@@ -1,0 +1,17 @@
+{
+	"slug": "b2012-PackOne",
+	"name": "PackOne",
+	"author": "b2012",
+	"license": "BSD-3-Clause",
+	"authorEmail": "contact@vcvrack.com",
+	"pluginUrl": "https://github.com/stoermelder/vcvrack-b2012-packone",
+	"authorUrl": "https://github.com/stoermelder",
+	"sourceUrl": "https://github.com/stoermelder/vcvrack-b2012-packone",
+	"version": "1.0.0",
+	"modules": {
+		"CV-Map": {
+			"name": "CV-MAP",
+			"tags": ["CV", "Parameter", "Modulation"]
+		}
+	}
+}
