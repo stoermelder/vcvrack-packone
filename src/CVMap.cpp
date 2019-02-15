@@ -1,7 +1,6 @@
 #include "plugin.hpp"
 
-
-static const int MAX_CHANNELS = 16;
+static const int MAX_CHANNELS = 32;
 
 
 struct CV_Map : Module {
@@ -9,14 +8,16 @@ struct CV_Map : Module {
 		NUM_PARAMS
 	};
 	enum InputIds {
-		POLY_INPUT,
+		POLY_INPUT1,
+		POLY_INPUT2,
 		NUM_INPUTS
 	};
 	enum OutputIds {
 		NUM_OUTPUTS
 	};
 	enum LightIds {
-		ENUMS(CHANNEL_LIGHTS, 16),
+		ENUMS(CHANNEL_LIGHTS1, 16),
+		ENUMS(CHANNEL_LIGHTS2, 16),
 		NUM_LIGHTS
 	};
 
@@ -32,6 +33,8 @@ struct CV_Map : Module {
 
 	/** The smoothing processor (normalized between 0 and 1) of each channel */
 	dsp::ExponentialFilter valueFilters[MAX_CHANNELS];
+
+  	bool bipolarInput = false;
 
 	CV_Map() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -71,8 +74,10 @@ struct CV_Map : Module {
 			if (!param->isBounded())
 				continue;
 			// Set param
-			float v = inputs[POLY_INPUT].getVoltage(id);
-			v = rescale(v, -5.f, 5.f, 0.f, 1.f);
+			float v = id < 16 ? inputs[POLY_INPUT1].getVoltage(id) : inputs[POLY_INPUT2].getVoltage(id - 16);
+			if (bipolarInput)
+	  			v += 5.f;
+			v = rescale(v, 0.f, 10.f, 0.f, 1.f);
 			v = valueFilters[id].process(deltaTime, v);
 			v = rescale(v, 0.f, 1.f, param->minValue, param->maxValue);
 			APP->engine->setParam(module, paramId, v);
@@ -82,8 +87,12 @@ struct CV_Map : Module {
 		if (++lightFrame >= 512) {
 			lightFrame = 0;
 			for (int c = 0; c < 16; c++) {
-				bool active = (c < inputs[POLY_INPUT].getChannels());
-				lights[CHANNEL_LIGHTS + c].setBrightness(active);
+				bool active = (c < inputs[POLY_INPUT1].getChannels());
+				lights[CHANNEL_LIGHTS1 + c].setBrightness(active);
+			}
+			for (int c = 0; c < 16; c++) {
+				bool active = (c < inputs[POLY_INPUT2].getChannels());
+				lights[CHANNEL_LIGHTS2 + c].setBrightness(active);
 			}
 		}
 	}
@@ -164,6 +173,9 @@ struct CV_Map : Module {
 		}
 		json_object_set_new(rootJ, "maps", mapsJ);
 
+		json_t *bipolarInputJ = json_boolean(bipolarInput);
+		json_object_set_new(rootJ, "bipolarInput", bipolarInputJ);
+
 		return rootJ;
 	}
 
@@ -184,8 +196,10 @@ struct CV_Map : Module {
 				APP->engine->updateParamHandle(&paramHandles[mapIndex], json_integer_value(moduleIdJ), json_integer_value(paramIdJ), false);
 			}
 		}
-
 		updateMapLen();
+
+		json_t *bipolarInputJ = json_object_get(rootJ, "bipolarInput");
+		bipolarInput = json_boolean_value(bipolarInputJ);
 	}
 };
 
@@ -378,30 +392,74 @@ struct CV_MapWidget : ModuleWidget {
 		addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(6.77, 21.347)), module, CV_Map::POLY_INPUT));
+		float o = 6.77f;
+		float v = 16.f;
+		float d = 7.5f;
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(o, 21.1)), module, CV_Map::POLY_INPUT1));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(o + 37.f, 21.1)), module, CV_Map::POLY_INPUT2));
 
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(15.276, 17.775)), module, CV_Map::CHANNEL_LIGHTS + 0));
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(17.275, 17.775)), module, CV_Map::CHANNEL_LIGHTS + 1));
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(19.275, 17.775)), module, CV_Map::CHANNEL_LIGHTS + 2));
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(21.275, 17.775)), module, CV_Map::CHANNEL_LIGHTS + 3));
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(15.276, 19.775)), module, CV_Map::CHANNEL_LIGHTS + 4));
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(17.275, 19.775)), module, CV_Map::CHANNEL_LIGHTS + 5));
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(19.275, 19.775)), module, CV_Map::CHANNEL_LIGHTS + 6));
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(21.275, 19.775)), module, CV_Map::CHANNEL_LIGHTS + 7));
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(15.276, 21.775)), module, CV_Map::CHANNEL_LIGHTS + 8));
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(17.275, 21.775)), module, CV_Map::CHANNEL_LIGHTS + 9));
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(19.275, 21.775)), module, CV_Map::CHANNEL_LIGHTS + 10));
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(21.276, 21.775)), module, CV_Map::CHANNEL_LIGHTS + 11));
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(15.276, 23.775)), module, CV_Map::CHANNEL_LIGHTS + 12));
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(17.275, 23.775)), module, CV_Map::CHANNEL_LIGHTS + 13));
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(19.275, 23.775)), module, CV_Map::CHANNEL_LIGHTS + 14));
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(21.276, 23.775)), module, CV_Map::CHANNEL_LIGHTS + 15));
+		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d, 17.975)), module, CV_Map::CHANNEL_LIGHTS1 + 0));
+		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 2, 17.975)), module, CV_Map::CHANNEL_LIGHTS1 + 1));
+		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 4, 17.975)), module, CV_Map::CHANNEL_LIGHTS1 + 2));
+		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 6, 17.975)), module, CV_Map::CHANNEL_LIGHTS1 + 3));
+		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d, 19.975)), module, CV_Map::CHANNEL_LIGHTS1 + 4));
+		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 2, 19.975)), module, CV_Map::CHANNEL_LIGHTS1 + 5));
+		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 4, 19.975)), module, CV_Map::CHANNEL_LIGHTS1 + 6));
+		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 6, 19.975)), module, CV_Map::CHANNEL_LIGHTS1 + 7));
+		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d, 21.975)), module, CV_Map::CHANNEL_LIGHTS1 + 8));
+		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 2, 21.975)), module, CV_Map::CHANNEL_LIGHTS1 + 9));
+		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 4, 21.975)), module, CV_Map::CHANNEL_LIGHTS1 + 10));
+		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 6, 21.975)), module, CV_Map::CHANNEL_LIGHTS1 + 11));
+		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d, 23.975)), module, CV_Map::CHANNEL_LIGHTS1 + 12));
+		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 2, 23.975)), module, CV_Map::CHANNEL_LIGHTS1 + 13));
+		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 4, 23.975)), module, CV_Map::CHANNEL_LIGHTS1 + 14));
+		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 6, 23.975)), module, CV_Map::CHANNEL_LIGHTS1 + 15));
+
+		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + v, 17.975)), module, CV_Map::CHANNEL_LIGHTS2 + 0));
+		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 2 + v, 17.975)), module, CV_Map::CHANNEL_LIGHTS2 + 1));
+		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 4 + v, 17.975)), module, CV_Map::CHANNEL_LIGHTS2 + 2));
+		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 6 + v, 17.975)), module, CV_Map::CHANNEL_LIGHTS2 + 3));
+		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + v, 19.975)), module, CV_Map::CHANNEL_LIGHTS2 + 4));
+		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 2 + v, 19.975)), module, CV_Map::CHANNEL_LIGHTS2 + 5));
+		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 4 + v, 19.975)), module, CV_Map::CHANNEL_LIGHTS2 + 6));
+		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 6 + v, 19.975)), module, CV_Map::CHANNEL_LIGHTS2 + 7));
+		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + v, 21.975)), module, CV_Map::CHANNEL_LIGHTS2 + 8));
+		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 2 + v, 21.975)), module, CV_Map::CHANNEL_LIGHTS2 + 9));
+		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 4 + v, 21.975)), module, CV_Map::CHANNEL_LIGHTS2 + 10));
+		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 6 + v, 21.975)), module, CV_Map::CHANNEL_LIGHTS2 + 11));
+		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + v, 23.975)), module, CV_Map::CHANNEL_LIGHTS2 + 12));
+		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 2 + v, 23.975)), module, CV_Map::CHANNEL_LIGHTS2 + 13));
+		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 4 + v, 23.975)), module, CV_Map::CHANNEL_LIGHTS2 + 14));
+		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 6 + v, 23.975)), module, CV_Map::CHANNEL_LIGHTS2 + 15));
+
 
 		CV_MapDisplay *mapWidget = createWidget<CV_MapDisplay>(mm2px(Vec(3.41891, 28.02)));
-		mapWidget->box.size = mm2px(Vec(33.840, 91.664));
+		mapWidget->box.size = mm2px(Vec(43.999, 91));
 		mapWidget->setModule(module);
 		addChild(mapWidget);
 	}
+
+
+	void appendContextMenu(Menu *menu) override {
+		CV_Map *cv_map = dynamic_cast<CV_Map*>(module);
+		assert(cv_map);
+
+		struct UniBiItem : MenuItem {
+			CV_Map *cv_map;
+
+			void onAction(const event::Action &e) override {
+				cv_map->bipolarInput ^= true;;
+			}
+
+			void step() override {
+				rightText = cv_map->bipolarInput ? "-5V..5V" : "0V..10V";
+				MenuItem::step();
+			}
+		};
+
+		menu->addChild(construct<MenuLabel>());
+		menu->addChild(construct<UniBiItem>(&MenuItem::text, "Signal input", &UniBiItem::cv_map, cv_map));
+  	};
 };
 
 
