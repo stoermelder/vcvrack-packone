@@ -278,7 +278,7 @@ struct CV_MapChoice : LedDisplayChoice {
 		}
 
 		// Set text
-		text = "";
+		text = "[" + std::to_string(id + 1) + "] ";
 		if (module->paramHandles[id].moduleId >= 0) {
 			text += getParamName();
 		}
