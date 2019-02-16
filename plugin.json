@@ -12,6 +12,10 @@
 		"CV-Map": {
 			"name": "CV-MAP",
 			"tags": ["CV", "Parameter", "Modulation"]
+		},
+		"CV-Pam": {
+			"name": "CV-PAM",
+			"tags": ["CV", "Parameter", "Modulation"]
 		}
 	}
 }
