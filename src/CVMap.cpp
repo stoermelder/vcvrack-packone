@@ -36,12 +36,15 @@ struct CV_Map : Module {
 
   	bool bipolarInput = false;
 
+	dsp::Counter lightCounter;
+
 	CV_Map() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		for (int id = 0; id < MAX_CHANNELS; id++) {
 			APP->engine->addParamHandle(&paramHandles[id]);
 		}
 		onReset();
+		lightCounter.setPeriod(512);
 	}
 
 	~CV_Map() {
@@ -49,8 +52,6 @@ struct CV_Map : Module {
 			APP->engine->removeParamHandle(&paramHandles[id]);
 		}
 	}
-
-	int lightFrame = 0;
 
 	void onReset() override {
 		learningId = -1;
@@ -82,8 +83,7 @@ struct CV_Map : Module {
 		}
 		
 		// Set channel lights infrequently
-		if (++lightFrame >= 512) {
-			lightFrame = 0;
+		if (lightCounter.process()) {
 			for (int c = 0; c < 16; c++) {
 				bool active = (c < inputs[POLY_INPUT1].getChannels());
 				lights[CHANNEL_LIGHTS1 + c].setBrightness(active);
@@ -276,16 +276,16 @@ struct CV_MapChoice : LedDisplayChoice {
 		}
 
 		// Set text
-		text = "[" + std::to_string(id + 1) + "] ";
+		text = "[" + ((id < 9 ? "0" : "") + std::to_string(id + 1)) + "] ";
 		if (module->paramHandles[id].moduleId >= 0) {
 			text += getParamName();
 		}
 		if (module->paramHandles[id].moduleId < 0) {
 			if (module->learningId == id) {
-				text = "Mapping...";
+				text += "Mapping...";
 			}
 			else {
-				text = "Unmapped";
+				text += "Unmapped";
 			}
 		}
 
@@ -364,19 +364,6 @@ struct CV_MapDisplay : LedDisplay {
 
 			pos = choice->box.getBottomLeft();
 		}
-	}
-
-	void step() override {
-		if (!module)
-			return;
-
-		int mapLen = module->mapLen;
-		for (int id = 0; id < MAX_CHANNELS; id++) {
-			choices[id]->visible = (id < mapLen);
-			separators[id]->visible = (id < mapLen);
-		}
-
-		LedDisplay::step();
 	}
 };
 
