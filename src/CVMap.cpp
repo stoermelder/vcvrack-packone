@@ -59,9 +59,7 @@ struct CV_Map : Module {
 		mapLen = 1;
 	}
 
-	void step() override {
-		float deltaTime = APP->engine->getSampleTime();
-		
+	void process(const ProcessArgs &args) override {
 		// Step channels
 		for (int id = 0; id < mapLen; id++) {
 			// Get module
@@ -78,7 +76,7 @@ struct CV_Map : Module {
 			if (bipolarInput)
 	  			v += 5.f;
 			v = rescale(v, 0.f, 10.f, 0.f, 1.f);
-			v = valueFilters[id].process(deltaTime, v);
+			v = valueFilters[id].process(args.sampleTime, v);
 			v = rescale(v, 0.f, 1.f, param->minValue, param->maxValue);
 			APP->engine->setParam(module, paramId, v);
 		}
