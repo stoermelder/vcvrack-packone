@@ -8,14 +8,16 @@
 	"authorUrl": "https://github.com/stoermelder",
 	"sourceUrl": "https://github.com/stoermelder/vcvrack-b2012-packone",
 	"version": "1.0.0",
-	"modules": {
-		"CV-Map": {
+	"modules": [
+		{
+			"slug": "CV-Map",
 			"name": "CV-MAP",
 			"tags": ["CV", "Parameter", "Modulation"]
-		},
-		"CV-Pam": {
+		}, 
+		{
+			"slug": "CV-Pam",
 			"name": "CV-PAM",
 			"tags": ["CV", "Parameter", "Modulation"]
 		}
-	}
+	]
 }

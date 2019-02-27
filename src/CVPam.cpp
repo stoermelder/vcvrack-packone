@@ -224,7 +224,7 @@ struct CV_PamChoice : LedDisplayChoice {
 		this->module = module;
 	}
 
-	void onButton(const event::Button &e) override {
+	void onButton(const ButtonEvent &e) override {
 		if (!module)
 			return;
 
@@ -238,7 +238,7 @@ struct CV_PamChoice : LedDisplayChoice {
 		}
 	}
 
-	void onSelect(const event::Select &e) override {
+	void onSelect(const SelectEvent &e) override {
 		if (!module)
 			return;
 
@@ -251,7 +251,7 @@ struct CV_PamChoice : LedDisplayChoice {
 		e.consume(this);
 	}
 
-	void onDeselect(const event::Deselect &e) override {
+	void onDeselect(const DeselectEvent &e) override {
 		if (!module)
 			return;
 		// Check if a ParamWidget was touched
@@ -445,8 +445,8 @@ struct CV_PamWidget : ModuleWidget {
 		struct UniBiItem : MenuItem {
 			CV_Pam *cv_pam;
 
-			void onAction(const event::Action &e) override {
-				cv_pam->bipolarOutput ^= true;;
+			void onAction(const ActionEvent &e) override {
+				cv_pam->bipolarOutput ^= true;
 			}
 
 			void step() override {
