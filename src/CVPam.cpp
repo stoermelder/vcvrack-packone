@@ -307,6 +307,15 @@ struct CV_PamChoice : LedDisplayChoice {
 			}
 		}
 
+		if (module->paramHandles[id].moduleId < 0) {
+			if (module->learningId == id) {
+				text += "Mapping...";
+			}
+			else {
+				text += "Unmapped";
+			}
+		}
+
 		// Set text color
 		if (module->paramHandles[id].moduleId >= 0 || module->learningId == id) {
 			color.a = 1.0;
