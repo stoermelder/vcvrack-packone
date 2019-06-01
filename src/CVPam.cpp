@@ -393,11 +393,11 @@ struct CV_PamWidget : ModuleWidget {
 		addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		float o = 6.77f;
-		float v = 16.f;
-		float d = 7.5f;
+		float o = 9.f;
+		float v = 13.5f;
+		float d = 6.8f;
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(o, 21.1)), module, CV_Pam::POLY_OUTPUT1));
-		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(o + 37.f, 21.1)), module, CV_Pam::POLY_OUTPUT2));
+		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(o + d + v + 12.4f, 21.1)), module, CV_Pam::POLY_OUTPUT2));
 
 		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d, 17.975)), module, CV_Pam::CHANNEL_LIGHTS1 + 0));
 		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 2, 17.975)), module, CV_Pam::CHANNEL_LIGHTS1 + 1));
@@ -434,7 +434,7 @@ struct CV_PamWidget : ModuleWidget {
 		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 6 + v, 23.975)), module, CV_Pam::CHANNEL_LIGHTS2 + 15));
 
 
-		CV_PamDisplay *pamWidget = createWidget<CV_PamDisplay>(mm2px(Vec(3.41891, 28.02)));
+		CV_PamDisplay *pamWidget = createWidget<CV_PamDisplay>(mm2px(Vec(3.41891, 29.f)));
 		pamWidget->box.size = mm2px(Vec(43.999, 91));
 		pamWidget->setModule(module);
 		addChild(pamWidget);
