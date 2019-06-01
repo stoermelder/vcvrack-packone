@@ -36,7 +36,7 @@ struct CV_Map : Module {
 
   	bool bipolarInput = false;
 
-	dsp::Counter lightCounter;
+	dsp::ClockDivider lightDivider;
 
 	CV_Map() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -44,7 +44,7 @@ struct CV_Map : Module {
 			APP->engine->addParamHandle(&paramHandles[id]);
 		}
 		onReset();
-		lightCounter.setPeriod(512);
+		lightDivider.setDivision(512);
 	}
 
 	~CV_Map() {
@@ -69,8 +69,10 @@ struct CV_Map : Module {
 				continue;
 			// Get param
 			int paramId = paramHandles[id].paramId;
-			Param *param = &module->params[paramId];
-			if (!param->isBounded())
+			ParamQuantity *paramQuantity = module->paramQuantities[paramId];
+			if (!paramQuantity)
+				continue;
+			if (!paramQuantity->isBounded())
 				continue;
 			// Set param
 			float v = id < 16 ? inputs[POLY_INPUT1].getVoltage(id) : inputs[POLY_INPUT2].getVoltage(id - 16);
@@ -78,12 +80,12 @@ struct CV_Map : Module {
 	  			v += 5.f;
 			v = rescale(v, 0.f, 10.f, 0.f, 1.f);
 			v = valueFilters[id].process(args.sampleTime, v);
-			v = rescale(v, 0.f, 1.f, param->minValue, param->maxValue);
-			APP->engine->setParam(module, paramId, v);
+			v = rescale(v, 0.f, 1.f, paramQuantity->minValue, paramQuantity->maxValue);
+			paramQuantity->setScaledValue(v);
 		}
 		
 		// Set channel lights infrequently
-		if (lightCounter.process()) {
+		if (lightDivider.process()) {
 			for (int c = 0; c < 16; c++) {
 				bool active = (c < inputs[POLY_INPUT1].getChannels());
 				lights[CHANNEL_LIGHTS1 + c].setBrightness(active);
@@ -211,7 +213,7 @@ struct CV_MapChoice : LedDisplayChoice {
 		this->module = module;
 	}
 
-	void onButton(const ButtonEvent &e) override {
+	void onButton(const event::Button &e) override {
 		if (!module)
 			return;
 
@@ -225,7 +227,7 @@ struct CV_MapChoice : LedDisplayChoice {
 		}
 	}
 
-	void onSelect(const SelectEvent &e) override {
+	void onSelect(const event::Select &e) override {
 		if (!module)
 			return;
 
@@ -233,18 +235,18 @@ struct CV_MapChoice : LedDisplayChoice {
 		scroll->scrollTo(box);
 
 		// Reset touchedParam
-		APP->scene->rackWidget->touchedParam = NULL;
+		APP->scene->rack->touchedParam = NULL;
 		module->enableLearn(id);
 		e.consume(this);
 	}
 
-	void onDeselect(const DeselectEvent &e) override {
+	void onDeselect(const event::Deselect &e) override {
 		if (!module)
 			return;
 		// Check if a ParamWidget was touched
-		ParamWidget *touchedParam = APP->scene->rackWidget->touchedParam;
+		ParamWidget *touchedParam = APP->scene->rack->touchedParam;
 		if (touchedParam) {
-			APP->scene->rackWidget->touchedParam = NULL;
+			APP->scene->rack->touchedParam = NULL;
 			int moduleId = touchedParam->paramQuantity->module->id;
 			int paramId = touchedParam->paramQuantity->paramId;
 			module->learnParam(id, moduleId, paramId);
@@ -306,7 +308,7 @@ struct CV_MapChoice : LedDisplayChoice {
 		ParamHandle *paramHandle = &module->paramHandles[id];
 		if (paramHandle->moduleId < 0)
 			return "";
-		ModuleWidget *mw = APP->scene->rackWidget->getModule(paramHandle->moduleId);
+		ModuleWidget *mw = APP->scene->rack->getModule(paramHandle->moduleId);
 		if (!mw)
 			return "";
 		// Get the Module from the ModuleWidget instead of the ParamHandle.
@@ -317,11 +319,11 @@ struct CV_MapChoice : LedDisplayChoice {
 		int paramId = paramHandle->paramId;
 		if (paramId >= (int) m->params.size())
 			return "";
-		Param *param = &m->params[paramId];
+		ParamQuantity *paramQuantity = m->paramQuantities[paramId];
 		std::string s;
 		s += mw->model->name;
 		s += " ";
-		s += param->label;
+		s += paramQuantity->label;
 		return s;
 	}
 };
@@ -432,7 +434,7 @@ struct CV_MapWidget : ModuleWidget {
 		struct UniBiItem : MenuItem {
 			CV_Map *cv_map;
 
-			void onAction(const ActionEvent &e) override {
+			void onAction(const event::Action &e) override {
 				cv_map->bipolarInput ^= true;
 			}
 
@@ -448,4 +450,4 @@ struct CV_MapWidget : ModuleWidget {
 };
 
 
-Model *modelCV_Map = createModel<CV_Map, CV_MapWidget>("CV-Map");
+Model *modelCV_Map = createModel<CV_Map, CV_MapWidget>("CVMap");

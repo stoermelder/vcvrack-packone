@@ -36,7 +36,7 @@ struct CV_Pam : Module {
 
   	bool bipolarOutput = false;
 
-	dsp::Counter lightCounter;
+	dsp::ClockDivider lightDivider;
 
 	CV_Pam() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -44,7 +44,7 @@ struct CV_Pam : Module {
 			APP->engine->addParamHandle(&paramHandles[id]);
 		}
 		onReset();
-		lightCounter.setPeriod(512);
+		lightDivider.setDivision(512);
 	}
 
 	~CV_Pam() {
@@ -72,16 +72,19 @@ struct CV_Pam : Module {
 				continue;
 			// Get param
 			int paramId = paramHandles[id].paramId;
-			Param *param = &module->params[paramId];
-			if (!param->isBounded())
+			ParamQuantity *paramQuantity = module->paramQuantities[paramId];
+			if (!paramQuantity)
+				continue;
+			if (!paramQuantity->isBounded())
 				continue;
 
 			lastChannel_out1 = id < 16 ? id : lastChannel_out1;
 			lastChannel_out2 = id >= 16 ? id - 16 : lastChannel_out2;
 			
 			// get param
-			float v = APP->engine->getParam(module, paramId);
-			v = rescale(v, param->minValue, param->maxValue, 0.f, 1.f);
+			//float v = APP->engine->getParam(module, paramId);
+			float v = paramQuantity->getScaledValue();
+			v = rescale(v, paramQuantity->minValue, paramQuantity->maxValue, 0.f, 1.f);
 			v = valueFilters[id].process(args.sampleTime, v);
 			v = rescale(v, 0.f, 1.f, 0.f, 10.f);
 			if (bipolarOutput)
@@ -96,7 +99,7 @@ struct CV_Pam : Module {
 		outputs[POLY_OUTPUT2].setChannels(lastChannel_out2 + 1);
 
 		// Set channel lights infrequently
-		if (lightCounter.process()) {
+		if (lightDivider.process()) {
 			for (int c = 0; c < 16; c++) {
 				bool active = (c < outputs[POLY_OUTPUT1].getChannels());
 				lights[CHANNEL_LIGHTS1 + c].setBrightness(active);
@@ -224,7 +227,7 @@ struct CV_PamChoice : LedDisplayChoice {
 		this->module = module;
 	}
 
-	void onButton(const ButtonEvent &e) override {
+	void onButton(const event::Button &e) override {
 		if (!module)
 			return;
 
@@ -238,7 +241,7 @@ struct CV_PamChoice : LedDisplayChoice {
 		}
 	}
 
-	void onSelect(const SelectEvent &e) override {
+	void onSelect(const event::Select &e) override {
 		if (!module)
 			return;
 
@@ -246,18 +249,18 @@ struct CV_PamChoice : LedDisplayChoice {
 		scroll->scrollTo(box);
 
 		// Reset touchedParam
-		APP->scene->rackWidget->touchedParam = NULL;
+		APP->scene->rack->touchedParam = NULL;
 		module->enableLearn(id);
 		e.consume(this);
 	}
 
-	void onDeselect(const DeselectEvent &e) override {
+	void onDeselect(const event::Deselect &e) override {
 		if (!module)
 			return;
 		// Check if a ParamWidget was touched
-		ParamWidget *touchedParam = APP->scene->rackWidget->touchedParam;
+		ParamWidget *touchedParam = APP->scene->rack->touchedParam;
 		if (touchedParam) {
-			APP->scene->rackWidget->touchedParam = NULL;
+			APP->scene->rack->touchedParam = NULL;
 			int moduleId = touchedParam->paramQuantity->module->id;
 			int paramId = touchedParam->paramQuantity->paramId;
 			module->learnParam(id, moduleId, paramId);
@@ -319,7 +322,7 @@ struct CV_PamChoice : LedDisplayChoice {
 		ParamHandle *paramHandle = &module->paramHandles[id];
 		if (paramHandle->moduleId < 0)
 			return "";
-		ModuleWidget *mw = APP->scene->rackWidget->getModule(paramHandle->moduleId);
+		ModuleWidget *mw = APP->scene->rack->getModule(paramHandle->moduleId);
 		if (!mw)
 			return "";
 		// Get the Module from the ModuleWidget instead of the ParamHandle.
@@ -330,11 +333,11 @@ struct CV_PamChoice : LedDisplayChoice {
 		int paramId = paramHandle->paramId;
 		if (paramId >= (int) m->params.size())
 			return "";
-		Param *param = &m->params[paramId];
+		ParamQuantity *paramQuantity = m->paramQuantities[paramId];
 		std::string s;
 		s += mw->model->name;
 		s += " ";
-		s += param->label;
+		s += paramQuantity->label;
 		return s;
 	}
 };
@@ -445,7 +448,7 @@ struct CV_PamWidget : ModuleWidget {
 		struct UniBiItem : MenuItem {
 			CV_Pam *cv_pam;
 
-			void onAction(const ActionEvent &e) override {
+			void onAction(const event::Action &e) override {
 				cv_pam->bipolarOutput ^= true;
 			}
 
@@ -461,4 +464,4 @@ struct CV_PamWidget : ModuleWidget {
 };
 
 
-Model *modelCV_Pam = createModel<CV_Pam, CV_PamWidget>("CV-Pam");
+Model *modelCV_Pam = createModel<CV_Pam, CV_PamWidget>("CVPam");
