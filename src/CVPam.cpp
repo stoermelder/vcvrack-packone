@@ -66,11 +66,11 @@ struct CV_Pam : Module {
 
 		// Step channels
 		for (int id = 0; id < mapLen; id++) {
-			// Get module
+			// Get Module
 			Module *module = paramHandles[id].module;
 			if (!module)
 				continue;
-			// Get param
+			// Get ParamQuantity
 			int paramId = paramHandles[id].paramId;
 			ParamQuantity *paramQuantity = module->paramQuantities[paramId];
 			if (!paramQuantity)
@@ -81,10 +81,8 @@ struct CV_Pam : Module {
 			lastChannel_out1 = id < 16 ? id : lastChannel_out1;
 			lastChannel_out2 = id >= 16 ? id - 16 : lastChannel_out2;
 			
-			// get param
-			//float v = APP->engine->getParam(module, paramId);
+			// set voltage
 			float v = paramQuantity->getScaledValue();
-			v = rescale(v, paramQuantity->minValue, paramQuantity->maxValue, 0.f, 1.f);
 			v = valueFilters[id].process(args.sampleTime, v);
 			v = rescale(v, 0.f, 1.f, 0.f, 10.f);
 			if (bipolarOutput)
@@ -228,6 +226,7 @@ struct CV_PamChoice : LedDisplayChoice {
 	}
 
 	void onButton(const event::Button &e) override {
+		e.stopPropagating();
 		if (!module)
 			return;
 
@@ -251,7 +250,6 @@ struct CV_PamChoice : LedDisplayChoice {
 		// Reset touchedParam
 		APP->scene->rack->touchedParam = NULL;
 		module->enableLearn(id);
-		e.consume(this);
 	}
 
 	void onDeselect(const event::Deselect &e) override {
