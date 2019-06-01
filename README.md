@@ -1,6 +1,6 @@
-# PackOne
+# stoermelder PackOne
 
-The PackOne plugin pack gives you a some additional basic modules.
+The PackOne plugin pack gives you a some basic modules.
 
 ## Building
 
