@@ -221,6 +221,9 @@ struct CV_PamChoice : LedDisplayChoice {
 	int id;
 	int disableLearnFrames = -1;
 
+	int scrollCount = 0;
+	int scrollOffset = 0;
+
 	void setModule(CV_Pam *module) {
 		this->module = module;
 	}
@@ -290,16 +293,17 @@ struct CV_PamChoice : LedDisplayChoice {
 		}
 
 		// Set text
-		text = "[" + ((id < 9 ? "0" : "") + std::to_string(id + 1)) + "] ";
+		text = ((id < 9 ? "0" : "") + std::to_string(id + 1)) + " ";
 		if (module->paramHandles[id].moduleId >= 0) {
-			text += getParamName();
-		}
-		if (module->paramHandles[id].moduleId < 0) {
-			if (module->learningId == id) {
-				text += "Mapping...";
-			}
-			else {
-				text += "Unmapped";
+			std::string pn = getParamName();
+			if (pn.length() > 15) {
+				text += pn.substr(scrollOffset > (int)pn.length() ? 0 : scrollOffset);
+				scrollCount = (scrollCount + 1) % 5;
+				if (scrollCount == 0) {
+					scrollOffset = (scrollOffset + 1) % (pn.length() + 15);
+				}
+			} else {
+				text += pn;
 			}
 		}
 
