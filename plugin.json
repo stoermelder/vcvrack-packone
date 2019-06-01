@@ -1,22 +1,26 @@
 {
-	"slug": "b2012-PackOne",
-	"name": "PackOne",
-	"author": "b2012",
-	"license": "BSD-3-Clause",
-	"authorEmail": "contact@vcvrack.com",
-	"pluginUrl": "https://github.com/stoermelder/vcvrack-b2012-packone",
-	"authorUrl": "https://github.com/stoermelder",
-	"sourceUrl": "https://github.com/stoermelder/vcvrack-b2012-packone",
+	"slug": "Stoermelder-P1",
 	"version": "1.0.0",
+	"license": "BSD-3-Clause",	
+	"author": "Benjamin Dill",
+	"name": "PackOne",
+	"brand": "stoermelder",
+	"authorEmail": "stoermelder@outlook.com",
+	"pluginUrl": "https://github.com/stoermelder/vcvrack-packone",
+	"authorUrl": "https://github.com/stoermelder",
+	"sourceUrl": "https://github.com/stoermelder/vcvrack-packone",
+
 	"modules": [
 		{
-			"slug": "CV-Map",
+			"slug": "CVMap",
 			"name": "CV-MAP",
+			"description": "Add CV control to any parameter of any module",
 			"tags": ["CV", "Parameter", "Modulation"]
 		}, 
 		{
-			"slug": "CV-Pam",
+			"slug": "CVPam",
 			"name": "CV-PAM",
+			"description": "Generate CV from any parameter change of any module",
 			"tags": ["CV", "Parameter", "Modulation"]
 		}
 	]
