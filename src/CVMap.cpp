@@ -66,6 +66,19 @@ struct CV_Map : Module {
 	void process(const ProcessArgs &args) override {
 		// Step channels
 		for (int id = 0; id < mapLen; id++) {
+			if (id < 16) {
+				// Skip unused channels on INPUT1
+				if (inputs[POLY_INPUT1].getChannels() == id) {
+					id = 15;
+					continue;
+				}
+			} else {
+				// Skip unused channels on INPUT2
+				if (inputs[POLY_INPUT2].getChannels() == id - 16) {
+					break;
+				}
+			}
+
 			// Get Module
 			Module *module = paramHandles[id].module;
 			if (!module)
