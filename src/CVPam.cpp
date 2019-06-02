@@ -1,4 +1,5 @@
 #include "plugin.hpp"
+#include <chrono>
 
 static const int MAX_CHANNELS = 32;
 
@@ -219,10 +220,15 @@ struct CV_Pam : Module {
 struct CV_PamChoice : LedDisplayChoice {
 	CV_Pam *module;
 	int id;
-	int disableLearnFrames = -1;
 
-	int scrollCount = 0;
-	int scrollOffset = 0;
+	static const int hscrollCharMAXLENGTH = 16;
+	std::chrono::time_point<std::chrono::system_clock> hscrollUpdate = std::chrono::system_clock::now();
+	int hscrollCharOffset = 0;
+
+	CV_PamChoice() {
+		box.size = mm2px(Vec(0, 7.5));
+		textOffset = Vec(6, 14.7);
+	}
 
 	void setModule(CV_Pam *module) {
 		this->module = module;
@@ -265,6 +271,7 @@ struct CV_PamChoice : LedDisplayChoice {
 			int moduleId = touchedParam->paramQuantity->module->id;
 			int paramId = touchedParam->paramQuantity->paramId;
 			module->learnParam(id, moduleId, paramId);
+			hscrollCharOffset = 0;
 		}
 		else {
 			module->disableLearn(id);
@@ -294,20 +301,20 @@ struct CV_PamChoice : LedDisplayChoice {
 
 		// Set text
 		text = ((id < 9 ? "0" : "") + std::to_string(id + 1)) + " ";
-		if (module->paramHandles[id].moduleId >= 0) {
+		if (module->paramHandles[id].moduleId >= 0 && module->learningId != id) {
 			std::string pn = getParamName();
-			if (pn.length() > 15) {
-				text += pn.substr(scrollOffset > (int)pn.length() ? 0 : scrollOffset);
-				scrollCount = (scrollCount + 1) % 5;
-				if (scrollCount == 0) {
-					scrollOffset = (scrollOffset + 1) % (pn.length() + 15);
+			if (pn.length() > hscrollCharMAXLENGTH) {
+				// Scroll the parameter-name horizontically
+				text += pn.substr(hscrollCharOffset > (int)pn.length() ? 0 : hscrollCharOffset);
+				auto now = std::chrono::system_clock::now();
+				if (now - hscrollUpdate > std::chrono::milliseconds{100}) {
+					hscrollCharOffset = (hscrollCharOffset + 1) % (pn.length() + hscrollCharMAXLENGTH);
+					hscrollUpdate = now;
 				}
 			} else {
 				text += pn;
 			}
-		}
-
-		if (module->paramHandles[id].moduleId < 0) {
+		} else {
 			if (module->learningId == id) {
 				text += "Mapping...";
 			}
@@ -329,21 +336,21 @@ struct CV_PamChoice : LedDisplayChoice {
 		if (!module)
 			return "";
 		if (id >= module->mapLen)
-			return "";
+			return "<ERROR>";
 		ParamHandle *paramHandle = &module->paramHandles[id];
 		if (paramHandle->moduleId < 0)
-			return "";
+			return "<ERROR>";
 		ModuleWidget *mw = APP->scene->rack->getModule(paramHandle->moduleId);
 		if (!mw)
-			return "";
+			return "<ERROR>";
 		// Get the Module from the ModuleWidget instead of the ParamHandle.
 		// I think this is more elegant since this method is called in the app world instead of the engine world.
 		Module *m = mw->module;
 		if (!m)
-			return "";
+			return "<ERROR>";
 		int paramId = paramHandle->paramId;
 		if (paramId >= (int) m->params.size())
-			return "";
+			return "<ERROR>";
 		ParamQuantity *paramQuantity = m->paramQuantities[paramId];
 		std::string s;
 		s += mw->model->name;
