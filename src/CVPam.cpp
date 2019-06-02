@@ -42,7 +42,7 @@ struct CV_Pam : Module {
 	CV_Pam() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		for (int id = 0; id < MAX_CHANNELS; id++) {
-			paramHandles[id].color = nvgRGB(0xff, 0x40, 0xff);
+			paramHandles[id].color = nvgRGB(0x40, 0xff, 0xff);
 			paramHandles[id].text = string::f("CV-Pam Ch%02d", id + 1);
 			APP->engine->addParamHandle(&paramHandles[id]);
 		}
