@@ -47,7 +47,7 @@ struct CV_Pam : Module {
 			APP->engine->addParamHandle(&paramHandles[id]);
 		}
 		onReset();
-		lightDivider.setDivision(512);
+		lightDivider.setDivision(1024);
 	}
 
 	~CV_Pam() {

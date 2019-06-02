@@ -2,7 +2,7 @@
 #include <chrono>
 
 static const int MAX_CHANNELS = 32;
-
+static const float UINIT = 0;
 
 struct CV_Map : Module {
 	enum ParamIds {
@@ -37,6 +37,11 @@ struct CV_Map : Module {
 
   	bool bipolarInput = false;
 
+	/** Track last values */
+	float lastValue[MAX_CHANNELS];
+	/** [Saved to JSON] Allow manual changes of target parameters */
+	bool lockParameterChanges = true;
+
 	dsp::ClockDivider lightDivider;
 
 	CV_Map() {
@@ -47,7 +52,7 @@ struct CV_Map : Module {
 			APP->engine->addParamHandle(&paramHandles[id]);
 		}
 		onReset();
-		lightDivider.setDivision(512);
+		lightDivider.setDivision(1024);
 	}
 
 	~CV_Map() {
@@ -96,7 +101,16 @@ struct CV_Map : Module {
 	  			v += 5.f;
 			v = rescale(v, 0.f, 10.f, 0.f, 1.f);
 			v = valueFilters[id].process(args.sampleTime, v);
-			paramQuantity->setScaledValue(v);
+
+			// If lastValue is unitialized set it to its current value, only executed once
+			if (lastValue[id] == UINIT) {
+				lastValue[id] = v;
+			}
+
+			if (lockParameterChanges || lastValue[id] != v) {
+				paramQuantity->setScaledValue(v);
+				lastValue[id] = v;					
+			}
 		}
 		
 		// Set channel lights infrequently
@@ -116,6 +130,7 @@ struct CV_Map : Module {
 		learningId = -1;
 		APP->engine->updateParamHandle(&paramHandles[id], -1, 0, true);
 		valueFilters[id].reset();
+		lastValue[id] = UINIT;
 		updateMapLen();
 	}
 
@@ -124,6 +139,7 @@ struct CV_Map : Module {
 		for (int id = 0; id < MAX_CHANNELS; id++) {
 			APP->engine->updateParamHandle(&paramHandles[id], -1, 0, true);
 			valueFilters[id].reset();
+			lastValue[id] = UINIT;
 		}
 		mapLen = 0;
 	}
@@ -188,6 +204,9 @@ struct CV_Map : Module {
 		}
 		json_object_set_new(rootJ, "maps", mapsJ);
 
+		json_t *lockParameterChangesJ = json_boolean(lockParameterChanges);
+		json_object_set_new(rootJ, "lockParameterChanges", lockParameterChangesJ);
+
 		json_t *bipolarInputJ = json_boolean(bipolarInput);
 		json_object_set_new(rootJ, "bipolarInput", bipolarInputJ);
 
@@ -212,6 +231,9 @@ struct CV_Map : Module {
 			}
 		}
 		updateMapLen();
+
+		json_t *lockParameterChangesJ = json_object_get(rootJ, "lockParameterChanges");
+		lockParameterChanges = json_boolean_value(lockParameterChangesJ);
 
 		json_t *bipolarInputJ = json_object_get(rootJ, "bipolarInput");
 		bipolarInput = json_boolean_value(bipolarInputJ);
@@ -465,6 +487,19 @@ struct CV_MapWidget : ModuleWidget {
 		CV_Map *cv_map = dynamic_cast<CV_Map*>(module);
 		assert(cv_map);
 
+		struct LockItem : MenuItem {
+			CV_Map *cv_map;
+
+			void onAction(const event::Action &e) override {
+				cv_map->lockParameterChanges ^= true;
+			}
+
+			void step() override {
+				rightText = cv_map->lockParameterChanges ? "Locked" : "Unlocked";
+				MenuItem::step();
+			}
+		};
+
 		struct UniBiItem : MenuItem {
 			CV_Map *cv_map;
 
@@ -479,6 +514,7 @@ struct CV_MapWidget : ModuleWidget {
 		};
 
 		menu->addChild(construct<MenuLabel>());
+		menu->addChild(construct<LockItem>(&MenuItem::text, "Parameter changes", &LockItem::cv_map, cv_map));
 		menu->addChild(construct<UniBiItem>(&MenuItem::text, "Signal input", &UniBiItem::cv_map, cv_map));
   	};
 };
