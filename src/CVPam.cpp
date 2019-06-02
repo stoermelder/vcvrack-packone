@@ -42,6 +42,8 @@ struct CV_Pam : Module {
 	CV_Pam() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		for (int id = 0; id < MAX_CHANNELS; id++) {
+			paramHandles[id].color = nvgRGB(0xff, 0x40, 0xff);
+			paramHandles[id].text = string::f("CV-Pam Ch%02d", id + 1);
 			APP->engine->addParamHandle(&paramHandles[id]);
 		}
 		onReset();
@@ -300,7 +302,7 @@ struct CV_PamChoice : LedDisplayChoice {
 		}
 
 		// Set text
-		text = ((id < 9 ? "0" : "") + std::to_string(id + 1)) + " ";
+		text = string::f("%02d ", id + 1);
 		if (module->paramHandles[id].moduleId >= 0 && module->learningId != id) {
 			std::string pn = getParamName();
 			if (pn.length() > hscrollCharMAXLENGTH) {
