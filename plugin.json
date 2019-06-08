@@ -22,6 +22,12 @@
 			"name": "CV-PAM",
 			"description": "Generate CV from any parameter change of any module",
 			"tags": ["CV", "Parameter", "Modulation", "Map"]
+		},
+		{
+			"slug": "RotorA",
+			"name": "Rotor Model A",			
+			"description": "Rotates a signal across channels",
+			"tags": ["Modulation", "Poly"]
 		}
 	]
 }

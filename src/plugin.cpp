@@ -8,4 +8,5 @@ void init(rack::Plugin *p) {
 
 	p->addModel(modelCV_Map);
 	p->addModel(modelCV_Pam);
+	p->addModel(modelRotorA);
 }
