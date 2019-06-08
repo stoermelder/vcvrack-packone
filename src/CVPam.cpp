@@ -1,4 +1,5 @@
 #include "plugin.hpp"
+#include "widgets.hpp"
 #include <chrono>
 
 static const int MAX_CHANNELS = 32;
@@ -419,40 +420,13 @@ struct CV_PamWidget : ModuleWidget {
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(o, 21.1)), module, CV_Pam::POLY_OUTPUT1));
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(o + d + v + 12.4f, 21.1)), module, CV_Pam::POLY_OUTPUT2));
 
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d, 17.975)), module, CV_Pam::CHANNEL_LIGHTS1 + 0));
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 2, 17.975)), module, CV_Pam::CHANNEL_LIGHTS1 + 1));
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 4, 17.975)), module, CV_Pam::CHANNEL_LIGHTS1 + 2));
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 6, 17.975)), module, CV_Pam::CHANNEL_LIGHTS1 + 3));
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d, 19.975)), module, CV_Pam::CHANNEL_LIGHTS1 + 4));
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 2, 19.975)), module, CV_Pam::CHANNEL_LIGHTS1 + 5));
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 4, 19.975)), module, CV_Pam::CHANNEL_LIGHTS1 + 6));
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 6, 19.975)), module, CV_Pam::CHANNEL_LIGHTS1 + 7));
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d, 21.975)), module, CV_Pam::CHANNEL_LIGHTS1 + 8));
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 2, 21.975)), module, CV_Pam::CHANNEL_LIGHTS1 + 9));
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 4, 21.975)), module, CV_Pam::CHANNEL_LIGHTS1 + 10));
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 6, 21.975)), module, CV_Pam::CHANNEL_LIGHTS1 + 11));
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d, 23.975)), module, CV_Pam::CHANNEL_LIGHTS1 + 12));
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 2, 23.975)), module, CV_Pam::CHANNEL_LIGHTS1 + 13));
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 4, 23.975)), module, CV_Pam::CHANNEL_LIGHTS1 + 14));
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 6, 23.975)), module, CV_Pam::CHANNEL_LIGHTS1 + 15));
+        PolyLedWidget *w0 = createWidget<PolyLedWidget>(mm2px(Vec(o + d, 17.975)));
+        w0->setModule(module, CV_Pam::CHANNEL_LIGHTS1);
+        addChild(w0);
 
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + v, 17.975)), module, CV_Pam::CHANNEL_LIGHTS2 + 0));
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 2 + v, 17.975)), module, CV_Pam::CHANNEL_LIGHTS2 + 1));
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 4 + v, 17.975)), module, CV_Pam::CHANNEL_LIGHTS2 + 2));
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 6 + v, 17.975)), module, CV_Pam::CHANNEL_LIGHTS2 + 3));
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + v, 19.975)), module, CV_Pam::CHANNEL_LIGHTS2 + 4));
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 2 + v, 19.975)), module, CV_Pam::CHANNEL_LIGHTS2 + 5));
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 4 + v, 19.975)), module, CV_Pam::CHANNEL_LIGHTS2 + 6));
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 6 + v, 19.975)), module, CV_Pam::CHANNEL_LIGHTS2 + 7));
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + v, 21.975)), module, CV_Pam::CHANNEL_LIGHTS2 + 8));
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 2 + v, 21.975)), module, CV_Pam::CHANNEL_LIGHTS2 + 9));
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 4 + v, 21.975)), module, CV_Pam::CHANNEL_LIGHTS2 + 10));
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 6 + v, 21.975)), module, CV_Pam::CHANNEL_LIGHTS2 + 11));
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + v, 23.975)), module, CV_Pam::CHANNEL_LIGHTS2 + 12));
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 2 + v, 23.975)), module, CV_Pam::CHANNEL_LIGHTS2 + 13));
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 4 + v, 23.975)), module, CV_Pam::CHANNEL_LIGHTS2 + 14));
-		addChild(createLightCentered<TinyLight<BlueLight>>(mm2px(Vec(o + d + 6 + v, 23.975)), module, CV_Pam::CHANNEL_LIGHTS2 + 15));
-
+        PolyLedWidget *w1 = createWidget<PolyLedWidget>(mm2px(Vec(o + d + v, 17.975)));
+        w1->setModule(module, CV_Pam::CHANNEL_LIGHTS2);
+        addChild(w1);
 
 		CV_PamDisplay *pamWidget = createWidget<CV_PamDisplay>(mm2px(Vec(3.41891, 29.f)));
 		pamWidget->box.size = mm2px(Vec(43.999, 91));
