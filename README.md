@@ -2,6 +2,8 @@
 
 The PackOne plugin pack gives you a some modules.
 
+![Intro image](./docs/intro.png)
+
 ## Building
 
 Follow the build instructions for [VCV Rack](https://github.com/VCVRack/Rack).
