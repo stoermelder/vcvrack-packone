@@ -23,44 +23,62 @@ struct RotorA : Module {
 	};
 
     dsp::ClockDivider lightDivider;
-    float temp[16];
+    dsp::ClockDivider channelsDivider;
+
+    simd::float_4 mask[4];
+    float split;
+    int channels;
 
     RotorA() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-        configParam(CHANNELS_PARAM, 1, 16, 16, "Number of output channels");
+        configParam(CHANNELS_PARAM, 2, 16, 16, "Number of output channels");
       
         onReset();
+        lightDivider.setDivision(2048);
+        channelsDivider.setDivision(256);
+        channels = ceil(params[CHANNELS_PARAM].getValue());
+        split = 10.f / (float)(channels - 1); 
 	}
 
-    void process(const ProcessArgs &args) override {
-        int chan = ceil(params[CHANNELS_PARAM].getValue());
-        outputs[POLY_OUTPUT].setChannels(chan);
+    void process(const ProcessArgs &args) override {      
+        if (channelsDivider.process()) {
+            channels = ceil(params[CHANNELS_PARAM].getValue());
+            for (int c = 0; c < 4; c++) {
+                mask[c] = simd::float_4::mask();
+            }
+            for (int c = inputs[BASE_INPUT].getChannels(); c < 16; c++) {
+                mask[c / 4].s[c % 4] = 0.f;
+            }
+            split = 10.f / (float)(channels - 1);      
+        }
 
         float car = inputs[CAR_INPUT].isConnected() ? clamp(inputs[CAR_INPUT].getVoltage(), 0.f, 10.f) : 10.f;
 
-        if (chan > 1) {
-            for (int c = 0; c < 16; c++) {
-                temp[c] = 0;
-            }
+        simd::float_4 v[4];
+        for (int c = 0; c < 16; c += 4) {
+            v[c / 4] = 0.f;           
+        }
+    
+        float mod = clamp(inputs[MOD_INPUT].getVoltage(), 0.f, 10.f);
+        float mod_p = mod / split;
+        int mod_c = floor(mod_p);
+        float mod_p2 = mod_p - (float)mod_c;
+        float mod_p1 = 1.f - mod_p2;
 
-            float split = 10.f / (float)(chan - 1);      
-            
-            float mod = clamp(inputs[MOD_INPUT].getVoltage(), 0.f, 10.f);
-            float mod_p = mod / split;
-            int mod_c = floor(mod_p);
-            float mod_p2 = mod_p - (float)mod_c;
-            float mod_p1 = 1.f - mod_p2;
-
-            temp[mod_c] = mod_p1 * car;
-            temp[mod_c + 1] = mod_p2 * car;
-            
-            for (int c = 0; c < chan; c++) {
-                float v = (c < inputs[BASE_INPUT].getChannels()) ? rescale(inputs[BASE_INPUT].getVoltage(c), 0.f, 10.f, 0.f, 1.f) : 1.f; 
-                outputs[POLY_OUTPUT].setVoltage(v * temp[c], c);
+        v[(mod_c + 0) / 4].s[(mod_c + 0) % 4] = mod_p1 * car;
+        v[(mod_c + 1) / 4].s[(mod_c + 1) % 4] = mod_p2 * car;
+        
+        if (outputs[POLY_OUTPUT].isConnected()) {
+            outputs[POLY_OUTPUT].setChannels(channels);
+            for (int c = 0; c < channels; c += 4) {
+                simd::float_4 v1 = simd::float_4::load(inputs[BASE_INPUT].getVoltages(c));
+                v1 = rescale(v1, 0.f, 10.f, 0.f, 1.f);
+                v1 = ifelse(mask[c / 4], v1, 1.f);
+                v1 = v1 * v[c / 4];
+                //float v = (c < inputs[BASE_INPUT].getChannels()) ? rescale(inputs[BASE_INPUT].getVoltage(c), 0.f, 10.f, 0.f, 1.f) : 1.f; 
+                //.setVoltage(v * temp[c], c);
+                v1.store(outputs[POLY_OUTPUT].getVoltages(c));
             }
-        } else {
-            float v = (inputs[BASE_INPUT].getChannels() > 0) ? rescale(inputs[BASE_INPUT].getVoltage(), 0.f, 10.f, 0.f, 1.f) : 1.f; 
-            outputs[POLY_OUTPUT].setVoltage(v * car, 0);
         }
 
         // Set channel lights infrequently
@@ -70,12 +88,22 @@ struct RotorA : Module {
 				lights[INPUT_LIGHTS + c].setBrightness(active);
 			}
 			for (int c = 0; c < 16; c++) {
-				bool active = (c < chan);
+				bool active = (c < channels);
 				lights[OUTPUT_LIGHTS + c].setBrightness(active);
 			}
 		}
     }
+
+    /*/
+    Menu* createContextMenu() override {
+        Menu* theMenu = ModuleWidget::createContextMenu();
+        ManualMenuItem* manual = new ManualMenuItem("https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/RotorA.md");
+        return theMenu;
+        theMenu->addChild(manual);
+    }
+    */
 };
+
 
 struct RotorAWidget : ModuleWidget {
 	RotorAWidget(RotorA *module) {	
