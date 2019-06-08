@@ -8,6 +8,6 @@
 - Module CV-PAM
     - Added text scroling for longer module and parameter names
 
-### 1.0.0-rc
+### 1.0.0-rc1
 
 - Initial public release
