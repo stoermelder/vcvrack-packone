@@ -35,12 +35,13 @@ struct RotorA : Module {
       
         onReset();
         lightDivider.setDivision(2048);
-        channelsDivider.setDivision(256);
+        channelsDivider.setDivision(512);
         channels = ceil(params[CHANNELS_PARAM].getValue());
         split = 10.f / (float)(channels - 1); 
 	}
 
-    void process(const ProcessArgs &args) override {      
+    void process(const ProcessArgs &args) override {  
+        // Update mask for input channels infrequently    
         if (channelsDivider.process()) {
             channels = ceil(params[CHANNELS_PARAM].getValue());
             for (int c = 0; c < 4; c++) {
@@ -75,8 +76,6 @@ struct RotorA : Module {
                 v1 = rescale(v1, 0.f, 10.f, 0.f, 1.f);
                 v1 = ifelse(mask[c / 4], v1, 1.f);
                 v1 = v1 * v[c / 4];
-                //float v = (c < inputs[BASE_INPUT].getChannels()) ? rescale(inputs[BASE_INPUT].getVoltage(c), 0.f, 10.f, 0.f, 1.f) : 1.f; 
-                //.setVoltage(v * temp[c], c);
                 v1.store(outputs[POLY_OUTPUT].getVoltages(c));
             }
         }

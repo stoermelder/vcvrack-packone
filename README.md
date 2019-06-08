@@ -14,4 +14,4 @@ Copyright © 2019 Benjamin Dill
 
 Licensed under the [Gnu Public License, version 3](https://www.gnu.org/licenses/gpl-3.0.en.html).
 
-The panel graphics in the `res` and `res-src` directories licensed under CC BY-NC-ND 4.0. You may not create modified adaptations of these graphics.
+The panel graphics in the `res` and `res-src` directories are licensed under CC BY-NC-ND 4.0. You may not create modified adaptations of these graphics.
