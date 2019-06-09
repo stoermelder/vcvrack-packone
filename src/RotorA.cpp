@@ -1,5 +1,6 @@
 #include "plugin.hpp"
 #include "widgets.hpp"
+#include <thread>
 
 struct RotorA : Module {
 	enum ParamIds {
@@ -38,7 +39,7 @@ struct RotorA : Module {
         channelsDivider.setDivision(512);
         channels = ceil(params[CHANNELS_PARAM].getValue());
         split = 10.f / (float)(channels - 1); 
-	}
+    }
 
     void process(const ProcessArgs &args) override {  
         // Update mask for input channels infrequently    
@@ -81,26 +82,17 @@ struct RotorA : Module {
         }
 
         // Set channel lights infrequently
-		if (lightDivider.process()) {
-			for (int c = 0; c < 16; c++) {
-				bool active = (c < inputs[BASE_INPUT].getChannels());
-				lights[INPUT_LIGHTS + c].setBrightness(active);
-			}
-			for (int c = 0; c < 16; c++) {
-				bool active = (c < channels);
-				lights[OUTPUT_LIGHTS + c].setBrightness(active);
-			}
-		}
+        if (lightDivider.process()) {
+            for (int c = 0; c < 16; c++) {
+                bool active = (c < inputs[BASE_INPUT].getChannels());
+                lights[INPUT_LIGHTS + c].setBrightness(active);
+            }
+            for (int c = 0; c < 16; c++) {
+                bool active = (c < channels);
+                lights[OUTPUT_LIGHTS + c].setBrightness(active);
+            }
+        }
     }
-
-    /*/
-    Menu* createContextMenu() override {
-        Menu* theMenu = ModuleWidget::createContextMenu();
-        ManualMenuItem* manual = new ManualMenuItem("https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/RotorA.md");
-        return theMenu;
-        theMenu->addChild(manual);
-    }
-    */
 };
 
 
@@ -127,6 +119,20 @@ struct RotorAWidget : ModuleWidget {
         w1->setModule(module, RotorA::OUTPUT_LIGHTS);
         addChild(w1);
     }
+
+	void appendContextMenu(Menu *menu) override {
+		RotorA *_module = dynamic_cast<RotorA*>(module);
+		assert(_module);
+
+		struct ManualItem : MenuItem {
+			void onAction(const event::Action &e) override {
+		        std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/RotorA.md");
+		        t.detach();
+			}
+		};
+
+		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
+  	};    
 };
 
 Model *modelRotorA = createModel<RotorA, RotorAWidget>("RotorA");
