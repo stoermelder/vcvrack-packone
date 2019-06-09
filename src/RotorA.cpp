@@ -3,32 +3,32 @@
 #include <thread>
 
 struct RotorA : Module {
-	enum ParamIds {
+    enum ParamIds {
         CHANNELS_PARAM,
-		NUM_PARAMS
-	};
-	enum InputIds {
-		MOD_INPUT,
-		CAR_INPUT,
+        NUM_PARAMS
+    };
+    enum InputIds {
+        MOD_INPUT,
+        CAR_INPUT,
         BASE_INPUT,        
-		NUM_INPUTS
-	};
-	enum OutputIds {
-		POLY_OUTPUT,
-		NUM_OUTPUTS
-	};
-	enum LightIds {
-		ENUMS(INPUT_LIGHTS, 16),
-		ENUMS(OUTPUT_LIGHTS, 16),
-		NUM_LIGHTS
-	};
+        NUM_INPUTS
+    };
+    enum OutputIds {
+        POLY_OUTPUT,
+        NUM_OUTPUTS
+    };
+    enum LightIds {
+        ENUMS(INPUT_LIGHTS, 16),
+        ENUMS(OUTPUT_LIGHTS, 16),
+        NUM_LIGHTS
+    };
 
     dsp::ClockDivider lightDivider;
     dsp::ClockDivider channelsDivider;
 
-    simd::float_4 mask[4];
-    float split;
     int channels;
+    simd::float_4 channelsMask[4];
+    float channelsSplit;
 
     RotorA() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -38,7 +38,7 @@ struct RotorA : Module {
         lightDivider.setDivision(2048);
         channelsDivider.setDivision(512);
         channels = ceil(params[CHANNELS_PARAM].getValue());
-        split = 10.f / (float)(channels - 1); 
+        channelsSplit = 10.f / (float)(channels - 1); 
     }
 
     void process(const ProcessArgs &args) override {  
@@ -46,12 +46,12 @@ struct RotorA : Module {
         if (channelsDivider.process()) {
             channels = ceil(params[CHANNELS_PARAM].getValue());
             for (int c = 0; c < 4; c++) {
-                mask[c] = simd::float_4::mask();
+                channelsMask[c] = simd::float_4::mask();
             }
             for (int c = inputs[BASE_INPUT].getChannels(); c < 16; c++) {
-                mask[c / 4].s[c % 4] = 0.f;
+                channelsMask[c / 4].s[c % 4] = 0.f;
             }
-            split = 10.f / (float)(channels - 1);      
+            channelsSplit = 10.f / (float)(channels - 1);      
         }
 
         float car = inputs[CAR_INPUT].isConnected() ? clamp(inputs[CAR_INPUT].getVoltage(), 0.f, 10.f) : 10.f;
@@ -62,7 +62,7 @@ struct RotorA : Module {
         }
     
         float mod = clamp(inputs[MOD_INPUT].getVoltage(), 0.f, 10.f);
-        float mod_p = mod / split;
+        float mod_p = mod / channelsSplit;
         int mod_c = floor(mod_p);
         float mod_p2 = mod_p - (float)mod_c;
         float mod_p1 = 1.f - mod_p2;
@@ -75,7 +75,7 @@ struct RotorA : Module {
             for (int c = 0; c < channels; c += 4) {
                 simd::float_4 v1 = simd::float_4::load(inputs[BASE_INPUT].getVoltages(c));
                 v1 = rescale(v1, 0.f, 10.f, 0.f, 1.f);
-                v1 = ifelse(mask[c / 4], v1, 1.f);
+                v1 = ifelse(channelsMask[c / 4], v1, 1.f);
                 v1 = v1 * v[c / 4];
                 v1.store(outputs[POLY_OUTPUT].getVoltages(c));
             }
@@ -120,19 +120,19 @@ struct RotorAWidget : ModuleWidget {
         addChild(w1);
     }
 
-	void appendContextMenu(Menu *menu) override {
-		RotorA *_module = dynamic_cast<RotorA*>(module);
-		assert(_module);
+    void appendContextMenu(Menu *menu) override {
+        RotorA *_module = dynamic_cast<RotorA*>(module);
+        assert(_module);
 
-		struct ManualItem : MenuItem {
-			void onAction(const event::Action &e) override {
-		        std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/RotorA.md");
-		        t.detach();
-			}
-		};
+        struct ManualItem : MenuItem {
+            void onAction(const event::Action &e) override {
+                std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/RotorA.md");
+                t.detach();
+            }
+        };
 
-		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
-  	};    
+        menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
+    };    
 };
 
 Model *modelRotorA = createModel<RotorA, RotorAWidget>("RotorA");
