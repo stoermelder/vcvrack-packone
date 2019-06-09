@@ -97,7 +97,7 @@ struct RotorA : Module {
 
 
 struct RotorAWidget : ModuleWidget {
-	RotorAWidget(RotorA *module) {	
+    RotorAWidget(RotorA *module) {	
         setModule(module);
         setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/RotorA.svg")));
 

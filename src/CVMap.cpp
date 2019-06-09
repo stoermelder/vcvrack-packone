@@ -36,7 +36,7 @@ struct CV_Map : Module {
 	/** The smoothing processor (normalized between 0 and 1) of each channel */
 	dsp::ExponentialFilter valueFilters[MAX_CHANNELS];
 
-  	bool bipolarInput = false;
+	bool bipolarInput = false;
 
 	/** Track last values */
 	float lastValue[MAX_CHANNELS];
@@ -99,7 +99,7 @@ struct CV_Map : Module {
 			// Set ParamQuantity
 			float v = id < 16 ? inputs[POLY_INPUT1].getVoltage(id) : inputs[POLY_INPUT2].getVoltage(id - 16);
 			if (bipolarInput)
-	  			v += 5.f;
+				v += 5.f;
 			v = rescale(v, 0.f, 10.f, 0.f, 1.f);
 			v = valueFilters[id].process(args.sampleTime, v);
 
@@ -113,7 +113,7 @@ struct CV_Map : Module {
 				lastValue[id] = v;					
 			}
 		}
-		
+
 		// Set channel lights infrequently
 		if (lightDivider.process()) {
 			for (int c = 0; c < 16; c++) {
@@ -315,8 +315,7 @@ struct CV_MapChoice : LedDisplayChoice {
 			// HACK
 			if (APP->event->selectedWidget != this)
 				APP->event->setSelected(this);
-		}
-		else {
+		} else {
 			bgColor = nvgRGBA(0, 0, 0, 0);
 
 			// HACK
@@ -342,8 +341,7 @@ struct CV_MapChoice : LedDisplayChoice {
 		} else  {
 			if (module->learningId == id) {
 				text += "Mapping...";
-			}
-			else {
+			} else {
 				text += "Unmapped";
 			}
 		}
@@ -351,8 +349,7 @@ struct CV_MapChoice : LedDisplayChoice {
 		// Set text color
 		if (module->paramHandles[id].moduleId >= 0 || module->learningId == id) {
 			color.a = 1.0;
-		}
-		else {
+		} else {
 			color.a = 0.5;
 		}
 	}
@@ -426,6 +423,7 @@ struct CV_MapDisplay : LedDisplay {
 	}
 };
 
+
 struct CV_MapWidget : ModuleWidget {
 	CV_MapWidget(CV_Map *module) {	
 		setModule(module);
@@ -442,13 +440,13 @@ struct CV_MapWidget : ModuleWidget {
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(o, 21.1)), module, CV_Map::POLY_INPUT1));
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(o + d + v + 12.4f, 21.1)), module, CV_Map::POLY_INPUT2));
 
-        PolyLedWidget *w0 = createWidget<PolyLedWidget>(mm2px(Vec(o + d, 17.975)));
-        w0->setModule(module, CV_Map::CHANNEL_LIGHTS1);
-        addChild(w0);
+		PolyLedWidget *w0 = createWidget<PolyLedWidget>(mm2px(Vec(o + d, 17.975)));
+		w0->setModule(module, CV_Map::CHANNEL_LIGHTS1);
+		addChild(w0);
 
-        PolyLedWidget *w1 = createWidget<PolyLedWidget>(mm2px(Vec(o + d + v, 17.975)));
-        w1->setModule(module, CV_Map::CHANNEL_LIGHTS2);
-        addChild(w1);
+		PolyLedWidget *w1 = createWidget<PolyLedWidget>(mm2px(Vec(o + d + v, 17.975)));
+		w1->setModule(module, CV_Map::CHANNEL_LIGHTS2);
+		addChild(w1);
 
 		CV_MapDisplay *mapWidget = createWidget<CV_MapDisplay>(mm2px(Vec(3.41891, 29.f)));
 		mapWidget->box.size = mm2px(Vec(43.999, 91));
@@ -490,7 +488,7 @@ struct CV_MapWidget : ModuleWidget {
 		menu->addChild(construct<MenuLabel>());
 		menu->addChild(construct<LockItem>(&MenuItem::text, "Parameter changes", &LockItem::cv_map, cv_map));
 		menu->addChild(construct<UniBiItem>(&MenuItem::text, "Signal input", &UniBiItem::cv_map, cv_map));
-  	};
+	}
 };
 
 
