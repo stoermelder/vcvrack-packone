@@ -6,7 +6,7 @@ The PackOne plugin pack gives you a some modules.
 
 ## Building
 
-Follow the build instructions for [VCV Rack](https://github.com/VCVRack/Rack).
+Follow the build instructions for [VCV Rack](https://vcvrack.com/manual/Building.html#building-rack-plugins).
 
 ## License
 
