@@ -12,6 +12,6 @@ Follow the build instructions for [VCV Rack](https://vcvrack.com/manual/Building
 
 Copyright © 2019 Benjamin Dill
 
-Licensed under the [Gnu Public License, version 3](https://www.gnu.org/licenses/gpl-3.0.en.html).
+Licensed under the [GNU Public License, version 3](https://www.gnu.org/licenses/gpl-3.0.en.html).
 
 The panel graphics in the `res` and `res-src` directories are licensed under CC BY-NC-ND 4.0. You may not create modified adaptations of these graphics.

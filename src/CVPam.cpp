@@ -275,8 +275,7 @@ struct CV_PamChoice : LedDisplayChoice {
 			int paramId = touchedParam->paramQuantity->paramId;
 			module->learnParam(id, moduleId, paramId);
 			hscrollCharOffset = 0;
-		}
-		else {
+		} else {
 			module->disableLearn(id);
 		}
 	}
@@ -293,8 +292,7 @@ struct CV_PamChoice : LedDisplayChoice {
 			// HACK
 			if (APP->event->selectedWidget != this)
 				APP->event->setSelected(this);
-		}
-		else {
+		} else {
 			bgColor = nvgRGBA(0, 0, 0, 0);
 
 			// HACK
@@ -320,8 +318,7 @@ struct CV_PamChoice : LedDisplayChoice {
 		} else {
 			if (module->learningId == id) {
 				text += "Mapping...";
-			}
-			else {
+			} else {
 				text += "Unmapped";
 			}
 		}
@@ -329,8 +326,7 @@ struct CV_PamChoice : LedDisplayChoice {
 		// Set text color
 		if (module->paramHandles[id].moduleId >= 0 || module->learningId == id) {
 			color.a = 1.0;
-		}
-		else {
+		} else {
 			color.a = 0.5;
 		}
 	}
@@ -420,13 +416,13 @@ struct CV_PamWidget : ModuleWidget {
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(o, 21.1)), module, CV_Pam::POLY_OUTPUT1));
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(o + d + v + 12.4f, 21.1)), module, CV_Pam::POLY_OUTPUT2));
 
-        PolyLedWidget *w0 = createWidget<PolyLedWidget>(mm2px(Vec(o + d, 17.975)));
-        w0->setModule(module, CV_Pam::CHANNEL_LIGHTS1);
-        addChild(w0);
+		PolyLedWidget *w0 = createWidget<PolyLedWidget>(mm2px(Vec(o + d, 17.975)));
+		w0->setModule(module, CV_Pam::CHANNEL_LIGHTS1);
+		addChild(w0);
 
-        PolyLedWidget *w1 = createWidget<PolyLedWidget>(mm2px(Vec(o + d + v, 17.975)));
-        w1->setModule(module, CV_Pam::CHANNEL_LIGHTS2);
-        addChild(w1);
+		PolyLedWidget *w1 = createWidget<PolyLedWidget>(mm2px(Vec(o + d + v, 17.975)));
+		w1->setModule(module, CV_Pam::CHANNEL_LIGHTS2);
+		addChild(w1);
 
 		CV_PamDisplay *pamWidget = createWidget<CV_PamDisplay>(mm2px(Vec(3.41891, 29.f)));
 		pamWidget->box.size = mm2px(Vec(43.999, 91));
@@ -454,7 +450,7 @@ struct CV_PamWidget : ModuleWidget {
 
 		menu->addChild(construct<MenuLabel>());
 		menu->addChild(construct<UniBiItem>(&MenuItem::text, "Signal output", &UniBiItem::cv_pam, cv_pam));
-  	};
+  	}
 };
 
 
