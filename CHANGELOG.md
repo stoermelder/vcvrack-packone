@@ -1,3 +1,8 @@
+### 1.0.1
+
+- Module RePlay Light
+    - New module, allows recording of parameter movement
+
 ### 1.0.0
 
 - Module Rotor Model A

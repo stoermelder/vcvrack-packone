@@ -1,6 +1,6 @@
 {
 	"slug": "Stoermelder-P1",
-	"version": "1.0.0",
+	"version": "1.0.1",
 	"license": "GPL-3.0-only",	
 	"author": "Benjamin Dill",
 	"name": "PackOne",
@@ -30,11 +30,10 @@
 			"tags": ["Utility", "Polyphonic"]
 		},
 		{
-			"slug": "RePlay",
-			"name": "RePlay",			
+			"slug": "RePlayLight",
+			"name": "RePlay Light",			
 			"description": "",
-			"tags": ["Utility"],
-			"disabled": true
+			"tags": ["Utility"]
 		}
 	]
 }
