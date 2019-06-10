@@ -51,21 +51,11 @@ struct CV_Pam : MapModule<MAX_CHANNELS> {
 
 		// Step channels
 		for (int id = 0; id < mapLen; id++) {
-			// Get Module
-			Module *module = paramHandles[id].module;
-			if (!module)
-				continue;
-			// Get ParamQuantity
-			int paramId = paramHandles[id].paramId;
-			ParamQuantity *paramQuantity = module->paramQuantities[paramId];
-			if (!paramQuantity)
-				continue;
-			if (!paramQuantity->isBounded())
-				continue;
-
 			lastChannel_out1 = id < 16 ? id : lastChannel_out1;
 			lastChannel_out2 = id >= 16 ? id - 16 : lastChannel_out2;
 			
+			ParamQuantity *paramQuantity = getParamQuantity(id);
+			if (paramQuantity == NULL) continue;
 			// set voltage
 			float v = paramQuantity->getScaledValue();
 			v = valueFilters[id].process(args.sampleTime, v);

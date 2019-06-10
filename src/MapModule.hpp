@@ -23,6 +23,21 @@ struct MapModule : Module {
 		mapLen = 1;
 	}
 
+	ParamQuantity *getParamQuantity(int id) {
+		// Get Module
+		Module *module = paramHandles[id].module;
+		if (!module)
+			return NULL;
+		// Get ParamQuantity
+		int paramId = paramHandles[id].paramId;
+		ParamQuantity *paramQuantity = module->paramQuantities[paramId];
+		if (!paramQuantity)
+			return NULL;
+		if (!paramQuantity->isBounded())
+			return NULL;
+		return paramQuantity;
+	}
+
    	void clearMap(int id) {
 		learningId = -1;
 		APP->engine->updateParamHandle(&paramHandles[id], -1, 0, true);

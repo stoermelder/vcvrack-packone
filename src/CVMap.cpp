@@ -66,17 +66,8 @@ struct CV_Map : MapModule<MAX_CHANNELS> {
 				}
 			}
 
-			// Get Module
-			Module *module = paramHandles[id].module;
-			if (!module)
-				continue;
-			// Get ParamQuantity
-			int paramId = paramHandles[id].paramId;
-			ParamQuantity *paramQuantity = module->paramQuantities[paramId];
-			if (!paramQuantity)
-				continue;
-			if (!paramQuantity->isBounded())
-				continue;
+			ParamQuantity *paramQuantity = getParamQuantity(id);
+			if (paramQuantity == NULL) continue;
 			// Set ParamQuantity
 			float v = id < 16 ? inputs[POLY_INPUT1].getVoltage(id) : inputs[POLY_INPUT2].getVoltage(id - 16);
 			if (bipolarInput)
