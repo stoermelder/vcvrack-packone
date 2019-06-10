@@ -206,7 +206,7 @@ struct MapModuleChoice : LedDisplayChoice {
 		}
 
 		// Set text
-		text = string::f("%02d ", id + 1);
+		text = MAX_CHANNELS > 1 ? string::f("%02d ", id + 1) : "";
 		if (module->paramHandles[id].moduleId >= 0 && module->learningId != id) {
 			std::string pn = getParamName();
 			if (pn.length() > hscrollCharMAXLENGTH) {
