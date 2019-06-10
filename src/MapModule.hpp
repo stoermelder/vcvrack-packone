@@ -157,7 +157,6 @@ struct MapModuleChoice : LedDisplayChoice {
 	MapModule<MAX_CHANNELS> *module;
 	int id;
 
-	static const int hscrollCharMAXLENGTH = 16;
 	std::chrono::time_point<std::chrono::system_clock> hscrollUpdate = std::chrono::system_clock::now();
 	int hscrollCharOffset = 0;
 
@@ -237,12 +236,14 @@ struct MapModuleChoice : LedDisplayChoice {
 		text = MAX_CHANNELS > 1 ? string::f("%02d ", id + 1) : "";
 		if (module->paramHandles[id].moduleId >= 0 && module->learningId != id) {
 			std::string pn = getParamName();
-			if (pn.length() > hscrollCharMAXLENGTH) {
+
+			size_t hscrollMaxLength = ceil(box.size.x / 8.f);			
+			if (pn.length() > hscrollMaxLength) {
 				// Scroll the parameter-name horizontically
 				text += pn.substr(hscrollCharOffset > (int)pn.length() ? 0 : hscrollCharOffset);
 				auto now = std::chrono::system_clock::now();
 				if (now - hscrollUpdate > std::chrono::milliseconds{100}) {
-					hscrollCharOffset = (hscrollCharOffset + 1) % (pn.length() + hscrollCharMAXLENGTH);
+					hscrollCharOffset = (hscrollCharOffset + 1) % (pn.length() + hscrollMaxLength);
 					hscrollUpdate = now;
 				}
 			} else {
