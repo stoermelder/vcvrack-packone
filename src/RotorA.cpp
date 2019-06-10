@@ -121,9 +121,6 @@ struct RotorAWidget : ModuleWidget {
     }
 
     void appendContextMenu(Menu *menu) override {
-        RotorA *_module = dynamic_cast<RotorA*>(module);
-        assert(_module);
-
         struct ManualItem : MenuItem {
             void onAction(const event::Action &e) override {
                 std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/RotorA.md");

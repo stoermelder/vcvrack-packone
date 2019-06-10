@@ -1,4 +1,4 @@
-### 1.0.0-rc2
+### 1.0.0
 
 - Module Rotor Model A
     - New module
@@ -8,6 +8,6 @@
 - Module CV-PAM
     - Added text scroling for longer module and parameter names
 
-### 1.0.0-rc1
+### 1.0.0-rc
 
 - Initial public release
