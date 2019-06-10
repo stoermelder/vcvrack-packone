@@ -30,9 +30,9 @@
 			"tags": ["Utility", "Polyphonic"]
 		},
 		{
-			"slug": "RePlayLight",
-			"name": "RePlay Light",			
-			"description": "",
+			"slug": "ReMoveLight",
+			"name": "ReMove Light",			
+			"description": "Recorder for parameter movements",
 			"tags": ["Utility"]
 		}
 	]

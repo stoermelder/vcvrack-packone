@@ -6,7 +6,7 @@
 const int MAX_DATA = 48000 * 2;     // 32 seconds, 16th precision at 48kHz
 
 
-struct RePlay : MapModule<1> {
+struct ReMove : MapModule<1> {
     enum ParamIds {
         PLAY_PARAM,
         RESET_PARAM,
@@ -59,14 +59,14 @@ struct RePlay : MapModule<1> {
 
 	dsp::ClockDivider lightDivider;
 
-    RePlay() {
+    ReMove() {
         config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS); 
         configParam(PLAY_PARAM, 0.0f, 1.0f, 0.0f, "Play");
         configParam(RESET_PARAM, 0.0f, 1.0f, 0.0f, "Reset");
         configParam(REC_PARAM, 0.0f, 1.0f, 0.0f, "Record");
 
         paramHandles[0].color = nvgRGB(0x40, 0xff, 0xff);
-        paramHandles[0].text = "RePlay Light";
+        paramHandles[0].text = "ReMove Light";
 
         onReset();
 		lightDivider.setDivision(1024);
@@ -284,27 +284,27 @@ struct RecLight : RedLight {
 };
 
 
-struct RePlayWidget : ModuleWidget {
-    RePlayWidget(RePlay *module) {	
+struct ReMoveWidget : ModuleWidget {
+    ReMoveWidget(ReMove *module) {	
         setModule(module);
-        setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/RePlay.svg")));
+        setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/ReMove.svg")));
 
         addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, 0)));
         addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-        addInput(createInputCentered<PJ301MPort>(Vec(37.6f, 121.7f), module, RePlay::PLAY_INPUT));
-        addParam(createParamCentered<LEDButton>(Vec(37.6f, 147.6f), module, RePlay::PLAY_PARAM));
-        addChild(createLightCentered<MediumLight<GreenLight>>(Vec(37.6f, 147.6f), module, RePlay::PLAY_LIGHT));
+        addInput(createInputCentered<PJ301MPort>(Vec(37.6f, 121.7f), module, ReMove::PLAY_INPUT));
+        addParam(createParamCentered<LEDButton>(Vec(37.6f, 147.6f), module, ReMove::PLAY_PARAM));
+        addChild(createLightCentered<MediumLight<GreenLight>>(Vec(37.6f, 147.6f), module, ReMove::PLAY_LIGHT));
 
-        addInput(createInputCentered<PJ301MPort>(Vec(37.6f, 187.f), module, RePlay::RESET_INPUT));
-        addParam(createParamCentered<LEDButton>(Vec(37.6f, 211.9f), module, RePlay::RESET_PARAM));
-        addChild(createLightCentered<MediumLight<GreenLight>>(Vec(37.6f, 211.9f), module, RePlay::RESET_LIGHT));
+        addInput(createInputCentered<PJ301MPort>(Vec(37.6f, 187.f), module, ReMove::RESET_INPUT));
+        addParam(createParamCentered<LEDButton>(Vec(37.6f, 211.9f), module, ReMove::RESET_PARAM));
+        addChild(createLightCentered<MediumLight<GreenLight>>(Vec(37.6f, 211.9f), module, ReMove::RESET_LIGHT));
 
-        addInput(createInputCentered<PJ301MPort>(Vec(37.6f, 255.3f), module, RePlay::POS_INPUT));
-        addOutput(createOutputCentered<PJ301MPort>(Vec(37.6f, 335.9f), module, RePlay::CV_OUTPUT));
+        addInput(createInputCentered<PJ301MPort>(Vec(37.6f, 255.3f), module, ReMove::POS_INPUT));
+        addOutput(createOutputCentered<PJ301MPort>(Vec(37.6f, 335.9f), module, ReMove::CV_OUTPUT));
 
-        addParam(createParamCentered<RecButton>(Vec(37.6f, 294.7f), module, RePlay::REC_PARAM));
-        addChild(createLightCentered<RecLight>(Vec(37.6f, 294.7f), module, RePlay::REC_LIGHT));
+        addParam(createParamCentered<RecButton>(Vec(37.6f, 294.7f), module, ReMove::REC_PARAM));
+        addChild(createLightCentered<RecLight>(Vec(37.6f, 294.7f), module, ReMove::REC_LIGHT));
 
 		MapModuleDisplay<1> *mapWidget = createWidget<MapModuleDisplay<1>>(Vec(6.8f, 36.4f));
 		mapWidget->box.size = Vec(61.5f, 23.5f);
@@ -313,12 +313,12 @@ struct RePlayWidget : ModuleWidget {
     }
 
     void appendContextMenu(Menu *menu) override {
-        RePlay *module = dynamic_cast<RePlay*>(this->module);
+        ReMove *module = dynamic_cast<ReMove*>(this->module);
         assert(module);
 
         struct ManualItem : MenuItem {
             void onAction(const event::Action &e) override {
-                std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/RePlay.md");
+                std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/ReMove.md");
                 t.detach();
             }
         };
@@ -327,7 +327,7 @@ struct RePlayWidget : ModuleWidget {
         menu->addChild(construct<MenuLabel>());
 
         struct PrecisionItem : MenuItem {
-            RePlay *module;
+            ReMove *module;
             int precision;
 
             void onAction(const event::Action &e) override {
@@ -341,7 +341,7 @@ struct RePlayWidget : ModuleWidget {
         };
 
         struct PrecisionMenuItem : MenuItem {
-            RePlay *module;
+            ReMove *module;
 
             Menu *createChildMenu() override {
                 Menu *menu = new Menu;
@@ -358,7 +358,7 @@ struct RePlayWidget : ModuleWidget {
         menu->addChild(precisionMenuItem);
 
         struct RecordModeItem : MenuItem {
-            RePlay *module;
+            ReMove *module;
             int recMode;
 
             void onAction(const event::Action &e) override {
@@ -372,7 +372,7 @@ struct RePlayWidget : ModuleWidget {
         };
 
         struct RecordModeMenuItem : MenuItem {
-            RePlay *module;
+            ReMove *module;
 
             Menu *createChildMenu() override {
                 Menu *menu = new Menu;
@@ -389,7 +389,7 @@ struct RePlayWidget : ModuleWidget {
         menu->addChild(recordModeMenuItem); 
 
         struct PlayModeItem : MenuItem {
-            RePlay *module;
+            ReMove *module;
             int playMode;
 
             void onAction(const event::Action &e) override {
@@ -403,7 +403,7 @@ struct RePlayWidget : ModuleWidget {
         };
 
         struct PlayModeMenuItem : MenuItem {
-            RePlay *module;
+            ReMove *module;
 
             Menu *createChildMenu() override {
                 Menu *menu = new Menu;
@@ -422,4 +422,4 @@ struct RePlayWidget : ModuleWidget {
 };
 
 
-Model *modelRePlay = createModel<RePlay, RePlayWidget>("RePlayLight");
+Model *modelReMoveLight = createModel<ReMove, ReMoveWidget>("ReMoveLight");
