@@ -28,6 +28,13 @@
 			"name": "Rotor Model A",			
 			"description": "Rotates a signal across polyphonic channels",
 			"tags": ["Utility", "Polyphonic"]
+		},
+		{
+			"slug": "RePlay",
+			"name": "RePlay",			
+			"description": "",
+			"tags": ["Utility"],
+			"disabled": true
 		}
 	]
 }
