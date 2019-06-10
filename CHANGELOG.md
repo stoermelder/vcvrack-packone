@@ -2,6 +2,8 @@
 
 - Module RePlay Light
     - New module, allows recording of parameter movement
+- Modules CV-MAP, CV-PAM
+    - Added indicator blinking for mapped slots (on context menu)
 
 ### 1.0.0
 
