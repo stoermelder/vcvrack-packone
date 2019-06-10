@@ -1,12 +1,39 @@
 #include "plugin.hpp"
 #include <chrono>
 
+
+struct ParamHandleIndicator {
+	ParamHandle *handle;
+	NVGcolor color;
+		
+	int indicateCount = 0;
+	float sampletime;
+
+	void process(float sampleTime) {
+		if (indicateCount > 0) {
+			this->sampletime += sampleTime;
+			if (this->sampletime > 0.15f) {
+				this->sampletime = 0;
+				indicateCount--;
+				handle->color = indicateCount % 2 == 1 ? nvgRGB(0x0, 0x0, 0x0) : color;
+			}
+		}
+	}
+
+	void indicate() {
+		indicateCount = 10;
+		color = handle->color;
+	}	
+};
+
+
 template< int MAX_CHANNELS >
 struct MapModule : Module {
 	/** Number of maps */
 	int mapLen = 0;
 	/** The mapped param handle of each channel */
 	ParamHandle paramHandles[MAX_CHANNELS];
+	ParamHandleIndicator paramHandleIndicator[MAX_CHANNELS];
 
     /** Channel ID of the learning session */
 	int learningId;
@@ -16,9 +43,12 @@ struct MapModule : Module {
     /** The smoothing processor (normalized between 0 and 1) of each channel */
 	dsp::ExponentialFilter valueFilters[MAX_CHANNELS];
 
+	dsp::ClockDivider indicatorDivider;
+
 	MapModule() {
 		for (int id = 0; id < MAX_CHANNELS; id++) {
 			paramHandles[id].color = nvgRGB(0x0, 0x0, 0x0);
+			paramHandleIndicator[id].handle = &paramHandles[id];
 			APP->engine->addParamHandle(&paramHandles[id]);
 		}
 	}
@@ -27,6 +57,7 @@ struct MapModule : Module {
 		for (int id = 0; id < MAX_CHANNELS; id++) {
 			APP->engine->removeParamHandle(&paramHandles[id]);
 		}
+		indicatorDivider.setDivision(1024);
 	}
 
 	void onReset() override {
@@ -34,6 +65,16 @@ struct MapModule : Module {
 		learnedParam = false;
 		clearMaps();
 		mapLen = 1;
+	}
+
+	void process(const ProcessArgs &args) override {
+		if (indicatorDivider.process()) {
+			float t = indicatorDivider.getDivision() * args.sampleTime;
+			for (size_t i = 0; i < MAX_CHANNELS; i++) {
+				if (paramHandles[id].moduleId >= 0)
+					paramHandleIndicator[i].process(t);
+			}
+		}
 	}
 
 	ParamQuantity *getParamQuantity(int id) {
@@ -194,6 +235,15 @@ struct MapModuleChoice : LedDisplayChoice {
 					}
 				};
 				menu->addChild(construct<UnmapItem>(&MenuItem::text, "Unmap", &UnmapItem::module, module, &UnmapItem::id, id));
+
+				struct IndicateItem : MenuItem {
+					MapModule<MAX_CHANNELS> *module;
+					int id;
+					void onAction(const event::Action &e) override {
+						module->paramHandleIndicator[id].indicate();
+					}
+				};
+				menu->addChild(construct<IndicateItem>(&MenuItem::text, "Indicate", &IndicateItem::module, module, &IndicateItem::id, id));
 			} 
 			else {
 				module->clearMap(id);

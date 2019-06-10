@@ -90,6 +90,8 @@ struct CV_Map : MapModule<MAX_CHANNELS> {
 				lights[CHANNEL_LIGHTS2 + c].setBrightness(active);
 			}
 		}
+		
+		MapModule::process(args);
 	}
 
 	json_t *dataToJson() override {

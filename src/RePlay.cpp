@@ -206,6 +206,8 @@ struct RePlay : MapModule<1> {
             lights[RESET_LIGHT].setSmoothBrightness(resetTrigger.isHigh(), lightDivider.getDivision() * args.sampleTime);
             lights[REC_LIGHT].setBrightness(isRecording);
         }
+
+        MapModule::process(args);
     }
 
     void clearMap(int id) override {
