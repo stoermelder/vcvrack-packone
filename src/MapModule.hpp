@@ -179,8 +179,25 @@ struct MapModuleChoice : LedDisplayChoice {
 		}
 
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
-			module->clearMap(id);
 			e.consume(this);
+
+			if (module->paramHandles[id].moduleId >= 0) {
+				ui::Menu *menu = createMenu();
+				std::string header = "Parameter \"" + getParamName() + "\"";
+				menu->addChild(createMenuLabel(header));
+
+				struct UnmapItem : MenuItem {
+					MapModule<MAX_CHANNELS> *module;
+					int id;
+					void onAction(const event::Action &e) override {
+						module->clearMap(id);
+					}
+				};
+				menu->addChild(construct<UnmapItem>(&MenuItem::text, "Unmap", &UnmapItem::module, module, &UnmapItem::id, id));
+			} 
+			else {
+				module->clearMap(id);
+			}
 		}
 	}
 
@@ -207,7 +224,8 @@ struct MapModuleChoice : LedDisplayChoice {
 			int paramId = touchedParam->paramQuantity->paramId;
 			module->learnParam(id, moduleId, paramId);
 			hscrollCharOffset = 0;
-		} else {
+		} 
+		else {
 			module->disableLearn(id);
 		}
 	}
@@ -224,7 +242,8 @@ struct MapModuleChoice : LedDisplayChoice {
 			// HACK
 			if (APP->event->selectedWidget != this)
 				APP->event->setSelected(this);
-		} else {
+		} 
+		else {
 			bgColor = nvgRGBA(0, 0, 0, 0);
 
 			// HACK
@@ -246,10 +265,12 @@ struct MapModuleChoice : LedDisplayChoice {
 					hscrollCharOffset = (hscrollCharOffset + 1) % (pn.length() + hscrollMaxLength);
 					hscrollUpdate = now;
 				}
-			} else {
+			} 
+			else {
 				text += pn;
 			}
-		} else {
+		} 
+		else {
 			if (module->learningId == id) {
 				text += "Mapping...";
 			} else {
@@ -260,7 +281,8 @@ struct MapModuleChoice : LedDisplayChoice {
 		// Set text color
 		if (module->paramHandles[id].moduleId >= 0 || module->learningId == id) {
 			color.a = 1.0;
-		} else {
+		} 
+		else {
 			color.a = 0.5;
 		}
 	}
