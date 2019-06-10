@@ -16,6 +16,19 @@ struct MapModule : Module {
     /** The smoothing processor (normalized between 0 and 1) of each channel */
 	dsp::ExponentialFilter valueFilters[MAX_CHANNELS];
 
+	MapModule() {
+		for (int id = 0; id < MAX_CHANNELS; id++) {
+			paramHandles[id].color = nvgRGB(0x0, 0x0, 0x0);
+			APP->engine->addParamHandle(&paramHandles[id]);
+		}
+	}
+
+	~MapModule() {
+		for (int id = 0; id < MAX_CHANNELS; id++) {
+			APP->engine->removeParamHandle(&paramHandles[id]);
+		}
+	}
+
 	void onReset() override {
 		learningId = -1;
 		learnedParam = false;
@@ -38,14 +51,14 @@ struct MapModule : Module {
 		return paramQuantity;
 	}
 
-   	void clearMap(int id) {
+   	virtual void clearMap(int id) {
 		learningId = -1;
 		APP->engine->updateParamHandle(&paramHandles[id], -1, 0, true);
 		valueFilters[id].reset();
 		updateMapLen();
 	}
 
-	void clearMaps() {
+	virtual void clearMaps() {
 		learningId = -1;
 		for (int id = 0; id < MAX_CHANNELS; id++) {
 			APP->engine->updateParamHandle(&paramHandles[id], -1, 0, true);
@@ -54,7 +67,7 @@ struct MapModule : Module {
 		mapLen = 0;
 	}
 
-	void updateMapLen() {
+	virtual void updateMapLen() {
 		// Find last nonempty map
 		int id;
 		for (id = MAX_CHANNELS - 1; id >= 0; id--) {
@@ -67,7 +80,7 @@ struct MapModule : Module {
 			mapLen++;
 	}
 
-	void commitLearn() {
+	virtual void commitLearn() {
 		if (learningId < 0)
 			return;
 		if (!learnedParam)
@@ -82,20 +95,20 @@ struct MapModule : Module {
 		learningId = -1;
 	}
 
-	void enableLearn(int id) {
+	virtual void enableLearn(int id) {
 		if (learningId != id) {
 			learningId = id;
 			learnedParam = false;
 		}
 	}
 
-	void disableLearn(int id) {
+	virtual void disableLearn(int id) {
 		if (learningId == id) {
 			learningId = -1;
 		}
 	}
 
-	void learnParam(int id, int moduleId, int paramId) {
+	virtual void learnParam(int id, int moduleId, int paramId) {
 		APP->engine->updateParamHandle(&paramHandles[id], moduleId, paramId, true);
 		learnedParam = true;
 		commitLearn();

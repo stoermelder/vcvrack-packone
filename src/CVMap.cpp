@@ -38,16 +38,9 @@ struct CV_Map : MapModule<MAX_CHANNELS> {
 		for (int id = 0; id < MAX_CHANNELS; id++) {
 			paramHandles[id].color = nvgRGB(0xff, 0x40, 0xff);
 			paramHandles[id].text = string::f("CV-Map Ch%02d", id + 1);
-			APP->engine->addParamHandle(&paramHandles[id]);
 		}
 		onReset();
 		lightDivider.setDivision(1024);
-	}
-
-	~CV_Map() {
-		for (int id = 0; id < MAX_CHANNELS; id++) {
-			APP->engine->removeParamHandle(&paramHandles[id]);
-		}
 	}
 
 	void process(const ProcessArgs &args) override {
