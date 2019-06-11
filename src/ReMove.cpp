@@ -286,9 +286,21 @@ struct ReMove : MapModule<1> {
 		json_t *seqDataJ = json_array();
 		for (int i = 0; i < seqCount; i++) {
             json_t *seqData1J = json_array();
+            float last1 = 100.f, last2 = -100.f;
             for (int j = 0; j < seqLength[i]; j++) {
-                json_t *d = json_real(data[i * s + j]);
-                json_array_append(seqData1J, d);
+                if (last1 == last2) {
+                    // 2 times same value -> compress!
+                    int c = 0;
+                    while (data[i * s + j] == last1 && j < seqLength[i]) { c++; j++; }
+                    json_array_append(seqData1J, json_integer(c));
+                    if (j < seqLength[i]) json_array_append(seqData1J, json_real(data[i * s + j]));                    
+                    last1 = 100.f; last2 = -100.f;
+                } 
+                else {
+                    json_array_append(seqData1J, json_real(data[i * s + j]));
+                    last2 = last1;
+                    last1 = data[i * s + j];
+                }
             }
 			json_array_append(seqDataJ, seqData1J);
 		}
@@ -345,9 +357,22 @@ struct ReMove : MapModule<1> {
 			json_array_foreach(seqDataJ, i, seqData1J) {
                 if ((int)i >= seqCount) continue;
                 size_t j;
+                float last1 = 100.f, last2 = -100.f;
+                int c = 0;
                 json_array_foreach(seqData1J, j, d) {
-                    if ((int)j > seqLength[i]) continue;
-                    data[i * s + j] = json_real_value(d);
+                    if (c > seqLength[i]) continue;
+                    if (last1 == last2) {
+                        // we've seen two same values -> decompress!
+                        int v = json_integer_value(d);
+                        for (int k = 0; k < v; k++) { data[i * s + c] = last1; c++; }
+                        last1 = 100.f; last2 = -100.f;
+                    }
+                    else {
+                        data[i * s + c] = json_real_value(d);
+                        last2 = last1;
+                        last1 = data[i * s + c];
+                        c++;
+                    }
                 }
 			}
 		}
