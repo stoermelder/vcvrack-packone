@@ -4,7 +4,7 @@
 
 
 const int MAX_DATA = 48000 * 2;     // 32 seconds, 16th precision at 48kHz
-
+const int MAX_SEQ = 8;
 
 struct ReMove : MapModule<1> {
     enum ParamIds {
@@ -35,9 +35,17 @@ struct ReMove : MapModule<1> {
 
     /** [STORED TO JSON] */
     float data[MAX_DATA];
-    /** [STORED TO JSON] */
-    int dataLength;             // stores the length of the recording
-    int dataPtr = 0;            // stores the current position in data
+    /** stores the current position in data */
+    int dataPtr = 0;            
+
+    /** [Stored to JSON] number of sequences */
+    int seqCount = 4;
+    /** [Stored to JSON] currently selected sequence */
+    int seq = 0;
+    int seqLow;
+    int seqHigh;
+    /** [Stored to JSON] length of the seqences */
+    int seqLength[MAX_SEQ];
 
     /** [STORED TO JSON] */
     int recMode = 0;            // 0 = First Touch, 1 = Instant
@@ -58,6 +66,8 @@ struct ReMove : MapModule<1> {
 
     int sampleRate;
 
+    dsp::SchmittTrigger seqPTrigger;
+    dsp::SchmittTrigger seqNTrigger;
     dsp::BooleanTrigger playTrigger;
     dsp::SchmittTrigger resetTrigger;
     dsp::BooleanTrigger recTrigger;
@@ -66,6 +76,8 @@ struct ReMove : MapModule<1> {
 
     ReMove() {
         config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS); 
+        configParam(SEQP_PARAM, 0.0f, 1.0f, 0.0f, "Previous sequence");
+        configParam(SEQN_PARAM, 0.0f, 1.0f, 0.0f, "Next sequence");
         configParam(PLAY_PARAM, 0.0f, 1.0f, 0.0f, "Play");
         configParam(RESET_PARAM, 0.0f, 1.0f, 0.0f, "Reset");
         configParam(REC_PARAM, 0.0f, 1.0f, 0.0f, "Record");
@@ -73,17 +85,21 @@ struct ReMove : MapModule<1> {
         paramHandles[0].color = nvgRGB(0x40, 0xff, 0xff);
         paramHandles[0].text = "ReMove Light";
 
-        onReset();
 		lightDivider.setDivision(1024);
+        onReset();
     }
 
     void onReset() override {
         MapModule::onReset();
+        precisionCount = 0;        
+        isPlaying = false;
         playDir = 1;
+        isRecording = false;   
+        recTouched = false;      
         dataPtr = 0;
-        dataLength = 0;
-        precisionCount = 0;
-        recTouched = false;
+        for (int i = 0; i < MAX_SEQ; i++) seqLength[i] = 0;
+        seqUpdate();   
+
         valueFilters[0].reset();
     }
 
@@ -96,10 +112,10 @@ struct ReMove : MapModule<1> {
             ParamQuantity *paramQuantity = getParamQuantity(0);
             if (paramQuantity != NULL) {
                 isRecording ^= true;
-                dataPtr = 0;
+                dataPtr = seqLow;
                 precisionCount = 0;
                 if (isRecording) {
-                    dataLength = 0;
+                    seqLength[seq] = 0;
                     paramHandles[0].color = nvgRGB(0xff, 0x40, 0xff);
                     recTouch = paramQuantity->getScaledValue();
                     recTouched = false;
@@ -131,9 +147,9 @@ struct ReMove : MapModule<1> {
 
                     data[dataPtr] = v;
                     dataPtr++;
-                    dataLength++;
+                    seqLength[seq]++;
                     // stop recording when store is full
-                    if (dataPtr == MAX_DATA) {
+                    if (dataPtr == seqHigh) {
                         isRecording = false;
                         params[REC_PARAM].setValue(0);
                     }
@@ -142,9 +158,17 @@ struct ReMove : MapModule<1> {
             }
         }
 
-        // Reset ptr when button is pressed of input is triggered
+        if (!isRecording && seqPTrigger.process(params[SEQP_PARAM].getValue())) {
+            seqPrev();
+        }
+
+        if (!isRecording && seqNTrigger.process(params[SEQN_PARAM].getValue())) {
+            seqNext();
+        }
+
+        // Reset ptr when button is pressed or input is triggered
         if (!isRecording && resetTrigger.process(params[RESET_PARAM].getValue() + inputs[RESET_INPUT].getVoltage())) {
-            dataPtr = 0;
+            dataPtr = seqLow;
             playDir = 1;
             precisionCount = 0;
             valueFilters[0].reset();
@@ -167,7 +191,7 @@ struct ReMove : MapModule<1> {
             ParamQuantity *paramQuantity = getParamQuantity(0);
             if (paramQuantity != NULL) {
                 float v = clamp(inputs[POS_INPUT].getVoltage(), 0.f, 10.f);
-                int pos = floor(rescale(v, 0.f, 10.f, 0, dataLength - 1));
+                int pos = floor(rescale(v, 0.f, 10.f, seqLow, seqLow + seqLength[seq] - 1));
                 v = data[pos];
                 paramQuantity->setScaledValue(v);
                 if (outputs[CV_OUTPUT].isConnected()) {
@@ -192,14 +216,14 @@ struct ReMove : MapModule<1> {
                         v = rescale(v, 0.f, 1.f, 0.f, 10.f);
                         outputs[CV_OUTPUT].setVoltage(v);
                     }
-                    if (dataPtr == dataLength && playDir == 1) {
+                    if (dataPtr == seqLow + seqLength[seq] && playDir == 1) {
                         switch (playMode) {
-                            case 0: dataPtr = 0; break;                 // loop
-                            case 1: dataPtr = dataLength - 1; break;    // oneshot, stay on last value
+                            case 0: dataPtr = seqLow; break;            // loop
+                            case 1: dataPtr--; break;                   // oneshot, stay on last value
                             case 2: dataPtr--; playDir = -1; break;     // pingpong, reverse direction
                         }
                     }
-                    if (dataPtr == -1) {
+                    if (dataPtr == seqLow - 1) {
                         dataPtr++; playDir = 1;
                     }
                 }
@@ -217,10 +241,36 @@ struct ReMove : MapModule<1> {
         MapModule::process(args);
     }
 
-    void clearMap(int id) override {
-        dataLength = 0;
+    void seqNext() {
+        seq = std::min(seq + 1, seqCount - 1);
+        seqUpdate();
+    }
+
+    void seqPrev() {
+        seq = std::max(seq - 1, 0);
+        seqUpdate();
+    }
+
+    void seqSet(int c) {
+        if (isRecording) return;
         isPlaying = false;
-        isRecording = false;
+        seq = 0;
+        seqCount = c;
+        for (int i = 0; i < seqCount; i++) seqLength[i] = 0;        
+        seqUpdate();
+    }
+
+    void seqUpdate() {
+        int s = MAX_DATA / seqCount;    
+        seqLow = seq * s;
+        seqHigh =  (seq + 1) * s;
+        dataPtr = seqLow;
+        valueFilters[0].reset();        
+    }
+
+
+    void clearMap(int id) override {
+        onReset();
         MapModule::clearMap(id);
     }
 
@@ -232,14 +282,27 @@ struct ReMove : MapModule<1> {
     json_t *dataToJson() override {
 		json_t *rootJ = MapModule::dataToJson();
 
-		json_t *dataJ = json_array();
-		for (int i = 0; i < dataLength; i++) {
-			json_t *d = json_real(data[i]);
-			json_array_append(dataJ, d);
+        int s = MAX_DATA / seqCount;
+		json_t *seqDataJ = json_array();
+		for (int i = 0; i < seqCount; i++) {
+            json_t *seqData1J = json_array();
+            for (int j = 0; j < seqLength[i]; j++) {
+                json_t *d = json_real(data[i * s + j]);
+                json_array_append(seqData1J, d);
+            }
+			json_array_append(seqDataJ, seqData1J);
 		}
-		json_object_set_new(rootJ, "data", dataJ);
+		json_object_set_new(rootJ, "seqData", seqDataJ);
 
-        json_object_set_new(rootJ, "dataLength", json_integer(dataLength));
+		json_t *seqLengthJ = json_array();
+		for (int i = 0; i < seqCount; i++) {
+			json_t *d = json_integer(seqLength[i]);
+			json_array_append(seqLengthJ, d);
+		}
+		json_object_set_new(rootJ, "seqLength", seqLengthJ);
+
+        json_object_set_new(rootJ, "seqCount", json_integer(seqCount));
+        json_object_set_new(rootJ, "seq", json_integer(seq));
         json_object_set_new(rootJ, "recMode", json_integer(recMode));
         json_object_set_new(rootJ, "playMode", json_integer(playMode));
 		json_object_set_new(rootJ, "precision", json_integer(precision));
@@ -250,9 +313,11 @@ struct ReMove : MapModule<1> {
 
  	void dataFromJson(json_t *rootJ) override {
         MapModule::dataFromJson(rootJ);
-		
-    	json_t *dataLengthJ = json_object_get(rootJ, "dataLength");
-		if (dataLengthJ) dataLength = json_integer_value(dataLengthJ);
+
+    	json_t *seqCountJ = json_object_get(rootJ, "seqCount");
+		if (seqCountJ) seqCount = json_integer_value(seqCountJ);
+    	json_t *seqJ = json_object_get(rootJ, "seq");
+		if (seqJ) seq = json_integer_value(seqJ);
     	json_t *recModeJ = json_object_get(rootJ, "recMode");
 		if (recModeJ) recMode = json_integer_value(recModeJ);
     	json_t *playModeJ = json_object_get(rootJ, "playMode");
@@ -262,15 +327,32 @@ struct ReMove : MapModule<1> {
     	json_t *isPlayingJ = json_object_get(rootJ, "isPlaying");
 		if (isPlayingJ) isPlaying = json_boolean_value(isPlayingJ);
 
-        json_t *dataJ = json_object_get(rootJ, "data");
-		if (dataJ) {
+        json_t *seqLengthJ = json_object_get(rootJ, "seqLength");
+		if (seqLengthJ) {
 			json_t *d;
-			size_t dataIndex;
-			json_array_foreach(dataJ, dataIndex, d) {
-                if (dataIndex >= MAX_DATA) continue;
-                data[dataIndex] = json_real_value(d);
+			size_t i;
+			json_array_foreach(seqLengthJ, i, d) {
+                if ((int)i >= seqCount) continue;
+                seqLength[i] = json_integer_value(d);
 			}
 		}
+
+        int s = MAX_DATA / seqCount;
+        json_t *seqDataJ = json_object_get(rootJ, "seqData");
+		if (seqDataJ) {
+			json_t *seqData1J, *d;
+			size_t i;
+			json_array_foreach(seqDataJ, i, seqData1J) {
+                if ((int)i >= seqCount) continue;
+                size_t j;
+                json_array_foreach(seqData1J, j, d) {
+                    if ((int)j > seqLength[i]) continue;
+                    data[i * s + j] = json_real_value(d);
+                }
+			}
+		}
+
+        seqUpdate();
 	}   
 };
 
@@ -314,8 +396,8 @@ struct ReMoveWidget : ModuleWidget {
         addChild(createLightCentered<RecLight>(Vec(37.6f, 290.5f), module, ReMove::REC_LIGHT));
 
         //addInput(createInputCentered<PJ301MPort>(Vec(37.6f, 146.f), module, ReMove::SEQ_INPUT));
-        //addParam(createParamCentered<TL1105>(Vec(19.9f, 127.9f), module, ReMove::SEQP_PARAM));
-        //addParam(createParamCentered<TL1105>(Vec(55.1f, 127.9f), module, ReMove::SEQN_PARAM));
+        addParam(createParamCentered<TL1105>(Vec(19.9f, 127.9f), module, ReMove::SEQP_PARAM));
+        addParam(createParamCentered<TL1105>(Vec(55.1f, 127.9f), module, ReMove::SEQN_PARAM));
 
 		MapModuleDisplay<1> *mapWidget = createWidget<MapModuleDisplay<1>>(Vec(6.8f, 36.4f));
 		mapWidget->box.size = Vec(61.5f, 23.5f);
@@ -346,8 +428,9 @@ struct ReMoveWidget : ModuleWidget {
             }
 
             void step() override {
-                int s = MAX_DATA / module->sampleRate * pow(2, precision);
-                rightText = string::f(((module->precision == precision) ? "✔ %ds" : "%ds"), s);
+                int s1 = MAX_DATA / module->sampleRate * pow(2, precision);
+                int s2 = s1 / module->seqCount;
+                rightText = string::f(((module->precision == precision) ? "✔ %ds / %ds" : "%ds / %ds"), s1, s2);
                 MenuItem::step();
             }
         };
@@ -369,6 +452,39 @@ struct ReMoveWidget : ModuleWidget {
         precisionMenuItem->rightText = RIGHT_ARROW;
         menu->addChild(precisionMenuItem);
 
+
+        struct SeqCountItem : MenuItem {
+            ReMove *module;
+            int seqCount;
+
+            void onAction(const event::Action &e) override {
+                module->seqSet(seqCount);
+            }
+
+            void step() override {
+                rightText = (module->seqCount == seqCount) ? "✔" : "";
+                MenuItem::step();
+            }
+        };
+
+        struct SeqCountMenuItem : MenuItem {
+            ReMove *module;
+
+            Menu *createChildMenu() override {
+                Menu *menu = new Menu;
+                std::vector<std::string> names = {"1", "2", "4", "8"};
+                for (size_t i = 0; i < names.size(); i++) {
+                    menu->addChild(construct<SeqCountItem>(&MenuItem::text, names[i], &SeqCountItem::module, module, &SeqCountItem::seqCount, (int)pow(2, i)));
+                }
+                return menu;
+            }
+        };
+
+        SeqCountMenuItem *seqCountMenuItem = construct<SeqCountMenuItem>(&MenuItem::text, "No of sequences", &SeqCountMenuItem::module, module);
+        seqCountMenuItem->rightText = RIGHT_ARROW;
+        menu->addChild(seqCountMenuItem);
+
+
         struct RecordModeItem : MenuItem {
             ReMove *module;
             int recMode;
@@ -383,12 +499,13 @@ struct ReMoveWidget : ModuleWidget {
             }
         };
 
+
         struct RecordModeMenuItem : MenuItem {
             ReMove *module;
 
             Menu *createChildMenu() override {
                 Menu *menu = new Menu;
-                std::vector<std::string> names = {"First Touch", "Instant"};
+                std::vector<std::string> names = {"First Move", "Instant"};
                 for (size_t i = 0; i < names.size(); i++) {
                     menu->addChild(construct<RecordModeItem>(&MenuItem::text, names[i], &RecordModeItem::module, module, &RecordModeItem::recMode, i));
                 }
