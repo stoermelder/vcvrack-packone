@@ -11,12 +11,15 @@ struct ReMove : MapModule<1> {
         PLAY_PARAM,
         RESET_PARAM,
         REC_PARAM,
+        SEQP_PARAM,
+        SEQN_PARAM,
         NUM_PARAMS
     };
     enum InputIds {
         PLAY_INPUT,
         RESET_INPUT,
-        POS_INPUT,  
+        POS_INPUT,
+        SEQ_INPUT,
         NUM_INPUTS
     };
     enum OutputIds {
@@ -292,19 +295,23 @@ struct ReMoveWidget : ModuleWidget {
         addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, 0)));
         addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-        addInput(createInputCentered<PJ301MPort>(Vec(37.6f, 121.7f), module, ReMove::PLAY_INPUT));
-        addParam(createParamCentered<LEDButton>(Vec(37.6f, 147.6f), module, ReMove::PLAY_PARAM));
-        addChild(createLightCentered<MediumLight<GreenLight>>(Vec(37.6f, 147.6f), module, ReMove::PLAY_LIGHT));
+        addInput(createInputCentered<PJ301MPort>(Vec(52.6f, 188.1f), module, ReMove::PLAY_INPUT));
+        addParam(createParamCentered<LEDButton>(Vec(52.6f, 213.5f), module, ReMove::PLAY_PARAM));
+        addChild(createLightCentered<MediumLight<GreenLight>>(Vec(52.6f, 213.5f), module, ReMove::PLAY_LIGHT));
 
-        addInput(createInputCentered<PJ301MPort>(Vec(37.6f, 187.f), module, ReMove::RESET_INPUT));
-        addParam(createParamCentered<LEDButton>(Vec(37.6f, 211.9f), module, ReMove::RESET_PARAM));
-        addChild(createLightCentered<MediumLight<GreenLight>>(Vec(37.6f, 211.9f), module, ReMove::RESET_LIGHT));
+        addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 188.1f), module, ReMove::RESET_INPUT));
+        addParam(createParamCentered<LEDButton>(Vec(22.5f, 213.5f), module, ReMove::RESET_PARAM));
+        addChild(createLightCentered<MediumLight<GreenLight>>(Vec(22.5f, 213.5f), module, ReMove::RESET_LIGHT));
 
-        addInput(createInputCentered<PJ301MPort>(Vec(37.6f, 255.3f), module, ReMove::POS_INPUT));
-        addOutput(createOutputCentered<PJ301MPort>(Vec(37.6f, 335.9f), module, ReMove::CV_OUTPUT));
+        addInput(createInputCentered<PJ301MPort>(Vec(37.6f, 251.6f), module, ReMove::POS_INPUT));
+        addOutput(createOutputCentered<PJ301MPort>(Vec(37.6f, 336.3f), module, ReMove::CV_OUTPUT));
 
-        addParam(createParamCentered<RecButton>(Vec(37.6f, 294.7f), module, ReMove::REC_PARAM));
-        addChild(createLightCentered<RecLight>(Vec(37.6f, 294.7f), module, ReMove::REC_LIGHT));
+        addParam(createParamCentered<RecButton>(Vec(37.6f, 290.5f), module, ReMove::REC_PARAM));
+        addChild(createLightCentered<RecLight>(Vec(37.6f, 290.5f), module, ReMove::REC_LIGHT));
+
+        //addInput(createInputCentered<PJ301MPort>(Vec(37.6f, 146.f), module, ReMove::SEQ_INPUT));
+        //addParam(createParamCentered<TL1105>(Vec(19.9f, 127.9f), module, ReMove::SEQP_PARAM));
+        //addParam(createParamCentered<TL1105>(Vec(55.1f, 127.9f), module, ReMove::SEQN_PARAM));
 
 		MapModuleDisplay<1> *mapWidget = createWidget<MapModuleDisplay<1>>(Vec(6.8f, 36.4f));
 		mapWidget->box.size = Vec(61.5f, 23.5f);
