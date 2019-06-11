@@ -191,8 +191,8 @@ struct ReMove : MapModule<1> {
             ParamQuantity *paramQuantity = getParamQuantity(0);
             if (paramQuantity != NULL) {
                 float v = clamp(inputs[POS_INPUT].getVoltage(), 0.f, 10.f);
-                int pos = floor(rescale(v, 0.f, 10.f, seqLow, seqLow + seqLength[seq] - 1));
-                v = data[pos];
+                dataPtr = floor(rescale(v, 0.f, 10.f, seqLow, seqLow + seqLength[seq] - 1));
+                v = data[dataPtr];
                 paramQuantity->setScaledValue(v);
                 if (outputs[CV_OUTPUT].isConnected()) {
                     v = rescale(v, 0.f, 1.f, 0.f, 10.f);
@@ -376,9 +376,76 @@ struct ReMove : MapModule<1> {
                 }
 			}
 		}
-
         seqUpdate();
 	}   
+};
+
+
+struct ReMoveDisplay : TransparentWidget {
+    const float maxX = 61.5f, maxY = 42.f;
+	ReMove *module;
+	//shared_ptr<Font> font;
+
+	ReMoveDisplay() {
+		//font = Font::load(assetPlugin(plugin, "res/DejaVuSansMono.ttf"));
+	}
+	
+	void draw(NVGcontext *vg) override {
+        if (!module) return;
+        if (module->isRecording) return;
+		//nvgFontSize(vg, 12);
+		//nvgFontFaceId(vg, font->handle);
+		//nvgTextLetterSpacing(vg, -2);
+		//nvgFillColor(vg, nvgRGBA(0xff, 0xff, 0xff, 0xff));	
+		//nvgTextBox(vg, 5, 5, 120, module->fileDesc.c_str(), NULL);
+		
+		// Draw ref line
+		nvgStrokeColor(vg, nvgRGBA(0xff, 0xb0, 0xf3, 0x20));
+        nvgBeginPath(vg);
+        nvgMoveTo(vg, 0, maxY / 2);
+        nvgLineTo(vg, maxX, maxY / 2);
+        nvgClosePath(vg);
+        nvgStroke(vg);
+
+        int seqLength = module->seqLength[module->seq];
+        int seqPos = module->dataPtr - module->seqLow;
+
+		// Draw play line
+		nvgStrokeColor(vg, nvgRGBA(0xff, 0xb0, 0xf3, 0xb0));
+        nvgStrokeWidth(vg, 0.7);		
+        nvgBeginPath(vg);
+        nvgMoveTo(vg, seqPos * maxX / seqLength, 0 + 5.5);
+        nvgLineTo(vg, seqPos * maxX / seqLength, maxY - 5.5);
+        nvgClosePath(vg);
+		nvgStroke(vg);
+            
+		// Draw automation-line
+		nvgStrokeColor(vg, nvgRGBA(0xff, 0xd7, 0x14, 0xd0));
+		nvgSave(vg);
+		Rect b = Rect(Vec(0, 7), Vec(maxX, 56));
+		nvgScissor(vg, b.pos.x, b.pos.y, b.size.x, b.size.y);
+		nvgBeginPath(vg);
+        int c = std::min(seqLength, 120);
+		for (int i = 0; i < c; i++) {
+            float x = (float)i / (c - 1);
+            float y = module->data[module->seqLow + (int)floor(x * (seqLength - 1))] / 2.0 + 0.5;
+            Vec p;
+			p.x = b.pos.x + b.size.x * x;
+			p.y = b.pos.y + b.size.y * (1.0 - y);	
+            if (i == 0)
+                nvgMoveTo(vg, p.x, p.y);
+            else
+                nvgLineTo(vg, p.x, p.y);
+		}
+
+		nvgLineCap(vg, NVG_ROUND);
+		nvgMiterLimit(vg, 2.0);
+		nvgStrokeWidth(vg, 1.1);
+		nvgGlobalCompositeOperation(vg, NVG_LIGHTER);
+		nvgStroke(vg);			
+		nvgResetScissor(vg);
+		nvgRestore(vg);	
+	}
 };
 
 
@@ -428,6 +495,12 @@ struct ReMoveWidget : ModuleWidget {
 		mapWidget->box.size = Vec(61.5f, 23.5f);
 		mapWidget->setModule(module);
 		addChild(mapWidget);
+
+       	ReMoveDisplay *display = new ReMoveDisplay();
+		display->module = module;
+		display->box.pos = Vec(6.8f, 62.f);
+		display->box.size = Vec(61.5f, 50.f);
+		addChild(display); 
     }
 
     void appendContextMenu(Menu *menu) override {
@@ -465,9 +538,9 @@ struct ReMoveWidget : ModuleWidget {
 
             Menu *createChildMenu() override {
                 Menu *menu = new Menu;
-                std::vector<std::string> names = {"16th", "32nd", "64th", "128th", "256th", "512nd", "1024th"};
+                std::vector<std::string> names = {"8th", "16th", "32nd", "64th", "128th", "256th", "512nd", "1024th", "2048th"};
                 for (size_t i = 0; i < names.size(); i++) {
-                    menu->addChild(construct<PrecisionItem>(&MenuItem::text, names[i], &PrecisionItem::module, module, &PrecisionItem::precision, i + 4));
+                    menu->addChild(construct<PrecisionItem>(&MenuItem::text, names[i], &PrecisionItem::module, module, &PrecisionItem::precision, i + 3));
                 }
                 return menu;
             }
