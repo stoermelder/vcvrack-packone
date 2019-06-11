@@ -56,6 +56,8 @@ struct ReMove : MapModule<1> {
     bool isPlaying = false;
     bool isRecording = false;
 
+    int sampleRate;
+
     dsp::BooleanTrigger playTrigger;
     dsp::SchmittTrigger resetTrigger;
     dsp::BooleanTrigger recTrigger;
@@ -86,6 +88,8 @@ struct ReMove : MapModule<1> {
     }
 
     void process(const ProcessArgs &args) override { 
+        sampleRate = args.sampleRate;
+
         // Toggle record when button is pressed
         if (recTrigger.process(params[REC_PARAM].getValue())) {
             isPlaying = false;
@@ -342,7 +346,8 @@ struct ReMoveWidget : ModuleWidget {
             }
 
             void step() override {
-                rightText = (module->precision == precision) ? "✔" : "";
+                int s = MAX_DATA / module->sampleRate * pow(2, precision);
+                rightText = string::f(((module->precision == precision) ? "✔ %ds" : "%ds"), s);
                 MenuItem::step();
             }
         };
