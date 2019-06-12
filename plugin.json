@@ -30,8 +30,8 @@
 			"tags": ["Utility", "Polyphonic"]
 		},
 		{
-			"slug": "ReMoveLight",
-			"name": "ReMove Light",			
+			"slug": "ReMoveLite",
+			"name": "ReMove Lite",			
 			"description": "Recorder for parameter movements",
 			"tags": ["Utility"]
 		}

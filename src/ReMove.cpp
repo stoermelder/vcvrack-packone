@@ -19,7 +19,7 @@ struct ReMove : MapModule<1> {
         RUN_INPUT,
         RESET_INPUT,
         PHASE_INPUT,
-        SEQCV_INPUT,
+        SEQ_INPUT,
         CV_INPUT,
         NUM_INPUTS
     };
@@ -75,7 +75,7 @@ struct ReMove : MapModule<1> {
     dsp::SchmittTrigger seqNTrigger;
     dsp::SchmittTrigger seqCvTrigger;
     dsp::BooleanTrigger runTrigger;
-    dsp::SchmittTrigger resetTrigger;
+    dsp::SchmittTrigger resetCvTrigger;
     dsp::BooleanTrigger recTrigger;
 
 	dsp::ClockDivider lightDivider;
@@ -158,102 +158,103 @@ struct ReMove : MapModule<1> {
                 precisionCount = (precisionCount + 1) % (int)pow(2, precision);
             }
         }
-
-        // Move to previous sequence on button-press
-        if (!isRecording && seqPTrigger.process(params[SEQP_PARAM].getValue())) {
-            seqPrev();
-        }
-
-        // Move to next sequence on button-press
-        if (!isRecording && seqNTrigger.process(params[SEQN_PARAM].getValue())) {
-            seqNext();
-        }
-
-        // SEQCV-input
-        if (!isRecording && inputs[SEQCV_INPUT].isConnected()) {
-            switch (seqCvMode) {
-                case 0:     // 0-10V
-                    seqSet(round(rescale(inputs[SEQCV_INPUT].getVoltage(), 0.f, 10.f, 0, seqCount - 1)));
-                    break;
-                case 1:     // C4-G4
-                    seqSet(round(clamp(inputs[SEQCV_INPUT].getVoltage() * 12.f, 0.f, MAX_SEQ - 1.f)));
-                    break;
-                case 2:     // Trigger
-                    if (seqCvTrigger.process(inputs[SEQCV_INPUT].getVoltage()))
-                        seqNext();
-                    break;
+        else {
+            // Move to previous sequence on button-press
+            if (seqPTrigger.process(params[SEQP_PARAM].getValue())) {
+                seqPrev();
             }
-        }
 
-        // Reset ptr when button is pressed or input is triggered
-        if (!isRecording && resetTrigger.process(params[RESET_PARAM].getValue() + inputs[RESET_INPUT].getVoltage())) {
-            dataPtr = seqLow;
-            playDir = 1;
-            precisionCount = 0;
-            valueFilters[0].reset();
-        }
+            // Move to next sequence on button-press
+            if (seqNTrigger.process(params[SEQN_PARAM].getValue())) {
+                seqNext();
+            }
 
-        // Toggle playing when button is pressed
-        if (!isRecording && runTrigger.process(params[RUN_PARAM].getValue())) {
-            isPlaying ^= true;
-            precisionCount = 0;
-        }
+            // SEQCV-input
+            if (inputs[SEQ_INPUT].isConnected()) {
+                switch (seqCvMode) {
+                    case 0:     // 0-10V
+                        seqSet(round(rescale(inputs[SEQ_INPUT].getVoltage(), 0.f, 10.f, 0, seqCount - 1)));
+                        break;
+                    case 1:     // C4-G4
+                        seqSet(round(clamp(inputs[SEQ_INPUT].getVoltage() * 12.f, 0.f, MAX_SEQ - 1.f)));
+                        break;
+                    case 2:     // Trigger
+                        if (seqCvTrigger.process(inputs[SEQ_INPUT].getVoltage()))
+                            seqNext();
+                        break;
+                }
+            }
 
-        // Set playing when input is high
-		if (!isRecording && inputs[RUN_INPUT].isConnected()) {
-			isPlaying = (inputs[RUN_INPUT].getVoltage() >= 1.f);
-		}
+            // Reset ptr when button is pressed or input is triggered
+            if (resetCvTrigger.process(params[RESET_PARAM].getValue() + inputs[RESET_INPUT].getVoltage())) {
+                dataPtr = seqLow;
+                playDir = 1;
+                precisionCount = 0;
+                valueFilters[0].reset();
+            }
 
-        // If position-input is connected set the position directly, ignore playing
-        if (!isRecording && inputs[PHASE_INPUT].isConnected()) {
-            isPlaying = false;
-            ParamQuantity *paramQuantity = getParamQuantity(0);
-            if (paramQuantity != NULL) {
-                float v = clamp(inputs[PHASE_INPUT].getVoltage(), 0.f, 10.f);
-                dataPtr = floor(rescale(v, 0.f, 10.f, seqLow, seqLow + seqLength[seq] - 1));
-                v = data[dataPtr];
-                paramQuantity->setScaledValue(v);
-                if (outputs[CV_OUTPUT].isConnected()) {
-                    v = rescale(v, 0.f, 1.f, 0.f, 10.f);
-                    outputs[CV_OUTPUT].setVoltage(v);
-                }  
-            }     
-        }
+            // Toggle playing when button is pressed
+            if (runTrigger.process(params[RUN_PARAM].getValue())) {
+                isPlaying ^= true;
+                precisionCount = 0;
+            }
 
-        if (isPlaying) {
-            if (precisionCount == 0) {
+            // Set playing when input is high
+            if (inputs[RUN_INPUT].isConnected()) {
+                isPlaying = (inputs[RUN_INPUT].getVoltage() >= 1.f);
+            }
+
+            // If position-input is connected set the position directly, ignore playing
+            if (inputs[PHASE_INPUT].isConnected()) {
+                isPlaying = false;
                 ParamQuantity *paramQuantity = getParamQuantity(0);
-                if (paramQuantity == NULL) {
-                    isPlaying = false;
-
-                } else {
-                    float v = data[dataPtr];
-                    v = valueFilters[0].process(args.sampleTime, v);
+                if (paramQuantity != NULL) {
+                    float v = clamp(inputs[PHASE_INPUT].getVoltage(), 0.f, 10.f);
+                    dataPtr = floor(rescale(v, 0.f, 10.f, seqLow, seqLow + seqLength[seq] - 1));
+                    v = data[dataPtr];
                     paramQuantity->setScaledValue(v);
-                    dataPtr = dataPtr + playDir;
                     if (outputs[CV_OUTPUT].isConnected()) {
                         v = rescale(v, 0.f, 1.f, 0.f, 10.f);
                         outputs[CV_OUTPUT].setVoltage(v);
-                    }
-                    if (dataPtr == seqLow + seqLength[seq] && playDir == 1) {
-                        switch (playMode) {
-                            case 0: dataPtr = seqLow; break;            // loop
-                            case 1: dataPtr--; break;                   // oneshot, stay on last value
-                            case 2: dataPtr--; playDir = -1; break;     // pingpong, reverse direction
+                    }  
+                }     
+            }
+
+            if (isPlaying) {
+                if (precisionCount == 0) {
+                    ParamQuantity *paramQuantity = getParamQuantity(0);
+                    if (paramQuantity == NULL) {
+                        isPlaying = false;
+
+                    } else {
+                        float v = data[dataPtr];
+                        v = valueFilters[0].process(args.sampleTime, v);
+                        paramQuantity->setScaledValue(v);
+                        dataPtr = dataPtr + playDir;
+                        if (outputs[CV_OUTPUT].isConnected()) {
+                            v = rescale(v, 0.f, 1.f, 0.f, 10.f);
+                            outputs[CV_OUTPUT].setVoltage(v);
+                        }
+                        if (dataPtr == seqLow + seqLength[seq] && playDir == 1) {
+                            switch (playMode) {
+                                case 0: dataPtr = seqLow; break;            // loop
+                                case 1: dataPtr--; break;                   // oneshot, stay on last value
+                                case 2: dataPtr--; playDir = -1; break;     // pingpong, reverse direction
+                            }
+                        }
+                        if (dataPtr == seqLow - 1) {
+                            dataPtr++; playDir = 1;
                         }
                     }
-                    if (dataPtr == seqLow - 1) {
-                        dataPtr++; playDir = 1;
-                    }
                 }
+                precisionCount = (precisionCount + 1) % (int)pow(2, precision);
             }
-            precisionCount = (precisionCount + 1) % (int)pow(2, precision);
         }
 
 		// Set channel lights infrequently
 		if (lightDivider.process()) {
             lights[RUN_LIGHT].setBrightness(isPlaying);
-            lights[RESET_LIGHT].setSmoothBrightness(resetTrigger.isHigh(), lightDivider.getDivision() * args.sampleTime);
+            lights[RESET_LIGHT].setSmoothBrightness(resetCvTrigger.isHigh(), lightDivider.getDivision() * args.sampleTime);
             lights[REC_LIGHT].setBrightness(isRecording);
 
             for (int i = 0; i < 8; i++) {
@@ -675,7 +676,7 @@ struct ReMoveWidget : ModuleWidget {
         addParam(createParamCentered<RecButton>(Vec(37.6f, 284.3f), module, ReMove::REC_PARAM));
         addChild(createLightCentered<RecLight>(Vec(37.6f, 284.3f), module, ReMove::REC_LIGHT));
 
-        addInput(createInputCentered<PJ301MPort>(Vec(54.1f, 171.f), module, ReMove::SEQCV_INPUT));
+        addInput(createInputCentered<PJ301MPort>(Vec(54.1f, 171.f), module, ReMove::SEQ_INPUT));
         addParam(createParamCentered<TL1105>(Vec(21.1f, 132.4f), module, ReMove::SEQP_PARAM));
         addParam(createParamCentered<TL1105>(Vec(54.1f, 132.4), module, ReMove::SEQN_PARAM));
 
@@ -728,4 +729,4 @@ struct ReMoveWidget : ModuleWidget {
 };
 
 
-Model *modelReMoveLight = createModel<ReMove, ReMoveWidget>("ReMoveLight");
+Model *modelReMoveLite = createModel<ReMove, ReMoveWidget>("ReMoveLite");
