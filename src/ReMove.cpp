@@ -19,7 +19,7 @@ struct ReMove : MapModule<1> {
         RUN_INPUT,
         RESET_INPUT,
         PHASE_INPUT,
-        SEQ_INPUT,
+        SEQCV_INPUT,
         NUM_INPUTS
     };
     enum OutputIds {
@@ -48,20 +48,23 @@ struct ReMove : MapModule<1> {
     /** [Stored to JSON] length of the seqences */
     int seqLength[MAX_SEQ];
 
-    /** [STORED TO JSON] */
-    int recMode = 0;            // 0 = First Touch, 1 = Instant
+    /** [Stored to JSON] mode for SEQ CV input, 0 = 0-10V, 1 = C4-G4, 2 = Trig */
+    int seqCvMode = 0;
+
+    /** [Stored to JSON] recording mode, 0 = First Move, 1 = Instant */
+    int recMode = 0;
     bool recTouched = false;
     float recTouch;
 
-    /** [STORED TO JSON] */
-    int precision = 7;          // rate for recording is 2^precision 
+    /** [Stored to JSON] rate for recording, interpreted as 2^precision */
+    int precision = 7;          
     int precisionCount = 0;
 
-    /** [STORED TO JSON] */
-    int playMode = 0;           // 0 = Loop, 1 = Oneshot, 2 = Pingpong
+    /** [Stored to JSON] mode for playback, 0 = Loop, 1 = Oneshot, 2 = Pingpong */
+    int playMode = 0;
     int playDir = 1;
 
-    /** [STORED TO JSON] */
+    /** [Stored to JSON] state of playback (for button-press manually) */
     bool isPlaying = false;
     bool isRecording = false;
 
@@ -69,6 +72,7 @@ struct ReMove : MapModule<1> {
 
     dsp::SchmittTrigger seqPTrigger;
     dsp::SchmittTrigger seqNTrigger;
+    dsp::SchmittTrigger seqCvTrigger;
     dsp::BooleanTrigger runTrigger;
     dsp::SchmittTrigger resetTrigger;
     dsp::BooleanTrigger recTrigger;
@@ -130,7 +134,7 @@ struct ReMove : MapModule<1> {
         if (isRecording) {
             bool doRecord = true;
 
-            // In case of record mode "Touch" check if param value has changed
+            // In case of record mode "First Move" check if param value has changed
             if (recMode == 0 && !recTouched) {
                 ParamQuantity *paramQuantity = getParamQuantity(0);
                 float v = paramQuantity->getScaledValue();
@@ -159,12 +163,30 @@ struct ReMove : MapModule<1> {
             }
         }
 
+        // Move to previous sequence on button-press
         if (!isRecording && seqPTrigger.process(params[SEQP_PARAM].getValue())) {
             seqPrev();
         }
 
+        // Move to next sequence on button-press
         if (!isRecording && seqNTrigger.process(params[SEQN_PARAM].getValue())) {
             seqNext();
+        }
+
+        // SEQCV-input
+        if (!isRecording && inputs[SEQCV_INPUT].isConnected()) {
+            switch (seqCvMode) {
+                case 0:     // 0-10V
+                    seqSet(round(rescale(inputs[SEQCV_INPUT].getVoltage(), 0.f, 10.f, 0, seqCount - 1)));
+                    break;
+                case 1:     // C4-G4
+                    seqSet(round(clamp(inputs[SEQCV_INPUT].getVoltage() * 12.f, 0.f, MAX_SEQ - 1.f)));
+                    break;
+                case 2:     // Trigger
+                    if (seqCvTrigger.process(inputs[SEQCV_INPUT].getVoltage()))
+                        seqNext();
+                    break;
+            }
         }
 
         // Reset ptr when button is pressed or input is triggered
@@ -183,7 +205,7 @@ struct ReMove : MapModule<1> {
 
         // Set playing when input is high
 		if (!isRecording && inputs[RUN_INPUT].isConnected()) {
-			isPlaying = (inputs[RUN_INPUT].getVoltage() >= 2.f);
+			isPlaying = (inputs[RUN_INPUT].getVoltage() >= 1.f);
 		}
 
         // If position-input is connected set the position directly, ignore playing
@@ -247,16 +269,22 @@ struct ReMove : MapModule<1> {
     }
 
     void seqNext() {
-        seq = std::min(seq + 1, seqCount - 1);
+        seq = (seq + 1) % seqCount;
         seqUpdate();
     }
 
     void seqPrev() {
-        seq = std::max(seq - 1, 0);
+        seq = (seq - 1 + seqCount) % seqCount;
         seqUpdate();
     }
 
     void seqSet(int c) {
+        if (c == seq) return;
+        seq = clamp(c, 0, seqCount - 1);
+        seqUpdate();
+    }
+
+    void seqResize(int c) {
         if (isRecording) return;
         isPlaying = false;
         seq = 0;
@@ -320,6 +348,7 @@ struct ReMove : MapModule<1> {
 
         json_object_set_new(rootJ, "seqCount", json_integer(seqCount));
         json_object_set_new(rootJ, "seq", json_integer(seq));
+        json_object_set_new(rootJ, "seqCvMode", json_integer(seqCvMode));
         json_object_set_new(rootJ, "recMode", json_integer(recMode));
         json_object_set_new(rootJ, "playMode", json_integer(playMode));
 		json_object_set_new(rootJ, "precision", json_integer(precision));
@@ -335,6 +364,8 @@ struct ReMove : MapModule<1> {
 		if (seqCountJ) seqCount = json_integer_value(seqCountJ);
     	json_t *seqJ = json_object_get(rootJ, "seq");
 		if (seqJ) seq = json_integer_value(seqJ);
+        json_t *seqCvModeJ = json_object_get(rootJ, "seqCvMode");
+		if (seqCvModeJ) seqCvMode = json_integer_value(seqCvModeJ);
     	json_t *recModeJ = json_object_get(rootJ, "recMode");
 		if (recModeJ) recMode = json_integer_value(recModeJ);
     	json_t *playModeJ = json_object_get(rootJ, "playMode");
@@ -454,6 +485,140 @@ struct ReMoveDisplay : TransparentWidget {
 };
 
 
+
+struct SeqCvModeMenuItem : MenuItem {
+    struct SeqCvModItem : MenuItem {
+        ReMove *module;
+        int seqCvMode;
+
+        void onAction(const event::Action &e) override {
+            module->seqCvMode = seqCvMode;
+        }
+
+        void step() override {
+            rightText = module->seqCvMode == seqCvMode ? "✔" : "";
+            MenuItem::step();
+        }
+    };
+    
+    ReMove *module;
+    Menu *createChildMenu() override {
+        Menu *menu = new Menu;
+        std::vector<std::string> names = {"0-10V", "C4-G4", "Trigger"};
+        for (size_t i = 0; i < names.size(); i++) {
+            menu->addChild(construct<SeqCvModItem>(&MenuItem::text, names[i], &SeqCvModItem::module, module, &SeqCvModItem::seqCvMode, i));
+        }
+        return menu;
+    }
+};
+
+
+struct PrecisionMenuItem : MenuItem {
+    struct PrecisionItem : MenuItem {
+        ReMove *module;
+        int precision;
+
+        void onAction(const event::Action &e) override {
+            module->precision = precision;
+        }
+
+        void step() override {
+            int s1 = MAX_DATA / module->sampleRate * pow(2, precision);
+            int s2 = s1 / module->seqCount;
+            rightText = string::f(((module->precision == precision) ? "✔ %ds / %ds" : "%ds / %ds"), s1, s2);
+            MenuItem::step();
+        }
+    };
+    
+    ReMove *module;
+    Menu *createChildMenu() override {
+        Menu *menu = new Menu;
+        std::vector<std::string> names = {"8th", "16th", "32nd", "64th", "128th", "256th", "512nd", "1024th", "2048th"};
+        for (size_t i = 0; i < names.size(); i++) {
+            menu->addChild(construct<PrecisionItem>(&MenuItem::text, names[i], &PrecisionItem::module, module, &PrecisionItem::precision, i + 3));
+        }
+        return menu;
+    }
+};
+
+struct SeqCountMenuItem : MenuItem {
+    struct SeqCountItem : MenuItem {
+        ReMove *module;
+        int seqCount;
+
+        void onAction(const event::Action &e) override {
+            module->seqResize(seqCount);
+        }
+
+        void step() override {
+            rightText = (module->seqCount == seqCount) ? "✔" : "";
+            MenuItem::step();
+        }
+    };
+    
+    ReMove *module;
+    Menu *createChildMenu() override {
+        Menu *menu = new Menu;
+        std::vector<std::string> names = {"1", "2", "4", "8"};
+        for (size_t i = 0; i < names.size(); i++) {
+            menu->addChild(construct<SeqCountItem>(&MenuItem::text, names[i], &SeqCountItem::module, module, &SeqCountItem::seqCount, (int)pow(2, i)));
+        }
+        return menu;
+    }
+};
+
+struct RecordModeMenuItem : MenuItem {
+    struct RecordModeItem : MenuItem {
+        ReMove *module;
+        int recMode;
+
+        void onAction(const event::Action &e) override {
+            module->recMode = recMode;
+        }
+
+        void step() override {
+            rightText = (module->recMode == recMode) ? "✔" : "";
+            MenuItem::step();
+        }
+    };
+    
+    ReMove *module;
+    Menu *createChildMenu() override {
+        Menu *menu = new Menu;
+        std::vector<std::string> names = {"First Move", "Instant"};
+        for (size_t i = 0; i < names.size(); i++) {
+            menu->addChild(construct<RecordModeItem>(&MenuItem::text, names[i], &RecordModeItem::module, module, &RecordModeItem::recMode, i));
+        }
+        return menu;
+    }
+};
+
+struct PlayModeMenuItem : MenuItem {
+    struct PlayModeItem : MenuItem {
+        ReMove *module;
+        int playMode;
+
+        void onAction(const event::Action &e) override {
+            module->playMode = playMode;
+        }
+
+        void step() override {
+            rightText = (module->playMode == playMode) ? "✔" : "";
+            MenuItem::step();
+        }
+    };
+    
+    ReMove *module;
+    Menu *createChildMenu() override {
+        Menu *menu = new Menu;
+        std::vector<std::string> names = {"Loop", "Oneshot", "Ping Pong"};
+        for (size_t i = 0; i < names.size(); i++) {
+            menu->addChild(construct<PlayModeItem>(&MenuItem::text, names[i], &PlayModeItem::module, module, &PlayModeItem::playMode, i));
+        }
+        return menu;
+    }
+};
+
 struct RecButton : SvgSwitch {
     RecButton() {
         momentary = true;
@@ -501,7 +666,7 @@ struct ReMoveWidget : ModuleWidget {
         addParam(createParamCentered<RecButton>(Vec(37.6f, 283.5f), module, ReMove::REC_PARAM));
         addChild(createLightCentered<RecLight>(Vec(37.6f, 283.5f), module, ReMove::REC_LIGHT));
 
-        //addInput(createInputCentered<PJ301MPort>(Vec(54.1f, 171.f), module, ReMove::SEQ_INPUT));
+        addInput(createInputCentered<PJ301MPort>(Vec(54.1f, 171.f), module, ReMove::SEQCV_INPUT));
         addParam(createParamCentered<TL1105>(Vec(21.1f, 132.4f), module, ReMove::SEQP_PARAM));
         addParam(createParamCentered<TL1105>(Vec(54.1f, 132.4), module, ReMove::SEQN_PARAM));
 
@@ -531,134 +696,25 @@ struct ReMoveWidget : ModuleWidget {
         menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
         menu->addChild(construct<MenuLabel>());
 
-        struct PrecisionItem : MenuItem {
-            ReMove *module;
-            int precision;
-
-            void onAction(const event::Action &e) override {
-                module->precision = precision;
-            }
-
-            void step() override {
-                int s1 = MAX_DATA / module->sampleRate * pow(2, precision);
-                int s2 = s1 / module->seqCount;
-                rightText = string::f(((module->precision == precision) ? "✔ %ds / %ds" : "%ds / %ds"), s1, s2);
-                MenuItem::step();
-            }
-        };
-
-        struct PrecisionMenuItem : MenuItem {
-            ReMove *module;
-
-            Menu *createChildMenu() override {
-                Menu *menu = new Menu;
-                std::vector<std::string> names = {"8th", "16th", "32nd", "64th", "128th", "256th", "512nd", "1024th", "2048th"};
-                for (size_t i = 0; i < names.size(); i++) {
-                    menu->addChild(construct<PrecisionItem>(&MenuItem::text, names[i], &PrecisionItem::module, module, &PrecisionItem::precision, i + 3));
-                }
-                return menu;
-            }
-        };
-
         PrecisionMenuItem *precisionMenuItem = construct<PrecisionMenuItem>(&MenuItem::text, "Precision", &PrecisionMenuItem::module, module);
         precisionMenuItem->rightText = RIGHT_ARROW;
         menu->addChild(precisionMenuItem);
-
-
-        struct SeqCountItem : MenuItem {
-            ReMove *module;
-            int seqCount;
-
-            void onAction(const event::Action &e) override {
-                module->seqSet(seqCount);
-            }
-
-            void step() override {
-                rightText = (module->seqCount == seqCount) ? "✔" : "";
-                MenuItem::step();
-            }
-        };
-
-        struct SeqCountMenuItem : MenuItem {
-            ReMove *module;
-
-            Menu *createChildMenu() override {
-                Menu *menu = new Menu;
-                std::vector<std::string> names = {"1", "2", "4", "8"};
-                for (size_t i = 0; i < names.size(); i++) {
-                    menu->addChild(construct<SeqCountItem>(&MenuItem::text, names[i], &SeqCountItem::module, module, &SeqCountItem::seqCount, (int)pow(2, i)));
-                }
-                return menu;
-            }
-        };
 
         SeqCountMenuItem *seqCountMenuItem = construct<SeqCountMenuItem>(&MenuItem::text, "No of sequences", &SeqCountMenuItem::module, module);
         seqCountMenuItem->rightText = RIGHT_ARROW;
         menu->addChild(seqCountMenuItem);
 
-
-        struct RecordModeItem : MenuItem {
-            ReMove *module;
-            int recMode;
-
-            void onAction(const event::Action &e) override {
-                module->recMode = recMode;
-            }
-
-            void step() override {
-                rightText = (module->recMode == recMode) ? "✔" : "";
-                MenuItem::step();
-            }
-        };
-
-
-        struct RecordModeMenuItem : MenuItem {
-            ReMove *module;
-
-            Menu *createChildMenu() override {
-                Menu *menu = new Menu;
-                std::vector<std::string> names = {"First Move", "Instant"};
-                for (size_t i = 0; i < names.size(); i++) {
-                    menu->addChild(construct<RecordModeItem>(&MenuItem::text, names[i], &RecordModeItem::module, module, &RecordModeItem::recMode, i));
-                }
-                return menu;
-            }
-        };
-
         RecordModeMenuItem *recordModeMenuItem = construct<RecordModeMenuItem>(&MenuItem::text, "Record Mode", &RecordModeMenuItem::module, module);
         recordModeMenuItem->rightText = RIGHT_ARROW;
-        menu->addChild(recordModeMenuItem); 
-
-        struct PlayModeItem : MenuItem {
-            ReMove *module;
-            int playMode;
-
-            void onAction(const event::Action &e) override {
-                module->playMode = playMode;
-            }
-
-            void step() override {
-                rightText = (module->playMode == playMode) ? "✔" : "";
-                MenuItem::step();
-            }
-        };
-
-        struct PlayModeMenuItem : MenuItem {
-            ReMove *module;
-
-            Menu *createChildMenu() override {
-                Menu *menu = new Menu;
-                std::vector<std::string> names = {"Loop", "Oneshot", "Ping Pong"};
-                for (size_t i = 0; i < names.size(); i++) {
-                    menu->addChild(construct<PlayModeItem>(&MenuItem::text, names[i], &PlayModeItem::module, module, &PlayModeItem::playMode, i));
-                }
-                return menu;
-            }
-        };
+        menu->addChild(recordModeMenuItem);
 
         PlayModeMenuItem *playModeMenuItem = construct<PlayModeMenuItem>(&MenuItem::text, "Play Mode", &PlayModeMenuItem::module, module);
         playModeMenuItem->rightText = RIGHT_ARROW;
-        menu->addChild(playModeMenuItem);         
+        menu->addChild(playModeMenuItem);
+
+        SeqCvModeMenuItem *seqCvModeMenuItem = construct<SeqCvModeMenuItem>(&MenuItem::text, "SEQ CV Mode", &SeqCvModeMenuItem::module, module);
+        seqCvModeMenuItem->rightText = RIGHT_ARROW;
+        menu->addChild(seqCvModeMenuItem);
     }
 };
 
