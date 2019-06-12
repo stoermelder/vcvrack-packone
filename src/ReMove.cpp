@@ -20,6 +20,7 @@ struct ReMove : MapModule<1> {
         RESET_INPUT,
         PHASE_INPUT,
         SEQCV_INPUT,
+        CV_INPUT,
         NUM_INPUTS
     };
     enum OutputIds {
@@ -122,7 +123,7 @@ struct ReMove : MapModule<1> {
                 if (isRecording) {
                     seqLength[seq] = 0;
                     paramHandles[0].color = nvgRGB(0xff, 0x40, 0xff);
-                    recTouch = paramQuantity->getScaledValue();
+                    recTouch = getValue();
                     recTouched = false;
                 } else {
                     paramHandles[0].color = nvgRGB(0x40, 0xff, 0xff);
@@ -136,9 +137,7 @@ struct ReMove : MapModule<1> {
 
             // In case of record mode "First Move" check if param value has changed
             if (recMode == 0 && !recTouched) {
-                ParamQuantity *paramQuantity = getParamQuantity(0);
-                float v = paramQuantity->getScaledValue();
-                if (v != recTouch) {
+                if (getValue() != recTouch) {
                     recTouched = true;
                 } else {
                     doRecord = false;
@@ -147,10 +146,7 @@ struct ReMove : MapModule<1> {
 
             if (doRecord) {
                 if (precisionCount == 0) {
-                    ParamQuantity *paramQuantity = getParamQuantity(0);
-                    float v = paramQuantity->getScaledValue();
-
-                    data[dataPtr] = v;
+                    data[dataPtr] = getValue();
                     dataPtr++;
                     seqLength[seq]++;
                     // stop recording when store is full
@@ -266,6 +262,18 @@ struct ReMove : MapModule<1> {
         }
 
         MapModule::process(args);
+    }
+
+    inline float getValue() {
+        float v;
+        if (inputs[CV_INPUT].isConnected()) {
+            v = rescale(inputs[CV_INPUT].getVoltage(), 0.f, 10.f, 0.f, 1.f);
+        }
+        else {
+            ParamQuantity *paramQuantity = getParamQuantity(0);
+            v = paramQuantity->getScaledValue();
+        }
+        return v;
     }
 
     void seqNext() {
@@ -465,13 +473,12 @@ struct ReMoveDisplay : TransparentWidget {
 		for (int i = 0; i < c; i++) {
             float x = (float)i / (c - 1);
             float y = module->data[module->seqLow + (int)floor(x * (seqLength - 1))] / 2.0 + 0.5;
-            Vec p;
-			p.x = b.pos.x + b.size.x * x;
-			p.y = b.pos.y + b.size.y * (1.0 - y);	
+			float px = b.pos.x + b.size.x * x;
+			float py = b.pos.y + b.size.y * (1.01 - y);
             if (i == 0)
-                nvgMoveTo(vg, p.x, p.y);
+                nvgMoveTo(vg, px, py);
             else
-                nvgLineTo(vg, p.x, p.y);
+                nvgLineTo(vg, px, py);
 		}
 
 		nvgLineCap(vg, NVG_ROUND);
@@ -653,18 +660,20 @@ struct ReMoveWidget : ModuleWidget {
         addChild(createLightCentered<TinyLight<GreenLight>>(Vec(61.0f, 107.9f), module, ReMove::SEQ_LIGHT + 7));
 
         addInput(createInputCentered<PJ301MPort>(Vec(54.1f, 238.7f), module, ReMove::RUN_INPUT));
-        addParam(createParamCentered<TL1105>(Vec(54.1f, 212.8f), module, ReMove::RUN_PARAM));
+        addParam(createParamCentered<TL1105>(Vec(54.1f, 212.2f), module, ReMove::RUN_PARAM));
         addChild(createLightCentered<SmallLight<GreenLight>>(Vec(42.3f, 224.9f), module, ReMove::RUN_LIGHT));
 
         addInput(createInputCentered<PJ301MPort>(Vec(21.1f, 238.7f), module, ReMove::RESET_INPUT));
-        addParam(createParamCentered<TL1105>(Vec(21.1f, 212.8f), module, ReMove::RESET_PARAM));
-        addChild(createLightCentered<SmallLight<GreenLight>>(Vec(33.4f, 251.7f), module, ReMove::RESET_LIGHT));
+        addParam(createParamCentered<TL1105>(Vec(21.1f, 212.2f), module, ReMove::RESET_PARAM));
+        addChild(createLightCentered<SmallLight<GreenLight>>(Vec(33.4f, 251.9f), module, ReMove::RESET_LIGHT));
 
         addInput(createInputCentered<PJ301MPort>(Vec(21.1f, 171.f), module, ReMove::PHASE_INPUT));
+
+        addInput(createInputCentered<PJ301MPort>(Vec(21.1f, 336.3f), module, ReMove::CV_INPUT));      
         addOutput(createOutputCentered<PJ301MPort>(Vec(54.1f, 336.3f), module, ReMove::CV_OUTPUT));
 
-        addParam(createParamCentered<RecButton>(Vec(37.6f, 283.5f), module, ReMove::REC_PARAM));
-        addChild(createLightCentered<RecLight>(Vec(37.6f, 283.5f), module, ReMove::REC_LIGHT));
+        addParam(createParamCentered<RecButton>(Vec(37.6f, 284.3f), module, ReMove::REC_PARAM));
+        addChild(createLightCentered<RecLight>(Vec(37.6f, 284.3f), module, ReMove::REC_LIGHT));
 
         addInput(createInputCentered<PJ301MPort>(Vec(54.1f, 171.f), module, ReMove::SEQCV_INPUT));
         addParam(createParamCentered<TL1105>(Vec(21.1f, 132.4f), module, ReMove::SEQP_PARAM));
