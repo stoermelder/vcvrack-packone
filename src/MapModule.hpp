@@ -12,7 +12,7 @@ struct ParamHandleIndicator {
 	void process(float sampleTime) {
 		if (indicateCount > 0) {
 			this->sampletime += sampleTime;
-			if (this->sampletime > 0.15f) {
+			if (this->sampletime > 0.2f) {
 				this->sampletime = 0;
 				indicateCount--;
 				handle->color = indicateCount % 2 == 1 ? nvgRGB(0x0, 0x0, 0x0) : color;
@@ -21,7 +21,7 @@ struct ParamHandleIndicator {
 	}
 
 	void indicate() {
-		indicateCount = 10;
+		indicateCount = 20;
 		color = handle->color;
 	}	
 };
@@ -193,6 +193,7 @@ struct MapModule : Module {
 	}
 };
 
+
 template< int MAX_CHANNELS >
 struct MapModuleChoice : LedDisplayChoice {
 	MapModule<MAX_CHANNELS> *module;
@@ -240,10 +241,17 @@ struct MapModuleChoice : LedDisplayChoice {
 					MapModule<MAX_CHANNELS> *module;
 					int id;
 					void onAction(const event::Action &e) override {
+						ParamHandle *paramHandle = &module->paramHandles[id];
+						ModuleWidget *mw = APP->scene->rack->getModule(paramHandle->moduleId);
+						if (mw) {
+							// position the current view to the module
+							auto offset = mw->box.pos.mult(APP->scene->rackScroll->zoomWidget->zoom);
+							APP->scene->rackScroll->offset = offset;
+						}						
 						module->paramHandleIndicator[id].indicate();
 					}
 				};
-				menu->addChild(construct<IndicateItem>(&MenuItem::text, "Indicate", &IndicateItem::module, module, &IndicateItem::id, id));
+				menu->addChild(construct<IndicateItem>(&MenuItem::text, "Locate and indicate", &IndicateItem::module, module, &IndicateItem::id, id));
 			} 
 			else {
 				module->clearMap(id);
