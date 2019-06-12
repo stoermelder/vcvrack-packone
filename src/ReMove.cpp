@@ -8,7 +8,7 @@ const int MAX_SEQ = 8;
 
 struct ReMove : MapModule<1> {
     enum ParamIds {
-        PLAY_PARAM,
+        RUN_PARAM,
         RESET_PARAM,
         REC_PARAM,
         SEQP_PARAM,
@@ -16,9 +16,9 @@ struct ReMove : MapModule<1> {
         NUM_PARAMS
     };
     enum InputIds {
-        PLAY_INPUT,
+        RUN_INPUT,
         RESET_INPUT,
-        POS_INPUT,
+        PHASE_INPUT,
         SEQ_INPUT,
         NUM_INPUTS
     };
@@ -27,9 +27,10 @@ struct ReMove : MapModule<1> {
         NUM_OUTPUTS
     };
     enum LightIds {
-        PLAY_LIGHT,
+        RUN_LIGHT,
         RESET_LIGHT,
         REC_LIGHT,
+        ENUMS(SEQ_LIGHT, 8),
         NUM_LIGHTS
     };
 
@@ -68,7 +69,7 @@ struct ReMove : MapModule<1> {
 
     dsp::SchmittTrigger seqPTrigger;
     dsp::SchmittTrigger seqNTrigger;
-    dsp::BooleanTrigger playTrigger;
+    dsp::BooleanTrigger runTrigger;
     dsp::SchmittTrigger resetTrigger;
     dsp::BooleanTrigger recTrigger;
 
@@ -78,12 +79,12 @@ struct ReMove : MapModule<1> {
         config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS); 
         configParam(SEQP_PARAM, 0.0f, 1.0f, 0.0f, "Previous sequence");
         configParam(SEQN_PARAM, 0.0f, 1.0f, 0.0f, "Next sequence");
-        configParam(PLAY_PARAM, 0.0f, 1.0f, 0.0f, "Play");
+        configParam(RUN_PARAM, 0.0f, 1.0f, 0.0f, "Run");
         configParam(RESET_PARAM, 0.0f, 1.0f, 0.0f, "Reset");
         configParam(REC_PARAM, 0.0f, 1.0f, 0.0f, "Record");
 
         paramHandles[0].color = nvgRGB(0x40, 0xff, 0xff);
-        paramHandles[0].text = "ReMove Light";
+        paramHandles[0].text = "ReMove Lite";
 
 		lightDivider.setDivision(1024);
         onReset();
@@ -175,22 +176,22 @@ struct ReMove : MapModule<1> {
         }
 
         // Toggle playing when button is pressed
-        if (!isRecording && playTrigger.process(params[PLAY_PARAM].getValue())) {
+        if (!isRecording && runTrigger.process(params[RUN_PARAM].getValue())) {
             isPlaying ^= true;
             precisionCount = 0;
         }
 
         // Set playing when input is high
-		if (!isRecording && inputs[PLAY_INPUT].isConnected()) {
-			isPlaying = (inputs[PLAY_INPUT].getVoltage() >= 2.f);
+		if (!isRecording && inputs[RUN_INPUT].isConnected()) {
+			isPlaying = (inputs[RUN_INPUT].getVoltage() >= 2.f);
 		}
 
         // If position-input is connected set the position directly, ignore playing
-        if (!isRecording && inputs[POS_INPUT].isConnected()) {
+        if (!isRecording && inputs[PHASE_INPUT].isConnected()) {
             isPlaying = false;
             ParamQuantity *paramQuantity = getParamQuantity(0);
             if (paramQuantity != NULL) {
-                float v = clamp(inputs[POS_INPUT].getVoltage(), 0.f, 10.f);
+                float v = clamp(inputs[PHASE_INPUT].getVoltage(), 0.f, 10.f);
                 dataPtr = floor(rescale(v, 0.f, 10.f, seqLow, seqLow + seqLength[seq] - 1));
                 v = data[dataPtr];
                 paramQuantity->setScaledValue(v);
@@ -233,9 +234,13 @@ struct ReMove : MapModule<1> {
 
 		// Set channel lights infrequently
 		if (lightDivider.process()) {
-            lights[PLAY_LIGHT].setBrightness(isPlaying);
+            lights[RUN_LIGHT].setBrightness(isPlaying);
             lights[RESET_LIGHT].setSmoothBrightness(resetTrigger.isHigh(), lightDivider.getDivision() * args.sampleTime);
             lights[REC_LIGHT].setBrightness(isRecording);
+
+            for (int i = 0; i < 8; i++) {
+                lights[SEQ_LIGHT + i].setBrightness((seq == i ? 0.7f : 0) + (seqCount >= i + 1 ? 0.3f : 0));
+            }
         }
 
         MapModule::process(args);
@@ -420,7 +425,7 @@ struct ReMoveDisplay : TransparentWidget {
 		nvgStroke(vg);
             
 		// Draw automation-line
-		nvgStrokeColor(vg, nvgRGBA(0xff, 0xd7, 0x14, 0xd0));
+		nvgStrokeColor(vg, nvgRGBA(0xff, 0xd7, 0x14, 0xc0));
 		nvgSave(vg);
 		Rect b = Rect(Vec(0, 7), Vec(maxX, 56));
 		nvgScissor(vg, b.pos.x, b.pos.y, b.size.x, b.size.y);
@@ -452,7 +457,7 @@ struct ReMoveDisplay : TransparentWidget {
 struct RecButton : SvgSwitch {
     RecButton() {
         momentary = true;
-        box.size = Vec(28.f, 28.f);
+        box.size = Vec(40.f, 40.f);
         addFrame(APP->window->loadSvg(asset::plugin(pluginInstance, "res/RecButton.svg")));
     }
 };
@@ -460,7 +465,7 @@ struct RecButton : SvgSwitch {
 struct RecLight : RedLight {
 	RecLight() {
 		bgColor = nvgRGB(0x66, 0x66, 0x66);
-		box.size = Vec(20.f, 20.f);
+		box.size = Vec(27.f, 27.f);
 	}
 };
 
@@ -473,26 +478,35 @@ struct ReMoveWidget : ModuleWidget {
         addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, 0)));
         addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-        addInput(createInputCentered<PJ301MPort>(Vec(52.6f, 188.1f), module, ReMove::PLAY_INPUT));
-        addParam(createParamCentered<LEDButton>(Vec(52.6f, 213.5f), module, ReMove::PLAY_PARAM));
-        addChild(createLightCentered<MediumLight<GreenLight>>(Vec(52.6f, 213.5f), module, ReMove::PLAY_LIGHT));
+        addChild(createLightCentered<TinyLight<GreenLight>>(Vec(14.1f, 107.9f), module, ReMove::SEQ_LIGHT + 0));
+        addChild(createLightCentered<TinyLight<GreenLight>>(Vec(20.8f, 107.9f), module, ReMove::SEQ_LIGHT + 1));
+        addChild(createLightCentered<TinyLight<GreenLight>>(Vec(27.5f, 107.9f), module, ReMove::SEQ_LIGHT + 2));
+        addChild(createLightCentered<TinyLight<GreenLight>>(Vec(34.2f, 107.9f), module, ReMove::SEQ_LIGHT + 3));
+        addChild(createLightCentered<TinyLight<GreenLight>>(Vec(40.9f, 107.9f), module, ReMove::SEQ_LIGHT + 4));
+        addChild(createLightCentered<TinyLight<GreenLight>>(Vec(47.6f, 107.9f), module, ReMove::SEQ_LIGHT + 5));
+        addChild(createLightCentered<TinyLight<GreenLight>>(Vec(54.3f, 107.9f), module, ReMove::SEQ_LIGHT + 6));
+        addChild(createLightCentered<TinyLight<GreenLight>>(Vec(61.0f, 107.9f), module, ReMove::SEQ_LIGHT + 7));
 
-        addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 188.1f), module, ReMove::RESET_INPUT));
-        addParam(createParamCentered<LEDButton>(Vec(22.5f, 213.5f), module, ReMove::RESET_PARAM));
-        addChild(createLightCentered<MediumLight<GreenLight>>(Vec(22.5f, 213.5f), module, ReMove::RESET_LIGHT));
+        addInput(createInputCentered<PJ301MPort>(Vec(54.1f, 238.7f), module, ReMove::RUN_INPUT));
+        addParam(createParamCentered<TL1105>(Vec(54.1f, 212.8f), module, ReMove::RUN_PARAM));
+        addChild(createLightCentered<SmallLight<GreenLight>>(Vec(42.3f, 224.9f), module, ReMove::RUN_LIGHT));
 
-        addInput(createInputCentered<PJ301MPort>(Vec(37.6f, 251.6f), module, ReMove::POS_INPUT));
-        addOutput(createOutputCentered<PJ301MPort>(Vec(37.6f, 336.3f), module, ReMove::CV_OUTPUT));
+        addInput(createInputCentered<PJ301MPort>(Vec(21.1f, 238.7f), module, ReMove::RESET_INPUT));
+        addParam(createParamCentered<TL1105>(Vec(21.1f, 212.8f), module, ReMove::RESET_PARAM));
+        addChild(createLightCentered<SmallLight<GreenLight>>(Vec(33.4f, 251.7f), module, ReMove::RESET_LIGHT));
 
-        addParam(createParamCentered<RecButton>(Vec(37.6f, 290.5f), module, ReMove::REC_PARAM));
-        addChild(createLightCentered<RecLight>(Vec(37.6f, 290.5f), module, ReMove::REC_LIGHT));
+        addInput(createInputCentered<PJ301MPort>(Vec(21.1f, 171.f), module, ReMove::PHASE_INPUT));
+        addOutput(createOutputCentered<PJ301MPort>(Vec(54.1f, 336.3f), module, ReMove::CV_OUTPUT));
 
-        //addInput(createInputCentered<PJ301MPort>(Vec(37.6f, 146.f), module, ReMove::SEQ_INPUT));
-        addParam(createParamCentered<TL1105>(Vec(19.9f, 127.9f), module, ReMove::SEQP_PARAM));
-        addParam(createParamCentered<TL1105>(Vec(55.1f, 127.9f), module, ReMove::SEQN_PARAM));
+        addParam(createParamCentered<RecButton>(Vec(37.6f, 283.5f), module, ReMove::REC_PARAM));
+        addChild(createLightCentered<RecLight>(Vec(37.6f, 283.5f), module, ReMove::REC_LIGHT));
+
+        //addInput(createInputCentered<PJ301MPort>(Vec(54.1f, 171.f), module, ReMove::SEQ_INPUT));
+        addParam(createParamCentered<TL1105>(Vec(21.1f, 132.4f), module, ReMove::SEQP_PARAM));
+        addParam(createParamCentered<TL1105>(Vec(54.1f, 132.4), module, ReMove::SEQN_PARAM));
 
 		MapModuleDisplay<1> *mapWidget = createWidget<MapModuleDisplay<1>>(Vec(6.8f, 36.4f));
-		mapWidget->box.size = Vec(61.5f, 23.5f);
+		mapWidget->box.size = Vec(61.5f, 23.f);
 		mapWidget->setModule(module);
 		addChild(mapWidget);
 
