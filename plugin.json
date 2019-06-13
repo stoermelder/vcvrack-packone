@@ -9,7 +9,9 @@
 	"pluginUrl": "https://github.com/stoermelder/vcvrack-packone",
 	"authorUrl": "https://github.com/stoermelder",
 	"sourceUrl": "https://github.com/stoermelder/vcvrack-packone.git",
+	"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/README.md",
 	"changelogUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/CHANGELOG.md",
+	"donateUrl": "https://paypal.me/stoermelder",
 	"modules": [
 		{
 			"slug": "CVMap",
