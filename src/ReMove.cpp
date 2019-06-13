@@ -125,9 +125,18 @@ struct ReMove : MapModule<1> {
                     paramHandles[0].color = nvgRGB(0xff, 0x40, 0xff);
                     recTouch = getValue();
                     recTouched = false;
-                } else {
+                } 
+                else {
                     paramHandles[0].color = nvgRGB(0x40, 0xff, 0xff);
-                    valueFilters[0].reset();       
+                    valueFilters[0].reset();
+                    if (recMode == 2) {     // Trim
+                        int i = seqLow + seqLength[seq] - 1;
+                        if (i > seqLow) {
+                            float l = data[i];
+                            while (i > seqLow && l == data[i - 1]) i--;
+                            seqLength[seq] = i - seqLow;
+                        }
+                    }     
                 }
             }
         }
@@ -135,11 +144,12 @@ struct ReMove : MapModule<1> {
         if (isRecording) {
             bool doRecord = true;
 
-            // In case of record mode "First Move" check if param value has changed
-            if (recMode == 0 && !recTouched) {
+            // In case of record mode "First Move" or "Trim" check if param value has changed
+            if ((recMode == 0 || recMode == 2) && !recTouched) {
                 if (getValue() != recTouch) {
                     recTouched = true;
-                } else {
+                } 
+                else {
                     doRecord = false;
                 }
             }
@@ -595,7 +605,7 @@ struct RecordModeMenuItem : MenuItem {
     ReMove *module;
     Menu *createChildMenu() override {
         Menu *menu = new Menu;
-        std::vector<std::string> names = {"First Move", "Instant"};
+        std::vector<std::string> names = {"First Move", "Instant", "Trim"};
         for (size_t i = 0; i < names.size(); i++) {
             menu->addChild(construct<RecordModeItem>(&MenuItem::text, names[i], &RecordModeItem::module, module, &RecordModeItem::recMode, i));
         }
