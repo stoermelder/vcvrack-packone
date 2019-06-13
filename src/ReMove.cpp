@@ -147,10 +147,11 @@ struct ReMove : MapModule<1> {
             if (doRecord) {
                 if (precisionCount == 0) {
                     data[dataPtr] = getValue();
-                    dataPtr++;
                     seqLength[seq]++;
+                    dataPtr++;
                     // stop recording when store is full
                     if (dataPtr == seqHigh) {
+                        dataPtr = seqLow;
                         isRecording = false;
                         params[REC_PARAM].setValue(0);
                     }
@@ -437,7 +438,7 @@ struct ReMoveDisplay : TransparentWidget {
 	
 	void draw(NVGcontext *vg) override {
         if (!module) return;
-        if (module->isRecording) return;
+        //if (module->isRecording) return;
 		//nvgFontSize(vg, 12);
 		//nvgFontFaceId(vg, font->handle);
 		//nvgTextLetterSpacing(vg, -2);
@@ -452,12 +453,13 @@ struct ReMoveDisplay : TransparentWidget {
         nvgClosePath(vg);
         nvgStroke(vg);
 
-        int seqLength = module->seqLength[module->seq];
         int seqPos = module->dataPtr - module->seqLow;
-
+        int seqLength = module->seqLength[module->seq];
+        if (seqLength < 2) return;
+        
 		// Draw play line
 		nvgStrokeColor(vg, nvgRGBA(0xff, 0xb0, 0xf3, 0xb0));
-        nvgStrokeWidth(vg, 0.7);		
+        nvgStrokeWidth(vg, 0.7);
         nvgBeginPath(vg);
         nvgMoveTo(vg, seqPos * maxX / seqLength, 0 + 5.5);
         nvgLineTo(vg, seqPos * maxX / seqLength, maxY - 5.5);
