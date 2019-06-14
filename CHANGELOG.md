@@ -1,6 +1,6 @@
 ### 1.0.2
 
-- Module ReMove Light
+- Module ReMove Lite
     - New module, allows recording of parameter (knob, switch or slider) movements
 - Modules CV-MAP, CV-PAM
     - Added locating and indicator blinking for mapped slots (on context menu)

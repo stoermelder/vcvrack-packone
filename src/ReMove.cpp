@@ -52,7 +52,7 @@ struct ReMove : MapModule<1> {
     /** [Stored to JSON] mode for SEQ CV input, 0 = 0-10V, 1 = C4-G4, 2 = Trig */
     int seqCvMode = 0;
 
-    /** [Stored to JSON] recording mode, 0 = First Move, 1 = Instant */
+    /** [Stored to JSON] recording mode, 0 = Touch, 1 = Move, 2 = Manual */
     int recMode = 0;
     bool recTouched = false;
     float recTouch;
@@ -118,52 +118,72 @@ struct ReMove : MapModule<1> {
             ParamQuantity *paramQuantity = getParamQuantity(0);
             if (paramQuantity != NULL) {
                 isRecording ^= true;
-                dataPtr = seqLow;
-                precisionCount = 0;
-                if (isRecording) {
-                    seqLength[seq] = 0;
-                    paramHandles[0].color = nvgRGB(0xff, 0x40, 0xff);
-                    recTouch = getValue();
-                    recTouched = false;
-                } 
-                else {
-                    paramHandles[0].color = nvgRGB(0x40, 0xff, 0xff);
-                    valueFilters[0].reset();
-                    if (recMode == 2) {     // Trim
-                        int i = seqLow + seqLength[seq] - 1;
-                        if (i > seqLow) {
-                            float l = data[i];
-                            while (i > seqLow && l == data[i - 1]) i--;
-                            seqLength[seq] = i - seqLow;
-                        }
-                    }     
-                }
+                if (isRecording) 
+                    startRecording();
+                else
+                    stopRecording();
             }
         }
 
         if (isRecording) {
             bool doRecord = true;
 
-            // In case of record mode "First Move" or "Trim" check if param value has changed
-            if ((recMode == 0 || recMode == 2) && !recTouched) {
-                if (getValue() != recTouch) {
-                    recTouched = true;
-                } 
+            // record mode "Touch": check if mouse has been pressed on parameter
+            if (recMode == 0 && !recTouched) {
+                if (APP->event->draggedWidget != NULL) {
+                    // HACK! uses unstable API!
+                    // it is not a good idea to do this in the DSP kernel, but the
+                    // code is only executed when record is armed and something is dragged
+                    // accross the rack, so it's OK...
+                    ParamWidget *pw = dynamic_cast<ParamWidget*>(APP->event->draggedWidget);
+                    if (pw != NULL && pw->paramQuantity == getParamQuantity(0))
+                        recTouched = true;
+                    else 
+                        doRecord = false;
+                }
                 else {
                     doRecord = false;
                 }
             }
 
+            // record mode "Move": check if param value has changed
+            if (recMode == 1 && !recTouched) {
+                if (getValue() != recTouch)
+                    recTouched = true;
+                else
+                    doRecord = false;
+            }
+
             if (doRecord) {
                 if (precisionCount == 0) {
-                    data[dataPtr] = getValue();
-                    seqLength[seq]++;
-                    dataPtr++;
-                    // stop recording when store is full
-                    if (dataPtr == seqHigh) {
-                        dataPtr = seqLow;
-                        isRecording = false;
-                        params[REC_PARAM].setValue(0);
+                    // check if mouse button has been released
+                    // NB: maybe unstable API
+                    if (APP->event->draggedWidget == NULL) {
+                        // record mode "Touch"
+                        if (recMode == 0) {     
+                            stopRecording();
+                        }
+                        // record mode "Move": trim unchanged values from the end
+                        if (recMode == 1) {    
+                            stopRecording();
+                            int i = seqLow + seqLength[seq] - 1;
+                            if (i > seqLow) {
+                                float l = data[i];
+                                while (i > seqLow && l == data[i - 1]) i--;
+                                seqLength[seq] = i - seqLow;
+                            }
+                        } 
+                    }
+                    
+                    // are we still recording?
+                    if (isRecording) {
+                        data[dataPtr] = getValue();
+                        seqLength[seq]++;
+                        dataPtr++;
+                        // stop recording when store is full
+                        if (dataPtr == seqHigh) {
+                            stopRecording();
+                        }
                     }
                 }
                 precisionCount = (precisionCount + 1) % (int)pow(2, precision);
@@ -286,6 +306,23 @@ struct ReMove : MapModule<1> {
             v = paramQuantity->getScaledValue();
         }
         return v;
+    }
+
+    void startRecording() {
+        seqLength[seq] = 0;
+        dataPtr = seqLow;
+        precisionCount = 0;
+        paramHandles[0].color = nvgRGB(0xff, 0x40, 0xff);
+        recTouch = getValue();
+        recTouched = false;
+    }
+
+    void stopRecording() {
+        isRecording = false;
+        dataPtr = seqLow;
+        precisionCount = 0;        
+        paramHandles[0].color = nvgRGB(0x40, 0xff, 0xff);
+        valueFilters[0].reset();   
     }
 
     void seqNext() {
@@ -605,7 +642,7 @@ struct RecordModeMenuItem : MenuItem {
     ReMove *module;
     Menu *createChildMenu() override {
         Menu *menu = new Menu;
-        std::vector<std::string> names = {"First Move", "Instant", "Trim"};
+        std::vector<std::string> names = {"Touch", "Move", "Manual"};
         for (size_t i = 0; i < names.size(); i++) {
             menu->addChild(construct<RecordModeItem>(&MenuItem::text, names[i], &RecordModeItem::module, module, &RecordModeItem::recMode, i));
         }
