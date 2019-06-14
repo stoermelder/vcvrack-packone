@@ -10,6 +10,9 @@ const int RECMODE_TOUCH = 0;
 const int RECMODE_MOVE = 1;
 const int RECMODE_MANUAL = 2;
 
+const int INCVMODE_SOURCE = 0;
+const int INCVMODE_TRIGGER = 1;
+
 struct ReMove : MapModule<1> {
     enum ParamIds {
         RUN_PARAM,
@@ -55,6 +58,9 @@ struct ReMove : MapModule<1> {
 
     /** [Stored to JSON] mode for SEQ CV input, 0 = 0-10V, 1 = C4-G4, 2 = Trig */
     int seqCvMode = 0;
+
+    /** [Stored to JSON] mode for INPUT input */
+    int inCvMode = INCVMODE_SOURCE;
 
     /** [Stored to JSON] recording mode */
     int recMode = RECMODE_TOUCH;
@@ -126,7 +132,7 @@ struct ReMove : MapModule<1> {
         sampleRate = args.sampleRate;
 
         // Toggle record when button is pressed
-        if (recTrigger.process(params[REC_PARAM].getValue())) {
+        if (recTrigger.process(params[REC_PARAM].getValue() + (inCvMode == INCVMODE_TRIGGER ? inputs[CV_INPUT].getVoltage() : 0.f))) {
             isPlaying = false;
             ParamQuantity *paramQuantity = getParamQuantity(0);
             if (paramQuantity != NULL) {
@@ -309,8 +315,8 @@ struct ReMove : MapModule<1> {
 
     inline float getValue() {
         float v;
-        if (inputs[CV_INPUT].isConnected()) {
-            v = rescale(inputs[CV_INPUT].getVoltage(), 0.f, 10.f, 0.f, 1.f);
+        if (inCvMode == INCVMODE_SOURCE && inputs[CV_INPUT].isConnected()) {
+            v = rescale(clamp(inputs[CV_INPUT].getVoltage(), 0.f, 10.f), 0.f, 10.f, 0.f, 1.f);
         }
         else {
             ParamQuantity *paramQuantity = getParamQuantity(0);
@@ -417,6 +423,7 @@ struct ReMove : MapModule<1> {
         json_object_set_new(rootJ, "seqCount", json_integer(seqCount));
         json_object_set_new(rootJ, "seq", json_integer(seq));
         json_object_set_new(rootJ, "seqCvMode", json_integer(seqCvMode));
+        json_object_set_new(rootJ, "inCvMode", json_integer(seqCvMode));
         json_object_set_new(rootJ, "recMode", json_integer(recMode));
         json_object_set_new(rootJ, "playMode", json_integer(playMode));
 		json_object_set_new(rootJ, "precision", json_integer(precision));
@@ -434,6 +441,8 @@ struct ReMove : MapModule<1> {
 		if (seqJ) seq = json_integer_value(seqJ);
         json_t *seqCvModeJ = json_object_get(rootJ, "seqCvMode");
 		if (seqCvModeJ) seqCvMode = json_integer_value(seqCvModeJ);
+        json_t *inCvModeJ = json_object_get(rootJ, "inCvMode");
+		if (inCvModeJ) inCvMode = json_integer_value(inCvModeJ);
     	json_t *recModeJ = json_object_get(rootJ, "recMode");
 		if (recModeJ) recMode = json_integer_value(recModeJ);
     	json_t *playModeJ = json_object_get(rootJ, "playMode");
@@ -581,6 +590,31 @@ struct SeqCvModeMenuItem : MenuItem {
 };
 
 
+struct InCvModeMenuItem : MenuItem {
+    struct InCvModeItem : MenuItem {
+        ReMove *module;
+        int inCvMode;
+
+        void onAction(const event::Action &e) override {
+            module->inCvMode = inCvMode;
+        }
+
+        void step() override {
+            rightText = (module->inCvMode == inCvMode) ? "✔" : "";
+            MenuItem::step();
+        }
+    };
+    
+    ReMove *module;
+    Menu *createChildMenu() override {
+        Menu *menu = new Menu;
+        menu->addChild(construct<InCvModeItem>(&MenuItem::text, "Record Source", &InCvModeItem::module, module, &InCvModeItem::inCvMode, INCVMODE_SOURCE));
+        menu->addChild(construct<InCvModeItem>(&MenuItem::text, "Record Trigger", &InCvModeItem::module, module, &InCvModeItem::inCvMode, INCVMODE_TRIGGER));
+        return menu;
+    }
+};
+
+
 struct PrecisionMenuItem : MenuItem {
     struct PrecisionItem : MenuItem {
         ReMove *module;
@@ -609,6 +643,7 @@ struct PrecisionMenuItem : MenuItem {
     }
 };
 
+
 struct SeqCountMenuItem : MenuItem {
     struct SeqCountItem : MenuItem {
         ReMove *module;
@@ -635,6 +670,7 @@ struct SeqCountMenuItem : MenuItem {
     }
 };
 
+
 struct RecordModeMenuItem : MenuItem {
     struct RecordModeItem : MenuItem {
         ReMove *module;
@@ -659,6 +695,7 @@ struct RecordModeMenuItem : MenuItem {
         return menu;
     }
 };
+
 
 struct PlayModeMenuItem : MenuItem {
     struct PlayModeItem : MenuItem {
@@ -685,6 +722,7 @@ struct PlayModeMenuItem : MenuItem {
         return menu;
     }
 };
+
 
 struct RecButton : SvgSwitch {
     RecButton() {
@@ -781,9 +819,13 @@ struct ReMoveWidget : ModuleWidget {
         playModeMenuItem->rightText = RIGHT_ARROW;
         menu->addChild(playModeMenuItem);
 
-        SeqCvModeMenuItem *seqCvModeMenuItem = construct<SeqCvModeMenuItem>(&MenuItem::text, "SEQ CV Mode", &SeqCvModeMenuItem::module, module);
+        SeqCvModeMenuItem *seqCvModeMenuItem = construct<SeqCvModeMenuItem>(&MenuItem::text, "SEQ# CV Mode", &SeqCvModeMenuItem::module, module);
         seqCvModeMenuItem->rightText = RIGHT_ARROW;
         menu->addChild(seqCvModeMenuItem);
+
+        InCvModeMenuItem *inCvModeMenuItem = construct<InCvModeMenuItem>(&MenuItem::text, "IN CV Mode", &InCvModeMenuItem::module, module);
+        inCvModeMenuItem->rightText = RIGHT_ARROW;
+        menu->addChild(inCvModeMenuItem);
     }
 };
 
