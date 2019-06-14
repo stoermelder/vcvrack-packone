@@ -14,6 +14,13 @@ const int INCVMODE_SOURCE_UNI = 0;
 const int INCVMODE_SOURCE_BI = 1;
 const int INCVMODE_TRIGGER = 2;
 
+const int PLAYMODE_LOOP = 0;
+const int PLAYMODE_ONESHOT = 1;
+const int PLAYMODE_PINGPONG = 2;
+
+const int PLAYDIR_FWD = 1;
+const int PLAYDIR_REV = -1;
+
 
 struct ReMove : MapModule<1> {
     enum ParamIds {
@@ -73,9 +80,9 @@ struct ReMove : MapModule<1> {
     int precision = 7;          
     int precisionCount = 0;
 
-    /** [Stored to JSON] mode for playback, 0 = Loop, 1 = Oneshot, 2 = Pingpong */
-    int playMode = 0;
-    int playDir = 1;
+    /** [Stored to JSON] mode for playback */
+    int playMode = PLAYMODE_LOOP;
+    int playDir = PLAYDIR_FWD;
 
     /** [Stored to JSON] state of playback (for button-press manually) */
     bool isPlaying = false;
@@ -120,7 +127,7 @@ struct ReMove : MapModule<1> {
         MapModule::onReset();
         precisionCount = 0;        
         isPlaying = false;
-        playDir = 1;
+        playDir = PLAYDIR_FWD;
         isRecording = false;   
         recTouched = false;      
         dataPtr = 0;
@@ -238,7 +245,7 @@ struct ReMove : MapModule<1> {
             // Reset ptr when button is pressed or input is triggered
             if (resetCvTrigger.process(params[RESET_PARAM].getValue() + inputs[RESET_INPUT].getVoltage())) {
                 dataPtr = seqLow;
-                playDir = 1;
+                playDir = PLAYDIR_FWD;
                 precisionCount = 0;
                 valueFilters[0].reset();
             }
@@ -275,8 +282,8 @@ struct ReMove : MapModule<1> {
                     ParamQuantity *paramQuantity = getParamQuantity(0);
                     if (paramQuantity == NULL) {
                         isPlaying = false;
-
-                    } else {
+                    } 
+                    else {
                         float v = seqData[dataPtr];
                         v = valueFilters[0].process(args.sampleTime, v);
                         paramQuantity->setScaledValue(v);
@@ -285,15 +292,18 @@ struct ReMove : MapModule<1> {
                             v = rescale(v, 0.f, 1.f, 0.f, 10.f);
                             outputs[CV_OUTPUT].setVoltage(v);
                         }
-                        if (dataPtr == seqLow + seqLength[seq] && playDir == 1) {
+                        if (dataPtr == seqLow + seqLength[seq] && playDir == PLAYDIR_FWD) {
                             switch (playMode) {
-                                case 0: dataPtr = seqLow; break;            // loop
-                                case 1: dataPtr--; break;                   // oneshot, stay on last value
-                                case 2: dataPtr--; playDir = -1; break;     // pingpong, reverse direction
+                                case PLAYMODE_LOOP: 
+                                    dataPtr = seqLow; break;
+                                case PLAYMODE_ONESHOT:      // stay on last value
+                                    dataPtr--; break;                               
+                                case PLAYMODE_PINGPONG:     // reverse direction
+                                    dataPtr--; playDir = PLAYDIR_REV; break;       
                             }
                         }
                         if (dataPtr == seqLow - 1) {
-                            dataPtr++; playDir = 1;
+                            dataPtr++; playDir = PLAYDIR_FWD;
                         }
                     }
                 }
@@ -721,10 +731,9 @@ struct PlayModeMenuItem : MenuItem {
     ReMove *module;
     Menu *createChildMenu() override {
         Menu *menu = new Menu;
-        std::vector<std::string> names = {"Loop", "Oneshot", "Ping Pong"};
-        for (size_t i = 0; i < names.size(); i++) {
-            menu->addChild(construct<PlayModeItem>(&MenuItem::text, names[i], &PlayModeItem::module, module, &PlayModeItem::playMode, i));
-        }
+        menu->addChild(construct<PlayModeItem>(&MenuItem::text, "Loop", &PlayModeItem::module, module, &PlayModeItem::playMode, PLAYMODE_LOOP));
+        menu->addChild(construct<PlayModeItem>(&MenuItem::text, "Oneshot", &PlayModeItem::module, module, &PlayModeItem::playMode, PLAYMODE_ONESHOT));
+        menu->addChild(construct<PlayModeItem>(&MenuItem::text, "Ping Pong", &PlayModeItem::module, module, &PlayModeItem::playMode, PLAYMODE_PINGPONG));
         return menu;
     }
 };
