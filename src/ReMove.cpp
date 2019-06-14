@@ -52,7 +52,7 @@ struct ReMove : MapModule<1> {
     /** [Stored to JSON] mode for SEQ CV input, 0 = 0-10V, 1 = C4-G4, 2 = Trig */
     int seqCvMode = 0;
 
-    /** [Stored to JSON] recording mode, 0 = Touch, 1 = Move, 2 = Manual */
+    /** [Stored to JSON] recording mode, 0 = Touch, 4 = Move, 8 = Manual */
     int recMode = 0;
     bool recTouched = false;
     float recTouch;
@@ -147,7 +147,7 @@ struct ReMove : MapModule<1> {
             }
 
             // record mode "Move": check if param value has changed
-            if (recMode == 1 && !recTouched) {
+            if (recMode == 4 && !recTouched) {
                 if (getValue() != recTouch)
                     recTouched = true;
                 else
@@ -164,7 +164,7 @@ struct ReMove : MapModule<1> {
                             stopRecording();
                         }
                         // record mode "Move": trim unchanged values from the end
-                        if (recMode == 1) {    
+                        if (recMode == 4) {    
                             stopRecording();
                             int i = seqLow + seqLength[seq] - 1;
                             if (i > seqLow) {
@@ -642,10 +642,9 @@ struct RecordModeMenuItem : MenuItem {
     ReMove *module;
     Menu *createChildMenu() override {
         Menu *menu = new Menu;
-        std::vector<std::string> names = {"Touch", "Move", "Manual"};
-        for (size_t i = 0; i < names.size(); i++) {
-            menu->addChild(construct<RecordModeItem>(&MenuItem::text, names[i], &RecordModeItem::module, module, &RecordModeItem::recMode, i));
-        }
+        menu->addChild(construct<RecordModeItem>(&MenuItem::text, "Touch", &RecordModeItem::module, module, &RecordModeItem::recMode, 0));
+        menu->addChild(construct<RecordModeItem>(&MenuItem::text, "Move", &RecordModeItem::module, module, &RecordModeItem::recMode, 4));
+        menu->addChild(construct<RecordModeItem>(&MenuItem::text, "Manual", &RecordModeItem::module, module, &RecordModeItem::recMode, 8));
         return menu;
     }
 };
