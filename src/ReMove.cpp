@@ -6,6 +6,10 @@
 const int MAX_DATA = 48000 * 2;     // 32 seconds, 16th precision at 48kHz
 const int MAX_SEQ = 8;
 
+const int RECMODE_TOUCH = 0;
+const int RECMODE_MOVE = 1;
+const int RECMODE_MANUAL = 2;
+
 struct ReMove : MapModule<1> {
     enum ParamIds {
         RUN_PARAM,
@@ -52,8 +56,8 @@ struct ReMove : MapModule<1> {
     /** [Stored to JSON] mode for SEQ CV input, 0 = 0-10V, 1 = C4-G4, 2 = Trig */
     int seqCvMode = 0;
 
-    /** [Stored to JSON] recording mode, 0 = Touch, 4 = Move, 8 = Manual */
-    int recMode = 0;
+    /** [Stored to JSON] recording mode */
+    int recMode = RECMODE_TOUCH;
     bool recTouched = false;
     float recTouch;
 
@@ -128,8 +132,8 @@ struct ReMove : MapModule<1> {
         if (isRecording) {
             bool doRecord = true;
 
-            // record mode "Touch": check if mouse has been pressed on parameter
-            if (recMode == 0 && !recTouched) {
+            if (recMode == RECMODE_TOUCH && !recTouched) {
+                // check if mouse has been pressed on parameter
                 if (APP->event->draggedWidget != NULL) {
                     // HACK! uses unstable API!
                     // it is not a good idea to do this in the DSP kernel, but the
@@ -146,8 +150,8 @@ struct ReMove : MapModule<1> {
                 }
             }
 
-            // record mode "Move": check if param value has changed
-            if (recMode == 4 && !recTouched) {
+            if (recMode == RECMODE_MOVE && !recTouched) {
+                // check if param value has changed
                 if (getValue() != recTouch)
                     recTouched = true;
                 else
@@ -159,13 +163,12 @@ struct ReMove : MapModule<1> {
                     // check if mouse button has been released
                     // NB: maybe unstable API
                     if (APP->event->draggedWidget == NULL) {
-                        // record mode "Touch"
-                        if (recMode == 0) {     
+                        if (recMode == RECMODE_TOUCH) {     
                             stopRecording();
                         }
-                        // record mode "Move": trim unchanged values from the end
-                        if (recMode == 4) {    
+                        if (recMode == RECMODE_MOVE) {
                             stopRecording();
+                            // trim unchanged values from the end
                             int i = seqLow + seqLength[seq] - 1;
                             if (i > seqLow) {
                                 float l = data[i];
@@ -642,9 +645,9 @@ struct RecordModeMenuItem : MenuItem {
     ReMove *module;
     Menu *createChildMenu() override {
         Menu *menu = new Menu;
-        menu->addChild(construct<RecordModeItem>(&MenuItem::text, "Touch", &RecordModeItem::module, module, &RecordModeItem::recMode, 0));
-        menu->addChild(construct<RecordModeItem>(&MenuItem::text, "Move", &RecordModeItem::module, module, &RecordModeItem::recMode, 4));
-        menu->addChild(construct<RecordModeItem>(&MenuItem::text, "Manual", &RecordModeItem::module, module, &RecordModeItem::recMode, 8));
+        menu->addChild(construct<RecordModeItem>(&MenuItem::text, "Touch", &RecordModeItem::module, module, &RecordModeItem::recMode, RECMODE_TOUCH));
+        menu->addChild(construct<RecordModeItem>(&MenuItem::text, "Move", &RecordModeItem::module, module, &RecordModeItem::recMode, RECMODE_MOVE));
+        menu->addChild(construct<RecordModeItem>(&MenuItem::text, "Manual", &RecordModeItem::module, module, &RecordModeItem::recMode, RECMODE_MANUAL));
         return menu;
     }
 };
