@@ -73,6 +73,7 @@ struct ReMove : MapModule<1> {
     bool isPlaying = false;
     bool isRecording = false;
 
+    /** for access from the widget */
     int sampleRate;
 
     dsp::SchmittTrigger seqPTrigger;
@@ -83,6 +84,9 @@ struct ReMove : MapModule<1> {
     dsp::BooleanTrigger recTrigger;
 
 	dsp::ClockDivider lightDivider;
+
+    /** for remembering the last touched parameter to avoid dynamic casting */
+    Widget *lastParamWidget;
 
     ReMove() {
         config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS); 
@@ -139,12 +143,12 @@ struct ReMove : MapModule<1> {
 
             if (recMode == RECMODE_TOUCH && !recTouched) {
                 // check if mouse has been pressed on parameter
-                if (APP->event->draggedWidget != NULL) {
-                    // HACK! uses unstable API!
-                    // it is not a good idea to do this in the DSP kernel, but the
-                    // code is only executed when record is armed and something is dragged
-                    // accross the rack, so it's OK...
-                    ParamWidget *pw = dynamic_cast<ParamWidget*>(APP->event->draggedWidget);
+                Widget *w = APP->event->getDraggedWidget();
+                if (w != NULL && w != lastParamWidget) {
+                    lastParamWidget = w;
+                    // it is not a good idea to do dynamic casting in the DSP thread,
+                    // so do this only once for each touched widget
+                    ParamWidget *pw = dynamic_cast<ParamWidget*>(w);
                     if (pw != NULL && pw->paramQuantity == getParamQuantity(0))
                         recTouched = true;
                     else 
@@ -166,8 +170,7 @@ struct ReMove : MapModule<1> {
             if (doRecord) {
                 if (precisionCount == 0) {
                     // check if mouse button has been released
-                    // NB: maybe unstable API
-                    if (APP->event->draggedWidget == NULL) {
+                    if (APP->event->getDraggedWidget() == NULL) {
                         if (recMode == RECMODE_TOUCH) {     
                             stopRecording();
                         }
