@@ -39,8 +39,8 @@ struct ReMove : MapModule<1> {
         NUM_LIGHTS
     };
 
-    /** [STORED TO JSON] */
-    float data[MAX_DATA];
+    /** [Stored to JSON] recorded data */
+    float *seqData;
     /** stores the current position in data */
     int dataPtr = 0;            
 
@@ -92,11 +92,16 @@ struct ReMove : MapModule<1> {
         configParam(RESET_PARAM, 0.0f, 1.0f, 0.0f, "Reset");
         configParam(REC_PARAM, 0.0f, 1.0f, 0.0f, "Record");
 
+        seqData = new float[MAX_DATA];
         paramHandles[0].color = nvgRGB(0x40, 0xff, 0xff);
         paramHandles[0].text = "ReMove Lite";
 
 		lightDivider.setDivision(1024);
         onReset();
+    }
+
+    ~ReMove() {
+        delete[] seqData;
     }
 
     void onReset() override {
@@ -171,8 +176,8 @@ struct ReMove : MapModule<1> {
                             // trim unchanged values from the end
                             int i = seqLow + seqLength[seq] - 1;
                             if (i > seqLow) {
-                                float l = data[i];
-                                while (i > seqLow && l == data[i - 1]) i--;
+                                float l = seqData[i];
+                                while (i > seqLow && l == seqData[i - 1]) i--;
                                 seqLength[seq] = i - seqLow;
                             }
                         } 
@@ -180,7 +185,7 @@ struct ReMove : MapModule<1> {
                     
                     // are we still recording?
                     if (isRecording) {
-                        data[dataPtr] = getValue();
+                        seqData[dataPtr] = getValue();
                         seqLength[seq]++;
                         dataPtr++;
                         // stop recording when store is full
@@ -245,7 +250,7 @@ struct ReMove : MapModule<1> {
                 if (paramQuantity != NULL) {
                     float v = clamp(inputs[PHASE_INPUT].getVoltage(), 0.f, 10.f);
                     dataPtr = floor(rescale(v, 0.f, 10.f, seqLow, seqLow + seqLength[seq] - 1));
-                    v = data[dataPtr];
+                    v = seqData[dataPtr];
                     paramQuantity->setScaledValue(v);
                     if (outputs[CV_OUTPUT].isConnected()) {
                         v = rescale(v, 0.f, 1.f, 0.f, 10.f);
@@ -261,7 +266,7 @@ struct ReMove : MapModule<1> {
                         isPlaying = false;
 
                     } else {
-                        float v = data[dataPtr];
+                        float v = seqData[dataPtr];
                         v = valueFilters[0].process(args.sampleTime, v);
                         paramQuantity->setScaledValue(v);
                         dataPtr = dataPtr + playDir;
@@ -384,15 +389,15 @@ struct ReMove : MapModule<1> {
                 if (last1 == last2) {
                     // 2 times same value -> compress!
                     int c = 0;
-                    while (data[i * s + j] == last1 && j < seqLength[i]) { c++; j++; }
+                    while (seqData[i * s + j] == last1 && j < seqLength[i]) { c++; j++; }
                     json_array_append(seqData1J, json_integer(c));
-                    if (j < seqLength[i]) json_array_append(seqData1J, json_real(data[i * s + j]));                    
+                    if (j < seqLength[i]) json_array_append(seqData1J, json_real(seqData[i * s + j]));                    
                     last1 = 100.f; last2 = -100.f;
                 } 
                 else {
-                    json_array_append(seqData1J, json_real(data[i * s + j]));
+                    json_array_append(seqData1J, json_real(seqData[i * s + j]));
                     last2 = last1;
-                    last1 = data[i * s + j];
+                    last1 = seqData[i * s + j];
                 }
             }
 			json_array_append(seqDataJ, seqData1J);
@@ -460,13 +465,13 @@ struct ReMove : MapModule<1> {
                     if (last1 == last2) {
                         // we've seen two same values -> decompress!
                         int v = json_integer_value(d);
-                        for (int k = 0; k < v; k++) { data[i * s + c] = last1; c++; }
+                        for (int k = 0; k < v; k++) { seqData[i * s + c] = last1; c++; }
                         last1 = 100.f; last2 = -100.f;
                     }
                     else {
-                        data[i * s + c] = json_real_value(d);
+                        seqData[i * s + c] = json_real_value(d);
                         last2 = last1;
-                        last1 = data[i * s + c];
+                        last1 = seqData[i * s + c];
                         c++;
                     }
                 }
@@ -525,7 +530,7 @@ struct ReMoveDisplay : TransparentWidget {
         int c = std::min(seqLength, 120);
 		for (int i = 0; i < c; i++) {
             float x = (float)i / (c - 1);
-            float y = module->data[module->seqLow + (int)floor(x * (seqLength - 1))] / 2.0 + 0.5;
+            float y = module->seqData[module->seqLow + (int)floor(x * (seqLength - 1))] / 2.0 + 0.5;
 			float px = b.pos.x + b.size.x * x;
 			float py = b.pos.y + b.size.y * (1.01 - y);
             if (i == 0)
