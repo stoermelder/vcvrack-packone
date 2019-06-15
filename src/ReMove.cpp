@@ -631,51 +631,29 @@ struct SeqCvModeMenuItem : MenuItem {
 
 
 struct InCvModeMenuItem : MenuItem {
-    struct InCvModeItem : MenuItem {
-        ReMove *module;
-        int inCvMode;
-
-        void onAction(const event::Action &e) override {
-            module->inCvMode = inCvMode;
-        }
-
-        void step() override {
-            rightText = (module->inCvMode == inCvMode) ? "✔" : "";
-            MenuItem::step();
-        }
-    };
-    
     ReMove *module;
-    Menu *createChildMenu() override {
-        Menu *menu = new Menu;
-        menu->addChild(construct<InCvModeItem>(&MenuItem::text, "0..10V", &InCvModeItem::module, module, &InCvModeItem::inCvMode, INCVMODE_SOURCE_UNI));
-        menu->addChild(construct<InCvModeItem>(&MenuItem::text, "-5..5V", &InCvModeItem::module, module, &InCvModeItem::inCvMode, INCVMODE_SOURCE_BI));
-        return menu;
+
+    void onAction(const event::Action &e) override {
+        module->inCvMode = module->inCvMode == INCVMODE_SOURCE_UNI ? INCVMODE_SOURCE_BI : INCVMODE_SOURCE_UNI;
+    }
+
+    void step() override {
+        rightText = module->inCvMode == INCVMODE_SOURCE_UNI ? "0V..10V" : "-5V..5V";
+        MenuItem::step();
     }
 };
 
 
 struct OutCvModeMenuItem : MenuItem {
-    struct OutCvModeItem : MenuItem {
-        ReMove *module;
-        int outCvMode;
-
-        void onAction(const event::Action &e) override {
-            module->outCvMode = outCvMode;
-        }
-
-        void step() override {
-            rightText = (module->outCvMode == outCvMode) ? "✔" : "";
-            MenuItem::step();
-        }
-    };
-    
     ReMove *module;
-    Menu *createChildMenu() override {
-        Menu *menu = new Menu;
-        menu->addChild(construct<OutCvModeItem>(&MenuItem::text, "0..10V", &OutCvModeItem::module, module, &OutCvModeItem::outCvMode, OUTCVMODE_OUT_UNI));
-        menu->addChild(construct<OutCvModeItem>(&MenuItem::text, "-5..5V", &OutCvModeItem::module, module, &OutCvModeItem::outCvMode, OUTCVMODE_OUT_BI));
-        return menu;
+
+    void onAction(const event::Action &e) override {
+        module->outCvMode = module->outCvMode == OUTCVMODE_OUT_UNI ? OUTCVMODE_OUT_BI : OUTCVMODE_OUT_UNI;
+    }
+
+    void step() override {
+        rightText = module->outCvMode == OUTCVMODE_OUT_UNI ? "0V..10V" : "-5V..5V";
+        MenuItem::step();
     }
 };
 
@@ -914,7 +892,7 @@ struct ReMoveWidget : ModuleWidget {
         precisionMenuItem->rightText = RIGHT_ARROW;
         menu->addChild(precisionMenuItem);
 
-        SeqCountMenuItem *seqCountMenuItem = construct<SeqCountMenuItem>(&MenuItem::text, "No of sequences", &SeqCountMenuItem::module, module);
+        SeqCountMenuItem *seqCountMenuItem = construct<SeqCountMenuItem>(&MenuItem::text, "# of sequences", &SeqCountMenuItem::module, module);
         seqCountMenuItem->rightText = RIGHT_ARROW;
         menu->addChild(seqCountMenuItem);
 
@@ -932,11 +910,11 @@ struct ReMoveWidget : ModuleWidget {
         seqCvModeMenuItem->rightText = RIGHT_ARROW;
         menu->addChild(seqCvModeMenuItem);
 
-        InCvModeMenuItem *inCvModeMenuItem = construct<InCvModeMenuItem>(&MenuItem::text, "Port IN Mode", &InCvModeMenuItem::module, module);
+        InCvModeMenuItem *inCvModeMenuItem = construct<InCvModeMenuItem>(&MenuItem::text, "Port IN Voltage", &InCvModeMenuItem::module, module);
         inCvModeMenuItem->rightText = RIGHT_ARROW;
         menu->addChild(inCvModeMenuItem);
 
-        OutCvModeMenuItem *outCvModeMenuItem = construct<OutCvModeMenuItem>(&MenuItem::text, "Port OUT Mode", &OutCvModeMenuItem::module, module);
+        OutCvModeMenuItem *outCvModeMenuItem = construct<OutCvModeMenuItem>(&MenuItem::text, "Port OUT Voltage", &OutCvModeMenuItem::module, module);
         outCvModeMenuItem->rightText = RIGHT_ARROW;
         menu->addChild(outCvModeMenuItem);
     }
