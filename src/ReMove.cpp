@@ -524,23 +524,17 @@ struct ReMove : MapModule<1> {
 
 struct ReMoveDisplay : TransparentWidget {
 	ReMove *module;
-	//shared_ptr<Font> font;
+	std::shared_ptr<Font> font;
 
 	ReMoveDisplay() {
-		//font = Font::load(assetPlugin(plugin, "res/DejaVuSansMono.ttf"));
+        font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
 	}
 	
 	void draw(NVGcontext *vg) override {
         if (!module) return;
         float maxX = box.size.x;
         float maxY = box.size.y;
-        //if (module->isRecording) return;
-		//nvgFontSize(vg, 12);
-		//nvgFontFaceId(vg, font->handle);
-		//nvgTextLetterSpacing(vg, -2);
-		//nvgFillColor(vg, nvgRGBA(0xff, 0xff, 0xff, 0xff));	
-		//nvgTextBox(vg, 5, 5, 120, module->fileDesc.c_str(), NULL);
-		
+
 		// Draw ref line
 		nvgStrokeColor(vg, nvgRGBA(0xff, 0xb0, 0xf3, 0x20));
         nvgBeginPath(vg);
@@ -550,18 +544,31 @@ struct ReMoveDisplay : TransparentWidget {
         nvgStroke(vg);
 
         int seqPos = module->dataPtr - module->seqLow;
+
+        if (module->isRecording) {
+            // Draw text showing remaining time
+            float t = ((float)MAX_DATA / (float)module->seqCount - (float)seqPos) * (float)pow(2, module->precision) / (float)module->sampleRate;
+		    nvgFontSize(vg, 11);
+		    nvgFontFaceId(vg, font->handle);
+		    nvgTextLetterSpacing(vg, -2.2);
+		    nvgFillColor(vg, nvgRGBA(0x66, 0x66, 0x66, 0xff));	
+		    nvgTextBox(vg, 6, box.size.y - 4, 120, string::f("REC -%.1fs", t).c_str(), NULL);
+        }
+
         int seqLength = module->seqLength[module->seq];
         if (seqLength < 2) return;
-        
-		// Draw play line
-		nvgStrokeColor(vg, nvgRGBA(0xff, 0xb0, 0xf3, 0xb0));
-        nvgStrokeWidth(vg, 0.7);
-        nvgBeginPath(vg);
-        nvgMoveTo(vg, seqPos * maxX / seqLength, 0);
-        nvgLineTo(vg, seqPos * maxX / seqLength, maxY);
-        nvgClosePath(vg);
-		nvgStroke(vg);
-            
+
+        if (!module->isRecording) {
+            // Draw play line
+            nvgStrokeColor(vg, nvgRGBA(0xff, 0xb0, 0xf3, 0xb0));
+            nvgStrokeWidth(vg, 0.7);
+            nvgBeginPath(vg);
+            nvgMoveTo(vg, seqPos * maxX / seqLength, 0);
+            nvgLineTo(vg, seqPos * maxX / seqLength, maxY);
+            nvgClosePath(vg);
+            nvgStroke(vg);
+        }   
+
 		// Draw automation-line
 		nvgStrokeColor(vg, nvgRGBA(0xff, 0xd7, 0x14, 0xc0));
 		nvgSave(vg);
