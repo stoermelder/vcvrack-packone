@@ -4,6 +4,10 @@ ReMove Lite is a utility module for recording and replaying movements of any par
 
 ![ReMove Intro](./ReMove-intro.gif)
 
+### Mapping of parameters
+
+The map the module to a parameter click into the display on the top. While showing "Mapping..." click on any parameter of any module in your rack to bind the module. You can unbind the parameter using the context menu of the display. Also, you can "locate" the module and mapped parameter if you got lost inside you rack.
+
 ### Precision and number of sequences
 
 The module has storage of 96000 samples. At full sampling rate this corresponds to 2 seconds of recording at audio samplerate of 48kHz. Such high precision is not needed for parameter automation, so ReMOVE Lite allows at most an 8th of the audio sampling rate for recording. The lowest setting at 2048th sample gives you ~23 samples per second at audio samplerate of 48kHz and could still be ok for slowly changing parameters or low accuracy.

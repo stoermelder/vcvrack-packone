@@ -10,6 +10,8 @@ The PackOne plugin pack gives you a some utility modules.
 
 ![Intro image](./docs/intro.png)
 
+All releases with odd numbering (1.0.1, 1.0.3) are preview-builts. Releases published in the [VCV Library](https://vcvrack.com/plugins.html#packone) are even numbered.
+
 ## Building
 
 Follow the build instructions for [VCV Rack](https://vcvrack.com/manual/Building.html#building-rack-plugins).
