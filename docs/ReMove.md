@@ -6,7 +6,7 @@ ReMove Lite is a utility module for recording and replaying movements of any par
 
 ### Mapping of parameters
 
-The map the module to a parameter click into the display on the top. While showing "Mapping..." click on any parameter of any module in your rack to bind the module. You can unbind the parameter using the context menu of the display. Also, you can "locate" the module and mapped parameter if you got lost inside you rack.
+To map the module to a parameter activate the mapping mode by mouse press inside the display on the top. While showing "Mapping..." click on any parameter of any module in your rack to bind the module. You can unbind the parameter using the context menu of the display. Also, you can "locate" the module and mapped parameter if you got lost inside you rack.
 
 ### Precision and number of sequences
 
@@ -21,11 +21,11 @@ Both precision setting and number of sequences are found on the context menu.
 
 There are three recording modes available, changed by the context menu option:
 
-- Touch-Mode (Default)
+- Touch-Mode (Default):
 Triggering the red REC button by mouse or through REC-port arms the recording. Actual recording starts on first mouse click ("touch") on the mapped parameter and holds on as long the button is pressed. On release of the button the recording stops.
-- Move-Mode
+- Move-Mode:
 As with Touch-Mode the recording is armed. Actual recording starts on the first change of the mapped parameter, which happens not necessarily on the mouse down event. Releasing the mouse button ends the recording and the stored automation will be trimmed on the end to the last change of value. This way the sequence starts on first change and ends on the last one.
-- Manual-Mode
+- Manual-Mode:
 This mode starts the recording as soon as the red REC-button is pressed. Manual-mode is especially useful when triggering using the REC-input.
 
 Recording is only possible when a parameter is mapped, even when using the IN-port.
