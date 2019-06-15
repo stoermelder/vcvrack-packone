@@ -12,11 +12,9 @@ const int RECMODE_MANUAL = 2;
 
 const int INCVMODE_SOURCE_UNI = 0;
 const int INCVMODE_SOURCE_BI = 1;
-const int INCVMODE_TRIGGER = 2;
 
 const int OUTCVMODE_OUT_UNI = 0;
 const int OUTCVMODE_OUT_BI = 1;
-const int OUTCVMODE_TRIGGER = 2;
 
 const int PLAYMODE_LOOP = 0;
 const int PLAYMODE_ONESHOT = 1;
@@ -41,10 +39,12 @@ struct ReMove : MapModule<1> {
         PHASE_INPUT,
         SEQ_INPUT,
         CV_INPUT,
+        REC_INPUT,
         NUM_INPUTS
     };
     enum OutputIds {
         CV_OUTPUT,
+        REC_OUTPUT,
         NUM_OUTPUTS
     };
     enum LightIds {
@@ -145,14 +145,15 @@ struct ReMove : MapModule<1> {
 
     void process(const ProcessArgs &args) override { 
         sampleRate = args.sampleRate;
+        outputs[REC_OUTPUT].setVoltage(0);
 
         // Toggle record when button is pressed
-        if (recTrigger.process(params[REC_PARAM].getValue() + (inCvMode == INCVMODE_TRIGGER ? inputs[CV_INPUT].getVoltage() : 0.f))) {
+        if (recTrigger.process(params[REC_PARAM].getValue() + inputs[REC_INPUT].getVoltage())) {
             isPlaying = false;
             ParamQuantity *paramQuantity = getParamQuantity(0);
             if (paramQuantity != NULL) {
                 isRecording ^= true;
-                if (isRecording) 
+                if (isRecording)
                     startRecording();
                 else
                     stopRecording();
@@ -188,7 +189,7 @@ struct ReMove : MapModule<1> {
                     doRecord = false;
             }
 
-            if (doRecord) {
+            if (doRecord) {           
                 if (precisionCount == 0) {
                     // check if mouse button has been released
                     if (APP->event->getDraggedWidget() == NULL) {
@@ -218,6 +219,7 @@ struct ReMove : MapModule<1> {
                         }
                     }
                 }
+                outputs[REC_OUTPUT].setVoltage(10);
                 precisionCount = (precisionCount + 1) % (int)pow(2, precision);
             }
         }
@@ -635,9 +637,8 @@ struct InCvModeMenuItem : MenuItem {
     ReMove *module;
     Menu *createChildMenu() override {
         Menu *menu = new Menu;
-        menu->addChild(construct<InCvModeItem>(&MenuItem::text, "Source 0..10V", &InCvModeItem::module, module, &InCvModeItem::inCvMode, INCVMODE_SOURCE_UNI));
-        menu->addChild(construct<InCvModeItem>(&MenuItem::text, "Source -5..5V", &InCvModeItem::module, module, &InCvModeItem::inCvMode, INCVMODE_SOURCE_BI));
-        menu->addChild(construct<InCvModeItem>(&MenuItem::text, "Record Trigger", &InCvModeItem::module, module, &InCvModeItem::inCvMode, INCVMODE_TRIGGER));
+        menu->addChild(construct<InCvModeItem>(&MenuItem::text, "0..10V", &InCvModeItem::module, module, &InCvModeItem::inCvMode, INCVMODE_SOURCE_UNI));
+        menu->addChild(construct<InCvModeItem>(&MenuItem::text, "-5..5V", &InCvModeItem::module, module, &InCvModeItem::inCvMode, INCVMODE_SOURCE_BI));
         return menu;
     }
 };
@@ -661,9 +662,8 @@ struct OutCvModeMenuItem : MenuItem {
     ReMove *module;
     Menu *createChildMenu() override {
         Menu *menu = new Menu;
-        menu->addChild(construct<OutCvModeItem>(&MenuItem::text, "Out 0..10V", &OutCvModeItem::module, module, &OutCvModeItem::outCvMode, OUTCVMODE_OUT_UNI));
-        menu->addChild(construct<OutCvModeItem>(&MenuItem::text, "Out -5..5V", &OutCvModeItem::module, module, &OutCvModeItem::outCvMode, OUTCVMODE_OUT_BI));
-        //menu->addChild(construct<OutCvModeItem>(&MenuItem::text, "Record Trigger", &OutCvModeItem::module, module, &OutCvModeItem::outCvMode, OUTCVMODE_TRIGGER));
+        menu->addChild(construct<OutCvModeItem>(&MenuItem::text, "0..10V", &OutCvModeItem::module, module, &OutCvModeItem::outCvMode, OUTCVMODE_OUT_UNI));
+        menu->addChild(construct<OutCvModeItem>(&MenuItem::text, "-5..5V", &OutCvModeItem::module, module, &OutCvModeItem::outCvMode, OUTCVMODE_OUT_BI));
         return menu;
     }
 };
@@ -822,6 +822,9 @@ struct ReMoveWidget : ModuleWidget {
 
         addInput(createInputCentered<PJ301MPort>(Vec(21.1f, 336.8f), module, ReMove::CV_INPUT));      
         addOutput(createOutputCentered<PJ301MPort>(Vec(68.7f, 336.8f), module, ReMove::CV_OUTPUT));
+
+        addInput(createInputCentered<PJ301MPort>(Vec(21.1f, 294.1f), module, ReMove::REC_INPUT));      
+        addOutput(createOutputCentered<PJ301MPort>(Vec(68.7f, 294.1f), module, ReMove::REC_OUTPUT));
 
         addParam(createParamCentered<RecButton>(Vec(44.8f, 152.9f), module, ReMove::REC_PARAM));
         addChild(createLightCentered<RecLight>(Vec(44.8f, 152.9f), module, ReMove::REC_LIGHT));
