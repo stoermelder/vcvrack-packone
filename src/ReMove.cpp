@@ -787,16 +787,56 @@ struct PlayModeMenuItem : MenuItem {
 struct RecButton : SvgSwitch {
     RecButton() {
         momentary = true;
-        box.size = Vec(39.f, 39.f);
+        box.size = Vec(34.f, 34.f);
         addFrame(APP->window->loadSvg(asset::plugin(pluginInstance, "res/RecButton.svg")));
     }
 };
 
 struct RecLight : RedLight {
+    std::chrono::time_point<std::chrono::system_clock> blink;
+    bool op = true;
+
 	RecLight() {
 		bgColor = nvgRGB(0x66, 0x66, 0x66);
 		box.size = Vec(27.f, 27.f);
+        blink = std::chrono::system_clock::now();
 	}
+
+    void step() override {
+        if (module) {
+            auto now = std::chrono::system_clock::now();
+            if (now - blink > std::chrono::milliseconds{800}) {
+                op = !op;
+                blink = now;
+            }
+
+            std::vector<float> brightnesses(baseColors.size());
+            for (size_t i = 0; i < baseColors.size(); i++) {
+                float b = module->lights[firstLightId + i].getBrightness();
+                if (b > 0.f) 
+                    b = op ? 1.f : 0.6f;
+                brightnesses[i] = b;
+            }
+            setBrightnesses(brightnesses);
+        }
+    }
+
+    void drawHalo(const DrawArgs &args) override {
+	    float radius = box.size.x / 2.0;
+	    float oradius = 5 * radius;
+
+	    nvgBeginPath(args.vg);
+	    nvgRect(args.vg, radius - oradius, radius - oradius, 2*oradius, 2*oradius);
+
+	    NVGpaint paint;
+	    NVGcolor icol = color::mult(color, 0.4);
+	    NVGcolor ocol = nvgRGB(0, 0, 0);
+
+	    paint = nvgRadialGradient(args.vg, radius, radius, radius, oradius, icol, ocol);
+	    nvgFillPaint(args.vg, paint);
+	    nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
+	    nvgFill(args.vg);
+    }
 };
 
 
