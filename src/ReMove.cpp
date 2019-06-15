@@ -288,7 +288,7 @@ struct ReMove : MapModule<1> {
                     else {
                         float v = seqData[dataPtr];
                         dataPtr = dataPtr + playDir;
-                        v = valueFilters[0].process(args.sampleTime, v);
+                        //v = valueFilters[0].process(args.sampleTime, v);
                         setValue(v, paramQuantity);
                         if (dataPtr == seqLow + seqLength[seq] && playDir == PLAYDIR_FWD) {
                             switch (playMode) {
@@ -521,7 +521,6 @@ struct ReMove : MapModule<1> {
 
 
 struct ReMoveDisplay : TransparentWidget {
-    const float maxX = 61.5f, maxY = 42.f;
 	ReMove *module;
 	//shared_ptr<Font> font;
 
@@ -531,6 +530,8 @@ struct ReMoveDisplay : TransparentWidget {
 	
 	void draw(NVGcontext *vg) override {
         if (!module) return;
+        float maxX = box.size.x;
+        float maxY = box.size.y;
         //if (module->isRecording) return;
 		//nvgFontSize(vg, 12);
 		//nvgFontFaceId(vg, font->handle);
@@ -554,23 +555,23 @@ struct ReMoveDisplay : TransparentWidget {
 		nvgStrokeColor(vg, nvgRGBA(0xff, 0xb0, 0xf3, 0xb0));
         nvgStrokeWidth(vg, 0.7);
         nvgBeginPath(vg);
-        nvgMoveTo(vg, seqPos * maxX / seqLength, 0 + 5.5);
-        nvgLineTo(vg, seqPos * maxX / seqLength, maxY - 5.5);
+        nvgMoveTo(vg, seqPos * maxX / seqLength, 0);
+        nvgLineTo(vg, seqPos * maxX / seqLength, maxY);
         nvgClosePath(vg);
 		nvgStroke(vg);
             
 		// Draw automation-line
 		nvgStrokeColor(vg, nvgRGBA(0xff, 0xd7, 0x14, 0xc0));
 		nvgSave(vg);
-		Rect b = Rect(Vec(0, 7), Vec(maxX, 56));
+		Rect b = Rect(Vec(0, 2), Vec(maxX, maxY - 4));
 		nvgScissor(vg, b.pos.x, b.pos.y, b.size.x, b.size.y);
 		nvgBeginPath(vg);
         int c = std::min(seqLength, 120);
 		for (int i = 0; i < c; i++) {
             float x = (float)i / (c - 1);
-            float y = module->seqData[module->seqLow + (int)floor(x * (seqLength - 1))] / 2.0 + 0.5;
+            float y = module->seqData[module->seqLow + (int)floor(x * (seqLength - 1))] * 0.98f + 0.01f;
 			float px = b.pos.x + b.size.x * x;
-			float py = b.pos.y + b.size.y * (1.01 - y);
+			float py = b.pos.y + b.size.y * (1.0 - y);
             if (i == 0)
                 nvgMoveTo(vg, px, py);
             else
@@ -779,7 +780,7 @@ struct PlayModeMenuItem : MenuItem {
 struct RecButton : SvgSwitch {
     RecButton() {
         momentary = true;
-        box.size = Vec(40.f, 40.f);
+        box.size = Vec(39.f, 39.f);
         addFrame(APP->window->loadSvg(asset::plugin(pluginInstance, "res/RecButton.svg")));
     }
 };
@@ -800,44 +801,44 @@ struct ReMoveWidget : ModuleWidget {
         addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, 0)));
         addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-        addChild(createLightCentered<TinyLight<GreenLight>>(Vec(14.1f, 107.9f), module, ReMove::SEQ_LIGHT + 0));
-        addChild(createLightCentered<TinyLight<GreenLight>>(Vec(20.8f, 107.9f), module, ReMove::SEQ_LIGHT + 1));
-        addChild(createLightCentered<TinyLight<GreenLight>>(Vec(27.5f, 107.9f), module, ReMove::SEQ_LIGHT + 2));
-        addChild(createLightCentered<TinyLight<GreenLight>>(Vec(34.2f, 107.9f), module, ReMove::SEQ_LIGHT + 3));
-        addChild(createLightCentered<TinyLight<GreenLight>>(Vec(40.9f, 107.9f), module, ReMove::SEQ_LIGHT + 4));
-        addChild(createLightCentered<TinyLight<GreenLight>>(Vec(47.6f, 107.9f), module, ReMove::SEQ_LIGHT + 5));
-        addChild(createLightCentered<TinyLight<GreenLight>>(Vec(54.3f, 107.9f), module, ReMove::SEQ_LIGHT + 6));
-        addChild(createLightCentered<TinyLight<GreenLight>>(Vec(61.0f, 107.9f), module, ReMove::SEQ_LIGHT + 7));
+        addChild(createLightCentered<TinyLight<GreenLight>>(Vec(19.5f, 113.8f), module, ReMove::SEQ_LIGHT + 0));
+        addChild(createLightCentered<TinyLight<GreenLight>>(Vec(26.8f, 113.8f), module, ReMove::SEQ_LIGHT + 1));
+        addChild(createLightCentered<TinyLight<GreenLight>>(Vec(34.1f, 113.8f), module, ReMove::SEQ_LIGHT + 2));
+        addChild(createLightCentered<TinyLight<GreenLight>>(Vec(41.4f, 113.8f), module, ReMove::SEQ_LIGHT + 3));
+        addChild(createLightCentered<TinyLight<GreenLight>>(Vec(48.6f, 113.8f), module, ReMove::SEQ_LIGHT + 4));
+        addChild(createLightCentered<TinyLight<GreenLight>>(Vec(55.9f, 113.8f), module, ReMove::SEQ_LIGHT + 5));
+        addChild(createLightCentered<TinyLight<GreenLight>>(Vec(63.2f, 113.8f), module, ReMove::SEQ_LIGHT + 6));
+        addChild(createLightCentered<TinyLight<GreenLight>>(Vec(70.5f, 113.8f), module, ReMove::SEQ_LIGHT + 7));
 
-        addInput(createInputCentered<PJ301MPort>(Vec(54.1f, 238.7f), module, ReMove::RUN_INPUT));
-        addParam(createParamCentered<TL1105>(Vec(54.1f, 212.2f), module, ReMove::RUN_PARAM));
-        addChild(createLightCentered<SmallLight<GreenLight>>(Vec(42.3f, 224.9f), module, ReMove::RUN_LIGHT));
+        addInput(createInputCentered<PJ301MPort>(Vec(68.7f, 243.3f), module, ReMove::RUN_INPUT));
+        addParam(createParamCentered<TL1105>(Vec(45.f, 230.3f), module, ReMove::RUN_PARAM));
+        addChild(createLightCentered<SmallLight<GreenLight>>(Vec(76.7f, 260.5f), module, ReMove::RUN_LIGHT));
 
-        addInput(createInputCentered<PJ301MPort>(Vec(21.1f, 238.7f), module, ReMove::RESET_INPUT));
-        addParam(createParamCentered<TL1105>(Vec(21.1f, 212.2f), module, ReMove::RESET_PARAM));
-        addChild(createLightCentered<SmallLight<GreenLight>>(Vec(33.4f, 251.9f), module, ReMove::RESET_LIGHT));
+        addInput(createInputCentered<PJ301MPort>(Vec(21.1f, 243.3f), module, ReMove::RESET_INPUT));
+        addParam(createParamCentered<TL1105>(Vec(45.f, 256.3f), module, ReMove::RESET_PARAM));
+        addChild(createLightCentered<SmallLight<GreenLight>>(Vec(13.1f, 260.5f), module, ReMove::RESET_LIGHT));
 
-        addInput(createInputCentered<PJ301MPort>(Vec(21.1f, 171.f), module, ReMove::PHASE_INPUT));
+        addInput(createInputCentered<PJ301MPort>(Vec(68.7f, 200.1f), module, ReMove::PHASE_INPUT));
 
-        addInput(createInputCentered<PJ301MPort>(Vec(21.1f, 336.3f), module, ReMove::CV_INPUT));      
-        addOutput(createOutputCentered<PJ301MPort>(Vec(54.1f, 336.3f), module, ReMove::CV_OUTPUT));
+        addInput(createInputCentered<PJ301MPort>(Vec(21.1f, 336.8f), module, ReMove::CV_INPUT));      
+        addOutput(createOutputCentered<PJ301MPort>(Vec(68.7f, 336.8f), module, ReMove::CV_OUTPUT));
 
-        addParam(createParamCentered<RecButton>(Vec(37.6f, 284.3f), module, ReMove::REC_PARAM));
-        addChild(createLightCentered<RecLight>(Vec(37.6f, 284.3f), module, ReMove::REC_LIGHT));
+        addParam(createParamCentered<RecButton>(Vec(44.8f, 152.9f), module, ReMove::REC_PARAM));
+        addChild(createLightCentered<RecLight>(Vec(44.8f, 152.9f), module, ReMove::REC_LIGHT));
 
-        addInput(createInputCentered<PJ301MPort>(Vec(54.1f, 171.f), module, ReMove::SEQ_INPUT));
-        addParam(createParamCentered<TL1105>(Vec(21.1f, 132.4f), module, ReMove::SEQP_PARAM));
-        addParam(createParamCentered<TL1105>(Vec(54.1f, 132.4), module, ReMove::SEQN_PARAM));
+        addInput(createInputCentered<PJ301MPort>(Vec(21.1f, 200.1f), module, ReMove::SEQ_INPUT));
+        addParam(createParamCentered<TL1105>(Vec(21.1f, 131.9f), module, ReMove::SEQP_PARAM));
+        addParam(createParamCentered<TL1105>(Vec(68.7f, 131.9), module, ReMove::SEQN_PARAM));
 
 		MapModuleDisplay<1> *mapWidget = createWidget<MapModuleDisplay<1>>(Vec(6.8f, 36.4f));
-		mapWidget->box.size = Vec(61.5f, 23.f);
+		mapWidget->box.size = Vec(76.2f, 23.f);
 		mapWidget->setModule(module);
 		addChild(mapWidget);
 
        	ReMoveDisplay *display = new ReMoveDisplay();
 		display->module = module;
-		display->box.pos = Vec(6.8f, 62.f);
-		display->box.size = Vec(61.5f, 50.f);
+		display->box.pos = Vec(6.8f, 65.7f);
+		display->box.size = Vec(76.2f, 41.6f);
 		addChild(display); 
     }
 
