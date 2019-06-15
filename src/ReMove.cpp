@@ -10,6 +10,9 @@ const int RECMODE_TOUCH = 0;
 const int RECMODE_MOVE = 1;
 const int RECMODE_MANUAL = 2;
 
+const int SEQCHANGEMODE_RESTART = 0;
+const int SEQCHANGEMODE_OFFSET = 1;
+
 const int INCVMODE_SOURCE_UNI = 0;
 const int INCVMODE_SOURCE_BI = 1;
 
@@ -71,6 +74,8 @@ struct ReMove : MapModule<1> {
 
     /** [Stored to JSON] mode for SEQ CV input, 0 = 0-10V, 1 = C4-G4, 2 = Trig */
     int seqCvMode = 0;
+    /** [Stored to JSON] behaviour when changing sequences during playback */
+    int seqChangeMode = SEQCHANGEMODE_RESTART;
 
     /** [Stored to JSON] usage-mode for IN input */
     int inCvMode = INCVMODE_SOURCE_UNI;
@@ -282,17 +287,15 @@ struct ReMove : MapModule<1> {
 
             if (isPlaying) {
                 if (precisionCount == 0) {
-                    if (seqLength[seq] == 0)
-                        isPlaying = false;
                     ParamQuantity *paramQuantity = getParamQuantity(0);
                     if (paramQuantity == NULL)
                         isPlaying = false;
 
                     // are we still playing?
-                    if (isPlaying) {
+                    if (isPlaying && seqLength[seq] > 0) {
                         float v = seqData[dataPtr];
                         dataPtr = dataPtr + playDir;
-                        //v = valueFilters[0].process(args.sampleTime, v);
+                        v = valueFilters[0].process(args.sampleTime, v);
                         setValue(v, paramQuantity);
                         if (dataPtr == seqLow + seqLength[seq] && playDir == PLAYDIR_FWD) {
                             switch (playMode) {
@@ -390,6 +393,7 @@ struct ReMove : MapModule<1> {
         isPlaying = false;
         seq = 0;
         seqCount = c;
+        dataPtr = 0;
         for (int i = 0; i < MAX_SEQ; i++) seqLength[i] = 0;        
         seqUpdate();
     }
@@ -398,10 +402,17 @@ struct ReMove : MapModule<1> {
         int s = MAX_DATA / seqCount;    
         seqLow = seq * s;
         seqHigh =  (seq + 1) * s;
-        dataPtr = seqLow;
-        playDir = PLAYDIR_FWD;
-        precisionCount = 0;
-        valueFilters[0].reset();        
+        switch (seqChangeMode) {
+            case SEQCHANGEMODE_RESTART:
+                dataPtr = seqLow;
+                playDir = PLAYDIR_FWD;
+                precisionCount = 0;
+                valueFilters[0].reset();
+                break;
+            case SEQCHANGEMODE_OFFSET:
+                dataPtr = seqLength[seq] > 0 ? seqLow + (dataPtr % s) % seqLength[seq] : seqLow;
+                break;
+        }
     }
 
 
@@ -452,6 +463,7 @@ struct ReMove : MapModule<1> {
         json_object_set_new(rootJ, "seqCount", json_integer(seqCount));
         json_object_set_new(rootJ, "seq", json_integer(seq));
         json_object_set_new(rootJ, "seqCvMode", json_integer(seqCvMode));
+        json_object_set_new(rootJ, "seqChangeMode", json_integer(seqChangeMode));
         json_object_set_new(rootJ, "inCvMode", json_integer(inCvMode));
         json_object_set_new(rootJ, "outCvMode", json_integer(outCvMode));
         json_object_set_new(rootJ, "recMode", json_integer(recMode));
@@ -471,6 +483,8 @@ struct ReMove : MapModule<1> {
 		if (seqJ) seq = json_integer_value(seqJ);
         json_t *seqCvModeJ = json_object_get(rootJ, "seqCvMode");
 		if (seqCvModeJ) seqCvMode = json_integer_value(seqCvModeJ);
+        json_t *seqChangeModeJ = json_object_get(rootJ, "seqChangeMode");
+		if (seqChangeModeJ) seqChangeMode = json_integer_value(seqChangeModeJ);
         json_t *inCvModeJ = json_object_get(rootJ, "inCvMode");
 		if (inCvModeJ) inCvMode = json_integer_value(inCvModeJ);
         json_t *outCvModeJ = json_object_get(rootJ, "outCvMode");
@@ -714,6 +728,31 @@ struct SeqCountMenuItem : MenuItem {
 };
 
 
+struct SeqChangeModeMenuItem : MenuItem {
+    struct SeqChangeModeItem : MenuItem {
+        ReMove *module;
+        int seqChangeMode;
+
+        void onAction(const event::Action &e) override {
+            module->seqChangeMode = seqChangeMode;
+        }
+
+        void step() override {
+            rightText = (module->seqChangeMode == seqChangeMode) ? "✔" : "";
+            MenuItem::step();
+        }
+    };
+    
+    ReMove *module;
+    Menu *createChildMenu() override {
+        Menu *menu = new Menu;
+        menu->addChild(construct<SeqChangeModeItem>(&MenuItem::text, "Restart", &SeqChangeModeItem::module, module, &SeqChangeModeItem::seqChangeMode, SEQCHANGEMODE_RESTART));
+        menu->addChild(construct<SeqChangeModeItem>(&MenuItem::text, "Offset", &SeqChangeModeItem::module, module, &SeqChangeModeItem::seqChangeMode, SEQCHANGEMODE_OFFSET));
+        return menu;
+    }
+};
+
+
 struct RecordModeMenuItem : MenuItem {
     struct RecordModeItem : MenuItem {
         ReMove *module;
@@ -896,25 +935,29 @@ struct ReMoveWidget : ModuleWidget {
         seqCountMenuItem->rightText = RIGHT_ARROW;
         menu->addChild(seqCountMenuItem);
 
-        RecordModeMenuItem *recordModeMenuItem = construct<RecordModeMenuItem>(&MenuItem::text, "Record Mode", &RecordModeMenuItem::module, module);
+        SeqChangeModeMenuItem *seqChangeModeMenuItem = construct<SeqChangeModeMenuItem>(&MenuItem::text, "Sequence change mode", &SeqChangeModeMenuItem::module, module);
+        seqChangeModeMenuItem->rightText = RIGHT_ARROW;
+        menu->addChild(seqChangeModeMenuItem);
+
+        RecordModeMenuItem *recordModeMenuItem = construct<RecordModeMenuItem>(&MenuItem::text, "Record mode", &RecordModeMenuItem::module, module);
         recordModeMenuItem->rightText = RIGHT_ARROW;
         menu->addChild(recordModeMenuItem);
 
-        PlayModeMenuItem *playModeMenuItem = construct<PlayModeMenuItem>(&MenuItem::text, "Play Mode", &PlayModeMenuItem::module, module);
+        PlayModeMenuItem *playModeMenuItem = construct<PlayModeMenuItem>(&MenuItem::text, "Play mode", &PlayModeMenuItem::module, module);
         playModeMenuItem->rightText = RIGHT_ARROW;
         menu->addChild(playModeMenuItem);
 
         menu->addChild(new MenuSeparator());
 
-        SeqCvModeMenuItem *seqCvModeMenuItem = construct<SeqCvModeMenuItem>(&MenuItem::text, "Port SEQ# Mode", &SeqCvModeMenuItem::module, module);
+        SeqCvModeMenuItem *seqCvModeMenuItem = construct<SeqCvModeMenuItem>(&MenuItem::text, "Port SEQ# mode", &SeqCvModeMenuItem::module, module);
         seqCvModeMenuItem->rightText = RIGHT_ARROW;
         menu->addChild(seqCvModeMenuItem);
 
-        InCvModeMenuItem *inCvModeMenuItem = construct<InCvModeMenuItem>(&MenuItem::text, "Port IN Voltage", &InCvModeMenuItem::module, module);
+        InCvModeMenuItem *inCvModeMenuItem = construct<InCvModeMenuItem>(&MenuItem::text, "Port IN voltage", &InCvModeMenuItem::module, module);
         inCvModeMenuItem->rightText = RIGHT_ARROW;
         menu->addChild(inCvModeMenuItem);
 
-        OutCvModeMenuItem *outCvModeMenuItem = construct<OutCvModeMenuItem>(&MenuItem::text, "Port OUT Voltage", &OutCvModeMenuItem::module, module);
+        OutCvModeMenuItem *outCvModeMenuItem = construct<OutCvModeMenuItem>(&MenuItem::text, "Port OUT voltage", &OutCvModeMenuItem::module, module);
         outCvModeMenuItem->rightText = RIGHT_ARROW;
         menu->addChild(outCvModeMenuItem);
     }
