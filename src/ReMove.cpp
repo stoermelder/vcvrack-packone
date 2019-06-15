@@ -131,15 +131,14 @@ struct ReMove : MapModule<1> {
 
     void onReset() override {
         MapModule::onReset();
-        precisionCount = 0;        
         isPlaying = false;
         playDir = PLAYDIR_FWD;
-        isRecording = false;   
-        recTouched = false;      
+        isRecording = false;
+        recTouched = false;
         dataPtr = 0;
-        for (int i = 0; i < MAX_SEQ; i++) seqLength[i] = 0;
-        seqUpdate();   
-
+        precisionCount = 0;
+        seq = 0;
+        seqResize(4); 
         valueFilters[0].reset();
     }
 
@@ -238,7 +237,7 @@ struct ReMove : MapModule<1> {
             if (inputs[SEQ_INPUT].isConnected()) {
                 switch (seqCvMode) {
                     case 0:     // 0-10V
-                        seqSet(round(rescale(inputs[SEQ_INPUT].getVoltage(), 0.f, 10.f, 0, seqCount - 1)));
+                        seqSet(floor(rescale(inputs[SEQ_INPUT].getVoltage(), 0.f, 10.f, 0, seqCount)));
                         break;
                     case 1:     // C4-G4
                         seqSet(round(clamp(inputs[SEQ_INPUT].getVoltage() * 12.f, 0.f, MAX_SEQ - 1.f)));
@@ -283,11 +282,14 @@ struct ReMove : MapModule<1> {
 
             if (isPlaying) {
                 if (precisionCount == 0) {
-                    ParamQuantity *paramQuantity = getParamQuantity(0);
-                    if (paramQuantity == NULL) {
+                    if (seqLength[seq] == 0)
                         isPlaying = false;
-                    } 
-                    else {
+                    ParamQuantity *paramQuantity = getParamQuantity(0);
+                    if (paramQuantity == NULL)
+                        isPlaying = false;
+
+                    // are we still playing?
+                    if (isPlaying) {
                         float v = seqData[dataPtr];
                         dataPtr = dataPtr + playDir;
                         //v = valueFilters[0].process(args.sampleTime, v);
@@ -388,7 +390,7 @@ struct ReMove : MapModule<1> {
         isPlaying = false;
         seq = 0;
         seqCount = c;
-        for (int i = 0; i < seqCount; i++) seqLength[i] = 0;        
+        for (int i = 0; i < MAX_SEQ; i++) seqLength[i] = 0;        
         seqUpdate();
     }
 
@@ -397,6 +399,8 @@ struct ReMove : MapModule<1> {
         seqLow = seq * s;
         seqHigh =  (seq + 1) * s;
         dataPtr = seqLow;
+        playDir = PLAYDIR_FWD;
+        precisionCount = 0;
         valueFilters[0].reset();        
     }
 
