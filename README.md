@@ -1,6 +1,11 @@
 # stoermelder PackOne
 
-The PackOne plugin pack gives you a some modules.
+<!-- Version and License Badges -->
+![Version](https://img.shields.io/badge/version-1.0.0-green.svg?style=flat-square)
+![License](https://img.shields.io/badge/license-GPLv3-blue.svg?style=flat-square)
+![Language](https://img.shields.io/badge/language-C++-yellow.svg?style=flat-square)
+
+The PackOne plugin pack gives you a some utility modules.
 
 ![Intro image](./docs/intro.png)
 
