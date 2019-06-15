@@ -71,7 +71,7 @@ struct MapModule : Module {
 		if (indicatorDivider.process()) {
 			float t = indicatorDivider.getDivision() * args.sampleTime;
 			for (size_t i = 0; i < MAX_CHANNELS; i++) {
-				if (paramHandles[id].moduleId >= 0)
+				if (paramHandles[i].moduleId >= 0)
 					paramHandleIndicator[i].process(t);
 			}
 		}
