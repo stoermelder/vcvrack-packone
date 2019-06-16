@@ -3,7 +3,7 @@
 #include <thread>
 
 
-const int MAX_DATA = 48000 * 2;     // 32 seconds, 16th precision at 48kHz
+const int MAX_DATA = 64 * 1024;
 const int MAX_SEQ = 8;
 
 const int RECMODE_TOUCH = 0;
@@ -593,7 +593,7 @@ struct ReMoveDisplay : TransparentWidget {
         int c = std::min(seqLength, 120);
 		for (int i = 0; i < c; i++) {
             float x = (float)i / (c - 1);
-            float y = module->seqData[module->seqLow + (int)floor(x * (seqLength - 1))] * 0.98f + 0.01f;
+            float y = module->seqData[module->seqLow + (int)floor(x * (seqLength - 1))] * 0.96f + 0.02f;
 			float px = b.pos.x + b.size.x * x;
 			float py = b.pos.y + b.size.y * (1.0 - y);
             if (i == 0)
@@ -620,6 +620,7 @@ struct SeqCvModeMenuItem : MenuItem {
         int seqCvMode;
 
         void onAction(const event::Action &e) override {
+            if (module->isRecording) return;
             module->seqCvMode = seqCvMode;
         }
 
@@ -645,6 +646,7 @@ struct InCvModeMenuItem : MenuItem {
     ReMove *module;
 
     void onAction(const event::Action &e) override {
+        if (module->isRecording) return;
         module->inCvMode = module->inCvMode == INCVMODE_SOURCE_UNI ? INCVMODE_SOURCE_BI : INCVMODE_SOURCE_UNI;
     }
 
@@ -675,6 +677,7 @@ struct SampleRateMenuItem : MenuItem {
         float sampleRate;
 
         void onAction(const event::Action &e) override {
+            if (module->isRecording) return;
             module->sampleRate = sampleRate;
         }
 
@@ -707,6 +710,7 @@ struct SeqCountMenuItem : MenuItem {
         int seqCount;
 
         void onAction(const event::Action &e) override {
+            if (module->isRecording) return;
             module->seqResize(seqCount);
         }
 
@@ -759,6 +763,7 @@ struct RecordModeMenuItem : MenuItem {
         int recMode;
 
         void onAction(const event::Action &e) override {
+            if (module->isRecording) return;
             module->recMode = recMode;
         }
 

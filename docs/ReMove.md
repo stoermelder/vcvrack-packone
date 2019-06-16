@@ -50,7 +50,7 @@ The SEQ#-input allows you to select the sequence by CV. There are three differen
 
 ### PHASE-input
 
-The input labeled PHASE accepts 0-10V and allows controlling the playhead directly: The voltages from 0 to 10V are mapped to the the length of the sequence. Using an LFO's unipolar saw output or a clock with phase output like ZZC's Clock-module the playback can be synced to sequencers. Obviously multiple instances can also be synchronized this way.
+The input labeled PHASE accepts 0-10V and allows controlling the playhead directly: The voltages from 0 to 10V are mapped to the the length of the sequence. Using an LFO's unipolar saw output or a clock with phase output like [ZZC's Clock-module](https://zzc-cv.github.io/en/clock-manipulation/clock) the playback can be synced to sequencers. Obviously multiple instances can also be synchronized this way.
 
 The ports RUN and RESET as well as their buttons are disabled and can't be used as long a cable is connected to PHASE.
 
