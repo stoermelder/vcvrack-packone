@@ -87,9 +87,9 @@ struct ReMove : MapModule<1> {
     bool recTouched = false;
     float recTouch;
 
-    /** [Stored to JSON] rate for recording, interpreted as 2^precision */
-    int precision = 7;          
-    int precisionCount = 0;
+    /** [Stored to JSON] sample rate for recording */
+    float sampleRate = 1.f/60.f;          
+    dsp::Timer sampleTimer;
 
     /** [Stored to JSON] mode for playback */
     int playMode = PLAYMODE_LOOP;
@@ -98,9 +98,6 @@ struct ReMove : MapModule<1> {
     /** [Stored to JSON] state of playback (for button-press manually) */
     bool isPlaying = false;
     bool isRecording = false;
-
-    /** for access from the widget */
-    int sampleRate;
 
     dsp::SchmittTrigger seqPTrigger;
     dsp::SchmittTrigger seqNTrigger;
@@ -141,14 +138,13 @@ struct ReMove : MapModule<1> {
         isRecording = false;
         recTouched = false;
         dataPtr = 0;
-        precisionCount = 0;
+        sampleTimer.reset();
         seq = 0;
         seqResize(4); 
         valueFilters[0].reset();
     }
 
     void process(const ProcessArgs &args) override { 
-        sampleRate = args.sampleRate;
         outputs[REC_OUTPUT].setVoltage(0);
 
         // Toggle record when button is pressed
@@ -194,7 +190,7 @@ struct ReMove : MapModule<1> {
             }
 
             if (doRecord) {           
-                if (precisionCount == 0) {
+                if (sampleTimer.process(args.sampleTime) > sampleRate) {
                     // check if mouse button has been released
                     if (APP->event->getDraggedWidget() == NULL) {
                         if (recMode == RECMODE_TOUCH) {     
@@ -222,9 +218,10 @@ struct ReMove : MapModule<1> {
                             stopRecording();
                         }
                     }
+
+                    sampleTimer.reset();
                 }
                 outputs[REC_OUTPUT].setVoltage(10);
-                precisionCount = (precisionCount + 1) % (int)pow(2, precision);
             }
         }
         else {
@@ -258,14 +255,14 @@ struct ReMove : MapModule<1> {
             if (resetCvTrigger.process(params[RESET_PARAM].getValue() + inputs[RESET_INPUT].getVoltage())) {
                 dataPtr = seqLow;
                 playDir = PLAYDIR_FWD;
-                precisionCount = 0;
+                sampleTimer.reset();
                 valueFilters[0].reset();
             }
 
             // RUN-button: toggle playing when button is pressed
             if (runTrigger.process(params[RUN_PARAM].getValue())) {
                 isPlaying ^= true;
-                precisionCount = 0;
+                sampleTimer.reset();
             }
 
             // RUN-input: Set playing when input is high
@@ -286,7 +283,7 @@ struct ReMove : MapModule<1> {
             }
 
             if (isPlaying) {
-                if (precisionCount == 0) {
+                if (sampleTimer.process(args.sampleTime) > sampleRate) {
                     ParamQuantity *paramQuantity = getParamQuantity(0);
                     if (paramQuantity == NULL)
                         isPlaying = false;
@@ -311,8 +308,8 @@ struct ReMove : MapModule<1> {
                             dataPtr++; playDir = PLAYDIR_FWD;
                         }
                     }
+                    sampleTimer.reset();
                 }
-                precisionCount = (precisionCount + 1) % (int)pow(2, precision);
             }
         }
 
@@ -358,7 +355,7 @@ struct ReMove : MapModule<1> {
     inline void startRecording() {
         seqLength[seq] = 0;
         dataPtr = seqLow;
-        precisionCount = 0;
+        sampleTimer.reset();
         paramHandles[0].color = nvgRGB(0xff, 0x40, 0xff);
         recTouch = getValue();
         recTouched = false;
@@ -367,7 +364,7 @@ struct ReMove : MapModule<1> {
     inline void stopRecording() {
         isRecording = false;
         dataPtr = seqLow;
-        precisionCount = 0;        
+        sampleTimer.reset();      
         paramHandles[0].color = nvgRGB(0x40, 0xff, 0xff);
         valueFilters[0].reset();   
     }
@@ -406,7 +403,7 @@ struct ReMove : MapModule<1> {
             case SEQCHANGEMODE_RESTART:
                 dataPtr = seqLow;
                 playDir = PLAYDIR_FWD;
-                precisionCount = 0;
+                sampleTimer.reset();
                 valueFilters[0].reset();
                 break;
             case SEQCHANGEMODE_OFFSET:
@@ -468,7 +465,7 @@ struct ReMove : MapModule<1> {
         json_object_set_new(rootJ, "outCvMode", json_integer(outCvMode));
         json_object_set_new(rootJ, "recMode", json_integer(recMode));
         json_object_set_new(rootJ, "playMode", json_integer(playMode));
-		json_object_set_new(rootJ, "precision", json_integer(precision));
+		json_object_set_new(rootJ, "sampleRate", json_real(sampleRate));
         json_object_set_new(rootJ, "isPlaying", json_boolean(isPlaying));
 
 		return rootJ;
@@ -493,8 +490,8 @@ struct ReMove : MapModule<1> {
 		if (recModeJ) recMode = json_integer_value(recModeJ);
     	json_t *playModeJ = json_object_get(rootJ, "playMode");
 		if (playModeJ) playMode = json_integer_value(playModeJ);
-    	json_t *precisionJ = json_object_get(rootJ, "precision");
-		if (precisionJ) precision = json_integer_value(precisionJ);
+    	json_t *sampleRateJ = json_object_get(rootJ, "sampleRate");
+		if (sampleRateJ) sampleRate = json_real_value(sampleRateJ);
     	json_t *isPlayingJ = json_object_get(rootJ, "isPlaying");
 		if (isPlayingJ) isPlaying = json_boolean_value(isPlayingJ);
 
@@ -565,7 +562,7 @@ struct ReMoveDisplay : TransparentWidget {
 
         if (module->isRecording) {
             // Draw text showing remaining time
-            float t = ((float)MAX_DATA / (float)module->seqCount - (float)seqPos) * (float)pow(2, module->precision) / (float)module->sampleRate;
+            float t = ((float)MAX_DATA / (float)module->seqCount - (float)seqPos) * module->sampleRate;
 		    nvgFontSize(vg, 11);
 		    nvgFontFaceId(vg, font->handle);
 		    nvgTextLetterSpacing(vg, -2.2);
@@ -672,19 +669,19 @@ struct OutCvModeMenuItem : MenuItem {
 };
 
 
-struct PrecisionMenuItem : MenuItem {
-    struct PrecisionItem : MenuItem {
+struct SampleRateMenuItem : MenuItem {
+    struct SampleRateItem : MenuItem {
         ReMove *module;
-        int precision;
+        float sampleRate;
 
         void onAction(const event::Action &e) override {
-            module->precision = precision;
+            module->sampleRate = sampleRate;
         }
 
         void step() override {
-            int s1 = MAX_DATA / module->sampleRate * pow(2, precision);
+            int s1 = MAX_DATA * sampleRate;
             int s2 = s1 / module->seqCount;
-            rightText = string::f(((module->precision == precision) ? "✔ %ds / %ds" : "%ds / %ds"), s1, s2);
+            rightText = string::f(((module->sampleRate == sampleRate) ? "✔ %ds / %ds" : "%ds / %ds"), s1, s2);
             MenuItem::step();
         }
     };
@@ -692,10 +689,13 @@ struct PrecisionMenuItem : MenuItem {
     ReMove *module;
     Menu *createChildMenu() override {
         Menu *menu = new Menu;
-        std::vector<std::string> names = {"8th", "16th", "32nd", "64th", "128th", "256th", "512nd", "1024th", "2048th"};
-        for (size_t i = 0; i < names.size(); i++) {
-            menu->addChild(construct<PrecisionItem>(&MenuItem::text, names[i], &PrecisionItem::module, module, &PrecisionItem::precision, i + 3));
-        }
+        menu->addChild(construct<SampleRateItem>(&MenuItem::text, "30Hz", &SampleRateItem::module, module, &SampleRateItem::sampleRate, 1.f/30.f));
+        menu->addChild(construct<SampleRateItem>(&MenuItem::text, "60Hz", &SampleRateItem::module, module, &SampleRateItem::sampleRate, 1.f/60.f));
+        menu->addChild(construct<SampleRateItem>(&MenuItem::text, "100Hz", &SampleRateItem::module, module, &SampleRateItem::sampleRate, 1.f/100.f));
+        menu->addChild(construct<SampleRateItem>(&MenuItem::text, "200Hz", &SampleRateItem::module, module, &SampleRateItem::sampleRate, 1.f/200.f));
+        menu->addChild(construct<SampleRateItem>(&MenuItem::text, "500Hz", &SampleRateItem::module, module, &SampleRateItem::sampleRate, 1.f/500.f));
+        menu->addChild(construct<SampleRateItem>(&MenuItem::text, "1000Hz", &SampleRateItem::module, module, &SampleRateItem::sampleRate, 1.f/1000.f));
+        menu->addChild(construct<SampleRateItem>(&MenuItem::text, "2000Hz", &SampleRateItem::module, module, &SampleRateItem::sampleRate, 1.f/2000.f));
         return menu;
     }
 };
@@ -927,9 +927,9 @@ struct ReMoveWidget : ModuleWidget {
         menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
         menu->addChild(new MenuSeparator());
 
-        PrecisionMenuItem *precisionMenuItem = construct<PrecisionMenuItem>(&MenuItem::text, "Precision", &PrecisionMenuItem::module, module);
-        precisionMenuItem->rightText = RIGHT_ARROW;
-        menu->addChild(precisionMenuItem);
+        SampleRateMenuItem *sampleRateMenuItem = construct<SampleRateMenuItem>(&MenuItem::text, "Sample Rate", &SampleRateMenuItem::module, module);
+        sampleRateMenuItem->rightText = RIGHT_ARROW;
+        menu->addChild(sampleRateMenuItem);
 
         SeqCountMenuItem *seqCountMenuItem = construct<SeqCountMenuItem>(&MenuItem::text, "# of sequences", &SeqCountMenuItem::module, module);
         seqCountMenuItem->rightText = RIGHT_ARROW;
