@@ -88,7 +88,7 @@ struct ReMove : MapModule<1> {
     float recTouch;
 
     /** [Stored to JSON] sample rate for recording */
-    float sampleRate = 1.f/60.f;          
+    float sampleRate = 1.f/60.f;
     dsp::Timer sampleTimer;
 
     /** [Stored to JSON] mode for playback */
@@ -108,8 +108,9 @@ struct ReMove : MapModule<1> {
 
 	dsp::ClockDivider lightDivider;
 
-    /** for remembering the last touched parameter to avoid dynamic casting */
+    /** last touched parameter to avoid frequent dynamic casting */
     Widget *lastParamWidget;
+
 
     ReMove() {
         config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS); 
@@ -425,6 +426,7 @@ struct ReMove : MapModule<1> {
 
     json_t *dataToJson() override {
 		json_t *rootJ = MapModule::dataToJson();
+        json_t *rec0J = json_object();
 
         int s = MAX_DATA / seqCount;
 		json_t *seqDataJ = json_array();
@@ -436,37 +438,40 @@ struct ReMove : MapModule<1> {
                     // 2 times same value -> compress!
                     int c = 0;
                     while (seqData[i * s + j] == last1 && j < seqLength[i]) { c++; j++; }
-                    json_array_append(seqData1J, json_integer(c));
-                    if (j < seqLength[i]) json_array_append(seqData1J, json_real(seqData[i * s + j]));                    
+                    json_array_append_new(seqData1J, json_integer(c));
+                    if (j < seqLength[i]) json_array_append_new(seqData1J, json_real(seqData[i * s + j]));                    
                     last1 = 100.f; last2 = -100.f;
                 } 
                 else {
-                    json_array_append(seqData1J, json_real(seqData[i * s + j]));
+                    json_array_append_new(seqData1J, json_real(seqData[i * s + j]));
                     last2 = last1;
                     last1 = seqData[i * s + j];
                 }
             }
-			json_array_append(seqDataJ, seqData1J);
+			json_array_append_new(seqDataJ, seqData1J);
 		}
-		json_object_set_new(rootJ, "seqData", seqDataJ);
+		json_object_set_new(rec0J, "seqData", seqDataJ);
 
 		json_t *seqLengthJ = json_array();
 		for (int i = 0; i < seqCount; i++) {
-			json_t *d = json_integer(seqLength[i]);
-			json_array_append(seqLengthJ, d);
+			json_array_append_new(seqLengthJ, json_integer(seqLength[i]));
 		}
-		json_object_set_new(rootJ, "seqLength", seqLengthJ);
+		json_object_set_new(rec0J, "seqLength", seqLengthJ);
 
-        json_object_set_new(rootJ, "seqCount", json_integer(seqCount));
-        json_object_set_new(rootJ, "seq", json_integer(seq));
-        json_object_set_new(rootJ, "seqCvMode", json_integer(seqCvMode));
-        json_object_set_new(rootJ, "seqChangeMode", json_integer(seqChangeMode));
-        json_object_set_new(rootJ, "inCvMode", json_integer(inCvMode));
-        json_object_set_new(rootJ, "outCvMode", json_integer(outCvMode));
-        json_object_set_new(rootJ, "recMode", json_integer(recMode));
-        json_object_set_new(rootJ, "playMode", json_integer(playMode));
-		json_object_set_new(rootJ, "sampleRate", json_real(sampleRate));
-        json_object_set_new(rootJ, "isPlaying", json_boolean(isPlaying));
+        json_object_set_new(rec0J, "seqCount", json_integer(seqCount));
+        json_object_set_new(rec0J, "seq", json_integer(seq));
+        json_object_set_new(rec0J, "seqCvMode", json_integer(seqCvMode));
+        json_object_set_new(rec0J, "seqChangeMode", json_integer(seqChangeMode));
+        json_object_set_new(rec0J, "inCvMode", json_integer(inCvMode));
+        json_object_set_new(rec0J, "outCvMode", json_integer(outCvMode));
+        json_object_set_new(rec0J, "recMode", json_integer(recMode));
+        json_object_set_new(rec0J, "playMode", json_integer(playMode));
+		json_object_set_new(rec0J, "sampleRate", json_real(sampleRate));
+        json_object_set_new(rec0J, "isPlaying", json_boolean(isPlaying));
+
+        json_t *recJ = json_array();
+        json_array_append_new(recJ, rec0J);
+        json_object_set_new(rootJ, "recorder", recJ);
 
 		return rootJ;
 	}
@@ -474,28 +479,31 @@ struct ReMove : MapModule<1> {
  	void dataFromJson(json_t *rootJ) override {
         MapModule::dataFromJson(rootJ);
 
-    	json_t *seqCountJ = json_object_get(rootJ, "seqCount");
+        json_t *recJ = json_object_get(rootJ, "recorder");
+        json_t *rec0J = json_array_get(recJ, 0);
+
+    	json_t *seqCountJ = json_object_get(rec0J, "seqCount");
 		if (seqCountJ) seqCount = json_integer_value(seqCountJ);
-    	json_t *seqJ = json_object_get(rootJ, "seq");
+    	json_t *seqJ = json_object_get(rec0J, "seq");
 		if (seqJ) seq = json_integer_value(seqJ);
-        json_t *seqCvModeJ = json_object_get(rootJ, "seqCvMode");
+        json_t *seqCvModeJ = json_object_get(rec0J, "seqCvMode");
 		if (seqCvModeJ) seqCvMode = json_integer_value(seqCvModeJ);
-        json_t *seqChangeModeJ = json_object_get(rootJ, "seqChangeMode");
+        json_t *seqChangeModeJ = json_object_get(rec0J, "seqChangeMode");
 		if (seqChangeModeJ) seqChangeMode = json_integer_value(seqChangeModeJ);
-        json_t *inCvModeJ = json_object_get(rootJ, "inCvMode");
+        json_t *inCvModeJ = json_object_get(rec0J, "inCvMode");
 		if (inCvModeJ) inCvMode = json_integer_value(inCvModeJ);
-        json_t *outCvModeJ = json_object_get(rootJ, "outCvMode");
+        json_t *outCvModeJ = json_object_get(rec0J, "outCvMode");
 		if (outCvModeJ) outCvMode = json_integer_value(outCvModeJ); 
-    	json_t *recModeJ = json_object_get(rootJ, "recMode");
+    	json_t *recModeJ = json_object_get(rec0J, "recMode");
 		if (recModeJ) recMode = json_integer_value(recModeJ);
-    	json_t *playModeJ = json_object_get(rootJ, "playMode");
+    	json_t *playModeJ = json_object_get(rec0J, "playMode");
 		if (playModeJ) playMode = json_integer_value(playModeJ);
-    	json_t *sampleRateJ = json_object_get(rootJ, "sampleRate");
+    	json_t *sampleRateJ = json_object_get(rec0J, "sampleRate");
 		if (sampleRateJ) sampleRate = json_real_value(sampleRateJ);
-    	json_t *isPlayingJ = json_object_get(rootJ, "isPlaying");
+    	json_t *isPlayingJ = json_object_get(rec0J, "isPlaying");
 		if (isPlayingJ) isPlaying = json_boolean_value(isPlayingJ);
 
-        json_t *seqLengthJ = json_object_get(rootJ, "seqLength");
+        json_t *seqLengthJ = json_object_get(rec0J, "seqLength");
 		if (seqLengthJ) {
 			json_t *d;
 			size_t i;
@@ -506,7 +514,7 @@ struct ReMove : MapModule<1> {
 		}
 
         int s = MAX_DATA / seqCount;
-        json_t *seqDataJ = json_object_get(rootJ, "seqData");
+        json_t *seqDataJ = json_object_get(rec0J, "seqData");
 		if (seqDataJ) {
 			json_t *seqData1J, *d;
 			size_t i;
@@ -692,6 +700,7 @@ struct SampleRateMenuItem : MenuItem {
     ReMove *module;
     Menu *createChildMenu() override {
         Menu *menu = new Menu;
+        menu->addChild(construct<SampleRateItem>(&MenuItem::text, "15Hz", &SampleRateItem::module, module, &SampleRateItem::sampleRate, 1.f/15.f));
         menu->addChild(construct<SampleRateItem>(&MenuItem::text, "30Hz", &SampleRateItem::module, module, &SampleRateItem::sampleRate, 1.f/30.f));
         menu->addChild(construct<SampleRateItem>(&MenuItem::text, "60Hz", &SampleRateItem::module, module, &SampleRateItem::sampleRate, 1.f/60.f));
         menu->addChild(construct<SampleRateItem>(&MenuItem::text, "100Hz", &SampleRateItem::module, module, &SampleRateItem::sampleRate, 1.f/100.f));
@@ -932,7 +941,7 @@ struct ReMoveWidget : ModuleWidget {
         menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
         menu->addChild(new MenuSeparator());
 
-        SampleRateMenuItem *sampleRateMenuItem = construct<SampleRateMenuItem>(&MenuItem::text, "Sample Rate", &SampleRateMenuItem::module, module);
+        SampleRateMenuItem *sampleRateMenuItem = construct<SampleRateMenuItem>(&MenuItem::text, "Sample rate", &SampleRateMenuItem::module, module);
         sampleRateMenuItem->rightText = RIGHT_ARROW;
         menu->addChild(sampleRateMenuItem);
 
