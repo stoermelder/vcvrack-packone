@@ -8,14 +8,14 @@ ReMove Lite is a utility module for recording and replaying movements of any par
 
 To map the module to a parameter activate the mapping mode by mouse press inside the display on the top. While showing "Mapping..." click on any parameter of any module in your rack to bind the module. You can unbind the parameter using the context menu of the display. Also, you can "locate" the module and mapped parameter if you got lost inside you rack.
 
-### Precision and number of sequences
+### Sample rate and number of sequences
 
-The module has storage of 96000 samples. At full sampling rate this corresponds to 2 seconds of recording at audio samplerate of 48kHz. Such high precision is not needed for parameter automation, so ReMOVE Lite allows at most an 8th of the audio sampling rate for recording. The lowest setting at 2048th sample gives you ~23 samples per second at audio samplerate of 48kHz and could still be ok for slowly changing parameters or low accuracy.
-Be careful using higher rates: The recorded sequences are stored to the patch-file and these can get quite huge if several modules are used.
+The module has storage for 64k samples. At full audio sample rate of 48kHz this corresponds to 1.3 seconds of recording. Such high precision is not needed for parameter automation, so ReMOVE Lite allows at most a sample rate of 2kHz. The lowest setting is 15Hz and gives you 15 samples per second what could still be ok for slowly changing parameters or low timing accuracy.
+Be careful using higher sample rates: Recorded sequences are stored inside the patch and these can get quite huge if several modules are used (to be precise: 64k samples each 4 byte size plus overhead for storing in JSON format).
 
-ReMOVE Lite can be configured to store 1 to 8 sequences. The maximum length for each sequence is evenly diveded, so you get 1/8 of the available recording time when using 8 sequences. The available time is shown in the context menu-option and in the display as soon as a recording starts. Changing the number of sequences resets all recordings.
+ReMOVE Lite can be configured to save 1 to 8 different sequences. The maximum length for each sequence is evenly divided, so you get 1/8 of the available recording time when using 8 sequences. The available time is shown in the context menu-option and in the display as soon as a recording starts. Changing the number of sequences resets all recordings.
 
-Both precision setting and number of sequences are found on the context menu.
+Both sample rate setting and number of sequences are found on the context menu.
 
 ### Recording-Modes
 

@@ -13,7 +13,7 @@ The PackOne plugin pack gives you a some utility modules:
 - CV-MAP: control 32 knobs/sliders/switches of any module by CV even when the module has no CV input
 - CV-PAM: generate CV voltage by observing any knob/slider/switch of any module
 - [ReMOVE Lite](./docs/ReMove.md): recorder for know/silder/switch-movements
-- [Rotor Model A](./docs/RotorA.md): spread a carrier signal across 2-16 output channels using CV
+- [ROTOR Model A](./docs/RotorA.md): spread a carrier signal across 2-16 output channels using CV
 
 All releases with odd numbering (1.0.1, 1.0.3) are preview-builds. Releases published in the [VCV Library](https://vcvrack.com/plugins.html#packone) are even numbered.
 
