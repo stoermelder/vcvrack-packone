@@ -96,12 +96,8 @@ struct CV_Map : MapModule<MAX_CHANNELS> {
 
 	json_t *dataToJson() override {
 		json_t *rootJ = MapModule::dataToJson();
-
-		json_t *lockParameterChangesJ = json_boolean(lockParameterChanges);
-		json_object_set_new(rootJ, "lockParameterChanges", lockParameterChangesJ);
-
-		json_t *bipolarInputJ = json_boolean(bipolarInput);
-		json_object_set_new(rootJ, "bipolarInput", bipolarInputJ);
+		json_object_set_new(rootJ, "lockParameterChanges", json_boolean(lockParameterChanges));
+		json_object_set_new(rootJ, "bipolarInput", json_boolean(bipolarInput));
 
 		return rootJ;
 	}
@@ -150,38 +146,52 @@ struct CV_MapWidget : ModuleWidget {
 
 
 	void appendContextMenu(Menu *menu) override {
-		CV_Map *cv_map = dynamic_cast<CV_Map*>(module);
-		assert(cv_map);
+		CV_Map *module = dynamic_cast<CV_Map*>(this->module);
+		assert(module);
 
 		struct LockItem : MenuItem {
-			CV_Map *cv_map;
+			CV_Map *module;
 
 			void onAction(const event::Action &e) override {
-				cv_map->lockParameterChanges ^= true;
+				module->lockParameterChanges ^= true;
 			}
 
 			void step() override {
-				rightText = cv_map->lockParameterChanges ? "Locked" : "Unlocked";
+				rightText = module->lockParameterChanges ? "Locked" : "Unlocked";
 				MenuItem::step();
 			}
 		};
 
 		struct UniBiItem : MenuItem {
-			CV_Map *cv_map;
+			CV_Map *module;
 
 			void onAction(const event::Action &e) override {
-				cv_map->bipolarInput ^= true;
+				module->bipolarInput ^= true;
 			}
 
 			void step() override {
-				rightText = cv_map->bipolarInput ? "-5V..5V" : "0V..10V";
+				rightText = module->bipolarInput ? "-5V..5V" : "0V..10V";
 				MenuItem::step();
 			}
 		};
 
-		menu->addChild(construct<MenuLabel>());
-		menu->addChild(construct<LockItem>(&MenuItem::text, "Parameter changes", &LockItem::cv_map, cv_map));
-		menu->addChild(construct<UniBiItem>(&MenuItem::text, "Signal input", &UniBiItem::cv_map, cv_map));
+		struct TextScrollItem : MenuItem {
+			CV_Map *module;
+
+			void onAction(const event::Action &e) override {
+				module->textScrolling ^= true;
+			}
+
+			void step() override {
+				rightText = module->textScrolling ? "✔" : "";
+				MenuItem::step();
+			}
+		};
+
+		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<LockItem>(&MenuItem::text, "Parameter changes", &LockItem::module, module));
+		menu->addChild(construct<TextScrollItem>(&MenuItem::text, "Text scrolling", &TextScrollItem::module, module));
+		menu->addChild(construct<UniBiItem>(&MenuItem::text, "Signal input", &UniBiItem::module, module));
 	}
 };
 

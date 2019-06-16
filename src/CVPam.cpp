@@ -81,9 +81,7 @@ struct CV_Pam : MapModule<MAX_CHANNELS> {
 
 	json_t *dataToJson() override {
 		json_t *rootJ = MapModule::dataToJson();
-
-		json_t *bipolarOutputJ = json_boolean(bipolarOutput);
-		json_object_set_new(rootJ, "bipolarOutput", bipolarOutputJ);
+		json_object_set_new(rootJ, "bipolarOutput", json_boolean(bipolarOutput));
 
 		return rootJ;
 	}
@@ -129,24 +127,38 @@ struct CV_PamWidget : ModuleWidget {
 
 
 	void appendContextMenu(Menu *menu) override {
-		CV_Pam *cv_pam = dynamic_cast<CV_Pam*>(module);
-		assert(cv_pam);
+		CV_Pam *module = dynamic_cast<CV_Pam*>(this->module);
+		assert(module);
 
 		struct UniBiItem : MenuItem {
-			CV_Pam *cv_pam;
+			CV_Pam *module;
 
 			void onAction(const event::Action &e) override {
-				cv_pam->bipolarOutput ^= true;
+				module->bipolarOutput ^= true;
 			}
 
 			void step() override {
-				rightText = cv_pam->bipolarOutput ? "-5V..5V" : "0V..10V";
+				rightText = module->bipolarOutput ? "-5V..5V" : "0V..10V";
 				MenuItem::step();
 			}
 		};
 
-		menu->addChild(construct<MenuLabel>());
-		menu->addChild(construct<UniBiItem>(&MenuItem::text, "Signal output", &UniBiItem::cv_pam, cv_pam));
+		struct TextScrollItem : MenuItem {
+			CV_Pam *module;
+
+			void onAction(const event::Action &e) override {
+				module->textScrolling ^= true;
+			}
+
+			void step() override {
+				rightText = module->textScrolling ? "✔" : "";
+				MenuItem::step();
+			}
+		};
+
+		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<UniBiItem>(&MenuItem::text, "Signal output", &UniBiItem::module, module));
+		menu->addChild(construct<TextScrollItem>(&MenuItem::text, "Text scrolling", &TextScrollItem::module, module));
   	}
 };
 

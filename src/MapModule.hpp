@@ -40,6 +40,8 @@ struct MapModule : Module {
 	/** Whether the param has been set during the learning session */
 	bool learnedParam;
 
+	bool textScrolling = true;
+
     /** The smoothing processor (normalized between 0 and 1) of each channel */
 	dsp::ExponentialFilter valueFilters[MAX_CHANNELS];
 
@@ -159,13 +161,14 @@ struct MapModule : Module {
  
 	json_t *dataToJson() override {
 		json_t *rootJ = json_object();
+		json_object_set_new(rootJ, "textScrolling", json_boolean(textScrolling));
 
 		json_t *mapsJ = json_array();
 		for (int id = 0; id < mapLen; id++) {
 			json_t *mapJ = json_object();
 			json_object_set_new(mapJ, "moduleId", json_integer(paramHandles[id].moduleId));
 			json_object_set_new(mapJ, "paramId", json_integer(paramHandles[id].paramId));
-			json_array_append(mapsJ, mapJ);
+			json_array_append_new(mapsJ, mapJ);
 		}
 		json_object_set_new(rootJ, "maps", mapsJ);
 
@@ -174,6 +177,9 @@ struct MapModule : Module {
 
 	void dataFromJson(json_t *rootJ) override {
 		clearMaps();
+
+		json_t *textScrollingJ = json_object_get(rootJ, "textScrolling");
+		textScrolling = json_boolean_value(textScrollingJ);
 
 		json_t *mapsJ = json_object_get(rootJ, "maps");
 		if (mapsJ) {
@@ -315,7 +321,7 @@ struct MapModuleChoice : LedDisplayChoice {
 			std::string pn = getParamName();
 
 			size_t hscrollMaxLength = ceil(box.size.x / 8.f);			
-			if (pn.length() > hscrollMaxLength) {
+			if (module->textScrolling && pn.length() > hscrollMaxLength) {
 				// Scroll the parameter-name horizontically
 				text += pn.substr(hscrollCharOffset > (int)pn.length() ? 0 : hscrollCharOffset);
 				auto now = std::chrono::system_clock::now();
