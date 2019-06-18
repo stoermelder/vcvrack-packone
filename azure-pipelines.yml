@@ -1,0 +1,144 @@
+# Starter pipeline
+# Start with a minimal pipeline that you can customize to build and deploy your code.
+# Add steps that build, run tests, deploy, and more:
+# https://aka.ms/yaml
+
+trigger:
+- master
+- candidate*
+- release*
+
+pr:
+- master
+
+jobs:
+- job: Build
+  strategy:
+    matrix:
+      mac:
+        imageName: 'macos-10.13'
+        isMac: true
+      windows:
+        imageName: 'vs2017-win2016'
+        isWindows: true
+      linux:
+        imageName: 'ubuntu-16.04'
+        isLinux: true
+
+  pool:
+    vmImage: $(imageName)
+
+  steps:
+  - checkout: self
+    fetchDepth: 1
+    # submodules: recursive # can't do submodules here b'cuz depth=1 fails with Github
+
+  - bash: |
+      uname -a
+      git submodule update --init --recursive
+
+      pushd $AGENT_TEMPDIRECTORY
+      curl -o Rack-SDK.zip https://vcvrack.com/downloads/Rack-SDK-1.dev.b4bd09a.zip
+      unzip Rack-SDK.zip
+      
+    displayName: Get Rack 
+
+  - bash: |
+      ./scripts/resetversion.sh
+    displayName: Update Version in plugins.json
+
+
+  - bash: |
+      export RACK_DIR=$AGENT_TEMPDIRECTORY/Rack-SDK
+      export CC=gcc
+
+      make win-dist
+
+      mkdir products_win/
+      cp dist/*zip products_win/
+    displayName: Build Windows Plugins
+    condition: variables.isWindows
+
+  - bash: |
+      export RACK_DIR=$AGENT_TEMPDIRECTORY/Rack-SDK
+      make dist
+      mkdir products_mac/
+      cp dist/*zip products_mac/
+    displayName: Build Mac Plugins
+    condition: variables.isMac
+
+  - bash: |
+      export RACK_DIR=$AGENT_TEMPDIRECTORY/Rack-SDK
+      make dist
+      mkdir products_lin/
+      cp dist/*zip products_lin/
+    displayName: Build Linux Plugins
+    condition: variables.isLinux
+
+  - task: PublishPipelineArtifact@0
+    inputs:
+      artifactName: 'PACKONE_ZIP_LINUX'
+      targetPath: 'products_lin/'
+    displayName: Publish Linux Zip
+    condition: variables.isLinux
+
+  - task: PublishPipelineArtifact@0
+    inputs:
+      artifactName: 'PACKONE_ZIP_MACOS'  
+      targetPath: 'products_mac/'
+    displayName: Publish macOS Zip
+    condition: variables.isMac
+
+  - task: PublishPipelineArtifact@0
+    inputs:
+      artifactName: 'PACKONE_ZIP_WIN'  
+      targetPath: 'products_win/'
+    displayName: Publish Windows Zip
+    condition: variables.isWindows
+
+
+- job: UpdateGithubRelease
+  dependsOn: Build
+  condition: and(succeeded(), or(eq(variables['Build.SourceBranch'], 'refs/heads/master'), eq(variables['Build.SourceBranch'], 'refs/heads/azure-test')))
+
+  steps:
+
+  - task: DownloadPipelineArtifact@0
+    inputs:
+      artifactName: 'PACKONE_ZIP_LINUX'
+      targetPath: $(Build.ArtifactStagingDirectory)
+
+  - task: DownloadPipelineArtifact@0
+    inputs:
+      artifactName: 'PACKONE_ZIP_MACOS'
+      targetPath: $(Build.ArtifactStagingDirectory)
+
+  - task: DownloadPipelineArtifact@0
+    inputs:
+      artifactName: 'PACKONE_ZIP_WIN'
+      targetPath: $(Build.ArtifactStagingDirectory)
+
+  - bash: |
+     ls -l $(Build.ArtifactStagingDirectory)
+     export EXTEND_TAG=`date "+%Y%m%d"`
+     for file in $(Build.ArtifactStagingDirectory)/*.zip; do mv "$file" "${file/.zip/-${EXTEND_TAG}.zip}"; done
+     ls -l $(Build.ArtifactStagingDirectory)         
+    displayName: Tag asset names with Date
+
+  - bash: |
+     scripts/release-notes.sh > $(Build.ArtifactStagingDirectory)/ReleaseNotes.md
+    displayName: Fake up release notes
+
+  - task: GitHubRelease@0
+    displayName: "Update Github Release"
+    inputs:
+      gitHubConnection: stoermelder
+      repositoryName: stoermelder/vcvrack-packone
+      action: edit
+      tag: Nightly
+      target: '$(Build.SourceVersion)'
+      addChangeLog: false
+      releaseNotesFile: $(Build.ArtifactStagingDirectory)/ReleaseNotes.md
+      assets: $(Build.ArtifactStagingDirectory)/*.zip
+
+
