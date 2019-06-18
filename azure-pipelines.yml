@@ -4,12 +4,10 @@
 # https://aka.ms/yaml
 
 trigger:
-- master
-- candidate*
-- release*
+- v1
 
 pr:
-- master
+- v1
 
 jobs:
 - job: Build
@@ -44,6 +42,7 @@ jobs:
     displayName: Get Rack 
 
   - bash: |
+      chmod +x scripts/resetversion.sh
       ./scripts/resetversion.sh
     displayName: Update Version in plugins.json
 
