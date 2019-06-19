@@ -125,6 +125,7 @@ jobs:
     displayName: Tag asset names with Date
 
   - bash: |
+     chmod +x scripts/release-notes.sh
      scripts/release-notes.sh > $(Build.ArtifactStagingDirectory)/ReleaseNotes.md
     displayName: Fake up release notes
 
