@@ -98,7 +98,7 @@ jobs:
 
 - job: UpdateGithubRelease
   dependsOn: Build
-  condition: and(succeeded(), or(eq(variables['Build.SourceBranch'], 'refs/heads/master'), eq(variables['Build.SourceBranch'], 'refs/heads/azure-test')))
+  condition: and(succeeded(), or(eq(variables['Build.SourceBranch'], 'refs/heads/v1'), eq(variables['Build.SourceBranch'], 'refs/heads/azure-test')))
 
   steps:
 
