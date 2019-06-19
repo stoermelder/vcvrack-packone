@@ -1,6 +1,6 @@
 {
 	"slug": "Stoermelder-P1",
-	"version": "1.0.1d",
+	"version": "1.0.1",
 	"license": "GPL-3.0-only",	
 	"author": "Benjamin Dill",
 	"name": "PackOne",
@@ -33,8 +33,8 @@
 		},
 		{
 			"slug": "ReMoveLite",
-			"name": "ReMove Lite",			
-			"description": "Recorder for parameter movements",
+			"name": "ReMOVE Lite",			
+			"description": "Recorder for parameter automation",
 			"tags": ["Utility"]
 		}
 	]

@@ -1,8 +1,8 @@
 # stoermelder ReMOVE Lite
 
-ReMove Lite is a utility module for recording and replaying movements of any parameter on any module in the rack. It supports up to 8 recorded sequences, various  sampling rates, different recording-modes, a phase-input for directly controlling the playback and some more settings.
+ReMOVE Lite is a utility module for recording and replaying movements of any parameter on any module in the rack. It supports up to 8 recorded sequences, various  sampling rates, different recording-modes, a phase-input for directly controlling the playback and some more settings. Though it is not its main purpose ReMOVE can be also used as a CV recorder. ReMOVE Lite is monophonic.
 
-![ReMove Intro](./ReMove-intro.gif)
+![ReMOVE Intro](./ReMove-intro.gif)
 
 ### Mapping of parameters
 
@@ -10,7 +10,7 @@ To map the module to a parameter activate the mapping mode by mouse press inside
 
 ### Sample rate and number of sequences
 
-The module has storage for 64k samples. At full audio sample rate of 48kHz this corresponds to 1.3 seconds of recording. Such high precision is not needed for parameter automation, so ReMOVE Lite allows at most a sample rate of 2kHz. The lowest setting is 15Hz and gives you 15 samples per second what could still be ok for slowly changing parameters or low timing accuracy.
+The module has built-in storage for 64k samples. At full audio sample rate of 48kHz this corresponds to 1.3 seconds of recording. Such high precision is not needed for parameter automation, so ReMOVE Lite allows at most sampling at rate of 2kHz. The lowest setting is 15Hz and gives you 15 samples per second what could still be ok for slowly changing parameters or low timing accuracy.
 Be careful using higher sample rates: Recorded sequences are stored inside the patch and these can get quite huge if several modules are used (to be precise: 64k samples each 4 byte size plus overhead for storing in JSON format).
 
 ReMOVE Lite can be configured to save 1 to 8 different sequences. The maximum length for each sequence is evenly divided, so you get 1/8 of the available recording time when using 8 sequences. The available time is shown in the context menu-option and in the display as soon as a recording starts. Changing the number of sequences resets all recordings.
@@ -54,13 +54,13 @@ The input labeled PHASE accepts 0-10V and allows controlling the playhead direct
 
 The ports RUN and RESET as well as their buttons are disabled and can't be used as long a cable is connected to PHASE.
 
-![ReMove PHASE-input](./ReMove-phase.png)
+![ReMOVE PHASE-input](./ReMove-phase.png)
 
 ### RESET- and RUN-ports
 
 Same behaviour as most sequencers: RUN must be high for playback, a trigger on RESET restarts the currently selected playback mode from the beginning. Disabled when recording or when PHASE is connected.
 
-![ReMove IN-input](./ReMove-reset.png)
+![ReMOVE IN-input](./ReMove-reset.png)
 
 ### REC-input
 
@@ -74,7 +74,7 @@ The REC-output sends a trigger everytime a recording starts or stops.
 
 The input labled IN accepts 0..10V or -5..5V (configuration option is found in the context menu) and can be used to record parameter movements from any external CV source. All parameter movements are ignored duing a recording when a cable is connected.
 
-![ReMove IN-input](./ReMove-in.png)
+![ReMOVE IN-input](./ReMove-in.png)
 
 ### OUT-output
 

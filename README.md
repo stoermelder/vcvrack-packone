@@ -6,7 +6,7 @@
 ![License](https://img.shields.io/badge/license-GPLv3-blue.svg?style=flat-square)
 ![Language](https://img.shields.io/badge/language-C++-yellow.svg?style=flat-square)
 
-The PackOne plugin pack gives you a some utility modules:
+The PackOne plugin pack gives you a some utility modules for VCV Rack v1:
 
 ![Intro image](./docs/intro.png)
 
@@ -16,6 +16,8 @@ The PackOne plugin pack gives you a some utility modules:
 - [ROTOR Model A](./docs/RotorA.md): spread a carrier signal across 2-16 output channels using CV
 
 All releases with odd numbering (1.0.1, 1.0.3) are preview-builds. Releases published in the [VCV Library](https://vcvrack.com/plugins.html#packone) are even numbered.
+
+Feel free to contact me or create a GitHub issue if you have any problems or questions!
 
 ## Building
 

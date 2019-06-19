@@ -1,4 +1,4 @@
-# stoermelder Rotor Model A
+# stoermelder ROTOR Model A
 
 This module modulates a carrier signal across several output channels. 
 
