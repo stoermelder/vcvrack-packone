@@ -1,10 +1,10 @@
 #!/bin/bash
 
 cat <<- EOH
-# Automatically generated release
+# Automatically generated PackOne release
 
 This release is automatically generated every time I push
-to master. As such it is the latest version of the code and may be
+to v1. As such it is the latest version of the code and may be
 unstable, unusable, unsuitable for human consumption, and so on.
 
 These assets were built against
