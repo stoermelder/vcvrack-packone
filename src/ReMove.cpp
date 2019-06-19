@@ -908,8 +908,8 @@ struct ReMoveWidget : ModuleWidget {
         addInput(createInputCentered<PJ301MPort>(Vec(21.1f, 294.1f), module, ReMove::REC_INPUT));      
         addOutput(createOutputCentered<PJ301MPort>(Vec(68.7f, 294.1f), module, ReMove::REC_OUTPUT));
 
-        addParam(createParamCentered<RecButton>(Vec(44.8f, 152.9f), module, ReMove::REC_PARAM));
-        addChild(createLightCentered<RecLight>(Vec(44.8f, 152.9f), module, ReMove::REC_LIGHT));
+        addParam(createParamCentered<RecButton>(Vec(44.8f, 151.4f), module, ReMove::REC_PARAM));
+        addChild(createLightCentered<RecLight>(Vec(44.8f, 151.4f), module, ReMove::REC_LIGHT));
 
         addInput(createInputCentered<PJ301MPort>(Vec(21.1f, 200.1f), module, ReMove::SEQ_INPUT));
         addParam(createParamCentered<TL1105>(Vec(21.1f, 131.9f), module, ReMove::SEQP_PARAM));
