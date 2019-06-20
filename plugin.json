@@ -36,6 +36,12 @@
 			"name": "ReMOVE Lite",			
 			"description": "Recorder for parameter automation",
 			"tags": ["Utility"]
+		},
+		{
+			"slug": "Bolt",
+			"name": "BOLT",			
+			"description": "Polyphonic logic operations with modulation and sample & hold",
+			"tags": ["Utility", "Logic", "Polyphonic"]
 		}
 	]
 }

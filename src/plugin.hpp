@@ -10,3 +10,4 @@ extern Model *modelCV_Map;
 extern Model *modelCV_Pam;
 extern Model *modelRotorA;
 extern Model *modelReMoveLite;
+extern Model *modelBolt;

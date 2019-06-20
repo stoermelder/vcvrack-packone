@@ -10,4 +10,5 @@ void init(rack::Plugin *p) {
 	p->addModel(modelCV_Pam);
 	p->addModel(modelRotorA);
 	p->addModel(modelReMoveLite);
+	p->addModel(modelBolt);
 }
