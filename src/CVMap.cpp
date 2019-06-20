@@ -2,6 +2,7 @@
 #include "widgets.hpp"
 #include "MapModule.hpp"
 #include <chrono>
+#include <thread>
 
 static const int MAX_CHANNELS = 32;
 static const float UINIT = 0;
@@ -149,6 +150,16 @@ struct CV_MapWidget : ModuleWidget {
 		CV_Map *module = dynamic_cast<CV_Map*>(this->module);
 		assert(module);
 
+        struct ManualItem : MenuItem {
+            void onAction(const event::Action &e) override {
+                std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/CVMap.md");
+                t.detach();
+            }
+        };
+
+        menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
+        menu->addChild(new MenuSeparator());
+
 		struct LockItem : MenuItem {
 			CV_Map *module;
 
@@ -188,7 +199,6 @@ struct CV_MapWidget : ModuleWidget {
 			}
 		};
 
-		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<LockItem>(&MenuItem::text, "Parameter changes", &LockItem::module, module));
 		menu->addChild(construct<TextScrollItem>(&MenuItem::text, "Text scrolling", &TextScrollItem::module, module));
 		menu->addChild(construct<UniBiItem>(&MenuItem::text, "Signal input", &UniBiItem::module, module));

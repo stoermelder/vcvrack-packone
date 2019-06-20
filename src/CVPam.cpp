@@ -2,6 +2,7 @@
 #include "widgets.hpp"
 #include "MapModule.hpp"
 #include <chrono>
+#include <thread>
 
 static const int MAX_CHANNELS = 32;
 
@@ -130,6 +131,16 @@ struct CV_PamWidget : ModuleWidget {
 		CV_Pam *module = dynamic_cast<CV_Pam*>(this->module);
 		assert(module);
 
+        struct ManualItem : MenuItem {
+            void onAction(const event::Action &e) override {
+                std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/CVPam.md");
+                t.detach();
+            }
+        };
+
+        menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
+		menu->addChild(new MenuSeparator());
+
 		struct UniBiItem : MenuItem {
 			CV_Pam *module;
 
@@ -156,7 +167,6 @@ struct CV_PamWidget : ModuleWidget {
 			}
 		};
 
-		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<UniBiItem>(&MenuItem::text, "Signal output", &UniBiItem::module, module));
 		menu->addChild(construct<TextScrollItem>(&MenuItem::text, "Text scrolling", &TextScrollItem::module, module));
   	}
