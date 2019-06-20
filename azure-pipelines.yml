@@ -139,6 +139,5 @@ jobs:
       target: '$(Build.SourceVersion)'
       addChangeLog: false
       releaseNotesFile: $(Build.ArtifactStagingDirectory)/ReleaseNotes.md
+      isPreRelease: true
       assets: $(Build.ArtifactStagingDirectory)/*.zip
-
-
