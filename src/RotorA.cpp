@@ -106,12 +106,12 @@ struct RotorAWidget : ModuleWidget {
 
         addParam(createParamCentered<RoundBlackSnapKnob>(Vec(30.f, 239.3f), module, RotorA::CHANNELS_PARAM));
 
-        addInput(createInputCentered<PJ301MPort>(Vec(30.f, 62.4f), module, RotorA::MOD_INPUT));
+        addInput(createInputCentered<PJ301MPort>(Vec(30.f, 61.2f), module, RotorA::MOD_INPUT));
         addInput(createInputCentered<PJ301MPort>(Vec(30.f, 106.7f), module, RotorA::CAR_INPUT));
-        addInput(createInputCentered<PJ301MPort>(Vec(30.f, 154.0f), module, RotorA::BASE_INPUT));
+        addInput(createInputCentered<PJ301MPort>(Vec(30.f, 155.2f), module, RotorA::BASE_INPUT));
         addOutput(createOutputCentered<PJ301MPort>(Vec(30.f, 305.9f), module, RotorA::POLY_OUTPUT));
 
-        PolyLedWidget *w0 = createWidgetCentered<PolyLedWidget>(Vec(30.f, 185.0f));
+        PolyLedWidget *w0 = createWidgetCentered<PolyLedWidget>(Vec(30.f, 185.4f));
         w0->setModule(module, RotorA::INPUT_LIGHTS);
         addChild(w0);
 
