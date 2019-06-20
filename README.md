@@ -14,6 +14,7 @@ The PackOne plugin pack gives you a some utility modules for VCV Rack v1:
 - CV-PAM: generate CV voltage by observing any knob/slider/switch of any module
 - [ReMOVE Lite](./docs/ReMove.md): recorder for know/silder/switch-movements
 - [ROTOR Model A](./docs/RotorA.md): spread a carrier signal across 2-16 output channels using CV
+- [BOLT](./docs/Bolt.md): polyphonic CV-modulateable boolean functions
 
 All releases with odd numbering (1.0.1, 1.0.3) are preview-builds. Releases published in the [VCV Library](https://vcvrack.com/plugins.html#packone) are even numbered.
 

@@ -104,18 +104,18 @@ struct RotorAWidget : ModuleWidget {
         addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, 0)));
         addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-        addParam(createParamCentered<RoundBlackSnapKnob>(Vec(37.6f, 239.3f), module, RotorA::CHANNELS_PARAM));
+        addParam(createParamCentered<RoundBlackSnapKnob>(Vec(30.f, 239.3f), module, RotorA::CHANNELS_PARAM));
 
-        addInput(createInputCentered<PJ301MPort>(Vec(37.6f, 62.4f), module, RotorA::MOD_INPUT));
-        addInput(createInputCentered<PJ301MPort>(Vec(37.6f, 106.7f), module, RotorA::CAR_INPUT));
-        addInput(createInputCentered<PJ301MPort>(Vec(37.6f, 154.0f), module, RotorA::BASE_INPUT));
-        addOutput(createOutputCentered<PJ301MPort>(Vec(37.6f, 291.9f), module, RotorA::POLY_OUTPUT));
+        addInput(createInputCentered<PJ301MPort>(Vec(30.f, 62.4f), module, RotorA::MOD_INPUT));
+        addInput(createInputCentered<PJ301MPort>(Vec(30.f, 106.7f), module, RotorA::CAR_INPUT));
+        addInput(createInputCentered<PJ301MPort>(Vec(30.f, 154.0f), module, RotorA::BASE_INPUT));
+        addOutput(createOutputCentered<PJ301MPort>(Vec(30.f, 305.9f), module, RotorA::POLY_OUTPUT));
 
-        PolyLedWidget *w0 = createWidgetCentered<PolyLedWidget>(Vec(37.6, 185.0f));
+        PolyLedWidget *w0 = createWidgetCentered<PolyLedWidget>(Vec(30.f, 185.0f));
         w0->setModule(module, RotorA::INPUT_LIGHTS);
         addChild(w0);
 
-        PolyLedWidget *w1 = createWidgetCentered<PolyLedWidget>(Vec(37.6, 322.1f));
+        PolyLedWidget *w1 = createWidgetCentered<PolyLedWidget>(Vec(30.f, 336.1f));
         w1->setModule(module, RotorA::OUTPUT_LIGHTS);
         addChild(w1);
     }

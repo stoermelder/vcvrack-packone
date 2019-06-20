@@ -9,6 +9,8 @@
     - Added context menu option to disable text scrolling
     - Added context menu option linking online manual
     - Improverd panels
+- Module ROTOR Model A
+    - Reduced panel width
     
 ### 1.0.0
 
