@@ -1,4 +1,5 @@
 #include "plugin.hpp"
+#include "settings.hpp"
 #include <chrono>
 
 
@@ -250,10 +251,15 @@ struct MapModuleChoice : LedDisplayChoice {
 						ParamHandle *paramHandle = &module->paramHandles[id];
 						ModuleWidget *mw = APP->scene->rack->getModule(paramHandle->moduleId);
 						if (mw) {
-							// position the current view to the module
-							auto offset = mw->box.pos.mult(APP->scene->rackScroll->zoomWidget->zoom);
+							// move the view to center the mapped module
+							// NB: unstable API!
+							Vec offset = mw->box.pos;
+							offset = offset.plus(mw->box.size.mult(0.5f));
+							offset = offset.mult(APP->scene->rackScroll->zoomWidget->zoom);
+							offset = offset.minus(APP->scene->box.size.mult(0.5f));
 							APP->scene->rackScroll->offset = offset;
-						}						
+							rack::settings::zoom = 1.f;
+						}					
 						module->paramHandleIndicator[id].indicate();
 					}
 				};
