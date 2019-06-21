@@ -1,3 +1,4 @@
+#pragma once
 #include "plugin.hpp"
 #include "settings.hpp"
 #include <chrono>

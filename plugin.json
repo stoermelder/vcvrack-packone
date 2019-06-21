@@ -16,7 +16,7 @@
 		{
 			"slug": "CVMap",
 			"name": "CV-MAP",
-			"description": "Add CV control to any parameter of any module",
+			"description": "Add CV automation to 32 parameters of any module",
 			"tags": ["Utility", "Polyphonic"]
 		}, 
 		{

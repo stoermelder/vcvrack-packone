@@ -6,8 +6,8 @@ using namespace rack;
 
 extern Plugin *pluginInstance;
 
-extern Model *modelCV_Map;
-extern Model *modelCV_Pam;
+extern Model *modelCVMap;
+extern Model *modelCVPam;
 extern Model *modelRotorA;
 extern Model *modelReMoveLite;
 extern Model *modelBolt;

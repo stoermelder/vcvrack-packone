@@ -1,13 +1,13 @@
 #include "plugin.hpp"
 #include "widgets.hpp"
-#include "MapModule.hpp"
+#include "CVMapModule.hpp"
 #include <chrono>
 #include <thread>
 
 static const int MAX_CHANNELS = 32;
 static const float UINIT = 0;
 
-struct CV_Map : MapModule<MAX_CHANNELS> {
+struct CVMap : CVMapModule<MAX_CHANNELS> {
 	enum ParamIds {
 		NUM_PARAMS
 	};
@@ -25,23 +25,11 @@ struct CV_Map : MapModule<MAX_CHANNELS> {
 		NUM_LIGHTS
 	};
 
-	bool bipolarInput = false;
-
-	/** Track last values */
-	float lastValue[MAX_CHANNELS];
-	/** [Saved to JSON] Allow manual changes of target parameters */
-	bool lockParameterChanges = true;
-
-	dsp::ClockDivider lightDivider;
-
-	CV_Map() {
+	CVMap() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		for (int id = 0; id < MAX_CHANNELS; id++) {
-			paramHandles[id].color = nvgRGB(0xff, 0x40, 0xff);
-			paramHandles[id].text = string::f("CV-Map Ch%02d", id + 1);
+			MapModule<MAX_CHANNELS>::paramHandles[id].text = string::f("CV-MAP Ch%02d", id + 1);
 		}
-		onReset();
-		lightDivider.setDivision(1024);
 	}
 
 	void process(const ProcessArgs &args) override {
@@ -92,31 +80,13 @@ struct CV_Map : MapModule<MAX_CHANNELS> {
 			}
 		}
 		
-		MapModule::process(args);
-	}
-
-	json_t *dataToJson() override {
-		json_t *rootJ = MapModule::dataToJson();
-		json_object_set_new(rootJ, "lockParameterChanges", json_boolean(lockParameterChanges));
-		json_object_set_new(rootJ, "bipolarInput", json_boolean(bipolarInput));
-
-		return rootJ;
-	}
-
-	void dataFromJson(json_t *rootJ) override {
-		MapModule::dataFromJson(rootJ);
-
-		json_t *lockParameterChangesJ = json_object_get(rootJ, "lockParameterChanges");
-		lockParameterChanges = json_boolean_value(lockParameterChangesJ);
-
-		json_t *bipolarInputJ = json_object_get(rootJ, "bipolarInput");
-		bipolarInput = json_boolean_value(bipolarInputJ);
+		CVMapModule<MAX_CHANNELS>::process(args);
 	}
 };
 
 
-struct CV_MapWidget : ModuleWidget {
-	CV_MapWidget(CV_Map *module) {	
+struct CVMapWidget : ModuleWidget {
+	CVMapWidget(CVMap *module) {	
 		setModule(module);
 		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/CV-Map.svg")));
 
@@ -128,15 +98,15 @@ struct CV_MapWidget : ModuleWidget {
 		float o = 9.f;
 		float v = 13.5f;
 		float d = 6.8f;
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(o, 21.1)), module, CV_Map::POLY_INPUT1));
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(o + d + v + 12.4f, 21.1)), module, CV_Map::POLY_INPUT2));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(o, 21.1)), module, CVMap::POLY_INPUT1));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(o + d + v + 12.4f, 21.1)), module, CVMap::POLY_INPUT2));
 
 		PolyLedWidget *w0 = createWidget<PolyLedWidget>(mm2px(Vec(o + d, 17.975)));
-		w0->setModule(module, CV_Map::CHANNEL_LIGHTS1);
+		w0->setModule(module, CVMap::CHANNEL_LIGHTS1);
 		addChild(w0);
 
 		PolyLedWidget *w1 = createWidget<PolyLedWidget>(mm2px(Vec(o + d + v, 17.975)));
-		w1->setModule(module, CV_Map::CHANNEL_LIGHTS2);
+		w1->setModule(module, CVMap::CHANNEL_LIGHTS2);
 		addChild(w1);
 
 		MapModuleDisplay<MAX_CHANNELS> *mapWidget = createWidget<MapModuleDisplay<MAX_CHANNELS>>(mm2px(Vec(3.41891, 29.f)));
@@ -147,7 +117,7 @@ struct CV_MapWidget : ModuleWidget {
 
 
 	void appendContextMenu(Menu *menu) override {
-		CV_Map *module = dynamic_cast<CV_Map*>(this->module);
+		CVMap *module = dynamic_cast<CVMap*>(this->module);
 		assert(module);
 
         struct ManualItem : MenuItem {
@@ -161,7 +131,7 @@ struct CV_MapWidget : ModuleWidget {
         menu->addChild(new MenuSeparator());
 
 		struct LockItem : MenuItem {
-			CV_Map *module;
+			CVMap *module;
 
 			void onAction(const event::Action &e) override {
 				module->lockParameterChanges ^= true;
@@ -174,7 +144,7 @@ struct CV_MapWidget : ModuleWidget {
 		};
 
 		struct UniBiItem : MenuItem {
-			CV_Map *module;
+			CVMap *module;
 
 			void onAction(const event::Action &e) override {
 				module->bipolarInput ^= true;
@@ -187,7 +157,7 @@ struct CV_MapWidget : ModuleWidget {
 		};
 
 		struct TextScrollItem : MenuItem {
-			CV_Map *module;
+			CVMap *module;
 
 			void onAction(const event::Action &e) override {
 				module->textScrolling ^= true;
@@ -206,4 +176,4 @@ struct CV_MapWidget : ModuleWidget {
 };
 
 
-Model *modelCV_Map = createModel<CV_Map, CV_MapWidget>("CVMap");
+Model *modelCVMap = createModel<CVMap, CVMapWidget>("CVMap");

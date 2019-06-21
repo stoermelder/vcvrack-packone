@@ -7,7 +7,7 @@
 static const int MAX_CHANNELS = 32;
 
 
-struct CV_Pam : MapModule<MAX_CHANNELS> {
+struct CVPam : MapModule<MAX_CHANNELS> {
 	enum ParamIds {
 		NUM_PARAMS
 	};
@@ -29,11 +29,11 @@ struct CV_Pam : MapModule<MAX_CHANNELS> {
 
 	dsp::ClockDivider lightDivider;
 
-	CV_Pam() {
+	CVPam() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		for (int id = 0; id < MAX_CHANNELS; id++) {
 			paramHandles[id].color = nvgRGB(0x40, 0xff, 0xff);
-			paramHandles[id].text = string::f("CV-Pam Ch%02d", id + 1);
+			paramHandles[id].text = string::f("CV-PAM Ch%02d", id + 1);
 		}
 		onReset();
 		lightDivider.setDivision(1024);
@@ -96,8 +96,8 @@ struct CV_Pam : MapModule<MAX_CHANNELS> {
 };
 
 
-struct CV_PamWidget : ModuleWidget {
-	CV_PamWidget(CV_Pam *module) {	
+struct CVPamWidget : ModuleWidget {
+	CVPamWidget(CVPam *module) {	
 		setModule(module);
 		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/CV-Pam.svg")));
 
@@ -109,15 +109,15 @@ struct CV_PamWidget : ModuleWidget {
 		float o = 9.f;
 		float v = 13.5f;
 		float d = 6.8f;
-		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(o, 21.1)), module, CV_Pam::POLY_OUTPUT1));
-		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(o + d + v + 12.4f, 21.1)), module, CV_Pam::POLY_OUTPUT2));
+		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(o, 21.1)), module, CVPam::POLY_OUTPUT1));
+		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(o + d + v + 12.4f, 21.1)), module, CVPam::POLY_OUTPUT2));
 
 		PolyLedWidget *w0 = createWidget<PolyLedWidget>(mm2px(Vec(o + d, 17.975)));
-		w0->setModule(module, CV_Pam::CHANNEL_LIGHTS1);
+		w0->setModule(module, CVPam::CHANNEL_LIGHTS1);
 		addChild(w0);
 
 		PolyLedWidget *w1 = createWidget<PolyLedWidget>(mm2px(Vec(o + d + v, 17.975)));
-		w1->setModule(module, CV_Pam::CHANNEL_LIGHTS2);
+		w1->setModule(module, CVPam::CHANNEL_LIGHTS2);
 		addChild(w1);
 
 		MapModuleDisplay<MAX_CHANNELS> *mapWidget = createWidget<MapModuleDisplay<MAX_CHANNELS>>(mm2px(Vec(3.41891, 29.f)));
@@ -128,7 +128,7 @@ struct CV_PamWidget : ModuleWidget {
 
 
 	void appendContextMenu(Menu *menu) override {
-		CV_Pam *module = dynamic_cast<CV_Pam*>(this->module);
+		CVPam *module = dynamic_cast<CVPam*>(this->module);
 		assert(module);
 
         struct ManualItem : MenuItem {
@@ -142,7 +142,7 @@ struct CV_PamWidget : ModuleWidget {
 		menu->addChild(new MenuSeparator());
 
 		struct UniBiItem : MenuItem {
-			CV_Pam *module;
+			CVPam *module;
 
 			void onAction(const event::Action &e) override {
 				module->bipolarOutput ^= true;
@@ -155,7 +155,7 @@ struct CV_PamWidget : ModuleWidget {
 		};
 
 		struct TextScrollItem : MenuItem {
-			CV_Pam *module;
+			CVPam *module;
 
 			void onAction(const event::Action &e) override {
 				module->textScrolling ^= true;
@@ -173,4 +173,4 @@ struct CV_PamWidget : ModuleWidget {
 };
 
 
-Model *modelCV_Pam = createModel<CV_Pam, CV_PamWidget>("CVPam");
+Model *modelCVPam = createModel<CVPam, CVPamWidget>("CVPam");
