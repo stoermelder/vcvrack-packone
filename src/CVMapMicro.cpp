@@ -59,7 +59,6 @@ struct CVMapMicro : CVMapModule<1> {
 
 				v = o + v * s;
 				v = clamp(v, 0.f, 1.f);
-				v = valueFilters[id].process(args.sampleTime, v);
 
 				// If lastValue is unitialized set it to its current value, only executed once
 				if (lastValue[id] == UINIT) {

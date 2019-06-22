@@ -105,6 +105,7 @@ struct ReMove : MapModule<1> {
 
     /** [Stored to JSON] sample rate for recording */
     float sampleRate = 1.f/60.f;
+    float sampleTime;
     dsp::Timer sampleTimer;
 
     /** [Stored to JSON] mode for playback */
@@ -163,7 +164,8 @@ struct ReMove : MapModule<1> {
         valueFilters[0].reset();
     }
 
-    void process(const ProcessArgs &args) override { 
+    void process(const ProcessArgs &args) override {
+        sampleTime = args.sampleTime;
         outputs[REC_OUTPUT].setVoltage(0);
 
         // Toggle record when button is pressed
@@ -371,15 +373,20 @@ struct ReMove : MapModule<1> {
 
     inline float getValue() {
         float v;
-        if (inCvMode == REMOVE_INCVMODE_UNI && inputs[CV_INPUT].isConnected()) {
-            v = rescale(clamp(inputs[CV_INPUT].getVoltage(), 0.f, 10.f), 0.f, 10.f, 0.f, 1.f);
-        }
-        else if (inCvMode == REMOVE_INCVMODE_BI && inputs[CV_INPUT].isConnected()) {
-            v = rescale(clamp(inputs[CV_INPUT].getVoltage(), -5.f, 5.f), -5.f, 5.f, 0.f, 1.f);
+        if (inputs[CV_INPUT].isConnected()) {
+            switch (inCvMode) {
+                case REMOVE_INCVMODE_UNI:
+                    v = rescale(clamp(inputs[CV_INPUT].getVoltage(), 0.f, 10.f), 0.f, 10.f, 0.f, 1.f);
+                    break;
+                case REMOVE_INCVMODE_BI:
+                    v = rescale(clamp(inputs[CV_INPUT].getVoltage(), -5.f, 5.f), -5.f, 5.f, 0.f, 1.f);
+                    break;
+            }
         }
         else {
             ParamQuantity *paramQuantity = getParamQuantity(0);
             v = paramQuantity->getScaledValue();
+            v = valueFilters[0].process(sampleTime, v);
         }
         return v;
     }

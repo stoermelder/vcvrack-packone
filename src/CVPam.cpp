@@ -16,7 +16,7 @@ struct CVPam : MapModule<MAX_CHANNELS> {
 	};
 	enum OutputIds {
 		POLY_OUTPUT1,
-		POLY_OUTPUT2,		
+		POLY_OUTPUT2,
 		NUM_OUTPUTS
 	};
 	enum LightIds {
@@ -39,7 +39,7 @@ struct CVPam : MapModule<MAX_CHANNELS> {
 		lightDivider.setDivision(1024);
 	}
 
-	void process(const ProcessArgs &args) override {		
+	void process(const ProcessArgs &args) override {
 		int lastChannel_out1 = -1;
 		int lastChannel_out2 = -1;
 
@@ -59,7 +59,7 @@ struct CVPam : MapModule<MAX_CHANNELS> {
 			if (id < 16) 
 				outputs[POLY_OUTPUT1].setVoltage(v, id); 
 			else 
-				outputs[POLY_OUTPUT2].setVoltage(v, id - 16);			
+				outputs[POLY_OUTPUT2].setVoltage(v, id - 16);
 		}
 		
 		outputs[POLY_OUTPUT1].setChannels(lastChannel_out1 + 1);

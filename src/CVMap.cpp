@@ -58,7 +58,6 @@ struct CVMap : CVMapModule<MAX_CHANNELS> {
 			if (bipolarInput)
 				v += 5.f;
 			v = rescale(v, 0.f, 10.f, 0.f, 1.f);
-			v = valueFilters[id].process(args.sampleTime, v);
 
 			// If lastValue is unitialized set it to its current value, only executed once
 			if (lastValue[id] == UINIT) {
