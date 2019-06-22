@@ -1,6 +1,6 @@
 {
 	"slug": "Stoermelder-P1",
-	"version": "1.0.1",
+	"version": "1.0.2",
 	"license": "GPL-3.0-only",	
 	"author": "Benjamin Dill",
 	"name": "PackOne",
@@ -33,19 +33,19 @@
 		},
 		{
 			"slug": "RotorA",
-			"name": "Rotor Model A",			
+			"name": "Rotor Model A",
 			"description": "Rotates a signal across polyphonic channels",
 			"tags": ["Utility", "Polyphonic"]
 		},
 		{
 			"slug": "ReMoveLite",
-			"name": "ReMOVE Lite",			
+			"name": "ReMOVE Lite",
 			"description": "Recorder for parameter automation",
 			"tags": ["Utility"]
 		},
 		{
 			"slug": "Bolt",
-			"name": "BOLT",			
+			"name": "BOLT",
 			"description": "Polyphonic logic operations with modulation and sample & hold",
 			"tags": ["Utility", "Logic", "Polyphonic"]
 		}

@@ -1,4 +1,4 @@
-### 1.0.2 (in development)
+### 1.0.2
 
 - Module ReMOVE Lite
     - New module, allows recording of parameter automation of knobs, switchs or sliders ([docs](./docs/ReMove.md))
