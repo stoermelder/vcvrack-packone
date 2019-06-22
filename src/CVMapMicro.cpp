@@ -33,8 +33,10 @@ struct CVMapMicro : CVMapModule<1> {
 
     CVMapMicro() {
         config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+		configParam(MAP_PARAM, 0.f, 1.f, 0.f, "Map");
 		configParam(OFFSET_PARAM, 0.f, 1.f, 0.f, "Offset for the input signal");
 		configParam(SCALE_PARAM, -2.f, 2.f, 1.f, "Scaling for the input signal");
+		CVMapModule<1>::paramHandles[0].text = "µMAP";
 
 		lightDivider.setDivision(1024);
     }

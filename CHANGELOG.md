@@ -4,6 +4,8 @@
     - New module, allows recording of parameter automation of knobs, switchs or sliders ([docs](./docs/ReMove.md))
 - Module BOLT
     - New module, polyphonic modulateable boolean functions ([docs](./docs/Bolt.md))
+- Module µMAP
+    - New module, a single slow version of CV-PAM with attenuverter and output port
 - Modules CV-MAP, CV-PAM
     - Added context menu option (on LED display) to locate and blink indicator for mapped slots
     - Added context menu option to disable text scrolling

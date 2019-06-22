@@ -1,6 +1,6 @@
 # stoermelder µMAP
 
-µMAP is a single slot of [CV-MAP](./CVMap.md) with attenuvation and output port. Please refer to the manual of CV-MAP how to this module works.
+µMAP is a single slot of [CV-MAP](./CVMap.md) with attenuation and output port. Please refer to the manual of CV-MAP how to this module works.
 
 ### Section OFFSET
 
