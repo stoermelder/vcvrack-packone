@@ -4,8 +4,6 @@ BOLT is module for applying different boolean functions on up to four input sign
 
 ![BOLT Intro](./Bolt-intro.gif)
 
-![BOLT Intro](./Bolt-intro2.gif)
-
 ### Input TRIG
 
 When TRIG is connected the module acts as a sample and hold module. Only when a trigger is received the boolean function is applied and the output updated. The TRIG-port is polyphonic and normalized: When only one channel is connected a trigger is used for all 16 channels, with more channels connected each can have its own trigger. When no cable is connected to TRIG the module updates the output port instantly.
@@ -17,6 +15,8 @@ This port modulates the boolean function. It is monophonic. On the context menu 
 - 0..10V: The range is splitted evenly by 5. 0-2V selects the first function, 2-4V the second and so on.
 - C4-E4: Keyboard mode, C4 selectes function 1, E4 selects function 5.
 - Trigger: When a trigger is received the module advances to the next function, like using the button.
+
+![BOLT Op](./Bolt-op.gif)
 
 ### Input ports
 
