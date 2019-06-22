@@ -20,6 +20,9 @@ const int REMOVE_SEQCHANGEMODE_OFFSET = 1;
 const int REMOVE_RUNCVMODE_GATE = 0;
 const int REMOVE_RUNCVMODE_TRIG = 1;
 
+const int REMOVE_RECOUTCVMODE_GATE = 0;
+const int REMOVE_RECOUTCVMODE_TRIG = 1;
+
 const int REMOVE_INCVMODE_UNI = 0;
 const int REMOVE_INCVMODE_BI = 1;
 
@@ -87,6 +90,9 @@ struct ReMove : MapModule<1> {
     /** [Stored to JSON] mode for RUN port */
     int runCvMode = REMOVE_RUNCVMODE_GATE;
 
+    /** [Stored to JSON] mode for REC-in */
+    int recOutCvMode = REMOVE_RECOUTCVMODE_GATE;
+
     /** [Stored to JSON] usage-mode for IN input */
     int inCvMode = REMOVE_INCVMODE_UNI;
     /** [Stored to JSON] usage-mode for OUT output*/
@@ -114,6 +120,7 @@ struct ReMove : MapModule<1> {
     dsp::SchmittTrigger seqCvTrigger;
     dsp::BooleanTrigger runTrigger;
     dsp::SchmittTrigger runCvTrigger;
+    dsp::PulseGenerator recOutCvPulse;
     dsp::SchmittTrigger resetCvTrigger;
     dsp::BooleanTrigger recTrigger;
 
@@ -165,10 +172,13 @@ struct ReMove : MapModule<1> {
             ParamQuantity *paramQuantity = getParamQuantity(0);
             if (paramQuantity != NULL) {
                 isRecording ^= true;
-                if (isRecording)
+                if (isRecording) {
                     startRecording();
-                else
+                    if (recMode == REMOVE_RECMODE_MANUAL) recOutCvPulse.trigger();
+                } 
+                else {
                     stopRecording();
+                }
             }
         }
 
@@ -183,10 +193,13 @@ struct ReMove : MapModule<1> {
                     // it is not a good idea to do dynamic casting in the DSP thread,
                     // so do this only once for each touched widget
                     ParamWidget *pw = dynamic_cast<ParamWidget*>(w);
-                    if (pw != NULL && pw->paramQuantity == getParamQuantity(0))
+                    if (pw != NULL && pw->paramQuantity == getParamQuantity(0)) {
                         recTouched = true;
-                    else 
+                        recOutCvPulse.trigger();
+                    }
+                    else {
                         doRecord = false;
+                    }
                 }
                 else {
                     doRecord = false;
@@ -195,17 +208,20 @@ struct ReMove : MapModule<1> {
 
             if (recMode == REMOVE_RECMODE_MOVE && !recTouched) {
                 // check if param value has changed
-                if (getValue() != recTouch)
+                if (getValue() != recTouch) {
                     recTouched = true;
-                else
+                    recOutCvPulse.trigger();
+                }
+                else {
                     doRecord = false;
+                }
             }
 
-            if (doRecord) {           
+            if (doRecord) {
                 if (sampleTimer.process(args.sampleTime) > sampleRate) {
                     // check if mouse button has been released
                     if (APP->event->getDraggedWidget() == NULL) {
-                        if (recMode == REMOVE_RECMODE_TOUCH) {     
+                        if (recMode == REMOVE_RECMODE_TOUCH) {
                             stopRecording();
                         }
                         if (recMode == REMOVE_RECMODE_MOVE) {
@@ -233,7 +249,9 @@ struct ReMove : MapModule<1> {
 
                     sampleTimer.reset();
                 }
-                outputs[REC_OUTPUT].setVoltage(10);
+
+                if (recOutCvMode == REMOVE_RECOUTCVMODE_GATE)
+                    outputs[REC_OUTPUT].setVoltage(10);
             }
         }
         else {
@@ -333,6 +351,10 @@ struct ReMove : MapModule<1> {
             }
         }
 
+        // REC-out in trigger mode
+        if (recOutCvMode == REMOVE_RECOUTCVMODE_TRIG)
+            outputs[REC_OUTPUT].setVoltage(recOutCvPulse.process(args.sampleTime) ? 10.f : 0.f);
+
         // Set channel lights infrequently
         if (lightDivider.process()) {
             lights[RUN_LIGHT].setBrightness(isPlaying);
@@ -384,9 +406,10 @@ struct ReMove : MapModule<1> {
     inline void stopRecording() {
         isRecording = false;
         dataPtr = seqLow;
-        sampleTimer.reset();      
+        sampleTimer.reset();
         paramHandles[0].color = nvgRGB(0x40, 0xff, 0xff);
-        valueFilters[0].reset();   
+        valueFilters[0].reset();
+        recOutCvPulse.trigger();
     }
 
     inline void seqNext() {
@@ -482,6 +505,7 @@ struct ReMove : MapModule<1> {
         json_object_set_new(rec0J, "seqCvMode", json_integer(seqCvMode));
         json_object_set_new(rec0J, "seqChangeMode", json_integer(seqChangeMode));
         json_object_set_new(rec0J, "runCvMode", json_integer(runCvMode));
+        json_object_set_new(rec0J, "recOutCvMode", json_integer(recOutCvMode));
         json_object_set_new(rec0J, "inCvMode", json_integer(inCvMode));
         json_object_set_new(rec0J, "outCvMode", json_integer(outCvMode));
         json_object_set_new(rec0J, "recMode", json_integer(recMode));
@@ -512,6 +536,8 @@ struct ReMove : MapModule<1> {
         if (seqChangeModeJ) seqChangeMode = json_integer_value(seqChangeModeJ);
         json_t *runCvModeJ = json_object_get(rec0J, "runCvMode");
         if (runCvModeJ) runCvMode = json_integer_value(runCvModeJ);
+        json_t *recOutCvModeJ = json_object_get(rec0J, "recOutCvMode");
+        if (recOutCvModeJ) recOutCvMode = json_integer_value(recOutCvModeJ);
         json_t *inCvModeJ = json_object_get(rec0J, "inCvMode");
         if (inCvModeJ) inCvMode = json_integer_value(inCvModeJ);
         json_t *outCvModeJ = json_object_get(rec0J, "outCvMode");
@@ -678,7 +704,6 @@ struct ReMoveRunCvModeMenuItem : MenuItem {
         int runCvMode;
 
         void onAction(const event::Action &e) override {
-            if (module->isRecording) return;
             module->runCvMode = runCvMode;
         }
 
@@ -693,6 +718,31 @@ struct ReMoveRunCvModeMenuItem : MenuItem {
         Menu *menu = new Menu;
         menu->addChild(construct<ReMoveRunCvModeItem>(&MenuItem::text, "Gate", &ReMoveRunCvModeItem::module, module, &ReMoveRunCvModeItem::runCvMode, REMOVE_RUNCVMODE_GATE));
         menu->addChild(construct<ReMoveRunCvModeItem>(&MenuItem::text, "Trigger", &ReMoveRunCvModeItem::module, module, &ReMoveRunCvModeItem::runCvMode, REMOVE_RUNCVMODE_TRIG));
+        return menu;
+    }
+};
+
+struct ReMoveRecOutCvModeMenuItem : MenuItem {
+    struct ReMoveRecOutCvModeItem : MenuItem {
+        ReMove *module;
+        int recOutCvMode;
+
+        void onAction(const event::Action &e) override {
+            if (module->isRecording) return;
+            module->recOutCvMode = recOutCvMode;
+        }
+
+        void step() override {
+            rightText = module->recOutCvMode == recOutCvMode ? "✔" : "";
+            MenuItem::step();
+        }
+    };
+    
+    ReMove *module;
+    Menu *createChildMenu() override {
+        Menu *menu = new Menu;
+        menu->addChild(construct<ReMoveRecOutCvModeItem>(&MenuItem::text, "Gate", &ReMoveRecOutCvModeItem::module, module, &ReMoveRecOutCvModeItem::recOutCvMode, REMOVE_RECOUTCVMODE_GATE));
+        menu->addChild(construct<ReMoveRecOutCvModeItem>(&MenuItem::text, "Trigger", &ReMoveRecOutCvModeItem::module, module, &ReMoveRecOutCvModeItem::recOutCvMode, REMOVE_RECOUTCVMODE_TRIG));
         return menu;
     }
 };
@@ -1017,6 +1067,10 @@ struct ReMoveWidget : ModuleWidget {
         ReMoveRunCvModeMenuItem *runCvModeMenuItem = construct<ReMoveRunCvModeMenuItem>(&MenuItem::text, "Port RUN mode", &ReMoveRunCvModeMenuItem::module, module);
         runCvModeMenuItem->rightText = RIGHT_ARROW;
         menu->addChild(runCvModeMenuItem);
+
+        ReMoveRecOutCvModeMenuItem *recOutCvModeMenuItem = construct<ReMoveRecOutCvModeMenuItem>(&MenuItem::text, "Port REC-out mode", &ReMoveRecOutCvModeMenuItem::module, module);
+        recOutCvModeMenuItem->rightText = RIGHT_ARROW;
+        menu->addChild(recOutCvModeMenuItem);
 
         InCvModeMenuItem *inCvModeMenuItem = construct<InCvModeMenuItem>(&MenuItem::text, "Port IN voltage", &InCvModeMenuItem::module, module);
         inCvModeMenuItem->rightText = RIGHT_ARROW;

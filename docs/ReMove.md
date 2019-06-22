@@ -72,7 +72,7 @@ REC-input is used for starting and stopping recordings by CV trigger. Be aware t
 
 ### REC-output
 
-The REC-output sends a trigger everytime a recording starts or stops.
+The REC-output can be configured as a gate or to trigger everytime a recording starts or stops.
 
 ### IN-input
 
