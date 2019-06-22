@@ -1,8 +1,10 @@
 # stoermelder BOLT
 
-BOLT is module for applying different boolean functions on up to four input signals. "Another module for boolean functions" you say? Yes, because it has two special twists: First, it is polyphonic. The module processes up to 16 channels on the four input ports and applies the selected boolean function on its inputs. Second, it can be modulated by CV which boolean function is evaluated. Also, it has rarly available functions [NAND](https://en.wikipedia.org/wiki/Sheffer_stroke) and [NOR](https://en.wikipedia.org/wiki/Logical_NOR).
+BOLT is module for applying different boolean functions on up to four input signals. "Another module for boolean functions" you say? Yes, because it has two special twists: First, it is polyphonic. The module processes up to 16 channels on the four input ports and applies the selected boolean function on its inputs. Second, it can be modulated by CV which boolean function is evaluated. Also, it has rarely available functions [NAND](https://en.wikipedia.org/wiki/Sheffer_stroke) and [NOR](https://en.wikipedia.org/wiki/Logical_NOR).
 
 ![BOLT Intro](./Bolt-intro.gif)
+
+This module integrates several boolean logic module into one tiny case and combines them with a sequential switch or a signal router.
 
 ### Input TRIG
 
