@@ -58,9 +58,13 @@ The ports RUN and RESET as well as their buttons are disabled and can't be used 
 
 ### RESET- and RUN-ports
 
-Same behaviour as most sequencers: RUN must be high for playback, a trigger on RESET restarts the currently selected playback mode from the beginning. Disabled when recording or when PHASE is connected.
+Same behaviour as most sequencers: RUN can be configured as high or trigger for playback, a trigger on RESET restarts the currently selected playback mode from the beginning. Disabled when recording or when PHASE is connected.
 
 ![ReMOVE IN-input](./ReMove-reset.png)
+
+Using ReMOVE in a sequencer scenario.
+
+![ReMOVE sequencing](./ReMove-seq.png)
 
 ### REC-input
 
