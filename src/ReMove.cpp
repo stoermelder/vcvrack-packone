@@ -372,7 +372,7 @@ struct ReMove : MapModule<1> {
     }
 
     inline float getValue() {
-        float v;
+        float v = 0.f;
         if (inputs[CV_INPUT].isConnected()) {
             switch (inCvMode) {
                 case REMOVE_INCVMODE_UNI:
@@ -412,11 +412,11 @@ struct ReMove : MapModule<1> {
 
     inline void stopRecording() {
         isRecording = false;
+        if (dataPtr != seqLow) recOutCvPulse.trigger();
         dataPtr = seqLow;
         sampleTimer.reset();
         paramHandles[0].color = nvgRGB(0x40, 0xff, 0xff);
         valueFilters[0].reset();
-        recOutCvPulse.trigger();
     }
 
     inline void seqNext() {
