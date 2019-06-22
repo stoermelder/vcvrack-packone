@@ -33,6 +33,7 @@ struct CVMap : CVMapModule<MAX_CHANNELS> {
 			MapModule<MAX_CHANNELS>::paramHandles[id].text = string::f("CV-MAP Ch%02d", id + 1);
 		}
 		lightDivider.setDivision(1024);
+		onReset();
 	}
 
 	void process(const ProcessArgs &args) override {

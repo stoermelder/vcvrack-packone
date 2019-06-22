@@ -39,6 +39,7 @@ struct CVMapMicro : CVMapModule<1> {
 		CVMapModule<1>::paramHandles[0].text = "µMAP";
 
 		lightDivider.setDivision(1024);
+		onReset();
     }
 
 	void process(const ProcessArgs &args) override {
