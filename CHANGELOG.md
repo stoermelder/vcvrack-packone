@@ -7,7 +7,7 @@
 - Modules CV-MAP, CV-PAM
     - Added context menu option (on LED display) to locate and blink indicator for mapped slots
     - Added context menu option to disable text scrolling
-    - Added context menu option linking online manual
+    - Added context menu option linking the online manual
     - Improverd panels
 - Module ROTOR Model A
     - Reduced panel width

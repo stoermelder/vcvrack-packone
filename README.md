@@ -10,9 +10,9 @@ The PackOne plugin pack gives you a some utility modules for VCV Rack v1:
 
 ![Intro image](./docs/intro.png)
 
-- CV-MAP: control 32 knobs/sliders/switches of any module by CV even when the module has no CV input
-- CV-PAM: generate CV voltage by observing any knob/slider/switch of any module
-- [ReMOVE Lite](./docs/ReMove.md): recorder for know/silder/switch-movements
+- [CM-MAP](./docs/CVMap.md): control 32 knobs/sliders/switches of any module by CV even when the module has no CV input
+- CV-PAM: generate CV voltage by observing 32 knobs/sliders/switches of any module
+- [ReMOVE Lite](./docs/ReMove.md): a recorder for knob/silder/switch-automation
 - [ROTOR Model A](./docs/RotorA.md): spread a carrier signal across 2-16 output channels using CV
 - [BOLT](./docs/Bolt.md): polyphonic CV-modulateable boolean functions
 
