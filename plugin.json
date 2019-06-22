@@ -18,7 +18,13 @@
 			"name": "CV-MAP",
 			"description": "Add CV automation to 32 parameters of any module",
 			"tags": ["Utility", "Polyphonic"]
-		}, 
+		},
+		{
+			"slug": "CVMapMicro",
+			"name": "µMAP",
+			"description": "Add CV automation to one parameter of any module",
+			"tags": ["Utility"]
+		},
 		{
 			"slug": "CVPam",
 			"name": "CV-PAM",

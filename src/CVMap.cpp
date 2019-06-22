@@ -25,11 +25,14 @@ struct CVMap : CVMapModule<MAX_CHANNELS> {
 		NUM_LIGHTS
 	};
 
+	dsp::ClockDivider lightDivider;
+
 	CVMap() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		for (int id = 0; id < MAX_CHANNELS; id++) {
 			MapModule<MAX_CHANNELS>::paramHandles[id].text = string::f("CV-MAP Ch%02d", id + 1);
 		}
+		lightDivider.setDivision(1024);
 	}
 
 	void process(const ProcessArgs &args) override {
@@ -88,7 +91,7 @@ struct CVMap : CVMapModule<MAX_CHANNELS> {
 struct CVMapWidget : ModuleWidget {
 	CVMapWidget(CVMap *module) {	
 		setModule(module);
-		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/CV-Map.svg")));
+		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/CVMap.svg")));
 
 		addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));

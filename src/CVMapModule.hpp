@@ -11,13 +11,10 @@ struct CVMapModule : MapModule<MAX_CHANNELS> {
 	/** [Saved to JSON] Allow manual changes of target parameters */
 	bool lockParameterChanges = true;
 
-	dsp::ClockDivider lightDivider;
-
 	CVMapModule() {
 		for (int id = 0; id < MAX_CHANNELS; id++) {
 			MapModule<MAX_CHANNELS>::paramHandles[id].color = nvgRGB(0xff, 0x40, 0xff);
 		}
-		lightDivider.setDivision(1024);
 	}
 
 	void process(const Module::ProcessArgs &args) override {

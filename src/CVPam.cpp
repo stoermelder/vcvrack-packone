@@ -99,7 +99,7 @@ struct CVPam : MapModule<MAX_CHANNELS> {
 struct CVPamWidget : ModuleWidget {
 	CVPamWidget(CVPam *module) {	
 		setModule(module);
-		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/CV-Pam.svg")));
+		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/CVPam.svg")));
 
 		addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
