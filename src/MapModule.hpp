@@ -55,13 +55,13 @@ struct MapModule : Module {
 			paramHandleIndicator[id].handle = &paramHandles[id];
 			APP->engine->addParamHandle(&paramHandles[id]);
 		}
+		indicatorDivider.setDivision(1024);
 	}
 
 	~MapModule() {
 		for (int id = 0; id < MAX_CHANNELS; id++) {
 			APP->engine->removeParamHandle(&paramHandles[id]);
 		}
-		indicatorDivider.setDivision(1024);
 	}
 
 	void onReset() override {
@@ -289,7 +289,7 @@ struct MapModuleChoice : LedDisplayChoice {
 			return;
 		// Check if a ParamWidget was touched
 		ParamWidget *touchedParam = APP->scene->rack->touchedParam;
-		if (touchedParam) {
+		if (touchedParam && touchedParam->paramQuantity->module != module) {
 			APP->scene->rack->touchedParam = NULL;
 			int moduleId = touchedParam->paramQuantity->module->id;
 			int paramId = touchedParam->paramQuantity->paramId;

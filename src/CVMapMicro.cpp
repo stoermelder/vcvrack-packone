@@ -164,7 +164,7 @@ struct MapButton : LEDBezel {
 			return;
 		// Check if a ParamWidget was touched
 		ParamWidget *touchedParam = APP->scene->rack->touchedParam;
-		if (touchedParam) {
+		if (touchedParam && touchedParam->paramQuantity->module != module) {
 			APP->scene->rack->touchedParam = NULL;
 			int moduleId = touchedParam->paramQuantity->module->id;
 			int paramId = touchedParam->paramQuantity->paramId;
