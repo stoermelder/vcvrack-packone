@@ -1,5 +1,5 @@
 #include "plugin.hpp"
-
+#include <thread>
 
 struct Infix : Module {
 	enum ParamIds {
@@ -69,6 +69,21 @@ struct InfixWidget : ModuleWidget {
         addInput(createInputCentered<PJ301MPort>(Vec(20.6f, 61.f), module, Infix::POLY_INPUT));
 		addOutput(createOutputCentered<PJ301MPort>(Vec(54.f, 61.f), module, Infix::POLY_OUTPUT));
 	}
+
+	
+	void appendContextMenu(Menu *menu) override {
+		Infix *module = dynamic_cast<Infix*>(this->module);
+		assert(module);
+
+        struct ManualItem : MenuItem {
+            void onAction(const event::Action &e) override {
+                std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Infix.md");
+                t.detach();
+            }
+        };
+
+        menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
+  	}
 };
 
 

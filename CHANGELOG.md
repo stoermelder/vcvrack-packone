@@ -1,23 +1,23 @@
 ### 1.0.3
 
 - Module INFIX
-    - New Module, insert for polyphonic cables
+    - New module, insert for polyphonic cables
 - Module µMAP
     - Fixed bug causing "damaged" module panels (array out of bounds)
 
 ### 1.0.2
 
 - Module ReMOVE Lite
-    - New module, allows recording of parameter automation of knobs, switchs or sliders ([docs](./docs/ReMove.md))
+    - New module, allows recording of parameter automation of knobs, switches or sliders ([docs](./docs/ReMove.md))
 - Module BOLT
     - New module, polyphonic modulateable boolean functions ([docs](./docs/Bolt.md))
 - Module µMAP
-    - New module, a single slot version of CV-PAM with attenuverter and output port
+    - New module, a single slot version of CV-PAM with attenuverter and output port ([docs](./docs/CVMapMicro.md))
 - Modules CV-MAP, CV-PAM
     - Added context menu option (on LED display) to locate and blink indicator for mapped slots
     - Added context menu option to disable text scrolling
     - Added context menu option linking the online manual
-    - Improverd panels
+    - Improved panels
 - Module ROTOR Model A
     - Reduced panel width
     
