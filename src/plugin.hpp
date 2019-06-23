@@ -12,4 +12,4 @@ extern Model *modelCVPam;
 extern Model *modelRotorA;
 extern Model *modelReMoveLite;
 extern Model *modelBolt;
-extern Model *modelInsert;
+extern Model *modelInfix;

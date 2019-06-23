@@ -16,7 +16,7 @@ The PackOne plugin pack gives you a some utility modules for VCV Rack v1:
 - [ReMOVE Lite](./docs/ReMove.md): a recorder for knob/slider/switch-automation
 - [ROTOR Model A](./docs/RotorA.md): spread a carrier signal across 2-16 output channels using CV
 - [BOLT](./docs/Bolt.md): polyphonic CV-modulateable boolean functions
-- INSERT: insert for polyphonic cables
+- INFIX: insert for polyphonic cables
 
 Release versions are published in the [VCV Library](https://vcvrack.com/plugins.html#packone).
 

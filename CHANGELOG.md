@@ -1,7 +1,9 @@
 ### 1.0.3 (in development)
 
-- Module INSERT
+- Module INFIX
     - New Module, insert for polyphonic cables
+- Module µMAP
+    - Fixed bug causing "damaged" module panels (array out of bounds)
 
 ### 1.0.2
 

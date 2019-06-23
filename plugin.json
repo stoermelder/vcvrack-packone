@@ -33,7 +33,7 @@
 		},
 		{
 			"slug": "RotorA",
-			"name": "Rotor Model A",
+			"name": "ROTOR Model A",
 			"description": "Rotates a signal across polyphonic channels",
 			"tags": ["Utility", "Polyphonic"]
 		},
@@ -50,8 +50,8 @@
 			"tags": ["Utility", "Logic", "Polyphonic"]
 		},
 		{
-			"slug": "Insert",
-			"name": "Insert",
+			"slug": "Infix",
+			"name": "INFIX",
 			"description": "Insert for polyphonic cables",
 			"tags": ["Utility", "Polyphonic"]
 		}
