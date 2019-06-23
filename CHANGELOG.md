@@ -1,7 +1,7 @@
 ### 1.0.3
 
 - Module INFIX
-    - New module, insert for polyphonic cables
+    - New module, insert for polyphonic cables ([docs](./docs/Infix.md))
 - Module µMAP
     - Fixed bug causing "damaged" module panels (array out of bounds)
 
