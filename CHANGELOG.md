@@ -1,4 +1,4 @@
-### 1.0.3 (in development)
+### 1.0.3
 
 - Module INFIX
     - New Module, insert for polyphonic cables

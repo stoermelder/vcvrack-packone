@@ -71,7 +71,7 @@ struct CVMapMicro : CVMapModule<1> {
 
 				if (lockParameterChanges || lastValue[0] != v) {
 					paramQuantity->setScaledValue(v);
-					lastValue[0] = v;					
+					lastValue[0] = v;
 
 					if (outputs[OUTPUT].isConnected()) {
 						outputs[OUTPUT].setVoltage(rescale(v, 0.f, 1.f, 0.f, 10.f));
