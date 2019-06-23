@@ -1,3 +1,8 @@
+### 1.0.3 (in development)
+
+- Module INSERT
+    - New Module, insert for polyphonic cables
+
 ### 1.0.2
 
 - Module ReMOVE Lite
@@ -5,7 +10,7 @@
 - Module BOLT
     - New module, polyphonic modulateable boolean functions ([docs](./docs/Bolt.md))
 - Module µMAP
-    - New module, a single slow version of CV-PAM with attenuverter and output port
+    - New module, a single slot version of CV-PAM with attenuverter and output port
 - Modules CV-MAP, CV-PAM
     - Added context menu option (on LED display) to locate and blink indicator for mapped slots
     - Added context menu option to disable text scrolling
@@ -16,13 +21,13 @@
     
 ### 1.0.0
 
-- Module Rotor Model A
+- Module ROTOR Model A
     - New module
 - Module CV-MAP
-    - Added text scroling for longer module and parameter names
+    - Added text scrolling for longer module and parameter names
     - Added context menu option to allow manual target parameter changes (Locked/Unlocked)
 - Module CV-PAM
-    - Added text scroling for longer module and parameter names
+    - Added text scrolling for longer module and parameter names
 
 ### 1.0.0-rc
 

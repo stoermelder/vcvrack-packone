@@ -12,4 +12,5 @@ void init(rack::Plugin *p) {
 	p->addModel(modelRotorA);
 	p->addModel(modelReMoveLite);
 	p->addModel(modelBolt);
+	p->addModel(modelInsert);
 }

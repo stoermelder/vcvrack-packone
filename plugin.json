@@ -48,6 +48,12 @@
 			"name": "BOLT",
 			"description": "Polyphonic logic operations with modulation and sample & hold",
 			"tags": ["Utility", "Logic", "Polyphonic"]
+		},
+		{
+			"slug": "Insert",
+			"name": "Insert",
+			"description": "Insert for polyphonic cables",
+			"tags": ["Utility", "Polyphonic"]
 		}
 	]
 }
