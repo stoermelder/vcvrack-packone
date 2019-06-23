@@ -36,8 +36,9 @@ struct CVMapMicro : CVMapModule<1> {
 		configParam(MAP_PARAM, 0.f, 1.f, 0.f, "Map");
 		configParam(OFFSET_PARAM, 0.f, 1.f, 0.f, "Offset for the input signal");
 		configParam(SCALE_PARAM, -2.f, 2.f, 1.f, "Scaling for the input signal");
-		CVMapModule<1>::paramHandles[0].text = "µMAP";
 
+		id = 0;
+		CVMapModule<1>::paramHandles[0].text = "µMAP";
 		lightDivider.setDivision(1024);
 		onReset();
     }
@@ -64,13 +65,13 @@ struct CVMapMicro : CVMapModule<1> {
 				v = clamp(v, 0.f, 1.f);
 
 				// If lastValue is unitialized set it to its current value, only executed once
-				if (lastValue[id] == UINIT) {
-					lastValue[id] = v;
+				if (lastValue[0] == UINIT) {
+					lastValue[0] = v;
 				}
 
-				if (lockParameterChanges || lastValue[id] != v) {
+				if (lockParameterChanges || lastValue[0] != v) {
 					paramQuantity->setScaledValue(v);
-					lastValue[id] = v;					
+					lastValue[0] = v;					
 
 					if (outputs[OUTPUT].isConnected()) {
 						outputs[OUTPUT].setVoltage(rescale(v, 0.f, 1.f, 0.f, 10.f));
@@ -109,7 +110,7 @@ struct MapButton : LEDBezel {
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
 			e.consume(this);
 
-			if (module->paramHandles[0].moduleId >= 0) {
+			if (module->paramHandles[id].moduleId >= 0) {
 				ui::Menu *menu = createMenu();
 				std::string header = "Parameter \"" + getParamName() + "\"";
 				menu->addChild(createMenuLabel(header));
