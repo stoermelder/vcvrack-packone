@@ -29,8 +29,8 @@ struct CVMap : CVMapModule<MAX_CHANNELS> {
 
 	CVMap() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		for (int id = 0; id < MAX_CHANNELS; id++) {
-			MapModule<MAX_CHANNELS>::paramHandles[id].text = string::f("CV-MAP Ch%02d", id + 1);
+		for (int i = 0; i < MAX_CHANNELS; i++) {
+			MapModule<MAX_CHANNELS>::paramHandles[i].text = string::f("CV-MAP Ch%02d", i + 1);
 		}
 		lightDivider.setDivision(1024);
 		onReset();
@@ -38,36 +38,36 @@ struct CVMap : CVMapModule<MAX_CHANNELS> {
 
 	void process(const ProcessArgs &args) override {
 		// Step channels
-		for (int id = 0; id < mapLen; id++) {
-			if (id < 16) {
+		for (int i = 0; i < mapLen; i++) {
+			if (i < 16) {
 				// Skip unused channels on INPUT1
-				if (inputs[POLY_INPUT1].getChannels() == id) {
-					id = 15;
+				if (inputs[POLY_INPUT1].getChannels() == i) {
+					i = 15;
 					continue;
 				}
 			} else {
 				// Skip unused channels on INPUT2
-				if (inputs[POLY_INPUT2].getChannels() == id - 16) {
+				if (inputs[POLY_INPUT2].getChannels() == i - 16) {
 					break;
 				}
 			}
 
-			ParamQuantity *paramQuantity = getParamQuantity(id);
+			ParamQuantity *paramQuantity = getParamQuantity(i);
 			if (paramQuantity == NULL) continue;
 			// Set ParamQuantity
-			float v = id < 16 ? inputs[POLY_INPUT1].getVoltage(id) : inputs[POLY_INPUT2].getVoltage(id - 16);
+			float v = i < 16 ? inputs[POLY_INPUT1].getVoltage(i) : inputs[POLY_INPUT2].getVoltage(i - 16);
 			if (bipolarInput)
 				v += 5.f;
 			v = rescale(v, 0.f, 10.f, 0.f, 1.f);
 
 			// If lastValue is unitialized set it to its current value, only executed once
-			if (lastValue[id] == UINIT) {
-				lastValue[id] = v;
+			if (lastValue[i] == UINIT) {
+				lastValue[i] = v;
 			}
 
-			if (lockParameterChanges || lastValue[id] != v) {
+			if (lockParameterChanges || lastValue[i] != v) {
 				paramQuantity->setScaledValue(v);
-				lastValue[id] = v;					
+				lastValue[i] = v;					
 			}
 		}
 

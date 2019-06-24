@@ -17,19 +17,19 @@
 			"slug": "CVMap",
 			"name": "CV-MAP",
 			"description": "Add CV automation to 32 parameters of any module",
-			"tags": ["Utility", "Polyphonic"]
+			"tags": ["Utility", "Polyphonic", "Controller"]
 		},
 		{
 			"slug": "CVMapMicro",
 			"name": "µMAP",
 			"description": "Add CV automation to one parameter of any module",
-			"tags": ["Utility"]
+			"tags": ["Utility", "Controller"]
 		},
 		{
 			"slug": "CVPam",
 			"name": "CV-PAM",
 			"description": "Generate CV from any parameter change of any module",
-			"tags": ["Utility", "Polyphonic"]
+			"tags": ["Utility", "Polyphonic", "Controller"]
 		},
 		{
 			"slug": "RotorA",
@@ -41,13 +41,13 @@
 			"slug": "ReMoveLite",
 			"name": "ReMOVE Lite",
 			"description": "Recorder for parameter automation",
-			"tags": ["Utility"]
+			"tags": ["Utility", "Recording", "Controller"]
 		},
 		{
 			"slug": "Bolt",
 			"name": "BOLT",
-			"description": "Polyphonic logic operations with modulation and sample & hold",
-			"tags": ["Utility", "Logic", "Polyphonic"]
+			"description": "Polyphonic logic boolean functions with modulation and sample & hold",
+			"tags": ["Utility", "Logic", "Polyphonic", "Sample and hold"]
 		},
 		{
 			"slug": "Infix",
