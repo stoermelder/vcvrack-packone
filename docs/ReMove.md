@@ -64,7 +64,7 @@ Same behaviour as most sequencers: RUN can be configured as high or trigger for 
 
 Using ReMOVE in a sequencer scenario.
 
-![ReMOVE sequencing](./ReMove-seq.png)
+![ReMOVE sequencing](./ReMove-seq.gif)
 
 ### REC-input
 
