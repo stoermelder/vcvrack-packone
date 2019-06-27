@@ -64,7 +64,7 @@ Same behaviour as most sequencers: RUN can be configured for playback as "high" 
 
 Using ReMOVE in a sequencer scenario that records a random source and plays it back multiple times.
 
-![ReMOVE sequencing](./ReMove-seq.png)
+![ReMOVE sequencing](./ReMove-seq.gif)
 
 ### REC-input
 
@@ -89,4 +89,4 @@ The OUT-port outputs voltage for the recorded sequence. It can be configured for
 - When duplicating an instance of the module all recorded sequences are also duplicated.
 - The module can be re-mapped to another parameter after a sequence has been recorded.
 - When changing the sampling rate of the module all recorded data will prevail and the playback-speed will be higher or slower.
-- A simple compression is implemented to reduce the file size of the patchfile.
+- A simple compression is implemented to reduce the size of the patchfile.
