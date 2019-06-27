@@ -61,8 +61,8 @@ struct ReMove : MapModule<1> {
         NUM_OUTPUTS
     };
     enum LightIds {
-        RUN_LIGHT,
-        RESET_LIGHT,
+        ENUMS(RUN_LIGHT, 2),
+        ENUMS(RESET_LIGHT, 2),
         REC_LIGHT,
         ENUMS(SEQ_LIGHT, 8),
         NUM_LIGHTS
@@ -71,7 +71,7 @@ struct ReMove : MapModule<1> {
     /** [Stored to JSON] recorded data */
     float *seqData;
     /** stores the current position in data */
-    int dataPtr = 0;            
+    int dataPtr = 0;
 
     /** [Stored to JSON] number of sequences */
     int seqCount = 4;
@@ -359,8 +359,19 @@ struct ReMove : MapModule<1> {
 
         // Set channel lights infrequently
         if (lightDivider.process()) {
-            lights[RUN_LIGHT].setBrightness(isPlaying);
-            lights[RESET_LIGHT].setSmoothBrightness(resetCvTrigger.isHigh(), lightDivider.getDivision() * args.sampleTime);
+            if (inputs[PHASE_INPUT].isConnected()) {
+                lights[RUN_LIGHT + 0].setBrightness(0.f);
+                lights[RUN_LIGHT + 1].setBrightness(1.f);
+                lights[RESET_LIGHT + 0].setBrightness(0.f);
+                lights[RESET_LIGHT + 1].setBrightness(1.f);
+            }
+            else {
+                lights[RUN_LIGHT + 0].setBrightness(isPlaying);
+                lights[RUN_LIGHT + 1].setBrightness(0.f);
+                lights[RESET_LIGHT + 0].setSmoothBrightness(resetCvTrigger.isHigh(), lightDivider.getDivision() * args.sampleTime);
+                lights[RESET_LIGHT + 1].setBrightness(0.f);
+            }
+
             lights[REC_LIGHT].setBrightness(isRecording);
 
             for (int i = 0; i < 8; i++) {
@@ -998,11 +1009,11 @@ struct ReMoveWidget : ModuleWidget {
 
         addInput(createInputCentered<PJ301MPort>(Vec(68.7f, 243.3f), module, ReMove::RUN_INPUT));
         addParam(createParamCentered<TL1105>(Vec(45.f, 230.3f), module, ReMove::RUN_PARAM));
-        addChild(createLightCentered<SmallLight<GreenLight>>(Vec(76.7f, 260.5f), module, ReMove::RUN_LIGHT));
+        addChild(createLightCentered<SmallLight<GreenRedLight>>(Vec(76.7f, 260.5f), module, ReMove::RUN_LIGHT));
 
         addInput(createInputCentered<PJ301MPort>(Vec(21.1f, 243.3f), module, ReMove::RESET_INPUT));
         addParam(createParamCentered<TL1105>(Vec(45.f, 256.3f), module, ReMove::RESET_PARAM));
-        addChild(createLightCentered<SmallLight<GreenLight>>(Vec(13.1f, 260.5f), module, ReMove::RESET_LIGHT));
+        addChild(createLightCentered<SmallLight<GreenRedLight>>(Vec(13.1f, 260.5f), module, ReMove::RESET_LIGHT));
 
         addInput(createInputCentered<PJ301MPort>(Vec(68.7f, 200.1f), module, ReMove::PHASE_INPUT));
 

@@ -1,3 +1,7 @@
+### 1.0.4 (in development)
+- Module ReMOVE
+    - LEDs for RUN and RESET turn red when using PHASE-input
+    
 ### 1.0.3
 
 - Module INFIX
