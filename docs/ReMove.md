@@ -34,9 +34,10 @@ Recording is only possible when a parameter is mapped, even when using the IN-po
 
 Some modes for playback have been implemented:
 
-- Loop (Default): playback loops through the sequence.
+- Loop (Default): playback loops through the selected sequence.
 - Oneshot: the sequence is played once and must be retriggered by RESET.
 - Ping Pong: the sequence loops, first played forward and then backward.
+- Sequence Loop (added in v1.0.4): playback loops through all sequences.
 
 You can use the PHASE-input if you want a different playback speed or a completely different playback pattern.
 

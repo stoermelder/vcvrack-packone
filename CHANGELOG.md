@@ -1,6 +1,7 @@
 ### 1.0.4 (in development)
 - Module ReMOVE
     - LEDs for RUN and RESET turn red when using PHASE-input
+    - Added play mode "Sequence Loop"
     
 ### 1.0.3
 

@@ -29,12 +29,10 @@ const int REMOVE_INCVMODE_BI = 1;
 const int REMOVE_OUTCVMODE_UNI = 0;
 const int REMOVE_OUTCVMODE_BI = 1;
 
-enum ReMovePlayMode {
-    Loop = 0,
-    OneShot = 1,
-    PingPong = 2,
-    SequenceLoop = 3
-};
+const int REMOVE_PLAYMODE_LOOP = 0;
+const int REMOVE_PLAYMODE_ONESHOT = 1;
+const int REMOVE_PLAYMODE_PINGPONG = 2;
+const int REMOVE_PLAYMODE_SEQLOOP = 3;
 
 const int REMOVE_PLAYDIR_FWD = 1;
 const int REMOVE_PLAYDIR_REV = -1;
@@ -112,7 +110,7 @@ struct ReMove : MapModule<1> {
     dsp::Timer sampleTimer;
 
     /** [Stored to JSON] mode for playback */
-    int playMode = ReMovePlayMode::Loop;
+    int playMode = REMOVE_PLAYMODE_LOOP;
     int playDir = REMOVE_PLAYDIR_FWD;
 
     /** [Stored to JSON] state of playback (for button-press manually) */
@@ -339,13 +337,13 @@ struct ReMove : MapModule<1> {
                         setValue(v, paramQuantity);
                         if (dataPtr == seqLow + seqLength[seq] && playDir == REMOVE_PLAYDIR_FWD) {
                             switch (playMode) {
-                                case ReMovePlayMode::Loop: 
+                                case REMOVE_PLAYMODE_LOOP: 
                                     dataPtr = seqLow; break;
-                                case ReMovePlayMode::OneShot:      // stay on last value
+                                case REMOVE_PLAYMODE_ONESHOT:      // stay on last value
                                     dataPtr--; break;
-                                case ReMovePlayMode::PingPong:     // reverse direction
+                                case REMOVE_PLAYMODE_PINGPONG:     // reverse direction
                                     dataPtr--; playDir = REMOVE_PLAYDIR_REV; break;
-                                case ReMovePlayMode::SequenceLoop:
+                                case REMOVE_PLAYMODE_SEQLOOP:
                                     seqNext(true); break;
                             }
                         }
@@ -938,10 +936,10 @@ struct PlayModeMenuItem : MenuItem {
     ReMove *module;
     Menu *createChildMenu() override {
         Menu *menu = new Menu;
-        menu->addChild(construct<PlayModeItem>(&MenuItem::text, "Loop", &PlayModeItem::module, module, &PlayModeItem::playMode, ReMovePlayMode::Loop));
-        menu->addChild(construct<PlayModeItem>(&MenuItem::text, "Oneshot", &PlayModeItem::module, module, &PlayModeItem::playMode, ReMovePlayMode::OneShot));
-        menu->addChild(construct<PlayModeItem>(&MenuItem::text, "Ping Pong", &PlayModeItem::module, module, &PlayModeItem::playMode, ReMovePlayMode::PingPong));
-        menu->addChild(construct<PlayModeItem>(&MenuItem::text, "Sequence Loop", &PlayModeItem::module, module, &PlayModeItem::playMode, ReMovePlayMode::SequenceLoop));
+        menu->addChild(construct<PlayModeItem>(&MenuItem::text, "Loop", &PlayModeItem::module, module, &PlayModeItem::playMode, REMOVE_PLAYMODE_LOOP));
+        menu->addChild(construct<PlayModeItem>(&MenuItem::text, "Oneshot", &PlayModeItem::module, module, &PlayModeItem::playMode, REMOVE_PLAYMODE_ONESHOT));
+        menu->addChild(construct<PlayModeItem>(&MenuItem::text, "Ping Pong", &PlayModeItem::module, module, &PlayModeItem::playMode, REMOVE_PLAYMODE_PINGPONG));
+        menu->addChild(construct<PlayModeItem>(&MenuItem::text, "Sequence Loop", &PlayModeItem::module, module, &PlayModeItem::playMode, REMOVE_PLAYMODE_SEQLOOP));
         return menu;
     }
 };
