@@ -119,6 +119,7 @@ struct StripWidget : ModuleWidget {
 		ModuleWidget *moduleWidget = moduleFromJson(moduleJ);
 		if (moduleWidget) {
 			moduleWidget->box.pos = left ? box.pos.minus(Vec(moduleWidget->box.size.x, 0)) : box.pos;
+			moduleWidget->module->id = -1;
 			APP->scene->rack->addModule(moduleWidget);
 			APP->scene->rack->setModulePosForce(moduleWidget, moduleWidget->box.pos);
 			box.size = moduleWidget->box.size;
