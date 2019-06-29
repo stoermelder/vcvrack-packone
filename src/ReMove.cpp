@@ -939,7 +939,7 @@ struct PlayModeMenuItem : MenuItem {
         menu->addChild(construct<PlayModeItem>(&MenuItem::text, "Loop", &PlayModeItem::module, module, &PlayModeItem::playMode, REMOVE_PLAYMODE_LOOP));
         menu->addChild(construct<PlayModeItem>(&MenuItem::text, "Oneshot", &PlayModeItem::module, module, &PlayModeItem::playMode, REMOVE_PLAYMODE_ONESHOT));
         menu->addChild(construct<PlayModeItem>(&MenuItem::text, "Ping Pong", &PlayModeItem::module, module, &PlayModeItem::playMode, REMOVE_PLAYMODE_PINGPONG));
-        menu->addChild(construct<PlayModeItem>(&MenuItem::text, "Sequence Loop", &PlayModeItem::module, module, &PlayModeItem::playMode, REMOVE_PLAYMODE_SEQLOOP));
+        menu->addChild(construct<PlayModeItem>(&MenuItem::text, "Loop Sequences", &PlayModeItem::module, module, &PlayModeItem::playMode, REMOVE_PLAYMODE_SEQLOOP));
         return menu;
     }
 };
