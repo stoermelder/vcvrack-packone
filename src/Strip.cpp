@@ -177,6 +177,7 @@ struct StripWidget : ModuleWidget {
 		for (std::vector<int>::iterator it = toBeRemoved.begin() ; it != toBeRemoved.end(); ++it) {
 			ModuleWidget *mw = APP->scene->rack->getModule(*it);
 			APP->scene->rack->removeModule(mw);
+			delete mw;
 		}
 
 		// add modules, right then left matters here
@@ -214,18 +215,24 @@ struct StripWidget : ModuleWidget {
 				int outputIndex, outputPortId, inputIndex, inputPortId;
 				json_unpack(cableJ, "[i, i, i, i]", &outputIndex, &outputPortId, &inputIndex, &inputPortId);
 
-				ModuleWidget *mw1 = modules[outputIndex];
-				ModuleWidget *mw2 = modules[inputIndex];
+				ModuleWidget *outputModule = modules[outputIndex];
+				ModuleWidget *inputModule = modules[inputIndex];
 				// maybe modules could not be loaded
-				if (!mw1 || !mw2) continue;
-				PortWidget *pw1 = mw1->outputs[outputPortId];
-				PortWidget *pw2 = mw2->inputs[inputPortId];
-				// maybe there is something wrong with the ports
-				if (!pw1 || !pw2) continue;
+				if (!outputModule || !inputModule) continue;
 
 				CableWidget *cw = new CableWidget;
-				cw->setOutput(pw1);
-				cw->setInput(pw2);
+				for (PortWidget *port : outputModule->outputs) {
+					if (port->portId == outputPortId) {
+						cw->setOutput(port);
+						break;
+					}
+				}
+				for (PortWidget *port : inputModule->inputs) {
+					if (port->portId == inputPortId) {
+						cw->setInput(port);
+						break;
+					}
+				}
 				APP->scene->rack->addCable(cw);
 			}
 		}
@@ -272,8 +279,8 @@ struct StripWidget : ModuleWidget {
 						continue;
 
 					PortWidget* input = cw->inputPort;
-					ModuleWidget *mw2 = APP->scene->rack->getModule(input->module->id);
-					auto it2 = modules.find(mw2);
+					ModuleWidget *inputModule = APP->scene->rack->getModule(input->module->id);
+					auto it2 = modules.find(inputModule);
 					if (it2 == modules.end())
 						continue;
 
