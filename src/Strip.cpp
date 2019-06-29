@@ -3,9 +3,11 @@
 #include <plugin.hpp>
 #include <thread>
 
+static const char PRESET_FILTERS[] = "stoermelder STRIP group preset (.vcvss):vcvss";
 
 const int STRIP_ONMODE_DEFAULT = 0;
 const int STRIP_ONMODE_TOGGLE = 1;
+
 
 struct Strip : Module {
 	enum ParamIds {
@@ -63,14 +65,9 @@ struct Strip : Module {
         }
     }
 
-	void saveGroup() {
-
-	}
-
     json_t *dataToJson() override {
 		json_t *rootJ = json_object();
 		json_object_set_new(rootJ, "onMode", json_boolean(onMode));
-
 		return rootJ;
 	}
 
@@ -80,7 +77,6 @@ struct Strip : Module {
 	}
 };
 
-static const char PRESET_FILTERS[] = "stoermelder STRIP group preset (.vcvss):vcvss";
 
 struct StripWidget : ModuleWidget {
 	StripWidget(Strip *module) {
@@ -119,7 +115,7 @@ struct StripWidget : ModuleWidget {
 		return moduleWidget;
 	}
 
-	ModuleWidget *addModuleToRack(json_t *moduleJ, Rect &box, bool left) {
+	ModuleWidget *moduleToRack(json_t *moduleJ, Rect &box, bool left) {
 		ModuleWidget *moduleWidget = moduleFromJson(moduleJ);
 		if (moduleWidget) {
 			moduleWidget->box.pos = left ? box.pos.minus(Vec(moduleWidget->box.size.x, 0)) : box.pos;
@@ -145,7 +141,7 @@ struct StripWidget : ModuleWidget {
 
 		FILE *file = fopen(filename.c_str(), "r");
 		if (!file) {
-			WARN("Could not load patch file %s", filename.c_str());
+			WARN("Could not load file %s", filename.c_str());
 			return;
 		}
 		DEFER({
@@ -155,7 +151,7 @@ struct StripWidget : ModuleWidget {
 		json_error_t error;
 		json_t *rootJ = json_loadf(file, 0, &error);
 		if (!rootJ) {
-			std::string message = string::f("File is not a valid patch file. JSON parsing error at %s %d:%d %s", error.source, error.line, error.column, error.text);
+			std::string message = string::f("File is not a valid file. JSON parsing error at %s %d:%d %s", error.source, error.line, error.column, error.text);
 			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, message.c_str());
 			return;
 		}
@@ -163,7 +159,7 @@ struct StripWidget : ModuleWidget {
 			json_decref(rootJ);
 		});
 
-		// remove modules directly attached to STRIP
+		// remove modules next to STRIP
 		std::vector<int> toBeRemoved;
         Module *m = module;
         while (m) {
@@ -182,7 +178,7 @@ struct StripWidget : ModuleWidget {
 			APP->scene->rack->removeModule(mw);
 		}
 
-		// add modules
+		// add modules, right then left matters here
 		std::map<int, ModuleWidget*> modules;
 		int mc = 0;
 		Rect box = this->box;
@@ -192,7 +188,8 @@ struct StripWidget : ModuleWidget {
 			size_t moduleIndex;
 			json_array_foreach(rightModulesJ, moduleIndex, moduleJ) {
 				box.pos = box.pos.plus(Vec(box.size.x, 0));
-				ModuleWidget *mw = addModuleToRack(moduleJ, box, false);
+				ModuleWidget *mw = moduleToRack(moduleJ, box, false);
+				// could be NULL, just move on
 				modules[mc++] = mw;
 			}
 		}
@@ -202,7 +199,7 @@ struct StripWidget : ModuleWidget {
 			json_t *moduleJ;
 			size_t moduleIndex;
 			json_array_foreach(leftModulesJ, moduleIndex, moduleJ) {
-				ModuleWidget *mw = addModuleToRack(moduleJ, box, true);
+				ModuleWidget *mw = moduleToRack(moduleJ, box, true);
 				modules[mc++] = mw;
 			}
 		}
@@ -218,8 +215,12 @@ struct StripWidget : ModuleWidget {
 
 				ModuleWidget *mw1 = modules[outputIndex];
 				ModuleWidget *mw2 = modules[inputIndex];
+				// maybe modules could not be loaded
+				if (!mw1 || !mw2) continue;
 				PortWidget *pw1 = mw1->outputs[outputPortId];
 				PortWidget *pw2 = mw2->inputs[inputPortId];
+				// maybe there is something wrong with the ports
+				if (!pw1 || !pw2) continue;
 
 				CableWidget *cw = new CableWidget;
 				cw->setOutput(pw1);
@@ -232,7 +233,7 @@ struct StripWidget : ModuleWidget {
 	void saveGroup(std::string filename) {
 		INFO("Saving preset %s", filename.c_str());
 
-		// modules
+		// add modules
 		std::map<ModuleWidget*, int> modules;
 		int mc = 0;
 		json_t *rightModulesJ = json_array();
@@ -259,11 +260,11 @@ struct StripWidget : ModuleWidget {
             m = m->leftExpander.module;
         }
 
-		// cables
+		// add cables
 		json_t *cablesJ = json_array();
 		for (auto it1 = modules.begin(); it1 != modules.end(); ++it1) {
 			int outputIndex = it1->second;
-			// it is enough to check the inputs, as output with other end outside the group doesn't matter
+			// it is enough to check the inputs, as outputs don't matter when the other end outside of the group
 			for (PortWidget* output : it1->first->outputs) {
 				for (CableWidget *cw : APP->scene->rack->getCablesOnPort(output)) {
 					if (!cw->isComplete())
@@ -282,7 +283,9 @@ struct StripWidget : ModuleWidget {
 			}
 		}
 
+		// save json
 		json_t *rootJ = json_object();
+		json_object_set_new(rootJ, "version", json_integer(1));
 		json_object_set_new(rootJ, "rightModules", rightModulesJ);
 		json_object_set_new(rootJ, "leftModules", leftModulesJ);
 		json_object_set_new(rootJ, "cables", cablesJ);
@@ -391,9 +394,9 @@ struct StripWidget : ModuleWidget {
 			}
 		};
 
-		LoadGroupMenuItem *loadGroupMenuItem = construct<LoadGroupMenuItem>(&MenuItem::text, "Load group of modules", &LoadGroupMenuItem::moduleWidget, this);
+		LoadGroupMenuItem *loadGroupMenuItem = construct<LoadGroupMenuItem>(&MenuItem::text, "Load strip of modules", &LoadGroupMenuItem::moduleWidget, this);
 		menu->addChild(loadGroupMenuItem);
-        SaveGroupMenuItem *saveGroupMenuItem = construct<SaveGroupMenuItem>(&MenuItem::text, "Save group of modules", &SaveGroupMenuItem::moduleWidget, this);
+        SaveGroupMenuItem *saveGroupMenuItem = construct<SaveGroupMenuItem>(&MenuItem::text, "Save strip of modules", &SaveGroupMenuItem::moduleWidget, this);
 		menu->addChild(saveGroupMenuItem);
   	}
 };
