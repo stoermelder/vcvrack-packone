@@ -1,4 +1,7 @@
 ### 1.0.4 (in development)
+
+- Module STRIP
+    - New module, allows enabling and disabling modules by CV using the expander-mechanis ([docs](./docs/Strip.md))
 - Module ReMOVE
     - LEDs for RUN and RESET turn red when using PHASE-input
     - Added play mode "Sequence Loop"

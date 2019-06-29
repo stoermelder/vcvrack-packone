@@ -13,4 +13,5 @@ void init(rack::Plugin *p) {
 	p->addModel(modelReMoveLite);
 	p->addModel(modelBolt);
 	p->addModel(modelInfix);
+	p->addModel(modelStrip);
 }

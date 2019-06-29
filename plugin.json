@@ -54,6 +54,12 @@
 			"name": "INFIX",
 			"description": "Insert for polyphonic cables",
 			"tags": ["Utility", "Polyphonic"]
+		},
+		{
+			"slug": "Strip",
+			"name": "STRIP",
+			"description": "Disable and enable a group of modules by using the expander-mechanism",
+			"tags": ["Utility"]
 		}
 	]
 }
