@@ -17,7 +17,7 @@ The PackOne plugin pack gives you a some utility modules for VCV Rack v1:
 - [ROTOR Model A](./docs/RotorA.md): spread a carrier signal across 2-16 output channels using CV
 - [BOLT](./docs/Bolt.md): polyphonic CV-modulateable boolean functions
 - [INFIX](./docs/Infix.md): insert for polyphonic cables
-- [STRIP](./docs/Strip.md): utility of disabled and enabling modules by CV using the expander-mechanism
+- [STRIP](./docs/Strip.md): utility for disabling and enabling modules by CV using the expander-mechanism
 
 Release versions are published in the [VCV Library](https://vcvrack.com/plugins.html#packone).
 

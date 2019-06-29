@@ -1,6 +1,10 @@
 #include "plugin.hpp"
 #include <thread>
 
+
+const int STRIP_ONMODE_DEFAULT = 0;
+const int STRIP_ONMODE_TOGGLE = 1;
+
 struct Strip : Module {
 	enum ParamIds {
         ON_PARAM,
@@ -19,6 +23,11 @@ struct Strip : Module {
 		NUM_LIGHTS
 	};
 
+    /** [Stored to JSON] */
+
+    int onMode = STRIP_ONMODE_DEFAULT;
+    bool lastState = false;
+
 	dsp::SchmittTrigger onTrigger;
     dsp::SchmittTrigger offPTrigger;
 
@@ -32,11 +41,12 @@ struct Strip : Module {
             traverseDisable(true);
         }
         if (onTrigger.process(params[ON_PARAM].getValue() + inputs[ON_INPUT].getVoltage())) {
-            traverseDisable(false);
+            traverseDisable(onMode == STRIP_ONMODE_DEFAULT ? false : !lastState);
         }
 	}
 
     void traverseDisable(bool val) {
+        lastState = val;
         Module *m = this;
         while (m) {
             if (m->rightExpander.moduleId < 0) break;
@@ -50,6 +60,18 @@ struct Strip : Module {
             m = m->leftExpander.module;
         }
     }
+
+    json_t *dataToJson() override {
+		json_t *rootJ = json_object();
+		json_object_set_new(rootJ, "onMode", json_boolean(onMode));
+
+		return rootJ;
+	}
+
+	void dataFromJson(json_t *rootJ) override {
+		json_t *onModeJ = json_object_get(rootJ, "onMode");
+		onMode = json_boolean_value(onModeJ);
+	}
 };
 
 
@@ -80,6 +102,23 @@ struct StripWidget : ModuleWidget {
         };
 
         menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
+        menu->addChild(new MenuSeparator());
+
+		struct OnModeMenuItem : MenuItem {
+			Strip *module;
+
+			void onAction(const event::Action &e) override {
+				module->onMode ^= true;
+			}
+
+			void step() override {
+				rightText = module->onMode == STRIP_ONMODE_DEFAULT ? "Default" : "Toggle";
+				MenuItem::step();
+			}
+		};
+
+        OnModeMenuItem *onModeMenuItem = construct<OnModeMenuItem>(&MenuItem::text, "ON mode", &OnModeMenuItem::module, module);
+        menu->addChild(onModeMenuItem);
   	}
 };
 
