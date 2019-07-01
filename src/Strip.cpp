@@ -11,13 +11,13 @@ const int STRIP_ONMODE_TOGGLE = 1;
 
 struct Strip : Module {
 	enum ParamIds {
-        ON_PARAM,
-        OFF_PARAM,
+		ON_PARAM,
+		OFF_PARAM,
 		NUM_PARAMS
 	};
 	enum InputIds {
-        ON_INPUT,
-        OFF_INPUT,
+		ON_INPUT,
+		OFF_INPUT,
 		NUM_INPUTS
 	};
 	enum OutputIds {
@@ -27,13 +27,13 @@ struct Strip : Module {
 		NUM_LIGHTS
 	};
 
-    /** [Stored to JSON] */
-    int onMode = STRIP_ONMODE_DEFAULT;
-    
-    bool lastState = false;
+	/** [Stored to JSON] */
+	int onMode = STRIP_ONMODE_DEFAULT;
+
+	bool lastState = false;
 
 	dsp::SchmittTrigger onTrigger;
-    dsp::SchmittTrigger offPTrigger;
+	dsp::SchmittTrigger offPTrigger;
 
 	Strip() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -41,31 +41,31 @@ struct Strip : Module {
 	}
 
 	void process(const ProcessArgs &args) override {
-        if (offPTrigger.process(params[OFF_PARAM].getValue() + inputs[OFF_INPUT].getVoltage())) {
-            traverseDisable(true);
-        }
-        if (onTrigger.process(params[ON_PARAM].getValue() + inputs[ON_INPUT].getVoltage())) {
-            traverseDisable(onMode == STRIP_ONMODE_DEFAULT ? false : !lastState);
-        }
+		if (offPTrigger.process(params[OFF_PARAM].getValue() + inputs[OFF_INPUT].getVoltage())) {
+			traverseDisable(true);
+		}
+		if (onTrigger.process(params[ON_PARAM].getValue() + inputs[ON_INPUT].getVoltage())) {
+			traverseDisable(onMode == STRIP_ONMODE_DEFAULT ? false : !lastState);
+		}
 	}
 
-    void traverseDisable(bool val) {
-        lastState = val;
-        Module *m = this;
-        while (m) {
-            if (m->rightExpander.moduleId < 0) break;
-            m->rightExpander.module->bypass = val;
-            m = m->rightExpander.module;
-        }
-        m = this;
-        while (m) {
-            if (m->leftExpander.moduleId < 0) break;
-            m->leftExpander.module->bypass = val;
-            m = m->leftExpander.module;
-        }
-    }
+	void traverseDisable(bool val) {
+		lastState = val;
+		Module *m = this;
+		while (m) {
+			if (m->rightExpander.moduleId < 0) break;
+			m->rightExpander.module->bypass = val;
+			m = m->rightExpander.module;
+		}
+		m = this;
+		while (m) {
+			if (m->leftExpander.moduleId < 0) break;
+			m->leftExpander.module->bypass = val;
+			m = m->leftExpander.module;
+		}
+	}
 
-    json_t *dataToJson() override {
+	json_t *dataToJson() override {
 		json_t *rootJ = json_object();
 		json_object_set_new(rootJ, "onMode", json_boolean(onMode));
 		return rootJ;
@@ -86,10 +86,10 @@ struct StripWidget : ModuleWidget {
 		addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-        addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 59.3f), module, Strip::ON_INPUT));
-        addParam(createParamCentered<TL1105>(Vec(22.5f, 82.6f), module, Strip::ON_PARAM));
-        addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 126.1f), module, Strip::OFF_INPUT));
-        addParam(createParamCentered<TL1105>(Vec(22.5f, 149.4f), module, Strip::OFF_PARAM));
+		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 59.3f), module, Strip::ON_INPUT));
+		addParam(createParamCentered<TL1105>(Vec(22.5f, 82.6f), module, Strip::ON_PARAM));
+		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 126.1f), module, Strip::OFF_INPUT));
+		addParam(createParamCentered<TL1105>(Vec(22.5f, 149.4f), module, Strip::OFF_PARAM));
 	}
 
 	ModuleWidget *moduleFromJson(json_t *moduleJ) {
@@ -162,18 +162,18 @@ struct StripWidget : ModuleWidget {
 
 		// remove modules next to STRIP
 		std::vector<int> toBeRemoved;
-        Module *m = module;
-        while (m) {
-            if (m->rightExpander.moduleId < 0) break;
+		Module *m = module;
+		while (m) {
+			if (m->rightExpander.moduleId < 0) break;
 			toBeRemoved.push_back(m->rightExpander.moduleId);
-            m = m->rightExpander.module;
-        }
+			m = m->rightExpander.module;
+		}
 		m = module;
-        while (m) {
-            if (m->leftExpander.moduleId < 0) break;
+		while (m) {
+			if (m->leftExpander.moduleId < 0) break;
 			toBeRemoved.push_back(m->leftExpander.moduleId);
-            m = m->leftExpander.module;
-        }
+			m = m->leftExpander.module;
+		}
 		for (std::vector<int>::iterator it = toBeRemoved.begin() ; it != toBeRemoved.end(); ++it) {
 			ModuleWidget *mw = APP->scene->rack->getModule(*it);
 			APP->scene->rack->removeModule(mw);
@@ -213,7 +213,12 @@ struct StripWidget : ModuleWidget {
 			size_t cableIndex;
 			json_array_foreach(cablesJ, cableIndex, cableJ) {
 				int outputIndex, outputPortId, inputIndex, inputPortId;
-				json_unpack(cableJ, "[i, i, i, i]", &outputIndex, &outputPortId, &inputIndex, &inputPortId);
+
+				json_t *cablePortsJ = json_object_get(cableJ, "ports");
+				if (!cablePortsJ) continue;
+				json_unpack(cablePortsJ, "[i, i, i, i]", &outputIndex, &outputPortId, &inputIndex, &inputPortId);
+
+				json_t *cableColorJ = json_object_get(cableJ, "color");
 
 				ModuleWidget *outputModule = modules[outputIndex];
 				ModuleWidget *inputModule = modules[inputIndex];
@@ -221,6 +226,10 @@ struct StripWidget : ModuleWidget {
 				if (!outputModule || !inputModule) continue;
 
 				CableWidget *cw = new CableWidget;
+				if (cableColorJ) {
+					std::string colorStr = json_string_value(cableColorJ);
+					cw->color = color::fromHexString(colorStr);
+				}
 				for (PortWidget *port : outputModule->outputs) {
 					if (port->portId == outputPortId) {
 						cw->setOutput(port);
@@ -233,7 +242,9 @@ struct StripWidget : ModuleWidget {
 						break;
 					}
 				}
-				APP->scene->rack->addCable(cw);
+				if (cw->isComplete()) {
+					APP->scene->rack->addCable(cw);
+				}
 			}
 		}
 	}
@@ -245,28 +256,28 @@ struct StripWidget : ModuleWidget {
 		std::map<ModuleWidget*, int> modules;
 		int mc = 0;
 		json_t *rightModulesJ = json_array();
-        Module *m = module;
-        while (m) {
-            if (m->rightExpander.moduleId < 0) break;
+		Module *m = module;
+		while (m) {
+			if (m->rightExpander.moduleId < 0) break;
 			ModuleWidget *mw = APP->scene->rack->getModule(m->rightExpander.moduleId);
 			json_t *moduleJ = mw->toJson();
 			assert(moduleJ);
 			json_array_append_new(rightModulesJ, moduleJ);
 			modules[mw] = mc++;
-            m = m->rightExpander.module;
-        }
+			m = m->rightExpander.module;
+		}
 
 		json_t *leftModulesJ = json_array();
-        m = module;
-        while (m) {
-            if (m->leftExpander.moduleId < 0) break;
+		m = module;
+		while (m) {
+			if (m->leftExpander.moduleId < 0) break;
 			ModuleWidget *mw = APP->scene->rack->getModule(m->leftExpander.moduleId);
 			json_t *moduleJ = mw->toJson();
 			assert(moduleJ);
 			json_array_append_new(leftModulesJ, moduleJ);
 			modules[mw] = mc++;
-            m = m->leftExpander.module;
-        }
+			m = m->leftExpander.module;
+		}
 
 		// add cables
 		json_t *cablesJ = json_array();
@@ -285,7 +296,13 @@ struct StripWidget : ModuleWidget {
 						continue;
 
 					int inputIndex = it2->second;
-					json_t *cableJ = json_pack("[i, i, i, i]", outputIndex, output->portId, inputIndex, input->portId);
+
+					json_t *cableJ = json_object();
+					json_t *cablePortsJ = json_pack("[i, i, i, i]", outputIndex, output->portId, inputIndex, input->portId);
+					json_object_set_new(cableJ, "ports", cablePortsJ);
+					std::string colorStr = color::toHexString(cw->color);
+					json_object_set_new(cableJ, "color", json_string(colorStr.c_str()));
+
 					json_array_append_new(cablesJ, cableJ);
 				}
 			}
@@ -359,15 +376,15 @@ struct StripWidget : ModuleWidget {
 		Strip *module = dynamic_cast<Strip*>(this->module);
 		assert(module);
 
-        struct ManualItem : MenuItem {
-            void onAction(const event::Action &e) override {
-                std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Strip.md");
-                t.detach();
-            }
-        };
+		struct ManualItem : MenuItem {
+			void onAction(const event::Action &e) override {
+				std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Strip.md");
+				t.detach();
+			}
+		};
 
-        menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
-        menu->addChild(new MenuSeparator());
+		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
+		menu->addChild(new MenuSeparator());
 
 		struct OnModeMenuItem : MenuItem {
 			Strip *module;
@@ -382,8 +399,8 @@ struct StripWidget : ModuleWidget {
 			}
 		};
 
-        OnModeMenuItem *onModeMenuItem = construct<OnModeMenuItem>(&MenuItem::text, "ON mode", &OnModeMenuItem::module, module);
-        menu->addChild(onModeMenuItem);
+		OnModeMenuItem *onModeMenuItem = construct<OnModeMenuItem>(&MenuItem::text, "ON mode", &OnModeMenuItem::module, module);
+		menu->addChild(onModeMenuItem);
 		menu->addChild(new MenuSeparator());
 
 		struct LoadGroupMenuItem : MenuItem {
@@ -404,9 +421,9 @@ struct StripWidget : ModuleWidget {
 
 		LoadGroupMenuItem *loadGroupMenuItem = construct<LoadGroupMenuItem>(&MenuItem::text, "Load strip of modules", &LoadGroupMenuItem::moduleWidget, this);
 		menu->addChild(loadGroupMenuItem);
-        SaveGroupMenuItem *saveGroupMenuItem = construct<SaveGroupMenuItem>(&MenuItem::text, "Save strip of modules", &SaveGroupMenuItem::moduleWidget, this);
+		SaveGroupMenuItem *saveGroupMenuItem = construct<SaveGroupMenuItem>(&MenuItem::text, "Save strip of modules", &SaveGroupMenuItem::moduleWidget, this);
 		menu->addChild(saveGroupMenuItem);
-  	}
+	}
 };
 
 
