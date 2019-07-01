@@ -160,9 +160,10 @@ struct StripWidget : ModuleWidget {
 			json_decref(rootJ);
 		});
 
-		// remove modules next to STRIP
+		// clear modules next to STRIP
 		std::vector<int> toBeRemoved;
-		Module *m = module;
+		Module *m;
+		m = module;
 		while (m) {
 			if (m->rightExpander.moduleId < 0) break;
 			toBeRemoved.push_back(m->rightExpander.moduleId);
@@ -180,7 +181,7 @@ struct StripWidget : ModuleWidget {
 			delete mw;
 		}
 
-		// add modules, right then left matters here
+		// add modules, order matters here, right then left!
 		std::map<int, ModuleWidget*> modules;
 		int mc = 0;
 		Rect box = this->box;
@@ -212,22 +213,19 @@ struct StripWidget : ModuleWidget {
 			json_t *cableJ;
 			size_t cableIndex;
 			json_array_foreach(cablesJ, cableIndex, cableJ) {
-				int outputIndex, outputPortId, inputIndex, inputPortId;
-
-				json_t *cablePortsJ = json_object_get(cableJ, "ports");
-				if (!cablePortsJ) continue;
-				json_unpack(cablePortsJ, "[i, i, i, i]", &outputIndex, &outputPortId, &inputIndex, &inputPortId);
-
-				json_t *cableColorJ = json_object_get(cableJ, "color");
+				int outputIndex = json_integer_value(json_object_get(cableJ, "outputModuleIndex"));
+				int outputPortId = json_integer_value(json_object_get(cableJ, "outputId"));
+				int inputIndex = json_integer_value(json_object_get(cableJ, "inputModuleIndex"));
+				int inputPortId = json_integer_value(json_object_get(cableJ, "inputId"));
+				const char *colorStr = json_string_value(json_object_get(cableJ, "color"));
 
 				ModuleWidget *outputModule = modules[outputIndex];
 				ModuleWidget *inputModule = modules[inputIndex];
-				// maybe modules could not be loaded
+				// in case one of the modules could not be loaded
 				if (!outputModule || !inputModule) continue;
 
 				CableWidget *cw = new CableWidget;
-				if (cableColorJ) {
-					std::string colorStr = json_string_value(cableColorJ);
+				if (colorStr) {
 					cw->color = color::fromHexString(colorStr);
 				}
 				for (PortWidget *port : outputModule->outputs) {
@@ -286,23 +284,22 @@ struct StripWidget : ModuleWidget {
 			// it is enough to check the inputs, as outputs don't matter when the other end outside of the group
 			for (PortWidget* output : it1->first->outputs) {
 				for (CableWidget *cw : APP->scene->rack->getCablesOnPort(output)) {
-					if (!cw->isComplete())
-						continue;
+					if (!cw->isComplete()) continue;
 
 					PortWidget* input = cw->inputPort;
 					ModuleWidget *inputModule = APP->scene->rack->getModule(input->module->id);
 					auto it2 = modules.find(inputModule);
-					if (it2 == modules.end())
-						continue;
-
+					if (it2 == modules.end()) continue;
 					int inputIndex = it2->second;
 
-					json_t *cableJ = json_object();
-					json_t *cablePortsJ = json_pack("[i, i, i, i]", outputIndex, output->portId, inputIndex, input->portId);
-					json_object_set_new(cableJ, "ports", cablePortsJ);
 					std::string colorStr = color::toHexString(cw->color);
-					json_object_set_new(cableJ, "color", json_string(colorStr.c_str()));
 
+					json_t *cableJ = json_object();
+					json_object_set_new(cableJ, "outputModuleIndex", json_integer(outputIndex));
+					json_object_set_new(cableJ, "outputId", json_integer(output->portId));
+					json_object_set_new(cableJ, "inputModuleIndex", json_integer(inputIndex));
+					json_object_set_new(cableJ, "inputId", json_integer(input->portId));
+					json_object_set_new(cableJ, "color", json_string(colorStr.c_str()));
 					json_array_append_new(cablesJ, cableJ);
 				}
 			}
@@ -310,10 +307,13 @@ struct StripWidget : ModuleWidget {
 
 		// save json
 		json_t *rootJ = json_object();
-		json_object_set_new(rootJ, "version", json_integer(1));
+		json_object_set_new(rootJ, "stripVersion", json_integer(1));
 		json_object_set_new(rootJ, "rightModules", rightModulesJ);
 		json_object_set_new(rootJ, "leftModules", leftModulesJ);
 		json_object_set_new(rootJ, "cables", cablesJ);
+
+		json_t *versionJ = json_string(app::APP_VERSION.c_str());
+		json_object_set_new(rootJ, "version", versionJ);
 
 		DEFER({
 			json_decref(rootJ);
