@@ -4,6 +4,8 @@ ReMOVE Lite is a utility module for recording and replaying movements of any par
 
 ![ReMOVE Intro](./ReMove-intro.gif)
 
+A really epic ![tutorial video](https://www.youtube.com/watch?v=Dd0EESJhPZA) from ![Omri Cohen](https://omricohencomposer.bandcamp.com/) showcasing ReMOVE.
+
 ### Mapping of parameters
 
 To map the module to a parameter first activate the mapping mode by mouse press inside the display on the top. While showing "Mapping..." click on any parameter of any module in your rack to bind the module. You can unbind the parameter using the context menu of the display. Also, you can "locate" the module and mapped parameter if you got lost inside you rack.

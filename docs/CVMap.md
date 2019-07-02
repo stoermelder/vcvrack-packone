@@ -6,9 +6,13 @@ It has been said that is a bit againt the idea of "virtual modular" and it is so
 
 ![CV-MAP Intro](./CVMap-intro.gif)
 
-[Omri Cohen](https://omricohencomposer.bandcamp.com/) showed how to use this module in one of his recent [live streams](https://youtu.be/RSvWeBZzYEA?t=2522).
-
 New in v1.0.2: You can disable text scrolling if it distracts you.
+
+Some videos about CV-MAP:
+
+- [Omri Cohen](https://omricohencomposer.bandcamp.com/) showed how to use this module in one of his recent [live streams](https://youtu.be/RSvWeBZzYEA?t=2522).
+- A really epic ![tutorial video](https://www.youtube.com/watch?v=Dd0EESJhPZA) from ![Omri Cohen](https://omricohencomposer.bandcamp.com/).
+- Extensive use of little brother µMAP in ![this video](https://www.youtube.com/watch?v=_bVb3LewdVw) from VCV Rack Ideas.
 
 ### Mapping of parameters
 
