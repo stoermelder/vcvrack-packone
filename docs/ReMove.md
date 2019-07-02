@@ -4,7 +4,7 @@ ReMOVE Lite is a utility module for recording and replaying movements of any par
 
 ![ReMOVE Intro](./ReMove-intro.gif)
 
-A really epic ![tutorial video](https://www.youtube.com/watch?v=Dd0EESJhPZA) from ![Omri Cohen](https://omricohencomposer.bandcamp.com/) showcasing ReMOVE.
+A really epic [tutorial video](https://www.youtube.com/watch?v=Dd0EESJhPZA) from [Omri Cohen](https://omricohencomposer.bandcamp.com/) showcasing ReMOVE.
 
 ### Mapping of parameters
 
