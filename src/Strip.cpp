@@ -56,7 +56,7 @@ struct Strip : Module {
 					traverseDisable(!lastState);
 				break;
 			case STRIP_ONMODE_HIGHLOW:
-				traverseDisable(params[ON_PARAM].getValue() + inputs[ON_INPUT].getVoltage() >= 1.f);
+				traverseDisable(params[ON_PARAM].getValue() + inputs[ON_INPUT].getVoltage() < 1.f);
 				break;
 		}
 	}
