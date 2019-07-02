@@ -7,6 +7,7 @@ static const char PRESET_FILTERS[] = "stoermelder STRIP group preset (.vcvss):vc
 
 const int STRIP_ONMODE_DEFAULT = 0;
 const int STRIP_ONMODE_TOGGLE = 1;
+const int STRIP_ONMODE_HIGHLOW = 2;
 
 
 struct Strip : Module {
@@ -44,14 +45,27 @@ struct Strip : Module {
 		if (offPTrigger.process(params[OFF_PARAM].getValue() + inputs[OFF_INPUT].getVoltage())) {
 			traverseDisable(true);
 		}
-		if (onTrigger.process(params[ON_PARAM].getValue() + inputs[ON_INPUT].getVoltage())) {
-			traverseDisable(onMode == STRIP_ONMODE_DEFAULT ? false : !lastState);
+
+		switch (onMode) {
+			case STRIP_ONMODE_DEFAULT:
+				if (onTrigger.process(params[ON_PARAM].getValue() + inputs[ON_INPUT].getVoltage()))
+					traverseDisable(false);
+				break;
+			case STRIP_ONMODE_TOGGLE:
+				if (onTrigger.process(params[ON_PARAM].getValue() + inputs[ON_INPUT].getVoltage()))
+					traverseDisable(!lastState);
+				break;
+			case STRIP_ONMODE_HIGHLOW:
+				traverseDisable(params[ON_PARAM].getValue() + inputs[ON_INPUT].getVoltage() >= 1.f);
+				break;
 		}
 	}
 
 	void traverseDisable(bool val) {
+		if (lastState == val) return;
 		lastState = val;
-		Module *m = this;
+		Module *m;
+		m = this;
 		while (m) {
 			if (m->rightExpander.moduleId < 0) break;
 			m->rightExpander.module->bypass = val;
@@ -67,14 +81,40 @@ struct Strip : Module {
 
 	json_t *dataToJson() override {
 		json_t *rootJ = json_object();
-		json_object_set_new(rootJ, "onMode", json_boolean(onMode));
+		json_object_set_new(rootJ, "onMode", json_integer(onMode));
 		return rootJ;
 	}
 
 	void dataFromJson(json_t *rootJ) override {
 		json_t *onModeJ = json_object_get(rootJ, "onMode");
-		onMode = json_boolean_value(onModeJ);
+		onMode = json_integer_value(onModeJ);
 	}
+};
+
+
+struct StripOnModeMenuItem : MenuItem {
+    struct StripOnModeItem : MenuItem {
+        Strip *module;
+        int onMode;
+
+        void onAction(const event::Action &e) override {
+            module->onMode = onMode;
+        }
+
+        void step() override {
+            rightText = module->onMode == onMode ? "✔" : "";
+            MenuItem::step();
+        }
+    };
+    
+    Strip *module;
+    Menu *createChildMenu() override {
+        Menu *menu = new Menu;
+        menu->addChild(construct<StripOnModeItem>(&MenuItem::text, "Gate", &StripOnModeItem::module, module, &StripOnModeItem::onMode, STRIP_ONMODE_DEFAULT));
+        menu->addChild(construct<StripOnModeItem>(&MenuItem::text, "Trigger", &StripOnModeItem::module, module, &StripOnModeItem::onMode, STRIP_ONMODE_TOGGLE));
+		menu->addChild(construct<StripOnModeItem>(&MenuItem::text, "High/Low", &StripOnModeItem::module, module, &StripOnModeItem::onMode, STRIP_ONMODE_HIGHLOW));
+        return menu;
+    }
 };
 
 
@@ -386,21 +426,9 @@ struct StripWidget : ModuleWidget {
 		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
 		menu->addChild(new MenuSeparator());
 
-		struct OnModeMenuItem : MenuItem {
-			Strip *module;
-
-			void onAction(const event::Action &e) override {
-				module->onMode ^= true;
-			}
-
-			void step() override {
-				rightText = module->onMode == STRIP_ONMODE_DEFAULT ? "Default" : "Toggle";
-				MenuItem::step();
-			}
-		};
-
-		OnModeMenuItem *onModeMenuItem = construct<OnModeMenuItem>(&MenuItem::text, "ON mode", &OnModeMenuItem::module, module);
-		menu->addChild(onModeMenuItem);
+		StripOnModeMenuItem *stripOnModeMenuItem = construct<StripOnModeMenuItem>(&MenuItem::text, "ON mode", &StripOnModeMenuItem::module, module);
+		stripOnModeMenuItem->rightText = RIGHT_ARROW;
+		menu->addChild(stripOnModeMenuItem);
 		menu->addChild(new MenuSeparator());
 
 		struct LoadGroupMenuItem : MenuItem {
