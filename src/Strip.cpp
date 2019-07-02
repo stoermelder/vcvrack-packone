@@ -132,75 +132,7 @@ struct StripWidget : ModuleWidget {
 		addParam(createParamCentered<TL1105>(Vec(22.5f, 149.4f), module, Strip::OFF_PARAM));
 	}
 
-	ModuleWidget *moduleFromJson(json_t *moduleJ) {
-		// Get slugs
-		json_t *pluginSlugJ = json_object_get(moduleJ, "plugin");
-		if (!pluginSlugJ)
-			return NULL;
-		json_t *modelSlugJ = json_object_get(moduleJ, "model");
-		if (!modelSlugJ)
-			return NULL;
-		std::string pluginSlug = json_string_value(pluginSlugJ);
-		std::string modelSlug = json_string_value(modelSlugJ);
-
-		// Get Model
-		plugin::Model *model = plugin::getModel(pluginSlug, modelSlug);
-		if (!model)
-			return NULL;
-
-		// Create ModuleWidget
-		ModuleWidget *moduleWidget = model->createModuleWidget();
-		assert(moduleWidget);
-		moduleWidget->fromJson(moduleJ);
-		return moduleWidget;
-	}
-
-	ModuleWidget *moduleToRack(json_t *moduleJ, Rect &box, bool left) {
-		ModuleWidget *moduleWidget = moduleFromJson(moduleJ);
-		if (moduleWidget) {
-			moduleWidget->box.pos = left ? box.pos.minus(Vec(moduleWidget->box.size.x, 0)) : box.pos;
-			moduleWidget->module->id = -1;
-			APP->scene->rack->addModule(moduleWidget);
-			APP->scene->rack->setModulePosForce(moduleWidget, moduleWidget->box.pos);
-			box.size = moduleWidget->box.size;
-			box.pos = moduleWidget->box.pos;
-			return moduleWidget;
-		}
-		else {
-			json_t *pluginSlugJ = json_object_get(moduleJ, "plugin");
-			json_t *modelSlugJ = json_object_get(moduleJ, "model");
-			std::string pluginSlug = json_string_value(pluginSlugJ);
-			std::string modelSlug = json_string_value(modelSlugJ);
-			//APP->patch->warningLog += string::f("Could not find module \"%s\" of plugin \"%s\"\n", modelSlug.c_str(), pluginSlug.c_str());
-			box = Rect(box.pos, Vec(0, 0));
-			return NULL;
-		}
-	}
-
-	void loadGroup(std::string filename) {
-		INFO("Loading preset %s", filename.c_str());
-
-		FILE *file = fopen(filename.c_str(), "r");
-		if (!file) {
-			WARN("Could not load file %s", filename.c_str());
-			return;
-		}
-		DEFER({
-			fclose(file);
-		});
-
-		json_error_t error;
-		json_t *rootJ = json_loadf(file, 0, &error);
-		if (!rootJ) {
-			std::string message = string::f("File is not a valid file. JSON parsing error at %s %d:%d %s", error.source, error.line, error.column, error.text);
-			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, message.c_str());
-			return;
-		}
-		DEFER({
-			json_decref(rootJ);
-		});
-
-		// clear modules next to STRIP
+	void clearGroup() {
 		std::vector<int> toBeRemoved;
 		Module *m;
 		m = module;
@@ -220,9 +152,58 @@ struct StripWidget : ModuleWidget {
 			APP->scene->rack->removeModule(mw);
 			delete mw;
 		}
+	}
 
-		// add modules, order matters here, right then left!
-		std::map<int, ModuleWidget*> modules;
+	/** Creates a module from json data, also retrieved the previous id of the module */
+	ModuleWidget *moduleFromJson(json_t *moduleJ, int &oldId) {
+		// Get slugs
+		json_t *pluginSlugJ = json_object_get(moduleJ, "plugin");
+		if (!pluginSlugJ) 
+			return NULL;
+		json_t *modelSlugJ = json_object_get(moduleJ, "model");
+		if (!modelSlugJ) 
+			return NULL;
+		std::string pluginSlug = json_string_value(pluginSlugJ);
+		std::string modelSlug = json_string_value(modelSlugJ);
+
+		json_t *idJ = json_object_get(moduleJ, "id");
+		oldId = idJ ? json_integer_value(idJ) : -1;
+
+		// Get Model
+		plugin::Model *model = plugin::getModel(pluginSlug, modelSlug);
+		if (!model)
+			return NULL;
+
+		// Create ModuleWidget
+		ModuleWidget *moduleWidget = model->createModuleWidget();
+		assert(moduleWidget);
+		return moduleWidget;
+	}
+
+	ModuleWidget *moduleToRack(json_t *moduleJ, bool left, Rect &box, int &oldId, int &newId) {
+		ModuleWidget *moduleWidget = moduleFromJson(moduleJ, oldId);
+		if (moduleWidget) {
+			moduleWidget->box.pos = left ? box.pos.minus(Vec(moduleWidget->box.size.x, 0)) : box.pos;
+			moduleWidget->module->id = -1;
+			APP->scene->rack->addModule(moduleWidget);
+			APP->scene->rack->setModulePosForce(moduleWidget, moduleWidget->box.pos);
+			box.size = moduleWidget->box.size;
+			box.pos = moduleWidget->box.pos;
+			newId = moduleWidget->module->id;
+			return moduleWidget;
+		}
+		else {
+			json_t *pluginSlugJ = json_object_get(moduleJ, "plugin");
+			json_t *modelSlugJ = json_object_get(moduleJ, "model");
+			std::string pluginSlug = json_string_value(pluginSlugJ);
+			std::string modelSlug = json_string_value(modelSlugJ);
+			//APP->patch->warningLog += string::f("Could not find module \"%s\" of plugin \"%s\"\n", modelSlug.c_str(), pluginSlug.c_str());
+			box = Rect(box.pos, Vec(0, 0));
+			return NULL;
+		}
+	}
+
+	void loadGroup_modules(json_t *rootJ, std::map<int, ModuleWidget*> &modules, std::map<int, int> &moduleIds) {
 		int mc = 0;
 		Rect box = this->box;
 		json_t *rightModulesJ = json_object_get(rootJ, "rightModules");
@@ -230,10 +211,12 @@ struct StripWidget : ModuleWidget {
 			json_t *moduleJ;
 			size_t moduleIndex;
 			json_array_foreach(rightModulesJ, moduleIndex, moduleJ) {
+				int oldId, newId;
 				box.pos = box.pos.plus(Vec(box.size.x, 0));
-				ModuleWidget *mw = moduleToRack(moduleJ, box, false);
+				ModuleWidget *mw = moduleToRack(moduleJ, false, box, oldId, newId);
 				// could be NULL, just move on
 				modules[mc++] = mw;
+				moduleIds[oldId] = newId;
 			}
 		}
 		box = this->box;
@@ -242,12 +225,66 @@ struct StripWidget : ModuleWidget {
 			json_t *moduleJ;
 			size_t moduleIndex;
 			json_array_foreach(leftModulesJ, moduleIndex, moduleJ) {
-				ModuleWidget *mw = moduleToRack(moduleJ, box, true);
+				int oldId, newId;
+				ModuleWidget *mw = moduleToRack(moduleJ, true, box, oldId, newId);
 				modules[mc++] = mw;
+				moduleIds[oldId] = newId;
 			}
 		}
+	}
 
-		// add cables
+	void loadGroup_presets_fixId(json_t *moduleJ, std::map<int, int> &moduleIds) {
+		std::string pluginSlug = json_string_value(json_object_get(moduleJ, "plugin"));
+		std::string modelSlug = json_string_value(json_object_get(moduleJ, "model"));
+
+		if (!(pluginSlug == "Stoermelder-P1" || pluginSlug == "VCV")) 
+			return;
+		if (!(modelSlug == "CVMap" || modelSlug == "CVMapMicro" || modelSlug == "CVPam" || modelSlug == "MIDI-Map")) 
+			return;
+
+		json_t *dataJ = json_object_get(moduleJ, "data");
+		json_t *mapsJ = json_object_get(dataJ, "maps");
+		if (mapsJ) {
+			json_t *mapJ;
+			size_t mapIndex;
+			json_array_foreach(mapsJ, mapIndex, mapJ) {
+				json_t *moduleIdJ = json_object_get(mapJ, "moduleId");
+				if (!moduleIdJ)
+					continue;
+				int oldId = json_integer_value(moduleIdJ);
+				if (oldId >= 0) {
+					int newId = moduleIds[oldId];
+					json_object_set_new(mapJ, "moduleId", json_integer(newId));
+				}
+			}
+		}
+	}
+
+	void loadGroup_presets(json_t *rootJ, std::map<int, ModuleWidget*> &modules, std::map<int, int> &moduleIds) {
+		int mc = 0;
+		json_t *rightModulesJ = json_object_get(rootJ, "rightModules");
+		if (rightModulesJ) {
+			json_t *moduleJ;
+			size_t moduleIndex;
+			json_array_foreach(rightModulesJ, moduleIndex, moduleJ) {
+				loadGroup_presets_fixId(moduleJ, moduleIds);
+				modules[mc]->fromJson(moduleJ);
+				mc++;
+			}
+		}
+		json_t *leftModulesJ = json_object_get(rootJ, "leftModules");
+		if (leftModulesJ) {
+			json_t *moduleJ;
+			size_t moduleIndex;
+			json_array_foreach(leftModulesJ, moduleIndex, moduleJ) {
+				loadGroup_presets_fixId(moduleJ, moduleIds);
+				modules[mc]->fromJson(moduleJ);
+				mc++;
+			}
+		}
+	}
+
+	void loadGroup_cables(json_t *rootJ, std::map<int, ModuleWidget*> &modules) {
 		json_t *cablesJ = json_object_get(rootJ, "cables");
 		if (cablesJ) {
 			json_t *cableJ;
@@ -285,6 +322,42 @@ struct StripWidget : ModuleWidget {
 				}
 			}
 		}
+	}
+
+	void loadGroup(std::string filename) {
+		INFO("Loading preset %s", filename.c_str());
+
+		FILE *file = fopen(filename.c_str(), "r");
+		if (!file) {
+			WARN("Could not load file %s", filename.c_str());
+			return;
+		}
+		DEFER({
+			fclose(file);
+		});
+
+		json_error_t error;
+		json_t *rootJ = json_loadf(file, 0, &error);
+		if (!rootJ) {
+			std::string message = string::f("File is not a valid file. JSON parsing error at %s %d:%d %s", error.source, error.line, error.column, error.text);
+			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, message.c_str());
+			return;
+		}
+		DEFER({
+			json_decref(rootJ);
+		});
+
+		// clear modules next to STRIP
+		clearGroup();
+
+		// add modules, order matters here, right then left!
+		std::map<int, ModuleWidget*> modules;
+		std::map<int, int> moduleIds;
+		loadGroup_modules(rootJ, modules, moduleIds);
+		loadGroup_presets(rootJ, modules, moduleIds);
+
+		// add cables
+		loadGroup_cables(rootJ, modules);
 	}
 
 	void saveGroup(std::string filename) {
@@ -447,9 +520,9 @@ struct StripWidget : ModuleWidget {
 			}
 		};
 
-		LoadGroupMenuItem *loadGroupMenuItem = construct<LoadGroupMenuItem>(&MenuItem::text, "Load strip of modules", &LoadGroupMenuItem::moduleWidget, this);
+		LoadGroupMenuItem *loadGroupMenuItem = construct<LoadGroupMenuItem>(&MenuItem::text, "Load strip", &LoadGroupMenuItem::moduleWidget, this);
 		menu->addChild(loadGroupMenuItem);
-		SaveGroupMenuItem *saveGroupMenuItem = construct<SaveGroupMenuItem>(&MenuItem::text, "Save strip of modules", &SaveGroupMenuItem::moduleWidget, this);
+		SaveGroupMenuItem *saveGroupMenuItem = construct<SaveGroupMenuItem>(&MenuItem::text, "Save strip", &SaveGroupMenuItem::moduleWidget, this);
 		menu->addChild(saveGroupMenuItem);
 	}
 };
