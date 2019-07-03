@@ -93,28 +93,28 @@ struct Strip : Module {
 
 
 struct StripOnModeMenuItem : MenuItem {
-    struct StripOnModeItem : MenuItem {
-        Strip *module;
-        int onMode;
+	struct StripOnModeItem : MenuItem {
+		Strip *module;
+		int onMode;
 
-        void onAction(const event::Action &e) override {
-            module->onMode = onMode;
-        }
+		void onAction(const event::Action &e) override {
+			module->onMode = onMode;
+		}
 
-        void step() override {
-            rightText = module->onMode == onMode ? "✔" : "";
-            MenuItem::step();
-        }
-    };
-    
-    Strip *module;
-    Menu *createChildMenu() override {
-        Menu *menu = new Menu;
-        menu->addChild(construct<StripOnModeItem>(&MenuItem::text, "Default", &StripOnModeItem::module, module, &StripOnModeItem::onMode, STRIP_ONMODE_DEFAULT));
-        menu->addChild(construct<StripOnModeItem>(&MenuItem::text, "Toggle", &StripOnModeItem::module, module, &StripOnModeItem::onMode, STRIP_ONMODE_TOGGLE));
+		void step() override {
+			rightText = module->onMode == onMode ? "✔" : "";
+			MenuItem::step();
+		}
+	};
+
+	Strip *module;
+	Menu *createChildMenu() override {
+		Menu *menu = new Menu;
+		menu->addChild(construct<StripOnModeItem>(&MenuItem::text, "Default", &StripOnModeItem::module, module, &StripOnModeItem::onMode, STRIP_ONMODE_DEFAULT));
+		menu->addChild(construct<StripOnModeItem>(&MenuItem::text, "Toggle", &StripOnModeItem::module, module, &StripOnModeItem::onMode, STRIP_ONMODE_TOGGLE));
 		menu->addChild(construct<StripOnModeItem>(&MenuItem::text, "High/Low", &StripOnModeItem::module, module, &StripOnModeItem::onMode, STRIP_ONMODE_HIGHLOW));
-        return menu;
-    }
+		return menu;
+	}
 };
 
 
@@ -528,6 +528,29 @@ struct StripWidget : ModuleWidget {
 	}
 
 
+	void onHoverKey(const event::HoverKey &e) override {
+		ModuleWidget::onHoverKey(e);
+		if (e.isConsumed())
+			return;
+
+		if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
+			switch (e.key) {
+				case GLFW_KEY_C: {
+					if ((e.mods & RACK_MOD_MASK) == GLFW_MOD_SHIFT) {
+						groupCopyClipboard();
+						e.consume(this);
+					}
+				} break;
+				case GLFW_KEY_V: {
+					if ((e.mods & RACK_MOD_MASK) == GLFW_MOD_SHIFT) {
+						groupPasteClipboard();
+						e.consume(this);
+					}
+				} break;
+			}
+		}
+	}
+
 	void appendContextMenu(Menu *menu) override {
 		Strip *module = dynamic_cast<Strip*>(this->module);
 		assert(module);
@@ -579,9 +602,9 @@ struct StripWidget : ModuleWidget {
 			}
 		};
 
-		CopyGroupMenuItem *copyGroupMenuItem = construct<CopyGroupMenuItem>(&MenuItem::text, "Copy strip", &CopyGroupMenuItem::moduleWidget, this);
+		CopyGroupMenuItem *copyGroupMenuItem = construct<CopyGroupMenuItem>(&MenuItem::text, "Copy strip", &MenuItem::rightText, "Shift+C", &CopyGroupMenuItem::moduleWidget, this);
 		menu->addChild(copyGroupMenuItem);
-		PasteGroupMenuItem *pasteGroupMenuItem = construct<PasteGroupMenuItem>(&MenuItem::text, "Paste strip", &PasteGroupMenuItem::moduleWidget, this);
+		PasteGroupMenuItem *pasteGroupMenuItem = construct<PasteGroupMenuItem>(&MenuItem::text, "Paste strip", &MenuItem::rightText, "Shift+V", &PasteGroupMenuItem::moduleWidget, this);
 		menu->addChild(pasteGroupMenuItem);
 		LoadGroupMenuItem *loadGroupMenuItem = construct<LoadGroupMenuItem>(&MenuItem::text, "Load strip", &LoadGroupMenuItem::moduleWidget, this);
 		menu->addChild(loadGroupMenuItem);
