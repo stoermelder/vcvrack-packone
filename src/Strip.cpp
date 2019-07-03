@@ -175,10 +175,9 @@ struct StripWidget : ModuleWidget {
 
 	void groupClear() {
 		std::vector<int> toBeRemoved;
-		Module *m;
 
 		if (module->mode == STRIP_MODE_LEFTRIGHT || module->mode == STRIP_MODE_RIGHT) {
-			m = module;
+			Module *m = module;
 			while (m) {
 				if (m->rightExpander.moduleId < 0) break;
 				toBeRemoved.push_back(m->rightExpander.moduleId);
@@ -186,7 +185,7 @@ struct StripWidget : ModuleWidget {
 			}
 		}
 		if (module->mode == STRIP_MODE_LEFTRIGHT || module->mode == STRIP_MODE_LEFT) {
-			m = module;
+			Module *m = module;
 			while (m) {
 				if (m->leftExpander.moduleId < 0) break;
 				toBeRemoved.push_back(m->leftExpander.moduleId);
@@ -226,7 +225,7 @@ struct StripWidget : ModuleWidget {
 		return moduleWidget;
 	}
 
-	ModuleWidget *moduleToRack(json_t *moduleJ, bool left, Rect &box, int &oldId, int &newId) {
+	ModuleWidget *moduleToRack(json_t *moduleJ, bool left, Rect &box, int &oldId) {
 		ModuleWidget *moduleWidget = moduleFromJson(moduleJ, oldId);
 		if (moduleWidget) {
 			moduleWidget->box.pos = left ? box.pos.minus(Vec(moduleWidget->box.size.x, 0)) : box.pos;
@@ -235,7 +234,6 @@ struct StripWidget : ModuleWidget {
 			APP->scene->rack->setModulePosForce(moduleWidget, moduleWidget->box.pos);
 			box.size = moduleWidget->box.size;
 			box.pos = moduleWidget->box.pos;
-			newId = moduleWidget->module->id;
 			return moduleWidget;
 		}
 		else {
@@ -249,41 +247,40 @@ struct StripWidget : ModuleWidget {
 		}
 	}
 
-	void groupFromJson_modules(json_t *rootJ, std::map<int, ModuleWidget*> &modules, std::map<int, int> &moduleIds) {
-		int mc = 0;
-		Rect box = this->box;
-		json_t *rightModulesJ = json_object_get(rootJ, "rightModules");
-		if (rightModulesJ) {
-			json_t *moduleJ;
-			size_t moduleIndex;
-			json_array_foreach(rightModulesJ, moduleIndex, moduleJ) {
-				int oldId, newId;
-				box.pos = box.pos.plus(Vec(box.size.x, 0));
-				ModuleWidget *mw = NULL;
-				if (module->mode == STRIP_MODE_LEFTRIGHT || module->mode == STRIP_MODE_RIGHT)
-					mw = moduleToRack(moduleJ, false, box, oldId, newId);
-				// could be NULL, just move on
-				modules[mc++] = mw;
-				moduleIds[oldId] = newId;
+	void groupFromJson_modules(json_t *rootJ, std::map<int, ModuleWidget*> &modules) {
+		if (module->mode == STRIP_MODE_LEFTRIGHT || module->mode == STRIP_MODE_RIGHT) {
+			Rect box = this->box;
+			json_t *rightModulesJ = json_object_get(rootJ, "rightModules");
+			if (rightModulesJ) {
+				json_t *moduleJ;
+				size_t moduleIndex;
+				json_array_foreach(rightModulesJ, moduleIndex, moduleJ) {
+					int oldId;
+					box.pos = box.pos.plus(Vec(box.size.x, 0));
+					ModuleWidget *mw = NULL;
+					mw = moduleToRack(moduleJ, false, box, oldId);
+					// Could be NULL, just move on
+					modules[oldId] = mw;
+				}
 			}
 		}
-		box = this->box;
-		json_t *leftModulesJ = json_object_get(rootJ, "leftModules");
-		if (leftModulesJ) {
-			json_t *moduleJ;
-			size_t moduleIndex;
-			json_array_foreach(leftModulesJ, moduleIndex, moduleJ) {
-				int oldId, newId;
-				ModuleWidget *mw = NULL;
-				if (module->mode == STRIP_MODE_LEFTRIGHT || module->mode == STRIP_MODE_LEFT)
-					mw = moduleToRack(moduleJ, true, box, oldId, newId);
-				modules[mc++] = mw;
-				moduleIds[oldId] = newId;
+		if (module->mode == STRIP_MODE_LEFTRIGHT || module->mode == STRIP_MODE_LEFT) {
+			Rect box = this->box;
+			json_t *leftModulesJ = json_object_get(rootJ, "leftModules");
+			if (leftModulesJ) {
+				json_t *moduleJ;
+				size_t moduleIndex;
+				json_array_foreach(leftModulesJ, moduleIndex, moduleJ) {
+					int oldId;
+					ModuleWidget *mw = NULL;
+					mw = moduleToRack(moduleJ, true, box, oldId);
+					modules[oldId] = mw;
+				}
 			}
 		}
 	}
 
-	void groupFromJson_presets_fixMapping(json_t *moduleJ, std::map<int, int> &moduleIds) {
+	void groupFromJson_presets_fixMapping(json_t *moduleJ, std::map<int, ModuleWidget*> &modules) {
 		std::string pluginSlug = json_string_value(json_object_get(moduleJ, "plugin"));
 		std::string modelSlug = json_string_value(json_object_get(moduleJ, "model"));
 
@@ -303,25 +300,28 @@ struct StripWidget : ModuleWidget {
 					continue;
 				int oldId = json_integer_value(moduleIdJ);
 				if (oldId >= 0) {
-					int newId = moduleIds[oldId];
+					int newId = -1;
+					auto t = modules.find(oldId);
+					if (t != modules.end() && t->second != NULL)
+						newId = modules[oldId]->module->id;
 					json_object_set_new(mapJ, "moduleId", json_integer(newId));
 				}
 			}
 		}
 	}
 
-	void groupFromJson_presets(json_t *rootJ, std::map<int, ModuleWidget*> &modules, std::map<int, int> &moduleIds) {
-		int mc = 0;
+	void groupFromJson_presets(json_t *rootJ, std::map<int, ModuleWidget*> &modules) {
 		json_t *rightModulesJ = json_object_get(rootJ, "rightModules");
 		if (rightModulesJ) {
 			json_t *moduleJ;
 			size_t moduleIndex;
 			json_array_foreach(rightModulesJ, moduleIndex, moduleJ) {
 				if (module->mode == STRIP_MODE_LEFTRIGHT || module->mode == STRIP_MODE_RIGHT) {
-					groupFromJson_presets_fixMapping(moduleJ, moduleIds);
-					modules[mc]->fromJson(moduleJ);
+					groupFromJson_presets_fixMapping(moduleJ, modules);
+					int oldId = json_integer_value(json_object_get(moduleJ, "id"));
+					if (modules.find(oldId) != modules.end())
+						modules[oldId]->fromJson(moduleJ);
 				}
-				mc++;
 			}
 		}
 		json_t *leftModulesJ = json_object_get(rootJ, "leftModules");
@@ -330,10 +330,11 @@ struct StripWidget : ModuleWidget {
 			size_t moduleIndex;
 			json_array_foreach(leftModulesJ, moduleIndex, moduleJ) {
 				if (module->mode == STRIP_MODE_LEFTRIGHT || module->mode == STRIP_MODE_LEFT) {
-					groupFromJson_presets_fixMapping(moduleJ, moduleIds);
-					modules[mc]->fromJson(moduleJ);
+					groupFromJson_presets_fixMapping(moduleJ, modules);
+					int oldId = json_integer_value(json_object_get(moduleJ, "id"));
+					if (modules.find(oldId) != modules.end())
+						modules[oldId]->fromJson(moduleJ);
 				}
-				mc++;
 			}
 		}
 	}
@@ -344,15 +345,15 @@ struct StripWidget : ModuleWidget {
 			json_t *cableJ;
 			size_t cableIndex;
 			json_array_foreach(cablesJ, cableIndex, cableJ) {
-				int outputIndex = json_integer_value(json_object_get(cableJ, "outputModuleIndex"));
-				int outputPortId = json_integer_value(json_object_get(cableJ, "outputId"));
-				int inputIndex = json_integer_value(json_object_get(cableJ, "inputModuleIndex"));
-				int inputPortId = json_integer_value(json_object_get(cableJ, "inputId"));
+				int outputModuleId = json_integer_value(json_object_get(cableJ, "outputModuleId"));
+				int outputId = json_integer_value(json_object_get(cableJ, "outputId"));
+				int inputModuleId = json_integer_value(json_object_get(cableJ, "inputModuleId"));
+				int inputId = json_integer_value(json_object_get(cableJ, "inputId"));
 				const char *colorStr = json_string_value(json_object_get(cableJ, "color"));
 
-				ModuleWidget *outputModule = modules[outputIndex];
-				ModuleWidget *inputModule = modules[inputIndex];
-				// in case one of the modules could not be loaded
+				ModuleWidget *outputModule = modules[outputModuleId];
+				ModuleWidget *inputModule = modules[inputModuleId];
+				// In case one of the modules could not be loaded
 				if (!outputModule || !inputModule) continue;
 
 				CableWidget *cw = new CableWidget;
@@ -360,13 +361,13 @@ struct StripWidget : ModuleWidget {
 					cw->color = color::fromHexString(colorStr);
 				}
 				for (PortWidget *port : outputModule->outputs) {
-					if (port->portId == outputPortId) {
+					if (port->portId == outputId) {
 						cw->setOutput(port);
 						break;
 					}
 				}
 				for (PortWidget *port : inputModule->inputs) {
-					if (port->portId == inputPortId) {
+					if (port->portId == inputId) {
 						cw->setInput(port);
 						break;
 					}
@@ -381,59 +382,57 @@ struct StripWidget : ModuleWidget {
 
 	void groupToJson(json_t *rootJ) {
 		// add modules
-		std::map<ModuleWidget*, int> modules;
-		int mc = 0;
-		Module *m;
+		std::set<ModuleWidget*> modules;
 
 		json_t *rightModulesJ = json_array();
 		if (module->mode == STRIP_MODE_LEFTRIGHT || module->mode == STRIP_MODE_RIGHT) {
-			m = module;
+			Module *m = module;
 			while (m) {
 				if (m->rightExpander.moduleId < 0) break;
 				ModuleWidget *mw = APP->scene->rack->getModule(m->rightExpander.moduleId);
 				json_t *moduleJ = mw->toJson();
 				assert(moduleJ);
 				json_array_append_new(rightModulesJ, moduleJ);
-				modules[mw] = mc++;
+				modules.insert(mw);
 				m = m->rightExpander.module;
 			}
 		}
 
 		json_t *leftModulesJ = json_array();
 		if (module->mode == STRIP_MODE_LEFTRIGHT || module->mode == STRIP_MODE_LEFT) {
-			m = module;
+			Module *m = module;
 			while (m) {
 				if (m->leftExpander.moduleId < 0) break;
 				ModuleWidget *mw = APP->scene->rack->getModule(m->leftExpander.moduleId);
 				json_t *moduleJ = mw->toJson();
 				assert(moduleJ);
 				json_array_append_new(leftModulesJ, moduleJ);
-				modules[mw] = mc++;
+				modules.insert(mw);
 				m = m->leftExpander.module;
 			}
 		}
 
 		// add cables
 		json_t *cablesJ = json_array();
-		for (auto it1 = modules.begin(); it1 != modules.end(); ++it1) {
-			int outputIndex = it1->second;
-			// it is enough to check the inputs, as outputs don't matter when the other end outside of the group
-			for (PortWidget* output : it1->first->outputs) {
+		for (auto i = modules.begin(); i != modules.end(); ++i) {
+			ModuleWidget *outputModule = *i;
+			// It is enough to check the outputs, as inputs don't matter when the other end outside of the group
+			for (PortWidget* output : outputModule->outputs) {
 				for (CableWidget *cw : APP->scene->rack->getCablesOnPort(output)) {
-					if (!cw->isComplete()) continue;
+					if (!cw->isComplete()) 
+						continue;
 
 					PortWidget* input = cw->inputPort;
 					ModuleWidget *inputModule = APP->scene->rack->getModule(input->module->id);
-					auto it2 = modules.find(inputModule);
-					if (it2 == modules.end()) continue;
-					int inputIndex = it2->second;
+					if (modules.find(inputModule) == modules.end()) 
+						continue;
 
 					std::string colorStr = color::toHexString(cw->color);
 
 					json_t *cableJ = json_object();
-					json_object_set_new(cableJ, "outputModuleIndex", json_integer(outputIndex));
+					json_object_set_new(cableJ, "outputModuleId", json_integer(output->module->id));
 					json_object_set_new(cableJ, "outputId", json_integer(output->portId));
-					json_object_set_new(cableJ, "inputModuleIndex", json_integer(inputIndex));
+					json_object_set_new(cableJ, "inputModuleId", json_integer(input->module->id));
 					json_object_set_new(cableJ, "inputId", json_integer(input->portId));
 					json_object_set_new(cableJ, "color", json_string(colorStr.c_str()));
 					json_array_append_new(cablesJ, cableJ);
@@ -510,17 +509,21 @@ struct StripWidget : ModuleWidget {
 	}
 
 	void groupFromJson(json_t *rootJ) {
-		// clear modules next to STRIP
+		// Clear modules next to STRIP
 		groupClear();
 
-		// add modules, order matters here, right then left!
+		// Maps old moduleId to the newly created module (with new id)
 		std::map<int, ModuleWidget*> modules;
-		std::map<int, int> moduleIds;
-		groupFromJson_modules(rootJ, modules, moduleIds);
-		groupFromJson_presets(rootJ, modules, moduleIds);
+		// Add modules
+		groupFromJson_modules(rootJ, modules);
+		// Load presets for modules, also fixes parameter mappings
+		groupFromJson_presets(rootJ, modules);
 
-		// add cables
+		// Add cables
 		groupFromJson_cables(rootJ, modules);
+
+		// Does nothing, but fixes https://github.com/VCVRack/Rack/issues/1444 for Rack <= 1.1.1
+		APP->scene->rack->requestModulePos(this, this->box.pos);
 	}
 
 	void groupPasteClipboard() {
