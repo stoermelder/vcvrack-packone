@@ -9,6 +9,10 @@ const int STRIP_ONMODE_DEFAULT = 0;
 const int STRIP_ONMODE_TOGGLE = 1;
 const int STRIP_ONMODE_HIGHLOW = 2;
 
+const int STRIP_MODE_LEFTRIGHT = 0;
+const int STRIP_MODE_RIGHT = 1;
+const int STRIP_MODE_LEFT = 2;
+
 
 struct Strip : Module {
 	enum ParamIds {
@@ -28,7 +32,9 @@ struct Strip : Module {
 		NUM_LIGHTS
 	};
 
-	/** [Stored to JSON] */
+	/** [Stored to JSON] left? right? both? */
+	int mode = STRIP_MODE_LEFTRIGHT;
+	/** [Stored to JSON] usage of switch+port in "on"-section */
 	int onMode = STRIP_ONMODE_DEFAULT;
 
 	bool lastState = false;
@@ -65,27 +71,34 @@ struct Strip : Module {
 		if (lastState == val) return;
 		lastState = val;
 		Module *m;
-		m = this;
-		while (m) {
-			if (m->rightExpander.moduleId < 0) break;
-			m->rightExpander.module->bypass = val;
-			m = m->rightExpander.module;
+		if (mode == STRIP_MODE_LEFTRIGHT || mode == STRIP_MODE_RIGHT) {
+			m = this;
+			while (m) {
+				if (m->rightExpander.moduleId < 0) break;
+				m->rightExpander.module->bypass = val;
+				m = m->rightExpander.module;
+			}
 		}
-		m = this;
-		while (m) {
-			if (m->leftExpander.moduleId < 0) break;
-			m->leftExpander.module->bypass = val;
-			m = m->leftExpander.module;
+		if (mode == STRIP_MODE_LEFTRIGHT || mode == STRIP_MODE_LEFT) {
+			m = this;
+			while (m) {
+				if (m->leftExpander.moduleId < 0) break;
+				m->leftExpander.module->bypass = val;
+				m = m->leftExpander.module;
+			}
 		}
 	}
 
 	json_t *dataToJson() override {
 		json_t *rootJ = json_object();
+		json_object_set_new(rootJ, "mode", json_integer(mode));
 		json_object_set_new(rootJ, "onMode", json_integer(onMode));
 		return rootJ;
 	}
 
 	void dataFromJson(json_t *rootJ) override {
+		json_t *modeJ = json_object_get(rootJ, "mode");
+		mode = json_integer_value(modeJ);
 		json_t *onModeJ = json_object_get(rootJ, "onMode");
 		onMode = json_integer_value(onModeJ);
 	}
@@ -117,9 +130,37 @@ struct StripOnModeMenuItem : MenuItem {
 	}
 };
 
+struct StripModeMenuItem : MenuItem {
+	struct StripModeItem : MenuItem {
+		Strip *module;
+		int mode;
+
+		void onAction(const event::Action &e) override {
+			module->mode = mode;
+		}
+
+		void step() override {
+			rightText = module->mode == mode ? "✔" : "";
+			MenuItem::step();
+		}
+	};
+
+	Strip *module;
+	Menu *createChildMenu() override {
+		Menu *menu = new Menu;
+		menu->addChild(construct<StripModeItem>(&MenuItem::text, "Left+Right", &StripModeItem::module, module, &StripModeItem::mode, STRIP_MODE_LEFTRIGHT));
+		menu->addChild(construct<StripModeItem>(&MenuItem::text, "Right", &StripModeItem::module, module, &StripModeItem::mode, STRIP_MODE_RIGHT));
+		menu->addChild(construct<StripModeItem>(&MenuItem::text, "Left", &StripModeItem::module, module, &StripModeItem::mode, STRIP_MODE_LEFT));
+		return menu;
+	}
+};
+
 
 struct StripWidget : ModuleWidget {
+	Strip *module;
+
 	StripWidget(Strip *module) {
+		this->module = module;
 		setModule(module);
 		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/Strip.svg")));
 
@@ -135,17 +176,22 @@ struct StripWidget : ModuleWidget {
 	void groupClear() {
 		std::vector<int> toBeRemoved;
 		Module *m;
-		m = module;
-		while (m) {
-			if (m->rightExpander.moduleId < 0) break;
-			toBeRemoved.push_back(m->rightExpander.moduleId);
-			m = m->rightExpander.module;
+
+		if (module->mode == STRIP_MODE_LEFTRIGHT || module->mode == STRIP_MODE_RIGHT) {
+			m = module;
+			while (m) {
+				if (m->rightExpander.moduleId < 0) break;
+				toBeRemoved.push_back(m->rightExpander.moduleId);
+				m = m->rightExpander.module;
+			}
 		}
-		m = module;
-		while (m) {
-			if (m->leftExpander.moduleId < 0) break;
-			toBeRemoved.push_back(m->leftExpander.moduleId);
-			m = m->leftExpander.module;
+		if (module->mode == STRIP_MODE_LEFTRIGHT || module->mode == STRIP_MODE_LEFT) {
+			m = module;
+			while (m) {
+				if (m->leftExpander.moduleId < 0) break;
+				toBeRemoved.push_back(m->leftExpander.moduleId);
+				m = m->leftExpander.module;
+			}
 		}
 		for (std::vector<int>::iterator it = toBeRemoved.begin() ; it != toBeRemoved.end(); ++it) {
 			ModuleWidget *mw = APP->scene->rack->getModule(*it);
@@ -213,7 +259,9 @@ struct StripWidget : ModuleWidget {
 			json_array_foreach(rightModulesJ, moduleIndex, moduleJ) {
 				int oldId, newId;
 				box.pos = box.pos.plus(Vec(box.size.x, 0));
-				ModuleWidget *mw = moduleToRack(moduleJ, false, box, oldId, newId);
+				ModuleWidget *mw = NULL;
+				if (module->mode == STRIP_MODE_LEFTRIGHT || module->mode == STRIP_MODE_RIGHT)
+					mw = moduleToRack(moduleJ, false, box, oldId, newId);
 				// could be NULL, just move on
 				modules[mc++] = mw;
 				moduleIds[oldId] = newId;
@@ -226,7 +274,9 @@ struct StripWidget : ModuleWidget {
 			size_t moduleIndex;
 			json_array_foreach(leftModulesJ, moduleIndex, moduleJ) {
 				int oldId, newId;
-				ModuleWidget *mw = moduleToRack(moduleJ, true, box, oldId, newId);
+				ModuleWidget *mw = NULL;
+				if (module->mode == STRIP_MODE_LEFTRIGHT || module->mode == STRIP_MODE_LEFT)
+					mw = moduleToRack(moduleJ, true, box, oldId, newId);
 				modules[mc++] = mw;
 				moduleIds[oldId] = newId;
 			}
@@ -267,8 +317,10 @@ struct StripWidget : ModuleWidget {
 			json_t *moduleJ;
 			size_t moduleIndex;
 			json_array_foreach(rightModulesJ, moduleIndex, moduleJ) {
-				groupFromJson_presets_fixMapping(moduleJ, moduleIds);
-				modules[mc]->fromJson(moduleJ);
+				if (module->mode == STRIP_MODE_LEFTRIGHT || module->mode == STRIP_MODE_RIGHT) {
+					groupFromJson_presets_fixMapping(moduleJ, moduleIds);
+					modules[mc]->fromJson(moduleJ);
+				}
 				mc++;
 			}
 		}
@@ -277,8 +329,10 @@ struct StripWidget : ModuleWidget {
 			json_t *moduleJ;
 			size_t moduleIndex;
 			json_array_foreach(leftModulesJ, moduleIndex, moduleJ) {
-				groupFromJson_presets_fixMapping(moduleJ, moduleIds);
-				modules[mc]->fromJson(moduleJ);
+				if (module->mode == STRIP_MODE_LEFTRIGHT || module->mode == STRIP_MODE_LEFT) {
+					groupFromJson_presets_fixMapping(moduleJ, moduleIds);
+					modules[mc]->fromJson(moduleJ);
+				}
 				mc++;
 			}
 		}
@@ -329,28 +383,34 @@ struct StripWidget : ModuleWidget {
 		// add modules
 		std::map<ModuleWidget*, int> modules;
 		int mc = 0;
+		Module *m;
+
 		json_t *rightModulesJ = json_array();
-		Module *m = module;
-		while (m) {
-			if (m->rightExpander.moduleId < 0) break;
-			ModuleWidget *mw = APP->scene->rack->getModule(m->rightExpander.moduleId);
-			json_t *moduleJ = mw->toJson();
-			assert(moduleJ);
-			json_array_append_new(rightModulesJ, moduleJ);
-			modules[mw] = mc++;
-			m = m->rightExpander.module;
+		if (module->mode == STRIP_MODE_LEFTRIGHT || module->mode == STRIP_MODE_RIGHT) {
+			m = module;
+			while (m) {
+				if (m->rightExpander.moduleId < 0) break;
+				ModuleWidget *mw = APP->scene->rack->getModule(m->rightExpander.moduleId);
+				json_t *moduleJ = mw->toJson();
+				assert(moduleJ);
+				json_array_append_new(rightModulesJ, moduleJ);
+				modules[mw] = mc++;
+				m = m->rightExpander.module;
+			}
 		}
 
 		json_t *leftModulesJ = json_array();
-		m = module;
-		while (m) {
-			if (m->leftExpander.moduleId < 0) break;
-			ModuleWidget *mw = APP->scene->rack->getModule(m->leftExpander.moduleId);
-			json_t *moduleJ = mw->toJson();
-			assert(moduleJ);
-			json_array_append_new(leftModulesJ, moduleJ);
-			modules[mw] = mc++;
-			m = m->leftExpander.module;
+		if (module->mode == STRIP_MODE_LEFTRIGHT || module->mode == STRIP_MODE_LEFT) {
+			m = module;
+			while (m) {
+				if (m->leftExpander.moduleId < 0) break;
+				ModuleWidget *mw = APP->scene->rack->getModule(m->leftExpander.moduleId);
+				json_t *moduleJ = mw->toJson();
+				assert(moduleJ);
+				json_array_append_new(leftModulesJ, moduleJ);
+				modules[mw] = mc++;
+				m = m->leftExpander.module;
+			}
 		}
 
 		// add cables
@@ -606,6 +666,11 @@ struct StripWidget : ModuleWidget {
 		ui::MenuLabel *modelLabel = new ui::MenuLabel;
 		modelLabel->text = "Strip";
 		menu->addChild(modelLabel);
+
+		StripModeMenuItem *stripModeMenuItem = construct<StripModeMenuItem>(&MenuItem::text, "Mode", &StripModeMenuItem::module, module);
+		stripModeMenuItem->rightText = RIGHT_ARROW;
+		menu->addChild(stripModeMenuItem);
+
 		CopyGroupMenuItem *copyGroupMenuItem = construct<CopyGroupMenuItem>(&MenuItem::text, "Copy", &MenuItem::rightText, "Shift+C", &CopyGroupMenuItem::moduleWidget, this);
 		menu->addChild(copyGroupMenuItem);
 		PasteGroupMenuItem *pasteGroupMenuItem = construct<PasteGroupMenuItem>(&MenuItem::text, "Paste", &MenuItem::rightText, "Shift+V", &PasteGroupMenuItem::moduleWidget, this);
