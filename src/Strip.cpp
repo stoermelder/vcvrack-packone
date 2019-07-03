@@ -132,7 +132,7 @@ struct StripWidget : ModuleWidget {
 		addParam(createParamCentered<TL1105>(Vec(22.5f, 149.4f), module, Strip::OFF_PARAM));
 	}
 
-	void clearGroup() {
+	void groupClear() {
 		std::vector<int> toBeRemoved;
 		Module *m;
 		m = module;
@@ -203,7 +203,7 @@ struct StripWidget : ModuleWidget {
 		}
 	}
 
-	void loadGroup_modules(json_t *rootJ, std::map<int, ModuleWidget*> &modules, std::map<int, int> &moduleIds) {
+	void groupFromJson_modules(json_t *rootJ, std::map<int, ModuleWidget*> &modules, std::map<int, int> &moduleIds) {
 		int mc = 0;
 		Rect box = this->box;
 		json_t *rightModulesJ = json_object_get(rootJ, "rightModules");
@@ -233,7 +233,7 @@ struct StripWidget : ModuleWidget {
 		}
 	}
 
-	void loadGroup_presets_fixId(json_t *moduleJ, std::map<int, int> &moduleIds) {
+	void groupFromJson_presets_fixMapping(json_t *moduleJ, std::map<int, int> &moduleIds) {
 		std::string pluginSlug = json_string_value(json_object_get(moduleJ, "plugin"));
 		std::string modelSlug = json_string_value(json_object_get(moduleJ, "model"));
 
@@ -260,14 +260,14 @@ struct StripWidget : ModuleWidget {
 		}
 	}
 
-	void loadGroup_presets(json_t *rootJ, std::map<int, ModuleWidget*> &modules, std::map<int, int> &moduleIds) {
+	void groupFromJson_presets(json_t *rootJ, std::map<int, ModuleWidget*> &modules, std::map<int, int> &moduleIds) {
 		int mc = 0;
 		json_t *rightModulesJ = json_object_get(rootJ, "rightModules");
 		if (rightModulesJ) {
 			json_t *moduleJ;
 			size_t moduleIndex;
 			json_array_foreach(rightModulesJ, moduleIndex, moduleJ) {
-				loadGroup_presets_fixId(moduleJ, moduleIds);
+				groupFromJson_presets_fixMapping(moduleJ, moduleIds);
 				modules[mc]->fromJson(moduleJ);
 				mc++;
 			}
@@ -277,14 +277,14 @@ struct StripWidget : ModuleWidget {
 			json_t *moduleJ;
 			size_t moduleIndex;
 			json_array_foreach(leftModulesJ, moduleIndex, moduleJ) {
-				loadGroup_presets_fixId(moduleJ, moduleIds);
+				groupFromJson_presets_fixMapping(moduleJ, moduleIds);
 				modules[mc]->fromJson(moduleJ);
 				mc++;
 			}
 		}
 	}
 
-	void loadGroup_cables(json_t *rootJ, std::map<int, ModuleWidget*> &modules) {
+	void groupFromJson_cables(json_t *rootJ, std::map<int, ModuleWidget*> &modules) {
 		json_t *cablesJ = json_object_get(rootJ, "cables");
 		if (cablesJ) {
 			json_t *cableJ;
@@ -324,45 +324,8 @@ struct StripWidget : ModuleWidget {
 		}
 	}
 
-	void loadGroup(std::string filename) {
-		INFO("Loading preset %s", filename.c_str());
 
-		FILE *file = fopen(filename.c_str(), "r");
-		if (!file) {
-			WARN("Could not load file %s", filename.c_str());
-			return;
-		}
-		DEFER({
-			fclose(file);
-		});
-
-		json_error_t error;
-		json_t *rootJ = json_loadf(file, 0, &error);
-		if (!rootJ) {
-			std::string message = string::f("File is not a valid file. JSON parsing error at %s %d:%d %s", error.source, error.line, error.column, error.text);
-			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, message.c_str());
-			return;
-		}
-		DEFER({
-			json_decref(rootJ);
-		});
-
-		// clear modules next to STRIP
-		clearGroup();
-
-		// add modules, order matters here, right then left!
-		std::map<int, ModuleWidget*> modules;
-		std::map<int, int> moduleIds;
-		loadGroup_modules(rootJ, modules, moduleIds);
-		loadGroup_presets(rootJ, modules, moduleIds);
-
-		// add cables
-		loadGroup_cables(rootJ, modules);
-	}
-
-	void saveGroup(std::string filename) {
-		INFO("Saving preset %s", filename.c_str());
-
+	void groupToJson(json_t *rootJ) {
 		// add modules
 		std::map<ModuleWidget*, int> modules;
 		int mc = 0;
@@ -418,8 +381,6 @@ struct StripWidget : ModuleWidget {
 			}
 		}
 
-		// save json
-		json_t *rootJ = json_object();
 		json_object_set_new(rootJ, "stripVersion", json_integer(1));
 		json_object_set_new(rootJ, "rightModules", rightModulesJ);
 		json_object_set_new(rootJ, "leftModules", leftModulesJ);
@@ -427,6 +388,27 @@ struct StripWidget : ModuleWidget {
 
 		json_t *versionJ = json_string(app::APP_VERSION.c_str());
 		json_object_set_new(rootJ, "version", versionJ);
+	}
+
+	void groupCopyClipboard() {
+		json_t *rootJ = json_object();
+		groupToJson(rootJ);
+
+		DEFER({
+			json_decref(rootJ);
+		});
+		char *moduleJson = json_dumps(rootJ, JSON_INDENT(2) | JSON_REAL_PRECISION(9));
+		DEFER({
+			free(moduleJson);
+		});
+		glfwSetClipboardString(APP->window->win, moduleJson);
+	}
+
+	void groupSaveFile(std::string filename) {
+		INFO("Saving preset %s", filename.c_str());
+
+		json_t *rootJ = json_object();
+		groupToJson(rootJ);
 
 		DEFER({
 			json_decref(rootJ);
@@ -443,25 +425,7 @@ struct StripWidget : ModuleWidget {
 		json_dumpf(rootJ, file, JSON_INDENT(2) | JSON_REAL_PRECISION(9));
 	}
 
-	void loadGroupDialog() {
-		osdialog_filters *filters = osdialog_filters_parse(PRESET_FILTERS);
-		DEFER({
-			osdialog_filters_free(filters);
-		});
-
-		char *path = osdialog_file(OSDIALOG_OPEN, "", NULL, filters);
-		if (!path) {
-			// No path selected
-			return;
-		}
-		DEFER({
-			free(path);
-		});
-
-		loadGroup(path);
-	}
-
-	void saveGroupDialog() {
+	void groupSaveFileDialog() {
 		osdialog_filters *filters = osdialog_filters_parse(PRESET_FILTERS);
 		DEFER({
 			osdialog_filters_free(filters);
@@ -482,8 +446,87 @@ struct StripWidget : ModuleWidget {
 			pathStr += ".vcvss";
 		}
 
-		saveGroup(pathStr);
+		groupSaveFile(pathStr);
 	}
+
+	void groupFromJson(json_t *rootJ) {
+		// clear modules next to STRIP
+		groupClear();
+
+		// add modules, order matters here, right then left!
+		std::map<int, ModuleWidget*> modules;
+		std::map<int, int> moduleIds;
+		groupFromJson_modules(rootJ, modules, moduleIds);
+		groupFromJson_presets(rootJ, modules, moduleIds);
+
+		// add cables
+		groupFromJson_cables(rootJ, modules);
+	}
+
+	void groupPasteClipboard() {
+		const char *moduleJson = glfwGetClipboardString(APP->window->win);
+		if (!moduleJson) {
+			WARN("Could not get text from clipboard.");
+			return;
+		}
+
+		json_error_t error;
+		json_t *rootJ = json_loads(moduleJson, 0, &error);
+		if (!rootJ) {
+			WARN("JSON parsing error at %s %d:%d %s", error.source, error.line, error.column, error.text);
+			return;
+		}
+		DEFER({
+			json_decref(rootJ);
+		});
+
+		groupFromJson(rootJ);
+	}
+
+	void groupLoadFile(std::string filename) {
+		INFO("Loading preset %s", filename.c_str());
+
+		FILE *file = fopen(filename.c_str(), "r");
+		if (!file) {
+			WARN("Could not load file %s", filename.c_str());
+			return;
+		}
+		DEFER({
+			fclose(file);
+		});
+
+		json_error_t error;
+		json_t *rootJ = json_loadf(file, 0, &error);
+		if (!rootJ) {
+			std::string message = string::f("File is not a valid file. JSON parsing error at %s %d:%d %s", error.source, error.line, error.column, error.text);
+			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, message.c_str());
+			return;
+		}
+		DEFER({
+			json_decref(rootJ);
+		});
+
+		groupFromJson(rootJ);
+	}
+
+	void groupLoadFileDialog() {
+		osdialog_filters *filters = osdialog_filters_parse(PRESET_FILTERS);
+		DEFER({
+			osdialog_filters_free(filters);
+		});
+
+		char *path = osdialog_file(OSDIALOG_OPEN, "", NULL, filters);
+		if (!path) {
+			// No path selected
+			return;
+		}
+		DEFER({
+			free(path);
+		});
+
+		groupLoadFile(path);
+	}
+
 
 	void appendContextMenu(Menu *menu) override {
 		Strip *module = dynamic_cast<Strip*>(this->module);
@@ -504,11 +547,27 @@ struct StripWidget : ModuleWidget {
 		menu->addChild(stripOnModeMenuItem);
 		menu->addChild(new MenuSeparator());
 
+		struct CopyGroupMenuItem : MenuItem {
+			StripWidget *moduleWidget;
+
+			void onAction(const event::Action &e) override {
+				moduleWidget->groupCopyClipboard();
+			}
+		};
+
+		struct PasteGroupMenuItem : MenuItem {
+			StripWidget *moduleWidget;
+
+			void onAction(const event::Action &e) override {
+				moduleWidget->groupPasteClipboard();
+			}
+		};
+
 		struct LoadGroupMenuItem : MenuItem {
 			StripWidget *moduleWidget;
 
 			void onAction(const event::Action &e) override {
-				moduleWidget->loadGroupDialog();
+				moduleWidget->groupLoadFileDialog();
 			}
 		};
 
@@ -516,10 +575,14 @@ struct StripWidget : ModuleWidget {
 			StripWidget *moduleWidget;
 
 			void onAction(const event::Action &e) override {
-				moduleWidget->saveGroupDialog();
+				moduleWidget->groupSaveFileDialog();
 			}
 		};
 
+		CopyGroupMenuItem *copyGroupMenuItem = construct<CopyGroupMenuItem>(&MenuItem::text, "Copy strip", &CopyGroupMenuItem::moduleWidget, this);
+		menu->addChild(copyGroupMenuItem);
+		PasteGroupMenuItem *pasteGroupMenuItem = construct<PasteGroupMenuItem>(&MenuItem::text, "Paste strip", &PasteGroupMenuItem::moduleWidget, this);
+		menu->addChild(pasteGroupMenuItem);
 		LoadGroupMenuItem *loadGroupMenuItem = construct<LoadGroupMenuItem>(&MenuItem::text, "Load strip", &LoadGroupMenuItem::moduleWidget, this);
 		menu->addChild(loadGroupMenuItem);
 		SaveGroupMenuItem *saveGroupMenuItem = construct<SaveGroupMenuItem>(&MenuItem::text, "Save strip", &SaveGroupMenuItem::moduleWidget, this);
