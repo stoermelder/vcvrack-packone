@@ -565,10 +565,11 @@ struct StripWidget : ModuleWidget {
 		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
 		menu->addChild(new MenuSeparator());
 
-		StripOnModeMenuItem *stripOnModeMenuItem = construct<StripOnModeMenuItem>(&MenuItem::text, "ON mode", &StripOnModeMenuItem::module, module);
+		StripOnModeMenuItem *stripOnModeMenuItem = construct<StripOnModeMenuItem>(&MenuItem::text, "Port/Switch ON mode", &StripOnModeMenuItem::module, module);
 		stripOnModeMenuItem->rightText = RIGHT_ARROW;
 		menu->addChild(stripOnModeMenuItem);
 		menu->addChild(new MenuSeparator());
+
 
 		struct CopyGroupMenuItem : MenuItem {
 			StripWidget *moduleWidget;
@@ -602,13 +603,16 @@ struct StripWidget : ModuleWidget {
 			}
 		};
 
-		CopyGroupMenuItem *copyGroupMenuItem = construct<CopyGroupMenuItem>(&MenuItem::text, "Copy strip", &MenuItem::rightText, "Shift+C", &CopyGroupMenuItem::moduleWidget, this);
+		ui::MenuLabel *modelLabel = new ui::MenuLabel;
+		modelLabel->text = "Strip";
+		menu->addChild(modelLabel);
+		CopyGroupMenuItem *copyGroupMenuItem = construct<CopyGroupMenuItem>(&MenuItem::text, "Copy", &MenuItem::rightText, "Shift+C", &CopyGroupMenuItem::moduleWidget, this);
 		menu->addChild(copyGroupMenuItem);
-		PasteGroupMenuItem *pasteGroupMenuItem = construct<PasteGroupMenuItem>(&MenuItem::text, "Paste strip", &MenuItem::rightText, "Shift+V", &PasteGroupMenuItem::moduleWidget, this);
+		PasteGroupMenuItem *pasteGroupMenuItem = construct<PasteGroupMenuItem>(&MenuItem::text, "Paste", &MenuItem::rightText, "Shift+V", &PasteGroupMenuItem::moduleWidget, this);
 		menu->addChild(pasteGroupMenuItem);
-		LoadGroupMenuItem *loadGroupMenuItem = construct<LoadGroupMenuItem>(&MenuItem::text, "Load strip", &LoadGroupMenuItem::moduleWidget, this);
+		LoadGroupMenuItem *loadGroupMenuItem = construct<LoadGroupMenuItem>(&MenuItem::text, "Load", &LoadGroupMenuItem::moduleWidget, this);
 		menu->addChild(loadGroupMenuItem);
-		SaveGroupMenuItem *saveGroupMenuItem = construct<SaveGroupMenuItem>(&MenuItem::text, "Save strip", &SaveGroupMenuItem::moduleWidget, this);
+		SaveGroupMenuItem *saveGroupMenuItem = construct<SaveGroupMenuItem>(&MenuItem::text, "Save as", &SaveGroupMenuItem::moduleWidget, this);
 		menu->addChild(saveGroupMenuItem);
 	}
 };
