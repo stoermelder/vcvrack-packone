@@ -211,8 +211,8 @@ struct StripWidget : ModuleWidget {
 
 		addParam(createParamCentered<CKD6>(Vec(22.5f, 67.3f), module, Strip::MODE_PARAM));
 
-		addChild(createLightCentered<SmallLight<GreenLight>>(Vec(14.9f, 111.f), module, Strip::LEFT_LIGHT));
-		addChild(createLightCentered<SmallLight<GreenLight>>(Vec(30.1f, 111.f), module, Strip::RIGHT_LIGHT));
+		addChild(createLightCentered<SmallLight<GreenLight>>(Vec(16.0f, 111.f), module, Strip::LEFT_LIGHT));
+		addChild(createLightCentered<SmallLight<GreenLight>>(Vec(29.0f, 111.f), module, Strip::RIGHT_LIGHT));
 
 		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 146.7f), module, Strip::ON_INPUT));
 		addParam(createParamCentered<TL1105>(Vec(22.5f, 170.1f), module, Strip::ON_PARAM));
@@ -333,9 +333,8 @@ struct StripWidget : ModuleWidget {
 		std::string pluginSlug = json_string_value(json_object_get(moduleJ, "plugin"));
 		std::string modelSlug = json_string_value(json_object_get(moduleJ, "model"));
 
-		if (!(pluginSlug == "Stoermelder-P1" || pluginSlug == "VCV")) 
-			return;
-		if (!(modelSlug == "CVMap" || modelSlug == "CVMapMicro" || modelSlug == "CVPam" || modelSlug == "MIDI-Map")) 
+		if (!((pluginSlug == "Stoermelder-P1" && (modelSlug == "CVMap" || modelSlug == "CVMapMicro" || modelSlug == "CVPam" || modelSlug == "ReMoveLite"))
+			|| (pluginSlug == "VCV" && modelSlug == "MIDI-Map"))) 
 			return;
 
 		json_t *dataJ = json_object_get(moduleJ, "data");

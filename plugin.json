@@ -58,7 +58,7 @@
 		{
 			"slug": "Strip",
 			"name": "STRIP",
-			"description": "Disable and enable a group of modules by using the expander-mechanism",
+			"description": "Manage a group of modules by using the expander-mechanism, providing load and save functionality",
 			"tags": ["Utility"]
 		}
 	]
