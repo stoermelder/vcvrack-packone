@@ -1,7 +1,7 @@
 # stoermelder PackOne
 
 <!-- Version and License Badges -->
-![Rack](https://img.shields.io/badge/Rack-1.1.0-red.svg?style=flat-square)
+![Rack SDK](https://img.shields.io/badge/Rack--SDK-1.1.1-red.svg?style=flat-square)
 ![Version](https://img.shields.io/badge/version-1.0.3-green.svg?style=flat-square)
 ![License](https://img.shields.io/badge/license-GPLv3-blue.svg?style=flat-square)
 ![Language](https://img.shields.io/badge/language-C++-yellow.svg?style=flat-square)
@@ -17,7 +17,7 @@ The PackOne plugin pack gives you a some utility modules for VCV Rack v1:
 - [ROTOR Model A](./docs/RotorA.md): spread a carrier signal across 2-16 output channels using CV
 - [BOLT](./docs/Bolt.md): polyphonic CV-modulateable boolean functions
 - [INFIX](./docs/Infix.md): insert for polyphonic cables
-- [STRIP](./docs/Strip.md): utility for disabling and enabling modules by CV using the expander-mechanism
+- [STRIP](./docs/Strip.md): manage a group of modules in a patch, providing load, save as, disable and randomize
 
 Release versions are published in the [VCV Library](https://vcvrack.com/plugins.html#packone).
 
