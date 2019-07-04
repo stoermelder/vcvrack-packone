@@ -1,11 +1,12 @@
 ### 1.0.4 (in development)
 
 - Module STRIP
-    - New module, allows enabling and disabling modules by CV using the expander-mechanis ([docs](./docs/Strip.md))
-- Module ReMOVE
+    - New module, manage a group of modules in a patch, providing load, save as, disable and randomize ([docs](./docs/Strip.md))
+- Module ReMOVE Lite
     - LEDs for RUN and RESET turn red when using PHASE-input
+    - OUT-port can be used for monitoring while recording
     - Added play mode "Sequence Loop"
-    
+
 ### 1.0.3
 
 - Module INFIX

@@ -85,7 +85,7 @@ The input labled IN accepts 0..10V or -5..5V (configuration option is found in t
 
 ### OUT-output
 
-The OUT-port outputs voltage for the recorded sequence. It can be configured for 0..10V or -5..5V.
+The OUT-port outputs voltage for the recorded sequence. It can be configured for 0..10V or -5..5V. Since v1.0.4 it outputs also CV while recording for monitoring purposes.
 
 ### Bonus-Features
 

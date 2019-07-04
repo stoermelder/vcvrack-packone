@@ -239,12 +239,14 @@ struct ReMove : MapModule<1> {
                         } 
                     }
                     
-                    // are we still recording?
+                    // Are we still recording?
                     if (isRecording) {
                         seqData[dataPtr] = getValue();
+                        // Output on CV out only while recording
+                        setValue(seqData[dataPtr]);
                         seqLength[seq]++;
                         dataPtr++;
-                        // stop recording when store is full
+                        // Stop recording when end of sequence is reached
                         if (dataPtr == seqHigh) {
                             stopRecording();
                         }
@@ -405,8 +407,10 @@ struct ReMove : MapModule<1> {
         return v;
     }
 
-    inline void setValue(float v, ParamQuantity *paramQuantity) {
-        paramQuantity->setScaledValue(v);
+    inline void setValue(float v, ParamQuantity *paramQuantity = NULL) {
+        if (paramQuantity) {
+            paramQuantity->setScaledValue(v);
+        }
         if (outCvMode == REMOVE_OUTCVMODE_UNI && outputs[CV_OUTPUT].isConnected()) {
             outputs[CV_OUTPUT].setVoltage(rescale(v, 0.f, 1.f, 0.f, 10.f));
         }
