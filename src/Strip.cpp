@@ -105,6 +105,11 @@ struct Strip : Module {
 			while (m) {
 				if (m->rightExpander.moduleId < 0) break;
 				m->rightExpander.module->bypass = val;
+				// Clear outputs and set to 1 channel
+				for (Output &output : m->outputs) {
+					// This zeros all voltages, but the channel is set to 1 if connected
+					output.setChannels(0);
+				}
 				m = m->rightExpander.module;
 			}
 		}
@@ -113,6 +118,11 @@ struct Strip : Module {
 			while (m) {
 				if (m->leftExpander.moduleId < 0) break;
 				m->leftExpander.module->bypass = val;
+				// Clear outputs and set to 1 channel
+				for (Output &output : m->outputs) {
+					// This zeros all voltages, but the channel is set to 1 if connected
+					output.setChannels(0);
+				}
 				m = m->leftExpander.module;
 			}
 		}
@@ -127,7 +137,7 @@ struct Strip : Module {
 				for (ParamWidget *param : mw->params) {
 					param->randomize();
 				}
-				APP->engine->randomizeModule(m->rightExpander.module);
+				m->rightExpander.module->onRandomize();
 				m = m->rightExpander.module;
 			}
 		}
@@ -135,11 +145,11 @@ struct Strip : Module {
 			Module *m = this;
 			while (m) {
 				if (m->leftExpander.moduleId < 0) break;
-				ModuleWidget *mw = APP->scene->rack->getModule(m->rightExpander.moduleId);
+				ModuleWidget *mw = APP->scene->rack->getModule(m->leftExpander.moduleId);
 				for (ParamWidget *param : mw->params) {
 					param->randomize();
 				}
-				APP->engine->randomizeModule(m->leftExpander.module);
+				m->leftExpander.module->onRandomize();
 				m = m->leftExpander.module;
 			}
 		}
