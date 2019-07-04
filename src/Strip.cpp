@@ -16,19 +16,24 @@ const int STRIP_MODE_LEFT = 2;
 
 struct Strip : Module {
 	enum ParamIds {
+		MODE_PARAM,
 		ON_PARAM,
 		OFF_PARAM,
+		RAND_PARAM,
 		NUM_PARAMS
 	};
 	enum InputIds {
 		ON_INPUT,
 		OFF_INPUT,
+		RAND_INPUT,
 		NUM_INPUTS
 	};
 	enum OutputIds {
 		NUM_OUTPUTS
 	};
 	enum LightIds {
+		LEFT_LIGHT,
+		RIGHT_LIGHT,
 		NUM_LIGHTS
 	};
 
@@ -39,40 +44,64 @@ struct Strip : Module {
 
 	bool lastState = false;
 
+	dsp::SchmittTrigger modeTrigger;
 	dsp::SchmittTrigger onTrigger;
 	dsp::SchmittTrigger offPTrigger;
+	dsp::SchmittTrigger randTrigger;
+
+	dsp::ClockDivider lightDivider;
 
 	Strip() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+		configParam(MODE_PARAM, 0, 1, 0, "Toggle left/right mode");
+		configParam(ON_PARAM, 0, 1, 0, "Switch/toggle strip on");
+		configParam(OFF_PARAM, 0, 1, 0, "Switch strip off");
+		configParam(RAND_PARAM, 0, 1, 0, "Randomize strip");
+
+		lightDivider.setDivision(1024);
 		onReset();
 	}
 
 	void process(const ProcessArgs &args) override {
+		if (modeTrigger.process(params[MODE_PARAM].getValue())) {
+			mode = (mode + 1) % 3;
+			lastState = true;
+		}
+
 		if (offPTrigger.process(params[OFF_PARAM].getValue() + inputs[OFF_INPUT].getVoltage())) {
-			traverseDisable(true);
+			groupDisable(true);
 		}
 
 		switch (onMode) {
 			case STRIP_ONMODE_DEFAULT:
 				if (onTrigger.process(params[ON_PARAM].getValue() + inputs[ON_INPUT].getVoltage()))
-					traverseDisable(false);
+					groupDisable(false);
 				break;
 			case STRIP_ONMODE_TOGGLE:
 				if (onTrigger.process(params[ON_PARAM].getValue() + inputs[ON_INPUT].getVoltage()))
-					traverseDisable(!lastState);
+					groupDisable(!lastState);
 				break;
 			case STRIP_ONMODE_HIGHLOW:
-				traverseDisable(params[ON_PARAM].getValue() + inputs[ON_INPUT].getVoltage() < 1.f);
+				groupDisable(params[ON_PARAM].getValue() + inputs[ON_INPUT].getVoltage() < 1.f);
 				break;
+		}
+
+		if (randTrigger.process(params[RAND_PARAM].getValue() + inputs[RAND_INPUT].getVoltage())) {
+			groupRandomize();
+		}
+
+		// Set channel lights infrequently
+		if (lightDivider.process()) {
+			lights[RIGHT_LIGHT].setBrightness(mode == STRIP_MODE_LEFTRIGHT || mode == STRIP_MODE_RIGHT);
+			lights[LEFT_LIGHT].setBrightness(mode == STRIP_MODE_LEFTRIGHT || mode == STRIP_MODE_LEFT);
 		}
 	}
 
-	void traverseDisable(bool val) {
+	void groupDisable(bool val) {
 		if (lastState == val) return;
 		lastState = val;
-		Module *m;
 		if (mode == STRIP_MODE_LEFTRIGHT || mode == STRIP_MODE_RIGHT) {
-			m = this;
+			Module *m = this;
 			while (m) {
 				if (m->rightExpander.moduleId < 0) break;
 				m->rightExpander.module->bypass = val;
@@ -80,7 +109,7 @@ struct Strip : Module {
 			}
 		}
 		if (mode == STRIP_MODE_LEFTRIGHT || mode == STRIP_MODE_LEFT) {
-			m = this;
+			Module *m = this;
 			while (m) {
 				if (m->leftExpander.moduleId < 0) break;
 				m->leftExpander.module->bypass = val;
@@ -88,6 +117,34 @@ struct Strip : Module {
 			}
 		}
 	}
+
+	void groupRandomize() {
+		if (mode == STRIP_MODE_LEFTRIGHT || mode == STRIP_MODE_RIGHT) {
+			Module *m = this;
+			while (m) {
+				if (m->rightExpander.moduleId < 0) break;
+				ModuleWidget *mw = APP->scene->rack->getModule(m->rightExpander.moduleId);
+				for (ParamWidget *param : mw->params) {
+					param->randomize();
+				}
+				APP->engine->randomizeModule(m->rightExpander.module);
+				m = m->rightExpander.module;
+			}
+		}
+		if (mode == STRIP_MODE_LEFTRIGHT || mode == STRIP_MODE_LEFT) {
+			Module *m = this;
+			while (m) {
+				if (m->leftExpander.moduleId < 0) break;
+				ModuleWidget *mw = APP->scene->rack->getModule(m->rightExpander.moduleId);
+				for (ParamWidget *param : mw->params) {
+					param->randomize();
+				}
+				APP->engine->randomizeModule(m->leftExpander.module);
+				m = m->leftExpander.module;
+			}
+		}
+	}
+
 
 	json_t *dataToJson() override {
 		json_t *rootJ = json_object();
@@ -130,31 +187,6 @@ struct StripOnModeMenuItem : MenuItem {
 	}
 };
 
-struct StripModeMenuItem : MenuItem {
-	struct StripModeItem : MenuItem {
-		Strip *module;
-		int mode;
-
-		void onAction(const event::Action &e) override {
-			module->mode = mode;
-		}
-
-		void step() override {
-			rightText = module->mode == mode ? "✔" : "";
-			MenuItem::step();
-		}
-	};
-
-	Strip *module;
-	Menu *createChildMenu() override {
-		Menu *menu = new Menu;
-		menu->addChild(construct<StripModeItem>(&MenuItem::text, "Left+Right", &StripModeItem::module, module, &StripModeItem::mode, STRIP_MODE_LEFTRIGHT));
-		menu->addChild(construct<StripModeItem>(&MenuItem::text, "Right", &StripModeItem::module, module, &StripModeItem::mode, STRIP_MODE_RIGHT));
-		menu->addChild(construct<StripModeItem>(&MenuItem::text, "Left", &StripModeItem::module, module, &StripModeItem::mode, STRIP_MODE_LEFT));
-		return menu;
-	}
-};
-
 
 struct StripWidget : ModuleWidget {
 	Strip *module;
@@ -167,10 +199,17 @@ struct StripWidget : ModuleWidget {
 		addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 59.3f), module, Strip::ON_INPUT));
-		addParam(createParamCentered<TL1105>(Vec(22.5f, 82.6f), module, Strip::ON_PARAM));
-		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 126.1f), module, Strip::OFF_INPUT));
-		addParam(createParamCentered<TL1105>(Vec(22.5f, 149.4f), module, Strip::OFF_PARAM));
+		addParam(createParamCentered<CKD6>(Vec(22.5f, 67.3f), module, Strip::MODE_PARAM));
+
+		addChild(createLightCentered<SmallLight<GreenLight>>(Vec(14.9f, 111.f), module, Strip::LEFT_LIGHT));
+		addChild(createLightCentered<SmallLight<GreenLight>>(Vec(30.1f, 111.f), module, Strip::RIGHT_LIGHT));
+
+		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 146.7f), module, Strip::ON_INPUT));
+		addParam(createParamCentered<TL1105>(Vec(22.5f, 170.1f), module, Strip::ON_PARAM));
+		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 210.1f), module, Strip::OFF_INPUT));
+		addParam(createParamCentered<TL1105>(Vec(22.5f, 233.5f), module, Strip::OFF_PARAM));
+		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 273.1f), module, Strip::RAND_INPUT));
+		addParam(createParamCentered<TL1105>(Vec(22.5f, 296.4f), module, Strip::RAND_PARAM));
 	}
 
 	void groupClear() {
@@ -669,10 +708,6 @@ struct StripWidget : ModuleWidget {
 		ui::MenuLabel *modelLabel = new ui::MenuLabel;
 		modelLabel->text = "Strip";
 		menu->addChild(modelLabel);
-
-		StripModeMenuItem *stripModeMenuItem = construct<StripModeMenuItem>(&MenuItem::text, "Mode", &StripModeMenuItem::module, module);
-		stripModeMenuItem->rightText = RIGHT_ARROW;
-		menu->addChild(stripModeMenuItem);
 
 		CopyGroupMenuItem *copyGroupMenuItem = construct<CopyGroupMenuItem>(&MenuItem::text, "Copy", &MenuItem::rightText, "Shift+C", &CopyGroupMenuItem::moduleWidget, this);
 		menu->addChild(copyGroupMenuItem);
