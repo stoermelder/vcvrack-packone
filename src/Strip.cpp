@@ -1,6 +1,7 @@
 #include "plugin.hpp"
 #include <osdialog.h>
 #include <plugin.hpp>
+#include <patch.hpp>
 #include <thread>
 
 static const char PRESET_FILTERS[] = "stoermelder STRIP group preset (.vcvss):vcvss";
@@ -102,7 +103,7 @@ struct Strip : Module {
 		lastState = val;
 		if (mode == STRIP_MODE_LEFTRIGHT || mode == STRIP_MODE_RIGHT) {
 			Module *m = this;
-			while (m) {
+			while (true) {
 				if (m->rightExpander.moduleId < 0) break;
 				m->rightExpander.module->bypass = val;
 				// Clear outputs and set to 1 channel
@@ -115,7 +116,7 @@ struct Strip : Module {
 		}
 		if (mode == STRIP_MODE_LEFTRIGHT || mode == STRIP_MODE_LEFT) {
 			Module *m = this;
-			while (m) {
+			while (true) {
 				if (m->leftExpander.moduleId < 0) break;
 				m->leftExpander.module->bypass = val;
 				// Clear outputs and set to 1 channel
@@ -131,7 +132,7 @@ struct Strip : Module {
 	void groupRandomize() {
 		if (mode == STRIP_MODE_LEFTRIGHT || mode == STRIP_MODE_RIGHT) {
 			Module *m = this;
-			while (m) {
+			while (true) {
 				if (m->rightExpander.moduleId < 0) break;
 				ModuleWidget *mw = APP->scene->rack->getModule(m->rightExpander.moduleId);
 				for (ParamWidget *param : mw->params) {
@@ -143,7 +144,7 @@ struct Strip : Module {
 		}
 		if (mode == STRIP_MODE_LEFTRIGHT || mode == STRIP_MODE_LEFT) {
 			Module *m = this;
-			while (m) {
+			while (true) {
 				if (m->leftExpander.moduleId < 0) break;
 				ModuleWidget *mw = APP->scene->rack->getModule(m->leftExpander.moduleId);
 				for (ParamWidget *param : mw->params) {
@@ -227,7 +228,7 @@ struct StripWidget : ModuleWidget {
 
 		if (module->mode == STRIP_MODE_LEFTRIGHT || module->mode == STRIP_MODE_RIGHT) {
 			Module *m = module;
-			while (m) {
+			while (true) {
 				if (m->rightExpander.moduleId < 0) break;
 				toBeRemoved.push_back(m->rightExpander.moduleId);
 				m = m->rightExpander.module;
@@ -235,7 +236,7 @@ struct StripWidget : ModuleWidget {
 		}
 		if (module->mode == STRIP_MODE_LEFTRIGHT || module->mode == STRIP_MODE_LEFT) {
 			Module *m = module;
-			while (m) {
+			while (true) {
 				if (m->leftExpander.moduleId < 0) break;
 				toBeRemoved.push_back(m->leftExpander.moduleId);
 				m = m->leftExpander.module;
@@ -287,10 +288,10 @@ struct StripWidget : ModuleWidget {
 		}
 		else {
 			json_t *pluginSlugJ = json_object_get(moduleJ, "plugin");
-			json_t *modelSlugJ = json_object_get(moduleJ, "model");
 			std::string pluginSlug = json_string_value(pluginSlugJ);
+			json_t *modelSlugJ = json_object_get(moduleJ, "model");
 			std::string modelSlug = json_string_value(modelSlugJ);
-			//APP->patch->warningLog += string::f("Could not find module \"%s\" of plugin \"%s\"\n", modelSlug.c_str(), pluginSlug.c_str());
+			APP->patch->warningLog += string::f("Could not find module \"%s\" of plugin \"%s\"\n", modelSlug.c_str(), pluginSlug.c_str());
 			box = Rect(box.pos, Vec(0, 0));
 			return NULL;
 		}
@@ -311,7 +312,7 @@ struct StripWidget : ModuleWidget {
 					int oldId;
 					box.pos = box.pos.plus(Vec(box.size.x, 0));
 					ModuleWidget *mw = moduleToRack(moduleJ, false, box, oldId);
-					// Could be NULL, just move on
+					// mw could be NULL, just move on
 					modules[oldId] = mw;
 				}
 			}
@@ -359,9 +360,10 @@ struct StripWidget : ModuleWidget {
 				int oldId = json_integer_value(moduleIdJ);
 				if (oldId >= 0) {
 					int newId = -1;
-					auto t = modules.find(oldId);
-					if (t != modules.end() && t->second != NULL)
-						newId = modules[oldId]->module->id;
+					ModuleWidget *mw = modules[oldId];
+					if (mw != NULL) {
+						newId = mw->module->id;
+					}
 					json_object_set_new(mapJ, "moduleId", json_integer(newId));
 				}
 			}
@@ -382,8 +384,10 @@ struct StripWidget : ModuleWidget {
 				if (module->mode == STRIP_MODE_LEFTRIGHT || module->mode == STRIP_MODE_RIGHT) {
 					groupFromJson_presets_fixMapping(moduleJ, modules);
 					int oldId = json_integer_value(json_object_get(moduleJ, "id"));
-					if (modules.find(oldId) != modules.end())
-						modules[oldId]->fromJson(moduleJ);
+					ModuleWidget *mw = modules[oldId];
+					if (mw != NULL) {
+						mw->fromJson(moduleJ);
+					}
 				}
 			}
 		}
@@ -395,8 +399,10 @@ struct StripWidget : ModuleWidget {
 				if (module->mode == STRIP_MODE_LEFTRIGHT || module->mode == STRIP_MODE_LEFT) {
 					groupFromJson_presets_fixMapping(moduleJ, modules);
 					int oldId = json_integer_value(json_object_get(moduleJ, "id"));
-					if (modules.find(oldId) != modules.end())
-						modules[oldId]->fromJson(moduleJ);
+					ModuleWidget *mw = modules[oldId];
+					if (mw != NULL) {
+						mw->fromJson(moduleJ);
+					}
 				}
 			}
 		}
@@ -455,7 +461,7 @@ struct StripWidget : ModuleWidget {
 		json_t *rightModulesJ = json_array();
 		if (module->mode == STRIP_MODE_LEFTRIGHT || module->mode == STRIP_MODE_RIGHT) {
 			Module *m = module;
-			while (m) {
+			while (true) {
 				if (m->rightExpander.moduleId < 0) break;
 				ModuleWidget *mw = APP->scene->rack->getModule(m->rightExpander.moduleId);
 				json_t *moduleJ = mw->toJson();
@@ -469,7 +475,7 @@ struct StripWidget : ModuleWidget {
 		json_t *leftModulesJ = json_array();
 		if (module->mode == STRIP_MODE_LEFTRIGHT || module->mode == STRIP_MODE_LEFT) {
 			Module *m = module;
-			while (m) {
+			while (true) {
 				if (m->leftExpander.moduleId < 0) break;
 				ModuleWidget *mw = APP->scene->rack->getModule(m->leftExpander.moduleId);
 				json_t *moduleJ = mw->toJson();
