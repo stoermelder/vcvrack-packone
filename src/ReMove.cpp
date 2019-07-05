@@ -356,6 +356,11 @@ struct ReMove : MapModule<1> {
                     sampleTimer.reset();
                 }
             }
+            else {
+                // Not playing and not recording -> bypass input to output for empty sequences
+                if (seqLength[seq] == 0)
+                    setValue(getValue());
+            }
         }
 
         // REC-out in trigger mode
@@ -401,8 +406,10 @@ struct ReMove : MapModule<1> {
         }
         else {
             ParamQuantity *paramQuantity = getParamQuantity(0);
-            v = paramQuantity->getScaledValue();
-            v = valueFilters[0].process(sampleTime, v);
+            if (paramQuantity) {
+                v = paramQuantity->getScaledValue();
+                v = valueFilters[0].process(sampleTime, v);
+            }
         }
         return v;
     }
