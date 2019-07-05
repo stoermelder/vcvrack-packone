@@ -4,9 +4,10 @@
     - New module, manage a group of modules in a patch, providing load, save as, disable and randomize ([docs](./docs/Strip.md))
 - Module ReMOVE Lite
     - LEDs for RUN and RESET turn red when using PHASE-input
+    - Added play mode "Sequence Loop"
+    - Added record mode "Sample & Hold"
     - OUT-port can be used for monitoring while recording
     - OUT-port bypasses IN-port when selecting an empty sequence
-    - Added play mode "Sequence Loop"
     - Fixed bug when saving sequences with lots of constant values (compression-bug)
 
 ### 1.0.3

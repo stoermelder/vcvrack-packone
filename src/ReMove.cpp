@@ -9,6 +9,7 @@ const int REMOVE_MAX_SEQ = 8;
 const int REMOVE_RECMODE_TOUCH = 0;
 const int REMOVE_RECMODE_MOVE = 1;
 const int REMOVE_RECMODE_MANUAL = 2;
+const int REMOVE_RECMODE_SAMPLEHOLD = 3;
 
 const int REMOVE_SEQCVMODE_10V = 0;
 const int REMOVE_SEQCVMODE_C4 = 1;
@@ -248,6 +249,11 @@ struct ReMove : MapModule<1> {
                         dataPtr++;
                         // Stop recording when end of sequence is reached
                         if (dataPtr == seqHigh) {
+                            stopRecording();
+                        }
+                        if (recMode == REMOVE_RECMODE_SAMPLEHOLD) {
+                            seqData[dataPtr] = seqData[dataPtr - 1];
+                            seqLength[seq]++;
                             stopRecording();
                         }
                     }
@@ -669,7 +675,7 @@ struct ReMoveDisplay : TransparentWidget {
         int seqLength = module->seqLength[module->seq];
         if (seqLength < 2) return;
 
-        if (!module->isRecording) {
+        if (!module->isRecording && seqLength > 2) {
             // Draw play line
             nvgStrokeColor(vg, nvgRGBA(0xff, 0xb0, 0xf3, 0xb0));
             nvgStrokeWidth(vg, 0.7);
@@ -925,6 +931,7 @@ struct RecordModeMenuItem : MenuItem {
         menu->addChild(construct<RecordModeItem>(&MenuItem::text, "Touch", &RecordModeItem::module, module, &RecordModeItem::recMode, REMOVE_RECMODE_TOUCH));
         menu->addChild(construct<RecordModeItem>(&MenuItem::text, "Move", &RecordModeItem::module, module, &RecordModeItem::recMode, REMOVE_RECMODE_MOVE));
         menu->addChild(construct<RecordModeItem>(&MenuItem::text, "Manual", &RecordModeItem::module, module, &RecordModeItem::recMode, REMOVE_RECMODE_MANUAL));
+        menu->addChild(construct<RecordModeItem>(&MenuItem::text, "Sample & Hold", &RecordModeItem::module, module, &RecordModeItem::recMode, REMOVE_RECMODE_SAMPLEHOLD));
         return menu;
     }
 };

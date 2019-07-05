@@ -29,6 +29,10 @@ Triggering the red REC button by mouse or through REC-port arms recording. Actua
 Similar to Touch-Mode recording is armed when clicking on REC. Recording starts on the first change of the mapped parameter, which happens not necessarily on the mouse down event. Releasing the mouse button ends the recording and the stored automation data will be trimmed on the end to the last change of value. This way the sequence starts on first change and ends on the last one.
 - Manual-Mode:
 This mode starts the recording as soon as the red REC-button is pressed. Manual-mode is especially useful when triggering using REC-input.
+- Sample & Hold-Mode (added in v1.0.4):
+This mode records one sample of the currently set parameter value. Useful for sequencing a parameter value in combination with play mode "Loop Sequences".
+
+![ReMOVE Sample & Hold](./ReMove-sh.gif)
 
 Recording is only possible when a parameter is mapped, even when using the IN-port.
 
