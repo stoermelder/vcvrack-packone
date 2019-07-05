@@ -6,6 +6,7 @@
     - LEDs for RUN and RESET turn red when using PHASE-input
     - OUT-port can be used for monitoring while recording
     - Added play mode "Sequence Loop"
+    - Fixed bug when saving sequences with lots of constant values (compression-bug)
 
 ### 1.0.3
 

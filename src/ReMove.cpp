@@ -514,7 +514,8 @@ struct ReMove : MapModule<1> {
                     while (seqData[i * s + j] == last1 && j < seqLength[i]) { c++; j++; }
                     json_array_append_new(seqData1J, json_integer(c));
                     if (j < seqLength[i]) json_array_append_new(seqData1J, json_real(seqData[i * s + j]));
-                    last1 = 100.f; last2 = -100.f;
+                    last2 = -100.f;
+                    last1 = seqData[i * s + j];
                 } 
                 else {
                     json_array_append_new(seqData1J, json_real(seqData[i * s + j]));
