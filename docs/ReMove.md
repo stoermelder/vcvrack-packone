@@ -21,7 +21,7 @@ Both settings for samplerate and number of sequences can be found in the context
 
 ### Recording-Modes
 
-There are three different recording modes available, changed by a context menu option:
+There are four different recording modes available, changed byS context menu option:
 
 - Touch-Mode (Default):
 Triggering the red REC button by mouse or through REC-port arms recording. Actual recording of automation data starts on first mouse click ("touch") on the mapped parameter and holds on as long the button is pressed. Recording stops when the mouse button is released.

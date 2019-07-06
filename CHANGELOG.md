@@ -1,4 +1,4 @@
-### 1.0.4 (in development)
+### 1.0.4
 
 - Module STRIP
     - New module, manage a group of modules in a patch, providing load, save as, disable and randomize ([docs](./docs/Strip.md))
