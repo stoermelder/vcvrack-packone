@@ -284,7 +284,7 @@ struct StripWidget : ModuleWidget {
 	}
 
 	/**
-	 * Creates a module from json data, also retrieved the previous id of the module
+	 * Creates a module from json data, also returns the previous id of the module
 	 * @moduleJ
 	 * @oldId
 	 */
@@ -391,8 +391,8 @@ struct StripWidget : ModuleWidget {
 		std::string modelSlug = json_string_value(json_object_get(moduleJ, "model"));
 
 		// Only handle some specific modules known to use mapping of parameters
-		if (!((pluginSlug == "Stoermelder-P1" && (modelSlug == "CVMap" || modelSlug == "CVMapMicro" || modelSlug == "CVPam" || modelSlug == "ReMoveLite"))
-			|| (pluginSlug == "VCV" && modelSlug == "MIDI-Map"))) 
+		if (!( (pluginSlug == "Stoermelder-P1" && (modelSlug == "CVMap" || modelSlug == "CVMapMicro" || modelSlug == "CVPam" || modelSlug == "ReMoveLite"))
+			|| (pluginSlug == "Core" && modelSlug == "MIDI-Map"))) 
 			return;
 
 		json_t *dataJ = json_object_get(moduleJ, "data");
