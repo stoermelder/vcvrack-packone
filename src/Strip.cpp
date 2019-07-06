@@ -1,7 +1,6 @@
 #include "plugin.hpp"
 #include <osdialog.h>
 #include <plugin.hpp>
-#include <patch.hpp>
 #include <thread>
 
 static const char PRESET_FILTERS[] = "stoermelder STRIP group preset (.vcvss):vcvss";
@@ -40,7 +39,7 @@ struct Strip : Module {
 
 	/** [Stored to JSON] left? right? both? */
 	int mode = STRIP_MODE_LEFTRIGHT;
-	/** [Stored to JSON] usage of switch+port in "on"-section */
+	/** [Stored to JSON] usage of switch+port in "ON"-section */
 	int onMode = STRIP_ONMODE_DEFAULT;
 
 	bool lastState = false;
@@ -259,7 +258,7 @@ struct StripWidget : ModuleWidget {
 		// space is cleared on both sides. Why this stupid and not just use setModulePosForce?
 		// Because setModulePosForce will clear the space, but is not certain in which direction the
 		// existing modules will be moved because a new big module will push a small module to its closer 
-		// side. This would result in foreign modules within the strip.
+		// side. This would result to foreign modules within the loaded strip.
 		if (module->mode == STRIP_MODE_LEFTRIGHT || module->mode == STRIP_MODE_RIGHT) {
 			float rightWidth = json_real_value(json_object_get(rootJ, "rightWidth"));
 			if (rightWidth > 0.f) {

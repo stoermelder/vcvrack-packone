@@ -1,12 +1,12 @@
 # stoermelder PackOne
 
 <!-- Version and License Badges -->
-![Rack SDK](https://img.shields.io/badge/Rack--SDK-1.1.1-red.svg?style=flat-square)
 ![Version](https://img.shields.io/badge/version-1.0.3-green.svg?style=flat-square)
+![Rack SDK](https://img.shields.io/badge/Rack--SDK-1.1.1-red.svg?style=flat-square)
 ![License](https://img.shields.io/badge/license-GPLv3-blue.svg?style=flat-square)
 ![Language](https://img.shields.io/badge/language-C++-yellow.svg?style=flat-square)
 
-The PackOne plugin pack gives you a some utility modules for VCV Rack v1:
+The PackOne plugin pack gives you a some utility modules for [VCV Rack](https://www.vcvrack.com).
 
 ![Intro image](./docs/intro.png)
 
@@ -25,7 +25,7 @@ Feel free to contact me or create a GitHub issue if you have any problems or que
 
 ## Building
 
-Follow the build instructions for [VCV Rack](https://vcvrack.com/manual/Building.html#building-rack-plugins).
+Follow the [build instructions](https://vcvrack.com/manual/Building.html#building-rack-plugins) for VCV Rack.
 
 ## License
 
