@@ -201,6 +201,7 @@ struct StripOnModeMenuItem : MenuItem {
 
 struct StripWidget : ModuleWidget {
 	Strip *module;
+	std::string warningLog;
 
 	StripWidget(Strip *module) {
 		this->module = module;
@@ -223,9 +224,13 @@ struct StripWidget : ModuleWidget {
 		addParam(createParamCentered<TL1105>(Vec(22.5f, 296.4f), module, Strip::RAND_PARAM));
 	}
 
-	void groupClear() {
+	/**
+	 *  Make enough space directly next to this instance of STRIP for the new modules.
+	 */
+	void groupClear(json_t *rootJ) {
+		/*
+		// Collect all modules right next to this instance of STRIP.
 		std::vector<int> toBeRemoved;
-
 		if (module->mode == STRIP_MODE_LEFTRIGHT || module->mode == STRIP_MODE_RIGHT) {
 			Module *m = module;
 			while (true) {
@@ -242,14 +247,48 @@ struct StripWidget : ModuleWidget {
 				m = m->leftExpander.module;
 			}
 		}
-		for (std::vector<int>::iterator it = toBeRemoved.begin() ; it != toBeRemoved.end(); ++it) {
-			ModuleWidget *mw = APP->scene->rack->getModule(*it);
+		for (int id : toBeRemoved) {
+			ModuleWidget *mw = APP->scene->rack->getModule(id);
 			APP->scene->rack->removeModule(mw);
 			delete mw;
 		}
+		*/
+
+		// To make sure there is enough space for the module shove the existing modules to the 
+		// left and to the right. This is done by moving this instance of STRIP stepwise 1HP until enough
+		// space is cleared on both sides. Why this stupid and not just use setModulePosForce?
+		// Because setModulePosForce will clear the space, but is not certain in which direction the
+		// existing modules will be moved because a new big module will push a small module to its closer 
+		// side. This would result in foreign modules within the strip.
+		if (module->mode == STRIP_MODE_LEFTRIGHT || module->mode == STRIP_MODE_RIGHT) {
+			float rightWidth = json_real_value(json_object_get(rootJ, "rightWidth"));
+			if (rightWidth > 0.f) {
+				Vec pos = box.pos;
+				for (int i = 0; i < (rightWidth / RACK_GRID_WIDTH) + 4; i++) {
+					Vec np = box.pos.plus(Vec(RACK_GRID_WIDTH, 0));
+					APP->scene->rack->setModulePosForce(this, np);
+				}
+				APP->scene->rack->setModulePosForce(this, pos);
+			}
+		}
+		if (module->mode == STRIP_MODE_LEFTRIGHT || module->mode == STRIP_MODE_LEFT) {
+			float leftWidth = json_real_value(json_object_get(rootJ, "leftWidth"));
+				if (leftWidth > 0.f) {
+				Vec pos = box.pos;
+				for (int i = 0; i < (leftWidth / RACK_GRID_WIDTH) + 4; i++) {
+					Vec np = box.pos.plus(Vec(-RACK_GRID_WIDTH, 0));
+					APP->scene->rack->setModulePosForce(this, np);
+				}
+				APP->scene->rack->setModulePosForce(this, pos);
+			}
+		}
 	}
 
-	/** Creates a module from json data, also retrieved the previous id of the module */
+	/**
+	 * Creates a module from json data, also retrieved the previous id of the module
+	 * @moduleJ
+	 * @oldId
+	 */
 	ModuleWidget *moduleFromJson(json_t *moduleJ, int &oldId) {
 		// Get slugs
 		json_t *pluginSlugJ = json_object_get(moduleJ, "plugin");
@@ -275,13 +314,20 @@ struct StripWidget : ModuleWidget {
 		return moduleWidget;
 	}
 
+	/**
+	 *  Adds a new module to the rack from a json-representation.
+	 * @moduleJ
+	 * @left Should the module placed left or right of @box
+	 * @box
+	 * @oldId
+	 */
 	ModuleWidget *moduleToRack(json_t *moduleJ, bool left, Rect &box, int &oldId) {
 		ModuleWidget *moduleWidget = moduleFromJson(moduleJ, oldId);
 		if (moduleWidget) {
 			moduleWidget->box.pos = left ? box.pos.minus(Vec(moduleWidget->box.size.x, 0)) : box.pos;
 			moduleWidget->module->id = -1;
 			APP->scene->rack->addModule(moduleWidget);
-			APP->scene->rack->setModulePosForce(moduleWidget, moduleWidget->box.pos);
+			APP->scene->rack->setModulePosForce(moduleWidget, moduleWidget->box.pos);			
 			box.size = moduleWidget->box.size;
 			box.pos = moduleWidget->box.pos;
 			return moduleWidget;
@@ -291,13 +337,14 @@ struct StripWidget : ModuleWidget {
 			std::string pluginSlug = json_string_value(pluginSlugJ);
 			json_t *modelSlugJ = json_object_get(moduleJ, "model");
 			std::string modelSlug = json_string_value(modelSlugJ);
-			APP->patch->warningLog += string::f("Could not find module \"%s\" of plugin \"%s\"\n", modelSlug.c_str(), pluginSlug.c_str());
+			warningLog += string::f("Could not find module \"%s\" of plugin \"%s\"\n", modelSlug.c_str(), pluginSlug.c_str());
 			box = Rect(box.pos, Vec(0, 0));
 			return NULL;
 		}
 	}
 
-	/* Adds modules next to this module according to the supplied json-representation.
+	/**
+	 * Adds modules next to this module according to the supplied json-representation.
 	 * @rootJ json-representation of the STRIP-file
 	 * @modules maps old module ids the new modules
 	 */
@@ -332,7 +379,8 @@ struct StripWidget : ModuleWidget {
 		}
 	}
 
-	/* Fixes parameter mappings within a preset. This can be considered a hack because
+	/**
+	 * Fixes parameter mappings within a preset. This can be considered a hack because
 	 * Rack v1 offers no API for reading the mapping module of a parameter. So this replaces the
 	 * module id in the preset JSON with the new module it to preserve correct mapping.
 	 * This means every module must be handled explitly.
@@ -370,7 +418,8 @@ struct StripWidget : ModuleWidget {
 		}
 	}
 
-	/* Loads all the presets from a json-representation generated by STRIP. Assumes the modules are there.
+	/**
+	 * Loads all the presets from a json-representation generated by STRIP. Assumes the modules are there.
 	 * Presets of non-existing modules will be skipped.
 	 * @json json-representation of the STRIP-file
 	 * @modules maps old module ids the new modules
@@ -408,7 +457,8 @@ struct StripWidget : ModuleWidget {
 		}
 	}
 
-	/* Adds cables loaded from a json-representation generated by STRIP.
+	/**
+	 * Adds cables loaded from a json-representation generated by STRIP.
 	 * If a module is missing the cable will be obviously skipped.
 	 * @rootJ json-representation of the STRIP-file
 	 * @modules maps old module ids the new modules
@@ -457,7 +507,8 @@ struct StripWidget : ModuleWidget {
 	void groupToJson(json_t *rootJ) {
 		// Add modules
 		std::set<ModuleWidget*> modules;
-
+		
+		float rightWidth = 0.f;
 		json_t *rightModulesJ = json_array();
 		if (module->mode == STRIP_MODE_LEFTRIGHT || module->mode == STRIP_MODE_RIGHT) {
 			Module *m = module;
@@ -468,10 +519,12 @@ struct StripWidget : ModuleWidget {
 				assert(moduleJ);
 				json_array_append_new(rightModulesJ, moduleJ);
 				modules.insert(mw);
+				rightWidth += mw->box.size.x;
 				m = m->rightExpander.module;
 			}
 		}
 
+		float leftWidth = 0.f;
 		json_t *leftModulesJ = json_array();
 		if (module->mode == STRIP_MODE_LEFTRIGHT || module->mode == STRIP_MODE_LEFT) {
 			Module *m = module;
@@ -482,6 +535,7 @@ struct StripWidget : ModuleWidget {
 				assert(moduleJ);
 				json_array_append_new(leftModulesJ, moduleJ);
 				modules.insert(mw);
+				leftWidth += mw->box.size.x;
 				m = m->leftExpander.module;
 			}
 		}
@@ -516,7 +570,9 @@ struct StripWidget : ModuleWidget {
 
 		json_object_set_new(rootJ, "stripVersion", json_integer(1));
 		json_object_set_new(rootJ, "rightModules", rightModulesJ);
+		json_object_set_new(rootJ, "rightWidth", json_real(rightWidth));
 		json_object_set_new(rootJ, "leftModules", leftModulesJ);
+		json_object_set_new(rootJ, "leftWidth", json_real(leftWidth));
 		json_object_set_new(rootJ, "cables", cablesJ);
 
 		json_t *versionJ = json_string(app::APP_VERSION.c_str());
@@ -549,7 +605,8 @@ struct StripWidget : ModuleWidget {
 
 		FILE *file = fopen(filename.c_str(), "w");
 		if (!file) {
-			WARN("Could not write to patch file %s", filename.c_str());
+			std::string message = string::f("Could not write to patch file %s", filename.c_str());
+			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, message.c_str());
 		}
 		DEFER({
 			fclose(file);
@@ -583,8 +640,10 @@ struct StripWidget : ModuleWidget {
 	}
 
 	void groupFromJson(json_t *rootJ) {
+		warningLog = "";
+
 		// Clear modules next to STRIP
-		groupClear();
+		groupClear(rootJ);
 
 		// Maps old moduleId to the newly created module (with new id)
 		std::map<int, ModuleWidget*> modules;
@@ -598,19 +657,24 @@ struct StripWidget : ModuleWidget {
 
 		// Does nothing, but fixes https://github.com/VCVRack/Rack/issues/1444 for Rack <= 1.1.1
 		APP->scene->rack->requestModulePos(this, this->box.pos);
+
+		if (!warningLog.empty()) {
+			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, warningLog.c_str());
+		}
 	}
 
 	void groupPasteClipboard() {
 		const char *moduleJson = glfwGetClipboardString(APP->window->win);
 		if (!moduleJson) {
-			WARN("Could not get text from clipboard.");
+			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, "Could not get text from clipboard.");
 			return;
 		}
 
 		json_error_t error;
 		json_t *rootJ = json_loads(moduleJson, 0, &error);
 		if (!rootJ) {
-			WARN("JSON parsing error at %s %d:%d %s", error.source, error.line, error.column, error.text);
+			std::string message = string::f("JSON parsing error at %s %d:%d %s", error.source, error.line, error.column, error.text);
+			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, message.c_str());
 			return;
 		}
 		DEFER({
@@ -625,7 +689,8 @@ struct StripWidget : ModuleWidget {
 
 		FILE *file = fopen(filename.c_str(), "r");
 		if (!file) {
-			WARN("Could not load file %s", filename.c_str());
+			std::string message = string::f("Could not load file %s", filename.c_str());
+			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, message.c_str());
 			return;
 		}
 		DEFER({
