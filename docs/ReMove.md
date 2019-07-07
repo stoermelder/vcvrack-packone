@@ -96,4 +96,5 @@ The OUT-port outputs voltage for the recorded sequence. It can be configured for
 - When duplicating an instance of the module all recorded sequences are also duplicated.
 - The module can be re-mapped to another parameter after a sequence has been recorded.
 - When changing the sampling rate of the module all recorded data will prevail and the playback-speed will be higher or slower.
+- "Randomization" of the module generates some random automation curves (added in v1.0.5).
 - A simple compression is implemented to reduce the size of the patchfile.

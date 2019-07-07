@@ -1,3 +1,8 @@
+### 1.0.5 (in development)
+
+- Module ReMOVE Lite
+    - Generate random curves on "Randomization" of the module
+
 ### 1.0.4
 
 - Module STRIP
