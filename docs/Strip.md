@@ -14,6 +14,8 @@ STRIP can be configured which modules will be considered as managed. By default 
 
 The sections ON, OFF and RAND provide CV control of options only available in the context menu of modules: ON and OFF triggers "Disable" with different modes, RAND triggers "Randomize". 
 
+Please keep in mind that both functions "Disable" and "Randomize" were not designed to be controlled by CV or modulated at audio rate. Please do not contact the developers of Rack or any modules when unexpected behaviour occurs or high CPU usage is noticable.
+
 ![STRIP RAND](./Strip-rand.gif)
 
 The modes for the ON-section are:
@@ -28,7 +30,7 @@ A useful feature of STRIP is its ability to save strips to files and load them a
 
 ![STRIP context menu](./Strip-context.png)
 
-All settings of the modules, all cables (with color) between modules within the strip and all parameter mappings (e.g. by VCV MIDI-MAP or stoermelder CV-MAP) are saved. Also, copy and paste is available, by option in the context menu or by using keyboard shortcuts Shift+sC and Shift+V. When using left-only or right-only mode only affected modules will be saved and loaded, even if a different mode was used for saving or copying. Existing modules will be moved right and left, respectively, to provide enough empty space for newly loaded or copied modules.
+All settings of the modules, all cables (with color) between modules within the strip and all parameter mappings (e.g. by VCV MIDI-MAP or stoermelder CV-MAP) are saved. Also, copy and paste is available, by option in the context menu or by using keyboard shortcuts Shift+C and Shift+V. When using left-only or right-only mode only affected modules will be saved and loaded, even if a different mode was used for saving or copying. Existing modules will be moved right and left, respectively, to provide enough empty space for newly loaded or copied modules.
 
 ![STRIP copy and paste](./Strip-copy.gif)
 
