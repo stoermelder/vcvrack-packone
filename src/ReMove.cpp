@@ -1,7 +1,7 @@
 #include "plugin.hpp"
 #include "MapModule.hpp"
 #include <thread>
-
+#include <random>
 
 const int REMOVE_MAX_DATA = 64 * 1024;
 const int REMOVE_MAX_SEQ = 8;
@@ -635,6 +635,36 @@ struct ReMove : MapModule<1> {
             }
         }
         seqUpdate();
+    }
+
+    void onRandomize() override {
+        unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
+        std::default_random_engine gen(seed);
+        std::normal_distribution<float> d{0.f, 0.1f};
+        dsp::ExponentialFilter filter;
+        filter.setLambda(sampleRate * 10.f);
+
+        int s = REMOVE_MAX_DATA / seqCount;
+        // Generate maximum of 4 seconds random data
+        int l = std::min((int)round(1.f / sampleRate * 8.f), s);
+
+        for (int i = 0; i < seqCount; i++) {
+            // Set some start-value for the exponential filter
+            filter.out = 0.5f + d(gen) * 10.f;
+            float dir = 1.f;
+            float p = 0.5f;
+            for (int c = 0; c < l; c++) {
+                // Reduce the number of direction changes, only when rand > 0
+                if (c % (l / 8) == 0) dir = d(gen) >= 0 ? 1 : -1;
+                float r = d(gen);
+                // Inject some static in the curve
+                p = filter.process(1.f, r >= 0.005f ? p + dir * abs(r) : p);
+                // Only range [0,1] is valid
+                p = clamp(p, 0.f, 1.f);
+                seqData[i * s + c] = p;
+            }
+            seqLength[i] = l;
+        }
     }
 };
 
