@@ -132,6 +132,8 @@ struct ReMove : MapModule<1> {
     /** last touched parameter to avoid frequent dynamic casting */
     Widget *lastParamWidget;
 
+    /** history-item when starting recording */
+    history::ModuleChange *recChangeHistory = NULL;
 
     ReMove() {
         config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS); 
@@ -432,7 +434,13 @@ struct ReMove : MapModule<1> {
         }
     }
 
-    inline void startRecording() {
+    void startRecording() {
+        // history::ModuleChange
+        recChangeHistory = new history::ModuleChange;
+        recChangeHistory->name = "ReMOVE recording";
+        recChangeHistory->moduleId = this->id;
+        recChangeHistory->oldModuleJ = toJson();
+
         seqLength[seq] = 0;
         dataPtr = seqLow;
         sampleTimer.reset();
@@ -441,13 +449,19 @@ struct ReMove : MapModule<1> {
         recTouched = false;
     }
 
-    inline void stopRecording() {
+    void stopRecording() {
         isRecording = false;
         if (dataPtr != seqLow) recOutCvPulse.trigger();
         dataPtr = seqLow;
         sampleTimer.reset();
         paramHandles[0].color = nvgRGB(0x40, 0xff, 0xff);
         valueFilters[0].reset();
+
+        if (recChangeHistory) {
+            recChangeHistory->newModuleJ = toJson();
+	        APP->history->push(recChangeHistory);
+            recChangeHistory = NULL;
+        }
     }
 
     inline void seqNext(bool skipEmpty = false) {
@@ -634,6 +648,8 @@ struct ReMove : MapModule<1> {
                 }
             }
         }
+        isRecording = false;
+        params[REC_PARAM].setValue(0);
         seqUpdate();
     }
 

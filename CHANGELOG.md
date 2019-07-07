@@ -1,7 +1,8 @@
 ### 1.0.5 (in development)
 
 - Module ReMOVE Lite
-    - Generate random curves on "Randomization" of the module
+    - Added random automation-curves on "Randomize" of the module
+    - Starting a recording generates an item in the Rack undo-history
 
 ### 1.0.4
 
