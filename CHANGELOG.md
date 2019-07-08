@@ -1,5 +1,7 @@
 ### 1.0.5 (in development)
 
+- Module STRIP
+    - Added "cut" for cut & paste in the context menu
 - Module ReMOVE Lite
     - Added random automation-curves on "Randomize" of the module
     - Starting a recording generates an item in the Rack undo-history

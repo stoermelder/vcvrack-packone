@@ -224,10 +224,9 @@ struct StripWidget : ModuleWidget {
 	}
 
 	/**
-	 *  Make enough space directly next to this instance of STRIP for the new modules.
+	 * Removes all modules in the group. Used for "cut" in cut & paste.
 	 */
-	void groupClear(json_t *rootJ) {
-		/*
+	void groupRemove() {
 		// Collect all modules right next to this instance of STRIP.
 		std::vector<int> toBeRemoved;
 		if (module->mode == STRIP_MODE_LEFTRIGHT || module->mode == STRIP_MODE_RIGHT) {
@@ -251,9 +250,13 @@ struct StripWidget : ModuleWidget {
 			APP->scene->rack->removeModule(mw);
 			delete mw;
 		}
-		*/
+	}
 
-		// To make sure there is enough space for the module shove the existing modules to the 
+	/**
+	 *  Make enough space directly next to this instance of STRIP for the new modules.
+	 */
+	void groupClearSpace(json_t *rootJ) {
+		// To make sure there is enough space for the modules shove the existing modules to the 
 		// left and to the right. This is done by moving this instance of STRIP stepwise 1HP until enough
 		// space is cleared on both sides. Why this stupid and not just use setModulePosForce?
 		// Because setModulePosForce will clear the space, but is not certain in which direction the
@@ -316,7 +319,7 @@ struct StripWidget : ModuleWidget {
 	/**
 	 *  Adds a new module to the rack from a json-representation.
 	 * @moduleJ
-	 * @left Should the module placed left or right of @box
+	 * @left Should the module placed left or right of @box?
 	 * @box
 	 * @oldId
 	 */
@@ -326,7 +329,7 @@ struct StripWidget : ModuleWidget {
 			moduleWidget->box.pos = left ? box.pos.minus(Vec(moduleWidget->box.size.x, 0)) : box.pos;
 			moduleWidget->module->id = -1;
 			APP->scene->rack->addModule(moduleWidget);
-			APP->scene->rack->setModulePosForce(moduleWidget, moduleWidget->box.pos);			
+			APP->scene->rack->setModulePosForce(moduleWidget, moduleWidget->box.pos);
 			box.size = moduleWidget->box.size;
 			box.pos = moduleWidget->box.pos;
 			return moduleWidget;
@@ -381,8 +384,8 @@ struct StripWidget : ModuleWidget {
 	/**
 	 * Fixes parameter mappings within a preset. This can be considered a hack because
 	 * Rack v1 offers no API for reading the mapping module of a parameter. So this replaces the
-	 * module id in the preset JSON with the new module it to preserve correct mapping.
-	 * This means every module must be handled explitly.
+	 * module id in the preset JSON with the new module id to preserve correct mapping.
+	 * This means every module using mapping must be handled explicitly.
 	 * @moduleJ json-representation of the module
 	 * @modules maps old module ids the new modules
 	 */
@@ -592,6 +595,21 @@ struct StripWidget : ModuleWidget {
 		glfwSetClipboardString(APP->window->win, moduleJson);
 	}
 
+	void groupCutClipboard() {
+		json_t *rootJ = json_object();
+		groupToJson(rootJ);
+
+		DEFER({
+			json_decref(rootJ);
+		});
+		char *moduleJson = json_dumps(rootJ, JSON_INDENT(2) | JSON_REAL_PRECISION(9));
+		DEFER({
+			free(moduleJson);
+		});
+		glfwSetClipboardString(APP->window->win, moduleJson);
+		groupRemove();
+	}
+
 	void groupSaveFile(std::string filename) {
 		INFO("Saving preset %s", filename.c_str());
 
@@ -642,7 +660,7 @@ struct StripWidget : ModuleWidget {
 		warningLog = "";
 
 		// Clear modules next to STRIP
-		groupClear(rootJ);
+		groupClearSpace(rootJ);
 
 		// Maps old moduleId to the newly created module (with new id)
 		std::map<int, ModuleWidget*> modules;
@@ -771,6 +789,13 @@ struct StripWidget : ModuleWidget {
 		menu->addChild(stripOnModeMenuItem);
 		menu->addChild(new MenuSeparator());
 
+		struct CutGroupMenuItem : MenuItem {
+			StripWidget *moduleWidget;
+
+			void onAction(const event::Action &e) override {
+				moduleWidget->groupCutClipboard();
+			}
+		};
 
 		struct CopyGroupMenuItem : MenuItem {
 			StripWidget *moduleWidget;
@@ -808,6 +833,8 @@ struct StripWidget : ModuleWidget {
 		modelLabel->text = "Strip";
 		menu->addChild(modelLabel);
 
+		CutGroupMenuItem *cutGroupMenuItem = construct<CutGroupMenuItem>(&MenuItem::text, "Cut", &CutGroupMenuItem::moduleWidget, this);
+		menu->addChild(cutGroupMenuItem);
 		CopyGroupMenuItem *copyGroupMenuItem = construct<CopyGroupMenuItem>(&MenuItem::text, "Copy", &MenuItem::rightText, "Shift+C", &CopyGroupMenuItem::moduleWidget, this);
 		menu->addChild(copyGroupMenuItem);
 		PasteGroupMenuItem *pasteGroupMenuItem = construct<PasteGroupMenuItem>(&MenuItem::text, "Paste", &MenuItem::rightText, "Shift+V", &PasteGroupMenuItem::moduleWidget, this);
