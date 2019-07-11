@@ -14,4 +14,5 @@ void init(rack::Plugin *p) {
 	p->addModel(modelBolt);
 	p->addModel(modelInfix);
 	p->addModel(modelStrip);
+	p->addModel(modelEightFace);
 }
