@@ -93,7 +93,7 @@ struct EightFace : Module {
 
 	EightFace() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		configParam(MODE_PARAM, 0, 1, 0, "Read/write switch");
+		configParam(MODE_PARAM, 0, 1, 0, "Switch Read/write modes");
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			configParam(PRESET_PARAM + i, 0, 1, 0, string::f("Preset slot %d", i + 1));
 			presetSlotUsed[i] = false;
