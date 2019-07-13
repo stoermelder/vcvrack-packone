@@ -44,6 +44,7 @@ struct EightFaceLongPressButton {
 
 struct EightFace : Module {
 	enum ParamIds {
+		MODE_PARAM,
 		ENUMS(PRESET_PARAM, NUM_PRESETS),
 		NUM_PARAMS
 	};
@@ -57,20 +58,27 @@ struct EightFace : Module {
 	};
 	enum LightIds {
 		ENUMS(MODULE_LIGHT, 2),
-		ENUMS(PRESET_LIGHT, NUM_PRESETS),
+		ENUMS(PRESET_LIGHT, NUM_PRESETS * 3),
 		NUM_LIGHTS
 	};
 
+	/** [Stored to JSON] */
 	std::string pluginSlug;
+	/** [Stored to JSON] */
 	std::string modelSlug;
 
+	/** [Stored to JSON] */
 	bool presetSlotUsed[NUM_PRESETS];
+	/** [Stored to JSON] */
 	json_t *presetSlot[NUM_PRESETS];
 
+	/** [Stored to JSON] */
 	int preset = 0;
+	/** [Stored to JSON] */
+	int presetCount = NUM_PRESETS;
 
-    /** [Stored to JSON] mode for SEQ CV input, 0 = 0-10V, 1 = C4-G4, 2 = Trig */
-    int seqCvMode = EIGHTFACE_SEQCVMODE_10V;
+	/** [Stored to JSON] mode for SEQ CV input, 0 = 0-10V, 1 = C4-G4, 2 = Trig */
+	int seqCvMode = EIGHTFACE_SEQCVMODE_10V;
 
 	int connected = 0;
 
@@ -82,11 +90,13 @@ struct EightFace : Module {
 
 	EightFace() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		lightDivider.setDivision(1024);
-
-		for (int i = 0; i < NUM_PRESETS; i++)
+		configParam(MODE_PARAM, 0, 1, 0, "Read/write switch");
+		for (int i = 0; i < NUM_PRESETS; i++) {
+			configParam(PRESET_PARAM + i, 0, 1, 0, string::f("Preset slot %d", i + 1));
 			presetSlotUsed[i] = false;
+		}
 
+		lightDivider.setDivision(512);
 		onReset();
 	}
 
@@ -107,6 +117,7 @@ struct EightFace : Module {
 		}
 
 		preset = -1;
+		presetCount = NUM_PRESETS;
 		modelSlug = "";
 		pluginSlug = "";
 		connected = 0;
@@ -114,38 +125,56 @@ struct EightFace : Module {
 
 	void process(const ProcessArgs &args) override {
 		if (leftExpander.moduleId >= 0) {
-			auto t = APP->engine->getModule(leftExpander.moduleId);
-			bool m = modelSlug == "" || (t->model->name == modelSlug && t->model->plugin->name == pluginSlug);
-			connected = m ? 2 : 1;
+			Module *t = APP->engine->getModule(leftExpander.moduleId);
+			bool c = modelSlug == "" || (t->model->name == modelSlug && t->model->plugin->name == pluginSlug);
+			connected = c ? 2 : 1;
 
 			if (connected == 2) {
-				if (inputs[RESET_INPUT].isConnected()) {
+				// RESET input
+				if (seqCvMode == EIGHTFACE_SEQCVMODE_TRIG && inputs[RESET_INPUT].isConnected()) {
 					if (resetTrigger.process(inputs[RESET_INPUT].getVoltage()))
-						preset = -1;
+						presetLoad(t, 0);
 				}
 
+				// SEQ input
 				if (inputs[SEQ_INPUT].isConnected()) {
 					switch (seqCvMode) {
 						case EIGHTFACE_SEQCVMODE_10V:
-							presetLoad(t, floor(rescale(inputs[SEQ_INPUT].getVoltage(), 0.f, 10.f, 0, NUM_PRESETS)));
+							presetLoad(t, floor(rescale(inputs[SEQ_INPUT].getVoltage(), 0.f, 10.f, 0, presetCount)));
 							break;
 						case EIGHTFACE_SEQCVMODE_C4:
 							presetLoad(t, round(clamp(inputs[SEQ_INPUT].getVoltage() * 12.f, 0.f, NUM_PRESETS - 1.f)));
 							break;
 						case EIGHTFACE_SEQCVMODE_TRIG:
 							if (seqTrigger.process(inputs[SEQ_INPUT].getVoltage()))
-								presetLoad(t, (preset + 1) % NUM_PRESETS);
+								presetLoad(t, (preset + 1) % presetCount);
 							break;
 					}
 				}
 
 				// Buttons
 				for (int i = 0; i < NUM_PRESETS; i++) {
-					switch (typeButtons[i].step(params[PRESET_PARAM + i])) {
-						default:
-						case EightFaceLongPressButton::NO_PRESS: break;
-						case EightFaceLongPressButton::SHORT_PRESS: presetLoad(t, i); break;
-						case EightFaceLongPressButton::LONG_PRESS: presetSave(t, i); break;
+					if (params[MODE_PARAM].getValue() == 0.f) {
+						switch (typeButtons[i].step(params[PRESET_PARAM + i])) {
+							default:
+							case EightFaceLongPressButton::NO_PRESS:
+								break;
+							case EightFaceLongPressButton::SHORT_PRESS:
+								presetLoad(t, i); break;
+							case EightFaceLongPressButton::LONG_PRESS:
+								presetSetCount(i + 1); break;
+						}
+					}
+					else {
+						switch (typeButtons[i].step(params[PRESET_PARAM + i])) {
+							default:
+							case EightFaceLongPressButton::NO_PRESS:
+								break;
+							case EightFaceLongPressButton::SHORT_PRESS:
+								presetSave(t, i); break;
+							case EightFaceLongPressButton::LONG_PRESS:
+								presetClear(i); break;
+						}
 					}
 				}
 			}
@@ -160,26 +189,50 @@ struct EightFace : Module {
 			lights[MODULE_LIGHT + 1].setBrightness(connected == 1 ? 1.f : 0.f);
 
 			for (int i = 0; i < NUM_PRESETS; i++) {
-				lights[PRESET_LIGHT + i].setBrightness(presetSlotUsed[i] ? (preset == i ? 1.f : 0.4f) : 0.f);
+				if (params[MODE_PARAM].getValue() == 0.f) {
+					lights[PRESET_LIGHT + i * 3 + 0].setBrightness(0.f);
+					lights[PRESET_LIGHT + i * 3 + 1].setBrightness(preset != i && presetCount > i ? (presetSlotUsed[i] ? 1.f : 0.1f) : 0.f);
+					lights[PRESET_LIGHT + i * 3 + 2].setBrightness(preset == i ? 1.f : 0.f);
+				}
+				else {
+					lights[PRESET_LIGHT + i * 3 + 0].setBrightness(preset != i && presetSlotUsed[i] ? 1.f : 0.f);
+					lights[PRESET_LIGHT + i * 3 + 1].setBrightness(0.f);
+					lights[PRESET_LIGHT + i * 3 + 2].setBrightness(preset == i ? 1.f : 0.f);
+				}
 			}
 		}
 	}
 
-	void presetLoad(Module *m, int i) {
-		preset = i;
-		if (!presetSlotUsed[i]) return;
+	void presetLoad(Module *m, int p) {
+		preset = p;
+		if (!presetSlotUsed[p]) return;
 		ModuleWidget *mw = APP->scene->rack->getModule(m->id);
-		mw->fromJson(presetSlot[i]);
+		mw->fromJson(presetSlot[p]);
 	}
 
-	void presetSave(Module *m, int i) {
-		preset = i;
+	void presetSave(Module *m, int p) {
 		pluginSlug = m->model->plugin->name;
 		modelSlug = m->model->name;
 		ModuleWidget *mw = APP->scene->rack->getModule(m->id);
-		if (presetSlotUsed[i]) json_decref(presetSlot[i]);
-		presetSlotUsed[i] = true;
-		presetSlot[i] = mw->toJson();
+		if (presetSlotUsed[p]) json_decref(presetSlot[p]);
+		presetSlotUsed[p] = true;
+		presetSlot[p] = mw->toJson();
+	}
+
+	void presetClear(int p) {
+		if (presetSlotUsed[p]) json_decref(presetSlot[p]);
+		presetSlotUsed[p] = false;
+		bool empty = true;
+		for (int i = 0; i < NUM_PRESETS; i++) empty = empty && !presetSlotUsed[i];
+		if (empty) {
+			pluginSlug = "";
+			modelSlug = "";
+		}
+	}
+
+	void presetSetCount(int p) {
+		if (preset >= p) preset = 0;
+		presetCount = p;
 	}
 
 	json_t *dataToJson() override {
@@ -187,6 +240,8 @@ struct EightFace : Module {
 		json_object_set_new(rootJ, "pluginSlug", json_string(pluginSlug.c_str()));
 		json_object_set_new(rootJ, "modelSlug", json_string(modelSlug.c_str()));
 		json_object_set_new(rootJ, "seqCvMode", json_integer(seqCvMode));
+		json_object_set_new(rootJ, "preset", json_integer(preset));
+		json_object_set_new(rootJ, "presetCount", json_integer(presetCount));
 
 		json_t *presetsJ = json_array();
 		for (int i = 0; i < NUM_PRESETS; i++) {
@@ -205,9 +260,10 @@ struct EightFace : Module {
 		pluginSlug = json_string_value(json_object_get(rootJ, "pluginSlug"));
 		modelSlug = json_string_value(json_object_get(rootJ, "modelSlug"));
 		seqCvMode = json_integer_value(json_object_get(rootJ, "seqCvMode"));
+		preset = json_integer_value(json_object_get(rootJ, "preset"));
+		presetCount = json_integer_value(json_object_get(rootJ, "presetCount"));
 
 		json_t *presetsJ = json_object_get(rootJ, "presets");
-
 		json_t *presetJ;
 		size_t presetIndex;
 		json_array_foreach(presetsJ, presetIndex, presetJ) {
@@ -243,6 +299,11 @@ struct EightFaceSeqCvModeMenuItem : MenuItem {
 	}
 };
 
+struct ModeButton : TL1105 {
+	ModeButton() {
+		momentary = false;
+	}
+};
 
 struct EightFaceWidget : ModuleWidget {
 	EightFaceWidget(EightFace *module) {
@@ -255,25 +316,27 @@ struct EightFaceWidget : ModuleWidget {
 		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 58.9f), module, EightFace::SEQ_INPUT));
 		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 95.2f), module, EightFace::RESET_INPUT));
 
-		addChild(createLightCentered<MediumLight<GreenRedLight>>(Vec(11.7f, 130.3f), module, EightFace::MODULE_LIGHT));
+		addChild(createLightCentered<SmallLight<GreenRedLight>>(Vec(22.5f, 119.1f), module, EightFace::MODULE_LIGHT));
 
-		addChild(createLightCentered<MediumLight<YellowLight>>(Vec(11.7f, 154.7f), module, EightFace::PRESET_LIGHT + 0));
-		addChild(createLightCentered<MediumLight<YellowLight>>(Vec(11.7f, 179.2f), module, EightFace::PRESET_LIGHT + 1));
-		addChild(createLightCentered<MediumLight<YellowLight>>(Vec(11.7f, 203.7f), module, EightFace::PRESET_LIGHT + 2));
-		addChild(createLightCentered<MediumLight<YellowLight>>(Vec(11.7f, 228.2f), module, EightFace::PRESET_LIGHT + 3));
-		addChild(createLightCentered<MediumLight<YellowLight>>(Vec(11.7f, 252.7f), module, EightFace::PRESET_LIGHT + 4));
-		addChild(createLightCentered<MediumLight<YellowLight>>(Vec(11.7f, 277.2f), module, EightFace::PRESET_LIGHT + 5));
-		addChild(createLightCentered<MediumLight<YellowLight>>(Vec(11.7f, 301.7f), module, EightFace::PRESET_LIGHT + 6));
-		addChild(createLightCentered<MediumLight<YellowLight>>(Vec(11.7f, 326.2f), module, EightFace::PRESET_LIGHT + 7));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 140.8f), module, EightFace::PRESET_LIGHT + 0 * 3));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 164.3f), module, EightFace::PRESET_LIGHT + 1 * 3));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 187.8f), module, EightFace::PRESET_LIGHT + 2 * 3));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 211.4f), module, EightFace::PRESET_LIGHT + 3 * 3));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 234.9f), module, EightFace::PRESET_LIGHT + 4 * 3));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 258.4f), module, EightFace::PRESET_LIGHT + 5 * 3));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 281.9f), module, EightFace::PRESET_LIGHT + 6 * 3));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 305.5f), module, EightFace::PRESET_LIGHT + 7 * 3));
 
-		addParam(createParamCentered<TL1105>(Vec(30.1f, 154.7f), module, EightFace::PRESET_PARAM + 0));
-		addParam(createParamCentered<TL1105>(Vec(30.1f, 179.2f), module, EightFace::PRESET_PARAM + 1));
-		addParam(createParamCentered<TL1105>(Vec(30.1f, 203.7f), module, EightFace::PRESET_PARAM + 2));
-		addParam(createParamCentered<TL1105>(Vec(30.1f, 228.2f), module, EightFace::PRESET_PARAM + 3));
-		addParam(createParamCentered<TL1105>(Vec(30.1f, 252.7f), module, EightFace::PRESET_PARAM + 4));
-		addParam(createParamCentered<TL1105>(Vec(30.1f, 277.2f), module, EightFace::PRESET_PARAM + 5));
-		addParam(createParamCentered<TL1105>(Vec(30.1f, 301.7f), module, EightFace::PRESET_PARAM + 6));
-		addParam(createParamCentered<TL1105>(Vec(30.1f, 326.2f), module, EightFace::PRESET_PARAM + 7));
+		addParam(createParamCentered<TL1105>(Vec(27.6f, 135.8f), module, EightFace::PRESET_PARAM + 0));
+		addParam(createParamCentered<TL1105>(Vec(27.6f, 159.4f), module, EightFace::PRESET_PARAM + 1));
+		addParam(createParamCentered<TL1105>(Vec(27.6f, 182.9f), module, EightFace::PRESET_PARAM + 2));
+		addParam(createParamCentered<TL1105>(Vec(27.6f, 206.4f), module, EightFace::PRESET_PARAM + 3));
+		addParam(createParamCentered<TL1105>(Vec(27.6f, 230.0f), module, EightFace::PRESET_PARAM + 4));
+		addParam(createParamCentered<TL1105>(Vec(27.6f, 253.5f), module, EightFace::PRESET_PARAM + 5));
+		addParam(createParamCentered<TL1105>(Vec(27.6f, 277.1f), module, EightFace::PRESET_PARAM + 6));
+		addParam(createParamCentered<TL1105>(Vec(27.6f, 300.6f), module, EightFace::PRESET_PARAM + 7));
+
+		addParam(createParamCentered<ModeButton>(Vec(22.5f, 333.0f), module, EightFace::MODE_PARAM));
 	}
 
 	
@@ -291,7 +354,7 @@ struct EightFaceWidget : ModuleWidget {
 		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
 		menu->addChild(new MenuSeparator());
 
-		EightFaceSeqCvModeMenuItem *seqCvModeMenuItem = construct<EightFaceSeqCvModeMenuItem>(&MenuItem::text, "Port SEQ# mode", &EightFaceSeqCvModeMenuItem::module, module);
+		EightFaceSeqCvModeMenuItem *seqCvModeMenuItem = construct<EightFaceSeqCvModeMenuItem>(&MenuItem::text, "Port SEQ mode", &EightFaceSeqCvModeMenuItem::module, module);
 		seqCvModeMenuItem->rightText = RIGHT_ARROW;
 		menu->addChild(seqCvModeMenuItem);
 	}

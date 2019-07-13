@@ -1,5 +1,7 @@
 ### 1.0.5 (in development)
 
+- Module 8FACE
+    - New module, preset sequencer for 8 presets of any module
 - Module STRIP
     - Added "cut" for cut & paste in the context menu
 - Module ReMOVE Lite
