@@ -66,6 +66,8 @@ struct EightFace : Module {
 	std::string pluginSlug;
 	/** [Stored to JSON] */
 	std::string modelSlug;
+	/** [Stored to JSON] */
+	std::string moduleName;
 
 	/** [Stored to JSON] */
 	bool presetSlotUsed[NUM_PRESETS];
@@ -121,11 +123,12 @@ struct EightFace : Module {
 		presetCount = NUM_PRESETS;
 		modelSlug = "";
 		pluginSlug = "";
+		moduleName = "";
 		connected = 0;
 	}
 
 	void process(const ProcessArgs &args) override {
-		if (leftExpander.moduleId >= 0) {
+		if (leftExpander.moduleId >= 0 && leftExpander.module) {
 			Module *t = leftExpander.module;
 			bool c = modelSlug == "" || (t->model->name == modelSlug && t->model->plugin->name == pluginSlug);
 			connected = c ? 2 : 1;
@@ -200,9 +203,9 @@ struct EightFace : Module {
 					lights[PRESET_LIGHT + i * 3 + 2].setSmoothBrightness(preset == i ? 1.f : 0.f, s);
 				}
 				else {
-					lights[PRESET_LIGHT + i * 3 + 0].setSmoothBrightness(preset != i && presetSlotUsed[i] ? 1.f : 0.f, s);
+					lights[PRESET_LIGHT + i * 3 + 0].setBrightness(presetSlotUsed[i] ? 1.f : 0.f);
 					lights[PRESET_LIGHT + i * 3 + 1].setBrightness(0.f);
-					lights[PRESET_LIGHT + i * 3 + 2].setBrightness(0.f); //preset == i ? 1.f : 0.f, s);
+					lights[PRESET_LIGHT + i * 3 + 2].setBrightness(0.f);
 				}
 			}
 		}
@@ -218,6 +221,7 @@ struct EightFace : Module {
 	void presetSave(Module *m, int p) {
 		pluginSlug = m->model->plugin->name;
 		modelSlug = m->model->name;
+		moduleName = m->model->plugin->brand + " " + m->model->name;
 		ModuleWidget *mw = APP->scene->rack->getModule(m->id);
 		if (presetSlotUsed[p]) json_decref(presetSlot[p]);
 		presetSlotUsed[p] = true;
@@ -232,6 +236,7 @@ struct EightFace : Module {
 		if (empty) {
 			pluginSlug = "";
 			modelSlug = "";
+			moduleName = "";
 		}
 	}
 
@@ -244,6 +249,7 @@ struct EightFace : Module {
 		json_t *rootJ = json_object();
 		json_object_set_new(rootJ, "pluginSlug", json_string(pluginSlug.c_str()));
 		json_object_set_new(rootJ, "modelSlug", json_string(modelSlug.c_str()));
+		json_object_set_new(rootJ, "moduleName", json_string(moduleName.c_str()));
 		json_object_set_new(rootJ, "seqCvMode", json_integer(seqCvMode));
 		json_object_set_new(rootJ, "preset", json_integer(preset));
 		json_object_set_new(rootJ, "presetCount", json_integer(presetCount));
@@ -264,6 +270,7 @@ struct EightFace : Module {
 	void dataFromJson(json_t *rootJ) override {
 		pluginSlug = json_string_value(json_object_get(rootJ, "pluginSlug"));
 		modelSlug = json_string_value(json_object_get(rootJ, "modelSlug"));
+		moduleName = json_string_value(json_object_get(rootJ, "moduleName"));
 		seqCvMode = json_integer_value(json_object_get(rootJ, "seqCvMode"));
 		preset = json_integer_value(json_object_get(rootJ, "preset"));
 		presetCount = json_integer_value(json_object_get(rootJ, "presetCount"));
@@ -372,6 +379,17 @@ struct EightFaceWidget : ModuleWidget {
 
 		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
 		menu->addChild(new MenuSeparator());
+
+		if (module->moduleName != "") {
+			ui::MenuLabel *textLabel = new ui::MenuLabel;
+			textLabel->text = "Configured for...";
+			menu->addChild(textLabel);
+
+			ui::MenuLabel *modelLabel = new ui::MenuLabel;
+			modelLabel->text = module->moduleName;
+			menu->addChild(modelLabel);
+			menu->addChild(new MenuSeparator());
+		}
 
 		EightFaceSeqCvModeMenuItem *seqCvModeMenuItem = construct<EightFaceSeqCvModeMenuItem>(&MenuItem::text, "Port SEQ mode", &EightFaceSeqCvModeMenuItem::module, module);
 		seqCvModeMenuItem->rightText = RIGHT_ARROW;
