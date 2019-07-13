@@ -134,25 +134,28 @@ struct EightFace : Module {
 			connected = c ? 2 : 1;
 
 			if (connected == 2) {
-				// RESET input
-				if (seqCvMode == EIGHTFACE_SEQCVMODE_TRIG && inputs[RESET_INPUT].isConnected()) {
-					if (resetTrigger.process(inputs[RESET_INPUT].getVoltage()))
-						presetLoad(t, 0);
-				}
+				if (params[MODE_PARAM].getValue() == 0.f) {
+					// SEQ input
+					if (inputs[SEQ_INPUT].isConnected()) {
+						switch (seqCvMode) {
+							case EIGHTFACE_SEQCVMODE_10V:
+								presetLoad(t, floor(rescale(inputs[SEQ_INPUT].getVoltage(), 0.f, 10.f, 0, presetCount)));
+								break;
+							case EIGHTFACE_SEQCVMODE_C4:
+								presetLoad(t, round(clamp(inputs[SEQ_INPUT].getVoltage() * 12.f, 0.f, NUM_PRESETS - 1.f)));
+								break;
+							case EIGHTFACE_SEQCVMODE_TRIG:
+								if (seqTrigger.process(inputs[SEQ_INPUT].getVoltage()))
+									presetLoad(t, (preset + 1) % presetCount);
+								break;
+						}
+					}
 
-				// SEQ input
-				if (inputs[SEQ_INPUT].isConnected()) {
-					switch (seqCvMode) {
-						case EIGHTFACE_SEQCVMODE_10V:
-							presetLoad(t, floor(rescale(inputs[SEQ_INPUT].getVoltage(), 0.f, 10.f, 0, presetCount)));
-							break;
-						case EIGHTFACE_SEQCVMODE_C4:
-							presetLoad(t, round(clamp(inputs[SEQ_INPUT].getVoltage() * 12.f, 0.f, NUM_PRESETS - 1.f)));
-							break;
-						case EIGHTFACE_SEQCVMODE_TRIG:
-							if (seqTrigger.process(inputs[SEQ_INPUT].getVoltage()))
-								presetLoad(t, (preset + 1) % presetCount);
-							break;
+					// RESET input
+					if (seqCvMode == EIGHTFACE_SEQCVMODE_TRIG && inputs[RESET_INPUT].isConnected()) {
+						if (resetTrigger.process(inputs[RESET_INPUT].getVoltage())) {
+							presetLoad(t, 0);
+						}
 					}
 				}
 
@@ -270,7 +273,8 @@ struct EightFace : Module {
 	void dataFromJson(json_t *rootJ) override {
 		pluginSlug = json_string_value(json_object_get(rootJ, "pluginSlug"));
 		modelSlug = json_string_value(json_object_get(rootJ, "modelSlug"));
-		moduleName = json_string_value(json_object_get(rootJ, "moduleName"));
+		json_t *moduleNameJ = json_object_get(rootJ, "moduleName");
+		if (moduleNameJ) moduleName = json_string_value(json_object_get(rootJ, "moduleName"));
 		seqCvMode = json_integer_value(json_object_get(rootJ, "seqCvMode"));
 		preset = json_integer_value(json_object_get(rootJ, "preset"));
 		presetCount = json_integer_value(json_object_get(rootJ, "presetCount"));
