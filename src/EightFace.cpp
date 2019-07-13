@@ -95,7 +95,7 @@ struct EightFace : Module {
 
 	EightFace() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		configParam(MODE_PARAM, 0, 1, 0, "Switch Read/write modes");
+		configParam(MODE_PARAM, 0, 1, 0, "Switch Read/write mode");
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			configParam(PRESET_PARAM + i, 0, 1, 0, string::f("Preset slot %d", i + 1));
 			presetSlotUsed[i] = false;
@@ -224,7 +224,7 @@ struct EightFace : Module {
 	}
 
 	void presetLoad(Module *m, int p, bool isNext = false) {
-		if (p < 0)
+		if (p < 0 || p >= presetCount)
 			return;
 
 		if (!isNext) {
@@ -251,10 +251,14 @@ struct EightFace : Module {
 	}
 
 	void presetClear(int p) {
-		if (presetSlotUsed[p]) json_decref(presetSlot[p]);
+		if (presetSlotUsed[p]) 
+			json_decref(presetSlot[p]);
 		presetSlotUsed[p] = false;
+		if (preset == p) 
+			preset = -1;
 		bool empty = true;
-		for (int i = 0; i < NUM_PRESETS; i++) empty = empty && !presetSlotUsed[i];
+		for (int i = 0; i < NUM_PRESETS; i++) 
+			empty = empty && !presetSlotUsed[i];
 		if (empty) {
 			pluginSlug = "";
 			modelSlug = "";
@@ -265,6 +269,7 @@ struct EightFace : Module {
 	void presetSetCount(int p) {
 		if (preset >= p) preset = 0;
 		presetCount = p;
+		presetNext = -1;
 	}
 
 	json_t *dataToJson() override {
@@ -305,6 +310,8 @@ struct EightFace : Module {
 			presetSlotUsed[presetIndex] = json_boolean_value(json_object_get(presetJ, "slotUsed"));
 			presetSlot[presetIndex] = json_deep_copy(json_object_get(presetJ, "slot"));
 		}
+
+		if (preset >= presetCount) preset = 0;
 	}
 };
 
@@ -354,6 +361,7 @@ struct CKSSH : CKSS {
 		box.size = tw->box.size;
 	}
 };
+
 
 struct EightFaceWidget : ModuleWidget {
 	EightFaceWidget(EightFace *module) {
