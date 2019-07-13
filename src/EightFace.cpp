@@ -78,9 +78,10 @@ struct EightFace : Module {
 	int presetCount = NUM_PRESETS;
 
 	/** [Stored to JSON] mode for SEQ CV input, 0 = 0-10V, 1 = C4-G4, 2 = Trig */
-	int seqCvMode = EIGHTFACE_SEQCVMODE_10V;
+	int seqCvMode = EIGHTFACE_SEQCVMODE_TRIG;
 
 	int connected = 0;
+	float modeLight = 0;
 
 	EightFaceLongPressButton typeButtons[NUM_PRESETS];
 	dsp::SchmittTrigger seqTrigger;
@@ -185,19 +186,23 @@ struct EightFace : Module {
 
 		// Set channel lights infrequently
 		if (lightDivider.process()) {
-			lights[MODULE_LIGHT + 0].setBrightness(connected == 2 ? 1.f : 0.f);
+			float s = args.sampleTime * lightDivider.getDivision();
+			modeLight += 0.3f * s;
+			if (modeLight > 1.f) modeLight = 0.f;
+
+			lights[MODULE_LIGHT + 0].setSmoothBrightness(connected == 2 ? modeLight : 0.f, s);
 			lights[MODULE_LIGHT + 1].setBrightness(connected == 1 ? 1.f : 0.f);
 
 			for (int i = 0; i < NUM_PRESETS; i++) {
 				if (params[MODE_PARAM].getValue() == 0.f) {
 					lights[PRESET_LIGHT + i * 3 + 0].setBrightness(0.f);
-					lights[PRESET_LIGHT + i * 3 + 1].setBrightness(preset != i && presetCount > i ? (presetSlotUsed[i] ? 1.f : 0.1f) : 0.f);
-					lights[PRESET_LIGHT + i * 3 + 2].setBrightness(preset == i ? 1.f : 0.f);
+					lights[PRESET_LIGHT + i * 3 + 1].setSmoothBrightness(preset != i && presetCount > i ? (presetSlotUsed[i] ? 1.f : 0.2f) : 0.f, s);
+					lights[PRESET_LIGHT + i * 3 + 2].setSmoothBrightness(preset == i ? 1.f : 0.f, s);
 				}
 				else {
-					lights[PRESET_LIGHT + i * 3 + 0].setBrightness(preset != i && presetSlotUsed[i] ? 1.f : 0.f);
+					lights[PRESET_LIGHT + i * 3 + 0].setSmoothBrightness(preset != i && presetSlotUsed[i] ? 1.f : 0.f, s);
 					lights[PRESET_LIGHT + i * 3 + 1].setBrightness(0.f);
-					lights[PRESET_LIGHT + i * 3 + 2].setBrightness(preset == i ? 1.f : 0.f);
+					lights[PRESET_LIGHT + i * 3 + 2].setBrightness(0.f); //preset == i ? 1.f : 0.f, s);
 				}
 			}
 		}
@@ -292,16 +297,30 @@ struct EightFaceSeqCvModeMenuItem : MenuItem {
 	EightFace *module;
 	Menu *createChildMenu() override {
 		Menu *menu = new Menu;
+		menu->addChild(construct<EightFaceSeqCvModeItem>(&MenuItem::text, "Trigger", &EightFaceSeqCvModeItem::module, module, &EightFaceSeqCvModeItem::seqCvMode, EIGHTFACE_SEQCVMODE_TRIG));
 		menu->addChild(construct<EightFaceSeqCvModeItem>(&MenuItem::text, "0..10V", &EightFaceSeqCvModeItem::module, module, &EightFaceSeqCvModeItem::seqCvMode, EIGHTFACE_SEQCVMODE_10V));
 		menu->addChild(construct<EightFaceSeqCvModeItem>(&MenuItem::text, "C4-G4", &EightFaceSeqCvModeItem::module, module, &EightFaceSeqCvModeItem::seqCvMode, EIGHTFACE_SEQCVMODE_C4));
-		menu->addChild(construct<EightFaceSeqCvModeItem>(&MenuItem::text, "Trigger", &EightFaceSeqCvModeItem::module, module, &EightFaceSeqCvModeItem::seqCvMode, EIGHTFACE_SEQCVMODE_TRIG));
 		return menu;
 	}
 };
 
-struct ModeButton : TL1105 {
-	ModeButton() {
-		momentary = false;
+
+struct CKSSH : CKSS {
+	CKSSH() {
+		shadow->opacity = 0.0f;
+		fb->removeChild(sw);
+
+		TransformWidget *tw = new TransformWidget();
+		tw->addChild(sw);
+		fb->addChild(tw);
+
+		Vec center = sw->box.getCenter();
+		tw->translate(center);
+		tw->rotate(M_PI/2.0f);
+		tw->translate(Vec(center.y, sw->box.size.x).neg());
+
+		tw->box.size = sw->box.size.flip();
+		box.size = tw->box.size;
 	}
 };
 
@@ -318,14 +337,14 @@ struct EightFaceWidget : ModuleWidget {
 
 		addChild(createLightCentered<SmallLight<GreenRedLight>>(Vec(22.5f, 119.1f), module, EightFace::MODULE_LIGHT));
 
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 140.8f), module, EightFace::PRESET_LIGHT + 0 * 3));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 164.3f), module, EightFace::PRESET_LIGHT + 1 * 3));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 187.8f), module, EightFace::PRESET_LIGHT + 2 * 3));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 211.4f), module, EightFace::PRESET_LIGHT + 3 * 3));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 234.9f), module, EightFace::PRESET_LIGHT + 4 * 3));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 258.4f), module, EightFace::PRESET_LIGHT + 5 * 3));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 281.9f), module, EightFace::PRESET_LIGHT + 6 * 3));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 305.5f), module, EightFace::PRESET_LIGHT + 7 * 3));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 140.0f), module, EightFace::PRESET_LIGHT + 0 * 3));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 163.6f), module, EightFace::PRESET_LIGHT + 1 * 3));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 187.1f), module, EightFace::PRESET_LIGHT + 2 * 3));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 210.6f), module, EightFace::PRESET_LIGHT + 3 * 3));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 234.2f), module, EightFace::PRESET_LIGHT + 4 * 3));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 257.7f), module, EightFace::PRESET_LIGHT + 5 * 3));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 281.3f), module, EightFace::PRESET_LIGHT + 6 * 3));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 304.8f), module, EightFace::PRESET_LIGHT + 7 * 3));
 
 		addParam(createParamCentered<TL1105>(Vec(27.6f, 135.8f), module, EightFace::PRESET_PARAM + 0));
 		addParam(createParamCentered<TL1105>(Vec(27.6f, 159.4f), module, EightFace::PRESET_PARAM + 1));
@@ -336,7 +355,7 @@ struct EightFaceWidget : ModuleWidget {
 		addParam(createParamCentered<TL1105>(Vec(27.6f, 277.1f), module, EightFace::PRESET_PARAM + 6));
 		addParam(createParamCentered<TL1105>(Vec(27.6f, 300.6f), module, EightFace::PRESET_PARAM + 7));
 
-		addParam(createParamCentered<ModeButton>(Vec(22.5f, 333.0f), module, EightFace::MODE_PARAM));
+		addParam(createParamCentered<CKSSH>(Vec(22.5f, 333.0f), module, EightFace::MODE_PARAM));
 	}
 
 	
