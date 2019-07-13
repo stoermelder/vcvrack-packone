@@ -3,9 +3,10 @@
 
 const int NUM_PRESETS = 8;
 
-const int EIGHTFACE_SEQCVMODE_10V = 0;
-const int EIGHTFACE_SEQCVMODE_C4 = 1;
-const int EIGHTFACE_SEQCVMODE_TRIG = 2;
+const int EIGHTFACE_SLOTCVMODE_TRIG = 2;
+const int EIGHTFACE_SLOTCVMODE_10V = 0;
+const int EIGHTFACE_SLOTCVMODE_C4 = 1;
+const int EIGHTFACE_SLOTCVMODE_CLOCK = 3;
 
 
 struct EightFaceLongPressButton {
@@ -49,7 +50,7 @@ struct EightFace : Module {
 		NUM_PARAMS
 	};
 	enum InputIds {
-		SEQ_INPUT,
+		SLOT_INPUT,
 		RESET_INPUT,
 		NUM_INPUTS
 	};
@@ -80,13 +81,14 @@ struct EightFace : Module {
 	int presetCount = NUM_PRESETS;
 
 	/** [Stored to JSON] mode for SEQ CV input, 0 = 0-10V, 1 = C4-G4, 2 = Trig */
-	int seqCvMode = EIGHTFACE_SEQCVMODE_TRIG;
+	int slotCvMode = EIGHTFACE_SLOTCVMODE_TRIG;
 
 	int connected = 0;
+	int presetNext = -1;
 	float modeLight = 0;
 
 	EightFaceLongPressButton typeButtons[NUM_PRESETS];
-	dsp::SchmittTrigger seqTrigger;
+	dsp::SchmittTrigger slotTrigger;
 	dsp::SchmittTrigger resetTrigger;
 	dsp::ClockDivider lightDivider;
 
@@ -121,6 +123,7 @@ struct EightFace : Module {
 
 		preset = -1;
 		presetCount = NUM_PRESETS;
+		presetNext = -1;
 		modelSlug = "";
 		pluginSlug = "";
 		moduleName = "";
@@ -134,45 +137,51 @@ struct EightFace : Module {
 			connected = c ? 2 : 1;
 
 			if (connected == 2) {
+				// Read mode
 				if (params[MODE_PARAM].getValue() == 0.f) {
 					// SEQ input
-					if (inputs[SEQ_INPUT].isConnected()) {
-						switch (seqCvMode) {
-							case EIGHTFACE_SEQCVMODE_10V:
-								presetLoad(t, floor(rescale(inputs[SEQ_INPUT].getVoltage(), 0.f, 10.f, 0, presetCount)));
+					if (inputs[SLOT_INPUT].isConnected()) {
+						switch (slotCvMode) {
+							case EIGHTFACE_SLOTCVMODE_10V:
+								presetLoad(t, floor(rescale(inputs[SLOT_INPUT].getVoltage(), 0.f, 10.f, 0, presetCount)));
 								break;
-							case EIGHTFACE_SEQCVMODE_C4:
-								presetLoad(t, round(clamp(inputs[SEQ_INPUT].getVoltage() * 12.f, 0.f, NUM_PRESETS - 1.f)));
+							case EIGHTFACE_SLOTCVMODE_C4:
+								presetLoad(t, round(clamp(inputs[SLOT_INPUT].getVoltage() * 12.f, 0.f, NUM_PRESETS - 1.f)));
 								break;
-							case EIGHTFACE_SEQCVMODE_TRIG:
-								if (seqTrigger.process(inputs[SEQ_INPUT].getVoltage()))
+							case EIGHTFACE_SLOTCVMODE_TRIG:
+								if (slotTrigger.process(inputs[SLOT_INPUT].getVoltage()))
 									presetLoad(t, (preset + 1) % presetCount);
+								break;
+							case EIGHTFACE_SLOTCVMODE_CLOCK:
+								if (slotTrigger.process(inputs[SLOT_INPUT].getVoltage()))
+									presetLoad(t, presetNext);
 								break;
 						}
 					}
 
 					// RESET input
-					if (seqCvMode == EIGHTFACE_SEQCVMODE_TRIG && inputs[RESET_INPUT].isConnected()) {
+					if (slotCvMode == EIGHTFACE_SLOTCVMODE_TRIG && inputs[RESET_INPUT].isConnected()) {
 						if (resetTrigger.process(inputs[RESET_INPUT].getVoltage())) {
 							presetLoad(t, 0);
 						}
 					}
-				}
 
-				// Buttons
-				for (int i = 0; i < NUM_PRESETS; i++) {
-					if (params[MODE_PARAM].getValue() == 0.f) {
+					// Buttons
+					for (int i = 0; i < NUM_PRESETS; i++) {
 						switch (typeButtons[i].step(params[PRESET_PARAM + i])) {
 							default:
 							case EightFaceLongPressButton::NO_PRESS:
 								break;
 							case EightFaceLongPressButton::SHORT_PRESS:
-								presetLoad(t, i); break;
+								presetLoad(t, i, slotCvMode == EIGHTFACE_SLOTCVMODE_CLOCK); break;
 							case EightFaceLongPressButton::LONG_PRESS:
 								presetSetCount(i + 1); break;
 						}
 					}
-					else {
+				}
+				// Write mode
+				else {
+					for (int i = 0; i < NUM_PRESETS; i++) {
 						switch (typeButtons[i].step(params[PRESET_PARAM + i])) {
 							default:
 							case EightFaceLongPressButton::NO_PRESS:
@@ -201,7 +210,7 @@ struct EightFace : Module {
 
 			for (int i = 0; i < NUM_PRESETS; i++) {
 				if (params[MODE_PARAM].getValue() == 0.f) {
-					lights[PRESET_LIGHT + i * 3 + 0].setBrightness(0.f);
+					lights[PRESET_LIGHT + i * 3 + 0].setBrightness(presetNext == i ? 1.f : 0.f);
 					lights[PRESET_LIGHT + i * 3 + 1].setSmoothBrightness(preset != i && presetCount > i ? (presetSlotUsed[i] ? 1.f : 0.2f) : 0.f, s);
 					lights[PRESET_LIGHT + i * 3 + 2].setSmoothBrightness(preset == i ? 1.f : 0.f, s);
 				}
@@ -214,11 +223,21 @@ struct EightFace : Module {
 		}
 	}
 
-	void presetLoad(Module *m, int p) {
-		preset = p;
-		if (!presetSlotUsed[p]) return;
-		ModuleWidget *mw = APP->scene->rack->getModule(m->id);
-		mw->fromJson(presetSlot[p]);
+	void presetLoad(Module *m, int p, bool isNext = false) {
+		if (p < 0)
+			return;
+
+		if (!isNext) {
+			preset = p;
+			presetNext = -1;
+			if (!presetSlotUsed[p]) return;
+			ModuleWidget *mw = APP->scene->rack->getModule(m->id);
+			mw->fromJson(presetSlot[p]);
+		}
+		else {
+			if (!presetSlotUsed[p]) return;
+			presetNext = p;
+		}
 	}
 
 	void presetSave(Module *m, int p) {
@@ -253,7 +272,7 @@ struct EightFace : Module {
 		json_object_set_new(rootJ, "pluginSlug", json_string(pluginSlug.c_str()));
 		json_object_set_new(rootJ, "modelSlug", json_string(modelSlug.c_str()));
 		json_object_set_new(rootJ, "moduleName", json_string(moduleName.c_str()));
-		json_object_set_new(rootJ, "seqCvMode", json_integer(seqCvMode));
+		json_object_set_new(rootJ, "slotCvMode", json_integer(slotCvMode));
 		json_object_set_new(rootJ, "preset", json_integer(preset));
 		json_object_set_new(rootJ, "presetCount", json_integer(presetCount));
 
@@ -275,7 +294,7 @@ struct EightFace : Module {
 		modelSlug = json_string_value(json_object_get(rootJ, "modelSlug"));
 		json_t *moduleNameJ = json_object_get(rootJ, "moduleName");
 		if (moduleNameJ) moduleName = json_string_value(json_object_get(rootJ, "moduleName"));
-		seqCvMode = json_integer_value(json_object_get(rootJ, "seqCvMode"));
+		slotCvMode = json_integer_value(json_object_get(rootJ, "slotCvMode"));
 		preset = json_integer_value(json_object_get(rootJ, "preset"));
 		presetCount = json_integer_value(json_object_get(rootJ, "presetCount"));
 
@@ -290,17 +309,17 @@ struct EightFace : Module {
 };
 
 
-struct EightFaceSeqCvModeMenuItem : MenuItem {
-	struct EightFaceSeqCvModeItem : MenuItem {
+struct EightFaceSlotCvModeMenuItem : MenuItem {
+	struct EightFaceSlotCvMenuItem : MenuItem {
 		EightFace *module;
-		int seqCvMode;
+		int slotCvMode;
 
 		void onAction(const event::Action &e) override {
-			module->seqCvMode = seqCvMode;
+			module->slotCvMode = slotCvMode;
 		}
 
 		void step() override {
-			rightText = module->seqCvMode == seqCvMode ? "✔" : "";
+			rightText = module->slotCvMode == slotCvMode ? "✔" : "";
 			MenuItem::step();
 		}
 	};
@@ -308,9 +327,10 @@ struct EightFaceSeqCvModeMenuItem : MenuItem {
 	EightFace *module;
 	Menu *createChildMenu() override {
 		Menu *menu = new Menu;
-		menu->addChild(construct<EightFaceSeqCvModeItem>(&MenuItem::text, "Trigger", &EightFaceSeqCvModeItem::module, module, &EightFaceSeqCvModeItem::seqCvMode, EIGHTFACE_SEQCVMODE_TRIG));
-		menu->addChild(construct<EightFaceSeqCvModeItem>(&MenuItem::text, "0..10V", &EightFaceSeqCvModeItem::module, module, &EightFaceSeqCvModeItem::seqCvMode, EIGHTFACE_SEQCVMODE_10V));
-		menu->addChild(construct<EightFaceSeqCvModeItem>(&MenuItem::text, "C4-G4", &EightFaceSeqCvModeItem::module, module, &EightFaceSeqCvModeItem::seqCvMode, EIGHTFACE_SEQCVMODE_C4));
+		menu->addChild(construct<EightFaceSlotCvMenuItem>(&MenuItem::text, "Seq Trigger", &EightFaceSlotCvMenuItem::module, module, &EightFaceSlotCvMenuItem::slotCvMode, EIGHTFACE_SLOTCVMODE_TRIG));
+		menu->addChild(construct<EightFaceSlotCvMenuItem>(&MenuItem::text, "Seq 0..10V", &EightFaceSlotCvMenuItem::module, module, &EightFaceSlotCvMenuItem::slotCvMode, EIGHTFACE_SLOTCVMODE_10V));
+		menu->addChild(construct<EightFaceSlotCvMenuItem>(&MenuItem::text, "Seq C4-G4", &EightFaceSlotCvMenuItem::module, module, &EightFaceSlotCvMenuItem::slotCvMode, EIGHTFACE_SLOTCVMODE_C4));
+		menu->addChild(construct<EightFaceSlotCvMenuItem>(&MenuItem::text, "Clock", &EightFaceSlotCvMenuItem::module, module, &EightFaceSlotCvMenuItem::slotCvMode, EIGHTFACE_SLOTCVMODE_CLOCK));
 		return menu;
 	}
 };
@@ -343,7 +363,7 @@ struct EightFaceWidget : ModuleWidget {
 		addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 58.9f), module, EightFace::SEQ_INPUT));
+		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 58.9f), module, EightFace::SLOT_INPUT));
 		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 95.2f), module, EightFace::RESET_INPUT));
 
 		addChild(createLightCentered<SmallLight<GreenRedLight>>(Vec(22.5f, 119.1f), module, EightFace::MODULE_LIGHT));
@@ -395,9 +415,9 @@ struct EightFaceWidget : ModuleWidget {
 			menu->addChild(new MenuSeparator());
 		}
 
-		EightFaceSeqCvModeMenuItem *seqCvModeMenuItem = construct<EightFaceSeqCvModeMenuItem>(&MenuItem::text, "Port SEQ mode", &EightFaceSeqCvModeMenuItem::module, module);
-		seqCvModeMenuItem->rightText = RIGHT_ARROW;
-		menu->addChild(seqCvModeMenuItem);
+		EightFaceSlotCvModeMenuItem *slotCvModeMenuItem = construct<EightFaceSlotCvModeMenuItem>(&MenuItem::text, "Port SLOT mode", &EightFaceSlotCvModeMenuItem::module, module);
+		slotCvModeMenuItem->rightText = RIGHT_ARROW;
+		menu->addChild(slotCvModeMenuItem);
 	}
 };
 
