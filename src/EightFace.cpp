@@ -126,7 +126,7 @@ struct EightFace : Module {
 
 	void process(const ProcessArgs &args) override {
 		if (leftExpander.moduleId >= 0) {
-			Module *t = APP->engine->getModule(leftExpander.moduleId);
+			Module *t = leftExpander.module;
 			bool c = modelSlug == "" || (t->model->name == modelSlug && t->model->plugin->name == pluginSlug);
 			connected = c ? 2 : 1;
 
