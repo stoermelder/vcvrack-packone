@@ -18,6 +18,7 @@ The PackOne plugin pack gives you a some utility modules for [VCV Rack](https://
 - [BOLT](./docs/Bolt.md): polyphonic CV-modulateable boolean functions
 - [INFIX](./docs/Infix.md): insert for polyphonic cables
 - [STRIP](./docs/Strip.md): manage a group of modules in a patch, providing load, save as, disable and randomize
+- [8FACE](./docs/EightFace.md): preset sequencer for eight presets of any module
 
 Release versions are published in the [VCV Library](https://vcvrack.com/plugins.html#packone).
 
