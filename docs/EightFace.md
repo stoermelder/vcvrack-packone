@@ -2,7 +2,7 @@
 
 8FACE is a module for storing, recalling and sequencing up to eight different presets of any module in Rack. It uses Rack's expander mechanism to attach to any module to its left and uses buttons and LEDs to manage each of its preset-slot.
 
-An important advice: Loading presets of modules was not designed to be controlled by CV or modulated at audio rate. Please do not contact the developers of Rack or any modules when unexpected behaviour occurs or high CPU usage is noticable.
+**An important advice: Loading presets of modules was not designed to be controlled by CV or modulated at audio rate. Please do not contact the developers of Rack or any modules when unexpected behaviour occurs or high CPU usage is noticable.**
 
 ![8FACE Intro](./EightFace-intro.gif)
 
@@ -12,7 +12,7 @@ Place 8FACE on the right side next to the module you like to manage. The LED bet
 
 ### Write-Mode
 
-Write-mode is used to save presets in 8FACE. You enter write mode by flipping the switch on the bottom to the "W"-position. To store a preset simply configure your module left of 8FACE and then short press a slot-button numbered 1 to 8. The LEDs next to the slot-button turn red when a slot is already in use. To clear a slot long-press a button.
+Write-mode is used to save presets in 8FACE. You enter write mode by flipping the switch on the bottom to the "W"-position. To store a preset simply configure your module left of 8FACE and then short press a slot-button numbered 1 to 8. The LEDs next to the slot-button turn red when a slot is already in use. To clear a slot long-press a button. In write-mode any input in SLOT is ignored and sequencing is disabled.
 
 ### Read-Mode
 
@@ -24,18 +24,19 @@ The fun begins when you use the port labelled "SLOT" for selecting preset slots 
 
 ![8FACE sequencing](./EightFace-context.png)
 
-There are different modes for SLOT available, configured by context menu option:
+There are different modes for SLOT-input available, configured by context menu option:
 
 - Seq Trigger:
 A trigger on SLOT advances 8FACE to the next slot. Empty slots are part of the sequence but won't have any effect on the controlled module.
+
+![8FACE sequencing](./EightFace-trig.gif)
+
 - Seq 0..10V:
 You can select a specific slot by voltage. A voltage 0-1.25V selects slot 1, 1.25-2.5V selects slot 2, and so on if all eight slots are active. Keep in mind that adjusting the length of the sequence also adjusts the voltage range for selecting individual slots: A sequence with length 2 will select slot 1 on voltage 0-5V etc.
 - Seq C4-G8: 
 This mode follows the V/Oct-standard. C4 selects slot 1, C#4 selects slot 2 and so on.
 - Clock:
 This mode is kind a sample and hold. First apply a clock signal on SLOT. Then you trigger any slot manually by its button (resulting a yellow LED) which will be applied on the next clock trigger (blue LED). This mode allows you manual preset changes sychronized to the beat.
-
-![8FACE sequencing](./EightFace-trig.gif)
 
 ![8FACE clock mode](./EightFace-clock.gif)
 

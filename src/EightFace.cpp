@@ -143,10 +143,10 @@ struct EightFace : Module {
 					if (inputs[SLOT_INPUT].isConnected()) {
 						switch (slotCvMode) {
 							case EIGHTFACE_SLOTCVMODE_10V:
-								presetLoad(t, floor(rescale(inputs[SLOT_INPUT].getVoltage(), 0.f, 10.f, 0, presetCount)));
+								presetLoad(t, std::floor(rescale(inputs[SLOT_INPUT].getVoltage(), 0.f, 10.f, 0, presetCount)));
 								break;
 							case EIGHTFACE_SLOTCVMODE_C4:
-								presetLoad(t, round(clamp(inputs[SLOT_INPUT].getVoltage() * 12.f, 0.f, NUM_PRESETS - 1.f)));
+								presetLoad(t, std::round(clamp(inputs[SLOT_INPUT].getVoltage() * 12.f, 0.f, NUM_PRESETS - 1.f)));
 								break;
 							case EIGHTFACE_SLOTCVMODE_TRIG:
 								if (slotTrigger.process(inputs[SLOT_INPUT].getVoltage()))
