@@ -85,7 +85,7 @@ struct ReMove : MapModule<1> {
     int seqLength[REMOVE_MAX_SEQ];
 
     /** [Stored to JSON] mode for SEQ CV input, 0 = 0-10V, 1 = C4-G4, 2 = Trig */
-    int seqCvMode = 0;
+    int seqCvMode = REMOVE_SEQCVMODE_10V;
     /** [Stored to JSON] behaviour when changing sequences during playback */
     int seqChangeMode = REMOVE_SEQCHANGEMODE_RESTART;
 
@@ -459,7 +459,7 @@ struct ReMove : MapModule<1> {
 
         if (recChangeHistory) {
             recChangeHistory->newModuleJ = toJson();
-	        APP->history->push(recChangeHistory);
+            APP->history->push(recChangeHistory);
             recChangeHistory = NULL;
         }
     }
@@ -526,12 +526,12 @@ struct ReMove : MapModule<1> {
     }
 
     json_t *dataToJson() override {
-		json_t *rootJ = MapModule::dataToJson();
+        json_t *rootJ = MapModule::dataToJson();
         json_t *rec0J = json_object();
 
         int s = REMOVE_MAX_DATA / seqCount;
-		json_t *seqDataJ = json_array();
-		for (int i = 0; i < seqCount; i++) {
+        json_t *seqDataJ = json_array();
+        for (int i = 0; i < seqCount; i++) {
             json_t *seqData1J = json_array();
             float last1 = 100.f, last2 = -100.f;
             for (int j = 0; j < seqLength[i]; j++) {
@@ -648,6 +648,7 @@ struct ReMove : MapModule<1> {
                 }
             }
         }
+
         isRecording = false;
         params[REC_PARAM].setValue(0);
         seqUpdate();

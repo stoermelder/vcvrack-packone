@@ -14,7 +14,7 @@ STRIP can be configured which modules will be considered as managed. By default 
 
 The sections ON, OFF and RAND provide CV control of options only available in the context menu of modules: ON and OFF triggers "Disable" with different modes, RAND triggers "Randomize". 
 
-Please keep in mind that both functions "Disable" and "Randomize" were not designed to be controlled by CV or modulated at audio rate. Please do not contact the developers of Rack or any modules when unexpected behaviour occurs or high CPU usage is noticable.
+**Please keep in mind that both functions "Disable" and "Randomize" were not designed to be controlled by CV or modulated at audio rate. Please do not contact the developers of Rack or any modules when unexpected behaviour occurs or high CPU usage is noticable.**
 
 ![STRIP RAND](./Strip-rand.gif)
 
@@ -35,5 +35,9 @@ All settings of the modules, all cables (with color) between modules within the 
 ![STRIP copy and paste](./Strip-copy.gif)
 
 The file-format "vcvss" for storing strips is very close to Rack's own format for storing patches or module presets. Compatibility in future versions should be no problem as long Rack will be able to load preset files from older Rack versions.
+
+Bonus tips:
+
+- If you want some documentation on your strip just add a VCV Notes module and type in some text.
 
 This module was added in v1.0.4 of PackOne.

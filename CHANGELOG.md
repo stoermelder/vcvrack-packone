@@ -1,4 +1,4 @@
-### 1.0.5 (in development)
+### 1.0.5
 
 - Module 8FACE
     - New module, preset sequencer for 8 presets of any module ([docs](./docs/EightFace.md))
