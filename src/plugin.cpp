@@ -15,4 +15,5 @@ void init(rack::Plugin *p) {
 	p->addModel(modelInfix);
 	p->addModel(modelStrip);
 	p->addModel(modelEightFace);
+	p->addModel(modelMidiCat);
 }

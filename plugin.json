@@ -66,6 +66,12 @@
 			"name": "8FACE",
 			"description": "Preset sequencer for eight presets of any module",
 			"tags": ["Utility"]
+		},
+		{
+			"slug": "MidiCat",
+			"name": "MIDI-CAT",
+			"description": "",
+			"tags": ["Utility"]
 		}
 	]
 }

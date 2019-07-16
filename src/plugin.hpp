@@ -15,3 +15,4 @@ extern Model *modelBolt;
 extern Model *modelInfix;
 extern Model *modelStrip;
 extern Model *modelEightFace;
+extern Model *modelMidiCat;
