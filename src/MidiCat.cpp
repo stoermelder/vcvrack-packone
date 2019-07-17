@@ -325,9 +325,8 @@ struct MidiCat : Module {
 
 
 struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCat> {
-
 	MidiCatChoice() {
-		textOffset = Vec(10, 14.7);
+		textOffset = Vec(6.f, 14.7f);
 	}
 
 	std::string getTextPrefix() override {
@@ -344,45 +343,7 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCat> {
 };
 
 
-struct MidiCatDisplay : LedDisplay {
-	MidiCat *module;
-	ScrollWidget *scroll;
-	MidiCatChoice *choices[MAX_CHANNELS];
-	LedDisplaySeparator *separators[MAX_CHANNELS];
-
-	void setModule(MidiCat *module) {
-		this->module = module;
-
-		scroll = new ScrollWidget;
-		scroll->box.size.x = box.size.x;
-		scroll->box.size.y = box.size.y - scroll->box.pos.y;
-		addChild(scroll);
-
-		LedDisplaySeparator *separator = createWidget<LedDisplaySeparator>(scroll->box.pos);
-		separator->box.size.x = box.size.x;
-		addChild(separator);
-		separators[0] = separator;
-
-		Vec pos;
-		for (int id = 0; id < MAX_CHANNELS; id++) {
-			if (id > 0) {
-				LedDisplaySeparator *separator = createWidget<LedDisplaySeparator>(pos);
-				separator->box.size.x = box.size.x;
-				scroll->container->addChild(separator);
-				separators[id] = separator;
-			}
-
-			MidiCatChoice *choice = createWidget<MidiCatChoice>(pos);
-			choice->box.size.x = box.size.x;
-			choice->id = id;
-			choice->setModule(module);
-			scroll->container->addChild(choice);
-			choices[id] = choice;
-
-			pos = choice->box.getBottomLeft();
-		}
-	}
-
+struct MidiCatDisplay : MapModuleDisplay<MAX_CHANNELS, MidiCat, MidiCatChoice> {
 	void step() override {
 		if (module) {
 			int mapLen = module->mapLen;
@@ -396,6 +357,22 @@ struct MidiCatDisplay : LedDisplay {
 	}
 };
 
+struct MidiCatMidiWidget : MidiWidget {
+	void setMidiPort(midi::Port *port) {
+		MidiWidget::setMidiPort(port);
+
+		driverChoice->textOffset = Vec(6.f, 14.7f);
+		driverChoice->box.size = mm2px(Vec(driverChoice->box.size.x, 7.5f));
+		driverSeparator->box.pos = driverChoice->box.getBottomLeft();
+		deviceChoice->textOffset = Vec(6.f, 14.7f);
+		deviceChoice->box.size = mm2px(Vec(deviceChoice->box.size.x, 7.5f));
+		deviceChoice->box.pos = driverChoice->box.getBottomLeft();
+		deviceSeparator->box.pos = deviceChoice->box.getBottomLeft();
+		channelChoice->textOffset = Vec(6.f, 14.7f);
+		channelChoice->box.size = mm2px(Vec(channelChoice->box.size.x, 7.5f));
+		channelChoice->box.pos = deviceChoice->box.getBottomLeft();
+	}
+};
 
 struct MidiCatWidget : ModuleWidget {
 	MidiCatWidget(MidiCat *module) {
@@ -407,18 +384,18 @@ struct MidiCatWidget : ModuleWidget {
 		addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		MidiWidget *midiInputWidget = createWidget<MidiWidget>(mm2px(Vec(3.41891, 12.f)));
-		midiInputWidget->box.size = mm2px(Vec(43.999, 28));
+		MidiCatMidiWidget *midiInputWidget = createWidget<MidiCatMidiWidget>(Vec(10.0f, 36.4f));
+		midiInputWidget->box.size = Vec(130.0f, 67.0f);
 		midiInputWidget->setMidiPort(module ? &module->midiInput : NULL);
 		addChild(midiInputWidget);
 
-        MidiWidget *midiOutputWidget = createWidget<MidiWidget>(mm2px(Vec(3.41891, 42.f)));
-		midiOutputWidget->box.size = mm2px(Vec(43.999, 28));
+        MidiCatMidiWidget *midiOutputWidget = createWidget<MidiCatMidiWidget>(Vec(10.0f, 107.4f));
+		midiOutputWidget->box.size = Vec(130.0f, 67.0f);
 		midiOutputWidget->setMidiPort(module ? &module->midiOutput : NULL);
 		addChild(midiOutputWidget);
 
-        MidiCatDisplay *mapWidget = createWidget<MidiCatDisplay>(mm2px(Vec(3.41891, 72.f)));
-		mapWidget->box.size = mm2px(Vec(43.999, 48));
+        MidiCatDisplay *mapWidget = createWidget<MidiCatDisplay>(Vec(10.0f, 180.0f));
+		mapWidget->box.size = Vec(130.0f, 174.4f);
 		mapWidget->setModule(module);
 		addChild(mapWidget);
 	}

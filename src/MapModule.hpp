@@ -390,11 +390,11 @@ struct MapModuleChoice : LedDisplayChoice {
 	}
 };
 
-template< int MAX_CHANNELS, typename MODULE >
+template< int MAX_CHANNELS, typename MODULE, typename CHOICE = MapModuleChoice<MAX_CHANNELS, MODULE> >
 struct MapModuleDisplay : LedDisplay {
 	MODULE *module;
 	ScrollWidget *scroll;
-	MapModuleChoice<MAX_CHANNELS, MODULE> *choices[MAX_CHANNELS];
+	CHOICE *choices[MAX_CHANNELS];
 	LedDisplaySeparator *separators[MAX_CHANNELS];
 
 	void setModule(MODULE *module) {
@@ -419,7 +419,7 @@ struct MapModuleDisplay : LedDisplay {
 				separators[id] = separator;
 			}
 
-			MapModuleChoice<MAX_CHANNELS, MODULE> *choice = createWidget<MapModuleChoice<MAX_CHANNELS, MODULE>>(pos);
+			CHOICE *choice = createWidget<CHOICE>(pos);
 			choice->box.size.x = box.size.x;
 			choice->id = id;
 			choice->setModule(module);
