@@ -253,6 +253,7 @@ struct EightFace : Module {
 	void presetClear(int p) {
 		if (presetSlotUsed[p]) 
 			json_decref(presetSlot[p]);
+		presetSlot[p] = NULL;
 		presetSlotUsed[p] = false;
 		if (preset == p) 
 			preset = -1;
