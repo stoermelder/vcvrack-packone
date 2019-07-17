@@ -45,7 +45,7 @@ struct MidiCat : Module {
 	};
 
 	midi::InputQueue midiInput;
-    CCMidiOutput midiOutput;
+	CCMidiOutput midiOutput;
 
 	/** Number of maps */
 	int mapLen = 0;
@@ -66,14 +66,12 @@ struct MidiCat : Module {
 
 	/** The value of each CC number */
 	int8_t values[128];
-	/** The smoothing processor (normalized between 0 and 1) of each channel */
-	dsp::ExponentialFilter valueFilters[MAX_CHANNELS];
 
 	dsp::ClockDivider indicatorDivider;
 
 	/** Track last values */
 	float lastValue[MAX_CHANNELS];
-    float lastValue2[MAX_CHANNELS];
+	float lastValue2[MAX_CHANNELS];
 	/** Allow manual changes of target parameters */
 	bool lockParameterChanges = false;
 
@@ -102,8 +100,8 @@ struct MidiCat : Module {
 		mapLen = 1;
 		for (int i = 0; i < MAX_CHANNELS; i++) {
 			values[i] = -1;
-            lastValue[i] = -1;
-            lastValue2[i] = -1;
+			lastValue[i] = -1;
+			lastValue2[i] = -1;
 		}
 		midiInput.reset();
 		midiOutput.reset();
@@ -122,36 +120,36 @@ struct MidiCat : Module {
 			if (cc < 0)
 				continue;
 
-            // Get Module
-            Module *module = paramHandles[id].module;
-            if (!module)
-                continue;
-            // Get ParamQuantity
-            int paramId = paramHandles[id].paramId;
-            ParamQuantity *paramQuantity = module->paramQuantities[paramId];
-            if (!paramQuantity)
-                continue;
-            if (!paramQuantity->isBounded())
-                continue;
+			// Get Module
+			Module *module = paramHandles[id].module;
+			if (!module)
+				continue;
+			// Get ParamQuantity
+			int paramId = paramHandles[id].paramId;
+			ParamQuantity *paramQuantity = module->paramQuantities[paramId];
+			if (!paramQuantity)
+				continue;
+			if (!paramQuantity->isBounded())
+				continue;
 
-            // Check if CC value has been set
-            if (values[cc] >= 0)
-            {
-                // Set ParamQuantity
-                float v = rescale(values[cc], 0, 127, 0.f, 1.f);
+			// Check if CC value has been set
+			if (values[cc] >= 0)
+			{
+				// Set ParamQuantity
+				float v = rescale(values[cc], 0, 127, 0.f, 1.f);
 
-                if (lockParameterChanges || lastValue[id] != v) {
-                    paramQuantity->setScaledValue(v);
-                    lastValue[id] = v;
-                }
-            }
+				if (lockParameterChanges || lastValue[id] != v) {
+					paramQuantity->setScaledValue(v);
+					lastValue[id] = v;
+				}
+			}
 
-            float v = paramQuantity->getScaledValue();
-            v = rescale(v, 0.f, 1.f, 0, 127);
-            if (lastValue2[id] != v) {
-                lastValue2[id] = v;
-                midiOutput.setValue(v, cc);
-            }
+			float v = paramQuantity->getScaledValue();
+			v = rescale(v, 0.f, 1.f, 0, 127);
+			if (lastValue2[id] != v) {
+				lastValue2[id] = v;
+				midiOutput.setValue(v, cc);
+			}
 		}
 
 		if (indicatorDivider.process()) {
@@ -163,15 +161,15 @@ struct MidiCat : Module {
 		}
 	}
 
-    void processMessage(midi::Message msg) {
-        switch (msg.getStatus()) {
-            // cc
-            case 0xb: {
-                processCC(msg);
-            } break;
-            default: break;
-        }
-    }
+	void processMessage(midi::Message msg) {
+		switch (msg.getStatus()) {
+			// cc
+			case 0xb: {
+				processCC(msg);
+			} break;
+			default: break;
+		}
+	}
 
 	void processCC(midi::Message msg) {
 		uint8_t cc = msg.getNote();
@@ -179,7 +177,6 @@ struct MidiCat : Module {
 		// Learn
 		if (0 <= learningId && values[cc] != value) {
 			ccs[learningId] = cc;
-			valueFilters[learningId].reset();
 			learnedCc = true;
 			commitLearn();
 			updateMapLen();
@@ -192,7 +189,6 @@ struct MidiCat : Module {
 		learningId = -1;
 		ccs[id] = -1;
 		APP->engine->updateParamHandle(&paramHandles[id], -1, 0, true);
-		valueFilters[id].reset();
 		updateMapLen();
 		refreshParamHandleText(id);
 	}
@@ -202,7 +198,6 @@ struct MidiCat : Module {
 		for (int id = 0; id < MAX_CHANNELS; id++) {
 			ccs[id] = -1;
 			APP->engine->updateParamHandle(&paramHandles[id], -1, 0, true);
-			valueFilters[id].reset();
 			refreshParamHandleText(id);
 		}
 		mapLen = 0;
@@ -327,6 +322,7 @@ struct MidiCat : Module {
 struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCat> {
 	MidiCatChoice() {
 		textOffset = Vec(6.f, 14.7f);
+		color = componentlibrary::SCHEME_WHITE;
 	}
 
 	std::string getTextPrefix() override {
@@ -363,14 +359,17 @@ struct MidiCatMidiWidget : MidiWidget {
 
 		driverChoice->textOffset = Vec(6.f, 14.7f);
 		driverChoice->box.size = mm2px(Vec(driverChoice->box.size.x, 7.5f));
+		driverChoice->color = componentlibrary::SCHEME_WHITE;
 		driverSeparator->box.pos = driverChoice->box.getBottomLeft();
 		deviceChoice->textOffset = Vec(6.f, 14.7f);
 		deviceChoice->box.size = mm2px(Vec(deviceChoice->box.size.x, 7.5f));
 		deviceChoice->box.pos = driverChoice->box.getBottomLeft();
+		deviceChoice->color = componentlibrary::SCHEME_WHITE;
 		deviceSeparator->box.pos = deviceChoice->box.getBottomLeft();
 		channelChoice->textOffset = Vec(6.f, 14.7f);
 		channelChoice->box.size = mm2px(Vec(channelChoice->box.size.x, 7.5f));
 		channelChoice->box.pos = deviceChoice->box.getBottomLeft();
+		channelChoice->color = componentlibrary::SCHEME_WHITE;
 	}
 };
 
@@ -389,12 +388,12 @@ struct MidiCatWidget : ModuleWidget {
 		midiInputWidget->setMidiPort(module ? &module->midiInput : NULL);
 		addChild(midiInputWidget);
 
-        MidiCatMidiWidget *midiOutputWidget = createWidget<MidiCatMidiWidget>(Vec(10.0f, 107.4f));
+		MidiCatMidiWidget *midiOutputWidget = createWidget<MidiCatMidiWidget>(Vec(10.0f, 107.4f));
 		midiOutputWidget->box.size = Vec(130.0f, 67.0f);
 		midiOutputWidget->setMidiPort(module ? &module->midiOutput : NULL);
 		addChild(midiOutputWidget);
 
-        MidiCatDisplay *mapWidget = createWidget<MidiCatDisplay>(Vec(10.0f, 180.0f));
+		MidiCatDisplay *mapWidget = createWidget<MidiCatDisplay>(Vec(10.0f, 180.0f));
 		mapWidget->box.size = Vec(130.0f, 174.4f);
 		mapWidget->setModule(module);
 		addChild(mapWidget);
@@ -404,15 +403,15 @@ struct MidiCatWidget : ModuleWidget {
 		MidiCat *module = dynamic_cast<MidiCat*>(this->module);
 		assert(module);
 
-        struct ManualItem : MenuItem {
-            void onAction(const event::Action &e) override {
-                std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/MidiCat.md");
-                t.detach();
-            }
-        };
+		struct ManualItem : MenuItem {
+			void onAction(const event::Action &e) override {
+				std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/MidiCat.md");
+				t.detach();
+			}
+		};
 
-        menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
-        menu->addChild(new MenuSeparator());
+		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
+		menu->addChild(new MenuSeparator());
 
 		struct TextScrollItem : MenuItem {
 			MidiCat *module;
