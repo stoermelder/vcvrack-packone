@@ -1107,7 +1107,7 @@ struct ReMoveWidget : ModuleWidget {
         addParam(createParamCentered<TL1105>(Vec(21.1f, 131.9f), module, ReMove::SEQP_PARAM));
         addParam(createParamCentered<TL1105>(Vec(68.7f, 131.9), module, ReMove::SEQN_PARAM));
 
-        MapModuleDisplay<1> *mapWidget = createWidget<MapModuleDisplay<1>>(Vec(6.8f, 36.4f));
+        MapModuleDisplay<1, ReMove> *mapWidget = createWidget<MapModuleDisplay<1, ReMove>>(Vec(6.8f, 36.4f));
         mapWidget->box.size = Vec(76.2f, 23.f);
         mapWidget->setModule(module);
         addChild(mapWidget);

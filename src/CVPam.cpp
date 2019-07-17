@@ -120,7 +120,8 @@ struct CVPamWidget : ModuleWidget {
 		w1->setModule(module, CVPam::CHANNEL_LIGHTS2);
 		addChild(w1);
 
-		MapModuleDisplay<MAX_CHANNELS> *mapWidget = createWidget<MapModuleDisplay<MAX_CHANNELS>>(mm2px(Vec(3.41891, 29.f)));
+		typedef MapModuleDisplay<MAX_CHANNELS, CVPam> TMapDisplay;
+		TMapDisplay *mapWidget = createWidget<TMapDisplay>(mm2px(Vec(3.41891, 29.f)));
 		mapWidget->box.size = mm2px(Vec(43.999, 91));
 		mapWidget->setModule(module);
 		addChild(mapWidget);

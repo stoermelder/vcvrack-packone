@@ -202,9 +202,9 @@ struct MapModule : Module {
 };
 
 
-template< int MAX_CHANNELS >
+template< int MAX_CHANNELS, typename MODULE >
 struct MapModuleChoice : LedDisplayChoice {
-	MapModule<MAX_CHANNELS> *module;
+	MODULE *module;
 	int id;
 
 	std::chrono::time_point<std::chrono::system_clock> hscrollUpdate = std::chrono::system_clock::now();
@@ -215,7 +215,7 @@ struct MapModuleChoice : LedDisplayChoice {
 		textOffset = Vec(6, 14.7);
 	}
 
-	void setModule(MapModule<MAX_CHANNELS> *module) {
+	void setModule(MODULE *module) {
 		this->module = module;
 	}
 
@@ -237,7 +237,7 @@ struct MapModuleChoice : LedDisplayChoice {
 				menu->addChild(createMenuLabel(header));
 
 				struct UnmapItem : MenuItem {
-					MapModule<MAX_CHANNELS> *module;
+					MODULE *module;
 					int id;
 					void onAction(const event::Action &e) override {
 						module->clearMap(id);
@@ -246,7 +246,7 @@ struct MapModuleChoice : LedDisplayChoice {
 				menu->addChild(construct<UnmapItem>(&MenuItem::text, "Unmap", &UnmapItem::module, module, &UnmapItem::id, id));
 
 				struct IndicateItem : MenuItem {
-					MapModule<MAX_CHANNELS> *module;
+					MODULE *module;
 					int id;
 					void onAction(const event::Action &e) override {
 						ParamHandle *paramHandle = &module->paramHandles[id];
@@ -323,12 +323,12 @@ struct MapModuleChoice : LedDisplayChoice {
 		}
 
 		// Set text
-		text = MAX_CHANNELS > 1 ? string::f("%02d ", id + 1) : "";
+		text = getTextPrefix();
 		if (module->paramHandles[id].moduleId >= 0 && module->learningId != id) {
 			std::string pn = getParamName();
 
-			size_t hscrollMaxLength = ceil(box.size.x / 8.f);			
-			if (module->textScrolling && pn.length() > hscrollMaxLength) {
+			size_t hscrollMaxLength = ceil(box.size.x / 7.f);
+			if (module->textScrolling && pn.length() + text.length() > hscrollMaxLength) {
 				// Scroll the parameter-name horizontically
 				text += pn.substr(hscrollCharOffset > (int)pn.length() ? 0 : hscrollCharOffset);
 				auto now = std::chrono::system_clock::now();
@@ -356,6 +356,10 @@ struct MapModuleChoice : LedDisplayChoice {
 		else {
 			color.a = 0.5;
 		}
+	}
+
+	virtual std::string getTextPrefix() {
+		return MAX_CHANNELS > 1 ? string::f("%02d ", id + 1) : "";
 	}
 
 	std::string getParamName() {
@@ -386,14 +390,14 @@ struct MapModuleChoice : LedDisplayChoice {
 	}
 };
 
-template< int MAX_CHANNELS >
+template< int MAX_CHANNELS, typename MODULE >
 struct MapModuleDisplay : LedDisplay {
-	MapModule<MAX_CHANNELS> *module;
+	MODULE *module;
 	ScrollWidget *scroll;
-	MapModuleChoice<MAX_CHANNELS> *choices[MAX_CHANNELS];
+	MapModuleChoice<MAX_CHANNELS, MODULE> *choices[MAX_CHANNELS];
 	LedDisplaySeparator *separators[MAX_CHANNELS];
 
-	void setModule(MapModule<MAX_CHANNELS> *module) {
+	void setModule(MODULE *module) {
 		this->module = module;
 
 		scroll = new ScrollWidget;
@@ -415,7 +419,7 @@ struct MapModuleDisplay : LedDisplay {
 				separators[id] = separator;
 			}
 
-			MapModuleChoice<MAX_CHANNELS> *choice = createWidget<MapModuleChoice<MAX_CHANNELS>>(pos);
+			MapModuleChoice<MAX_CHANNELS, MODULE> *choice = createWidget<MapModuleChoice<MAX_CHANNELS, MODULE>>(pos);
 			choice->box.size.x = box.size.x;
 			choice->id = id;
 			choice->setModule(module);

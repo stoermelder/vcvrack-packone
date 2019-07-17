@@ -1,5 +1,6 @@
 #include "plugin.hpp"
-#include <midi.hpp>
+#include "CVMapModule.hpp"
+#include <thread>
 
 static const int MAX_CHANNELS = 128;
 
@@ -52,6 +53,7 @@ struct MidiCat : Module {
 	int ccs[MAX_CHANNELS];
 	/** The mapped param handle of each channel */
 	ParamHandle paramHandles[MAX_CHANNELS];
+	ParamHandleIndicator paramHandleIndicator[MAX_CHANNELS];
 
 	/** Channel ID of the learning session */
 	int learningId;
@@ -60,10 +62,14 @@ struct MidiCat : Module {
 	/** Whether the param has been set during the learning session */
 	bool learnedParam;
 
+	bool textScrolling = true;
+
 	/** The value of each CC number */
 	int8_t values[128];
 	/** The smoothing processor (normalized between 0 and 1) of each channel */
 	dsp::ExponentialFilter valueFilters[MAX_CHANNELS];
+
+	dsp::ClockDivider indicatorDivider;
 
 	/** Track last values */
 	float lastValue[MAX_CHANNELS];
@@ -75,8 +81,10 @@ struct MidiCat : Module {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		for (int id = 0; id < MAX_CHANNELS; id++) {
 			paramHandles[id].color = nvgRGB(0xff, 0xff, 0x40);
+			paramHandleIndicator[id].handle = &paramHandles[id];
 			APP->engine->addParamHandle(&paramHandles[id]);
 		}
+		indicatorDivider.setDivision(1024);
 		onReset();
 	}
 
@@ -144,6 +152,14 @@ struct MidiCat : Module {
                 lastValue2[id] = v;
                 midiOutput.setValue(v, cc);
             }
+		}
+
+		if (indicatorDivider.process()) {
+			float t = indicatorDivider.getDivision() * args.sampleTime;
+			for (size_t i = 0; i < MAX_CHANNELS; i++) {
+				if (paramHandles[i].moduleId >= 0)
+					paramHandleIndicator[i].process(t);
+			}
 		}
 	}
 
@@ -255,6 +271,7 @@ struct MidiCat : Module {
 
 	json_t *dataToJson() override {
 		json_t *rootJ = json_object();
+		json_object_set_new(rootJ, "textScrolling", json_boolean(textScrolling));
 
 		json_t *mapsJ = json_array();
 		for (int id = 0; id < mapLen; id++) {
@@ -273,6 +290,9 @@ struct MidiCat : Module {
 
 	void dataFromJson(json_t *rootJ) override {
 		clearMaps();
+
+		json_t *textScrollingJ = json_object_get(rootJ, "textScrolling");
+		textScrolling = json_boolean_value(textScrollingJ);
 
 		json_t *mapsJ = json_object_get(rootJ, "maps");
 		if (mapsJ) {
@@ -304,135 +324,22 @@ struct MidiCat : Module {
 };
 
 
-struct MidiCatChoice : LedDisplayChoice {
-	MidiCat *module;
-	int id;
-	int disableLearnFrames = -1;
+struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCat> {
 
 	MidiCatChoice() {
-		box.size = mm2px(Vec(0, 7.5));
 		textOffset = Vec(10, 14.7);
 	}
 
-	void setModule(MidiCat *module) {
-		this->module = module;
-	}
-
-	void onButton(const event::Button &e) override {
-		e.stopPropagating();
-		if (!module)
-			return;
-
-		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
-			e.consume(this);
-		}
-
-		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
-			module->clearMap(id);
-			e.consume(this);
-		}
-	}
-
-	void onSelect(const event::Select &e) override {
-		if (!module)
-			return;
-
-		ScrollWidget *scroll = getAncestorOfType<ScrollWidget>();
-		scroll->scrollTo(box);
-
-		// Reset touchedParam
-		APP->scene->rack->touchedParam = NULL;
-		module->enableLearn(id);
-	}
-
-	void onDeselect(const event::Deselect &e) override {
-		if (!module)
-			return;
-		// Check if a ParamWidget was touched
-		ParamWidget *touchedParam = APP->scene->rack->touchedParam;
-		if (touchedParam) {
-			APP->scene->rack->touchedParam = NULL;
-			int moduleId = touchedParam->paramQuantity->module->id;
-			int paramId = touchedParam->paramQuantity->paramId;
-			module->learnParam(id, moduleId, paramId);
-		}
-		else {
-			module->disableLearn(id);
-		}
-	}
-
-	void step() override {
-		if (!module)
-			return;
-
-		// Set bgColor and selected state
-		if (module->learningId == id) {
-			bgColor = color;
-			bgColor.a = 0.15;
-
-			// HACK
-			if (APP->event->selectedWidget != this)
-				APP->event->setSelected(this);
-		}
-		else {
-			bgColor = nvgRGBA(0, 0, 0, 0);
-
-			// HACK
-			if (APP->event->selectedWidget == this)
-				APP->event->setSelected(NULL);
-		}
-
-		// Set text
-		text = "";
+	std::string getTextPrefix() override {
 		if (module->ccs[id] >= 0) {
-			text += string::f("CC%02d ", module->ccs[id]);
+			return string::f("CC%02d ", module->ccs[id]);
 		}
-		if (module->paramHandles[id].moduleId >= 0) {
-			text += getParamName();
-		}
-		if (module->ccs[id] < 0 && module->paramHandles[id].moduleId < 0) {
-			if (module->learningId == id) {
-				text = "Mapping...";
-			}
-			else {
-				text = "Unmapped";
-			}
-		}
-
-		// Set text color
-		if ((module->ccs[id] >= 0 && module->paramHandles[id].moduleId >= 0) || module->learningId == id) {
-			color.a = 1.0;
+		else if (module->paramHandles[id].moduleId >= 0) {
+			return "CC.. ";
 		}
 		else {
-			color.a = 0.5;
+			return "";
 		}
-	}
-
-	std::string getParamName() {
-		if (!module)
-			return "";
-		if (id >= module->mapLen)
-			return "";
-		ParamHandle *paramHandle = &module->paramHandles[id];
-		if (paramHandle->moduleId < 0)
-			return "";
-		ModuleWidget *mw = APP->scene->rack->getModule(paramHandle->moduleId);
-		if (!mw)
-			return "";
-		// Get the Module from the ModuleWidget instead of the ParamHandle.
-		// I think this is more elegant since this method is called in the app world instead of the engine world.
-		Module *m = mw->module;
-		if (!m)
-			return "";
-		int paramId = paramHandle->paramId;
-		if (paramId >= (int) m->params.size())
-			return "";
-		ParamQuantity *paramQuantity = m->paramQuantities[paramId];
-		std::string s;
-		s += mw->model->name;
-		s += " ";
-		s += paramQuantity->label;
-		return s;
 	}
 };
 
@@ -511,9 +418,39 @@ struct MidiCatWidget : ModuleWidget {
 		addChild(midiOutputWidget);
 
         MidiCatDisplay *mapWidget = createWidget<MidiCatDisplay>(mm2px(Vec(3.41891, 72.f)));
-		mapWidget->box.size = mm2px(Vec(43.999, 47));
+		mapWidget->box.size = mm2px(Vec(43.999, 48));
 		mapWidget->setModule(module);
 		addChild(mapWidget);
+	}
+
+	void appendContextMenu(Menu *menu) override {
+		MidiCat *module = dynamic_cast<MidiCat*>(this->module);
+		assert(module);
+
+        struct ManualItem : MenuItem {
+            void onAction(const event::Action &e) override {
+                std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/MidiCat.md");
+                t.detach();
+            }
+        };
+
+        menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
+        menu->addChild(new MenuSeparator());
+
+		struct TextScrollItem : MenuItem {
+			MidiCat *module;
+
+			void onAction(const event::Action &e) override {
+				module->textScrolling ^= true;
+			}
+
+			void step() override {
+				rightText = module->textScrolling ? "✔" : "";
+				MenuItem::step();
+			}
+		};
+
+		menu->addChild(construct<TextScrollItem>(&MenuItem::text, "Text scrolling", &TextScrollItem::module, module));
 	}
 };
 
