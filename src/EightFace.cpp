@@ -1,4 +1,5 @@
 #include "plugin.hpp"
+#include "components.hpp"
 #include <thread>
 
 const int NUM_PRESETS = 8;
@@ -7,40 +8,6 @@ const int EIGHTFACE_SLOTCVMODE_TRIG = 2;
 const int EIGHTFACE_SLOTCVMODE_10V = 0;
 const int EIGHTFACE_SLOTCVMODE_C4 = 1;
 const int EIGHTFACE_SLOTCVMODE_CLOCK = 3;
-
-
-struct EightFaceLongPressButton {
-	enum Events {
-		NO_PRESS,
-		SHORT_PRESS,
-		LONG_PRESS
-	};
-
-	float pressedTime = 0.f;
-	dsp::BooleanTrigger trigger;
-
-	Events step(Param &param) {
-		Events result = NO_PRESS;
-		bool pressed = param.value > 0.f;
-		if (pressed && pressedTime >= 0.f) {
-			pressedTime += APP->engine->getSampleTime();
-			if (pressedTime >= 1.f) {
-				pressedTime = -1.f;
-				result = LONG_PRESS;
-			}
-		}
-
-		// Check if released
-		if (trigger.process(!pressed)) {
-			if (pressedTime >= 0.f) {
-				result = SHORT_PRESS;
-			}
-			pressedTime = 0.f;
-		}
-
-		return result;
-	}
-};
 
 
 struct EightFace : Module {
@@ -87,7 +54,7 @@ struct EightFace : Module {
 	int presetNext = -1;
 	float modeLight = 0;
 
-	EightFaceLongPressButton typeButtons[NUM_PRESETS];
+	LongPressButton typeButtons[NUM_PRESETS];
 	dsp::SchmittTrigger slotTrigger;
 	dsp::SchmittTrigger resetTrigger;
 	dsp::ClockDivider lightDivider;
@@ -170,11 +137,11 @@ struct EightFace : Module {
 					for (int i = 0; i < NUM_PRESETS; i++) {
 						switch (typeButtons[i].step(params[PRESET_PARAM + i])) {
 							default:
-							case EightFaceLongPressButton::NO_PRESS:
+							case LongPressButton::NO_PRESS:
 								break;
-							case EightFaceLongPressButton::SHORT_PRESS:
+							case LongPressButton::SHORT_PRESS:
 								presetLoad(t, i, slotCvMode == EIGHTFACE_SLOTCVMODE_CLOCK); break;
-							case EightFaceLongPressButton::LONG_PRESS:
+							case LongPressButton::LONG_PRESS:
 								presetSetCount(i + 1); break;
 						}
 					}
@@ -184,11 +151,11 @@ struct EightFace : Module {
 					for (int i = 0; i < NUM_PRESETS; i++) {
 						switch (typeButtons[i].step(params[PRESET_PARAM + i])) {
 							default:
-							case EightFaceLongPressButton::NO_PRESS:
+							case LongPressButton::NO_PRESS:
 								break;
-							case EightFaceLongPressButton::SHORT_PRESS:
+							case LongPressButton::SHORT_PRESS:
 								presetSave(t, i); break;
-							case EightFaceLongPressButton::LONG_PRESS:
+							case LongPressButton::LONG_PRESS:
 								presetClear(i); break;
 						}
 					}
