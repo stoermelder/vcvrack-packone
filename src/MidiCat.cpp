@@ -217,7 +217,7 @@ struct MidiCat : Module {
 			} break;
 			// note off
 			case 0x8: {
-				processReleaseNote(msg.getNote());
+				processReleaseNote(msg);
 			} break;
 			// note on
 			case 0x9: {
