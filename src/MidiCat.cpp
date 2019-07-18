@@ -15,6 +15,7 @@ struct MidiCatOutput : midi::Output {
 	void reset() {
 		for (int n = 0; n < 128; n++) {
 			lastValues[n] = -1;
+			lastGates[n] = false;
 		}
 	}
 
@@ -65,7 +66,9 @@ struct MidiCat : Module {
 		NUM_LIGHTS
 	};
 
+	/** [Stored to Json] */
 	midi::InputQueue midiInput;
+	/** [Stored to Json] */
 	MidiCatOutput midiOutput;
 
 	/** Number of maps */
@@ -90,6 +93,7 @@ struct MidiCat : Module {
 	/** Whether the param has been set during the learning session */
 	bool learnedParam;
 
+	/** [Stored to Json] */
 	bool textScrolling = true;
 
 	/** The value of each CC number */
@@ -169,7 +173,6 @@ struct MidiCat : Module {
 			// Check if CC value has been set
 			if (cc >= 0 && valuesCc[cc] >= 0)
 			{
-				// Set ParamQuantity
 				float v = rescale(valuesCc[cc], 0, 127, 0.f, 1.f);
 
 				if (lockParameterChanges || lastValue[id] != v) {
@@ -181,7 +184,6 @@ struct MidiCat : Module {
 			// Check if note value has been set
 			if (note >= 0 && valuesNote[note] >= 0)
 			{
-				// Set ParamQuantity
 				int t = valuesNote[note];
 				if (t > 0 && !notesVel[id]) t = 127;
 				float v = rescale(t, 0, 127, 0.f, 1.f);
@@ -192,6 +194,7 @@ struct MidiCat : Module {
 				}
 			}
 
+			// Midi feedback
 			float v = paramQuantity->getScaledValue();
 			v = rescale(v, 0.f, 1.f, 0, 127);
 			if (cc >= 0)
@@ -217,16 +220,16 @@ struct MidiCat : Module {
 			} break;
 			// note off
 			case 0x8: {
-				processReleaseNote(msg);
+				processNoteRelease(msg);
 			} break;
 			// note on
 			case 0x9: {
 				if (msg.getValue() > 0) {
-					processPressNote(msg);
+					processNotePress(msg);
 				}
 				else {
 					// Many stupid keyboards send a "note on" command with 0 velocity to mean "note release"
-					processReleaseNote(msg);
+					processNoteRelease(msg);
 				}
 			} break;
 			default: break;
@@ -239,6 +242,7 @@ struct MidiCat : Module {
 		// Learn
 		if (learningId >= 0 && valuesCc[cc] != value) {
 			ccs[learningId] = cc;
+			notes[learningId] = -1;
 			learnedCc = true;
 			commitLearn();
 			updateMapLen();
@@ -247,11 +251,12 @@ struct MidiCat : Module {
 		valuesCc[cc] = value;
 	}
 
-	void processPressNote(midi::Message msg) {
+	void processNotePress(midi::Message msg) {
 		uint8_t note = msg.getNote();
 		uint8_t vel = msg.getValue();
 		// Learn
 		if (learningId >= 0) {
+			ccs[learningId] = -1;
 			notes[learningId] = note;
 			notesVel[learningId] = false;
 			learnedNote = true;
@@ -262,7 +267,7 @@ struct MidiCat : Module {
 		valuesNote[note] = vel;
 	}
 
-	void processReleaseNote(midi::Message msg) {
+	void processNoteRelease(midi::Message msg) {
 		uint8_t note = msg.getNote();
 		valuesNote[note] = 0;
 	}
@@ -344,15 +349,15 @@ struct MidiCat : Module {
 	void refreshParamHandleText(int id) {
 		std::string text = "MIDI-CAT";
 		if (ccs[id] >= 0) {
-			text += string::f(" CC%02d", ccs[id]);
+			text += string::f(" cc%02d", ccs[id]);
 		}
 		if (notes[id] >= 0) {
 			static const char *noteNames[] = {
-				" C", "C#", " D", "D#", " E", " F", "F#", " G", "G#", " A", "A#", " B"
+				"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"
 			};
 			int oct = notes[id] / 12 - 1;
 			int semi = notes[id] % 12;
-			text += string::f(" Note %s%d", noteNames[semi], oct);
+			text += string::f(" note %s%d", noteNames[semi], oct);
 		}
 		paramHandles[id].text = text;
 	}
@@ -426,7 +431,7 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCat> {
 
 	std::string getTextPrefix() override {
 		if (module->ccs[id] >= 0) {
-			return string::f("CC%02d ", module->ccs[id]);
+			return string::f("cc%02d ", module->ccs[id]);
 		}
 		else if (module->notes[id] >= 0) {
 			static const char *noteNames[] = {
@@ -462,7 +467,7 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCat> {
 				}
 			};
 
-			menu->addChild(construct<VelocityItem>(&MenuItem::text, "Note Velocity", &VelocityItem::module, module, &VelocityItem::id, id));
+			menu->addChild(construct<VelocityItem>(&MenuItem::text, "Note velocity", &VelocityItem::module, module, &VelocityItem::id, id));
 		}
 	}
 };
