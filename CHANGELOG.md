@@ -1,3 +1,8 @@
+### 1.0.6 (in development)
+
+- Module STRIP
+    - Added button EX for excluding specific module parameter from randomization
+
 ### 1.0.5
 
 - Module 8FACE

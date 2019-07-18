@@ -24,6 +24,8 @@ The modes for the ON-section are:
 - Toggle: ON toggles enable/disable of the modules, OFF disables the modules.
 - High/Low: ON in high-state (button pressed or voltage >=1V) enables the modules, ON in low-state (voltage <1V) disables the modules.
 
+Added in v1.0.6: The button labeled EX allows you to exclude some parameters within the strip from randomization. To add a parameter to the exclusion list first enable learn mode by pressing EX, the LED turns red. Next, touch the parameter which should not be randomized. Learn mode will be automatically disabled and you can repeat the learning procedure for another parameter. Green light on the LED signals that at least one parameter has been excluded. A long press on the button resets all excluded parameters and the LED turns off.
+
 ### Loading and saving, copying and pasting strips
 
 A useful feature of STRIP is its ability to save strips to files and load them afterwards. This allows you to build blocks of modules for some purpose (e.g. synth voices, fx sections, mixer consoles) and reuse them later in a different patch or quickly clone them within the same patch.
