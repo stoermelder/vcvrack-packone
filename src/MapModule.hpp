@@ -265,11 +265,15 @@ struct MapModuleChoice : LedDisplayChoice {
 					}
 				};
 				menu->addChild(construct<IndicateItem>(&MenuItem::text, "Locate and indicate", &IndicateItem::module, module, &IndicateItem::id, id));
+				appendContextMenu(menu);
 			} 
 			else {
 				module->clearMap(id);
 			}
 		}
+	}
+
+	virtual void appendContextMenu(Menu *menu) {
 	}
 
 	void onSelect(const event::Select &e) override {

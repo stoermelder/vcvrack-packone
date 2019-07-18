@@ -4,10 +4,11 @@
 
 static const int MAX_CHANNELS = 128;
 
-struct CCMidiOutput : midi::Output {
+struct MidiCatOutput : midi::Output {
 	int lastValues[128];
+	bool lastGates[128];
 
-	CCMidiOutput() {
+	MidiCatOutput() {
 		reset();
 	}
 
@@ -28,6 +29,26 @@ struct CCMidiOutput : midi::Output {
 		m.setValue(value);
 		sendMessage(m);
 	}
+
+	void setGate(int vel, int note) {
+		if (vel > 0 && !lastGates[note]) {
+			// Note on
+			midi::Message m;
+			m.setStatus(0x9);
+			m.setNote(note);
+			m.setValue(vel);
+			sendMessage(m);
+		}
+		else if (vel == 0 && lastGates[note]) {
+			// Note off
+			midi::Message m;
+			m.setStatus(0x8);
+			m.setNote(note);
+			m.setValue(0);
+			sendMessage(m);
+		}
+		lastGates[note] = vel > 0;
+	}
 };
 
 struct MidiCat : Module {
@@ -45,12 +66,17 @@ struct MidiCat : Module {
 	};
 
 	midi::InputQueue midiInput;
-	CCMidiOutput midiOutput;
+	MidiCatOutput midiOutput;
 
 	/** Number of maps */
 	int mapLen = 0;
-	/** The mapped CC number of each channel */
+	/** [Stored to Json] The mapped CC number of each channel */
 	int ccs[MAX_CHANNELS];
+	/** [Stored to Json] The mapped note number of each channel */
+	int notes[MAX_CHANNELS];
+	/** [Stored to Json] Use the velocity value of each channel when notes are used */
+	bool notesVel[MAX_CHANNELS];
+
 	/** The mapped param handle of each channel */
 	ParamHandle paramHandles[MAX_CHANNELS];
 	ParamHandleIndicator paramHandleIndicator[MAX_CHANNELS];
@@ -59,21 +85,25 @@ struct MidiCat : Module {
 	int learningId;
 	/** Whether the CC has been set during the learning session */
 	bool learnedCc;
+	/** Whether the note has been set during the learning session */
+	bool learnedNote;
 	/** Whether the param has been set during the learning session */
 	bool learnedParam;
 
 	bool textScrolling = true;
 
 	/** The value of each CC number */
-	int8_t values[128];
-
-	dsp::ClockDivider indicatorDivider;
+	int8_t valuesCc[128];
+	/** The value of each note number */
+	int8_t valuesNote[128];
 
 	/** Track last values */
 	float lastValue[MAX_CHANNELS];
-	float lastValue2[MAX_CHANNELS];
-	/** Allow manual changes of target parameters */
+
+	/** [Stored to Json] Allow manual changes of target parameters */
 	bool lockParameterChanges = false;
+
+	dsp::ClockDivider indicatorDivider;
 
 	MidiCat() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -95,13 +125,16 @@ struct MidiCat : Module {
 	void onReset() override {
 		learningId = -1;
 		learnedCc = false;
+		learnedNote = false;
 		learnedParam = false;
 		clearMaps();
 		mapLen = 1;
+		for (int i = 0; i < 128; i++) {
+			valuesCc[i] = -1;
+			valuesNote[i] = -1;
+		}
 		for (int i = 0; i < MAX_CHANNELS; i++) {
-			values[i] = -1;
 			lastValue[i] = -1;
-			lastValue2[i] = -1;
 		}
 		midiInput.reset();
 		midiOutput.reset();
@@ -117,7 +150,8 @@ struct MidiCat : Module {
 		// Step channels
 		for (int id = 0; id < mapLen; id++) {
 			int cc = ccs[id];
-			if (cc < 0)
+			int note = notes[id];
+			if (cc < 0 && note < 0)
 				continue;
 
 			// Get Module
@@ -133,10 +167,24 @@ struct MidiCat : Module {
 				continue;
 
 			// Check if CC value has been set
-			if (values[cc] >= 0)
+			if (cc >= 0 && valuesCc[cc] >= 0)
 			{
 				// Set ParamQuantity
-				float v = rescale(values[cc], 0, 127, 0.f, 1.f);
+				float v = rescale(valuesCc[cc], 0, 127, 0.f, 1.f);
+
+				if (lockParameterChanges || lastValue[id] != v) {
+					paramQuantity->setScaledValue(v);
+					lastValue[id] = v;
+				}
+			}
+
+			// Check if note value has been set
+			if (note >= 0 && valuesNote[note] >= 0)
+			{
+				// Set ParamQuantity
+				int t = valuesNote[note];
+				if (t > 0 && !notesVel[id]) t = 127;
+				float v = rescale(t, 0, 127, 0.f, 1.f);
 
 				if (lockParameterChanges || lastValue[id] != v) {
 					paramQuantity->setScaledValue(v);
@@ -146,10 +194,10 @@ struct MidiCat : Module {
 
 			float v = paramQuantity->getScaledValue();
 			v = rescale(v, 0.f, 1.f, 0, 127);
-			if (lastValue2[id] != v) {
-				lastValue2[id] = v;
+			if (cc >= 0)
 				midiOutput.setValue(v, cc);
-			}
+			if (note >= 0)
+				midiOutput.setGate(v, note);
 		}
 
 		if (indicatorDivider.process()) {
@@ -167,27 +215,62 @@ struct MidiCat : Module {
 			case 0xb: {
 				processCC(msg);
 			} break;
+			// note off
+			case 0x8: {
+				processReleaseNote(msg.getNote());
+			} break;
+			// note on
+			case 0x9: {
+				if (msg.getValue() > 0) {
+					processPressNote(msg);
+				}
+				else {
+					// Many stupid keyboards send a "note on" command with 0 velocity to mean "note release"
+					processReleaseNote(msg);
+				}
+			} break;
 			default: break;
 		}
 	}
 
 	void processCC(midi::Message msg) {
 		uint8_t cc = msg.getNote();
-		int8_t value = msg.getValue();
+		uint8_t value = msg.getValue();
 		// Learn
-		if (0 <= learningId && values[cc] != value) {
+		if (learningId >= 0 && valuesCc[cc] != value) {
 			ccs[learningId] = cc;
 			learnedCc = true;
 			commitLearn();
 			updateMapLen();
 			refreshParamHandleText(learningId);
 		}
-		values[cc] = value;
+		valuesCc[cc] = value;
+	}
+
+	void processPressNote(midi::Message msg) {
+		uint8_t note = msg.getNote();
+		uint8_t vel = msg.getValue();
+		// Learn
+		if (learningId >= 0) {
+			notes[learningId] = note;
+			notesVel[learningId] = false;
+			learnedNote = true;
+			commitLearn();
+			updateMapLen();
+			refreshParamHandleText(learningId);
+		}
+		valuesNote[note] = vel;
+	}
+
+	void processReleaseNote(midi::Message msg) {
+		uint8_t note = msg.getNote();
+		valuesNote[note] = 0;
 	}
 
 	void clearMap(int id) {
 		learningId = -1;
 		ccs[id] = -1;
+		notes[id] = -1;
 		APP->engine->updateParamHandle(&paramHandles[id], -1, 0, true);
 		updateMapLen();
 		refreshParamHandleText(id);
@@ -197,6 +280,7 @@ struct MidiCat : Module {
 		learningId = -1;
 		for (int id = 0; id < MAX_CHANNELS; id++) {
 			ccs[id] = -1;
+			notes[id] = -1;
 			APP->engine->updateParamHandle(&paramHandles[id], -1, 0, true);
 			refreshParamHandleText(id);
 		}
@@ -207,7 +291,7 @@ struct MidiCat : Module {
 		// Find last nonempty map
 		int id;
 		for (id = MAX_CHANNELS - 1; id >= 0; id--) {
-			if (ccs[id] >= 0 || paramHandles[id].moduleId >= 0)
+			if (ccs[id] >= 0 || notes[id] >= 0 || paramHandles[id].moduleId >= 0)
 				break;
 		}
 		mapLen = id + 1;
@@ -219,16 +303,17 @@ struct MidiCat : Module {
 	void commitLearn() {
 		if (learningId < 0)
 			return;
-		if (!learnedCc)
+		if (!learnedCc && !learnedNote)
 			return;
 		if (!learnedParam)
 			return;
 		// Reset learned state
 		learnedCc = false;
+		learnedNote = false;
 		learnedParam = false;
 		// Find next incomplete map
 		while (++learningId < MAX_CHANNELS) {
-			if (ccs[learningId] < 0 || paramHandles[learningId].moduleId < 0)
+			if ((ccs[learningId] < 0 && notes[learningId] < 0) || paramHandles[learningId].moduleId < 0)
 				return;
 		}
 		learningId = -1;
@@ -238,6 +323,7 @@ struct MidiCat : Module {
 		if (learningId != id) {
 			learningId = id;
 			learnedCc = false;
+			learnedNote = false;
 			learnedParam = false;
 		}
 	}
@@ -256,11 +342,18 @@ struct MidiCat : Module {
 	}
 
 	void refreshParamHandleText(int id) {
-		std::string text;
-		if (ccs[id] >= 0)
-			text = string::f("CC%02d", ccs[id]);
-		else
-			text = "MIDI-Map";
+		std::string text = "MIDI-CAT";
+		if (ccs[id] >= 0) {
+			text += string::f(" CC%02d", ccs[id]);
+		}
+		if (notes[id] >= 0) {
+			static const char *noteNames[] = {
+				" C", "C#", " D", "D#", " E", " F", "F#", " G", "G#", " A", "A#", " B"
+			};
+			int oct = notes[id] / 12 - 1;
+			int semi = notes[id] % 12;
+			text += string::f(" Note %s%d", noteNames[semi], oct);
+		}
 		paramHandles[id].text = text;
 	}
 
@@ -272,6 +365,8 @@ struct MidiCat : Module {
 		for (int id = 0; id < mapLen; id++) {
 			json_t *mapJ = json_object();
 			json_object_set_new(mapJ, "cc", json_integer(ccs[id]));
+			json_object_set_new(mapJ, "note", json_integer(notes[id]));
+			json_object_set_new(mapJ, "noteVel", json_boolean(notesVel[id]));
 			json_object_set_new(mapJ, "moduleId", json_integer(paramHandles[id].moduleId));
 			json_object_set_new(mapJ, "paramId", json_integer(paramHandles[id].paramId));
 			json_array_append_new(mapsJ, mapJ);
@@ -295,13 +390,17 @@ struct MidiCat : Module {
 			size_t mapIndex;
 			json_array_foreach(mapsJ, mapIndex, mapJ) {
 				json_t *ccJ = json_object_get(mapJ, "cc");
+				json_t *noteJ = json_object_get(mapJ, "note");
+				json_t *noteVelJ = json_object_get(mapJ, "noteVel");
 				json_t *moduleIdJ = json_object_get(mapJ, "moduleId");
 				json_t *paramIdJ = json_object_get(mapJ, "paramId");
-				if (!(ccJ && moduleIdJ && paramIdJ))
+				if (!(ccJ && noteJ && moduleIdJ && paramIdJ))
 					continue;
 				if (mapIndex >= MAX_CHANNELS)
 					continue;
 				ccs[mapIndex] = json_integer_value(ccJ);
+				notes[mapIndex] = json_integer_value(noteJ);
+				notesVel[mapIndex] = json_boolean_value(noteVelJ);
 				APP->engine->updateParamHandle(&paramHandles[mapIndex], json_integer_value(moduleIdJ), json_integer_value(paramIdJ), false);
 				refreshParamHandleText(mapIndex);
 			}
@@ -329,11 +428,41 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCat> {
 		if (module->ccs[id] >= 0) {
 			return string::f("CC%02d ", module->ccs[id]);
 		}
+		else if (module->notes[id] >= 0) {
+			static const char *noteNames[] = {
+				" C", "C#", " D", "D#", " E", " F", "F#", " G", "G#", " A", "A#", " B"
+			};
+			int oct = module->notes[id] / 12 - 1;
+			int semi = module->notes[id] % 12;
+			return string::f(" %s%d ", noteNames[semi], oct);
+		}
 		else if (module->paramHandles[id].moduleId >= 0) {
-			return "CC.. ";
+			return ".... ";
 		}
 		else {
 			return "";
+		}
+	}
+
+	void appendContextMenu(Menu *menu) override {
+		if (module->notes[id] >= 0) {
+			menu->addChild(new MenuSeparator());
+
+			struct VelocityItem : MenuItem {
+				MidiCat *module;
+				int id;
+
+				void onAction(const event::Action &e) override {
+					module->notesVel[id] ^= true;
+				}
+
+				void step() override {
+					rightText = module->notesVel[id] ? "✔" : "";
+					MenuItem::step();
+				}
+			};
+
+			menu->addChild(construct<VelocityItem>(&MenuItem::text, "Note Velocity", &VelocityItem::module, module, &VelocityItem::id, id));
 		}
 	}
 };
