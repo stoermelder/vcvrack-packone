@@ -1,5 +1,7 @@
 ### 1.0.6 (in development)
 
+- Module MIDI-CAT
+    - New module, mapping module similar to VCV's MIDI-MAP with midi feedback and note mapping
 - Module STRIP
     - Added button EX for excluding specific module parameter from randomization
 
