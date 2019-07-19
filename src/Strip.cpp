@@ -54,7 +54,13 @@ struct Strip : Module {
 
 	LongPressButton excludeButton;
 	bool excludeLearn = false;
+	/** [Stored to JSON] */
 	std::set<std::tuple<int, int>> excludedParams;
+
+	/** Member fields for thread-sychronisation of function groupExcludeParam */
+	bool groupExcludeParam_invoke = false;
+	int groupExcludeParam_moduleId;
+	int groupExcludeParam_paramId;
 
 	dsp::ClockDivider lightDivider;
 
@@ -110,6 +116,10 @@ struct Strip : Module {
 				break;
 		}
 
+		if (groupExcludeParam_invoke) {
+			groupExcludeParam();
+		}
+
 		// Set channel lights infrequently
 		if (lightDivider.process()) {
 			lights[RIGHT_LIGHT].setBrightness(mode == STRIP_MODE_LEFTRIGHT || mode == STRIP_MODE_RIGHT);
@@ -120,6 +130,10 @@ struct Strip : Module {
 		}
 	}
 
+	/** 
+	 * Disables/enables all modules of the current strip.
+	 * To be called from engine-thread only.
+	 */
 	void groupDisable(bool val) {
 		if (lastState == val) return;
 		lastState = val;
@@ -151,11 +165,17 @@ struct Strip : Module {
 		}
 	}
 
+	/** 
+	 * Randomizes all modules of the current strip.
+	 * To be called from engine-thread only.
+	 */
 	void groupRandomize() {
 		if (mode == STRIP_MODE_LEFTRIGHT || mode == STRIP_MODE_RIGHT) {
 			Module *m = this;
 			while (true) {
 				if (m->rightExpander.moduleId < 0) break;
+				// Be careful: this function is called from the dsp-thread, but widgets belong
+				// to the app-world!
 				ModuleWidget *mw = APP->scene->rack->getModule(m->rightExpander.moduleId);
 				for (ParamWidget *param : mw->params) {
 					if (excludedParams.find(std::make_tuple(m->rightExpander.moduleId, param->paramQuantity->paramId)) == excludedParams.end())
@@ -169,6 +189,8 @@ struct Strip : Module {
 			Module *m = this;
 			while (true) {
 				if (m->leftExpander.moduleId < 0) break;
+				// Be careful: this function is called from the dsp-thread, but widgets belong
+				// to the app-world!
 				ModuleWidget *mw = APP->scene->rack->getModule(m->leftExpander.moduleId);
 				for (ParamWidget *param : mw->params) {
 					if (excludedParams.find(std::make_tuple(m->leftExpander.moduleId, param->paramQuantity->paramId)) == excludedParams.end())
@@ -180,7 +202,26 @@ struct Strip : Module {
 		}
 	}
 
-	void groupExcludeParam(int moduleId, int paramId) {	
+	/**
+	 * Adds a parameter to the randomization exclusion list.
+	 * Called from the app-thread for simple synchronization.
+	 */
+	void groupExcludeParam(int moduleId, int paramId) {
+		groupExcludeParam_moduleId = moduleId;
+		groupExcludeParam_paramId = paramId;
+		groupExcludeParam_invoke = true;
+	}
+
+	/** 
+	 * Adds a parameter to the randomization exclusion list.
+	 * Called from the dsp-thread to ensure thread-safe access to set excludedParams.
+	 */
+	void groupExcludeParam() {
+		int moduleId = groupExcludeParam_moduleId;
+		int paramId = groupExcludeParam_paramId;
+
+		excludeLearn = false;
+		groupExcludeParam_invoke = false;
 		if (mode == STRIP_MODE_LEFTRIGHT || mode == STRIP_MODE_RIGHT) {
 			Module *m = this;
 			while (true) {
@@ -190,7 +231,7 @@ struct Strip : Module {
 					for (ParamWidget *param : mw->params) {
 						if (param->paramQuantity->paramId == paramId) {
 							excludedParams.insert(std::make_tuple(moduleId, paramId));
-							excludeLearn = false;
+							return;
 						}
 					}
 					return;
@@ -207,7 +248,7 @@ struct Strip : Module {
 					for (ParamWidget *param : mw->params) {
 						if (param->paramQuantity->paramId == paramId) {
 							excludedParams.insert(std::make_tuple(moduleId, paramId));
-							excludeLearn = false;
+							return;
 						}
 					}
 					return;
@@ -308,6 +349,7 @@ struct ExcludeButton : TL1105 {
 			APP->scene->rack->touchedParam = NULL;
 			int moduleId = touchedParam->paramQuantity->module->id;
 			int paramId = touchedParam->paramQuantity->paramId;
+			// Called from the app-thread, synchronization to the dsp-thread will be done in the module.
 			module->groupExcludeParam(moduleId, paramId);
 			learn = false;
 		}
