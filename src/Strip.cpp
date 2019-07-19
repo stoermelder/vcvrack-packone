@@ -70,7 +70,7 @@ struct Strip : Module {
 		configParam(ON_PARAM, 0, 1, 0, "Switch/toggle strip on");
 		configParam(OFF_PARAM, 0, 1, 0, "Switch strip off");
 		configParam(RAND_PARAM, 0, 1, 0, "Randomize strip");
-		configParam(EXCLUDE_PARAM, 0, 1, 0, "Short press: learn excluded parameters. Long Press: clear excluded parameters");
+		configParam(EXCLUDE_PARAM, 0, 1, 0, "Randomize exclusion");
 
 		lightDivider.setDivision(1024);
 		onReset();
@@ -352,6 +352,63 @@ struct ExcludeButton : TL1105 {
 			// Called from the app-thread, synchronization to the dsp-thread will be done in the module.
 			module->groupExcludeParam(moduleId, paramId);
 			learn = false;
+		}
+	}
+
+	void onButton(const event::Button &e) override {
+		// Right click to open context menu
+		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT && (e.mods & RACK_MOD_MASK) == 0) {
+			createContextMenu();
+			e.consume(this);
+		}
+		else {
+			TL1105::onButton(e);
+		}
+	}
+
+	void createContextMenu() {
+		ui::Menu *menu = createMenu();
+
+		ui::MenuLabel *modelLabel = new ui::MenuLabel;
+		modelLabel->text = "Randomize exclusion";
+		menu->addChild(modelLabel);
+
+		struct LabelButton : ui::MenuItem {
+			void onButton(const event::Button &e) override { }
+		};
+
+		LabelButton *help1Label = new LabelButton;
+		help1Label->rightText = "short press";
+		help1Label->text = "Learn";
+		menu->addChild(help1Label);
+
+		LabelButton *help2Label = new LabelButton;
+		help2Label->rightText = "long press";
+		help2Label->text = "Clear";
+		menu->addChild(help2Label);
+
+		if (module->excludedParams.size() > 0) {
+			menu->addChild(new MenuSeparator());
+		}
+
+		for (auto it : module->excludedParams) {
+			int moduleId = std::get<0>(it);
+			int paramId = std::get<1>(it);
+			
+			ModuleWidget *moduleWidget = APP->scene->rack->getModule(moduleId);
+			if (!moduleWidget) continue;
+			ParamWidget *paramWidget = moduleWidget->getParam(paramId);
+			if (!paramWidget) continue;
+			
+			std::string text = "Excluded \"";
+			text += moduleWidget->model->name;
+			text += " ";
+			text += paramWidget->paramQuantity->getLabel();
+			text += "\"";
+
+			ui::MenuLabel *modelLabel = new ui::MenuLabel;
+			modelLabel->text = text;
+			menu->addChild(modelLabel);
 		}
 	}
 };
