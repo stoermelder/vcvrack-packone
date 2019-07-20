@@ -53,13 +53,14 @@ struct Strip : Module {
 	dsp::SchmittTrigger randTrigger;
 
 	LongPressButton excludeButton;
+	bool excludeParam_firstRun = true;
 	bool excludeLearn = false;
 	/** [Stored to JSON] */
 	std::set<std::tuple<int, int>> excludedParams;
 
 	/** Member fields for thread-sychronisation of function groupExcludeParam */
-	bool groupExcludeParam_invoke = false;
-	std::tuple<int, int> groupExcludeParam_tuple;
+	bool excludeParams_invoke = false;
+	std::tuple<int, int> excludeParams_tuple;
 
 	dsp::ClockDivider lightDivider;
 
@@ -76,6 +77,11 @@ struct Strip : Module {
 	}
 
 	void process(const ProcessArgs &args) override {
+		if (excludeParam_firstRun) {
+			groupExcludeCleanup();
+			excludeParam_firstRun = false;
+		}
+
 		if (modeTrigger.process(params[MODE_PARAM].getValue())) {
 			mode = (mode + 1) % 3;
 			lastState = true;
@@ -116,7 +122,7 @@ struct Strip : Module {
 				break;
 		}
 
-		if (groupExcludeParam_invoke) {
+		if (excludeParams_invoke) {
 			groupExcludeParam();
 		}
 
@@ -141,9 +147,11 @@ struct Strip : Module {
 			Module *m = this;
 			while (true) {
 				if (m->rightExpander.moduleId < 0) break;
+				// This is what "Module.hpp" says about bypass:
+				// "Module subclasses should not read/write this variable."
 				m->rightExpander.module->bypass = val;
 				// Clear outputs and set to 1 channel
-				for (Output &output : m->outputs) {
+				for (Output &output : m->rightExpander.module->outputs) {
 					// This zeros all voltages, but the channel is set to 1 if connected
 					output.setChannels(0);
 				}
@@ -154,9 +162,11 @@ struct Strip : Module {
 			Module *m = this;
 			while (true) {
 				if (m->leftExpander.moduleId < 0) break;
+				// This is what "Module.hpp" says about bypass:
+				// "Module subclasses should not read/write this variable."
 				m->leftExpander.module->bypass = val;
 				// Clear outputs and set to 1 channel
-				for (Output &output : m->outputs) {
+				for (Output &output : m->leftExpander.module->outputs) {
 					// This zeros all voltages, but the channel is set to 1 if connected
 					output.setChannels(0);
 				}
@@ -207,8 +217,8 @@ struct Strip : Module {
 	 * Called from the app-thread for simple synchronization.
 	 */
 	void groupExcludeParam(int moduleId, int paramId) {
-		groupExcludeParam_tuple = std::make_tuple(moduleId, paramId);
-		groupExcludeParam_invoke = true;
+		excludeParams_tuple = std::make_tuple(moduleId, paramId);
+		excludeParams_invoke = true;
 	}
 
 	/** 
@@ -216,11 +226,11 @@ struct Strip : Module {
 	 * Called from the dsp-thread to ensure thread-safe access to set excludedParams.
 	 */
 	void groupExcludeParam() {
-		int moduleId = std::get<0>(groupExcludeParam_tuple);
-		int paramId = std::get<1>(groupExcludeParam_tuple);
+		int moduleId = std::get<0>(excludeParams_tuple);
+		int paramId = std::get<1>(excludeParams_tuple);
 
 		excludeLearn = false;
-		groupExcludeParam_invoke = false;
+		excludeParams_invoke = false;
 		if (mode == STRIP_MODE_LEFTRIGHT || mode == STRIP_MODE_RIGHT) {
 			Module *m = this;
 			while (true) {
@@ -257,7 +267,15 @@ struct Strip : Module {
 		}
 	}
 
+	/**
+	 * Cleans the currently list of excluded parameters from modules that are no longer 
+	 * within the current strip.
+	 * To be called from engine-thread only.
+	 */
 	void groupExcludeCleanup() {
+		if (excludedParams.size() == 0)
+			return;
+
 		std::map<int, Module*> modules;
 		if (mode == STRIP_MODE_LEFTRIGHT || mode == STRIP_MODE_RIGHT) {
 			Module *m = this;
