@@ -330,8 +330,12 @@ struct MapModuleChoice : LedDisplayChoice {
 		text = getTextPrefix();
 		if (module->paramHandles[id].moduleId >= 0 && module->learningId != id) {
 			std::string pn = getParamName();
+			if (pn == "") {
+				module->clearMap(id);
+				return;
+			}
 
-			size_t hscrollMaxLength = ceil(box.size.x / 7.f);
+			size_t hscrollMaxLength = ceil(box.size.x / 6.2f);
 			if (module->textScrolling && pn.length() + text.length() > hscrollMaxLength) {
 				// Scroll the parameter-name horizontically
 				text += pn.substr(hscrollCharOffset > (int)pn.length() ? 0 : hscrollCharOffset);
@@ -370,21 +374,21 @@ struct MapModuleChoice : LedDisplayChoice {
 		if (!module)
 			return "";
 		if (id >= module->mapLen)
-			return "<ERROR>";
+			return "";
 		ParamHandle *paramHandle = &module->paramHandles[id];
 		if (paramHandle->moduleId < 0)
-			return "<ERROR>";
+			return "";
 		ModuleWidget *mw = APP->scene->rack->getModule(paramHandle->moduleId);
 		if (!mw)
-			return "<ERROR>";
+			return "";
 		// Get the Module from the ModuleWidget instead of the ParamHandle.
 		// I think this is more elegant since this method is called in the app world instead of the engine world.
 		Module *m = mw->module;
 		if (!m)
-			return "<ERROR>";
+			return "";
 		int paramId = paramHandle->paramId;
 		if (paramId >= (int) m->params.size())
-			return "<ERROR>";
+			return "";
 		ParamQuantity *paramQuantity = m->paramQuantities[paramId];
 		std::string s;
 		s += mw->model->name;
