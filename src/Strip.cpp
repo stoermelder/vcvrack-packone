@@ -59,8 +59,7 @@ struct Strip : Module {
 
 	/** Member fields for thread-sychronisation of function groupExcludeParam */
 	bool groupExcludeParam_invoke = false;
-	int groupExcludeParam_moduleId;
-	int groupExcludeParam_paramId;
+	std::tuple<int, int> groupExcludeParam_tuple;
 
 	dsp::ClockDivider lightDivider;
 
@@ -109,6 +108,7 @@ struct Strip : Module {
 			case LongPressButton::NO_PRESS:
 				break;
 			case LongPressButton::SHORT_PRESS:
+				groupExcludeCleanup();
 				excludeLearn ^= true;
 				break;
 			case LongPressButton::LONG_PRESS:
@@ -207,8 +207,7 @@ struct Strip : Module {
 	 * Called from the app-thread for simple synchronization.
 	 */
 	void groupExcludeParam(int moduleId, int paramId) {
-		groupExcludeParam_moduleId = moduleId;
-		groupExcludeParam_paramId = paramId;
+		groupExcludeParam_tuple = std::make_tuple(moduleId, paramId);
 		groupExcludeParam_invoke = true;
 	}
 
@@ -217,8 +216,8 @@ struct Strip : Module {
 	 * Called from the dsp-thread to ensure thread-safe access to set excludedParams.
 	 */
 	void groupExcludeParam() {
-		int moduleId = groupExcludeParam_moduleId;
-		int paramId = groupExcludeParam_paramId;
+		int moduleId = std::get<0>(groupExcludeParam_tuple);
+		int paramId = std::get<1>(groupExcludeParam_tuple);
 
 		excludeLearn = false;
 		groupExcludeParam_invoke = false;
@@ -258,11 +257,46 @@ struct Strip : Module {
 		}
 	}
 
+	void groupExcludeCleanup() {
+		std::map<int, Module*> modules;
+		if (mode == STRIP_MODE_LEFTRIGHT || mode == STRIP_MODE_RIGHT) {
+			Module *m = this;
+			while (true) {
+				if (m->rightExpander.moduleId < 0) break;
+				modules[m->rightExpander.moduleId] = m;
+				m = m->rightExpander.module;
+			}
+		}
+		if (mode == STRIP_MODE_LEFTRIGHT || mode == STRIP_MODE_LEFT) {
+			Module *m = this;
+			while (true) {
+				if (m->leftExpander.moduleId < 0) break;
+				modules[m->leftExpander.moduleId] = m;
+				m = m->leftExpander.module;
+			}
+		}
+
+		std::vector<std::tuple<int, int>> toBeDeleted;
+		for (auto it : excludedParams) {
+			int moduleId = std::get<0>(it);
+			auto m = modules.find(moduleId);
+			if (m == modules.end()) {
+				toBeDeleted.push_back(it);
+			}
+		}
+
+		for (auto it : toBeDeleted) {
+			excludedParams.erase(it);
+		}
+	}
+
+
 	json_t *dataToJson() override {
 		json_t *rootJ = json_object();
 		json_object_set_new(rootJ, "mode", json_integer(mode));
 		json_object_set_new(rootJ, "onMode", json_integer(onMode));
 
+		groupExcludeCleanup();
 		json_t *excludedParamsJ = json_array();
 		for (auto t : excludedParams) {
 			json_t *excludedParamJ = json_object();
@@ -291,7 +325,10 @@ struct Strip : Module {
 				json_t *paramIdJ = json_object_get(excludedParamJ, "paramId");
 				if (!(moduleIdJ && paramIdJ))
 					continue;
-				excludedParams.insert(std::make_tuple(json_integer_value(moduleIdJ), json_integer_value(paramIdJ)));
+
+				int moduleId = json_integer_value(moduleIdJ);
+				int paramId = json_integer_value(paramIdJ);
+				excludedParams.insert(std::make_tuple(moduleId, paramId));
 			}
 		}
 	}
