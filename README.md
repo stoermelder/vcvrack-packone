@@ -10,17 +10,18 @@ The PackOne plugin pack gives you a some utility modules for [VCV Rack](https://
 
 ![Intro image](./docs/intro.png)
 
+- [8FACE](./docs/EightFace.md): preset sequencer for eight presets of any module
+- [BOLT](./docs/Bolt.md): polyphonic CV-modulateable boolean functions
 - [CV-MAP](./docs/CVMap.md): control 32 knobs/sliders/switches of any module by CV even when the module has no CV input
-- [µMAP](./docs/CVMapMicro.md): a single instance of CV-MAP's slots with attenuverters
 - [CV-PAM](./docs/CVPam.md): generate CV voltage by observing 32 knobs/sliders/switches of any module
+- [INFIX](./docs/Infix.md): insert for polyphonic cables
+- [µMAP](./docs/CVMapMicro.md): a single instance of CV-MAP's slots with attenuverters
+- [MIDI-CAT](./docs/MidiCat.md): map parameters to midi controls similar to MIDI-MAP with midi feedback and note mapping
 - [ReMOVE Lite](./docs/ReMove.md): a recorder for knob/slider/switch-automation
 - [ROTOR Model A](./docs/RotorA.md): spread a carrier signal across 2-16 output channels using CV
-- [BOLT](./docs/Bolt.md): polyphonic CV-modulateable boolean functions
-- [INFIX](./docs/Infix.md): insert for polyphonic cables
 - [STRIP](./docs/Strip.md): manage a group of modules in a patch, providing load, save as, disable and randomize
-- [8FACE](./docs/EightFace.md): preset sequencer for eight presets of any module
 
-Release versions are published in the [VCV Library](https://vcvrack.com/plugins.html#packone).
+Stable versions are released in the [VCV Library](https://vcvrack.com/plugins.html#packone).
 
 Feel free to contact me or create a GitHub issue if you have any problems or questions!
 

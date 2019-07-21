@@ -14,7 +14,7 @@ STRIP can be configured which modules will be considered as managed. By default 
 
 The sections ON, OFF and RAND provide CV control of options only available in the context menu of modules: ON and OFF triggers "Disable" with different modes, RAND triggers "Randomize". 
 
-**Please keep in mind that both functions "Disable" and "Randomize" were not designed to be controlled by CV or modulated at audio rate. Please do not contact the developers of Rack or any modules when unexpected behaviour occurs or high CPU usage is noticable.**
+**Disclaimer: Please keep in mind that both functions "Disable" and "Randomize" were not designed to be controlled by CV or modulated at audio rate. Please do not contact the developers of Rack or any modules when unexpected behaviour occurs or high CPU usage is noticable.**
 
 ![STRIP RAND](./Strip-rand.gif)
 

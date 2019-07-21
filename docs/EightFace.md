@@ -2,7 +2,7 @@
 
 8FACE is a module for storing, recalling and sequencing up to eight different presets of any module in Rack. It uses Rack's expander mechanism to attach to any module to its left and uses buttons and LEDs to manage each of its preset-slot.
 
-**An important advice: Loading presets of modules was not designed to be controlled by CV or modulated at audio rate. Please do not contact the developers of Rack or any modules when unexpected behaviour occurs or high CPU usage is noticable.**
+**Disclaimer: Loading presets of modules was not designed to be controlled by CV or modulated at audio rate. Please do not contact the developers of Rack or any modules when unexpected behaviour occurs or high CPU usage is noticable.**
 
 ![8FACE Intro](./EightFace-intro.gif)
 
