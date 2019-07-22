@@ -21,7 +21,6 @@ struct Strip : Module {
 		ON_PARAM,
 		OFF_PARAM,
 		RAND_PARAM,
-		EXCLUDE_PARAM,
 		NUM_PARAMS
 	};
 	enum InputIds {
@@ -36,7 +35,6 @@ struct Strip : Module {
 	enum LightIds {
 		LEFT_LIGHT,
 		RIGHT_LIGHT,
-		ENUMS(EXCLUDE_LIGHT, 2),
 		NUM_LIGHTS
 	};
 
@@ -52,16 +50,6 @@ struct Strip : Module {
 	dsp::SchmittTrigger offPTrigger;
 	dsp::SchmittTrigger randTrigger;
 
-	LongPressButton excludeButton;
-	bool excludeParam_firstRun = true;
-	bool excludeLearn = false;
-	/** [Stored to JSON] */
-	std::set<std::tuple<int, int>> excludedParams;
-
-	/** Member fields for thread-sychronisation of function groupExcludeParam */
-	bool excludeParams_invoke = false;
-	std::tuple<int, int> excludeParams_tuple;
-
 	dsp::ClockDivider lightDivider;
 
 	Strip() {
@@ -70,18 +58,12 @@ struct Strip : Module {
 		configParam(ON_PARAM, 0, 1, 0, "Switch/toggle strip on");
 		configParam(OFF_PARAM, 0, 1, 0, "Switch strip off");
 		configParam(RAND_PARAM, 0, 1, 0, "Randomize strip");
-		configParam(EXCLUDE_PARAM, 0, 1, 0, "Randomize exclusion");
 
 		lightDivider.setDivision(1024);
 		onReset();
 	}
 
 	void process(const ProcessArgs &args) override {
-		if (excludeParam_firstRun) {
-			groupExcludeCleanup();
-			excludeParam_firstRun = false;
-		}
-
 		if (modeTrigger.process(params[MODE_PARAM].getValue())) {
 			mode = (mode + 1) % 3;
 			lastState = true;
@@ -109,30 +91,10 @@ struct Strip : Module {
 			groupRandomize();
 		}
 
-		switch (excludeButton.step(params[EXCLUDE_PARAM])) {
-			default:
-			case LongPressButton::NO_PRESS:
-				break;
-			case LongPressButton::SHORT_PRESS:
-				groupExcludeCleanup();
-				excludeLearn ^= true;
-				break;
-			case LongPressButton::LONG_PRESS:
-				excludedParams.clear();
-				break;
-		}
-
-		if (excludeParams_invoke) {
-			groupExcludeParam();
-		}
-
 		// Set channel lights infrequently
 		if (lightDivider.process()) {
 			lights[RIGHT_LIGHT].setBrightness(mode == STRIP_MODE_LEFTRIGHT || mode == STRIP_MODE_RIGHT);
 			lights[LEFT_LIGHT].setBrightness(mode == STRIP_MODE_LEFTRIGHT || mode == STRIP_MODE_LEFT);
-
-			lights[EXCLUDE_LIGHT + 0].setBrightness(!excludeLearn && excludedParams.size() > 0 ? 1.f : 0.f);
-			lights[EXCLUDE_LIGHT + 1].setBrightness(excludeLearn ? 1.f : 0.f);
 		}
 	}
 
@@ -188,8 +150,7 @@ struct Strip : Module {
 				// to the app-world!
 				ModuleWidget *mw = APP->scene->rack->getModule(m->rightExpander.moduleId);
 				for (ParamWidget *param : mw->params) {
-					if (excludedParams.find(std::make_tuple(m->rightExpander.moduleId, param->paramQuantity->paramId)) == excludedParams.end())
-						param->randomize();
+					param->randomize();
 				}
 				m->rightExpander.module->onRandomize();
 				m = m->rightExpander.module;
@@ -203,8 +164,7 @@ struct Strip : Module {
 				// to the app-world!
 				ModuleWidget *mw = APP->scene->rack->getModule(m->leftExpander.moduleId);
 				for (ParamWidget *param : mw->params) {
-					if (excludedParams.find(std::make_tuple(m->leftExpander.moduleId, param->paramQuantity->paramId)) == excludedParams.end())
-						param->randomize();
+					param->randomize();
 				}
 				m->leftExpander.module->onRandomize();
 				m = m->leftExpander.module;
@@ -212,117 +172,10 @@ struct Strip : Module {
 		}
 	}
 
-	/**
-	 * Adds a parameter to the randomization exclusion list.
-	 * Called from the app-thread for simple synchronization.
-	 */
-	void groupExcludeParam(int moduleId, int paramId) {
-		excludeParams_tuple = std::make_tuple(moduleId, paramId);
-		excludeParams_invoke = true;
-	}
-
-	/** 
-	 * Adds a parameter to the randomization exclusion list.
-	 * Called from the dsp-thread to ensure thread-safe access to set excludedParams.
-	 */
-	void groupExcludeParam() {
-		int moduleId = std::get<0>(excludeParams_tuple);
-		int paramId = std::get<1>(excludeParams_tuple);
-
-		excludeLearn = false;
-		excludeParams_invoke = false;
-		if (mode == STRIP_MODE_LEFTRIGHT || mode == STRIP_MODE_RIGHT) {
-			Module *m = this;
-			while (true) {
-				if (m->rightExpander.moduleId < 0) break;
-				if (m->rightExpander.moduleId == moduleId) {
-					ModuleWidget *mw = APP->scene->rack->getModule(m->rightExpander.moduleId);
-					for (ParamWidget *param : mw->params) {
-						if (param->paramQuantity->paramId == paramId) {
-							excludedParams.insert(std::make_tuple(moduleId, paramId));
-							return;
-						}
-					}
-					return;
-				}
-				m = m->rightExpander.module;
-			}
-		}
-		if (mode == STRIP_MODE_LEFTRIGHT || mode == STRIP_MODE_LEFT) {
-			Module *m = this;
-			while (true) {
-				if (m->leftExpander.moduleId < 0) break;
-				if (m->leftExpander.moduleId == moduleId) {
-					ModuleWidget *mw = APP->scene->rack->getModule(m->leftExpander.moduleId);
-					for (ParamWidget *param : mw->params) {
-						if (param->paramQuantity->paramId == paramId) {
-							excludedParams.insert(std::make_tuple(moduleId, paramId));
-							return;
-						}
-					}
-					return;
-				}
-				m = m->leftExpander.module;
-			}
-		}
-	}
-
-	/**
-	 * Cleans the currently list of excluded parameters from modules that are no longer 
-	 * within the current strip.
-	 * To be called from engine-thread only.
-	 */
-	void groupExcludeCleanup() {
-		if (excludedParams.size() == 0)
-			return;
-
-		std::map<int, Module*> modules;
-		if (mode == STRIP_MODE_LEFTRIGHT || mode == STRIP_MODE_RIGHT) {
-			Module *m = this;
-			while (true) {
-				if (m->rightExpander.moduleId < 0) break;
-				modules[m->rightExpander.moduleId] = m;
-				m = m->rightExpander.module;
-			}
-		}
-		if (mode == STRIP_MODE_LEFTRIGHT || mode == STRIP_MODE_LEFT) {
-			Module *m = this;
-			while (true) {
-				if (m->leftExpander.moduleId < 0) break;
-				modules[m->leftExpander.moduleId] = m;
-				m = m->leftExpander.module;
-			}
-		}
-
-		std::vector<std::tuple<int, int>> toBeDeleted;
-		for (auto it : excludedParams) {
-			int moduleId = std::get<0>(it);
-			auto m = modules.find(moduleId);
-			if (m == modules.end()) {
-				toBeDeleted.push_back(it);
-			}
-		}
-
-		for (auto it : toBeDeleted) {
-			excludedParams.erase(it);
-		}
-	}
-
-
 	json_t *dataToJson() override {
 		json_t *rootJ = json_object();
 		json_object_set_new(rootJ, "mode", json_integer(mode));
 		json_object_set_new(rootJ, "onMode", json_integer(onMode));
-
-		groupExcludeCleanup();
-		json_t *excludedParamsJ = json_array();
-		for (auto t : excludedParams) {
-			json_t *excludedParamJ = json_object();
-			json_object_set_new(excludedParamJ, "moduleId", json_integer(std::get<0>(t)));
-			json_object_set_new(excludedParamJ, "paramId", json_integer(std::get<1>(t)));
-			json_array_append_new(excludedParamsJ, excludedParamJ);
-		}
-		json_object_set_new(rootJ, "excludedParams", excludedParamsJ);
 
 		return rootJ;
 	}
@@ -332,23 +185,6 @@ struct Strip : Module {
 		mode = json_integer_value(modeJ);
 		json_t *onModeJ = json_object_get(rootJ, "onMode");
 		onMode = json_integer_value(onModeJ);
-
-		excludedParams.clear();
-		json_t *excludedParamsJ = json_object_get(rootJ, "excludedParams");
-		if (excludedParamsJ) {
-			json_t *excludedParamJ;
-			size_t i;
-			json_array_foreach(excludedParamsJ, i, excludedParamJ) {
-				json_t *moduleIdJ = json_object_get(excludedParamJ, "moduleId");
-				json_t *paramIdJ = json_object_get(excludedParamJ, "paramId");
-				if (!(moduleIdJ && paramIdJ))
-					continue;
-
-				int moduleId = json_integer_value(moduleIdJ);
-				int paramId = json_integer_value(paramIdJ);
-				excludedParams.insert(std::make_tuple(moduleId, paramId));
-			}
-		}
 	}
 };
 
@@ -379,96 +215,6 @@ struct StripOnModeMenuItem : MenuItem {
 };
 
 
-struct ExcludeButton : TL1105 {
-	Strip *module;
-	bool learn = false;
-
-	void step() override {
-		if (!module)
-			return;
-		if (module->excludeLearn && !learn) {
-			learn = true;
-			APP->scene->rack->touchedParam = NULL;
-		}
-		TL1105::step();
-	}
-
-	void onDeselect(const event::Deselect &e) override {
-		if (!module)
-			return;
-		if (!learn)
-			return;
-		// Check if a ParamWidget was touched
-		ParamWidget *touchedParam = APP->scene->rack->touchedParam;
-		if (touchedParam && touchedParam->paramQuantity->module != module) {
-			APP->scene->rack->touchedParam = NULL;
-			int moduleId = touchedParam->paramQuantity->module->id;
-			int paramId = touchedParam->paramQuantity->paramId;
-			// Called from the app-thread, synchronization to the dsp-thread will be done in the module.
-			module->groupExcludeParam(moduleId, paramId);
-			learn = false;
-		}
-	}
-
-	void onButton(const event::Button &e) override {
-		// Right click to open context menu
-		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT && (e.mods & RACK_MOD_MASK) == 0) {
-			createContextMenu();
-			e.consume(this);
-		}
-		else {
-			TL1105::onButton(e);
-		}
-	}
-
-	void createContextMenu() {
-		ui::Menu *menu = createMenu();
-
-		ui::MenuLabel *modelLabel = new ui::MenuLabel;
-		modelLabel->text = "Randomize exclusion";
-		menu->addChild(modelLabel);
-
-		struct LabelButton : ui::MenuItem {
-			void onButton(const event::Button &e) override { }
-		};
-
-		LabelButton *help1Label = new LabelButton;
-		help1Label->rightText = "short press";
-		help1Label->text = "Learn";
-		menu->addChild(help1Label);
-
-		LabelButton *help2Label = new LabelButton;
-		help2Label->rightText = "long press";
-		help2Label->text = "Clear";
-		menu->addChild(help2Label);
-
-		if (module->excludedParams.size() > 0) {
-			menu->addChild(new MenuSeparator());
-		}
-
-		for (auto it : module->excludedParams) {
-			int moduleId = std::get<0>(it);
-			int paramId = std::get<1>(it);
-			
-			ModuleWidget *moduleWidget = APP->scene->rack->getModule(moduleId);
-			if (!moduleWidget) continue;
-			ParamWidget *paramWidget = moduleWidget->getParam(paramId);
-			if (!paramWidget) continue;
-			
-			std::string text = "Excluded \"";
-			text += moduleWidget->model->name;
-			text += " ";
-			text += paramWidget->paramQuantity->getLabel();
-			text += "\"";
-
-			ui::MenuLabel *modelLabel = new ui::MenuLabel;
-			modelLabel->text = text;
-			menu->addChild(modelLabel);
-		}
-	}
-};
-
-
 struct StripWidget : ModuleWidget {
 	Strip *module;
 	std::string warningLog;
@@ -492,12 +238,7 @@ struct StripWidget : ModuleWidget {
 		addParam(createParamCentered<TL1105>(Vec(22.5f, 233.5f), module, Strip::OFF_PARAM));
 
 		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 273.1f), module, Strip::RAND_INPUT));
-		addParam(createParamCentered<TL1105>(Vec(22.5f, 296.4f), module, Strip::RAND_PARAM));
-		addChild(createLightCentered<SmallLight<GreenRedLight>>(Vec(32.3f, 333.7f), module, Strip::EXCLUDE_LIGHT));
-		
-		ExcludeButton *button = createParamCentered<ExcludeButton>(Vec(22.5f, 324.0f), module, Strip::EXCLUDE_PARAM);
-		button->module = module;
-		addParam(button);
+		addParam(createParamCentered<TL1105>(Vec(22.5f, 296.4f), module, Strip::RAND_PARAM));	
 	}
 
 	/**

@@ -4,8 +4,6 @@
     - Prevent storing presets from modules that use parameter mapping because of engine deadlock
 - Module MIDI-CAT
     - New module, mapping module similar to VCV's MIDI-MAP with midi feedback and note mapping
-- Module STRIP
-    - Added button EX for excluding specific module parameter from randomization
 
 ### 1.0.5
 
