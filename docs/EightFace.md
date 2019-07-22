@@ -40,4 +40,6 @@ This mode is kind a sample and hold. First apply a clock signal on SLOT. Then yo
 
 ![8FACE clock mode](./EightFace-clock.gif)
 
+At the moment it is not possible to store and recall presets from any module that uses parameter mapping (like MIDI-MAP, CV-MAP, ReMOVE Lite etc.). Restoring parameter mappings will cause a deadlock in Rack's multithreading engine. This limitation will be possibly addressed in a later update.
+
 This module was added in v1.0.5 of PackOne.

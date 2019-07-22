@@ -211,6 +211,14 @@ struct EightFace : Module {
 		pluginSlug = m->model->plugin->name;
 		modelSlug = m->model->name;
 		moduleName = m->model->plugin->brand + " " + m->model->name;
+
+		// Do not handle some specific modules known to use mapping of parameters:
+		// Potential thread locking when multi-threading is enabled and parameter mappings
+		// are restored from preset.
+		if (!( (pluginSlug == "Stoermelder-P1" && (modelSlug == "CVMap" || modelSlug == "CVMapMicro" || modelSlug == "CVPam" || modelSlug == "ReMoveLite" || modelSlug == "MidiCat"))
+			|| (pluginSlug == "Core" && modelSlug == "MIDI-Map")))
+			return;
+
 		ModuleWidget *mw = APP->scene->rack->getModule(m->id);
 		if (presetSlotUsed[p]) json_decref(presetSlot[p]);
 		presetSlotUsed[p] = true;
