@@ -1,6 +1,9 @@
 #include "plugin.hpp"
 #include "components.hpp"
+#include <functional>
 #include <thread>
+#include <mutex>
+#include <condition_variable>
 
 const int NUM_PRESETS = 8;
 
@@ -54,6 +57,15 @@ struct EightFace : Module {
 	int presetNext = -1;
 	float modeLight = 0;
 
+
+	std::mutex workerMutex;
+	std::condition_variable workerCondVar;
+	std::thread *worker;
+	bool workerIsRunning = true;
+	bool workerDoProcess;
+	int workerPreset;
+	ModuleWidget *workerModuleWidget;
+
 	LongPressButton typeButtons[NUM_PRESETS];
 	dsp::SchmittTrigger slotTrigger;
 	dsp::SchmittTrigger resetTrigger;
@@ -68,6 +80,7 @@ struct EightFace : Module {
 			presetSlotUsed[i] = false;
 		}
 
+		worker = new std::thread(&EightFace::workerProcess, this);
 		lightDivider.setDivision(512);
 		onReset();
 	}
@@ -77,6 +90,12 @@ struct EightFace : Module {
 			if (presetSlotUsed[i])
 				json_decref(presetSlot[i]);
 		}
+
+		workerIsRunning = false;
+		workerDoProcess = true;
+		workerCondVar.notify_one();
+		worker->join();
+		delete worker;
 	}
 
 	void onReset() override {
@@ -190,6 +209,17 @@ struct EightFace : Module {
 		}
 	}
 
+
+	void workerProcess() {
+		while (true) {
+			std::unique_lock<std::mutex> lock(workerMutex);
+			workerCondVar.wait(lock, std::bind(&EightFace::workerDoProcess, this));
+			if (!workerIsRunning) return;
+			workerModuleWidget->fromJson(presetSlot[workerPreset]);
+			workerDoProcess = false;
+		}
+	}
+
 	void presetLoad(Module *m, int p, bool isNext = false) {
 		if (p < 0 || p >= presetCount)
 			return;
@@ -199,7 +229,11 @@ struct EightFace : Module {
 			presetNext = -1;
 			if (!presetSlotUsed[p]) return;
 			ModuleWidget *mw = APP->scene->rack->getModule(m->id);
-			mw->fromJson(presetSlot[p]);
+			//mw->fromJson(presetSlot[p]);
+			workerModuleWidget = mw;
+			workerPreset = p;
+			workerDoProcess = true;
+			workerCondVar.notify_one();
 		}
 		else {
 			if (!presetSlotUsed[p]) return;
@@ -215,9 +249,11 @@ struct EightFace : Module {
 		// Do not handle some specific modules known to use mapping of parameters:
 		// Potential thread locking when multi-threading is enabled and parameter mappings
 		// are restored from preset.
+		/*
 		if (!( (pluginSlug == "Stoermelder-P1" && (modelSlug == "CVMap" || modelSlug == "CVMapMicro" || modelSlug == "CVPam" || modelSlug == "ReMoveLite" || modelSlug == "MidiCat"))
 			|| (pluginSlug == "Core" && modelSlug == "MIDI-Map")))
 			return;
+		*/
 
 		ModuleWidget *mw = APP->scene->rack->getModule(m->id);
 		if (presetSlotUsed[p]) json_decref(presetSlot[p]);
