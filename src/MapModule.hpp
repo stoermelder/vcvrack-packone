@@ -205,6 +205,7 @@ struct MapModule : Module {
 template< int MAX_CHANNELS, typename MODULE >
 struct MapModuleChoice : LedDisplayChoice {
 	MODULE *module;
+	bool processEvents = true;
 	int id;
 
 	std::chrono::time_point<std::chrono::system_clock> hscrollUpdate = std::chrono::system_clock::now();
@@ -290,6 +291,8 @@ struct MapModuleChoice : LedDisplayChoice {
 
 	void onDeselect(const event::Deselect &e) override {
 		if (!module)
+			return;
+		if (!processEvents)
 			return;
 		// Check if a ParamWidget was touched
 		ParamWidget *touchedParam = APP->scene->rack->touchedParam;
@@ -404,6 +407,12 @@ struct MapModuleDisplay : LedDisplay {
 	ScrollWidget *scroll;
 	CHOICE *choices[MAX_CHANNELS];
 	LedDisplaySeparator *separators[MAX_CHANNELS];
+
+	~MapModuleDisplay() {
+		for (int id = 0; id < MAX_CHANNELS; id++) {
+			choices[id]->processEvents = false;
+		}
+	}
 
 	void setModule(MODULE *module) {
 		this->module = module;

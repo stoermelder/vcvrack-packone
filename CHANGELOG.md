@@ -6,6 +6,8 @@
     - New module, mapping module similar to VCV's MIDI-MAP with midi feedback and note mapping
 - Module STRIP
     - Added button EX for excluding specific module parameter from randomization
+- Modules CV-MAP, CV-PAM, ReMOVE Lite, µMAP
+    - Fixed crash if deleting the module from Rack while in mapping mode
 
 ### 1.0.5
 
