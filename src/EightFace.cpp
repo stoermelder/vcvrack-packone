@@ -62,8 +62,8 @@ struct EightFace : Module {
 	std::condition_variable workerCondVar;
 	std::thread *worker;
 	bool workerIsRunning = true;
-	bool workerDoProcess;
-	int workerPreset;
+	bool workerDoProcess = false;
+	int workerPreset = -1;
 	ModuleWidget *workerModuleWidget;
 
 	LongPressButton typeButtons[NUM_PRESETS];
@@ -214,7 +214,7 @@ struct EightFace : Module {
 		while (true) {
 			std::unique_lock<std::mutex> lock(workerMutex);
 			workerCondVar.wait(lock, std::bind(&EightFace::workerDoProcess, this));
-			if (!workerIsRunning) return;
+			if (!workerIsRunning || workerPreset < 0) return;
 			workerModuleWidget->fromJson(presetSlot[workerPreset]);
 			workerDoProcess = false;
 		}
