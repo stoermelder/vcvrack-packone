@@ -406,7 +406,7 @@ struct MidiCat : Module {
 				ccs[mapIndex] = json_integer_value(ccJ);
 				notes[mapIndex] = json_integer_value(noteJ);
 				notesVel[mapIndex] = json_boolean_value(noteVelJ);
-				APP->engine->updateParamHandle(&paramHandles[mapIndex], json_integer_value(moduleIdJ), json_integer_value(paramIdJ), false);
+				APP->engine->updateParamHandle(&paramHandles[mapIndex], json_integer_value(moduleIdJ), json_integer_value(paramIdJ), true);
 				refreshParamHandleText(mapIndex);
 			}
 		}
