@@ -80,9 +80,9 @@ struct EightFace : Module {
 			presetSlotUsed[i] = false;
 		}
 
-		worker = new std::thread(&EightFace::workerProcess, this);
 		lightDivider.setDivision(512);
 		onReset();
+		worker = new std::thread(&EightFace::workerProcess, this);
 	}
 
 	~EightFace() {
