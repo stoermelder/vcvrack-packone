@@ -1,8 +1,10 @@
 #include "plugin.hpp"
 #include "CVMapModule.hpp"
+#include <osdialog.h>
 #include <thread>
 
 static const int MAX_CHANNELS = 128;
+static const char PRESET_FILTERS[] = "VCV Rack module preset (.vcvm):vcvm";
 
 struct MidiCatOutput : midi::Output {
 	int lastValues[128];
@@ -167,8 +169,12 @@ struct MidiCat : Module {
 			ParamQuantity *paramQuantity = module->paramQuantities[paramId];
 			if (!paramQuantity)
 				continue;
-			//if (!paramQuantity->isBounded())
-			//	continue;
+
+			// Removed due high cpu usage
+			/*
+			if (!paramQuantity->isBounded())
+				continue;
+			*/
 
 			// Check if CC value has been set
 			if (cc >= 0 && valuesCc[cc] >= 0)
@@ -401,12 +407,12 @@ struct MidiCat : Module {
 				json_t *noteVelJ = json_object_get(mapJ, "noteVel");
 				json_t *moduleIdJ = json_object_get(mapJ, "moduleId");
 				json_t *paramIdJ = json_object_get(mapJ, "paramId");
-				if (!(ccJ && noteJ && moduleIdJ && paramIdJ))
+				if (!((ccJ || noteJ) && moduleIdJ && paramIdJ))
 					continue;
 				if (mapIndex >= MAX_CHANNELS)
 					continue;
 				ccs[mapIndex] = json_integer_value(ccJ);
-				notes[mapIndex] = json_integer_value(noteJ);
+				notes[mapIndex] = noteJ ? json_integer_value(noteJ) : -1;
 				notesVel[mapIndex] = json_boolean_value(noteVelJ);
 				APP->engine->updateParamHandle(&paramHandles[mapIndex], json_integer_value(moduleIdJ), json_integer_value(paramIdJ), true);
 				refreshParamHandleText(mapIndex);
@@ -535,6 +541,77 @@ struct MidiCatWidget : ModuleWidget {
 		addChild(mapWidget);
 	}
 
+	void loadMidiMapPreset_dialog() {
+		osdialog_filters *filters = osdialog_filters_parse(PRESET_FILTERS);
+		DEFER({
+			osdialog_filters_free(filters);
+		});
+
+		char *path = osdialog_file(OSDIALOG_OPEN, "", NULL, filters);
+		if (!path) {
+			// No path selected
+			return;
+		}
+		DEFER({
+			free(path);
+		});
+
+		loadMidiMapPreset_action(path);
+	}
+
+	void loadMidiMapPreset_action(std::string filename) {
+		INFO("Loading preset %s", filename.c_str());
+
+		FILE *file = fopen(filename.c_str(), "r");
+		if (!file) {
+			WARN("Could not load patch file %s", filename.c_str());
+			return;
+		}
+		DEFER({
+			fclose(file);
+		});
+
+		json_error_t error;
+		json_t *moduleJ = json_loadf(file, 0, &error);
+		if (!moduleJ) {
+			std::string message = string::f("File is not a valid patch file. JSON parsing error at %s %d:%d %s", error.source, error.line, error.column, error.text);
+			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, message.c_str());
+			return;
+		}
+		DEFER({
+			json_decref(moduleJ);
+		});
+
+		if (!loadMidiMapPreset_convert(moduleJ))
+			return;
+
+		// history::ModuleChange
+		history::ModuleChange *h = new history::ModuleChange;
+		h->name = "load module preset";
+		h->moduleId = module->id;
+		h->oldModuleJ = toJson();
+
+		module->fromJson(moduleJ);
+
+		h->newModuleJ = toJson();
+		APP->history->push(h);
+	}
+
+	bool loadMidiMapPreset_convert(json_t *moduleJ) {
+		std::string pluginSlug = json_string_value(json_object_get(moduleJ, "plugin"));
+		std::string modelSlug = json_string_value(json_object_get(moduleJ, "model"));
+
+		// Only handle MIDI-Map
+		if (!(pluginSlug == "Core" && modelSlug == "MIDI-Map"))
+			return false;
+
+		json_object_set_new(moduleJ, "plugin", json_string(module->model->plugin->slug.c_str()));
+		json_object_set_new(moduleJ, "model", json_string(module->model->slug.c_str()));
+		json_t *dataJ = json_object_get(moduleJ, "data");
+		json_object_set(dataJ, "midiInput", json_object_get(dataJ, "midi"));
+		return true;
+	}
+
 	void appendContextMenu(Menu *menu) override {
 		MidiCat *module = dynamic_cast<MidiCat*>(this->module);
 		assert(module);
@@ -563,6 +640,17 @@ struct MidiCatWidget : ModuleWidget {
 		};
 
 		menu->addChild(construct<TextScrollItem>(&MenuItem::text, "Text scrolling", &TextScrollItem::module, module));
+		menu->addChild(new MenuSeparator());
+
+		struct MidiMapImportItem : MenuItem {
+			MidiCatWidget *moduleWidget;
+
+			void onAction(const event::Action &e) override {
+				moduleWidget->loadMidiMapPreset_dialog();
+			}
+		};
+
+		menu->addChild(construct<MidiMapImportItem>(&MenuItem::text, "Import MIDI-MAP preset", &MidiMapImportItem::moduleWidget, this));
 	}
 };
 
