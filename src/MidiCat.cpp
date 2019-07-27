@@ -102,10 +102,8 @@ struct MidiCat : Module {
 	int8_t valuesNote[128];
 
 	/** Track last values */
-	float lastValue[MAX_CHANNELS];
-
-	/** [Stored to Json] Allow manual changes of target parameters */
-	bool lockParameterChanges = false;
+	int8_t lastValueIn[MAX_CHANNELS];
+	float lastValueOut[MAX_CHANNELS];
 
 	dsp::ClockDivider indicatorDivider;
 
@@ -138,7 +136,8 @@ struct MidiCat : Module {
 			valuesNote[i] = -1;
 		}
 		for (int i = 0; i < MAX_CHANNELS; i++) {
-			lastValue[i] = -1;
+			lastValueIn[i] = -1;
+			lastValueOut[i] = -1;
 		}
 		midiInput.reset();
 		midiOutput.reset();
@@ -173,11 +172,10 @@ struct MidiCat : Module {
 			// Check if CC value has been set
 			if (cc >= 0 && valuesCc[cc] >= 0)
 			{
-				float v = rescale(valuesCc[cc], 0, 127, 0.f, 1.f);
-
-				if (lockParameterChanges || lastValue[id] != v) {
-					paramQuantity->setScaledValue(v);
-					lastValue[id] = v;
+				if (lastValueIn[id] != valuesCc[cc]) {
+					lastValueIn[id] = valuesCc[cc];
+					float v = rescale(valuesCc[cc], 0.f, 127.f, paramQuantity->getMinValue(), paramQuantity->getMaxValue());
+					paramQuantity->setValue(v);
 				}
 			}
 
@@ -186,21 +184,24 @@ struct MidiCat : Module {
 			{
 				int t = valuesNote[note];
 				if (t > 0 && !notesVel[id]) t = 127;
-				float v = rescale(t, 0, 127, 0.f, 1.f);
-
-				if (lockParameterChanges || lastValue[id] != v) {
-					paramQuantity->setScaledValue(v);
-					lastValue[id] = v;
+				
+				if (lastValueIn[id] != valuesNote[note]) {
+					lastValueIn[id] = valuesNote[note];
+					float v = rescale(t, 0.f, 127.f, paramQuantity->getMinValue(), paramQuantity->getMaxValue());
+					paramQuantity->setValue(v);
 				}
 			}
 
 			// Midi feedback
-			float v = paramQuantity->getScaledValue();
-			v = rescale(v, 0.f, 1.f, 0, 127);
-			if (cc >= 0)
-				midiOutput.setValue(v, cc);
-			if (note >= 0)
-				midiOutput.setGate(v, note);
+			float v = paramQuantity->getValue();
+			if (lastValueOut[id] != v) {
+				lastValueOut[id] = v;
+				v = rescale(v, paramQuantity->getMinValue(), paramQuantity->getMaxValue(), 0.f, 127.f);
+				if (cc >= 0)
+					midiOutput.setValue(v, cc);
+				if (note >= 0)
+					midiOutput.setGate(v, note);
+			}
 		}
 
 		if (indicatorDivider.process()) {
