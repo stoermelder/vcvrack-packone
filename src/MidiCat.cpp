@@ -97,12 +97,12 @@ struct MidiCat : Module {
 	bool textScrolling = true;
 
 	/** The value of each CC number */
-	int8_t valuesCc[128];
+	int valuesCc[128];
 	/** The value of each note number */
-	int8_t valuesNote[128];
+	int valuesNote[128];
 
 	/** Track last values */
-	int8_t lastValueIn[MAX_CHANNELS];
+	int lastValueIn[MAX_CHANNELS];
 	float lastValueOut[MAX_CHANNELS];
 
 	dsp::ClockDivider indicatorDivider;
@@ -161,13 +161,14 @@ struct MidiCat : Module {
 			Module *module = paramHandles[id].module;
 			if (!module)
 				continue;
+
 			// Get ParamQuantity
 			int paramId = paramHandles[id].paramId;
 			ParamQuantity *paramQuantity = module->paramQuantities[paramId];
 			if (!paramQuantity)
 				continue;
-			if (!paramQuantity->isBounded())
-				continue;
+			//if (!paramQuantity->isBounded())
+			//	continue;
 
 			// Check if CC value has been set
 			if (cc >= 0 && valuesCc[cc] >= 0)
@@ -206,7 +207,7 @@ struct MidiCat : Module {
 
 		if (indicatorDivider.process()) {
 			float t = indicatorDivider.getDivision() * args.sampleTime;
-			for (size_t i = 0; i < MAX_CHANNELS; i++) {
+			for (int i = 0; i < mapLen; i++) {
 				if (paramHandles[i].moduleId >= 0)
 					paramHandleIndicator[i].process(t);
 			}
