@@ -107,6 +107,7 @@ struct MidiCat : Module {
 	int lastValueIn[MAX_CHANNELS];
 	float lastValueOut[MAX_CHANNELS];
 
+	dsp::ClockDivider loopDivider;
 	dsp::ClockDivider indicatorDivider;
 
 	MidiCat() {
@@ -116,6 +117,7 @@ struct MidiCat : Module {
 			paramHandleIndicator[id].handle = &paramHandles[id];
 			APP->engine->addParamHandle(&paramHandles[id]);
 		}
+		loopDivider.setDivision(64);
 		indicatorDivider.setDivision(1024);
 		onReset();
 	}
@@ -148,66 +150,70 @@ struct MidiCat : Module {
 
 	void process(const ProcessArgs &args) override {
 		midi::Message msg;
+		bool changed = false;
 		while (midiInput.shift(&msg)) {
-			processMessage(msg);
+			changed = changed || processMessage(msg);
 		}
 
-		// Step channels
-		for (int id = 0; id < mapLen; id++) {
-			int cc = ccs[id];
-			int note = notes[id];
-			if (cc < 0 && note < 0)
-				continue;
+		// Only step channels when some midi event has been received. Additionally
+		// step channels for parameter changed made manually every 64h loop. Notice
+		// that midi allows about 1000 messages per second, to checking this more often
+		// won't lead to higher precision.
+		if (changed || loopDivider.process()) {
+			// Step channels
+			for (int id = 0; id < mapLen; id++) {
+				int cc = ccs[id];
+				int note = notes[id];
+				if (cc < 0 && note < 0)
+					continue;
 
-			// Get Module
-			Module *module = paramHandles[id].module;
-			if (!module)
-				continue;
+				// Get Module
+				Module *module = paramHandles[id].module;
+				if (!module)
+					continue;
 
-			// Get ParamQuantity
-			int paramId = paramHandles[id].paramId;
-			ParamQuantity *paramQuantity = module->paramQuantities[paramId];
-			if (!paramQuantity)
-				continue;
+				// Get ParamQuantity
+				int paramId = paramHandles[id].paramId;
+				ParamQuantity *paramQuantity = module->paramQuantities[paramId];
+				if (!paramQuantity)
+					continue;
 
-			// Removed due high cpu usage
-			/*
-			if (!paramQuantity->isBounded())
-				continue;
-			*/
+				if (!paramQuantity->isBounded())
+					continue;
 
-			// Check if CC value has been set
-			if (cc >= 0 && valuesCc[cc] >= 0)
-			{
-				if (lastValueIn[id] != valuesCc[cc]) {
-					lastValueIn[id] = valuesCc[cc];
-					float v = rescale(valuesCc[cc], 0.f, 127.f, paramQuantity->getMinValue(), paramQuantity->getMaxValue());
-					paramQuantity->setValue(v);
+				// Check if CC value has been set
+				if (cc >= 0 && valuesCc[cc] >= 0)
+				{
+					if (lastValueIn[id] != valuesCc[cc]) {
+						lastValueIn[id] = valuesCc[cc];
+						float v = rescale(valuesCc[cc], 0.f, 127.f, paramQuantity->getMinValue(), paramQuantity->getMaxValue());
+						paramQuantity->setValue(v);
+					}
 				}
-			}
 
-			// Check if note value has been set
-			if (note >= 0 && valuesNote[note] >= 0)
-			{
-				int t = valuesNote[note];
-				if (t > 0 && !notesVel[id]) t = 127;
-				
-				if (lastValueIn[id] != valuesNote[note]) {
-					lastValueIn[id] = valuesNote[note];
-					float v = rescale(t, 0.f, 127.f, paramQuantity->getMinValue(), paramQuantity->getMaxValue());
-					paramQuantity->setValue(v);
+				// Check if note value has been set
+				if (note >= 0 && valuesNote[note] >= 0)
+				{
+					int t = valuesNote[note];
+					if (t > 0 && !notesVel[id]) t = 127;
+					
+					if (lastValueIn[id] != valuesNote[note]) {
+						lastValueIn[id] = valuesNote[note];
+						float v = rescale(t, 0.f, 127.f, paramQuantity->getMinValue(), paramQuantity->getMaxValue());
+						paramQuantity->setValue(v);
+					}
 				}
-			}
 
-			// Midi feedback
-			float v = paramQuantity->getValue();
-			if (lastValueOut[id] != v) {
-				lastValueOut[id] = v;
-				v = rescale(v, paramQuantity->getMinValue(), paramQuantity->getMaxValue(), 0.f, 127.f);
-				if (cc >= 0)
-					midiOutput.setValue(v, cc);
-				if (note >= 0)
-					midiOutput.setGate(v, note);
+				// Midi feedback
+				float v = paramQuantity->getValue();
+				if (lastValueOut[id] != v) {
+					lastValueOut[id] = v;
+					v = rescale(v, paramQuantity->getMinValue(), paramQuantity->getMaxValue(), 0.f, 127.f);
+					if (cc >= 0)
+						midiOutput.setValue(v, cc);
+					if (note >= 0)
+						midiOutput.setGate(v, note);
+				}
 			}
 		}
 
@@ -220,31 +226,33 @@ struct MidiCat : Module {
 		}
 	}
 
-	void processMessage(midi::Message msg) {
+	bool processMessage(midi::Message msg) {
 		switch (msg.getStatus()) {
 			// cc
 			case 0xb: {
-				processCC(msg);
-			} break;
+				return processCC(msg);
+			}
 			// note off
 			case 0x8: {
-				processNoteRelease(msg);
-			} break;
+				return processNoteRelease(msg);
+			}
 			// note on
 			case 0x9: {
 				if (msg.getValue() > 0) {
-					processNotePress(msg);
+					return processNotePress(msg);
 				}
 				else {
 					// Many stupid keyboards send a "note on" command with 0 velocity to mean "note release"
-					processNoteRelease(msg);
+					return processNoteRelease(msg);
 				}
-			} break;
-			default: break;
+			} 
+			default: {
+				return false;
+			}
 		}
 	}
 
-	void processCC(midi::Message msg) {
+	bool processCC(midi::Message msg) {
 		uint8_t cc = msg.getNote();
 		uint8_t value = msg.getValue();
 		// Learn
@@ -256,10 +264,12 @@ struct MidiCat : Module {
 			updateMapLen();
 			refreshParamHandleText(learningId);
 		}
+		bool changed = valuesCc[cc] != value;
 		valuesCc[cc] = value;
+		return changed;
 	}
 
-	void processNotePress(midi::Message msg) {
+	bool processNotePress(midi::Message msg) {
 		uint8_t note = msg.getNote();
 		uint8_t vel = msg.getValue();
 		// Learn
@@ -272,12 +282,16 @@ struct MidiCat : Module {
 			updateMapLen();
 			refreshParamHandleText(learningId);
 		}
+		bool changed = valuesNote[note] != vel;
 		valuesNote[note] = vel;
+		return changed;
 	}
 
-	void processNoteRelease(midi::Message msg) {
+	bool processNoteRelease(midi::Message msg) {
 		uint8_t note = msg.getNote();
+		bool changed = valuesNote[note] != 0;
 		valuesNote[note] = 0;
+		return changed;
 	}
 
 	void clearMap(int id) {
