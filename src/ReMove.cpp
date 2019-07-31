@@ -734,7 +734,7 @@ struct ReMoveDisplay : TransparentWidget {
         }
 
         // Draw automation-line
-        nvgStrokeColor(vg, nvgRGBA(0xff, 0xd7, 0x14, 0xc0));
+        nvgStrokeColor(vg, nvgRGB(0xd8, 0xd8, 0xd8));
         nvgSave(vg);
         Rect b = Rect(Vec(0, 2), Vec(maxX, maxY - 4));
         nvgScissor(vg, b.pos.x, b.pos.y, b.size.x, b.size.y);
@@ -753,7 +753,7 @@ struct ReMoveDisplay : TransparentWidget {
 
         nvgLineCap(vg, NVG_ROUND);
         nvgMiterLimit(vg, 2.0);
-        nvgStrokeWidth(vg, 1.1);
+        nvgStrokeWidth(vg, 1.0);
         nvgGlobalCompositeOperation(vg, NVG_LIGHTER);
         nvgStroke(vg);
         nvgResetScissor(vg);
@@ -1075,14 +1075,14 @@ struct ReMoveWidget : ModuleWidget {
         addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, 0)));
         addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-        addChild(createLightCentered<TinyLight<GreenLight>>(Vec(19.5f, 113.8f), module, ReMove::SEQ_LIGHT + 0));
-        addChild(createLightCentered<TinyLight<GreenLight>>(Vec(26.8f, 113.8f), module, ReMove::SEQ_LIGHT + 1));
-        addChild(createLightCentered<TinyLight<GreenLight>>(Vec(34.1f, 113.8f), module, ReMove::SEQ_LIGHT + 2));
-        addChild(createLightCentered<TinyLight<GreenLight>>(Vec(41.4f, 113.8f), module, ReMove::SEQ_LIGHT + 3));
-        addChild(createLightCentered<TinyLight<GreenLight>>(Vec(48.6f, 113.8f), module, ReMove::SEQ_LIGHT + 4));
-        addChild(createLightCentered<TinyLight<GreenLight>>(Vec(55.9f, 113.8f), module, ReMove::SEQ_LIGHT + 5));
-        addChild(createLightCentered<TinyLight<GreenLight>>(Vec(63.2f, 113.8f), module, ReMove::SEQ_LIGHT + 6));
-        addChild(createLightCentered<TinyLight<GreenLight>>(Vec(70.5f, 113.8f), module, ReMove::SEQ_LIGHT + 7));
+        addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(19.5f, 113.8f), module, ReMove::SEQ_LIGHT + 0));
+        addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(26.8f, 113.8f), module, ReMove::SEQ_LIGHT + 1));
+        addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(34.1f, 113.8f), module, ReMove::SEQ_LIGHT + 2));
+        addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(41.4f, 113.8f), module, ReMove::SEQ_LIGHT + 3));
+        addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(48.6f, 113.8f), module, ReMove::SEQ_LIGHT + 4));
+        addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(55.9f, 113.8f), module, ReMove::SEQ_LIGHT + 5));
+        addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(63.2f, 113.8f), module, ReMove::SEQ_LIGHT + 6));
+        addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(70.5f, 113.8f), module, ReMove::SEQ_LIGHT + 7));
 
         addInput(createInputCentered<PJ301MPort>(Vec(68.7f, 243.3f), module, ReMove::RUN_INPUT));
         addParam(createParamCentered<TL1105>(Vec(45.f, 230.3f), module, ReMove::RUN_PARAM));

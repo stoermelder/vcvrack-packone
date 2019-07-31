@@ -156,9 +156,9 @@ struct MidiCat : Module {
 		}
 
 		// Only step channels when some midi event has been received. Additionally
-		// step channels for parameter changed made manually every 64h loop. Notice
-		// that midi allows about 1000 messages per second, to checking this more often
-		// won't lead to higher precision.
+		// step channels for parameter changes made manually every 64th loop. Notice
+		// that midi allows about 1000 messages per second, to checking for changes more often
+		// won't lead to higher precision on midi output.
 		if (changed || loopDivider.process()) {
 			// Step channels
 			for (int id = 0; id < mapLen; id++) {
@@ -448,7 +448,7 @@ struct MidiCat : Module {
 struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCat> {
 	MidiCatChoice() {
 		textOffset = Vec(6.f, 14.7f);
-		color = componentlibrary::SCHEME_WHITE;
+		color = nvgRGB(0xf0, 0xf0, 0xf0);
 	}
 
 	std::string getTextPrefix() override {
@@ -515,17 +515,17 @@ struct MidiCatMidiWidget : MidiWidget {
 
 		driverChoice->textOffset = Vec(6.f, 14.7f);
 		driverChoice->box.size = mm2px(Vec(driverChoice->box.size.x, 7.5f));
-		driverChoice->color = componentlibrary::SCHEME_WHITE;
+		driverChoice->color = nvgRGB(0xf0, 0xf0, 0xf0);
 		driverSeparator->box.pos = driverChoice->box.getBottomLeft();
 		deviceChoice->textOffset = Vec(6.f, 14.7f);
 		deviceChoice->box.size = mm2px(Vec(deviceChoice->box.size.x, 7.5f));
 		deviceChoice->box.pos = driverChoice->box.getBottomLeft();
-		deviceChoice->color = componentlibrary::SCHEME_WHITE;
+		deviceChoice->color = nvgRGB(0xf0, 0xf0, 0xf0);
 		deviceSeparator->box.pos = deviceChoice->box.getBottomLeft();
 		channelChoice->textOffset = Vec(6.f, 14.7f);
 		channelChoice->box.size = mm2px(Vec(channelChoice->box.size.x, 7.5f));
 		channelChoice->box.pos = deviceChoice->box.getBottomLeft();
-		channelChoice->color = componentlibrary::SCHEME_WHITE;
+		channelChoice->color = nvgRGB(0xf0, 0xf0, 0xf0);
 	}
 };
 

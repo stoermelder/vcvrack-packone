@@ -214,6 +214,7 @@ struct MapModuleChoice : LedDisplayChoice {
 	MapModuleChoice() {
 		box.size = mm2px(Vec(0, 7.5));
 		textOffset = Vec(6, 14.7);
+		color = nvgRGB(0xf0, 0xf0, 0xf0);
 	}
 
 	void setModule(MODULE *module) {
