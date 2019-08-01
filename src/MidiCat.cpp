@@ -3,9 +3,11 @@
 #include <osdialog.h>
 #include <thread>
 
+
+namespace MidiCat {
+
 static const int MAX_CHANNELS = 128;
 static const char PRESET_FILTERS[] = "VCV Rack module preset (.vcvm):vcvm";
-
 
 struct MidiCatOutput : midi::Output {
 	int lastValues[128];
@@ -56,15 +58,20 @@ struct MidiCatOutput : midi::Output {
 };
 
 
-enum MIDICAT_INMODE {
+enum INMODE {
 	DEFAULT = 0,
 	LOCATE = 1
 };
 
-enum MIDICAT_NOTEMODE {
-	MOMENTARY = 0,
-	MOMENTARY_VELOCITY = 1,
-	TOGGLE = 2
+enum CCMODE {
+	CCMODE_DEFAULT = 0,
+	CCMODE_PICKUP = 1
+};
+
+enum NOTEMODE {
+	NOTEMODE_MOMENTARY = 0,
+	NOTEMODE_MOMENTARY_VEL = 1,
+	NOTENOTE_TOGGLE = 2
 };
 
 struct MidiCat : Module {
@@ -90,10 +97,12 @@ struct MidiCat : Module {
 	int mapLen = 0;
 	/** [Stored to Json] The mapped CC number of each channel */
 	int ccs[MAX_CHANNELS];
+	/** [Stored to Json] */
+	CCMODE ccsMode[MAX_CHANNELS];
 	/** [Stored to Json] The mapped note number of each channel */
 	int notes[MAX_CHANNELS];
 	/** [Stored to Json] Use the velocity value of each channel when notes are used */
-	MIDICAT_NOTEMODE notesMode[MAX_CHANNELS];
+	NOTEMODE notesMode[MAX_CHANNELS];
 
 	/** The mapped param handle of each channel */
 	ParamHandle paramHandles[MAX_CHANNELS];
@@ -116,7 +125,7 @@ struct MidiCat : Module {
 	/** The value of each note number */
 	int valuesNote[128];
 
-	MIDICAT_INMODE inMode = MIDICAT_INMODE::DEFAULT;
+	INMODE inMode = INMODE::DEFAULT;
 
 	/** Track last values */
 	int lastValueIn[MAX_CHANNELS];
@@ -158,7 +167,8 @@ struct MidiCat : Module {
 		for (int i = 0; i < MAX_CHANNELS; i++) {
 			lastValueIn[i] = -1;
 			lastValueOut[i] = -1;
-			notesMode[i] = MIDICAT_NOTEMODE::MOMENTARY;
+			ccsMode[i] = CCMODE::CCMODE_DEFAULT;
+			notesMode[i] = NOTEMODE::NOTEMODE_MOMENTARY;
 		}
 		midiInput.reset();
 		midiOutput.reset();
@@ -199,7 +209,7 @@ struct MidiCat : Module {
 					continue;
 
 				switch (inMode) {
-					case MIDICAT_INMODE::DEFAULT: {
+					case INMODE::DEFAULT: {
 						// Check if CC value has been set
 						if (cc >= 0 && valuesCc[cc] >= 0)
 						{
@@ -215,20 +225,20 @@ struct MidiCat : Module {
 						{
 							int t = -1;
 							switch (notesMode[id]) {
-								case MIDICAT_NOTEMODE::MOMENTARY:
+								case NOTEMODE::NOTEMODE_MOMENTARY:
 									if (lastValueIn[id] != valuesNote[note]) {
 										t = valuesNote[note];
 										if (t > 0) t = 127;
 										lastValueIn[id] = valuesNote[note];
 									} 
 									break;
-								case MIDICAT_NOTEMODE::MOMENTARY_VELOCITY:
+								case NOTEMODE::NOTEMODE_MOMENTARY_VEL:
 									if (lastValueIn[id] != valuesNote[note]) {
 										t = valuesNote[note];
 										lastValueIn[id] = valuesNote[note];
 									}
 									break;
-								case MIDICAT_NOTEMODE::TOGGLE:
+								case NOTEMODE::NOTENOTE_TOGGLE:
 									if (valuesNote[note] == 127 && (lastValueIn[id] == -1 || lastValueIn[id] >= 0)) {
 										t = 127;
 										lastValueIn[id] = -2;
@@ -266,7 +276,7 @@ struct MidiCat : Module {
 						}
 					} break;
 
-					case MIDICAT_INMODE::LOCATE: {
+					case INMODE::LOCATE: {
 						bool indicate = false;
 						if ((cc >= 0 && valuesCc[cc] >= 0) && lastValueInIndicate[id] != valuesCc[cc]) {
 							lastValueInIndicate[id] = valuesCc[cc];
@@ -294,12 +304,12 @@ struct MidiCat : Module {
 		}
 	}
 
-	void setMode(MIDICAT_INMODE inMode) {
+	void setMode(INMODE inMode) {
 		this->inMode = inMode;
 		switch (inMode) {
-			case MIDICAT_INMODE::LOCATE:
+			case INMODE::LOCATE:
 				for (int i = 0; i < MAX_CHANNELS; i++) 
-					lastValueInIndicate[i] = lastValueIn[i];
+					lastValueInIndicate[i] = std::max(0, lastValueIn[i]);
 				break;
 			default:
 				break;
@@ -338,6 +348,7 @@ struct MidiCat : Module {
 		// Learn
 		if (learningId >= 0 && valuesCc[cc] != value) {
 			ccs[learningId] = cc;
+			ccsMode[learningId] = CCMODE::CCMODE_DEFAULT;
 			notes[learningId] = -1;
 			learnedCc = true;
 			commitLearn();
@@ -356,7 +367,7 @@ struct MidiCat : Module {
 		if (learningId >= 0) {
 			ccs[learningId] = -1;
 			notes[learningId] = note;
-			notesMode[learningId] = MIDICAT_NOTEMODE::MOMENTARY;
+			notesMode[learningId] = NOTEMODE::NOTEMODE_MOMENTARY;
 			learnedNote = true;
 			commitLearn();
 			updateMapLen();
@@ -472,6 +483,7 @@ struct MidiCat : Module {
 		for (int id = 0; id < mapLen; id++) {
 			json_t *mapJ = json_object();
 			json_object_set_new(mapJ, "cc", json_integer(ccs[id]));
+			json_object_set_new(mapJ, "ccMode", json_integer(ccsMode[id]));
 			json_object_set_new(mapJ, "note", json_integer(notes[id]));
 			json_object_set_new(mapJ, "noteMode", json_integer(notesMode[id]));
 			json_object_set_new(mapJ, "moduleId", json_integer(paramHandles[id].moduleId));
@@ -497,6 +509,7 @@ struct MidiCat : Module {
 			size_t mapIndex;
 			json_array_foreach(mapsJ, mapIndex, mapJ) {
 				json_t *ccJ = json_object_get(mapJ, "cc");
+				json_t *ccModeJ = json_object_get(mapJ, "ccMode");
 				json_t *noteJ = json_object_get(mapJ, "note");
 				json_t *noteModeJ = json_object_get(mapJ, "noteMode");
 				json_t *moduleIdJ = json_object_get(mapJ, "moduleId");
@@ -506,8 +519,9 @@ struct MidiCat : Module {
 				if (mapIndex >= MAX_CHANNELS)
 					continue;
 				ccs[mapIndex] = json_integer_value(ccJ);
+				ccsMode[mapIndex] = (CCMODE)json_integer_value(ccModeJ);
 				notes[mapIndex] = noteJ ? json_integer_value(noteJ) : -1;
-				notesMode[mapIndex] = (MIDICAT_NOTEMODE)json_integer_value(noteModeJ);
+				notesMode[mapIndex] = (NOTEMODE)json_integer_value(noteModeJ);
 				APP->engine->updateParamHandle(&paramHandles[mapIndex], json_integer_value(moduleIdJ), json_integer_value(paramIdJ), true);
 				refreshParamHandleText(mapIndex);
 			}
@@ -525,33 +539,68 @@ struct MidiCat : Module {
 };
 
 
-struct MidiCatInModeMenuItem : MenuItem {
-	MidiCatInModeMenuItem() {
+struct CcModeMenuItem : MenuItem {
+	MidiCat *module;
+	int id;
+
+	CcModeMenuItem() {
 		rightText = RIGHT_ARROW;
 	}
 
-	struct MidiCatInModeItem : MenuItem {
+	struct CcModeItem : MenuItem {
 		MidiCat *module;
-		MIDICAT_INMODE inMode;
+		int id;
+		CCMODE ccMode;
 
 		void onAction(const event::Action &e) override {
-			module->setMode(inMode);
+			module->ccsMode[id] = ccMode;
 		}
 
 		void step() override {
-			rightText = module->inMode == inMode ? "✔" : "";
+			rightText = module->ccsMode[id] == ccMode ? "✔" : "";
 			MenuItem::step();
 		}
 	};
 
-	MidiCat *module;
 	Menu *createChildMenu() override {
 		Menu *menu = new Menu;
-		menu->addChild(construct<MidiCatInModeItem>(&MenuItem::text, "Default", &MidiCatInModeItem::module, module, &MidiCatInModeItem::inMode, MIDICAT_INMODE::DEFAULT));
-		menu->addChild(construct<MidiCatInModeItem>(&MenuItem::text, "Locate and indicate", &MidiCatInModeItem::module, module, &MidiCatInModeItem::inMode, MIDICAT_INMODE::LOCATE));
+		menu->addChild(construct<CcModeItem>(&MenuItem::text, "Default", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::CCMODE_DEFAULT));
 		return menu;
 	}
 };
+
+struct NoteModeMenuItem : MenuItem {
+	MidiCat *module;
+	int id;
+
+	NoteModeMenuItem() {
+		rightText = RIGHT_ARROW;
+	}
+
+	struct NoteModeItem : MenuItem {
+		MidiCat *module;
+		int id;
+		NOTEMODE noteMode;
+
+		void onAction(const event::Action &e) override {
+			module->notesMode[id] = noteMode;
+		}
+
+		void step() override {
+			rightText = module->notesMode[id] == noteMode ? "✔" : "";
+			MenuItem::step();
+		}
+	};
+
+	Menu *createChildMenu() override {
+		Menu *menu = new Menu;
+		menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Momentary", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::NOTEMODE_MOMENTARY));
+		menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Momentary + Velocity", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::NOTEMODE_MOMENTARY_VEL));
+		menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Toggle", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::NOTENOTE_TOGGLE));
+		return menu;
+	}
+};
+
 
 struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCat> {
 	MidiCatChoice() {
@@ -580,56 +629,14 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCat> {
 	}
 
 	void appendContextMenu(Menu *menu) override {
+		if (module->ccs[id] >= 0) {
+			menu->addChild(new MenuSeparator());
+			menu->addChild(construct<CcModeMenuItem>(&MenuItem::text, "Cc mode", &CcModeMenuItem::module, module, &CcModeMenuItem::id, id));
+		}
 		if (module->notes[id] >= 0) {
 			menu->addChild(new MenuSeparator());
-
-			struct NoteModeMenuItem : MenuItem {
-				MidiCat *module;
-				int id;
-
-				NoteModeMenuItem() {
-					rightText = RIGHT_ARROW;
-				}
-
-				struct NoteModeItem : MenuItem {
-					MidiCat *module;
-					int id;
-					MIDICAT_NOTEMODE noteMode;
-
-					void onAction(const event::Action &e) override {
-						module->notesMode[id] = noteMode;
-					}
-
-					void step() override {
-						rightText = module->notesMode[id] == noteMode ? "✔" : "";
-						MenuItem::step();
-					}
-				};
-
-				Menu *createChildMenu() override {
-					Menu *menu = new Menu;
-					menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Momentary", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, MIDICAT_NOTEMODE::MOMENTARY));
-					menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Momentary + Velocity", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, MIDICAT_NOTEMODE::MOMENTARY_VELOCITY));
-					menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Toggle", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, MIDICAT_NOTEMODE::TOGGLE));
-					return menu;
-				}
-			};
-
 			menu->addChild(construct<NoteModeMenuItem>(&MenuItem::text, "Note mode", &NoteModeMenuItem::module, module, &NoteModeMenuItem::id, id));
 		}
-	}
-};
-
-struct MidiCatTextScrollItem : MenuItem {
-	MidiCat *module;
-
-	void onAction(const event::Action &e) override {
-		module->textScrolling ^= true;
-	}
-
-	void step() override {
-		rightText = module->textScrolling ? "✔" : "";
-		MenuItem::step();
 	}
 };
 
@@ -646,6 +653,49 @@ struct MidiCatDisplay : MapModuleDisplay<MAX_CHANNELS, MidiCat, MidiCatChoice> {
 		LedDisplay::step();
 	}
 };
+
+
+struct InModeMenuItem : MenuItem {
+	InModeMenuItem() {
+		rightText = RIGHT_ARROW;
+	}
+
+	struct InModeItem : MenuItem {
+		MidiCat *module;
+		INMODE inMode;
+
+		void onAction(const event::Action &e) override {
+			module->setMode(inMode);
+		}
+
+		void step() override {
+			rightText = module->inMode == inMode ? "✔" : "";
+			MenuItem::step();
+		}
+	};
+
+	MidiCat *module;
+	Menu *createChildMenu() override {
+		Menu *menu = new Menu;
+		menu->addChild(construct<InModeItem>(&MenuItem::text, "Default", &InModeItem::module, module, &InModeItem::inMode, INMODE::DEFAULT));
+		menu->addChild(construct<InModeItem>(&MenuItem::text, "Locate and indicate", &InModeItem::module, module, &InModeItem::inMode, INMODE::LOCATE));
+		return menu;
+	}
+};
+
+struct TextScrollItem : MenuItem {
+	MidiCat *module;
+
+	void onAction(const event::Action &e) override {
+		module->textScrolling ^= true;
+	}
+
+	void step() override {
+		rightText = module->textScrolling ? "✔" : "";
+		MenuItem::step();
+	}
+};
+
 
 struct MidiCatMidiWidget : MidiWidget {
 	void setMidiPort(midi::Port *port) {
@@ -778,8 +828,8 @@ struct MidiCatWidget : ModuleWidget {
 		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
 		menu->addChild(new MenuSeparator());
 
-		menu->addChild(construct<MidiCatInModeMenuItem>(&MenuItem::text, "Mode", &MidiCatInModeMenuItem::module, module));
-		menu->addChild(construct<MidiCatTextScrollItem>(&MenuItem::text, "Text scrolling", &MidiCatTextScrollItem::module, module));
+		menu->addChild(construct<InModeMenuItem>(&MenuItem::text, "Mode", &InModeMenuItem::module, module));
+		menu->addChild(construct<TextScrollItem>(&MenuItem::text, "Text scrolling", &TextScrollItem::module, module));
 		menu->addChild(new MenuSeparator());
 
 		struct MidiMapImportItem : MenuItem {
@@ -794,5 +844,6 @@ struct MidiCatWidget : ModuleWidget {
 	}
 };
 
+} // namespace MidiCat
 
-Model *modelMidiCat = createModel<MidiCat, MidiCatWidget>("MidiCat");
+Model *modelMidiCat = createModel<MidiCat::MidiCat, MidiCat::MidiCatWidget>("MidiCat");
