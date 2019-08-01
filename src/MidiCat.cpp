@@ -6,6 +6,7 @@
 static const int MAX_CHANNELS = 128;
 static const char PRESET_FILTERS[] = "VCV Rack module preset (.vcvm):vcvm";
 
+
 struct MidiCatOutput : midi::Output {
 	int lastValues[128];
 	bool lastGates[128];
@@ -52,6 +53,12 @@ struct MidiCatOutput : midi::Output {
 		}
 		lastGates[note] = vel > 0;
 	}
+};
+
+
+enum MIDICAT_INMODE {
+	DEFAULT = 0,
+	LOCATE = 1
 };
 
 struct MidiCat : Module {
@@ -103,8 +110,11 @@ struct MidiCat : Module {
 	/** The value of each note number */
 	int valuesNote[128];
 
+	MIDICAT_INMODE inMode = MIDICAT_INMODE::DEFAULT;
+
 	/** Track last values */
 	int lastValueIn[MAX_CHANNELS];
+	int lastValueInIndicate[MAX_CHANNELS];
 	float lastValueOut[MAX_CHANNELS];
 
 	dsp::ClockDivider loopDivider;
@@ -181,38 +191,58 @@ struct MidiCat : Module {
 				if (!paramQuantity->isBounded())
 					continue;
 
-				// Check if CC value has been set
-				if (cc >= 0 && valuesCc[cc] >= 0)
-				{
-					if (lastValueIn[id] != valuesCc[cc]) {
-						lastValueIn[id] = valuesCc[cc];
-						float v = rescale(valuesCc[cc], 0.f, 127.f, paramQuantity->getMinValue(), paramQuantity->getMaxValue());
-						paramQuantity->setValue(v);
-					}
-				}
+				switch (inMode) {
+					case MIDICAT_INMODE::DEFAULT: {
+						// Check if CC value has been set
+						if (cc >= 0 && valuesCc[cc] >= 0)
+						{
+							if (lastValueIn[id] != valuesCc[cc]) {
+								lastValueIn[id] = valuesCc[cc];
+								float v = rescale(valuesCc[cc], 0.f, 127.f, paramQuantity->getMinValue(), paramQuantity->getMaxValue());
+								paramQuantity->setValue(v);
+							}
+						}
 
-				// Check if note value has been set
-				if (note >= 0 && valuesNote[note] >= 0)
-				{
-					int t = valuesNote[note];
-					if (t > 0 && !notesVel[id]) t = 127;
-					
-					if (lastValueIn[id] != valuesNote[note]) {
-						lastValueIn[id] = valuesNote[note];
-						float v = rescale(t, 0.f, 127.f, paramQuantity->getMinValue(), paramQuantity->getMaxValue());
-						paramQuantity->setValue(v);
-					}
-				}
+						// Check if note value has been set
+						if (note >= 0 && valuesNote[note] >= 0)
+						{
+							int t = valuesNote[note];
+							if (t > 0 && !notesVel[id]) t = 127;
+							
+							if (lastValueIn[id] != valuesNote[note]) {
+								lastValueIn[id] = valuesNote[note];
+								float v = rescale(t, 0.f, 127.f, paramQuantity->getMinValue(), paramQuantity->getMaxValue());
+								paramQuantity->setValue(v);
+							}
+						}
 
-				// Midi feedback
-				float v = paramQuantity->getValue();
-				if (lastValueOut[id] != v) {
-					lastValueOut[id] = v;
-					v = rescale(v, paramQuantity->getMinValue(), paramQuantity->getMaxValue(), 0.f, 127.f);
-					if (cc >= 0)
-						midiOutput.setValue(v, cc);
-					if (note >= 0)
-						midiOutput.setGate(v, note);
+						// Midi feedback
+						float v = paramQuantity->getValue();
+						if (lastValueOut[id] != v) {
+							lastValueOut[id] = v;
+							v = rescale(v, paramQuantity->getMinValue(), paramQuantity->getMaxValue(), 0.f, 127.f);
+							if (cc >= 0)
+								midiOutput.setValue(v, cc);
+							if (note >= 0)
+								midiOutput.setGate(v, note);
+						}
+					} break;
+
+					case MIDICAT_INMODE::LOCATE: {
+						bool indicate = false;
+						if ((cc >= 0 && valuesCc[cc] >= 0) && lastValueInIndicate[id] != valuesCc[cc]) {
+							lastValueInIndicate[id] = valuesCc[cc];
+							indicate = true;
+						}
+						if ((note >= 0 && valuesNote[note] >= 0) && lastValueInIndicate[id] != valuesNote[note]) {
+							lastValueInIndicate[id] = valuesNote[note];
+							indicate = true;
+						}
+						if (indicate) {
+							ModuleWidget *mw = APP->scene->rack->getModule(paramQuantity->module->id);
+							paramHandleIndicator[id].indicate(mw);
+						}
+					} break;
 				}
 			}
 		}
@@ -223,6 +253,18 @@ struct MidiCat : Module {
 				if (paramHandles[i].moduleId >= 0)
 					paramHandleIndicator[i].process(t);
 			}
+		}
+	}
+
+	void setMode(MIDICAT_INMODE inMode) {
+		this->inMode = inMode;
+		switch (inMode) {
+			case MIDICAT_INMODE::LOCATE:
+				for (int i = 0; i < MAX_CHANNELS; i++) 
+					lastValueInIndicate[i] = lastValueIn[i];
+				break;
+			default:
+				break;
 		}
 	}
 
@@ -445,6 +487,34 @@ struct MidiCat : Module {
 };
 
 
+struct MidiCatInModeMenuItem : MenuItem {
+	MidiCatInModeMenuItem() {
+		rightText = RIGHT_ARROW;
+	}
+
+	struct MidiCatInModeItem : MenuItem {
+		MidiCat *module;
+		MIDICAT_INMODE inMode;
+
+		void onAction(const event::Action &e) override {
+			module->setMode(inMode);
+		}
+
+		void step() override {
+			rightText = module->inMode == inMode ? "✔" : "";
+			MenuItem::step();
+		}
+	};
+
+	MidiCat *module;
+	Menu *createChildMenu() override {
+		Menu *menu = new Menu;
+		menu->addChild(construct<MidiCatInModeItem>(&MenuItem::text, "Default", &MidiCatInModeItem::module, module, &MidiCatInModeItem::inMode, MIDICAT_INMODE::DEFAULT));
+		menu->addChild(construct<MidiCatInModeItem>(&MenuItem::text, "Locate and indicate", &MidiCatInModeItem::module, module, &MidiCatInModeItem::inMode, MIDICAT_INMODE::LOCATE));
+		return menu;
+	}
+};
+
 struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCat> {
 	MidiCatChoice() {
 		textOffset = Vec(6.f, 14.7f);
@@ -494,6 +564,18 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCat> {
 	}
 };
 
+struct MidiCatTextScrollItem : MenuItem {
+	MidiCat *module;
+
+	void onAction(const event::Action &e) override {
+		module->textScrolling ^= true;
+	}
+
+	void step() override {
+		rightText = module->textScrolling ? "✔" : "";
+		MenuItem::step();
+	}
+};
 
 struct MidiCatDisplay : MapModuleDisplay<MAX_CHANNELS, MidiCat, MidiCatChoice> {
 	void step() override {
@@ -640,20 +722,8 @@ struct MidiCatWidget : ModuleWidget {
 		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
 		menu->addChild(new MenuSeparator());
 
-		struct TextScrollItem : MenuItem {
-			MidiCat *module;
-
-			void onAction(const event::Action &e) override {
-				module->textScrolling ^= true;
-			}
-
-			void step() override {
-				rightText = module->textScrolling ? "✔" : "";
-				MenuItem::step();
-			}
-		};
-
-		menu->addChild(construct<TextScrollItem>(&MenuItem::text, "Text scrolling", &TextScrollItem::module, module));
+		menu->addChild(construct<MidiCatInModeMenuItem>(&MenuItem::text, "Mode", &MidiCatInModeMenuItem::module, module));
+		menu->addChild(construct<MidiCatTextScrollItem>(&MenuItem::text, "Text scrolling", &MidiCatTextScrollItem::module, module));
 		menu->addChild(new MenuSeparator());
 
 		struct MidiMapImportItem : MenuItem {

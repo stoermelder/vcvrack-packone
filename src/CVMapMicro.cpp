@@ -129,17 +129,7 @@ struct MapButton : LEDBezel {
 					void onAction(const event::Action &e) override {
 						ParamHandle *paramHandle = &module->paramHandles[id];
 						ModuleWidget *mw = APP->scene->rack->getModule(paramHandle->moduleId);
-						if (mw) {
-							// move the view to center the mapped module
-							// NB: unstable API!
-							Vec offset = mw->box.pos;
-							offset = offset.plus(mw->box.size.mult(0.5f));
-							offset = offset.mult(APP->scene->rackScroll->zoomWidget->zoom);
-							offset = offset.minus(APP->scene->box.size.mult(0.5f));
-							APP->scene->rackScroll->offset = offset;
-							rack::settings::zoom = 1.f;
-						}					
-						module->paramHandleIndicator[id].indicate();
+						module->paramHandleIndicator[id].indicate(mw);
 					}
 				};
 				menu->addChild(construct<IndicateItem>(&MenuItem::text, "Locate and indicate", &IndicateItem::module, module, &IndicateItem::id, id));
