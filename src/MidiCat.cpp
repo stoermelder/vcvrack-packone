@@ -59,8 +59,8 @@ struct MidiCatOutput : midi::Output {
 
 
 enum INMODE {
-	DEFAULT = 0,
-	LOCATE = 1
+	INMODE_DEFAULT = 0,
+	INMODE_LOCATE = 1
 };
 
 enum CCMODE {
@@ -74,7 +74,7 @@ enum NOTEMODE {
 	NOTENOTE_TOGGLE = 2
 };
 
-struct MidiCat : Module {
+struct MidiCatModule : Module {
 	enum ParamIds {
 		NUM_PARAMS
 	};
@@ -125,7 +125,7 @@ struct MidiCat : Module {
 	/** The value of each note number */
 	int valuesNote[128];
 
-	INMODE inMode = INMODE::DEFAULT;
+	INMODE inMode = INMODE::INMODE_DEFAULT;
 
 	/** Track last values */
 	int lastValueIn[MAX_CHANNELS];
@@ -135,7 +135,7 @@ struct MidiCat : Module {
 	dsp::ClockDivider loopDivider;
 	dsp::ClockDivider indicatorDivider;
 
-	MidiCat() {
+	MidiCatModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		for (int id = 0; id < MAX_CHANNELS; id++) {
 			paramHandles[id].color = nvgRGB(0xff, 0xff, 0x40);
@@ -147,7 +147,7 @@ struct MidiCat : Module {
 		onReset();
 	}
 
-	~MidiCat() {
+	~MidiCatModule() {
 		for (int id = 0; id < MAX_CHANNELS; id++) {
 			APP->engine->removeParamHandle(&paramHandles[id]);
 		}
@@ -209,7 +209,7 @@ struct MidiCat : Module {
 					continue;
 
 				switch (inMode) {
-					case INMODE::DEFAULT: {
+					case INMODE_DEFAULT: {
 						// Check if CC value has been set
 						if (cc >= 0 && valuesCc[cc] >= 0)
 						{
@@ -243,20 +243,20 @@ struct MidiCat : Module {
 						{
 							int t = -1;
 							switch (notesMode[id]) {
-								case NOTEMODE::NOTEMODE_MOMENTARY:
+								case NOTEMODE_MOMENTARY:
 									if (lastValueIn[id] != valuesNote[note]) {
 										t = valuesNote[note];
 										if (t > 0) t = 127;
 										lastValueIn[id] = valuesNote[note];
 									} 
 									break;
-								case NOTEMODE::NOTEMODE_MOMENTARY_VEL:
+								case NOTEMODE_MOMENTARY_VEL:
 									if (lastValueIn[id] != valuesNote[note]) {
 										t = valuesNote[note];
 										lastValueIn[id] = valuesNote[note];
 									}
 									break;
-								case NOTEMODE::NOTENOTE_TOGGLE:
+								case NOTENOTE_TOGGLE:
 									if (valuesNote[note] == 127 && (lastValueIn[id] == -1 || lastValueIn[id] >= 0)) {
 										t = 127;
 										lastValueIn[id] = -2;
@@ -294,7 +294,7 @@ struct MidiCat : Module {
 						}
 					} break;
 
-					case INMODE::LOCATE: {
+					case INMODE_LOCATE: {
 						bool indicate = false;
 						if ((cc >= 0 && valuesCc[cc] >= 0) && lastValueInIndicate[id] != valuesCc[cc]) {
 							lastValueInIndicate[id] = valuesCc[cc];
@@ -325,7 +325,7 @@ struct MidiCat : Module {
 	void setMode(INMODE inMode) {
 		this->inMode = inMode;
 		switch (inMode) {
-			case INMODE::LOCATE:
+			case INMODE_LOCATE:
 				for (int i = 0; i < MAX_CHANNELS; i++) 
 					lastValueInIndicate[i] = std::max(0, lastValueIn[i]);
 				break;
@@ -558,7 +558,7 @@ struct MidiCat : Module {
 
 
 struct CcModeMenuItem : MenuItem {
-	MidiCat *module;
+	MidiCatModule *module;
 	int id;
 
 	CcModeMenuItem() {
@@ -566,7 +566,7 @@ struct CcModeMenuItem : MenuItem {
 	}
 
 	struct CcModeItem : MenuItem {
-		MidiCat *module;
+		MidiCatModule *module;
 		int id;
 		CCMODE ccMode;
 
@@ -589,7 +589,7 @@ struct CcModeMenuItem : MenuItem {
 };
 
 struct NoteModeMenuItem : MenuItem {
-	MidiCat *module;
+	MidiCatModule *module;
 	int id;
 
 	NoteModeMenuItem() {
@@ -597,7 +597,7 @@ struct NoteModeMenuItem : MenuItem {
 	}
 
 	struct NoteModeItem : MenuItem {
-		MidiCat *module;
+		MidiCatModule *module;
 		int id;
 		NOTEMODE noteMode;
 
@@ -613,15 +613,15 @@ struct NoteModeMenuItem : MenuItem {
 
 	Menu *createChildMenu() override {
 		Menu *menu = new Menu;
-		menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Momentary", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::NOTEMODE_MOMENTARY));
-		menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Momentary + Velocity", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::NOTEMODE_MOMENTARY_VEL));
-		menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Toggle", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::NOTENOTE_TOGGLE));
+		menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Momentary", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE_MOMENTARY));
+		menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Momentary + Velocity", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE_MOMENTARY_VEL));
+		menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Toggle", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTENOTE_TOGGLE));
 		return menu;
 	}
 };
 
 
-struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCat> {
+struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 	MidiCatChoice() {
 		textOffset = Vec(6.f, 14.7f);
 		color = nvgRGB(0xf0, 0xf0, 0xf0);
@@ -659,7 +659,7 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCat> {
 	}
 };
 
-struct MidiCatDisplay : MapModuleDisplay<MAX_CHANNELS, MidiCat, MidiCatChoice> {
+struct MidiCatDisplay : MapModuleDisplay<MAX_CHANNELS, MidiCatModule, MidiCatChoice> {
 	void step() override {
 		if (module) {
 			int mapLen = module->mapLen;
@@ -680,7 +680,7 @@ struct InModeMenuItem : MenuItem {
 	}
 
 	struct InModeItem : MenuItem {
-		MidiCat *module;
+		MidiCatModule *module;
 		INMODE inMode;
 
 		void onAction(const event::Action &e) override {
@@ -693,17 +693,17 @@ struct InModeMenuItem : MenuItem {
 		}
 	};
 
-	MidiCat *module;
+	MidiCatModule *module;
 	Menu *createChildMenu() override {
 		Menu *menu = new Menu;
-		menu->addChild(construct<InModeItem>(&MenuItem::text, "Default", &InModeItem::module, module, &InModeItem::inMode, INMODE::DEFAULT));
-		menu->addChild(construct<InModeItem>(&MenuItem::text, "Locate and indicate", &InModeItem::module, module, &InModeItem::inMode, INMODE::LOCATE));
+		menu->addChild(construct<InModeItem>(&MenuItem::text, "Operating", &InModeItem::module, module, &InModeItem::inMode, INMODE_DEFAULT));
+		menu->addChild(construct<InModeItem>(&MenuItem::text, "Locate and indicate", &InModeItem::module, module, &InModeItem::inMode, INMODE_LOCATE));
 		return menu;
 	}
 };
 
 struct TextScrollItem : MenuItem {
-	MidiCat *module;
+	MidiCatModule *module;
 
 	void onAction(const event::Action &e) override {
 		module->textScrolling ^= true;
@@ -737,7 +737,7 @@ struct MidiCatMidiWidget : MidiWidget {
 };
 
 struct MidiCatWidget : ModuleWidget {
-	MidiCatWidget(MidiCat *module) {
+	MidiCatWidget(MidiCatModule *module) {
 		setModule(module);
 		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/MidiCat.svg")));
 
@@ -834,7 +834,7 @@ struct MidiCatWidget : ModuleWidget {
 	}
 
 	void appendContextMenu(Menu *menu) override {
-		MidiCat *module = dynamic_cast<MidiCat*>(this->module);
+		MidiCatModule *module = dynamic_cast<MidiCatModule*>(this->module);
 		assert(module);
 
 		struct ManualItem : MenuItem {
@@ -865,4 +865,4 @@ struct MidiCatWidget : ModuleWidget {
 
 } // namespace MidiCat
 
-Model *modelMidiCat = createModel<MidiCat::MidiCat, MidiCat::MidiCatWidget>("MidiCat");
+Model *modelMidiCat = createModel<MidiCat::MidiCatModule, MidiCat::MidiCatWidget>("MidiCat");
