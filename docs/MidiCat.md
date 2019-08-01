@@ -6,6 +6,6 @@ MIDI-CAT is an evolution of [VCV's MIDI-MAP](https://vcvrack.com/manual/Core.htm
 
 All parameter changes are sent to midi output with the same CC or note as mapped. Note-mapping (instead of CC) enables an additional context menu option "Note velocity" for the mapping slot: When disabled (default) the midi velocity value is ignored and a value of 127 is assumed.
 
-The module allows you to import preset from VCV MIDI-MAP for a quick migration.
+The module allows you to import presets from VCV MIDI-MAP for a quick migration.
 
-This module was added in v1.0.6 of PackOne.
+This module was added in v1.1.0 of PackOne.

@@ -1,4 +1,4 @@
-### 1.0.6 (in development)
+### 1.1.0 (in development)
 
 - Module 8FACE
     - Using additional worker thread for applying presets to avoid engine deadlock on some modules (especially using parameter mapping)
