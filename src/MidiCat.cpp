@@ -213,9 +213,27 @@ struct MidiCat : Module {
 						// Check if CC value has been set
 						if (cc >= 0 && valuesCc[cc] >= 0)
 						{
-							if (lastValueIn[id] != valuesCc[cc]) {
-								lastValueIn[id] = valuesCc[cc];
-								float v = rescale(valuesCc[cc], 0.f, 127.f, paramQuantity->getMinValue(), paramQuantity->getMaxValue());
+							int t = -1;
+							switch (ccsMode[id]) {
+								case CCMODE_DEFAULT:
+									if (lastValueIn[id] != valuesCc[cc]) {
+										lastValueIn[id] = valuesCc[cc];
+										t = valuesCc[cc];
+									}
+									break;
+								case CCMODE_PICKUP:
+									if (lastValueIn[id] != valuesCc[cc]) {
+										int p = (int)rescale(paramQuantity->getValue(), paramQuantity->getMinValue(), paramQuantity->getMaxValue(), 0.f, 127.f);
+										if (p - 3 <= lastValueIn[id] && lastValueIn[id] <= p + 3) {
+											t = valuesCc[cc];
+										}
+										lastValueIn[id] = valuesCc[cc];
+									}
+									break;
+							}
+
+							if (t >= 0) {
+								float v = rescale(t, 0.f, 127.f, paramQuantity->getMinValue(), paramQuantity->getMaxValue());
 								paramQuantity->setValue(v);
 							}
 						}
@@ -564,7 +582,8 @@ struct CcModeMenuItem : MenuItem {
 
 	Menu *createChildMenu() override {
 		Menu *menu = new Menu;
-		menu->addChild(construct<CcModeItem>(&MenuItem::text, "Default", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::CCMODE_DEFAULT));
+		menu->addChild(construct<CcModeItem>(&MenuItem::text, "Default", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE_DEFAULT));
+		menu->addChild(construct<CcModeItem>(&MenuItem::text, "Pickup", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE_PICKUP));
 		return menu;
 	}
 };
