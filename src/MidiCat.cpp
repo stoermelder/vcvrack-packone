@@ -61,6 +61,12 @@ enum MIDICAT_INMODE {
 	LOCATE = 1
 };
 
+enum MIDICAT_NOTEMODE {
+	MOMENTARY = 0,
+	MOMENTARY_VELOCITY = 1,
+	TOGGLE = 2
+};
+
 struct MidiCat : Module {
 	enum ParamIds {
 		NUM_PARAMS
@@ -87,7 +93,7 @@ struct MidiCat : Module {
 	/** [Stored to Json] The mapped note number of each channel */
 	int notes[MAX_CHANNELS];
 	/** [Stored to Json] Use the velocity value of each channel when notes are used */
-	bool notesVel[MAX_CHANNELS];
+	MIDICAT_NOTEMODE notesMode[MAX_CHANNELS];
 
 	/** The mapped param handle of each channel */
 	ParamHandle paramHandles[MAX_CHANNELS];
@@ -152,6 +158,7 @@ struct MidiCat : Module {
 		for (int i = 0; i < MAX_CHANNELS; i++) {
 			lastValueIn[i] = -1;
 			lastValueOut[i] = -1;
+			notesMode[i] = MIDICAT_NOTEMODE::MOMENTARY;
 		}
 		midiInput.reset();
 		midiOutput.reset();
@@ -206,11 +213,42 @@ struct MidiCat : Module {
 						// Check if note value has been set
 						if (note >= 0 && valuesNote[note] >= 0)
 						{
-							int t = valuesNote[note];
-							if (t > 0 && !notesVel[id]) t = 127;
-							
-							if (lastValueIn[id] != valuesNote[note]) {
-								lastValueIn[id] = valuesNote[note];
+							int t = -1;
+							switch (notesMode[id]) {
+								case MIDICAT_NOTEMODE::MOMENTARY:
+									if (lastValueIn[id] != valuesNote[note]) {
+										t = valuesNote[note];
+										if (t > 0) t = 127;
+										lastValueIn[id] = valuesNote[note];
+									} 
+									break;
+								case MIDICAT_NOTEMODE::MOMENTARY_VELOCITY:
+									if (lastValueIn[id] != valuesNote[note]) {
+										t = valuesNote[note];
+										lastValueIn[id] = valuesNote[note];
+									}
+									break;
+								case MIDICAT_NOTEMODE::TOGGLE:
+									if (valuesNote[note] == 127 && (lastValueIn[id] == -1 || lastValueIn[id] >= 0)) {
+										t = 127;
+										lastValueIn[id] = -2;
+									} 
+									else if (valuesNote[note] == 0 && lastValueIn[id] == -2) {
+										t = 127;
+										lastValueIn[id] = -3;
+									}
+									else if (valuesNote[note] == 127 && lastValueIn[id] == -3) {
+										t = 0;
+										lastValueIn[id] = -4;
+									}
+									else if (valuesNote[note] == 0 && lastValueIn[id] == -4) {
+										t = 0;
+										lastValueIn[id] = -1;
+									}
+									break;
+							}
+
+							if (t >= 0) {
 								float v = rescale(t, 0.f, 127.f, paramQuantity->getMinValue(), paramQuantity->getMaxValue());
 								paramQuantity->setValue(v);
 							}
@@ -318,7 +356,7 @@ struct MidiCat : Module {
 		if (learningId >= 0) {
 			ccs[learningId] = -1;
 			notes[learningId] = note;
-			notesVel[learningId] = false;
+			notesMode[learningId] = MIDICAT_NOTEMODE::MOMENTARY;
 			learnedNote = true;
 			commitLearn();
 			updateMapLen();
@@ -435,7 +473,7 @@ struct MidiCat : Module {
 			json_t *mapJ = json_object();
 			json_object_set_new(mapJ, "cc", json_integer(ccs[id]));
 			json_object_set_new(mapJ, "note", json_integer(notes[id]));
-			json_object_set_new(mapJ, "noteVel", json_boolean(notesVel[id]));
+			json_object_set_new(mapJ, "noteMode", json_integer(notesMode[id]));
 			json_object_set_new(mapJ, "moduleId", json_integer(paramHandles[id].moduleId));
 			json_object_set_new(mapJ, "paramId", json_integer(paramHandles[id].paramId));
 			json_array_append_new(mapsJ, mapJ);
@@ -460,7 +498,7 @@ struct MidiCat : Module {
 			json_array_foreach(mapsJ, mapIndex, mapJ) {
 				json_t *ccJ = json_object_get(mapJ, "cc");
 				json_t *noteJ = json_object_get(mapJ, "note");
-				json_t *noteVelJ = json_object_get(mapJ, "noteVel");
+				json_t *noteModeJ = json_object_get(mapJ, "noteMode");
 				json_t *moduleIdJ = json_object_get(mapJ, "moduleId");
 				json_t *paramIdJ = json_object_get(mapJ, "paramId");
 				if (!((ccJ || noteJ) && moduleIdJ && paramIdJ))
@@ -469,7 +507,7 @@ struct MidiCat : Module {
 					continue;
 				ccs[mapIndex] = json_integer_value(ccJ);
 				notes[mapIndex] = noteJ ? json_integer_value(noteJ) : -1;
-				notesVel[mapIndex] = json_boolean_value(noteVelJ);
+				notesMode[mapIndex] = (MIDICAT_NOTEMODE)json_integer_value(noteModeJ);
 				APP->engine->updateParamHandle(&paramHandles[mapIndex], json_integer_value(moduleIdJ), json_integer_value(paramIdJ), true);
 				refreshParamHandleText(mapIndex);
 			}
@@ -545,21 +583,39 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCat> {
 		if (module->notes[id] >= 0) {
 			menu->addChild(new MenuSeparator());
 
-			struct VelocityItem : MenuItem {
+			struct NoteModeMenuItem : MenuItem {
 				MidiCat *module;
 				int id;
 
-				void onAction(const event::Action &e) override {
-					module->notesVel[id] ^= true;
+				NoteModeMenuItem() {
+					rightText = RIGHT_ARROW;
 				}
 
-				void step() override {
-					rightText = module->notesVel[id] ? "✔" : "";
-					MenuItem::step();
+				struct NoteModeItem : MenuItem {
+					MidiCat *module;
+					int id;
+					MIDICAT_NOTEMODE noteMode;
+
+					void onAction(const event::Action &e) override {
+						module->notesMode[id] = noteMode;
+					}
+
+					void step() override {
+						rightText = module->notesMode[id] == noteMode ? "✔" : "";
+						MenuItem::step();
+					}
+				};
+
+				Menu *createChildMenu() override {
+					Menu *menu = new Menu;
+					menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Momentary", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, MIDICAT_NOTEMODE::MOMENTARY));
+					menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Momentary + Velocity", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, MIDICAT_NOTEMODE::MOMENTARY_VELOCITY));
+					menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Toggle", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, MIDICAT_NOTEMODE::TOGGLE));
+					return menu;
 				}
 			};
 
-			menu->addChild(construct<VelocityItem>(&MenuItem::text, "Note velocity", &VelocityItem::module, module, &VelocityItem::id, id));
+			menu->addChild(construct<NoteModeMenuItem>(&MenuItem::text, "Note mode", &NoteModeMenuItem::module, module, &NoteModeMenuItem::id, id));
 		}
 	}
 };
