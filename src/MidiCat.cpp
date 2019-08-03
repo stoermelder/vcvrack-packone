@@ -457,6 +457,12 @@ struct MidiCatModule : Module {
 		learnedCc = false;
 		learnedNote = false;
 		learnedParam = false;
+		// Copy modes from the previous slot
+		if (learningId > 0) {
+			ccsMode[learningId] = ccsMode[learningId - 1];
+			notesMode[learningId] = notesMode[learningId - 1];
+		}
+
 		// Find next incomplete map
 		while (++learningId < MAX_CHANNELS) {
 			if ((ccs[learningId] < 0 && notes[learningId] < 0) || paramHandles[learningId].moduleId < 0)
