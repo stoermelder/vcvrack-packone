@@ -4,6 +4,8 @@
     - Using additional worker thread for applying presets to avoid engine deadlock on some modules (especially using parameter mapping)
 - Module MIDI-CAT
     - New module, mapping module similar to VCV's MIDI-MAP with midi feedback, note mapping and cc pickup-mode
+- Module ReMOVE Lite
+    - Added playmode "sequence random" which walks randomly through all sequences
 - Module STRIP
     - Added button INC/EXC for including or excluding specific module parameter from randomization
 - Modules CV-MAP, CV-PAM, ReMOVE Lite, µMAP

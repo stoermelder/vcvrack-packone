@@ -51,7 +51,8 @@ enum PLAYMODE {
     PLAYMODE_LOOP = 0,
     PLAYMODE_ONESHOT = 1,
     PLAYMODE_PINGPONG = 2,
-    PLAYMODE_SEQLOOP = 3
+    PLAYMODE_SEQLOOP = 3,
+    PLAYMODE_SEQRANDOM = 4
 };
 
 const int REMOVE_PLAYDIR_FWD = 1;
@@ -132,6 +133,9 @@ struct ReMoveModule : MapModule<1> {
     /** [Stored to JSON] mode for playback */
     PLAYMODE playMode = PLAYMODE_LOOP;
     int playDir = REMOVE_PLAYDIR_FWD;
+
+    std::default_random_engine randGen{(uint16_t)std::chrono::system_clock::now().time_since_epoch().count()};
+    std::uniform_int_distribution<int> randDist{0, REMOVE_MAX_SEQ - 1};
 
     /** [Stored to JSON] state of playback (for button-press manually) */
     bool isPlaying = false;
@@ -374,6 +378,8 @@ struct ReMoveModule : MapModule<1> {
                                     dataPtr--; playDir = REMOVE_PLAYDIR_REV; break;
                                 case PLAYMODE_SEQLOOP:
                                     seqNext(true); break;
+                                case PLAYMODE_SEQRANDOM:
+                                    seqRand(); break;
                             }
                         }
                         if (dataPtr == seqLow - 1) {
@@ -497,6 +503,11 @@ struct ReMoveModule : MapModule<1> {
 
     inline void seqPrev() {
         seq = (seq - 1 + seqCount) % seqCount;
+        seqUpdate();
+    }
+
+    inline void seqRand() {
+        seq = randDist(randGen) % seqCount;
         seqUpdate();
     }
 
@@ -1023,7 +1034,8 @@ struct PlayModeMenuItem : MenuItem {
         menu->addChild(construct<PlayModeItem>(&MenuItem::text, "Loop", &PlayModeItem::module, module, &PlayModeItem::playMode, PLAYMODE_LOOP));
         menu->addChild(construct<PlayModeItem>(&MenuItem::text, "Oneshot", &PlayModeItem::module, module, &PlayModeItem::playMode, PLAYMODE_ONESHOT));
         menu->addChild(construct<PlayModeItem>(&MenuItem::text, "Ping Pong", &PlayModeItem::module, module, &PlayModeItem::playMode, PLAYMODE_PINGPONG));
-        menu->addChild(construct<PlayModeItem>(&MenuItem::text, "Loop Sequences", &PlayModeItem::module, module, &PlayModeItem::playMode, PLAYMODE_SEQLOOP));
+        menu->addChild(construct<PlayModeItem>(&MenuItem::text, "Sequence loop", &PlayModeItem::module, module, &PlayModeItem::playMode, PLAYMODE_SEQLOOP));
+        menu->addChild(construct<PlayModeItem>(&MenuItem::text, "Sequence random", &PlayModeItem::module, module, &PlayModeItem::playMode, PLAYMODE_SEQRANDOM));
         return menu;
     }
 };

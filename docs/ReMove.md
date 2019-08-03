@@ -43,7 +43,8 @@ Some modes for playback have been implemented:
 - Loop (Default): playback loops through the selected sequence.
 - Oneshot: the sequence is played once and must be retriggered by RESET.
 - Ping Pong: the sequence loops, first played forward and then backward.
-- Loop Sequences (added in v1.0.4): playback loops through all sequences.
+- Sequence loop (added in v1.0.4): playback loops through all sequences.
+- Sequence random (added in v1.1.0): playback walks randomly through all sequences.
 
 You can use the PHASE-input if you want a different playback speed or a completely different playback pattern.
 
