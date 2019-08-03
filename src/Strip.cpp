@@ -5,18 +5,24 @@
 #include <thread>
 #include <mutex>
 
+
+namespace Strip {
+
 static const char PRESET_FILTERS[] = "stoermelder STRIP group preset (.vcvss):vcvss";
 
-const int STRIP_ONMODE_DEFAULT = 0;
-const int STRIP_ONMODE_TOGGLE = 1;
-const int STRIP_ONMODE_HIGHLOW = 2;
+enum ONMODE {
+	ONMODE_DEFAULT = 0,
+	ONMODE_TOGGLE = 1,
+	ONMODE_HIGHLOW = 2
+};
 
-const int STRIP_MODE_LEFTRIGHT = 0;
-const int STRIP_MODE_RIGHT = 1;
-const int STRIP_MODE_LEFT = 2;
+enum MODE {
+	MODE_LEFTRIGHT = 0,
+	MODE_RIGHT = 1,
+	MODE_LEFT = 2
+};
 
-
-struct Strip : Module {
+struct StripModule : Module {
 	enum ParamIds {
 		MODE_PARAM,
 		ON_PARAM,
@@ -42,9 +48,9 @@ struct Strip : Module {
 	};
 
 	/** [Stored to JSON] left? right? both? */
-	int mode = STRIP_MODE_LEFTRIGHT;
+	MODE mode = MODE_LEFTRIGHT;
 	/** [Stored to JSON] usage of switch+port in "ON"-section */
-	int onMode = STRIP_ONMODE_DEFAULT;
+	ONMODE onMode = ONMODE_DEFAULT;
 
 	bool lastState = false;
 
@@ -60,7 +66,7 @@ struct Strip : Module {
 
 	dsp::ClockDivider lightDivider;
 
-	Strip() {
+	StripModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configParam(MODE_PARAM, 0, 1, 0, "Toggle left/right mode");
 		configParam(ON_PARAM, 0, 1, 0, "Switch/toggle strip on");
@@ -81,7 +87,7 @@ struct Strip : Module {
 
 	void process(const ProcessArgs &args) override {
 		if (modeTrigger.process(params[MODE_PARAM].getValue())) {
-			mode = (mode + 1) % 3;
+			mode = (MODE)((mode + 1) % 3);
 			lastState = true;
 		}
 
@@ -90,15 +96,15 @@ struct Strip : Module {
 		}
 
 		switch (onMode) {
-			case STRIP_ONMODE_DEFAULT:
+			case ONMODE_DEFAULT:
 				if (onTrigger.process(params[ON_PARAM].getValue() + inputs[ON_INPUT].getVoltage()))
 					groupDisable(false);
 				break;
-			case STRIP_ONMODE_TOGGLE:
+			case ONMODE_TOGGLE:
 				if (onTrigger.process(params[ON_PARAM].getValue() + inputs[ON_INPUT].getVoltage()))
 					groupDisable(!lastState);
 				break;
-			case STRIP_ONMODE_HIGHLOW:
+			case ONMODE_HIGHLOW:
 				groupDisable(params[ON_PARAM].getValue() + inputs[ON_INPUT].getVoltage() < 1.f);
 				break;
 		}
@@ -109,8 +115,8 @@ struct Strip : Module {
 
 		// Set channel lights infrequently
 		if (lightDivider.process()) {
-			lights[RIGHT_LIGHT].setBrightness(mode == STRIP_MODE_LEFTRIGHT || mode == STRIP_MODE_RIGHT);
-			lights[LEFT_LIGHT].setBrightness(mode == STRIP_MODE_LEFTRIGHT || mode == STRIP_MODE_LEFT);
+			lights[RIGHT_LIGHT].setBrightness(mode == MODE_LEFTRIGHT || mode == MODE_RIGHT);
+			lights[LEFT_LIGHT].setBrightness(mode == MODE_LEFTRIGHT || mode == MODE_LEFT);
 
 			lights[EXCLUDE_LIGHT + 0].setBrightness(!excludeLearn && excludedParams.size() > 0 ? 1.f : 0.f); 
 			lights[EXCLUDE_LIGHT + 1].setBrightness(excludeLearn ? 1.f : 0.f);
@@ -124,7 +130,7 @@ struct Strip : Module {
 	void groupDisable(bool val) {
 		if (lastState == val) return;
 		lastState = val;
-		if (mode == STRIP_MODE_LEFTRIGHT || mode == STRIP_MODE_RIGHT) {
+		if (mode == MODE_LEFTRIGHT || mode == MODE_RIGHT) {
 			Module *m = this;
 			while (true) {
 				if (!m || m->rightExpander.moduleId < 0) break;
@@ -139,7 +145,7 @@ struct Strip : Module {
 				m = m->rightExpander.module;
 			}
 		}
-		if (mode == STRIP_MODE_LEFTRIGHT || mode == STRIP_MODE_LEFT) {
+		if (mode == MODE_LEFTRIGHT || mode == MODE_LEFT) {
 			Module *m = this;
 			while (true) {
 				if (!m || m->leftExpander.moduleId < 0) break;
@@ -163,7 +169,7 @@ struct Strip : Module {
 	void groupRandomize() {
 		// Aquire excludeMutex to get get exclusive access to excludedParams
 		std::lock_guard<std::mutex> lockGuard(excludeMutex);
-		if (mode == STRIP_MODE_LEFTRIGHT || mode == STRIP_MODE_RIGHT) {
+		if (mode == MODE_LEFTRIGHT || mode == MODE_RIGHT) {
 			Module *m = this;
 			while (true) {
 				if (!m || m->rightExpander.moduleId < 0) break;
@@ -178,7 +184,7 @@ struct Strip : Module {
 				m = m->rightExpander.module;
 			}
 		}
-		if (mode == STRIP_MODE_LEFTRIGHT || mode == STRIP_MODE_LEFT) {
+		if (mode == MODE_LEFTRIGHT || mode == MODE_LEFT) {
 			Module *m = this;
 			while (true) {
 				if (!m || m->leftExpander.moduleId < 0) break;
@@ -218,9 +224,9 @@ struct Strip : Module {
 
 	void dataFromJson(json_t *rootJ) override {
 		json_t *modeJ = json_object_get(rootJ, "mode");
-		mode = json_integer_value(modeJ);
+		mode = (MODE)json_integer_value(modeJ);
 		json_t *onModeJ = json_object_get(rootJ, "onMode");
-		onMode = json_integer_value(onModeJ);
+		onMode = (ONMODE)json_integer_value(onModeJ);
 
 		json_t *excludedParamsJ = json_object_get(rootJ, "excludedParams"); 
 		// Aquire excludeMutex to get exclusive access to excludedParams
@@ -246,8 +252,8 @@ struct Strip : Module {
 
 struct StripOnModeMenuItem : MenuItem {
 	struct StripOnModeItem : MenuItem {
-		Strip *module;
-		int onMode;
+		StripModule *module;
+		ONMODE onMode;
 
 		void onAction(const event::Action &e) override {
 			module->onMode = onMode;
@@ -259,19 +265,19 @@ struct StripOnModeMenuItem : MenuItem {
 		}
 	};
 
-	Strip *module;
+	StripModule *module;
 	Menu *createChildMenu() override {
 		Menu *menu = new Menu;
-		menu->addChild(construct<StripOnModeItem>(&MenuItem::text, "Default", &StripOnModeItem::module, module, &StripOnModeItem::onMode, STRIP_ONMODE_DEFAULT));
-		menu->addChild(construct<StripOnModeItem>(&MenuItem::text, "Toggle", &StripOnModeItem::module, module, &StripOnModeItem::onMode, STRIP_ONMODE_TOGGLE));
-		menu->addChild(construct<StripOnModeItem>(&MenuItem::text, "High/Low", &StripOnModeItem::module, module, &StripOnModeItem::onMode, STRIP_ONMODE_HIGHLOW));
+		menu->addChild(construct<StripOnModeItem>(&MenuItem::text, "Default", &StripOnModeItem::module, module, &StripOnModeItem::onMode, ONMODE_DEFAULT));
+		menu->addChild(construct<StripOnModeItem>(&MenuItem::text, "Toggle", &StripOnModeItem::module, module, &StripOnModeItem::onMode, ONMODE_TOGGLE));
+		menu->addChild(construct<StripOnModeItem>(&MenuItem::text, "High/Low", &StripOnModeItem::module, module, &StripOnModeItem::onMode, ONMODE_HIGHLOW));
 		return menu;
 	}
 };
 
 
 struct ExcludeButton : TL1105 {
-	Strip *module;
+	StripModule *module;
 	bool learn = false;
 	bool pressed = false;
 	std::chrono::time_point<std::chrono::system_clock> pressedTime;
@@ -347,7 +353,7 @@ struct ExcludeButton : TL1105 {
 	 */
 	void groupExcludeParam(int moduleId, int paramId) {
 		learn = false;
-		if (module->mode == STRIP_MODE_LEFTRIGHT || module->mode == STRIP_MODE_RIGHT) {
+		if (module->mode == MODE_LEFTRIGHT || module->mode == MODE_RIGHT) {
 			Module *m = module;
 			while (true) {
 				if (!m || m->rightExpander.moduleId < 0) break;
@@ -367,7 +373,7 @@ struct ExcludeButton : TL1105 {
 				m = m->rightExpander.module;
 			}
 		}
-		if (module->mode == STRIP_MODE_LEFTRIGHT || module->mode == STRIP_MODE_LEFT) {
+		if (module->mode == MODE_LEFTRIGHT || module->mode == MODE_LEFT) {
 			Module *m = module;
 			while (true) {
 				if (!m || m->leftExpander.moduleId < 0) break;
@@ -399,7 +405,7 @@ struct ExcludeButton : TL1105 {
 			return;
 
 		std::map<int, Module*> modules;
-		if (module->mode == STRIP_MODE_LEFTRIGHT || module->mode == STRIP_MODE_RIGHT) {
+		if (module->mode == MODE_LEFTRIGHT || module->mode == MODE_RIGHT) {
 			Module *m = module;
 			while (true) {
 				if (!m || m->rightExpander.moduleId < 0) break;
@@ -407,7 +413,7 @@ struct ExcludeButton : TL1105 {
 				m = m->rightExpander.module;
 			}
 		}
-		if (module->mode == STRIP_MODE_LEFTRIGHT || module->mode == STRIP_MODE_LEFT) {
+		if (module->mode == MODE_LEFTRIGHT || module->mode == MODE_LEFT) {
 			Module *m = module;
 			while (true) {
 				if (!m || m->leftExpander.moduleId < 0) break;
@@ -484,10 +490,10 @@ struct ExcludeButton : TL1105 {
 };
 
 struct StripWidget : ModuleWidget {
-	Strip *module;
+	StripModule *module;
 	std::string warningLog;
 
-	StripWidget(Strip *module) {
+	StripWidget(StripModule *module) {
 		this->module = module;
 		setModule(module);
 		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/Strip.svg")));
@@ -495,21 +501,21 @@ struct StripWidget : ModuleWidget {
 		addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addParam(createParamCentered<CKD6>(Vec(22.5f, 67.3f), module, Strip::MODE_PARAM));
+		addParam(createParamCentered<CKD6>(Vec(22.5f, 67.3f), module, StripModule::MODE_PARAM));
 
-		addChild(createLightCentered<SmallLight<GreenLight>>(Vec(16.0f, 111.f), module, Strip::LEFT_LIGHT));
-		addChild(createLightCentered<SmallLight<GreenLight>>(Vec(29.0f, 111.f), module, Strip::RIGHT_LIGHT));
+		addChild(createLightCentered<SmallLight<GreenLight>>(Vec(16.0f, 111.f), module, StripModule::LEFT_LIGHT));
+		addChild(createLightCentered<SmallLight<GreenLight>>(Vec(29.0f, 111.f), module, StripModule::RIGHT_LIGHT));
 
-		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 146.7f), module, Strip::ON_INPUT));
-		addParam(createParamCentered<TL1105>(Vec(22.5f, 170.1f), module, Strip::ON_PARAM));
-		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 210.1f), module, Strip::OFF_INPUT));
-		addParam(createParamCentered<TL1105>(Vec(22.5f, 233.5f), module, Strip::OFF_PARAM));
+		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 146.7f), module, StripModule::ON_INPUT));
+		addParam(createParamCentered<TL1105>(Vec(22.5f, 170.1f), module, StripModule::ON_PARAM));
+		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 210.1f), module, StripModule::OFF_INPUT));
+		addParam(createParamCentered<TL1105>(Vec(22.5f, 233.5f), module, StripModule::OFF_PARAM));
 
-		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 273.1f), module, Strip::RAND_INPUT));
-		addParam(createParamCentered<TL1105>(Vec(22.5f, 296.4f), module, Strip::RAND_PARAM));
+		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 273.1f), module, StripModule::RAND_INPUT));
+		addParam(createParamCentered<TL1105>(Vec(22.5f, 296.4f), module, StripModule::RAND_PARAM));
 
-		addChild(createLightCentered<SmallLight<GreenRedLight>>(Vec(32.3f, 333.7f), module, Strip::EXCLUDE_LIGHT));
-		ExcludeButton *button = createParamCentered<ExcludeButton>(Vec(22.5f, 324.0f), module, Strip::EXCLUDE_PARAM);
+		addChild(createLightCentered<SmallLight<GreenRedLight>>(Vec(32.3f, 333.7f), module, StripModule::EXCLUDE_LIGHT));
+		ExcludeButton *button = createParamCentered<ExcludeButton>(Vec(22.5f, 324.0f), module, StripModule::EXCLUDE_PARAM);
 		button->module = module;
 		addParam(button);
 	}
@@ -520,7 +526,7 @@ struct StripWidget : ModuleWidget {
 	void groupRemove() {
 		// Collect all modules right next to this instance of STRIP.
 		std::vector<int> toBeRemoved;
-		if (module->mode == STRIP_MODE_LEFTRIGHT || module->mode == STRIP_MODE_RIGHT) {
+		if (module->mode == MODE_LEFTRIGHT || module->mode == MODE_RIGHT) {
 			Module *m = module;
 			while (true) {
 				if (!m || m->rightExpander.moduleId < 0) break;
@@ -528,7 +534,7 @@ struct StripWidget : ModuleWidget {
 				m = m->rightExpander.module;
 			}
 		}
-		if (module->mode == STRIP_MODE_LEFTRIGHT || module->mode == STRIP_MODE_LEFT) {
+		if (module->mode == MODE_LEFTRIGHT || module->mode == MODE_LEFT) {
 			Module *m = module;
 			while (true) {
 				if (!m || m->leftExpander.moduleId < 0) break;
@@ -553,7 +559,7 @@ struct StripWidget : ModuleWidget {
 		// Because setModulePosForce will clear the space, but is not certain in which direction the
 		// existing modules will be moved because a new big module will push a small module to its closer 
 		// side. This would result to foreign modules within the loaded strip.
-		if (module->mode == STRIP_MODE_LEFTRIGHT || module->mode == STRIP_MODE_RIGHT) {
+		if (module->mode == MODE_LEFTRIGHT || module->mode == MODE_RIGHT) {
 			float rightWidth = json_real_value(json_object_get(rootJ, "rightWidth"));
 			if (rightWidth > 0.f) {
 				Vec pos = box.pos;
@@ -564,7 +570,7 @@ struct StripWidget : ModuleWidget {
 				APP->scene->rack->setModulePosForce(this, pos);
 			}
 		}
-		if (module->mode == STRIP_MODE_LEFTRIGHT || module->mode == STRIP_MODE_LEFT) {
+		if (module->mode == MODE_LEFTRIGHT || module->mode == MODE_LEFT) {
 			float leftWidth = json_real_value(json_object_get(rootJ, "leftWidth"));
 				if (leftWidth > 0.f) {
 				Vec pos = box.pos;
@@ -642,7 +648,7 @@ struct StripWidget : ModuleWidget {
 	 * @modules maps old module ids the new modules
 	 */
 	void groupFromJson_modules(json_t *rootJ, std::map<int, ModuleWidget*> &modules) {
-		if (module->mode == STRIP_MODE_LEFTRIGHT || module->mode == STRIP_MODE_RIGHT) {
+		if (module->mode == MODE_LEFTRIGHT || module->mode == MODE_RIGHT) {
 			Rect box = this->box;
 			json_t *rightModulesJ = json_object_get(rootJ, "rightModules");
 			if (rightModulesJ) {
@@ -657,7 +663,7 @@ struct StripWidget : ModuleWidget {
 				}
 			}
 		}
-		if (module->mode == STRIP_MODE_LEFTRIGHT || module->mode == STRIP_MODE_LEFT) {
+		if (module->mode == MODE_LEFTRIGHT || module->mode == MODE_LEFT) {
 			Rect box = this->box;
 			json_t *leftModulesJ = json_object_get(rootJ, "leftModules");
 			if (leftModulesJ) {
@@ -723,7 +729,7 @@ struct StripWidget : ModuleWidget {
 			json_t *moduleJ;
 			size_t moduleIndex;
 			json_array_foreach(rightModulesJ, moduleIndex, moduleJ) {
-				if (module->mode == STRIP_MODE_LEFTRIGHT || module->mode == STRIP_MODE_RIGHT) {
+				if (module->mode == MODE_LEFTRIGHT || module->mode == MODE_RIGHT) {
 					groupFromJson_presets_fixMapping(moduleJ, modules);
 					int oldId = json_integer_value(json_object_get(moduleJ, "id"));
 					ModuleWidget *mw = modules[oldId];
@@ -738,7 +744,7 @@ struct StripWidget : ModuleWidget {
 			json_t *moduleJ;
 			size_t moduleIndex;
 			json_array_foreach(leftModulesJ, moduleIndex, moduleJ) {
-				if (module->mode == STRIP_MODE_LEFTRIGHT || module->mode == STRIP_MODE_LEFT) {
+				if (module->mode == MODE_LEFTRIGHT || module->mode == MODE_LEFT) {
 					groupFromJson_presets_fixMapping(moduleJ, modules);
 					int oldId = json_integer_value(json_object_get(moduleJ, "id"));
 					ModuleWidget *mw = modules[oldId];
@@ -803,7 +809,7 @@ struct StripWidget : ModuleWidget {
 		
 		float rightWidth = 0.f;
 		json_t *rightModulesJ = json_array();
-		if (module->mode == STRIP_MODE_LEFTRIGHT || module->mode == STRIP_MODE_RIGHT) {
+		if (module->mode == MODE_LEFTRIGHT || module->mode == MODE_RIGHT) {
 			Module *m = module;
 			while (true) {
 				if (!m || m->rightExpander.moduleId < 0) break;
@@ -819,7 +825,7 @@ struct StripWidget : ModuleWidget {
 
 		float leftWidth = 0.f;
 		json_t *leftModulesJ = json_array();
-		if (module->mode == STRIP_MODE_LEFTRIGHT || module->mode == STRIP_MODE_LEFT) {
+		if (module->mode == MODE_LEFTRIGHT || module->mode == MODE_LEFT) {
 			Module *m = module;
 			while (true) {
 				if (!m || m->leftExpander.moduleId < 0) break;
@@ -1062,7 +1068,7 @@ struct StripWidget : ModuleWidget {
 	}
 
 	void appendContextMenu(Menu *menu) override {
-		Strip *module = dynamic_cast<Strip*>(this->module);
+		StripModule *module = dynamic_cast<StripModule*>(this->module);
 		assert(module);
 
 		struct ManualItem : MenuItem {
@@ -1137,5 +1143,6 @@ struct StripWidget : ModuleWidget {
 	}
 };
 
+} // namespace Strip
 
-Model *modelStrip = createModel<Strip, StripWidget>("Strip");
+Model *modelStrip = createModel<Strip::StripModule, Strip::StripWidget>("Strip");
