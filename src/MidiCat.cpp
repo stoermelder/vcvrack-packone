@@ -536,6 +536,10 @@ struct MidiCatModule : Module {
 			json_t *mapJ;
 			size_t mapIndex;
 			json_array_foreach(mapsJ, mapIndex, mapJ) {
+				if (mapIndex >= MAX_CHANNELS) {
+					continue;
+				}
+
 				json_t *ccJ = json_object_get(mapJ, "cc");
 				json_t *ccModeJ = json_object_get(mapJ, "ccMode");
 				json_t *noteJ = json_object_get(mapJ, "note");
@@ -544,10 +548,9 @@ struct MidiCatModule : Module {
 				json_t *paramIdJ = json_object_get(mapJ, "paramId");
 
 				if (!((ccJ || noteJ) && moduleIdJ && paramIdJ)) {
+					ccs[mapIndex] = -1;
+					notes[mapIndex] = -1;
 					APP->engine->updateParamHandle(&paramHandles[mapIndex], -1, 0, true);
-					continue;
-				}
-				if (mapIndex >= MAX_CHANNELS) {
 					continue;
 				}
 
