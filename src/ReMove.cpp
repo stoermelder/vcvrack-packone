@@ -3,43 +3,62 @@
 #include <thread>
 #include <random>
 
+
+namespace ReMove {
+
 const int REMOVE_MAX_DATA = 64 * 1024;
 const int REMOVE_MAX_SEQ = 8;
 
-const int REMOVE_RECMODE_TOUCH = 0;
-const int REMOVE_RECMODE_MOVE = 1;
-const int REMOVE_RECMODE_MANUAL = 2;
-const int REMOVE_RECMODE_SAMPLEHOLD = 3;
+enum RECMODE {
+    RECMODE_TOUCH = 0,
+    RECMODE_MOVE = 1,
+    RECMODE_MANUAL = 2,
+    RECMODE_SAMPLEHOLD = 3
+};
 
-const int REMOVE_SEQCVMODE_10V = 0;
-const int REMOVE_SEQCVMODE_C4 = 1;
-const int REMOVE_SEQCVMODE_TRIG = 2;
+enum SEQCVMODE {
+    SEQCVMODE_10V = 0,
+    SEQCVMODE_C4 = 1,
+    SEQCVMODE_TRIG = 2
+};
 
-const int REMOVE_SEQCHANGEMODE_RESTART = 0;
-const int REMOVE_SEQCHANGEMODE_OFFSET = 1;
+enum SEQCHANGEMODE {
+    SEQCHANGEMODE_RESTART = 0,
+    SEQCHANGEMODE_OFFSET = 1
+};
 
-const int REMOVE_RUNCVMODE_GATE = 0;
-const int REMOVE_RUNCVMODE_TRIG = 1;
+enum RUNCVMODE {
+    RUNCVMODE_GATE = 0,
+    RUNCVMODE_TRIG = 1
+};
 
-const int REMOVE_RECOUTCVMODE_GATE = 0;
-const int REMOVE_RECOUTCVMODE_TRIG = 1;
+enum RECOUTCVMODE {
+    RECOUTCVMODE_GATE = 0,
+    RECOUTCVMODE_TRIG = 1
+};
 
-const int REMOVE_INCVMODE_UNI = 0;
-const int REMOVE_INCVMODE_BI = 1;
+enum INCVMODE {
+    INCVMODE_UNI = 0,
+    INCVMODE_BI = 1
+};
 
-const int REMOVE_OUTCVMODE_UNI = 0;
-const int REMOVE_OUTCVMODE_BI = 1;
+enum OUTCVMODE {
+    OUTCVMODE_UNI = 0,
+    OUTCVMODE_BI = 1
+};
 
-const int REMOVE_PLAYMODE_LOOP = 0;
-const int REMOVE_PLAYMODE_ONESHOT = 1;
-const int REMOVE_PLAYMODE_PINGPONG = 2;
-const int REMOVE_PLAYMODE_SEQLOOP = 3;
+enum PLAYMODE {
+    PLAYMODE_LOOP = 0,
+    PLAYMODE_ONESHOT = 1,
+    PLAYMODE_PINGPONG = 2,
+    PLAYMODE_SEQLOOP = 3
+};
 
 const int REMOVE_PLAYDIR_FWD = 1;
 const int REMOVE_PLAYDIR_REV = -1;
 
 
-struct ReMove : MapModule<1> {
+struct ReMoveModule : MapModule<1> {
     enum ParamIds {
         RUN_PARAM,
         RESET_PARAM,
@@ -85,23 +104,23 @@ struct ReMove : MapModule<1> {
     int seqLength[REMOVE_MAX_SEQ];
 
     /** [Stored to JSON] mode for SEQ CV input, 0 = 0-10V, 1 = C4-G4, 2 = Trig */
-    int seqCvMode = REMOVE_SEQCVMODE_10V;
+    SEQCVMODE seqCvMode = SEQCVMODE_10V;
     /** [Stored to JSON] behaviour when changing sequences during playback */
-    int seqChangeMode = REMOVE_SEQCHANGEMODE_RESTART;
+    SEQCHANGEMODE seqChangeMode = SEQCHANGEMODE_RESTART;
 
     /** [Stored to JSON] mode for RUN port */
-    int runCvMode = REMOVE_RUNCVMODE_GATE;
+    RUNCVMODE runCvMode = RUNCVMODE_GATE;
 
     /** [Stored to JSON] mode for REC-in */
-    int recOutCvMode = REMOVE_RECOUTCVMODE_GATE;
+    RECOUTCVMODE recOutCvMode = RECOUTCVMODE_GATE;
 
     /** [Stored to JSON] usage-mode for IN input */
-    int inCvMode = REMOVE_INCVMODE_UNI;
+    INCVMODE inCvMode = INCVMODE_UNI;
     /** [Stored to JSON] usage-mode for OUT output*/
-    int outCvMode = REMOVE_OUTCVMODE_UNI;
+    OUTCVMODE outCvMode = OUTCVMODE_UNI;
 
     /** [Stored to JSON] recording mode */
-    int recMode = REMOVE_RECMODE_TOUCH;
+    RECMODE recMode = RECMODE_TOUCH;
     bool recTouched = false;
     float recTouch;
 
@@ -111,7 +130,7 @@ struct ReMove : MapModule<1> {
     dsp::Timer sampleTimer;
 
     /** [Stored to JSON] mode for playback */
-    int playMode = REMOVE_PLAYMODE_LOOP;
+    PLAYMODE playMode = PLAYMODE_LOOP;
     int playDir = REMOVE_PLAYDIR_FWD;
 
     /** [Stored to JSON] state of playback (for button-press manually) */
@@ -135,7 +154,7 @@ struct ReMove : MapModule<1> {
     /** history-item when starting recording */
     history::ModuleChange *recChangeHistory = NULL;
 
-    ReMove() {
+    ReMoveModule() {
         config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS); 
         configParam(SEQP_PARAM, 0.0f, 1.0f, 0.0f, "Previous sequence");
         configParam(SEQN_PARAM, 0.0f, 1.0f, 0.0f, "Next sequence");
@@ -151,7 +170,7 @@ struct ReMove : MapModule<1> {
         onReset();
     }
 
-    ~ReMove() {
+    ~ReMoveModule() {
         delete[] seqData;
     }
 
@@ -180,7 +199,7 @@ struct ReMove : MapModule<1> {
                 isRecording ^= true;
                 if (isRecording) {
                     startRecording();
-                    if (recMode == REMOVE_RECMODE_MANUAL) recOutCvPulse.trigger();
+                    if (recMode == RECMODE_MANUAL) recOutCvPulse.trigger();
                 } 
                 else {
                     stopRecording();
@@ -191,7 +210,7 @@ struct ReMove : MapModule<1> {
         if (isRecording) {
             bool doRecord = true;
 
-            if (recMode == REMOVE_RECMODE_TOUCH && !recTouched) {
+            if (recMode == RECMODE_TOUCH && !recTouched) {
                 // check if mouse has been pressed on parameter
                 Widget *w = APP->event->getDraggedWidget();
                 if (w != NULL && w != lastParamWidget) {
@@ -212,7 +231,7 @@ struct ReMove : MapModule<1> {
                 }
             }
 
-            if (recMode == REMOVE_RECMODE_MOVE && !recTouched) {
+            if (recMode == RECMODE_MOVE && !recTouched) {
                 // check if param value has changed
                 if (getValue() != recTouch) {
                     recTouched = true;
@@ -227,10 +246,10 @@ struct ReMove : MapModule<1> {
                 if (sampleTimer.process(args.sampleTime) > sampleRate) {
                     // check if mouse button has been released
                     if (APP->event->getDraggedWidget() == NULL) {
-                        if (recMode == REMOVE_RECMODE_TOUCH) {
+                        if (recMode == RECMODE_TOUCH) {
                             stopRecording();
                         }
-                        if (recMode == REMOVE_RECMODE_MOVE) {
+                        if (recMode == RECMODE_MOVE) {
                             stopRecording();
                             // trim unchanged values from the end
                             int i = seqLow + seqLength[seq] - 1;
@@ -253,7 +272,7 @@ struct ReMove : MapModule<1> {
                         if (dataPtr == seqHigh) {
                             stopRecording();
                         }
-                        if (recMode == REMOVE_RECMODE_SAMPLEHOLD) {
+                        if (recMode == RECMODE_SAMPLEHOLD) {
                             seqData[dataPtr] = seqData[dataPtr - 1];
                             seqLength[seq]++;
                             stopRecording();
@@ -263,7 +282,7 @@ struct ReMove : MapModule<1> {
                     sampleTimer.reset();
                 }
 
-                if (recOutCvMode == REMOVE_RECOUTCVMODE_GATE)
+                if (recOutCvMode == RECOUTCVMODE_GATE)
                     outputs[REC_OUTPUT].setVoltage(10);
             }
         }
@@ -281,13 +300,13 @@ struct ReMove : MapModule<1> {
             // SEQ#-input
             if (inputs[SEQ_INPUT].isConnected()) {
                 switch (seqCvMode) {
-                    case REMOVE_SEQCVMODE_10V:
+                    case SEQCVMODE_10V:
                         seqSet(floor(rescale(inputs[SEQ_INPUT].getVoltage(), 0.f, 10.f, 0, seqCount)));
                         break;
-                    case REMOVE_SEQCVMODE_C4:
+                    case SEQCVMODE_C4:
                         seqSet(round(clamp(inputs[SEQ_INPUT].getVoltage() * 12.f, 0.f, REMOVE_MAX_SEQ - 1.f)));
                         break;
-                    case REMOVE_SEQCVMODE_TRIG:
+                    case SEQCVMODE_TRIG:
                         if (seqCvTrigger.process(inputs[SEQ_INPUT].getVoltage()))
                             seqNext();
                         break;
@@ -311,10 +330,10 @@ struct ReMove : MapModule<1> {
             // RUN-input
             if (inputs[RUN_INPUT].isConnected()) {
                 switch (runCvMode) {
-                    case REMOVE_RUNCVMODE_GATE:
+                    case RUNCVMODE_GATE:
                         isPlaying = (inputs[RUN_INPUT].getVoltage() >= 1.f);
                         break;
-                    case REMOVE_RUNCVMODE_TRIG:
+                    case RUNCVMODE_TRIG:
                         if (runCvTrigger.process(inputs[RUN_INPUT].getVoltage()))
                             isPlaying = !isPlaying;
                         break;
@@ -347,13 +366,13 @@ struct ReMove : MapModule<1> {
                         setValue(v, paramQuantity);
                         if (dataPtr == seqLow + seqLength[seq] && playDir == REMOVE_PLAYDIR_FWD) {
                             switch (playMode) {
-                                case REMOVE_PLAYMODE_LOOP: 
+                                case PLAYMODE_LOOP: 
                                     dataPtr = seqLow; break;
-                                case REMOVE_PLAYMODE_ONESHOT:      // stay on last value
+                                case PLAYMODE_ONESHOT:      // stay on last value
                                     dataPtr--; break;
-                                case REMOVE_PLAYMODE_PINGPONG:     // reverse direction
+                                case PLAYMODE_PINGPONG:     // reverse direction
                                     dataPtr--; playDir = REMOVE_PLAYDIR_REV; break;
-                                case REMOVE_PLAYMODE_SEQLOOP:
+                                case PLAYMODE_SEQLOOP:
                                     seqNext(true); break;
                             }
                         }
@@ -372,7 +391,7 @@ struct ReMove : MapModule<1> {
         }
 
         // REC-out in trigger mode
-        if (recOutCvMode == REMOVE_RECOUTCVMODE_TRIG)
+        if (recOutCvMode == RECOUTCVMODE_TRIG)
             outputs[REC_OUTPUT].setVoltage(recOutCvPulse.process(args.sampleTime) ? 10.f : 0.f);
 
         // Set channel lights infrequently
@@ -404,10 +423,10 @@ struct ReMove : MapModule<1> {
         float v = 0.f;
         if (inputs[CV_INPUT].isConnected()) {
             switch (inCvMode) {
-                case REMOVE_INCVMODE_UNI:
+                case INCVMODE_UNI:
                     v = rescale(clamp(inputs[CV_INPUT].getVoltage(), 0.f, 10.f), 0.f, 10.f, 0.f, 1.f);
                     break;
-                case REMOVE_INCVMODE_BI:
+                case INCVMODE_BI:
                     v = rescale(clamp(inputs[CV_INPUT].getVoltage(), -5.f, 5.f), -5.f, 5.f, 0.f, 1.f);
                     break;
             }
@@ -426,10 +445,10 @@ struct ReMove : MapModule<1> {
         if (paramQuantity) {
             paramQuantity->setScaledValue(v);
         }
-        if (outCvMode == REMOVE_OUTCVMODE_UNI && outputs[CV_OUTPUT].isConnected()) {
+        if (outCvMode == OUTCVMODE_UNI && outputs[CV_OUTPUT].isConnected()) {
             outputs[CV_OUTPUT].setVoltage(rescale(v, 0.f, 1.f, 0.f, 10.f));
         }
-        else if (outCvMode == REMOVE_OUTCVMODE_BI && outputs[CV_OUTPUT].isConnected()) {
+        else if (outCvMode == OUTCVMODE_BI && outputs[CV_OUTPUT].isConnected()) {
             outputs[CV_OUTPUT].setVoltage(rescale(v, 0.f, 1.f, -5.f, 5.f));
         }
     }
@@ -502,13 +521,13 @@ struct ReMove : MapModule<1> {
         seqLow = seq * s;
         seqHigh =  (seq + 1) * s;
         switch (seqChangeMode) {
-            case REMOVE_SEQCHANGEMODE_RESTART:
+            case SEQCHANGEMODE_RESTART:
                 dataPtr = seqLow;
                 playDir = REMOVE_PLAYDIR_FWD;
                 sampleTimer.reset();
                 valueFilters[0].reset();
                 break;
-            case REMOVE_SEQCHANGEMODE_OFFSET:
+            case SEQCHANGEMODE_OFFSET:
                 dataPtr = seqLength[seq] > 0 ? seqLow + (dataPtr % s) % seqLength[seq] : seqLow;
                 break;
         }
@@ -591,21 +610,21 @@ struct ReMove : MapModule<1> {
         json_t *seqJ = json_object_get(rec0J, "seq");
         if (seqJ) seq = json_integer_value(seqJ);
         json_t *seqCvModeJ = json_object_get(rec0J, "seqCvMode");
-        if (seqCvModeJ) seqCvMode = json_integer_value(seqCvModeJ);
+        if (seqCvModeJ) seqCvMode = (SEQCVMODE)json_integer_value(seqCvModeJ);
         json_t *seqChangeModeJ = json_object_get(rec0J, "seqChangeMode");
-        if (seqChangeModeJ) seqChangeMode = json_integer_value(seqChangeModeJ);
+        if (seqChangeModeJ) seqChangeMode = (SEQCHANGEMODE)json_integer_value(seqChangeModeJ);
         json_t *runCvModeJ = json_object_get(rec0J, "runCvMode");
-        if (runCvModeJ) runCvMode = json_integer_value(runCvModeJ);
+        if (runCvModeJ) runCvMode = (RUNCVMODE)json_integer_value(runCvModeJ);
         json_t *recOutCvModeJ = json_object_get(rec0J, "recOutCvMode");
-        if (recOutCvModeJ) recOutCvMode = json_integer_value(recOutCvModeJ);
+        if (recOutCvModeJ) recOutCvMode = (RECOUTCVMODE)json_integer_value(recOutCvModeJ);
         json_t *inCvModeJ = json_object_get(rec0J, "inCvMode");
-        if (inCvModeJ) inCvMode = json_integer_value(inCvModeJ);
+        if (inCvModeJ) inCvMode = (INCVMODE)json_integer_value(inCvModeJ);
         json_t *outCvModeJ = json_object_get(rec0J, "outCvMode");
-        if (outCvModeJ) outCvMode = json_integer_value(outCvModeJ); 
+        if (outCvModeJ) outCvMode = (OUTCVMODE)json_integer_value(outCvModeJ); 
         json_t *recModeJ = json_object_get(rec0J, "recMode");
-        if (recModeJ) recMode = json_integer_value(recModeJ);
+        if (recModeJ) recMode = (RECMODE)json_integer_value(recModeJ);
         json_t *playModeJ = json_object_get(rec0J, "playMode");
-        if (playModeJ) playMode = json_integer_value(playModeJ);
+        if (playModeJ) playMode = (PLAYMODE)json_integer_value(playModeJ);
         json_t *sampleRateJ = json_object_get(rec0J, "sampleRate");
         if (sampleRateJ) sampleRate = json_real_value(sampleRateJ);
         json_t *isPlayingJ = json_object_get(rec0J, "isPlaying");
@@ -687,7 +706,7 @@ struct ReMove : MapModule<1> {
 
 
 struct ReMoveDisplay : TransparentWidget {
-    ReMove *module;
+    ReMoveModule *module;
     std::shared_ptr<Font> font;
 
     ReMoveDisplay() {
@@ -763,10 +782,10 @@ struct ReMoveDisplay : TransparentWidget {
 
 
 
-struct ReMoveSeqCvModeMenuItem : MenuItem {
-    struct ReMoveSeqCvModeItem : MenuItem {
-        ReMove *module;
-        int seqCvMode;
+struct SeqCvModeMenuItem : MenuItem {
+    struct SeqCvModeItem : MenuItem {
+        ReMoveModule *module;
+        SEQCVMODE seqCvMode;
 
         void onAction(const event::Action &e) override {
             if (module->isRecording) return;
@@ -779,22 +798,21 @@ struct ReMoveSeqCvModeMenuItem : MenuItem {
         }
     };
     
-    ReMove *module;
+    ReMoveModule *module;
     Menu *createChildMenu() override {
         Menu *menu = new Menu;
-        std::vector<std::string> names = {"0..10V", "C4-G4", "Trigger"};
-        for (size_t i = 0; i < names.size(); i++) {
-            menu->addChild(construct<ReMoveSeqCvModeItem>(&MenuItem::text, names[i], &ReMoveSeqCvModeItem::module, module, &ReMoveSeqCvModeItem::seqCvMode, i));
-        }
+        menu->addChild(construct<SeqCvModeItem>(&MenuItem::text, "0..10V", &SeqCvModeItem::module, module, &SeqCvModeItem::seqCvMode, SEQCVMODE_10V));
+        menu->addChild(construct<SeqCvModeItem>(&MenuItem::text, "C4-G4", &SeqCvModeItem::module, module, &SeqCvModeItem::seqCvMode, SEQCVMODE_C4));
+        menu->addChild(construct<SeqCvModeItem>(&MenuItem::text, "Trigger", &SeqCvModeItem::module, module, &SeqCvModeItem::seqCvMode, SEQCVMODE_TRIG));
         return menu;
     }
 };
 
 
-struct ReMoveRunCvModeMenuItem : MenuItem {
-    struct ReMoveRunCvModeItem : MenuItem {
-        ReMove *module;
-        int runCvMode;
+struct RunCvModeMenuItem : MenuItem {
+    struct RunCvModeItem : MenuItem {
+        ReMoveModule *module;
+        RUNCVMODE runCvMode;
 
         void onAction(const event::Action &e) override {
             module->runCvMode = runCvMode;
@@ -806,19 +824,19 @@ struct ReMoveRunCvModeMenuItem : MenuItem {
         }
     };
     
-    ReMove *module;
+    ReMoveModule *module;
     Menu *createChildMenu() override {
         Menu *menu = new Menu;
-        menu->addChild(construct<ReMoveRunCvModeItem>(&MenuItem::text, "Gate", &ReMoveRunCvModeItem::module, module, &ReMoveRunCvModeItem::runCvMode, REMOVE_RUNCVMODE_GATE));
-        menu->addChild(construct<ReMoveRunCvModeItem>(&MenuItem::text, "Trigger", &ReMoveRunCvModeItem::module, module, &ReMoveRunCvModeItem::runCvMode, REMOVE_RUNCVMODE_TRIG));
+        menu->addChild(construct<RunCvModeItem>(&MenuItem::text, "Gate", &RunCvModeItem::module, module, &RunCvModeItem::runCvMode, RUNCVMODE_GATE));
+        menu->addChild(construct<RunCvModeItem>(&MenuItem::text, "Trigger", &RunCvModeItem::module, module, &RunCvModeItem::runCvMode, RUNCVMODE_TRIG));
         return menu;
     }
 };
 
-struct ReMoveRecOutCvModeMenuItem : MenuItem {
-    struct ReMoveRecOutCvModeItem : MenuItem {
-        ReMove *module;
-        int recOutCvMode;
+struct RecOutCvModeMenuItem : MenuItem {
+    struct RecOutCvModeItem : MenuItem {
+        ReMoveModule *module;
+        RECOUTCVMODE recOutCvMode;
 
         void onAction(const event::Action &e) override {
             if (module->isRecording) return;
@@ -831,39 +849,39 @@ struct ReMoveRecOutCvModeMenuItem : MenuItem {
         }
     };
     
-    ReMove *module;
+    ReMoveModule *module;
     Menu *createChildMenu() override {
         Menu *menu = new Menu;
-        menu->addChild(construct<ReMoveRecOutCvModeItem>(&MenuItem::text, "Gate", &ReMoveRecOutCvModeItem::module, module, &ReMoveRecOutCvModeItem::recOutCvMode, REMOVE_RECOUTCVMODE_GATE));
-        menu->addChild(construct<ReMoveRecOutCvModeItem>(&MenuItem::text, "Trigger", &ReMoveRecOutCvModeItem::module, module, &ReMoveRecOutCvModeItem::recOutCvMode, REMOVE_RECOUTCVMODE_TRIG));
+        menu->addChild(construct<RecOutCvModeItem>(&MenuItem::text, "Gate", &RecOutCvModeItem::module, module, &RecOutCvModeItem::recOutCvMode, RECOUTCVMODE_GATE));
+        menu->addChild(construct<RecOutCvModeItem>(&MenuItem::text, "Trigger", &RecOutCvModeItem::module, module, &RecOutCvModeItem::recOutCvMode, RECOUTCVMODE_TRIG));
         return menu;
     }
 };
 
 struct InCvModeMenuItem : MenuItem {
-    ReMove *module;
+    ReMoveModule *module;
 
     void onAction(const event::Action &e) override {
         if (module->isRecording) return;
-        module->inCvMode = module->inCvMode == REMOVE_INCVMODE_UNI ? REMOVE_INCVMODE_BI : REMOVE_INCVMODE_UNI;
+        module->inCvMode = module->inCvMode == INCVMODE_UNI ? INCVMODE_BI : INCVMODE_UNI;
     }
 
     void step() override {
-        rightText = module->inCvMode == REMOVE_INCVMODE_UNI ? "0V..10V" : "-5V..5V";
+        rightText = module->inCvMode == INCVMODE_UNI ? "0V..10V" : "-5V..5V";
         MenuItem::step();
     }
 };
 
 
 struct OutCvModeMenuItem : MenuItem {
-    ReMove *module;
+    ReMoveModule *module;
 
     void onAction(const event::Action &e) override {
-        module->outCvMode = module->outCvMode == REMOVE_OUTCVMODE_UNI ? REMOVE_OUTCVMODE_BI : REMOVE_OUTCVMODE_UNI;
+        module->outCvMode = module->outCvMode == OUTCVMODE_UNI ? OUTCVMODE_BI : OUTCVMODE_UNI;
     }
 
     void step() override {
-        rightText = module->outCvMode == REMOVE_OUTCVMODE_UNI ? "0V..10V" : "-5V..5V";
+        rightText = module->outCvMode == OUTCVMODE_UNI ? "0V..10V" : "-5V..5V";
         MenuItem::step();
     }
 };
@@ -871,7 +889,7 @@ struct OutCvModeMenuItem : MenuItem {
 
 struct SampleRateMenuItem : MenuItem {
     struct SampleRateItem : MenuItem {
-        ReMove *module;
+        ReMoveModule *module;
         float sampleRate;
 
         void onAction(const event::Action &e) override {
@@ -887,7 +905,7 @@ struct SampleRateMenuItem : MenuItem {
         }
     };
     
-    ReMove *module;
+    ReMoveModule *module;
     Menu *createChildMenu() override {
         Menu *menu = new Menu;
         menu->addChild(construct<SampleRateItem>(&MenuItem::text, "15Hz", &SampleRateItem::module, module, &SampleRateItem::sampleRate, 1.f/15.f));
@@ -905,7 +923,7 @@ struct SampleRateMenuItem : MenuItem {
 
 struct SeqCountMenuItem : MenuItem {
     struct SeqCountItem : MenuItem {
-        ReMove *module;
+        ReMoveModule *module;
         int seqCount;
 
         void onAction(const event::Action &e) override {
@@ -919,7 +937,7 @@ struct SeqCountMenuItem : MenuItem {
         }
     };
     
-    ReMove *module;
+    ReMoveModule *module;
     Menu *createChildMenu() override {
         Menu *menu = new Menu;
         std::vector<std::string> names = {"1", "2", "4", "8"};
@@ -933,8 +951,8 @@ struct SeqCountMenuItem : MenuItem {
 
 struct SeqChangeModeMenuItem : MenuItem {
     struct SeqChangeModeItem : MenuItem {
-        ReMove *module;
-        int seqChangeMode;
+        ReMoveModule *module;
+        SEQCHANGEMODE seqChangeMode;
 
         void onAction(const event::Action &e) override {
             module->seqChangeMode = seqChangeMode;
@@ -946,11 +964,11 @@ struct SeqChangeModeMenuItem : MenuItem {
         }
     };
     
-    ReMove *module;
+    ReMoveModule *module;
     Menu *createChildMenu() override {
         Menu *menu = new Menu;
-        menu->addChild(construct<SeqChangeModeItem>(&MenuItem::text, "Restart", &SeqChangeModeItem::module, module, &SeqChangeModeItem::seqChangeMode, REMOVE_SEQCHANGEMODE_RESTART));
-        menu->addChild(construct<SeqChangeModeItem>(&MenuItem::text, "Offset", &SeqChangeModeItem::module, module, &SeqChangeModeItem::seqChangeMode, REMOVE_SEQCHANGEMODE_OFFSET));
+        menu->addChild(construct<SeqChangeModeItem>(&MenuItem::text, "Restart", &SeqChangeModeItem::module, module, &SeqChangeModeItem::seqChangeMode, SEQCHANGEMODE_RESTART));
+        menu->addChild(construct<SeqChangeModeItem>(&MenuItem::text, "Offset", &SeqChangeModeItem::module, module, &SeqChangeModeItem::seqChangeMode, SEQCHANGEMODE_OFFSET));
         return menu;
     }
 };
@@ -958,8 +976,8 @@ struct SeqChangeModeMenuItem : MenuItem {
 
 struct RecordModeMenuItem : MenuItem {
     struct RecordModeItem : MenuItem {
-        ReMove *module;
-        int recMode;
+        ReMoveModule *module;
+        RECMODE recMode;
 
         void onAction(const event::Action &e) override {
             if (module->isRecording) return;
@@ -972,13 +990,13 @@ struct RecordModeMenuItem : MenuItem {
         }
     };
     
-    ReMove *module;
+    ReMoveModule *module;
     Menu *createChildMenu() override {
         Menu *menu = new Menu;
-        menu->addChild(construct<RecordModeItem>(&MenuItem::text, "Touch", &RecordModeItem::module, module, &RecordModeItem::recMode, REMOVE_RECMODE_TOUCH));
-        menu->addChild(construct<RecordModeItem>(&MenuItem::text, "Move", &RecordModeItem::module, module, &RecordModeItem::recMode, REMOVE_RECMODE_MOVE));
-        menu->addChild(construct<RecordModeItem>(&MenuItem::text, "Manual", &RecordModeItem::module, module, &RecordModeItem::recMode, REMOVE_RECMODE_MANUAL));
-        menu->addChild(construct<RecordModeItem>(&MenuItem::text, "Sample & Hold", &RecordModeItem::module, module, &RecordModeItem::recMode, REMOVE_RECMODE_SAMPLEHOLD));
+        menu->addChild(construct<RecordModeItem>(&MenuItem::text, "Touch", &RecordModeItem::module, module, &RecordModeItem::recMode, RECMODE_TOUCH));
+        menu->addChild(construct<RecordModeItem>(&MenuItem::text, "Move", &RecordModeItem::module, module, &RecordModeItem::recMode, RECMODE_MOVE));
+        menu->addChild(construct<RecordModeItem>(&MenuItem::text, "Manual", &RecordModeItem::module, module, &RecordModeItem::recMode, RECMODE_MANUAL));
+        menu->addChild(construct<RecordModeItem>(&MenuItem::text, "Sample & Hold", &RecordModeItem::module, module, &RecordModeItem::recMode, RECMODE_SAMPLEHOLD));
         return menu;
     }
 };
@@ -986,8 +1004,8 @@ struct RecordModeMenuItem : MenuItem {
 
 struct PlayModeMenuItem : MenuItem {
     struct PlayModeItem : MenuItem {
-        ReMove *module;
-        int playMode;
+        ReMoveModule *module;
+        PLAYMODE playMode;
 
         void onAction(const event::Action &e) override {
             module->playMode = playMode;
@@ -999,13 +1017,13 @@ struct PlayModeMenuItem : MenuItem {
         }
     };
     
-    ReMove *module;
+    ReMoveModule *module;
     Menu *createChildMenu() override {
         Menu *menu = new Menu;
-        menu->addChild(construct<PlayModeItem>(&MenuItem::text, "Loop", &PlayModeItem::module, module, &PlayModeItem::playMode, REMOVE_PLAYMODE_LOOP));
-        menu->addChild(construct<PlayModeItem>(&MenuItem::text, "Oneshot", &PlayModeItem::module, module, &PlayModeItem::playMode, REMOVE_PLAYMODE_ONESHOT));
-        menu->addChild(construct<PlayModeItem>(&MenuItem::text, "Ping Pong", &PlayModeItem::module, module, &PlayModeItem::playMode, REMOVE_PLAYMODE_PINGPONG));
-        menu->addChild(construct<PlayModeItem>(&MenuItem::text, "Loop Sequences", &PlayModeItem::module, module, &PlayModeItem::playMode, REMOVE_PLAYMODE_SEQLOOP));
+        menu->addChild(construct<PlayModeItem>(&MenuItem::text, "Loop", &PlayModeItem::module, module, &PlayModeItem::playMode, PLAYMODE_LOOP));
+        menu->addChild(construct<PlayModeItem>(&MenuItem::text, "Oneshot", &PlayModeItem::module, module, &PlayModeItem::playMode, PLAYMODE_ONESHOT));
+        menu->addChild(construct<PlayModeItem>(&MenuItem::text, "Ping Pong", &PlayModeItem::module, module, &PlayModeItem::playMode, PLAYMODE_PINGPONG));
+        menu->addChild(construct<PlayModeItem>(&MenuItem::text, "Loop Sequences", &PlayModeItem::module, module, &PlayModeItem::playMode, PLAYMODE_SEQLOOP));
         return menu;
     }
 };
@@ -1068,46 +1086,46 @@ struct RecLight : RedLight {
 
 
 struct ReMoveWidget : ModuleWidget {
-    ReMoveWidget(ReMove *module) {	
+    ReMoveWidget(ReMoveModule *module) {	
         setModule(module);
         setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/ReMove.svg")));
 
         addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, 0)));
         addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-        addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(19.5f, 113.8f), module, ReMove::SEQ_LIGHT + 0));
-        addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(26.8f, 113.8f), module, ReMove::SEQ_LIGHT + 1));
-        addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(34.1f, 113.8f), module, ReMove::SEQ_LIGHT + 2));
-        addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(41.4f, 113.8f), module, ReMove::SEQ_LIGHT + 3));
-        addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(48.6f, 113.8f), module, ReMove::SEQ_LIGHT + 4));
-        addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(55.9f, 113.8f), module, ReMove::SEQ_LIGHT + 5));
-        addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(63.2f, 113.8f), module, ReMove::SEQ_LIGHT + 6));
-        addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(70.5f, 113.8f), module, ReMove::SEQ_LIGHT + 7));
+        addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(19.5f, 113.8f), module, ReMoveModule::SEQ_LIGHT + 0));
+        addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(26.8f, 113.8f), module, ReMoveModule::SEQ_LIGHT + 1));
+        addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(34.1f, 113.8f), module, ReMoveModule::SEQ_LIGHT + 2));
+        addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(41.4f, 113.8f), module, ReMoveModule::SEQ_LIGHT + 3));
+        addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(48.6f, 113.8f), module, ReMoveModule::SEQ_LIGHT + 4));
+        addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(55.9f, 113.8f), module, ReMoveModule::SEQ_LIGHT + 5));
+        addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(63.2f, 113.8f), module, ReMoveModule::SEQ_LIGHT + 6));
+        addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(70.5f, 113.8f), module, ReMoveModule::SEQ_LIGHT + 7));
 
-        addInput(createInputCentered<PJ301MPort>(Vec(68.7f, 243.3f), module, ReMove::RUN_INPUT));
-        addParam(createParamCentered<TL1105>(Vec(45.f, 230.3f), module, ReMove::RUN_PARAM));
-        addChild(createLightCentered<SmallLight<GreenRedLight>>(Vec(76.7f, 260.5f), module, ReMove::RUN_LIGHT));
+        addInput(createInputCentered<PJ301MPort>(Vec(68.7f, 243.3f), module, ReMoveModule::RUN_INPUT));
+        addParam(createParamCentered<TL1105>(Vec(45.f, 230.3f), module, ReMoveModule::RUN_PARAM));
+        addChild(createLightCentered<SmallLight<GreenRedLight>>(Vec(76.7f, 260.5f), module, ReMoveModule::RUN_LIGHT));
 
-        addInput(createInputCentered<PJ301MPort>(Vec(21.1f, 243.3f), module, ReMove::RESET_INPUT));
-        addParam(createParamCentered<TL1105>(Vec(45.f, 256.3f), module, ReMove::RESET_PARAM));
-        addChild(createLightCentered<SmallLight<GreenRedLight>>(Vec(13.1f, 260.5f), module, ReMove::RESET_LIGHT));
+        addInput(createInputCentered<PJ301MPort>(Vec(21.1f, 243.3f), module, ReMoveModule::RESET_INPUT));
+        addParam(createParamCentered<TL1105>(Vec(45.f, 256.3f), module, ReMoveModule::RESET_PARAM));
+        addChild(createLightCentered<SmallLight<GreenRedLight>>(Vec(13.1f, 260.5f), module, ReMoveModule::RESET_LIGHT));
 
-        addInput(createInputCentered<PJ301MPort>(Vec(68.7f, 200.1f), module, ReMove::PHASE_INPUT));
+        addInput(createInputCentered<PJ301MPort>(Vec(68.7f, 200.1f), module, ReMoveModule::PHASE_INPUT));
 
-        addInput(createInputCentered<PJ301MPort>(Vec(21.1f, 336.8f), module, ReMove::CV_INPUT));      
-        addOutput(createOutputCentered<PJ301MPort>(Vec(68.7f, 336.8f), module, ReMove::CV_OUTPUT));
+        addInput(createInputCentered<PJ301MPort>(Vec(21.1f, 336.8f), module, ReMoveModule::CV_INPUT));      
+        addOutput(createOutputCentered<PJ301MPort>(Vec(68.7f, 336.8f), module, ReMoveModule::CV_OUTPUT));
 
-        addInput(createInputCentered<PJ301MPort>(Vec(21.1f, 294.1f), module, ReMove::REC_INPUT));      
-        addOutput(createOutputCentered<PJ301MPort>(Vec(68.7f, 294.1f), module, ReMove::REC_OUTPUT));
+        addInput(createInputCentered<PJ301MPort>(Vec(21.1f, 294.1f), module, ReMoveModule::REC_INPUT));      
+        addOutput(createOutputCentered<PJ301MPort>(Vec(68.7f, 294.1f), module, ReMoveModule::REC_OUTPUT));
 
-        addParam(createParamCentered<RecButton>(Vec(44.8f, 151.4f), module, ReMove::REC_PARAM));
-        addChild(createLightCentered<RecLight>(Vec(44.8f, 151.4f), module, ReMove::REC_LIGHT));
+        addParam(createParamCentered<RecButton>(Vec(44.8f, 151.4f), module, ReMoveModule::REC_PARAM));
+        addChild(createLightCentered<RecLight>(Vec(44.8f, 151.4f), module, ReMoveModule::REC_LIGHT));
 
-        addInput(createInputCentered<PJ301MPort>(Vec(21.1f, 200.1f), module, ReMove::SEQ_INPUT));
-        addParam(createParamCentered<TL1105>(Vec(21.1f, 131.9f), module, ReMove::SEQP_PARAM));
-        addParam(createParamCentered<TL1105>(Vec(68.7f, 131.9), module, ReMove::SEQN_PARAM));
+        addInput(createInputCentered<PJ301MPort>(Vec(21.1f, 200.1f), module, ReMoveModule::SEQ_INPUT));
+        addParam(createParamCentered<TL1105>(Vec(21.1f, 131.9f), module, ReMoveModule::SEQP_PARAM));
+        addParam(createParamCentered<TL1105>(Vec(68.7f, 131.9), module, ReMoveModule::SEQN_PARAM));
 
-        MapModuleDisplay<1, ReMove> *mapWidget = createWidget<MapModuleDisplay<1, ReMove>>(Vec(6.8f, 36.4f));
+        MapModuleDisplay<1, ReMoveModule> *mapWidget = createWidget<MapModuleDisplay<1, ReMoveModule>>(Vec(6.8f, 36.4f));
         mapWidget->box.size = Vec(76.2f, 23.f);
         mapWidget->setModule(module);
         addChild(mapWidget);
@@ -1120,7 +1138,7 @@ struct ReMoveWidget : ModuleWidget {
     }
 
     void appendContextMenu(Menu *menu) override {
-        ReMove *module = dynamic_cast<ReMove*>(this->module);
+        ReMoveModule *module = dynamic_cast<ReMoveModule*>(this->module);
         assert(module);
 
         struct ManualItem : MenuItem {
@@ -1155,15 +1173,15 @@ struct ReMoveWidget : ModuleWidget {
 
         menu->addChild(new MenuSeparator());
 
-        ReMoveSeqCvModeMenuItem *seqCvModeMenuItem = construct<ReMoveSeqCvModeMenuItem>(&MenuItem::text, "Port SEQ# mode", &ReMoveSeqCvModeMenuItem::module, module);
+        SeqCvModeMenuItem *seqCvModeMenuItem = construct<SeqCvModeMenuItem>(&MenuItem::text, "Port SEQ# mode", &SeqCvModeMenuItem::module, module);
         seqCvModeMenuItem->rightText = RIGHT_ARROW;
         menu->addChild(seqCvModeMenuItem);
 
-        ReMoveRunCvModeMenuItem *runCvModeMenuItem = construct<ReMoveRunCvModeMenuItem>(&MenuItem::text, "Port RUN mode", &ReMoveRunCvModeMenuItem::module, module);
+        RunCvModeMenuItem *runCvModeMenuItem = construct<RunCvModeMenuItem>(&MenuItem::text, "Port RUN mode", &RunCvModeMenuItem::module, module);
         runCvModeMenuItem->rightText = RIGHT_ARROW;
         menu->addChild(runCvModeMenuItem);
 
-        ReMoveRecOutCvModeMenuItem *recOutCvModeMenuItem = construct<ReMoveRecOutCvModeMenuItem>(&MenuItem::text, "Port REC-out mode", &ReMoveRecOutCvModeMenuItem::module, module);
+        RecOutCvModeMenuItem *recOutCvModeMenuItem = construct<RecOutCvModeMenuItem>(&MenuItem::text, "Port REC-out mode", &RecOutCvModeMenuItem::module, module);
         recOutCvModeMenuItem->rightText = RIGHT_ARROW;
         menu->addChild(recOutCvModeMenuItem);
 
@@ -1177,5 +1195,6 @@ struct ReMoveWidget : ModuleWidget {
     }
 };
 
+} // namespace ReMove
 
-Model *modelReMoveLite = createModel<ReMove, ReMoveWidget>("ReMoveLite");
+Model *modelReMoveLite = createModel<ReMove::ReMoveModule, ReMove::ReMoveWidget>("ReMoveLite");
