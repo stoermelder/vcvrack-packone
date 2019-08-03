@@ -134,6 +134,7 @@ struct StripModule : Module {
 	/** 
 	 * Disables/enables all modules of the current strip.
 	 * To be called from engine-thread only.
+	 * TODO: use worker thread instead to get thread-safety
 	 */
 	void groupDisable(bool val) {
 		if (lastState == val) return;
@@ -173,6 +174,7 @@ struct StripModule : Module {
 	/** 
 	 * Randomizes all modules of the current strip.
 	 * To be called from engine-thread only.
+	 * TODO: use worker thread instead to get thread-safety
 	 */
 	void groupRandomize() {
 		// Aquire excludeMutex to get get exclusive access to excludedParams
@@ -281,31 +283,6 @@ struct StripModule : Module {
 	}
 };
 
-
-struct StripOnModeMenuItem : MenuItem {
-	struct StripOnModeItem : MenuItem {
-		StripModule *module;
-		ONMODE onMode;
-
-		void onAction(const event::Action &e) override {
-			module->onMode = onMode;
-		}
-
-		void step() override {
-			rightText = module->onMode == onMode ? "✔" : "";
-			MenuItem::step();
-		}
-	};
-
-	StripModule *module;
-	Menu *createChildMenu() override {
-		Menu *menu = new Menu;
-		menu->addChild(construct<StripOnModeItem>(&MenuItem::text, "Default", &StripOnModeItem::module, module, &StripOnModeItem::onMode, ONMODE_DEFAULT));
-		menu->addChild(construct<StripOnModeItem>(&MenuItem::text, "Toggle", &StripOnModeItem::module, module, &StripOnModeItem::onMode, ONMODE_TOGGLE));
-		menu->addChild(construct<StripOnModeItem>(&MenuItem::text, "High/Low", &StripOnModeItem::module, module, &StripOnModeItem::onMode, ONMODE_HIGHLOW));
-		return menu;
-	}
-};
 
 struct RandomExclMenuItem : MenuItem {
 	struct RandomExclItem : MenuItem {
@@ -548,6 +525,31 @@ struct ExcludeButton : TL1105 {
 			menu->addChild(modelLabel);
 		}
 		// Release excludeMutex
+	}
+};
+
+struct OnModeMenuItem : MenuItem {
+	struct OnModeItem : MenuItem {
+		StripModule *module;
+		ONMODE onMode;
+
+		void onAction(const event::Action &e) override {
+			module->onMode = onMode;
+		}
+
+		void step() override {
+			rightText = module->onMode == onMode ? "✔" : "";
+			MenuItem::step();
+		}
+	};
+
+	StripModule *module;
+	Menu *createChildMenu() override {
+		Menu *menu = new Menu;
+		menu->addChild(construct<OnModeItem>(&MenuItem::text, "Default", &OnModeItem::module, module, &OnModeItem::onMode, ONMODE_DEFAULT));
+		menu->addChild(construct<OnModeItem>(&MenuItem::text, "Toggle", &OnModeItem::module, module, &OnModeItem::onMode, ONMODE_TOGGLE));
+		menu->addChild(construct<OnModeItem>(&MenuItem::text, "High/Low", &OnModeItem::module, module, &OnModeItem::onMode, ONMODE_HIGHLOW));
+		return menu;
 	}
 };
 
@@ -1143,9 +1145,9 @@ struct StripWidget : ModuleWidget {
 		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
 		menu->addChild(new MenuSeparator());
 
-		StripOnModeMenuItem *stripOnModeMenuItem = construct<StripOnModeMenuItem>(&MenuItem::text, "Port/Switch ON mode", &StripOnModeMenuItem::module, module);
-		stripOnModeMenuItem->rightText = RIGHT_ARROW;
-		menu->addChild(stripOnModeMenuItem);
+		OnModeMenuItem *onModeMenuItem = construct<OnModeMenuItem>(&MenuItem::text, "Port/Switch ON mode", &OnModeMenuItem::module, module);
+		onModeMenuItem->rightText = RIGHT_ARROW;
+		menu->addChild(onModeMenuItem);
 		menu->addChild(new MenuSeparator());
 
 		struct CutGroupMenuItem : MenuItem {
