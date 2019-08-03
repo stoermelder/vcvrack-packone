@@ -234,9 +234,10 @@ struct MidiCatModule : Module {
 								case CCMODE_PICKUP2:
 									if (lastValueIn[id] != valuesCc[cc]) {
 										int p = (int)rescale(paramQuantity->getValue(), paramQuantity->getMinValue(), paramQuantity->getMaxValue(), 0.f, 127.f);
-										if (p - 4 <= valuesCc[cc] && valuesCc[cc] <= p + 4) {
+										if (p - 3 <= lastValueIn[id] && lastValueIn[id] <= p + 3 && p - 7 <= valuesCc[cc] && valuesCc[cc] <= p + 7) {
 											t = valuesCc[cc];
 										}
+										lastValueIn[id] = valuesCc[cc];
 									}
 									break;
 							}
