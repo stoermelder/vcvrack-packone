@@ -24,7 +24,7 @@ The modes for the ON-section are:
 - Toggle: ON toggles enable/disable of the modules, OFF disables the modules.
 - High/Low: ON in high-state (button pressed or voltage >=1V) enables the modules, ON in low-state (voltage <1V) disables the modules.
 
-Added in v1.0.6: The button labeled EX allows you to exclude some parameters within the strip from randomization. To add a parameter to the exclusion list first enable learn mode by pressing EX, the LED turns red. Next, touch the parameter which should not be randomized. Learn mode will be automatically disabled and you can repeat the learning procedure for another parameter. Green light on the LED signals that at least one parameter has been excluded. A long press on the button resets all excluded parameters and the LED turns off.
+Added in v1.1.0: The button labeled INC/EXC allows you to include or exclude some parameters within the strip from randomization. To add a parameter to the inclusion/exclusion list first enable learn mode by pressing INC/EXC, the LED turns red. Next, touch the parameter which should only be randomized or not be randomized. Learn mode will be automatically disabled and you can repeat the learning procedure for another parameter. Green light on the LED signals that at least one parameter has been included/excluded. A long press on the button resets all included/excluded parameters and the LED turns off. You can switch between inclusion-mode and exclusion-mode on the context menu of the INC/EXC-button.
 
 ### Loading and saving, copying and pasting strips
 

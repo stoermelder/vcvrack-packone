@@ -22,6 +22,12 @@ enum MODE {
 	MODE_LEFT = 2
 };
 
+enum RANDOMEXCL {
+	RANDOMEXCL_NONE = 0,
+	RANDOMEXCL_EXC = 1,
+	RANDOMEXCL_INC = 2
+};
+
 struct StripModule : Module {
 	enum ParamIds {
 		MODE_PARAM,
@@ -58,6 +64,8 @@ struct StripModule : Module {
 	bool excludeLearn = false;
 	/** [Stored to JSON] */ 
 	std::set<std::tuple<int, int>> excludedParams;
+	/** [Stored to JSON] */
+	RANDOMEXCL randomExcl = RANDOMEXCL_EXC;
 
 	dsp::SchmittTrigger modeTrigger;
 	dsp::SchmittTrigger onTrigger;
@@ -72,7 +80,7 @@ struct StripModule : Module {
 		configParam(ON_PARAM, 0, 1, 0, "Switch/toggle strip on");
 		configParam(OFF_PARAM, 0, 1, 0, "Switch strip off");
 		configParam(RAND_PARAM, 0, 1, 0, "Randomize strip");
-		configParam(EXCLUDE_PARAM, 0, 1, 0, "Randomize exclusion");
+		configParam(EXCLUDE_PARAM, 0, 1, 0, "Parameter randomization include/exclude");
 
 		lightDivider.setDivision(1024);
 		onReset();
@@ -177,8 +185,19 @@ struct StripModule : Module {
 				// to the app-world!
 				ModuleWidget *mw = APP->scene->rack->getModule(m->rightExpander.moduleId);
 				for (ParamWidget *param : mw->params) {
-					if (excludedParams.find(std::make_tuple(m->rightExpander.moduleId, param->paramQuantity->paramId)) == excludedParams.end())
-						param->randomize();
+					switch (randomExcl) {
+						case RANDOMEXCL_NONE:
+							param->randomize();
+							break;
+						case RANDOMEXCL_EXC:
+							if (excludedParams.find(std::make_tuple(m->rightExpander.moduleId, param->paramQuantity->paramId)) == excludedParams.end())
+								param->randomize();
+							break;
+						case RANDOMEXCL_INC:
+							if (excludedParams.find(std::make_tuple(m->rightExpander.moduleId, param->paramQuantity->paramId)) != excludedParams.end())
+								param->randomize();
+							break;
+					}
 				}
 				mw->module->onRandomize();
 				m = m->rightExpander.module;
@@ -192,8 +211,19 @@ struct StripModule : Module {
 				// to the app-world!
 				ModuleWidget *mw = APP->scene->rack->getModule(m->leftExpander.moduleId);
 				for (ParamWidget *param : mw->params) {
-					if (excludedParams.find(std::make_tuple(m->leftExpander.moduleId, param->paramQuantity->paramId)) == excludedParams.end())
-						param->randomize();
+					switch (randomExcl) {
+						case RANDOMEXCL_NONE:
+							param->randomize();
+							break;
+						case RANDOMEXCL_EXC:
+							if (excludedParams.find(std::make_tuple(m->leftExpander.moduleId, param->paramQuantity->paramId)) == excludedParams.end())
+								param->randomize();
+							break;
+						case RANDOMEXCL_INC:
+							if (excludedParams.find(std::make_tuple(m->leftExpander.moduleId, param->paramQuantity->paramId)) != excludedParams.end())
+								param->randomize();
+							break;
+					}
 				}
 				mw->module->onRandomize();
 				m = m->leftExpander.module;
@@ -217,7 +247,7 @@ struct StripModule : Module {
 			json_array_append_new(excludedParamsJ, excludedParamJ); 
 		} 
 		json_object_set_new(rootJ, "excludedParams", excludedParamsJ);
-
+		json_object_set_new(rootJ, "randomExcl", json_integer(randomExcl));
 		return rootJ;
 		// Release excludeMutex
 	}
@@ -245,6 +275,8 @@ struct StripModule : Module {
 				excludedParams.insert(std::make_tuple(moduleId, paramId)); 
 			} 
 		}
+		json_t *randomExclJ = json_object_get(rootJ, "randomExcl");
+		randomExcl = (RANDOMEXCL)json_integer_value(randomExclJ);
 		// Release excludeMutex
 	}
 };
@@ -271,6 +303,31 @@ struct StripOnModeMenuItem : MenuItem {
 		menu->addChild(construct<StripOnModeItem>(&MenuItem::text, "Default", &StripOnModeItem::module, module, &StripOnModeItem::onMode, ONMODE_DEFAULT));
 		menu->addChild(construct<StripOnModeItem>(&MenuItem::text, "Toggle", &StripOnModeItem::module, module, &StripOnModeItem::onMode, ONMODE_TOGGLE));
 		menu->addChild(construct<StripOnModeItem>(&MenuItem::text, "High/Low", &StripOnModeItem::module, module, &StripOnModeItem::onMode, ONMODE_HIGHLOW));
+		return menu;
+	}
+};
+
+struct RandomExclMenuItem : MenuItem {
+	struct RandomExclItem : MenuItem {
+		StripModule *module;
+		RANDOMEXCL randomExcl;
+
+		void onAction(const event::Action &e) override {
+			module->randomExcl = randomExcl;
+		}
+
+		void step() override {
+			rightText = module->randomExcl == randomExcl ? "✔" : "";
+			MenuItem::step();
+		}
+	};
+
+	StripModule *module;
+	Menu *createChildMenu() override {
+		Menu *menu = new Menu;
+		menu->addChild(construct<RandomExclItem>(&MenuItem::text, "All", &RandomExclItem::module, module, &RandomExclItem::randomExcl, RANDOMEXCL_NONE));
+		menu->addChild(construct<RandomExclItem>(&MenuItem::text, "Exclude", &RandomExclItem::module, module, &RandomExclItem::randomExcl, RANDOMEXCL_EXC));
+		menu->addChild(construct<RandomExclItem>(&MenuItem::text, "Include", &RandomExclItem::module, module, &RandomExclItem::randomExcl, RANDOMEXCL_INC));
 		return menu;
 	}
 };
@@ -443,8 +500,12 @@ struct ExcludeButton : TL1105 {
 		ui::Menu *menu = createMenu();
 
 		ui::MenuLabel *modelLabel = new ui::MenuLabel;
-		modelLabel->text = "Randomize exclusion";
+		modelLabel->text = "Parameter randomization";
 		menu->addChild(modelLabel);
+
+		RandomExclMenuItem *randomExclMenuItem = construct<RandomExclMenuItem>(&MenuItem::text, "Mode", &RandomExclMenuItem::module, module);
+		randomExclMenuItem->rightText = RIGHT_ARROW;
+		menu->addChild(randomExclMenuItem);
 
 		struct LabelButton : ui::MenuItem {
 			void onButton(const event::Button &e) override { }
@@ -460,9 +521,10 @@ struct ExcludeButton : TL1105 {
 		help2Label->text = "Clear";
 		menu->addChild(help2Label);
 
-		if (module->excludedParams.size() > 0) {
-			menu->addChild(new MenuSeparator());
-		}
+		if (module->excludedParams.size() == 0)
+			return;
+
+		menu->addChild(new MenuSeparator());
 
 		// Aquire excludeMutex to get exclusive access to excludedParams
 		std::lock_guard<std::mutex> lockGuard(module->excludeMutex);
@@ -475,7 +537,7 @@ struct ExcludeButton : TL1105 {
 			ParamWidget *paramWidget = moduleWidget->getParam(paramId);
 			if (!paramWidget) continue;
 			
-			std::string text = "Excluded \"";
+			std::string text = "Parameter \"";
 			text += moduleWidget->model->name;
 			text += " ";
 			text += paramWidget->paramQuantity->getLabel();

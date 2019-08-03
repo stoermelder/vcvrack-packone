@@ -3,11 +3,11 @@
 - Module 8FACE
     - Using additional worker thread for applying presets to avoid engine deadlock on some modules (especially using parameter mapping)
 - Module MIDI-CAT
-    - New module, mapping module similar to VCV's MIDI-MAP with midi feedback and note mapping
+    - New module, mapping module similar to VCV's MIDI-MAP with midi feedback, note mapping and cc pickup-mode
 - Module STRIP
-    - Added button EX for excluding specific module parameter from randomization
+    - Added button INC/EXC for including or excluding specific module parameter from randomization
 - Modules CV-MAP, CV-PAM, ReMOVE Lite, µMAP
-    - Fixed crash if deleting the module from Rack while in mapping mode
+    - Fixed crash of Rack if deleting the module while in mapping mode
 
 ### 1.0.5
 
