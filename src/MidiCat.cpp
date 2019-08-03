@@ -65,7 +65,8 @@ enum INMODE {
 
 enum CCMODE {
 	CCMODE_DEFAULT = 0,
-	CCMODE_PICKUP = 1
+	CCMODE_PICKUP1 = 1,
+	CCMODE_PICKUP2 = 2
 };
 
 enum NOTEMODE {
@@ -221,13 +222,21 @@ struct MidiCatModule : Module {
 										t = valuesCc[cc];
 									}
 									break;
-								case CCMODE_PICKUP:
+								case CCMODE_PICKUP1:
 									if (lastValueIn[id] != valuesCc[cc]) {
 										int p = (int)rescale(paramQuantity->getValue(), paramQuantity->getMinValue(), paramQuantity->getMaxValue(), 0.f, 127.f);
 										if (p - 3 <= lastValueIn[id] && lastValueIn[id] <= p + 3) {
 											t = valuesCc[cc];
 										}
 										lastValueIn[id] = valuesCc[cc];
+									}
+									break;
+								case CCMODE_PICKUP2:
+									if (lastValueIn[id] != valuesCc[cc]) {
+										int p = (int)rescale(paramQuantity->getValue(), paramQuantity->getMinValue(), paramQuantity->getMaxValue(), 0.f, 127.f);
+										if (p - 4 <= valuesCc[cc] && valuesCc[cc] <= p + 4) {
+											t = valuesCc[cc];
+										}
 									}
 									break;
 							}
@@ -583,7 +592,8 @@ struct CcModeMenuItem : MenuItem {
 	Menu *createChildMenu() override {
 		Menu *menu = new Menu;
 		menu->addChild(construct<CcModeItem>(&MenuItem::text, "Default", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE_DEFAULT));
-		menu->addChild(construct<CcModeItem>(&MenuItem::text, "Pickup", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE_PICKUP));
+		menu->addChild(construct<CcModeItem>(&MenuItem::text, "Pickup 1", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE_PICKUP1));
+		menu->addChild(construct<CcModeItem>(&MenuItem::text, "Pickup 2", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE_PICKUP2));
 		return menu;
 	}
 };
