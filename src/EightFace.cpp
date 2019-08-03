@@ -5,15 +5,19 @@
 #include <mutex>
 #include <condition_variable>
 
+
+namespace EightFace {
+
 const int NUM_PRESETS = 8;
 
-const int EIGHTFACE_SLOTCVMODE_TRIG = 2;
-const int EIGHTFACE_SLOTCVMODE_10V = 0;
-const int EIGHTFACE_SLOTCVMODE_C4 = 1;
-const int EIGHTFACE_SLOTCVMODE_CLOCK = 3;
+enum SLOTCVMODE {
+	SLOTCVMODE_TRIG = 2,
+	SLOTCVMODE_10V = 0,
+	SLOTCVMODE_C4 = 1,
+	SLOTCVMODE_CLOCK = 3
+};
 
-
-struct EightFace : Module {
+struct EightFaceModule : Module {
 	enum ParamIds {
 		MODE_PARAM,
 		ENUMS(PRESET_PARAM, NUM_PRESETS),
@@ -51,7 +55,7 @@ struct EightFace : Module {
 	int presetCount = NUM_PRESETS;
 
 	/** [Stored to JSON] mode for SEQ CV input, 0 = 0-10V, 1 = C4-G4, 2 = Trig */
-	int slotCvMode = EIGHTFACE_SLOTCVMODE_TRIG;
+	SLOTCVMODE slotCvMode = SLOTCVMODE_TRIG;
 
 	int connected = 0;
 	int presetNext = -1;
@@ -72,7 +76,7 @@ struct EightFace : Module {
 	dsp::ClockDivider lightDivider;
 
 
-	EightFace() {
+	EightFaceModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configParam(MODE_PARAM, 0, 1, 0, "Switch Read/write mode");
 		for (int i = 0; i < NUM_PRESETS; i++) {
@@ -82,10 +86,10 @@ struct EightFace : Module {
 
 		lightDivider.setDivision(512);
 		onReset();
-		worker = new std::thread(&EightFace::workerProcess, this);
+		worker = new std::thread(&EightFaceModule::workerProcess, this);
 	}
 
-	~EightFace() {
+	~EightFaceModule() {
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			if (presetSlotUsed[i])
 				json_decref(presetSlot[i]);
@@ -128,17 +132,17 @@ struct EightFace : Module {
 					// SEQ input
 					if (inputs[SLOT_INPUT].isConnected()) {
 						switch (slotCvMode) {
-							case EIGHTFACE_SLOTCVMODE_10V:
+							case SLOTCVMODE_10V:
 								presetLoad(t, std::floor(rescale(inputs[SLOT_INPUT].getVoltage(), 0.f, 10.f, 0, presetCount)));
 								break;
-							case EIGHTFACE_SLOTCVMODE_C4:
+							case SLOTCVMODE_C4:
 								presetLoad(t, std::round(clamp(inputs[SLOT_INPUT].getVoltage() * 12.f, 0.f, NUM_PRESETS - 1.f)));
 								break;
-							case EIGHTFACE_SLOTCVMODE_TRIG:
+							case SLOTCVMODE_TRIG:
 								if (slotTrigger.process(inputs[SLOT_INPUT].getVoltage()))
 									presetLoad(t, (preset + 1) % presetCount);
 								break;
-							case EIGHTFACE_SLOTCVMODE_CLOCK:
+							case SLOTCVMODE_CLOCK:
 								if (slotTrigger.process(inputs[SLOT_INPUT].getVoltage()))
 									presetLoad(t, presetNext);
 								break;
@@ -146,7 +150,7 @@ struct EightFace : Module {
 					}
 
 					// RESET input
-					if (slotCvMode == EIGHTFACE_SLOTCVMODE_TRIG && inputs[RESET_INPUT].isConnected()) {
+					if (slotCvMode == SLOTCVMODE_TRIG && inputs[RESET_INPUT].isConnected()) {
 						if (resetTrigger.process(inputs[RESET_INPUT].getVoltage())) {
 							presetLoad(t, 0);
 						}
@@ -159,7 +163,7 @@ struct EightFace : Module {
 							case LongPressButton::NO_PRESS:
 								break;
 							case LongPressButton::SHORT_PRESS:
-								presetLoad(t, i, slotCvMode == EIGHTFACE_SLOTCVMODE_CLOCK); break;
+								presetLoad(t, i, slotCvMode == SLOTCVMODE_CLOCK); break;
 							case LongPressButton::LONG_PRESS:
 								presetSetCount(i + 1); break;
 						}
@@ -213,7 +217,7 @@ struct EightFace : Module {
 	void workerProcess() {
 		while (true) {
 			std::unique_lock<std::mutex> lock(workerMutex);
-			workerCondVar.wait(lock, std::bind(&EightFace::workerDoProcess, this));
+			workerCondVar.wait(lock, std::bind(&EightFaceModule::workerDoProcess, this));
 			if (!workerIsRunning || workerPreset < 0) return;
 			workerModuleWidget->fromJson(presetSlot[workerPreset]);
 			workerDoProcess = false;
@@ -311,7 +315,7 @@ struct EightFace : Module {
 		modelSlug = json_string_value(json_object_get(rootJ, "modelSlug"));
 		json_t *moduleNameJ = json_object_get(rootJ, "moduleName");
 		if (moduleNameJ) moduleName = json_string_value(json_object_get(rootJ, "moduleName"));
-		slotCvMode = json_integer_value(json_object_get(rootJ, "slotCvMode"));
+		slotCvMode = (SLOTCVMODE)json_integer_value(json_object_get(rootJ, "slotCvMode"));
 		preset = json_integer_value(json_object_get(rootJ, "preset"));
 		presetCount = json_integer_value(json_object_get(rootJ, "presetCount"));
 
@@ -328,10 +332,10 @@ struct EightFace : Module {
 };
 
 
-struct EightFaceSlotCvModeMenuItem : MenuItem {
-	struct EightFaceSlotCvMenuItem : MenuItem {
-		EightFace *module;
-		int slotCvMode;
+struct SlovCvModeMenuItem : MenuItem {
+	struct SlotCvModeItem : MenuItem {
+		EightFaceModule *module;
+		SLOTCVMODE slotCvMode;
 
 		void onAction(const event::Action &e) override {
 			module->slotCvMode = slotCvMode;
@@ -343,13 +347,13 @@ struct EightFaceSlotCvModeMenuItem : MenuItem {
 		}
 	};
 
-	EightFace *module;
+	EightFaceModule *module;
 	Menu *createChildMenu() override {
 		Menu *menu = new Menu;
-		menu->addChild(construct<EightFaceSlotCvMenuItem>(&MenuItem::text, "Seq Trigger", &EightFaceSlotCvMenuItem::module, module, &EightFaceSlotCvMenuItem::slotCvMode, EIGHTFACE_SLOTCVMODE_TRIG));
-		menu->addChild(construct<EightFaceSlotCvMenuItem>(&MenuItem::text, "Seq 0..10V", &EightFaceSlotCvMenuItem::module, module, &EightFaceSlotCvMenuItem::slotCvMode, EIGHTFACE_SLOTCVMODE_10V));
-		menu->addChild(construct<EightFaceSlotCvMenuItem>(&MenuItem::text, "Seq C4-G4", &EightFaceSlotCvMenuItem::module, module, &EightFaceSlotCvMenuItem::slotCvMode, EIGHTFACE_SLOTCVMODE_C4));
-		menu->addChild(construct<EightFaceSlotCvMenuItem>(&MenuItem::text, "Clock", &EightFaceSlotCvMenuItem::module, module, &EightFaceSlotCvMenuItem::slotCvMode, EIGHTFACE_SLOTCVMODE_CLOCK));
+		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Seq Trigger", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_TRIG));
+		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Seq 0..10V", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_10V));
+		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Seq C4-G4", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_C4));
+		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Clock", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_CLOCK));
 		return menu;
 	}
 };
@@ -376,42 +380,42 @@ struct CKSSH : CKSS {
 
 
 struct EightFaceWidget : ModuleWidget {
-	EightFaceWidget(EightFace *module) {
+	EightFaceWidget(EightFaceModule *module) {
 		setModule(module);
 		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/EightFace.svg")));
 
 		addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 58.9f), module, EightFace::SLOT_INPUT));
-		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 95.2f), module, EightFace::RESET_INPUT));
+		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 58.9f), module, EightFaceModule::SLOT_INPUT));
+		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 95.2f), module, EightFaceModule::RESET_INPUT));
 
-		addChild(createLightCentered<SmallLight<GreenRedLight>>(Vec(22.5f, 119.1f), module, EightFace::MODULE_LIGHT));
+		addChild(createLightCentered<SmallLight<GreenRedLight>>(Vec(22.5f, 119.1f), module, EightFaceModule::MODULE_LIGHT));
 
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 140.0f), module, EightFace::PRESET_LIGHT + 0 * 3));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 163.6f), module, EightFace::PRESET_LIGHT + 1 * 3));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 187.1f), module, EightFace::PRESET_LIGHT + 2 * 3));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 210.6f), module, EightFace::PRESET_LIGHT + 3 * 3));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 234.2f), module, EightFace::PRESET_LIGHT + 4 * 3));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 257.7f), module, EightFace::PRESET_LIGHT + 5 * 3));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 281.3f), module, EightFace::PRESET_LIGHT + 6 * 3));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 304.8f), module, EightFace::PRESET_LIGHT + 7 * 3));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 140.0f), module, EightFaceModule::PRESET_LIGHT + 0 * 3));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 163.6f), module, EightFaceModule::PRESET_LIGHT + 1 * 3));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 187.1f), module, EightFaceModule::PRESET_LIGHT + 2 * 3));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 210.6f), module, EightFaceModule::PRESET_LIGHT + 3 * 3));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 234.2f), module, EightFaceModule::PRESET_LIGHT + 4 * 3));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 257.7f), module, EightFaceModule::PRESET_LIGHT + 5 * 3));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 281.3f), module, EightFaceModule::PRESET_LIGHT + 6 * 3));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 304.8f), module, EightFaceModule::PRESET_LIGHT + 7 * 3));
 
-		addParam(createParamCentered<TL1105>(Vec(27.6f, 135.8f), module, EightFace::PRESET_PARAM + 0));
-		addParam(createParamCentered<TL1105>(Vec(27.6f, 159.4f), module, EightFace::PRESET_PARAM + 1));
-		addParam(createParamCentered<TL1105>(Vec(27.6f, 182.9f), module, EightFace::PRESET_PARAM + 2));
-		addParam(createParamCentered<TL1105>(Vec(27.6f, 206.4f), module, EightFace::PRESET_PARAM + 3));
-		addParam(createParamCentered<TL1105>(Vec(27.6f, 230.0f), module, EightFace::PRESET_PARAM + 4));
-		addParam(createParamCentered<TL1105>(Vec(27.6f, 253.5f), module, EightFace::PRESET_PARAM + 5));
-		addParam(createParamCentered<TL1105>(Vec(27.6f, 277.1f), module, EightFace::PRESET_PARAM + 6));
-		addParam(createParamCentered<TL1105>(Vec(27.6f, 300.6f), module, EightFace::PRESET_PARAM + 7));
+		addParam(createParamCentered<TL1105>(Vec(27.6f, 135.8f), module, EightFaceModule::PRESET_PARAM + 0));
+		addParam(createParamCentered<TL1105>(Vec(27.6f, 159.4f), module, EightFaceModule::PRESET_PARAM + 1));
+		addParam(createParamCentered<TL1105>(Vec(27.6f, 182.9f), module, EightFaceModule::PRESET_PARAM + 2));
+		addParam(createParamCentered<TL1105>(Vec(27.6f, 206.4f), module, EightFaceModule::PRESET_PARAM + 3));
+		addParam(createParamCentered<TL1105>(Vec(27.6f, 230.0f), module, EightFaceModule::PRESET_PARAM + 4));
+		addParam(createParamCentered<TL1105>(Vec(27.6f, 253.5f), module, EightFaceModule::PRESET_PARAM + 5));
+		addParam(createParamCentered<TL1105>(Vec(27.6f, 277.1f), module, EightFaceModule::PRESET_PARAM + 6));
+		addParam(createParamCentered<TL1105>(Vec(27.6f, 300.6f), module, EightFaceModule::PRESET_PARAM + 7));
 
-		addParam(createParamCentered<CKSSH>(Vec(22.5f, 333.0f), module, EightFace::MODE_PARAM));
+		addParam(createParamCentered<CKSSH>(Vec(22.5f, 333.0f), module, EightFaceModule::MODE_PARAM));
 	}
 
 	
 	void appendContextMenu(Menu *menu) override {
-		EightFace *module = dynamic_cast<EightFace*>(this->module);
+		EightFaceModule *module = dynamic_cast<EightFaceModule*>(this->module);
 		assert(module);
 
 		struct ManualItem : MenuItem {
@@ -435,11 +439,12 @@ struct EightFaceWidget : ModuleWidget {
 			menu->addChild(new MenuSeparator());
 		}
 
-		EightFaceSlotCvModeMenuItem *slotCvModeMenuItem = construct<EightFaceSlotCvModeMenuItem>(&MenuItem::text, "Port SLOT mode", &EightFaceSlotCvModeMenuItem::module, module);
+		SlovCvModeMenuItem *slotCvModeMenuItem = construct<SlovCvModeMenuItem>(&MenuItem::text, "Port SLOT mode", &SlovCvModeMenuItem::module, module);
 		slotCvModeMenuItem->rightText = RIGHT_ARROW;
 		menu->addChild(slotCvModeMenuItem);
 	}
 };
 
+} // namespace EightFace
 
-Model *modelEightFace = createModel<EightFace, EightFaceWidget>("EightFace");
+Model *modelEightFace = createModel<EightFace::EightFaceModule, EightFace::EightFaceWidget>("EightFace");
