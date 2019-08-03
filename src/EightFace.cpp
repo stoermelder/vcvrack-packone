@@ -57,6 +57,8 @@ struct EightFaceModule : Module {
 	int preset = 0;
 	/** [Stored to JSON] */
 	int presetCount = NUM_PRESETS;
+	/** [Stored to JSON] */
+	bool autoload = false;
 
 	/** [Stored to JSON] mode for SEQ CV input */
 	SLOTCVMODE slotCvMode = SLOTCVMODE_TRIG_FWD;
@@ -129,6 +131,7 @@ struct EightFaceModule : Module {
 		connected = 0;
 		if (randDist) delete randDist;
 		randDist = new std::uniform_int_distribution<int>(0, presetCount - 1);
+		autoload = false;
 	}
 
 	void process(const ProcessArgs &args) override {
@@ -358,7 +361,15 @@ struct EightFaceModule : Module {
 			presetSlot[presetIndex] = json_deep_copy(json_object_get(presetJ, "slot"));
 		}
 
-		if (preset >= presetCount) preset = 0;
+		if (preset >= presetCount) 
+			preset = 0;
+
+		if (autoload) {
+			if (leftExpander.moduleId >= 0 && leftExpander.module) {
+				Module *t = leftExpander.module;
+				presetLoad(t, 0, false);
+			}
+		}
 	}
 };
 
@@ -389,6 +400,19 @@ struct SlovCvModeMenuItem : MenuItem {
 		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "C4-G4", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_C4));
 		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Arm", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_ARM));
 		return menu;
+	}
+};
+
+struct AutoloadItem : MenuItem {
+	EightFaceModule *module;
+
+	void onAction(const event::Action &e) override {
+		module->autoload ^= true;
+	}
+
+	void step() override {
+		rightText = module->autoload ? "✔" : "";
+		MenuItem::step();
 	}
 };
 
@@ -476,6 +500,8 @@ struct EightFaceWidget : ModuleWidget {
 		SlovCvModeMenuItem *slotCvModeMenuItem = construct<SlovCvModeMenuItem>(&MenuItem::text, "Port SLOT mode", &SlovCvModeMenuItem::module, module);
 		slotCvModeMenuItem->rightText = RIGHT_ARROW;
 		menu->addChild(slotCvModeMenuItem);
+
+		menu->addChild(construct<AutoloadItem>(&MenuItem::text, "Autoload first preset", &AutoloadItem::module, module));
 	}
 };
 

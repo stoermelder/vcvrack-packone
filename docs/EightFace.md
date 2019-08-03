@@ -44,8 +44,8 @@ This mode follows the V/Oct-standard. C4 selects slot 1, C#4 selects slot 2 and 
 - Arm (renamed from "Clock" in v1.1.0):
 This mode is kind a sample and hold. First apply a clock signal on SLOT. Then you "arm" any slot manually by its button (resulting a yellow LED) which will be activated on the next clock trigger (blue LED). This mode allows you manual preset changes sychronized to a beat or clock.
 
-![8FACE clock mode](./EightFace-clock.gif)
+![8FACE arm mode](./EightFace-clock.gif)
 
-At the moment it is not possible to store and recall presets from any module that uses parameter mapping (like MIDI-MAP, CV-MAP, ReMOVE Lite etc.). Restoring parameter mappings will cause a deadlock in Rack's multithreading engine. This limitation will be possibly addressed in a later update.
+With the option "Autoload first preset" on the context menu you can autoload the first preset slot when a preset of 8FACE itself is loaded. This is useful when changing presets of 8FACE with another 8FACE module to get 64 preset slots.
 
 This module was added in v1.0.5 of PackOne.
