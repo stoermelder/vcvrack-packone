@@ -542,18 +542,25 @@ struct MidiCatModule : Module {
 				json_t *noteModeJ = json_object_get(mapJ, "noteMode");
 				json_t *moduleIdJ = json_object_get(mapJ, "moduleId");
 				json_t *paramIdJ = json_object_get(mapJ, "paramId");
+
 				if (!((ccJ || noteJ) && moduleIdJ && paramIdJ)) {
 					APP->engine->updateParamHandle(&paramHandles[mapIndex], -1, 0, true);
 					continue;
 				}
-				if (mapIndex >= MAX_CHANNELS)
+				if (mapIndex >= MAX_CHANNELS) {
 					continue;
+				}
+
 				ccs[mapIndex] = json_integer_value(ccJ);
 				ccsMode[mapIndex] = (CCMODE)json_integer_value(ccModeJ);
 				notes[mapIndex] = noteJ ? json_integer_value(noteJ) : -1;
 				notesMode[mapIndex] = (NOTEMODE)json_integer_value(noteModeJ);
-				APP->engine->updateParamHandle(&paramHandles[mapIndex], json_integer_value(moduleIdJ), json_integer_value(paramIdJ), true);
-				refreshParamHandleText(mapIndex);
+				int moduleId = json_integer_value(moduleIdJ);
+				int paramId = json_integer_value(paramIdJ);
+				if (moduleId != paramHandles[mapIndex].moduleId || paramId != paramHandles[mapIndex].paramId) {
+					APP->engine->updateParamHandle(&paramHandles[mapIndex], moduleId, paramId, false);
+					refreshParamHandleText(mapIndex);
+				}
 			}
 		}
 
