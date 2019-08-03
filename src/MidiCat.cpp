@@ -526,7 +526,7 @@ struct MidiCatModule : Module {
 	}
 
 	void dataFromJson(json_t *rootJ) override {
-		clearMaps();
+		//clearMaps();
 
 		json_t *textScrollingJ = json_object_get(rootJ, "textScrolling");
 		textScrolling = json_boolean_value(textScrollingJ);
@@ -542,8 +542,10 @@ struct MidiCatModule : Module {
 				json_t *noteModeJ = json_object_get(mapJ, "noteMode");
 				json_t *moduleIdJ = json_object_get(mapJ, "moduleId");
 				json_t *paramIdJ = json_object_get(mapJ, "paramId");
-				if (!((ccJ || noteJ) && moduleIdJ && paramIdJ))
+				if (!((ccJ || noteJ) && moduleIdJ && paramIdJ)) {
+					APP->engine->updateParamHandle(&paramHandles[mapIndex], -1, 0, true);
 					continue;
+				}
 				if (mapIndex >= MAX_CHANNELS)
 					continue;
 				ccs[mapIndex] = json_integer_value(ccJ);
@@ -593,8 +595,8 @@ struct CcModeMenuItem : MenuItem {
 	Menu *createChildMenu() override {
 		Menu *menu = new Menu;
 		menu->addChild(construct<CcModeItem>(&MenuItem::text, "Default", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE_DEFAULT));
-		menu->addChild(construct<CcModeItem>(&MenuItem::text, "Pickup 1", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE_PICKUP1));
-		menu->addChild(construct<CcModeItem>(&MenuItem::text, "Pickup 2", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE_PICKUP2));
+		menu->addChild(construct<CcModeItem>(&MenuItem::text, "Pickup (snap)", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE_PICKUP1));
+		menu->addChild(construct<CcModeItem>(&MenuItem::text, "Pickup (jump)", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE_PICKUP2));
 		return menu;
 	}
 };
