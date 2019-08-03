@@ -26,17 +26,23 @@ The fun begins when you use the port labelled "SLOT" for selecting preset slots 
 
 There are different modes for SLOT-input available, configured by context menu option:
 
-- Seq Trigger:
+- Trigger forward:
 A trigger on SLOT advances 8FACE to the next slot. Empty slots are part of the sequence but won't have any effect on the controlled module.
 
 ![8FACE sequencing](./EightFace-trig.gif)
 
-- Seq 0..10V:
+- Trigger reverse (added in v1.1.0):
+Same as "Trigger forward", but reverse direction.
+- Trigger pingpong (added in v1.1.0):
+Same as "Trigger forward", but loops first forward then reverse.
+- Trigger random (added in v1.1.0):
+Same as "Trigger forward", but chooses the next preset randomly.
+- 0..10V:
 You can select a specific slot by voltage. A voltage 0-1.25V selects slot 1, 1.25-2.5V selects slot 2, and so on if all eight slots are active. Keep in mind that adjusting the length of the sequence also adjusts the voltage range for selecting individual slots: A sequence with length 2 will select slot 1 on voltage 0-5V etc.
-- Seq C4-G8: 
+- C4-G8: 
 This mode follows the V/Oct-standard. C4 selects slot 1, C#4 selects slot 2 and so on.
-- Clock:
-This mode is kind a sample and hold. First apply a clock signal on SLOT. Then you trigger any slot manually by its button (resulting a yellow LED) which will be applied on the next clock trigger (blue LED). This mode allows you manual preset changes sychronized to the beat.
+- Arm (renamed from "Clock" in v1.1.0):
+This mode is kind a sample and hold. First apply a clock signal on SLOT. Then you "arm" any slot manually by its button (resulting a yellow LED) which will be activated on the next clock trigger (blue LED). This mode allows you manual preset changes sychronized to a beat or clock.
 
 ![8FACE clock mode](./EightFace-clock.gif)
 

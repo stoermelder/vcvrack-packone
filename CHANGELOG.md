@@ -2,6 +2,8 @@
 
 - Module 8FACE
     - Using additional worker thread for applying presets to avoid engine deadlock on some modules (especially using parameter mapping)
+    - Added trigger modes "reverse", "pingpong" and "random" for SLOT-port
+    - Renamed "Clock"-mode to "Arm" for SLOT-port
 - Module MIDI-CAT
     - New module, mapping module similar to VCV's MIDI-MAP with midi feedback, note mapping and cc pickup-mode
 - Module ReMOVE Lite

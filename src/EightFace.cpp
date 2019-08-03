@@ -4,6 +4,7 @@
 #include <thread>
 #include <mutex>
 #include <condition_variable>
+#include <random>
 
 
 namespace EightFace {
@@ -11,10 +12,13 @@ namespace EightFace {
 const int NUM_PRESETS = 8;
 
 enum SLOTCVMODE {
-	SLOTCVMODE_TRIG = 2,
+	SLOTCVMODE_TRIG_FWD = 2,
+	SLOTCVMODE_TRIG_REV = 4,
+	SLOTCVMODE_TRIG_PINGPONG = 5,
+	SLOTCVMODE_TRIG_RANDOM = 6,
 	SLOTCVMODE_10V = 0,
 	SLOTCVMODE_C4 = 1,
-	SLOTCVMODE_CLOCK = 3
+	SLOTCVMODE_ARM = 3
 };
 
 struct EightFaceModule : Module {
@@ -54,8 +58,12 @@ struct EightFaceModule : Module {
 	/** [Stored to JSON] */
 	int presetCount = NUM_PRESETS;
 
-	/** [Stored to JSON] mode for SEQ CV input, 0 = 0-10V, 1 = C4-G4, 2 = Trig */
-	SLOTCVMODE slotCvMode = SLOTCVMODE_TRIG;
+	/** [Stored to JSON] mode for SEQ CV input */
+	SLOTCVMODE slotCvMode = SLOTCVMODE_TRIG_FWD;
+	int slotCvModeDir = 1;
+
+	std::default_random_engine randGen{(uint16_t)std::chrono::system_clock::now().time_since_epoch().count()};
+	std::uniform_int_distribution<int> *randDist = NULL;
 
 	int connected = 0;
 	int presetNext = -1;
@@ -94,6 +102,7 @@ struct EightFaceModule : Module {
 			if (presetSlotUsed[i])
 				json_decref(presetSlot[i]);
 		}
+		delete randDist;
 
 		workerIsRunning = false;
 		workerDoProcess = true;
@@ -118,6 +127,8 @@ struct EightFaceModule : Module {
 		pluginSlug = "";
 		moduleName = "";
 		connected = 0;
+		if (randDist) delete randDist;
+		randDist = new std::uniform_int_distribution<int>(0, presetCount - 1);
 	}
 
 	void process(const ProcessArgs &args) override {
@@ -138,11 +149,29 @@ struct EightFaceModule : Module {
 							case SLOTCVMODE_C4:
 								presetLoad(t, std::round(clamp(inputs[SLOT_INPUT].getVoltage() * 12.f, 0.f, NUM_PRESETS - 1.f)));
 								break;
-							case SLOTCVMODE_TRIG:
+							case SLOTCVMODE_TRIG_FWD:
 								if (slotTrigger.process(inputs[SLOT_INPUT].getVoltage()))
 									presetLoad(t, (preset + 1) % presetCount);
 								break;
-							case SLOTCVMODE_CLOCK:
+							case SLOTCVMODE_TRIG_REV:
+								if (slotTrigger.process(inputs[SLOT_INPUT].getVoltage()))
+									presetLoad(t, (preset - 1 + presetCount) % presetCount);
+								break;
+							case SLOTCVMODE_TRIG_PINGPONG:
+								if (slotTrigger.process(inputs[SLOT_INPUT].getVoltage())) {
+									int n = preset + slotCvModeDir;
+									if (n == presetCount - 1) 
+										slotCvModeDir = -1;
+									if (n == 0) 
+										slotCvModeDir = 1;
+									presetLoad(t, n);
+								}
+								break;
+							case SLOTCVMODE_TRIG_RANDOM:
+								if (slotTrigger.process(inputs[SLOT_INPUT].getVoltage()))
+									presetLoad(t, (*randDist)(randGen));
+								break;
+							case SLOTCVMODE_ARM:
 								if (slotTrigger.process(inputs[SLOT_INPUT].getVoltage()))
 									presetLoad(t, presetNext);
 								break;
@@ -150,8 +179,8 @@ struct EightFaceModule : Module {
 					}
 
 					// RESET input
-					if (slotCvMode == SLOTCVMODE_TRIG && inputs[RESET_INPUT].isConnected()) {
-						if (resetTrigger.process(inputs[RESET_INPUT].getVoltage())) {
+					if (slotCvMode == SLOTCVMODE_TRIG_FWD || slotCvMode == SLOTCVMODE_TRIG_REV || slotCvMode == SLOTCVMODE_TRIG_PINGPONG) {
+						if (inputs[RESET_INPUT].isConnected() && resetTrigger.process(inputs[RESET_INPUT].getVoltage())) {
 							presetLoad(t, 0);
 						}
 					}
@@ -163,7 +192,7 @@ struct EightFaceModule : Module {
 							case LongPressButton::NO_PRESS:
 								break;
 							case LongPressButton::SHORT_PRESS:
-								presetLoad(t, i, slotCvMode == SLOTCVMODE_CLOCK); break;
+								presetLoad(t, i, slotCvMode == SLOTCVMODE_ARM); break;
 							case LongPressButton::LONG_PRESS:
 								presetSetCount(i + 1); break;
 						}
@@ -286,6 +315,8 @@ struct EightFaceModule : Module {
 		if (preset >= p) preset = 0;
 		presetCount = p;
 		presetNext = -1;
+		delete randDist;
+		randDist = new std::uniform_int_distribution<int>(0, presetCount - 1);
 	}
 
 	json_t *dataToJson() override {
@@ -350,10 +381,13 @@ struct SlovCvModeMenuItem : MenuItem {
 	EightFaceModule *module;
 	Menu *createChildMenu() override {
 		Menu *menu = new Menu;
-		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Seq Trigger", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_TRIG));
-		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Seq 0..10V", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_10V));
-		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Seq C4-G4", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_C4));
-		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Clock", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_CLOCK));
+		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger forward", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_TRIG_FWD));
+		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger reverse", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_TRIG_REV));
+		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger pingpong", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_TRIG_PINGPONG));
+		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger random", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_TRIG_RANDOM));
+		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "0..10V", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_10V));
+		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "C4-G4", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_C4));
+		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Arm", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_ARM));
 		return menu;
 	}
 };
