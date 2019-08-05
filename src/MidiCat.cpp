@@ -58,9 +58,9 @@ struct MidiCatOutput : midi::Output {
 };
 
 
-enum INMODE {
-	INMODE_DEFAULT = 0,
-	INMODE_LOCATE = 1
+enum MIDIMODE {
+	MIDIMODE_DEFAULT = 0,
+	MIDIMODE_LOCATE = 1
 };
 
 enum CCMODE {
@@ -126,7 +126,7 @@ struct MidiCatModule : Module {
 	/** The value of each note number */
 	int valuesNote[128];
 
-	INMODE inMode = INMODE::INMODE_DEFAULT;
+	MIDIMODE midiMode = MIDIMODE::MIDIMODE_DEFAULT;
 
 	/** Track last values */
 	int lastValueIn[MAX_CHANNELS];
@@ -143,7 +143,7 @@ struct MidiCatModule : Module {
 			paramHandleIndicator[id].handle = &paramHandles[id];
 			APP->engine->addParamHandle(&paramHandles[id]);
 		}
-		loopDivider.setDivision(64);
+		loopDivider.setDivision(128);
 		indicatorDivider.setDivision(1024);
 		onReset();
 	}
@@ -184,7 +184,7 @@ struct MidiCatModule : Module {
 		}
 
 		// Only step channels when some midi event has been received. Additionally
-		// step channels for parameter changes made manually every 64th loop. Notice
+		// step channels for parameter changes made manually every 128th loop. Notice
 		// that midi allows about 1000 messages per second, to checking for changes more often
 		// won't lead to higher precision on midi output.
 		if (changed || loopDivider.process()) {
@@ -209,8 +209,8 @@ struct MidiCatModule : Module {
 				if (!paramQuantity->isBounded())
 					continue;
 
-				switch (inMode) {
-					case INMODE_DEFAULT: {
+				switch (midiMode) {
+					case MIDIMODE::MIDIMODE_DEFAULT: {
 						// Check if CC value has been set
 						if (cc >= 0 && valuesCc[cc] >= 0)
 						{
@@ -253,20 +253,20 @@ struct MidiCatModule : Module {
 						{
 							int t = -1;
 							switch (notesMode[id]) {
-								case NOTEMODE_MOMENTARY:
+								case NOTEMODE::NOTEMODE_MOMENTARY:
 									if (lastValueIn[id] != valuesNote[note]) {
 										t = valuesNote[note];
 										if (t > 0) t = 127;
 										lastValueIn[id] = valuesNote[note];
 									} 
 									break;
-								case NOTEMODE_MOMENTARY_VEL:
+								case NOTEMODE::NOTEMODE_MOMENTARY_VEL:
 									if (lastValueIn[id] != valuesNote[note]) {
 										t = valuesNote[note];
 										lastValueIn[id] = valuesNote[note];
 									}
 									break;
-								case NOTENOTE_TOGGLE:
+								case NOTEMODE::NOTENOTE_TOGGLE:
 									if (valuesNote[note] == 127 && (lastValueIn[id] == -1 || lastValueIn[id] >= 0)) {
 										t = 127;
 										lastValueIn[id] = -2;
@@ -304,7 +304,7 @@ struct MidiCatModule : Module {
 						}
 					} break;
 
-					case INMODE_LOCATE: {
+					case MIDIMODE::MIDIMODE_LOCATE: {
 						bool indicate = false;
 						if ((cc >= 0 && valuesCc[cc] >= 0) && lastValueInIndicate[id] != valuesCc[cc]) {
 							lastValueInIndicate[id] = valuesCc[cc];
@@ -332,10 +332,10 @@ struct MidiCatModule : Module {
 		}
 	}
 
-	void setMode(INMODE inMode) {
-		this->inMode = inMode;
-		switch (inMode) {
-			case INMODE_LOCATE:
+	void setMode(MIDIMODE midiMode) {
+		this->midiMode = midiMode;
+		switch (midiMode) {
+			case MIDIMODE::MIDIMODE_LOCATE:
 				for (int i = 0; i < MAX_CHANNELS; i++) 
 					lastValueInIndicate[i] = std::max(0, lastValueIn[i]);
 				break;
@@ -610,9 +610,9 @@ struct CcModeMenuItem : MenuItem {
 
 	Menu *createChildMenu() override {
 		Menu *menu = new Menu;
-		menu->addChild(construct<CcModeItem>(&MenuItem::text, "Default", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE_DEFAULT));
-		menu->addChild(construct<CcModeItem>(&MenuItem::text, "Pickup (snap)", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE_PICKUP1));
-		menu->addChild(construct<CcModeItem>(&MenuItem::text, "Pickup (jump)", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE_PICKUP2));
+		menu->addChild(construct<CcModeItem>(&MenuItem::text, "Direct", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::CCMODE_DEFAULT));
+		menu->addChild(construct<CcModeItem>(&MenuItem::text, "Pickup (snap)", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::CCMODE_PICKUP1));
+		menu->addChild(construct<CcModeItem>(&MenuItem::text, "Pickup (jump)", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::CCMODE_PICKUP2));
 		return menu;
 	}
 };
@@ -642,9 +642,9 @@ struct NoteModeMenuItem : MenuItem {
 
 	Menu *createChildMenu() override {
 		Menu *menu = new Menu;
-		menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Momentary", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE_MOMENTARY));
-		menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Momentary + Velocity", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE_MOMENTARY_VEL));
-		menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Toggle", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTENOTE_TOGGLE));
+		menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Momentary", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::NOTEMODE_MOMENTARY));
+		menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Momentary + Velocity", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::NOTEMODE_MOMENTARY_VEL));
+		menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Toggle", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::NOTENOTE_TOGGLE));
 		return menu;
 	}
 };
@@ -679,11 +679,11 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 	void appendContextMenu(Menu *menu) override {
 		if (module->ccs[id] >= 0) {
 			menu->addChild(new MenuSeparator());
-			menu->addChild(construct<CcModeMenuItem>(&MenuItem::text, "Cc mode", &CcModeMenuItem::module, module, &CcModeMenuItem::id, id));
+			menu->addChild(construct<CcModeMenuItem>(&MenuItem::text, "Input mode for CC", &CcModeMenuItem::module, module, &CcModeMenuItem::id, id));
 		}
 		if (module->notes[id] >= 0) {
 			menu->addChild(new MenuSeparator());
-			menu->addChild(construct<NoteModeMenuItem>(&MenuItem::text, "Note mode", &NoteModeMenuItem::module, module, &NoteModeMenuItem::id, id));
+			menu->addChild(construct<NoteModeMenuItem>(&MenuItem::text, "Input mode for notes", &NoteModeMenuItem::module, module, &NoteModeMenuItem::id, id));
 		}
 	}
 };
@@ -703,21 +703,21 @@ struct MidiCatDisplay : MapModuleDisplay<MAX_CHANNELS, MidiCatModule, MidiCatCho
 };
 
 
-struct InModeMenuItem : MenuItem {
-	InModeMenuItem() {
+struct MidiModeMenuItem : MenuItem {
+	MidiModeMenuItem() {
 		rightText = RIGHT_ARROW;
 	}
 
-	struct InModeItem : MenuItem {
+	struct MidiModeItem : MenuItem {
 		MidiCatModule *module;
-		INMODE inMode;
+		MIDIMODE midiMode;
 
 		void onAction(const event::Action &e) override {
-			module->setMode(inMode);
+			module->setMode(midiMode);
 		}
 
 		void step() override {
-			rightText = module->inMode == inMode ? "✔" : "";
+			rightText = module->midiMode == midiMode ? "✔" : "";
 			MenuItem::step();
 		}
 	};
@@ -725,8 +725,8 @@ struct InModeMenuItem : MenuItem {
 	MidiCatModule *module;
 	Menu *createChildMenu() override {
 		Menu *menu = new Menu;
-		menu->addChild(construct<InModeItem>(&MenuItem::text, "Operating", &InModeItem::module, module, &InModeItem::inMode, INMODE_DEFAULT));
-		menu->addChild(construct<InModeItem>(&MenuItem::text, "Locate and indicate", &InModeItem::module, module, &InModeItem::inMode, INMODE_LOCATE));
+		menu->addChild(construct<MidiModeItem>(&MenuItem::text, "Operating", &MidiModeItem::module, module, &MidiModeItem::midiMode, MIDIMODE::MIDIMODE_DEFAULT));
+		menu->addChild(construct<MidiModeItem>(&MenuItem::text, "Locate and indicate", &MidiModeItem::module, module, &MidiModeItem::midiMode, MIDIMODE::MIDIMODE_LOCATE));
 		return menu;
 	}
 };
@@ -752,12 +752,16 @@ struct MidiCatMidiWidget : MidiWidget {
 		driverChoice->textOffset = Vec(6.f, 14.7f);
 		driverChoice->box.size = mm2px(Vec(driverChoice->box.size.x, 7.5f));
 		driverChoice->color = nvgRGB(0xf0, 0xf0, 0xf0);
+
 		driverSeparator->box.pos = driverChoice->box.getBottomLeft();
+
 		deviceChoice->textOffset = Vec(6.f, 14.7f);
 		deviceChoice->box.size = mm2px(Vec(deviceChoice->box.size.x, 7.5f));
 		deviceChoice->box.pos = driverChoice->box.getBottomLeft();
 		deviceChoice->color = nvgRGB(0xf0, 0xf0, 0xf0);
+
 		deviceSeparator->box.pos = deviceChoice->box.getBottomLeft();
+
 		channelChoice->textOffset = Vec(6.f, 14.7f);
 		channelChoice->box.size = mm2px(Vec(channelChoice->box.size.x, 7.5f));
 		channelChoice->box.pos = deviceChoice->box.getBottomLeft();
@@ -851,7 +855,7 @@ struct MidiCatWidget : ModuleWidget {
 		std::string pluginSlug = json_string_value(json_object_get(moduleJ, "plugin"));
 		std::string modelSlug = json_string_value(json_object_get(moduleJ, "model"));
 
-		// Only handle MIDI-Map
+		// Only handle presets for MIDI-Map
 		if (!(pluginSlug == "Core" && modelSlug == "MIDI-Map"))
 			return false;
 
@@ -876,7 +880,7 @@ struct MidiCatWidget : ModuleWidget {
 		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
 		menu->addChild(new MenuSeparator());
 
-		menu->addChild(construct<InModeMenuItem>(&MenuItem::text, "Mode", &InModeMenuItem::module, module));
+		menu->addChild(construct<MidiModeMenuItem>(&MenuItem::text, "Mode", &MidiModeMenuItem::module, module));
 		menu->addChild(construct<TextScrollItem>(&MenuItem::text, "Text scrolling", &TextScrollItem::module, module));
 		menu->addChild(new MenuSeparator());
 
