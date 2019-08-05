@@ -180,7 +180,8 @@ struct MidiCatModule : Module {
 		midi::Message msg;
 		bool changed = false;
 		while (midiInput.shift(&msg)) {
-			changed = changed || processMessage(msg);
+			bool r = processMessage(msg);
+			changed = changed || r;
 		}
 
 		// Only step channels when some midi event has been received. Additionally
