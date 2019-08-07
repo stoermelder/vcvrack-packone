@@ -195,7 +195,7 @@ struct EightFaceModule : Module {
 							case LongPressButton::NO_PRESS:
 								break;
 							case LongPressButton::SHORT_PRESS:
-								presetLoad(t, i, slotCvMode == SLOTCVMODE_ARM); break;
+								presetLoad(t, i, slotCvMode == SLOTCVMODE_ARM, true); break;
 							case LongPressButton::LONG_PRESS:
 								presetSetCount(i + 1); break;
 						}
@@ -256,20 +256,22 @@ struct EightFaceModule : Module {
 		}
 	}
 
-	void presetLoad(Module *m, int p, bool isNext = false) {
+	void presetLoad(Module *m, int p, bool isNext = false, bool force = false) {
 		if (p < 0 || p >= presetCount)
 			return;
 
 		if (!isNext) {
-			preset = p;
-			presetNext = -1;
-			if (!presetSlotUsed[p]) return;
-			ModuleWidget *mw = APP->scene->rack->getModule(m->id);
-			//mw->fromJson(presetSlot[p]);
-			workerModuleWidget = mw;
-			workerPreset = p;
-			workerDoProcess = true;
-			workerCondVar.notify_one();
+			if (p != preset || force) {
+				preset = p;
+				presetNext = -1;
+				if (!presetSlotUsed[p]) return;
+				ModuleWidget *mw = APP->scene->rack->getModule(m->id);
+				//mw->fromJson(presetSlot[p]);
+				workerModuleWidget = mw;
+				workerPreset = p;
+				workerDoProcess = true;
+				workerCondVar.notify_one();
+			}
 		}
 		else {
 			if (!presetSlotUsed[p]) return;

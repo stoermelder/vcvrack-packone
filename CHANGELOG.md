@@ -1,12 +1,14 @@
 ### 1.1.0 (in development)
 
+- Module MIDI-CAT
+    - New module, mapping module similar to VCV's MIDI-MAP with midi feedback, note mapping and cc pickup-mode
+
 - Module 8FACE
     - Using additional worker thread for applying presets to avoid engine deadlock on some modules (especially using parameter mapping)
     - Added trigger modes "reverse", "pingpong" and "random" for SLOT-port
     - Renamed "Clock"-mode to "Arm" for SLOT-port
     - Added option to autoload first preset on load of 8FACE presets
-- Module MIDI-CAT
-    - New module, mapping module similar to VCV's MIDI-MAP with midi feedback, note mapping and cc pickup-mode
+    - Fixed unusable SLOT-modes "0..10V" and "C4..G4"
 - Module ReMOVE Lite
     - Added playmode "sequence random" which walks randomly through all sequences
 - Module STRIP
