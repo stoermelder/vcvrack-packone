@@ -64,7 +64,7 @@ enum MIDIMODE {
 };
 
 enum CCMODE {
-	CCMODE_DEFAULT = 0,
+	CCMODE_DIRECT = 0,
 	CCMODE_PICKUP1 = 1,
 	CCMODE_PICKUP2 = 2
 };
@@ -133,6 +133,9 @@ struct MidiCatModule : Module {
 	int lastValueInIndicate[MAX_CHANNELS];
 	float lastValueOut[MAX_CHANNELS];
 
+	dsp::ExponentialFilter valueFilters[MAX_CHANNELS];
+	bool filterInitialized[MAX_CHANNELS] = {};
+
 	dsp::ClockDivider loopDivider;
 	dsp::ClockDivider indicatorDivider;
 
@@ -141,6 +144,7 @@ struct MidiCatModule : Module {
 		for (int id = 0; id < MAX_CHANNELS; id++) {
 			paramHandles[id].color = nvgRGB(0xff, 0xff, 0x40);
 			paramHandleIndicator[id].handle = &paramHandles[id];
+			valueFilters[id].lambda = 1 / 0.01f;
 			APP->engine->addParamHandle(&paramHandles[id]);
 		}
 		loopDivider.setDivision(128);
@@ -168,8 +172,11 @@ struct MidiCatModule : Module {
 		for (int i = 0; i < MAX_CHANNELS; i++) {
 			lastValueIn[i] = -1;
 			lastValueOut[i] = -1;
-			ccsMode[i] = CCMODE::CCMODE_DEFAULT;
+			ccsMode[i] = CCMODE::CCMODE_DIRECT;
 			notesMode[i] = NOTEMODE::NOTEMODE_MOMENTARY;
+
+			filterInitialized[i] = false;
+			valueFilters[i].reset();
 		}
 		midiInput.reset();
 		midiOutput.reset();
@@ -212,12 +219,18 @@ struct MidiCatModule : Module {
 
 				switch (midiMode) {
 					case MIDIMODE::MIDIMODE_DEFAULT: {
+						// Set filter from param value if filter is uninitialized
+						if (!filterInitialized[id]) {
+							valueFilters[id].out = paramQuantity->getScaledValue();
+							filterInitialized[id] = true;
+						}
+
 						// Check if CC value has been set
 						if (cc >= 0 && valuesCc[cc] >= 0)
 						{
 							int t = -1;
 							switch (ccsMode[id]) {
-								case CCMODE_DEFAULT:
+								case CCMODE_DIRECT:
 									if (lastValueIn[id] != valuesCc[cc]) {
 										lastValueIn[id] = valuesCc[cc];
 										t = valuesCc[cc];
@@ -245,6 +258,7 @@ struct MidiCatModule : Module {
 
 							if (t >= 0) {
 								float v = rescale(t, 0.f, 127.f, paramQuantity->getMinValue(), paramQuantity->getMaxValue());
+								v = valueFilters[id].process(args.sampleTime * loopDivider.getDivision(), v);
 								paramQuantity->setValue(v);
 							}
 						}
@@ -289,6 +303,7 @@ struct MidiCatModule : Module {
 
 							if (t >= 0) {
 								float v = rescale(t, 0.f, 127.f, paramQuantity->getMinValue(), paramQuantity->getMaxValue());
+								// Do not use filters on notes
 								paramQuantity->setValue(v);
 							}
 						}
@@ -334,6 +349,8 @@ struct MidiCatModule : Module {
 	}
 
 	void setMode(MIDIMODE midiMode) {
+		if (this->midiMode == midiMode)
+			return;
 		this->midiMode = midiMode;
 		switch (midiMode) {
 			case MIDIMODE::MIDIMODE_LOCATE:
@@ -377,7 +394,7 @@ struct MidiCatModule : Module {
 		// Learn
 		if (learningId >= 0 && valuesCc[cc] != value) {
 			ccs[learningId] = cc;
-			ccsMode[learningId] = CCMODE::CCMODE_DEFAULT;
+			ccsMode[learningId] = CCMODE::CCMODE_DIRECT;
 			notes[learningId] = -1;
 			learnedCc = true;
 			commitLearn();
@@ -489,6 +506,8 @@ struct MidiCatModule : Module {
 
 	void learnParam(int id, int moduleId, int paramId) {
 		APP->engine->updateParamHandle(&paramHandles[id], moduleId, paramId, true);
+		filterInitialized[id] = false;
+		valueFilters[id].reset();
 		learnedParam = true;
 		commitLearn();
 		updateMapLen();
@@ -611,7 +630,7 @@ struct CcModeMenuItem : MenuItem {
 
 	Menu *createChildMenu() override {
 		Menu *menu = new Menu;
-		menu->addChild(construct<CcModeItem>(&MenuItem::text, "Direct", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::CCMODE_DEFAULT));
+		menu->addChild(construct<CcModeItem>(&MenuItem::text, "Direct", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::CCMODE_DIRECT));
 		menu->addChild(construct<CcModeItem>(&MenuItem::text, "Pickup (snap)", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::CCMODE_PICKUP1));
 		menu->addChild(construct<CcModeItem>(&MenuItem::text, "Pickup (jump)", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::CCMODE_PICKUP2));
 		return menu;
