@@ -9,6 +9,8 @@
     - Renamed "Clock"-mode to "Arm" for SLOT-port
     - Added option to autoload first preset on load of 8FACE presets
     - Fixed unusable SLOT-modes "0..10V" and "C4..G4"
+- Module µMAP
+    - Added ventilation holes on the panel to prevent overheating
 - Module ReMOVE Lite
     - Added playmode "sequence random" which walks randomly through all sequences
 - Module STRIP

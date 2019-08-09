@@ -214,10 +214,10 @@ struct CVMapMicroWidget : ModuleWidget {
 		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 271.8f), module, CVMapMicro::SCALE_INPUT));
 		addChild(createParamCentered<Trimpot>(Vec(22.5f, 245.5f), module, CVMapMicro::SCALE_PARAM));
 
-		MapButton *button = createParamCentered<MapButton>(Vec(22.5f, 73.7f), module, CVMapMicro::MAP_PARAM);
+		MapButton *button = createParamCentered<MapButton>(Vec(22.5f, 60.3f), module, CVMapMicro::MAP_PARAM);
 		button->setModule(module);
 		addParam(button);
-		addChild(createLightCentered<MapLight<GreenRedLight>>(Vec(22.5f, 73.7f), module, CVMapMicro::MAP_LIGHT));
+		addChild(createLightCentered<MapLight<GreenRedLight>>(Vec(22.5f, 60.3f), module, CVMapMicro::MAP_LIGHT));
 
 		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 134.f), module, CVMapMicro::INPUT));
 		addOutput(createOutputCentered<PJ301MPort>(Vec(22.5f, 330.f), module, CVMapMicro::OUTPUT));
