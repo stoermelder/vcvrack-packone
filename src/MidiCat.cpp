@@ -133,8 +133,8 @@ struct MidiCatModule : Module {
 	int lastValueInIndicate[MAX_CHANNELS];
 	float lastValueOut[MAX_CHANNELS];
 
-	dsp::ExponentialFilter valueFilters[MAX_CHANNELS];
-	bool filterInitialized[MAX_CHANNELS] = {};
+	//dsp::ExponentialFilter valueFilters[MAX_CHANNELS];
+	//bool filterInitialized[MAX_CHANNELS] = {};
 
 	dsp::ClockDivider loopDivider;
 	dsp::ClockDivider indicatorDivider;
@@ -144,7 +144,7 @@ struct MidiCatModule : Module {
 		for (int id = 0; id < MAX_CHANNELS; id++) {
 			paramHandles[id].color = nvgRGB(0xff, 0xff, 0x40);
 			paramHandleIndicator[id].handle = &paramHandles[id];
-			valueFilters[id].lambda = 1 / 0.01f;
+			//valueFilters[id].lambda = 1 / 0.01f;
 			APP->engine->addParamHandle(&paramHandles[id]);
 		}
 		loopDivider.setDivision(128);
@@ -175,8 +175,8 @@ struct MidiCatModule : Module {
 			ccsMode[i] = CCMODE::CCMODE_DIRECT;
 			notesMode[i] = NOTEMODE::NOTEMODE_MOMENTARY;
 
-			filterInitialized[i] = false;
-			valueFilters[i].reset();
+			//filterInitialized[i] = false;
+			//valueFilters[i].reset();
 		}
 		midiInput.reset();
 		midiOutput.reset();
@@ -220,10 +220,10 @@ struct MidiCatModule : Module {
 				switch (midiMode) {
 					case MIDIMODE::MIDIMODE_DEFAULT: {
 						// Set filter from param value if filter is uninitialized
-						if (!filterInitialized[id]) {
-							valueFilters[id].out = paramQuantity->getScaledValue();
-							filterInitialized[id] = true;
-						}
+						//if (!filterInitialized[id]) {
+						//	valueFilters[id].out = paramQuantity->getScaledValue();
+						//	filterInitialized[id] = true;
+						//}
 
 						// Check if CC value has been set
 						if (cc >= 0 && valuesCc[cc] >= 0)
@@ -258,7 +258,7 @@ struct MidiCatModule : Module {
 
 							if (t >= 0) {
 								float v = rescale(t, 0.f, 127.f, paramQuantity->getMinValue(), paramQuantity->getMaxValue());
-								v = valueFilters[id].process(args.sampleTime * loopDivider.getDivision(), v);
+								//v = valueFilters[id].process(args.sampleTime * loopDivider.getDivision(), v);
 								paramQuantity->setValue(v);
 							}
 						}
@@ -506,8 +506,8 @@ struct MidiCatModule : Module {
 
 	void learnParam(int id, int moduleId, int paramId) {
 		APP->engine->updateParamHandle(&paramHandles[id], moduleId, paramId, true);
-		filterInitialized[id] = false;
-		valueFilters[id].reset();
+		//filterInitialized[id] = false;
+		//valueFilters[id].reset();
 		learnedParam = true;
 		commitLearn();
 		updateMapLen();
