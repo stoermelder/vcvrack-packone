@@ -40,6 +40,6 @@ The file-format "vcvss" for storing strips is very close to Rack's own format fo
 
 Bonus tips:
 
-- If you want some documentation on your strip just add a VCV Notes module and type in some text.
+- If you want some documentation for your strip just add a VCV Notes module and type in some text.
 
 This module was added in v1.0.4 of PackOne.

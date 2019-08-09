@@ -1,4 +1,4 @@
-### 1.1.0 (in development)
+### 1.1.0
 
 - Module MIDI-CAT
     - New module, mapping module similar to VCV's MIDI-MAP with midi feedback, note mapping and cc pickup-mode
