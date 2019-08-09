@@ -24,6 +24,7 @@ The PackOne plugin pack gives you a some utility modules for [VCV Rack](https://
 Stable versions are released in the [VCV Library](https://vcvrack.com/plugins.html#packone).
 
 Feel free to contact me or create a GitHub issue if you have any problems or questions!
+If you like my modules consider donating to https://paypal.me/stoermelder. Thanks for your support!
 
 ## Building
 
