@@ -341,7 +341,7 @@ struct ExcludeButton : TL1105 {
 			return;
 		// Check if a ParamWidget was touched
 		ParamWidget *touchedParam = APP->scene->rack->touchedParam;
-		if (touchedParam && touchedParam->paramQuantity->module != module) {
+		if (touchedParam && touchedParam->paramQuantity && touchedParam->paramQuantity->module != module) {
 			int moduleId = touchedParam->paramQuantity->module->id;
 			int paramId = touchedParam->paramQuantity->paramId;
 			groupExcludeParam(moduleId, paramId);
@@ -394,7 +394,7 @@ struct ExcludeButton : TL1105 {
 				if (m->rightExpander.moduleId == moduleId) {
 					ModuleWidget *mw = APP->scene->rack->getModule(m->rightExpander.moduleId);
 					for (ParamWidget *param : mw->params) {
-						if (param->paramQuantity->paramId == paramId) {
+						if (param->paramQuantity && param->paramQuantity->paramId == paramId) {
 							// Aquire excludeMutex to get exclusive access to excludedParams
 							std::lock_guard<std::mutex> lockGuard(module->excludeMutex);
 							module->excludedParams.insert(std::make_tuple(moduleId, paramId));
@@ -414,7 +414,7 @@ struct ExcludeButton : TL1105 {
 				if (m->leftExpander.moduleId == moduleId) {
 					ModuleWidget *mw = APP->scene->rack->getModule(m->leftExpander.moduleId);
 					for (ParamWidget *param : mw->params) {
-						if (param->paramQuantity->paramId == paramId) {
+						if (param->paramQuantity && param->paramQuantity->paramId == paramId) {
 							// Aquire excludeMutex to get exclusive access to excludedParams
 							std::lock_guard<std::mutex> lockGuard(module->excludeMutex);
 							module->excludedParams.insert(std::make_tuple(moduleId, paramId));
