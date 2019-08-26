@@ -36,7 +36,7 @@ jobs:
       git submodule update --init --recursive
 
       pushd $AGENT_TEMPDIRECTORY
-      curl -o Rack-SDK.zip https://vcvrack.com/downloads/Rack-SDK-1.1.3.zip
+      curl -o Rack-SDK.zip https://vcvrack.com/downloads/Rack-SDK-1.1.4.zip
       unzip Rack-SDK.zip
       
     displayName: Get Rack 
