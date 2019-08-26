@@ -72,6 +72,12 @@
 			"name": "MIDI-CAT",
 			"description": "Mapping module for midi CCs and notes to parameters of any module, similar to MIDI-MAP",
 			"tags": ["Utility", "MIDI"]
+		},
+		{
+			"slug": "AudioInterface64",
+			"name": "AUDIO-64",
+			"description": "",
+			"tags": [""]
 		}
 	]
 }
