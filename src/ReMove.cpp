@@ -268,8 +268,11 @@ struct ReMoveModule : MapModule<1> {
                     // Are we still recording?
                     if (isRecording) {
                         seqData[dataPtr] = getValue();
-                        // Output on CV out only while recording
-                        setValue(seqData[dataPtr]);
+
+                        // Push value on parameter only when CV input is been used
+                        ParamQuantity* paramQuantity = NULL;
+                        if (inputs[CV_INPUT].isConnected()) paramQuantity = getParamQuantity(0);
+                        setValue(seqData[dataPtr], paramQuantity);
                         seqLength[seq]++;
                         dataPtr++;
                         // Stop recording when end of sequence is reached
@@ -353,7 +356,7 @@ struct ReMoveModule : MapModule<1> {
                     dataPtr = floor(rescale(v, 0.f, 10.f, seqLow, seqLow + seqLength[seq] - 1));
                     v = seqData[dataPtr];
                     setValue(v, paramQuantity);
-                }     
+                }
             }
 
             if (isPlaying) {
@@ -469,7 +472,7 @@ struct ReMoveModule : MapModule<1> {
         seqLength[seq] = 0;
         dataPtr = seqLow;
         sampleTimer.reset();
-        paramHandles[0].color = nvgRGB(0xff, 0x40, 0xff);
+        if (!inputs[CV_INPUT].isConnected()) paramHandles[0].color = nvgRGB(0xff, 0x40, 0xff);
         recTouch = getValue();
         recTouched = false;
     }

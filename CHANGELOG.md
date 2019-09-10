@@ -1,3 +1,8 @@
+### 1.x.x (in development)
+
+- Module ReMOVE Lite
+    - Value is set on the mapped parameter when using IN-port for recording (#48)
+
 ### 1.1.0
 
 - Module MIDI-CAT
