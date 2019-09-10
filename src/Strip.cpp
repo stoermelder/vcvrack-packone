@@ -134,7 +134,6 @@ struct StripModule : Module {
 	/** 
 	 * Disables/enables all modules of the current strip.
 	 * To be called from engine-thread only.
-	 * TODO: use worker thread instead to get thread-safety
 	 */
 	void groupDisable(bool val) {
 		if (lastState == val) return;
@@ -174,11 +173,10 @@ struct StripModule : Module {
 	/** 
 	 * Randomizes all modules of the current strip.
 	 * To be called from engine-thread only.
-	 * TODO: use worker thread instead to get thread-safety
 	 */
 	void groupRandomize() {
-		// Aquire excludeMutex to get get exclusive access to excludedParams
-		std::lock_guard<std::mutex> lockGuard(excludeMutex);
+		//std::lock_guard<std::mutex> lockGuard(excludeMutex);
+		// Do not lock the mutex as changes on excludedParams are rare events
 		if (mode == MODE_LEFTRIGHT || mode == MODE_RIGHT) {
 			Module *m = this;
 			while (true) {
@@ -231,7 +229,6 @@ struct StripModule : Module {
 				m = m->leftExpander.module;
 			}
 		}
-		// Release excludeMutex
 	}
 
 	json_t *dataToJson() override {
