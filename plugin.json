@@ -17,61 +17,71 @@
 			"slug": "CVMap",
 			"name": "CV-MAP",
 			"description": "Add CV automation to 32 parameters of any module",
-			"tags": ["Utility", "Polyphonic", "Controller"]
+			"tags": ["Utility", "Polyphonic", "Controller"],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/CVMap.md"
 		},
 		{
 			"slug": "CVMapMicro",
 			"name": "µMAP",
 			"description": "Add CV automation to one parameter of any module",
-			"tags": ["Utility", "Controller"]
+			"tags": ["Utility", "Controller"],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/CVMapMicro.md"
 		},
 		{
 			"slug": "CVPam",
 			"name": "CV-PAM",
 			"description": "Generate CV from any parameter change of any module",
-			"tags": ["Utility", "Polyphonic", "Controller"]
+			"tags": ["Utility", "Polyphonic", "Controller"],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/CVPam.md"
 		},
 		{
 			"slug": "RotorA",
 			"name": "ROTOR Model A",
 			"description": "Rotates a signal across polyphonic channels",
-			"tags": ["Utility", "Polyphonic"]
+			"tags": ["Utility", "Polyphonic"],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/RotorA.md"
 		},
 		{
 			"slug": "ReMoveLite",
 			"name": "ReMOVE Lite",
 			"description": "Recorder for parameter automation",
-			"tags": ["Utility", "Recording", "Controller"]
+			"tags": ["Utility", "Recording", "Controller"],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/ReMove.md"
 		},
 		{
 			"slug": "Bolt",
 			"name": "BOLT",
 			"description": "Polyphonic logic boolean functions with modulation and sample & hold",
-			"tags": ["Utility", "Logic", "Polyphonic", "Sample and hold"]
+			"tags": ["Utility", "Logic", "Polyphonic", "Sample and hold"],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Bolt.md"
 		},
 		{
 			"slug": "Infix",
 			"name": "INFIX",
 			"description": "Insert for polyphonic cables",
-			"tags": ["Utility", "Polyphonic"]
+			"tags": ["Utility", "Polyphonic"],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Infix.md"
 		},
 		{
 			"slug": "Strip",
 			"name": "STRIP",
 			"description": "Manage a group of modules by using the expander-mechanism, providing load and save functionality",
-			"tags": ["Utility"]
+			"tags": ["Utility"],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Strip.md"
 		},
 		{
 			"slug": "EightFace",
 			"name": "8FACE",
 			"description": "Universal expander for sequencing up to eight presets of any module",
-			"tags": ["Utility"]
+			"tags": ["Utility"],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/EightFace.md"
 		},
 		{
 			"slug": "MidiCat",
 			"name": "MIDI-CAT",
 			"description": "Mapping module for midi CCs and notes to parameters of any module, similar to MIDI-MAP",
-			"tags": ["Utility", "MIDI"]
+			"tags": ["Utility", "MIDI"],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/MidiCat.md"
 		},
 		{
 			"slug": "AudioInterface64",
