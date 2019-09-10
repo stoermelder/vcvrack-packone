@@ -1,5 +1,8 @@
 ### 1.x.x (in development)
 
+- Module µMAP
+    - Added option to invert output (#46)
+    - Selected voltage range (-5V..5V or 0V..10V) is also used for OUT-port
 - Module ReMOVE Lite
     - Value is set on the mapped parameter when using IN-port for recording (#48)
 

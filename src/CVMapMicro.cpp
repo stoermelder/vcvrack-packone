@@ -31,6 +31,9 @@ struct CVMapMicroModule : CVMapModule<1> {
 		NUM_LIGHTS
 	};
 
+	/** [Stored to Json] */
+	bool invertedOutput = false;
+
 	dsp::ClockDivider lightDivider;
 
 	CVMapMicroModule() {
@@ -44,7 +47,7 @@ struct CVMapMicroModule : CVMapModule<1> {
 		onReset();
 	}
 
-	void process(const ProcessArgs &args) override {
+	void process(const ProcessArgs& args) override {
 		if (inputs[INPUT].isConnected()) {
 			ParamQuantity *paramQuantity = getParamQuantity(0);
 			if (paramQuantity != NULL) {
@@ -75,7 +78,12 @@ struct CVMapMicroModule : CVMapModule<1> {
 					lastValue[0] = v;
 
 					if (outputs[OUTPUT].isConnected()) {
-						outputs[OUTPUT].setVoltage(rescale(v, 0.f, 1.f, 0.f, 10.f));
+						if (invertedOutput) v = 1 - v;
+						if (bipolarInput)
+							v = rescale(v, 0.f, 1.f, -5.f, 5.f);
+						else
+							v = rescale(v, 0.f, 1.f, 0.f, 10.f);
+						outputs[OUTPUT].setVoltage(v);
 					}
 				}
 			}
@@ -88,18 +96,32 @@ struct CVMapMicroModule : CVMapModule<1> {
 
 		CVMapModule<1>::process(args);
 	}
+
+	json_t* dataToJson() override {
+		json_t* rootJ = CVMapModule<1>::dataToJson();
+		json_object_set_new(rootJ, "invertedOutput", json_boolean(invertedOutput));
+
+		return rootJ;
+	}
+
+	void dataFromJson(json_t* rootJ) override {
+		CVMapModule<1>::dataFromJson(rootJ);
+
+		json_t* invertedOutputJ = json_object_get(rootJ, "invertedOutput");
+		if (invertedOutputJ) invertedOutput = json_boolean_value(invertedOutputJ);
+	}
 };
 
 
 struct MapButton : LEDBezel {
-	CVMapMicroModule *module;
+	CVMapMicroModule* module;
 	int id = 0;
 
-	void setModule(CVMapMicroModule *module) {
+	void setModule(CVMapMicroModule* module) {
 		this->module = module;
 	}
 
-	void onButton(const event::Button &e) override {
+	void onButton(const event::Button& e) override {
 		e.stopPropagating();
 		if (!module)
 			return;
@@ -112,12 +134,12 @@ struct MapButton : LEDBezel {
 			e.consume(this);
 
 			if (module->paramHandles[id].moduleId >= 0) {
-				ui::Menu *menu = createMenu();
+				ui::Menu* menu = createMenu();
 				std::string header = "Parameter \"" + getParamName() + "\"";
 				menu->addChild(createMenuLabel(header));
 
 				struct UnmapItem : MenuItem {
-					CVMapMicroModule *module;
+					CVMapMicroModule* module;
 					int id;
 					void onAction(const event::Action &e) override {
 						module->clearMap(0);
@@ -129,8 +151,8 @@ struct MapButton : LEDBezel {
 					CVMapMicroModule *module;
 					int id;
 					void onAction(const event::Action &e) override {
-						ParamHandle *paramHandle = &module->paramHandles[id];
-						ModuleWidget *mw = APP->scene->rack->getModule(paramHandle->moduleId);
+						ParamHandle* paramHandle = &module->paramHandles[id];
+						ModuleWidget* mw = APP->scene->rack->getModule(paramHandle->moduleId);
 						module->paramHandleIndicator[id].indicate(mw);
 					}
 				};
@@ -155,7 +177,7 @@ struct MapButton : LEDBezel {
 		if (!module)
 			return;
 		// Check if a ParamWidget was touched
-		ParamWidget *touchedParam = APP->scene->rack->touchedParam;
+		ParamWidget* touchedParam = APP->scene->rack->touchedParam;
 		if (touchedParam && touchedParam->paramQuantity->module != module) {
 			APP->scene->rack->touchedParam = NULL;
 			int moduleId = touchedParam->paramQuantity->module->id;
@@ -172,21 +194,21 @@ struct MapButton : LEDBezel {
 			return "";
 		if (id >= module->mapLen)
 			return "<ERROR>";
-		ParamHandle *paramHandle = &module->paramHandles[id];
+		ParamHandle* paramHandle = &module->paramHandles[id];
 		if (paramHandle->moduleId < 0)
 			return "<ERROR>";
-		ModuleWidget *mw = APP->scene->rack->getModule(paramHandle->moduleId);
+		ModuleWidget* mw = APP->scene->rack->getModule(paramHandle->moduleId);
 		if (!mw)
 			return "<ERROR>";
 		// Get the Module from the ModuleWidget instead of the ParamHandle.
 		// I think this is more elegant since this method is called in the app world instead of the engine world.
-		Module *m = mw->module;
+		Module* m = mw->module;
 		if (!m)
 			return "<ERROR>";
 		int paramId = paramHandle->paramId;
 		if (paramId >= (int) m->params.size())
 			return "<ERROR>";
-		ParamQuantity *paramQuantity = m->paramQuantities[paramId];
+		ParamQuantity* paramQuantity = m->paramQuantities[paramId];
 		std::string s;
 		s += mw->model->name;
 		s += " ";
@@ -204,7 +226,7 @@ struct MapLight : BASE {
 };
 
 struct CVMapMicroWidget : ModuleWidget {
-	CVMapMicroWidget(CVMapMicroModule *module) {
+	CVMapMicroWidget(CVMapMicroModule* module) {
 		setModule(module);
 		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/CVMapMicro.svg")));
 
@@ -216,7 +238,7 @@ struct CVMapMicroWidget : ModuleWidget {
 		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 271.8f), module, CVMapMicroModule::SCALE_INPUT));
 		addChild(createParamCentered<Trimpot>(Vec(22.5f, 245.5f), module, CVMapMicroModule::SCALE_PARAM));
 
-		MapButton *button = createParamCentered<MapButton>(Vec(22.5f, 60.3f), module, CVMapMicroModule::MAP_PARAM);
+		MapButton* button = createParamCentered<MapButton>(Vec(22.5f, 60.3f), module, CVMapMicroModule::MAP_PARAM);
 		button->setModule(module);
 		addParam(button);
 		addChild(createLightCentered<MapLight<GreenRedLight>>(Vec(22.5f, 60.3f), module, CVMapMicroModule::MAP_LIGHT));
@@ -225,8 +247,8 @@ struct CVMapMicroWidget : ModuleWidget {
 		addOutput(createOutputCentered<PJ301MPort>(Vec(22.5f, 330.f), module, CVMapMicroModule::OUTPUT));
 	}
 
-	void appendContextMenu(Menu *menu) override {
-		CVMapMicroModule *module = dynamic_cast<CVMapMicroModule*>(this->module);
+	void appendContextMenu(Menu* menu) override {
+		CVMapMicroModule* module = dynamic_cast<CVMapMicroModule*>(this->module);
 		assert(module);
 
 		struct ManualItem : MenuItem {
@@ -240,7 +262,7 @@ struct CVMapMicroWidget : ModuleWidget {
 		menu->addChild(new MenuSeparator());
 
 		struct LockItem : MenuItem {
-			CVMapMicroModule *module;
+			CVMapMicroModule* module;
 
 			void onAction(const event::Action &e) override {
 				module->lockParameterChanges ^= true;
@@ -253,7 +275,7 @@ struct CVMapMicroWidget : ModuleWidget {
 		};
 
 		struct UniBiItem : MenuItem {
-			CVMapMicroModule *module;
+			CVMapMicroModule* module;
 
 			void onAction(const event::Action &e) override {
 				module->bipolarInput ^= true;
@@ -265,11 +287,25 @@ struct CVMapMicroWidget : ModuleWidget {
 			}
 		};
 
+		struct SignalOutputItem : MenuItem {
+			CVMapMicroModule* module;
+
+			void onAction(const event::Action &e) override {
+				module->invertedOutput ^= true;
+			}
+
+			void step() override {
+				rightText = module->invertedOutput ? "Inverted" : "Default";
+				MenuItem::step();
+			}
+		};
+
 		menu->addChild(construct<LockItem>(&MenuItem::text, "Parameter changes", &LockItem::module, module));
-		menu->addChild(construct<UniBiItem>(&MenuItem::text, "Signal input", &UniBiItem::module, module));
+		menu->addChild(construct<UniBiItem>(&MenuItem::text, "Voltage range", &UniBiItem::module, module));
+		menu->addChild(construct<SignalOutputItem>(&MenuItem::text, "Signal output", &SignalOutputItem::module, module));
 	}
 };
 
 } // namespace CVMapMicro
 
-Model *modelCVMapMicro = createModel<CVMapMicro::CVMapMicroModule, CVMapMicro::CVMapMicroWidget>("CVMapMicro");
+Model* modelCVMapMicro = createModel<CVMapMicro::CVMapMicroModule, CVMapMicro::CVMapMicroWidget>("CVMapMicro");

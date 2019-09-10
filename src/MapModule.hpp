@@ -48,14 +48,14 @@ struct MapModule : Module {
 	ParamHandle paramHandles[MAX_CHANNELS];
 	ParamHandleIndicator paramHandleIndicator[MAX_CHANNELS];
 
-    /** Channel ID of the learning session */
+	/** Channel ID of the learning session */
 	int learningId;
 	/** Whether the param has been set during the learning session */
 	bool learnedParam;
 
 	bool textScrolling = true;
 
-    /** The smoothing processor (normalized between 0 and 1) of each channel */
+	/** The smoothing processor (normalized between 0 and 1) of each channel */
 	dsp::ExponentialFilter valueFilters[MAX_CHANNELS];
 
 	dsp::ClockDivider indicatorDivider;
@@ -107,7 +107,7 @@ struct MapModule : Module {
 		return paramQuantity;
 	}
 
-   	virtual void clearMap(int id) {
+	virtual void clearMap(int id) {
 		learningId = -1;
 		APP->engine->updateParamHandle(&paramHandles[id], -1, 0, true);
 		valueFilters[id].reset();
