@@ -7,6 +7,7 @@
 #include <mutex>
 #include <condition_variable>
 
+
 namespace AudioInterface64 {
 
 template <int AUDIO_OUTPUTS, int AUDIO_INPUTS>
@@ -16,10 +17,12 @@ struct AudioInterfacePort : audio::Port {
 	std::mutex audioMutex;
 	std::condition_variable audioCv;
 	// Audio thread produces, engine thread consumes
-	dsp::DoubleRingBuffer < dsp::Frame<AUDIO_INPUTS>, (1 << 15) > inputBuffer;
+	dsp::DoubleRingBuffer<dsp::Frame<AUDIO_INPUTS>, (1 << 15)> inputBuffer;
 	// Audio thread consumes, engine thread produces
-	dsp::DoubleRingBuffer < dsp::Frame<AUDIO_OUTPUTS>, (1 << 15) > outputBuffer;
+	dsp::DoubleRingBuffer<dsp::Frame<AUDIO_OUTPUTS>, (1 << 15)> outputBuffer;
 	bool active = false;
+
+	std::chrono::duration<int64_t, std::milli> timeout = std::chrono::milliseconds(100);
 
 	~AudioInterfacePort() {
 		// Close stream here before destructing AudioInterfacePort, so the mutexes are still valid when waiting to close.
@@ -51,7 +54,6 @@ struct AudioInterfacePort : audio::Port {
 			auto cond = [&] {
 				return (outputBuffer.size() >= (size_t) frames);
 			};
-			auto timeout = std::chrono::milliseconds(100);
 			if (audioCv.wait_for(lock, timeout, cond)) {
 				// Consume audio block
 				for (int i = 0; i < frames; i++) {
@@ -113,10 +115,15 @@ struct AudioInterface : Module {
 	dsp::DoubleRingBuffer<dsp::Frame<AUDIO_INPUTS>, 16> inputBuffer;
 	dsp::DoubleRingBuffer<dsp::Frame<AUDIO_OUTPUTS>, 16> outputBuffer;
 
+	std::chrono::duration<int64_t, std::milli> timeout = std::chrono::milliseconds(200);
+
+	dsp::ClockDivider lightDivider;
+
 	AudioInterface() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		port.maxChannels = std::max(AUDIO_OUTPUTS, AUDIO_INPUTS);
 		onSampleRateChange();
+		lightDivider.setDivision(1024);
 	}
 
 	void process(const ProcessArgs& args) override {
@@ -135,7 +142,6 @@ struct AudioInterface : Module {
 			auto cond = [&] {
 				return (!port.inputBuffer.empty());
 			};
-			auto timeout = std::chrono::milliseconds(200);
 			if (port.engineCv.wait_for(lock, timeout, cond)) {
 				// Convert inputs
 				int inLen = port.inputBuffer.size();
@@ -161,18 +167,24 @@ struct AudioInterface : Module {
 		}
 		for (int i = 0; i < port.numInputs; i++) {
 			outputs[AUDIO_OUTPUT + i].setVoltage(10.f * inputFrame.samples[i]);
+		}		
+		if (lastNumInputs != port.numInputs) {
+			lastNumInputs = port.numInputs;
+			for (int i = port.numInputs; i < AUDIO_INPUTS; i++) {
+				outputs[AUDIO_OUTPUT + i].setVoltage(0.f);
+			}
 		}
-		for (int i = port.numInputs; i < AUDIO_INPUTS; i++) {
-			outputs[AUDIO_OUTPUT + i].setVoltage(0.f);
-		}
-
+		
 		// Outputs: rack engine -> audio engine
 		if (port.active && port.numOutputs > 0) {
 			// Get and push output SRC frame
 			if (!outputBuffer.full()) {
 				dsp::Frame<AUDIO_OUTPUTS> outputFrame;
-				for (int i = 0; i < AUDIO_OUTPUTS; i++) {
-					outputFrame.samples[i] = inputs[AUDIO_INPUT + i].getVoltageSum() / 10.f;
+				std::memset(&outputFrame, 0, sizeof(outputFrame));
+				for (int i = 0; i < port.numOutputs; i++) {
+					if (inputs[AUDIO_INPUT + i].isConnected()) {
+						outputFrame.samples[i] = inputs[AUDIO_INPUT + i].getVoltageSum() / 10.f;
+					}
 				}
 				outputBuffer.push(outputFrame);
 			}
@@ -186,7 +198,6 @@ struct AudioInterface : Module {
 				if (!cond())
 					APP->engine->yieldWorkers();
 				std::unique_lock<std::mutex> lock(port.engineMutex);
-				auto timeout = std::chrono::milliseconds(200);
 				if (port.engineCv.wait_for(lock, timeout, cond)) {
 					// Push converted output
 					int inLen = outputBuffer.size();
@@ -207,11 +218,14 @@ struct AudioInterface : Module {
 			port.audioCv.notify_one();
 		}
 
-		// Turn on light if at least one port is enabled in the nearby pair
-		for (int i = 0; i < AUDIO_INPUTS / 2; i++)
-			lights[INPUT_LIGHT + i].setBrightness(port.active && port.numOutputs >= 2 * i + 1);
-		for (int i = 0; i < AUDIO_OUTPUTS / 2; i++)
-			lights[OUTPUT_LIGHT + i].setBrightness(port.active && port.numInputs >= 2 * i + 1);
+		// Set channel lights infrequently
+		if (lightDivider.process()) {
+			// Turn on light if at least one port is enabled in the nearby pair
+			for (int i = 0; i < AUDIO_INPUTS / 2; i++)
+				lights[INPUT_LIGHT + i].setBrightness(port.active && port.numOutputs >= 2 * i + 1);
+			for (int i = 0; i < AUDIO_OUTPUTS / 2; i++)
+				lights[OUTPUT_LIGHT + i].setBrightness(port.active && port.numInputs >= 2 * i + 1);
+		}
 	}
 
 	json_t* dataToJson() override {
@@ -252,6 +266,8 @@ struct Audio64Widget : AudioWidget {
 		sampleRateChoice->box.size = mm2px(Vec(sampleRateChoice->box.size.x, 7.5f));
 		sampleRateChoice->box.pos = deviceChoice->box.getBottomLeft();
 		sampleRateChoice->color = nvgRGB(0xf0, 0xf0, 0xf0);
+
+		sampleRateSeparator->box.pos.y = sampleRateChoice->box.pos.y;
 
 		bufferSizeChoice->textOffset = Vec(6.f, 14.7f);
 		bufferSizeChoice->box.size.y = sampleRateChoice->box.size.y;
