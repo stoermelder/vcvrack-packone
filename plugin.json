@@ -65,7 +65,7 @@
 		{
 			"slug": "Strip",
 			"name": "STRIP",
-			"description": "Manage a group of modules by using the expander-mechanism, providing load and save functionality",
+			"description": "Group module manipulation: load, save, cut, copy, paste, randomize, disable, enable",
 			"tags": ["Utility"],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Strip.md"
 		},
