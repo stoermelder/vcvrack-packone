@@ -21,6 +21,11 @@ enum SLOTCVMODE {
 	SLOTCVMODE_ARM = 3
 };
 
+enum MODE {
+	MODE_LEFT = 0,
+	MODE_RIGHT = 1
+};
+
 struct EightFaceModule : Module {
 	enum ParamIds {
 		MODE_PARAM,
@@ -36,10 +41,14 @@ struct EightFaceModule : Module {
 		NUM_OUTPUTS
 	};
 	enum LightIds {
-		ENUMS(MODULE_LIGHT, 2),
+		ENUMS(LEFT_LIGHT, 2),
+		ENUMS(RIGHT_LIGHT, 2),
 		ENUMS(PRESET_LIGHT, NUM_PRESETS * 3),
 		NUM_LIGHTS
 	};
+
+	/** [Stored to JSON] left? right? */
+	MODE mode = MODE_LEFT;
 
 	/** [Stored to JSON] */
 	std::string pluginSlug;
@@ -135,8 +144,9 @@ struct EightFaceModule : Module {
 	}
 
 	void process(const ProcessArgs &args) override {
-		if (leftExpander.moduleId >= 0 && leftExpander.module) {
-			Module *t = leftExpander.module;
+		Expander* exp = mode == MODE_LEFT ? &leftExpander : &rightExpander;
+		if (exp->moduleId >= 0 && exp->module) {
+			Module *t = exp->module;
 			bool c = modelSlug == "" || (t->model->name == modelSlug && t->model->plugin->name == pluginSlug);
 			connected = c ? 2 : 1;
 
@@ -227,8 +237,18 @@ struct EightFaceModule : Module {
 			modeLight += 0.3f * s;
 			if (modeLight > 1.f) modeLight = 0.f;
 
-			lights[MODULE_LIGHT + 0].setSmoothBrightness(connected == 2 ? modeLight : 0.f, s);
-			lights[MODULE_LIGHT + 1].setBrightness(connected == 1 ? 1.f : 0.f);
+			if (mode == MODE_LEFT) {
+				lights[LEFT_LIGHT + 0].setSmoothBrightness(connected == 2 ? modeLight : 0.f, s);
+				lights[LEFT_LIGHT + 1].setBrightness(connected == 1 ? 1.f : 0.f);
+				lights[RIGHT_LIGHT + 0].setBrightness(0.f);
+				lights[RIGHT_LIGHT + 1].setBrightness(0.f);
+			}
+			else {
+				lights[LEFT_LIGHT + 0].setBrightness(0.f);
+				lights[LEFT_LIGHT + 1].setBrightness(0.f);
+				lights[RIGHT_LIGHT + 0].setSmoothBrightness(connected == 2 ? modeLight : 0.f, s);
+				lights[RIGHT_LIGHT + 1].setBrightness(connected == 1 ? 1.f : 0.f);
+			}
 
 			for (int i = 0; i < NUM_PRESETS; i++) {
 				if (params[MODE_PARAM].getValue() == 0.f) {
@@ -326,6 +346,7 @@ struct EightFaceModule : Module {
 
 	json_t *dataToJson() override {
 		json_t *rootJ = json_object();
+		json_object_set_new(rootJ, "mode", json_integer(mode));
 		json_object_set_new(rootJ, "pluginSlug", json_string(pluginSlug.c_str()));
 		json_object_set_new(rootJ, "modelSlug", json_string(modelSlug.c_str()));
 		json_object_set_new(rootJ, "moduleName", json_string(moduleName.c_str()));
@@ -347,6 +368,8 @@ struct EightFaceModule : Module {
 	}
 
 	void dataFromJson(json_t *rootJ) override {
+		json_t *modeJ = json_object_get(rootJ, "mode");
+		if (modeJ) mode = (MODE)json_integer_value(modeJ);
 		pluginSlug = json_string_value(json_object_get(rootJ, "pluginSlug"));
 		modelSlug = json_string_value(json_object_get(rootJ, "modelSlug"));
 		json_t *moduleNameJ = json_object_get(rootJ, "moduleName");
@@ -367,8 +390,9 @@ struct EightFaceModule : Module {
 			preset = 0;
 
 		if (autoload) {
-			if (leftExpander.moduleId >= 0 && leftExpander.module) {
-				Module *t = leftExpander.module;
+			Expander* exp = mode == MODE_LEFT ? &leftExpander : &rightExpander;
+			if (exp->moduleId >= 0 && exp->module) {
+				Module *t = exp->module;
 				presetLoad(t, 0, false);
 			}
 		}
@@ -419,6 +443,20 @@ struct AutoloadItem : MenuItem {
 };
 
 
+struct ModeItem : MenuItem {
+	EightFaceModule* module;
+
+	void onAction(const event::Action &e) override {
+		module->mode = module->mode == MODE_LEFT ? MODE_RIGHT : MODE_LEFT;
+	}
+
+	void step() override {
+		rightText = module->mode == MODE_LEFT ? "Left" : "Right";
+		MenuItem::step();
+	}
+};
+
+
 struct CKSSH : CKSS {
 	CKSSH() {
 		shadow->opacity = 0.0f;
@@ -450,7 +488,8 @@ struct EightFaceWidget : ModuleWidget {
 		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 58.9f), module, EightFaceModule::SLOT_INPUT));
 		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 95.2f), module, EightFaceModule::RESET_INPUT));
 
-		addChild(createLightCentered<SmallLight<GreenRedLight>>(Vec(22.5f, 119.1f), module, EightFaceModule::MODULE_LIGHT));
+		addChild(createLightCentered<TriangleLeftLight<SmallLight<GreenRedLight>>>(Vec(13.8f, 119.1f), module, EightFaceModule::LEFT_LIGHT));
+		addChild(createLightCentered<TriangleRightLight<SmallLight<GreenRedLight>>>(Vec(31.2f, 119.1f), module, EightFaceModule::RIGHT_LIGHT));
 
 		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 140.0f), module, EightFaceModule::PRESET_LIGHT + 0 * 3));
 		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 163.6f), module, EightFaceModule::PRESET_LIGHT + 1 * 3));
@@ -502,6 +541,8 @@ struct EightFaceWidget : ModuleWidget {
 		SlovCvModeMenuItem *slotCvModeMenuItem = construct<SlovCvModeMenuItem>(&MenuItem::text, "Port SLOT mode", &SlovCvModeMenuItem::module, module);
 		slotCvModeMenuItem->rightText = RIGHT_ARROW;
 		menu->addChild(slotCvModeMenuItem);
+
+		menu->addChild(construct<ModeItem>(&MenuItem::text, "Module", &ModeItem::module, module));
 
 		menu->addChild(construct<AutoloadItem>(&MenuItem::text, "Autoload first preset", &AutoloadItem::module, module));
 	}

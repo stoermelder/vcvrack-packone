@@ -1,10 +1,14 @@
-### 1.x.x (in development)
+### 1.2.0 (in development)
 
+- Module 8FACE
+    - Added option to switch between left and right controlled module (#50)
 - Module µMAP
     - Added option to invert output (#46)
     - Selected voltage range (-5V..5V or 0V..10V) is also used for OUT-port
 - Module ReMOVE Lite
     - Value is set on the mapped parameter when using IN-port for recording (#48)
+- Module STRIP
+    - Changed LEDs to triangle shape
 
 ### 1.1.0
 
