@@ -74,7 +74,7 @@ struct EightFaceModule : Module {
 	int slotCvModeDir = 1;
 
 	std::default_random_engine randGen{(uint16_t)std::chrono::system_clock::now().time_since_epoch().count()};
-	std::uniform_int_distribution<int> *randDist = NULL;
+	std::uniform_int_distribution<int>* randDist = NULL;
 
 	int connected = 0;
 	int presetNext = -1;
@@ -83,11 +83,11 @@ struct EightFaceModule : Module {
 
 	std::mutex workerMutex;
 	std::condition_variable workerCondVar;
-	std::thread *worker;
+	std::thread* worker;
 	bool workerIsRunning = true;
 	bool workerDoProcess = false;
 	int workerPreset = -1;
-	ModuleWidget *workerModuleWidget;
+	ModuleWidget* workerModuleWidget;
 
 	LongPressButton typeButtons[NUM_PRESETS];
 	dsp::SchmittTrigger slotTrigger;
@@ -146,7 +146,7 @@ struct EightFaceModule : Module {
 	void process(const ProcessArgs &args) override {
 		Expander* exp = mode == MODE_LEFT ? &leftExpander : &rightExpander;
 		if (exp->moduleId >= 0 && exp->module) {
-			Module *t = exp->module;
+			Module* t = exp->module;
 			bool c = modelSlug == "" || (t->model->name == modelSlug && t->model->plugin->name == pluginSlug);
 			connected = c ? 2 : 1;
 
@@ -276,7 +276,7 @@ struct EightFaceModule : Module {
 		}
 	}
 
-	void presetLoad(Module *m, int p, bool isNext = false, bool force = false) {
+	void presetLoad(Module* m, int p, bool isNext = false, bool force = false) {
 		if (p < 0 || p >= presetCount)
 			return;
 
@@ -285,7 +285,7 @@ struct EightFaceModule : Module {
 				preset = p;
 				presetNext = -1;
 				if (!presetSlotUsed[p]) return;
-				ModuleWidget *mw = APP->scene->rack->getModule(m->id);
+				ModuleWidget* mw = APP->scene->rack->getModule(m->id);
 				//mw->fromJson(presetSlot[p]);
 				workerModuleWidget = mw;
 				workerPreset = p;
@@ -299,7 +299,7 @@ struct EightFaceModule : Module {
 		}
 	}
 
-	void presetSave(Module *m, int p) {
+	void presetSave(Module* m, int p) {
 		pluginSlug = m->model->plugin->name;
 		modelSlug = m->model->name;
 		moduleName = m->model->plugin->brand + " " + m->model->name;
@@ -313,7 +313,7 @@ struct EightFaceModule : Module {
 			return;
 		*/
 
-		ModuleWidget *mw = APP->scene->rack->getModule(m->id);
+		ModuleWidget* mw = APP->scene->rack->getModule(m->id);
 		if (presetSlotUsed[p]) json_decref(presetSlot[p]);
 		presetSlotUsed[p] = true;
 		presetSlot[p] = mw->toJson();
@@ -344,8 +344,8 @@ struct EightFaceModule : Module {
 		randDist = new std::uniform_int_distribution<int>(0, presetCount - 1);
 	}
 
-	json_t *dataToJson() override {
-		json_t *rootJ = json_object();
+	json_t* dataToJson() override {
+		json_t* rootJ = json_object();
 		json_object_set_new(rootJ, "mode", json_integer(mode));
 		json_object_set_new(rootJ, "pluginSlug", json_string(pluginSlug.c_str()));
 		json_object_set_new(rootJ, "modelSlug", json_string(modelSlug.c_str()));
@@ -354,9 +354,9 @@ struct EightFaceModule : Module {
 		json_object_set_new(rootJ, "preset", json_integer(preset));
 		json_object_set_new(rootJ, "presetCount", json_integer(presetCount));
 
-		json_t *presetsJ = json_array();
+		json_t* presetsJ = json_array();
 		for (int i = 0; i < NUM_PRESETS; i++) {
-			json_t *presetJ = json_object();
+			json_t* presetJ = json_object();
 			json_object_set_new(presetJ, "slotUsed", json_boolean(presetSlotUsed[i]));
 			if (presetSlotUsed[i]) {
 				json_object_set(presetJ, "slot", presetSlot[i]);
@@ -367,19 +367,19 @@ struct EightFaceModule : Module {
 		return rootJ;
 	}
 
-	void dataFromJson(json_t *rootJ) override {
-		json_t *modeJ = json_object_get(rootJ, "mode");
+	void dataFromJson(json_t* rootJ) override {
+		json_t* modeJ = json_object_get(rootJ, "mode");
 		if (modeJ) mode = (MODE)json_integer_value(modeJ);
 		pluginSlug = json_string_value(json_object_get(rootJ, "pluginSlug"));
 		modelSlug = json_string_value(json_object_get(rootJ, "modelSlug"));
-		json_t *moduleNameJ = json_object_get(rootJ, "moduleName");
+		json_t* moduleNameJ = json_object_get(rootJ, "moduleName");
 		if (moduleNameJ) moduleName = json_string_value(json_object_get(rootJ, "moduleName"));
 		slotCvMode = (SLOTCVMODE)json_integer_value(json_object_get(rootJ, "slotCvMode"));
 		preset = json_integer_value(json_object_get(rootJ, "preset"));
 		presetCount = json_integer_value(json_object_get(rootJ, "presetCount"));
 
-		json_t *presetsJ = json_object_get(rootJ, "presets");
-		json_t *presetJ;
+		json_t* presetsJ = json_object_get(rootJ, "presets");
+		json_t* presetJ;
 		size_t presetIndex;
 		json_array_foreach(presetsJ, presetIndex, presetJ) {
 			presetSlotUsed[presetIndex] = json_boolean_value(json_object_get(presetJ, "slotUsed"));
@@ -392,7 +392,7 @@ struct EightFaceModule : Module {
 		if (autoload) {
 			Expander* exp = mode == MODE_LEFT ? &leftExpander : &rightExpander;
 			if (exp->moduleId >= 0 && exp->module) {
-				Module *t = exp->module;
+				Module* t = exp->module;
 				presetLoad(t, 0, false);
 			}
 		}
@@ -402,7 +402,7 @@ struct EightFaceModule : Module {
 
 struct SlovCvModeMenuItem : MenuItem {
 	struct SlotCvModeItem : MenuItem {
-		EightFaceModule *module;
+		EightFaceModule* module;
 		SLOTCVMODE slotCvMode;
 
 		void onAction(const event::Action &e) override {
@@ -415,9 +415,9 @@ struct SlovCvModeMenuItem : MenuItem {
 		}
 	};
 
-	EightFaceModule *module;
-	Menu *createChildMenu() override {
-		Menu *menu = new Menu;
+	EightFaceModule* module;
+	Menu* createChildMenu() override {
+		Menu* menu = new Menu;
 		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger forward", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_TRIG_FWD));
 		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger reverse", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_TRIG_REV));
 		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger pingpong", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_TRIG_PINGPONG));
@@ -430,7 +430,7 @@ struct SlovCvModeMenuItem : MenuItem {
 };
 
 struct AutoloadItem : MenuItem {
-	EightFaceModule *module;
+	EightFaceModule* module;
 
 	void onAction(const event::Action &e) override {
 		module->autoload ^= true;
@@ -462,7 +462,7 @@ struct CKSSH : CKSS {
 		shadow->opacity = 0.0f;
 		fb->removeChild(sw);
 
-		TransformWidget *tw = new TransformWidget();
+		TransformWidget* tw = new TransformWidget();
 		tw->addChild(sw);
 		fb->addChild(tw);
 
@@ -478,7 +478,7 @@ struct CKSSH : CKSS {
 
 
 struct EightFaceWidget : ModuleWidget {
-	EightFaceWidget(EightFaceModule *module) {
+	EightFaceWidget(EightFaceModule* module) {
 		setModule(module);
 		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/EightFace.svg")));
 
@@ -513,8 +513,8 @@ struct EightFaceWidget : ModuleWidget {
 	}
 
 	
-	void appendContextMenu(Menu *menu) override {
-		EightFaceModule *module = dynamic_cast<EightFaceModule*>(this->module);
+	void appendContextMenu(Menu* menu) override {
+		EightFaceModule* module = dynamic_cast<EightFaceModule*>(this->module);
 		assert(module);
 
 		struct ManualItem : MenuItem {
@@ -528,17 +528,17 @@ struct EightFaceWidget : ModuleWidget {
 		menu->addChild(new MenuSeparator());
 
 		if (module->moduleName != "") {
-			ui::MenuLabel *textLabel = new ui::MenuLabel;
+			ui::MenuLabel* textLabel = new ui::MenuLabel;
 			textLabel->text = "Configured for...";
 			menu->addChild(textLabel);
 
-			ui::MenuLabel *modelLabel = new ui::MenuLabel;
+			ui::MenuLabel* modelLabel = new ui::MenuLabel;
 			modelLabel->text = module->moduleName;
 			menu->addChild(modelLabel);
 			menu->addChild(new MenuSeparator());
 		}
 
-		SlovCvModeMenuItem *slotCvModeMenuItem = construct<SlovCvModeMenuItem>(&MenuItem::text, "Port SLOT mode", &SlovCvModeMenuItem::module, module);
+		SlovCvModeMenuItem* slotCvModeMenuItem = construct<SlovCvModeMenuItem>(&MenuItem::text, "Port SLOT mode", &SlovCvModeMenuItem::module, module);
 		slotCvModeMenuItem->rightText = RIGHT_ARROW;
 		menu->addChild(slotCvModeMenuItem);
 
@@ -550,4 +550,4 @@ struct EightFaceWidget : ModuleWidget {
 
 } // namespace EightFace
 
-Model *modelEightFace = createModel<EightFace::EightFaceModule, EightFace::EightFaceWidget>("EightFace");
+Model* modelEightFace = createModel<EightFace::EightFaceModule, EightFace::EightFaceWidget>("EightFace");
