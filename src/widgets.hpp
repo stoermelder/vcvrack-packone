@@ -4,6 +4,6 @@
 using namespace rack;
 
 struct PolyLedWidget : Widget {
-    PolyLedWidget();
-    void setModule(Module *module, int firstlightId);
+	PolyLedWidget();
+	void setModule(Module *module, int firstlightId);
 };

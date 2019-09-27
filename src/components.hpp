@@ -34,3 +34,64 @@ struct LongPressButton {
 		return result;
 	}
 };
+
+
+template <typename TBase>
+struct TriangleLeftLight : TBase {
+	void drawLight(const widget::Widget::DrawArgs& args) override {
+		nvgBeginPath(args.vg);
+		nvgMoveTo(args.vg, this->box.size.x, 0);
+		nvgLineTo(args.vg, this->box.size.x, this->box.size.y);
+		nvgLineTo(args.vg, 0, this->box.size.y / 2.f);
+		nvgClosePath(args.vg);
+
+		// Background
+		if (this->bgColor.a > 0.0) {
+			nvgFillColor(args.vg, this->bgColor);
+			nvgFill(args.vg);
+		}
+
+		// Foreground
+		if (this->color.a > 0.0) {
+			nvgFillColor(args.vg, this->color);
+			nvgFill(args.vg);
+		}
+
+		// Border
+		if (this->borderColor.a > 0.0) {
+			nvgStrokeWidth(args.vg, 0.5);
+			nvgStrokeColor(args.vg, this->borderColor);
+			nvgStroke(args.vg);
+		}
+	}
+};
+
+template <typename TBase>
+struct TriangleRightLight : TBase {
+	void drawLight(const widget::Widget::DrawArgs& args) override {
+		nvgBeginPath(args.vg);
+		nvgMoveTo(args.vg, 0, 0);
+		nvgLineTo(args.vg, 0, this->box.size.y);
+		nvgLineTo(args.vg, this->box.size.x, this->box.size.y / 2.f);
+		nvgClosePath(args.vg);
+
+		// Background
+		if (this->bgColor.a > 0.0) {
+			nvgFillColor(args.vg, this->bgColor);
+			nvgFill(args.vg);
+		}
+
+		// Foreground
+		if (this->color.a > 0.0) {
+			nvgFillColor(args.vg, this->color);
+			nvgFill(args.vg);
+		}
+
+		// Border
+		if (this->borderColor.a > 0.0) {
+			nvgStrokeWidth(args.vg, 0.5);
+			nvgStrokeColor(args.vg, this->borderColor);
+			nvgStroke(args.vg);
+		}
+	}
+};
