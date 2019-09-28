@@ -43,8 +43,9 @@ enum INCVMODE {
 };
 
 enum OUTCVMODE {
-    OUTCVMODE_UNI = 0,
-    OUTCVMODE_BI = 1
+    OUTCVMODE_CV_UNI = 0,
+    OUTCVMODE_CV_BI = 1,
+    OUTCVMODE_EOC = 2
 };
 
 enum PLAYMODE {
@@ -57,6 +58,7 @@ enum PLAYMODE {
 
 const int REMOVE_PLAYDIR_FWD = 1;
 const int REMOVE_PLAYDIR_REV = -1;
+const int REMOVE_PLAYDIR_NONE = 0;
 
 
 struct ReMoveModule : MapModule<1> {
@@ -118,7 +120,7 @@ struct ReMoveModule : MapModule<1> {
     /** [Stored to JSON] usage-mode for IN input */
     INCVMODE inCvMode = INCVMODE_UNI;
     /** [Stored to JSON] usage-mode for OUT output*/
-    OUTCVMODE outCvMode = OUTCVMODE_UNI;
+    OUTCVMODE outCvMode = OUTCVMODE_CV_UNI;
 
     /** [Stored to JSON] recording mode */
     RECMODE recMode = RECMODE_TOUCH;
@@ -149,6 +151,7 @@ struct ReMoveModule : MapModule<1> {
     dsp::PulseGenerator recOutCvPulse;
     dsp::SchmittTrigger resetCvTrigger;
     dsp::BooleanTrigger recTrigger;
+    dsp::PulseGenerator outCvPulse;
 
 	dsp::ClockDivider lightDivider;
 
@@ -376,7 +379,7 @@ struct ReMoveModule : MapModule<1> {
                                 case PLAYMODE_LOOP: 
                                     dataPtr = seqLow; break;
                                 case PLAYMODE_ONESHOT:      // stay on last value
-                                    dataPtr--; break;
+                                    dataPtr--; playDir = REMOVE_PLAYDIR_NONE; break;
                                 case PLAYMODE_PINGPONG:     // reverse direction
                                     dataPtr--; playDir = REMOVE_PLAYDIR_REV; break;
                                 case PLAYMODE_SEQLOOP:
@@ -391,6 +394,8 @@ struct ReMoveModule : MapModule<1> {
                     }
                     sampleTimer.reset();
                 }
+                if (outCvMode == OUTCVMODE_EOC)
+                    outputs[CV_OUTPUT].setVoltage(outCvPulse.process(sampleTime));
             }
             else {
                 // Not playing and not recording -> bypass input to output for empty sequences
@@ -454,11 +459,30 @@ struct ReMoveModule : MapModule<1> {
         if (paramQuantity) {
             paramQuantity->setScaledValue(v);
         }
-        if (outCvMode == OUTCVMODE_UNI && outputs[CV_OUTPUT].isConnected()) {
-            outputs[CV_OUTPUT].setVoltage(rescale(v, 0.f, 1.f, 0.f, 10.f));
-        }
-        else if (outCvMode == OUTCVMODE_BI && outputs[CV_OUTPUT].isConnected()) {
-            outputs[CV_OUTPUT].setVoltage(rescale(v, 0.f, 1.f, -5.f, 5.f));
+        switch (outCvMode) {
+            case OUTCVMODE_CV_UNI: 
+                outputs[CV_OUTPUT].setVoltage(rescale(v, 0.f, 1.f, 0.f, 10.f));
+                break;
+            case OUTCVMODE_CV_BI:
+                outputs[CV_OUTPUT].setVoltage(rescale(v, 0.f, 1.f, -5.f, 5.f));
+                break;
+            case OUTCVMODE_EOC:
+                if (dataPtr == seqLow + seqLength[seq] && playDir == REMOVE_PLAYDIR_FWD) {
+                    switch (playMode) {
+                        case PLAYMODE_LOOP:
+                        case PLAYMODE_ONESHOT:
+                        case PLAYMODE_SEQLOOP:
+                        case PLAYMODE_SEQRANDOM:
+                            outCvPulse.trigger(); break;
+                        case PLAYMODE_PINGPONG:
+                            // Do nothing, trigger on end of reverse direction
+                            break;
+                    }
+                }
+                if (dataPtr == seqLow - 1) {
+                    outCvPulse.trigger();
+                }
+                break;
         }
     }
 
@@ -888,15 +912,28 @@ struct InCvModeMenuItem : MenuItem {
 
 
 struct OutCvModeMenuItem : MenuItem {
-    ReMoveModule *module;
+    struct OutCvModeItem : MenuItem {
+        ReMoveModule* module;
+        OUTCVMODE outCvMode;
 
-    void onAction(const event::Action &e) override {
-        module->outCvMode = module->outCvMode == OUTCVMODE_UNI ? OUTCVMODE_BI : OUTCVMODE_UNI;
-    }
+        void onAction(const event::Action &e) override {
+            if (module->isRecording) return;
+            module->outCvMode = outCvMode;
+        }
 
-    void step() override {
-        rightText = module->outCvMode == OUTCVMODE_UNI ? "0V..10V" : "-5V..5V";
-        MenuItem::step();
+        void step() override {
+            rightText = module->outCvMode == outCvMode ? "✔" : "";
+            MenuItem::step();
+        }
+    };
+
+    ReMoveModule* module;
+    Menu* createChildMenu() override {
+        Menu* menu = new Menu;
+        menu->addChild(construct<OutCvModeItem>(&MenuItem::text, "CV with 0V..10V", &OutCvModeItem::module, module, &OutCvModeItem::outCvMode, OUTCVMODE_CV_UNI));
+        menu->addChild(construct<OutCvModeItem>(&MenuItem::text, "CV with -5V..5V", &OutCvModeItem::module, module, &OutCvModeItem::outCvMode, OUTCVMODE_CV_BI));
+        menu->addChild(construct<OutCvModeItem>(&MenuItem::text, "EOC", &OutCvModeItem::module, module, &OutCvModeItem::outCvMode, OUTCVMODE_EOC));
+        return menu;
     }
 };
 
