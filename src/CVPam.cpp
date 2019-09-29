@@ -112,11 +112,11 @@ struct CVPamWidget : ModuleWidget {
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(o, 21.1)), module, CVPam::POLY_OUTPUT1));
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(o + d + v + 12.4f, 21.1)), module, CVPam::POLY_OUTPUT2));
 
-		PolyLedWidget *w0 = createWidget<PolyLedWidget>(mm2px(Vec(o + d, 17.975)));
+		PolyLedWidget<> *w0 = createWidget<PolyLedWidget<>>(mm2px(Vec(o + d, 17.975)));
 		w0->setModule(module, CVPam::CHANNEL_LIGHTS1);
 		addChild(w0);
 
-		PolyLedWidget *w1 = createWidget<PolyLedWidget>(mm2px(Vec(o + d + v, 17.975)));
+		PolyLedWidget<> *w1 = createWidget<PolyLedWidget<>>(mm2px(Vec(o + d + v, 17.975)));
 		w1->setModule(module, CVPam::CHANNEL_LIGHTS2);
 		addChild(w1);
 

@@ -10,7 +10,7 @@ struct RotorA : Module {
     enum InputIds {
         MOD_INPUT,
         CAR_INPUT,
-        BASE_INPUT,        
+        BASE_INPUT,
         NUM_INPUTS
     };
     enum OutputIds {
@@ -41,8 +41,8 @@ struct RotorA : Module {
         channelsSplit = 10.f / (float)(channels - 1); 
     }
 
-    void process(const ProcessArgs &args) override {  
-        // Update mask for input channels infrequently    
+    void process(const ProcessArgs &args) override {
+        // Update mask for input channels infrequently
         if (channelsDivider.process()) {
             channels = ceil(params[CHANNELS_PARAM].getValue());
             for (int c = 0; c < 4; c++) {
@@ -51,14 +51,14 @@ struct RotorA : Module {
             for (int c = inputs[BASE_INPUT].getChannels(); c < 16; c++) {
                 channelsMask[c / 4].s[c % 4] = 0.f;
             }
-            channelsSplit = 10.f / (float)(channels - 1);      
+            channelsSplit = 10.f / (float)(channels - 1);
         }
 
         float car = inputs[CAR_INPUT].isConnected() ? clamp(inputs[CAR_INPUT].getVoltage(), 0.f, 10.f) : 10.f;
 
         simd::float_4 v[4];
         for (int c = 0; c < 16; c += 4) {
-            v[c / 4] = 0.f;           
+            v[c / 4] = 0.f;
         }
     
         float mod = clamp(inputs[MOD_INPUT].getVoltage(), 0.f, 10.f);
@@ -97,7 +97,7 @@ struct RotorA : Module {
 
 
 struct RotorAWidget : ModuleWidget {
-    RotorAWidget(RotorA *module) {	
+    RotorAWidget(RotorA *module) {
         setModule(module);
         setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/RotorA.svg")));
 
@@ -111,11 +111,11 @@ struct RotorAWidget : ModuleWidget {
         addInput(createInputCentered<PJ301MPort>(Vec(30.f, 155.2f), module, RotorA::BASE_INPUT));
         addOutput(createOutputCentered<PJ301MPort>(Vec(30.f, 305.9f), module, RotorA::POLY_OUTPUT));
 
-        PolyLedWidget *w0 = createWidgetCentered<PolyLedWidget>(Vec(30.f, 185.4f));
+        PolyLedWidget<> *w0 = createWidgetCentered<PolyLedWidget<>>(Vec(30.f, 185.4f));
         w0->setModule(module, RotorA::INPUT_LIGHTS);
         addChild(w0);
 
-        PolyLedWidget *w1 = createWidgetCentered<PolyLedWidget>(Vec(30.f, 336.1f));
+        PolyLedWidget<> *w1 = createWidgetCentered<PolyLedWidget<>>(Vec(30.f, 336.1f));
         w1->setModule(module, RotorA::OUTPUT_LIGHTS);
         addChild(w1);
     }
@@ -129,7 +129,7 @@ struct RotorAWidget : ModuleWidget {
         };
 
         menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
-    };    
+    };
 };
 
 Model *modelRotorA = createModel<RotorA, RotorAWidget>("RotorA");
