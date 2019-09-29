@@ -84,6 +84,12 @@
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/MidiCat.md"
 		},
 		{
+			"slug": "Sipo",
+			"name": "SIPO",
+			"description": "A serial-in parallel-out shift register with polyphonic output and CV controls for offset and increment",
+			"tags": ["Utility", "Sample and hold", "Polyphonic"]
+		},
+		{
 			"slug": "AudioInterface64",
 			"name": "AUDIO-64",
 			"description": "",

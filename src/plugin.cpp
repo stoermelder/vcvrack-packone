@@ -16,5 +16,6 @@ void init(rack::Plugin *p) {
 	p->addModel(modelStrip);
 	p->addModel(modelEightFace);
 	p->addModel(modelMidiCat);
+	p->addModel(modelSipo);
 	p->addModel(modelAudioInterface64);
 }

@@ -1,5 +1,8 @@
 ### 1.2.0 (in development)
 
+- Module SIPO
+    - New module, serial-in parallel-out shift register with polyphonic output and CV controls for offset and increment
+
 - Module 8FACE
     - Added option to switch between left and right side controlled module (#50)
 - Module µMAP
