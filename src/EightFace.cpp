@@ -92,8 +92,8 @@ struct EightFaceModule : Module {
 	LongPressButton typeButtons[NUM_PRESETS];
 	dsp::SchmittTrigger slotTrigger;
 	dsp::SchmittTrigger resetTrigger;
+	dsp::Timer resetTimer;
 	dsp::ClockDivider lightDivider;
-
 
 	EightFaceModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -153,8 +153,16 @@ struct EightFaceModule : Module {
 			if (connected == 2) {
 				// Read mode
 				if (params[MODE_PARAM].getValue() == 0.f) {
+					// RESET input
+					if (slotCvMode == SLOTCVMODE_TRIG_FWD || slotCvMode == SLOTCVMODE_TRIG_REV || slotCvMode == SLOTCVMODE_TRIG_PINGPONG) {
+						if (inputs[RESET_INPUT].isConnected() && resetTrigger.process(inputs[RESET_INPUT].getVoltage())) {
+							resetTimer.reset();
+							presetLoad(t, 0);
+						}
+					}
+
 					// SEQ input
-					if (inputs[SLOT_INPUT].isConnected()) {
+					if (resetTimer.process(args.sampleTime) > 1.f && inputs[SLOT_INPUT].isConnected()) {
 						switch (slotCvMode) {
 							case SLOTCVMODE_10V:
 								presetLoad(t, std::floor(rescale(inputs[SLOT_INPUT].getVoltage(), 0.f, 10.f, 0, presetCount)));
@@ -188,13 +196,6 @@ struct EightFaceModule : Module {
 								if (slotTrigger.process(inputs[SLOT_INPUT].getVoltage()))
 									presetLoad(t, presetNext);
 								break;
-						}
-					}
-
-					// RESET input
-					if (slotCvMode == SLOTCVMODE_TRIG_FWD || slotCvMode == SLOTCVMODE_TRIG_REV || slotCvMode == SLOTCVMODE_TRIG_PINGPONG) {
-						if (inputs[RESET_INPUT].isConnected() && resetTrigger.process(inputs[RESET_INPUT].getVoltage())) {
-							presetLoad(t, 0);
 						}
 					}
 

@@ -5,6 +5,7 @@
 
 - Module 8FACE
     - Added option to switch between left and right side controlled module (#50)
+    - Follow voltage standards (ignore SLOT for 1ms after trigger on RESET)
 - Module µMAP
     - Added option to invert output (#46)
     - Selected voltage range (-5V..5V or 0V..10V) is also used for OUT-port
