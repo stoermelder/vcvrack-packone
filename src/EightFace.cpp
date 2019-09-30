@@ -162,7 +162,7 @@ struct EightFaceModule : Module {
 					}
 
 					// SEQ input
-					if (resetTimer.process(args.sampleTime) > 1.f && inputs[SLOT_INPUT].isConnected()) {
+					if (resetTimer.process(args.sampleTime) >= 1e-3f && inputs[SLOT_INPUT].isConnected()) {
 						switch (slotCvMode) {
 							case SLOTCVMODE_10V:
 								presetLoad(t, std::floor(rescale(inputs[SLOT_INPUT].getVoltage(), 0.f, 10.f, 0, presetCount)));
