@@ -27,7 +27,7 @@ EOF
 }
 
 un=`uname`
-sdkversion=1.1.4
+sdkversion=1.1.5
 sdk="https://vcvrack.com/downloads/Rack-SDK-${sdkversion}.zip"
 slug=`jq -r '{slug} | .[]' plugin.json `
 
