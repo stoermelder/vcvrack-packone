@@ -235,11 +235,11 @@ struct EightFaceModule : Module {
 		// Set channel lights infrequently
 		if (lightDivider.process()) {
 			float s = args.sampleTime * lightDivider.getDivision();
-			modeLight += 0.3f * s;
-			if (modeLight > 1.f) modeLight = 0.f;
+			modeLight += 0.7f * s;
+			if (modeLight > 1.5f) modeLight = 0.f;
 
 			if (mode == MODE_LEFT) {
-				lights[LEFT_LIGHT + 0].setSmoothBrightness(connected == 2 ? modeLight : 0.f, s);
+				lights[LEFT_LIGHT + 0].setBrightness(connected == 2 ? std::min(modeLight, 1.f) : 0.f);
 				lights[LEFT_LIGHT + 1].setBrightness(connected == 1 ? 1.f : 0.f);
 				lights[RIGHT_LIGHT + 0].setBrightness(0.f);
 				lights[RIGHT_LIGHT + 1].setBrightness(0.f);
@@ -247,7 +247,7 @@ struct EightFaceModule : Module {
 			else {
 				lights[LEFT_LIGHT + 0].setBrightness(0.f);
 				lights[LEFT_LIGHT + 1].setBrightness(0.f);
-				lights[RIGHT_LIGHT + 0].setSmoothBrightness(connected == 2 ? modeLight : 0.f, s);
+				lights[RIGHT_LIGHT + 0].setBrightness(connected == 2 ? std::min(modeLight, 1.f) : 0.f);
 				lights[RIGHT_LIGHT + 1].setBrightness(connected == 1 ? 1.f : 0.f);
 			}
 
