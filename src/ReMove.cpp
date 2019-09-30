@@ -150,6 +150,7 @@ struct ReMoveModule : MapModule<1> {
     dsp::SchmittTrigger runCvTrigger;
     dsp::PulseGenerator recOutCvPulse;
     dsp::SchmittTrigger resetCvTrigger;
+    dsp::Timer resetCvTimer;
     dsp::BooleanTrigger recTrigger;
     dsp::PulseGenerator outCvPulse;
 
@@ -307,8 +308,17 @@ struct ReMoveModule : MapModule<1> {
                 seqNext();
             }
 
+            // RESET-input: reset ptr when button is pressed or input is triggered
+            if (resetCvTrigger.process(params[RESET_PARAM].getValue() + inputs[RESET_INPUT].getVoltage())) {
+                dataPtr = seqLow;
+                playDir = REMOVE_PLAYDIR_FWD;
+                sampleTimer.reset();
+                valueFilters[0].reset();
+                resetCvTimer.reset();
+            }
+
             // SEQ#-input
-            if (inputs[SEQ_INPUT].isConnected()) {
+            if (resetCvTimer.process(args.sampleTime) >= 1e-3f && inputs[SEQ_INPUT].isConnected()) {
                 switch (seqCvMode) {
                     case SEQCVMODE_10V:
                         seqSet(floor(rescale(inputs[SEQ_INPUT].getVoltage(), 0.f, 10.f, 0, seqCount)));
@@ -321,14 +331,6 @@ struct ReMoveModule : MapModule<1> {
                             seqNext();
                         break;
                 }
-            }
-
-            // RESET-input: reset ptr when button is pressed or input is triggered
-            if (resetCvTrigger.process(params[RESET_PARAM].getValue() + inputs[RESET_INPUT].getVoltage())) {
-                dataPtr = seqLow;
-                playDir = REMOVE_PLAYDIR_FWD;
-                sampleTimer.reset();
-                valueFilters[0].reset();
             }
 
             // RUN-button: toggle playing when button is pressed

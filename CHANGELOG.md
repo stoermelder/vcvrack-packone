@@ -12,6 +12,7 @@
 - Module ReMOVE Lite
     - Value is set on the mapped parameter when using IN-port for recording (#48)
     - Added EOC-mode for OUT-port (#47)
+    - Follow voltage standards (ignore SEQ# for 1ms after trigger on RESET)
 - Module STRIP
     - Changed LEDs to triangle shape
 
