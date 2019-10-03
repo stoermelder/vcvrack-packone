@@ -258,8 +258,8 @@ struct BoltWidget : ModuleWidget {
 		setModule(module);
         setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/Bolt.svg")));
 
-        addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, 0)));
-        addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+        addChild(createWidget<MyBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
+        addChild(createWidget<MyBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
         addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 60.3f), module, Bolt::TRIG_INPUT));
         addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 102.1f), module, Bolt::OP_INPUT));

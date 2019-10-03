@@ -46,8 +46,8 @@ struct InfixWidget : ModuleWidget {
 		setModule(module);
 		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/Infix.svg")));
 
-		addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, 0)));
-		addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+		addChild(createWidget<MyBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
+		addChild(createWidget<MyBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
 		addInput(createInputCentered<PJ301MPort>(Vec(20.6f, 111.f), module, Infix::MONO_INPUTS + 0));
 		addInput(createInputCentered<PJ301MPort>(Vec(20.6f, 143.f), module, Infix::MONO_INPUTS + 1));

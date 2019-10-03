@@ -124,21 +124,19 @@ struct SipoWidget : ModuleWidget {
 		setModule(module);
 		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/Sipo.svg")));
 
-		addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, 0)));
-		addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
-		addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
-		addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+		addChild(createWidget<MyBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
+		addChild(createWidget<MyBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
 		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 60.6f), module, SipoModule::TRIG_INPUT));
 		addChild(createLightCentered<SmallLight<GreenLight>>(Vec(32.3f, 76.3f), module, SipoModule::TRIG_LIGHT));
 
 		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 112.1f), module, SipoModule::OFFSET_INPUT));
-		Trimpot* tp1 = createParamCentered<Trimpot>(Vec(22.5f, 140.5f), module, SipoModule::OFFSET_PARAM);
+		MyTrimpot* tp1 = createParamCentered<MyTrimpot>(Vec(22.5f, 140.5f), module, SipoModule::OFFSET_PARAM);
 		tp1->snap = true;
 		addParam(tp1);
 
 		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 183.3f), module, SipoModule::INCR_INPUT));
-		Trimpot* tp2 = createParamCentered<Trimpot>(Vec(22.5f, 211.8f), module, SipoModule::INCR_PARAM);
+		MyTrimpot* tp2 = createParamCentered<MyTrimpot>(Vec(22.5f, 211.8f), module, SipoModule::INCR_PARAM);
 		tp2->snap = true;
 		addParam(tp2);
 
