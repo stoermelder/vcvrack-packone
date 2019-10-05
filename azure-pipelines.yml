@@ -68,6 +68,7 @@ jobs:
 
   - bash: |
       export RACK_DIR=$AGENT_TEMPDIRECTORY/Rack-SDK
+      sudo apt-get install libglu-dev
       make dist
       mkdir products_lin/
       cp dist/*zip products_lin/
