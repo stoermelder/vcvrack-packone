@@ -233,18 +233,18 @@ struct CVMapMicroWidget : ModuleWidget {
 		addChild(createWidget<MyBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<MyBlackScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 203.8f), module, CVMapMicroModule::OFFSET_INPUT));
-		addParam(createParamCentered<MyTrimpot>(Vec(22.5f, 177.4f), module, CVMapMicroModule::OFFSET_PARAM));
-		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 271.8f), module, CVMapMicroModule::SCALE_INPUT));
-		addParam(createParamCentered<MyTrimpot>(Vec(22.5f, 245.5f), module, CVMapMicroModule::SCALE_PARAM));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 203.8f), module, CVMapMicroModule::OFFSET_INPUT));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(22.5f, 177.4f), module, CVMapMicroModule::OFFSET_PARAM));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 271.8f), module, CVMapMicroModule::SCALE_INPUT));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(22.5f, 245.5f), module, CVMapMicroModule::SCALE_PARAM));
 
 		MapButton* button = createParamCentered<MapButton>(Vec(22.5f, 60.3f), module, CVMapMicroModule::MAP_PARAM);
 		button->setModule(module);
 		addParam(button);
 		addChild(createLightCentered<MapLight<GreenRedLight>>(Vec(22.5f, 60.3f), module, CVMapMicroModule::MAP_LIGHT));
 
-		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 134.f), module, CVMapMicroModule::INPUT));
-		addOutput(createOutputCentered<PJ301MPort>(Vec(22.5f, 330.f), module, CVMapMicroModule::OUTPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 134.f), module, CVMapMicroModule::INPUT));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(22.5f, 330.f), module, CVMapMicroModule::OUTPUT));
 	}
 
 	void appendContextMenu(Menu* menu) override {

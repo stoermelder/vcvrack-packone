@@ -111,43 +111,43 @@ struct FourRoundsWidget : ModuleWidget {
 		addChild(createWidget<MyBlackScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<MyBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addInput(createInputCentered<PJ301MPort>(Vec(150.0f, 241.3f), module,  FourRoundsModule::TRIG_INPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(150.0f, 241.3f), module,  FourRoundsModule::TRIG_INPUT));
 
-		addInput(createInputCentered<PJ301MPort>(Vec(175.6f, 65.7f), module,  FourRoundsModule::ROUND1_INPUT + 0));
-		addInput(createInputCentered<PJ301MPort>(Vec(222.9f, 85.3f), module,  FourRoundsModule::ROUND1_INPUT + 1));
-		addInput(createInputCentered<PJ301MPort>(Vec(259.0f, 121.5f), module, FourRoundsModule::ROUND1_INPUT + 2));
-		addInput(createInputCentered<PJ301MPort>(Vec(278.6f, 168.7f), module, FourRoundsModule::ROUND1_INPUT + 3));
-		addInput(createInputCentered<PJ301MPort>(Vec(278.6f, 219.8f), module, FourRoundsModule::ROUND1_INPUT + 4));
-		addInput(createInputCentered<PJ301MPort>(Vec(259.0f, 267.1f), module, FourRoundsModule::ROUND1_INPUT + 5));
-		addInput(createInputCentered<PJ301MPort>(Vec(222.9f, 303.2f), module, FourRoundsModule::ROUND1_INPUT + 6));
-		addInput(createInputCentered<PJ301MPort>(Vec(175.6f, 322.8f), module, FourRoundsModule::ROUND1_INPUT + 7));
-		addInput(createInputCentered<PJ301MPort>(Vec(124.4f, 322.8f), module, FourRoundsModule::ROUND1_INPUT + 8));
-		addInput(createInputCentered<PJ301MPort>(Vec(77.2f, 303.2f), module,  FourRoundsModule::ROUND1_INPUT + 9));
-		addInput(createInputCentered<PJ301MPort>(Vec(41.0f, 267.1f), module,  FourRoundsModule::ROUND1_INPUT + 10));
-		addInput(createInputCentered<PJ301MPort>(Vec(21.4f, 219.8f), module,  FourRoundsModule::ROUND1_INPUT + 11));
-		addInput(createInputCentered<PJ301MPort>(Vec(21.4f, 168.7f), module,  FourRoundsModule::ROUND1_INPUT + 12));
-		addInput(createInputCentered<PJ301MPort>(Vec(41.0f, 121.5f), module,  FourRoundsModule::ROUND1_INPUT + 13));
-		addInput(createInputCentered<PJ301MPort>(Vec(77.2f, 85.3f), module,   FourRoundsModule::ROUND1_INPUT + 14));
-		addInput(createInputCentered<PJ301MPort>(Vec(124.4f, 65.7f), module,  FourRoundsModule::ROUND1_INPUT + 15));
+		addInput(createInputCentered<StoermelderPort>(Vec(175.6f, 65.7f), module,  FourRoundsModule::ROUND1_INPUT + 0));
+		addInput(createInputCentered<StoermelderPort>(Vec(222.9f, 85.3f), module,  FourRoundsModule::ROUND1_INPUT + 1));
+		addInput(createInputCentered<StoermelderPort>(Vec(259.0f, 121.5f), module, FourRoundsModule::ROUND1_INPUT + 2));
+		addInput(createInputCentered<StoermelderPort>(Vec(278.6f, 168.7f), module, FourRoundsModule::ROUND1_INPUT + 3));
+		addInput(createInputCentered<StoermelderPort>(Vec(278.6f, 219.8f), module, FourRoundsModule::ROUND1_INPUT + 4));
+		addInput(createInputCentered<StoermelderPort>(Vec(259.0f, 267.1f), module, FourRoundsModule::ROUND1_INPUT + 5));
+		addInput(createInputCentered<StoermelderPort>(Vec(222.9f, 303.2f), module, FourRoundsModule::ROUND1_INPUT + 6));
+		addInput(createInputCentered<StoermelderPort>(Vec(175.6f, 322.8f), module, FourRoundsModule::ROUND1_INPUT + 7));
+		addInput(createInputCentered<StoermelderPort>(Vec(124.4f, 322.8f), module, FourRoundsModule::ROUND1_INPUT + 8));
+		addInput(createInputCentered<StoermelderPort>(Vec(77.2f, 303.2f), module,  FourRoundsModule::ROUND1_INPUT + 9));
+		addInput(createInputCentered<StoermelderPort>(Vec(41.0f, 267.1f), module,  FourRoundsModule::ROUND1_INPUT + 10));
+		addInput(createInputCentered<StoermelderPort>(Vec(21.4f, 219.8f), module,  FourRoundsModule::ROUND1_INPUT + 11));
+		addInput(createInputCentered<StoermelderPort>(Vec(21.4f, 168.7f), module,  FourRoundsModule::ROUND1_INPUT + 12));
+		addInput(createInputCentered<StoermelderPort>(Vec(41.0f, 121.5f), module,  FourRoundsModule::ROUND1_INPUT + 13));
+		addInput(createInputCentered<StoermelderPort>(Vec(77.2f, 85.3f), module,   FourRoundsModule::ROUND1_INPUT + 14));
+		addInput(createInputCentered<StoermelderPort>(Vec(124.4f, 65.7f), module,  FourRoundsModule::ROUND1_INPUT + 15));
 
-		addOutput(createOutputCentered<PJ301MPort>(Vec(187.1f, 104.8f), module, FourRoundsModule::ROUND2_OUTPUT + 0));
-		addOutput(createOutputCentered<PJ301MPort>(Vec(239.5f, 157.2f), module, FourRoundsModule::ROUND2_OUTPUT + 1));
-		addOutput(createOutputCentered<PJ301MPort>(Vec(239.5f, 231.2f), module, FourRoundsModule::ROUND2_OUTPUT + 2));
-		addOutput(createOutputCentered<PJ301MPort>(Vec(187.1f, 283.8f), module, FourRoundsModule::ROUND2_OUTPUT + 3));
-		addOutput(createOutputCentered<PJ301MPort>(Vec(112.9f, 283.8f), module, FourRoundsModule::ROUND2_OUTPUT + 4));
-		addOutput(createOutputCentered<PJ301MPort>(Vec(60.5f, 231.2f), module,  FourRoundsModule::ROUND2_OUTPUT + 5));
-		addOutput(createOutputCentered<PJ301MPort>(Vec(60.5f, 157.2f), module,  FourRoundsModule::ROUND2_OUTPUT + 6));
-		addOutput(createOutputCentered<PJ301MPort>(Vec(112.9f, 104.8f), module, FourRoundsModule::ROUND2_OUTPUT + 7));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(187.1f, 104.8f), module, FourRoundsModule::ROUND2_OUTPUT + 0));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(239.5f, 157.2f), module, FourRoundsModule::ROUND2_OUTPUT + 1));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(239.5f, 231.2f), module, FourRoundsModule::ROUND2_OUTPUT + 2));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(187.1f, 283.8f), module, FourRoundsModule::ROUND2_OUTPUT + 3));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(112.9f, 283.8f), module, FourRoundsModule::ROUND2_OUTPUT + 4));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(60.5f, 231.2f), module,  FourRoundsModule::ROUND2_OUTPUT + 5));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(60.5f, 157.2f), module,  FourRoundsModule::ROUND2_OUTPUT + 6));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(112.9f, 104.8f), module, FourRoundsModule::ROUND2_OUTPUT + 7));
 
-		addOutput(createOutputCentered<PJ301MPort>(Vec(193.4f, 150.9f), module, FourRoundsModule::ROUND3_OUTPUT + 0));
-		addOutput(createOutputCentered<PJ301MPort>(Vec(193.4f, 237.7f), module, FourRoundsModule::ROUND3_OUTPUT + 1));
-		addOutput(createOutputCentered<PJ301MPort>(Vec(106.6f, 237.7f), module, FourRoundsModule::ROUND3_OUTPUT + 2));
-		addOutput(createOutputCentered<PJ301MPort>(Vec(106.6f, 150.9f), module, FourRoundsModule::ROUND3_OUTPUT + 3));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(193.4f, 150.9f), module, FourRoundsModule::ROUND3_OUTPUT + 0));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(193.4f, 237.7f), module, FourRoundsModule::ROUND3_OUTPUT + 1));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(106.6f, 237.7f), module, FourRoundsModule::ROUND3_OUTPUT + 2));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(106.6f, 150.9f), module, FourRoundsModule::ROUND3_OUTPUT + 3));
 
-		addOutput(createOutputCentered<PJ301MPort>(Vec(178.2f, 194.3f), module, FourRoundsModule::ROUND4_OUTPUT + 0));
-		addOutput(createOutputCentered<PJ301MPort>(Vec(121.8f, 194.3f), module, FourRoundsModule::ROUND4_OUTPUT + 1));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(178.2f, 194.3f), module, FourRoundsModule::ROUND4_OUTPUT + 0));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(121.8f, 194.3f), module, FourRoundsModule::ROUND4_OUTPUT + 1));
 
-		addOutput(createOutputCentered<PJ301MPort>(Vec(150.0f, 159.0f), module, FourRoundsModule::WINNER_OUTPUT));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(150.0f, 159.0f), module, FourRoundsModule::WINNER_OUTPUT));
 
 		addChild(createLightCentered<TinyLight<GreenLight>>(Vec(178.6f, 83.9f), module,  FourRoundsModule::ROUND_LIGHT + 0));
 		addChild(createLightCentered<TinyLight<GreenLight>>(Vec(207.8f, 96.2f), module,  FourRoundsModule::ROUND_LIGHT + 1));

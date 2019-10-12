@@ -122,10 +122,17 @@ struct MyBlackScrew : app::SvgScrew {
 	}
 };
 
-struct MyTrimpot : app::SvgKnob {
-	MyTrimpot() {
+struct StoermelderTrimpot : app::SvgKnob {
+	StoermelderTrimpot() {
 		minAngle = -0.75 * M_PI;
 		maxAngle = 0.75 * M_PI;
 		setSvg(APP->window->loadSvg(asset::plugin(pluginInstance, "res/components/Trimpot.svg")));
+	}
+};
+
+struct StoermelderPort : app::SvgPort {
+	StoermelderPort() {
+		setSvg(APP->window->loadSvg(asset::plugin(pluginInstance, "res/components/Port.svg")));
+		box.size = Vec(22.2f, 22.2f);
 	}
 };

@@ -49,25 +49,25 @@ struct InfixWidget : ModuleWidget {
 		addChild(createWidget<MyBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<MyBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addInput(createInputCentered<PJ301MPort>(Vec(20.6f, 111.f), module, Infix::MONO_INPUTS + 0));
-		addInput(createInputCentered<PJ301MPort>(Vec(20.6f, 143.f), module, Infix::MONO_INPUTS + 1));
-		addInput(createInputCentered<PJ301MPort>(Vec(20.6f, 174.9f), module, Infix::MONO_INPUTS + 2));
-		addInput(createInputCentered<PJ301MPort>(Vec(20.6f, 206.9f), module, Infix::MONO_INPUTS + 3));
-		addInput(createInputCentered<PJ301MPort>(Vec(20.6f, 238.8f), module, Infix::MONO_INPUTS + 4));
-		addInput(createInputCentered<PJ301MPort>(Vec(20.6f, 270.8f), module, Infix::MONO_INPUTS + 5));
-		addInput(createInputCentered<PJ301MPort>(Vec(20.6f, 302.7f), module, Infix::MONO_INPUTS + 6));
-		addInput(createInputCentered<PJ301MPort>(Vec(20.6f, 334.7f), module, Infix::MONO_INPUTS + 7));
-		addInput(createInputCentered<PJ301MPort>(Vec(54.f, 111.f), module, Infix::MONO_INPUTS + 8));
-		addInput(createInputCentered<PJ301MPort>(Vec(54.f, 143.f), module, Infix::MONO_INPUTS + 9));
-		addInput(createInputCentered<PJ301MPort>(Vec(54.f, 174.9f), module, Infix::MONO_INPUTS + 10));
-		addInput(createInputCentered<PJ301MPort>(Vec(54.f, 206.9f), module, Infix::MONO_INPUTS + 11));
-		addInput(createInputCentered<PJ301MPort>(Vec(54.f, 238.8f), module, Infix::MONO_INPUTS + 12));
-		addInput(createInputCentered<PJ301MPort>(Vec(54.f, 270.8f), module, Infix::MONO_INPUTS + 13));
-		addInput(createInputCentered<PJ301MPort>(Vec(54.f, 302.7f), module, Infix::MONO_INPUTS + 14));
-		addInput(createInputCentered<PJ301MPort>(Vec(54.f, 334.7f), module, Infix::MONO_INPUTS + 15));
+		addInput(createInputCentered<StoermelderPort>(Vec(20.6f, 111.f), module, Infix::MONO_INPUTS + 0));
+		addInput(createInputCentered<StoermelderPort>(Vec(20.6f, 143.f), module, Infix::MONO_INPUTS + 1));
+		addInput(createInputCentered<StoermelderPort>(Vec(20.6f, 174.9f), module, Infix::MONO_INPUTS + 2));
+		addInput(createInputCentered<StoermelderPort>(Vec(20.6f, 206.9f), module, Infix::MONO_INPUTS + 3));
+		addInput(createInputCentered<StoermelderPort>(Vec(20.6f, 238.8f), module, Infix::MONO_INPUTS + 4));
+		addInput(createInputCentered<StoermelderPort>(Vec(20.6f, 270.8f), module, Infix::MONO_INPUTS + 5));
+		addInput(createInputCentered<StoermelderPort>(Vec(20.6f, 302.7f), module, Infix::MONO_INPUTS + 6));
+		addInput(createInputCentered<StoermelderPort>(Vec(20.6f, 334.7f), module, Infix::MONO_INPUTS + 7));
+		addInput(createInputCentered<StoermelderPort>(Vec(54.f, 111.f), module, Infix::MONO_INPUTS + 8));
+		addInput(createInputCentered<StoermelderPort>(Vec(54.f, 143.f), module, Infix::MONO_INPUTS + 9));
+		addInput(createInputCentered<StoermelderPort>(Vec(54.f, 174.9f), module, Infix::MONO_INPUTS + 10));
+		addInput(createInputCentered<StoermelderPort>(Vec(54.f, 206.9f), module, Infix::MONO_INPUTS + 11));
+		addInput(createInputCentered<StoermelderPort>(Vec(54.f, 238.8f), module, Infix::MONO_INPUTS + 12));
+		addInput(createInputCentered<StoermelderPort>(Vec(54.f, 270.8f), module, Infix::MONO_INPUTS + 13));
+		addInput(createInputCentered<StoermelderPort>(Vec(54.f, 302.7f), module, Infix::MONO_INPUTS + 14));
+		addInput(createInputCentered<StoermelderPort>(Vec(54.f, 334.7f), module, Infix::MONO_INPUTS + 15));
 
-        addInput(createInputCentered<PJ301MPort>(Vec(20.6f, 61.f), module, Infix::POLY_INPUT));
-		addOutput(createOutputCentered<PJ301MPort>(Vec(54.f, 61.f), module, Infix::POLY_OUTPUT));
+        addInput(createInputCentered<StoermelderPort>(Vec(20.6f, 61.f), module, Infix::POLY_INPUT));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(54.f, 61.f), module, Infix::POLY_OUTPUT));
 	}
 
 	

@@ -109,8 +109,8 @@ struct CVPamWidget : ModuleWidget {
 		float o = 9.f;
 		float v = 13.5f;
 		float d = 6.8f;
-		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(o, 21.1)), module, CVPam::POLY_OUTPUT1));
-		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(o + d + v + 12.4f, 21.1)), module, CVPam::POLY_OUTPUT2));
+		addOutput(createOutputCentered<StoermelderPort>(mm2px(Vec(o, 21.1)), module, CVPam::POLY_OUTPUT1));
+		addOutput(createOutputCentered<StoermelderPort>(mm2px(Vec(o + d + v + 12.4f, 21.1)), module, CVPam::POLY_OUTPUT2));
 
 		PolyLedWidget<> *w0 = createWidget<PolyLedWidget<>>(mm2px(Vec(o + d, 17.975)));
 		w0->setModule(module, CVPam::CHANNEL_LIGHTS1);

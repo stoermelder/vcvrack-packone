@@ -566,12 +566,12 @@ struct StripWidget : ModuleWidget {
 		addChild(createLightCentered<TriangleLeftLight<SmallLight<GreenLight>>>(Vec(13.8f, 110.6f), module, StripModule::LEFT_LIGHT));
 		addChild(createLightCentered<TriangleRightLight<SmallLight<GreenLight>>>(Vec(31.2f, 110.6f), module, StripModule::RIGHT_LIGHT));
 
-		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 146.7f), module, StripModule::ON_INPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 146.7f), module, StripModule::ON_INPUT));
 		addParam(createParamCentered<TL1105>(Vec(22.5f, 170.1f), module, StripModule::ON_PARAM));
-		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 210.1f), module, StripModule::OFF_INPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 210.1f), module, StripModule::OFF_INPUT));
 		addParam(createParamCentered<TL1105>(Vec(22.5f, 233.5f), module, StripModule::OFF_PARAM));
 
-		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 273.1f), module, StripModule::RAND_INPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 273.1f), module, StripModule::RAND_INPUT));
 		addParam(createParamCentered<TL1105>(Vec(22.5f, 296.4f), module, StripModule::RAND_PARAM));
 
 		addChild(createLightCentered<SmallLight<GreenRedLight>>(Vec(32.3f, 333.7f), module, StripModule::EXCLUDE_LIGHT));

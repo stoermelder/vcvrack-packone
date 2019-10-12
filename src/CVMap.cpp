@@ -101,8 +101,8 @@ struct CVMapWidget : ModuleWidget {
 		float o = 9.f;
 		float v = 13.5f;
 		float d = 6.8f;
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(o, 21.1)), module, CVMap::POLY_INPUT1));
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(o + d + v + 12.4f, 21.1)), module, CVMap::POLY_INPUT2));
+		addInput(createInputCentered<StoermelderPort>(mm2px(Vec(o, 21.1)), module, CVMap::POLY_INPUT1));
+		addInput(createInputCentered<StoermelderPort>(mm2px(Vec(o + d + v + 12.4f, 21.1)), module, CVMap::POLY_INPUT2));
 
 		PolyLedWidget<> *w0 = createWidget<PolyLedWidget<>>(mm2px(Vec(o + d, 17.975)));
 		w0->setModule(module, CVMap::CHANNEL_LIGHTS1);

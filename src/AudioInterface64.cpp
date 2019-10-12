@@ -289,23 +289,23 @@ struct AudioInterface64Widget : ModuleWidget {
 		addChild(createWidget<MyBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
         for (int i = 0; i < 8; i++) {
-            addInput(createInputCentered<PJ301MPort>(Vec(21.3f + i * 32.2f, 133.9f), module, TAudioInterface::AUDIO_INPUT + i * 8 + 0));
-            addInput(createInputCentered<PJ301MPort>(Vec(21.3f + i * 32.2f, 163.0f), module, TAudioInterface::AUDIO_INPUT + i * 8 + 1));
-            addInput(createInputCentered<PJ301MPort>(Vec(21.3f + i * 32.2f, 192.1f), module, TAudioInterface::AUDIO_INPUT + i * 8 + 2));
-            addInput(createInputCentered<PJ301MPort>(Vec(21.3f + i * 32.2f, 221.1f), module, TAudioInterface::AUDIO_INPUT + i * 8 + 3));
-            addInput(createInputCentered<PJ301MPort>(Vec(21.3f + i * 32.2f, 250.2f), module, TAudioInterface::AUDIO_INPUT + i * 8 + 4));
-            addInput(createInputCentered<PJ301MPort>(Vec(21.3f + i * 32.2f, 279.3f), module, TAudioInterface::AUDIO_INPUT + i * 8 + 5));
-            addInput(createInputCentered<PJ301MPort>(Vec(21.3f + i * 32.2f, 308.4f), module, TAudioInterface::AUDIO_INPUT + i * 8 + 6));
-            addInput(createInputCentered<PJ301MPort>(Vec(21.3f + i * 32.2f, 337.4f), module, TAudioInterface::AUDIO_INPUT + i * 8 + 7));
+            addInput(createInputCentered<StoermelderPort>(Vec(21.3f + i * 32.2f, 133.9f), module, TAudioInterface::AUDIO_INPUT + i * 8 + 0));
+            addInput(createInputCentered<StoermelderPort>(Vec(21.3f + i * 32.2f, 163.0f), module, TAudioInterface::AUDIO_INPUT + i * 8 + 1));
+            addInput(createInputCentered<StoermelderPort>(Vec(21.3f + i * 32.2f, 192.1f), module, TAudioInterface::AUDIO_INPUT + i * 8 + 2));
+            addInput(createInputCentered<StoermelderPort>(Vec(21.3f + i * 32.2f, 221.1f), module, TAudioInterface::AUDIO_INPUT + i * 8 + 3));
+            addInput(createInputCentered<StoermelderPort>(Vec(21.3f + i * 32.2f, 250.2f), module, TAudioInterface::AUDIO_INPUT + i * 8 + 4));
+            addInput(createInputCentered<StoermelderPort>(Vec(21.3f + i * 32.2f, 279.3f), module, TAudioInterface::AUDIO_INPUT + i * 8 + 5));
+            addInput(createInputCentered<StoermelderPort>(Vec(21.3f + i * 32.2f, 308.4f), module, TAudioInterface::AUDIO_INPUT + i * 8 + 6));
+            addInput(createInputCentered<StoermelderPort>(Vec(21.3f + i * 32.2f, 337.4f), module, TAudioInterface::AUDIO_INPUT + i * 8 + 7));
 
-            addOutput(createOutputCentered<PJ301MPort>(Vec(278.9f + i * 32.2f, 133.9f), module, TAudioInterface::AUDIO_OUTPUT + i * 8 + 0));
-            addOutput(createOutputCentered<PJ301MPort>(Vec(278.9f + i * 32.2f, 163.0f), module, TAudioInterface::AUDIO_OUTPUT + i * 8 + 1));
-            addOutput(createOutputCentered<PJ301MPort>(Vec(278.9f + i * 32.2f, 192.1f), module, TAudioInterface::AUDIO_OUTPUT + i * 8 + 2));
-            addOutput(createOutputCentered<PJ301MPort>(Vec(278.9f + i * 32.2f, 221.1f), module, TAudioInterface::AUDIO_OUTPUT + i * 8 + 3));
-            addOutput(createOutputCentered<PJ301MPort>(Vec(278.9f + i * 32.2f, 250.2f), module, TAudioInterface::AUDIO_OUTPUT + i * 8 + 4));
-            addOutput(createOutputCentered<PJ301MPort>(Vec(278.9f + i * 32.2f, 279.3f), module, TAudioInterface::AUDIO_OUTPUT + i * 8 + 5));
-            addOutput(createOutputCentered<PJ301MPort>(Vec(278.9f + i * 32.2f, 308.4f), module, TAudioInterface::AUDIO_OUTPUT + i * 8 + 6));
-            addOutput(createOutputCentered<PJ301MPort>(Vec(278.9f + i * 32.2f, 337.4f), module, TAudioInterface::AUDIO_OUTPUT + i * 8 + 7));
+            addOutput(createOutputCentered<StoermelderPort>(Vec(278.9f + i * 32.2f, 133.9f), module, TAudioInterface::AUDIO_OUTPUT + i * 8 + 0));
+            addOutput(createOutputCentered<StoermelderPort>(Vec(278.9f + i * 32.2f, 163.0f), module, TAudioInterface::AUDIO_OUTPUT + i * 8 + 1));
+            addOutput(createOutputCentered<StoermelderPort>(Vec(278.9f + i * 32.2f, 192.1f), module, TAudioInterface::AUDIO_OUTPUT + i * 8 + 2));
+            addOutput(createOutputCentered<StoermelderPort>(Vec(278.9f + i * 32.2f, 221.1f), module, TAudioInterface::AUDIO_OUTPUT + i * 8 + 3));
+            addOutput(createOutputCentered<StoermelderPort>(Vec(278.9f + i * 32.2f, 250.2f), module, TAudioInterface::AUDIO_OUTPUT + i * 8 + 4));
+            addOutput(createOutputCentered<StoermelderPort>(Vec(278.9f + i * 32.2f, 279.3f), module, TAudioInterface::AUDIO_OUTPUT + i * 8 + 5));
+            addOutput(createOutputCentered<StoermelderPort>(Vec(278.9f + i * 32.2f, 308.4f), module, TAudioInterface::AUDIO_OUTPUT + i * 8 + 6));
+            addOutput(createOutputCentered<StoermelderPort>(Vec(278.9f + i * 32.2f, 337.4f), module, TAudioInterface::AUDIO_OUTPUT + i * 8 + 7));
 
 			addChild(createLightCentered<TinyLight<GreenLight>>(Vec(21.3f + 10.0f + i * 32.2f, 148.4f), module, TAudioInterface::INPUT_LIGHT + i * 4 + 0));
 			addChild(createLightCentered<TinyLight<GreenLight>>(Vec(21.3f + 10.0f + i * 32.2f, 206.6f), module, TAudioInterface::INPUT_LIGHT + i * 4 + 1));

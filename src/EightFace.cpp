@@ -485,8 +485,8 @@ struct EightFaceWidget : ModuleWidget {
 		addChild(createWidget<MyBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<MyBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 58.9f), module, EightFaceModule::SLOT_INPUT));
-		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 95.2f), module, EightFaceModule::RESET_INPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 58.9f), module, EightFaceModule::SLOT_INPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 95.2f), module, EightFaceModule::RESET_INPUT));
 
 		addChild(createLightCentered<TriangleLeftLight<SmallLight<GreenRedLight>>>(Vec(13.8f, 119.1f), module, EightFaceModule::LEFT_LIGHT));
 		addChild(createLightCentered<TriangleRightLight<SmallLight<GreenRedLight>>>(Vec(31.2f, 119.1f), module, EightFaceModule::RIGHT_LIGHT));

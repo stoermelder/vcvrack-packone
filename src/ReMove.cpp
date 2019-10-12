@@ -1156,26 +1156,26 @@ struct ReMoveWidget : ModuleWidget {
         addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(63.2f, 113.8f), module, ReMoveModule::SEQ_LIGHT + 6));
         addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(70.5f, 113.8f), module, ReMoveModule::SEQ_LIGHT + 7));
 
-        addInput(createInputCentered<PJ301MPort>(Vec(68.7f, 243.3f), module, ReMoveModule::RUN_INPUT));
+        addInput(createInputCentered<StoermelderPort>(Vec(68.7f, 243.3f), module, ReMoveModule::RUN_INPUT));
         addParam(createParamCentered<TL1105>(Vec(45.f, 230.3f), module, ReMoveModule::RUN_PARAM));
         addChild(createLightCentered<SmallLight<GreenRedLight>>(Vec(76.7f, 260.5f), module, ReMoveModule::RUN_LIGHT));
 
-        addInput(createInputCentered<PJ301MPort>(Vec(21.1f, 243.3f), module, ReMoveModule::RESET_INPUT));
+        addInput(createInputCentered<StoermelderPort>(Vec(21.1f, 243.3f), module, ReMoveModule::RESET_INPUT));
         addParam(createParamCentered<TL1105>(Vec(45.f, 256.3f), module, ReMoveModule::RESET_PARAM));
         addChild(createLightCentered<SmallLight<GreenRedLight>>(Vec(13.1f, 260.5f), module, ReMoveModule::RESET_LIGHT));
 
-        addInput(createInputCentered<PJ301MPort>(Vec(68.7f, 200.1f), module, ReMoveModule::PHASE_INPUT));
+        addInput(createInputCentered<StoermelderPort>(Vec(68.7f, 200.1f), module, ReMoveModule::PHASE_INPUT));
 
-        addInput(createInputCentered<PJ301MPort>(Vec(21.1f, 336.8f), module, ReMoveModule::CV_INPUT));      
-        addOutput(createOutputCentered<PJ301MPort>(Vec(68.7f, 336.8f), module, ReMoveModule::CV_OUTPUT));
+        addInput(createInputCentered<StoermelderPort>(Vec(21.1f, 336.8f), module, ReMoveModule::CV_INPUT));      
+        addOutput(createOutputCentered<StoermelderPort>(Vec(68.7f, 336.8f), module, ReMoveModule::CV_OUTPUT));
 
-        addInput(createInputCentered<PJ301MPort>(Vec(21.1f, 294.1f), module, ReMoveModule::REC_INPUT));      
-        addOutput(createOutputCentered<PJ301MPort>(Vec(68.7f, 294.1f), module, ReMoveModule::REC_OUTPUT));
+        addInput(createInputCentered<StoermelderPort>(Vec(21.1f, 294.1f), module, ReMoveModule::REC_INPUT));      
+        addOutput(createOutputCentered<StoermelderPort>(Vec(68.7f, 294.1f), module, ReMoveModule::REC_OUTPUT));
 
         addParam(createParamCentered<RecButton>(Vec(44.8f, 151.4f), module, ReMoveModule::REC_PARAM));
         addChild(createLightCentered<RecLight>(Vec(44.8f, 151.4f), module, ReMoveModule::REC_LIGHT));
 
-        addInput(createInputCentered<PJ301MPort>(Vec(21.1f, 200.1f), module, ReMoveModule::SEQ_INPUT));
+        addInput(createInputCentered<StoermelderPort>(Vec(21.1f, 200.1f), module, ReMoveModule::SEQ_INPUT));
         addParam(createParamCentered<TL1105>(Vec(21.1f, 131.9f), module, ReMoveModule::SEQP_PARAM));
         addParam(createParamCentered<TL1105>(Vec(68.7f, 131.9), module, ReMoveModule::SEQN_PARAM));
 

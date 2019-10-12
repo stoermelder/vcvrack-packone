@@ -261,8 +261,8 @@ struct BoltWidget : ModuleWidget {
         addChild(createWidget<MyBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
         addChild(createWidget<MyBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-        addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 60.3f), module, Bolt::TRIG_INPUT));
-        addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 102.1f), module, Bolt::OP_INPUT));
+        addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 60.3f), module, Bolt::TRIG_INPUT));
+        addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 102.1f), module, Bolt::OP_INPUT));
         addParam(createParamCentered<TL1105>(Vec(22.5f, 125.4f), module, Bolt::OP_PARAM));
 
         addChild(createLightCentered<SmallLight<GreenLight>>(Vec(11.9f, 146.3f), module, Bolt::OP_LIGHTS + 0));
@@ -271,11 +271,11 @@ struct BoltWidget : ModuleWidget {
         addChild(createLightCentered<SmallLight<GreenLight>>(Vec(11.9f, 175.3f), module, Bolt::OP_LIGHTS + 3));
         addChild(createLightCentered<SmallLight<GreenLight>>(Vec(11.9f, 185.0f), module, Bolt::OP_LIGHTS + 4));
 
-        addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 210.1f), module, Bolt::IN + 0));
-        addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 238.4f), module, Bolt::IN + 1));
-        addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 266.7f), module, Bolt::IN + 2));
-        addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 295.0f), module, Bolt::IN + 3));
-        addOutput(createOutputCentered<PJ301MPort>(Vec(22.5f, 330.f), module, Bolt::OUTPUT));
+        addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 210.1f), module, Bolt::IN + 0));
+        addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 238.4f), module, Bolt::IN + 1));
+        addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 266.7f), module, Bolt::IN + 2));
+        addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 295.0f), module, Bolt::IN + 3));
+        addOutput(createOutputCentered<StoermelderPort>(Vec(22.5f, 330.f), module, Bolt::OUTPUT));
     }
 
     void appendContextMenu(Menu *menu) override {
