@@ -44,13 +44,13 @@ struct FourRoundsModule : Module {
 
 	void onReset() override {
 		for (int i = 0; i < SIZE; i++)
-			state[i] = 0;
+			state[i] = randDist(randGen);
 	}
 
 	void process(const ProcessArgs &args) override {
 		if (trigTrigger.process(inputs[TRIG_INPUT].getVoltage())) {
 			for (int i = 0; i < SIZE; i++) {
-				state[i] = randDist(randGen); 
+				state[i] = randDist(randGen);
 			}
 		}
 
@@ -111,7 +111,7 @@ struct FourRoundsWidget : ModuleWidget {
 		addChild(createWidget<MyBlackScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<MyBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(150.0f, 241.3f), module,  FourRoundsModule::TRIG_INPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.6f, 324.2f), module,  FourRoundsModule::TRIG_INPUT));
 
 		addInput(createInputCentered<StoermelderPort>(Vec(175.6f, 65.7f), module,  FourRoundsModule::ROUND1_INPUT + 0));
 		addInput(createInputCentered<StoermelderPort>(Vec(222.9f, 85.3f), module,  FourRoundsModule::ROUND1_INPUT + 1));
@@ -147,7 +147,7 @@ struct FourRoundsWidget : ModuleWidget {
 		addOutput(createOutputCentered<StoermelderPort>(Vec(178.2f, 194.3f), module, FourRoundsModule::ROUND4_OUTPUT + 0));
 		addOutput(createOutputCentered<StoermelderPort>(Vec(121.8f, 194.3f), module, FourRoundsModule::ROUND4_OUTPUT + 1));
 
-		addOutput(createOutputCentered<StoermelderPort>(Vec(150.0f, 159.0f), module, FourRoundsModule::WINNER_OUTPUT));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(150.0f, 160.5f), module, FourRoundsModule::WINNER_OUTPUT));
 
 		addChild(createLightCentered<TinyLight<GreenLight>>(Vec(178.6f, 83.9f), module,  FourRoundsModule::ROUND_LIGHT + 0));
 		addChild(createLightCentered<TinyLight<GreenLight>>(Vec(207.8f, 96.2f), module,  FourRoundsModule::ROUND_LIGHT + 1));
