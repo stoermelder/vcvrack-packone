@@ -25,8 +25,7 @@ struct SipoModule : Module {
 		NUM_OUTPUTS
 	};
 	enum LightIds {
-		TRIG_LIGHT,
-		ENUMS(CHANNEL_LIGHTS, 32),
+		ENUMS(CHANNEL_LIGHTS, PORT_MAX_CHANNELS * 2),
 		NUM_LIGHTS
 	};
 
@@ -75,11 +74,9 @@ struct SipoModule : Module {
 			outputs[POLY_OUTPUT].setVoltage(data[(dataPtr - (offset + incr * c) * c + MAX_DATA) % MAX_DATA], c);
 		}
 
-		lights[TRIG_LIGHT].setSmoothBrightness(clockTrigger.isHigh(), args.sampleTime);
-
 		// Set channel lights infrequently
 		if (lightDivider.process()) {
-			for (int c = 0; c < 16; c++) {
+			for (int c = 0; c < PORT_MAX_CHANNELS; c++) {
 				float f = outputs[POLY_OUTPUT].getVoltage(c);
 				lights[CHANNEL_LIGHTS + 2 * c + 0].setBrightness(f < 0.f ? 0 : rescale(f, 0.f, 5.f, 0.f, 1.f));
 				lights[CHANNEL_LIGHTS + 2 * c + 1].setBrightness(f > 0.f ? 0 : rescale(f, -5.f, 0.f, 0.f, 1.f));
@@ -127,25 +124,24 @@ struct SipoWidget : ModuleWidget {
 		addChild(createWidget<MyBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<MyBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 60.6f), module, SipoModule::TRIG_INPUT));
-		addChild(createLightCentered<SmallLight<GreenLight>>(Vec(32.3f, 76.3f), module, SipoModule::TRIG_LIGHT));
+		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 83.4f), module, SipoModule::TRIG_INPUT));
 
-		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 112.1f), module, SipoModule::OFFSET_INPUT));
-		MyTrimpot* tp1 = createParamCentered<MyTrimpot>(Vec(22.5f, 140.5f), module, SipoModule::OFFSET_PARAM);
+		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 126.9f), module, SipoModule::OFFSET_INPUT));
+		MyTrimpot* tp1 = createParamCentered<MyTrimpot>(Vec(22.5f, 151.5f), module, SipoModule::OFFSET_PARAM);
 		tp1->snap = true;
 		addParam(tp1);
 
-		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 183.3f), module, SipoModule::INCR_INPUT));
-		MyTrimpot* tp2 = createParamCentered<MyTrimpot>(Vec(22.5f, 211.8f), module, SipoModule::INCR_PARAM);
+		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 193.4f), module, SipoModule::INCR_INPUT));
+		MyTrimpot* tp2 = createParamCentered<MyTrimpot>(Vec(22.5f, 218.1f), module, SipoModule::INCR_PARAM);
 		tp2->snap = true;
 		addParam(tp2);
 
-		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 254.f), module, SipoModule::SRC_INPUT));
+		addInput(createInputCentered<PJ301MPort>(Vec(22.5f, 258.7f), module, SipoModule::SRC_INPUT));
 
-		PolyLedWidget<GreenRedLight, 2>* w = createWidget<PolyLedWidget<GreenRedLight, 2>>(Vec(14.f, 288.2f));
+		PolyLedWidget<GreenRedLight, 2>* w = createWidget<PolyLedWidget<GreenRedLight, 2>>(Vec(14.f, 287.1f));
 		w->setModule(module, SipoModule::CHANNEL_LIGHTS);
 		addChild(w);
-		addOutput(createOutputCentered<PJ301MPort>(Vec(22.5f, 324.1f), module, SipoModule::POLY_OUTPUT));
+		addOutput(createOutputCentered<PJ301MPort>(Vec(22.5f, 323.5f), module, SipoModule::POLY_OUTPUT));
 	}
 };
 

@@ -5,19 +5,10 @@
         <g transform="matrix(10.4825,0,0,0.958552,963,-240.235)">
             <rect x="0" y="0" width="60" height="380" style="fill:rgb(128,187,254);"/>
         </g>
-        <g transform="matrix(3.71936,0,0,1.44687,1074.71,-653.268)">
-            <rect x="-30.034" y="347.456" width="169.102" height="16.91" style="fill-opacity:0.3;"/>
-        </g>
-        <g transform="matrix(3.71936,0,0,1.55539,1074.71,-450.668)">
-            <rect x="-30.034" y="347.456" width="169.102" height="16.91" style="fill:rgb(4,4,4);fill-opacity:0.3;"/>
-        </g>
-        <g id="path3052" transform="matrix(4.40008,0,0,1.06342,-3276.62,-7.50798)">
-            <rect x="963.532" y="121.41" width="142.941" height="2.074" style="fill:url(#_Linear1);"/>
-        </g>
         <g transform="matrix(28.0822,0,0,25.5659,-86.9238,-292.473)">
             <rect x="37.388" y="2.043" width="22.397" height="14.247" style="fill:none;stroke:black;stroke-opacity:0.6;stroke-width:0.02px;"/>
         </g>
-        <g transform="matrix(1.198,0,0,0.958552,1242.37,-221.067)">
+        <g transform="matrix(1.198,0,0,0.958552,1242.37,-212.524)">
             <g transform="matrix(13,0,0,13,-3.96856,0)">
                 <path d="M0.744,0L0.568,0L0.511,-0.173L0.236,-0.173L0.181,0L0.006,0L0.283,-0.756L0.472,-0.756L0.744,0ZM0.473,-0.298L0.387,-0.56C0.382,-0.577 0.378,-0.599 0.375,-0.626L0.371,-0.626C0.369,-0.604 0.365,-0.583 0.358,-0.562L0.271,-0.298L0.473,-0.298Z" style="fill-rule:nonzero;"/>
             </g>
@@ -42,6 +33,12 @@
             <g transform="matrix(13,0,0,13,54.6394,0)">
                 <path d="M0.498,-0.756L0.498,-0.276L0.604,-0.276L0.604,-0.161L0.498,-0.161L0.498,0L0.354,0L0.354,-0.161L0.016,-0.161L0.016,-0.277C0.086,-0.355 0.152,-0.438 0.213,-0.525C0.274,-0.612 0.32,-0.689 0.352,-0.756L0.498,-0.756ZM0.156,-0.276L0.354,-0.276L0.354,-0.553C0.338,-0.524 0.316,-0.488 0.287,-0.447C0.258,-0.405 0.214,-0.348 0.156,-0.276Z" style="fill-rule:nonzero;"/>
             </g>
+        </g>
+        <g transform="matrix(3.71936,0,0,2.38646,1074.71,-1069.43)">
+            <rect x="-30.034" y="347.456" width="169.102" height="16.91" style="fill:rgb(4,4,4);fill-opacity:0.3;"/>
+        </g>
+        <g transform="matrix(3.71936,0,0,2.03501,1074.71,-617.315)">
+            <rect x="-30.034" y="347.456" width="169.102" height="16.91" style="fill:rgb(4,4,4);fill-opacity:0.3;"/>
         </g>
         <g transform="matrix(1.198,0,0,0.958552,1181.09,-223.245)">
             <g transform="matrix(9,0,0,9,52.3635,347.267)">
@@ -399,7 +396,4 @@
             </g>
         </g>
     </g>
-    <defs>
-        <linearGradient id="_Linear1" x1="0" y1="0" x2="1" y2="0" gradientUnits="userSpaceOnUse" gradientTransform="matrix(9.31062e-17,1.52054,-1.52054,9.31062e-17,1036.87,122.284)"><stop offset="0" style="stop-color:rgb(165,165,165);stop-opacity:1"/><stop offset="1" style="stop-color:black;stop-opacity:1"/></linearGradient>
-    </defs>
 </svg>
