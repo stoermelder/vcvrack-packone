@@ -6,10 +6,11 @@
 ![License](https://img.shields.io/badge/license-GPLv3-blue.svg?style=flat-square)
 ![Language](https://img.shields.io/badge/language-C++-yellow.svg?style=flat-square)
 
-The PackOne plugin pack gives you a some utility modules for [VCV Rack](https://www.vcvrack.com).
+The PackOne plugin gives you some utility modules for [VCV Rack](https://www.vcvrack.com).
 
 ![Intro image](./docs/intro.png)
 
+- [4ROUNDS](./docs/FourRounds.md): creating various outputs by randomly selecting out of 16 inputs
 - [8FACE](./docs/EightFace.md): preset sequencer for eight presets of any module as an universal expander
 - [BOLT](./docs/Bolt.md): polyphonic CV-modulateable boolean functions
 - [CV-MAP](./docs/CVMap.md): control 32 knobs/sliders/switches of any module by CV even when the module has no CV input
@@ -19,6 +20,7 @@ The PackOne plugin pack gives you a some utility modules for [VCV Rack](https://
 - [MIDI-CAT](./docs/MidiCat.md): map parameters to midi controllers similar to MIDI-MAP with midi feedback and note mapping
 - [ReMOVE Lite](./docs/ReMove.md): a recorder for knob/slider/switch-automation
 - [ROTOR Model A](./docs/RotorA.md): spread a carrier signal across 2-16 output channels using CV
+- [SIPO](./docs/Sipo.md): serial-in parallel-out shift register with polyphonic output and CV controls
 - [STRIP](./docs/Strip.md): manage a group of modules in a patch, providing load, save as, disable and randomize
 
 Stable versions are released in the [VCV Library](https://vcvrack.com/plugins.html#packone).

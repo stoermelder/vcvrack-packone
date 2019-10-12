@@ -90,6 +90,12 @@
 			"tags": ["Utility", "Sample and hold", "Polyphonic"]
 		},
 		{
+			"slug": "FourRounds",
+			"name": "4ROUNDS",
+			"description": "",
+			"tags": ["Utility", "Sample and hold"]
+		},
+		{
 			"slug": "AudioInterface64",
 			"name": "AUDIO-64",
 			"description": "",

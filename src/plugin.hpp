@@ -17,4 +17,5 @@ extern Model *modelStrip;
 extern Model *modelEightFace;
 extern Model *modelMidiCat;
 extern Model *modelSipo;
+extern Model *modelFourRounds;
 extern Model *modelAudioInterface64;
