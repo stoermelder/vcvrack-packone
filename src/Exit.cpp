@@ -8,6 +8,24 @@
 
 namespace Exit {
 
+static std::string path;
+static int workToDo;
+
+void exit_worker() {
+	if (workToDo == 2)
+		APP->patch->save(APP->patch->path);
+	APP->patch->load(path);
+	APP->patch->path = path;
+	APP->history->setSaved();
+}
+
+void exit_run(std::string path, int workToDo) {
+	Exit::path = path;
+	Exit::workToDo = workToDo;
+	std::thread t(exit_worker);
+	t.detach();
+}
+
 static const char PATCH_FILTERS[] = "VCV Rack patch (.vcv):vcv";
 
 struct ExitModule : Module {
@@ -38,32 +56,18 @@ struct ExitModule : Module {
 
 	ExitModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		worker = new std::thread(&ExitModule::workerProcess, this);
 	}
 
 	void process(const ProcessArgs &args) override {
         if (inputs[TRIG_INPUT].isConnected() && trigTrigger.process(inputs[TRIG_INPUT].getVoltage())) {
             workToDo = 1;
-            workerCondVar.notify_one();
+			exit_run(path, 1);
+            //workerCondVar.notify_one();
         }
         if (inputs[TRIGS_INPUT].isConnected() && trigTrigger.process(inputs[TRIGS_INPUT].getVoltage())) {
             workToDo = 2;
-            workerCondVar.notify_one();
-        }
-	}
-
-	void workerProcess() {
-        {
-            std::unique_lock<std::mutex> lock(workerMutex);
-            workerCondVar.wait(lock);
-        }
-        if (!path.empty()) {
-            std::string path = this->path;
-            if (workToDo == 2)
-                APP->patch->save(APP->patch->path);
-            APP->patch->load(path);
-            APP->patch->path = path;
-            APP->history->setSaved();
+			exit_run(path, 2);
+            //workerCondVar.notify_one();
         }
 	}
 

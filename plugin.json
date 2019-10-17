@@ -96,12 +96,6 @@
 			"tags": ["Utility", "Sample and hold"]
 		},
 		{
-			"slug": "Exit",
-			"name": "EXIT",
-			"description": "",
-			"tags": ["Utility"]
-		},
-		{
 			"slug": "AudioInterface64",
 			"name": "AUDIO-64",
 			"description": "",
