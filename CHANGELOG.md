@@ -1,5 +1,7 @@
 ### 1.2.0 (in development)
 
+- Module 4ROUNDS
+    - New module, select various outputs by a triggered random contest of 16 input signals
 - Module SIPO
     - New module, serial-in parallel-out shift register with polyphonic output and CV controls for offset and increment
 
