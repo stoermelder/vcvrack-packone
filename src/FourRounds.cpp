@@ -4,6 +4,11 @@
 
 namespace FourRounds {
 
+enum MODE {
+	DIRECT = 0,
+	SH = 1
+};
+
 struct FourRoundsModule : Module {
 	enum ParamIds {
 		TRIG_PARAM,
@@ -36,6 +41,10 @@ struct FourRoundsModule : Module {
 	/** [Stored to JSON] */
 	int state[SIZE];
 	/** [Stored to JSON] */
+	float lastValue[16];
+	/** [Stored to JSON] */
+	MODE mode = MODE::DIRECT;
+	/** [Stored to JSON] */
 	bool inverted = false;
 
 	dsp::SchmittTrigger trigTrigger;
@@ -53,12 +62,17 @@ struct FourRoundsModule : Module {
 	void onReset() override {
 		for (int i = 0; i < SIZE; i++)
 			state[i] = randDist(randGen);
+		for (int i = 0; i < 16; i++)
+			lastValue[i] = 0.f;
 	}
 
 	void process(const ProcessArgs &args) override {
 		if (trigTrigger.process(inputs[TRIG_INPUT].getVoltage() + params[TRIG_PARAM].getValue())) {
 			for (int i = 0; i < SIZE; i++) {
 				state[i] = randDist(randGen);
+			}
+			for (int i = 0; i < 16; i++) {
+				lastValue[i] = inputs[ROUND1_INPUT + i].getVoltage();
 			}
 		}
 
@@ -68,7 +82,7 @@ struct FourRoundsModule : Module {
 
 		for (int i = 0; i < 8; i++) {
 			int s = (state[i] + inverted) % 2;
-			float v = inputs[ROUND1_INPUT + i * 2 + s].getVoltage();
+			float v = getInputVoltage(i * 2 + s);
 			outputs[ROUND2_OUTPUT + i].setVoltage(v);
 		}
 		for (int i = 0; i < 4; i++) {
@@ -95,16 +109,36 @@ struct FourRoundsModule : Module {
 		}
 	}
 
+	inline float getInputVoltage(int i) {
+		switch (mode) {
+			case MODE::DIRECT:
+				return inputs[ROUND1_INPUT + i].getVoltage(); 
+			case MODE::SH:
+				return lastValue[i];
+			default:
+				return 0.f;
+		}
+	}
+
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
 		json_t* statesJ = json_array();
 		for (int i = 0; i < SIZE; i++) {
-			json_t* presetJ = json_object();
-			json_object_set_new(presetJ, "value", json_integer(state[i]));
-			json_array_append_new(statesJ, presetJ);
+			json_t* stateJ = json_object();
+			json_object_set_new(stateJ, "value", json_integer(state[i]));
+			json_array_append_new(statesJ, stateJ);
 		}
 		json_object_set_new(rootJ, "state", statesJ);
 
+		json_t* lastValuesJ = json_array();
+		for (int i = 0; i < 16; i++) {
+			json_t* lastValueJ = json_object();
+			json_object_set_new(lastValueJ, "value", json_real(lastValue[i]));
+			json_array_append_new(lastValuesJ, lastValueJ);
+		}
+		json_object_set_new(rootJ, "lastValue", lastValuesJ);
+
+		json_object_set_new(rootJ, "mode", json_integer(mode));
 		json_object_set_new(rootJ, "inverted", json_boolean(inverted));
 		return rootJ;
 	}
@@ -117,6 +151,15 @@ struct FourRoundsModule : Module {
 			state[stateIndex] = json_integer_value(json_object_get(stateJ, "value"));
 		}
 
+		json_t* lastValuesJ = json_object_get(rootJ, "lastValue");
+		json_t* lastValueJ;
+		size_t lastValueIndex;
+		json_array_foreach(lastValuesJ, lastValueIndex, lastValueJ) {
+			lastValue[lastValueIndex] = json_real_value(json_object_get(lastValueJ, "value"));
+		}
+
+		json_t* modeJ = json_object_get(rootJ, "mode");
+		mode = (MODE)json_integer_value(modeJ);
 		json_t* invertedJ = json_object_get(rootJ, "inverted");
 		inverted = json_boolean_value(invertedJ);
 	}
@@ -209,21 +252,38 @@ struct FourRoundsWidget : ModuleWidget {
 		addChild(createLightCentered<TinyLight<GreenRedLight>>(Vec(140.1f, 194.3f), module, FourRoundsModule::ROUND_LIGHT + 32 + 16 + 8 + 2));
 	}
 
-	/*
 	void appendContextMenu(Menu *menu) override {
-		FourRoundsModule* module = dynamic_cast<Infix*>(this->module);
+		FourRoundsModule* module = dynamic_cast<FourRoundsModule*>(this->module);
 		assert(module);
 
 		struct ManualItem : MenuItem {
-            void onAction(const event::Action &e) override {
-                std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/FourRounds.md");
-                t.detach();
-            }
+			void onAction(const event::Action &e) override {
+				std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/FourRounds.md");
+				t.detach();
+			}
 		};
 
 		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
+		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Mode"));
+
+		struct ModeItem : MenuItem {
+			FourRoundsModule* module;
+			MODE mode;
+			
+			void onAction(const event::Action &e) override {
+				module->mode = mode;
+			}
+
+			void step() override {
+				rightText = module->mode == mode ? "✔" : "";
+				MenuItem::step();
+			}
+		};
+
+		menu->addChild(construct<ModeItem>(&MenuItem::text, "CV / audio", &ModeItem::module, module, &ModeItem::mode, MODE::DIRECT));
+		menu->addChild(construct<ModeItem>(&MenuItem::text, "Sample & hold", &ModeItem::module, module, &ModeItem::mode, MODE::SH));
 	}
-    */
 };
 
 } // namespace FourRounds
