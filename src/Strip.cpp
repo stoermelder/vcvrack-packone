@@ -995,7 +995,8 @@ struct StripWidget : ModuleWidget {
 			osdialog_filters_free(filters);
 		});
 
-		char *path = osdialog_file(OSDIALOG_SAVE, "", "Untitled.vcvss", filters);
+		std::string dir = asset::user("patches");
+		char *path = osdialog_file(OSDIALOG_SAVE, dir.c_str(), "Untitled.vcvss", filters);
 		if (!path) {
 			// No path selected
 			return;
@@ -1091,7 +1092,8 @@ struct StripWidget : ModuleWidget {
 			osdialog_filters_free(filters);
 		});
 
-		char *path = osdialog_file(OSDIALOG_OPEN, "", NULL, filters);
+		std::string dir = asset::user("patches");
+		char *path = osdialog_file(OSDIALOG_OPEN, dir.c_str(), NULL, filters);
 		if (!path) {
 			// No path selected
 			return;

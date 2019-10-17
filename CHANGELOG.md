@@ -15,6 +15,7 @@
     - Follow voltage standards (ignore SEQ# for 1ms after trigger on RESET)
 - Module STRIP
     - Changed LEDs to triangle shape
+    - Load and save dialogs open in the "patches" folder of the current user (#41)
 
 ### 1.1.0
 
