@@ -113,11 +113,11 @@ struct FourRoundsModule : Module {
 				case MODE::DIRECT:
 				case MODE::SH: {
 					for (int i = 0; i < SIZE; i++) {
-						lights[ROUND_LIGHT + i * 6 + 0].setBrightness(inverted ? state[i] > 0 : 0);
-						lights[ROUND_LIGHT + i * 6 + 1].setBrightness(inverted ? 0 : state[i] == 0);
+						lights[ROUND_LIGHT + i * 6 + 0].setBrightness(inverted ? state[i] == 1.f : 0.f);
+						lights[ROUND_LIGHT + i * 6 + 1].setBrightness(inverted ? 0.f : state[i] == 0.f);
 						lights[ROUND_LIGHT + i * 6 + 2].setBrightness(0.f);
-						lights[ROUND_LIGHT + i * 6 + 3].setBrightness(inverted ? state[i] == 0 : 0);
-						lights[ROUND_LIGHT + i * 6 + 4].setBrightness(inverted ? 0 : state[i] > 0);
+						lights[ROUND_LIGHT + i * 6 + 3].setBrightness(inverted ? state[i] == 0.f : 0.f);
+						lights[ROUND_LIGHT + i * 6 + 4].setBrightness(inverted ? 0.f : state[i] == 1.f);
 						lights[ROUND_LIGHT + i * 6 + 5].setBrightness(0.f);
 					}
 					break;
@@ -126,10 +126,10 @@ struct FourRoundsModule : Module {
 					for (int i = 0; i < SIZE; i++) {
 						lights[ROUND_LIGHT + i * 6 + 0].setBrightness(0.f);
 						lights[ROUND_LIGHT + i * 6 + 1].setBrightness(0.f);
-						lights[ROUND_LIGHT + i * 6 + 2].setBrightness(inverted ? (1.f - state[i]) : state[i]);
+						lights[ROUND_LIGHT + i * 6 + 2].setBrightness(inverted ? state[i] : (1.f - state[i]));
 						lights[ROUND_LIGHT + i * 6 + 3].setBrightness(0.f);
 						lights[ROUND_LIGHT + i * 6 + 4].setBrightness(0.f);
-						lights[ROUND_LIGHT + i * 6 + 5].setBrightness(inverted ? state[i] : (1.f - state[i]));
+						lights[ROUND_LIGHT + i * 6 + 5].setBrightness(inverted ? (1.f - state[i]) : state[i]);
 					}
 					break;
 				}
@@ -150,7 +150,7 @@ struct FourRoundsModule : Module {
 			case MODE::QUANTUM: {
 				float v1 = inputs[ROUND1_INPUT + index * 2 + 0].getVoltage();
 				float v2 = inputs[ROUND1_INPUT + index * 2 + 1].getVoltage();
-				return inverted ? (v1 * (1.f - state[index]) + v2 * state[index]) : (v1 * state[index] + v2 * (1.f - state[index]));
+				return !inverted ? (v1 * (1.f - state[index]) + v2 * state[index]) : (v1 * state[index] + v2 * (1.f - state[index]));
 			}
 			default: {
 				return 0.f;
@@ -169,7 +169,7 @@ struct FourRoundsModule : Module {
 				float v1 = outputs[output_offset + index * 2 + 0].getVoltage();
 				float v2 = outputs[output_offset + index * 2 + 1].getVoltage();
 				int i = state_offset + index;
-				return inverted ? (v1 * (1.f - state[i]) + v2 * state[i]) : (v1 * state[i] + v2 * (1.f - state[i]));
+				return !inverted ? (v1 * (1.f - state[i]) + v2 * state[i]) : (v1 * state[i] + v2 * (1.f - state[i]));
 			}
 			default: {
 				return 0.f;
@@ -274,39 +274,39 @@ struct FourRoundsWidget : ModuleWidget {
 
 		addOutput(createOutputCentered<StoermelderPort>(Vec(150.0f, 160.5f), module, FourRoundsModule::WINNER_OUTPUT));
 
-		addChild(createLightCentered<TinyLight<RedGreenBlueLight>>(Vec(178.6f, 83.9f), module,  FourRoundsModule::ROUND_LIGHT + 3 * 0));
-		addChild(createLightCentered<TinyLight<RedGreenBlueLight>>(Vec(207.8f, 96.2f), module,  FourRoundsModule::ROUND_LIGHT + 3 * 1));
-		addChild(createLightCentered<TinyLight<RedGreenBlueLight>>(Vec(248.0f, 136.5f), module, FourRoundsModule::ROUND_LIGHT + 3 * 2));
-		addChild(createLightCentered<TinyLight<RedGreenBlueLight>>(Vec(260.3f, 166.1f), module, FourRoundsModule::ROUND_LIGHT + 3 * 3));
-		addChild(createLightCentered<TinyLight<RedGreenBlueLight>>(Vec(260.3f, 222.2f), module, FourRoundsModule::ROUND_LIGHT + 3 * 4));
-		addChild(createLightCentered<TinyLight<RedGreenBlueLight>>(Vec(248.0f, 251.7f), module, FourRoundsModule::ROUND_LIGHT + 3 * 5));
-		addChild(createLightCentered<TinyLight<RedGreenBlueLight>>(Vec(207.8f, 292.2f), module, FourRoundsModule::ROUND_LIGHT + 3 * 6));
-		addChild(createLightCentered<TinyLight<RedGreenBlueLight>>(Vec(178.6f, 304.5f), module, FourRoundsModule::ROUND_LIGHT + 3 * 7));
-		addChild(createLightCentered<TinyLight<RedGreenBlueLight>>(Vec(122.0f, 304.5f), module, FourRoundsModule::ROUND_LIGHT + 3 * 8));
-		addChild(createLightCentered<TinyLight<RedGreenBlueLight>>(Vec(92.4f, 292.2f), module,  FourRoundsModule::ROUND_LIGHT + 3 * 9));
-		addChild(createLightCentered<TinyLight<RedGreenBlueLight>>(Vec(51.9f, 251.7f), module,  FourRoundsModule::ROUND_LIGHT + 3 * 10));
-		addChild(createLightCentered<TinyLight<RedGreenBlueLight>>(Vec(39.6f, 222.2f), module,  FourRoundsModule::ROUND_LIGHT + 3 * 11));
-		addChild(createLightCentered<TinyLight<RedGreenBlueLight>>(Vec(39.6f, 166.1f), module,  FourRoundsModule::ROUND_LIGHT + 3 * 12));
-		addChild(createLightCentered<TinyLight<RedGreenBlueLight>>(Vec(51.9f, 136.5f), module,  FourRoundsModule::ROUND_LIGHT + 3 * 13));
-		addChild(createLightCentered<TinyLight<RedGreenBlueLight>>(Vec(92.4f, 96.2f), module,   FourRoundsModule::ROUND_LIGHT + 3 * 14));
-		addChild(createLightCentered<TinyLight<RedGreenBlueLight>>(Vec(122.0f, 83.9f), module,  FourRoundsModule::ROUND_LIGHT + 3 * 15));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(178.6f, 83.9f), module,  FourRoundsModule::ROUND_LIGHT + 3 * 0));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(207.8f, 96.2f), module,  FourRoundsModule::ROUND_LIGHT + 3 * 1));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(248.0f, 136.5f), module, FourRoundsModule::ROUND_LIGHT + 3 * 2));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(260.3f, 166.1f), module, FourRoundsModule::ROUND_LIGHT + 3 * 3));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(260.3f, 222.2f), module, FourRoundsModule::ROUND_LIGHT + 3 * 4));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(248.0f, 251.7f), module, FourRoundsModule::ROUND_LIGHT + 3 * 5));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(207.8f, 292.2f), module, FourRoundsModule::ROUND_LIGHT + 3 * 6));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(178.6f, 304.5f), module, FourRoundsModule::ROUND_LIGHT + 3 * 7));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(122.0f, 304.5f), module, FourRoundsModule::ROUND_LIGHT + 3 * 8));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(92.4f, 292.2f), module,  FourRoundsModule::ROUND_LIGHT + 3 * 9));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(51.9f, 251.7f), module,  FourRoundsModule::ROUND_LIGHT + 3 * 10));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(39.6f, 222.2f), module,  FourRoundsModule::ROUND_LIGHT + 3 * 11));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(39.6f, 166.1f), module,  FourRoundsModule::ROUND_LIGHT + 3 * 12));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(51.9f, 136.5f), module,  FourRoundsModule::ROUND_LIGHT + 3 * 13));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(92.4f, 96.2f), module,   FourRoundsModule::ROUND_LIGHT + 3 * 14));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(122.0f, 83.9f), module,  FourRoundsModule::ROUND_LIGHT + 3 * 15));
 
-		addChild(createLightCentered<TinyLight<RedGreenBlueLight>>(Vec(187.1f, 123.4f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 0)));
-		addChild(createLightCentered<TinyLight<RedGreenBlueLight>>(Vec(220.8f, 157.1f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 1)));
-		addChild(createLightCentered<TinyLight<RedGreenBlueLight>>(Vec(220.8f, 231.1f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 2)));
-		addChild(createLightCentered<TinyLight<RedGreenBlueLight>>(Vec(187.1f, 265.1f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 3)));
-		addChild(createLightCentered<TinyLight<RedGreenBlueLight>>(Vec(113.1f, 265.1f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 4)));
-		addChild(createLightCentered<TinyLight<RedGreenBlueLight>>(Vec(79.0f, 231.1f),  module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 5)));
-		addChild(createLightCentered<TinyLight<RedGreenBlueLight>>(Vec(79.0f, 157.1f),  module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 6)));
-		addChild(createLightCentered<TinyLight<RedGreenBlueLight>>(Vec(113.1f, 123.4f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 7)));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(187.1f, 123.4f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 0)));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(220.8f, 157.1f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 1)));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(220.8f, 231.1f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 2)));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(187.1f, 265.1f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 3)));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(113.1f, 265.1f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 4)));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(79.0f, 231.1f),  module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 5)));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(79.0f, 157.1f),  module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 6)));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(113.1f, 123.4f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 7)));
 
-		addChild(createLightCentered<TinyLight<RedGreenBlueLight>>(Vec(186.2f, 168.1f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 8 + 0)));
-		addChild(createLightCentered<TinyLight<RedGreenBlueLight>>(Vec(186.2f, 220.5f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 8 + 1)));
-		addChild(createLightCentered<TinyLight<RedGreenBlueLight>>(Vec(113.8f, 220.5f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 8 + 2)));
-		addChild(createLightCentered<TinyLight<RedGreenBlueLight>>(Vec(113.8f, 168.1f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 8 + 3)));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(186.2f, 168.1f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 8 + 0)));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(186.2f, 220.5f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 8 + 1)));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(113.8f, 220.5f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 8 + 2)));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(113.8f, 168.1f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 8 + 3)));
 
-		addChild(createLightCentered<TinyLight<RedGreenBlueLight>>(Vec(159.9f, 194.3f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 8 + 4 + 0)));
-		addChild(createLightCentered<TinyLight<RedGreenBlueLight>>(Vec(140.1f, 194.3f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 8 + 4 + 1)));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(159.9f, 194.3f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 8 + 4 + 0)));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(140.1f, 194.3f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 8 + 4 + 1)));
 	}
 
 	void appendContextMenu(Menu *menu) override {
