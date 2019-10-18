@@ -124,12 +124,14 @@ struct FourRoundsModule : Module {
 				}
 				case MODE::QUANTUM: {
 					for (int i = 0; i < SIZE; i++) {
-						lights[ROUND_LIGHT + i * 6 + 0].setBrightness(0.f);
-						lights[ROUND_LIGHT + i * 6 + 1].setBrightness(0.f);
-						lights[ROUND_LIGHT + i * 6 + 2].setBrightness(inverted ? state[i] : (1.f - state[i]));
-						lights[ROUND_LIGHT + i * 6 + 3].setBrightness(0.f);
-						lights[ROUND_LIGHT + i * 6 + 4].setBrightness(0.f);
-						lights[ROUND_LIGHT + i * 6 + 5].setBrightness(inverted ? (1.f - state[i]) : state[i]);
+						float l1 = inverted ? state[i] : (1.f - state[i]);
+						lights[ROUND_LIGHT + i * 6 + 0].setBrightness(l1);
+						lights[ROUND_LIGHT + i * 6 + 1].setBrightness(l1);
+						lights[ROUND_LIGHT + i * 6 + 2].setBrightness(l1);
+						float l2 = inverted ? (1.f - state[i]) : state[i];
+						lights[ROUND_LIGHT + i * 6 + 3].setBrightness(l2);
+						lights[ROUND_LIGHT + i * 6 + 4].setBrightness(l2);
+						lights[ROUND_LIGHT + i * 6 + 5].setBrightness(l2);
 					}
 					break;
 				}
