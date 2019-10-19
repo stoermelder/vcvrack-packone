@@ -66,6 +66,8 @@ struct FourRoundsModule : Module {
 			state[i] = randDist(randGen);
 		for (int i = 0; i < 16; i++)
 			lastValue[i] = 0.f;
+		mode = MODE::DIRECT;
+		inverted = false;
 	}
 
 	void process(const ProcessArgs &args) override {
