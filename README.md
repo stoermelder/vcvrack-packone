@@ -1,7 +1,7 @@
 # stoermelder PackOne
 
 <!-- Version and License Badges -->
-![Version](https://img.shields.io/badge/version-1.1.0-green.svg?style=flat-square)
+![Version](https://img.shields.io/badge/version-1.2.0-green.svg?style=flat-square)
 ![Rack SDK](https://img.shields.io/badge/Rack--SDK-1.1.5-red.svg?style=flat-square)
 ![License](https://img.shields.io/badge/license-GPLv3-blue.svg?style=flat-square)
 ![Language](https://img.shields.io/badge/language-C++-yellow.svg?style=flat-square)
@@ -23,7 +23,7 @@ The PackOne plugin gives you some utility modules for [VCV Rack](https://www.vcv
 - [SIPO](./docs/Sipo.md): serial-in parallel-out shift register with polyphonic output and CV controls
 - [STRIP](./docs/Strip.md): manage a group of modules in a patch, providing load, save as, disable and randomize
 
-Stable versions are released in the [VCV Library](https://vcvrack.com/plugins.html#packone).
+Stable versions are released in the [VCV Library](https://vcvrack.com/plugins.html#packone). [Changelog](./CHANGELOG.md) for this plugin.
 
 Feel free to contact me or create a GitHub issue if you have any problems or questions!
 If you like my modules consider donating to https://paypal.me/stoermelder. Thanks for your support!
