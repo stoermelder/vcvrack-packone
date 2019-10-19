@@ -1,9 +1,9 @@
 ### 1.2.0
 
 - Module 4ROUNDS
-    - New module, select various outputs by a triggered random contest of 16 input signals
+    - New module, randomizer for up to 16 input signals to create 15 output signals
 - Module SIPO
-    - New module, serial-in parallel-out shift register with polyphonic output and CV controls for offset and increment
+    - New module, serial-in parallel-out shift register with polyphonic output and CV controls for skipping and incrementing on sampled values
 - Module 8FACE
     - Added option to switch between left and right side controlled module (#50)
     - Follow voltage standards for Rack (ignore SLOT for 1ms after trigger on RESET)
@@ -17,7 +17,7 @@
 - Module STRIP
     - Changed LEDs to triangle shape
     - Load and save dialogs default to "patches" folder of the current user (#41)
-- All stoermelder-modules are now shipped with dark mounting-screws, improved jack-ports and trimpots
+- All stoermelder-modules are now shipped with dark mounting-screws, improved jack-ports and handy trimpots
 
 ### 1.1.0
 

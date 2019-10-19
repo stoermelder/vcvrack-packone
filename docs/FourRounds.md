@@ -1,6 +1,6 @@
 # stoermelder 4ROUNDS
 
-The module 4ROUNDS takes up to 16 input signals and creates several randomly selected outputs. This is done by delivering some sort of contest or tournament between signals and choosing a random winner of 15 "1-on-1 matches". There are four rounds of 1-on-1 matches needed to find a winner hence the name 4ROUNDS. Every pairing of each match is drawn on the panel for easy visual understanding.
+The module takes up to 16 input signals (bright circle) and creates 15 output signals (dark circles) with randomly selected or mixed inputs. This is done by hosting some sort of contest or tournament between signals and choosing a random winner of several "1-on-1 matches". There are four rounds of 1-on-1 matches needed to find a winner out of 16 inputs hence the name 4ROUNDS. Every pairing of each match is drawn on the panel for easy visual understanding.
 
 ![4ROUNDS Intro](./FourRounds-intro.gif)
 
