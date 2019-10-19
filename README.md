@@ -23,7 +23,7 @@ The PackOne plugin gives you some utility modules for [VCV Rack](https://www.vcv
 - [SIPO](./docs/Sipo.md): serial-in parallel-out shift register with polyphonic output and CV controls
 - [STRIP](./docs/Strip.md): manage a group of modules in a patch, providing load, save as, disable and randomize
 
-Stable versions are released in the [VCV Library](https://vcvrack.com/plugins.html#packone). [Changelog](./CHANGELOG.md) for this plugin.
+Stable versions are released in the [VCV Library](https://vcvrack.com/plugins.html#packone). Nightly builds of the latest commit can be downloaded [here](https://github.com/stoermelder/vcvrack-packone/releases/tag/Nightly). Please review the [changelog](./CHANGELOG.md) for this plugin.
 
 Feel free to contact me or create a GitHub issue if you have any problems or questions!
 If you like my modules consider donating to https://paypal.me/stoermelder. Thanks for your support!
@@ -34,8 +34,6 @@ Follow the [build instructions](https://vcvrack.com/manual/Building.html#buildin
 
 ## License
 
-Copyright © 2019 Benjamin Dill
+All **source code** is copyright © 2019 Benjamin Dill and is licensed under the [GNU General Public License, version v3.0](./LICENSE.txt).
 
-Licensed under the [GNU Public License, version 3](https://www.gnu.org/licenses/gpl-3.0.en.html).
-
-The panel graphics in the `res` and `res-src` directories are licensed under CC BY-NC-ND 4.0. You may not create modified adaptations of these graphics.
+The **graphics** in the `res` and `res-src` directories are licensed under [CC BY-NC-ND 4.0](https://creativecommons.org/licenses/by-nc-nd/4.0/). You may not distribute modified adaptations of these graphics.
