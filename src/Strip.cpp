@@ -561,10 +561,10 @@ struct StripWidget : ModuleWidget {
 		addChild(createWidget<MyBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<MyBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addParam(createParamCentered<CKD6>(Vec(22.5f, 67.3f), module, StripModule::MODE_PARAM));
+		addParam(createParamCentered<CKD6>(Vec(22.5f, 87.6f), module, StripModule::MODE_PARAM));
 
-		addChild(createLightCentered<TriangleLeftLight<SmallLight<GreenLight>>>(Vec(13.8f, 110.6f), module, StripModule::LEFT_LIGHT));
-		addChild(createLightCentered<TriangleRightLight<SmallLight<GreenLight>>>(Vec(31.2f, 110.6f), module, StripModule::RIGHT_LIGHT));
+		addChild(createLightCentered<TriangleLeftLight<SmallLight<GreenLight>>>(Vec(14.8f, 116.3f), module, StripModule::LEFT_LIGHT));
+		addChild(createLightCentered<TriangleRightLight<SmallLight<GreenLight>>>(Vec(30.2f, 116.3f), module, StripModule::RIGHT_LIGHT));
 
 		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 146.7f), module, StripModule::ON_INPUT));
 		addParam(createParamCentered<TL1105>(Vec(22.5f, 170.1f), module, StripModule::ON_PARAM));
