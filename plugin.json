@@ -65,41 +65,43 @@
 		{
 			"slug": "Strip",
 			"name": "STRIP",
-			"description": "Manage a group of modules by using the expander-mechanism, providing load and save functionality",
-			"tags": ["Utility"],
+			"description": "Manage a group of modules by using the expander-mechanism, providing load, save, copy, paste, disable, enable and randomize",
+			"tags": ["Utility", "Controller", "Random"],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Strip.md"
 		},
 		{
 			"slug": "EightFace",
 			"name": "8FACE",
 			"description": "Universal expander for sequencing up to eight presets of any module",
-			"tags": ["Utility"],
+			"tags": ["Utility", "Sequencer"],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/EightFace.md"
 		},
 		{
 			"slug": "MidiCat",
 			"name": "MIDI-CAT",
-			"description": "Mapping module for midi CCs and notes to parameters of any module, similar to MIDI-MAP",
+			"description": "Mapping module for MIDI CCs and notes to parameters of any module, similar to VCV MIDI-MAP",
 			"tags": ["Utility", "MIDI"],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/MidiCat.md"
 		},
 		{
 			"slug": "Sipo",
 			"name": "SIPO",
-			"description": "A serial-in parallel-out shift register with polyphonic output and CV controls for offset and increment",
-			"tags": ["Utility", "Sample and hold", "Polyphonic"]
+			"description": "Serial-in parallel-out shift register with polyphonic output and CV controls for skipping and incrementing on sampled values",
+			"tags": ["Utility", "Sample and hold", "Digital", "Polyphonic"],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Sipo.md"
 		},
 		{
 			"slug": "FourRounds",
 			"name": "4ROUNDS",
-			"description": "",
-			"tags": ["Utility", "Sample and hold"]
+			"description": "Randomizer for up to 16 input signals to create 15 output signals",
+			"tags": ["Utility", "Sample and hold", "Random", "Switch"],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/FourRounds.md"
 		},
 		{
 			"slug": "AudioInterface64",
 			"name": "AUDIO-64",
-			"description": "",
-			"tags": [""]
+			"description": "Sends CV and audio to/from an audio device",
+			"tags": ["External"]
 		}
 	]
 }
