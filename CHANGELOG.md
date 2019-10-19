@@ -1,29 +1,28 @@
-### 1.2.0 (in development)
+### 1.2.0
 
 - Module 4ROUNDS
     - New module, select various outputs by a triggered random contest of 16 input signals
 - Module SIPO
     - New module, serial-in parallel-out shift register with polyphonic output and CV controls for offset and increment
-
 - Module 8FACE
     - Added option to switch between left and right side controlled module (#50)
-    - Follow voltage standards (ignore SLOT for 1ms after trigger on RESET)
+    - Follow voltage standards for Rack (ignore SLOT for 1ms after trigger on RESET)
 - Module µMAP
     - Added option to invert output (#46)
     - Selected voltage range (-5V..5V or 0V..10V) is also used for OUT-port
 - Module ReMOVE Lite
-    - Value is set on the mapped parameter when using IN-port for recording (#48)
+    - Value is set to the mapped parameter when using IN-port for recording (#48)
     - Added EOC-mode for OUT-port (#47)
-    - Follow voltage standards (ignore SEQ# for 1ms after trigger on RESET)
+    - Follow voltage standards for Rack (ignore SEQ# for 1ms after trigger on RESET)
 - Module STRIP
     - Changed LEDs to triangle shape
-    - Load and save dialogs open in the "patches" folder of the current user (#41)
+    - Load and save dialogs default to "patches" folder of the current user (#41)
+- All stoermelder-modules are now shipped with dark mounting-screws, improved jack-ports and trimpots
 
 ### 1.1.0
 
 - Module MIDI-CAT
     - New module, mapping module similar to VCV's MIDI-MAP with midi feedback, note mapping and cc pickup-mode
-
 - Module 8FACE
     - Using additional worker thread for applying presets to avoid engine deadlock on some modules (especially using parameter mapping)
     - Added trigger modes "reverse", "pingpong" and "random" for SLOT-port
