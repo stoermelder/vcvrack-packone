@@ -1,5 +1,6 @@
 #include "plugin.hpp"
 #include "widgets.hpp"
+#include <thread>
 
 namespace Sipo {
 
@@ -143,6 +144,20 @@ struct SipoWidget : ModuleWidget {
 		w->setModule(module, SipoModule::CHANNEL_LIGHTS);
 		addChild(w);
 		addOutput(createOutputCentered<StoermelderPort>(Vec(22.5f, 323.5f), module, SipoModule::POLY_OUTPUT));
+	}
+
+	void appendContextMenu(Menu *menu) override {
+		SipoModule *module = dynamic_cast<SipoModule*>(this->module);
+		assert(module);
+
+		struct ManualItem : MenuItem {
+			void onAction(const event::Action &e) override {
+				std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Sipo.md");
+				t.detach();
+			}
+		};
+
+		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
 	}
 };
 
