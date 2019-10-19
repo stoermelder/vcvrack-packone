@@ -5,7 +5,7 @@ namespace Sipo {
 
 static const int MAX_DATA = 4096;
 static const int MAX_DATA_32 = MAX_DATA / 32;
-static const int MAX_DATA_32_16 = MAX_DATA_32 / 16;
+static const int MAX_DATA_32_16 = MAX_DATA_32 / PORT_MAX_CHANNELS;
 
 struct SipoModule : Module {
 	enum ParamIds {
@@ -33,12 +33,13 @@ struct SipoModule : Module {
 
 	float* data;
 	int dataPtr = 0;
+	int dataUsed = 0;
 
 	dsp::ClockDivider lightDivider;
 
 	SipoModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		configParam(OFFSET_PARAM, 1.f, MAX_DATA_32, 1.f, "Offset to the current value, 1 acts as a standard shift register");
+		configParam(OFFSET_PARAM, 1.f, MAX_DATA_32, 1.f, "Trigger-count to the current value, 1 acts as a standard shift register");
 		configParam(INCR_PARAM, 0.f, MAX_DATA_32_16, 0.f, "Inrement between used cells, 0 acts as standard shift register");
 		data = new float[MAX_DATA];
 
@@ -52,16 +53,18 @@ struct SipoModule : Module {
 
 	void onReset() override {
 		dataPtr = 0;
+		dataUsed = 0;
 		for (int i = 0; i < MAX_DATA; i++) {
 			data[i] = 0.f;
 		}
 	}
 
 	void process(const ProcessArgs &args) override {
-		outputs[POLY_OUTPUT].setChannels(16);
+		outputs[POLY_OUTPUT].setChannels(PORT_MAX_CHANNELS);
 
 		if (clockTrigger.process(inputs[TRIG_INPUT].getVoltage())) {
 			dataPtr = (dataPtr + 1) % MAX_DATA;
+			dataUsed = std::min(dataUsed + 1, MAX_DATA);
 			data[dataPtr] = inputs[SRC_INPUT].getVoltage();
 		}
 
@@ -70,7 +73,7 @@ struct SipoModule : Module {
 		int incrCv = std::round(rescale(inputs[INCR_INPUT].getVoltage(), 0.f, 10.f, 0, MAX_DATA_32_16));
 		int incr = (int) clamp((int)params[INCR_PARAM].getValue() + incrCv, 0, MAX_DATA_32_16);
 
-		for (int c = 0; c < 16; c++) {
+		for (int c = 0; c < PORT_MAX_CHANNELS; c++) {
 			outputs[POLY_OUTPUT].setVoltage(data[(dataPtr - (offset + incr * c) * c + MAX_DATA) % MAX_DATA], c);
 		}
 
@@ -88,15 +91,13 @@ struct SipoModule : Module {
 		json_t* rootJ = json_object();
 
 		json_t* dataJ = json_array();
-		for (int i = 0; i < MAX_DATA; i++) {
+		for (int i = 0; i < dataUsed; i++) {
 			json_t* d = json_real(data[i]);
 			json_array_append(dataJ, d);
 		}
 		json_object_set_new(rootJ, "data", dataJ);
 
-		json_t* dataPtrJ = json_integer(dataPtr);
-		json_object_set_new(rootJ, "dataPtr", dataPtrJ);
-
+		json_object_set_new(rootJ, "dataPtr", json_integer(dataPtr));
 		return rootJ;
 	}
 
@@ -108,16 +109,16 @@ struct SipoModule : Module {
 			json_array_foreach(dataJ, dataIndex, d) {
 				data[dataIndex] = json_real_value(d);
 			}
+			dataUsed = dataIndex;
 		}
 
-		json_t* dataPtrJ = json_object_get(rootJ, "dataPtr");
-		if (dataPtrJ) dataPtr = json_integer_value(dataPtrJ);
+		dataPtr = json_integer_value(json_object_get(rootJ, "dataPtr"));
 	}
 };
 
 
 struct SipoWidget : ModuleWidget {
-	SipoWidget(SipoModule* module) {	
+	SipoWidget(SipoModule* module) {
 		setModule(module);
 		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/Sipo.svg")));
 
