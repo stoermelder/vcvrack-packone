@@ -10,11 +10,11 @@ A new contest is carried out every time a trigger is received. The winners of ea
 
 ### Section INV
 
-INV triggers the inversion of the state of the module. The losers of every 1-on-1 match become winners, the winner become losers.
+INV triggers the inversion of the state of the module. The losers of every 1-on-1 match become winners, the winners become losers.
 
 ### Modes
 
-The module provides currently three different operation modes:
+The module provides currently three different operation modes selectable on the context menu:
 
 - In "CV / audio" mode the winning signal of each match is directly routed to each output respectively. Active signals are shown by LEDs lit in green and an inverted state is shown by LEDs lit in red.
 - In "Sample & hold" mode just one sample of each input is taken when receiving a trigger on TRIG. Green and red LEDs are used the same way as in "CV / audio" mode.
