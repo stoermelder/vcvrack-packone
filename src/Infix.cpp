@@ -52,8 +52,8 @@ struct InfixWidget : ModuleWidget {
 		addChild(createWidget<MyBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<MyBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(20.6f, 83.0f), module, InfixModule::POLY_INPUT));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(54.f, 83.0f), module, InfixModule::POLY_OUTPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(20.6f, 74.4f), module, InfixModule::POLY_INPUT));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(54.f, 74.4f), module, InfixModule::POLY_OUTPUT));
 
 		addInput(createInputCentered<StoermelderPort>(Vec(20.6f, 132.3f), module, InfixModule::MONO_INPUTS + 0));
 		addInput(createInputCentered<StoermelderPort>(Vec(20.6f, 159.7f), module, InfixModule::MONO_INPUTS + 1));
