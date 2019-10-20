@@ -4,6 +4,8 @@
 #include <chrono>
 #include <thread>
 
+namespace CVMap {
+
 static const int MAX_CHANNELS = 32;
 static const float UINIT = 0;
 
@@ -67,7 +69,7 @@ struct CVMap : CVMapModule<MAX_CHANNELS> {
 
 			if (lockParameterChanges || lastValue[i] != v) {
 				paramQuantity->setScaledValue(v);
-				lastValue[i] = v;					
+				lastValue[i] = v;
 			}
 		}
 
@@ -98,23 +100,20 @@ struct CVMapWidget : ModuleWidget {
 		addChild(createWidget<MyBlackScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<MyBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		float o = 9.f;
-		float v = 13.5f;
-		float d = 6.8f;
-		addInput(createInputCentered<StoermelderPort>(mm2px(Vec(o, 21.1)), module, CVMap::POLY_INPUT1));
-		addInput(createInputCentered<StoermelderPort>(mm2px(Vec(o + d + v + 12.4f, 21.1)), module, CVMap::POLY_INPUT2));
+		addInput(createInputCentered<StoermelderPort>(Vec(26.9f, 74.7f), module, CVMap::POLY_INPUT1));
+		addInput(createInputCentered<StoermelderPort>(Vec(123.1f, 74.7f), module, CVMap::POLY_INPUT2));
 
-		PolyLedWidget<> *w0 = createWidget<PolyLedWidget<>>(mm2px(Vec(o + d, 17.975)));
+		PolyLedWidget<> *w0 = createWidgetCentered<PolyLedWidget<>>(Vec(54.2f, 74.7f));
 		w0->setModule(module, CVMap::CHANNEL_LIGHTS1);
 		addChild(w0);
 
-		PolyLedWidget<> *w1 = createWidget<PolyLedWidget<>>(mm2px(Vec(o + d + v, 17.975)));
+		PolyLedWidget<> *w1 = createWidgetCentered<PolyLedWidget<>>(Vec(95.8f, 74.7f));
 		w1->setModule(module, CVMap::CHANNEL_LIGHTS2);
 		addChild(w1);
 
 		typedef MapModuleDisplay<MAX_CHANNELS, CVMap> TMapDisplay;
-		TMapDisplay *mapWidget = createWidget<TMapDisplay>(mm2px(Vec(3.41891, 29.f)));
-		mapWidget->box.size = mm2px(Vec(43.999, 91));
+		TMapDisplay *mapWidget = createWidget<TMapDisplay>(Vec(10.6f, 95.3f));
+		mapWidget->box.size = Vec(128.9f, 243.9f);
 		mapWidget->setModule(module);
 		addChild(mapWidget);
 	}
@@ -124,15 +123,15 @@ struct CVMapWidget : ModuleWidget {
 		CVMap *module = dynamic_cast<CVMap*>(this->module);
 		assert(module);
 
-        struct ManualItem : MenuItem {
-            void onAction(const event::Action &e) override {
-                std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/CVMap.md");
-                t.detach();
-            }
-        };
+		struct ManualItem : MenuItem {
+			void onAction(const event::Action &e) override {
+				std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/CVMap.md");
+				t.detach();
+			}
+		};
 
-        menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
-        menu->addChild(new MenuSeparator());
+		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
+		menu->addChild(new MenuSeparator());
 
 		struct LockItem : MenuItem {
 			CVMap *module;
@@ -179,5 +178,6 @@ struct CVMapWidget : ModuleWidget {
 	}
 };
 
+} // namespace CVMap
 
-Model *modelCVMap = createModel<CVMap, CVMapWidget>("CVMap");
+Model* modelCVMap = createModel<CVMap::CVMap, CVMap::CVMapWidget>("CVMap");
