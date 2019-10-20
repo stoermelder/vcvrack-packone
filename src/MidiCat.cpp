@@ -810,7 +810,7 @@ struct MidiCatWidget : ModuleWidget {
 		addChild(midiOutputWidget);
 
 		MidiCatDisplay *mapWidget = createWidget<MidiCatDisplay>(Vec(10.0f, 180.0f));
-		mapWidget->box.size = Vec(130.0f, 174.4f);
+		mapWidget->box.size = Vec(130.0f, 159.2f);
 		mapWidget->setModule(module);
 		addChild(mapWidget);
 	}
