@@ -561,15 +561,15 @@ struct StripWidget : ModuleWidget {
 		addChild(createWidget<MyBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<MyBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addParam(createParamCentered<CKD6>(Vec(22.5f, 87.6f), module, StripModule::MODE_PARAM));
+		addParam(createParamCentered<CKD6>(Vec(22.5f, 81.6f), module, StripModule::MODE_PARAM));
 
-		addChild(createLightCentered<TriangleLeftLight<SmallLight<GreenLight>>>(Vec(14.8f, 116.3f), module, StripModule::LEFT_LIGHT));
-		addChild(createLightCentered<TriangleRightLight<SmallLight<GreenLight>>>(Vec(30.2f, 116.3f), module, StripModule::RIGHT_LIGHT));
+		addChild(createLightCentered<TriangleLeftLight<SmallLight<GreenLight>>>(Vec(14.8f, 105.1f), module, StripModule::LEFT_LIGHT));
+		addChild(createLightCentered<TriangleRightLight<SmallLight<GreenLight>>>(Vec(30.2f, 105.1f), module, StripModule::RIGHT_LIGHT));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 146.7f), module, StripModule::ON_INPUT));
-		addParam(createParamCentered<TL1105>(Vec(22.5f, 170.1f), module, StripModule::ON_PARAM));
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 210.1f), module, StripModule::OFF_INPUT));
-		addParam(createParamCentered<TL1105>(Vec(22.5f, 233.5f), module, StripModule::OFF_PARAM));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 143.1f), module, StripModule::ON_INPUT));
+		addParam(createParamCentered<TL1105>(Vec(22.5f, 166.4f), module, StripModule::ON_PARAM));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 208.4f), module, StripModule::OFF_INPUT));
+		addParam(createParamCentered<TL1105>(Vec(22.5f, 231.7f), module, StripModule::OFF_PARAM));
 
 		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 273.1f), module, StripModule::RAND_INPUT));
 		addParam(createParamCentered<TL1105>(Vec(22.5f, 296.4f), module, StripModule::RAND_PARAM));
