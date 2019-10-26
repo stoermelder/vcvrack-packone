@@ -291,6 +291,30 @@ struct ArenaModule : Module {
 		selectedId = -1;
 	}
 
+	void randomizeInputAmount() {
+		for (int i = 0; i < IN_PORTS; i++) {
+			amount[i] = random::uniform();
+		}
+	}
+
+	void randomizeInputRadius() {
+		for (int i = 0; i < IN_PORTS; i++) {
+			radius[i] = random::uniform();
+		}
+	}
+
+	void randomizeInputX() {
+		for (int i = 0; i < IN_PORTS; i++) {
+			params[IN_X_POS + i].setValue(random::uniform());
+		}
+	}
+
+	void randomizeInputY() {
+		for (int i = 0; i < IN_PORTS; i++) {
+			params[IN_Y_POS + i].setValue(random::uniform());
+		}
+	}
+
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
 
@@ -299,7 +323,7 @@ struct ArenaModule : Module {
 			json_t* inputJ = json_object();
 			json_object_set_new(inputJ, "amount", json_real(amount[i]));
 			json_object_set_new(inputJ, "radius", json_real(radius[i]));
-			json_object_set_new(inputJ, "opMode", json_boolean(opMode[i]));
+			json_object_set_new(inputJ, "opMode", json_integer(opMode[i]));
 			json_object_set_new(inputJ, "opBipolar", json_boolean(opBipolar[i]));
 			json_object_set_new(inputJ, "inputXBipolar", json_boolean(inputXBipolar[i]));
 			json_object_set_new(inputJ, "inputYBipolar", json_boolean(inputYBipolar[i]));
@@ -604,8 +628,8 @@ struct ArenaMixWidget : ArenaIoWidget<MODULE> {
 				nvgBeginPath(args.vg);
 				nvgMoveTo(args.vg, s.x, s.y);
 				nvgLineTo(args.vg, t.x, t.y);
-				nvgStrokeColor(args.vg, color::mult(AIOW::color, AIOW::module->amount[i]));
-				nvgStrokeWidth(args.vg, 1.2f);
+				nvgStrokeColor(args.vg, color::mult(nvgRGB(0x29, 0xb2, 0xef), AIOW::module->amount[i]));
+				nvgStrokeWidth(args.vg, 1.0f);
 				nvgStroke(args.vg);
 			}
 		}
@@ -613,7 +637,7 @@ struct ArenaMixWidget : ArenaIoWidget<MODULE> {
 };
 
 
-struct DummyMapButton : app::SvgSwitch {
+struct DummyMapButton : ParamWidget {
 	DummyMapButton() {
 		this->box.size = Vec(5.f, 5.f);
 	}
@@ -621,14 +645,10 @@ struct DummyMapButton : app::SvgSwitch {
 	void draw(const Widget::DrawArgs& args) override {
 		nvgBeginPath(args.vg);
 		nvgCircle(args.vg, 2.5f, 2.5f, 2.0f);
-		nvgStrokeColor(args.vg, color::mult(color::BLACK, 0.2f));
+		nvgStrokeColor(args.vg, nvgRGB(0x90, 0x90, 0x90));
 		nvgStrokeWidth(args.vg, 1.0f);
 		nvgStroke(args.vg);
-		app::SvgSwitch::draw(args);
-	}
-
-	void onButton(const event::Button& e) override {
-		return;
+		ParamWidget::draw(args);
 	}
 };
 
@@ -674,7 +694,49 @@ struct ArenaAreaWidget : OpaqueWidget {
 
 	void createContextMenu() {
 		ui::Menu* menu = createMenu();
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Menu"));
+		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Arena"));
+
+		struct RandomizeXYItem : MenuItem {
+			MODULE* module;
+			void onAction(const event::Action &e) override {
+				module->randomizeInputX();
+				module->randomizeInputY();
+			}
+		};
+
+		struct RandomizeXItem : MenuItem {
+			MODULE* module;
+			void onAction(const event::Action &e) override {
+				module->randomizeInputX();
+			}
+		};
+
+		struct RandomizeYItem : MenuItem {
+			MODULE* module;
+			void onAction(const event::Action &e) override {
+				module->randomizeInputY();
+			}
+		};
+
+		struct RandomizeAmountItem : MenuItem {
+			MODULE* module;
+			void onAction(const event::Action &e) override {
+				module->randomizeInputAmount();
+			}
+		};
+
+		struct RandomizeRadiusItem : MenuItem {
+			MODULE* module;
+			void onAction(const event::Action &e) override {
+				module->randomizeInputRadius();
+			}
+		};
+
+		menu->addChild(construct<RandomizeXYItem>(&MenuItem::text, "Radomize x-pos & y-pos", &RandomizeXYItem::module, module));
+		menu->addChild(construct<RandomizeXItem>(&MenuItem::text, "Radomize x-pos", &RandomizeXItem::module, module));
+		menu->addChild(construct<RandomizeYItem>(&MenuItem::text, "Radomize y-pos", &RandomizeYItem::module, module));
+		menu->addChild(construct<RandomizeAmountItem>(&MenuItem::text, "Radomize amount", &RandomizeAmountItem::module, module));
+		menu->addChild(construct<RandomizeRadiusItem>(&MenuItem::text, "Radomize radius", &RandomizeRadiusItem::module, module));
 	}
 };
 
@@ -866,6 +928,21 @@ struct ArenaSeqDisplay : LedDisplayChoice {
 };
 
 
+template < typename LIGHT >
+struct ClickableSmallLight : SmallLight<LIGHT> {
+	int id;
+	int type;
+
+	void onButton(const event::Button& e) override {
+		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
+			ArenaModule<8, 2>* m = dynamic_cast<ArenaModule<8, 2>*>(SmallLight<LIGHT>::module);
+			m->setSelection(type, id);
+		}
+		SmallLight<LIGHT>::onButton(e);
+	}
+};
+
+
 struct ArenaWidget : ModuleWidget {
 	typedef ArenaModule<8, 2> MODULE;
 	MODULE* module;
@@ -888,7 +965,10 @@ struct ArenaWidget : ModuleWidget {
 			addInput(createInputCentered<StoermelderPort>(Vec(x, 96.4f), module, MODULE::IN_X_INPUT + i));
 			addParam(createParamCentered<StoermelderTrimpot>(Vec(x, 121.8f), module, MODULE::IN_X_PARAM + i));
 			addParam(createParamCentered<DummyMapButton>(Vec(x + s * 7.8f, 136.1f), module, MODULE::IN_X_POS + i));
-			addChild(createLightCentered<SmallLight<GreenLight>>(Vec(x, 139.6f), module, MODULE::IN_SEL_LIGHT + i));
+			ClickableSmallLight<GreenLight>* l = createLightCentered<ClickableSmallLight<GreenLight>>(Vec(x, 139.6f), module, MODULE::IN_SEL_LIGHT + i);
+			l->id = i;
+			l->type = 0;
+			addChild(l);
 			addParam(createParamCentered<DummyMapButton>(Vec(x - s * 7.8f, 143.1f), module, MODULE::IN_Y_POS + i));
 			addParam(createParamCentered<StoermelderTrimpot>(Vec(x, 157.4f), module, MODULE::IN_Y_PARAM + i));
 			addInput(createInputCentered<StoermelderPort>(Vec(x, 182.8f), module, MODULE::IN_Y_INPUT + i));
@@ -912,7 +992,10 @@ struct ArenaWidget : ModuleWidget {
 		addInput(createInputCentered<StoermelderPort>(Vec(25.9f, 323.4f), module, MODULE::MIX_X_INPUT + 0));
 		addParam(createParamCentered<StoermelderTrimpot>(Vec(53.9f, 323.4f), module, MODULE::MIX_X_PARAM + 0));
 		addParam(createParamCentered<DummyMapButton>(Vec(68.4f, 331.0f), module, MODULE::MIX_X_POS + 0));
-		addChild(createLightCentered<SmallLight<GreenLight>>(Vec(71.7f, 323.4f), module, MODULE::MIX_SEL_LIGHT + 0));
+		ClickableSmallLight<GreenLight>* l1 = createLightCentered<ClickableSmallLight<GreenLight>>(Vec(71.7f, 323.4f), module, MODULE::MIX_SEL_LIGHT + 0);
+		l1->id = 0;
+		l1->type = 1;
+		addChild(l1);
 		addParam(createParamCentered<DummyMapButton>(Vec(75.4f, 315.8f), module, MODULE::MIX_Y_POS + 0));
 		addParam(createParamCentered<StoermelderTrimpot>(Vec(89.4f, 323.4f), module, MODULE::MIX_Y_PARAM + 0));
 		addInput(createInputCentered<StoermelderPort>(Vec(117.2f, 323.4f), module, MODULE::MIX_Y_INPUT + 0));
@@ -931,7 +1014,10 @@ struct ArenaWidget : ModuleWidget {
 		addInput(createInputCentered<StoermelderPort>(Vec(497.7f, 323.4f), module, MODULE::MIX_X_INPUT + 1));
 		addParam(createParamCentered<StoermelderTrimpot>(Vec(525.6f, 323.4f), module, MODULE::MIX_X_PARAM + 1));
 		addParam(createParamCentered<DummyMapButton>(Vec(539.9f, 315.8f), module, MODULE::MIX_X_POS + 1));
-		addChild(createLightCentered<SmallLight<GreenLight>>(Vec(543.4f, 323.4f), module, MODULE::MIX_SEL_LIGHT + 1));
+		ClickableSmallLight<GreenLight>* l2 = createLightCentered<ClickableSmallLight<GreenLight>>(Vec(543.4f, 323.4f), module, MODULE::MIX_SEL_LIGHT + 1);
+		l2->id = 1;
+		l2->type = 1;
+		addChild(l2);
 		addParam(createParamCentered<DummyMapButton>(Vec(546.9f, 331.0f), module, MODULE::MIX_Y_POS + 1));
 		addParam(createParamCentered<StoermelderTrimpot>(Vec(561.2f, 323.4f), module, MODULE::MIX_Y_PARAM + 1));
 		addInput(createInputCentered<StoermelderPort>(Vec(589.2f, 323.4f), module, MODULE::MIX_Y_INPUT + 1));
@@ -946,7 +1032,7 @@ struct ArenaWidget : ModuleWidget {
 		};
 
 		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
-		menu->addChild(new MenuSeparator());
+		//menu->addChild(new MenuSeparator());
 	}
 };
 
