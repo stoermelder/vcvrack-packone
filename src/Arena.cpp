@@ -3,6 +3,8 @@
 
 namespace Arena {
 
+static const int SEQ_COUNT = 16;
+
 enum OPMODE {
 	RADIUS = 0,
 	OFFSET_X = 1,
@@ -10,7 +12,8 @@ enum OPMODE {
 	SEQ_10V = 3,
 	SEQ_C4 = 4,
 	SEQ_TRIG = 5,
-	ROTATE = 6
+	ROTATE = 6,
+	WALK = 7
 };
 
 template < int IN_PORTS, int MIX_PORTS >
@@ -25,9 +28,13 @@ struct ArenaModule : Module {
 		ENUMS(OP_PARAM, IN_PORTS),
 		ENUMS(IN_PLUS_PARAM, IN_PORTS),
 		ENUMS(IN_MINUS_PARAM, IN_PORTS),
-		ENUMS(OUT_X_POS, MIX_PORTS),
-		ENUMS(OUT_Y_POS, MIX_PORTS),
+		ENUMS(MIX_X_POS, MIX_PORTS),
+		ENUMS(MIX_Y_POS, MIX_PORTS),
+		ENUMS(MIX_X_PARAM, MIX_PORTS),
+		ENUMS(MIX_Y_PARAM, MIX_PORTS),
 		ENUMS(OUT_SEL_PARAM, MIX_PORTS),
+		SEQ_MINUS_PARAM,
+		SEQ_PLUS_PARAM,
 		NUM_PARAMS
 	};
 	enum InputIds {
@@ -35,18 +42,19 @@ struct ArenaModule : Module {
 		ENUMS(IN_X_INPUT, IN_PORTS),
 		ENUMS(IN_Y_INPUT, IN_PORTS),
 		ENUMS(OP_INPUT, IN_PORTS),
-		ENUMS(OUT_X_INPUT, MIX_PORTS),
-		ENUMS(OUT_Y_INPUT, MIX_PORTS),
+		ENUMS(MIX_X_INPUT, MIX_PORTS),
+		ENUMS(MIX_Y_INPUT, MIX_PORTS),
+		SEQ_INPUT,
 		NUM_INPUTS
 	};
 	enum OutputIds {
-		ENUMS(OUT_MIX, MIX_PORTS),
+		ENUMS(MIX_OUTPUT, MIX_PORTS),
 		ENUMS(OUT, IN_PORTS),
 		NUM_OUTPUTS
 	};
 	enum LightIds {
 		ENUMS(IN_SEL_LIGHT, IN_PORTS),
-		ENUMS(OUT_SEL_LIGHT, MIX_PORTS),
+		ENUMS(MIX_SEL_LIGHT, MIX_PORTS),
 		NUM_LIGHTS
 	};
 
@@ -59,11 +67,15 @@ struct ArenaModule : Module {
 	float radius[IN_PORTS];
 	/** [Stored to JSON] */
 	OPMODE opmode[IN_PORTS];
+	/** [Stored to JSON] */
+	int seqSelected = 0;
 
 	float dist[MIX_PORTS][IN_PORTS];
 	float offsetX[IN_PORTS];
 	float offsetY[IN_PORTS];
 
+	dsp::SchmittTrigger seqMinusTrigger;
+	dsp::SchmittTrigger seqPlusTrigger;
 	dsp::ClockDivider lightDivider;
 
 	ArenaModule() {
@@ -79,15 +91,20 @@ struct ArenaModule : Module {
 		}
 		// outputs
 		for (int i = 0; i < MIX_PORTS; i++) {
-			configParam(OUT_X_POS + i, 0.0f, 1.0f, 0.9f, string::f("Mix %i x-pos", i + 1));
-			configParam(OUT_Y_POS + i, 0.0f, 1.0f, 0.1f + float(i) * (0.8f / (MIX_PORTS - 1)), string::f("Mix %i x-pos", i + 1));
+			configParam(MIX_X_POS + i, 0.0f, 1.0f, 0.9f, string::f("Mix%i x-pos", i + 1));
+			configParam(MIX_Y_POS + i, 0.0f, 1.0f, 0.1f + float(i) * (0.8f / (MIX_PORTS - 1)), string::f("Mix%i y-pos", i + 1));
+			configParam(MIX_X_PARAM + i, -1.f, 1.f, 0.f, string::f("Mix%i x-pos attenuverter", i + 1), "x");
+			configParam(MIX_Y_PARAM + i, -1.f, 1.f, 0.f, string::f("Mix%i y-pos attenuverter", i + 1), "x");
 		}
+		configParam(SEQ_MINUS_PARAM, 0.f, 1.f, 0.f, "Previous sequence");
+		configParam(SEQ_PLUS_PARAM, 0.f, 1.f, 0.f, "Next sequence");
 		onReset();
 		lightDivider.setDivision(512);
 	}
 
 	void onReset() override {
 		resetSelection();
+		seqSelected = 0;
 		for (int i = 0; i < IN_PORTS; i++) {
 			radius[i] = 0.5f;
 			opmode[i] = OPMODE::RADIUS;
@@ -95,13 +112,20 @@ struct ArenaModule : Module {
 			paramQuantities[IN_Y_POS + i]->setValue(paramQuantities[IN_Y_POS + i]->getDefaultValue());
 		}
 		for (int i = 0; i < MIX_PORTS; i++) {
-			paramQuantities[OUT_X_POS + i]->setValue(paramQuantities[OUT_X_POS + i]->getDefaultValue());
-			paramQuantities[OUT_Y_POS + i]->setValue(paramQuantities[OUT_Y_POS + i]->getDefaultValue());
+			paramQuantities[MIX_X_POS + i]->setValue(paramQuantities[MIX_X_POS + i]->getDefaultValue());
+			paramQuantities[MIX_Y_POS + i]->setValue(paramQuantities[MIX_Y_POS + i]->getDefaultValue());
 		}
 		Module::onReset();
 	}
 
 	void process(const ProcessArgs &args) override {
+		if (seqMinusTrigger.process(params[SEQ_MINUS_PARAM].getValue())) {
+			seqSelected = (seqSelected - 1 + SEQ_COUNT) % SEQ_COUNT;
+		}
+		if (seqPlusTrigger.process(params[SEQ_PLUS_PARAM].getValue())) {
+			seqSelected = (seqSelected + 1) % SEQ_COUNT;
+		}
+
 		for (int j = 0; j < IN_PORTS; j++) {
 			offsetX[j] = 0.f;
 			offsetY[j] = 0.f;
@@ -126,37 +150,56 @@ struct ArenaModule : Module {
 					offsetY[j] = v;
 					break;
 				}
+				case OPMODE::WALK: {
+					float v = inputs[OP_INPUT + j].isConnected() ? clamp(inputs[OP_INPUT + j].getVoltage() / 10.f, 0.f, 1.f) : 1.f;
+					v *= params[OP_PARAM + j].getValue();
+					offsetX[j] = random::normal() / 1000.f * v;
+					offsetY[j] = random::normal() / 1000.f * v;
+					break;
+				}
 			}
 
+			float x = params[IN_X_POS + j].getValue();
 			if (inputs[IN_X_INPUT + j].isConnected()) {
-				float x = clamp(inputs[IN_X_INPUT + j].getVoltage() / 10.f, 0.f, 1.f);
+				x = clamp(inputs[IN_X_INPUT + j].getVoltage() / 10.f, 0.f, 1.f);
 				x *= params[IN_X_PARAM + j].getValue();
-				x += offsetX[j];
-				x = clamp(x, 0.f, 1.f);
-				params[IN_X_POS + j].setValue(x);
 			}
+			x += offsetX[j];
+			x = clamp(x, 0.f, 1.f);
+			params[IN_X_POS + j].setValue(x);
+
+			float y = params[IN_Y_POS + j].getValue();
 			if (inputs[IN_Y_INPUT + j].isConnected()) {
-				float y = clamp(inputs[IN_Y_INPUT + j].getVoltage() / 10.f, 0.f, 1.f);
+				y = clamp(inputs[IN_Y_INPUT + j].getVoltage() / 10.f, 0.f, 1.f);
 				y *= params[IN_Y_PARAM + j].getValue();
-				y += offsetY[j];
-				y = clamp(y, 0.f, 1.f);
-				params[IN_Y_POS + j].setValue(y);
 			}
+			y += offsetY[j];
+			y = clamp(y, 0.f, 1.f);
+			params[IN_Y_POS + j].setValue(y);
 		}
 
 		float out[IN_PORTS];
 		for (int i = 0; i < MIX_PORTS; i++) {
-			if (inputs[OUT_X_INPUT + i].isConnected()) {
-				float x = clamp(inputs[OUT_X_INPUT + i].getVoltage() / 10.f, 0.f, 1.f);
-				params[OUT_X_POS + i].setValue(x);
-			}
-			if (inputs[OUT_Y_INPUT + i].isConnected()) {
-				float y = clamp(inputs[OUT_Y_INPUT + i].getVoltage() / 10.f, 0.f, 1.f);
-				params[OUT_Y_POS + i].setValue(y);
+			if (inputs[MIX_X_INPUT + i].isConnected()) {
+				float x = clamp(inputs[MIX_X_INPUT + i].getVoltage() / 10.f, 0.f, 1.f);
+				x *= params[MIX_X_PARAM + i].getValue();
+				params[MIX_X_POS + i].setValue(x);
+			} 
+			else {
+
 			}
 
-			float x = params[OUT_X_POS + i].getValue();
-			float y = params[OUT_Y_POS + i].getValue();
+			if (inputs[MIX_Y_INPUT + i].isConnected()) {
+				float y = clamp(inputs[MIX_Y_INPUT + i].getVoltage() / 10.f, 0.f, 1.f);
+				y *= params[MIX_Y_PARAM + i].getValue();
+				params[MIX_Y_POS + i].setValue(y);
+			}
+			else {
+
+			}
+
+			float x = params[MIX_X_POS + i].getValue();
+			float y = params[MIX_Y_POS + i].getValue();
 			Vec p = Vec(x, y);
 
 			int c = 0;
@@ -178,7 +221,7 @@ struct ArenaModule : Module {
 			}
 
 			if (c > 0) mix /= c;
-			outputs[OUT_MIX + i].setVoltage(mix);
+			outputs[MIX_OUTPUT + i].setVoltage(mix);
 
 			for (int j = 0; j < IN_PORTS; j++)
 				outputs[OUT + j].setVoltage(clamp(out[j], 0.f, 10.f));
@@ -190,7 +233,7 @@ struct ArenaModule : Module {
 				lights[IN_SEL_LIGHT + i].setBrightness(selectedType == 0 && selectedId == i);
 			}
 			for (int i = 0; i < MIX_PORTS; i++) {
-				lights[OUT_SEL_LIGHT + i].setBrightness(selectedType == 1 && selectedId == i);
+				lights[MIX_SEL_LIGHT + i].setBrightness(selectedType == 1 && selectedId == i);
 			}
 		}
 	}
@@ -221,6 +264,7 @@ struct ArenaModule : Module {
 		}
 		json_object_set_new(rootJ, "inputs", inputsJ);
 
+		json_object_set_new(rootJ, "seqSelected", json_integer(seqSelected));
 		return rootJ;
 	}
 
@@ -232,6 +276,8 @@ struct ArenaModule : Module {
 			radius[inputIndex] = json_real_value(json_object_get(inputJ, "radius"));
 			opmode[inputIndex] = (OPMODE)json_integer_value(json_object_get(inputJ, "opmode"));
 		}
+
+		seqSelected = json_integer_value(json_object_get(inputJ, "seqSelected"));
 	}
 };
 
@@ -442,10 +488,10 @@ struct ArenaInputWidget : ArenaIoWidget<MODULE> {
 };
 
 template < typename MODULE >
-struct ArenaOutputWidget : ArenaIoWidget<MODULE> {
+struct ArenaMixWidget : ArenaIoWidget<MODULE> {
 	typedef ArenaIoWidget<MODULE> AIOW;
 
-	ArenaOutputWidget() {
+	ArenaMixWidget() {
 		AIOW::color = color::YELLOW;
 		AIOW::type = 1;
 	}
@@ -494,7 +540,7 @@ template < typename MODULE, int IN_PORTS, int MIX_PORTS >
 struct ArenaAreaWidget : OpaqueWidget {
 	MODULE* module;
 	ArenaInputWidget<MODULE>* inwidget[IN_PORTS];
-	ArenaOutputWidget<MODULE>* outwidget[MIX_PORTS];
+	ArenaMixWidget<MODULE>* outwidget[MIX_PORTS];
 
 	ArenaAreaWidget(MODULE* module, int inParamIdX, int inParamIdY, int outParamIdX, int outParamIdY) {
 		this->module = module;
@@ -508,7 +554,7 @@ struct ArenaAreaWidget : OpaqueWidget {
 				addChild(inwidget[i]);
 			}
 			for (int i = 0; i < MIX_PORTS; i++) {
-				outwidget[i] = new ArenaOutputWidget<MODULE>;
+				outwidget[i] = new ArenaMixWidget<MODULE>;
 				outwidget[i]->module = module;
 				outwidget[i]->paramQuantityX = module->paramQuantities[outParamIdX + i];
 				outwidget[i]->paramQuantityY = module->paramQuantities[outParamIdY + i];
@@ -564,6 +610,8 @@ struct ArenaOpDisplay : LedDisplayChoice {
 					text = "S:C4"; break;
 				case OPMODE::SEQ_TRIG:
 					text = "S:TR"; break;
+				case OPMODE::WALK:
+					text = "WLK"; break;
 			}
 		}
 		LedDisplayChoice::step();
@@ -599,9 +647,27 @@ struct ArenaOpDisplay : LedDisplayChoice {
 		menu->addChild(construct<OpModeItem>(&MenuItem::text, "Radius", &OpModeItem::module, module, &OpModeItem::id, id, &OpModeItem::opmode, OPMODE::RADIUS));
 		menu->addChild(construct<OpModeItem>(&MenuItem::text, "Offset x-pos", &OpModeItem::module, module, &OpModeItem::id, id, &OpModeItem::opmode, OPMODE::OFFSET_X));
 		menu->addChild(construct<OpModeItem>(&MenuItem::text, "Offset y-pos", &OpModeItem::module, module, &OpModeItem::id, id, &OpModeItem::opmode, OPMODE::OFFSET_Y));
+		menu->addChild(construct<OpModeItem>(&MenuItem::text, "Random walk", &OpModeItem::module, module, &OpModeItem::id, id, &OpModeItem::opmode, OPMODE::WALK));
 		//menu->addChild(construct<OpModeItem>(&MenuItem::text, "Sequence 0..10V", &OpModeItem::module, module, &OpModeItem::id, id, &OpModeItem::opmode, OPMODE::SEQ_10V));
 		//menu->addChild(construct<OpModeItem>(&MenuItem::text, "Sequence C4..G4", &OpModeItem::module, module, &OpModeItem::id, id, &OpModeItem::opmode, OPMODE::SEQ_C4));
 		//menu->addChild(construct<OpModeItem>(&MenuItem::text, "Sequence Trigger", &OpModeItem::module, module, &OpModeItem::id, id, &OpModeItem::opmode, OPMODE::SEQ_TRIG));
+	}
+};
+
+template < typename MODULE >
+struct ArenaSeqDisplay : LedDisplayChoice {
+	MODULE* module;
+
+	ArenaSeqDisplay() {
+		color = nvgRGB(0xf0, 0xf0, 0xf0);
+		box.size = Vec(25.1f, 16.f);
+		textOffset = Vec(7.f, 11.5f);
+		this->module = module;
+	}
+
+	void step() override {
+		text = string::f("%02d", module->seqSelected + 1);
+		LedDisplayChoice::step();
 	}
 };
 
@@ -641,26 +707,38 @@ struct ArenaWidget : ModuleWidget {
 			addParam(createParamCentered<StoermelderTrimpot>(Vec(x, 230.7f), module, MODULE::OP_PARAM + i));
 			addInput(createInputCentered<StoermelderPort>(Vec(x, 253.9f), module, MODULE::OP_INPUT + i));
 
-			addOutput(createOutputCentered<StoermelderPort>(Vec(x, 323.4f), module, MODULE::OUT + i));
+			addOutput(createOutputCentered<StoermelderPort>(Vec(x, 284.9f), module, MODULE::OUT + i));
 		}
 
-		ArenaAreaWidget<MODULE, 8, 2>* area = new ArenaAreaWidget<MODULE, 8, 2>(module, MODULE::IN_X_POS, MODULE::IN_Y_POS, MODULE::OUT_X_POS, MODULE::OUT_Y_POS);
-		area->box.pos = Vec(166.f, 53.3f);
-		area->box.size = Vec(283.f, 237.7f);
+		ArenaAreaWidget<MODULE, 8, 2>* area = new ArenaAreaWidget<MODULE, 8, 2>(module, MODULE::IN_X_POS, MODULE::IN_Y_POS, MODULE::MIX_X_POS, MODULE::MIX_Y_POS);
+		area->box.pos = Vec(162.5f, 54.5f);
+		area->box.size = Vec(290.0f, 241.4f);
 		addChild(area);
 
-		addOutput(createOutputCentered<StoermelderPort>(Vec(195.5f, 323.4f), module, MODULE::OUT_MIX + 0));
-		addInput(createInputCentered<StoermelderPort>(Vec(238.1f, 323.4f), module, MODULE::OUT_X_INPUT + 0));
-		addParam(createParamCentered<LEDButton>(Vec(255.1f, 326.9f), module, MODULE::OUT_X_POS + 0));
-		addChild(createLightCentered<SmallLight<GreenLight>>(Vec(262.7f, 323.4f), module, MODULE::OUT_SEL_LIGHT + 0));
-		addParam(createParamCentered<LEDButton>(Vec(270.3f, 319.9f), module, MODULE::OUT_X_POS + 0));
-		addInput(createInputCentered<StoermelderPort>(Vec(287.3f, 323.4f), module, MODULE::OUT_Y_INPUT + 0));
-		addInput(createInputCentered<StoermelderPort>(Vec(327.7f, 323.4f), module, MODULE::OUT_X_INPUT + 1));
-		addParam(createParamCentered<LEDButton>(Vec(344.7f, 319.9f), module, MODULE::OUT_X_POS + 1));
-		addChild(createLightCentered<SmallLight<GreenLight>>(Vec(352.3f, 323.4f), module, MODULE::OUT_SEL_LIGHT + 1));
-		addParam(createParamCentered<LEDButton>(Vec(359.8f, 326.9f), module, MODULE::OUT_Y_POS + 1));
-		addInput(createInputCentered<StoermelderPort>(Vec(376.9f, 323.4f), module, MODULE::OUT_Y_INPUT + 1));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(419.4f, 323.4f), module, MODULE::OUT_MIX + 1));
+		addInput(createInputCentered<StoermelderPort>(Vec(25.9f, 323.4f), module, MODULE::MIX_X_INPUT + 0));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(53.9f, 323.4f), module, MODULE::MIX_X_PARAM + 0));
+		addParam(createParamCentered<LEDButton>(Vec(68.4f, 331.0f), module, MODULE::MIX_X_POS + 0));
+		addChild(createLightCentered<SmallLight<GreenLight>>(Vec(71.7f, 323.4f), module, MODULE::MIX_SEL_LIGHT + 0));
+		addParam(createParamCentered<LEDButton>(Vec(75.4f, 315.8f), module, MODULE::MIX_Y_POS + 0));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(89.4f, 323.4f), module, MODULE::MIX_Y_PARAM + 0));
+		addInput(createInputCentered<StoermelderPort>(Vec(117.2f, 323.4f), module, MODULE::MIX_Y_INPUT + 0));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(191.9f, 323.4f), module, MODULE::MIX_OUTPUT + 0));
+
+		addInput(createInputCentered<StoermelderPort>(Vec(241.3f, 323.4f), module, MODULE::SEQ_INPUT));
+		addParam(createParamCentered<TL1105>(Vec(281.4f, 323.4f), module, MODULE::SEQ_MINUS_PARAM));
+		ArenaSeqDisplay<MODULE>* arenaSeqDisplay = createWidgetCentered<ArenaSeqDisplay<MODULE>>(Vec(307.5, 323.4f));
+		arenaSeqDisplay->module = module;
+		addChild(arenaSeqDisplay);
+		addParam(createParamCentered<TL1105>(Vec(333.6f, 323.4f), module, MODULE::SEQ_PLUS_PARAM));
+
+		addOutput(createOutputCentered<StoermelderPort>(Vec(423.6f, 323.4f), module, MODULE::MIX_OUTPUT + 1));
+		addInput(createInputCentered<StoermelderPort>(Vec(497.7f, 323.4f), module, MODULE::MIX_X_INPUT + 1));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(525.6f, 323.4f), module, MODULE::MIX_X_PARAM + 1));
+		addParam(createParamCentered<LEDButton>(Vec(539.9f, 315.8f), module, MODULE::MIX_X_POS + 1));
+		addChild(createLightCentered<SmallLight<GreenLight>>(Vec(543.4f, 323.4f), module, MODULE::MIX_SEL_LIGHT + 1));
+		addParam(createParamCentered<LEDButton>(Vec(546.9f, 331.0f), module, MODULE::MIX_Y_POS + 1));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(561.2f, 323.4f), module, MODULE::MIX_Y_PARAM + 1));
+		addInput(createInputCentered<StoermelderPort>(Vec(589.2f, 323.4f), module, MODULE::MIX_Y_INPUT + 1));
 	}
 
 	void appendContextMenu(Menu* menu) override {
