@@ -12,11 +12,17 @@ enum OPMODE {
 	OFFSET_X = 2,
 	OFFSET_Y = 3,
 //	ROTATE = 6,
-	WALK = 7,
-	SEQ_10V = 10,
-	SEQ_C4 = 11,
-	SEQ_TRIG = 12,
+	WALK = 7
 };
+
+enum SEQMODE {
+	TRIG_FWD = 0,
+	TRIG_REV = 1,
+	TRIG_RANDOM = 2,
+	VOLT = 4,
+	C4 = 5,
+};
+
 
 template < int IN_PORTS, int MIX_PORTS >
 struct ArenaModule : Module {
@@ -46,7 +52,8 @@ struct ArenaModule : Module {
 		ENUMS(OP_INPUT, IN_PORTS),
 		ENUMS(MIX_X_INPUT, MIX_PORTS),
 		ENUMS(MIX_Y_INPUT, MIX_PORTS),
-		SEQ_INPUT,
+		ENUMS(SEQ_INPUT, MIX_PORTS),
+		ENUMS(SEQ_PH_INPUT, MIX_PORTS),
 		NUM_INPUTS
 	};
 	enum OutputIds {
@@ -77,22 +84,25 @@ struct ArenaModule : Module {
 	bool inputXBipolar[IN_PORTS];
 	/** [Stored to JSON] */
 	bool inputYBipolar[IN_PORTS];
-	/** [Stored to JSON] */
-	int seqSelected = 0;
 
 	struct SeqItem {
 		float x[SEQ_LENGTH];
 		float y[SEQ_LENGTH];
 	};
 
-	SeqItem seqData[IN_PORTS][SEQ_COUNT];
+	/** [Stored to JSON] */
+	SeqItem seqData[MIX_PORTS][SEQ_COUNT];
+	/** [Stored to JSON] */
+	SEQMODE seqMode[MIX_PORTS];
+	/** [Stored to JSON] */
+	int seqSelected[MIX_PORTS];
+	int seqRec;
 
 	float dist[MIX_PORTS][IN_PORTS];
 	float offsetX[IN_PORTS];
 	float offsetY[IN_PORTS];
 
-	dsp::SchmittTrigger seqMinusTrigger;
-	dsp::SchmittTrigger seqPlusTrigger;
+	dsp::SchmittTrigger seqTrigger[MIX_PORTS];
 	dsp::ClockDivider lightDivider;
 
 	ArenaModule() {
@@ -121,7 +131,6 @@ struct ArenaModule : Module {
 
 	void onReset() override {
 		resetSelection();
-		seqSelected = 0;
 		for (int i = 0; i < IN_PORTS; i++) {
 			radius[i] = 0.5f;
 			amount[i] = 1.f;
@@ -133,20 +142,16 @@ struct ArenaModule : Module {
 			paramQuantities[IN_Y_POS + i]->setValue(paramQuantities[IN_Y_POS + i]->getDefaultValue());
 		}
 		for (int i = 0; i < MIX_PORTS; i++) {
+			seqSelected[i] = 0;
+			seqMode[i] = SEQMODE::TRIG_FWD;
 			paramQuantities[MIX_X_POS + i]->setValue(paramQuantities[MIX_X_POS + i]->getDefaultValue());
 			paramQuantities[MIX_Y_POS + i]->setValue(paramQuantities[MIX_Y_POS + i]->getDefaultValue());
 		}
+		seqRec = -1;
 		Module::onReset();
 	}
 
 	void process(const ProcessArgs &args) override {
-		if (seqMinusTrigger.process(params[SEQ_MINUS_PARAM].getValue())) {
-			seqSelected = (seqSelected - 1 + SEQ_COUNT) % SEQ_COUNT;
-		}
-		if (seqPlusTrigger.process(params[SEQ_PLUS_PARAM].getValue())) {
-			seqSelected = (seqSelected + 1) % SEQ_COUNT;
-		}
-
 		for (int j = 0; j < IN_PORTS; j++) {
 			offsetX[j] = 0.f;
 			offsetY[j] = 0.f;
@@ -205,9 +210,9 @@ struct ArenaModule : Module {
 		float out[IN_PORTS];
 		for (int i = 0; i < MIX_PORTS; i++) {
 			if (inputs[MIX_X_INPUT + i].isConnected()) {
-				float x = inputs[MIX_X_INPUT + i].getVoltage();
-				x = clamp(x / 10.f, 0.f, 1.f);
+				float x = inputs[MIX_X_INPUT + i].getVoltage() / 10.f;
 				x *= params[MIX_X_PARAM + i].getValue();
+				x = clamp(x, 0.f, 1.f);
 				params[MIX_X_POS + i].setValue(x);
 			} 
 			else {
@@ -215,9 +220,9 @@ struct ArenaModule : Module {
 			}
 
 			if (inputs[MIX_Y_INPUT + i].isConnected()) {
-				float y = inputs[MIX_Y_INPUT + i].getVoltage();
-				y = clamp(y / 10.f, 0.f, 1.f);
+				float y = inputs[MIX_Y_INPUT + i].getVoltage() / 10.f;
 				y *= params[MIX_Y_PARAM + i].getValue();
+				y = clamp(y, 0.f, 1.f);
 				params[MIX_Y_POS + i].setValue(y);
 			}
 			else {
@@ -331,13 +336,21 @@ struct ArenaModule : Module {
 		}
 		json_object_set_new(rootJ, "inputs", inputsJ);
 
-		//json_object_set_new(rootJ, "seqSelected", json_integer(seqSelected));
+		json_t* mixputsJ = json_array();
+		for (int i = 0; i < MIX_PORTS; i++) {
+			json_t* mixputJ = json_object();
+			json_object_set_new(mixputJ, "seqSelected", json_integer(seqSelected[i]));
+			json_object_set_new(mixputJ, "seqMode", json_integer(seqMode[i]));
+			json_array_append_new(mixputsJ, mixputJ);
+		}
+		json_object_set_new(rootJ, "mixputs", mixputsJ);
+
 		return rootJ;
 	}
 
 	void dataFromJson(json_t* rootJ) override {
 		json_t* inputsJ = json_object_get(rootJ, "inputs");
-		json_t *inputJ;
+		json_t* inputJ;
 		size_t inputIndex;
 		json_array_foreach(inputsJ, inputIndex, inputJ) {
 			amount[inputIndex] = json_real_value(json_object_get(inputJ, "amount"));
@@ -348,10 +361,202 @@ struct ArenaModule : Module {
 			inputYBipolar[inputIndex] = json_boolean_value(json_object_get(inputJ, "inputYBipolar"));
 		}
 
-		//seqSelected = json_integer_value(json_object_get(inputJ, "seqSelected"));
+		json_t* mixputsJ = json_object_get(rootJ, "mixputs");
+		json_t* mixputJ;
+		size_t mixputIndex;
+		json_array_foreach(mixputsJ, mixputIndex, mixputJ) {
+			seqSelected[mixputIndex] = json_integer_value(json_object_get(mixputJ, "seqSelected"));
+			seqMode[mixputIndex] = (SEQMODE)json_integer_value(json_object_get(mixputJ, "seqMode"));
+		}
 	}
 };
 
+
+// context menus
+
+template < typename MODULE >
+struct InputXMenuItem : MenuItem {
+	InputXMenuItem() {
+		rightText = RIGHT_ARROW;
+	}
+
+	struct InputXBipolarItem : MenuItem {
+		MODULE* module;
+		int id;
+
+		void onAction(const event::Action &e) override {
+			module->inputXBipolar[id] ^= true;
+		}
+
+		void step() override {
+			rightText = module->inputXBipolar[id] ? "-5V..5V" : "0V..10V";
+			MenuItem::step();
+		}
+	};
+
+	MODULE* module;
+	int id;
+	Menu* createChildMenu() override {
+		Menu* menu = new Menu;
+		menu->addChild(construct<InputXBipolarItem>(&MenuItem::text, "Voltage", &InputXBipolarItem::module, module, &InputXBipolarItem::id, id));
+		return menu;
+	}
+};
+
+
+template < typename MODULE >
+struct InputYMenuItem : MenuItem {
+	InputYMenuItem() {
+		rightText = RIGHT_ARROW;
+	}
+
+	struct InputYBipolarItem : MenuItem {
+		MODULE* module;
+		int id;
+
+		void onAction(const event::Action &e) override {
+			module->inputYBipolar[id] ^= true;
+		}
+
+		void step() override {
+			rightText = module->inputYBipolar[id] ? "-5V..5V" : "0V..10V";
+			MenuItem::step();
+		}
+	};
+
+	MODULE* module;
+	int id;
+	Menu* createChildMenu() override {
+		Menu* menu = new Menu;
+		menu->addChild(construct<InputYBipolarItem>(&MenuItem::text, "Voltage", &InputYBipolarItem::module, module, &InputYBipolarItem::id, id));
+		return menu;
+	}
+};
+
+
+template < typename MODULE >
+struct OpModeMenuItem : MenuItem {
+	OpModeMenuItem() {
+		rightText = RIGHT_ARROW;
+	}
+
+	struct OpModeItem : MenuItem {
+		MODULE* module;
+		OPMODE opMode;
+		int id;
+		
+		void onAction(const event::Action &e) override {
+			module->opMode[id] = opMode;
+		}
+
+		void step() override {
+			rightText = module->opMode[id] == opMode ? "✔" : "";
+			MenuItem::step();
+		}
+	};
+
+	struct OpBipolarItem : MenuItem {
+		MODULE* module;
+		int id;
+
+		void onAction(const event::Action &e) override {
+			module->opBipolar[id] ^= true;
+		}
+
+		void step() override {
+			rightText = module->opBipolar[id] ? "-5V..5V" : "0V..10V";
+			MenuItem::step();
+		}
+	};
+
+	MODULE* module;
+	int id;
+	Menu* createChildMenu() override {
+		Menu* menu = new Menu;
+		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Mode"));
+		menu->addChild(construct<OpModeItem>(&MenuItem::text, "Radius", &OpModeItem::module, module, &OpModeItem::id, id, &OpModeItem::opMode, OPMODE::RADIUS));
+		menu->addChild(construct<OpModeItem>(&MenuItem::text, "Amount", &OpModeItem::module, module, &OpModeItem::id, id, &OpModeItem::opMode, OPMODE::AMOUNT));
+		menu->addChild(construct<OpModeItem>(&MenuItem::text, "Offset x-pos", &OpModeItem::module, module, &OpModeItem::id, id, &OpModeItem::opMode, OPMODE::OFFSET_X));
+		menu->addChild(construct<OpModeItem>(&MenuItem::text, "Offset y-pos", &OpModeItem::module, module, &OpModeItem::id, id, &OpModeItem::opMode, OPMODE::OFFSET_Y));
+		menu->addChild(construct<OpModeItem>(&MenuItem::text, "Random walk", &OpModeItem::module, module, &OpModeItem::id, id, &OpModeItem::opMode, OPMODE::WALK));
+		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<OpBipolarItem>(&MenuItem::text, "Voltage", &OpBipolarItem::module, module, &OpBipolarItem::id, id));
+		return menu;
+	}
+};
+
+
+template < typename MODULE >
+struct SeqMenuItem : MenuItem {
+	SeqMenuItem() {
+		rightText = RIGHT_ARROW;
+	}
+
+	struct SeqItem : MenuItem {
+		MODULE* module;
+		int id;
+		int seq;
+		
+		void onAction(const event::Action &e) override {
+			if (module->seqRec != id)
+				module->seqSelected[id] = seq;
+		}
+
+		void step() override {
+			rightText = module->seqSelected[id] == seq ? "✔" : "";
+			MenuItem::step();
+		}
+	};
+
+	MODULE* module;
+	int id;
+	Menu* createChildMenu() override {
+		Menu* menu = new Menu;
+		for (int i = 0; i < SEQ_COUNT; i++) {
+			menu->addChild(construct<SeqItem>(&MenuItem::text, string::f("%02u", i + 1), &SeqItem::module, module, &SeqItem::id, id, &SeqItem::seq, i));
+		}
+		return menu;
+	}
+};
+
+
+template < typename MODULE >
+struct SeqModeMenuItem : MenuItem {
+	SeqModeMenuItem() {
+		rightText = RIGHT_ARROW;
+	}
+
+	struct SeqModeItem : MenuItem {
+		MODULE* module;
+		int id;
+		SEQMODE seqMode;
+		
+		void onAction(const event::Action &e) override {
+			if (module->seqRec != id)
+				module->seqMode[id] = seqMode;
+		}
+
+		void step() override {
+			rightText = module->seqMode[id] == seqMode ? "✔" : "";
+			MenuItem::step();
+		}
+	};
+
+	MODULE* module;
+	int id;
+	Menu* createChildMenu() override {
+		Menu* menu = new Menu;
+		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "Trigger forward", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::TRIG_FWD));
+		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "Trigger reverse", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::TRIG_REV));
+		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "Trigger random", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::TRIG_RANDOM));
+		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "0..10V", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::VOLT));
+		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "C4-F5", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::C4));
+		return menu;
+	}
+};
+
+
+// widgets
 
 template < typename MODULE >
 struct ArenaIoWidget : OpaqueWidget {
@@ -474,6 +679,7 @@ struct ArenaIoWidget : OpaqueWidget {
 
 	virtual void createContextMenu() {}
 };
+
 
 template < typename MODULE >
 struct ArenaInputWidget : ArenaIoWidget<MODULE> {
@@ -599,6 +805,12 @@ struct ArenaInputWidget : ArenaIoWidget<MODULE> {
 		RadiusSlider* radiusSlider = new RadiusSlider(AIOW::module, AIOW::id);
 		radiusSlider->box.size.x = 200.0;
 		menu->addChild(radiusSlider);
+
+		menu->addChild(new MenuSeparator());
+
+		menu->addChild(construct<InputXMenuItem<MODULE>>(&MenuItem::text, "X-port", &InputXMenuItem<MODULE>::module, AIOW::module, &InputXMenuItem<MODULE>::id, AIOW::id));
+		menu->addChild(construct<InputYMenuItem<MODULE>>(&MenuItem::text, "Y-port", &InputYMenuItem<MODULE>::module, AIOW::module, &InputYMenuItem<MODULE>::id, AIOW::id));
+		menu->addChild(construct<OpModeMenuItem<MODULE>>(&MenuItem::text, "OP-port", &OpModeMenuItem<MODULE>::module, AIOW::module, &OpModeMenuItem<MODULE>::id, AIOW::id));
 	}
 };
 
@@ -633,22 +845,6 @@ struct ArenaMixWidget : ArenaIoWidget<MODULE> {
 				nvgStroke(args.vg);
 			}
 		}
-	}
-};
-
-
-struct DummyMapButton : ParamWidget {
-	DummyMapButton() {
-		this->box.size = Vec(5.f, 5.f);
-	}
-
-	void draw(const Widget::DrawArgs& args) override {
-		nvgBeginPath(args.vg);
-		nvgCircle(args.vg, 2.5f, 2.5f, 2.0f);
-		nvgStrokeColor(args.vg, nvgRGB(0x90, 0x90, 0x90));
-		nvgStrokeWidth(args.vg, 1.0f);
-		nvgStroke(args.vg);
-		ParamWidget::draw(args);
 	}
 };
 
@@ -732,11 +928,11 @@ struct ArenaAreaWidget : OpaqueWidget {
 			}
 		};
 
-		menu->addChild(construct<RandomizeXYItem>(&MenuItem::text, "Radomize x-pos & y-pos", &RandomizeXYItem::module, module));
-		menu->addChild(construct<RandomizeXItem>(&MenuItem::text, "Radomize x-pos", &RandomizeXItem::module, module));
-		menu->addChild(construct<RandomizeYItem>(&MenuItem::text, "Radomize y-pos", &RandomizeYItem::module, module));
-		menu->addChild(construct<RandomizeAmountItem>(&MenuItem::text, "Radomize amount", &RandomizeAmountItem::module, module));
-		menu->addChild(construct<RandomizeRadiusItem>(&MenuItem::text, "Radomize radius", &RandomizeRadiusItem::module, module));
+		menu->addChild(construct<RandomizeXYItem>(&MenuItem::text, "Radomize input x-pos & y-pos", &RandomizeXYItem::module, module));
+		menu->addChild(construct<RandomizeXItem>(&MenuItem::text, "Radomize input x-pos", &RandomizeXItem::module, module));
+		menu->addChild(construct<RandomizeYItem>(&MenuItem::text, "Radomize input y-pos", &RandomizeYItem::module, module));
+		menu->addChild(construct<RandomizeAmountItem>(&MenuItem::text, "Radomize input amount", &RandomizeAmountItem::module, module));
+		menu->addChild(construct<RandomizeRadiusItem>(&MenuItem::text, "Radomize input radius", &RandomizeRadiusItem::module, module));
 	}
 };
 
@@ -750,8 +946,6 @@ struct ArenaOpDisplay : LedDisplayChoice {
 		color = nvgRGB(0xf0, 0xf0, 0xf0);
 		box.size = Vec(25.1f, 16.f);
 		textOffset = Vec(4.f, 11.5f);
-		this->module = module;
-		this->id = id;
 	}
 
 	void step() override {
@@ -765,12 +959,6 @@ struct ArenaOpDisplay : LedDisplayChoice {
 					text = "O-X"; break;
 				case OPMODE::OFFSET_Y:
 					text = "O-Y"; break;
-				case OPMODE::SEQ_10V:
-					text = "S:V"; break;
-				case OPMODE::SEQ_C4:
-					text = "S:C4"; break;
-				case OPMODE::SEQ_TRIG:
-					text = "S:TR"; break;
 				case OPMODE::WALK:
 					text = "WLK"; break;
 			}
@@ -790,143 +978,100 @@ struct ArenaOpDisplay : LedDisplayChoice {
 		ui::Menu* menu = createMenu();
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("Input %i", id + 1)));
 		menu->addChild(new MenuSeparator());
-
-		struct InputXMenuItem : MenuItem {
-			InputXMenuItem() {
-				rightText = RIGHT_ARROW;
-			}
-
-			struct InputXBipolarItem : MenuItem {
-				MODULE* module;
-				int id;
-
-				void onAction(const event::Action &e) override {
-					module->inputXBipolar[id] ^= true;
-				}
-
-				void step() override {
-					rightText = module->inputXBipolar[id] ? "-5V..5V" : "0V..10V";
-					MenuItem::step();
-				}
-			};
-
-			MODULE* module;
-			int id;
-			Menu* createChildMenu() override {
-				Menu* menu = new Menu;
-				menu->addChild(construct<InputXBipolarItem>(&MenuItem::text, "Voltage", &InputXBipolarItem::module, module, &InputXBipolarItem::id, id));
-				return menu;
-			}
-		};
-		menu->addChild(construct<InputXMenuItem>(&MenuItem::text, "X-port", &InputXMenuItem::module, module, &InputXMenuItem::id, id));
-
-		struct InputYMenuItem : MenuItem {
-			InputYMenuItem() {
-				rightText = RIGHT_ARROW;
-			}
-
-			struct InputYBipolarItem : MenuItem {
-				MODULE* module;
-				int id;
-
-				void onAction(const event::Action &e) override {
-					module->inputYBipolar[id] ^= true;
-				}
-
-				void step() override {
-					rightText = module->inputYBipolar[id] ? "-5V..5V" : "0V..10V";
-					MenuItem::step();
-				}
-			};
-
-			MODULE* module;
-			int id;
-			Menu* createChildMenu() override {
-				Menu* menu = new Menu;
-				menu->addChild(construct<InputYBipolarItem>(&MenuItem::text, "Voltage", &InputYBipolarItem::module, module, &InputYBipolarItem::id, id));
-				return menu;
-			}
-		};
-		menu->addChild(construct<InputYMenuItem>(&MenuItem::text, "Y-port", &InputYMenuItem::module, module, &InputYMenuItem::id, id));
-
-		struct OpModeMenuItem : MenuItem {
-			OpModeMenuItem() {
-				rightText = RIGHT_ARROW;
-			}
-
-			struct OpModeItem : MenuItem {
-				MODULE* module;
-				OPMODE opMode;
-				int id;
-				
-				void onAction(const event::Action &e) override {
-					module->opMode[id] = opMode;
-				}
-
-				void step() override {
-					rightText = module->opMode[id] == opMode ? "✔" : "";
-					MenuItem::step();
-				}
-			};
-
-			struct OpBipolarItem : MenuItem {
-				MODULE* module;
-				int id;
-
-				void onAction(const event::Action &e) override {
-					module->opBipolar[id] ^= true;
-				}
-
-				void step() override {
-					rightText = module->opBipolar[id] ? "-5V..5V" : "0V..10V";
-					MenuItem::step();
-				}
-			};
-
-			MODULE* module;
-			int id;
-			Menu* createChildMenu() override {
-				Menu* menu = new Menu;
-				menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Mode"));
-				menu->addChild(construct<OpModeItem>(&MenuItem::text, "Radius", &OpModeItem::module, module, &OpModeItem::id, id, &OpModeItem::opMode, OPMODE::RADIUS));
-				menu->addChild(construct<OpModeItem>(&MenuItem::text, "Amount", &OpModeItem::module, module, &OpModeItem::id, id, &OpModeItem::opMode, OPMODE::AMOUNT));
-				menu->addChild(construct<OpModeItem>(&MenuItem::text, "Offset x-pos", &OpModeItem::module, module, &OpModeItem::id, id, &OpModeItem::opMode, OPMODE::OFFSET_X));
-				menu->addChild(construct<OpModeItem>(&MenuItem::text, "Offset y-pos", &OpModeItem::module, module, &OpModeItem::id, id, &OpModeItem::opMode, OPMODE::OFFSET_Y));
-				menu->addChild(construct<OpModeItem>(&MenuItem::text, "Random walk", &OpModeItem::module, module, &OpModeItem::id, id, &OpModeItem::opMode, OPMODE::WALK));
-				/*
-				menu->addChild(construct<OpModeItem>(&MenuItem::text, "Sequence 0..10V", &OpModeItem::module, module, &OpModeItem::id, id, &OpModeItem::opMode, OPMODE::SEQ_10V));
-				menu->addChild(construct<OpModeItem>(&MenuItem::text, "Sequence C4..G4", &OpModeItem::module, module, &OpModeItem::id, id, &OpModeItem::opMode, OPMODE::SEQ_C4));
-				menu->addChild(construct<OpModeItem>(&MenuItem::text, "Sequence Trigger", &OpModeItem::module, module, &OpModeItem::id, id, &OpModeItem::opMode, OPMODE::SEQ_TRIG));
-				*/
-
-				menu->addChild(new MenuSeparator());
-				menu->addChild(construct<OpBipolarItem>(&MenuItem::text, "Voltage", &OpBipolarItem::module, module, &OpBipolarItem::id, id));
-				return menu;
-			}
-		};
-		menu->addChild(construct<OpModeMenuItem>(&MenuItem::text, "OP-port", &OpModeMenuItem::module, module, &OpModeMenuItem::id, id));
+		menu->addChild(construct<InputXMenuItem<MODULE>>(&MenuItem::text, "X-port", &InputXMenuItem<MODULE>::module, module, &InputXMenuItem<MODULE>::id, id));
+		menu->addChild(construct<InputYMenuItem<MODULE>>(&MenuItem::text, "Y-port", &InputYMenuItem<MODULE>::module, module, &InputYMenuItem<MODULE>::id, id));
+		menu->addChild(construct<OpModeMenuItem<MODULE>>(&MenuItem::text, "OP-port", &OpModeMenuItem<MODULE>::module, module, &OpModeMenuItem<MODULE>::id, id));
 	}
 };
+
 
 template < typename MODULE >
 struct ArenaSeqDisplay : LedDisplayChoice {
 	MODULE* module;
+	int id;
 
 	ArenaSeqDisplay() {
 		color = nvgRGB(0xf0, 0xf0, 0xf0);
-		box.size = Vec(25.1f, 16.f);
-		textOffset = Vec(7.f, 11.5f);
-		this->module = module;
+		box.size = Vec(16.9f, 16.f);
+		textOffset = Vec(3.f, 11.5f);
 	}
 
 	void step() override {
 		if (module) {
-			text = string::f("%02d", module->seqSelected + 1);
+			text = string::f("%02d", module->seqSelected[id] + 1);
 		}
 		LedDisplayChoice::step();
 	}
+
+	void onButton(const event::Button& e) override {
+		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
+			createContextMenu();
+			e.consume(this);
+		}
+		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
+			if (module->seqRec == id) {
+				module->seqRec = -1;
+				color = nvgRGB(0xf0, 0xf0, 0xf0);
+			}
+			else {
+				module->seqRec = id;
+				color = color::RED;
+			}
+			e.consume(this);
+		}
+		LedDisplayChoice::onButton(e);
+	}
+
+	void draw(const DrawArgs& args) override {
+		LedDisplayChoice::draw(args);
+		if (module && module->seqRec == id) {
+			drawHalo(args);
+		}
+	}
+
+	void drawHalo(const DrawArgs &args) {
+		float radiusX = box.size.x / 2.0;
+		float radiusY = box.size.x / 2.0;
+		float oradiusX = 2 * radiusX;
+		float oradiusY = 2 * radiusY;
+		nvgBeginPath(args.vg);
+		nvgRect(args.vg, radiusX - oradiusX, radiusY - oradiusY, 2 * oradiusX, 2 * oradiusY);
+
+		NVGpaint paint;
+		NVGcolor icol = color::mult(color, 0.65f);
+		NVGcolor ocol = nvgRGB(0, 0, 0);
+
+		paint = nvgRadialGradient(args.vg, radiusX, radiusY, radiusX, oradiusY, icol, ocol);
+		nvgFillPaint(args.vg, paint);
+		nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
+		nvgFill(args.vg);
+	}
+
+	void createContextMenu() {
+		ui::Menu* menu = createMenu();
+		menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("Mix%i", id + 1)));
+		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<SeqMenuItem<MODULE>>(&MenuItem::text, "Sequence", &SeqMenuItem<MODULE>::module, module, &SeqMenuItem<MODULE>::id, id));
+		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<SeqModeMenuItem<MODULE>>(&MenuItem::text, "OP-port", &SeqModeMenuItem<MODULE>::module, module, &SeqModeMenuItem<MODULE>::id, id));
+	}
 };
 
+
+struct DummyMapButton : ParamWidget {
+	DummyMapButton() {
+		this->box.size = Vec(5.f, 5.f);
+	}
+
+	void draw(const Widget::DrawArgs& args) override {
+		nvgBeginPath(args.vg);
+		nvgCircle(args.vg, 2.5f, 2.5f, 2.0f);
+		nvgStrokeColor(args.vg, nvgRGB(0x90, 0x90, 0x90));
+		nvgStrokeWidth(args.vg, 1.0f);
+		nvgStroke(args.vg);
+		ParamWidget::draw(args);
+	}
+};
 
 template < typename LIGHT >
 struct ClickableSmallLight : SmallLight<LIGHT> {
@@ -989,6 +1134,7 @@ struct ArenaWidget : ModuleWidget {
 		area->box.size = Vec(290.0f, 241.4f);
 		addChild(area);
 
+		// MIX1
 		addInput(createInputCentered<StoermelderPort>(Vec(25.9f, 323.4f), module, MODULE::MIX_X_INPUT + 0));
 		addParam(createParamCentered<StoermelderTrimpot>(Vec(53.9f, 323.4f), module, MODULE::MIX_X_PARAM + 0));
 		addParam(createParamCentered<DummyMapButton>(Vec(68.4f, 331.0f), module, MODULE::MIX_X_POS + 0));
@@ -1001,14 +1147,21 @@ struct ArenaWidget : ModuleWidget {
 		addInput(createInputCentered<StoermelderPort>(Vec(117.2f, 323.4f), module, MODULE::MIX_Y_INPUT + 0));
 		addOutput(createOutputCentered<StoermelderPort>(Vec(191.9f, 323.4f), module, MODULE::MIX_OUTPUT + 0));
 
-		/*
-		addInput(createInputCentered<StoermelderPort>(Vec(241.3f, 323.4f), module, MODULE::SEQ_INPUT));
-		addParam(createParamCentered<TL1105>(Vec(281.4f, 323.4f), module, MODULE::SEQ_MINUS_PARAM));
-		ArenaSeqDisplay<MODULE>* arenaSeqDisplay = createWidgetCentered<ArenaSeqDisplay<MODULE>>(Vec(307.5, 323.4f));
-		arenaSeqDisplay->module = module;
-		addChild(arenaSeqDisplay);
-		addParam(createParamCentered<TL1105>(Vec(333.6f, 323.4f), module, MODULE::SEQ_PLUS_PARAM));
-		*/
+
+		addInput(createInputCentered<StoermelderPort>(Vec(222.7f, 323.4f), module, MODULE::SEQ_INPUT + 0));
+		ArenaSeqDisplay<MODULE>* arenaSeqDisplay1 = createWidgetCentered<ArenaSeqDisplay<MODULE>>(Vec(255.3, 325.4f));
+		arenaSeqDisplay1->module = module;
+		arenaSeqDisplay1->id = 0;
+		addChild(arenaSeqDisplay1);
+		addInput(createInputCentered<StoermelderPort>(Vec(287.8f, 323.4f), module, MODULE::SEQ_PH_INPUT + 0));
+
+		// MIX2
+		addInput(createInputCentered<StoermelderPort>(Vec(327.7f, 323.4f), module, MODULE::SEQ_PH_INPUT + 1));
+		ArenaSeqDisplay<MODULE>* arenaSeqDisplay2 = createWidgetCentered<ArenaSeqDisplay<MODULE>>(Vec(359.7, 325.4f));
+		arenaSeqDisplay2->module = module;
+		arenaSeqDisplay2->id = 1;
+		addChild(arenaSeqDisplay2);
+		addInput(createInputCentered<StoermelderPort>(Vec(392.3f, 323.4f), module, MODULE::SEQ_INPUT + 1));
 
 		addOutput(createOutputCentered<StoermelderPort>(Vec(423.6f, 323.4f), module, MODULE::MIX_OUTPUT + 1));
 		addInput(createInputCentered<StoermelderPort>(Vec(497.7f, 323.4f), module, MODULE::MIX_X_INPUT + 1));
