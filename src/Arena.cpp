@@ -4,16 +4,18 @@
 namespace Arena {
 
 static const int SEQ_COUNT = 16;
+static const int SEQ_LENGTH = 128;
 
 enum OPMODE {
 	RADIUS = 0,
-	OFFSET_X = 1,
-	OFFSET_Y = 2,
-	SEQ_10V = 3,
-	SEQ_C4 = 4,
-	SEQ_TRIG = 5,
-	ROTATE = 6,
-	WALK = 7
+	AMOUNT = 1,
+	OFFSET_X = 2,
+	OFFSET_Y = 3,
+//	ROTATE = 6,
+	WALK = 7,
+	SEQ_10V = 10,
+	SEQ_C4 = 11,
+	SEQ_TRIG = 12,
 };
 
 template < int IN_PORTS, int MIX_PORTS >
@@ -32,7 +34,7 @@ struct ArenaModule : Module {
 		ENUMS(MIX_Y_POS, MIX_PORTS),
 		ENUMS(MIX_X_PARAM, MIX_PORTS),
 		ENUMS(MIX_Y_PARAM, MIX_PORTS),
-		ENUMS(OUT_SEL_PARAM, MIX_PORTS),
+		ENUMS(MIX_SEL_PARAM, MIX_PORTS),
 		SEQ_MINUS_PARAM,
 		SEQ_PLUS_PARAM,
 		NUM_PARAMS
@@ -66,9 +68,24 @@ struct ArenaModule : Module {
 	/** [Stored to JSON] */
 	float radius[IN_PORTS];
 	/** [Stored to JSON] */
-	OPMODE opmode[IN_PORTS];
+	float amount[IN_PORTS];
+	/** [Stored to JSON] */
+	OPMODE opMode[IN_PORTS];
+	/** [Stored to JSON] */
+	bool opBipolar[IN_PORTS];
+	/** [Stored to JSON] */
+	bool inputXBipolar[IN_PORTS];
+	/** [Stored to JSON] */
+	bool inputYBipolar[IN_PORTS];
 	/** [Stored to JSON] */
 	int seqSelected = 0;
+
+	struct SeqItem {
+		float x[SEQ_LENGTH];
+		float y[SEQ_LENGTH];
+	};
+
+	SeqItem seqData[IN_PORTS][SEQ_COUNT];
 
 	float dist[MIX_PORTS][IN_PORTS];
 	float offsetX[IN_PORTS];
@@ -82,8 +99,8 @@ struct ArenaModule : Module {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		// inputs
 		for (int i = 0; i < IN_PORTS; i++) {
-			configParam(IN_X_POS + i, 0.0f, 1.0f, 0.1f, string::f("Ch %i x-pos", i + 1));
-			configParam(IN_Y_POS + i, 0.0f, 1.0f, 0.1f + float(i) * (0.8f / (IN_PORTS - 1)), string::f("Ch %i y-pos", i + 1));
+			configParam(IN_X_POS + i, 0.0f, 1.0f, 0.1f + float(i) * (0.8f / (IN_PORTS - 1)), string::f("Ch %i x-pos", i + 1));
+			configParam(IN_Y_POS + i, 0.0f, 1.0f, 0.1f, string::f("Ch %i y-pos", i + 1));
 			configParam(IN_X_PARAM + i, -1.f, 1.f, 0.f, string::f("Ch %i x-pos attenuverter", i + 1), "x");
 			configParam(IN_Y_PARAM + i, -1.f, 1.f, 0.f, string::f("Ch %i y-pos attenuverter", i + 1), "x");
 
@@ -91,8 +108,8 @@ struct ArenaModule : Module {
 		}
 		// outputs
 		for (int i = 0; i < MIX_PORTS; i++) {
-			configParam(MIX_X_POS + i, 0.0f, 1.0f, 0.9f, string::f("Mix%i x-pos", i + 1));
-			configParam(MIX_Y_POS + i, 0.0f, 1.0f, 0.1f + float(i) * (0.8f / (MIX_PORTS - 1)), string::f("Mix%i y-pos", i + 1));
+			configParam(MIX_X_POS + i, 0.0f, 1.0f, 0.1f + float(i) * (0.8f / (MIX_PORTS - 1)), string::f("Mix%i x-pos", i + 1));
+			configParam(MIX_Y_POS + i, 0.0f, 1.0f, 0.9f, string::f("Mix%i y-pos", i + 1));
 			configParam(MIX_X_PARAM + i, -1.f, 1.f, 0.f, string::f("Mix%i x-pos attenuverter", i + 1), "x");
 			configParam(MIX_Y_PARAM + i, -1.f, 1.f, 0.f, string::f("Mix%i y-pos attenuverter", i + 1), "x");
 		}
@@ -107,7 +124,11 @@ struct ArenaModule : Module {
 		seqSelected = 0;
 		for (int i = 0; i < IN_PORTS; i++) {
 			radius[i] = 0.5f;
-			opmode[i] = OPMODE::RADIUS;
+			amount[i] = 1.f;
+			opMode[i] = OPMODE::RADIUS;
+			opBipolar[i] = false;
+			inputXBipolar[i] = false;
+			inputYBipolar[i] = false;
 			paramQuantities[IN_X_POS + i]->setValue(paramQuantities[IN_X_POS + i]->getDefaultValue());
 			paramQuantities[IN_Y_POS + i]->setValue(paramQuantities[IN_Y_POS + i]->getDefaultValue());
 		}
@@ -129,39 +150,40 @@ struct ArenaModule : Module {
 		for (int j = 0; j < IN_PORTS; j++) {
 			offsetX[j] = 0.f;
 			offsetY[j] = 0.f;
-			switch (opmode[j]) {
+			switch (opMode[j]) {
 				case OPMODE::RADIUS: {
 					if (inputs[OP_INPUT + j].isConnected()) {
-						float v = clamp(inputs[OP_INPUT + j].getVoltage() / 10.f, 0.f, 1.f);
-						v *= params[OP_PARAM + j].getValue();
-						radius[j] = v;
+						radius[j] = getOpInput(j);
+					}
+					break;
+				}
+				case OPMODE::AMOUNT: {
+					if (inputs[OP_INPUT + j].isConnected()) {
+						amount[j] = getOpInput(j);
 					}
 					break;
 				}
 				case OPMODE::OFFSET_X: {
-					float v = inputs[OP_INPUT + j].isConnected() ? clamp(inputs[OP_INPUT + j].getVoltage() / 10.f, 0.f, 1.f) : 1.f;
-					v *= params[OP_PARAM + j].getValue();
-					offsetX[j] = v;
+					offsetX[j] = getOpInput(j);
 					break;
 				}
 				case OPMODE::OFFSET_Y: {
-					float v = inputs[OP_INPUT + j].isConnected() ? clamp(inputs[OP_INPUT + j].getVoltage() / 10.f, 0.f, 1.f) : 1.f;
-					v *= params[OP_PARAM + j].getValue();
-					offsetY[j] = v;
+					offsetY[j] = getOpInput(j);
 					break;
 				}
 				case OPMODE::WALK: {
-					float v = inputs[OP_INPUT + j].isConnected() ? clamp(inputs[OP_INPUT + j].getVoltage() / 10.f, 0.f, 1.f) : 1.f;
-					v *= params[OP_PARAM + j].getValue();
-					offsetX[j] = random::normal() / 1000.f * v;
-					offsetY[j] = random::normal() / 1000.f * v;
+					float v = getOpInput(j);
+					offsetX[j] = random::normal() / 2000.f * v;
+					offsetY[j] = random::normal() / 2000.f * v;
 					break;
 				}
 			}
 
 			float x = params[IN_X_POS + j].getValue();
 			if (inputs[IN_X_INPUT + j].isConnected()) {
-				x = clamp(inputs[IN_X_INPUT + j].getVoltage() / 10.f, 0.f, 1.f);
+				float xd = inputs[IN_X_INPUT + j].getVoltage();
+				xd += inputXBipolar[j] ? 5.f : 0.f;
+				x = clamp(xd / 10.f, 0.f, 1.f);
 				x *= params[IN_X_PARAM + j].getValue();
 			}
 			x += offsetX[j];
@@ -170,7 +192,9 @@ struct ArenaModule : Module {
 
 			float y = params[IN_Y_POS + j].getValue();
 			if (inputs[IN_Y_INPUT + j].isConnected()) {
-				y = clamp(inputs[IN_Y_INPUT + j].getVoltage() / 10.f, 0.f, 1.f);
+				float yd = inputs[IN_Y_INPUT + j].getVoltage();
+				yd += inputYBipolar[j] ? 5.f : 0.f;
+				y = clamp(yd / 10.f, 0.f, 1.f);
 				y *= params[IN_Y_PARAM + j].getValue();
 			}
 			y += offsetY[j];
@@ -181,7 +205,8 @@ struct ArenaModule : Module {
 		float out[IN_PORTS];
 		for (int i = 0; i < MIX_PORTS; i++) {
 			if (inputs[MIX_X_INPUT + i].isConnected()) {
-				float x = clamp(inputs[MIX_X_INPUT + i].getVoltage() / 10.f, 0.f, 1.f);
+				float x = inputs[MIX_X_INPUT + i].getVoltage();
+				x = clamp(x / 10.f, 0.f, 1.f);
 				x *= params[MIX_X_PARAM + i].getValue();
 				params[MIX_X_POS + i].setValue(x);
 			} 
@@ -190,7 +215,8 @@ struct ArenaModule : Module {
 			}
 
 			if (inputs[MIX_Y_INPUT + i].isConnected()) {
-				float y = clamp(inputs[MIX_Y_INPUT + i].getVoltage() / 10.f, 0.f, 1.f);
+				float y = inputs[MIX_Y_INPUT + i].getVoltage();
+				y = clamp(y / 10.f, 0.f, 1.f);
 				y *= params[MIX_Y_PARAM + i].getValue();
 				params[MIX_Y_POS + i].setValue(y);
 			}
@@ -212,8 +238,11 @@ struct ArenaModule : Module {
 
 				float r = radius[j];
 				if (inputs[IN + j].isConnected() && dist[i][j] < r) {
+					float sd = inputs[IN + j].getVoltage();
+					sd = clamp(sd, -10.f, 10.f);
+					sd *= amount[j];
 					float s = std::min(1.0f, (r - dist[i][j]) / r * 1.1f);
-					s = clamp(inputs[IN + j].getVoltage(), 0.f, 10.f) * s;
+					s *= sd;
 					mix += s;
 					out[j] += s;
 					c++;
@@ -223,8 +252,10 @@ struct ArenaModule : Module {
 			if (c > 0) mix /= c;
 			outputs[MIX_OUTPUT + i].setVoltage(mix);
 
-			for (int j = 0; j < IN_PORTS; j++)
-				outputs[OUT + j].setVoltage(clamp(out[j], 0.f, 10.f));
+			for (int j = 0; j < IN_PORTS; j++) {
+				float v = clamp(out[j], -10.f, 10.f);
+				outputs[OUT + j].setVoltage(v);
+			}
 		}
 
 		// Set lights infrequently
@@ -236,6 +267,14 @@ struct ArenaModule : Module {
 				lights[MIX_SEL_LIGHT + i].setBrightness(selectedType == 1 && selectedId == i);
 			}
 		}
+	}
+
+	inline float getOpInput(int j) {
+		float v = inputs[OP_INPUT + j].isConnected() ? inputs[OP_INPUT + j].getVoltage() : 10.f;
+		v += opBipolar[j] ? 5.f : 0.f;
+		v = clamp(v / 10.f, 0.f, 1.f);
+		v *= params[OP_PARAM + j].getValue();
+		return v;
 	}
 
 	inline void setSelection(int type, int id) {
@@ -258,13 +297,17 @@ struct ArenaModule : Module {
 		json_t* inputsJ = json_array();
 		for (int i = 0; i < IN_PORTS; i++) {
 			json_t* inputJ = json_object();
+			json_object_set_new(inputJ, "amount", json_real(amount[i]));
 			json_object_set_new(inputJ, "radius", json_real(radius[i]));
-			json_object_set_new(inputJ, "opmode", json_integer(opmode[i]));
+			json_object_set_new(inputJ, "opMode", json_boolean(opMode[i]));
+			json_object_set_new(inputJ, "opBipolar", json_boolean(opBipolar[i]));
+			json_object_set_new(inputJ, "inputXBipolar", json_boolean(inputXBipolar[i]));
+			json_object_set_new(inputJ, "inputYBipolar", json_boolean(inputYBipolar[i]));
 			json_array_append_new(inputsJ, inputJ);
 		}
 		json_object_set_new(rootJ, "inputs", inputsJ);
 
-		json_object_set_new(rootJ, "seqSelected", json_integer(seqSelected));
+		//json_object_set_new(rootJ, "seqSelected", json_integer(seqSelected));
 		return rootJ;
 	}
 
@@ -273,11 +316,15 @@ struct ArenaModule : Module {
 		json_t *inputJ;
 		size_t inputIndex;
 		json_array_foreach(inputsJ, inputIndex, inputJ) {
+			amount[inputIndex] = json_real_value(json_object_get(inputJ, "amount"));
 			radius[inputIndex] = json_real_value(json_object_get(inputJ, "radius"));
-			opmode[inputIndex] = (OPMODE)json_integer_value(json_object_get(inputJ, "opmode"));
+			opMode[inputIndex] = (OPMODE)json_integer_value(json_object_get(inputJ, "opMode"));
+			opBipolar[inputIndex] = json_boolean_value(json_object_get(inputJ, "opBipolar"));
+			inputXBipolar[inputIndex] = json_boolean_value(json_object_get(inputJ, "inputXBipolar"));
+			inputYBipolar[inputIndex] = json_boolean_value(json_object_get(inputJ, "inputYBipolar"));
 		}
 
-		seqSelected = json_integer_value(json_object_get(inputJ, "seqSelected"));
+		//seqSelected = json_integer_value(json_object_get(inputJ, "seqSelected"));
 	}
 };
 
@@ -441,6 +488,50 @@ struct ArenaInputWidget : ArenaIoWidget<MODULE> {
 		ui::Menu* menu = createMenu();
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("Input %i", AIOW::id + 1).c_str()));
 
+		struct AmountQuantity : Quantity {
+			MODULE* module;
+			int id;
+
+			AmountQuantity(MODULE* module, int id) {
+				this->module = module;
+				this->id = id;
+			}
+			void setValue(float value) override {
+				module->amount[id] = math::clamp(value, 0.f, 1.f);
+			}
+			float getValue() override {
+				return module->amount[id];
+			}
+			float getDefaultValue() override {
+				return 0.5;
+			}
+			float getDisplayValue() override {
+				return getValue() * 100;
+			}
+			void setDisplayValue(float displayValue) override {
+				setValue(displayValue / 100);
+			}
+			std::string getLabel() override {
+				return "Amount";
+			}
+			std::string getUnit() override {
+				return "%";
+			}
+		};
+
+		struct AmountSlider : ui::Slider {
+			AmountSlider(MODULE* module, int id) {
+				quantity = new AmountQuantity(module, id);
+			}
+			~AmountSlider() {
+				delete quantity;
+			}
+		};
+
+		AmountSlider* amountSlider = new AmountSlider(AIOW::module, AIOW::id);
+		amountSlider->box.size.x = 200.0;
+		menu->addChild(amountSlider);
+
 		struct RadiusQuantity : Quantity {
 			MODULE* module;
 			int id;
@@ -513,7 +604,7 @@ struct ArenaMixWidget : ArenaIoWidget<MODULE> {
 				nvgBeginPath(args.vg);
 				nvgMoveTo(args.vg, s.x, s.y);
 				nvgLineTo(args.vg, t.x, t.y);
-				nvgStrokeColor(args.vg, color::mult(AIOW::color, 0.7f));
+				nvgStrokeColor(args.vg, color::mult(AIOW::color, AIOW::module->amount[i]));
 				nvgStrokeWidth(args.vg, 1.2f);
 				nvgStroke(args.vg);
 			}
@@ -521,8 +612,9 @@ struct ArenaMixWidget : ArenaIoWidget<MODULE> {
 	}
 };
 
-struct LEDButton : app::SvgSwitch {
-	LEDButton() {
+
+struct DummyMapButton : app::SvgSwitch {
+	DummyMapButton() {
 		this->box.size = Vec(5.f, 5.f);
 	}
 
@@ -534,7 +626,12 @@ struct LEDButton : app::SvgSwitch {
 		nvgStroke(args.vg);
 		app::SvgSwitch::draw(args);
 	}
+
+	void onButton(const event::Button& e) override {
+		return;
+	}
 };
+
 
 template < typename MODULE, int IN_PORTS, int MIX_PORTS >
 struct ArenaAreaWidget : OpaqueWidget {
@@ -597,9 +694,11 @@ struct ArenaOpDisplay : LedDisplayChoice {
 
 	void step() override {
 		if (module) {
-			switch (module->opmode[id]) {
+			switch (module->opMode[id]) {
 				case OPMODE::RADIUS:
 					text = "RAD"; break;
+				case OPMODE::AMOUNT:
+					text = "AMT"; break;
 				case OPMODE::OFFSET_X:
 					text = "O-X"; break;
 				case OPMODE::OFFSET_Y:
@@ -627,30 +726,123 @@ struct ArenaOpDisplay : LedDisplayChoice {
 
 	void createContextMenu() {
 		ui::Menu* menu = createMenu();
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "OP-port mode"));
+		menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("Input %i", id + 1)));
+		menu->addChild(new MenuSeparator());
 
-		struct OpModeItem : MenuItem {
-			MODULE* module;
-			OPMODE opmode;
-			int id;
-			
-			void onAction(const event::Action &e) override {
-				module->opmode[id] = opmode;
+		struct InputXMenuItem : MenuItem {
+			InputXMenuItem() {
+				rightText = RIGHT_ARROW;
 			}
 
-			void step() override {
-				rightText = module->opmode[id] == opmode ? "✔" : "";
-				MenuItem::step();
+			struct InputXBipolarItem : MenuItem {
+				MODULE* module;
+				int id;
+
+				void onAction(const event::Action &e) override {
+					module->inputXBipolar[id] ^= true;
+				}
+
+				void step() override {
+					rightText = module->inputXBipolar[id] ? "-5V..5V" : "0V..10V";
+					MenuItem::step();
+				}
+			};
+
+			MODULE* module;
+			int id;
+			Menu* createChildMenu() override {
+				Menu* menu = new Menu;
+				menu->addChild(construct<InputXBipolarItem>(&MenuItem::text, "Voltage", &InputXBipolarItem::module, module, &InputXBipolarItem::id, id));
+				return menu;
 			}
 		};
+		menu->addChild(construct<InputXMenuItem>(&MenuItem::text, "X-port", &InputXMenuItem::module, module, &InputXMenuItem::id, id));
 
-		menu->addChild(construct<OpModeItem>(&MenuItem::text, "Radius", &OpModeItem::module, module, &OpModeItem::id, id, &OpModeItem::opmode, OPMODE::RADIUS));
-		menu->addChild(construct<OpModeItem>(&MenuItem::text, "Offset x-pos", &OpModeItem::module, module, &OpModeItem::id, id, &OpModeItem::opmode, OPMODE::OFFSET_X));
-		menu->addChild(construct<OpModeItem>(&MenuItem::text, "Offset y-pos", &OpModeItem::module, module, &OpModeItem::id, id, &OpModeItem::opmode, OPMODE::OFFSET_Y));
-		menu->addChild(construct<OpModeItem>(&MenuItem::text, "Random walk", &OpModeItem::module, module, &OpModeItem::id, id, &OpModeItem::opmode, OPMODE::WALK));
-		//menu->addChild(construct<OpModeItem>(&MenuItem::text, "Sequence 0..10V", &OpModeItem::module, module, &OpModeItem::id, id, &OpModeItem::opmode, OPMODE::SEQ_10V));
-		//menu->addChild(construct<OpModeItem>(&MenuItem::text, "Sequence C4..G4", &OpModeItem::module, module, &OpModeItem::id, id, &OpModeItem::opmode, OPMODE::SEQ_C4));
-		//menu->addChild(construct<OpModeItem>(&MenuItem::text, "Sequence Trigger", &OpModeItem::module, module, &OpModeItem::id, id, &OpModeItem::opmode, OPMODE::SEQ_TRIG));
+		struct InputYMenuItem : MenuItem {
+			InputYMenuItem() {
+				rightText = RIGHT_ARROW;
+			}
+
+			struct InputYBipolarItem : MenuItem {
+				MODULE* module;
+				int id;
+
+				void onAction(const event::Action &e) override {
+					module->inputYBipolar[id] ^= true;
+				}
+
+				void step() override {
+					rightText = module->inputYBipolar[id] ? "-5V..5V" : "0V..10V";
+					MenuItem::step();
+				}
+			};
+
+			MODULE* module;
+			int id;
+			Menu* createChildMenu() override {
+				Menu* menu = new Menu;
+				menu->addChild(construct<InputYBipolarItem>(&MenuItem::text, "Voltage", &InputYBipolarItem::module, module, &InputYBipolarItem::id, id));
+				return menu;
+			}
+		};
+		menu->addChild(construct<InputYMenuItem>(&MenuItem::text, "Y-port", &InputYMenuItem::module, module, &InputYMenuItem::id, id));
+
+		struct OpModeMenuItem : MenuItem {
+			OpModeMenuItem() {
+				rightText = RIGHT_ARROW;
+			}
+
+			struct OpModeItem : MenuItem {
+				MODULE* module;
+				OPMODE opMode;
+				int id;
+				
+				void onAction(const event::Action &e) override {
+					module->opMode[id] = opMode;
+				}
+
+				void step() override {
+					rightText = module->opMode[id] == opMode ? "✔" : "";
+					MenuItem::step();
+				}
+			};
+
+			struct OpBipolarItem : MenuItem {
+				MODULE* module;
+				int id;
+
+				void onAction(const event::Action &e) override {
+					module->opBipolar[id] ^= true;
+				}
+
+				void step() override {
+					rightText = module->opBipolar[id] ? "-5V..5V" : "0V..10V";
+					MenuItem::step();
+				}
+			};
+
+			MODULE* module;
+			int id;
+			Menu* createChildMenu() override {
+				Menu* menu = new Menu;
+				menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Mode"));
+				menu->addChild(construct<OpModeItem>(&MenuItem::text, "Radius", &OpModeItem::module, module, &OpModeItem::id, id, &OpModeItem::opMode, OPMODE::RADIUS));
+				menu->addChild(construct<OpModeItem>(&MenuItem::text, "Amount", &OpModeItem::module, module, &OpModeItem::id, id, &OpModeItem::opMode, OPMODE::AMOUNT));
+				menu->addChild(construct<OpModeItem>(&MenuItem::text, "Offset x-pos", &OpModeItem::module, module, &OpModeItem::id, id, &OpModeItem::opMode, OPMODE::OFFSET_X));
+				menu->addChild(construct<OpModeItem>(&MenuItem::text, "Offset y-pos", &OpModeItem::module, module, &OpModeItem::id, id, &OpModeItem::opMode, OPMODE::OFFSET_Y));
+				menu->addChild(construct<OpModeItem>(&MenuItem::text, "Random walk", &OpModeItem::module, module, &OpModeItem::id, id, &OpModeItem::opMode, OPMODE::WALK));
+				/*
+				menu->addChild(construct<OpModeItem>(&MenuItem::text, "Sequence 0..10V", &OpModeItem::module, module, &OpModeItem::id, id, &OpModeItem::opMode, OPMODE::SEQ_10V));
+				menu->addChild(construct<OpModeItem>(&MenuItem::text, "Sequence C4..G4", &OpModeItem::module, module, &OpModeItem::id, id, &OpModeItem::opMode, OPMODE::SEQ_C4));
+				menu->addChild(construct<OpModeItem>(&MenuItem::text, "Sequence Trigger", &OpModeItem::module, module, &OpModeItem::id, id, &OpModeItem::opMode, OPMODE::SEQ_TRIG));
+				*/
+
+				menu->addChild(new MenuSeparator());
+				menu->addChild(construct<OpBipolarItem>(&MenuItem::text, "Voltage", &OpBipolarItem::module, module, &OpBipolarItem::id, id));
+				return menu;
+			}
+		};
+		menu->addChild(construct<OpModeMenuItem>(&MenuItem::text, "OP-port", &OpModeMenuItem::module, module, &OpModeMenuItem::id, id));
 	}
 };
 
@@ -666,7 +858,9 @@ struct ArenaSeqDisplay : LedDisplayChoice {
 	}
 
 	void step() override {
-		text = string::f("%02d", module->seqSelected + 1);
+		if (module) {
+			text = string::f("%02d", module->seqSelected + 1);
+		}
 		LedDisplayChoice::step();
 	}
 };
@@ -693,9 +887,9 @@ struct ArenaWidget : ModuleWidget {
 			addInput(createInputCentered<StoermelderPort>(Vec(x, 65.6f), module, MODULE::IN + i));
 			addInput(createInputCentered<StoermelderPort>(Vec(x, 96.4f), module, MODULE::IN_X_INPUT + i));
 			addParam(createParamCentered<StoermelderTrimpot>(Vec(x, 121.8f), module, MODULE::IN_X_PARAM + i));
-			addParam(createParamCentered<LEDButton>(Vec(x + s * 7.8f, 136.1f), module, MODULE::IN_X_POS + i));
+			addParam(createParamCentered<DummyMapButton>(Vec(x + s * 7.8f, 136.1f), module, MODULE::IN_X_POS + i));
 			addChild(createLightCentered<SmallLight<GreenLight>>(Vec(x, 139.6f), module, MODULE::IN_SEL_LIGHT + i));
-			addParam(createParamCentered<LEDButton>(Vec(x - s * 7.8f, 143.1f), module, MODULE::IN_Y_POS + i));
+			addParam(createParamCentered<DummyMapButton>(Vec(x - s * 7.8f, 143.1f), module, MODULE::IN_Y_POS + i));
 			addParam(createParamCentered<StoermelderTrimpot>(Vec(x, 157.4f), module, MODULE::IN_Y_PARAM + i));
 			addInput(createInputCentered<StoermelderPort>(Vec(x, 182.8f), module, MODULE::IN_Y_INPUT + i));
 
@@ -717,26 +911,28 @@ struct ArenaWidget : ModuleWidget {
 
 		addInput(createInputCentered<StoermelderPort>(Vec(25.9f, 323.4f), module, MODULE::MIX_X_INPUT + 0));
 		addParam(createParamCentered<StoermelderTrimpot>(Vec(53.9f, 323.4f), module, MODULE::MIX_X_PARAM + 0));
-		addParam(createParamCentered<LEDButton>(Vec(68.4f, 331.0f), module, MODULE::MIX_X_POS + 0));
+		addParam(createParamCentered<DummyMapButton>(Vec(68.4f, 331.0f), module, MODULE::MIX_X_POS + 0));
 		addChild(createLightCentered<SmallLight<GreenLight>>(Vec(71.7f, 323.4f), module, MODULE::MIX_SEL_LIGHT + 0));
-		addParam(createParamCentered<LEDButton>(Vec(75.4f, 315.8f), module, MODULE::MIX_Y_POS + 0));
+		addParam(createParamCentered<DummyMapButton>(Vec(75.4f, 315.8f), module, MODULE::MIX_Y_POS + 0));
 		addParam(createParamCentered<StoermelderTrimpot>(Vec(89.4f, 323.4f), module, MODULE::MIX_Y_PARAM + 0));
 		addInput(createInputCentered<StoermelderPort>(Vec(117.2f, 323.4f), module, MODULE::MIX_Y_INPUT + 0));
 		addOutput(createOutputCentered<StoermelderPort>(Vec(191.9f, 323.4f), module, MODULE::MIX_OUTPUT + 0));
 
+		/*
 		addInput(createInputCentered<StoermelderPort>(Vec(241.3f, 323.4f), module, MODULE::SEQ_INPUT));
 		addParam(createParamCentered<TL1105>(Vec(281.4f, 323.4f), module, MODULE::SEQ_MINUS_PARAM));
 		ArenaSeqDisplay<MODULE>* arenaSeqDisplay = createWidgetCentered<ArenaSeqDisplay<MODULE>>(Vec(307.5, 323.4f));
 		arenaSeqDisplay->module = module;
 		addChild(arenaSeqDisplay);
 		addParam(createParamCentered<TL1105>(Vec(333.6f, 323.4f), module, MODULE::SEQ_PLUS_PARAM));
+		*/
 
 		addOutput(createOutputCentered<StoermelderPort>(Vec(423.6f, 323.4f), module, MODULE::MIX_OUTPUT + 1));
 		addInput(createInputCentered<StoermelderPort>(Vec(497.7f, 323.4f), module, MODULE::MIX_X_INPUT + 1));
 		addParam(createParamCentered<StoermelderTrimpot>(Vec(525.6f, 323.4f), module, MODULE::MIX_X_PARAM + 1));
-		addParam(createParamCentered<LEDButton>(Vec(539.9f, 315.8f), module, MODULE::MIX_X_POS + 1));
+		addParam(createParamCentered<DummyMapButton>(Vec(539.9f, 315.8f), module, MODULE::MIX_X_POS + 1));
 		addChild(createLightCentered<SmallLight<GreenLight>>(Vec(543.4f, 323.4f), module, MODULE::MIX_SEL_LIGHT + 1));
-		addParam(createParamCentered<LEDButton>(Vec(546.9f, 331.0f), module, MODULE::MIX_Y_POS + 1));
+		addParam(createParamCentered<DummyMapButton>(Vec(546.9f, 331.0f), module, MODULE::MIX_Y_POS + 1));
 		addParam(createParamCentered<StoermelderTrimpot>(Vec(561.2f, 323.4f), module, MODULE::MIX_Y_PARAM + 1));
 		addInput(createInputCentered<StoermelderPort>(Vec(589.2f, 323.4f), module, MODULE::MIX_Y_INPUT + 1));
 	}
