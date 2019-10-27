@@ -126,6 +126,8 @@ struct ReMoveModule : MapModule<1> {
     RECMODE recMode = RECMODE_TOUCH;
     bool recTouched = false;
     float recTouch;
+    /** [Stored to JSON] autoplay after record */
+    bool recAutoplay;
 
     /** [Stored to JSON] sample rate for recording */
     float sampleRate = 1.f/60.f;
@@ -188,6 +190,7 @@ struct ReMoveModule : MapModule<1> {
         playDir = REMOVE_PLAYDIR_FWD;
         isRecording = false;
         recTouched = false;
+        recAutoplay = false;
         dataPtr = 0;
         sampleTimer.reset();
         seq = 0;
@@ -516,6 +519,10 @@ struct ReMoveModule : MapModule<1> {
             APP->history->push(recChangeHistory);
             recChangeHistory = NULL;
         }
+
+        if (recAutoplay) {
+            isPlaying = true;
+        }
     }
 
     inline void seqNext(bool skipEmpty = false) {
@@ -628,6 +635,7 @@ struct ReMoveModule : MapModule<1> {
         json_object_set_new(rec0J, "inCvMode", json_integer(inCvMode));
         json_object_set_new(rec0J, "outCvMode", json_integer(outCvMode));
         json_object_set_new(rec0J, "recMode", json_integer(recMode));
+        json_object_set_new(rec0J, "recAutoplay", json_boolean(recAutoplay));
         json_object_set_new(rec0J, "playMode", json_integer(playMode));
         json_object_set_new(rec0J, "sampleRate", json_real(sampleRate));
         json_object_set_new(rec0J, "isPlaying", json_boolean(isPlaying));
@@ -663,6 +671,8 @@ struct ReMoveModule : MapModule<1> {
         if (outCvModeJ) outCvMode = (OUTCVMODE)json_integer_value(outCvModeJ); 
         json_t *recModeJ = json_object_get(rec0J, "recMode");
         if (recModeJ) recMode = (RECMODE)json_integer_value(recModeJ);
+        json_t *recAutoplayJ = json_object_get(rec0J, "recAutoplay");
+        if (recAutoplayJ) recAutoplay = json_boolean_value(recAutoplayJ);
         json_t *playModeJ = json_object_get(rec0J, "playMode");
         if (playModeJ) playMode = (PLAYMODE)json_integer_value(playModeJ);
         json_t *sampleRateJ = json_object_get(rec0J, "sampleRate");
@@ -774,7 +784,7 @@ struct ReMoveDisplay : TransparentWidget {
             nvgFontSize(vg, 11);
             nvgFontFaceId(vg, font->handle);
             nvgTextLetterSpacing(vg, -2.2);
-            nvgFillColor(vg, nvgRGBA(0x66, 0x66, 0x66, 0xff));	
+            nvgFillColor(vg, nvgRGBA(0x66, 0x66, 0x66, 0xff));
             nvgTextBox(vg, 6, box.size.y - 4, 120, string::f("REC -%.1fs", t).c_str(), NULL);
         }
 
@@ -1054,6 +1064,18 @@ struct RecordModeMenuItem : MenuItem {
     }
 };
 
+struct RecAutoplayItem : MenuItem {
+    ReMoveModule *module;
+
+    void onAction(const event::Action &e) override {
+        module->recAutoplay ^= true;
+    }
+
+    void step() override {
+        rightText = module->recAutoplay ? "✔" : "";
+        MenuItem::step();
+    }
+};
 
 struct PlayModeMenuItem : MenuItem {
     struct PlayModeItem : MenuItem {
@@ -1220,6 +1242,10 @@ struct ReMoveWidget : ModuleWidget {
         RecordModeMenuItem *recordModeMenuItem = construct<RecordModeMenuItem>(&MenuItem::text, "Record mode", &RecordModeMenuItem::module, module);
         recordModeMenuItem->rightText = RIGHT_ARROW;
         menu->addChild(recordModeMenuItem);
+
+        RecAutoplayItem *recAutoplayItem = construct<RecAutoplayItem>(&MenuItem::text, "Autoplay after record", &RecAutoplayItem::module, module);
+        recAutoplayItem->rightText = RIGHT_ARROW;
+        menu->addChild(recAutoplayItem);
 
         PlayModeMenuItem *playModeMenuItem = construct<PlayModeMenuItem>(&MenuItem::text, "Play mode", &PlayModeMenuItem::module, module);
         playModeMenuItem->rightText = RIGHT_ARROW;

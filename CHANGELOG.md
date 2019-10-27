@@ -1,3 +1,8 @@
+### 1.3.0 (in development)
+
+- Module ReMOVE Lite
+    - Added option to start playing after recording automatically
+
 ### 1.2.0
 
 - Module 4ROUNDS
