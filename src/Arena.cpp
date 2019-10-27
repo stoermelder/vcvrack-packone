@@ -556,24 +556,109 @@ struct SeqModeMenuItem : MenuItem {
 };
 
 
+template < typename MODULE >
+struct RadiusSlider : ui::Slider {
+	struct RadiusQuantity : Quantity {
+		MODULE* module;
+		int id;
+
+		RadiusQuantity(MODULE* module, int id) {
+			this->module = module;
+			this->id = id;
+		}
+		void setValue(float value) override {
+			module->radius[id] = math::clamp(value, 0.f, 1.f);
+		}
+		float getValue() override {
+			return module->radius[id];
+		}
+		float getDefaultValue() override {
+			return 0.5;
+		}
+		float getDisplayValue() override {
+			return getValue() * 100;
+		}
+		void setDisplayValue(float displayValue) override {
+			setValue(displayValue / 100);
+		}
+		std::string getLabel() override {
+			return "Radius";
+		}
+		std::string getUnit() override {
+			return "";
+		}
+	};
+
+	RadiusSlider(MODULE* module, int id) {
+		quantity = new RadiusQuantity(module, id);
+	}
+	~RadiusSlider() {
+		delete quantity;
+	}
+};
+
+
+template < typename MODULE >
+struct AmountSlider : ui::Slider {
+	struct AmountQuantity : Quantity {
+		MODULE* module;
+		int id;
+
+		AmountQuantity(MODULE* module, int id) {
+			this->module = module;
+			this->id = id;
+		}
+		void setValue(float value) override {
+			module->amount[id] = math::clamp(value, 0.f, 1.f);
+		}
+		float getValue() override {
+			return module->amount[id];
+		}
+		float getDefaultValue() override {
+			return 0.5;
+		}
+		float getDisplayValue() override {
+			return getValue() * 100;
+		}
+		void setDisplayValue(float displayValue) override {
+			setValue(displayValue / 100);
+		}
+		std::string getLabel() override {
+			return "Amount";
+		}
+		std::string getUnit() override {
+			return "%";
+		}
+	};
+
+	AmountSlider(MODULE* module, int id) {
+		quantity = new AmountQuantity(module, id);
+	}
+	~AmountSlider() {
+		delete quantity;
+	}
+};
+
+
 // widgets
 
 template < typename MODULE >
-struct ArenaIoWidget : OpaqueWidget {
-	const float KNOB_SENSITIVITY = 0.3f;
-	const float radius = 9.f;
+struct ArenaDragableWidget : OpaqueWidget {
+	const float radius = 10.f;
 	const float fontsize = 13.0f;
 
 	MODULE* module;
 	std::shared_ptr<Font> font;
 	ParamQuantity* paramQuantityX;
 	ParamQuantity* paramQuantityY;
+	NVGcolor color = nvgRGB(0x66, 0x66, 0x0);
 	int id = -1;
 	int type = -1;
 	
-	NVGcolor color = nvgRGB(0x66, 0x66, 0x0);
+	float circleA = 1.f;
+	math::Vec dragPos;
 
-	ArenaIoWidget() {
+	ArenaDragableWidget() {
 		font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
 		box.size = Vec(2 * radius, 2 * radius);
 	}
@@ -597,24 +682,36 @@ struct ArenaIoWidget : OpaqueWidget {
 			// selection halo
 			float oradius = 1.8f * radius;
 			NVGpaint paint;
-			NVGcolor icol = color::mult(color::WHITE, 0.2f);
+			NVGcolor icol = color::mult(color, 0.25f);
 			NVGcolor ocol = nvgRGB(0, 0, 0);
 
+			Rect b = Rect(box.pos.mult(-1), parent->box.size);
+			nvgSave(args.vg);
+			nvgScissor(args.vg, b.pos.x, b.pos.y, b.size.x, b.size.y);
 			nvgBeginPath(args.vg);
 			nvgCircle(args.vg, c.x, c.y, oradius);
 			paint = nvgRadialGradient(args.vg, c.x, c.y, radius, oradius, icol, ocol);
 			nvgFillPaint(args.vg, paint);
 			nvgFill(args.vg);
+			nvgResetScissor(args.vg);
+			nvgRestore(args.vg);
 		}
 
 		// circle
 		nvgBeginPath(args.vg);
-		nvgCircle(args.vg, c.x, c.y, radius);
+		nvgCircle(args.vg, c.x, c.y, radius - 2.f);
 		nvgStrokeColor(args.vg, color);
-		nvgStrokeWidth(args.vg, 1.0);
+		nvgStrokeWidth(args.vg, 1.0f);
 		nvgStroke(args.vg);
 		nvgFillColor(args.vg, color::mult(color, 0.5f));
 		nvgFill(args.vg);
+
+		// amount circle
+		nvgBeginPath(args.vg);
+		nvgCircle(args.vg, c.x, c.y, radius);
+		nvgStrokeColor(args.vg, color::mult(color, circleA));
+		nvgStrokeWidth(args.vg, 0.8f);
+		nvgStroke(args.vg);
 
 		// label
 		nvgFontSize(args.vg, fontsize);
@@ -655,24 +752,24 @@ struct ArenaIoWidget : OpaqueWidget {
 		if (e.button != GLFW_MOUSE_BUTTON_LEFT)
 			return;
 
-		APP->window->cursorLock();
+		dragPos = APP->scene->rack->mousePos.minus(box.pos);
 	}
 
 	void onDragEnd(const event::DragEnd& e) override {
 		if (e.button != GLFW_MOUSE_BUTTON_LEFT)
 			return;
-
-		APP->window->cursorUnlock();
 	}
 
-	void onDragMove(const event::DragMove& e) override {
-		float deltaX = e.mouseDelta.x / (parent->box.size.x - box.size.x);
-		deltaX *= KNOB_SENSITIVITY;
-		paramQuantityX->setValue(std::max(0.f, std::min(1.f, paramQuantityX->getValue() + deltaX)));
 
-		float deltaY = e.mouseDelta.y / (parent->box.size.y - box.size.y);
-		deltaY *= KNOB_SENSITIVITY;
-		paramQuantityY->setValue(std::max(0.f, std::min(1.f, paramQuantityY->getValue() + deltaY)));
+	void onDragMove(const event::DragMove& e) override {
+		if (e.button != GLFW_MOUSE_BUTTON_LEFT)
+			return;
+
+		math::Vec pos = APP->scene->rack->mousePos.minus(dragPos);
+		float x = pos.x / (parent->box.size.x - box.size.x);
+		paramQuantityX->setValue(std::max(0.f, std::min(1.f, x)));
+		float y = pos.y / (parent->box.size.y - box.size.y);
+		paramQuantityY->setValue(std::max(0.f, std::min(1.f, y)));
 
 		OpaqueWidget::onDragMove(e);
 	}
@@ -682,165 +779,88 @@ struct ArenaIoWidget : OpaqueWidget {
 
 
 template < typename MODULE >
-struct ArenaInputWidget : ArenaIoWidget<MODULE> {
-	typedef ArenaIoWidget<MODULE> AIOW;
+struct ArenaInputWidget : ArenaDragableWidget<MODULE> {
+	typedef ArenaDragableWidget<MODULE> AW;
 
 	ArenaInputWidget() {
-		AIOW::color = color::WHITE;
-		AIOW::type = 0;
+		AW::color = color::WHITE;
+		AW::type = 0;
+	}
+
+	void step() override {
+		AW::circleA = AW::module->amount[AW::id];
+		AW::step();
 	}
 
 	void draw(const Widget::DrawArgs& args) override {
-		if (AIOW::module->isSelected(AIOW::type, AIOW::id)) {
+		if (AW::module->isSelected(AW::type, AW::id)) {
 			// outer circle and fill
-			Vec c = Vec(AIOW::box.size.x / 2.f, AIOW::box.size.y / 2.f);
-			Rect b = Rect(AIOW::box.pos.mult(-1), AIOW::parent->box.size);
+			Vec c = Vec(AW::box.size.x / 2.f, AW::box.size.y / 2.f);
+			Rect b = Rect(AW::box.pos.mult(-1), AW::parent->box.size);
 			nvgSave(args.vg);
 			nvgScissor(args.vg, b.pos.x, b.pos.y, b.size.x, b.size.y);
-			float sizeX = std::max(0.f, (AIOW::parent->box.size.x - 2 * AIOW::radius) * AIOW::module->radius[AIOW::id] - AIOW::radius);
-			float sizeY = std::max(0.f, (AIOW::parent->box.size.y - 2 * AIOW::radius) * AIOW::module->radius[AIOW::id] - AIOW::radius);
+			float sizeX = std::max(0.f, (AW::parent->box.size.x - 2 * AW::radius) * AW::module->radius[AW::id] - AW::radius);
+			float sizeY = std::max(0.f, (AW::parent->box.size.y - 2 * AW::radius) * AW::module->radius[AW::id] - AW::radius);
 			nvgBeginPath(args.vg);
 			nvgEllipse(args.vg, c.x, c.y, sizeX, sizeY);
 			nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
-			nvgStrokeColor(args.vg, color::mult(AIOW::color, 0.8f));
+			nvgStrokeColor(args.vg, color::mult(AW::color, 0.8f));
 			nvgStrokeWidth(args.vg, 1.0f);
 			nvgStroke(args.vg);
-			nvgFillColor(args.vg, color::mult(AIOW::color, 0.1f));
+			nvgFillColor(args.vg, color::mult(AW::color, 0.1f));
 			nvgFill(args.vg);
 			nvgResetScissor(args.vg);
 			nvgRestore(args.vg);
 		}
 
-		AIOW::draw(args);
+		AW::draw(args);
 	}
 
 	void createContextMenu() override {
 		ui::Menu* menu = createMenu();
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("Input %i", AIOW::id + 1).c_str()));
+		menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("Input %i", AW::id + 1).c_str()));
 
-		struct AmountQuantity : Quantity {
-			MODULE* module;
-			int id;
-
-			AmountQuantity(MODULE* module, int id) {
-				this->module = module;
-				this->id = id;
-			}
-			void setValue(float value) override {
-				module->amount[id] = math::clamp(value, 0.f, 1.f);
-			}
-			float getValue() override {
-				return module->amount[id];
-			}
-			float getDefaultValue() override {
-				return 0.5;
-			}
-			float getDisplayValue() override {
-				return getValue() * 100;
-			}
-			void setDisplayValue(float displayValue) override {
-				setValue(displayValue / 100);
-			}
-			std::string getLabel() override {
-				return "Amount";
-			}
-			std::string getUnit() override {
-				return "%";
-			}
-		};
-
-		struct AmountSlider : ui::Slider {
-			AmountSlider(MODULE* module, int id) {
-				quantity = new AmountQuantity(module, id);
-			}
-			~AmountSlider() {
-				delete quantity;
-			}
-		};
-
-		AmountSlider* amountSlider = new AmountSlider(AIOW::module, AIOW::id);
+		AmountSlider<MODULE>* amountSlider = new AmountSlider<MODULE>(AW::module, AW::id);
 		amountSlider->box.size.x = 200.0;
 		menu->addChild(amountSlider);
 
-		struct RadiusQuantity : Quantity {
-			MODULE* module;
-			int id;
-
-			RadiusQuantity(MODULE* module, int id) {
-				this->module = module;
-				this->id = id;
-			}
-			void setValue(float value) override {
-				module->radius[id] = math::clamp(value, 0.f, 1.f);
-			}
-			float getValue() override {
-				return module->radius[id];
-			}
-			float getDefaultValue() override {
-				return 0.5;
-			}
-			float getDisplayValue() override {
-				return getValue() * 100;
-			}
-			void setDisplayValue(float displayValue) override {
-				setValue(displayValue / 100);
-			}
-			std::string getLabel() override {
-				return "Radius";
-			}
-			std::string getUnit() override {
-				return "";
-			}
-		};
-
-		struct RadiusSlider : ui::Slider {
-			RadiusSlider(MODULE* module, int id) {
-				quantity = new RadiusQuantity(module, id);
-			}
-			~RadiusSlider() {
-				delete quantity;
-			}
-		};
-
-		RadiusSlider* radiusSlider = new RadiusSlider(AIOW::module, AIOW::id);
+		RadiusSlider<MODULE>* radiusSlider = new RadiusSlider<MODULE>(AW::module, AW::id);
 		radiusSlider->box.size.x = 200.0;
 		menu->addChild(radiusSlider);
 
-		menu->addChild(new MenuSeparator());
-
-		menu->addChild(construct<InputXMenuItem<MODULE>>(&MenuItem::text, "X-port", &InputXMenuItem<MODULE>::module, AIOW::module, &InputXMenuItem<MODULE>::id, AIOW::id));
-		menu->addChild(construct<InputYMenuItem<MODULE>>(&MenuItem::text, "Y-port", &InputYMenuItem<MODULE>::module, AIOW::module, &InputYMenuItem<MODULE>::id, AIOW::id));
-		menu->addChild(construct<OpModeMenuItem<MODULE>>(&MenuItem::text, "OP-port", &OpModeMenuItem<MODULE>::module, AIOW::module, &OpModeMenuItem<MODULE>::id, AIOW::id));
+		menu->addChild(construct<InputXMenuItem<MODULE>>(&MenuItem::text, "X-port", &InputXMenuItem<MODULE>::module, AW::module, &InputXMenuItem<MODULE>::id, AW::id));
+		menu->addChild(construct<InputYMenuItem<MODULE>>(&MenuItem::text, "Y-port", &InputYMenuItem<MODULE>::module, AW::module, &InputYMenuItem<MODULE>::id, AW::id));
+		menu->addChild(construct<OpModeMenuItem<MODULE>>(&MenuItem::text, "OP-port", &OpModeMenuItem<MODULE>::module, AW::module, &OpModeMenuItem<MODULE>::id, AW::id));
 	}
 };
 
 template < typename MODULE >
-struct ArenaMixWidget : ArenaIoWidget<MODULE> {
-	typedef ArenaIoWidget<MODULE> AIOW;
+struct ArenaMixWidget : ArenaDragableWidget<MODULE> {
+	typedef ArenaDragableWidget<MODULE> AW;
 
 	ArenaMixWidget() {
-		AIOW::color = color::YELLOW;
-		AIOW::type = 1;
+		AW::color = color::YELLOW;
+		AW::type = 1;
 	}
 
 	void draw(const Widget::DrawArgs& args) override {
-		AIOW::draw(args);
+		AW::draw(args);
 
-		Vec c = Vec(AIOW::box.size.x / 2.f, AIOW::box.size.y / 2.f);
-		float sizeX = AIOW::parent->box.size.x;
-		float sizeY = AIOW::parent->box.size.y;
-		for (int i = 0; i < AIOW::module->num_inports; i++) {
-			if (AIOW::module->dist[AIOW::id][i] < AIOW::module->radius[i]) {
-				float x = AIOW::module->params[MODULE::IN_X_POS + i].getValue() * (sizeX - 2.f * AIOW::radius);
-				float y = AIOW::module->params[MODULE::IN_Y_POS + i].getValue() * (sizeY - 2.f * AIOW::radius);
-				Vec p = AIOW::box.pos.mult(-1).plus(Vec(x, y)).plus(c);
-				Vec p_rad = p.minus(c).normalize().mult(AIOW::radius);
+		Vec c = Vec(AW::box.size.x / 2.f, AW::box.size.y / 2.f);
+		float sizeX = AW::parent->box.size.x;
+		float sizeY = AW::parent->box.size.y;
+		for (int i = 0; i < AW::module->num_inports; i++) {
+			if (AW::module->dist[AW::id][i] < AW::module->radius[i]) {
+				float x = AW::module->params[MODULE::IN_X_POS + i].getValue() * (sizeX - 2.f * AW::radius);
+				float y = AW::module->params[MODULE::IN_Y_POS + i].getValue() * (sizeY - 2.f * AW::radius);
+				Vec p = AW::box.pos.mult(-1).plus(Vec(x, y)).plus(c);
+				Vec p_rad = p.minus(c).normalize().mult(AW::radius);
 				Vec s = c.plus(p_rad);
 				Vec t = p.minus(p_rad);
 				nvgBeginPath(args.vg);
 				nvgMoveTo(args.vg, s.x, s.y);
 				nvgLineTo(args.vg, t.x, t.y);
-				nvgStrokeColor(args.vg, color::mult(nvgRGB(0x29, 0xb2, 0xef), AIOW::module->amount[i]));
+				nvgStrokeColor(args.vg, color::mult(nvgRGB(0x29, 0xb2, 0xef), AW::module->amount[i]));
 				nvgStrokeWidth(args.vg, 1.0f);
 				nvgStroke(args.vg);
 			}
@@ -977,7 +997,15 @@ struct ArenaOpDisplay : LedDisplayChoice {
 	void createContextMenu() {
 		ui::Menu* menu = createMenu();
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("Input %i", id + 1)));
-		menu->addChild(new MenuSeparator());
+
+		AmountSlider<MODULE>* amountSlider = new AmountSlider<MODULE>(module, id);
+		amountSlider->box.size.x = 200.0;
+		menu->addChild(amountSlider);
+
+		RadiusSlider<MODULE>* radiusSlider = new RadiusSlider<MODULE>(module, id);
+		radiusSlider->box.size.x = 200.0;
+		menu->addChild(radiusSlider);
+
 		menu->addChild(construct<InputXMenuItem<MODULE>>(&MenuItem::text, "X-port", &InputXMenuItem<MODULE>::module, module, &InputXMenuItem<MODULE>::id, id));
 		menu->addChild(construct<InputYMenuItem<MODULE>>(&MenuItem::text, "Y-port", &InputYMenuItem<MODULE>::module, module, &InputYMenuItem<MODULE>::id, id));
 		menu->addChild(construct<OpModeMenuItem<MODULE>>(&MenuItem::text, "OP-port", &OpModeMenuItem<MODULE>::module, module, &OpModeMenuItem<MODULE>::id, id));
@@ -1053,7 +1081,7 @@ struct ArenaSeqDisplay : LedDisplayChoice {
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<SeqMenuItem<MODULE>>(&MenuItem::text, "Sequence", &SeqMenuItem<MODULE>::module, module, &SeqMenuItem<MODULE>::id, id));
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<SeqModeMenuItem<MODULE>>(&MenuItem::text, "OP-port", &SeqModeMenuItem<MODULE>::module, module, &SeqModeMenuItem<MODULE>::id, id));
+		menu->addChild(construct<SeqModeMenuItem<MODULE>>(&MenuItem::text, "SEQ-port", &SeqModeMenuItem<MODULE>::module, module, &SeqModeMenuItem<MODULE>::id, id));
 	}
 };
 
@@ -1081,7 +1109,10 @@ struct ClickableSmallLight : SmallLight<LIGHT> {
 	void onButton(const event::Button& e) override {
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
 			ArenaModule<8, 2>* m = dynamic_cast<ArenaModule<8, 2>*>(SmallLight<LIGHT>::module);
-			m->setSelection(type, id);
+			if (m->isSelected(type, id))
+				m->resetSelection();
+			else
+				m->setSelection(type, id);
 		}
 		SmallLight<LIGHT>::onButton(e);
 	}
@@ -1145,25 +1176,24 @@ struct ArenaWidget : ModuleWidget {
 		addParam(createParamCentered<DummyMapButton>(Vec(75.4f, 315.8f), module, MODULE::MIX_Y_POS + 0));
 		addParam(createParamCentered<StoermelderTrimpot>(Vec(89.4f, 323.4f), module, MODULE::MIX_Y_PARAM + 0));
 		addInput(createInputCentered<StoermelderPort>(Vec(117.2f, 323.4f), module, MODULE::MIX_Y_INPUT + 0));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(191.9f, 323.4f), module, MODULE::MIX_OUTPUT + 0));
 
-
-		addInput(createInputCentered<StoermelderPort>(Vec(222.7f, 323.4f), module, MODULE::SEQ_INPUT + 0));
-		ArenaSeqDisplay<MODULE>* arenaSeqDisplay1 = createWidgetCentered<ArenaSeqDisplay<MODULE>>(Vec(255.3, 325.4f));
+		addInput(createInputCentered<StoermelderPort>(Vec(173.9f, 323.4f), module, MODULE::SEQ_INPUT + 0));
+		ArenaSeqDisplay<MODULE>* arenaSeqDisplay1 = createWidgetCentered<ArenaSeqDisplay<MODULE>>(Vec(206.5, 325.4f));
 		arenaSeqDisplay1->module = module;
 		arenaSeqDisplay1->id = 0;
 		addChild(arenaSeqDisplay1);
-		addInput(createInputCentered<StoermelderPort>(Vec(287.8f, 323.4f), module, MODULE::SEQ_PH_INPUT + 0));
+		addInput(createInputCentered<StoermelderPort>(Vec(239.0f, 323.4f), module, MODULE::SEQ_PH_INPUT + 0));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(288.0f, 323.4f), module, MODULE::MIX_OUTPUT + 0));
 
 		// MIX2
-		addInput(createInputCentered<StoermelderPort>(Vec(327.7f, 323.4f), module, MODULE::SEQ_PH_INPUT + 1));
-		ArenaSeqDisplay<MODULE>* arenaSeqDisplay2 = createWidgetCentered<ArenaSeqDisplay<MODULE>>(Vec(359.7, 325.4f));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(327.5f, 323.4f), module, MODULE::MIX_OUTPUT + 1));
+		addInput(createInputCentered<StoermelderPort>(Vec(376.0f, 323.4f), module, MODULE::SEQ_PH_INPUT + 1));
+		ArenaSeqDisplay<MODULE>* arenaSeqDisplay2 = createWidgetCentered<ArenaSeqDisplay<MODULE>>(Vec(408.6, 325.4f));
 		arenaSeqDisplay2->module = module;
 		arenaSeqDisplay2->id = 1;
 		addChild(arenaSeqDisplay2);
-		addInput(createInputCentered<StoermelderPort>(Vec(392.3f, 323.4f), module, MODULE::SEQ_INPUT + 1));
+		addInput(createInputCentered<StoermelderPort>(Vec(441.1f, 323.4f), module, MODULE::SEQ_INPUT + 1));
 
-		addOutput(createOutputCentered<StoermelderPort>(Vec(423.6f, 323.4f), module, MODULE::MIX_OUTPUT + 1));
 		addInput(createInputCentered<StoermelderPort>(Vec(497.7f, 323.4f), module, MODULE::MIX_X_INPUT + 1));
 		addParam(createParamCentered<StoermelderTrimpot>(Vec(525.6f, 323.4f), module, MODULE::MIX_X_PARAM + 1));
 		addParam(createParamCentered<DummyMapButton>(Vec(539.9f, 315.8f), module, MODULE::MIX_X_POS + 1));
