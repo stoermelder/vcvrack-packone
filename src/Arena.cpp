@@ -24,6 +24,11 @@ enum SEQMODE {
 	C4 = 5
 };
 
+enum SEQINTERPOLATE {
+	LINEAR = 0,
+	CUBIC = 1
+};
+
 enum OUTPUTMODE {
 	SCALE = 0,
 	LIMIT = 1,
@@ -106,6 +111,8 @@ struct ArenaModule : Module {
 	/** [Stored to JSON] */
 	SEQMODE seqMode[MIX_PORTS];
 	/** [Stored to JSON] */
+	SEQINTERPOLATE seqInterpolate[MIX_PORTS];
+	/** [Stored to JSON] */
 	int seqSelected[MIX_PORTS];
 	int seqRec;
 
@@ -138,7 +145,7 @@ struct ArenaModule : Module {
 	}
 
 	void onReset() override {
-		resetSelection();
+		selectionReset();
 		for (int i = 0; i < IN_PORTS; i++) {
 			radius[i] = 0.5f;
 			amount[i] = 1.f;
@@ -153,6 +160,7 @@ struct ArenaModule : Module {
 		for (int i = 0; i < MIX_PORTS; i++) {
 			seqSelected[i] = 0;
 			seqMode[i] = SEQMODE::TRIG_FWD;
+			seqInterpolate[i] = SEQINTERPOLATE::CUBIC;
 			paramQuantities[MIX_X_POS + i]->setValue(paramQuantities[MIX_X_POS + i]->getDefaultValue());
 			paramQuantities[MIX_Y_POS + i]->setValue(paramQuantities[MIX_Y_POS + i]->getDefaultValue());
 		}
@@ -218,24 +226,26 @@ struct ArenaModule : Module {
 
 		float outNorm[IN_PORTS];
 		for (int i = 0; i < MIX_PORTS; i++) {
-			if (inputs[MIX_X_INPUT + i].isConnected()) {
-				float x = inputs[MIX_X_INPUT + i].getVoltage() / 10.f;
-				x *= params[MIX_X_PARAM + i].getValue();
-				x = clamp(x, 0.f, 1.f);
-				params[MIX_X_POS + i].setValue(x);
-			} 
-			else {
-
-			}
-
-			if (inputs[MIX_Y_INPUT + i].isConnected()) {
-				float y = inputs[MIX_Y_INPUT + i].getVoltage() / 10.f;
-				y *= params[MIX_Y_PARAM + i].getValue();
-				y = clamp(y, 0.f, 1.f);
-				params[MIX_Y_POS + i].setValue(y);
+			if (inputs[SEQ_PH_INPUT + i].isConnected()) {
+				float v = clamp(inputs[SEQ_PH_INPUT + i].getVoltage() / 10.f, 0.f, 1.f);
+				Vec d = seqValue(i, v);
+				params[MIX_X_POS + i].setValue(d.x);
+				params[MIX_Y_POS + i].setValue(d.y);
 			}
 			else {
+				if (inputs[MIX_X_INPUT + i].isConnected()) {
+					float x = inputs[MIX_X_INPUT + i].getVoltage() / 10.f;
+					x *= params[MIX_X_PARAM + i].getValue();
+					x = clamp(x, 0.f, 1.f);
+					params[MIX_X_POS + i].setValue(x);
+				} 
 
+				if (inputs[MIX_Y_INPUT + i].isConnected()) {
+					float y = inputs[MIX_Y_INPUT + i].getVoltage() / 10.f;
+					y *= params[MIX_Y_PARAM + i].getValue();
+					y = clamp(y, 0.f, 1.f);
+					params[MIX_Y_POS + i].setValue(y);
+				}
 			}
 
 			float x = params[MIX_X_POS + i].getValue();
@@ -331,18 +341,66 @@ struct ArenaModule : Module {
 		return v;
 	}
 
-	inline void setSelection(int type, int id) {
+	inline void selectionSet(int type, int id) {
 		selectedType = type;
 		selectedId = id;
 	}
 
-	inline bool isSelected(int type, int id) {
+	inline bool selectionTest(int type, int id) {
 		return selectedType == type && selectedId == id;
 	}
 
-	inline void resetSelection() {
+	inline void selectionReset() {
 		selectedType = -1;
 		selectedId = -1;
+	}
+
+	int seqLength(int port) {
+		return seqData[port][seqSelected[port]].length;
+	}
+
+	Vec seqValue(int port, float pos) {
+		switch (seqInterpolate[port]) {
+			case SEQINTERPOLATE::LINEAR: {
+				SeqItem* s = &seqData[port][seqSelected[port]];
+				int l = s->length - 1;
+				float mu1 = l * pos;
+				float intf;
+				float mu = std::modf(mu1, &intf);
+				int i1 = int(intf);
+				int i2 = std::min(int(intf) + 1, l);
+				Vec a1 = Vec(s->x[i1], s->y[i1]);
+				Vec a2 = Vec(s->x[i2], s->y[i2]);
+				Vec d = a2.minus(a1).mult(mu).plus(a1);
+				return d;
+			}
+			case SEQINTERPOLATE::CUBIC: {
+				SeqItem* s = &seqData[port][seqSelected[port]];
+				int l = s->length - 1;
+				float mu1 = l * pos;
+				float intf;
+				float mu = std::modf(mu1, &intf);
+				int i0 = std::max(0, int(intf));
+				int i1 = int(intf);
+				int i2 = std::min(int(intf) + 1, l);
+				int i3 = std::min(int(intf) + 2, l);
+				float mu2 = mu * mu;
+				float x0 = -0.5f * s->x[i0] + 1.5f * s->x[i1] - 1.5f * s->x[i2] + 0.5f * s->x[i3];
+				float x1 = s->x[i0] - 2.5f * s->x[i1] + 2.f * s->x[i2] - 0.5f * s->x[i3];
+				float x2 = -0.5f * s->x[i0] + 0.5f * s->x[i2];
+				float x3 = s->x[i1];
+				float x = x0 * mu * mu2 + x1 * mu2 + x2 * mu + x3;
+				float y0 = -0.5f * s->y[i0] + 1.5f * s->y[i1] - 1.5f * s->y[i2] + 0.5f * s->y[i3];
+				float y1 = s->y[i0] - 2.5f * s->y[i1] + 2.f * s->y[i2] - 0.5f * s->y[i3];
+				float y2 = -0.5f * s->y[i0] + 0.5f * s->y[i2];
+				float y3 = s->y[i1];
+				float y = y0 * mu * mu2 + y1 * mu2 + y2 * mu + y3;
+				return Vec(x, y);
+			}
+			default: {
+				return Vec(0, 0);
+			}
+		}
 	}
 
 	void randomizeInputAmount() {
@@ -391,6 +449,7 @@ struct ArenaModule : Module {
 			json_t* mixputJ = json_object();
 			json_object_set_new(mixputJ, "seqSelected", json_integer(seqSelected[i]));
 			json_object_set_new(mixputJ, "seqMode", json_integer(seqMode[i]));
+			json_object_set_new(mixputJ, "seqInterpolate", json_integer(seqInterpolate[i]));
 			json_t* seqDataJ = json_array();
 			for (int j = 0; j < SEQ_COUNT; j++) {
 				SeqItem* s = &seqData[i][j];
@@ -433,6 +492,7 @@ struct ArenaModule : Module {
 		json_array_foreach(mixputsJ, mixputIndex, mixputJ) {
 			seqSelected[mixputIndex] = json_integer_value(json_object_get(mixputJ, "seqSelected"));
 			seqMode[mixputIndex] = (SEQMODE)json_integer_value(json_object_get(mixputJ, "seqMode"));
+			seqInterpolate[mixputIndex] = (SEQINTERPOLATE)json_integer_value(json_object_get(mixputJ, "seqInterpolate"));
 			json_t* seqDataJ = json_object_get(mixputJ, "seqData");
 			json_t* seqItemJ;
 			size_t seqItemIndex;
@@ -456,7 +516,7 @@ struct ArenaModule : Module {
 };
 
 
-// context menus
+// Context menus
 
 template < typename MODULE >
 struct InputXMenuItem : MenuItem {
@@ -675,6 +735,39 @@ struct SeqModeMenuItem : MenuItem {
 
 
 template < typename MODULE >
+struct SeqInterpolateMenuItem : MenuItem {
+	SeqInterpolateMenuItem() {
+		rightText = RIGHT_ARROW;
+	}
+
+	struct SeqInterpolateItem : MenuItem {
+		MODULE* module;
+		int id;
+		SEQINTERPOLATE seqInterpolate;
+		
+		void onAction(const event::Action &e) override {
+			if (module->seqRec != id)
+				module->seqInterpolate[id] = seqInterpolate;
+		}
+
+		void step() override {
+			rightText = module->seqInterpolate[id] == seqInterpolate ? "✔" : "";
+			MenuItem::step();
+		}
+	};
+
+	MODULE* module;
+	int id;
+	Menu* createChildMenu() override {
+		Menu* menu = new Menu;
+		menu->addChild(construct<SeqInterpolateItem>(&MenuItem::text, "Linear", &SeqInterpolateItem::module, module, &SeqInterpolateItem::id, id, &SeqInterpolateItem::seqInterpolate, SEQINTERPOLATE::LINEAR));
+		menu->addChild(construct<SeqInterpolateItem>(&MenuItem::text, "Cubic", &SeqInterpolateItem::module, module, &SeqInterpolateItem::id, id, &SeqInterpolateItem::seqInterpolate, SEQINTERPOLATE::CUBIC));
+		return menu;
+	}
+};
+
+
+template < typename MODULE >
 struct RadiusSlider : ui::Slider {
 	struct RadiusQuantity : Quantity {
 		MODULE* module;
@@ -758,10 +851,10 @@ struct AmountSlider : ui::Slider {
 };
 
 
-// widgets
+// Play widgets
 
 template < typename MODULE >
-struct ArenaDragableWidget : OpaqueWidget {
+struct ArenaDragPlayWidget : OpaqueWidget {
 	const float radius = 10.f;
 	const float fontsize = 13.0f;
 
@@ -776,7 +869,7 @@ struct ArenaDragableWidget : OpaqueWidget {
 	float circleA = 1.f;
 	math::Vec dragPos;
 
-	ArenaDragableWidget() {
+	ArenaDragPlayWidget() {
 		font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
 		box.size = Vec(2 * radius, 2 * radius);
 	}
@@ -796,7 +889,7 @@ struct ArenaDragableWidget : OpaqueWidget {
 
 		nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
 
-		if (module->isSelected(type, id)) {
+		if (module->selectionTest(type, id)) {
 			// selection halo
 			float oradius = 1.8f * radius;
 			NVGpaint paint;
@@ -852,11 +945,11 @@ struct ArenaDragableWidget : OpaqueWidget {
 		if (dist <= c.x) {
 			OpaqueWidget::onButton(e);
 			if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
-				module->setSelection(type, id);
+				module->selectionSet(type, id);
 				e.consume(this);
 			}
 			if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
-				module->setSelection(type, id);
+				module->selectionSet(type, id);
 				createContextMenu();
 				e.consume(this);
 			}
@@ -896,10 +989,10 @@ struct ArenaDragableWidget : OpaqueWidget {
 
 
 template < typename MODULE >
-struct ArenaInputWidget : ArenaDragableWidget<MODULE> {
-	typedef ArenaDragableWidget<MODULE> AW;
+struct ArenaInputPlayWidget : ArenaDragPlayWidget<MODULE> {
+	typedef ArenaDragPlayWidget<MODULE> AW;
 
-	ArenaInputWidget() {
+	ArenaInputPlayWidget() {
 		AW::color = color::WHITE;
 		AW::type = 0;
 	}
@@ -910,7 +1003,7 @@ struct ArenaInputWidget : ArenaDragableWidget<MODULE> {
 	}
 
 	void draw(const Widget::DrawArgs& args) override {
-		if (AW::module->isSelected(AW::type, AW::id)) {
+		if (AW::module->selectionTest(AW::type, AW::id)) {
 			// outer circle and fill
 			Vec c = Vec(AW::box.size.x / 2.f, AW::box.size.y / 2.f);
 			Rect b = Rect(AW::box.pos.mult(-1), AW::parent->box.size);
@@ -953,10 +1046,10 @@ struct ArenaInputWidget : ArenaDragableWidget<MODULE> {
 };
 
 template < typename MODULE >
-struct ArenaMixWidget : ArenaDragableWidget<MODULE> {
-	typedef ArenaDragableWidget<MODULE> AW;
+struct ArenaMixPlayWidget : ArenaDragPlayWidget<MODULE> {
+	typedef ArenaDragPlayWidget<MODULE> AW;
 
-	ArenaMixWidget() {
+	ArenaMixPlayWidget() {
 		AW::color = color::YELLOW;
 		AW::type = 1;
 	}
@@ -964,6 +1057,7 @@ struct ArenaMixWidget : ArenaDragableWidget<MODULE> {
 	void draw(const Widget::DrawArgs& args) override {
 		AW::draw(args);
 
+		// Draw lines between inputs and mixputs
 		Vec c = Vec(AW::box.size.x / 2.f, AW::box.size.y / 2.f);
 		float sizeX = AW::parent->box.size.x;
 		float sizeY = AW::parent->box.size.y;
@@ -983,21 +1077,44 @@ struct ArenaMixWidget : ArenaDragableWidget<MODULE> {
 				nvgStroke(args.vg);
 			}
 		}
+
+		// Draw interpolated automation line if selected
+		if (AW::module->selectionTest(AW::type, AW::id)) {
+			float sizeX = AW::parent->box.size.x - AW::box.size.x;
+			float sizeY = AW::parent->box.size.y - AW::box.size.y;
+			Vec pos = AW::box.pos.mult(-1).plus(Vec(AW::radius, AW::radius));
+			nvgBeginPath(args.vg);
+			int segments = AW::module->seqLength(AW::id) * 5;
+			float seg1 = 1.f / segments;
+			for (int i = 0; i < segments; i++) {
+				Vec p = AW::module->seqValue(AW::id, seg1 * i);
+				if (i == 0)
+					nvgMoveTo(args.vg, pos.x + sizeX * p.x, pos.y + sizeY * p.y);
+				else
+					nvgLineTo(args.vg, pos.x + sizeX * p.x, pos.y + sizeY * p.y);
+			}
+			nvgStrokeColor(args.vg, color::mult(AW::color, 0.4f));
+			nvgLineCap(args.vg, NVG_ROUND);
+			nvgMiterLimit(args.vg, 2.0);
+			nvgStrokeWidth(args.vg, 1.0);
+			nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
+			nvgStroke(args.vg);
+		}
 	}
 };
 
 
 template < typename MODULE, int IN_PORTS, int MIX_PORTS >
-struct ArenaAreaWidget : OpaqueWidget {
+struct ArenaPlayWidget : OpaqueWidget {
 	MODULE* module;
-	ArenaInputWidget<MODULE>* inWidget[IN_PORTS];
-	ArenaMixWidget<MODULE>* mixWidget[MIX_PORTS];
+	ArenaInputPlayWidget<MODULE>* inWidget[IN_PORTS];
+	ArenaMixPlayWidget<MODULE>* mixWidget[MIX_PORTS];
 
-	ArenaAreaWidget(MODULE* module, int inParamIdX, int inParamIdY, int mixParamIdX, int mixParamIdY) {
+	ArenaPlayWidget(MODULE* module, int inParamIdX, int inParamIdY, int mixParamIdX, int mixParamIdY) {
 		this->module = module;
 		if (module) {
 			for (int i = 0; i < IN_PORTS; i++) {
-				inWidget[i] = new ArenaInputWidget<MODULE>;
+				inWidget[i] = new ArenaInputPlayWidget<MODULE>;
 				inWidget[i]->module = module;
 				inWidget[i]->paramQuantityX = module->paramQuantities[inParamIdX + i];
 				inWidget[i]->paramQuantityY = module->paramQuantities[inParamIdY + i];
@@ -1005,7 +1122,7 @@ struct ArenaAreaWidget : OpaqueWidget {
 				addChild(inWidget[i]);
 			}
 			for (int i = 0; i < MIX_PORTS; i++) {
-				mixWidget[i] = new ArenaMixWidget<MODULE>;
+				mixWidget[i] = new ArenaMixPlayWidget<MODULE>;
 				mixWidget[i]->module = module;
 				mixWidget[i]->paramQuantityX = module->paramQuantities[mixParamIdX + i];
 				mixWidget[i]->paramQuantityY = module->paramQuantities[mixParamIdY + i];
@@ -1024,7 +1141,7 @@ struct ArenaAreaWidget : OpaqueWidget {
 	void onButton(const event::Button& e) override {
 		if (module->seqRec < 0) {
 			if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
-				module->resetSelection();
+				module->selectionReset();
 			}
 			OpaqueWidget::onButton(e);
 			if (e.button == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT && !e.isConsumed()) {
@@ -1083,8 +1200,10 @@ struct ArenaAreaWidget : OpaqueWidget {
 };
 
 
+// Record widgets
+
 template < typename MODULE >
-struct ArenaDragableRecordWidget : OpaqueWidget {
+struct ArenaDragRecordWidget : OpaqueWidget {
 	const float radius = 8.f;
 	const float fontsize = 13.0f;
 
@@ -1099,7 +1218,7 @@ struct ArenaDragableRecordWidget : OpaqueWidget {
 	std::chrono::time_point<std::chrono::system_clock> timer;
 	bool timerClear;
 
-	ArenaDragableRecordWidget() {
+	ArenaDragRecordWidget() {
 		font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
 		box.size = Vec(2 * radius, 2 * radius);
 	}
@@ -1216,18 +1335,20 @@ struct ArenaDragableRecordWidget : OpaqueWidget {
 template < typename MODULE >
 struct ArenaRecordWidget : OpaqueWidget {
 	MODULE* module;
-	ArenaDragableRecordWidget<MODULE>* recWidget;
+	std::shared_ptr<Font> font;
+	ArenaDragRecordWidget<MODULE>* recWidget;
 	int mixParamIdX;
 	int mixParamIdY;
 	int lastSeqId = -1;
 	int lastSeqSelected = -1;
 
 	ArenaRecordWidget(MODULE* module, int mixParamIdX, int mixParamIdY) {
+		font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
 		this->module = module;
 		this->mixParamIdX = mixParamIdX;
 		this->mixParamIdY = mixParamIdY;
 
-		recWidget = new ArenaDragableRecordWidget<MODULE>;
+		recWidget = new ArenaDragRecordWidget<MODULE>;
 		recWidget->module = module;
 		addChild(recWidget);
 	}
@@ -1253,6 +1374,8 @@ struct ArenaRecordWidget : OpaqueWidget {
 	void draw(const DrawArgs& args) override {
 		if (module && module->seqRec >= 0) {
 			OpaqueWidget::draw(args);
+
+			// Draw raw automation line
 			SeqItem* s = &module->seqData[lastSeqId][lastSeqSelected];
 			if (s->length > 1) {
 				float sizeX = box.size.x - recWidget->box.size.x;
@@ -1274,6 +1397,13 @@ struct ArenaRecordWidget : OpaqueWidget {
 				nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
 				nvgStroke(args.vg);
 			}
+
+			// Draw "REC" text
+			nvgFontSize(args.vg, 22);
+			nvgFontFaceId(args.vg, font->handle);
+			nvgTextLetterSpacing(args.vg, -2.2);
+			nvgFillColor(args.vg, color::mult(color::RED, 0.5f));
+			nvgTextBox(args.vg, box.size.x - 32.f, box.size.y - 6.f, 120, "REC", NULL);
 		}
 	}
 
@@ -1290,6 +1420,8 @@ struct ArenaRecordWidget : OpaqueWidget {
 	}
 };
 
+
+// Various widgets
 
 template < typename MODULE >
 struct ArenaOpDisplay : LedDisplayChoice {
@@ -1415,6 +1547,7 @@ struct ArenaSeqDisplay : LedDisplayChoice {
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("Mix%i", id + 1)));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<SeqMenuItem<MODULE>>(&MenuItem::text, "Sequence", &SeqMenuItem<MODULE>::module, module, &SeqMenuItem<MODULE>::id, id));
+		menu->addChild(construct<SeqInterpolateMenuItem<MODULE>>(&MenuItem::text, "Interpolation", &SeqInterpolateMenuItem<MODULE>::module, module, &SeqInterpolateMenuItem<MODULE>::id, id));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<SeqModeMenuItem<MODULE>>(&MenuItem::text, "SEQ-port", &SeqModeMenuItem<MODULE>::module, module, &SeqModeMenuItem<MODULE>::id, id));
 	}
@@ -1444,10 +1577,10 @@ struct ClickableSmallLight : SmallLight<LIGHT> {
 	void onButton(const event::Button& e) override {
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
 			ArenaModule<8, 2>* m = dynamic_cast<ArenaModule<8, 2>*>(SmallLight<LIGHT>::module);
-			if (m->isSelected(type, id))
-				m->resetSelection();
+			if (m->selectionTest(type, id))
+				m->selectionReset();
 			else
-				m->setSelection(type, id);
+				m->selectionSet(type, id);
 		}
 		SmallLight<LIGHT>::onButton(e);
 	}
@@ -1495,7 +1628,7 @@ struct ArenaWidget : ModuleWidget {
 			addOutput(createOutputCentered<StoermelderPort>(Vec(x, 284.9f), module, MODULE::OUT + i));
 		}
 
-		ArenaAreaWidget<MODULE, 8, 2>* areaWidget = new ArenaAreaWidget<MODULE, 8, 2>(module, MODULE::IN_X_POS, MODULE::IN_Y_POS, MODULE::MIX_X_POS, MODULE::MIX_Y_POS);
+		ArenaPlayWidget<MODULE, 8, 2>* areaWidget = new ArenaPlayWidget<MODULE, 8, 2>(module, MODULE::IN_X_POS, MODULE::IN_Y_POS, MODULE::MIX_X_POS, MODULE::MIX_Y_POS);
 		areaWidget->box.pos = Vec(162.5f, 54.5f);
 		areaWidget->box.size = Vec(290.0f, 241.4f);
 		addChild(areaWidget);
