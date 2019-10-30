@@ -117,10 +117,10 @@ struct RotorAWidget : ModuleWidget {
 
 		addParam(createParamCentered<RoundBlackSnapKnob>(Vec(30.f, 239.6f), module, RotorAModule::CHANNELS_PARAM));
 
-		PolyLedWidget<>* w1 = createWidgetCentered<PolyLedWidget<>>(Vec(30.f, 295.8f));
+		PolyLedWidget<>* w1 = createWidgetCentered<PolyLedWidget<>>(Vec(30.f, 299.8f));
 		w1->setModule(module, RotorAModule::OUTPUT_LIGHTS);
 		addChild(w1);
-		addOutput(createOutputCentered<StoermelderPort>(Vec(30.f, 323.9f), module, RotorAModule::POLY_OUTPUT));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(30.f, 327.9f), module, RotorAModule::POLY_OUTPUT));
 	}
 
 	void appendContextMenu(Menu* menu) override {

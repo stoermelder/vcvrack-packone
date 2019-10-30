@@ -237,80 +237,80 @@ struct FourRoundsWidget : ModuleWidget {
 		addChild(createWidget<MyBlackScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<MyBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(20.4f, 325.0f), module, FourRoundsModule::TRIG_INPUT));
-		addParam(createParamCentered<TL1105>(Vec(40.3f, 312.7f), module, FourRoundsModule::TRIG_PARAM));
-		addInput(createInputCentered<StoermelderPort>(Vec(279.2f, 325.0f), module, FourRoundsModule::INV_INPUT));
-		addParam(createParamCentered<TL1105>(Vec(259.7f, 312.7f), module, FourRoundsModule::INV_PARAM));
+		addInput(createInputCentered<StoermelderPort>(Vec(23.1f, 327.8f), module, FourRoundsModule::TRIG_INPUT));
+		addParam(createParamCentered<TL1105>(Vec(23.1f, 305.0f), module, FourRoundsModule::TRIG_PARAM));
+		addInput(createInputCentered<StoermelderPort>(Vec(277.1f, 327.8f), module, FourRoundsModule::INV_INPUT));
+		addParam(createParamCentered<TL1105>(Vec(277.1f, 305.0f), module, FourRoundsModule::INV_PARAM));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(175.6f, 65.7f), module,  FourRoundsModule::ROUND1_INPUT + 0));
-		addInput(createInputCentered<StoermelderPort>(Vec(222.9f, 85.3f), module,  FourRoundsModule::ROUND1_INPUT + 1));
-		addInput(createInputCentered<StoermelderPort>(Vec(259.0f, 121.5f), module, FourRoundsModule::ROUND1_INPUT + 2));
-		addInput(createInputCentered<StoermelderPort>(Vec(278.6f, 168.7f), module, FourRoundsModule::ROUND1_INPUT + 3));
-		addInput(createInputCentered<StoermelderPort>(Vec(278.6f, 219.8f), module, FourRoundsModule::ROUND1_INPUT + 4));
-		addInput(createInputCentered<StoermelderPort>(Vec(259.0f, 267.1f), module, FourRoundsModule::ROUND1_INPUT + 5));
-		addInput(createInputCentered<StoermelderPort>(Vec(222.9f, 303.2f), module, FourRoundsModule::ROUND1_INPUT + 6));
-		addInput(createInputCentered<StoermelderPort>(Vec(175.6f, 322.8f), module, FourRoundsModule::ROUND1_INPUT + 7));
-		addInput(createInputCentered<StoermelderPort>(Vec(124.4f, 322.8f), module, FourRoundsModule::ROUND1_INPUT + 8));
-		addInput(createInputCentered<StoermelderPort>(Vec(77.2f, 303.2f), module,  FourRoundsModule::ROUND1_INPUT + 9));
-		addInput(createInputCentered<StoermelderPort>(Vec(41.0f, 267.1f), module,  FourRoundsModule::ROUND1_INPUT + 10));
-		addInput(createInputCentered<StoermelderPort>(Vec(21.4f, 219.8f), module,  FourRoundsModule::ROUND1_INPUT + 11));
-		addInput(createInputCentered<StoermelderPort>(Vec(21.4f, 168.7f), module,  FourRoundsModule::ROUND1_INPUT + 12));
-		addInput(createInputCentered<StoermelderPort>(Vec(41.0f, 121.5f), module,  FourRoundsModule::ROUND1_INPUT + 13));
-		addInput(createInputCentered<StoermelderPort>(Vec(77.2f, 85.3f), module,   FourRoundsModule::ROUND1_INPUT + 14));
-		addInput(createInputCentered<StoermelderPort>(Vec(124.4f, 65.7f), module,  FourRoundsModule::ROUND1_INPUT + 15));
+		addInput(createInputCentered<StoermelderPort>(Vec(175.6f, 52.1f), module,  FourRoundsModule::ROUND1_INPUT + 0));
+		addInput(createInputCentered<StoermelderPort>(Vec(222.9f, 71.7f), module,  FourRoundsModule::ROUND1_INPUT + 1));
+		addInput(createInputCentered<StoermelderPort>(Vec(259.0f, 107.8f), module, FourRoundsModule::ROUND1_INPUT + 2));
+		addInput(createInputCentered<StoermelderPort>(Vec(278.6f, 155.1f), module, FourRoundsModule::ROUND1_INPUT + 3));
+		addInput(createInputCentered<StoermelderPort>(Vec(278.6f, 206.2f), module, FourRoundsModule::ROUND1_INPUT + 4));
+		addInput(createInputCentered<StoermelderPort>(Vec(259.0f, 253.5f), module, FourRoundsModule::ROUND1_INPUT + 5));
+		addInput(createInputCentered<StoermelderPort>(Vec(222.9f, 289.7f), module, FourRoundsModule::ROUND1_INPUT + 6));
+		addInput(createInputCentered<StoermelderPort>(Vec(175.6f, 309.2f), module, FourRoundsModule::ROUND1_INPUT + 7));
+		addInput(createInputCentered<StoermelderPort>(Vec(124.4f, 309.2f), module, FourRoundsModule::ROUND1_INPUT + 8));
+		addInput(createInputCentered<StoermelderPort>(Vec(77.2f, 289.7f), module,  FourRoundsModule::ROUND1_INPUT + 9));
+		addInput(createInputCentered<StoermelderPort>(Vec(41.0f, 253.5f), module,  FourRoundsModule::ROUND1_INPUT + 10));
+		addInput(createInputCentered<StoermelderPort>(Vec(21.4f, 206.2f), module,  FourRoundsModule::ROUND1_INPUT + 11));
+		addInput(createInputCentered<StoermelderPort>(Vec(21.4f, 155.1f), module,  FourRoundsModule::ROUND1_INPUT + 12));
+		addInput(createInputCentered<StoermelderPort>(Vec(41.0f, 107.8f), module,  FourRoundsModule::ROUND1_INPUT + 13));
+		addInput(createInputCentered<StoermelderPort>(Vec(77.2f, 71.7f), module,   FourRoundsModule::ROUND1_INPUT + 14));
+		addInput(createInputCentered<StoermelderPort>(Vec(124.4f, 52.1f), module,  FourRoundsModule::ROUND1_INPUT + 15));
 
-		addOutput(createOutputCentered<StoermelderPort>(Vec(187.1f, 104.8f), module, FourRoundsModule::ROUND2_OUTPUT + 0));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(239.5f, 157.2f), module, FourRoundsModule::ROUND2_OUTPUT + 1));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(239.5f, 231.2f), module, FourRoundsModule::ROUND2_OUTPUT + 2));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(187.1f, 283.8f), module, FourRoundsModule::ROUND2_OUTPUT + 3));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(112.9f, 283.8f), module, FourRoundsModule::ROUND2_OUTPUT + 4));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(60.5f, 231.2f), module,  FourRoundsModule::ROUND2_OUTPUT + 5));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(60.5f, 157.2f), module,  FourRoundsModule::ROUND2_OUTPUT + 6));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(112.9f, 104.8f), module, FourRoundsModule::ROUND2_OUTPUT + 7));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(187.1f, 91.2f), module, FourRoundsModule::ROUND2_OUTPUT + 0));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(239.5f, 143.6f), module, FourRoundsModule::ROUND2_OUTPUT + 1));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(239.5f, 217.7f), module, FourRoundsModule::ROUND2_OUTPUT + 2));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(187.1f, 270.2f), module, FourRoundsModule::ROUND2_OUTPUT + 3));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(112.9f, 270.2f), module, FourRoundsModule::ROUND2_OUTPUT + 4));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(60.5f, 217.7f), module,  FourRoundsModule::ROUND2_OUTPUT + 5));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(60.5f, 143.6f), module,  FourRoundsModule::ROUND2_OUTPUT + 6));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(112.9f, 91.2f), module, FourRoundsModule::ROUND2_OUTPUT + 7));
 
-		addOutput(createOutputCentered<StoermelderPort>(Vec(193.4f, 150.9f), module, FourRoundsModule::ROUND3_OUTPUT + 0));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(193.4f, 237.7f), module, FourRoundsModule::ROUND3_OUTPUT + 1));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(106.6f, 237.7f), module, FourRoundsModule::ROUND3_OUTPUT + 2));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(106.6f, 150.9f), module, FourRoundsModule::ROUND3_OUTPUT + 3));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(193.4f, 137.3f), module, FourRoundsModule::ROUND3_OUTPUT + 0));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(193.4f, 224.1f), module, FourRoundsModule::ROUND3_OUTPUT + 1));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(106.6f, 224.1f), module, FourRoundsModule::ROUND3_OUTPUT + 2));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(106.6f, 137.3f), module, FourRoundsModule::ROUND3_OUTPUT + 3));
 
-		addOutput(createOutputCentered<StoermelderPort>(Vec(178.2f, 194.3f), module, FourRoundsModule::ROUND4_OUTPUT + 0));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(121.8f, 194.3f), module, FourRoundsModule::ROUND4_OUTPUT + 1));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(178.2f, 180.7f), module, FourRoundsModule::ROUND4_OUTPUT + 0));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(121.8f, 180.7f), module, FourRoundsModule::ROUND4_OUTPUT + 1));
 
-		addOutput(createOutputCentered<StoermelderPort>(Vec(150.0f, 160.5f), module, FourRoundsModule::WINNER_OUTPUT));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(150.0f, 146.9f), module, FourRoundsModule::WINNER_OUTPUT));
 
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(178.6f, 83.9f), module,  FourRoundsModule::ROUND_LIGHT + 3 * 0));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(207.8f, 96.2f), module,  FourRoundsModule::ROUND_LIGHT + 3 * 1));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(248.0f, 136.5f), module, FourRoundsModule::ROUND_LIGHT + 3 * 2));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(260.3f, 166.1f), module, FourRoundsModule::ROUND_LIGHT + 3 * 3));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(260.3f, 222.2f), module, FourRoundsModule::ROUND_LIGHT + 3 * 4));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(248.0f, 251.7f), module, FourRoundsModule::ROUND_LIGHT + 3 * 5));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(207.8f, 292.2f), module, FourRoundsModule::ROUND_LIGHT + 3 * 6));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(178.6f, 304.5f), module, FourRoundsModule::ROUND_LIGHT + 3 * 7));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(122.0f, 304.5f), module, FourRoundsModule::ROUND_LIGHT + 3 * 8));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(92.4f, 292.2f), module,  FourRoundsModule::ROUND_LIGHT + 3 * 9));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(51.9f, 251.7f), module,  FourRoundsModule::ROUND_LIGHT + 3 * 10));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(39.6f, 222.2f), module,  FourRoundsModule::ROUND_LIGHT + 3 * 11));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(39.6f, 166.1f), module,  FourRoundsModule::ROUND_LIGHT + 3 * 12));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(51.9f, 136.5f), module,  FourRoundsModule::ROUND_LIGHT + 3 * 13));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(92.4f, 96.2f), module,   FourRoundsModule::ROUND_LIGHT + 3 * 14));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(122.0f, 83.9f), module,  FourRoundsModule::ROUND_LIGHT + 3 * 15));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(178.6f, 70.3f), module,  FourRoundsModule::ROUND_LIGHT + 3 * 0));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(207.8f, 82.6f), module,  FourRoundsModule::ROUND_LIGHT + 3 * 1));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(248.0f, 122.9f), module, FourRoundsModule::ROUND_LIGHT + 3 * 2));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(260.3f, 152.5f), module, FourRoundsModule::ROUND_LIGHT + 3 * 3));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(260.3f, 208.6f), module, FourRoundsModule::ROUND_LIGHT + 3 * 4));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(248.0f, 238.1f), module, FourRoundsModule::ROUND_LIGHT + 3 * 5));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(207.8f, 278.5f), module, FourRoundsModule::ROUND_LIGHT + 3 * 6));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(178.6f, 290.8f), module, FourRoundsModule::ROUND_LIGHT + 3 * 7));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(122.0f, 290.8f), module, FourRoundsModule::ROUND_LIGHT + 3 * 8));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(92.4f, 278.5f), module,  FourRoundsModule::ROUND_LIGHT + 3 * 9));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(51.9f, 238.1f), module,  FourRoundsModule::ROUND_LIGHT + 3 * 10));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(39.6f, 208.6f), module,  FourRoundsModule::ROUND_LIGHT + 3 * 11));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(39.6f, 152.5f), module,  FourRoundsModule::ROUND_LIGHT + 3 * 12));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(51.9f, 122.9f), module,  FourRoundsModule::ROUND_LIGHT + 3 * 13));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(92.4f, 82.6f), module,   FourRoundsModule::ROUND_LIGHT + 3 * 14));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(122.0f, 70.3f), module,  FourRoundsModule::ROUND_LIGHT + 3 * 15));
 
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(187.1f, 123.4f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 0)));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(220.8f, 157.1f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 1)));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(220.8f, 231.1f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 2)));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(187.1f, 265.1f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 3)));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(113.1f, 265.1f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 4)));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(79.0f, 231.1f),  module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 5)));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(79.0f, 157.1f),  module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 6)));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(113.1f, 123.4f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 7)));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(187.1f, 109.8f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 0)));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(220.8f, 143.5f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 1)));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(220.8f, 217.5f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 2)));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(187.1f, 251.5f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 3)));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(113.1f, 251.5f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 4)));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(79.0f, 217.5f),  module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 5)));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(79.0f, 143.5f),  module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 6)));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(113.1f, 109.8f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 7)));
 
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(186.2f, 168.1f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 8 + 0)));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(186.2f, 220.5f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 8 + 1)));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(113.8f, 220.5f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 8 + 2)));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(113.8f, 168.1f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 8 + 3)));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(186.2f, 154.5f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 8 + 0)));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(186.2f, 206.9f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 8 + 1)));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(113.8f, 206.9f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 8 + 2)));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(113.8f, 154.5f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 8 + 3)));
 
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(159.9f, 194.3f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 8 + 4 + 0)));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(140.1f, 194.3f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 8 + 4 + 1)));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(159.9f, 180.6f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 8 + 4 + 0)));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(140.1f, 180.6f), module, FourRoundsModule::ROUND_LIGHT + 3 * (16 + 8 + 4 + 1)));
 	}
 
 	void appendContextMenu(Menu *menu) override {

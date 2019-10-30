@@ -140,10 +140,10 @@ struct SipoWidget : ModuleWidget {
 
 		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 258.2f), module, SipoModule::SRC_INPUT));
 
-		PolyLedWidget<GreenRedLight, 2>* w = createWidgetCentered<PolyLedWidget<GreenRedLight, 2>>(Vec(22.5f, 295.8f));
+		PolyLedWidget<GreenRedLight, 2>* w = createWidgetCentered<PolyLedWidget<GreenRedLight, 2>>(Vec(22.5f, 299.8f));
 		w->setModule(module, SipoModule::CHANNEL_LIGHTS);
 		addChild(w);
-		addOutput(createOutputCentered<StoermelderPort>(Vec(22.5f, 323.5f), module, SipoModule::POLY_OUTPUT));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(22.5f, 327.5f), module, SipoModule::POLY_OUTPUT));
 	}
 
 	void appendContextMenu(Menu *menu) override {

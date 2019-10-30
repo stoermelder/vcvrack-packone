@@ -491,25 +491,25 @@ struct EightFaceWidget : ModuleWidget {
 		addChild(createLightCentered<TriangleLeftLight<SmallLight<GreenRedLight>>>(Vec(13.8f, 119.1f), module, EightFaceModule::LEFT_LIGHT));
 		addChild(createLightCentered<TriangleRightLight<SmallLight<GreenRedLight>>>(Vec(31.2f, 119.1f), module, EightFaceModule::RIGHT_LIGHT));
 
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 140.0f), module, EightFaceModule::PRESET_LIGHT + 0 * 3));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 163.6f), module, EightFaceModule::PRESET_LIGHT + 1 * 3));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 187.1f), module, EightFaceModule::PRESET_LIGHT + 2 * 3));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 210.6f), module, EightFaceModule::PRESET_LIGHT + 3 * 3));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 234.2f), module, EightFaceModule::PRESET_LIGHT + 4 * 3));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 257.7f), module, EightFaceModule::PRESET_LIGHT + 5 * 3));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 281.3f), module, EightFaceModule::PRESET_LIGHT + 6 * 3));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 304.8f), module, EightFaceModule::PRESET_LIGHT + 7 * 3));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 143.0f), module, EightFaceModule::PRESET_LIGHT + 0 * 3));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 166.5f), module, EightFaceModule::PRESET_LIGHT + 1 * 3));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 190.1f), module, EightFaceModule::PRESET_LIGHT + 2 * 3));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 213.6f), module, EightFaceModule::PRESET_LIGHT + 3 * 3));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 237.2f), module, EightFaceModule::PRESET_LIGHT + 4 * 3));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 260.7f), module, EightFaceModule::PRESET_LIGHT + 5 * 3));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 284.3f), module, EightFaceModule::PRESET_LIGHT + 6 * 3));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 307.8f), module, EightFaceModule::PRESET_LIGHT + 7 * 3));
 
-		addParam(createParamCentered<TL1105>(Vec(27.6f, 135.8f), module, EightFaceModule::PRESET_PARAM + 0));
-		addParam(createParamCentered<TL1105>(Vec(27.6f, 159.4f), module, EightFaceModule::PRESET_PARAM + 1));
-		addParam(createParamCentered<TL1105>(Vec(27.6f, 182.9f), module, EightFaceModule::PRESET_PARAM + 2));
-		addParam(createParamCentered<TL1105>(Vec(27.6f, 206.4f), module, EightFaceModule::PRESET_PARAM + 3));
-		addParam(createParamCentered<TL1105>(Vec(27.6f, 230.0f), module, EightFaceModule::PRESET_PARAM + 4));
-		addParam(createParamCentered<TL1105>(Vec(27.6f, 253.5f), module, EightFaceModule::PRESET_PARAM + 5));
-		addParam(createParamCentered<TL1105>(Vec(27.6f, 277.1f), module, EightFaceModule::PRESET_PARAM + 6));
-		addParam(createParamCentered<TL1105>(Vec(27.6f, 300.6f), module, EightFaceModule::PRESET_PARAM + 7));
+		addParam(createParamCentered<TL1105>(Vec(27.6f, 138.8f), module, EightFaceModule::PRESET_PARAM + 0));
+		addParam(createParamCentered<TL1105>(Vec(27.6f, 162.3f), module, EightFaceModule::PRESET_PARAM + 1));
+		addParam(createParamCentered<TL1105>(Vec(27.6f, 185.9f), module, EightFaceModule::PRESET_PARAM + 2));
+		addParam(createParamCentered<TL1105>(Vec(27.6f, 209.4f), module, EightFaceModule::PRESET_PARAM + 3));
+		addParam(createParamCentered<TL1105>(Vec(27.6f, 233.0f), module, EightFaceModule::PRESET_PARAM + 4));
+		addParam(createParamCentered<TL1105>(Vec(27.6f, 256.5f), module, EightFaceModule::PRESET_PARAM + 5));
+		addParam(createParamCentered<TL1105>(Vec(27.6f, 280.1f), module, EightFaceModule::PRESET_PARAM + 6));
+		addParam(createParamCentered<TL1105>(Vec(27.6f, 303.6f), module, EightFaceModule::PRESET_PARAM + 7));
 
-		addParam(createParamCentered<CKSSH>(Vec(22.5f, 333.0f), module, EightFaceModule::MODE_PARAM));
+		addParam(createParamCentered<CKSSH>(Vec(22.5f, 336.2f), module, EightFaceModule::MODE_PARAM));
 	}
 
 	

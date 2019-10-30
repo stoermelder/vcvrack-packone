@@ -100,20 +100,20 @@ struct CVMapWidget : ModuleWidget {
 		addChild(createWidget<MyBlackScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<MyBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(26.9f, 74.7f), module, CVMap::POLY_INPUT1));
-		addInput(createInputCentered<StoermelderPort>(Vec(123.1f, 74.7f), module, CVMap::POLY_INPUT2));
+		addInput(createInputCentered<StoermelderPort>(Vec(26.9f, 60.8f), module, CVMap::POLY_INPUT1));
+		addInput(createInputCentered<StoermelderPort>(Vec(123.1f, 60.8f), module, CVMap::POLY_INPUT2));
 
-		PolyLedWidget<> *w0 = createWidgetCentered<PolyLedWidget<>>(Vec(54.2f, 74.7f));
+		PolyLedWidget<> *w0 = createWidgetCentered<PolyLedWidget<>>(Vec(54.2f, 60.8f));
 		w0->setModule(module, CVMap::CHANNEL_LIGHTS1);
 		addChild(w0);
 
-		PolyLedWidget<> *w1 = createWidgetCentered<PolyLedWidget<>>(Vec(95.8f, 74.7f));
+		PolyLedWidget<> *w1 = createWidgetCentered<PolyLedWidget<>>(Vec(95.8f, 60.8f));
 		w1->setModule(module, CVMap::CHANNEL_LIGHTS2);
 		addChild(w1);
 
 		typedef MapModuleDisplay<MAX_CHANNELS, CVMap> TMapDisplay;
-		TMapDisplay *mapWidget = createWidget<TMapDisplay>(Vec(10.6f, 95.3f));
-		mapWidget->box.size = Vec(128.9f, 243.9f);
+		TMapDisplay *mapWidget = createWidget<TMapDisplay>(Vec(10.6f, 81.5f));
+		mapWidget->box.size = Vec(128.9f, 261.7f);
 		mapWidget->setModule(module);
 		addChild(mapWidget);
 	}

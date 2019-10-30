@@ -718,7 +718,7 @@ struct MidiCatDisplay : MapModuleDisplay<MAX_CHANNELS, MidiCatModule, MidiCatCho
 			}
 		}
 
-		LedDisplay::step();
+		MapModuleDisplay<MAX_CHANNELS, MidiCatModule, MidiCatChoice>::step();
 	}
 };
 
@@ -809,8 +809,8 @@ struct MidiCatWidget : ModuleWidget {
 		midiOutputWidget->setMidiPort(module ? &module->midiOutput : NULL);
 		addChild(midiOutputWidget);
 
-		MidiCatDisplay *mapWidget = createWidget<MidiCatDisplay>(Vec(10.0f, 180.0f));
-		mapWidget->box.size = Vec(130.0f, 159.2f);
+		MidiCatDisplay *mapWidget = createWidget<MidiCatDisplay>(Vec(10.0f, 178.5f));
+		mapWidget->box.size = Vec(130.0f, 164.7f);
 		mapWidget->setModule(module);
 		addChild(mapWidget);
 	}

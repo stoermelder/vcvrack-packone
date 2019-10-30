@@ -568,14 +568,14 @@ struct StripWidget : ModuleWidget {
 
 		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 143.1f), module, StripModule::ON_INPUT));
 		addParam(createParamCentered<TL1105>(Vec(22.5f, 166.4f), module, StripModule::ON_PARAM));
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 208.4f), module, StripModule::OFF_INPUT));
-		addParam(createParamCentered<TL1105>(Vec(22.5f, 231.7f), module, StripModule::OFF_PARAM));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 210.4f), module, StripModule::OFF_INPUT));
+		addParam(createParamCentered<TL1105>(Vec(22.5f, 233.7f), module, StripModule::OFF_PARAM));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 273.1f), module, StripModule::RAND_INPUT));
-		addParam(createParamCentered<TL1105>(Vec(22.5f, 296.4f), module, StripModule::RAND_PARAM));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 277.1f), module, StripModule::RAND_INPUT));
+		addParam(createParamCentered<TL1105>(Vec(22.5f, 300.4f), module, StripModule::RAND_PARAM));
 
-		addChild(createLightCentered<SmallLight<GreenRedLight>>(Vec(32.3f, 333.7f), module, StripModule::EXCLUDE_LIGHT));
-		ExcludeButton *button = createParamCentered<ExcludeButton>(Vec(22.5f, 324.0f), module, StripModule::EXCLUDE_PARAM);
+		addChild(createLightCentered<SmallLight<GreenRedLight>>(Vec(32.3f, 337.7f), module, StripModule::EXCLUDE_LIGHT));
+		ExcludeButton *button = createParamCentered<ExcludeButton>(Vec(22.5f, 328.0f), module, StripModule::EXCLUDE_PARAM);
 		button->module = module;
 		addParam(button);
 	}

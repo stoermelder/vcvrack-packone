@@ -55,23 +55,23 @@ struct InfixWidget : ModuleWidget {
 		addInput(createInputCentered<StoermelderPort>(Vec(20.6f, 74.4f), module, InfixModule::POLY_INPUT));
 		addOutput(createOutputCentered<StoermelderPort>(Vec(54.f, 74.4f), module, InfixModule::POLY_OUTPUT));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(20.6f, 132.3f), module, InfixModule::MONO_INPUTS + 0));
-		addInput(createInputCentered<StoermelderPort>(Vec(20.6f, 159.7f), module, InfixModule::MONO_INPUTS + 1));
-		addInput(createInputCentered<StoermelderPort>(Vec(20.6f, 187.1f), module, InfixModule::MONO_INPUTS + 2));
-		addInput(createInputCentered<StoermelderPort>(Vec(20.6f, 214.5f), module, InfixModule::MONO_INPUTS + 3));
-		addInput(createInputCentered<StoermelderPort>(Vec(20.6f, 241.8f), module, InfixModule::MONO_INPUTS + 4));
-		addInput(createInputCentered<StoermelderPort>(Vec(20.6f, 269.2f), module, InfixModule::MONO_INPUTS + 5));
-		addInput(createInputCentered<StoermelderPort>(Vec(20.6f, 296.6f), module, InfixModule::MONO_INPUTS + 6));
-		addInput(createInputCentered<StoermelderPort>(Vec(20.6f, 324.0f), module, InfixModule::MONO_INPUTS + 7));
+		addInput(createInputCentered<StoermelderPort>(Vec(20.6f, 136.3f), module, InfixModule::MONO_INPUTS + 0));
+		addInput(createInputCentered<StoermelderPort>(Vec(20.6f, 163.7f), module, InfixModule::MONO_INPUTS + 1));
+		addInput(createInputCentered<StoermelderPort>(Vec(20.6f, 191.1f), module, InfixModule::MONO_INPUTS + 2));
+		addInput(createInputCentered<StoermelderPort>(Vec(20.6f, 218.5f), module, InfixModule::MONO_INPUTS + 3));
+		addInput(createInputCentered<StoermelderPort>(Vec(20.6f, 245.8f), module, InfixModule::MONO_INPUTS + 4));
+		addInput(createInputCentered<StoermelderPort>(Vec(20.6f, 273.2f), module, InfixModule::MONO_INPUTS + 5));
+		addInput(createInputCentered<StoermelderPort>(Vec(20.6f, 300.6f), module, InfixModule::MONO_INPUTS + 6));
+		addInput(createInputCentered<StoermelderPort>(Vec(20.6f, 328.0f), module, InfixModule::MONO_INPUTS + 7));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(54.f, 132.3f), module, InfixModule::MONO_INPUTS + 8));
-		addInput(createInputCentered<StoermelderPort>(Vec(54.f, 159.7f), module, InfixModule::MONO_INPUTS + 9));
-		addInput(createInputCentered<StoermelderPort>(Vec(54.f, 187.1f), module, InfixModule::MONO_INPUTS + 10));
-		addInput(createInputCentered<StoermelderPort>(Vec(54.f, 214.5f), module, InfixModule::MONO_INPUTS + 11));
-		addInput(createInputCentered<StoermelderPort>(Vec(54.f, 241.8f), module, InfixModule::MONO_INPUTS + 12));
-		addInput(createInputCentered<StoermelderPort>(Vec(54.f, 269.2f), module, InfixModule::MONO_INPUTS + 13));
-		addInput(createInputCentered<StoermelderPort>(Vec(54.f, 296.6f), module, InfixModule::MONO_INPUTS + 14));
-		addInput(createInputCentered<StoermelderPort>(Vec(54.f, 324.0f), module, InfixModule::MONO_INPUTS + 15));
+		addInput(createInputCentered<StoermelderPort>(Vec(54.f, 136.3f), module, InfixModule::MONO_INPUTS + 8));
+		addInput(createInputCentered<StoermelderPort>(Vec(54.f, 163.7f), module, InfixModule::MONO_INPUTS + 9));
+		addInput(createInputCentered<StoermelderPort>(Vec(54.f, 191.1f), module, InfixModule::MONO_INPUTS + 10));
+		addInput(createInputCentered<StoermelderPort>(Vec(54.f, 218.5f), module, InfixModule::MONO_INPUTS + 11));
+		addInput(createInputCentered<StoermelderPort>(Vec(54.f, 245.8f), module, InfixModule::MONO_INPUTS + 12));
+		addInput(createInputCentered<StoermelderPort>(Vec(54.f, 273.2f), module, InfixModule::MONO_INPUTS + 13));
+		addInput(createInputCentered<StoermelderPort>(Vec(54.f, 300.6f), module, InfixModule::MONO_INPUTS + 14));
+		addInput(createInputCentered<StoermelderPort>(Vec(54.f, 328.0f), module, InfixModule::MONO_INPUTS + 15));
 	}
 	
 	void appendContextMenu(Menu* menu) override {

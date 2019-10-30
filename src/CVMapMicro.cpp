@@ -245,7 +245,7 @@ struct CVMapMicroWidget : ModuleWidget {
 		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 255.9f), module, CVMapMicroModule::SCALE_INPUT));
 		addParam(createParamCentered<StoermelderTrimpot>(Vec(22.5f, 280.4f), module, CVMapMicroModule::SCALE_PARAM));
 
-		addOutput(createOutputCentered<StoermelderPort>(Vec(22.5f, 323.4f), module, CVMapMicroModule::OUTPUT));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(22.5f, 327.4f), module, CVMapMicroModule::OUTPUT));
 	}
 
 	void appendContextMenu(Menu* menu) override {

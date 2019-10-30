@@ -318,15 +318,11 @@ struct MapModuleChoice : LedDisplayChoice {
 		if (module->learningId == id) {
 			bgColor = color;
 			bgColor.a = 0.15;
-
-			// HACK
 			if (APP->event->getSelectedWidget() != this)
 				APP->event->setSelected(this);
 		} 
 		else {
 			bgColor = nvgRGBA(0, 0, 0, 0);
-
-			// HACK
 			if (APP->event->getSelectedWidget() == this)
 				APP->event->setSelected(NULL);
 		}
