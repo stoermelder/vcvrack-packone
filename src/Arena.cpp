@@ -114,7 +114,7 @@ struct ArenaModule : Module {
 	SEQINTERPOLATE seqInterpolate[MIX_PORTS];
 	/** [Stored to JSON] */
 	int seqSelected[MIX_PORTS];
-	int seqRec;
+	int seqEdit;
 
 	float dist[MIX_PORTS][IN_PORTS];
 	float offsetX[IN_PORTS];
@@ -160,11 +160,11 @@ struct ArenaModule : Module {
 		for (int i = 0; i < MIX_PORTS; i++) {
 			seqSelected[i] = 0;
 			seqMode[i] = SEQMODE::TRIG_FWD;
-			seqInterpolate[i] = SEQINTERPOLATE::CUBIC;
+			seqInterpolate[i] = SEQINTERPOLATE::LINEAR;
 			paramQuantities[MIX_X_POS + i]->setValue(paramQuantities[MIX_X_POS + i]->getDefaultValue());
 			paramQuantities[MIX_Y_POS + i]->setValue(paramQuantities[MIX_Y_POS + i]->getDefaultValue());
 		}
-		seqRec = -1;
+		seqEdit = -1;
 		Module::onReset();
 	}
 
@@ -357,6 +357,10 @@ struct ArenaModule : Module {
 
 	int seqLength(int port) {
 		return seqData[port][seqSelected[port]].length;
+	}
+
+	void seqClear(int port) {
+		seqData[port][seqSelected[port]].length = 0;
 	}
 
 	Vec seqValue(int port, float pos) {
@@ -710,7 +714,7 @@ struct SeqModeMenuItem : MenuItem {
 		SEQMODE seqMode;
 		
 		void onAction(const event::Action &e) override {
-			if (module->seqRec != id)
+			if (module->seqEdit != id)
 				module->seqMode[id] = seqMode;
 		}
 
@@ -746,7 +750,7 @@ struct SeqInterpolateMenuItem : MenuItem {
 		SEQINTERPOLATE seqInterpolate;
 		
 		void onAction(const event::Action &e) override {
-			if (module->seqRec != id)
+			if (module->seqEdit != id)
 				module->seqInterpolate[id] = seqInterpolate;
 		}
 
@@ -1133,13 +1137,13 @@ struct ArenaPlayWidget : OpaqueWidget {
 	}
 
 	void draw(const DrawArgs& args) override {
-		if (module && module->seqRec < 0) {
+		if (module && module->seqEdit < 0) {
 			OpaqueWidget::draw(args);
 		}
 	}
 
 	void onButton(const event::Button& e) override {
-		if (module->seqRec < 0) {
+		if (module->seqEdit < 0) {
 			if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
 				module->selectionReset();
 			}
@@ -1315,7 +1319,7 @@ struct ArenaDragRecordWidget : OpaqueWidget {
 		box.pos = pos;
 
 		auto now = std::chrono::system_clock::now();
-		if (timerClear || now - timer > std::chrono::milliseconds{100}) {
+		if (timerClear || now - timer > std::chrono::milliseconds{80}) {
 			if (index < SEQ_LENGTH) {
 				float x = pos.x / (parent->box.size.x - box.size.x);
 				float y = pos.y / (parent->box.size.y - box.size.y);
@@ -1357,10 +1361,10 @@ struct ArenaRecordWidget : OpaqueWidget {
 		OpaqueWidget::step();
 		if (!module) return;
 
-		int seqId = module->seqRec;
-		int seqSelected = module->seqSelected[module->seqRec];
+		int seqId = module->seqEdit;
+		int seqSelected = module->seqSelected[module->seqEdit];
 
-		if (module->seqRec >= 0) {
+		if (module->seqEdit >= 0) {
 			if (lastSeqId != seqId || lastSeqSelected != seqSelected)
 				recWidget->init(seqId, seqSelected);
 		}
@@ -1372,7 +1376,14 @@ struct ArenaRecordWidget : OpaqueWidget {
 	}
 
 	void draw(const DrawArgs& args) override {
-		if (module && module->seqRec >= 0) {
+		if (module && module->seqEdit >= 0) {
+			// Draw "EDIT" text
+			nvgFontSize(args.vg, 22);
+			nvgFontFaceId(args.vg, font->handle);
+			nvgTextLetterSpacing(args.vg, -2.2);
+			nvgFillColor(args.vg, color::RED);
+			nvgTextBox(args.vg, box.size.x - 78.f, box.size.y - 6.f, 120, "SEQ-EDIT", NULL);
+
 			OpaqueWidget::draw(args);
 
 			// Draw raw automation line
@@ -1397,13 +1408,6 @@ struct ArenaRecordWidget : OpaqueWidget {
 				nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
 				nvgStroke(args.vg);
 			}
-
-			// Draw "REC" text
-			nvgFontSize(args.vg, 22);
-			nvgFontFaceId(args.vg, font->handle);
-			nvgTextLetterSpacing(args.vg, -2.2);
-			nvgFillColor(args.vg, color::mult(color::RED, 0.5f));
-			nvgTextBox(args.vg, box.size.x - 32.f, box.size.y - 6.f, 120, "REC", NULL);
 		}
 	}
 
@@ -1416,7 +1420,25 @@ struct ArenaRecordWidget : OpaqueWidget {
 				recWidget->clear();
 				e.consume(this);
 			}
+			if (e.button == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT && !e.isConsumed()) {
+				createContextMenu();
+				e.consume(this);
+			}
 		}
+	}
+
+	void createContextMenu() {
+		ui::Menu* menu = createMenu();
+		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Arena sequence"));
+
+		struct ClearItem : MenuItem {
+			MODULE* module;
+			void onAction(const event::Action &e) override {
+				module->seqClear(module->seqEdit);
+			}
+		};
+
+		menu->addChild(construct<ClearItem>(&MenuItem::text, "Clear", &ClearItem::module, module));
 	}
 };
 
@@ -1475,7 +1497,7 @@ struct ArenaOpDisplay : LedDisplayChoice {
 		menu->addChild(construct<InputXMenuItem<MODULE>>(&MenuItem::text, "X-port", &InputXMenuItem<MODULE>::module, module, &InputXMenuItem<MODULE>::id, id));
 		menu->addChild(construct<InputYMenuItem<MODULE>>(&MenuItem::text, "Y-port", &InputYMenuItem<MODULE>::module, module, &InputYMenuItem<MODULE>::id, id));
 		menu->addChild(construct<ModModeMenuItem<MODULE>>(&MenuItem::text, "MOD-port", &ModModeMenuItem<MODULE>::module, module, &ModModeMenuItem<MODULE>::id, id));
-		menu->addChild(construct<OutputModeMenuItem<MODULE>>(&MenuItem::text, "OUTPUT-port", &OutputModeMenuItem<MODULE>::module, module, &OutputModeMenuItem<MODULE>::id, id));
+		menu->addChild(construct<OutputModeMenuItem<MODULE>>(&MenuItem::text, "OUT-port", &OutputModeMenuItem<MODULE>::module, module, &OutputModeMenuItem<MODULE>::id, id));
 	}
 };
 
@@ -1504,12 +1526,12 @@ struct ArenaSeqDisplay : LedDisplayChoice {
 			e.consume(this);
 		}
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
-			if (module->seqRec == id) {
-				module->seqRec = -1;
+			if (module->seqEdit == id) {
+				module->seqEdit = -1;
 				color = nvgRGB(0xf0, 0xf0, 0xf0);
 			}
 			else {
-				module->seqRec = id;
+				module->seqEdit = id;
 				color = color::RED;
 			}
 			e.consume(this);
@@ -1519,7 +1541,7 @@ struct ArenaSeqDisplay : LedDisplayChoice {
 
 	void draw(const DrawArgs& args) override {
 		LedDisplayChoice::draw(args);
-		if (module && module->seqRec == id) {
+		if (module && module->seqEdit == id) {
 			drawHalo(args);
 		}
 	}
@@ -1605,78 +1627,81 @@ struct ArenaWidget : ModuleWidget {
 			float xs[] = { 25.9f, 497.6f };
 			float x = xs[i >= 4] + (i % 4) * 30.433f;
 			int s = i >= 4 ? -1 : 1;
-			addInput(createInputCentered<StoermelderPort>(Vec(x, 65.6f), module, MODULE::IN + i));
-			addInput(createInputCentered<StoermelderPort>(Vec(x, 96.4f), module, MODULE::IN_X_INPUT + i));
-			addParam(createParamCentered<StoermelderTrimpot>(Vec(x, 121.8f), module, MODULE::IN_X_PARAM + i));
-			addParam(createParamCentered<DummyMapButton>(Vec(x + s * 7.8f, 136.1f), module, MODULE::IN_X_POS + i));
-			ClickableSmallLight<GreenLight>* l = createLightCentered<ClickableSmallLight<GreenLight>>(Vec(x, 139.6f), module, MODULE::IN_SEL_LIGHT + i);
+			addInput(createInputCentered<StoermelderPort>(Vec(x, 51.7f), module, MODULE::IN + i));
+			addInput(createInputCentered<StoermelderPort>(Vec(x, 82.5f), module, MODULE::IN_X_INPUT + i));
+			addParam(createParamCentered<StoermelderTrimpot>(Vec(x, 107.9f), module, MODULE::IN_X_PARAM + i));
+			addParam(createParamCentered<DummyMapButton>(Vec(x + s * 7.8f, 122.2f), module, MODULE::IN_X_POS + i));
+			ClickableSmallLight<GreenLight>* l = createLightCentered<ClickableSmallLight<GreenLight>>(Vec(x, 125.9f), module, MODULE::IN_SEL_LIGHT + i);
 			l->id = i;
 			l->type = 0;
 			addChild(l);
-			addParam(createParamCentered<DummyMapButton>(Vec(x - s * 7.8f, 143.1f), module, MODULE::IN_Y_POS + i));
-			addParam(createParamCentered<StoermelderTrimpot>(Vec(x, 157.4f), module, MODULE::IN_Y_PARAM + i));
-			addInput(createInputCentered<StoermelderPort>(Vec(x, 182.8f), module, MODULE::IN_Y_INPUT + i));
+			addParam(createParamCentered<DummyMapButton>(Vec(x - s * 7.8f, 129.2f), module, MODULE::IN_Y_POS + i));
+			addParam(createParamCentered<StoermelderTrimpot>(Vec(x, 143.5f), module, MODULE::IN_Y_PARAM + i));
+			addInput(createInputCentered<StoermelderPort>(Vec(x, 168.9f), module, MODULE::IN_Y_INPUT + i));
 
-			ArenaOpDisplay<MODULE>* arenaOpDisplay = createWidgetCentered<ArenaOpDisplay<MODULE>>(Vec(x, 210.8f));
+			ArenaOpDisplay<MODULE>* arenaOpDisplay = createWidgetCentered<ArenaOpDisplay<MODULE>>(Vec(x, 196.6f));
 			arenaOpDisplay->module = module;
 			arenaOpDisplay->id = i;
 			addChild(arenaOpDisplay);
 
-			addParam(createParamCentered<StoermelderTrimpot>(Vec(x, 230.7f), module, MODULE::MOD_PARAM + i));
-			addInput(createInputCentered<StoermelderPort>(Vec(x, 253.9f), module, MODULE::MOD_INPUT + i));
+			addParam(createParamCentered<StoermelderTrimpot>(Vec(x, 216.8f), module, MODULE::MOD_PARAM + i));
+			addInput(createInputCentered<StoermelderPort>(Vec(x, 240.0f), module, MODULE::MOD_INPUT + i));
 
-			addOutput(createOutputCentered<StoermelderPort>(Vec(x, 284.9f), module, MODULE::OUT + i));
+			addOutput(createOutputCentered<StoermelderPort>(Vec(x, 271.0f), module, MODULE::OUT + i));
 		}
 
 		ArenaPlayWidget<MODULE, 8, 2>* areaWidget = new ArenaPlayWidget<MODULE, 8, 2>(module, MODULE::IN_X_POS, MODULE::IN_Y_POS, MODULE::MIX_X_POS, MODULE::MIX_Y_POS);
-		areaWidget->box.pos = Vec(162.5f, 54.5f);
-		areaWidget->box.size = Vec(290.0f, 241.4f);
+		areaWidget->box.pos = Vec(164.3f, 41.0f);
+		areaWidget->box.size = Vec(286.4f, 250.0f);
 		addChild(areaWidget);
 
 		ArenaRecordWidget<MODULE>* recordWidget = new ArenaRecordWidget<MODULE>(module, MODULE::MIX_X_POS, MODULE::MIX_Y_POS);
-		recordWidget->box.pos = Vec(162.5f, 54.5f);
-		recordWidget->box.size = Vec(290.0f, 241.4f);
+		recordWidget->box.pos = Vec(164.3f, 41.0f);
+		recordWidget->box.size = Vec(286.4f, 250.0f);
 		addChild(recordWidget);
 
 		// MIX1
-		addInput(createInputCentered<StoermelderPort>(Vec(25.9f, 323.4f), module, MODULE::MIX_X_INPUT + 0));
-		addParam(createParamCentered<StoermelderTrimpot>(Vec(53.9f, 323.4f), module, MODULE::MIX_X_PARAM + 0));
-		addParam(createParamCentered<DummyMapButton>(Vec(68.4f, 331.0f), module, MODULE::MIX_X_POS + 0));
-		ClickableSmallLight<GreenLight>* l1 = createLightCentered<ClickableSmallLight<GreenLight>>(Vec(71.7f, 323.4f), module, MODULE::MIX_SEL_LIGHT + 0);
+		addInput(createInputCentered<StoermelderPort>(Vec(25.9f, 327.3f), module, MODULE::MIX_X_INPUT + 0));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(53.9f, 327.3f), module, MODULE::MIX_X_PARAM + 0));
+		addParam(createParamCentered<DummyMapButton>(Vec(68.4f, 334.9f), module, MODULE::MIX_X_POS + 0));
+		ClickableSmallLight<GreenLight>* l1 = createLightCentered<ClickableSmallLight<GreenLight>>(Vec(71.7f, 327.3f), module, MODULE::MIX_SEL_LIGHT + 0);
 		l1->id = 0;
 		l1->type = 1;
 		addChild(l1);
-		addParam(createParamCentered<DummyMapButton>(Vec(75.4f, 315.8f), module, MODULE::MIX_Y_POS + 0));
-		addParam(createParamCentered<StoermelderTrimpot>(Vec(89.4f, 323.4f), module, MODULE::MIX_Y_PARAM + 0));
-		addInput(createInputCentered<StoermelderPort>(Vec(117.2f, 323.4f), module, MODULE::MIX_Y_INPUT + 0));
+		addParam(createParamCentered<DummyMapButton>(Vec(75.4f, 319.7f), module, MODULE::MIX_Y_POS + 0));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(89.4f, 327.3f), module, MODULE::MIX_Y_PARAM + 0));
+		addInput(createInputCentered<StoermelderPort>(Vec(117.2f, 327.3f), module, MODULE::MIX_Y_INPUT + 0));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(173.9f, 323.4f), module, MODULE::SEQ_INPUT + 0));
-		ArenaSeqDisplay<MODULE>* arenaSeqDisplay1 = createWidgetCentered<ArenaSeqDisplay<MODULE>>(Vec(206.5, 325.4f));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(150.2f, 327.3f), module, MODULE::MIX_OUTPUT + 0));
+
+		addInput(createInputCentered<StoermelderPort>(Vec(183.2f, 327.3f), module, MODULE::SEQ_INPUT + 0));
+		ArenaSeqDisplay<MODULE>* arenaSeqDisplay1 = createWidgetCentered<ArenaSeqDisplay<MODULE>>(Vec(208.2, 327.3f));
 		arenaSeqDisplay1->module = module;
 		arenaSeqDisplay1->id = 0;
 		addChild(arenaSeqDisplay1);
-		addInput(createInputCentered<StoermelderPort>(Vec(239.0f, 323.4f), module, MODULE::SEQ_PH_INPUT + 0));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(288.0f, 323.4f), module, MODULE::MIX_OUTPUT + 0));
+		addInput(createInputCentered<StoermelderPort>(Vec(233.2f, 327.3f), module, MODULE::SEQ_PH_INPUT + 0));
+
 
 		// MIX2
-		addOutput(createOutputCentered<StoermelderPort>(Vec(327.5f, 323.4f), module, MODULE::MIX_OUTPUT + 1));
-		addInput(createInputCentered<StoermelderPort>(Vec(376.0f, 323.4f), module, MODULE::SEQ_PH_INPUT + 1));
-		ArenaSeqDisplay<MODULE>* arenaSeqDisplay2 = createWidgetCentered<ArenaSeqDisplay<MODULE>>(Vec(408.6, 325.4f));
+		addInput(createInputCentered<StoermelderPort>(Vec(381.9f, 327.3f), module, MODULE::SEQ_PH_INPUT + 1));
+		ArenaSeqDisplay<MODULE>* arenaSeqDisplay2 = createWidgetCentered<ArenaSeqDisplay<MODULE>>(Vec(406.9, 327.3f));
 		arenaSeqDisplay2->module = module;
 		arenaSeqDisplay2->id = 1;
 		addChild(arenaSeqDisplay2);
-		addInput(createInputCentered<StoermelderPort>(Vec(441.1f, 323.4f), module, MODULE::SEQ_INPUT + 1));
+		addInput(createInputCentered<StoermelderPort>(Vec(431.9f, 327.3f), module, MODULE::SEQ_INPUT + 1));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(497.7f, 323.4f), module, MODULE::MIX_X_INPUT + 1));
-		addParam(createParamCentered<StoermelderTrimpot>(Vec(525.6f, 323.4f), module, MODULE::MIX_X_PARAM + 1));
-		addParam(createParamCentered<DummyMapButton>(Vec(539.9f, 315.8f), module, MODULE::MIX_X_POS + 1));
-		ClickableSmallLight<GreenLight>* l2 = createLightCentered<ClickableSmallLight<GreenLight>>(Vec(543.4f, 323.4f), module, MODULE::MIX_SEL_LIGHT + 1);
+		addOutput(createOutputCentered<StoermelderPort>(Vec(464.8f, 327.3f), module, MODULE::MIX_OUTPUT + 1));
+
+		addInput(createInputCentered<StoermelderPort>(Vec(497.7f, 327.3f), module, MODULE::MIX_X_INPUT + 1));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(525.6f, 327.3f), module, MODULE::MIX_X_PARAM + 1));
+		addParam(createParamCentered<DummyMapButton>(Vec(539.9f, 319.7f), module, MODULE::MIX_X_POS + 1));
+		ClickableSmallLight<GreenLight>* l2 = createLightCentered<ClickableSmallLight<GreenLight>>(Vec(543.4f, 327.3f), module, MODULE::MIX_SEL_LIGHT + 1);
 		l2->id = 1;
 		l2->type = 1;
 		addChild(l2);
-		addParam(createParamCentered<DummyMapButton>(Vec(546.9f, 331.0f), module, MODULE::MIX_Y_POS + 1));
-		addParam(createParamCentered<StoermelderTrimpot>(Vec(561.2f, 323.4f), module, MODULE::MIX_Y_PARAM + 1));
-		addInput(createInputCentered<StoermelderPort>(Vec(589.2f, 323.4f), module, MODULE::MIX_Y_INPUT + 1));
+		addParam(createParamCentered<DummyMapButton>(Vec(546.9f, 334.9f), module, MODULE::MIX_Y_POS + 1));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(561.2f, 327.3f), module, MODULE::MIX_Y_PARAM + 1));
+		addInput(createInputCentered<StoermelderPort>(Vec(589.2f, 327.3f), module, MODULE::MIX_Y_INPUT + 1));
 	}
 
 	void appendContextMenu(Menu* menu) override {
