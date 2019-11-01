@@ -19,4 +19,5 @@ extern Model *modelMidiCat;
 extern Model *modelSipo;
 extern Model *modelFourRounds;
 extern Model *modelArena;
+extern Model *modelTurnSeq;
 extern Model *modelAudioInterface64;

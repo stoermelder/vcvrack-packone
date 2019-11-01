@@ -105,6 +105,13 @@
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Arena.md"
 		},
 		{
+			"slug": "TurnSeq",
+			"name": "TURN-SEQ",
+			"description": "",
+			"tags": ["Sequencer"],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/TurnSeq.md"
+		},
+		{
 			"slug": "AudioInterface64",
 			"name": "AUDIO-64",
 			"description": "Sends CV and audio to/from an audio device",
