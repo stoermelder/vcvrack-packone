@@ -46,7 +46,7 @@ Some modes for playback have been implemented:
 - Sequence loop (added in v1.0.4): playback loops through all sequences.
 - Sequence random (added in v1.1.0): playback walks randomly through all sequences.
 
-You can use the PHASE-input if you want a different playback speed or a completely different playback pattern.
+You can use the PHASE-input if you want a different playback speed or a completely different playback pattern. Additionally you change the SMTH-parameter for smoothing the recorded curve and for value jumps on sequence end or sequence change (added in v1.3.0).
 
 ### SEQ#-input
 

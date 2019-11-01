@@ -1,63 +1,68 @@
 ### 1.3.0 (in development)
 
-- Module ReMOVE Lite
+- Module [ARENA](./docs/Arena.md)
+    - New module, 2-dimensional XY-Mixer for 8 sound sources with various modulation targets and graphical interface
+- Module [TURN-SEQ](./docs/TurnSeq.md)
+    - New module, 4 channel trigger-sequencer running on a 2-dimensional grid
+- Module [ReMOVE Lite](./docs/ReMove.md)
     - Added option to start playing after recording automatically
+    - Added SMTH-parameter for linear smoothing espacially on jumps at sequence end and sequence change (#14)
 
 ### 1.2.0
 
-- Module 4ROUNDS
+- Module [4ROUNDS](./docs/FourRounds.md)
     - New module, randomizer for up to 16 input signals to create 15 output signals
-- Module SIPO
+- Module [SIPO](./docs/Sipo.md)
     - New module, serial-in parallel-out shift register with polyphonic output and CV controls for skipping and incrementing on sampled values
-- Module 8FACE
+- Module [8FACE](./docs/EightFace.md)
     - Added option to switch between left and right side controlled module (#50)
     - Follow voltage standards for Rack (ignore SLOT for 1ms after trigger on RESET)
-- Module µMAP
+- Module [µMAP](./docs/CVMapMicro.md)
     - Added option to invert output (#46)
     - Selected voltage range (-5V..5V or 0V..10V) is also used for OUT-port
-- Module ReMOVE Lite
+- Module [ReMOVE Lite](./docs/ReMove.md)
     - Value is set to the mapped parameter when using IN-port for recording (#48)
     - Added EOC-mode for OUT-port (#47)
     - Follow voltage standards for Rack (ignore SEQ# for 1ms after trigger on RESET)
-- Module STRIP
+- Module [STRIP](./docs/Strip.md)
     - Changed LEDs to triangle shape
     - Load and save dialogs default to "patches" folder of the current user (#41)
 - All stoermelder-modules are now shipped with dark mounting-screws, improved jack-ports and handy trimpots
 
 ### 1.1.0
 
-- Module MIDI-CAT
+- Module [MIDI-CAT](./docs/MidiCat.md)
     - New module, mapping module similar to VCV's MIDI-MAP with midi feedback, note mapping and cc pickup-mode
-- Module 8FACE
+- Module [8FACE](./docs/EightFace.md)
     - Using additional worker thread for applying presets to avoid engine deadlock on some modules (especially using parameter mapping)
     - Added trigger modes "reverse", "pingpong" and "random" for SLOT-port
     - Renamed "Clock"-mode to "Arm" for SLOT-port
     - Added option to autoload first preset on load of 8FACE presets
     - Fixed unusable SLOT-modes "0..10V" and "C4..G4"
-- Module µMAP
+- Module [µMAP](./docs/CVMapMicro.md)
     - Added ventilation holes on the panel to prevent overheating
-- Module ReMOVE Lite
+- Module [ReMOVE Lite](./docs/ReMove.md)
     - Added playmode "sequence random" which walks randomly through all sequences
-- Module STRIP
+- Module [STRIP](./docs/Strip.md)
     - Added button INC/EXC for including or excluding specific module parameter from randomization
-- Modules CV-MAP, CV-PAM, ReMOVE Lite, µMAP
+- Modules [CV-MAP](./docs/CVMap.md), [CV-PAM](./docs/CVPam.md), [ReMOVE Lite](./docs/ReMove.md), [µMAP](./docs/CVMapMicro.md)
     - Fixed crash of Rack if deleting the module while in mapping mode
 
 ### 1.0.5
 
-- Module 8FACE
+- Module [8FACE](./docs/EightFace.md)
     - New module, preset sequencer for 8 presets of any module ([docs](./docs/EightFace.md))
-- Module STRIP
+- Module [STRIP](./docs/Strip.md)
     - Added "cut" for cut & paste in the context menu
-- Module ReMOVE Lite
+- Module [ReMOVE Lite](./docs/ReMove.md)
     - Added random automation-curves on "Randomize" of the module
     - Starting a recording generates an item in the Rack undo-history
 
 ### 1.0.4
 
-- Module STRIP
+- Module [STRIP](./docs/Strip.md)
     - New module, manage a group of modules in a patch, providing load, save as, disable and randomize ([docs](./docs/Strip.md))
-- Module ReMOVE Lite
+- Module [ReMOVE Lite](./docs/ReMove.md)
     - LEDs for RUN and RESET turn red when using PHASE-input
     - Added play mode "Sequence Loop"
     - Added record mode "Sample & Hold"
@@ -67,35 +72,35 @@
 
 ### 1.0.3
 
-- Module INFIX
-    - New module, insert for polyphonic cables ([docs](./docs/Infix.md))
-- Module µMAP
+- Module [INFIX](./docs/Infix.md)
+    - New module, insert for polyphonic cables
+- Module [µMAP](./docs/CVMapMicro.md)
     - Fixed bug causing "damaged" module panels (array out of bounds)
 
 ### 1.0.2
 
-- Module ReMOVE Lite
-    - New module, allows recording of parameter automation of knobs, switches or sliders ([docs](./docs/ReMove.md))
-- Module BOLT
-    - New module, polyphonic modulateable boolean functions ([docs](./docs/Bolt.md))
-- Module µMAP
-    - New module, a single slot version of CV-PAM with attenuverter and output port ([docs](./docs/CVMapMicro.md))
-- Modules CV-MAP, CV-PAM
+- Module [ReMOVE Lite](./docs/ReMove.md)
+    - New module, allows recording of parameter automation of knobs, switches or sliders
+- Module [BOLT](./docs/Bolt.md)
+    - New module, polyphonic modulateable boolean functions
+- Module [µMAP](./docs/CVMapMicro.md)
+    - New module, a single slot version of [CV-MAP](./docs/CVMap.md) with attenuverter and output port
+- Modules [CV-MAP](./docs/CVMap.md), [CV-PAM](./docs/CVPam.md)
     - Added context menu option (on LED display) to locate and blink indicator for mapped slots
     - Added context menu option to disable text scrolling
     - Added context menu option linking the online manual
     - Improved panels
-- Module ROTOR Model A
+- Module [ROTOR Model A](./docs/RotorA.md)
     - Reduced panel width
     
 ### 1.0.0
 
-- Module ROTOR Model A
+- Module [ROTOR Model A](./docs/RotorA.md)
     - New module
-- Module CV-MAP
+- Module [CV-MAP](./docs/CVMap.md)
     - Added text scrolling for longer module and parameter names
     - Added context menu option to allow manual target parameter changes (Locked/Unlocked)
-- Module CV-PAM
+- Module [CV-PAM](./docs/CVPam.md)
     - Added text scrolling for longer module and parameter names
 
 ### 1.0.0-rc

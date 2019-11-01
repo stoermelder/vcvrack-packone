@@ -68,6 +68,7 @@ struct ReMoveModule : MapModule<1> {
         REC_PARAM,
         SEQP_PARAM,
         SEQN_PARAM,
+        SLEW_PARAM,
         NUM_PARAMS
     };
     enum InputIds {
@@ -131,7 +132,8 @@ struct ReMoveModule : MapModule<1> {
 
     /** [Stored to JSON] sample rate for recording */
     float sampleRate = 1.f/60.f;
-    float sampleTime;
+
+    float engineSampleTime;
     dsp::Timer sampleTimer;
 
     /** [Stored to JSON] mode for playback */
@@ -156,6 +158,8 @@ struct ReMoveModule : MapModule<1> {
     dsp::BooleanTrigger recTrigger;
     dsp::PulseGenerator outCvPulse;
 
+    dsp::SlewLimiter slewLimiter;
+
 	dsp::ClockDivider lightDivider;
 
     /** last touched parameter to avoid frequent dynamic casting */
@@ -171,6 +175,7 @@ struct ReMoveModule : MapModule<1> {
         configParam(RUN_PARAM, 0.0f, 1.0f, 0.0f, "Run");
         configParam(RESET_PARAM, 0.0f, 1.0f, 0.0f, "Reset");
         configParam(REC_PARAM, 0.0f, 1.0f, 0.0f, "Record");
+        configParam(SLEW_PARAM, 0.0f, 0.975f, 0.0f, "Slew");
 
         seqData = new float[REMOVE_MAX_DATA];
         paramHandles[0].color = nvgRGB(0x40, 0xff, 0xff);
@@ -194,12 +199,12 @@ struct ReMoveModule : MapModule<1> {
         dataPtr = 0;
         sampleTimer.reset();
         seq = 0;
-        seqResize(4); 
+        seqResize(4);
         valueFilters[0].reset();
     }
 
     void process(const ProcessArgs &args) override {
-        sampleTime = args.sampleTime;
+        engineSampleTime = args.sampleTime;
         outputs[REC_OUTPUT].setVoltage(0);
 
         // Toggle record when button is pressed
@@ -377,7 +382,6 @@ struct ReMoveModule : MapModule<1> {
                     if (isPlaying && seqLength[seq] > 0) {
                         float v = seqData[dataPtr];
                         dataPtr = dataPtr + playDir;
-                        v = valueFilters[0].process(args.sampleTime, v);
                         setValue(v, paramQuantity);
                         if (dataPtr == seqLow + seqLength[seq] && playDir == REMOVE_PLAYDIR_FWD) {
                             switch (playMode) {
@@ -399,8 +403,7 @@ struct ReMoveModule : MapModule<1> {
                     }
                     sampleTimer.reset();
                 }
-                if (outCvMode == OUTCVMODE_EOC)
-                    outputs[CV_OUTPUT].setVoltage(outCvPulse.process(sampleTime));
+                processSetValue();
             }
             else {
                 // Not playing and not recording -> bypass input to output for empty sequences
@@ -454,18 +457,25 @@ struct ReMoveModule : MapModule<1> {
             ParamQuantity *paramQuantity = getParamQuantity(0);
             if (paramQuantity) {
                 v = paramQuantity->getScaledValue();
-                v = valueFilters[0].process(sampleTime, v);
+                v = valueFilters[0].process(engineSampleTime, v);
             }
         }
         return v;
     }
 
     inline void setValue(float v, ParamQuantity *paramQuantity = NULL) {
+        //v = valueFilters[0].process(sampleTime, v);
+        if (params[SLEW_PARAM].getValue() > 0.f) {
+            float s = 100.f * (1.f - params[SLEW_PARAM].getValue());
+            slewLimiter.setRiseFall(s, s);
+            v = slewLimiter.process(sampleRate, v);
+        }
+
         if (paramQuantity) {
             paramQuantity->setScaledValue(v);
         }
         switch (outCvMode) {
-            case OUTCVMODE_CV_UNI: 
+            case OUTCVMODE_CV_UNI:
                 outputs[CV_OUTPUT].setVoltage(rescale(v, 0.f, 1.f, 0.f, 10.f));
                 break;
             case OUTCVMODE_CV_BI:
@@ -488,6 +498,12 @@ struct ReMoveModule : MapModule<1> {
                     outCvPulse.trigger();
                 }
                 break;
+        }
+    }
+
+    inline void processSetValue() {
+        if (outCvMode == OUTCVMODE_EOC) {
+            outputs[CV_OUTPUT].setVoltage(outCvPulse.process(engineSampleTime));
         }
     }
 
@@ -1186,20 +1202,20 @@ struct ReMoveWidget : ModuleWidget {
         addParam(createParamCentered<TL1105>(Vec(45.f, 256.3f), module, ReMoveModule::RESET_PARAM));
         addChild(createLightCentered<SmallLight<GreenRedLight>>(Vec(13.1f, 260.5f), module, ReMoveModule::RESET_LIGHT));
 
-        addInput(createInputCentered<StoermelderPort>(Vec(68.7f, 200.1f), module, ReMoveModule::PHASE_INPUT));
-
-        addInput(createInputCentered<StoermelderPort>(Vec(21.1f, 336.8f), module, ReMoveModule::CV_INPUT));      
+        addInput(createInputCentered<StoermelderPort>(Vec(21.1f, 336.8f), module, ReMoveModule::CV_INPUT));
         addOutput(createOutputCentered<StoermelderPort>(Vec(68.7f, 336.8f), module, ReMoveModule::CV_OUTPUT));
 
-        addInput(createInputCentered<StoermelderPort>(Vec(21.1f, 294.1f), module, ReMoveModule::REC_INPUT));      
+        addInput(createInputCentered<StoermelderPort>(Vec(21.1f, 294.1f), module, ReMoveModule::REC_INPUT));
         addOutput(createOutputCentered<StoermelderPort>(Vec(68.7f, 294.1f), module, ReMoveModule::REC_OUTPUT));
 
-        addParam(createParamCentered<RecButton>(Vec(44.8f, 151.4f), module, ReMoveModule::REC_PARAM));
-        addChild(createLightCentered<RecLight>(Vec(44.8f, 151.4f), module, ReMoveModule::REC_LIGHT));
+        addParam(createParamCentered<RecButton>(Vec(45.0f, 151.4f), module, ReMoveModule::REC_PARAM));
+        addChild(createLightCentered<RecLight>(Vec(45.0f, 151.4f), module, ReMoveModule::REC_LIGHT));
 
         addInput(createInputCentered<StoermelderPort>(Vec(21.1f, 200.1f), module, ReMoveModule::SEQ_INPUT));
         addParam(createParamCentered<TL1105>(Vec(21.1f, 131.9f), module, ReMoveModule::SEQP_PARAM));
         addParam(createParamCentered<TL1105>(Vec(68.7f, 131.9), module, ReMoveModule::SEQN_PARAM));
+        addParam(createParamCentered<StoermelderTrimpot>(Vec(45.0f, 187.2f), module, ReMoveModule::SLEW_PARAM));
+        addInput(createInputCentered<StoermelderPort>(Vec(68.7f, 200.1f), module, ReMoveModule::PHASE_INPUT));
 
         MapModuleDisplay<1, ReMoveModule> *mapWidget = createWidget<MapModuleDisplay<1, ReMoveModule>>(Vec(6.8f, 36.4f));
         mapWidget->box.size = Vec(76.2f, 23.f);
