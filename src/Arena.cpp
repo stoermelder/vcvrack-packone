@@ -1045,7 +1045,7 @@ struct ArenaInputPlayWidget : ArenaDragPlayWidget<MODULE> {
 		menu->addChild(construct<InputXMenuItem<MODULE>>(&MenuItem::text, "X-port", &InputXMenuItem<MODULE>::module, AW::module, &InputXMenuItem<MODULE>::id, AW::id));
 		menu->addChild(construct<InputYMenuItem<MODULE>>(&MenuItem::text, "Y-port", &InputYMenuItem<MODULE>::module, AW::module, &InputYMenuItem<MODULE>::id, AW::id));
 		menu->addChild(construct<ModModeMenuItem<MODULE>>(&MenuItem::text, "MOD-port", &ModModeMenuItem<MODULE>::module, AW::module, &ModModeMenuItem<MODULE>::id, AW::id));
-		menu->addChild(construct<OutputModeMenuItem<MODULE>>(&MenuItem::text, "OUTPUT-port", &OutputModeMenuItem<MODULE>::module, AW::module, &OutputModeMenuItem<MODULE>::id, AW::id));
+		menu->addChild(construct<OutputModeMenuItem<MODULE>>(&MenuItem::text, "OUT-port", &OutputModeMenuItem<MODULE>::module, AW::module, &OutputModeMenuItem<MODULE>::id, AW::id));
 	}
 };
 
@@ -1624,40 +1624,40 @@ struct ArenaWidget : ModuleWidget {
 		addChild(createWidget<MyBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
 		for (int i = 0; i < 8; i++) {
-			float xs[] = { 25.9f, 497.6f };
+			float xs[] = { 25.9f, 512.6f };
 			float x = xs[i >= 4] + (i % 4) * 30.433f;
 			int s = i >= 4 ? -1 : 1;
-			addInput(createInputCentered<StoermelderPort>(Vec(x, 51.7f), module, MODULE::IN + i));
-			addInput(createInputCentered<StoermelderPort>(Vec(x, 82.5f), module, MODULE::IN_X_INPUT + i));
-			addParam(createParamCentered<StoermelderTrimpot>(Vec(x, 107.9f), module, MODULE::IN_X_PARAM + i));
-			addParam(createParamCentered<DummyMapButton>(Vec(x + s * 7.8f, 122.2f), module, MODULE::IN_X_POS + i));
-			ClickableSmallLight<GreenLight>* l = createLightCentered<ClickableSmallLight<GreenLight>>(Vec(x, 125.9f), module, MODULE::IN_SEL_LIGHT + i);
+			addInput(createInputCentered<StoermelderPort>(Vec(x, 58.5f), module, MODULE::IN + i));
+			addInput(createInputCentered<StoermelderPort>(Vec(x, 90.0f), module, MODULE::IN_X_INPUT + i));
+			addParam(createParamCentered<StoermelderTrimpot>(Vec(x, 116.1f), module, MODULE::IN_X_PARAM + i));
+			addParam(createParamCentered<DummyMapButton>(Vec(x + s * 7.8f, 130.4f), module, MODULE::IN_X_POS + i));
+			ClickableSmallLight<GreenLight>* l = createLightCentered<ClickableSmallLight<GreenLight>>(Vec(x, 133.9f), module, MODULE::IN_SEL_LIGHT + i);
 			l->id = i;
 			l->type = 0;
 			addChild(l);
-			addParam(createParamCentered<DummyMapButton>(Vec(x - s * 7.8f, 129.2f), module, MODULE::IN_Y_POS + i));
-			addParam(createParamCentered<StoermelderTrimpot>(Vec(x, 143.5f), module, MODULE::IN_Y_PARAM + i));
-			addInput(createInputCentered<StoermelderPort>(Vec(x, 168.9f), module, MODULE::IN_Y_INPUT + i));
+			addParam(createParamCentered<DummyMapButton>(Vec(x - s * 7.8f, 137.4f), module, MODULE::IN_Y_POS + i));
+			addParam(createParamCentered<StoermelderTrimpot>(Vec(x, 151.7f), module, MODULE::IN_Y_PARAM + i));
+			addInput(createInputCentered<StoermelderPort>(Vec(x, 177.8f), module, MODULE::IN_Y_INPUT + i));
 
-			ArenaOpDisplay<MODULE>* arenaOpDisplay = createWidgetCentered<ArenaOpDisplay<MODULE>>(Vec(x, 196.6f));
+			ArenaOpDisplay<MODULE>* arenaOpDisplay = createWidgetCentered<ArenaOpDisplay<MODULE>>(Vec(x, 205.4f));
 			arenaOpDisplay->module = module;
 			arenaOpDisplay->id = i;
 			addChild(arenaOpDisplay);
 
-			addParam(createParamCentered<StoermelderTrimpot>(Vec(x, 216.8f), module, MODULE::MOD_PARAM + i));
-			addInput(createInputCentered<StoermelderPort>(Vec(x, 240.0f), module, MODULE::MOD_INPUT + i));
+			addParam(createParamCentered<StoermelderTrimpot>(Vec(x, 225.5f), module, MODULE::MOD_PARAM + i));
+			addInput(createInputCentered<StoermelderPort>(Vec(x, 248.8f), module, MODULE::MOD_INPUT + i));
 
-			addOutput(createOutputCentered<StoermelderPort>(Vec(x, 271.0f), module, MODULE::OUT + i));
+			addOutput(createOutputCentered<StoermelderPort>(Vec(x, 279.8f), module, MODULE::OUT + i));
 		}
 
 		ArenaPlayWidget<MODULE, 8, 2>* areaWidget = new ArenaPlayWidget<MODULE, 8, 2>(module, MODULE::IN_X_POS, MODULE::IN_Y_POS, MODULE::MIX_X_POS, MODULE::MIX_Y_POS);
-		areaWidget->box.pos = Vec(164.3f, 41.0f);
-		areaWidget->box.size = Vec(286.4f, 250.0f);
+		areaWidget->box.pos = Vec(165.7f, 41.0f);
+		areaWidget->box.size = Vec(298.5f, 250.0f);
 		addChild(areaWidget);
 
 		ArenaRecordWidget<MODULE>* recordWidget = new ArenaRecordWidget<MODULE>(module, MODULE::MIX_X_POS, MODULE::MIX_Y_POS);
-		recordWidget->box.pos = Vec(164.3f, 41.0f);
-		recordWidget->box.size = Vec(286.4f, 250.0f);
+		recordWidget->box.pos = Vec(165.7f, 41.0f);
+		recordWidget->box.size = Vec(298.5f, 250.0f);
 		addChild(recordWidget);
 
 		// MIX1
@@ -1683,25 +1683,25 @@ struct ArenaWidget : ModuleWidget {
 
 
 		// MIX2
-		addInput(createInputCentered<StoermelderPort>(Vec(381.9f, 327.3f), module, MODULE::SEQ_PH_INPUT + 1));
-		ArenaSeqDisplay<MODULE>* arenaSeqDisplay2 = createWidgetCentered<ArenaSeqDisplay<MODULE>>(Vec(406.9, 327.3f));
+		addInput(createInputCentered<StoermelderPort>(Vec(396.9f, 327.3f), module, MODULE::SEQ_PH_INPUT + 1));
+		ArenaSeqDisplay<MODULE>* arenaSeqDisplay2 = createWidgetCentered<ArenaSeqDisplay<MODULE>>(Vec(421.9, 327.3f));
 		arenaSeqDisplay2->module = module;
 		arenaSeqDisplay2->id = 1;
 		addChild(arenaSeqDisplay2);
-		addInput(createInputCentered<StoermelderPort>(Vec(431.9f, 327.3f), module, MODULE::SEQ_INPUT + 1));
+		addInput(createInputCentered<StoermelderPort>(Vec(446.9f, 327.3f), module, MODULE::SEQ_INPUT + 1));
 
-		addOutput(createOutputCentered<StoermelderPort>(Vec(464.8f, 327.3f), module, MODULE::MIX_OUTPUT + 1));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(479.8f, 327.3f), module, MODULE::MIX_OUTPUT + 1));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(497.7f, 327.3f), module, MODULE::MIX_X_INPUT + 1));
-		addParam(createParamCentered<StoermelderTrimpot>(Vec(525.6f, 327.3f), module, MODULE::MIX_X_PARAM + 1));
-		addParam(createParamCentered<DummyMapButton>(Vec(539.9f, 319.7f), module, MODULE::MIX_X_POS + 1));
-		ClickableSmallLight<GreenLight>* l2 = createLightCentered<ClickableSmallLight<GreenLight>>(Vec(543.4f, 327.3f), module, MODULE::MIX_SEL_LIGHT + 1);
+		addInput(createInputCentered<StoermelderPort>(Vec(512.7f, 327.3f), module, MODULE::MIX_X_INPUT + 1));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(540.6f, 327.3f), module, MODULE::MIX_X_PARAM + 1));
+		addParam(createParamCentered<DummyMapButton>(Vec(554.9f, 319.7f), module, MODULE::MIX_X_POS + 1));
+		ClickableSmallLight<GreenLight>* l2 = createLightCentered<ClickableSmallLight<GreenLight>>(Vec(558.4f, 327.3f), module, MODULE::MIX_SEL_LIGHT + 1);
 		l2->id = 1;
 		l2->type = 1;
 		addChild(l2);
-		addParam(createParamCentered<DummyMapButton>(Vec(546.9f, 334.9f), module, MODULE::MIX_Y_POS + 1));
-		addParam(createParamCentered<StoermelderTrimpot>(Vec(561.2f, 327.3f), module, MODULE::MIX_Y_PARAM + 1));
-		addInput(createInputCentered<StoermelderPort>(Vec(589.2f, 327.3f), module, MODULE::MIX_Y_INPUT + 1));
+		addParam(createParamCentered<DummyMapButton>(Vec(561.9f, 334.9f), module, MODULE::MIX_Y_POS + 1));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(576.2f, 327.3f), module, MODULE::MIX_Y_PARAM + 1));
+		addInput(createInputCentered<StoermelderPort>(Vec(604.2f, 327.3f), module, MODULE::MIX_Y_INPUT + 1));
 	}
 
 	void appendContextMenu(Menu* menu) override {
