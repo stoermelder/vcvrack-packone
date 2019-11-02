@@ -1651,13 +1651,13 @@ struct ArenaWidget : ModuleWidget {
 		}
 
 		ArenaPlayWidget<MODULE, 8, 2>* areaWidget = new ArenaPlayWidget<MODULE, 8, 2>(module, MODULE::IN_X_POS, MODULE::IN_Y_POS, MODULE::MIX_X_POS, MODULE::MIX_Y_POS);
-		areaWidget->box.pos = Vec(165.7f, 41.0f);
-		areaWidget->box.size = Vec(298.5f, 250.0f);
+		areaWidget->box.pos = Vec(165.7f, 37.3f);
+		areaWidget->box.size = Vec(298.5f, 257.1f);
 		addChild(areaWidget);
 
 		ArenaRecordWidget<MODULE>* recordWidget = new ArenaRecordWidget<MODULE>(module, MODULE::MIX_X_POS, MODULE::MIX_Y_POS);
-		recordWidget->box.pos = Vec(165.7f, 41.0f);
-		recordWidget->box.size = Vec(298.5f, 250.0f);
+		recordWidget->box.pos = areaWidget->box.pos;
+		recordWidget->box.size = areaWidget->box.size;
 		addChild(recordWidget);
 
 		// MIX1
