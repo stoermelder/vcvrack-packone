@@ -44,6 +44,10 @@ struct TurnSeqModule : Module {
 	GRIDSTATE grid[SIZE][SIZE];
 
 	/** [Stored to JSON] */
+	int xStartDir[NUM_PORTS];
+	/** [Stored to JSON] */
+	int yStartDir[NUM_PORTS];
+	/** [Stored to JSON] */
 	int xStartPos[NUM_PORTS];
 	/** [Stored to JSON] */
 	int yStartPos[NUM_PORTS];
@@ -79,13 +83,12 @@ struct TurnSeqModule : Module {
 	}
 
 	void onReset() override {
-		//usedSize = 8;
 		gridClear();
 		for (int i = 0; i < NUM_PORTS; i++) {
 			xPos[i] = xStartPos[i] = 0;
 			yPos[i] = yStartPos[i] = usedSize / NUM_PORTS * i;
-			xDir[i] = 1;
-			yDir[i] = 0;
+			xDir[i] = xStartDir[i] = 1;
+			yDir[i] = yStartDir[i] = 0;
 			resetTimer[i].reset();
 		}
 		Module::onReset();
@@ -93,12 +96,14 @@ struct TurnSeqModule : Module {
 
 	void onRandomize() override {
 		gridRandomize();
+		Module::onRandomize();
 	}
 
 	void process(const ProcessArgs& args) override {
 		if (shiftTrigger.process(inputs[SHIFT_INPUT].getVoltage())) {
 			for (int i = 0; i < NUM_PORTS; i++) {
-				yPos[i] = (yPos[i] + 1 + usedSize) % usedSize;
+				xPos[i] = (xPos[i] + -1 * yDir[i] + usedSize) % usedSize;
+				yPos[i] = (yPos[i] + xDir[i] + usedSize) % usedSize;
 			}
 		}
 
@@ -106,8 +111,8 @@ struct TurnSeqModule : Module {
 			if (processResetTrigger(i)) {
 				xPos[i] = xStartPos[i];
 				yPos[i] = yStartPos[i];
-				xDir[i] = 1;
-				yDir[i] = 0;
+				xDir[i] = xStartDir[i];
+				yDir[i] = yStartDir[i];
 			}
 
 			if (processClockTrigger(i, args.sampleTime)) {
@@ -211,7 +216,7 @@ struct TurnSeqModule : Module {
 		}
 	}
 
-	void gridSetSize(int size) {
+	void gridResize(int size) {
 		usedSize = size;
 		for (int i = 0; i < NUM_PORTS; i++) {
 			xStartPos[i] = 0;
@@ -251,6 +256,8 @@ struct TurnSeqModule : Module {
 			json_t* portJ = json_object();
 			json_object_set_new(portJ, "xStartPos", json_integer(xStartPos[i]));
 			json_object_set_new(portJ, "yStartPos", json_integer(yStartPos[i]));
+			json_object_set_new(portJ, "xStartDir", json_integer(xStartDir[i]));
+			json_object_set_new(portJ, "yStartDir", json_integer(yStartDir[i]));
 			json_object_set_new(portJ, "xPos", json_integer(xPos[i]));
 			json_object_set_new(portJ, "yPos", json_integer(yPos[i]));
 			json_object_set_new(portJ, "xDir", json_integer(xDir[i]));
@@ -277,6 +284,8 @@ struct TurnSeqModule : Module {
 		json_array_foreach(portsJ, portIndex, portJ) {
 			xStartPos[portIndex] = json_integer_value(json_object_get(portJ, "xStartPos"));
 			yStartPos[portIndex] = json_integer_value(json_object_get(portJ, "yStartPos"));
+			xStartDir[portIndex] = json_integer_value(json_object_get(portJ, "xStartDir"));
+			yStartDir[portIndex] = json_integer_value(json_object_get(portJ, "yStartDir"));
 			xPos[portIndex] = json_integer_value(json_object_get(portJ, "xPos"));
 			yPos[portIndex] = json_integer_value(json_object_get(portJ, "yPos"));
 			xDir[portIndex] = json_integer_value(json_object_get(portJ, "xDir"));
@@ -310,7 +319,7 @@ struct SizeMenuItem : MenuItem {
 		int usedSize;
 		
 		void onAction(const event::Action &e) override {
-			module->gridSetSize(usedSize);
+			module->gridResize(usedSize);
 		}
 
 		void step() override {
@@ -451,8 +460,9 @@ struct TurnSeqStartPosEditWidget : OpaqueWidget, TurnSeqDrawHelper<MODULE> {
 
 	void draw(const DrawArgs& args) override {
 		if (module && module->currentState == MODULESTATE::EDIT) {
-			float stroke = 1.f;
 			NVGcolor c = color::mult(color::WHITE, 0.7f);
+			float stroke = 1.f;
+			nvgGlobalCompositeOperation(args.vg, NVG_ATOP);
 
 			// Outer border
 			nvgBeginPath(args.vg);
@@ -469,13 +479,35 @@ struct TurnSeqStartPosEditWidget : OpaqueWidget, TurnSeqDrawHelper<MODULE> {
 			nvgTextBox(args.vg, box.size.x - 40.f, box.size.y - 6.f, 120, "EDIT", NULL);
 
 			TurnSeqDrawHelper<MODULE>::draw(args, box);
+
+			float r = box.size.y / module->usedSize / 2.f;
+			float rS = r * 0.75f;
+			float sizeX = box.size.x / module->usedSize;
+			float sizeY = box.size.y / module->usedSize;
+
+			nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
+			for (int i = 0; i < module->numPorts; i++) {
+				// Direction triangle
+				Vec c = Vec(module->xStartPos[i] * sizeX + r, module->yStartPos[i] * sizeY + r);
+				Vec p1 = Vec(c.x + module->yStartDir[i] * rS, c.y - module->xStartDir[i] * rS);
+				Vec p2 = Vec(c.x + module->xStartDir[i] * rS, c.y + module->yStartDir[i] * rS);
+				Vec p3 = Vec(c.x - module->yStartDir[i] * rS, c.y + module->xStartDir[i] * rS);
+				nvgBeginPath(args.vg);
+				nvgMoveTo(args.vg, p1.x, p1.y);
+				nvgLineTo(args.vg, p2.x, p2.y);
+				nvgLineTo(args.vg, p3.x, p3.y);
+				nvgClosePath(args.vg);
+				nvgFillColor(args.vg, color::mult(color::WHITE, 0.9f));
+				nvgFill(args.vg);
+			}
+
 			OpaqueWidget::draw(args);
 		}
 	}
 
 	void onButton(const event::Button& e) override {
 		if (module && module->currentState == MODULESTATE::EDIT) {
-			if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
+			if (e.action == GLFW_PRESS) {
 				selectedId = -1;
 				int x = (int)std::floor((e.pos.x / box.size.x) * module->usedSize);
 				int y = (int)std::floor((e.pos.y / box.size.y) * module->usedSize);
@@ -485,13 +517,19 @@ struct TurnSeqStartPosEditWidget : OpaqueWidget, TurnSeqDrawHelper<MODULE> {
 						break;
 					}
 				}
-				dragPos = APP->scene->rack->mousePos.minus(e.pos);
-				e.consume(this);
-			}
-			if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
-				createContextMenu();
-				e.consume(this);
-			}
+
+				if (e.button == GLFW_MOUSE_BUTTON_LEFT) {
+					dragPos = APP->scene->rack->mousePos.minus(e.pos);
+					e.consume(this);
+				}
+				if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
+					if (selectedId == -1) 
+						createContextMenu();
+					else 
+						createDirectionContextMenu();
+					e.consume(this);
+				}
+			} 
 			OpaqueWidget::onButton(e);
 		}
 	}
@@ -509,6 +547,32 @@ struct TurnSeqStartPosEditWidget : OpaqueWidget, TurnSeqDrawHelper<MODULE> {
 			module->xStartPos[selectedId] = std::max(0, std::min(x, module->usedSize - 1));
 			module->yStartPos[selectedId] = std::max(0, std::min(y, module->usedSize - 1));
 		}
+	}
+
+	void createDirectionContextMenu() {
+		struct DirectionItem : MenuItem {
+			MODULE* module;
+			int xdir, ydir;
+			int id;
+
+			void onAction(const event::Action &e) override {
+				module->xStartDir[id] = xdir;
+				module->yStartDir[id] = ydir;
+			}
+
+			void step() override {
+				bool s = module->xStartDir[id] == xdir && module->yStartDir[id] == ydir;
+				rightText = s ? "✔" : "";
+				MenuItem::step();
+			}
+		};
+
+		ui::Menu* menu = createMenu();
+		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Start direction"));
+		menu->addChild(construct<DirectionItem>(&MenuItem::text, "Right", &DirectionItem::module, module, &DirectionItem::id, selectedId, &DirectionItem::xdir, 1, &DirectionItem::ydir, 0));
+		menu->addChild(construct<DirectionItem>(&MenuItem::text, "Down", &DirectionItem::module, module, &DirectionItem::id, selectedId, &DirectionItem::xdir, 0, &DirectionItem::ydir, 1));
+		menu->addChild(construct<DirectionItem>(&MenuItem::text, "Left", &DirectionItem::module, module, &DirectionItem::id, selectedId, &DirectionItem::xdir, -1, &DirectionItem::ydir, 0));
+		menu->addChild(construct<DirectionItem>(&MenuItem::text, "Up", &DirectionItem::module, module, &DirectionItem::id, selectedId, &DirectionItem::xdir, 0, &DirectionItem::ydir, -1));
 	}
 
 	void createContextMenu() {
