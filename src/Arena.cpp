@@ -1377,11 +1377,21 @@ struct ArenaRecordWidget : OpaqueWidget {
 
 	void draw(const DrawArgs& args) override {
 		if (module && module->seqEdit >= 0) {
+			NVGcolor c = color::mult(color::WHITE, 0.7f);
+			float stroke = 1.f;
+			
+			// Outer border
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, 0.f + stroke, 0.f + stroke, box.size.x - 2 * stroke, box.size.y - 2 * stroke);
+			nvgStrokeWidth(args.vg, stroke);
+			nvgStrokeColor(args.vg, c);
+			nvgStroke(args.vg);
+
 			// Draw "EDIT" text
 			nvgFontSize(args.vg, 22);
 			nvgFontFaceId(args.vg, font->handle);
 			nvgTextLetterSpacing(args.vg, -2.2);
-			nvgFillColor(args.vg, color::RED);
+			nvgFillColor(args.vg, c);
 			nvgTextBox(args.vg, box.size.x - 78.f, box.size.y - 6.f, 120, "SEQ-EDIT", NULL);
 
 			OpaqueWidget::draw(args);
@@ -1683,12 +1693,12 @@ struct ArenaWidget : ModuleWidget {
 
 
 		// MIX2
-		addInput(createInputCentered<StoermelderPort>(Vec(396.9f, 327.3f), module, MODULE::SEQ_PH_INPUT + 1));
+		addInput(createInputCentered<StoermelderPort>(Vec(396.9f, 327.3f), module, MODULE::SEQ_INPUT + 1));
 		ArenaSeqDisplay<MODULE>* arenaSeqDisplay2 = createWidgetCentered<ArenaSeqDisplay<MODULE>>(Vec(421.9, 327.3f));
 		arenaSeqDisplay2->module = module;
 		arenaSeqDisplay2->id = 1;
 		addChild(arenaSeqDisplay2);
-		addInput(createInputCentered<StoermelderPort>(Vec(446.9f, 327.3f), module, MODULE::SEQ_INPUT + 1));
+		addInput(createInputCentered<StoermelderPort>(Vec(446.9f, 327.3f), module, MODULE::SEQ_PH_INPUT + 1));
 
 		addOutput(createOutputCentered<StoermelderPort>(Vec(479.8f, 327.3f), module, MODULE::MIX_OUTPUT + 1));
 
