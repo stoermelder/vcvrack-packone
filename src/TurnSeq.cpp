@@ -639,7 +639,7 @@ struct TurnSeqWidget32 : ModuleWidget {
 		addChild(createWidget<MyBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
 		TurnSeqScreenWidget<MODULE>* turnWidget = new TurnSeqScreenWidget<MODULE>(module);
-		turnWidget->box.pos = Vec(8.7f, 36.6f);
+		turnWidget->box.pos = Vec(8.7f, 37.0f);
 		turnWidget->box.size = Vec(162.6f, 162.6f);
 		addChild(turnWidget);
 
