@@ -120,6 +120,11 @@ struct ArenaModule : Module {
 	float offsetX[IN_PORTS];
 	float offsetY[IN_PORTS];
 
+	float lastInXpos[IN_PORTS];
+	float lastInYpos[IN_PORTS];
+	float lastMixXpos[MIX_PORTS];
+	float lastMixYpos[MIX_PORTS];
+
 	dsp::SchmittTrigger seqTrigger[MIX_PORTS];
 	dsp::ClockDivider lightDivider;
 
@@ -156,6 +161,8 @@ struct ArenaModule : Module {
 			outputMode[i] = OUTPUTMODE::SCALE;
 			paramQuantities[IN_X_POS + i]->setValue(paramQuantities[IN_X_POS + i]->getDefaultValue());
 			paramQuantities[IN_Y_POS + i]->setValue(paramQuantities[IN_Y_POS + i]->getDefaultValue());
+			lastInXpos[i] = -1.f;
+			lastInYpos[i] = -1.f;
 		}
 		for (int i = 0; i < MIX_PORTS; i++) {
 			seqSelected[i] = 0;
@@ -163,6 +170,8 @@ struct ArenaModule : Module {
 			seqInterpolate[i] = SEQINTERPOLATE::LINEAR;
 			paramQuantities[MIX_X_POS + i]->setValue(paramQuantities[MIX_X_POS + i]->getDefaultValue());
 			paramQuantities[MIX_Y_POS + i]->setValue(paramQuantities[MIX_Y_POS + i]->getDefaultValue());
+			lastMixXpos[i] = -1.f;
+			lastMixYpos[i] = -1.f;
 		}
 		seqEdit = -1;
 		Module::onReset();
@@ -232,33 +241,37 @@ struct ArenaModule : Module {
 				params[MIX_X_POS + i].setValue(d.x);
 				params[MIX_Y_POS + i].setValue(d.y);
 			}
-			else {
-				if (inputs[MIX_X_INPUT + i].isConnected()) {
-					float x = inputs[MIX_X_INPUT + i].getVoltage() / 10.f;
-					x *= params[MIX_X_PARAM + i].getValue();
-					x = clamp(x, 0.f, 1.f);
-					params[MIX_X_POS + i].setValue(x);
-				} 
 
-				if (inputs[MIX_Y_INPUT + i].isConnected()) {
-					float y = inputs[MIX_Y_INPUT + i].getVoltage() / 10.f;
-					y *= params[MIX_Y_PARAM + i].getValue();
-					y = clamp(y, 0.f, 1.f);
-					params[MIX_Y_POS + i].setValue(y);
-				}
+			if (inputs[MIX_X_INPUT + i].isConnected()) {
+				float x = inputs[MIX_X_INPUT + i].getVoltage() / 10.f;
+				x *= params[MIX_X_PARAM + i].getValue();
+				x = clamp(x, 0.f, 1.f);
+				params[MIX_X_POS + i].setValue(x);
+			} 
+
+			if (inputs[MIX_Y_INPUT + i].isConnected()) {
+				float y = inputs[MIX_Y_INPUT + i].getVoltage() / 10.f;
+				y *= params[MIX_Y_PARAM + i].getValue();
+				y = clamp(y, 0.f, 1.f);
+				params[MIX_Y_POS + i].setValue(y);
 			}
 
-			float x = params[MIX_X_POS + i].getValue();
-			float y = params[MIX_Y_POS + i].getValue();
-			Vec p = Vec(x, y);
+			float mixX = params[MIX_X_POS + i].getValue();
+			float mixY = params[MIX_Y_POS + i].getValue();
+			Vec mixVec = Vec(mixX, mixY);
 
 			int c = 0;
 			float mix = 0.f;
 			for (int j = 0; j < IN_PORTS; j++) {
-				float in_x = params[IN_X_POS + j].getValue();
-				float in_y = params[IN_Y_POS + j].getValue();
-				Vec in_p = Vec(in_x, in_y);
-				dist[i][j] = in_p.minus(p).norm();
+				float inX = params[IN_X_POS + j].getValue();
+				float inY = params[IN_Y_POS + j].getValue();
+
+				if (mixX != lastMixXpos[i] || mixY != lastMixYpos[i] || inX != lastInXpos[j] || inY != lastInYpos[j]) {
+					lastInXpos[j] = inX;
+					lastInYpos[j] = inY;
+					Vec inVec = Vec(inX, inY);
+					dist[i][j] = inVec.minus(mixVec).norm();
+				}
 
 				float r = radius[j];
 				if (inputs[IN + j].isConnected() && dist[i][j] < r) {
@@ -272,6 +285,9 @@ struct ArenaModule : Module {
 					c++;
 				}
 			}
+
+			lastMixXpos[i] = mixX;
+			lastMixYpos[i] = mixY;
 
 			if (c > 0) mix /= c;
 			outputs[MIX_OUTPUT + i].setVoltage(mix);
