@@ -240,12 +240,12 @@ struct TurnSeqModule : Module {
 		}
 	}
 
-	void gridRandomize() {
+	void gridRandomize(bool useRandom = true) {
 		for (int i = 0; i < SIZE; i++) {
 			for (int j = 0; j < SIZE; j++) {
 				float r = random::uniform();
 				if (r > 0.8f)
-					grid[i][j] = GRIDSTATE::RANDOM;
+					grid[i][j] = useRandom ? GRIDSTATE::RANDOM : GRIDSTATE::ON;
 				else if (r > 0.6f)
 					grid[i][j] = GRIDSTATE::ON;
 				else
@@ -358,9 +358,10 @@ struct SizeMenuItem : MenuItem {
 template < typename MODULE >
 struct RandomizeMenuItem : MenuItem {
 	MODULE* module;
+	bool useRandom = true;
 	
 	void onAction(const event::Action &e) override {
-		module->gridRandomize();
+		module->gridRandomize(useRandom);
 	}
 };
 
@@ -652,6 +653,7 @@ struct TurnSeqScreenWidget : OpaqueWidget, TurnSeqDrawHelper<MODULE> {
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<SizeMenuItem<MODULE>>(&MenuItem::text, "Dimension", &SizeMenuItem<MODULE>::module, module));
 		menu->addChild(construct<RandomizeMenuItem<MODULE>>(&MenuItem::text, "Randomize", &RandomizeMenuItem<MODULE>::module, module));
+		menu->addChild(construct<RandomizeMenuItem<MODULE>>(&MenuItem::text, "Randomize certainty", &RandomizeMenuItem<MODULE>::module, module, &RandomizeMenuItem<MODULE>::useRandom, false));
 		menu->addChild(construct<ClearMenuItem<MODULE>>(&MenuItem::text, "Clear", &ClearMenuItem<MODULE>::module, module));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<RatchetingItem<MODULE>>(&MenuItem::text, "Ratcheting", &RatchetingItem<MODULE>::module, module));
