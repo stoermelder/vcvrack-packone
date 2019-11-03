@@ -19,6 +19,6 @@ void init(rack::Plugin *p) {
 	p->addModel(modelSipo);
 	p->addModel(modelFourRounds);
 	p->addModel(modelArena);
-	p->addModel(modelTurnSeq);
+	p->addModel(modelMaze);
 	p->addModel(modelAudioInterface64);
 }

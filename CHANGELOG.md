@@ -2,7 +2,7 @@
 
 - Module [ARENA](./docs/Arena.md)
     - New module, 2-dimensional XY-Mixer for 8 sound sources with various modulation targets and graphical interface
-- Module [TURN-SEQ](./docs/TurnSeq.md)
+- Module [MAZE](./docs/Maze.md)
     - New module, 4 channel trigger-sequencer running on a 2-dimensional grid
 - Module [MIDI-CAT](./docs/MidiCat.md)
     - Fixed velocity-handling on note messages if in toggle-mode (does not need vel 127 anymore)

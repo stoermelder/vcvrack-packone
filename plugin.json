@@ -105,11 +105,11 @@
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Arena.md"
 		},
 		{
-			"slug": "TurnSeq",
-			"name": "TURN-SEQ",
+			"slug": "Maze",
+			"name": "MAZE",
 			"description": "",
 			"tags": ["Sequencer"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/TurnSeq.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Maze.md"
 		},
 		{
 			"slug": "AudioInterface64",

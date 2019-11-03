@@ -4,7 +4,7 @@
 #include <random>
 
 
-namespace TurnSeq {
+namespace Maze {
 
 enum GRIDSTATE {
 	OFF = 0,
@@ -29,7 +29,7 @@ enum MODULESTATE {
 };
 
 template < int SIZE, int NUM_PORTS >
-struct TurnSeqModule : Module {
+struct MazeModule : Module {
 	enum ParamIds {
 		RESET_PARAM,
 		NUM_PARAMS
@@ -106,12 +106,12 @@ struct TurnSeqModule : Module {
 
 	MODULESTATE currentState = MODULESTATE::GRID;
 
-	TurnSeqModule() {
+	MazeModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		onReset();
 	}
 
-	~TurnSeqModule() {
+	~MazeModule() {
 		delete geoDist;
 	}
 
@@ -520,7 +520,7 @@ struct RatchetingProbMenuItem : MenuItem {
 // Widgets
 
 template < typename MODULE >
-struct TurnSeqDrawHelper {
+struct MazeDrawHelper {
 	MODULE* module;
 	int* xpos;
 	int* ypos;
@@ -602,19 +602,19 @@ struct TurnSeqDrawHelper {
 
 
 template < typename MODULE >
-struct TurnSeqStartPosEditWidget : OpaqueWidget, TurnSeqDrawHelper<MODULE> {
+struct MazeStartPosEditWidget : OpaqueWidget, MazeDrawHelper<MODULE> {
 	MODULE* module;
 	std::shared_ptr<Font> font;
 	int selectedId = -1;
 	math::Vec dragPos;
 
-	TurnSeqStartPosEditWidget(MODULE* module) {
+	MazeStartPosEditWidget(MODULE* module) {
 		font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
 		this->module = module;
-		TurnSeqDrawHelper<MODULE>::module = module;
-		TurnSeqDrawHelper<MODULE>::xpos = module->xStartPos;
-		TurnSeqDrawHelper<MODULE>::ypos = module->yStartPos;
-		TurnSeqDrawHelper<MODULE>::gridColor = color::mult(color::WHITE, 0.4f);
+		MazeDrawHelper<MODULE>::module = module;
+		MazeDrawHelper<MODULE>::xpos = module->xStartPos;
+		MazeDrawHelper<MODULE>::ypos = module->yStartPos;
+		MazeDrawHelper<MODULE>::gridColor = color::mult(color::WHITE, 0.4f);
 	}
 
 	void draw(const DrawArgs& args) override {
@@ -637,7 +637,7 @@ struct TurnSeqStartPosEditWidget : OpaqueWidget, TurnSeqDrawHelper<MODULE> {
 			nvgFillColor(args.vg, c);
 			nvgTextBox(args.vg, box.size.x - 40.f, box.size.y - 6.f, 120, "EDIT", NULL);
 
-			TurnSeqDrawHelper<MODULE>::draw(args, box);
+			MazeDrawHelper<MODULE>::draw(args, box);
 
 			float r = box.size.y / module->usedSize / 2.f;
 			float rS = r * 0.75f;
@@ -782,19 +782,19 @@ struct TurnSeqStartPosEditWidget : OpaqueWidget, TurnSeqDrawHelper<MODULE> {
 
 
 template < typename MODULE >
-struct TurnSeqScreenWidget : OpaqueWidget, TurnSeqDrawHelper<MODULE> {
+struct MazeScreenWidget : OpaqueWidget, MazeDrawHelper<MODULE> {
 	MODULE* module;
 
-	TurnSeqScreenWidget(MODULE* module) {
+	MazeScreenWidget(MODULE* module) {
 		this->module = module;
-		TurnSeqDrawHelper<MODULE>::module = module;
-		TurnSeqDrawHelper<MODULE>::xpos = module->xPos;
-		TurnSeqDrawHelper<MODULE>::ypos = module->yPos;
+		MazeDrawHelper<MODULE>::module = module;
+		MazeDrawHelper<MODULE>::xpos = module->xPos;
+		MazeDrawHelper<MODULE>::ypos = module->yPos;
 	}
 
 	void draw(const DrawArgs& args) override {
 		if (module && module->currentState == MODULESTATE::GRID) {
-			TurnSeqDrawHelper<MODULE>::draw(args, box);
+			MazeDrawHelper<MODULE>::draw(args, box);
 			OpaqueWidget::draw(args);
 		}
 	}
@@ -832,23 +832,23 @@ struct TurnSeqScreenWidget : OpaqueWidget, TurnSeqDrawHelper<MODULE> {
 };
 
 
-struct TurnSeqWidget32 : ModuleWidget {
-	typedef TurnSeqModule<32, 4> MODULE;
-	TurnSeqWidget32(MODULE* module) {
+struct MazeWidget32 : ModuleWidget {
+	typedef MazeModule<32, 4> MODULE;
+	MazeWidget32(MODULE* module) {
 		setModule(module);
-		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/TurnSeq.svg")));
+		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/Maze.svg")));
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		TurnSeqScreenWidget<MODULE>* turnWidget = new TurnSeqScreenWidget<MODULE>(module);
+		MazeScreenWidget<MODULE>* turnWidget = new MazeScreenWidget<MODULE>(module);
 		turnWidget->box.pos = Vec(63.5f, 37.7f);
 		turnWidget->box.size = Vec(233.f, 233.f);
 		addChild(turnWidget);
 
-		TurnSeqStartPosEditWidget<MODULE>* resetEditWidget = new TurnSeqStartPosEditWidget<MODULE>(module);
+		MazeStartPosEditWidget<MODULE>* resetEditWidget = new MazeStartPosEditWidget<MODULE>(module);
 		resetEditWidget->box.pos = turnWidget->box.pos;
 		resetEditWidget->box.size = turnWidget->box.size;
 		addChild(resetEditWidget);
@@ -887,7 +887,7 @@ struct TurnSeqWidget32 : ModuleWidget {
 
 		struct ManualItem : MenuItem {
 			void onAction(const event::Action &e) override {
-				std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/TurnSeq.md");
+				std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Maze.md");
 				t.detach();
 			}
 		};
@@ -896,6 +896,6 @@ struct TurnSeqWidget32 : ModuleWidget {
 	}
 };
 
-} // namespace TurnSeq
+} // namespace Maze
 
-Model* modelTurnSeq = createModel<TurnSeq::TurnSeqModule<32, 4>, TurnSeq::TurnSeqWidget32>("TurnSeq");
+Model* modelMaze = createModel<Maze::MazeModule<32, 4>, Maze::MazeWidget32>("Maze");
