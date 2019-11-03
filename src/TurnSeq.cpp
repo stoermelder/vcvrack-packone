@@ -18,9 +18,9 @@ enum TURNMODE {
 };
 
 enum OUTMODE {
-	TRIGGER = 0,
-	CV_10V = 1,
-	CV_1V = 2
+	BI_5V = 0,
+	UNI_3V = 1,
+	UNI_1V = 2
 };
 
 enum MODULESTATE {
@@ -42,7 +42,8 @@ struct TurnSeqModule : Module {
 		NUM_INPUTS
 	};
 	enum OutputIds {
-		ENUMS(OUTPUT, NUM_PORTS),
+		ENUMS(GATE_OUTPUT, NUM_PORTS),
+		ENUMS(CV_OUTPUT, NUM_PORTS),
 		NUM_OUTPUTS
 	};
 	enum LightIds {
@@ -122,7 +123,7 @@ struct TurnSeqModule : Module {
 			xDir[i] = xStartDir[i] = 1;
 			yDir[i] = yStartDir[i] = 0;
 			turnMode[i] = TURNMODE::NINETY;
-			outMode[i] = OUTMODE::TRIGGER;
+			outMode[i] = OUTMODE::BI_5V;
 			resetTimer[i].reset();
 		}
 		ratchetingEnabled = true;
@@ -144,7 +145,7 @@ struct TurnSeqModule : Module {
 		}
 
 		for (int i = 0; i < NUM_PORTS; i++) {
-			active[i] = outputs[OUTPUT + i].isConnected();
+			active[i] = outputs[GATE_OUTPUT + i].isConnected();
 			bool doPulse = false;
 
 			if (processResetTrigger(i)) {
@@ -197,25 +198,30 @@ struct TurnSeqModule : Module {
 				}
 			}
 
-			bool m =  multiplier[i].process();
-			doPulse = doPulse || m;
+			if (multiplier[i].process() || doPulse)
+				outPulse[i].trigger();
 
-			float out = 0.f;
-			switch (outMode[i]) {
-				case OUTMODE::TRIGGER:
-					if (doPulse) outPulse[i].trigger();
-					out = outPulse[i].process(args.sampleTime) ? 10.f : 0.f;
-					break;
-				case OUTMODE::CV_10V:
-					if (doPulse) outPulse[i].trigger(0.05f);
-					out = outPulse[i].process(args.sampleTime) ? rescale(gridCv[xPos[i]][yPos[i]], 0.f, 1.f, -5.f, 5.f) : 0.f;
-					break;
-				case OUTMODE::CV_1V:
-					if (doPulse) outPulse[i].trigger(0.05f);
-					out = outPulse[i].process(args.sampleTime) ? gridCv[xPos[i]][yPos[i]] : 0.f;
-					break;
+			float outGate = 0.f;
+			if (outPulse[i].process(args.sampleTime))
+				outGate = 10.f;
+
+			float outCv = outputs[CV_OUTPUT + i].getVoltage();
+			if (grid[xPos[i]][yPos[i]] != GRIDSTATE::OFF) {
+				switch (outMode[i]) {
+					case OUTMODE::BI_5V:
+						outCv = rescale(gridCv[xPos[i]][yPos[i]], 0.f, 1.f, -5.f, 5.f);
+						break;
+					case OUTMODE::UNI_3V:
+						outCv = rescale(gridCv[xPos[i]][yPos[i]], 0.f, 1.f, 0.f, 3.f);
+						break;
+					case OUTMODE::UNI_1V:
+						outCv = gridCv[xPos[i]][yPos[i]];
+						break;
+				}
 			}
-			outputs[OUTPUT + i].setVoltage(out);
+
+			outputs[GATE_OUTPUT + i].setVoltage(outGate);
+			outputs[CV_OUTPUT + i].setVoltage(outCv);
 		}
 	}
 
@@ -762,10 +768,10 @@ struct TurnSeqStartPosEditWidget : OpaqueWidget, TurnSeqDrawHelper<MODULE> {
 			}
 		};
 
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Out mode"));
-		menu->addChild(construct<OutModeItem>(&MenuItem::text, "Trigger", &OutModeItem::module, module, &OutModeItem::id, selectedId, &OutModeItem::outMode, OUTMODE::TRIGGER));
-		menu->addChild(construct<OutModeItem>(&MenuItem::text, "CV -5..5V", &OutModeItem::module, module, &OutModeItem::id, selectedId, &OutModeItem::outMode, OUTMODE::CV_10V));
-		menu->addChild(construct<OutModeItem>(&MenuItem::text, "CV 0..1V", &OutModeItem::module, module, &OutModeItem::id, selectedId, &OutModeItem::outMode, OUTMODE::CV_1V));
+		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "CV mode"));
+		menu->addChild(construct<OutModeItem>(&MenuItem::text, "-5..5V", &OutModeItem::module, module, &OutModeItem::id, selectedId, &OutModeItem::outMode, OUTMODE::BI_5V));
+		menu->addChild(construct<OutModeItem>(&MenuItem::text, "0..3V", &OutModeItem::module, module, &OutModeItem::id, selectedId, &OutModeItem::outMode, OUTMODE::UNI_3V));
+		menu->addChild(construct<OutModeItem>(&MenuItem::text, "0..1V", &OutModeItem::module, module, &OutModeItem::id, selectedId, &OutModeItem::outMode, OUTMODE::UNI_1V));
 	}
 
 	void createContextMenu() {
@@ -817,6 +823,7 @@ struct TurnSeqScreenWidget : OpaqueWidget, TurnSeqDrawHelper<MODULE> {
 		menu->addChild(construct<RatchetingMenuItem<MODULE>>(&MenuItem::text, "Ratcheting", &RatchetingMenuItem<MODULE>::module, module));
 		menu->addChild(construct<RatchetingProbMenuItem<MODULE>>(&MenuItem::text, "Ratcheting probability", &RatchetingProbMenuItem<MODULE>::module, module));
 		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Grid"));
 		menu->addChild(construct<SizeMenuItem<MODULE>>(&MenuItem::text, "Dimension", &SizeMenuItem<MODULE>::module, module));
 		menu->addChild(construct<RandomizeMenuItem<MODULE>>(&MenuItem::text, "Randomize", &RandomizeMenuItem<MODULE>::module, module));
 		menu->addChild(construct<RandomizeMenuItem<MODULE>>(&MenuItem::text, "Randomize certainty", &RandomizeMenuItem<MODULE>::module, module, &RandomizeMenuItem<MODULE>::useRandom, false));
@@ -837,8 +844,8 @@ struct TurnSeqWidget32 : ModuleWidget {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
 		TurnSeqScreenWidget<MODULE>* turnWidget = new TurnSeqScreenWidget<MODULE>(module);
-		turnWidget->box.pos = Vec(8.7f, 37.0f);
-		turnWidget->box.size = Vec(162.6f, 162.6f);
+		turnWidget->box.pos = Vec(63.5f, 37.7f);
+		turnWidget->box.size = Vec(233.f, 233.f);
 		addChild(turnWidget);
 
 		TurnSeqStartPosEditWidget<MODULE>* resetEditWidget = new TurnSeqStartPosEditWidget<MODULE>(module);
@@ -846,29 +853,32 @@ struct TurnSeqWidget32 : ModuleWidget {
 		resetEditWidget->box.size = turnWidget->box.size;
 		addChild(resetEditWidget);
 
-		addInput(createInputCentered<StoermelderPort>(Vec(24.1f, 227.5f), module, MODULE::CLK_INPUT + 0));
-		addInput(createInputCentered<StoermelderPort>(Vec(54.6f, 227.5f), module, MODULE::CLK_INPUT + 1));
-		addInput(createInputCentered<StoermelderPort>(Vec(125.5f, 227.5f), module, MODULE::CLK_INPUT + 2));
-		addInput(createInputCentered<StoermelderPort>(Vec(155.9f, 227.5f), module, MODULE::CLK_INPUT + 3));
+		addInput(createInputCentered<StoermelderPort>(Vec(117.2f, 292.2f), module, MODULE::CLK_INPUT + 0));
+		addInput(createInputCentered<StoermelderPort>(Vec(117.2f, 327.6f), module, MODULE::CLK_INPUT + 1));
+		addInput(createInputCentered<StoermelderPort>(Vec(243.5f, 292.2f), module, MODULE::CLK_INPUT + 2));
+		addInput(createInputCentered<StoermelderPort>(Vec(243.5f, 327.6f), module, MODULE::CLK_INPUT + 3));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(24.1f, 253.5f), module, MODULE::RESET_INPUT + 0));
-		addInput(createInputCentered<StoermelderPort>(Vec(54.6f, 253.5f), module, MODULE::RESET_INPUT + 1));
-		addInput(createInputCentered<StoermelderPort>(Vec(125.5f, 253.5f), module, MODULE::RESET_INPUT + 2));
-		addInput(createInputCentered<StoermelderPort>(Vec(155.9f, 253.5f), module, MODULE::RESET_INPUT + 3));
+		addInput(createInputCentered<StoermelderPort>(Vec(144.1f, 292.2f), module, MODULE::RESET_INPUT + 0));
+		addInput(createInputCentered<StoermelderPort>(Vec(144.1f, 327.6f), module, MODULE::RESET_INPUT + 1));
+		addInput(createInputCentered<StoermelderPort>(Vec(216.3f, 292.2f), module, MODULE::RESET_INPUT + 2));
+		addInput(createInputCentered<StoermelderPort>(Vec(216.3f, 327.6f), module, MODULE::RESET_INPUT + 3));
 
-		addParam(createParamCentered<TL1105>(Vec(90.0f, 262.2f), module, MODULE::RESET_PARAM));
+		addInput(createInputCentered<StoermelderPort>(Vec(84.4f, 292.2f), module, MODULE::TURN_INPUT + 0));
+		addInput(createInputCentered<StoermelderPort>(Vec(84.4f, 327.6f), module, MODULE::TURN_INPUT + 1));
+		addInput(createInputCentered<StoermelderPort>(Vec(275.6f, 292.2f), module, MODULE::TURN_INPUT + 2));
+		addInput(createInputCentered<StoermelderPort>(Vec(275.6f, 327.6f), module, MODULE::TURN_INPUT + 3));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(24.1f, 292.1f), module, MODULE::TURN_INPUT + 0));
-		addInput(createInputCentered<StoermelderPort>(Vec(54.6f, 292.1f), module, MODULE::TURN_INPUT + 1));
-		addInput(createInputCentered<StoermelderPort>(Vec(125.5f, 292.1f), module, MODULE::TURN_INPUT + 2));
-		addInput(createInputCentered<StoermelderPort>(Vec(155.9f, 292.1f), module, MODULE::TURN_INPUT + 3));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(52.2f, 292.2f), module, MODULE::GATE_OUTPUT + 0));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(52.2f, 327.6f), module, MODULE::GATE_OUTPUT + 1));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(307.7f, 292.2f), module, MODULE::GATE_OUTPUT + 2));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(307.7f, 327.6f), module, MODULE::GATE_OUTPUT + 3));
 
-		addOutput(createOutputCentered<StoermelderPort>(Vec(24.1f, 327.3f), module, MODULE::OUTPUT + 0));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(54.6f, 327.3f), module, MODULE::OUTPUT + 1));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(125.5f, 327.3f), module, MODULE::OUTPUT + 2));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(155.9f, 327.3f), module, MODULE::OUTPUT + 3));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(24.8f, 292.2f), module, MODULE::CV_OUTPUT + 0));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(24.8f, 327.6f), module, MODULE::CV_OUTPUT + 1));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(334.8f, 292.2f), module, MODULE::CV_OUTPUT + 2));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(334.8f, 327.6f), module, MODULE::CV_OUTPUT + 3));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(90.0f, 327.6f), module, MODULE::SHIFT_INPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(180.0f, 327.6f), module, MODULE::SHIFT_INPUT));
 	}
 
 	void appendContextMenu(Menu* menu) override {
