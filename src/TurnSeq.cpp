@@ -17,6 +17,12 @@ enum TURNMODE {
 	ONEEIGHTY = 1
 };
 
+enum OUTMODE {
+	TRIGGER = 0,
+	CV_10V = 1,
+	CV_1V = 2
+};
+
 enum MODULESTATE {
 	GRID = 0,
 	EDIT = 1
@@ -52,6 +58,8 @@ struct TurnSeqModule : Module {
 	int usedSize = 8;
 	/** [Stored to JSON] */
 	GRIDSTATE grid[SIZE][SIZE];
+	/** [Stored to JSON] */
+	float gridCv[SIZE][SIZE];
 
 	/** [Stored to JSON] */
 	int xStartDir[NUM_PORTS];
@@ -72,6 +80,8 @@ struct TurnSeqModule : Module {
 
 	/** [Stored to JSON] */
 	TURNMODE turnMode[NUM_PORTS];
+	/** [Stored to JSON] */
+	OUTMODE outMode[NUM_PORTS];
 
 	/** [Stored to JSON] */
 	bool ratchetingEnabled;
@@ -112,6 +122,7 @@ struct TurnSeqModule : Module {
 			xDir[i] = xStartDir[i] = 1;
 			yDir[i] = yStartDir[i] = 0;
 			turnMode[i] = TURNMODE::NINETY;
+			outMode[i] = OUTMODE::TRIGGER;
 			resetTimer[i].reset();
 		}
 		ratchetingEnabled = true;
@@ -134,6 +145,7 @@ struct TurnSeqModule : Module {
 
 		for (int i = 0; i < NUM_PORTS; i++) {
 			active[i] = outputs[OUTPUT + i].isConnected();
+			bool doPulse = false;
 
 			if (processResetTrigger(i)) {
 				xPos[i] = xStartPos[i];
@@ -152,7 +164,7 @@ struct TurnSeqModule : Module {
 					case GRIDSTATE::OFF:
 						break;
 					case GRIDSTATE::ON:
-						outPulse[i].trigger();
+						doPulse = true;
 						break;
 					case GRIDSTATE::RANDOM:
 						if (ratchetingEnabled) {
@@ -160,8 +172,7 @@ struct TurnSeqModule : Module {
 								multiplier[i].trigger((*geoDist)(randGen));
 						}
 						else {
-							if (random::uniform() >= 0.5f)
-								outPulse[i].trigger();
+							doPulse = random::uniform() >= 0.5f;
 						}
 						break;
 				}
@@ -186,9 +197,25 @@ struct TurnSeqModule : Module {
 				}
 			}
 
-			if (multiplier[i].process())
-				outPulse[i].trigger();
-			outputs[OUTPUT + i].setVoltage(outPulse[i].process(args.sampleTime) ? 10.f : 0.f);
+			bool m =  multiplier[i].process();
+			doPulse = doPulse || m;
+
+			float out = 0.f;
+			switch (outMode[i]) {
+				case OUTMODE::TRIGGER:
+					if (doPulse) outPulse[i].trigger();
+					out = outPulse[i].process(args.sampleTime) ? 10.f : 0.f;
+					break;
+				case OUTMODE::CV_10V:
+					if (doPulse) outPulse[i].trigger(0.05f);
+					out = outPulse[i].process(args.sampleTime) ? rescale(gridCv[xPos[i]][yPos[i]], 0.f, 1.f, -5.f, 5.f) : 0.f;
+					break;
+				case OUTMODE::CV_1V:
+					if (doPulse) outPulse[i].trigger(0.05f);
+					out = outPulse[i].process(args.sampleTime) ? gridCv[xPos[i]][yPos[i]] : 0.f;
+					break;
+			}
+			outputs[OUTPUT + i].setVoltage(out);
 		}
 	}
 
@@ -249,6 +276,7 @@ struct TurnSeqModule : Module {
 		for (int i = 0; i < SIZE; i++) {
 			for (int j = 0; j < SIZE; j++) {
 				grid[i][j] = GRIDSTATE::OFF;
+				gridCv[i][j] = 0.f;
 			}
 		}
 	}
@@ -267,14 +295,25 @@ struct TurnSeqModule : Module {
 		for (int i = 0; i < SIZE; i++) {
 			for (int j = 0; j < SIZE; j++) {
 				float r = random::uniform();
-				if (r > 0.8f)
+				if (r > 0.8f) {
 					grid[i][j] = useRandom ? GRIDSTATE::RANDOM : GRIDSTATE::ON;
-				else if (r > 0.6f)
+					gridCv[i][j] = random::uniform();
+				}
+				else if (r > 0.6f) {
 					grid[i][j] = GRIDSTATE::ON;
-				else
+					gridCv[i][j] = random::uniform();
+				}
+				else {
 					grid[i][j] = GRIDSTATE::OFF;
+					gridCv[i][j] = 0.f;
+				}
 			}
 		}
+	}
+
+	void gridNextState(int i, int j) {
+		grid[i][j] = (GRIDSTATE)((grid[i][j] + 1) % 3);
+		gridCv[i][j] = random::uniform();
 	}
 
 	void ratchetingSetProb(float prob = 0.35f) {
@@ -294,6 +333,14 @@ struct TurnSeqModule : Module {
 		}
 		json_object_set_new(rootJ, "grid", gridJ);
 
+		json_t* gridCvJ = json_array();
+		for (int i = 0; i < SIZE; i++) {
+			for (int j = 0; j < SIZE; j++) {
+				json_array_append_new(gridCvJ, json_real(gridCv[i][j]));
+			}
+		}
+		json_object_set_new(rootJ, "gridCv", gridCvJ);
+
 		json_t* portsJ = json_array();
 		for (int i = 0; i < NUM_PORTS; i++) {
 			json_t* portJ = json_object();
@@ -306,6 +353,7 @@ struct TurnSeqModule : Module {
 			json_object_set_new(portJ, "xDir", json_integer(xDir[i]));
 			json_object_set_new(portJ, "yDir", json_integer(yDir[i]));
 			json_object_set_new(portJ, "turnMode", json_integer(turnMode[i]));
+			json_object_set_new(portJ, "outMode", json_integer(outMode[i]));
 			json_array_append_new(portsJ, portJ);
 		}
 		json_object_set_new(rootJ, "ports", portsJ);
@@ -324,6 +372,13 @@ struct TurnSeqModule : Module {
 			}
 		}
 		
+		json_t* gridCvJ = json_object_get(rootJ, "gridCv");
+		for (int i = 0; i < SIZE; i++) {
+			for (int j = 0; j < SIZE; j++) {
+				gridCv[i][j] = json_real_value(json_array_get(gridCvJ, i * SIZE + j));
+			}
+		}
+
 		json_t* portsJ = json_object_get(rootJ, "ports");
 		json_t* portJ;
 		size_t portIndex;
@@ -337,6 +392,7 @@ struct TurnSeqModule : Module {
 			xDir[portIndex] = json_integer_value(json_object_get(portJ, "xDir"));
 			yDir[portIndex] = json_integer_value(json_object_get(portJ, "yDir"));
 			turnMode[portIndex] = (TURNMODE)json_integer_value(json_object_get(portJ, "turnMode"));
+			outMode[portIndex] = (OUTMODE)json_integer_value(json_object_get(portJ, "outMode"));
 		}
 
 		usedSize = json_integer_value(json_object_get(rootJ, "usedSize"));
@@ -690,6 +746,26 @@ struct TurnSeqStartPosEditWidget : OpaqueWidget, TurnSeqDrawHelper<MODULE> {
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Turn mode"));
 		menu->addChild(construct<TurnModeItem>(&MenuItem::text, "Ninety", &TurnModeItem::module, module, &TurnModeItem::id, selectedId, &TurnModeItem::turnMode, TURNMODE::NINETY));
 		menu->addChild(construct<TurnModeItem>(&MenuItem::text, "One-Eighty", &TurnModeItem::module, module, &TurnModeItem::id, selectedId, &TurnModeItem::turnMode, TURNMODE::ONEEIGHTY));
+
+		struct OutModeItem : MenuItem {
+			MODULE* module;
+			OUTMODE outMode;
+			int id;
+
+			void onAction(const event::Action &e) override {
+				module->outMode[id] = outMode;
+			}
+
+			void step() override {
+				rightText = module->outMode[id] == outMode ? "✔" : "";
+				MenuItem::step();
+			}
+		};
+
+		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Out mode"));
+		menu->addChild(construct<OutModeItem>(&MenuItem::text, "Trigger", &OutModeItem::module, module, &OutModeItem::id, selectedId, &OutModeItem::outMode, OUTMODE::TRIGGER));
+		menu->addChild(construct<OutModeItem>(&MenuItem::text, "CV -5..5V", &OutModeItem::module, module, &OutModeItem::id, selectedId, &OutModeItem::outMode, OUTMODE::CV_10V));
+		menu->addChild(construct<OutModeItem>(&MenuItem::text, "CV 0..1V", &OutModeItem::module, module, &OutModeItem::id, selectedId, &OutModeItem::outMode, OUTMODE::CV_1V));
 	}
 
 	void createContextMenu() {
@@ -722,7 +798,8 @@ struct TurnSeqScreenWidget : OpaqueWidget, TurnSeqDrawHelper<MODULE> {
 			if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
 				int x = (int)std::floor((e.pos.x / box.size.x) * module->usedSize);
 				int y = (int)std::floor((e.pos.y / box.size.y) * module->usedSize);
-				module->grid[x][y] = (GRIDSTATE)((module->grid[x][y] + 1) % 3);
+				module->gridNextState(x, y);
+				
 				e.consume(this);
 			}
 			if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
