@@ -97,10 +97,10 @@ struct TriangleRightLight : TBase {
 };
 
 
-struct MyBlackScrew : app::SvgScrew {
+struct StoermelderBlackScrew : app::SvgScrew {
 	widget::TransformWidget* tw;
 
-	MyBlackScrew() {
+	StoermelderBlackScrew() {
 		fb->removeChild(sw);
 
 		tw = new TransformWidget();

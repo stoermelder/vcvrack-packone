@@ -229,8 +229,8 @@ struct CVMapMicroWidget : ModuleWidget {
 		setModule(module);
 		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/CVMapMicro.svg")));
 
-		addChild(createWidget<MyBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
-		addChild(createWidget<MyBlackScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
+		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
 		MapButton* button = createParamCentered<MapButton>(Vec(22.5f, 74.2f), module, CVMapMicroModule::MAP_PARAM);
 		button->setModule(module);
