@@ -4,6 +4,8 @@
     - New module, 2-dimensional XY-Mixer for 8 sound sources with various modulation targets and graphical interface
 - Module [TURN-SEQ](./docs/TurnSeq.md)
     - New module, 4 channel trigger-sequencer running on a 2-dimensional grid
+- Module [MIDI-CAT](./docs/MidiCat.md)
+    - Fixed velocity-handling on note messages if in toggle-mode (does not need vel 127 anymore)
 - Module [ReMOVE Lite](./docs/ReMove.md)
     - Added option to start playing after recording automatically
     - Added SMTH-parameter for linear smoothing espacially on jumps at sequence end and sequence change (#14)
@@ -51,7 +53,7 @@
 ### 1.0.5
 
 - Module [8FACE](./docs/EightFace.md)
-    - New module, preset sequencer for 8 presets of any module ([docs](./docs/EightFace.md))
+    - New module, preset sequencer for 8 presets of any module
 - Module [STRIP](./docs/Strip.md)
     - Added "cut" for cut & paste in the context menu
 - Module [ReMOVE Lite](./docs/ReMove.md)
@@ -61,7 +63,7 @@
 ### 1.0.4
 
 - Module [STRIP](./docs/Strip.md)
-    - New module, manage a group of modules in a patch, providing load, save as, disable and randomize ([docs](./docs/Strip.md))
+    - New module, manage a group of modules in a patch, providing load, save as, disable and randomize
 - Module [ReMOVE Lite](./docs/ReMove.md)
     - LEDs for RUN and RESET turn red when using PHASE-input
     - Added play mode "Sequence Loop"

@@ -72,7 +72,7 @@ enum CCMODE {
 enum NOTEMODE {
 	NOTEMODE_MOMENTARY = 0,
 	NOTEMODE_MOMENTARY_VEL = 1,
-	NOTENOTE_TOGGLE = 2
+	NOTEMODE_TOGGLE = 2
 };
 
 struct MidiCatModule : Module {
@@ -281,8 +281,8 @@ struct MidiCatModule : Module {
 										lastValueIn[id] = valuesNote[note];
 									}
 									break;
-								case NOTEMODE::NOTENOTE_TOGGLE:
-									if (valuesNote[note] == 127 && (lastValueIn[id] == -1 || lastValueIn[id] >= 0)) {
+								case NOTEMODE::NOTEMODE_TOGGLE:
+									if (valuesNote[note] > 0 && (lastValueIn[id] == -1 || lastValueIn[id] >= 0)) {
 										t = 127;
 										lastValueIn[id] = -2;
 									} 
@@ -290,7 +290,7 @@ struct MidiCatModule : Module {
 										t = 127;
 										lastValueIn[id] = -3;
 									}
-									else if (valuesNote[note] == 127 && lastValueIn[id] == -3) {
+									else if (valuesNote[note] > 0 && lastValueIn[id] == -3) {
 										t = 0;
 										lastValueIn[id] = -4;
 									}
@@ -664,7 +664,7 @@ struct NoteModeMenuItem : MenuItem {
 		Menu *menu = new Menu;
 		menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Momentary", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::NOTEMODE_MOMENTARY));
 		menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Momentary + Velocity", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::NOTEMODE_MOMENTARY_VEL));
-		menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Toggle", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::NOTENOTE_TOGGLE));
+		menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Toggle", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::NOTEMODE_TOGGLE));
 		return menu;
 	}
 };
