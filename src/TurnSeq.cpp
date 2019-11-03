@@ -1,5 +1,8 @@
 #include "plugin.hpp"
+#include "digital.hpp"
 #include <thread>
+#include <random>
+
 
 namespace TurnSeq {
 
@@ -13,7 +16,6 @@ enum MODULESTATE {
 	GRID = 0,
 	EDIT = 1
 };
-
 
 template < int SIZE, int NUM_PORTS >
 struct TurnSeqModule : Module {
@@ -38,6 +40,9 @@ struct TurnSeqModule : Module {
 
 	const int numPorts = NUM_PORTS;
 
+	std::default_random_engine randGen{(uint16_t)std::chrono::system_clock::now().time_since_epoch().count()};
+	std::geometric_distribution<int> geoDist{0.35};
+
 	/** [Stored to JSON] */
 	int usedSize = 8;
 	/** [Stored to JSON] */
@@ -60,6 +65,9 @@ struct TurnSeqModule : Module {
 	/** [Stored to JSON] */
 	int yPos[NUM_PORTS];
 
+	/** [Stored to JSON] */
+	bool enableRatcheting;
+
 	dsp::SchmittTrigger clockTrigger[NUM_PORTS];
 	bool clockTrigger0;
 	dsp::SchmittTrigger resetTrigger[NUM_PORTS];
@@ -69,11 +77,11 @@ struct TurnSeqModule : Module {
 	dsp::Timer resetTimer[NUM_PORTS];
 	float resetTimer0;
 	dsp::PulseGenerator outPulse[NUM_PORTS];
+	ClockMultiplier multiplier[NUM_PORTS];
 
 	dsp::SchmittTrigger shiftTrigger;
 
 	bool active[NUM_PORTS];
-	bool changed[NUM_PORTS];
 
 	MODULESTATE currentState = MODULESTATE::GRID;
 
@@ -91,6 +99,7 @@ struct TurnSeqModule : Module {
 			yDir[i] = yStartDir[i] = 0;
 			resetTimer[i].reset();
 		}
+		enableRatcheting = true;
 		Module::onReset();
 	}
 
@@ -108,17 +117,35 @@ struct TurnSeqModule : Module {
 		}
 
 		for (int i = 0; i < NUM_PORTS; i++) {
+			active[i] = outputs[OUTPUT + i].isConnected();
+
 			if (processResetTrigger(i)) {
 				xPos[i] = xStartPos[i];
 				yPos[i] = yStartPos[i];
 				xDir[i] = xStartDir[i];
 				yDir[i] = yStartDir[i];
+				multiplier[i].reset();
 			}
 
 			if (processClockTrigger(i, args.sampleTime)) {
 				xPos[i] = (xPos[i] + xDir[i] + usedSize) % usedSize;
 				yPos[i] = (yPos[i] + yDir[i] + usedSize) % usedSize;
-				changed[i] = true;
+				multiplier[i].tick();
+
+				switch (grid[xPos[i]][yPos[i]]) {
+					case GRIDSTATE::OFF:
+						break;
+					case GRIDSTATE::ON:
+						outPulse[i].trigger();
+						break;
+					case GRIDSTATE::RANDOM:
+						if (enableRatcheting)
+							multiplier[i].trigger(geoDist(randGen));
+						else
+							if (random::uniform() >= 0.5f)
+								outPulse[i].trigger();
+						break;
+				}
 			}
 
 			if (processTurnTrigger(i)) {
@@ -136,21 +163,8 @@ struct TurnSeqModule : Module {
 				}
 			}
 
-			if (changed[i]) {
-				switch (grid[xPos[i]][yPos[i]]) {
-					case GRIDSTATE::OFF:
-						break;
-					case GRIDSTATE::ON:
-						outPulse[i].trigger();
-						break;
-					case GRIDSTATE::RANDOM:
-						if (random::uniform() >= 0.5f) outPulse[i].trigger();
-						break;
-				}
-				changed[i] = false;
-			}
-
-			active[i] = outputs[OUTPUT + i].isConnected();
+			if (multiplier[i].process())
+				outPulse[i].trigger();
 			outputs[OUTPUT + i].setVoltage(outPulse[i].process(args.sampleTime) ? 10.f : 0.f);
 		}
 	}
@@ -267,6 +281,7 @@ struct TurnSeqModule : Module {
 		json_object_set_new(rootJ, "ports", portsJ);
 
 		json_object_set_new(rootJ, "usedSize", json_integer(usedSize));
+		json_object_set_new(rootJ, "enableRatcheting", json_boolean(enableRatcheting));
 		return rootJ;
 	}
 
@@ -293,6 +308,7 @@ struct TurnSeqModule : Module {
 		}
 
 		usedSize = json_integer_value(json_object_get(rootJ, "usedSize"));
+		enableRatcheting = json_boolean_value(json_object_get(rootJ, "enableRatcheting"));
 	}
 };
 
@@ -354,6 +370,20 @@ struct ClearMenuItem : MenuItem {
 	
 	void onAction(const event::Action &e) override {
 		module->gridClear();
+	}
+};
+
+template < typename MODULE >
+struct RatchetingItem : MenuItem {
+	MODULE* module;
+
+	void onAction(const event::Action &e) override {
+		module->enableRatcheting ^= true;
+	}
+
+	void step() override {
+		rightText = module->enableRatcheting ? "✔" : "";
+		MenuItem::step();
 	}
 };
 
@@ -623,6 +653,8 @@ struct TurnSeqScreenWidget : OpaqueWidget, TurnSeqDrawHelper<MODULE> {
 		menu->addChild(construct<SizeMenuItem<MODULE>>(&MenuItem::text, "Dimension", &SizeMenuItem<MODULE>::module, module));
 		menu->addChild(construct<RandomizeMenuItem<MODULE>>(&MenuItem::text, "Randomize", &RandomizeMenuItem<MODULE>::module, module));
 		menu->addChild(construct<ClearMenuItem<MODULE>>(&MenuItem::text, "Clear", &ClearMenuItem<MODULE>::module, module));
+		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<RatchetingItem<MODULE>>(&MenuItem::text, "Ratcheting", &RatchetingItem<MODULE>::module, module));
 	}
 };
 
