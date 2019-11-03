@@ -12,6 +12,11 @@ enum GRIDSTATE {
 	RANDOM = 2
 };
 
+enum TURNMODE {
+	NINETY = 0,
+	ONEEIGHTY = 1
+};
+
 enum MODULESTATE {
 	GRID = 0,
 	EDIT = 1
@@ -66,6 +71,9 @@ struct TurnSeqModule : Module {
 	int yPos[NUM_PORTS];
 
 	/** [Stored to JSON] */
+	TURNMODE turnMode[NUM_PORTS];
+
+	/** [Stored to JSON] */
 	bool ratchetingEnabled;
 	/** [Stored to JSON] */
 	float ratchetingProb;
@@ -103,6 +111,7 @@ struct TurnSeqModule : Module {
 			yPos[i] = yStartPos[i] = usedSize / NUM_PORTS * i;
 			xDir[i] = xStartDir[i] = 1;
 			yDir[i] = yStartDir[i] = 0;
+			turnMode[i] = TURNMODE::NINETY;
 			resetTimer[i].reset();
 		}
 		ratchetingEnabled = true;
@@ -160,16 +169,20 @@ struct TurnSeqModule : Module {
 
 			if (processTurnTrigger(i)) {
 				if (xDir[i] == 1 && yDir[i] == 0) {
-					xDir[i] = 0; yDir[i] = 1;
+					xDir[i] = turnMode[i] == TURNMODE::NINETY ? 0 : -1;
+					yDir[i] = turnMode[i] == TURNMODE::NINETY ? 1 : 0;
 				}
 				else if (xDir[i] == 0 && yDir[i] == 1) {
-					xDir[i] = -1; yDir[i] = 0;
+					xDir[i] = turnMode[i] == TURNMODE::NINETY ? -1 : 0;
+					yDir[i] = turnMode[i] == TURNMODE::NINETY ? 0 : -1;
 				}
 				else if (xDir[i] == -1 && yDir[i] == 0) {
-					xDir[i] = 0; yDir[i] = -1;
+					xDir[i] = turnMode[i] == TURNMODE::NINETY ? 0 : 1;
+					yDir[i] = turnMode[i] == TURNMODE::NINETY ? -1 : 0;
 				}
 				else {
-					xDir[i] = 1; yDir[i] = 0;
+					xDir[i] = turnMode[i] == TURNMODE::NINETY ? 1 : 0;
+					yDir[i] = turnMode[i] == TURNMODE::NINETY ? 0 : 1;
 				}
 			}
 
@@ -292,6 +305,7 @@ struct TurnSeqModule : Module {
 			json_object_set_new(portJ, "yPos", json_integer(yPos[i]));
 			json_object_set_new(portJ, "xDir", json_integer(xDir[i]));
 			json_object_set_new(portJ, "yDir", json_integer(yDir[i]));
+			json_object_set_new(portJ, "turnMode", json_integer(turnMode[i]));
 			json_array_append_new(portsJ, portJ);
 		}
 		json_object_set_new(rootJ, "ports", portsJ);
@@ -322,6 +336,7 @@ struct TurnSeqModule : Module {
 			yPos[portIndex] = json_integer_value(json_object_get(portJ, "yPos"));
 			xDir[portIndex] = json_integer_value(json_object_get(portJ, "xDir"));
 			yDir[portIndex] = json_integer_value(json_object_get(portJ, "yDir"));
+			turnMode[portIndex] = (TURNMODE)json_integer_value(json_object_get(portJ, "turnMode"));
 		}
 
 		usedSize = json_integer_value(json_object_get(rootJ, "usedSize"));
@@ -632,6 +647,8 @@ struct TurnSeqStartPosEditWidget : OpaqueWidget, TurnSeqDrawHelper<MODULE> {
 	}
 
 	void createDirectionContextMenu() {
+		ui::Menu* menu = createMenu();
+
 		struct DirectionItem : MenuItem {
 			MODULE* module;
 			int xdir, ydir;
@@ -649,12 +666,30 @@ struct TurnSeqStartPosEditWidget : OpaqueWidget, TurnSeqDrawHelper<MODULE> {
 			}
 		};
 
-		ui::Menu* menu = createMenu();
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Start direction"));
 		menu->addChild(construct<DirectionItem>(&MenuItem::text, "Right", &DirectionItem::module, module, &DirectionItem::id, selectedId, &DirectionItem::xdir, 1, &DirectionItem::ydir, 0));
 		menu->addChild(construct<DirectionItem>(&MenuItem::text, "Down", &DirectionItem::module, module, &DirectionItem::id, selectedId, &DirectionItem::xdir, 0, &DirectionItem::ydir, 1));
 		menu->addChild(construct<DirectionItem>(&MenuItem::text, "Left", &DirectionItem::module, module, &DirectionItem::id, selectedId, &DirectionItem::xdir, -1, &DirectionItem::ydir, 0));
 		menu->addChild(construct<DirectionItem>(&MenuItem::text, "Up", &DirectionItem::module, module, &DirectionItem::id, selectedId, &DirectionItem::xdir, 0, &DirectionItem::ydir, -1));
+
+		struct TurnModeItem : MenuItem {
+			MODULE* module;
+			TURNMODE turnMode;
+			int id;
+
+			void onAction(const event::Action &e) override {
+				module->turnMode[id] = turnMode;
+			}
+
+			void step() override {
+				rightText = module->turnMode[id] == turnMode ? "✔" : "";
+				MenuItem::step();
+			}
+		};
+
+		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Turn mode"));
+		menu->addChild(construct<TurnModeItem>(&MenuItem::text, "Ninety", &TurnModeItem::module, module, &TurnModeItem::id, selectedId, &TurnModeItem::turnMode, TURNMODE::NINETY));
+		menu->addChild(construct<TurnModeItem>(&MenuItem::text, "One-Eighty", &TurnModeItem::module, module, &TurnModeItem::id, selectedId, &TurnModeItem::turnMode, TURNMODE::ONEEIGHTY));
 	}
 
 	void createContextMenu() {
