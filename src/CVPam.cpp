@@ -1,5 +1,4 @@
 #include "plugin.hpp"
-#include "widgets.hpp"
 #include "MapModule.hpp"
 #include <chrono>
 #include <thread>
