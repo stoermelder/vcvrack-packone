@@ -41,7 +41,7 @@ struct TurnSeqModule : Module {
 	const int numPorts = NUM_PORTS;
 
 	std::default_random_engine randGen{(uint16_t)std::chrono::system_clock::now().time_since_epoch().count()};
-	std::geometric_distribution<int> geoDist{0.35};
+	std::geometric_distribution<int>* geoDist = NULL;
 
 	/** [Stored to JSON] */
 	int usedSize = 8;
@@ -66,7 +66,9 @@ struct TurnSeqModule : Module {
 	int yPos[NUM_PORTS];
 
 	/** [Stored to JSON] */
-	bool enableRatcheting;
+	bool ratchetingEnabled;
+	/** [Stored to JSON] */
+	float ratchetingProb;
 
 	dsp::SchmittTrigger clockTrigger[NUM_PORTS];
 	bool clockTrigger0;
@@ -90,6 +92,10 @@ struct TurnSeqModule : Module {
 		onReset();
 	}
 
+	~TurnSeqModule() {
+		delete geoDist;
+	}
+
 	void onReset() override {
 		gridClear();
 		for (int i = 0; i < NUM_PORTS; i++) {
@@ -99,7 +105,8 @@ struct TurnSeqModule : Module {
 			yDir[i] = yStartDir[i] = 0;
 			resetTimer[i].reset();
 		}
-		enableRatcheting = true;
+		ratchetingEnabled = true;
+		ratchetingSetProb();
 		Module::onReset();
 	}
 
@@ -139,11 +146,14 @@ struct TurnSeqModule : Module {
 						outPulse[i].trigger();
 						break;
 					case GRIDSTATE::RANDOM:
-						if (enableRatcheting)
-							multiplier[i].trigger(geoDist(randGen));
-						else
+						if (ratchetingEnabled) {
+							if (geoDist) 
+								multiplier[i].trigger((*geoDist)(randGen));
+						}
+						else {
 							if (random::uniform() >= 0.5f)
 								outPulse[i].trigger();
+						}
 						break;
 				}
 			}
@@ -254,6 +264,12 @@ struct TurnSeqModule : Module {
 		}
 	}
 
+	void ratchetingSetProb(float prob = 0.35f) {
+		if (geoDist) delete geoDist;
+		geoDist = new std::geometric_distribution<int>(prob);
+		ratchetingProb = prob;
+	}
+
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
 
@@ -281,7 +297,8 @@ struct TurnSeqModule : Module {
 		json_object_set_new(rootJ, "ports", portsJ);
 
 		json_object_set_new(rootJ, "usedSize", json_integer(usedSize));
-		json_object_set_new(rootJ, "enableRatcheting", json_boolean(enableRatcheting));
+		json_object_set_new(rootJ, "ratchetingEnabled", json_boolean(ratchetingEnabled));
+		json_object_set_new(rootJ, "ratchetingProb", json_real(ratchetingProb));
 		return rootJ;
 	}
 
@@ -308,7 +325,8 @@ struct TurnSeqModule : Module {
 		}
 
 		usedSize = json_integer_value(json_object_get(rootJ, "usedSize"));
-		enableRatcheting = json_boolean_value(json_object_get(rootJ, "enableRatcheting"));
+		ratchetingEnabled = json_boolean_value(json_object_get(rootJ, "ratchetingEnabled"));
+		ratchetingProb = json_real_value(json_object_get(rootJ, "ratchetingProb"));
 	}
 };
 
@@ -375,16 +393,49 @@ struct ClearMenuItem : MenuItem {
 };
 
 template < typename MODULE >
-struct RatchetingItem : MenuItem {
+struct RatchetingMenuItem : MenuItem {
 	MODULE* module;
 
 	void onAction(const event::Action &e) override {
-		module->enableRatcheting ^= true;
+		module->ratchetingEnabled ^= true;
 	}
 
 	void step() override {
-		rightText = module->enableRatcheting ? "✔" : "";
+		rightText = module->ratchetingEnabled ? "✔" : "";
 		MenuItem::step();
+	}
+};
+
+template < typename MODULE >
+struct RatchetingProbMenuItem : MenuItem {
+	RatchetingProbMenuItem() {
+		rightText = RIGHT_ARROW;
+	}
+
+	struct RatchetingProbItem : MenuItem {
+		MODULE* module;
+		float ratchetingProb;
+		
+		void onAction(const event::Action &e) override {
+			module->ratchetingSetProb(ratchetingProb);
+		}
+
+		void step() override {
+			rightText = module->ratchetingProb == ratchetingProb ? "✔" : "";
+			MenuItem::step();
+		}
+	};
+
+	MODULE* module;
+	Menu* createChildMenu() override {
+		Menu* menu = new Menu;
+		menu->addChild(construct<RatchetingProbItem>(&MenuItem::text, "50%", &RatchetingProbItem::module, module, &RatchetingProbItem::ratchetingProb, 0.5f));
+		menu->addChild(construct<RatchetingProbItem>(&MenuItem::text, "60%", &RatchetingProbItem::module, module, &RatchetingProbItem::ratchetingProb, 0.4f));
+		menu->addChild(construct<RatchetingProbItem>(&MenuItem::text, "65%", &RatchetingProbItem::module, module, &RatchetingProbItem::ratchetingProb, 0.35f));
+		menu->addChild(construct<RatchetingProbItem>(&MenuItem::text, "70%", &RatchetingProbItem::module, module, &RatchetingProbItem::ratchetingProb, 0.3f));
+		menu->addChild(construct<RatchetingProbItem>(&MenuItem::text, "80%", &RatchetingProbItem::module, module, &RatchetingProbItem::ratchetingProb, 0.2f));
+		menu->addChild(construct<RatchetingProbItem>(&MenuItem::text, "90%", &RatchetingProbItem::module, module, &RatchetingProbItem::ratchetingProb, 0.1f));
+		return menu;
 	}
 };
 
@@ -651,12 +702,13 @@ struct TurnSeqScreenWidget : OpaqueWidget, TurnSeqDrawHelper<MODULE> {
 		ui::Menu* menu = createMenu();
 		menu->addChild(construct<ModuleStateMenuItem<MODULE>>(&MenuItem::text, "Enter Edit-mode", &ModuleStateMenuItem<MODULE>::module, module));
 		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<RatchetingMenuItem<MODULE>>(&MenuItem::text, "Ratcheting", &RatchetingMenuItem<MODULE>::module, module));
+		menu->addChild(construct<RatchetingProbMenuItem<MODULE>>(&MenuItem::text, "Ratcheting probability", &RatchetingProbMenuItem<MODULE>::module, module));
+		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<SizeMenuItem<MODULE>>(&MenuItem::text, "Dimension", &SizeMenuItem<MODULE>::module, module));
 		menu->addChild(construct<RandomizeMenuItem<MODULE>>(&MenuItem::text, "Randomize", &RandomizeMenuItem<MODULE>::module, module));
 		menu->addChild(construct<RandomizeMenuItem<MODULE>>(&MenuItem::text, "Randomize certainty", &RandomizeMenuItem<MODULE>::module, module, &RandomizeMenuItem<MODULE>::useRandom, false));
 		menu->addChild(construct<ClearMenuItem<MODULE>>(&MenuItem::text, "Clear", &ClearMenuItem<MODULE>::module, module));
-		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<RatchetingItem<MODULE>>(&MenuItem::text, "Ratcheting", &RatchetingItem<MODULE>::module, module));
 	}
 };
 
