@@ -123,7 +123,7 @@ struct MazeModule : Module {
 			xDir[i] = xStartDir[i] = 1;
 			yDir[i] = yStartDir[i] = 0;
 			turnMode[i] = TURNMODE::NINETY;
-			outMode[i] = OUTMODE::BI_5V;
+			outMode[i] = OUTMODE::UNI_3V;
 			resetTimer[i].reset();
 		}
 		ratchetingEnabled = true;
@@ -145,7 +145,7 @@ struct MazeModule : Module {
 		}
 
 		for (int i = 0; i < NUM_PORTS; i++) {
-			active[i] = outputs[GATE_OUTPUT + i].isConnected();
+			active[i] = outputs[GATE_OUTPUT + i].isConnected() || outputs[CV_OUTPUT + i].isConnected();
 			bool doPulse = false;
 
 			if (processResetTrigger(i)) {
@@ -198,15 +198,11 @@ struct MazeModule : Module {
 				}
 			}
 
-			if (multiplier[i].process() || doPulse)
-				outPulse[i].trigger();
-
 			float outGate = 0.f;
-			if (outPulse[i].process(args.sampleTime))
-				outGate = 10.f;
-
 			float outCv = outputs[CV_OUTPUT + i].getVoltage();
-			if (grid[xPos[i]][yPos[i]] != GRIDSTATE::OFF) {
+
+			if (multiplier[i].process() || doPulse) {
+				outPulse[i].trigger();
 				switch (outMode[i]) {
 					case OUTMODE::BI_5V:
 						outCv = rescale(gridCv[xPos[i]][yPos[i]], 0.f, 1.f, -5.f, 5.f);
@@ -219,6 +215,9 @@ struct MazeModule : Module {
 						break;
 				}
 			}
+
+			if (outPulse[i].process(args.sampleTime))
+				outGate = 10.f;
 
 			outputs[GATE_OUTPUT + i].setVoltage(outGate);
 			outputs[CV_OUTPUT + i].setVoltage(outCv);
