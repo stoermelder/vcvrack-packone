@@ -19,8 +19,9 @@ enum TURNMODE {
 
 enum OUTMODE {
 	BI_5V = 0,
-	UNI_3V = 1,
-	UNI_1V = 2
+	UNI_5V = 1,
+	UNI_3V = 2,
+	UNI_1V = 3
 };
 
 enum MODULESTATE {
@@ -42,7 +43,7 @@ struct MazeModule : Module {
 		NUM_INPUTS
 	};
 	enum OutputIds {
-		ENUMS(GATE_OUTPUT, NUM_PORTS),
+		ENUMS(TRIG_OUTPUT, NUM_PORTS),
 		ENUMS(CV_OUTPUT, NUM_PORTS),
 		NUM_OUTPUTS
 	};
@@ -131,11 +132,6 @@ struct MazeModule : Module {
 		Module::onReset();
 	}
 
-	void onRandomize() override {
-		gridRandomize();
-		Module::onRandomize();
-	}
-
 	void process(const ProcessArgs& args) override {
 		if (shiftTrigger.process(inputs[SHIFT_INPUT].getVoltage())) {
 			for (int i = 0; i < NUM_PORTS; i++) {
@@ -145,7 +141,7 @@ struct MazeModule : Module {
 		}
 
 		for (int i = 0; i < NUM_PORTS; i++) {
-			active[i] = outputs[GATE_OUTPUT + i].isConnected() || outputs[CV_OUTPUT + i].isConnected();
+			active[i] = outputs[TRIG_OUTPUT + i].isConnected() || outputs[CV_OUTPUT + i].isConnected();
 			bool doPulse = false;
 
 			if (processResetTrigger(i)) {
@@ -207,6 +203,9 @@ struct MazeModule : Module {
 					case OUTMODE::BI_5V:
 						outCv = rescale(gridCv[xPos[i]][yPos[i]], 0.f, 1.f, -5.f, 5.f);
 						break;
+					case OUTMODE::UNI_5V:
+						outCv = rescale(gridCv[xPos[i]][yPos[i]], 0.f, 1.f, 0.f, 5.f);
+						break;
 					case OUTMODE::UNI_3V:
 						outCv = rescale(gridCv[xPos[i]][yPos[i]], 0.f, 1.f, 0.f, 3.f);
 						break;
@@ -219,7 +218,7 @@ struct MazeModule : Module {
 			if (outPulse[i].process(args.sampleTime))
 				outGate = 10.f;
 
-			outputs[GATE_OUTPUT + i].setVoltage(outGate);
+			outputs[TRIG_OUTPUT + i].setVoltage(outGate);
 			outputs[CV_OUTPUT + i].setVoltage(outCv);
 		}
 	}
@@ -769,6 +768,7 @@ struct MazeStartPosEditWidget : OpaqueWidget, MazeDrawHelper<MODULE> {
 
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "CV mode"));
 		menu->addChild(construct<OutModeItem>(&MenuItem::text, "-5..5V", &OutModeItem::module, module, &OutModeItem::id, selectedId, &OutModeItem::outMode, OUTMODE::BI_5V));
+		menu->addChild(construct<OutModeItem>(&MenuItem::text, "0..5V", &OutModeItem::module, module, &OutModeItem::id, selectedId, &OutModeItem::outMode, OUTMODE::UNI_5V));
 		menu->addChild(construct<OutModeItem>(&MenuItem::text, "0..3V", &OutModeItem::module, module, &OutModeItem::id, selectedId, &OutModeItem::outMode, OUTMODE::UNI_3V));
 		menu->addChild(construct<OutModeItem>(&MenuItem::text, "0..1V", &OutModeItem::module, module, &OutModeItem::id, selectedId, &OutModeItem::outMode, OUTMODE::UNI_1V));
 	}
@@ -867,10 +867,10 @@ struct MazeWidget32 : ModuleWidget {
 		addInput(createInputCentered<StoermelderPort>(Vec(275.6f, 292.2f), module, MODULE::TURN_INPUT + 2));
 		addInput(createInputCentered<StoermelderPort>(Vec(275.6f, 327.6f), module, MODULE::TURN_INPUT + 3));
 
-		addOutput(createOutputCentered<StoermelderPort>(Vec(52.2f, 292.2f), module, MODULE::GATE_OUTPUT + 0));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(52.2f, 327.6f), module, MODULE::GATE_OUTPUT + 1));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(307.7f, 292.2f), module, MODULE::GATE_OUTPUT + 2));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(307.7f, 327.6f), module, MODULE::GATE_OUTPUT + 3));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(52.2f, 292.2f), module, MODULE::TRIG_OUTPUT + 0));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(52.2f, 327.6f), module, MODULE::TRIG_OUTPUT + 1));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(307.7f, 292.2f), module, MODULE::TRIG_OUTPUT + 2));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(307.7f, 327.6f), module, MODULE::TRIG_OUTPUT + 3));
 
 		addOutput(createOutputCentered<StoermelderPort>(Vec(24.8f, 292.2f), module, MODULE::CV_OUTPUT + 0));
 		addOutput(createOutputCentered<StoermelderPort>(Vec(24.8f, 327.6f), module, MODULE::CV_OUTPUT + 1));
