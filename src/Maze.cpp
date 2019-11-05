@@ -104,8 +104,8 @@ struct MazeModule : Module {
 	dsp::SchmittTrigger shiftTrigger;
 
 	bool active[NUM_PORTS];
-
 	MODULESTATE currentState = MODULESTATE::GRID;
+	bool gridDirty = true;
 
 	MazeModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -129,6 +129,7 @@ struct MazeModule : Module {
 		}
 		ratchetingEnabled = true;
 		ratchetingSetProb();
+		gridDirty = true;
 		Module::onReset();
 	}
 
@@ -283,6 +284,7 @@ struct MazeModule : Module {
 				gridCv[i][j] = 0.f;
 			}
 		}
+		gridDirty = true;
 	}
 
 	void gridResize(int size) {
@@ -293,6 +295,7 @@ struct MazeModule : Module {
 			xPos[i] = (xPos[i] + usedSize) % usedSize;
 			yPos[i] = (yPos[i] + usedSize) % usedSize;
 		}
+		gridDirty = true;
 	}
 
 	void gridRandomize(bool useRandom = true) {
@@ -313,11 +316,13 @@ struct MazeModule : Module {
 				}
 			}
 		}
+		gridDirty = true;
 	}
 
 	void gridNextState(int i, int j) {
 		grid[i][j] = (GRIDSTATE)((grid[i][j] + 1) % 3);
 		gridCv[i][j] = random::uniform();
+		gridDirty = true;
 	}
 
 	void ratchetingSetProb(float prob = 0.35f) {
@@ -402,6 +407,7 @@ struct MazeModule : Module {
 		usedSize = json_integer_value(json_object_get(rootJ, "usedSize"));
 		ratchetingEnabled = json_boolean_value(json_object_get(rootJ, "ratchetingEnabled"));
 		ratchetingProb = json_real_value(json_object_get(rootJ, "ratchetingProb"));
+		gridDirty = true;
 	}
 };
 
@@ -414,37 +420,57 @@ struct ModuleStateMenuItem : MenuItem {
 	
 	void onAction(const event::Action &e) override {
 		module->currentState = module->currentState == MODULESTATE::GRID ? MODULESTATE::EDIT : MODULESTATE::GRID;
+		module->gridDirty = true;
 	}
 };
 
+
 template < typename MODULE >
-struct SizeMenuItem : MenuItem {
-	SizeMenuItem() {
-		rightText = RIGHT_ARROW;
-	}
-
-	struct SizeItem : MenuItem {
+struct SizeSlider : ui::Slider {
+	struct SizeQuantity : Quantity {
 		MODULE* module;
-		int usedSize;
-		
-		void onAction(const event::Action &e) override {
-			module->gridResize(usedSize);
-		}
 
-		void step() override {
-			rightText = module->usedSize == usedSize ? "✔" : "";
-			MenuItem::step();
+		SizeQuantity(MODULE* module) {
+			this->module = module;
+		}
+		void setValue(float value) override {
+			int s = int(clamp(value, 2.f, 32.f));
+			module->gridResize(s);
+		}
+		float getValue() override {
+			return module->usedSize;
+		}
+		float getDefaultValue() override {
+			return 8.f;
+		}
+		float getMinValue() override {
+			return 2.f;
+		}
+		float getMaxValue() override {
+			return 32.f;
+		}
+		float getDisplayValue() override {
+			return getValue();
+		}
+		std::string getDisplayValueString() override {
+			return string::f("%i x %i", int(getDisplayValue()), int(getDisplayValue()));
+		}
+		void setDisplayValue(float displayValue) override {
+			setValue(displayValue);
+		}
+		std::string getLabel() override {
+			return "Dimension";
+		}
+		std::string getUnit() override {
+			return "";
 		}
 	};
 
-	MODULE* module;
-	Menu* createChildMenu() override {
-		Menu* menu = new Menu;
-		menu->addChild(construct<SizeItem>(&MenuItem::text, "4 x 4", &SizeItem::module, module, &SizeItem::usedSize, 4));
-		menu->addChild(construct<SizeItem>(&MenuItem::text, "8 x 8", &SizeItem::module, module, &SizeItem::usedSize, 8));
-		menu->addChild(construct<SizeItem>(&MenuItem::text, "16 x 16", &SizeItem::module, module, &SizeItem::usedSize, 16));
-		menu->addChild(construct<SizeItem>(&MenuItem::text, "32 x 32", &SizeItem::module, module, &SizeItem::usedSize, 32));
-		return menu;
+	SizeSlider(MODULE* module) {
+		quantity = new SizeQuantity(module);
+	}
+	~SizeSlider() {
+		delete quantity;
 	}
 };
 
@@ -518,60 +544,126 @@ struct RatchetingProbMenuItem : MenuItem {
 // Widgets
 
 template < typename MODULE >
+struct MazeGridWidget : FramebufferWidget {
+	struct MazeGridDrawWidget : OpaqueWidget {
+		MODULE* module;
+		NVGcolor gridColor = color::WHITE;
+
+		MazeGridDrawWidget(MODULE* module) {
+			this->module = module;
+		}
+
+		void draw(const Widget::DrawArgs& args) override {
+			if (!module) return;
+			float sizeX = box.size.x / module->usedSize;
+			float sizeY = box.size.y / module->usedSize;
+
+			// Draw background
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+			nvgFillColor(args.vg, nvgRGB(0, 16, 90));
+			nvgFill(args.vg);
+
+			// Draw grid
+			nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
+			nvgStrokeWidth(args.vg, 0.6f);
+			for (int i = 1; i < module->usedSize; i++) {
+				float a = 0.075f;
+				if (module->usedSize % 4 == 0) { if (i % 4 == 0) a = 0.2f; }
+				else if (module->usedSize % 3 == 0) { if (i % 3 == 0) a = 0.2f; }
+				else if (module->usedSize % 5 == 0) { if (i % 5 == 0) a = 0.2f; }
+				nvgBeginPath(args.vg);
+				nvgMoveTo(args.vg, sizeX * i, 0.f);
+				nvgLineTo(args.vg, sizeX * i, box.size.y);
+				nvgStrokeColor(args.vg, color::mult(color::WHITE, a));
+				nvgStroke(args.vg);
+			}
+			for (int i = 1; i < module->usedSize; i++) {
+				float a = 0.075f;
+				if (module->usedSize % 4 == 0) { if (i % 4 == 0) a = 0.2f; }
+				else if (module->usedSize % 3 == 0) { if (i % 3 == 0) a = 0.2f; }
+				else if (module->usedSize % 5 == 0) { if (i % 5 == 0) a = 0.2f; }
+				nvgBeginPath(args.vg);
+				nvgMoveTo(args.vg, 0.f, sizeY * i);
+				nvgLineTo(args.vg, box.size.x, sizeY * i);
+				nvgStrokeColor(args.vg, color::mult(color::WHITE, a));
+				nvgStroke(args.vg);
+			}
+
+			// Draw grid cells
+			float stroke = 0.7f;
+			for (int i = 0; i < module->usedSize; i++) {
+				for (int j = 0; j < module->usedSize; j++) {
+					switch (module->grid[i][j]) {
+						case GRIDSTATE::ON:
+							nvgBeginPath(args.vg);
+							nvgRect(args.vg, i * sizeX + stroke / 2.f, j * sizeY + stroke / 2.f, sizeX - stroke, sizeY - stroke);
+							nvgFillColor(args.vg, color::mult(gridColor, 0.55f));
+							nvgFill(args.vg);
+							break;
+						case GRIDSTATE::RANDOM:
+							nvgBeginPath(args.vg);
+							nvgRect(args.vg, i * sizeX + stroke, j * sizeY + stroke, sizeX - stroke * 2.f, sizeY - stroke * 2.f);
+							nvgStrokeWidth(args.vg, stroke);
+							nvgStrokeColor(args.vg, color::mult(gridColor, 0.45f));
+							nvgStroke(args.vg);
+							nvgBeginPath(args.vg);
+							nvgRect(args.vg, i * sizeX + sizeX * 0.25f, j * sizeY + sizeY * 0.25f, sizeX * 0.5f, sizeY * 0.5f);
+							nvgFillColor(args.vg, color::mult(gridColor, 0.3f));
+							nvgFill(args.vg);
+							break;
+						case GRIDSTATE::OFF:
+							break;
+					}
+				}
+			}
+		}
+	};
+
+	MODULE* module;
+	MazeGridDrawWidget* w;
+	
+	MazeGridWidget(MODULE* module) {
+		this->module = module;
+		w = new MazeGridDrawWidget(module);
+		addChild(w);
+	}
+
+	void step() override{
+		if (module && module->gridDirty) {
+			FramebufferWidget::dirty = true;
+			w->box.size = box.size;
+			w->gridColor = module->currentState == MODULESTATE::EDIT ? color::mult(color::WHITE, 0.35f) : color::WHITE;
+			module->gridDirty = false;
+		}
+		FramebufferWidget::step();
+	}
+};
+
+
+template < typename MODULE >
 struct MazeDrawHelper {
 	MODULE* module;
 	int* xpos;
 	int* ypos;
 
-	NVGcolor gridColor = color::WHITE;
 	NVGcolor colors[4] = { color::YELLOW, color::RED, color::CYAN, color::BLUE };
 
 	void draw(const Widget::DrawArgs& args, Rect box) {
-		nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
-
 		float sizeX = box.size.x / module->usedSize;
 		float sizeY = box.size.y / module->usedSize;
-
-		float stroke = 0.7f;
-		for (int i = 0; i < module->usedSize; i++) {
-			for (int j = 0; j < module->usedSize; j++) {
-				switch (module->grid[i][j]) {
-					case GRIDSTATE::ON:
-						nvgBeginPath(args.vg);
-						nvgRect(args.vg, i * sizeX + stroke / 2.f, j * sizeY + stroke / 2.f, sizeX - stroke, sizeY - stroke);
-						nvgFillColor(args.vg, color::mult(gridColor, 0.55f));
-						nvgFill(args.vg);
-						break;
-					case GRIDSTATE::RANDOM:
-						nvgBeginPath(args.vg);
-						nvgRect(args.vg, i * sizeX + stroke, j * sizeY + stroke, sizeX - stroke * 2.f, sizeY - stroke * 2.f);
-						nvgStrokeWidth(args.vg, stroke);
-						nvgStrokeColor(args.vg, color::mult(gridColor, 0.45f));
-						nvgStroke(args.vg);
-						nvgBeginPath(args.vg);
-						nvgRect(args.vg, i * sizeX + sizeX * 0.25f, j * sizeY + sizeY * 0.25f, sizeX * 0.5f, sizeY * 0.5f);
-						nvgFillColor(args.vg, color::mult(gridColor, 0.3f));
-						nvgFill(args.vg);
-						break;
-					case GRIDSTATE::OFF:
-						break;
-				}
-			}
-		}
-
 		float r = box.size.y / module->usedSize / 2.f;
 
+		nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
 		for (int i = 0; i < module->numPorts; i++) {
 			if (module->currentState == MODULESTATE::EDIT || module->active[i]) {
 				Vec c = Vec(xpos[i] * sizeX + r, ypos[i] * sizeY + r);
-
 				// Inner circle
 				nvgGlobalCompositeOperation(args.vg, NVG_ATOP);
 				nvgBeginPath(args.vg);
 				nvgCircle(args.vg, c.x, c.y, r * 0.75f);
 				nvgFillColor(args.vg, color::mult(colors[i], 0.35f));
 				nvgFill(args.vg);
-
 				// Outer cirlce
 				nvgBeginPath(args.vg);
 				nvgCircle(args.vg, c.x, c.y, r - 0.7f);
@@ -612,7 +704,6 @@ struct MazeStartPosEditWidget : OpaqueWidget, MazeDrawHelper<MODULE> {
 		MazeDrawHelper<MODULE>::module = module;
 		MazeDrawHelper<MODULE>::xpos = module->xStartPos;
 		MazeDrawHelper<MODULE>::ypos = module->yStartPos;
-		MazeDrawHelper<MODULE>::gridColor = color::mult(color::WHITE, 0.4f);
 	}
 
 	void draw(const DrawArgs& args) override {
@@ -623,7 +714,7 @@ struct MazeStartPosEditWidget : OpaqueWidget, MazeDrawHelper<MODULE> {
 
 			// Outer border
 			nvgBeginPath(args.vg);
-			nvgRect(args.vg, 0.f + stroke, 0.f + stroke, box.size.x - 2 * stroke, box.size.y - 2 * stroke);
+			nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
 			nvgStrokeWidth(args.vg, stroke);
 			nvgStrokeColor(args.vg, c);
 			nvgStroke(args.vg);
@@ -823,7 +914,10 @@ struct MazeScreenWidget : OpaqueWidget, MazeDrawHelper<MODULE> {
 		menu->addChild(construct<RatchetingProbMenuItem<MODULE>>(&MenuItem::text, "Ratcheting probability", &RatchetingProbMenuItem<MODULE>::module, module));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Grid"));
-		menu->addChild(construct<SizeMenuItem<MODULE>>(&MenuItem::text, "Dimension", &SizeMenuItem<MODULE>::module, module));
+		SizeSlider<MODULE>* sizeSlider = new SizeSlider<MODULE>(module);
+		sizeSlider->box.size.x = 200.0;
+		menu->addChild(sizeSlider);
+
 		menu->addChild(construct<RandomizeMenuItem<MODULE>>(&MenuItem::text, "Randomize", &RandomizeMenuItem<MODULE>::module, module));
 		menu->addChild(construct<RandomizeMenuItem<MODULE>>(&MenuItem::text, "Randomize certainty", &RandomizeMenuItem<MODULE>::module, module, &RandomizeMenuItem<MODULE>::useRandom, false));
 		menu->addChild(construct<ClearMenuItem<MODULE>>(&MenuItem::text, "Clear", &ClearMenuItem<MODULE>::module, module));
@@ -842,9 +936,14 @@ struct MazeWidget32 : ModuleWidget {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
+		MazeGridWidget<MODULE>* gridWidget = new MazeGridWidget<MODULE>(module);
+		gridWidget->box.pos = Vec(63.5f, 37.3f);
+		gridWidget->box.size = Vec(233.f, 233.f);
+		addChild(gridWidget);
+
 		MazeScreenWidget<MODULE>* turnWidget = new MazeScreenWidget<MODULE>(module);
-		turnWidget->box.pos = Vec(63.5f, 37.7f);
-		turnWidget->box.size = Vec(233.f, 233.f);
+		turnWidget->box.pos = gridWidget->box.pos;
+		turnWidget->box.size = gridWidget->box.size;
 		addChild(turnWidget);
 
 		MazeStartPosEditWidget<MODULE>* resetEditWidget = new MazeStartPosEditWidget<MODULE>(module);
