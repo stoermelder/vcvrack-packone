@@ -2,7 +2,7 @@
 
 <!-- Version and License Badges -->
 ![Version](https://img.shields.io/badge/version-1.2.0-green.svg?style=flat-square)
-![Rack SDK](https://img.shields.io/badge/Rack--SDK-1.1.5-red.svg?style=flat-square)
+![Rack SDK](https://img.shields.io/badge/Rack--SDK-1.1.6-red.svg?style=flat-square)
 ![License](https://img.shields.io/badge/license-GPLv3-blue.svg?style=flat-square)
 ![Language](https://img.shields.io/badge/language-C++-yellow.svg?style=flat-square)
 
@@ -10,7 +10,7 @@ The PackOne plugin gives you some utility modules for [VCV Rack](https://www.vcv
 
 ![Intro image](./docs/intro.png)
 
-- [4ROUNDS](./docs/FourRounds.md): select various outputs by a triggered random contest of 16 input signals
+- [4ROUNDS](./docs/FourRounds.md): randomizer for up to 16 input signals to create 15 output signals
 - [8FACE](./docs/EightFace.md): preset sequencer for eight presets of any module as an universal expander
 - [BOLT](./docs/Bolt.md): polyphonic CV-modulateable boolean functions
 - [CV-MAP](./docs/CVMap.md): control 32 knobs/sliders/switches of any module by CV even when the module has no CV input
@@ -36,4 +36,4 @@ Follow the [build instructions](https://vcvrack.com/manual/Building.html#buildin
 
 All **source code** is copyright © 2019 Benjamin Dill and is licensed under the [GNU General Public License, version v3.0](./LICENSE.txt).
 
-The **graphics** in the `res` and `res-src` directories are licensed under [CC BY-NC-ND 4.0](https://creativecommons.org/licenses/by-nc-nd/4.0/). You may not distribute modified adaptations of these graphics.
+All files and **graphics** in the `res` and `res-src` directories are licensed under [CC BY-NC-ND 4.0](https://creativecommons.org/licenses/by-nc-nd/4.0/). You may not distribute modified adaptations of these graphics.
