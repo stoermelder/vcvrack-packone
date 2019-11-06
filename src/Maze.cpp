@@ -288,6 +288,7 @@ struct MazeModule : Module {
 	}
 
 	void gridResize(int size) {
+		if (size == usedSize) return;
 		usedSize = size;
 		for (int i = 0; i < NUM_PORTS; i++) {
 			xStartPos[i] = 0;
@@ -429,16 +430,18 @@ template < typename MODULE >
 struct SizeSlider : ui::Slider {
 	struct SizeQuantity : Quantity {
 		MODULE* module;
+		float v = -1.f;
 
 		SizeQuantity(MODULE* module) {
 			this->module = module;
 		}
 		void setValue(float value) override {
-			int s = int(clamp(value, 2.f, 32.f));
-			module->gridResize(s);
+			v = clamp(value, 2.f, 32.f);
+			module->gridResize(int(v));
 		}
 		float getValue() override {
-			return module->usedSize;
+			if (v < 0.f) v = module->usedSize;
+			return v;
 		}
 		float getDefaultValue() override {
 			return 8.f;
@@ -453,7 +456,8 @@ struct SizeSlider : ui::Slider {
 			return getValue();
 		}
 		std::string getDisplayValueString() override {
-			return string::f("%i x %i", int(getDisplayValue()), int(getDisplayValue()));
+			int i = int(getValue());
+			return string::f("%i x %i", i, i);
 		}
 		void setDisplayValue(float displayValue) override {
 			setValue(displayValue);
@@ -471,6 +475,11 @@ struct SizeSlider : ui::Slider {
 	}
 	~SizeSlider() {
 		delete quantity;
+	}
+	void onDragMove(const event::DragMove& e) override {
+		if (quantity) {
+			quantity->moveScaledValue(0.002f * e.mouseDelta.x);
+		}
 	}
 };
 
