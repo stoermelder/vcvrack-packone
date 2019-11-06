@@ -476,6 +476,13 @@ struct CKSSH : CKSS {
 	}
 };
 
+struct WhiteRedLight : GrayModuleLightWidget {
+	WhiteRedLight() {
+		this->addBaseColor(SCHEME_WHITE);
+		this->addBaseColor(SCHEME_RED);
+	}
+};
+
 
 struct EightFaceWidget : ModuleWidget {
 	EightFaceWidget(EightFaceModule* module) {
@@ -488,26 +495,26 @@ struct EightFaceWidget : ModuleWidget {
 		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 58.9f), module, EightFaceModule::SLOT_INPUT));
 		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 95.2f), module, EightFaceModule::RESET_INPUT));
 
-		addChild(createLightCentered<TriangleLeftLight<SmallLight<GreenRedLight>>>(Vec(13.8f, 119.1f), module, EightFaceModule::LEFT_LIGHT));
-		addChild(createLightCentered<TriangleRightLight<SmallLight<GreenRedLight>>>(Vec(31.2f, 119.1f), module, EightFaceModule::RIGHT_LIGHT));
+		addChild(createLightCentered<TriangleLeftLight<SmallLight<WhiteRedLight>>>(Vec(13.8f, 119.1f), module, EightFaceModule::LEFT_LIGHT));
+		addChild(createLightCentered<TriangleRightLight<SmallLight<WhiteRedLight>>>(Vec(31.2f, 119.1f), module, EightFaceModule::RIGHT_LIGHT));
 
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 143.0f), module, EightFaceModule::PRESET_LIGHT + 0 * 3));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 166.5f), module, EightFaceModule::PRESET_LIGHT + 1 * 3));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 190.1f), module, EightFaceModule::PRESET_LIGHT + 2 * 3));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 213.6f), module, EightFaceModule::PRESET_LIGHT + 3 * 3));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 237.2f), module, EightFaceModule::PRESET_LIGHT + 4 * 3));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 260.7f), module, EightFaceModule::PRESET_LIGHT + 5 * 3));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 284.3f), module, EightFaceModule::PRESET_LIGHT + 6 * 3));
-		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(Vec(13.2f, 307.8f), module, EightFaceModule::PRESET_LIGHT + 7 * 3));
+		addParam(createParamCentered<LEDButton>(Vec(22.5f, 140.6f), module, EightFaceModule::PRESET_PARAM + 0));
+		addParam(createParamCentered<LEDButton>(Vec(22.5f, 164.1f), module, EightFaceModule::PRESET_PARAM + 1));
+		addParam(createParamCentered<LEDButton>(Vec(22.5f, 187.7f), module, EightFaceModule::PRESET_PARAM + 2));
+		addParam(createParamCentered<LEDButton>(Vec(22.5f, 211.2f), module, EightFaceModule::PRESET_PARAM + 3));
+		addParam(createParamCentered<LEDButton>(Vec(22.5f, 234.8f), module, EightFaceModule::PRESET_PARAM + 4));
+		addParam(createParamCentered<LEDButton>(Vec(22.5f, 258.3f), module, EightFaceModule::PRESET_PARAM + 5));
+		addParam(createParamCentered<LEDButton>(Vec(22.5f, 281.9f), module, EightFaceModule::PRESET_PARAM + 6));
+		addParam(createParamCentered<LEDButton>(Vec(22.5f, 305.4f), module, EightFaceModule::PRESET_PARAM + 7));
 
-		addParam(createParamCentered<TL1105>(Vec(27.6f, 138.8f), module, EightFaceModule::PRESET_PARAM + 0));
-		addParam(createParamCentered<TL1105>(Vec(27.6f, 162.3f), module, EightFaceModule::PRESET_PARAM + 1));
-		addParam(createParamCentered<TL1105>(Vec(27.6f, 185.9f), module, EightFaceModule::PRESET_PARAM + 2));
-		addParam(createParamCentered<TL1105>(Vec(27.6f, 209.4f), module, EightFaceModule::PRESET_PARAM + 3));
-		addParam(createParamCentered<TL1105>(Vec(27.6f, 233.0f), module, EightFaceModule::PRESET_PARAM + 4));
-		addParam(createParamCentered<TL1105>(Vec(27.6f, 256.5f), module, EightFaceModule::PRESET_PARAM + 5));
-		addParam(createParamCentered<TL1105>(Vec(27.6f, 280.1f), module, EightFaceModule::PRESET_PARAM + 6));
-		addParam(createParamCentered<TL1105>(Vec(27.6f, 303.6f), module, EightFaceModule::PRESET_PARAM + 7));
+		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(22.5f, 140.6f), module, EightFaceModule::PRESET_LIGHT + 0 * 3));
+		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(22.5f, 164.1f), module, EightFaceModule::PRESET_LIGHT + 1 * 3));
+		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(22.5f, 187.7f), module, EightFaceModule::PRESET_LIGHT + 2 * 3));
+		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(22.5f, 211.2f), module, EightFaceModule::PRESET_LIGHT + 3 * 3));
+		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(22.5f, 234.8f), module, EightFaceModule::PRESET_LIGHT + 4 * 3));
+		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(22.5f, 258.3f), module, EightFaceModule::PRESET_LIGHT + 5 * 3));
+		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(22.5f, 281.9f), module, EightFaceModule::PRESET_LIGHT + 6 * 3));
+		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(22.5f, 305.4f), module, EightFaceModule::PRESET_LIGHT + 7 * 3));
 
 		addParam(createParamCentered<CKSSH>(Vec(22.5f, 336.2f), module, EightFaceModule::MODE_PARAM));
 	}
