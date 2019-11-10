@@ -177,7 +177,7 @@ struct ArenaModule : Module {
 		Module::onReset();
 	}
 
-	void process(const ProcessArgs &args) override {
+	void process(const ProcessArgs& args) override {
 		for (int j = 0; j < IN_PORTS; j++) {
 			offsetX[j] = 0.f;
 			offsetY[j] = 0.f;
@@ -1643,7 +1643,7 @@ struct ArenaWidget : ModuleWidget {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
 		for (int i = 0; i < IN_PORTS; i++) {
-			float xs[] = { 93.9f, 534.7f };
+			float xs[] = { 24.1f, 604.7f };
 			float x = xs[i >= IN_PORTS / 2] + (i % (IN_PORTS / 2)) * 30.433f;
 			addInput(createInputCentered<StoermelderPort>(Vec(x, 58.5f), module, MODULE::IN + i));
 			addInput(createInputCentered<StoermelderPort>(Vec(x, 96.2f), module, MODULE::IN_X_INPUT + i));
@@ -1657,13 +1657,13 @@ struct ArenaWidget : ModuleWidget {
 			addParam(createParamCentered<StoermelderTrimpot>(Vec(x, 164.4f), module, MODULE::IN_Y_PARAM + i));
 			addInput(createInputCentered<StoermelderPort>(Vec(x, 198.9f), module, MODULE::IN_Y_INPUT + i));
 
-			ArenaOpDisplay<MODULE>* arenaOpDisplay = createWidgetCentered<ArenaOpDisplay<MODULE>>(Vec(x, 235.6f));
+			ArenaOpDisplay<MODULE>* arenaOpDisplay = createWidgetCentered<ArenaOpDisplay<MODULE>>(Vec(x, 227.0f));
 			arenaOpDisplay->module = module;
 			arenaOpDisplay->id = i;
 			addChild(arenaOpDisplay);
 
-			addParam(createParamCentered<StoermelderTrimpot>(Vec(x, 258.6f), module, MODULE::MOD_PARAM + i));
-			addInput(createInputCentered<StoermelderPort>(Vec(x, 287.4f), module, MODULE::MOD_INPUT + i));
+			addParam(createParamCentered<StoermelderTrimpot>(Vec(x, 279.5f), module, MODULE::MOD_PARAM + i));
+			addInput(createInputCentered<StoermelderPort>(Vec(x, 255.1f), module, MODULE::MOD_INPUT + i));
 
 			addOutput(createOutputCentered<StoermelderPort>(Vec(x, 327.7f), module, MODULE::OUT + i));
 		}
@@ -1679,7 +1679,7 @@ struct ArenaWidget : ModuleWidget {
 		addChild(recordWidget);
 
 		for (int i = 0; i < MIX_PORTS; i++) {
-			float xs[] = { 26.2f, 663.2f };
+			float xs[] = { 154.3f, 534.9f };
 			float x = xs[i >= MIX_PORTS / 2] + (i % (MIX_PORTS / 2)) * 30.433f;
 			addInput(createInputCentered<StoermelderPort>(Vec(x, 96.2f), module, MODULE::MIX_X_INPUT + i));
 			addParam(createParamCentered<StoermelderTrimpot>(Vec(x, 130.7f), module, MODULE::MIX_X_PARAM + i));
@@ -1694,12 +1694,12 @@ struct ArenaWidget : ModuleWidget {
 
 			addOutput(createOutputCentered<StoermelderPort>(Vec(x, 327.7f), module, MODULE::MIX_OUTPUT + i));
 
-			addInput(createInputCentered<StoermelderPort>(Vec(x, 255.2f), module, MODULE::SEQ_INPUT + i));
+			addInput(createInputCentered<StoermelderPort>(Vec(x, 255.6f), module, MODULE::SEQ_INPUT + i));
 			ArenaSeqDisplay<MODULE>* arenaSeqDisplay1 = createWidgetCentered<ArenaSeqDisplay<MODULE>>(Vec(x, 227.0f));
 			arenaSeqDisplay1->module = module;
 			arenaSeqDisplay1->id = i;
 			addChild(arenaSeqDisplay1);
-			addInput(createInputCentered<StoermelderPort>(Vec(x, 287.4f), module, MODULE::SEQ_PH_INPUT + i));
+			addInput(createInputCentered<StoermelderPort>(Vec(x, 287.8f), module, MODULE::SEQ_PH_INPUT + i));
 		}
 	}
 
