@@ -1,6 +1,7 @@
 #include "plugin.hpp"
 #include <thread>
 #include <chrono>
+#include <random>
 
 namespace Arena {
 
@@ -383,6 +384,52 @@ struct ArenaModule : Module {
 
 	void seqClear(int port) {
 		seqData[port][seqSelected[port]].length = 0;
+	}
+
+	void seqRandomize(int port) {
+		seqData[port][seqSelected[port]].length = 0;
+
+		unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
+		std::default_random_engine gen(seed);
+		std::normal_distribution<float> d{0.f, 0.1f};
+		dsp::ExponentialFilter filterX;
+		dsp::ExponentialFilter filterY;
+		filterX.setLambda(0.7f);
+		filterY.setLambda(0.7f);
+
+		// Random length
+		int l = std::max(0, std::min(int(SEQ_LENGTH / 4 + d(gen) * SEQ_LENGTH / 4), SEQ_LENGTH - 1));
+
+		// Set some start-value for the exponential filters
+		filterX.out = 0.5f + d(gen);
+		filterY.out = 0.5f + d(gen);
+		int dirX = d(gen) >= 0.f ? 1 : -1;
+		int dirY = d(gen) >= 0.f ? 1 : -1;
+		float pX = 0.5f;
+		float pY = 0.5f;
+		for (int c = 0; c < l; c++) {
+			// Reduce the number of direction changes, only when rand > 0
+			if (d(gen) >= 0.5f) dirX = dirX == -1 ? 1 : -1;
+			if (pX == 1.f) dirX = -1;
+			if (pX == 0.f) dirX = 1;
+			if (d(gen) >= 0.5f) dirY = dirY == -1 ? 1 : -1;
+			if (pY == 1.f) dirY = -1;
+			if (pY == 0.f) dirY = 1;
+			float r;
+
+			r = d(gen);
+			pX = filterX.process(1.f, pX + dirX * abs(r));
+			// Only range [0,1] is valid
+			pX = clamp(pX, 0.f, 1.f);
+			seqData[port][seqSelected[port]].x[c] = pX;
+
+			r = d(gen);
+			pY = filterY.process(1.f, pY + dirY * abs(r));
+			// Only range [0,1] is valid
+			pY = clamp(pY, 0.f, 1.f);
+			seqData[port][seqSelected[port]].y[c] = pY;
+		}
+		seqData[port][seqSelected[port]].length = l;
 	}
 
 	Vec seqValue(int port, float pos) {
@@ -1520,7 +1567,15 @@ struct ArenaRecordWidget : OpaqueWidget {
 			}
 		};
 
+		struct RandomizeItem : MenuItem {
+			MODULE* module;
+			void onAction(const event::Action &e) override {
+				module->seqRandomize(module->seqEdit);
+			}
+		};
+
 		menu->addChild(construct<ClearItem>(&MenuItem::text, "Clear", &ClearItem::module, module));
+		menu->addChild(construct<RandomizeItem>(&MenuItem::text, "Randomize", &RandomizeItem::module, module));
 	}
 };
 
