@@ -114,6 +114,8 @@ struct ArenaModule : Module {
 	/** [Stored to JSON] */
 	OUTPUTMODE outputMode[IN_PORTS];
 	/** [Stored to JSON] */
+	int inportsUsed = IN_PORTS;
+	/** [Stored to JSON] */
 	int mixportsUsed = MIX_PORTS;
 
 	/** [Stored to JSON] */
@@ -188,7 +190,7 @@ struct ArenaModule : Module {
 	}
 
 	void process(const ProcessArgs& args) override {
-		for (int j = 0; j < IN_PORTS; j++) {
+		for (int j = 0; j < inportsUsed; j++) {
 			offsetX[j] = 0.f;
 			offsetY[j] = 0.f;
 			switch (modMode[j]) {
@@ -276,7 +278,7 @@ struct ArenaModule : Module {
 
 			int c = 0;
 			float mix = 0.f;
-			for (int j = 0; j < IN_PORTS; j++) {
+			for (int j = 0; j < inportsUsed; j++) {
 				float inX = params[IN_X_POS + j].getValue();
 				float inY = params[IN_Y_POS + j].getValue();
 
@@ -307,7 +309,7 @@ struct ArenaModule : Module {
 			outputs[MIX_OUTPUT + i].setVoltage(mix);
 		}
 
-		for (int j = 0; j < IN_PORTS; j++) {
+		for (int j = 0; j < inportsUsed; j++) {
 			if (inputs[IN + j].isConnected() && outputs[OUT + j].isConnected()) {
 				float v = inputs[IN + j].getVoltage();
 				switch (outputMode[j]) {
@@ -372,6 +374,7 @@ struct ArenaModule : Module {
 	}
 
 	inline void selectionSet(int type, int id) {
+		if (type == 0 && id + 1 > inportsUsed) return;
 		if (type == 1 && id + 1 > mixportsUsed) return;
 		selectedType = type;
 		selectedId = id;
@@ -638,6 +641,8 @@ struct ArenaModule : Module {
 			json_array_append_new(mixportsJ, mixportJ);
 		}
 		json_object_set_new(rootJ, "mixports", mixportsJ);
+
+		json_object_set_new(rootJ, "inportsUsed", json_integer(inportsUsed));
 		json_object_set_new(rootJ, "mixportsUsed", json_integer(mixportsUsed));
 
 		return rootJ;
@@ -684,6 +689,7 @@ struct ArenaModule : Module {
 			}
 		}
 
+		inportsUsed = json_integer_value(json_object_get(rootJ, "inportsUsed"));
 		mixportsUsed = json_integer_value(json_object_get(rootJ, "mixportsUsed"));
 	}
 };
@@ -1202,6 +1208,8 @@ struct ArenaInportScreenDragWidget : ArenaScreenDragWidget<MODULE> {
 	}
 
 	void draw(const Widget::DrawArgs& args) override {
+		if (AW::id + 1 > AW::module->inportsUsed) return;
+
 		if (AW::module->selectionTest(AW::type, AW::id)) {
 			// Draw outer circle and fill
 			Vec c = Vec(AW::box.size.x / 2.f, AW::box.size.y / 2.f);
@@ -1223,6 +1231,11 @@ struct ArenaInportScreenDragWidget : ArenaScreenDragWidget<MODULE> {
 		}
 
 		AW::draw(args);
+	}
+
+	void onButton(const event::Button& e) override {
+		if (AW::id + 1 > AW::module->inportsUsed) return;
+		ArenaScreenDragWidget<MODULE>::onButton(e);
 	}
 
 	void createContextMenu() override {
@@ -1261,7 +1274,7 @@ struct ArenaMixportScreenDragWidget : ArenaScreenDragWidget<MODULE> {
 		Vec c = Vec(AW::box.size.x / 2.f, AW::box.size.y / 2.f);
 		float sizeX = AW::parent->box.size.x;
 		float sizeY = AW::parent->box.size.y;
-		for (int i = 0; i < AW::module->numInports; i++) {
+		for (int i = 0; i < AW::module->inportsUsed; i++) {
 			if (AW::module->dist[AW::id][i] < AW::module->radius[i]) {
 				float x = AW::module->params[MODULE::IN_X_POS + i].getValue() * (sizeX - 2.f * AW::radius);
 				float y = AW::module->params[MODULE::IN_Y_POS + i].getValue() * (sizeY - 2.f * AW::radius);
@@ -1394,6 +1407,35 @@ struct ArenaScreenWidget : OpaqueWidget {
 			}
 		};
 
+		struct NumInportsMenuItem : MenuItem {
+			NumInportsMenuItem() {
+				rightText = RIGHT_ARROW;
+			}
+
+			struct NumInportsItem : MenuItem {
+				MODULE* module;
+				int inportsUsed;
+				
+				void onAction(const event::Action &e) override {
+					module->inportsUsed = inportsUsed;
+				}
+
+				void step() override {
+					rightText = module->inportsUsed == inportsUsed ? "✔" : "";
+					MenuItem::step();
+				}
+			};
+
+			MODULE* module;
+			Menu* createChildMenu() override {
+				Menu* menu = new Menu;
+				for (int i = 0; i < module->numInports; i++) {
+					menu->addChild(construct<NumInportsItem>(&MenuItem::text, string::f("%i", i + 1), &NumInportsItem::module, module, &NumInportsItem::inportsUsed, i + 1));
+				}
+				return menu;
+			}
+		};
+
 		struct NumMixportsMenuItem : MenuItem {
 			NumMixportsMenuItem() {
 				rightText = RIGHT_ARROW;
@@ -1429,7 +1471,8 @@ struct ArenaScreenWidget : OpaqueWidget {
 		menu->addChild(construct<RandomizeAmountItem>(&MenuItem::text, "Radomize input amount", &RandomizeAmountItem::module, module));
 		menu->addChild(construct<RandomizeRadiusItem>(&MenuItem::text, "Radomize input radius", &RandomizeRadiusItem::module, module));
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<NumMixportsMenuItem>(&MenuItem::text, "Number of mixports", &NumMixportsMenuItem::module, module));
+		menu->addChild(construct<NumInportsMenuItem>(&MenuItem::text, "Number of Input-ports", &NumInportsMenuItem::module, module));
+		menu->addChild(construct<NumMixportsMenuItem>(&MenuItem::text, "Number of Mix-ports", &NumMixportsMenuItem::module, module));
 	}
 };
 
@@ -1715,6 +1758,10 @@ struct ArenaOpDisplay : LedDisplayChoice {
 
 	void step() override {
 		if (module) {
+			if (id + 1 > module->inportsUsed) {
+				text = "";
+				return;
+			}
 			switch (module->modMode[id]) {
 				case MODMODE::RADIUS:
 					text = "RAD"; break;
@@ -1732,6 +1779,7 @@ struct ArenaOpDisplay : LedDisplayChoice {
 	}
 
 	void onButton(const event::Button& e) override {
+		if (id + 1 > module->inportsUsed) return;
 		if (e.button == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
 			createContextMenu();
 			e.consume(this);
@@ -1772,7 +1820,7 @@ struct ArenaSeqDisplay : LedDisplayChoice {
 
 	void step() override {
 		if (module) {
-			text = string::f("%02d", module->seqSelected[id] + 1);
+			text = id + 1 > module->mixportsUsed ? "" : string::f("%02d", module->seqSelected[id] + 1);
 			color = module->seqEdit == id ? color::RED : nvgRGB(0xf0, 0xf0, 0xf0);
 		}
 		LedDisplayChoice::step();
@@ -1799,11 +1847,11 @@ struct ArenaSeqDisplay : LedDisplayChoice {
 	void draw(const DrawArgs& args) override {
 		LedDisplayChoice::draw(args);
 		if (module && module->seqEdit == id) {
-			drawHalo(args);
+			drawRedHalo(args);
 		}
 	}
 
-	void drawHalo(const DrawArgs &args) {
+	void drawRedHalo(const DrawArgs &args) {
 		float radiusX = box.size.x / 2.0;
 		float radiusY = box.size.x / 2.0;
 		float oradiusX = 2 * radiusX;
@@ -1840,7 +1888,7 @@ struct DummyMapButton : ParamWidget {
 };
 
 template < typename MODULE, typename LIGHT >
-struct ClickableSmallLight : MediumLight<LIGHT> {
+struct ClickableLight : MediumLight<LIGHT> {
 	int id;
 	int type;
 
@@ -1858,9 +1906,7 @@ struct ClickableSmallLight : MediumLight<LIGHT> {
 
 
 struct ArenaWidget : ModuleWidget {
-	static const int IN_PORTS = 8;
-	static const int MIX_PORTS = 4;
-	typedef ArenaModule<IN_PORTS, MIX_PORTS> MODULE;
+	typedef ArenaModule<8, 4> MODULE;
 	MODULE* module;
 
 	ArenaWidget(MODULE* module) {
@@ -1873,14 +1919,14 @@ struct ArenaWidget : ModuleWidget {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		for (int i = 0; i < IN_PORTS; i++) {
+		for (int i = 0; i < module->numInports; i++) {
 			float xs[] = { 24.1f, 604.7f };
-			float x = xs[i >= IN_PORTS / 2] + (i % (IN_PORTS / 2)) * 30.433f;
+			float x = xs[i >= module->numInports / 2] + (i % (module->numInports / 2)) * 30.433f;
 			addInput(createInputCentered<StoermelderPort>(Vec(x, 58.5f), module, MODULE::IN + i));
 			addInput(createInputCentered<StoermelderPort>(Vec(x, 96.2f), module, MODULE::IN_X_INPUT + i));
 			addParam(createParamCentered<StoermelderTrimpot>(Vec(x, 130.7f), module, MODULE::IN_X_PARAM + i));
 			addParam(createParamCentered<DummyMapButton>(Vec(x, 115.3f), module, MODULE::IN_X_POS + i));
-			ClickableSmallLight<MODULE, WhiteLight>* l = createLightCentered<ClickableSmallLight<MODULE, WhiteLight>>(Vec(x, 147.6f), module, MODULE::IN_SEL_LIGHT + i);
+			ClickableLight<MODULE, WhiteLight>* l = createLightCentered<ClickableLight<MODULE, WhiteLight>>(Vec(x, 147.6f), module, MODULE::IN_SEL_LIGHT + i);
 			l->id = i;
 			l->type = 0;
 			addChild(l);
@@ -1899,23 +1945,23 @@ struct ArenaWidget : ModuleWidget {
 			addOutput(createOutputCentered<StoermelderPort>(Vec(x, 327.7f), module, MODULE::OUT + i));
 		}
 
-		ArenaScreenWidget<MODULE>* areaWidget = new ArenaScreenWidget<MODULE>(module, MODULE::IN_X_POS, MODULE::IN_Y_POS, MODULE::MIX_X_POS, MODULE::MIX_Y_POS);
-		areaWidget->box.pos = Vec(213.2f, 42.1f);
-		areaWidget->box.size = Vec(293.6f, 296.0f);
-		addChild(areaWidget);
+		ArenaScreenWidget<MODULE>* screenWidget = new ArenaScreenWidget<MODULE>(module, MODULE::IN_X_POS, MODULE::IN_Y_POS, MODULE::MIX_X_POS, MODULE::MIX_Y_POS);
+		screenWidget->box.pos = Vec(213.2f, 42.1f);
+		screenWidget->box.size = Vec(293.6f, 296.0f);
+		addChild(screenWidget);
 
-		ArenaSeqEditWidget<MODULE>* recordWidget = new ArenaSeqEditWidget<MODULE>(module, MODULE::MIX_X_POS, MODULE::MIX_Y_POS);
-		recordWidget->box.pos = areaWidget->box.pos;
-		recordWidget->box.size = areaWidget->box.size;
-		addChild(recordWidget);
+		ArenaSeqEditWidget<MODULE>* seqEditWidget = new ArenaSeqEditWidget<MODULE>(module, MODULE::MIX_X_POS, MODULE::MIX_Y_POS);
+		seqEditWidget->box.pos = screenWidget->box.pos;
+		seqEditWidget->box.size = screenWidget->box.size;
+		addChild(seqEditWidget);
 
-		for (int i = 0; i < MIX_PORTS; i++) {
+		for (int i = 0; i < module->numMixports; i++) {
 			float xs[] = { 154.3f, 534.9f };
-			float x = xs[i >= MIX_PORTS / 2] + (i % (MIX_PORTS / 2)) * 30.433f;
+			float x = xs[i >= module->numMixports / 2] + (i % (module->numMixports / 2)) * 30.433f;
 			addInput(createInputCentered<StoermelderPort>(Vec(x, 96.2f), module, MODULE::MIX_X_INPUT + i));
 			addParam(createParamCentered<StoermelderTrimpot>(Vec(x, 130.7f), module, MODULE::MIX_X_PARAM + i));
 			addParam(createParamCentered<DummyMapButton>(Vec(x, 115.3f), module, MODULE::MIX_X_POS + i));
-			ClickableSmallLight<MODULE, YellowLight>* l1 = createLightCentered<ClickableSmallLight<MODULE, YellowLight>>(Vec(x, 147.6f), module, MODULE::MIX_SEL_LIGHT + i);
+			ClickableLight<MODULE, YellowLight>* l1 = createLightCentered<ClickableLight<MODULE, YellowLight>>(Vec(x, 147.6f), module, MODULE::MIX_SEL_LIGHT + i);
 			l1->id = i;
 			l1->type = 1;
 			addChild(l1);
