@@ -559,6 +559,17 @@ struct ArenaModule : Module {
 		}
 	}
 
+	void seqRotate90(int port) {
+		for (int i = 0; i < seqData[port][seqSelected[port]].length; i++) {
+			Vec p = Vec(seqData[port][seqSelected[port]].x[i], seqData[port][seqSelected[port]].y[i]);
+			p = p.plus(Vec(-0.5f, -0.5f));
+			p = p.rotate(M_PI / 2.f);
+			p = p.minus(Vec(-0.5f, -0.5f));
+			seqData[port][seqSelected[port]].x[i] = p.x;
+			seqData[port][seqSelected[port]].y[i] = p.y;
+		}
+	}
+
 	void randomizeInputAmount() {
 		for (int i = 0; i < IN_PORTS; i++) {
 			amount[i] = random::uniform();
@@ -1626,6 +1637,13 @@ struct ArenaRecordWidget : OpaqueWidget {
 			}
 		};
 
+		struct SeqRotate90Item : MenuItem {
+			MODULE* module;
+			void onAction(const event::Action &e) override {
+				module->seqRotate90(module->seqEdit);
+			}
+		};
+
 		struct SeqRandomizeItem : MenuItem {
 			MODULE* module;
 			void onAction(const event::Action &e) override {
@@ -1634,6 +1652,7 @@ struct ArenaRecordWidget : OpaqueWidget {
 		};
 
 		menu->addChild(construct<SeqClearItem>(&MenuItem::text, "Clear", &SeqClearItem::module, module));
+		menu->addChild(construct<SeqRotate90Item>(&MenuItem::text, "Rotate 90 degrees", &SeqRotate90Item::module, module));
 		menu->addChild(construct<SeqRandomizeItem>(&MenuItem::text, "Random motion", &SeqRandomizeItem::module, module));
 		menu->addChild(construct<SeqPresetMenuItem<MODULE>>(&MenuItem::text, "Preset", &SeqPresetMenuItem<MODULE>::module, module));
 	}
