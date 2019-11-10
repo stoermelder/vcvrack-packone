@@ -94,8 +94,8 @@ struct ArenaModule : Module {
 		NUM_LIGHTS
 	};
 
-	const int num_inports = IN_PORTS;
-	const int num_outputs = MIX_PORTS;
+	const int numInports = IN_PORTS;
+	const int numMixports = MIX_PORTS;
 	int selectedId = -1;
 	int selectedType = -1;
 
@@ -113,6 +113,8 @@ struct ArenaModule : Module {
 	bool inputYBipolar[IN_PORTS];
 	/** [Stored to JSON] */
 	OUTPUTMODE outputMode[IN_PORTS];
+	/** [Stored to JSON] */
+	int mixportsUsed = MIX_PORTS;
 
 	/** [Stored to JSON] */
 	SeqItem seqData[MIX_PORTS][SEQ_COUNT];
@@ -242,7 +244,7 @@ struct ArenaModule : Module {
 		}
 
 		float outNorm[IN_PORTS];
-		for (int i = 0; i < MIX_PORTS; i++) {
+		for (int i = 0; i < mixportsUsed; i++) {
 			if (inputs[SEQ_INPUT + i].isConnected()) {
 				seqProcess(i);
 			}
@@ -370,6 +372,7 @@ struct ArenaModule : Module {
 	}
 
 	inline void selectionSet(int type, int id) {
+		if (type == 1 && id + 1 > mixportsUsed) return;
 		selectedType = type;
 		selectedId = id;
 	}
@@ -597,26 +600,26 @@ struct ArenaModule : Module {
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
 
-		json_t* inputsJ = json_array();
+		json_t* inportsJ = json_array();
 		for (int i = 0; i < IN_PORTS; i++) {
-			json_t* inputJ = json_object();
-			json_object_set_new(inputJ, "amount", json_real(amount[i]));
-			json_object_set_new(inputJ, "radius", json_real(radius[i]));
-			json_object_set_new(inputJ, "modMode", json_integer(modMode[i]));
-			json_object_set_new(inputJ, "modBipolar", json_boolean(modBipolar[i]));
-			json_object_set_new(inputJ, "inputXBipolar", json_boolean(inputXBipolar[i]));
-			json_object_set_new(inputJ, "inputYBipolar", json_boolean(inputYBipolar[i]));
-			json_object_set_new(inputJ, "outputMode", json_integer(outputMode[i]));
-			json_array_append_new(inputsJ, inputJ);
+			json_t* inportJ = json_object();
+			json_object_set_new(inportJ, "amount", json_real(amount[i]));
+			json_object_set_new(inportJ, "radius", json_real(radius[i]));
+			json_object_set_new(inportJ, "modMode", json_integer(modMode[i]));
+			json_object_set_new(inportJ, "modBipolar", json_boolean(modBipolar[i]));
+			json_object_set_new(inportJ, "inputXBipolar", json_boolean(inputXBipolar[i]));
+			json_object_set_new(inportJ, "inputYBipolar", json_boolean(inputYBipolar[i]));
+			json_object_set_new(inportJ, "outputMode", json_integer(outputMode[i]));
+			json_array_append_new(inportsJ, inportJ);
 		}
-		json_object_set_new(rootJ, "inputs", inputsJ);
+		json_object_set_new(rootJ, "inports", inportsJ);
 
-		json_t* mixputsJ = json_array();
+		json_t* mixportsJ = json_array();
 		for (int i = 0; i < MIX_PORTS; i++) {
-			json_t* mixputJ = json_object();
-			json_object_set_new(mixputJ, "seqSelected", json_integer(seqSelected[i]));
-			json_object_set_new(mixputJ, "seqMode", json_integer(seqMode[i]));
-			json_object_set_new(mixputJ, "seqInterpolate", json_integer(seqInterpolate[i]));
+			json_t* mixportJ = json_object();
+			json_object_set_new(mixportJ, "seqSelected", json_integer(seqSelected[i]));
+			json_object_set_new(mixportJ, "seqMode", json_integer(seqMode[i]));
+			json_object_set_new(mixportJ, "seqInterpolate", json_integer(seqInterpolate[i]));
 			json_t* seqDataJ = json_array();
 			for (int j = 0; j < SEQ_COUNT; j++) {
 				SeqItem* s = &seqData[i][j];
@@ -631,36 +634,37 @@ struct ArenaModule : Module {
 				json_object_set_new(seqItemJ, "y", yJ);
 				json_array_append_new(seqDataJ, seqItemJ);
 			}
-			json_object_set_new(mixputJ, "seqData", seqDataJ);
-			json_array_append_new(mixputsJ, mixputJ);
+			json_object_set_new(mixportJ, "seqData", seqDataJ);
+			json_array_append_new(mixportsJ, mixportJ);
 		}
-		json_object_set_new(rootJ, "mixputs", mixputsJ);
+		json_object_set_new(rootJ, "mixports", mixportsJ);
+		json_object_set_new(rootJ, "mixportsUsed", json_integer(mixportsUsed));
 
 		return rootJ;
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		json_t* inputsJ = json_object_get(rootJ, "inputs");
-		json_t* inputJ;
+		json_t* inportsJ = json_object_get(rootJ, "inports");
+		json_t* inportJ;
 		size_t inputIndex;
-		json_array_foreach(inputsJ, inputIndex, inputJ) {
-			amount[inputIndex] = json_real_value(json_object_get(inputJ, "amount"));
-			radius[inputIndex] = json_real_value(json_object_get(inputJ, "radius"));
-			modMode[inputIndex] = (MODMODE)json_integer_value(json_object_get(inputJ, "modMode"));
-			modBipolar[inputIndex] = json_boolean_value(json_object_get(inputJ, "modBipolar"));
-			inputXBipolar[inputIndex] = json_boolean_value(json_object_get(inputJ, "inputXBipolar"));
-			inputYBipolar[inputIndex] = json_boolean_value(json_object_get(inputJ, "inputYBipolar"));
-			outputMode[inputIndex] = (OUTPUTMODE)json_integer_value(json_object_get(inputJ, "outputMode"));
+		json_array_foreach(inportsJ, inputIndex, inportJ) {
+			amount[inputIndex] = json_real_value(json_object_get(inportJ, "amount"));
+			radius[inputIndex] = json_real_value(json_object_get(inportJ, "radius"));
+			modMode[inputIndex] = (MODMODE)json_integer_value(json_object_get(inportJ, "modMode"));
+			modBipolar[inputIndex] = json_boolean_value(json_object_get(inportJ, "modBipolar"));
+			inputXBipolar[inputIndex] = json_boolean_value(json_object_get(inportJ, "inputXBipolar"));
+			inputYBipolar[inputIndex] = json_boolean_value(json_object_get(inportJ, "inputYBipolar"));
+			outputMode[inputIndex] = (OUTPUTMODE)json_integer_value(json_object_get(inportJ, "outputMode"));
 		}
 
-		json_t* mixputsJ = json_object_get(rootJ, "mixputs");
-		json_t* mixputJ;
+		json_t* mixportsJ = json_object_get(rootJ, "mixports");
+		json_t* mixportJ;
 		size_t mixputIndex;
-		json_array_foreach(mixputsJ, mixputIndex, mixputJ) {
-			seqSelected[mixputIndex] = json_integer_value(json_object_get(mixputJ, "seqSelected"));
-			seqMode[mixputIndex] = (SEQMODE)json_integer_value(json_object_get(mixputJ, "seqMode"));
-			seqInterpolate[mixputIndex] = (SEQINTERPOLATE)json_integer_value(json_object_get(mixputJ, "seqInterpolate"));
-			json_t* seqDataJ = json_object_get(mixputJ, "seqData");
+		json_array_foreach(mixportsJ, mixputIndex, mixportJ) {
+			seqSelected[mixputIndex] = json_integer_value(json_object_get(mixportJ, "seqSelected"));
+			seqMode[mixputIndex] = (SEQMODE)json_integer_value(json_object_get(mixportJ, "seqMode"));
+			seqInterpolate[mixputIndex] = (SEQINTERPOLATE)json_integer_value(json_object_get(mixportJ, "seqInterpolate"));
+			json_t* seqDataJ = json_object_get(mixportJ, "seqData");
 			json_t* seqItemJ;
 			size_t seqItemIndex;
 			json_array_foreach(seqDataJ, seqItemIndex, seqItemJ) {
@@ -679,6 +683,8 @@ struct ArenaModule : Module {
 				seqData[mixputIndex][seqItemIndex].length = yIndex;
 			}
 		}
+
+		mixportsUsed = json_integer_value(json_object_get(rootJ, "mixportsUsed"));
 	}
 };
 
@@ -1248,13 +1254,14 @@ struct ArenaMixPlayWidget : ArenaDragPlayWidget<MODULE> {
 	}
 
 	void draw(const Widget::DrawArgs& args) override {
+		if (AW::id + 1 > AW::module->mixportsUsed) return;
 		AW::draw(args);
 
 		// Draw lines between inputs and mixputs
 		Vec c = Vec(AW::box.size.x / 2.f, AW::box.size.y / 2.f);
 		float sizeX = AW::parent->box.size.x;
 		float sizeY = AW::parent->box.size.y;
-		for (int i = 0; i < AW::module->num_inports; i++) {
+		for (int i = 0; i < AW::module->numInports; i++) {
 			if (AW::module->dist[AW::id][i] < AW::module->radius[i]) {
 				float x = AW::module->params[MODULE::IN_X_POS + i].getValue() * (sizeX - 2.f * AW::radius);
 				float y = AW::module->params[MODULE::IN_Y_POS + i].getValue() * (sizeY - 2.f * AW::radius);
@@ -1293,6 +1300,11 @@ struct ArenaMixPlayWidget : ArenaDragPlayWidget<MODULE> {
 			nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
 			nvgStroke(args.vg);
 		}
+	}
+
+	void onButton(const event::Button& e) override {
+		if (AW::id + 1 > AW::module->mixportsUsed) return;
+		ArenaDragPlayWidget<MODULE>::onButton(e);
 	}
 };
 
@@ -1384,11 +1396,42 @@ struct ArenaPlayWidget : OpaqueWidget {
 			}
 		};
 
+		struct NumMixportsMenuItem : MenuItem {
+			NumMixportsMenuItem() {
+				rightText = RIGHT_ARROW;
+			}
+
+			struct NumMixportsItem : MenuItem {
+				MODULE* module;
+				int mixportsUsed;
+				
+				void onAction(const event::Action &e) override {
+					module->mixportsUsed = mixportsUsed;
+				}
+
+				void step() override {
+					rightText = module->mixportsUsed == mixportsUsed ? "✔" : "";
+					MenuItem::step();
+				}
+			};
+
+			MODULE* module;
+			Menu* createChildMenu() override {
+				Menu* menu = new Menu;
+				for (int i = 0; i < module->numMixports; i++) {
+					menu->addChild(construct<NumMixportsItem>(&MenuItem::text, string::f("%i", i + 1), &NumMixportsItem::module, module, &NumMixportsItem::mixportsUsed, i + 1));
+				}
+				return menu;
+			}
+		};
+
 		menu->addChild(construct<RandomizeXYItem>(&MenuItem::text, "Radomize input x-pos & y-pos", &RandomizeXYItem::module, module));
 		menu->addChild(construct<RandomizeXItem>(&MenuItem::text, "Radomize input x-pos", &RandomizeXItem::module, module));
 		menu->addChild(construct<RandomizeYItem>(&MenuItem::text, "Radomize input y-pos", &RandomizeYItem::module, module));
 		menu->addChild(construct<RandomizeAmountItem>(&MenuItem::text, "Radomize input amount", &RandomizeAmountItem::module, module));
 		menu->addChild(construct<RandomizeRadiusItem>(&MenuItem::text, "Radomize input radius", &RandomizeRadiusItem::module, module));
+		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<NumMixportsMenuItem>(&MenuItem::text, "Number of mixports", &NumMixportsMenuItem::module, module));
 	}
 };
 
@@ -1732,11 +1775,13 @@ struct ArenaSeqDisplay : LedDisplayChoice {
 	void step() override {
 		if (module) {
 			text = string::f("%02d", module->seqSelected[id] + 1);
+			color = module->seqEdit == id ? color::RED : nvgRGB(0xf0, 0xf0, 0xf0);
 		}
 		LedDisplayChoice::step();
 	}
 
 	void onButton(const event::Button& e) override {
+		if (id + 1 > module->mixportsUsed) return;
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
 			createContextMenu();
 			e.consume(this);
@@ -1744,11 +1789,9 @@ struct ArenaSeqDisplay : LedDisplayChoice {
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
 			if (module->seqEdit == id) {
 				module->seqEdit = -1;
-				color = nvgRGB(0xf0, 0xf0, 0xf0);
 			}
 			else {
 				module->seqEdit = id;
-				color = color::RED;
 			}
 			e.consume(this);
 		}
