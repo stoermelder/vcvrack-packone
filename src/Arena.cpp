@@ -1050,10 +1050,10 @@ struct AmountSlider : ui::Slider {
 };
 
 
-// Play widgets
+// Screen widgets
 
 template < typename MODULE >
-struct ArenaDragPlayWidget : OpaqueWidget {
+struct ArenaScreenDragWidget : OpaqueWidget {
 	const float radius = 10.f;
 	const float fontsize = 13.0f;
 
@@ -1068,7 +1068,7 @@ struct ArenaDragPlayWidget : OpaqueWidget {
 	float circleA = 1.f;
 	math::Vec dragPos;
 
-	ArenaDragPlayWidget() {
+	ArenaScreenDragWidget() {
 		font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
 		box.size = Vec(2 * radius, 2 * radius);
 	}
@@ -1188,10 +1188,10 @@ struct ArenaDragPlayWidget : OpaqueWidget {
 
 
 template < typename MODULE >
-struct ArenaInputPlayWidget : ArenaDragPlayWidget<MODULE> {
-	typedef ArenaDragPlayWidget<MODULE> AW;
+struct ArenaInportScreenDragWidget : ArenaScreenDragWidget<MODULE> {
+	typedef ArenaScreenDragWidget<MODULE> AW;
 
-	ArenaInputPlayWidget() {
+	ArenaInportScreenDragWidget() {
 		AW::color = color::WHITE;
 		AW::type = 0;
 	}
@@ -1245,10 +1245,10 @@ struct ArenaInputPlayWidget : ArenaDragPlayWidget<MODULE> {
 };
 
 template < typename MODULE >
-struct ArenaMixPlayWidget : ArenaDragPlayWidget<MODULE> {
-	typedef ArenaDragPlayWidget<MODULE> AW;
+struct ArenaMixportScreenDragWidget : ArenaScreenDragWidget<MODULE> {
+	typedef ArenaScreenDragWidget<MODULE> AW;
 
-	ArenaMixPlayWidget() {
+	ArenaMixportScreenDragWidget() {
 		AW::color = color::YELLOW;
 		AW::type = 1;
 	}
@@ -1304,35 +1304,33 @@ struct ArenaMixPlayWidget : ArenaDragPlayWidget<MODULE> {
 
 	void onButton(const event::Button& e) override {
 		if (AW::id + 1 > AW::module->mixportsUsed) return;
-		ArenaDragPlayWidget<MODULE>::onButton(e);
+		ArenaScreenDragWidget<MODULE>::onButton(e);
 	}
 };
 
 
-template < typename MODULE, int IN_PORTS, int MIX_PORTS >
-struct ArenaPlayWidget : OpaqueWidget {
+template < typename MODULE >
+struct ArenaScreenWidget : OpaqueWidget {
 	MODULE* module;
-	ArenaInputPlayWidget<MODULE>* inWidget[IN_PORTS];
-	ArenaMixPlayWidget<MODULE>* mixWidget[MIX_PORTS];
 
-	ArenaPlayWidget(MODULE* module, int inParamIdX, int inParamIdY, int mixParamIdX, int mixParamIdY) {
+	ArenaScreenWidget(MODULE* module, int inParamIdX, int inParamIdY, int mixParamIdX, int mixParamIdY) {
 		this->module = module;
 		if (module) {
-			for (int i = 0; i < IN_PORTS; i++) {
-				inWidget[i] = new ArenaInputPlayWidget<MODULE>;
-				inWidget[i]->module = module;
-				inWidget[i]->paramQuantityX = module->paramQuantities[inParamIdX + i];
-				inWidget[i]->paramQuantityY = module->paramQuantities[inParamIdY + i];
-				inWidget[i]->id = i;
-				addChild(inWidget[i]);
+			for (int i = 0; i < module->numInports; i++) {
+				ArenaInportScreenDragWidget<MODULE>* w = new ArenaInportScreenDragWidget<MODULE>;
+				w->module = module;
+				w->paramQuantityX = module->paramQuantities[inParamIdX + i];
+				w->paramQuantityY = module->paramQuantities[inParamIdY + i];
+				w->id = i;
+				addChild(w);
 			}
-			for (int i = 0; i < MIX_PORTS; i++) {
-				mixWidget[i] = new ArenaMixPlayWidget<MODULE>;
-				mixWidget[i]->module = module;
-				mixWidget[i]->paramQuantityX = module->paramQuantities[mixParamIdX + i];
-				mixWidget[i]->paramQuantityY = module->paramQuantities[mixParamIdY + i];
-				mixWidget[i]->id = i;
-				addChild(mixWidget[i]);
+			for (int i = 0; i < module->numMixports; i++) {
+				ArenaMixportScreenDragWidget<MODULE>* w = new ArenaMixportScreenDragWidget<MODULE>;
+				w->module = module;
+				w->paramQuantityX = module->paramQuantities[mixParamIdX + i];
+				w->paramQuantityY = module->paramQuantities[mixParamIdY + i];
+				w->id = i;
+				addChild(w);
 			}
 		}
 	}
@@ -1436,10 +1434,10 @@ struct ArenaPlayWidget : OpaqueWidget {
 };
 
 
-// Record widgets
+// Seq-edit widgets
 
 template < typename MODULE >
-struct ArenaDragRecordWidget : OpaqueWidget {
+struct ArenaSeqEditDragWidget : OpaqueWidget {
 	const float radius = 8.f;
 	const float fontsize = 13.0f;
 
@@ -1454,7 +1452,7 @@ struct ArenaDragRecordWidget : OpaqueWidget {
 	std::chrono::time_point<std::chrono::system_clock> timer;
 	bool timerClear;
 
-	ArenaDragRecordWidget() {
+	ArenaSeqEditDragWidget() {
 		font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
 		box.size = Vec(2 * radius, 2 * radius);
 	}
@@ -1569,22 +1567,22 @@ struct ArenaDragRecordWidget : OpaqueWidget {
 };
 
 template < typename MODULE >
-struct ArenaRecordWidget : OpaqueWidget {
+struct ArenaSeqEditWidget : OpaqueWidget {
 	MODULE* module;
 	std::shared_ptr<Font> font;
-	ArenaDragRecordWidget<MODULE>* recWidget;
+	ArenaSeqEditDragWidget<MODULE>* recWidget;
 	int mixParamIdX;
 	int mixParamIdY;
 	int lastSeqId = -1;
 	int lastSeqSelected = -1;
 
-	ArenaRecordWidget(MODULE* module, int mixParamIdX, int mixParamIdY) {
+	ArenaSeqEditWidget(MODULE* module, int mixParamIdX, int mixParamIdY) {
 		font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
 		this->module = module;
 		this->mixParamIdX = mixParamIdX;
 		this->mixParamIdY = mixParamIdY;
 
-		recWidget = new ArenaDragRecordWidget<MODULE>;
+		recWidget = new ArenaSeqEditDragWidget<MODULE>;
 		recWidget->module = module;
 		addChild(recWidget);
 	}
@@ -1901,12 +1899,12 @@ struct ArenaWidget : ModuleWidget {
 			addOutput(createOutputCentered<StoermelderPort>(Vec(x, 327.7f), module, MODULE::OUT + i));
 		}
 
-		ArenaPlayWidget<MODULE, IN_PORTS, MIX_PORTS>* areaWidget = new ArenaPlayWidget<MODULE, IN_PORTS, MIX_PORTS>(module, MODULE::IN_X_POS, MODULE::IN_Y_POS, MODULE::MIX_X_POS, MODULE::MIX_Y_POS);
+		ArenaScreenWidget<MODULE>* areaWidget = new ArenaScreenWidget<MODULE>(module, MODULE::IN_X_POS, MODULE::IN_Y_POS, MODULE::MIX_X_POS, MODULE::MIX_Y_POS);
 		areaWidget->box.pos = Vec(213.2f, 42.1f);
 		areaWidget->box.size = Vec(293.6f, 296.0f);
 		addChild(areaWidget);
 
-		ArenaRecordWidget<MODULE>* recordWidget = new ArenaRecordWidget<MODULE>(module, MODULE::MIX_X_POS, MODULE::MIX_Y_POS);
+		ArenaSeqEditWidget<MODULE>* recordWidget = new ArenaSeqEditWidget<MODULE>(module, MODULE::MIX_X_POS, MODULE::MIX_Y_POS);
 		recordWidget->box.pos = areaWidget->box.pos;
 		recordWidget->box.size = areaWidget->box.size;
 		addChild(recordWidget);
