@@ -19,9 +19,11 @@ enum MODMODE {
 enum SEQMODE {
 	TRIG_FWD = 0,
 	TRIG_REV = 1,
-	TRIG_RANDOM = 2,
-	VOLT = 4,
-	C4 = 5
+	TRIG_RANDOM_16 = 2,
+	TRIG_RANDOM_8 = 3,
+	TRIG_RANDOM_4 = 4,
+	VOLT = 10,
+	C4 = 11
 };
 
 enum SEQINTERPOLATE {
@@ -235,6 +237,10 @@ struct ArenaModule : Module {
 
 		float outNorm[IN_PORTS];
 		for (int i = 0; i < MIX_PORTS; i++) {
+			if (inputs[SEQ_INPUT + i].isConnected()) {
+				seqProcess(i);
+			}
+
 			if (inputs[SEQ_PH_INPUT + i].isConnected()) {
 				float v = clamp(inputs[SEQ_PH_INPUT + i].getVoltage() / 10.f, 0.f, 1.f);
 				Vec d = seqValue(i, v);
@@ -419,6 +425,54 @@ struct ArenaModule : Module {
 			}
 			default: {
 				return Vec(0, 0);
+			}
+		}
+	}
+
+	void seqProcess(int port) {
+		switch (seqMode[port]) {
+			case SEQMODE::TRIG_FWD: {
+				if (seqTrigger[port].process(inputs[SEQ_INPUT + port].getVoltage())) {
+					int t = seqSelected[port];
+					do 
+						seqSelected[port] = (seqSelected[port] + 1) % SEQ_COUNT;
+					while (seqData[port][seqSelected[port]].length == 0 && seqSelected[port] != t);
+				}
+				break;
+			}
+			case SEQMODE::TRIG_REV: {
+				if (seqTrigger[port].process(inputs[SEQ_INPUT + port].getVoltage())) {
+					int t = seqSelected[port];
+					do 
+						seqSelected[port] = (seqSelected[port] - 1 + SEQ_COUNT) % SEQ_COUNT;
+					while (seqData[port][seqSelected[port]].length == 0 && seqSelected[port] != t);
+				}
+				break;
+			}
+			case SEQMODE::TRIG_RANDOM_16:
+				if (seqTrigger[port].process(inputs[SEQ_INPUT + port].getVoltage())) {
+					seqSelected[port] = std::floor(rescale(random::uniform(), 0.f, 1.f, 0.f, 16.f));
+				}
+				break;
+			case SEQMODE::TRIG_RANDOM_8:
+				if (seqTrigger[port].process(inputs[SEQ_INPUT + port].getVoltage())) {
+					seqSelected[port] = std::floor(rescale(random::uniform(), 0.f, 1.f, 0.f, 8.f));
+				}
+				break;
+			case SEQMODE::TRIG_RANDOM_4:
+				if (seqTrigger[port].process(inputs[SEQ_INPUT + port].getVoltage())) {
+					seqSelected[port] = std::floor(rescale(random::uniform(), 0.f, 1.f, 0.f, 4.f));
+				}
+				break;
+			case SEQMODE::C4: {
+				int s = std::round(clamp(inputs[SEQ_INPUT + port].getVoltage() * 12.f, 0.f, SEQ_COUNT - 1.f));
+				seqSelected[port] = s;
+				break;
+			}
+			case SEQMODE::VOLT: {
+				int s = std::floor(rescale(inputs[SEQ_INPUT + port].getVoltage(), 0.f, 10.f, 0, SEQ_COUNT - 1));
+				seqSelected[port] = s;
+				break;
 			}
 		}
 	}
@@ -746,7 +800,9 @@ struct SeqModeMenuItem : MenuItem {
 		Menu* menu = new Menu;
 		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "Trigger forward", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::TRIG_FWD));
 		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "Trigger reverse", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::TRIG_REV));
-		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "Trigger random", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::TRIG_RANDOM));
+		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "Trigger random 1-16", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::TRIG_RANDOM_16));
+		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "Trigger random 1-8", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::TRIG_RANDOM_8));
+		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "Trigger random 1-4", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::TRIG_RANDOM_4));
 		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "0..10V", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::VOLT));
 		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "C4-F5", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::C4));
 		return menu;
