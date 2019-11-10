@@ -32,6 +32,11 @@ enum SEQINTERPOLATE {
 	CUBIC = 1
 };
 
+enum SEQPRESET {
+	CIRCLE,
+	SAW
+};
+
 enum OUTPUTMODE {
 	SCALE = 0,
 	LIMIT = 1,
@@ -386,52 +391,6 @@ struct ArenaModule : Module {
 		seqData[port][seqSelected[port]].length = 0;
 	}
 
-	void seqRandomize(int port) {
-		seqData[port][seqSelected[port]].length = 0;
-
-		unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
-		std::default_random_engine gen(seed);
-		std::normal_distribution<float> d{0.f, 0.1f};
-		dsp::ExponentialFilter filterX;
-		dsp::ExponentialFilter filterY;
-		filterX.setLambda(0.7f);
-		filterY.setLambda(0.7f);
-
-		// Random length
-		int l = std::max(0, std::min(int(SEQ_LENGTH / 4 + d(gen) * SEQ_LENGTH / 4), SEQ_LENGTH - 1));
-
-		// Set some start-value for the exponential filters
-		filterX.out = 0.5f + d(gen);
-		filterY.out = 0.5f + d(gen);
-		int dirX = d(gen) >= 0.f ? 1 : -1;
-		int dirY = d(gen) >= 0.f ? 1 : -1;
-		float pX = 0.5f;
-		float pY = 0.5f;
-		for (int c = 0; c < l; c++) {
-			// Reduce the number of direction changes, only when rand > 0
-			if (d(gen) >= 0.5f) dirX = dirX == -1 ? 1 : -1;
-			if (pX == 1.f) dirX = -1;
-			if (pX == 0.f) dirX = 1;
-			if (d(gen) >= 0.5f) dirY = dirY == -1 ? 1 : -1;
-			if (pY == 1.f) dirY = -1;
-			if (pY == 0.f) dirY = 1;
-			float r;
-
-			r = d(gen);
-			pX = filterX.process(1.f, pX + dirX * abs(r));
-			// Only range [0,1] is valid
-			pX = clamp(pX, 0.f, 1.f);
-			seqData[port][seqSelected[port]].x[c] = pX;
-
-			r = d(gen);
-			pY = filterY.process(1.f, pY + dirY * abs(r));
-			// Only range [0,1] is valid
-			pY = clamp(pY, 0.f, 1.f);
-			seqData[port][seqSelected[port]].y[c] = pY;
-		}
-		seqData[port][seqSelected[port]].length = l;
-	}
-
 	Vec seqValue(int port, float pos) {
 		switch (seqInterpolate[port]) {
 			case SEQINTERPOLATE::LINEAR: {
@@ -519,6 +478,82 @@ struct ArenaModule : Module {
 			case SEQMODE::VOLT: {
 				int s = std::floor(rescale(inputs[SEQ_INPUT + port].getVoltage(), 0.f, 10.f, 0, SEQ_COUNT - 1));
 				seqSelected[port] = s;
+				break;
+			}
+		}
+	}
+
+	void seqRandomize(int port) {
+		seqData[port][seqSelected[port]].length = 0;
+
+		unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
+		std::default_random_engine gen(seed);
+		std::normal_distribution<float> d{0.f, 0.1f};
+		dsp::ExponentialFilter filterX;
+		dsp::ExponentialFilter filterY;
+		filterX.setLambda(0.7f);
+		filterY.setLambda(0.7f);
+
+		// Random length
+		int l = std::max(0, std::min(int(SEQ_LENGTH / 4 + d(gen) * SEQ_LENGTH / 4), SEQ_LENGTH - 1));
+
+		// Set some start-value for the exponential filters
+		filterX.out = 0.5f + d(gen);
+		filterY.out = 0.5f + d(gen);
+		int dirX = d(gen) >= 0.f ? 1 : -1;
+		int dirY = d(gen) >= 0.f ? 1 : -1;
+		float pX = 0.5f;
+		float pY = 0.5f;
+		for (int c = 0; c < l; c++) {
+			// Reduce the number of direction changes, only when rand > 0
+			if (d(gen) >= 0.5f) dirX = dirX == -1 ? 1 : -1;
+			if (pX == 1.f) dirX = -1;
+			if (pX == 0.f) dirX = 1;
+			if (d(gen) >= 0.5f) dirY = dirY == -1 ? 1 : -1;
+			if (pY == 1.f) dirY = -1;
+			if (pY == 0.f) dirY = 1;
+			float r;
+
+			r = d(gen);
+			pX = filterX.process(1.f, pX + dirX * abs(r));
+			// Only range [0,1] is valid
+			pX = clamp(pX, 0.f, 1.f);
+			seqData[port][seqSelected[port]].x[c] = pX;
+
+			r = d(gen);
+			pY = filterY.process(1.f, pY + dirY * abs(r));
+			// Only range [0,1] is valid
+			pY = clamp(pY, 0.f, 1.f);
+			seqData[port][seqSelected[port]].y[c] = pY;
+		}
+		seqData[port][seqSelected[port]].length = l;
+	}
+
+	void seqPreset(int port, SEQPRESET preset) {
+		switch (preset) {
+			case SEQPRESET::CIRCLE: {
+				seqData[port][seqSelected[port]].length = 0;
+				int l = SEQ_LENGTH / 4;
+				float p = 2.f * M_PI / (l - 1);
+				for (int i = 0; i < l; i++) {
+					seqData[port][seqSelected[port]].x[i] = sin(i * p) / 2.f + 0.5f;
+					seqData[port][seqSelected[port]].y[i] = cos(i * p) / 2.f + 0.5f;
+				}
+				seqData[port][seqSelected[port]].length = l;
+				break;
+			}
+			case SEQPRESET::SAW: {
+				seqData[port][seqSelected[port]].length = 0;
+				seqData[port][seqSelected[port]].x[0] = 0.f;
+				seqData[port][seqSelected[port]].y[0] = 1.f;
+				int c = 8;
+				for (int i = 0; i < c; i++) {
+					seqData[port][seqSelected[port]].x[i + 1] = 1.f / (c + 1) * (i + 1);
+					seqData[port][seqSelected[port]].y[i + 1] = i % 2;
+				}
+				seqData[port][seqSelected[port]].x[c + 1] = 1.f;
+				seqData[port][seqSelected[port]].y[c + 1] = 0.f;
+				seqData[port][seqSelected[port]].length = c + 2;
 				break;
 			}
 		}
@@ -885,6 +920,30 @@ struct SeqInterpolateMenuItem : MenuItem {
 		Menu* menu = new Menu;
 		menu->addChild(construct<SeqInterpolateItem>(&MenuItem::text, "Linear", &SeqInterpolateItem::module, module, &SeqInterpolateItem::id, id, &SeqInterpolateItem::seqInterpolate, SEQINTERPOLATE::LINEAR));
 		menu->addChild(construct<SeqInterpolateItem>(&MenuItem::text, "Cubic", &SeqInterpolateItem::module, module, &SeqInterpolateItem::id, id, &SeqInterpolateItem::seqInterpolate, SEQINTERPOLATE::CUBIC));
+		return menu;
+	}
+};
+
+template < typename MODULE >
+struct SeqPresetMenuItem : MenuItem {
+	SeqPresetMenuItem() {
+		rightText = RIGHT_ARROW;
+	}
+
+	struct SeqPresetItem : MenuItem {
+		MODULE* module;
+		SEQPRESET preset;
+		
+		void onAction(const event::Action &e) override {
+			module->seqPreset(module->seqEdit, preset);
+		}
+	};
+
+	MODULE* module;
+	Menu* createChildMenu() override {
+		Menu* menu = new Menu;
+		menu->addChild(construct<SeqPresetItem>(&MenuItem::text, "Circle", &SeqPresetItem::module, module, &SeqPresetItem::preset, SEQPRESET::CIRCLE));
+		menu->addChild(construct<SeqPresetItem>(&MenuItem::text, "Saw", &SeqPresetItem::module, module, &SeqPresetItem::preset, SEQPRESET::SAW));
 		return menu;
 	}
 };
@@ -1558,24 +1617,25 @@ struct ArenaRecordWidget : OpaqueWidget {
 
 	void createContextMenu() {
 		ui::Menu* menu = createMenu();
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Arena sequence"));
+		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Arena motion"));
 
-		struct ClearItem : MenuItem {
+		struct SeqClearItem : MenuItem {
 			MODULE* module;
 			void onAction(const event::Action &e) override {
 				module->seqClear(module->seqEdit);
 			}
 		};
 
-		struct RandomizeItem : MenuItem {
+		struct SeqRandomizeItem : MenuItem {
 			MODULE* module;
 			void onAction(const event::Action &e) override {
 				module->seqRandomize(module->seqEdit);
 			}
 		};
 
-		menu->addChild(construct<ClearItem>(&MenuItem::text, "Clear", &ClearItem::module, module));
-		menu->addChild(construct<RandomizeItem>(&MenuItem::text, "Randomize", &RandomizeItem::module, module));
+		menu->addChild(construct<SeqClearItem>(&MenuItem::text, "Clear", &SeqClearItem::module, module));
+		menu->addChild(construct<SeqRandomizeItem>(&MenuItem::text, "Random motion", &SeqRandomizeItem::module, module));
+		menu->addChild(construct<SeqPresetMenuItem<MODULE>>(&MenuItem::text, "Preset", &SeqPresetMenuItem<MODULE>::module, module));
 	}
 };
 
