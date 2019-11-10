@@ -1,5 +1,5 @@
 #include "plugin.hpp"
-#include "CVMapModule.hpp"
+#include "MapModule.hpp"
 #include <chrono>
 #include <thread>
 

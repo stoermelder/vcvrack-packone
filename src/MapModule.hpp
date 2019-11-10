@@ -40,6 +40,8 @@ struct ParamHandleIndicator {
 };
 
 
+// Abstract modules
+
 template< int MAX_CHANNELS >
 struct MapModule : Module {
 	/** Number of maps */
@@ -212,6 +214,46 @@ struct MapModule : Module {
 	}
 };
 
+template< int MAX_CHANNELS >
+struct CVMapModule : MapModule<MAX_CHANNELS> {
+	bool bipolarInput = false;
+
+	/** Track last values */
+	float lastValue[MAX_CHANNELS];
+	/** [Saved to JSON] Allow manual changes of target parameters */
+	bool lockParameterChanges = true;
+
+	CVMapModule() {
+		for (int id = 0; id < MAX_CHANNELS; id++) {
+			MapModule<MAX_CHANNELS>::paramHandles[id].color = nvgRGB(0xff, 0x40, 0xff);
+		}
+	}
+
+	void process(const Module::ProcessArgs &args) override {
+		MapModule<MAX_CHANNELS>::process(args);
+	}
+
+	json_t *dataToJson() override {
+		json_t *rootJ = MapModule<MAX_CHANNELS>::dataToJson();
+		json_object_set_new(rootJ, "lockParameterChanges", json_boolean(lockParameterChanges));
+		json_object_set_new(rootJ, "bipolarInput", json_boolean(bipolarInput));
+
+		return rootJ;
+	}
+
+	void dataFromJson(json_t *rootJ) override {
+		MapModule<MAX_CHANNELS>::dataFromJson(rootJ);
+
+		json_t *lockParameterChangesJ = json_object_get(rootJ, "lockParameterChanges");
+		lockParameterChanges = json_boolean_value(lockParameterChangesJ);
+
+		json_t *bipolarInputJ = json_object_get(rootJ, "bipolarInput");
+		bipolarInput = json_boolean_value(bipolarInputJ);
+	}
+};
+
+
+// Widgets
 
 template< int MAX_CHANNELS, typename MODULE >
 struct MapModuleChoice : LedDisplayChoice {
@@ -286,7 +328,7 @@ struct MapModuleChoice : LedDisplayChoice {
 		ScrollWidget *scroll = getAncestorOfType<ScrollWidget>();
 		scroll->scrollTo(box);
 
-		// Reset touchedParam
+		// Reset touchedParam, unstable API
 		APP->scene->rack->touchedParam = NULL;
 		module->enableLearn(id);
 	}
@@ -296,7 +338,7 @@ struct MapModuleChoice : LedDisplayChoice {
 			return;
 		if (!processEvents)
 			return;
-		// Check if a ParamWidget was touched
+		// Check if a ParamWidget was touched, unstable API
 		ParamWidget *touchedParam = APP->scene->rack->touchedParam;
 		if (touchedParam && touchedParam->paramQuantity->module != module) {
 			APP->scene->rack->touchedParam = NULL;

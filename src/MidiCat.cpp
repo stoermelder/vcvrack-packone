@@ -1,5 +1,5 @@
 #include "plugin.hpp"
-#include "CVMapModule.hpp"
+#include "MapModule.hpp"
 #include <osdialog.h>
 #include <thread>
 
@@ -193,7 +193,7 @@ struct MidiCatModule : Module {
 
 		// Only step channels when some midi event has been received. Additionally
 		// step channels for parameter changes made manually every 128th loop. Notice
-		// that midi allows about 1000 messages per second, to checking for changes more often
+		// that midi allows about 1000 messages per second, so checking for changes more often
 		// won't lead to higher precision on midi output.
 		if (changed || loopDivider.process()) {
 			// Step channels
