@@ -1906,7 +1906,9 @@ struct ClickableLight : MediumLight<LIGHT> {
 
 
 struct ArenaWidget : ModuleWidget {
-	typedef ArenaModule<8, 4> MODULE;
+	static const int IN_PORTS = 8;
+	static const int MIX_PORTS = 4;
+	typedef ArenaModule<IN_PORTS, MIX_PORTS> MODULE;
 	MODULE* module;
 
 	ArenaWidget(MODULE* module) {
@@ -1919,9 +1921,9 @@ struct ArenaWidget : ModuleWidget {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		for (int i = 0; i < module->numInports; i++) {
+		for (int i = 0; i < IN_PORTS; i++) {
 			float xs[] = { 24.1f, 604.7f };
-			float x = xs[i >= module->numInports / 2] + (i % (module->numInports / 2)) * 30.433f;
+			float x = xs[i >= IN_PORTS / 2] + (i % (IN_PORTS / 2)) * 30.433f;
 			addInput(createInputCentered<StoermelderPort>(Vec(x, 58.5f), module, MODULE::IN + i));
 			addInput(createInputCentered<StoermelderPort>(Vec(x, 96.2f), module, MODULE::IN_X_INPUT + i));
 			addParam(createParamCentered<StoermelderTrimpot>(Vec(x, 130.7f), module, MODULE::IN_X_PARAM + i));
@@ -1955,9 +1957,9 @@ struct ArenaWidget : ModuleWidget {
 		seqEditWidget->box.size = screenWidget->box.size;
 		addChild(seqEditWidget);
 
-		for (int i = 0; i < module->numMixports; i++) {
+		for (int i = 0; i < MIX_PORTS; i++) {
 			float xs[] = { 154.3f, 534.9f };
-			float x = xs[i >= module->numMixports / 2] + (i % (module->numMixports / 2)) * 30.433f;
+			float x = xs[i >= MIX_PORTS / 2] + (i % (MIX_PORTS / 2)) * 30.433f;
 			addInput(createInputCentered<StoermelderPort>(Vec(x, 96.2f), module, MODULE::MIX_X_INPUT + i));
 			addParam(createParamCentered<StoermelderTrimpot>(Vec(x, 130.7f), module, MODULE::MIX_X_PARAM + i));
 			addParam(createParamCentered<DummyMapButton>(Vec(x, 115.3f), module, MODULE::MIX_X_POS + i));
