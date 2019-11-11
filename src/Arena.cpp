@@ -165,29 +165,19 @@ struct ArenaModule : Module {
 
 	void onReset() override {
 		selectionReset();
+		init();
 		for (int i = 0; i < IN_PORTS; i++) {
-			radius[i] = 0.5f;
-			amount[i] = 1.f;
 			modMode[i] = MODMODE::RADIUS;
 			modBipolar[i] = false;
 			inputXBipolar[i] = false;
 			inputYBipolar[i] = false;
 			outputMode[i] = OUTPUTMODE::SCALE;
-			paramQuantities[IN_X_POS + i]->setValue(paramQuantities[IN_X_POS + i]->getDefaultValue());
-			paramQuantities[IN_Y_POS + i]->setValue(paramQuantities[IN_Y_POS + i]->getDefaultValue());
-			lastInXpos[i] = -1.f;
-			lastInYpos[i] = -1.f;
 		}
 		for (int i = 0; i < MIX_PORTS; i++) {
 			seqSelected[i] = 0;
 			seqMode[i] = SEQMODE::TRIG_FWD;
 			seqInterpolate[i] = SEQINTERPOLATE::LINEAR;
-			paramQuantities[MIX_X_POS + i]->setValue(paramQuantities[MIX_X_POS + i]->getDefaultValue());
-			paramQuantities[MIX_Y_POS + i]->setValue(paramQuantities[MIX_Y_POS + i]->getDefaultValue());
-			lastMixXpos[i] = -1.f;
-			lastMixYpos[i] = -1.f;
 		}
-		seqEdit = -1;
 		Module::onReset();
 	}
 
@@ -400,10 +390,12 @@ struct ArenaModule : Module {
 	}
 
 	Vec seqValue(int port, float pos) {
+		SeqItem* s = &seqData[port][seqSelected[port]];
+		if (s->length == 0) return Vec(0.5f, 0.5f);
+		int l = s->length - 1;
+
 		switch (seqInterpolate[port]) {
 			case SEQINTERPOLATE::LINEAR: {
-				SeqItem* s = &seqData[port][seqSelected[port]];
-				int l = s->length - 1;
 				float mu1 = l * pos;
 				float intf;
 				float mu = std::modf(mu1, &intf);
@@ -415,8 +407,6 @@ struct ArenaModule : Module {
 				return d;
 			}
 			case SEQINTERPOLATE::CUBIC: {
-				SeqItem* s = &seqData[port][seqSelected[port]];
-				int l = s->length - 1;
 				float mu1 = l * pos;
 				float intf;
 				float mu = std::modf(mu1, &intf);
@@ -582,7 +572,7 @@ struct ArenaModule : Module {
 			case SEQPRESET::SINE: {
 				seqData[port][seqSelected[port]].length = 0;
 				int l = SEQ_LENGTH;
-				float p = parameter * 2.f * M_PI / l;
+				float p = parameter * 2.f * M_PI / (l - 1);
 				for (int i = 0; i < l; i++) {
 					seqData[port][seqSelected[port]].x[i] = _x(1.f / l * i);
 					seqData[port][seqSelected[port]].y[i] = _y(sin(i * p) / 2.f + 0.5f);
@@ -602,6 +592,28 @@ struct ArenaModule : Module {
 			seqData[port][seqSelected[port]].x[i] = std::max(0.f, std::min(p.x, 1.f));
 			seqData[port][seqSelected[port]].y[i] = std::max(0.f, std::min(p.y, 1.f));
 		}
+	}
+
+	void init() {
+		for (int i = 0; i < IN_PORTS; i++) {
+			radius[i] = 0.5f;
+			amount[i] = 1.f;
+			paramQuantities[IN_X_POS + i]->setValue(paramQuantities[IN_X_POS + i]->getDefaultValue());
+			paramQuantities[IN_Y_POS + i]->setValue(paramQuantities[IN_Y_POS + i]->getDefaultValue());
+			lastInXpos[i] = -1.f;
+			lastInYpos[i] = -1.f;
+		}
+		for (int i = 0; i < MIX_PORTS; i++) {
+			seqSelected[i] = 0;
+			paramQuantities[MIX_X_POS + i]->setValue(paramQuantities[MIX_X_POS + i]->getDefaultValue());
+			paramQuantities[MIX_Y_POS + i]->setValue(paramQuantities[MIX_Y_POS + i]->getDefaultValue());
+			lastMixXpos[i] = -1.f;
+			lastMixYpos[i] = -1.f;
+			for (int j = 0; j < SEQ_COUNT; j++) {
+				seqData[i][j].length = 0;
+			}
+		}
+		seqEdit = -1;
 	}
 
 	void randomizeInputAmount() {
@@ -735,7 +747,7 @@ struct InputXMenuItem : MenuItem {
 		MODULE* module;
 		int id;
 
-		void onAction(const event::Action &e) override {
+		void onAction(const event::Action& e) override {
 			module->inputXBipolar[id] ^= true;
 		}
 
@@ -765,7 +777,7 @@ struct InputYMenuItem : MenuItem {
 		MODULE* module;
 		int id;
 
-		void onAction(const event::Action &e) override {
+		void onAction(const event::Action& e) override {
 			module->inputYBipolar[id] ^= true;
 		}
 
@@ -796,7 +808,7 @@ struct ModModeMenuItem : MenuItem {
 		MODMODE modMode;
 		int id;
 		
-		void onAction(const event::Action &e) override {
+		void onAction(const event::Action& e) override {
 			module->modMode[id] = modMode;
 		}
 
@@ -810,7 +822,7 @@ struct ModModeMenuItem : MenuItem {
 		MODULE* module;
 		int id;
 
-		void onAction(const event::Action &e) override {
+		void onAction(const event::Action& e) override {
 			module->modBipolar[id] ^= true;
 		}
 
@@ -847,7 +859,7 @@ struct OutputModeMenuItem : MenuItem {
 		OUTPUTMODE outputMode;
 		int id;
 		
-		void onAction(const event::Action &e) override {
+		void onAction(const event::Action& e) override {
 			module->outputMode[id] = outputMode;
 		}
 
@@ -883,7 +895,7 @@ struct SeqMenuItem : MenuItem {
 		int id;
 		int seq;
 		
-		void onAction(const event::Action &e) override {
+		void onAction(const event::Action& e) override {
 			module->seqSelected[id] = seq;
 		}
 
@@ -916,7 +928,7 @@ struct SeqModeMenuItem : MenuItem {
 		int id;
 		SEQMODE seqMode;
 		
-		void onAction(const event::Action &e) override {
+		void onAction(const event::Action& e) override {
 			if (module->seqEdit != id)
 				module->seqMode[id] = seqMode;
 		}
@@ -954,9 +966,8 @@ struct SeqInterpolateMenuItem : MenuItem {
 		int id;
 		SEQINTERPOLATE seqInterpolate;
 		
-		void onAction(const event::Action &e) override {
-			if (module->seqEdit != id)
-				module->seqInterpolate[id] = seqInterpolate;
+		void onAction(const event::Action& e) override {
+			module->seqInterpolate[id] = seqInterpolate;
 		}
 
 		void step() override {
@@ -1548,9 +1559,16 @@ struct ArenaScreenWidget : OpaqueWidget {
 		ui::Menu* menu = createMenu();
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Arena"));
 
+		struct InitItem : MenuItem {
+			MODULE* module;
+			void onAction(const event::Action& e) override {
+				module->init();
+			}
+		};
+
 		struct RandomizeXYItem : MenuItem {
 			MODULE* module;
-			void onAction(const event::Action &e) override {
+			void onAction(const event::Action& e) override {
 				module->randomizeInputX();
 				module->randomizeInputY();
 			}
@@ -1558,28 +1576,28 @@ struct ArenaScreenWidget : OpaqueWidget {
 
 		struct RandomizeXItem : MenuItem {
 			MODULE* module;
-			void onAction(const event::Action &e) override {
+			void onAction(const event::Action& e) override {
 				module->randomizeInputX();
 			}
 		};
 
 		struct RandomizeYItem : MenuItem {
 			MODULE* module;
-			void onAction(const event::Action &e) override {
+			void onAction(const event::Action& e) override {
 				module->randomizeInputY();
 			}
 		};
 
 		struct RandomizeAmountItem : MenuItem {
 			MODULE* module;
-			void onAction(const event::Action &e) override {
+			void onAction(const event::Action& e) override {
 				module->randomizeInputAmount();
 			}
 		};
 
 		struct RandomizeRadiusItem : MenuItem {
 			MODULE* module;
-			void onAction(const event::Action &e) override {
+			void onAction(const event::Action& e) override {
 				module->randomizeInputRadius();
 			}
 		};
@@ -1593,7 +1611,7 @@ struct ArenaScreenWidget : OpaqueWidget {
 				MODULE* module;
 				int inportsUsed;
 				
-				void onAction(const event::Action &e) override {
+				void onAction(const event::Action& e) override {
 					module->inportsUsed = inportsUsed;
 				}
 
@@ -1622,7 +1640,7 @@ struct ArenaScreenWidget : OpaqueWidget {
 				MODULE* module;
 				int mixportsUsed;
 				
-				void onAction(const event::Action &e) override {
+				void onAction(const event::Action& e) override {
 					module->mixportsUsed = mixportsUsed;
 				}
 
@@ -1642,6 +1660,8 @@ struct ArenaScreenWidget : OpaqueWidget {
 			}
 		};
 
+		menu->addChild(construct<InitItem>(&MenuItem::text, "Initialize", &InitItem::module, module));
+		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<RandomizeXYItem>(&MenuItem::text, "Radomize input x-pos & y-pos", &RandomizeXYItem::module, module));
 		menu->addChild(construct<RandomizeXItem>(&MenuItem::text, "Radomize input x-pos", &RandomizeXItem::module, module));
 		menu->addChild(construct<RandomizeYItem>(&MenuItem::text, "Radomize input y-pos", &RandomizeYItem::module, module));
@@ -1769,7 +1789,7 @@ struct ArenaSeqEditDragWidget : OpaqueWidget {
 		box.pos = pos;
 
 		auto now = std::chrono::system_clock::now();
-		if (timerClear || now - timer > std::chrono::milliseconds{80}) {
+		if (timerClear || now - timer > std::chrono::milliseconds{65}) {
 			if (index < SEQ_LENGTH) {
 				float x = pos.x / (parent->box.size.x - box.size.x);
 				float y = pos.y / (parent->box.size.y - box.size.y);
@@ -1914,6 +1934,7 @@ struct ArenaSeqEditWidget : OpaqueWidget {
 		};
 
 		menu->addChild(construct<SeqMenuItem<MODULE>>(&MenuItem::text, "Sequence", &SeqMenuItem<MODULE>::module, module, &SeqMenuItem<MODULE>::id, module->seqEdit));
+		menu->addChild(construct<SeqInterpolateMenuItem<MODULE>>(&MenuItem::text, "Interpolation", &SeqInterpolateMenuItem<MODULE>::module, module, &SeqInterpolateMenuItem<MODULE>::id, module->seqEdit));
 		menu->addChild(construct<MenuSeparator>());
 		menu->addChild(construct<SeqClearItem>(&MenuItem::text, "Clear", &SeqClearItem::module, module));
 		menu->addChild(construct<SeqRotateItem>(&MenuItem::text, "Rotate 45 degrees", &SeqRotateItem::module, module, &SeqRotateItem::angle, M_PI / 4.f));
