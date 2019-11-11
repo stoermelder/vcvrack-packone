@@ -34,7 +34,9 @@ enum SEQINTERPOLATE {
 
 enum SEQPRESET {
 	CIRCLE,
-	SAW
+	SPIRAL,
+	SAW,
+	SINE
 };
 
 enum OUTPUTMODE {
@@ -535,7 +537,7 @@ struct ArenaModule : Module {
 		seqData[port][seqSelected[port]].length = l;
 	}
 
-	void seqPreset(int port, SEQPRESET preset, float x, float y) {
+	void seqPreset(int port, SEQPRESET preset, float x, float y, int parameter) {
 		auto _x = [x](float v) { return (v - 0.5f) * x + 0.5f; };
 		auto _y = [y](float v) { return (v - 0.5f) * y + 0.5f; };
 
@@ -551,11 +553,23 @@ struct ArenaModule : Module {
 				seqData[port][seqSelected[port]].length = l;
 				break;
 			}
+			case SEQPRESET::SPIRAL: {
+				auto _s = [](float v, float s) { return (v - 0.5f) * s + 0.5f; };
+				seqData[port][seqSelected[port]].length = 0;
+				int l = SEQ_LENGTH;
+				float p = parameter * 2.f * M_PI / (l - 1);
+				for (int i = 0; i < l; i++) {
+					seqData[port][seqSelected[port]].x[i] = _x(_s(sin(i * p) / 2.f + 0.5f, 1.f / l * i));
+					seqData[port][seqSelected[port]].y[i] = _y(_s(cos(i * p) / 2.f + 0.5f, 1.f / l * i));
+				}
+				seqData[port][seqSelected[port]].length = l;
+				break;
+			}
 			case SEQPRESET::SAW: {
 				seqData[port][seqSelected[port]].length = 0;
 				seqData[port][seqSelected[port]].x[0] = _x(0.f);
 				seqData[port][seqSelected[port]].y[0] = _y(1.f);
-				int c = 8;
+				int c = parameter;
 				for (int i = 0; i < c; i++) {
 					seqData[port][seqSelected[port]].x[i + 1] = _x(1.f / (c + 1) * (i + 1));
 					seqData[port][seqSelected[port]].y[i + 1] = _y(i % 2);
@@ -565,17 +579,28 @@ struct ArenaModule : Module {
 				seqData[port][seqSelected[port]].length = c + 2;
 				break;
 			}
+			case SEQPRESET::SINE: {
+				seqData[port][seqSelected[port]].length = 0;
+				int l = SEQ_LENGTH;
+				float p = parameter * 2.f * M_PI / l;
+				for (int i = 0; i < l; i++) {
+					seqData[port][seqSelected[port]].x[i] = _x(1.f / l * i);
+					seqData[port][seqSelected[port]].y[i] = _y(sin(i * p) / 2.f + 0.5f);
+				}
+				seqData[port][seqSelected[port]].length = l;
+				break;
+			}
 		}
 	}
 
-	void seqRotate90(int port) {
+	void seqRotate(int port, float angle) {
 		for (int i = 0; i < seqData[port][seqSelected[port]].length; i++) {
 			Vec p = Vec(seqData[port][seqSelected[port]].x[i], seqData[port][seqSelected[port]].y[i]);
 			p = p.plus(Vec(-0.5f, -0.5f));
-			p = p.rotate(M_PI / 2.f);
+			p = p.rotate(angle);
 			p = p.minus(Vec(-0.5f, -0.5f));
-			seqData[port][seqSelected[port]].x[i] = p.x;
-			seqData[port][seqSelected[port]].y[i] = p.y;
+			seqData[port][seqSelected[port]].x[i] = std::max(0.f, std::min(p.x, 1.f));
+			seqData[port][seqSelected[port]].y[i] = std::max(0.f, std::min(p.y, 1.f));
 		}
 	}
 
@@ -954,6 +979,7 @@ template < typename MODULE >
 struct SeqPresetMenuItem : MenuItem {
 	float x = 1.0f;
 	float y = 1.0f;
+	int parameter = 6;
 
 	SeqPresetMenuItem() {
 		rightText = RIGHT_ARROW;
@@ -982,7 +1008,7 @@ struct SeqPresetMenuItem : MenuItem {
 				setValue(displayValue / 100);
 			}
 			std::string getLabel() override {
-				return "x";
+				return "Scale x";
 			}
 			std::string getUnit() override {
 				return "%";
@@ -1020,7 +1046,7 @@ struct SeqPresetMenuItem : MenuItem {
 				setValue(displayValue / 100);
 			}
 			std::string getLabel() override {
-				return "y";
+				return "Scale y";
 			}
 			std::string getUnit() override {
 				return "%";
@@ -1035,29 +1061,89 @@ struct SeqPresetMenuItem : MenuItem {
 		}
 	};
 
+	struct ParameterSlider : ui::Slider {
+		struct ParameterQuantity : Quantity {
+			SeqPresetMenuItem* item;
+			float v = -1.f;
+
+			ParameterQuantity(SeqPresetMenuItem* item) {
+				this->item = item;
+			}
+			void setValue(float value) override {
+				v = clamp(value, 2.f, 12.f);
+				item->parameter = int(v);
+			}
+			float getValue() override {
+				if (v < 0.f) v = item->parameter;
+				return v;
+			}
+			float getDefaultValue() override {
+				return 6.f;
+			}
+			float getMinValue() override {
+				return 2.f;
+			}
+			float getMaxValue() override {
+				return 12.f;
+			}
+			float getDisplayValue() override {
+				return getValue();
+			}
+			std::string getDisplayValueString() override {
+				int i = int(getValue());
+				return string::f("%i", i);
+			}
+			void setDisplayValue(float displayValue) override {
+				setValue(displayValue);
+			}
+			std::string getLabel() override {
+				return "Parameter";
+			}
+			std::string getUnit() override {
+				return "";
+			}
+		};
+
+		ParameterSlider(SeqPresetMenuItem* item) {
+			quantity = new ParameterQuantity(item);
+		}
+		~ParameterSlider() {
+			delete quantity;
+		}
+		void onDragMove(const event::DragMove& e) override {
+			if (quantity) {
+				quantity->moveScaledValue(0.002f * e.mouseDelta.x);
+			}
+		}
+	};
+
 	struct SeqPresetItem : MenuItem {
 		MODULE* module;
 		SEQPRESET preset;
 		SeqPresetMenuItem* item;
 		
 		void onAction(const event::Action &e) override {
-			module->seqPreset(module->seqEdit, preset, item->x, item->y);
+			module->seqPreset(module->seqEdit, preset, item->x, item->y, item->parameter);
 		}
 	};
 
 	MODULE* module;
 	Menu* createChildMenu() override {
 		Menu* menu = new Menu;
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Scale"));
+		menu->addChild(construct<SeqPresetItem>(&MenuItem::text, "Circle", &SeqPresetItem::module, module, &SeqPresetItem::item, this, &SeqPresetItem::preset, SEQPRESET::CIRCLE));
+		menu->addChild(construct<SeqPresetItem>(&MenuItem::text, "Spiral", &SeqPresetItem::module, module, &SeqPresetItem::item, this, &SeqPresetItem::preset, SEQPRESET::SPIRAL));
+		menu->addChild(construct<SeqPresetItem>(&MenuItem::text, "Saw", &SeqPresetItem::module, module, &SeqPresetItem::item, this, &SeqPresetItem::preset, SEQPRESET::SAW));
+		menu->addChild(construct<SeqPresetItem>(&MenuItem::text, "Sine", &SeqPresetItem::module, module, &SeqPresetItem::item, this, &SeqPresetItem::preset, SEQPRESET::SINE));
+
 		XSlider* xSlider = new XSlider(this);
 		xSlider->box.size.x = 120.0f;
 		menu->addChild(xSlider);
 		YSlider* ySlider = new YSlider(this);
 		ySlider->box.size.x = 120.0f;
 		menu->addChild(ySlider);
-
-		menu->addChild(construct<SeqPresetItem>(&MenuItem::text, "Circle", &SeqPresetItem::module, module, &SeqPresetItem::item, this, &SeqPresetItem::preset, SEQPRESET::CIRCLE));
-		menu->addChild(construct<SeqPresetItem>(&MenuItem::text, "Saw", &SeqPresetItem::module, module, &SeqPresetItem::item, this, &SeqPresetItem::preset, SEQPRESET::SAW));
+		ParameterSlider* parameterSlider = new ParameterSlider(this);
+		parameterSlider->box.size.x = 120.0f;
+		menu->addChild(parameterSlider);
 		return menu;
 	}
 };
@@ -1812,10 +1898,11 @@ struct ArenaSeqEditWidget : OpaqueWidget {
 			}
 		};
 
-		struct SeqRotate90Item : MenuItem {
+		struct SeqRotateItem : MenuItem {
 			MODULE* module;
+			float angle;
 			void onAction(const event::Action &e) override {
-				module->seqRotate90(module->seqEdit);
+				module->seqRotate(module->seqEdit, angle);
 			}
 		};
 
@@ -1826,8 +1913,11 @@ struct ArenaSeqEditWidget : OpaqueWidget {
 			}
 		};
 
+		menu->addChild(construct<SeqMenuItem<MODULE>>(&MenuItem::text, "Sequence", &SeqMenuItem<MODULE>::module, module, &SeqMenuItem<MODULE>::id, module->seqEdit));
+		menu->addChild(construct<MenuSeparator>());
 		menu->addChild(construct<SeqClearItem>(&MenuItem::text, "Clear", &SeqClearItem::module, module));
-		menu->addChild(construct<SeqRotate90Item>(&MenuItem::text, "Rotate 90 degrees", &SeqRotate90Item::module, module));
+		menu->addChild(construct<SeqRotateItem>(&MenuItem::text, "Rotate 45 degrees", &SeqRotateItem::module, module, &SeqRotateItem::angle, M_PI / 4.f));
+		menu->addChild(construct<SeqRotateItem>(&MenuItem::text, "Rotate 90 degrees", &SeqRotateItem::module, module, &SeqRotateItem::angle, M_PI / 2.f));
 		menu->addChild(construct<SeqRandomizeItem>(&MenuItem::text, "Random motion", &SeqRandomizeItem::module, module));
 		menu->addChild(construct<SeqPresetMenuItem<MODULE>>(&MenuItem::text, "Preset", &SeqPresetMenuItem<MODULE>::module, module));
 	}
