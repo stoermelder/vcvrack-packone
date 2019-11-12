@@ -36,7 +36,9 @@ enum SEQPRESET {
 	CIRCLE,
 	SPIRAL,
 	SAW,
-	SINE
+	SINE,
+	EIGHT,
+	ROSE
 };
 
 enum OUTPUTMODE {
@@ -530,7 +532,7 @@ struct ArenaModule : Module {
 	void seqPreset(int port, SEQPRESET preset, float x, float y, int parameter) {
 		auto _x = [x](float v) { return (v - 0.5f) * x + 0.5f; };
 		auto _y = [y](float v) { return (v - 0.5f) * y + 0.5f; };
-
+		
  		switch (preset) {
 			case SEQPRESET::CIRCLE: {
 				seqData[port][seqSelected[port]].length = 0;
@@ -576,6 +578,31 @@ struct ArenaModule : Module {
 				for (int i = 0; i < l; i++) {
 					seqData[port][seqSelected[port]].x[i] = _x(1.f / l * i);
 					seqData[port][seqSelected[port]].y[i] = _y(sin(i * p) / 2.f + 0.5f);
+				}
+				seqData[port][seqSelected[port]].length = l;
+				break;
+			}
+			case SEQPRESET::EIGHT: {
+				auto _s = [](float v) { return v / 2.f + 0.5f; };
+				seqData[port][seqSelected[port]].length = 0;
+				int l = SEQ_LENGTH / 2.f;
+				float p = 2.f * M_PI / (l - 1);
+				float o = - M_PI / 2.f;
+				for (int i = 0; i < l; i++) {
+					seqData[port][seqSelected[port]].x[i] = _x(_s(std::cos(i * p + o)));
+					seqData[port][seqSelected[port]].y[i] = _y(_s(std::cos(i * p + o) * std::sin(i * p + o)));
+				}
+				seqData[port][seqSelected[port]].length = l;
+				break;
+			}
+			case SEQPRESET::ROSE: {
+				auto _s = [](float v) { return v / 2.f + 0.5f; };
+				seqData[port][seqSelected[port]].length = 0;
+				int l = SEQ_LENGTH;
+				float p = (parameter % 2 == 1 ? 2.f : 1.f) * 2.f * M_PI / (l - 1);
+				for (int i = 0; i < l; i++) {
+					seqData[port][seqSelected[port]].x[i] = _x(_s(std::cos(parameter / 2.f * i * p) * std::cos(i * p)));
+					seqData[port][seqSelected[port]].y[i] = _y(_s(std::cos(parameter / 2.f * i * p) * std::sin(i * p)));
 				}
 				seqData[port][seqSelected[port]].length = l;
 				break;
@@ -1157,6 +1184,8 @@ struct SeqPresetMenuItem : MenuItem {
 		menu->addChild(construct<SeqPresetItem>(&MenuItem::text, "Spiral", &SeqPresetItem::module, module, &SeqPresetItem::item, this, &SeqPresetItem::preset, SEQPRESET::SPIRAL));
 		menu->addChild(construct<SeqPresetItem>(&MenuItem::text, "Saw", &SeqPresetItem::module, module, &SeqPresetItem::item, this, &SeqPresetItem::preset, SEQPRESET::SAW));
 		menu->addChild(construct<SeqPresetItem>(&MenuItem::text, "Sine", &SeqPresetItem::module, module, &SeqPresetItem::item, this, &SeqPresetItem::preset, SEQPRESET::SINE));
+		menu->addChild(construct<SeqPresetItem>(&MenuItem::text, "Eight", &SeqPresetItem::module, module, &SeqPresetItem::item, this, &SeqPresetItem::preset, SEQPRESET::EIGHT));
+		menu->addChild(construct<SeqPresetItem>(&MenuItem::text, "Rose", &SeqPresetItem::module, module, &SeqPresetItem::item, this, &SeqPresetItem::preset, SEQPRESET::ROSE));
 
 		XSlider* xSlider = new XSlider(this);
 		xSlider->box.size.x = 120.0f;
