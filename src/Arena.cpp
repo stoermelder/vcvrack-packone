@@ -74,6 +74,7 @@ struct ArenaModule : Module {
 		ENUMS(MIX_X_PARAM, MIX_PORTS),
 		ENUMS(MIX_Y_PARAM, MIX_PORTS),
 		ENUMS(MIX_SEL_PARAM, MIX_PORTS),
+		ENUMS(MIX_VOL_PARAM, MIX_PORTS),
 		NUM_PARAMS
 	};
 	enum InputIds {
@@ -89,7 +90,7 @@ struct ArenaModule : Module {
 	};
 	enum OutputIds {
 		ENUMS(MIX_OUTPUT, MIX_PORTS),
-		ENUMS(OUT, IN_PORTS),
+		ENUMS(OUT_OUTPUT, IN_PORTS),
 		NUM_OUTPUTS
 	};
 	enum LightIds {
@@ -148,18 +149,19 @@ struct ArenaModule : Module {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		// inputs
 		for (int i = 0; i < IN_PORTS; i++) {
-			configParam(IN_X_POS + i, 0.0f, 1.0f, 0.1f + float(i) * (0.8f / (IN_PORTS - 1)), string::f("Input %i x-pos", i + 1));
-			configParam(IN_Y_POS + i, 0.0f, 1.0f, 0.1f, string::f("Input %i y-pos", i + 1));
-			configParam(IN_X_PARAM + i, -1.f, 1.f, 0.f, string::f("Input %i x-pos attenuverter", i + 1), "x");
-			configParam(IN_Y_PARAM + i, -1.f, 1.f, 0.f, string::f("Input %i y-pos attenuverter", i + 1), "x");
-			configParam(MOD_PARAM + i, -1.f, 1.f, 0.f, string::f("Input %i Op attenuverter", i + 1), "x");
+			configParam(IN_X_POS + i, 0.0f, 1.0f, 0.1f + float(i) * (0.8f / (IN_PORTS - 1)), string::f("IN %i x-pos", i + 1));
+			configParam(IN_Y_POS + i, 0.0f, 1.0f, 0.1f, string::f("IN %i y-pos", i + 1));
+			configParam(IN_X_PARAM + i, -1.f, 1.f, 0.f, string::f("IN %i x-pos attenuverter", i + 1), "x");
+			configParam(IN_Y_PARAM + i, -1.f, 1.f, 0.f, string::f("IN %i y-pos attenuverter", i + 1), "x");
+			configParam(MOD_PARAM + i, -1.f, 1.f, 0.f, string::f("IN %i Op attenuverter", i + 1), "x");
 		}
 		// outputs
 		for (int i = 0; i < MIX_PORTS; i++) {
-			configParam(MIX_X_POS + i, 0.0f, 1.0f, 0.1f + float(i) * (0.8f / (MIX_PORTS - 1)), string::f("Mix%i x-pos", i + 1));
-			configParam(MIX_Y_POS + i, 0.0f, 1.0f, 0.9f, string::f("Mix%i y-pos", i + 1));
-			configParam(MIX_X_PARAM + i, -1.f, 1.f, 0.f, string::f("Mix%i x-pos attenuverter", i + 1), "x");
-			configParam(MIX_Y_PARAM + i, -1.f, 1.f, 0.f, string::f("Mix%i y-pos attenuverter", i + 1), "x");
+			configParam(MIX_VOL_PARAM + i, 0.0f, 2.0f, 1.0f, string::f("MIX %i volume", i + 1));
+			configParam(MIX_X_POS + i, 0.0f, 1.0f, 0.1f + float(i) * (0.8f / (MIX_PORTS - 1)), string::f("MIX %i x-pos", i + 1));
+			configParam(MIX_Y_POS + i, 0.0f, 1.0f, 0.9f, string::f("MIX %i y-pos", i + 1));
+			configParam(MIX_X_PARAM + i, -1.f, 1.f, 0.f, string::f("MIX %i x-pos attenuverter", i + 1), "x");
+			configParam(MIX_Y_PARAM + i, -1.f, 1.f, 0.f, string::f("MIX %i y-pos attenuverter", i + 1), "x");
 		}
 		onReset();
 		lightDivider.setDivision(512);
@@ -184,6 +186,7 @@ struct ArenaModule : Module {
 	}
 
 	void process(const ProcessArgs& args) override {
+		float inNorm[IN_PORTS];
 		for (int j = 0; j < inportsUsed; j++) {
 			offsetX[j] = 0.f;
 			offsetY[j] = 0.f;
@@ -237,6 +240,13 @@ struct ArenaModule : Module {
 			y += offsetY[j];
 			y = clamp(y, 0.f, 1.f);
 			params[IN_Y_POS + j].setValue(y);
+
+			if (inputs[IN + j].isConnected()) {
+				float sd = inputs[IN + j].getVoltage();
+				sd = clamp(sd, -10.f, 10.f);
+				sd *= amount[j];
+				inNorm[j] = sd;
+			}
 		}
 
 		float outNorm[IN_PORTS];
@@ -270,7 +280,6 @@ struct ArenaModule : Module {
 			float mixY = params[MIX_Y_POS + i].getValue();
 			Vec mixVec = Vec(mixX, mixY);
 
-			int c = 0;
 			float mix = 0.f;
 			for (int j = 0; j < inportsUsed; j++) {
 				float inX = params[IN_X_POS + j].getValue();
@@ -285,26 +294,21 @@ struct ArenaModule : Module {
 
 				float r = radius[j];
 				if (inputs[IN + j].isConnected() && dist[i][j] < r) {
-					float sd = inputs[IN + j].getVoltage();
-					sd = clamp(sd, -10.f, 10.f);
-					sd *= amount[j];
 					float s = std::min(1.0f, (r - dist[i][j]) / r * 1.1f);
 					outNorm[j] += s;
-					s *= sd;
+					s *= inNorm[j];
 					mix += s;
-					c++;
 				}
 			}
 
 			lastMixXpos[i] = mixX;
 			lastMixYpos[i] = mixY;
-
-			if (c > 0) mix /= c;
+			mix *= params[MIX_VOL_PARAM + i].getValue();
 			outputs[MIX_OUTPUT + i].setVoltage(mix);
 		}
 
 		for (int j = 0; j < inportsUsed; j++) {
-			if (inputs[IN + j].isConnected() && outputs[OUT + j].isConnected()) {
+			if (inputs[IN + j].isConnected() && outputs[OUT_OUTPUT + j].isConnected()) {
 				float v = inputs[IN + j].getVoltage();
 				switch (outputMode[j]) {
 					case OUTPUTMODE::SCALE: {
@@ -344,7 +348,7 @@ struct ArenaModule : Module {
 						break;
 					}
 				}
-				outputs[OUT + j].setVoltage(v);
+				outputs[OUT_OUTPUT + j].setVoltage(v);
 			}
 		}
 
@@ -1469,7 +1473,7 @@ struct ArenaInportScreenDragWidget : ArenaScreenDragWidget<MODULE> {
 
 	void createContextMenu() override {
 		ui::Menu* menu = createMenu();
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("Input %i", AW::id + 1).c_str()));
+		menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("IN %i", AW::id + 1).c_str()));
 
 		AmountSlider<MODULE>* amountSlider = new AmountSlider<MODULE>(AW::module, AW::id);
 		amountSlider->box.size.x = 200.0;
@@ -1703,14 +1707,14 @@ struct ArenaScreenWidget : OpaqueWidget {
 
 		menu->addChild(construct<InitItem>(&MenuItem::text, "Initialize", &InitItem::module, module));
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<RandomizeXYItem>(&MenuItem::text, "Radomize input x-pos & y-pos", &RandomizeXYItem::module, module));
-		menu->addChild(construct<RandomizeXItem>(&MenuItem::text, "Radomize input x-pos", &RandomizeXItem::module, module));
-		menu->addChild(construct<RandomizeYItem>(&MenuItem::text, "Radomize input y-pos", &RandomizeYItem::module, module));
-		menu->addChild(construct<RandomizeAmountItem>(&MenuItem::text, "Radomize input amount", &RandomizeAmountItem::module, module));
-		menu->addChild(construct<RandomizeRadiusItem>(&MenuItem::text, "Radomize input radius", &RandomizeRadiusItem::module, module));
+		menu->addChild(construct<RandomizeXYItem>(&MenuItem::text, "Radomize IN x-pos & y-pos", &RandomizeXYItem::module, module));
+		menu->addChild(construct<RandomizeXItem>(&MenuItem::text, "Radomize IN x-pos", &RandomizeXItem::module, module));
+		menu->addChild(construct<RandomizeYItem>(&MenuItem::text, "Radomize IN y-pos", &RandomizeYItem::module, module));
+		menu->addChild(construct<RandomizeAmountItem>(&MenuItem::text, "Radomize IN amount", &RandomizeAmountItem::module, module));
+		menu->addChild(construct<RandomizeRadiusItem>(&MenuItem::text, "Radomize IN radius", &RandomizeRadiusItem::module, module));
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<NumInportsMenuItem>(&MenuItem::text, "Number of Input-ports", &NumInportsMenuItem::module, module));
-		menu->addChild(construct<NumMixportsMenuItem>(&MenuItem::text, "Number of Mix-ports", &NumMixportsMenuItem::module, module));
+		menu->addChild(construct<NumInportsMenuItem>(&MenuItem::text, "Number of IN-ports", &NumInportsMenuItem::module, module));
+		menu->addChild(construct<NumMixportsMenuItem>(&MenuItem::text, "Number of MIX-ports", &NumMixportsMenuItem::module, module));
 	}
 };
 
@@ -2049,7 +2053,7 @@ struct ArenaOpDisplay : LedDisplayChoice {
 
 	void createContextMenu() {
 		ui::Menu* menu = createMenu();
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("Input %i", id + 1)));
+		menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("IN %i", id + 1)));
 
 		AmountSlider<MODULE>* amountSlider = new AmountSlider<MODULE>(module, id);
 		amountSlider->box.size.x = 200.0;
@@ -2131,7 +2135,7 @@ struct ArenaSeqDisplay : LedDisplayChoice {
 
 	void createContextMenu() {
 		ui::Menu* menu = createMenu();
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("Mix%i", id + 1)));
+		menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("MIX %i", id + 1)));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<SeqMenuItem<MODULE>>(&MenuItem::text, "Sequence", &SeqMenuItem<MODULE>::module, module, &SeqMenuItem<MODULE>::id, id));
 		menu->addChild(construct<SeqInterpolateMenuItem<MODULE>>(&MenuItem::text, "Interpolation", &SeqInterpolateMenuItem<MODULE>::module, module, &SeqInterpolateMenuItem<MODULE>::id, id));
@@ -2184,7 +2188,7 @@ struct ArenaWidget : ModuleWidget {
 		for (int i = 0; i < IN_PORTS; i++) {
 			float xs[] = { 24.1f, 604.7f };
 			float x = xs[i >= IN_PORTS / 2] + (i % (IN_PORTS / 2)) * 30.433f;
-			addInput(createInputCentered<StoermelderPort>(Vec(x, 58.5f), module, MODULE::IN + i));
+			addInput(createInputCentered<StoermelderPort>(Vec(x, 61.1f), module, MODULE::IN + i));
 			addInput(createInputCentered<StoermelderPort>(Vec(x, 96.2f), module, MODULE::IN_X_INPUT + i));
 			addParam(createParamCentered<StoermelderTrimpot>(Vec(x, 130.7f), module, MODULE::IN_X_PARAM + i));
 			addParam(createParamCentered<DummyMapButton>(Vec(x, 115.3f), module, MODULE::IN_X_POS + i));
@@ -2201,10 +2205,10 @@ struct ArenaWidget : ModuleWidget {
 			arenaOpDisplay->id = i;
 			addChild(arenaOpDisplay);
 
-			addParam(createParamCentered<StoermelderTrimpot>(Vec(x, 279.5f), module, MODULE::MOD_PARAM + i));
+			addParam(createParamCentered<StoermelderTrimpot>(Vec(x, 282.5f), module, MODULE::MOD_PARAM + i));
 			addInput(createInputCentered<StoermelderPort>(Vec(x, 255.1f), module, MODULE::MOD_INPUT + i));
 
-			addOutput(createOutputCentered<StoermelderPort>(Vec(x, 327.7f), module, MODULE::OUT + i));
+			addOutput(createOutputCentered<StoermelderPort>(Vec(x, 327.7f), module, MODULE::OUT_OUTPUT + i));
 		}
 
 		ArenaScreenWidget<MODULE>* screenWidget = new ArenaScreenWidget<MODULE>(module, MODULE::IN_X_POS, MODULE::IN_Y_POS, MODULE::MIX_X_POS, MODULE::MIX_Y_POS);
@@ -2220,6 +2224,8 @@ struct ArenaWidget : ModuleWidget {
 		for (int i = 0; i < MIX_PORTS; i++) {
 			float xs[] = { 154.3f, 534.9f };
 			float x = xs[i >= MIX_PORTS / 2] + (i % (MIX_PORTS / 2)) * 30.433f;
+			addParam(createParamCentered<StoermelderSmallKnob>(Vec(x, 61.1f), module, MODULE::MIX_VOL_PARAM + i));
+
 			addInput(createInputCentered<StoermelderPort>(Vec(x, 96.2f), module, MODULE::MIX_X_INPUT + i));
 			addParam(createParamCentered<StoermelderTrimpot>(Vec(x, 130.7f), module, MODULE::MIX_X_PARAM + i));
 			addParam(createParamCentered<DummyMapButton>(Vec(x, 115.3f), module, MODULE::MIX_X_POS + i));
