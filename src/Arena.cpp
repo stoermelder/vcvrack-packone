@@ -133,6 +133,9 @@ struct ArenaModule : Module {
 	int seqSelected[MIX_PORTS];
 	int seqEdit;
 
+	int seqCopyPort = -1;
+	int seqCopySeq = -1;
+
 	float dist[MIX_PORTS][IN_PORTS];
 	float offsetX[IN_PORTS];
 	float offsetY[IN_PORTS];
@@ -182,6 +185,8 @@ struct ArenaModule : Module {
 			seqMode[i] = SEQMODE::TRIG_FWD;
 			seqInterpolate[i] = SEQINTERPOLATE::LINEAR;
 		}
+		seqCopyPort = -1;
+		seqCopySeq = -1;
 		Module::onReset();
 	}
 
@@ -634,6 +639,22 @@ struct ArenaModule : Module {
 	void seqFlipVertically(int port) {
 		for (int i = 0; i < seqData[port][seqSelected[port]].length; i++) {
 			seqData[port][seqSelected[port]].x[i] = 1.f - seqData[port][seqSelected[port]].x[i];
+		}
+	}
+
+	void seqCopy(int port) {
+		seqCopyPort = port;
+		seqCopySeq = seqSelected[port];
+	}
+
+	void seqPaste(int port) {
+		if (seqCopyPort >= 0) {
+			seqData[port][seqSelected[port]].length = 0;
+			for (int i = 0; i < seqData[seqCopyPort][seqCopySeq].length; i++) {
+				seqData[port][seqSelected[port]].x[i] = seqData[seqCopyPort][seqCopySeq].x[i];
+				seqData[port][seqSelected[port]].y[i] = seqData[seqCopyPort][seqCopySeq].y[i];
+			}
+			seqData[port][seqSelected[port]].length = seqData[seqCopyPort][seqCopySeq].length;
 		}
 	}
 
@@ -1992,6 +2013,20 @@ struct ArenaSeqEditWidget : OpaqueWidget {
 			}
 		};
 
+		struct SeqCopyItem : MenuItem {
+			MODULE* module;
+			void onAction(const event::Action& e) override {
+				module->seqCopy(module->seqEdit);
+			}
+		};
+
+		struct SeqPasteItem : MenuItem {
+			MODULE* module;
+			void onAction(const event::Action& e) override {
+				module->seqPaste(module->seqEdit);
+			}
+		};
+
 		menu->addChild(construct<SeqMenuItem<MODULE>>(&MenuItem::text, "Sequence", &SeqMenuItem<MODULE>::module, module, &SeqMenuItem<MODULE>::id, module->seqEdit));
 		menu->addChild(construct<SeqInterpolateMenuItem<MODULE>>(&MenuItem::text, "Interpolation", &SeqInterpolateMenuItem<MODULE>::module, module, &SeqInterpolateMenuItem<MODULE>::id, module->seqEdit));
 		menu->addChild(construct<MenuSeparator>());
@@ -2003,6 +2038,9 @@ struct ArenaSeqEditWidget : OpaqueWidget {
 		menu->addChild(construct<MenuSeparator>());
 		menu->addChild(construct<SeqRandomizeItem>(&MenuItem::text, "Random motion", &SeqRandomizeItem::module, module));
 		menu->addChild(construct<SeqPresetMenuItem<MODULE>>(&MenuItem::text, "Preset", &SeqPresetMenuItem<MODULE>::module, module));
+		menu->addChild(construct<MenuSeparator>());
+		menu->addChild(construct<SeqCopyItem>(&MenuItem::text, "Copy", &SeqCopyItem::module, module));
+		menu->addChild(construct<SeqPasteItem>(&MenuItem::text, "Paste", &SeqPasteItem::module, module));
 	}
 };
 
