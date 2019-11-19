@@ -16,7 +16,7 @@ Some videos about CV-MAP:
 
 ### Mapping of parameters
 
-You can bind up to 32 mapping slots onto parameters of any module in your patch. You do this by activating a mapping with a mouse click. As long the mapping-mode is active the slot shows "Mapping...". Then click on the knob of the module you like to automate. The mapping slot binds to the knob by showing its name, also a small pink mapping indicator is shown near the parameter. The mapping mode automatically moves to the next empty slot and can be deactived by clicking anyhwere in the rack except a parameter.
+You can bind up to 32 mapping slots onto parameters of any module in your patch. You do this by activating a mapping with a mouse click. As long the mapping-mode is active the slot shows "Mapping...". Then click on the knob of the module you like to automate. The mapping slot binds to the knob by showing its name, also a small pink mapping indicator is shown near the parameter. The mapping mode automatically moves to the next empty slot and can be deactivated by clicking anywhere in the rack except a parameter.
 
 New in v1.0.2: In the context menu of each mapping slot you find a option "Locate and indicate" which centers the module on screen and blinks the pink mapping indicator for a short time. Useful when you get lost in what maps what.
 
