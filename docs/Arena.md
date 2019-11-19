@@ -8,7 +8,7 @@ The module produces no signal on its own.
 
 ### IN-ports and OUT-ports
 
-The module has 8 input-ports with assigned controls for "Amount" and "Radius" and are routed their output-ports respectively. The signal sent to the OUT-port is calculated in this way: The amount is used to scale the input linearly between 0-100%. The radius defines the range of influence of the input-signal according to the euclidian distance between each of the MIX-objects in 2d-space considering the x/y coordinates of the objects. These weighted distances are summed in repect of one of the following OUT-modes:
+The module has 8 input-ports with assigned controls for "Amount" and "Radius" and are routed their output-ports respectively. The signal sent to the OUT-port is calculated in this way: The amount is used to scale the input linearly between 0-100%. The radius defines the range of influence of the input-signal according to the euclidian distance between each of the MIX-objects in 2d-space considering the x/y coordinates of the objects. These weighted distances are summed in respect of one of the following OUT-modes:
 
 - Scale: Each MIX-port brings in at most 100/n% of the input-signal if n MIX-ports are active, so the output can reach 100% at most.
 - Limit: Each MIX-port brings in at most 100% of the input-signal and the output is limited at 100% of the input.
@@ -44,7 +44,7 @@ Additionally there are some predefined motion paths that can be scaled in x/y-di
 
 ![ARENA Motion Presets](./Arena-motion2.gif)
 
-There are some edit options available to modify a recorded path or one of the presets: flip horizontically or flip vertically and rotate. Also a path can be copied and pasted to another sequencing slot.
+There are some edit options available to modify a recorded path or one of the presets: flip horizontally or flip vertically and rotate. Also a path can be copied and pasted to another sequencing slot.
 
 ![ARENA Motion Options](./Arena-motion3.png)
 
