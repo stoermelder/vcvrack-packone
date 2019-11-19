@@ -587,14 +587,14 @@ struct ArenaModule : Module {
 				break;
 			}
 			case SEQPRESET::EIGHT: {
-				auto _s = [](float v) { return v / 2.f + 0.5f; };
+				auto _s = [](float v, float s) { return v / s + 0.5f; };
 				seqData[port][seqSelected[port]].length = 0;
 				int l = SEQ_LENGTH / 2.f;
 				float p = 2.f * M_PI / (l - 1);
 				float o = - M_PI / 2.f;
 				for (int i = 0; i < l; i++) {
-					seqData[port][seqSelected[port]].x[i] = _x(_s(std::cos(i * p + o)));
-					seqData[port][seqSelected[port]].y[i] = _y(_s(std::cos(i * p + o) * std::sin(i * p + o)));
+					seqData[port][seqSelected[port]].x[i] = _x(_s(std::cos(i * p + o), 2.f));
+					seqData[port][seqSelected[port]].y[i] = _y(_s(std::cos(i * p + o) * std::sin(i * p + o), 1.f));
 				}
 				seqData[port][seqSelected[port]].length = l;
 				break;
