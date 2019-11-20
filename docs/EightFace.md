@@ -2,7 +2,7 @@
 
 8FACE is a module for storing, recalling and sequencing up to eight different presets of any module in Rack. It uses Rack's expander mechanism to attach to any module to its left and uses buttons and LEDs to manage each of its preset-slot.
 
-**Disclaimer: Loading presets of modules was not designed to be controlled by CV or modulated at audio rate. Please do not contact the developers of Rack or any modules when unexpected behaviour occurs or high CPU usage is noticable.**
+**Disclaimer: Loading presets of modules was not designed to be controlled by CV or modulated at audio rate. Please do not contact the developers of Rack or any modules when unexpected behaviour occurs or high CPU usage is noticeable.**
 
 ![8FACE Intro](./EightFace-intro.gif)
 
@@ -42,7 +42,7 @@ You can select a specific slot by voltage. A voltage 0-1.25V selects slot 1, 1.2
 - C4-G8: 
 This mode follows the V/Oct-standard. C4 selects slot 1, C#4 selects slot 2 and so on.
 - Arm (renamed from "Clock" in v1.1.0):
-This mode is kind a sample and hold. First apply a clock signal on SLOT. Then you "arm" any slot manually by its button (resulting a yellow LED) which will be activated on the next clock trigger (blue LED). This mode allows you manual preset changes sychronized to a beat or clock.
+This mode is kind a sample and hold. First apply a clock signal on SLOT. Then you "arm" any slot manually by its button (resulting a yellow LED) which will be activated on the next clock trigger (blue LED). This mode allows you manual preset changes synchronized to a beat or clock.
 
 ![8FACE arm mode](./EightFace-clock.gif)
 
