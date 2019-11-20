@@ -21,7 +21,7 @@ Both settings for samplerate and number of sequences can be found in the context
 
 ### Recording-Modes
 
-There are four different recording modes available, changed byS context menu option:
+There are four different recording modes available, changed by context menu option:
 
 - Touch-Mode (Default):
 Triggering the red REC button by mouse or through REC-port arms recording. Actual recording of automation data starts on first mouse click ("touch") on the mapped parameter and holds on as long the button is pressed. Recording stops when the mouse button is released.
@@ -58,7 +58,7 @@ The SEQ#-input allows you to select sequences by CV. There are three different m
 
 ### PHASE-input
 
-The input labeled PHASE accepts 0-10V and allows controlling the playhead directly: The voltages from 0 to 10V are mapped to the the length of the sequence. Using an LFO's unipolar saw output or a clock with phase output like [ZZC's Clock-module](https://zzc-cv.github.io/en/clock-manipulation/clock) the playback can be synced to sequencers and you get behaviour of Loop-mode, an LFO with triangle-output gives you ping ping-playback. Obviously multiple instances of the module can also be synchronized this way.
+The input labeled PHASE accepts 0-10V and allows controlling the playhead directly: The voltages from 0 to 10V are mapped to the length of the sequence. Using an LFO's unipolar saw output or a clock with phase output like [ZZC's Clock-module](https://zzc-cv.github.io/en/clock-manipulation/clock) the playback can be synced to sequencers and you get behaviour of Loop-mode, an LFO with triangle-output gives you ping ping-playback. Obviously multiple instances of the module can also be synchronized this way.
 
 The ports RUN and RESET and their buttons are disabled and can't be used as long a cable is connected to PHASE. From v1.0.4 on this is signaled by red LEDs next to the ports.
 
