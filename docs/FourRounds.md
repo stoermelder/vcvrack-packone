@@ -1,6 +1,6 @@
 # stoermelder 4ROUNDS
 
-The module takes up to 16 input signals (bright circle) and creates 15 output signals (dark circles) with randomly selected or mixed inputs. This is done by hosting some sort of contest or tournament between signals and choosing a random winner of several "1-on-1 matches". There are four rounds of 1-on-1 matches needed to find a winner out of 16 inputs hence the name 4ROUNDS. Every pairing of each match is drawn on the panel for easy visual understanding.
+4ROUNDS takes up to 16 input signals (bright circle) and creates up to 15 output signals (dark circles) with randomly selected or mixed inputs. This is done by hosting some sort of contest or tournament between signals and choosing a random winner of several "1-on-1 matches". There are four rounds of 1-on-1 matches needed to find a winner out of 16 inputs hence the name 4ROUNDS. Every pairing of each match is drawn on the panel for easy visual understanding.
 
 ![4ROUNDS Intro](./FourRounds-intro.gif)
 
@@ -21,3 +21,5 @@ The module provides currently three different operation modes selectable on the 
 - In "Quantum" mode there are not just "winners" and "losers" of matches but also every state in between. The output of a match is a randomly weighted mix of both input signals. The LEDs are lit in white signaling the weighting.
 
 ![4ROUNDS quantum mode](./FourRounds-quantum.gif)
+
+This module was added in v1.2.0 of PackOne.

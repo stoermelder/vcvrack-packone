@@ -8,13 +8,13 @@ STRIP uses Rack v1's expander-mechanism to traverse the modules in a group. Chan
 
 ### MODE
 
-STRIP can be configured which modules will be considered as managed. By default STRIP handles all modules left and right of itself, but the MODE-button allows you to toggle to left-only or right-only. Which modules are affected is shown by the LEDs next to the direction-triangles on the panel.
+STRIP can be configured which modules will be considered as managed. By default STRIP handles all modules left and right of itself, but the MODE-button allows you to toggle to left-only or right-only. Which modules are affected is shown by the triangle-shaped LEDs on the panel.
 
 ### ON, OFF, RAND
 
 The sections ON, OFF and RAND provide CV control of options only available in the context menu of modules: ON and OFF triggers "Disable" with different modes, RAND triggers "Randomize". 
 
-**Disclaimer: Please keep in mind that both functions "Disable" and "Randomize" were not designed to be controlled by CV or modulated at audio rate. Please do not contact the developers of Rack or any modules when unexpected behaviour occurs or high CPU usage is noticeable.**
+**Disclaimer: Please keep in mind that both functions "Disable" and "Randomize" were not designed to be controlled by CV or modulated at audio rate. Please do not contact the developers of Rack or any modules if unexpected behavior occurs or high CPU usage is noticeable.**
 
 ![STRIP RAND](./Strip-rand.gif)
 
@@ -32,14 +32,14 @@ A useful feature of STRIP is its ability to save strips to files and load them a
 
 ![STRIP context menu](./Strip-context.png)
 
-All settings of the modules, all cables (with color) between modules within the strip and all parameter mappings (e.g. by VCV MIDI-MAP or stoermelder CV-MAP) are saved. Also, copy and paste is available, by option in the context menu or by using keyboard shortcuts Shift+C and Shift+V. When using left-only or right-only mode only affected modules will be saved and loaded, even if a different mode was used for saving or copying. Existing modules will be moved right and left, respectively, to provide enough empty space for newly loaded or copied modules.
+All settings of the modules, all cables (including color) between modules within the strip and all parameter mappings (e.g. by VCV MIDI-MAP or stoermelder CV-MAP) are saved. Also, copy and paste is available, by option in the context menu or by using keyboard shortcuts Shift+C and Shift+V. When using left-only or right-only mode only affected modules will be saved and loaded, even if a different mode was used for saving or copying. Existing modules will be moved right and left, respectively, to provide enough empty space for newly loaded or copied modules.
 
 ![STRIP copy and paste](./Strip-copy.gif)
 
-The file-format "vcvss" for storing strips is very close to Rack's own format for storing patches or module presets. Compatibility in future versions should be no problem as long Rack will be able to load preset files from older Rack versions.
+The file-format "vcvss" for storing strips is very close to Rack's own format for storing patches or module presets. Compatibility in future versions should be no problem as long Rack will be able to load module preset files from older Rack versions.
 
 Bonus tips:
 
-- If you want some documentation for your strip just add a VCV Notes module and type in some text.
+- If you want to add some documentation for your strip just include a VCV Notes module and type in some text.
 
 This module was added in v1.0.4 of PackOne.

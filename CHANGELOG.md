@@ -7,8 +7,8 @@
 - Module [MIDI-CAT](./docs/MidiCat.md)
     - Fixed velocity-handling on note messages if in toggle-mode (does not need vel 127 anymore)
 - Module [ReMOVE Lite](./docs/ReMove.md)
-    - Added option to start playing after recording automatically
-    - Added SMTH-parameter for linear smoothing espacially on jumps at sequence end and sequence change (#14)
+    - Added option to start playback automatically after recording 
+    - Added SMTH-parameter for linear smoothing especially on jumps at sequence end and sequence change (#14)
 
 ### 1.2.0
 
