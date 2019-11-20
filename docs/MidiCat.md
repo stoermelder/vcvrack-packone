@@ -27,6 +27,6 @@ Any parameter change is sent to midi output with the same CC or note as mapped. 
     - Momentary + Velocity: same as "Momentary", but the MIDI velocity of the note is mapped to the range of the parameter.
     - Toggle: Every MIDI "note on" message toggles the parameter between its minimum and maximum value (usually 0 and 1 for switches).
 
-The module allows you to import presets from VCV MIDI-MAP for a quick migration. Also, the module can be switched to "Locate and indicate"-mode: Received MIDI messages have no effect to the mapped parameters, instead the module is centered on the screen and the parameter mapping indiciator flashes for a short period of time. When finished verifying all MIDI controls switch back to "Operating"-mode for normal module operation.
+The module allows you to import presets from VCV MIDI-MAP for a quick migration. Also, the module can be switched to "Locate and indicate"-mode: Received MIDI messages have no effect to the mapped parameters, instead the module is centered on the screen and the parameter mapping indicator flashes for a short period of time. When finished verifying all MIDI controls switch back to "Operating"-mode for normal module operation.
 
 This module was added in v1.1.0 of PackOne.
