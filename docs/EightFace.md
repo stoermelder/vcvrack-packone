@@ -42,7 +42,7 @@ You can select a specific slot by voltage. A voltage 0-1.25V selects slot 1, 1.2
 - C4-G8: 
 This mode follows the V/Oct-standard. C4 selects slot 1, C#4 selects slot 2 and so on.
 - Arm (renamed from "Clock" in v1.1.0):
-This mode is kind a sample and hold. First apply a clock signal on SLOT. Then you "arm" any slot manually by its button (resulting a yellow LED) which will be activated on the next clock trigger (blue LED). This mode allows you manual preset changes sychronized to a beat or clock.
+This mode is kind a sample and hold. First apply a clock signal on SLOT. Then you "arm" any slot manually by its button (resulting a yellow LED) which will be activated on the next clock trigger (blue LED). This mode allows you manual preset changes synchronized to a beat or clock.
 
 ![8FACE arm mode](./EightFace-clock.gif)
 
