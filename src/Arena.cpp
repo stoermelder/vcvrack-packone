@@ -956,283 +956,31 @@ struct OutputModeMenuItem : MenuItem {
 	}
 };
 
-template < typename MODULE >
-struct SeqMenuItem : MenuItem {
-	SeqMenuItem() {
-		rightText = RIGHT_ARROW;
-	}
-
-	struct SeqItem : MenuItem {
-		MODULE* module;
-		int id;
-		int seq;
-		
-		void onAction(const event::Action& e) override {
-			module->seqSelected[id] = seq;
-		}
-
-		void step() override {
-			rightText = module->seqSelected[id] == seq ? "✔" : "";
-			MenuItem::step();
-		}
-	};
-
-	MODULE* module;
-	int id;
-	Menu* createChildMenu() override {
-		Menu* menu = new Menu;
-		for (int i = 0; i < SEQ_COUNT; i++) {
-			menu->addChild(construct<SeqItem>(&MenuItem::text, string::f("%02u", i + 1), &SeqItem::module, module, &SeqItem::id, id, &SeqItem::seq, i));
-		}
-		return menu;
-	}
-};
-
 
 template < typename MODULE >
-struct SeqModeMenuItem : MenuItem {
-	SeqModeMenuItem() {
-		rightText = RIGHT_ARROW;
+struct RadiusChangeAction : history::ModuleAction {
+	int inputId;
+	float oldValue;
+	float newValue;
+
+	RadiusChangeAction() {
+		name = "stoermelder ARENA radius change";
 	}
 
-	struct SeqModeItem : MenuItem {
-		MODULE* module;
-		int id;
-		SEQMODE seqMode;
-		
-		void onAction(const event::Action& e) override {
-			if (module->seqEdit != id)
-				module->seqMode[id] = seqMode;
-		}
+	void undo() override {
+		app::ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
+		assert(mw);
+		MODULE* m = dynamic_cast<MODULE*>(mw->module);
+		m->radius[inputId] = oldValue;
+	}
 
-		void step() override {
-			rightText = module->seqMode[id] == seqMode ? "✔" : "";
-			MenuItem::step();
-		}
-	};
-
-	MODULE* module;
-	int id;
-	Menu* createChildMenu() override {
-		Menu* menu = new Menu;
-		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "Trigger forward", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::TRIG_FWD));
-		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "Trigger reverse", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::TRIG_REV));
-		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "Trigger random 1-16", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::TRIG_RANDOM_16));
-		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "Trigger random 1-8", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::TRIG_RANDOM_8));
-		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "Trigger random 1-4", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::TRIG_RANDOM_4));
-		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "0..10V", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::VOLT));
-		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "C4-D#5", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::C4));
-		return menu;
+	void redo() override {
+		app::ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
+		assert(mw);
+		MODULE* m = dynamic_cast<MODULE*>(mw->module);
+		m->radius[inputId] = newValue;
 	}
 };
-
-
-template < typename MODULE >
-struct SeqInterpolateMenuItem : MenuItem {
-	SeqInterpolateMenuItem() {
-		rightText = RIGHT_ARROW;
-	}
-
-	struct SeqInterpolateItem : MenuItem {
-		MODULE* module;
-		int id;
-		SEQINTERPOLATE seqInterpolate;
-		
-		void onAction(const event::Action& e) override {
-			module->seqInterpolate[id] = seqInterpolate;
-		}
-
-		void step() override {
-			rightText = module->seqInterpolate[id] == seqInterpolate ? "✔" : "";
-			MenuItem::step();
-		}
-	};
-
-	MODULE* module;
-	int id;
-	Menu* createChildMenu() override {
-		Menu* menu = new Menu;
-		menu->addChild(construct<SeqInterpolateItem>(&MenuItem::text, "Linear", &SeqInterpolateItem::module, module, &SeqInterpolateItem::id, id, &SeqInterpolateItem::seqInterpolate, SEQINTERPOLATE::LINEAR));
-		menu->addChild(construct<SeqInterpolateItem>(&MenuItem::text, "Cubic", &SeqInterpolateItem::module, module, &SeqInterpolateItem::id, id, &SeqInterpolateItem::seqInterpolate, SEQINTERPOLATE::CUBIC));
-		return menu;
-	}
-};
-
-template < typename MODULE >
-struct SeqPresetMenuItem : MenuItem {
-	float x = 1.0f;
-	float y = 1.0f;
-	int parameter = 6;
-
-	SeqPresetMenuItem() {
-		rightText = RIGHT_ARROW;
-	}
-
-	struct XSlider : ui::Slider {
-		struct XQuantity : Quantity {
-			SeqPresetMenuItem* item;
-
-			XQuantity(SeqPresetMenuItem* item) {
-				this->item = item;
-			}
-			void setValue(float value) override {
-				item->x = math::clamp(value, 0.f, 1.f);
-			}
-			float getValue() override {
-				return item->x;
-			}
-			float getDefaultValue() override {
-				return 0.5;
-			}
-			float getDisplayValue() override {
-				return getValue() * 100;
-			}
-			void setDisplayValue(float displayValue) override {
-				setValue(displayValue / 100);
-			}
-			std::string getLabel() override {
-				return "Scale x";
-			}
-			std::string getUnit() override {
-				return "%";
-			}
-		};
-
-		XSlider(SeqPresetMenuItem* item) {
-			quantity = new XQuantity(item);
-		}
-		~XSlider() {
-			delete quantity;
-		}
-	};
-
-	struct YSlider : ui::Slider {
-		struct YQuantity : Quantity {
-			SeqPresetMenuItem* item;
-
-			YQuantity(SeqPresetMenuItem* item) {
-				this->item = item;
-			}
-			void setValue(float value) override {
-				item->y = math::clamp(value, 0.f, 1.f);
-			}
-			float getValue() override {
-				return item->y;
-			}
-			float getDefaultValue() override {
-				return 0.5;
-			}
-			float getDisplayValue() override {
-				return getValue() * 100;
-			}
-			void setDisplayValue(float displayValue) override {
-				setValue(displayValue / 100);
-			}
-			std::string getLabel() override {
-				return "Scale y";
-			}
-			std::string getUnit() override {
-				return "%";
-			}
-		};
-
-		YSlider(SeqPresetMenuItem* item) {
-			quantity = new YQuantity(item);
-		}
-		~YSlider() {
-			delete quantity;
-		}
-	};
-
-	struct ParameterSlider : ui::Slider {
-		struct ParameterQuantity : Quantity {
-			SeqPresetMenuItem* item;
-			float v = -1.f;
-
-			ParameterQuantity(SeqPresetMenuItem* item) {
-				this->item = item;
-			}
-			void setValue(float value) override {
-				v = clamp(value, 2.f, 12.f);
-				item->parameter = int(v);
-			}
-			float getValue() override {
-				if (v < 0.f) v = item->parameter;
-				return v;
-			}
-			float getDefaultValue() override {
-				return 6.f;
-			}
-			float getMinValue() override {
-				return 2.f;
-			}
-			float getMaxValue() override {
-				return 12.f;
-			}
-			float getDisplayValue() override {
-				return getValue();
-			}
-			std::string getDisplayValueString() override {
-				int i = int(getValue());
-				return string::f("%i", i);
-			}
-			void setDisplayValue(float displayValue) override {
-				setValue(displayValue);
-			}
-			std::string getLabel() override {
-				return "Parameter";
-			}
-			std::string getUnit() override {
-				return "";
-			}
-		};
-
-		ParameterSlider(SeqPresetMenuItem* item) {
-			quantity = new ParameterQuantity(item);
-		}
-		~ParameterSlider() {
-			delete quantity;
-		}
-		void onDragMove(const event::DragMove& e) override {
-			if (quantity) {
-				quantity->moveScaledValue(0.002f * e.mouseDelta.x);
-			}
-		}
-	};
-
-	struct SeqPresetItem : MenuItem {
-		MODULE* module;
-		SEQPRESET preset;
-		SeqPresetMenuItem* item;
-		
-		void onAction(const event::Action &e) override {
-			module->seqPreset(module->seqEdit, preset, item->x, item->y, item->parameter);
-		}
-	};
-
-	MODULE* module;
-	Menu* createChildMenu() override {
-		Menu* menu = new Menu;
-		menu->addChild(construct<SeqPresetItem>(&MenuItem::text, "Circle", &SeqPresetItem::module, module, &SeqPresetItem::item, this, &SeqPresetItem::preset, SEQPRESET::CIRCLE));
-		menu->addChild(construct<SeqPresetItem>(&MenuItem::text, "Spiral", &SeqPresetItem::module, module, &SeqPresetItem::item, this, &SeqPresetItem::preset, SEQPRESET::SPIRAL));
-		menu->addChild(construct<SeqPresetItem>(&MenuItem::text, "Saw", &SeqPresetItem::module, module, &SeqPresetItem::item, this, &SeqPresetItem::preset, SEQPRESET::SAW));
-		menu->addChild(construct<SeqPresetItem>(&MenuItem::text, "Sine", &SeqPresetItem::module, module, &SeqPresetItem::item, this, &SeqPresetItem::preset, SEQPRESET::SINE));
-		menu->addChild(construct<SeqPresetItem>(&MenuItem::text, "Eight", &SeqPresetItem::module, module, &SeqPresetItem::item, this, &SeqPresetItem::preset, SEQPRESET::EIGHT));
-		menu->addChild(construct<SeqPresetItem>(&MenuItem::text, "Rose", &SeqPresetItem::module, module, &SeqPresetItem::item, this, &SeqPresetItem::preset, SEQPRESET::ROSE));
-
-		XSlider* xSlider = new XSlider(this);
-		xSlider->box.size.x = 120.0f;
-		menu->addChild(xSlider);
-		YSlider* ySlider = new YSlider(this);
-		ySlider->box.size.x = 120.0f;
-		menu->addChild(ySlider);
-		ParameterSlider* parameterSlider = new ParameterSlider(this);
-		parameterSlider->box.size.x = 120.0f;
-		menu->addChild(parameterSlider);
-		return menu;
-	}
-};
-
 
 template < typename MODULE >
 struct RadiusSlider : ui::Slider {
@@ -1267,14 +1015,63 @@ struct RadiusSlider : ui::Slider {
 		}
 	};
 
+	MODULE* module;
+	int id;
+	RadiusChangeAction<MODULE>* h;
+
 	RadiusSlider(MODULE* module, int id) {
+		this->module = module;
+		this->id = id;
 		quantity = new RadiusQuantity(module, id);
 	}
 	~RadiusSlider() {
 		delete quantity;
 	}
+
+	void onDragStart(const event::DragStart& e) override {
+		// history
+		h = new RadiusChangeAction<MODULE>;
+		h->moduleId = module->id;
+		h->inputId = id;
+		h->oldValue = module->radius[id];
+
+		ui::Slider::onDragStart(e);
+	}
+
+	void onDragEnd(const event::DragEnd& e) override {
+		h->newValue = module->radius[id];
+		APP->history->push(h);
+		h = NULL;
+
+		ui::Slider::onDragEnd(e);
+	}
 };
 
+
+template < typename MODULE >
+struct AmountChangeAction : history::ModuleAction {
+	int inputId;
+	float oldValue;
+	float newValue;
+
+	AmountChangeAction() {
+		name = "stoermelder ARENA amount change";
+	}
+
+	void undo() override {
+		app::ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
+		assert(mw);
+		MODULE* m = dynamic_cast<MODULE*>(mw->module);
+		m->amount[inputId] = oldValue;
+	}
+
+	void redo() override {
+		app::ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
+		assert(mw);
+		MODULE* m = dynamic_cast<MODULE*>(mw->module);
+		m->amount[inputId] = newValue;
+	}
+};
 
 template < typename MODULE >
 struct AmountSlider : ui::Slider {
@@ -1309,11 +1106,62 @@ struct AmountSlider : ui::Slider {
 		}
 	};
 
+
+
+	MODULE* module;
+	int id;
+	AmountChangeAction<MODULE>* h;
+
 	AmountSlider(MODULE* module, int id) {
+		this->module = module;
+		this->id = id;
 		quantity = new AmountQuantity(module, id);
 	}
 	~AmountSlider() {
 		delete quantity;
+	}
+
+	void onDragStart(const event::DragStart& e) override {
+		// history
+		h = new AmountChangeAction<MODULE>;
+		h->moduleId = module->id;
+		h->inputId = id;
+		h->oldValue = module->amount[id];
+
+		ui::Slider::onDragStart(e);
+	}
+
+	void onDragEnd(const event::DragEnd& e) override {
+		h->newValue = module->amount[id];
+		APP->history->push(h);
+		h = NULL;
+
+		ui::Slider::onDragEnd(e);
+	}
+};
+
+
+struct XYChangeAction : history::ModuleAction {
+	int paramXId, paramYId;
+	float oldX, oldY;
+	float newX, newY;
+
+	XYChangeAction() {
+		name = "stoermelder ARENA x/y-change";
+	}
+
+	void undo() override {
+		app::ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
+		assert(mw);
+		mw->module->params[paramXId].setValue(oldX);
+		mw->module->params[paramYId].setValue(oldY);
+	}
+
+	void redo() override {
+		app::ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
+		assert(mw);
+		mw->module->params[paramXId].setValue(newX);
+		mw->module->params[paramYId].setValue(newY);
 	}
 };
 
@@ -1335,6 +1183,7 @@ struct ArenaScreenDragWidget : OpaqueWidget {
 	
 	float circleA = 1.f;
 	math::Vec dragPos;
+	XYChangeAction* dragAction;
 
 	ArenaScreenDragWidget() {
 		font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
@@ -1431,11 +1280,24 @@ struct ArenaScreenDragWidget : OpaqueWidget {
 			return;
 
 		dragPos = APP->scene->rack->mousePos.minus(box.pos);
+
+		// history
+		dragAction = new XYChangeAction;
+		dragAction->moduleId = module->id;
+		dragAction->paramXId = paramQuantityX->paramId;
+		dragAction->paramYId = paramQuantityY->paramId;
+		dragAction->oldX = paramQuantityX->getValue();
+		dragAction->oldY = paramQuantityY->getValue();
 	}
 
 	void onDragEnd(const event::DragEnd& e) override {
 		if (e.button != GLFW_MOUSE_BUTTON_LEFT)
 			return;
+
+		dragAction->newX = paramQuantityX->getValue();
+		dragAction->newY = paramQuantityY->getValue();
+		APP->history->push(dragAction);
+		dragAction = NULL;
 	}
 
 	void onDragMove(const event::DragMove& e) override {
@@ -1636,43 +1498,146 @@ struct ArenaScreenWidget : OpaqueWidget {
 		struct InitItem : MenuItem {
 			MODULE* module;
 			void onAction(const event::Action& e) override {
+				// history::ModuleChange
+				history::ModuleChange* h = new history::ModuleChange;
+				h->name = "stoermelder ARENA initialize";
+				h->moduleId = module->id;
+				h->oldModuleJ = module->toJson();
+
 				module->init();
+
+				h->newModuleJ = module->toJson();
+				APP->history->push(h);
 			}
 		};
 
 		struct RandomizeXYItem : MenuItem {
 			MODULE* module;
 			void onAction(const event::Action& e) override {
+				XYChangeAction* actions[module->numInports];
+				for (int i = 0; i < module->numInports; i++) {
+					actions[i] = new XYChangeAction;
+					actions[i]->moduleId = module->id;
+					actions[i]->paramXId = MODULE::IN_X_POS + i;
+					actions[i]->paramYId = MODULE::IN_Y_POS + i;
+					actions[i]->oldX = module->params[MODULE::IN_X_POS + i].getValue();
+					actions[i]->oldY = module->params[MODULE::IN_Y_POS + i].getValue();
+				}
+
 				module->randomizeInputX();
 				module->randomizeInputY();
+
+				history::ComplexAction* complexAction = new history::ComplexAction;
+				for (int i = 0; i < module->numInports; i++) {
+					actions[i]->newX = module->params[MODULE::IN_X_POS + i].getValue();
+					actions[i]->newY = module->params[MODULE::IN_Y_POS + i].getValue();
+					complexAction->push(actions[i]);
+				}
+
+				complexAction->name = "stoermelder ARENA randomize IN x-pos & y-pos";
+				APP->history->push(complexAction);
 			}
 		};
 
 		struct RandomizeXItem : MenuItem {
 			MODULE* module;
 			void onAction(const event::Action& e) override {
+				XYChangeAction* actions[module->numInports];
+				for (int i = 0; i < module->numInports; i++) {
+					actions[i] = new XYChangeAction;
+					actions[i]->moduleId = module->id;
+					actions[i]->paramXId = MODULE::IN_X_POS + i;
+					actions[i]->paramYId = MODULE::IN_Y_POS + i;
+					actions[i]->oldX = module->params[MODULE::IN_X_POS + i].getValue();
+					actions[i]->oldY = module->params[MODULE::IN_Y_POS + i].getValue();
+				}
+
 				module->randomizeInputX();
+
+				history::ComplexAction* complexAction = new history::ComplexAction;
+				for (int i = 0; i < module->numInports; i++) {
+					actions[i]->newX = module->params[MODULE::IN_X_POS + i].getValue();
+					actions[i]->newY = module->params[MODULE::IN_Y_POS + i].getValue();
+					complexAction->push(actions[i]);
+				}
+
+				complexAction->name = "stoermelder ARENA randomize IN x-pos";
+				APP->history->push(complexAction);
 			}
 		};
 
 		struct RandomizeYItem : MenuItem {
 			MODULE* module;
 			void onAction(const event::Action& e) override {
+				XYChangeAction* actions[module->numInports];
+				for (int i = 0; i < module->numInports; i++) {
+					actions[i] = new XYChangeAction;
+					actions[i]->moduleId = module->id;
+					actions[i]->paramXId = MODULE::IN_X_POS + i;
+					actions[i]->paramYId = MODULE::IN_Y_POS + i;
+					actions[i]->oldX = module->params[MODULE::IN_X_POS + i].getValue();
+					actions[i]->oldY = module->params[MODULE::IN_Y_POS + i].getValue();
+				}
+
 				module->randomizeInputY();
+
+				history::ComplexAction* complexAction = new history::ComplexAction;
+				for (int i = 0; i < module->numInports; i++) {
+					actions[i]->newX = module->params[MODULE::IN_X_POS + i].getValue();
+					actions[i]->newY = module->params[MODULE::IN_Y_POS + i].getValue();
+					complexAction->push(actions[i]);
+				}
+
+				complexAction->name = "stoermelder ARENA randomize IN y-pos";
+				APP->history->push(complexAction);
 			}
 		};
 
 		struct RandomizeAmountItem : MenuItem {
 			MODULE* module;
 			void onAction(const event::Action& e) override {
+				AmountChangeAction<MODULE>* actions[module->numInports];
+				for (int i = 0; i < module->numInports; i++) {
+					actions[i] = new AmountChangeAction<MODULE>;
+					actions[i]->moduleId = module->id;
+					actions[i]->inputId = i;
+					actions[i]->oldValue = module->amount[i];
+				}
+
 				module->randomizeInputAmount();
+
+				history::ComplexAction* complexAction = new history::ComplexAction;
+				for (int i = 0; i < module->numInports; i++) {
+					actions[i]->newValue = module->amount[i];
+					complexAction->push(actions[i]);
+				}
+
+				complexAction->name = "stoermelder ARENA randomize IN amount";
+				APP->history->push(complexAction);
 			}
 		};
 
 		struct RandomizeRadiusItem : MenuItem {
 			MODULE* module;
 			void onAction(const event::Action& e) override {
+				RadiusChangeAction<MODULE>* actions[module->numInports];
+				for (int i = 0; i < module->numInports; i++) {
+					actions[i] = new RadiusChangeAction<MODULE>;
+					actions[i]->moduleId = module->id;
+					actions[i]->inputId = i;
+					actions[i]->oldValue = module->radius[i];
+				}
+
 				module->randomizeInputRadius();
+
+				history::ComplexAction* complexAction = new history::ComplexAction;
+				for (int i = 0; i < module->numInports; i++) {
+					actions[i]->newValue = module->radius[i];
+					complexAction->push(actions[i]);
+				}
+
+				complexAction->name = "stoermelder ARENA randomize IN radius";
+				APP->history->push(complexAction);
 			}
 		};
 
@@ -1748,7 +1713,414 @@ struct ArenaScreenWidget : OpaqueWidget {
 };
 
 
-// Seq-edit widgets
+template < typename MODULE >
+struct ArenaOpDisplay : LedDisplayChoice {
+	MODULE* module;
+	int id;
+
+	ArenaOpDisplay() {
+		color = nvgRGB(0xf0, 0xf0, 0xf0);
+		box.size = Vec(25.1f, 16.f);
+		textOffset = Vec(4.f, 11.5f);
+	}
+
+	void step() override {
+		if (module) {
+			if (id + 1 > module->inportsUsed) {
+				text = "";
+				return;
+			}
+			switch (module->modMode[id]) {
+				case MODMODE::RADIUS:
+					text = "RAD"; break;
+				case MODMODE::AMOUNT:
+					text = "AMT"; break;
+				case MODMODE::OFFSET_X:
+					text = "O-X"; break;
+				case MODMODE::OFFSET_Y:
+					text = "O-Y"; break;
+				case MODMODE::WALK:
+					text = "WLK"; break;
+			}
+		}
+		LedDisplayChoice::step();
+	}
+
+	void onButton(const event::Button& e) override {
+		if (id + 1 > module->inportsUsed) return;
+		if (e.button == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
+			createContextMenu();
+			e.consume(this);
+		}
+		LedDisplayChoice::onButton(e);
+	}
+
+	void createContextMenu() {
+		ui::Menu* menu = createMenu();
+		menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("IN %i", id + 1)));
+
+		AmountSlider<MODULE>* amountSlider = new AmountSlider<MODULE>(module, id);
+		amountSlider->box.size.x = 200.0;
+		menu->addChild(amountSlider);
+
+		RadiusSlider<MODULE>* radiusSlider = new RadiusSlider<MODULE>(module, id);
+		radiusSlider->box.size.x = 200.0;
+		menu->addChild(radiusSlider);
+
+		menu->addChild(construct<InputXMenuItem<MODULE>>(&MenuItem::text, "X-port", &InputXMenuItem<MODULE>::module, module, &InputXMenuItem<MODULE>::id, id));
+		menu->addChild(construct<InputYMenuItem<MODULE>>(&MenuItem::text, "Y-port", &InputYMenuItem<MODULE>::module, module, &InputYMenuItem<MODULE>::id, id));
+		menu->addChild(construct<ModModeMenuItem<MODULE>>(&MenuItem::text, "MOD-port", &ModModeMenuItem<MODULE>::module, module, &ModModeMenuItem<MODULE>::id, id));
+		menu->addChild(construct<OutputModeMenuItem<MODULE>>(&MenuItem::text, "OUT-port", &OutputModeMenuItem<MODULE>::module, module, &OutputModeMenuItem<MODULE>::id, id));
+	}
+};
+
+
+// Seq-Edit menu etc.
+
+template < typename MODULE >
+struct SeqMenuItem : MenuItem {
+	SeqMenuItem() {
+		rightText = RIGHT_ARROW;
+	}
+
+	struct SeqItem : MenuItem {
+		MODULE* module;
+		int id;
+		int seq;
+		
+		void onAction(const event::Action& e) override {
+			module->seqSelected[id] = seq;
+		}
+
+		void step() override {
+			rightText = module->seqSelected[id] == seq ? "✔" : "";
+			MenuItem::step();
+		}
+	};
+
+	MODULE* module;
+	int id;
+	Menu* createChildMenu() override {
+		Menu* menu = new Menu;
+		for (int i = 0; i < SEQ_COUNT; i++) {
+			menu->addChild(construct<SeqItem>(&MenuItem::text, string::f("%02u", i + 1), &SeqItem::module, module, &SeqItem::id, id, &SeqItem::seq, i));
+		}
+		return menu;
+	}
+};
+
+
+template < typename MODULE >
+struct SeqModeMenuItem : MenuItem {
+	SeqModeMenuItem() {
+		rightText = RIGHT_ARROW;
+	}
+
+	struct SeqModeItem : MenuItem {
+		MODULE* module;
+		int id;
+		SEQMODE seqMode;
+		
+		void onAction(const event::Action& e) override {
+			if (module->seqEdit != id)
+				module->seqMode[id] = seqMode;
+		}
+
+		void step() override {
+			rightText = module->seqMode[id] == seqMode ? "✔" : "";
+			MenuItem::step();
+		}
+	};
+
+	MODULE* module;
+	int id;
+	Menu* createChildMenu() override {
+		Menu* menu = new Menu;
+		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "Trigger forward", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::TRIG_FWD));
+		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "Trigger reverse", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::TRIG_REV));
+		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "Trigger random 1-16", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::TRIG_RANDOM_16));
+		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "Trigger random 1-8", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::TRIG_RANDOM_8));
+		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "Trigger random 1-4", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::TRIG_RANDOM_4));
+		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "0..10V", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::VOLT));
+		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "C4-D#5", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::C4));
+		return menu;
+	}
+};
+
+
+template < typename MODULE >
+struct SeqInterpolateMenuItem : MenuItem {
+	SeqInterpolateMenuItem() {
+		rightText = RIGHT_ARROW;
+	}
+
+	struct SeqInterpolateItem : MenuItem {
+		MODULE* module;
+		int id;
+		SEQINTERPOLATE seqInterpolate;
+		
+		void onAction(const event::Action& e) override {
+			module->seqInterpolate[id] = seqInterpolate;
+		}
+
+		void step() override {
+			rightText = module->seqInterpolate[id] == seqInterpolate ? "✔" : "";
+			MenuItem::step();
+		}
+	};
+
+	MODULE* module;
+	int id;
+	Menu* createChildMenu() override {
+		Menu* menu = new Menu;
+		menu->addChild(construct<SeqInterpolateItem>(&MenuItem::text, "Linear", &SeqInterpolateItem::module, module, &SeqInterpolateItem::id, id, &SeqInterpolateItem::seqInterpolate, SEQINTERPOLATE::LINEAR));
+		menu->addChild(construct<SeqInterpolateItem>(&MenuItem::text, "Cubic", &SeqInterpolateItem::module, module, &SeqInterpolateItem::id, id, &SeqInterpolateItem::seqInterpolate, SEQINTERPOLATE::CUBIC));
+		return menu;
+	}
+};
+
+
+template < typename MODULE >
+struct SeqChangeAction : history::ModuleAction {
+	int portId;
+	int seqId;
+	int oldSeqLength, newSeqLength;
+	float oldSeqX[SEQ_LENGTH], oldSeqY[SEQ_LENGTH];
+	float newSeqX[SEQ_LENGTH], newSeqY[SEQ_LENGTH];
+
+	SeqChangeAction() {
+		name = "stoermelder ARENA seq";
+	}
+
+	void setOld(MODULE* m, int portId, int seqId) {
+		this->moduleId = m->id;
+		this->portId = portId;
+		this->seqId = seqId;
+		oldSeqLength = m->seqData[portId][seqId].length;
+		for (int i = 0; i < oldSeqLength; i++) {
+			oldSeqX[i] = m->seqData[portId][seqId].x[i];
+			oldSeqY[i] = m->seqData[portId][seqId].y[i];
+		}
+	}
+
+	void setNew(MODULE* m) {
+		newSeqLength = m->seqData[portId][seqId].length;
+		for (int i = 0; i < newSeqLength; i++) {
+			newSeqX[i] = m->seqData[portId][seqId].x[i];
+			newSeqY[i] = m->seqData[portId][seqId].y[i];
+		}
+	}
+
+	void undo() override {
+		app::ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
+		assert(mw);
+		MODULE* m = dynamic_cast<MODULE*>(mw->module);
+		m->seqData[portId][seqId].length = 0;
+		for (int i = 0; i < oldSeqLength; i++) {
+			m->seqData[portId][seqId].x[i] = oldSeqX[i];
+			m->seqData[portId][seqId].y[i] = oldSeqY[i];
+		}
+		m->seqData[portId][seqId].length = oldSeqLength;
+	}
+
+	void redo() override {
+		app::ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
+		assert(mw);
+		MODULE* m = dynamic_cast<MODULE*>(mw->module);
+		m->seqData[portId][seqId].length = 0;
+		for (int i = 0; i < newSeqLength; i++) {
+			m->seqData[portId][seqId].x[i] = newSeqX[i];
+			m->seqData[portId][seqId].y[i] = newSeqY[i];
+		}
+		m->seqData[portId][seqId].length = newSeqLength;
+	}
+};
+
+template < typename MODULE >
+struct SeqPresetMenuItem : MenuItem {
+	float x = 1.0f;
+	float y = 1.0f;
+	int parameter = 6;
+
+	SeqPresetMenuItem() {
+		rightText = RIGHT_ARROW;
+	}
+
+	struct XSlider : ui::Slider {
+		struct XQuantity : Quantity {
+			SeqPresetMenuItem* item;
+
+			XQuantity(SeqPresetMenuItem* item) {
+				this->item = item;
+			}
+			void setValue(float value) override {
+				item->x = math::clamp(value, 0.f, 1.f);
+			}
+			float getValue() override {
+				return item->x;
+			}
+			float getDefaultValue() override {
+				return 0.5;
+			}
+			float getDisplayValue() override {
+				return getValue() * 100;
+			}
+			void setDisplayValue(float displayValue) override {
+				setValue(displayValue / 100);
+			}
+			std::string getLabel() override {
+				return "Scale x";
+			}
+			std::string getUnit() override {
+				return "%";
+			}
+		};
+
+		XSlider(SeqPresetMenuItem* item) {
+			quantity = new XQuantity(item);
+		}
+		~XSlider() {
+			delete quantity;
+		}
+	};
+
+	struct YSlider : ui::Slider {
+		struct YQuantity : Quantity {
+			SeqPresetMenuItem* item;
+
+			YQuantity(SeqPresetMenuItem* item) {
+				this->item = item;
+			}
+			void setValue(float value) override {
+				item->y = math::clamp(value, 0.f, 1.f);
+			}
+			float getValue() override {
+				return item->y;
+			}
+			float getDefaultValue() override {
+				return 0.5;
+			}
+			float getDisplayValue() override {
+				return getValue() * 100;
+			}
+			void setDisplayValue(float displayValue) override {
+				setValue(displayValue / 100);
+			}
+			std::string getLabel() override {
+				return "Scale y";
+			}
+			std::string getUnit() override {
+				return "%";
+			}
+		};
+
+		YSlider(SeqPresetMenuItem* item) {
+			quantity = new YQuantity(item);
+		}
+		~YSlider() {
+			delete quantity;
+		}
+	};
+
+	struct ParameterSlider : ui::Slider {
+		struct ParameterQuantity : Quantity {
+			SeqPresetMenuItem* item;
+			float v = -1.f;
+
+			ParameterQuantity(SeqPresetMenuItem* item) {
+				this->item = item;
+			}
+			void setValue(float value) override {
+				v = clamp(value, 2.f, 12.f);
+				item->parameter = int(v);
+			}
+			float getValue() override {
+				if (v < 0.f) v = item->parameter;
+				return v;
+			}
+			float getDefaultValue() override {
+				return 6.f;
+			}
+			float getMinValue() override {
+				return 2.f;
+			}
+			float getMaxValue() override {
+				return 12.f;
+			}
+			float getDisplayValue() override {
+				return getValue();
+			}
+			std::string getDisplayValueString() override {
+				int i = int(getValue());
+				return string::f("%i", i);
+			}
+			void setDisplayValue(float displayValue) override {
+				setValue(displayValue);
+			}
+			std::string getLabel() override {
+				return "Parameter";
+			}
+			std::string getUnit() override {
+				return "";
+			}
+		};
+
+		ParameterSlider(SeqPresetMenuItem* item) {
+			quantity = new ParameterQuantity(item);
+		}
+		~ParameterSlider() {
+			delete quantity;
+		}
+		void onDragMove(const event::DragMove& e) override {
+			if (quantity) {
+				quantity->moveScaledValue(0.002f * e.mouseDelta.x);
+			}
+		}
+	};
+
+	struct SeqPresetItem : MenuItem {
+		MODULE* module;
+		SEQPRESET preset;
+		SeqPresetMenuItem* item;
+		
+		void onAction(const event::Action& e) override {
+			// history
+			SeqChangeAction<MODULE>* h = new SeqChangeAction<MODULE>;
+			h->setOld(module, module->seqEdit, module->seqSelected[module->seqEdit]);
+			h->name += " preset";
+
+			module->seqPreset(module->seqEdit, preset, item->x, item->y, item->parameter);
+
+			h->setNew(module);
+			APP->history->push(h);
+		}
+	};
+
+	MODULE* module;
+	Menu* createChildMenu() override {
+		Menu* menu = new Menu;
+		menu->addChild(construct<SeqPresetItem>(&MenuItem::text, "Circle", &SeqPresetItem::module, module, &SeqPresetItem::item, this, &SeqPresetItem::preset, SEQPRESET::CIRCLE));
+		menu->addChild(construct<SeqPresetItem>(&MenuItem::text, "Spiral", &SeqPresetItem::module, module, &SeqPresetItem::item, this, &SeqPresetItem::preset, SEQPRESET::SPIRAL));
+		menu->addChild(construct<SeqPresetItem>(&MenuItem::text, "Saw", &SeqPresetItem::module, module, &SeqPresetItem::item, this, &SeqPresetItem::preset, SEQPRESET::SAW));
+		menu->addChild(construct<SeqPresetItem>(&MenuItem::text, "Sine", &SeqPresetItem::module, module, &SeqPresetItem::item, this, &SeqPresetItem::preset, SEQPRESET::SINE));
+		menu->addChild(construct<SeqPresetItem>(&MenuItem::text, "Eight", &SeqPresetItem::module, module, &SeqPresetItem::item, this, &SeqPresetItem::preset, SEQPRESET::EIGHT));
+		menu->addChild(construct<SeqPresetItem>(&MenuItem::text, "Rose", &SeqPresetItem::module, module, &SeqPresetItem::item, this, &SeqPresetItem::preset, SEQPRESET::ROSE));
+
+		XSlider* xSlider = new XSlider(this);
+		xSlider->box.size.x = 120.0f;
+		menu->addChild(xSlider);
+		YSlider* ySlider = new YSlider(this);
+		ySlider->box.size.x = 120.0f;
+		menu->addChild(ySlider);
+		ParameterSlider* parameterSlider = new ParameterSlider(this);
+		parameterSlider->box.size.x = 120.0f;
+		menu->addChild(parameterSlider);
+		return menu;
+	}
+};
+
+
+// Seq-Edit widgets
 
 template < typename MODULE >
 struct ArenaSeqEditDragWidget : OpaqueWidget {
@@ -1763,6 +2135,7 @@ struct ArenaSeqEditDragWidget : OpaqueWidget {
 
 	int index;
 	math::Vec dragPos;
+	SeqChangeAction<MODULE>* dragChange;
 	std::chrono::time_point<std::chrono::system_clock> timer;
 	bool timerClear;
 
@@ -1790,7 +2163,15 @@ struct ArenaSeqEditDragWidget : OpaqueWidget {
 
 	void clear() {
 		index = 0;
+
+		SeqChangeAction<MODULE>* h = new SeqChangeAction<MODULE>;
+		h->setOld(module, id, seq);
+		h->name += " clear";
+
 		module->seqData[id][seq].length = 0;
+
+		h->setNew(module);
+		APP->history->push(h);
 	}
 
 	void draw(const Widget::DrawArgs& args) override {
@@ -1848,9 +2229,17 @@ struct ArenaSeqEditDragWidget : OpaqueWidget {
 		dragPos = APP->scene->rack->mousePos.minus(box.pos);
 		timerClear = true;
 		module->seqData[id][seq].length = 0;
+
+		// history
+		dragChange = new SeqChangeAction<MODULE>;
+		dragChange->setOld(module, module->seqEdit, module->seqSelected[module->seqEdit]);
+		dragChange->name += " drag";
 	}
 
 	void onDragEnd(const event::DragEnd& e) override {
+		dragChange->setNew(module);
+		APP->history->push(dragChange);
+		dragChange = NULL;
 	}
 
 	void onDragMove(const event::DragMove& e) override {
@@ -1988,21 +2377,45 @@ struct ArenaSeqEditWidget : OpaqueWidget {
 		struct SeqClearItem : MenuItem {
 			MODULE* module;
 			void onAction(const event::Action& e) override {
+				// history
+				SeqChangeAction<MODULE>* h = new SeqChangeAction<MODULE>;
+				h->setOld(module, module->seqEdit, module->seqSelected[module->seqEdit]);
+				h->name += " clear";
+
 				module->seqClear(module->seqEdit);
+
+				h->setNew(module);
+				APP->history->push(h);
 			}
 		};
 
 		struct SeqFilpHorizontallyItem : MenuItem {
 			MODULE* module;
 			void onAction(const event::Action& e) override {
+				// history
+				SeqChangeAction<MODULE>* h = new SeqChangeAction<MODULE>;
+				h->setOld(module, module->seqEdit, module->seqSelected[module->seqEdit]);
+				h->name += " flip horizontally";
+
 				module->seqFlipHorizontally(module->seqEdit);
+
+				h->setNew(module);
+				APP->history->push(h);
 			}
 		};
 
 		struct SeqFlipVerticallyItem : MenuItem {
 			MODULE* module;
 			void onAction(const event::Action& e) override {
+				// history
+				SeqChangeAction<MODULE>* h = new SeqChangeAction<MODULE>;
+				h->setOld(module, module->seqEdit, module->seqSelected[module->seqEdit]);
+				h->name += " flip vertically";
+
 				module->seqFlipVertically(module->seqEdit);
+
+				h->setNew(module);
+				APP->history->push(h);
 			}
 		};
 
@@ -2010,14 +2423,30 @@ struct ArenaSeqEditWidget : OpaqueWidget {
 			MODULE* module;
 			float angle;
 			void onAction(const event::Action& e) override {
+				// history
+				SeqChangeAction<MODULE>* h = new SeqChangeAction<MODULE>;
+				h->setOld(module, module->seqEdit, module->seqSelected[module->seqEdit]);
+				h->name += " rotate";
+
 				module->seqRotate(module->seqEdit, angle);
+
+				h->setNew(module);
+				APP->history->push(h);
 			}
 		};
 
 		struct SeqRandomizeItem : MenuItem {
 			MODULE* module;
 			void onAction(const event::Action& e) override {
+				// history
+				SeqChangeAction<MODULE>* h = new SeqChangeAction<MODULE>;
+				h->setOld(module, module->seqEdit, module->seqSelected[module->seqEdit]);
+				h->name += " randomize";
+
 				module->seqRandomize(module->seqEdit);
+
+				h->setNew(module);
+				APP->history->push(h);
 			}
 		};
 
@@ -2031,7 +2460,15 @@ struct ArenaSeqEditWidget : OpaqueWidget {
 		struct SeqPasteItem : MenuItem {
 			MODULE* module;
 			void onAction(const event::Action& e) override {
+				// history
+				SeqChangeAction<MODULE>* h = new SeqChangeAction<MODULE>;
+				h->setOld(module, module->seqEdit, module->seqSelected[module->seqEdit]);
+				h->name += " paste";
+
 				module->seqPaste(module->seqEdit);
+
+				h->setNew(module);
+				APP->history->push(h);
 			}
 		};
 
@@ -2054,68 +2491,6 @@ struct ArenaSeqEditWidget : OpaqueWidget {
 
 
 // Various widgets
-
-template < typename MODULE >
-struct ArenaOpDisplay : LedDisplayChoice {
-	MODULE* module;
-	int id;
-
-	ArenaOpDisplay() {
-		color = nvgRGB(0xf0, 0xf0, 0xf0);
-		box.size = Vec(25.1f, 16.f);
-		textOffset = Vec(4.f, 11.5f);
-	}
-
-	void step() override {
-		if (module) {
-			if (id + 1 > module->inportsUsed) {
-				text = "";
-				return;
-			}
-			switch (module->modMode[id]) {
-				case MODMODE::RADIUS:
-					text = "RAD"; break;
-				case MODMODE::AMOUNT:
-					text = "AMT"; break;
-				case MODMODE::OFFSET_X:
-					text = "O-X"; break;
-				case MODMODE::OFFSET_Y:
-					text = "O-Y"; break;
-				case MODMODE::WALK:
-					text = "WLK"; break;
-			}
-		}
-		LedDisplayChoice::step();
-	}
-
-	void onButton(const event::Button& e) override {
-		if (id + 1 > module->inportsUsed) return;
-		if (e.button == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
-			createContextMenu();
-			e.consume(this);
-		}
-		LedDisplayChoice::onButton(e);
-	}
-
-	void createContextMenu() {
-		ui::Menu* menu = createMenu();
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("IN %i", id + 1)));
-
-		AmountSlider<MODULE>* amountSlider = new AmountSlider<MODULE>(module, id);
-		amountSlider->box.size.x = 200.0;
-		menu->addChild(amountSlider);
-
-		RadiusSlider<MODULE>* radiusSlider = new RadiusSlider<MODULE>(module, id);
-		radiusSlider->box.size.x = 200.0;
-		menu->addChild(radiusSlider);
-
-		menu->addChild(construct<InputXMenuItem<MODULE>>(&MenuItem::text, "X-port", &InputXMenuItem<MODULE>::module, module, &InputXMenuItem<MODULE>::id, id));
-		menu->addChild(construct<InputYMenuItem<MODULE>>(&MenuItem::text, "Y-port", &InputYMenuItem<MODULE>::module, module, &InputYMenuItem<MODULE>::id, id));
-		menu->addChild(construct<ModModeMenuItem<MODULE>>(&MenuItem::text, "MOD-port", &ModModeMenuItem<MODULE>::module, module, &ModModeMenuItem<MODULE>::id, id));
-		menu->addChild(construct<OutputModeMenuItem<MODULE>>(&MenuItem::text, "OUT-port", &OutputModeMenuItem<MODULE>::module, module, &OutputModeMenuItem<MODULE>::id, id));
-	}
-};
-
 
 template < typename MODULE >
 struct ArenaSeqDisplay : LedDisplayChoice {
@@ -2190,6 +2565,8 @@ struct ArenaSeqDisplay : LedDisplayChoice {
 	}
 };
 
+
+// Module widget
 
 struct DummyMapButton : ParamWidget {
 	DummyMapButton() {
