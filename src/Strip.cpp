@@ -99,25 +99,25 @@ struct StripModule : Module {
 		}
 
 		if (offPTrigger.process(params[OFF_PARAM].getValue() + inputs[OFF_INPUT].getVoltage())) {
-			groupDisable(true);
+			groupDisable(true, params[OFF_PARAM].getValue() > 0.f);
 		}
 
 		switch (onMode) {
 			case ONMODE_DEFAULT:
 				if (onTrigger.process(params[ON_PARAM].getValue() + inputs[ON_INPUT].getVoltage()))
-					groupDisable(false);
+					groupDisable(false, params[ON_PARAM].getValue() > 0.f);
 				break;
 			case ONMODE_TOGGLE:
 				if (onTrigger.process(params[ON_PARAM].getValue() + inputs[ON_INPUT].getVoltage()))
-					groupDisable(!lastState);
+					groupDisable(!lastState, params[ON_PARAM].getValue() > 0.f);
 				break;
 			case ONMODE_HIGHLOW:
-				groupDisable(params[ON_PARAM].getValue() + inputs[ON_INPUT].getVoltage() < 1.f);
+				groupDisable(params[ON_PARAM].getValue() + inputs[ON_INPUT].getVoltage() < 1.f, params[ON_PARAM].getValue() > 0.f);
 				break;
 		}
 
 		if (randTrigger.process(params[RAND_PARAM].getValue() + inputs[RAND_INPUT].getVoltage())) {
-			groupRandomize();
+			groupRandomize(params[RAND_PARAM].getValue() > 0.f);
 		}
 
 		// Set channel lights infrequently
@@ -134,9 +134,17 @@ struct StripModule : Module {
 	 * Disables/enables all modules of the current strip.
 	 * To be called from engine-thread only.
 	 */
-	void groupDisable(bool val) {
+	void groupDisable(bool val, bool useHistory) {
 		if (lastState == val) return;
 		lastState = val;
+
+		history::ComplexAction* complexAction;
+		if (useHistory) {
+			complexAction = new history::ComplexAction;
+			complexAction->name = "stoermelder STRIP bypass";
+			APP->history->push(complexAction);
+		}
+
 		if (mode == MODE_LEFTRIGHT || mode == MODE_RIGHT) {
 			Module* m = this;
 			while (true) {
@@ -149,9 +157,19 @@ struct StripModule : Module {
 					// This zeros all voltages, but the channel is set to 1 if connected
 					output.setChannels(0);
 				}
+
+				if (useHistory) {
+					// history::ModuleBypass
+					history::ModuleBypass* h = new history::ModuleBypass;
+					h->moduleId = m->rightExpander.module->id;
+					h->bypass = m->rightExpander.module->bypass;
+					complexAction->push(h);
+				}
+
 				m = m->rightExpander.module;
 			}
 		}
+
 		if (mode == MODE_LEFTRIGHT || mode == MODE_LEFT) {
 			Module* m = this;
 			while (true) {
@@ -164,6 +182,15 @@ struct StripModule : Module {
 					// This zeros all voltages, but the channel is set to 1 if connected
 					output.setChannels(0);
 				}
+
+				if (useHistory) {
+					// history::ModuleBypass
+					history::ModuleBypass* h = new history::ModuleBypass;
+					h->moduleId = m->leftExpander.module->id;
+					h->bypass = m->leftExpander.module->bypass;
+					complexAction->push(h);
+				}
+
 				m = m->leftExpander.module;
 			}
 		}
@@ -173,15 +200,33 @@ struct StripModule : Module {
 	 * Randomizes all modules of the current strip.
 	 * To be called from engine-thread only.
 	 */
-	void groupRandomize() {
+	void groupRandomize(bool useHistory) {
 		//std::lock_guard<std::mutex> lockGuard(excludeMutex);
 		// Do not lock the mutex as changes on excludedParams are rare events
+
+		history::ComplexAction* complexAction;
+		if (useHistory) {
+			complexAction = new history::ComplexAction;
+			complexAction->name = "stoermelder STRIP randomize";
+			APP->history->push(complexAction);
+		}
+
 		if (mode == MODE_LEFTRIGHT || mode == MODE_RIGHT) {
 			Module* m = this;
 			while (true) {
 				if (!m || m->rightExpander.moduleId < 0) break;
 				// Be careful: this function is called from the dsp-thread, but widgets belong
 				// to the app-world!
+
+				history::ModuleChange* h;
+				if (useHistory) {
+					// history::ModuleChange
+					h = new history::ModuleChange;
+					h->moduleId = m->rightExpander.moduleId;
+					h->oldModuleJ = m->rightExpander.module->toJson();
+					complexAction->push(h);
+				}
+
 				ModuleWidget* mw = APP->scene->rack->getModule(m->rightExpander.moduleId);
 				for (ParamWidget* param : mw->params) {
 					switch (randomExcl) {
@@ -199,6 +244,11 @@ struct StripModule : Module {
 					}
 				}
 				mw->module->onRandomize();
+
+				if (useHistory) {
+					h->newModuleJ = m->rightExpander.module->toJson();
+				}
+
 				m = m->rightExpander.module;
 			}
 		}
@@ -208,6 +258,16 @@ struct StripModule : Module {
 				if (!m || m->leftExpander.moduleId < 0) break;
 				// Be careful: this function is called from the dsp-thread, but widgets belong
 				// to the app-world!
+
+				history::ModuleChange* h;
+				if (useHistory) {
+					// history::ModuleChange
+					h = new history::ModuleChange;
+					h->moduleId = m->leftExpander.moduleId;
+					h->oldModuleJ = m->leftExpander.module->toJson();
+					complexAction->push(h);
+				}
+
 				ModuleWidget* mw = APP->scene->rack->getModule(m->leftExpander.moduleId);
 				for (ParamWidget* param : mw->params) {
 					switch (randomExcl) {
@@ -225,6 +285,11 @@ struct StripModule : Module {
 					}
 				}
 				mw->module->onRandomize();
+
+				if (useHistory) {
+					h->newModuleJ = m->leftExpander.module->toJson();
+				}
+
 				m = m->leftExpander.module;
 			}
 		}
@@ -295,7 +360,7 @@ struct RandomExclMenuItem : MenuItem {
 		}
 	};
 
-	StripModule *module;
+	StripModule* module;
 	Menu* createChildMenu() override {
 		Menu* menu = new Menu;
 		menu->addChild(construct<RandomExclItem>(&MenuItem::text, "All", &RandomExclItem::module, module, &RandomExclItem::randomExcl, RANDOMEXCL_NONE));
