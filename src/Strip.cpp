@@ -92,7 +92,7 @@ struct StripModule : Module {
 		// Release excludeMutex
 	}
 
-	void process(const ProcessArgs &args) override {
+	void process(const ProcessArgs& args) override {
 		if (modeTrigger.process(params[MODE_PARAM].getValue())) {
 			mode = (MODE)((mode + 1) % 3);
 			lastState = true;
@@ -125,7 +125,7 @@ struct StripModule : Module {
 			lights[RIGHT_LIGHT].setBrightness(mode == MODE_LEFTRIGHT || mode == MODE_RIGHT);
 			lights[LEFT_LIGHT].setBrightness(mode == MODE_LEFTRIGHT || mode == MODE_LEFT);
 
-			lights[EXCLUDE_LIGHT + 0].setBrightness(!excludeLearn && excludedParams.size() > 0 ? 1.f : 0.f); 
+			lights[EXCLUDE_LIGHT + 0].setBrightness(!excludeLearn && excludedParams.size() > 0 ? 1.f : 0.f);
 			lights[EXCLUDE_LIGHT + 1].setBrightness(excludeLearn ? 1.f : 0.f);
 		}
 	}
@@ -138,14 +138,14 @@ struct StripModule : Module {
 		if (lastState == val) return;
 		lastState = val;
 		if (mode == MODE_LEFTRIGHT || mode == MODE_RIGHT) {
-			Module *m = this;
+			Module* m = this;
 			while (true) {
 				if (!m || m->rightExpander.moduleId < 0) break;
 				// This is what "Module.hpp" says about bypass:
 				// "Module subclasses should not read/write this variable."
 				m->rightExpander.module->bypass = val;
 				// Clear outputs and set to 1 channel
-				for (Output &output : m->rightExpander.module->outputs) {
+				for (Output& output : m->rightExpander.module->outputs) {
 					// This zeros all voltages, but the channel is set to 1 if connected
 					output.setChannels(0);
 				}
@@ -153,14 +153,14 @@ struct StripModule : Module {
 			}
 		}
 		if (mode == MODE_LEFTRIGHT || mode == MODE_LEFT) {
-			Module *m = this;
+			Module* m = this;
 			while (true) {
 				if (!m || m->leftExpander.moduleId < 0) break;
 				// This is what "Module.hpp" says about bypass:
 				// "Module subclasses should not read/write this variable."
 				m->leftExpander.module->bypass = val;
 				// Clear outputs and set to 1 channel
-				for (Output &output : m->leftExpander.module->outputs) {
+				for (Output& output : m->leftExpander.module->outputs) {
 					// This zeros all voltages, but the channel is set to 1 if connected
 					output.setChannels(0);
 				}
@@ -177,13 +177,13 @@ struct StripModule : Module {
 		//std::lock_guard<std::mutex> lockGuard(excludeMutex);
 		// Do not lock the mutex as changes on excludedParams are rare events
 		if (mode == MODE_LEFTRIGHT || mode == MODE_RIGHT) {
-			Module *m = this;
+			Module* m = this;
 			while (true) {
 				if (!m || m->rightExpander.moduleId < 0) break;
 				// Be careful: this function is called from the dsp-thread, but widgets belong
 				// to the app-world!
-				ModuleWidget *mw = APP->scene->rack->getModule(m->rightExpander.moduleId);
-				for (ParamWidget *param : mw->params) {
+				ModuleWidget* mw = APP->scene->rack->getModule(m->rightExpander.moduleId);
+				for (ParamWidget* param : mw->params) {
 					switch (randomExcl) {
 						case RANDOMEXCL_NONE:
 							param->randomize();
@@ -203,13 +203,13 @@ struct StripModule : Module {
 			}
 		}
 		if (mode == MODE_LEFTRIGHT || mode == MODE_LEFT) {
-			Module *m = this;
+			Module* m = this;
 			while (true) {
 				if (!m || m->leftExpander.moduleId < 0) break;
 				// Be careful: this function is called from the dsp-thread, but widgets belong
 				// to the app-world!
-				ModuleWidget *mw = APP->scene->rack->getModule(m->leftExpander.moduleId);
-				for (ParamWidget *param : mw->params) {
+				ModuleWidget* mw = APP->scene->rack->getModule(m->leftExpander.moduleId);
+				for (ParamWidget* param : mw->params) {
 					switch (randomExcl) {
 						case RANDOMEXCL_NONE:
 							param->randomize();
@@ -230,19 +230,19 @@ struct StripModule : Module {
 		}
 	}
 
-	json_t *dataToJson() override {
-		json_t *rootJ = json_object();
+	json_t* dataToJson() override {
+		json_t* rootJ = json_object();
 		json_object_set_new(rootJ, "mode", json_integer(mode));
 		json_object_set_new(rootJ, "onMode", json_integer(onMode));
 
-		json_t *excludedParamsJ = json_array();
+		json_t* excludedParamsJ = json_array();
 		// Aquire excludeMutex to get exclusive access to excludedParams
 		std::lock_guard<std::mutex> lockGuard(excludeMutex);
-		for (auto t : excludedParams) { 
-			json_t *excludedParamJ = json_object(); 
-			json_object_set_new(excludedParamJ, "moduleId", json_integer(std::get<0>(t))); 
-			json_object_set_new(excludedParamJ, "paramId", json_integer(std::get<1>(t))); 
-			json_array_append_new(excludedParamsJ, excludedParamJ); 
+		for (auto t : excludedParams) {
+			json_t* excludedParamJ = json_object();
+			json_object_set_new(excludedParamJ, "moduleId", json_integer(std::get<0>(t)));
+			json_object_set_new(excludedParamJ, "paramId", json_integer(std::get<1>(t)));
+			json_array_append_new(excludedParamsJ, excludedParamJ);
 		} 
 		json_object_set_new(rootJ, "excludedParams", excludedParamsJ);
 		json_object_set_new(rootJ, "randomExcl", json_integer(randomExcl));
@@ -250,30 +250,30 @@ struct StripModule : Module {
 		// Release excludeMutex
 	}
 
-	void dataFromJson(json_t *rootJ) override {
-		json_t *modeJ = json_object_get(rootJ, "mode");
+	void dataFromJson(json_t* rootJ) override {
+		json_t* modeJ = json_object_get(rootJ, "mode");
 		mode = (MODE)json_integer_value(modeJ);
-		json_t *onModeJ = json_object_get(rootJ, "onMode");
+		json_t* onModeJ = json_object_get(rootJ, "onMode");
 		onMode = (ONMODE)json_integer_value(onModeJ);
 
-		json_t *excludedParamsJ = json_object_get(rootJ, "excludedParams"); 
+		json_t* excludedParamsJ = json_object_get(rootJ, "excludedParams");
 		// Aquire excludeMutex to get exclusive access to excludedParams
 		std::lock_guard<std::mutex> lockGuard(excludeMutex);
 		excludedParams.clear();
 		if (excludedParamsJ) {
-			json_t *excludedParamJ;
+			json_t* excludedParamJ;
 			size_t i; 
-			json_array_foreach(excludedParamsJ, i, excludedParamJ) { 
-				json_t *moduleIdJ = json_object_get(excludedParamJ, "moduleId"); 
-				json_t *paramIdJ = json_object_get(excludedParamJ, "paramId"); 
+			json_array_foreach(excludedParamsJ, i, excludedParamJ) {
+				json_t* moduleIdJ = json_object_get(excludedParamJ, "moduleId");
+				json_t* paramIdJ = json_object_get(excludedParamJ, "paramId");
 				if (!(moduleIdJ && paramIdJ)) 
-					continue; 
+					continue;
 				int moduleId = json_integer_value(moduleIdJ); 
 				int paramId = json_integer_value(paramIdJ); 
-				excludedParams.insert(std::make_tuple(moduleId, paramId)); 
-			} 
+				excludedParams.insert(std::make_tuple(moduleId, paramId));
+			}
 		}
-		json_t *randomExclJ = json_object_get(rootJ, "randomExcl");
+		json_t* randomExclJ = json_object_get(rootJ, "randomExcl");
 		randomExcl = (RANDOMEXCL)json_integer_value(randomExclJ);
 		// Release excludeMutex
 	}
@@ -282,10 +282,10 @@ struct StripModule : Module {
 
 struct RandomExclMenuItem : MenuItem {
 	struct RandomExclItem : MenuItem {
-		StripModule *module;
+		StripModule* module;
 		RANDOMEXCL randomExcl;
 
-		void onAction(const event::Action &e) override {
+		void onAction(const event::Action& e) override {
 			module->randomExcl = randomExcl;
 		}
 
@@ -296,8 +296,8 @@ struct RandomExclMenuItem : MenuItem {
 	};
 
 	StripModule *module;
-	Menu *createChildMenu() override {
-		Menu *menu = new Menu;
+	Menu* createChildMenu() override {
+		Menu* menu = new Menu;
 		menu->addChild(construct<RandomExclItem>(&MenuItem::text, "All", &RandomExclItem::module, module, &RandomExclItem::randomExcl, RANDOMEXCL_NONE));
 		menu->addChild(construct<RandomExclItem>(&MenuItem::text, "Exclude", &RandomExclItem::module, module, &RandomExclItem::randomExcl, RANDOMEXCL_EXC));
 		menu->addChild(construct<RandomExclItem>(&MenuItem::text, "Include", &RandomExclItem::module, module, &RandomExclItem::randomExcl, RANDOMEXCL_INC));
@@ -307,7 +307,7 @@ struct RandomExclMenuItem : MenuItem {
 
 
 struct ExcludeButton : TL1105 {
-	StripModule *module;
+	StripModule* module;
 	bool learn = false;
 	bool pressed = false;
 	std::chrono::time_point<std::chrono::system_clock> pressedTime;
@@ -330,13 +330,14 @@ struct ExcludeButton : TL1105 {
 		groupExcludeStep();
 	}
 
-	void onDeselect(const event::Deselect &e) override {
+	void onDeselect(const event::Deselect& e) override {
 		if (!module)
 			return;
 		if (!learn)
 			return;
 		// Check if a ParamWidget was touched
-		ParamWidget *touchedParam = APP->scene->rack->touchedParam;
+		// NB: unstable API
+		ParamWidget* touchedParam = APP->scene->rack->touchedParam;
 		if (touchedParam && touchedParam->paramQuantity && touchedParam->paramQuantity->module != module) {
 			int moduleId = touchedParam->paramQuantity->module->id;
 			int paramId = touchedParam->paramQuantity->paramId;
@@ -344,7 +345,7 @@ struct ExcludeButton : TL1105 {
 		}
 	}
 
-	void onButton(const event::Button &e) override {
+	void onButton(const event::Button& e) override {
 		// Right click to open context menu
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT && (e.mods & RACK_MOD_MASK) == 0) {
 			createContextMenu();
@@ -384,12 +385,12 @@ struct ExcludeButton : TL1105 {
 	void groupExcludeParam(int moduleId, int paramId) {
 		learn = false;
 		if (module->mode == MODE_LEFTRIGHT || module->mode == MODE_RIGHT) {
-			Module *m = module;
+			Module* m = module;
 			while (true) {
 				if (!m || m->rightExpander.moduleId < 0) break;
 				if (m->rightExpander.moduleId == moduleId) {
-					ModuleWidget *mw = APP->scene->rack->getModule(m->rightExpander.moduleId);
-					for (ParamWidget *param : mw->params) {
+					ModuleWidget* mw = APP->scene->rack->getModule(m->rightExpander.moduleId);
+					for (ParamWidget* param : mw->params) {
 						if (param->paramQuantity && param->paramQuantity->paramId == paramId) {
 							// Aquire excludeMutex to get exclusive access to excludedParams
 							std::lock_guard<std::mutex> lockGuard(module->excludeMutex);
@@ -404,12 +405,12 @@ struct ExcludeButton : TL1105 {
 			}
 		}
 		if (module->mode == MODE_LEFTRIGHT || module->mode == MODE_LEFT) {
-			Module *m = module;
+			Module* m = module;
 			while (true) {
 				if (!m || m->leftExpander.moduleId < 0) break;
 				if (m->leftExpander.moduleId == moduleId) {
-					ModuleWidget *mw = APP->scene->rack->getModule(m->leftExpander.moduleId);
-					for (ParamWidget *param : mw->params) {
+					ModuleWidget* mw = APP->scene->rack->getModule(m->leftExpander.moduleId);
+					for (ParamWidget* param : mw->params) {
 						if (param->paramQuantity && param->paramQuantity->paramId == paramId) {
 							// Aquire excludeMutex to get exclusive access to excludedParams
 							std::lock_guard<std::mutex> lockGuard(module->excludeMutex);
@@ -436,7 +437,7 @@ struct ExcludeButton : TL1105 {
 
 		std::map<int, Module*> modules;
 		if (module->mode == MODE_LEFTRIGHT || module->mode == MODE_RIGHT) {
-			Module *m = module;
+			Module* m = module;
 			while (true) {
 				if (!m || m->rightExpander.moduleId < 0) break;
 				modules[m->rightExpander.moduleId] = m;
@@ -444,7 +445,7 @@ struct ExcludeButton : TL1105 {
 			}
 		}
 		if (module->mode == MODE_LEFTRIGHT || module->mode == MODE_LEFT) {
-			Module *m = module;
+			Module* m = module;
 			while (true) {
 				if (!m || m->leftExpander.moduleId < 0) break;
 				modules[m->leftExpander.moduleId] = m;
@@ -470,26 +471,26 @@ struct ExcludeButton : TL1105 {
 	}
 
 	void createContextMenu() {
-		ui::Menu *menu = createMenu();
+		ui::Menu* menu = createMenu();
 
-		ui::MenuLabel *modelLabel = new ui::MenuLabel;
+		ui::MenuLabel* modelLabel = new ui::MenuLabel;
 		modelLabel->text = "Parameter randomization";
 		menu->addChild(modelLabel);
 
-		RandomExclMenuItem *randomExclMenuItem = construct<RandomExclMenuItem>(&MenuItem::text, "Mode", &RandomExclMenuItem::module, module);
+		RandomExclMenuItem* randomExclMenuItem = construct<RandomExclMenuItem>(&MenuItem::text, "Mode", &RandomExclMenuItem::module, module);
 		randomExclMenuItem->rightText = RIGHT_ARROW;
 		menu->addChild(randomExclMenuItem);
 
 		struct LabelButton : ui::MenuItem {
-			void onButton(const event::Button &e) override { }
+			void onButton(const event::Button& e) override { }
 		};
 
-		LabelButton *help1Label = new LabelButton;
+		LabelButton* help1Label = new LabelButton;
 		help1Label->rightText = "short press";
 		help1Label->text = "Learn";
 		menu->addChild(help1Label);
 
-		LabelButton *help2Label = new LabelButton;
+		LabelButton* help2Label = new LabelButton;
 		help2Label->rightText = "long press";
 		help2Label->text = "Clear";
 		menu->addChild(help2Label);
@@ -505,9 +506,9 @@ struct ExcludeButton : TL1105 {
 			int moduleId = std::get<0>(it);
 			int paramId = std::get<1>(it);
 			
-			ModuleWidget *moduleWidget = APP->scene->rack->getModule(moduleId);
+			ModuleWidget* moduleWidget = APP->scene->rack->getModule(moduleId);
 			if (!moduleWidget) continue;
-			ParamWidget *paramWidget = moduleWidget->getParam(paramId);
+			ParamWidget* paramWidget = moduleWidget->getParam(paramId);
 			if (!paramWidget) continue;
 			
 			std::string text = "Parameter \"";
@@ -516,7 +517,7 @@ struct ExcludeButton : TL1105 {
 			text += paramWidget->paramQuantity->getLabel();
 			text += "\"";
 
-			ui::MenuLabel *modelLabel = new ui::MenuLabel;
+			ui::MenuLabel* modelLabel = new ui::MenuLabel;
 			modelLabel->text = text;
 			menu->addChild(modelLabel);
 		}
@@ -526,10 +527,10 @@ struct ExcludeButton : TL1105 {
 
 struct OnModeMenuItem : MenuItem {
 	struct OnModeItem : MenuItem {
-		StripModule *module;
+		StripModule* module;
 		ONMODE onMode;
 
-		void onAction(const event::Action &e) override {
+		void onAction(const event::Action& e) override {
 			module->onMode = onMode;
 		}
 
@@ -539,8 +540,8 @@ struct OnModeMenuItem : MenuItem {
 		}
 	};
 
-	StripModule *module;
-	Menu *createChildMenu() override {
+	StripModule* module;
+	Menu* createChildMenu() override {
 		Menu *menu = new Menu;
 		menu->addChild(construct<OnModeItem>(&MenuItem::text, "Default", &OnModeItem::module, module, &OnModeItem::onMode, ONMODE_DEFAULT));
 		menu->addChild(construct<OnModeItem>(&MenuItem::text, "Toggle", &OnModeItem::module, module, &OnModeItem::onMode, ONMODE_TOGGLE));
@@ -550,10 +551,10 @@ struct OnModeMenuItem : MenuItem {
 };
 
 struct StripWidget : ModuleWidget {
-	StripModule *module;
+	StripModule* module;
 	std::string warningLog;
 
-	StripWidget(StripModule *module) {
+	StripWidget(StripModule* module) {
 		this->module = module;
 		setModule(module);
 		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/Strip.svg")));
@@ -575,7 +576,7 @@ struct StripWidget : ModuleWidget {
 		addParam(createParamCentered<TL1105>(Vec(22.5f, 300.4f), module, StripModule::RAND_PARAM));
 
 		addChild(createLightCentered<SmallLight<GreenRedLight>>(Vec(32.3f, 337.7f), module, StripModule::EXCLUDE_LIGHT));
-		ExcludeButton *button = createParamCentered<ExcludeButton>(Vec(22.5f, 328.0f), module, StripModule::EXCLUDE_PARAM);
+		ExcludeButton* button = createParamCentered<ExcludeButton>(Vec(22.5f, 328.0f), module, StripModule::EXCLUDE_PARAM);
 		button->module = module;
 		addParam(button);
 	}
@@ -587,7 +588,7 @@ struct StripWidget : ModuleWidget {
 		// Collect all modules right next to this instance of STRIP.
 		std::vector<int> toBeRemoved;
 		if (module->mode == MODE_LEFTRIGHT || module->mode == MODE_RIGHT) {
-			Module *m = module;
+			Module* m = module;
 			while (true) {
 				if (!m || m->rightExpander.moduleId < 0) break;
 				toBeRemoved.push_back(m->rightExpander.moduleId);
@@ -595,30 +596,86 @@ struct StripWidget : ModuleWidget {
 			}
 		}
 		if (module->mode == MODE_LEFTRIGHT || module->mode == MODE_LEFT) {
-			Module *m = module;
+			Module* m = module;
 			while (true) {
 				if (!m || m->leftExpander.moduleId < 0) break;
 				toBeRemoved.push_back(m->leftExpander.moduleId);
 				m = m->leftExpander.module;
 			}
 		}
-		for (int id : toBeRemoved) {
-			ModuleWidget *mw = APP->scene->rack->getModule(id);
-			APP->scene->rack->removeModule(mw);
-			delete mw;
+
+		if (toBeRemoved.size() > 0) {
+			history::ComplexAction* complexAction = new history::ComplexAction;
+			complexAction->name = "stoermelder STRIP cut";
+
+			for (int id : toBeRemoved) {
+				ModuleWidget* mw = APP->scene->rack->getModule(id);
+
+				for (PortWidget* output : mw->outputs) {
+					for (CableWidget* cw : APP->scene->rack->getCablesOnPort(output)) {
+						if (!cw->isComplete())
+							continue;
+
+						// history::CableRemove
+						history::CableRemove* h = new history::CableRemove;
+						h->setCable(cw);
+						complexAction->push(h);
+
+						APP->scene->rack->removeCable(cw);
+					}
+				}
+
+				for (PortWidget* input : mw->inputs) {
+					for (CableWidget* cw : APP->scene->rack->getCablesOnPort(input)) {
+						if (!cw->isComplete())
+							continue;
+
+						// history::CableRemove
+						history::CableRemove* h = new history::CableRemove;
+						h->setCable(cw);
+						complexAction->push(h);
+
+						APP->scene->rack->removeCable(cw);
+					}
+				}
+			}
+
+			for (int id : toBeRemoved) {
+				ModuleWidget* mw = APP->scene->rack->getModule(id);
+				// history::ModuleRemove
+				history::ModuleRemove* h = new history::ModuleRemove;
+				h->setModule(mw);
+				complexAction->push(h);
+
+				APP->scene->rack->removeModule(mw);
+				delete mw;
+			}
+
+			APP->history->push(complexAction);
 		}
 	}
 
 	/**
 	 *  Make enough space directly next to this instance of STRIP for the new modules.
 	 */
-	void groupClearSpace(json_t *rootJ) {
+	std::vector<history::Action*>* groupClearSpace(json_t* rootJ) {
 		// To make sure there is enough space for the modules shove the existing modules to the 
 		// left and to the right. This is done by moving this instance of STRIP stepwise 1HP until enough
 		// space is cleared on both sides. Why this stupid and not just use setModulePosForce?
 		// Because setModulePosForce will clear the space, but is not certain in which direction the
 		// existing modules will be moved because a new big module will push a small module to its closer 
 		// side. This would result to foreign modules within the loaded strip.
+
+		std::vector<history::Action*>* undoActions = new std::vector<history::Action*>;
+		std::map<int, math::Vec> moduleMovePositions;
+
+		// NB: unstable API
+		for (widget::Widget* w : APP->scene->rack->moduleContainer->children) {
+			ModuleWidget* mw = dynamic_cast<ModuleWidget*>(w);
+			assert(mw);
+			moduleMovePositions[mw->module->id] = mw->box.pos;
+		}
+
 		if (module->mode == MODE_LEFTRIGHT || module->mode == MODE_RIGHT) {
 			float rightWidth = json_real_value(json_object_get(rootJ, "rightWidth"));
 			if (rightWidth > 0.f) {
@@ -641,6 +698,27 @@ struct StripWidget : ModuleWidget {
 				APP->scene->rack->setModulePosForce(this, pos);
 			}
 		}
+
+		// NB: unstable API
+		for (widget::Widget* w : APP->scene->rack->moduleContainer->children) {
+			ModuleWidget* mw = dynamic_cast<ModuleWidget*>(w);
+			assert(mw);
+			// It is possible to add modules to the rack while dragging, so ignore modules that don't exist.
+			auto it = moduleMovePositions.find(mw->module->id);
+			if (it == moduleMovePositions.end())
+				continue;
+			// Create ModuleMove action if the module was moved.
+			math::Vec pos = it->second;
+			if (!pos.isEqual(mw->box.pos)) {
+				history::ModuleMove* mmh = new history::ModuleMove;
+				mmh->moduleId = mw->module->id;
+				mmh->oldPos = pos;
+				mmh->newPos = mw->box.pos;
+				undoActions->push_back(mmh);
+			}
+		}
+
+		return undoActions;
 	}
 
 	/**
@@ -648,27 +726,27 @@ struct StripWidget : ModuleWidget {
 	 * @moduleJ
 	 * @oldId
 	 */
-	ModuleWidget *moduleFromJson(json_t *moduleJ, int &oldId) {
+	ModuleWidget* moduleFromJson(json_t* moduleJ, int& oldId) {
 		// Get slugs
-		json_t *pluginSlugJ = json_object_get(moduleJ, "plugin");
-		if (!pluginSlugJ) 
+		json_t* pluginSlugJ = json_object_get(moduleJ, "plugin");
+		if (!pluginSlugJ)
 			return NULL;
-		json_t *modelSlugJ = json_object_get(moduleJ, "model");
-		if (!modelSlugJ) 
+		json_t* modelSlugJ = json_object_get(moduleJ, "model");
+		if (!modelSlugJ)
 			return NULL;
 		std::string pluginSlug = json_string_value(pluginSlugJ);
 		std::string modelSlug = json_string_value(modelSlugJ);
 
-		json_t *idJ = json_object_get(moduleJ, "id");
+		json_t* idJ = json_object_get(moduleJ, "id");
 		oldId = idJ ? json_integer_value(idJ) : -1;
 
 		// Get Model
-		plugin::Model *model = plugin::getModel(pluginSlug, modelSlug);
+		plugin::Model* model = plugin::getModel(pluginSlug, modelSlug);
 		if (!model)
 			return NULL;
 
 		// Create ModuleWidget
-		ModuleWidget *moduleWidget = model->createModuleWidget();
+		ModuleWidget* moduleWidget = model->createModuleWidget();
 		assert(moduleWidget);
 		return moduleWidget;
 	}
@@ -680,8 +758,8 @@ struct StripWidget : ModuleWidget {
 	 * @box
 	 * @oldId
 	 */
-	ModuleWidget *moduleToRack(json_t *moduleJ, bool left, Rect &box, int &oldId) {
-		ModuleWidget *moduleWidget = moduleFromJson(moduleJ, oldId);
+	ModuleWidget* moduleToRack(json_t* moduleJ, bool left, Rect& box, int& oldId) {
+		ModuleWidget* moduleWidget = moduleFromJson(moduleJ, oldId);
 		if (moduleWidget) {
 			moduleWidget->box.pos = left ? box.pos.minus(Vec(moduleWidget->box.size.x, 0)) : box.pos;
 			moduleWidget->module->id = -1;
@@ -692,9 +770,9 @@ struct StripWidget : ModuleWidget {
 			return moduleWidget;
 		}
 		else {
-			json_t *pluginSlugJ = json_object_get(moduleJ, "plugin");
+			json_t* pluginSlugJ = json_object_get(moduleJ, "plugin");
 			std::string pluginSlug = json_string_value(pluginSlugJ);
-			json_t *modelSlugJ = json_object_get(moduleJ, "model");
+			json_t* modelSlugJ = json_object_get(moduleJ, "model");
 			std::string modelSlug = json_string_value(modelSlugJ);
 			warningLog += string::f("Could not find module \"%s\" of plugin \"%s\"\n", modelSlug.c_str(), pluginSlug.c_str());
 			box = Rect(box.pos, Vec(0, 0));
@@ -707,35 +785,51 @@ struct StripWidget : ModuleWidget {
 	 * @rootJ json-representation of the STRIP-file
 	 * @modules maps old module ids the new modules
 	 */
-	void groupFromJson_modules(json_t *rootJ, std::map<int, ModuleWidget*> &modules) {
+	std::vector<history::Action*>* groupFromJson_modules(json_t* rootJ, std::map<int, ModuleWidget*>& modules) {
+		std::vector<history::Action*>* undoActions = new std::vector<history::Action*>;
+
 		if (module->mode == MODE_LEFTRIGHT || module->mode == MODE_RIGHT) {
 			Rect box = this->box;
-			json_t *rightModulesJ = json_object_get(rootJ, "rightModules");
+			json_t* rightModulesJ = json_object_get(rootJ, "rightModules");
 			if (rightModulesJ) {
-				json_t *moduleJ;
+				json_t* moduleJ;
 				size_t moduleIndex;
 				json_array_foreach(rightModulesJ, moduleIndex, moduleJ) {
 					int oldId;
 					box.pos = box.pos.plus(Vec(box.size.x, 0));
-					ModuleWidget *mw = moduleToRack(moduleJ, false, box, oldId);
+					ModuleWidget* mw = moduleToRack(moduleJ, false, box, oldId);
 					// mw could be NULL, just move on
 					modules[oldId] = mw;
+
+					// ModuleAdd history action
+					history::ModuleAdd* h = new history::ModuleAdd;
+					h->name = "create module";
+					h->setModule(mw);
+					undoActions->push_back(h);
 				}
 			}
 		}
 		if (module->mode == MODE_LEFTRIGHT || module->mode == MODE_LEFT) {
 			Rect box = this->box;
-			json_t *leftModulesJ = json_object_get(rootJ, "leftModules");
+			json_t* leftModulesJ = json_object_get(rootJ, "leftModules");
 			if (leftModulesJ) {
-				json_t *moduleJ;
+				json_t* moduleJ;
 				size_t moduleIndex;
 				json_array_foreach(leftModulesJ, moduleIndex, moduleJ) {
 					int oldId;
-					ModuleWidget *mw = moduleToRack(moduleJ, true, box, oldId);
+					ModuleWidget* mw = moduleToRack(moduleJ, true, box, oldId);
 					modules[oldId] = mw;
+
+					// ModuleAdd history action
+					history::ModuleAdd* h = new history::ModuleAdd;
+					h->name = "create module";
+					h->setModule(mw);
+					undoActions->push_back(h);
 				}
 			}
 		}
+
+		return undoActions;
 	}
 
 	/**
@@ -746,7 +840,7 @@ struct StripWidget : ModuleWidget {
 	 * @moduleJ json-representation of the module
 	 * @modules maps old module ids the new modules
 	 */
-	void groupFromJson_presets_fixMapping(json_t *moduleJ, std::map<int, ModuleWidget*> &modules) {
+	void groupFromJson_presets_fixMapping(json_t* moduleJ, std::map<int, ModuleWidget*>& modules) {
 		std::string pluginSlug = json_string_value(json_object_get(moduleJ, "plugin"));
 		std::string modelSlug = json_string_value(json_object_get(moduleJ, "model"));
 
@@ -755,19 +849,19 @@ struct StripWidget : ModuleWidget {
 			|| (pluginSlug == "Core" && modelSlug == "MIDI-Map"))) 
 			return;
 
-		json_t *dataJ = json_object_get(moduleJ, "data");
-		json_t *mapsJ = json_object_get(dataJ, "maps");
+		json_t* dataJ = json_object_get(moduleJ, "data");
+		json_t* mapsJ = json_object_get(dataJ, "maps");
 		if (mapsJ) {
-			json_t *mapJ;
+			json_t* mapJ;
 			size_t mapIndex;
 			json_array_foreach(mapsJ, mapIndex, mapJ) {
-				json_t *moduleIdJ = json_object_get(mapJ, "moduleId");
+				json_t* moduleIdJ = json_object_get(mapJ, "moduleId");
 				if (!moduleIdJ)
 					continue;
 				int oldId = json_integer_value(moduleIdJ);
 				if (oldId >= 0) {
 					int newId = -1;
-					ModuleWidget *mw = modules[oldId];
+					ModuleWidget* mw = modules[oldId];
 					if (mw != NULL) {
 						newId = mw->module->id;
 					}
@@ -783,37 +877,59 @@ struct StripWidget : ModuleWidget {
 	 * @json json-representation of the STRIP-file
 	 * @modules maps old module ids the new modules
 	 */
-	void groupFromJson_presets(json_t *rootJ, std::map<int, ModuleWidget*> &modules) {
-		json_t *rightModulesJ = json_object_get(rootJ, "rightModules");
+	std::vector<history::Action*>* groupFromJson_presets(json_t* rootJ, std::map<int, ModuleWidget*>& modules) {
+		std::vector<history::Action*>* undoActions = new std::vector<history::Action*>;
+
+		json_t* rightModulesJ = json_object_get(rootJ, "rightModules");
 		if (rightModulesJ) {
-			json_t *moduleJ;
+			json_t* moduleJ;
 			size_t moduleIndex;
 			json_array_foreach(rightModulesJ, moduleIndex, moduleJ) {
 				if (module->mode == MODE_LEFTRIGHT || module->mode == MODE_RIGHT) {
 					groupFromJson_presets_fixMapping(moduleJ, modules);
 					int oldId = json_integer_value(json_object_get(moduleJ, "id"));
-					ModuleWidget *mw = modules[oldId];
+					ModuleWidget* mw = modules[oldId];
 					if (mw != NULL) {
+						// history::ModuleChange
+						history::ModuleChange* h = new history::ModuleChange;
+						h->name = "load module preset";
+						h->moduleId = mw->module->id;
+						h->oldModuleJ = mw->toJson();
+
 						mw->fromJson(moduleJ);
+
+						h->newModuleJ = mw->toJson();
+						undoActions->push_back(h);
 					}
 				}
 			}
 		}
-		json_t *leftModulesJ = json_object_get(rootJ, "leftModules");
+		json_t* leftModulesJ = json_object_get(rootJ, "leftModules");
 		if (leftModulesJ) {
-			json_t *moduleJ;
+			json_t* moduleJ;
 			size_t moduleIndex;
 			json_array_foreach(leftModulesJ, moduleIndex, moduleJ) {
 				if (module->mode == MODE_LEFTRIGHT || module->mode == MODE_LEFT) {
 					groupFromJson_presets_fixMapping(moduleJ, modules);
 					int oldId = json_integer_value(json_object_get(moduleJ, "id"));
-					ModuleWidget *mw = modules[oldId];
+					ModuleWidget* mw = modules[oldId];
 					if (mw != NULL) {
+						// history::ModuleChange
+						history::ModuleChange* h = new history::ModuleChange;
+						h->name = "load module preset";
+						h->moduleId = mw->module->id;
+						h->oldModuleJ = mw->toJson();
+
 						mw->fromJson(moduleJ);
+
+						h->newModuleJ = mw->toJson();
+						undoActions->push_back(h);
 					}
 				}
 			}
 		}
+
+		return undoActions;
 	}
 
 	/**
@@ -822,34 +938,36 @@ struct StripWidget : ModuleWidget {
 	 * @rootJ json-representation of the STRIP-file
 	 * @modules maps old module ids the new modules
 	 */
-	void groupFromJson_cables(json_t *rootJ, std::map<int, ModuleWidget*> &modules) {
-		json_t *cablesJ = json_object_get(rootJ, "cables");
+	std::vector<history::Action*>* groupFromJson_cables(json_t* rootJ, std::map<int, ModuleWidget*>& modules) {
+		std::vector<history::Action*>* undoActions = new std::vector<history::Action*>;
+
+		json_t* cablesJ = json_object_get(rootJ, "cables");
 		if (cablesJ) {
-			json_t *cableJ;
+			json_t* cableJ;
 			size_t cableIndex;
 			json_array_foreach(cablesJ, cableIndex, cableJ) {
 				int outputModuleId = json_integer_value(json_object_get(cableJ, "outputModuleId"));
 				int outputId = json_integer_value(json_object_get(cableJ, "outputId"));
 				int inputModuleId = json_integer_value(json_object_get(cableJ, "inputModuleId"));
 				int inputId = json_integer_value(json_object_get(cableJ, "inputId"));
-				const char *colorStr = json_string_value(json_object_get(cableJ, "color"));
+				const char* colorStr = json_string_value(json_object_get(cableJ, "color"));
 
-				ModuleWidget *outputModule = modules[outputModuleId];
-				ModuleWidget *inputModule = modules[inputModuleId];
+				ModuleWidget* outputModule = modules[outputModuleId];
+				ModuleWidget* inputModule = modules[inputModuleId];
 				// In case one of the modules could not be loaded
 				if (!outputModule || !inputModule) continue;
 
-				CableWidget *cw = new CableWidget;
+				CableWidget* cw = new CableWidget;
 				if (colorStr) {
 					cw->color = color::fromHexString(colorStr);
 				}
-				for (PortWidget *port : outputModule->outputs) {
+				for (PortWidget* port : outputModule->outputs) {
 					if (port->portId == outputId) {
 						cw->setOutput(port);
 						break;
 					}
 				}
-				for (PortWidget *port : inputModule->inputs) {
+				for (PortWidget* port : inputModule->inputs) {
 					if (port->portId == inputId) {
 						cw->setInput(port);
 						break;
@@ -857,24 +975,31 @@ struct StripWidget : ModuleWidget {
 				}
 				if (cw->isComplete()) {
 					APP->scene->rack->addCable(cw);
+
+					// history::CableAdd
+					history::CableAdd* h = new history::CableAdd;
+					h->setCable(cw);
+					undoActions->push_back(h);
 				}
 			}
 		}
+
+		return undoActions;
 	}
 
 
-	void groupToJson(json_t *rootJ) {
+	void groupToJson(json_t* rootJ) {
 		// Add modules
 		std::set<ModuleWidget*> modules;
 		
 		float rightWidth = 0.f;
-		json_t *rightModulesJ = json_array();
+		json_t* rightModulesJ = json_array();
 		if (module->mode == MODE_LEFTRIGHT || module->mode == MODE_RIGHT) {
-			Module *m = module;
+			Module* m = module;
 			while (true) {
 				if (!m || m->rightExpander.moduleId < 0) break;
-				ModuleWidget *mw = APP->scene->rack->getModule(m->rightExpander.moduleId);
-				json_t *moduleJ = mw->toJson();
+				ModuleWidget* mw = APP->scene->rack->getModule(m->rightExpander.moduleId);
+				json_t* moduleJ = mw->toJson();
 				assert(moduleJ);
 				json_array_append_new(rightModulesJ, moduleJ);
 				modules.insert(mw);
@@ -884,13 +1009,13 @@ struct StripWidget : ModuleWidget {
 		}
 
 		float leftWidth = 0.f;
-		json_t *leftModulesJ = json_array();
+		json_t* leftModulesJ = json_array();
 		if (module->mode == MODE_LEFTRIGHT || module->mode == MODE_LEFT) {
-			Module *m = module;
+			Module* m = module;
 			while (true) {
 				if (!m || m->leftExpander.moduleId < 0) break;
-				ModuleWidget *mw = APP->scene->rack->getModule(m->leftExpander.moduleId);
-				json_t *moduleJ = mw->toJson();
+				ModuleWidget* mw = APP->scene->rack->getModule(m->leftExpander.moduleId);
+				json_t* moduleJ = mw->toJson();
 				assert(moduleJ);
 				json_array_append_new(leftModulesJ, moduleJ);
 				modules.insert(mw);
@@ -900,23 +1025,23 @@ struct StripWidget : ModuleWidget {
 		}
 
 		// Add cables
-		json_t *cablesJ = json_array();
+		json_t* cablesJ = json_array();
 		for (auto i = modules.begin(); i != modules.end(); ++i) {
-			ModuleWidget *outputModule = *i;
+			ModuleWidget* outputModule = *i;
 			// It is enough to check the outputs, as inputs don't matter when the other end is outside of the group
 			for (PortWidget* output : outputModule->outputs) {
-				for (CableWidget *cw : APP->scene->rack->getCablesOnPort(output)) {
-					if (!cw->isComplete()) 
+				for (CableWidget* cw : APP->scene->rack->getCablesOnPort(output)) {
+					if (!cw->isComplete())
 						continue;
 
 					PortWidget* input = cw->inputPort;
-					ModuleWidget *inputModule = APP->scene->rack->getModule(input->module->id);
-					if (modules.find(inputModule) == modules.end()) 
+					ModuleWidget* inputModule = APP->scene->rack->getModule(input->module->id);
+					if (modules.find(inputModule) == modules.end())
 						continue;
 
 					std::string colorStr = color::toHexString(cw->color);
 
-					json_t *cableJ = json_object();
+					json_t* cableJ = json_object();
 					json_object_set_new(cableJ, "outputModuleId", json_integer(output->module->id));
 					json_object_set_new(cableJ, "outputId", json_integer(output->portId));
 					json_object_set_new(cableJ, "inputModuleId", json_integer(input->module->id));
@@ -934,18 +1059,18 @@ struct StripWidget : ModuleWidget {
 		json_object_set_new(rootJ, "leftWidth", json_real(leftWidth));
 		json_object_set_new(rootJ, "cables", cablesJ);
 
-		json_t *versionJ = json_string(app::APP_VERSION.c_str());
+		json_t* versionJ = json_string(app::APP_VERSION.c_str());
 		json_object_set_new(rootJ, "version", versionJ);
 	}
 
 	void groupCopyClipboard() {
-		json_t *rootJ = json_object();
+		json_t* rootJ = json_object();
 		groupToJson(rootJ);
 
 		DEFER({
 			json_decref(rootJ);
 		});
-		char *moduleJson = json_dumps(rootJ, JSON_INDENT(2) | JSON_REAL_PRECISION(9));
+		char* moduleJson = json_dumps(rootJ, JSON_INDENT(2) | JSON_REAL_PRECISION(9));
 		DEFER({
 			free(moduleJson);
 		});
@@ -953,13 +1078,13 @@ struct StripWidget : ModuleWidget {
 	}
 
 	void groupCutClipboard() {
-		json_t *rootJ = json_object();
+		json_t* rootJ = json_object();
 		groupToJson(rootJ);
 
 		DEFER({
 			json_decref(rootJ);
 		});
-		char *moduleJson = json_dumps(rootJ, JSON_INDENT(2) | JSON_REAL_PRECISION(9));
+		char* moduleJson = json_dumps(rootJ, JSON_INDENT(2) | JSON_REAL_PRECISION(9));
 		DEFER({
 			free(moduleJson);
 		});
@@ -970,14 +1095,14 @@ struct StripWidget : ModuleWidget {
 	void groupSaveFile(std::string filename) {
 		INFO("Saving preset %s", filename.c_str());
 
-		json_t *rootJ = json_object();
+		json_t* rootJ = json_object();
 		groupToJson(rootJ);
 
 		DEFER({
 			json_decref(rootJ);
 		});
 
-		FILE *file = fopen(filename.c_str(), "w");
+		FILE* file = fopen(filename.c_str(), "w");
 		if (!file) {
 			std::string message = string::f("Could not write to patch file %s", filename.c_str());
 			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, message.c_str());
@@ -990,13 +1115,13 @@ struct StripWidget : ModuleWidget {
 	}
 
 	void groupSaveFileDialog() {
-		osdialog_filters *filters = osdialog_filters_parse(PRESET_FILTERS);
+		osdialog_filters* filters = osdialog_filters_parse(PRESET_FILTERS);
 		DEFER({
 			osdialog_filters_free(filters);
 		});
 
 		std::string dir = asset::user("patches");
-		char *path = osdialog_file(OSDIALOG_SAVE, dir.c_str(), "Untitled.vcvss", filters);
+		char* path = osdialog_file(OSDIALOG_SAVE, dir.c_str(), "Untitled.vcvss", filters);
 		if (!path) {
 			// No path selected
 			return;
@@ -1014,21 +1139,21 @@ struct StripWidget : ModuleWidget {
 		groupSaveFile(pathStr);
 	}
 
-	void groupFromJson(json_t *rootJ) {
+	void groupFromJson(json_t* rootJ) {
 		warningLog = "";
 
 		// Clear modules next to STRIP
-		groupClearSpace(rootJ);
+		std::vector<history::Action*>* h1 = groupClearSpace(rootJ);
 
 		// Maps old moduleId to the newly created module (with new id)
 		std::map<int, ModuleWidget*> modules;
 		// Add modules
-		groupFromJson_modules(rootJ, modules);
+		std::vector<history::Action*>* h2 = groupFromJson_modules(rootJ, modules);
 		// Load presets for modules, also fixes parameter mappings
-		groupFromJson_presets(rootJ, modules);
+		std::vector<history::Action*>* h3 = groupFromJson_presets(rootJ, modules);
 
 		// Add cables
-		groupFromJson_cables(rootJ, modules);
+		std::vector<history::Action*>* h4 = groupFromJson_cables(rootJ, modules);
 
 		// Does nothing, but fixes https://github.com/VCVRack/Rack/issues/1444 for Rack <= 1.1.1
 		APP->scene->rack->requestModulePos(this, this->box.pos);
@@ -1036,17 +1161,29 @@ struct StripWidget : ModuleWidget {
 		if (!warningLog.empty()) {
 			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, warningLog.c_str());
 		}
+
+		history::ComplexAction* complexAction = new history::ComplexAction;
+		complexAction->name = "stoermelder STRIP load";
+		for (history::Action* h : *h1) complexAction->push(h);
+		delete h1;
+		for (history::Action* h : *h2) complexAction->push(h);
+		delete h2;
+		for (history::Action* h : *h3) complexAction->push(h);
+		delete h3;
+		for (history::Action* h : *h4) complexAction->push(h);
+		delete h4;
+		APP->history->push(complexAction);
 	}
 
 	void groupPasteClipboard() {
-		const char *moduleJson = glfwGetClipboardString(APP->window->win);
+		const char* moduleJson = glfwGetClipboardString(APP->window->win);
 		if (!moduleJson) {
 			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, "Could not get text from clipboard.");
 			return;
 		}
 
 		json_error_t error;
-		json_t *rootJ = json_loads(moduleJson, 0, &error);
+		json_t* rootJ = json_loads(moduleJson, 0, &error);
 		if (!rootJ) {
 			std::string message = string::f("JSON parsing error at %s %d:%d %s", error.source, error.line, error.column, error.text);
 			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, message.c_str());
@@ -1062,7 +1199,7 @@ struct StripWidget : ModuleWidget {
 	void groupLoadFile(std::string filename) {
 		INFO("Loading preset %s", filename.c_str());
 
-		FILE *file = fopen(filename.c_str(), "r");
+		FILE* file = fopen(filename.c_str(), "r");
 		if (!file) {
 			std::string message = string::f("Could not load file %s", filename.c_str());
 			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, message.c_str());
@@ -1073,7 +1210,7 @@ struct StripWidget : ModuleWidget {
 		});
 
 		json_error_t error;
-		json_t *rootJ = json_loadf(file, 0, &error);
+		json_t* rootJ = json_loadf(file, 0, &error);
 		if (!rootJ) {
 			std::string message = string::f("File is not a valid file. JSON parsing error at %s %d:%d %s", error.source, error.line, error.column, error.text);
 			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, message.c_str());
@@ -1087,13 +1224,13 @@ struct StripWidget : ModuleWidget {
 	}
 
 	void groupLoadFileDialog() {
-		osdialog_filters *filters = osdialog_filters_parse(PRESET_FILTERS);
+		osdialog_filters* filters = osdialog_filters_parse(PRESET_FILTERS);
 		DEFER({
 			osdialog_filters_free(filters);
 		});
 
 		std::string dir = asset::user("patches");
-		char *path = osdialog_file(OSDIALOG_OPEN, dir.c_str(), NULL, filters);
+		char* path = osdialog_file(OSDIALOG_OPEN, dir.c_str(), NULL, filters);
 		if (!path) {
 			// No path selected
 			return;
@@ -1106,7 +1243,7 @@ struct StripWidget : ModuleWidget {
 	}
 
 
-	void onHoverKey(const event::HoverKey &e) override {
+	void onHoverKey(const event::HoverKey& e) override {
 		ModuleWidget::onHoverKey(e);
 		if (e.isConsumed())
 			return;
@@ -1129,12 +1266,12 @@ struct StripWidget : ModuleWidget {
 		}
 	}
 
-	void appendContextMenu(Menu *menu) override {
-		StripModule *module = dynamic_cast<StripModule*>(this->module);
+	void appendContextMenu(Menu* menu) override {
+		StripModule* module = dynamic_cast<StripModule*>(this->module);
 		assert(module);
 
 		struct ManualItem : MenuItem {
-			void onAction(const event::Action &e) override {
+			void onAction(const event::Action& e) override {
 				std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Strip.md");
 				t.detach();
 			}
@@ -1143,68 +1280,68 @@ struct StripWidget : ModuleWidget {
 		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
 		menu->addChild(new MenuSeparator());
 
-		OnModeMenuItem *onModeMenuItem = construct<OnModeMenuItem>(&MenuItem::text, "Port/Switch ON mode", &OnModeMenuItem::module, module);
+		OnModeMenuItem* onModeMenuItem = construct<OnModeMenuItem>(&MenuItem::text, "Port/Switch ON mode", &OnModeMenuItem::module, module);
 		onModeMenuItem->rightText = RIGHT_ARROW;
 		menu->addChild(onModeMenuItem);
 		menu->addChild(new MenuSeparator());
 
 		struct CutGroupMenuItem : MenuItem {
-			StripWidget *moduleWidget;
+			StripWidget* moduleWidget;
 
-			void onAction(const event::Action &e) override {
+			void onAction(const event::Action& e) override {
 				moduleWidget->groupCutClipboard();
 			}
 		};
 
 		struct CopyGroupMenuItem : MenuItem {
-			StripWidget *moduleWidget;
+			StripWidget* moduleWidget;
 
-			void onAction(const event::Action &e) override {
+			void onAction(const event::Action& e) override {
 				moduleWidget->groupCopyClipboard();
 			}
 		};
 
 		struct PasteGroupMenuItem : MenuItem {
-			StripWidget *moduleWidget;
+			StripWidget* moduleWidget;
 
-			void onAction(const event::Action &e) override {
+			void onAction(const event::Action& e) override {
 				moduleWidget->groupPasteClipboard();
 			}
 		};
 
 		struct LoadGroupMenuItem : MenuItem {
-			StripWidget *moduleWidget;
+			StripWidget* moduleWidget;
 
-			void onAction(const event::Action &e) override {
+			void onAction(const event::Action& e) override {
 				moduleWidget->groupLoadFileDialog();
 			}
 		};
 
 		struct SaveGroupMenuItem : MenuItem {
-			StripWidget *moduleWidget;
+			StripWidget* moduleWidget;
 
-			void onAction(const event::Action &e) override {
+			void onAction(const event::Action& e) override {
 				moduleWidget->groupSaveFileDialog();
 			}
 		};
 
-		ui::MenuLabel *modelLabel = new ui::MenuLabel;
+		ui::MenuLabel* modelLabel = new ui::MenuLabel;
 		modelLabel->text = "Strip";
 		menu->addChild(modelLabel);
 
-		CutGroupMenuItem *cutGroupMenuItem = construct<CutGroupMenuItem>(&MenuItem::text, "Cut", &CutGroupMenuItem::moduleWidget, this);
+		CutGroupMenuItem* cutGroupMenuItem = construct<CutGroupMenuItem>(&MenuItem::text, "Cut", &CutGroupMenuItem::moduleWidget, this);
 		menu->addChild(cutGroupMenuItem);
-		CopyGroupMenuItem *copyGroupMenuItem = construct<CopyGroupMenuItem>(&MenuItem::text, "Copy", &MenuItem::rightText, "Shift+C", &CopyGroupMenuItem::moduleWidget, this);
+		CopyGroupMenuItem* copyGroupMenuItem = construct<CopyGroupMenuItem>(&MenuItem::text, "Copy", &MenuItem::rightText, "Shift+C", &CopyGroupMenuItem::moduleWidget, this);
 		menu->addChild(copyGroupMenuItem);
-		PasteGroupMenuItem *pasteGroupMenuItem = construct<PasteGroupMenuItem>(&MenuItem::text, "Paste", &MenuItem::rightText, "Shift+V", &PasteGroupMenuItem::moduleWidget, this);
+		PasteGroupMenuItem* pasteGroupMenuItem = construct<PasteGroupMenuItem>(&MenuItem::text, "Paste", &MenuItem::rightText, "Shift+V", &PasteGroupMenuItem::moduleWidget, this);
 		menu->addChild(pasteGroupMenuItem);
-		LoadGroupMenuItem *loadGroupMenuItem = construct<LoadGroupMenuItem>(&MenuItem::text, "Load", &LoadGroupMenuItem::moduleWidget, this);
+		LoadGroupMenuItem* loadGroupMenuItem = construct<LoadGroupMenuItem>(&MenuItem::text, "Load", &LoadGroupMenuItem::moduleWidget, this);
 		menu->addChild(loadGroupMenuItem);
-		SaveGroupMenuItem *saveGroupMenuItem = construct<SaveGroupMenuItem>(&MenuItem::text, "Save as", &SaveGroupMenuItem::moduleWidget, this);
+		SaveGroupMenuItem* saveGroupMenuItem = construct<SaveGroupMenuItem>(&MenuItem::text, "Save as", &SaveGroupMenuItem::moduleWidget, this);
 		menu->addChild(saveGroupMenuItem);
 	}
 };
 
 } // namespace Strip
 
-Model *modelStrip = createModel<Strip::StripModule, Strip::StripWidget>("Strip");
+Model* modelStrip = createModel<Strip::StripModule, Strip::StripWidget>("Strip");
