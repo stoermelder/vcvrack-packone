@@ -190,6 +190,14 @@ struct ArenaModule : Module {
 		Module::onReset();
 	}
 
+	void onRandomize() override {
+		randomizeInputAmount();
+		randomizeInputRadius();
+		randomizeInputX();
+		randomizeInputY();
+		Module::onRandomize();
+	}
+
 	void process(const ProcessArgs& args) override {
 		float inNorm[IN_PORTS];
 		for (int j = 0; j < inportsUsed; j++) {
@@ -630,7 +638,7 @@ struct ArenaModule : Module {
 		}
 	}
 
-	void seqFlipHorizontically(int port) {
+	void seqFlipHorizontally(int port) {
 		for (int i = 0; i < seqData[port][seqSelected[port]].length; i++) {
 			seqData[port][seqSelected[port]].y[i] = 1.f - seqData[port][seqSelected[port]].y[i];
 		}
@@ -1013,7 +1021,7 @@ struct SeqModeMenuItem : MenuItem {
 		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "Trigger random 1-8", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::TRIG_RANDOM_8));
 		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "Trigger random 1-4", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::TRIG_RANDOM_4));
 		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "0..10V", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::VOLT));
-		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "C4-F5", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::C4));
+		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "C4-D#5", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::C4));
 		return menu;
 	}
 };
@@ -1984,10 +1992,10 @@ struct ArenaSeqEditWidget : OpaqueWidget {
 			}
 		};
 
-		struct SeqFlipHorizonticallyItem : MenuItem {
+		struct SeqFilpHorizontallyItem : MenuItem {
 			MODULE* module;
 			void onAction(const event::Action& e) override {
-				module->seqFlipHorizontically(module->seqEdit);
+				module->seqFlipHorizontally(module->seqEdit);
 			}
 		};
 
@@ -2031,7 +2039,7 @@ struct ArenaSeqEditWidget : OpaqueWidget {
 		menu->addChild(construct<SeqInterpolateMenuItem<MODULE>>(&MenuItem::text, "Interpolation", &SeqInterpolateMenuItem<MODULE>::module, module, &SeqInterpolateMenuItem<MODULE>::id, module->seqEdit));
 		menu->addChild(construct<MenuSeparator>());
 		menu->addChild(construct<SeqClearItem>(&MenuItem::text, "Clear", &SeqClearItem::module, module));
-		menu->addChild(construct<SeqFlipHorizonticallyItem>(&MenuItem::text, "Flip horizontically", &SeqFlipHorizonticallyItem::module, module));
+		menu->addChild(construct<SeqFilpHorizontallyItem>(&MenuItem::text, "Flip horizontally", &SeqFilpHorizontallyItem::module, module));
 		menu->addChild(construct<SeqFlipVerticallyItem>(&MenuItem::text, "Flip vertically", &SeqFlipVerticallyItem::module, module));
 		menu->addChild(construct<SeqRotateItem>(&MenuItem::text, "Rotate 45 degrees", &SeqRotateItem::module, module, &SeqRotateItem::angle, M_PI / 4.f));
 		menu->addChild(construct<SeqRotateItem>(&MenuItem::text, "Rotate 90 degrees", &SeqRotateItem::module, module, &SeqRotateItem::angle, M_PI / 2.f));
