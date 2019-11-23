@@ -1106,8 +1106,6 @@ struct AmountSlider : ui::Slider {
 		}
 	};
 
-
-
 	MODULE* module;
 	int id;
 	AmountChangeAction<MODULE>* h;
@@ -1169,7 +1167,7 @@ struct XYChangeAction : history::ModuleAction {
 // Screen widgets
 
 template < typename MODULE >
-struct ArenaScreenDragWidget : OpaqueWidget {
+struct ScreenDragWidget : OpaqueWidget {
 	const float radius = 10.f;
 	const float fontsize = 13.0f;
 
@@ -1185,7 +1183,7 @@ struct ArenaScreenDragWidget : OpaqueWidget {
 	math::Vec dragPos;
 	XYChangeAction* dragAction;
 
-	ArenaScreenDragWidget() {
+	ScreenDragWidget() {
 		font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
 		box.size = Vec(2 * radius, 2 * radius);
 	}
@@ -1318,10 +1316,10 @@ struct ArenaScreenDragWidget : OpaqueWidget {
 
 
 template < typename MODULE >
-struct ArenaInportScreenDragWidget : ArenaScreenDragWidget<MODULE> {
-	typedef ArenaScreenDragWidget<MODULE> AW;
+struct ScreenInportDragWidget : ScreenDragWidget<MODULE> {
+	typedef ScreenDragWidget<MODULE> AW;
 
-	ArenaInportScreenDragWidget() {
+	ScreenInportDragWidget() {
 		AW::color = color::WHITE;
 		AW::type = 0;
 	}
@@ -1359,7 +1357,7 @@ struct ArenaInportScreenDragWidget : ArenaScreenDragWidget<MODULE> {
 
 	void onButton(const event::Button& e) override {
 		if (AW::id + 1 > AW::module->inportsUsed) return;
-		ArenaScreenDragWidget<MODULE>::onButton(e);
+		ScreenDragWidget<MODULE>::onButton(e);
 	}
 
 	void createContextMenu() override {
@@ -1382,10 +1380,10 @@ struct ArenaInportScreenDragWidget : ArenaScreenDragWidget<MODULE> {
 };
 
 template < typename MODULE >
-struct ArenaMixportScreenDragWidget : ArenaScreenDragWidget<MODULE> {
-	typedef ArenaScreenDragWidget<MODULE> AW;
+struct ScreenMixportDragWidget : ScreenDragWidget<MODULE> {
+	typedef ScreenDragWidget<MODULE> AW;
 
-	ArenaMixportScreenDragWidget() {
+	ScreenMixportDragWidget() {
 		AW::color = color::YELLOW;
 		AW::type = 1;
 	}
@@ -1441,20 +1439,20 @@ struct ArenaMixportScreenDragWidget : ArenaScreenDragWidget<MODULE> {
 
 	void onButton(const event::Button& e) override {
 		if (AW::id + 1 > AW::module->mixportsUsed) return;
-		ArenaScreenDragWidget<MODULE>::onButton(e);
+		ScreenDragWidget<MODULE>::onButton(e);
 	}
 };
 
 
 template < typename MODULE >
-struct ArenaScreenWidget : OpaqueWidget {
+struct ScreenWidget : OpaqueWidget {
 	MODULE* module;
 
-	ArenaScreenWidget(MODULE* module, int inParamIdX, int inParamIdY, int mixParamIdX, int mixParamIdY) {
+	ScreenWidget(MODULE* module, int inParamIdX, int inParamIdY, int mixParamIdX, int mixParamIdY) {
 		this->module = module;
 		if (module) {
 			for (int i = 0; i < module->numInports; i++) {
-				ArenaInportScreenDragWidget<MODULE>* w = new ArenaInportScreenDragWidget<MODULE>;
+				ScreenInportDragWidget<MODULE>* w = new ScreenInportDragWidget<MODULE>;
 				w->module = module;
 				w->paramQuantityX = module->paramQuantities[inParamIdX + i];
 				w->paramQuantityY = module->paramQuantities[inParamIdY + i];
@@ -1462,7 +1460,7 @@ struct ArenaScreenWidget : OpaqueWidget {
 				addChild(w);
 			}
 			for (int i = 0; i < module->numMixports; i++) {
-				ArenaMixportScreenDragWidget<MODULE>* w = new ArenaMixportScreenDragWidget<MODULE>;
+				ScreenMixportDragWidget<MODULE>* w = new ScreenMixportDragWidget<MODULE>;
 				w->module = module;
 				w->paramQuantityX = module->paramQuantities[mixParamIdX + i];
 				w->paramQuantityY = module->paramQuantities[mixParamIdY + i];
@@ -1714,11 +1712,11 @@ struct ArenaScreenWidget : OpaqueWidget {
 
 
 template < typename MODULE >
-struct ArenaOpDisplay : LedDisplayChoice {
+struct OpLedDisplay : LedDisplayChoice {
 	MODULE* module;
 	int id;
 
-	ArenaOpDisplay() {
+	OpLedDisplay() {
 		color = nvgRGB(0xf0, 0xf0, 0xf0);
 		box.size = Vec(25.1f, 16.f);
 		textOffset = Vec(4.f, 11.5f);
@@ -2123,7 +2121,7 @@ struct SeqPresetMenuItem : MenuItem {
 // Seq-Edit widgets
 
 template < typename MODULE >
-struct ArenaSeqEditDragWidget : OpaqueWidget {
+struct SeqEditDragWidget : OpaqueWidget {
 	const float radius = 8.f;
 	const float fontsize = 13.0f;
 
@@ -2139,7 +2137,7 @@ struct ArenaSeqEditDragWidget : OpaqueWidget {
 	std::chrono::time_point<std::chrono::system_clock> timer;
 	bool timerClear;
 
-	ArenaSeqEditDragWidget() {
+	SeqEditDragWidget() {
 		font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
 		box.size = Vec(2 * radius, 2 * radius);
 	}
@@ -2270,22 +2268,22 @@ struct ArenaSeqEditDragWidget : OpaqueWidget {
 };
 
 template < typename MODULE >
-struct ArenaSeqEditWidget : OpaqueWidget {
+struct SeqEditWidget : OpaqueWidget {
 	MODULE* module;
 	std::shared_ptr<Font> font;
-	ArenaSeqEditDragWidget<MODULE>* recWidget;
+	SeqEditDragWidget<MODULE>* recWidget;
 	int mixParamIdX;
 	int mixParamIdY;
 	int lastSeqId = -1;
 	int lastSeqSelected = -1;
 
-	ArenaSeqEditWidget(MODULE* module, int mixParamIdX, int mixParamIdY) {
+	SeqEditWidget(MODULE* module, int mixParamIdX, int mixParamIdY) {
 		font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
 		this->module = module;
 		this->mixParamIdX = mixParamIdX;
 		this->mixParamIdY = mixParamIdY;
 
-		recWidget = new ArenaSeqEditDragWidget<MODULE>;
+		recWidget = new SeqEditDragWidget<MODULE>;
 		recWidget->module = module;
 		addChild(recWidget);
 	}
@@ -2493,11 +2491,11 @@ struct ArenaSeqEditWidget : OpaqueWidget {
 // Various widgets
 
 template < typename MODULE >
-struct ArenaSeqDisplay : LedDisplayChoice {
+struct SeqLedDisplay : LedDisplayChoice {
 	MODULE* module;
 	int id;
 
-	ArenaSeqDisplay() {
+	SeqLedDisplay() {
 		color = nvgRGB(0xf0, 0xf0, 0xf0);
 		box.size = Vec(16.9f, 16.f);
 		textOffset = Vec(3.f, 11.5f);
@@ -2536,7 +2534,7 @@ struct ArenaSeqDisplay : LedDisplayChoice {
 		}
 	}
 
-	void drawRedHalo(const DrawArgs &args) {
+	void drawRedHalo(const DrawArgs& args) {
 		float radiusX = box.size.x / 2.0;
 		float radiusY = box.size.x / 2.0;
 		float oradiusX = 2 * radiusX;
@@ -2558,7 +2556,7 @@ struct ArenaSeqDisplay : LedDisplayChoice {
 		ui::Menu* menu = createMenu();
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("MIX %i", id + 1)));
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<SeqMenuItem<MODULE>>(&MenuItem::text, "Sequence", &SeqMenuItem<MODULE>::module, module, &SeqMenuItem<MODULE>::id, id));
+		menu->addChild(construct<SeqMenuItem<MODULE>>(&MenuItem::text, "Motion-Sequence", &SeqMenuItem<MODULE>::module, module, &SeqMenuItem<MODULE>::id, id));
 		menu->addChild(construct<SeqInterpolateMenuItem<MODULE>>(&MenuItem::text, "Interpolation", &SeqInterpolateMenuItem<MODULE>::module, module, &SeqInterpolateMenuItem<MODULE>::id, id));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<SeqModeMenuItem<MODULE>>(&MenuItem::text, "SEQ-port", &SeqModeMenuItem<MODULE>::module, module, &SeqModeMenuItem<MODULE>::id, id));
@@ -2623,7 +2621,7 @@ struct ArenaWidget : ModuleWidget {
 			addParam(createParamCentered<StoermelderTrimpot>(Vec(x, 164.4f), module, MODULE::IN_Y_PARAM + i));
 			addInput(createInputCentered<StoermelderPort>(Vec(x, 198.9f), module, MODULE::IN_Y_INPUT + i));
 
-			ArenaOpDisplay<MODULE>* arenaOpDisplay = createWidgetCentered<ArenaOpDisplay<MODULE>>(Vec(x, 227.0f));
+			OpLedDisplay<MODULE>* arenaOpDisplay = createWidgetCentered<OpLedDisplay<MODULE>>(Vec(x, 227.0f));
 			arenaOpDisplay->module = module;
 			arenaOpDisplay->id = i;
 			addChild(arenaOpDisplay);
@@ -2634,12 +2632,12 @@ struct ArenaWidget : ModuleWidget {
 			addOutput(createOutputCentered<StoermelderPort>(Vec(x, 327.7f), module, MODULE::OUT_OUTPUT + i));
 		}
 
-		ArenaScreenWidget<MODULE>* screenWidget = new ArenaScreenWidget<MODULE>(module, MODULE::IN_X_POS, MODULE::IN_Y_POS, MODULE::MIX_X_POS, MODULE::MIX_Y_POS);
+		ScreenWidget<MODULE>* screenWidget = new ScreenWidget<MODULE>(module, MODULE::IN_X_POS, MODULE::IN_Y_POS, MODULE::MIX_X_POS, MODULE::MIX_Y_POS);
 		screenWidget->box.pos = Vec(213.2f, 42.1f);
 		screenWidget->box.size = Vec(293.6f, 296.0f);
 		addChild(screenWidget);
 
-		ArenaSeqEditWidget<MODULE>* seqEditWidget = new ArenaSeqEditWidget<MODULE>(module, MODULE::MIX_X_POS, MODULE::MIX_Y_POS);
+		SeqEditWidget<MODULE>* seqEditWidget = new SeqEditWidget<MODULE>(module, MODULE::MIX_X_POS, MODULE::MIX_Y_POS);
 		seqEditWidget->box.pos = screenWidget->box.pos;
 		seqEditWidget->box.size = screenWidget->box.size;
 		addChild(seqEditWidget);
@@ -2663,7 +2661,7 @@ struct ArenaWidget : ModuleWidget {
 			addOutput(createOutputCentered<StoermelderPort>(Vec(x, 327.7f), module, MODULE::MIX_OUTPUT + i));
 
 			addInput(createInputCentered<StoermelderPort>(Vec(x, 255.6f), module, MODULE::SEQ_INPUT + i));
-			ArenaSeqDisplay<MODULE>* arenaSeqDisplay1 = createWidgetCentered<ArenaSeqDisplay<MODULE>>(Vec(x, 227.0f));
+			SeqLedDisplay<MODULE>* arenaSeqDisplay1 = createWidgetCentered<SeqLedDisplay<MODULE>>(Vec(x, 227.0f));
 			arenaSeqDisplay1->module = module;
 			arenaSeqDisplay1->id = i;
 			addChild(arenaSeqDisplay1);
@@ -2673,7 +2671,7 @@ struct ArenaWidget : ModuleWidget {
 
 	void appendContextMenu(Menu* menu) override {
 		struct ManualItem : MenuItem {
-			void onAction(const event::Action &e) override {
+			void onAction(const event::Action& e) override {
 				std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Arena.md");
 				t.detach();
 			}
