@@ -330,7 +330,13 @@ struct MazeModule : Module {
 
 	void gridNextState(int i, int j) {
 		grid[i][j] = (GRIDSTATE)((grid[i][j] + 1) % 3);
-		gridCv[i][j] = random::uniform();
+		if (grid[i][j] == GRIDSTATE::ON) gridCv[i][j] = random::uniform();
+		gridDirty = true;
+	}
+
+	void gridSetState(int i, int j, GRIDSTATE s, float cv) {
+		grid[i][j] = s;
+		gridCv[i][j] = cv;
 		gridDirty = true;
 	}
 
@@ -433,14 +439,41 @@ struct ModuleStateMenuItem : MenuItem {
 	}
 };
 
+template < typename MODULE >
+struct GridCellChangeAction : history::ModuleAction {
+	int x, y;
+	GRIDSTATE oldGrid, newGrid;
+	float oldGridCv, newGridCv;
+
+	GridCellChangeAction() {
+		name = "stoermelder MAZE cell";
+	}
+
+	void undo() override {
+		app::ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
+		assert(mw);
+		MODULE* m = dynamic_cast<MODULE*>(mw->module);
+		assert(m);
+		m->gridSetState(x, y, oldGrid, oldGridCv);
+	}
+
+	void redo() override {
+		app::ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
+		assert(mw);
+		MODULE* m = dynamic_cast<MODULE*>(mw->module);
+		assert(m);
+		m->gridSetState(x, y, newGrid, newGridCv);
+	}
+};
+
 
 template < typename MODULE >
-struct SizeSlider : ui::Slider {
-	struct SizeQuantity : Quantity {
+struct GridSizeSlider : ui::Slider {
+	struct GridSizeQuantity : Quantity {
 		MODULE* module;
 		float v = -1.f;
 
-		SizeQuantity(MODULE* module) {
+		GridSizeQuantity(MODULE* module) {
 			this->module = module;
 		}
 		void setValue(float value) override {
@@ -478,10 +511,10 @@ struct SizeSlider : ui::Slider {
 		}
 	};
 
-	SizeSlider(MODULE* module) {
-		quantity = new SizeQuantity(module);
+	GridSizeSlider(MODULE* module) {
+		quantity = new GridSizeQuantity(module);
 	}
-	~SizeSlider() {
+	~GridSizeSlider() {
 		delete quantity;
 	}
 	void onDragMove(const event::DragMove& e) override {
@@ -492,21 +525,39 @@ struct SizeSlider : ui::Slider {
 };
 
 template < typename MODULE >
-struct RandomizeMenuItem : MenuItem {
+struct GridRandomizeMenuItem : MenuItem {
 	MODULE* module;
 	bool useRandom = true;
 	
-	void onAction(const event::Action &e) override {
+	void onAction(const event::Action& e) override {
+		// history::ModuleChange
+		history::ModuleChange* h = new history::ModuleChange;
+		h->name = "stoermelder MAZE grid randomize";
+		h->moduleId = module->id;
+		h->oldModuleJ = module->toJson();
+
 		module->gridRandomize(useRandom);
+
+		h->newModuleJ = module->toJson();
+		APP->history->push(h);
 	}
 };
 
 template < typename MODULE >
-struct ClearMenuItem : MenuItem {
+struct GridClearMenuItem : MenuItem {
 	MODULE* module;
 	
-	void onAction(const event::Action &e) override {
+	void onAction(const event::Action& e) override {
+		// history::ModuleChange
+		history::ModuleChange* h = new history::ModuleChange;
+		h->name = "stoermelder MAZE grid clear";
+		h->moduleId = module->id;
+		h->oldModuleJ = module->toJson();
+
 		module->gridClear();
+
+		h->newModuleJ = module->toJson();
+		APP->history->push(h);
 	}
 };
 
@@ -514,7 +565,7 @@ template < typename MODULE >
 struct RatchetingMenuItem : MenuItem {
 	MODULE* module;
 
-	void onAction(const event::Action &e) override {
+	void onAction(const event::Action& e) override {
 		module->ratchetingEnabled ^= true;
 	}
 
@@ -534,7 +585,7 @@ struct RatchetingProbMenuItem : MenuItem {
 		MODULE* module;
 		float ratchetingProb;
 		
-		void onAction(const event::Action &e) override {
+		void onAction(const event::Action& e) override {
 			module->ratchetingSetProb(ratchetingProb);
 		}
 
@@ -911,8 +962,21 @@ struct MazeScreenWidget : OpaqueWidget, MazeDrawHelper<MODULE> {
 			if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
 				int x = (int)std::floor((e.pos.x / box.size.x) * module->usedSize);
 				int y = (int)std::floor((e.pos.y / box.size.y) * module->usedSize);
+
+				// History
+				GridCellChangeAction<MODULE>* h = new GridCellChangeAction<MODULE>;
+				h->moduleId = module->id;
+				h->x = x;
+				h->y = y;
+				h->oldGrid = module->grid[x][y];
+				h->oldGridCv = module->gridCv[x][y];
+
 				module->gridNextState(x, y);
 				
+				h->newGrid = module->grid[x][y];
+				h->newGridCv = module->gridCv[x][y];
+				APP->history->push(h);
+
 				e.consume(this);
 			}
 			if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
@@ -931,13 +995,13 @@ struct MazeScreenWidget : OpaqueWidget, MazeDrawHelper<MODULE> {
 		menu->addChild(construct<RatchetingProbMenuItem<MODULE>>(&MenuItem::text, "Ratcheting probability", &RatchetingProbMenuItem<MODULE>::module, module));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Grid"));
-		SizeSlider<MODULE>* sizeSlider = new SizeSlider<MODULE>(module);
+		GridSizeSlider<MODULE>* sizeSlider = new GridSizeSlider<MODULE>(module);
 		sizeSlider->box.size.x = 200.0;
 		menu->addChild(sizeSlider);
 
-		menu->addChild(construct<RandomizeMenuItem<MODULE>>(&MenuItem::text, "Randomize", &RandomizeMenuItem<MODULE>::module, module));
-		menu->addChild(construct<RandomizeMenuItem<MODULE>>(&MenuItem::text, "Randomize certainty", &RandomizeMenuItem<MODULE>::module, module, &RandomizeMenuItem<MODULE>::useRandom, false));
-		menu->addChild(construct<ClearMenuItem<MODULE>>(&MenuItem::text, "Clear", &ClearMenuItem<MODULE>::module, module));
+		menu->addChild(construct<GridRandomizeMenuItem<MODULE>>(&MenuItem::text, "Randomize", &GridRandomizeMenuItem<MODULE>::module, module));
+		menu->addChild(construct<GridRandomizeMenuItem<MODULE>>(&MenuItem::text, "Randomize certainty", &GridRandomizeMenuItem<MODULE>::module, module, &GridRandomizeMenuItem<MODULE>::useRandom, false));
+		menu->addChild(construct<GridClearMenuItem<MODULE>>(&MenuItem::text, "Clear", &GridClearMenuItem<MODULE>::module, module));
 	}
 };
 
@@ -1002,7 +1066,7 @@ struct MazeWidget32 : ModuleWidget {
 		assert(module);
 
 		struct ManualItem : MenuItem {
-			void onAction(const event::Action &e) override {
+			void onAction(const event::Action& e) override {
 				std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Maze.md");
 				t.detach();
 			}
