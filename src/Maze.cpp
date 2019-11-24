@@ -1035,30 +1035,30 @@ struct MazeWidget32 : ModuleWidget {
 		addInput(createInputCentered<StoermelderPort>(Vec(23.8f, 256.0f), module, MODULE::SHIFT_L_INPUT));
 		addInput(createInputCentered<StoermelderPort>(Vec(306.2f, 256.0f), module, MODULE::SHIFT_R_INPUT));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(116.8f, 292.2f), module, MODULE::CLK_INPUT + 0));
-		addInput(createInputCentered<StoermelderPort>(Vec(116.8f, 327.6f), module, MODULE::CLK_INPUT + 1));
-		addInput(createInputCentered<StoermelderPort>(Vec(213.6f, 292.2f), module, MODULE::CLK_INPUT + 2));
-		addInput(createInputCentered<StoermelderPort>(Vec(213.6f, 327.6f), module, MODULE::CLK_INPUT + 3));
+		addInput(createInputCentered<StoermelderPort>(Vec(119.4f, 292.2f), module, MODULE::CLK_INPUT + 0));
+		addInput(createInputCentered<StoermelderPort>(Vec(119.4f, 327.6f), module, MODULE::CLK_INPUT + 1));
+		addInput(createInputCentered<StoermelderPort>(Vec(210.6f, 292.2f), module, MODULE::CLK_INPUT + 2));
+		addInput(createInputCentered<StoermelderPort>(Vec(210.6f, 327.6f), module, MODULE::CLK_INPUT + 3));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(144.0f, 292.2f), module, MODULE::RESET_INPUT + 0));
-		addInput(createInputCentered<StoermelderPort>(Vec(144.0f, 327.6f), module, MODULE::RESET_INPUT + 1));
-		addInput(createInputCentered<StoermelderPort>(Vec(186.5f, 292.2f), module, MODULE::RESET_INPUT + 2));
-		addInput(createInputCentered<StoermelderPort>(Vec(186.5f, 327.6f), module, MODULE::RESET_INPUT + 3));
+		addInput(createInputCentered<StoermelderPort>(Vec(146.6f, 292.2f), module, MODULE::RESET_INPUT + 0));
+		addInput(createInputCentered<StoermelderPort>(Vec(146.6f, 327.6f), module, MODULE::RESET_INPUT + 1));
+		addInput(createInputCentered<StoermelderPort>(Vec(183.4f, 292.2f), module, MODULE::RESET_INPUT + 2));
+		addInput(createInputCentered<StoermelderPort>(Vec(183.4f, 327.6f), module, MODULE::RESET_INPUT + 3));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(84.1f, 292.2f), module, MODULE::TURN_INPUT + 0));
-		addInput(createInputCentered<StoermelderPort>(Vec(84.1f, 327.6f), module, MODULE::TURN_INPUT + 1));
-		addInput(createInputCentered<StoermelderPort>(Vec(245.7f, 292.2f), module, MODULE::TURN_INPUT + 2));
-		addInput(createInputCentered<StoermelderPort>(Vec(245.7f, 327.6f), module, MODULE::TURN_INPUT + 3));
+		addInput(createInputCentered<StoermelderPort>(Vec(82.8f, 292.2f), module, MODULE::TURN_INPUT + 0));
+		addInput(createInputCentered<StoermelderPort>(Vec(82.8f, 327.6f), module, MODULE::TURN_INPUT + 1));
+		addInput(createInputCentered<StoermelderPort>(Vec(247.2f, 292.2f), module, MODULE::TURN_INPUT + 2));
+		addInput(createInputCentered<StoermelderPort>(Vec(247.2f, 327.6f), module, MODULE::TURN_INPUT + 3));
 
 		addOutput(createOutputCentered<StoermelderPort>(Vec(51.9f, 292.2f), module, MODULE::TRIG_OUTPUT + 0));
 		addOutput(createOutputCentered<StoermelderPort>(Vec(51.9f, 327.6f), module, MODULE::TRIG_OUTPUT + 1));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(277.8f, 292.2f), module, MODULE::TRIG_OUTPUT + 2));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(277.8f, 327.6f), module, MODULE::TRIG_OUTPUT + 3));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(278.2f, 292.2f), module, MODULE::TRIG_OUTPUT + 2));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(278.2f, 327.6f), module, MODULE::TRIG_OUTPUT + 3));
 
-		addOutput(createOutputCentered<StoermelderPort>(Vec(24.7f, 292.2f), module, MODULE::CV_OUTPUT + 0));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(24.7f, 327.6f), module, MODULE::CV_OUTPUT + 1));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(304.9f, 292.2f), module, MODULE::CV_OUTPUT + 2));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(304.9f, 327.6f), module, MODULE::CV_OUTPUT + 3));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(23.8f, 292.2f), module, MODULE::CV_OUTPUT + 0));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(23.8f, 327.6f), module, MODULE::CV_OUTPUT + 1));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(306.2f, 292.2f), module, MODULE::CV_OUTPUT + 2));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(306.2f, 327.6f), module, MODULE::CV_OUTPUT + 3));
 	}
 
 	void appendContextMenu(Menu* menu) override {
