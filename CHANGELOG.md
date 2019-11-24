@@ -4,8 +4,13 @@
     - New module, 2-dimensional XY-Mixer for 8 sound sources with various modulation targets and graphical interface
 - Module [MAZE](./docs/Maze.md)
     - New module, 4 channel trigger-sequencer running on a 2-dimensional grid
+- Module [µMAP](./docs/CVMapMicro.md)
+    - Fixed meaningless tooltip on Map-button
 - Module [MIDI-CAT](./docs/MidiCat.md)
     - Fixed velocity-handling on note messages if in toggle-mode (does not need vel 127 anymore)
+- Module [STRIP](./docs/Strip.md)
+    - Added utilization for Rack's undo-history on cutting strips and pasting/loading-strips (#11)
+    - Added utilization for Rack's undo-history on enable/disable or randomize if triggered manually (#11)
 - Module [ReMOVE Lite](./docs/ReMove.md)
     - Added option to start playback automatically after recording 
     - Added SMTH-parameter for linear smoothing especially on jumps at sequence end and sequence change (#14)

@@ -8,6 +8,42 @@ namespace CVMapMicro {
 
 static const float UINIT = 0;
 
+
+template < typename MODULE >
+struct MapParamQuantity : ParamQuantity {
+	MODULE* module;
+	std::string getParamName() {
+		if (!module)
+			return "";
+		ParamHandle* paramHandle = &module->paramHandles[0];
+		if (paramHandle->moduleId < 0)
+			return "";
+		ModuleWidget* mw = APP->scene->rack->getModule(paramHandle->moduleId);
+		if (!mw)
+			return "";
+		// Get the Module from the ModuleWidget instead of the ParamHandle.
+		// I think this is more elegant since this method is called in the app world instead of the engine world.
+		Module* m = mw->module;
+		if (!m)
+			return "";
+		int paramId = paramHandle->paramId;
+		if (paramId >= (int) m->params.size())
+			return "";
+		ParamQuantity* paramQuantity = m->paramQuantities[paramId];
+		std::string s;
+		s += mw->model->name;
+		s += " ";
+		s += paramQuantity->label;
+		return s;
+	}
+
+	std::string getDisplayValueString() override {
+		std::string name = getParamName();
+		return name != "" ? "Mapped to \"" + name + "\"" : "Unmapped";
+	}
+};
+
+
 struct CVMapMicroModule : CVMapModule<1> {
 	enum ParamIds {
 		MAP_PARAM,
@@ -37,9 +73,12 @@ struct CVMapMicroModule : CVMapModule<1> {
 
 	CVMapMicroModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		configParam(MAP_PARAM, 0.f, 1.f, 0.f, "Map");
-		configParam(OFFSET_PARAM, 0.f, 1.f, 0.f, "Offset for the input signal");
-		configParam(SCALE_PARAM, -2.f, 2.f, 1.f, "Scaling for the input signal");
+		configParam<MapParamQuantity<CVMapMicroModule>>(MAP_PARAM, 0.f, 1.f, 0.f, "µMAP");
+		MapParamQuantity<CVMapMicroModule>* pq = dynamic_cast<MapParamQuantity<CVMapMicroModule>*>(paramQuantities[MAP_PARAM]);
+		pq->module = this;
+
+		configParam(OFFSET_PARAM, 0.f, 1.f, 0.f, "Input-offset", "%", 0.f, 100.f);
+		configParam(SCALE_PARAM, -2.f, 2.f, 1.f, "Input-scaling", "x");
 
 		CVMapModule<1>::paramHandles[0].text = "µMAP";
 		lightDivider.setDivision(1024);
@@ -48,8 +87,8 @@ struct CVMapMicroModule : CVMapModule<1> {
 
 	void process(const ProcessArgs& args) override {
 		if (inputs[INPUT].isConnected()) {
-			ParamQuantity *paramQuantity = getParamQuantity(0);
-			if (paramQuantity != NULL) {
+			ParamQuantity* paramQuantity = getParamQuantity(0);
+			if (paramQuantity) {
 				// Set ParamQuantity
 				float v = inputs[INPUT].getVoltage();
 				if (bipolarInput)
@@ -68,16 +107,16 @@ struct CVMapMicroModule : CVMapModule<1> {
 				v = clamp(v, 0.f, 1.f);
 
 				// If lastValue is unitialized set it to its current value, only executed once
-				if (lastValue[0] == UINIT) {
+				if (lastValue[0] == UINIT)
 					lastValue[0] = v;
-				}
 
 				if (lockParameterChanges || lastValue[0] != v) {
 					paramQuantity->setScaledValue(v);
 					lastValue[0] = v;
 
 					if (outputs[OUTPUT].isConnected()) {
-						if (invertedOutput) v = 1 - v;
+						if (invertedOutput)
+							v = 1 - v;
 						if (bipolarInput)
 							v = rescale(v, 0.f, 1.f, -5.f, 5.f);
 						else
@@ -140,16 +179,16 @@ struct MapButton : LEDBezel {
 				struct UnmapItem : MenuItem {
 					CVMapMicroModule* module;
 					int id;
-					void onAction(const event::Action &e) override {
+					void onAction(const event::Action& e) override {
 						module->clearMap(0);
 					}
 				};
 				menu->addChild(construct<UnmapItem>(&MenuItem::text, "Unmap", &UnmapItem::module, module, &UnmapItem::id, id));
 
 				struct IndicateItem : MenuItem {
-					CVMapMicroModule *module;
+					CVMapMicroModule* module;
 					int id;
-					void onAction(const event::Action &e) override {
+					void onAction(const event::Action& e) override {
 						ParamHandle* paramHandle = &module->paramHandles[id];
 						ModuleWidget* mw = APP->scene->rack->getModule(paramHandle->moduleId);
 						module->paramHandleIndicator[id].indicate(mw);
@@ -163,7 +202,7 @@ struct MapButton : LEDBezel {
 		}
 	}
 
-	void onSelect(const event::Select &e) override {
+	void onSelect(const event::Select& e) override {
 		if (!module)
 			return;
 
@@ -172,7 +211,7 @@ struct MapButton : LEDBezel {
 		module->enableLearn(id);
 	}
 
-	void onDeselect(const event::Deselect &e) override {
+	void onDeselect(const event::Deselect& e) override {
 		if (!module)
 			return;
 		// Check if a ParamWidget was touched
@@ -252,7 +291,7 @@ struct CVMapMicroWidget : ModuleWidget {
 		assert(module);
 
 		struct ManualItem : MenuItem {
-			void onAction(const event::Action &e) override {
+			void onAction(const event::Action& e) override {
 				std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/CVMapMicro.md");
 				t.detach();
 			}
@@ -264,7 +303,7 @@ struct CVMapMicroWidget : ModuleWidget {
 		struct LockItem : MenuItem {
 			CVMapMicroModule* module;
 
-			void onAction(const event::Action &e) override {
+			void onAction(const event::Action& e) override {
 				module->lockParameterChanges ^= true;
 			}
 
@@ -277,7 +316,7 @@ struct CVMapMicroWidget : ModuleWidget {
 		struct UniBiItem : MenuItem {
 			CVMapMicroModule* module;
 
-			void onAction(const event::Action &e) override {
+			void onAction(const event::Action& e) override {
 				module->bipolarInput ^= true;
 			}
 
@@ -290,7 +329,7 @@ struct CVMapMicroWidget : ModuleWidget {
 		struct SignalOutputItem : MenuItem {
 			CVMapMicroModule* module;
 
-			void onAction(const event::Action &e) override {
+			void onAction(const event::Action& e) override {
 				module->invertedOutput ^= true;
 			}
 
@@ -302,7 +341,7 @@ struct CVMapMicroWidget : ModuleWidget {
 
 		menu->addChild(construct<LockItem>(&MenuItem::text, "Parameter changes", &LockItem::module, module));
 		menu->addChild(construct<UniBiItem>(&MenuItem::text, "Voltage range", &UniBiItem::module, module));
-		menu->addChild(construct<SignalOutputItem>(&MenuItem::text, "Signal output", &SignalOutputItem::module, module));
+		menu->addChild(construct<SignalOutputItem>(&MenuItem::text, "OUT-port", &SignalOutputItem::module, module));
 	}
 };
 
