@@ -147,6 +147,63 @@ struct StoermelderPort : app::SvgPort {
 	}
 };
 
+template <typename TBase>
+struct StoermelderPortLight : TBase {
+	float size = 24.8f;
+
+	StoermelderPortLight() {
+		this->box.size = math::Vec(size, size);
+	}
+
+	void drawLight(const widget::Widget::DrawArgs& args) override {
+		float radius = size / 2.0f;
+		float radius2 = 22.2f / 2.0f;
+
+		// Background
+		if (TBase::bgColor.a > 0.0) {
+			nvgBeginPath(args.vg);
+			nvgCircle(args.vg, radius, radius, radius);
+			nvgFillColor(args.vg, TBase::bgColor);
+			nvgFill(args.vg);
+		}
+
+		// Foreground
+		if (TBase::color.a > 0.0) {
+			nvgBeginPath(args.vg);
+			nvgCircle(args.vg, radius, radius, radius);
+			nvgCircle(args.vg, radius, radius, radius2);
+			nvgPathWinding(args.vg, NVG_HOLE);	// Mark second circle as a hole.
+			nvgFillColor(args.vg, TBase::color);
+			nvgFill(args.vg);
+		}
+
+		// Border
+		if (TBase::borderColor.a > 0.0) {
+			nvgBeginPath(args.vg);
+			nvgCircle(args.vg, radius, radius, radius);
+			nvgStrokeWidth(args.vg, 0.5);
+			nvgStrokeColor(args.vg, TBase::borderColor);
+			nvgStroke(args.vg);
+		}
+	}
+
+	void drawHalo(const widget::Widget::DrawArgs& args) override {
+		float radius = size / 2.0;
+		float oradius = 2.0 * radius;
+
+		nvgBeginPath(args.vg);
+		nvgRect(args.vg, radius - oradius, radius - oradius, 2 * oradius, 2 * oradius);
+
+		NVGpaint paint;
+		NVGcolor icol = color::mult(TBase::color, 0.07);
+		NVGcolor ocol = nvgRGB(0, 0, 0);
+		paint = nvgRadialGradient(args.vg, radius, radius, radius, oradius, icol, ocol);
+		nvgFillPaint(args.vg, paint);
+		nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
+		nvgFill(args.vg);
+	}
+};
+
 
 template < typename LIGHT = BlueLight, int COLORS = 1>
 struct PolyLedWidget : Widget {
