@@ -188,8 +188,8 @@ struct StoermelderPortLight : TBase {
 	}
 
 	void drawHalo(const widget::Widget::DrawArgs& args) override {
-		float radius = size / 2.0;
-		float oradius = 2.0 * radius;
+		float radius = size / 2.0f;
+		float oradius = 2.5f * radius;
 
 		nvgBeginPath(args.vg);
 		nvgRect(args.vg, radius - oradius, radius - oradius, 2 * oradius, 2 * oradius);

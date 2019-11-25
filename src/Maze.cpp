@@ -49,6 +49,8 @@ struct MazeModule : Module {
 		NUM_OUTPUTS
 	};
 	enum LightIds {
+		ENUMS(TRIG_LIGHT, NUM_PORTS),
+		ENUMS(CV_LIGHT, NUM_PORTS * 2),
 		NUM_LIGHTS
 	};
 
@@ -109,8 +111,11 @@ struct MazeModule : Module {
 	MODULESTATE currentState = MODULESTATE::GRID;
 	bool gridDirty = true;
 
+	dsp::ClockDivider lightDivider;
+
 	MazeModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+		lightDivider.setDivision(128);
 		onReset();
 	}
 
@@ -229,6 +234,22 @@ struct MazeModule : Module {
 
 			outputs[TRIG_OUTPUT + i].setVoltage(outGate);
 			outputs[CV_OUTPUT + i].setVoltage(outCv);
+		}
+
+		// Set channel lights infrequently
+		if (lightDivider.process()) {
+			float s = args.sampleTime * lightDivider.division;
+			for (int i = 0; i < NUM_PORTS; i++) {
+				float l = outputs[TRIG_OUTPUT + i].isConnected() && outputs[TRIG_OUTPUT + i].getVoltage() > 0.f;
+				lights[TRIG_LIGHT + i].setSmoothBrightness(l, s);
+
+				float l1 = outputs[CV_OUTPUT + i].getVoltage() * outputs[CV_OUTPUT + i].isConnected();
+				float l2 = l1;
+				if (l1 > 0.f) l1 = rescale(l1, 0.f, 5.f, 0.f, 1.f);
+				lights[CV_LIGHT + i * 2].setSmoothBrightness(l1, s);
+				if (l2 < 0.f) l2 = rescale(l2, -5.f, 0.f, 1.f, 0.f);
+				lights[CV_LIGHT + i * 2 + 1].setSmoothBrightness(l2, s);
+			}
 		}
 	}
 
@@ -666,18 +687,18 @@ struct MazeGridWidget : FramebufferWidget {
 						case GRIDSTATE::ON:
 							nvgBeginPath(args.vg);
 							nvgRect(args.vg, i * sizeX + stroke / 2.f, j * sizeY + stroke / 2.f, sizeX - stroke, sizeY - stroke);
-							nvgFillColor(args.vg, color::mult(gridColor, 0.55f));
+							nvgFillColor(args.vg, color::mult(gridColor, 0.7f));
 							nvgFill(args.vg);
 							break;
 						case GRIDSTATE::RANDOM:
 							nvgBeginPath(args.vg);
 							nvgRect(args.vg, i * sizeX + stroke, j * sizeY + stroke, sizeX - stroke * 2.f, sizeY - stroke * 2.f);
 							nvgStrokeWidth(args.vg, stroke);
-							nvgStrokeColor(args.vg, color::mult(gridColor, 0.45f));
+							nvgStrokeColor(args.vg, color::mult(gridColor, 0.6f));
 							nvgStroke(args.vg);
 							nvgBeginPath(args.vg);
 							nvgRect(args.vg, i * sizeX + sizeX * 0.25f, j * sizeY + sizeY * 0.25f, sizeX * 0.5f, sizeY * 0.5f);
-							nvgFillColor(args.vg, color::mult(gridColor, 0.3f));
+							nvgFillColor(args.vg, color::mult(gridColor, 0.4f));
 							nvgFill(args.vg);
 							break;
 						case GRIDSTATE::OFF:
@@ -1050,14 +1071,22 @@ struct MazeWidget32 : ModuleWidget {
 		addInput(createInputCentered<StoermelderPort>(Vec(247.2f, 292.2f), module, MODULE::TURN_INPUT + 2));
 		addInput(createInputCentered<StoermelderPort>(Vec(247.2f, 327.6f), module, MODULE::TURN_INPUT + 3));
 
+		addChild(createLightCentered<StoermelderPortLight<GreenLight>>(Vec(51.9f, 292.2f), module, MODULE::TRIG_LIGHT + 0));
 		addOutput(createOutputCentered<StoermelderPort>(Vec(51.9f, 292.2f), module, MODULE::TRIG_OUTPUT + 0));
+		addChild(createLightCentered<StoermelderPortLight<GreenLight>>(Vec(51.9f, 327.6f), module, MODULE::TRIG_LIGHT + 1));
 		addOutput(createOutputCentered<StoermelderPort>(Vec(51.9f, 327.6f), module, MODULE::TRIG_OUTPUT + 1));
+		addChild(createLightCentered<StoermelderPortLight<GreenLight>>(Vec(278.2f, 292.2f), module, MODULE::TRIG_LIGHT + 2));
 		addOutput(createOutputCentered<StoermelderPort>(Vec(278.2f, 292.2f), module, MODULE::TRIG_OUTPUT + 2));
+		addChild(createLightCentered<StoermelderPortLight<GreenLight>>(Vec(278.2f, 327.6f), module, MODULE::TRIG_LIGHT + 3));
 		addOutput(createOutputCentered<StoermelderPort>(Vec(278.2f, 327.6f), module, MODULE::TRIG_OUTPUT + 3));
 
+		addChild(createLightCentered<StoermelderPortLight<GreenRedLight>>(Vec(23.8f, 292.2f), module, MODULE::CV_LIGHT + 0));
 		addOutput(createOutputCentered<StoermelderPort>(Vec(23.8f, 292.2f), module, MODULE::CV_OUTPUT + 0));
+		addChild(createLightCentered<StoermelderPortLight<GreenRedLight>>(Vec(23.8f, 327.6f), module, MODULE::CV_LIGHT + 2));
 		addOutput(createOutputCentered<StoermelderPort>(Vec(23.8f, 327.6f), module, MODULE::CV_OUTPUT + 1));
+		addChild(createLightCentered<StoermelderPortLight<GreenRedLight>>(Vec(306.2f, 292.2f), module, MODULE::CV_LIGHT + 4));
 		addOutput(createOutputCentered<StoermelderPort>(Vec(306.2f, 292.2f), module, MODULE::CV_OUTPUT + 2));
+		addChild(createLightCentered<StoermelderPortLight<GreenRedLight>>(Vec(306.2f, 327.6f), module, MODULE::CV_LIGHT + 6));
 		addOutput(createOutputCentered<StoermelderPort>(Vec(306.2f, 327.6f), module, MODULE::CV_OUTPUT + 3));
 	}
 
