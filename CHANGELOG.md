@@ -1,9 +1,11 @@
 ### 1.3.0 (in development)
 
 - Module [ARENA](./docs/Arena.md)
-    - New module, 2-dimensional XY-Mixer for 8 sound sources with various modulation targets and graphical interface
+    - New module, 2-dimensional XY-Mixer for 8 sources with various modulation targets and graphical interface
 - Module [MAZE](./docs/Maze.md)
-    - New module, 4 channel trigger-sequencer running on a 2-dimensional grid
+    - New module, 4 channel sequencer running on a 2-dimensional grid
+- Module [INFIX8](./docs/Infix.md)
+    - New module, 8 channel variant of INFIX
 - Module [µMAP](./docs/CVMapMicro.md)
     - Fixed meaningless tooltip on Map-button
 - Module [MIDI-CAT](./docs/MidiCat.md)

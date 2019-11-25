@@ -63,6 +63,13 @@
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Infix.md"
 		},
 		{
+			"slug": "Infix8",
+			"name": "INFIX8",
+			"description": "Insert for polyphonic cables",
+			"tags": ["Utility", "Polyphonic"],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Infix.md"
+		},
+		{
 			"slug": "Strip",
 			"name": "STRIP",
 			"description": "Manage a group of modules by using the expander-mechanism, providing load, save, copy, paste, disable, enable and randomize",

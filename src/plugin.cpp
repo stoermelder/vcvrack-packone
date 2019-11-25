@@ -12,7 +12,8 @@ void init(rack::Plugin *p) {
 	p->addModel(modelRotorA);
 	p->addModel(modelReMoveLite);
 	p->addModel(modelBolt);
-	p->addModel(modelInfix);
+	p->addModel(modelInfix16);
+	p->addModel(modelInfix8);
 	p->addModel(modelStrip);
 	p->addModel(modelEightFace);
 	p->addModel(modelMidiCat);
