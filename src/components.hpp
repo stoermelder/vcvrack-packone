@@ -3,20 +3,21 @@
 
 
 struct LongPressButton {
-	enum Events {
+	enum Event {
 		NO_PRESS,
 		SHORT_PRESS,
 		LONG_PRESS
 	};
 
+	Param* param;
 	float pressedTime = 0.f;
 	dsp::BooleanTrigger trigger;
 
-	Events step(Param &param) {
-		Events result = NO_PRESS;
-		bool pressed = param.value > 0.f;
+	inline Event process(float sampleTime) {
+		Event result = NO_PRESS;
+		bool pressed = param->value > 0.f;
 		if (pressed && pressedTime >= 0.f) {
-			pressedTime += APP->engine->getSampleTime();
+			pressedTime += sampleTime;
 			if (pressedTime >= 1.f) {
 				pressedTime = -1.f;
 				result = LONG_PRESS;

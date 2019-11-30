@@ -92,17 +92,21 @@ struct EightFaceModule : Module {
 	dsp::SchmittTrigger slotTrigger;
 	dsp::SchmittTrigger resetTrigger;
 	dsp::Timer resetTimer;
+
 	dsp::ClockDivider lightDivider;
+	dsp::ClockDivider buttonDivider;
 
 	EightFaceModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configParam(MODE_PARAM, 0, 1, 0, "Switch Read/write mode");
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			configParam(PRESET_PARAM + i, 0, 1, 0, string::f("Preset slot %d", i + 1));
+			typeButtons[i].param = &params[PRESET_PARAM + i];
 			presetSlotUsed[i] = false;
 		}
 
 		lightDivider.setDivision(512);
+		buttonDivider.setDivision(4);
 		onReset();
 		worker = new std::thread(&EightFaceModule::workerProcess, this);
 	}
@@ -199,29 +203,35 @@ struct EightFaceModule : Module {
 					}
 
 					// Buttons
-					for (int i = 0; i < NUM_PRESETS; i++) {
-						switch (typeButtons[i].step(params[PRESET_PARAM + i])) {
-							default:
-							case LongPressButton::NO_PRESS:
-								break;
-							case LongPressButton::SHORT_PRESS:
-								presetLoad(t, i, slotCvMode == SLOTCVMODE_ARM, true); break;
-							case LongPressButton::LONG_PRESS:
-								presetSetCount(i + 1); break;
+					if (buttonDivider.process()) {
+						float sampleTime = args.sampleTime * buttonDivider.division;
+						for (int i = 0; i < NUM_PRESETS; i++) {
+							switch (typeButtons[i].process(sampleTime)) {
+								default:
+								case LongPressButton::NO_PRESS:
+									break;
+								case LongPressButton::SHORT_PRESS:
+									presetLoad(t, i, slotCvMode == SLOTCVMODE_ARM, true); break;
+								case LongPressButton::LONG_PRESS:
+									presetSetCount(i + 1); break;
+							}
 						}
 					}
 				}
 				// Write mode
 				else {
-					for (int i = 0; i < NUM_PRESETS; i++) {
-						switch (typeButtons[i].step(params[PRESET_PARAM + i])) {
-							default:
-							case LongPressButton::NO_PRESS:
-								break;
-							case LongPressButton::SHORT_PRESS:
-								presetSave(t, i); break;
-							case LongPressButton::LONG_PRESS:
-								presetClear(i); break;
+					if (buttonDivider.process()) {
+						float sampleTime = args.sampleTime * buttonDivider.division;
+						for (int i = 0; i < NUM_PRESETS; i++) {
+							switch (typeButtons[i].process(sampleTime)) {
+								default:
+								case LongPressButton::NO_PRESS:
+									break;
+								case LongPressButton::SHORT_PRESS:
+									presetSave(t, i); break;
+								case LongPressButton::LONG_PRESS:
+									presetClear(i); break;
+							}
 						}
 					}
 				}
