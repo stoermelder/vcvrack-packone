@@ -1,4 +1,4 @@
-### 1.3.0 (in development)
+### 1.3.0
 
 - Module [ARENA](./docs/Arena.md)
     - New module, 2-dimensional XY-Mixer for 8 sources with various modulation targets and graphical interface
