@@ -5,7 +5,7 @@
 
 
 struct ParamHandleIndicator {
-	ParamHandle *handle;
+	ParamHandle* handle;
 	NVGcolor color;
 		
 	int indicateCount = 0;
@@ -22,7 +22,7 @@ struct ParamHandleIndicator {
 		}
 	}
 
-	void indicate(ModuleWidget *mw) {
+	void indicate(ModuleWidget* mw) {
 		if (indicateCount > 0) return;
 		if (mw) {
 			// Move the view to center the mapped module
@@ -84,7 +84,7 @@ struct MapModule : Module {
 		mapLen = 1;
 	}
 
-	void process(const ProcessArgs &args) override {
+	void process(const ProcessArgs& args) override {
 		if (indicatorDivider.process()) {
 			float t = indicatorDivider.getDivision() * args.sampleTime;
 			for (size_t i = 0; i < MAX_CHANNELS; i++) {
@@ -94,14 +94,14 @@ struct MapModule : Module {
 		}
 	}
 
-	ParamQuantity *getParamQuantity(int id) {
+	ParamQuantity* getParamQuantity(int id) {
 		// Get Module
-		Module *module = paramHandles[id].module;
+		Module* module = paramHandles[id].module;
 		if (!module)
 			return NULL;
 		// Get ParamQuantity
 		int paramId = paramHandles[id].paramId;
-		ParamQuantity *paramQuantity = module->paramQuantities[paramId];
+		ParamQuantity* paramQuantity = module->paramQuantities[paramId];
 		if (!paramQuantity)
 			return NULL;
 		if (!paramQuantity->isBounded())
@@ -174,13 +174,13 @@ struct MapModule : Module {
 	}
 
  
-	json_t *dataToJson() override {
-		json_t *rootJ = json_object();
+	json_t* dataToJson() override {
+		json_t* rootJ = json_object();
 		json_object_set_new(rootJ, "textScrolling", json_boolean(textScrolling));
 
-		json_t *mapsJ = json_array();
+		json_t* mapsJ = json_array();
 		for (int id = 0; id < mapLen; id++) {
-			json_t *mapJ = json_object();
+			json_t* mapJ = json_object();
 			json_object_set_new(mapJ, "moduleId", json_integer(paramHandles[id].moduleId));
 			json_object_set_new(mapJ, "paramId", json_integer(paramHandles[id].paramId));
 			json_array_append_new(mapsJ, mapJ);
@@ -193,12 +193,12 @@ struct MapModule : Module {
 	void dataFromJson(json_t *rootJ) override {
 		clearMaps();
 
-		json_t *textScrollingJ = json_object_get(rootJ, "textScrolling");
+		json_t* textScrollingJ = json_object_get(rootJ, "textScrolling");
 		textScrolling = json_boolean_value(textScrollingJ);
 
-		json_t *mapsJ = json_object_get(rootJ, "maps");
+		json_t* mapsJ = json_object_get(rootJ, "maps");
 		if (mapsJ) {
-			json_t *mapJ;
+			json_t* mapJ;
 			size_t mapIndex;
 			json_array_foreach(mapsJ, mapIndex, mapJ) {
 				json_t *moduleIdJ = json_object_get(mapJ, "moduleId");
@@ -233,21 +233,21 @@ struct CVMapModule : MapModule<MAX_CHANNELS> {
 		MapModule<MAX_CHANNELS>::process(args);
 	}
 
-	json_t *dataToJson() override {
-		json_t *rootJ = MapModule<MAX_CHANNELS>::dataToJson();
+	json_t* dataToJson() override {
+		json_t* rootJ = MapModule<MAX_CHANNELS>::dataToJson();
 		json_object_set_new(rootJ, "lockParameterChanges", json_boolean(lockParameterChanges));
 		json_object_set_new(rootJ, "bipolarInput", json_boolean(bipolarInput));
 
 		return rootJ;
 	}
 
-	void dataFromJson(json_t *rootJ) override {
+	void dataFromJson(json_t* rootJ) override {
 		MapModule<MAX_CHANNELS>::dataFromJson(rootJ);
 
-		json_t *lockParameterChangesJ = json_object_get(rootJ, "lockParameterChanges");
+		json_t* lockParameterChangesJ = json_object_get(rootJ, "lockParameterChanges");
 		lockParameterChanges = json_boolean_value(lockParameterChangesJ);
 
-		json_t *bipolarInputJ = json_object_get(rootJ, "bipolarInput");
+		json_t* bipolarInputJ = json_object_get(rootJ, "bipolarInput");
 		bipolarInput = json_boolean_value(bipolarInputJ);
 	}
 };
@@ -255,9 +255,10 @@ struct CVMapModule : MapModule<MAX_CHANNELS> {
 
 // Widgets
 
+
 template< int MAX_CHANNELS, typename MODULE >
 struct MapModuleChoice : LedDisplayChoice {
-	MODULE *module;
+	MODULE* module;
 	bool processEvents = true;
 	int id;
 
@@ -270,11 +271,11 @@ struct MapModuleChoice : LedDisplayChoice {
 		color = nvgRGB(0xf0, 0xf0, 0xf0);
 	}
 
-	void setModule(MODULE *module) {
+	void setModule(MODULE* module) {
 		this->module = module;
 	}
 
-	void onButton(const event::Button &e) override {
+	void onButton(const event::Button& e) override {
 		e.stopPropagating();
 		if (!module)
 			return;
@@ -287,25 +288,25 @@ struct MapModuleChoice : LedDisplayChoice {
 			e.consume(this);
 
 			if (module->paramHandles[id].moduleId >= 0) {
-				ui::Menu *menu = createMenu();
+				ui::Menu* menu = createMenu();
 				std::string header = "Parameter \"" + getParamName() + "\"";
 				menu->addChild(createMenuLabel(header));
 
 				struct UnmapItem : MenuItem {
-					MODULE *module;
+					MODULE* module;
 					int id;
-					void onAction(const event::Action &e) override {
+					void onAction(const event::Action& e) override {
 						module->clearMap(id);
 					}
 				};
 				menu->addChild(construct<UnmapItem>(&MenuItem::text, "Unmap", &UnmapItem::module, module, &UnmapItem::id, id));
 
 				struct IndicateItem : MenuItem {
-					MODULE *module;
+					MODULE* module;
 					int id;
-					void onAction(const event::Action &e) override {
-						ParamHandle *paramHandle = &module->paramHandles[id];
-						ModuleWidget *mw = APP->scene->rack->getModule(paramHandle->moduleId);
+					void onAction(const event::Action& e) override {
+						ParamHandle* paramHandle = &module->paramHandles[id];
+						ModuleWidget* mw = APP->scene->rack->getModule(paramHandle->moduleId);
 						module->paramHandleIndicator[id].indicate(mw);
 					}
 				};
@@ -318,10 +319,10 @@ struct MapModuleChoice : LedDisplayChoice {
 		}
 	}
 
-	virtual void appendContextMenu(Menu *menu) {
+	virtual void appendContextMenu(Menu* menu) {
 	}
 
-	void onSelect(const event::Select &e) override {
+	void onSelect(const event::Select& e) override {
 		if (!module)
 			return;
 
@@ -333,7 +334,7 @@ struct MapModuleChoice : LedDisplayChoice {
 		module->enableLearn(id);
 	}
 
-	void onDeselect(const event::Deselect &e) override {
+	void onDeselect(const event::Deselect& e) override {
 		if (!module)
 			return;
 		if (!processEvents)
@@ -418,7 +419,7 @@ struct MapModuleChoice : LedDisplayChoice {
 			return "";
 		if (id >= module->mapLen)
 			return "";
-		ParamHandle *paramHandle = &module->paramHandles[id];
+		ParamHandle* paramHandle = &module->paramHandles[id];
 		if (paramHandle->moduleId < 0)
 			return "";
 		ModuleWidget *mw = APP->scene->rack->getModule(paramHandle->moduleId);
@@ -426,13 +427,13 @@ struct MapModuleChoice : LedDisplayChoice {
 			return "";
 		// Get the Module from the ModuleWidget instead of the ParamHandle.
 		// I think this is more elegant since this method is called in the app world instead of the engine world.
-		Module *m = mw->module;
+		Module* m = mw->module;
 		if (!m)
 			return "";
 		int paramId = paramHandle->paramId;
 		if (paramId >= (int) m->params.size())
 			return "";
-		ParamQuantity *paramQuantity = m->paramQuantities[paramId];
+		ParamQuantity* paramQuantity = m->paramQuantities[paramId];
 		std::string s;
 		s += mw->model->name;
 		s += " ";
@@ -443,9 +444,9 @@ struct MapModuleChoice : LedDisplayChoice {
 
 template< int MAX_CHANNELS, typename MODULE, typename CHOICE = MapModuleChoice<MAX_CHANNELS, MODULE> >
 struct MapModuleDisplay : LedDisplay {
-	MODULE *module;
-	ScrollWidget *scroll;
-	CHOICE *choices[MAX_CHANNELS];
+	MODULE* module;
+	ScrollWidget* scroll;
+	CHOICE* choices[MAX_CHANNELS];
 	LedDisplaySeparator *separators[MAX_CHANNELS];
 
 	~MapModuleDisplay() {
@@ -454,7 +455,7 @@ struct MapModuleDisplay : LedDisplay {
 		}
 	}
 
-	void setModule(MODULE *module) {
+	void setModule(MODULE* module) {
 		this->module = module;
 
 		scroll = new ScrollWidget;
@@ -462,7 +463,7 @@ struct MapModuleDisplay : LedDisplay {
 		scroll->box.size.y = box.size.y - scroll->box.pos.y;
 		addChild(scroll);
 
-		LedDisplaySeparator *separator = createWidget<LedDisplaySeparator>(scroll->box.pos);
+		LedDisplaySeparator* separator = createWidget<LedDisplaySeparator>(scroll->box.pos);
 		separator->box.size.x = box.size.x;
 		addChild(separator);
 		separators[0] = separator;
@@ -470,13 +471,13 @@ struct MapModuleDisplay : LedDisplay {
 		Vec pos;
 		for (int id = 0; id < MAX_CHANNELS; id++) {
 			if (id > 0) {
-				LedDisplaySeparator *separator = createWidget<LedDisplaySeparator>(pos);
+				LedDisplaySeparator* separator = createWidget<LedDisplaySeparator>(pos);
 				separator->box.size.x = box.size.x;
 				scroll->container->addChild(separator);
 				separators[id] = separator;
 			}
 
-			CHOICE *choice = createWidget<CHOICE>(pos);
+			CHOICE* choice = createWidget<CHOICE>(pos);
 			choice->box.size.x = box.size.x;
 			choice->id = id;
 			choice->setModule(module);
