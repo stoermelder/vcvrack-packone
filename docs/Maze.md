@@ -12,7 +12,7 @@ The grid is the main part of MAZE with up to four color-coded "cursors". Cursors
 
 If "Ratcheting" is disabled by context menu option each half filled cell generates one single gate pulse with probability of 50%.
 
-![MAZE ratcheting probability](./MAZE-ratchet.png)
+![MAZE ratcheting probability](./Maze-ratchet.png)
 
 A mouse click into a grid cell cycles through the three different states. Additionally each cell holds a randomly choosen CV value that is sent to the CV port everytime a trigger is raised. The CV value of a cell cannot be changed manually but each cycle of the cell-states sets a new value. While the number of triggers of half cells is randomly chosen everytime a cursor enters them the CV values are constant.
 
@@ -22,13 +22,13 @@ The grid can be sized from 2x2 up to 32x32 with the slider on the context menu. 
 
 Each cursor has his own clock and reset port. Every clock-trigger moves the cursor one cell forward according to the current progressing direction. A reset-trigger returns the cursor to its start position which can be set on the Edit-mode of the grid. Triggers on CLK and RESET of the yellow channel are normalized to the other ports if no cable is connected.
 
-![MAZE clock and reset](./MAZE-clock.gif)
+![MAZE clock and reset](./Maze-clock.gif)
 
 ### TURN ports 
 
 A trigger on the TURN-port turns the current progressing direction of the cursor 90 degrees to the right or 180 degrees (this setting is found in Edit-mode). Triggers of the yellow channel are normalized to the other ports.
 
-![MAZE turn](./MAZE-turn.gif)
+![MAZE turn](./Maze-turn.gif)
 
 ### SHIFT/L and SHIFT/R ports
 
@@ -36,7 +36,7 @@ Triggers on SHIFT/L or SHIFT/R shift all cursors one lane to the left or to the 
 
 ### Edit-mode of the grid
 
-![MAZE Edit-mode](./MAZE-edit1.gif)
+![MAZE Edit-mode](./Maze-edit1.gif)
 
 The grid can be switched to "Edit-mode" on the context menu. While in Edit-mode the reset-positions of each cursor can be modified by drag and drop. Everytime RESET is triggered the respective cursor will return to this cell on the grid.
 
@@ -46,7 +46,7 @@ There are some additional settings on the context menu of each cursor:
 - Behaviour of TURN-triggers: 90 degrees (default) or 180 degrees
 - Output range of the respective CV-port, default is 0..3V
 
-![MAZE Edit-mode context menu](./MAZE-edit2.png)
+![MAZE Edit-mode context menu](./Maze-edit2.png)
 
 ### Bonus tips
 

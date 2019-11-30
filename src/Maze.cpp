@@ -644,8 +644,8 @@ struct MazeGridWidget : FramebufferWidget {
 
 		void draw(const Widget::DrawArgs& args) override {
 			if (!module) return;
-			float sizeX = box.size.x / module->usedSize;
-			float sizeY = box.size.y / module->usedSize;
+			float sizeX = box.size.x / float(module->usedSize);
+			float sizeY = box.size.y / float(module->usedSize);
 
 			// Draw background
 			nvgBeginPath(args.vg);
@@ -662,8 +662,8 @@ struct MazeGridWidget : FramebufferWidget {
 				else if (module->usedSize % 3 == 0) { if (i % 3 == 0) a = 0.2f; }
 				else if (module->usedSize % 5 == 0) { if (i % 5 == 0) a = 0.2f; }
 				nvgBeginPath(args.vg);
-				nvgMoveTo(args.vg, sizeX * i, 0.f);
-				nvgLineTo(args.vg, sizeX * i, box.size.y);
+				nvgMoveTo(args.vg, sizeX * float(i), 0.f);
+				nvgLineTo(args.vg, sizeX * float(i), box.size.y);
 				nvgStrokeColor(args.vg, color::mult(color::WHITE, a));
 				nvgStroke(args.vg);
 			}
@@ -673,11 +673,18 @@ struct MazeGridWidget : FramebufferWidget {
 				else if (module->usedSize % 3 == 0) { if (i % 3 == 0) a = 0.2f; }
 				else if (module->usedSize % 5 == 0) { if (i % 5 == 0) a = 0.2f; }
 				nvgBeginPath(args.vg);
-				nvgMoveTo(args.vg, 0.f, sizeY * i);
-				nvgLineTo(args.vg, box.size.x, sizeY * i);
+				nvgMoveTo(args.vg, 0.f, sizeY * float(i));
+				nvgLineTo(args.vg, box.size.x, sizeY * float(i));
 				nvgStrokeColor(args.vg, color::mult(color::WHITE, a));
 				nvgStroke(args.vg);
 			}
+
+			// Draw outer rectangle
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+			nvgStrokeWidth(args.vg, 0.7f);
+			nvgStrokeColor(args.vg, color::mult(color::WHITE, 0.25f));
+			nvgStroke(args.vg);
 
 			// Draw grid cells
 			float stroke = 0.7f;
