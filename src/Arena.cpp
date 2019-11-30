@@ -152,19 +152,19 @@ struct ArenaModule : Module {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		// inputs
 		for (int i = 0; i < IN_PORTS; i++) {
-			configParam(IN_X_POS + i, 0.0f, 1.0f, 0.1f + float(i) * (0.8f / (IN_PORTS - 1)), string::f("IN %i x-pos", i + 1));
-			configParam(IN_Y_POS + i, 0.0f, 1.0f, 0.1f, string::f("IN %i y-pos", i + 1));
-			configParam(IN_X_PARAM + i, -1.f, 1.f, 0.f, string::f("IN %i x-pos attenuverter", i + 1), "x");
-			configParam(IN_Y_PARAM + i, -1.f, 1.f, 0.f, string::f("IN %i y-pos attenuverter", i + 1), "x");
-			configParam(MOD_PARAM + i, -1.f, 1.f, 0.f, string::f("IN %i Op attenuverter", i + 1), "x");
+			configParam(IN_X_POS + i, 0.0f, 1.0f, 0.1f + float(i) * (0.8f / (IN_PORTS - 1)), string::f("Channel IN-%i x-pos", i + 1));
+			configParam(IN_Y_POS + i, 0.0f, 1.0f, 0.1f, string::f("Channel IN-%i y-pos", i + 1));
+			configParam(IN_X_PARAM + i, -1.f, 1.f, 0.f, string::f("Channel IN-%i x-pos attenuverter", i + 1), "x");
+			configParam(IN_Y_PARAM + i, -1.f, 1.f, 0.f, string::f("Channel IN-%i y-pos attenuverter", i + 1), "x");
+			configParam(MOD_PARAM + i, -1.f, 1.f, 0.f, string::f("Channel IN-%i Mod attenuverter", i + 1), "x");
 		}
 		// outputs
 		for (int i = 0; i < MIX_PORTS; i++) {
-			configParam(MIX_VOL_PARAM + i, 0.0f, 2.0f, 1.0f, string::f("MIX %i volume", i + 1));
-			configParam(MIX_X_POS + i, 0.0f, 1.0f, 0.1f + float(i) * (0.8f / (MIX_PORTS - 1)), string::f("MIX %i x-pos", i + 1));
-			configParam(MIX_Y_POS + i, 0.0f, 1.0f, 0.9f, string::f("MIX %i y-pos", i + 1));
-			configParam(MIX_X_PARAM + i, -1.f, 1.f, 0.f, string::f("MIX %i x-pos attenuverter", i + 1), "x");
-			configParam(MIX_Y_PARAM + i, -1.f, 1.f, 0.f, string::f("MIX %i y-pos attenuverter", i + 1), "x");
+			configParam(MIX_VOL_PARAM + i, 0.0f, 2.0f, 1.0f, string::f("Channel MIX-%i volume", i + 1));
+			configParam(MIX_X_POS + i, 0.0f, 1.0f, 0.1f + float(i) * (0.8f / (MIX_PORTS - 1)), string::f("Channel MIX-%i x-pos", i + 1));
+			configParam(MIX_Y_POS + i, 0.0f, 1.0f, 0.9f, string::f("Channel MIX-%i y-pos", i + 1));
+			configParam(MIX_X_PARAM + i, -1.f, 1.f, 0.f, string::f("Channel MIX-%i x-pos attenuverter", i + 1), "x");
+			configParam(MIX_Y_PARAM + i, -1.f, 1.f, 0.f, string::f("Channel MIX-%i y-pos attenuverter", i + 1), "x");
 		}
 		onReset();
 		lightDivider.setDivision(512);
@@ -1164,6 +1164,112 @@ struct XYChangeAction : history::ModuleAction {
 };
 
 
+// Seq-Edit menu etc.
+
+template < typename MODULE >
+struct SeqMenuItem : MenuItem {
+	SeqMenuItem() {
+		rightText = RIGHT_ARROW;
+	}
+
+	struct SeqItem : MenuItem {
+		MODULE* module;
+		int id;
+		int seq;
+		
+		void onAction(const event::Action& e) override {
+			module->seqSelected[id] = seq;
+		}
+
+		void step() override {
+			rightText = module->seqSelected[id] == seq ? "✔" : "";
+			MenuItem::step();
+		}
+	};
+
+	MODULE* module;
+	int id;
+	Menu* createChildMenu() override {
+		Menu* menu = new Menu;
+		for (int i = 0; i < SEQ_COUNT; i++) {
+			menu->addChild(construct<SeqItem>(&MenuItem::text, string::f("%02u", i + 1), &SeqItem::module, module, &SeqItem::id, id, &SeqItem::seq, i));
+		}
+		return menu;
+	}
+};
+
+
+template < typename MODULE >
+struct SeqModeMenuItem : MenuItem {
+	SeqModeMenuItem() {
+		rightText = RIGHT_ARROW;
+	}
+
+	struct SeqModeItem : MenuItem {
+		MODULE* module;
+		int id;
+		SEQMODE seqMode;
+		
+		void onAction(const event::Action& e) override {
+			if (module->seqEdit != id)
+				module->seqMode[id] = seqMode;
+		}
+
+		void step() override {
+			rightText = module->seqMode[id] == seqMode ? "✔" : "";
+			MenuItem::step();
+		}
+	};
+
+	MODULE* module;
+	int id;
+	Menu* createChildMenu() override {
+		Menu* menu = new Menu;
+		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "Trigger forward", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::TRIG_FWD));
+		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "Trigger reverse", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::TRIG_REV));
+		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "Trigger random 1-16", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::TRIG_RANDOM_16));
+		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "Trigger random 1-8", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::TRIG_RANDOM_8));
+		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "Trigger random 1-4", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::TRIG_RANDOM_4));
+		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "0..10V", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::VOLT));
+		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "C4-D#5", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::C4));
+		return menu;
+	}
+};
+
+
+template < typename MODULE >
+struct SeqInterpolateMenuItem : MenuItem {
+	SeqInterpolateMenuItem() {
+		rightText = RIGHT_ARROW;
+	}
+
+	struct SeqInterpolateItem : MenuItem {
+		MODULE* module;
+		int id;
+		SEQINTERPOLATE seqInterpolate;
+		
+		void onAction(const event::Action& e) override {
+			module->seqInterpolate[id] = seqInterpolate;
+		}
+
+		void step() override {
+			rightText = module->seqInterpolate[id] == seqInterpolate ? "✔" : "";
+			MenuItem::step();
+		}
+	};
+
+	MODULE* module;
+	int id;
+	Menu* createChildMenu() override {
+		Menu* menu = new Menu;
+		menu->addChild(construct<SeqInterpolateItem>(&MenuItem::text, "Linear", &SeqInterpolateItem::module, module, &SeqInterpolateItem::id, id, &SeqInterpolateItem::seqInterpolate, SEQINTERPOLATE::LINEAR));
+		menu->addChild(construct<SeqInterpolateItem>(&MenuItem::text, "Cubic", &SeqInterpolateItem::module, module, &SeqInterpolateItem::id, id, &SeqInterpolateItem::seqInterpolate, SEQINTERPOLATE::CUBIC));
+		return menu;
+	}
+};
+
+
+
 // Screen widgets
 
 template < typename MODULE >
@@ -1176,6 +1282,7 @@ struct ScreenDragWidget : OpaqueWidget {
 	ParamQuantity* paramQuantityX;
 	ParamQuantity* paramQuantityY;
 	NVGcolor color = nvgRGB(0x66, 0x66, 0x0);
+	NVGcolor textColor = nvgRGB(0x66, 0x66, 0x0);
 	int id = -1;
 	int type = -1;
 	
@@ -1238,10 +1345,12 @@ struct ScreenDragWidget : OpaqueWidget {
 		nvgStrokeWidth(args.vg, 0.8f);
 		nvgStroke(args.vg);
 
+		nvgGlobalCompositeOperation(args.vg, NVG_ATOP);
+
 		// Draw label
 		nvgFontSize(args.vg, fontsize);
 		nvgFontFaceId(args.vg, font->handle);
-		nvgFillColor(args.vg, color);
+		nvgFillColor(args.vg, textColor);
 		nvgTextBox(args.vg, c.x - 3.f, c.y + 4.f, 120, string::f("%i", id + 1).c_str(), NULL);
 	}
 
@@ -1343,13 +1452,18 @@ struct ScreenInportDragWidget : ScreenDragWidget<MODULE> {
 			nvgBeginPath(args.vg);
 			nvgEllipse(args.vg, c.x, c.y, sizeX, sizeY);
 			nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
-			nvgStrokeColor(args.vg, color::mult(AW::color, 0.8f));
-			nvgStrokeWidth(args.vg, 1.0f);
+			nvgStrokeColor(args.vg, color::mult(AW::color, 0.7f));
+			nvgStrokeWidth(args.vg, 0.6f);
 			nvgStroke(args.vg);
 			nvgFillColor(args.vg, color::mult(AW::color, 0.1f));
 			nvgFill(args.vg);
 			nvgResetScissor(args.vg);
 			nvgRestore(args.vg);
+
+			AW::textColor = nvgRGBA(0, 16, 90, 200);
+		}
+		else {
+			AW::textColor = AW::color;
 		}
 
 		AW::draw(args);
@@ -1362,7 +1476,7 @@ struct ScreenInportDragWidget : ScreenDragWidget<MODULE> {
 
 	void createContextMenu() override {
 		ui::Menu* menu = createMenu();
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("IN %i", AW::id + 1).c_str()));
+		menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("Channel IN-%i", AW::id + 1).c_str()));
 
 		AmountSlider<MODULE>* amountSlider = new AmountSlider<MODULE>(AW::module, AW::id);
 		amountSlider->box.size.x = 200.0;
@@ -1391,6 +1505,8 @@ struct ScreenMixportDragWidget : ScreenDragWidget<MODULE> {
 	void draw(const Widget::DrawArgs& args) override {
 		if (AW::id + 1 > AW::module->mixportsUsed) return;
 		AW::draw(args);
+
+		nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
 
 		// Draw lines between inputs and mixputs
 		Vec c = Vec(AW::box.size.x / 2.f, AW::box.size.y / 2.f);
@@ -1434,12 +1550,27 @@ struct ScreenMixportDragWidget : ScreenDragWidget<MODULE> {
 			nvgStrokeWidth(args.vg, 1.0);
 			nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
 			nvgStroke(args.vg);
+
+			AW::textColor = nvgRGBA(0, 16, 90, 200);
+		}
+		else {
+			AW::textColor = AW::color;
 		}
 	}
 
 	void onButton(const event::Button& e) override {
 		if (AW::id + 1 > AW::module->mixportsUsed) return;
-		ScreenDragWidget<MODULE>::onButton(e);
+		AW::onButton(e);
+	}
+
+	void createContextMenu() override {
+		ui::Menu* menu = createMenu();
+		menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("Channel MIX-%i", AW::id + 1)));
+		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<SeqMenuItem<MODULE>>(&MenuItem::text, "Motion-Sequence", &SeqMenuItem<MODULE>::module, AW::module, &SeqMenuItem<MODULE>::id, AW::id));
+		menu->addChild(construct<SeqInterpolateMenuItem<MODULE>>(&MenuItem::text, "Interpolation", &SeqInterpolateMenuItem<MODULE>::module, AW::module, &SeqInterpolateMenuItem<MODULE>::id, AW::id));
+		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<SeqModeMenuItem<MODULE>>(&MenuItem::text, "SEQ-port", &SeqModeMenuItem<MODULE>::module, AW::module, &SeqModeMenuItem<MODULE>::id, AW::id));
 	}
 };
 
@@ -1755,7 +1886,7 @@ struct OpLedDisplay : LedDisplayChoice {
 
 	void createContextMenu() {
 		ui::Menu* menu = createMenu();
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("IN %i", id + 1)));
+		menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("Channel IN-%i", id + 1)));
 
 		AmountSlider<MODULE>* amountSlider = new AmountSlider<MODULE>(module, id);
 		amountSlider->box.size.x = 200.0;
@@ -1773,109 +1904,6 @@ struct OpLedDisplay : LedDisplayChoice {
 };
 
 
-// Seq-Edit menu etc.
-
-template < typename MODULE >
-struct SeqMenuItem : MenuItem {
-	SeqMenuItem() {
-		rightText = RIGHT_ARROW;
-	}
-
-	struct SeqItem : MenuItem {
-		MODULE* module;
-		int id;
-		int seq;
-		
-		void onAction(const event::Action& e) override {
-			module->seqSelected[id] = seq;
-		}
-
-		void step() override {
-			rightText = module->seqSelected[id] == seq ? "✔" : "";
-			MenuItem::step();
-		}
-	};
-
-	MODULE* module;
-	int id;
-	Menu* createChildMenu() override {
-		Menu* menu = new Menu;
-		for (int i = 0; i < SEQ_COUNT; i++) {
-			menu->addChild(construct<SeqItem>(&MenuItem::text, string::f("%02u", i + 1), &SeqItem::module, module, &SeqItem::id, id, &SeqItem::seq, i));
-		}
-		return menu;
-	}
-};
-
-
-template < typename MODULE >
-struct SeqModeMenuItem : MenuItem {
-	SeqModeMenuItem() {
-		rightText = RIGHT_ARROW;
-	}
-
-	struct SeqModeItem : MenuItem {
-		MODULE* module;
-		int id;
-		SEQMODE seqMode;
-		
-		void onAction(const event::Action& e) override {
-			if (module->seqEdit != id)
-				module->seqMode[id] = seqMode;
-		}
-
-		void step() override {
-			rightText = module->seqMode[id] == seqMode ? "✔" : "";
-			MenuItem::step();
-		}
-	};
-
-	MODULE* module;
-	int id;
-	Menu* createChildMenu() override {
-		Menu* menu = new Menu;
-		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "Trigger forward", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::TRIG_FWD));
-		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "Trigger reverse", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::TRIG_REV));
-		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "Trigger random 1-16", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::TRIG_RANDOM_16));
-		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "Trigger random 1-8", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::TRIG_RANDOM_8));
-		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "Trigger random 1-4", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::TRIG_RANDOM_4));
-		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "0..10V", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::VOLT));
-		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "C4-D#5", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::C4));
-		return menu;
-	}
-};
-
-
-template < typename MODULE >
-struct SeqInterpolateMenuItem : MenuItem {
-	SeqInterpolateMenuItem() {
-		rightText = RIGHT_ARROW;
-	}
-
-	struct SeqInterpolateItem : MenuItem {
-		MODULE* module;
-		int id;
-		SEQINTERPOLATE seqInterpolate;
-		
-		void onAction(const event::Action& e) override {
-			module->seqInterpolate[id] = seqInterpolate;
-		}
-
-		void step() override {
-			rightText = module->seqInterpolate[id] == seqInterpolate ? "✔" : "";
-			MenuItem::step();
-		}
-	};
-
-	MODULE* module;
-	int id;
-	Menu* createChildMenu() override {
-		Menu* menu = new Menu;
-		menu->addChild(construct<SeqInterpolateItem>(&MenuItem::text, "Linear", &SeqInterpolateItem::module, module, &SeqInterpolateItem::id, id, &SeqInterpolateItem::seqInterpolate, SEQINTERPOLATE::LINEAR));
-		menu->addChild(construct<SeqInterpolateItem>(&MenuItem::text, "Cubic", &SeqInterpolateItem::module, module, &SeqInterpolateItem::id, id, &SeqInterpolateItem::seqInterpolate, SEQINTERPOLATE::CUBIC));
-		return menu;
-	}
-};
 
 
 template < typename MODULE >
@@ -2470,7 +2498,7 @@ struct SeqEditWidget : OpaqueWidget {
 			}
 		};
 
-		menu->addChild(construct<SeqMenuItem<MODULE>>(&MenuItem::text, "Sequence", &SeqMenuItem<MODULE>::module, module, &SeqMenuItem<MODULE>::id, module->seqEdit));
+		menu->addChild(construct<SeqMenuItem<MODULE>>(&MenuItem::text, "Motion-Sequence", &SeqMenuItem<MODULE>::module, module, &SeqMenuItem<MODULE>::id, module->seqEdit));
 		menu->addChild(construct<SeqInterpolateMenuItem<MODULE>>(&MenuItem::text, "Interpolation", &SeqInterpolateMenuItem<MODULE>::module, module, &SeqInterpolateMenuItem<MODULE>::id, module->seqEdit));
 		menu->addChild(construct<MenuSeparator>());
 		menu->addChild(construct<SeqClearItem>(&MenuItem::text, "Clear", &SeqClearItem::module, module));
@@ -2554,7 +2582,7 @@ struct SeqLedDisplay : LedDisplayChoice {
 
 	void createContextMenu() {
 		ui::Menu* menu = createMenu();
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("MIX %i", id + 1)));
+		menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("Channel MIX-%i", id + 1)));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<SeqMenuItem<MODULE>>(&MenuItem::text, "Motion-Sequence", &SeqMenuItem<MODULE>::module, module, &SeqMenuItem<MODULE>::id, id));
 		menu->addChild(construct<SeqInterpolateMenuItem<MODULE>>(&MenuItem::text, "Interpolation", &SeqInterpolateMenuItem<MODULE>::module, module, &SeqInterpolateMenuItem<MODULE>::id, id));
@@ -2678,7 +2706,6 @@ struct ArenaWidget : ModuleWidget {
 		};
 
 		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
-		//menu->addChild(new MenuSeparator());
 	}
 };
 
