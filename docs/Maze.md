@@ -43,7 +43,7 @@ The grid can be switched to "Edit-mode" on the context menu. While in Edit-mode 
 There are some additional settings on the context menu of each cursor:
 
 - Start progressing direction: Right (default), Left, Up, Down
-- Behaviour of TURN-triggers: 90 degrees (default) or 180 degrees
+- Behavior of TURN-triggers: 90 degrees (default) or 180 degrees
 - Output range of the respective CV-port, default is 0..3V
 
 ![MAZE Edit-mode context menu](./Maze-edit2.png)

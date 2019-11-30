@@ -29,4 +29,4 @@ Any parameter change is sent to midi output with the same CC or note as mapped. 
 
 The module allows you to import presets from VCV MIDI-MAP for a quick migration. Also, the module can be switched to "Locate and indicate"-mode: Received MIDI messages have no effect to the mapped parameters, instead the module is centered on the screen and the parameter mapping indicator flashes for a short period of time. When finished verifying all MIDI controls switch back to "Operating"-mode for normal module operation of MIDI-CAT.
 
-This module was added in v1.1.0 of PackOne.
+MIDI-CAT was added in v1.1.0 of PackOne.

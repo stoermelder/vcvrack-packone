@@ -38,8 +38,8 @@ All settings of the modules, all cables (including color) between modules within
 
 The file-format "vcvss" for storing strips is very close to Rack's own format for storing patches or module presets. Compatibility in future versions should be no problem as long Rack will be able to load module preset files from older Rack versions.
 
-Bonus tips:
+### Bonus tips
 
 - If you want to add some documentation for your strip just include a VCV Notes module and type in some text.
 
-This module was added in v1.0.4 of PackOne.
+STRIP was added in v1.0.4 of PackOne.

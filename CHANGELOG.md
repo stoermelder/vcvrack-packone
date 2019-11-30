@@ -20,6 +20,7 @@
 - Module [ReMOVE Lite](./docs/ReMove.md)
     - Added option to start playback automatically after recording 
     - Added SMTH-parameter for linear smoothing especially on jumps at sequence end and sequence change (#14)
+- All stoermelder-modules are now shipped with updated panels and minor layout fixes
 
 ### 1.2.0
 

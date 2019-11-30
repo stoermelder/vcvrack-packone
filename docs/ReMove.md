@@ -94,7 +94,7 @@ The port labeled IN accepts 0..10V or -5..5V (configuration option is found in t
 
 The OUT-port outputs a voltage for the recorded sequence. It can be configured for ranges 0..10V or -5..5V. Since v1.0.4 it outputs also CV while recording for monitoring purposes. Since v1.3.0 there is a third option EOC on the context-menu for outputting a trigger on the OUT-port every time the playback reaches the end of a sequence.
 
-### Bonus-Features
+### Bonus tips
 
 - When duplicating an instance of the module all recorded sequences are also duplicated.
 - The module can be re-mapped to another parameter after a sequence has been recorded.
