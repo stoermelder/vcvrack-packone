@@ -53,8 +53,8 @@ struct InfixModule : Module {
 };
 
 
-struct Infix16Widget : ModuleWidget {
-	Infix16Widget(InfixModule<16>* module) {
+struct InfixWidget : ModuleWidget {
+	InfixWidget(InfixModule<16>* module) {
 		setModule(module);
 		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/Infix.svg")));
 
@@ -98,10 +98,10 @@ struct Infix16Widget : ModuleWidget {
 	}
 };
 
-struct Infix8Widget : ModuleWidget {
-	Infix8Widget(InfixModule<8>* module) {
+struct InfixMicroWidget : ModuleWidget {
+	InfixMicroWidget(InfixModule<8>* module) {
 		setModule(module);
-		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/Infix8.svg")));
+		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/InfixMicro.svg")));
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
@@ -145,5 +145,5 @@ struct Infix8Widget : ModuleWidget {
 
 } // namespace Infix
 
-Model* modelInfix16 = createModel<Infix::InfixModule<16>, Infix::Infix16Widget>("Infix");
-Model* modelInfix8 = createModel<Infix::InfixModule<8>, Infix::Infix8Widget>("Infix8");
+Model* modelInfix = createModel<Infix::InfixModule<16>, Infix::InfixWidget>("Infix");
+Model* modelInfixMicro = createModel<Infix::InfixModule<8>, Infix::InfixMicroWidget>("InfixMicro");

@@ -16,7 +16,7 @@ The PackOne plugin gives you some utility modules for [VCV Rack](https://www.vcv
 - [BOLT](./docs/Bolt.md): polyphonic CV-modulateable boolean functions
 - [CV-MAP](./docs/CVMap.md): control 32 knobs/sliders/switches of any module by CV even when the module has no CV input
 - [CV-PAM](./docs/CVPam.md): generate CV voltage by observing 32 knobs/sliders/switches of any module
-- [INFIX, INFIX8](./docs/Infix.md): insert for polyphonic cables
+- [INFIX, µINFIX](./docs/Infix.md): insert for polyphonic cables
 - [MAZE](./docs/Maze.md): 4 channel sequencer running on a 2-dimensional grid
 - [µMAP](./docs/CVMapMicro.md): a single instance of CV-MAP's slots with attenuverters
 - [MIDI-CAT](./docs/MidiCat.md): map parameters to midi controllers similar to MIDI-MAP with midi feedback and note mapping

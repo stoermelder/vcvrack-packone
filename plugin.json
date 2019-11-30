@@ -63,8 +63,8 @@
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Infix.md"
 		},
 		{
-			"slug": "Infix8",
-			"name": "INFIX8",
+			"slug": "InfixMicro",
+			"name": "µINFIX",
 			"description": "Insert for polyphonic cables",
 			"tags": ["Utility", "Polyphonic"],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Infix.md"

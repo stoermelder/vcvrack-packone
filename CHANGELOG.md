@@ -8,7 +8,7 @@
     - Revised panel design with combined LED and buttons
 - Module [8FACEx2](./docs/EightFace.md)
     - New module, 8FACE with sixteen preset slots
-- Module [INFIX8](./docs/Infix.md)
+- Module [µINFIX](./docs/Infix.md)
     - New module, 8 port variant of INFIX
 - Module [µMAP](./docs/CVMapMicro.md)
     - Fixed meaningless tooltip on Map-button
