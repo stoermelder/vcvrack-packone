@@ -11,7 +11,7 @@ The PackOne plugin gives you some utility modules for [VCV Rack](https://www.vcv
 ![Intro image](./docs/intro.png)
 
 - [4ROUNDS](./docs/FourRounds.md): randomizer for up to 16 input signals to create 15 output signals
-- [8FACE, 8FACEx2](./docs/EightFace.md): preset sequencer for eight presets of any module as an universal expander
+- [8FACE, 8FACEx2](./docs/EightFace.md): preset sequencer for eight or sixteen presets of any module as an universal expander
 - [ARENA](./docs/Arena.md): 2-dimensional XY-Mixer for 8 sources with various modulation targets and fun graphical interface
 - [BOLT](./docs/Bolt.md): polyphonic CV-modulateable boolean functions
 - [CV-MAP](./docs/CVMap.md): control 32 knobs/sliders/switches of any module by CV even when the module has no CV input

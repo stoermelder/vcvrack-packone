@@ -1,6 +1,6 @@
 # stoermelder 8FACE and 8FACEx2
 
-8FACE is a module for storing, recalling and sequencing up to eight different presets of any module in Rack. It uses Rack's expander mechanism to attach to any module to its left and uses buttons and LEDs to manage each of its preset-slot. 8FACEx2 offers sixteen preset slots.
+8FACE is a module for storing, recalling and sequencing up to eight different presets of any module in Rack. It uses Rack's expander mechanism to attach to any module to its side and uses buttons and LEDs to manage each of its preset-slot. 8FACEx2 offers sixteen preset slots.
 
 **Disclaimer: Loading presets of modules was not designed to be controlled by CV or modulated at audio rate. Please do not contact the developers of Rack or any modules when unexpected behaviour occurs or high CPU usage is noticeable.**
 
@@ -8,15 +8,15 @@
 
 ### Usage
 
-Place 8FACE on the right side next to the module you like to manage. The LED between the directional triangles begins to flash if a connection is established successfully. You can detach 8FACE and re-attach to another instance of the same module. When you place 8FACE next to a module and the LED turns red it means it had been configured for another model. In this case you can either check the model on the context menu or initialize 8FACE to its initial state.
+Place 8FACE on the right side next to the module you like to manage. The triangle shaped LED begins to flash if a connection is established successfully. You can detach 8FACE and re-attach to another instance of the same module. When you place 8FACE next to a module and the LED turns red it means it had been configured for another model. In this case you can either check the model on the context menu or initialize 8FACE to its initial state. Since v1.2.0 you can place 8FACE on the left side of a module after changing the according setting on the context menu.
 
-### Write-Mode
+### Write-mode
 
-Write-mode is used to save presets in 8FACE. You enter write mode by flipping the switch on the bottom to the "W"-position. To store a preset simply configure your module left of 8FACE and then short press a slot-button numbered 1 to 8. The LEDs next to the slot-button turn red when a slot is already in use. To clear a slot long-press a button. In write-mode any input in SLOT is ignored and sequencing is disabled.
+Write-mode is used to save presets in 8FACE. You enter write mode by flipping the switch on the bottom to the "W"-position. To store a preset simply configure your module next to 8FACE and then short press a slot-button numbered 1 to 8. The LEDs next to the slot-button turn red when a slot is already in use. To clear a slot long-press a button. In write-mode any input on the SLOT-port is ignored and sequencing is disabled.
 
-### Read-Mode
+### Read-mode
 
-Read-mode is enabled by default and can be selected by the switch on the bottom in "R"-position. LEDs lit in bright green signal slots in use, dim green slots are active but empty. A blue LED marks a slot which preset is currently applied to the module on the left. You can manually apply a preset with a short-press.
+Read-mode is enabled by default and can be selected by the switch on the bottom in "R"-position. LEDs lit in bright green signal slots in use, dim green slots are active but empty. A blue LED marks a slot which preset is currently applied to the module on the side. You can manually apply a preset with a short-press.
 
 ### SLOT-port
 
@@ -42,10 +42,10 @@ You can select a specific slot by voltage. A voltage 0-1.25V selects slot 1, 1.2
 - C4:
 This mode follows the V/Oct-standard. C4 selects slot 1, C#4 selects slot 2 and so on.
 - Arm (renamed from "Clock" in v1.1.0):
-This mode is kind a sample and hold. First apply a clock signal on SLOT. Then you "arm" any slot manually by its button (resulting a yellow LED) which will be activated on the next clock trigger (blue LED). This mode allows you manual preset changes sychronized to a beat or clock.
+This mode is kind a sample and hold. First apply a clock signal on SLOT. Then you "arm" any slot manually or by MIDI-mapping by its button (resulting a yellow LED) which will be activated on the next clock trigger (blue LED). This mode allows you manual preset changes sychronized to a clock.
 
 ![8FACE arm mode](./EightFace-clock.gif)
 
-With the option "Autoload first preset" on the context menu you can autoload the first preset slot when a preset of 8FACE itself is loaded. This is useful when changing presets of 8FACE with another 8FACE module to get 64 preset slots.
+With the option "Autoload first preset" on the context menu you can autoload the first preset slot when a preset of 8FACE itself is loaded. This is useful when changing presets of 8FACE with another instance of 8FACE to aquire even more preset slots.
 
-This module was added in v1.0.5 of PackOne. 8FACEx2 was added in v1.3.0 of PackOne.
+8FACE was added in v1.0.5 of PackOne. 8FACEx2 was added in v1.3.0 of PackOne.
