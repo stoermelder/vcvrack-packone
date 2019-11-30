@@ -84,6 +84,13 @@
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/EightFace.md"
 		},
 		{
+			"slug": "EightFaceX2",
+			"name": "8FACEx2",
+			"description": "Universal expander for sequencing up to sixteen presets of any module",
+			"tags": ["Utility", "Sequencer"],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/EightFace.md"
+		},
+		{
 			"slug": "MidiCat",
 			"name": "MIDI-CAT",
 			"description": "Mapping module for MIDI CCs and notes to parameters of any module, similar to VCV MIDI-MAP",

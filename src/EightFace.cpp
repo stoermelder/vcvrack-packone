@@ -8,8 +8,6 @@
 
 namespace EightFace {
 
-const int NUM_PRESETS = 8;
-
 enum SLOTCVMODE {
 	SLOTCVMODE_TRIG_FWD = 2,
 	SLOTCVMODE_TRIG_REV = 4,
@@ -25,6 +23,8 @@ enum MODE {
 	MODE_RIGHT = 1
 };
 
+
+template < int NUM_PRESETS >
 struct EightFaceModule : Module {
 	enum ParamIds {
 		MODE_PARAM,
@@ -142,7 +142,7 @@ struct EightFaceModule : Module {
 		autoload = false;
 	}
 
-	void process(const ProcessArgs &args) override {
+	void process(const ProcessArgs& args) override {
 		Expander* exp = mode == MODE_LEFT ? &leftExpander : &rightExpander;
 		if (exp->moduleId >= 0 && exp->module) {
 			Module* t = exp->module;
@@ -160,7 +160,7 @@ struct EightFaceModule : Module {
 						}
 					}
 
-					// SEQ input
+					// SLOT input
 					if (resetTimer.process(args.sampleTime) >= 1e-3f && inputs[SLOT_INPUT].isConnected()) {
 						switch (slotCvMode) {
 							case SLOTCVMODE_10V:
@@ -320,14 +320,13 @@ struct EightFaceModule : Module {
 	}
 
 	void presetClear(int p) {
-		if (presetSlotUsed[p]) 
+		if (presetSlotUsed[p])
 			json_decref(presetSlot[p]);
 		presetSlot[p] = NULL;
 		presetSlotUsed[p] = false;
-		if (preset == p) 
-			preset = -1;
+		if (preset == p) preset = -1;
 		bool empty = true;
-		for (int i = 0; i < NUM_PRESETS; i++) 
+		for (int i = 0; i < NUM_PRESETS; i++)
 			empty = empty && !presetSlotUsed[i];
 		if (empty) {
 			pluginSlug = "";
@@ -400,12 +399,13 @@ struct EightFaceModule : Module {
 };
 
 
+template < typename MODULE >
 struct SlovCvModeMenuItem : MenuItem {
 	struct SlotCvModeItem : MenuItem {
-		EightFaceModule* module;
+		MODULE* module;
 		SLOTCVMODE slotCvMode;
 
-		void onAction(const event::Action &e) override {
+		void onAction(const event::Action& e) override {
 			module->slotCvMode = slotCvMode;
 		}
 
@@ -415,7 +415,11 @@ struct SlovCvModeMenuItem : MenuItem {
 		}
 	};
 
-	EightFaceModule* module;
+	MODULE* module;
+	SlovCvModeMenuItem() {
+		rightText = RIGHT_ARROW;
+	}
+
 	Menu* createChildMenu() override {
 		Menu* menu = new Menu;
 		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger forward", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_TRIG_FWD));
@@ -423,16 +427,17 @@ struct SlovCvModeMenuItem : MenuItem {
 		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger pingpong", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_TRIG_PINGPONG));
 		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger random", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_TRIG_RANDOM));
 		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "0..10V", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_10V));
-		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "C4-G4", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_C4));
+		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "C4", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_C4));
 		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Arm", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_ARM));
 		return menu;
 	}
 };
 
+template < typename MODULE >
 struct AutoloadItem : MenuItem {
-	EightFaceModule* module;
+	MODULE* module;
 
-	void onAction(const event::Action &e) override {
+	void onAction(const event::Action& e) override {
 		module->autoload ^= true;
 	}
 
@@ -442,11 +447,11 @@ struct AutoloadItem : MenuItem {
 	}
 };
 
-
+template < typename MODULE >
 struct ModeItem : MenuItem {
-	EightFaceModule* module;
+	MODULE* module;
 
-	void onAction(const event::Action &e) override {
+	void onAction(const event::Action& e) override {
 		module->mode = module->mode == MODE_LEFT ? MODE_RIGHT : MODE_LEFT;
 	}
 
@@ -484,48 +489,14 @@ struct WhiteRedLight : GrayModuleLightWidget {
 };
 
 
-struct EightFaceWidget : ModuleWidget {
-	EightFaceWidget(EightFaceModule* module) {
-		setModule(module);
-		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/EightFace.svg")));
-
-		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
-		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
-
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 58.9f), module, EightFaceModule::SLOT_INPUT));
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 95.2f), module, EightFaceModule::RESET_INPUT));
-
-		addChild(createLightCentered<TriangleLeftLight<SmallLight<WhiteRedLight>>>(Vec(13.8f, 119.1f), module, EightFaceModule::LEFT_LIGHT));
-		addChild(createLightCentered<TriangleRightLight<SmallLight<WhiteRedLight>>>(Vec(31.2f, 119.1f), module, EightFaceModule::RIGHT_LIGHT));
-
-		addParam(createParamCentered<LEDButton>(Vec(22.5f, 140.6f), module, EightFaceModule::PRESET_PARAM + 0));
-		addParam(createParamCentered<LEDButton>(Vec(22.5f, 164.1f), module, EightFaceModule::PRESET_PARAM + 1));
-		addParam(createParamCentered<LEDButton>(Vec(22.5f, 187.7f), module, EightFaceModule::PRESET_PARAM + 2));
-		addParam(createParamCentered<LEDButton>(Vec(22.5f, 211.2f), module, EightFaceModule::PRESET_PARAM + 3));
-		addParam(createParamCentered<LEDButton>(Vec(22.5f, 234.8f), module, EightFaceModule::PRESET_PARAM + 4));
-		addParam(createParamCentered<LEDButton>(Vec(22.5f, 258.3f), module, EightFaceModule::PRESET_PARAM + 5));
-		addParam(createParamCentered<LEDButton>(Vec(22.5f, 281.9f), module, EightFaceModule::PRESET_PARAM + 6));
-		addParam(createParamCentered<LEDButton>(Vec(22.5f, 305.4f), module, EightFaceModule::PRESET_PARAM + 7));
-
-		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(22.5f, 140.6f), module, EightFaceModule::PRESET_LIGHT + 0 * 3));
-		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(22.5f, 164.1f), module, EightFaceModule::PRESET_LIGHT + 1 * 3));
-		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(22.5f, 187.7f), module, EightFaceModule::PRESET_LIGHT + 2 * 3));
-		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(22.5f, 211.2f), module, EightFaceModule::PRESET_LIGHT + 3 * 3));
-		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(22.5f, 234.8f), module, EightFaceModule::PRESET_LIGHT + 4 * 3));
-		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(22.5f, 258.3f), module, EightFaceModule::PRESET_LIGHT + 5 * 3));
-		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(22.5f, 281.9f), module, EightFaceModule::PRESET_LIGHT + 6 * 3));
-		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(22.5f, 305.4f), module, EightFaceModule::PRESET_LIGHT + 7 * 3));
-
-		addParam(createParamCentered<CKSSH>(Vec(22.5f, 336.2f), module, EightFaceModule::MODE_PARAM));
-	}
-
-	
+template < typename MODULE >
+struct EightFaceWidgetTemplate : ModuleWidget {
 	void appendContextMenu(Menu* menu) override {
-		EightFaceModule* module = dynamic_cast<EightFaceModule*>(this->module);
+		MODULE* module = dynamic_cast<MODULE*>(this->module);
 		assert(module);
 
 		struct ManualItem : MenuItem {
-			void onAction(const event::Action &e) override {
+			void onAction(const event::Action& e) override {
 				std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/EightFace.md");
 				t.detach();
 			}
@@ -545,16 +516,105 @@ struct EightFaceWidget : ModuleWidget {
 			menu->addChild(new MenuSeparator());
 		}
 
-		SlovCvModeMenuItem* slotCvModeMenuItem = construct<SlovCvModeMenuItem>(&MenuItem::text, "Port SLOT mode", &SlovCvModeMenuItem::module, module);
-		slotCvModeMenuItem->rightText = RIGHT_ARROW;
-		menu->addChild(slotCvModeMenuItem);
+		menu->addChild(construct<SlovCvModeMenuItem<MODULE>>(&MenuItem::text, "Port SLOT mode", &SlovCvModeMenuItem<MODULE>::module, module));
+		menu->addChild(construct<ModeItem<MODULE>>(&MenuItem::text, "Module", &ModeItem<MODULE>::module, module));
+		menu->addChild(construct<AutoloadItem<MODULE>>(&MenuItem::text, "Autoload first preset", &AutoloadItem<MODULE>::module, module));
+	}
+};
 
-		menu->addChild(construct<ModeItem>(&MenuItem::text, "Module", &ModeItem::module, module));
+struct EightFaceWidget : EightFaceWidgetTemplate<EightFaceModule<8>> {
+	typedef EightFaceModule<8> MODULE;
 
-		menu->addChild(construct<AutoloadItem>(&MenuItem::text, "Autoload first preset", &AutoloadItem::module, module));
+	EightFaceWidget(MODULE* module) {
+		setModule(module);
+		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/EightFace.svg")));
+
+		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
+		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 58.9f), module, MODULE::SLOT_INPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 95.2f), module, MODULE::RESET_INPUT));
+
+		addChild(createLightCentered<TriangleLeftLight<SmallLight<WhiteRedLight>>>(Vec(13.8f, 119.1f), module, MODULE::LEFT_LIGHT));
+		addChild(createLightCentered<TriangleRightLight<SmallLight<WhiteRedLight>>>(Vec(31.2f, 119.1f), module, MODULE::RIGHT_LIGHT));
+
+		addParam(createParamCentered<LEDButton>(Vec(22.5f, 140.6f), module, MODULE::PRESET_PARAM + 0));
+		addParam(createParamCentered<LEDButton>(Vec(22.5f, 164.1f), module, MODULE::PRESET_PARAM + 1));
+		addParam(createParamCentered<LEDButton>(Vec(22.5f, 187.7f), module, MODULE::PRESET_PARAM + 2));
+		addParam(createParamCentered<LEDButton>(Vec(22.5f, 211.2f), module, MODULE::PRESET_PARAM + 3));
+		addParam(createParamCentered<LEDButton>(Vec(22.5f, 234.8f), module, MODULE::PRESET_PARAM + 4));
+		addParam(createParamCentered<LEDButton>(Vec(22.5f, 258.3f), module, MODULE::PRESET_PARAM + 5));
+		addParam(createParamCentered<LEDButton>(Vec(22.5f, 281.9f), module, MODULE::PRESET_PARAM + 6));
+		addParam(createParamCentered<LEDButton>(Vec(22.5f, 305.4f), module, MODULE::PRESET_PARAM + 7));
+
+		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(22.5f, 140.6f), module, MODULE::PRESET_LIGHT + 0 * 3));
+		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(22.5f, 164.1f), module, MODULE::PRESET_LIGHT + 1 * 3));
+		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(22.5f, 187.7f), module, MODULE::PRESET_LIGHT + 2 * 3));
+		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(22.5f, 211.2f), module, MODULE::PRESET_LIGHT + 3 * 3));
+		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(22.5f, 234.8f), module, MODULE::PRESET_LIGHT + 4 * 3));
+		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(22.5f, 258.3f), module, MODULE::PRESET_LIGHT + 5 * 3));
+		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(22.5f, 281.9f), module, MODULE::PRESET_LIGHT + 6 * 3));
+		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(22.5f, 305.4f), module, MODULE::PRESET_LIGHT + 7 * 3));
+
+		addParam(createParamCentered<CKSSH>(Vec(22.5f, 336.2f), module, MODULE::MODE_PARAM));
+	}
+};
+
+struct EightFaceX2Widget : EightFaceWidgetTemplate<EightFaceModule<16>> {
+	typedef EightFaceModule<16> MODULE;
+
+	EightFaceX2Widget(MODULE* module) {
+		setModule(module);
+		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/EightFaceX2.svg")));
+
+		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
+		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+
+		addInput(createInputCentered<StoermelderPort>(Vec(30.0f, 58.9f), module, MODULE::SLOT_INPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(30.0f, 95.2f), module, MODULE::RESET_INPUT));
+
+		addChild(createLightCentered<TriangleLeftLight<SmallLight<WhiteRedLight>>>(Vec(21.3f, 119.1f), module, MODULE::LEFT_LIGHT));
+		addChild(createLightCentered<TriangleRightLight<SmallLight<WhiteRedLight>>>(Vec(38.7f, 119.1f), module, MODULE::RIGHT_LIGHT));
+
+		addParam(createParamCentered<LEDButton>(Vec(17.7f, 140.6f), module, MODULE::PRESET_PARAM + 0));
+		addParam(createParamCentered<LEDButton>(Vec(17.7f, 164.1f), module, MODULE::PRESET_PARAM + 1));
+		addParam(createParamCentered<LEDButton>(Vec(17.7f, 187.7f), module, MODULE::PRESET_PARAM + 2));
+		addParam(createParamCentered<LEDButton>(Vec(17.7f, 211.2f), module, MODULE::PRESET_PARAM + 3));
+		addParam(createParamCentered<LEDButton>(Vec(17.7f, 234.8f), module, MODULE::PRESET_PARAM + 4));
+		addParam(createParamCentered<LEDButton>(Vec(17.7f, 258.3f), module, MODULE::PRESET_PARAM + 5));
+		addParam(createParamCentered<LEDButton>(Vec(17.7f, 281.9f), module, MODULE::PRESET_PARAM + 6));
+		addParam(createParamCentered<LEDButton>(Vec(17.7f, 305.4f), module, MODULE::PRESET_PARAM + 7));
+		addParam(createParamCentered<LEDButton>(Vec(42.3f, 140.6f), module, MODULE::PRESET_PARAM + 8));
+		addParam(createParamCentered<LEDButton>(Vec(42.3f, 164.1f), module, MODULE::PRESET_PARAM + 9));
+		addParam(createParamCentered<LEDButton>(Vec(42.3f, 187.7f), module, MODULE::PRESET_PARAM + 10));
+		addParam(createParamCentered<LEDButton>(Vec(42.3f, 211.2f), module, MODULE::PRESET_PARAM + 11));
+		addParam(createParamCentered<LEDButton>(Vec(42.3f, 234.8f), module, MODULE::PRESET_PARAM + 12));
+		addParam(createParamCentered<LEDButton>(Vec(42.3f, 258.3f), module, MODULE::PRESET_PARAM + 13));
+		addParam(createParamCentered<LEDButton>(Vec(42.3f, 281.9f), module, MODULE::PRESET_PARAM + 14));
+		addParam(createParamCentered<LEDButton>(Vec(42.3f, 305.4f), module, MODULE::PRESET_PARAM + 15));
+
+		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(17.7f, 140.6f), module, MODULE::PRESET_LIGHT + 0 * 3));
+		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(17.7f, 164.1f), module, MODULE::PRESET_LIGHT + 1 * 3));
+		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(17.7f, 187.7f), module, MODULE::PRESET_LIGHT + 2 * 3));
+		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(17.7f, 211.2f), module, MODULE::PRESET_LIGHT + 3 * 3));
+		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(17.7f, 234.8f), module, MODULE::PRESET_LIGHT + 4 * 3));
+		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(17.7f, 258.3f), module, MODULE::PRESET_LIGHT + 5 * 3));
+		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(17.7f, 281.9f), module, MODULE::PRESET_LIGHT + 6 * 3));
+		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(17.7f, 305.4f), module, MODULE::PRESET_LIGHT + 7 * 3));
+		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(42.3f, 140.6f), module, MODULE::PRESET_LIGHT + 8 * 3));
+		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(42.3f, 164.1f), module, MODULE::PRESET_LIGHT + 9 * 3));
+		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(42.3f, 187.7f), module, MODULE::PRESET_LIGHT + 10 * 3));
+		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(42.3f, 211.2f), module, MODULE::PRESET_LIGHT + 11 * 3));
+		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(42.3f, 234.8f), module, MODULE::PRESET_LIGHT + 12 * 3));
+		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(42.3f, 258.3f), module, MODULE::PRESET_LIGHT + 13 * 3));
+		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(42.3f, 281.9f), module, MODULE::PRESET_LIGHT + 14 * 3));
+		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(42.3f, 305.4f), module, MODULE::PRESET_LIGHT + 15 * 3));
+
+		addParam(createParamCentered<CKSSH>(Vec(30.0f, 336.2f), module, MODULE::MODE_PARAM));
 	}
 };
 
 } // namespace EightFace
 
-Model* modelEightFace = createModel<EightFace::EightFaceModule, EightFace::EightFaceWidget>("EightFace");
+Model* modelEightFace = createModel<EightFace::EightFaceModule<8>, EightFace::EightFaceWidget>("EightFace");
+Model* modelEightFaceX2 = createModel<EightFace::EightFaceModule<16>, EightFace::EightFaceX2Widget>("EightFaceX2");

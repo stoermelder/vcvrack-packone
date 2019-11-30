@@ -4,8 +4,10 @@
     - New module, 2-dimensional XY-Mixer for 8 sources with various modulation targets and graphical interface
 - Module [MAZE](./docs/Maze.md)
     - New module, 4 channel sequencer running on a 2-dimensional grid
+- Module [8FACEx2](./docs/EightFace.md)
+    - New module, 16 slot variant of 8FACE
 - Module [INFIX8](./docs/Infix.md)
-    - New module, 8 channel variant of INFIX
+    - New module, 8 port variant of INFIX
 - Module [µMAP](./docs/CVMapMicro.md)
     - Fixed meaningless tooltip on Map-button
 - Module [MIDI-CAT](./docs/MidiCat.md)

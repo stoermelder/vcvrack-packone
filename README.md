@@ -11,11 +11,13 @@ The PackOne plugin gives you some utility modules for [VCV Rack](https://www.vcv
 ![Intro image](./docs/intro.png)
 
 - [4ROUNDS](./docs/FourRounds.md): randomizer for up to 16 input signals to create 15 output signals
-- [8FACE](./docs/EightFace.md): preset sequencer for eight presets of any module as an universal expander
+- [8FACE, 8FACEx2](./docs/EightFace.md): preset sequencer for eight presets of any module as an universal expander
+- [ARENA](./docs/Arena.md): 2-dimensional XY-Mixer for 8 sources with various modulation targets and fun graphical interface
 - [BOLT](./docs/Bolt.md): polyphonic CV-modulateable boolean functions
 - [CV-MAP](./docs/CVMap.md): control 32 knobs/sliders/switches of any module by CV even when the module has no CV input
 - [CV-PAM](./docs/CVPam.md): generate CV voltage by observing 32 knobs/sliders/switches of any module
-- [INFIX](./docs/Infix.md): insert for polyphonic cables
+- [INFIX, INFIX8](./docs/Infix.md): insert for polyphonic cables
+- [MAZE](./docs/Maze.md): 4 channel sequencer running on a 2-dimensional grid
 - [µMAP](./docs/CVMapMicro.md): a single instance of CV-MAP's slots with attenuverters
 - [MIDI-CAT](./docs/MidiCat.md): map parameters to midi controllers similar to MIDI-MAP with midi feedback and note mapping
 - [ReMOVE Lite](./docs/ReMove.md): a recorder for knob/slider/switch-automation
@@ -26,7 +28,7 @@ The PackOne plugin gives you some utility modules for [VCV Rack](https://www.vcv
 Stable versions are released in the [VCV Library](https://vcvrack.com/plugins.html#packone). Nightly builds of the latest commit can be downloaded [here](https://github.com/stoermelder/vcvrack-packone/releases/tag/Nightly). Please review the [changelog](./CHANGELOG.md) for this plugin.
 
 Feel free to contact me or create a GitHub issue if you have any problems or questions!
-If you like my modules consider donating to https://paypal.me/stoermelder. Thanks for your support!
+If you like my modules consider donating to https://paypal.me/stoermelder. Thank you for your support!
 
 ## Building
 
@@ -36,4 +38,4 @@ Follow the [build instructions](https://vcvrack.com/manual/Building.html#buildin
 
 All **source code** is copyright © 2019 Benjamin Dill and is licensed under the [GNU General Public License, version v3.0](./LICENSE.txt).
 
-All files and **graphics** in the `res` and `res-src` directories are licensed under [CC BY-NC-ND 4.0](https://creativecommons.org/licenses/by-nc-nd/4.0/). You may not distribute modified adaptations of these graphics.
+All **files** and **graphics** in the `res` and `res-src` directories are licensed under [CC BY-NC-ND 4.0](https://creativecommons.org/licenses/by-nc-nd/4.0/). You may not distribute modified adaptations of these graphics.

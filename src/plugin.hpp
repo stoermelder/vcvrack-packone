@@ -16,6 +16,7 @@ extern Model *modelInfix16;
 extern Model *modelInfix8;
 extern Model *modelStrip;
 extern Model *modelEightFace;
+extern Model *modelEightFaceX2;
 extern Model *modelMidiCat;
 extern Model *modelSipo;
 extern Model *modelFourRounds;

@@ -1,6 +1,6 @@
-# stoermelder 8FACE
+# stoermelder 8FACE and 8FACEx2
 
-8FACE is a module for storing, recalling and sequencing up to eight different presets of any module in Rack. It uses Rack's expander mechanism to attach to any module to its left and uses buttons and LEDs to manage each of its preset-slot.
+8FACE is a module for storing, recalling and sequencing up to eight different presets of any module in Rack. It uses Rack's expander mechanism to attach to any module to its left and uses buttons and LEDs to manage each of its preset-slot. 8FACEx2 offers sixteen preset slots.
 
 **Disclaimer: Loading presets of modules was not designed to be controlled by CV or modulated at audio rate. Please do not contact the developers of Rack or any modules when unexpected behaviour occurs or high CPU usage is noticeable.**
 
@@ -39,7 +39,7 @@ Same as "Trigger forward", but loops first forward then reverse.
 Same as "Trigger forward", but chooses the next preset randomly.
 - 0..10V:
 You can select a specific slot by voltage. A voltage 0-1.25V selects slot 1, 1.25-2.5V selects slot 2, and so on if all eight slots are active. Keep in mind that adjusting the length of the sequence also adjusts the voltage range for selecting individual slots: A sequence with length 2 will select slot 1 on voltage 0-5V etc.
-- C4-G8: 
+- C4:
 This mode follows the V/Oct-standard. C4 selects slot 1, C#4 selects slot 2 and so on.
 - Arm (renamed from "Clock" in v1.1.0):
 This mode is kind a sample and hold. First apply a clock signal on SLOT. Then you "arm" any slot manually by its button (resulting a yellow LED) which will be activated on the next clock trigger (blue LED). This mode allows you manual preset changes sychronized to a beat or clock.
@@ -48,4 +48,4 @@ This mode is kind a sample and hold. First apply a clock signal on SLOT. Then yo
 
 With the option "Autoload first preset" on the context menu you can autoload the first preset slot when a preset of 8FACE itself is loaded. This is useful when changing presets of 8FACE with another 8FACE module to get 64 preset slots.
 
-This module was added in v1.0.5 of PackOne.
+This module was added in v1.0.5 of PackOne. 8FACEx2 was added in v1.3.0 of PackOne.
