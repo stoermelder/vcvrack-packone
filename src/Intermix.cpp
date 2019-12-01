@@ -121,7 +121,7 @@ struct IntermixModule : Module {
 			}
 		}
 
-		simd::float_4 out[PORTS / 4];
+		simd::float_4 out[PORTS / 4] = {};
 		for (int i = 0; i < PORTS; i++) {
 			float v;
 			switch (scenes[sceneSelected].input[i]) {
