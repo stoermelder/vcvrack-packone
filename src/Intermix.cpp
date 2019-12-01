@@ -397,18 +397,18 @@ struct IntermixWidget : ModuleWidget {
 		float xMax = 269.9f;
 		float yMin = 53.0f;
 		float yMax = 264.3f;
+
+		// Parameters and ports
 		for (int i = 0; i < PORTS; i++) {
 			for (int j = 0; j < PORTS; j++) {
 				Vec v = Vec(xMin + (xMax - xMin) / (PORTS - 1) * j, yMin + (yMax - yMin) / (PORTS - 1) * i);
 				addParam(createParamCentered<IntermixButton>(v, module, IntermixModule<PORTS>::MATRIX_PARAM + i * PORTS + j));
-				addChild(createLightCentered<IntermixButtonLight<GreenLight>>(v, module, IntermixModule<PORTS>::MATRIX_LIGHT + i * PORTS + j));
 			}
 		}
 
 		for (int i = 0; i < PORTS; i++) {
 			Vec v = Vec(21.9f, yMin + (yMax - yMin) / (PORTS - 1) * i);
 			addParam(createParamCentered<IntermixButton>(v, module, IntermixModule<PORTS>::OUTPUT_PARAM + i));
-			addChild(createLightCentered<IntermixButtonLight<RedLight>>(v, module, IntermixModule<PORTS>::OUTPUT_LIGHT + i));
 
 			Vec vo = Vec(308.1f, yMin + (yMax - yMin) / (PORTS - 1) * i);
 			addOutput(createOutputCentered<StoermelderPort>(vo, module, IntermixModule<PORTS>::OUTPUT + i));
@@ -426,6 +426,16 @@ struct IntermixWidget : ModuleWidget {
 		sceneLedDisplay->module = module;
 		addChild(sceneLedDisplay);
 		addInput(createInputCentered<StoermelderPort>(Vec(308.1f, 323.7f), module, IntermixModule<PORTS>::SCENE_INPUT));
+
+		// Lights
+		for (int i = 0; i < PORTS; i++) {
+			Vec v = Vec(21.9f, yMin + (yMax - yMin) / (PORTS - 1) * i);
+			addChild(createLightCentered<IntermixButtonLight<RedLight>>(v, module, IntermixModule<PORTS>::OUTPUT_LIGHT + i));
+			for (int j = 0; j < PORTS; j++) {
+				Vec v = Vec(xMin + (xMax - xMin) / (PORTS - 1) * j, yMin + (yMax - yMin) / (PORTS - 1) * i);
+				addChild(createLightCentered<IntermixButtonLight<GreenLight>>(v, module, IntermixModule<PORTS>::MATRIX_LIGHT + i * PORTS + j));
+			}
+		}
 	}
 
 	void appendContextMenu(Menu* menu) override {
@@ -438,7 +448,6 @@ struct IntermixWidget : ModuleWidget {
 				t.detach();
 			}
 		};
-
 
 		struct SceneModeMenuItem : MenuItem {
 			SceneModeMenuItem() {
