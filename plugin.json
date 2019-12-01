@@ -128,7 +128,7 @@
 		{
 			"slug": "Intermix",
 			"name": "INTERMIX",
-			"description": "",
+			"description": "Precision adder 8x8 switch matrix with scene-support",
 			"tags": ["Mixer"],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Intermix.md"
 		},

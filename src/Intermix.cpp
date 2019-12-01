@@ -52,6 +52,8 @@ struct IntermixModule : Module {
 	};
 
 	/** [Stored to JSON] */
+	float padBrightness;
+	/** [Stored to JSON] */
 	bool inputVisualize;
 	/** [Stored to JSON] */
 	bool outputClamp;
@@ -68,8 +70,6 @@ struct IntermixModule : Module {
 
 	IntermixModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		inputVisualize = true;
-		outputClamp = true;
 		for (int i = 0; i < PORTS; i++) {
 			for (int j = 0; j < PORTS; j++) {
 				configParam(MATRIX_PARAM + i * PORTS + j, 0.f, 1.f, 0.f, string::f("Input %i to Output %i", j + 1, i + 1));
@@ -82,6 +82,9 @@ struct IntermixModule : Module {
 	}
 
 	void onReset() override {
+		padBrightness = 0.75f;
+		inputVisualize = true;
+		outputClamp = true;
 		for (int i = 0; i < SCENE_COUNT; i++) {
 			for (int j = 0; j < PORTS; j++) {
 				scenes[i].input[j] = IM_IN;
@@ -152,11 +155,29 @@ struct IntermixModule : Module {
 			}
 		}
 
+		/*
+		// Standard code
 		for (int i = 0; i < PORTS; i++) {
 			float v = scenes[sceneSelected].output[i] == OM_OUT ? out[i / 4][i % 4] : 0.f;
 			if (outputClamp) v = clamp(v, -10.f, 10.f);
 			outputs[OUTPUT + i].setVoltage(v);
 		}
+		*/
+
+		// SIMD code
+		simd::float_4 c = outputClamp;
+		for (int j = 0; j < PORTS; j+=4) {
+			out[j / 4] = simd::ifelse(c == 1.f, simd::clamp(out[j / 4], -10.f, 10.f), out[j / 4]);
+			simd::int32_4 o1 = simd::int32_4::load((int32_t*)&scenes[sceneSelected].output[j]);
+			simd::float_4 o2 = simd::float_4(o1 == 0) == -1.f;
+			out[j / 4] = simd::ifelse(o2, out[j / 4], simd::float_4::zero());
+		}
+
+		for (int i = 0; i < PORTS; i++) {
+			float v = out[i / 4][i % 4];
+			outputs[OUTPUT + i].setVoltage(v);
+		}
+		// --
 
 		if (lightDivider.process()) {
 			float s = lightDivider.getDivision() * args.sampleTime;
@@ -167,7 +188,7 @@ struct IntermixModule : Module {
 				}
 				for (int i = 0; i < PORTS; i++) {
 					for (int j = 0; j < PORTS; j++) {
-						float v = scenes[sceneSelected].matrix[j][i] > 0.f ? in[j] : 0.f;
+						float v = scenes[sceneSelected].matrix[j][i] > 0.f ? (in[j] * padBrightness) : 0.f;
 						lights[MATRIX_LIGHT + (i * PORTS + j) * 3 + 0].setBrightness(v < 0.f ? -v : 0.f);
 						lights[MATRIX_LIGHT + (i * PORTS + j) * 3 + 1].setBrightness(v > 0.f ?  v : 0.f);
 						lights[MATRIX_LIGHT + (i * PORTS + j) * 3 + 2].setBrightness(0.f);
@@ -177,7 +198,7 @@ struct IntermixModule : Module {
 			else {
 				for (int i = 0; i < PORTS; i++) {
 					for (int j = 0; j < PORTS; j++) {
-						float v = std::min(scenes[sceneSelected].matrix[j][i], 0.4f);
+						float v = scenes[sceneSelected].matrix[j][i] * padBrightness;
 						lights[MATRIX_LIGHT + (i * PORTS + j) * 3 + 0].setSmoothBrightness(v, s);
 						lights[MATRIX_LIGHT + (i * PORTS + j) * 3 + 1].setSmoothBrightness(v, s);
 						lights[MATRIX_LIGHT + (i * PORTS + j) * 3 + 2].setSmoothBrightness(v, s);
@@ -185,7 +206,8 @@ struct IntermixModule : Module {
 				}
 			}
 			for (int i = 0; i < PORTS; i++) {
-				lights[OUTPUT_LIGHT + i].setSmoothBrightness(scenes[sceneSelected].output[i] != OM_OUT, s);
+				float v = (scenes[sceneSelected].output[i] != OM_OUT) * padBrightness;
+				lights[OUTPUT_LIGHT + i].setSmoothBrightness(v, s);
 			}
 		}
 	}
@@ -204,6 +226,7 @@ struct IntermixModule : Module {
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
 
+		json_object_set_new(rootJ, "padBrightness", json_real(padBrightness));
 		json_object_set_new(rootJ, "inputVisualize", json_boolean(inputVisualize));
 		json_object_set_new(rootJ, "outputClamp", json_boolean(outputClamp));
 
@@ -234,6 +257,7 @@ struct IntermixModule : Module {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
+		padBrightness = json_real_value(json_object_get(rootJ, "padBrightness"));
 		inputVisualize = json_boolean_value(json_object_get(rootJ, "inputVisualize"));
 		outputClamp = json_boolean_value(json_object_get(rootJ, "outputClamp"));
 
@@ -378,10 +402,8 @@ struct InputLedDisplay : LedDisplayChoice {
 };
 
 
-template < typename BASE >
+template < typename BASE, typename MODULE >
 struct IntermixButtonLight : BASE {
-	float brightness = 0.7f;
-
 	IntermixButtonLight() {
 		this->box.size = math::Vec(26.f, 26.f);
 	}
@@ -390,8 +412,8 @@ struct IntermixButtonLight : BASE {
 		nvgBeginPath(args.vg);
 		nvgRoundedRect(args.vg, 0.f, 0.f, this->box.size.x, this->box.size.y, 3.4f);
 
-		nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
-		nvgFillColor(args.vg, color::mult(this->color, brightness));
+		//nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
+		nvgFillColor(args.vg, this->color);
 		nvgFill(args.vg);
 	}
 };
@@ -453,13 +475,10 @@ struct IntermixWidget : ModuleWidget {
 		// Lights
 		for (int i = 0; i < PORTS; i++) {
 			Vec v = Vec(21.9f, yMin + (yMax - yMin) / (PORTS - 1) * i);
-			IntermixButtonLight<RedLight>* redLight = createLightCentered<IntermixButtonLight<RedLight>>(v, module, IntermixModule<PORTS>::OUTPUT_LIGHT + i);
-			redLight->brightness = 0.9f;
-			addChild(redLight);
-
+			addChild(createLightCentered<IntermixButtonLight<RedLight, IntermixModule<PORTS>>>(v, module, IntermixModule<PORTS>::OUTPUT_LIGHT + i));
 			for (int j = 0; j < PORTS; j++) {
 				Vec v = Vec(xMin + (xMax - xMin) / (PORTS - 1) * j, yMin + (yMax - yMin) / (PORTS - 1) * i);
-				addChild(createLightCentered<IntermixButtonLight<RedGreenBlueLight>>(v, module, IntermixModule<PORTS>::MATRIX_LIGHT + (i * PORTS + j) * 3));
+				addChild(createLightCentered<IntermixButtonLight<RedGreenBlueLight, IntermixModule<PORTS>>>(v, module, IntermixModule<PORTS>::MATRIX_LIGHT + (i * PORTS + j) * 3));
 			}
 		}
 	}
@@ -531,10 +550,52 @@ struct IntermixWidget : ModuleWidget {
 			}
 		};
 
+		struct BrightnessSlider : ui::Slider {
+			struct BrightnessQuantity : Quantity {
+				IntermixModule<PORTS>* module;
+				const float MAX = 2.f;
+
+				BrightnessQuantity(IntermixModule<PORTS>* module) {
+					this->module = module;
+				}
+				void setValue(float value) override {
+					module->padBrightness = math::clamp(value * MAX, 0.f, MAX);
+				}
+				float getValue() override {
+					return module->padBrightness / MAX;
+				}
+				float getDefaultValue() override {
+					return (1.f / MAX) * 0.75f;
+				}
+				float getDisplayValue() override {
+					return getValue() * 100 * MAX;
+				}
+				void setDisplayValue(float displayValue) override {
+					setValue(displayValue / (100 * MAX));
+				}
+				std::string getLabel() override {
+					return "Pad brightness";
+				}
+				std::string getUnit() override {
+					return "%";
+				}
+			};
+
+			BrightnessSlider(IntermixModule<PORTS>* module) {
+				this->box.size.x = 200.0;
+				quantity = new BrightnessQuantity(module);
+			}
+			~BrightnessSlider() {
+				delete quantity;
+			}
+		};
+
 		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<SceneModeMenuItem>(&MenuItem::text, "SCENE-port", &SceneModeMenuItem::module, module));
 		menu->addChild(construct<OutputClampItem>(&MenuItem::text, "Limit output on -10..10V", &OutputClampItem::module, module));
+		menu->addChild(new MenuSeparator());
+		menu->addChild(new BrightnessSlider(module));
 		menu->addChild(construct<InputVisualizeItem>(&MenuItem::text, "Visualize input on pads", &InputVisualizeItem::module, module));
 	}
 };
