@@ -1,5 +1,7 @@
 ### 1.x.x (in development)
 
+- Module [INTERMIX](./docs/Intermix.md)
+    - New module, precision adder 8x8 switch matrix
 - Module [ARENA](./docs/Arena.md)
     - Added missing bipolar-mode for X/Y-inputs of the mix-channels
 

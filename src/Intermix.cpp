@@ -52,6 +52,8 @@ struct IntermixModule : Module {
 	};
 
 	/** [Stored to JSON] */
+	bool outputClamp;
+	/** [Stored to JSON] */
 	SceneData scenes[SCENE_COUNT];
 	/** [Stored to JSON] */
 	int sceneSelected = 0;
@@ -64,6 +66,7 @@ struct IntermixModule : Module {
 
 	IntermixModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+		outputClamp = true;
 		for (int i = 0; i < PORTS; i++) {
 			for (int j = 0; j < PORTS; j++) {
 				configParam(MATRIX_PARAM + i * PORTS + j, 0.f, 1.f, 0.f, string::f("Input %i to Output %i", j + 1, i + 1));
@@ -148,7 +151,7 @@ struct IntermixModule : Module {
 
 		for (int i = 0; i < PORTS; i++) {
 			float v = scenes[sceneSelected].output[i] == OM_OUT ? out[i / 4][i % 4] : 0.f;
-			v = clamp(v, -10.f, 10.f);
+			if (outputClamp) v = clamp(v, -10.f, 10.f);
 			outputs[OUTPUT + i].setVoltage(v);
 		}
 
@@ -183,6 +186,8 @@ struct IntermixModule : Module {
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
 
+		json_object_set_new(rootJ, "outputClamp", json_boolean(outputClamp));
+
 		json_t* scenesJ = json_array();
 		for (int i = 0; i < SCENE_COUNT; i++) {
 			json_t* inputJ = json_array();
@@ -210,6 +215,8 @@ struct IntermixModule : Module {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
+		outputClamp = json_boolean_value(json_object_get(rootJ, "outputClamp"));
+
 		json_t* scenesJ = json_object_get(rootJ, "scenes");
 		json_t* sceneJ;
 		size_t sceneIndex;
@@ -478,9 +485,23 @@ struct IntermixWidget : ModuleWidget {
 			}
 		};
 
+		struct OutputClampItem : MenuItem {
+			IntermixModule<PORTS>* module;
+			
+			void onAction(const event::Action& e) override {
+				module->outputClamp ^= true;
+			}
+
+			void step() override {
+				rightText = module->outputClamp ? "✔" : "";
+				MenuItem::step();
+			}
+		};
+
 		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<SceneModeMenuItem>(&MenuItem::text, "SCENE-port", &SceneModeMenuItem::module, module));
+		menu->addChild(construct<OutputClampItem>(&MenuItem::text, "Limit output on -10..10V", &OutputClampItem::module, module));
 	}
 };
 
