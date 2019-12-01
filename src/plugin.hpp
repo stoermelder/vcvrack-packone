@@ -22,4 +22,5 @@ extern Model *modelSipo;
 extern Model *modelFourRounds;
 extern Model *modelArena;
 extern Model *modelMaze;
+extern Model *modelIntermix;
 extern Model *modelAudioInterface64;
