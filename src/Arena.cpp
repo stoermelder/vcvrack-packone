@@ -119,6 +119,10 @@ struct ArenaModule : Module {
 	/** [Stored to JSON] */
 	OUTPUTMODE outputMode[IN_PORTS];
 	/** [Stored to JSON] */
+	bool mixportXBipolar[MIX_PORTS];
+	/** [Stored to JSON] */
+	bool mixportYBipolar[MIX_PORTS];
+	/** [Stored to JSON] */
 	int inportsUsed = IN_PORTS;
 	/** [Stored to JSON] */
 	int mixportsUsed = MIX_PORTS;
@@ -181,6 +185,8 @@ struct ArenaModule : Module {
 			outputMode[i] = OUTPUTMODE::SCALE;
 		}
 		for (int i = 0; i < MIX_PORTS; i++) {
+			mixportXBipolar[i] = false;
+			mixportYBipolar[i] = false;
 			seqSelected[i] = 0;
 			seqMode[i] = SEQMODE::TRIG_FWD;
 			seqInterpolate[i] = SEQINTERPOLATE::LINEAR;
@@ -278,6 +284,7 @@ struct ArenaModule : Module {
 			if (inputs[MIX_X_INPUT + i].isConnected()) {
 				float x = inputs[MIX_X_INPUT + i].getVoltage() / 10.f;
 				x *= params[MIX_X_PARAM + i].getValue();
+				x += mixportXBipolar[i] ? 0.5f : 0.f;
 				x = clamp(x, 0.f, 1.f);
 				params[MIX_X_POS + i].setValue(x);
 			} 
@@ -285,6 +292,7 @@ struct ArenaModule : Module {
 			if (inputs[MIX_Y_INPUT + i].isConnected()) {
 				float y = inputs[MIX_Y_INPUT + i].getVoltage() / 10.f;
 				y *= params[MIX_Y_PARAM + i].getValue();
+				y += mixportYBipolar[i] ? 0.5f : 0.f;
 				y = clamp(y, 0.f, 1.f);
 				params[MIX_Y_POS + i].setValue(y);
 			}
@@ -732,6 +740,8 @@ struct ArenaModule : Module {
 		json_t* mixportsJ = json_array();
 		for (int i = 0; i < MIX_PORTS; i++) {
 			json_t* mixportJ = json_object();
+			json_object_set_new(mixportJ, "mixportXBipolar", json_boolean(mixportXBipolar[i]));
+			json_object_set_new(mixportJ, "mixportYBipolar", json_boolean(mixportYBipolar[i]));
 			json_object_set_new(mixportJ, "seqSelected", json_integer(seqSelected[i]));
 			json_object_set_new(mixportJ, "seqMode", json_integer(seqMode[i]));
 			json_object_set_new(mixportJ, "seqInterpolate", json_integer(seqInterpolate[i]));
@@ -778,6 +788,8 @@ struct ArenaModule : Module {
 		json_t* mixportJ;
 		size_t mixputIndex;
 		json_array_foreach(mixportsJ, mixputIndex, mixportJ) {
+			mixportXBipolar[mixputIndex] = json_boolean_value(json_object_get(mixportJ, "mixportXBipolar"));
+			mixportYBipolar[mixputIndex] = json_boolean_value(json_object_get(mixportJ, "mixportYBipolar"));
 			seqSelected[mixputIndex] = json_integer_value(json_object_get(mixportJ, "seqSelected"));
 			seqMode[mixputIndex] = (SEQMODE)json_integer_value(json_object_get(mixportJ, "seqMode"));
 			seqInterpolate[mixputIndex] = (SEQINTERPOLATE)json_integer_value(json_object_get(mixportJ, "seqInterpolate"));
@@ -1160,6 +1172,65 @@ struct XYChangeAction : history::ModuleAction {
 		assert(mw);
 		mw->module->params[paramXId].setValue(newX);
 		mw->module->params[paramYId].setValue(newY);
+	}
+};
+
+
+template < typename MODULE >
+struct MixportXMenuItem : MenuItem {
+	MixportXMenuItem() {
+		rightText = RIGHT_ARROW;
+	}
+
+	struct MixportXBipolarItem : MenuItem {
+		MODULE* module;
+		int id;
+
+		void onAction(const event::Action& e) override {
+			module->mixportXBipolar[id] ^= true;
+		}
+
+		void step() override {
+			rightText = module->mixportXBipolar[id] ? "-5V..5V" : "0V..10V";
+			MenuItem::step();
+		}
+	};
+
+	MODULE* module;
+	int id;
+	Menu* createChildMenu() override {
+		Menu* menu = new Menu;
+		menu->addChild(construct<MixportXBipolarItem>(&MenuItem::text, "Voltage", &MixportXBipolarItem::module, module, &MixportXBipolarItem::id, id));
+		return menu;
+	}
+};
+
+template < typename MODULE >
+struct MixportYMenuItem : MenuItem {
+	MixportYMenuItem() {
+		rightText = RIGHT_ARROW;
+	}
+
+	struct MixportYBipolarItem : MenuItem {
+		MODULE* module;
+		int id;
+
+		void onAction(const event::Action& e) override {
+			module->mixportYBipolar[id] ^= true;
+		}
+
+		void step() override {
+			rightText = module->mixportYBipolar[id] ? "-5V..5V" : "0V..10V";
+			MenuItem::step();
+		}
+	};
+
+	MODULE* module;
+	int id;
+	Menu* createChildMenu() override {
+		Menu* menu = new Menu;
+		menu->addChild(construct<MixportYBipolarItem>(&MenuItem::text, "Voltage", &MixportYBipolarItem::module, module, &MixportYBipolarItem::id, id));
+		return menu;
 	}
 };
 
@@ -1570,6 +1641,8 @@ struct ScreenMixportDragWidget : ScreenDragWidget<MODULE> {
 		menu->addChild(construct<SeqMenuItem<MODULE>>(&MenuItem::text, "Motion-Sequence", &SeqMenuItem<MODULE>::module, AW::module, &SeqMenuItem<MODULE>::id, AW::id));
 		menu->addChild(construct<SeqInterpolateMenuItem<MODULE>>(&MenuItem::text, "Interpolation", &SeqInterpolateMenuItem<MODULE>::module, AW::module, &SeqInterpolateMenuItem<MODULE>::id, AW::id));
 		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<MixportXMenuItem<MODULE>>(&MenuItem::text, "X-port", &MixportXMenuItem<MODULE>::module, AW::module, &MixportXMenuItem<MODULE>::id, AW::id));
+		menu->addChild(construct<MixportYMenuItem<MODULE>>(&MenuItem::text, "Y-port", &MixportYMenuItem<MODULE>::module, AW::module, &MixportYMenuItem<MODULE>::id, AW::id));
 		menu->addChild(construct<SeqModeMenuItem<MODULE>>(&MenuItem::text, "SEQ-port", &SeqModeMenuItem<MODULE>::module, AW::module, &SeqModeMenuItem<MODULE>::id, AW::id));
 	}
 };
@@ -2587,6 +2660,8 @@ struct SeqLedDisplay : LedDisplayChoice {
 		menu->addChild(construct<SeqMenuItem<MODULE>>(&MenuItem::text, "Motion-Sequence", &SeqMenuItem<MODULE>::module, module, &SeqMenuItem<MODULE>::id, id));
 		menu->addChild(construct<SeqInterpolateMenuItem<MODULE>>(&MenuItem::text, "Interpolation", &SeqInterpolateMenuItem<MODULE>::module, module, &SeqInterpolateMenuItem<MODULE>::id, id));
 		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<MixportXMenuItem<MODULE>>(&MenuItem::text, "X-port", &MixportXMenuItem<MODULE>::module, module, &MixportXMenuItem<MODULE>::id, id));
+		menu->addChild(construct<MixportYMenuItem<MODULE>>(&MenuItem::text, "Y-port", &MixportYMenuItem<MODULE>::module, module, &MixportYMenuItem<MODULE>::id, id));
 		menu->addChild(construct<SeqModeMenuItem<MODULE>>(&MenuItem::text, "SEQ-port", &SeqModeMenuItem<MODULE>::module, module, &SeqModeMenuItem<MODULE>::id, id));
 	}
 };

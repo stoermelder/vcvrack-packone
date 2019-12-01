@@ -1,3 +1,8 @@
+### 1.x.x (in development)
+
+- Module [ARENA](./docs/Arena.md)
+    - Added missing bipolar-mode for X/Y-inputs of the mix-channels
+
 ### 1.3.0
 
 - Module [ARENA](./docs/Arena.md)
