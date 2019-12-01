@@ -52,6 +52,8 @@ struct IntermixModule : Module {
 	};
 
 	/** [Stored to JSON] */
+	bool inputVisualize;
+	/** [Stored to JSON] */
 	bool outputClamp;
 	/** [Stored to JSON] */
 	SceneData scenes[SCENE_COUNT];
@@ -66,6 +68,7 @@ struct IntermixModule : Module {
 
 	IntermixModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+		inputVisualize = true;
 		outputClamp = true;
 		for (int i = 0; i < PORTS; i++) {
 			for (int j = 0; j < PORTS; j++) {
@@ -156,17 +159,32 @@ struct IntermixModule : Module {
 		}
 
 		if (lightDivider.process()) {
-			float s = lightDivider.division * args.sampleTime;
-			float in[PORTS];
-			for (int i = 0; i < PORTS; i++) {
-				in[i] = rescale(inputs[INPUT + i].getVoltage(), -10.f, 10.f, -1.f, 1.f);
+			float s = lightDivider.getDivision() * args.sampleTime;
+			if (inputVisualize) {
+				float in[PORTS];
+				for (int i = 0; i < PORTS; i++) {
+					in[i] = rescale(inputs[INPUT + i].getVoltage(), -10.f, 10.f, -1.f, 1.f);
+				}
+				for (int i = 0; i < PORTS; i++) {
+					for (int j = 0; j < PORTS; j++) {
+						float v = scenes[sceneSelected].matrix[j][i] > 0.f ? in[j] : 0.f;
+						lights[MATRIX_LIGHT + (i * PORTS + j) * 3 + 0].setBrightness(v < 0.f ? -v : 0.f);
+						lights[MATRIX_LIGHT + (i * PORTS + j) * 3 + 1].setBrightness(v > 0.f ?  v : 0.f);
+						lights[MATRIX_LIGHT + (i * PORTS + j) * 3 + 2].setBrightness(0.f);
+					}
+				}
+			}
+			else {
+				for (int i = 0; i < PORTS; i++) {
+					for (int j = 0; j < PORTS; j++) {
+						float v = std::min(scenes[sceneSelected].matrix[j][i], 0.4f);
+						lights[MATRIX_LIGHT + (i * PORTS + j) * 3 + 0].setSmoothBrightness(v, s);
+						lights[MATRIX_LIGHT + (i * PORTS + j) * 3 + 1].setSmoothBrightness(v, s);
+						lights[MATRIX_LIGHT + (i * PORTS + j) * 3 + 2].setSmoothBrightness(v, s);
+					}
+				}
 			}
 			for (int i = 0; i < PORTS; i++) {
-				for (int j = 0; j < PORTS; j++) {
-					float v = scenes[sceneSelected].matrix[j][i] > 0.f ? in[j] : 0.f;
-					lights[MATRIX_LIGHT + (i * PORTS + j) * 3 + 0].setSmoothBrightness(v < 0.f ? -v : 0.f, s);
-					lights[MATRIX_LIGHT + (i * PORTS + j) * 3 + 1].setSmoothBrightness(v > 0.f ?  v : 0.f, s);
-				}
 				lights[OUTPUT_LIGHT + i].setSmoothBrightness(scenes[sceneSelected].output[i] != OM_OUT, s);
 			}
 		}
@@ -186,6 +204,7 @@ struct IntermixModule : Module {
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
 
+		json_object_set_new(rootJ, "inputVisualize", json_boolean(inputVisualize));
 		json_object_set_new(rootJ, "outputClamp", json_boolean(outputClamp));
 
 		json_t* scenesJ = json_array();
@@ -215,6 +234,7 @@ struct IntermixModule : Module {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
+		inputVisualize = json_boolean_value(json_object_get(rootJ, "inputVisualize"));
 		outputClamp = json_boolean_value(json_object_get(rootJ, "outputClamp"));
 
 		json_t* scenesJ = json_object_get(rootJ, "scenes");
@@ -360,7 +380,7 @@ struct InputLedDisplay : LedDisplayChoice {
 
 template < typename BASE >
 struct IntermixButtonLight : BASE {
-	float brightness = 0.6f;
+	float brightness = 0.7f;
 
 	IntermixButtonLight() {
 		this->box.size = math::Vec(26.f, 26.f);
@@ -434,7 +454,7 @@ struct IntermixWidget : ModuleWidget {
 		for (int i = 0; i < PORTS; i++) {
 			Vec v = Vec(21.9f, yMin + (yMax - yMin) / (PORTS - 1) * i);
 			IntermixButtonLight<RedLight>* redLight = createLightCentered<IntermixButtonLight<RedLight>>(v, module, IntermixModule<PORTS>::OUTPUT_LIGHT + i);
-			redLight->brightness = 0.8f;
+			redLight->brightness = 0.9f;
 			addChild(redLight);
 
 			for (int j = 0; j < PORTS; j++) {
@@ -498,10 +518,24 @@ struct IntermixWidget : ModuleWidget {
 			}
 		};
 
+		struct InputVisualizeItem : MenuItem {
+			IntermixModule<PORTS>* module;
+			
+			void onAction(const event::Action& e) override {
+				module->inputVisualize ^= true;
+			}
+
+			void step() override {
+				rightText = module->inputVisualize ? "✔" : "";
+				MenuItem::step();
+			}
+		};
+
 		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<SceneModeMenuItem>(&MenuItem::text, "SCENE-port", &SceneModeMenuItem::module, module));
 		menu->addChild(construct<OutputClampItem>(&MenuItem::text, "Limit output on -10..10V", &OutputClampItem::module, module));
+		menu->addChild(construct<InputVisualizeItem>(&MenuItem::text, "Visualize input on pads", &InputVisualizeItem::module, module));
 	}
 };
 
