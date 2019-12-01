@@ -23,11 +23,6 @@ enum OUT_MODE {
 	OM_OUT = 1
 };
 
-enum PAD_MODE {
-	PM_OFF = 0,
-	PM_ON = 1
-};
-
 template < int PORTS >
 struct IntermixModule : Module {
 	enum ParamIds {
@@ -53,7 +48,7 @@ struct IntermixModule : Module {
 	struct SceneData {
 		IN_MODE input[PORTS];
 		OUT_MODE output[PORTS];
-		PAD_MODE matrix[PORTS][PORTS];
+		float matrix[PORTS][PORTS];
 	};
 
 	/** [Stored to JSON] */
@@ -86,7 +81,7 @@ struct IntermixModule : Module {
 				scenes[i].input[j] = IM_IN;
 				scenes[i].output[j] = OM_OUT;
 				for (int k = 0; k < PORTS; k++) {
-					scenes[i].matrix[j][k] = PM_OFF;
+					scenes[i].matrix[j][k] = 0.f;
 				}
 			}
 		}
@@ -121,7 +116,7 @@ struct IntermixModule : Module {
 			for (int i = 0; i < PORTS; i++) {
 				scenes[sceneSelected].output[i] = params[OUTPUT_PARAM + i].getValue() != 0.f ? OM_OUT : OM_OFF;
 				for (int j = 0; j < PORTS; j++) {
-					scenes[sceneSelected].matrix[i][j] = params[MATRIX_PARAM + j * PORTS + i].getValue() != 0.f ? PM_ON : PM_OFF;
+					scenes[sceneSelected].matrix[i][j] = params[MATRIX_PARAM + j * PORTS + i].getValue();
 				}
 			}
 		}
@@ -131,9 +126,9 @@ struct IntermixModule : Module {
 			float v;
 			switch (scenes[sceneSelected].input[i]) {
 				case IN_MODE::IM_OFF:
-					v = 0.f;
-					break;
+					continue;
 				case IN_MODE::IM_IN:
+					if (!inputs[INPUT + i].isConnected()) continue;
 					v = inputs[INPUT + i].getVoltage();
 					break;
 				case IN_MODE::IM_ADD_1V:
@@ -144,23 +139,15 @@ struct IntermixModule : Module {
 					break;
 			}
 
-			simd::float_4 mask[PORTS / 4];
 			for (int j = 0; j < PORTS / 4; j+=4) {
-				mask[j / 4] = simd::float_4::mask();
-			}
-
-			for (int j = 0; j < PORTS; j++) {
-				if (!scenes[sceneSelected].matrix[i][j]) mask[j / 4][j % 4] = 0.f;
-			}
-
-			for (int j = 0; j < PORTS / 4; j+=4) {
-				simd::float_4 t = simd::ifelse(mask[j], simd::float_4(v), simd::float_4::zero());
-				out[j] += t;
+				simd::float_4 v1 = simd::float_4::load(&scenes[sceneSelected].matrix[i][j]);
+				simd::float_4 v2 = simd::ifelse(v1 == 1.f, simd::float_4(v), 0.f);
+				out[j] += v2;
 			}
 		}
 
 		for (int i = 0; i < PORTS; i++) {
-			float v = params[OUTPUT_PARAM + i].getValue() > 0.f ? out[i / 4][i % 4] : 0.f;
+			float v = scenes[sceneSelected].output[i] == OM_OUT ? out[i / 4][i % 4] : 0.f;
 			outputs[OUTPUT + i].setVoltage(v);
 		}
 
@@ -168,9 +155,9 @@ struct IntermixModule : Module {
 			float s = lightDivider.division * args.sampleTime;
 			for (int i = 0; i < PORTS; i++) {
 				for (int j = 0; j < PORTS; j++) {
-					lights[MATRIX_LIGHT + i * PORTS + j].setSmoothBrightness(params[MATRIX_PARAM + i * PORTS + j].getValue(), s);
+					lights[MATRIX_LIGHT + i * PORTS + j].setSmoothBrightness(scenes[sceneSelected].matrix[j][i], s);
 				}
-				lights[OUTPUT_LIGHT + i].setSmoothBrightness(params[OUTPUT_PARAM + i].getValue(), s);
+				lights[OUTPUT_LIGHT + i].setSmoothBrightness(scenes[sceneSelected].output[i] == OM_OUT, s);
 			}
 		}
 	}
@@ -179,7 +166,7 @@ struct IntermixModule : Module {
 		if (sceneSelected == scene) return;
 		sceneSelected = scene;
 		for (int i = 0; i < PORTS; i++) {
-			params[OUTPUT_PARAM + i].setValue(scenes[sceneSelected].output[i]);
+			params[OUTPUT_PARAM + i].setValue(scenes[sceneSelected].output[i] == OM_OUT);
 			for (int j = 0; j < PORTS; j++) {
 				params[MATRIX_PARAM + j * PORTS + i].setValue(scenes[sceneSelected].matrix[i][j]);
 			}
@@ -199,7 +186,7 @@ struct IntermixModule : Module {
 				json_array_append_new(inputJ, json_integer(scenes[i].input[j]));
 				json_array_append_new(outputJ, json_integer(scenes[i].output[j]));
 				for (int k = 0; k < PORTS; k++) {
-					json_array_append_new(matrixJ, json_integer(scenes[i].matrix[j][k]));
+					json_array_append_new(matrixJ, json_real(scenes[i].matrix[j][k]));
 				}
 			}
 			json_object_set_new(sceneJ, "input", inputJ);
@@ -235,7 +222,7 @@ struct IntermixModule : Module {
 			}
 			size_t matrixIndex;
 			json_array_foreach(matrixJ, matrixIndex, valueJ) {
-				scenes[sceneIndex].matrix[matrixIndex / PORTS][matrixIndex % PORTS] = (PAD_MODE)json_integer_value(valueJ);
+				scenes[sceneIndex].matrix[matrixIndex / PORTS][matrixIndex % PORTS] = json_real_value(valueJ);
 			}
 		}
 
