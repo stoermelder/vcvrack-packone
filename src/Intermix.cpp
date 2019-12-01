@@ -40,7 +40,7 @@ struct IntermixModule : Module {
 		NUM_OUTPUTS
 	};
 	enum LightIds {
-		ENUMS(MATRIX_LIGHT, PORTS * PORTS),
+		ENUMS(MATRIX_LIGHT, PORTS * PORTS * 3),
 		ENUMS(OUTPUT_LIGHT, PORTS),
 		NUM_LIGHTS
 	};
@@ -48,7 +48,7 @@ struct IntermixModule : Module {
 	struct SceneData {
 		IN_MODE input[PORTS];
 		OUT_MODE output[PORTS];
-		float matrix[PORTS][PORTS];
+		alignas(16) float matrix[PORTS][PORTS];
 	};
 
 	/** [Stored to JSON] */
@@ -68,7 +68,7 @@ struct IntermixModule : Module {
 			for (int j = 0; j < PORTS; j++) {
 				configParam(MATRIX_PARAM + i * PORTS + j, 0.f, 1.f, 0.f, string::f("Input %i to Output %i", j + 1, i + 1));
 			}
-			configParam(OUTPUT_PARAM + i, 0.f, 1.f, 1.f, string::f("Output %i", i + 1));
+			configParam(OUTPUT_PARAM + i, 0.f, 1.f, 0.f, string::f("Disable output %i", i + 1));
 		}
 		sceneDivider.setDivision(32);
 		lightDivider.setDivision(512);
@@ -114,7 +114,7 @@ struct IntermixModule : Module {
 
 		if (sceneDivider.process()) {
 			for (int i = 0; i < PORTS; i++) {
-				scenes[sceneSelected].output[i] = params[OUTPUT_PARAM + i].getValue() != 0.f ? OM_OUT : OM_OFF;
+				scenes[sceneSelected].output[i] = params[OUTPUT_PARAM + i].getValue() == 0.f ? OM_OUT : OM_OFF;
 				for (int j = 0; j < PORTS; j++) {
 					scenes[sceneSelected].matrix[i][j] = params[MATRIX_PARAM + j * PORTS + i].getValue();
 				}
@@ -139,25 +139,32 @@ struct IntermixModule : Module {
 					break;
 			}
 
-			for (int j = 0; j < PORTS / 4; j+=4) {
+			for (int j = 0; j < PORTS; j+=4) {
 				simd::float_4 v1 = simd::float_4::load(&scenes[sceneSelected].matrix[i][j]);
-				simd::float_4 v2 = simd::ifelse(v1 == 1.f, simd::float_4(v), 0.f);
-				out[j] += v2;
+				simd::float_4 v2 = simd::ifelse(v1 == 1.f, simd::float_4(v), simd::float_4::zero());
+				out[j / 4] += v2;
 			}
 		}
 
 		for (int i = 0; i < PORTS; i++) {
 			float v = scenes[sceneSelected].output[i] == OM_OUT ? out[i / 4][i % 4] : 0.f;
+			v = clamp(v, -10.f, 10.f);
 			outputs[OUTPUT + i].setVoltage(v);
 		}
 
 		if (lightDivider.process()) {
 			float s = lightDivider.division * args.sampleTime;
+			float in[PORTS];
+			for (int i = 0; i < PORTS; i++) {
+				in[i] = rescale(inputs[INPUT + i].getVoltage(), -10.f, 10.f, -1.f, 1.f);
+			}
 			for (int i = 0; i < PORTS; i++) {
 				for (int j = 0; j < PORTS; j++) {
-					lights[MATRIX_LIGHT + i * PORTS + j].setSmoothBrightness(scenes[sceneSelected].matrix[j][i], s);
+					float v = scenes[sceneSelected].matrix[j][i] > 0.f ? in[j] : 0.f;
+					lights[MATRIX_LIGHT + (i * PORTS + j) * 3 + 0].setSmoothBrightness(v < 0.f ? -v : 0.f, s);
+					lights[MATRIX_LIGHT + (i * PORTS + j) * 3 + 1].setSmoothBrightness(v > 0.f ?  v : 0.f, s);
 				}
-				lights[OUTPUT_LIGHT + i].setSmoothBrightness(scenes[sceneSelected].output[i] == OM_OUT, s);
+				lights[OUTPUT_LIGHT + i].setSmoothBrightness(scenes[sceneSelected].output[i] != OM_OUT, s);
 			}
 		}
 	}
@@ -346,6 +353,8 @@ struct InputLedDisplay : LedDisplayChoice {
 
 template < typename BASE >
 struct IntermixButtonLight : BASE {
+	float brightness = 0.6f;
+
 	IntermixButtonLight() {
 		this->box.size = math::Vec(26.f, 26.f);
 	}
@@ -355,7 +364,7 @@ struct IntermixButtonLight : BASE {
 		nvgRoundedRect(args.vg, 0.f, 0.f, this->box.size.x, this->box.size.y, 3.4f);
 
 		nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
-		nvgFillColor(args.vg, color::mult(this->color, 0.6f));
+		nvgFillColor(args.vg, color::mult(this->color, brightness));
 		nvgFill(args.vg);
 	}
 };
@@ -417,10 +426,13 @@ struct IntermixWidget : ModuleWidget {
 		// Lights
 		for (int i = 0; i < PORTS; i++) {
 			Vec v = Vec(21.9f, yMin + (yMax - yMin) / (PORTS - 1) * i);
-			addChild(createLightCentered<IntermixButtonLight<RedLight>>(v, module, IntermixModule<PORTS>::OUTPUT_LIGHT + i));
+			IntermixButtonLight<RedLight>* redLight = createLightCentered<IntermixButtonLight<RedLight>>(v, module, IntermixModule<PORTS>::OUTPUT_LIGHT + i);
+			redLight->brightness = 0.8f;
+			addChild(redLight);
+
 			for (int j = 0; j < PORTS; j++) {
 				Vec v = Vec(xMin + (xMax - xMin) / (PORTS - 1) * j, yMin + (yMax - yMin) / (PORTS - 1) * i);
-				addChild(createLightCentered<IntermixButtonLight<GreenLight>>(v, module, IntermixModule<PORTS>::MATRIX_LIGHT + i * PORTS + j));
+				addChild(createLightCentered<IntermixButtonLight<RedGreenBlueLight>>(v, module, IntermixModule<PORTS>::MATRIX_LIGHT + (i * PORTS + j) * 3));
 			}
 		}
 	}
