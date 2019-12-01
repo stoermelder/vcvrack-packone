@@ -167,15 +167,16 @@ struct IntermixModule : Module {
 		// SIMD code
 		simd::float_4 c = outputClamp;
 		for (int j = 0; j < PORTS; j+=4) {
-			out[j / 4] = simd::ifelse(c == 1.f, simd::clamp(out[j / 4], -10.f, 10.f), out[j / 4]);
+			// Check for OUT_MODE
 			simd::int32_4 o1 = simd::int32_4::load((int32_t*)&scenes[sceneSelected].output[j]);
-			simd::float_4 o2 = simd::float_4(o1 == 0) == -1.f;
+			simd::float_4 o2 = simd::float_4(o1 != 0) == -1.f;
 			out[j / 4] = simd::ifelse(o2, out[j / 4], simd::float_4::zero());
+			// Clamp if outputClamp it set
+			out[j / 4] = simd::ifelse(c == 1.f, simd::clamp(out[j / 4], -10.f, 10.f), out[j / 4]);
 		}
 
 		for (int i = 0; i < PORTS; i++) {
-			float v = out[i / 4][i % 4];
-			outputs[OUTPUT + i].setVoltage(v);
+			outputs[OUTPUT + i].setVoltage(out[i / 4][i % 4]);
 		}
 		// --
 
@@ -593,7 +594,7 @@ struct IntermixWidget : ModuleWidget {
 		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<SceneModeMenuItem>(&MenuItem::text, "SCENE-port", &SceneModeMenuItem::module, module));
-		menu->addChild(construct<OutputClampItem>(&MenuItem::text, "Limit output on -10..10V", &OutputClampItem::module, module));
+		menu->addChild(construct<OutputClampItem>(&MenuItem::text, "Limit output to -10..10V", &OutputClampItem::module, module));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(new BrightnessSlider(module));
 		menu->addChild(construct<InputVisualizeItem>(&MenuItem::text, "Visualize input on pads", &InputVisualizeItem::module, module));
