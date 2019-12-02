@@ -42,3 +42,51 @@ struct ClockMultiplier {
 		currentDivision = 0;
 	}
 };
+
+
+struct Fader {
+	float rise = 1.f;
+	float fall = 1.f;
+	float currentRise;
+	float currentFall;
+	float last = 0.f;
+
+	void reset(float last) {
+		currentRise = rise;
+		currentFall = 0.f;
+		this->last = last;
+	}
+
+	void triggerFadeIn() {
+		currentRise = (currentFall / fall) * rise;
+		currentFall = 0.f;
+		last = 1.f;
+	}
+
+	void triggerFadeOut() {
+		currentFall = (currentRise / rise) * fall;
+		currentRise = rise;
+		last = 0.f;
+	}
+
+	inline void setRiseFall(float rise, float fall) {
+		if (currentRise == this->rise) currentRise = rise;
+		currentFall = std::min(fall, currentFall);
+		this->rise = rise;
+		this->fall = fall;
+	}
+
+	inline float process(float deltaTime) {
+		if (currentRise < rise) {
+			currentRise += deltaTime;
+			return (currentRise / rise);
+		}
+		else if (currentFall > 0.f) {
+			currentFall = std::max(currentFall - deltaTime, 0.f);
+			return (currentFall / fall);
+		}
+		else {
+			return last;
+		}
+	}
+};

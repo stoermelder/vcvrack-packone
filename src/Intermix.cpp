@@ -1,4 +1,5 @@
 #include "plugin.hpp"
+#include "digital.hpp"
 #include <thread>
 
 namespace Intermix {
@@ -13,7 +14,8 @@ enum SCENE_CV_MODE {
 
 enum IN_MODE {
 	IM_OFF = 0,
-	IM_IN = 1,
+	IM_DIRECT = 1,
+	IM_FADE = 4,
 	IM_ADD_1V = 2,
 	IM_SUB_1V = 3
 };
@@ -28,6 +30,8 @@ struct IntermixModule : Module {
 	enum ParamIds {
 		ENUMS(MATRIX_PARAM, PORTS * PORTS),
 		ENUMS(OUTPUT_PARAM, PORTS),
+		FADEIN_PARAM,
+		FADEOUT_PARAM,
 		NUM_PARAMS
 	};
 	enum InputIds {
@@ -46,15 +50,18 @@ struct IntermixModule : Module {
 	};
 
 	struct SceneData {
-		IN_MODE input[PORTS];
-		OUT_MODE output[PORTS];
+		alignas(16) OUT_MODE output[PORTS];
 		alignas(16) float matrix[PORTS][PORTS];
 	};
+
+	alignas(16) float currentMatrix[PORTS][PORTS];
 
 	/** [Stored to JSON] */
 	float padBrightness;
 	/** [Stored to JSON] */
 	bool inputVisualize;
+	/** [Stored to JSON] */
+	IN_MODE inputMode[PORTS];
 	/** [Stored to JSON] */
 	bool outputClamp;
 	/** [Stored to JSON] */
@@ -63,6 +70,8 @@ struct IntermixModule : Module {
 	int sceneSelected = 0;
 	/** [Stored to JSON] */
 	SCENE_CV_MODE sceneMode;
+
+	Fader fader[PORTS][PORTS];
 
 	dsp::SchmittTrigger sceneTrigger;
 	dsp::ClockDivider sceneDivider;
@@ -76,6 +85,8 @@ struct IntermixModule : Module {
 			}
 			configParam(OUTPUT_PARAM + i, 0.f, 1.f, 0.f, string::f("Disable output %i", i + 1));
 		}
+		configParam(FADEIN_PARAM, 0.f, 4.f, 0.5f, "Fade in", "s");
+		configParam(FADEOUT_PARAM, 0.f, 4.f, 0.5f, "Fade out", "s");
 		sceneDivider.setDivision(32);
 		lightDivider.setDivision(512);
 		onReset();
@@ -86,8 +97,8 @@ struct IntermixModule : Module {
 		inputVisualize = true;
 		outputClamp = true;
 		for (int i = 0; i < SCENE_COUNT; i++) {
+			inputMode[i] = IM_DIRECT;
 			for (int j = 0; j < PORTS; j++) {
-				scenes[i].input[j] = IM_IN;
 				scenes[i].output[j] = OM_OUT;
 				for (int k = 0; k < PORTS; k++) {
 					scenes[i].matrix[j][k] = 0.f;
@@ -122,10 +133,16 @@ struct IntermixModule : Module {
 		}
 
 		if (sceneDivider.process()) {
+			float f1 = params[FADEIN_PARAM].getValue();
+			float f2 = params[FADEOUT_PARAM].getValue();
 			for (int i = 0; i < PORTS; i++) {
 				scenes[sceneSelected].output[i] = params[OUTPUT_PARAM + i].getValue() == 0.f ? OM_OUT : OM_OFF;
 				for (int j = 0; j < PORTS; j++) {
-					scenes[sceneSelected].matrix[i][j] = params[MATRIX_PARAM + j * PORTS + i].getValue();
+					fader[i][j].setRiseFall(f1, f2);
+					float p = params[MATRIX_PARAM + j * PORTS + i].getValue();
+					if (p != scenes[sceneSelected].matrix[i][j] && p == 1.f) fader[i][j].triggerFadeIn();
+					if (p != scenes[sceneSelected].matrix[i][j] && p == 0.f) fader[i][j].triggerFadeOut();
+					scenes[sceneSelected].matrix[i][j] = currentMatrix[i][j] = p;
 				}
 			}
 		}
@@ -133,12 +150,19 @@ struct IntermixModule : Module {
 		simd::float_4 out[PORTS / 4] = {};
 		for (int i = 0; i < PORTS; i++) {
 			float v;
-			switch (scenes[sceneSelected].input[i]) {
+			switch (inputMode[i]) {
 				case IN_MODE::IM_OFF:
 					continue;
-				case IN_MODE::IM_IN:
+				case IN_MODE::IM_DIRECT:
 					if (!inputs[INPUT + i].isConnected()) continue;
 					v = inputs[INPUT + i].getVoltage();
+					break;
+				case IN_MODE::IM_FADE:
+					if (!inputs[INPUT + i].isConnected()) continue;
+					v = inputs[INPUT + i].getVoltage();
+					for (int j = 0; j < PORTS; j++) {
+						currentMatrix[i][j] = fader[i][j].process(args.sampleTime);
+					}
 					break;
 				case IN_MODE::IM_ADD_1V:
 					v = 1.f;
@@ -149,8 +173,8 @@ struct IntermixModule : Module {
 			}
 
 			for (int j = 0; j < PORTS; j+=4) {
-				simd::float_4 v1 = simd::float_4::load(&scenes[sceneSelected].matrix[i][j]);
-				simd::float_4 v2 = simd::ifelse(v1 == 1.f, simd::float_4(v), simd::float_4::zero());
+				simd::float_4 v1 = simd::float_4::load(&currentMatrix[i][j]);
+				simd::float_4 v2 = v1 * simd::float_4(v);
 				out[j / 4] += v2;
 			}
 		}
@@ -189,7 +213,7 @@ struct IntermixModule : Module {
 				}
 				for (int i = 0; i < PORTS; i++) {
 					for (int j = 0; j < PORTS; j++) {
-						float v = scenes[sceneSelected].matrix[j][i] > 0.f ? (in[j] * padBrightness) : 0.f;
+						float v = currentMatrix[j][i] * (in[j] * padBrightness);
 						lights[MATRIX_LIGHT + (i * PORTS + j) * 3 + 0].setBrightness(v < 0.f ? -v : 0.f);
 						lights[MATRIX_LIGHT + (i * PORTS + j) * 3 + 1].setBrightness(v > 0.f ?  v : 0.f);
 						lights[MATRIX_LIGHT + (i * PORTS + j) * 3 + 2].setBrightness(0.f);
@@ -199,7 +223,7 @@ struct IntermixModule : Module {
 			else {
 				for (int i = 0; i < PORTS; i++) {
 					for (int j = 0; j < PORTS; j++) {
-						float v = scenes[sceneSelected].matrix[j][i] * padBrightness;
+						float v = currentMatrix[j][i] * padBrightness;
 						lights[MATRIX_LIGHT + (i * PORTS + j) * 3 + 0].setSmoothBrightness(v, s);
 						lights[MATRIX_LIGHT + (i * PORTS + j) * 3 + 1].setSmoothBrightness(v, s);
 						lights[MATRIX_LIGHT + (i * PORTS + j) * 3 + 2].setSmoothBrightness(v, s);
@@ -215,11 +239,16 @@ struct IntermixModule : Module {
 
 	inline void sceneSet(int scene) {
 		if (sceneSelected == scene) return;
+		int scenePrevious = sceneSelected;
 		sceneSelected = scene;
 		for (int i = 0; i < PORTS; i++) {
-			params[OUTPUT_PARAM + i].setValue(scenes[sceneSelected].output[i] == OM_OUT);
+			params[OUTPUT_PARAM + i].setValue(scenes[sceneSelected].output[i] != OM_OUT);
 			for (int j = 0; j < PORTS; j++) {
-				params[MATRIX_PARAM + j * PORTS + i].setValue(scenes[sceneSelected].matrix[i][j]);
+				float p = scenes[sceneSelected].matrix[i][j];
+				params[MATRIX_PARAM + j * PORTS + i].setValue(p);
+				if (p != scenes[scenePrevious].matrix[i][j] && p == 1.f) fader[i][j].triggerFadeIn();
+				if (p != scenes[scenePrevious].matrix[i][j] && p == 0.f) fader[i][j].triggerFadeOut();
+				currentMatrix[i][j] = p;
 			}
 		}
 	}
@@ -231,20 +260,24 @@ struct IntermixModule : Module {
 		json_object_set_new(rootJ, "inputVisualize", json_boolean(inputVisualize));
 		json_object_set_new(rootJ, "outputClamp", json_boolean(outputClamp));
 
+		json_t* inputsJ = json_array();
+		for (int i = 0; i < PORTS; i++) {
+			json_array_append_new(inputsJ, json_integer(inputMode[i]));
+		}
+		json_object_set_new(rootJ, "inputMode", inputsJ);
+
 		json_t* scenesJ = json_array();
 		for (int i = 0; i < SCENE_COUNT; i++) {
-			json_t* inputJ = json_array();
 			json_t* outputJ = json_array();
 			json_t* sceneJ = json_object();
 			json_t* matrixJ = json_array();
 			for (int j = 0; j < PORTS; j++) {
-				json_array_append_new(inputJ, json_integer(scenes[i].input[j]));
 				json_array_append_new(outputJ, json_integer(scenes[i].output[j]));
 				for (int k = 0; k < PORTS; k++) {
 					json_array_append_new(matrixJ, json_real(scenes[i].matrix[j][k]));
 				}
 			}
-			json_object_set_new(sceneJ, "input", inputJ);
+
 			json_object_set_new(sceneJ, "output", outputJ);
 			json_object_set_new(sceneJ, "matrix", matrixJ);
 			json_array_append_new(scenesJ, sceneJ);
@@ -262,19 +295,21 @@ struct IntermixModule : Module {
 		inputVisualize = json_boolean_value(json_object_get(rootJ, "inputVisualize"));
 		outputClamp = json_boolean_value(json_object_get(rootJ, "outputClamp"));
 
+		json_t* inputsJ = json_object_get(rootJ, "inputMode");
+		json_t* inputJ;
+		size_t inputIndex;
+		json_array_foreach(inputsJ, inputIndex, inputJ) {
+			inputMode[inputIndex] = (IN_MODE)json_integer_value(inputJ);
+		}
+
 		json_t* scenesJ = json_object_get(rootJ, "scenes");
 		json_t* sceneJ;
 		size_t sceneIndex;
 		json_array_foreach(scenesJ, sceneIndex, sceneJ) {
-			json_t* inputJ = json_object_get(sceneJ, "input");
 			json_t* outputJ = json_object_get(sceneJ, "output");
 			json_t* matrixJ = json_object_get(sceneJ, "matrix");
-
 			json_t* valueJ;
-			size_t inputIndex;
-			json_array_foreach(inputJ, inputIndex, valueJ) {
-				scenes[sceneIndex].input[inputIndex] = (IN_MODE)json_integer_value(valueJ);
-			}
+
 			size_t outputIndex;
 			json_array_foreach(outputJ, outputIndex, valueJ) {
 				scenes[sceneIndex].output[outputIndex] = (OUT_MODE)json_integer_value(valueJ);
@@ -287,6 +322,14 @@ struct IntermixModule : Module {
 
 		sceneSelected = json_integer_value(json_object_get(rootJ, "sceneSelected"));
 		sceneMode = (SCENE_CV_MODE)json_integer_value(json_object_get(rootJ, "sceneMode"));
+
+		for (int i = 0; i < PORTS; i++) {
+			for (int j = 0; j < PORTS; j++) {
+				float v = scenes[sceneSelected].matrix[i][j];
+				currentMatrix[i][j] = v;
+				fader[i][j].reset(v);
+			}
+		}
 	}
 };
 
@@ -354,11 +397,13 @@ struct InputLedDisplay : LedDisplayChoice {
 
 	void step() override {
 		if (module) {
-			switch (module->scenes[module->sceneSelected].input[id]) {
+			switch (module->inputMode[id]) {
 				case IN_MODE::IM_OFF:
 					text = "OFF"; break;
-				case IN_MODE::IM_IN:
-					text = " - "; break;
+				case IN_MODE::IM_DIRECT:
+					text = "<->"; break;
+				case IN_MODE::IM_FADE:
+					text = "FAD"; break;
 				case IN_MODE::IM_ADD_1V:
 					text = "+1V"; break;
 				case IN_MODE::IM_SUB_1V:
@@ -385,18 +430,19 @@ struct InputLedDisplay : LedDisplayChoice {
 			IN_MODE inMode;
 			
 			void onAction(const event::Action& e) override {
-				module->scenes[module->sceneSelected].input[id] = inMode;
+				module->inputMode[id] = inMode;
 			}
 
 			void step() override {
-				rightText = module->scenes[module->sceneSelected].input[id] == inMode ? "✔" : "";
+				rightText = module->inputMode[id] == inMode ? "✔" : "";
 				MenuItem::step();
 			}
 		};
 
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Input mode"));
 		menu->addChild(construct<InputItem>(&MenuItem::text, "Off", &InputItem::module, module, &InputItem::id, id, &InputItem::inMode, IM_OFF));
-		menu->addChild(construct<InputItem>(&MenuItem::text, "Default", &InputItem::module, module, &InputItem::id, id, &InputItem::inMode, IM_IN));
+		menu->addChild(construct<InputItem>(&MenuItem::text, "Direct", &InputItem::module, module, &InputItem::id, id, &InputItem::inMode, IM_DIRECT));
+		menu->addChild(construct<InputItem>(&MenuItem::text, "Linear fade", &InputItem::module, module, &InputItem::id, id, &InputItem::inMode, IM_FADE));
 		menu->addChild(construct<InputItem>(&MenuItem::text, "+1V", &InputItem::module, module, &InputItem::id, id, &InputItem::inMode, IM_ADD_1V));
 		menu->addChild(construct<InputItem>(&MenuItem::text, "-1V", &InputItem::module, module, &InputItem::id, id, &InputItem::inMode, IM_SUB_1V));
 	}
@@ -467,6 +513,9 @@ struct IntermixWidget : ModuleWidget {
 			Vec vi1 = Vec(xMin + (xMax - xMin) / (PORTS - 1) * i, 323.7f);
 			addInput(createInputCentered<StoermelderPort>(vi1, module, IntermixModule<PORTS>::INPUT + i));
 		}
+
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(21.9f, 300.3f), module, IntermixModule<PORTS>::FADEIN_PARAM));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(21.9f, 327.3f), module, IntermixModule<PORTS>::FADEOUT_PARAM));
 
 		SceneLedDisplay<IntermixModule<PORTS>>* sceneLedDisplay = createWidgetCentered<SceneLedDisplay<IntermixModule<PORTS>>>(Vec(308.1f, 299.5f));
 		sceneLedDisplay->module = module;
