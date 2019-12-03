@@ -71,7 +71,7 @@ struct IntermixModule : Module {
 	/** [Stored to JSON] */
 	SCENE_CV_MODE sceneMode;
 
-	Fader fader[PORTS][PORTS];
+	LinearFade fader[PORTS][PORTS];
 
 	dsp::SchmittTrigger sceneTrigger;
 	dsp::ClockDivider sceneDivider;

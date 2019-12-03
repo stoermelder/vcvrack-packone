@@ -44,7 +44,7 @@ struct ClockMultiplier {
 };
 
 
-struct Fader {
+struct LinearFade {
 	float rise = 1.f;
 	float fall = 1.f;
 	float currentRise;
@@ -88,5 +88,51 @@ struct Fader {
 		else {
 			return last;
 		}
+	}
+};
+
+
+struct LinearFade4 {
+	float rise = 1.f;
+	float fall = 1.f;
+	simd::float_4 currentRise;
+	simd::float_4 currentFall;
+	simd::float_4 last = 0.f;
+
+	void reset(int i, float last) {
+		currentRise[i] = rise;
+		currentFall[i] = 0.f;
+		this->last[i] = last;
+	}
+
+	void triggerFadeIn(int i) {
+		currentRise[i] = (currentFall[i] / fall) * rise;
+		currentFall[i] = 0.f;
+		last[i] = 1.f;
+	}
+
+	void triggerFadeOut(int i) {
+		currentFall[i] = (currentRise[i] / rise) * fall;
+		currentRise[i] = rise;
+		last[i] = 0.f;
+	}
+
+	inline void setRiseFall(float rise, float fall) {
+		currentRise = simd::ifelse(currentRise == this->rise, rise, currentRise);
+		currentFall = simd::fmin(fall, currentFall);
+		this->rise = rise;
+		this->fall = fall;
+	}
+
+	inline simd::float_4 process(float deltaTime) {
+		simd::float_4 r = last;
+
+		r = simd::ifelse(currentRise < rise, currentRise / rise, r);
+		currentRise = simd::ifelse(currentRise < rise, currentRise += deltaTime, currentRise);
+
+		r = simd::ifelse(currentFall > 0.f, currentFall / fall, r);
+		currentFall = simd::ifelse(currentFall > 0.f, simd::fmax(currentFall - deltaTime, 0.f), currentFall);
+
+		return r;
 	}
 };
