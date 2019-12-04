@@ -9,7 +9,8 @@ const int SCENE_COUNT = 8;
 enum SCENE_CV_MODE {
 	TRIG_FWD = 0,
 	VOLT = 8,
-	C4 = 9
+	C4 = 9,
+	ARM = 7
 };
 
 enum IN_MODE {
@@ -75,6 +76,8 @@ struct IntermixModule : Module {
 	/** [Stored to JSON] */
 	SCENE_CV_MODE sceneMode;
 
+	int sceneNext = -1;
+
 	LinearFade fader[PORTS][PORTS];
 	dsp::TSlewLimiter<simd::float_4> outputAtSlew[PORTS / 4];
 
@@ -115,8 +118,8 @@ struct IntermixModule : Module {
 				}
 			}
 		}
-		sceneSet(0);
 		sceneMode = SCENE_CV_MODE::TRIG_FWD;
+		sceneSet(0);
 		Module::onReset();
 	}
 
@@ -140,6 +143,12 @@ struct IntermixModule : Module {
 					sceneSet(s);
 					break;
 				}
+				case SCENE_CV_MODE::ARM: {
+					if (sceneTrigger.process(inputs[SCENE_INPUT].getVoltage())) {
+						sceneSet(sceneNext);
+					}
+					break;
+				}
 			}
 		}
 
@@ -148,7 +157,10 @@ struct IntermixModule : Module {
 			for (int i = 0; i < SCENE_COUNT; i++) {
 				if (params[SCENE_PARAM + i].getValue() > 0.f) {
 					if (i != sceneSelected) {
-						sceneSet(i);
+						if (sceneMode == SCENE_CV_MODE::ARM)
+							sceneNext = i;
+						else
+							sceneSet(i);
 						break;
 					}
 					sceneFound = i;
@@ -173,6 +185,7 @@ struct IntermixModule : Module {
 			}
 		}
 
+		// DSP processing
 		simd::float_4 out[PORTS / 4] = {};
 		for (int i = 0; i < PORTS; i++) {
 			float v;
@@ -234,6 +247,7 @@ struct IntermixModule : Module {
 		}
 		// --
 
+
 		if (lightDivider.process()) {
 			float s = lightDivider.getDivision() * args.sampleTime;
 
@@ -274,8 +288,10 @@ struct IntermixModule : Module {
 
 	inline void sceneSet(int scene) {
 		if (sceneSelected == scene) return;
+		if (scene < 0) return;
 		int scenePrevious = sceneSelected;
 		sceneSelected = scene;
+		sceneNext = -1;
 
 		for (int i = 0; i < SCENE_COUNT; i++) {
 			params[SCENE_PARAM + i].setValue(i == sceneSelected);
@@ -646,6 +662,7 @@ struct IntermixWidget : ModuleWidget {
 				menu->addChild(construct<SceneModeItem>(&MenuItem::text, "Trigger", &SceneModeItem::module, module, &SceneModeItem::sceneMode, SCENE_CV_MODE::TRIG_FWD));
 				menu->addChild(construct<SceneModeItem>(&MenuItem::text, "0..10V", &SceneModeItem::module, module, &SceneModeItem::sceneMode, SCENE_CV_MODE::VOLT));
 				menu->addChild(construct<SceneModeItem>(&MenuItem::text, "C4-G4", &SceneModeItem::module, module, &SceneModeItem::sceneMode, SCENE_CV_MODE::C4));
+				menu->addChild(construct<SceneModeItem>(&MenuItem::text, "Arm", &SceneModeItem::module, module, &SceneModeItem::sceneMode, SCENE_CV_MODE::ARM));
 				return menu;
 			}
 		};
