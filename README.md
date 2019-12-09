@@ -8,6 +8,8 @@
 
 The PackOne plugin gives you some utility modules for [VCV Rack](https://www.vcvrack.com).
 
+**Stable versions are released in the [VCV Library](https://vcvrack.com/plugins.html#packone). [Nightly builds](https://github.com/stoermelder/vcvrack-packone/releases/tag/Nightly) of the latest commit are also available for all platforms. Please review the [changelog](./CHANGELOG.md) for this plugin.**
+
 ![Intro image](./docs/intro.png)
 
 - [4ROUNDS](./docs/FourRounds.md): randomizer for up to 16 input signals to create 15 output signals
@@ -24,8 +26,6 @@ The PackOne plugin gives you some utility modules for [VCV Rack](https://www.vcv
 - [ROTOR Model A](./docs/RotorA.md): spread a carrier signal across 2-16 output channels using CV
 - [SIPO](./docs/Sipo.md): serial-in parallel-out shift register with polyphonic output and CV controls
 - [STRIP](./docs/Strip.md): manage a group of modules in a patch, providing load, save as, disable and randomize
-
-Stable versions are released in the [VCV Library](https://vcvrack.com/plugins.html#packone). Nightly builds of the latest commit can be downloaded [here](https://github.com/stoermelder/vcvrack-packone/releases/tag/Nightly). Please review the [changelog](./CHANGELOG.md) for this plugin.
 
 Feel free to contact me or create a GitHub issue if you have any problems or questions!
 If you like my modules consider donating to https://paypal.me/stoermelder. Thank you for your support!
