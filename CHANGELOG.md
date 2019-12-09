@@ -4,6 +4,10 @@
     - New module, precision adder 8x8 switch matrix with scene-support
 - Module [ARENA](./docs/Arena.md)
     - Added missing bipolar-mode for X/Y-inputs of the mix-channels
+- Module [CV-MAP](./docs/CVMap.md)
+    - Added option to disable audio rate processing for lower cpu usage
+- Module [CV-PAM](./docs/CVPam.md)
+    - Added option to disable audio rate processing for lower cpu usage
 - Module [MIDI-CAT](./docs/MidiCat.md)
     - Fixed wrong handling of CC-mappings in Direct-mode on parameter changes made within Rack
     - Added option to enter custom labels for mapping slots (#75)
