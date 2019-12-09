@@ -26,6 +26,10 @@ struct CVMap : CVMapModule<MAX_CHANNELS> {
 		NUM_LIGHTS
 	};
 
+	/** [Stored to Json] */
+	bool audioRate;
+
+	dsp::ClockDivider processDivider;
 	dsp::ClockDivider lightDivider;
 
 	CVMap() {
@@ -33,42 +37,50 @@ struct CVMap : CVMapModule<MAX_CHANNELS> {
 		for (int i = 0; i < MAX_CHANNELS; i++) {
 			MapModule<MAX_CHANNELS>::paramHandles[i].text = string::f("CV-MAP Ch%02d", i + 1);
 		}
+		processDivider.setDivision(32);
 		lightDivider.setDivision(1024);
 		onReset();
 	}
 
-	void process(const ProcessArgs &args) override {
-		// Step channels
-		for (int i = 0; i < mapLen; i++) {
-			if (i < 16) {
-				// Skip unused channels on INPUT1
-				if (inputs[POLY_INPUT1].getChannels() == i) {
-					i = 15;
-					continue;
+	void onReset() override {
+		audioRate = true;
+		CVMapModule<MAX_CHANNELS>::onReset();
+	}
+
+	void process(const ProcessArgs& args) override {
+		if (audioRate || processDivider.process()) {
+			// Step channels
+			for (int i = 0; i < mapLen; i++) {
+				if (i < 16) {
+					// Skip unused channels on INPUT1
+					if (inputs[POLY_INPUT1].getChannels() == i) {
+						i = 15;
+						continue;
+					}
+				} else {
+					// Skip unused channels on INPUT2
+					if (inputs[POLY_INPUT2].getChannels() == i - 16) {
+						break;
+					}
 				}
-			} else {
-				// Skip unused channels on INPUT2
-				if (inputs[POLY_INPUT2].getChannels() == i - 16) {
-					break;
+
+				ParamQuantity *paramQuantity = getParamQuantity(i);
+				if (paramQuantity == NULL) continue;
+				// Set ParamQuantity
+				float v = i < 16 ? inputs[POLY_INPUT1].getVoltage(i) : inputs[POLY_INPUT2].getVoltage(i - 16);
+				if (bipolarInput)
+					v += 5.f;
+				v = rescale(v, 0.f, 10.f, 0.f, 1.f);
+
+				// If lastValue is unitialized set it to its current value, only executed once
+				if (lastValue[i] == UINIT) {
+					lastValue[i] = v;
 				}
-			}
 
-			ParamQuantity *paramQuantity = getParamQuantity(i);
-			if (paramQuantity == NULL) continue;
-			// Set ParamQuantity
-			float v = i < 16 ? inputs[POLY_INPUT1].getVoltage(i) : inputs[POLY_INPUT2].getVoltage(i - 16);
-			if (bipolarInput)
-				v += 5.f;
-			v = rescale(v, 0.f, 10.f, 0.f, 1.f);
-
-			// If lastValue is unitialized set it to its current value, only executed once
-			if (lastValue[i] == UINIT) {
-				lastValue[i] = v;
-			}
-
-			if (lockParameterChanges || lastValue[i] != v) {
-				paramQuantity->setScaledValue(v);
-				lastValue[i] = v;
+				if (lockParameterChanges || lastValue[i] != v) {
+					paramQuantity->setScaledValue(v);
+					lastValue[i] = v;
+				}
 			}
 		}
 
@@ -86,11 +98,23 @@ struct CVMap : CVMapModule<MAX_CHANNELS> {
 		
 		CVMapModule<MAX_CHANNELS>::process(args);
 	}
+
+	json_t* dataToJson() override {
+		json_t* rootJ = CVMapModule<MAX_CHANNELS>::dataToJson();
+		json_object_set_new(rootJ, "audioRate", json_boolean(audioRate));
+		return rootJ;
+	}
+
+	void dataFromJson(json_t* rootJ) override {
+		CVMapModule<MAX_CHANNELS>::dataFromJson(rootJ);
+		json_t* audioRateJ = json_object_get(rootJ, "audioRate");
+		if (audioRateJ) audioRate = json_boolean_value(audioRateJ);
+	}
 };
 
 
 struct CVMapWidget : ModuleWidget {
-	CVMapWidget(CVMap *module) {	
+	CVMapWidget(CVMap* module) {
 		setModule(module);
 		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/CVMap.svg")));
 
@@ -102,28 +126,28 @@ struct CVMapWidget : ModuleWidget {
 		addInput(createInputCentered<StoermelderPort>(Vec(26.9f, 60.8f), module, CVMap::POLY_INPUT1));
 		addInput(createInputCentered<StoermelderPort>(Vec(123.1f, 60.8f), module, CVMap::POLY_INPUT2));
 
-		PolyLedWidget<> *w0 = createWidgetCentered<PolyLedWidget<>>(Vec(54.2f, 60.8f));
+		PolyLedWidget<>* w0 = createWidgetCentered<PolyLedWidget<>>(Vec(54.2f, 60.8f));
 		w0->setModule(module, CVMap::CHANNEL_LIGHTS1);
 		addChild(w0);
 
-		PolyLedWidget<> *w1 = createWidgetCentered<PolyLedWidget<>>(Vec(95.8f, 60.8f));
+		PolyLedWidget<>* w1 = createWidgetCentered<PolyLedWidget<>>(Vec(95.8f, 60.8f));
 		w1->setModule(module, CVMap::CHANNEL_LIGHTS2);
 		addChild(w1);
 
 		typedef MapModuleDisplay<MAX_CHANNELS, CVMap> TMapDisplay;
-		TMapDisplay *mapWidget = createWidget<TMapDisplay>(Vec(10.6f, 81.5f));
+		TMapDisplay* mapWidget = createWidget<TMapDisplay>(Vec(10.6f, 81.5f));
 		mapWidget->box.size = Vec(128.9f, 261.7f);
 		mapWidget->setModule(module);
 		addChild(mapWidget);
 	}
 
 
-	void appendContextMenu(Menu *menu) override {
-		CVMap *module = dynamic_cast<CVMap*>(this->module);
+	void appendContextMenu(Menu* menu) override {
+		CVMap* module = dynamic_cast<CVMap*>(this->module);
 		assert(module);
 
 		struct ManualItem : MenuItem {
-			void onAction(const event::Action &e) override {
+			void onAction(const event::Action& e) override {
 				std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/CVMap.md");
 				t.detach();
 			}
@@ -133,9 +157,9 @@ struct CVMapWidget : ModuleWidget {
 		menu->addChild(new MenuSeparator());
 
 		struct LockItem : MenuItem {
-			CVMap *module;
+			CVMap* module;
 
-			void onAction(const event::Action &e) override {
+			void onAction(const event::Action& e) override {
 				module->lockParameterChanges ^= true;
 			}
 
@@ -146,9 +170,9 @@ struct CVMapWidget : ModuleWidget {
 		};
 
 		struct UniBiItem : MenuItem {
-			CVMap *module;
+			CVMap* module;
 
-			void onAction(const event::Action &e) override {
+			void onAction(const event::Action& e) override {
 				module->bipolarInput ^= true;
 			}
 
@@ -158,10 +182,23 @@ struct CVMapWidget : ModuleWidget {
 			}
 		};
 
-		struct TextScrollItem : MenuItem {
-			CVMap *module;
+		struct AudioRateItem : MenuItem {
+			CVMap* module;
 
-			void onAction(const event::Action &e) override {
+			void onAction(const event::Action& e) override {
+				module->audioRate ^= true;
+			}
+
+			void step() override {
+				rightText = module->audioRate ? "✔" : "";
+				MenuItem::step();
+			}
+		};
+
+		struct TextScrollItem : MenuItem {
+			CVMap* module;
+
+			void onAction(const event::Action& e) override {
 				module->textScrolling ^= true;
 			}
 
@@ -172,8 +209,10 @@ struct CVMapWidget : ModuleWidget {
 		};
 
 		menu->addChild(construct<LockItem>(&MenuItem::text, "Parameter changes", &LockItem::module, module));
-		menu->addChild(construct<TextScrollItem>(&MenuItem::text, "Text scrolling", &TextScrollItem::module, module));
 		menu->addChild(construct<UniBiItem>(&MenuItem::text, "Signal input", &UniBiItem::module, module));
+		menu->addChild(construct<AudioRateItem>(&MenuItem::text, "Audio rate processing", &AudioRateItem::module, module));
+		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<TextScrollItem>(&MenuItem::text, "Text scrolling", &TextScrollItem::module, module));
 	}
 };
 
