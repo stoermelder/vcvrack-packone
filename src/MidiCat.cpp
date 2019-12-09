@@ -120,6 +120,8 @@ struct MidiCatModule : Module {
 
 	/** [Stored to Json] */
 	bool textScrolling = true;
+	/** [Stored to Json] */
+	std::string textLabel[MAX_CHANNELS];
 
 	/** The value of each CC number */
 	int valuesCc[128];
@@ -174,7 +176,7 @@ struct MidiCatModule : Module {
 			lastValueOut[i] = -1;
 			ccsMode[i] = CCMODE::CCMODE_DIRECT;
 			notesMode[i] = NOTEMODE::NOTEMODE_MOMENTARY;
-
+			textLabel[i] = "";
 			//filterInitialized[i] = false;
 			//valueFilters[i].reset();
 		}
@@ -437,6 +439,7 @@ struct MidiCatModule : Module {
 		learningId = -1;
 		ccs[id] = -1;
 		notes[id] = -1;
+		textLabel[id] = "";
 		APP->engine->updateParamHandle(&paramHandles[id], -1, 0, true);
 		updateMapLen();
 		refreshParamHandleText(id);
@@ -447,6 +450,7 @@ struct MidiCatModule : Module {
 		for (int id = 0; id < MAX_CHANNELS; id++) {
 			ccs[id] = -1;
 			notes[id] = -1;
+			textLabel[id] = "";
 			APP->engine->updateParamHandle(&paramHandles[id], -1, 0, true);
 			refreshParamHandleText(id);
 		}
@@ -482,6 +486,7 @@ struct MidiCatModule : Module {
 			ccsMode[learningId] = ccsMode[learningId - 1];
 			notesMode[learningId] = notesMode[learningId - 1];
 		}
+		textLabel[learningId] = "";
 
 		// Find next incomplete map
 		while (++learningId < MAX_CHANNELS) {
@@ -544,6 +549,7 @@ struct MidiCatModule : Module {
 			json_object_set_new(mapJ, "noteMode", json_integer(notesMode[id]));
 			json_object_set_new(mapJ, "moduleId", json_integer(paramHandles[id].moduleId));
 			json_object_set_new(mapJ, "paramId", json_integer(paramHandles[id].paramId));
+			json_object_set_new(mapJ, "label", json_string(textLabel[id].c_str()));
 			json_array_append_new(mapsJ, mapJ);
 		}
 		json_object_set_new(rootJ, "maps", mapsJ);
@@ -574,6 +580,7 @@ struct MidiCatModule : Module {
 				json_t *noteModeJ = json_object_get(mapJ, "noteMode");
 				json_t *moduleIdJ = json_object_get(mapJ, "moduleId");
 				json_t *paramIdJ = json_object_get(mapJ, "paramId");
+				json_t *labelJ = json_object_get(mapJ, "label");
 
 				if (!((ccJ || noteJ) && moduleIdJ && paramIdJ)) {
 					ccs[mapIndex] = -1;
@@ -592,6 +599,7 @@ struct MidiCatModule : Module {
 					APP->engine->updateParamHandle(&paramHandles[mapIndex], moduleId, paramId, false);
 					refreshParamHandleText(mapIndex);
 				}
+				if (labelJ) textLabel[mapIndex] = json_string_value(labelJ);
 			}
 		}
 
@@ -671,6 +679,61 @@ struct NoteModeMenuItem : MenuItem {
 	}
 };
 
+struct LabelMenuItem : MenuItem {
+	MidiCatModule* module;
+	int id;
+
+	LabelMenuItem() {
+		rightText = RIGHT_ARROW;
+	}
+
+	struct LabelField : ui::TextField {
+		MidiCatModule* module;
+		int id;
+		void onSelectKey(const event::SelectKey& e) override {
+			if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
+				module->textLabel[id] = text;
+
+				ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
+				overlay->requestDelete();
+				e.consume(this);
+			}
+
+			if (!e.getTarget()) {
+				ui::TextField::onSelectKey(e);
+			}
+		}
+	};
+
+	struct ResetItem : ui::MenuItem {
+		MidiCatModule* module;
+		int id;
+		void onAction(const event::Action& e) override {
+			module->textLabel[id] = "";
+		}
+	};
+
+	Menu* createChildMenu() override {
+		Menu* menu = new Menu;
+
+		LabelField* labelField = new LabelField;
+		labelField->placeholder = "Label";
+		labelField->text = module->textLabel[id];
+		labelField->box.size.x = 180;
+		labelField->module = module;
+		labelField->id = id;
+		menu->addChild(labelField);
+
+		ResetItem* resetItem = new ResetItem;
+		resetItem->text = "Reset";
+		resetItem->module = module;
+		resetItem->id = id;
+		menu->addChild(resetItem);
+
+		return menu;
+	}
+};
+
 
 struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 	MidiCatChoice() {
@@ -678,7 +741,7 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 		color = nvgRGB(0xf0, 0xf0, 0xf0);
 	}
 
-	std::string getTextPrefix() override {
+	std::string getSlotPrefix() override {
 		if (module->ccs[id] >= 0) {
 			return string::f("cc%02d ", module->ccs[id]);
 		}
@@ -698,6 +761,10 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 		}
 	}
 
+	std::string getSlotLabel() override {
+		return module->textLabel[id];
+	}
+
 	void appendContextMenu(Menu *menu) override {
 		if (module->ccs[id] >= 0) {
 			menu->addChild(new MenuSeparator());
@@ -707,6 +774,9 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 			menu->addChild(new MenuSeparator());
 			menu->addChild(construct<NoteModeMenuItem>(&MenuItem::text, "Input mode for notes", &NoteModeMenuItem::module, module, &NoteModeMenuItem::id, id));
 		}
+
+		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<LabelMenuItem>(&MenuItem::text, "Custom label", &LabelMenuItem::module, module, &LabelMenuItem::id, id));
 	}
 };
 

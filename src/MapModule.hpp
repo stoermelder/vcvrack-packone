@@ -371,33 +371,37 @@ struct MapModuleChoice : LedDisplayChoice {
 		}
 
 		// Set text
-		text = getTextPrefix();
 		if (module->paramHandles[id].moduleId >= 0 && module->learningId != id) {
-			std::string pn = getParamName();
-			if (pn == "") {
-				module->clearMap(id);
-				return;
+			std::string prefix = "";
+			std::string label = getSlotLabel();
+			if (label == "") {
+				prefix = getSlotPrefix();
+				label = getParamName();
+				if (label == "") {
+					module->clearMap(id);
+					return;
+				}
 			}
 
 			size_t hscrollMaxLength = ceil(box.size.x / 6.2f);
-			if (module->textScrolling && pn.length() + text.length() > hscrollMaxLength) {
+			if (module->textScrolling && label.length() + prefix.length() > hscrollMaxLength) {
 				// Scroll the parameter-name horizontically
-				text += pn.substr(hscrollCharOffset > (int)pn.length() ? 0 : hscrollCharOffset);
+				text = prefix + label.substr(hscrollCharOffset > (int)label.length() ? 0 : hscrollCharOffset);
 				auto now = std::chrono::system_clock::now();
 				if (now - hscrollUpdate > std::chrono::milliseconds{100}) {
-					hscrollCharOffset = (hscrollCharOffset + 1) % (pn.length() + hscrollMaxLength);
+					hscrollCharOffset = (hscrollCharOffset + 1) % (label.length() + hscrollMaxLength);
 					hscrollUpdate = now;
 				}
 			} 
 			else {
-				text += pn;
+				text = prefix + label;
 			}
 		} 
 		else {
 			if (module->learningId == id) {
-				text += "Mapping...";
+				text = getSlotPrefix() + "Mapping...";
 			} else {
-				text += "Unmapped";
+				text = getSlotPrefix() + "Unmapped";
 			}
 		}
 
@@ -410,7 +414,11 @@ struct MapModuleChoice : LedDisplayChoice {
 		}
 	}
 
-	virtual std::string getTextPrefix() {
+	virtual std::string getSlotLabel() {
+		return "";
+	}
+
+	virtual std::string getSlotPrefix() {
 		return MAX_CHANNELS > 1 ? string::f("%02d ", id + 1) : "";
 	}
 

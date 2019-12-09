@@ -6,6 +6,7 @@
     - Added missing bipolar-mode for X/Y-inputs of the mix-channels
 - Module [MIDI-CAT](./docs/MidiCat.md)
     - Fixed wrong handling of CC-mappings in Direct-mode on parameter changes made within Rack
+    - Added option to enter custom labels for mapping slots (#75)
 
 ### 1.3.0
 
