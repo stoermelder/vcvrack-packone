@@ -16,9 +16,31 @@ enum SCENE_CV_MODE {
 enum IN_MODE {
 	IM_OFF = 0,
 	IM_DIRECT = 1,
-	IM_FADE = 4,
-	IM_ADD_1V = 2,
-	IM_SUB_1V = 3
+	IM_FADE = 2,
+	IM_SUB_12C = 12,
+	IM_SUB_11C = 13,
+	IM_SUB_10C = 14,
+	IM_SUB_09C = 15,
+	IM_SUB_08C = 16,
+	IM_SUB_07C = 17,
+	IM_SUB_06C = 18,
+	IM_SUB_05C = 19,
+	IM_SUB_04C = 20,
+	IM_SUB_03C = 21,
+	IM_SUB_02C = 22,
+	IM_SUB_01C = 23,
+	IM_ADD_01C = 25,
+	IM_ADD_02C = 26,
+	IM_ADD_03C = 27,
+	IM_ADD_04C = 28,
+	IM_ADD_05C = 29,
+	IM_ADD_06C = 30,
+	IM_ADD_07C = 31,
+	IM_ADD_08C = 32,
+	IM_ADD_09C = 33,
+	IM_ADD_10C = 34,
+	IM_ADD_11C = 35,
+	IM_ADD_12C = 36
 };
 
 enum OUT_MODE {
@@ -194,7 +216,8 @@ struct IntermixModule : Module {
 		simd::float_4 out[PORTS / 4] = {};
 		for (int i = 0; i < PORTS; i++) {
 			float v;
-			switch (sceneInputMode ? scenes[sceneSelected].input[i] : inputMode[i]) {
+			IN_MODE mode = sceneInputMode ? scenes[sceneSelected].input[i] : inputMode[i];
+			switch (mode) {
 				case IN_MODE::IM_OFF:
 					continue;
 				case IN_MODE::IM_DIRECT:
@@ -208,11 +231,8 @@ struct IntermixModule : Module {
 						currentMatrix[i][j] = fader[i][j].process(args.sampleTime);
 					}
 					break;
-				case IN_MODE::IM_ADD_1V:
-					v = 1.f;
-					break;
-				case IN_MODE::IM_SUB_1V:
-					v = -1.f;
+				default:
+					v = (mode - 24) / 12.f;
 					break;
 			}
 
@@ -489,18 +509,17 @@ struct InputLedDisplay : LedDisplayChoice {
 
 	void step() override {
 		if (module) {
-			IN_MODE m = module->sceneInputMode ? module->scenes[module->sceneSelected].input[id] : module->inputMode[id];
-			switch (m) {
+			IN_MODE mode = module->sceneInputMode ? module->scenes[module->sceneSelected].input[id] : module->inputMode[id];
+			switch (mode) {
 				case IN_MODE::IM_OFF:
 					text = "OFF"; break;
 				case IN_MODE::IM_DIRECT:
 					text = "<->"; break;
 				case IN_MODE::IM_FADE:
 					text = "FAD"; break;
-				case IN_MODE::IM_ADD_1V:
-					text = "+1V"; break;
-				case IN_MODE::IM_SUB_1V:
-					text = "-1V"; break;
+				default:
+					text = (mode - 24 > 0 ? "+" : "-") + string::f("%02i", std::abs(mode - 24));
+					break;
 			}
 		}
 		LedDisplayChoice::step();
@@ -542,8 +561,14 @@ struct InputLedDisplay : LedDisplayChoice {
 		menu->addChild(construct<InputItem>(&MenuItem::text, "Off", &InputItem::module, module, &InputItem::id, id, &InputItem::inMode, IM_OFF));
 		menu->addChild(construct<InputItem>(&MenuItem::text, "Direct", &InputItem::module, module, &InputItem::id, id, &InputItem::inMode, IM_DIRECT));
 		menu->addChild(construct<InputItem>(&MenuItem::text, "Linear fade", &InputItem::module, module, &InputItem::id, id, &InputItem::inMode, IM_FADE));
-		menu->addChild(construct<InputItem>(&MenuItem::text, "+1V", &InputItem::module, module, &InputItem::id, id, &InputItem::inMode, IM_ADD_1V));
-		menu->addChild(construct<InputItem>(&MenuItem::text, "-1V", &InputItem::module, module, &InputItem::id, id, &InputItem::inMode, IM_SUB_1V));
+		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Constant voltage"));
+		for (int i = 12; i > 0; i--) {
+			menu->addChild(construct<InputItem>(&MenuItem::text, string::f("-%02i cent", i), &InputItem::module, module, &InputItem::id, id, &InputItem::inMode, (IN_MODE)(24 - i)));
+		}
+		for (int i = 1; i <= 12; i++) {
+			menu->addChild(construct<InputItem>(&MenuItem::text, string::f("+%02i cent", i), &InputItem::module, module, &InputItem::id, id, &InputItem::inMode, (IN_MODE)(24 + i)));
+		}
 	}
 };
 
