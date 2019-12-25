@@ -1,7 +1,7 @@
 ### 1.x.x (in development)
 
 - Module [INTERMIX](./docs/Intermix.md)
-    - New module, precision adder 8x8 switch matrix with scene-support
+    - New module, precision adder 8x8 switch matrix with support for 8 scenes
 - Module [ARENA](./docs/Arena.md)
     - Added missing bipolar-mode for X/Y-inputs of the mix-channels
 - Module [CV-MAP](./docs/CVMap.md)
