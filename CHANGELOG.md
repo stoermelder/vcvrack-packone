@@ -1,4 +1,4 @@
-### 1.x.x (in development)
+### 1.4.0
 
 - Module [INTERMIX](./docs/Intermix.md)
     - New module, precision adder 8x8 switch matrix with support for 8 scenes

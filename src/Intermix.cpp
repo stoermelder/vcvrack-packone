@@ -104,7 +104,7 @@ struct IntermixModule : Module {
 	int sceneNext = -1;
 
 	LinearFade fader[PORTS][PORTS];
-	dsp::TSlewLimiter<simd::float_4> outputAtSlew[PORTS / 4];
+	//dsp::TSlewLimiter<simd::float_4> outputAtSlew[PORTS / 4];
 
 	dsp::SchmittTrigger sceneTrigger;
 	dsp::ClockDivider sceneDivider;
@@ -120,7 +120,7 @@ struct IntermixModule : Module {
 				configParam(MATRIX_PARAM + i * PORTS + j, 0.f, 1.f, 0.f, string::f("Input %i to Output %i", j + 1, i + 1));
 			}
 			configParam(OUTPUT_PARAM + i, 0.f, 1.f, 0.f, string::f("Output %i disable", i + 1));
-			configParam(AT_PARAM + i, -1.f, 1.f, 1.f, string::f("Output %i attenuverter", i + 1), "x");
+			configParam(AT_PARAM + i, -2.f, 2.f, 1.f, string::f("Output %i attenuverter", i + 1), "x");
 		}
 		configParam(FADEIN_PARAM, 0.f, 4.f, 0.f, "Fade in", "s");
 		configParam(FADEOUT_PARAM, 0.f, 4.f, 0.f, "Fade out", "s");
