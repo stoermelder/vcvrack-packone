@@ -448,55 +448,6 @@ struct IntermixModule : Module {
 
 
 template < typename MODULE >
-struct SceneLedDisplay : LedDisplayChoice {
-	MODULE* module;
-
-	SceneLedDisplay() {
-		color = nvgRGB(0xf0, 0xf0, 0xf0);
-		box.size = Vec(16.9f, 16.f);
-		textOffset = Vec(3.f, 11.5f);
-	}
-
-	void step() override {
-		if (module) {
-			text = string::f("%02d", module->sceneSelected + 1);
-		}
-		LedDisplayChoice::step();
-	}
-
-	void onButton(const event::Button& e) override {
-		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
-			createContextMenu();
-			e.consume(this);
-		}
-		LedDisplayChoice::onButton(e);
-	}
-
-	void createContextMenu() {
-		ui::Menu* menu = createMenu();
-
-		struct SceneItem : MenuItem {
-			MODULE* module;
-			int scene;
-			
-			void onAction(const event::Action& e) override {
-				module->sceneSet(scene);
-			}
-
-			void step() override {
-				rightText = module->sceneSelected == scene ? "✔" : "";
-				MenuItem::step();
-			}
-		};
-
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Scene"));
-		for (int i = 0; i < SCENE_COUNT; i++) {
-			menu->addChild(construct<SceneItem>(&MenuItem::text, string::f("%02u", i + 1), &SceneItem::module, module, &SceneItem::scene, i));
-		}
-	}
-};
-
-template < typename MODULE >
 struct InputLedDisplay : LedDisplayChoice {
 	MODULE* module;
 	int id;
@@ -573,30 +524,6 @@ struct InputLedDisplay : LedDisplayChoice {
 };
 
 
-template < typename BASE, typename MODULE >
-struct IntermixButtonLight : BASE {
-	IntermixButtonLight() {
-		this->box.size = math::Vec(26.5f, 26.5f);
-	}
-
-	void drawLight(const Widget::DrawArgs& args) override {
-		nvgBeginPath(args.vg);
-		nvgRoundedRect(args.vg, 0.8f, 0.8f, this->box.size.x - 2 * 0.8f, this->box.size.y - 2 * 0.8f, 3.4f);
-
-		//nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
-		nvgFillColor(args.vg, this->color);
-		nvgFill(args.vg);
-	}
-};
-
-struct IntermixButton : app::SvgSwitch {
-	IntermixButton() {
-		addFrame(APP->window->loadSvg(asset::plugin(pluginInstance, "res/components/IntermixButton.svg")));
-		addFrame(APP->window->loadSvg(asset::plugin(pluginInstance, "res/components/IntermixButton1.svg")));
-		fb->removeChild(shadow);
-		delete shadow;
-	}
-};
 
 /*
 struct IntermixKnob : app::SvgKnob {
@@ -631,10 +558,10 @@ struct IntermixWidget : ModuleWidget {
 		// Parameters and ports
 		for (int i = 0; i < SCENE_COUNT; i++) {
 			Vec v = Vec(23.1f, yMin + (yMax - yMin) / (SCENE_COUNT - 1) * i);
-			addParam(createParamCentered<IntermixButton>(v, module, IntermixModule<PORTS>::SCENE_PARAM + i));
+			addParam(createParamCentered<MatrixButton>(v, module, IntermixModule<PORTS>::SCENE_PARAM + i));
 		}
 
-		SceneLedDisplay<IntermixModule<PORTS>>* sceneLedDisplay = createWidgetCentered<SceneLedDisplay<IntermixModule<PORTS>>>(Vec(23.1f, 299.5f));
+		SceneLedDisplay<IntermixModule<PORTS>, SCENE_COUNT>* sceneLedDisplay = createWidgetCentered<SceneLedDisplay<IntermixModule<PORTS>, SCENE_COUNT>>(Vec(23.1f, 299.5f));
 		sceneLedDisplay->module = module;
 		addChild(sceneLedDisplay);
 		addInput(createInputCentered<StoermelderPort>(Vec(23.1f, 323.7f), module, IntermixModule<PORTS>::SCENE_INPUT));
@@ -642,13 +569,13 @@ struct IntermixWidget : ModuleWidget {
 		for (int i = 0; i < PORTS; i++) {
 			for (int j = 0; j < PORTS; j++) {
 				Vec v = Vec(xMin + (xMax - xMin) / (PORTS - 1) * j, yMin + (yMax - yMin) / (PORTS - 1) * i);
-				addParam(createParamCentered<IntermixButton>(v, module, IntermixModule<PORTS>::MATRIX_PARAM + i * PORTS + j));
+				addParam(createParamCentered<MatrixButton>(v, module, IntermixModule<PORTS>::MATRIX_PARAM + i * PORTS + j));
 			}
 		}
 
 		for (int i = 0; i < PORTS; i++) {
 			Vec v = Vec(312.5f, yMin + (yMax - yMin) / (PORTS - 1) * i);
-			addParam(createParamCentered<IntermixButton>(v, module, IntermixModule<PORTS>::OUTPUT_PARAM + i));
+			addParam(createParamCentered<MatrixButton>(v, module, IntermixModule<PORTS>::OUTPUT_PARAM + i));
 
 			Vec vo = Vec(381.9f, yMin + (yMax - yMin) / (PORTS - 1) * i);
 			addOutput(createOutputCentered<StoermelderPort>(vo, module, IntermixModule<PORTS>::OUTPUT + i));
@@ -670,15 +597,15 @@ struct IntermixWidget : ModuleWidget {
 		// Lights
 		for (int i = 0; i < SCENE_COUNT; i++) {
 			Vec v = Vec(23.1f, yMin + (yMax - yMin) / (SCENE_COUNT - 1) * i);
-			addChild(createLightCentered<IntermixButtonLight<YellowLight, IntermixModule<PORTS>>>(v, module, IntermixModule<PORTS>::SCENE_LIGHT + i));
+			addChild(createLightCentered<MatrixButtonLight<YellowLight, IntermixModule<PORTS>>>(v, module, IntermixModule<PORTS>::SCENE_LIGHT + i));
 		}
 
 		for (int i = 0; i < PORTS; i++) {
 			Vec v = Vec(312.5f, yMin + (yMax - yMin) / (PORTS - 1) * i);
-			addChild(createLightCentered<IntermixButtonLight<RedLight, IntermixModule<PORTS>>>(v, module, IntermixModule<PORTS>::OUTPUT_LIGHT + i));
+			addChild(createLightCentered<MatrixButtonLight<RedLight, IntermixModule<PORTS>>>(v, module, IntermixModule<PORTS>::OUTPUT_LIGHT + i));
 			for (int j = 0; j < PORTS; j++) {
 				Vec v = Vec(xMin + (xMax - xMin) / (PORTS - 1) * j, yMin + (yMax - yMin) / (PORTS - 1) * i);
-				addChild(createLightCentered<IntermixButtonLight<RedGreenBlueLight, IntermixModule<PORTS>>>(v, module, IntermixModule<PORTS>::MATRIX_LIGHT + (i * PORTS + j) * 3));
+				addChild(createLightCentered<MatrixButtonLight<RedGreenBlueLight, IntermixModule<PORTS>>>(v, module, IntermixModule<PORTS>::MATRIX_LIGHT + (i * PORTS + j) * 3));
 			}
 		}
 	}

@@ -231,3 +231,79 @@ struct PolyLedWidget : Widget {
 		addChild(createLightCentered<TinyLight<LIGHT>>(mm2px(Vec(6, 6)), module, firstlightId + COLORS * 15));
 	}
 };
+
+
+template < typename MODULE, int SCENE_COUNT >
+struct SceneLedDisplay : LedDisplayChoice {
+	MODULE* module;
+
+	SceneLedDisplay() {
+		color = nvgRGB(0xf0, 0xf0, 0xf0);
+		box.size = Vec(16.9f, 16.f);
+		textOffset = Vec(3.f, 11.5f);
+	}
+
+	void step() override {
+		if (module) {
+			text = string::f("%02d", module->sceneSelected + 1);
+		}
+		LedDisplayChoice::step();
+	}
+
+	void onButton(const event::Button& e) override {
+		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
+			createContextMenu();
+			e.consume(this);
+		}
+		LedDisplayChoice::onButton(e);
+	}
+
+	void createContextMenu() {
+		ui::Menu* menu = createMenu();
+
+		struct SceneItem : MenuItem {
+			MODULE* module;
+			int scene;
+			
+			void onAction(const event::Action& e) override {
+				module->sceneSet(scene);
+			}
+
+			void step() override {
+				rightText = module->sceneSelected == scene ? "✔" : "";
+				MenuItem::step();
+			}
+		};
+
+		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Scene"));
+		for (int i = 0; i < SCENE_COUNT; i++) {
+			menu->addChild(construct<SceneItem>(&MenuItem::text, string::f("%02u", i + 1), &SceneItem::module, module, &SceneItem::scene, i));
+		}
+	}
+};
+
+
+template < typename BASE, typename MODULE >
+struct MatrixButtonLight : BASE {
+	MatrixButtonLight() {
+		this->box.size = math::Vec(26.5f, 26.5f);
+	}
+
+	void drawLight(const Widget::DrawArgs& args) override {
+		nvgBeginPath(args.vg);
+		nvgRoundedRect(args.vg, 0.8f, 0.8f, this->box.size.x - 2 * 0.8f, this->box.size.y - 2 * 0.8f, 3.4f);
+
+		//nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
+		nvgFillColor(args.vg, this->color);
+		nvgFill(args.vg);
+	}
+};
+
+struct MatrixButton : app::SvgSwitch {
+	MatrixButton() {
+		addFrame(APP->window->loadSvg(asset::plugin(pluginInstance, "res/Components/MatrixButton.svg")));
+		addFrame(APP->window->loadSvg(asset::plugin(pluginInstance, "res/Components/MatrixButton.svg")));
+		fb->removeChild(shadow);
+		delete shadow;
+	}
+};
