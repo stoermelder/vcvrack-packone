@@ -1,3 +1,14 @@
+### 1.5.0 (in development)
+
+- Module [DETOUR](./docs/Detour.md)
+    - New module, Send/Return switch matrix with support for 8 scenes
+- Module [CV-MAP](./docs/CVMap.md)
+    - Added option to hide parameter indicator squares
+- Module [CV-PAM](./docs/CVPam.md)
+    - Added option to hide parameter indicator squares
+- Module [MIDI-CAT](./docs/MidiCat.md)
+    - Added option to hide parameter indicator squares
+    - 
 ### 1.4.0
 
 - Module [INTERMIX](./docs/Intermix.md)

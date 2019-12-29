@@ -35,8 +35,8 @@ struct CVPam : MapModule<MAX_CHANNELS> {
 
 	CVPam() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+		this->mappingIndicatorColor = nvgRGB(0x40, 0xff, 0xff);
 		for (int id = 0; id < MAX_CHANNELS; id++) {
-			paramHandles[id].color = nvgRGB(0x40, 0xff, 0xff);
 			paramHandles[id].text = string::f("CV-PAM Ch%02d", id + 1);
 		}
 		onReset();
@@ -194,10 +194,24 @@ struct CVPamWidget : ModuleWidget {
 			}
 		};
 
+		struct MappingIndicatorHiddenItem : MenuItem {
+			CVPam* module;
+
+			void onAction(const event::Action& e) override {
+				module->mappingIndicatorHidden ^= true;
+			}
+
+			void step() override {
+				rightText = module->mappingIndicatorHidden ? "✔" : "";
+				MenuItem::step();
+			}
+		};
+
 		menu->addChild(construct<UniBiItem>(&MenuItem::text, "Signal output", &UniBiItem::module, module));
 		menu->addChild(construct<AudioRateItem>(&MenuItem::text, "Audio rate processing", &AudioRateItem::module, module));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<TextScrollItem>(&MenuItem::text, "Text scrolling", &TextScrollItem::module, module));
+		menu->addChild(construct<MappingIndicatorHiddenItem>(&MenuItem::text, "Hide mapping indicators", &MappingIndicatorHiddenItem::module, module));
 	}
 };
 

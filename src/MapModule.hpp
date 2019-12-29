@@ -17,8 +17,11 @@ struct ParamHandleIndicator {
 			if (this->sampletime > 0.2f) {
 				this->sampletime = 0;
 				indicateCount--;
-				handle->color = indicateCount % 2 == 1 ? nvgRGB(0x0, 0x0, 0x0) : color;
+				handle->color = indicateCount % 2 == 1 ? color::BLACK : color;
 			}
+		}
+		else {
+			handle->color = color;
 		}
 	}
 
@@ -35,7 +38,6 @@ struct ParamHandleIndicator {
 			rack::settings::zoom = 1.f;
 		}
 		indicateCount = 20;
-		color = handle->color;
 	}	
 };
 
@@ -55,7 +57,12 @@ struct MapModule : Module {
 	/** Whether the param has been set during the learning session */
 	bool learnedParam;
 
+	/** [Stored to JSON] */
 	bool textScrolling = true;
+
+	NVGcolor mappingIndicatorColor = color::BLACK_TRANSPARENT;
+	/** [Stored to JSON] */
+	bool mappingIndicatorHidden = false;
 
 	/** The smoothing processor (normalized between 0 and 1) of each channel */
 	dsp::ExponentialFilter valueFilters[MAX_CHANNELS];
@@ -64,11 +71,11 @@ struct MapModule : Module {
 
 	MapModule() {
 		for (int id = 0; id < MAX_CHANNELS; id++) {
-			paramHandles[id].color = nvgRGB(0x0, 0x0, 0x0);
+			paramHandleIndicator[id].color = mappingIndicatorColor;
 			paramHandleIndicator[id].handle = &paramHandles[id];
 			APP->engine->addParamHandle(&paramHandles[id]);
 		}
-		indicatorDivider.setDivision(1024);
+		indicatorDivider.setDivision(2048);
 	}
 
 	~MapModule() {
@@ -88,8 +95,10 @@ struct MapModule : Module {
 		if (indicatorDivider.process()) {
 			float t = indicatorDivider.getDivision() * args.sampleTime;
 			for (size_t i = 0; i < MAX_CHANNELS; i++) {
-				if (paramHandles[i].moduleId >= 0)
+				paramHandleIndicator[i].color = mappingIndicatorHidden ? color::BLACK_TRANSPARENT : mappingIndicatorColor;
+				if (paramHandles[i].moduleId >= 0) {
 					paramHandleIndicator[i].process(t);
+				}
 			}
 		}
 	}
@@ -177,6 +186,7 @@ struct MapModule : Module {
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
 		json_object_set_new(rootJ, "textScrolling", json_boolean(textScrolling));
+		json_object_set_new(rootJ, "mappingIndicatorHidden", json_boolean(mappingIndicatorHidden));
 
 		json_t* mapsJ = json_array();
 		for (int id = 0; id < mapLen; id++) {
@@ -195,6 +205,8 @@ struct MapModule : Module {
 
 		json_t* textScrollingJ = json_object_get(rootJ, "textScrolling");
 		textScrolling = json_boolean_value(textScrollingJ);
+		json_t* mappingIndicatorHiddenJ = json_object_get(rootJ, "mappingIndicatorHidden");
+		mappingIndicatorHidden = json_boolean_value(mappingIndicatorHiddenJ);
 
 		json_t* mapsJ = json_object_get(rootJ, "maps");
 		if (mapsJ) {
@@ -224,9 +236,7 @@ struct CVMapModule : MapModule<MAX_CHANNELS> {
 	bool lockParameterChanges = true;
 
 	CVMapModule() {
-		for (int id = 0; id < MAX_CHANNELS; id++) {
-			MapModule<MAX_CHANNELS>::paramHandles[id].color = nvgRGB(0xff, 0x40, 0xff);
-		}
+		this->mappingIndicatorColor = nvgRGB(0xff, 0x40, 0xff);
 	}
 
 	void process(const Module::ProcessArgs &args) override {

@@ -208,11 +208,25 @@ struct CVMapWidget : ModuleWidget {
 			}
 		};
 
+		struct MappingIndicatorHiddenItem : MenuItem {
+			CVMap* module;
+
+			void onAction(const event::Action& e) override {
+				module->mappingIndicatorHidden ^= true;
+			}
+
+			void step() override {
+				rightText = module->mappingIndicatorHidden ? "✔" : "";
+				MenuItem::step();
+			}
+		};
+
 		menu->addChild(construct<LockItem>(&MenuItem::text, "Parameter changes", &LockItem::module, module));
 		menu->addChild(construct<UniBiItem>(&MenuItem::text, "Signal input", &UniBiItem::module, module));
 		menu->addChild(construct<AudioRateItem>(&MenuItem::text, "Audio rate processing", &AudioRateItem::module, module));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<TextScrollItem>(&MenuItem::text, "Text scrolling", &TextScrollItem::module, module));
+		menu->addChild(construct<MappingIndicatorHiddenItem>(&MenuItem::text, "Hide mapping indicators", &MappingIndicatorHiddenItem::module, module));
 	}
 };
 

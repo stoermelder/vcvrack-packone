@@ -123,6 +123,10 @@ struct MidiCatModule : Module {
 	/** [Stored to Json] */
 	std::string textLabel[MAX_CHANNELS];
 
+	NVGcolor mappingIndicatorColor = nvgRGB(0xff, 0xff, 0x40);
+	/** [Stored to JSON] */
+	bool mappingIndicatorHidden = false;
+
 	/** The value of each CC number */
 	int valuesCc[128];
 	/** The value of each note number */
@@ -144,13 +148,13 @@ struct MidiCatModule : Module {
 	MidiCatModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		for (int id = 0; id < MAX_CHANNELS; id++) {
-			paramHandles[id].color = nvgRGB(0xff, 0xff, 0x40);
+			paramHandleIndicator[id].color = mappingIndicatorColor;
 			paramHandleIndicator[id].handle = &paramHandles[id];
 			//valueFilters[id].lambda = 1 / 0.01f;
 			APP->engine->addParamHandle(&paramHandles[id]);
 		}
 		loopDivider.setDivision(128);
-		indicatorDivider.setDivision(1024);
+		indicatorDivider.setDivision(2048);
 		onReset();
 	}
 
@@ -346,8 +350,10 @@ struct MidiCatModule : Module {
 		if (indicatorDivider.process()) {
 			float t = indicatorDivider.getDivision() * args.sampleTime;
 			for (int i = 0; i < mapLen; i++) {
-				if (paramHandles[i].moduleId >= 0)
+				paramHandleIndicator[i].color = mappingIndicatorHidden ? color::BLACK_TRANSPARENT : mappingIndicatorColor;
+				if (paramHandles[i].moduleId >= 0) {
 					paramHandleIndicator[i].process(t);
+				}
 			}
 		}
 	}
@@ -539,6 +545,7 @@ struct MidiCatModule : Module {
 	json_t *dataToJson() override {
 		json_t *rootJ = json_object();
 		json_object_set_new(rootJ, "textScrolling", json_boolean(textScrolling));
+		json_object_set_new(rootJ, "mappingIndicatorHidden", json_boolean(mappingIndicatorHidden));
 
 		json_t *mapsJ = json_array();
 		for (int id = 0; id < mapLen; id++) {
@@ -564,6 +571,8 @@ struct MidiCatModule : Module {
 
 		json_t *textScrollingJ = json_object_get(rootJ, "textScrolling");
 		textScrolling = json_boolean_value(textScrollingJ);
+		json_t* mappingIndicatorHiddenJ = json_object_get(rootJ, "mappingIndicatorHidden");
+		mappingIndicatorHidden = json_boolean_value(mappingIndicatorHiddenJ);
 
 		json_t *mapsJ = json_object_get(rootJ, "maps");
 		if (mapsJ) {
@@ -823,19 +832,6 @@ struct MidiModeMenuItem : MenuItem {
 	}
 };
 
-struct TextScrollItem : MenuItem {
-	MidiCatModule *module;
-
-	void onAction(const event::Action &e) override {
-		module->textScrolling ^= true;
-	}
-
-	void step() override {
-		rightText = module->textScrolling ? "✔" : "";
-		MenuItem::step();
-	}
-};
-
 
 struct MidiCatMidiWidget : MidiWidget {
 	void setMidiPort(midi::Port *port) {
@@ -972,8 +968,35 @@ struct MidiCatWidget : ModuleWidget {
 		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
 		menu->addChild(new MenuSeparator());
 
+		struct TextScrollItem : MenuItem {
+			MidiCatModule *module;
+
+			void onAction(const event::Action &e) override {
+				module->textScrolling ^= true;
+			}
+
+			void step() override {
+				rightText = module->textScrolling ? "✔" : "";
+				MenuItem::step();
+			}
+		};
+
+		struct MappingIndicatorHiddenItem : MenuItem {
+			MidiCatModule* module;
+
+			void onAction(const event::Action& e) override {
+				module->mappingIndicatorHidden ^= true;
+			}
+
+			void step() override {
+				rightText = module->mappingIndicatorHidden ? "✔" : "";
+				MenuItem::step();
+			}
+		};
+
 		menu->addChild(construct<MidiModeMenuItem>(&MenuItem::text, "Mode", &MidiModeMenuItem::module, module));
 		menu->addChild(construct<TextScrollItem>(&MenuItem::text, "Text scrolling", &TextScrollItem::module, module));
+		menu->addChild(construct<MappingIndicatorHiddenItem>(&MenuItem::text, "Hide mapping indicators", &MappingIndicatorHiddenItem::module, module));
 		menu->addChild(new MenuSeparator());
 
 		struct MidiMapImportItem : MenuItem {

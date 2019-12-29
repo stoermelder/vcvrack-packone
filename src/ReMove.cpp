@@ -178,7 +178,7 @@ struct ReMoveModule : MapModule<1> {
         configParam(SLEW_PARAM, 0.0f, 0.975f, 0.0f, "Slew");
 
         seqData = new float[REMOVE_MAX_DATA];
-        paramHandles[0].color = nvgRGB(0x40, 0xff, 0xff);
+        this->mappingIndicatorColor = nvgRGB(0x40, 0xff, 0xff);
         paramHandles[0].text = "ReMove Lite";
 
         lightDivider.setDivision(1024);
