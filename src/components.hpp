@@ -1,5 +1,63 @@
 #pragma once
 #include "plugin.hpp"
+#include <thread>
+
+
+template < typename MODULE, typename BASE = ModuleWidget >
+struct ThemedModuleWidget : BASE {
+	MODULE* module;
+	std::string baseName;
+	SvgPanel* darkPanel;
+
+	ThemedModuleWidget(MODULE* module, std::string baseName) {
+		this->module = module;
+		this->baseName = baseName;
+
+		BASE::setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/" + baseName + ".svg")));
+		if (module) {
+			darkPanel = new SvgPanel();
+			darkPanel->setBackground(APP->window->loadSvg(asset::plugin(pluginInstance, "res/dark/" + baseName + ".svg")));
+			darkPanel->visible = false;
+			BASE::addChild(darkPanel);
+		}
+	}
+
+	void appendContextMenu(Menu* menu) override {
+		BASE::appendContextMenu(menu);
+
+		struct ManualItem : MenuItem {
+			std::string baseName;
+			void onAction(const event::Action& e) override {
+				std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/" + baseName + ".md");
+				t.detach();
+			}
+		};
+
+		struct PanelThemeItem : MenuItem {
+			MODULE* module;
+			int theme;
+
+			void onAction(const event::Action& e) override {
+				module->panelTheme = module->panelTheme == theme ? 0 : theme;
+			}
+			void step() override {
+				rightText = module->panelTheme == theme ? "✔" : "";
+			}
+		};
+
+		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual", &ManualItem::baseName, baseName));
+		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<PanelThemeItem>(&MenuItem::text, "Dark theme", &PanelThemeItem::module, module, &PanelThemeItem::theme, 1));
+	}
+
+	void step() override {
+		if (module) {
+			BASE::panel->visible = module->panelTheme == 0;
+			darkPanel->visible  = module->panelTheme == 1;
+		}
+		BASE::step();
+	}
+};
 
 
 struct LongPressButton {

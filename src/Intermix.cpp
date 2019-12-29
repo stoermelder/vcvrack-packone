@@ -1,6 +1,5 @@
 #include "plugin.hpp"
 #include "digital.hpp"
-#include <thread>
 
 namespace Intermix {
 
@@ -83,6 +82,9 @@ struct IntermixModule : Module {
 	};
 
 	alignas(16) float currentMatrix[PORTS][PORTS];
+
+	/** [Stored to JSON] */
+	int panelTheme = 0;
 
 	/** [Stored to JSON] */
 	float padBrightness;
@@ -356,6 +358,8 @@ struct IntermixModule : Module {
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
 
+		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
+
 		json_object_set_new(rootJ, "padBrightness", json_real(padBrightness));
 		json_object_set_new(rootJ, "inputVisualize", json_boolean(inputVisualize));
 		json_object_set_new(rootJ, "outputClamp", json_boolean(outputClamp));
@@ -398,6 +402,8 @@ struct IntermixModule : Module {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
+		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+
 		padBrightness = json_real_value(json_object_get(rootJ, "padBrightness"));
 		inputVisualize = json_boolean_value(json_object_get(rootJ, "inputVisualize"));
 		outputClamp = json_boolean_value(json_object_get(rootJ, "outputClamp"));
@@ -540,12 +546,12 @@ struct IntermixKnob : app::SvgKnob {
 };
 */
 
-struct IntermixWidget : ModuleWidget {
+struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 	const static int PORTS = 8;
 
-	IntermixWidget(IntermixModule<PORTS>* module) {
+	IntermixWidget(IntermixModule<PORTS>* module)
+		: ThemedModuleWidget<IntermixModule<8>>(module, "Intermix") {
 		setModule(module);
-		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/Intermix.svg")));
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
@@ -613,15 +619,9 @@ struct IntermixWidget : ModuleWidget {
 	}
 
 	void appendContextMenu(Menu* menu) override {
+		ThemedModuleWidget<IntermixModule<8>>::appendContextMenu(menu);
 		IntermixModule<PORTS>* module = dynamic_cast<IntermixModule<PORTS>*>(this->module);
 		assert(module);
-
-		struct ManualItem : MenuItem {
-			void onAction(const event::Action& e) override {
-				std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Intermix.md");
-				t.detach();
-			}
-		};
 
 		struct SceneModeMenuItem : MenuItem {
 			SceneModeMenuItem() {
@@ -732,7 +732,6 @@ struct IntermixWidget : ModuleWidget {
 			}
 		};
 
-		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<SceneModeMenuItem>(&MenuItem::text, "SCENE-port", &SceneModeMenuItem::module, module));
 		menu->addChild(construct<SceneInputModeItem>(&MenuItem::text, "Include input-mode in scenes", &SceneInputModeItem::module, module));
