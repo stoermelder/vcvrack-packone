@@ -1,5 +1,5 @@
 #include "plugin.hpp"
-#include "MapModule.hpp"
+#include "MapModuleBase.hpp"
 #include <chrono>
 #include <thread>
 
@@ -44,7 +44,7 @@ struct MapParamQuantity : ParamQuantity {
 };
 
 
-struct CVMapMicroModule : CVMapModule<1> {
+struct CVMapMicroModule : CVMapModuleBase<1> {
 	enum ParamIds {
 		MAP_PARAM,
 		OFFSET_PARAM,
@@ -80,7 +80,7 @@ struct CVMapMicroModule : CVMapModule<1> {
 		configParam(OFFSET_PARAM, 0.f, 1.f, 0.f, "Input-offset", "%", 0.f, 100.f);
 		configParam(SCALE_PARAM, -2.f, 2.f, 1.f, "Input-scaling", "x");
 
-		CVMapModule<1>::paramHandles[0].text = "µMAP";
+		this->paramHandles[0].text = "µMAP";
 		lightDivider.setDivision(1024);
 		onReset();
 	}
@@ -132,18 +132,18 @@ struct CVMapMicroModule : CVMapModule<1> {
 			lights[MAP_LIGHT + 1].setBrightness(learningId == 0 ? 1.f : 0.f);
 		}
 
-		CVMapModule<1>::process(args);
+		CVMapModuleBase<1>::process(args);
 	}
 
 	json_t* dataToJson() override {
-		json_t* rootJ = CVMapModule<1>::dataToJson();
+		json_t* rootJ = CVMapModuleBase<1>::dataToJson();
 		json_object_set_new(rootJ, "invertedOutput", json_boolean(invertedOutput));
 
 		return rootJ;
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		CVMapModule<1>::dataFromJson(rootJ);
+		CVMapModuleBase<1>::dataFromJson(rootJ);
 
 		json_t* invertedOutputJ = json_object_get(rootJ, "invertedOutput");
 		if (invertedOutputJ) invertedOutput = json_boolean_value(invertedOutputJ);

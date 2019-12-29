@@ -45,7 +45,7 @@ struct ParamHandleIndicator {
 // Abstract modules
 
 template< int MAX_CHANNELS >
-struct MapModule : Module {
+struct MapModuleBase : Module {
 	/** Number of maps */
 	int mapLen = 0;
 	/** The mapped param handle of each channel */
@@ -69,7 +69,7 @@ struct MapModule : Module {
 
 	dsp::ClockDivider indicatorDivider;
 
-	MapModule() {
+	MapModuleBase() {
 		for (int id = 0; id < MAX_CHANNELS; id++) {
 			paramHandleIndicator[id].color = mappingIndicatorColor;
 			paramHandleIndicator[id].handle = &paramHandles[id];
@@ -78,7 +78,7 @@ struct MapModule : Module {
 		indicatorDivider.setDivision(2048);
 	}
 
-	~MapModule() {
+	~MapModuleBase() {
 		for (int id = 0; id < MAX_CHANNELS; id++) {
 			APP->engine->removeParamHandle(&paramHandles[id]);
 		}
@@ -227,7 +227,7 @@ struct MapModule : Module {
 };
 
 template< int MAX_CHANNELS >
-struct CVMapModule : MapModule<MAX_CHANNELS> {
+struct CVMapModuleBase : MapModuleBase<MAX_CHANNELS> {
 	bool bipolarInput = false;
 
 	/** Track last values */
@@ -235,16 +235,16 @@ struct CVMapModule : MapModule<MAX_CHANNELS> {
 	/** [Saved to JSON] Allow manual changes of target parameters */
 	bool lockParameterChanges = true;
 
-	CVMapModule() {
+	CVMapModuleBase() {
 		this->mappingIndicatorColor = nvgRGB(0xff, 0x40, 0xff);
 	}
 
 	void process(const Module::ProcessArgs &args) override {
-		MapModule<MAX_CHANNELS>::process(args);
+		MapModuleBase<MAX_CHANNELS>::process(args);
 	}
 
 	json_t* dataToJson() override {
-		json_t* rootJ = MapModule<MAX_CHANNELS>::dataToJson();
+		json_t* rootJ = MapModuleBase<MAX_CHANNELS>::dataToJson();
 		json_object_set_new(rootJ, "lockParameterChanges", json_boolean(lockParameterChanges));
 		json_object_set_new(rootJ, "bipolarInput", json_boolean(bipolarInput));
 
@@ -252,7 +252,7 @@ struct CVMapModule : MapModule<MAX_CHANNELS> {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		MapModule<MAX_CHANNELS>::dataFromJson(rootJ);
+		MapModuleBase<MAX_CHANNELS>::dataFromJson(rootJ);
 
 		json_t* lockParameterChangesJ = json_object_get(rootJ, "lockParameterChanges");
 		lockParameterChanges = json_boolean_value(lockParameterChangesJ);

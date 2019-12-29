@@ -1,5 +1,5 @@
 #include "plugin.hpp"
-#include "MapModule.hpp"
+#include "MapModuleBase.hpp"
 #include <chrono>
 #include <thread>
 
@@ -7,7 +7,7 @@ namespace CVPam {
 
 static const int MAX_CHANNELS = 32;
 
-struct CVPam : MapModule<MAX_CHANNELS> {
+struct CVPamModule : MapModuleBase<MAX_CHANNELS> {
 	enum ParamIds {
 		NUM_PARAMS
 	};
@@ -33,7 +33,7 @@ struct CVPam : MapModule<MAX_CHANNELS> {
 	dsp::ClockDivider processDivider;
 	dsp::ClockDivider lightDivider;
 
-	CVPam() {
+	CVPamModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		this->mappingIndicatorColor = nvgRGB(0x40, 0xff, 0xff);
 		for (int id = 0; id < MAX_CHANNELS; id++) {
@@ -47,7 +47,7 @@ struct CVPam : MapModule<MAX_CHANNELS> {
 	void onReset() override {
 		bipolarOutput = false;
 		audioRate = true;
-		MapModule<MAX_CHANNELS>::onReset();
+		MapModuleBase<MAX_CHANNELS>::onReset();
 	}
 
 	void process(const ProcessArgs& args) override {
@@ -90,18 +90,18 @@ struct CVPam : MapModule<MAX_CHANNELS> {
 			}
 		}
 
-		MapModule::process(args);
+		MapModuleBase::process(args);
 	}
 
 	json_t* dataToJson() override {
-		json_t* rootJ = MapModule::dataToJson();
+		json_t* rootJ = MapModuleBase::dataToJson();
 		json_object_set_new(rootJ, "bipolarOutput", json_boolean(bipolarOutput));
 		json_object_set_new(rootJ, "audioRate", json_boolean(audioRate));
 		return rootJ;
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		MapModule::dataFromJson(rootJ);
+		MapModuleBase::dataFromJson(rootJ);
 
 		json_t* bipolarOutputJ = json_object_get(rootJ, "bipolarOutput");
 		bipolarOutput = json_boolean_value(bipolarOutputJ);
@@ -113,7 +113,7 @@ struct CVPam : MapModule<MAX_CHANNELS> {
 
 
 struct CVPamWidget : ModuleWidget {
-	CVPamWidget(CVPam* module) {
+	CVPamWidget(CVPamModule* module) {
 		setModule(module);
 		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/CVPam.svg")));
 
@@ -122,18 +122,18 @@ struct CVPamWidget : ModuleWidget {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addOutput(createOutputCentered<StoermelderPort>(Vec(26.9f, 60.8f), module, CVPam::POLY_OUTPUT1));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(123.1f, 60.8f), module, CVPam::POLY_OUTPUT2));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(26.9f, 60.8f), module, CVPamModule::POLY_OUTPUT1));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(123.1f, 60.8f), module, CVPamModule::POLY_OUTPUT2));
 
 		PolyLedWidget<>* w0 = createWidgetCentered<PolyLedWidget<>>(Vec(54.2f, 60.8f));
-		w0->setModule(module, CVPam::CHANNEL_LIGHTS1);
+		w0->setModule(module, CVPamModule::CHANNEL_LIGHTS1);
 		addChild(w0);
 
 		PolyLedWidget<>* w1 = createWidgetCentered<PolyLedWidget<>>(Vec(95.8f, 60.8f));
-		w1->setModule(module, CVPam::CHANNEL_LIGHTS2);
+		w1->setModule(module, CVPamModule::CHANNEL_LIGHTS2);
 		addChild(w1);
 
-		typedef MapModuleDisplay<MAX_CHANNELS, CVPam> TMapDisplay;
+		typedef MapModuleDisplay<MAX_CHANNELS, CVPamModule> TMapDisplay;
 		TMapDisplay* mapWidget = createWidget<TMapDisplay>(Vec(10.6f, 81.5f));
 		mapWidget->box.size = Vec(128.9f, 261.7f);
 		mapWidget->setModule(module);
@@ -142,7 +142,7 @@ struct CVPamWidget : ModuleWidget {
 
 
 	void appendContextMenu(Menu* menu) override {
-		CVPam* module = dynamic_cast<CVPam*>(this->module);
+		CVPamModule* module = dynamic_cast<CVPamModule*>(this->module);
 		assert(module);
 
 		struct ManualItem : MenuItem {
@@ -156,7 +156,7 @@ struct CVPamWidget : ModuleWidget {
 		menu->addChild(new MenuSeparator());
 
 		struct UniBiItem : MenuItem {
-			CVPam* module;
+			CVPamModule* module;
 
 			void onAction(const event::Action& e) override {
 				module->bipolarOutput ^= true;
@@ -169,7 +169,7 @@ struct CVPamWidget : ModuleWidget {
 		};
 
 		struct AudioRateItem : MenuItem {
-			CVPam* module;
+			CVPamModule* module;
 
 			void onAction(const event::Action& e) override {
 				module->audioRate ^= true;
@@ -182,7 +182,7 @@ struct CVPamWidget : ModuleWidget {
 		};
 
 		struct TextScrollItem : MenuItem {
-			CVPam* module;
+			CVPamModule* module;
 
 			void onAction(const event::Action& e) override {
 				module->textScrolling ^= true;
@@ -195,7 +195,7 @@ struct CVPamWidget : ModuleWidget {
 		};
 
 		struct MappingIndicatorHiddenItem : MenuItem {
-			CVPam* module;
+			CVPamModule* module;
 
 			void onAction(const event::Action& e) override {
 				module->mappingIndicatorHidden ^= true;
@@ -217,4 +217,4 @@ struct CVPamWidget : ModuleWidget {
 
 } // namespace CVPam
 
-Model* modelCVPam = createModel<CVPam::CVPam, CVPam::CVPamWidget>("CVPam");
+Model* modelCVPam = createModel<CVPam::CVPamModule, CVPam::CVPamWidget>("CVPam");

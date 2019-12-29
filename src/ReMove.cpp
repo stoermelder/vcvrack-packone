@@ -1,5 +1,5 @@
 #include "plugin.hpp"
-#include "MapModule.hpp"
+#include "MapModuleBase.hpp"
 #include <thread>
 #include <random>
 
@@ -61,7 +61,7 @@ const int REMOVE_PLAYDIR_REV = -1;
 const int REMOVE_PLAYDIR_NONE = 0;
 
 
-struct ReMoveModule : MapModule<1> {
+struct ReMoveModule : MapModuleBase<1> {
     enum ParamIds {
         RUN_PARAM,
         RESET_PARAM,
@@ -190,7 +190,7 @@ struct ReMoveModule : MapModule<1> {
     }
 
     void onReset() override {
-        MapModule::onReset();
+        MapModuleBase::onReset();
         isPlaying = false;
         playDir = REMOVE_PLAYDIR_FWD;
         isRecording = false;
@@ -438,7 +438,7 @@ struct ReMoveModule : MapModule<1> {
             }
         }
 
-        MapModule::process(args);
+        MapModuleBase::process(args);
     }
 
     inline float getValue() {
@@ -599,16 +599,16 @@ struct ReMoveModule : MapModule<1> {
 
     void clearMap(int id) override {
         onReset();
-        MapModule::clearMap(id);
+        MapModuleBase::clearMap(id);
     }
 
     void enableLearn(int id) override {
         if (isRecording) return;
-        MapModule::enableLearn(id);
+        MapModuleBase::enableLearn(id);
     }
 
     json_t *dataToJson() override {
-        json_t *rootJ = MapModule::dataToJson();
+        json_t *rootJ = MapModuleBase::dataToJson();
         json_t *rec0J = json_object();
 
         int s = REMOVE_MAX_DATA / seqCount;
@@ -664,7 +664,7 @@ struct ReMoveModule : MapModule<1> {
     }
 
     void dataFromJson(json_t *rootJ) override {
-        MapModule::dataFromJson(rootJ);
+        MapModuleBase::dataFromJson(rootJ);
 
         json_t *recJ = json_object_get(rootJ, "recorder");
         json_t *rec0J = json_array_get(recJ, 0);

@@ -1,5 +1,5 @@
 #include "plugin.hpp"
-#include "MapModule.hpp"
+#include "MapModuleBase.hpp"
 #include <osdialog.h>
 #include <thread>
 

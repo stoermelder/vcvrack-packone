@@ -1,5 +1,5 @@
 #include "plugin.hpp"
-#include "MapModule.hpp"
+#include "MapModuleBase.hpp"
 #include <chrono>
 #include <thread>
 
@@ -8,7 +8,7 @@ namespace CVMap {
 static const int MAX_CHANNELS = 32;
 static const float UINIT = 0;
 
-struct CVMap : CVMapModule<MAX_CHANNELS> {
+struct CVMapModule : CVMapModuleBase<MAX_CHANNELS> {
 	enum ParamIds {
 		NUM_PARAMS
 	};
@@ -32,10 +32,10 @@ struct CVMap : CVMapModule<MAX_CHANNELS> {
 	dsp::ClockDivider processDivider;
 	dsp::ClockDivider lightDivider;
 
-	CVMap() {
+	CVMapModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		for (int i = 0; i < MAX_CHANNELS; i++) {
-			MapModule<MAX_CHANNELS>::paramHandles[i].text = string::f("CV-MAP Ch%02d", i + 1);
+			this->paramHandles[i].text = string::f("CV-MAP Ch%02d", i + 1);
 		}
 		processDivider.setDivision(32);
 		lightDivider.setDivision(1024);
@@ -44,7 +44,7 @@ struct CVMap : CVMapModule<MAX_CHANNELS> {
 
 	void onReset() override {
 		audioRate = true;
-		CVMapModule<MAX_CHANNELS>::onReset();
+		CVMapModuleBase<MAX_CHANNELS>::onReset();
 	}
 
 	void process(const ProcessArgs& args) override {
@@ -96,17 +96,17 @@ struct CVMap : CVMapModule<MAX_CHANNELS> {
 			}
 		}
 		
-		CVMapModule<MAX_CHANNELS>::process(args);
+		CVMapModuleBase<MAX_CHANNELS>::process(args);
 	}
 
 	json_t* dataToJson() override {
-		json_t* rootJ = CVMapModule<MAX_CHANNELS>::dataToJson();
+		json_t* rootJ = CVMapModuleBase<MAX_CHANNELS>::dataToJson();
 		json_object_set_new(rootJ, "audioRate", json_boolean(audioRate));
 		return rootJ;
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		CVMapModule<MAX_CHANNELS>::dataFromJson(rootJ);
+		CVMapModuleBase<MAX_CHANNELS>::dataFromJson(rootJ);
 		json_t* audioRateJ = json_object_get(rootJ, "audioRate");
 		if (audioRateJ) audioRate = json_boolean_value(audioRateJ);
 	}
@@ -114,7 +114,7 @@ struct CVMap : CVMapModule<MAX_CHANNELS> {
 
 
 struct CVMapWidget : ModuleWidget {
-	CVMapWidget(CVMap* module) {
+	CVMapWidget(CVMapModule* module) {
 		setModule(module);
 		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/CVMap.svg")));
 
@@ -123,18 +123,18 @@ struct CVMapWidget : ModuleWidget {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(26.9f, 60.8f), module, CVMap::POLY_INPUT1));
-		addInput(createInputCentered<StoermelderPort>(Vec(123.1f, 60.8f), module, CVMap::POLY_INPUT2));
+		addInput(createInputCentered<StoermelderPort>(Vec(26.9f, 60.8f), module, CVMapModule::POLY_INPUT1));
+		addInput(createInputCentered<StoermelderPort>(Vec(123.1f, 60.8f), module, CVMapModule::POLY_INPUT2));
 
 		PolyLedWidget<>* w0 = createWidgetCentered<PolyLedWidget<>>(Vec(54.2f, 60.8f));
-		w0->setModule(module, CVMap::CHANNEL_LIGHTS1);
+		w0->setModule(module, CVMapModule::CHANNEL_LIGHTS1);
 		addChild(w0);
 
 		PolyLedWidget<>* w1 = createWidgetCentered<PolyLedWidget<>>(Vec(95.8f, 60.8f));
-		w1->setModule(module, CVMap::CHANNEL_LIGHTS2);
+		w1->setModule(module, CVMapModule::CHANNEL_LIGHTS2);
 		addChild(w1);
 
-		typedef MapModuleDisplay<MAX_CHANNELS, CVMap> TMapDisplay;
+		typedef MapModuleDisplay<MAX_CHANNELS, CVMapModule> TMapDisplay;
 		TMapDisplay* mapWidget = createWidget<TMapDisplay>(Vec(10.6f, 81.5f));
 		mapWidget->box.size = Vec(128.9f, 261.7f);
 		mapWidget->setModule(module);
@@ -143,7 +143,7 @@ struct CVMapWidget : ModuleWidget {
 
 
 	void appendContextMenu(Menu* menu) override {
-		CVMap* module = dynamic_cast<CVMap*>(this->module);
+		CVMapModule* module = dynamic_cast<CVMapModule*>(this->module);
 		assert(module);
 
 		struct ManualItem : MenuItem {
@@ -157,7 +157,7 @@ struct CVMapWidget : ModuleWidget {
 		menu->addChild(new MenuSeparator());
 
 		struct LockItem : MenuItem {
-			CVMap* module;
+			CVMapModule* module;
 
 			void onAction(const event::Action& e) override {
 				module->lockParameterChanges ^= true;
@@ -170,7 +170,7 @@ struct CVMapWidget : ModuleWidget {
 		};
 
 		struct UniBiItem : MenuItem {
-			CVMap* module;
+			CVMapModule* module;
 
 			void onAction(const event::Action& e) override {
 				module->bipolarInput ^= true;
@@ -183,7 +183,7 @@ struct CVMapWidget : ModuleWidget {
 		};
 
 		struct AudioRateItem : MenuItem {
-			CVMap* module;
+			CVMapModule* module;
 
 			void onAction(const event::Action& e) override {
 				module->audioRate ^= true;
@@ -196,7 +196,7 @@ struct CVMapWidget : ModuleWidget {
 		};
 
 		struct TextScrollItem : MenuItem {
-			CVMap* module;
+			CVMapModule* module;
 
 			void onAction(const event::Action& e) override {
 				module->textScrolling ^= true;
@@ -209,7 +209,7 @@ struct CVMapWidget : ModuleWidget {
 		};
 
 		struct MappingIndicatorHiddenItem : MenuItem {
-			CVMap* module;
+			CVMapModule* module;
 
 			void onAction(const event::Action& e) override {
 				module->mappingIndicatorHidden ^= true;
@@ -232,4 +232,4 @@ struct CVMapWidget : ModuleWidget {
 
 } // namespace CVMap
 
-Model* modelCVMap = createModel<CVMap::CVMap, CVMap::CVMapWidget>("CVMap");
+Model* modelCVMap = createModel<CVMap::CVMapModule, CVMap::CVMapWidget>("CVMap");
