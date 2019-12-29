@@ -50,7 +50,7 @@ struct DetourModule : Module {
 	const int countPort = PORTS;
 
 	alignas(16) float currentMatrix[PORTS][PORTS];
-	alignas(16) float history[PORTS][SENDS + 1][MAX_DELAY];
+	alignas(16) float history[PORTS][SENDS + 1][MAX_DELAY + 1];
 	int sceneNext = -1;
 
 	/** [Stored to JSON] */
@@ -98,7 +98,7 @@ struct DetourModule : Module {
 				}
 			}
 		}
-		for (int i = 0; i < PORTS; i++) {
+		for (int i = 0; i < SENDS; i++) {
 			channelMode[i] = MODE::MONO;
 			channelDelay[i] = 2;
 		}
@@ -189,12 +189,10 @@ struct DetourModule : Module {
 		for (int i = 0; i < PORTS; i++) {
 			if (!inputs[INPUT + i].isConnected()) continue;
 			float out = history[i][0][currentFrame] = inputs[INPUT + i].getVoltage();
-			int lastActive = 0;
 
 			for (int j = 0; j < SENDS; j++) {
 				if (outputs[OUTPUT_SEND + j].isConnected() && inputs[INPUT_RETURN + j].isConnected()) {
 					if (currentMatrix[i][j] == 1.f) {
-						lastActive = j + 1;
 						if (channelMode[j] == MODE::MONO) {
 							outputs[OUTPUT_SEND + j].setVoltage(out);
 							out = inputs[INPUT_RETURN + j].getVoltage();
@@ -203,13 +201,13 @@ struct DetourModule : Module {
 							outputs[OUTPUT_SEND + j].setVoltage(out, i);
 							out = inputs[INPUT_RETURN + j].getVoltage(i);
 						}
-						history[i][j + 1][currentFrame] = out;
 					}
 					else {
 						int f = (currentFrame - channelDelay[j] + MAX_DELAY) % MAX_DELAY;
-						out = history[i][lastActive][f];
+						out = history[i][j][f];
 					}
 				}
+				history[i][j + 1][currentFrame] = out;
 			}
 			outputs[OUTPUT + i].setVoltage(out);
 		}
@@ -432,7 +430,66 @@ struct DetourWidget : ModuleWidget {
 						}
 					};
 
+					struct DelaySlider : ui::Slider {
+						struct DelayQuantity : Quantity {
+							DetourModule<PORTS>* module;
+							int channel;
+							float v = -1.f;
+
+							DelayQuantity(DetourModule<PORTS>* module, int channel) {
+								this->module = module;
+								this->channel = channel;
+							}
+							void setValue(float value) override {
+								v = clamp(value, 2.f, float(MAX_DELAY - 1));
+								module->channelDelay[channel] = int(v);
+							}
+							float getValue() override {
+								if (v < 0.f) v = module->channelDelay[channel];
+								return v;
+							}
+							float getDefaultValue() override {
+								return 2.f;
+							}
+							float getMinValue() override {
+								return 2.f;
+							}
+							float getMaxValue() override {
+								return MAX_DELAY - 1;
+							}
+							float getDisplayValue() override {
+								return getValue();
+							}
+							std::string getDisplayValueString() override {
+								return string::f("%i", int(getValue()));
+							}
+							void setDisplayValue(float displayValue) override {
+								setValue(displayValue);
+							}
+							std::string getLabel() override {
+								return "Bypass delay";
+							}
+							std::string getUnit() override {
+								return "";
+							}
+						};
+
+						DelaySlider(DetourModule<PORTS>* module, int channel) {
+							this->box.size.x = 160.0;
+							quantity = new DelayQuantity(module, channel);
+						}
+						~DelaySlider() {
+							delete quantity;
+						}
+						void onDragMove(const event::DragMove& e) override {
+							if (quantity) {
+								quantity->moveScaledValue(0.002f * e.mouseDelta.x);
+							}
+						}
+					};
+
 					menu->addChild(construct<ChannelModeItem>(&MenuItem::text, "Mode", &ChannelModeItem::module, module, &ChannelModeItem::channel, channel));
+					menu->addChild(new DelaySlider(module, channel));
 					return menu;
 				}
 			};
