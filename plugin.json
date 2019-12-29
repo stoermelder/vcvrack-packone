@@ -133,6 +133,13 @@
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Intermix.md"
 		},
 		{
+			"slug": "Detour",
+			"name": "DETOUR",
+			"description": "Send/Return switch matrix with scene-support",
+			"tags": ["Mixer", "Switch", "Utility"],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Detour.md"
+		},
+		{
 			"slug": "AudioInterface64",
 			"name": "AUDIO-64",
 			"description": "Sends CV and audio to/from an audio device",

@@ -23,4 +23,5 @@ extern Model *modelFourRounds;
 extern Model *modelArena;
 extern Model *modelMaze;
 extern Model *modelIntermix;
+extern Model *modelDetour;
 extern Model *modelAudioInterface64;
