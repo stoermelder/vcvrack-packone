@@ -591,8 +591,8 @@ struct IntermixButtonLight : BASE {
 
 struct IntermixButton : app::SvgSwitch {
 	IntermixButton() {
-		addFrame(APP->window->loadSvg(asset::plugin(pluginInstance, "res/Components/IntermixButton.svg")));
-		addFrame(APP->window->loadSvg(asset::plugin(pluginInstance, "res/Components/IntermixButton1.svg")));
+		addFrame(APP->window->loadSvg(asset::plugin(pluginInstance, "res/components/IntermixButton.svg")));
+		addFrame(APP->window->loadSvg(asset::plugin(pluginInstance, "res/components/IntermixButton1.svg")));
 		fb->removeChild(shadow);
 		delete shadow;
 	}
