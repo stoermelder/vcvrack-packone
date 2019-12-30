@@ -26,6 +26,8 @@ struct CVMapModule : CVMapModuleBase<MAX_CHANNELS> {
 		NUM_LIGHTS
 	};
 
+	/** [Stored to JSON] */
+	int panelTheme = 0;
 	/** [Stored to Json] */
 	bool audioRate;
 
@@ -101,22 +103,24 @@ struct CVMapModule : CVMapModuleBase<MAX_CHANNELS> {
 
 	json_t* dataToJson() override {
 		json_t* rootJ = CVMapModuleBase<MAX_CHANNELS>::dataToJson();
+		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 		json_object_set_new(rootJ, "audioRate", json_boolean(audioRate));
 		return rootJ;
 	}
 
 	void dataFromJson(json_t* rootJ) override {
 		CVMapModuleBase<MAX_CHANNELS>::dataFromJson(rootJ);
+		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 		json_t* audioRateJ = json_object_get(rootJ, "audioRate");
 		if (audioRateJ) audioRate = json_boolean_value(audioRateJ);
 	}
 };
 
 
-struct CVMapWidget : ModuleWidget {
-	CVMapWidget(CVMapModule* module) {
+struct CVMapWidget : ThemedModuleWidget<CVMapModule> {
+	CVMapWidget(CVMapModule* module)
+		: ThemedModuleWidget<CVMapModule>(module, "CVMap") {
 		setModule(module);
-		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/CVMap.svg")));
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
@@ -143,18 +147,9 @@ struct CVMapWidget : ModuleWidget {
 
 
 	void appendContextMenu(Menu* menu) override {
+		ThemedModuleWidget<CVMapModule>::appendContextMenu(menu);
 		CVMapModule* module = dynamic_cast<CVMapModule*>(this->module);
 		assert(module);
-
-		struct ManualItem : MenuItem {
-			void onAction(const event::Action& e) override {
-				std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/CVMap.md");
-				t.detach();
-			}
-		};
-
-		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
-		menu->addChild(new MenuSeparator());
 
 		struct LockItem : MenuItem {
 			CVMapModule* module;
@@ -221,6 +216,7 @@ struct CVMapWidget : ModuleWidget {
 			}
 		};
 
+		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<LockItem>(&MenuItem::text, "Parameter changes", &LockItem::module, module));
 		menu->addChild(construct<UniBiItem>(&MenuItem::text, "Signal input", &UniBiItem::module, module));
 		menu->addChild(construct<AudioRateItem>(&MenuItem::text, "Audio rate processing", &AudioRateItem::module, module));

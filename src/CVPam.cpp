@@ -25,6 +25,8 @@ struct CVPamModule : MapModuleBase<MAX_CHANNELS> {
 		NUM_LIGHTS
 	};
 
+	/** [Stored to JSON] */
+	int panelTheme = 0;
 	/** [Stored to Json] */
 	bool bipolarOutput;
 	/** [Stored to Json] */
@@ -95,6 +97,7 @@ struct CVPamModule : MapModuleBase<MAX_CHANNELS> {
 
 	json_t* dataToJson() override {
 		json_t* rootJ = MapModuleBase::dataToJson();
+		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 		json_object_set_new(rootJ, "bipolarOutput", json_boolean(bipolarOutput));
 		json_object_set_new(rootJ, "audioRate", json_boolean(audioRate));
 		return rootJ;
@@ -102,6 +105,7 @@ struct CVPamModule : MapModuleBase<MAX_CHANNELS> {
 
 	void dataFromJson(json_t* rootJ) override {
 		MapModuleBase::dataFromJson(rootJ);
+		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 
 		json_t* bipolarOutputJ = json_object_get(rootJ, "bipolarOutput");
 		bipolarOutput = json_boolean_value(bipolarOutputJ);
@@ -112,10 +116,10 @@ struct CVPamModule : MapModuleBase<MAX_CHANNELS> {
 };
 
 
-struct CVPamWidget : ModuleWidget {
-	CVPamWidget(CVPamModule* module) {
+struct CVPamWidget : ThemedModuleWidget<CVPamModule> {
+	CVPamWidget(CVPamModule* module)
+		: ThemedModuleWidget<CVPamModule>(module, "CVPam") {
 		setModule(module);
-		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/CVPam.svg")));
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
@@ -142,18 +146,9 @@ struct CVPamWidget : ModuleWidget {
 
 
 	void appendContextMenu(Menu* menu) override {
+		ThemedModuleWidget<CVPamModule>::appendContextMenu(menu);
 		CVPamModule* module = dynamic_cast<CVPamModule*>(this->module);
 		assert(module);
-
-		struct ManualItem : MenuItem {
-			void onAction(const event::Action& e) override {
-				std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/CVPam.md");
-				t.detach();
-			}
-		};
-
-		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
-		menu->addChild(new MenuSeparator());
 
 		struct UniBiItem : MenuItem {
 			CVPamModule* module;
@@ -207,6 +202,7 @@ struct CVPamWidget : ModuleWidget {
 			}
 		};
 
+		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<UniBiItem>(&MenuItem::text, "Signal output", &UniBiItem::module, module));
 		menu->addChild(construct<AudioRateItem>(&MenuItem::text, "Audio rate processing", &AudioRateItem::module, module));
 		menu->addChild(new MenuSeparator());

@@ -94,6 +94,9 @@ struct MidiCatModule : Module {
 	/** [Stored to Json] */
 	MidiCatOutput midiOutput;
 
+	/** [Stored to JSON] */
+	int panelTheme = 0;
+
 	/** Number of maps */
 	int mapLen = 0;
 	/** [Stored to Json] The mapped CC number of each channel */
@@ -543,7 +546,10 @@ struct MidiCatModule : Module {
 	}
 
 	json_t *dataToJson() override {
-		json_t *rootJ = json_object();
+		json_t *rootJ = Module::dataToJson();
+		if (!rootJ) rootJ = json_object();
+		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
+
 		json_object_set_new(rootJ, "textScrolling", json_boolean(textScrolling));
 		json_object_set_new(rootJ, "mappingIndicatorHidden", json_boolean(mappingIndicatorHidden));
 
@@ -568,6 +574,8 @@ struct MidiCatModule : Module {
 
 	void dataFromJson(json_t *rootJ) override {
 		//clearMaps();
+		Module::dataFromJson(rootJ);
+		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 
 		json_t *textScrollingJ = json_object_get(rootJ, "textScrolling");
 		textScrolling = json_boolean_value(textScrollingJ);
@@ -857,10 +865,10 @@ struct MidiCatMidiWidget : MidiWidget {
 	}
 };
 
-struct MidiCatWidget : ModuleWidget {
-	MidiCatWidget(MidiCatModule *module) {
+struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
+	MidiCatWidget(MidiCatModule *module)
+		: ThemedModuleWidget<MidiCatModule>(module, "MidiCat") {
 		setModule(module);
-		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/MidiCat.svg")));
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
@@ -955,18 +963,9 @@ struct MidiCatWidget : ModuleWidget {
 	}
 
 	void appendContextMenu(Menu *menu) override {
+		ThemedModuleWidget<MidiCatModule>::appendContextMenu(menu);
 		MidiCatModule *module = dynamic_cast<MidiCatModule*>(this->module);
 		assert(module);
-
-		struct ManualItem : MenuItem {
-			void onAction(const event::Action &e) override {
-				std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/MidiCat.md");
-				t.detach();
-			}
-		};
-
-		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
-		menu->addChild(new MenuSeparator());
 
 		struct TextScrollItem : MenuItem {
 			MidiCatModule *module;
@@ -994,6 +993,7 @@ struct MidiCatWidget : ModuleWidget {
 			}
 		};
 
+		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<MidiModeMenuItem>(&MenuItem::text, "Mode", &MidiModeMenuItem::module, module));
 		menu->addChild(construct<TextScrollItem>(&MenuItem::text, "Text scrolling", &TextScrollItem::module, module));
 		menu->addChild(construct<MappingIndicatorHiddenItem>(&MenuItem::text, "Hide mapping indicators", &MappingIndicatorHiddenItem::module, module));
