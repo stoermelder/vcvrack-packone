@@ -340,10 +340,10 @@ struct DetourWidget : ModuleWidget {
 			addParam(createParamCentered<MatrixButton>(v, module, DetourModule<PORTS>::PARAM_SCENE + i));
 		}
 
-		SceneLedDisplay<DetourModule<PORTS>, SCENE_COUNT>* sceneLedDisplay = createWidgetCentered<SceneLedDisplay<DetourModule<PORTS>, SCENE_COUNT>>(Vec(23.1f, 299.5f));
+		SceneLedDisplay<DetourModule<PORTS>, SCENE_COUNT>* sceneLedDisplay = createWidgetCentered<SceneLedDisplay<DetourModule<PORTS>, SCENE_COUNT>>(Vec(23.1f, 304.9f));
 		sceneLedDisplay->module = module;
 		addChild(sceneLedDisplay);
-		addInput(createInputCentered<StoermelderPort>(Vec(23.1f, 323.7f), module, DetourModule<PORTS>::INPUT_SCENE));
+		addInput(createInputCentered<StoermelderPort>(Vec(23.1f, 327.9f), module, DetourModule<PORTS>::INPUT_SCENE));
 
 		for (int i = 0; i < PORTS; i++) {
 			for (int j = 0; j < PORTS; j++) {
@@ -359,9 +359,9 @@ struct DetourWidget : ModuleWidget {
 			v = Vec(336.2f, yMin + (yMax - yMin) / (PORTS - 1) * i);
 			addOutput(createOutputCentered<StoermelderPort>(v, module, DetourModule<PORTS>::OUTPUT + i));
 
-			v = Vec(xMin + (xMax - xMin) / (PORTS - 1) * i, 325.5f);
+			v = Vec(xMin + (xMax - xMin) / (PORTS - 1) * i, 327.9f);
 			addOutput(createOutputCentered<StoermelderPort>(v, module, DetourModule<PORTS>::OUTPUT_SEND + i));
-			v = Vec(xMin + (xMax - xMin) / (PORTS - 1) * i, 296.4f);
+			v = Vec(xMin + (xMax - xMin) / (PORTS - 1) * i, 297.3f);
 			addInput(createInputCentered<StoermelderPort>(v, module, DetourModule<PORTS>::INPUT_RETURN + i));
 		}
 
