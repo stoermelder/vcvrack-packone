@@ -25,62 +25,63 @@ struct BoltModule : Module {
 		NUM_PARAMS
 	};
 	enum InputIds {
-        TRIG_INPUT,
-        OP_INPUT,
-        ENUMS(IN, 4),
+		TRIG_INPUT,
+		OP_INPUT,
+		ENUMS(IN, 4),
 		NUM_INPUTS
 	};
 	enum OutputIds {
-        OUTPUT,
+		OUTPUT,
 		NUM_OUTPUTS
 	};
 	enum LightIds {
-        ENUMS(OP_LIGHTS, 5),
+		ENUMS(OP_LIGHTS, 5),
 		NUM_LIGHTS
 	};
 
 	/** [Stored to JSON] */
 	int panelTheme = 0;
-    
-    int op = 0;
-    int opCvMode = BOLT_OPCV_MODE_10V;
-    int outCvMode = BOLT_OUTCV_MODE_GATE;
 
-    bool out[16];
+	int op = 0;
+	int opCvMode = BOLT_OPCV_MODE_10V;
+	int outCvMode = BOLT_OUTCV_MODE_GATE;
 
-    dsp::SchmittTrigger trigTrigger[16];
-    dsp::SchmittTrigger opButtonTrigger;
-    dsp::SchmittTrigger opCvTrigger;
-    dsp::PulseGenerator outPulseGenerator[16];
+	bool out[16];
+
+	dsp::SchmittTrigger trigTrigger[16];
+	dsp::SchmittTrigger opButtonTrigger;
+	dsp::SchmittTrigger opCvTrigger;
+	dsp::PulseGenerator outPulseGenerator[16];
 
     dsp::ClockDivider lightDivider;
 
     BoltModule() {
-		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);    
-        onReset();
+		panelTheme = pluginSettings.panelThemeDefault;
+		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+		onReset();
 
 		configParam(OP_PARAM, 0.0f, 1.0f, 0.0f, "Next operator");
-        lightDivider.setDivision(1024);
-        onReset();
+		lightDivider.setDivision(1024);
+		onReset();
 	}
 
-    void onReset() override {
-        Module::onReset();
-        op = 0;
-        for (int c = 0; c < 16; c++) {
-            out[c] = false;
-            outPulseGenerator[c].reset();
-        }
-    }
+	void onReset() override {
+		Module::onReset();
+		op = 0;
+		for (int c = 0; c < 16; c++) {
+			out[c] = false;
+			outPulseGenerator[c].reset();
+		}
+	}
 
-  	void process(const ProcessArgs &args) override {
-        // OP-button
-        if (opButtonTrigger.process(params[OP_PARAM].getValue())) {
-            op = (op + 1) % 5;
-        }
+	void process(const ProcessArgs &args) override {
+		// OP-button
+		if (opButtonTrigger.process(params[OP_PARAM].getValue())) {
+			op = (op + 1) % 5;
+		}
 
-        // OP-input, monophonic
-        if (inputs[OP_INPUT].isConnected()) {
+		// OP-input, monophonic
+		if (inputs[OP_INPUT].isConnected()) {
             switch (opCvMode) {
                 case BOLT_OPCV_MODE_10V: 
                     op = std::min((int)clamp(inputs[OP_INPUT].getVoltage(), 0.f, 10.f) / 2, 4);

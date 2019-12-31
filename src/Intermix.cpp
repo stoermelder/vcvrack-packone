@@ -113,6 +113,7 @@ struct IntermixModule : Module {
 	dsp::ClockDivider lightDivider;
 
 	IntermixModule() {
+		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		for (int i = 0; i < SCENE_COUNT; i++) {
 			configParam(PARAM_SCENE + i, 0.f, 1.f, 0.f, string::f("Scene %i", i + 1));
@@ -480,6 +481,9 @@ struct InputLedDisplay : LedDisplayChoice {
 					text = (mode - 24 > 0 ? "+" : "-") + string::f("%02i", std::abs(mode - 24));
 					break;
 			}
+		} 
+		else {
+			text = "-X-";
 		}
 		LedDisplayChoice::step();
 	}

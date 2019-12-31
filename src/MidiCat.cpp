@@ -149,6 +149,7 @@ struct MidiCatModule : Module {
 	dsp::ClockDivider indicatorDivider;
 
 	MidiCatModule() {
+		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		for (int id = 0; id < MAX_CHANNELS; id++) {
 			paramHandleIndicator[id].color = mappingIndicatorColor;

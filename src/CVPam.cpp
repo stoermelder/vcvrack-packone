@@ -36,6 +36,7 @@ struct CVPamModule : MapModuleBase<MAX_CHANNELS> {
 	dsp::ClockDivider lightDivider;
 
 	CVPamModule() {
+		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		this->mappingIndicatorColor = nvgRGB(0x40, 0xff, 0xff);
 		for (int id = 0; id < MAX_CHANNELS; id++) {

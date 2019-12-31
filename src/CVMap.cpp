@@ -35,6 +35,7 @@ struct CVMapModule : CVMapModuleBase<MAX_CHANNELS> {
 	dsp::ClockDivider lightDivider;
 
 	CVMapModule() {
+		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		for (int i = 0; i < MAX_CHANNELS; i++) {
 			this->paramHandles[i].text = string::f("CV-MAP Ch%02d", i + 1);

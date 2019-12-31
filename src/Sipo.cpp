@@ -42,6 +42,7 @@ struct SipoModule : Module {
 	dsp::ClockDivider lightDivider;
 
 	SipoModule() {
+		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configParam(SKIP_PARAM, 0.f, MAX_DATA_32 - 1, 0.f, "Trigger-skip to the current value, 0 acts as a standard shift register");
 		configParam(INCR_PARAM, 0.f, MAX_DATA_32_16, 0.f, "Inrement between used cells, 0 acts as standard shift register");

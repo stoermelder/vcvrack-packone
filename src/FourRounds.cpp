@@ -57,6 +57,7 @@ struct FourRoundsModule : Module {
 	dsp::ClockDivider lightDivider;
 
 	FourRoundsModule() {
+		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configParam(TRIG_PARAM, 0.0f, 1.0f, 0.0f, "Trigger next contest");
 		configParam(INV_PARAM, 0.0f, 1.0f, 0.0f, "Invert current state");

@@ -117,6 +117,7 @@ struct MazeModule : Module {
 	dsp::ClockDivider lightDivider;
 
 	MazeModule() {
+		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		lightDivider.setDivision(128);
 		onReset();

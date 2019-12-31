@@ -25,6 +25,7 @@ struct InfixModule : Module {
 	};
 
 	InfixModule() {
+		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		lightDivider.setDivision(512);
 		onReset();
@@ -79,8 +80,8 @@ struct InfixWidget : ThemedModuleWidget<InfixModule<16>> {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(20.0f, 87.8f), module, InfixModule<16>::INPUT_POLY));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(55.0f, 87.8f), module, InfixModule<16>::OUTPUT_POLY));
+		addInput(createInputCentered<StoermelderPort>(Vec(20.0f, 61.3f), module, InfixModule<16>::INPUT_POLY));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(55.0f, 61.3f), module, InfixModule<16>::OUTPUT_POLY));
 
 		addInput(createInputCentered<StoermelderPort>(Vec(20.0f, 136.3f), module, InfixModule<16>::INPUT_MONO + 0));
 		addInput(createInputCentered<StoermelderPort>(Vec(20.0f, 163.7f), module, InfixModule<16>::INPUT_MONO + 1));
@@ -100,11 +101,11 @@ struct InfixWidget : ThemedModuleWidget<InfixModule<16>> {
 		addInput(createInputCentered<StoermelderPort>(Vec(55.0f, 300.6f), module, InfixModule<16>::INPUT_MONO + 14));
 		addInput(createInputCentered<StoermelderPort>(Vec(55.0f, 328.0f), module, InfixModule<16>::INPUT_MONO + 15));
 
-		PolyLedWidget<GreenLight>* w1 = createWidgetCentered<PolyLedWidget<GreenLight>>(Vec(20.0f, 61.2f));
+		PolyLedWidget<WhiteLight>* w1 = createWidgetCentered<PolyLedWidget<WhiteLight>>(Vec(20.0f, 88.1f));
 		w1->setModule(module, InfixModule<16>::LIGHT_IN);
 		addChild(w1);
 
-		PolyLedWidget<GreenLight>* w2 = createWidgetCentered<PolyLedWidget<GreenLight>>(Vec(55.0f, 61.2f));
+		PolyLedWidget<WhiteLight>* w2 = createWidgetCentered<PolyLedWidget<WhiteLight>>(Vec(55.0f, 88.1f));
 		w2->setModule(module, InfixModule<16>::LIGHT_OUT);
 		addChild(w2);
 	}

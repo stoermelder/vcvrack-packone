@@ -172,6 +172,7 @@ struct ReMoveModule : MapModuleBase<1> {
     history::ModuleChange *recChangeHistory = NULL;
 
     ReMoveModule() {
+        panelTheme = pluginSettings.panelThemeDefault;
         config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS); 
         configParam(SEQP_PARAM, 0.0f, 1.0f, 0.0f, "Previous sequence");
         configParam(SEQN_PARAM, 0.0f, 1.0f, 0.0f, "Next sequence");

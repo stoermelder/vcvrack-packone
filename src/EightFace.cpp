@@ -100,6 +100,7 @@ struct EightFaceModule : Module {
 	dsp::ClockDivider buttonDivider;
 
 	EightFaceModule() {
+		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configParam(MODE_PARAM, 0, 1, 0, "Switch Read/write mode");
 		for (int i = 0; i < NUM_PRESETS; i++) {

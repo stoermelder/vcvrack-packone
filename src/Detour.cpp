@@ -54,6 +54,9 @@ struct DetourModule : Module {
 	int sceneNext = -1;
 
 	/** [Stored to JSON] */
+	int panelTheme = 0;
+
+	/** [Stored to JSON] */
 	MODE channelMode[SENDS];
 	/** [Stored to JSON] */
 	int channelDelay[SENDS];
@@ -73,6 +76,7 @@ struct DetourModule : Module {
 	dsp::ClockDivider lightDivider;
 
 	DetourModule() {
+		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		for (int i = 0; i < SCENE_COUNT; i++) {
 			configParam(PARAM_SCENE + i, 0.f, 1.f, 0.f, string::f("Scene %i", i + 1));
@@ -248,6 +252,7 @@ struct DetourModule : Module {
 
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
+		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 
 		json_object_set_new(rootJ, "padBrightness", json_real(padBrightness));
 
@@ -282,6 +287,8 @@ struct DetourModule : Module {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
+		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		
 		padBrightness = json_real_value(json_object_get(rootJ, "padBrightness"));
 
 		json_t* channelsJ = json_object_get(rootJ, "channel");

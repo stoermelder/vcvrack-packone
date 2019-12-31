@@ -8,7 +8,11 @@
     - Added option to hide parameter indicator squares
 - Module [MIDI-CAT](./docs/MidiCat.md)
     - Added option to hide parameter indicator squares
-    - 
+- Module [INFIX](./docs/Infix.md)
+    - Added Leds for used channels on polyphonic cables 
+- Added dark panels for all modules
+- Added globals settings, esp. for dark panels als default
+
 ### 1.4.0
 
 - Module [INTERMIX](./docs/Intermix.md)

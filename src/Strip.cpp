@@ -77,6 +77,7 @@ struct StripModule : Module {
 	dsp::ClockDivider lightDivider;
 
 	StripModule() {
+		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configParam(MODE_PARAM, 0, 1, 0, "Toggle left/right mode");
 		configParam(ON_PARAM, 0, 1, 0, "Switch/toggle strip on");

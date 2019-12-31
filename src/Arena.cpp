@@ -156,6 +156,7 @@ struct ArenaModule : Module {
 	dsp::ClockDivider lightDivider;
 
 	ArenaModule() {
+		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		// inputs
 		for (int i = 0; i < IN_PORTS; i++) {
@@ -1951,6 +1952,9 @@ struct OpLedDisplay : LedDisplayChoice {
 					text = "WLK"; break;
 			}
 		}
+		else {
+			text = "-X-";
+		}
 		LedDisplayChoice::step();
 	}
 
@@ -2612,6 +2616,9 @@ struct SeqLedDisplay : LedDisplayChoice {
 		if (module) {
 			text = id + 1 > module->mixportsUsed ? "" : string::f("%02d", module->seqSelected[id] + 1);
 			color = module->seqEdit == id ? color::RED : nvgRGB(0xf0, 0xf0, 0xf0);
+		}
+		else {
+			text = "00";
 		}
 		LedDisplayChoice::step();
 	}

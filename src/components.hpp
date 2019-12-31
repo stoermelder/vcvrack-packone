@@ -13,12 +13,18 @@ struct ThemedModuleWidget : BASE {
 		this->module = module;
 		this->baseName = baseName;
 
-		BASE::setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/" + baseName + ".svg")));
 		if (module) {
+			BASE::setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/" + baseName + ".svg")));
 			darkPanel = new SvgPanel();
 			darkPanel->setBackground(APP->window->loadSvg(asset::plugin(pluginInstance, "res/dark/" + baseName + ".svg")));
 			darkPanel->visible = false;
 			BASE::addChild(darkPanel);
+		}
+		else {
+			if (pluginSettings.panelThemeDefault == 0)
+				BASE::setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/" + baseName + ".svg")));
+			if (pluginSettings.panelThemeDefault == 1)
+				BASE::setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/dark/" + baseName + ".svg")));
 		}
 	}
 
@@ -31,21 +37,50 @@ struct ThemedModuleWidget : BASE {
 			}
 		};
 
-		struct PanelThemeItem : MenuItem {
+		struct PanelMenuItem : MenuItem {
 			MODULE* module;
-			int theme;
 
-			void onAction(const event::Action& e) override {
-				module->panelTheme = module->panelTheme == theme ? 0 : theme;
+			PanelMenuItem() {
+				rightText = RIGHT_ARROW;
 			}
-			void step() override {
-				rightText = module->panelTheme == theme ? "✔" : "";
+
+			Menu* createChildMenu() override {
+				struct PanelThemeItem : MenuItem {
+					MODULE* module;
+					int theme;
+
+					void onAction(const event::Action& e) override {
+						module->panelTheme = module->panelTheme == theme ? 0 : theme;
+					}
+					void step() override {
+						rightText = module->panelTheme == theme ? "✔" : "";
+						MenuItem::step();
+					}
+				};
+
+				struct PanelThemeDefaultItem : MenuItem {
+					int theme;
+
+					void onAction(const event::Action& e) override {
+						pluginSettings.panelThemeDefault = pluginSettings.panelThemeDefault == theme ? 0 : theme;
+						pluginSettings.saveToJson();
+					}
+					void step() override {
+						rightText = pluginSettings.panelThemeDefault == theme ? "✔" : "";
+						MenuItem::step();
+					}
+				};
+
+				Menu* menu = new Menu;
+				menu->addChild(construct<PanelThemeItem>(&MenuItem::text, "Dark panel", &PanelThemeItem::module, module, &PanelThemeItem::theme, 1));
+				menu->addChild(construct<PanelThemeDefaultItem>(&MenuItem::text, "Dark panel as default", &PanelThemeDefaultItem::theme, 1));
+				return menu;
 			}
 		};
 
 		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual", &ManualItem::baseName, baseName));
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<PanelThemeItem>(&MenuItem::text, "Dark theme", &PanelThemeItem::module, module, &PanelThemeItem::theme, 1));
+		menu->addChild(construct<PanelMenuItem>(&MenuItem::text, "Panel", &PanelMenuItem::module, module));
 		BASE::appendContextMenu(menu);
 	}
 
@@ -303,6 +338,9 @@ struct SceneLedDisplay : LedDisplayChoice {
 	void step() override {
 		if (module) {
 			text = string::f("%02d", module->sceneSelected + 1);
+		} 
+		else {
+			text = "00";
 		}
 		LedDisplayChoice::step();
 	}

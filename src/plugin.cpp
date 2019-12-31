@@ -1,9 +1,9 @@
 #include "plugin.hpp"
 
 
-Plugin *pluginInstance;
+Plugin* pluginInstance;
 
-void init(rack::Plugin *p) {
+void init(rack::Plugin* p) {
 	pluginInstance = p;
 
 	p->addModel(modelCVMap);
@@ -25,4 +25,6 @@ void init(rack::Plugin *p) {
 	p->addModel(modelIntermix);
 	p->addModel(modelDetour);
 	p->addModel(modelAudioInterface64);
+
+	pluginSettings.readFromJson();
 }

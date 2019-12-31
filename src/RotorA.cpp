@@ -36,6 +36,7 @@ struct RotorAModule : Module {
 	float channelsSplit;
 
 	RotorAModule() {
+		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configParam(CHANNELS_PARAM, 2, 16, 16, "Number of output channels");
 
