@@ -66,6 +66,8 @@ struct CVMapMicroModule : CVMapModuleBase<1> {
 		NUM_LIGHTS
 	};
 
+	/** [Stored to JSON] */
+	int panelTheme = 0;
 	/** [Stored to Json] */
 	bool invertedOutput = false;
 
@@ -137,14 +139,14 @@ struct CVMapMicroModule : CVMapModuleBase<1> {
 
 	json_t* dataToJson() override {
 		json_t* rootJ = CVMapModuleBase<1>::dataToJson();
+		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 		json_object_set_new(rootJ, "invertedOutput", json_boolean(invertedOutput));
-
 		return rootJ;
 	}
 
 	void dataFromJson(json_t* rootJ) override {
 		CVMapModuleBase<1>::dataFromJson(rootJ);
-
+		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 		json_t* invertedOutputJ = json_object_get(rootJ, "invertedOutput");
 		if (invertedOutputJ) invertedOutput = json_boolean_value(invertedOutputJ);
 	}
@@ -263,18 +265,18 @@ struct MapLight : BASE {
 	}
 };
 
-struct CVMapMicroWidget : ModuleWidget {
-	CVMapMicroWidget(CVMapMicroModule* module) {
+struct CVMapMicroWidget : ThemedModuleWidget<CVMapMicroModule> {
+	CVMapMicroWidget(CVMapMicroModule* module)
+		: ThemedModuleWidget<CVMapMicroModule>(module, "CVMapMicro") {
 		setModule(module);
-		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/CVMapMicro.svg")));
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		MapButton* button = createParamCentered<MapButton>(Vec(22.5f, 74.2f), module, CVMapMicroModule::MAP_PARAM);
+		MapButton* button = createParamCentered<MapButton>(Vec(22.5f, 60.3f), module, CVMapMicroModule::MAP_PARAM);
 		button->setModule(module);
 		addParam(button);
-		addChild(createLightCentered<MapLight<GreenRedLight>>(Vec(22.5f, 74.2f), module, CVMapMicroModule::MAP_LIGHT));
+		addChild(createLightCentered<MapLight<GreenRedLight>>(Vec(22.5f, 60.3f), module, CVMapMicroModule::MAP_LIGHT));
 
 		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 142.0f), module, CVMapMicroModule::INPUT));
 
@@ -287,18 +289,9 @@ struct CVMapMicroWidget : ModuleWidget {
 	}
 
 	void appendContextMenu(Menu* menu) override {
+		ThemedModuleWidget<CVMapMicroModule>::appendContextMenu(menu);
 		CVMapMicroModule* module = dynamic_cast<CVMapMicroModule*>(this->module);
 		assert(module);
-
-		struct ManualItem : MenuItem {
-			void onAction(const event::Action& e) override {
-				std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/CVMapMicro.md");
-				t.detach();
-			}
-		};
-
-		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
-		menu->addChild(new MenuSeparator());
 
 		struct LockItem : MenuItem {
 			CVMapMicroModule* module;
@@ -339,6 +332,7 @@ struct CVMapMicroWidget : ModuleWidget {
 			}
 		};
 
+		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<LockItem>(&MenuItem::text, "Parameter changes", &LockItem::module, module));
 		menu->addChild(construct<UniBiItem>(&MenuItem::text, "Voltage range", &UniBiItem::module, module));
 		menu->addChild(construct<SignalOutputItem>(&MenuItem::text, "OUT-port", &SignalOutputItem::module, module));

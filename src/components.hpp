@@ -23,8 +23,6 @@ struct ThemedModuleWidget : BASE {
 	}
 
 	void appendContextMenu(Menu* menu) override {
-		BASE::appendContextMenu(menu);
-
 		struct ManualItem : MenuItem {
 			std::string baseName;
 			void onAction(const event::Action& e) override {
@@ -48,6 +46,7 @@ struct ThemedModuleWidget : BASE {
 		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual", &ManualItem::baseName, baseName));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<PanelThemeItem>(&MenuItem::text, "Dark theme", &PanelThemeItem::module, module, &PanelThemeItem::theme, 1));
+		BASE::appendContextMenu(menu);
 	}
 
 	void step() override {
@@ -360,7 +359,7 @@ struct MatrixButtonLight : BASE {
 struct MatrixButton : app::SvgSwitch {
 	MatrixButton() {
 		addFrame(APP->window->loadSvg(asset::plugin(pluginInstance, "res/components/MatrixButton.svg")));
-		addFrame(APP->window->loadSvg(asset::plugin(pluginInstance, "res/components/MatrixButton.svg")));
+		addFrame(APP->window->loadSvg(asset::plugin(pluginInstance, "res/components/MatrixButton1.svg")));
 		fb->removeChild(shadow);
 		delete shadow;
 	}

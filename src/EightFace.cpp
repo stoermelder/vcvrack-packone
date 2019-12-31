@@ -46,6 +46,9 @@ struct EightFaceModule : Module {
 		NUM_LIGHTS
 	};
 
+	/** [Stored to JSON] */
+	int panelTheme = 0;
+
 	/** [Stored to JSON] left? right? */
 	MODE mode = MODE_LEFT;
 
@@ -355,6 +358,7 @@ struct EightFaceModule : Module {
 
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
+		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 		json_object_set_new(rootJ, "mode", json_integer(mode));
 		json_object_set_new(rootJ, "pluginSlug", json_string(pluginSlug.c_str()));
 		json_object_set_new(rootJ, "modelSlug", json_string(modelSlug.c_str()));
@@ -377,6 +381,8 @@ struct EightFaceModule : Module {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
+		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+
 		json_t* modeJ = json_object_get(rootJ, "mode");
 		if (modeJ) mode = (MODE)json_integer_value(modeJ);
 		pluginSlug = json_string_value(json_object_get(rootJ, "pluginSlug"));
@@ -505,17 +511,9 @@ struct EightFaceWidgetTemplate : ModuleWidget {
 		MODULE* module = dynamic_cast<MODULE*>(this->module);
 		assert(module);
 
-		struct ManualItem : MenuItem {
-			void onAction(const event::Action& e) override {
-				std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/EightFace.md");
-				t.detach();
-			}
-		};
-
-		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
-		menu->addChild(new MenuSeparator());
-
 		if (module->moduleName != "") {
+			menu->addChild(new MenuSeparator());
+
 			ui::MenuLabel* textLabel = new ui::MenuLabel;
 			textLabel->text = "Configured for...";
 			menu->addChild(textLabel);
@@ -523,21 +521,21 @@ struct EightFaceWidgetTemplate : ModuleWidget {
 			ui::MenuLabel* modelLabel = new ui::MenuLabel;
 			modelLabel->text = module->moduleName;
 			menu->addChild(modelLabel);
-			menu->addChild(new MenuSeparator());
 		}
 
+		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<SlovCvModeMenuItem<MODULE>>(&MenuItem::text, "Port SLOT mode", &SlovCvModeMenuItem<MODULE>::module, module));
 		menu->addChild(construct<ModeItem<MODULE>>(&MenuItem::text, "Module", &ModeItem<MODULE>::module, module));
 		menu->addChild(construct<AutoloadItem<MODULE>>(&MenuItem::text, "Autoload first preset", &AutoloadItem<MODULE>::module, module));
 	}
 };
 
-struct EightFaceWidget : EightFaceWidgetTemplate<EightFaceModule<8>> {
+struct EightFaceWidget : ThemedModuleWidget<EightFaceModule<8>, EightFaceWidgetTemplate<EightFaceModule<8>>> {
 	typedef EightFaceModule<8> MODULE;
 
-	EightFaceWidget(MODULE* module) {
+	EightFaceWidget(MODULE* module)
+		: ThemedModuleWidget<MODULE, EightFaceWidgetTemplate<MODULE>>(module, "EightFace") {
 		setModule(module);
-		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/EightFace.svg")));
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
@@ -570,12 +568,12 @@ struct EightFaceWidget : EightFaceWidgetTemplate<EightFaceModule<8>> {
 	}
 };
 
-struct EightFaceX2Widget : EightFaceWidgetTemplate<EightFaceModule<16>> {
+struct EightFaceX2Widget : ThemedModuleWidget<EightFaceModule<16>, EightFaceWidgetTemplate<EightFaceModule<16>>> {
 	typedef EightFaceModule<16> MODULE;
 
-	EightFaceX2Widget(MODULE* module) {
+	EightFaceX2Widget(MODULE* module)
+		: ThemedModuleWidget<MODULE, EightFaceWidgetTemplate<MODULE>>(module, "EightFaceX2") {
 		setModule(module);
-		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/EightFaceX2.svg")));
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));

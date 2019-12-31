@@ -569,10 +569,10 @@ struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 			addParam(createParamCentered<MatrixButton>(v, module, IntermixModule<PORTS>::PARAM_SCENE + i));
 		}
 
-		SceneLedDisplay<IntermixModule<PORTS>, SCENE_COUNT>* sceneLedDisplay = createWidgetCentered<SceneLedDisplay<IntermixModule<PORTS>, SCENE_COUNT>>(Vec(23.1f, 299.5f));
+		SceneLedDisplay<IntermixModule<PORTS>, SCENE_COUNT>* sceneLedDisplay = createWidgetCentered<SceneLedDisplay<IntermixModule<PORTS>, SCENE_COUNT>>(Vec(23.1f, 302.3f));
 		sceneLedDisplay->module = module;
 		addChild(sceneLedDisplay);
-		addInput(createInputCentered<StoermelderPort>(Vec(23.1f, 323.7f), module, IntermixModule<PORTS>::INPUT_SCENE));
+		addInput(createInputCentered<StoermelderPort>(Vec(23.1f, 326.7f), module, IntermixModule<PORTS>::INPUT_SCENE));
 
 		for (int i = 0; i < PORTS; i++) {
 			for (int j = 0; j < PORTS; j++) {
@@ -590,17 +590,17 @@ struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 			Vec vi2 = Vec(342.9f, yMin + (yMax - yMin) / (PORTS - 1) * i);
 			addParam(createParamCentered<StoermelderSmallKnob>(vi2, module, IntermixModule<PORTS>::PARAM_AT + i));
 
-			Vec vi0 = Vec(xMin + (xMax - xMin) / (PORTS - 1) * i, 299.5f);
+			Vec vi0 = Vec(xMin + (xMax - xMin) / (PORTS - 1) * i, 302.3f);
 			InputLedDisplay<IntermixModule<PORTS>>* inputLedDisplay = createWidgetCentered<InputLedDisplay<IntermixModule<PORTS>>>(vi0);
 			inputLedDisplay->module = module;
 			inputLedDisplay->id = i;
 			addChild(inputLedDisplay);
-			Vec vi1 = Vec(xMin + (xMax - xMin) / (PORTS - 1) * i, 323.7f);
+			Vec vi1 = Vec(xMin + (xMax - xMin) / (PORTS - 1) * i, 326.7f);
 			addInput(createInputCentered<StoermelderPort>(vi1, module, IntermixModule<PORTS>::INPUT + i));
 		}
 
-		addParam(createParamCentered<StoermelderTrimpot>(Vec(310.9f, 300.3f), module, IntermixModule<PORTS>::PARAM_FADEIN));
-		addParam(createParamCentered<StoermelderTrimpot>(Vec(310.9f, 327.3f), module, IntermixModule<PORTS>::PARAM_FADEOUT));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(310.9f, 303.1f), module, IntermixModule<PORTS>::PARAM_FADEIN));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(310.9f, 330.1f), module, IntermixModule<PORTS>::PARAM_FADEOUT));
 
 		// Lights
 		for (int i = 0; i < SCENE_COUNT; i++) {

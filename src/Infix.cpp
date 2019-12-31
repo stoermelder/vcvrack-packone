@@ -10,16 +10,17 @@ struct InfixModule : Module {
 		NUM_PARAMS
 	};
 	enum InputIds {
-		POLY_INPUT,
-		ENUMS(MONO_INPUT, CHANNELS),
+		INPUT_POLY,
+		ENUMS(INPUT_MONO, CHANNELS),
 		NUM_INPUTS
 	};
 	enum OutputIds {
-		POLY_OUTPUT,
+		OUTPUT_POLY,
 		NUM_OUTPUTS
 	};
 	enum LightIds {
-		ENUMS(MONO_LIGHT, CHANNELS),
+		ENUMS(LIGHT_OUT, CHANNELS),
+		ENUMS(LIGHT_IN, 16),
 		NUM_LIGHTS
 	};
 
@@ -29,117 +30,114 @@ struct InfixModule : Module {
 		onReset();
 	}
 
+	/** [Stored to JSON] */
+	int panelTheme = 0;
+
 	dsp::ClockDivider lightDivider;
 
 	void process(const ProcessArgs& args) override {
-		int lastChannel = inputs[POLY_INPUT].getChannels();
+		int lastChannel = inputs[INPUT_POLY].getChannels();
 		for (int c = 0; c < CHANNELS; c++) {
-			float v = inputs[POLY_INPUT].getVoltage(c);
-			if (inputs[MONO_INPUT + c].isConnected()) {
+			float v = inputs[INPUT_POLY].getVoltage(c);
+			if (inputs[INPUT_MONO + c].isConnected()) {
 				lastChannel = std::max(lastChannel, c + 1);
-				v = inputs[MONO_INPUT + c].getVoltage();
+				v = inputs[INPUT_MONO + c].getVoltage();
 			}
-			outputs[POLY_OUTPUT].setVoltage(v, c);
+			outputs[OUTPUT_POLY].setVoltage(v, c);
 		}
-		outputs[POLY_OUTPUT].setChannels(lastChannel);
+		outputs[OUTPUT_POLY].setChannels(lastChannel);
 
 		// Set channel lights infrequently
 		if (lightDivider.process()) {
+			int i = inputs[INPUT_POLY].getChannels();
+			for (int c = 0; c < 16; c++) {
+				lights[LIGHT_IN + c].setBrightness(i > c);
+			}
 			for (int c = 0; c < CHANNELS; c++) {
-				lights[MONO_LIGHT + c].setBrightness(lastChannel > c);
+				lights[LIGHT_OUT + c].setBrightness(lastChannel > c);
 			}
 		}
 	}
+
+	json_t* dataToJson() override {
+		json_t *rootJ = json_object();
+		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
+		return rootJ;
+	}
+
+	void dataFromJson(json_t* rootJ) override {
+		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+	}
 };
 
 
-struct InfixWidget : ModuleWidget {
-	InfixWidget(InfixModule<16>* module) {
+struct InfixWidget : ThemedModuleWidget<InfixModule<16>> {
+	InfixWidget(InfixModule<16>* module)
+		: ThemedModuleWidget<InfixModule<16>>(module, "Infix") {
 		setModule(module);
-		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/Infix.svg")));
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(20.6f, 74.4f), module, InfixModule<16>::POLY_INPUT));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(54.f, 74.4f), module, InfixModule<16>::POLY_OUTPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(20.0f, 87.8f), module, InfixModule<16>::INPUT_POLY));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(55.0f, 87.8f), module, InfixModule<16>::OUTPUT_POLY));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(20.6f, 136.3f), module, InfixModule<16>::MONO_INPUT + 0));
-		addInput(createInputCentered<StoermelderPort>(Vec(20.6f, 163.7f), module, InfixModule<16>::MONO_INPUT + 1));
-		addInput(createInputCentered<StoermelderPort>(Vec(20.6f, 191.1f), module, InfixModule<16>::MONO_INPUT + 2));
-		addInput(createInputCentered<StoermelderPort>(Vec(20.6f, 218.5f), module, InfixModule<16>::MONO_INPUT + 3));
-		addInput(createInputCentered<StoermelderPort>(Vec(20.6f, 245.8f), module, InfixModule<16>::MONO_INPUT + 4));
-		addInput(createInputCentered<StoermelderPort>(Vec(20.6f, 273.2f), module, InfixModule<16>::MONO_INPUT + 5));
-		addInput(createInputCentered<StoermelderPort>(Vec(20.6f, 300.6f), module, InfixModule<16>::MONO_INPUT + 6));
-		addInput(createInputCentered<StoermelderPort>(Vec(20.6f, 328.0f), module, InfixModule<16>::MONO_INPUT + 7));
+		addInput(createInputCentered<StoermelderPort>(Vec(20.0f, 136.3f), module, InfixModule<16>::INPUT_MONO + 0));
+		addInput(createInputCentered<StoermelderPort>(Vec(20.0f, 163.7f), module, InfixModule<16>::INPUT_MONO + 1));
+		addInput(createInputCentered<StoermelderPort>(Vec(20.0f, 191.1f), module, InfixModule<16>::INPUT_MONO + 2));
+		addInput(createInputCentered<StoermelderPort>(Vec(20.0f, 218.5f), module, InfixModule<16>::INPUT_MONO + 3));
+		addInput(createInputCentered<StoermelderPort>(Vec(20.0f, 245.8f), module, InfixModule<16>::INPUT_MONO + 4));
+		addInput(createInputCentered<StoermelderPort>(Vec(20.0f, 273.2f), module, InfixModule<16>::INPUT_MONO + 5));
+		addInput(createInputCentered<StoermelderPort>(Vec(20.0f, 300.6f), module, InfixModule<16>::INPUT_MONO + 6));
+		addInput(createInputCentered<StoermelderPort>(Vec(20.0f, 328.0f), module, InfixModule<16>::INPUT_MONO + 7));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(54.f, 136.3f), module, InfixModule<16>::MONO_INPUT + 8));
-		addInput(createInputCentered<StoermelderPort>(Vec(54.f, 163.7f), module, InfixModule<16>::MONO_INPUT + 9));
-		addInput(createInputCentered<StoermelderPort>(Vec(54.f, 191.1f), module, InfixModule<16>::MONO_INPUT + 10));
-		addInput(createInputCentered<StoermelderPort>(Vec(54.f, 218.5f), module, InfixModule<16>::MONO_INPUT + 11));
-		addInput(createInputCentered<StoermelderPort>(Vec(54.f, 245.8f), module, InfixModule<16>::MONO_INPUT + 12));
-		addInput(createInputCentered<StoermelderPort>(Vec(54.f, 273.2f), module, InfixModule<16>::MONO_INPUT + 13));
-		addInput(createInputCentered<StoermelderPort>(Vec(54.f, 300.6f), module, InfixModule<16>::MONO_INPUT + 14));
-		addInput(createInputCentered<StoermelderPort>(Vec(54.f, 328.0f), module, InfixModule<16>::MONO_INPUT + 15));
-	}
-	
-	void appendContextMenu(Menu* menu) override {
-		InfixModule<16>* module = dynamic_cast<InfixModule<16>*>(this->module);
-		assert(module);
+		addInput(createInputCentered<StoermelderPort>(Vec(55.0f, 136.3f), module, InfixModule<16>::INPUT_MONO + 8));
+		addInput(createInputCentered<StoermelderPort>(Vec(55.0f, 163.7f), module, InfixModule<16>::INPUT_MONO + 9));
+		addInput(createInputCentered<StoermelderPort>(Vec(55.0f, 191.1f), module, InfixModule<16>::INPUT_MONO + 10));
+		addInput(createInputCentered<StoermelderPort>(Vec(55.0f, 218.5f), module, InfixModule<16>::INPUT_MONO + 11));
+		addInput(createInputCentered<StoermelderPort>(Vec(55.0f, 245.8f), module, InfixModule<16>::INPUT_MONO + 12));
+		addInput(createInputCentered<StoermelderPort>(Vec(55.0f, 273.2f), module, InfixModule<16>::INPUT_MONO + 13));
+		addInput(createInputCentered<StoermelderPort>(Vec(55.0f, 300.6f), module, InfixModule<16>::INPUT_MONO + 14));
+		addInput(createInputCentered<StoermelderPort>(Vec(55.0f, 328.0f), module, InfixModule<16>::INPUT_MONO + 15));
 
-		struct ManualItem : MenuItem {
-			void onAction(const event::Action& e) override {
-				std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Infix.md");
-				t.detach();
-			}
-		};
+		PolyLedWidget<GreenLight>* w1 = createWidgetCentered<PolyLedWidget<GreenLight>>(Vec(20.0f, 61.2f));
+		w1->setModule(module, InfixModule<16>::LIGHT_IN);
+		addChild(w1);
 
-		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
+		PolyLedWidget<GreenLight>* w2 = createWidgetCentered<PolyLedWidget<GreenLight>>(Vec(55.0f, 61.2f));
+		w2->setModule(module, InfixModule<16>::LIGHT_OUT);
+		addChild(w2);
 	}
 };
 
-struct InfixMicroWidget : ModuleWidget {
-	InfixMicroWidget(InfixModule<8>* module) {
+struct InfixMicroWidget : ThemedModuleWidget<InfixModule<8>> {
+	InfixMicroWidget(InfixModule<8>* module)
+		: ThemedModuleWidget<InfixModule<8>>(module, "InfixMicro") {
 		setModule(module);
-		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/InfixMicro.svg")));
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 60.5f), module, InfixModule<8>::POLY_INPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 60.5f), module, InfixModule<8>::INPUT_POLY));
 
-		addChild(createLightCentered<StoermelderPortLight<GreenLight>>(Vec(22.5f, 98.2f), module, InfixModule<8>::MONO_LIGHT + 0));
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 98.2f), module, InfixModule<8>::MONO_INPUT + 0));
-		addChild(createLightCentered<StoermelderPortLight<GreenLight>>(Vec(22.5f, 125.6f), module, InfixModule<8>::MONO_LIGHT + 1));
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 125.6f), module, InfixModule<8>::MONO_INPUT + 1));
-		addChild(createLightCentered<StoermelderPortLight<GreenLight>>(Vec(22.5f, 153.0f), module, InfixModule<8>::MONO_LIGHT + 2));
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 153.0f), module, InfixModule<8>::MONO_INPUT + 2));
-		addChild(createLightCentered<StoermelderPortLight<GreenLight>>(Vec(22.5f, 180.4f), module, InfixModule<8>::MONO_LIGHT + 3));
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 180.4f), module, InfixModule<8>::MONO_INPUT + 3));
-		addChild(createLightCentered<StoermelderPortLight<GreenLight>>(Vec(22.5f, 207.7f), module, InfixModule<8>::MONO_LIGHT + 4));
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 207.7f), module, InfixModule<8>::MONO_INPUT + 4));
-		addChild(createLightCentered<StoermelderPortLight<GreenLight>>(Vec(22.5f, 235.1f), module, InfixModule<8>::MONO_LIGHT + 5));
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 235.1f), module, InfixModule<8>::MONO_INPUT + 5));
-		addChild(createLightCentered<StoermelderPortLight<GreenLight>>(Vec(22.5f, 262.5f), module, InfixModule<8>::MONO_LIGHT + 6));
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 262.5f), module, InfixModule<8>::MONO_INPUT + 6));
-		addChild(createLightCentered<StoermelderPortLight<GreenLight>>(Vec(22.5f, 289.9f), module, InfixModule<8>::MONO_LIGHT + 7));
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 289.9f), module, InfixModule<8>::MONO_INPUT + 7));
+		addChild(createLightCentered<StoermelderPortLight<GreenLight>>(Vec(22.5f, 98.2f), module, InfixModule<8>::LIGHT_OUT + 0));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 98.2f), module, InfixModule<8>::INPUT_MONO + 0));
+		addChild(createLightCentered<StoermelderPortLight<GreenLight>>(Vec(22.5f, 125.6f), module, InfixModule<8>::LIGHT_OUT + 1));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 125.6f), module, InfixModule<8>::INPUT_MONO + 1));
+		addChild(createLightCentered<StoermelderPortLight<GreenLight>>(Vec(22.5f, 153.0f), module, InfixModule<8>::LIGHT_OUT + 2));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 153.0f), module, InfixModule<8>::INPUT_MONO + 2));
+		addChild(createLightCentered<StoermelderPortLight<GreenLight>>(Vec(22.5f, 180.4f), module, InfixModule<8>::LIGHT_OUT + 3));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 180.4f), module, InfixModule<8>::INPUT_MONO + 3));
+		addChild(createLightCentered<StoermelderPortLight<GreenLight>>(Vec(22.5f, 207.7f), module, InfixModule<8>::LIGHT_OUT + 4));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 207.7f), module, InfixModule<8>::INPUT_MONO + 4));
+		addChild(createLightCentered<StoermelderPortLight<GreenLight>>(Vec(22.5f, 235.1f), module, InfixModule<8>::LIGHT_OUT + 5));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 235.1f), module, InfixModule<8>::INPUT_MONO + 5));
+		addChild(createLightCentered<StoermelderPortLight<GreenLight>>(Vec(22.5f, 262.5f), module, InfixModule<8>::LIGHT_OUT + 6));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 262.5f), module, InfixModule<8>::INPUT_MONO + 6));
+		addChild(createLightCentered<StoermelderPortLight<GreenLight>>(Vec(22.5f, 289.9f), module, InfixModule<8>::LIGHT_OUT + 7));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 289.9f), module, InfixModule<8>::INPUT_MONO + 7));
 
-		addOutput(createOutputCentered<StoermelderPort>(Vec(22.5f, 327.2f), module, InfixModule<8>::POLY_OUTPUT));
-	}
-	
-	void appendContextMenu(Menu* menu) override {
-		InfixModule<8>* module = dynamic_cast<InfixModule<8>*>(this->module);
-		assert(module);
-
-		struct ManualItem : MenuItem {
-			void onAction(const event::Action& e) override {
-				std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Infix.md");
-				t.detach();
-			}
-		};
-
-		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(22.5f, 327.2f), module, InfixModule<8>::OUTPUT_POLY));
 	}
 };
 

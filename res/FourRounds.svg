@@ -5,6 +5,15 @@
         <g transform="matrix(5.99002,0,0,0.958552,963,-240.235)">
             <rect x="0" y="0" width="60" height="380" style="fill:rgb(128,187,254);"/>
         </g>
+        <g transform="matrix(2.12535,0,0,1.76292,1026.83,-852.772)">
+            <rect x="-30.034" y="347.456" width="169.102" height="16.91" style="fill:rgb(4,4,4);fill-opacity:0.3;"/>
+        </g>
+        <g transform="matrix(2.12535,0,0,1.81961,1026.83,-538.829)">
+            <rect x="-30.034" y="347.456" width="169.102" height="16.91" style="fill:rgb(4,4,4);fill-opacity:0.3;"/>
+        </g>
+        <g transform="matrix(16.0469,0,0,25.5659,363.043,-292.473)">
+            <rect x="37.388" y="2.043" width="22.397" height="14.247" style="fill:none;stroke:black;stroke-opacity:0.6;stroke-width:0.03px;"/>
+        </g>
         <g transform="matrix(0.840359,0,0,0.840359,310.666,16.2108)">
             <g transform="matrix(1.198,0,0,0.958552,893.633,-224.914)">
                 <g transform="matrix(9,0,0,9,64.0056,347.267)">
@@ -43,15 +52,6 @@
                     <path d="M0.416,-0.397C0.397,-0.408 0.374,-0.414 0.346,-0.414C0.31,-0.414 0.282,-0.4 0.261,-0.373C0.24,-0.345 0.229,-0.308 0.229,-0.26L0.229,0L0.072,0L0.072,-0.54L0.229,-0.54L0.229,-0.438L0.231,-0.438C0.257,-0.512 0.305,-0.549 0.374,-0.549C0.392,-0.549 0.406,-0.547 0.416,-0.543L0.416,-0.397Z" style="fill:rgb(10,1,1);fill-rule:nonzero;"/>
                 </g>
             </g>
-        </g>
-        <g transform="matrix(2.12535,0,0,1.76292,1026.83,-852.772)">
-            <rect x="-30.034" y="347.456" width="169.102" height="16.91" style="fill:rgb(4,4,4);fill-opacity:0.3;"/>
-        </g>
-        <g transform="matrix(2.12535,0,0,1.81961,1026.83,-538.829)">
-            <rect x="-30.034" y="347.456" width="169.102" height="16.91" style="fill:rgb(4,4,4);fill-opacity:0.3;"/>
-        </g>
-        <g transform="matrix(16.0469,0,0,25.5659,363.043,-292.473)">
-            <rect x="37.388" y="2.043" width="22.397" height="14.247" style="fill:none;stroke:black;stroke-opacity:0.6;stroke-width:0.03px;"/>
         </g>
         <g transform="matrix(1.198,0,0,0.958552,1120.95,-213.59)">
             <g transform="matrix(13,0,0,13,-10.3943,0)">

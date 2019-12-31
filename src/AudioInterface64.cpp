@@ -117,6 +117,9 @@ struct AudioInterface : Module {
 
 	std::chrono::duration<int64_t, std::milli> timeout = std::chrono::milliseconds(200);
 
+	/** [Stored to JSON] */
+	int panelTheme = 0;
+
 	dsp::ClockDivider lightDivider;
 
 	AudioInterface() {
@@ -230,12 +233,14 @@ struct AudioInterface : Module {
 
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
+		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 		json_object_set_new(rootJ, "audio", port.toJson());
 		return rootJ;
 	}
 
 	void dataFromJson(json_t* rootJ) override {
 		json_t* audioJ = json_object_get(rootJ, "audio");
+		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 		port.fromJson(audioJ);
 	}
 
@@ -276,12 +281,12 @@ struct Audio64Widget : AudioWidget {
 	}
 };
 
-struct AudioInterface64Widget : ModuleWidget {
+struct AudioInterface64Widget : ThemedModuleWidget<AudioInterface<64, 64>> {
 	typedef AudioInterface<64, 64> TAudioInterface;
 
-	AudioInterface64Widget(TAudioInterface* module) {
+	AudioInterface64Widget(TAudioInterface* module)
+		: ThemedModuleWidget<TAudioInterface>(module, "AudioInterface64") {
 		setModule(module);
-		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/AudioInterface64.svg")));
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));

@@ -1,6 +1,9 @@
 #include "plugin.hpp"
 #include <thread>
 
+
+namespace Bolt {
+
 const int BOLT_OP_AND = 0;
 const int BOLT_OP_NOR = 1;
 const int BOLT_OP_XOR = 2;
@@ -16,7 +19,7 @@ const int BOLT_OUTCV_MODE_TRIG_HIGH = 1;
 const int BOLT_OUTCV_MODE_TRIG_CHANGE = 2;
 
 
-struct Bolt : Module {
+struct BoltModule : Module {
 	enum ParamIds {
 		OP_PARAM,
 		NUM_PARAMS
@@ -36,6 +39,9 @@ struct Bolt : Module {
 		NUM_LIGHTS
 	};
 
+	/** [Stored to JSON] */
+	int panelTheme = 0;
+    
     int op = 0;
     int opCvMode = BOLT_OPCV_MODE_10V;
     int outCvMode = BOLT_OUTCV_MODE_GATE;
@@ -49,7 +55,7 @@ struct Bolt : Module {
 
     dsp::ClockDivider lightDivider;
 
-    Bolt() {
+    BoltModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);    
         onReset();
 
@@ -186,6 +192,7 @@ struct Bolt : Module {
 
     json_t *dataToJson() override {
         json_t *rootJ = json_object();
+        json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 		json_object_set_new(rootJ, "op", json_integer(op));
         json_object_set_new(rootJ, "opCvMode", json_integer(opCvMode));
         json_object_set_new(rootJ, "outCvMode", json_integer(outCvMode));
@@ -193,6 +200,7 @@ struct Bolt : Module {
     }
 
     void dataFromJson(json_t *rootJ) override {
+        panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
         json_t *opJ = json_object_get(rootJ, "op");
 		op = json_integer_value(opJ);
         json_t *opCvModeJ = json_object_get(rootJ, "opCvMode");
@@ -205,7 +213,7 @@ struct Bolt : Module {
 
 struct BoltOpCvModeMenuItem : MenuItem {
     struct BoltOpCvModeItem : MenuItem {
-        Bolt *module;
+        BoltModule *module;
         int opCvMode;
 
         void onAction(const event::Action &e) override {
@@ -218,7 +226,7 @@ struct BoltOpCvModeMenuItem : MenuItem {
         }
     };
     
-    Bolt *module;
+    BoltModule *module;
     Menu *createChildMenu() override {
         Menu *menu = new Menu;
         menu->addChild(construct<BoltOpCvModeItem>(&MenuItem::text, "0..10V", &BoltOpCvModeItem::module, module, &BoltOpCvModeItem::opCvMode, BOLT_OPCV_MODE_10V));
@@ -230,7 +238,7 @@ struct BoltOpCvModeMenuItem : MenuItem {
 
 struct BoltOutCvModeMenuItem : MenuItem {
     struct BoltOutCvModeItem : MenuItem {
-        Bolt *module;
+        BoltModule *module;
         int outCvMode;
 
         void onAction(const event::Action &e) override {
@@ -243,7 +251,7 @@ struct BoltOutCvModeMenuItem : MenuItem {
         }
     };
     
-    Bolt *module;
+    BoltModule *module;
     Menu *createChildMenu() override {
         Menu *menu = new Menu;
         menu->addChild(construct<BoltOutCvModeItem>(&MenuItem::text, "Gate", &BoltOutCvModeItem::module, module, &BoltOutCvModeItem::outCvMode, BOLT_OUTCV_MODE_GATE));
@@ -253,43 +261,37 @@ struct BoltOutCvModeMenuItem : MenuItem {
     }
 };
 
-struct BoltWidget : ModuleWidget {
-	BoltWidget(Bolt *module) {	
+
+struct BoltWidget : ThemedModuleWidget<BoltModule> {
+	BoltWidget(BoltModule *module)
+        : ThemedModuleWidget<BoltModule>(module, "Bolt") {
 		setModule(module);
-        setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/Bolt.svg")));
 
         addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
         addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-        addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 60.3f), module, Bolt::TRIG_INPUT));
-        addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 102.1f), module, Bolt::OP_INPUT));
-        addParam(createParamCentered<TL1105>(Vec(22.5f, 125.4f), module, Bolt::OP_PARAM));
+        addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 60.3f), module, BoltModule::TRIG_INPUT));
+        addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 102.1f), module, BoltModule::OP_INPUT));
+        addParam(createParamCentered<TL1105>(Vec(22.5f, 125.4f), module, BoltModule::OP_PARAM));
 
-        addChild(createLightCentered<SmallLight<GreenLight>>(Vec(11.9f, 146.3f), module, Bolt::OP_LIGHTS + 0));
-        addChild(createLightCentered<SmallLight<GreenLight>>(Vec(11.9f, 156.0f), module, Bolt::OP_LIGHTS + 1));
-        addChild(createLightCentered<SmallLight<GreenLight>>(Vec(11.9f, 165.7f), module, Bolt::OP_LIGHTS + 2));
-        addChild(createLightCentered<SmallLight<GreenLight>>(Vec(11.9f, 175.3f), module, Bolt::OP_LIGHTS + 3));
-        addChild(createLightCentered<SmallLight<GreenLight>>(Vec(11.9f, 185.0f), module, Bolt::OP_LIGHTS + 4));
+        addChild(createLightCentered<SmallLight<GreenLight>>(Vec(11.9f, 146.3f), module, BoltModule::OP_LIGHTS + 0));
+        addChild(createLightCentered<SmallLight<GreenLight>>(Vec(11.9f, 156.0f), module, BoltModule::OP_LIGHTS + 1));
+        addChild(createLightCentered<SmallLight<GreenLight>>(Vec(11.9f, 165.7f), module, BoltModule::OP_LIGHTS + 2));
+        addChild(createLightCentered<SmallLight<GreenLight>>(Vec(11.9f, 175.3f), module, BoltModule::OP_LIGHTS + 3));
+        addChild(createLightCentered<SmallLight<GreenLight>>(Vec(11.9f, 185.0f), module, BoltModule::OP_LIGHTS + 4));
 
-        addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 209.1f), module, Bolt::IN + 0));
-        addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 236.7f), module, Bolt::IN + 1));
-        addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 264.2f), module, Bolt::IN + 2));
-        addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 291.7f), module, Bolt::IN + 3));
-        addOutput(createOutputCentered<StoermelderPort>(Vec(22.5f, 327.5f), module, Bolt::OUTPUT));
+        addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 209.1f), module, BoltModule::IN + 0));
+        addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 236.7f), module, BoltModule::IN + 1));
+        addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 264.2f), module, BoltModule::IN + 2));
+        addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 291.7f), module, BoltModule::IN + 3));
+        addOutput(createOutputCentered<StoermelderPort>(Vec(22.5f, 327.5f), module, BoltModule::OUTPUT));
     }
 
     void appendContextMenu(Menu *menu) override {
-        Bolt *module = dynamic_cast<Bolt*>(this->module);
+        ThemedModuleWidget<BoltModule>::appendContextMenu(menu);
+        BoltModule *module = dynamic_cast<BoltModule*>(this->module);
         assert(module);
 
-        struct ManualItem : MenuItem {
-            void onAction(const event::Action &e) override {
-                std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Bolt.md");
-                t.detach();
-            }
-        };
-
-        menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
         menu->addChild(new MenuSeparator());
 
         BoltOpCvModeMenuItem *opCvModeMenuItem = construct<BoltOpCvModeMenuItem>(&MenuItem::text, "Port OP mode", &BoltOpCvModeMenuItem::module, module);
@@ -302,4 +304,6 @@ struct BoltWidget : ModuleWidget {
     }
 };
 
-Model *modelBolt = createModel<Bolt, BoltWidget>("Bolt");
+} // namespace Bolt
+
+Model *modelBolt = createModel<Bolt::BoltModule, Bolt::BoltWidget>("Bolt");

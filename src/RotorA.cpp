@@ -25,6 +25,9 @@ struct RotorAModule : Module {
 		NUM_LIGHTS
 	};
 
+	/** [Stored to JSON] */
+	int panelTheme = 0;
+
 	dsp::ClockDivider lightDivider;
 	dsp::ClockDivider channelsDivider;
 
@@ -95,43 +98,42 @@ struct RotorAModule : Module {
 			}
 		}
 	}
+
+	json_t* dataToJson() override {
+		json_t *rootJ = json_object();
+		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
+		return rootJ;
+	}
+
+	void dataFromJson(json_t* rootJ) override {
+		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+	}
 };
 
 
-struct RotorAWidget : ModuleWidget {
-	RotorAWidget(RotorAModule* module) {
+struct RotorAWidget : ThemedModuleWidget<RotorAModule> {
+	RotorAWidget(RotorAModule* module)
+		: ThemedModuleWidget<RotorAModule>(module, "RotorA") {
 		setModule(module);
-		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/RotorA.svg")));
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(30.f, 74.6f), module, RotorAModule::MOD_INPUT));
-		addInput(createInputCentered<StoermelderPort>(Vec(30.f, 122.3f), module, RotorAModule::CAR_INPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(30.f, 60.7f), module, RotorAModule::MOD_INPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(30.f, 108.7f), module, RotorAModule::CAR_INPUT));
 
-		PolyLedWidget<>* w0 = createWidgetCentered<PolyLedWidget<>>(Vec(30.f, 168.5f));
+		PolyLedWidget<>* w0 = createWidgetCentered<PolyLedWidget<>>(Vec(30.f, 155.0f));
 		w0->setModule(module, RotorAModule::INPUT_LIGHTS);
 		addChild(w0);
-		addInput(createInputCentered<StoermelderPort>(Vec(30.f, 194.5f), module, RotorAModule::BASE_INPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(30.f, 180.9f), module, RotorAModule::BASE_INPUT));
 
-		addParam(createParamCentered<RoundBlackSnapKnob>(Vec(30.f, 239.6f), module, RotorAModule::CHANNELS_PARAM));
+		addParam(createParamCentered<RoundBlackSnapKnob>(Vec(30.f, 226.1f), module, RotorAModule::CHANNELS_PARAM));
 
 		PolyLedWidget<>* w1 = createWidgetCentered<PolyLedWidget<>>(Vec(30.f, 299.8f));
 		w1->setModule(module, RotorAModule::OUTPUT_LIGHTS);
 		addChild(w1);
 		addOutput(createOutputCentered<StoermelderPort>(Vec(30.f, 327.9f), module, RotorAModule::POLY_OUTPUT));
 	}
-
-	void appendContextMenu(Menu* menu) override {
-		struct ManualItem : MenuItem {
-			void onAction(const event::Action& e) override {
-				std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/RotorA.md");
-				t.detach();
-			}
-		};
-
-		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
-	};
 };
 
 } // namespace RotorA

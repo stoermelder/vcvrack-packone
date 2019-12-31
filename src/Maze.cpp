@@ -60,6 +60,9 @@ struct MazeModule : Module {
 	std::geometric_distribution<int>* geoDist = NULL;
 
 	/** [Stored to JSON] */
+	int panelTheme = 0;
+
+	/** [Stored to JSON] */
 	int usedSize = 8;
 	/** [Stored to JSON] */
 	GRIDSTATE grid[SIZE][SIZE];
@@ -370,6 +373,8 @@ struct MazeModule : Module {
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
 
+		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
+
 		json_t* gridJ = json_array();
 		for (int i = 0; i < SIZE; i++) {
 			for (int j = 0; j < SIZE; j++) {
@@ -410,6 +415,8 @@ struct MazeModule : Module {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
+		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+
 		json_t* gridJ = json_object_get(rootJ, "grid");
 		for (int i = 0; i < SIZE; i++) {
 			for (int j = 0; j < SIZE; j++) {
@@ -1034,11 +1041,11 @@ struct MazeScreenWidget : OpaqueWidget, MazeDrawHelper<MODULE> {
 };
 
 
-struct MazeWidget32 : ModuleWidget {
+struct MazeWidget32 : ThemedModuleWidget<MazeModule<32, 4>> {
 	typedef MazeModule<32, 4> MODULE;
-	MazeWidget32(MODULE* module) {
+	MazeWidget32(MODULE* module)
+		: ThemedModuleWidget<MazeModule<32, 4>>(module, "Maze") {
 		setModule(module);
-		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/Maze.svg")));
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
@@ -1095,20 +1102,6 @@ struct MazeWidget32 : ModuleWidget {
 		addOutput(createOutputCentered<StoermelderPort>(Vec(306.2f, 292.2f), module, MODULE::CV_OUTPUT + 2));
 		addChild(createLightCentered<StoermelderPortLight<GreenRedLight>>(Vec(306.2f, 327.6f), module, MODULE::CV_LIGHT + 6));
 		addOutput(createOutputCentered<StoermelderPort>(Vec(306.2f, 327.6f), module, MODULE::CV_OUTPUT + 3));
-	}
-
-	void appendContextMenu(Menu* menu) override {
-		MODULE* module = dynamic_cast<MODULE*>(this->module);
-		assert(module);
-
-		struct ManualItem : MenuItem {
-			void onAction(const event::Action& e) override {
-				std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Maze.md");
-				t.detach();
-			}
-		};
-
-		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
 	}
 };
 

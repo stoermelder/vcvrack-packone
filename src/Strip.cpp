@@ -52,6 +52,9 @@ struct StripModule : Module {
 		NUM_LIGHTS
 	};
 
+	/** [Stored to JSON] */
+	int panelTheme = 0;
+
 	/** [Stored to JSON] left? right? both? */
 	MODE mode = MODE_LEFTRIGHT;
 	/** [Stored to JSON] usage of switch+port in "ON"-section */
@@ -297,6 +300,8 @@ struct StripModule : Module {
 
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
+		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
+
 		json_object_set_new(rootJ, "mode", json_integer(mode));
 		json_object_set_new(rootJ, "onMode", json_integer(onMode));
 
@@ -316,6 +321,8 @@ struct StripModule : Module {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
+		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+
 		json_t* modeJ = json_object_get(rootJ, "mode");
 		mode = (MODE)json_integer_value(modeJ);
 		json_t* onModeJ = json_object_get(rootJ, "onMode");
@@ -615,33 +622,33 @@ struct OnModeMenuItem : MenuItem {
 	}
 };
 
-struct StripWidget : ModuleWidget {
+struct StripWidget : ThemedModuleWidget<StripModule> {
 	StripModule* module;
 	std::string warningLog;
 
-	StripWidget(StripModule* module) {
+	StripWidget(StripModule* module)
+		: ThemedModuleWidget<StripModule>(module, "Strip") {
 		this->module = module;
 		setModule(module);
-		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/Strip.svg")));
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addParam(createParamCentered<CKD6>(Vec(22.5f, 81.6f), module, StripModule::MODE_PARAM));
+		addParam(createParamCentered<CKD6>(Vec(22.5f, 67.7f), module, StripModule::MODE_PARAM));
 
-		addChild(createLightCentered<TriangleLeftLight<SmallLight<GreenLight>>>(Vec(14.8f, 105.1f), module, StripModule::LEFT_LIGHT));
-		addChild(createLightCentered<TriangleRightLight<SmallLight<GreenLight>>>(Vec(30.2f, 105.1f), module, StripModule::RIGHT_LIGHT));
+		addChild(createLightCentered<TriangleLeftLight<SmallLight<GreenLight>>>(Vec(14.8f, 91.2f), module, StripModule::LEFT_LIGHT));
+		addChild(createLightCentered<TriangleRightLight<SmallLight<GreenLight>>>(Vec(30.2f, 91.2f), module, StripModule::RIGHT_LIGHT));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 143.1f), module, StripModule::ON_INPUT));
-		addParam(createParamCentered<TL1105>(Vec(22.5f, 166.4f), module, StripModule::ON_PARAM));
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 210.4f), module, StripModule::OFF_INPUT));
-		addParam(createParamCentered<TL1105>(Vec(22.5f, 233.7f), module, StripModule::OFF_PARAM));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 139.4f), module, StripModule::ON_INPUT));
+		addParam(createParamCentered<TL1105>(Vec(22.5f, 162.7f), module, StripModule::ON_PARAM));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 205.1f), module, StripModule::OFF_INPUT));
+		addParam(createParamCentered<TL1105>(Vec(22.5f, 228.5f), module, StripModule::OFF_PARAM));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 277.1f), module, StripModule::RAND_INPUT));
-		addParam(createParamCentered<TL1105>(Vec(22.5f, 300.4f), module, StripModule::RAND_PARAM));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 270.3f), module, StripModule::RAND_INPUT));
+		addParam(createParamCentered<TL1105>(Vec(22.5f, 293.6f), module, StripModule::RAND_PARAM));
 
-		addChild(createLightCentered<SmallLight<GreenRedLight>>(Vec(32.3f, 337.7f), module, StripModule::EXCLUDE_LIGHT));
-		ExcludeButton* button = createParamCentered<ExcludeButton>(Vec(22.5f, 328.0f), module, StripModule::EXCLUDE_PARAM);
+		addChild(createLightCentered<SmallLight<GreenRedLight>>(Vec(32.3f, 337.3f), module, StripModule::EXCLUDE_LIGHT));
+		ExcludeButton* button = createParamCentered<ExcludeButton>(Vec(22.5f, 326.0f), module, StripModule::EXCLUDE_PARAM);
 		button->module = module;
 		addParam(button);
 	}
@@ -1332,17 +1339,10 @@ struct StripWidget : ModuleWidget {
 	}
 
 	void appendContextMenu(Menu* menu) override {
+		ThemedModuleWidget<StripModule>::appendContextMenu(menu);
 		StripModule* module = dynamic_cast<StripModule*>(this->module);
 		assert(module);
 
-		struct ManualItem : MenuItem {
-			void onAction(const event::Action& e) override {
-				std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Strip.md");
-				t.detach();
-			}
-		};
-
-		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
 		menu->addChild(new MenuSeparator());
 
 		OnModeMenuItem* onModeMenuItem = construct<OnModeMenuItem>(&MenuItem::text, "Port/Switch ON mode", &OnModeMenuItem::module, module);

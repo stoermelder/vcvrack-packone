@@ -93,6 +93,9 @@ struct ReMoveModule : MapModuleBase<1> {
         NUM_LIGHTS
     };
 
+    /** [Stored to JSON] */
+    int panelTheme = 0;
+
     /** [Stored to JSON] recorded data */
     float *seqData;
     /** stores the current position in data */
@@ -609,6 +612,8 @@ struct ReMoveModule : MapModuleBase<1> {
 
     json_t *dataToJson() override {
         json_t *rootJ = MapModuleBase::dataToJson();
+        json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
+
         json_t *rec0J = json_object();
 
         int s = REMOVE_MAX_DATA / seqCount;
@@ -665,6 +670,7 @@ struct ReMoveModule : MapModuleBase<1> {
 
     void dataFromJson(json_t *rootJ) override {
         MapModuleBase::dataFromJson(rootJ);
+        panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 
         json_t *recJ = json_object_get(rootJ, "recorder");
         json_t *rec0J = json_array_get(recJ, 0);
@@ -1177,10 +1183,10 @@ struct RecLight : RedLight {
 };
 
 
-struct ReMoveWidget : ModuleWidget {
-    ReMoveWidget(ReMoveModule *module) {	
+struct ReMoveWidget : ThemedModuleWidget<ReMoveModule> {
+    ReMoveWidget(ReMoveModule *module)
+        : ThemedModuleWidget<ReMoveModule>(module, "ReMove") {
         setModule(module);
-        setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/ReMove.svg")));
 
         addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
         addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
@@ -1202,11 +1208,11 @@ struct ReMoveWidget : ModuleWidget {
         addParam(createParamCentered<TL1105>(Vec(45.f, 256.3f), module, ReMoveModule::RESET_PARAM));
         addChild(createLightCentered<SmallLight<GreenRedLight>>(Vec(13.1f, 260.5f), module, ReMoveModule::RESET_LIGHT));
 
-        addInput(createInputCentered<StoermelderPort>(Vec(21.1f, 336.8f), module, ReMoveModule::CV_INPUT));
-        addOutput(createOutputCentered<StoermelderPort>(Vec(68.7f, 336.8f), module, ReMoveModule::CV_OUTPUT));
+        addInput(createInputCentered<StoermelderPort>(Vec(21.1f, 327.5f), module, ReMoveModule::CV_INPUT));
+        addOutput(createOutputCentered<StoermelderPort>(Vec(68.7f, 327.5f), module, ReMoveModule::CV_OUTPUT));
 
-        addInput(createInputCentered<StoermelderPort>(Vec(21.1f, 294.1f), module, ReMoveModule::REC_INPUT));
-        addOutput(createOutputCentered<StoermelderPort>(Vec(68.7f, 294.1f), module, ReMoveModule::REC_OUTPUT));
+        addInput(createInputCentered<StoermelderPort>(Vec(21.1f, 286.1f), module, ReMoveModule::REC_INPUT));
+        addOutput(createOutputCentered<StoermelderPort>(Vec(68.7f, 286.1f), module, ReMoveModule::REC_OUTPUT));
 
         addParam(createParamCentered<RecButton>(Vec(45.0f, 151.4f), module, ReMoveModule::REC_PARAM));
         addChild(createLightCentered<RecLight>(Vec(45.0f, 151.4f), module, ReMoveModule::REC_LIGHT));
@@ -1230,17 +1236,10 @@ struct ReMoveWidget : ModuleWidget {
     }
 
     void appendContextMenu(Menu *menu) override {
+        ThemedModuleWidget<ReMoveModule>::appendContextMenu(menu);
         ReMoveModule *module = dynamic_cast<ReMoveModule*>(this->module);
         assert(module);
 
-        struct ManualItem : MenuItem {
-            void onAction(const event::Action &e) override {
-                std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/ReMove.md");
-                t.detach();
-            }
-        };
-
-        menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
         menu->addChild(new MenuSeparator());
 
         SampleRateMenuItem *sampleRateMenuItem = construct<SampleRateMenuItem>(&MenuItem::text, "Sample rate", &SampleRateMenuItem::module, module);

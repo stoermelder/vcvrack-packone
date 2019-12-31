@@ -29,12 +29,16 @@ struct SipoModule : Module {
 		NUM_LIGHTS
 	};
 
-	dsp::SchmittTrigger clockTrigger;
+	/** [Stored to JSON] */
+	int panelTheme = 0;
 
+	/** [Stored to JSON] */
 	float* data;
+	/** [Stored to JSON] */
 	int dataPtr = 0;
 	int dataUsed = 0;
 
+	dsp::SchmittTrigger clockTrigger;
 	dsp::ClockDivider lightDivider;
 
 	SipoModule() {
@@ -89,6 +93,7 @@ struct SipoModule : Module {
 
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
+		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 
 		json_t* dataJ = json_array();
 		for (int i = 0; i < dataUsed; i++) {
@@ -102,6 +107,8 @@ struct SipoModule : Module {
 	}
 
 	void dataFromJson(json_t *rootJ) override {
+		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+
 		json_t* dataJ = json_object_get(rootJ, "data");
 		if (dataJ) {
 			json_t *d;
@@ -117,46 +124,32 @@ struct SipoModule : Module {
 };
 
 
-struct SipoWidget : ModuleWidget {
-	SipoWidget(SipoModule* module) {
+struct SipoWidget : ThemedModuleWidget<SipoModule> {
+	SipoWidget(SipoModule* module)
+		: ThemedModuleWidget<SipoModule>(module, "Sipo") {
 		setModule(module);
-		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/Sipo.svg")));
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 74.8f), module, SipoModule::TRIG_INPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 60.9f), module, SipoModule::TRIG_INPUT));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 120.7f), module, SipoModule::SKIP_INPUT));
-		StoermelderTrimpot* tp1 = createParamCentered<StoermelderTrimpot>(Vec(22.5f, 145.3f), module, SipoModule::SKIP_PARAM);
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 109.5f), module, SipoModule::SKIP_INPUT));
+		StoermelderTrimpot* tp1 = createParamCentered<StoermelderTrimpot>(Vec(22.5f, 134.1f), module, SipoModule::SKIP_PARAM);
 		tp1->snap = true;
 		addParam(tp1);
 
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 190.0f), module, SipoModule::INCR_INPUT));
-		StoermelderTrimpot* tp2 = createParamCentered<StoermelderTrimpot>(Vec(22.5f, 214.8f), module, SipoModule::INCR_PARAM);
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 181.4f), module, SipoModule::INCR_INPUT));
+		StoermelderTrimpot* tp2 = createParamCentered<StoermelderTrimpot>(Vec(22.5f, 206.2f), module, SipoModule::INCR_PARAM);
 		tp2->snap = true;
 		addParam(tp2);
 
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 258.2f), module, SipoModule::SRC_INPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 252.2f), module, SipoModule::SRC_INPUT));
 
 		PolyLedWidget<GreenRedLight, 2>* w = createWidgetCentered<PolyLedWidget<GreenRedLight, 2>>(Vec(22.5f, 299.8f));
 		w->setModule(module, SipoModule::CHANNEL_LIGHTS);
 		addChild(w);
 		addOutput(createOutputCentered<StoermelderPort>(Vec(22.5f, 327.5f), module, SipoModule::POLY_OUTPUT));
-	}
-
-	void appendContextMenu(Menu *menu) override {
-		SipoModule *module = dynamic_cast<SipoModule*>(this->module);
-		assert(module);
-
-		struct ManualItem : MenuItem {
-			void onAction(const event::Action &e) override {
-				std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Sipo.md");
-				t.detach();
-			}
-		};
-
-		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
 	}
 };
 

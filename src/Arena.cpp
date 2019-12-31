@@ -105,6 +105,9 @@ struct ArenaModule : Module {
 	int selectedType = -1;
 
 	/** [Stored to JSON] */
+	int panelTheme = 0;
+
+	/** [Stored to JSON] */
 	float radius[IN_PORTS];
 	/** [Stored to JSON] */
 	float amount[IN_PORTS];
@@ -722,6 +725,7 @@ struct ArenaModule : Module {
 
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
+		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 
 		json_t* inportsJ = json_array();
 		for (int i = 0; i < IN_PORTS; i++) {
@@ -771,6 +775,8 @@ struct ArenaModule : Module {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
+		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+
 		json_t* inportsJ = json_object_get(rootJ, "inports");
 		json_t* inportJ;
 		size_t inputIndex;
@@ -2693,16 +2699,16 @@ struct ClickableLight : MediumLight<LIGHT> {
 };
 
 
-struct ArenaWidget : ModuleWidget {
+struct ArenaWidget : ThemedModuleWidget<ArenaModule<8, 4>> {
 	static const int IN_PORTS = 8;
 	static const int MIX_PORTS = 4;
 	typedef ArenaModule<IN_PORTS, MIX_PORTS> MODULE;
 	MODULE* module;
 
-	ArenaWidget(MODULE* module) {
+	ArenaWidget(MODULE* module)
+		: ThemedModuleWidget<MODULE>(module, "Arena") {
 		setModule(module);
 		this->module = module;
-		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/Arena.svg")));
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
@@ -2770,17 +2776,6 @@ struct ArenaWidget : ModuleWidget {
 			addChild(arenaSeqDisplay1);
 			addInput(createInputCentered<StoermelderPort>(Vec(x, 287.8f), module, MODULE::SEQ_PH_INPUT + i));
 		}
-	}
-
-	void appendContextMenu(Menu* menu) override {
-		struct ManualItem : MenuItem {
-			void onAction(const event::Action& e) override {
-				std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Arena.md");
-				t.detach();
-			}
-		};
-
-		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
 	}
 };
 

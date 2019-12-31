@@ -41,6 +41,9 @@ struct FourRoundsModule : Module {
 	std::uniform_real_distribution<float> randFloatDist = std::uniform_real_distribution<float>(0, 1);
 
 	/** [Stored to JSON] */
+	int panelTheme = 0;
+
+	/** [Stored to JSON] */
 	float state[SIZE];
 	/** [Stored to JSON] */
 	float lastValue[16];
@@ -183,6 +186,8 @@ struct FourRoundsModule : Module {
 
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
+		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
+
 		json_t* statesJ = json_array();
 		for (int i = 0; i < SIZE; i++) {
 			json_t* stateJ = json_object();
@@ -205,6 +210,8 @@ struct FourRoundsModule : Module {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
+		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+
 		json_t* statesJ = json_object_get(rootJ, "state");
 		json_t* stateJ;
 		size_t stateIndex;
@@ -227,10 +234,10 @@ struct FourRoundsModule : Module {
 };
 
 
-struct FourRoundsWidget : ModuleWidget {
-	FourRoundsWidget(FourRoundsModule* module) {
+struct FourRoundsWidget : ThemedModuleWidget<FourRoundsModule> {
+	FourRoundsWidget(FourRoundsModule* module)
+		: ThemedModuleWidget<FourRoundsModule>(module, "FourRounds") {
 		setModule(module);
-		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/FourRounds.svg")));
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
@@ -314,17 +321,10 @@ struct FourRoundsWidget : ModuleWidget {
 	}
 
 	void appendContextMenu(Menu *menu) override {
+		ThemedModuleWidget<FourRoundsModule>::appendContextMenu(menu);
 		FourRoundsModule* module = dynamic_cast<FourRoundsModule*>(this->module);
 		assert(module);
 
-		struct ManualItem : MenuItem {
-			void onAction(const event::Action &e) override {
-				std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/FourRounds.md");
-				t.detach();
-			}
-		};
-
-		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Mode"));
 

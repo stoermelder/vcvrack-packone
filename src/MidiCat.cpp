@@ -546,8 +546,7 @@ struct MidiCatModule : Module {
 	}
 
 	json_t *dataToJson() override {
-		json_t *rootJ = Module::dataToJson();
-		if (!rootJ) rootJ = json_object();
+		json_t *rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 
 		json_object_set_new(rootJ, "textScrolling", json_boolean(textScrolling));
@@ -574,7 +573,6 @@ struct MidiCatModule : Module {
 
 	void dataFromJson(json_t *rootJ) override {
 		//clearMaps();
-		Module::dataFromJson(rootJ);
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 
 		json_t *textScrollingJ = json_object_get(rootJ, "textScrolling");
