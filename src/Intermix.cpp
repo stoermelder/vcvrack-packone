@@ -56,6 +56,8 @@ struct IntermixModule : Module {
 		ENUMS(PARAM_AT, PORTS),
 		PARAM_FADEIN,
 		PARAM_FADEOUT,
+		ENUMS(PARAM_X_MAP, PORTS),
+		ENUMS(PARAM_Y_MAP, PORTS),
 		NUM_PARAMS
 	};
 	enum InputIds {
@@ -109,6 +111,7 @@ struct IntermixModule : Module {
 	//dsp::TSlewLimiter<simd::float_4> outputAtSlew[PORTS / 4];
 
 	dsp::SchmittTrigger sceneTrigger;
+	dsp::SchmittTrigger mapTrigger[PORTS];
 	dsp::ClockDivider sceneDivider;
 	dsp::ClockDivider lightDivider;
 
@@ -124,6 +127,8 @@ struct IntermixModule : Module {
 			}
 			configParam(PARAM_OUTPUT + i, 0.f, 1.f, 0.f, string::f("Output %i disable", i + 1));
 			configParam(PARAM_AT + i, -2.f, 2.f, 1.f, string::f("Output %i attenuverter", i + 1), "x");
+			configParam(PARAM_X_MAP + i, 0.f, 1.f, 0.f, string::f("Matrix col %i", i + 1));
+			configParam(PARAM_Y_MAP + i, 0.f, 1.f, 0.f, string::f("Matrix row %i", i + 1));
 		}
 		configParam(PARAM_FADEIN, 0.f, 4.f, 0.f, "Fade in", "s");
 		configParam(PARAM_FADEOUT, 0.f, 4.f, 0.f, "Fade out", "s");
@@ -198,6 +203,18 @@ struct IntermixModule : Module {
 			}
 			if (sceneFound == -1) {
 				params[PARAM_SCENE + sceneSelected].setValue(1.f);
+			}
+
+			for (int i = 0; i < PORTS; i++) {
+				if (params[PARAM_X_MAP + i].getValue() > 0.f) {
+					for (int j = 0; j < PORTS; j++) {
+						if (mapTrigger[j].process(params[PARAM_Y_MAP + j].getValue())) {
+							float v = params[PARAM_MATRIX + j * PORTS + i].getValue();
+							v = v == 1.f ? 0.f : 1.f;
+							params[PARAM_MATRIX + j * PORTS + i].setValue(v);
+						}
+					}
+				}
 			}
 
 			float f1 = params[PARAM_FADEIN].getValue();
@@ -585,14 +602,22 @@ struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 			}
 		}
 
+		struct DummyMapButton : ParamWidget {
+			DummyMapButton() {
+				this->box.size = Vec(5.f, 5.f);
+			}
+		};
+
 		for (int i = 0; i < PORTS; i++) {
-			Vec v = Vec(312.5f, yMin + (yMax - yMin) / (PORTS - 1) * i);
+			Vec v = Vec(313.5f, yMin + (yMax - yMin) / (PORTS - 1) * i);
 			addParam(createParamCentered<MatrixButton>(v, module, IntermixModule<PORTS>::PARAM_OUTPUT + i));
 
-			Vec vo = Vec(381.9f, yMin + (yMax - yMin) / (PORTS - 1) * i);
-			addOutput(createOutputCentered<StoermelderPort>(vo, module, IntermixModule<PORTS>::OUTPUT + i));
-			Vec vi2 = Vec(342.9f, yMin + (yMax - yMin) / (PORTS - 1) * i);
-			addParam(createParamCentered<StoermelderSmallKnob>(vi2, module, IntermixModule<PORTS>::PARAM_AT + i));
+			Vec vo1 = Vec(381.9f, yMin + (yMax - yMin) / (PORTS - 1) * i);
+			addOutput(createOutputCentered<StoermelderPort>(vo1, module, IntermixModule<PORTS>::OUTPUT + i));
+			Vec vo2 = Vec(343.6f, yMin + (yMax - yMin) / (PORTS - 1) * i);
+			addParam(createParamCentered<StoermelderSmallKnob>(vo2, module, IntermixModule<PORTS>::PARAM_AT + i));
+			Vec vo3 = Vec(289.2f, yMin + (yMax - yMin) / (PORTS - 1) * i - 11.2f);
+			addParam(createParamCentered<DummyMapButton>(vo3, module, IntermixModule<PORTS>::PARAM_Y_MAP + i));
 
 			Vec vi0 = Vec(xMin + (xMax - xMin) / (PORTS - 1) * i, 302.3f);
 			InputLedDisplay<IntermixModule<PORTS>>* inputLedDisplay = createWidgetCentered<InputLedDisplay<IntermixModule<PORTS>>>(vi0);
@@ -601,10 +626,12 @@ struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 			addChild(inputLedDisplay);
 			Vec vi1 = Vec(xMin + (xMax - xMin) / (PORTS - 1) * i, 326.7f);
 			addInput(createInputCentered<StoermelderPort>(vi1, module, IntermixModule<PORTS>::INPUT + i));
+			Vec vi2 = Vec(xMin + (xMax - xMin) / (PORTS - 1) * i - 11.2f, 281.9f);
+			addParam(createParamCentered<DummyMapButton>(vi2, module, IntermixModule<PORTS>::PARAM_X_MAP + i));
 		}
 
-		addParam(createParamCentered<StoermelderTrimpot>(Vec(310.9f, 303.1f), module, IntermixModule<PORTS>::PARAM_FADEIN));
-		addParam(createParamCentered<StoermelderTrimpot>(Vec(310.9f, 330.1f), module, IntermixModule<PORTS>::PARAM_FADEOUT));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(311.7f, 300.8f), module, IntermixModule<PORTS>::PARAM_FADEIN));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(311.7f, 330.1f), module, IntermixModule<PORTS>::PARAM_FADEOUT));
 
 		// Lights
 		for (int i = 0; i < SCENE_COUNT; i++) {
@@ -613,7 +640,7 @@ struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 		}
 
 		for (int i = 0; i < PORTS; i++) {
-			Vec v = Vec(312.5f, yMin + (yMax - yMin) / (PORTS - 1) * i);
+			Vec v = Vec(313.5f, yMin + (yMax - yMin) / (PORTS - 1) * i);
 			addChild(createLightCentered<MatrixButtonLight<RedLight, IntermixModule<PORTS>>>(v, module, IntermixModule<PORTS>::LIGHT_OUTPUT + i));
 			for (int j = 0; j < PORTS; j++) {
 				Vec v = Vec(xMin + (xMax - xMin) / (PORTS - 1) * j, yMin + (yMax - yMin) / (PORTS - 1) * i);
