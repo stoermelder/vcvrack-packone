@@ -323,7 +323,7 @@ struct MidiCatModule : Module {
 						if (lastValueOut[id] != v) {
 							lastValueOut[id] = v;
 							v = rescale(v, paramQuantity->getMinValue(), paramQuantity->getMaxValue(), 0.f, 127.f);
-							if (ccsMode[id] == CCMODE_DIRECT)
+							if (cc >= 0 && ccsMode[id] == CCMODE_DIRECT)
 								lastValueIn[id] = valuesCc[cc] = v;
 							if (cc >= 0)
 								midiOutput.setValue(v, cc);
