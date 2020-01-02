@@ -58,13 +58,13 @@ struct LinearFade {
 	}
 
 	void triggerFadeIn() {
-		currentRise = (currentFall / fall) * rise;
+		currentRise = (fall > 0.f ? (currentFall / fall) : 0.f) * rise;
 		currentFall = 0.f;
 		last = 1.f;
 	}
 
 	void triggerFadeOut() {
-		currentFall = (currentRise / rise) * fall;
+		currentFall = (rise > 0.f ? (currentRise / rise) : 0.f) * fall;
 		currentRise = rise;
 		last = 0.f;
 	}

@@ -10,7 +10,9 @@
     - Added option to hide parameter indicator squares
     - Fixed non-working toggle-mode for midi note-mapping
 - Module [INFIX](./docs/Infix.md)
-    - Added Leds for used channels on polyphonic cables 
+    - Added Leds for used channels on polyphonic cables
+- Module [INTERMIX](./docs/Intermix.md)
+    - Fixed fading if either fade-in or fade-out is set to zero
 - Added dark panels for all modules (#15)
 - Added globals settings, esp. for dark panels als default
 
