@@ -325,7 +325,7 @@ struct PolyLedWidget : Widget {
 };
 
 
-template < typename MODULE, int SCENE_COUNT >
+template < typename MODULE, int SCENE_MAX >
 struct SceneLedDisplay : LedDisplayChoice {
 	MODULE* module;
 
@@ -388,8 +388,39 @@ struct SceneLedDisplay : LedDisplayChoice {
 					}
 				};
 
-				for (int i = 0; i < SCENE_COUNT; i++) {
+				for (int i = 0; i < SCENE_MAX; i++) {
 					menu->addChild(construct<CopyItem>(&MenuItem::text, string::f("%02u", i + 1), &CopyItem::module, module, &CopyItem::scene, i));
+				}
+
+				return menu;
+			}
+		};
+
+		struct CountMenuItem : MenuItem {
+			MODULE* module;
+			CountMenuItem() {
+				rightText = RIGHT_ARROW;
+			}
+
+			Menu* createChildMenu() override {
+				Menu* menu = new Menu;
+
+				struct CountItem : MenuItem {
+					MODULE* module;
+					int count;
+					
+					void onAction(const event::Action& e) override {
+						module->sceneSetCount(count);
+					}
+
+					void step() override {
+						rightText = module->sceneCount == count ? "✔" : "";
+						MenuItem::step();
+					}
+				};
+
+				for (int i = 0; i < SCENE_MAX; i++) {
+					menu->addChild(construct<CountItem>(&MenuItem::text, string::f("%02u", i + 1), &CountItem::module, module, &CountItem::count, i + 1));
 				}
 
 				return menu;
@@ -404,10 +435,11 @@ struct SceneLedDisplay : LedDisplayChoice {
 		};
 
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Scene"));
-		for (int i = 0; i < SCENE_COUNT; i++) {
+		for (int i = 0; i < SCENE_MAX; i++) {
 			menu->addChild(construct<SceneItem>(&MenuItem::text, string::f("%02u", i + 1), &SceneItem::module, module, &SceneItem::scene, i));
 		}
 		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<CountMenuItem>(&MenuItem::text, "Count", &CountMenuItem::module, module));
 		menu->addChild(construct<CopyMenuItem>(&MenuItem::text, "Copy to", &CopyMenuItem::module, module));
 		menu->addChild(construct<ResetItem>(&MenuItem::text, "Reset", &ResetItem::module, module));
 	}

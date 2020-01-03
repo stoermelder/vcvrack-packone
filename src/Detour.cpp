@@ -3,7 +3,7 @@
 
 namespace Detour {
 
-const int SCENE_COUNT = 8;
+const int SCENE_MAX = 8;
 const int MAX_DELAY = 32;
 
 enum MODE {
@@ -12,6 +12,7 @@ enum MODE {
 };
 
 enum SCENE_CV_MODE {
+	OFF = -1,
 	TRIG_FWD = 0,
 	VOLT = 8,
 	C4 = 9,
@@ -22,7 +23,7 @@ template < int PORTS, int SENDS = 8 >
 struct DetourModule : Module {
 	enum ParamIds {
 		ENUMS(PARAM_MATRIX, PORTS * SENDS),
-		ENUMS(PARAM_SCENE, SCENE_COUNT),
+		ENUMS(PARAM_SCENE, SCENE_MAX),
 		NUM_PARAMS
 	};
 	enum InputIds {
@@ -63,11 +64,13 @@ struct DetourModule : Module {
 	/** [Stored to JSON] */
 	float padBrightness;
 	/** [Stored to JSON] */
-	SceneData scenes[SCENE_COUNT];
+	SceneData scenes[SCENE_MAX];
 	/** [Stored to JSON] */
 	int sceneSelected = 0;
 	/** [Stored to JSON] */
 	SCENE_CV_MODE sceneMode;
+	/** [Stored to JSON] */
+	int sceneCount;
 
 	int currentFrame;
 
@@ -78,7 +81,7 @@ struct DetourModule : Module {
 	DetourModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		for (int i = 0; i < SCENE_COUNT; i++) {
+		for (int i = 0; i < SCENE_MAX; i++) {
 			configParam(PARAM_SCENE + i, 0.f, 1.f, 0.f, string::f("Scene %i", i + 1));
 		}
 		for (int i = 0; i < PORTS; i++) {
@@ -95,7 +98,7 @@ struct DetourModule : Module {
 
 	void onReset() override {
 		padBrightness = 0.75f;
-		for (int i = 0; i < SCENE_COUNT; i++) {
+		for (int i = 0; i < SCENE_MAX; i++) {
 			for (int j = 0; j < PORTS; j++) {
 				for (int k = 0; k < SENDS; k++) {
 					scenes[i].matrix[j][k] = 0.f;
@@ -114,6 +117,7 @@ struct DetourModule : Module {
 			}
 		}
 		sceneMode = SCENE_CV_MODE::TRIG_FWD;
+		sceneCount = SCENE_MAX;
 		sceneSet(0);
 		Module::onReset();
 	}
@@ -121,20 +125,23 @@ struct DetourModule : Module {
 	void process(const ProcessArgs& args) override {
 		if (inputs[INPUT_SCENE].isConnected()) {
 			switch (sceneMode) {
+				case SCENE_CV_MODE::OFF: {
+					break;
+				}
 				case SCENE_CV_MODE::TRIG_FWD: {
 					if (sceneTrigger.process(inputs[INPUT_SCENE].getVoltage())) {
-						int s = (sceneSelected + 1) % SCENE_COUNT;
+						int s = (sceneSelected + 1) % sceneCount;
 						sceneSet(s);
 					}
 					break;
 				}
 				case SCENE_CV_MODE::C4: {
-					int s = std::round(clamp(inputs[INPUT_SCENE].getVoltage() * 12.f, 0.f, SCENE_COUNT - 1.f));
+					int s = std::round(clamp(inputs[INPUT_SCENE].getVoltage() * 12.f, 0.f, sceneCount - 1.f));
 					sceneSet(s);
 					break;
 				}
 				case SCENE_CV_MODE::VOLT: {
-					int s = std::floor(rescale(inputs[INPUT_SCENE].getVoltage(), 0.f, 10.f, 0, SCENE_COUNT - 1e-3f));
+					int s = std::floor(rescale(inputs[INPUT_SCENE].getVoltage(), 0.f, 10.f, 0, sceneCount - 1e-3f));
 					sceneSet(s);
 					break;
 				}
@@ -149,7 +156,7 @@ struct DetourModule : Module {
 
 		if (sceneDivider.process()) {
 			int sceneFound = -1;
-			for (int i = 0; i < SCENE_COUNT; i++) {
+			for (int i = 0; i < SCENE_MAX; i++) {
 				if (params[PARAM_SCENE + i].getValue() > 0.f) {
 					if (i != sceneSelected) {
 						if (sceneMode == SCENE_CV_MODE::ARM)
@@ -163,6 +170,12 @@ struct DetourModule : Module {
 			}
 			if (sceneFound == -1) {
 				params[PARAM_SCENE + sceneSelected].setValue(1.f);
+			}
+
+			int maxInput = 0;
+			for (int i = 0; i < PORTS; i++) {
+				if (inputs[INPUT + i].isConnected())
+					maxInput = i + 1;
 			}
 
 			for (int i = 0; i < SENDS; i++) {
@@ -184,7 +197,7 @@ struct DetourModule : Module {
 					outputs[OUTPUT_SEND + i].setChannels(1);
 				}
 				else {
-					outputs[OUTPUT_SEND + i].setChannels(PORTS);
+					outputs[OUTPUT_SEND + i].setChannels(maxInput);
 				}
 			}
 		}
@@ -195,7 +208,7 @@ struct DetourModule : Module {
 			float out = history[i][0][currentFrame] = inputs[INPUT + i].getVoltage();
 
 			for (int j = 0; j < SENDS; j++) {
-				if (outputs[OUTPUT_SEND + j].isConnected() && inputs[INPUT_RETURN + j].isConnected()) {
+				if (inputs[INPUT_RETURN + j].isConnected()) {
 					if (currentMatrix[i][j] == 1.f) {
 						if (channelMode[j] == MODE::MONO) {
 							outputs[OUTPUT_SEND + j].setVoltage(out);
@@ -221,8 +234,10 @@ struct DetourModule : Module {
 		if (lightDivider.process()) {
 			float s = lightDivider.getDivision() * args.sampleTime;
 
-			for (int i = 0; i < SCENE_COUNT; i++) {
-				lights[LIGHT_SCENE + i].setSmoothBrightness((i == sceneSelected) * padBrightness, s);
+			for (int i = 0; i < SCENE_MAX; i++) {
+				float v = (i == sceneSelected) * padBrightness;
+				v = std::max(i < sceneCount ? 0.05f : 0.f, v);
+				lights[LIGHT_SCENE + i].setSmoothBrightness(v, s);
 			}
 			for (int i = 0; i < PORTS; i++) {
 				for (int j = 0; j < SENDS; j++) {
@@ -236,10 +251,10 @@ struct DetourModule : Module {
 	void sceneSet(int scene) {
 		if (sceneSelected == scene) return;
 		if (scene < 0) return;
-		sceneSelected = scene;
+		sceneSelected = std::min(scene, sceneCount - 1);
 		sceneNext = -1;
 
-		for (int i = 0; i < SCENE_COUNT; i++) {
+		for (int i = 0; i < SCENE_MAX; i++) {
 			params[PARAM_SCENE + i].setValue(i == sceneSelected);
 			for (int j = 0; j < SENDS; j++) {
 				float p = scenes[sceneSelected].matrix[i][j];
@@ -251,7 +266,7 @@ struct DetourModule : Module {
 
 	void sceneCopy(int scene) {
 		if (sceneSelected == scene) return;
-		for (int i = 0; i < SCENE_COUNT; i++) {
+		for (int i = 0; i < SCENE_MAX; i++) {
 			for (int j = 0; j < SENDS; j++) {
 				scenes[scene].matrix[i][j] = scenes[sceneSelected].matrix[i][j];
 			}
@@ -266,6 +281,11 @@ struct DetourModule : Module {
 				currentMatrix[i][j] = 0.f;
 			}
 		}
+	}
+
+	void sceneSetCount(int count) {
+		sceneCount = count;
+		sceneSelected = std::min(sceneSelected, sceneCount - 1);
 	}
 
 	json_t* dataToJson() override {
@@ -284,7 +304,7 @@ struct DetourModule : Module {
 		json_object_set_new(rootJ, "channel", channelsJ);
 
 		json_t* scenesJ = json_array();
-		for (int i = 0; i < SCENE_COUNT; i++) {
+		for (int i = 0; i < SCENE_MAX; i++) {
 			json_t* matrixJ = json_array();
 			for (int j = 0; j < PORTS; j++) {
 				for (int k = 0; k < SENDS; k++) {
@@ -300,6 +320,7 @@ struct DetourModule : Module {
 
 		json_object_set_new(rootJ, "sceneSelected", json_integer(sceneSelected));
 		json_object_set_new(rootJ, "sceneMode", json_integer(sceneMode));
+		json_object_set_new(rootJ, "sceneCount", json_integer(sceneCount));
 
 		return rootJ;
 	}
@@ -331,6 +352,8 @@ struct DetourModule : Module {
 
 		sceneSelected = json_integer_value(json_object_get(rootJ, "sceneSelected"));
 		sceneMode = (SCENE_CV_MODE)json_integer_value(json_object_get(rootJ, "sceneMode"));
+		json_t* sceneCountJ = json_object_get(rootJ, "sceneCount");
+		if (sceneCountJ) sceneCount = json_integer_value(sceneCountJ);
 
 		for (int i = 0; i < PORTS; i++) {
 			for (int j = 0; j < SENDS; j++) {
@@ -360,12 +383,12 @@ struct DetourWidget : ModuleWidget {
 		float yMax = 264.3f;
 
 		// Parameters and ports
-		for (int i = 0; i < SCENE_COUNT; i++) {
-			Vec v = Vec(23.1f, yMin + (yMax - yMin) / (SCENE_COUNT - 1) * i);
+		for (int i = 0; i < SCENE_MAX; i++) {
+			Vec v = Vec(23.1f, yMin + (yMax - yMin) / (SCENE_MAX - 1) * i);
 			addParam(createParamCentered<MatrixButton>(v, module, DetourModule<PORTS>::PARAM_SCENE + i));
 		}
 
-		SceneLedDisplay<DetourModule<PORTS>, SCENE_COUNT>* sceneLedDisplay = createWidgetCentered<SceneLedDisplay<DetourModule<PORTS>, SCENE_COUNT>>(Vec(23.1f, 304.9f));
+		SceneLedDisplay<DetourModule<PORTS>, SCENE_MAX>* sceneLedDisplay = createWidgetCentered<SceneLedDisplay<DetourModule<PORTS>, SCENE_MAX>>(Vec(23.1f, 304.9f));
 		sceneLedDisplay->module = module;
 		addChild(sceneLedDisplay);
 		addInput(createInputCentered<StoermelderPort>(Vec(23.1f, 327.9f), module, DetourModule<PORTS>::INPUT_SCENE));
@@ -385,14 +408,14 @@ struct DetourWidget : ModuleWidget {
 			addOutput(createOutputCentered<StoermelderPort>(v, module, DetourModule<PORTS>::OUTPUT + i));
 
 			v = Vec(xMin + (xMax - xMin) / (PORTS - 1) * i, 327.9f);
-			addOutput(createOutputCentered<StoermelderPort>(v, module, DetourModule<PORTS>::OUTPUT_SEND + i));
-			v = Vec(xMin + (xMax - xMin) / (PORTS - 1) * i, 297.3f);
 			addInput(createInputCentered<StoermelderPort>(v, module, DetourModule<PORTS>::INPUT_RETURN + i));
+			v = Vec(xMin + (xMax - xMin) / (PORTS - 1) * i, 297.3f);
+			addOutput(createOutputCentered<StoermelderPort>(v, module, DetourModule<PORTS>::OUTPUT_SEND + i));
 		}
 
 		// Lights
-		for (int i = 0; i < SCENE_COUNT; i++) {
-			Vec v = Vec(23.1f, yMin + (yMax - yMin) / (SCENE_COUNT - 1) * i);
+		for (int i = 0; i < SCENE_MAX; i++) {
+			Vec v = Vec(23.1f, yMin + (yMax - yMin) / (SCENE_MAX - 1) * i);
 			addChild(createLightCentered<MatrixButtonLight<YellowLight, DetourModule<PORTS>>>(v, module, DetourModule<PORTS>::LIGHT_SCENE + i));
 		}
 
@@ -437,7 +460,7 @@ struct DetourWidget : ModuleWidget {
 						
 						void onAction(const event::Action& e) override {
 							if (module->channelMode[channel] == MODE::POLY) {
-								for (int i = 0; i < SCENE_COUNT; i++) {
+								for (int i = 0; i < SCENE_MAX; i++) {
 									for (int j = 0; j < module->countPort; j++) {
 										module->scenes[i].matrix[j][channel] = 0.f;
 									}
@@ -551,6 +574,7 @@ struct DetourWidget : ModuleWidget {
 			DetourModule<PORTS>* module;
 			Menu* createChildMenu() override {
 				Menu* menu = new Menu;
+				menu->addChild(construct<SceneModeItem>(&MenuItem::text, "Off", &SceneModeItem::module, module, &SceneModeItem::sceneMode, SCENE_CV_MODE::OFF));
 				menu->addChild(construct<SceneModeItem>(&MenuItem::text, "Trigger", &SceneModeItem::module, module, &SceneModeItem::sceneMode, SCENE_CV_MODE::TRIG_FWD));
 				menu->addChild(construct<SceneModeItem>(&MenuItem::text, "0..10V", &SceneModeItem::module, module, &SceneModeItem::sceneMode, SCENE_CV_MODE::VOLT));
 				menu->addChild(construct<SceneModeItem>(&MenuItem::text, "C4-G4", &SceneModeItem::module, module, &SceneModeItem::sceneMode, SCENE_CV_MODE::C4));

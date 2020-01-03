@@ -17,6 +17,7 @@
     - Added ability to copy scenes
     - Added ability to reset scenes
     - Added option to disable SCENE-port
+    - Added option to change the number of active scenes
     - Fixed broken fading if either fade-in or fade-out is set to zero
 - Added dark panels for all modules (#15)
 - Added globals settings, esp. for dark panels als default
