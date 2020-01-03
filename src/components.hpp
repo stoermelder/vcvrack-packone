@@ -370,10 +370,38 @@ struct SceneLedDisplay : LedDisplayChoice {
 			}
 		};
 
+		struct CopyMenuItem : MenuItem {
+			MODULE* module;
+			CopyMenuItem() {
+				rightText = RIGHT_ARROW;
+			}
+
+			Menu* createChildMenu() override {
+				Menu* menu = new Menu;
+
+				struct CopyItem : MenuItem {
+					MODULE* module;
+					int scene;
+					
+					void onAction(const event::Action& e) override {
+						module->sceneCopy(scene);
+					}
+				};
+
+				for (int i = 0; i < SCENE_COUNT; i++) {
+					menu->addChild(construct<CopyItem>(&MenuItem::text, string::f("%02u", i + 1), &CopyItem::module, module, &CopyItem::scene, i));
+				}
+
+				return menu;
+			}
+		};
+
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Scene"));
 		for (int i = 0; i < SCENE_COUNT; i++) {
 			menu->addChild(construct<SceneItem>(&MenuItem::text, string::f("%02u", i + 1), &SceneItem::module, module, &SceneItem::scene, i));
 		}
+		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<CopyMenuItem>(&MenuItem::text, "Copy to", &CopyMenuItem::module, module));
 	}
 };
 

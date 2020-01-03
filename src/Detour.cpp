@@ -249,6 +249,14 @@ struct DetourModule : Module {
 		}
 	}
 
+	void sceneCopy(int scene) {
+		if (sceneSelected == scene) return;
+		for (int i = 0; i < SCENE_COUNT; i++) {
+			for (int j = 0; j < SENDS; j++) {
+				scenes[scene].matrix[i][j] = scenes[sceneSelected].matrix[i][j];
+			}
+		}
+	}
 
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();

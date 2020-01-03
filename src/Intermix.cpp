@@ -378,6 +378,18 @@ struct IntermixModule : Module {
 		*/
 	}
 
+	void sceneCopy(int scene) {
+		if (sceneSelected == scene) return;
+		for (int i = 0; i < PORTS; i++) {
+			scenes[scene].input[i] = scenes[sceneSelected].input[i];
+			scenes[scene].output[i] = scenes[sceneSelected].output[i];
+			scenes[scene].outputAt[i] = scenes[sceneSelected].outputAt[i];
+			for (int j = 0; j < PORTS; j++) {
+				scenes[scene].matrix[i][j] = scenes[sceneSelected].matrix[i][j];
+			}
+		}
+	}
+
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
 
