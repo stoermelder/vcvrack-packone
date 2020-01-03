@@ -8,7 +8,7 @@
     - Added option to hide parameter indicator squares
 - Module [MIDI-CAT](./docs/MidiCat.md)
     - Added option to hide parameter indicator squares
-    - Fixed non-working toggle-mode for midi note-mapping
+    - Fixed broken toggle-mode for MIDI note-mapping
 - Module [INFIX](./docs/Infix.md)
     - Added Leds for used channels on polyphonic cables
 - Module [INTERMIX](./docs/Intermix.md)
@@ -16,7 +16,8 @@
     - Added option for excluding attenuverters from scenes
     - Added ability to copy scenes
     - Added ability to reset scenes
-    - Fixed fading if either fade-in or fade-out is set to zero
+    - Added option to disable SCENE-port
+    - Fixed broken fading if either fade-in or fade-out is set to zero
 - Added dark panels for all modules (#15)
 - Added globals settings, esp. for dark panels als default
 

@@ -6,6 +6,7 @@ namespace Intermix {
 const int SCENE_COUNT = 8;
 
 enum SCENE_CV_MODE {
+	OFF = -1,
 	TRIG_FWD = 0,
 	VOLT = 8,
 	C4 = 9,
@@ -164,6 +165,9 @@ struct IntermixModule : Module {
 	void process(const ProcessArgs& args) override {
 		if (inputs[INPUT_SCENE].isConnected()) {
 			switch (sceneMode) {
+				case SCENE_CV_MODE::OFF: {
+					break;
+				}
 				case SCENE_CV_MODE::TRIG_FWD: {
 					if (sceneTrigger.process(inputs[INPUT_SCENE].getVoltage())) {
 						int s = (sceneSelected + 1) % SCENE_COUNT;
@@ -711,6 +715,7 @@ struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 			IntermixModule<PORTS>* module;
 			Menu* createChildMenu() override {
 				Menu* menu = new Menu;
+				menu->addChild(construct<SceneModeItem>(&MenuItem::text, "Off", &SceneModeItem::module, module, &SceneModeItem::sceneMode, SCENE_CV_MODE::OFF));
 				menu->addChild(construct<SceneModeItem>(&MenuItem::text, "Trigger", &SceneModeItem::module, module, &SceneModeItem::sceneMode, SCENE_CV_MODE::TRIG_FWD));
 				menu->addChild(construct<SceneModeItem>(&MenuItem::text, "0..10V", &SceneModeItem::module, module, &SceneModeItem::sceneMode, SCENE_CV_MODE::VOLT));
 				menu->addChild(construct<SceneModeItem>(&MenuItem::text, "C4-G4", &SceneModeItem::module, module, &SceneModeItem::sceneMode, SCENE_CV_MODE::C4));
