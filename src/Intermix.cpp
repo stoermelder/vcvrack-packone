@@ -390,6 +390,22 @@ struct IntermixModule : Module {
 		}
 	}
 
+	void sceneReset() {
+		for (int i = 0; i < PORTS; i++) {
+			scenes[sceneSelected].input[i] = IN_MODE::IM_DIRECT;
+			scenes[sceneSelected].output[i] = OUT_MODE::OM_OUT;
+			params[PARAM_OUTPUT + i].setValue(0.f);
+			scenes[sceneSelected].outputAt[i] = 1.f;
+			params[PARAM_AT + i].setValue(1.f);
+			for (int j = 0; j < PORTS; j++) {
+				scenes[sceneSelected].matrix[i][j] = 0.f;
+				params[PARAM_MATRIX + j * PORTS + i].setValue(0.f);
+				currentMatrix[i][j] = 0.f;
+				fader[i][j].reset(0.f);
+			}
+		}
+	}
+
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
 

@@ -396,12 +396,20 @@ struct SceneLedDisplay : LedDisplayChoice {
 			}
 		};
 
+		struct ResetItem : MenuItem {
+			MODULE* module;
+			void onAction(const event::Action& e) override {
+				module->sceneReset();
+			}
+		};
+
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Scene"));
 		for (int i = 0; i < SCENE_COUNT; i++) {
 			menu->addChild(construct<SceneItem>(&MenuItem::text, string::f("%02u", i + 1), &SceneItem::module, module, &SceneItem::scene, i));
 		}
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<CopyMenuItem>(&MenuItem::text, "Copy to", &CopyMenuItem::module, module));
+		menu->addChild(construct<ResetItem>(&MenuItem::text, "Reset", &ResetItem::module, module));
 	}
 };
 

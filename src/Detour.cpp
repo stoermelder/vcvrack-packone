@@ -258,6 +258,16 @@ struct DetourModule : Module {
 		}
 	}
 
+	void sceneReset() {
+		for (int i = 0; i < PORTS; i++) {
+			for (int j = 0; j < PORTS; j++) {
+				scenes[sceneSelected].matrix[i][j] = 0.f;
+				params[PARAM_MATRIX + j * PORTS + i].setValue(0.f);
+				currentMatrix[i][j] = 0.f;
+			}
+		}
+	}
+
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
