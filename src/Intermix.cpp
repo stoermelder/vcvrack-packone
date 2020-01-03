@@ -589,18 +589,44 @@ struct InputLedDisplay : LedDisplayChoice {
 			}
 		};
 
+		struct InputSubtractItem : MenuItem {
+			MODULE* module;
+			int id;
+			InputSubtractItem() {
+				rightText = RIGHT_ARROW;
+			}
+			Menu* createChildMenu() override {
+				Menu* menu = new Menu;
+				for (int i = 12; i > 0; i--) {
+					menu->addChild(construct<InputItem>(&MenuItem::text, string::f("-%02i cent", i), &InputItem::module, module, &InputItem::id, id, &InputItem::inMode, (IN_MODE)(24 - i)));
+				}
+				return menu;
+			}
+		};
+
+		struct InputAddItem : MenuItem {
+			MODULE* module;
+			int id;
+			InputAddItem() {
+				rightText = RIGHT_ARROW;
+			}
+			Menu* createChildMenu() override {
+				Menu* menu = new Menu;
+				for (int i = 1; i <= 12; i++) {
+					menu->addChild(construct<InputItem>(&MenuItem::text, string::f("+%02i cent", i), &InputItem::module, module, &InputItem::id, id, &InputItem::inMode, (IN_MODE)(24 + i)));
+				}
+				return menu;
+			}
+		};
+
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Input mode"));
 		menu->addChild(construct<InputItem>(&MenuItem::text, "Off", &InputItem::module, module, &InputItem::id, id, &InputItem::inMode, IM_OFF));
 		menu->addChild(construct<InputItem>(&MenuItem::text, "Direct", &InputItem::module, module, &InputItem::id, id, &InputItem::inMode, IM_DIRECT));
 		menu->addChild(construct<InputItem>(&MenuItem::text, "Linear fade", &InputItem::module, module, &InputItem::id, id, &InputItem::inMode, IM_FADE));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Constant voltage"));
-		for (int i = 12; i > 0; i--) {
-			menu->addChild(construct<InputItem>(&MenuItem::text, string::f("-%02i cent", i), &InputItem::module, module, &InputItem::id, id, &InputItem::inMode, (IN_MODE)(24 - i)));
-		}
-		for (int i = 1; i <= 12; i++) {
-			menu->addChild(construct<InputItem>(&MenuItem::text, string::f("+%02i cent", i), &InputItem::module, module, &InputItem::id, id, &InputItem::inMode, (IN_MODE)(24 + i)));
-		}
+		menu->addChild(construct<InputSubtractItem>(&MenuItem::text, "Subtract", &InputSubtractItem::module, module, &InputSubtractItem::id, id));
+		menu->addChild(construct<InputAddItem>(&MenuItem::text, "Add", &InputAddItem::module, module, &InputAddItem::id, id));
 	}
 };
 
