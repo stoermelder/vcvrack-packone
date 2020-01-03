@@ -13,6 +13,7 @@
     - Added Leds for used channels on polyphonic cables
 - Module [INTERMIX](./docs/Intermix.md)
     - Added matrix mapping parameters on rows and columns for use with midi-mapping
+    - Added option for excluding attenuverters from scenes
     - Fixed fading if either fade-in or fade-out is set to zero
 - Added dark panels for all modules (#15)
 - Added globals settings, esp. for dark panels als default

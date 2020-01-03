@@ -104,6 +104,8 @@ struct IntermixModule : Module {
 	SCENE_CV_MODE sceneMode;
 	/** [Stored to JSON] */
 	bool sceneInputMode;
+	/** [Stored to JSON] */
+	bool sceneAtMode;
 
 	int sceneNext = -1;
 
@@ -154,6 +156,7 @@ struct IntermixModule : Module {
 		}
 		sceneMode = SCENE_CV_MODE::TRIG_FWD;
 		sceneInputMode = false;
+		sceneAtMode = true;
 		sceneSet(0);
 		Module::onReset();
 	}
@@ -357,7 +360,9 @@ struct IntermixModule : Module {
 			float at1 = scenes[sceneSelected].outputAt[i];
 			at[i / 4][i % 4] = at0 > at1 ? (at0 - at1) : (at1 - at0);
 			*/
-			params[PARAM_AT + i].setValue(scenes[sceneSelected].outputAt[i]);
+			if (sceneAtMode) {
+				params[PARAM_AT + i].setValue(scenes[sceneSelected].outputAt[i]);
+			}
 			for (int j = 0; j < PORTS; j++) {
 				float p = scenes[sceneSelected].matrix[i][j];
 				params[PARAM_MATRIX + j * PORTS + i].setValue(p);
@@ -415,7 +420,7 @@ struct IntermixModule : Module {
 		json_object_set_new(rootJ, "sceneSelected", json_integer(sceneSelected));
 		json_object_set_new(rootJ, "sceneMode", json_integer(sceneMode));
 		json_object_set_new(rootJ, "sceneInputMode", json_boolean(sceneInputMode));
-
+		json_object_set_new(rootJ, "sceneAtMode", json_boolean(sceneAtMode));
 		return rootJ;
 	}
 
@@ -460,6 +465,8 @@ struct IntermixModule : Module {
 		sceneSelected = json_integer_value(json_object_get(rootJ, "sceneSelected"));
 		sceneMode = (SCENE_CV_MODE)json_integer_value(json_object_get(rootJ, "sceneMode"));
 		sceneInputMode = json_boolean_value(json_object_get(rootJ, "sceneInputMode"));
+		json_t* sceneAtModeJ = json_object_get(rootJ, "sceneAtMode");
+		if (sceneAtModeJ) sceneAtMode = json_boolean_value(sceneAtModeJ);
 
 		for (int i = 0; i < PORTS; i++) {
 			for (int j = 0; j < PORTS; j++) {
@@ -697,6 +704,19 @@ struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 			}
 		};
 
+		struct SceneAtModeItem : MenuItem {
+			IntermixModule<PORTS>* module;
+			
+			void onAction(const event::Action& e) override {
+				module->sceneAtMode ^= true;
+			}
+
+			void step() override {
+				rightText = module->sceneAtMode ? "✔" : "";
+				MenuItem::step();
+			}
+		};
+
 		struct OutputClampItem : MenuItem {
 			IntermixModule<PORTS>* module;
 			
@@ -766,6 +786,7 @@ struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<SceneModeMenuItem>(&MenuItem::text, "SCENE-port", &SceneModeMenuItem::module, module));
 		menu->addChild(construct<SceneInputModeItem>(&MenuItem::text, "Include input-mode in scenes", &SceneInputModeItem::module, module));
+		menu->addChild(construct<SceneAtModeItem>(&MenuItem::text, "Include attenuverters in scenes", &SceneAtModeItem::module, module));
 		menu->addChild(construct<OutputClampItem>(&MenuItem::text, "Limit output to -10..10V", &OutputClampItem::module, module));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(new BrightnessSlider(module));
