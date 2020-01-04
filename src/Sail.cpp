@@ -102,7 +102,8 @@ struct SailWidget : ThemedModuleWidget<SailModule> {
 		float delta = module->delta;
 		module->base = std::numeric_limits<float>::min();
 		if (delta != 0.f) {
-			if (module->mod) delta /= 10.f;
+			bool mod = module->mod || (APP->window->getMods() & GLFW_MOD_SHIFT);
+			if (mod) delta /= 10.f;
 			q->moveScaledValue(delta / 10.f);
 		}
 	}
