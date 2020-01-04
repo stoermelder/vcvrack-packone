@@ -1,5 +1,4 @@
 #include "plugin.hpp"
-#include <thread>
 
 
 namespace Infix {

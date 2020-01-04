@@ -1,7 +1,6 @@
 #include "plugin.hpp"
 #include "MapModuleBase.hpp"
 #include <osdialog.h>
-#include <thread>
 
 
 namespace MidiCat {

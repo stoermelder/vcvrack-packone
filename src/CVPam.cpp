@@ -1,7 +1,6 @@
 #include "plugin.hpp"
 #include "MapModuleBase.hpp"
 #include <chrono>
-#include <thread>
 
 namespace CVPam {
 

@@ -1,6 +1,5 @@
 #include "plugin.hpp"
 #include <functional>
-#include <thread>
 #include <mutex>
 #include <condition_variable>
 #include <random>
