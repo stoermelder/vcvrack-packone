@@ -27,4 +27,5 @@ extern Model* modelArena;
 extern Model* modelMaze;
 extern Model* modelIntermix;
 extern Model* modelDetour;
+extern Model* modelSail;
 extern Model* modelAudioInterface64;

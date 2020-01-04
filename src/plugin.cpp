@@ -24,6 +24,7 @@ void init(rack::Plugin* p) {
 	p->addModel(modelMaze);
 	p->addModel(modelIntermix);
 	p->addModel(modelDetour);
+	p->addModel(modelSail);
 	p->addModel(modelAudioInterface64);
 
 	pluginSettings.readFromJson();

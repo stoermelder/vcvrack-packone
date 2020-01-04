@@ -2,6 +2,8 @@
 
 - Module [DETOUR](./docs/Detour.md)
     - New module, Send/Return switch matrix with support for 8 scenes
+- Module [SAIL](./docs/Sail.md)
+    - New module, control any parameter currently hovered by mouse with CV, especially useful with MIDI-CC
 - Module [CV-MAP](./docs/CVMap.md)
     - Added option to hide parameter indicator squares
 - Module [CV-PAM](./docs/CVPam.md)

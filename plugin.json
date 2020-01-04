@@ -140,6 +140,13 @@
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Detour.md"
 		},
 		{
+			"slug": "Sail",
+			"name": "SAIL",
+			"description": "Control any parameter currently hovered by mouse with CV, especially useful with MIDI-CC",
+			"tags": ["Utility"],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Sail.md"
+		},
+		{
 			"slug": "AudioInterface64",
 			"name": "AUDIO-64",
 			"description": "Sends CV and audio to/from an audio device",
