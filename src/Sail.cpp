@@ -3,6 +3,11 @@
 
 namespace Sail {
 
+enum MODE {
+	RELATIVE = 0,
+	ABSOLUTE = 1
+};
+
 struct SailModule : Module {
 	enum ParamIds {
 		NUM_PARAMS
@@ -22,10 +27,13 @@ struct SailModule : Module {
 
 	/** [Stored to JSON] */
 	int panelTheme = 0;
+	/** [Stored to JSON] */
+	MODE mode;
 
 	bool mod;
 	bool locked = false;
-	float base;
+	float value;
+	float deltaBase;
 	float delta = 0.f;
 
 	dsp::ClockDivider lightDivider;
@@ -39,17 +47,19 @@ struct SailModule : Module {
 
 	void onReset() override {
 		Module::onReset();
-		base = std::numeric_limits<float>::min();
+		mode = MODE::RELATIVE;
+		deltaBase = std::numeric_limits<float>::min();
 	}
 
 	void process(const ProcessArgs& args) override {
 		if (locked) {
-			if (base == std::numeric_limits<float>::min()) {
-				base = inputs[INPUT_VALUE].getVoltage();
+			if (deltaBase == std::numeric_limits<float>::min()) {
+				deltaBase = inputs[INPUT_VALUE].getVoltage();
 				delta = 0.f;
 			}
 			else {
-				delta = inputs[INPUT_VALUE].getVoltage() - base;
+				value = inputs[INPUT_VALUE].getVoltage();
+				delta = value - deltaBase;
 			}
 			mod = inputs[INPUT_MOD].getVoltage() > 1.f;
 		}
@@ -65,11 +75,13 @@ struct SailModule : Module {
 	json_t* dataToJson() override {
 		json_t *rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
+		json_object_set_new(rootJ, "mode", json_integer(mode));
 		return rootJ;
 	}
 
 	void dataFromJson(json_t* rootJ) override {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		mode = (MODE)json_integer_value(json_object_get(rootJ, "mode"));
 	}
 };
 
@@ -99,13 +111,62 @@ struct SailWidget : ThemedModuleWidget<SailModule> {
 		if (!q) { module->locked = false; return; }
 		module->locked = true;
 
-		float delta = module->delta;
-		module->base = std::numeric_limits<float>::min();
-		if (delta != 0.f) {
-			bool mod = module->mod || (APP->window->getMods() & GLFW_MOD_SHIFT);
-			if (mod) delta /= 10.f;
-			q->moveScaledValue(delta / 10.f);
+		switch (module->mode) {
+			case MODE::RELATIVE: {
+				float delta = module->delta;
+				module->deltaBase = std::numeric_limits<float>::min();
+				if (delta != 0.f) {
+					bool mod = module->mod || (APP->window->getMods() & GLFW_MOD_SHIFT);
+					if (mod) delta /= 10.f;
+					q->moveScaledValue(delta / 10.f);
+				}
+				break;
+			}
+
+			case MODE::ABSOLUTE: {
+				float delta = module->delta;
+				module->deltaBase = std::numeric_limits<float>::min();
+				if (delta != 0.f) {
+					q->setScaledValue(module->value / 10.f);
+				}
+				break;
+			}
 		}
+	}
+
+	void appendContextMenu(Menu* menu) override {
+		ModuleWidget::appendContextMenu(menu);
+
+		struct ModeMenuItem : MenuItem {
+			SailModule* module;
+			ModeMenuItem() {
+				rightText = RIGHT_ARROW;
+			}
+
+			Menu* createChildMenu() override {
+				Menu* menu = new Menu;
+
+				struct ModeItem : MenuItem {
+					SailModule* module;
+					MODE mode;
+
+					void onAction(const event::Action& e) override {
+						module->mode = mode;
+					}
+					void step() override {
+						rightText = module->mode == mode ? "✔" : "";
+						MenuItem::step();
+					}
+				};
+
+				menu->addChild(construct<ModeItem>(&MenuItem::text, "Relative", &ModeItem::module, module, &ModeItem::mode, MODE::RELATIVE));
+				menu->addChild(construct<ModeItem>(&MenuItem::text, "Absolute", &ModeItem::module, module, &ModeItem::mode, MODE::ABSOLUTE));
+				return menu;
+			}
+		};
+
+		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Mode", &ModeMenuItem::module, module));
 	}
 };
 
