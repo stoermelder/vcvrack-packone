@@ -470,3 +470,9 @@ struct MatrixButton : app::SvgSwitch {
 		delete shadow;
 	}
 };
+
+struct MatrixButtonParamQuantity : ParamQuantity {
+	void setValue(float value) override {
+		ParamQuantity::setValue(std::round(value));
+	}
+};

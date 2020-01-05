@@ -86,7 +86,7 @@ struct DetourModule : Module {
 		}
 		for (int i = 0; i < PORTS; i++) {
 			for (int j = 0; j < SENDS; j++) {
-				configParam(PARAM_MATRIX + i * PORTS + j, 0.f, 1.f, 0.f, string::f("Input %i to Send/Return %i", i + 1, j + 1));
+				configParam<MatrixButtonParamQuantity>(PARAM_MATRIX + i * PORTS + j, 0.f, 1.f, 0.f, string::f("Input %i to Send/Return %i", i + 1, j + 1));
 			}
 		}
 
