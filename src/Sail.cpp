@@ -95,7 +95,7 @@ struct SailModule : Module {
 				trig = (!inputs[INPUT_VALUE].isConnected() && paramQuantityPriv) ? (paramQuantityPriv->getScaledValue() * 10.f) : 0.f;
 			}
 
-			if (paramQuantityPriv && paramQuantityPriv->isBounded()) {
+			if (paramQuantityPriv && paramQuantityPriv->isBounded() && paramQuantityPriv->module != this) {
 				value[1] = value[0]; // Previous value for delta-calculation
 				value[0] = inputs[INPUT_VALUE].isConnected() ? inputs[INPUT_VALUE].getVoltage() : 0.f;
 				value[0] = clamp(value[0] + trig, 0.f, 10.f);
@@ -151,7 +151,8 @@ struct SailModule : Module {
 		}
 
 		if (lightDivider.process()) {
-			lights[LIGHT_ACTIVE].setSmoothBrightness(paramQuantity ? 1.f : 0.f, args.sampleTime * lightDivider.getDivision());
+			bool active = paramQuantityPriv && paramQuantityPriv->isBounded() && paramQuantityPriv->module != this;
+			lights[LIGHT_ACTIVE].setSmoothBrightness(active ? 1.f : 0.f, args.sampleTime * lightDivider.getDivision());
 		}
 	}
 
