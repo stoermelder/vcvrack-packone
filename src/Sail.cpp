@@ -4,17 +4,19 @@
 namespace Sail {
 
 enum MODE {
-	RELATIVE = 0,
+	DIFFERENTIAL = 0,
 	ABSOLUTE = 1
 };
 
 struct SailModule : Module {
 	enum ParamIds {
+		PARAM_SLEW,
 		NUM_PARAMS
 	};
 	enum InputIds {
 		INPUT_VALUE,
-		INPUT_MOD,
+		INPUT_FINE,
+		INPUT_SLEW,
 		NUM_INPUTS
 	};
 	enum OutputIds {
@@ -41,11 +43,13 @@ struct SailModule : Module {
 	dsp::ClockDivider processDivider;
 	dsp::ClockDivider lightDivider;
 	dsp::ExponentialFilter valueFilter;
+	dsp::ExponentialSlewLimiter slewLimiter;
 
 	SailModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		processDivider.setDivision(32);
+		configParam(PARAM_SLEW, 0.f, 5.f, 0.f, "Slew limiting", "s");
+		processDivider.setDivision(64);
 		lightDivider.setDivision(512);
 		valueFilter.setTau(1 / 30.f);
 		onReset();
@@ -54,27 +58,36 @@ struct SailModule : Module {
 	void onReset() override {
 		Module::onReset();
 		paramQuantity = NULL;
-		mode = MODE::RELATIVE;
+		mode = MODE::DIFFERENTIAL;
 		valueFiltering = true;
+		slewLimiter.reset();
 	}
 
 	void process(const ProcessArgs& args) override {
 		if (processDivider.process()) {
+			// Copy to local scope variable as paramQuantity might become NULL through the app thread
 			ParamQuantity* q = paramQuantity;
 			if (q) {
-				value[1] = value[0];
+				value[1] = value[0]; // Previous value for delta-calculation
 				value[0] = inputs[INPUT_VALUE].getVoltage();
 
 				if (valueBase == std::numeric_limits<float>::min())
-					valueBase = valueFilter.out = value[0];
+					valueBase = slewLimiter.out = valueFilter.out = value[0];
 				if (valueFiltering)
 					value[0] = valueFilter.process(args.sampleTime * processDivider.getDivision(), value[0]);
 
+				float s = inputs[INPUT_SLEW].isConnected() ? clamp(inputs[INPUT_SLEW].getVoltage(), 0.f, 5.f) : params[PARAM_SLEW].getValue();
+				if (s > 0.f) {
+					s = (1.f / s) * 10.f;
+					slewLimiter.setRiseFall(s, s);
+					value[0] = slewLimiter.process(args.sampleTime * processDivider.getDivision(), value[0]);
+				}
+
 				switch (mode) {
-					case MODE::RELATIVE: {
+					case MODE::DIFFERENTIAL: {
 						float d = value[0] - value[1];
 						if (valueBase != value[0] && d != 0.f) {
-							bool m = mod || inputs[INPUT_MOD].getVoltage() > 1.f;
+							bool m = mod || inputs[INPUT_FINE].getVoltage() >= 1.f;
 							if (m) d /= 10.f;
 							q->moveScaledValue(d / 10.f);
 						}
@@ -123,8 +136,12 @@ struct SailWidget : ThemedModuleWidget<SailModule> {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addChild(createLightCentered<SmallLight<WhiteLight>>(Vec(22.5f, 244.7f), module, SailModule::LIGHT_ACTIVE));
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 283.5f), module, SailModule::INPUT_MOD));
+		addChild(createLightCentered<SmallLight<WhiteLight>>(Vec(22.5f, 179.6f), module, SailModule::LIGHT_ACTIVE));
+
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 216.5f), module, SailModule::INPUT_SLEW));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(22.5f, 241.1f), module, SailModule::PARAM_SLEW));
+
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 283.5f), module, SailModule::INPUT_FINE));
 		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 327.7f), module, SailModule::INPUT_VALUE));
 	}
 
@@ -167,7 +184,7 @@ struct SailWidget : ThemedModuleWidget<SailModule> {
 					}
 				};
 
-				menu->addChild(construct<ModeItem>(&MenuItem::text, "Relative", &ModeItem::module, module, &ModeItem::mode, MODE::RELATIVE));
+				menu->addChild(construct<ModeItem>(&MenuItem::text, "Differential", &ModeItem::module, module, &ModeItem::mode, MODE::DIFFERENTIAL));
 				menu->addChild(construct<ModeItem>(&MenuItem::text, "Absolute", &ModeItem::module, module, &ModeItem::mode, MODE::ABSOLUTE));
 				return menu;
 			}
