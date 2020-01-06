@@ -147,6 +147,13 @@
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Sail.md"
 		},
 		{
+			"slug": "Pile",
+			"name": "PILE",
+			"description": "",
+			"tags": ["Utility"],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Pile.md"
+		},
+		{
 			"slug": "AudioInterface64",
 			"name": "AUDIO-64",
 			"description": "Sends CV and audio to/from an audio device",
