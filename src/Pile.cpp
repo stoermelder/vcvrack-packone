@@ -13,10 +13,12 @@ enum RANGE {
 
 struct PileModule : Module {
 	enum ParamIds {
+		PARAM_SLEW,
 		PARAM_STEP,
 		NUM_PARAMS
 	};
 	enum InputIds {
+		INPUT_SLEW,
 		INPUT_INC,
 		INPUT_DEC,
 		INPUT_RESET,
@@ -41,17 +43,22 @@ struct PileModule : Module {
 
 	dsp::SchmittTrigger incTrigger;
 	dsp::SchmittTrigger decTrigger;
+	dsp::ExponentialSlewLimiter slewLimiter;
+
+	dsp::ClockDivider processDivider;
 
 	PileModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		configParam(PARAM_STEP, 0.f, 2.f, 0.5f, "Stepsize", "V");
+		configParam(PARAM_SLEW, 0.f, 5.f, 0.f, "Slew limiting", "s");
+		configParam(PARAM_STEP, 0.f, 5.f, 0.5f, "Stepsize", "V");
+		processDivider.setDivision(32);
 		onReset();
 	}
 
 	void onReset() override {
 		Module::onReset();
-		currentVoltage = 5.f;
+		currentVoltage = 0.f;
 		range = RANGE::UNI_10V;
 		lastResetVoltage = currentVoltage;
 	}
@@ -85,7 +92,14 @@ struct PileModule : Module {
 				break;
 		}
 
-		outputs[OUTPUT].setVoltage(currentVoltage);
+		if (processDivider.process()) {
+			float s = inputs[INPUT_SLEW].isConnected() ? clamp(inputs[INPUT_SLEW].getVoltage(), 0.f, 5.f) : params[PARAM_SLEW].getValue();
+			if (s > 0.f) s = (1.f / s) * 10.f;
+			slewLimiter.setRiseFall(s, s);
+		}
+
+		float v = slewLimiter.process(args.sampleTime, currentVoltage);
+		outputs[OUTPUT].setVoltage(v);
 	}
 
 	json_t* dataToJson() override {
@@ -109,13 +123,13 @@ struct VoltageLedDisplay : LedDisplayChoice {
 
 	VoltageLedDisplay() {
 		color = nvgRGB(0xf0, 0xf0, 0xf0);
-		box.size = Vec(31.4f, 16.f);
-		textOffset = Vec(1.2f, 11.5f);
+		box.size = Vec(37.9f, 16.f);
+		textOffset = Vec(1.8f, 11.5f);
 	}
 
 	void step() override {
 		if (module) {
-			text = string::f("%05.2f", module->currentVoltage);
+			text = string::f("%+06.2f", std::max(std::min(module->currentVoltage, 99.99f), -99.99f));
 		} 
 		LedDisplayChoice::step();
 	}
@@ -130,15 +144,18 @@ struct PileWidget : ThemedModuleWidget<PileModule> {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addParam(createParamCentered<StoermelderTrimpot>(Vec(22.5f, 134.7f), module, PileModule::PARAM_STEP));
-
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 176.8f), module, PileModule::INPUT_INC));
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 221.1f), module, PileModule::INPUT_DEC));
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 265.4f), module, PileModule::INPUT_RESET));
-
-		VoltageLedDisplay* ledDisplay = createWidgetCentered<VoltageLedDisplay>(Vec(22.5f, 292.3f));
+		VoltageLedDisplay* ledDisplay = createWidgetCentered<VoltageLedDisplay>(Vec(22.5f, 43.0f));
 		ledDisplay->module = module;
 		addChild(ledDisplay);
+
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 112.9f), module, PileModule::INPUT_SLEW));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(22.5f, 137.5f), module, PileModule::PARAM_SLEW));
+
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(22.5f, 178.2f), module, PileModule::PARAM_STEP));
+
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 203.1f), module, PileModule::INPUT_INC));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 238.8f), module, PileModule::INPUT_DEC));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 283.5f), module, PileModule::INPUT_RESET));
 
 		addOutput(createOutputCentered<StoermelderPort>(Vec(22.5f, 327.7f), module, PileModule::OUTPUT));
 	}
