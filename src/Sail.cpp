@@ -20,6 +20,7 @@ struct SailModule : Module {
 		NUM_INPUTS
 	};
 	enum OutputIds {
+		OUTPUT,
 		NUM_OUTPUTS
 	};
 	enum LightIds {
@@ -101,6 +102,10 @@ struct SailModule : Module {
 						break;
 					}
 				}
+
+				if (outputs[OUTPUT].isConnected()) {
+					outputs[OUTPUT].setVoltage(q->getScaledValue() * 10.f);
+				}
 			}
 			else {
 				valueBase = std::numeric_limits<float>::min();
@@ -136,13 +141,15 @@ struct SailWidget : ThemedModuleWidget<SailModule> {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addChild(createLightCentered<SmallLight<WhiteLight>>(Vec(22.5f, 179.6f), module, SailModule::LIGHT_ACTIVE));
+		addChild(createLightCentered<SmallLight<WhiteLight>>(Vec(22.5f, 135.4f), module, SailModule::LIGHT_ACTIVE));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 216.5f), module, SailModule::INPUT_SLEW));
-		addParam(createParamCentered<StoermelderTrimpot>(Vec(22.5f, 241.1f), module, SailModule::PARAM_SLEW));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 172.2f), module, SailModule::INPUT_SLEW));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(22.5f, 196.8f), module, SailModule::PARAM_SLEW));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 283.5f), module, SailModule::INPUT_FINE));
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 327.7f), module, SailModule::INPUT_VALUE));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 239.2f), module, SailModule::INPUT_FINE));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 283.5f), module, SailModule::INPUT_VALUE));
+
+		addOutput(createOutputCentered<StoermelderPort>(Vec(22.5f, 327.7f), module, SailModule::OUTPUT));
 	}
 
 	void step() override {
@@ -161,7 +168,7 @@ struct SailWidget : ThemedModuleWidget<SailModule> {
 	}
 
 	void appendContextMenu(Menu* menu) override {
-		ModuleWidget::appendContextMenu(menu);
+		ThemedModuleWidget<SailModule>::appendContextMenu(menu);
 
 		struct ModeMenuItem : MenuItem {
 			SailModule* module;
