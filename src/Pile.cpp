@@ -3,6 +3,14 @@
 
 namespace Pile {
 
+enum RANGE {
+	UNI_5V = 0,
+	UNI_10V = 1,
+	BI_5V = 2,
+	BI_10V = 3,
+	UNBOUNDED = 10
+};
+
 struct PileModule : Module {
 	enum ParamIds {
 		PARAM_STEP,
@@ -26,6 +34,8 @@ struct PileModule : Module {
 	int panelTheme = 0;
 	/** [Stored to JSON] */
 	float currentVoltage;
+	/** [Stored to JSON] */
+	RANGE range;
 
 	float lastResetVoltage;
 
@@ -42,6 +52,7 @@ struct PileModule : Module {
 	void onReset() override {
 		Module::onReset();
 		currentVoltage = 5.f;
+		range = RANGE::UNI_10V;
 		lastResetVoltage = currentVoltage;
 	}
 
@@ -51,12 +62,29 @@ struct PileModule : Module {
 		}
 
 		if (incTrigger.process(inputs[INPUT_INC].getVoltage())) {
-			currentVoltage = clamp(currentVoltage + params[PARAM_STEP].getValue(), 0.f, 10.f);
+			currentVoltage += params[PARAM_STEP].getValue();
 		}
 		if (decTrigger.process(inputs[INPUT_DEC].getVoltage())) {
-			currentVoltage = clamp(currentVoltage - params[PARAM_STEP].getValue(), 0.f, 10.f);
+			currentVoltage -= params[PARAM_STEP].getValue();
 		}
 		
+		switch (range) {
+			case RANGE::UNI_5V:
+				currentVoltage = clamp(currentVoltage, 0.f, 5.f);
+				break;
+			case RANGE::UNI_10V:
+				currentVoltage = clamp(currentVoltage, 0.f, 10.f);
+				break;
+			case RANGE::BI_5V:
+				currentVoltage = clamp(currentVoltage, -5.f, 5.f);
+				break;
+			case RANGE::BI_10V:
+				currentVoltage = clamp(currentVoltage, -10.f, 10.f);
+				break;
+			case RANGE::UNBOUNDED:
+				break;
+		}
+
 		outputs[OUTPUT].setVoltage(currentVoltage);
 	}
 
@@ -64,12 +92,14 @@ struct PileModule : Module {
 		json_t *rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 		json_object_set_new(rootJ, "currentVoltage", json_real(currentVoltage));
+		json_object_set_new(rootJ, "range", json_integer(range));
 		return rootJ;
 	}
 
 	void dataFromJson(json_t* rootJ) override {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 		currentVoltage = lastResetVoltage = json_real_value(json_object_get(rootJ, "currentVoltage"));
+		range = (RANGE)json_integer_value(json_object_get(rootJ, "range"));
 	}
 };
 
@@ -80,7 +110,7 @@ struct VoltageLedDisplay : LedDisplayChoice {
 	VoltageLedDisplay() {
 		color = nvgRGB(0xf0, 0xf0, 0xf0);
 		box.size = Vec(31.4f, 16.f);
-		textOffset = Vec(2.8f, 11.5f);
+		textOffset = Vec(1.2f, 11.5f);
 	}
 
 	void step() override {
@@ -111,6 +141,43 @@ struct PileWidget : ThemedModuleWidget<PileModule> {
 		addChild(ledDisplay);
 
 		addOutput(createOutputCentered<StoermelderPort>(Vec(22.5f, 327.7f), module, PileModule::OUTPUT));
+	}
+
+	void appendContextMenu(Menu* menu) override {
+		ThemedModuleWidget<PileModule>::appendContextMenu(menu);
+
+		struct RangeMenuItem : MenuItem {
+			PileModule* module;
+			RangeMenuItem() {
+				rightText = RIGHT_ARROW;
+			}
+
+			Menu* createChildMenu() override {
+				Menu* menu = new Menu;
+
+				struct RangeItem : MenuItem {
+					PileModule* module;
+					RANGE range;
+					void onAction(const event::Action& e) override {
+						module->range = range;
+					}
+					void step() override {
+						rightText = module->range == range ? "✔" : "";
+						MenuItem::step();
+					}
+				};
+
+				menu->addChild(construct<RangeItem>(&MenuItem::text, "0..5V", &RangeItem::module, module, &RangeItem::range, RANGE::UNI_5V));
+				menu->addChild(construct<RangeItem>(&MenuItem::text, "0..10V", &RangeItem::module, module, &RangeItem::range, RANGE::UNI_10V));
+				menu->addChild(construct<RangeItem>(&MenuItem::text, "-5..5V", &RangeItem::module, module, &RangeItem::range, RANGE::BI_5V));
+				menu->addChild(construct<RangeItem>(&MenuItem::text, "-10..10V", &RangeItem::module, module, &RangeItem::range, RANGE::BI_10V));
+				menu->addChild(construct<RangeItem>(&MenuItem::text, "Unbounded", &RangeItem::module, module, &RangeItem::range, RANGE::UNBOUNDED));
+				return menu;
+			}
+		};
+
+		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<RangeMenuItem>(&MenuItem::text, "Voltage range", &RangeMenuItem::module, module));
 	}
 };
 
