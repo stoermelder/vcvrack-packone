@@ -51,7 +51,7 @@ struct PileModule : Module {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configParam(PARAM_SLEW, 0.f, 5.f, 0.f, "Slew limiting", "s");
-		configParam(PARAM_STEP, 0.f, 5.f, 0.5f, "Stepsize", "V");
+		configParam(PARAM_STEP, 0.f, 5.f, 0.2f, "Stepsize", "V");
 		processDivider.setDivision(32);
 		onReset();
 	}
@@ -122,7 +122,7 @@ struct VoltageLedDisplay : LedDisplayChoice {
 	PileModule* module;
 
 	VoltageLedDisplay() {
-		color = nvgRGB(0xf0, 0xf0, 0xf0);
+		color = nvgRGB(0xef, 0xef, 0xef);
 		box.size = Vec(37.9f, 16.f);
 		textOffset = Vec(1.8f, 11.5f);
 	}
@@ -148,13 +148,13 @@ struct PileWidget : ThemedModuleWidget<PileModule> {
 		ledDisplay->module = module;
 		addChild(ledDisplay);
 
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 112.9f), module, PileModule::INPUT_SLEW));
-		addParam(createParamCentered<StoermelderTrimpot>(Vec(22.5f, 137.5f), module, PileModule::PARAM_SLEW));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 113.3f), module, PileModule::INPUT_SLEW));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(22.5f, 137.9f), module, PileModule::PARAM_SLEW));
 
-		addParam(createParamCentered<StoermelderTrimpot>(Vec(22.5f, 178.2f), module, PileModule::PARAM_STEP));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(22.5f, 178.6f), module, PileModule::PARAM_STEP));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 203.1f), module, PileModule::INPUT_INC));
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 238.8f), module, PileModule::INPUT_DEC));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 203.5f), module, PileModule::INPUT_INC));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 239.2f), module, PileModule::INPUT_DEC));
 		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 283.5f), module, PileModule::INPUT_RESET));
 
 		addOutput(createOutputCentered<StoermelderPort>(Vec(22.5f, 327.7f), module, PileModule::OUTPUT));

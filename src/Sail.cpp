@@ -64,7 +64,7 @@ struct SailModule : Module {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configParam(PARAM_SLEW, 0.f, 5.f, 0.f, "Slew limiting", "s");
-		configParam(PARAM_STEP, 0.f, 2.f, 5.f, "Stepsize", "V");
+		configParam(PARAM_STEP, 0.f, 2.f, 0.2f, "Stepsize", "V");
 		processDivider.setDivision(32);
 		lightDivider.setDivision(512);
 		onReset();
@@ -180,17 +180,19 @@ struct SailWidget : ThemedModuleWidget<SailModule> {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 60.4f), module, SailModule::INPUT_SLEW));
-		addParam(createParamCentered<StoermelderTrimpot>(Vec(22.5f, 85.0f), module, SailModule::PARAM_SLEW));
+		addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(22.5f, 38.0f), module, SailModule::LIGHT_ACTIVE));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 127.4f), module, SailModule::INPUT_FINE));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 69.0f), module, SailModule::INPUT_FINE));
 
-		addParam(createParamCentered<StoermelderTrimpot>(Vec(22.5f, 170.f), module, SailModule::PARAM_STEP));
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 194.9f), module, SailModule::INPUT_INC));
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 230.5f), module, SailModule::INPUT_DEC));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 113.3f), module, SailModule::INPUT_SLEW));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(22.5f, 137.9f), module, SailModule::PARAM_SLEW));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 274.8f), module, SailModule::INPUT_VALUE));
-		addChild(createLightCentered<SmallLight<WhiteLight>>(Vec(22.5f, 297.f), module, SailModule::LIGHT_ACTIVE));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(22.5f, 178.6f), module, SailModule::PARAM_STEP));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 203.5f), module, SailModule::INPUT_INC));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 239.2f), module, SailModule::INPUT_DEC));
+
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 283.5f), module, SailModule::INPUT_VALUE));
+
 		addOutput(createOutputCentered<StoermelderPort>(Vec(22.5f, 327.7f), module, SailModule::OUTPUT));
 	}
 
