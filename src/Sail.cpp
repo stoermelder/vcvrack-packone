@@ -4,7 +4,7 @@
 namespace Sail {
 
 enum MODE {
-	DIFFERENTIAL = 0,
+	DIFF = 0,
 	ABSOLUTE = 1
 };
 
@@ -40,6 +40,7 @@ struct SailModule : Module {
 	float value[2];
 
 	ParamQuantity* paramQuantity;
+	ParamQuantity* paramQuantityPriv;
 
 	dsp::ClockDivider processDivider;
 	dsp::ClockDivider lightDivider;
@@ -59,16 +60,20 @@ struct SailModule : Module {
 	void onReset() override {
 		Module::onReset();
 		paramQuantity = NULL;
-		mode = MODE::DIFFERENTIAL;
+		mode = MODE::DIFF;
 		valueFiltering = true;
 		slewLimiter.reset();
 	}
 
 	void process(const ProcessArgs& args) override {
 		if (processDivider.process()) {
-			// Copy to local scope variable as paramQuantity might become NULL through the app thread
-			ParamQuantity* q = paramQuantity;
-			if (q) {
+			// Copy to second variable as paramQuantity might become NULL through the app thread
+			if (paramQuantity != paramQuantityPriv) {
+				valueBase = std::numeric_limits<float>::min();
+				paramQuantityPriv = paramQuantity;
+			}
+
+			if (paramQuantityPriv && paramQuantityPriv->isBounded()) {
 				value[1] = value[0]; // Previous value for delta-calculation
 				value[0] = inputs[INPUT_VALUE].getVoltage();
 
@@ -85,30 +90,27 @@ struct SailModule : Module {
 				}
 
 				switch (mode) {
-					case MODE::DIFFERENTIAL: {
+					case MODE::DIFF: {
 						float d = value[0] - value[1];
 						if (valueBase != value[0] && d != 0.f) {
 							bool m = mod || inputs[INPUT_FINE].getVoltage() >= 1.f;
 							if (m) d /= 10.f;
-							q->moveScaledValue(d / 10.f);
+							paramQuantityPriv->moveScaledValue(d / 10.f);
 						}
 						break;
 					}
 					case MODE::ABSOLUTE: {
 						float d = value[0] - value[1];
 						if (valueBase != value[0] && d != 0.f) {
-							q->setScaledValue(value[0] / 10.f);
+							paramQuantityPriv->setScaledValue(value[0] / 10.f);
 						}
 						break;
 					}
 				}
 
 				if (outputs[OUTPUT].isConnected()) {
-					outputs[OUTPUT].setVoltage(q->getScaledValue() * 10.f);
+					outputs[OUTPUT].setVoltage(paramQuantityPriv->getScaledValue() * 10.f);
 				}
-			}
-			else {
-				valueBase = std::numeric_limits<float>::min();
 			}
 		}
 
@@ -191,7 +193,7 @@ struct SailWidget : ThemedModuleWidget<SailModule> {
 					}
 				};
 
-				menu->addChild(construct<ModeItem>(&MenuItem::text, "Differential", &ModeItem::module, module, &ModeItem::mode, MODE::DIFFERENTIAL));
+				menu->addChild(construct<ModeItem>(&MenuItem::text, "Differential", &ModeItem::module, module, &ModeItem::mode, MODE::DIFF));
 				menu->addChild(construct<ModeItem>(&MenuItem::text, "Absolute", &ModeItem::module, module, &ModeItem::mode, MODE::ABSOLUTE));
 				return menu;
 			}
