@@ -6,7 +6,7 @@ This module modulates a carrier signal across several output channels.
 
 ### MODULATOR-port
 
-The Modulator input is mandatory and defines how the carrier signal is modulated accross the output channels. It must be unipolar (0V-10V) and monophonic. When the channel knob is set to 4, an input voltage in the range 0V-2.5V (=10V / 4 channels) outputs the carrier on channel 1 with attenuation in respect to the voltage between 0V and 2.5V. So, 0V outputs 100% of the carrier, 1.25V outputs 50% of the carrier and 2.5V (and above) 0%. Also, an input voltage of 1.25V outputs 50% of the carrier on channel 2.
+The Modulator input is mandatory and defines how the carrier signal is modulated across the output channels. It must be unipolar (0V-10V) and monophonic. When the channel knob is set to 4, an input voltage in the range 0V-2.5V (=10V / 4 channels) outputs the carrier on channel 1 with attenuation in respect to the voltage between 0V and 2.5V. So, 0V outputs 100% of the carrier, 1.25V outputs 50% of the carrier and 2.5V (and above) 0%. Also, an input voltage of 1.25V outputs 50% of the carrier on channel 2.
 
 ### CARRIER-port
 
