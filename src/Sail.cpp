@@ -36,6 +36,8 @@ struct SailModule : Module {
 		NUM_LIGHTS
 	};
 
+	const float FINE = 0.1f;
+
 	/** [Stored to JSON] */
 	int panelTheme = 0;
 	/** [Stored to JSON] */
@@ -48,7 +50,7 @@ struct SailModule : Module {
 	float valueBaseOut;
 	float value[2];
 
-	float trig;
+	float incdec;
 
 	ParamQuantity* paramQuantity;
 	ParamQuantity* paramQuantityPriv;
@@ -75,16 +77,20 @@ struct SailModule : Module {
 		paramQuantity = NULL;
 		inMode = IN_MODE::DIFF;
 		outMode = OUT_MODE::REDUCED;
-		trig = 0.f;
+		incdec = 0.f;
 		slewLimiter.reset();
 	}
 
 	void process(const ProcessArgs& args) override {
 		if (incTrigger.process(inputs[INPUT_INC].getVoltage())) {
-			trig += params[PARAM_STEP].getValue();
+			float step = params[PARAM_STEP].getValue();
+			if (mod || inputs[INPUT_FINE].getVoltage() >= 1.f) step *= FINE;
+			incdec += step;
 		}
 		if (decTrigger.process(inputs[INPUT_DEC].getVoltage())) {
-			trig -= params[PARAM_STEP].getValue();
+			float step = params[PARAM_STEP].getValue();
+			if (mod || inputs[INPUT_FINE].getVoltage() >= 1.f) step *= FINE;
+			incdec -= step;
 		}
 
 		if (processDivider.process()) {
@@ -92,39 +98,45 @@ struct SailModule : Module {
 			if (paramQuantity != paramQuantityPriv) {
 				valueBase = valueBaseOut = std::numeric_limits<float>::min();
 				paramQuantityPriv = paramQuantity;
-				trig = (!inputs[INPUT_VALUE].isConnected() && paramQuantityPriv) ? (paramQuantityPriv->getScaledValue() * 10.f) : 0.f;
+				incdec = (!inputs[INPUT_VALUE].isConnected() && paramQuantityPriv) ? (paramQuantityPriv->getScaledValue() * 10.f) : 0.f;
 			}
 
 			if (paramQuantityPriv && paramQuantityPriv->isBounded() && paramQuantityPriv->module != this) {
-				value[1] = value[0]; // Previous value for delta-calculation
-				value[0] = inputs[INPUT_VALUE].isConnected() ? inputs[INPUT_VALUE].getVoltage() : 0.f;
-				value[0] = clamp(value[0] + trig, 0.f, 10.f);
+				// Previous value for delta-calculation
+				value[1] = value[0];
+
+				// Input voltage
+				float voltage = inputs[INPUT_VALUE].isConnected() ? inputs[INPUT_VALUE].getVoltage() : 0.f;
+				if (mod || inputs[INPUT_FINE].getVoltage() >= 1.f) voltage *= FINE;
+				voltage = clamp(voltage, 0.f, 10.f);
+
+				// Add INC/DEC but keep in range 0..10V
+				incdec = clamp(voltage + incdec, 0.f, 10.f) - voltage;
+				value[0] = voltage + incdec;
 
 				if (valueBase == std::numeric_limits<float>::min()) {
 					valueBase = slewLimiter.out = value[0];
 				}
 
-				float s = inputs[INPUT_SLEW].isConnected() ? clamp(inputs[INPUT_SLEW].getVoltage(), 0.f, 5.f) : params[PARAM_SLEW].getValue();
-				if (s > 0.f) {
-					s = (1.f / s) * 10.f;
-					slewLimiter.setRiseFall(s, s);
+				// Apply slew limiting
+				float slew = inputs[INPUT_SLEW].isConnected() ? clamp(inputs[INPUT_SLEW].getVoltage(), 0.f, 5.f) : params[PARAM_SLEW].getValue();
+				if (slew > 0.f) {
+					slew = (1.f / slew) * 10.f;
+					slewLimiter.setRiseFall(slew, slew);
 					value[0] = slewLimiter.process(args.sampleTime * processDivider.getDivision(), value[0]);
 				}
 
+				float delta = value[0] - value[1];
 				switch (inMode) {
 					case IN_MODE::DIFF: {
-						float d = value[0] - value[1];
-						if (valueBase != value[0] && d != 0.f) {
-							bool m = mod || inputs[INPUT_FINE].getVoltage() >= 1.f;
-							if (m) d /= 10.f;
-							paramQuantityPriv->moveScaledValue(d / 10.f);
+						if (valueBase != value[0] && delta != 0.f) {
+							paramQuantityPriv->moveScaledValue(delta / 10.f);
 							valueBaseOut = paramQuantityPriv->getScaledValue();
 						}
 						break;
 					}
 					case IN_MODE::ABSOLUTE: {
-						float d = value[0] - value[1];
-						if (valueBase != value[0] && d != 0.f) {
+						if (valueBase != value[0] && delta != 0.f) {
 							paramQuantityPriv->setScaledValue(value[0] / 10.f);
 							valueBaseOut = paramQuantityPriv->getScaledValue();
 						}
