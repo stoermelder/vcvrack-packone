@@ -29,4 +29,5 @@ extern Model* modelIntermix;
 extern Model* modelDetour;
 extern Model* modelSail;
 extern Model* modelPile;
+extern Model* modelMidiStep;
 extern Model* modelAudioInterface64;
