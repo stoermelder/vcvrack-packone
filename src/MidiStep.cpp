@@ -338,10 +338,10 @@ struct MyCcChoice : LedDisplayChoice {
 	}
 };
 
-struct MidiStepWidget : ModuleWidget {
-	MidiStepWidget(MidiStepModule<>* module) {
+struct MidiStepWidget : ThemedModuleWidget<MidiStepModule<>> {
+	MidiStepWidget(MidiStepModule<>* module)
+		: ThemedModuleWidget<MidiStepModule<>>(module, "MidiStep") {
 		setModule(module);
-		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/MidiStep.svg")));
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
@@ -359,26 +359,27 @@ struct MidiStepWidget : ModuleWidget {
 		addChild(midiWidget);
 
 		addOutput(createOutputCentered<StoermelderPort>(Vec(27.9f, 232.7f), module, MidiStepModule<>::OUTPUT_INC + 0));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(56.3f, 232.7f), module, MidiStepModule<>::OUTPUT_INC + 1));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(92.6f, 232.7f), module, MidiStepModule<>::OUTPUT_INC + 2));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(56.1f, 232.7f), module, MidiStepModule<>::OUTPUT_INC + 1));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(93.9f, 232.7f), module, MidiStepModule<>::OUTPUT_INC + 2));
 		addOutput(createOutputCentered<StoermelderPort>(Vec(122.1f, 232.7f), module, MidiStepModule<>::OUTPUT_INC + 3));
 		addOutput(createOutputCentered<StoermelderPort>(Vec(27.9f, 261.0f), module, MidiStepModule<>::OUTPUT_INC + 4));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(56.3f, 261.0f), module, MidiStepModule<>::OUTPUT_INC + 5));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(92.6f, 261.0f), module, MidiStepModule<>::OUTPUT_INC + 6));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(56.1f, 261.0f), module, MidiStepModule<>::OUTPUT_INC + 5));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(93.9f, 261.0f), module, MidiStepModule<>::OUTPUT_INC + 6));
 		addOutput(createOutputCentered<StoermelderPort>(Vec(122.1f, 261.0f), module, MidiStepModule<>::OUTPUT_INC + 7));
 
 		addOutput(createOutputCentered<StoermelderPort>(Vec(27.9f, 298.8f), module, MidiStepModule<>::OUTPUT_DEC + 0));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(56.3f, 298.8f), module, MidiStepModule<>::OUTPUT_DEC + 1));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(92.6f, 298.8f), module, MidiStepModule<>::OUTPUT_DEC + 2));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(56.1f, 298.8f), module, MidiStepModule<>::OUTPUT_DEC + 1));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(93.9f, 298.8f), module, MidiStepModule<>::OUTPUT_DEC + 2));
 		addOutput(createOutputCentered<StoermelderPort>(Vec(122.1f, 298.8f), module, MidiStepModule<>::OUTPUT_DEC + 3));
 		addOutput(createOutputCentered<StoermelderPort>(Vec(27.9f, 327.1f), module, MidiStepModule<>::OUTPUT_DEC + 4));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(56.3f, 327.1f), module, MidiStepModule<>::OUTPUT_DEC + 5));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(92.6f, 327.1f), module, MidiStepModule<>::OUTPUT_DEC + 6));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(56.1f, 327.1f), module, MidiStepModule<>::OUTPUT_DEC + 5));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(93.9f, 327.1f), module, MidiStepModule<>::OUTPUT_DEC + 6));
 		addOutput(createOutputCentered<StoermelderPort>(Vec(122.1f, 327.1f), module, MidiStepModule<>::OUTPUT_DEC + 7));
 	}
 
 	void appendContextMenu(Menu* menu) override {
-        MidiStepModule<>* module = dynamic_cast<MidiStepModule<>*>(this->module);
+		ThemedModuleWidget<MidiStepModule<>>::appendContextMenu(menu);
+		MidiStepModule<>* module = dynamic_cast<MidiStepModule<>*>(this->module);
 		struct ModeMenuItem : MenuItem {
 			MidiStepModule<>* module;
 			ModeMenuItem() {
@@ -407,9 +408,9 @@ struct MidiStepWidget : ModuleWidget {
 			}
 		};
 
-        menu->addChild(new MenuSeparator());
+		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Mode", &ModeMenuItem::module, module));
-    }
+	}
 };
 
 }
