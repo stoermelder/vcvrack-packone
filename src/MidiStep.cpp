@@ -124,12 +124,12 @@ struct MidiStepModule : Module {
 
         switch (mode) {
             case MODE::BEATSTEP_R1: {
-                if (value == uint8_t(61)) decPulseCount[ccs[cc]] += 6;
-                if (value == uint8_t(62)) decPulseCount[ccs[cc]] += 4;
-                if (value == uint8_t(63)) decPulseCount[ccs[cc]] += 2;
-                if (value == uint8_t(65)) incPulseCount[ccs[cc]] += 2;
-                if (value == uint8_t(66)) incPulseCount[ccs[cc]] += 4;
-                if (value == uint8_t(67)) incPulseCount[ccs[cc]] += 6;
+                if (value <= uint8_t(58)) decPulseCount[ccs[cc]] += 6;
+                else if (value <= uint8_t(61)) decPulseCount[ccs[cc]] += 4;
+                else if (value <= uint8_t(63)) decPulseCount[ccs[cc]] += 2;
+                if (value >= uint8_t(70)) incPulseCount[ccs[cc]] += 6;
+                else if (value >= uint8_t(67)) incPulseCount[ccs[cc]] += 4;
+                else if (value >= uint8_t(65)) incPulseCount[ccs[cc]] += 2;
                 break;
             }
 
