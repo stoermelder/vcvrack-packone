@@ -383,13 +383,14 @@ struct DetourModule : Module {
 };
 
 
-struct DetourWidget : ModuleWidget {
+struct DetourWidget : ThemedModuleWidget<DetourModule<8, 8>> {
 	const static int PORTS = 8;
 	const static int SENDS = 8;
+	typedef DetourModule<PORTS, SENDS> MODULE;
 
-	DetourWidget(DetourModule<PORTS>* module) {
+	DetourWidget(MODULE* module)
+		: ThemedModuleWidget<MODULE>(module, "Detour") {
 		setModule(module);
-		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/Detour.svg")));
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
@@ -404,18 +405,18 @@ struct DetourWidget : ModuleWidget {
 		// Parameters and ports
 		for (int i = 0; i < SCENE_MAX; i++) {
 			Vec v = Vec(23.1f, yMin + (yMax - yMin) / (SCENE_MAX - 1) * i);
-			addParam(createParamCentered<MatrixButton>(v, module, DetourModule<PORTS>::PARAM_SCENE + i));
+			addParam(createParamCentered<MatrixButton>(v, module, MODULE::PARAM_SCENE + i));
 		}
 
-		SceneLedDisplay<DetourModule<PORTS>, SCENE_MAX>* sceneLedDisplay = createWidgetCentered<SceneLedDisplay<DetourModule<PORTS>, SCENE_MAX>>(Vec(23.1f, 304.9f));
+		SceneLedDisplay<MODULE, SCENE_MAX>* sceneLedDisplay = createWidgetCentered<SceneLedDisplay<MODULE, SCENE_MAX>>(Vec(23.1f, 304.9f));
 		sceneLedDisplay->module = module;
 		addChild(sceneLedDisplay);
-		addInput(createInputCentered<StoermelderPort>(Vec(23.1f, 327.9f), module, DetourModule<PORTS>::INPUT_SCENE));
+		addInput(createInputCentered<StoermelderPort>(Vec(23.1f, 327.9f), module, MODULE::INPUT_SCENE));
 
 		for (int i = 0; i < PORTS; i++) {
 			for (int j = 0; j < SENDS; j++) {
 				Vec v = Vec(xMin + (xMax - xMin) / (SENDS - 1) * j, yMin + (yMax - yMin) / (PORTS - 1) * i);
-				addParam(createParamCentered<MatrixButton>(v, module, DetourModule<PORTS>::PARAM_MATRIX + i * PORTS + j));
+				addParam(createParamCentered<MatrixButton>(v, module, MODULE::PARAM_MATRIX + i * PORTS + j));
 			}
 		}
 
@@ -428,38 +429,39 @@ struct DetourWidget : ModuleWidget {
 		for (int i = 0; i < PORTS; i++) {
 			Vec v;
 			v = Vec(60.1f, yMin + (yMax - yMin) / (PORTS - 1) * i);
-			addInput(createInputCentered<StoermelderPort>(v, module, DetourModule<PORTS>::INPUT + i));
+			addInput(createInputCentered<StoermelderPort>(v, module, MODULE::INPUT + i));
 			v = Vec(336.2f, yMin + (yMax - yMin) / (PORTS - 1) * i);
-			addOutput(createOutputCentered<StoermelderPort>(v, module, DetourModule<PORTS>::OUTPUT + i));
+			addOutput(createOutputCentered<StoermelderPort>(v, module, MODULE::OUTPUT + i));
 			v = Vec(320.5f, yMin + (yMax - yMin) / (PORTS - 1) * i - 11.2f);
-			addParam(createParamCentered<DummyMapButton>(v, module, DetourModule<PORTS>::PARAM_Y_MAP + i));
+			addParam(createParamCentered<DummyMapButton>(v, module, MODULE::PARAM_Y_MAP + i));
 		}
 		for (int i = 0; i < SENDS; i++) {
 			Vec v;
 			v = Vec(xMin + (xMax - xMin) / (SENDS - 1) * i, 327.9f);
-			addInput(createInputCentered<StoermelderPort>(v, module, DetourModule<PORTS>::INPUT_RETURN + i));
+			addInput(createInputCentered<StoermelderPort>(v, module, MODULE::INPUT_RETURN + i));
 			v = Vec(xMin + (xMax - xMin) / (SENDS - 1) * i, 297.3f);
-			addOutput(createOutputCentered<StoermelderPort>(v, module, DetourModule<PORTS>::OUTPUT_SEND + i));
+			addOutput(createOutputCentered<StoermelderPort>(v, module, MODULE::OUTPUT_SEND + i));
 			v = Vec(xMin + (xMax - xMin) / (SENDS - 1) * i - 11.2f, 281.9f);
-			addParam(createParamCentered<DummyMapButton>(v, module, DetourModule<PORTS>::PARAM_X_MAP + i));
+			addParam(createParamCentered<DummyMapButton>(v, module, MODULE::PARAM_X_MAP + i));
 		}
 
 		// Lights
 		for (int i = 0; i < SCENE_MAX; i++) {
 			Vec v = Vec(23.1f, yMin + (yMax - yMin) / (SCENE_MAX - 1) * i);
-			addChild(createLightCentered<MatrixButtonLight<YellowLight, DetourModule<PORTS>>>(v, module, DetourModule<PORTS>::LIGHT_SCENE + i));
+			addChild(createLightCentered<MatrixButtonLight<YellowLight, MODULE>>(v, module, MODULE::LIGHT_SCENE + i));
 		}
 
 		for (int i = 0; i < PORTS; i++) {
 			for (int j = 0; j < SENDS; j++) {
 				Vec v = Vec(xMin + (xMax - xMin) / (SENDS - 1) * j, yMin + (yMax - yMin) / (PORTS - 1) * i);
-				addChild(createLightCentered<MatrixButtonLight<WhiteLight, DetourModule<PORTS>>>(v, module, DetourModule<PORTS>::LIGHT_MATRIX + i * PORTS + j));
+				addChild(createLightCentered<MatrixButtonLight<WhiteLight, MODULE>>(v, module, MODULE::LIGHT_MATRIX + i * PORTS + j));
 			}
 		}
 	}
 
 	void appendContextMenu(Menu* menu) override {
-		DetourModule<PORTS>* module = dynamic_cast<DetourModule<PORTS>*>(this->module);
+		ThemedModuleWidget<MODULE>::appendContextMenu(menu);
+		MODULE* module = dynamic_cast<MODULE*>(this->module);
 		assert(module);
 
 		struct ManualItem : MenuItem {
@@ -475,7 +477,7 @@ struct DetourWidget : ModuleWidget {
 			}
 
 			struct ChannelMenuItem : MenuItem {
-				DetourModule<PORTS>* module;
+				MODULE* module;
 				int channel;
 
 				ChannelMenuItem() {
@@ -486,7 +488,7 @@ struct DetourWidget : ModuleWidget {
 					Menu* menu = new Menu;
 
 					struct ChannelModeItem : MenuItem {
-						DetourModule<PORTS>* module;
+						MODULE* module;
 						int channel;
 						
 						void onAction(const event::Action& e) override {
@@ -511,11 +513,11 @@ struct DetourWidget : ModuleWidget {
 
 					struct DelaySlider : ui::Slider {
 						struct DelayQuantity : Quantity {
-							DetourModule<PORTS>* module;
+							MODULE* module;
 							int channel;
 							float v = -1.f;
 
-							DelayQuantity(DetourModule<PORTS>* module, int channel) {
+							DelayQuantity(MODULE* module, int channel) {
 								this->module = module;
 								this->channel = channel;
 							}
@@ -553,7 +555,7 @@ struct DetourWidget : ModuleWidget {
 							}
 						};
 
-						DelaySlider(DetourModule<PORTS>* module, int channel) {
+						DelaySlider(MODULE* module, int channel) {
 							this->box.size.x = 160.0;
 							quantity = new DelayQuantity(module, channel);
 						}
@@ -573,7 +575,7 @@ struct DetourWidget : ModuleWidget {
 				}
 			};
 
-			DetourModule<PORTS>* module;
+			MODULE* module;
 			Menu* createChildMenu() override {
 				Menu* menu = new Menu;
 				for (int i = 0; i < module->countSend; i++) {
@@ -589,7 +591,7 @@ struct DetourWidget : ModuleWidget {
 			}
 
 			struct SceneModeItem : MenuItem {
-				DetourModule<PORTS>* module;
+				MODULE* module;
 				SCENE_CV_MODE sceneMode;
 				
 				void onAction(const event::Action& e) override {
@@ -602,7 +604,7 @@ struct DetourWidget : ModuleWidget {
 				}
 			};
 
-			DetourModule<PORTS>* module;
+			MODULE* module;
 			Menu* createChildMenu() override {
 				Menu* menu = new Menu;
 				menu->addChild(construct<SceneModeItem>(&MenuItem::text, "Off", &SceneModeItem::module, module, &SceneModeItem::sceneMode, SCENE_CV_MODE::OFF));
