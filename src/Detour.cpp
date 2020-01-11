@@ -24,6 +24,8 @@ struct DetourModule : Module {
 	enum ParamIds {
 		ENUMS(PARAM_MATRIX, PORTS * SENDS),
 		ENUMS(PARAM_SCENE, SCENE_MAX),
+		ENUMS(PARAM_X_MAP, SENDS),
+		ENUMS(PARAM_Y_MAP, PORTS),
 		NUM_PARAMS
 	};
 	enum InputIds {
@@ -75,6 +77,7 @@ struct DetourModule : Module {
 	int currentFrame;
 
 	dsp::SchmittTrigger sceneTrigger;
+	dsp::SchmittTrigger mapTrigger[PORTS];
 	dsp::ClockDivider sceneDivider;
 	dsp::ClockDivider lightDivider;
 
@@ -88,8 +91,11 @@ struct DetourModule : Module {
 			for (int j = 0; j < SENDS; j++) {
 				configParam<MatrixButtonParamQuantity>(PARAM_MATRIX + i * PORTS + j, 0.f, 1.f, 0.f, string::f("Input %i to Send/Return %i", i + 1, j + 1));
 			}
+			configParam(PARAM_Y_MAP + i, 0.f, 1.f, 0.f, string::f("Matrix row %i", i + 1));
 		}
-
+		for (int j = 0; j < SENDS; j++) {
+			configParam(PARAM_X_MAP + j, 0.f, 1.f, 0.f, string::f("Matrix col %i", j + 1));
+		}
 		currentFrame = 0;
 		sceneDivider.setDivision(32);
 		lightDivider.setDivision(512);
@@ -170,6 +176,18 @@ struct DetourModule : Module {
 			}
 			if (sceneFound == -1) {
 				params[PARAM_SCENE + sceneSelected].setValue(1.f);
+			}
+
+			for (int i = 0; i < SENDS; i++) {
+				if (params[PARAM_X_MAP + i].getValue() > 0.f) {
+					for (int j = 0; j < PORTS; j++) {
+						if (mapTrigger[j].process(params[PARAM_Y_MAP + j].getValue())) {
+							float v = params[PARAM_MATRIX + j * PORTS + i].getValue();
+							v = v == 1.f ? 0.f : 1.f;
+							params[PARAM_MATRIX + j * PORTS + i].setValue(v);
+						}
+					}
+				}
 			}
 
 			int maxInput = 0;
@@ -367,6 +385,7 @@ struct DetourModule : Module {
 
 struct DetourWidget : ModuleWidget {
 	const static int PORTS = 8;
+	const static int SENDS = 8;
 
 	DetourWidget(DetourModule<PORTS>* module) {
 		setModule(module);
@@ -394,11 +413,17 @@ struct DetourWidget : ModuleWidget {
 		addInput(createInputCentered<StoermelderPort>(Vec(23.1f, 327.9f), module, DetourModule<PORTS>::INPUT_SCENE));
 
 		for (int i = 0; i < PORTS; i++) {
-			for (int j = 0; j < PORTS; j++) {
-				Vec v = Vec(xMin + (xMax - xMin) / (PORTS - 1) * j, yMin + (yMax - yMin) / (PORTS - 1) * i);
+			for (int j = 0; j < SENDS; j++) {
+				Vec v = Vec(xMin + (xMax - xMin) / (SENDS - 1) * j, yMin + (yMax - yMin) / (PORTS - 1) * i);
 				addParam(createParamCentered<MatrixButton>(v, module, DetourModule<PORTS>::PARAM_MATRIX + i * PORTS + j));
 			}
 		}
+
+		struct DummyMapButton : ParamWidget {
+			DummyMapButton() {
+				this->box.size = Vec(5.f, 5.f);
+			}
+		};
 
 		for (int i = 0; i < PORTS; i++) {
 			Vec v;
@@ -406,11 +431,17 @@ struct DetourWidget : ModuleWidget {
 			addInput(createInputCentered<StoermelderPort>(v, module, DetourModule<PORTS>::INPUT + i));
 			v = Vec(336.2f, yMin + (yMax - yMin) / (PORTS - 1) * i);
 			addOutput(createOutputCentered<StoermelderPort>(v, module, DetourModule<PORTS>::OUTPUT + i));
-
-			v = Vec(xMin + (xMax - xMin) / (PORTS - 1) * i, 327.9f);
+			v = Vec(320.5f, yMin + (yMax - yMin) / (PORTS - 1) * i - 11.2f);
+			addParam(createParamCentered<DummyMapButton>(v, module, DetourModule<PORTS>::PARAM_Y_MAP + i));
+		}
+		for (int i = 0; i < SENDS; i++) {
+			Vec v;
+			v = Vec(xMin + (xMax - xMin) / (SENDS - 1) * i, 327.9f);
 			addInput(createInputCentered<StoermelderPort>(v, module, DetourModule<PORTS>::INPUT_RETURN + i));
-			v = Vec(xMin + (xMax - xMin) / (PORTS - 1) * i, 297.3f);
+			v = Vec(xMin + (xMax - xMin) / (SENDS - 1) * i, 297.3f);
 			addOutput(createOutputCentered<StoermelderPort>(v, module, DetourModule<PORTS>::OUTPUT_SEND + i));
+			v = Vec(xMin + (xMax - xMin) / (SENDS - 1) * i - 11.2f, 281.9f);
+			addParam(createParamCentered<DummyMapButton>(v, module, DetourModule<PORTS>::PARAM_X_MAP + i));
 		}
 
 		// Lights
@@ -420,8 +451,8 @@ struct DetourWidget : ModuleWidget {
 		}
 
 		for (int i = 0; i < PORTS; i++) {
-			for (int j = 0; j < PORTS; j++) {
-				Vec v = Vec(xMin + (xMax - xMin) / (PORTS - 1) * j, yMin + (yMax - yMin) / (PORTS - 1) * i);
+			for (int j = 0; j < SENDS; j++) {
+				Vec v = Vec(xMin + (xMax - xMin) / (SENDS - 1) * j, yMin + (yMax - yMin) / (PORTS - 1) * i);
 				addChild(createLightCentered<MatrixButtonLight<WhiteLight, DetourModule<PORTS>>>(v, module, DetourModule<PORTS>::LIGHT_MATRIX + i * PORTS + j));
 			}
 		}

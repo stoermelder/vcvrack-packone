@@ -1,9 +1,15 @@
 ### 1.5.0 (in development)
 
 - Module [DETOUR](./docs/Detour.md)
-    - New module, Send/Return switch matrix with support for 8 scenes
+    - New module, 8x8 send/return switch matrix with support for 8 scenes
+- Module [MIDI-STEP](./docs/MidiStep.md)
+    - New module,
+- Module [PILE](./docs/Pile.md)
+    - New module, 
 - Module [SAIL](./docs/Sail.md)
     - New module, control any parameter currently hovered by mouse with CV, especially useful with MIDI-CC
+
+Fixes and Changes
 - Module [CV-MAP](./docs/CVMap.md)
     - Added option to hide parameter indicator squares
 - Module [CV-PAM](./docs/CVPam.md)
