@@ -38,7 +38,7 @@ struct MidiStepModule : Module {
 	int learningId;
 
 	int8_t values[128];
-    int ccs[128];
+	int ccs[128];
 
 	int incPulseCount[PORTS];
 	dsp::PulseGenerator incPulse[PORTS];
@@ -46,18 +46,19 @@ struct MidiStepModule : Module {
 	dsp::PulseGenerator decPulse[PORTS];
 
 	MidiStepModule() {
+		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		onReset();
 	}
 
 	void onReset() override {
 		for (int i = 0; i < 128; i++) {
-            values[i] = 0;
+			values[i] = 0;
 			ccs[i] = -1;
 		}
 		for (int i = 0; i < PORTS; i++) {
 			learnedCcs[i] = i;
-            ccs[i] = i;
+			ccs[i] = i;
 			incPulseCount[i] = 0;
 			decPulseCount[i] = 0;
 		}
@@ -72,37 +73,36 @@ struct MidiStepModule : Module {
 		}
 
 		for (int i = 0; i < PORTS; i++) {
-            if (incPulse[i].process(args.sampleTime)) {
-                outputs[OUTPUT_INC + i].setVoltage(incPulseCount[i] % 2 == 1 ? 10.f : 0.f);
-            }
-            else {
-                if (incPulseCount[i] > 0) {
-                    incPulse[i].trigger();
-                    incPulseCount[i]--;
-                }
-                outputs[OUTPUT_INC + i].setVoltage(0.f);
-            }
+			if (incPulse[i].process(args.sampleTime)) {
+				outputs[OUTPUT_INC + i].setVoltage(incPulseCount[i] % 2 == 1 ? 10.f : 0.f);
+			}
+			else {
+				if (incPulseCount[i] > 0) {
+					incPulse[i].trigger();
+					incPulseCount[i]--;
+				}
+				outputs[OUTPUT_INC + i].setVoltage(0.f);
+			}
 
-            if (decPulse[i].process(args.sampleTime)) {
-                outputs[OUTPUT_DEC + i].setVoltage(decPulseCount[i] % 2 == 1 ? 10.f : 0.f);
-            }
-            else {
-                if (decPulseCount[i] > 0) {
-                    decPulse[i].trigger();
-                    decPulseCount[i]--;
-                }
-                outputs[OUTPUT_DEC + i].setVoltage(0.f);
-            }
+			if (decPulse[i].process(args.sampleTime)) {
+				outputs[OUTPUT_DEC + i].setVoltage(decPulseCount[i] % 2 == 1 ? 10.f : 0.f);
+			}
+			else {
+				if (decPulseCount[i] > 0) {
+					decPulse[i].trigger();
+					decPulseCount[i]--;
+				}
+				outputs[OUTPUT_DEC + i].setVoltage(0.f);
+			}
 		}
 	}
 
 	void processMessage(midi::Message msg) {
 		switch (msg.getStatus()) {
-			// cc
-			case 0xb: {
+			case 0xb: { // cc
 				processCC(msg);
-                break;
-			} 
+				break;
+			}
 		}
 	}
 
@@ -113,33 +113,33 @@ struct MidiStepModule : Module {
 		value = clamp(value, 0, 127);
 		// Learn
 		if (learningId >= 0) {
-            if (learnedCcs[learningId] >= 0) {
-                ccs[learnedCcs[learningId]] = -1;
-            }
-            ccs[cc] = learningId;
+			if (learnedCcs[learningId] >= 0) {
+				ccs[learnedCcs[learningId]] = -1;
+			}
+			ccs[cc] = learningId;
 			learnedCcs[learningId] = cc;
 			learningId = -1;
 			return;
 		}
 
-        switch (mode) {
-            case MODE::BEATSTEP_R1: {
-                if (value <= uint8_t(58)) decPulseCount[ccs[cc]] += 6;
-                else if (value <= uint8_t(61)) decPulseCount[ccs[cc]] += 4;
-                else if (value <= uint8_t(63)) decPulseCount[ccs[cc]] += 2;
-                if (value >= uint8_t(70)) incPulseCount[ccs[cc]] += 6;
-                else if (value >= uint8_t(67)) incPulseCount[ccs[cc]] += 4;
-                else if (value >= uint8_t(65)) incPulseCount[ccs[cc]] += 2;
-                break;
-            }
+		switch (mode) {
+			case MODE::BEATSTEP_R1: {
+				if (value <= uint8_t(58)) decPulseCount[ccs[cc]] += 6;
+				else if (value <= uint8_t(61)) decPulseCount[ccs[cc]] += 4;
+				else if (value <= uint8_t(63)) decPulseCount[ccs[cc]] += 2;
+				if (value >= uint8_t(70)) incPulseCount[ccs[cc]] += 6;
+				else if (value >= uint8_t(67)) incPulseCount[ccs[cc]] += 4;
+				else if (value >= uint8_t(65)) incPulseCount[ccs[cc]] += 2;
+				break;
+			}
 
-            case MODE::BEATSTEP_R2:
-            case MODE::KK_REL: {
-                if (value == uint8_t(127)) decPulseCount[ccs[cc]] += 2;
-                if (value == uint8_t(1)) incPulseCount[ccs[cc]] += 2;
-                break;
-            }
-        }
+			case MODE::BEATSTEP_R2:
+			case MODE::KK_REL: {
+				if (value == uint8_t(127)) decPulseCount[ccs[cc]] += 2;
+				if (value == uint8_t(1)) incPulseCount[ccs[cc]] += 2;
+				break;
+			}
+		}
 
 		values[cc] = value;
 	}
@@ -184,8 +184,8 @@ struct MidiStepModule : Module {
 };
 
 
-struct MyMidiWidget : MidiWidget {
-	void setMidiPort(midi::Port *port) {
+struct MidiStepMidiWidget : MidiWidget {
+	void setMidiPort(midi::Port* port) {
 		MidiWidget::setMidiPort(port);
 
 		driverChoice->textOffset = Vec(6.f, 14.7f);
@@ -210,17 +210,13 @@ struct MyMidiWidget : MidiWidget {
 
 
 template < int PORTS, class COICE >
-struct MyLedWidget : LedDisplay {
+struct MidiStepLedDisplay : LedDisplay {
 	LedDisplaySeparator* hSeparators[PORTS / 4];
 	LedDisplaySeparator* vSeparators[4];
 	COICE* choices[4][PORTS / 4];
 
 	void setModule(MidiStepModule<>* module) {
 		Vec pos = Vec(0, 0);
-
-		LedDisplaySeparator* channelSeparator = createWidget<LedDisplaySeparator>(pos);
-		channelSeparator->box.size.x = box.size.x;
-		addChild(channelSeparator);
 
 		// Add vSeparators
 		for (int x = 1; x < 4; x++) {
@@ -251,12 +247,12 @@ struct MyLedWidget : LedDisplay {
 };
 
 
-struct MyCcChoice : LedDisplayChoice {
+struct MidiStepCcChoice : LedDisplayChoice {
 	MidiStepModule<>* module;
 	int id;
 	int focusCc;
 
-	MyCcChoice() {
+	MidiStepCcChoice() {
 		box.size.y = mm2px(6.666);
 		textOffset.y -= 4.f;
 		textOffset.x -= 2.5f;
@@ -288,15 +284,14 @@ struct MyCcChoice : LedDisplayChoice {
 			text = string::f("%03d", module->learnedCcs[id]);
 			color.a = 1.0;
 			// HACK
-			if (APP->event->selectedWidget == this)
+			if (APP->event->getSelectedWidget() == this)
 				APP->event->setSelected(NULL);
 		}
 	}
 
-	void onButton(const event::Button &e) override {
+	void onButton(const event::Button& e) override {
 		e.stopPropagating();
-		if (!module)
-			return;
+		if (!module) return;
 
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
 			e.consume(this);
@@ -306,8 +301,7 @@ struct MyCcChoice : LedDisplayChoice {
 	}
 
 	void onDeselect(const event::Deselect& e) override {
-		if (!module)
-			return;
+		if (!module) return;
 		if (module->learningId == id) {
 			if (0 <= focusCc && focusCc < 128) {
 				module->learnedCcs[id] = focusCc;
@@ -348,12 +342,12 @@ struct MidiStepWidget : ThemedModuleWidget<MidiStepModule<>> {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		MyMidiWidget* midiInputWidget = createWidget<MyMidiWidget>(Vec(10.0f, 36.4f));
+		MidiStepMidiWidget* midiInputWidget = createWidget<MidiStepMidiWidget>(Vec(10.0f, 36.4f));
 		midiInputWidget->box.size = Vec(130.0f, 67.0f);
 		midiInputWidget->setMidiPort(module ? &module->midiInput : NULL);
 		addChild(midiInputWidget);
 
-		MyLedWidget<8, MyCcChoice>* midiWidget = createWidget<MyLedWidget<8, MyCcChoice>>(Vec(10.f, 108.7f));
+		MidiStepLedDisplay<8, MidiStepCcChoice>* midiWidget = createWidget<MidiStepLedDisplay<8, MidiStepCcChoice>>(Vec(10.f, 108.7f));
 		midiWidget->box.size = Vec(130.0f, 40.0f);
 		midiWidget->setModule(module);
 		addChild(midiWidget);
@@ -380,6 +374,7 @@ struct MidiStepWidget : ThemedModuleWidget<MidiStepModule<>> {
 	void appendContextMenu(Menu* menu) override {
 		ThemedModuleWidget<MidiStepModule<>>::appendContextMenu(menu);
 		MidiStepModule<>* module = dynamic_cast<MidiStepModule<>*>(this->module);
+
 		struct ModeMenuItem : MenuItem {
 			MidiStepModule<>* module;
 			ModeMenuItem() {
@@ -413,6 +408,6 @@ struct MidiStepWidget : ThemedModuleWidget<MidiStepModule<>> {
 	}
 };
 
-}
+} // namespace MidiStep
 
 Model* modelMidiStep = createModel<MidiStep::MidiStepModule<>, MidiStep::MidiStepWidget>("MidiStep");
