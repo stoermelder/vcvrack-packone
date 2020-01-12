@@ -287,8 +287,8 @@ struct MapModuleChoice : LedDisplayChoice {
 
 	void onButton(const event::Button& e) override {
 		e.stopPropagating();
-		if (!module)
-			return;
+		if (!module) return;
+		if (module->locked) return;
 
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
 			e.consume(this);
@@ -333,8 +333,8 @@ struct MapModuleChoice : LedDisplayChoice {
 	}
 
 	void onSelect(const event::Select& e) override {
-		if (!module)
-			return;
+		if (!module) return;
+		if (module->locked) return;
 
 		ScrollWidget *scroll = getAncestorOfType<ScrollWidget>();
 		scroll->scrollTo(box);
@@ -345,10 +345,9 @@ struct MapModuleChoice : LedDisplayChoice {
 	}
 
 	void onDeselect(const event::Deselect& e) override {
-		if (!module)
-			return;
-		if (!processEvents)
-			return;
+		if (!module) return;
+		if (!processEvents) return;
+
 		// Check if a ParamWidget was touched, unstable API
 		ParamWidget *touchedParam = APP->scene->rack->touchedParam;
 		if (touchedParam && touchedParam->paramQuantity->module != module) {
@@ -503,6 +502,18 @@ struct MapModuleDisplay : LedDisplay {
 			choices[id] = choice;
 
 			pos = choice->box.getBottomLeft();
+		}
+	}
+
+	void draw(const DrawArgs& args) override {
+		LedDisplay::draw(args);
+		if (module && module->locked) {
+			float stroke = 2.f;
+			nvgBeginPath(args.vg);
+			nvgRoundedRect(args.vg, stroke / 2, stroke / 2, box.size.x - stroke, box.size.y - stroke, 5.0);
+			nvgStrokeWidth(args.vg, stroke);
+			nvgStrokeColor(args.vg, color::mult(color::WHITE, 0.5f));
+			nvgStroke(args.vg);
 		}
 	}
 };

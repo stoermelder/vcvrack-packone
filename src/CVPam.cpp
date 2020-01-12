@@ -30,7 +30,9 @@ struct CVPamModule : MapModuleBase<MAX_CHANNELS> {
 	bool bipolarOutput;
 	/** [Stored to Json] */
 	bool audioRate;
-
+	/** [Stored to Json] */
+	bool locked;
+	
 	dsp::ClockDivider processDivider;
 	dsp::ClockDivider lightDivider;
 
@@ -49,6 +51,7 @@ struct CVPamModule : MapModuleBase<MAX_CHANNELS> {
 	void onReset() override {
 		bipolarOutput = false;
 		audioRate = true;
+		locked = false;
 		MapModuleBase<MAX_CHANNELS>::onReset();
 	}
 
@@ -100,6 +103,7 @@ struct CVPamModule : MapModuleBase<MAX_CHANNELS> {
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 		json_object_set_new(rootJ, "bipolarOutput", json_boolean(bipolarOutput));
 		json_object_set_new(rootJ, "audioRate", json_boolean(audioRate));
+		json_object_set_new(rootJ, "locked", json_boolean(locked));
 		return rootJ;
 	}
 
@@ -109,9 +113,10 @@ struct CVPamModule : MapModuleBase<MAX_CHANNELS> {
 
 		json_t* bipolarOutputJ = json_object_get(rootJ, "bipolarOutput");
 		bipolarOutput = json_boolean_value(bipolarOutputJ);
-
 		json_t* audioRateJ = json_object_get(rootJ, "audioRate");
 		if (audioRateJ) audioRate = json_boolean_value(audioRateJ);
+		json_t* lockedJ = json_object_get(rootJ, "locked");
+		if (lockedJ) locked = json_boolean_value(lockedJ);
 	}
 };
 
@@ -202,12 +207,26 @@ struct CVPamWidget : ThemedModuleWidget<CVPamModule> {
 			}
 		};
 
+		struct LockedItem : MenuItem {
+			CVPamModule* module;
+
+			void onAction(const event::Action& e) override {
+				module->locked ^= true;
+			}
+
+			void step() override {
+				rightText = module->locked ? "✔" : "";
+				MenuItem::step();
+			}
+		};
+
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<UniBiItem>(&MenuItem::text, "Signal output", &UniBiItem::module, module));
 		menu->addChild(construct<AudioRateItem>(&MenuItem::text, "Audio rate processing", &AudioRateItem::module, module));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<TextScrollItem>(&MenuItem::text, "Text scrolling", &TextScrollItem::module, module));
 		menu->addChild(construct<MappingIndicatorHiddenItem>(&MenuItem::text, "Hide mapping indicators", &MappingIndicatorHiddenItem::module, module));
+		menu->addChild(construct<LockedItem>(&MenuItem::text, "Lock mapping slots", &LockedItem::module, module));
 	}
 };
 

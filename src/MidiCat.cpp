@@ -124,6 +124,8 @@ struct MidiCatModule : Module {
 	bool textScrolling = true;
 	/** [Stored to Json] */
 	std::string textLabel[MAX_CHANNELS];
+	/** [Stored to Json] */
+	bool locked;
 
 	NVGcolor mappingIndicatorColor = nvgRGB(0xff, 0xff, 0x40);
 	/** [Stored to JSON] */
@@ -187,6 +189,7 @@ struct MidiCatModule : Module {
 			//filterInitialized[i] = false;
 			//valueFilters[i].reset();
 		}
+		locked = false;
 		midiInput.reset();
 		midiOutput.reset();
 		midiOutput.midi::Output::reset();
@@ -551,6 +554,7 @@ struct MidiCatModule : Module {
 
 		json_object_set_new(rootJ, "textScrolling", json_boolean(textScrolling));
 		json_object_set_new(rootJ, "mappingIndicatorHidden", json_boolean(mappingIndicatorHidden));
+		json_object_set_new(rootJ, "locked", json_boolean(locked));
 
 		json_t *mapsJ = json_array();
 		for (int id = 0; id < mapLen; id++) {
@@ -579,6 +583,8 @@ struct MidiCatModule : Module {
 		textScrolling = json_boolean_value(textScrollingJ);
 		json_t* mappingIndicatorHiddenJ = json_object_get(rootJ, "mappingIndicatorHidden");
 		mappingIndicatorHidden = json_boolean_value(mappingIndicatorHiddenJ);
+		json_t* lockedJ = json_object_get(rootJ, "locked");
+		if (lockedJ) locked = json_boolean_value(lockedJ);
 
 		json_t *mapsJ = json_object_get(rootJ, "maps");
 		if (mapsJ) {
@@ -965,6 +971,17 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 		MidiCatModule *module = dynamic_cast<MidiCatModule*>(this->module);
 		assert(module);
 
+		struct MidiMapImportItem : MenuItem {
+			MidiCatWidget *moduleWidget;
+
+			void onAction(const event::Action &e) override {
+				moduleWidget->loadMidiMapPreset_dialog();
+			}
+		};
+
+		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<MidiMapImportItem>(&MenuItem::text, "Import MIDI-MAP preset", &MidiMapImportItem::moduleWidget, this));
+
 		struct TextScrollItem : MenuItem {
 			MidiCatModule *module;
 
@@ -991,21 +1008,24 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 			}
 		};
 
+		struct LockedItem : MenuItem {
+			MidiCatModule* module;
+
+			void onAction(const event::Action& e) override {
+				module->locked ^= true;
+			}
+
+			void step() override {
+				rightText = module->locked ? "✔" : "";
+				MenuItem::step();
+			}
+		};
+
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<MidiModeMenuItem>(&MenuItem::text, "Mode", &MidiModeMenuItem::module, module));
 		menu->addChild(construct<TextScrollItem>(&MenuItem::text, "Text scrolling", &TextScrollItem::module, module));
 		menu->addChild(construct<MappingIndicatorHiddenItem>(&MenuItem::text, "Hide mapping indicators", &MappingIndicatorHiddenItem::module, module));
-		menu->addChild(new MenuSeparator());
-
-		struct MidiMapImportItem : MenuItem {
-			MidiCatWidget *moduleWidget;
-
-			void onAction(const event::Action &e) override {
-				moduleWidget->loadMidiMapPreset_dialog();
-			}
-		};
-
-		menu->addChild(construct<MidiMapImportItem>(&MenuItem::text, "Import MIDI-MAP preset", &MidiMapImportItem::moduleWidget, this));
+		menu->addChild(construct<LockedItem>(&MenuItem::text, "Lock mapping slots", &LockedItem::module, module));
 	}
 };
 

@@ -11,11 +11,14 @@
 
 Fixes and Changes
 - Module [CV-MAP](./docs/CVMap.md)
-    - Added option to hide parameter indicator squares
+    - Added option for hiding parameter indicator squares
+    - Added option for locking mapping slots to prevent changes by accident (#89)
 - Module [CV-PAM](./docs/CVPam.md)
-    - Added option to hide parameter indicator squares
+    - Added option for hiding parameter indicator squares
+    - Added option for locking mapping slots to prevent changes by accident (#89)
 - Module [MIDI-CAT](./docs/MidiCat.md)
-    - Added option to hide parameter indicator squares
+    - Added option for hiding parameter indicator squares
+    - Added option for locking mapping slots to prevent changes by accident (#89)
     - Fixed broken toggle-mode for MIDI note-mapping
 - Module [INFIX](./docs/Infix.md)
     - Added Leds for used channels on polyphonic cables
@@ -24,8 +27,8 @@ Fixes and Changes
     - Added option for excluding attenuverters from scenes
     - Added ability to copy scenes
     - Added ability to reset scenes
-    - Added option to disable SCENE-port
-    - Added option to change the number of active scenes
+    - Added option for disabling the SCENE-port
+    - Added option for changing the number of active scenes
     - Fixed broken fading if either fade-in or fade-out is set to zero
 - Added dark panels for all modules (#15)
 - Added globals settings, esp. for dark panels als default

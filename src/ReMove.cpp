@@ -136,6 +136,8 @@ struct ReMoveModule : MapModuleBase<1> {
     /** [Stored to JSON] sample rate for recording */
     float sampleRate = 1.f/60.f;
 
+    bool locked = false;
+
     float engineSampleTime;
     dsp::Timer sampleTimer;
 
