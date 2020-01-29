@@ -18,7 +18,7 @@ struct ThemedModuleWidget : BASE {
 			darkPanel = new SvgPanel();
 			darkPanel->setBackground(APP->window->loadSvg(asset::plugin(pluginInstance, "res/dark/" + baseName + ".svg")));
 			darkPanel->visible = false;
-			BASE::addChild(darkPanel);
+			BASE::addChildBottom(darkPanel);
 		}
 		else {
 			if (pluginSettings.panelThemeDefault == 0)
@@ -298,7 +298,7 @@ struct StoermelderPortLight : TBase {
 };
 
 
-template < typename LIGHT = BlueLight, int COLORS = 1>
+template < typename LIGHT = WhiteLight, int COLORS = 1>
 struct PolyLedWidget : Widget {
 	PolyLedWidget() {
 		box.size = mm2px(Vec(6.f, 6.f));

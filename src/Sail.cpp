@@ -66,7 +66,7 @@ struct SailModule : Module {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configParam(PARAM_SLEW, 0.f, 5.f, 0.f, "Slew limiting", "s");
-		configParam(PARAM_STEP, 0.f, 2.f, 0.2f, "Stepsize", "V");
+		configParam(PARAM_STEP, 0.f, 2.f, 0.2f, "Stepsize", "%", 0.f, 10.f);
 		processDivider.setDivision(32);
 		lightDivider.setDivision(512);
 		onReset();
