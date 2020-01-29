@@ -1,15 +1,19 @@
-### 1.5.0 (in development)
+## 1.6.0 (in development)
 
 - Module [DETOUR](./docs/Detour.md)
     - New module, 8x8 send/return switch matrix with support for 8 scenes
-- Module [MIDI-STEP](./docs/MidiStep.md)
-    - New module,
-- Module [PILE](./docs/Pile.md)
-    - New module, 
-- Module [SAIL](./docs/Sail.md)
-    - New module, control any parameter currently hovered by mouse with CV, especially useful with MIDI-CC
 
-Fixes and Changes
+## 1.5.0
+
+- Module [MIDI-STEP](./docs/MidiStep.md)
+    - New module, utility for relative modes of endless knobs on your MIDI controller such as Arturia Beatstep
+- Module [PILE](./docs/Pile.md)
+    - New module, translate increment triggers or decrement triggers in an absolute voltage, especially useful with MIDI-STEP
+- Module [SAIL](./docs/Sail.md)
+    - New module, control any parameter currently hovered by mouse with CV, especially useful with MIDI-CC or MIDI-STEP
+
+### Fixes and Changes
+
 - Module [CV-MAP](./docs/CVMap.md)
     - Added option for hiding parameter indicator squares
     - Added option for locking mapping slots to prevent changes by accident (#89)
@@ -33,7 +37,7 @@ Fixes and Changes
 - Added dark panels for all modules (#15)
 - Added globals settings, esp. for dark panels als default
 
-### 1.4.0
+## 1.4.0
 
 - Module [INTERMIX](./docs/Intermix.md)
     - New module, precision adder 8x8 switch matrix with support for 8 scenes
@@ -47,7 +51,7 @@ Fixes and Changes
     - Fixed wrong handling of CC-mappings in Direct-mode on parameter changes made within Rack
     - Added option to enter custom labels for mapping slots (#75)
 
-### 1.3.0
+## 1.3.0
 
 - Module [ARENA](./docs/Arena.md)
     - New module, 2-dimensional XY-Mixer for 8 sources with various modulation targets and graphical interface
@@ -71,7 +75,7 @@ Fixes and Changes
     - Added SMTH-parameter for linear smoothing especially on jumps at sequence end and sequence change (#14)
 - All stoermelder-modules are now shipped with updated panels and minor layout fixes
 
-### 1.2.0
+## 1.2.0
 
 - Module [4ROUNDS](./docs/FourRounds.md)
     - New module, randomizer for up to 16 input signals to create 15 output signals
@@ -92,7 +96,7 @@ Fixes and Changes
     - Load and save dialogs default to "patches" folder of the current user (#41)
 - All stoermelder-modules are now shipped with dark mounting-screws, improved jack-ports and handy trimpots
 
-### 1.1.0
+## 1.1.0
 
 - Module [MIDI-CAT](./docs/MidiCat.md)
     - New module, mapping module similar to VCV's MIDI-MAP with midi feedback, note mapping and cc pickup-mode
@@ -111,7 +115,7 @@ Fixes and Changes
 - Modules [CV-MAP](./docs/CVMap.md), [CV-PAM](./docs/CVPam.md), [ReMOVE Lite](./docs/ReMove.md), [µMAP](./docs/CVMapMicro.md)
     - Fixed crash of Rack if deleting the module while in mapping mode
 
-### 1.0.5
+## 1.0.5
 
 - Module [8FACE](./docs/EightFace.md)
     - New module, preset sequencer for 8 presets of any module
@@ -121,7 +125,7 @@ Fixes and Changes
     - Added random automation-curves on "Randomize" of the module
     - Starting a recording generates an item in the Rack undo-history
 
-### 1.0.4
+## 1.0.4
 
 - Module [STRIP](./docs/Strip.md)
     - New module, manage a group of modules in a patch, providing load, save as, disable and randomize
@@ -133,14 +137,14 @@ Fixes and Changes
     - OUT-port bypasses IN-port when selecting an empty sequence
     - Fixed bug when saving sequences with lots of constant values (compression-bug)
 
-### 1.0.3
+## 1.0.3
 
 - Module [INFIX](./docs/Infix.md)
     - New module, insert for polyphonic cables
 - Module [µMAP](./docs/CVMapMicro.md)
     - Fixed bug causing "damaged" module panels (array out of bounds)
 
-### 1.0.2
+## 1.0.2
 
 - Module [ReMOVE Lite](./docs/ReMove.md)
     - New module, allows recording of parameter automation of knobs, switches or sliders
@@ -156,7 +160,7 @@ Fixes and Changes
 - Module [ROTOR Model A](./docs/RotorA.md)
     - Reduced panel width
     
-### 1.0.0
+## 1.0.0
 
 - Module [ROTOR Model A](./docs/RotorA.md)
     - New module
@@ -166,6 +170,6 @@ Fixes and Changes
 - Module [CV-PAM](./docs/CVPam.md)
     - Added text scrolling for longer module and parameter names
 
-### 1.0.0-rc
+## 1.0.0-rc
 
 - Initial public release

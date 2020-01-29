@@ -1,7 +1,7 @@
 # stoermelder PackOne
 
 <!-- Version and License Badges -->
-![Version](https://img.shields.io/badge/version-1.4.0-green.svg?style=flat-square)
+![Version](https://img.shields.io/badge/version-1.5.0-green.svg?style=flat-square)
 ![Rack SDK](https://img.shields.io/badge/Rack--SDK-1.1.6-red.svg?style=flat-square)
 ![License](https://img.shields.io/badge/license-GPLv3-blue.svg?style=flat-square)
 ![Language](https://img.shields.io/badge/language-C++-yellow.svg?style=flat-square)
@@ -23,8 +23,11 @@ The PackOne plugin gives you some utility modules for [VCV Rack](https://www.vcv
 - [MAZE](./docs/Maze.md): 4 channel sequencer running on a 2-dimensional grid
 - [µMAP](./docs/CVMapMicro.md): a single instance of CV-MAP's slots with attenuverters
 - [MIDI-CAT](./docs/MidiCat.md): map parameters to midi controllers similar to MIDI-MAP with midi feedback and note mapping
+- [MIDI-STEP](./docs/MidiStep.md): utility for relative modes of endless knobs on your MIDI controller such as Arturia Beatstep
+- [PILE](./docs/Pile.md): utility which translate increment triggers or decrement triggers in an absolute voltage, especially useful with MIDI-STEP
 - [ReMOVE Lite](./docs/ReMove.md): a recorder for knob/slider/switch-automation
 - [ROTOR Model A](./docs/RotorA.md): spread a carrier signal across 2-16 output channels using CV
+- [SAIL](./docs/Sail.md): control any parameter currently hovered by mouse with CV, especially useful with MIDI-CC
 - [SIPO](./docs/Sipo.md): serial-in parallel-out shift register with polyphonic output and CV controls
 - [STRIP](./docs/Strip.md): manage a group of modules in a patch, providing load, save as, disable and randomize
 
@@ -37,6 +40,6 @@ Follow the [build instructions](https://vcvrack.com/manual/Building.html#buildin
 
 ## License
 
-All **source code** is copyright © 2019 Benjamin Dill and is licensed under the [GNU General Public License, version v3.0](./LICENSE.txt).
+All **source code** is copyright © 2020 Benjamin Dill and is licensed under the [GNU General Public License, version v3.0](./LICENSE.txt).
 
 All **files** and **graphics** in the `res` and `res-src` directories are licensed under [CC BY-NC-ND 4.0](https://creativecommons.org/licenses/by-nc-nd/4.0/). You may not distribute modified adaptations of these graphics.
