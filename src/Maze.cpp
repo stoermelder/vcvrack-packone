@@ -89,6 +89,8 @@ struct MazeModule : Module {
 	TURNMODE turnMode[NUM_PORTS];
 	/** [Stored to JSON] */
 	OUTMODE outMode[NUM_PORTS];
+	/** [Stored to JSON] */
+	bool normalizePorts;
 
 	/** [Stored to JSON] */
 	bool ratchetingEnabled;
@@ -139,6 +141,7 @@ struct MazeModule : Module {
 		}
 		ratchetingEnabled = true;
 		ratchetingSetProb();
+		normalizePorts = true;
 		gridDirty = true;
 		Module::onReset();
 	}
@@ -269,7 +272,7 @@ struct MazeModule : Module {
 				return r;
 			}
 			else {
-				return resetTrigger0;
+				return normalizePorts && resetTrigger0;
 			}
 		}
 	}
@@ -289,7 +292,7 @@ struct MazeModule : Module {
 				return r && clockTrigger[port].process(inputs[CLK_INPUT + port].getVoltage());
 			}
 			else {
-				return clockTrigger0;
+				return normalizePorts && clockTrigger0;
 			}
 		}
 	}
@@ -304,7 +307,7 @@ struct MazeModule : Module {
 				return turnTrigger[port].process(inputs[TURN_INPUT + port].getVoltage());
 			}
 			else {
-				return turnTrigger0;
+				return normalizePorts && turnTrigger0;
 			}
 		}
 	}
@@ -411,6 +414,7 @@ struct MazeModule : Module {
 		json_object_set_new(rootJ, "usedSize", json_integer(usedSize));
 		json_object_set_new(rootJ, "ratchetingEnabled", json_boolean(ratchetingEnabled));
 		json_object_set_new(rootJ, "ratchetingProb", json_real(ratchetingProb));
+		json_object_set_new(rootJ, "normalizePorts", json_boolean(normalizePorts));
 		return rootJ;
 	}
 
@@ -450,6 +454,9 @@ struct MazeModule : Module {
 		usedSize = json_integer_value(json_object_get(rootJ, "usedSize"));
 		ratchetingEnabled = json_boolean_value(json_object_get(rootJ, "ratchetingEnabled"));
 		ratchetingProb = json_real_value(json_object_get(rootJ, "ratchetingProb"));
+		json_t* normalizePortsJ = json_object_get(rootJ, "normalizePorts");
+		if (normalizePortsJ) normalizePorts = json_boolean_value(normalizePortsJ);
+
 		gridDirty = true;
 	}
 };
@@ -1102,6 +1109,27 @@ struct MazeWidget32 : ThemedModuleWidget<MazeModule<32, 4>> {
 		addOutput(createOutputCentered<StoermelderPort>(Vec(306.2f, 292.2f), module, MODULE::CV_OUTPUT + 2));
 		addChild(createLightCentered<StoermelderPortLight<GreenRedLight>>(Vec(306.2f, 327.6f), module, MODULE::CV_LIGHT + 6));
 		addOutput(createOutputCentered<StoermelderPort>(Vec(306.2f, 327.6f), module, MODULE::CV_OUTPUT + 3));
+	}
+
+	void appendContextMenu(Menu* menu) override {
+		ThemedModuleWidget<MODULE>::appendContextMenu(menu);
+		MODULE* module = dynamic_cast<MODULE*>(this->module);
+
+		struct NormalizePortsItem : MenuItem {
+			MODULE* module;
+			
+			void onAction(const event::Action& e) override {
+				module->normalizePorts ^= true;
+			}
+
+			void step() override {
+				rightText = module->normalizePorts ? "✔" : "";
+				MenuItem::step();
+			}
+		};
+
+		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<NormalizePortsItem>(&MenuItem::text, "Normalize inputs to Yellow", &NormalizePortsItem::module, module));
 	}
 };
 

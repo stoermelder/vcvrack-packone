@@ -3,12 +3,17 @@
 - Module [DETOUR](./docs/Detour.md)
     - New module, 8x8 send/return switch matrix with support for 8 scenes
 
+### Fixes and Changes
+
+- Module [MAZE](./docs/Maze.md)
+    - Added option for disabling normalization to the yellow input ports (#95)
+
 ## 1.5.0
 
 - Module [MIDI-STEP](./docs/MidiStep.md)
     - New module, utility for relative modes of endless knobs on your MIDI controller such as Arturia Beatstep
 - Module [PILE](./docs/Pile.md)
-    - New module, translate increment triggers or decrement triggers in an absolute voltage, especially useful with MIDI-STEP
+    - New module, translate increment triggers or decrement triggers into an absolute voltage, especially useful with MIDI-STEP
 - Module [SAIL](./docs/Sail.md)
     - New module, control any parameter currently hovered by mouse with CV, especially useful with MIDI-CC or MIDI-STEP
 
