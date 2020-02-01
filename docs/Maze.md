@@ -2,6 +2,8 @@
 
 MAZE is a random ratcheting sequencer with 4 independent outputs which run on a common 2-dimensional grid. This module is all about randomness and limitations, so you can't control everything.
 
+[Live stream](https://www.youtube.com/watch?v=pOcYGj1Qb9M) of [Omri Cohen](https://omricohencomposer.bandcamp.com/) using Maze for sequencing.
+
 ### The grid
 
 The grid is the main part of MAZE with up to four color-coded "cursors". Cursors are visible and enabled if one of their ports CV or TRIG outputs are connected. Each cell of the grid can have one of three states:
