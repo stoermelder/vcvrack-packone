@@ -18,4 +18,8 @@ I don't own all of following devices so I can provide only limited supported for
 
 ![MIDI-STEP Behringer controller](./MidiStep-Behringer.jpg)
 
+- **DJ Tech Tools Midi Fighter Twister.** Set the "Encoder Type" to "ENC 3FH/41H" in the MidiFighter Utility
+
+![MIDI-STEP DJ Tech Tools controller](./MidiStep-DJTT.png)
+
 MIDI-STEP was added in v1.5.0 of PackOne.
