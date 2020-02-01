@@ -7,6 +7,7 @@
 
 - Module [MAZE](./docs/Maze.md)
     - Added option for disabling normalization to the yellow input ports (#95)
+    - Added independent ratcheting settings for each sequencer-playhead (#94)
 
 ## 1.5.0
 

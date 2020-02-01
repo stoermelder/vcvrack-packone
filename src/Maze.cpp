@@ -56,7 +56,7 @@ struct MazeModule : Module {
 	const int numPorts = NUM_PORTS;
 
 	std::default_random_engine randGen{(uint16_t)std::chrono::system_clock::now().time_since_epoch().count()};
-	std::geometric_distribution<int>* geoDist = NULL;
+	std::geometric_distribution<int>* geoDist[NUM_PORTS] = {};
 
 	/** [Stored to JSON] */
 	int panelTheme = 0;
@@ -93,9 +93,9 @@ struct MazeModule : Module {
 	bool normalizePorts;
 
 	/** [Stored to JSON] */
-	bool ratchetingEnabled;
+	bool ratchetingEnabled[NUM_PORTS];
 	/** [Stored to JSON] */
-	float ratchetingProb;
+	float ratchetingProb[NUM_PORTS];
 
 	dsp::SchmittTrigger clockTrigger[NUM_PORTS];
 	bool clockTrigger0;
@@ -125,7 +125,9 @@ struct MazeModule : Module {
 	}
 
 	~MazeModule() {
-		delete geoDist;
+		for (int i = 0; i < NUM_PORTS; i++) {
+			delete geoDist[i];
+		}
 	}
 
 	void onReset() override {
@@ -138,9 +140,10 @@ struct MazeModule : Module {
 			turnMode[i] = TURNMODE::NINETY;
 			outMode[i] = OUTMODE::UNI_3V;
 			resetTimer[i].reset();
+			ratchetingEnabled[i] = true;
+			ratchetingSetProb(i);
 		}
-		ratchetingEnabled = true;
-		ratchetingSetProb();
+
 		normalizePorts = true;
 		gridDirty = true;
 		Module::onReset();
@@ -184,9 +187,9 @@ struct MazeModule : Module {
 						doPulse = true;
 						break;
 					case GRIDSTATE::RANDOM:
-						if (ratchetingEnabled) {
-							if (geoDist) 
-								multiplier[i].trigger((*geoDist)(randGen));
+						if (ratchetingEnabled[i]) {
+							if (geoDist[i])
+								multiplier[i].trigger((*geoDist[i])(randGen));
 						}
 						else {
 							doPulse = random::uniform() >= 0.5f;
@@ -367,10 +370,11 @@ struct MazeModule : Module {
 		gridDirty = true;
 	}
 
-	void ratchetingSetProb(float prob = 0.35f) {
-		if (geoDist) delete geoDist;
-		geoDist = new std::geometric_distribution<int>(prob);
-		ratchetingProb = prob;
+	void ratchetingSetProb(int id, float prob = 0.35f) {
+		auto geoDistOld = geoDist[id];
+		geoDist[id] = new std::geometric_distribution<int>(prob);
+		if (geoDistOld) delete geoDistOld;
+		ratchetingProb[id] = prob;
 	}
 
 	json_t* dataToJson() override {
@@ -407,13 +411,13 @@ struct MazeModule : Module {
 			json_object_set_new(portJ, "yDir", json_integer(yDir[i]));
 			json_object_set_new(portJ, "turnMode", json_integer(turnMode[i]));
 			json_object_set_new(portJ, "outMode", json_integer(outMode[i]));
+			json_object_set_new(portJ, "ratchetingProb", json_real(ratchetingProb[i]));
+			json_object_set_new(portJ, "ratchetingEnabled", json_boolean(ratchetingEnabled[i]));
 			json_array_append_new(portsJ, portJ);
 		}
 		json_object_set_new(rootJ, "ports", portsJ);
 
 		json_object_set_new(rootJ, "usedSize", json_integer(usedSize));
-		json_object_set_new(rootJ, "ratchetingEnabled", json_boolean(ratchetingEnabled));
-		json_object_set_new(rootJ, "ratchetingProb", json_real(ratchetingProb));
 		json_object_set_new(rootJ, "normalizePorts", json_boolean(normalizePorts));
 		return rootJ;
 	}
@@ -449,13 +453,26 @@ struct MazeModule : Module {
 			yDir[portIndex] = json_integer_value(json_object_get(portJ, "yDir"));
 			turnMode[portIndex] = (TURNMODE)json_integer_value(json_object_get(portJ, "turnMode"));
 			outMode[portIndex] = (OUTMODE)json_integer_value(json_object_get(portJ, "outMode"));
+			ratchetingEnabled[portIndex] = json_boolean_value(json_object_get(portJ, "ratchetingEnabled"));
+
+			json_t* ratchetingProbJ = json_object_get(portJ, "ratchetingProb");
+			if (ratchetingProbJ) {
+				ratchetingSetProb(portIndex, json_real_value(ratchetingProbJ));
+			}
 		}
 
 		usedSize = json_integer_value(json_object_get(rootJ, "usedSize"));
-		ratchetingEnabled = json_boolean_value(json_object_get(rootJ, "ratchetingEnabled"));
-		ratchetingProb = json_real_value(json_object_get(rootJ, "ratchetingProb"));
 		json_t* normalizePortsJ = json_object_get(rootJ, "normalizePorts");
 		if (normalizePortsJ) normalizePorts = json_boolean_value(normalizePortsJ);
+
+		json_t* ratchetingEnabledJ = json_object_get(rootJ, "ratchetingEnabled");
+		json_t* ratchetingProbJ = json_object_get(rootJ, "ratchetingProb");
+		if (ratchetingEnabledJ) {
+			for (int i = 0; i < NUM_PORTS; i++) {
+				ratchetingEnabled[i] = json_boolean_value(ratchetingEnabledJ);
+				ratchetingSetProb(i, json_real_value(ratchetingProbJ));
+			}
+		}
 
 		gridDirty = true;
 	}
@@ -593,53 +610,6 @@ struct GridClearMenuItem : MenuItem {
 
 		h->newModuleJ = module->toJson();
 		APP->history->push(h);
-	}
-};
-
-template < typename MODULE >
-struct RatchetingMenuItem : MenuItem {
-	MODULE* module;
-
-	void onAction(const event::Action& e) override {
-		module->ratchetingEnabled ^= true;
-	}
-
-	void step() override {
-		rightText = module->ratchetingEnabled ? "✔" : "";
-		MenuItem::step();
-	}
-};
-
-template < typename MODULE >
-struct RatchetingProbMenuItem : MenuItem {
-	RatchetingProbMenuItem() {
-		rightText = RIGHT_ARROW;
-	}
-
-	struct RatchetingProbItem : MenuItem {
-		MODULE* module;
-		float ratchetingProb;
-		
-		void onAction(const event::Action& e) override {
-			module->ratchetingSetProb(ratchetingProb);
-		}
-
-		void step() override {
-			rightText = module->ratchetingProb == ratchetingProb ? "✔" : "";
-			MenuItem::step();
-		}
-	};
-
-	MODULE* module;
-	Menu* createChildMenu() override {
-		Menu* menu = new Menu;
-		menu->addChild(construct<RatchetingProbItem>(&MenuItem::text, "50%", &RatchetingProbItem::module, module, &RatchetingProbItem::ratchetingProb, 0.5f));
-		menu->addChild(construct<RatchetingProbItem>(&MenuItem::text, "60%", &RatchetingProbItem::module, module, &RatchetingProbItem::ratchetingProb, 0.4f));
-		menu->addChild(construct<RatchetingProbItem>(&MenuItem::text, "65%", &RatchetingProbItem::module, module, &RatchetingProbItem::ratchetingProb, 0.35f));
-		menu->addChild(construct<RatchetingProbItem>(&MenuItem::text, "70%", &RatchetingProbItem::module, module, &RatchetingProbItem::ratchetingProb, 0.3f));
-		menu->addChild(construct<RatchetingProbItem>(&MenuItem::text, "80%", &RatchetingProbItem::module, module, &RatchetingProbItem::ratchetingProb, 0.2f));
-		menu->addChild(construct<RatchetingProbItem>(&MenuItem::text, "90%", &RatchetingProbItem::module, module, &RatchetingProbItem::ratchetingProb, 0.1f));
-		return menu;
 	}
 };
 
@@ -948,6 +918,7 @@ struct MazeStartPosEditWidget : OpaqueWidget, MazeDrawHelper<MODULE> {
 			}
 		};
 
+		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Turn mode"));
 		menu->addChild(construct<TurnModeItem>(&MenuItem::text, "Ninety", &TurnModeItem::module, module, &TurnModeItem::id, selectedId, &TurnModeItem::turnMode, TURNMODE::NINETY));
 		menu->addChild(construct<TurnModeItem>(&MenuItem::text, "One-Eighty", &TurnModeItem::module, module, &TurnModeItem::id, selectedId, &TurnModeItem::turnMode, TURNMODE::ONEEIGHTY));
@@ -967,11 +938,65 @@ struct MazeStartPosEditWidget : OpaqueWidget, MazeDrawHelper<MODULE> {
 			}
 		};
 
+		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "CV mode"));
 		menu->addChild(construct<OutModeItem>(&MenuItem::text, "-5..5V", &OutModeItem::module, module, &OutModeItem::id, selectedId, &OutModeItem::outMode, OUTMODE::BI_5V));
 		menu->addChild(construct<OutModeItem>(&MenuItem::text, "0..5V", &OutModeItem::module, module, &OutModeItem::id, selectedId, &OutModeItem::outMode, OUTMODE::UNI_5V));
 		menu->addChild(construct<OutModeItem>(&MenuItem::text, "0..3V", &OutModeItem::module, module, &OutModeItem::id, selectedId, &OutModeItem::outMode, OUTMODE::UNI_3V));
 		menu->addChild(construct<OutModeItem>(&MenuItem::text, "0..1V", &OutModeItem::module, module, &OutModeItem::id, selectedId, &OutModeItem::outMode, OUTMODE::UNI_1V));
+
+		struct RatchetingMenuItem : MenuItem {
+			MODULE* module;
+			int id;
+
+			void onAction(const event::Action& e) override {
+				module->ratchetingEnabled[id] ^= true;
+			}
+
+			void step() override {
+				rightText = module->ratchetingEnabled[id] ? "✔" : "";
+				MenuItem::step();
+			}
+		};
+
+		struct RatchetingProbMenuItem : MenuItem {
+			int id;
+
+			RatchetingProbMenuItem() {
+				rightText = RIGHT_ARROW;
+			}
+
+			struct RatchetingProbItem : MenuItem {
+				MODULE* module;
+				float ratchetingProb;
+				int id;
+
+				void onAction(const event::Action& e) override {
+					module->ratchetingSetProb(id, ratchetingProb);
+				}
+
+				void step() override {
+					rightText = module->ratchetingProb[id] == ratchetingProb ? "✔" : "";
+					MenuItem::step();
+				}
+			};
+
+			MODULE* module;
+			Menu* createChildMenu() override {
+				Menu* menu = new Menu;
+				menu->addChild(construct<RatchetingProbItem>(&MenuItem::text, "50%", &RatchetingProbItem::module, module, &RatchetingProbItem::id, id, &RatchetingProbItem::ratchetingProb, 0.5f));
+				menu->addChild(construct<RatchetingProbItem>(&MenuItem::text, "60%", &RatchetingProbItem::module, module, &RatchetingProbItem::id, id, &RatchetingProbItem::ratchetingProb, 0.4f));
+				menu->addChild(construct<RatchetingProbItem>(&MenuItem::text, "65%", &RatchetingProbItem::module, module, &RatchetingProbItem::id, id, &RatchetingProbItem::ratchetingProb, 0.35f));
+				menu->addChild(construct<RatchetingProbItem>(&MenuItem::text, "70%", &RatchetingProbItem::module, module, &RatchetingProbItem::id, id, &RatchetingProbItem::ratchetingProb, 0.3f));
+				menu->addChild(construct<RatchetingProbItem>(&MenuItem::text, "80%", &RatchetingProbItem::module, module, &RatchetingProbItem::id, id, &RatchetingProbItem::ratchetingProb, 0.2f));
+				menu->addChild(construct<RatchetingProbItem>(&MenuItem::text, "90%", &RatchetingProbItem::module, module, &RatchetingProbItem::id, id, &RatchetingProbItem::ratchetingProb, 0.1f));
+				return menu;
+			}
+		};
+
+		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<RatchetingMenuItem>(&MenuItem::text, "Ratcheting", &RatchetingMenuItem::module, module, &RatchetingMenuItem::id, selectedId));
+		menu->addChild(construct<RatchetingProbMenuItem>(&MenuItem::text, "Ratcheting probability", &RatchetingProbMenuItem::module, module, &RatchetingProbMenuItem::id, selectedId));
 	}
 
 	void createContextMenu() {
@@ -1032,9 +1057,6 @@ struct MazeScreenWidget : OpaqueWidget, MazeDrawHelper<MODULE> {
 	void createContextMenu() {
 		ui::Menu* menu = createMenu();
 		menu->addChild(construct<ModuleStateMenuItem<MODULE>>(&MenuItem::text, "Enter Edit-mode", &ModuleStateMenuItem<MODULE>::module, module));
-		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<RatchetingMenuItem<MODULE>>(&MenuItem::text, "Ratcheting", &RatchetingMenuItem<MODULE>::module, module));
-		menu->addChild(construct<RatchetingProbMenuItem<MODULE>>(&MenuItem::text, "Ratcheting probability", &RatchetingProbMenuItem<MODULE>::module, module));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Grid"));
 		GridSizeSlider<MODULE>* sizeSlider = new GridSizeSlider<MODULE>(module);
