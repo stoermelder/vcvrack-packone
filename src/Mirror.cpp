@@ -64,6 +64,7 @@ struct MirrorModule : Module {
 	}
 
 	void onReset() override {
+		inChange = true;
 		for (ParamHandle* sourceHandle : sourceHandles) {
 			APP->engine->removeParamHandle(sourceHandle);
 			delete sourceHandle;
@@ -78,6 +79,7 @@ struct MirrorModule : Module {
 		for (int i = 0; i < 8; i++) {
 			cvParamId[i] = -1;
 		}
+		inChange = false;
 
 		pluginSlug = "";
 		modelSlug = "";
@@ -406,13 +408,48 @@ struct MirrorWidget : ThemedModuleWidget<MirrorModule> {
 			}
 		};
 
+		struct SyncPresetItem : MenuItem {
+			MirrorWidget* mw;
+			void onAction(const event::Action& e) override {
+				mw->syncPresets();
+			}
+		};
+
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<AudioRateItem>(&MenuItem::text, "Audio rate processing", &AudioRateItem::module, module));
 		menu->addChild(construct<MappingIndicatorHiddenItem>(&MenuItem::text, "Hide mapping indicators", &MappingIndicatorHiddenItem::module, module));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<CvInputPortMenuItem>(&MenuItem::text, "CV ports", &CvInputPortMenuItem::module, module));
-		menu->addChild(construct<BindSourceItem>(&MenuItem::text, "Bind source module", &BindSourceItem::module, module));
-		menu->addChild(construct<BindTargetItem>(&MenuItem::text, "Bind target module", &BindTargetItem::module, module));
+		menu->addChild(construct<BindSourceItem>(&MenuItem::text, "Map source module", &BindSourceItem::module, module));
+		menu->addChild(construct<BindTargetItem>(&MenuItem::text, "Map target module", &BindTargetItem::module, module));
+		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<SyncPresetItem>(&MenuItem::text, "Sync module settings", &SyncPresetItem::mw, this));
+	}
+
+	void syncPresets() {
+		int moduleId = -1;
+		for (ParamHandle* sourceHandle : module->sourceHandles) {
+			if (sourceHandle->moduleId >= 0) {
+				moduleId = sourceHandle->moduleId;
+				break;
+			}
+		}
+
+		if (moduleId < 0) return;
+		ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
+		if (!mw) return;
+		json_t* preset = mw->toJson();
+
+		moduleId = -1;
+		for (ParamHandle* targetHandle : module->targetHandles) {
+			if (targetHandle->moduleId >= 0 && targetHandle->moduleId != moduleId) {
+				moduleId = targetHandle->moduleId;
+				mw = APP->scene->rack->getModule(moduleId);
+				mw->fromJson(preset);
+			}
+		}
+
+		json_decref(preset);
 	}
 };
 
