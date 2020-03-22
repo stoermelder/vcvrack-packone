@@ -105,13 +105,13 @@ struct LongPressButton {
 	float pressedTime = 0.f;
 	dsp::BooleanTrigger trigger;
 
-	inline Event process(float sampleTime) {
+	inline Event process(float sampleTime, float longPressThreshold = 1.f) {
 		Event result = NO_PRESS;
 		bool pressed = param->value > 0.f;
 		if (pressed && pressedTime >= 0.f) {
 			pressedTime += sampleTime;
-			if (pressedTime >= 1.f) {
-				pressedTime = -1.f;
+			if (pressedTime >= longPressThreshold) {
+				pressedTime = -longPressThreshold;
 				result = LONG_PRESS;
 			}
 		}
@@ -474,5 +474,15 @@ struct MatrixButton : app::SvgSwitch {
 struct MatrixButtonParamQuantity : ParamQuantity {
 	void setValue(float value) override {
 		ParamQuantity::setValue(std::round(value));
+	}
+};
+
+
+struct TriggerParamQuantity : ParamQuantity {
+	std::string getDisplayValueString() override {
+		return ParamQuantity::getLabel();
+	}
+	std::string getLabel() override {
+		return "";
 	}
 };
