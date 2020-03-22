@@ -9,11 +9,22 @@ struct ThemedModuleWidget : BASE {
 	std::string baseName;
 	SvgPanel* darkPanel;
 
+	struct HalfPanel : SvgPanel {
+		ThemedModuleWidget<MODULE, BASE>* w;
+		void draw(const DrawArgs& args) override {
+			if (!w) return;
+			nvgScissor(args.vg, w->box.size.x / 2.f, 0, w->box.size.x, w->box.size.y);
+			SvgPanel::draw(args);
+			nvgResetScissor(args.vg);
+		}
+	};
+
 	ThemedModuleWidget(MODULE* module, std::string baseName) {
 		this->module = module;
 		this->baseName = baseName;
 
 		if (module) {
+			// Normal operation
 			BASE::setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/" + baseName + ".svg")));
 			darkPanel = new SvgPanel();
 			darkPanel->setBackground(APP->window->loadSvg(asset::plugin(pluginInstance, "res/dark/" + baseName + ".svg")));
@@ -21,10 +32,12 @@ struct ThemedModuleWidget : BASE {
 			BASE::addChildBottom(darkPanel);
 		}
 		else {
-			if (pluginSettings.panelThemeDefault == 0)
-				BASE::setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/" + baseName + ".svg")));
-			if (pluginSettings.panelThemeDefault == 1)
-				BASE::setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/dark/" + baseName + ".svg")));
+			// Module Browser
+			BASE::setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/" + baseName + ".svg")));
+			HalfPanel* darkPanel = new HalfPanel();
+			darkPanel->w = this;
+			darkPanel->setBackground(APP->window->loadSvg(asset::plugin(pluginInstance, "res/dark/" + baseName + ".svg")));
+			BASE::addChild(darkPanel);
 		}
 	}
 
