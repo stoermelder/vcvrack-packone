@@ -176,11 +176,11 @@ struct ReMoveModule : MapModuleBase<1> {
     ReMoveModule() {
         panelTheme = pluginSettings.panelThemeDefault;
         config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS); 
-        configParam(SEQP_PARAM, 0.0f, 1.0f, 0.0f, "Previous sequence");
-        configParam(SEQN_PARAM, 0.0f, 1.0f, 0.0f, "Next sequence");
-        configParam(RUN_PARAM, 0.0f, 1.0f, 0.0f, "Run");
-        configParam(RESET_PARAM, 0.0f, 1.0f, 0.0f, "Reset");
-        configParam(REC_PARAM, 0.0f, 1.0f, 0.0f, "Record");
+        configParam<TriggerParamQuantity>(SEQP_PARAM, 0.0f, 1.0f, 0.0f, "Previous sequence");
+        configParam<TriggerParamQuantity>(SEQN_PARAM, 0.0f, 1.0f, 0.0f, "Next sequence");
+        configParam<TriggerParamQuantity>(RUN_PARAM, 0.0f, 1.0f, 0.0f, "Run");
+        configParam<TriggerParamQuantity>(RESET_PARAM, 0.0f, 1.0f, 0.0f, "Reset");
+        configParam<TriggerParamQuantity>(REC_PARAM, 0.0f, 1.0f, 0.0f, "Record");
         configParam(SLEW_PARAM, 0.0f, 0.975f, 0.0f, "Slew");
 
         seqData = new float[REMOVE_MAX_DATA];

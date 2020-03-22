@@ -59,7 +59,7 @@ struct BoltModule : Module {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		onReset();
 
-		configParam(OP_PARAM, 0.0f, 1.0f, 0.0f, "Next operator");
+		configParam<TriggerParamQuantity>(OP_PARAM, 0.0f, 1.0f, 0.0f, "Next operator");
 		lightDivider.setDivision(1024);
 		onReset();
 	}
