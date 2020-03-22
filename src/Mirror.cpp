@@ -1,4 +1,5 @@
 #include "plugin.hpp"
+#include <plugin.hpp>
 
 namespace Mirror {
 
@@ -21,11 +22,16 @@ struct MirrorModule : Module {
 	int panelTheme = 0;
 
 	/** [Stored to JSON] */
-	std::string pluginSlug;
+	std::string sourcePluginSlug;
 	/** [Stored to JSON] */
-	std::string modelSlug;
+	std::string sourcePluginName;
 	/** [Stored to JSON] */
-	std::string moduleName;
+	std::string sourceModelSlug;
+	/** [Stored to JSON] */
+	std::string sourceModelName;
+	/** [Stored to JSON] */
+	int sourceModuleId;
+
 	/** [Stored to Json] */
 	bool audioRate;
 	/** [Stored to JSON] */
@@ -81,9 +87,11 @@ struct MirrorModule : Module {
 		}
 		inChange = false;
 
-		pluginSlug = "";
-		modelSlug = "";
-		moduleName = "";
+		sourcePluginSlug = "";
+		sourcePluginName = "";
+		sourceModelSlug = "";
+		sourceModelName = "";
+		sourceModuleId = -1;
 		audioRate = false;
 	}
 
@@ -161,9 +169,11 @@ struct MirrorModule : Module {
 		inChange = true;
 		onReset();
 		Module* m = exp->module;
-		pluginSlug = m->model->plugin->name;
-		modelSlug = m->model->slug;
-		moduleName = m->model->name;
+		sourcePluginSlug = m->model->plugin->slug;
+		sourcePluginName = m->model->plugin->name;
+		sourceModelSlug = m->model->slug;
+		sourceModelName = m->model->name;
+		sourceModuleId = m->id;
 
 		for (size_t i = 0; i < m->params.size(); i++) {
 			ParamHandle* sourceHandle = new ParamHandle;
@@ -179,8 +189,9 @@ struct MirrorModule : Module {
 	void bindToTarget() {
 		Expander* exp = &rightExpander;
 		if (exp->moduleId < 0) return;
-		Module* m = exp->module;
-		if (pluginSlug != m->model->plugin->name || modelSlug != m->model->slug) return;
+		// Use this instead of "exp->module" as the expander might not be initialized yet
+		Module* m = APP->engine->getModule(exp->moduleId);
+		if (sourcePluginSlug != m->model->plugin->slug || sourceModelSlug != m->model->slug) return;
 
 		inChange = true;
 		for (ParamHandle* sourceHandle : sourceHandles) {
@@ -196,12 +207,14 @@ struct MirrorModule : Module {
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
-
-		json_object_set_new(rootJ, "pluginSlug", json_string(pluginSlug.c_str()));
-		json_object_set_new(rootJ, "modelSlug", json_string(modelSlug.c_str()));
-		json_object_set_new(rootJ, "moduleName", json_string(moduleName.c_str()));
 		json_object_set_new(rootJ, "audioRate", json_boolean(audioRate));
 		json_object_set_new(rootJ, "mappingIndicatorHidden", json_boolean(mappingIndicatorHidden));
+
+		json_object_set_new(rootJ, "sourcePluginSlug", json_string(sourcePluginSlug.c_str()));
+		json_object_set_new(rootJ, "sourcePluginName", json_string(sourcePluginName.c_str()));
+		json_object_set_new(rootJ, "sourceModelSlug", json_string(sourceModelSlug.c_str()));
+		json_object_set_new(rootJ, "sourceModelName", json_string(sourceModelName.c_str()));
+		json_object_set_new(rootJ, "sourceModuleId", json_integer(sourceModuleId));
 
 		json_t* sourceMapsJ = json_array();
 		for (size_t i = 0; i < sourceHandles.size(); i++) {
@@ -233,13 +246,33 @@ struct MirrorModule : Module {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		// Hack for preventing duplicating this module
+		if (APP->engine->getModule(id) != NULL) return;
 
-		pluginSlug = json_string_value(json_object_get(rootJ, "pluginSlug"));
-		modelSlug = json_string_value(json_object_get(rootJ, "modelSlug"));
-		moduleName = json_string_value(json_object_get(rootJ, "moduleName"));
+		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 		audioRate = json_boolean_value(json_object_get(rootJ, "audioRate"));
 		mappingIndicatorHidden = json_boolean_value(json_object_get(rootJ, "mappingIndicatorHidden"));
+
+		json_t* sourcePluginSlugJ = json_object_get(rootJ, "sourcePluginSlug");
+		if (sourcePluginSlugJ) sourcePluginSlug = json_string_value(sourcePluginSlugJ);
+		json_t* sourcePluginNameJ = json_object_get(rootJ, "sourcePluginName");
+		if (sourcePluginNameJ) sourcePluginName = json_string_value(sourcePluginNameJ);
+		json_t* sourceModelSlugJ = json_object_get(rootJ, "sourceModelSlug");
+		if (sourceModelSlugJ) sourceModelSlug = json_string_value(sourceModelSlugJ);
+		json_t* sourceModelNameJ = json_object_get(rootJ, "sourceModelName");
+		if (sourceModelNameJ) sourceModelName = json_string_value(sourceModelNameJ);
+		json_t* sourceModuleIdJ = json_object_get(rootJ, "sourceModuleId");
+
+		if (sourceModuleIdJ) {
+			sourceModuleId = json_integer_value(sourceModuleIdJ);
+		}
+		else {
+			sourcePluginSlug = "";
+			sourcePluginName = "";
+			sourceModelSlug = "";
+			sourceModelName = "";
+			return;
+		}
 
 		inChange = true;
 		json_t* sourceMapsJ = json_object_get(rootJ, "sourceMaps");
@@ -307,7 +340,7 @@ struct MirrorWidget : ThemedModuleWidget<MirrorModule> {
 		MirrorModule* module = dynamic_cast<MirrorModule*>(this->module);
 		assert(module);
 
-		if (module->moduleName != "") {
+		if (module->sourceModelSlug != "") {
 			menu->addChild(new MenuSeparator());
 
 			ui::MenuLabel* textLabel = new ui::MenuLabel;
@@ -315,7 +348,7 @@ struct MirrorWidget : ThemedModuleWidget<MirrorModule> {
 			menu->addChild(textLabel);
 
 			ui::MenuLabel* modelLabel = new ui::MenuLabel;
-			modelLabel->text = module->moduleName;
+			modelLabel->text = module->sourcePluginName + " " + module->sourceModelName;
 			menu->addChild(modelLabel);
 		}
 
@@ -408,6 +441,15 @@ struct MirrorWidget : ThemedModuleWidget<MirrorModule> {
 			}
 		};
 
+		struct AddAndBindTargetItem : MenuItem {
+			MirrorModule* module;
+			MirrorWidget* mw;
+			void onAction(const event::Action& e) override {
+				mw->addNewModule();
+				module->bindToTarget();
+			}
+		};
+
 		struct SyncPresetItem : MenuItem {
 			MirrorWidget* mw;
 			void onAction(const event::Action& e) override {
@@ -422,25 +464,17 @@ struct MirrorWidget : ThemedModuleWidget<MirrorModule> {
 		menu->addChild(construct<CvInputPortMenuItem>(&MenuItem::text, "CV ports", &CvInputPortMenuItem::module, module));
 		menu->addChild(construct<BindSourceItem>(&MenuItem::text, "Map source module", &BindSourceItem::module, module));
 		menu->addChild(construct<BindTargetItem>(&MenuItem::text, "Map target module", &BindTargetItem::module, module));
+		menu->addChild(construct<AddAndBindTargetItem>(&MenuItem::text, "Add and map new module", &AddAndBindTargetItem::module, module, &AddAndBindTargetItem::mw, this));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<SyncPresetItem>(&MenuItem::text, "Sync module settings", &SyncPresetItem::mw, this));
 	}
 
 	void syncPresets() {
-		int moduleId = -1;
-		for (ParamHandle* sourceHandle : module->sourceHandles) {
-			if (sourceHandle->moduleId >= 0) {
-				moduleId = sourceHandle->moduleId;
-				break;
-			}
-		}
-
-		if (moduleId < 0) return;
-		ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
+		ModuleWidget* mw = APP->scene->rack->getModule(module->sourceModuleId);
 		if (!mw) return;
 		json_t* preset = mw->toJson();
 
-		moduleId = -1;
+		int moduleId = -1;
 		for (ParamHandle* targetHandle : module->targetHandles) {
 			if (targetHandle->moduleId >= 0 && targetHandle->moduleId != moduleId) {
 				moduleId = targetHandle->moduleId;
@@ -449,6 +483,39 @@ struct MirrorWidget : ThemedModuleWidget<MirrorModule> {
 			}
 		}
 
+		json_decref(preset);
+	}
+
+	void addNewModule() {
+		if (module->sourceModuleId < 0) return;
+		ModuleWidget* mw = APP->scene->rack->getModule(module->sourceModuleId);
+		if (!mw) return;
+
+		// Make free space on the right side
+		float rightWidth = mw->box.size.x;
+		Vec pos = box.pos;
+		for (int i = 0; i < (rightWidth / RACK_GRID_WIDTH); i++) {
+			Vec np = box.pos.plus(Vec(RACK_GRID_WIDTH, 0));
+			APP->scene->rack->setModulePosForce(this, np);
+		}
+		APP->scene->rack->setModulePosForce(this, pos);
+
+		// Get Model
+		plugin::Model* model = plugin::getModel(module->sourcePluginSlug, module->sourceModelSlug);
+		if (!model) return;
+
+		// Create ModuleWidget
+		ModuleWidget* newMw = model->createModuleWidget();
+		assert(newMw);
+		newMw->box.pos = box.pos;
+		newMw->box.pos.x += box.size.x;
+		newMw->module->id = -1;
+		APP->scene->rack->addModule(newMw);
+		APP->scene->rack->setModulePosForce(newMw, newMw->box.pos);
+
+		// Apply preset
+		json_t* preset = mw->toJson();
+		newMw->fromJson(preset);
 		json_decref(preset);
 	}
 };
