@@ -555,14 +555,14 @@ struct EightFaceWidget : ThemedModuleWidget<EightFaceModule<8>, EightFaceWidgetT
 		addParam(createParamCentered<LEDButton>(Vec(22.5f, 281.9f), module, MODULE::PRESET_PARAM + 6));
 		addParam(createParamCentered<LEDButton>(Vec(22.5f, 305.4f), module, MODULE::PRESET_PARAM + 7));
 
-		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(22.5f, 140.6f), module, MODULE::PRESET_LIGHT + 0 * 3));
-		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(22.5f, 164.1f), module, MODULE::PRESET_LIGHT + 1 * 3));
-		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(22.5f, 187.7f), module, MODULE::PRESET_LIGHT + 2 * 3));
-		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(22.5f, 211.2f), module, MODULE::PRESET_LIGHT + 3 * 3));
-		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(22.5f, 234.8f), module, MODULE::PRESET_LIGHT + 4 * 3));
-		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(22.5f, 258.3f), module, MODULE::PRESET_LIGHT + 5 * 3));
-		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(22.5f, 281.9f), module, MODULE::PRESET_LIGHT + 6 * 3));
-		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(22.5f, 305.4f), module, MODULE::PRESET_LIGHT + 7 * 3));
+		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(22.5f, 140.6f), module, MODULE::PRESET_LIGHT + 0 * 3));
+		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(22.5f, 164.1f), module, MODULE::PRESET_LIGHT + 1 * 3));
+		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(22.5f, 187.7f), module, MODULE::PRESET_LIGHT + 2 * 3));
+		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(22.5f, 211.2f), module, MODULE::PRESET_LIGHT + 3 * 3));
+		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(22.5f, 234.8f), module, MODULE::PRESET_LIGHT + 4 * 3));
+		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(22.5f, 258.3f), module, MODULE::PRESET_LIGHT + 5 * 3));
+		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(22.5f, 281.9f), module, MODULE::PRESET_LIGHT + 6 * 3));
+		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(22.5f, 305.4f), module, MODULE::PRESET_LIGHT + 7 * 3));
 
 		addParam(createParamCentered<CKSSH>(Vec(22.5f, 336.2f), module, MODULE::MODE_PARAM));
 	}
@@ -601,22 +601,22 @@ struct EightFaceX2Widget : ThemedModuleWidget<EightFaceModule<16>, EightFaceWidg
 		addParam(createParamCentered<LEDButton>(Vec(42.3f, 281.9f), module, MODULE::PRESET_PARAM + 14));
 		addParam(createParamCentered<LEDButton>(Vec(42.3f, 305.4f), module, MODULE::PRESET_PARAM + 15));
 
-		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(17.7f, 140.6f), module, MODULE::PRESET_LIGHT + 0 * 3));
-		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(17.7f, 164.1f), module, MODULE::PRESET_LIGHT + 1 * 3));
-		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(17.7f, 187.7f), module, MODULE::PRESET_LIGHT + 2 * 3));
-		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(17.7f, 211.2f), module, MODULE::PRESET_LIGHT + 3 * 3));
-		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(17.7f, 234.8f), module, MODULE::PRESET_LIGHT + 4 * 3));
-		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(17.7f, 258.3f), module, MODULE::PRESET_LIGHT + 5 * 3));
-		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(17.7f, 281.9f), module, MODULE::PRESET_LIGHT + 6 * 3));
-		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(17.7f, 305.4f), module, MODULE::PRESET_LIGHT + 7 * 3));
-		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(42.3f, 140.6f), module, MODULE::PRESET_LIGHT + 8 * 3));
-		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(42.3f, 164.1f), module, MODULE::PRESET_LIGHT + 9 * 3));
-		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(42.3f, 187.7f), module, MODULE::PRESET_LIGHT + 10 * 3));
-		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(42.3f, 211.2f), module, MODULE::PRESET_LIGHT + 11 * 3));
-		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(42.3f, 234.8f), module, MODULE::PRESET_LIGHT + 12 * 3));
-		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(42.3f, 258.3f), module, MODULE::PRESET_LIGHT + 13 * 3));
-		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(42.3f, 281.9f), module, MODULE::PRESET_LIGHT + 14 * 3));
-		addChild(createLightCentered<MediumLight<RedGreenBlueLight>>(Vec(42.3f, 305.4f), module, MODULE::PRESET_LIGHT + 15 * 3));
+		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(17.7f, 140.6f), module, MODULE::PRESET_LIGHT + 0 * 3));
+		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(17.7f, 164.1f), module, MODULE::PRESET_LIGHT + 1 * 3));
+		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(17.7f, 187.7f), module, MODULE::PRESET_LIGHT + 2 * 3));
+		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(17.7f, 211.2f), module, MODULE::PRESET_LIGHT + 3 * 3));
+		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(17.7f, 234.8f), module, MODULE::PRESET_LIGHT + 4 * 3));
+		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(17.7f, 258.3f), module, MODULE::PRESET_LIGHT + 5 * 3));
+		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(17.7f, 281.9f), module, MODULE::PRESET_LIGHT + 6 * 3));
+		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(17.7f, 305.4f), module, MODULE::PRESET_LIGHT + 7 * 3));
+		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(42.3f, 140.6f), module, MODULE::PRESET_LIGHT + 8 * 3));
+		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(42.3f, 164.1f), module, MODULE::PRESET_LIGHT + 9 * 3));
+		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(42.3f, 187.7f), module, MODULE::PRESET_LIGHT + 10 * 3));
+		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(42.3f, 211.2f), module, MODULE::PRESET_LIGHT + 11 * 3));
+		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(42.3f, 234.8f), module, MODULE::PRESET_LIGHT + 12 * 3));
+		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(42.3f, 258.3f), module, MODULE::PRESET_LIGHT + 13 * 3));
+		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(42.3f, 281.9f), module, MODULE::PRESET_LIGHT + 14 * 3));
+		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(42.3f, 305.4f), module, MODULE::PRESET_LIGHT + 15 * 3));
 
 		addParam(createParamCentered<CKSSH>(Vec(30.0f, 336.2f), module, MODULE::MODE_PARAM));
 	}
