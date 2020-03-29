@@ -3,12 +3,12 @@
 
 namespace Sail {
 
-enum IN_MODE {
+enum class IN_MODE {
 	DIFF = 0,
 	ABSOLUTE = 1
 };
 
-enum OUT_MODE {
+enum class OUT_MODE {
 	REDUCED = 0,
 	FULL = 1
 };
@@ -98,7 +98,7 @@ struct SailModule : Module {
 			if (paramQuantity != paramQuantityPriv) {
 				valueBase = valueBaseOut = std::numeric_limits<float>::min();
 				paramQuantityPriv = paramQuantity;
-				incdec = (!inputs[INPUT_VALUE].isConnected() && paramQuantityPriv) ? (paramQuantityPriv->getScaledValue() * 10.f) : 0.f;
+				incdec = paramQuantityPriv ? (paramQuantityPriv->getScaledValue() * 10.f) : 0.f;
 			}
 
 			if (paramQuantityPriv && paramQuantityPriv->isBounded() && paramQuantityPriv->module != this) {
@@ -171,8 +171,8 @@ struct SailModule : Module {
 	json_t* dataToJson() override {
 		json_t *rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
-		json_object_set_new(rootJ, "inMode", json_integer(inMode));
-		json_object_set_new(rootJ, "outMode", json_integer(outMode));
+		json_object_set_new(rootJ, "inMode", json_integer((int)inMode));
+		json_object_set_new(rootJ, "outMode", json_integer((int)outMode));
 		return rootJ;
 	}
 
