@@ -96,9 +96,8 @@ struct SailModule : Module {
 		if (processDivider.process()) {
 			// Copy to second variable as paramQuantity might become NULL through the app thread
 			if (paramQuantity != paramQuantityPriv) {
-				valueBase = valueBaseOut = std::numeric_limits<float>::min();
 				paramQuantityPriv = paramQuantity;
-				incdec = paramQuantityPriv ? (paramQuantityPriv->getScaledValue() * 10.f) : 0.f;
+				value[0] = incdec = slewLimiter.out = paramQuantityPriv ? (paramQuantityPriv->getScaledValue() * 10.f) : 0.f;
 			}
 
 			if (paramQuantityPriv && paramQuantityPriv->isBounded() && paramQuantityPriv->module != this) {
@@ -114,10 +113,6 @@ struct SailModule : Module {
 				incdec = clamp(voltage + incdec, 0.f, 10.f) - voltage;
 				value[0] = voltage + incdec;
 
-				if (valueBase == std::numeric_limits<float>::min()) {
-					valueBase = slewLimiter.out = value[0];
-				}
-
 				// Apply slew limiting
 				float slew = inputs[INPUT_SLEW].isConnected() ? clamp(inputs[INPUT_SLEW].getVoltage(), 0.f, 5.f) : params[PARAM_SLEW].getValue();
 				if (slew > 0.f) {
@@ -129,14 +124,14 @@ struct SailModule : Module {
 				float delta = value[0] - value[1];
 				switch (inMode) {
 					case IN_MODE::DIFF: {
-						if (valueBase != value[0] && delta != 0.f) {
+						if (delta != 0.f) {
 							paramQuantityPriv->moveScaledValue(delta / 10.f);
 							valueBaseOut = paramQuantityPriv->getScaledValue();
 						}
 						break;
 					}
 					case IN_MODE::ABSOLUTE: {
-						if (valueBase != value[0] && delta != 0.f) {
+						if (delta != 0.f) {
 							paramQuantityPriv->setScaledValue(value[0] / 10.f);
 							valueBaseOut = paramQuantityPriv->getScaledValue();
 						}

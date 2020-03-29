@@ -2,12 +2,16 @@
 
 - Module [DETOUR](./docs/Detour.md)
     - New module, 8x8 send/return switch matrix with support for 8 scenes
+- Module [MIRROR](./docs/Mirror.md)
+    - New module
 
 ### Fixes and Changes
 
 - Module [MAZE](./docs/Maze.md)
     - Added option for disabling normalization to the yellow input ports (#95)
     - Added independent ratcheting settings for each sequencer-playhead (#94)
+- Module [SAIL](./docs/Sail.md)
+    - Fixed wrong position-checks preventing full parameter range usage (#106)
 
 ## 1.5.0
 
