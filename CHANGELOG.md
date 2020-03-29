@@ -11,7 +11,7 @@
     - Added option for disabling normalization to the yellow input ports (#95)
     - Added independent ratcheting settings for each sequencer-playhead (#94)
 - Module [SAIL](./docs/Sail.md)
-    - Fixed wrong position-checks preventing full parameter range usage (#106)
+    - Rewritten how the target values are applied onto the parameters (#106). You can't use IN and INC/DEC the same time anymore, just use two different modules.
 
 ## 1.5.0
 

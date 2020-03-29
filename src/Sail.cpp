@@ -45,12 +45,14 @@ struct SailModule : Module {
 	/** [Stored to JSON] */
 	OUT_MODE outMode;
 
-	bool mod;
-	float valueBase;
-	float valueBaseOut;
-	float value[2];
+	bool fineMod;
 
-	float incdec;
+	float inVoltBase;
+	float inVoltTarget;
+	float incdecTarget;
+
+	float valueBaseOut;
+	float valuePrevious;
 
 	ParamQuantity* paramQuantity;
 	ParamQuantity* paramQuantityPriv;
@@ -77,67 +79,83 @@ struct SailModule : Module {
 		paramQuantity = NULL;
 		inMode = IN_MODE::DIFF;
 		outMode = OUT_MODE::REDUCED;
-		incdec = 0.f;
 		slewLimiter.reset();
 	}
 
 	void process(const ProcessArgs& args) override {
 		if (incTrigger.process(inputs[INPUT_INC].getVoltage())) {
-			float step = params[PARAM_STEP].getValue();
-			if (mod || inputs[INPUT_FINE].getVoltage() >= 1.f) step *= FINE;
-			incdec += step;
+			float step = params[PARAM_STEP].getValue() / 10.f;
+			if (fineMod || inputs[INPUT_FINE].getVoltage() >= 1.f) step *= FINE;
+			incdecTarget += step;
 		}
 		if (decTrigger.process(inputs[INPUT_DEC].getVoltage())) {
-			float step = params[PARAM_STEP].getValue();
-			if (mod || inputs[INPUT_FINE].getVoltage() >= 1.f) step *= FINE;
-			incdec -= step;
+			float step = params[PARAM_STEP].getValue() / 10.f;
+			if (fineMod || inputs[INPUT_FINE].getVoltage() >= 1.f) step *= FINE;
+			incdecTarget -= step;
 		}
 
 		if (processDivider.process()) {
 			// Copy to second variable as paramQuantity might become NULL through the app thread
 			if (paramQuantity != paramQuantityPriv) {
 				paramQuantityPriv = paramQuantity;
-				value[0] = incdec = slewLimiter.out = paramQuantityPriv ? (paramQuantityPriv->getScaledValue() * 10.f) : 0.f;
+				// Current parameter value
+				valuePrevious = paramQuantityPriv ? paramQuantityPriv->getScaledValue() : 0.f;
+				inVoltTarget = incdecTarget = slewLimiter.out = valuePrevious;
+				inVoltBase = clamp(inputs[INPUT_VALUE].getVoltage() / 10.f, 0.f, 1.f);
 			}
 
 			if (paramQuantityPriv && paramQuantityPriv->isBounded() && paramQuantityPriv->module != this) {
-				// Previous value for delta-calculation
-				value[1] = value[0];
+				float valueNext = valuePrevious;
 
-				// Input voltage
-				float voltage = inputs[INPUT_VALUE].isConnected() ? inputs[INPUT_VALUE].getVoltage() : 0.f;
-				if (mod || inputs[INPUT_FINE].getVoltage() >= 1.f) voltage *= FINE;
-				voltage = clamp(voltage, 0.f, 10.f);
-
-				// Add INC/DEC but keep in range 0..10V
-				incdec = clamp(voltage + incdec, 0.f, 10.f) - voltage;
-				value[0] = voltage + incdec;
+				if (inputs[INPUT_VALUE].isConnected()) {
+					// IN-port
+					float inVolt = clamp(inputs[INPUT_VALUE].getVoltage() / 10.f, 0.f, 1.f);
+					switch (inMode) {
+						case IN_MODE::DIFF: {
+							// Change since last time
+							float d1 = inVolt - inVoltBase;
+							inVoltBase = inVolt;
+							if (fineMod || inputs[INPUT_FINE].getVoltage() >= 1.f) d1 *= FINE;
+							// Actual change of parameter after slew limiting
+							float d2 = inVoltTarget - valuePrevious;
+							// Reapply the sum of both
+							valueNext = clamp(valuePrevious + d1 + d2, 0.f, 1.f);
+							inVoltTarget = valueNext;
+							break;
+						}
+						case IN_MODE::ABSOLUTE: {
+							// Only move on input voltage change
+							if (inVolt != inVoltBase) {
+								valueNext = inVolt;
+								// Detach when target value has been reached
+								if (valuePrevious == inVolt) inVoltBase = inVolt;
+							}
+							break;
+						}
+					}
+				}
+				else {
+					// INC/DEC-ports
+					incdecTarget = clamp(incdecTarget, 0.f, 1.f);
+					valueNext = incdecTarget;
+				}
 
 				// Apply slew limiting
 				float slew = inputs[INPUT_SLEW].isConnected() ? clamp(inputs[INPUT_SLEW].getVoltage(), 0.f, 5.f) : params[PARAM_SLEW].getValue();
 				if (slew > 0.f) {
 					slew = (1.f / slew) * 10.f;
 					slewLimiter.setRiseFall(slew, slew);
-					value[0] = slewLimiter.process(args.sampleTime * processDivider.getDivision(), value[0]);
+					valueNext = slewLimiter.process(args.sampleTime * processDivider.getDivision(), valueNext);
 				}
 
-				float delta = value[0] - value[1];
-				switch (inMode) {
-					case IN_MODE::DIFF: {
-						if (delta != 0.f) {
-							paramQuantityPriv->moveScaledValue(delta / 10.f);
-							valueBaseOut = paramQuantityPriv->getScaledValue();
-						}
-						break;
-					}
-					case IN_MODE::ABSOLUTE: {
-						if (delta != 0.f) {
-							paramQuantityPriv->setScaledValue(value[0] / 10.f);
-							valueBaseOut = paramQuantityPriv->getScaledValue();
-						}
-						break;
-					}
+				// Determine the relative change
+				float delta = valueNext - valuePrevious;
+				if (delta != 0.f) {
+					paramQuantityPriv->moveScaledValue(delta);
+					valueBaseOut = paramQuantityPriv->getScaledValue();
 				}
+
+				valuePrevious = valueNext;
 
 				if (outputs[OUTPUT].isConnected()) {
 					switch (outMode) {
@@ -215,7 +233,7 @@ struct SailWidget : ThemedModuleWidget<SailModule> {
 		if (!q) { module->paramQuantity = NULL; return; }
 
 		module->paramQuantity = q;
-		module->mod = APP->window->getMods() & GLFW_MOD_SHIFT;
+		module->fineMod = APP->window->getMods() & GLFW_MOD_SHIFT;
 	}
 
 	void appendContextMenu(Menu* menu) override {
