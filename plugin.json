@@ -169,6 +169,20 @@
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Mirror.md"
 		},
 		{
+			"slug": "Affix",
+			"name": "AFFIX",
+			"description": "Insert on polyphonic cables for adding offsets in Volt or cent (16-channel)",
+			"tags": ["Polyphonic", "Utility"],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Affix.md"
+		},
+		{
+			"slug": "AffixMicro",
+			"name": "µAFFIX",
+			"description": "Insert on polyphonic cables for adding offsets in Volt or cent (8-channel)",
+			"tags": ["Polyphonic", "Utility"],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Affix.md"
+		},
+		{
 			"slug": "AudioInterface64",
 			"name": "AUDIO-64",
 			"description": "Sends CV and audio to/from an audio device",

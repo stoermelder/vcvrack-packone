@@ -1,5 +1,7 @@
 ## 1.6.0 (in development)
 
+- Module [AFFIX](./docs/Mirror.md), [µAFFIX](./docs/Mirror.md)
+    - New modules, insert on polyphonic cables for adding offsets in Volt or cent
 - Module [DETOUR](./docs/Detour.md)
     - New module, 8x8 send/return switch matrix with support for 8 scenes
 - Module [MIRROR](./docs/Mirror.md)

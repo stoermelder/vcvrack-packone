@@ -31,4 +31,6 @@ extern Model* modelSail;
 extern Model* modelPile;
 extern Model* modelMidiStep;
 extern Model* modelMirror;
+extern Model* modelAffix;
+extern Model* modelAffixMicro;
 extern Model* modelAudioInterface64;
