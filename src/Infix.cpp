@@ -19,7 +19,6 @@ struct InfixModule : Module {
 	};
 	enum LightIds {
 		ENUMS(LIGHT_OUT, CHANNELS),
-		ENUMS(LIGHT_IN, 16),
 		NUM_LIGHTS
 	};
 
@@ -49,10 +48,6 @@ struct InfixModule : Module {
 
 		// Set channel lights infrequently
 		if (lightDivider.process()) {
-			int i = inputs[INPUT_POLY].getChannels();
-			for (int c = 0; c < 16; c++) {
-				lights[LIGHT_IN + c].setBrightness(i > c);
-			}
 			for (int c = 0; c < CHANNELS; c++) {
 				lights[LIGHT_OUT + c].setBrightness(lastChannel > c);
 			}
@@ -72,72 +67,46 @@ struct InfixModule : Module {
 
 
 struct InfixWidget : ThemedModuleWidget<InfixModule<16>> {
-	InfixWidget(InfixModule<16>* module)
-		: ThemedModuleWidget<InfixModule<16>>(module, "Infix") {
+	typedef InfixModule<16> MODULE;
+	InfixWidget(MODULE* module)
+		: ThemedModuleWidget<MODULE>(module, "Infix") {
 		setModule(module);
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(20.0f, 61.3f), module, InfixModule<16>::INPUT_POLY));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(55.0f, 61.3f), module, InfixModule<16>::OUTPUT_POLY));
+		addInput(createInputCentered<StoermelderPort>(Vec(37.5f, 60.5f), module, MODULE::INPUT_POLY));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(20.0f, 136.3f), module, InfixModule<16>::INPUT_MONO + 0));
-		addInput(createInputCentered<StoermelderPort>(Vec(20.0f, 163.7f), module, InfixModule<16>::INPUT_MONO + 1));
-		addInput(createInputCentered<StoermelderPort>(Vec(20.0f, 191.1f), module, InfixModule<16>::INPUT_MONO + 2));
-		addInput(createInputCentered<StoermelderPort>(Vec(20.0f, 218.5f), module, InfixModule<16>::INPUT_MONO + 3));
-		addInput(createInputCentered<StoermelderPort>(Vec(20.0f, 245.8f), module, InfixModule<16>::INPUT_MONO + 4));
-		addInput(createInputCentered<StoermelderPort>(Vec(20.0f, 273.2f), module, InfixModule<16>::INPUT_MONO + 5));
-		addInput(createInputCentered<StoermelderPort>(Vec(20.0f, 300.6f), module, InfixModule<16>::INPUT_MONO + 6));
-		addInput(createInputCentered<StoermelderPort>(Vec(20.0f, 328.0f), module, InfixModule<16>::INPUT_MONO + 7));
+		for (int i = 0; i < 8; i++) {
+			float o = i * 27.4f;
+			addChild(createLightCentered<StoermelderPortLight<GreenLight>>(Vec(23.0f, 98.2f + o), module, MODULE::LIGHT_OUT + i));
+			addInput(createInputCentered<StoermelderPort>(Vec(23.0f, 98.2f + o), module, MODULE::INPUT_MONO + i));
+			addChild(createLightCentered<StoermelderPortLight<GreenLight>>(Vec(52.0f, 98.2f + o), module, MODULE::LIGHT_OUT + i + 8));
+			addInput(createInputCentered<StoermelderPort>(Vec(52.0f, 98.2f + o), module, MODULE::INPUT_MONO + i + 8));
+		}
 
-		addInput(createInputCentered<StoermelderPort>(Vec(55.0f, 136.3f), module, InfixModule<16>::INPUT_MONO + 8));
-		addInput(createInputCentered<StoermelderPort>(Vec(55.0f, 163.7f), module, InfixModule<16>::INPUT_MONO + 9));
-		addInput(createInputCentered<StoermelderPort>(Vec(55.0f, 191.1f), module, InfixModule<16>::INPUT_MONO + 10));
-		addInput(createInputCentered<StoermelderPort>(Vec(55.0f, 218.5f), module, InfixModule<16>::INPUT_MONO + 11));
-		addInput(createInputCentered<StoermelderPort>(Vec(55.0f, 245.8f), module, InfixModule<16>::INPUT_MONO + 12));
-		addInput(createInputCentered<StoermelderPort>(Vec(55.0f, 273.2f), module, InfixModule<16>::INPUT_MONO + 13));
-		addInput(createInputCentered<StoermelderPort>(Vec(55.0f, 300.6f), module, InfixModule<16>::INPUT_MONO + 14));
-		addInput(createInputCentered<StoermelderPort>(Vec(55.0f, 328.0f), module, InfixModule<16>::INPUT_MONO + 15));
-
-		PolyLedWidget<WhiteLight>* w1 = createWidgetCentered<PolyLedWidget<WhiteLight>>(Vec(20.0f, 88.1f));
-		w1->setModule(module, InfixModule<16>::LIGHT_IN);
-		addChild(w1);
-
-		PolyLedWidget<WhiteLight>* w2 = createWidgetCentered<PolyLedWidget<WhiteLight>>(Vec(55.0f, 88.1f));
-		w2->setModule(module, InfixModule<16>::LIGHT_OUT);
-		addChild(w2);
+		addOutput(createOutputCentered<StoermelderPort>(Vec(37.5f, 327.2f), module, MODULE::OUTPUT_POLY));
 	}
 };
 
 struct InfixMicroWidget : ThemedModuleWidget<InfixModule<8>> {
-	InfixMicroWidget(InfixModule<8>* module)
-		: ThemedModuleWidget<InfixModule<8>>(module, "InfixMicro") {
+	typedef InfixModule<8> MODULE;
+	InfixMicroWidget(MODULE* module)
+		: ThemedModuleWidget<MODULE>(module, "InfixMicro") {
 		setModule(module);
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 60.5f), module, InfixModule<8>::INPUT_POLY));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 60.5f), module, MODULE::INPUT_POLY));
 
-		addChild(createLightCentered<StoermelderPortLight<GreenLight>>(Vec(22.5f, 98.2f), module, InfixModule<8>::LIGHT_OUT + 0));
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 98.2f), module, InfixModule<8>::INPUT_MONO + 0));
-		addChild(createLightCentered<StoermelderPortLight<GreenLight>>(Vec(22.5f, 125.6f), module, InfixModule<8>::LIGHT_OUT + 1));
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 125.6f), module, InfixModule<8>::INPUT_MONO + 1));
-		addChild(createLightCentered<StoermelderPortLight<GreenLight>>(Vec(22.5f, 153.0f), module, InfixModule<8>::LIGHT_OUT + 2));
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 153.0f), module, InfixModule<8>::INPUT_MONO + 2));
-		addChild(createLightCentered<StoermelderPortLight<GreenLight>>(Vec(22.5f, 180.4f), module, InfixModule<8>::LIGHT_OUT + 3));
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 180.4f), module, InfixModule<8>::INPUT_MONO + 3));
-		addChild(createLightCentered<StoermelderPortLight<GreenLight>>(Vec(22.5f, 207.7f), module, InfixModule<8>::LIGHT_OUT + 4));
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 207.7f), module, InfixModule<8>::INPUT_MONO + 4));
-		addChild(createLightCentered<StoermelderPortLight<GreenLight>>(Vec(22.5f, 235.1f), module, InfixModule<8>::LIGHT_OUT + 5));
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 235.1f), module, InfixModule<8>::INPUT_MONO + 5));
-		addChild(createLightCentered<StoermelderPortLight<GreenLight>>(Vec(22.5f, 262.5f), module, InfixModule<8>::LIGHT_OUT + 6));
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 262.5f), module, InfixModule<8>::INPUT_MONO + 6));
-		addChild(createLightCentered<StoermelderPortLight<GreenLight>>(Vec(22.5f, 289.9f), module, InfixModule<8>::LIGHT_OUT + 7));
-		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 289.9f), module, InfixModule<8>::INPUT_MONO + 7));
+		for (int i = 0; i < 8; i++) {
+			float o = i * 27.4f;
+			addChild(createLightCentered<StoermelderPortLight<GreenLight>>(Vec(23.0f, 98.2f + o), module, MODULE::LIGHT_OUT + i));
+			addInput(createInputCentered<StoermelderPort>(Vec(23.0f, 98.2f + o), module, MODULE::INPUT_MONO + i));
+		}
 
-		addOutput(createOutputCentered<StoermelderPort>(Vec(22.5f, 327.2f), module, InfixModule<8>::OUTPUT_POLY));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(22.5f, 327.2f), module, MODULE::OUTPUT_POLY));
 	}
 };
 
