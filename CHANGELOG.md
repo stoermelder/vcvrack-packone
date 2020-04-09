@@ -4,6 +4,8 @@
     - New modules, insert on polyphonic cables for adding offsets in Volt or cent
 - Module [DETOUR](./docs/Detour.md)
     - New module, 8x8 send/return switch matrix with support for 8 scenes
+- Module [GRIP](./docs/Grip.md)
+    - New module, locker for module parameters
 - Module [MIRROR](./docs/Mirror.md)
     - New module
 
