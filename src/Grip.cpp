@@ -23,6 +23,8 @@ struct GripModule : CVMapModuleBase<MAX_CHANNELS> {
 
 	/** [Stored to JSON] */
 	int panelTheme = 0;
+	/** [Stored to Json] */
+	bool audioRate;
 
 	dsp::ClockDivider processDivider;
 	dsp::ClockDivider lightDivider;
@@ -30,20 +32,25 @@ struct GripModule : CVMapModuleBase<MAX_CHANNELS> {
 	GripModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		configParam(PARAM_BIND, 0.f, 1.f, 0.f, "Bind parameter");
+		configParam<TriggerParamQuantity>(PARAM_BIND, 0.f, 1.f, 0.f, "Bind new parameter");
 		processDivider.setDivision(64);
 		lightDivider.setDivision(1024);
 
 		for (int i = 0; i < MAX_CHANNELS; i++) {
-			paramHandles[i].text = "GRIP";
-			paramHandles[i].color = mappingIndicatorColor;
+			paramHandles[i].text = "stoermelder GRIP";
+			paramHandles[i].color = color::fromHexString("#CD5C5C");
 		}
 
 		onReset();
 	}
 
+	void onReset() override {
+		audioRate = false;
+		CVMapModuleBase<MAX_CHANNELS>::onReset();
+	}
+
 	void process(const ProcessArgs& args) override {
-		if (processDivider.process()) {
+		if (audioRate || processDivider.process()) {
 			// Step channels
 			for (int i = 0; i < mapLen; i++) {
 				ParamQuantity* paramQuantity = getParamQuantity(i);
@@ -79,6 +86,7 @@ struct GripModule : CVMapModuleBase<MAX_CHANNELS> {
 	json_t* dataToJson() override {
 		json_t* rootJ = CVMapModuleBase<MAX_CHANNELS>::dataToJson();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
+		json_object_set_new(rootJ, "audioRate", json_boolean(audioRate));
 
 		json_t* lastValuesJ = json_array();
 		for (int i = 0; i < MAX_CHANNELS; i++) {
@@ -93,6 +101,7 @@ struct GripModule : CVMapModuleBase<MAX_CHANNELS> {
 	void dataFromJson(json_t* rootJ) override {
 		CVMapModuleBase<MAX_CHANNELS>::dataFromJson(rootJ);
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		audioRate = json_boolean_value(json_object_get(rootJ, "audioRate"));
 
 		json_t* lastValuesJ = json_object_get(rootJ, "lastValues");
 		for (int i = 0; i < MAX_CHANNELS; i++) {
@@ -167,6 +176,17 @@ struct GripWidget : ThemedModuleWidget<GripModule> {
 		ThemedModuleWidget<GripModule>::appendContextMenu(menu);
 		GripModule* module = dynamic_cast<GripModule*>(this->module);
 
+		struct AudioRateItem : MenuItem {
+			GripModule* module;
+			void onAction(const event::Action& e) override {
+				module->audioRate ^= true;
+			}
+			void step() override {
+				rightText = module->audioRate ? "✔" : "";
+				MenuItem::step();
+			}
+		};
+
 		struct UnmapItem : MenuItem {
 			GripModule* module;
 			int id;
@@ -196,8 +216,12 @@ struct GripWidget : ThemedModuleWidget<GripModule> {
 			}
 		};
 
+		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<AudioRateItem>(&MenuItem::text, "Audio rate processing", &AudioRateItem::module, module));
+
 		if (module->mapLen > 0) {
 			menu->addChild(new MenuSeparator());
+			menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Locked parameters"));
 			for (int i = 0; i < MAX_CHANNELS; i++) {
 				if (module->paramHandles[i].moduleId >= 0) {
 					menu->addChild(construct<UnmapItem>(&UnmapItem::module, module, &UnmapItem::id, i));
