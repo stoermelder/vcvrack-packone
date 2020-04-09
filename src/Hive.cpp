@@ -70,7 +70,7 @@ const int ARRAY_SIZE = 2 * (MAX_RADIUS - 1) + 1;
 const float BOX_WIDTH = 262.563f;
 const float BOX_HEIGHT = 227.f;					/// Grid origin at (131.2815, 113.5)
 
-struct CubeVec {
+struct CubeVec {								///
 	float x = 0.f;
 	float y = 0.f;
 	float z = 0.f;
@@ -79,7 +79,7 @@ struct CubeVec {
 	CubeVec(float x, float y, float z) : x(x), y(y), z(z) {}
 };
 
-struct RoundAxialVec {
+struct RoundAxialVec {							///
 	int q = 0;
 	int r = 0;
 
@@ -1259,7 +1259,6 @@ struct HiveStartPosEditWidget : OpaqueWidget, HiveDrawHelper<MODULE> {
 			HiveDrawHelper<MODULE>::draw(args, box);
 
 			float radius = module->cellWd2 * 0.75f;													///
-			float radiusH = sqrt(radius * radius + radius * radius) / 2.f;
 
 			nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
 			for (int i = 0; i < module->numPorts; i++) {
