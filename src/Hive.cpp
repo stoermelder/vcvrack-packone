@@ -127,25 +127,21 @@ struct HiveModule : Module {
 	/** [Stored to JSON] */
 	int usedSize = 2 * (usedRadius - 1) + 1;									///
 
-	// int usedCells = (3 * usedRadius * usedRadius) - (3 * usedRadius) + 1;	///
-	// int usedLinearRAxis = 3 * usedRadius - 2;								///
-	// Vec linearMap[(3 * MAX_RADIUS * MAX_RADIUS) - (3 * MAX_RADIUS + 1)];		///
-
-	/** [Stored to JSON] */					///!!!
+	/** [Stored to JSON] */														///
 	float cellH = BOX_HEIGHT / (((2 * usedRadius - 2) * (3.f / 4.f)) + 1);;
-	/** [Stored to JSON] */					///!!!
+	/** [Stored to JSON] */														///
 	float cellH3d4 = cellH * 3.f / 4.f;;
-	/** [Stored to JSON] */					///!!!
+	/** [Stored to JSON] */														///
 	float cellHd2 = cellH / 2.f;;
-	/** [Stored to JSON] */					///!!!
+	/** [Stored to JSON] */														///
 	float cellHd4 = cellH / 4.f;;
-	/** [Stored to JSON] */					///!!!
+	/** [Stored to JSON] */														///
 	float cellW = sqrt(3) * (cellH / 2.f);;
-	/** [Stored to JSON] */					///!!!
+	/** [Stored to JSON] */														///
 	float cellWd2 = cellW / 2.f;;
-	/** [Stored to JSON] */					///!!!
+	/** [Stored to JSON] */														///
 	float hexSizeFactor = cellHd2;;
-	/** [Stored to JSON] */					///!!!
+	/** [Stored to JSON] */														///
 	float pad = (BOX_WIDTH - (2 * usedRadius - 1) * cellW) / 2.f;;
 
 	/** [Stored to JSON] */
@@ -247,21 +243,6 @@ struct HiveModule : Module {
 		return (pos >= 0 && pos < size) ? pos : fixLinearPos(pos, size);
 	}
 
-/* 	void mapLinear() {																									///
-		int rAxis = 3 * MAX_RADIUS - 2;
-		int cells = (3 * MAX_RADIUS * MAX_RADIUS) - (3 * MAX_RADIUS) + 1;
-		for (int q = 0; q < SIZE; q++) {
-			for (int r = 0; r < SIZE; r++) {
-				if (q == 14 && r == 18)
-					int debug = 1;
-				if (cellVisible(q, r, SIZE)) {
-					int pos = fixLinearPos(q - r * rAxis, cells);
-					linearMap[pos] = Vec(q, r);
-				}
-			}
-		}
-	} */
-
 	CubeVec axialToCube(Vec axialVec) {																					///
 		float x = axialVec.x;
 		float z = axialVec.y;
@@ -353,25 +334,10 @@ struct HiveModule : Module {
 		mirrorCenters[0] = CubeVec(	-(usedRadius - 1),				2 * (usedRadius - 1) + 1,		-(usedRadius - 1) - 1),				/// ( x,  y,  z)
 		mirrorCenters[1] = CubeVec(	(usedRadius - 1) + 1,			(usedRadius - 1), 				-(2 * (usedRadius - 1) + 1)),		/// (-z, -x, -y)
 		mirrorCenters[2] = CubeVec(	2 * (usedRadius - 1) + 1,		-(usedRadius - 1) - 1,			-(usedRadius - 1)),					/// ( y,  z,  x)
-		mirrorCenters[3] = CubeVec(	(usedRadius - 1),				-(2 * (usedRadius - 1) + 1), 	(usedRadius - 1) + 1),				/// (-x, mirrorCenters-y, -z)
+		mirrorCenters[3] = CubeVec(	(usedRadius - 1),				-(2 * (usedRadius - 1) + 1), 	(usedRadius - 1) + 1),				/// (-x, -y, -z)
 		mirrorCenters[4] = CubeVec(	-(usedRadius - 1) - 1,			-(usedRadius - 1),				2 * (usedRadius - 1) + 1),			/// ( z,  x,  y)
 		mirrorCenters[5] = CubeVec(	-(2 * (usedRadius - 1 ) + 1),	(usedRadius - 1) + 1,			(usedRadius - 1));					/// (-y, -z, -x)
 	}
-
-/* 	Vec wrapHex(int q, int r) {																///
-		int linearPos = fixLinearPos(q - r * usedLinearRAxis, usedCells);
-		/// TODO convert to current grid size
-		return linearMap[linearPos];
-	} */
-
-/* 	Vec wrapHex(int q, int r) {																///
-		CubeVec c = axialToCube(Vec(q, r));
-		for (int i = 0; i < 6; i++) {
-			if (distance(c, mirrorCenters[i]) <= (usedRadius - 1))							//If distance from mirror center i is less than distance to grid center
-				return Vec(q - mirrorCenters[i].x, r - mirrorCenters[i].z);
-		}
-		return Vec((SIZE - 1) / 2, (SIZE - 1) / 2);											//This should never happen
-	} */
 
 	void wrapHex(int port) {																///
 		qPos[port] -= (SIZE - 1) / 2;														//Shift origin to 0, 0
@@ -415,7 +381,7 @@ struct HiveModule : Module {
 	}
 
 	void process(const ProcessArgs& args) override {
-		if (shiftR1Trigger.process(inputs[SHIFT_R1_INPUT].getVoltage())) {			///
+		if (shiftR1Trigger.process(inputs[SHIFT_R1_INPUT].getVoltage())) {				///
 			for (int i = 0; i < NUM_PORTS; i++) {
 				if (dir[i] == NW)
 					moveHex(i, NE);
@@ -423,7 +389,7 @@ struct HiveModule : Module {
 					moveHex(i, (DIRECTION)(dir[i] + 1));
 			}
 		}
-		if (shiftR2Trigger.process(inputs[SHIFT_R2_INPUT].getVoltage())) {			///
+		if (shiftR2Trigger.process(inputs[SHIFT_R2_INPUT].getVoltage())) {				///
 			for (int i = 0; i < NUM_PORTS; i++) {
 				if (dir[i] == NW)
 					moveHex(i, E);
@@ -433,7 +399,7 @@ struct HiveModule : Module {
 					moveHex(i, (DIRECTION)(dir[i] + 2));
 			}
 		}
-		if (shiftL1Trigger.process(inputs[SHIFT_L1_INPUT].getVoltage())) {			///
+		if (shiftL1Trigger.process(inputs[SHIFT_L1_INPUT].getVoltage())) {				///
 			for (int i = 0; i < NUM_PORTS; i++) {
 				if (dir[i] == NE)
 					moveHex(i, NW);
@@ -441,7 +407,7 @@ struct HiveModule : Module {
 					moveHex(i, (DIRECTION)(dir[i] - 1));
 			}
 		}
-		if (shiftL2Trigger.process(inputs[SHIFT_L2_INPUT].getVoltage())) {			///
+		if (shiftL2Trigger.process(inputs[SHIFT_L2_INPUT].getVoltage())) {				///
 			for (int i = 0; i < NUM_PORTS; i++) {
 				if (dir[i] == NE)
 					moveHex(i, W);
@@ -457,17 +423,17 @@ struct HiveModule : Module {
 			bool doPulse = false;
 
 			if (processResetTrigger(i)) {
-				qPos[i] = qStartPos[i];								///
-				rPos[i] = rStartPos[i];								///
-				dir[i] = startDir[i];								///
+				qPos[i] = qStartPos[i];									///
+				rPos[i] = rStartPos[i];									///
+				dir[i] = startDir[i];									///
 				multiplier[i].reset();
 			}
 
 			if (processClockTrigger(i, args.sampleTime)) {
-				moveHex(i, dir[i]);									///
+				moveHex(i, dir[i]);										///
 				multiplier[i].tick();
 
-				switch (grid[qPos[i]][rPos[i]]) {            		///
+				switch (grid[qPos[i]][rPos[i]]) {            			///
 					case GRIDSTATE::OFF:
 						break;
 					case GRIDSTATE::ON:
@@ -485,7 +451,7 @@ struct HiveModule : Module {
 				}
 			}
 
-			if (processTurnTrigger(i)) {							///
+			if (processTurnTrigger(i)) {								///
 				switch (turnMode[i]) {
 					case SIXTY:
 						if (dir[i] == NW)
@@ -636,8 +602,6 @@ struct HiveModule : Module {
 		if (radius == usedRadius) return;
 		usedRadius = radius;
 		usedSize = 2 * (radius - 1) + 1;
-		// usedCells = (3 * usedRadius * usedRadius) - (3 * usedRadius) + 1;
-		// usedLinearRAxis = 3 * usedRadius - 2;
 		updateHexSize();
 		updateMirrorCenters();
 
@@ -719,14 +683,14 @@ struct HiveModule : Module {
 		json_t* portsJ = json_array();
 		for (int i = 0; i < NUM_PORTS; i++) {
 			json_t* portJ = json_object();
-			json_object_set_new(portJ, "qStartPos", json_integer(qStartPos[i]));				///
-			json_object_set_new(portJ, "rStartPos", json_integer(rStartPos[i]));				///
-			json_object_set_new(portJ, "startDir", json_integer(startDir[i]));					///
-			json_object_set_new(portJ, "qPos", json_integer(qPos[i]));							///
-			json_object_set_new(portJ, "rPos", json_integer(rPos[i]));							///
-			json_object_set_new(portJ, "dir", json_integer(dir[i]));							///
+			json_object_set_new(portJ, "qStartPos", json_integer(qStartPos[i]));					///
+			json_object_set_new(portJ, "rStartPos", json_integer(rStartPos[i]));					///
+			json_object_set_new(portJ, "startDir", json_integer(startDir[i]));						///
+			json_object_set_new(portJ, "qPos", json_integer(qPos[i]));								///
+			json_object_set_new(portJ, "rPos", json_integer(rPos[i]));								///
+			json_object_set_new(portJ, "dir", json_integer(dir[i]));								///
 			json_object_set_new(portJ, "turnMode", json_integer(turnMode[i]));
-			json_object_set_new(portJ, "ninetyState", json_integer(ninetyState[i]));    		///
+			json_object_set_new(portJ, "ninetyState", json_integer(ninetyState[i]));    			///
 			json_object_set_new(portJ, "outMode", json_integer(outMode[i]));
 			json_object_set_new(portJ, "ratchetingProb", json_real(ratchetingProb[i]));
 			json_object_set_new(portJ, "ratchetingEnabled", json_boolean(ratchetingEnabled[i]));
@@ -734,7 +698,7 @@ struct HiveModule : Module {
 		}
 		json_object_set_new(rootJ, "ports", portsJ);
 
-		json_object_set_new(rootJ, "usedRadius", json_integer(usedRadius));						///
+		json_object_set_new(rootJ, "usedRadius", json_integer(usedRadius));							///
 		json_object_set_new(rootJ, "usedSize", json_integer(usedSize));
 
 		json_object_set_new(rootJ, "cellH", json_real(cellH));
