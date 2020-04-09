@@ -131,6 +131,23 @@ struct HiveModule : Module {
 	// int usedLinearRAxis = 3 * usedRadius - 2;								///
 	// Vec linearMap[(3 * MAX_RADIUS * MAX_RADIUS) - (3 * MAX_RADIUS + 1)];		///
 
+	/** [Stored to JSON] */					///!!!
+	float cellH = BOX_HEIGHT / (((2 * usedRadius - 2) * (3.f / 4.f)) + 1);;
+	/** [Stored to JSON] */					///!!!
+	float cellH3d4 = cellH * 3.f / 4.f;;
+	/** [Stored to JSON] */					///!!!
+	float cellHd2 = cellH / 2.f;;
+	/** [Stored to JSON] */					///!!!
+	float cellHd4 = cellH / 4.f;;
+	/** [Stored to JSON] */					///!!!
+	float cellW = sqrt(3) * (cellH / 2.f);;
+	/** [Stored to JSON] */					///!!!
+	float cellWd2 = cellW / 2.f;;
+	/** [Stored to JSON] */					///!!!
+	float hexSizeFactor = cellHd2;;
+	/** [Stored to JSON] */					///!!!
+	float pad = (BOX_WIDTH - (2 * usedRadius - 1) * cellW) / 2.f;;
+
 	/** [Stored to JSON] */
 	GRIDSTATE grid[SIZE][SIZE];
 	/** [Stored to JSON] */
@@ -186,14 +203,6 @@ struct HiveModule : Module {
 
 	dsp::ClockDivider lightDivider;
 
-	float cellH;																///
-	float cellH3d4;																///
-	float cellHd2;																///
-	float cellHd4;																///
-	float cellW;																///
-	float cellWd2;																///
-	float hexSizeFactor;														///
-	float pad;																	///
 
 	HiveModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
@@ -728,6 +737,15 @@ struct HiveModule : Module {
 		json_object_set_new(rootJ, "usedRadius", json_integer(usedRadius));						///
 		json_object_set_new(rootJ, "usedSize", json_integer(usedSize));
 
+		json_object_set_new(rootJ, "cellH", json_real(cellH));
+		json_object_set_new(rootJ, "cellH3d4", json_real(cellH3d4));
+		json_object_set_new(rootJ, "cellHd2", json_real(cellHd2));
+		json_object_set_new(rootJ, "cellHd4", json_real(cellHd4));
+		json_object_set_new(rootJ, "cellW", json_real(cellW));
+		json_object_set_new(rootJ, "cellWd2", json_real(cellWd2));
+		json_object_set_new(rootJ, "hexSizeFactor", json_real(hexSizeFactor));
+		json_object_set_new(rootJ, "pad", json_real(pad));
+
 		json_object_set_new(rootJ, "normalizePorts", json_boolean(normalizePorts));
 		return rootJ;
 	}
@@ -772,6 +790,15 @@ struct HiveModule : Module {
 
 		usedRadius = json_integer_value(json_object_get(rootJ, "usedRadius"));				///
 		usedSize = json_integer_value(json_object_get(rootJ, "usedSize"));
+
+		cellH = json_real_value(json_object_get(rootJ, "cellH"));		
+		cellH3d4 = json_real_value(json_object_get(rootJ, "cellH3d4"));		
+		cellHd2 = json_real_value(json_object_get(rootJ, "cellHd2"));		
+		cellHd4 = json_real_value(json_object_get(rootJ, "cellHd4"));		
+		cellW = json_real_value(json_object_get(rootJ, "cellW"));		
+		cellWd2 = json_real_value(json_object_get(rootJ, "cellWd2"));		
+		hexSizeFactor = json_real_value(json_object_get(rootJ, "hexSizeFactor"));		
+		pad = json_real_value(json_object_get(rootJ, "pad"));		
 
 		json_t* normalizePortsJ = json_object_get(rootJ, "normalizePorts");
 		if (normalizePortsJ) normalizePorts = json_boolean_value(normalizePortsJ);
