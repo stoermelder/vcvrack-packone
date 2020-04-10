@@ -128,21 +128,21 @@ struct HiveModule : Module {
 	int usedSize = 2 * (usedRadius - 1) + 1;									///
 
 	/** [Stored to JSON] */														///
-	float cellH = BOX_HEIGHT / (((2 * usedRadius - 2) * (3.f / 4.f)) + 1);;
+	float cellH = BOX_HEIGHT / (((2 * usedRadius - 2) * (3.f / 4.f)) + 1);
 	/** [Stored to JSON] */														///
-	float cellH3d4 = cellH * 3.f / 4.f;;
+	float cellH3d4 = cellH * 3.f / 4.f;
 	/** [Stored to JSON] */														///
-	float cellHd2 = cellH / 2.f;;
+	float cellHd2 = cellH / 2.f;
 	/** [Stored to JSON] */														///
-	float cellHd4 = cellH / 4.f;;
+	float cellHd4 = cellH / 4.f;
 	/** [Stored to JSON] */														///
-	float cellW = sqrt(3) * (cellH / 2.f);;
+	float cellW = sqrt(3) * (cellH / 2.f);
 	/** [Stored to JSON] */														///
-	float cellWd2 = cellW / 2.f;;
+	float cellWd2 = cellW / 2.f;
 	/** [Stored to JSON] */														///
-	float hexSizeFactor = cellHd2;;
+	float hexSizeFactor = cellHd2;
 	/** [Stored to JSON] */														///
-	float pad = (BOX_WIDTH - (2 * usedRadius - 1) * cellW) / 2.f;;
+	float pad = (BOX_WIDTH - (2 * usedRadius - 1) * cellW) / 2.f;
 
 	/** [Stored to JSON] */
 	GRIDSTATE grid[SIZE][SIZE];
@@ -589,7 +589,7 @@ struct HiveModule : Module {
 		}
 	}
 
-	void gridClear() {									///
+	void gridClear() {
 		for (int i = 0; i < SIZE; i++) {
 			for (int j = 0; j < SIZE; j++) {
 				grid[i][j] = GRIDSTATE::OFF;
