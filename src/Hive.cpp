@@ -235,14 +235,6 @@ struct HiveModule : Module {
 		Module::onReset();
 	}
 
-	int fixLinearPos(int pos, int size)	{																				///
-		if (pos > 0) pos %= size;
-		else if (pos == size) pos = 0;
-		else pos = size + pos;
-
-		return (pos >= 0 && pos < size) ? pos : fixLinearPos(pos, size);
-	}
-
 	CubeVec axialToCube(Vec axialVec) {																					///
 		float x = axialVec.x;
 		float z = axialVec.y;
