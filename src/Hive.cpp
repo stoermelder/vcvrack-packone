@@ -298,17 +298,18 @@ struct HiveModule : Module {
 
 	bool cellVisible(int q, int r, int size) {												///
 		bool visible = false;
+		int radius = ((size - 1) / 2) + 1;
 
-		q -= MAX_RADIUS - usedRadius;
-		r -= MAX_RADIUS - usedRadius;
+		q -= MAX_RADIUS - radius;
+		r -= MAX_RADIUS - radius;
 
 		if ((q >= 0 && r >= 0) && (q < size && r < size)) {
-			if (q > usedRadius - 1) {
-				if (r < size - abs((usedRadius - 1) - q))
+			if (q > radius - 1) {
+				if (r < size - abs((radius - 1) - q))
 					visible = true;
 			}
-			else if (q < usedRadius - 1) {
-				if (r >= size - (size - std::abs((usedRadius - 1) - q)))
+			else if (q < radius - 1) {
+				if (r >= size - (size - std::abs((radius - 1) - q)))
 					visible = true;
 			}
 			else if (r < size)
