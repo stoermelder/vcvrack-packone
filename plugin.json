@@ -165,7 +165,7 @@
 			"slug": "MidiStep",
 			"name": "MIDI-STEP",
 			"description": "Module for relative modes of endless knobs on your MIDI controller, such as Arturia Beatstep, Native Instruments Komplete Keyboards or Behringer X-TOUCH",
-			"tags": ["Utility", "MIDI"],
+			"tags": ["Utility", "MIDI", "Polyphonic"],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/MidiStep.md"
 		},
 		{

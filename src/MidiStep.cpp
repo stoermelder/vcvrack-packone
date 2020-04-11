@@ -33,6 +33,8 @@ struct MidiStepModule : Module {
 	midi::InputQueue midiInput;
 	/** [Stored to JSON] */
 	MODE mode = MODE::BEATSTEP_R1;
+	/** [Stored to JSON] */
+	bool polyphonicOutput = false;
 
 	/** [Stored to JSON] */
 	int learnedCcs[PORTS];
@@ -75,26 +77,35 @@ struct MidiStepModule : Module {
 
 		for (int i = 0; i < PORTS; i++) {
 			if (incPulse[i].process(args.sampleTime)) {
-				outputs[OUTPUT_INC + i].setVoltage(incPulseCount[i] % 2 == 1 ? 10.f : 0.f);
+				setOutputVoltage(OUTPUT_INC, i, incPulseCount[i] % 2 == 1 ? 10.f : 0.f);
 			}
 			else {
 				if (incPulseCount[i] > 0) {
 					incPulse[i].trigger();
 					incPulseCount[i]--;
 				}
-				outputs[OUTPUT_INC + i].setVoltage(0.f);
+				setOutputVoltage(OUTPUT_INC, i, 0.f);
 			}
 
 			if (decPulse[i].process(args.sampleTime)) {
-				outputs[OUTPUT_DEC + i].setVoltage(decPulseCount[i] % 2 == 1 ? 10.f : 0.f);
+				setOutputVoltage(OUTPUT_DEC, i, decPulseCount[i] % 2 == 1 ? 10.f : 0.f);
 			}
 			else {
 				if (decPulseCount[i] > 0) {
 					decPulse[i].trigger();
 					decPulseCount[i]--;
 				}
-				outputs[OUTPUT_DEC + i].setVoltage(0.f);
+				setOutputVoltage(OUTPUT_DEC, i, 0.f);
 			}
+		}
+	}
+
+	inline void setOutputVoltage(int out, int idx, float v) {
+		if (polyphonicOutput) {
+			outputs[out].setVoltage(v, idx);
+		}
+		else {
+			outputs[out + idx].setVoltage(v);
 		}
 	}
 
@@ -150,6 +161,7 @@ struct MidiStepModule : Module {
 		json_t* rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 		json_object_set_new(rootJ, "mode", json_integer(mode));
+		json_object_set_new(rootJ, "polyphonicOutput", json_boolean(polyphonicOutput));
 
 		json_t* ccsJ = json_array();
 		for (int i = 0; i < PORTS; i++) {
@@ -168,6 +180,7 @@ struct MidiStepModule : Module {
 
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 		mode = (MODE)json_integer_value(json_object_get(rootJ, "mode"));
+		polyphonicOutput = json_boolean_value(json_object_get(rootJ, "polyphonicOutput"));
 
 		json_t* ccsJ = json_object_get(rootJ, "ccs");
 		if (ccsJ) {
@@ -406,8 +419,20 @@ struct MidiStepWidget : ThemedModuleWidget<MidiStepModule<>> {
 			}
 		};
 
+		struct PolyphonicOutputItem : MenuItem {
+			MidiStepModule<>* module;
+			void onAction(const event::Action& e) override {
+				module->polyphonicOutput ^= true;
+			}
+			void step() override {
+				rightText = module->polyphonicOutput ? "✔" : "";
+				MenuItem::step();
+			}
+		};
+
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Mode", &ModeMenuItem::module, module));
+		menu->addChild(construct<PolyphonicOutputItem>(&MenuItem::text, "Polyphonic output", &PolyphonicOutputItem::module, module));
 	}
 };
 
