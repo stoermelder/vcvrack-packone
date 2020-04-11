@@ -374,42 +374,18 @@ struct HiveModule : Module {
 	}
 
 	void process(const ProcessArgs& args) override {
-		if (shiftR1Trigger.process(inputs[SHIFT_R1_INPUT].getVoltage())) {				///
-			for (int i = 0; i < NUM_PORTS; i++) {
-				if (dir[i] == NW)
-					moveHex(i, NE);
-				else
-					moveHex(i, (DIRECTION)(dir[i] + 1));
-			}
-		}
-		if (shiftR2Trigger.process(inputs[SHIFT_R2_INPUT].getVoltage())) {				///
-			for (int i = 0; i < NUM_PORTS; i++) {
-				if (dir[i] == NW)
-					moveHex(i, E);
-				else if (dir[i] == W)
-					moveHex(i, NE);
-				else
-					moveHex(i, (DIRECTION)(dir[i] + 2));
-			}
-		}
-		if (shiftL1Trigger.process(inputs[SHIFT_L1_INPUT].getVoltage())) {				///
-			for (int i = 0; i < NUM_PORTS; i++) {
-				if (dir[i] == NE)
-					moveHex(i, NW);
-				else
-					moveHex(i, (DIRECTION)(dir[i] - 1));
-			}
-		}
-		if (shiftL2Trigger.process(inputs[SHIFT_L2_INPUT].getVoltage())) {				///
-			for (int i = 0; i < NUM_PORTS; i++) {
-				if (dir[i] == NE)
-					moveHex(i, W);
-				else if (dir[i] == E)
-					moveHex(i, NW);
-				else
-					moveHex(i, (DIRECTION)(dir[i] - 2));
-			}
-		}
+		if (shiftR1Trigger.process(inputs[SHIFT_R1_INPUT].getVoltage()))				///
+			for (int i = 0; i < NUM_PORTS; i++)
+				moveHex(i, (DIRECTION)((dir[i] + 1 ) % 6));
+		if (shiftR2Trigger.process(inputs[SHIFT_R2_INPUT].getVoltage()))				///
+			for (int i = 0; i < NUM_PORTS; i++)
+				moveHex(i, (DIRECTION)((dir[i] + 2 ) % 6));
+		if (shiftL1Trigger.process(inputs[SHIFT_L1_INPUT].getVoltage()))				///
+			for (int i = 0; i < NUM_PORTS; i++)
+				moveHex(i, (DIRECTION)((dir[i] + 5 ) % 6));
+		if (shiftL1Trigger.process(inputs[SHIFT_L1_INPUT].getVoltage()))				///
+			for (int i = 0; i < NUM_PORTS; i++)
+				moveHex(i, (DIRECTION)((dir[i] + 4 ) % 6));
 
 		for (int i = 0; i < NUM_PORTS; i++) {
 			active[i] = outputs[TRIG_OUTPUT + i].isConnected() || outputs[CV_OUTPUT + i].isConnected();
