@@ -166,10 +166,10 @@ struct GripWidget : ThemedModuleWidget<GripModule> {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(0, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 1 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		MapButton* button = createParamCentered<MapButton>(Vec(15.0f, 60.3f), module, GripModule::PARAM_BIND);
+		MapButton* button = createParamCentered<MapButton>(Vec(15.0f, 328.5f), module, GripModule::PARAM_BIND);
 		button->module = module;
 		addParam(button);
-		addChild(createLightCentered<MapLight<GreenRedLight>>(Vec(15.f, 60.3f), module, GripModule::LIGHT_BIND));
+		addChild(createLightCentered<MapLight<GreenRedLight>>(Vec(15.f, 328.5f), module, GripModule::LIGHT_BIND));
 	}
 
 	void appendContextMenu(Menu* menu) override {
