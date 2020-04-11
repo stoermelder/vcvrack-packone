@@ -26,6 +26,7 @@ void init(rack::Plugin* p) {
 	p->addModel(modelDetour);
 	p->addModel(modelSail);
 	p->addModel(modelPile);
+	p->addModel(modelPilePoly);
 	p->addModel(modelMidiStep);
 	p->addModel(modelMirror);
 	p->addModel(modelAffix);

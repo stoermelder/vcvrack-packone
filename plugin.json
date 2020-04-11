@@ -155,6 +155,13 @@
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Pile.md"
 		},
 		{
+			"slug": "PilePoly",
+			"name": "POLY-PILE",
+			"description": "Translate increment triggers or decrement triggers in an absolute voltage, especially useful with MIDI-STEP, with slew support",
+			"tags": ["Utility", "Polyphonic"],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Pile.md"
+		},
+		{
 			"slug": "MidiStep",
 			"name": "MIDI-STEP",
 			"description": "Module for relative modes of endless knobs on your MIDI controller, such as Arturia Beatstep, Native Instruments Komplete Keyboards or Behringer X-TOUCH",

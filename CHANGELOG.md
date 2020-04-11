@@ -8,6 +8,8 @@
     - New module, locker for module parameters
 - Module [MIRROR](./docs/Mirror.md)
     - New module
+- Module [POLY-PILE](./docs/Pile.md)
+    - New module, polyphonic version of PILE
 
 ### Fixes and Changes
 

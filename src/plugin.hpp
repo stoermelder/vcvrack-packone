@@ -29,6 +29,7 @@ extern Model* modelIntermix;
 extern Model* modelDetour;
 extern Model* modelSail;
 extern Model* modelPile;
+extern Model* modelPilePoly;
 extern Model* modelMidiStep;
 extern Model* modelMirror;
 extern Model* modelAffix;
