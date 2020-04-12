@@ -10,6 +10,8 @@
     - New module
 - Module [POLY-PILE](./docs/Pile.md)
     - New module, polyphonic version of PILE
+- Module [GLUE](./docs/Glue.md)
+    - New module, label maker for your modules!
 
 ### Fixes and Changes
 

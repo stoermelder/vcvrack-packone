@@ -32,6 +32,7 @@ void init(rack::Plugin* p) {
 	p->addModel(modelAffix);
 	p->addModel(modelAffixMicro);
 	p->addModel(modelGrip);
+	p->addModel(modelGlue);
 	p->addModel(modelAudioInterface64);
 
 	pluginSettings.readFromJson();

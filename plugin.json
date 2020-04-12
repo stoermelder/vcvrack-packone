@@ -192,9 +192,16 @@
 		{
 			"slug": "Grip",
 			"name": "GRIP",
-			"description": "",
+			"description": "Locker for module parameters",
 			"tags": ["Utility"],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Grip.md"
+		},
+		{
+			"slug": "Glue",
+			"name": "GLUE",
+			"description": "Label maker for your modules!",
+			"tags": ["Utility"],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Glue.md"
 		},
 		{
 			"slug": "AudioInterface64",
