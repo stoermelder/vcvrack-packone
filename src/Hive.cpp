@@ -423,38 +423,23 @@ struct HiveModule : Module {
 			if (processTurnTrigger(i)) {								///
 				switch (turnMode[i]) {
 					case SIXTY:
-						if (dir[i] == NW)
-							dir[i] = NE;
-						else
-							dir[i] = (DIRECTION)(dir[i] + 1);
+						dir[i] = (DIRECTION)((dir[i] + 1) % 6);
 						break;
 					case NINETY:
 						if (ninetyState[i] == SIXTY) {
-							if (dir[i] == NW)
-								dir[i] = NE;
-							else
-								dir[i] = (DIRECTION)(dir[i] + 1);
+							dir[i] = (DIRECTION)((dir[i] + 1) % 6);
 							ninetyState[i] = ONETWENTY;
 						}
 						else {
-							if (dir[i] < 4)
-								dir[i] = (DIRECTION)(dir[i] + 2);
-							else
-								dir[i] = (DIRECTION)(dir[i] - 4);
+							dir[i] = (DIRECTION)((dir[i] + 2) % 6);
 							ninetyState[i] = SIXTY;
 						}
 						break;
 					case ONETWENTY:
-						if (dir[i] < 4)
-								dir[i] = (DIRECTION)(dir[i] + 2);
-							else
-								dir[i] = (DIRECTION)(dir[i] - 4);
+						dir[i] = (DIRECTION)((dir[i] + 2) % 6);
 						break;
 					case ONEEIGHTY:
-						if (dir[i] < 3)
-							dir[i] = (DIRECTION)(dir[i] + 3);
-						else
-							dir[i] = (DIRECTION)(dir[i] - 3);
+						dir[i] = (DIRECTION)((dir[i] + 3) % 6);
 						break;
 				}
 			}
