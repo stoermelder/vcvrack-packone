@@ -132,6 +132,7 @@ struct LabelDrawWidget : TransparentWidget {
 struct LabelWidget : widget::TransparentWidget {
 	Label* label;
 	bool deleteRequested = false;
+	bool duplicateRequested = false;
 	bool editMode = false;
 
 	math::Vec dragPos;
@@ -442,6 +443,13 @@ struct LabelWidget : widget::TransparentWidget {
 			}
 		};
 
+		struct LabelDuplicateItem : MenuItem {
+			LabelWidget* w;
+			void onAction(const event::Action& e) override {
+				w->duplicateRequested = true;
+			}
+		};
+
 		struct LabelDeleteItem : MenuItem {
 			LabelWidget* w;
 			void onAction(const event::Action& e) override {
@@ -452,22 +460,35 @@ struct LabelWidget : widget::TransparentWidget {
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Label"));
 		menu->addChild(construct<LabelField>(&LabelField::text, label->text, &LabelField::l, label));
 		menu->addChild(construct<AppearanceItem>(&AppearanceItem::text, "Appearance", &AppearanceItem::label, label));
+		menu->addChild(construct<LabelDuplicateItem>(&MenuItem::text, "Duplicate", &LabelDuplicateItem::w, this));
 		menu->addChild(construct<LabelDeleteItem>(&MenuItem::text, "Delete", &LabelDeleteItem::w, this));
 	}
 };
 
 
 struct LabelContainer : widget::Widget {
-	ParamQuantity* unlockParamQuantity;
-
+	/** [Stored to JSON] the list of labels */
 	std::list<Label*> labels;
 	std::list<Label*> labelsToBeDeleted;
 	bool editMode;
 	bool editModeForce = false;
 
+	/** used when duplicating an existing label */
+	Label* labelTemplate = NULL;
+
+	/** [Stored to JSON] default size for new labels */
 	float defaultSize = LABEL_SIZE_DEFAULT;
+	/** [Stored to JSON] default width for new labels */
+	float defaultWidth = LABEL_WIDTH_DEFAULT;
+	/** [Stored to JSON] default angle for new labels */
 	float defaultAngle = 0.f;
+	/** [Stored to JSON] default color for new labels */
 	NVGcolor defaultColor = LABEL_COLOR_YELLOW;
+
+	/** reference to unlock-parameter */
+	ParamQuantity* unlockParamQuantity;
+	/** reference to add-parameter */
+	ParamQuantity* addLabelParamQuantity;
 
 	~LabelContainer() {
 		for (Label* l : labels) {
@@ -485,7 +506,15 @@ struct LabelContainer : widget::Widget {
 		for (Widget* w : children) {
 			LabelWidget* lw = dynamic_cast<LabelWidget*>(w);
 			if (!lw) continue;
-			if (lw->deleteRequested) labelsToBeDeleted.push_back(lw->label);
+			if (lw->deleteRequested) {
+				labelsToBeDeleted.push_back(lw->label);
+				labelTemplate = NULL;
+			}
+			if (lw->duplicateRequested) {
+				lw->duplicateRequested = false;
+				labelTemplate = lw->label;
+				addLabelParamQuantity->setValue(1.0);
+			}
 			lw->editMode = editMode;
 		}
 		for (Label* l : labelsToBeDeleted) {
@@ -507,10 +536,12 @@ struct LabelContainer : widget::Widget {
 
 	Label* addLabel() {
 		Label* l = new Label;
-		l->size = defaultSize;
-		l->angle = defaultAngle;
-		l->color = defaultColor;
+		l->size = labelTemplate ? labelTemplate->size : defaultSize;
+		l->width = labelTemplate ? labelTemplate->width : defaultWidth;
+		l->angle = labelTemplate ? labelTemplate->angle : defaultAngle;
+		l->color = labelTemplate ? labelTemplate->color : defaultColor;
 		labels.push_back(l);
+		labelTemplate = NULL;
 		LabelWidget* lw = new LabelWidget(l);
 		addChild(lw);
 		return l;
@@ -599,8 +630,12 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 		: ThemedModuleWidget<GlueModule>(module, "Glue") {
 		setModule(module);
 
+		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
+		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+
 		if (module) {
 			labelContainer = new LabelContainer;
+			labelContainer->addLabelParamQuantity = module->paramQuantities[GlueModule::PARAM_ADD_LABEL];
 			labelContainer->unlockParamQuantity = module->paramQuantities[GlueModule::PARAM_UNLOCK];
 			APP->scene->rack->addChild(labelContainer);
 
@@ -631,6 +666,7 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 		json_t* rootJ = ModuleWidget::toJson();
 
 		json_object_set_new(rootJ, "defaultSize", json_real(labelContainer->defaultSize));
+		json_object_set_new(rootJ, "defaultWidth", json_real(labelContainer->defaultWidth));
 		json_object_set_new(rootJ, "defaultAngle", json_real(labelContainer->defaultAngle));
 		json_object_set_new(rootJ, "defaultColor", json_string(color::toHexString(labelContainer->defaultColor).c_str()));
 
@@ -661,9 +697,10 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 		ModuleWidget::fromJson(rootJ);
 
 		labelContainer->defaultSize = json_real_value(json_object_get(rootJ, "defaultSize"));
+		labelContainer->defaultWidth = json_real_value(json_object_get(rootJ, "defaultWidth"));
 		labelContainer->defaultAngle = json_real_value(json_object_get(rootJ, "defaultAngle"));
 		labelContainer->defaultColor = color::fromHexString(json_string_value(json_object_get(rootJ, "defaultColor")));
-		
+
 		json_t* labelsJ = json_object_get(rootJ, "labels");
 		size_t labelIdx;
 		json_t* labelJ;
@@ -730,6 +767,44 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 					}
 				};
 
+				struct WidthSlider : ui::Slider {
+					struct WidthQuantity : Quantity {
+						LabelContainer* labelContainer;
+						WidthQuantity(LabelContainer* labelContainer) {
+							this->labelContainer = labelContainer;
+						}
+						void setValue(float value) override {
+							labelContainer->defaultWidth = math::clamp(value, LABEL_WIDTH_MIN, LABEL_WIDTH_MAX);
+						}
+						float getValue() override {
+							return labelContainer->defaultWidth;
+						}
+						float getDefaultValue() override {
+							return LABEL_WIDTH_DEFAULT;
+						}
+						std::string getLabel() override {
+							return "Width";
+						}
+						int getDisplayPrecision() override {
+							return 3;
+						}
+						float getMaxValue() override {
+							return LABEL_WIDTH_MAX;
+						}
+						float getMinValue() override {
+							return LABEL_WIDTH_MIN;
+						}
+					};
+
+					WidthSlider(LabelContainer* labelContainer) {
+						box.size.x = 140.0f;
+						quantity = new WidthQuantity(labelContainer);
+					}
+					~WidthSlider() {
+						delete quantity;
+					}
+				};
+
 				struct RotateItem : MenuItem {
 					LabelContainer* labelContainer;
 					float angle;
@@ -774,6 +849,7 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 				};
 
 				menu->addChild(new SizeSlider(labelContainer));
+				menu->addChild(new WidthSlider(labelContainer));
 				menu->addChild(new MenuSeparator);
 				menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Default rotation"));
 				menu->addChild(construct<RotateItem>(&MenuItem::text, "0°", &RotateItem::labelContainer, labelContainer, &RotateItem::angle, 0.f));
