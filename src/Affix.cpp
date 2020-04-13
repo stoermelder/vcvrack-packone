@@ -5,7 +5,8 @@ namespace Affix {
 
 enum class PARAM_MODE {
 	VOLTAGE = 0,
-	CENT = 1
+	CENT = 1,
+	OCTAVE = 2
 };
 
 template < int CHANNELS >
@@ -28,6 +29,19 @@ struct AffixModule : Module {
 
 	struct AffixParamQuantity : ParamQuantity {
 		AffixModule<CHANNELS>* module;
+		float v = std::numeric_limits<float>::min();
+
+		float getValue() override {
+			switch (module->paramMode) {
+				default:
+					return ParamQuantity::getValue();
+				case PARAM_MODE::CENT:
+				case PARAM_MODE::OCTAVE: {
+					if (v == std::numeric_limits<float>::min()) v = ParamQuantity::getValue();
+					return v;
+				}
+			}
+		}
 
 		void setValue(float value) override {
 			switch (module->paramMode) {
@@ -37,7 +51,14 @@ struct AffixModule : Module {
 					break;
 				}
 				case PARAM_MODE::CENT: {
+					v = clamp(value, getMinValue(), getMaxValue());
 					value = std::round(value * 12.f) / 12.f;
+					ParamQuantity::setValue(value);
+					break;
+				}
+				case PARAM_MODE::OCTAVE: {
+					v = clamp(value, getMinValue(), getMaxValue());
+					value = std::round(value), 
 					ParamQuantity::setValue(value);
 					break;
 				}
@@ -56,6 +77,10 @@ struct AffixModule : Module {
 					int octaves = cent / 12;
 					cent = cent % 12;
 					return string::f("%i, %i", octaves, cent);
+				}
+				case PARAM_MODE::OCTAVE: {
+					int octaves = (int)ParamQuantity::getValue();
+					return string::f("%i", octaves);
 				}
 			}
 		}
@@ -76,6 +101,14 @@ struct AffixModule : Module {
 					}
 					break;
 				}
+				case PARAM_MODE::OCTAVE: {
+					int octave = 0;
+					int n = std::sscanf(s.c_str(), "%i", &octave);
+					if (n == 1) {
+						ParamQuantity::setDisplayValue(octave);
+					}
+					break;
+				}
 			}
 		}
 
@@ -91,6 +124,10 @@ struct AffixModule : Module {
 					int octaves = cent / 12;
 					cent = cent % 12;
 					return string::f("%s: %i oct %i cent", ParamQuantity::getLabel().c_str(), octaves, cent);
+				}
+				case PARAM_MODE::OCTAVE: {
+					int octaves = (int)ParamQuantity::getValue();
+					return string::f("%s: %i oct", ParamQuantity::getLabel().c_str(), octaves);
 				}
 			}
 		}
@@ -177,6 +214,7 @@ struct ParamModeMenuItem : MenuItem {
 
 		menu->addChild(construct<ParamModeItem>(&MenuItem::text, "Volt", &ParamModeItem::module, module, &ParamModeItem::paramMode, PARAM_MODE::VOLTAGE));
 		menu->addChild(construct<ParamModeItem>(&MenuItem::text, "Cent", &ParamModeItem::module, module, &ParamModeItem::paramMode, PARAM_MODE::CENT));
+		menu->addChild(construct<ParamModeItem>(&MenuItem::text, "Octave", &ParamModeItem::module, module, &ParamModeItem::paramMode, PARAM_MODE::OCTAVE));
 		return menu;
 	}
 }; // ParamModeMenuItem
