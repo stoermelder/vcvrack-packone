@@ -20,6 +20,8 @@
     - Added independent ratcheting settings for each sequencer-playhead (#94)
 - Module [MIDI-STEP](./docs/MidiStep.md)
     - Added option for polyphonic output for all 8 channels on port 1
+- Module [PILE](./docs/Pile.md)
+    - Removed slew-limiting after preset-load
 - Module [SAIL](./docs/Sail.md)
     - Rewritten how the target values are applied onto the parameters (#106). You can't use IN and INC/DEC the same time anymore, just use two different modules.
 
