@@ -8,8 +8,13 @@ const static NVGcolor LABEL_COLOR_RED = nvgRGB(0xff, 0x74, 0x55);
 const static NVGcolor LABEL_COLOR_CYAN = nvgRGB(0x7a, 0xfc, 0xff);
 const static NVGcolor LABEL_COLOR_GREEN = nvgRGB(0x1b, 0xa8, 0xb1);
 const static NVGcolor LABEL_COLOR_PINK = nvgRGB(0xff, 0x65, 0xa3);
+const static NVGcolor LABEL_COLOR_WHITE = nvgRGB(0xfa, 0xfa, 0xfa);
 
-const static float LABEL_WIDTH_MAX = 150.f;
+const static float LABEL_OPACITY_MAX = 1.0f;
+const static float LABEL_OPACITY_MIN = 0.2f;
+const static float LABEL_OPACITY_STEP = 0.05f;
+
+const static float LABEL_WIDTH_MAX = 180.f;
 const static float LABEL_WIDTH_MIN = 20.f;
 const static float LABEL_WIDTH_DEFAULT = 80.f;
 
@@ -244,6 +249,8 @@ struct LabelWidget : widget::TransparentWidget {
 
 		struct LabelField : ui::TextField {
 			Label* l;
+			// Need for input field blur on submenu
+			bool textSelected = true;
 			LabelField() {
 				box.size.x = 140.f;
 				placeholder = "Label";
@@ -256,7 +263,7 @@ struct LabelWidget : widget::TransparentWidget {
 			}
 			void step() override {
 				// Keep selected
-				APP->event->setSelected(this);
+				if (textSelected) APP->event->setSelected(this);
 				TextField::step();
 				l->text = text;
 			}
@@ -275,6 +282,7 @@ struct LabelWidget : widget::TransparentWidget {
 
 		struct AppearanceItem : MenuItem {
 			Label* label;
+			bool* textSelected;
 			AppearanceItem() {
 				rightText = RIGHT_ARROW;
 			}
@@ -368,7 +376,7 @@ struct LabelWidget : widget::TransparentWidget {
 							this->label = label;
 						}
 						void setValue(float value) override {
-							label->opacity = math::clamp(value, 0.f, 1.f);
+							label->opacity = math::clamp(value, LABEL_OPACITY_MIN, LABEL_OPACITY_MAX);
 						}
 						float getValue() override {
 							return label->opacity;
@@ -387,6 +395,12 @@ struct LabelWidget : widget::TransparentWidget {
 						}
 						std::string getUnit() override {
 							return "%";
+						}
+						float getMaxValue() override {
+							return LABEL_OPACITY_MAX;
+						}
+						float getMinValue() override {
+							return LABEL_OPACITY_MIN;
 						}
 					};
 
@@ -427,6 +441,7 @@ struct LabelWidget : widget::TransparentWidget {
 
 				struct CustomColorField : ui::TextField {
 					Label* label;
+					bool* textSelected;
 					CustomColorField() {
 						box.size.x = 80.f;
 						placeholder = "#ffffff";
@@ -441,6 +456,10 @@ struct LabelWidget : widget::TransparentWidget {
 						if (!e.getTarget()) {
 							ui::TextField::onSelectKey(e);
 						}
+					}
+					void onButton(const event::Button& e) override {
+						*textSelected = false;
+						TextField::onButton(e);
 					}
 				};
 
@@ -459,7 +478,8 @@ struct LabelWidget : widget::TransparentWidget {
 				menu->addChild(construct<ColorItem>(&MenuItem::text, "Cyan", &ColorItem::label, label, &ColorItem::color, LABEL_COLOR_CYAN));
 				menu->addChild(construct<ColorItem>(&MenuItem::text, "Green", &ColorItem::label, label, &ColorItem::color, LABEL_COLOR_GREEN));
 				menu->addChild(construct<ColorItem>(&MenuItem::text, "Pink", &ColorItem::label, label, &ColorItem::color, LABEL_COLOR_PINK));
-				menu->addChild(construct<CustomColorField>(&TextField::text, color::toHexString(label->color), &CustomColorField::label, label));
+				menu->addChild(construct<ColorItem>(&MenuItem::text, "White", &ColorItem::label, label, &ColorItem::color, LABEL_COLOR_WHITE));
+				menu->addChild(construct<CustomColorField>(&TextField::text, color::toHexString(label->color), &CustomColorField::label, label, &CustomColorField::textSelected, textSelected));
 				return menu;
 			}
 		};
@@ -479,8 +499,9 @@ struct LabelWidget : widget::TransparentWidget {
 		};
 
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Label"));
-		menu->addChild(construct<LabelField>()->setLabel(label));
-		menu->addChild(construct<AppearanceItem>(&AppearanceItem::text, "Appearance", &AppearanceItem::label, label));
+		LabelField* labelField = construct<LabelField>()->setLabel(label);
+		menu->addChild(labelField);
+		menu->addChild(construct<AppearanceItem>(&AppearanceItem::text, "Appearance", &AppearanceItem::label, label, &AppearanceItem::textSelected, &labelField->textSelected));
 		menu->addChild(construct<LabelDuplicateItem>(&MenuItem::text, "Duplicate", &LabelDuplicateItem::w, this));
 		menu->addChild(construct<LabelDeleteItem>(&MenuItem::text, "Delete", &LabelDeleteItem::w, this, &LabelDeleteItem::rightText, "Backspace"));
 	}
@@ -494,6 +515,48 @@ struct LabelWidget : widget::TransparentWidget {
 	}
 };
 
+
+
+template < typename WIDGET >
+struct LabelRemoveAction : history::ModuleAction {
+	Label label;
+	int moduleId;
+
+	void undo() override {
+		ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
+		assert(mw);
+		WIDGET* w = dynamic_cast<WIDGET*>(mw);
+		assert(w);
+
+		Label* l = w->labelContainer->addLabel();
+		l->moduleId = label.moduleId;
+		l->x = label.x;
+		l->y = label.y;
+		l->width = label.width;
+		l->size = label.size;
+		l->angle = label.angle;
+		l->skew = label.skew;
+		l->opacity = label.opacity;
+		l->text = label.text;
+		l->color = label.color;
+	}
+
+	void redo() override {
+		// Nothing to do here, it's handled like any module removal by LabelContainer
+	}
+};
+
+struct DoubleUndoAction : history::ModuleAction {
+	void undo() override {
+		APP->history->undo();
+	}
+	void redo() override {
+		APP->history->redo();
+	}
+};
+
+
+struct GlueWidget;
 
 struct LabelContainer : widget::Widget {
 	/** [Stored to JSON] the list of labels */
@@ -551,10 +614,22 @@ struct LabelContainer : widget::Widget {
 			lw->editMode = editMode;
 			lw->skew = skewLabels;
 		}
-		for (Label* l : labelsToBeDeleted) {
-			removeLabel(l);
+
+		if (labelsToBeDeleted.size() > 0) {
+			history::ComplexAction* complexAction = new history::ComplexAction;
+			complexAction->name = "remove module";
+			// First undo the module removal by a "double undo"
+			complexAction->push(new DoubleUndoAction);
+			for (Label* l : labelsToBeDeleted) {
+				LabelRemoveAction<GlueWidget>* a = new LabelRemoveAction<GlueWidget>;
+				a->label = *l;
+				a->moduleId = mw->module->id;
+				complexAction->push(a);
+				removeLabel(l);
+			}
+			APP->history->push(complexAction);
+			labelsToBeDeleted.clear();
 		}
-		labelsToBeDeleted.clear();
 
 		Widget::step();
 	}
@@ -650,7 +725,7 @@ struct OpacityPlusButton : TL1105 {
 	void onButton(const event::Button& e) override {
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
 			for (Label* l : labelContainer->labels)
-				l->opacity = std::min(l->opacity + 0.05f, 1.f);
+				l->opacity = std::min(l->opacity + LABEL_OPACITY_STEP, LABEL_OPACITY_MAX);
 		}
 		TL1105::onButton(e);
 	}
@@ -661,7 +736,7 @@ struct OpacityMinusButton : TL1105 {
 	void onButton(const event::Button& e) override {
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
 			for (Label* l : labelContainer->labels)
-				l->opacity = std::max(l->opacity - 0.05f, 0.f);
+				l->opacity = std::max(l->opacity - LABEL_OPACITY_STEP, LABEL_OPACITY_MIN);
 		}
 		TL1105::onButton(e);
 	}
@@ -919,6 +994,7 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 				menu->addChild(construct<ColorItem>(&MenuItem::text, "Cyan", &ColorItem::labelContainer, labelContainer, &ColorItem::color, LABEL_COLOR_CYAN));
 				menu->addChild(construct<ColorItem>(&MenuItem::text, "Green", &ColorItem::labelContainer, labelContainer, &ColorItem::color, LABEL_COLOR_GREEN));
 				menu->addChild(construct<ColorItem>(&MenuItem::text, "Pink", &ColorItem::labelContainer, labelContainer, &ColorItem::color, LABEL_COLOR_PINK));
+				menu->addChild(construct<ColorItem>(&MenuItem::text, "White", &ColorItem::labelContainer, labelContainer, &ColorItem::color, LABEL_COLOR_WHITE));
 				menu->addChild(construct<CustomColorField>(&TextField::text, color::toHexString(labelContainer->defaultColor), &CustomColorField::labelContainer, labelContainer));
 				return menu;
 			}
