@@ -1,13 +1,13 @@
 /**
  * q = column
  * r = row
- * 												-r
+ * 										-r
  * 
  * 
  * 									-q		 *		+q
  * 
  * 
- * 										+r 
+ * 												+r 
  * 
  * 
  *  
@@ -22,6 +22,7 @@
 
 #include "plugin.hpp"
 #include "digital.hpp"
+#include "hexgrid.hpp"
 #include <random>
 #include <initializer_list>
 
@@ -70,23 +71,6 @@ const int ARRAY_SIZE = 2 * (MAX_RADIUS - 1) + 1;
 const float BOX_WIDTH = 262.563f;
 const float BOX_HEIGHT = 227.f;					/// Grid origin at (131.2815, 113.5)
 
-struct CubeVec {								///
-	float x = 0.f;
-	float y = 0.f;
-	float z = 0.f;
-
-	CubeVec() {}
-	CubeVec(float x, float y, float z) : x(x), y(y), z(z) {}
-};
-
-struct RoundAxialVec {							///
-	int q = 0;
-	int r = 0;
-
-	RoundAxialVec() {}
-	RoundAxialVec(int q, int r) : q(q), r(r) {}
-};
-
 template < int SIZE, int NUM_PORTS >
 struct HiveModule : Module {
 	enum ParamIds {
@@ -114,6 +98,11 @@ struct HiveModule : Module {
 		NUM_LIGHTS
 	};
 
+	struct HiveCell : HexCell {
+		GRIDSTATE state;
+		float cv;
+	};
+
 	const int numPorts = NUM_PORTS;
 
 	std::default_random_engine randGen{(uint16_t)std::chrono::system_clock::now().time_since_epoch().count()};
@@ -123,44 +112,16 @@ struct HiveModule : Module {
 	int panelTheme = 0;
 
 	/** [Stored to JSON] */
-	int usedRadius = 7;															///
-	/** [Stored to JSON] */
-	int usedSize = 2 * (usedRadius - 1) + 1;									///
-
-	/** [Stored to JSON] */														///
-	float cellH = BOX_HEIGHT / (((2 * usedRadius - 2) * (3.f / 4.f)) + 1);
-	/** [Stored to JSON] */														///
-	float cellH3d4 = cellH * 3.f / 4.f;
-	/** [Stored to JSON] */														///
-	float cellHd2 = cellH / 2.f;
-	/** [Stored to JSON] */														///
-	float cellHd4 = cellH / 4.f;
-	/** [Stored to JSON] */														///
-	float cellW = sqrt(3) * (cellH / 2.f);
-	/** [Stored to JSON] */														///
-	float cellWd2 = cellW / 2.f;
-	/** [Stored to JSON] */														///
-	float hexSizeFactor = cellHd2;
-	/** [Stored to JSON] */														///
-	float pad = (BOX_WIDTH - (2 * usedRadius - 1) * cellW) / 2.f;
-
-	/** [Stored to JSON] */
-	GRIDSTATE grid[SIZE][SIZE];
-	/** [Stored to JSON] */
-	float gridCv[SIZE][SIZE];
+	HexGrid<HiveCell, SIZE, POINTY> grid = HexGrid(7);							///!!!
 
 	/** [Stored to JSON] */
 	DIRECTION startDir[NUM_PORTS];												///
 	/** [Stored to JSON] */
-	int qStartPos[NUM_PORTS];													///
-	/** [Stored to JSON] */
-	int rStartPos[NUM_PORTS];													///
+	RoundAxialVec startPos[NUM_PORTS];											///!!!
 	/** [Stored to JSON] */
 	DIRECTION dir[NUM_PORTS];													///
 	/** [Stored to JSON] */
-	int qPos[NUM_PORTS];														///
-	/** [Stored to JSON] */
-	int rPos[NUM_PORTS];														///
+	RoundAxialVec pos[NUM_PORTS];												///!!!
 
 	/** [Stored to JSON] */
 	TURNMODE turnMode[NUM_PORTS];
@@ -233,144 +194,6 @@ struct HiveModule : Module {
 		normalizePorts = true;
 		gridDirty = true;
 		Module::onReset();
-	}
-
-	CubeVec axialToCube(Vec axialVec) {																					///
-		float x = axialVec.x;
-		float z = axialVec.y;
-		float y = -x-z;
-
-		return CubeVec(x, y, z);
-	}
-
-	RoundAxialVec hexRound(Vec axialVec) {																				///
-		CubeVec cubeVec = (axialToCube(axialVec));
-
-		float rx = roundf(cubeVec.x), 		ry = roundf(cubeVec.y), 	rz = roundf(cubeVec.z);
-		float dx = fabsf(rx - cubeVec.x),	dy = fabsf(ry - cubeVec.y),	dz = fabsf(rz - cubeVec.z);
-		
-		if 		(dx > dy && dx > dz)	rx = -ry-rz;
-		else if (dy > dz)				ry = -rx-rz;
-		else							rz = -rx-ry;
-
-		return RoundAxialVec(rx, rz);
-	}
-
-	bool gridHovered(Vec pixelVec) {																					///
-		pixelVec.x -= BOX_WIDTH / 2.f;																					///Move origin (0px, 0px) to the center of the grid
-		pixelVec.y -= BOX_HEIGHT / 2.f;
-		float q = (2.f/3.f * pixelVec.x) / (BOX_WIDTH / 2.f);
-    	float r = (-1.f/3.f * pixelVec.x  +  sqrt(3.f)/3.f * pixelVec.y) / (BOX_WIDTH / 2.f);
-		RoundAxialVec roundVec = hexRound(Vec(q, r));
-		if (!roundVec.q && !roundVec.r)
-			return true;
-		else return false;
-	}
-
-	RoundAxialVec pixelToHex(Vec pixelVec, float sizeFactor) {															///
-		pixelVec.x -= BOX_WIDTH / 2.f;																					///Move origin (0px, 0px) to the center of the grid
-		pixelVec.y -= BOX_HEIGHT / 2.f;
-		float q = (sqrt(3.f)/3.f * pixelVec.x - (1.f/3.f) * pixelVec.y) / sizeFactor;
-    	float r = ((2.f/3.f) * pixelVec.y) / sizeFactor;
-		RoundAxialVec roundVec = hexRound(Vec(q, r));
-		roundVec.q += SIZE / 2;																							//Rescale +/-x to 0->2*x
-		roundVec.r += SIZE / 2;
-		return roundVec;	
-	}
-
-	Vec hexToPixel(Vec axialVec, float sizeFactor) {																							///
-		float x = (sqrt(3.f) * (axialVec.x - (SIZE / 2)) + sqrt(3.f)/2.f * (axialVec.y - (SIZE / 2))) * sizeFactor + BOX_WIDTH / 2.f;
-    	float y = (3.f/2.f * (axialVec.y - (SIZE / 2))) * sizeFactor + BOX_HEIGHT / 2.f;
-		return Vec(x, y);
-	}
-
-	int distance(CubeVec a, CubeVec b) {
-		return std::max({std::abs(a.x - b.x), std::abs(a.y - b.y), std::abs(a.z - b.z)});
-	}
-
-	bool cellVisible(int q, int r, int size) {												///
-		bool visible = false;
-		int radius = ((size - 1) / 2) + 1;
-
-		q -= MAX_RADIUS - radius;
-		r -= MAX_RADIUS - radius;
-
-		if ((q >= 0 && r >= 0) && (q < size && r < size)) {
-			if (q > radius - 1) {
-				if (r < size - abs((radius - 1) - q))
-					visible = true;
-			}
-			else if (q < radius - 1) {
-				if (r >= size - (size - std::abs((radius - 1) - q)))
-					visible = true;
-			}
-			else if (r < size)
-				visible = true;
-		}
-		return visible;
-	}
-
-	void updateHexSize() {																	///
-		cellH = BOX_HEIGHT / (((2 * usedRadius - 2) * (3.f / 4.f)) + 1);
-		cellH3d4 = cellH * 3.f / 4.f;
-		cellHd2 = cellH / 2.f;
-		cellHd4 = cellH / 4.f;
-
-		cellW = sqrt(3) * (cellH / 2.f);
-		cellWd2 = cellW / 2.f;
-
-		pad = (BOX_WIDTH - (2 * usedRadius - 1) * cellW) / 2.f;
-		hexSizeFactor = cellHd2;
-	}
-
-	void updateMirrorCenters() {															///
-		mirrorCenters[0] = CubeVec(	-(usedRadius - 1),				2 * (usedRadius - 1) + 1,		-(usedRadius - 1) - 1),				/// ( x,  y,  z)
-		mirrorCenters[1] = CubeVec(	(usedRadius - 1) + 1,			(usedRadius - 1), 				-(2 * (usedRadius - 1) + 1)),		/// (-z, -x, -y)
-		mirrorCenters[2] = CubeVec(	2 * (usedRadius - 1) + 1,		-(usedRadius - 1) - 1,			-(usedRadius - 1)),					/// ( y,  z,  x)
-		mirrorCenters[3] = CubeVec(	(usedRadius - 1),				-(2 * (usedRadius - 1) + 1), 	(usedRadius - 1) + 1),				/// (-x, -y, -z)
-		mirrorCenters[4] = CubeVec(	-(usedRadius - 1) - 1,			-(usedRadius - 1),				2 * (usedRadius - 1) + 1),			/// ( z,  x,  y)
-		mirrorCenters[5] = CubeVec(	-(2 * (usedRadius - 1 ) + 1),	(usedRadius - 1) + 1,			(usedRadius - 1));					/// (-y, -z, -x)
-	}
-
-	void wrapHex(int port) {																///
-		qPos[port] -= (SIZE - 1) / 2;														//Shift origin to 0, 0
-		rPos[port] -= (SIZE - 1) / 2;
-		CubeVec c = axialToCube(Vec(qPos[port], rPos[port]));
-		for (int i = 0; i < 6; i++) {
-			if (distance(c, mirrorCenters[i]) <= (usedRadius - 1)) {						//If distance from mirror center i is less than distance to grid center
-				qPos[port] -= mirrorCenters[i].x;
-				rPos[port] -= mirrorCenters[i].z;
-			}
-		}
-		qPos[port] += (SIZE - 1) / 2;
-		rPos[port] += (SIZE - 1) / 2;
-	}
-
-	void moveHex(int i, DIRECTION d) {														///
-		switch (d) {
-			case NE:
-				qPos[i] += 1;
-				rPos[i] -= 1;
-				break;
-			case E:
-				qPos[i] += 1;
-				break;
-			case SE:
-				rPos[i] += 1;
-				break;
-			case SW:
-				qPos[i] -= 1;
-				rPos[i] += 1;
-				break;
-			case W:
-				qPos[i] -= 1;
-				break;
-			case NW:
-				rPos[i] -= 1;
-				break;
-		}
-		if (!cellVisible(qPos[i], rPos[i], usedSize))
-			wrapHex(i);
 	}
 
 	void process(const ProcessArgs& args) override {
