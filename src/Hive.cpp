@@ -432,17 +432,17 @@ struct HiveModule : Module {
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 
 		json_t* gridJ = json_array();
-		for (int q = -RADIUS; q <= RADIUS; q++) {				///
-			for (int r = -RADIUS; r <= RADIUS; r++) {
-				json_array_append_new(gridJ, json_integer(grid.getCell(q, r).state));
+		for (int q = 0; q < grid.arraySize; q++) {				///
+			for (int r = 0; r < grid.arraySize; r++) {
+				json_array_append_new(gridJ, json_integer(grid.cellMap[q][r].state));
 			}
 		}
 		json_object_set_new(rootJ, "grid", gridJ);
 
-		json_t* gridCvJ = json_array();
-		for (int q = -RADIUS; q <= RADIUS; q++) {				///
-			for (int r = -RADIUS; r <= RADIUS; r++) {
-				json_array_append_new(gridCvJ, json_real(grid.getCell(q, r).state));
+	json_t* gridCvJ = json_array();
+		for (int q = 0; q < grid.arraySize; q++) {				///
+			for (int r = 0; r < grid.arraySize; r++) {
+				json_array_append_new(gridCvJ, json_real(grid.cellMap[q][r].cv));
 			}
 		}
 		json_object_set_new(rootJ, "gridCv", gridCvJ);
@@ -478,22 +478,16 @@ struct HiveModule : Module {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 
 		json_t* gridJ = json_object_get(rootJ, "grid");										///
-		for (int q = -RADIUS; q < RADIUS; q++) {
-			for (int r = -RADIUS; r < RADIUS; r++) {
-				HiveCell cell = grid.getCell(q, r);
-				RoundAxialVec index = grid.axialToIndex(q, r);
-				cell.state = (GRIDSTATE)json_integer_value(json_array_get(gridJ, index.q * grid.arraySize + index.r));
-				grid.setCell(cell);
+		for (int q = 0; q < grid.arraySize; q++) {											///
+			for (int r = 0; r < grid.arraySize; r++) {
+				grid.cellMap[q][r].state = (GRIDSTATE)json_integer_value(json_array_get(gridJ, q * grid.arraySize + r));
 			}
 		}
 		
 		json_t* gridCvJ = json_object_get(rootJ, "gridCv");									///
-		for (int q = -RADIUS; q <= RADIUS; q++) {
-			for (int r = -RADIUS; r <= RADIUS; r++) {
-				HiveCell cell = grid.getCell(q, r);
-				RoundAxialVec index = grid.axialToIndex(q, r);
-				cell.cv = json_real_value(json_array_get(gridCvJ, index.q * grid.arraySize + index.r));
-				grid.setCell(cell);
+		for (int q = 0; q < grid.arraySize; q++) {											///
+			for (int r = 0; r < grid.arraySize; r++) {
+				grid.cellMap[q][r].cv = json_real_value(json_array_get(gridCvJ, q * grid.arraySize + r));
 			}
 		}
 
