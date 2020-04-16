@@ -750,11 +750,6 @@ struct MazeDrawHelper {
 				nvgStrokeColor(args.vg, color::mult(colors[i], 0.9f));
 				nvgStrokeWidth(args.vg, 0.7f);
 				nvgStroke(args.vg);
-			}
-		}
-		for (int i = 0; i < module->numPorts; i++) {
-			if (module->currentState == MODULESTATE::EDIT || module->active[i]) {
-				Vec c = Vec(xpos[i] * sizeX + r, ypos[i] * sizeY + r);
 				// Halo
 				NVGpaint paint;
 				NVGcolor icol = color::mult(colors[i], 0.25f);
