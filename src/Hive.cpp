@@ -468,6 +468,7 @@ struct HiveModule : Module {
 		json_object_set_new(rootJ, "ports", portsJ);
 
 		json_object_set_new(rootJ, "usedRadius", json_integer(grid.usedRadius));				///
+		json_object_set_new(rootJ, "sizeFactor", json_real(sizeFactor));					///
 
 		json_object_set_new(rootJ, "normalizePorts", json_boolean(normalizePorts));
 		return rootJ;
@@ -516,6 +517,7 @@ struct HiveModule : Module {
 		}
 
 		grid.usedRadius = json_integer_value(json_object_get(rootJ, "usedRadius"));				///
+		sizeFactor = json_real_value(json_object_get(rootJ, "sizeFactor"));						///
 
 		json_t* normalizePortsJ = json_object_get(rootJ, "normalizePorts");
 		if (normalizePortsJ) normalizePorts = json_boolean_value(normalizePortsJ);
