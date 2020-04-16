@@ -48,6 +48,7 @@ struct GlueModule : Module {
 		PARAM_ADD_LABEL,
 		PARAM_OPACITY_PLUS,
 		PARAM_OPACITY_MINUS,
+		PARAM_HIDE,
 		NUM_PARAMS
 	};
 	enum InputIds {
@@ -66,10 +67,11 @@ struct GlueModule : Module {
 	GlueModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		configParam(PARAM_UNLOCK, 0.f, 1.f, 0.f, "Label unlock");
+		configParam<TriggerParamQuantity>(PARAM_UNLOCK, 0.f, 1.f, 0.f, "Unlock labels for editing");
 		configParam<TriggerParamQuantity>(PARAM_ADD_LABEL, 0.f, 1.f, 0.f, "Add label (Ctrl+A)");
-		configParam<TriggerParamQuantity>(PARAM_OPACITY_PLUS, 0.f, 1.f, 0.f, "Increase overall opacity");
-		configParam<TriggerParamQuantity>(PARAM_OPACITY_MINUS, 0.f, 1.f, 0.f, "Decrease overall opacity");
+		configParam<TriggerParamQuantity>(PARAM_OPACITY_PLUS, 0.f, 1.f, 0.f, string::f("Increase overall opacity by %i%%", int(LABEL_OPACITY_STEP * 100)));
+		configParam<TriggerParamQuantity>(PARAM_OPACITY_MINUS, 0.f, 1.f, 0.f, string::f("Decrease overall opacity by %i%%", int(LABEL_OPACITY_STEP * 100)));
+		configParam<TriggerParamQuantity>(PARAM_HIDE, 0.f, 1.f, 0.f, "Hide labels");
 	}
 
 	json_t* dataToJson() override {
@@ -95,23 +97,26 @@ struct Label {
 	float angle = 0.f;
 	float skew = 0.f;
 	float opacity = 1.f;
+	int font = 0;
 	std::string text;
 	NVGcolor color = LABEL_COLOR_YELLOW;
 };
 
 
 struct LabelDrawWidget : TransparentWidget {
-	std::shared_ptr<Font> font;
+	std::shared_ptr<Font> font[2];
 	Label* label;
+	Vec rotatedSize;
 
 	LabelDrawWidget() {
-		font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
+		font[0] = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
+		font[1] = APP->window->loadFont(asset::plugin(pluginInstance, "res/fonts/RedkostComic.otf"));
 	}
 
 	void draw(const Widget::DrawArgs& args) override {
 		if (!label) return;
 
-		Rect d = Rect(Vec(0.f, 0.f), box.size);
+		Rect d = Rect(Vec(0.f, 0.f), rotatedSize);
 
 		// Draw shadow
 		nvgBeginPath(args.vg);
@@ -132,10 +137,10 @@ struct LabelDrawWidget : TransparentWidget {
 
 		// Draw text
 		nvgFontSize(args.vg, label->size);
-		nvgFontFaceId(args.vg, font->handle);
+		nvgFontFaceId(args.vg, font[label->font]->handle);
 		nvgTextLetterSpacing(args.vg, -1.4);
 		nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_TOP);
-		nvgFillColor(args.vg, color::alpha(color::BLACK, label->opacity));
+		nvgFillColor(args.vg, color::alpha(nvgRGB(0x08, 0x08, 0x08), label->opacity));
 		NVGtextRow textRow;
 		nvgTextBreakLines(args.vg, label->text.c_str(), NULL, d.size.x, &textRow, 1);
 		nvgTextBox(args.vg, d.pos.x, d.pos.y, d.size.x, textRow.start, textRow.end);
@@ -145,6 +150,7 @@ struct LabelDrawWidget : TransparentWidget {
 
 struct LabelWidget : widget::TransparentWidget {
 	Label* label;
+
 	bool requestedDelete = false;
 	bool requestedDuplicate = false;
 	bool editMode = false;
@@ -182,17 +188,18 @@ struct LabelWidget : widget::TransparentWidget {
 		label->y = clamp(label->y, -label->size / 2.f, mw->box.size.y - label->size / 2.f);
 		label->opacity = clamp(label->opacity, 0.f, 1.f);
 	
-		widget->box.size = Vec(label->width, label->size);
-
 		// Move according to the owning module
 		if (label->angle == 0 || label->angle == 180) {
-			this->box.size = Vec(label->width, label->size);
-			this->box.pos = mw->box.pos.plus(Vec(label->x, label->y));
+			box.size = Vec(label->width, label->size);
+			box.pos = mw->box.pos.plus(Vec(label->x, label->y));
 		}
 		else {
-			this->box.size = Vec(label->size, label->width);
-			this->box.pos = mw->box.pos.plus(Vec(label->x + label->width / 2.f - label->size / 2.f, label->y - label->width / 2.f + label->size / 2.f));;
+			box.size = Vec(label->size, label->width);
+			box.pos = mw->box.pos.plus(Vec(label->x + label->width / 2.f - label->size / 2.f, label->y - label->width / 2.f + label->size / 2.f));;
 		}
+
+		widget->rotatedSize = Vec(label->width, label->size);
+		widget->box.size = box.size;
 
 		if (label->angle != lastAngle || label->width != lastWidth || label->size != lastSize || lastSkew != skew) {
 			float angle = label->angle + (skew ? label->skew : 0.f);
@@ -212,8 +219,7 @@ struct LabelWidget : widget::TransparentWidget {
 	void onButton(const event::Button& e) override {
 		if (editMode && e.button == GLFW_MOUSE_BUTTON_LEFT) {
 			if (e.action == GLFW_PRESS) {
-				Rect b = Rect(Vec(0, 0), box.size);
-				if (b.isContaining(e.pos))
+				if (box.zeroPos().isContaining(e.pos))
 					e.consume(this);
 			}
 		}
@@ -252,7 +258,7 @@ struct LabelWidget : widget::TransparentWidget {
 			// Need for input field blur on submenu
 			bool textSelected = true;
 			LabelField() {
-				box.size.x = 140.f;
+				box.size.x = 160.f;
 				placeholder = "Label";
 			}
 			LabelField* setLabel(Label* l) {
@@ -463,6 +469,18 @@ struct LabelWidget : widget::TransparentWidget {
 					}
 				};
 
+				struct FontItem : MenuItem {
+					Label* label;
+					int font;
+					void onAction(const event::Action& e) override {
+						label->font = font;
+					}
+					void step() override {
+						rightText = label->font == font ? "✔" : "";
+						MenuItem::step();
+					}
+				};
+
 				menu->addChild(new SizeSlider(label));
 				menu->addChild(new WidthSlider(label));
 				menu->addChild(new OpacitySlider(label));
@@ -471,6 +489,10 @@ struct LabelWidget : widget::TransparentWidget {
 				menu->addChild(construct<RotateItem>(&MenuItem::text, "0°", &RotateItem::label, label, &RotateItem::angle, 0.f));
 				menu->addChild(construct<RotateItem>(&MenuItem::text, "90°", &RotateItem::label, label, &RotateItem::angle, 90.f));
 				menu->addChild(construct<RotateItem>(&MenuItem::text, "270°", &RotateItem::label, label, &RotateItem::angle, 270.f));
+				menu->addChild(new MenuSeparator);
+				menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Font"));
+				menu->addChild(construct<FontItem>(&MenuItem::text, "Default", &FontItem::label, label, &FontItem::font, 0));
+				menu->addChild(construct<FontItem>(&MenuItem::text, "Handwriting", &FontItem::label, label, &FontItem::font, 1));
 				menu->addChild(new MenuSeparator);
 				menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Color"));
 				menu->addChild(construct<ColorItem>(&MenuItem::text, "Yellow", &ColorItem::label, label, &ColorItem::color, LABEL_COLOR_YELLOW));
@@ -576,8 +598,12 @@ struct LabelContainer : widget::Widget {
 	float defaultAngle = 0.f;
 	/** [Stored to JSON] default color for new labels */
 	NVGcolor defaultColor = LABEL_COLOR_YELLOW;
-	/** [Stored to JSON] default color for new labels */
+	/** [Stored to JSON] default font for new labels */
+	int defaultFont = 0;
+	/** [Stored to JSON] */
 	bool skewLabels = true;
+	/** [Stored to JSON] */
+	bool hideLabels = false;
 
 	/** reference to unlock-parameter */
 	ParamQuantity* unlockParamQuantity;
@@ -631,7 +657,16 @@ struct LabelContainer : widget::Widget {
 			labelsToBeDeleted.clear();
 		}
 
+		if (hideLabels) {
+			unlockParamQuantity->setValue(0.f);
+			addLabelParamQuantity->setValue(0.f);
+		}
+
 		Widget::step();
+	}
+
+	void draw(const DrawArgs& args) override {
+		if (!hideLabels) Widget::draw(args);
 	}
 
 	LabelWidget* getLabelWidget(Label* l) {
@@ -651,6 +686,7 @@ struct LabelContainer : widget::Widget {
 		l->skew = random::normal() * LABEL_SKEW_MAX;
 		l->color = labelTemplate ? labelTemplate->color : defaultColor;
 		l->opacity = labelTemplate ? labelTemplate->opacity : 1.f;
+		l->font = labelTemplate ? labelTemplate->font : defaultFont;
 		labels.push_back(l);
 		labelTemplate = NULL;
 		LabelWidget* lw = new LabelWidget(l);
@@ -703,12 +739,10 @@ struct LabelContainer : widget::Widget {
 };
 
 
-struct LabelAddButton : CKSS {
+struct LabelAddSwitch : CKSS {
 	LabelContainer* labelContainer;
-
 	void step() override {
 		CKSS::step();
-
 		if (paramQuantity && paramQuantity->getValue() > 0.f) {
 			// Learn module
 			Widget* w = APP->event->getSelectedWidget();
@@ -718,7 +752,6 @@ struct LabelAddButton : CKSS {
 		}
 	}
 };
-
 
 struct OpacityPlusButton : TL1105 {
 	LabelContainer* labelContainer = NULL;
@@ -739,6 +772,14 @@ struct OpacityMinusButton : TL1105 {
 				l->opacity = std::max(l->opacity - LABEL_OPACITY_STEP, LABEL_OPACITY_MIN);
 		}
 		TL1105::onButton(e);
+	}
+};
+
+struct HideSwitch : CKSS {
+	LabelContainer* labelContainer = NULL;
+	void step() override {
+		if (labelContainer) labelContainer->hideLabels = paramQuantity->getValue() > 0.f;
+		CKSS::step();
 	}
 };
 
@@ -775,12 +816,12 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 			APP->scene->rack->children.splice(APP->scene->rack->children.end(), APP->scene->rack->children, it);
 		}
 
-		addParam(createParamCentered<LabelAddButton>(Vec(22.5f, 200.3f), module, GlueModule::PARAM_ADD_LABEL));
-		addParam(rack::createParamCentered<CKSS>(Vec(22.5f, 241.3f), module, GlueModule::PARAM_UNLOCK));
+		addParam(createParamCentered<LabelAddSwitch>(Vec(22.5f, 160.8f), module, GlueModule::PARAM_ADD_LABEL));
+		addParam(rack::createParamCentered<CKSS>(Vec(22.5f, 201.8f), module, GlueModule::PARAM_UNLOCK));
 
-		addParam(createParamCentered<OpacityPlusButton>(Vec(22.5f, 296.6f), module, GlueModule::PARAM_OPACITY_MINUS));
-		addParam(createParamCentered<OpacityMinusButton>(Vec(22.5f, 328.3f), module, GlueModule::PARAM_OPACITY_PLUS));
-
+		addParam(createParamCentered<OpacityPlusButton>(Vec(22.5f, 254.7f), module, GlueModule::PARAM_OPACITY_MINUS));
+		addParam(createParamCentered<OpacityMinusButton>(Vec(22.5f, 286.3f), module, GlueModule::PARAM_OPACITY_PLUS));
+		addParam(createParamCentered<HideSwitch>(Vec(22.5f, 326.7f), module, GlueModule::PARAM_HIDE));
 	}
 
 	~GlueWidget() {
@@ -798,6 +839,7 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 		json_object_set_new(rootJ, "defaultAngle", json_real(labelContainer->defaultAngle));
 		json_object_set_new(rootJ, "defaultColor", json_string(color::toHexString(labelContainer->defaultColor).c_str()));
 		json_object_set_new(rootJ, "skewLabels", json_boolean(labelContainer->skewLabels));
+		json_object_set_new(rootJ, "defaultFont", json_integer(labelContainer->defaultFont));
 
 		json_t* labelsJ = json_array();
 		for (Label* l : labelContainer->labels) {
@@ -812,6 +854,7 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 			json_object_set_new(labelJ, "size", json_real(l->size));
 			json_object_set_new(labelJ, "text", json_string(l->text.c_str()));
 			json_object_set_new(labelJ, "color", json_string(color::toHexString(l->color).c_str()));
+			json_object_set_new(labelJ, "font", json_integer(l->font));
 			json_array_append_new(labelsJ, labelJ);
 		}
 		json_object_set_new(rootJ, "labels", labelsJ);
@@ -830,6 +873,7 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 		labelContainer->defaultWidth = json_real_value(json_object_get(rootJ, "defaultWidth"));
 		labelContainer->defaultAngle = json_real_value(json_object_get(rootJ, "defaultAngle"));
 		labelContainer->defaultColor = color::fromHexString(json_string_value(json_object_get(rootJ, "defaultColor")));
+		labelContainer->defaultFont = json_integer_value(json_object_get(rootJ, "defaultFont"));
 		labelContainer->skewLabels = json_boolean_value(json_object_get(rootJ, "skewLabels"));
 
 		json_t* labelsJ = json_object_get(rootJ, "labels");
@@ -847,6 +891,7 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 			l->size = json_real_value(json_object_get(labelJ, "size"));
 			l->text = json_string_value(json_object_get(labelJ, "text"));
 			l->color = color::fromHexString(json_string_value(json_object_get(labelJ, "color")));
+			l->font = json_integer_value(json_object_get(labelJ, "font"));
 		}
 	}
 
@@ -980,6 +1025,18 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 					}
 				};
 
+				struct FontItem : MenuItem {
+					LabelContainer* labelContainer;
+					int font;
+					void onAction(const event::Action& e) override {
+						labelContainer->defaultFont = font;
+					}
+					void step() override {
+						rightText = labelContainer->defaultFont == font ? "✔" : "";
+						MenuItem::step();
+					}
+				};
+
 				menu->addChild(new SizeSlider(labelContainer));
 				menu->addChild(new WidthSlider(labelContainer));
 				menu->addChild(new MenuSeparator);
@@ -987,6 +1044,10 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 				menu->addChild(construct<RotateItem>(&MenuItem::text, "0°", &RotateItem::labelContainer, labelContainer, &RotateItem::angle, 0.f));
 				menu->addChild(construct<RotateItem>(&MenuItem::text, "90°", &RotateItem::labelContainer, labelContainer, &RotateItem::angle, 90.f));
 				menu->addChild(construct<RotateItem>(&MenuItem::text, "270°", &RotateItem::labelContainer, labelContainer, &RotateItem::angle, 270.f));
+				menu->addChild(new MenuSeparator());
+				menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Default font"));
+				menu->addChild(construct<FontItem>(&MenuItem::text, "Default", &FontItem::labelContainer, labelContainer, &FontItem::font, 0));
+				menu->addChild(construct<FontItem>(&MenuItem::text, "Handwriting", &FontItem::labelContainer, labelContainer, &FontItem::font, 1));
 				menu->addChild(new MenuSeparator());
 				menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Default color"));
 				menu->addChild(construct<ColorItem>(&MenuItem::text, "Yellow", &ColorItem::labelContainer, labelContainer, &ColorItem::color, LABEL_COLOR_YELLOW));
