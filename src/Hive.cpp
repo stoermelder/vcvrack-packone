@@ -792,6 +792,12 @@ struct HiveDrawHelper {
 				nvgStrokeColor(args.vg, color::mult(colors[i], 0.9f));
 				nvgStrokeWidth(args.vg, 0.7f);
 				nvgStroke(args.vg);
+			}
+		}
+		for (int i = 0; i < module->numPorts; i++) {
+			if (module->currentState == MODULESTATE::EDIT || module->active[i]) {
+				c = hexToPixel(	module->currentState == MODULESTATE::EDIT ? module->grid.cursor[i].startPos : module->grid.cursor[i].pos, 
+								module->sizeFactor, POINTY, ORIGIN);
 				// Halo
 				NVGpaint paint;
 				NVGcolor icol = color::mult(colors[i], 0.25f);
