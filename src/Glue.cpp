@@ -402,6 +402,9 @@ struct LabelWidget : widget::TransparentWidget {
 						std::string getUnit() override {
 							return "%";
 						}
+						int getDisplayPrecision() override {
+							return 3;
+						}
 						float getMaxValue() override {
 							return LABEL_OPACITY_MAX;
 						}
@@ -410,9 +413,7 @@ struct LabelWidget : widget::TransparentWidget {
 						}
 					};
 
-					Label* label;
 					OpacitySlider(Label* label) {
-						this->label = label;
 						box.size.x = 140.0f;
 						quantity = new OpacityQuantity(label);
 					}
@@ -596,13 +597,15 @@ struct LabelContainer : widget::Widget {
 	float defaultWidth = LABEL_WIDTH_DEFAULT;
 	/** [Stored to JSON] default angle for new labels */
 	float defaultAngle = 0.f;
+	/** [Stored to JSON] default opacity for new labels */
+	float defaultOpacity = 0.f;
 	/** [Stored to JSON] default color for new labels */
 	NVGcolor defaultColor = LABEL_COLOR_YELLOW;
 	/** [Stored to JSON] default font for new labels */
 	int defaultFont = 0;
 	/** [Stored to JSON] */
 	bool skewLabels = true;
-	/** [Stored to JSON] */
+	/** */
 	bool hideLabels = false;
 
 	/** reference to unlock-parameter */
@@ -685,7 +688,7 @@ struct LabelContainer : widget::Widget {
 		l->angle = labelTemplate ? labelTemplate->angle : defaultAngle;
 		l->skew = random::normal() * LABEL_SKEW_MAX;
 		l->color = labelTemplate ? labelTemplate->color : defaultColor;
-		l->opacity = labelTemplate ? labelTemplate->opacity : 1.f;
+		l->opacity = labelTemplate ? labelTemplate->opacity : defaultOpacity;
 		l->font = labelTemplate ? labelTemplate->font : defaultFont;
 		labels.push_back(l);
 		labelTemplate = NULL;
@@ -819,8 +822,8 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 		addParam(createParamCentered<LabelAddSwitch>(Vec(22.5f, 160.8f), module, GlueModule::PARAM_ADD_LABEL));
 		addParam(rack::createParamCentered<CKSS>(Vec(22.5f, 201.8f), module, GlueModule::PARAM_UNLOCK));
 
-		addParam(createParamCentered<OpacityPlusButton>(Vec(22.5f, 254.7f), module, GlueModule::PARAM_OPACITY_MINUS));
-		addParam(createParamCentered<OpacityMinusButton>(Vec(22.5f, 286.3f), module, GlueModule::PARAM_OPACITY_PLUS));
+		addParam(createParamCentered<OpacityPlusButton>(Vec(22.5f, 254.7f), module, GlueModule::PARAM_OPACITY_PLUS));
+		addParam(createParamCentered<OpacityMinusButton>(Vec(22.5f, 286.3f), module, GlueModule::PARAM_OPACITY_MINUS));
 		addParam(createParamCentered<HideSwitch>(Vec(22.5f, 326.7f), module, GlueModule::PARAM_HIDE));
 	}
 
@@ -837,9 +840,10 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 		json_object_set_new(rootJ, "defaultSize", json_real(labelContainer->defaultSize));
 		json_object_set_new(rootJ, "defaultWidth", json_real(labelContainer->defaultWidth));
 		json_object_set_new(rootJ, "defaultAngle", json_real(labelContainer->defaultAngle));
+		json_object_set_new(rootJ, "defaultOpacity", json_real(labelContainer->defaultOpacity));
 		json_object_set_new(rootJ, "defaultColor", json_string(color::toHexString(labelContainer->defaultColor).c_str()));
-		json_object_set_new(rootJ, "skewLabels", json_boolean(labelContainer->skewLabels));
 		json_object_set_new(rootJ, "defaultFont", json_integer(labelContainer->defaultFont));
+		json_object_set_new(rootJ, "skewLabels", json_boolean(labelContainer->skewLabels));
 
 		json_t* labelsJ = json_array();
 		for (Label* l : labelContainer->labels) {
@@ -872,6 +876,7 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 		labelContainer->defaultSize = json_real_value(json_object_get(rootJ, "defaultSize"));
 		labelContainer->defaultWidth = json_real_value(json_object_get(rootJ, "defaultWidth"));
 		labelContainer->defaultAngle = json_real_value(json_object_get(rootJ, "defaultAngle"));
+		labelContainer->defaultOpacity = json_real_value(json_object_get(rootJ, "defaultOpacity"));
 		labelContainer->defaultColor = color::fromHexString(json_string_value(json_object_get(rootJ, "defaultColor")));
 		labelContainer->defaultFont = json_integer_value(json_object_get(rootJ, "defaultFont"));
 		labelContainer->skewLabels = json_boolean_value(json_object_get(rootJ, "skewLabels"));
@@ -936,7 +941,7 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 					};
 
 					SizeSlider(LabelContainer* labelContainer) {
-						box.size.x = 140.0f;
+						box.size.x = 160.0f;
 						quantity = new SizeQuantity(labelContainer);
 					}
 					~SizeSlider() {
@@ -960,7 +965,7 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 							return LABEL_WIDTH_DEFAULT;
 						}
 						std::string getLabel() override {
-							return "Width";
+							return "Default width";
 						}
 						int getDisplayPrecision() override {
 							return 3;
@@ -974,10 +979,57 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 					};
 
 					WidthSlider(LabelContainer* labelContainer) {
-						box.size.x = 140.0f;
+						box.size.x = 160.0f;
 						quantity = new WidthQuantity(labelContainer);
 					}
 					~WidthSlider() {
+						delete quantity;
+					}
+				};
+
+				struct OpacitySlider : ui::Slider {
+					struct OpacityQuantity : Quantity {
+						LabelContainer* labelContainer;
+						OpacityQuantity(LabelContainer* labelContainer) {
+							this->labelContainer = labelContainer;
+						}
+						void setValue(float value) override {
+							labelContainer->defaultOpacity = math::clamp(value, LABEL_OPACITY_MIN, LABEL_OPACITY_MAX);
+						}
+						float getValue() override {
+							return labelContainer->defaultOpacity;
+						}
+						float getDefaultValue() override {
+							return 1.0f;
+						}
+						float getDisplayValue() override {
+							return getValue() * 100;
+						}
+						void setDisplayValue(float displayValue) override {
+							setValue(displayValue / 100);
+						}
+						std::string getLabel() override {
+							return "Default opacity";
+						}
+						std::string getUnit() override {
+							return "%";
+						}
+						int getDisplayPrecision() override {
+							return 3;
+						}
+						float getMaxValue() override {
+							return LABEL_OPACITY_MAX;
+						}
+						float getMinValue() override {
+							return LABEL_OPACITY_MIN;
+						}
+					};
+
+					OpacitySlider(LabelContainer* labelContainer) {
+						box.size.x = 160.0f;
+						quantity = new OpacityQuantity(labelContainer);
+					}
+					~OpacitySlider() {
 						delete quantity;
 					}
 				};
@@ -1039,6 +1091,7 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 
 				menu->addChild(new SizeSlider(labelContainer));
 				menu->addChild(new WidthSlider(labelContainer));
+				menu->addChild(new OpacitySlider(labelContainer));
 				menu->addChild(new MenuSeparator);
 				menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Default rotation"));
 				menu->addChild(construct<RotateItem>(&MenuItem::text, "0°", &RotateItem::labelContainer, labelContainer, &RotateItem::angle, 0.f));
