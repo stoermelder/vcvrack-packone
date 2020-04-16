@@ -77,8 +77,8 @@ bool gridHovered(Vec pixelVec, float sizeFactor, ORIENTATION cellShape, Vec orig
 
 Vec hexToPixel(RoundAxialVec hex, float sizeFactor, ORIENTATION shape, Vec origin) {
     float x, y;
-    if (shape == FLAT) { //!!!
-
+    if (shape == FLAT) {
+        // TODO
     }
     else {
         x = (sqrt(3.f) * hex.q + sqrt(3.f)/2.f * hex.r) * sizeFactor + origin.x;
@@ -151,76 +151,6 @@ void drawHex(Vec hexCenter, float sizeFactor, ORIENTATION shape, NVGcontext* ctx
         nvgLineTo(ctx, points[i].x, points[i].y);
 }
 
-/* void drawPartialHex(float x, float y, float sizeFactor, int numPoints, DIRECTION dir, ORIENTATION shape, NVGcontext* ctx) {    
-    Vec points[6];
-    bool drawnPoint[6] = { false };
-    if (shape == POINTY) {
-        switch (dir) {
-            case N:
-                drawnPoint[5] = drawnPoint[0] = drawnPoint[1] = true;
-                break;
-            case NE:
-                if (numPoints == 4)
-                    drawnPoint[5] = drawnPoint[0] = drawnPoint[1] = drawnPoint[2] = true;
-                else
-                    drawnPoint[0] = drawnPoint[1] = drawnPoint[2] = true;
-                break;
-            case E:
-                drawnPoint[0] = drawnPoint[1] = drawnPoint[2] = drawnPoint[3] = true;
-                break;
-            case SE:
-                if (numPoints == 3)
-                    drawnPoint[1] = drawnPoint[2] = drawnPoint[3] = true;
-                else
-                    drawnPoint[1] = drawnPoint[2] = drawnPoint[3] = drawnPoint[4] = true;
-                break;
-            case S:
-                drawnPoint[2] = drawnPoint[3] = drawnPoint[4] = true;
-                break;
-            case SW:
-                if (numPoints == 4)
-                    drawnPoint[2] = drawnPoint[3] = drawnPoint[4] = drawnPoint[5] = true;
-                else
-                    drawnPoint[3] = drawnPoint[4] = drawnPoint[5] = true;
-                break;
-            case W:
-                drawnPoint[3] = drawnPoint[4] = drawnPoint[5] = drawnPoint[0] = true;
-                break;
-            case NW:
-                if (numPoints == 3)
-                    drawnPoint[4] = drawnPoint[5] = drawnPoint[0] = true;
-                else
-                    drawnPoint[4] = drawnPoint[5] = drawnPoint[0] = drawnPoint[1] = true;
-                break;
-        }
-    }
-    float angle;
-    int j = 0;
-    if (shape == FLAT) {
-        for (int i = 0; i < 6; i++) {
-            if (drawnPoint[i]) {
-                angle = M_PI / 180 * (60 * i);
-                points[j].x = x + sizeFactor * cos(angle);
-                points[j].y = y + sizeFactor * sin(angle);
-                j++;
-            }
-        }
-    }
-    else {
-        for (int i = 0; i < 6; i++) {
-            if (drawnPoint[i]) {
-                angle = M_PI / 180 * (60 * i - 30);
-                points[j].x = x + sizeFactor * cos(angle);
-                points[j].y = y + sizeFactor * sin(angle);
-                j++;
-            }
-        }
-    }
-    nvgMoveTo(ctx, points[0].x, points[0].y);
-    for (int i = 1; i < numPoints; i++)
-        nvgLineTo(ctx, points[i].x, points[i].y);
-} */
-
 Vec* hexPoints(Vec hexCenter, float sizeFactor, ORIENTATION shape, int startPoint, int numPoints, Vec* array) {
     // Returns the vertices of a hexagon, beginning from a given starting vertex and continuing clockwise through a given number of vertices
     //      5               5   0
@@ -256,7 +186,6 @@ template < class CELL, class CURSOR, int NUM_CURSORS, int MAX_RADIUS, ORIENTATIO
 struct HexGrid {
     int usedRadius;
     const int arraySize = 2 * MAX_RADIUS + 1;
-    ORIENTATION cellShape = CELL_SHAPE;
     CELL cellMap[2 * MAX_RADIUS + 1][2 * MAX_RADIUS + 1];
     CURSOR cursor[NUM_CURSORS];
     CubeVec mirrorCenters[6];
@@ -315,18 +244,18 @@ struct HexGrid {
     }
 
     void updateMirrorCenters() {
-        mirrorCenters[0] = CubeVec(	-usedRadius,			2 * usedRadius + 1,		-usedRadius - 1),			/// ( x,  y,  z)
-        mirrorCenters[1] = CubeVec(	usedRadius + 1,			usedRadius, 			-(2 * usedRadius + 1)),		/// (-z, -x, -y)
-        mirrorCenters[2] = CubeVec(	2 * usedRadius + 1,		-usedRadius - 1,		-usedRadius),				/// ( y,  z,  x)
-        mirrorCenters[3] = CubeVec(	usedRadius,				-(2 * usedRadius + 1), 	usedRadius + 1),			/// (-x, -y, -z)
-        mirrorCenters[4] = CubeVec(	-usedRadius - 1,		-usedRadius,			2 * usedRadius + 1),		/// ( z,  x,  y)
-        mirrorCenters[5] = CubeVec(	-(2 * usedRadius + 1),	usedRadius + 1,			usedRadius);				/// (-y, -z, -x)
+        mirrorCenters[0] = CubeVec(	-usedRadius,			2 * usedRadius + 1,		-usedRadius - 1),			// ( x,  y,  z)
+        mirrorCenters[1] = CubeVec(	usedRadius + 1,			usedRadius, 			-(2 * usedRadius + 1)),		// (-z, -x, -y)
+        mirrorCenters[2] = CubeVec(	2 * usedRadius + 1,		-usedRadius - 1,		-usedRadius),				// ( y,  z,  x)
+        mirrorCenters[3] = CubeVec(	usedRadius,				-(2 * usedRadius + 1), 	usedRadius + 1),			// (-x, -y, -z)
+        mirrorCenters[4] = CubeVec(	-usedRadius - 1,		-usedRadius,			2 * usedRadius + 1),		// ( z,  x,  y)
+        mirrorCenters[5] = CubeVec(	-(2 * usedRadius + 1),	usedRadius + 1,			usedRadius);				// (-y, -z, -x)
     }
 
     void wrapCell(CELL cell) {
         CubeVec cubePos = axialToCube(cell.pos);
         for (int i = 0; i < 6; i++) {
-            if (distance(cubePos, mirrorCenters[i]) <= usedRadius) {						//If distance from mirror center i is less than distance to grid center
+            if (distance(cubePos, mirrorCenters[i]) <= usedRadius) {			//If distance from mirror center i is less than distance to grid center
                 cell.pos.q -= mirrorCenters[i].x;
                 cell.pos.r -= mirrorCenters[i].z;
             }
@@ -337,7 +266,7 @@ struct HexGrid {
     void wrapCursor(int id) {
         CubeVec c = axialToCube(cursor[id].pos);
         for (int i = 0; i < 6; i++) {
-            if (distance(c, mirrorCenters[i]) <= usedRadius) {						//If distance from mirror center i is less than distance to grid center
+            if (distance(c, mirrorCenters[i]) <= usedRadius) {					//If distance from mirror center i is less than distance to grid center
                 cursor[id].pos.q -= mirrorCenters[i].x;
                 cursor[id].pos.r -= mirrorCenters[i].z;
             }
@@ -349,7 +278,7 @@ struct HexGrid {
         // For flat-top hexagons, odd-numbered directions are oriented between neighboring cells and thus alternate: first clockwise, then counter
         // For pointy-top hexagons, it is the even-numbered directions which demand these alternating movements
         RoundAxialVec index = axialToIndex(cell.pos);
-        if (cellShape == FLAT) {
+        if (CELL_SHAPE == FLAT) {
             switch (direction) {
                 case 0:
                     cell.r -= 1;
@@ -661,7 +590,7 @@ struct HexGrid {
 
     void drawGrid(float cellSizeFactor, Vec gridOrigin, NVGcontext* ctx) {
         Vec hex;
-        if (cellShape == FLAT) {
+        if (CELL_SHAPE == FLAT) {
             // TODO                
         }
         else {
@@ -712,8 +641,8 @@ struct HexGrid {
             }
         }
 
-        if (cellShape == FLAT) {
-
+        if (CELL_SHAPE == FLAT) {
+            // TODO
         }
         else {
             int n = 0;
@@ -724,11 +653,11 @@ struct HexGrid {
                     Vec* p;
                     if (j == 0) {   // Corner hex
                         curHexPoints = 3;
-                        p = hexPoints(hexToPixel(borderHex[usedRadius * i], cellSizeFactor, cellShape, gridOrigin), cellSizeFactor, cellShape, (i + 2) % 6, curHexPoints, points);
+                        p = hexPoints(hexToPixel(borderHex[usedRadius * i], cellSizeFactor, CELL_SHAPE, gridOrigin), cellSizeFactor, CELL_SHAPE, (i + 2) % 6, curHexPoints, points);
                     }
                     else {
                         curHexPoints = 2;
-                        p = hexPoints(hexToPixel(borderHex[usedRadius * i + j], cellSizeFactor, cellShape, gridOrigin), cellSizeFactor, cellShape, (i + 3) % 6, curHexPoints, points);  
+                        p = hexPoints(hexToPixel(borderHex[usedRadius * i + j], cellSizeFactor, CELL_SHAPE, gridOrigin), cellSizeFactor, CELL_SHAPE, (i + 3) % 6, curHexPoints, points);  
                     }
                     for (int k = 0; k < curHexPoints; k++) {
                         borderPoint[n] = p[k];

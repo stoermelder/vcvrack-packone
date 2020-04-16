@@ -63,14 +63,14 @@ enum DIRECTION {			///
 	NW = 11
 };
 
-const int MAX_RADIUS = 16;						/// Max of 16 ensures the area of a cell does not shrink beyond that of one in Maze
-const int MIN_RADIUS = 1;						///
+const int MAX_RADIUS = 16;					/// Max of 16 ensures the area of a cell does not shrink beyond that of one in Maze
+const int MIN_RADIUS = 1;					///
 
-const float BOX_WIDTH = 262.563f;
-const float BOX_HEIGHT = 227.f;
-const Vec ORIGIN = Vec(BOX_WIDTH / 2.f, BOX_HEIGHT / 2.f);
+const float BOX_WIDTH = 262.563f;								///
+const float BOX_HEIGHT = 227.f;									///
+const Vec ORIGIN = Vec(BOX_WIDTH / 2.f, BOX_HEIGHT / 2.f);		///
 
-struct HiveCell : HexCell {
+struct HiveCell : HexCell {				///
 	GRIDSTATE state;
 	float cv;
 
@@ -78,7 +78,7 @@ struct HiveCell : HexCell {
 	HiveCell() : state(GRIDSTATE::OFF), cv(0.f) {}
 };
 
-struct HiveCursor : HexCell {
+struct HiveCursor : HexCell {			///
 	DIRECTION startDir;
 	DIRECTION dir;
 	RoundAxialVec startPos;
@@ -122,7 +122,7 @@ struct HiveModule : Module {
 	std::default_random_engine randGen{(uint16_t)std::chrono::system_clock::now().time_since_epoch().count()};
 	std::geometric_distribution<int>* geoDist[NUM_PORTS] = {};
 	
-	typedef HexGrid <HiveCell, HiveCursor, NUM_PORTS, RADIUS, POINTY> HIVEGRID;
+	typedef HexGrid <HiveCell, HiveCursor, NUM_PORTS, RADIUS, POINTY> HIVEGRID;		///
 
 	/** [Stored to JSON] */
 	int panelTheme = 0;
@@ -147,10 +147,10 @@ struct HiveModule : Module {
 	dsp::PulseGenerator outPulse[NUM_PORTS];
 	ClockMultiplier multiplier[NUM_PORTS];
 
-	dsp::SchmittTrigger shiftR1Trigger;
-	dsp::SchmittTrigger shiftR2Trigger;
-	dsp::SchmittTrigger shiftL1Trigger;
-	dsp::SchmittTrigger shiftL2Trigger;
+	dsp::SchmittTrigger shiftR1Trigger;			///
+	dsp::SchmittTrigger shiftR2Trigger;			///
+	dsp::SchmittTrigger shiftL1Trigger;			///
+	dsp::SchmittTrigger shiftL2Trigger;			///
 
 	bool active[NUM_PORTS];
 	MODULESTATE currentState = MODULESTATE::GRID;
@@ -192,34 +192,34 @@ struct HiveModule : Module {
 	}
 
 	void process(const ProcessArgs& args) override {
-		if (shiftR1Trigger.process(inputs[SHIFT_R1_INPUT].getVoltage()))				///
+		if (shiftR1Trigger.process(inputs[SHIFT_R1_INPUT].getVoltage()))
 			for (int i = 0; i < NUM_PORTS; i++)
-				grid.moveCursor(i, (grid.cursor[i].dir + 2) % 12);
-		if (shiftR2Trigger.process(inputs[SHIFT_R2_INPUT].getVoltage()))				///
+				grid.moveCursor(i, (grid.cursor[i].dir + 2) % 12);				///
+		if (shiftR2Trigger.process(inputs[SHIFT_R2_INPUT].getVoltage()))
 			for (int i = 0; i < NUM_PORTS; i++)
-				grid.moveCursor(i, (grid.cursor[i].dir + 4) % 12);
-		if (shiftL1Trigger.process(inputs[SHIFT_L1_INPUT].getVoltage()))				///
+				grid.moveCursor(i, (grid.cursor[i].dir + 4) % 12);				///
+		if (shiftL1Trigger.process(inputs[SHIFT_L1_INPUT].getVoltage()))
 			for (int i = 0; i < NUM_PORTS; i++)
-				grid.moveCursor(i, (grid.cursor[i].dir + 10) % 12);
-		if (shiftL1Trigger.process(inputs[SHIFT_L1_INPUT].getVoltage()))				///
+				grid.moveCursor(i, (grid.cursor[i].dir + 10) % 12);				///
+		if (shiftL1Trigger.process(inputs[SHIFT_L1_INPUT].getVoltage()))
 			for (int i = 0; i < NUM_PORTS; i++)
-				grid.moveCursor(i, (grid.cursor[i].dir + 8) % 12);
+				grid.moveCursor(i, (grid.cursor[i].dir + 8) % 12);				///
 
 		for (int i = 0; i < NUM_PORTS; i++) {
 			active[i] = outputs[TRIG_OUTPUT + i].isConnected() || outputs[CV_OUTPUT + i].isConnected();
 			bool doPulse = false;
 
 			if (processResetTrigger(i)) {
-				grid.cursor[i].pos = grid.cursor[i].startPos;							///
-				grid.cursor[i].dir = grid.cursor[i].startDir;							///
+				grid.cursor[i].pos = grid.cursor[i].startPos;					///
+				grid.cursor[i].dir = grid.cursor[i].startDir;					///
 				multiplier[i].reset();
 			}
 
 			if (processClockTrigger(i, args.sampleTime)) {
-				grid.moveCursor(i, grid.cursor[i].dir);										///
+				grid.moveCursor(i, grid.cursor[i].dir);							///
 				multiplier[i].tick();
 
-				switch (grid.getCell(grid.cursor[i].pos).state) {            			///
+				switch (grid.getCell(grid.cursor[i].pos).state) {            	///
 					case GRIDSTATE::OFF:
 						break;
 					case GRIDSTATE::ON:
@@ -266,8 +266,8 @@ struct HiveModule : Module {
 
 			if (multiplier[i].process() || doPulse) {
 				outPulse[i].trigger();
-				HiveCell cell = grid.getCell(grid.cursor[i].pos);
-				switch (grid.cursor[i].outMode) {
+				HiveCell cell = grid.getCell(grid.cursor[i].pos);					///
+				switch (grid.cursor[i].outMode) {									///
 					case OUTMODE::BI_5V:
 						outCv = rescale(cell.cv, 0.f, 1.f, -5.f, 5.f);				///
 						break;
@@ -360,7 +360,7 @@ struct HiveModule : Module {
 		}
 	}
 
-	void gridClear() {
+	void gridClear() {										///
 		HiveCell cell = HiveCell(GRIDSTATE::OFF, 0.f);
 		for (int q = -RADIUS; q <= RADIUS; q++) {
 			for (int r = -RADIUS; r <= RADIUS; r++) {
@@ -371,7 +371,7 @@ struct HiveModule : Module {
 		gridDirty = true;
 	}
 
-	void gridResize(int radius) {						///
+	void gridResize(int radius) {							///
 		if (radius == grid.usedRadius) return;
 		sizeFactor = (BOX_HEIGHT / (((2 * radius) * (3.f / 4.f)) + 1)) / 2.f;
 		grid.setRadius(radius);
@@ -386,7 +386,7 @@ struct HiveModule : Module {
 		gridDirty = true;
 	}
 
-	void gridRandomize(bool useRandom = true) {
+	void gridRandomize(bool useRandom = true) {					///
 		HiveCell cell;
 		for (int q = -RADIUS; q <= RADIUS; q++) {
 			for (int r = -RADIUS; r <= RADIUS; r++) {
@@ -412,7 +412,7 @@ struct HiveModule : Module {
 		gridDirty = true;
 	}
 
-	void cellNextState(HiveCell *cell) {
+	void cellNextState(HiveCell *cell) {						///
 		cell->state = (GRIDSTATE)((cell->state + 1) % 3);
 		if (cell->state == GRIDSTATE::ON) cell->cv = random::uniform();
 		grid.setCell(*cell);
@@ -432,7 +432,7 @@ struct HiveModule : Module {
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 
 		json_t* gridJ = json_array();
-		for (int q = -RADIUS; q <= RADIUS; q++) {
+		for (int q = -RADIUS; q <= RADIUS; q++) {				///
 			for (int r = -RADIUS; r <= RADIUS; r++) {
 				json_array_append_new(gridJ, json_integer(grid.getCell(q, r).state));
 			}
@@ -440,7 +440,7 @@ struct HiveModule : Module {
 		json_object_set_new(rootJ, "grid", gridJ);
 
 		json_t* gridCvJ = json_array();
-		for (int q = -RADIUS; q <= RADIUS; q++) {
+		for (int q = -RADIUS; q <= RADIUS; q++) {				///
 			for (int r = -RADIUS; r <= RADIUS; r++) {
 				json_array_append_new(gridCvJ, json_real(grid.getCell(q, r).state));
 			}
@@ -450,16 +450,16 @@ struct HiveModule : Module {
 
 
 		json_t* portsJ = json_array();
-		for (int i = 0; i < NUM_PORTS; i++) {
+		for (int i = 0; i < NUM_PORTS; i++) {													///
 			json_t* portJ = json_object();
-			json_object_set_new(portJ, "qStartPos", json_integer(grid.cursor[i].startPos.q));					///
-			json_object_set_new(portJ, "rStartPos", json_integer(grid.cursor[i].startPos.r));					///
-			json_object_set_new(portJ, "startDir", json_integer(grid.cursor[i].startDir));						///
-			json_object_set_new(portJ, "qPos", json_integer(grid.cursor[i].pos.q));								///
-			json_object_set_new(portJ, "rPos", json_integer(grid.cursor[i].pos.r));								///
-			json_object_set_new(portJ, "dir", json_integer(grid.cursor[i].dir));								///
+			json_object_set_new(portJ, "qStartPos", json_integer(grid.cursor[i].startPos.q));
+			json_object_set_new(portJ, "rStartPos", json_integer(grid.cursor[i].startPos.r));
+			json_object_set_new(portJ, "startDir", json_integer(grid.cursor[i].startDir));
+			json_object_set_new(portJ, "qPos", json_integer(grid.cursor[i].pos.q));
+			json_object_set_new(portJ, "rPos", json_integer(grid.cursor[i].pos.r));
+			json_object_set_new(portJ, "dir", json_integer(grid.cursor[i].dir));
 			json_object_set_new(portJ, "turnMode", json_integer(grid.cursor[i].turnMode));
-			json_object_set_new(portJ, "ninetyState", json_integer(grid.cursor[i].ninetyState));    			///
+			json_object_set_new(portJ, "ninetyState", json_integer(grid.cursor[i].ninetyState));
 			json_object_set_new(portJ, "outMode", json_integer(grid.cursor[i].outMode));
 			json_object_set_new(portJ, "ratchetingProb", json_real(grid.cursor[i].ratchetingProb));
 			json_object_set_new(portJ, "ratchetingEnabled", json_boolean(grid.cursor[i].ratchetingEnabled));
@@ -467,7 +467,7 @@ struct HiveModule : Module {
 		}
 		json_object_set_new(rootJ, "ports", portsJ);
 
-		json_object_set_new(rootJ, "usedRadius", json_integer(grid.usedRadius));							///
+		json_object_set_new(rootJ, "usedRadius", json_integer(grid.usedRadius));				///
 
 		json_object_set_new(rootJ, "normalizePorts", json_boolean(normalizePorts));
 		return rootJ;
@@ -476,7 +476,7 @@ struct HiveModule : Module {
 	void dataFromJson(json_t* rootJ) override {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 
-		json_t* gridJ = json_object_get(rootJ, "grid");
+		json_t* gridJ = json_object_get(rootJ, "grid");											///
 		for (int q = -RADIUS; q < RADIUS; q++) {
 			for (int r = -RADIUS; r < RADIUS; r++) {
 				HiveCell cell = grid.getCell(q, r);
@@ -485,7 +485,7 @@ struct HiveModule : Module {
 			}
 		}
 		
-		json_t* gridCvJ = json_object_get(rootJ, "gridCv");
+		json_t* gridCvJ = json_object_get(rootJ, "gridCv");										///
 		for (int q = -RADIUS; q <= RADIUS; q++) {
 			for (int r = -RADIUS; r <= RADIUS; r++) {
 				HiveCell cell = grid.getCell(q, r);
@@ -497,15 +497,15 @@ struct HiveModule : Module {
 		json_t* portsJ = json_object_get(rootJ, "ports");
 		json_t* portJ;
 		size_t portIndex;
-		json_array_foreach(portsJ, portIndex, portJ) {
-			grid.cursor[portIndex].startPos.q = json_integer_value(json_object_get(portJ, "qStartPos"));							///
-			grid.cursor[portIndex].startPos.r = json_integer_value(json_object_get(portJ, "rStartPos"));							///	
-			grid.cursor[portIndex].startDir = (DIRECTION)json_integer_value(json_object_get(portJ, "startDir"));				///
-			grid.cursor[portIndex].pos.q = json_integer_value(json_object_get(portJ, "qPos"));									///
-			grid.cursor[portIndex].pos.r = json_integer_value(json_object_get(portJ, "rPos"));									///
-			grid.cursor[portIndex].dir = (DIRECTION)json_integer_value(json_object_get(portJ, "dir"));							///
+		json_array_foreach(portsJ, portIndex, portJ) {																			///
+			grid.cursor[portIndex].startPos.q = json_integer_value(json_object_get(portJ, "qStartPos"));
+			grid.cursor[portIndex].startPos.r = json_integer_value(json_object_get(portJ, "rStartPos"));	
+			grid.cursor[portIndex].startDir = (DIRECTION)json_integer_value(json_object_get(portJ, "startDir"));
+			grid.cursor[portIndex].pos.q = json_integer_value(json_object_get(portJ, "qPos"));
+			grid.cursor[portIndex].pos.r = json_integer_value(json_object_get(portJ, "rPos"));
+			grid.cursor[portIndex].dir = (DIRECTION)json_integer_value(json_object_get(portJ, "dir"));
 			grid.cursor[portIndex].turnMode = (TURNMODE)json_integer_value(json_object_get(portJ, "turnMode"));
-			grid.cursor[portIndex].ninetyState = (TURNMODE)json_integer_value(json_object_get(portJ, "ninetyState"));       	///
+			grid.cursor[portIndex].ninetyState = (TURNMODE)json_integer_value(json_object_get(portJ, "ninetyState"));
 			grid.cursor[portIndex].outMode = (OUTMODE)json_integer_value(json_object_get(portJ, "outMode"));
 			grid.cursor[portIndex].ratchetingEnabled = json_boolean_value(json_object_get(portJ, "ratchetingEnabled"));
 
@@ -548,7 +548,7 @@ struct ModuleStateMenuItem : MenuItem {
 
 template < typename MODULE >
 struct GridCellChangeAction : history::ModuleAction {
-	HiveCell oldCell, newCell;
+	HiveCell oldCell, newCell;										///
 
 	GridCellChangeAction() {
 		name = "stoermelder HIVE cell";
@@ -559,7 +559,7 @@ struct GridCellChangeAction : history::ModuleAction {
 		assert(mw);
 		MODULE* m = dynamic_cast<MODULE*>(mw->module);
 		assert(m);
-		m->grid.setCell(oldCell);							///
+		m->grid.setCell(oldCell);									///
 	}
 
 	void redo() override {
@@ -567,7 +567,7 @@ struct GridCellChangeAction : history::ModuleAction {
 		assert(mw);
 		MODULE* m = dynamic_cast<MODULE*>(mw->module);
 		assert(m);
-		m->grid.setCell(newCell);							///
+		m->grid.setCell(newCell);									///
 	}
 };
 
@@ -582,7 +582,7 @@ struct GridSizeSlider : ui::Slider {
 			this->module = module;
 		}
 		void setValue(float value) override {
-			v = clamp(value, (float)MIN_RADIUS, (float)MAX_RADIUS);								///
+			v = clamp(value, (float)MIN_RADIUS, (float)MAX_RADIUS);			///
 			module->gridResize(int(v));
 		}
 		float getValue() override {
@@ -590,20 +590,20 @@ struct GridSizeSlider : ui::Slider {
 			return v;
 		}
 		float getDefaultValue() override {
-			return 5.f;													///
+			return 4.f;														///
 		}
 		float getMinValue() override {
-			return float(MIN_RADIUS);
+			return float(MIN_RADIUS);										///
 		}
 		float getMaxValue() override {
-			return float(MAX_RADIUS);
+			return float(MAX_RADIUS);										///
 		}
 		float getDisplayValue() override {
 			return getValue();
 		}
 		std::string getDisplayValueString() override {
 			int i = int(getValue());
-			return string::f("%i", i);									///
+			return string::f("%i", i);										///
 		}
 		void setDisplayValue(float displayValue) override {
 			setValue(displayValue);
@@ -686,7 +686,6 @@ struct HiveGridWidget : FramebufferWidget {
 			// Draw background
 			nvgBeginPath(args.vg);
 			drawHex(ORIGIN, ORIGIN.x, FLAT, args.vg);
-			//nvgClosePath(args.vg);
 			nvgFillColor(args.vg, nvgRGB(0, 16, 90));
 			nvgFill(args.vg);
 
@@ -695,7 +694,6 @@ struct HiveGridWidget : FramebufferWidget {
 			nvgStrokeWidth(args.vg, 0.6f);
 			nvgBeginPath(args.vg);
 			module->grid.drawGrid(module->sizeFactor, ORIGIN, args.vg);
-			//nvgClosePath(args.vg);
 			nvgStrokeColor(args.vg, color::mult(color::WHITE, 0.075f));
 			nvgStroke(args.vg);
 
@@ -720,7 +718,6 @@ struct HiveGridWidget : FramebufferWidget {
 								hex = hexToPixel(RoundAxialVec(q, r), module->sizeFactor, POINTY, ORIGIN);
 								nvgBeginPath(args.vg);
 								drawHex(hex, onCellSizeFactor, POINTY, args.vg);
-								//nvgClosePath(args.vg);
 								nvgFillColor(args.vg, color::mult(gridColor, 0.7f));
 								nvgFill(args.vg);
 								break;
@@ -728,14 +725,12 @@ struct HiveGridWidget : FramebufferWidget {
 								hex = hexToPixel(RoundAxialVec(q, r), module->sizeFactor, POINTY, ORIGIN);
 								nvgBeginPath(args.vg);
 								drawHex(hex, randCellSizeFactor, POINTY, args.vg);
-								//nvgClosePath(args.vg);
 								nvgStrokeWidth(args.vg, stroke);
 								nvgStrokeColor(args.vg, color::mult(gridColor, 0.6f));
 								nvgStroke(args.vg);
 
 								nvgBeginPath(args.vg);
 								drawHex(hex, sCellSizeFactor, POINTY, args.vg);
-								//nvgClosePath(args.vg);
 								nvgFillColor(args.vg, color::mult(gridColor, 0.4f));
 								nvgFill(args.vg);
 								break;
@@ -835,7 +830,6 @@ struct HiveStartPosEditWidget : OpaqueWidget, HiveDrawHelper<MODULE> {
 			// Outer border																///
 			nvgBeginPath(args.vg);
 			drawHex(ORIGIN, ORIGIN.x, FLAT, args.vg);
-			//nvgClosePath(args.vg);
 			nvgStrokeWidth(args.vg, stroke);
 			nvgStrokeColor(args.vg, c);
 			nvgStroke(args.vg);
@@ -849,7 +843,7 @@ struct HiveStartPosEditWidget : OpaqueWidget, HiveDrawHelper<MODULE> {
 
 			HiveDrawHelper<MODULE>::draw(args, box);
 
-			float triangleRadius = (sqrt(3.f) * module->sizeFactor) / 2.f * 0.75f;													///
+			float triangleRadius = (sqrt(3.f) * module->sizeFactor) / 2.f * 0.75f;					///
 
 			nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
 			for (int i = 0; i < module->numPorts; i++) {
@@ -908,9 +902,9 @@ struct HiveStartPosEditWidget : OpaqueWidget, HiveDrawHelper<MODULE> {
 			if (e.action == GLFW_PRESS) {
 				selectedId = -1;
 				if (gridHovered(e.pos, BOX_WIDTH / 2.f, FLAT, ORIGIN)) {															///
-					RoundAxialVec hex = pixelToHex(e.pos, module->sizeFactor, POINTY, ORIGIN);						///
+					RoundAxialVec hex = pixelToHex(e.pos, module->sizeFactor, POINTY, ORIGIN);										///
 					for (int i = 0; i < module->numPorts; i++) {
-						if (module->grid.cursor[i].startPos.q == hex.q && module->grid.cursor[i].startPos.r == hex.r) {					///
+						if (module->grid.cursor[i].startPos.q == hex.q && module->grid.cursor[i].startPos.r == hex.r) {				///
 							selectedId = i;
 							break;
 						}
@@ -942,8 +936,8 @@ struct HiveStartPosEditWidget : OpaqueWidget, HiveDrawHelper<MODULE> {
 
 			math::Vec pos = APP->scene->rack->mousePos.minus(dragPos);
 			RoundAxialVec hex = pixelToHex(pos, module->sizeFactor, POINTY, ORIGIN);		///
-			if (cellVisible(hex.q, hex.r, module->grid.usedRadius)) {				///
-				module->grid.cursor[selectedId].startPos = hex;					///
+			if (cellVisible(hex.q, hex.r, module->grid.usedRadius)) {						///
+				module->grid.cursor[selectedId].startPos = hex;								///
 			}
 		}
 	}
@@ -953,7 +947,7 @@ struct HiveStartPosEditWidget : OpaqueWidget, HiveDrawHelper<MODULE> {
 
 		struct DirectionItem : MenuItem {
 			MODULE* module;
-			DIRECTION dir;														///
+			DIRECTION dir;													///
 			int id;
 
 			void onAction(const event::Action &e) override {
@@ -961,7 +955,7 @@ struct HiveStartPosEditWidget : OpaqueWidget, HiveDrawHelper<MODULE> {
 			}
 
 			void step() override {
-				bool s = module->grid.cursor[id].startDir == dir;				///
+				bool s = module->grid.cursor[id].startDir == dir;			///
 				rightText = s ? "✔" : "";
 				MenuItem::step();
 			}
@@ -1003,11 +997,11 @@ struct HiveStartPosEditWidget : OpaqueWidget, HiveDrawHelper<MODULE> {
 			int id;
 
 			void onAction(const event::Action &e) override {
-				module->grid.cursor[id].outMode = outMode;
+				module->grid.cursor[id].outMode = outMode;									///
 			}
 
 			void step() override {
-				rightText = module->grid.cursor[id].outMode == outMode ? "✔" : "";
+				rightText = module->grid.cursor[id].outMode == outMode ? "✔" : "";			///
 				MenuItem::step();
 			}
 		};
@@ -1024,11 +1018,11 @@ struct HiveStartPosEditWidget : OpaqueWidget, HiveDrawHelper<MODULE> {
 			int id;
 
 			void onAction(const event::Action& e) override {
-				module->grid.cursor[id].ratchetingEnabled ^= true;
+				module->grid.cursor[id].ratchetingEnabled ^= true;							///
 			}
 
 			void step() override {
-				rightText = module->grid.cursor[id].ratchetingEnabled ? "✔" : "";
+				rightText = module->grid.cursor[id].ratchetingEnabled ? "✔" : "";			///
 				MenuItem::step();
 			}
 		};
@@ -1050,7 +1044,7 @@ struct HiveStartPosEditWidget : OpaqueWidget, HiveDrawHelper<MODULE> {
 				}
 
 				void step() override {
-					rightText = module->grid.cursor[id].ratchetingProb == ratchetingProb ? "✔" : "";
+					rightText = module->grid.cursor[id].ratchetingProb == ratchetingProb ? "✔" : "";		///
 					MenuItem::step();
 				}
 			};
@@ -1098,20 +1092,20 @@ struct HiveScreenWidget : OpaqueWidget, HiveDrawHelper<MODULE> {
 
 	void onButton(const event::Button& e) override {
 		if (module && module->currentState == MODULESTATE::GRID) {
-			if (gridHovered(e.pos, BOX_WIDTH / 2.f, FLAT, ORIGIN)) {
+			if (gridHovered(e.pos, BOX_WIDTH / 2.f, FLAT, ORIGIN)) {									///
 				if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
-					RoundAxialVec c = pixelToHex(e.pos, module->sizeFactor, POINTY, ORIGIN);				///
+					RoundAxialVec c = pixelToHex(e.pos, module->sizeFactor, POINTY, ORIGIN);			///
 
-					if (cellVisible(c.q, c.r, module->grid.usedRadius)) {							///
+					if (cellVisible(c.q, c.r, module->grid.usedRadius)) {								///
 						// History
 						GridCellChangeAction<MODULE>* h = new GridCellChangeAction<MODULE>;
 						CELL cell = module->grid.getCell(c.q, c.r);
 						h->moduleId = module->id;
-						h->oldCell = cell;															///
+						h->oldCell = cell;																///
 
-						module->cellNextState(&cell);             								///
+						module->cellNextState(&cell);             										///
 						
-						h->newCell = cell;         								///
+						h->newCell = cell;         														///
 						APP->history->push(h);
 					}
 
@@ -1142,7 +1136,7 @@ struct HiveScreenWidget : OpaqueWidget, HiveDrawHelper<MODULE> {
 };
 
 
-struct HiveWidget : ThemedModuleWidget<HiveModule<MAX_RADIUS, 4>> {
+struct HiveWidget : ThemedModuleWidget<HiveModule<MAX_RADIUS, 4>> {			///
 	typedef HiveModule<MAX_RADIUS, 4> MODULE;
 	HiveWidget(MODULE* module)
 		: ThemedModuleWidget<HiveModule<MAX_RADIUS, 4>>(module, "Hive") {
