@@ -483,6 +483,7 @@ struct HiveModule : Module {
 				HiveCell cell = grid.getCell(q, r);
 				RoundAxialVec index = grid.axialToIndex(q, r);
 				cell.state = (GRIDSTATE)json_integer_value(json_array_get(gridJ, index.q * grid.arraySize + index.r));
+				grid.setCell(cell);
 			}
 		}
 		
@@ -492,6 +493,7 @@ struct HiveModule : Module {
 				HiveCell cell = grid.getCell(q, r);
 				RoundAxialVec index = grid.axialToIndex(q, r);
 				cell.cv = json_real_value(json_array_get(gridCvJ, index.q * grid.arraySize + index.r));
+				grid.setCell(cell);
 			}
 		}
 
