@@ -128,7 +128,7 @@ struct HiveModule : Module {
 	int panelTheme = 0;
 
 	/** [Stored to JSON] */				///!!!
-	HIVEGRID grid = HIVEGRID(1);				
+	HIVEGRID grid = HIVEGRID(4);				
 
 	/** [Stored to JSON] */				///!!!
 	float sizeFactor = (BOX_HEIGHT / (((2 * grid.usedRadius) * (3.f / 4.f)) + 1)) / 2.f;
@@ -560,6 +560,7 @@ struct GridCellChangeAction : history::ModuleAction {
 		MODULE* m = dynamic_cast<MODULE*>(mw->module);
 		assert(m);
 		m->grid.setCell(oldCell);									///
+		m->gridDirty = true;
 	}
 
 	void redo() override {
@@ -568,6 +569,7 @@ struct GridCellChangeAction : history::ModuleAction {
 		MODULE* m = dynamic_cast<MODULE*>(mw->module);
 		assert(m);
 		m->grid.setCell(newCell);									///
+		m->gridDirty = true;
 	}
 };
 
