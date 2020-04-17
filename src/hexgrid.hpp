@@ -1,6 +1,6 @@
 #include "rack.hpp"
 
-enum ORIENTATION {
+enum ROTATION {
     FLAT = 0,
     POINTY = 1
 };
@@ -51,12 +51,12 @@ RoundAxialVec hexRound(Vec v) {
     return RoundAxialVec(rx, rz);
 }
 
-RoundAxialVec pixelToHex(Vec pixelVec, float sizeFactor, ORIENTATION shape, Vec origin) {
+RoundAxialVec pixelToHex(Vec pixelVec, float sizeFactor, ROTATION shape, Vec origin) {
     RoundAxialVec hex;
     float q, r;
     pixelVec.x -= origin.x;
     pixelVec.y -= origin.y;
-    if (shape == FLAT) {
+    if (shape == ROTATION::FLAT) {
         q = (2.f/3.f * pixelVec.x) / sizeFactor;
         r = (-1.f/3.f * pixelVec.x  +  sqrt(3.f)/3.f * pixelVec.y) / sizeFactor;
     }
@@ -68,16 +68,16 @@ RoundAxialVec pixelToHex(Vec pixelVec, float sizeFactor, ORIENTATION shape, Vec 
     return hex;
 }
 
-bool gridHovered(Vec pixelVec, float sizeFactor, ORIENTATION cellShape, Vec origin) {
+bool gridHovered(Vec pixelVec, float sizeFactor, ROTATION cellShape, Vec origin) {
     RoundAxialVec hex = pixelToHex(pixelVec, sizeFactor, cellShape, origin);
     if (!hex.q && !hex.r)
         return true;
     else return false;
 }
 
-Vec hexToPixel(RoundAxialVec hex, float sizeFactor, ORIENTATION shape, Vec origin) {
+Vec hexToPixel(RoundAxialVec hex, float sizeFactor, ROTATION shape, Vec origin) {
     float x, y;
-    if (shape == FLAT) {
+    if (shape == ROTATION::FLAT) {
         // TODO
     }
     else {
@@ -129,10 +129,10 @@ bool cellVisible(RoundAxialVec pos, int radius) {
     return visible;
 }
 
-void drawHex(Vec hexCenter, float sizeFactor, ORIENTATION shape, NVGcontext* ctx) {
+void drawHex(Vec hexCenter, float sizeFactor, ROTATION shape, NVGcontext* ctx) {
     Vec points[6];
     float angle;
-    if (shape == FLAT) {
+    if (shape == ROTATION::FLAT) {
         for (int i = 0; i < 6; i++) {
             angle = M_PI / 180.f * (60.f * i);
             points[i].x = hexCenter.x + sizeFactor * cos(angle);
@@ -151,14 +151,14 @@ void drawHex(Vec hexCenter, float sizeFactor, ORIENTATION shape, NVGcontext* ctx
         nvgLineTo(ctx, points[i].x, points[i].y);
 }
 
-Vec* hexPoints(Vec hexCenter, float sizeFactor, ORIENTATION shape, int startPoint, int numPoints, Vec* array) {
+Vec* hexPoints(Vec hexCenter, float sizeFactor, ROTATION shape, int startPoint, int numPoints, Vec* array) {
     // Returns the vertices of a hexagon, beginning from a given starting vertex and continuing clockwise through a given number of vertices
     //      5               5   0
     //  4       0       4           1
     //  3       1           3   2
     //      2
     float angle;
-    if (shape == FLAT) {
+    if (shape == ROTATION::FLAT) {
         for (int i = 0; i < numPoints; i++) {
             angle = M_PI / 180.f * (60.f * ((startPoint + i) % 6));
             array[i].x = hexCenter.x + sizeFactor * cos(angle);
@@ -182,7 +182,7 @@ struct HexCell {
     HexCell() {}
 };
 
-template < class CELL, class CURSOR, int NUM_CURSORS, int MAX_RADIUS, ORIENTATION CELL_SHAPE >
+template < class CELL, class CURSOR, int NUM_CURSORS, int MAX_RADIUS, ROTATION CELL_SHAPE >
 struct HexGrid {
     int usedRadius;
     const int arraySize = 2 * MAX_RADIUS + 1;
@@ -278,7 +278,7 @@ struct HexGrid {
         // For flat-top hexagons, odd-numbered directions are oriented between neighboring cells and thus alternate: first clockwise, then counter
         // For pointy-top hexagons, it is the even-numbered directions which demand these alternating movements
         RoundAxialVec index = axialToIndex(cell.pos);
-        if (CELL_SHAPE == FLAT) {
+        if (CELL_SHAPE == ROTATION::FLAT) {
             switch (direction) {
                 case 0:
                     cell.r -= 1;
@@ -436,7 +436,7 @@ struct HexGrid {
         // Direction is expressed as relative to the center of a clock, 0 through 11.
         // For flat-top hexagons, odd-numbered directions are oriented between neighboring cells and thus alternate: first clockwise, then counter
         // For pointy-top hexagons, it is the even-numbered directions which demand these alternating movements
-        if (CELL_SHAPE == FLAT) {
+        if (CELL_SHAPE == ROTATION::FLAT) {
             switch (direction) {
                 case 0:
                     cursor[id].pos.r -= 1;
@@ -590,15 +590,15 @@ struct HexGrid {
 
     void drawGrid(float cellSizeFactor, Vec gridOrigin, NVGcontext* ctx) {
         Vec hex;
-        if (CELL_SHAPE == FLAT) {
+        if (CELL_SHAPE == ROTATION::FLAT) {
             // TODO                
         }
         else {
             for (int q = -usedRadius; q <= usedRadius; q++) {
                 for (int r = -usedRadius; r <= usedRadius; r++) {
                     if (cellVisible(q, r, usedRadius)) {
-                        hex = hexToPixel(RoundAxialVec(q, r), cellSizeFactor, POINTY, gridOrigin);
-                        drawHex(hex, cellSizeFactor, POINTY, ctx);
+                        hex = hexToPixel(RoundAxialVec(q, r), cellSizeFactor, ROTATION::POINTY, gridOrigin);
+                        drawHex(hex, cellSizeFactor, ROTATION::POINTY, ctx);
                     }
                 }
             }
@@ -641,7 +641,7 @@ struct HexGrid {
             }
         }
 
-        if (CELL_SHAPE == FLAT) {
+        if (CELL_SHAPE == ROTATION::FLAT) {
             // TODO
         }
         else {
