@@ -461,12 +461,12 @@ struct MirrorWidget : ThemedModuleWidget<MirrorModule> {
 		menu->addChild(construct<AudioRateItem>(&MenuItem::text, "Audio rate processing", &AudioRateItem::module, module));
 		menu->addChild(construct<MappingIndicatorHiddenItem>(&MenuItem::text, "Hide mapping indicators", &MappingIndicatorHiddenItem::module, module));
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<CvInputPortMenuItem>(&MenuItem::text, "CV ports", &CvInputPortMenuItem::module, module));
-		menu->addChild(construct<BindSourceItem>(&MenuItem::text, "Map source module", &BindSourceItem::module, module));
-		menu->addChild(construct<BindTargetItem>(&MenuItem::text, "Map target module", &BindTargetItem::module, module));
+		menu->addChild(construct<BindSourceItem>(&MenuItem::text, "Bind source module (left)", &BindSourceItem::module, module));
+		menu->addChild(construct<BindTargetItem>(&MenuItem::text, "Map module (right)", &BindTargetItem::module, module));
 		menu->addChild(construct<AddAndBindTargetItem>(&MenuItem::text, "Add and map new module", &AddAndBindTargetItem::module, module, &AddAndBindTargetItem::mw, this));
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<SyncPresetItem>(&MenuItem::text, "Sync module settings", &SyncPresetItem::mw, this));
+		menu->addChild(construct<CvInputPortMenuItem>(&MenuItem::text, "CV ports", &CvInputPortMenuItem::module, module));
+		menu->addChild(construct<SyncPresetItem>(&MenuItem::text, "Sync module presets", &SyncPresetItem::mw, this));
 	}
 
 	void syncPresets() {
@@ -501,10 +501,12 @@ struct MirrorWidget : ThemedModuleWidget<MirrorModule> {
 		APP->scene->rack->setModulePosForce(this, pos);
 
 		// Get Model
+		// NB: unstable API
 		plugin::Model* model = plugin::getModel(module->sourcePluginSlug, module->sourceModelSlug);
 		if (!model) return;
 
 		// Create ModuleWidget
+		// NB: unstable API
 		ModuleWidget* newMw = model->createModuleWidget();
 		assert(newMw);
 		newMw->box.pos = box.pos;
