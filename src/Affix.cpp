@@ -123,7 +123,7 @@ struct AffixModule : Module {
 					int cent = (int)(value * 12.f);
 					int octaves = cent / 12;
 					cent = cent % 12;
-					return string::f("%s: %i oct %i cent", ParamQuantity::getLabel().c_str(), octaves, cent);
+					return string::f("%s: %i oct %i semi", ParamQuantity::getLabel().c_str(), octaves, cent);
 				}
 				case PARAM_MODE::OCTAVE: {
 					int octaves = (int)ParamQuantity::getValue();
@@ -132,6 +132,14 @@ struct AffixModule : Module {
 			}
 		}
 	}; // AffixParamQuantity
+
+
+	/** [Stored to JSON] */
+	int panelTheme = 0;
+	/** [Stored to JSON] */
+	PARAM_MODE paramMode;
+	/** [Stored to JSON] */
+	int numberOfChannels;
 
 	AffixModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
@@ -144,13 +152,14 @@ struct AffixModule : Module {
 		onReset();
 	}
 
-	/** [Stored to JSON] */
-	int panelTheme = 0;
-	/** [Stored to JSON] */
-	PARAM_MODE paramMode;
+	void onReset() override {
+		paramMode = PARAM_MODE::VOLTAGE;
+		numberOfChannels = 0;
+		Module::onReset();
+	}
 
 	void process(const ProcessArgs& args) override {
-		int lastChannel = inputs[INPUT_POLY].getChannels();
+		int lastChannel = numberOfChannels == 0 ? inputs[INPUT_POLY].getChannels() : numberOfChannels;
 		for (int c = 0; c < lastChannel; c++) {
 			float v = inputs[INPUT_POLY].getVoltage(c);
 			if (c < CHANNELS) {
@@ -161,15 +170,10 @@ struct AffixModule : Module {
 		outputs[OUTPUT_POLY].setChannels(lastChannel);
 	}
 
-	void onReset() override {
-		paramMode = PARAM_MODE::VOLTAGE;
-		Module::onReset();
-	}
-
 	void setParamMode(PARAM_MODE paramMode) {
 		if (this->paramMode == paramMode) return;
 		this->paramMode = paramMode;
-		if (this->paramMode == PARAM_MODE::CENT) {
+		if (this->paramMode == PARAM_MODE::CENT || this->paramMode == PARAM_MODE::OCTAVE) {
 			// Snap value
 			for (int i = 0; i < CHANNELS; i++) {
 				paramQuantities[PARAM_MONO + i]->setValue(params[PARAM_MONO + i].getValue());
@@ -177,47 +181,24 @@ struct AffixModule : Module {
 		}
 	}
 
+	int getChannelNumber() {
+		return CHANNELS;
+	}
+
 	json_t* dataToJson() override {
 		json_t *rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 		json_object_set_new(rootJ, "paramMode", json_integer((int)paramMode));
+		json_object_set_new(rootJ, "numberOfChannels", json_integer(numberOfChannels));
 		return rootJ;
 	}
 
 	void dataFromJson(json_t* rootJ) override {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 		paramMode = (PARAM_MODE)json_integer_value(json_object_get(rootJ, "paramMode"));
+		numberOfChannels = json_integer_value(json_object_get(rootJ, "numberOfChannels"));
 	}
 };
-
-
-template < typename MODULE >
-struct ParamModeMenuItem : MenuItem {
-	MODULE* module;
-	ParamModeMenuItem() {
-		rightText = RIGHT_ARROW;
-	}
-
-	Menu* createChildMenu() override {
-		Menu* menu = new Menu;
-		struct ParamModeItem : MenuItem {
-			MODULE* module;
-			PARAM_MODE paramMode;
-			void onAction(const event::Action& e) override {
-				module->setParamMode(paramMode);
-			}
-			void step() override {
-				rightText = paramMode == module->paramMode ? "✔" : "";
-				MenuItem::step();
-			}
-		};
-
-		menu->addChild(construct<ParamModeItem>(&MenuItem::text, "Volt", &ParamModeItem::module, module, &ParamModeItem::paramMode, PARAM_MODE::VOLTAGE));
-		menu->addChild(construct<ParamModeItem>(&MenuItem::text, "Cent", &ParamModeItem::module, module, &ParamModeItem::paramMode, PARAM_MODE::CENT));
-		menu->addChild(construct<ParamModeItem>(&MenuItem::text, "Octave", &ParamModeItem::module, module, &ParamModeItem::paramMode, PARAM_MODE::OCTAVE));
-		return menu;
-	}
-}; // ParamModeMenuItem
 
 
 template < typename MODULE >
@@ -244,8 +225,63 @@ struct TAffixWidget : ThemedModuleWidget<MODULE> {
 		MODULE* module = dynamic_cast<MODULE*>(this->module);
 		assert(module);
 
+		struct ParamModeMenuItem : MenuItem {
+			MODULE* module;
+			ParamModeMenuItem() {
+				rightText = RIGHT_ARROW;
+			}
+
+			Menu* createChildMenu() override {
+				Menu* menu = new Menu;
+				struct ParamModeItem : MenuItem {
+					MODULE* module;
+					PARAM_MODE paramMode;
+					void onAction(const event::Action& e) override {
+						module->setParamMode(paramMode);
+					}
+					void step() override {
+						rightText = paramMode == module->paramMode ? "✔" : "";
+						MenuItem::step();
+					}
+				};
+
+				menu->addChild(construct<ParamModeItem>(&MenuItem::text, "Volt", &ParamModeItem::module, module, &ParamModeItem::paramMode, PARAM_MODE::VOLTAGE));
+				menu->addChild(construct<ParamModeItem>(&MenuItem::text, "Cent", &ParamModeItem::module, module, &ParamModeItem::paramMode, PARAM_MODE::CENT));
+				menu->addChild(construct<ParamModeItem>(&MenuItem::text, "Octave", &ParamModeItem::module, module, &ParamModeItem::paramMode, PARAM_MODE::OCTAVE));
+				return menu;
+			}
+		}; // ParamModeMenuItem
+
+		struct ChannelNumberMenuItem : MenuItem {
+			MODULE* module;
+			ChannelNumberMenuItem() {
+				rightText = RIGHT_ARROW;
+			}
+			Menu* createChildMenu() override {
+				Menu* menu = new Menu;
+				struct ChannelNumberItem : MenuItem {
+					MODULE* module;
+					int channels;
+					void onAction(const event::Action& e) override {
+						module->numberOfChannels = channels;
+					}
+					void step() override {
+						rightText = channels == module->numberOfChannels ? "✔" : "";
+						MenuItem::step();
+					}
+				};
+
+				menu->addChild(construct<ChannelNumberItem>(&MenuItem::text, "Automatic", &ChannelNumberItem::module, module, &ChannelNumberItem::channels, 0));
+				for (int i = 1; i <= module->getChannelNumber(); i++) {
+					menu->addChild(construct<ChannelNumberItem>(&MenuItem::text, string::f("%i", i), &ChannelNumberItem::module, module, &ChannelNumberItem::channels, i));
+				}
+				return menu;
+			}
+		}; // ChannelNumberMenuItem
+
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<ParamModeMenuItem<MODULE>>(&MenuItem::text, "Knob mode", &ParamModeMenuItem<MODULE>::module, module));
+		menu->addChild(construct<ParamModeMenuItem>(&MenuItem::text, "Knob mode", &ParamModeMenuItem::module, module));
+		menu->addChild(construct<ChannelNumberMenuItem>(&MenuItem::text, "Channels", &ChannelNumberMenuItem::module, module));
 	}
 };
 
