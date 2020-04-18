@@ -1,6 +1,6 @@
 /**
- * q = column
- * r = row
+ * 		q = column
+ * 		r = row
  * 										-r
  * 
  * 
@@ -18,6 +18,10 @@
  * 
  * 
  * 									  -1 , +1	     +0 , +1
+ * 
+ * 
+ * 		pointy-top hexagon width 	=  	sqrt(3) * sizeFactor
+ * 		pointy-top hexagon height 	= 	2 * sizeFactor
  */
 
 #include "plugin.hpp"
@@ -37,7 +41,7 @@ enum GRIDSTATE {
 
 enum TURNMODE {
 	SIXTY = 0,				///
-	NINETY = 1,				///
+	NINETY = 1,				/// Turn mode 90 alternates between 60 and 120
 	ONETWENTY = 2,			///
 	ONEEIGHTY = 3			///
 };
@@ -54,8 +58,8 @@ enum MODULESTATE {
 	EDIT = 1
 };
 
-enum DIRECTION {			///
-	NE = 1,
+enum DIRECTION {			/// Numbered according to the face of a clock
+	NE = 1,					/// The even numbers would be appropriate for a grid of flat-top hexagons
 	E = 3,
 	SE = 5,
 	SW = 7,
@@ -63,12 +67,13 @@ enum DIRECTION {			///
 	NW = 11
 };
 
-const int MAX_RADIUS = 16;				/// Max of 16 ensures the area of a cell does not shrink beyond that of one in Maze
+const int MAX_RADIUS = 16;				/// Max 16 ensures the area of a cell does not shrink beyond that of one in MAZE
+										/// Max radius > 160 crashes Rack...
 const int MIN_RADIUS = 1;				///
 
-const float BOX_WIDTH = 262.563f;								///
+const float BOX_WIDTH = 262.563f;								/// Grid widget's dimensions in pixels
 const float BOX_HEIGHT = 227.f;									///
-const Vec ORIGIN = Vec(BOX_WIDTH / 2.f, BOX_HEIGHT / 2.f);		///
+const Vec ORIGIN = Vec(BOX_WIDTH / 2.f, BOX_HEIGHT / 2.f);		/// Hex grid origin is at the center of the widget
 
 struct HiveCell : HexCell {				///
 	GRIDSTATE state;
@@ -84,7 +89,7 @@ struct HiveCursor : HexCell {			///
 	RoundAxialVec startPos;
 	RoundAxialVec pos;
 	TURNMODE turnMode;
-	TURNMODE ninetyState;
+	TURNMODE ninetyState;				/// Used for alternating turns in 90 degree turnmode
 	OUTMODE outMode;
 	bool ratchetingEnabled;
 	float ratchetingProb;
@@ -128,10 +133,12 @@ struct HiveModule : Module {
 	int panelTheme = 0;
 
 	/** [Stored to JSON] */
-	HIVEGRID grid = HIVEGRID(4);		///
+	HIVEGRID grid = HIVEGRID(4);		/// Default starting radius of 4
 
 	/** [Stored to JSON] */
-	float sizeFactor = (BOX_HEIGHT / (((2 * grid.usedRadius) * (3.f / 4.f)) + 1)) / 2.f;		///
+	float sizeFactor = (BOX_HEIGHT / (((2 * grid.usedRadius) * (3.f / 4.f)) + 1)) / 2.f;		/// (2 * usedRadius) * (3/4) + 1 = the height of the grid, in units of 1 hexagon's height
+																								/// Divide grid widget's height by this number to obtain height of 1 hexagon in pixels
+																								/// Divide this by two to obtain the size factor of the hexagon
 
 	/** [Stored to JSON] */
 	bool normalizePorts;
@@ -177,7 +184,7 @@ struct HiveModule : Module {
 		for (int i = 0; i < NUM_PORTS; i++) {
 			grid.cursor[i].pos.q = grid.cursor[i].startPos.q = -grid.usedRadius;								/// SW edge
 			grid.cursor[i].pos.r = grid.cursor[i].startPos.r = (grid.usedRadius + 1) / NUM_PORTS * i;			/// Divide across SW edge
-			grid.cursor[i].dir = grid.cursor[i].startDir = NE;													/// Start direction NE
+			grid.cursor[i].dir = grid.cursor[i].startDir = DIRECTION::NE;
 			grid.cursor[i].turnMode = TURNMODE::SIXTY;															/// Start with small turns 
             grid.cursor[i].ninetyState = TURNMODE::SIXTY;														/// Turnmode 90 starts with a small turn first
 			grid.cursor[i].outMode = OUTMODE::UNI_3V;
@@ -827,15 +834,15 @@ struct HiveStartPosEditWidget : OpaqueWidget, HiveDrawHelper<MODULE> {
 		HiveDrawHelper<MODULE>::module = module;
 	}
 
-	void draw(const DrawArgs& args) override {											///
+	void draw(const DrawArgs& args) override {								///
 		if (module && module->currentState == MODULESTATE::EDIT) {
 			NVGcolor c = color::mult(color::WHITE, 0.7f);
 			float stroke = 1.f;
 			nvgGlobalCompositeOperation(args.vg, NVG_ATOP);
 
-			// Outer border																///
+			// Outer border													///
 			nvgBeginPath(args.vg);
-			drawHex(ORIGIN, ORIGIN.x, FLAT, args.vg);
+			drawHex(ORIGIN, ORIGIN.x, FLAT, args.vg);						/// The x value of the origin (= width / 2) is equivalent to the sizeFactor of the flat-topped border hexagon
 			nvgStrokeWidth(args.vg, stroke);
 			nvgStrokeColor(args.vg, c);
 			nvgStroke(args.vg);
