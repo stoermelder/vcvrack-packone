@@ -122,10 +122,10 @@ struct LabelDrawWidget : TransparentWidget {
 		nvgBeginPath(args.vg);
 		float r = 4; // Blur radius
 		float c = 4; // Corner radius
-		math::Vec b = math::Vec(-2, -2); // Offset from each corner
+		math::Vec b = math::Vec(-2.f, -2.f); // Offset from each corner
 		nvgRect(args.vg, d.pos.x + b.x - r, d.pos.y + b.y - r, d.size.x - 2 * b.x + 2 * r, d.size.y - 2 * b.y + 2 * r);
-		NVGcolor shadowColor = nvgRGBAf(0, 0, 0, 0.1);
-		NVGcolor transparentColor = nvgRGBAf(0, 0, 0, 0);
+		NVGcolor shadowColor = nvgRGBAf(0.f, 0.f, 0.f, 0.1f);
+		NVGcolor transparentColor = nvgRGBAf(0.f, 0.f, 0.f, 0.f);
 		nvgFillPaint(args.vg, nvgBoxGradient(args.vg, d.pos.x + b.x, d.pos.y + b.y, d.size.x - 2 * b.x, d.size.y - 2 * b.y, c, r, shadowColor, transparentColor));
 		nvgFill(args.vg);
 
@@ -138,12 +138,12 @@ struct LabelDrawWidget : TransparentWidget {
 		// Draw text
 		nvgFontSize(args.vg, label->size);
 		nvgFontFaceId(args.vg, font[label->font]->handle);
-		nvgTextLetterSpacing(args.vg, -1.4);
+		nvgTextLetterSpacing(args.vg, -1.2f);
 		nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_TOP);
 		nvgFillColor(args.vg, color::alpha(nvgRGB(0x08, 0x08, 0x08), label->opacity));
 		NVGtextRow textRow;
 		nvgTextBreakLines(args.vg, label->text.c_str(), NULL, d.size.x, &textRow, 1);
-		nvgTextBox(args.vg, d.pos.x, d.pos.y, d.size.x, textRow.start, textRow.end);
+		nvgTextBox(args.vg, d.pos.x, d.pos.y + 0.2f, d.size.x, textRow.start, textRow.end);
 	}
 };
 
@@ -598,7 +598,7 @@ struct LabelContainer : widget::Widget {
 	/** [Stored to JSON] default angle for new labels */
 	float defaultAngle = 0.f;
 	/** [Stored to JSON] default opacity for new labels */
-	float defaultOpacity = 0.f;
+	float defaultOpacity = LABEL_OPACITY_MAX;
 	/** [Stored to JSON] default color for new labels */
 	NVGcolor defaultColor = LABEL_COLOR_YELLOW;
 	/** [Stored to JSON] default font for new labels */
