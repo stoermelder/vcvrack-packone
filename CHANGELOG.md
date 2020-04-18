@@ -1,9 +1,11 @@
-## 1.6.0 (in development)
-
-- Module [AFFIX](./docs/Mirror.md), [µAFFIX](./docs/Mirror.md)
-    - New modules, insert on polyphonic cables for adding offsets in Volt or cent
+## 1.7.0 (in development)
 - Module [DETOUR](./docs/Detour.md)
     - New module, 8x8 send/return switch matrix with support for 8 scenes
+
+## 1.6.0 (in development)
+
+- Module [AFFIX](./docs/Affix.md), [µAFFIX](./docs/Affix.md)
+    - New modules, insert on polyphonic cables for adding offsets in volt, semitones or ocatves
 - Module [GRIP](./docs/Grip.md)
     - New module, locker for module parameters
 - Module [MIRROR](./docs/Mirror.md)
@@ -23,7 +25,7 @@
 - Module [PILE](./docs/Pile.md)
     - Removed slew-limiting after preset-load
 - Module [SAIL](./docs/Sail.md)
-    - Rewritten how the target values are applied onto the parameters (#106). You can't use IN and INC/DEC the same time anymore, just use two different modules.
+    - Rewritten how the target values are applied onto the parameters (#106). You can't use IN and INC/DEC the same time anymore, just use two instances of the  module.
 
 ## 1.5.0
 
