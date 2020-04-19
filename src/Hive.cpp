@@ -914,7 +914,7 @@ struct HiveStartPosEditWidget : OpaqueWidget, HiveDrawHelper<MODULE> {
 		if (module && module->currentState == MODULESTATE::EDIT) {
 			if (e.action == GLFW_PRESS) {
 				selectedId = -1;
-				if (gridHovered(e.pos, BOX_WIDTH / 2.f, FLAT, ORIGIN)) {															///
+				if (module->grid.gridHovered(e.pos, BOX_WIDTH / 2.f, FLAT, ORIGIN)) {															///
 					RoundAxialVec hex = pixelToHex(e.pos, module->sizeFactor, POINTY, ORIGIN);										///
 					for (int i = 0; i < module->numPorts; i++) {
 						if (module->grid.cursor[i].startPos.q == hex.q && module->grid.cursor[i].startPos.r == hex.r) {				///
@@ -1105,7 +1105,7 @@ struct HiveScreenWidget : OpaqueWidget, HiveDrawHelper<MODULE> {
 
 	void onButton(const event::Button& e) override {
 		if (module && module->currentState == MODULESTATE::GRID) {
-			if (gridHovered(e.pos, BOX_WIDTH / 2.f, FLAT, ORIGIN)) {									///
+			if (module->grid.gridHovered(e.pos, BOX_WIDTH / 2.f, FLAT, ORIGIN)) {									///
 				if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
 					RoundAxialVec c = pixelToHex(e.pos, module->sizeFactor, POINTY, ORIGIN);			///
 
