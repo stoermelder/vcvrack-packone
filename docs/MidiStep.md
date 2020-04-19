@@ -6,7 +6,7 @@ MIDI-STEP is a module intended for relative MIDI protocols of endless rotary kno
 
 I don't own all of following devices so I can provide only limited supported for setup and correct function. They have been tested successfully by users though. Feel free to contact me if you have a MIDI controller with endless rotary knobs which does not work with one of the existing relative modes.
 
-- **Native Instruments controllers.** You have to change to assigned "Control Change" mode to "Relative" using the "Controller Editor" software.
+- **Native Instruments controllers.** You have to change the assigned "Control Change" mode to "Relative" using the "Controller Editor" software.
 
 ![MIDI-STEP Native Instruments controller](./MidiStep-NI.jpg)
 
@@ -18,7 +18,7 @@ I don't own all of following devices so I can provide only limited supported for
 
 ![MIDI-STEP Behringer controller](./MidiStep-Behringer.jpg)
 
-- **DJ Tech Tools Midi Fighter Twister.** Set the "Encoder Type" to "ENC 3FH/41H" in the MidiFighter Utility
+- **DJ Tech Tools Midi Fighter Twister.** Set the "Encoder Type" to "ENC 3FH/41H" in the MidiFighter Utility.
 
 ![MIDI-STEP DJ Tech Tools controller](./MidiStep-DJTT.png)
 

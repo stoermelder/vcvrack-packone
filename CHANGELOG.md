@@ -6,14 +6,14 @@
 
 - Module [AFFIX](./docs/Affix.md), [µAFFIX](./docs/Affix.md)
     - New modules, insert on polyphonic cables for adding offsets in volt, semitones or ocatves
+- Module [GLUE](./docs/Glue.md)
+    - New module, label maker for your modules!
 - Module [GRIP](./docs/Grip.md)
     - New module, locker for module parameters
 - Module [MIRROR](./docs/Mirror.md)
     - New module, utility for synchronizing module parameters
 - Module [POLY-PILE](./docs/Pile.md)
     - New module, polyphonic version of PILE
-- Module [GLUE](./docs/Glue.md)
-    - New module, label maker for your modules!
 
 ### Fixes and Changes
 
@@ -21,7 +21,8 @@
     - Added option for disabling normalization to the yellow input ports (#95)
     - Added independent ratcheting settings for each sequencer-playhead (#94)
 - Module [MIDI-STEP](./docs/MidiStep.md)
-    - Added option for polyphonic output for all 8 channels on port 1
+    - Added option for polyphonic output for all channels on port 1
+    - Increased number of CCs to 16 although 9-16 can only be used in polyphonic mode
 - Module [PILE](./docs/Pile.md)
     - Removed slew-limiting after preset-load
 - Module [SAIL](./docs/Sail.md)

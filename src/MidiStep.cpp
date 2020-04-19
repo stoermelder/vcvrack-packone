@@ -10,7 +10,7 @@ enum MODE {
 	XTOUCH_R1 = 20
 };
 
-template < int PORTS = 8 >
+template < int PORTS >
 struct MidiStepModule : Module {
 	enum ParamIds {
 		NUM_PARAMS
@@ -230,7 +230,7 @@ struct MidiStepLedDisplay : LedDisplay {
 	LedDisplaySeparator* vSeparators[4];
 	COICE* choices[4][PORTS / 4];
 
-	void setModule(MidiStepModule<>* module) {
+	void setModule(MidiStepModule<16>* module) {
 		Vec pos = Vec(0, 0);
 
 		// Add vSeparators
@@ -262,20 +262,18 @@ struct MidiStepLedDisplay : LedDisplay {
 };
 
 
+template < typename MODULE, int VISIBLE_PORTS >
 struct MidiStepCcChoice : LedDisplayChoice {
-	MidiStepModule<>* module;
+	MODULE* module;
 	int id;
 	int focusCc;
 
-	MidiStepCcChoice() {
+	void setModule(MODULE* module) {
+		this->module = module;
 		box.size.y = mm2px(6.666);
 		textOffset.y -= 4.f;
-		textOffset.x -= 2.5f;
+		textOffset.x = box.size.x / 2.f;
 		color = nvgRGB(0xf0, 0xf0, 0xf0);
-	}
-
-	void setModule(MidiStepModule<>* module) {
-		this->module = module;
 	}
 
 	void setId(int id) {
@@ -293,15 +291,27 @@ struct MidiStepCcChoice : LedDisplayChoice {
 				text = string::f("%03d", focusCc);
 			else
 				text = "---";
-			color.a = 0.5;
+			color.a = 0.5f;
 		}
 		else {
-			text = string::f("%03d", module->learnedCcs[id]);
-			color.a = 1.0;
+			if (id < VISIBLE_PORTS || module->polyphonicOutput) {
+				text = string::f("%03d", module->learnedCcs[id]);
+				color.a = 1.0;
+			}
+			else {
+				text = "-";
+				color.a = 0.5f;
+			}
 			// HACK
-			if (APP->event->getSelectedWidget() == this)
+			if (APP->event->getSelectedWidget() == this) {
 				APP->event->setSelected(NULL);
+			}
 		}
+	}
+
+	void draw(const DrawArgs& args) override {
+		nvgTextAlign(args.vg, NVG_ALIGN_CENTER);
+		LedDisplayChoice::draw(args);
 	}
 
 	void onButton(const event::Button& e) override {
@@ -309,9 +319,11 @@ struct MidiStepCcChoice : LedDisplayChoice {
 		if (!module) return;
 
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
-			e.consume(this);
-			module->learningId = id;
-			focusCc = -1;
+			if (id < VISIBLE_PORTS || module->polyphonicOutput) {
+				e.consume(this);
+				module->learningId = id;
+				focusCc = -1;
+			}
 		}
 	}
 
@@ -347,9 +359,9 @@ struct MidiStepCcChoice : LedDisplayChoice {
 	}
 };
 
-struct MidiStepWidget : ThemedModuleWidget<MidiStepModule<>> {
-	MidiStepWidget(MidiStepModule<>* module)
-		: ThemedModuleWidget<MidiStepModule<>>(module, "MidiStep") {
+struct MidiStepWidget : ThemedModuleWidget<MidiStepModule<16>> {
+	MidiStepWidget(MidiStepModule<16>* module)
+		: ThemedModuleWidget<MidiStepModule<16>>(module, "MidiStep") {
 		setModule(module);
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
@@ -362,36 +374,36 @@ struct MidiStepWidget : ThemedModuleWidget<MidiStepModule<>> {
 		midiInputWidget->setMidiPort(module ? &module->midiInput : NULL);
 		addChild(midiInputWidget);
 
-		MidiStepLedDisplay<8, MidiStepCcChoice>* midiWidget = createWidget<MidiStepLedDisplay<8, MidiStepCcChoice>>(Vec(10.f, 108.7f));
-		midiWidget->box.size = Vec(130.0f, 40.0f);
+		MidiStepLedDisplay<16, MidiStepCcChoice<MidiStepModule<16>, 8>>* midiWidget = createWidget<MidiStepLedDisplay<16, MidiStepCcChoice<MidiStepModule<16>, 8>>>(Vec(10.f, 108.7f));
+		midiWidget->box.size = Vec(130.0f, 79.0f);
 		midiWidget->setModule(module);
 		addChild(midiWidget);
 
-		addOutput(createOutputCentered<StoermelderPort>(Vec(27.9f, 232.7f), module, MidiStepModule<>::OUTPUT_INC + 0));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(56.1f, 232.7f), module, MidiStepModule<>::OUTPUT_INC + 1));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(93.9f, 232.7f), module, MidiStepModule<>::OUTPUT_INC + 2));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(122.1f, 232.7f), module, MidiStepModule<>::OUTPUT_INC + 3));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(27.9f, 261.0f), module, MidiStepModule<>::OUTPUT_INC + 4));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(56.1f, 261.0f), module, MidiStepModule<>::OUTPUT_INC + 5));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(93.9f, 261.0f), module, MidiStepModule<>::OUTPUT_INC + 6));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(122.1f, 261.0f), module, MidiStepModule<>::OUTPUT_INC + 7));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(27.9f, 232.7f), module, MidiStepModule<16>::OUTPUT_INC + 0));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(56.1f, 232.7f), module, MidiStepModule<16>::OUTPUT_INC + 1));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(93.9f, 232.7f), module, MidiStepModule<16>::OUTPUT_INC + 2));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(122.1f, 232.7f), module, MidiStepModule<16>::OUTPUT_INC + 3));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(27.9f, 261.0f), module, MidiStepModule<16>::OUTPUT_INC + 4));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(56.1f, 261.0f), module, MidiStepModule<16>::OUTPUT_INC + 5));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(93.9f, 261.0f), module, MidiStepModule<16>::OUTPUT_INC + 6));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(122.1f, 261.0f), module, MidiStepModule<16>::OUTPUT_INC + 7));
 
-		addOutput(createOutputCentered<StoermelderPort>(Vec(27.9f, 298.8f), module, MidiStepModule<>::OUTPUT_DEC + 0));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(56.1f, 298.8f), module, MidiStepModule<>::OUTPUT_DEC + 1));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(93.9f, 298.8f), module, MidiStepModule<>::OUTPUT_DEC + 2));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(122.1f, 298.8f), module, MidiStepModule<>::OUTPUT_DEC + 3));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(27.9f, 327.1f), module, MidiStepModule<>::OUTPUT_DEC + 4));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(56.1f, 327.1f), module, MidiStepModule<>::OUTPUT_DEC + 5));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(93.9f, 327.1f), module, MidiStepModule<>::OUTPUT_DEC + 6));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(122.1f, 327.1f), module, MidiStepModule<>::OUTPUT_DEC + 7));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(27.9f, 298.8f), module, MidiStepModule<16>::OUTPUT_DEC + 0));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(56.1f, 298.8f), module, MidiStepModule<16>::OUTPUT_DEC + 1));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(93.9f, 298.8f), module, MidiStepModule<16>::OUTPUT_DEC + 2));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(122.1f, 298.8f), module, MidiStepModule<16>::OUTPUT_DEC + 3));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(27.9f, 327.1f), module, MidiStepModule<16>::OUTPUT_DEC + 4));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(56.1f, 327.1f), module, MidiStepModule<16>::OUTPUT_DEC + 5));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(93.9f, 327.1f), module, MidiStepModule<16>::OUTPUT_DEC + 6));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(122.1f, 327.1f), module, MidiStepModule<16>::OUTPUT_DEC + 7));
 	}
 
 	void appendContextMenu(Menu* menu) override {
-		ThemedModuleWidget<MidiStepModule<>>::appendContextMenu(menu);
-		MidiStepModule<>* module = dynamic_cast<MidiStepModule<>*>(this->module);
+		ThemedModuleWidget<MidiStepModule<16>>::appendContextMenu(menu);
+		MidiStepModule<16>* module = dynamic_cast<MidiStepModule<16>*>(this->module);
 
 		struct ModeMenuItem : MenuItem {
-			MidiStepModule<>* module;
+			MidiStepModule<16>* module;
 			ModeMenuItem() {
 				rightText = RIGHT_ARROW;
 			}
@@ -400,7 +412,7 @@ struct MidiStepWidget : ThemedModuleWidget<MidiStepModule<>> {
 				Menu* menu = new Menu;
 
 				struct ModeItem : MenuItem {
-					MidiStepModule<>* module;
+					MidiStepModule<16>* module;
 					MODE mode;
 					void onAction(const event::Action& e) override {
 						module->mode = mode;
@@ -420,7 +432,7 @@ struct MidiStepWidget : ThemedModuleWidget<MidiStepModule<>> {
 		};
 
 		struct PolyphonicOutputItem : MenuItem {
-			MidiStepModule<>* module;
+			MidiStepModule<16>* module;
 			void onAction(const event::Action& e) override {
 				module->polyphonicOutput ^= true;
 			}
@@ -438,4 +450,4 @@ struct MidiStepWidget : ThemedModuleWidget<MidiStepModule<>> {
 
 } // namespace MidiStep
 
-Model* modelMidiStep = createModel<MidiStep::MidiStepModule<>, MidiStep::MidiStepWidget>("MidiStep");
+Model* modelMidiStep = createModel<MidiStep::MidiStepModule<16>, MidiStep::MidiStepWidget>("MidiStep");
