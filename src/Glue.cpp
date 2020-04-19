@@ -58,6 +58,8 @@ struct GlueModule : Module {
 		NUM_OUTPUTS
 	};
 	enum LightIds {
+		LIGHT_LEARN,
+		LIGHT_LOCK,
 		NUM_LIGHTS
 	};
 
@@ -136,14 +138,16 @@ struct LabelDrawWidget : TransparentWidget {
 		nvgFill(args.vg);
 
 		// Draw text
-		nvgFontSize(args.vg, label->size);
-		nvgFontFaceId(args.vg, font[label->font]->handle);
-		nvgTextLetterSpacing(args.vg, -1.2f);
-		nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_TOP);
-		nvgFillColor(args.vg, color::alpha(nvgRGB(0x08, 0x08, 0x08), label->opacity));
-		NVGtextRow textRow;
-		nvgTextBreakLines(args.vg, label->text.c_str(), NULL, d.size.x, &textRow, 1);
-		nvgTextBox(args.vg, d.pos.x, d.pos.y + 0.2f, d.size.x, textRow.start, textRow.end);
+		if (label->text.length() > 0) {
+			nvgFontSize(args.vg, label->size);
+			nvgFontFaceId(args.vg, font[label->font]->handle);
+			nvgTextLetterSpacing(args.vg, -1.2f);
+			nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_TOP);
+			nvgFillColor(args.vg, color::alpha(nvgRGB(0x08, 0x08, 0x08), label->opacity));
+			NVGtextRow textRow;
+			nvgTextBreakLines(args.vg, label->text.c_str(), NULL, d.size.x, &textRow, 1);
+			nvgTextBox(args.vg, d.pos.x, d.pos.y + 0.2f, d.size.x, textRow.start, textRow.end);
+		}
 	}
 };
 
@@ -526,11 +530,11 @@ struct LabelWidget : widget::TransparentWidget {
 		menu->addChild(labelField);
 		menu->addChild(construct<AppearanceItem>(&AppearanceItem::text, "Appearance", &AppearanceItem::label, label, &AppearanceItem::textSelected, &labelField->textSelected));
 		menu->addChild(construct<LabelDuplicateItem>(&MenuItem::text, "Duplicate", &LabelDuplicateItem::w, this));
-		menu->addChild(construct<LabelDeleteItem>(&MenuItem::text, "Delete", &LabelDeleteItem::w, this, &LabelDeleteItem::rightText, "Backspace"));
+		menu->addChild(construct<LabelDeleteItem>(&MenuItem::text, "Delete", &LabelDeleteItem::w, this, &LabelDeleteItem::rightText, "Ctrl+X"));
 	}
 
 	void onHoverKey(const event::HoverKey& e) override {
-		if (editMode && e.action == GLFW_PRESS && (e.key == GLFW_KEY_BACKSPACE || e.key == GLFW_KEY_DELETE)) {
+		if (editMode && e.action == GLFW_PRESS && e.mods & GLFW_MOD_CONTROL && e.key == GLFW_KEY_X) {
 			requestedDelete = true;
 			e.consume(this);
 		}
@@ -586,7 +590,6 @@ struct LabelContainer : widget::Widget {
 	std::list<Label*> labels;
 	std::list<Label*> labelsToBeDeleted;
 	bool editMode;
-	bool editModeForce = false;
 
 	/** used when duplicating an existing label */
 	Label* labelTemplate = NULL;
@@ -606,12 +609,9 @@ struct LabelContainer : widget::Widget {
 	/** [Stored to JSON] */
 	bool skewLabels = true;
 	/** */
-	bool hideLabels = false;
-
-	/** reference to unlock-parameter */
-	ParamQuantity* unlockParamQuantity;
-	/** reference to add-parameter */
-	ParamQuantity* addLabelParamQuantity;
+	bool hideMode = false;
+	/** */
+	bool learnMode = false;
 
 	ModuleWidget* mw;
 
@@ -622,12 +622,13 @@ struct LabelContainer : widget::Widget {
 	}
 
 	void step() override {
-		if (editModeForce) {
-			unlockParamQuantity->setValue(1.f);
-			editModeForce = false;
+		// Learn module
+		if (learnMode) {
+			Widget* w = APP->event->getSelectedWidget();
+			addLabelAtMousePos(w);
 		}
-		editMode = unlockParamQuantity->getValue() > 0.f;
 
+		// Traverse labels, collected delete-requests
 		for (Widget* w : children) {
 			LabelWidget* lw = dynamic_cast<LabelWidget*>(w);
 			if (!lw) continue;
@@ -638,7 +639,7 @@ struct LabelContainer : widget::Widget {
 			if (lw->requestedDuplicate) {
 				lw->requestedDuplicate = false;
 				labelTemplate = lw->label;
-				addLabelParamQuantity->setValue(1.0);
+				learnMode = true;
 			}
 			lw->editMode = editMode;
 			lw->skew = skewLabels;
@@ -660,16 +661,16 @@ struct LabelContainer : widget::Widget {
 			labelsToBeDeleted.clear();
 		}
 
-		if (hideLabels) {
-			unlockParamQuantity->setValue(0.f);
-			addLabelParamQuantity->setValue(0.f);
+		if (mw) {
+			mw->module->lights[GlueModule::LIGHT_LEARN].setBrightness(learnMode);
+			mw->module->lights[GlueModule::LIGHT_LOCK].setBrightness(!editMode);
 		}
 
 		Widget::step();
 	}
 
 	void draw(const DrawArgs& args) override {
-		if (!hideLabels) Widget::draw(args);
+		if (!hideMode) Widget::draw(args);
 	}
 
 	LabelWidget* getLabelWidget(Label* l) {
@@ -697,13 +698,13 @@ struct LabelContainer : widget::Widget {
 		return l;
 	}
 
-	bool addLabelAtMousePos(Widget* w) {
-		if (!w) return false;
+	void addLabelAtMousePos(Widget* w) {
+		if (!w) return;
 		ModuleWidget* mw = dynamic_cast<ModuleWidget*>(w);
 		if (!mw) mw = w->getAncestorOfType<ModuleWidget>();
-		if (!mw || mw == this->mw) return false;
+		if (!mw || mw == this->mw) return;
 		Module* m = mw->module;
-		if (!m) return false;
+		if (!m) return;
 
 		// Create new label
 		Label* l = addLabel();
@@ -716,9 +717,9 @@ struct LabelContainer : widget::Widget {
 		l->x = pos.x - l->width / 2.f;
 		l->y = pos.y - l->size / 2.f;
 
-		// Force edit mode
-		editModeForce = true;
-		return true;
+		// Enable edit mode
+		editMode = true;
+		learnMode = false;
 	}
 
 	void removeLabel(Label* l) {
@@ -728,6 +729,22 @@ struct LabelContainer : widget::Widget {
 		delete lw;
 		labels.remove(l);
 		delete l;
+	}
+
+	void enableLearnMode() {
+		if (!hideMode) learnMode = true;
+	}
+
+	void toggleEditMode() {
+		if (!hideMode) editMode ^= true;
+	}
+
+	void toggleHideMode(bool doHide) {
+		hideMode = doHide;
+		if (hideMode) {
+			editMode = false;
+			learnMode = false;
+		}
 	}
 
 	void onHoverKey(const event::HoverKey& e) override {
@@ -742,16 +759,23 @@ struct LabelContainer : widget::Widget {
 };
 
 
-struct LabelAddSwitch : CKSS {
+struct LabelButton : TL1105 {
 	LabelContainer* labelContainer;
 	void step() override {
-		CKSS::step();
+		TL1105::step();
 		if (paramQuantity && paramQuantity->getValue() > 0.f) {
-			// Learn module
-			Widget* w = APP->event->getSelectedWidget();
-			if (labelContainer->addLabelAtMousePos(w)) {
-				paramQuantity->setValue(0.f);
-			}
+			labelContainer->enableLearnMode();
+		}
+	}
+};
+
+struct LockButton : TL1105 {
+	dsp::BooleanTrigger trigger;
+	LabelContainer* labelContainer;
+	void step() override {
+		TL1105::step();
+		if (paramQuantity && trigger.process(paramQuantity->getValue() > 0.f)) {
+			labelContainer->toggleEditMode();
 		}
 	}
 };
@@ -781,7 +805,7 @@ struct OpacityMinusButton : TL1105 {
 struct HideSwitch : CKSS {
 	LabelContainer* labelContainer = NULL;
 	void step() override {
-		if (labelContainer) labelContainer->hideLabels = paramQuantity->getValue() > 0.f;
+		if (labelContainer) labelContainer->toggleHideMode(paramQuantity->getValue() > 0.f);
 		CKSS::step();
 	}
 };
@@ -806,21 +830,26 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 
 		if (module) {
 			labelContainer = new LabelContainer;
-			labelContainer->addLabelParamQuantity = module->paramQuantities[GlueModule::PARAM_ADD_LABEL];
-			labelContainer->unlockParamQuantity = module->paramQuantities[GlueModule::PARAM_UNLOCK];
 			labelContainer->mw = this;
+			// This is where the magic happens: add a new widget on top-level to Rack
 			APP->scene->rack->addChild(labelContainer);
 
 			// Move the cable-widget to the end, labels should appear below cables
+			// NB: this should be considered unstable API
 			std::list<Widget*>::iterator it;
 			for (it = APP->scene->rack->children.begin(); it != APP->scene->rack->children.end(); ++it){
 				if (*it == APP->scene->rack->cableContainer) break;
 			}
-			APP->scene->rack->children.splice(APP->scene->rack->children.end(), APP->scene->rack->children, it);
+			if (it != APP->scene->rack->children.end()) {
+				APP->scene->rack->children.splice(APP->scene->rack->children.end(), APP->scene->rack->children, it);
+			}
 		}
 
-		addParam(createParamCentered<LabelAddSwitch>(Vec(22.5f, 160.8f), module, GlueModule::PARAM_ADD_LABEL));
-		addParam(rack::createParamCentered<CKSS>(Vec(22.5f, 201.8f), module, GlueModule::PARAM_UNLOCK));
+		addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(22.5f, 143.5f), module, GlueModule::LIGHT_LEARN));
+		addParam(createParamCentered<LabelButton>(Vec(22.5f, 158.8f), module, GlueModule::PARAM_ADD_LABEL));
+
+		addChild(createLightCentered<TinyLight<YellowLight>>(Vec(22.5f, 188.3f), module, GlueModule::LIGHT_LOCK));
+		addParam(createParamCentered<LockButton>(Vec(22.5f, 203.6f), module, GlueModule::PARAM_UNLOCK));
 
 		addParam(createParamCentered<OpacityPlusButton>(Vec(22.5f, 254.7f), module, GlueModule::PARAM_OPACITY_PLUS));
 		addParam(createParamCentered<OpacityMinusButton>(Vec(22.5f, 286.3f), module, GlueModule::PARAM_OPACITY_MINUS));

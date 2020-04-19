@@ -2,14 +2,14 @@
 - Module [DETOUR](./docs/Detour.md)
     - New module, 8x8 send/return switch matrix with support for 8 scenes
 
-## 1.6.0 (in development)
+## 1.6.0 (preview)
 
 - Module [AFFIX](./docs/Affix.md), [µAFFIX](./docs/Affix.md)
     - New modules, insert on polyphonic cables for adding offsets in volt, semitones or ocatves
 - Module [GRIP](./docs/Grip.md)
     - New module, locker for module parameters
 - Module [MIRROR](./docs/Mirror.md)
-    - New module
+    - New module, utility for synchronizing module parameters
 - Module [POLY-PILE](./docs/Pile.md)
     - New module, polyphonic version of PILE
 - Module [GLUE](./docs/Glue.md)
