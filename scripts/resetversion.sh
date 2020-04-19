@@ -1,7 +1,7 @@
 #!/bin/sh
 
 gitrev=`git rev-parse --short HEAD`
-version="1.5.${gitrev}"
+version="1.6.${gitrev}"
 echo "Updating to version=$version"
 tf=`mktemp`
 jq --arg VERSION "$version" '.version=$VERSION' plugin.json > $tf
