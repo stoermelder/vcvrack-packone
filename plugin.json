@@ -204,6 +204,13 @@
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Glue.md"
 		},
 		{
+			"slug": "Goto",
+			"name": "GOTO",
+			"description": "Utility for jumping directly to 10 locations in your patch by hotkey or using MIDI-MAP",
+			"tags": ["Utility"],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Goto.md"
+		},
+		{
 			"slug": "AudioInterface64",
 			"name": "AUDIO-64",
 			"description": "Sends CV and audio to/from an audio device",

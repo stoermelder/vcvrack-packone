@@ -8,6 +8,8 @@
     - New modules, insert on polyphonic cables for adding offsets in volt, semitones or ocatves
 - Module [GLUE](./docs/Glue.md)
     - New module, label maker for your modules!
+- Module [GOTO](./docs/Goto.md)
+    - New module, utility for jumping directly to 10 locations in your patch by hotkey or using MIDI-MAP
 - Module [GRIP](./docs/Grip.md)
     - New module, locker for module parameters
 - Module [MIRROR](./docs/Mirror.md)
