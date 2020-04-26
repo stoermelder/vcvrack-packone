@@ -58,6 +58,7 @@ struct GotoModule : Module {
 
 struct GotoTarget {
 	int moduleId = -1;
+	float x = 0, y = 0;
 	float zoom = 1.f;
 };
 
@@ -71,6 +72,8 @@ struct GotoContainer : widget::Widget {
 	GotoTarget jumpPoints[SLOTS];
 	/** [Stored to JSON] */
 	bool smoothTransition = false;
+	/** [Stored to JSON] */
+	bool centerModule = true;
 
 	int learnJumpPoint = -1;
 
@@ -91,7 +94,14 @@ struct GotoContainer : widget::Widget {
 			if (!mw || mw == this->mw) goto j;
 			Module* m = mw->module;
 			if (!m) goto j;
+
+			Vec source = APP->scene->rackScroll->offset;
+			source = source.plus(APP->scene->box.size.mult(0.5f));
+			source = source.div(APP->scene->rackScroll->zoomWidget->zoom);
+
 			jumpPoints[learnJumpPoint].moduleId = m->id;
+			jumpPoints[learnJumpPoint].x = source.x;
+			jumpPoints[learnJumpPoint].y = source.y;
 			jumpPoints[learnJumpPoint].zoom = rack::settings::zoom;
 			learnJumpPoint = -1;
 		}
@@ -129,10 +139,16 @@ struct GotoContainer : widget::Widget {
 			ModuleWidget* mw = APP->scene->rack->getModule(jumpPoints[i].moduleId);
 			if (mw) {
 				if (smoothTransition) {
-					viewportCenterSmooth.trigger(mw, jumpPoints[i].zoom, APP->window->getLastFrameRate());
+					if (centerModule)
+						viewportCenterSmooth.trigger(mw, jumpPoints[i].zoom, APP->window->getLastFrameRate());
+					else
+						viewportCenterSmooth.trigger(Vec(jumpPoints[i].x, jumpPoints[i].y), jumpPoints[i].zoom, APP->window->getLastFrameRate());
 				}
 				else {
-					StoermelderPackOne::Rack::ViewportCenterToWidget{mw};
+					if (centerModule)
+						StoermelderPackOne::Rack::ViewportCenter{mw};
+					else
+						StoermelderPackOne::Rack::ViewportCenter{Vec(jumpPoints[i].x, jumpPoints[i].y)};
 					rack::settings::zoom = jumpPoints[i].zoom;
 				}
 			}
@@ -228,11 +244,14 @@ struct GotoWidget : ThemedModuleWidget<GotoModule<10>> {
 		json_t* rootJ = ModuleWidget::toJson();
 
 		json_object_set_new(rootJ, "smoothTransition", json_boolean(gotoContainer->smoothTransition));
+		json_object_set_new(rootJ, "centerModule", json_boolean(gotoContainer->centerModule));
 
 		json_t* jumpPointsJ = json_array();
 		for (GotoTarget jp : gotoContainer->jumpPoints) {
 			json_t* jumpPointJ = json_object();
 			json_object_set_new(jumpPointJ, "moduleId", json_integer(jp.moduleId));
+			json_object_set_new(jumpPointJ, "x", json_real(jp.x));
+			json_object_set_new(jumpPointJ, "y", json_real(jp.y));
 			json_object_set_new(jumpPointJ, "zoom", json_real(jp.zoom));
 			json_array_append_new(jumpPointsJ, jumpPointJ);
 		}
@@ -247,11 +266,14 @@ struct GotoWidget : ThemedModuleWidget<GotoModule<10>> {
 		if (idJ && APP->engine->getModule(json_integer_value(idJ)) != NULL) return;
 
 		gotoContainer->smoothTransition = json_boolean_value(json_object_get(rootJ, "smoothTransition"));
+		gotoContainer->centerModule = json_boolean_value(json_object_get(rootJ, "centerModule"));
 
 		json_t* jumpPointsJ = json_object_get(rootJ, "jumpPoints");
 		for (int i = 0; i < 10; i++) {
 			json_t* jumpPointJ = json_array_get(jumpPointsJ, i);
 			gotoContainer->jumpPoints[i].moduleId = json_integer_value(json_object_get(jumpPointJ, "moduleId"));
+			gotoContainer->jumpPoints[i].x = json_real_value(json_object_get(jumpPointJ, "x"));
+			gotoContainer->jumpPoints[i].y = json_real_value(json_object_get(jumpPointJ, "y"));
 			gotoContainer->jumpPoints[i].zoom = json_real_value(json_object_get(jumpPointJ, "zoom"));
 		}
 
@@ -263,7 +285,6 @@ struct GotoWidget : ThemedModuleWidget<GotoModule<10>> {
 
 		struct SmoothTransitionItem : MenuItem {
 			GotoContainer<10>* gotoContainer;
-			float angle;
 			void onAction(const event::Action& e) override {
 				gotoContainer->smoothTransition ^= true;
 			}
@@ -273,8 +294,20 @@ struct GotoWidget : ThemedModuleWidget<GotoModule<10>> {
 			}
 		};
 
+		struct CenterModuleItem : MenuItem {
+			GotoContainer<10>* gotoContainer;
+			void onAction(const event::Action& e) override {
+				gotoContainer->centerModule ^= true;
+			}
+			void step() override {
+				rightText = gotoContainer->centerModule ? "✔" : "";
+				MenuItem::step();
+			}
+		};
+
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<SmoothTransitionItem>(&MenuItem::text, "Smooth transition", &SmoothTransitionItem::gotoContainer, gotoContainer));
+		menu->addChild(construct<CenterModuleItem>(&MenuItem::text, "Center module", &CenterModuleItem::gotoContainer, gotoContainer));
 	}
 };
 

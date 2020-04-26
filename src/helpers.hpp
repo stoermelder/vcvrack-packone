@@ -14,13 +14,16 @@ struct ViewportCenterSmooth {
 	int frame = 0;
 
 	void trigger(Widget* w, float zoom, float framerate, float transitionTime = 1.f) {
+		Vec target = w->box.pos;
+		target = target.plus(w->box.size.mult(0.5f));
+		trigger(target, zoom, framerate, transitionTime);
+	}
+
+	void trigger(Vec target, float zoom, float framerate, float transitionTime = 1.f) {
 		// source is at top-left, translate to center of screen
 		Vec source = APP->scene->rackScroll->offset;
 		source = source.plus(APP->scene->box.size.mult(0.5f));
 		source = source.div(APP->scene->rackScroll->zoomWidget->zoom);
-
-		Vec target = w->box.pos;
-		target = target.plus(w->box.size.mult(0.5f));
 
 		this->source = source;
 		this->target = target;
@@ -44,7 +47,7 @@ struct ViewportCenterSmooth {
 		Vec p2 = target.mult(t);
 		Vec p = p1.plus(p2);
 		
-		// Ignore tiny changes in zoom as this will cause graphical artifacts
+		// Ignore tiny changes in zoom as they will cause graphical artifacts
 		if (std::abs(sourceZoom - targetZoom) > 0.01f) {
 			float z = sourceZoom * (1.f - t) + targetZoom * t;
 			rack::settings::zoom = z;
@@ -60,11 +63,18 @@ struct ViewportCenterSmooth {
 	}
 };
 
-struct ViewportCenterToWidget {
-	ViewportCenterToWidget(Widget* w) {
+struct ViewportCenter {
+	ViewportCenter(Widget* w) {
 		// NB: unstable API!
 		Vec target = w->box.pos;
 		target = target.plus(w->box.size.mult(0.5f));
+		target = target.mult(APP->scene->rackScroll->zoomWidget->zoom);
+		target = target.minus(APP->scene->box.size.mult(0.5f));
+		APP->scene->rackScroll->offset = target;
+	}
+
+	ViewportCenter(Vec target) {
+		// NB: unstable API!
 		target = target.mult(APP->scene->rackScroll->zoomWidget->zoom);
 		target = target.minus(APP->scene->box.size.mult(0.5f));
 		APP->scene->rackScroll->offset = target;
