@@ -221,7 +221,7 @@ struct GotoWidget : ThemedModuleWidget<GotoModule<10>> {
 			gotoContainer->executeJump(module->jumpTrigger);
 			module->jumpTrigger = -1;
 		}
-		ModuleWidget::step();
+		ThemedModuleWidget<GotoModule<10>>::step();
 	}
 
 	json_t* toJson() override {
@@ -255,7 +255,7 @@ struct GotoWidget : ThemedModuleWidget<GotoModule<10>> {
 			gotoContainer->jumpPoints[i].zoom = json_real_value(json_object_get(jumpPointJ, "zoom"));
 		}
 
-		ModuleWidget::fromJson(rootJ);
+		ThemedModuleWidget<GotoModule<10>>::fromJson(rootJ);
 	}
 
 	void appendContextMenu(Menu* menu) override {
