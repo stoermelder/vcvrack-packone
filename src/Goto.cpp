@@ -57,7 +57,7 @@ struct GotoModule : Module {
 
 
 struct GotoTarget {
-	int moduleId;
+	int moduleId = -1;
 	float zoom = 1.f;
 };
 
@@ -156,15 +156,10 @@ struct GotoButton : LEDButton {
 	LongPressButton lpb;
 	int id;
 
-	float frameRate = 1.f;
-
 	void step() override {
-		if (frameRate >= 1.f) {
-			frameRate = 1.f / APP->window->getLastFrameRate();
-		}
 		if (paramQuantity) {
 			lpb.param = paramQuantity->getParam();
-			switch (lpb.process(frameRate)) {
+			switch (lpb.process(1.f / APP->window->getLastFrameRate())) {
 				default:
 				case LongPressButton::NO_PRESS:
 					break;
