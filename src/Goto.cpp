@@ -1,33 +1,47 @@
 #include "plugin.hpp"
-#include "settings.hpp"
 
 namespace Goto {
 
+template < int SLOTS >
 struct GotoModule : Module {
 	enum ParamIds {
-		ENUMS(PARAM_SLOT, 10),
+		ENUMS(PARAM_SLOT, SLOTS),
 		NUM_PARAMS
 	};
 	enum InputIds {
+		INPUT_TRIG,
 		NUM_INPUTS
 	};
 	enum OutputIds {
 		NUM_OUTPUTS
 	};
 	enum LightIds {
-		ENUMS(LIGHT_SLOT, 10 * 3),
+		ENUMS(LIGHT_SLOT, SLOTS * 3),
 		NUM_LIGHTS
 	};
 
 	/** [Stored to JSON] */
 	int panelTheme = 0;
 
+	dsp::SchmittTrigger trigger[SLOTS];
+	int jumpTrigger = -1;
+
 	GotoModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-        for (int i = 0; i < 10; i++) {
-            configParam<TriggerParamQuantity>(PARAM_SLOT + i, 0, 1, 0, string::f("Jump point %i (SHIFT+%i)", i + 1, (i + 1) % 10));
-        }
+		for (int i = 0; i < SLOTS; i++) {
+			configParam<TriggerParamQuantity>(PARAM_SLOT + i, 0, 1, 0, string::f("Jump point %i (SHIFT+%i)", i + 1, (i + 1) % 10));
+		}
+	}
+
+	void process(const ProcessArgs& args) override {
+		if (inputs[INPUT_TRIG].isConnected()) {
+			for (int i = 0; i < SLOTS; i++) {
+				if (trigger[i].process(inputs[INPUT_TRIG].getVoltage(i))) {
+					jumpTrigger = i;
+				}
+			}
+		}
 	}
 
 	json_t* dataToJson() override {
@@ -41,25 +55,32 @@ struct GotoModule : Module {
 	}
 };
 
-struct JumpPoint {
+
+struct GotoTarget {
 	int moduleId;
 	float zoom = 1.f;
 };
 
-
-struct HotkeyContainer : widget::Widget {
+template < int SLOTS >
+struct GotoContainer : widget::Widget {
 	ModuleWidget* mw;
+	StoermelderPackOne::Rack::ViewportCenterSmooth viewportCenterSmooth;
 	dsp::ClockDivider divider;
 
-	JumpPoint jumpPoints[10];
+	/** [Stored to JSON] */
+	GotoTarget jumpPoints[SLOTS];
+	/** [Stored to JSON] */
+	bool smoothTransition = false;
+
 	int learnJumpPoint = -1;
 
-	HotkeyContainer() {
+	GotoContainer() {
 		divider.setDivision(APP->window->getMonitorRefreshRate());
 	}
 
 	void step() override {
 		Widget::step();
+		viewportCenterSmooth.process();
 
 		if (learnJumpPoint >= 0) {
 			// Learn module
@@ -77,7 +98,7 @@ struct HotkeyContainer : widget::Widget {
 
 		j:
 		if (divider.process()) {
-			for (int i = 0; i < 10; i++) {
+			for (int i = 0; i < SLOTS; i++) {
 				if (jumpPoints[i].moduleId >= 0) {
 					ModuleWidget* mw = APP->scene->rack->getModule(jumpPoints[i].moduleId);
 					if (!mw) jumpPoints[i].moduleId = -1;
@@ -86,10 +107,10 @@ struct HotkeyContainer : widget::Widget {
 		}
 
 		if (mw->module) {
-			for (int i = 0; i < 10; i++) {
-				mw->module->lights[GotoModule::LIGHT_SLOT + i * 3 + 0].setBrightness(learnJumpPoint == i);
-				mw->module->lights[GotoModule::LIGHT_SLOT + i * 3 + 1].setBrightness(learnJumpPoint != i && jumpPoints[i].moduleId >= 0);
-				mw->module->lights[GotoModule::LIGHT_SLOT + i * 3 + 2].setBrightness(0.f);
+			for (int i = 0; i < SLOTS; i++) {
+				mw->module->lights[GotoModule<SLOTS>::LIGHT_SLOT + i * 3 + 0].setBrightness(learnJumpPoint == i);
+				mw->module->lights[GotoModule<SLOTS>::LIGHT_SLOT + i * 3 + 1].setBrightness(learnJumpPoint != i && jumpPoints[i].moduleId >= 0);
+				mw->module->lights[GotoModule<SLOTS>::LIGHT_SLOT + i * 3 + 2].setBrightness(0.f);
 			}
 		}
 	}
@@ -107,14 +128,13 @@ struct HotkeyContainer : widget::Widget {
 		if (jumpPoints[i].moduleId >= 0) {
 			ModuleWidget* mw = APP->scene->rack->getModule(jumpPoints[i].moduleId);
 			if (mw) {
-				// Move the view to center the mapped module
-				// NB: unstable API!
-				Vec offset = mw->box.pos;
-				offset = offset.plus(mw->box.size.mult(0.5f));
-				offset = offset.mult(APP->scene->rackScroll->zoomWidget->zoom);
-				offset = offset.minus(APP->scene->box.size.mult(0.5f));
-				APP->scene->rackScroll->offset = offset;
-				rack::settings::zoom = jumpPoints[i].zoom;
+				if (smoothTransition) {
+					viewportCenterSmooth.trigger(mw, jumpPoints[i].zoom, APP->window->getLastFrameRate());
+				}
+				else {
+					StoermelderPackOne::Rack::ViewportCenterToWidget{mw};
+					rack::settings::zoom = jumpPoints[i].zoom;
+				}
 			}
 		}
 	}
@@ -130,8 +150,9 @@ struct HotkeyContainer : widget::Widget {
 };
 
 
+template < typename CONTAINER >
 struct GotoButton : LEDButton {
-	HotkeyContainer* hotkeyContainer;
+	CONTAINER* gotoContainer;
 	LongPressButton lpb;
 	int id;
 
@@ -148,10 +169,10 @@ struct GotoButton : LEDButton {
 				case LongPressButton::NO_PRESS:
 					break;
 				case LongPressButton::SHORT_PRESS:
-					hotkeyContainer->executeJump(id);
+					gotoContainer->executeJump(id);
 					break;
 				case LongPressButton::LONG_PRESS:
-					hotkeyContainer->learnJump(id);
+					gotoContainer->learnJump(id);
 					break;
 			}
 		}
@@ -160,48 +181,61 @@ struct GotoButton : LEDButton {
 };
 
 
-struct GotoWidget : ThemedModuleWidget<GotoModule> {
-	HotkeyContainer* hotkeyContainer = NULL;
+struct GotoWidget : ThemedModuleWidget<GotoModule<10>> {
+	GotoContainer<10>* gotoContainer = NULL;
+	GotoModule<10>* module;
 
-	GotoWidget(GotoModule* module)
-		: ThemedModuleWidget<GotoModule>(module, "Goto") {
+	GotoWidget(GotoModule<10>* module)
+		: ThemedModuleWidget<GotoModule<10>>(module, "Goto") {
 		setModule(module);
+		this->module = module;
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
 		if (module) {
-			hotkeyContainer = new HotkeyContainer;
-			hotkeyContainer->mw = this;
+			gotoContainer = new GotoContainer<10>;
+			gotoContainer->mw = this;
 			// This is where the magic happens: add a new widget on top-level to Rack
-			APP->scene->rack->addChild(hotkeyContainer);
+			APP->scene->rack->addChild(gotoContainer);
 		}
 
 		for (int i = 0; i < 10; i++) {
 			float o = i * 23.6f;
-			GotoButton* jumpButton = createParamCentered<GotoButton>(Vec(22.5f, 93.5f + o), module, GotoModule::PARAM_SLOT + i);
-			jumpButton->hotkeyContainer = hotkeyContainer;
+			GotoButton<GotoContainer<10>>* jumpButton = createParamCentered<GotoButton<GotoContainer<10>>>(Vec(22.5f, 76.4f + o), module, GotoModule<10>::PARAM_SLOT + i);
+			jumpButton->gotoContainer = gotoContainer;
 			jumpButton->id = i;
 			addParam(jumpButton);
 			if (module) {
-				module->params[GotoModule::PARAM_SLOT + i].setValue(0.f);
+				module->params[GotoModule<10>::PARAM_SLOT + i].setValue(0.f);
 			}
-			addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(22.5f, 93.5f + o), module, GotoModule::LIGHT_SLOT + i * 3));
+			addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(22.5f, 76.4f + o), module, GotoModule<10>::LIGHT_SLOT + i * 3));
 		}
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 327.5f), module, GotoModule<10>::INPUT_TRIG));
 	}
 
 	~GotoWidget() {
-		if (hotkeyContainer) {
-			APP->scene->rack->removeChild(hotkeyContainer);
-			delete hotkeyContainer;
+		if (gotoContainer) {
+			APP->scene->rack->removeChild(gotoContainer);
+			delete gotoContainer;
 		}
+	}
+
+	void step() override {
+		if (module && module->jumpTrigger >= 0) {
+			gotoContainer->executeJump(module->jumpTrigger);
+			module->jumpTrigger = -1;
+		}
+		ModuleWidget::step();
 	}
 
 	json_t* toJson() override {
 		json_t* rootJ = ModuleWidget::toJson();
 
+		json_object_set_new(rootJ, "smoothTransition", json_boolean(gotoContainer->smoothTransition));
+
 		json_t* jumpPointsJ = json_array();
-		for (JumpPoint jp : hotkeyContainer->jumpPoints) {
+		for (GotoTarget jp : gotoContainer->jumpPoints) {
 			json_t* jumpPointJ = json_object();
 			json_object_set_new(jumpPointJ, "moduleId", json_integer(jp.moduleId));
 			json_object_set_new(jumpPointJ, "zoom", json_real(jp.zoom));
@@ -217,17 +251,38 @@ struct GotoWidget : ThemedModuleWidget<GotoModule> {
 		json_t* idJ = json_object_get(rootJ, "id");
 		if (idJ && APP->engine->getModule(json_integer_value(idJ)) != NULL) return;
 
+		gotoContainer->smoothTransition = json_boolean_value(json_object_get(rootJ, "smoothTransition"));
+
 		json_t* jumpPointsJ = json_object_get(rootJ, "jumpPoints");
 		for (int i = 0; i < 10; i++) {
 			json_t* jumpPointJ = json_array_get(jumpPointsJ, i);
-			hotkeyContainer->jumpPoints[i].moduleId = json_integer_value(json_object_get(jumpPointJ, "moduleId"));
-			hotkeyContainer->jumpPoints[i].zoom = json_real_value(json_object_get(jumpPointJ, "zoom"));
+			gotoContainer->jumpPoints[i].moduleId = json_integer_value(json_object_get(jumpPointJ, "moduleId"));
+			gotoContainer->jumpPoints[i].zoom = json_real_value(json_object_get(jumpPointJ, "zoom"));
 		}
 
 		ModuleWidget::fromJson(rootJ);
+	}
+
+	void appendContextMenu(Menu* menu) override {
+		ThemedModuleWidget<GotoModule<10>>::appendContextMenu(menu);
+
+		struct SmoothTransitionItem : MenuItem {
+			GotoContainer<10>* gotoContainer;
+			float angle;
+			void onAction(const event::Action& e) override {
+				gotoContainer->smoothTransition ^= true;
+			}
+			void step() override {
+				rightText = gotoContainer->smoothTransition ? "✔" : "";
+				MenuItem::step();
+			}
+		};
+
+		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<SmoothTransitionItem>(&MenuItem::text, "Smooth transition", &SmoothTransitionItem::gotoContainer, gotoContainer));
 	}
 };
 
 } // namespace Goto
 
-Model* modelGoto = createModel<Goto::GotoModule, Goto::GotoWidget>("Goto");
+Model* modelGoto = createModel<Goto::GotoModule<10>, Goto::GotoWidget>("Goto");

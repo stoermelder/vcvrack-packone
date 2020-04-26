@@ -29,12 +29,7 @@ struct ParamHandleIndicator {
 		if (indicateCount > 0) return;
 		if (mw) {
 			// Move the view to center the mapped module
-			// NB: unstable API!
-			Vec offset = mw->box.pos;
-			offset = offset.plus(mw->box.size.mult(0.5f));
-			offset = offset.mult(APP->scene->rackScroll->zoomWidget->zoom);
-			offset = offset.minus(APP->scene->box.size.mult(0.5f));
-			APP->scene->rackScroll->offset = offset;
+			StoermelderPackOne::Rack::ViewportCenterToWidget{mw};
 			rack::settings::zoom = 1.f;
 		}
 		indicateCount = 20;
