@@ -864,7 +864,7 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 	}
 
 	json_t* toJson() override {
-		json_t* rootJ = ModuleWidget::toJson();
+		json_t* rootJ = ThemedModuleWidget<GlueModule>::toJson();
 
 		json_object_set_new(rootJ, "defaultSize", json_real(labelContainer->defaultSize));
 		json_object_set_new(rootJ, "defaultWidth", json_real(labelContainer->defaultWidth));
@@ -900,7 +900,7 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 		json_t* idJ = json_object_get(rootJ, "id");
 		if (idJ && APP->engine->getModule(json_integer_value(idJ)) != NULL) return;
 
-		ModuleWidget::fromJson(rootJ);
+		ThemedModuleWidget<GlueModule>::fromJson(rootJ);
 
 		labelContainer->defaultSize = json_real_value(json_object_get(rootJ, "defaultSize"));
 		labelContainer->defaultWidth = json_real_value(json_object_get(rootJ, "defaultWidth"));
@@ -1145,7 +1145,6 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 
 		struct SkewItem : MenuItem {
 			LabelContainer* labelContainer;
-			float angle;
 			void onAction(const event::Action& e) override {
 				labelContainer->skewLabels ^= true;
 			}
