@@ -99,7 +99,7 @@ struct MirrorModule : Module {
 		if (inChange) return;
 
 		// Sync source paramId to target handles in case a parameter has been unmapped
-		if (handleDivider.process()) {
+		/*if (handleDivider.process()) */ {
 			for (size_t i = 0; i < sourceHandles.size(); i++) {
 				ParamHandle* sourceHandle = sourceHandles[i];
 				sourceHandle->color = mappingIndicatorHidden ? color::BLACK_TRANSPARENT : nvgRGB(0x40, 0xff, 0xff);
@@ -108,7 +108,8 @@ struct MirrorModule : Module {
 					ParamHandle* targetHandle = targetHandles[j];
 					targetHandle->color = mappingIndicatorHidden ? color::BLACK_TRANSPARENT : nvgRGB(0xff, 0x40, 0xff);
 					if (sourceHandle->moduleId < 0 && targetHandle->moduleId >= 0) {
-						APP->engine->updateParamHandle(targetHandle, sourceHandle->moduleId, sourceHandle->paramId, true);
+						// Unmap target parameter
+						APP->engine->updateParamHandle(targetHandle, -1, 0, true);
 					}
 					j += sourceHandles.size();
 				}
@@ -138,7 +139,7 @@ struct MirrorModule : Module {
 				while (i < (int)targetHandles.size()) {
 					ParamHandle* targetHandle = targetHandles[i];
 					ParamQuantity* targetParamQuantity = getParamQuantity(targetHandle);
-					if (targetParamQuantity) 
+					if (targetParamQuantity)
 						targetParamQuantity->setValue(v);
 
 					i += sourceHandles.size();
@@ -148,6 +149,8 @@ struct MirrorModule : Module {
 	}
 
 	ParamQuantity* getParamQuantity(ParamHandle* handle) {
+		if (handle->moduleId < 0)
+			return NULL;
 		// Get Module
 		Module* module = handle->module;
 		if (!module)
