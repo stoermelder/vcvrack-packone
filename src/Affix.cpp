@@ -5,7 +5,7 @@ namespace Affix {
 
 enum class PARAM_MODE {
 	VOLTAGE = 0,
-	CENT = 1,
+	SEMITONE = 1,
 	OCTAVE = 2
 };
 
@@ -35,7 +35,7 @@ struct AffixModule : Module {
 			switch (module->paramMode) {
 				default:
 					return ParamQuantity::getValue();
-				case PARAM_MODE::CENT:
+				case PARAM_MODE::SEMITONE:
 				case PARAM_MODE::OCTAVE: {
 					if (v == std::numeric_limits<float>::min()) v = ParamQuantity::getValue();
 					return v;
@@ -50,7 +50,7 @@ struct AffixModule : Module {
 					ParamQuantity::setValue(value);
 					break;
 				}
-				case PARAM_MODE::CENT: {
+				case PARAM_MODE::SEMITONE: {
 					v = clamp(value, getMinValue(), getMaxValue());
 					value = std::round(value * 12.f) / 12.f;
 					ParamQuantity::setValue(value);
@@ -71,7 +71,7 @@ struct AffixModule : Module {
 				case PARAM_MODE::VOLTAGE: {
 					return ParamQuantity::getDisplayValueString();
 				}
-				case PARAM_MODE::CENT: {
+				case PARAM_MODE::SEMITONE: {
 					float value = ParamQuantity::getValue();
 					int cent = (int)(value * 12.f);
 					int octaves = cent / 12;
@@ -92,7 +92,7 @@ struct AffixModule : Module {
 					ParamQuantity::setDisplayValueString(s);
 					break;
 				}
-				case PARAM_MODE::CENT: {
+				case PARAM_MODE::SEMITONE: {
 					int octave = 0;
 					int cent = 0;
 					int n = std::sscanf(s.c_str(), "%i,%i", &octave, &cent);
@@ -118,7 +118,7 @@ struct AffixModule : Module {
 				case PARAM_MODE::VOLTAGE: {
 					return string::f("%s: %sV", ParamQuantity::getLabel().c_str(), ParamQuantity::getDisplayValueString().c_str());
 				}
-				case PARAM_MODE::CENT: {
+				case PARAM_MODE::SEMITONE: {
 					float value = ParamQuantity::getValue();
 					int cent = (int)(value * 12.f);
 					int octaves = cent / 12;
@@ -173,7 +173,7 @@ struct AffixModule : Module {
 	void setParamMode(PARAM_MODE paramMode) {
 		if (this->paramMode == paramMode) return;
 		this->paramMode = paramMode;
-		if (this->paramMode == PARAM_MODE::CENT || this->paramMode == PARAM_MODE::OCTAVE) {
+		if (this->paramMode == PARAM_MODE::SEMITONE || this->paramMode == PARAM_MODE::OCTAVE) {
 			// Snap value
 			for (int i = 0; i < CHANNELS; i++) {
 				paramQuantities[PARAM_MONO + i]->setValue(params[PARAM_MONO + i].getValue());
@@ -246,7 +246,7 @@ struct TAffixWidget : ThemedModuleWidget<MODULE> {
 				};
 
 				menu->addChild(construct<ParamModeItem>(&MenuItem::text, "Volt", &ParamModeItem::module, module, &ParamModeItem::paramMode, PARAM_MODE::VOLTAGE));
-				menu->addChild(construct<ParamModeItem>(&MenuItem::text, "Cent", &ParamModeItem::module, module, &ParamModeItem::paramMode, PARAM_MODE::CENT));
+				menu->addChild(construct<ParamModeItem>(&MenuItem::text, "Semitone", &ParamModeItem::module, module, &ParamModeItem::paramMode, PARAM_MODE::SEMITONE));
 				menu->addChild(construct<ParamModeItem>(&MenuItem::text, "Octave", &ParamModeItem::module, module, &ParamModeItem::paramMode, PARAM_MODE::OCTAVE));
 				return menu;
 			}
