@@ -49,6 +49,8 @@ struct MirrorModule : Module {
 	dsp::ClockDivider processDivider;
 	dsp::ClockDivider handleDivider;
 
+	dsp::RingBuffer<ParamHandle*, 8> handleClearTodo;
+
 	MirrorModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -99,7 +101,7 @@ struct MirrorModule : Module {
 		if (inChange) return;
 
 		// Sync source paramId to target handles in case a parameter has been unmapped
-		/*if (handleDivider.process()) */ {
+		if (handleDivider.process()) {
 			for (size_t i = 0; i < sourceHandles.size(); i++) {
 				ParamHandle* sourceHandle = sourceHandles[i];
 				sourceHandle->color = mappingIndicatorHidden ? color::BLACK_TRANSPARENT : nvgRGB(0x40, 0xff, 0xff);
@@ -109,7 +111,8 @@ struct MirrorModule : Module {
 					targetHandle->color = mappingIndicatorHidden ? color::BLACK_TRANSPARENT : nvgRGB(0xff, 0x40, 0xff);
 					if (sourceHandle->moduleId < 0 && targetHandle->moduleId >= 0) {
 						// Unmap target parameter
-						APP->engine->updateParamHandle(targetHandle, -1, 0, true);
+						//APP->engine->updateParamHandle(targetHandle, -1, 0, true);
+						handleClearTodo.push(targetHandle);
 					}
 					j += sourceHandles.size();
 				}
@@ -205,6 +208,14 @@ struct MirrorModule : Module {
 			targetHandles.push_back(targetHandle);
 		}
 		inChange = false;
+	}
+
+	void cleanUpHandles() {
+		// Called from the App-thread to avoid engine-deadlocks
+		while (handleClearTodo.size() > 0) {
+			ParamHandle* handle = handleClearTodo.shift();
+			APP->engine->updateParamHandle(handle, -1, 0, true);
+		}
 	}
 
 	json_t* dataToJson() override {
@@ -336,6 +347,11 @@ struct MirrorWidget : ThemedModuleWidget<MirrorModule> {
 		for (int i = 0; i < 8; i++) {
 			addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 134.5f + i * 27.4f), module, MirrorModule::INPUT_CV + i));
 		}
+	}
+
+	void step() override {
+		ThemedModuleWidget<MirrorModule>::step();
+		if (module) module->cleanUpHandles();
 	}
 
 	void appendContextMenu(Menu* menu) override {
