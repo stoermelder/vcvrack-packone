@@ -43,11 +43,15 @@ struct ViewportCenterSmooth {
 		Vec p1 = source.mult(1.f - t);
 		Vec p2 = target.mult(t);
 		Vec p = p1.plus(p2);
-		float z = sourceZoom * (1.f - t) + targetZoom * t;
+		
+		// Ignore tiny changes in zoom as this will cause graphical artifacts
+		if (std::abs(sourceZoom - targetZoom) > 0.01f) {
+			float z = sourceZoom * (1.f - t) + targetZoom * t;
+			rack::settings::zoom = z;
+		}
 
 		// Move the view
 		// NB: unstable API!
-		rack::settings::zoom = z;
 		p = p.mult(APP->scene->rackScroll->zoomWidget->zoom);
 		p = p.minus(APP->scene->box.size.mult(0.5f));
 		APP->scene->rackScroll->offset = p;
