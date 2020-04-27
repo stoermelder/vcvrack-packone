@@ -4,4 +4,6 @@ INFIX is a utility module for inserting or replacing channels in a polyphonic ca
 
 ![INFIX Intro](./Infix-intro.png)
 
+![INFIX Intro](./Infix-replace.gif)
+
 INFIX was added in v1.0.3 of PackOne. µINFIX was added in v1.3.0.
