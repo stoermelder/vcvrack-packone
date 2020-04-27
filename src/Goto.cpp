@@ -31,8 +31,12 @@ struct GotoModule : Module {
 	TRIGGERMODE triggerMode;
 
 	dsp::SchmittTrigger trigger[SLOTS];
+	/** helper-variable for pushing a triggered slot towards the widget */
 	int jumpTrigger = -1;
+	/** helper-variable for pushing a connected cable towards the widget */
 	bool jumpTriggerUsed = false;
+	/** helper-variable for requesting a reset of the widget */
+	bool resetRequested = false;
 
 	float triggerVoltage;
 
@@ -48,6 +52,7 @@ struct GotoModule : Module {
 		Module::onReset();
 		triggerMode = TRIGGERMODE::POLYTRIGGER;
 		triggerVoltage = 0.f;
+		resetRequested = true;
 	}
 
 	void process(const ProcessArgs& args) override {
@@ -197,6 +202,12 @@ struct GotoContainer : widget::Widget {
 		}
 	}
 
+	void reset() {
+		for (int i = 0; i < SLOTS; i++) {
+			jumpPoints[i].moduleId = -1;
+		}
+	}
+
 	void onHoverKey(const event::HoverKey& e) override {
 		if (useHotkeys && e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == GLFW_MOD_SHIFT && e.key >= GLFW_KEY_0 && e.key <= GLFW_KEY_9) {
 			int i = (e.key - GLFW_KEY_0 + 9) % 10;
@@ -280,6 +291,10 @@ struct GotoWidget : ThemedModuleWidget<GotoModule<10>> {
 			if (module->jumpTrigger >= 0) {
 				gotoContainer->executeJump(module->jumpTrigger);
 				module->jumpTrigger = -1;
+			}
+			if (module->resetRequested) {
+				gotoContainer->reset();
+				module->resetRequested = false;
 			}
 		}
 		ThemedModuleWidget<GotoModule<10>>::step();
