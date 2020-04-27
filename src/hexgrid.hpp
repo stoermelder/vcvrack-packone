@@ -251,11 +251,11 @@ struct HexGrid {
     }
     
     RoundAxialVec indexToAxial(int q, int r) {
-        return RoundAxialVec(q + MAX_RADIUS, r + MAX_RADIUS);
+        return RoundAxialVec(q - MAX_RADIUS, r - MAX_RADIUS);
     }
 
     RoundAxialVec indexToAxial(RoundAxialVec hex) {
-        return RoundAxialVec(hex.q + MAX_RADIUS, hex.r + MAX_RADIUS);
+        return RoundAxialVec(hex.q - MAX_RADIUS, hex.r - MAX_RADIUS);
     }
 
     void setRadius(int r) {
