@@ -28,7 +28,6 @@
 #include "digital.hpp"
 #include "hexgrid.hpp"
 #include <random>
-#include <initializer_list>
 
 
 namespace Hive {

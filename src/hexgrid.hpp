@@ -1,4 +1,5 @@
 #include "rack.hpp"
+#include <initializer_list>
 
 enum ROTATION {
     FLAT = 0,
