@@ -1,30 +1,30 @@
 #include "rack.hpp"
 #include <initializer_list>
 
-const float FLAT_ANGLE_X_FACTOR[6] = {  cos(M_PI / 180.f * 0.f), 
-                                        cos(M_PI / 180.f * 60.f), 
-                                        cos(M_PI / 180.f * 120.f), 
-                                        cos(M_PI / 180.f * 180.f), 
-                                        cos(M_PI / 180.f * 240.f),
-                                        cos(M_PI / 180.f * 300.f)};
-const float FLAT_ANGLE_Y_FACTOR[6] = {  sin(M_PI / 180.f * 0.f), 
-                                        sin(M_PI / 180.f * 60.f), 
-                                        sin(M_PI / 180.f * 120.f), 
-                                        sin(M_PI / 180.f * 180.f), 
-                                        sin(M_PI / 180.f * 240.f),
-                                        sin(M_PI / 180.f * 300.f)};
-const float POINTY_ANGLE_X_FACTOR[6] = {cos(M_PI / 180.f * -30.f), 
-                                        cos(M_PI / 180.f * 30.f), 
-                                        cos(M_PI / 180.f * 90.f), 
-                                        cos(M_PI / 180.f * 150.f), 
-                                        cos(M_PI / 180.f * 210.f),
-                                        cos(M_PI / 180.f * 270.f)};
-const float POINTY_ANGLE_Y_FACTOR[6] = {sin(M_PI / 180.f * -30.f), 
-                                        sin(M_PI / 180.f * 30.f), 
-                                        sin(M_PI / 180.f * 90.f), 
-                                        sin(M_PI / 180.f * 150.f), 
-                                        sin(M_PI / 180.f * 210.f),
-                                        sin(M_PI / 180.f * 270.f)};
+const float FLAT_ANGLE_X_FACTOR[6] = {  (float)cos(M_PI / 180.f * 0.f), 
+                                        (float)cos(M_PI / 180.f * 60.f), 
+                                        (float)cos(M_PI / 180.f * 120.f), 
+                                        (float)cos(M_PI / 180.f * 180.f), 
+                                        (float)cos(M_PI / 180.f * 240.f),
+                                        (float)cos(M_PI / 180.f * 300.f)};
+const float FLAT_ANGLE_Y_FACTOR[6] = {  (float)sin(M_PI / 180.f * 0.f), 
+                                        (float)sin(M_PI / 180.f * 60.f), 
+                                        (float)sin(M_PI / 180.f * 120.f), 
+                                        (float)sin(M_PI / 180.f * 180.f), 
+                                        (float)sin(M_PI / 180.f * 240.f),
+                                        (float)sin(M_PI / 180.f * 300.f)};
+const float POINTY_ANGLE_X_FACTOR[6] = {(float)cos(M_PI / 180.f * -30.f), 
+                                        (float)cos(M_PI / 180.f * 30.f), 
+                                        (float)cos(M_PI / 180.f * 90.f), 
+                                        (float)cos(M_PI / 180.f * 150.f), 
+                                        (float)cos(M_PI / 180.f * 210.f),
+                                        (float)cos(M_PI / 180.f * 270.f)};
+const float POINTY_ANGLE_Y_FACTOR[6] = {(float)sin(M_PI / 180.f * -30.f), 
+                                        (float)sin(M_PI / 180.f * 30.f), 
+                                        (float)sin(M_PI / 180.f * 90.f), 
+                                        (float)sin(M_PI / 180.f * 150.f), 
+                                        (float)sin(M_PI / 180.f * 210.f),
+                                        (float)sin(M_PI / 180.f * 270.f)};
 
 enum ROTATION {
     FLAT = 0,
