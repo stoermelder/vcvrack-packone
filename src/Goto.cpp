@@ -2,6 +2,11 @@
 
 namespace Goto {
 
+enum class TRIGGERMODE {
+	POLYTRIGGER = 0,
+	C4 = 1
+};
+
 template < int SLOTS >
 struct GotoModule : Module {
 	enum ParamIds {
@@ -22,9 +27,14 @@ struct GotoModule : Module {
 
 	/** [Stored to JSON] */
 	int panelTheme = 0;
+	/** [Stored to JSON] */
+	TRIGGERMODE triggerMode;
 
 	dsp::SchmittTrigger trigger[SLOTS];
 	int jumpTrigger = -1;
+	bool jumpTriggerUsed = false;
+
+	float triggerVoltage;
 
 	GotoModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
@@ -34,11 +44,31 @@ struct GotoModule : Module {
 		}
 	}
 
+	void onReset() override {
+		Module::onReset();
+		triggerMode = TRIGGERMODE::POLYTRIGGER;
+		triggerVoltage = 0.f;
+	}
+
 	void process(const ProcessArgs& args) override {
-		if (inputs[INPUT_TRIG].isConnected()) {
-			for (int i = 0; i < SLOTS; i++) {
-				if (trigger[i].process(inputs[INPUT_TRIG].getVoltage(i))) {
-					jumpTrigger = i;
+		jumpTriggerUsed = inputs[INPUT_TRIG].isConnected();
+		if (jumpTriggerUsed) {
+			switch (triggerMode) {
+				case TRIGGERMODE::POLYTRIGGER: {
+					for (int i = 0; i < SLOTS; i++) {
+						if (trigger[i].process(inputs[INPUT_TRIG].getVoltage(i))) {
+							jumpTrigger = i;
+						}
+					}
+					break;
+				}
+				case TRIGGERMODE::C4: {
+					float v = inputs[INPUT_TRIG].getVoltage();
+					if (v != 0.f && triggerVoltage != v) {
+						triggerVoltage = v;
+						jumpTrigger = std::round(clamp(triggerVoltage * 12.f, 0.f, SLOTS - 1.f));
+					}
+					break;
 				}
 			}
 		}
@@ -47,11 +77,13 @@ struct GotoModule : Module {
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
+		json_object_set_new(rootJ, "triggerMode", json_integer((int)triggerMode));
 		return rootJ;
 	}
 
 	void dataFromJson(json_t* rootJ) override {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		triggerMode = (TRIGGERMODE)json_integer_value(json_object_get(rootJ, "triggerMode"));
 	}
 };
 
@@ -78,6 +110,7 @@ struct GotoContainer : widget::Widget {
 	bool ignoreZoom = false;
 
 	int learnJumpPoint = -1;
+	bool useHotkeys = true;
 
 	GotoContainer() {
 		divider.setDivision(APP->window->getMonitorRefreshRate());
@@ -165,7 +198,7 @@ struct GotoContainer : widget::Widget {
 	}
 
 	void onHoverKey(const event::HoverKey& e) override {
-		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == GLFW_MOD_SHIFT && e.key >= GLFW_KEY_0 && e.key <= GLFW_KEY_9) {
+		if (useHotkeys && e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == GLFW_MOD_SHIFT && e.key >= GLFW_KEY_0 && e.key <= GLFW_KEY_9) {
 			int i = (e.key - GLFW_KEY_0 + 9) % 10;
 			executeJump(i);
 			e.consume(this);
@@ -242,9 +275,12 @@ struct GotoWidget : ThemedModuleWidget<GotoModule<10>> {
 	}
 
 	void step() override {
-		if (module && module->jumpTrigger >= 0) {
-			gotoContainer->executeJump(module->jumpTrigger);
-			module->jumpTrigger = -1;
+		if (module) {
+			gotoContainer->useHotkeys = !module->jumpTriggerUsed;
+			if (module->jumpTrigger >= 0) {
+				gotoContainer->executeJump(module->jumpTrigger);
+				module->jumpTrigger = -1;
+			}
 		}
 		ThemedModuleWidget<GotoModule<10>>::step();
 	}
@@ -327,10 +363,34 @@ struct GotoWidget : ThemedModuleWidget<GotoModule<10>> {
 			}
 		};
 
+		struct TriggerModeMenuItem : MenuItem {
+			struct TriggerModeItem : MenuItem {
+				GotoModule<10>* module;
+				TRIGGERMODE triggerMode;
+				void onAction(const event::Action& e) override {
+					module->triggerMode = triggerMode;
+				}
+				void step() override {
+					rightText = module->triggerMode == triggerMode ? "✔" : "";
+					MenuItem::step();
+				}
+			};
+
+			GotoModule<10>* module;
+			Menu* createChildMenu() override {
+				Menu* menu = new Menu;
+				menu->addChild(construct<TriggerModeItem>(&MenuItem::text, "Polyphonic trigger", &TriggerModeItem::module, module, &TriggerModeItem::triggerMode, TRIGGERMODE::POLYTRIGGER));
+				menu->addChild(construct<TriggerModeItem>(&MenuItem::text, "C4", &TriggerModeItem::module, module, &TriggerModeItem::triggerMode, TRIGGERMODE::C4));
+				return menu;
+			}
+		};
+
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<SmoothTransitionItem>(&MenuItem::text, "Smooth transition", &SmoothTransitionItem::gotoContainer, gotoContainer));
 		menu->addChild(construct<CenterModuleItem>(&MenuItem::text, "Center module", &CenterModuleItem::gotoContainer, gotoContainer));
 		menu->addChild(construct<IgnoreZoomItem>(&MenuItem::text, "Ignore zoom level", &IgnoreZoomItem::gotoContainer, gotoContainer));
+		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<TriggerModeMenuItem>(&MenuItem::text, "Trigger port-mode", &TriggerModeMenuItem::rightText, RIGHT_ARROW, &TriggerModeMenuItem::module, module));
 	}
 };
 
