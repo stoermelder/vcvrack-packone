@@ -98,6 +98,9 @@ struct MidiStepModule : Module {
 				setOutputVoltage(OUTPUT_DEC, i, 0.f);
 			}
 		}
+		
+		outputs[OUTPUT_INC + 0].setChannels(polyphonicOutput ? 16 : 1);
+		outputs[OUTPUT_DEC + 0].setChannels(polyphonicOutput ? 16 : 1);
 	}
 
 	inline void setOutputVoltage(int out, int idx, float v) {
