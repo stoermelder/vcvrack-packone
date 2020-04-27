@@ -74,6 +74,8 @@ struct GotoContainer : widget::Widget {
 	bool smoothTransition = false;
 	/** [Stored to JSON] */
 	bool centerModule = true;
+	/** [Stored to JSON] */
+	bool ignoreZoom = false;
 
 	int learnJumpPoint = -1;
 
@@ -139,17 +141,24 @@ struct GotoContainer : widget::Widget {
 			ModuleWidget* mw = APP->scene->rack->getModule(jumpPoints[i].moduleId);
 			if (mw) {
 				if (smoothTransition) {
-					if (centerModule)
-						viewportCenterSmooth.trigger(mw, jumpPoints[i].zoom, APP->window->getLastFrameRate());
-					else
-						viewportCenterSmooth.trigger(Vec(jumpPoints[i].x, jumpPoints[i].y), jumpPoints[i].zoom, APP->window->getLastFrameRate());
+					float zoom = !ignoreZoom ? jumpPoints[i].zoom : rack::settings::zoom;
+					if (centerModule) {
+						viewportCenterSmooth.trigger(mw, zoom, APP->window->getLastFrameRate());
+					}
+					else {
+						viewportCenterSmooth.trigger(Vec(jumpPoints[i].x, jumpPoints[i].y), zoom, APP->window->getLastFrameRate());
+					}
 				}
 				else {
-					if (centerModule)
+					if (centerModule) {
 						StoermelderPackOne::Rack::ViewportCenter{mw};
-					else
+					}
+					else {
 						StoermelderPackOne::Rack::ViewportCenter{Vec(jumpPoints[i].x, jumpPoints[i].y)};
-					rack::settings::zoom = jumpPoints[i].zoom;
+					}
+					if (!ignoreZoom) {
+						rack::settings::zoom = jumpPoints[i].zoom;
+					}
 				}
 			}
 		}
@@ -245,6 +254,7 @@ struct GotoWidget : ThemedModuleWidget<GotoModule<10>> {
 
 		json_object_set_new(rootJ, "smoothTransition", json_boolean(gotoContainer->smoothTransition));
 		json_object_set_new(rootJ, "centerModule", json_boolean(gotoContainer->centerModule));
+		json_object_set_new(rootJ, "ignoreZoom", json_boolean(gotoContainer->ignoreZoom));
 
 		json_t* jumpPointsJ = json_array();
 		for (GotoTarget jp : gotoContainer->jumpPoints) {
@@ -267,6 +277,7 @@ struct GotoWidget : ThemedModuleWidget<GotoModule<10>> {
 
 		gotoContainer->smoothTransition = json_boolean_value(json_object_get(rootJ, "smoothTransition"));
 		gotoContainer->centerModule = json_boolean_value(json_object_get(rootJ, "centerModule"));
+		gotoContainer->ignoreZoom = json_boolean_value(json_object_get(rootJ, "ignoreZoom"));
 
 		json_t* jumpPointsJ = json_object_get(rootJ, "jumpPoints");
 		for (int i = 0; i < 10; i++) {
@@ -305,9 +316,21 @@ struct GotoWidget : ThemedModuleWidget<GotoModule<10>> {
 			}
 		};
 
+		struct IgnoreZoomItem : MenuItem {
+			GotoContainer<10>* gotoContainer;
+			void onAction(const event::Action& e) override {
+				gotoContainer->ignoreZoom ^= true;
+			}
+			void step() override {
+				rightText = gotoContainer->ignoreZoom ? "✔" : "";
+				MenuItem::step();
+			}
+		};
+
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<SmoothTransitionItem>(&MenuItem::text, "Smooth transition", &SmoothTransitionItem::gotoContainer, gotoContainer));
 		menu->addChild(construct<CenterModuleItem>(&MenuItem::text, "Center module", &CenterModuleItem::gotoContainer, gotoContainer));
+		menu->addChild(construct<IgnoreZoomItem>(&MenuItem::text, "Ignore zoom level", &IgnoreZoomItem::gotoContainer, gotoContainer));
 	}
 };
 
