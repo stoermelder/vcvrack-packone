@@ -1,6 +1,31 @@
 #include "rack.hpp"
 #include <initializer_list>
 
+const float FLAT_ANGLE_X_FACTOR[6] = {  cos(M_PI / 180.f * 0.f), 
+                                        cos(M_PI / 180.f * 60.f), 
+                                        cos(M_PI / 180.f * 120.f), 
+                                        cos(M_PI / 180.f * 180.f), 
+                                        cos(M_PI / 180.f * 240.f),
+                                        cos(M_PI / 180.f * 300.f)};
+const float FLAT_ANGLE_Y_FACTOR[6] = {  sin(M_PI / 180.f * 0.f), 
+                                        sin(M_PI / 180.f * 60.f), 
+                                        sin(M_PI / 180.f * 120.f), 
+                                        sin(M_PI / 180.f * 180.f), 
+                                        sin(M_PI / 180.f * 240.f),
+                                        sin(M_PI / 180.f * 300.f)};
+const float POINTY_ANGLE_X_FACTOR[6] = {cos(M_PI / 180.f * -30.f), 
+                                        cos(M_PI / 180.f * 30.f), 
+                                        cos(M_PI / 180.f * 90.f), 
+                                        cos(M_PI / 180.f * 150.f), 
+                                        cos(M_PI / 180.f * 210.f),
+                                        cos(M_PI / 180.f * 270.f)};
+const float POINTY_ANGLE_Y_FACTOR[6] = {sin(M_PI / 180.f * -30.f), 
+                                        sin(M_PI / 180.f * 30.f), 
+                                        sin(M_PI / 180.f * 90.f), 
+                                        sin(M_PI / 180.f * 150.f), 
+                                        sin(M_PI / 180.f * 210.f),
+                                        sin(M_PI / 180.f * 270.f)};
+
 enum ROTATION {
     FLAT = 0,
     POINTY = 1
@@ -132,19 +157,16 @@ bool cellVisible(RoundAxialVec pos, int radius) {
 
 void drawHex(Vec hexCenter, float sizeFactor, ROTATION shape, NVGcontext* ctx) {
     Vec points[6];
-    float angle;
     if (shape == ROTATION::FLAT) {
         for (int i = 0; i < 6; i++) {
-            angle = M_PI / 180.f * (60.f * i);
-            points[i].x = hexCenter.x + sizeFactor * cos(angle);
-            points[i].y = hexCenter.y + sizeFactor * sin(angle);
+            points[i].x = hexCenter.x + sizeFactor * FLAT_ANGLE_X_FACTOR[i];
+            points[i].y = hexCenter.y + sizeFactor * FLAT_ANGLE_Y_FACTOR[i];
         }
     }
     else {
         for (int i = 0; i < 6; i++) {
-            angle = M_PI / 180.f * (60.f * i - 30);
-            points[i].x = hexCenter.x + sizeFactor * cos(angle);
-            points[i].y = hexCenter.y + sizeFactor * sin(angle);
+            points[i].x = hexCenter.x + sizeFactor * POINTY_ANGLE_X_FACTOR[i];
+            points[i].y = hexCenter.y + sizeFactor * POINTY_ANGLE_Y_FACTOR[i];
         }
     }
     nvgMoveTo(ctx, points[5].x, points[5].y);
@@ -158,19 +180,16 @@ Vec* hexPoints(Vec hexCenter, float sizeFactor, ROTATION shape, int startPoint, 
     //  4       0       4           1
     //  3       1           3   2
     //      2
-    float angle;
     if (shape == ROTATION::FLAT) {
         for (int i = 0; i < numPoints; i++) {
-            angle = M_PI / 180.f * (60.f * ((startPoint + i) % 6));
-            array[i].x = hexCenter.x + sizeFactor * cos(angle);
-            array[i].y = hexCenter.y + sizeFactor * sin(angle);
+            array[i].x = hexCenter.x + sizeFactor * FLAT_ANGLE_X_FACTOR[(startPoint + i) % 6];
+            array[i].y = hexCenter.y + sizeFactor * FLAT_ANGLE_Y_FACTOR[(startPoint + i) % 6];
         }
     }
     else {
         for (int i = 0; i < numPoints; i++) {
-            angle = M_PI / 180.f * (60.f * ((startPoint + i) % 6) - 30);
-            array[i].x = hexCenter.x + sizeFactor * cos(angle);
-            array[i].y = hexCenter.y + sizeFactor * sin(angle);
+            array[i].x = hexCenter.x + sizeFactor * POINTY_ANGLE_X_FACTOR[(startPoint + i) % 6];
+            array[i].y = hexCenter.y + sizeFactor * POINTY_ANGLE_Y_FACTOR[(startPoint + i) % 6];
         }
     }
     return array;
