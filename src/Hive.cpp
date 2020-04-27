@@ -191,7 +191,6 @@ struct HiveModule : Module {
 			grid.cursor[i].ratchetingEnabled = true;
 			ratchetingSetProb(i);
 		}
-
 		normalizePorts = true;
 		gridDirty = true;
 		Module::onReset();
@@ -437,26 +436,34 @@ struct HiveModule : Module {
 
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 
-		json_t* gridJ = json_array();
-		for (int q = 0; q < grid.arraySize; q++) {				///
+		json_t* gridJ = json_array();							///
+		for (int q = 0; q < grid.arraySize; q++) {
 			for (int r = 0; r < grid.arraySize; r++) {
 				json_array_append_new(gridJ, json_integer(grid.cellMap[q][r].state));
 			}
 		}
 		json_object_set_new(rootJ, "grid", gridJ);
 
-	json_t* gridCvJ = json_array();
-		for (int q = 0; q < grid.arraySize; q++) {				///
+		json_t* gridCvJ = json_array();							///
+		for (int q = 0; q < grid.arraySize; q++) {
 			for (int r = 0; r < grid.arraySize; r++) {
 				json_array_append_new(gridCvJ, json_real(grid.cellMap[q][r].cv));
 			}
 		}
 		json_object_set_new(rootJ, "gridCv", gridCvJ);
 
+		json_t* mirrorsJ = json_array();						///
+		for (int i = 0; i < 6; i++) {
+			json_t* mirrorJ = json_object();
+			json_object_set_new(mirrorJ, "x", json_integer(grid.mirrorCenters[i].x));
+			json_object_set_new(mirrorJ, "y", json_integer(grid.mirrorCenters[i].y));
+			json_object_set_new(mirrorJ, "z", json_integer(grid.mirrorCenters[i].z));
+			json_array_append_new(mirrorsJ, mirrorJ);
+		}
+		json_object_set_new(rootJ, "mirrorCenters", mirrorsJ);
 
-
-		json_t* portsJ = json_array();
-		for (int i = 0; i < NUM_PORTS; i++) {												///
+		json_t* portsJ = json_array();							///
+		for (int i = 0; i < NUM_PORTS; i++) {
 			json_t* portJ = json_object();
 			json_object_set_new(portJ, "qStartPos", json_integer(grid.cursor[i].startPos.q));
 			json_object_set_new(portJ, "rStartPos", json_integer(grid.cursor[i].startPos.r));
@@ -497,10 +504,19 @@ struct HiveModule : Module {
 			}
 		}
 
-		json_t* portsJ = json_object_get(rootJ, "ports");
+		json_t* mirrorsJ = json_object_get(rootJ, "mirrorCenters");							///
+		json_t* mirrorJ;
+		size_t mirrorIndex;
+		json_array_foreach(mirrorsJ, mirrorIndex, mirrorJ) {
+			grid.mirrorCenters[mirrorIndex].x = json_integer_value(json_object_get(mirrorJ, "x"));
+			grid.mirrorCenters[mirrorIndex].y = json_integer_value(json_object_get(mirrorJ, "y"));
+			grid.mirrorCenters[mirrorIndex].z = json_integer_value(json_object_get(mirrorJ, "z"));
+		}
+
+		json_t* portsJ = json_object_get(rootJ, "ports");									///
 		json_t* portJ;
 		size_t portIndex;
-		json_array_foreach(portsJ, portIndex, portJ) {															///
+		json_array_foreach(portsJ, portIndex, portJ) {
 			grid.cursor[portIndex].startPos.q = json_integer_value(json_object_get(portJ, "qStartPos"));
 			grid.cursor[portIndex].startPos.r = json_integer_value(json_object_get(portJ, "rStartPos"));	
 			grid.cursor[portIndex].startDir = (DIRECTION)json_integer_value(json_object_get(portJ, "startDir"));
@@ -518,8 +534,8 @@ struct HiveModule : Module {
 			}
 		}
 
-		grid.usedRadius = json_integer_value(json_object_get(rootJ, "usedRadius"));				///
-		sizeFactor = json_real_value(json_object_get(rootJ, "sizeFactor"));						///
+		grid.usedRadius = json_integer_value(json_object_get(rootJ, "usedRadius"));			///
+		sizeFactor = json_real_value(json_object_get(rootJ, "sizeFactor"));					///
 
 		json_t* normalizePortsJ = json_object_get(rootJ, "normalizePorts");
 		if (normalizePortsJ) normalizePorts = json_boolean_value(normalizePortsJ);
