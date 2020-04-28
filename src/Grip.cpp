@@ -17,13 +17,13 @@ struct GripModule : CVMapModuleBase<MAX_CHANNELS> {
 		NUM_OUTPUTS
 	};
 	enum LightIds {
-		ENUMS(LIGHT_BIND, 2),
+		LIGHT_BIND,
 		NUM_LIGHTS
 	};
 
 	/** [Stored to JSON] */
 	int panelTheme = 0;
-	/** [Stored to Json] */
+	/** [Stored to JSON] */
 	bool audioRate;
 
 	dsp::ClockDivider processDivider;
@@ -62,8 +62,7 @@ struct GripModule : CVMapModuleBase<MAX_CHANNELS> {
 		}
 
 		if (lightDivider.process()) {
-			lights[LIGHT_BIND + 0].setBrightness(learningId == -1 && mapLen > 0 ? 1.f : 0.f);
-			lights[LIGHT_BIND + 1].setBrightness(learningId >= 0 ? 1.f : 0.f);
+			lights[LIGHT_BIND].setBrightness(learningId >= 0 ? 1.f : 0.f);
 		}
 	}
 
@@ -112,7 +111,7 @@ struct GripModule : CVMapModuleBase<MAX_CHANNELS> {
 };
 
 
-struct MapButton : LEDBezel {
+struct MapButton : TL1105 {
 	GripModule* module;
 	int id;
 
@@ -151,13 +150,6 @@ struct MapButton : LEDBezel {
 	}
 };
 
-template <typename BASE>
-struct MapLight : BASE {
-	MapLight() {
-		this->box.size = mm2px(Vec(6.f, 6.f));
-	}
-};
-
 struct GripWidget : ThemedModuleWidget<GripModule> {
 	GripWidget(GripModule* module)
 		: ThemedModuleWidget<GripModule>(module, "Grip") {
@@ -166,10 +158,10 @@ struct GripWidget : ThemedModuleWidget<GripModule> {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(0, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 1 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		MapButton* button = createParamCentered<MapButton>(Vec(15.0f, 328.5f), module, GripModule::PARAM_BIND);
+		addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(15.f, 291.3f), module, GripModule::LIGHT_BIND));
+		MapButton* button = createParamCentered<MapButton>(Vec(15.0f, 306.7f), module, GripModule::PARAM_BIND);
 		button->module = module;
 		addParam(button);
-		addChild(createLightCentered<MapLight<GreenRedLight>>(Vec(15.f, 328.5f), module, GripModule::LIGHT_BIND));
 	}
 
 	void appendContextMenu(Menu* menu) override {
