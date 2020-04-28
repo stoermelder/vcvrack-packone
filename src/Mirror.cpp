@@ -32,7 +32,7 @@ struct MirrorModule : Module {
 	/** [Stored to JSON] */
 	int sourceModuleId;
 
-	/** [Stored to Json] */
+	/** [Stored to JSON] */
 	bool audioRate;
 	/** [Stored to JSON] */
 	bool mappingIndicatorHidden = false;
@@ -49,7 +49,7 @@ struct MirrorModule : Module {
 	dsp::ClockDivider processDivider;
 	dsp::ClockDivider handleDivider;
 
-	dsp::RingBuffer<ParamHandle*, 8> handleClearTodo;
+	dsp::RingBuffer<ParamHandle*, 16> handleClearTodo;
 
 	MirrorModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
@@ -111,8 +111,7 @@ struct MirrorModule : Module {
 					targetHandle->color = mappingIndicatorHidden ? color::BLACK_TRANSPARENT : nvgRGB(0xff, 0x40, 0xff);
 					if (sourceHandle->moduleId < 0 && targetHandle->moduleId >= 0) {
 						// Unmap target parameter
-						//APP->engine->updateParamHandle(targetHandle, -1, 0, true);
-						handleClearTodo.push(targetHandle);
+						if (!handleClearTodo.full()) handleClearTodo.push(targetHandle);
 					}
 					j += sourceHandles.size();
 				}
@@ -125,7 +124,7 @@ struct MirrorModule : Module {
 					float v = clamp(inputs[INPUT_CV + i].getVoltage(), 0.f, 10.f);
 					ParamHandle* sourceHandle = sourceHandles[cvParamId[i]];
 					ParamQuantity* sourceParamQuantity = getParamQuantity(sourceHandle);
-					if (sourceParamQuantity) 
+					if (sourceParamQuantity)
 						sourceParamQuantity->setScaledValue(v / 10.f);
 					else 
 						cvParamId[i] = -1;
@@ -520,12 +519,10 @@ struct MirrorWidget : ThemedModuleWidget<MirrorModule> {
 		APP->scene->rack->setModulePosForce(this, pos);
 
 		// Get Model
-		// NB: unstable API
 		plugin::Model* model = plugin::getModel(module->sourcePluginSlug, module->sourceModelSlug);
 		if (!model) return;
 
 		// Create ModuleWidget
-		// NB: unstable API
 		ModuleWidget* newMw = model->createModuleWidget();
 		assert(newMw);
 		newMw->box.pos = box.pos;
