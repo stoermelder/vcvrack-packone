@@ -186,7 +186,8 @@ struct GlueModule : Module {
 		defaultWidth = json_real_value(json_object_get(rootJ, "defaultWidth"));
 		defaultAngle = json_real_value(json_object_get(rootJ, "defaultAngle"));
 		defaultOpacity = json_real_value(json_object_get(rootJ, "defaultOpacity"));
-		defaultColor = color::fromHexString(json_string_value(json_object_get(rootJ, "defaultColor")));
+		json_t* defaultColorJ = json_object_get(rootJ, "defaultColor");
+		if (defaultColorJ) defaultColor = color::fromHexString(json_string_value(defaultColorJ));
 		defaultFont = json_integer_value(json_object_get(rootJ, "defaultFont"));
 		skewLabels = json_boolean_value(json_object_get(rootJ, "skewLabels"));
 
@@ -200,23 +201,24 @@ struct GlueModule : Module {
 		resetRequested = true;
 
 		json_t* labelsJ = json_object_get(rootJ, "labels");
-		size_t labelIdx;
-		json_t* labelJ;
-		json_array_foreach(labelsJ, labelIdx, labelJ) {
-			Label* l = addLabel();
-			l->moduleId = json_integer_value(json_object_get(labelJ, "moduleId"));
-			l->x = json_real_value(json_object_get(labelJ, "x"));
-			l->y = json_real_value(json_object_get(labelJ, "y"));
-			l->angle = json_real_value(json_object_get(labelJ, "angle"));
-			l->skew = json_real_value(json_object_get(labelJ, "skew"));
-			l->opacity = json_real_value(json_object_get(labelJ, "opacity"));
-			l->width = json_real_value(json_object_get(labelJ, "width"));
-			l->size = json_real_value(json_object_get(labelJ, "size"));
-			l->text = json_string_value(json_object_get(labelJ, "text"));
-			l->color = color::fromHexString(json_string_value(json_object_get(labelJ, "color")));
-			l->font = json_integer_value(json_object_get(labelJ, "font"));
+		if (labelsJ) {
+			size_t labelIdx;
+			json_t* labelJ;
+			json_array_foreach(labelsJ, labelIdx, labelJ) {
+				Label* l = addLabel();
+				l->moduleId = json_integer_value(json_object_get(labelJ, "moduleId"));
+				l->x = json_real_value(json_object_get(labelJ, "x"));
+				l->y = json_real_value(json_object_get(labelJ, "y"));
+				l->angle = json_real_value(json_object_get(labelJ, "angle"));
+				l->skew = json_real_value(json_object_get(labelJ, "skew"));
+				l->opacity = json_real_value(json_object_get(labelJ, "opacity"));
+				l->width = json_real_value(json_object_get(labelJ, "width"));
+				l->size = json_real_value(json_object_get(labelJ, "size"));
+				l->text = json_string_value(json_object_get(labelJ, "text"));
+				l->color = color::fromHexString(json_string_value(json_object_get(labelJ, "color")));
+				l->font = json_integer_value(json_object_get(labelJ, "font"));
+			}
 		}
-
 		params[PARAM_UNLOCK].setValue(0.f);
 	}
 };
@@ -970,6 +972,17 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 			APP->scene->rack->removeChild(labelContainer);
 			delete labelContainer;
 		}
+	}
+
+	void fromJson(json_t* rootJ) override {
+		// Handle data-storage from previous builds
+		json_t* dataJ = json_object_get(rootJ, "data");
+		json_t* labelsJ = json_object_get(rootJ, "labels");
+		if (dataJ && labelsJ) {
+			json_object_set(dataJ, "labels", labelsJ);
+			json_object_set(rootJ, "labels", NULL);
+		}
+		ThemedModuleWidget<GlueModule>::fromJson(rootJ);
 	}
 
 	void appendContextMenu(Menu* menu) override {
