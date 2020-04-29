@@ -339,6 +339,17 @@ struct GotoWidget : ThemedModuleWidget<GotoModule<10>> {
 		}
 	}
 
+	void fromJson(json_t* rootJ) override {
+		// Handle data-storage from previous builds
+		json_t* dataJ = json_object_get(rootJ, "data");
+		json_t* jumpPointsJ = json_object_get(rootJ, "jumpPoints");
+		if (dataJ && jumpPointsJ) {
+			json_object_set(dataJ, "jumpPoints", jumpPointsJ);
+			json_object_set(rootJ, "jumpPoints", NULL);
+		}
+		ThemedModuleWidget<GotoModule<10>>::fromJson(rootJ);
+	}
+
 	void appendContextMenu(Menu* menu) override {
 		ThemedModuleWidget<GotoModule<10>>::appendContextMenu(menu);
 
