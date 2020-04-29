@@ -4,7 +4,7 @@ namespace Goto {
 
 enum class TRIGGERMODE {
 	POLYTRIGGER = 0,
-	C4 = 1
+	C5 = 1
 };
 
 struct GotoTarget {
@@ -63,6 +63,7 @@ struct GotoModule : Module {
 		for (int i = 0; i < SLOTS; i++) {
 			configParam<TriggerParamQuantity>(PARAM_SLOT + i, 0, 1, 0, string::f("Jump point %i (SHIFT+%i)", i + 1, (i + 1) % 10));
 		}
+		onReset();
 	}
 
 	void onReset() override {
@@ -75,6 +76,7 @@ struct GotoModule : Module {
 		for (int i = 0; i < SLOTS; i++) {
 			jumpPoints[i].moduleId = -1;
 		}
+		resetRequested = true;
 	}
 
 	void process(const ProcessArgs& args) override {
@@ -89,11 +91,14 @@ struct GotoModule : Module {
 					}
 					break;
 				}
-				case TRIGGERMODE::C4: {
+				case TRIGGERMODE::C5: {
 					float v = inputs[INPUT_TRIG].getVoltage();
 					if (v != 0.f && triggerVoltage != v) {
 						triggerVoltage = v;
-						jumpTrigger = std::round(clamp(triggerVoltage * 12.f, 0.f, SLOTS - 1.f));
+						float t = (triggerVoltage - 1.f) * 12.f;
+						if (t >= 0 && t <= (SLOTS - 1)) {
+							jumpTrigger = std::round(t);
+						}
 					}
 					break;
 				}
@@ -166,6 +171,11 @@ struct GotoContainer : widget::Widget {
 		if (!module) return;
 
 		viewportCenterSmooth.process();
+
+		if (module->resetRequested) {
+			learnJumpPoint = -1;
+			module->resetRequested = false;
+		}
 
 		if (learnJumpPoint >= 0) {
 			// Learn module
@@ -251,8 +261,10 @@ struct GotoContainer : widget::Widget {
 		if (module && !module->jumpTriggerUsed) {
 			if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == GLFW_MOD_SHIFT && e.key >= GLFW_KEY_0 && e.key <= GLFW_KEY_9) {
 				int i = (e.key - GLFW_KEY_0 + 9) % 10;
-				executeJump(i);
-				e.consume(this);
+				if (module->jumpPoints[i].moduleId >= 0) {
+					executeJump(i);
+					e.consume(this);
+				}
 			}
 		}
 		Widget::onHoverKey(e);
@@ -380,7 +392,7 @@ struct GotoWidget : ThemedModuleWidget<GotoModule<10>> {
 			Menu* createChildMenu() override {
 				Menu* menu = new Menu;
 				menu->addChild(construct<TriggerModeItem>(&MenuItem::text, "Polyphonic trigger", &TriggerModeItem::module, module, &TriggerModeItem::triggerMode, TRIGGERMODE::POLYTRIGGER));
-				menu->addChild(construct<TriggerModeItem>(&MenuItem::text, "C4", &TriggerModeItem::module, module, &TriggerModeItem::triggerMode, TRIGGERMODE::C4));
+				menu->addChild(construct<TriggerModeItem>(&MenuItem::text, "C5-A5", &TriggerModeItem::module, module, &TriggerModeItem::triggerMode, TRIGGERMODE::C5));
 				return menu;
 			}
 		};
