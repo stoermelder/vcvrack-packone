@@ -1,0 +1,506 @@
+{
+  "version": "1.1.6",
+  "modules": [
+    {
+      "id": 240,
+      "plugin": "Stoermelder-P1",
+      "version": "1.6.8814a5d",
+      "model": "Glue",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        }
+      ],
+      "leftModuleId": 268,
+      "rightModuleId": 264,
+      "data": {
+        "panelTheme": 1,
+        "defaultSize": 0.0,
+        "defaultWidth": 0.0,
+        "defaultAngle": 0.0,
+        "defaultOpacity": 0.0,
+        "defaultColor": "#dcff46",
+        "defaultFont": 0,
+        "skewLabels": true,
+        "labels": []
+      },
+      "pos": [
+        14,
+        0
+      ]
+    },
+    {
+      "id": 264,
+      "plugin": "Stoermelder-P1",
+      "version": "1.6.8814a5d",
+      "model": "Glue",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        }
+      ],
+      "leftModuleId": 240,
+      "data": {
+        "panelTheme": 1,
+        "defaultSize": 0.0,
+        "defaultWidth": 0.0,
+        "defaultAngle": 0.0,
+        "defaultOpacity": 0.0,
+        "defaultColor": "#dcff46",
+        "defaultFont": 0,
+        "skewLabels": true,
+        "labels": []
+      },
+      "pos": [
+        17,
+        0
+      ]
+    },
+    {
+      "id": 265,
+      "plugin": "Stoermelder-P1",
+      "version": "1.6.8814a5d",
+      "model": "Glue",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        }
+      ],
+      "rightModuleId": 266,
+      "data": {
+        "panelTheme": 0,
+        "defaultSize": 0.0,
+        "defaultWidth": 0.0,
+        "defaultAngle": 0.0,
+        "defaultOpacity": 0.0,
+        "defaultColor": "#dcff46",
+        "defaultFont": 0,
+        "skewLabels": true,
+        "labels": []
+      },
+      "pos": [
+        22,
+        0
+      ]
+    },
+    {
+      "id": 266,
+      "plugin": "Stoermelder-P1",
+      "version": "1.6.8814a5d",
+      "model": "Glue",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        }
+      ],
+      "leftModuleId": 265,
+      "rightModuleId": 267,
+      "data": {
+        "panelTheme": 0,
+        "defaultSize": 0.0,
+        "defaultWidth": 0.0,
+        "defaultAngle": 0.0,
+        "defaultOpacity": 0.0,
+        "defaultColor": "#dcff46",
+        "defaultFont": 0,
+        "skewLabels": true,
+        "labels": []
+      },
+      "pos": [
+        25,
+        0
+      ]
+    },
+    {
+      "id": 267,
+      "plugin": "Stoermelder-P1",
+      "version": "1.6.8814a5d",
+      "model": "Glue",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        }
+      ],
+      "leftModuleId": 266,
+      "data": {
+        "panelTheme": 0,
+        "defaultSize": 0.0,
+        "defaultWidth": 0.0,
+        "defaultAngle": 0.0,
+        "defaultOpacity": 0.0,
+        "defaultColor": "#dcff46",
+        "defaultFont": 0,
+        "skewLabels": true,
+        "labels": []
+      },
+      "pos": [
+        28,
+        0
+      ]
+    },
+    {
+      "id": 268,
+      "plugin": "Stoermelder-P1",
+      "version": "1.6.8814a5d",
+      "model": "Glue",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        }
+      ],
+      "rightModuleId": 240,
+      "data": {
+        "panelTheme": 1,
+        "defaultSize": 16.0,
+        "defaultWidth": 80.0,
+        "defaultAngle": 0.0,
+        "defaultOpacity": 1.0,
+        "defaultColor": "#dcff46",
+        "defaultFont": 0,
+        "skewLabels": true,
+        "labels": [
+          {
+            "moduleId": 240,
+            "x": -22.1679688,
+            "y": 44.0742188,
+            "angle": 0.0,
+            "skew": 5.46805286,
+            "opacity": 1.0,
+            "width": 80.0,
+            "size": 24.0,
+            "text": "GLUE",
+            "color": "#dcff46",
+            "font": 0
+          },
+          {
+            "moduleId": 264,
+            "x": -13.3496094,
+            "y": 108.824219,
+            "angle": 0.0,
+            "skew": 0.0282697547,
+            "opacity": 1.0,
+            "width": 69.7599792,
+            "size": 19.7760162,
+            "text": "labels",
+            "color": "#1ba8b1",
+            "font": 0
+          },
+          {
+            "moduleId": 265,
+            "x": -21.078125,
+            "y": 84.4375,
+            "angle": 0.0,
+            "skew": 3.03652596,
+            "opacity": 1.0,
+            "width": 80.0,
+            "size": 16.0,
+            "text": "Your",
+            "color": "#ff7455",
+            "font": 0
+          },
+          {
+            "moduleId": 267,
+            "x": -56.9414063,
+            "y": 39.0273438,
+            "angle": 0.0,
+            "skew": -8.01377583,
+            "opacity": 1.0,
+            "width": 160.960037,
+            "size": 24.0,
+            "text": "modules",
+            "color": "#fafafa",
+            "font": 1
+          }
+        ]
+      },
+      "pos": [
+        11,
+        0
+      ]
+    },
+    {
+      "id": 269,
+      "plugin": "Stoermelder-P1",
+      "version": "1.6.8814a5d",
+      "model": "Glue",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        }
+      ],
+      "data": {
+        "panelTheme": 1,
+        "defaultSize": 16.0,
+        "defaultWidth": 80.0,
+        "defaultAngle": 0.0,
+        "defaultOpacity": 1.0,
+        "defaultColor": "#dcff46",
+        "defaultFont": 0,
+        "skewLabels": true,
+        "labels": [
+          {
+            "moduleId": 270,
+            "x": -11.3476563,
+            "y": 26.7578125,
+            "angle": 0.0,
+            "skew": -0.591507673,
+            "opacity": 1.0,
+            "width": 80.0,
+            "size": 16.0,
+            "text": "VCO-1",
+            "color": "#dcff46",
+            "font": 0
+          },
+          {
+            "moduleId": 271,
+            "x": -24.2832031,
+            "y": 26.7578125,
+            "angle": 0.0,
+            "skew": 1.9703207,
+            "opacity": 1.0,
+            "width": 80.0,
+            "size": 16.0,
+            "text": "Delay",
+            "color": "#dcff46",
+            "font": 0
+          },
+          {
+            "moduleId": 272,
+            "x": -33.2851563,
+            "y": 236.984375,
+            "angle": 0.0,
+            "skew": 4.20309639,
+            "opacity": 1.0,
+            "width": 132.160034,
+            "size": 20.8640022,
+            "text": "ADSR",
+            "color": "#dcff46",
+            "font": 0
+          }
+        ]
+      },
+      "pos": [
+        0,
+        2
+      ]
+    },
+    {
+      "id": 271,
+      "plugin": "Fundamental",
+      "version": "1.4.0",
+      "model": "Delay",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.5
+        },
+        {
+          "id": 1,
+          "value": 0.5
+        },
+        {
+          "id": 2,
+          "value": 0.5
+        },
+        {
+          "id": 3,
+          "value": 0.5
+        }
+      ],
+      "leftModuleId": 270,
+      "pos": [
+        17,
+        2
+      ]
+    },
+    {
+      "id": 272,
+      "plugin": "Fundamental",
+      "version": "1.4.0",
+      "model": "ADSR",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.5
+        },
+        {
+          "id": 1,
+          "value": 0.5
+        },
+        {
+          "id": 2,
+          "value": 0.5
+        },
+        {
+          "id": 3,
+          "value": 0.5
+        }
+      ],
+      "pos": [
+        30,
+        2
+      ]
+    },
+    {
+      "id": 270,
+      "plugin": "Fundamental",
+      "version": "1.4.0",
+      "model": "VCO",
+      "params": [
+        {
+          "id": 0,
+          "value": 1.0
+        },
+        {
+          "id": 1,
+          "value": 1.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        },
+        {
+          "id": 5,
+          "value": 0.5
+        },
+        {
+          "id": 6,
+          "value": 0.0
+        }
+      ],
+      "rightModuleId": 271,
+      "pos": [
+        7,
+        2
+      ]
+    }
+  ],
+  "cables": []
+}
