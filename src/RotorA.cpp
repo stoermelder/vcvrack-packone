@@ -59,12 +59,7 @@ struct RotorAModule : Module {
 			channelsSplit = 10.f / (float)(channels - 1);
 		}
 
-		float car = inputs[CAR_INPUT].isConnected() ? clamp(inputs[CAR_INPUT].getVoltage(), 0.f, 10.f) : 10.f;
-
-		simd::float_4 v[4];
-		for (int c = 0; c < 16; c += 4) {
-			v[c / 4] = 0.f;
-		}
+		float car = inputs[CAR_INPUT].getNormalVoltage(10.f);
 
 		float mod = clamp(inputs[MOD_INPUT].getVoltage(), 0.f, 10.f);
 		float mod_p = mod / channelsSplit;
@@ -72,17 +67,18 @@ struct RotorAModule : Module {
 		float mod_p2 = mod_p - (float)mod_c;
 		float mod_p1 = 1.f - mod_p2;
 
+		simd::float_4 v[4] = {0.f};
 		v[(mod_c + 0) / 4].s[(mod_c + 0) % 4] = mod_p1 * car;
 		v[(mod_c + 1) / 4].s[(mod_c + 1) % 4] = mod_p2 * car;
 
 		if (outputs[POLY_OUTPUT].isConnected()) {
 			outputs[POLY_OUTPUT].setChannels(channels);
 			for (int c = 0; c < channels; c += 4) {
-				simd::float_4 v1 = simd::float_4::load(inputs[BASE_INPUT].getVoltages(c));
+				simd::float_4 v1 = inputs[BASE_INPUT].getVoltageSimd<simd::float_4>(c);
 				v1 = rescale(v1, 0.f, 10.f, 0.f, 1.f);
 				v1 = ifelse(channelsMask[c / 4], v1, 1.f);
 				v1 = v1 * v[c / 4];
-				v1.store(outputs[POLY_OUTPUT].getVoltages(c));
+				outputs[POLY_OUTPUT].setVoltageSimd(v1, c);
 			}
 		}
 
