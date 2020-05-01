@@ -6,6 +6,7 @@ namespace RotorA {
 struct RotorAModule : Module {
 	enum ParamIds {
 		CHANNELS_PARAM,
+		CHANNELS_OFFSET_PARAM,
 		NUM_PARAMS
 	};
 	enum InputIds {
@@ -31,6 +32,7 @@ struct RotorAModule : Module {
 	dsp::ClockDivider channelsDivider;
 
 	int channels;
+	int channelsOffset;
 	simd::float_4 channelsMask[4];
 	float channelsSplit;
 
@@ -38,11 +40,17 @@ struct RotorAModule : Module {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configParam(CHANNELS_PARAM, 2, 16, 16, "Number of output channels");
+		configParam(CHANNELS_OFFSET_PARAM, 0, 14, 0, "Offset for output channels");
 
-		onReset();
 		lightDivider.setDivision(2048);
 		channelsDivider.setDivision(512);
+		onReset();
+	}
+
+	void onReset() override {
+		Module::onReset();
 		channels = ceil(params[CHANNELS_PARAM].getValue());
+		channelsOffset = 0;
 		channelsSplit = 10.f / (float)(channels - 1);
 	}
 
@@ -50,6 +58,7 @@ struct RotorAModule : Module {
 		// Update mask for input channels infrequently
 		if (channelsDivider.process()) {
 			channels = ceil(params[CHANNELS_PARAM].getValue());
+			channelsOffset = params[CHANNELS_OFFSET_PARAM].getValue();
 			for (int c = 0; c < 4; c++) {
 				channelsMask[c] = simd::float_4::mask();
 			}
@@ -72,13 +81,19 @@ struct RotorAModule : Module {
 		v[(mod_c + 1) / 4].s[(mod_c + 1) % 4] = mod_p2 * car;
 
 		if (outputs[POLY_OUTPUT].isConnected()) {
-			outputs[POLY_OUTPUT].setChannels(channels);
 			for (int c = 0; c < channels; c += 4) {
 				simd::float_4 v1 = inputs[BASE_INPUT].getVoltageSimd<simd::float_4>(c);
 				v1 = rescale(v1, 0.f, 10.f, 0.f, 1.f);
 				v1 = ifelse(channelsMask[c / 4], v1, 1.f);
-				v1 = v1 * v[c / 4];
-				outputs[POLY_OUTPUT].setVoltageSimd(v1, c);
+				v[c / 4] *= v1;
+			}
+
+			outputs[POLY_OUTPUT].setChannels(std::min(16, channelsOffset + channels));
+			for (int i = 0; i < channels && i + channelsOffset < 16; i++) {
+				outputs[POLY_OUTPUT].setVoltage(v[i / 4].s[i % 4], i + channelsOffset);
+			}
+			for (int i = 0; i < channelsOffset; i++) {
+				outputs[POLY_OUTPUT].setVoltage(0.f, i);
 			}
 		}
 
@@ -89,7 +104,7 @@ struct RotorAModule : Module {
 				lights[INPUT_LIGHTS + c].setBrightness(active);
 			}
 			for (int c = 0; c < 16; c++) {
-				bool active = (c < channels);
+				bool active = (c < channelsOffset + channels);
 				lights[OUTPUT_LIGHTS + c].setBrightness(active);
 			}
 		}
@@ -116,16 +131,19 @@ struct RotorAWidget : ThemedModuleWidget<RotorAModule> {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
 		addInput(createInputCentered<StoermelderPort>(Vec(30.f, 60.7f), module, RotorAModule::MOD_INPUT));
-		addInput(createInputCentered<StoermelderPort>(Vec(30.f, 108.7f), module, RotorAModule::CAR_INPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(30.f, 105.6f), module, RotorAModule::CAR_INPUT));
 
-		PolyLedWidget<>* w0 = createWidgetCentered<PolyLedWidget<>>(Vec(30.f, 155.0f));
+		PolyLedWidget<>* w0 = createWidgetCentered<PolyLedWidget<>>(Vec(30.f, 149.1f));
 		w0->setModule(module, RotorAModule::INPUT_LIGHTS);
 		addChild(w0);
-		addInput(createInputCentered<StoermelderPort>(Vec(30.f, 180.9f), module, RotorAModule::BASE_INPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(30.f, 175.0f), module, RotorAModule::BASE_INPUT));
 
-		addParam(createParamCentered<RoundBlackSnapKnob>(Vec(30.f, 226.1f), module, RotorAModule::CHANNELS_PARAM));
+		addParam(createParamCentered<RoundBlackSnapKnob>(Vec(30.f, 220.1f), module, RotorAModule::CHANNELS_PARAM));
+		StoermelderTrimpot* channelsOffset = createParamCentered<StoermelderTrimpot>(Vec(30.f, 259.1f), module, RotorAModule::CHANNELS_OFFSET_PARAM);
+		channelsOffset->snap = true;
+		addParam(channelsOffset);
 
-		PolyLedWidget<>* w1 = createWidgetCentered<PolyLedWidget<>>(Vec(30.f, 299.8f));
+		PolyLedWidget<>* w1 = createWidgetCentered<PolyLedWidget<>>(Vec(30.f, 300.8f));
 		w1->setModule(module, RotorAModule::OUTPUT_LIGHTS);
 		addChild(w1);
 		addOutput(createOutputCentered<StoermelderPort>(Vec(30.f, 327.9f), module, RotorAModule::POLY_OUTPUT));

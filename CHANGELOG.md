@@ -1,17 +1,19 @@
 ## 1.7.0 (in development)
 - Module [DETOUR](./docs/Detour.md)
     - New module, 8x8 send/return switch matrix with support for 8 scenes
+- Module [FLOWER](./docs/Flower.md)
+    - New module, pattern-driven 16-step sequencer
 
 ## 1.6.0 (preview)
 
 - Module [AFFIX](./docs/Affix.md), [µAFFIX](./docs/Affix.md)
-    - New modules, insert on polyphonic cables for adding offsets in volt, semitones or ocatves
+    - New modules, inserts for polyphonic cables for adding offsets in volt, semitones or ocatves
 - Module [GLUE](./docs/Glue.md)
     - New module, label maker for your modules!
 - Module [GOTO](./docs/Goto.md)
-    - New module, utility for jumping directly to 10 locations in your patch by hotkey or using MIDI-MAP
+    - New module, utility for jumping directly to 10 locations in your patch by hotkey or using MIDI
 - Module [GRIP](./docs/Grip.md)
-    - New module, locker for module parameters
+    - New module, lock for module parameters
 - Module [MIRROR](./docs/Mirror.md)
     - New module, utility for synchronizing module parameters
 - Module [POLY-PILE](./docs/Pile.md)
@@ -27,6 +29,9 @@
     - Increased number of CCs to 16 although 9-16 can only be used in polyphonic mode
 - Module [PILE](./docs/Pile.md)
     - Removed slew-limiting after preset-load
+- Module [ROTOR mod A](./docs/RotorA.md)
+    - Allow bipolar carrier signal / remove clamping on 0..10V
+    - Added offset for output channel number (#121)
 - Module [SAIL](./docs/Sail.md)
     - Rewritten how the target values are applied onto the parameters (#106). You can't use IN and INC/DEC the same time anymore, just use two instances of the  module.
 
