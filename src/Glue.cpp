@@ -85,19 +85,19 @@ struct GlueModule : Module {
 	std::list<Label*> labels;
 
 	/** [Stored to JSON] default size for new labels */
-	float defaultSize = LABEL_SIZE_DEFAULT;
+	float defaultSize;
 	/** [Stored to JSON] default width for new labels */
-	float defaultWidth = LABEL_WIDTH_DEFAULT;
+	float defaultWidth;
 	/** [Stored to JSON] default angle for new labels */
-	float defaultAngle = 0.f;
+	float defaultAngle;
 	/** [Stored to JSON] default opacity for new labels */
-	float defaultOpacity = LABEL_OPACITY_MAX;
+	float defaultOpacity;
 	/** [Stored to JSON] default color for new labels */
-	NVGcolor defaultColor = LABEL_COLOR_YELLOW;
+	NVGcolor defaultColor;
 	/** [Stored to JSON] default font for new labels */
-	int defaultFont = 0;
+	int defaultFont;
 	/** [Stored to JSON] */
-	bool skewLabels = true;
+	bool skewLabels;
 
 	bool resetRequested = false;
 
@@ -124,6 +124,13 @@ struct GlueModule : Module {
 			delete l;
 		}
 		labels.clear();
+		defaultSize = LABEL_SIZE_DEFAULT;
+		defaultWidth = LABEL_WIDTH_DEFAULT;
+		defaultAngle = 0.f;
+		defaultOpacity = LABEL_OPACITY_MAX;
+		defaultColor = LABEL_COLOR_YELLOW;
+		defaultFont = 0;
+		skewLabels = true;
 		resetRequested = true;
 	}
 
@@ -708,14 +715,15 @@ struct GlueWidget;
 struct LabelContainer : widget::Widget {
 	GlueModule* module;
 	std::list<Label*> labelsToBeDeleted;
-	bool editMode;
 
 	/** used when duplicating an existing label */
 	Label* labelTemplate = NULL;
 
-	/** */
+	/** labels locked? */
+	bool editMode = false;
+	/** labels hidden? gets its value from the module's parameter */
 	bool hideMode = false;
-	/** */
+	/** learning a module for a new label? */
 	bool learnMode = false;
 
 	ModuleWidget* mw;
@@ -724,12 +732,6 @@ struct LabelContainer : widget::Widget {
 		Widget::step();
 		if (!module) return;
 
-		// Learn module
-		if (learnMode) {
-			Widget* w = APP->event->getSelectedWidget();
-			addLabelAtMousePos(w);
-		}
-
 		if (module->resetRequested) {
 			this->clearChildren();
 			for (Label* l : module->labels) {
@@ -737,6 +739,14 @@ struct LabelContainer : widget::Widget {
 				addChild(lw);
 			}
 			module->resetRequested = false;
+			learnMode = false;
+			editMode = false;
+		}
+
+		// Learn module
+		if (learnMode) {
+			Widget* w = APP->event->getSelectedWidget();
+			addLabelAtMousePos(w);
 		}
 
 		// Traverse labels, collected delete-requests
@@ -759,7 +769,7 @@ struct LabelContainer : widget::Widget {
 		if (labelsToBeDeleted.size() > 0) {
 			history::ComplexAction* complexAction = new history::ComplexAction;
 			complexAction->name = "remove module";
-			// First undo the module removal by a "double undo"
+			// First, undo "module removal" by a "double undo"
 			complexAction->push(new DoubleUndoAction);
 			for (Label* l : labelsToBeDeleted) {
 				LabelRemoveAction<GlueWidget>* a = new LabelRemoveAction<GlueWidget>;
@@ -768,7 +778,9 @@ struct LabelContainer : widget::Widget {
 				complexAction->push(a);
 				removeLabelWidget(l);
 			}
+			// Second, undo the label removal
 			APP->history->push(complexAction);
+
 			labelsToBeDeleted.clear();
 		}
 
@@ -837,8 +849,8 @@ struct LabelContainer : widget::Widget {
 		learnMode = false;
 	}
 
-	void enableLearnMode() {
-		if (!hideMode) learnMode = true;
+	void toggleLearnMode() {
+		if (!hideMode) learnMode ^= true;
 	}
 
 	void toggleEditMode() {
@@ -867,22 +879,21 @@ struct LabelContainer : widget::Widget {
 
 struct LabelButton : TL1105 {
 	LabelContainer* labelContainer;
-	void step() override {
-		TL1105::step();
-		if (paramQuantity && paramQuantity->getValue() > 0.f) {
-			labelContainer->enableLearnMode();
+	void onButton(const event::Button& e) override {
+		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
+			labelContainer->toggleLearnMode();
 		}
+		TL1105::onButton(e);
 	}
 };
 
 struct LockButton : TL1105 {
-	dsp::BooleanTrigger trigger;
 	LabelContainer* labelContainer;
-	void step() override {
-		TL1105::step();
-		if (paramQuantity && trigger.process(paramQuantity->getValue() > 0.f)) {
+	void onButton(const event::Button& e) override {
+		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
 			labelContainer->toggleEditMode();
 		}
+		TL1105::onButton(e);
 	}
 };
 
