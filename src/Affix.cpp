@@ -1,6 +1,7 @@
 #include "plugin.hpp"
 
 
+namespace StoermelderPackOne {
 namespace Affix {
 
 enum class PARAM_MODE {
@@ -29,7 +30,7 @@ struct AffixModule : Module {
 
 	struct AffixParamQuantity : ParamQuantity {
 		AffixModule<CHANNELS>* module;
-		float v = std::numeric_limits<float>::min();
+		float v = std::numeric_limits<float>::max();
 
 		float getValue() override {
 			switch (module->paramMode) {
@@ -37,7 +38,7 @@ struct AffixModule : Module {
 					return ParamQuantity::getValue();
 				case PARAM_MODE::SEMITONE:
 				case PARAM_MODE::OCTAVE: {
-					if (v == std::numeric_limits<float>::min()) v = ParamQuantity::getValue();
+					if (v == std::numeric_limits<float>::max()) v = ParamQuantity::getValue();
 					return v;
 				}
 			}
@@ -207,17 +208,10 @@ struct TAffixWidget : ThemedModuleWidget<MODULE> {
 	: ThemedModuleWidget<MODULE>(module, baseName) {}
 
 	struct StoermelderTrimpotAffix : StoermelderTrimpot {
-		MODULE* module;
 		void step() override {
 			StoermelderTrimpot::step();
 			this->smooth = false;
 		}
-	};
-
-	StoermelderTrimpotAffix* createParamCenteredAffix(math::Vec pos, engine::Module* module, int paramId) {
-		StoermelderTrimpotAffix* p = createParamCentered<StoermelderTrimpotAffix>(pos, module, paramId);
-		p->module = dynamic_cast<MODULE*>(module);
-		return p;
 	};
 
 	void appendContextMenu(Menu* menu) override {
@@ -299,8 +293,8 @@ struct AffixWidget : TAffixWidget<AffixModule<16>> {
 
 		for (int i = 0; i < 8; i++) {
 			float o = i * 27.4f;
-			addParam(createParamCenteredAffix(Vec(23.0f, 98.2f + o),  module, MODULE::PARAM_MONO + i));
-			addParam(createParamCenteredAffix(Vec(52.0f, 98.2f + o),  module, MODULE::PARAM_MONO + i + 8));
+			addParam(createParamCentered<StoermelderTrimpotAffix>(Vec(23.0f, 98.2f + o), module, MODULE::PARAM_MONO + i));
+			addParam(createParamCentered<StoermelderTrimpotAffix>(Vec(52.0f, 98.2f + o), module, MODULE::PARAM_MONO + i + 8));
 		}
 
 		addOutput(createOutputCentered<StoermelderPort>(Vec(37.5f, 327.2f), module, MODULE::OUTPUT_POLY));
@@ -321,7 +315,7 @@ struct AffixMicroWidget : TAffixWidget<AffixModule<8>> {
 
 		for (int i = 0; i < 8; i++) {
 			float o = i * 27.4f;
-			addParam(createParamCenteredAffix(Vec(22.5f, 98.2f + o),  module, MODULE::PARAM_MONO + i));
+			addParam(createParamCentered<StoermelderTrimpotAffix>(Vec(22.5f, 98.2f + o), module, MODULE::PARAM_MONO + i));
 		}
 
 		addOutput(createOutputCentered<StoermelderPort>(Vec(22.5f, 327.2f), module, MODULE::OUTPUT_POLY));
@@ -329,6 +323,7 @@ struct AffixMicroWidget : TAffixWidget<AffixModule<8>> {
 };
 
 } // namespace Affix
+} // namespace StoermelderPackOne
 
-Model* modelAffix = createModel<Affix::AffixModule<16>, Affix::AffixWidget>("Affix");
-Model* modelAffixMicro = createModel<Affix::AffixModule<8>, Affix::AffixMicroWidget>("AffixMicro");
+Model* modelAffix = createModel<StoermelderPackOne::Affix::AffixModule<16>, StoermelderPackOne::Affix::AffixWidget>("Affix");
+Model* modelAffixMicro = createModel<StoermelderPackOne::Affix::AffixModule<8>, StoermelderPackOne::Affix::AffixMicroWidget>("AffixMicro");
