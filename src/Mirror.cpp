@@ -1,6 +1,7 @@
 #include "plugin.hpp"
 #include <plugin.hpp>
 
+namespace StoermelderPackOne {
 namespace Mirror {
 
 struct MirrorModule : Module {
@@ -539,5 +540,6 @@ struct MirrorWidget : ThemedModuleWidget<MirrorModule> {
 };
 
 } // namespace Mirror
+} // namespace StoermelderPackOne
 
-Model* modelMirror = createModel<Mirror::MirrorModule, Mirror::MirrorWidget>("Mirror");
+Model* modelMirror = createModel<StoermelderPackOne::Mirror::MirrorModule, StoermelderPackOne::Mirror::MirrorWidget>("Mirror");
