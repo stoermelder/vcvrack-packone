@@ -21,7 +21,7 @@ struct RotorAModule : Module {
 	};
 	enum LightIds {
 		ENUMS(INPUT_LIGHTS, 16),
-		ENUMS(OUTPUT_LIGHTS, 16),
+		ENUMS(OUTPUT_LIGHTS, 16 * 3),
 		NUM_LIGHTS
 	};
 
@@ -104,8 +104,11 @@ struct RotorAModule : Module {
 				lights[INPUT_LIGHTS + c].setBrightness(active);
 			}
 			for (int c = 0; c < 16; c++) {
-				bool active = (c < channelsOffset + channels);
-				lights[OUTPUT_LIGHTS + c].setBrightness(active);
+				bool active = c >= channelsOffset && c < channelsOffset + channels;
+				float v = outputs[POLY_OUTPUT].getVoltage(c) / 5.f;
+				lights[OUTPUT_LIGHTS + c * 3 + 0].setBrightness(active);
+				lights[OUTPUT_LIGHTS + c * 3 + 1].setBrightness(active);
+				lights[OUTPUT_LIGHTS + c * 3 + 2].setBrightness(active ? 1.f : c < channelsOffset ? 0.3f : 0.f);
 			}
 		}
 	}
@@ -143,7 +146,7 @@ struct RotorAWidget : ThemedModuleWidget<RotorAModule> {
 		channelsOffset->snap = true;
 		addParam(channelsOffset);
 
-		PolyLedWidget<>* w1 = createWidgetCentered<PolyLedWidget<>>(Vec(30.f, 300.8f));
+		PolyLedWidget<RedGreenBlueLight, 3>* w1 = createWidgetCentered<PolyLedWidget<RedGreenBlueLight, 3>>(Vec(30.f, 300.8f));
 		w1->setModule(module, RotorAModule::OUTPUT_LIGHTS);
 		addChild(w1);
 		addOutput(createOutputCentered<StoermelderPort>(Vec(30.f, 327.9f), module, RotorAModule::POLY_OUTPUT));

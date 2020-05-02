@@ -4,7 +4,12 @@
 - Module [FLOWER](./docs/Flower.md)
     - New module, pattern-driven 16-step sequencer
 
-## 1.6.0 (preview)
+### Fixes and Changes
+
+- Module [ROTOR mod A](./docs/RotorA.md)
+    - Indicate inactive output channels in blue
+
+## 1.6.0
 
 - Module [AFFIX](./docs/Affix.md), [µAFFIX](./docs/Affix.md)
     - New modules, inserts for polyphonic cables for adding offsets in volt, semitones or ocatves
