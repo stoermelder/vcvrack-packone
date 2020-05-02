@@ -1,6 +1,6 @@
 #include "plugin.hpp"
 
-
+namespace StoermelderPackOne {
 namespace MidiStep {
 
 enum MODE {
@@ -446,11 +446,12 @@ struct MidiStepWidget : ThemedModuleWidget<MidiStepModule<16>> {
 		};
 
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Mode", &ModeMenuItem::module, module));
+		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Protocol", &ModeMenuItem::module, module));
 		menu->addChild(construct<PolyphonicOutputItem>(&MenuItem::text, "Polyphonic output", &PolyphonicOutputItem::module, module));
 	}
 };
 
 } // namespace MidiStep
+} // namespace StoermelderPackOne
 
-Model* modelMidiStep = createModel<MidiStep::MidiStepModule<16>, MidiStep::MidiStepWidget>("MidiStep");
+Model* modelMidiStep = createModel<StoermelderPackOne::MidiStep::MidiStepModule<16>, StoermelderPackOne::MidiStep::MidiStepWidget>("MidiStep");
