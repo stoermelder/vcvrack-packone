@@ -1,9 +1,9 @@
 #include "plugin.hpp"
 
-
+namespace StoermelderPackOne {
 namespace PilePoly {
 
-enum RANGE {
+enum class RANGE {
 	UNI_5V = 0,
 	UNI_10V = 1,
 	BI_5V = 2,
@@ -68,45 +68,50 @@ struct PilePolyModule : Module {
 		float slew = inputs[INPUT_SLEW].isConnected() ? clamp(inputs[INPUT_SLEW].getVoltage(), 0.f, 5.f) : params[PARAM_SLEW].getValue();
 		if (slew > 0.f) slew = (1.f / slew) * 10.f;
 
+		simd::float_4 rangeMin, rangeMax;
+		switch (range) {
+			case RANGE::UNI_5V:
+				rangeMin = 0.f; rangeMax = 5.f;
+				break;
+			case RANGE::UNI_10V:
+				rangeMin = 0.f; rangeMax = 10.f;
+				break;
+			case RANGE::BI_5V:
+				rangeMin = -5.f; rangeMax = 5.f;
+				break;
+			case RANGE::BI_10V:
+				rangeMin = -10.f; rangeMax = 10.f;
+				break;
+			case RANGE::UNBOUNDED:
+				rangeMin = std::numeric_limits<float>::lowest(); rangeMax = std::numeric_limits<float>::max();
+				break;
+		}
+
+
 		simd::float_4 reset = resetTrigger.process(inputs[INPUT_RESET].getVoltage()) ? simd::float_4::mask() : 0.f;
 		simd::float_4 step = params[PARAM_STEP].getValue();
 
-		for (int i = 0; i < c / 4; i++) {
+		for (int i = 0; i < c; i += 4) {
 			// RESET-input
-			simd::float_4 resetVoltage = inputs[INPUT_RESET_VOLT].getChannels() == 1 ? 
-				inputs[INPUT_RESET_VOLT].getVoltage() : inputs[INPUT_RESET_VOLT].getVoltageSimd<simd::float_4>(i * 4);
-			currentVoltage[i] = simd::ifelse(reset, resetVoltage, currentVoltage[i]);
+			simd::float_4 resetVoltage = inputs[INPUT_RESET_VOLT].getPolyVoltageSimd<simd::float_4>(i);
+			currentVoltage[i / 4] = simd::ifelse(reset, resetVoltage, currentVoltage[i / 4]);
 
 			// INC-input
-			simd::float_4 incTrig = incTrigger[i].process(inputs[INPUT_INC].getVoltageSimd<simd::float_4>(i * 4));
-			currentVoltage[i] = simd::ifelse(incTrig, currentVoltage[i] + step, currentVoltage[i]);
+			simd::float_4 incTrig = incTrigger[i / 4].process(inputs[INPUT_INC].getVoltageSimd<simd::float_4>(i));
+			currentVoltage[i / 4] = simd::ifelse(incTrig, currentVoltage[i / 4] + step, currentVoltage[i / 4]);
 
 			// DEC-input
-			simd::float_4 decTrig = decTrigger[i].process(inputs[INPUT_DEC].getVoltageSimd<simd::float_4>(i * 4));
-			currentVoltage[i] = simd::ifelse(decTrig, currentVoltage[i] - step, currentVoltage[i]);
+			simd::float_4 decTrig = decTrigger[i / 4].process(inputs[INPUT_DEC].getVoltageSimd<simd::float_4>(i));
+			currentVoltage[i / 4] = simd::ifelse(decTrig, currentVoltage[i / 4] - step, currentVoltage[i / 4]);
 
-			switch (range) {
-				case RANGE::UNI_5V:
-					currentVoltage[i] = clamp(currentVoltage[i], 0.f, 5.f);
-					break;
-				case RANGE::UNI_10V:
-					currentVoltage[i] = clamp(currentVoltage[i], 0.f, 10.f);
-					break;
-				case RANGE::BI_5V:
-					currentVoltage[i] = clamp(currentVoltage[i], -5.f, 5.f);
-					break;
-				case RANGE::BI_10V:
-					currentVoltage[i] = clamp(currentVoltage[i], -10.f, 10.f);
-					break;
-				case RANGE::UNBOUNDED:
-					break;
-			}
+			// Clamp to range
+			currentVoltage[i / 4] = clamp(currentVoltage[i / 4], rangeMin, rangeMax);
 
 			// SLEW-input
-			slewLimiter[i].setRiseFall(slew, slew);
+			slewLimiter[i / 4].setRiseFall(slew, slew);
 
-			simd::float_4 v = slewLimiter[i].process(args.sampleTime, currentVoltage[i]);
-			outputs[OUTPUT].setVoltageSimd(v, i * 4);
+			simd::float_4 v = slewLimiter[i / 4].process(args.sampleTime, currentVoltage[i / 4]);
+			outputs[OUTPUT].setVoltageSimd(v, i);
 		}
 
 		outputs[OUTPUT].setChannels(c);
@@ -115,7 +120,7 @@ struct PilePolyModule : Module {
 	json_t* dataToJson() override {
 		json_t *rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
-		json_object_set_new(rootJ, "range", json_integer(range));
+		json_object_set_new(rootJ, "range", json_integer((int)range));
 
 		json_t* currentVoltageJ = json_array();
 		for (int i = 0; i < 16; i++) {
@@ -201,5 +206,6 @@ struct PilePolyWidget : ThemedModuleWidget<PilePolyModule> {
 };
 
 } // namespace PilePoly
+} // namespace StoermelderPackOne
 
-Model* modelPilePoly = createModel<PilePoly::PilePolyModule, PilePoly::PilePolyWidget>("PilePoly");
+Model* modelPilePoly = createModel<StoermelderPackOne::PilePoly::PilePolyModule, StoermelderPackOne::PilePoly::PilePolyWidget>("PilePoly");
