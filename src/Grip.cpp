@@ -1,6 +1,7 @@
 #include "plugin.hpp"
 #include "MapModuleBase.hpp"
 
+namespace StoermelderPackOne {
 namespace Grip {
 
 static const int MAX_CHANNELS = 32;
@@ -224,5 +225,6 @@ struct GripWidget : ThemedModuleWidget<GripModule> {
 };
 
 } // namespace Grip
+} // namespace StoermelderPackOne
 
-Model* modelGrip = createModel<Grip::GripModule, Grip::GripWidget>("Grip");
+Model* modelGrip = createModel<StoermelderPackOne::Grip::GripModule, StoermelderPackOne::Grip::GripWidget>("Grip");
