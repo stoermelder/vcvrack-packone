@@ -33,6 +33,10 @@ struct ViewportCenterSmooth {
 		this->frame = 0;
 	}
 
+	void reset() {
+		frame = framecount = 0;
+	}
+
 	void process() {
 		if (framecount == frame) return;
 

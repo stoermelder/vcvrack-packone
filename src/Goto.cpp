@@ -1,5 +1,6 @@
 #include "plugin.hpp"
 
+namespace StoermelderPackOne {
 namespace Goto {
 
 enum class TRIGGERMODE {
@@ -61,7 +62,7 @@ struct GotoModule : Module {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		for (int i = 0; i < SLOTS; i++) {
-			configParam<TriggerParamQuantity>(PARAM_SLOT + i, 0, 1, 0, string::f("Jump point %i (SHIFT+%i)", i + 1, (i + 1) % 10));
+			configParam<TriggerParamQuantity>(PARAM_SLOT + i, 0, 1, 0, string::f("Jump point %i (SHIFT+%i)\nShort-press to jumo\nLong-press to learn/clear", i + 1, (i + 1) % 10));
 		}
 		onReset();
 	}
@@ -170,12 +171,13 @@ struct GotoContainer : widget::Widget {
 		Widget::step();
 		if (!module) return;
 
-		viewportCenterSmooth.process();
-
 		if (module->resetRequested) {
 			learnJumpPoint = -1;
+			viewportCenterSmooth.reset();
 			module->resetRequested = false;
 		}
+
+		viewportCenterSmooth.process();
 
 		if (learnJumpPoint >= 0) {
 			// Learn module
@@ -418,5 +420,6 @@ struct GotoWidget : ThemedModuleWidget<GotoModule<10>> {
 };
 
 } // namespace Goto
+} // namespace StoermelderPackOne
 
-Model* modelGoto = createModel<Goto::GotoModule<10>, Goto::GotoWidget>("Goto");
+Model* modelGoto = createModel<StoermelderPackOne::Goto::GotoModule<10>, StoermelderPackOne::Goto::GotoWidget>("Goto");
