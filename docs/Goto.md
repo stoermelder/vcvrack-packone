@@ -16,13 +16,13 @@ There are some settings on the context menu available:
 
 ### INPUT-port
 
-It is possible to trigger a view-port change by CV which is especially useful with one of the MIDI-modules, like MIDI-CV, MIDI-GATE or MIDI-CC. As long a cable is connected to the port the hotkeys SHIFT+1..0 are deactivated. There are two modes for the port available: 
+It is possible to trigger a view-port change by CV which is especially useful with one of the MIDI-modules, like MIDI-CV, MIDI-GATE or MIDI-CC. As long as a cable is connected to the port the hotkeys SHIFT+1..0 are deactivated. There are two modes available: 
 
 * **Polyphonic trigger**: The first 10 channels of a polyphonic cable are used as triggers for activating jump points 1-10.
 
 ![GOTO polyphonic trigger](./Goto-polytrig.png)
 
-* **C5-A5**: the input port is treated as monophonic and the voltages for C5 to A5 according to the V/oct-standard trigger jump points 1-10. The module reacts on every change in input voltage.
+* **C5-A5**: the input port is treated as monophonic and the voltages for C5 to A5 according to the V/oct-standard (1.00V-1.83V) trigger jump points 1-10. The module reacts on every change in input voltage.
 
 ![GOTO C5-A5](./Goto-c5.png)
 

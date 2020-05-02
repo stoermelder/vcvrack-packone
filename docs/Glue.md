@@ -20,7 +20,7 @@ There are global controls for opacity available which affect all labels of a GLU
 
 ### Default appearance and skew
 
-While each labels keeps its own settings for appearance the module provides default settings which will be applied on every new label. These settings are:
+While each label keeps its own settings for appearance the module provides default settings which will be applied on every new label. These settings are:
 * Size
 * Width
 * Opacity
@@ -44,10 +44,10 @@ The context menu option "Duplicate" arms the labeling mode. Click on any module 
 ### Bonus tips
 
 * Labels get deleted when a module is removed from Rack
-* When undo-ing a delete operation of a module all labels while also reappear
-* Duplicating a label won't duplicate its skew
-* Duplicating an instace of GLUE won't duplicate any labels
-* While a label is strictly attached to a module it can be placed 50% of the labels size outside in any direction
+* When undo-ing a delete operation of a module all labels will also reappear
+* Duplicating a label won't duplicate the skew
+* Duplicating an instance of GLUE won't duplicate any labels
+* While a label is strictly attached to a module it can be placed 50% off in any direction
 * Labels are drawn above all module components but below cables
 
 GLUE was added in v1.6.0 of PackOne.

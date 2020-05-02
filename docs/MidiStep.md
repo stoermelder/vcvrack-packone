@@ -8,7 +8,7 @@ The module is similiar to VCV MIDI-CC module and receives up to 8 different MIDI
 
 ![MIDI-STEP operating](./MidiStep-cc.gif)
 
-In polyphonic mode (added in v1.6.0) all triggers are sent on the first ports (top left) of the INC- and DEC-sections using a polyphonic connection. This mode especially useful together with [POLY-POLE](./Pile.md) which converts up to 16 channels into absolute voltages.
+In polyphonic mode (added in v1.6.0) all triggers are sent on the first ports (top left) of the INC- and DEC-sections using a polyphonic connection. This mode especially useful together with [POLY-PILE](./Pile.md) which converts up to 16 channels into absolute voltages.
 
 ![MIDI-STEP polyphonic](./MidiStep-poly.png)
 
