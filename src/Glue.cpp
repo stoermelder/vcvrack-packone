@@ -1,6 +1,6 @@
 #include "plugin.hpp"
 
-
+namespace StoermelderPackOne {
 namespace Glue {
 
 const static NVGcolor LABEL_COLOR_YELLOW = nvgRGB(0xdc, 0xff, 0x46);
@@ -226,6 +226,7 @@ struct GlueModule : Module {
 				l->font = json_integer_value(json_object_get(labelJ, "font"));
 			}
 		}
+
 		params[PARAM_UNLOCK].setValue(0.f);
 	}
 };
@@ -291,7 +292,7 @@ struct LabelWidget : widget::TransparentWidget {
 
 	LabelDrawWidget* widget;
 	TransformWidget* transformWidget;
-	float lastAngle = std::numeric_limits<float>::min();
+	float lastAngle = 360.f;
 	float lastSize = 0.f;
 	float lastWidth = 0.f;
 	bool lastSkew = false;
@@ -332,6 +333,7 @@ struct LabelWidget : widget::TransparentWidget {
 		widget->rotatedSize = Vec(label->width, label->size);
 		widget->box.size = box.size;
 
+		// Rotate
 		if (label->angle != lastAngle || label->width != lastWidth || label->size != lastSize || lastSkew != skew) {
 			float angle = label->angle + (skew ? label->skew : 0.f);
 			transformWidget->identity();
@@ -386,7 +388,7 @@ struct LabelWidget : widget::TransparentWidget {
 
 		struct LabelField : ui::TextField {
 			Label* l;
-			// Need for input field blur on submenu
+			// Needed for input-blur on submenu
 			bool textSelected = true;
 			LabelField() {
 				box.size.x = 160.f;
@@ -749,7 +751,7 @@ struct LabelContainer : widget::Widget {
 			addLabelAtMousePos(w);
 		}
 
-		// Traverse labels, collected delete-requests
+		// Traverse labels, collect delete-requests
 		for (Widget* w : children) {
 			LabelWidget* lw = dynamic_cast<LabelWidget*>(w);
 			if (!lw) continue;
@@ -1273,5 +1275,6 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 };
 
 } // namespace Glue
+} // namespace StoermelderPackOne
 
-Model* modelGlue = createModel<Glue::GlueModule, Glue::GlueWidget>("Glue");
+Model* modelGlue = createModel<StoermelderPackOne::Glue::GlueModule, StoermelderPackOne::Glue::GlueWidget>("Glue");
