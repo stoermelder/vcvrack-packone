@@ -69,9 +69,9 @@ struct CVMapModule : CVMapModuleBase<MAX_CHANNELS> {
 					}
 				}
 
-				ParamQuantity *paramQuantity = getParamQuantity(i);
+				ParamQuantity* paramQuantity = getParamQuantity(i);
 				if (paramQuantity == NULL) continue;
-				// Set ParamQuantity
+
 				float v = i < 16 ? inputs[POLY_INPUT1].getVoltage(i) : inputs[POLY_INPUT2].getVoltage(i - 16);
 				if (bipolarInput)
 					v += 5.f;
@@ -83,6 +83,7 @@ struct CVMapModule : CVMapModuleBase<MAX_CHANNELS> {
 				}
 
 				if (lockParameterChanges || lastValue[i] != v) {
+					// Set ParamQuantity
 					paramQuantity->setScaledValue(v);
 					lastValue[i] = v;
 				}

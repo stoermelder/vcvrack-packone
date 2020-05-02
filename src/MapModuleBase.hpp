@@ -83,7 +83,7 @@ struct MapModuleBase : Module {
 		learningId = -1;
 		learnedParam = false;
 		clearMaps();
-		mapLen = 1;
+		mapLen = 0;
 	}
 
 	void process(const ProcessArgs& args) override {
