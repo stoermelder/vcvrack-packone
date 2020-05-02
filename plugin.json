@@ -171,28 +171,28 @@
 		{
 			"slug": "Mirror",
 			"name": "MIRROR",
-			"description": "",
+			"description": "Utility for synchronizing module parameters",
 			"tags": ["Utility"],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Mirror.md"
 		},
 		{
 			"slug": "Affix",
 			"name": "AFFIX",
-			"description": "Insert on polyphonic cables for adding offsets in Volt or cent (16-channel)",
-			"tags": ["Polyphonic", "Utility"],
+			"description": "Insert for polyphonic cables for adding offsets in Volt, semitones or octaves (16 channels)",
+			"tags": ["Polyphonic", "Utility", "Attenuator"],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Affix.md"
 		},
 		{
 			"slug": "AffixMicro",
 			"name": "µAFFIX",
-			"description": "Insert on polyphonic cables for adding offsets in Volt or cent (8-channel)",
-			"tags": ["Polyphonic", "Utility"],
+			"description": "Insert for polyphonic cables for adding offsets in Volt, semitones or octaves (8 channels)",
+			"tags": ["Polyphonic", "Utility", "Attenuator"],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Affix.md"
 		},
 		{
 			"slug": "Grip",
 			"name": "GRIP",
-			"description": "Locker for module parameters",
+			"description": "Lock for module parameters",
 			"tags": ["Utility"],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Grip.md"
 		},
@@ -206,7 +206,7 @@
 		{
 			"slug": "Goto",
 			"name": "GOTO",
-			"description": "Utility for jumping directly to 10 locations in your patch by hotkey or using MIDI-MAP",
+			"description": "Utility for jumping directly to 10 locations in your patch by hotkey or using MIDI",
 			"tags": ["Utility"],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Goto.md"
 		},
