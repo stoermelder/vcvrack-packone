@@ -34,6 +34,7 @@ void init(rack::Plugin* p) {
 	p->addModel(modelGrip);
 	p->addModel(modelGlue);
 	p->addModel(modelGoto);
+	p->addModel(modelFr);
 	p->addModel(modelAudioInterface64);
 
 	pluginSettings.readFromJson();
