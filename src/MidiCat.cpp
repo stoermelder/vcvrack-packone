@@ -238,8 +238,7 @@ struct MidiCatModule : Module {
 						//}
 
 						// Check if CC value has been set
-						if (cc >= 0 && valuesCc[cc] >= 0)
-						{
+						if (cc >= 0 && valuesCc[cc] >= 0) {
 							int t = -1;
 							switch (ccsMode[id]) {
 								case CCMODE_DIRECT:
@@ -276,8 +275,7 @@ struct MidiCatModule : Module {
 						}
 
 						// Check if note value has been set
-						if (note >= 0 && valuesNote[note] >= 0)
-						{
+						if (note >= 0 && valuesNote[note] >= 0) {
 							int t = -1;
 							switch (notesMode[id]) {
 								case NOTEMODE::NOTEMODE_MOMENTARY:
@@ -546,6 +544,12 @@ struct MidiCatModule : Module {
 			text += string::f(" note %s%d", noteNames[semi], oct);
 		}
 		paramHandles[id].text = text;
+	}
+
+	void resendMidiOut() {
+		for (int i = 0; i < MAX_CHANNELS; i++) {
+			lastValueOut[i] = -1;
+		}
 	}
 
 	json_t *dataToJson() override {
@@ -973,22 +977,27 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 
 		struct MidiMapImportItem : MenuItem {
 			MidiCatWidget *moduleWidget;
-
 			void onAction(const event::Action &e) override {
 				moduleWidget->loadMidiMapPreset_dialog();
 			}
 		};
 
+		struct ResendMidiOutItem : MenuItem {
+			MidiCatModule *module;
+			void onAction(const event::Action &e) override {
+				module->resendMidiOut();
+			}
+		};
+
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<MidiMapImportItem>(&MenuItem::text, "Import MIDI-MAP preset", &MidiMapImportItem::moduleWidget, this));
+		menu->addChild(construct<ResendMidiOutItem>(&MenuItem::text, "Re-send MIDI feedback", &ResendMidiOutItem::module, module));
 
 		struct TextScrollItem : MenuItem {
 			MidiCatModule *module;
-
 			void onAction(const event::Action &e) override {
 				module->textScrolling ^= true;
 			}
-
 			void step() override {
 				rightText = module->textScrolling ? "✔" : "";
 				MenuItem::step();
@@ -997,11 +1006,9 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 
 		struct MappingIndicatorHiddenItem : MenuItem {
 			MidiCatModule* module;
-
 			void onAction(const event::Action& e) override {
 				module->mappingIndicatorHidden ^= true;
 			}
-
 			void step() override {
 				rightText = module->mappingIndicatorHidden ? "✔" : "";
 				MenuItem::step();
@@ -1010,11 +1017,9 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 
 		struct LockedItem : MenuItem {
 			MidiCatModule* module;
-
 			void onAction(const event::Action& e) override {
 				module->locked ^= true;
 			}
-
 			void step() override {
 				rightText = module->locked ? "✔" : "";
 				MenuItem::step();

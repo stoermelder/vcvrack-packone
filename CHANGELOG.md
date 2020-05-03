@@ -6,6 +6,8 @@
 
 ### Fixes and Changes
 
+- Module [MIDI-CAT](./docs/MidiCat.md)
+    - Added option for re-sending MIDI feedback values
 - Module [ROTOR mod A](./docs/RotorA.md)
     - Indicate inactive output channels in blue
 
