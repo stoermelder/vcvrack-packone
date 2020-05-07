@@ -39,4 +39,5 @@ extern Model* modelGrip;
 extern Model* modelGlue;
 extern Model* modelGoto;
 extern Model* modelFr;
+extern Model* modelStroke;
 extern Model* modelAudioInterface64;
