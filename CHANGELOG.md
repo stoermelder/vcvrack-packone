@@ -4,8 +4,12 @@
 - Module [FLOWER](./docs/Flower.md)
     - New module, pattern-driven 16-step sequencer
 
+## 1.6.1
+
 ### Fixes and Changes
 
+- Module [GLUE](./docs/Glue.md)
+    - Fixed invalid initialization on new instances
 - Module [MIDI-CAT](./docs/MidiCat.md)
     - Added option for re-sending MIDI feedback values
 - Module [ROTOR mod A](./docs/RotorA.md)
