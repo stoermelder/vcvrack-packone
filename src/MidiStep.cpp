@@ -10,8 +10,10 @@ enum MODE {
 	XTOUCH_R1 = 20
 };
 
-template< int CHANNELS, int PORTS >
 struct MidiStepModule : Module {
+	static const int PORTS = 8;
+	static const int CHANNELS = 16;
+
 	enum ParamIds {
 		NUM_PARAMS
 	};
@@ -233,7 +235,7 @@ struct MidiStepLedDisplay : LedDisplay {
 	LedDisplaySeparator* vSeparators[4];
 	COICE* choices[4][CHANNELS / 4];
 
-	void setModule(MidiStepModule<CHANNELS, PORTS>* module) {
+	void setModule(MidiStepModule* module) {
 		Vec pos = Vec(0, 0);
 
 		// Add vSeparators
@@ -267,11 +269,11 @@ struct MidiStepLedDisplay : LedDisplay {
 
 template < int CHANNELS, int PORTS >
 struct MidiStepCcChoice : LedDisplayChoice {
-	MidiStepModule<CHANNELS, PORTS>* module;
+	MidiStepModule* module;
 	int id;
 	int focusCc;
 
-	void setModule(MidiStepModule<CHANNELS, PORTS>* module) {
+	void setModule(MidiStepModule* module) {
 		this->module = module;
 		box.size.y = mm2px(6.666);
 		textOffset.y -= 4.f;
@@ -362,8 +364,8 @@ struct MidiStepCcChoice : LedDisplayChoice {
 	}
 };
 
-struct MidiStepWidget : ThemedModuleWidget<MidiStepModule<16, 8>> {
-	typedef MidiStepModule<16, 8> MODULE;
+struct MidiStepWidget : ThemedModuleWidget<MidiStepModule> {
+	typedef MidiStepModule MODULE;
 	MidiStepWidget(MODULE* module)
 		: ThemedModuleWidget<MODULE>(module, "MidiStep") {
 		setModule(module);
@@ -455,4 +457,4 @@ struct MidiStepWidget : ThemedModuleWidget<MidiStepModule<16, 8>> {
 } // namespace MidiStep
 } // namespace StoermelderPackOne
 
-Model* modelMidiStep = createModel<StoermelderPackOne::MidiStep::MidiStepModule<16, 8>, StoermelderPackOne::MidiStep::MidiStepWidget>("MidiStep");
+Model* modelMidiStep = createModel<StoermelderPackOne::MidiStep::MidiStepModule, StoermelderPackOne::MidiStep::MidiStepWidget>("MidiStep");
