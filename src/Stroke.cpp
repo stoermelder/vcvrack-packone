@@ -117,6 +117,11 @@ static const char* keyName(int key) {
 	}
 }
 
+enum class KEY_MODE {
+	TRIGGER,
+	GATE,
+	TOGGLE
+};
 
 template < int PORTS >
 struct StrokeModule : Module {
@@ -140,7 +145,8 @@ struct StrokeModule : Module {
 	struct Key {
 		int key = -1;
 		int mods;
-		bool pulse = true;
+		KEY_MODE mode;
+		bool high;
 	};
 
 	/** [Stored to JSON] */
@@ -149,7 +155,6 @@ struct StrokeModule : Module {
 	Key keys[PORTS];
 
 	dsp::PulseGenerator pulse[PORTS];
-	bool gate[PORTS];
 
 	StrokeModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
@@ -162,16 +167,46 @@ struct StrokeModule : Module {
 		for (int i = 0; i < PORTS; i++) {
 			keys[i].key = -1;
 			keys[i].mods = 0;
-			keys[i].pulse = true;
-			gate[i] = false;
+			keys[i].mode = KEY_MODE::TRIGGER;
+			keys[i].high = false;
 		}
 	}
 
 	void process(const ProcessArgs& args) override {
 		for (int i = 0; i < PORTS; i++) {
 			if (keys[i].key >= 0) {
-				outputs[OUTPUT + i].setVoltage((keys[i].pulse ? pulse[i].process(args.sampleTime) : gate[i]) * 5.f);
+				switch (keys[i].mode) {
+					case KEY_MODE::TRIGGER:
+						outputs[OUTPUT + i].setVoltage(pulse[i].process(args.sampleTime) * 10.f);
+						break;
+					case KEY_MODE::GATE:
+					case KEY_MODE::TOGGLE:
+						outputs[OUTPUT + i].setVoltage(keys[i].high * 10.f);
+						break;
+				}	
 			}
+		}
+	}
+
+	void keyEnable(int idx) {
+		switch (keys[idx].mode) {
+			case KEY_MODE::TRIGGER:
+				pulse[idx].trigger(); break;
+			case KEY_MODE::GATE:
+				keys[idx].high = true; break;
+			case KEY_MODE::TOGGLE:
+				keys[idx].high ^= true; break;
+		}
+	}
+
+	void keyDisable(int idx) {
+		switch (keys[idx].mode) {
+			case KEY_MODE::TRIGGER:
+				break;
+			case KEY_MODE::GATE:
+				keys[idx].high = false; break;
+			case KEY_MODE::TOGGLE:
+				break;
 		}
 	}
 
@@ -184,7 +219,8 @@ struct StrokeModule : Module {
 			json_t* keyJ = json_object();
 			json_object_set_new(keyJ, "key", json_integer(keys[i].key));
 			json_object_set_new(keyJ, "mods", json_integer(keys[i].mods));
-			json_object_set_new(keyJ, "pulse", json_boolean(keys[i].pulse));
+			json_object_set_new(keyJ, "mode", json_integer((int)keys[i].mode));
+			json_object_set_new(keyJ, "high", json_boolean(keys[i].high));
 			json_array_append_new(keysJ, keyJ);
 		}
 		json_object_set_new(rootJ, "keys", keysJ);
@@ -203,7 +239,8 @@ struct StrokeModule : Module {
 			json_t* keyJ = json_array_get(keysJ, i);
 			keys[i].key = json_integer_value(json_object_get(keyJ, "key"));
 			keys[i].mods = json_integer_value(json_object_get(keyJ, "mods"));
-			keys[i].pulse = json_boolean_value(json_object_get(keyJ, "pulse"));
+			keys[i].mode = (KEY_MODE)json_integer_value(json_object_get(keyJ, "mode"));
+			keys[i].high = json_boolean_value(json_object_get(keyJ, "high"));
 		}
 	}
 };
@@ -228,8 +265,7 @@ struct KeyContainer : Widget {
 			else {
 				for (int i = 0; i < PORTS; i++) {
 					if (e.key == module->keys[i].key && e.mods == module->keys[i].mods) {
-						module->pulse[i].trigger();
-						module->gate[i] = true;
+						module->keyEnable(i);
 						e.consume(this);
 					}
 				}
@@ -244,8 +280,8 @@ struct KeyContainer : Widget {
 		}
 		if (module && e.action == GLFW_RELEASE) {
 			for (int i = 0; i < PORTS; i++) {
-				if (e.key == module->keys[i].key && e.mods == module->keys[i].mods) {
-					module->gate[i] = false;
+				if (e.key == module->keys[i].key) {
+					module->keyDisable(i);
 					e.consume(this);
 				}
 			}
@@ -296,9 +332,9 @@ struct KeyDisplay : widget::OpaqueWidget {
 		else if (module) {
 			color.a = 1.f;
 			text = module->keys[idx].key >= 0 ? keyName(module->keys[idx].key) : "";
-			module->lights[StrokeModule<PORTS>::LIGHT_ALT + idx].setBrightness(module->keys[idx].mods & GLFW_MOD_ALT);
-			module->lights[StrokeModule<PORTS>::LIGHT_CTRL + idx].setBrightness(module->keys[idx].mods & GLFW_MOD_CONTROL);
-			module->lights[StrokeModule<PORTS>::LIGHT_SHIFT + idx].setBrightness(module->keys[idx].mods & GLFW_MOD_SHIFT);
+			module->lights[StrokeModule<PORTS>::LIGHT_ALT + idx].setBrightness(module->keys[idx].mods & GLFW_MOD_ALT ? 0.7f : 0.f);
+			module->lights[StrokeModule<PORTS>::LIGHT_CTRL + idx].setBrightness(module->keys[idx].mods & GLFW_MOD_CONTROL ? 0.7f : 0.f);
+			module->lights[StrokeModule<PORTS>::LIGHT_SHIFT + idx].setBrightness(module->keys[idx].mods & GLFW_MOD_SHIFT ? 0.7f : 0.f);
 		} 
 		OpaqueWidget::step();
 	}
@@ -320,22 +356,27 @@ struct KeyDisplay : widget::OpaqueWidget {
 			}
 		};
 
-		struct PulseMenuItem : MenuItem {
+		struct ModeMenuItem : MenuItem {
 			StrokeModule<PORTS>* module;
+			KEY_MODE mode;
 			int idx;
 			void step() override {
-				rightText = module->keys[idx].pulse ? "Trigger" : "Gate";
+				rightText = module->keys[idx].mode == mode ? "✔" : "";
 				MenuItem::step();
 			}
 			void onAction(const event::Action& e) override {
-				module->keys[idx].pulse ^= true;
+				module->keys[idx].mode = mode;
+				module->keys[idx].high = false;
 			}
 		};
 
 		ui::Menu* menu = createMenu();
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("Hotkey %i", idx + 1)));
 		menu->addChild(construct<LearnMenuItem>(&MenuItem::text, "Learn", &LearnMenuItem::keyContainer, keyContainer, &LearnMenuItem::idx, idx));
-		menu->addChild(construct<PulseMenuItem>(&MenuItem::text, "Mode", &PulseMenuItem::module, module, &PulseMenuItem::idx, idx));
+		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Mode"));
+		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Trigger", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::TRIGGER));
+		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Gate", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::GATE));
+		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::TOGGLE));
 	}
 };
 
