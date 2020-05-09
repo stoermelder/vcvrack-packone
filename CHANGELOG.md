@@ -4,6 +4,13 @@
 - Module [FLOWER](./docs/Flower.md)
     - New module, pattern-driven 16-step sequencer
 
+## 1.6.2
+
+### Fixes and Changes
+
+- Module [MIDI-STEP](./docs/MidiStep.md)
+    - Fixed port numbering
+
 ## 1.6.1
 
 ### Fixes and Changes
