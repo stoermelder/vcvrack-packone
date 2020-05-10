@@ -4,10 +4,10 @@
 # https://aka.ms/yaml
 
 trigger:
-- v1
+- v1-dev
 
 pr:
-- v1
+- v1-dev
 
 jobs:
 - job: Build
@@ -99,7 +99,7 @@ jobs:
 
 - job: UpdateGithubRelease
   dependsOn: Build
-  condition: and(succeeded(), or(eq(variables['Build.SourceBranch'], 'refs/heads/v1'), eq(variables['Build.SourceBranch'], 'refs/heads/azure-test')))
+  condition: and(succeeded(), or(eq(variables['Build.SourceBranch'], 'refs/heads/v1-dev'), eq(variables['Build.SourceBranch'], 'refs/heads/azure-test')))
 
   steps:
 
