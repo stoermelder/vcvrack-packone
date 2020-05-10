@@ -153,6 +153,8 @@ struct StrokeModule : Module {
 	int panelTheme = 0;
 	/** [Stored to JSON] */
 	Key keys[PORTS];
+	/** [Stored to JSON] */
+	bool polyphonicOutput = false;
 
 	dsp::PulseGenerator pulse[PORTS];
 
@@ -177,14 +179,25 @@ struct StrokeModule : Module {
 			if (keys[i].key >= 0) {
 				switch (keys[i].mode) {
 					case KEY_MODE::TRIGGER:
-						outputs[OUTPUT + i].setVoltage(pulse[i].process(args.sampleTime) * 10.f);
+						setOutputVoltage(OUTPUT, i, pulse[i].process(args.sampleTime) * 10.f);
 						break;
 					case KEY_MODE::GATE:
 					case KEY_MODE::TOGGLE:
-						outputs[OUTPUT + i].setVoltage(keys[i].high * 10.f);
+						setOutputVoltage(OUTPUT, i, keys[i].high * 10.f);
 						break;
 				}	
 			}
+		}
+
+		outputs[OUTPUT].setChannels(polyphonicOutput ? PORTS : 1);
+	}
+
+	inline void setOutputVoltage(int out, int idx, float v) {
+		if (polyphonicOutput) {
+			outputs[out].setVoltage(v, idx);
+		}
+		else {
+			outputs[out + idx].setVoltage(v);
 		}
 	}
 
@@ -213,6 +226,7 @@ struct StrokeModule : Module {
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
+		json_object_set_new(rootJ, "polyphonicOutput", json_boolean(polyphonicOutput));
 
 		json_t* keysJ = json_array();
 		for (int i = 0; i < PORTS; i++) {
@@ -230,6 +244,7 @@ struct StrokeModule : Module {
 
 	void dataFromJson(json_t* rootJ) override {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		polyphonicOutput = json_boolean_value(json_object_get(rootJ, "polyphonicOutput"));
 
 		// Hack for preventing duplicating this module
 		if (APP->engine->getModule(id) != NULL) return;
@@ -419,6 +434,25 @@ struct StrokeWidget : ThemedModuleWidget<StrokeModule<10>> {
 			APP->scene->rack->removeChild(keyContainer);
 			delete keyContainer;
 		}
+	}
+
+	void appendContextMenu(Menu* menu) override {
+		ThemedModuleWidget<StrokeModule<10>>::appendContextMenu(menu);
+		StrokeModule<10>* module = dynamic_cast<StrokeModule<10>*>(this->module);
+
+		struct PolyphonicOutputItem : MenuItem {
+			StrokeModule<10>* module;
+			void onAction(const event::Action& e) override {
+				module->polyphonicOutput ^= true;
+			}
+			void step() override {
+				rightText = module->polyphonicOutput ? "✔" : "";
+				MenuItem::step();
+			}
+		};
+
+		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<PolyphonicOutputItem>(&MenuItem::text, "Polyphonic output", &PolyphonicOutputItem::module, module));
 	}
 };
 
