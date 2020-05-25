@@ -4,6 +4,13 @@
 - Module [FLOWER](./docs/Flower.md)
     - New module, pattern-driven 16-step sequencer
 
+## 1.6.3
+
+### Fixes and Changes
+
+- Module [GLUE](./docs/Glue.md)
+    - Fixed crash on loading patches with empty labels
+
 ## 1.6.2
 
 ### Fixes and Changes

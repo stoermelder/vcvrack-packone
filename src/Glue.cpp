@@ -222,7 +222,8 @@ struct GlueModule : Module {
 				l->opacity = json_real_value(json_object_get(labelJ, "opacity"));
 				l->width = json_real_value(json_object_get(labelJ, "width"));
 				l->size = json_real_value(json_object_get(labelJ, "size"));
-				l->text = json_string_value(json_object_get(labelJ, "text"));
+				json_t* textJ = json_object_get(labelJ, "text");
+				if (textJ) l->text = json_string_value(textJ);
 				l->color = color::fromHexString(json_string_value(json_object_get(labelJ, "color")));
 				l->font = json_integer_value(json_object_get(labelJ, "font"));
 			}
