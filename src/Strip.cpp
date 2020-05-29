@@ -1,9 +1,9 @@
 #include "plugin.hpp"
+#include "StripIdFixModule.hpp"
 #include <osdialog.h>
 #include <plugin.hpp>
 #include <thread>
 #include <mutex>
-
 
 namespace Strip {
 
@@ -969,6 +969,9 @@ struct StripWidget : ThemedModuleWidget<StripModule> {
 						h->moduleId = mw->module->id;
 						h->oldModuleJ = mw->toJson();
 
+						StripIdFixModule* m = dynamic_cast<StripIdFixModule*>(mw->module);
+						if (m) m->dataFromJsonIdFix(modules);
+
 						mw->fromJson(moduleJ);
 
 						h->newModuleJ = mw->toJson();
@@ -992,6 +995,9 @@ struct StripWidget : ThemedModuleWidget<StripModule> {
 						h->name = "load module preset";
 						h->moduleId = mw->module->id;
 						h->oldModuleJ = mw->toJson();
+
+						StripIdFixModule* m = dynamic_cast<StripIdFixModule*>(mw->module);
+						if (m) m->dataFromJsonIdFix(modules);
 
 						mw->fromJson(moduleJ);
 

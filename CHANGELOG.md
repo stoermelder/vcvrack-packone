@@ -3,6 +3,8 @@
     - New module, 8x8 send/return switch matrix with support for 8 scenes
 - Module [FLOWER](./docs/Flower.md)
     - New module, pattern-driven 16-step sequencer
+- Module [GLUE](./docs/Glue.md)
+    - Implemented support for STRIP, please be aware to include GLUE within your strip-file (#115)
 
 ## 1.6.3
 
