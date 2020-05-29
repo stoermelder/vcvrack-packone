@@ -221,16 +221,9 @@
 		{
 			"slug": "Stroke",
 			"name": "STROKE",
-<<<<<<< HEAD
 			"description": "Utility for converting hotkys to triggers and gates",
-			"tags": ["Utility"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Stroke.md",
-			"disabled": true
-=======
-			"description": "Utility for converting hotkeys to triggers and gates",
 			"tags": ["Utility", "Polyphonic"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Stroke.md"
->>>>>>> 6f7114e... Stroke - added option for polyphonic output, panel refinement
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Stroke.md",
 		},
 		{
 			"slug": "AudioInterface64",
