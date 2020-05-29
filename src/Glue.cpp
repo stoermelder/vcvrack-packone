@@ -1,4 +1,5 @@
 #include "plugin.hpp"
+#include "StripIdFixModule.hpp"
 
 namespace StoermelderPackOne {
 namespace Glue {
@@ -57,7 +58,7 @@ struct Label {
 };
 
 
-struct GlueModule : Module {
+struct GlueModule : Module, StripIdFixModule {
 	enum ParamIds {
 		PARAM_UNLOCK,
 		PARAM_ADD_LABEL,
@@ -200,7 +201,7 @@ struct GlueModule : Module {
 		skewLabels = json_boolean_value(json_object_get(rootJ, "skewLabels"));
 
 		// Hack for preventing duplicating this module
-		if (APP->engine->getModule(id) != NULL) return;
+		if (APP->engine->getModule(id) != NULL && moduleIdMapping == NULL) return;
 
 		for (Label* l : labels) {
 			delete l;
@@ -213,8 +214,15 @@ struct GlueModule : Module {
 			size_t labelIdx;
 			json_t* labelJ;
 			json_array_foreach(labelsJ, labelIdx, labelJ) {
+				if (moduleIdMapping) {
+					int moduleId = json_integer_value(json_object_get(labelJ, "moduleId"));
+					auto it = moduleIdMapping->find(moduleId);
+					if (it == moduleIdMapping->end()) continue;
+				}
+				
 				Label* l = addLabel();
 				l->moduleId = json_integer_value(json_object_get(labelJ, "moduleId"));
+				if (moduleIdMapping) l->moduleId = moduleIdMapping->find(l->moduleId)->second->module->id;
 				l->x = json_real_value(json_object_get(labelJ, "x"));
 				l->y = json_real_value(json_object_get(labelJ, "y"));
 				l->angle = json_real_value(json_object_get(labelJ, "angle"));
@@ -228,6 +236,7 @@ struct GlueModule : Module {
 			}
 		}
 
+		moduleIdMapping = NULL;
 		params[PARAM_UNLOCK].setValue(0.f);
 	}
 };
