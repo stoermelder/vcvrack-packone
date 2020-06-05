@@ -124,7 +124,8 @@ enum class KEY_MODE {
 	TOGGLE = 3,
 	S_PARAM_COPY = 10,
 	S_PARAM_PASTE = 11,
-	S_MODULE_ZOOM = 12
+	S_MODULE_ZOOM = 12,
+	S_CABLE_OPACITY = 20
 };
 
 template < int PORTS >
@@ -209,6 +210,7 @@ struct StrokeModule : Module {
 			case KEY_MODE::S_PARAM_COPY:
 			case KEY_MODE::S_PARAM_PASTE:
 			case KEY_MODE::S_MODULE_ZOOM:
+			case KEY_MODE::S_CABLE_OPACITY:
 				keyModeTemp = keys[idx].mode;
 				break;
 		}
@@ -226,6 +228,7 @@ struct StrokeModule : Module {
 			case KEY_MODE::S_PARAM_COPY:
 			case KEY_MODE::S_PARAM_PASTE:
 			case KEY_MODE::S_MODULE_ZOOM:
+			case KEY_MODE::S_CABLE_OPACITY:
 				break;
 		}
 	}
@@ -271,7 +274,8 @@ struct KeyContainer : Widget {
 	StrokeModule<PORTS>* module;
 	int learnIdx = -1;
 
-	float paramTemp;
+	float tempParamValue = 0.f;
+	float tempCableOpacity;
 
 	void step() override {
 		if (module && module->keyModeTemp != KEY_MODE::OFF) {
@@ -282,6 +286,8 @@ struct KeyContainer : Widget {
 					cmdParamPaste(); break;
 				case KEY_MODE::S_MODULE_ZOOM:
 					cmdModuleZoom(); break;
+				case KEY_MODE::S_CABLE_OPACITY:
+					cmdCableOpacity(); break;
 				default:
 					break;
 			}
@@ -297,7 +303,7 @@ struct KeyContainer : Widget {
 		if (!p) return;
 		ParamQuantity* q = p->paramQuantity;
 		if (!q) return;
-		paramTemp = q->getScaledValue();
+		tempParamValue = q->getScaledValue();
 	}
 
 	void cmdParamPaste() {
@@ -307,7 +313,7 @@ struct KeyContainer : Widget {
 		if (!p) return;
 		ParamQuantity* q = p->paramQuantity;
 		if (!q) return;
-		q->setScaledValue(paramTemp);
+		q->setScaledValue(tempParamValue);
 	}
 
 	void cmdModuleZoom() {
@@ -316,7 +322,17 @@ struct KeyContainer : Widget {
 		ModuleWidget* mw = dynamic_cast<ModuleWidget*>(w);
 		if (!mw) mw = w->getAncestorOfType<ModuleWidget>();
 		if (!mw) return;
-		StoermelderPackOne::Rack::ViewportCenter{mw};
+		StoermelderPackOne::Rack::ViewportCenter{mw, true};
+	}
+
+	void cmdCableOpacity() {
+		if (settings::cableOpacity == 0.f) {
+			settings::cableOpacity = tempCableOpacity;
+		}
+		else {
+			tempCableOpacity = settings::cableOpacity;
+			settings::cableOpacity = 0.f;
+		}
 	}
 
 	void onHoverKey(const event::HoverKey& e) override {
@@ -450,7 +466,8 @@ struct KeyDisplay : widget::OpaqueWidget {
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Special mode"));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Parameter value copy", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_PARAM_COPY));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Parameter value paste", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_PARAM_PASTE));
-		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom and center module", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_MODULE_ZOOM));
+		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Module center and zoom", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_MODULE_ZOOM));
+		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle cable opacity", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_CABLE_OPACITY));
 	}
 };
 
