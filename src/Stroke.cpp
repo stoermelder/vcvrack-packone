@@ -118,9 +118,13 @@ static const char* keyName(int key) {
 }
 
 enum class KEY_MODE {
-	TRIGGER,
-	GATE,
-	TOGGLE
+	OFF = 0,
+	TRIGGER = 1,
+	GATE = 2,
+	TOGGLE = 3,
+	S_PARAM_COPY = 10,
+	S_PARAM_PASTE = 11,
+	S_MODULE_ZOOM = 12
 };
 
 template < int PORTS >
@@ -153,8 +157,8 @@ struct StrokeModule : Module {
 	int panelTheme = 0;
 	/** [Stored to JSON] */
 	Key keys[PORTS];
-	/** [Stored to JSON] */
-	bool polyphonicOutput = false;
+
+	KEY_MODE keyModeTemp = KEY_MODE::OFF;
 
 	dsp::PulseGenerator pulse[PORTS];
 
@@ -179,46 +183,49 @@ struct StrokeModule : Module {
 			if (keys[i].key >= 0) {
 				switch (keys[i].mode) {
 					case KEY_MODE::TRIGGER:
-						setOutputVoltage(OUTPUT, i, pulse[i].process(args.sampleTime) * 10.f);
+						outputs[OUTPUT + i].setVoltage(pulse[i].process(args.sampleTime) * 10.f);
 						break;
 					case KEY_MODE::GATE:
 					case KEY_MODE::TOGGLE:
-						setOutputVoltage(OUTPUT, i, keys[i].high * 10.f);
+						outputs[OUTPUT + i].setVoltage(keys[i].high * 10.f);
+						break;
+					default:
 						break;
 				}	
 			}
-		}
-
-		outputs[OUTPUT].setChannels(polyphonicOutput ? PORTS : 1);
-	}
-
-	inline void setOutputVoltage(int out, int idx, float v) {
-		if (polyphonicOutput) {
-			outputs[out].setVoltage(v, idx);
-		}
-		else {
-			outputs[out + idx].setVoltage(v);
 		}
 	}
 
 	void keyEnable(int idx) {
 		switch (keys[idx].mode) {
+			case KEY_MODE::OFF:
+				break;
 			case KEY_MODE::TRIGGER:
 				pulse[idx].trigger(); break;
 			case KEY_MODE::GATE:
 				keys[idx].high = true; break;
 			case KEY_MODE::TOGGLE:
 				keys[idx].high ^= true; break;
+			case KEY_MODE::S_PARAM_COPY:
+			case KEY_MODE::S_PARAM_PASTE:
+			case KEY_MODE::S_MODULE_ZOOM:
+				keyModeTemp = keys[idx].mode;
+				break;
 		}
 	}
 
 	void keyDisable(int idx) {
 		switch (keys[idx].mode) {
+			case KEY_MODE::OFF:
 			case KEY_MODE::TRIGGER:
 				break;
 			case KEY_MODE::GATE:
 				keys[idx].high = false; break;
 			case KEY_MODE::TOGGLE:
+				break;
+			case KEY_MODE::S_PARAM_COPY:
+			case KEY_MODE::S_PARAM_PASTE:
+			case KEY_MODE::S_MODULE_ZOOM:
 				break;
 		}
 	}
@@ -226,7 +233,6 @@ struct StrokeModule : Module {
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
-		json_object_set_new(rootJ, "polyphonicOutput", json_boolean(polyphonicOutput));
 
 		json_t* keysJ = json_array();
 		for (int i = 0; i < PORTS; i++) {
@@ -244,7 +250,6 @@ struct StrokeModule : Module {
 
 	void dataFromJson(json_t* rootJ) override {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
-		polyphonicOutput = json_boolean_value(json_object_get(rootJ, "polyphonicOutput"));
 
 		// Hack for preventing duplicating this module
 		if (APP->engine->getModule(id) != NULL) return;
@@ -265,6 +270,54 @@ template < int PORTS >
 struct KeyContainer : Widget {
 	StrokeModule<PORTS>* module;
 	int learnIdx = -1;
+
+	float paramTemp;
+
+	void step() override {
+		if (module && module->keyModeTemp != KEY_MODE::OFF) {
+			switch (module->keyModeTemp) {
+				case KEY_MODE::S_PARAM_COPY:
+					cmdParamCopy(); break;
+				case KEY_MODE::S_PARAM_PASTE:
+					cmdParamPaste(); break;
+				case KEY_MODE::S_MODULE_ZOOM:
+					cmdModuleZoom(); break;
+				default:
+					break;
+			}
+			module->keyModeTemp = KEY_MODE::OFF;
+		}
+		Widget::step();
+	}
+
+	void cmdParamCopy() {
+		Widget* w = APP->event->getHoveredWidget();
+		if (!w) return;
+		ParamWidget* p = dynamic_cast<ParamWidget*>(w);
+		if (!p) return;
+		ParamQuantity* q = p->paramQuantity;
+		if (!q) return;
+		paramTemp = q->getScaledValue();
+	}
+
+	void cmdParamPaste() {
+		Widget* w = APP->event->getHoveredWidget();
+		if (!w) return;
+		ParamWidget* p = dynamic_cast<ParamWidget*>(w);
+		if (!p) return;
+		ParamQuantity* q = p->paramQuantity;
+		if (!q) return;
+		q->setScaledValue(paramTemp);
+	}
+
+	void cmdModuleZoom() {
+		Widget* w = APP->event->getHoveredWidget();
+		if (!w) return;
+		ModuleWidget* mw = dynamic_cast<ModuleWidget*>(w);
+		if (!mw) mw = w->getAncestorOfType<ModuleWidget>();
+		if (!mw) return;
+		StoermelderPackOne::Rack::ViewportCenter{mw};
+	}
 
 	void onHoverKey(const event::HoverKey& e) override {
 		if (module && e.action == GLFW_PRESS) {
@@ -388,10 +441,16 @@ struct KeyDisplay : widget::OpaqueWidget {
 		ui::Menu* menu = createMenu();
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("Hotkey %i", idx + 1)));
 		menu->addChild(construct<LearnMenuItem>(&MenuItem::text, "Learn", &LearnMenuItem::keyContainer, keyContainer, &LearnMenuItem::idx, idx));
+		menu->addChild(new MenuSeparator);
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Mode"));
+		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Off", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::OFF));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Trigger", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::TRIGGER));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Gate", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::GATE));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::TOGGLE));
+		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Special mode"));
+		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Parameter value copy", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_PARAM_COPY));
+		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Parameter value paste", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_PARAM_PASTE));
+		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom and center module", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_MODULE_ZOOM));
 	}
 };
 
@@ -434,25 +493,6 @@ struct StrokeWidget : ThemedModuleWidget<StrokeModule<10>> {
 			APP->scene->rack->removeChild(keyContainer);
 			delete keyContainer;
 		}
-	}
-
-	void appendContextMenu(Menu* menu) override {
-		ThemedModuleWidget<StrokeModule<10>>::appendContextMenu(menu);
-		StrokeModule<10>* module = dynamic_cast<StrokeModule<10>*>(this->module);
-
-		struct PolyphonicOutputItem : MenuItem {
-			StrokeModule<10>* module;
-			void onAction(const event::Action& e) override {
-				module->polyphonicOutput ^= true;
-			}
-			void step() override {
-				rightText = module->polyphonicOutput ? "✔" : "";
-				MenuItem::step();
-			}
-		};
-
-		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<PolyphonicOutputItem>(&MenuItem::text, "Polyphonic output", &PolyphonicOutputItem::module, module));
 	}
 };
 
