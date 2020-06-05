@@ -22,7 +22,7 @@ struct ViewportCenterSmooth {
 	void trigger(Vec target, float zoom, float framerate, float transitionTime = 1.f) {
 		// source is at top-left, translate to center of screen
 		Vec source = APP->scene->rackScroll->offset;
-		source = source.plus(APP->scene->box.size.mult(0.5f));
+		source = source.plus(APP->scene->rackScroll->box.size.mult(0.5f));
 		source = source.div(APP->scene->rackScroll->zoomWidget->zoom);
 
 		this->source = source;
@@ -40,7 +40,7 @@ struct ViewportCenterSmooth {
 	void process() {
 		if (framecount == frame) return;
 
-		float t = float(frame) / float(framecount);
+		float t = float(frame) / float(framecount - 1);
 		// Sigmoid
 		t = t * 8.f - 4.f;
 		t = 1.f / (1.f + std::exp(-t));
@@ -60,7 +60,7 @@ struct ViewportCenterSmooth {
 		// Move the view
 		// NB: unstable API!
 		p = p.mult(APP->scene->rackScroll->zoomWidget->zoom);
-		p = p.minus(APP->scene->box.size.mult(0.5f));
+		p = p.minus(APP->scene->rackScroll->box.size.mult(0.5f));
 		APP->scene->rackScroll->offset = p;
 
 		frame++;
