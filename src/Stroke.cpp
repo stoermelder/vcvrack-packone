@@ -127,7 +127,11 @@ enum class KEY_MODE {
 	S_ZOOM_MODULE = 12,
 	S_ZOOM_OUT = 13,
 	S_CABLE_OPACITY = 20,
-	S_CABLE_COLOR = 21
+	S_CABLE_COLOR = 21,
+	S_CABLE_ROTATE = 22,
+	S_CABLE_VISIBILITY = 23,
+	S_FRAMERATE = 30,
+	S_RAIL = 31
 };
 
 template < int PORTS >
@@ -209,12 +213,7 @@ struct StrokeModule : Module {
 				keys[idx].high = true; break;
 			case KEY_MODE::TOGGLE:
 				keys[idx].high ^= true; break;
-			case KEY_MODE::S_PARAM_COPY:
-			case KEY_MODE::S_PARAM_PASTE:
-			case KEY_MODE::S_ZOOM_MODULE:
-			case KEY_MODE::S_ZOOM_OUT:
-			case KEY_MODE::S_CABLE_OPACITY:
-			case KEY_MODE::S_CABLE_COLOR:
+			default:
 				keyModeTemp = keys[idx].mode;
 				break;
 		}
@@ -229,12 +228,7 @@ struct StrokeModule : Module {
 				keys[idx].high = false; break;
 			case KEY_MODE::TOGGLE:
 				break;
-			case KEY_MODE::S_PARAM_COPY:
-			case KEY_MODE::S_PARAM_PASTE:
-			case KEY_MODE::S_ZOOM_MODULE:
-			case KEY_MODE::S_ZOOM_OUT:
-			case KEY_MODE::S_CABLE_OPACITY:
-			case KEY_MODE::S_CABLE_COLOR:
+			default:
 				break;
 		}
 	}
@@ -298,6 +292,14 @@ struct KeyContainer : Widget {
 					cmdCableOpacity(); break;
 				case KEY_MODE::S_CABLE_COLOR:
 					cmdCableColor(); break;
+				case KEY_MODE::S_CABLE_ROTATE:
+					cmdCableRotate(); break;
+				case KEY_MODE::S_CABLE_VISIBILITY:
+					cmdCableVisibility(); break;
+				case KEY_MODE::S_FRAMERATE:
+					cmdFramerate(); break;
+				case KEY_MODE::S_RAIL:
+					cmdRail(); break;
 				default:
 					break;
 			}
@@ -351,6 +353,15 @@ struct KeyContainer : Widget {
 		}
 	}
 
+	void cmdCableVisibility() {
+		if (APP->scene->rack->cableContainer->visible) {
+			APP->scene->rack->cableContainer->hide();
+		}
+		else {
+			APP->scene->rack->cableContainer->show();
+		}
+	}
+
 	void cmdCableColor() {
 		Widget* w = APP->event->getHoveredWidget();
 		if (!w) return;
@@ -361,6 +372,46 @@ struct KeyContainer : Widget {
 		int cid = APP->scene->rack->nextCableColorId++;
 		APP->scene->rack->nextCableColorId %= settings::cableColors.size();
 		cw->color = settings::cableColors[cid];
+	}
+
+	void cmdCableRotate() {
+		Widget* w = APP->event->getHoveredWidget();
+		if (!w) return;
+		PortWidget* pw = dynamic_cast<PortWidget*>(w);
+		if (!pw) return;
+
+		Widget* cc = APP->scene->rack->cableContainer;
+		std::list<Widget*>::iterator it;
+		for (it = cc->children.begin(); it != cc->children.end(); it++) {
+			CableWidget* cw = dynamic_cast<CableWidget*>(*it);
+			assert(cw);
+			// Ignore incomplete cables
+			if (!cw->isComplete())
+				continue;
+			if (cw->inputPort == pw || cw->outputPort == pw)
+				break;
+		}
+		if (it != cc->children.end()) {
+			cc->children.splice(cc->children.end(), cc->children, it);
+		}
+	}
+
+	void cmdFramerate() {
+		if (APP->scene->frameRateWidget->visible) {
+			APP->scene->frameRateWidget->hide();
+		}
+		else {
+			APP->scene->frameRateWidget->show();
+		}
+	}
+
+	void cmdRail() {
+		if (APP->scene->rack->railFb->visible) {
+			APP->scene->rack->railFb->hide();
+		}
+		else {
+			APP->scene->rack->railFb->show();
+		}
 	}
 
 	void onHoverKey(const event::HoverKey& e) override {
@@ -491,13 +542,20 @@ struct KeyDisplay : widget::OpaqueWidget {
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Trigger", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::TRIGGER));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Gate", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::GATE));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::TOGGLE));
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Special command"));
-		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Parameter value copy", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_PARAM_COPY));
-		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Parameter value paste", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_PARAM_PASTE));
+		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Parameter commands"));
+		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Value copy", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_PARAM_COPY));
+		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Value paste", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_PARAM_PASTE));
+		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "View commands"));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom to module", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ZOOM_MODULE));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom out", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ZOOM_OUT));
-		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle cable opacity", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_CABLE_OPACITY));
-		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Next cable color", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_CABLE_COLOR));
+		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Cable commands"));
+		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle opacity", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_CABLE_OPACITY));
+		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle visibility", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_CABLE_VISIBILITY));
+		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Next color", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_CABLE_COLOR));
+		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Rotate ordering", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_CABLE_ROTATE));
+		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Special commands"));
+		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle framerate", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_FRAMERATE));
+		//menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle rack rail", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_RAIL));
 	}
 };
 
