@@ -124,8 +124,10 @@ enum class KEY_MODE {
 	TOGGLE = 3,
 	S_PARAM_COPY = 10,
 	S_PARAM_PASTE = 11,
-	S_MODULE_ZOOM = 12,
-	S_CABLE_OPACITY = 20
+	S_ZOOM_MODULE = 12,
+	S_ZOOM_OUT = 13,
+	S_CABLE_OPACITY = 20,
+	S_CABLE_COLOR = 21
 };
 
 template < int PORTS >
@@ -209,8 +211,10 @@ struct StrokeModule : Module {
 				keys[idx].high ^= true; break;
 			case KEY_MODE::S_PARAM_COPY:
 			case KEY_MODE::S_PARAM_PASTE:
-			case KEY_MODE::S_MODULE_ZOOM:
+			case KEY_MODE::S_ZOOM_MODULE:
+			case KEY_MODE::S_ZOOM_OUT:
 			case KEY_MODE::S_CABLE_OPACITY:
+			case KEY_MODE::S_CABLE_COLOR:
 				keyModeTemp = keys[idx].mode;
 				break;
 		}
@@ -227,8 +231,10 @@ struct StrokeModule : Module {
 				break;
 			case KEY_MODE::S_PARAM_COPY:
 			case KEY_MODE::S_PARAM_PASTE:
-			case KEY_MODE::S_MODULE_ZOOM:
+			case KEY_MODE::S_ZOOM_MODULE:
+			case KEY_MODE::S_ZOOM_OUT:
 			case KEY_MODE::S_CABLE_OPACITY:
+			case KEY_MODE::S_CABLE_COLOR:
 				break;
 		}
 	}
@@ -284,10 +290,14 @@ struct KeyContainer : Widget {
 					cmdParamCopy(); break;
 				case KEY_MODE::S_PARAM_PASTE:
 					cmdParamPaste(); break;
-				case KEY_MODE::S_MODULE_ZOOM:
-					cmdModuleZoom(); break;
+				case KEY_MODE::S_ZOOM_MODULE:
+					cmdZoomModule(); break;
+				case KEY_MODE::S_ZOOM_OUT:
+					cmdZoomOut(); break;
 				case KEY_MODE::S_CABLE_OPACITY:
 					cmdCableOpacity(); break;
+				case KEY_MODE::S_CABLE_COLOR:
+					cmdCableColor(); break;
 				default:
 					break;
 			}
@@ -316,13 +326,19 @@ struct KeyContainer : Widget {
 		q->setScaledValue(tempParamValue);
 	}
 
-	void cmdModuleZoom() {
+	void cmdZoomModule() {
 		Widget* w = APP->event->getHoveredWidget();
 		if (!w) return;
 		ModuleWidget* mw = dynamic_cast<ModuleWidget*>(w);
 		if (!mw) mw = w->getAncestorOfType<ModuleWidget>();
 		if (!mw) return;
 		StoermelderPackOne::Rack::ViewportCenter{mw, true};
+	}
+
+	void cmdZoomOut() {
+		math::Rect moduleBox = APP->scene->rack->moduleContainer->getChildrenBoundingBox();
+		if (!moduleBox.size.isFinite()) return;
+		StoermelderPackOne::Rack::ViewportCenter{moduleBox};
 	}
 
 	void cmdCableOpacity() {
@@ -333,6 +349,18 @@ struct KeyContainer : Widget {
 			tempCableOpacity = settings::cableOpacity;
 			settings::cableOpacity = 0.f;
 		}
+	}
+
+	void cmdCableColor() {
+		Widget* w = APP->event->getHoveredWidget();
+		if (!w) return;
+		PortWidget* pw = dynamic_cast<PortWidget*>(w);
+		if (!pw) return;
+		CableWidget* cw = APP->scene->rack->getTopCable(pw);
+		if (!cw) return;
+		int cid = APP->scene->rack->nextCableColorId++;
+		APP->scene->rack->nextCableColorId %= settings::cableColors.size();
+		cw->color = settings::cableColors[cid];
 	}
 
 	void onHoverKey(const event::HoverKey& e) override {
@@ -458,16 +486,18 @@ struct KeyDisplay : widget::OpaqueWidget {
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("Hotkey %i", idx + 1)));
 		menu->addChild(construct<LearnMenuItem>(&MenuItem::text, "Learn", &LearnMenuItem::keyContainer, keyContainer, &LearnMenuItem::idx, idx));
 		menu->addChild(new MenuSeparator);
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Mode"));
+		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Output mode"));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Off", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::OFF));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Trigger", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::TRIGGER));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Gate", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::GATE));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::TOGGLE));
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Special mode"));
+		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Special command"));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Parameter value copy", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_PARAM_COPY));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Parameter value paste", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_PARAM_PASTE));
-		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Module center and zoom", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_MODULE_ZOOM));
+		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom to module", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ZOOM_MODULE));
+		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom out", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ZOOM_OUT));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle cable opacity", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_CABLE_OPACITY));
+		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Next cable color", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_CABLE_COLOR));
 	}
 };
 

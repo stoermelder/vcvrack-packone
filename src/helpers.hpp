@@ -86,6 +86,17 @@ struct ViewportCenter {
 		target = target.minus(APP->scene->rackScroll->box.size.mult(0.5f));
 		APP->scene->rackScroll->offset = target;
 	}
+
+	ViewportCenter(Rect rect) {
+		// NB: unstable API!
+		Vec target = rect.getCenter();
+		target = target.mult(APP->scene->rackScroll->zoomWidget->zoom);
+		target = target.minus(APP->scene->rackScroll->box.size.mult(0.5f));
+		APP->scene->rackScroll->offset = target;
+		float zx = std::log2(APP->scene->rackScroll->box.size.x / rect.size.x * 0.9f);
+		float zy = std::log2(APP->scene->rackScroll->box.size.y / rect.size.y * 0.9f);
+		rack::settings::zoom = std::min(zx, zy);
+	}
 };
 
 } // namespace Rack
