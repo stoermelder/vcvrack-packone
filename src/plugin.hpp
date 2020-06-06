@@ -38,7 +38,6 @@ extern Model* modelAffixMicro;
 extern Model* modelGrip;
 extern Model* modelGlue;
 extern Model* modelGoto;
-extern Model* modelFr;
 extern Model* modelStroke;
 extern Model* modelSpin;
 extern Model* modelAudioInterface64;

@@ -211,14 +211,6 @@
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Goto.md"
 		},
 		{
-			"slug": "Fr",
-			"name": "FR",
-			"description": "Show the current screen framerate in the top-right corner",
-			"tags": ["Utility"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Fr.md",
-			"disabled": true
-		},
-		{
 			"slug": "Stroke",
 			"name": "STROKE",
 			"description": "Utility for converting hotkeys to triggers and gates",

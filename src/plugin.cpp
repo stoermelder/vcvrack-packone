@@ -34,7 +34,6 @@ void init(rack::Plugin* p) {
 	p->addModel(modelGrip);
 	p->addModel(modelGlue);
 	p->addModel(modelGoto);
-	p->addModel(modelFr);
 	p->addModel(modelStroke);
 	p->addModel(modelSpin);
 	p->addModel(modelAudioInterface64);
