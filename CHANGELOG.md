@@ -1,10 +1,18 @@
 ## 1.7.0 (in development)
+
 - Module [DETOUR](./docs/Detour.md)
     - New module, 8x8 send/return switch matrix with support for 8 scenes
 - Module [FLOWER](./docs/Flower.md)
     - New module, pattern-driven 16-step sequencer
+
+### Fixes and Changes
+
 - Module [GLUE](./docs/Glue.md)
     - Implemented support for STRIP, please be aware to include GLUE within your strip-file (#115)
+    - Added options for changing text coloring (#136)
+- Module [GOTO](./docs/Goto.md)
+    - Added support for number pad keys (#134)
+
 
 ## 1.6.3
 

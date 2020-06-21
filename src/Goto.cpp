@@ -261,8 +261,10 @@ struct GotoContainer : widget::Widget {
 
 	void onHoverKey(const event::HoverKey& e) override {
 		if (module && !module->jumpTriggerUsed) {
-			if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == GLFW_MOD_SHIFT && e.key >= GLFW_KEY_0 && e.key <= GLFW_KEY_9) {
-				int i = (e.key - GLFW_KEY_0 + 9) % 10;
+			bool numkey1 = e.key >= GLFW_KEY_0 && e.key <= GLFW_KEY_9; 
+			bool numkey2 = e.key >= GLFW_KEY_KP_0 && e.key <= GLFW_KEY_KP_9;
+			if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == GLFW_MOD_SHIFT && (numkey1 || numkey2)) {
+				int i = (e.key - (numkey1 ? GLFW_KEY_0 : GLFW_KEY_KP_0) + 9) % 10;
 				if (module->jumpPoints[i].moduleId >= 0) {
 					executeJump(i);
 					e.consume(this);
