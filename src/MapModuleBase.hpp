@@ -511,4 +511,11 @@ struct MapModuleDisplay : LedDisplay {
 			nvgStroke(args.vg);
 		}
 	}
+
+	void onHoverScroll(const event::HoverScroll& e) override {
+		if (module && module->locked) {
+			e.stopPropagating();
+		}
+		LedDisplay::onHoverScroll(e);
+	}
 };
