@@ -12,7 +12,8 @@
     - Added options for changing text coloring (#136)
 - Module [GOTO](./docs/Goto.md)
     - Added support for number pad keys (#134)
-
+- Module [STRIP](./docs/Strip.md)
+    - Added option to randomize only parameters without the module's internal state (#135) 
 
 ## 1.6.3
 
