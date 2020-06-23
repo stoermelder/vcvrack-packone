@@ -119,12 +119,13 @@ static const char* keyName(int key) {
 
 enum class KEY_MODE {
 	OFF = 0,
-	TRIGGER = 1,
-	GATE = 2,
-	TOGGLE = 3,
+	CV_TRIGGER = 1,
+	CV_GATE = 2,
+	CV_TOGGLE = 3,
 	S_PARAM_COPY = 10,
 	S_PARAM_PASTE = 11,
-	S_ZOOM_MODULE = 12,
+	S_ZOOM_MODULE_90 = 12,
+	S_ZOOM_MODULE_30 = 14,
 	S_ZOOM_OUT = 13,
 	S_CABLE_OPACITY = 20,
 	S_CABLE_COLOR = 21,
@@ -182,7 +183,7 @@ struct StrokeModule : Module {
 			keys[i].button = -1;
 			keys[i].key = -1;
 			keys[i].mods = 0;
-			keys[i].mode = KEY_MODE::TRIGGER;
+			keys[i].mode = KEY_MODE::CV_TRIGGER;
 			keys[i].high = false;
 		}
 	}
@@ -191,11 +192,11 @@ struct StrokeModule : Module {
 		for (int i = 0; i < PORTS; i++) {
 			if (keys[i].key >= 0 || keys[i].button >= 0) {
 				switch (keys[i].mode) {
-					case KEY_MODE::TRIGGER:
+					case KEY_MODE::CV_TRIGGER:
 						outputs[OUTPUT + i].setVoltage(pulse[i].process(args.sampleTime) * 10.f);
 						break;
-					case KEY_MODE::GATE:
-					case KEY_MODE::TOGGLE:
+					case KEY_MODE::CV_GATE:
+					case KEY_MODE::CV_TOGGLE:
 						outputs[OUTPUT + i].setVoltage(keys[i].high * 10.f);
 						break;
 					default:
@@ -209,11 +210,11 @@ struct StrokeModule : Module {
 		switch (keys[idx].mode) {
 			case KEY_MODE::OFF:
 				break;
-			case KEY_MODE::TRIGGER:
+			case KEY_MODE::CV_TRIGGER:
 				pulse[idx].trigger(); break;
-			case KEY_MODE::GATE:
+			case KEY_MODE::CV_GATE:
 				keys[idx].high = true; break;
-			case KEY_MODE::TOGGLE:
+			case KEY_MODE::CV_TOGGLE:
 				keys[idx].high ^= true; break;
 			default:
 				keyModeTemp = keys[idx].mode;
@@ -223,13 +224,8 @@ struct StrokeModule : Module {
 
 	void keyDisable(int idx) {
 		switch (keys[idx].mode) {
-			case KEY_MODE::OFF:
-			case KEY_MODE::TRIGGER:
-				break;
-			case KEY_MODE::GATE:
+			case KEY_MODE::CV_GATE:
 				keys[idx].high = false; break;
-			case KEY_MODE::TOGGLE:
-				break;
 			default:
 				break;
 		}
@@ -288,8 +284,10 @@ struct KeyContainer : Widget {
 					cmdParamCopy(); break;
 				case KEY_MODE::S_PARAM_PASTE:
 					cmdParamPaste(); break;
-				case KEY_MODE::S_ZOOM_MODULE:
-					cmdZoomModule(); break;
+				case KEY_MODE::S_ZOOM_MODULE_90:
+					cmdZoomModule(0.9f); break;
+				case KEY_MODE::S_ZOOM_MODULE_30:
+					cmdZoomModule(0.3f); break;
 				case KEY_MODE::S_ZOOM_OUT:
 					cmdZoomOut(); break;
 				case KEY_MODE::S_CABLE_OPACITY:
@@ -332,13 +330,13 @@ struct KeyContainer : Widget {
 		q->setScaledValue(tempParamValue);
 	}
 
-	void cmdZoomModule() {
+	void cmdZoomModule(float scale) {
 		Widget* w = APP->event->getHoveredWidget();
 		if (!w) return;
 		ModuleWidget* mw = dynamic_cast<ModuleWidget*>(w);
 		if (!mw) mw = w->getAncestorOfType<ModuleWidget>();
 		if (!mw) return;
-		StoermelderPackOne::Rack::ViewportCenter{mw, true};
+		StoermelderPackOne::Rack::ViewportCenter{mw, scale};
 	}
 
 	void cmdZoomOut() {
@@ -593,14 +591,15 @@ struct KeyDisplay : widget::OpaqueWidget {
 		menu->addChild(new MenuSeparator);
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Output mode"));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Off", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::OFF));
-		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Trigger", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::TRIGGER));
-		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Gate", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::GATE));
-		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::TOGGLE));
+		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Trigger", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::CV_TRIGGER));
+		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Gate", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::CV_GATE));
+		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::CV_TOGGLE));
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Parameter commands"));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Value copy", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_PARAM_COPY));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Value paste", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_PARAM_PASTE));
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "View commands"));
-		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom to module", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ZOOM_MODULE));
+		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom to module", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ZOOM_MODULE_90));
+		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom to module 1/3", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ZOOM_MODULE_30));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom out", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ZOOM_OUT));
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Cable commands"));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle opacity", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_CABLE_OPACITY));

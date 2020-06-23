@@ -68,15 +68,15 @@ struct ViewportCenterSmooth {
 };
 
 struct ViewportCenter {
-	ViewportCenter(Widget* w, bool zoomToWidget = false) {
+	ViewportCenter(Widget* w, float zoomToWidget = -1.f) {
 		// NB: unstable API!
 		Vec target = w->box.pos;
 		target = target.plus(w->box.size.mult(0.5f));
 		target = target.mult(APP->scene->rackScroll->zoomWidget->zoom);
 		target = target.minus(APP->scene->rackScroll->box.size.mult(0.5f));
 		APP->scene->rackScroll->offset = target;
-		if (zoomToWidget) {
-			rack::settings::zoom = std::log2(APP->scene->rackScroll->box.size.y / w->box.size.y * 0.9f);
+		if (zoomToWidget > 0.f) {
+			rack::settings::zoom = std::log2(APP->scene->rackScroll->box.size.y / w->box.size.y * zoomToWidget);
 		}
 	}
 
