@@ -154,6 +154,7 @@ struct StrokeModule : Module {
 	};
 
 	struct Key {
+		int button = -1;
 		int key = -1;
 		int mods;
 		KEY_MODE mode;
@@ -178,6 +179,7 @@ struct StrokeModule : Module {
 	void onReset() override {
 		Module::onReset();
 		for (int i = 0; i < PORTS; i++) {
+			keys[i].button = -1;
 			keys[i].key = -1;
 			keys[i].mods = 0;
 			keys[i].mode = KEY_MODE::TRIGGER;
@@ -187,7 +189,7 @@ struct StrokeModule : Module {
 
 	void process(const ProcessArgs& args) override {
 		for (int i = 0; i < PORTS; i++) {
-			if (keys[i].key >= 0) {
+			if (keys[i].key >= 0 || keys[i].button >= 0) {
 				switch (keys[i].mode) {
 					case KEY_MODE::TRIGGER:
 						outputs[OUTPUT + i].setVoltage(pulse[i].process(args.sampleTime) * 10.f);
@@ -240,6 +242,7 @@ struct StrokeModule : Module {
 		json_t* keysJ = json_array();
 		for (int i = 0; i < PORTS; i++) {
 			json_t* keyJ = json_object();
+			json_object_set_new(keyJ, "button", json_integer(keys[i].button));
 			json_object_set_new(keyJ, "key", json_integer(keys[i].key));
 			json_object_set_new(keyJ, "mods", json_integer(keys[i].mods));
 			json_object_set_new(keyJ, "mode", json_integer((int)keys[i].mode));
@@ -260,6 +263,7 @@ struct StrokeModule : Module {
 		json_t* keysJ = json_object_get(rootJ, "keys");
 		for (int i = 0; i < PORTS; i++) {
 			json_t* keyJ = json_array_get(keysJ, i);
+			keys[i].button = json_integer_value(json_object_get(keyJ, "button"));
 			keys[i].key = json_integer_value(json_object_get(keyJ, "key"));
 			keys[i].mods = json_integer_value(json_object_get(keyJ, "mods"));
 			keys[i].mode = (KEY_MODE)json_integer_value(json_object_get(keyJ, "mode"));
@@ -414,11 +418,50 @@ struct KeyContainer : Widget {
 		}
 	}
 
+	void onButton(const event::Button& e) override {
+		if (module && e.action == GLFW_PRESS) {
+			if (learnIdx >= 0) {
+				if (e.button > 2) {
+					module->keys[learnIdx].button = e.button;
+					module->keys[learnIdx].key = -1;
+					module->keys[learnIdx].mods = e.mods;
+					learnIdx = -1;
+					e.consume(this);
+				}
+			}
+			else {
+				for (int i = 0; i < PORTS; i++) {
+					if (e.button == module->keys[i].button && e.mods == module->keys[i].mods) {
+						module->keyEnable(i);
+						e.consume(this);
+					}
+				}
+			}
+		}
+		if (module && e.action == RACK_HELD) {
+			for (int i = 0; i < PORTS; i++) {
+				if (e.button == module->keys[i].button && e.mods == module->keys[i].mods) {
+					e.consume(this);
+				}
+			}
+		}
+		if (module && e.action == GLFW_RELEASE) {
+			for (int i = 0; i < PORTS; i++) {
+				if (e.button == module->keys[i].button) {
+					module->keyDisable(i);
+					e.consume(this);
+				}
+			}
+		}
+		Widget::onButton(e);
+	}
+
 	void onHoverKey(const event::HoverKey& e) override {
 		if (module && e.action == GLFW_PRESS) {
 			if (learnIdx >= 0) {
 				const char* kn = keyName(e.key);
 				if (kn) {
+					module->keys[learnIdx].button = -1;
 					module->keys[learnIdx].key = e.key;
 					module->keys[learnIdx].mods = e.mods;
 					learnIdx = -1;
@@ -494,7 +537,7 @@ struct KeyDisplay : widget::OpaqueWidget {
 		}
 		else if (module) {
 			color.a = 1.f;
-			text = module->keys[idx].key >= 0 ? keyName(module->keys[idx].key) : "";
+			text = module->keys[idx].key >= 0 ? keyName(module->keys[idx].key) : module->keys[idx].button > 0 ? string::f("MB %i", module->keys[idx].button + 1) : "";
 			module->lights[StrokeModule<PORTS>::LIGHT_ALT + idx].setBrightness(module->keys[idx].mods & GLFW_MOD_ALT ? 0.7f : 0.f);
 			module->lights[StrokeModule<PORTS>::LIGHT_CTRL + idx].setBrightness(module->keys[idx].mods & GLFW_MOD_CONTROL ? 0.7f : 0.f);
 			module->lights[StrokeModule<PORTS>::LIGHT_SHIFT + idx].setBrightness(module->keys[idx].mods & GLFW_MOD_SHIFT ? 0.7f : 0.f);
@@ -519,6 +562,16 @@ struct KeyDisplay : widget::OpaqueWidget {
 			}
 		};
 
+		struct ClearMenuItem : MenuItem {
+			StrokeModule<PORTS>* module;
+			int idx;
+			void onAction(const event::Action& e) override {
+				module->keys[idx].button = -1;
+				module->keys[idx].key = -1;
+				module->keys[idx].mods = 0;
+			}
+		};
+
 		struct ModeMenuItem : MenuItem {
 			StrokeModule<PORTS>* module;
 			KEY_MODE mode;
@@ -536,6 +589,7 @@ struct KeyDisplay : widget::OpaqueWidget {
 		ui::Menu* menu = createMenu();
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("Hotkey %i", idx + 1)));
 		menu->addChild(construct<LearnMenuItem>(&MenuItem::text, "Learn", &LearnMenuItem::keyContainer, keyContainer, &LearnMenuItem::idx, idx));
+		menu->addChild(construct<ClearMenuItem>(&MenuItem::text, "Clear", &ClearMenuItem::module, module, &ClearMenuItem::idx, idx));
 		menu->addChild(new MenuSeparator);
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Output mode"));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Off", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::OFF));
@@ -554,7 +608,7 @@ struct KeyDisplay : widget::OpaqueWidget {
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Next color", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_CABLE_COLOR));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Rotate ordering", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_CABLE_ROTATE));
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Special commands"));
-		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle framerate", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_FRAMERATE));
+		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle framerate display", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_FRAMERATE));
 		//menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle rack rail", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_RAIL));
 	}
 };
