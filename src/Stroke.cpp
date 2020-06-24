@@ -87,6 +87,7 @@ enum class KEY_MODE {
 	S_ZOOM_MODULE_90 = 12,
 	S_ZOOM_MODULE_30 = 14,
 	S_ZOOM_OUT = 13,
+	S_ZOOM_TOGGLE = 15,
 	S_CABLE_OPACITY = 20,
 	S_CABLE_COLOR = 21,
 	S_CABLE_ROTATE = 22,
@@ -250,6 +251,8 @@ struct KeyContainer : Widget {
 					cmdZoomModule(0.3f); break;
 				case KEY_MODE::S_ZOOM_OUT:
 					cmdZoomOut(); break;
+				case KEY_MODE::S_ZOOM_TOGGLE:
+					cmdZoomToggle(); break;
 				case KEY_MODE::S_CABLE_OPACITY:
 					cmdCableOpacity(); break;
 				case KEY_MODE::S_CABLE_COLOR:
@@ -303,6 +306,10 @@ struct KeyContainer : Widget {
 		math::Rect moduleBox = APP->scene->rack->moduleContainer->getChildrenBoundingBox();
 		if (!moduleBox.size.isFinite()) return;
 		StoermelderPackOne::Rack::ViewportCenter{moduleBox};
+	}
+
+	void cmdZoomToggle() {
+		if (settings::zoom > 1.f) cmdZoomOut(); else cmdZoomModule(0.9f);
 	}
 
 	void cmdCableOpacity() {
@@ -561,6 +568,7 @@ struct KeyDisplay : widget::OpaqueWidget {
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom to module", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ZOOM_MODULE_90));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom to module 1/3", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ZOOM_MODULE_30));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom out", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ZOOM_OUT));
+		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom toggle", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ZOOM_TOGGLE));
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Cable commands"));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle opacity", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_CABLE_OPACITY));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle visibility", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_CABLE_VISIBILITY));
