@@ -3,56 +3,16 @@
 namespace StoermelderPackOne {
 namespace Stroke {
 
-static const char* keyName(int key) {
+static std::string keyName(int key) {
+	const char* k = glfwGetKeyName(key, 0);
+	if (k) {
+		std::string str = k;
+		for (auto& c : str) c = std::toupper(c);
+		return str;
+	}
+
 	switch (key) {
-		case GLFW_KEY_A:				return "A";
-		case GLFW_KEY_B:				return "B";
-		case GLFW_KEY_C:				return "C";
-		case GLFW_KEY_D:				return "D";
-		case GLFW_KEY_E:				return "E";
-		case GLFW_KEY_F:				return "F";
-		case GLFW_KEY_G:				return "G";
-		case GLFW_KEY_H:				return "H";
-		case GLFW_KEY_I:				return "I";
-		case GLFW_KEY_J:				return "J";
-		case GLFW_KEY_K:				return "K";
-		case GLFW_KEY_L:				return "L";
-		case GLFW_KEY_M:				return "M";
-		case GLFW_KEY_N:				return "N";
-		case GLFW_KEY_O:				return "O";
-		case GLFW_KEY_P:				return "P";
-		case GLFW_KEY_Q:				return "Q";
-		case GLFW_KEY_R:				return "R";
-		case GLFW_KEY_S:				return "S";
-		case GLFW_KEY_T:				return "T";
-		case GLFW_KEY_U:				return "U";
-		case GLFW_KEY_V:				return "V";
-		case GLFW_KEY_W:				return "W";
-		case GLFW_KEY_X:				return "X";
-		case GLFW_KEY_Y:				return "Y";
-		case GLFW_KEY_Z:				return "Z";
-		case GLFW_KEY_1:				return "1";
-		case GLFW_KEY_2:				return "2";
-		case GLFW_KEY_3:				return "3";
-		case GLFW_KEY_4:				return "4";
-		case GLFW_KEY_5:				return "5";
-		case GLFW_KEY_6:				return "6";
-		case GLFW_KEY_7:				return "7";
-		case GLFW_KEY_8:				return "8";
-		case GLFW_KEY_9:				return "9";
-		case GLFW_KEY_0:				return "0";
 		case GLFW_KEY_SPACE:			return "SPACE";
-		case GLFW_KEY_MINUS:			return "-";
-		case GLFW_KEY_EQUAL:			return "=";
-		case GLFW_KEY_LEFT_BRACKET:		return "(";
-		case GLFW_KEY_RIGHT_BRACKET:	return ")";
-		case GLFW_KEY_BACKSLASH:		return "\\";
-		case GLFW_KEY_SEMICOLON:		return ":";
-		case GLFW_KEY_APOSTROPHE:		return "'";
-		case GLFW_KEY_GRAVE_ACCENT:		return "^";
-		case GLFW_KEY_COMMA:			return ",";
-		case GLFW_KEY_PERIOD:			return ".";
-		case GLFW_KEY_SLASH:			return "/";
 		case GLFW_KEY_WORLD_1:			return "W1";
 		case GLFW_KEY_WORLD_2:			return "W2";
 		case GLFW_KEY_ESCAPE:			return "ESC";
@@ -91,7 +51,7 @@ static const char* keyName(int key) {
 		case GLFW_KEY_INSERT:			return "INS";
 		case GLFW_KEY_DELETE:			return "DEL";
 		case GLFW_KEY_PAGE_UP:			return "PG-UP";
-		case GLFW_KEY_PAGE_DOWN:		return "PG DN";
+		case GLFW_KEY_PAGE_DOWN:		return "PG-DW";
 		case GLFW_KEY_HOME:				return "HOME";
 		case GLFW_KEY_END:				return "END";
 		case GLFW_KEY_KP_0:				return "KP 0";
@@ -113,7 +73,7 @@ static const char* keyName(int key) {
 		case GLFW_KEY_KP_ENTER:			return "KP E";
 		case GLFW_KEY_PRINT_SCREEN:		return "PRINT";
 		case GLFW_KEY_PAUSE:			return "PAUSE";
-		default:						return NULL;
+		default:						return "";
 	}
 }
 
@@ -417,37 +377,37 @@ struct KeyContainer : Widget {
 	}
 
 	void onButton(const event::Button& e) override {
-		if (module && e.action == GLFW_PRESS) {
-			if (learnIdx >= 0) {
-				if (e.button > 2) {
+		if (e.button > 2) {
+			if (module && e.action == GLFW_PRESS) {
+				if (learnIdx >= 0) {
 					module->keys[learnIdx].button = e.button;
 					module->keys[learnIdx].key = -1;
 					module->keys[learnIdx].mods = e.mods;
 					learnIdx = -1;
 					e.consume(this);
 				}
+				else {
+					for (int i = 0; i < PORTS; i++) {
+						if (e.button == module->keys[i].button && e.mods == module->keys[i].mods) {
+							module->keyEnable(i);
+							e.consume(this);
+						}
+					}
+				}
 			}
-			else {
+			if (module && e.action == RACK_HELD) {
 				for (int i = 0; i < PORTS; i++) {
 					if (e.button == module->keys[i].button && e.mods == module->keys[i].mods) {
-						module->keyEnable(i);
 						e.consume(this);
 					}
 				}
 			}
-		}
-		if (module && e.action == RACK_HELD) {
-			for (int i = 0; i < PORTS; i++) {
-				if (e.button == module->keys[i].button && e.mods == module->keys[i].mods) {
-					e.consume(this);
-				}
-			}
-		}
-		if (module && e.action == GLFW_RELEASE) {
-			for (int i = 0; i < PORTS; i++) {
-				if (e.button == module->keys[i].button) {
-					module->keyDisable(i);
-					e.consume(this);
+			if (module && e.action == GLFW_RELEASE) {
+				for (int i = 0; i < PORTS; i++) {
+					if (e.button == module->keys[i].button) {
+						module->keyDisable(i);
+						e.consume(this);
+					}
 				}
 			}
 		}
@@ -457,8 +417,8 @@ struct KeyContainer : Widget {
 	void onHoverKey(const event::HoverKey& e) override {
 		if (module && e.action == GLFW_PRESS) {
 			if (learnIdx >= 0) {
-				const char* kn = keyName(e.key);
-				if (kn) {
+				std::string kn = keyName(e.key);
+				if (!kn.empty()) {
 					module->keys[learnIdx].button = -1;
 					module->keys[learnIdx].key = e.key;
 					module->keys[learnIdx].mods = e.mods;
@@ -494,7 +454,7 @@ struct KeyContainer : Widget {
 	}
 
 	void enableLearn(int idx) {
-		learnIdx = idx;
+		learnIdx = learnIdx != idx ? idx : -1;
 	}
 };
 
@@ -529,9 +489,9 @@ struct KeyDisplay : widget::OpaqueWidget {
 		if (keyContainer && keyContainer->learnIdx == idx) {
 			color.a = 0.6f;
 			text = "<LRN>";
-			module->lights[StrokeModule<PORTS>::LIGHT_ALT + idx].setBrightness(0.f);
-			module->lights[StrokeModule<PORTS>::LIGHT_CTRL + idx].setBrightness(0.f);
-			module->lights[StrokeModule<PORTS>::LIGHT_SHIFT + idx].setBrightness(0.f);
+			module->lights[StrokeModule<PORTS>::LIGHT_ALT + idx].setBrightness(0.1f);
+			module->lights[StrokeModule<PORTS>::LIGHT_CTRL + idx].setBrightness(0.1f);
+			module->lights[StrokeModule<PORTS>::LIGHT_SHIFT + idx].setBrightness(0.1f);
 		}
 		else if (module) {
 			color.a = 1.f;
