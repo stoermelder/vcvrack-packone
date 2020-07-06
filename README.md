@@ -12,7 +12,7 @@ The PackOne plugin gives you some modules for [VCV Rack](https://www.vcvrack.com
 
 ![Intro image](./docs/intro.png)
 
-- [AFFIX](./docs/Affix.md), [µAFFIX](./docs/Affix.md): inserts for polyphonic cables for adding offsets in volt, semitones or ocatves
+- [AFFIX](./docs/Affix.md), [µAFFIX](./docs/Affix.md): inserts for polyphonic cables for adding offsets in volt, semitones or octaves
 - [4ROUNDS](./docs/FourRounds.md): randomizer for up to 16 input signals to create 15 output signals
 - [8FACE, 8FACEx2](./docs/EightFace.md): preset sequencer for eight or sixteen presets of any module working as an universal expander
 - [ARENA](./docs/Arena.md): 2-dimensional XY-Mixer for 8 sources with various modulation targets and fun graphical interface
