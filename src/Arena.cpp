@@ -1922,15 +1922,9 @@ struct ScreenWidget : OpaqueWidget {
 
 
 template < typename MODULE >
-struct OpLedDisplay : LedDisplayChoice {
+struct OpLedDisplay : StoermelderLedDisplay {
 	MODULE* module;
 	int id;
-
-	OpLedDisplay() {
-		color = nvgRGB(0xf0, 0xf0, 0xf0);
-		box.size = Vec(25.1f, 16.f);
-		textOffset = Vec(4.f, 11.5f);
-	}
 
 	void step() override {
 		if (module) {
@@ -1954,7 +1948,7 @@ struct OpLedDisplay : LedDisplayChoice {
 		else {
 			text = "-X-";
 		}
-		LedDisplayChoice::step();
+		StoermelderLedDisplay::step();
 	}
 
 	void onButton(const event::Button& e) override {
@@ -1963,7 +1957,7 @@ struct OpLedDisplay : LedDisplayChoice {
 			createContextMenu();
 			e.consume(this);
 		}
-		LedDisplayChoice::onButton(e);
+		StoermelderLedDisplay::onButton(e);
 	}
 
 	void createContextMenu() {
@@ -2601,14 +2595,12 @@ struct SeqEditWidget : OpaqueWidget {
 // Various widgets
 
 template < typename MODULE >
-struct SeqLedDisplay : LedDisplayChoice {
+struct SeqLedDisplay : StoermelderLedDisplay {
 	MODULE* module;
 	int id;
 
 	SeqLedDisplay() {
-		color = nvgRGB(0xf0, 0xf0, 0xf0);
-		box.size = Vec(16.9f, 16.f);
-		textOffset = Vec(3.f, 11.5f);
+		box.size = Vec(16.9f, 13.2f);
 	}
 
 	void step() override {
@@ -2619,7 +2611,7 @@ struct SeqLedDisplay : LedDisplayChoice {
 		else {
 			text = "00";
 		}
-		LedDisplayChoice::step();
+		StoermelderLedDisplay::step();
 	}
 
 	void onButton(const event::Button& e) override {
@@ -2637,11 +2629,11 @@ struct SeqLedDisplay : LedDisplayChoice {
 			}
 			e.consume(this);
 		}
-		LedDisplayChoice::onButton(e);
+		StoermelderLedDisplay::onButton(e);
 	}
 
 	void draw(const DrawArgs& args) override {
-		LedDisplayChoice::draw(args);
+		StoermelderLedDisplay::draw(args);
 		if (module && module->seqEdit == id) {
 			drawRedHalo(args);
 		}

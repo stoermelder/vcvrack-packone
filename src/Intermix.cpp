@@ -526,15 +526,9 @@ struct IntermixModule : Module {
 
 
 template < typename MODULE >
-struct InputLedDisplay : LedDisplayChoice {
+struct InputLedDisplay : StoermelderLedDisplay {
 	MODULE* module;
 	int id;
-
-	InputLedDisplay() {
-		color = nvgRGB(0xf0, 0xf0, 0xf0);
-		box.size = Vec(25.1f, 16.f);
-		textOffset = Vec(4.f, 11.5f);
-	}
 
 	void step() override {
 		if (module) {
@@ -554,7 +548,7 @@ struct InputLedDisplay : LedDisplayChoice {
 		else {
 			text = "-X-";
 		}
-		LedDisplayChoice::step();
+		StoermelderLedDisplay::step();
 	}
 
 	void onButton(const event::Button& e) override {
@@ -562,7 +556,7 @@ struct InputLedDisplay : LedDisplayChoice {
 			createContextMenu();
 			e.consume(this);
 		}
-		LedDisplayChoice::onButton(e);
+		StoermelderLedDisplay::onButton(e);
 	}
 
 	void createContextMenu() {

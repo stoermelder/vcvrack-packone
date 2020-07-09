@@ -237,6 +237,12 @@ struct StoermelderTrimpot : app::SvgKnob {
 	}
 };
 
+struct StoermelderTrimpotSnap : StoermelderTrimpot {
+	StoermelderTrimpotSnap() {
+		snap = true;
+	}
+};
+
 struct StoermelderSmallKnob : app::SvgKnob {
 	StoermelderSmallKnob() {
 		minAngle = -0.83 * M_PI;
@@ -269,6 +275,8 @@ struct StoermelderPortLight : TBase {
 		if (TBase::bgColor.a > 0.0) {
 			nvgBeginPath(args.vg);
 			nvgCircle(args.vg, radius, radius, radius);
+			nvgCircle(args.vg, radius, radius, radius2);
+			nvgPathWinding(args.vg, NVG_HOLE);	// Mark second circle as a hole.
 			nvgFillColor(args.vg, TBase::bgColor);
 			nvgFill(args.vg);
 		}
@@ -338,15 +346,33 @@ struct PolyLedWidget : Widget {
 };
 
 
-template < typename MODULE, int SCENE_MAX >
-struct SceneLedDisplay : LedDisplayChoice {
-	MODULE* module;
+struct StoermelderLedDisplay : LightWidget {
+	std::shared_ptr<Font> font;
+	NVGcolor color = nvgRGB(0xef, 0xef, 0xef);
+	std::string text;
+	Vec textOffset;
 
-	SceneLedDisplay() {
-		color = nvgRGB(0xf0, 0xf0, 0xf0);
-		box.size = Vec(16.9f, 16.f);
-		textOffset = Vec(3.f, 11.5f);
+	StoermelderLedDisplay() {
+		font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
+		box.size = Vec(39.1f, 13.2f);
 	}
+
+	void draw(const DrawArgs& args) override {
+		if (text.length() > 0) {
+			nvgFillColor(args.vg, color);
+			nvgFontFaceId(args.vg, font->handle);
+			nvgTextLetterSpacing(args.vg, 0.0);
+			nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+			nvgFontSize(args.vg, 12);
+			nvgTextBox(args.vg, 0.f, box.size.y / 2.f, box.size.x, text.c_str(), NULL);
+		}
+	}
+};
+
+
+template < typename MODULE, int SCENE_MAX >
+struct SceneLedDisplay : StoermelderLedDisplay {
+	MODULE* module;
 
 	void step() override {
 		if (module) {
@@ -355,7 +381,7 @@ struct SceneLedDisplay : LedDisplayChoice {
 		else {
 			text = "00";
 		}
-		LedDisplayChoice::step();
+		StoermelderLedDisplay::step();
 	}
 
 	void onButton(const event::Button& e) override {
@@ -363,7 +389,7 @@ struct SceneLedDisplay : LedDisplayChoice {
 			createContextMenu();
 			e.consume(this);
 		}
-		LedDisplayChoice::onButton(e);
+		StoermelderLedDisplay::onButton(e);
 	}
 
 	void createContextMenu() {

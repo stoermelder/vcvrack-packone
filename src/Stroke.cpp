@@ -466,31 +466,10 @@ struct KeyContainer : Widget {
 };
 
 template < int PORTS >
-struct KeyDisplay : widget::OpaqueWidget {
+struct KeyDisplay : StoermelderLedDisplay {
 	KeyContainer<PORTS>* keyContainer;
 	StrokeModule<PORTS>* module;
 	int idx;
-
-	std::shared_ptr<Font> font;
-	NVGcolor color;
-	std::string text;
-
-	KeyDisplay() {
-		font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
-		color = nvgRGB(0xef, 0xef, 0xef);
-		box.size = Vec(37.9f, 16.f);
-	}
-
-	void draw(const DrawArgs& args) override {
-		if (text.length() > 0) {
-			nvgFillColor(args.vg, color);
-			nvgFontFaceId(args.vg, font->handle);
-			nvgTextLetterSpacing(args.vg, 0.0);
-			nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-			nvgFontSize(args.vg, 12);
-			nvgTextBox(args.vg, 0.f, box.size.y / 2.f + 1.8f, box.size.x, text.c_str(), NULL);
-		}
-	}
 
 	void step() override {
 		if (keyContainer && keyContainer->learnIdx == idx) {
@@ -507,7 +486,7 @@ struct KeyDisplay : widget::OpaqueWidget {
 			module->lights[StrokeModule<PORTS>::LIGHT_CTRL + idx].setBrightness(module->keys[idx].mods & GLFW_MOD_CONTROL ? 0.7f : 0.f);
 			module->lights[StrokeModule<PORTS>::LIGHT_SHIFT + idx].setBrightness(module->keys[idx].mods & GLFW_MOD_SHIFT ? 0.7f : 0.f);
 		} 
-		OpaqueWidget::step();
+		StoermelderLedDisplay::step();
 	}
 
 	void onButton(const event::Button& e) override {
@@ -515,7 +494,7 @@ struct KeyDisplay : widget::OpaqueWidget {
 			createContextMenu();
 			e.consume(this);
 		}
-		OpaqueWidget::onButton(e);
+		StoermelderLedDisplay::onButton(e);
 	}
 
 	void createContextMenu() {
@@ -604,7 +583,6 @@ struct StrokeWidget : ThemedModuleWidget<StrokeModule<10>> {
 			addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(19.4f, 50.1f + i * 29.4f), module, StrokeModule<10>::LIGHT_ALT + i));
 
 			KeyDisplay<10>* ledDisplay = createWidgetCentered<KeyDisplay<10>>(Vec(45.f, 50.1f + i * 29.4f));
-			ledDisplay->box.size = Vec(39.1f, 13.2f);
 			ledDisplay->module = module;
 			ledDisplay->keyContainer = keyContainer;
 			ledDisplay->idx = i;
