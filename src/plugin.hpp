@@ -40,4 +40,7 @@ extern Model* modelGlue;
 extern Model* modelGoto;
 extern Model* modelStroke;
 extern Model* modelSpin;
+extern Model* modelFlowerSeq;
+extern Model* modelFlowerSeqEx;
+extern Model* modelFlowerTrig;
 extern Model* modelAudioInterface64;

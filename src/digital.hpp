@@ -9,7 +9,7 @@ struct ClockMultiplier {
 
 	bool process() {
 		lastTickSamples++;
-		if (division > 0 && currentDivision >= divisionMult) {
+		if (division > 0 && currentDivision > divisionMult) {
 			currentDivision++;
 			divisionMult += division;
 			return true;
@@ -134,5 +134,55 @@ struct LinearFade4 {
 		currentFall = simd::ifelse(currentFall > 0.f, simd::fmax(currentFall - deltaTime, 0.f), currentFall);
 
 		return r;
+	}
+};
+
+
+struct StoermelderSlewLimiter {
+	// Minimum and maximum slopes in volts per second
+	const float slewMin = 0.1;
+	const float slewMax = 10000.f;
+	// Amount of extra slew per voltage difference
+	const float shapeScale = 1/10.f;
+
+	float shape	= 0.5f;
+	float rise = 0.0f;
+	float fall = 0.0f;
+
+	float out = 0.0;
+
+	inline void reset() {
+		out = 0.f;
+	}
+	inline void setShape(float shape) {
+		this->shape = shape;
+	}
+	inline void setRise(float rise) {
+		this->rise = rise;
+	}
+	inline void setFall(float fall) {
+		this->fall = fall;
+	}
+	inline void setRiseFall(float rise, float fall) {
+		this->rise = rise;
+		this->fall = fall;
+	}
+
+	float process(float in, float sampleTime) {
+		// Rise
+		if (in > out) {
+			float slew = slewMax * std::pow(slewMin / slewMax, rise);
+			out += slew * crossfade(1.f, shapeScale * (in - out), shape) * sampleTime;
+			if (out > in)
+				out = in;
+		}
+		// Fall
+		else if (in < out) {
+			float slew = slewMax * std::pow(slewMin / slewMax, fall);
+			out -= slew * crossfade(1.f, shapeScale * (out - in), shape) * sampleTime;
+			if (out < in)
+				out = in;
+		}
+		return out;
 	}
 };

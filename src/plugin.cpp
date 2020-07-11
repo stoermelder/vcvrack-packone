@@ -36,6 +36,9 @@ void init(rack::Plugin* p) {
 	p->addModel(modelGoto);
 	p->addModel(modelStroke);
 	p->addModel(modelSpin);
+	p->addModel(modelFlowerSeq);
+	p->addModel(modelFlowerSeqEx);
+	p->addModel(modelFlowerTrig);
 	p->addModel(modelAudioInterface64);
 
 	pluginSettings.readFromJson();
