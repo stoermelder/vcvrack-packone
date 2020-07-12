@@ -246,6 +246,13 @@
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Flower.md"
 		},
 		{
+			"slug": "Transit",
+			"name": "TRANSIT",
+			"description": "",
+			"tags": ["Utility"],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Transit.md"
+		},
+		{
 			"slug": "AudioInterface64",
 			"name": "AUDIO-64",
 			"description": "Sends CV and audio to/from an audio device",
