@@ -305,7 +305,7 @@ struct TransitModule : Module {
 		float shape = inputs[INPUT_SHAPE].getVoltage() / 10.f + params[PARAM_SHAPE].getValue();
 		slewLimiter.setShape(shape);
 		float s = slewLimiter.process(1.f, sampleTime);
-		if (s == 1.f) return;
+		if (s >= (1.f - 1e-3f)) return;
 
 		for (size_t i = 0; i < sourceHandles.size(); i++) {
 			ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
@@ -315,6 +315,7 @@ struct TransitModule : Module {
 			if (presetSlot[preset].size() <= i) return;
 			float newValue = presetSlot[preset][i];
 			float v = oldValue * (1.f - s) + newValue * s;
+			if (s > (1.f - 1e-2f) && std::abs(std::round(v) - v) < 5e-2f) v = std::round(v);
 			pq->setValue(v);
 		}
 	}
@@ -365,11 +366,11 @@ struct TransitModule : Module {
 			json_t* presetJ = json_object();
 			json_object_set_new(presetJ, "slotUsed", json_boolean(presetSlotUsed[i]));
 			if (presetSlotUsed[i]) {
-                json_t* slotJ = json_array();
-                for (size_t j = 0; j < presetSlot[i].size(); j++) {
-                    json_t* vJ = json_real(presetSlot[i][j]);
-                    json_array_append_new(slotJ, vJ);
-                }
+				json_t* slotJ = json_array();
+				for (size_t j = 0; j < presetSlot[i].size(); j++) {
+					json_t* vJ = json_real(presetSlot[i][j]);
+					json_array_append_new(slotJ, vJ);
+				}
 				json_object_set(presetJ, "slot", slotJ);
 			}
 			json_array_append_new(presetsJ, presetJ);
@@ -431,32 +432,34 @@ struct TransitModule : Module {
 	}
 };
 
-struct TransitWidget : ThemedModuleWidget<TransitModule<16>> {
-	typedef TransitModule<16> MODULE;
-
+template < int NUM_PRESETS >
+struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
+	typedef ThemedModuleWidget<TransitModule<NUM_PRESETS>> BASE;
+	typedef TransitModule<NUM_PRESETS> MODULE;
+	
 	TransitWidget(MODULE* module)
 		: ThemedModuleWidget<MODULE>(module, "Transit") {
-		setModule(module);
+		BASE::setModule(module);
 
-		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
-		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+		BASE::addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
+		BASE::addChild(createWidget<StoermelderBlackScrew>(Vec(BASE::box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		for (size_t i = 0; i < 16; i++) {
-			float o = i * 19.247f;
-			addParam(createParamCentered<LEDButton>(Vec(17.1f, 45.4f + o), module, MODULE::PARAM_PRESET + i));
-			addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(17.1f, 45.4f + o), module, MODULE::LIGHT_PRESET + i * 3));
+		for (size_t i = 0; i < NUM_PRESETS; i++) {
+			float o = i * (288.7f / (NUM_PRESETS - 1));
+			BASE::addParam(createParamCentered<LEDButton>(Vec(17.1f, 45.4f + o), module, MODULE::PARAM_PRESET + i));
+			BASE::addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(17.1f, 45.4f + o), module, MODULE::LIGHT_PRESET + i * 3));
 		}
 
-		addInput(createInputCentered<StoermelderPort>(Vec(52.6f, 58.9f), module, MODULE::INPUT_SLOT));
-		addInput(createInputCentered<StoermelderPort>(Vec(52.6f, 95.2f), module, MODULE::INPUT_RESET));
+		BASE::addInput(createInputCentered<StoermelderPort>(Vec(52.6f, 58.9f), module, MODULE::INPUT_SLOT));
+		BASE::addInput(createInputCentered<StoermelderPort>(Vec(52.6f, 95.2f), module, MODULE::INPUT_RESET));
 
-		addParam(createParamCentered<LEDSliderBlue>(Vec(52.6f, 170.2f), module, MODULE::PARAM_FADE));
-		addInput(createInputCentered<StoermelderPort>(Vec(52.6f, 225.9f), module, MODULE::INPUT_FADE));
+		BASE::addParam(createParamCentered<LEDSliderBlue>(Vec(52.6f, 170.2f), module, MODULE::PARAM_FADE));
+		BASE::addInput(createInputCentered<StoermelderPort>(Vec(52.6f, 225.9f), module, MODULE::INPUT_FADE));
 
-		addParam(createParamCentered<StoermelderTrimpot>(Vec(52.6f, 270.6f), module, MODULE::PARAM_SHAPE));
-		addInput(createInputCentered<StoermelderPort>(Vec(52.6f, 295.6f), module, MODULE::INPUT_SHAPE));
+		BASE::addParam(createParamCentered<StoermelderTrimpot>(Vec(52.6f, 270.6f), module, MODULE::PARAM_SHAPE));
+		BASE::addInput(createInputCentered<StoermelderPort>(Vec(52.6f, 295.6f), module, MODULE::INPUT_SHAPE));
 
-		addParam(createParamCentered<CKSSH>(Vec(52.6f, 336.2f), module, MODULE::PARAM_RW));
+		BASE::addParam(createParamCentered<CKSSH>(Vec(52.6f, 336.2f), module, MODULE::PARAM_RW));
 	}
 
 	void appendContextMenu(Menu* menu) override {
@@ -527,4 +530,4 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<16>> {
 } // namespace Transit
 } // namespace StoermelderPackOne
 
-Model* modelTransit = createModel<StoermelderPackOne::Transit::TransitModule<16>, StoermelderPackOne::Transit::TransitWidget>("Transit");
+Model* modelTransit = createModel<StoermelderPackOne::Transit::TransitModule<14>, StoermelderPackOne::Transit::TransitWidget<14>>("Transit");
