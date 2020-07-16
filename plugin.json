@@ -126,6 +126,13 @@
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Maze.md"
 		},
 		{
+			"slug": "Hive",
+			"name": "HIVE",
+			"description": "4 channel sequencer running on a 2-dimensional hexagonal grid",
+			"tags": ["Sequencer", "Random"],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Maze.md"
+		},
+		{
 			"slug": "Intermix",
 			"name": "INTERMIX",
 			"description": "Precision adder 8x8 switch matrix with scene-support",

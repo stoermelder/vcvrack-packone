@@ -22,6 +22,7 @@ void init(rack::Plugin* p) {
 	p->addModel(modelFourRounds);
 	p->addModel(modelArena);
 	p->addModel(modelMaze);
+	p->addModel(modelHive);
 	p->addModel(modelIntermix);
 	p->addModel(modelDetour);
 	p->addModel(modelSail);
