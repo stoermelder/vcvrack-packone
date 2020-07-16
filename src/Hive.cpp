@@ -26,10 +26,10 @@
 
 #include "plugin.hpp"
 #include "digital.hpp"
-#include "hexgrid.hpp"
+#include "HiveGrid.hpp"
 #include <random>
 
-
+namespace StoermelderPackOne {
 namespace Hive {
 
 enum GRIDSTATE {
@@ -74,7 +74,7 @@ const float BOX_WIDTH = 262.563f;								/// Grid widget's dimensions in pixels
 const float BOX_HEIGHT = 227.f;									///
 const Vec ORIGIN = Vec(BOX_WIDTH / 2.f, BOX_HEIGHT / 2.f);		/// Hex grid origin is at the center of the widget
 
-struct HiveCell : HexCell {				///
+struct HiveCell : HexCell {	
 	GRIDSTATE state;
 	float cv;
 
@@ -82,7 +82,7 @@ struct HiveCell : HexCell {				///
 	HiveCell() : state(GRIDSTATE::OFF), cv(0.f) {}
 };
 
-struct HiveCursor : HexCell {			///
+struct HiveCursor : HexCell {
 	DIRECTION startDir;
 	DIRECTION dir;
 	RoundAxialVec startPos;
@@ -104,10 +104,10 @@ struct HiveModule : Module {
 		ENUMS(CLK_INPUT, NUM_PORTS),
 		ENUMS(RESET_INPUT, NUM_PORTS),
 		ENUMS(TURN_INPUT, NUM_PORTS),
-		SHIFT_R1_INPUT,						///
-		SHIFT_R2_INPUT,						///
-		SHIFT_L1_INPUT,						///
-		SHIFT_L2_INPUT,						///
+		SHIFT_R1_INPUT,
+		SHIFT_R2_INPUT,
+		SHIFT_L1_INPUT,
+		SHIFT_L2_INPUT,
 		NUM_INPUTS
 	};
 	enum OutputIds {
@@ -126,7 +126,7 @@ struct HiveModule : Module {
 	std::default_random_engine randGen{(uint16_t)std::chrono::system_clock::now().time_since_epoch().count()};
 	std::geometric_distribution<int>* geoDist[NUM_PORTS] = {};
 	
-	typedef HexGrid <HiveCell, HiveCursor, NUM_PORTS, RADIUS, POINTY> HIVEGRID;			///
+	typedef HexGrid <HiveCell, HiveCursor, NUM_PORTS, RADIUS, POINTY> HIVEGRID;
 
 	/** [Stored to JSON] */
 	int panelTheme = 0;
@@ -153,10 +153,10 @@ struct HiveModule : Module {
 	dsp::PulseGenerator outPulse[NUM_PORTS];
 	ClockMultiplier multiplier[NUM_PORTS];
 
-	dsp::SchmittTrigger shiftR1Trigger;			///
-	dsp::SchmittTrigger shiftR2Trigger;			///
-	dsp::SchmittTrigger shiftL1Trigger;			///
-	dsp::SchmittTrigger shiftL2Trigger;			///
+	dsp::SchmittTrigger shiftR1Trigger;
+	dsp::SchmittTrigger shiftR2Trigger;
+	dsp::SchmittTrigger shiftL1Trigger;
+	dsp::SchmittTrigger shiftL2Trigger;
 
 	bool active[NUM_PORTS];
 	MODULESTATE currentState = MODULESTATE::GRID;
@@ -199,32 +199,32 @@ struct HiveModule : Module {
 	void process(const ProcessArgs& args) override {
 		if (shiftR1Trigger.process(inputs[SHIFT_R1_INPUT].getVoltage()))
 			for (int i = 0; i < NUM_PORTS; i++)
-				grid.moveCursor(i, (grid.cursor[i].dir + 2) % 12);				///
+				grid.moveCursor(i, (grid.cursor[i].dir + 2) % 12);
 		if (shiftR2Trigger.process(inputs[SHIFT_R2_INPUT].getVoltage()))
 			for (int i = 0; i < NUM_PORTS; i++)
-				grid.moveCursor(i, (grid.cursor[i].dir + 4) % 12);				///
+				grid.moveCursor(i, (grid.cursor[i].dir + 4) % 12);
 		if (shiftL1Trigger.process(inputs[SHIFT_L1_INPUT].getVoltage()))
 			for (int i = 0; i < NUM_PORTS; i++)
-				grid.moveCursor(i, (grid.cursor[i].dir + 10) % 12);				///
+				grid.moveCursor(i, (grid.cursor[i].dir + 10) % 12);
 		if (shiftL1Trigger.process(inputs[SHIFT_L1_INPUT].getVoltage()))
 			for (int i = 0; i < NUM_PORTS; i++)
-				grid.moveCursor(i, (grid.cursor[i].dir + 8) % 12);				///
+				grid.moveCursor(i, (grid.cursor[i].dir + 8) % 12);
 
 		for (int i = 0; i < NUM_PORTS; i++) {
 			active[i] = outputs[TRIG_OUTPUT + i].isConnected() || outputs[CV_OUTPUT + i].isConnected();
 			bool doPulse = false;
 
 			if (processResetTrigger(i)) {
-				grid.cursor[i].pos = grid.cursor[i].startPos;					///
-				grid.cursor[i].dir = grid.cursor[i].startDir;					///
+				grid.cursor[i].pos = grid.cursor[i].startPos;
+				grid.cursor[i].dir = grid.cursor[i].startDir;
 				multiplier[i].reset();
 			}
 
 			if (processClockTrigger(i, args.sampleTime)) {
-				grid.moveCursor(i, grid.cursor[i].dir);							///
+				grid.moveCursor(i, grid.cursor[i].dir);
 				multiplier[i].tick();
 
-				switch (grid.getCell(grid.cursor[i].pos).state) {            	///
+				switch (grid.getCell(grid.cursor[i].pos).state) {
 					case GRIDSTATE::OFF:
 						break;
 					case GRIDSTATE::ON:
@@ -242,7 +242,7 @@ struct HiveModule : Module {
 				}
 			}
 
-			if (processTurnTrigger(i)) {										///
+			if (processTurnTrigger(i)) {
 				switch (grid.cursor[i].turnMode) {
 					case SIXTY:
 						grid.cursor[i].dir = (DIRECTION)((grid.cursor[i].dir + 2) % 12);
@@ -271,19 +271,19 @@ struct HiveModule : Module {
 
 			if (multiplier[i].process() || doPulse) {
 				outPulse[i].trigger();
-				HiveCell cell = grid.getCell(grid.cursor[i].pos);					///
-				switch (grid.cursor[i].outMode) {									///
+				HiveCell cell = grid.getCell(grid.cursor[i].pos);
+				switch (grid.cursor[i].outMode) {
 					case OUTMODE::BI_5V:
-						outCv = rescale(cell.cv, 0.f, 1.f, -5.f, 5.f);				///
+						outCv = rescale(cell.cv, 0.f, 1.f, -5.f, 5.f);
 						break;
 					case OUTMODE::UNI_5V:
-						outCv = rescale(cell.cv, 0.f, 1.f, 0.f, 5.f);				///
+						outCv = rescale(cell.cv, 0.f, 1.f, 0.f, 5.f);
 						break;
 					case OUTMODE::UNI_3V:
-						outCv = rescale(cell.cv, 0.f, 1.f, 0.f, 3.f);				///
+						outCv = rescale(cell.cv, 0.f, 1.f, 0.f, 3.f);
 						break;
 					case OUTMODE::UNI_1V:
-						outCv = cell.cv;											///
+						outCv = cell.cv;
 						break;
 				}
 			}
@@ -365,7 +365,7 @@ struct HiveModule : Module {
 		}
 	}
 
-	void gridClear() {										///
+	void gridClear() {
 		HiveCell cell = HiveCell(GRIDSTATE::OFF, 0.f);
 		for (int q = -RADIUS; q <= RADIUS; q++) {
 			for (int r = -RADIUS; r <= RADIUS; r++) {
@@ -376,7 +376,7 @@ struct HiveModule : Module {
 		gridDirty = true;
 	}
 
-	void gridResize(int radius) {							///
+	void gridResize(int radius) {
 		if (radius == grid.usedRadius) return;
 		sizeFactor = (BOX_HEIGHT / (((2 * radius) * (3.f / 4.f)) + 1)) / 2.f;
 		grid.setRadius(radius);
@@ -391,11 +391,11 @@ struct HiveModule : Module {
 		gridDirty = true;
 	}
 
-	void gridRandomize(bool useRandom = true) {					///
+	void gridRandomize(bool useRandom = true) {
 		HiveCell cell;
 		for (int q = -RADIUS; q <= RADIUS; q++) {
 			for (int r = -RADIUS; r <= RADIUS; r++) {
-				if (cellVisible(q, r, RADIUS)) {				///
+				if (cellVisible(q, r, RADIUS)) {
 					float rand = random::uniform();
 					if (rand > 0.8f) {
 						cell.state = useRandom ? GRIDSTATE::RANDOM : GRIDSTATE::ON;
@@ -417,7 +417,7 @@ struct HiveModule : Module {
 		gridDirty = true;
 	}
 
-	void cellNextState(HiveCell *cell) {						///
+	void cellNextState(HiveCell *cell) {
 		cell->state = (GRIDSTATE)((cell->state + 1) % 3);
 		if (cell->state == GRIDSTATE::ON) cell->cv = random::uniform();
 		grid.setCell(*cell);
@@ -436,7 +436,7 @@ struct HiveModule : Module {
 
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 
-		json_t* gridJ = json_array();							///
+		json_t* gridJ = json_array();
 		for (int q = 0; q < grid.arraySize; q++) {
 			for (int r = 0; r < grid.arraySize; r++) {
 				json_array_append_new(gridJ, json_integer(grid.cellMap[q][r].state));
@@ -444,7 +444,7 @@ struct HiveModule : Module {
 		}
 		json_object_set_new(rootJ, "grid", gridJ);
 
-		json_t* gridCvJ = json_array();							///
+		json_t* gridCvJ = json_array();
 		for (int q = 0; q < grid.arraySize; q++) {
 			for (int r = 0; r < grid.arraySize; r++) {
 				json_array_append_new(gridCvJ, json_real(grid.cellMap[q][r].cv));
@@ -452,7 +452,7 @@ struct HiveModule : Module {
 		}
 		json_object_set_new(rootJ, "gridCv", gridCvJ);
 
-		json_t* mirrorsJ = json_array();						///
+		json_t* mirrorsJ = json_array();
 		for (int i = 0; i < 6; i++) {
 			json_t* mirrorJ = json_object();
 			json_object_set_new(mirrorJ, "x", json_integer(grid.mirrorCenters[i].x));
@@ -462,7 +462,7 @@ struct HiveModule : Module {
 		}
 		json_object_set_new(rootJ, "mirrorCenters", mirrorsJ);
 
-		json_t* portsJ = json_array();							///
+		json_t* portsJ = json_array();
 		for (int i = 0; i < NUM_PORTS; i++) {
 			json_t* portJ = json_object();
 			json_object_set_new(portJ, "qStartPos", json_integer(grid.cursor[i].startPos.q));
@@ -480,8 +480,8 @@ struct HiveModule : Module {
 		}
 		json_object_set_new(rootJ, "ports", portsJ);
 
-		json_object_set_new(rootJ, "usedRadius", json_integer(grid.usedRadius));			///
-		json_object_set_new(rootJ, "sizeFactor", json_real(sizeFactor));					///
+		json_object_set_new(rootJ, "usedRadius", json_integer(grid.usedRadius));
+		json_object_set_new(rootJ, "sizeFactor", json_real(sizeFactor));
 
 		json_object_set_new(rootJ, "normalizePorts", json_boolean(normalizePorts));
 		return rootJ;
@@ -490,21 +490,21 @@ struct HiveModule : Module {
 	void dataFromJson(json_t* rootJ) override {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 
-		json_t* gridJ = json_object_get(rootJ, "grid");										///
-		for (int q = 0; q < grid.arraySize; q++) {											///
+		json_t* gridJ = json_object_get(rootJ, "grid");
+		for (int q = 0; q < grid.arraySize; q++) {
 			for (int r = 0; r < grid.arraySize; r++) {
 				grid.cellMap[q][r].state = (GRIDSTATE)json_integer_value(json_array_get(gridJ, q * grid.arraySize + r));
 			}
 		}
 		
-		json_t* gridCvJ = json_object_get(rootJ, "gridCv");									///
-		for (int q = 0; q < grid.arraySize; q++) {											///
+		json_t* gridCvJ = json_object_get(rootJ, "gridCv");
+		for (int q = 0; q < grid.arraySize; q++) {
 			for (int r = 0; r < grid.arraySize; r++) {
 				grid.cellMap[q][r].cv = json_real_value(json_array_get(gridCvJ, q * grid.arraySize + r));
 			}
 		}
 
-		json_t* mirrorsJ = json_object_get(rootJ, "mirrorCenters");							///
+		json_t* mirrorsJ = json_object_get(rootJ, "mirrorCenters");
 		json_t* mirrorJ;
 		size_t mirrorIndex;
 		json_array_foreach(mirrorsJ, mirrorIndex, mirrorJ) {
@@ -513,7 +513,7 @@ struct HiveModule : Module {
 			grid.mirrorCenters[mirrorIndex].z = json_integer_value(json_object_get(mirrorJ, "z"));
 		}
 
-		json_t* portsJ = json_object_get(rootJ, "ports");									///
+		json_t* portsJ = json_object_get(rootJ, "ports");
 		json_t* portJ;
 		size_t portIndex;
 		json_array_foreach(portsJ, portIndex, portJ) {
@@ -534,8 +534,8 @@ struct HiveModule : Module {
 			}
 		}
 
-		grid.usedRadius = json_integer_value(json_object_get(rootJ, "usedRadius"));			///
-		sizeFactor = json_real_value(json_object_get(rootJ, "sizeFactor"));					///
+		grid.usedRadius = json_integer_value(json_object_get(rootJ, "usedRadius"));
+		sizeFactor = json_real_value(json_object_get(rootJ, "sizeFactor"));
 
 		json_t* normalizePortsJ = json_object_get(rootJ, "normalizePorts");
 		if (normalizePortsJ) normalizePorts = json_boolean_value(normalizePortsJ);
@@ -568,7 +568,7 @@ struct ModuleStateMenuItem : MenuItem {
 
 template < typename MODULE >
 struct GridCellChangeAction : history::ModuleAction {
-	HiveCell oldCell, newCell;										///
+	HiveCell oldCell, newCell;
 
 	GridCellChangeAction() {
 		name = "stoermelder HIVE cell";
@@ -579,7 +579,7 @@ struct GridCellChangeAction : history::ModuleAction {
 		assert(mw);
 		MODULE* m = dynamic_cast<MODULE*>(mw->module);
 		assert(m);
-		m->grid.setCell(oldCell);									///
+		m->grid.setCell(oldCell);
 		m->gridDirty = true;
 	}
 
@@ -588,7 +588,7 @@ struct GridCellChangeAction : history::ModuleAction {
 		assert(mw);
 		MODULE* m = dynamic_cast<MODULE*>(mw->module);
 		assert(m);
-		m->grid.setCell(newCell);									///
+		m->grid.setCell(newCell);
 		m->gridDirty = true;
 	}
 };
@@ -604,28 +604,28 @@ struct GridSizeSlider : ui::Slider {
 			this->module = module;
 		}
 		void setValue(float value) override {
-			v = clamp(value, (float)MIN_RADIUS, (float)MAX_RADIUS);			///
+			v = clamp(value, (float)MIN_RADIUS, (float)MAX_RADIUS);
 			module->gridResize(int(v));
 		}
 		float getValue() override {
-			if (v < 0.f) v = module->grid.usedRadius;						///
+			if (v < 0.f) v = module->grid.usedRadius;
 			return v;
 		}
 		float getDefaultValue() override {
-			return 4.f;														///
+			return 4.f;
 		}
 		float getMinValue() override {
-			return float(MIN_RADIUS);										///
+			return float(MIN_RADIUS);
 		}
 		float getMaxValue() override {
-			return float(MAX_RADIUS);										///
+			return float(MAX_RADIUS);
 		}
 		float getDisplayValue() override {
 			return getValue();
 		}
 		std::string getDisplayValueString() override {
 			int i = int(getValue());
-			return string::f("%i", i);										///
+			return string::f("%i", i);
 		}
 		void setDisplayValue(float displayValue) override {
 			setValue(displayValue);
@@ -700,7 +700,7 @@ struct HiveGridWidget : FramebufferWidget {
 			this->module = module;
 		}
 
-		void draw(const Widget::DrawArgs& args) override {			///
+		void draw(const Widget::DrawArgs& args) override {
 			if (!module) return;
 
 			Vec hex;
@@ -794,7 +794,7 @@ struct HiveDrawHelper {
 
 	NVGcolor colors[4] = { color::YELLOW, color::RED, color::CYAN, color::BLUE };
 
-	void draw(const Widget::DrawArgs& args, Rect box) {										///
+	void draw(const Widget::DrawArgs& args, Rect box) {
 		float cursorRadius = (sqrt(3.f) * module->sizeFactor) / 2.f;
 
 		nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
@@ -849,13 +849,13 @@ struct HiveStartPosEditWidget : OpaqueWidget, HiveDrawHelper<MODULE> {
 		HiveDrawHelper<MODULE>::module = module;
 	}
 
-	void draw(const DrawArgs& args) override {								///
+	void draw(const DrawArgs& args) override {
 		if (module && module->currentState == MODULESTATE::EDIT) {
 			NVGcolor c = color::mult(color::WHITE, 0.7f);
 			float stroke = 1.f;
 			nvgGlobalCompositeOperation(args.vg, NVG_ATOP);
 
-			// Outer border													///
+			// Outer border
 			nvgBeginPath(args.vg);
 			drawHex(ORIGIN, ORIGIN.x, FLAT, args.vg);						/// The x value of the origin (= width / 2) is equivalent to the sizeFactor of the flat-topped border hexagon
 			nvgStrokeWidth(args.vg, stroke);
@@ -867,11 +867,11 @@ struct HiveStartPosEditWidget : OpaqueWidget, HiveDrawHelper<MODULE> {
 			nvgFontFaceId(args.vg, font->handle);
 			nvgTextLetterSpacing(args.vg, -2.2);
 			nvgFillColor(args.vg, c);
-			nvgTextBox(args.vg, box.size.x - 101.25f, box.size.y - 6.f, 120, "EDIT", NULL);			///
+			nvgTextBox(args.vg, box.size.x - 101.25f, box.size.y - 6.f, 120, "EDIT", NULL);
 
 			HiveDrawHelper<MODULE>::draw(args, box);
 
-			float triangleRadius = (sqrt(3.f) * module->sizeFactor) / 2.f * 0.75f;					///
+			float triangleRadius = (sqrt(3.f) * module->sizeFactor) / 2.f * 0.75f;
 
 			nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
 			for (int i = 0; i < module->numPorts; i++) {
@@ -904,7 +904,7 @@ struct HiveStartPosEditWidget : OpaqueWidget, HiveDrawHelper<MODULE> {
 					case W:
 						p1 = c.minus(p1);
 						p2 = c.minus(p2);
-						p3 = c.minus(p3);				
+						p3 = c.minus(p3);
 						break;
 					case NW:
 						p1 = c.plus(p1.rotate(2.f * M_PI / -3.f));
@@ -929,10 +929,10 @@ struct HiveStartPosEditWidget : OpaqueWidget, HiveDrawHelper<MODULE> {
 		if (module && module->currentState == MODULESTATE::EDIT) {
 			if (e.action == GLFW_PRESS) {
 				selectedId = -1;
-				if (gridHovered(e.pos, BOX_WIDTH / 2.f, FLAT, ORIGIN)) {															///
-					RoundAxialVec hex = pixelToHex(e.pos, module->sizeFactor, POINTY, ORIGIN);										///
+				if (gridHovered(e.pos, BOX_WIDTH / 2.f, FLAT, ORIGIN)) {
+					RoundAxialVec hex = pixelToHex(e.pos, module->sizeFactor, POINTY, ORIGIN);
 					for (int i = 0; i < module->numPorts; i++) {
-						if (module->grid.cursor[i].startPos.q == hex.q && module->grid.cursor[i].startPos.r == hex.r) {				///
+						if (module->grid.cursor[i].startPos.q == hex.q && module->grid.cursor[i].startPos.r == hex.r) {
 							selectedId = i;
 							break;
 						}
@@ -955,7 +955,7 @@ struct HiveStartPosEditWidget : OpaqueWidget, HiveDrawHelper<MODULE> {
 		}
 	}
 
-	void onDragMove(const event::DragMove& e) override {									///
+	void onDragMove(const event::DragMove& e) override {
 		if (module && module->currentState == MODULESTATE::EDIT) {
 			if (e.button != GLFW_MOUSE_BUTTON_LEFT)
 				return;
@@ -963,9 +963,9 @@ struct HiveStartPosEditWidget : OpaqueWidget, HiveDrawHelper<MODULE> {
 				return;
 
 			math::Vec pos = APP->scene->rack->mousePos.minus(dragPos);
-			RoundAxialVec hex = pixelToHex(pos, module->sizeFactor, POINTY, ORIGIN);		///
-			if (cellVisible(hex.q, hex.r, module->grid.usedRadius)) {						///
-				module->grid.cursor[selectedId].startPos = hex;								///
+			RoundAxialVec hex = pixelToHex(pos, module->sizeFactor, POINTY, ORIGIN);
+			if (cellVisible(hex.q, hex.r, module->grid.usedRadius)) {
+				module->grid.cursor[selectedId].startPos = hex;
 			}
 		}
 	}
@@ -975,27 +975,27 @@ struct HiveStartPosEditWidget : OpaqueWidget, HiveDrawHelper<MODULE> {
 
 		struct DirectionItem : MenuItem {
 			MODULE* module;
-			DIRECTION dir;													///
+			DIRECTION dir;
 			int id;
 
 			void onAction(const event::Action &e) override {
-				module->grid.cursor[id].startDir = dir;						///
+				module->grid.cursor[id].startDir = dir;
 			}
 
 			void step() override {
-				bool s = module->grid.cursor[id].startDir == dir;			///
+				bool s = module->grid.cursor[id].startDir == dir;
 				rightText = s ? "✔" : "";
 				MenuItem::step();
 			}
 		};
 
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Start direction"));
-		menu->addChild(construct<DirectionItem>(&MenuItem::text, "NE", &DirectionItem::module, module, &DirectionItem::id, selectedId, &DirectionItem::dir, NE));			///
-		menu->addChild(construct<DirectionItem>(&MenuItem::text, "E", &DirectionItem::module, module, &DirectionItem::id, selectedId, &DirectionItem::dir, E));				///
-		menu->addChild(construct<DirectionItem>(&MenuItem::text, "SE", &DirectionItem::module, module, &DirectionItem::id, selectedId, &DirectionItem::dir, SE));			///
-		menu->addChild(construct<DirectionItem>(&MenuItem::text, "SW", &DirectionItem::module, module, &DirectionItem::id, selectedId, &DirectionItem::dir, SW));			///
-		menu->addChild(construct<DirectionItem>(&MenuItem::text, "W", &DirectionItem::module, module, &DirectionItem::id, selectedId, &DirectionItem::dir, W));				///
-		menu->addChild(construct<DirectionItem>(&MenuItem::text, "NW", &DirectionItem::module, module, &DirectionItem::id, selectedId, &DirectionItem::dir, NW));			///
+		menu->addChild(construct<DirectionItem>(&MenuItem::text, "NE", &DirectionItem::module, module, &DirectionItem::id, selectedId, &DirectionItem::dir, NE));
+		menu->addChild(construct<DirectionItem>(&MenuItem::text, "E", &DirectionItem::module, module, &DirectionItem::id, selectedId, &DirectionItem::dir, E));
+		menu->addChild(construct<DirectionItem>(&MenuItem::text, "SE", &DirectionItem::module, module, &DirectionItem::id, selectedId, &DirectionItem::dir, SE));
+		menu->addChild(construct<DirectionItem>(&MenuItem::text, "SW", &DirectionItem::module, module, &DirectionItem::id, selectedId, &DirectionItem::dir, SW));
+		menu->addChild(construct<DirectionItem>(&MenuItem::text, "W", &DirectionItem::module, module, &DirectionItem::id, selectedId, &DirectionItem::dir, W));
+		menu->addChild(construct<DirectionItem>(&MenuItem::text, "NW", &DirectionItem::module, module, &DirectionItem::id, selectedId, &DirectionItem::dir, NW));
 
 		struct TurnModeItem : MenuItem {
 			MODULE* module;
@@ -1014,9 +1014,9 @@ struct HiveStartPosEditWidget : OpaqueWidget, HiveDrawHelper<MODULE> {
 
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Turn mode"));
-		menu->addChild(construct<TurnModeItem>(&MenuItem::text, "Sixty", &TurnModeItem::module, module, &TurnModeItem::id, selectedId, &TurnModeItem::turnMode, TURNMODE::SIXTY));					///
+		menu->addChild(construct<TurnModeItem>(&MenuItem::text, "Sixty", &TurnModeItem::module, module, &TurnModeItem::id, selectedId, &TurnModeItem::turnMode, TURNMODE::SIXTY));
 		menu->addChild(construct<TurnModeItem>(&MenuItem::text, "Ninety", &TurnModeItem::module, module, &TurnModeItem::id, selectedId, &TurnModeItem::turnMode, TURNMODE::NINETY));
-		menu->addChild(construct<TurnModeItem>(&MenuItem::text, "One-Twenty", &TurnModeItem::module, module, &TurnModeItem::id, selectedId, &TurnModeItem::turnMode, TURNMODE::ONETWENTY));			///
+		menu->addChild(construct<TurnModeItem>(&MenuItem::text, "One-Twenty", &TurnModeItem::module, module, &TurnModeItem::id, selectedId, &TurnModeItem::turnMode, TURNMODE::ONETWENTY));
 		menu->addChild(construct<TurnModeItem>(&MenuItem::text, "One-Eighty", &TurnModeItem::module, module, &TurnModeItem::id, selectedId, &TurnModeItem::turnMode, TURNMODE::ONEEIGHTY));
 
 		struct OutModeItem : MenuItem {
@@ -1025,11 +1025,11 @@ struct HiveStartPosEditWidget : OpaqueWidget, HiveDrawHelper<MODULE> {
 			int id;
 
 			void onAction(const event::Action &e) override {
-				module->grid.cursor[id].outMode = outMode;									///
+				module->grid.cursor[id].outMode = outMode;
 			}
 
 			void step() override {
-				rightText = module->grid.cursor[id].outMode == outMode ? "✔" : "";			///
+				rightText = module->grid.cursor[id].outMode == outMode ? "✔" : "";
 				MenuItem::step();
 			}
 		};
@@ -1046,11 +1046,11 @@ struct HiveStartPosEditWidget : OpaqueWidget, HiveDrawHelper<MODULE> {
 			int id;
 
 			void onAction(const event::Action& e) override {
-				module->grid.cursor[id].ratchetingEnabled ^= true;							///
+				module->grid.cursor[id].ratchetingEnabled ^= true;
 			}
 
 			void step() override {
-				rightText = module->grid.cursor[id].ratchetingEnabled ? "✔" : "";			///
+				rightText = module->grid.cursor[id].ratchetingEnabled ? "✔" : "";
 				MenuItem::step();
 			}
 		};
@@ -1072,7 +1072,7 @@ struct HiveStartPosEditWidget : OpaqueWidget, HiveDrawHelper<MODULE> {
 				}
 
 				void step() override {
-					rightText = module->grid.cursor[id].ratchetingProb == ratchetingProb ? "✔" : "";		///
+					rightText = module->grid.cursor[id].ratchetingProb == ratchetingProb ? "✔" : "";
 					MenuItem::step();
 				}
 			};
@@ -1120,20 +1120,20 @@ struct HiveScreenWidget : OpaqueWidget, HiveDrawHelper<MODULE> {
 
 	void onButton(const event::Button& e) override {
 		if (module && module->currentState == MODULESTATE::GRID) {
-			if (gridHovered(e.pos, BOX_WIDTH / 2.f, FLAT, ORIGIN)) {									///
+			if (gridHovered(e.pos, BOX_WIDTH / 2.f, FLAT, ORIGIN)) {
 				if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
-					RoundAxialVec c = pixelToHex(e.pos, module->sizeFactor, POINTY, ORIGIN);			///
+					RoundAxialVec c = pixelToHex(e.pos, module->sizeFactor, POINTY, ORIGIN);
 
-					if (cellVisible(c.q, c.r, module->grid.usedRadius)) {								///
+					if (cellVisible(c.q, c.r, module->grid.usedRadius)) {
 						// History
 						GridCellChangeAction<MODULE>* h = new GridCellChangeAction<MODULE>;
 						CELL cell = module->grid.getCell(c.q, c.r);
 						h->moduleId = module->id;
-						h->oldCell = cell;																///
+						h->oldCell = cell;
 
-						module->cellNextState(&cell);             										///
+						module->cellNextState(&cell);
 						
-						h->newCell = cell;         														///
+						h->newCell = cell;
 						APP->history->push(h);
 					}
 
@@ -1164,7 +1164,7 @@ struct HiveScreenWidget : OpaqueWidget, HiveDrawHelper<MODULE> {
 };
 
 
-struct HiveWidget : ThemedModuleWidget<HiveModule<MAX_RADIUS, 4>> {			///
+struct HiveWidget : ThemedModuleWidget<HiveModule<MAX_RADIUS, 4>> {
 	typedef HiveModule<MAX_RADIUS, 4> MODULE;
 	HiveWidget(MODULE* module)
 		: ThemedModuleWidget<HiveModule<MAX_RADIUS, 4>>(module, "Hive") {
@@ -1190,10 +1190,10 @@ struct HiveWidget : ThemedModuleWidget<HiveModule<MAX_RADIUS, 4>> {			///
 		resetEditWidget->box.size = turnWidget->box.size;
 		addChild(resetEditWidget);
 
-		addInput(createInputCentered<StoermelderPort>(Vec(23.8f, 67.047f), module, MODULE::SHIFT_L1_INPUT));				///
-		addInput(createInputCentered<StoermelderPort>(Vec(23.8f, 256.0f), module, MODULE::SHIFT_L2_INPUT));					///
-		addInput(createInputCentered<StoermelderPort>(Vec(306.2f, 67.047f), module, MODULE::SHIFT_R1_INPUT));				///
-		addInput(createInputCentered<StoermelderPort>(Vec(306.2f, 256.0f), module, MODULE::SHIFT_R2_INPUT));				///
+		addInput(createInputCentered<StoermelderPort>(Vec(23.8f, 60.9f), module, MODULE::SHIFT_L1_INPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(23.8f, 256.0f), module, MODULE::SHIFT_L2_INPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(306.2f, 60.9f), module, MODULE::SHIFT_R1_INPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(306.2f, 256.0f), module, MODULE::SHIFT_R2_INPUT));
 
 		addInput(createInputCentered<StoermelderPort>(Vec(119.4f, 292.2f), module, MODULE::CLK_INPUT + 0));
 		addInput(createInputCentered<StoermelderPort>(Vec(119.4f, 327.6f), module, MODULE::CLK_INPUT + 1));
@@ -1252,5 +1252,6 @@ struct HiveWidget : ThemedModuleWidget<HiveModule<MAX_RADIUS, 4>> {			///
 };
 
 } // namespace Hive
+} // namespace StoermelderPackOne
 
-Model* modelHive = createModel<Hive::HiveModule<Hive::MAX_RADIUS, 4>, Hive::HiveWidget>("Hive");
+Model* modelHive = createModel<StoermelderPackOne::Hive::HiveModule<StoermelderPackOne::Hive::MAX_RADIUS, 4>, StoermelderPackOne::Hive::HiveWidget>("Hive");
