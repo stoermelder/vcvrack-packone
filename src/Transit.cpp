@@ -83,14 +83,14 @@ struct TransitModule : Module {
 	TransitModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		configParam(PARAM_RW, 0, 1, 0, "Switch Read/write mode");
+		configParam(PARAM_RW, 0, 1, 0, "Read/write mode");
 		for (int i = 0; i < NUM_PRESETS; i++) {
-			configParam<TriggerParamQuantity>(PARAM_PRESET + i, 0, 1, 0, string::f("Preset slot %d", i + 1));
+			configParam<TriggerParamQuantity>(PARAM_PRESET + i, 0, 1, 0, string::f("Slot #%d", i + 1));
 			typeButtons[i].param = &params[PARAM_PRESET + i];
 			presetSlotUsed[i] = false;
 		}
-		configParam(PARAM_FADE, 0.f, 1.f, 0.5f, "Fade time");
-		configParam(PARAM_SHAPE, 0.f, 1.f, 1.f, "Shape");
+		configParam(PARAM_FADE, 0.f, 1.f, 0.5f, "Fade");
+		configParam(PARAM_SHAPE, 0.f, 0.999f, 0.999f, "Shape");
 
 		handleDivider.setDivision(4096);
 		lightDivider.setDivision(512);
@@ -150,7 +150,7 @@ struct TransitModule : Module {
 			}
 
 			// SLOT input
-			if (resetTimer.process(args.sampleTime) >= 1e-3f && inputs[INPUT_SLOT].isConnected()) {
+			if (inputs[INPUT_SLOT].isConnected() && resetTimer.process(args.sampleTime) >= 1e-3f) {
 				switch (slotCvMode) {
 					case SLOTCVMODE_10V:
 						presetLoad(std::floor(rescale(inputs[INPUT_SLOT].getVoltage(), 0.f, 10.f, 0, presetCount)));
@@ -226,7 +226,6 @@ struct TransitModule : Module {
 		// Set channel lights infrequently
 		if (lightDivider.process()) {
 			float s = args.sampleTime * lightDivider.getDivision();
-
 			for (int i = 0; i < NUM_PRESETS; i++) {
 				if (params[PARAM_RW].getValue() == 0.f) {
 					lights[LIGHT_PRESET + i * 3 + 0].setBrightness(presetNext == i ? 1.f : 0.f);
@@ -254,8 +253,6 @@ struct TransitModule : Module {
 		ParamQuantity* paramQuantity = module->paramQuantities[paramId];
 		if (!paramQuantity)
 			return NULL;
-		if (!paramQuantity->isBounded())
-			return NULL;
 		return paramQuantity;
 	}
 
@@ -263,16 +260,29 @@ struct TransitModule : Module {
 		Expander* exp = &leftExpander;
 		if (exp->moduleId < 0) return;
 
-		inChange = true;
 		Module* m = exp->module;
 		for (size_t i = 0; i < m->params.size(); i++) {
-			ParamHandle* sourceHandle = new ParamHandle;
-			sourceHandle->text = "stoermelder TRANSIT";
-			APP->engine->addParamHandle(sourceHandle);
-			APP->engine->updateParamHandle(sourceHandle, m->id, i, true);
-			sourceHandles.push_back(sourceHandle);
+			bindParameter(m->id, i);
 		}
+	}
+
+	void bindParameter(int moduleId, int paramId) {
+		ParamHandle* sourceHandle = new ParamHandle;
+		sourceHandle->text = "stoermelder TRANSIT";
+		APP->engine->addParamHandle(sourceHandle);
+		APP->engine->updateParamHandle(sourceHandle, moduleId, paramId, true);
+		inChange = true;
+		sourceHandles.push_back(sourceHandle);
 		inChange = false;
+
+		ParamQuantity* pq = getParamQuantity(sourceHandle);
+		if (pq) {
+			float v = pq->getValue();
+			for (size_t i = 0; i < NUM_PRESETS; i++) {
+				if (!presetSlotUsed[i]) continue;
+				presetSlot[i].push_back(v);
+			}
+		}
 	}
 
 	void presetLoad(int p, bool isNext = false, bool force = false) {
@@ -305,7 +315,7 @@ struct TransitModule : Module {
 		float shape = inputs[INPUT_SHAPE].getVoltage() / 10.f + params[PARAM_SHAPE].getValue();
 		slewLimiter.setShape(shape);
 		float s = slewLimiter.process(1.f, sampleTime);
-		if (s >= (1.f - 1e-3f)) return;
+		if (s >= (1.f - 5e-3f)) return;
 
 		for (size_t i = 0; i < sourceHandles.size(); i++) {
 			ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
@@ -315,13 +325,14 @@ struct TransitModule : Module {
 			if (presetSlot[preset].size() <= i) return;
 			float newValue = presetSlot[preset][i];
 			float v = oldValue * (1.f - s) + newValue * s;
-			if (s > (1.f - 1e-2f) && std::abs(std::round(v) - v) < 5e-2f) v = std::round(v);
+			if (s > (1.f - 1e-2f) && std::abs(std::round(v) - v) < 5e-3f) v = std::round(v);
 			pq->setValue(v);
 		}
 	}
 
 	void presetSave(int p) {
 		presetSlotUsed[p] = true;
+		presetSlot[p].clear();
 		for (size_t i = 0; i < sourceHandles.size(); i++) {
 			ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
 			if (!pq) continue;
@@ -434,9 +445,12 @@ struct TransitModule : Module {
 
 template < int NUM_PRESETS >
 struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
+	typedef TransitWidget<NUM_PRESETS> WIDGET;
 	typedef ThemedModuleWidget<TransitModule<NUM_PRESETS>> BASE;
 	typedef TransitModule<NUM_PRESETS> MODULE;
 	
+	bool learnParam = false;
+
 	TransitWidget(MODULE* module)
 		: ThemedModuleWidget<MODULE>(module, "Transit") {
 		BASE::setModule(module);
@@ -482,11 +496,9 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 			struct SlotCvModeItem : MenuItem {
 				MODULE* module;
 				SLOTCVMODE slotCvMode;
-
 				void onAction(const event::Action& e) override {
 					module->slotCvMode = slotCvMode;
 				}
-
 				void step() override {
 					rightText = module->slotCvMode == slotCvMode ? "✔" : "";
 					MenuItem::step();
@@ -518,12 +530,41 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 			}
 		};
 
+		struct BindParameterItem : MenuItem {
+			WIDGET* widget;
+			void onAction(const event::Action& e) override {
+				widget->learnParam ^= true;
+				APP->scene->rack->touchedParam = NULL;
+				APP->event->setSelected(widget);
+			}
+			void step() override {
+				rightText = widget->learnParam ? "Active" : "";
+				MenuItem::step();
+			}
+		};
+
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<MappingIndicatorHiddenItem>(&MenuItem::text, "Hide mapping indicators", &MappingIndicatorHiddenItem::module, module));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<SlovCvModeMenuItem>(&MenuItem::text, "Port SLOT mode", &SlovCvModeMenuItem::module, module));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<BindModuleItem>(&MenuItem::text, "Bind module (left)", &BindModuleItem::module, module));
+		menu->addChild(construct<BindParameterItem>(&MenuItem::text, "Bind parameter", &BindParameterItem::widget, this));
+	}
+
+	void onDeselect(const event::Deselect& e) override {
+		if (!learnParam) return;
+		MODULE* module = dynamic_cast<MODULE*>(this->module);
+
+		// Check if a ParamWidget was touched, unstable API
+		ParamWidget* touchedParam = APP->scene->rack->touchedParam;
+		if (touchedParam && touchedParam->paramQuantity->module != module) {
+			APP->scene->rack->touchedParam = NULL;
+			int moduleId = touchedParam->paramQuantity->module->id;
+			int paramId = touchedParam->paramQuantity->paramId;
+			module->bindParameter(moduleId, paramId);
+			learnParam = false;
+		} 
 	}
 };
 
