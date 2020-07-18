@@ -7,6 +7,8 @@
 
 ### Fixes and Changes
 
+- Module [ARENA](./docs/Arena.md)
+    - Fixed wrong calculation of output levels (#147, #113)
 - Module [CV-MAP](./docs/CVMap.md)
     - Don't capture mouse scrolling if mapping slots are locked (#137)
 - Module [CV-PAM](./docs/CVPam.md)

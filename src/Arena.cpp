@@ -146,10 +146,10 @@ struct ArenaModule : Module {
 	float offsetX[IN_PORTS];
 	float offsetY[IN_PORTS];
 
-	float lastInXpos[IN_PORTS];
-	float lastInYpos[IN_PORTS];
-	float lastMixXpos[MIX_PORTS];
-	float lastMixYpos[MIX_PORTS];
+	//float lastInXpos[IN_PORTS];
+	//float lastInYpos[IN_PORTS];
+	//float lastMixXpos[MIX_PORTS];
+	//float lastMixYpos[MIX_PORTS];
 
 	dsp::SchmittTrigger seqTrigger[MIX_PORTS];
 	dsp::ClockDivider lightDivider;
@@ -309,12 +309,12 @@ struct ArenaModule : Module {
 				float inX = params[IN_X_POS + j].getValue();
 				float inY = params[IN_Y_POS + j].getValue();
 
-				if (mixX != lastMixXpos[i] || mixY != lastMixYpos[i] || inX != lastInXpos[j] || inY != lastInYpos[j]) {
-					lastInXpos[j] = inX;
-					lastInYpos[j] = inY;
+				//if (mixX != lastMixXpos[i] || mixY != lastMixYpos[i] || inX != lastInXpos[j] || inY != lastInYpos[j]) {
+					//lastInXpos[j] = inX;
+					//lastInYpos[j] = inY;
 					Vec inVec = Vec(inX, inY);
 					dist[i][j] = inVec.minus(mixVec).norm();
-				}
+				//}
 
 				float r = radius[j];
 				if (inputs[IN + j].isConnected() && dist[i][j] < r) {
@@ -325,8 +325,8 @@ struct ArenaModule : Module {
 				}
 			}
 
-			lastMixXpos[i] = mixX;
-			lastMixYpos[i] = mixY;
+			//lastMixXpos[i] = mixX;
+			//lastMixYpos[i] = mixY;
 			mix *= params[MIX_VOL_PARAM + i].getValue();
 			outputs[MIX_OUTPUT + i].setVoltage(mix);
 		}
@@ -683,15 +683,15 @@ struct ArenaModule : Module {
 			amount[i] = 1.f;
 			paramQuantities[IN_X_POS + i]->setValue(paramQuantities[IN_X_POS + i]->getDefaultValue());
 			paramQuantities[IN_Y_POS + i]->setValue(paramQuantities[IN_Y_POS + i]->getDefaultValue());
-			lastInXpos[i] = -1.f;
-			lastInYpos[i] = -1.f;
+			//lastInXpos[i] = -1.f;
+			//lastInYpos[i] = -1.f;
 		}
 		for (int i = 0; i < MIX_PORTS; i++) {
 			seqSelected[i] = 0;
 			paramQuantities[MIX_X_POS + i]->setValue(paramQuantities[MIX_X_POS + i]->getDefaultValue());
 			paramQuantities[MIX_Y_POS + i]->setValue(paramQuantities[MIX_Y_POS + i]->getDefaultValue());
-			lastMixXpos[i] = -1.f;
-			lastMixYpos[i] = -1.f;
+			//lastMixXpos[i] = -1.f;
+			//lastMixYpos[i] = -1.f;
 			for (int j = 0; j < SEQ_COUNT; j++) {
 				seqData[i][j].length = 0;
 			}
