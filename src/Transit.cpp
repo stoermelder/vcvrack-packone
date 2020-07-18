@@ -54,6 +54,7 @@ struct TransitModule : Module {
 
 	int presetNext;
 
+	/** Holds the last values on transitions */
 	std::vector<float> presetOld;
 
 	/** [Stored to JSON] mode for SEQ CV input */
@@ -62,6 +63,9 @@ struct TransitModule : Module {
 
 	/** [Stored to JSON] */
 	bool mappingIndicatorHidden = false;
+	/** [Stored to JSON] */
+	int presetProcessDivision;
+	dsp::ClockDivider presetProcessDivider;
 
 	std::default_random_engine randGen{(uint16_t)std::chrono::system_clock::now().time_since_epoch().count()};
 	std::uniform_int_distribution<int> randDist;
@@ -79,6 +83,8 @@ struct TransitModule : Module {
 	dsp::ClockDivider handleDivider;
 	dsp::ClockDivider lightDivider;
 	dsp::ClockDivider buttonDivider;
+
+	int sampleRate;
 
 	TransitModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
@@ -126,11 +132,16 @@ struct TransitModule : Module {
 
 		randDist = std::uniform_int_distribution<int>(0, presetCount - 1);
 		mappingIndicatorHidden = false;
+		presetProcessDivision = 8;
+		presetProcessDivider.setDivision(presetProcessDivision);
+		presetProcessDivider.reset();
+		
 		Module::onReset();
 	}
 
 	void process(const ProcessArgs& args) override {
 		if (inChange) return;
+		sampleRate = args.sampleRate;
 
 		if (handleDivider.process()) {
 			for (size_t i = 0; i < sourceHandles.size(); i++) {
@@ -309,25 +320,28 @@ struct TransitModule : Module {
 	}
 
 	void presetProcess(float sampleTime) {
-		if (preset == -1) return;
-		float fade = inputs[INPUT_FADE].getVoltage() / 10.f + params[PARAM_FADE].getValue();
-		slewLimiter.setRise(fade);
-		float shape = inputs[INPUT_SHAPE].getVoltage() / 10.f + params[PARAM_SHAPE].getValue();
-		slewLimiter.setShape(shape);
-		float s = slewLimiter.process(1.f, sampleTime);
-		if (s >= (1.f - 5e-3f)) return;
+		if (presetProcessDivider.process()) {
+			if (preset == -1) return;
+			float fade = inputs[INPUT_FADE].getVoltage() / 10.f + params[PARAM_FADE].getValue();
+			slewLimiter.setRise(fade);
+			float shape = inputs[INPUT_SHAPE].getVoltage() / 10.f + params[PARAM_SHAPE].getValue();
+			slewLimiter.setShape(shape);
+			float s = slewLimiter.process(1.f, sampleTime * presetProcessDivision);
+			if (s >= (1.f - 5e-3f)) return;
 
-		for (size_t i = 0; i < sourceHandles.size(); i++) {
-			ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
-			if (!pq) continue;
-			if (presetOld.size() <= i) return;
-			float oldValue = presetOld[i];
-			if (presetSlot[preset].size() <= i) return;
-			float newValue = presetSlot[preset][i];
-			float v = oldValue * (1.f - s) + newValue * s;
-			if (s > (1.f - 1e-2f) && std::abs(std::round(v) - v) < 5e-3f) v = std::round(v);
-			pq->setValue(v);
+			for (size_t i = 0; i < sourceHandles.size(); i++) {
+				ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
+				if (!pq) continue;
+				if (presetOld.size() <= i) return;
+				float oldValue = presetOld[i];
+				if (presetSlot[preset].size() <= i) return;
+				float newValue = presetSlot[preset][i];
+				float v = oldValue * (1.f - s) + newValue * s;
+				if (s > (1.f - 1e-2f) && std::abs(std::round(v) - v) < 5e-3f) v = std::round(v);
+				pq->setValue(v);
+			}
 		}
+		presetProcessDivider.setDivision(presetProcessDivision);
 	}
 
 	void presetSave(int p) {
@@ -358,6 +372,7 @@ struct TransitModule : Module {
 		json_t* rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 		json_object_set_new(rootJ, "mappingIndicatorHidden", json_boolean(mappingIndicatorHidden));
+		json_object_set_new(rootJ, "presetProcessDivision", json_integer(presetProcessDivision));
 
 		json_object_set_new(rootJ, "slotCvMode", json_integer(slotCvMode));
 		json_object_set_new(rootJ, "preset", json_integer(preset));
@@ -394,6 +409,7 @@ struct TransitModule : Module {
 	void dataFromJson(json_t* rootJ) override {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 		mappingIndicatorHidden = json_boolean_value(json_object_get(rootJ, "mappingIndicatorHidden"));
+		presetProcessDivision = json_integer_value(json_object_get(rootJ, "presetProcessDivision"));
 
 		slotCvMode = (SLOTCVMODE)json_integer_value(json_object_get(rootJ, "slotCvMode"));
 		preset = json_integer_value(json_object_get(rootJ, "preset"));
@@ -492,6 +508,35 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 			}
 		};
 
+		struct PrecisionMenuItem : MenuItem {
+			struct PrecisionItem : MenuItem {
+				MODULE* module;
+				int division;
+				std::string text;
+				void onAction(const event::Action& e) override {
+					module->presetProcessDivision = division;
+				}
+				void step() override {
+					MenuItem::text = string::f("%s (%i Hz)", text.c_str(), module->sampleRate / division);
+					rightText = module->presetProcessDivision == division ? "✔" : "";
+					MenuItem::step();
+				}
+			};
+
+			MODULE* module;
+			PrecisionMenuItem() {
+				rightText = RIGHT_ARROW;
+			}
+
+			Menu* createChildMenu() override {
+				Menu* menu = new Menu;
+				menu->addChild(construct<PrecisionItem>(&PrecisionItem::text, "Audio rate", &PrecisionItem::module, module, &PrecisionItem::division, 1));
+				menu->addChild(construct<PrecisionItem>(&PrecisionItem::text, "Lower CPU", &PrecisionItem::module, module, &PrecisionItem::division, 8));
+				menu->addChild(construct<PrecisionItem>(&PrecisionItem::text, "Lowest CPU", &PrecisionItem::module, module, &PrecisionItem::division, 64));
+				return menu;
+			}
+		};
+
 		struct SlovCvModeMenuItem : MenuItem {
 			struct SlotCvModeItem : MenuItem {
 				MODULE* module;
@@ -545,6 +590,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<MappingIndicatorHiddenItem>(&MenuItem::text, "Hide mapping indicators", &MappingIndicatorHiddenItem::module, module));
+		menu->addChild(construct<PrecisionMenuItem>(&MenuItem::text, "Precision", &PrecisionMenuItem::module, module));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<SlovCvModeMenuItem>(&MenuItem::text, "Port SLOT mode", &SlovCvModeMenuItem::module, module));
 		menu->addChild(new MenuSeparator());
