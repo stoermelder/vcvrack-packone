@@ -29,10 +29,10 @@ struct TransitModule : Module {
 		INPUT_SLOT,
 		INPUT_RESET,
 		INPUT_FADE,
-		INPUT_SHAPE,
 		NUM_INPUTS
 	};
 	enum OutputIds {
+		OUTPUT_SHAPE,
 		NUM_OUTPUTS
 	};
 	enum LightIds {
@@ -79,7 +79,7 @@ struct TransitModule : Module {
 	dsp::SchmittTrigger resetTrigger;
 	dsp::Timer resetTimer;
 
-	StoermelderSlewLimiter slewLimiter;
+	StoermelderShapedSlewLimiter slewLimiter;
 	dsp::ClockDivider handleDivider;
 	dsp::ClockDivider lightDivider;
 	dsp::ClockDivider buttonDivider;
@@ -96,7 +96,7 @@ struct TransitModule : Module {
 			presetSlotUsed[i] = false;
 		}
 		configParam(PARAM_FADE, 0.f, 1.f, 0.5f, "Fade");
-		configParam(PARAM_SHAPE, 0.f, 0.999f, 0.999f, "Shape");
+		configParam(PARAM_SHAPE, -1.f, 1.f, 0.f, "Shape");
 
 		handleDivider.setDivision(4096);
 		lightDivider.setDivision(512);
@@ -128,7 +128,7 @@ struct TransitModule : Module {
 		preset = -1;
 		presetCount = NUM_PRESETS;
 		presetNext = -1;
-		slewLimiter.out = 1.f;
+		slewLimiter.reset(10.f);
 
 		randDist = std::uniform_int_distribution<int>(0, presetCount - 1);
 		mappingIndicatorHidden = false;
@@ -324,10 +324,12 @@ struct TransitModule : Module {
 			if (preset == -1) return;
 			float fade = inputs[INPUT_FADE].getVoltage() / 10.f + params[PARAM_FADE].getValue();
 			slewLimiter.setRise(fade);
-			float shape = inputs[INPUT_SHAPE].getVoltage() / 10.f + params[PARAM_SHAPE].getValue();
+			float shape = params[PARAM_SHAPE].getValue();
 			slewLimiter.setShape(shape);
-			float s = slewLimiter.process(1.f, sampleTime * presetProcessDivision);
-			if (s >= (1.f - 5e-3f)) return;
+			float s = slewLimiter.process(10.f, sampleTime * presetProcessDivision);
+			outputs[OUTPUT_SHAPE].setVoltage(s);
+			if (s == 10.f) return;
+			s /= 10.f;
 
 			for (size_t i = 0; i < sourceHandles.size(); i++) {
 				ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
@@ -336,8 +338,8 @@ struct TransitModule : Module {
 				float oldValue = presetOld[i];
 				if (presetSlot[preset].size() <= i) return;
 				float newValue = presetSlot[preset][i];
-				float v = oldValue * (1.f - s) + newValue * s;
-				if (s > (1.f - 1e-2f) && std::abs(std::round(v) - v) < 5e-3f) v = std::round(v);
+				float v = crossfade(oldValue, newValue, s);
+				if (s > (1.f - 5e-3f) && std::abs(std::round(v) - v) < 5e-3f) v = std::round(v);
 				pq->setValue(v);
 			}
 		}
@@ -487,7 +489,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 		BASE::addInput(createInputCentered<StoermelderPort>(Vec(52.6f, 225.9f), module, MODULE::INPUT_FADE));
 
 		BASE::addParam(createParamCentered<StoermelderTrimpot>(Vec(52.6f, 270.6f), module, MODULE::PARAM_SHAPE));
-		BASE::addInput(createInputCentered<StoermelderPort>(Vec(52.6f, 295.6f), module, MODULE::INPUT_SHAPE));
+		BASE::addOutput(createOutputCentered<StoermelderPort>(Vec(52.6f, 295.6f), module, MODULE::OUTPUT_SHAPE));
 
 		BASE::addParam(createParamCentered<CKSSH>(Vec(52.6f, 336.2f), module, MODULE::PARAM_RW));
 	}
