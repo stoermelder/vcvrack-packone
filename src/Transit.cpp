@@ -100,7 +100,10 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		Module::config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		Module::configParam(PARAM_RW, 0, 1, 0, "Read/write mode");
 		for (int i = 0; i < NUM_PRESETS; i++) {
-			Module::configParam<TriggerParamQuantity>(PARAM_PRESET + i, 0, 1, 0, string::f("Set #%d", i + 1));
+			Module::configParam<TransitParamQuantity<NUM_PRESETS>>(PARAM_PRESET + i, 0, 1, 0);
+			TransitParamQuantity<NUM_PRESETS>* pq = (TransitParamQuantity<NUM_PRESETS>*)Module::paramQuantities[PARAM_PRESET + i];
+			pq->module = this;
+			pq->i = i;
 			TransitBase<NUM_PRESETS>::presetButton[i].param = &Module::params[PARAM_PRESET + i];
 		}
 		Module::configParam(PARAM_FADE, 0.f, 1.f, 0.5f, "Fade");
@@ -108,7 +111,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 
 		handleDivider.setDivision(4096);
 		lightDivider.setDivision(512);
-		buttonDivider.setDivision(4);
+		buttonDivider.setDivision(8);
 		onReset();
 	}
 
@@ -202,8 +205,9 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 			if (exp->model->plugin->slug != "Stoermelder-P1" || exp->model->slug != "TransitEx") break;
 			m = exp;
 			t = reinterpret_cast<TransitBase<NUM_PRESETS>*>(exp);
-			if (t->ctrlModuleId >= 0 && t->ctrlModuleId != Module::id) m->onReset();
+			if (t->ctrlModuleId >= 0 && t->ctrlModuleId != Module::id) t->onReset();
 			t->ctrlModuleId = Module::id;
+			t->ctrlOffset = c;
 			presetNum += NUM_PRESETS;
 		}
 		presetCount = std::min(presetCount, presetNum);
@@ -712,6 +716,36 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 			}
 		};
 
+		struct ParameterMenuItem : MenuItem {
+			struct ParameterItem : MenuItem {
+				MODULE* module;
+				ParamHandle* handle;
+				void onAction(const event::Action& e) override {
+					APP->engine->updateParamHandle(handle, -1, 0, true);
+				}
+			};
+
+			MODULE* module;
+			ParameterMenuItem() {
+				rightText = RIGHT_ARROW;
+			}
+
+			Menu* createChildMenu() override {
+				Menu* menu = new Menu;
+				for (size_t i = 0; i < module->sourceHandles.size(); i++) {
+					ParamHandle* handle = module->sourceHandles[i];
+					ModuleWidget* moduleWidget = APP->scene->rack->getModule(handle->moduleId);
+					if (!moduleWidget) continue;
+					ParamWidget* paramWidget = moduleWidget->getParam(handle->paramId);
+					if (!paramWidget) continue;
+					
+					std::string text = string::f("Unbind \"%s %s\"", moduleWidget->model->name.c_str(), paramWidget->paramQuantity->getLabel().c_str());
+					menu->addChild(construct<ParameterItem>(&MenuItem::text, text, &ParameterItem::module, module, &ParameterItem::handle, handle));
+				}
+				return menu;
+			}
+		};
+
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<MappingIndicatorHiddenItem>(&MenuItem::text, "Hide mapping indicators", &MappingIndicatorHiddenItem::module, module));
 		menu->addChild(construct<PrecisionMenuItem>(&MenuItem::text, "Precision", &PrecisionMenuItem::module, module));
@@ -721,6 +755,10 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<BindModuleItem>(&MenuItem::text, "Bind module (left)", &BindModuleItem::module, module));
 		menu->addChild(construct<BindParameterItem>(&MenuItem::text, "Bind parameter", &BindParameterItem::widget, this));
+
+		if (module->sourceHandles.size() > 0) {
+			menu->addChild(construct<ParameterMenuItem>(&MenuItem::text, "Bound parameters", &ParameterMenuItem::module, module));
+		}
 	}
 
 	void onDeselect(const event::Deselect& e) override {

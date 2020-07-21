@@ -30,7 +30,10 @@ struct TransitExModule : TransitBase<NUM_PRESETS> {
 		panelTheme = pluginSettings.panelThemeDefault;
 		Module::config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		for (int i = 0; i < NUM_PRESETS; i++) {
-			Module::configParam<TriggerParamQuantity>(PARAM_PRESET + i, 0, 1, 0, string::f("Set #%d", i + 1));
+			Module::configParam<TransitParamQuantity<NUM_PRESETS>>(PARAM_PRESET + i, 0, 1, 0);
+			TransitParamQuantity<NUM_PRESETS>* pq = (TransitParamQuantity<NUM_PRESETS>*)Module::paramQuantities[PARAM_PRESET + i];
+			pq->module = this;
+			pq->i = i;
 			TransitBase<NUM_PRESETS>::presetButton[i].param = &Module::params[PARAM_PRESET + i];
 		}
 
