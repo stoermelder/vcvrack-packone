@@ -1,10 +1,12 @@
 #include "plugin.hpp"
 #include "digital.hpp"
-#include <plugin.hpp>
+#include "TransitBase.hpp"
 #include <random>
 
 namespace StoermelderPackOne {
 namespace Transit {
+
+const int MAX_EXPANDERS = 3;
 
 enum class SLOTCVMODE {
 	TRIG_FWD = 2,
@@ -22,13 +24,13 @@ enum class OUTMODE {
 	EOC = 2
 };
 
-template < int NUM_PRESETS >
-struct TransitModule : Module {
+template <int NUM_PRESETS>
+struct TransitModule : TransitBase<NUM_PRESETS> {
 	enum ParamIds {
+		ENUMS(PARAM_PRESET, NUM_PRESETS),
 		PARAM_RW,
 		PARAM_FADE,
 		PARAM_SHAPE,
-		ENUMS(PARAM_PRESET, NUM_PRESETS),
 		NUM_PARAMS
 	};
 	enum InputIds {
@@ -50,10 +52,6 @@ struct TransitModule : Module {
 	int panelTheme = 0;
 
 	/** [Stored to JSON] */
-	bool presetSlotUsed[NUM_PRESETS];
-	/** [Stored to JSON] */
-	std::vector<float> presetSlot[NUM_PRESETS];
-	/** [Stored to JSON] */
 	int preset;
 	/** [Stored to JSON] */
 	int presetCount;
@@ -62,6 +60,7 @@ struct TransitModule : Module {
 
 	/** Holds the last values on transitions */
 	std::vector<float> presetOld;
+	std::vector<float> presetNew;
 
 	/** [Stored to JSON] mode for SEQ CV input */
 	SLOTCVMODE slotCvMode = SLOTCVMODE::TRIG_FWD;
@@ -85,7 +84,6 @@ struct TransitModule : Module {
 	/** [Stored to JSON] */
 	std::vector<ParamHandle*> sourceHandles;
 
-	LongPressButton typeButtons[NUM_PRESETS];
 	dsp::SchmittTrigger slotTrigger;
 	dsp::SchmittTrigger resetTrigger;
 	dsp::Timer resetTimer;
@@ -99,15 +97,14 @@ struct TransitModule : Module {
 
 	TransitModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
-		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		configParam(PARAM_RW, 0, 1, 0, "Read/write mode");
+		Module::config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+		Module::configParam(PARAM_RW, 0, 1, 0, "Read/write mode");
 		for (int i = 0; i < NUM_PRESETS; i++) {
-			configParam<TriggerParamQuantity>(PARAM_PRESET + i, 0, 1, 0, string::f("Slot #%d", i + 1));
-			typeButtons[i].param = &params[PARAM_PRESET + i];
-			presetSlotUsed[i] = false;
+			Module::configParam<TriggerParamQuantity>(PARAM_PRESET + i, 0, 1, 0, string::f("Set #%d", i + 1));
+			TransitBase<NUM_PRESETS>::presetButton[i].param = &Module::params[PARAM_PRESET + i];
 		}
-		configParam(PARAM_FADE, 0.f, 1.f, 0.5f, "Fade");
-		configParam(PARAM_SHAPE, -1.f, 1.f, 0.f, "Shape");
+		Module::configParam(PARAM_FADE, 0.f, 1.f, 0.5f, "Fade");
+		Module::configParam(PARAM_SHAPE, -1.f, 1.f, 0.f, "Shape");
 
 		handleDivider.setDivision(4096);
 		lightDivider.setDivision(512);
@@ -132,8 +129,8 @@ struct TransitModule : Module {
 		inChange = false;
 
 		for (int i = 0; i < NUM_PRESETS; i++) {
-			presetSlotUsed[i] = false;
-			presetSlot[i].clear();
+			TransitBase<NUM_PRESETS>::presetSlotUsed[i] = false;
+			TransitBase<NUM_PRESETS>::presetSlot[i].clear();
 		}
 
 		preset = -1;
@@ -143,7 +140,6 @@ struct TransitModule : Module {
 
 		outMode = OUTMODE::ENV;
 
-		randDist = std::uniform_int_distribution<int>(0, presetCount - 1);
 		mappingIndicatorHidden = false;
 		presetProcessDivision = 8;
 		presetProcessDivider.setDivision(presetProcessDivision);
@@ -152,9 +148,65 @@ struct TransitModule : Module {
 		Module::onReset();
 	}
 
-	void process(const ProcessArgs& args) override {
+	TransitBase<NUM_PRESETS>* N[MAX_EXPANDERS + 1];
+
+	Param* transitParam(int i) override {
+		return &Module::params[PARAM_PRESET + i];
+	}
+
+	Light* transitLight(int i) override {
+		return &Module::lights[LIGHT_PRESET + i];
+	}
+
+	inline Param* expParam(int index) {
+		int n = index / NUM_PRESETS;
+		return N[n]->transitParam(index % NUM_PRESETS);
+	}
+
+	inline Light* expLight(int index, int j) {
+		int n = index / NUM_PRESETS;
+		return N[n]->transitLight((index % NUM_PRESETS) * 3 + j);
+	}
+
+	inline bool* expPresetSlotUsed(int index) {
+		int n = index / NUM_PRESETS;
+		return &N[n]->presetSlotUsed[index % NUM_PRESETS];
+	}
+
+	inline std::vector<float>* expPresetSlot(int index) {
+		int n = index / NUM_PRESETS;
+		return &N[n]->presetSlot[index % NUM_PRESETS];
+	}
+
+	inline LongPressButton* expPresetButton(int index) {
+		int n = index / NUM_PRESETS;
+		return &N[n]->presetButton[index % NUM_PRESETS];
+	}
+
+	void process(const Module::ProcessArgs& args) override {
 		if (inChange) return;
 		sampleRate = args.sampleRate;
+
+		int presetNum = NUM_PRESETS;
+		Module* m = this;
+		TransitBase<NUM_PRESETS>* t = this;
+		int c = 0;
+		while (true) {
+			N[c] = t;
+
+			c++;
+			if (c == MAX_EXPANDERS + 1) break;
+
+			Module* exp = m->rightExpander.module;
+			if (!exp) break;
+			if (exp->model->plugin->slug != "Stoermelder-P1" || exp->model->slug != "TransitEx") break;
+			m = exp;
+			t = reinterpret_cast<TransitBase<NUM_PRESETS>*>(exp);
+			if (t->ctrlModuleId >= 0 && t->ctrlModuleId != Module::id) m->onReset();
+			t->ctrlModuleId = Module::id;
+			presetNum += NUM_PRESETS;
+		}
+		presetCount = std::min(presetCount, presetNum);
 
 		if (handleDivider.process()) {
 			for (size_t i = 0; i < sourceHandles.size(); i++) {
@@ -164,34 +216,36 @@ struct TransitModule : Module {
 		}
 
 		// Read mode
-		if (params[PARAM_RW].getValue() == 0.f) {
+		if (Module::params[PARAM_RW].getValue() == 0.f) {
 			// RESET input
 			if (slotCvMode == SLOTCVMODE::TRIG_FWD || slotCvMode == SLOTCVMODE::TRIG_REV || slotCvMode == SLOTCVMODE::TRIG_PINGPONG) {
-				if (inputs[INPUT_RESET].isConnected() && resetTrigger.process(inputs[INPUT_RESET].getVoltage())) {
+				if (Module::inputs[INPUT_RESET].isConnected() && resetTrigger.process(Module::inputs[INPUT_RESET].getVoltage())) {
 					resetTimer.reset();
 					presetLoad(0);
 				}
 			}
 
 			// SLOT input
-			if (inputs[INPUT_SLOT].isConnected() && resetTimer.process(args.sampleTime) >= 1e-3f) {
+			if (Module::inputs[INPUT_SLOT].isConnected() && resetTimer.process(args.sampleTime) >= 1e-3f) {
 				switch (slotCvMode) {
 					case SLOTCVMODE::VOLT:
-						presetLoad(std::floor(rescale(inputs[INPUT_SLOT].getVoltage(), 0.f, 10.f, 0, presetCount)));
+						presetLoad(std::floor(rescale(Module::inputs[INPUT_SLOT].getVoltage(), 0.f, 10.f, 0, presetCount)));
 						break;
 					case SLOTCVMODE::C4:
-						presetLoad(std::round(clamp(inputs[INPUT_SLOT].getVoltage() * 12.f, 0.f, NUM_PRESETS - 1.f)));
+						presetLoad(std::round(clamp(Module::inputs[INPUT_SLOT].getVoltage() * 12.f, 0.f, presetNum - 1.f)));
 						break;
 					case SLOTCVMODE::TRIG_FWD:
-						if (slotTrigger.process(inputs[INPUT_SLOT].getVoltage()))
+						if (slotTrigger.process(Module::inputs[INPUT_SLOT].getVoltage())) {
 							presetLoad((preset + 1) % presetCount);
+						}
 						break;
 					case SLOTCVMODE::TRIG_REV:
-						if (slotTrigger.process(inputs[INPUT_SLOT].getVoltage()))
+						if (slotTrigger.process(Module::inputs[INPUT_SLOT].getVoltage())) {
 							presetLoad((preset - 1 + presetCount) % presetCount);
+						}
 						break;
 					case SLOTCVMODE::TRIG_PINGPONG:
-						if (slotTrigger.process(inputs[INPUT_SLOT].getVoltage())) {
+						if (slotTrigger.process(Module::inputs[INPUT_SLOT].getVoltage())) {
 							int n = preset + slotCvModeDir;
 							if (n == presetCount - 1) 
 								slotCvModeDir = -1;
@@ -201,12 +255,15 @@ struct TransitModule : Module {
 						}
 						break;
 					case SLOTCVMODE::TRIG_RANDOM:
-						if (slotTrigger.process(inputs[INPUT_SLOT].getVoltage()))
+						if (slotTrigger.process(Module::inputs[INPUT_SLOT].getVoltage())) {
+							if (randDist.max() != presetCount - 1) randDist = std::uniform_int_distribution<int>(0, presetCount - 1);
 							presetLoad(randDist(randGen));
+						}
 						break;
 					case SLOTCVMODE::ARM:
-						if (slotTrigger.process(inputs[INPUT_SLOT].getVoltage()))
+						if (slotTrigger.process(Module::inputs[INPUT_SLOT].getVoltage())) {
 							presetLoad(presetNext);
+						}
 						break;
 				}
 			}
@@ -214,8 +271,8 @@ struct TransitModule : Module {
 			// Buttons
 			if (buttonDivider.process()) {
 				float sampleTime = args.sampleTime * buttonDivider.division;
-				for (int i = 0; i < NUM_PRESETS; i++) {
-					switch (typeButtons[i].process(sampleTime)) {
+				for (int i = 0; i < presetNum; i++) {
+					switch (expPresetButton(i)->process(sampleTime)) {
 						default:
 						case LongPressButton::NO_PRESS:
 							break;
@@ -231,8 +288,8 @@ struct TransitModule : Module {
 		else {
 			if (buttonDivider.process()) {
 				float sampleTime = args.sampleTime * buttonDivider.division;
-				for (int i = 0; i < NUM_PRESETS; i++) {
-					switch (typeButtons[i].process(sampleTime)) {
+				for (int i = 0; i < presetNum; i++) {
+					switch (expPresetButton(i)->process(sampleTime)) {
 						default:
 						case LongPressButton::NO_PRESS:
 							break;
@@ -250,16 +307,16 @@ struct TransitModule : Module {
 		// Set channel lights infrequently
 		if (lightDivider.process()) {
 			float s = args.sampleTime * lightDivider.getDivision();
-			for (int i = 0; i < NUM_PRESETS; i++) {
-				if (params[PARAM_RW].getValue() == 0.f) {
-					lights[LIGHT_PRESET + i * 3 + 0].setBrightness(presetNext == i ? 1.f : 0.f);
-					lights[LIGHT_PRESET + i * 3 + 1].setSmoothBrightness(preset != i && presetCount > i ? (presetSlotUsed[i] ? 1.f : 0.2f) : 0.f, s);
-					lights[LIGHT_PRESET + i * 3 + 2].setSmoothBrightness(preset == i ? 1.f : 0.f, s);
+			for (int i = 0; i < presetNum; i++) {
+				if (Module::params[PARAM_RW].getValue() == 0.f) {
+					expLight(i, 0)->setBrightness(presetNext == i ? 1.f : 0.f);
+					expLight(i, 1)->setSmoothBrightness(preset != i && presetCount > i ? (*expPresetSlotUsed(i) ? 1.f : 0.2f) : 0.f, s);
+					expLight(i, 2)->setSmoothBrightness(preset == i ? 1.f : 0.f, s);
 				}
 				else {
-					lights[LIGHT_PRESET + i * 3 + 0].setBrightness(presetSlotUsed[i] ? 1.f : 0.f);
-					lights[LIGHT_PRESET + i * 3 + 1].setBrightness(0.f);
-					lights[LIGHT_PRESET + i * 3 + 2].setBrightness(0.f);
+					expLight(i, 0)->setBrightness(*expPresetSlotUsed(i) ? 1.f : 0.f);
+					expLight(i, 1)->setBrightness(0.f);
+					expLight(i, 2)->setBrightness(0.f);
 				}
 			}
 		}
@@ -281,7 +338,7 @@ struct TransitModule : Module {
 	}
 
 	void bindModule() {
-		Expander* exp = &leftExpander;
+		Module::Expander* exp = &(Module::leftExpander);
 		if (exp->moduleId < 0) return;
 
 		Module* m = exp->module;
@@ -303,8 +360,8 @@ struct TransitModule : Module {
 		if (pq) {
 			float v = pq->getValue();
 			for (size_t i = 0; i < NUM_PRESETS; i++) {
-				if (!presetSlotUsed[i]) continue;
-				presetSlot[i].push_back(v);
+				if (!expPresetSlotUsed(i)) continue;
+				expPresetSlot(i)->push_back(v);
 			}
 		}
 	}
@@ -317,18 +374,22 @@ struct TransitModule : Module {
 			if (p != preset || force) {
 				preset = p;
 				presetNext = -1;
-				if (!presetSlotUsed[p]) return;
+				if (!*expPresetSlotUsed(p)) return;
 				slewLimiter.reset();
 				outEocArm = true;
 				presetOld.clear();
+				presetNew.clear();
 				for (size_t i = 0; i < sourceHandles.size(); i++) {
 					ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
 					presetOld.push_back(pq ? pq->getValue() : 0.f);
+					if (expPresetSlot(preset)->size() > i) {
+						presetNew.push_back((*expPresetSlot(preset))[i]);
+					}
 				}
 			}
 		}
 		else {
-			if (!presetSlotUsed[p]) return;
+			if (!*expPresetSlotUsed(p)) return;
 			presetNext = p;
 		}
 	}
@@ -338,9 +399,9 @@ struct TransitModule : Module {
 			if (preset == -1) return;
 			float deltaTime = sampleTime * presetProcessDivision;
 
-			float fade = inputs[INPUT_FADE].getVoltage() / 10.f + params[PARAM_FADE].getValue();
+			float fade = TransitBase<NUM_PRESETS>::inputs[INPUT_FADE].getVoltage() / 10.f + TransitBase<NUM_PRESETS>::params[PARAM_FADE].getValue();
 			slewLimiter.setRise(fade);
-			float shape = params[PARAM_SHAPE].getValue();
+			float shape = TransitBase<NUM_PRESETS>::params[PARAM_SHAPE].getValue();
 			slewLimiter.setShape(shape);
 			float s = slewLimiter.process(10.f, deltaTime);
 
@@ -351,13 +412,13 @@ struct TransitModule : Module {
 
 			switch (outMode) {
 				case OUTMODE::ENV:
-					outputs[OUTPUT].setVoltage(s == 10.f ? 0.f : s);
+					TransitBase<NUM_PRESETS>::outputs[OUTPUT].setVoltage(s == 10.f ? 0.f : s);
 					break;
 				case OUTMODE::GATE:
-					outputs[OUTPUT].setVoltage(s != 10.f ? 10.f : 0.f);
+					TransitBase<NUM_PRESETS>::outputs[OUTPUT].setVoltage(s != 10.f ? 10.f : 0.f);
 					break;
 				case OUTMODE::EOC:
-					outputs[OUTPUT].setVoltage(outEocPulseGenerator.process(deltaTime) ? 10.f : 0.f);
+					TransitBase<NUM_PRESETS>::outputs[OUTPUT].setVoltage(outEocPulseGenerator.process(deltaTime) ? 10.f : 0.f);
 					break;
 			}
 
@@ -369,8 +430,8 @@ struct TransitModule : Module {
 				if (!pq) continue;
 				if (presetOld.size() <= i) return;
 				float oldValue = presetOld[i];
-				if (presetSlot[preset].size() <= i) return;
-				float newValue = presetSlot[preset][i];
+				if (presetNew.size() <= i) return;
+				float newValue = presetNew[i];
 				float v = crossfade(oldValue, newValue, s);
 				if (s > (1.f - 5e-3f) && std::abs(std::round(v) - v) < 5e-3f) v = std::round(v);
 				pq->setValue(v);
@@ -380,19 +441,19 @@ struct TransitModule : Module {
 	}
 
 	void presetSave(int p) {
-		presetSlotUsed[p] = true;
-		presetSlot[p].clear();
+		*expPresetSlotUsed(p) = true;
+		expPresetSlot(p)->clear();
 		for (size_t i = 0; i < sourceHandles.size(); i++) {
 			ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
 			if (!pq) continue;
 			float v = pq->getValue();
-			presetSlot[p].push_back(v);
+			expPresetSlot(p)->push_back(v);
 		}
 	}
 
 	void presetClear(int p) {
-		presetSlotUsed[p] = false;
-		presetSlot[p].clear();
+		*expPresetSlotUsed(p) = false;
+		expPresetSlot(p)->clear();
 		if (preset == p) preset = -1;
 	}
 
@@ -400,7 +461,6 @@ struct TransitModule : Module {
 		if (preset >= p) preset = 0;
 		presetCount = p;
 		presetNext = -1;
-		randDist = std::uniform_int_distribution<int>(0, presetCount - 1);
 	}
 
 	json_t* dataToJson() override {
@@ -426,11 +486,11 @@ struct TransitModule : Module {
 		json_t* presetsJ = json_array();
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			json_t* presetJ = json_object();
-			json_object_set_new(presetJ, "slotUsed", json_boolean(presetSlotUsed[i]));
-			if (presetSlotUsed[i]) {
+			json_object_set_new(presetJ, "slotUsed", json_boolean(TransitBase<NUM_PRESETS>::presetSlotUsed[i]));
+			if (TransitBase<NUM_PRESETS>::presetSlotUsed[i]) {
 				json_t* slotJ = json_array();
-				for (size_t j = 0; j < presetSlot[i].size(); j++) {
-					json_t* vJ = json_real(presetSlot[i][j]);
+				for (size_t j = 0; j < TransitBase<NUM_PRESETS>::presetSlot[i].size(); j++) {
+					json_t* vJ = json_real(TransitBase<NUM_PRESETS>::presetSlot[i][j]);
 					json_array_append_new(slotJ, vJ);
 				}
 				json_object_set(presetJ, "slot", slotJ);
@@ -453,7 +513,7 @@ struct TransitModule : Module {
 		presetCount = json_integer_value(json_object_get(rootJ, "presetCount"));
 
 		// Hack for preventing duplicating this module
-		if (APP->engine->getModule(id) != NULL) return;
+		if (APP->engine->getModule(TransitBase<NUM_PRESETS>::id) != NULL) return;
 
 		inChange = true;
 		json_t* sourceMapsJ = json_object_get(rootJ, "sourceMaps");
@@ -477,15 +537,15 @@ struct TransitModule : Module {
 		json_t* presetJ;
 		size_t presetIndex;
 		json_array_foreach(presetsJ, presetIndex, presetJ) {
-			presetSlotUsed[presetIndex] = json_boolean_value(json_object_get(presetJ, "slotUsed"));
-			presetSlot[presetIndex].clear();
-			if (presetSlotUsed[presetIndex]) {
+			TransitBase<NUM_PRESETS>::presetSlotUsed[presetIndex] = json_boolean_value(json_object_get(presetJ, "slotUsed"));
+			TransitBase<NUM_PRESETS>::presetSlot[presetIndex].clear();
+			if (TransitBase<NUM_PRESETS>::presetSlotUsed[presetIndex]) {
 				json_t* slotJ = json_object_get(presetJ, "slot");
 				json_t* vJ;
 				size_t j;
 				json_array_foreach(slotJ, j, vJ) {
 					float v = json_real_value(vJ);
-					presetSlot[presetIndex].push_back(v);
+					TransitBase<NUM_PRESETS>::presetSlot[presetIndex].push_back(v);
 				}
 			}
 		}
@@ -496,7 +556,7 @@ struct TransitModule : Module {
 	}
 };
 
-template < int NUM_PRESETS >
+template <int NUM_PRESETS>
 struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 	typedef TransitWidget<NUM_PRESETS> WIDGET;
 	typedef ThemedModuleWidget<TransitModule<NUM_PRESETS>> BASE;
@@ -511,22 +571,22 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 		BASE::addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		BASE::addChild(createWidget<StoermelderBlackScrew>(Vec(BASE::box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
+		BASE::addInput(createInputCentered<StoermelderPort>(Vec(21.7f, 58.9f), module, MODULE::INPUT_SLOT));
+		BASE::addInput(createInputCentered<StoermelderPort>(Vec(21.7f, 94.2f), module, MODULE::INPUT_RESET));
+
+		BASE::addParam(createParamCentered<LEDSliderBlue>(Vec(21.7f, 166.7f), module, MODULE::PARAM_FADE));
+		BASE::addInput(createInputCentered<StoermelderPort>(Vec(21.7f, 221.4f), module, MODULE::INPUT_FADE));
+
+		BASE::addParam(createParamCentered<StoermelderTrimpot>(Vec(21.7f, 255.8f), module, MODULE::PARAM_SHAPE));
+		BASE::addOutput(createOutputCentered<StoermelderPort>(Vec(21.7f, 300.3f), module, MODULE::OUTPUT));
+
+		BASE::addParam(createParamCentered<CKSSH>(Vec(21.7f, 336.2f), module, MODULE::PARAM_RW));
+
 		for (size_t i = 0; i < NUM_PRESETS; i++) {
 			float o = i * (288.7f / (NUM_PRESETS - 1));
-			BASE::addParam(createParamCentered<LEDButton>(Vec(17.1f, 45.4f + o), module, MODULE::PARAM_PRESET + i));
-			BASE::addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(17.1f, 45.4f + o), module, MODULE::LIGHT_PRESET + i * 3));
+			BASE::addParam(createParamCentered<LEDButton>(Vec(60.0f, 45.4f + o), module, MODULE::PARAM_PRESET + i));
+			BASE::addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(60.0f, 45.4f + o), module, MODULE::LIGHT_PRESET + i * 3));
 		}
-
-		BASE::addInput(createInputCentered<StoermelderPort>(Vec(52.6f, 58.9f), module, MODULE::INPUT_SLOT));
-		BASE::addInput(createInputCentered<StoermelderPort>(Vec(52.6f, 94.2f), module, MODULE::INPUT_RESET));
-
-		BASE::addParam(createParamCentered<LEDSliderBlue>(Vec(52.6f, 166.7f), module, MODULE::PARAM_FADE));
-		BASE::addInput(createInputCentered<StoermelderPort>(Vec(52.6f, 221.4f), module, MODULE::INPUT_FADE));
-
-		BASE::addParam(createParamCentered<StoermelderTrimpot>(Vec(52.6f, 255.8f), module, MODULE::PARAM_SHAPE));
-		BASE::addOutput(createOutputCentered<StoermelderPort>(Vec(52.6f, 300.3f), module, MODULE::OUTPUT));
-
-		BASE::addParam(createParamCentered<CKSSH>(Vec(52.6f, 336.2f), module, MODULE::PARAM_RW));
 	}
 
 	void appendContextMenu(Menu* menu) override {
@@ -682,4 +742,4 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 } // namespace Transit
 } // namespace StoermelderPackOne
 
-Model* modelTransit = createModel<StoermelderPackOne::Transit::TransitModule<14>, StoermelderPackOne::Transit::TransitWidget<14>>("Transit");
+Model* modelTransit = createModel<StoermelderPackOne::Transit::TransitModule<12>, StoermelderPackOne::Transit::TransitWidget<12>>("Transit");

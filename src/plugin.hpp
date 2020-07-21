@@ -44,4 +44,5 @@ extern Model* modelFlowerSeq;
 extern Model* modelFlowerSeqEx;
 extern Model* modelFlowerTrig;
 extern Model* modelTransit;
+extern Model* modelTransitEx;
 extern Model* modelAudioInterface64;

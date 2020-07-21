@@ -40,6 +40,7 @@ void init(rack::Plugin* p) {
 	p->addModel(modelFlowerSeqEx);
 	p->addModel(modelFlowerTrig);
 	p->addModel(modelTransit);
+	p->addModel(modelTransitEx);
 	p->addModel(modelAudioInterface64);
 
 	pluginSettings.readFromJson();
