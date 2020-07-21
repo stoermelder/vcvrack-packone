@@ -8,6 +8,9 @@ namespace Transit {
 template <int NUM_PRESETS>
 struct TransitBase : Module {
 	/** [Stored to JSON] */
+	int panelTheme = 0;
+	
+	/** [Stored to JSON] */
 	bool presetSlotUsed[NUM_PRESETS] = {false};
 	/** [Stored to JSON] */
 	std::vector<float> presetSlot[NUM_PRESETS];

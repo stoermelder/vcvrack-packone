@@ -49,9 +49,6 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 	};
 
 	/** [Stored to JSON] */
-	int panelTheme = 0;
-
-	/** [Stored to JSON] */
 	int preset;
 	/** [Stored to JSON] */
 	int presetCount;
@@ -96,7 +93,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 	int sampleRate;
 
 	TransitModule() {
-		panelTheme = pluginSettings.panelThemeDefault;
+		TransitBase<NUM_PRESETS>::panelTheme = pluginSettings.panelThemeDefault;
 		Module::config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		Module::configParam(PARAM_RW, 0, 1, 0, "Read/write mode");
 		for (int i = 0; i < NUM_PRESETS; i++) {
@@ -149,6 +146,17 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		presetProcessDivider.reset();
 		
 		Module::onReset();
+		TransitBase<NUM_PRESETS>* t = this;
+		int c = 0;
+		while (true) {
+			c++;
+			if (c == MAX_EXPANDERS + 1) break;
+			Module* exp = t->rightExpander.module;
+			if (!exp) break;
+			if (exp->model->plugin->slug != "Stoermelder-P1" || exp->model->slug != "TransitEx") break;
+			t = reinterpret_cast<TransitBase<NUM_PRESETS>*>(exp);
+			t->onReset();
+		}
 	}
 
 	TransitBase<NUM_PRESETS>* N[MAX_EXPANDERS + 1];
@@ -206,6 +214,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 			m = exp;
 			t = reinterpret_cast<TransitBase<NUM_PRESETS>*>(exp);
 			if (t->ctrlModuleId >= 0 && t->ctrlModuleId != Module::id) t->onReset();
+			t->panelTheme = TransitBase<NUM_PRESETS>::panelTheme;
 			t->ctrlModuleId = Module::id;
 			t->ctrlOffset = c;
 			presetNum += NUM_PRESETS;
@@ -469,7 +478,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
-		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
+		json_object_set_new(rootJ, "panelTheme", json_integer(TransitBase<NUM_PRESETS>::panelTheme));
 		json_object_set_new(rootJ, "mappingIndicatorHidden", json_boolean(mappingIndicatorHidden));
 		json_object_set_new(rootJ, "presetProcessDivision", json_integer(presetProcessDivision));
 
@@ -507,7 +516,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		TransitBase<NUM_PRESETS>::panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 		mappingIndicatorHidden = json_boolean_value(json_object_get(rootJ, "mappingIndicatorHidden"));
 		presetProcessDivision = json_integer_value(json_object_get(rootJ, "presetProcessDivision"));
 

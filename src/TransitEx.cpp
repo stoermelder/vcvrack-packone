@@ -23,11 +23,8 @@ struct TransitExModule : TransitBase<NUM_PRESETS> {
 		NUM_LIGHTS
 	};
 
-	/** [Stored to JSON] */
-	int panelTheme = 0;
-
 	TransitExModule() {
-		panelTheme = pluginSettings.panelThemeDefault;
+		TransitBase<NUM_PRESETS>::panelTheme = pluginSettings.panelThemeDefault;
 		Module::config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			Module::configParam<TransitParamQuantity<NUM_PRESETS>>(PARAM_PRESET + i, 0, 1, 0);
@@ -57,7 +54,7 @@ struct TransitExModule : TransitBase<NUM_PRESETS> {
 
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
-		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
+		json_object_set_new(rootJ, "panelTheme", json_integer(TransitBase<NUM_PRESETS>::panelTheme));
 
 		json_t* presetsJ = json_array();
 		for (int i = 0; i < NUM_PRESETS; i++) {
@@ -79,7 +76,7 @@ struct TransitExModule : TransitBase<NUM_PRESETS> {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		TransitBase<NUM_PRESETS>::panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 
 		// Hack for preventing duplicating this module
 		if (APP->engine->getModule(Module::id) != NULL) return;
