@@ -33,7 +33,7 @@ struct TransitParamQuantity : ParamQuantity {
 		return module->presetSlotUsed[i] ? "Used" : "Empty";
 	}
 	std::string getLabel() override {
-		return string::f("Set #%d", module->ctrlOffset * NUM_PRESETS + i + 1);
+		return string::f("Scene #%d", module->ctrlOffset * NUM_PRESETS + i + 1);
 	}
 };
 

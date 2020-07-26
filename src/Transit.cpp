@@ -19,9 +19,12 @@ enum class SLOTCVMODE {
 };
 
 enum class OUTMODE {
+	POLY = -1,
 	ENV = 0,
 	GATE = 1,
-	EOC = 2
+	TRIG_SCENE = 4,
+	TRIG_SOC = 3,
+	TRIG_EOC = 2
 };
 
 template <int NUM_PRESETS>
@@ -67,6 +70,8 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 	/** [Stored to JSON] */
 	OUTMODE outMode;
 	bool outEocArm;
+	dsp::PulseGenerator outScenePulseGenerator;
+	dsp::PulseGenerator outSocPulseGenerator;
 	dsp::PulseGenerator outEocPulseGenerator;
 
 	/** [Stored to JSON] */
@@ -143,6 +148,9 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		slewLimiter.reset(10.f);
 
 		outMode = OUTMODE::ENV;
+		outScenePulseGenerator.reset();
+		outSocPulseGenerator.reset();
+		outEocPulseGenerator.reset();
 
 		mappingIndicatorHidden = false;
 		presetProcessDivision = 8;
@@ -402,8 +410,10 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 			if (p != preset || force) {
 				preset = p;
 				presetNext = -1;
+				outScenePulseGenerator.trigger();
 				if (!*expPresetSlotUsed(p)) return;
 				slewLimiter.reset();
+				outSocPulseGenerator.trigger();
 				outEocArm = true;
 				presetOld.clear();
 				presetNew.clear();
@@ -441,12 +451,31 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 			switch (outMode) {
 				case OUTMODE::ENV:
 					TransitBase<NUM_PRESETS>::outputs[OUTPUT].setVoltage(s == 10.f ? 0.f : s);
+					TransitBase<NUM_PRESETS>::outputs[OUTPUT].setChannels(1);
 					break;
 				case OUTMODE::GATE:
 					TransitBase<NUM_PRESETS>::outputs[OUTPUT].setVoltage(s != 10.f ? 10.f : 0.f);
+					TransitBase<NUM_PRESETS>::outputs[OUTPUT].setChannels(1);
 					break;
-				case OUTMODE::EOC:
+				case OUTMODE::TRIG_SCENE:
+					TransitBase<NUM_PRESETS>::outputs[OUTPUT].setVoltage(outScenePulseGenerator.process(deltaTime) ? 10.f : 0.f);
+					TransitBase<NUM_PRESETS>::outputs[OUTPUT].setChannels(1);
+					break;
+				case OUTMODE::TRIG_SOC:
+					TransitBase<NUM_PRESETS>::outputs[OUTPUT].setVoltage(outSocPulseGenerator.process(deltaTime) ? 10.f : 0.f);
+					TransitBase<NUM_PRESETS>::outputs[OUTPUT].setChannels(1);
+					break;
+				case OUTMODE::TRIG_EOC:
 					TransitBase<NUM_PRESETS>::outputs[OUTPUT].setVoltage(outEocPulseGenerator.process(deltaTime) ? 10.f : 0.f);
+					TransitBase<NUM_PRESETS>::outputs[OUTPUT].setChannels(1);
+					break;
+				case OUTMODE::POLY:
+					TransitBase<NUM_PRESETS>::outputs[OUTPUT].setVoltage(s == 10.f ? 0.f : s, 0);
+					TransitBase<NUM_PRESETS>::outputs[OUTPUT].setVoltage(s != 10.f ? 10.f : 0.f, 1);
+					TransitBase<NUM_PRESETS>::outputs[OUTPUT].setVoltage(outScenePulseGenerator.process(deltaTime) ? 10.f : 0.f, 2);
+					TransitBase<NUM_PRESETS>::outputs[OUTPUT].setVoltage(outSocPulseGenerator.process(deltaTime) ? 10.f : 0.f, 3);
+					TransitBase<NUM_PRESETS>::outputs[OUTPUT].setVoltage(outEocPulseGenerator.process(deltaTime) ? 10.f : 0.f, 4);
+					TransitBase<NUM_PRESETS>::outputs[OUTPUT].setChannels(5);
 					break;
 			}
 
@@ -620,6 +649,46 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 			BASE::addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(60.0f, 45.4f + o), module, MODULE::LIGHT_PRESET + i * 3));
 		}
 	}
+	
+	void onHoverKey(const event::HoverKey& e) override {
+		BASE::onHoverKey(e);
+		if (e.action == GLFW_PRESS && (e.mods & GLFW_MOD_SHIFT)) {
+			switch (e.key) {
+				case GLFW_KEY_B:
+					learnParam = learnParam != 1 ? 1 : 0;
+					APP->event->setSelected(this);
+					break;
+				case GLFW_KEY_A: 
+					learnParam = learnParam != 2 ? 2 : 0; 
+					break;
+			}
+		}
+	}
+
+	void onDeselect(const event::Deselect& e) override {
+		if (learnParam == 0) return;
+		MODULE* module = dynamic_cast<MODULE*>(this->module);
+
+		// Check if a ParamWidget was touched, unstable API
+		ParamWidget* touchedParam = APP->scene->rack->touchedParam;
+		if (touchedParam && touchedParam->paramQuantity->module != module) {
+			APP->scene->rack->touchedParam = NULL;
+			int moduleId = touchedParam->paramQuantity->module->id;
+			int paramId = touchedParam->paramQuantity->paramId;
+			module->bindParameter(moduleId, paramId);
+			if (learnParam == 1) learnParam = 0;
+		} 
+	}
+
+	void step() override {
+		if (learnParam == 2 && APP->event->getSelectedWidget() != this) {
+			APP->event->setSelected(this);
+		}
+		if (BASE::module) {
+			BASE::module->lights[MODULE::LIGHT_LEARN].setBrightness(learnParam > 0);
+		}
+		BASE::step();
+	}
 
 	void appendContextMenu(Menu* menu) override {
 		ThemedModuleWidget<MODULE>::appendContextMenu(menu);
@@ -719,7 +788,11 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 				Menu* menu = new Menu;
 				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Envelope", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::ENV));
 				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Gate", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::GATE));
-				menu->addChild(construct<OutModeItem>(&MenuItem::text, "EOC", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::EOC));
+				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Trigger scene change", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::TRIG_SCENE));
+				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Trigger fade start", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::TRIG_SOC));
+				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Trigger fade end", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::TRIG_EOC));
+				menu->addChild(new MenuSeparator);
+				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Polyphonic", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::POLY));
 				return menu;
 			}
 		};
@@ -792,46 +865,6 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 		if (module->sourceHandles.size() > 0) {
 			menu->addChild(construct<ParameterMenuItem>(&MenuItem::text, "Bound parameters", &ParameterMenuItem::module, module));
 		}
-	}
-
-	void onHoverKey(const event::HoverKey& e) override {
-		BASE::onHoverKey(e);
-		if (e.action == GLFW_PRESS && (e.mods & GLFW_MOD_SHIFT)) {
-			switch (e.key) {
-				case GLFW_KEY_B:
-					learnParam = learnParam != 1 ? 1 : 0;
-					APP->event->setSelected(this);
-					break;
-				case GLFW_KEY_A: 
-					learnParam = learnParam != 2 ? 2 : 0; 
-					break;
-			}
-		}
-	}
-
-	void onDeselect(const event::Deselect& e) override {
-		if (learnParam == 0) return;
-		MODULE* module = dynamic_cast<MODULE*>(this->module);
-
-		// Check if a ParamWidget was touched, unstable API
-		ParamWidget* touchedParam = APP->scene->rack->touchedParam;
-		if (touchedParam && touchedParam->paramQuantity->module != module) {
-			APP->scene->rack->touchedParam = NULL;
-			int moduleId = touchedParam->paramQuantity->module->id;
-			int paramId = touchedParam->paramQuantity->paramId;
-			module->bindParameter(moduleId, paramId);
-			if (learnParam == 1) learnParam = 0;
-		} 
-	}
-
-	void step() override {
-		if (learnParam == 2 && APP->event->getSelectedWidget() != this) {
-			APP->event->setSelected(this);
-		}
-		if (BASE::module) {
-			BASE::module->lights[MODULE::LIGHT_LEARN].setBrightness(learnParam > 0);
-		}
-		BASE::step();
 	}
 };
 
