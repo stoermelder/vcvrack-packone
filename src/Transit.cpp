@@ -45,6 +45,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 	};
 	enum LightIds {
 		ENUMS(LIGHT_PRESET, NUM_PRESETS * 3),
+		LIGHT_LEARN,
 		NUM_LIGHTS
 	};
 
@@ -329,14 +330,14 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 			}
 			for (int i = 0; i < presetNum; i++) {
 				if (Module::params[PARAM_RW].getValue() == 0.f) {
-					expLight(i, 0)->setBrightness(presetNext == i ? 1.f : 0.f);
-					expLight(i, 1)->setSmoothBrightness(preset != i && presetCount > i ? (*expPresetSlotUsed(i) ? 1.f : 0.2f) : 0.f, s);
-					expLight(i, 2)->setSmoothBrightness(preset == i ? 1.f : 0.f, s);
+					expLight(i, 0)->setBrightness(preset == i ? 1.f : (presetNext == i ? 1.f : 0.f));
+					expLight(i, 1)->setBrightness(preset == i ? 1.f : (presetCount > i ? (*expPresetSlotUsed(i) ? 1.f : 0.2f) : 0.f));
+					expLight(i, 2)->setBrightness(preset == i ? 1.f : 0.f);
 				}
 				else {
-					expLight(i, 0)->setBrightness(!(lightBlink && i == preset) && *expPresetSlotUsed(i) ? 1.f : 0.f);
-					expLight(i, 1)->setBrightness(0.f);
-					expLight(i, 2)->setBrightness(!(lightBlink && i == preset) ? 0.f : 0.6f);
+					expLight(i, 0)->setBrightness(preset == i && lightBlink ? 0.6f : (*expPresetSlotUsed(i) ? 1.f : 0.f));
+					expLight(i, 1)->setBrightness(preset == i && lightBlink ? 0.6f : 0.f);
+					expLight(i, 2)->setBrightness(preset == i && lightBlink ? 0.6f : 0.f);
 				}
 			}
 		}
@@ -591,7 +592,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 	typedef ThemedModuleWidget<TransitModule<NUM_PRESETS>> BASE;
 	typedef TransitModule<NUM_PRESETS> MODULE;
 	
-	bool learnParam = false;
+	int learnParam = 0;
 
 	TransitWidget(MODULE* module)
 		: ThemedModuleWidget<MODULE>(module, "Transit") {
@@ -603,13 +604,15 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 		BASE::addInput(createInputCentered<StoermelderPort>(Vec(21.7f, 58.9f), module, MODULE::INPUT_SLOT));
 		BASE::addInput(createInputCentered<StoermelderPort>(Vec(21.7f, 94.2f), module, MODULE::INPUT_RESET));
 
-		BASE::addParam(createParamCentered<LEDSliderBlue>(Vec(21.7f, 166.7f), module, MODULE::PARAM_FADE));
+		BASE::addParam(createParamCentered<LEDSliderWhite>(Vec(21.7f, 166.7f), module, MODULE::PARAM_FADE));
 		BASE::addInput(createInputCentered<StoermelderPort>(Vec(21.7f, 221.4f), module, MODULE::INPUT_FADE));
 
 		BASE::addParam(createParamCentered<StoermelderTrimpot>(Vec(21.7f, 255.8f), module, MODULE::PARAM_SHAPE));
 		BASE::addOutput(createOutputCentered<StoermelderPort>(Vec(21.7f, 300.3f), module, MODULE::OUTPUT));
 
 		BASE::addParam(createParamCentered<CKSSH>(Vec(21.7f, 336.2f), module, MODULE::PARAM_RW));
+
+		BASE::addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(7.4f, 336.2f), module, MODULE::LIGHT_LEARN));
 
 		for (size_t i = 0; i < NUM_PRESETS; i++) {
 			float o = i * (288.7f / (NUM_PRESETS - 1));
@@ -725,20 +728,22 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 			MODULE* module;
 			WIDGET* widget;
 			void onAction(const event::Action& e) override {
-				widget->learnParam = false;
+				widget->learnParam = 0;
 				module->bindModule();
 			}
 		};
 
 		struct BindParameterItem : MenuItem {
 			WIDGET* widget;
+			int mode;
+			std::string rightText = "";
 			void onAction(const event::Action& e) override {
-				widget->learnParam ^= true;
+				widget->learnParam = widget->learnParam != mode ? mode : 0;
 				APP->scene->rack->touchedParam = NULL;
 				APP->event->setSelected(widget);
 			}
 			void step() override {
-				rightText = widget->learnParam ? "Active" : "";
+				MenuItem::rightText = widget->learnParam == mode ? "Active" : rightText;
 				MenuItem::step();
 			}
 		};
@@ -781,15 +786,23 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 		menu->addChild(construct<OutModeMenuItem>(&MenuItem::text, "OUT-port", &OutModeMenuItem::module, module));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<BindModuleItem>(&MenuItem::text, "Bind module (left)", &BindModuleItem::widget, this, &BindModuleItem::module, module));
-		menu->addChild(construct<BindParameterItem>(&MenuItem::text, "Bind parameter", &BindParameterItem::widget, this));
+		menu->addChild(construct<BindParameterItem>(&MenuItem::text, "Bind single parameter", &BindParameterItem::widget, this, &BindParameterItem::mode, 1));
+		menu->addChild(construct<BindParameterItem>(&MenuItem::text, "Bind multiple parameters", &BindParameterItem::rightText, RACK_MOD_SHIFT_NAME "+A", &BindParameterItem::widget, this, &BindParameterItem::mode, 2));
 
 		if (module->sourceHandles.size() > 0) {
 			menu->addChild(construct<ParameterMenuItem>(&MenuItem::text, "Bound parameters", &ParameterMenuItem::module, module));
 		}
 	}
 
+	void onHoverKey(const event::HoverKey& e) override {
+		BASE::onHoverKey(e);
+		if (e.action == GLFW_PRESS && e.key == GLFW_KEY_A && (e.mods & GLFW_MOD_SHIFT)) {
+			learnParam = learnParam != 2 ? 2 : 0;
+		}
+	}
+
 	void onDeselect(const event::Deselect& e) override {
-		if (!learnParam) return;
+		if (learnParam == 0) return;
 		MODULE* module = dynamic_cast<MODULE*>(this->module);
 
 		// Check if a ParamWidget was touched, unstable API
@@ -799,8 +812,18 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 			int moduleId = touchedParam->paramQuantity->module->id;
 			int paramId = touchedParam->paramQuantity->paramId;
 			module->bindParameter(moduleId, paramId);
-			learnParam = false;
+			if (learnParam == 1) learnParam = 0;
 		} 
+	}
+
+	void step() override {
+		if (learnParam == 2 && APP->event->getSelectedWidget() != this) {
+			APP->event->setSelected(this);
+		}
+		if (BASE::module) {
+			BASE::module->lights[MODULE::LIGHT_LEARN].setBrightness(learnParam > 0);
+		}
+		BASE::step();
 	}
 };
 
