@@ -14,12 +14,16 @@
 - Module [CV-PAM](./docs/CVPam.md)
     - Don't capture mouse scrolling if mapping slots are locked (#137)
 - Module [GLUE](./docs/Glue.md)
-    - Implemented support for STRIP, please be aware to include GLUE within your strip-file (#115)
+    - Implemented support for mappings within STRIP, please be aware to include GLUE within your strip-file (#115)
     - Added options for changing text coloring (#136)
+- Module [GRIP](./docs/Grip.md)
+    - Implemented support for mappings within STRIP (#151)
 - Module [GOTO](./docs/Goto.md)
     - Added support for number pad keys (#134)
 - Module [MIDI-CAT](./docs/MidiCat.md)
     - Don't capture mouse scrolling if mapping slots are locked (#137)
+- Module [MIRROR](./docs/Mirror.md)
+    - Implemented support for mappings within STRIP
 - Module [STRIP](./docs/Strip.md)
     - Added option to randomize only parameters without the module's internal state (#135) 
 

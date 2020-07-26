@@ -924,8 +924,7 @@ struct StripWidget : ThemedModuleWidget<StripModule> {
 		std::string modelSlug = json_string_value(json_object_get(moduleJ, "model"));
 
 		// Only handle some specific modules known to use mapping of parameters
-		if (!( (pluginSlug == "Stoermelder-P1" && (modelSlug == "CVMap" || modelSlug == "CVMapMicro" || modelSlug == "CVPam" || modelSlug == "ReMoveLite" || modelSlug == "MidiCat"))
-			|| (pluginSlug == "Core" && modelSlug == "MIDI-Map"))) 
+		if (!(pluginSlug == "Core" && modelSlug == "MIDI-Map"))
 			return;
 
 		json_t* dataJ = json_object_get(moduleJ, "data");

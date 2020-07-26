@@ -1,6 +1,7 @@
 #pragma once
 #include "plugin.hpp"
 #include "settings.hpp"
+#include "StripIdFixModule.hpp"
 #include <chrono>
 
 
@@ -40,7 +41,7 @@ struct ParamHandleIndicator {
 // Abstract modules
 
 template< int MAX_CHANNELS >
-struct MapModuleBase : Module {
+struct MapModuleBase : Module, StripIdFixModule {
 	/** Number of maps */
 	int mapLen = 0;
 	/** The mapped param handle of each channel */
@@ -195,7 +196,7 @@ struct MapModuleBase : Module {
 		return rootJ;
 	}
 
-	void dataFromJson(json_t *rootJ) override {
+	void dataFromJson(json_t* rootJ) override {
 		clearMaps();
 
 		json_t* textScrollingJ = json_object_get(rootJ, "textScrolling");
@@ -208,16 +209,20 @@ struct MapModuleBase : Module {
 			json_t* mapJ;
 			size_t mapIndex;
 			json_array_foreach(mapsJ, mapIndex, mapJ) {
-				json_t *moduleIdJ = json_object_get(mapJ, "moduleId");
-				json_t *paramIdJ = json_object_get(mapJ, "paramId");
+				json_t* moduleIdJ = json_object_get(mapJ, "moduleId");
+				json_t* paramIdJ = json_object_get(mapJ, "paramId");
 				if (!(moduleIdJ && paramIdJ))
 					continue;
 				if (mapIndex >= MAX_CHANNELS)
 					continue;
-				APP->engine->updateParamHandle(&paramHandles[mapIndex], json_integer_value(moduleIdJ), json_integer_value(paramIdJ), false);
+				int moduleId = json_integer_value(moduleIdJ);
+				int paramId = json_integer_value(paramIdJ);
+				moduleId = idFix(moduleId);
+				APP->engine->updateParamHandle(&paramHandles[mapIndex], moduleId, paramId, false);
 			}
 		}
 		updateMapLen();
+		idFixClearMap();
 	}
 };
 

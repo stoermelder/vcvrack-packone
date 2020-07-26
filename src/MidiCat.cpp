@@ -1,5 +1,6 @@
 #include "plugin.hpp"
 #include "MapModuleBase.hpp"
+#include "StripIdFixModule.hpp"
 #include <osdialog.h>
 
 
@@ -74,7 +75,7 @@ enum NOTEMODE {
 	NOTEMODE_TOGGLE = 2
 };
 
-struct MidiCatModule : Module {
+struct MidiCatModule : Module, StripIdFixModule {
 	enum ParamIds {
 		NUM_PARAMS
 	};
@@ -620,6 +621,7 @@ struct MidiCatModule : Module {
 				notesMode[mapIndex] = (NOTEMODE)json_integer_value(noteModeJ);
 				int moduleId = json_integer_value(moduleIdJ);
 				int paramId = json_integer_value(paramIdJ);
+				moduleId = idFix(moduleId);
 				if (moduleId != paramHandles[mapIndex].moduleId || paramId != paramHandles[mapIndex].paramId) {
 					APP->engine->updateParamHandle(&paramHandles[mapIndex], moduleId, paramId, false);
 					refreshParamHandleText(mapIndex);
@@ -629,7 +631,8 @@ struct MidiCatModule : Module {
 		}
 
 		updateMapLen();
-
+		idFixClearMap();
+		
 		json_t *midiInputJ = json_object_get(rootJ, "midiInput");
 		if (midiInputJ)
 			midiInput.fromJson(midiInputJ);

@@ -1,10 +1,11 @@
 #include "plugin.hpp"
+#include "StripIdFixModule.hpp"
 #include <plugin.hpp>
 
 namespace StoermelderPackOne {
 namespace Mirror {
 
-struct MirrorModule : Module {
+struct MirrorModule : Module, StripIdFixModule {
 	enum ParamIds {
 		NUM_PARAMS
 	};
@@ -261,7 +262,7 @@ struct MirrorModule : Module {
 
 	void dataFromJson(json_t* rootJ) override {
 		// Hack for preventing duplicating this module
-		if (APP->engine->getModule(id) != NULL) return;
+		if (APP->engine->getModule(id) != NULL && !idFixHasMap()) return;
 
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 		audioRate = json_boolean_value(json_object_get(rootJ, "audioRate"));
@@ -295,12 +296,15 @@ struct MirrorModule : Module {
 			size_t sourceMapIndex;
 			json_array_foreach(sourceMapsJ, sourceMapIndex, sourceMapJ) {
 				json_t* moduleIdJ = json_object_get(sourceMapJ, "moduleId");
+				int moduleId = json_integer_value(moduleIdJ);
 				json_t* paramIdJ = json_object_get(sourceMapJ, "paramId");
+				int paramId = json_integer_value(paramIdJ);
+				moduleId = idFix(moduleId);
 
 				ParamHandle* sourceHandle = new ParamHandle;
 				sourceHandle->text = "stoermelder MIRROR";
 				APP->engine->addParamHandle(sourceHandle);
-				APP->engine->updateParamHandle(sourceHandle, json_integer_value(moduleIdJ), json_integer_value(paramIdJ), false);
+				APP->engine->updateParamHandle(sourceHandle, moduleId, paramId, false);
 				sourceHandles.push_back(sourceHandle);
 			}
 		}
@@ -311,12 +315,15 @@ struct MirrorModule : Module {
 			size_t targetMapIndex;
 			json_array_foreach(targetMapsJ, targetMapIndex, targetMapJ) {
 				json_t* moduleIdJ = json_object_get(targetMapJ, "moduleId");
+				int moduleId = json_integer_value(moduleIdJ);
 				json_t* paramIdJ = json_object_get(targetMapJ, "paramId");
+				int paramId = json_integer_value(paramIdJ);
+				moduleId = idFix(moduleId);
 
 				ParamHandle* targetHandle = new ParamHandle;
 				targetHandle->text = "stoermelder MIRROR";
 				APP->engine->addParamHandle(targetHandle);
-				APP->engine->updateParamHandle(targetHandle, json_integer_value(moduleIdJ), json_integer_value(paramIdJ), false);
+				APP->engine->updateParamHandle(targetHandle, moduleId, paramId, false);
 				targetHandles.push_back(targetHandle);
 			}
 		}
@@ -331,6 +338,7 @@ struct MirrorModule : Module {
 			}
 		}
 
+		idFixClearMap();
 		inChange = false;
 	}
 };
