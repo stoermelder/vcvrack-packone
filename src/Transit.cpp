@@ -786,7 +786,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 		menu->addChild(construct<OutModeMenuItem>(&MenuItem::text, "OUT-port", &OutModeMenuItem::module, module));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<BindModuleItem>(&MenuItem::text, "Bind module (left)", &BindModuleItem::widget, this, &BindModuleItem::module, module));
-		menu->addChild(construct<BindParameterItem>(&MenuItem::text, "Bind single parameter", &BindParameterItem::widget, this, &BindParameterItem::mode, 1));
+		menu->addChild(construct<BindParameterItem>(&MenuItem::text, "Bind single parameter", &BindParameterItem::rightText, RACK_MOD_SHIFT_NAME "+B", &BindParameterItem::widget, this, &BindParameterItem::mode, 1));
 		menu->addChild(construct<BindParameterItem>(&MenuItem::text, "Bind multiple parameters", &BindParameterItem::rightText, RACK_MOD_SHIFT_NAME "+A", &BindParameterItem::widget, this, &BindParameterItem::mode, 2));
 
 		if (module->sourceHandles.size() > 0) {
@@ -796,8 +796,16 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 
 	void onHoverKey(const event::HoverKey& e) override {
 		BASE::onHoverKey(e);
-		if (e.action == GLFW_PRESS && e.key == GLFW_KEY_A && (e.mods & GLFW_MOD_SHIFT)) {
-			learnParam = learnParam != 2 ? 2 : 0;
+		if (e.action == GLFW_PRESS && (e.mods & GLFW_MOD_SHIFT)) {
+			switch (e.key) {
+				case GLFW_KEY_B:
+					learnParam = learnParam != 1 ? 1 : 0;
+					APP->event->setSelected(this);
+					break;
+				case GLFW_KEY_A: 
+					learnParam = learnParam != 2 ? 2 : 0; 
+					break;
+			}
 		}
 	}
 
