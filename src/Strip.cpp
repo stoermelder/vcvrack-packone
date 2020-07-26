@@ -976,7 +976,7 @@ struct StripWidget : ThemedModuleWidget<StripModule> {
 						h->oldModuleJ = mw->toJson();
 
 						StripIdFixModule* m = dynamic_cast<StripIdFixModule*>(mw->module);
-						if (m) m->dataFromJsonIdFix(modules);
+						if (m) m->idFixDataFromJson(modules);
 
 						mw->fromJson(moduleJ);
 
@@ -1003,7 +1003,7 @@ struct StripWidget : ThemedModuleWidget<StripModule> {
 						h->oldModuleJ = mw->toJson();
 
 						StripIdFixModule* m = dynamic_cast<StripIdFixModule*>(mw->module);
-						if (m) m->dataFromJsonIdFix(modules);
+						if (m) m->idFixDataFromJson(modules);
 
 						mw->fromJson(moduleJ);
 
