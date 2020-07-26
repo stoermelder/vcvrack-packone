@@ -521,8 +521,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 	}
 
 	json_t* dataToJson() override {
-		json_t* rootJ = json_object();
-		json_object_set_new(rootJ, "panelTheme", json_integer(TransitBase<NUM_PRESETS>::panelTheme));
+		json_t* rootJ = TransitBase<NUM_PRESETS>::dataToJson();
 		json_object_set_new(rootJ, "mappingIndicatorHidden", json_boolean(mappingIndicatorHidden));
 		json_object_set_new(rootJ, "presetProcessDivision", json_integer(presetProcessDivision));
 
@@ -540,22 +539,6 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		}
 		json_object_set_new(rootJ, "sourceMaps", sourceMapsJ);
 
-		json_t* presetsJ = json_array();
-		for (int i = 0; i < NUM_PRESETS; i++) {
-			json_t* presetJ = json_object();
-			json_object_set_new(presetJ, "slotUsed", json_boolean(TransitBase<NUM_PRESETS>::presetSlotUsed[i]));
-			if (TransitBase<NUM_PRESETS>::presetSlotUsed[i]) {
-				json_t* slotJ = json_array();
-				for (size_t j = 0; j < TransitBase<NUM_PRESETS>::presetSlot[i].size(); j++) {
-					json_t* vJ = json_real(TransitBase<NUM_PRESETS>::presetSlot[i][j]);
-					json_array_append_new(slotJ, vJ);
-				}
-				json_object_set(presetJ, "slot", slotJ);
-			}
-			json_array_append_new(presetsJ, presetJ);
-		}
-		json_object_set_new(rootJ, "presets", presetsJ);
-
 		return rootJ;
 	}
 
@@ -569,8 +552,12 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		preset = json_integer_value(json_object_get(rootJ, "preset"));
 		presetCount = json_integer_value(json_object_get(rootJ, "presetCount"));
 
+		if (preset >= presetCount) {
+			preset = -1;
+		}
+
 		// Hack for preventing duplicating this module
-		if (APP->engine->getModule(TransitBase<NUM_PRESETS>::id) != NULL) return;
+		if (APP->engine->getModule(TransitBase<NUM_PRESETS>::id) != NULL && !TransitBase<NUM_PRESETS>::idFixHasMap()) return;
 
 		inChange = true;
 		json_t* sourceMapsJ = json_object_get(rootJ, "sourceMaps");
@@ -579,38 +566,22 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 			size_t sourceMapIndex;
 			json_array_foreach(sourceMapsJ, sourceMapIndex, sourceMapJ) {
 				json_t* moduleIdJ = json_object_get(sourceMapJ, "moduleId");
+				int moduleId = json_integer_value(moduleIdJ);
 				json_t* paramIdJ = json_object_get(sourceMapJ, "paramId");
+				int paramId = json_integer_value(paramIdJ);
 
+				moduleId = TransitBase<NUM_PRESETS>::idFix(moduleId);
 				ParamHandle* sourceHandle = new ParamHandle;
 				sourceHandle->text = "stoermelder TRANSIT";
 				APP->engine->addParamHandle(sourceHandle);
-				APP->engine->updateParamHandle(sourceHandle, json_integer_value(moduleIdJ), json_integer_value(paramIdJ), false);
+				APP->engine->updateParamHandle(sourceHandle, moduleId, paramId, false);
 				sourceHandles.push_back(sourceHandle);
 			}
 		}
 		inChange = false;
 
-		json_t* presetsJ = json_object_get(rootJ, "presets");
-		json_t* presetJ;
-		size_t presetIndex;
-		json_array_foreach(presetsJ, presetIndex, presetJ) {
-			TransitBase<NUM_PRESETS>::presetSlotUsed[presetIndex] = json_boolean_value(json_object_get(presetJ, "slotUsed"));
-			TransitBase<NUM_PRESETS>::presetSlot[presetIndex].clear();
-			if (TransitBase<NUM_PRESETS>::presetSlotUsed[presetIndex]) {
-				json_t* slotJ = json_object_get(presetJ, "slot");
-				json_t* vJ;
-				size_t j;
-				json_array_foreach(slotJ, j, vJ) {
-					float v = json_real_value(vJ);
-					TransitBase<NUM_PRESETS>::presetSlot[presetIndex].push_back(v);
-				}
-			}
-		}
-
-		if (preset >= presetCount) {
-			preset = -1;
-		}
-
+		TransitBase<NUM_PRESETS>::idFixClearMap();
+		TransitBase<NUM_PRESETS>::dataFromJson(rootJ);
 		Module::params[PARAM_RW].setValue(0.f);
 	}
 };
