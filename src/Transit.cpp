@@ -87,8 +87,11 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 
 	StoermelderShapedSlewLimiter slewLimiter;
 	dsp::ClockDivider handleDivider;
-	dsp::ClockDivider lightDivider;
 	dsp::ClockDivider buttonDivider;
+
+	dsp::ClockDivider lightDivider;
+	dsp::Timer lightTimer;
+	bool lightBlink = false;
 
 	int sampleRate;
 
@@ -320,6 +323,10 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		// Set channel lights infrequently
 		if (lightDivider.process()) {
 			float s = args.sampleTime * lightDivider.getDivision();
+			if (lightTimer.process(s) > 0.2f) {
+				lightTimer.reset();
+				lightBlink ^= true;
+			}
 			for (int i = 0; i < presetNum; i++) {
 				if (Module::params[PARAM_RW].getValue() == 0.f) {
 					expLight(i, 0)->setBrightness(presetNext == i ? 1.f : 0.f);
@@ -327,9 +334,9 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 					expLight(i, 2)->setSmoothBrightness(preset == i ? 1.f : 0.f, s);
 				}
 				else {
-					expLight(i, 0)->setBrightness(*expPresetSlotUsed(i) ? 1.f : 0.f);
+					expLight(i, 0)->setBrightness(!(lightBlink && i == preset) && *expPresetSlotUsed(i) ? 1.f : 0.f);
 					expLight(i, 1)->setBrightness(0.f);
-					expLight(i, 2)->setBrightness(0.f);
+					expLight(i, 2)->setBrightness(!(lightBlink && i == preset) ? 0.f : 0.6f);
 				}
 			}
 		}
@@ -571,8 +578,10 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		}
 
 		if (preset >= presetCount) {
-			preset = 0;
+			preset = -1;
 		}
+
+		Module::params[PARAM_RW].setValue(0.f);
 	}
 };
 
