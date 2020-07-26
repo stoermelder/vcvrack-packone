@@ -361,6 +361,13 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 	}
 
 	void bindParameter(int moduleId, int paramId) {
+		for (ParamHandle* handle : sourceHandles) {
+			if (handle->moduleId == moduleId && handle->paramId == paramId) {
+				// Parameter already bound
+				return;
+			}
+		}
+
 		ParamHandle* sourceHandle = new ParamHandle;
 		sourceHandle->text = "stoermelder TRANSIT";
 		APP->engine->addParamHandle(sourceHandle);
@@ -707,7 +714,9 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 
 		struct BindModuleItem : MenuItem {
 			MODULE* module;
+			WIDGET* widget;
 			void onAction(const event::Action& e) override {
+				widget->learnParam = false;
 				module->bindModule();
 			}
 		};
@@ -762,7 +771,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 		menu->addChild(construct<SlotCvModeMenuItem>(&MenuItem::text, "SLOT-port", &SlotCvModeMenuItem::module, module));
 		menu->addChild(construct<OutModeMenuItem>(&MenuItem::text, "OUT-port", &OutModeMenuItem::module, module));
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<BindModuleItem>(&MenuItem::text, "Bind module (left)", &BindModuleItem::module, module));
+		menu->addChild(construct<BindModuleItem>(&MenuItem::text, "Bind module (left)", &BindModuleItem::widget, this, &BindModuleItem::module, module));
 		menu->addChild(construct<BindParameterItem>(&MenuItem::text, "Bind parameter", &BindParameterItem::widget, this));
 
 		if (module->sourceHandles.size() > 0) {
