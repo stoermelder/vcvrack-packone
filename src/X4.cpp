@@ -28,6 +28,8 @@ struct X4Module : CVMapModuleBase<2> {
 
 	/** [Stored to JSON] */
 	int panelTheme = 0;
+	/** [Stored to Json] */
+	bool audioRate;
 
 	float lastA[5];
 	float lastB[5];
@@ -36,6 +38,7 @@ struct X4Module : CVMapModuleBase<2> {
 	int lightAtx[5];
 	int lightBtx[5];
 
+	dsp::ClockDivider processDivider;
 	dsp::ClockDivider lightDivider;
 
 	X4Module() {
@@ -54,116 +57,124 @@ struct X4Module : CVMapModuleBase<2> {
 
 		this->paramHandles[0].text = "XX";
 		this->paramHandles[1].text = "XX";
+		processDivider.setDivision(32);
 		lightDivider.setDivision(1024);
 		onReset();
 	}
 
-	void process(const ProcessArgs& args) override {
-		ParamQuantity* pqA = getParamQuantity(0);
-		if (pqA) {
-			float v = pqA->getScaledValue();
-			if (v != lastA[0]) {
-				lightArx[0]++;
-				lastA[0] = v;
-				params[PARAM_MAP_A + 1].setValue(v);
-				lightAtx[1] += lastA[1] != v;
-				lastA[1] = v;
-				params[PARAM_MAP_A + 2].setValue(v);
-				lightAtx[2] += lastA[2] != v;
-				lastA[2] = v;
-				params[PARAM_MAP_A + 3].setValue(v);
-				lightAtx[3] += lastA[3] != v;
-				lastA[3] = v;
-				params[PARAM_MAP_A + 4].setValue(v);
-				lightAtx[4] += lastA[4] != v;
-				lastA[4] = v;
-			}
-			else {
-				float v1 = lastA[1] = params[PARAM_MAP_A + 1].getValue();
-				lightArx[1] += v1 != v;
-				if (v == v1) {
-					v1 = lastA[2] = params[PARAM_MAP_A + 2].getValue();
-					lightArx[2] += v1 != v;
-				}
-				if (v == v1) {
-					v1 = lastA[3] = params[PARAM_MAP_A + 3].getValue();
-					lightArx[3] += v1 != v;
-				}
-				if (v == v1) {
-					v1 = lastA[4] = params[PARAM_MAP_A + 4].getValue();
-					lightArx[4] += v1 != v;
-				}
-				if (v1 != lastA[0]) {
-					lightAtx[0]++;
-					pqA->setScaledValue(v1);
-					params[PARAM_MAP_A + 1].setValue(v1);
-					lightAtx[1] += lastA[1] != v1;
-					lastA[1] = v1;
-					params[PARAM_MAP_A + 2].setValue(v1);
-					lightAtx[2] += lastA[2] != v1;
-					lastA[2] = v1;
-					params[PARAM_MAP_A + 3].setValue(v1);
-					lightAtx[3] += lastA[3] != v1;
-					lastA[3] = v1;
-					params[PARAM_MAP_A + 4].setValue(v1);
-					lightAtx[4] += lastA[4] != v1;
-					lastA[4] = v1;
-				}
-				lastA[0] = v1;
-			}
-		}
+	void onReset() override {
+		audioRate = false;
+		CVMapModuleBase<2>::onReset();
+	}
 
-		ParamQuantity* pqB = getParamQuantity(1);
-		if (pqB) {
-			float v = pqB->getScaledValue();
-			if (v != lastB[0]) {
-				lightBrx[0]++;
-				lastB[0] = v;
-				params[PARAM_MAP_B + 1].setValue(v);
-				lightBtx[1] += lastB[1] != v;
-				lastB[1] = v;
-				params[PARAM_MAP_B + 2].setValue(v);
-				lightBtx[2] += lastB[2] != v;
-				lastB[2] = v;
-				params[PARAM_MAP_B + 3].setValue(v);
-				lightBtx[3] += lastB[3] != v;
-				lastB[3] = v;
-				params[PARAM_MAP_B + 4].setValue(v);
-				lightBtx[4] += lastB[4] != v;
-				lastB[4] = v;
+	void process(const ProcessArgs& args) override {
+		if (audioRate || processDivider.process()) {
+			ParamQuantity* pqA = getParamQuantity(0);
+			if (pqA) {
+				float v = pqA->getScaledValue();
+				if (v != lastA[0]) {
+					lightArx[0]++;
+					lastA[0] = v;
+					params[PARAM_MAP_A + 1].setValue(v);
+					lightAtx[1] += lastA[1] != v;
+					lastA[1] = v;
+					params[PARAM_MAP_A + 2].setValue(v);
+					lightAtx[2] += lastA[2] != v;
+					lastA[2] = v;
+					params[PARAM_MAP_A + 3].setValue(v);
+					lightAtx[3] += lastA[3] != v;
+					lastA[3] = v;
+					params[PARAM_MAP_A + 4].setValue(v);
+					lightAtx[4] += lastA[4] != v;
+					lastA[4] = v;
+				}
+				else {
+					float v1 = lastA[1] = params[PARAM_MAP_A + 1].getValue();
+					lightArx[1] += v1 != v;
+					if (v == v1) {
+						v1 = lastA[2] = params[PARAM_MAP_A + 2].getValue();
+						lightArx[2] += v1 != v;
+					}
+					if (v == v1) {
+						v1 = lastA[3] = params[PARAM_MAP_A + 3].getValue();
+						lightArx[3] += v1 != v;
+					}
+					if (v == v1) {
+						v1 = lastA[4] = params[PARAM_MAP_A + 4].getValue();
+						lightArx[4] += v1 != v;
+					}
+					if (v1 != lastA[0]) {
+						lightAtx[0]++;
+						pqA->setScaledValue(v1);
+						params[PARAM_MAP_A + 1].setValue(v1);
+						lightAtx[1] += lastA[1] != v1;
+						lastA[1] = v1;
+						params[PARAM_MAP_A + 2].setValue(v1);
+						lightAtx[2] += lastA[2] != v1;
+						lastA[2] = v1;
+						params[PARAM_MAP_A + 3].setValue(v1);
+						lightAtx[3] += lastA[3] != v1;
+						lastA[3] = v1;
+						params[PARAM_MAP_A + 4].setValue(v1);
+						lightAtx[4] += lastA[4] != v1;
+						lastA[4] = v1;
+					}
+					lastA[0] = v1;
+				}
 			}
-			else {
-				float v1 = lastB[1] = params[PARAM_MAP_B + 1].getValue();
-				lightBrx[1] += v1 != v;
-				if (v == v1) { 
-					v1 = lastB[2] = params[PARAM_MAP_B + 2].getValue();
-					lightBrx[2] += v1 != v;
+
+			ParamQuantity* pqB = getParamQuantity(1);
+			if (pqB) {
+				float v = pqB->getScaledValue();
+				if (v != lastB[0]) {
+					lightBrx[0]++;
+					lastB[0] = v;
+					params[PARAM_MAP_B + 1].setValue(v);
+					lightBtx[1] += lastB[1] != v;
+					lastB[1] = v;
+					params[PARAM_MAP_B + 2].setValue(v);
+					lightBtx[2] += lastB[2] != v;
+					lastB[2] = v;
+					params[PARAM_MAP_B + 3].setValue(v);
+					lightBtx[3] += lastB[3] != v;
+					lastB[3] = v;
+					params[PARAM_MAP_B + 4].setValue(v);
+					lightBtx[4] += lastB[4] != v;
+					lastB[4] = v;
 				}
-				if (v == v1) { 
-					v1 = lastB[3] = params[PARAM_MAP_B + 3].getValue();
-					lightBrx[3] += v1 != v;
+				else {
+					float v1 = lastB[1] = params[PARAM_MAP_B + 1].getValue();
+					lightBrx[1] += v1 != v;
+					if (v == v1) { 
+						v1 = lastB[2] = params[PARAM_MAP_B + 2].getValue();
+						lightBrx[2] += v1 != v;
+					}
+					if (v == v1) { 
+						v1 = lastB[3] = params[PARAM_MAP_B + 3].getValue();
+						lightBrx[3] += v1 != v;
+					}
+					if (v == v1) {
+						v1 = lastB[4] = params[PARAM_MAP_B + 4].getValue();
+						lightBrx[4] += v1 != v;
+					}
+					if (v1 != lastB[0]) {
+						lightBtx[0]++;
+						pqB->setScaledValue(v1);
+						params[PARAM_MAP_B + 1].setValue(v1);
+						lightBtx[1] += lastB[1] != v1;
+						lastB[1] = v1;
+						params[PARAM_MAP_B + 2].setValue(v1);
+						lightBtx[2] += lastB[2] != v1;
+						lastB[2] = v1;
+						params[PARAM_MAP_B + 3].setValue(v1);
+						lightBtx[3] += lastB[3] != v1;
+						lastB[3] = v1;
+						params[PARAM_MAP_B + 4].setValue(v1);
+						lightBtx[4] += lastB[4] != v1;
+						lastB[4] = v1;
+					}
+					lastB[0] = v1;
 				}
-				if (v == v1) {
-					v1 = lastB[4] = params[PARAM_MAP_B + 4].getValue();
-					lightBrx[4] += v1 != v;
-				}
-				if (v1 != lastB[0]) {
-					lightBtx[0]++;
-					pqB->setScaledValue(v1);
-					params[PARAM_MAP_B + 1].setValue(v1);
-					lightBtx[1] += lastB[1] != v1;
-					lastB[1] = v1;
-					params[PARAM_MAP_B + 2].setValue(v1);
-					lightBtx[2] += lastB[2] != v1;
-					lastB[2] = v1;
-					params[PARAM_MAP_B + 3].setValue(v1);
-					lightBtx[3] += lastB[3] != v1;
-					lastB[3] = v1;
-					params[PARAM_MAP_B + 4].setValue(v1);
-					lightBtx[4] += lastB[4] != v1;
-					lastB[4] = v1;
-				}
-				lastB[0] = v1;
 			}
 		}
 
@@ -173,11 +184,12 @@ struct X4Module : CVMapModuleBase<2> {
 			lights[LIGHT_MAP_B + 0].setBrightness(paramHandles[1].moduleId >= 0 && learningId != 1 ? 1.f : 0.f);
 			lights[LIGHT_MAP_B + 1].setBrightness(learningId == 1 ? 1.f : 0.f);
 
+			float d = float(lightDivider.division) / float(audioRate ? 1 : processDivider.division);
 			for (size_t i = 0; i < 5; i++) {
-				lights[LIGHT_RX_A + i].setBrightness(float(lightArx[i]) / float(lightDivider.division));
-				lights[LIGHT_TX_A + i].setBrightness(float(lightAtx[i]) / float(lightDivider.division));
-				lights[LIGHT_RX_B + i].setBrightness(float(lightBrx[i]) / float(lightDivider.division));
-				lights[LIGHT_TX_B + i].setBrightness(float(lightBtx[i]) / float(lightDivider.division));
+				lights[LIGHT_RX_A + i].setBrightness(float(lightArx[i]) / d);
+				lights[LIGHT_TX_A + i].setBrightness(float(lightAtx[i]) / d);
+				lights[LIGHT_RX_B + i].setBrightness(float(lightBrx[i]) / d);
+				lights[LIGHT_TX_B + i].setBrightness(float(lightBtx[i]) / d);
 				lightArx[i] = lightBrx[i] = 0;
 				lightAtx[i] = lightBtx[i] = 0;
 			}
@@ -189,12 +201,14 @@ struct X4Module : CVMapModuleBase<2> {
 	json_t* dataToJson() override {
 		json_t* rootJ = CVMapModuleBase<2>::dataToJson();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
+		json_object_set_new(rootJ, "audioRate", json_boolean(audioRate));
 		return rootJ;
 	}
 
 	void dataFromJson(json_t* rootJ) override {
 		CVMapModuleBase<2>::dataFromJson(rootJ);
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		audioRate = json_boolean_value(json_object_get(rootJ, "audioRate"));
 	}
 };
 
@@ -347,6 +361,27 @@ struct X4Widget : ThemedModuleWidget<X4Module> {
 			addParam(createParamCentered<StoermelderTrimpot>(Vec(15.f, 242.2f + o * i), module, X4Module::PARAM_MAP_B + i + 1));
 			addChild(createLightCentered<TinyLight<BlueLight>>(Vec(24.0f, 231.7f + o * i), module, X4Module::LIGHT_TX_B + i + 1));
 		}
+	}
+
+
+	void appendContextMenu(Menu* menu) override {
+		ThemedModuleWidget<X4Module>::appendContextMenu(menu);
+		X4Module* module = dynamic_cast<X4Module*>(this->module);
+		assert(module);
+
+		struct AudioRateItem : MenuItem {
+			X4Module* module;
+			void onAction(const event::Action& e) override {
+				module->audioRate ^= true;
+			}
+			void step() override {
+				rightText = module->audioRate ? "✔" : "";
+				MenuItem::step();
+			}
+		};
+
+		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<AudioRateItem>(&MenuItem::text, "Audio rate processing", &AudioRateItem::module, module));
 	}
 };
 
