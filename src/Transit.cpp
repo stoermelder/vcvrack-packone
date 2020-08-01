@@ -29,6 +29,8 @@ enum class OUTMODE {
 
 template <int NUM_PRESETS>
 struct TransitModule : TransitBase<NUM_PRESETS> {
+	typedef TransitBase<NUM_PRESETS> BASE;
+
 	enum ParamIds {
 		ENUMS(PARAM_PRESET, NUM_PRESETS),
 		PARAM_RW,
@@ -102,7 +104,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 	int sampleRate;
 
 	TransitModule() {
-		TransitBase<NUM_PRESETS>::panelTheme = pluginSettings.panelThemeDefault;
+		BASE::panelTheme = pluginSettings.panelThemeDefault;
 		Module::config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		Module::configParam(PARAM_RW, 0, 1, 0, "Read/write mode");
 		for (int i = 0; i < NUM_PRESETS; i++) {
@@ -110,7 +112,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 			TransitParamQuantity<NUM_PRESETS>* pq = (TransitParamQuantity<NUM_PRESETS>*)Module::paramQuantities[PARAM_PRESET + i];
 			pq->module = this;
 			pq->i = i;
-			TransitBase<NUM_PRESETS>::presetButton[i].param = &Module::params[PARAM_PRESET + i];
+			BASE::presetButton[i].param = &Module::params[PARAM_PRESET + i];
 		}
 		Module::configParam(PARAM_FADE, 0.f, 1.f, 0.5f, "Fade");
 		Module::configParam(PARAM_SHAPE, -1.f, 1.f, 0.f, "Shape");
@@ -138,8 +140,8 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		inChange = false;
 
 		for (int i = 0; i < NUM_PRESETS; i++) {
-			TransitBase<NUM_PRESETS>::presetSlotUsed[i] = false;
-			TransitBase<NUM_PRESETS>::presetSlot[i].clear();
+			BASE::presetSlotUsed[i] = false;
+			BASE::presetSlot[i].clear();
 		}
 
 		preset = -1;
@@ -179,6 +181,10 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 
 	Light* transitLight(int i) override {
 		return &Module::lights[LIGHT_PRESET + i];
+	}
+
+	void transitLoadSlot(int i) override {
+		presetLoad(i);
 	}
 
 	inline Param* expParam(int index) {
@@ -226,7 +232,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 			m = exp;
 			t = reinterpret_cast<TransitBase<NUM_PRESETS>*>(exp);
 			if (t->ctrlModuleId >= 0 && t->ctrlModuleId != Module::id) t->onReset();
-			t->panelTheme = TransitBase<NUM_PRESETS>::panelTheme;
+			t->panelTheme = BASE::panelTheme;
 			t->ctrlModuleId = Module::id;
 			t->ctrlOffset = c;
 			presetNum += NUM_PRESETS;
@@ -437,9 +443,9 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 			if (preset == -1) return;
 			float deltaTime = sampleTime * presetProcessDivision;
 
-			float fade = TransitBase<NUM_PRESETS>::inputs[INPUT_FADE].getVoltage() / 10.f + TransitBase<NUM_PRESETS>::params[PARAM_FADE].getValue();
+			float fade = BASE::inputs[INPUT_FADE].getVoltage() / 10.f + BASE::params[PARAM_FADE].getValue();
 			slewLimiter.setRise(fade);
-			float shape = TransitBase<NUM_PRESETS>::params[PARAM_SHAPE].getValue();
+			float shape = BASE::params[PARAM_SHAPE].getValue();
 			slewLimiter.setShape(shape);
 			float s = slewLimiter.process(10.f, deltaTime);
 
@@ -450,32 +456,32 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 
 			switch (outMode) {
 				case OUTMODE::ENV:
-					TransitBase<NUM_PRESETS>::outputs[OUTPUT].setVoltage(s == 10.f ? 0.f : s);
-					TransitBase<NUM_PRESETS>::outputs[OUTPUT].setChannels(1);
+					BASE::outputs[OUTPUT].setVoltage(s == 10.f ? 0.f : s);
+					BASE::outputs[OUTPUT].setChannels(1);
 					break;
 				case OUTMODE::GATE:
-					TransitBase<NUM_PRESETS>::outputs[OUTPUT].setVoltage(s != 10.f ? 10.f : 0.f);
-					TransitBase<NUM_PRESETS>::outputs[OUTPUT].setChannels(1);
+					BASE::outputs[OUTPUT].setVoltage(s != 10.f ? 10.f : 0.f);
+					BASE::outputs[OUTPUT].setChannels(1);
 					break;
 				case OUTMODE::TRIG_SCENE:
-					TransitBase<NUM_PRESETS>::outputs[OUTPUT].setVoltage(outScenePulseGenerator.process(deltaTime) ? 10.f : 0.f);
-					TransitBase<NUM_PRESETS>::outputs[OUTPUT].setChannels(1);
+					BASE::outputs[OUTPUT].setVoltage(outScenePulseGenerator.process(deltaTime) ? 10.f : 0.f);
+					BASE::outputs[OUTPUT].setChannels(1);
 					break;
 				case OUTMODE::TRIG_SOC:
-					TransitBase<NUM_PRESETS>::outputs[OUTPUT].setVoltage(outSocPulseGenerator.process(deltaTime) ? 10.f : 0.f);
-					TransitBase<NUM_PRESETS>::outputs[OUTPUT].setChannels(1);
+					BASE::outputs[OUTPUT].setVoltage(outSocPulseGenerator.process(deltaTime) ? 10.f : 0.f);
+					BASE::outputs[OUTPUT].setChannels(1);
 					break;
 				case OUTMODE::TRIG_EOC:
-					TransitBase<NUM_PRESETS>::outputs[OUTPUT].setVoltage(outEocPulseGenerator.process(deltaTime) ? 10.f : 0.f);
-					TransitBase<NUM_PRESETS>::outputs[OUTPUT].setChannels(1);
+					BASE::outputs[OUTPUT].setVoltage(outEocPulseGenerator.process(deltaTime) ? 10.f : 0.f);
+					BASE::outputs[OUTPUT].setChannels(1);
 					break;
 				case OUTMODE::POLY:
-					TransitBase<NUM_PRESETS>::outputs[OUTPUT].setVoltage(s == 10.f ? 0.f : s, 0);
-					TransitBase<NUM_PRESETS>::outputs[OUTPUT].setVoltage(s != 10.f ? 10.f : 0.f, 1);
-					TransitBase<NUM_PRESETS>::outputs[OUTPUT].setVoltage(outScenePulseGenerator.process(deltaTime) ? 10.f : 0.f, 2);
-					TransitBase<NUM_PRESETS>::outputs[OUTPUT].setVoltage(outSocPulseGenerator.process(deltaTime) ? 10.f : 0.f, 3);
-					TransitBase<NUM_PRESETS>::outputs[OUTPUT].setVoltage(outEocPulseGenerator.process(deltaTime) ? 10.f : 0.f, 4);
-					TransitBase<NUM_PRESETS>::outputs[OUTPUT].setChannels(5);
+					BASE::outputs[OUTPUT].setVoltage(s == 10.f ? 0.f : s, 0);
+					BASE::outputs[OUTPUT].setVoltage(s != 10.f ? 10.f : 0.f, 1);
+					BASE::outputs[OUTPUT].setVoltage(outScenePulseGenerator.process(deltaTime) ? 10.f : 0.f, 2);
+					BASE::outputs[OUTPUT].setVoltage(outSocPulseGenerator.process(deltaTime) ? 10.f : 0.f, 3);
+					BASE::outputs[OUTPUT].setVoltage(outEocPulseGenerator.process(deltaTime) ? 10.f : 0.f, 4);
+					BASE::outputs[OUTPUT].setChannels(5);
 					break;
 			}
 
@@ -506,6 +512,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 			float v = pq->getValue();
 			expPresetSlot(p)->push_back(v);
 		}
+		preset = p;
 	}
 
 	void presetClear(int p) {
@@ -521,7 +528,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 	}
 
 	json_t* dataToJson() override {
-		json_t* rootJ = TransitBase<NUM_PRESETS>::dataToJson();
+		json_t* rootJ = BASE::dataToJson();
 		json_object_set_new(rootJ, "mappingIndicatorHidden", json_boolean(mappingIndicatorHidden));
 		json_object_set_new(rootJ, "presetProcessDivision", json_integer(presetProcessDivision));
 
@@ -543,7 +550,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		TransitBase<NUM_PRESETS>::panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		BASE::panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 		mappingIndicatorHidden = json_boolean_value(json_object_get(rootJ, "mappingIndicatorHidden"));
 		presetProcessDivision = json_integer_value(json_object_get(rootJ, "presetProcessDivision"));
 
@@ -557,7 +564,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		}
 
 		// Hack for preventing duplicating this module
-		if (APP->engine->getModule(TransitBase<NUM_PRESETS>::id) != NULL && !TransitBase<NUM_PRESETS>::idFixHasMap()) return;
+		if (APP->engine->getModule(BASE::id) != NULL && !BASE::idFixHasMap()) return;
 
 		inChange = true;
 		json_t* sourceMapsJ = json_object_get(rootJ, "sourceMaps");
@@ -570,7 +577,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 				json_t* paramIdJ = json_object_get(sourceMapJ, "paramId");
 				int paramId = json_integer_value(paramIdJ);
 
-				moduleId = TransitBase<NUM_PRESETS>::idFix(moduleId);
+				moduleId = BASE::idFix(moduleId);
 				ParamHandle* sourceHandle = new ParamHandle;
 				sourceHandle->text = "stoermelder TRANSIT";
 				APP->engine->addParamHandle(sourceHandle);
@@ -580,8 +587,8 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		}
 		inChange = false;
 
-		TransitBase<NUM_PRESETS>::idFixClearMap();
-		TransitBase<NUM_PRESETS>::dataFromJson(rootJ);
+		BASE::idFixClearMap();
+		BASE::dataFromJson(rootJ);
 		Module::params[PARAM_RW].setValue(0.f);
 	}
 };
@@ -616,7 +623,10 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 
 		for (size_t i = 0; i < NUM_PRESETS; i++) {
 			float o = i * (288.7f / (NUM_PRESETS - 1));
-			BASE::addParam(createParamCentered<LEDButton>(Vec(60.0f, 45.4f + o), module, MODULE::PARAM_PRESET + i));
+			TransitLedButton<NUM_PRESETS>* ledButton = createParamCentered<TransitLedButton<NUM_PRESETS>>(Vec(60.0f, 45.4f + o), module, MODULE::PARAM_PRESET + i);
+			ledButton->module = module;
+			ledButton->id = i;
+			BASE::addParam(ledButton);
 			BASE::addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(60.0f, 45.4f + o), module, MODULE::LIGHT_PRESET + i * 3));
 		}
 	}

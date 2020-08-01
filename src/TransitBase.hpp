@@ -24,6 +24,9 @@ struct TransitBase : Module, StripIdFixModule {
 	virtual Param* transitParam(int i) { return NULL; }
 	virtual Light* transitLight(int i) { return NULL; }
 
+	virtual void transitLoadSlot(int i) { }
+
+
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(TransitBase<NUM_PRESETS>::panelTheme));
@@ -79,6 +82,35 @@ struct TransitParamQuantity : ParamQuantity {
 	}
 	std::string getLabel() override {
 		return string::f("Scene #%d", module->ctrlOffset * NUM_PRESETS + i + 1);
+	}
+};
+
+template <int NUM_PRESETS>
+struct TransitLedButton : LEDButton {
+	TransitBase<NUM_PRESETS>* module;
+	int id;
+	bool eventConsumed = true;
+
+	void onButton(const event::Button& e) override {
+		if (e.action == GLFW_PRESS) {
+			if (e.button == GLFW_MOUSE_BUTTON_LEFT && (e.mods & RACK_MOD_MASK) == GLFW_MOD_SHIFT) {
+				module->transitLoadSlot(id);
+				e.consume(this);
+				eventConsumed = true;
+			}
+			else {
+				LEDButton::onButton(e);
+				eventConsumed = false;
+			}
+		}
+	}
+
+	void onDragStart(const event::DragStart& e) override {
+		if (eventConsumed) {
+			eventConsumed = false;
+			return;
+		}
+		LEDButton::onDragStart(e);
 	}
 };
 

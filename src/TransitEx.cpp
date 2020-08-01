@@ -7,6 +7,8 @@ namespace Transit {
 
 template <int NUM_PRESETS>
 struct TransitExModule : TransitBase<NUM_PRESETS> {
+	typedef TransitBase<NUM_PRESETS> BASE;
+
 	enum ParamIds {
 		ENUMS(PARAM_PRESET, NUM_PRESETS),
 		NUM_PARAMS
@@ -24,23 +26,23 @@ struct TransitExModule : TransitBase<NUM_PRESETS> {
 	};
 
 	TransitExModule() {
-		TransitBase<NUM_PRESETS>::panelTheme = pluginSettings.panelThemeDefault;
+		BASE::panelTheme = pluginSettings.panelThemeDefault;
 		Module::config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			Module::configParam<TransitParamQuantity<NUM_PRESETS>>(PARAM_PRESET + i, 0, 1, 0);
 			TransitParamQuantity<NUM_PRESETS>* pq = (TransitParamQuantity<NUM_PRESETS>*)Module::paramQuantities[PARAM_PRESET + i];
 			pq->module = this;
 			pq->i = i;
-			TransitBase<NUM_PRESETS>::presetButton[i].param = &Module::params[PARAM_PRESET + i];
+			BASE::presetButton[i].param = &Module::params[PARAM_PRESET + i];
 		}
 
-		TransitBase<NUM_PRESETS>::onReset();
+		BASE::onReset();
 	}
 
 	void onReset() override { 
 		for (int i = 0; i < NUM_PRESETS; i++) {
-			TransitBase<NUM_PRESETS>::presetSlotUsed[i] = false;
-			TransitBase<NUM_PRESETS>::presetSlot[i].clear();
+			BASE::presetSlotUsed[i] = false;
+			BASE::presetSlot[i].clear();
 		}
     }
 
@@ -52,11 +54,22 @@ struct TransitExModule : TransitBase<NUM_PRESETS> {
 		return &Module::lights[LIGHT_PRESET + i];
 	}
 
+	void transitLoadSlot(int i) override {
+		// Retrieve module from scene as this is called from the GUI thread
+		ModuleWidget* mw =  APP->scene->rack->getModule(BASE::ctrlModuleId);
+		if (!mw) return;
+		Module* m = mw->module;
+		if (!m) return;
+		TransitBase<NUM_PRESETS>* tm = dynamic_cast<TransitBase<NUM_PRESETS>*>(m);
+		if (!tm) return;
+		tm->transitLoadSlot(i + BASE::ctrlOffset * NUM_PRESETS);
+	}
+
 	void dataFromJson(json_t* rootJ) override {
 		// Hack for preventing duplicating this module
-		if (APP->engine->getModule(Module::id) != NULL && !TransitBase<NUM_PRESETS>::idFixHasMap()) return;
+		if (APP->engine->getModule(Module::id) != NULL && !BASE::idFixHasMap()) return;
 
-		TransitBase<NUM_PRESETS>::dataFromJson(rootJ);
+		BASE::dataFromJson(rootJ);
 	}
 };
 
@@ -75,7 +88,10 @@ struct TransitExWidget : ThemedModuleWidget<TransitExModule<NUM_PRESETS>> {
 
 		for (size_t i = 0; i < NUM_PRESETS; i++) {
 			float o = i * (288.7f / (NUM_PRESETS - 1));
-			BASE::addParam(createParamCentered<LEDButton>(Vec(15.0f, 45.4f + o), module, MODULE::PARAM_PRESET + i));
+			TransitLedButton<NUM_PRESETS>* ledButton = createParamCentered<TransitLedButton<NUM_PRESETS>>(Vec(15.0f, 45.4f + o), module, MODULE::PARAM_PRESET + i);
+			ledButton->module = module;
+			ledButton->id = i;
+			BASE::addParam(ledButton);
 			BASE::addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(15.0f, 45.4f + o), module, MODULE::LIGHT_PRESET + i * 3));
 		}
 	}
