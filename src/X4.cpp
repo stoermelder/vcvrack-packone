@@ -2,9 +2,9 @@
 #include "MapModuleBase.hpp"
 
 namespace StoermelderPackOne {
-namespace Xx {
+namespace X4 {
 
-struct XxModule : CVMapModuleBase<2> {
+struct X4Module : CVMapModuleBase<2> {
 	enum ParamIds {
 		ENUMS(PARAM_MAP_A, 5),
 		ENUMS(PARAM_MAP_B, 5),
@@ -30,7 +30,7 @@ struct XxModule : CVMapModuleBase<2> {
 
 	dsp::ClockDivider lightDivider;
 
-	XxModule() {
+	X4Module() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configParam(PARAM_MAP_A, 0.f, 1.f, 0.f, "Map A");
@@ -127,10 +127,10 @@ struct XxModule : CVMapModuleBase<2> {
 
 
 struct MapButton : LEDBezel {
-	XxModule* module;
+	X4Module* module;
 	int id = 0;
 
-	void setModule(XxModule* module) {
+	void setModule(X4Module* module) {
 		this->module = module;
 	}
 
@@ -152,7 +152,7 @@ struct MapButton : LEDBezel {
 				menu->addChild(createMenuLabel(header));
 
 				struct UnmapItem : MenuItem {
-					XxModule* module;
+					X4Module* module;
 					int id;
 					void onAction(const event::Action& e) override {
 						module->clearMap(id);
@@ -161,7 +161,7 @@ struct MapButton : LEDBezel {
 				menu->addChild(construct<UnmapItem>(&MenuItem::text, "Unmap", &UnmapItem::module, module, &UnmapItem::id, id));
 
 				struct IndicateItem : MenuItem {
-					XxModule* module;
+					X4Module* module;
 					int id;
 					void onAction(const event::Action& e) override {
 						ParamHandle* paramHandle = &module->paramHandles[id];
@@ -237,39 +237,39 @@ struct MapLight : BASE {
 	}
 };
 
-struct XxWidget : ThemedModuleWidget<XxModule> {
-	XxWidget(XxModule* module)
-		: ThemedModuleWidget<XxModule>(module, "Xx") {
+struct X4Widget : ThemedModuleWidget<X4Module> {
+	X4Widget(X4Module* module)
+		: ThemedModuleWidget<X4Module>(module, "X4") {
 		setModule(module);
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(0, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 1 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		MapButton* buttonA = createParamCentered<MapButton>(Vec(15.f, 59.5f), module, XxModule::PARAM_MAP_A);
+		MapButton* buttonA = createParamCentered<MapButton>(Vec(15.f, 59.5f), module, X4Module::PARAM_MAP_A);
 		buttonA->setModule(module);
 		buttonA->id = 0;
 		addParam(buttonA);
-		addChild(createLightCentered<MapLight<GreenRedLight>>(Vec(15.f, 59.5f), module, XxModule::LIGHT_MAP_A));
+		addChild(createLightCentered<MapLight<GreenRedLight>>(Vec(15.f, 59.5f), module, X4Module::LIGHT_MAP_A));
 
-		addParam(createParamCentered<StoermelderTrimpot>(Vec(15.f, 91.2f), module, XxModule::PARAM_MAP_A + 1));
-		addParam(createParamCentered<StoermelderTrimpot>(Vec(15.f, 117.8f), module, XxModule::PARAM_MAP_A + 2));
-		addParam(createParamCentered<StoermelderTrimpot>(Vec(15.f, 144.5f), module, XxModule::PARAM_MAP_A + 3));
-		addParam(createParamCentered<StoermelderTrimpot>(Vec(15.f, 171.1f), module, XxModule::PARAM_MAP_A + 4));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(15.f, 91.2f), module, X4Module::PARAM_MAP_A + 1));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(15.f, 117.8f), module, X4Module::PARAM_MAP_A + 2));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(15.f, 144.5f), module, X4Module::PARAM_MAP_A + 3));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(15.f, 171.1f), module, X4Module::PARAM_MAP_A + 4));
 
-		MapButton* buttonB = createParamCentered<MapButton>(Vec(15.f, 210.6f), module, XxModule::PARAM_MAP_B);
+		MapButton* buttonB = createParamCentered<MapButton>(Vec(15.f, 210.6f), module, X4Module::PARAM_MAP_B);
 		buttonB->setModule(module);
 		buttonB->id = 1;
 		addParam(buttonB);
-		addChild(createLightCentered<MapLight<GreenRedLight>>(Vec(15.f, 210.6f), module, XxModule::LIGHT_MAP_B));
+		addChild(createLightCentered<MapLight<GreenRedLight>>(Vec(15.f, 210.6f), module, X4Module::LIGHT_MAP_B));
 
-		addParam(createParamCentered<StoermelderTrimpot>(Vec(15.f, 242.2f), module, XxModule::PARAM_MAP_B + 1));
-		addParam(createParamCentered<StoermelderTrimpot>(Vec(15.f, 268.8f), module, XxModule::PARAM_MAP_B + 2));
-		addParam(createParamCentered<StoermelderTrimpot>(Vec(15.f, 295.5f), module, XxModule::PARAM_MAP_B + 3));
-		addParam(createParamCentered<StoermelderTrimpot>(Vec(15.f, 322.2f), module, XxModule::PARAM_MAP_B + 4));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(15.f, 242.2f), module, X4Module::PARAM_MAP_B + 1));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(15.f, 268.8f), module, X4Module::PARAM_MAP_B + 2));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(15.f, 295.5f), module, X4Module::PARAM_MAP_B + 3));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(15.f, 322.2f), module, X4Module::PARAM_MAP_B + 4));
 	}
 };
 
-} // namespace Xx
+} // namespace X4 
 } // namespace StoermelderPackOne
 
-Model* modelXx = createModel<StoermelderPackOne::Xx::XxModule, StoermelderPackOne::Xx::XxWidget>("Xx");
+Model* modelX4 = createModel<StoermelderPackOne::X4::X4Module, StoermelderPackOne::X4::X4Widget>("X4");

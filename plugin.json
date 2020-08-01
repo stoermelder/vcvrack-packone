@@ -260,11 +260,11 @@
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Transit.md"
 		},
 		{
-			"slug": "Xx",
-			"name": "XX",
+			"slug": "X4",
+			"name": "X4",
 			"description": "Mapping-multiplier",
 			"tags": ["Utility"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Xx.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/X4.md"
 		},
 		{
 			"slug": "AudioInterface64",
