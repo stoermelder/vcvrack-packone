@@ -372,15 +372,20 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		return paramQuantity;
 	}
 
-	void bindModule() {
-		Module::Expander* exp = &(Module::leftExpander);
-		if (exp->moduleId < 0) return;
-
-		Module* m = exp->module;
+	void bindModule(Module* m) {
+		if (!m) return;
 		for (size_t i = 0; i < m->params.size(); i++) {
 			bindParameter(m->id, i);
 		}
 	}
+
+	void bindModuleExpander() {
+		Module::Expander* exp = &(Module::leftExpander);
+		if (exp->moduleId < 0) return;
+		Module* m = exp->module;
+		bindModule(m);
+	}
+
 
 	void bindParameter(int moduleId, int paramId) {
 		for (ParamHandle* handle : sourceHandles) {
@@ -599,7 +604,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 	typedef ThemedModuleWidget<TransitModule<NUM_PRESETS>> BASE;
 	typedef TransitModule<NUM_PRESETS> MODULE;
 	
-	int learnParam = 0;
+	int learn = 0;
 
 	TransitWidget(MODULE* module)
 		: ThemedModuleWidget<MODULE>(module, "Transit") {
@@ -636,37 +641,63 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 		if (e.action == GLFW_PRESS && (e.mods & GLFW_MOD_SHIFT)) {
 			switch (e.key) {
 				case GLFW_KEY_B:
-					learnParam = learnParam != 1 ? 1 : 0;
+					learn = learn != 2 ? 2 : 0;
 					APP->event->setSelected(this);
 					break;
 				case GLFW_KEY_A: 
-					learnParam = learnParam != 2 ? 2 : 0; 
+					learn = learn != 3 ? 3 : 0;
 					break;
 			}
 		}
 	}
 
 	void onDeselect(const event::Deselect& e) override {
-		if (learnParam == 0) return;
+		if (learn == 0) return;
 		MODULE* module = dynamic_cast<MODULE*>(this->module);
 
-		// Check if a ParamWidget was touched, unstable API
-		ParamWidget* touchedParam = APP->scene->rack->touchedParam;
-		if (touchedParam && touchedParam->paramQuantity->module != module) {
-			APP->scene->rack->touchedParam = NULL;
-			int moduleId = touchedParam->paramQuantity->module->id;
-			int paramId = touchedParam->paramQuantity->paramId;
-			module->bindParameter(moduleId, paramId);
-			if (learnParam == 1) learnParam = 0;
-		} 
+		if (learn == 1) {
+			DEFER({
+				learn = 0;
+				glfwSetCursor(APP->window->win, NULL);
+			});
+
+			// Learn module
+			Widget* w = APP->event->getDraggedWidget();
+			if (!w) return;
+			ModuleWidget* mw = dynamic_cast<ModuleWidget*>(w);
+			if (!mw) mw = w->getAncestorOfType<ModuleWidget>();
+			if (!mw || mw == this) return;
+			Module* m = mw->module;
+			if (!m) return;
+			module->bindModule(m);
+		}
+
+		if (learn == 2 || learn == 3) {
+			// Check if a ParamWidget was touched, unstable API
+			ParamWidget* touchedParam = APP->scene->rack->touchedParam;
+			if (touchedParam && touchedParam->paramQuantity->module != module) {
+				APP->scene->rack->touchedParam = NULL;
+				int moduleId = touchedParam->paramQuantity->module->id;
+				int paramId = touchedParam->paramQuantity->paramId;
+				module->bindParameter(moduleId, paramId);
+				if (learn == 2) { 
+					learn = 0;
+					glfwSetCursor(APP->window->win, NULL);
+				}
+			}
+			else {
+				learn = 0;
+				glfwSetCursor(APP->window->win, NULL);
+			}
+		}
 	}
 
 	void step() override {
-		if (learnParam == 2 && APP->event->getSelectedWidget() != this) {
+		if (learn == 3 && APP->event->getSelectedWidget() != this) {
 			APP->event->setSelected(this);
 		}
 		if (BASE::module) {
-			BASE::module->lights[MODULE::LIGHT_LEARN].setBrightness(learnParam > 0);
+			BASE::module->lights[MODULE::LIGHT_LEARN].setBrightness(learn > 0);
 		}
 		BASE::step();
 	}
@@ -782,8 +813,18 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 			MODULE* module;
 			WIDGET* widget;
 			void onAction(const event::Action& e) override {
-				widget->learnParam = 0;
-				module->bindModule();
+				widget->learn = 0;
+				module->bindModuleExpander();
+			}
+		};
+
+		struct BindModuleSelectItem : MenuItem {
+			WIDGET* widget;
+			void onAction(const event::Action& e) override {
+				widget->learn = 1;
+				APP->event->setSelected(widget);
+				GLFWcursor* cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
+				glfwSetCursor(APP->window->win, cursor);
 			}
 		};
 
@@ -792,12 +833,14 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 			int mode;
 			std::string rightText = "";
 			void onAction(const event::Action& e) override {
-				widget->learnParam = widget->learnParam != mode ? mode : 0;
+				widget->learn = widget->learn != mode ? mode : 0;
 				APP->scene->rack->touchedParam = NULL;
 				APP->event->setSelected(widget);
+				GLFWcursor* cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
+				glfwSetCursor(APP->window->win, cursor);
 			}
 			void step() override {
-				MenuItem::rightText = widget->learnParam == mode ? "Active" : rightText;
+				MenuItem::rightText = widget->learn == mode ? "Active" : rightText;
 				MenuItem::step();
 			}
 		};
@@ -840,8 +883,9 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 		menu->addChild(construct<OutModeMenuItem>(&MenuItem::text, "OUT-port", &OutModeMenuItem::module, module));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<BindModuleItem>(&MenuItem::text, "Bind module (left)", &BindModuleItem::widget, this, &BindModuleItem::module, module));
-		menu->addChild(construct<BindParameterItem>(&MenuItem::text, "Bind single parameter", &BindParameterItem::rightText, RACK_MOD_SHIFT_NAME "+B", &BindParameterItem::widget, this, &BindParameterItem::mode, 1));
-		menu->addChild(construct<BindParameterItem>(&MenuItem::text, "Bind multiple parameters", &BindParameterItem::rightText, RACK_MOD_SHIFT_NAME "+A", &BindParameterItem::widget, this, &BindParameterItem::mode, 2));
+		menu->addChild(construct<BindModuleSelectItem>(&MenuItem::text, "Bind module (select)", &BindModuleSelectItem::widget, this));
+		menu->addChild(construct<BindParameterItem>(&MenuItem::text, "Bind single parameter", &BindParameterItem::rightText, RACK_MOD_SHIFT_NAME "+B", &BindParameterItem::widget, this, &BindParameterItem::mode, 2));
+		menu->addChild(construct<BindParameterItem>(&MenuItem::text, "Bind multiple parameters", &BindParameterItem::rightText, RACK_MOD_SHIFT_NAME "+A", &BindParameterItem::widget, this, &BindParameterItem::mode, 3));
 
 		if (module->sourceHandles.size() > 0) {
 			menu->addChild(construct<ParameterMenuItem>(&MenuItem::text, "Bound parameters", &ParameterMenuItem::module, module));
