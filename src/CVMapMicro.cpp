@@ -211,6 +211,9 @@ struct MapButton : LEDBezel {
 		// Reset touchedParam
 		APP->scene->rack->touchedParam = NULL;
 		module->enableLearn(id);
+
+		GLFWcursor* cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
+		glfwSetCursor(APP->window->win, cursor);
 	}
 
 	void onDeselect(const event::Deselect& e) override {
@@ -227,6 +230,7 @@ struct MapButton : LEDBezel {
 		else {
 			module->disableLearn(id);
 		}
+		glfwSetCursor(APP->window->win, NULL);
 	}
 
 	std::string getParamName() {

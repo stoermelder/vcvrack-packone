@@ -342,6 +342,9 @@ struct MapModuleChoice : LedDisplayChoice {
 		// Reset touchedParam, unstable API
 		APP->scene->rack->touchedParam = NULL;
 		module->enableLearn(id);
+
+		GLFWcursor* cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
+		glfwSetCursor(APP->window->win, cursor);
 	}
 
 	void onDeselect(const event::Deselect& e) override {
@@ -360,6 +363,7 @@ struct MapModuleChoice : LedDisplayChoice {
 		else {
 			module->disableLearn(id);
 		}
+		glfwSetCursor(APP->window->win, NULL);
 	}
 
 	void step() override {
