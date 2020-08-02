@@ -11,8 +11,10 @@
     - Fixed wrong calculation of output levels (#147, #113)
 - Module [CV-MAP](./docs/CVMap.md)
     - Don't capture mouse scrolling if mapping slots are locked (#137)
+    - Blink mapping indicator of currently selected mapping slot
 - Module [CV-PAM](./docs/CVPam.md)
     - Don't capture mouse scrolling if mapping slots are locked (#137)
+    - Blink mapping indicator of currently selected mapping slot
 - Module [GLUE](./docs/Glue.md)
     - Implemented support for mappings within STRIP, please be aware to include GLUE within your strip-file (#115)
     - Added options for changing text coloring (#136)
@@ -20,10 +22,16 @@
     - Implemented support for mappings within STRIP (#151)
 - Module [GOTO](./docs/Goto.md)
     - Added support for number pad keys (#134)
+- Module [µMAP](./docs/CVMapMicro.md)
+    - Fixed meaningless tooltip on Map-button
+    - Blink mapping indicator when activating the mapping button
 - Module [MIDI-CAT](./docs/MidiCat.md)
     - Don't capture mouse scrolling if mapping slots are locked (#137)
+    - Blink mapping indicator of currently selected mapping slot
 - Module [MIRROR](./docs/Mirror.md)
     - Implemented support for mappings within STRIP
+- Module [ReMOVE Lite](./docs/ReMove.md)
+    - Blink mapping indicator when activating the mapping screen
 - Module [STRIP](./docs/Strip.md)
     - Added option to randomize only parameters without the module's internal state (#135) 
 

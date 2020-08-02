@@ -12,13 +12,13 @@ struct ParamHandleIndicator {
 	int indicateCount = 0;
 	float sampletime;
 
-	void process(float sampleTime) {
-		if (indicateCount > 0) {
+	void process(float sampleTime, bool force = false) {
+		if (indicateCount > 0 || force) {
 			this->sampletime += sampleTime;
 			if (this->sampletime > 0.2f) {
 				this->sampletime = 0;
 				indicateCount--;
-				handle->color = indicateCount % 2 == 1 ? color::BLACK : color;
+				handle->color = std::abs(indicateCount) % 2 == 1 ? color::BLACK : color;
 			}
 		}
 		else {
@@ -90,10 +90,10 @@ struct MapModuleBase : Module, StripIdFixModule {
 	void process(const ProcessArgs& args) override {
 		if (indicatorDivider.process()) {
 			float t = indicatorDivider.getDivision() * args.sampleTime;
-			for (size_t i = 0; i < MAX_CHANNELS; i++) {
+			for (int i = 0; i < MAX_CHANNELS; i++) {
 				paramHandleIndicator[i].color = mappingIndicatorHidden ? color::BLACK_TRANSPARENT : mappingIndicatorColor;
 				if (paramHandles[i].moduleId >= 0) {
-					paramHandleIndicator[i].process(t);
+					paramHandleIndicator[i].process(t, learningId == i);
 				}
 			}
 		}

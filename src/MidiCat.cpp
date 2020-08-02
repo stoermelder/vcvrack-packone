@@ -357,7 +357,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 			for (int i = 0; i < mapLen; i++) {
 				paramHandleIndicator[i].color = mappingIndicatorHidden ? color::BLACK_TRANSPARENT : mappingIndicatorColor;
 				if (paramHandles[i].moduleId >= 0) {
-					paramHandleIndicator[i].process(t);
+					paramHandleIndicator[i].process(t, learningId == i);
 				}
 			}
 		}
