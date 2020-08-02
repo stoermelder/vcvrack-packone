@@ -29,6 +29,7 @@
     - Don't capture mouse scrolling if mapping slots are locked (#137)
     - Blink mapping indicator of currently selected mapping slot
     - Added option for automatic mapping of all parameters of a module on the left side or by module-select
+    - Mapping is aborted with ESC-key while hovering the mouse over the module
 - Module [MIRROR](./docs/Mirror.md)
     - Implemented support for mappings within STRIP
 - Module [ReMOVE Lite](./docs/ReMove.md)

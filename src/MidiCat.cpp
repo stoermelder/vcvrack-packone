@@ -522,6 +522,10 @@ struct MidiCatModule : Module, StripIdFixModule {
 		}
 	}
 
+	void disableLearn() {
+		learningId = -1;
+	}
+
 	void disableLearn(int id) {
 		if (learningId == id) {
 			learningId = -1;
@@ -1106,6 +1110,14 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 
 			MidiCatModule* module = dynamic_cast<MidiCatModule*>(this->module);
 			module->moduleLearn(m);
+		}
+	}
+
+	void onHoverKey(const event::HoverKey& e) override {
+		if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ESCAPE) {
+			MidiCatModule* module = dynamic_cast<MidiCatModule*>(this->module);
+			module->disableLearn();
+			e.consume(this);
 		}
 	}
 };
