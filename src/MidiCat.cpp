@@ -1036,11 +1036,36 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 	}
 
 	void onHoverKey(const event::HoverKey& e) override {
-		if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ESCAPE) {
-			MidiCatModule* module = dynamic_cast<MidiCatModule*>(this->module);
-			disableLearn();
-			module->disableLearn();
-			e.consume(this);
+		if (e.action == GLFW_PRESS) {
+			switch (e.key) {
+				case GLFW_KEY_S: {
+					if ((e.mods & RACK_MOD_MASK) == GLFW_MOD_SHIFT) {
+						enableLearn(true);
+					}
+					if ((e.mods & RACK_MOD_MASK) == (GLFW_MOD_SHIFT | RACK_MOD_CTRL)) {
+						enableLearn(false);
+					}
+					break;
+				}
+				case GLFW_KEY_E: {
+					if ((e.mods & RACK_MOD_MASK) == GLFW_MOD_SHIFT) {
+						MidiCatModule* module = dynamic_cast<MidiCatModule*>(this->module);
+						module->moduleLearnExpander(true);
+					}
+					if ((e.mods & RACK_MOD_MASK) == (GLFW_MOD_SHIFT | RACK_MOD_CTRL)) {
+						MidiCatModule* module = dynamic_cast<MidiCatModule*>(this->module);
+						module->moduleLearnExpander(false);
+					}
+					break;
+				}
+				case GLFW_KEY_ESCAPE: {
+					MidiCatModule* module = dynamic_cast<MidiCatModule*>(this->module);
+					disableLearn();
+					module->disableLearn();
+					e.consume(this);
+					break;
+				}
+			}
 		}
 	}
 
@@ -1130,8 +1155,8 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 				};
 
 				Menu* menu = new Menu;
-				menu->addChild(construct<ModuleLearnExpanderItem>(&MenuItem::text, "Clear first", &ModuleLearnExpanderItem::module, module, &ModuleLearnExpanderItem::keepCcAndNote, false));
-				menu->addChild(construct<ModuleLearnExpanderItem>(&MenuItem::text, "Keep MIDI assignments", &ModuleLearnExpanderItem::module, module, &ModuleLearnExpanderItem::keepCcAndNote, true));
+				menu->addChild(construct<ModuleLearnExpanderItem>(&MenuItem::text, "Clear first", &MenuItem::rightText, RACK_MOD_CTRL_NAME "+" RACK_MOD_SHIFT_NAME "+E", &ModuleLearnExpanderItem::module, module, &ModuleLearnExpanderItem::keepCcAndNote, false));
+				menu->addChild(construct<ModuleLearnExpanderItem>(&MenuItem::text, "Keep MIDI assignments", &MenuItem::rightText, RACK_MOD_SHIFT_NAME "+E", &ModuleLearnExpanderItem::module, module, &ModuleLearnExpanderItem::keepCcAndNote, true));
 				return menu;
 			}
 		};
@@ -1148,15 +1173,11 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 					void onAction(const event::Action& e) override {
 						mw->enableLearn(keepCcAndNote);
 					}
-					void step() override {
-						rightText = CHECKMARK(mw->learnModule);
-						MenuItem::step();
-					}
 				};
 
 				Menu* menu = new Menu;
-				menu->addChild(construct<ModuleLearnSelectItem>(&MenuItem::text, "Clear first", &ModuleLearnSelectItem::mw, mw, &ModuleLearnSelectItem::keepCcAndNote, false));
-				menu->addChild(construct<ModuleLearnSelectItem>(&MenuItem::text, "Keep MIDI assignments", &ModuleLearnSelectItem::mw, mw, &ModuleLearnSelectItem::keepCcAndNote, true));
+				menu->addChild(construct<ModuleLearnSelectItem>(&MenuItem::text, "Clear first", &MenuItem::rightText, RACK_MOD_CTRL_NAME "+" RACK_MOD_SHIFT_NAME "+S", &ModuleLearnSelectItem::mw, mw, &ModuleLearnSelectItem::keepCcAndNote, false));
+				menu->addChild(construct<ModuleLearnSelectItem>(&MenuItem::text, "Keep MIDI assignments", &MenuItem::rightText, RACK_MOD_SHIFT_NAME "+S", &ModuleLearnSelectItem::mw, mw, &ModuleLearnSelectItem::keepCcAndNote, true));
 				return menu;
 			}
 		};
