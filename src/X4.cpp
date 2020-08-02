@@ -31,6 +31,11 @@ struct X4Module : CVMapModuleBase<2> {
 	/** [Stored to Json] */
 	bool audioRate;
 
+	/** [Stored to Json] */
+	bool readParamA[5];
+	/** [Stored to Json] */
+	bool readParamB[5];
+
 	float lastA[5];
 	float lastB[5];
 	int lightArx[5];
@@ -64,6 +69,9 @@ struct X4Module : CVMapModuleBase<2> {
 
 	void onReset() override {
 		audioRate = false;
+		for (size_t i = 0; i < 5; i++) {
+			readParamA[i] = readParamB[i] = true;
+		}
 		CVMapModuleBase<2>::onReset();
 	}
 
@@ -89,21 +97,24 @@ struct X4Module : CVMapModuleBase<2> {
 					lastA[4] = v;
 				}
 				else {
-					float v1 = lastA[1] = params[PARAM_MAP_A + 1].getValue();
-					lightArx[1] += v1 != v;
-					if (v == v1) {
+					float v1 = -1.f;
+					if (readParamA[1]) {
+						v1 = lastA[1] = params[PARAM_MAP_A + 1].getValue();
+						lightArx[1] += v1 != v;
+					}
+					if (readParamA[2] && (v == v1 || v1 == -1.f)) {
 						v1 = lastA[2] = params[PARAM_MAP_A + 2].getValue();
 						lightArx[2] += v1 != v;
 					}
-					if (v == v1) {
+					if (readParamA[3] && (v == v1 || v1 == -1.f)) {
 						v1 = lastA[3] = params[PARAM_MAP_A + 3].getValue();
 						lightArx[3] += v1 != v;
 					}
-					if (v == v1) {
+					if (readParamA[4] && (v == v1 || v1 == -1.f)) {
 						v1 = lastA[4] = params[PARAM_MAP_A + 4].getValue();
 						lightArx[4] += v1 != v;
 					}
-					if (v1 != lastA[0]) {
+					if (v1 != lastA[0] && v1 != -1.f) {
 						lightAtx[0]++;
 						pqA->setScaledValue(v1);
 						params[PARAM_MAP_A + 1].setValue(v1);
@@ -143,21 +154,24 @@ struct X4Module : CVMapModuleBase<2> {
 					lastB[4] = v;
 				}
 				else {
-					float v1 = lastB[1] = params[PARAM_MAP_B + 1].getValue();
-					lightBrx[1] += v1 != v;
-					if (v == v1) { 
+					float v1 = -1.f;
+					if (readParamB[1]) {
+						v1 = lastB[1] = params[PARAM_MAP_B + 1].getValue();
+						lightBrx[1] += v1 != v;
+					}
+					if (readParamB[2] && (v == v1 || v1 == -1.f)) { 
 						v1 = lastB[2] = params[PARAM_MAP_B + 2].getValue();
 						lightBrx[2] += v1 != v;
 					}
-					if (v == v1) { 
+					if (readParamB[3] && (v == v1 || v1 == -1.f)) { 
 						v1 = lastB[3] = params[PARAM_MAP_B + 3].getValue();
 						lightBrx[3] += v1 != v;
 					}
-					if (v == v1) {
+					if (readParamB[4] && (v == v1 || v1 == -1.f)) {
 						v1 = lastB[4] = params[PARAM_MAP_B + 4].getValue();
 						lightBrx[4] += v1 != v;
 					}
-					if (v1 != lastB[0]) {
+					if (v1 != lastB[0] && v1 != -1.f) {
 						lightBtx[0]++;
 						pqB->setScaledValue(v1);
 						params[PARAM_MAP_B + 1].setValue(v1);
@@ -202,6 +216,18 @@ struct X4Module : CVMapModuleBase<2> {
 		json_t* rootJ = CVMapModuleBase<2>::dataToJson();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 		json_object_set_new(rootJ, "audioRate", json_boolean(audioRate));
+
+		json_t* readParamJ = json_array();
+		json_t* readParamAJ = json_array();
+		json_t* readParamBJ = json_array();
+		for (size_t i = 0; i < 5; i++) {
+			json_array_append_new(readParamAJ, json_boolean(readParamA[i]));
+			json_array_append_new(readParamBJ, json_boolean(readParamB[i]));
+		}
+		json_array_append_new(readParamJ, readParamAJ);
+		json_array_append_new(readParamJ, readParamBJ);
+		json_object_set_new(rootJ, "readParam", readParamJ);
+
 		return rootJ;
 	}
 
@@ -209,6 +235,15 @@ struct X4Module : CVMapModuleBase<2> {
 		CVMapModuleBase<2>::dataFromJson(rootJ);
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 		audioRate = json_boolean_value(json_object_get(rootJ, "audioRate"));
+
+		json_t* readParamJ = json_object_get(rootJ, "readParam");
+		if (!readParamJ) return;
+		json_t* readParamAJ = json_array_get(readParamJ, 0);
+		json_t* readParamBJ = json_array_get(readParamJ, 1);
+		for (size_t i = 0; i < 5; i++) {
+			readParamA[i] = json_boolean_value(json_array_get(readParamAJ, i));
+			readParamB[i] = json_boolean_value(json_array_get(readParamBJ, i));
+		}
 	}
 };
 
@@ -324,6 +359,46 @@ struct MapLight : BASE {
 	}
 };
 
+struct X4Trimpot : StoermelderTrimpot {
+	bool* readParam;
+
+	void onDoubleClick(const event::DoubleClick& e) override {
+		*readParam ^= true;
+	}
+
+	void onButton(const event::Button& e) override {
+		StoermelderTrimpot::onButton(e);
+		// Right click to open context menu
+		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT && (e.mods & RACK_MOD_MASK) == 0) {
+			extencContextMenu();
+		}
+	}
+
+	void extencContextMenu() {
+		// Hack for attaching additional menu items to parameter's context menu
+		MenuOverlay* overlay = APP->scene->getFirstDescendantOfType<MenuOverlay>();
+		if (!overlay) return;
+		Widget* w = overlay->children.front();
+		Menu* menu = dynamic_cast<Menu*>(w);
+		if (!menu) return;
+
+		struct ReadItem : MenuItem {
+			X4Trimpot* p;
+			void onAction(const event::Action& e) override {
+				*p->readParam ^= true;
+			}
+			void step() override {
+				rightText = CHECKMARK(*p->readParam);
+				MenuItem::step();
+			}
+		};
+
+		menu->addChild(new MenuSeparator);
+		menu->addChild(construct<ReadItem>(&MenuItem::text, "Read", &ReadItem::p, this));
+	}
+};
+
+
 struct X4Widget : ThemedModuleWidget<X4Module> {
 	X4Widget(X4Module* module)
 		: ThemedModuleWidget<X4Module>(module, "X4") {
@@ -344,7 +419,9 @@ struct X4Widget : ThemedModuleWidget<X4Module> {
 
 		for (size_t i = 0; i < 4; i++) {
 			addChild(createLightCentered<TinyLight<YellowLight>>(Vec(6.1f, 80.7f + o * i), module, X4Module::LIGHT_RX_A + i + 1));
-			addParam(createParamCentered<StoermelderTrimpot>(Vec(15.f, 91.2f + o * i), module, X4Module::PARAM_MAP_A + i + 1));
+			X4Trimpot* tp = createParamCentered<X4Trimpot>(Vec(15.f, 91.2f + o * i), module, X4Module::PARAM_MAP_A + i + 1);
+			tp->readParam = &module->readParamA[i + 1];
+			addParam(tp);
 			addChild(createLightCentered<TinyLight<BlueLight>>(Vec(24.0f, 80.7f + o * i), module, X4Module::LIGHT_TX_A + i + 1));
 		}
 
@@ -358,7 +435,9 @@ struct X4Widget : ThemedModuleWidget<X4Module> {
 
 		for (size_t i = 0; i < 4; i++) {
 			addChild(createLightCentered<TinyLight<YellowLight>>(Vec(6.1f, 231.7f + o * i), module, X4Module::LIGHT_RX_B + i + 1));
-			addParam(createParamCentered<StoermelderTrimpot>(Vec(15.f, 242.2f + o * i), module, X4Module::PARAM_MAP_B + i + 1));
+			X4Trimpot* tp = createParamCentered<X4Trimpot>(Vec(15.f, 242.2f + o * i), module, X4Module::PARAM_MAP_B + i + 1);
+			tp->readParam = &module->readParamB[i + 1];
+			addParam(tp);
 			addChild(createLightCentered<TinyLight<BlueLight>>(Vec(24.0f, 231.7f + o * i), module, X4Module::LIGHT_TX_B + i + 1));
 		}
 	}
