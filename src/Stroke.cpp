@@ -86,6 +86,7 @@ enum class KEY_MODE {
 	S_PARAM_PASTE = 11,
 	S_ZOOM_MODULE_90 = 12,
 	S_ZOOM_MODULE_30 = 14,
+	S_ZOOM_MODULE_CUSTOM = 16,
 	S_ZOOM_OUT = 13,
 	S_ZOOM_TOGGLE = 15,
 	S_CABLE_OPACITY = 20,
@@ -121,6 +122,8 @@ struct StrokeModule : Module {
 		int mods;
 		KEY_MODE mode;
 		bool high;
+
+		float zoomModuleLevel;
 	};
 
 	/** [Stored to JSON] */
@@ -128,7 +131,7 @@ struct StrokeModule : Module {
 	/** [Stored to JSON] */
 	Key keys[PORTS];
 
-	KEY_MODE keyModeTemp = KEY_MODE::OFF;
+	Key* keyTemp = NULL;
 
 	dsp::PulseGenerator pulse[PORTS];
 
@@ -146,6 +149,8 @@ struct StrokeModule : Module {
 			keys[i].mods = 0;
 			keys[i].mode = KEY_MODE::CV_TRIGGER;
 			keys[i].high = false;
+
+			keys[i].zoomModuleLevel = 0.f;
 		}
 	}
 
@@ -178,7 +183,7 @@ struct StrokeModule : Module {
 			case KEY_MODE::CV_TOGGLE:
 				keys[idx].high ^= true; break;
 			default:
-				keyModeTemp = keys[idx].mode;
+				keyTemp = &keys[idx];
 				break;
 		}
 	}
@@ -204,6 +209,7 @@ struct StrokeModule : Module {
 			json_object_set_new(keyJ, "mods", json_integer(keys[i].mods));
 			json_object_set_new(keyJ, "mode", json_integer((int)keys[i].mode));
 			json_object_set_new(keyJ, "high", json_boolean(keys[i].high));
+			json_object_set_new(keyJ, "zoomModuleLevel", json_real(keys[i].zoomModuleLevel));
 			json_array_append_new(keysJ, keyJ);
 		}
 		json_object_set_new(rootJ, "keys", keysJ);
@@ -225,6 +231,7 @@ struct StrokeModule : Module {
 			keys[i].mods = json_integer_value(json_object_get(keyJ, "mods"));
 			keys[i].mode = (KEY_MODE)json_integer_value(json_object_get(keyJ, "mode"));
 			keys[i].high = json_boolean_value(json_object_get(keyJ, "high"));
+			keys[i].zoomModuleLevel = json_real_value(json_object_get(keyJ, "zoomModuleLevel"));
 		}
 	}
 };
@@ -239,8 +246,8 @@ struct KeyContainer : Widget {
 	float tempCableOpacity;
 
 	void step() override {
-		if (module && module->keyModeTemp != KEY_MODE::OFF) {
-			switch (module->keyModeTemp) {
+		if (module && module->keyTemp != NULL) {
+			switch (module->keyTemp->mode) {
 				case KEY_MODE::S_PARAM_COPY:
 					cmdParamCopy(); break;
 				case KEY_MODE::S_PARAM_PASTE:
@@ -249,6 +256,9 @@ struct KeyContainer : Widget {
 					cmdZoomModule(0.9f); break;
 				case KEY_MODE::S_ZOOM_MODULE_30:
 					cmdZoomModule(0.3f); break;
+				case KEY_MODE::S_ZOOM_MODULE_CUSTOM:
+					settings::zoom = module->keyTemp->zoomModuleLevel;
+					cmdZoomModule(-1.f); break;
 				case KEY_MODE::S_ZOOM_OUT:
 					cmdZoomOut(); break;
 				case KEY_MODE::S_ZOOM_TOGGLE:
@@ -268,7 +278,7 @@ struct KeyContainer : Widget {
 				default:
 					break;
 			}
-			module->keyModeTemp = KEY_MODE::OFF;
+			module->keyTemp = NULL;
 		}
 		Widget::step();
 	}
@@ -530,6 +540,71 @@ struct KeyDisplay : StoermelderLedDisplay {
 			}
 		};
 
+		struct ModeZoomModuleCustomItem : MenuItem {
+			StrokeModule<PORTS>* module;
+			int idx;
+			void step() override {
+				rightText = CHECKMARK(module->keys[idx].mode == KEY_MODE::S_ZOOM_MODULE_CUSTOM);
+				MenuItem::step();
+			}
+			void onAction(const event::Action& e) override {
+				module->keys[idx].mode = KEY_MODE::S_ZOOM_MODULE_CUSTOM;
+				module->keys[idx].high = false;
+			}
+
+			Menu* createChildMenu() override {
+				Menu* menu = new Menu;
+				struct ZoomModuleSlider : ui::Slider {
+					struct ZoomModuleQuantity : Quantity {
+						StrokeModule<PORTS>* module;
+						int idx;
+						ZoomModuleQuantity(StrokeModule<PORTS>* module, int idx) {
+							this->module = module;
+							this->idx = idx;
+						}
+						void setValue(float value) override {
+							module->keys[idx].zoomModuleLevel = clamp(value, -2.f, 2.f);
+						}
+						float getValue() override {
+							return module->keys[idx].zoomModuleLevel;
+						}
+						float getDefaultValue() override {
+							return 0.0f;
+						}
+						float getDisplayValue() override {
+							return std::round(std::pow(2.f, getValue()) * 100);
+						}
+						void setDisplayValue(float displayValue) override {
+							setValue(std::log2(displayValue / 100));
+						}
+						std::string getLabel() override {
+							return "Zoom";
+						}
+						std::string getUnit() override {
+							return "%";
+						}
+						float getMaxValue() override {
+							return 2.f;
+						}
+						float getMinValue() override {
+							return -2.f;
+						}
+					};
+
+					ZoomModuleSlider(StrokeModule<PORTS>* module, int idx) {
+						box.size.x = 180.0f;
+						quantity = new ZoomModuleQuantity(module, idx);
+					}
+					~ZoomModuleSlider() {
+						delete quantity;
+					}
+				};
+
+				menu->addChild(new ZoomModuleSlider(module, idx));
+				return menu;
+			}
+		};
+
 		ui::Menu* menu = createMenu();
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("Hotkey %i", idx + 1)));
 		menu->addChild(construct<LearnMenuItem>(&MenuItem::text, "Learn", &LearnMenuItem::keyContainer, keyContainer, &LearnMenuItem::idx, idx));
@@ -546,6 +621,7 @@ struct KeyDisplay : StoermelderLedDisplay {
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "View commands"));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom to module", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ZOOM_MODULE_90));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom to module 1/3", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ZOOM_MODULE_30));
+		menu->addChild(construct<ModeZoomModuleCustomItem>(&MenuItem::text, "Zoom level to module", &ModeZoomModuleCustomItem::module, module, &ModeZoomModuleCustomItem::idx, idx));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom out", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ZOOM_OUT));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom toggle", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ZOOM_TOGGLE));
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Cable commands"));
