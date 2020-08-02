@@ -641,11 +641,10 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 		if (e.action == GLFW_PRESS && (e.mods & GLFW_MOD_SHIFT)) {
 			switch (e.key) {
 				case GLFW_KEY_B:
-					learn = learn != 2 ? 2 : 0;
-					APP->event->setSelected(this);
+					enableLearn(2);
 					break;
 				case GLFW_KEY_A: 
-					learn = learn != 3 ? 3 : 0;
+					enableLearn(3);
 					break;
 			}
 		}
@@ -657,8 +656,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 
 		if (learn == 1) {
 			DEFER({
-				learn = 0;
-				glfwSetCursor(APP->window->win, NULL);
+				disableLearn();
 			});
 
 			// Learn module
@@ -681,13 +679,11 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 				int paramId = touchedParam->paramQuantity->paramId;
 				module->bindParameter(moduleId, paramId);
 				if (learn == 2) { 
-					learn = 0;
-					glfwSetCursor(APP->window->win, NULL);
+					disableLearn();
 				}
 			}
 			else {
-				learn = 0;
-				glfwSetCursor(APP->window->win, NULL);
+				disableLearn();
 			}
 		}
 	}
@@ -700,6 +696,22 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 			BASE::module->lights[MODULE::LIGHT_LEARN].setBrightness(learn > 0);
 		}
 		BASE::step();
+	}
+
+	void enableLearn(int mode) {
+		learn = learn != mode ? mode : 0;
+		APP->scene->rack->touchedParam = NULL;
+		APP->event->setSelected(this);
+		GLFWcursor* cursor = NULL;
+		if (learn != 0) {
+			cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
+		}
+		glfwSetCursor(APP->window->win, cursor);
+	}
+
+	void disableLearn() {
+		learn = 0;
+		glfwSetCursor(APP->window->win, NULL);
 	}
 
 	void appendContextMenu(Menu* menu) override {
@@ -813,7 +825,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 			MODULE* module;
 			WIDGET* widget;
 			void onAction(const event::Action& e) override {
-				widget->learn = 0;
+				widget->disableLearn();
 				module->bindModuleExpander();
 			}
 		};
@@ -821,10 +833,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 		struct BindModuleSelectItem : MenuItem {
 			WIDGET* widget;
 			void onAction(const event::Action& e) override {
-				widget->learn = 1;
-				APP->event->setSelected(widget);
-				GLFWcursor* cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
-				glfwSetCursor(APP->window->win, cursor);
+				widget->enableLearn(1);
 			}
 		};
 
@@ -833,11 +842,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 			int mode;
 			std::string rightText = "";
 			void onAction(const event::Action& e) override {
-				widget->learn = widget->learn != mode ? mode : 0;
-				APP->scene->rack->touchedParam = NULL;
-				APP->event->setSelected(widget);
-				GLFWcursor* cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
-				glfwSetCursor(APP->window->win, cursor);
+				widget->enableLearn(mode);
 			}
 			void step() override {
 				MenuItem::rightText = widget->learn == mode ? "Active" : rightText;
