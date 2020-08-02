@@ -537,10 +537,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 		updateMapLen();
 	}
 
-	void moduleLearn() {
-		Module::Expander* exp = &leftExpander;
-		if (exp->moduleId < 0) return;
-		Module* m = exp->module;
+	void moduleLearn(Module* m) {
 		if (!m) return;
 
 		clearMaps();
@@ -549,6 +546,15 @@ struct MidiCatModule : Module, StripIdFixModule {
 		}
 		updateMapLen();
 	}
+
+	void moduleLearnExpander() {
+		Module::Expander* exp = &leftExpander;
+		if (exp->moduleId < 0) return;
+		Module* m = exp->module;
+		if (!m) return;
+		moduleLearn(m);
+	}
+
 
 	void refreshParamHandleText(int id) {
 		std::string text = "MIDI-CAT";
@@ -896,6 +902,8 @@ struct MidiCatMidiWidget : MidiWidget {
 };
 
 struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
+	bool learnModule = false;
+
 	MidiCatWidget(MidiCatModule *module)
 		: ThemedModuleWidget<MidiCatModule>(module, "MidiCat") {
 		setModule(module);
@@ -1048,10 +1056,27 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 			}
 		};
 
-		struct ModuleLearnItem : MenuItem {
+		struct ModuleLearnExpanderItem : MenuItem {
 			MidiCatModule* module;
 			void onAction(const event::Action& e) override {
-				module->moduleLearn();
+				module->moduleLearnExpander();
+			}
+		};
+
+		struct ModuleLearnSelectItem : MenuItem {
+			MidiCatWidget* mw;
+			void onAction(const event::Action& e) override {
+				mw->learnModule ^= true;
+				APP->event->setSelected(mw);
+				GLFWcursor* cursor = NULL;
+				if (mw->learnModule) {
+					cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
+				}
+				glfwSetCursor(APP->window->win, cursor);
+			}
+			void step() override {
+				rightText = CHECKMARK(mw->learnModule);
+				MenuItem::step();
 			}
 		};
 
@@ -1061,7 +1086,27 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 		menu->addChild(construct<MappingIndicatorHiddenItem>(&MenuItem::text, "Hide mapping indicators", &MappingIndicatorHiddenItem::module, module));
 		menu->addChild(construct<LockedItem>(&MenuItem::text, "Lock mapping slots", &LockedItem::module, module));
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<ModuleLearnItem>(&MenuItem::text, "Map module (left)", &ModuleLearnItem::module, module));
+		menu->addChild(construct<ModuleLearnExpanderItem>(&MenuItem::text, "Map module (left)", &ModuleLearnExpanderItem::module, module));
+		menu->addChild(construct<ModuleLearnSelectItem>(&MenuItem::text, "Map module (select)", &ModuleLearnSelectItem::mw, this));
+	}
+
+	void onDeselect(const event::Deselect& e) override {
+		ModuleWidget::onDeselect(e);
+		if (learnModule) {
+			learnModule = false;
+			glfwSetCursor(APP->window->win, NULL);
+			// Learn module
+			Widget* w = APP->event->getDraggedWidget();
+			if (!w) return;
+			ModuleWidget* mw = dynamic_cast<ModuleWidget*>(w);
+			if (!mw) mw = w->getAncestorOfType<ModuleWidget>();
+			if (!mw || mw == this) return;
+			Module* m = mw->module;
+			if (!m) return;
+
+			MidiCatModule* module = dynamic_cast<MidiCatModule*>(this->module);
+			module->moduleLearn(m);
+		}
 	}
 };
 
