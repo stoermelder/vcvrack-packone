@@ -28,6 +28,7 @@
 - Module [MIDI-CAT](./docs/MidiCat.md)
     - Don't capture mouse scrolling if mapping slots are locked (#137)
     - Blink mapping indicator of currently selected mapping slot
+    - Added option for automatic mapping of all parameters of a module on the left side
 - Module [MIRROR](./docs/Mirror.md)
     - Implemented support for mappings within STRIP
 - Module [ReMOVE Lite](./docs/ReMove.md)

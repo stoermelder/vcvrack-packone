@@ -116,8 +116,10 @@ struct MidiCatModule : Module, StripIdFixModule {
 	int learningId;
 	/** Whether the CC has been set during the learning session */
 	bool learnedCc;
+	int learnedCcLast = -1;
 	/** Whether the note has been set during the learning session */
 	bool learnedNote;
+	int learnedNoteLast = -1;
 	/** Whether the param has been set during the learning session */
 	bool learnedParam;
 
@@ -407,11 +409,12 @@ struct MidiCatModule : Module, StripIdFixModule {
 		uint8_t cc = msg.getNote();
 		uint8_t value = msg.getValue();
 		// Learn
-		if (learningId >= 0 && valuesCc[cc] != value) {
+		if (learningId >= 0 && learnedCcLast != cc && valuesCc[cc] != value) {
 			ccs[learningId] = cc;
 			ccsMode[learningId] = CCMODE::CCMODE_DIRECT;
 			notes[learningId] = -1;
 			learnedCc = true;
+			learnedCcLast = cc;
 			commitLearn();
 			updateMapLen();
 			refreshParamHandleText(learningId);
@@ -425,11 +428,12 @@ struct MidiCatModule : Module, StripIdFixModule {
 		uint8_t note = msg.getNote();
 		uint8_t vel = msg.getValue();
 		// Learn
-		if (learningId >= 0) {
+		if (learningId >= 0 && learnedNoteLast != note) {
 			ccs[learningId] = -1;
 			notes[learningId] = note;
 			notesMode[learningId] = NOTEMODE::NOTEMODE_MOMENTARY;
 			learnedNote = true;
+			learnedNoteLast = note;
 			commitLearn();
 			updateMapLen();
 			refreshParamHandleText(learningId);
@@ -486,7 +490,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 			return;
 		if (!learnedCc && !learnedNote)
 			return;
-		if (!learnedParam)
+		if (!learnedParam && paramHandles[learningId].moduleId < 0)
 			return;
 		// Reset learned state
 		learnedCc = false;
@@ -511,7 +515,9 @@ struct MidiCatModule : Module, StripIdFixModule {
 		if (learningId != id) {
 			learningId = id;
 			learnedCc = false;
+			learnedCcLast = -1;
 			learnedNote = false;
+			learnedNoteLast = -1;
 			learnedParam = false;
 		}
 	}
@@ -528,6 +534,19 @@ struct MidiCatModule : Module, StripIdFixModule {
 		//valueFilters[id].reset();
 		learnedParam = true;
 		commitLearn();
+		updateMapLen();
+	}
+
+	void moduleLearn() {
+		Module::Expander* exp = &leftExpander;
+		if (exp->moduleId < 0) return;
+		Module* m = exp->module;
+		if (!m) return;
+
+		clearMaps();
+		for (size_t i = 0; i < m->params.size(); i++) {
+			learnParam(int(i), m->id, int(i));
+		}
 		updateMapLen();
 	}
 
@@ -1029,11 +1048,20 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 			}
 		};
 
+		struct ModuleLearnItem : MenuItem {
+			MidiCatModule* module;
+			void onAction(const event::Action& e) override {
+				module->moduleLearn();
+			}
+		};
+
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<MidiModeMenuItem>(&MenuItem::text, "Mode", &MidiModeMenuItem::module, module));
 		menu->addChild(construct<TextScrollItem>(&MenuItem::text, "Text scrolling", &TextScrollItem::module, module));
 		menu->addChild(construct<MappingIndicatorHiddenItem>(&MenuItem::text, "Hide mapping indicators", &MappingIndicatorHiddenItem::module, module));
 		menu->addChild(construct<LockedItem>(&MenuItem::text, "Lock mapping slots", &LockedItem::module, module));
+		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<ModuleLearnItem>(&MenuItem::text, "Map module (left)", &ModuleLearnItem::module, module));
 	}
 };
 
