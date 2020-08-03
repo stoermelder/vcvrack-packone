@@ -18,6 +18,7 @@ void init(rack::Plugin* p) {
 	p->addModel(modelEightFace);
 	p->addModel(modelEightFaceX2);
 	p->addModel(modelMidiCat);
+	p->addModel(modelMidiCatEx);
 	p->addModel(modelSipo);
 	p->addModel(modelFourRounds);
 	p->addModel(modelArena);

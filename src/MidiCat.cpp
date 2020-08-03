@@ -1,12 +1,12 @@
 #include "plugin.hpp"
+#include "MidiCat.h"
 #include "MapModuleBase.hpp"
 #include "StripIdFixModule.hpp"
 #include <osdialog.h>
 
-
+namespace StoermelderPackOne {
 namespace MidiCat {
 
-static const int MAX_CHANNELS = 128;
 static const char PRESET_FILTERS[] = "VCV Rack module preset (.vcvm):vcvm";
 
 struct MidiCatOutput : midi::Output {
@@ -63,19 +63,8 @@ enum MIDIMODE {
 	MIDIMODE_LOCATE = 1
 };
 
-enum CCMODE {
-	CCMODE_DIRECT = 0,
-	CCMODE_PICKUP1 = 1,
-	CCMODE_PICKUP2 = 2
-};
 
-enum NOTEMODE {
-	NOTEMODE_MOMENTARY = 0,
-	NOTEMODE_MOMENTARY_VEL = 1,
-	NOTEMODE_TOGGLE = 2
-};
-
-struct MidiCatModule : Module, StripIdFixModule {
+struct MidiCatModule : Module, MidiCatProcessor, StripIdFixModule {
 	enum ParamIds {
 		NUM_PARAMS
 	};
@@ -108,7 +97,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 	/** [Stored to Json] Use the velocity value of each channel when notes are used */
 	NOTEMODE notesMode[MAX_CHANNELS];
 
-	/** The mapped param handle of each channel */
+	/** [Stored to Json] The mapped param handle of each channel */
 	ParamHandle paramHandles[MAX_CHANNELS];
 	ParamHandleIndicator paramHandleIndicator[MAX_CHANNELS];
 
@@ -152,6 +141,8 @@ struct MidiCatModule : Module, StripIdFixModule {
 	dsp::ClockDivider loopDivider;
 	dsp::ClockDivider indicatorDivider;
 
+	MidiCatExpanderMessage expanderMessage;
+
 	MidiCatModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -164,6 +155,13 @@ struct MidiCatModule : Module, StripIdFixModule {
 		loopDivider.setDivision(128);
 		indicatorDivider.setDivision(2048);
 		onReset();
+
+		expanderMessage.ccs = ccs;
+		expanderMessage.ccsMode = ccsMode;
+		expanderMessage.notes = notes;
+		expanderMessage.notesMode = notesMode;
+		expanderMessage.textLabel = textLabel;
+		expanderMessage.paramHandles = paramHandles;
 	}
 
 	~MidiCatModule() {
@@ -363,6 +361,9 @@ struct MidiCatModule : Module, StripIdFixModule {
 				}
 			}
 		}
+
+		rightExpander.messageFlipRequested = true;
+		rightExpander.producerMessage = &expanderMessage;
 	}
 
 	void setMode(MIDIMODE midiMode) {
@@ -568,6 +569,20 @@ struct MidiCatModule : Module, StripIdFixModule {
 		moduleLearn(m, keepCcAndNote);
 	}
 
+	void moduleLearn(int moduleId, std::list<MidimapParam*>& params) override {
+		clearMaps();
+		int i = 0;
+		for (MidimapParam* it : params) {
+			learnParam(i, moduleId, it->paramId);
+			ccs[i] = it->cc;
+			ccsMode[i] = it->ccMode;
+			notes[i] = it->note;
+			notesMode[i] = it->noteMode;
+			textLabel[i] = it->label;
+			i++;
+		}
+		updateMapLen();
+	}
 
 	void refreshParamHandleText(int id) {
 		std::string text = "MIDI-CAT";
@@ -1194,5 +1209,6 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 };
 
 } // namespace MidiCat
+} // namespace StoermelderPackOne 
 
-Model *modelMidiCat = createModel<MidiCat::MidiCatModule, MidiCat::MidiCatWidget>("MidiCat");
+Model *modelMidiCat = createModel<StoermelderPackOne::MidiCat::MidiCatModule, StoermelderPackOne::MidiCat::MidiCatWidget>("MidiCat");

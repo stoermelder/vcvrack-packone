@@ -98,6 +98,13 @@
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/MidiCat.md"
 		},
 		{
+			"slug": "MidiCatEx",
+			"name": "MEM",
+			"description": "Memory-expander for MIDI-CAT",
+			"tags": ["Utility"],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/MidiCat.md"
+		},
+		{
 			"slug": "Sipo",
 			"name": "SIPO",
 			"description": "Serial-in parallel-out shift register with polyphonic output and CV controls for skipping and incrementing on sampled values",
