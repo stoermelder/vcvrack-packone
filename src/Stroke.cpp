@@ -82,6 +82,7 @@ enum class KEY_MODE {
 	CV_TRIGGER = 1,
 	CV_GATE = 2,
 	CV_TOGGLE = 3,
+	S_PARAM_RAND = 9,
 	S_PARAM_COPY = 10,
 	S_PARAM_PASTE = 11,
 	S_ZOOM_MODULE_90 = 12,
@@ -248,6 +249,8 @@ struct KeyContainer : Widget {
 	void step() override {
 		if (module && module->keyTemp != NULL) {
 			switch (module->keyTemp->mode) {
+				case KEY_MODE::S_PARAM_RAND:
+					cmdParamRand(); break;
 				case KEY_MODE::S_PARAM_COPY:
 					cmdParamCopy(); break;
 				case KEY_MODE::S_PARAM_PASTE:
@@ -281,6 +284,16 @@ struct KeyContainer : Widget {
 			module->keyTemp = NULL;
 		}
 		Widget::step();
+	}
+
+	void cmdParamRand() {
+		Widget* w = APP->event->getHoveredWidget();
+		if (!w) return;
+		ParamWidget* p = dynamic_cast<ParamWidget*>(w);
+		if (!p) return;
+		ParamQuantity* q = p->paramQuantity;
+		if (!q) return;
+		q->setScaledValue(random::uniform());
 	}
 
 	void cmdParamCopy() {
@@ -616,6 +629,7 @@ struct KeyDisplay : StoermelderLedDisplay {
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Gate", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::CV_GATE));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::CV_TOGGLE));
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Parameter commands"));
+		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Randomize", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_PARAM_RAND));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Value copy", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_PARAM_COPY));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Value paste", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_PARAM_PASTE));
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "View commands"));
