@@ -18,7 +18,7 @@ enum NOTEMODE {
 	NOTEMODE_TOGGLE = 2
 };
 
-struct MidimapParam {
+struct MemParam {
 	int paramId = -1;
 	int cc = -1;
 	CCMODE ccMode;
@@ -27,26 +27,13 @@ struct MidimapParam {
 	std::string label;
 };
 
-struct MidimapModule {
+struct MemModule {
 	std::string pluginName;
 	std::string moduleName;
-	std::list<MidimapParam*> paramMap;
-	~MidimapModule() {
+	std::list<MemParam*> paramMap;
+	~MemModule() {
 		for (auto it : paramMap) delete it;
 	}
-};
-
-struct MidiCatProcessor {
-	virtual void moduleLearn(int moduleId, std::list<MidimapParam*>& params) { }
-};
-
-struct MidiCatExpanderMessage {
-	int* ccs;
-	CCMODE* ccsMode;
-	int* notes;
-	NOTEMODE* notesMode;
-	std::string* textLabel;
-	ParamHandle* paramHandles;
 };
 
 } // namespace MidiCat

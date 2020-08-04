@@ -22,17 +22,11 @@ struct MidiCatExModule : Module {
 	/** [Stored to JSON] */
 	int panelTheme = 0;
 	/** [Stored to JSON] */
-	std::map<std::pair<std::string, std::string>, MidimapModule*> midiMap;
-
-	dsp::ClockDivider processDivider;
-
-	MidiCatExpanderMessage* msg;
-	bool connected;
+	std::map<std::pair<std::string, std::string>, MemModule*> midiMap;
 
 	MidiCatExModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		processDivider.setDivision(24000);
 		onReset();
 	}
 
@@ -49,67 +43,8 @@ struct MidiCatExModule : Module {
 	}
 
 	void process(const ProcessArgs& args) override {
-		if (!processDivider.process()) return;
-		connected = false;
-		msg = NULL;
-
-		Module* m = leftExpander.module;
-		if (!m) return;
-		if (!(m->model->plugin->slug == "Stoermelder-P1" && m->model->slug == "MidiCat")) return;
-		if (!m->rightExpander.consumerMessage) return;
-		msg = reinterpret_cast<MidiCatExpanderMessage*>(m->rightExpander.consumerMessage);
-
-		connected = true;
-	}
-
-	void saveMidimap(int moduleId) {
-		MidimapModule* m = new MidimapModule;
-		Module* module;
-		for (size_t i = 0; i < MAX_CHANNELS; i++) {
-			if (msg->paramHandles[i].moduleId != moduleId) continue;
-			module = msg->paramHandles[i].module;
-
-			MidimapParam* p = new MidimapParam;
-			p->paramId = msg->paramHandles[i].paramId;
-			p->cc = msg->ccs[i];
-			p->ccMode = msg->ccsMode[i];
-			p->note = msg->notes[i];
-			p->noteMode = msg->notesMode[i];
-			p->label = msg->textLabel[i];
-			m->paramMap.push_back(p);
-		}
-		m->pluginName = module->model->plugin->name;
-		m->moduleName = module->model->name;
-
-		auto p = std::pair<std::string, std::string>(module->model->plugin->slug, module->model->slug);
-		auto it = midiMap.find(p);
-		if (it != midiMap.end()) {
-			delete it->second;
-		}
-
-		midiMap[p] = m;
-	}
-
-	void deleteMidimap(std::string pluginSlug, std::string moduleSlug) {
-		auto p = std::pair<std::string, std::string>(pluginSlug, moduleSlug);
-		auto it = midiMap.find(p);
-		delete it->second;
-		midiMap.erase(p);
-	}
-
-	void applyMidimap(Module* m) {
-		if (!m) return;
-
-		auto p = std::pair<std::string, std::string>(m->model->plugin->slug, m->model->slug);
-		auto it = midiMap.find(p);
-		if (it == midiMap.end()) return;
-		MidimapModule* map = it->second;
-
-		Module* exp = leftExpander.module;
-		if (!exp) return;
-		if (!(exp->model->plugin->slug == "Stoermelder-P1" && exp->model->slug == "MidiCat")) return;
-		MidiCatProcessor* cat = dynamic_cast<MidiCatProcessor*>(exp);
-		cat->moduleLearn(m->id, map->paramMap);
+		leftExpander.producerMessage = &midiMap;
+		leftExpander.messageFlipRequested = true;
 	}
 
 	json_t* dataToJson() override {
@@ -156,14 +91,14 @@ struct MidiCatExModule : Module {
 			std::string pluginSlug = json_string_value(json_object_get(midiMapJJ, "pluginSlug"));
 			std::string moduleSlug = json_string_value(json_object_get(midiMapJJ, "moduleSlug"));
 
-			MidimapModule* a = new MidimapModule;
+			MemModule* a = new MemModule;
 			a->pluginName = json_string_value(json_object_get(midiMapJJ, "pluginName"));
 			a->moduleName = json_string_value(json_object_get(midiMapJJ, "moduleName"));
 			json_t* paramMapJ = json_object_get(midiMapJJ, "paramMap");
 			size_t j;
 			json_t* paramMapJJ;
 			json_array_foreach(paramMapJ, j, paramMapJJ) {
-				MidimapParam* p = new MidimapParam;
+				MemParam* p = new MemParam;
 				p->paramId = json_integer_value(json_object_get(paramMapJJ, "paramId"));
 				p->cc = json_integer_value(json_object_get(paramMapJJ, "cc"));
 				p->ccMode = (CCMODE)json_integer_value(json_object_get(paramMapJJ, "ccMode"));
@@ -178,37 +113,12 @@ struct MidiCatExModule : Module {
 };
 
 
-struct ApplyButton : TL1105 {
-	ModuleWidget* mw;
+struct MemDisplay : StoermelderLedDisplay {
 	MidiCatExModule* module;
-	bool learn = false;
-
-	void onButton(const event::Button& e) override {
+	void step() override {
+		StoermelderLedDisplay::step();
 		if (!module) return;
-		if (e.action == GLFW_PRESS) {
-			learn = true;
-			glfwSetCursor(APP->window->win, glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR));
-			APP->event->setSelected(this);
-			e.consume(this);
-		}
-	}
-
-	void onDeselect(const event::Deselect& e) override {
-		if (!module) return;
-		if (!learn) return;
-		learn = false;
-		glfwSetCursor(APP->window->win, NULL);
-
-		// Learn module
-		Widget* w = APP->event->getDraggedWidget();
-		if (!w) return;
-		ModuleWidget* mw = dynamic_cast<ModuleWidget*>(w);
-		if (!mw) mw = w->getAncestorOfType<ModuleWidget>();
-		if (!mw || mw == this->mw) return;
-		Module* m = mw->module;
-		if (!m) return;
-
-		module->applyMidimap(m);
+		text = string::f("%i", module->midiMap.size());
 	}
 };
 
@@ -220,114 +130,9 @@ struct MidiCatExWidget : ThemedModuleWidget<MidiCatExModule> {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		ApplyButton* button = createParamCentered<ApplyButton>(Vec(15.0f, 306.7f), module, MidiCatExModule::PARAM_APPLY);
-		button->mw = this;
-		button->module = module;
-		addParam(button);
-	}
-
-	void appendContextMenu(Menu* menu) override {
-		ThemedModuleWidget<MidiCatExModule>::appendContextMenu(menu);
-		MidiCatExModule* module = dynamic_cast<MidiCatExModule*>(this->module);
-		assert(module);
-
-		struct MapMenuItem : MenuItem {
-			MidiCatExModule* module;
-			MapMenuItem() {
-				rightText = RIGHT_ARROW;
-			}
-			Menu* createChildMenu() override {
-				struct MidimapModuleItem : MenuItem {
-					MidiCatExModule* module;
-					std::string pluginSlug;
-					std::string moduleSlug;
-					MidimapModule* midimapModule;
-					MidimapModuleItem() {
-						rightText = RIGHT_ARROW;
-					}
-					Menu* createChildMenu() override {
-						struct DeleteItem : MenuItem {
-							MidiCatExModule* module;
-							std::string pluginSlug;
-							std::string moduleSlug;
-							void onAction(const event::Action& e) override {
-								module->deleteMidimap(pluginSlug, moduleSlug);
-							}
-						}; // DeleteItem
-
-						Menu* menu = new Menu;
-						menu->addChild(construct<DeleteItem>(&MenuItem::text, "Delete", &DeleteItem::module, module, &DeleteItem::pluginSlug, pluginSlug, &DeleteItem::moduleSlug, moduleSlug));
-						return menu;
-					}
-				}; // MidimapModuleItem
-
-				std::list<std::pair<std::string, MidimapModuleItem*>> l; 
-				for (auto it : module->midiMap) {
-					MidimapModule* a = it.second;
-					MidimapModuleItem* midimapModuleItem = new MidimapModuleItem;
-					midimapModuleItem->text = string::f("%s - %s", a->pluginName.c_str(), a->moduleName.c_str());
-					midimapModuleItem->module = module;
-					midimapModuleItem->midimapModule = a;
-					midimapModuleItem->pluginSlug = it.first.first;
-					midimapModuleItem->moduleSlug = it.first.second;
-					l.push_back(std::pair<std::string, MidimapModuleItem*>(midimapModuleItem->text, midimapModuleItem));
-				}
-
-				l.sort();
-				Menu* menu = new Menu;
-				for (auto it : l) {
-					menu->addChild(it.second);
-				}
-				return menu;
-			}
-		}; // MapMenuItem
-
-		struct SaveMenuItem : MenuItem {
-			MidiCatExModule* module;
-			std::list<std::pair<std::string, int>> list;
-
-			SaveMenuItem(MidiCatExModule* module) {
-				this->module = module;
-				text = "Save mapping";
-				rightText = RIGHT_ARROW;
-
-				MidiCatExpanderMessage* msg = module->msg;
-				std::set<int> s;
-				for (size_t i = 0; i < MAX_CHANNELS; i++) {
-					int moduleId = msg->paramHandles[i].moduleId;
-					if (moduleId < 0) continue;
-					if (s.find(moduleId) != s.end()) continue;
-					s.insert(moduleId);
-					Module* m = msg->paramHandles[i].module;
-					if (!m) continue;
-					std::string l = string::f("%s - %s", m->model->plugin->name.c_str(), m->model->name.c_str());
-					auto p = std::pair<std::string, int>(l, moduleId);
-					list.push_back(p);
-				}
-				list.sort();
-			}
-
-			Menu* createChildMenu() override {
-				struct SaveItem : MenuItem {
-					MidiCatExModule* module;
-					int moduleId;
-					void onAction(const event::Action& e) override {
-						module->saveMidimap(moduleId);
-					}
-				}; // SaveItem
-
-				Menu* menu = new Menu;
-				for (auto it : list) {
-					menu->addChild(construct<SaveItem>(&MenuItem::text, it.first, &SaveItem::module, module, &SaveItem::moduleId, it.second));
-				}
-				return menu;
-			}
-		}; // SaveMenuItem
-
-		if (!module->connected) return;
-		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<MapMenuItem>(&MenuItem::text, "Available mappings", &MapMenuItem::module, module));
-		menu->addChild(new SaveMenuItem(module));
+		MemDisplay* memDisplay = createWidgetCentered<MemDisplay>(Vec(15.0f, 336.2f));
+		memDisplay->module = module;
+		addChild(memDisplay);
 	}
 };
 
