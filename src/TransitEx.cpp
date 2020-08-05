@@ -32,7 +32,7 @@ struct TransitExModule : TransitBase<NUM_PRESETS> {
 			Module::configParam<TransitParamQuantity<NUM_PRESETS>>(PARAM_PRESET + i, 0, 1, 0);
 			TransitParamQuantity<NUM_PRESETS>* pq = (TransitParamQuantity<NUM_PRESETS>*)Module::paramQuantities[PARAM_PRESET + i];
 			pq->module = this;
-			pq->i = i;
+			pq->id = i;
 			BASE::presetButton[i].param = &Module::params[PARAM_PRESET + i];
 		}
 
@@ -54,7 +54,7 @@ struct TransitExModule : TransitBase<NUM_PRESETS> {
 		return &Module::lights[LIGHT_PRESET + i];
 	}
 
-	void transitLoadSlot(int i) override {
+	void transitSlotCmd(SLOT_CMD cmd, int i) override {
 		// Retrieve module from scene as this is called from the GUI thread
 		ModuleWidget* mw =  APP->scene->rack->getModule(BASE::ctrlModuleId);
 		if (!mw) return;
@@ -62,7 +62,7 @@ struct TransitExModule : TransitBase<NUM_PRESETS> {
 		if (!m) return;
 		TransitBase<NUM_PRESETS>* tm = dynamic_cast<TransitBase<NUM_PRESETS>*>(m);
 		if (!tm) return;
-		tm->transitLoadSlot(i + BASE::ctrlOffset * NUM_PRESETS);
+		tm->transitSlotCmd(cmd, i + BASE::ctrlOffset * NUM_PRESETS);
 	}
 
 	void dataFromJson(json_t* rootJ) override {

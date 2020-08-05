@@ -6,6 +6,14 @@
 namespace StoermelderPackOne {
 namespace Transit {
 
+enum class SLOT_CMD {
+	LOAD,
+	CLEAR,
+	RANDOMIZE,
+	COPY,
+	PASTE
+};
+
 template <int NUM_PRESETS>
 struct TransitBase : Module, StripIdFixModule {
 	/** [Stored to JSON] */
@@ -20,11 +28,12 @@ struct TransitBase : Module, StripIdFixModule {
 
 	int ctrlModuleId = -1;
 	int ctrlOffset = 0;
+	bool ctrlWrite = false;
 
 	virtual Param* transitParam(int i) { return NULL; }
 	virtual Light* transitLight(int i) { return NULL; }
 
-	virtual void transitLoadSlot(int i) { }
+	virtual void transitSlotCmd(SLOT_CMD cmd, int i) { }
 
 
 	json_t* dataToJson() override {
@@ -75,13 +84,13 @@ struct TransitBase : Module, StripIdFixModule {
 template <int NUM_PRESETS>
 struct TransitParamQuantity : ParamQuantity {
 	TransitBase<NUM_PRESETS>* module;
-	int i;
+	int id;
 
 	std::string getDisplayValueString() override {
-		return module->presetSlotUsed[i] ? "Used" : "Empty";
+		return module->presetSlotUsed[id] ? "Used" : "Empty";
 	}
 	std::string getLabel() override {
-		return string::f("Scene #%d", module->ctrlOffset * NUM_PRESETS + i + 1);
+		return string::f("Scene #%d", module->ctrlOffset * NUM_PRESETS + id + 1);
 	}
 };
 
@@ -94,9 +103,14 @@ struct TransitLedButton : LEDButton {
 	void onButton(const event::Button& e) override {
 		if (e.action == GLFW_PRESS) {
 			if (e.button == GLFW_MOUSE_BUTTON_LEFT && (e.mods & RACK_MOD_MASK) == GLFW_MOD_SHIFT) {
-				module->transitLoadSlot(id);
+				module->transitSlotCmd(SLOT_CMD::LOAD, id);
 				e.consume(this);
 				eventConsumed = true;
+			}
+			else if (module->ctrlWrite && e.button == GLFW_MOUSE_BUTTON_RIGHT && (e.mods & RACK_MOD_MASK) == 0) {
+				LEDButton::onButton(e);
+				eventConsumed = false;
+				extendContextMenu();
 			}
 			else {
 				LEDButton::onButton(e);
@@ -111,6 +125,32 @@ struct TransitLedButton : LEDButton {
 			return;
 		}
 		LEDButton::onDragStart(e);
+	}
+
+	void extendContextMenu() {
+		// Hack for attaching additional menu items to parameter's context menu
+		MenuOverlay* overlay = APP->scene->getFirstDescendantOfType<MenuOverlay>();
+		if (!overlay) return;
+		Widget* w = overlay->children.front();
+		Menu* menu = dynamic_cast<Menu*>(w);
+		if (!menu) return;
+
+		struct SlotItem : MenuItem {
+			TransitBase<NUM_PRESETS>* module;
+			int id;
+			SLOT_CMD cmd;
+			void onAction(const event::Action& e) override {
+				module->transitSlotCmd(cmd, id);
+			}
+		};
+
+		menu->addChild(new MenuSeparator);
+		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Scene"));
+		menu->addChild(construct<SlotItem>(&MenuItem::text, "Load", &MenuItem::rightText, RACK_MOD_SHIFT_NAME "+click", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::LOAD));
+		menu->addChild(construct<SlotItem>(&MenuItem::text, "Clear", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::CLEAR));
+		menu->addChild(construct<SlotItem>(&MenuItem::text, "Randomize", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::RANDOMIZE));
+		menu->addChild(construct<SlotItem>(&MenuItem::text, "Copy", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::COPY));
+		menu->addChild(construct<SlotItem>(&MenuItem::text, "Paste", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::PASTE));
 	}
 };
 
