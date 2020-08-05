@@ -6,7 +6,7 @@
 namespace StoermelderPackOne {
 namespace Transit {
 
-const int MAX_EXPANDERS = 3;
+const int MAX_EXPANDERS = 7;
 
 enum class SLOTCVMODE {
 	TRIG_FWD = 2,
@@ -122,7 +122,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 
 		handleDivider.setDivision(4096);
 		lightDivider.setDivision(512);
-		buttonDivider.setDivision(8);
+		buttonDivider.setDivision(32);
 		onReset();
 	}
 
@@ -337,6 +337,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		}
 		// Write mode
 		else {
+			// Buttons
 			if (buttonDivider.process()) {
 				float sampleTime = args.sampleTime * buttonDivider.division;
 				for (int i = 0; i < presetTotal; i++) {
