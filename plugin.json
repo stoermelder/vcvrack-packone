@@ -99,7 +99,7 @@
 		},
 		{
 			"slug": "MidiCatEx",
-			"name": "MEM",
+			"name": "MEM for MIDI-CAT",
 			"description": "Memory-expander for MIDI-CAT",
 			"tags": ["Utility"],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/MidiCat.md"
@@ -227,7 +227,7 @@
 		{
 			"slug": "Spin",
 			"name": "SPIN",
-			"description": "Utility for converting mouse wheel movement into trigger, useful for SAIL",
+			"description": "Utility for converting mouse wheel movement into triggers, also handles mouse-click of mouse, useful for SAIL",
 			"tags": ["Utility"],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Spin.md"
 		},
