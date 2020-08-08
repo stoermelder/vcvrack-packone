@@ -5,6 +5,7 @@ namespace Spin {
 
 struct SpinModule : Module {
 	enum ParamIds {
+		PARAM_ONLY,
 		NUM_PARAMS
 	};
 	enum InputIds {
@@ -21,8 +22,6 @@ struct SpinModule : Module {
 
 	/** [Stored to JSON] */
 	int panelTheme = 0;
-	/** [Stored to JSON] */
-	bool alwaysActive = false;
 
 	float delta = 0.f;
 	dsp::PulseGenerator decPulse;
@@ -30,6 +29,7 @@ struct SpinModule : Module {
 
 	SpinModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+		configParam<TriggerParamQuantity>(PARAM_ONLY, 0.f, 1.f, 1.f, "Only active while parameter-hovering");
 		onReset();
 	}
 
@@ -50,13 +50,11 @@ struct SpinModule : Module {
 	json_t* dataToJson() override {
 		json_t *rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
-		json_object_set_new(rootJ, "alwaysActive", json_boolean(alwaysActive));
 		return rootJ;
 	}
 
 	void dataFromJson(json_t* rootJ) override {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
-		alwaysActive = json_boolean_value(json_object_get(rootJ, "alwaysActive"));
 	}
 };
 
@@ -65,7 +63,7 @@ struct SpinContainer : widget::Widget {
 	SpinModule* module;
 
 	void onHoverScroll(const event::HoverScroll& e) override {
-		if (!module->alwaysActive) {
+		if (module->params[SpinModule::PARAM_ONLY].getValue() == 1.f) {
 			Widget* w = APP->event->getHoveredWidget();
 			if (!w) return;
 			ParamWidget* p = dynamic_cast<ParamWidget*>(w);
@@ -86,8 +84,9 @@ struct SpinWidget : ThemedModuleWidget<SpinModule> {
 		: ThemedModuleWidget<SpinModule>(module, "Spin") {
 		setModule(module);
 
-		addOutput(createOutputCentered<StoermelderPort>(Vec(22.5f, 263.3f), module, SpinModule::OUTPUT_INC));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(22.5f, 298.9f), module, SpinModule::OUTPUT_DEC));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(22.5f, 254.8f), module, SpinModule::OUTPUT_INC));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(22.5f, 290.5f), module, SpinModule::OUTPUT_DEC));
+		addParam(createParamCentered<CKSS>(Vec(22.5f, 332.9f), module, SpinModule::PARAM_ONLY));
 
 		if (module) {
 			mwContainer = new SpinContainer;
@@ -102,25 +101,6 @@ struct SpinWidget : ThemedModuleWidget<SpinModule> {
 			APP->scene->rack->removeChild(mwContainer);
 			delete mwContainer;
 		}
-	}
-
-	void appendContextMenu(Menu* menu) override {
-		ThemedModuleWidget<SpinModule>::appendContextMenu(menu);
-		SpinModule* module = dynamic_cast<SpinModule*>(this->module);
-
-		struct OnlyOnHoverItem : MenuItem {
-			SpinModule* module;
-			void onAction(const event::Action& e) override {
-				module->alwaysActive ^= true;
-			}
-			void step() override {
-				rightText = module->alwaysActive ? "✔" : "";
-				MenuItem::step();
-			}
-		};
-
-		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<OnlyOnHoverItem>(&MenuItem::text, "Always active", &OnlyOnHoverItem::module, module));
 	}
 };
 
