@@ -144,7 +144,8 @@ struct MidiCatModule : Module, StripIdFixModule {
 	dsp::ClockDivider indicatorDivider;
 
 	// Pointer of the MEM-expander's attribute
-	std::map<std::pair<std::string, std::string>, MemModule*>* mem;
+	std::map<std::pair<std::string, std::string>, MemModule*>* memStorage = NULL;
+	Module* mem = NULL;
 
 	MidiCatModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
@@ -362,9 +363,11 @@ struct MidiCatModule : Module, StripIdFixModule {
 
 		Module* exp = rightExpander.module;
 		if (exp && exp->model->plugin->slug == "Stoermelder-P1" && exp->model->slug == "MidiCatEx") {
-			mem = reinterpret_cast<std::map<std::pair<std::string, std::string>, MemModule*>*>(exp->leftExpander.consumerMessage);
+			memStorage = reinterpret_cast<std::map<std::pair<std::string, std::string>, MemModule*>*>(exp->leftExpander.consumerMessage);
+			mem = exp;
 		}
 		else {
+			memStorage = NULL;
 			mem = NULL;
 		}
 	}
@@ -619,26 +622,26 @@ struct MidiCatModule : Module, StripIdFixModule {
 		m->moduleName = module->model->name;
 
 		auto p = std::pair<std::string, std::string>(pluginSlug, moduleSlug);
-		auto it = mem->find(p);
-		if (it != mem->end()) {
+		auto it = memStorage->find(p);
+		if (it != memStorage->end()) {
 			delete it->second;
 		}
 
-		(*mem)[p] = m;
+		(*memStorage)[p] = m;
 	}
 
 	void memDelete(std::string pluginSlug, std::string moduleSlug) {
 		auto p = std::pair<std::string, std::string>(pluginSlug, moduleSlug);
-		auto it = mem->find(p);
+		auto it = memStorage->find(p);
 		delete it->second;
-		mem->erase(p);
+		memStorage->erase(p);
 	}
 
 	void memApply(Module* m) {
 		if (!m) return;
 		auto p = std::pair<std::string, std::string>(m->model->plugin->slug, m->model->slug);
-		auto it = mem->find(p);
-		if (it == mem->end()) return;
+		auto it = memStorage->find(p);
+		if (it == memStorage->end()) return;
 		MemModule* map = it->second;
 
 		clearMaps();
@@ -998,6 +1001,9 @@ struct MidiCatMidiWidget : MidiWidget {
 };
 
 struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
+	MidiCatModule* module;
+	dsp::SchmittTrigger memParamTrigger;
+
 	enum class LEARN_MODE {
 		OFF = 0,
 		BIND_CLEAR = 1,
@@ -1010,6 +1016,7 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 	MidiCatWidget(MidiCatModule *module)
 		: ThemedModuleWidget<MidiCatModule>(module, "MidiCat") {
 		setModule(module);
+		this->module = module;
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
@@ -1175,6 +1182,16 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 		}
 	}
 
+	void step() override {
+		ThemedModuleWidget<MidiCatModule>::step();
+		if (module && module->mem) {
+			if (memParamTrigger.process(module->mem->params[0].getValue())) {
+				enableLearn(LEARN_MODE::MEM);
+			}
+			module->mem->lights[0].setBrightness(learnMode == LEARN_MODE::MEM);
+		}
+	}
+
 	void enableLearn(LEARN_MODE mode) {
 		learnMode = learnMode == LEARN_MODE::OFF ? mode : LEARN_MODE::OFF;
 		APP->event->setSelected(this);
@@ -1192,7 +1209,6 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 
 	void appendContextMenu(Menu *menu) override {
 		ThemedModuleWidget<MidiCatModule>::appendContextMenu(menu);
-		MidiCatModule *module = dynamic_cast<MidiCatModule*>(this->module);
 		assert(module);
 
 		struct MidiMapImportItem : MenuItem {
@@ -1297,7 +1313,7 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 		menu->addChild(construct<ModuleLearnExpanderMenuItem>(&MenuItem::text, "Map module (left)", &ModuleLearnExpanderMenuItem::module, module));
 		menu->addChild(construct<ModuleLearnSelectMenuItem>(&MenuItem::text, "Map module (select)", &ModuleLearnSelectMenuItem::mw, this));
 
-		if (module->mem != NULL) appendContextMenuMem(menu);
+		if (module->memStorage != NULL) appendContextMenuMem(menu);
 	}
 
 	void appendContextMenuMem(Menu* menu) {
@@ -1336,7 +1352,7 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 				}; // MidimapModuleItem
 
 				std::list<std::pair<std::string, MidimapModuleItem*>> l; 
-				for (auto it : *module->mem) {
+				for (auto it : *module->memStorage) {
 					MemModule* a = it.second;
 					MidimapModuleItem* midimapModuleItem = new MidimapModuleItem;
 					midimapModuleItem->text = string::f("%s %s", a->pluginName.c_str(), a->moduleName.c_str());

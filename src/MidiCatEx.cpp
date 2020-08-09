@@ -16,6 +16,7 @@ struct MidiCatExModule : Module {
 		NUM_OUTPUTS
 	};
 	enum LightIds {
+		LIGHT_APPLY,
 		NUM_LIGHTS
 	};
 
@@ -27,6 +28,7 @@ struct MidiCatExModule : Module {
 	MidiCatExModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+		configParam<TriggerParamQuantity>(PARAM_APPLY, 0.f, 1.f, 0.f, "Activate apply mapping");
 		onReset();
 	}
 
@@ -132,6 +134,8 @@ struct MidiCatExWidget : ThemedModuleWidget<MidiCatExModule> {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
+		addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(15.f, 291.3f), module, MidiCatExModule::LIGHT_APPLY));
+		addChild(createParamCentered<TL1105>(Vec(15.0f, 306.7f), module, MidiCatExModule::PARAM_APPLY));
 		MemDisplay* memDisplay = createWidgetCentered<MemDisplay>(Vec(15.0f, 336.2f));
 		memDisplay->module = module;
 		addChild(memDisplay);
