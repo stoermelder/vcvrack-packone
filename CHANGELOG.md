@@ -1,9 +1,24 @@
-## 1.7.0 (in development)
+## 1.x.0 (in development)
 
 - Module [DETOUR](./docs/Detour.md)
     - New module, 8x8 send/return switch matrix with support for 8 scenes
+
+## 1.7.0 (in development)
+
 - Module [FLOWER](./docs/Flower.md)
     - New module, pattern-driven 16-step sequencer
+- Module [MEM](./docs/MidiCat.md)
+    - New expander-module for MIDI-CAT
+- Module [SPIN](./docs/SPIN.md)
+    - New module
+- Module [STROKE](./docs/STROKE.md)
+    - New module
+- Module [TRANSIT](./docs/TRANSIT.md)
+    - New module
+- Module [+T](./docs/TRANSIT.md)
+    - New expander-module for TRANSIT
+- Module [X4](./docs/X4.md)
+    - New module
 
 ### Fixes and Changes
 
@@ -19,7 +34,7 @@
     - Implemented support for mappings within STRIP, please be aware to include GLUE within your strip-file (#115)
     - Added options for changing text coloring (#136)
 - Module [GRIP](./docs/Grip.md)
-    - Implemented support for mappings within STRIP (#151)
+    - Implemented support for parameter-mappings within STRIP (#151)
 - Module [GOTO](./docs/Goto.md)
     - Added support for number pad keys (#134)
 - Module [µMAP](./docs/CVMapMicro.md)
@@ -29,9 +44,10 @@
     - Don't capture mouse scrolling if mapping slots are locked (#137)
     - Blink mapping indicator of currently selected mapping slot
     - Added option for automatic mapping of all parameters of a module on the left side or by module-select
-    - Mapping is aborted with ESC-key while hovering the mouse over the module
+    - Mapping is aborted using ESC-key while hovering the mouse over the module
+    - Added option for sending MIDI "note on, velocity 0" on feedback for note off (#130)
 - Module [MIRROR](./docs/Mirror.md)
-    - Implemented support for mappings within STRIP
+    - Implemented support for parameter-mappings within STRIP
 - Module [ReMOVE Lite](./docs/ReMove.md)
     - Blink mapping indicator when activating the mapping screen
 - Module [STRIP](./docs/Strip.md)
