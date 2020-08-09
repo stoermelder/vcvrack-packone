@@ -36,7 +36,7 @@ struct MidiCatOutput : midi::Output {
 		sendMessage(m);
 	}
 
-	void setGate(int vel, int note) {
+	void setGate(int vel, int note, bool noteOffVelocityZero) {
 		if (vel > 0 && !lastGates[note]) {
 			// Note on
 			midi::Message m;
@@ -48,7 +48,7 @@ struct MidiCatOutput : midi::Output {
 		else if (vel == 0 && lastGates[note]) {
 			// Note off
 			midi::Message m;
-			m.setStatus(0x8);
+			m.setStatus(noteOffVelocityZero ? 0x9 : 0x8);
 			m.setNote(note);
 			m.setValue(0);
 			sendMessage(m);
@@ -96,6 +96,8 @@ struct MidiCatModule : Module, StripIdFixModule {
 	int notes[MAX_CHANNELS];
 	/** [Stored to Json] Use the velocity value of each channel when notes are used */
 	NOTEMODE notesMode[MAX_CHANNELS];
+	/** [Stored to JSON] */
+	int midiOptions[MAX_CHANNELS];
 
 	/** [Stored to Json] The mapped param handle of each channel */
 	ParamHandle paramHandles[MAX_CHANNELS];
@@ -181,6 +183,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 			ccsMode[i] = CCMODE::CCMODE_DIRECT;
 			notesMode[i] = NOTEMODE::NOTEMODE_MOMENTARY;
 			textLabel[i] = "";
+			midiOptions[i] = 0;
 			//filterInitialized[i] = false;
 			//valueFilters[i].reset();
 		}
@@ -323,7 +326,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 							if (cc >= 0)
 								midiOutput.setValue(v, cc);
 							if (note >= 0)
-								midiOutput.setGate(v, note);
+								midiOutput.setGate(v, note, (midiOptions[id] >> MIDIOPTION_VELZERO_BIT) & 1U);
 						}
 					} break;
 
@@ -456,6 +459,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 		ccs[id] = -1;
 		notes[id] = -1;
 		textLabel[id] = "";
+		midiOptions[id] = 0;
 		APP->engine->updateParamHandle(&paramHandles[id], -1, 0, true);
 		updateMapLen();
 		refreshParamHandleText(id);
@@ -467,6 +471,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 			ccs[id] = -1;
 			notes[id] = -1;
 			textLabel[id] = "";
+			midiOptions[id] = 0;
 			APP->engine->updateParamHandle(&paramHandles[id], -1, 0, true);
 			refreshParamHandleText(id);
 		}
@@ -502,6 +507,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 		if (learningId > 0) {
 			ccsMode[learningId] = ccsMode[learningId - 1];
 			notesMode[learningId] = notesMode[learningId - 1];
+			midiOptions[learningId] = midiOptions[learningId - 1];
 		}
 		textLabel[learningId] = "";
 
@@ -606,6 +612,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 			p->note = notes[i];
 			p->noteMode = notesMode[i];
 			p->label = textLabel[i];
+			p->midiOptions = midiOptions[i];
 			m->paramMap.push_back(p);
 		}
 		m->pluginName = module->model->plugin->name;
@@ -643,6 +650,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 			notes[i] = it->note;
 			notesMode[i] = it->noteMode;
 			textLabel[i] = it->label;
+			midiOptions[i] = it->midiOptions;
 			i++;
 		}
 		updateMapLen();
@@ -666,6 +674,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 			json_object_set_new(mapJ, "moduleId", json_integer(paramHandles[id].moduleId));
 			json_object_set_new(mapJ, "paramId", json_integer(paramHandles[id].paramId));
 			json_object_set_new(mapJ, "label", json_string(textLabel[id].c_str()));
+			json_object_set_new(mapJ, "midiOptions", json_integer(midiOptions[id]));
 			json_array_append_new(mapsJ, mapJ);
 		}
 		json_object_set_new(rootJ, "maps", mapsJ);
@@ -702,6 +711,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 				json_t *moduleIdJ = json_object_get(mapJ, "moduleId");
 				json_t *paramIdJ = json_object_get(mapJ, "paramId");
 				json_t *labelJ = json_object_get(mapJ, "label");
+				json_t *midiOptionsJ = json_object_get(mapJ, "midiOptions");
 
 				if (!((ccJ || noteJ) && moduleIdJ && paramIdJ)) {
 					ccs[mapIndex] = -1;
@@ -714,6 +724,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 				ccsMode[mapIndex] = (CCMODE)json_integer_value(ccModeJ);
 				notes[mapIndex] = noteJ ? json_integer_value(noteJ) : -1;
 				notesMode[mapIndex] = (NOTEMODE)json_integer_value(noteModeJ);
+				midiOptions[mapIndex] = json_integer_value(midiOptionsJ);
 				int moduleId = json_integer_value(moduleIdJ);
 				int paramId = json_integer_value(paramIdJ);
 				moduleId = idFix(moduleId);
@@ -768,7 +779,7 @@ struct CcModeMenuItem : MenuItem {
 		menu->addChild(construct<CcModeItem>(&MenuItem::text, "Pickup (jump)", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::CCMODE_PICKUP2));
 		return menu;
 	}
-};
+}; // CcModeMenuItem
 
 struct NoteModeMenuItem : MenuItem {
 	MidiCatModule *module;
@@ -800,7 +811,21 @@ struct NoteModeMenuItem : MenuItem {
 		menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Toggle", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::NOTEMODE_TOGGLE));
 		return menu;
 	}
-};
+}; // NoteModeMenuItem
+
+struct NoteVelZeroMenuItem : MenuItem {
+	MidiCatModule* module;
+	int id;
+
+	void onAction(const event::Action &e) override {
+		module->midiOptions[id] ^= 1UL << MIDIOPTION_VELZERO_BIT;
+	}
+
+	void step() override {
+		rightText = CHECKMARK((module->midiOptions[id] >> MIDIOPTION_VELZERO_BIT) & 1U);
+		MenuItem::step();
+	}
+}; // NoteVelZeroMenuItem
 
 struct LabelMenuItem : MenuItem {
 	MidiCatModule* module;
@@ -855,7 +880,7 @@ struct LabelMenuItem : MenuItem {
 
 		return menu;
 	}
-};
+}; // LabelMenuItem
 
 
 struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
@@ -896,6 +921,7 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 		if (module->notes[id] >= 0) {
 			menu->addChild(new MenuSeparator());
 			menu->addChild(construct<NoteModeMenuItem>(&MenuItem::text, "Input mode for notes", &NoteModeMenuItem::module, module, &NoteModeMenuItem::id, id));
+			menu->addChild(construct<NoteVelZeroMenuItem>(&MenuItem::text, "Send \"note on, velocity 0\" on note off", &NoteVelZeroMenuItem::module, module, &NoteVelZeroMenuItem::id, id));
 		}
 
 		menu->addChild(new MenuSeparator());

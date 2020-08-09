@@ -6,6 +6,8 @@ namespace MidiCat {
 
 static const int MAX_CHANNELS = 128;
 
+#define MIDIOPTION_VELZERO_BIT 0
+
 enum CCMODE {
 	CCMODE_DIRECT = 0,
 	CCMODE_PICKUP1 = 1,
@@ -25,6 +27,7 @@ struct MemParam {
 	int note = -1;
 	NOTEMODE noteMode;
 	std::string label;
+	int midiOptions = 0;
 };
 
 struct MemModule {
