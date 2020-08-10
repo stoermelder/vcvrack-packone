@@ -4,9 +4,10 @@ namespace StoermelderPackOne {
 namespace Spin {
 
 enum class CLICK_MODE {
-	TOGGLE = 0,
-	TRIGGER = 1,
-	GATE = 2
+	OFF = 0,
+	TOGGLE = 1,
+	TRIGGER = 2,
+	GATE = 3
 };
 
 struct SpinModule : Module {
@@ -30,6 +31,8 @@ struct SpinModule : Module {
 	/** [Stored to JSON] */
 	int panelTheme = 0;
 	/** [Stored to JSON] */
+	int mods;
+	/** [Stored to JSON] */
 	CLICK_MODE clickMode;
 	/** [Stored to JSON] */
 	bool clickHigh;
@@ -41,6 +44,7 @@ struct SpinModule : Module {
 	dsp::PulseGenerator clickPulse;
 
 	SpinModule() {
+		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configParam<TriggerParamQuantity>(PARAM_ONLY, 0.f, 1.f, 1.f, "Only active while parameter-hovering");
 		onReset();
@@ -48,6 +52,7 @@ struct SpinModule : Module {
 
 	void onReset() override {
 		Module::onReset();
+		mods = GLFW_MOD_SHIFT;
 		clickMode = CLICK_MODE::TOGGLE;
 		clickHigh = false;
 	}
@@ -66,6 +71,8 @@ struct SpinModule : Module {
 		outputs[OUTPUT_DEC].setVoltage(incPulse.process(args.sampleTime) * 10.f);
 
 		switch (clickMode) {
+			case CLICK_MODE::OFF:
+				break;
 			case CLICK_MODE::TRIGGER:
 				outputs[OUTPUT_CLICK].setVoltage(clickPulse.process(args.sampleTime) * 10.f);
 				break;
@@ -78,6 +85,8 @@ struct SpinModule : Module {
 
 	void clickEnable() {
 		switch (clickMode) {
+			case CLICK_MODE::OFF:
+				break;
 			case CLICK_MODE::TRIGGER:
 				clickPulse.trigger(); break;
 			case CLICK_MODE::GATE:
@@ -99,6 +108,7 @@ struct SpinModule : Module {
 	json_t* dataToJson() override {
 		json_t *rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
+		json_object_set_new(rootJ, "mods", json_integer(mods));
 		json_object_set_new(rootJ, "clickMode", json_integer((int)clickMode));
 		json_object_set_new(rootJ, "clickHigh", json_boolean(clickHigh));
 		return rootJ;
@@ -106,6 +116,7 @@ struct SpinModule : Module {
 
 	void dataFromJson(json_t* rootJ) override {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		mods = json_integer_value(json_object_get(rootJ, "mods"));
 		clickMode = (CLICK_MODE)json_integer_value(json_object_get(rootJ, "clickMode"));
 		clickHigh = json_boolean_value(json_object_get(rootJ, "clickHigh"));
 	}
@@ -115,27 +126,33 @@ struct SpinModule : Module {
 struct SpinContainer : widget::Widget {
 	SpinModule* module;
 
-	void onHoverScroll(const event::HoverScroll& e) override {
+	bool testParam() {
 		if (module->params[SpinModule::PARAM_ONLY].getValue() == 1.f) {
 			Widget* w = APP->event->getHoveredWidget();
-			if (!w) return;
+			if (!w) return false;
 			ParamWidget* p = dynamic_cast<ParamWidget*>(w);
-			if (!p) return;
+			if (!p) return false;
 			ParamQuantity* q = p->paramQuantity;
-			if (!q) return;
+			if (!q) return false;
 		}
+		return true;
+	}
 
-		module->delta = e.scrollDelta.y;
-		e.consume(this);
+	void onHoverScroll(const event::HoverScroll& e) override {
+		if ((APP->window->getMods() & RACK_MOD_MASK) == module->mods && testParam()) {
+			module->delta = e.scrollDelta.y;
+			e.consume(this);
+		}
+		Widget::onHoverScroll(e);
 	}
 
 	void onButton(const event::Button& e) override {
-		if (e.button == GLFW_MOUSE_BUTTON_MIDDLE) {
-			if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == 0) {
+		if (e.button == GLFW_MOUSE_BUTTON_MIDDLE && module->clickMode != CLICK_MODE::OFF && testParam()) {
+			if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == module->mods) {
 				module->clickEnable();
 				e.consume(this);
 			}
-			if (e.action == RACK_HELD && (e.mods & RACK_MOD_MASK) == 0) {
+			if (e.action == RACK_HELD && (e.mods & RACK_MOD_MASK) == module->mods) {
 				e.consume(this);
 			}
 			if (e.action == GLFW_RELEASE) {
@@ -178,6 +195,18 @@ struct SpinWidget : ThemedModuleWidget<SpinModule> {
 		ThemedModuleWidget<SpinModule>::appendContextMenu(menu);
 		SpinModule* module = dynamic_cast<SpinModule*>(this->module);
 
+		struct ModifierItem : MenuItem {
+			SpinModule* module;
+			int mod;
+			void step() override {
+				rightText = CHECKMARK(module->mods & mod);
+				MenuItem::step();
+			}
+			void onAction(const event::Action& e) override {
+				module->mods ^= mod;
+			}
+		};
+
 		struct ClickMenuItem : MenuItem {
 			SpinModule* module;
 			CLICK_MODE mode;
@@ -191,7 +220,12 @@ struct SpinWidget : ThemedModuleWidget<SpinModule> {
 		};
 
 		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Modifier"));
+		menu->addChild(construct<ModifierItem>(&MenuItem::text, RACK_MOD_SHIFT_NAME, &ModifierItem::module, module, &ModifierItem::mod, GLFW_MOD_SHIFT));
+		menu->addChild(construct<ModifierItem>(&MenuItem::text, RACK_MOD_CTRL_NAME, &ModifierItem::module, module, &ModifierItem::mod, RACK_MOD_CTRL));
+		menu->addChild(construct<ModifierItem>(&MenuItem::text, RACK_MOD_ALT_NAME, &ModifierItem::module, module, &ModifierItem::mod, GLFW_MOD_ALT));
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Middle click mode"));
+		menu->addChild(construct<ClickMenuItem>(&MenuItem::text, "Off", &ClickMenuItem::module, module, &ClickMenuItem::mode, CLICK_MODE::OFF));
 		menu->addChild(construct<ClickMenuItem>(&MenuItem::text, "Toggle", &ClickMenuItem::module, module, &ClickMenuItem::mode, CLICK_MODE::TOGGLE));
 		menu->addChild(construct<ClickMenuItem>(&MenuItem::text, "Trigger", &ClickMenuItem::module, module, &ClickMenuItem::mode, CLICK_MODE::TRIGGER));
 		menu->addChild(construct<ClickMenuItem>(&MenuItem::text, "Gate", &ClickMenuItem::module, module, &ClickMenuItem::mode, CLICK_MODE::GATE));
