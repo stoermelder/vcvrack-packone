@@ -131,11 +131,11 @@ struct SpinContainer : widget::Widget {
 
 	void onButton(const event::Button& e) override {
 		if (e.button == GLFW_MOUSE_BUTTON_MIDDLE) {
-			if (e.action == GLFW_PRESS && e.mods == 0) {
+			if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == 0) {
 				module->clickEnable();
 				e.consume(this);
 			}
-			if (e.action == RACK_HELD && e.mods == 0) {
+			if (e.action == RACK_HELD && (e.mods & RACK_MOD_MASK) == 0) {
 				e.consume(this);
 			}
 			if (e.action == GLFW_RELEASE) {
