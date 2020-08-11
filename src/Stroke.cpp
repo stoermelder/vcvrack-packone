@@ -91,7 +91,8 @@ enum class KEY_MODE {
 	S_ZOOM_OUT = 13,
 	S_ZOOM_TOGGLE = 15,
 	S_CABLE_OPACITY = 20,
-	S_CABLE_COLOR = 21,
+	S_CABLE_COLOR_NEXT = 21,
+	S_CABLE_COLOR = 24,
 	S_CABLE_ROTATE = 22,
 	S_CABLE_VISIBILITY = 23,
 	S_FRAMERATE = 30,
@@ -125,6 +126,7 @@ struct StrokeModule : Module {
 		bool high;
 
 		float zoomModuleLevel;
+		NVGcolor cableColor;
 	};
 
 	/** [Stored to JSON] */
@@ -152,6 +154,7 @@ struct StrokeModule : Module {
 			keys[i].high = false;
 
 			keys[i].zoomModuleLevel = 0.f;
+			keys[i].cableColor = color::BLACK;
 		}
 	}
 
@@ -211,6 +214,7 @@ struct StrokeModule : Module {
 			json_object_set_new(keyJ, "mode", json_integer((int)keys[i].mode));
 			json_object_set_new(keyJ, "high", json_boolean(keys[i].high));
 			json_object_set_new(keyJ, "zoomModuleLevel", json_real(keys[i].zoomModuleLevel));
+			json_object_set_new(keyJ, "cableColor", json_string(color::toHexString(keys[i].cableColor).c_str()));
 			json_array_append_new(keysJ, keyJ);
 		}
 		json_object_set_new(rootJ, "keys", keysJ);
@@ -233,6 +237,8 @@ struct StrokeModule : Module {
 			keys[i].mode = (KEY_MODE)json_integer_value(json_object_get(keyJ, "mode"));
 			keys[i].high = json_boolean_value(json_object_get(keyJ, "high"));
 			keys[i].zoomModuleLevel = json_real_value(json_object_get(keyJ, "zoomModuleLevel"));
+			json_t* cableColorJ = json_object_get(keyJ, "cableColor");
+			if (cableColorJ) keys[i].cableColor = color::fromHexString(json_string_value(cableColorJ));
 		}
 	}
 };
@@ -268,8 +274,10 @@ struct KeyContainer : Widget {
 					cmdZoomToggle(); break;
 				case KEY_MODE::S_CABLE_OPACITY:
 					cmdCableOpacity(); break;
+				case KEY_MODE::S_CABLE_COLOR_NEXT:
+					cmdCableColorNext(); break;
 				case KEY_MODE::S_CABLE_COLOR:
-					cmdCableColor(); break;
+					cmdCableColor(module->keyTemp->cableColor); break;
 				case KEY_MODE::S_CABLE_ROTATE:
 					cmdCableRotate(); break;
 				case KEY_MODE::S_CABLE_VISIBILITY:
@@ -354,7 +362,7 @@ struct KeyContainer : Widget {
 		}
 	}
 
-	void cmdCableColor() {
+	void cmdCableColorNext() {
 		Widget* w = APP->event->getHoveredWidget();
 		if (!w) return;
 		PortWidget* pw = dynamic_cast<PortWidget*>(w);
@@ -364,6 +372,16 @@ struct KeyContainer : Widget {
 		int cid = APP->scene->rack->nextCableColorId++;
 		APP->scene->rack->nextCableColorId %= settings::cableColors.size();
 		cw->color = settings::cableColors[cid];
+	}
+
+	void cmdCableColor(NVGcolor c) {
+		Widget* w = APP->event->getHoveredWidget();
+		if (!w) return;
+		PortWidget* pw = dynamic_cast<PortWidget*>(w);
+		if (!pw) return;
+		CableWidget* cw = APP->scene->rack->getTopCable(pw);
+		if (!cw) return;
+		cw->color = c;
 	}
 
 	void cmdCableRotate() {
@@ -618,6 +636,45 @@ struct KeyDisplay : StoermelderLedDisplay {
 			}
 		};
 
+		struct CableColorMenuItem : MenuItem {
+			StrokeModule<PORTS>* module;
+			int idx;
+			void step() override {
+				rightText = CHECKMARK(module->keys[idx].mode == KEY_MODE::S_CABLE_COLOR);
+				MenuItem::step();
+			}
+			void onAction(const event::Action& e) override {
+				module->keys[idx].mode = KEY_MODE::S_CABLE_COLOR;
+				module->keys[idx].high = false;
+			}
+
+			Menu* createChildMenu() override {
+				struct ColorField : ui::TextField {
+					StrokeModule<PORTS>* module;
+					int idx;
+					ColorField() {
+						box.size.x = 80.f;
+						placeholder = color::toHexString(color::BLACK);
+					}
+					void onSelectKey(const event::SelectKey& e) override {
+						if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
+							module->keys[idx].cableColor = color::fromHexString(string::trim(text));
+							ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
+							overlay->requestDelete();
+							e.consume(this);
+						}
+						if (!e.getTarget()) {
+							ui::TextField::onSelectKey(e);
+						}
+					}
+				};
+
+				Menu* menu = new Menu;
+				menu->addChild(construct<ColorField>(&ColorField::module, module, &ColorField::idx, idx, &TextField::text, color::toHexString(module->keys[idx].cableColor)));
+				return menu;
+			}
+		};
+
 		ui::Menu* menu = createMenu();
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("Hotkey %i", idx + 1)));
 		menu->addChild(construct<LearnMenuItem>(&MenuItem::text, "Learn", &LearnMenuItem::keyContainer, keyContainer, &LearnMenuItem::idx, idx));
@@ -641,7 +698,8 @@ struct KeyDisplay : StoermelderLedDisplay {
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Cable commands"));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle opacity", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_CABLE_OPACITY));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle visibility", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_CABLE_VISIBILITY));
-		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Next color", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_CABLE_COLOR));
+		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Next color", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_CABLE_COLOR_NEXT));
+		menu->addChild(construct<CableColorMenuItem>(&MenuItem::text, "Color", &CableColorMenuItem::module, module, &CableColorMenuItem::idx, idx));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Rotate ordering", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_CABLE_ROTATE));
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Special commands"));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle framerate display", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_FRAMERATE));
