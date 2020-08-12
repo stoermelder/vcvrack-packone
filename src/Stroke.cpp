@@ -124,9 +124,7 @@ struct StrokeModule : Module {
 		int mods;
 		KEY_MODE mode;
 		bool high;
-
-		float zoomModuleLevel;
-		NVGcolor cableColor;
+		std::string data;
 	};
 
 	/** [Stored to JSON] */
@@ -152,9 +150,7 @@ struct StrokeModule : Module {
 			keys[i].mods = 0;
 			keys[i].mode = KEY_MODE::CV_TRIGGER;
 			keys[i].high = false;
-
-			keys[i].zoomModuleLevel = 0.f;
-			keys[i].cableColor = color::BLACK;
+			keys[i].data = "";
 		}
 	}
 
@@ -213,8 +209,7 @@ struct StrokeModule : Module {
 			json_object_set_new(keyJ, "mods", json_integer(keys[i].mods));
 			json_object_set_new(keyJ, "mode", json_integer((int)keys[i].mode));
 			json_object_set_new(keyJ, "high", json_boolean(keys[i].high));
-			json_object_set_new(keyJ, "zoomModuleLevel", json_real(keys[i].zoomModuleLevel));
-			json_object_set_new(keyJ, "cableColor", json_string(color::toHexString(keys[i].cableColor).c_str()));
+			json_object_set_new(keyJ, "data", json_string(keys[i].data.c_str()));
 			json_array_append_new(keysJ, keyJ);
 		}
 		json_object_set_new(rootJ, "keys", keysJ);
@@ -236,9 +231,8 @@ struct StrokeModule : Module {
 			keys[i].mods = json_integer_value(json_object_get(keyJ, "mods"));
 			keys[i].mode = (KEY_MODE)json_integer_value(json_object_get(keyJ, "mode"));
 			keys[i].high = json_boolean_value(json_object_get(keyJ, "high"));
-			keys[i].zoomModuleLevel = json_real_value(json_object_get(keyJ, "zoomModuleLevel"));
-			json_t* cableColorJ = json_object_get(keyJ, "cableColor");
-			if (cableColorJ) keys[i].cableColor = color::fromHexString(json_string_value(cableColorJ));
+			json_t* dataJ = json_object_get(keyJ, "data");
+			if (dataJ) keys[i].data = json_string_value(dataJ);
 		}
 	}
 };
@@ -266,7 +260,7 @@ struct KeyContainer : Widget {
 				case KEY_MODE::S_ZOOM_MODULE_30:
 					cmdZoomModule(0.3f); break;
 				case KEY_MODE::S_ZOOM_MODULE_CUSTOM:
-					settings::zoom = module->keyTemp->zoomModuleLevel;
+					settings::zoom = std::stof(module->keyTemp->data);
 					cmdZoomModule(-1.f); break;
 				case KEY_MODE::S_ZOOM_OUT:
 					cmdZoomOut(); break;
@@ -277,7 +271,7 @@ struct KeyContainer : Widget {
 				case KEY_MODE::S_CABLE_COLOR_NEXT:
 					cmdCableColorNext(); break;
 				case KEY_MODE::S_CABLE_COLOR:
-					cmdCableColor(module->keyTemp->cableColor); break;
+					cmdCableColor(color::fromHexString(module->keyTemp->data)); break;
 				case KEY_MODE::S_CABLE_ROTATE:
 					cmdCableRotate(); break;
 				case KEY_MODE::S_CABLE_VISIBILITY:
@@ -562,7 +556,7 @@ struct KeyDisplay : StoermelderLedDisplay {
 			KEY_MODE mode;
 			int idx;
 			void step() override {
-				rightText = module->keys[idx].mode == mode ? "✔" : "";
+				rightText = CHECKMARK(module->keys[idx].mode == mode);
 				MenuItem::step();
 			}
 			void onAction(const event::Action& e) override {
@@ -575,16 +569,16 @@ struct KeyDisplay : StoermelderLedDisplay {
 			StrokeModule<PORTS>* module;
 			int idx;
 			void step() override {
-				rightText = CHECKMARK(module->keys[idx].mode == KEY_MODE::S_ZOOM_MODULE_CUSTOM);
+				rightText = module->keys[idx].mode == KEY_MODE::S_ZOOM_MODULE_CUSTOM ? "✔ " RIGHT_ARROW : "";
 				MenuItem::step();
 			}
 			void onAction(const event::Action& e) override {
 				module->keys[idx].mode = KEY_MODE::S_ZOOM_MODULE_CUSTOM;
 				module->keys[idx].high = false;
+				module->keys[idx].data = "0";
 			}
 
 			Menu* createChildMenu() override {
-				Menu* menu = new Menu;
 				struct ZoomModuleSlider : ui::Slider {
 					struct ZoomModuleQuantity : Quantity {
 						StrokeModule<PORTS>* module;
@@ -594,10 +588,10 @@ struct KeyDisplay : StoermelderLedDisplay {
 							this->idx = idx;
 						}
 						void setValue(float value) override {
-							module->keys[idx].zoomModuleLevel = clamp(value, -2.f, 2.f);
+							module->keys[idx].data = string::f("%f", clamp(value, -2.f, 2.f));
 						}
 						float getValue() override {
-							return module->keys[idx].zoomModuleLevel;
+							return std::stof(module->keys[idx].data);
 						}
 						float getDefaultValue() override {
 							return 0.0f;
@@ -631,8 +625,12 @@ struct KeyDisplay : StoermelderLedDisplay {
 					}
 				};
 
-				menu->addChild(new ZoomModuleSlider(module, idx));
-				return menu;
+				if (module->keys[idx].mode == KEY_MODE::S_ZOOM_MODULE_CUSTOM) {
+					Menu* menu = new Menu;
+					menu->addChild(new ZoomModuleSlider(module, idx));
+					return menu;
+				}
+				return NULL;
 			}
 		};
 
@@ -640,12 +638,13 @@ struct KeyDisplay : StoermelderLedDisplay {
 			StrokeModule<PORTS>* module;
 			int idx;
 			void step() override {
-				rightText = CHECKMARK(module->keys[idx].mode == KEY_MODE::S_CABLE_COLOR);
+				rightText = module->keys[idx].mode == KEY_MODE::S_CABLE_COLOR ? "✔ " RIGHT_ARROW : "";
 				MenuItem::step();
 			}
 			void onAction(const event::Action& e) override {
 				module->keys[idx].mode = KEY_MODE::S_CABLE_COLOR;
 				module->keys[idx].high = false;
+				module->keys[idx].data = color::toHexString(color::BLACK);
 			}
 
 			Menu* createChildMenu() override {
@@ -658,7 +657,7 @@ struct KeyDisplay : StoermelderLedDisplay {
 					}
 					void onSelectKey(const event::SelectKey& e) override {
 						if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
-							module->keys[idx].cableColor = color::fromHexString(string::trim(text));
+							module->keys[idx].data = string::trim(text);
 							ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
 							overlay->requestDelete();
 							e.consume(this);
@@ -669,9 +668,12 @@ struct KeyDisplay : StoermelderLedDisplay {
 					}
 				};
 
-				Menu* menu = new Menu;
-				menu->addChild(construct<ColorField>(&ColorField::module, module, &ColorField::idx, idx, &TextField::text, color::toHexString(module->keys[idx].cableColor)));
-				return menu;
+				if (module->keys[idx].mode == KEY_MODE::S_CABLE_COLOR) {
+					Menu* menu = new Menu;
+					menu->addChild(construct<ColorField>(&ColorField::module, module, &ColorField::idx, idx, &TextField::text, module->keys[idx].data));
+					return menu;
+				}
+				return NULL;
 			}
 		};
 
