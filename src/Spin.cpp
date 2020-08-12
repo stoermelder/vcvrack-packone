@@ -171,6 +171,9 @@ struct SpinWidget : ThemedModuleWidget<SpinModule> {
 		: ThemedModuleWidget<SpinModule>(module, "Spin") {
 		setModule(module);
 
+		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
+		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+
 		addOutput(createOutputCentered<StoermelderPort>(Vec(22.5f, 218.4f), module, SpinModule::OUTPUT_CLICK));
 		addOutput(createOutputCentered<StoermelderPort>(Vec(22.5f, 254.8f), module, SpinModule::OUTPUT_INC));
 		addOutput(createOutputCentered<StoermelderPort>(Vec(22.5f, 290.5f), module, SpinModule::OUTPUT_DEC));
