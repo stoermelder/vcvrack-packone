@@ -1,5 +1,5 @@
 #include "plugin.hpp"
-#include "MidiCat.h"
+#include "MidiCat.hpp"
 #include "MapModuleBase.hpp"
 #include "StripIdFixModule.hpp"
 #include <osdialog.h>

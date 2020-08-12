@@ -1,5 +1,5 @@
 #include "plugin.hpp"
-#include "MidiCat.h"
+#include "MidiCat.hpp"
 
 namespace StoermelderPackOne {
 namespace MidiCat {
