@@ -240,7 +240,7 @@ struct StrokeModule : Module {
 
 template < int PORTS >
 struct KeyContainer : Widget {
-	StrokeModule<PORTS>* module;
+	StrokeModule<PORTS>* module = NULL;
 	int learnIdx = -1;
 
 	float tempParamValue = 0.f;
@@ -419,8 +419,8 @@ struct KeyContainer : Widget {
 	}
 
 	void onButton(const event::Button& e) override {
-		if (e.button > 2) {
-			if (module && e.action == GLFW_PRESS) {
+		if (module && !module->bypass && e.button > 2) {
+			if (e.action == GLFW_PRESS) {
 				if (learnIdx >= 0) {
 					module->keys[learnIdx].button = e.button;
 					module->keys[learnIdx].key = -1;
@@ -437,14 +437,14 @@ struct KeyContainer : Widget {
 					}
 				}
 			}
-			if (module && e.action == RACK_HELD) {
+			if (e.action == RACK_HELD) {
 				for (int i = 0; i < PORTS; i++) {
 					if (e.button == module->keys[i].button && e.mods == module->keys[i].mods) {
 						e.consume(this);
 					}
 				}
 			}
-			if (module && e.action == GLFW_RELEASE) {
+			if (e.action == GLFW_RELEASE) {
 				for (int i = 0; i < PORTS; i++) {
 					if (e.button == module->keys[i].button) {
 						module->keyDisable(i);
@@ -457,38 +457,40 @@ struct KeyContainer : Widget {
 	}
 
 	void onHoverKey(const event::HoverKey& e) override {
-		if (module && e.action == GLFW_PRESS) {
-			if (learnIdx >= 0) {
-				std::string kn = keyName(e.key);
-				if (!kn.empty()) {
-					module->keys[learnIdx].button = -1;
-					module->keys[learnIdx].key = e.key;
-					module->keys[learnIdx].mods = e.mods;
-					learnIdx = -1;
-					e.consume(this);
+		if (module && !module->bypass) {
+			if (e.action == GLFW_PRESS) {
+				if (learnIdx >= 0) {
+					std::string kn = keyName(e.key);
+					if (!kn.empty()) {
+						module->keys[learnIdx].button = -1;
+						module->keys[learnIdx].key = e.key;
+						module->keys[learnIdx].mods = e.mods;
+						learnIdx = -1;
+						e.consume(this);
+					}
+				}
+				else {
+					for (int i = 0; i < PORTS; i++) {
+						if (e.key == module->keys[i].key && e.mods == module->keys[i].mods) {
+							module->keyEnable(i);
+							e.consume(this);
+						}
+					}
 				}
 			}
-			else {
+			if (e.action == RACK_HELD) {
 				for (int i = 0; i < PORTS; i++) {
 					if (e.key == module->keys[i].key && e.mods == module->keys[i].mods) {
-						module->keyEnable(i);
 						e.consume(this);
 					}
 				}
 			}
-		}
-		if (module && e.action == RACK_HELD) {
-			for (int i = 0; i < PORTS; i++) {
-				if (e.key == module->keys[i].key && e.mods == module->keys[i].mods) {
-					e.consume(this);
-				}
-			}
-		}
-		if (module && e.action == GLFW_RELEASE) {
-			for (int i = 0; i < PORTS; i++) {
-				if (e.key == module->keys[i].key) {
-					module->keyDisable(i);
-					e.consume(this);
+			if (e.action == GLFW_RELEASE) {
+				for (int i = 0; i < PORTS; i++) {
+					if (e.key == module->keys[i].key) {
+						module->keyDisable(i);
+						e.consume(this);
+					}
 				}
 			}
 		}
