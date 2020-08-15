@@ -139,7 +139,7 @@ struct SpinContainer : widget::Widget {
 	}
 
 	void onHoverScroll(const event::HoverScroll& e) override {
-		if ((APP->window->getMods() & RACK_MOD_MASK) == module->mods && testParam()) {
+		if (!module->bypass && (APP->window->getMods() & RACK_MOD_MASK) == module->mods && testParam()) {
 			module->delta = e.scrollDelta.y;
 			e.consume(this);
 		}
@@ -147,7 +147,7 @@ struct SpinContainer : widget::Widget {
 	}
 
 	void onButton(const event::Button& e) override {
-		if (e.button == GLFW_MOUSE_BUTTON_MIDDLE && module->clickMode != CLICK_MODE::OFF && testParam()) {
+		if (!module->bypass && e.button == GLFW_MOUSE_BUTTON_MIDDLE && module->clickMode != CLICK_MODE::OFF && testParam()) {
 			if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == module->mods) {
 				module->clickEnable();
 				e.consume(this);
