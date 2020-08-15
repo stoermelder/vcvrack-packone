@@ -1039,6 +1039,12 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 		addChild(mapWidget);
 	}
 
+	~MidiCatWidget() {
+		if (learnMode != LEARN_MODE::OFF) {
+			glfwSetCursor(APP->window->win, NULL);
+		}
+	}
+
 	void loadMidiMapPreset_dialog() {
 		osdialog_filters *filters = osdialog_filters_parse(PRESET_FILTERS);
 		DEFER({
@@ -1111,7 +1117,6 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 	}
 
 
-
 	void onDeselect(const event::Deselect& e) override {
 		ModuleWidget::onDeselect(e);
 		if (learnMode != LEARN_MODE::OFF) {
@@ -1180,6 +1185,7 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 				}
 			}
 		}
+		ThemedModuleWidget<MidiCatModule>::onHoverKey(e);
 	}
 
 	void step() override {
