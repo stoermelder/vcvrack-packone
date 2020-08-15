@@ -14,6 +14,14 @@ enum class SLOT_CMD {
 	PASTE
 };
 
+struct TransitSlot {
+	Param* param;
+	Light* lights;
+	bool* presetSlotUsed;
+	std::vector<float>* preset;
+	LongPressButton* presetButton;
+};
+
 template <int NUM_PRESETS>
 struct TransitBase : Module, StripIdFixModule {
 	/** [Stored to JSON] */
@@ -22,7 +30,7 @@ struct TransitBase : Module, StripIdFixModule {
 	/** [Stored to JSON] */
 	bool presetSlotUsed[NUM_PRESETS] = {false};
 	/** [Stored to JSON] */
-	std::vector<float> presetSlot[NUM_PRESETS];
+	std::vector<float> preset[NUM_PRESETS];
 
 	LongPressButton presetButton[NUM_PRESETS];
 
@@ -30,8 +38,9 @@ struct TransitBase : Module, StripIdFixModule {
 	int ctrlOffset = 0;
 	bool ctrlWrite = false;
 
-	virtual Param* transitParam(int i) { return NULL; }
-	virtual Light* transitLight(int i) { return NULL; }
+	TransitSlot slot[NUM_PRESETS];
+
+	virtual TransitSlot* transitSlot(int i) { return NULL; }
 
 	virtual void transitSlotCmd(SLOT_CMD cmd, int i) { }
 
@@ -46,8 +55,8 @@ struct TransitBase : Module, StripIdFixModule {
 			json_object_set_new(presetJ, "slotUsed", json_boolean(TransitBase<NUM_PRESETS>::presetSlotUsed[i]));
 			if (TransitBase<NUM_PRESETS>::presetSlotUsed[i]) {
 				json_t* slotJ = json_array();
-				for (size_t j = 0; j < TransitBase<NUM_PRESETS>::presetSlot[i].size(); j++) {
-					json_t* vJ = json_real(TransitBase<NUM_PRESETS>::presetSlot[i][j]);
+				for (size_t j = 0; j < TransitBase<NUM_PRESETS>::preset[i].size(); j++) {
+					json_t* vJ = json_real(TransitBase<NUM_PRESETS>::preset[i][j]);
 					json_array_append_new(slotJ, vJ);
 				}
 				json_object_set(presetJ, "slot", slotJ);
@@ -67,14 +76,14 @@ struct TransitBase : Module, StripIdFixModule {
 		size_t presetIndex;
 		json_array_foreach(presetsJ, presetIndex, presetJ) {
 			presetSlotUsed[presetIndex] = json_boolean_value(json_object_get(presetJ, "slotUsed"));
-			presetSlot[presetIndex].clear();
+			preset[presetIndex].clear();
 			if (presetSlotUsed[presetIndex]) {
 				json_t* slotJ = json_object_get(presetJ, "slot");
 				json_t* vJ;
 				size_t j;
 				json_array_foreach(slotJ, j, vJ) {
 					float v = json_real_value(vJ);
-					presetSlot[presetIndex].push_back(v);
+					preset[presetIndex].push_back(v);
 				}
 			}
 		}

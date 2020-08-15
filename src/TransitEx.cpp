@@ -34,6 +34,12 @@ struct TransitExModule : TransitBase<NUM_PRESETS> {
 			pq->module = this;
 			pq->id = i;
 			BASE::presetButton[i].param = &Module::params[PARAM_PRESET + i];
+
+			BASE::slot[i].param = &Module::params[PARAM_PRESET + i];
+			BASE::slot[i].lights = &Module::lights[LIGHT_PRESET + i * 3];
+			BASE::slot[i].presetSlotUsed = &BASE::presetSlotUsed[i];
+			BASE::slot[i].preset = &BASE::preset[i];
+			BASE::slot[i].presetButton = &BASE::presetButton[i];
 		}
 
 		BASE::onReset();
@@ -42,16 +48,12 @@ struct TransitExModule : TransitBase<NUM_PRESETS> {
 	void onReset() override { 
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			BASE::presetSlotUsed[i] = false;
-			BASE::presetSlot[i].clear();
+			BASE::preset[i].clear();
 		}
     }
 
-	Param* transitParam(int i) override {
-		return &Module::params[PARAM_PRESET + i];
-	}
-
-	Light* transitLight(int i) override {
-		return &Module::lights[LIGHT_PRESET + i];
+	TransitSlot* transitSlot(int i) override {
+		return &BASE::slot[i];
 	}
 
 	void transitSlotCmd(SLOT_CMD cmd, int i) override {
