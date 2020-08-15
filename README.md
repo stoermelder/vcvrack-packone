@@ -34,7 +34,9 @@ The PackOne plugin gives you some modules for [VCV Rack](https://www.vcvrack.com
 - [ROTOR Model A](./docs/RotorA.md): spread a carrier signal across 2-16 output channels using CV
 - [SAIL](./docs/Sail.md): control any parameter currently hovered by mouse with CV, especially useful with MIDI-CC
 - [SIPO](./docs/Sipo.md): serial-in parallel-out shift register with polyphonic output and CV controls
+- [SPIN](./docs/Spin.md): utility for converting mouse-wheel or middle mouse-button events into triggers
 - [STRIP](./docs/Strip.md): manage a group of modules in a patch, providing load, save as, disable and randomize
+- [STROKE](./docs/Stroke.md): utility which converts used-defined hotkeys into triggers or gates, also provides some special commands for Rack's enviroment
 
 Feel free to contact me or create a GitHub issue if you have any problems or questions!  
 If you like my modules consider donating to https://paypal.me/stoermelder. Thank you for your support! I'm also interested in any Doepfer Eurorack hardware modules ;-)

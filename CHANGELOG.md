@@ -2,17 +2,17 @@
 
 - Module [DETOUR](./docs/Detour.md)
     - New module, 8x8 send/return switch matrix with support for 8 scenes
+- Module [FLOWER](./docs/Flower.md)
+    - New module, pattern-driven 16-step sequencer
 
 ## 1.7.0 (in development)
 
-- Module [FLOWER](./docs/Flower.md)
-    - New module, pattern-driven 16-step sequencer
 - Module [MEM](./docs/MidiCat.md)
     - New expander-module for MIDI-CAT
 - Module [SPIN](./docs/SPIN.md)
-    - New module
+    - New module, converts mouse-wheel or middle mouse-button events into triggers
 - Module [STROKE](./docs/STROKE.md)
-    - New module
+    - New module, converts used-defined hotkeys into triggers or gates, also provides some special commands for Rack's enviroment
 - Module [TRANSIT](./docs/TRANSIT.md)
     - New module
 - Module [+T](./docs/TRANSIT.md)
@@ -31,7 +31,7 @@
     - Don't capture mouse scrolling if mapping slots are locked (#137)
     - Blink mapping indicator of currently selected mapping slot
 - Module [GLUE](./docs/Glue.md)
-    - Implemented support for mappings within STRIP, please be aware to include GLUE within your strip-file (#115)
+    - Implemented support for labels within STRIP, please be aware to include GLUE within your strip-file (#115)
     - Added options for changing text coloring (#136)
 - Module [GRIP](./docs/Grip.md)
     - Implemented support for parameter-mappings within STRIP (#151)
