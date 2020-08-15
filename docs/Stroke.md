@@ -6,6 +6,8 @@ STROKE is an utility module which converts any hotkey command (assuming it is no
 
 The module provides ten independent mapping slots which are unmapped by default. A slot needs to be "learned" for a hotkey using the context menu option "Learn". The currently assigned key is visible on the display and its modifiers (ALT, CTRL/CMD and SHIFT) on the LEDs.
 
+Please note that the module also supports mouse-click events: If your mouse has more than three buttons these buttons can be mapped the same way as hotkeys, modifies apply also.
+
 ![STROKE learn](./Stroke-learn.gif)
 
 ## Output mode
@@ -52,7 +54,7 @@ The module provides ten independent mapping slots which are unmapped by default.
 - **Color**  
   Sets the color of an existing cable to an user-defined color-code in hexadecimal format set in the context menu. You need to move the mouse cursor above a cable plug before this command can be used.
 - **Rotate ordering**  
-  Moves the next cable to the top of a stacked cable for an module's output plug. Stacked cables have an ordering which correspond to order the cables are pluged in. You need to move the mouse cursor above a cable plug before this command can be used.
+  Moves the next cable to the top of a stacked cable for a module's output plug. Stacked cables have an ordering which correspond to order the cables are plugged in. You need to move the mouse cursor above a cable plug before this command can be used.
 
 ## Special commands
 
