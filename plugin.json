@@ -101,8 +101,8 @@
 			"slug": "MidiCatEx",
 			"name": "MEM for MIDI-CAT",
 			"description": "Memory-expander for MIDI-CAT",
-			"tags": ["Utility"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/MidiCat.md"
+			"tags": ["Utility", "MIDI"],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/MidiCat.md#mem-expander"
 		},
 		{
 			"slug": "Sipo",
@@ -220,14 +220,14 @@
 		{
 			"slug": "Stroke",
 			"name": "STROKE",
-			"description": "Utility for converting hotkeys to triggers and gates",
+			"description": "Utility for converting hotkeys to triggers, gates and some other special commands",
 			"tags": ["Utility", "Polyphonic"],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Stroke.md"
 		},
 		{
 			"slug": "Spin",
 			"name": "SPIN",
-			"description": "Utility for converting mouse wheel movement into triggers, also handles mouse-click of mouse, useful for SAIL",
+			"description": "Utility for converting mouse-wheel movement into triggers, also handles mouse-click of mouse, useful for SAIL",
 			"tags": ["Utility"],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Spin.md"
 		},
@@ -272,6 +272,13 @@
 			"description": "Mapping-multiplier",
 			"tags": ["Utility"],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/X4.md"
+		},
+		{
+			"slug": "Facets",
+			"name": "FACETS",
+			"description": "Wave multiplier/Phase shifter inspired by A-137-2",
+			"tags": ["Waveshaper", "Distortion"],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Facets.md"
 		},
 		{
 			"slug": "AudioInterface64",
