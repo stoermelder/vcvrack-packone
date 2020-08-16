@@ -268,7 +268,7 @@ struct CVMapModuleBase : MapModuleBase<MAX_CHANNELS> {
 
 template< int MAX_CHANNELS, typename MODULE >
 struct MapModuleChoice : LedDisplayChoice {
-	MODULE* module;
+	MODULE* module = NULL;
 	bool processEvents = true;
 	int id;
 
@@ -279,6 +279,12 @@ struct MapModuleChoice : LedDisplayChoice {
 		box.size = mm2px(Vec(0, 7.5));
 		textOffset = Vec(6, 14.7);
 		color = nvgRGB(0xf0, 0xf0, 0xf0);
+	}
+
+	~MapModuleChoice() {
+		if (module && module->learningId == id) {
+			glfwSetCursor(APP->window->win, NULL);
+		}
 	}
 
 	void setModule(MODULE* module) {
