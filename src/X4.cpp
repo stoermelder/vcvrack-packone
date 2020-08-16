@@ -1,5 +1,6 @@
 #include "plugin.hpp"
 #include "MapModuleBase.hpp"
+#include "components/MapButton.hpp"
 
 namespace StoermelderPackOne {
 namespace X4 {
@@ -49,19 +50,23 @@ struct X4Module : CVMapModuleBase<2> {
 	X4Module() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		configParam(PARAM_MAP_A, 0.f, 1.f, 0.f, "Map A");
+		configParam<MapParamQuantity<X4Module>>(PARAM_MAP_A, 0.f, 1.f, 0.f, "Map A");
+		MapParamQuantity<X4Module>* pq1 = dynamic_cast<MapParamQuantity<X4Module>*>(paramQuantities[PARAM_MAP_A]);
+		pq1->module = this;
 		configParam(PARAM_MAP_A + 1, 0.f, 1.f, 0.f, "Param A-1");
 		configParam(PARAM_MAP_A + 2, 0.f, 1.f, 0.f, "Param A-2");
 		configParam(PARAM_MAP_A + 3, 0.f, 1.f, 0.f, "Param A-3");
 		configParam(PARAM_MAP_A + 4, 0.f, 1.f, 0.f, "Param A-4");
-		configParam(PARAM_MAP_B, 0.f, 1.f, 0.f, "Map B");
+		configParam<MapParamQuantity<X4Module>>(PARAM_MAP_B, 0.f, 1.f, 0.f, "Map B");
+		MapParamQuantity<X4Module>* pq2 = dynamic_cast<MapParamQuantity<X4Module>*>(paramQuantities[PARAM_MAP_B]);
+		pq2->module = this;
 		configParam(PARAM_MAP_B + 1, 0.f, 1.f, 0.f, "Param B-1");
 		configParam(PARAM_MAP_B + 2, 0.f, 1.f, 0.f, "Param B-2");
 		configParam(PARAM_MAP_B + 3, 0.f, 1.f, 0.f, "Param B-3");
 		configParam(PARAM_MAP_B + 4, 0.f, 1.f, 0.f, "Param B-4");
 
-		this->paramHandles[0].text = "XX";
-		this->paramHandles[1].text = "XX";
+		this->paramHandles[0].text = "X4";
+		this->paramHandles[1].text = "X4";
 		processDivider.setDivision(32);
 		lightDivider.setDivision(1024);
 		onReset();
@@ -248,116 +253,6 @@ struct X4Module : CVMapModuleBase<2> {
 };
 
 
-struct MapButton : LEDBezel {
-	X4Module* module;
-	int id = 0;
-
-	void setModule(X4Module* module) {
-		this->module = module;
-	}
-
-	void onButton(const event::Button& e) override {
-		e.stopPropagating();
-		if (!module)
-			return;
-
-		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
-			e.consume(this);
-		}
-
-		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
-			e.consume(this);
-
-			if (module->paramHandles[id].moduleId >= 0) {
-				ui::Menu* menu = createMenu();
-				std::string header = "Parameter \"" + getParamName() + "\"";
-				menu->addChild(createMenuLabel(header));
-
-				struct UnmapItem : MenuItem {
-					X4Module* module;
-					int id;
-					void onAction(const event::Action& e) override {
-						module->clearMap(id);
-					}
-				};
-				menu->addChild(construct<UnmapItem>(&MenuItem::text, "Unmap", &UnmapItem::module, module, &UnmapItem::id, id));
-
-				struct IndicateItem : MenuItem {
-					X4Module* module;
-					int id;
-					void onAction(const event::Action& e) override {
-						ParamHandle* paramHandle = &module->paramHandles[id];
-						ModuleWidget* mw = APP->scene->rack->getModule(paramHandle->moduleId);
-						module->paramHandleIndicator[id].indicate(mw);
-					}
-				};
-				menu->addChild(construct<IndicateItem>(&MenuItem::text, "Locate and indicate", &IndicateItem::module, module, &IndicateItem::id, id));
-			} 
-			else {
-				module->clearMap(id);
-			}
-		}
-	}
-
-	void onSelect(const event::Select& e) override {
-		if (!module)
-			return;
-
-		// Reset touchedParam
-		APP->scene->rack->touchedParam = NULL;
-		module->enableLearn(id);
-	}
-
-	void onDeselect(const event::Deselect& e) override {
-		if (!module)
-			return;
-		// Check if a ParamWidget was touched
-		ParamWidget* touchedParam = APP->scene->rack->touchedParam;
-		if (touchedParam && touchedParam->paramQuantity->module != module) {
-			APP->scene->rack->touchedParam = NULL;
-			int moduleId = touchedParam->paramQuantity->module->id;
-			int paramId = touchedParam->paramQuantity->paramId;
-			module->learnParam(id, moduleId, paramId);
-		} 
-		else {
-			module->disableLearn(id);
-		}
-	}
-
-	std::string getParamName() {
-		if (!module)
-			return "";
-		if (id >= module->mapLen)
-			return "<ERROR>";
-		ParamHandle* paramHandle = &module->paramHandles[id];
-		if (paramHandle->moduleId < 0)
-			return "<ERROR>";
-		ModuleWidget* mw = APP->scene->rack->getModule(paramHandle->moduleId);
-		if (!mw)
-			return "<ERROR>";
-		// Get the Module from the ModuleWidget instead of the ParamHandle.
-		// I think this is more elegant since this method is called in the app world instead of the engine world.
-		Module* m = mw->module;
-		if (!m)
-			return "<ERROR>";
-		int paramId = paramHandle->paramId;
-		if (paramId >= (int) m->params.size())
-			return "<ERROR>";
-		ParamQuantity* paramQuantity = m->paramQuantities[paramId];
-		std::string s;
-		s += mw->model->name;
-		s += " ";
-		s += paramQuantity->label;
-		return s;
-	}
-};
-
-template <typename BASE>
-struct MapLight : BASE {
-	MapLight() {
-		this->box.size = mm2px(Vec(6.f, 6.f));
-	}
-};
 
 struct X4Trimpot : StoermelderTrimpot {
 	bool* readParam;
@@ -370,11 +265,11 @@ struct X4Trimpot : StoermelderTrimpot {
 		StoermelderTrimpot::onButton(e);
 		// Right click to open context menu
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT && (e.mods & RACK_MOD_MASK) == 0) {
-			extencContextMenu();
+			extendContextMenu();
 		}
 	}
 
-	void extencContextMenu() {
+	void extendContextMenu() {
 		// Hack for attaching additional menu items to parameter's context menu
 		MenuOverlay* overlay = APP->scene->getFirstDescendantOfType<MenuOverlay>();
 		if (!overlay) return;
@@ -409,7 +304,7 @@ struct X4Widget : ThemedModuleWidget<X4Module> {
 
 		float o = 26.7f;
 
-		MapButton* buttonA = createParamCentered<MapButton>(Vec(15.f, 59.5f), module, X4Module::PARAM_MAP_A);
+		MapButton<X4Module>* buttonA = createParamCentered<MapButton<X4Module>>(Vec(15.f, 59.5f), module, X4Module::PARAM_MAP_A);
 		buttonA->setModule(module);
 		buttonA->id = 0;
 		addParam(buttonA);
@@ -425,7 +320,7 @@ struct X4Widget : ThemedModuleWidget<X4Module> {
 			addChild(createLightCentered<TinyLight<BlueLight>>(Vec(24.0f, 80.7f + o * i), module, X4Module::LIGHT_TX_A + i + 1));
 		}
 
-		MapButton* buttonB = createParamCentered<MapButton>(Vec(15.f, 210.6f), module, X4Module::PARAM_MAP_B);
+		MapButton<X4Module>* buttonB = createParamCentered<MapButton<X4Module>>(Vec(15.f, 210.6f), module, X4Module::PARAM_MAP_B);
 		buttonB->setModule(module);
 		buttonB->id = 1;
 		addParam(buttonB);
