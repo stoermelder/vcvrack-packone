@@ -526,6 +526,17 @@ struct TriggerParamQuantity : ParamQuantity {
 	}
 };
 
+struct BufferedTriggerParamQuantity : TriggerParamQuantity {
+	float buffer = false;
+	void setValue(float value) override {
+		if (value >= 1.f) buffer = true;
+		TriggerParamQuantity::setValue(value);
+	}
+	void resetBuffer() {
+		buffer = false;
+	}
+};
+
 
 struct CKSSH : CKSS {
 	CKSSH() {

@@ -1002,6 +1002,8 @@ struct MidiCatMidiWidget : MidiWidget {
 
 struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 	MidiCatModule* module;
+	Module* mem;
+	BufferedTriggerParamQuantity* memParamQuantity;
 	dsp::SchmittTrigger memParamTrigger;
 
 	enum class LEARN_MODE {
@@ -1116,6 +1118,25 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 		return true;
 	}
 
+	void step() override {
+		ThemedModuleWidget<MidiCatModule>::step();
+		if (module) {
+			if (module->mem != mem) {
+				mem = module->mem;
+				if (mem) {
+					memParamQuantity = dynamic_cast<BufferedTriggerParamQuantity*>(mem->paramQuantities[0]);
+					memParamQuantity->resetBuffer();
+				}
+			}
+			if (mem) {
+				if (memParamTrigger.process(memParamQuantity->buffer)) {
+					memParamQuantity->resetBuffer();
+					enableLearn(LEARN_MODE::MEM);
+				}
+				module->mem->lights[0].setBrightness(learnMode == LEARN_MODE::MEM);
+			}
+		}
+	}
 
 	void onDeselect(const event::Deselect& e) override {
 		ModuleWidget::onDeselect(e);
@@ -1186,16 +1207,6 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 			}
 		}
 		ThemedModuleWidget<MidiCatModule>::onHoverKey(e);
-	}
-
-	void step() override {
-		ThemedModuleWidget<MidiCatModule>::step();
-		if (module && module->mem) {
-			if (memParamTrigger.process(module->mem->params[0].getValue())) {
-				enableLearn(LEARN_MODE::MEM);
-			}
-			module->mem->lights[0].setBrightness(learnMode == LEARN_MODE::MEM);
-		}
 	}
 
 	void enableLearn(LEARN_MODE mode) {

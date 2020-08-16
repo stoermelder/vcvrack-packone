@@ -28,7 +28,7 @@ struct MidiCatExModule : Module {
 	MidiCatExModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		configParam<TriggerParamQuantity>(PARAM_APPLY, 0.f, 1.f, 0.f, "Activate apply mapping");
+		configParam<BufferedTriggerParamQuantity>(PARAM_APPLY, 0.f, 1.f, 0.f, "Apply mapping");
 		onReset();
 	}
 
