@@ -2,13 +2,13 @@
 
 - Module [DETOUR](./docs/Detour.md)
     - New module, 8x8 send/return switch matrix with support for 8 scenes
-- Module [FLOWER](./docs/Flower.md)
+- Module [FLOWER, SEEDS, OFFSPRING](./docs/Flower.md)
     - New module, pattern-driven 16-step sequencer
 
 ## 1.7.0 (in development)
 
-- Module [MEM](./docs/MidiCat.md)
-    - New expander-module for MIDI-CAT
+- Module [MEM](./docs/MidiCat.md#mem-expander)
+    - New expander-module for MIDI-CAT, storage-unit for MIDI mapping-presets with MIDI-CAT
 - Module [SPIN](./docs/SPIN.md)
     - New module, converts mouse-wheel or middle mouse-button events into triggers
 - Module [STROKE](./docs/STROKE.md)

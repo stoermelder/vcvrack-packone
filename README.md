@@ -8,7 +8,10 @@
 
 The PackOne plugin gives you some modules for [VCV Rack](https://www.vcvrack.com).
 
-**Stable versions are released in the [VCV Library](https://vcvrack.com/plugins.html#packone). [Nightly builds](https://github.com/stoermelder/vcvrack-packone/releases/tag/Nightly) of the latest commit are also available for all platforms. Please review the [changelog](./CHANGELOG.md) for this plugin.**
+**Stable versions are released in the [VCV Library](https://vcvrack.com/plugins.html#packone).  
+[Nightly builds](https://github.com/stoermelder/vcvrack-packone/releases/tag/Nightly) of the latest commit are also available for all platforms. Please review the [changelog](./CHANGELOG.md) for this plugin.**
+
+If you like my modules consider donating to https://paypal.me/stoermelder. Thank you for your support!
 
 ![Intro image](./docs/intro.png)
 
@@ -26,6 +29,7 @@ The PackOne plugin gives you some modules for [VCV Rack](https://www.vcvrack.com
 - [INTERMIX](./docs/Intermix.md): precision adder 8x8 advanced switch matrix with support for 8 scenes
 - [MAZE](./docs/Maze.md): 4 channel sequencer running on a 2-dimensional grid
 - [µMAP](./docs/CVMapMicro.md): a single instance of CV-MAP's slots with attenuverters
+- [MEM](./docs/MidiCat.md#mem-expander): storage-expander for MIDI mapping-presets with MIDI-CAT
 - [MIDI-CAT](./docs/MidiCat.md): map parameters to midi controllers similar to MIDI-MAP with midi feedback and note mapping
 - [MIDI-STEP](./docs/MidiStep.md): utility for relative modes of endless knobs on your MIDI controller such as Arturia Beatstep
 - [MIRROR](./docs/Mirror.md): utility for synchronizing module parameters
@@ -39,7 +43,6 @@ The PackOne plugin gives you some modules for [VCV Rack](https://www.vcvrack.com
 - [STROKE](./docs/Stroke.md): utility which converts used-defined hotkeys into triggers or gates, also provides some special commands for Rack's enviroment
 
 Feel free to contact me or create a GitHub issue if you have any problems or questions!  
-If you like my modules consider donating to https://paypal.me/stoermelder. Thank you for your support! I'm also interested in any Doepfer Eurorack hardware modules ;-)
 
 ## Building
 
