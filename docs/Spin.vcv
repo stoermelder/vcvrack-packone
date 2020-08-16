@@ -4,7 +4,7 @@
     {
       "id": 124,
       "plugin": "Stoermelder-P1",
-      "version": "1.7.2b39998",
+      "version": "1.7.d33f671",
       "model": "Spin",
       "params": [
         {
@@ -27,7 +27,7 @@
     {
       "id": 125,
       "plugin": "Stoermelder-P1",
-      "version": "1.7.2b39998",
+      "version": "1.7.d33f671",
       "model": "Spin",
       "params": [
         {
@@ -49,7 +49,7 @@
     {
       "id": 126,
       "plugin": "Stoermelder-P1",
-      "version": "1.7.2b39998",
+      "version": "1.7.d33f671",
       "model": "Bolt",
       "params": [
         {
@@ -105,13 +105,13 @@
         },
         {
           "id": 7,
-          "value": 0.0800000057
+          "value": 0.0
         }
       ],
       "leftModuleId": 126,
       "data": {
         "lissajous": 0,
-        "external": 0
+        "external": 1
       },
       "pos": [
         32,
@@ -126,7 +126,7 @@
       "params": [
         {
           "id": 0,
-          "value": 0.463999927
+          "value": 0.487999916
         },
         {
           "id": 1,
@@ -153,7 +153,7 @@
     {
       "id": 129,
       "plugin": "Stoermelder-P1",
-      "version": "1.7.2b39998",
+      "version": "1.7.d33f671",
       "model": "Sail",
       "params": [
         {
@@ -179,7 +179,7 @@
     {
       "id": 130,
       "plugin": "Stoermelder-P1",
-      "version": "1.7.2b39998",
+      "version": "1.7.d33f671",
       "model": "Spin",
       "params": [
         {
@@ -187,6 +187,7 @@
           "value": 1.0
         }
       ],
+      "bypass": true,
       "data": {
         "panelTheme": 1,
         "mods": 0,

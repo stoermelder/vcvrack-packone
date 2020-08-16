@@ -1,6 +1,6 @@
 # stoermelder SPIN
 
-SPIN is an utility module which converts mouse wheel events or middle mouse buttons into triggers. The module is especially useful with [SAIL](./Sail.md): this combination gives you mouse-wheel control of hovered parameters and fine-control using the middle mouse-botton.
+SPIN is an utility module which converts mouse-wheel events or middle mouse-button into triggers. The module is especially useful with [SAIL](./Sail.md): this combination gives you mouse-wheel control of hovered parameters and fine-control using the middle mouse-button.
 
 ![SPIN intro](./Spin-intro.gif)
 
@@ -14,5 +14,7 @@ There are some options found in the context menu:
 - The middle click can be used to generate triggers, to generate gates (as long as the button is held) or the output value can be toggled. Additionaly the middle-click handling can be disabled. Please note that modifiers also apply on the middle-click.
 
 ![SPIN options](./Spin-options.png)
+
+Please note that you cannot use multiple instances of this module with the same settings: Only the first instance will receive and handle events. However, you can use multiple instances with different modifiers.
 
 SPIN was added in v1.7.0 of PackOne.
