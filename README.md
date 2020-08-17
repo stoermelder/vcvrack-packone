@@ -25,7 +25,7 @@ If you like my modules consider donating to https://paypal.me/stoermelder. Thank
 - [GLUE](./docs/Glue.md): label maker for your modules!
 - [GOTO](./docs/Goto.md): utility for jumping directly to 10 locations in your patch by hotkey or using MIDI
 - [GRIP](./docs/Grip.md): lock for module parameters
-- [INFIX, µINFIX](./docs/Infix.md): insert for polyphonic cables
+- [INFIX](./docs/Infix.md), [µINFIX](./docs/Infix.md): insert for polyphonic cables
 - [INTERMIX](./docs/Intermix.md): precision adder 8x8 advanced switch matrix with support for 8 scenes
 - [MAZE](./docs/Maze.md): 4 channel sequencer running on a 2-dimensional grid
 - [µMAP](./docs/CVMapMicro.md): a single instance of CV-MAP's slots with attenuverters
@@ -41,6 +41,7 @@ If you like my modules consider donating to https://paypal.me/stoermelder. Thank
 - [SPIN](./docs/Spin.md): utility for converting mouse-wheel or middle mouse-button events into triggers
 - [STRIP](./docs/Strip.md): manage a group of modules in a patch, providing load, save as, disable and randomize
 - [STROKE](./docs/Stroke.md): utility which converts used-defined hotkeys into triggers or gates, also provides some special commands for Rack's enviroment
+- [TRANSIT](./docs/Transit.md): parameter-morpher for up to 96 snapshots
 
 Feel free to contact me or create a GitHub issue if you have any problems or questions!  
 
