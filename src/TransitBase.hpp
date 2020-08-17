@@ -99,7 +99,7 @@ struct TransitParamQuantity : ParamQuantity {
 		return module->presetSlotUsed[id] ? "Used" : "Empty";
 	}
 	std::string getLabel() override {
-		return string::f("Scene #%d", module->ctrlOffset * NUM_PRESETS + id + 1);
+		return string::f("Snapshot #%d", module->ctrlOffset * NUM_PRESETS + id + 1);
 	}
 };
 
@@ -154,7 +154,7 @@ struct TransitLedButton : LEDButton {
 		};
 
 		menu->addChild(new MenuSeparator);
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Scene"));
+		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Snapshot"));
 		menu->addChild(construct<SlotItem>(&MenuItem::text, "Load", &MenuItem::rightText, RACK_MOD_SHIFT_NAME "+click", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::LOAD));
 		menu->addChild(construct<SlotItem>(&MenuItem::text, "Clear", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::CLEAR));
 		menu->addChild(construct<SlotItem>(&MenuItem::text, "Randomize", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::RANDOMIZE));

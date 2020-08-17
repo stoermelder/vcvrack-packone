@@ -22,7 +22,7 @@ enum class OUTMODE {
 	POLY = -1,
 	ENV = 0,
 	GATE = 1,
-	TRIG_SCENE = 4,
+	TRIG_SNAPSHOT = 4,
 	TRIG_SOC = 3,
 	TRIG_EOC = 2
 };
@@ -54,12 +54,12 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		NUM_LIGHTS
 	};
 
-	/** [Stored to JSON] Currently selected scene */
+	/** [Stored to JSON] Currently selected snapshot */
 	int preset;
-	/** [Stored to JSON] Number of currently active scenes */
+	/** [Stored to JSON] Number of currently active snapshots */
 	int presetCount;
 
-	/** Total number of scenes including expanders */
+	/** Total number of snapshots including expanders */
 	int presetTotal;
 	int presetNext;
 	int presetCopy = -1;
@@ -75,7 +75,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 	/** [Stored to JSON] */
 	OUTMODE outMode;
 	bool outEocArm;
-	dsp::PulseGenerator outScenePulseGenerator;
+	dsp::PulseGenerator outSlotPulseGenerator;
 	dsp::PulseGenerator outSocPulseGenerator;
 	dsp::PulseGenerator outEocPulseGenerator;
 
@@ -162,7 +162,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		slewLimiter.reset(10.f);
 
 		outMode = OUTMODE::ENV;
-		outScenePulseGenerator.reset();
+		outSlotPulseGenerator.reset();
 		outSocPulseGenerator.reset();
 		outEocPulseGenerator.reset();
 
@@ -413,7 +413,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 			if (p != preset || force) {	
 				preset = p;
 				presetNext = -1;
-				outScenePulseGenerator.trigger();
+				outSlotPulseGenerator.trigger();
 				if (!*(slot->presetSlotUsed)) return;
 				slewLimiter.reset();
 				outSocPulseGenerator.trigger();
@@ -460,8 +460,8 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 					BASE::outputs[OUTPUT].setVoltage(s != 10.f ? 10.f : 0.f);
 					BASE::outputs[OUTPUT].setChannels(1);
 					break;
-				case OUTMODE::TRIG_SCENE:
-					BASE::outputs[OUTPUT].setVoltage(outScenePulseGenerator.process(deltaTime) ? 10.f : 0.f);
+				case OUTMODE::TRIG_SNAPSHOT:
+					BASE::outputs[OUTPUT].setVoltage(outSlotPulseGenerator.process(deltaTime) ? 10.f : 0.f);
 					BASE::outputs[OUTPUT].setChannels(1);
 					break;
 				case OUTMODE::TRIG_SOC:
@@ -475,7 +475,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 				case OUTMODE::POLY:
 					BASE::outputs[OUTPUT].setVoltage(s == 10.f ? 0.f : s, 0);
 					BASE::outputs[OUTPUT].setVoltage(s != 10.f ? 10.f : 0.f, 1);
-					BASE::outputs[OUTPUT].setVoltage(outScenePulseGenerator.process(deltaTime) ? 10.f : 0.f, 2);
+					BASE::outputs[OUTPUT].setVoltage(outSlotPulseGenerator.process(deltaTime) ? 10.f : 0.f, 2);
 					BASE::outputs[OUTPUT].setVoltage(outSocPulseGenerator.process(deltaTime) ? 10.f : 0.f, 3);
 					BASE::outputs[OUTPUT].setVoltage(outEocPulseGenerator.process(deltaTime) ? 10.f : 0.f, 4);
 					BASE::outputs[OUTPUT].setChannels(5);
@@ -848,7 +848,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 				Menu* menu = new Menu;
 				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Envelope", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::ENV));
 				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Gate", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::GATE));
-				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Trigger scene change", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::TRIG_SCENE));
+				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Trigger snapshot change", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::TRIG_SNAPSHOT));
 				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Trigger fade start", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::TRIG_SOC));
 				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Trigger fade end", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::TRIG_EOC));
 				menu->addChild(new MenuSeparator);
@@ -920,7 +920,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 		menu->addChild(construct<MappingIndicatorHiddenItem>(&MenuItem::text, "Hide mapping indicators", &MappingIndicatorHiddenItem::module, module));
 		menu->addChild(construct<PrecisionMenuItem>(&MenuItem::text, "Precision", &PrecisionMenuItem::module, module));
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<SlotCvModeMenuItem>(&MenuItem::text, "SLOT-port", &SlotCvModeMenuItem::module, module));
+		menu->addChild(construct<SlotCvModeMenuItem>(&MenuItem::text, "SEL-port", &SlotCvModeMenuItem::module, module));
 		menu->addChild(construct<OutModeMenuItem>(&MenuItem::text, "OUT-port", &OutModeMenuItem::module, module));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<BindModuleItem>(&MenuItem::text, "Bind module (left)", &BindModuleItem::widget, this, &BindModuleItem::module, module));
