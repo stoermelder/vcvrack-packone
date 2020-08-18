@@ -334,13 +334,13 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 				bool u = *(slot->presetSlotUsed);
 				if (!BASE::ctrlWrite) {
 					slot->lights[0].setBrightness(preset == i ? 1.f : (presetNext == i ? 1.f : 0.f));
-					slot->lights[1].setBrightness(preset == i ? 1.f : (presetCount > i ? (u ? 1.f : 0.1f) : 0.f));
+					slot->lights[1].setBrightness(preset == i ? 1.f : (presetCount > i ? (u ? 1.f : 0.25f) : 0.f));
 					slot->lights[2].setBrightness(preset == i ? 1.f : 0.f);
 				}
 				else {
 					bool b = preset == i && lightBlink;
 					slot->lights[0].setBrightness(b ? 0.7f : (u ? 1.f : 0.f));
-					slot->lights[1].setBrightness(b ? 0.7f : (u ? 0.f : (presetCount > i ? 0.1f : 0.f)));
+					slot->lights[1].setBrightness(b ? 0.7f : (u ? 0.f : (presetCount > i ? 0.05f : 0.f)));
 					slot->lights[2].setBrightness(b ? 0.7f : 0.f);
 				}
 			}
