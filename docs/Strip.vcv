@@ -1,0 +1,1085 @@
+{
+  "version": "1.1.6",
+  "modules": [
+    {
+      "id": 352,
+      "plugin": "Stoermelder-P1",
+      "version": "1.7.e080538",
+      "model": "Strip",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        }
+      ],
+      "leftModuleId": 358,
+      "rightModuleId": 361,
+      "data": {
+        "panelTheme": 1,
+        "mode": 2,
+        "onMode": 1,
+        "excludedParams": [],
+        "randomExcl": 1,
+        "randomParamsOnly": false
+      },
+      "pos": [
+        73,
+        0
+      ]
+    },
+    {
+      "id": 354,
+      "plugin": "VCV-Chords",
+      "version": "1.2.0",
+      "model": "Chords",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 10.0
+        }
+      ],
+      "leftModuleId": 364,
+      "data": {
+        "notes": [
+          [
+            10,
+            9,
+            2,
+            4
+          ],
+          [
+            10,
+            3,
+            2,
+            4
+          ],
+          [
+            12,
+            4,
+            5,
+            9
+          ],
+          [
+            7,
+            3,
+            11,
+            6
+          ]
+        ],
+        "preset": 1,
+        "showChordNames": true,
+        "polyphonicMode": true,
+        "direction": 0
+      },
+      "pos": [
+        35,
+        0
+      ]
+    },
+    {
+      "id": 358,
+      "plugin": "Fundamental",
+      "version": "1.4.0",
+      "model": "Scope",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 16.0
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        },
+        {
+          "id": 6,
+          "value": 0.0
+        },
+        {
+          "id": 7,
+          "value": 0.0
+        }
+      ],
+      "leftModuleId": 360,
+      "rightModuleId": 352,
+      "data": {
+        "lissajous": 0,
+        "external": 1
+      },
+      "pos": [
+        60,
+        0
+      ]
+    },
+    {
+      "id": 359,
+      "plugin": "VultModulesFree",
+      "version": "1.11",
+      "model": "Basal",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        }
+      ],
+      "rightModuleId": 360,
+      "pos": [
+        46,
+        0
+      ]
+    },
+    {
+      "id": 360,
+      "plugin": "AudibleInstruments",
+      "version": "1.3.1",
+      "model": "Ripples",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 9.608778
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        }
+      ],
+      "leftModuleId": 359,
+      "rightModuleId": 358,
+      "pos": [
+        52,
+        0
+      ]
+    },
+    {
+      "id": 361,
+      "plugin": "Bogaudio",
+      "version": "1.1.34",
+      "model": "Bogaudio-AddrSeq",
+      "params": [
+        {
+          "id": 0,
+          "value": 6.0
+        },
+        {
+          "id": 1,
+          "value": 1.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": -0.209851801
+        },
+        {
+          "id": 4,
+          "value": 0.446501732
+        },
+        {
+          "id": 5,
+          "value": -0.194727272
+        },
+        {
+          "id": 6,
+          "value": 0.730071545
+        },
+        {
+          "id": 7,
+          "value": 0.0752189159
+        },
+        {
+          "id": 8,
+          "value": -0.379267156
+        },
+        {
+          "id": 9,
+          "value": 0.87747848
+        },
+        {
+          "id": 10,
+          "value": 0.565840483
+        }
+      ],
+      "leftModuleId": 352,
+      "rightModuleId": 362,
+      "data": {
+        "skin": "light",
+        "poly_input": 0,
+        "select_on_clock": false,
+        "triggered_select": false,
+        "reverse_on_negative_clock": false,
+        "range_offset": 0.0,
+        "range_scale": 10.0
+      },
+      "pos": [
+        76,
+        0
+      ]
+    },
+    {
+      "id": 362,
+      "plugin": "JW-Modules",
+      "version": "1.0.12",
+      "model": "MinMax",
+      "params": [
+        {
+          "id": 0,
+          "value": -14.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        }
+      ],
+      "leftModuleId": 361,
+      "data": {
+        "lissajous": 0
+      },
+      "pos": [
+        82,
+        0
+      ]
+    },
+    {
+      "id": 364,
+      "plugin": "SurgeRack",
+      "version": "1.7.1",
+      "model": "SurgeClock",
+      "params": [
+        {
+          "id": 0,
+          "value": -1.54400027
+        },
+        {
+          "id": 1,
+          "value": 0.5
+        }
+      ],
+      "rightModuleId": 354,
+      "data": {
+        "comment": "No Comment",
+        "buildInfo": "os:win pluggit:a6bc1cb surgegit:5270cfb9 buildtime=Aug 10 2020 18:27:04"
+      },
+      "pos": [
+        32,
+        0
+      ]
+    },
+    {
+      "id": 365,
+      "plugin": "Stoermelder-P1",
+      "version": "1.7.e080538",
+      "model": "Strip",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        }
+      ],
+      "leftModuleId": 366,
+      "data": {
+        "panelTheme": 1,
+        "mode": 2,
+        "onMode": 1,
+        "excludedParams": [],
+        "randomExcl": 1,
+        "randomParamsOnly": false
+      },
+      "pos": [
+        74,
+        2
+      ]
+    },
+    {
+      "id": 366,
+      "plugin": "Fundamental",
+      "version": "1.4.0",
+      "model": "SEQ3",
+      "params": [
+        {
+          "id": 0,
+          "value": 4.16173792
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 4.0
+        },
+        {
+          "id": 4,
+          "value": 8.45228958
+        },
+        {
+          "id": 5,
+          "value": 3.21283937
+        },
+        {
+          "id": 6,
+          "value": 8.05310822
+        },
+        {
+          "id": 7,
+          "value": 9.09947491
+        },
+        {
+          "id": 8,
+          "value": 9.33758736
+        },
+        {
+          "id": 9,
+          "value": 2.65036464
+        },
+        {
+          "id": 10,
+          "value": 0.258688331
+        },
+        {
+          "id": 11,
+          "value": 9.82282066
+        },
+        {
+          "id": 12,
+          "value": 9.00648212
+        },
+        {
+          "id": 13,
+          "value": 9.94074059
+        },
+        {
+          "id": 14,
+          "value": 7.69759846
+        },
+        {
+          "id": 15,
+          "value": 0.830384493
+        },
+        {
+          "id": 16,
+          "value": 2.04903245
+        },
+        {
+          "id": 17,
+          "value": 6.15118027
+        },
+        {
+          "id": 18,
+          "value": 5.36113167
+        },
+        {
+          "id": 19,
+          "value": 9.6419754
+        },
+        {
+          "id": 20,
+          "value": 1.14864826
+        },
+        {
+          "id": 21,
+          "value": 5.85322809
+        },
+        {
+          "id": 22,
+          "value": 6.36333942
+        },
+        {
+          "id": 23,
+          "value": 3.18682241
+        },
+        {
+          "id": 24,
+          "value": 6.44363022
+        },
+        {
+          "id": 25,
+          "value": 2.12698817
+        },
+        {
+          "id": 26,
+          "value": 0.413459539
+        },
+        {
+          "id": 27,
+          "value": 5.57134628
+        },
+        {
+          "id": 28,
+          "value": 0.0
+        },
+        {
+          "id": 29,
+          "value": 0.0
+        },
+        {
+          "id": 30,
+          "value": 0.0
+        },
+        {
+          "id": 31,
+          "value": 0.0
+        },
+        {
+          "id": 32,
+          "value": 0.0
+        },
+        {
+          "id": 33,
+          "value": 0.0
+        },
+        {
+          "id": 34,
+          "value": 0.0
+        },
+        {
+          "id": 35,
+          "value": 0.0
+        }
+      ],
+      "leftModuleId": 367,
+      "rightModuleId": 365,
+      "data": {
+        "running": true,
+        "gates": [
+          1,
+          0,
+          0,
+          0,
+          1,
+          0,
+          1,
+          0
+        ]
+      },
+      "pos": [
+        52,
+        2
+      ]
+    },
+    {
+      "id": 367,
+      "plugin": "Bogaudio",
+      "version": "1.1.34",
+      "model": "Bogaudio-Mix4",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.78398031
+        },
+        {
+          "id": 1,
+          "value": 0.26016891
+        },
+        {
+          "id": 2,
+          "value": 1.0
+        },
+        {
+          "id": 3,
+          "value": 0.137833238
+        },
+        {
+          "id": 4,
+          "value": 0.583418846
+        },
+        {
+          "id": 5,
+          "value": 1.0
+        },
+        {
+          "id": 6,
+          "value": 0.843130946
+        },
+        {
+          "id": 7,
+          "value": -0.139931321
+        },
+        {
+          "id": 8,
+          "value": 1.0
+        },
+        {
+          "id": 9,
+          "value": 0.469648957
+        },
+        {
+          "id": 10,
+          "value": 0.885103583
+        },
+        {
+          "id": 11,
+          "value": 1.0
+        },
+        {
+          "id": 12,
+          "value": 0.969181299
+        },
+        {
+          "id": 13,
+          "value": 0.0
+        },
+        {
+          "id": 14,
+          "value": 0.0
+        }
+      ],
+      "rightModuleId": 366,
+      "data": {
+        "skin": "light",
+        "dim_decibels": 12.0,
+        "poly_channel_offset": -1
+      },
+      "pos": [
+        37,
+        2
+      ]
+    },
+    {
+      "id": 368,
+      "plugin": "Stoermelder-P1",
+      "version": "1.7.e080538",
+      "model": "Strip",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        }
+      ],
+      "data": {
+        "panelTheme": 1,
+        "mode": 2,
+        "onMode": 1,
+        "excludedParams": [],
+        "randomExcl": 1,
+        "randomParamsOnly": false
+      },
+      "pos": [
+        52,
+        4
+      ]
+    },
+    {
+      "id": 369,
+      "plugin": "Stoermelder-P1",
+      "version": "1.7.e080538",
+      "model": "Strip",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        }
+      ],
+      "leftModuleId": 373,
+      "data": {
+        "panelTheme": 1,
+        "mode": 2,
+        "onMode": 1,
+        "excludedParams": [],
+        "randomExcl": 1,
+        "randomParamsOnly": false
+      },
+      "pos": [
+        26,
+        6
+      ]
+    },
+    {
+      "id": 370,
+      "plugin": "VultModules",
+      "version": "1.11",
+      "model": "Spank",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.5
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        },
+        {
+          "id": 6,
+          "value": 0.0
+        }
+      ],
+      "leftModuleId": 371,
+      "rightModuleId": 373,
+      "pos": [
+        3,
+        6
+      ]
+    },
+    {
+      "id": 371,
+      "plugin": "SurgeRack",
+      "version": "1.7.1",
+      "model": "SurgeClock",
+      "params": [
+        {
+          "id": 0,
+          "value": -0.00800038129
+        },
+        {
+          "id": 1,
+          "value": 0.5
+        }
+      ],
+      "rightModuleId": 370,
+      "data": {
+        "comment": "No Comment",
+        "buildInfo": "os:win pluggit:a6bc1cb surgegit:5270cfb9 buildtime=Aug 10 2020 18:27:04"
+      },
+      "pos": [
+        0,
+        6
+      ]
+    },
+    {
+      "id": 373,
+      "plugin": "Fundamental",
+      "version": "1.4.0",
+      "model": "Scope",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 6.0
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        },
+        {
+          "id": 6,
+          "value": 0.0
+        },
+        {
+          "id": 7,
+          "value": 0.0
+        }
+      ],
+      "leftModuleId": 370,
+      "rightModuleId": 369,
+      "data": {
+        "lissajous": 0,
+        "external": 0
+      },
+      "pos": [
+        13,
+        6
+      ]
+    },
+    {
+      "id": 374,
+      "plugin": "Stoermelder-P1",
+      "version": "1.7.e080538",
+      "model": "Strip",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        }
+      ],
+      "leftModuleId": 375,
+      "data": {
+        "panelTheme": 1,
+        "mode": 2,
+        "onMode": 1,
+        "excludedParams": [],
+        "randomExcl": 1,
+        "randomParamsOnly": false
+      },
+      "pos": [
+        60,
+        6
+      ]
+    },
+    {
+      "id": 375,
+      "plugin": "Fundamental",
+      "version": "1.4.0",
+      "model": "Scope",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 6.0
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        },
+        {
+          "id": 6,
+          "value": 0.0
+        },
+        {
+          "id": 7,
+          "value": 0.0
+        }
+      ],
+      "leftModuleId": 376,
+      "rightModuleId": 374,
+      "data": {
+        "lissajous": 0,
+        "external": 0
+      },
+      "pos": [
+        47,
+        6
+      ]
+    },
+    {
+      "id": 376,
+      "plugin": "VultModules",
+      "version": "1.11",
+      "model": "Spank",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.5
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        },
+        {
+          "id": 6,
+          "value": 0.0
+        }
+      ],
+      "leftModuleId": 377,
+      "rightModuleId": 375,
+      "pos": [
+        37,
+        6
+      ]
+    },
+    {
+      "id": 377,
+      "plugin": "SurgeRack",
+      "version": "1.7.1",
+      "model": "SurgeClock",
+      "params": [
+        {
+          "id": 0,
+          "value": -0.00800038129
+        },
+        {
+          "id": 1,
+          "value": 0.5
+        }
+      ],
+      "rightModuleId": 376,
+      "data": {
+        "comment": "No Comment",
+        "buildInfo": "os:win pluggit:a6bc1cb surgegit:5270cfb9 buildtime=Aug 10 2020 18:27:04"
+      },
+      "pos": [
+        34,
+        6
+      ]
+    }
+  ],
+  "cables": [
+    {
+      "id": 730,
+      "outputModuleId": 354,
+      "outputId": 3,
+      "inputModuleId": 359,
+      "inputId": 0,
+      "color": "#0986ad"
+    },
+    {
+      "id": 731,
+      "outputModuleId": 359,
+      "outputId": 0,
+      "inputModuleId": 360,
+      "inputId": 3,
+      "color": "#c9b70e"
+    },
+    {
+      "id": 732,
+      "outputModuleId": 360,
+      "outputId": 2,
+      "inputModuleId": 358,
+      "inputId": 0,
+      "color": "#0c8e15"
+    },
+    {
+      "id": 734,
+      "outputModuleId": 361,
+      "outputId": 0,
+      "inputModuleId": 360,
+      "inputId": 1,
+      "color": "#0986ad"
+    },
+    {
+      "id": 735,
+      "outputModuleId": 361,
+      "outputId": 0,
+      "inputModuleId": 362,
+      "inputId": 0,
+      "color": "#c9b70e"
+    },
+    {
+      "id": 737,
+      "outputModuleId": 364,
+      "outputId": 1,
+      "inputModuleId": 354,
+      "inputId": 2,
+      "color": "#0986ad"
+    },
+    {
+      "id": 738,
+      "outputModuleId": 364,
+      "outputId": 1,
+      "inputModuleId": 361,
+      "inputId": 0,
+      "color": "#c9b70e"
+    },
+    {
+      "id": 740,
+      "outputModuleId": 364,
+      "outputId": 1,
+      "inputModuleId": 358,
+      "inputId": 2,
+      "color": "#c91847"
+    },
+    {
+      "id": 741,
+      "outputModuleId": 371,
+      "outputId": 1,
+      "inputModuleId": 370,
+      "inputId": 0,
+      "color": "#c9b70e"
+    },
+    {
+      "id": 742,
+      "outputModuleId": 370,
+      "outputId": 1,
+      "inputModuleId": 373,
+      "inputId": 0,
+      "color": "#0c8e15"
+    },
+    {
+      "id": 743,
+      "outputModuleId": 377,
+      "outputId": 1,
+      "inputModuleId": 376,
+      "inputId": 0,
+      "color": "#c9b70e"
+    },
+    {
+      "id": 744,
+      "outputModuleId": 376,
+      "outputId": 1,
+      "inputModuleId": 375,
+      "inputId": 0,
+      "color": "#0c8e15"
+    }
+  ]
+}
