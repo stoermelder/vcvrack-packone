@@ -334,7 +334,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 				bool u = *(slot->presetSlotUsed);
 				if (!BASE::ctrlWrite) {
 					slot->lights[0].setBrightness(preset == i ? 1.f : (presetNext == i ? 1.f : 0.f));
-					slot->lights[1].setBrightness(preset == i ? 1.f : (presetCount > i ? (u ? 1.f : 0.2f) : 0.f));
+					slot->lights[1].setBrightness(preset == i ? 1.f : (presetCount > i ? (u ? 1.f : 0.1f) : 0.f));
 					slot->lights[2].setBrightness(preset == i ? 1.f : 0.f);
 				}
 				else {
@@ -532,11 +532,16 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		slot->preset->clear();
 		for (size_t i = 0; i < sourceHandles.size(); i++) {
 			ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
-			if (!pq) continue;
-			float v = rescale(random::uniform(), 0.f, 1.f, pq->getMinValue(), pq->getMaxValue());
+			if (!pq || !pq->module) continue;
+			ModuleWidget* mw = APP->scene->rack->getModule(pq->module->id);
+			if (!mw) continue;
+			ParamWidget* pw = mw->getParam(pq->paramId);
+			if (!pw) continue;
+			pw->randomize();
+			float v = pq->getValue();
 			slot->preset->push_back(v);
 		}
-		if (preset == p) preset = -1;
+		preset = p;
 	}
 
 	void presetCopyPaste(int source, int target) {
