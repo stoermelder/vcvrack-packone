@@ -16,4 +16,4 @@ date
 echo ""
 echo "Most recent commits:" 
 echo ""
-git log --pretty=oneline | head -3
+git log --pretty=oneline | head -5

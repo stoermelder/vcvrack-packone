@@ -13,7 +13,15 @@ The PackOne plugin gives you some modules for [VCV Rack](https://www.vcvrack.com
 
 If you like my modules consider donating to https://paypal.me/stoermelder. Thank you for your support!
 
-![Intro image](./docs/intro.png)
+## Latest additions to PackOne
+
+- [MEM](./docs/MidiCat.md#mem-expander): storage-expander for MIDI mapping-presets with MIDI-CAT
+- [SPIN](./docs/Spin.md): utility for converting mouse-wheel or middle mouse-button events into triggers
+- [STROKE](./docs/Stroke.md): utility which converts used-defined hotkeys into triggers or gates, also provides some special commands for Rack's enviroment
+- [TRANSIT](./docs/Transit.md): parameter-morpher for up to 96 snapshots
+- [X4](./docs/X4.md): dual multiple for parameter-mapping
+
+![Intro image](./docs/intro-latest.png)
 
 - [AFFIX](./docs/Affix.md), [µAFFIX](./docs/Affix.md): inserts for polyphonic cables for adding offsets in volt, semitones or ocatves
 - [4ROUNDS](./docs/FourRounds.md): randomizer for up to 16 input signals to create 15 output signals
@@ -29,7 +37,6 @@ If you like my modules consider donating to https://paypal.me/stoermelder. Thank
 - [INTERMIX](./docs/Intermix.md): precision adder 8x8 advanced switch matrix with support for 8 scenes
 - [MAZE](./docs/Maze.md): 4 channel sequencer running on a 2-dimensional grid
 - [µMAP](./docs/CVMapMicro.md): a single instance of CV-MAP's slots with attenuverters
-- [MEM](./docs/MidiCat.md#mem-expander): storage-expander for MIDI mapping-presets with MIDI-CAT
 - [MIDI-CAT](./docs/MidiCat.md): map parameters to midi controllers similar to MIDI-MAP with midi feedback and note mapping
 - [MIDI-STEP](./docs/MidiStep.md): utility for relative modes of endless knobs on your MIDI controller such as Arturia Beatstep
 - [MIRROR](./docs/Mirror.md): utility for synchronizing module parameters
@@ -38,10 +45,9 @@ If you like my modules consider donating to https://paypal.me/stoermelder. Thank
 - [ROTOR Model A](./docs/RotorA.md): spread a carrier signal across 2-16 output channels using CV
 - [SAIL](./docs/Sail.md): control any parameter currently hovered by mouse with CV, especially useful with MIDI-CC
 - [SIPO](./docs/Sipo.md): serial-in parallel-out shift register with polyphonic output and CV controls
-- [SPIN](./docs/Spin.md): utility for converting mouse-wheel or middle mouse-button events into triggers
 - [STRIP](./docs/Strip.md): manage a group of modules in a patch, providing load, save as, disable and randomize
-- [STROKE](./docs/Stroke.md): utility which converts used-defined hotkeys into triggers or gates, also provides some special commands for Rack's enviroment
-- [TRANSIT](./docs/Transit.md): parameter-morpher for up to 96 snapshots
+
+![Intro image](./docs/intro.png)
 
 Feel free to contact me or create a GitHub issue if you have any problems or questions!  
 

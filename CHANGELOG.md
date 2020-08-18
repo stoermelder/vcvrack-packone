@@ -18,7 +18,7 @@
 - Module [+T](./docs/TRANSIT.md)
     - New module, expander for TRANSIT
 - Module [X4](./docs/X4.md)
-    - New module
+    - New module, dual multiple for parameter-mapping
 
 ### Fixes and Changes
 
