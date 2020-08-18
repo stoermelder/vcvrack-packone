@@ -1,0 +1,3991 @@
+{
+  "version": "1.dev.2f5bff5",
+  "modules": [
+    {
+      "id": 100,
+      "plugin": "Stoermelder-P1",
+      "version": "1.6.3",
+      "model": "Transit",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        },
+        {
+          "id": 6,
+          "value": 0.0
+        },
+        {
+          "id": 7,
+          "value": 0.0
+        },
+        {
+          "id": 8,
+          "value": 0.0
+        },
+        {
+          "id": 9,
+          "value": 0.0
+        },
+        {
+          "id": 10,
+          "value": 0.0
+        },
+        {
+          "id": 11,
+          "value": 0.0
+        },
+        {
+          "id": 12,
+          "value": 0.0
+        },
+        {
+          "id": 13,
+          "value": 0.5
+        },
+        {
+          "id": 14,
+          "value": 0.0
+        }
+      ],
+      "rightModuleId": 101,
+      "data": {
+        "panelTheme": 1,
+        "presets": [
+          {
+            "slotUsed": true,
+            "slot": [
+              -1.0,
+              -1.0,
+              0.0,
+              -1.0,
+              0.803149581,
+              1.0
+            ]
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": true,
+            "slot": [
+              -1.0,
+              -1.0,
+              0.0,
+              -1.0,
+              0.803149581,
+              1.0
+            ]
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": true,
+            "slot": [
+              -0.697480798,
+              0.219141603,
+              0.677136958,
+              -0.408115506,
+              0.227424681,
+              -0.689907432
+            ]
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": true,
+            "slot": [
+              -0.545678735,
+              0.974664211,
+              0.310269892,
+              -0.183682323,
+              0.286292672,
+              -0.194671869
+            ]
+          },
+          {
+            "slotUsed": true,
+            "slot": [
+              -0.0637521744,
+              -0.0536774397,
+              0.445695519,
+              -0.056076169,
+              0.312891543,
+              0.428257465
+            ]
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": true,
+            "slot": [
+              0.264561296,
+              0.237315774,
+              0.273098171,
+              0.0169855356,
+              0.719598711,
+              -0.191818118
+            ]
+          },
+          {
+            "slotUsed": false
+          }
+        ],
+        "mappingIndicatorHidden": false,
+        "presetProcessDivision": 8,
+        "slotCvMode": 2,
+        "outMode": 0,
+        "preset": 32,
+        "presetCount": 55,
+        "sourceMaps": [
+          {
+            "moduleId": 90,
+            "paramId": 0
+          },
+          {
+            "moduleId": 90,
+            "paramId": 1
+          },
+          {
+            "moduleId": 90,
+            "paramId": 2
+          },
+          {
+            "moduleId": 90,
+            "paramId": 3
+          },
+          {
+            "moduleId": 90,
+            "paramId": 4
+          },
+          {
+            "moduleId": 90,
+            "paramId": 5
+          }
+        ]
+      },
+      "pos": [
+        38,
+        0
+      ]
+    },
+    {
+      "id": 101,
+      "plugin": "Stoermelder-P1",
+      "version": "1.6.3",
+      "model": "TransitEx",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        },
+        {
+          "id": 6,
+          "value": 0.0
+        },
+        {
+          "id": 7,
+          "value": 0.0
+        },
+        {
+          "id": 8,
+          "value": 0.0
+        },
+        {
+          "id": 9,
+          "value": 0.0
+        },
+        {
+          "id": 10,
+          "value": 0.0
+        },
+        {
+          "id": 11,
+          "value": 0.0
+        }
+      ],
+      "leftModuleId": 100,
+      "rightModuleId": 103,
+      "data": {
+        "panelTheme": 1,
+        "presets": [
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": true,
+            "slot": [
+              0.415346384,
+              0.593944669,
+              0.16442728,
+              -0.510104418,
+              0.467193723,
+              0.810842991
+            ]
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": true,
+            "slot": [
+              0.234235883,
+              0.943675756,
+              0.949985445,
+              -0.14055419,
+              0.294138253,
+              0.807393312
+            ]
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          }
+        ]
+      },
+      "pos": [
+        43,
+        0
+      ]
+    },
+    {
+      "id": 103,
+      "plugin": "Stoermelder-P1",
+      "version": "1.6.3",
+      "model": "TransitEx",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        },
+        {
+          "id": 6,
+          "value": 0.0
+        },
+        {
+          "id": 7,
+          "value": 0.0
+        },
+        {
+          "id": 8,
+          "value": 0.0
+        },
+        {
+          "id": 9,
+          "value": 0.0
+        },
+        {
+          "id": 10,
+          "value": 0.0
+        },
+        {
+          "id": 11,
+          "value": 0.0
+        }
+      ],
+      "leftModuleId": 101,
+      "rightModuleId": 104,
+      "data": {
+        "panelTheme": 1,
+        "presets": [
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": true,
+            "slot": [
+              0.414543509,
+              0.593040466,
+              0.164334014,
+              -0.510382295,
+              0.467384189,
+              0.810950279
+            ]
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          }
+        ]
+      },
+      "pos": [
+        45,
+        0
+      ]
+    },
+    {
+      "id": 104,
+      "plugin": "Stoermelder-P1",
+      "version": "1.6.3",
+      "model": "TransitEx",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        },
+        {
+          "id": 6,
+          "value": 0.0
+        },
+        {
+          "id": 7,
+          "value": 0.0
+        },
+        {
+          "id": 8,
+          "value": 0.0
+        },
+        {
+          "id": 9,
+          "value": 0.0
+        },
+        {
+          "id": 10,
+          "value": 0.0
+        },
+        {
+          "id": 11,
+          "value": 0.0
+        }
+      ],
+      "leftModuleId": 103,
+      "rightModuleId": 105,
+      "data": {
+        "panelTheme": 1,
+        "presets": [
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          }
+        ]
+      },
+      "pos": [
+        47,
+        0
+      ]
+    },
+    {
+      "id": 105,
+      "plugin": "Stoermelder-P1",
+      "version": "1.6.3",
+      "model": "TransitEx",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        },
+        {
+          "id": 6,
+          "value": 0.0
+        },
+        {
+          "id": 7,
+          "value": 0.0
+        },
+        {
+          "id": 8,
+          "value": 0.0
+        },
+        {
+          "id": 9,
+          "value": 0.0
+        },
+        {
+          "id": 10,
+          "value": 0.0
+        },
+        {
+          "id": 11,
+          "value": 0.0
+        }
+      ],
+      "leftModuleId": 104,
+      "rightModuleId": 106,
+      "data": {
+        "panelTheme": 1,
+        "presets": [
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          }
+        ]
+      },
+      "pos": [
+        49,
+        0
+      ]
+    },
+    {
+      "id": 106,
+      "plugin": "Stoermelder-P1",
+      "version": "1.6.3",
+      "model": "TransitEx",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        },
+        {
+          "id": 6,
+          "value": 0.0
+        },
+        {
+          "id": 7,
+          "value": 0.0
+        },
+        {
+          "id": 8,
+          "value": 0.0
+        },
+        {
+          "id": 9,
+          "value": 0.0
+        },
+        {
+          "id": 10,
+          "value": 0.0
+        },
+        {
+          "id": 11,
+          "value": 0.0
+        }
+      ],
+      "leftModuleId": 105,
+      "data": {
+        "panelTheme": 1,
+        "presets": [
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          }
+        ]
+      },
+      "pos": [
+        51,
+        0
+      ]
+    },
+    {
+      "id": 166,
+      "plugin": "Stoermelder-P1",
+      "version": "1.6.3",
+      "model": "Transit",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        },
+        {
+          "id": 6,
+          "value": 0.0
+        },
+        {
+          "id": 7,
+          "value": 0.0
+        },
+        {
+          "id": 8,
+          "value": 0.0
+        },
+        {
+          "id": 9,
+          "value": 0.0
+        },
+        {
+          "id": 10,
+          "value": 0.0
+        },
+        {
+          "id": 11,
+          "value": 0.0
+        },
+        {
+          "id": 12,
+          "value": 0.0
+        },
+        {
+          "id": 13,
+          "value": 0.617000163
+        },
+        {
+          "id": 14,
+          "value": 1.0
+        }
+      ],
+      "rightModuleId": 168,
+      "data": {
+        "panelTheme": 0,
+        "presets": [
+          {
+            "slotUsed": true,
+            "slot": [
+              0.476320505,
+              0.167826712,
+              0.935479403,
+              0.158226132,
+              9.49828339
+            ]
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": true,
+            "slot": [
+              0.819014251,
+              0.18954289,
+              0.246802926,
+              0.798100889,
+              9.49828339
+            ]
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": true,
+            "slot": [
+              0.459440112,
+              0.751271188,
+              0.996444523,
+              0.0,
+              9.49828339
+            ]
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          }
+        ],
+        "mappingIndicatorHidden": false,
+        "presetProcessDivision": 8,
+        "slotCvMode": 2,
+        "outMode": 0,
+        "preset": 29,
+        "presetCount": 45,
+        "sourceMaps": [
+          {
+            "moduleId": 167,
+            "paramId": 0
+          },
+          {
+            "moduleId": 167,
+            "paramId": 1
+          },
+          {
+            "moduleId": -1,
+            "paramId": 0
+          },
+          {
+            "moduleId": 167,
+            "paramId": 3
+          },
+          {
+            "moduleId": -1,
+            "paramId": 0
+          }
+        ]
+      },
+      "pos": [
+        16,
+        0
+      ]
+    },
+    {
+      "id": 168,
+      "plugin": "Stoermelder-P1",
+      "version": "1.6.3",
+      "model": "TransitEx",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        },
+        {
+          "id": 6,
+          "value": 0.0
+        },
+        {
+          "id": 7,
+          "value": 0.0
+        },
+        {
+          "id": 8,
+          "value": 0.0
+        },
+        {
+          "id": 9,
+          "value": 0.0
+        },
+        {
+          "id": 10,
+          "value": 0.0
+        },
+        {
+          "id": 11,
+          "value": 0.0
+        }
+      ],
+      "leftModuleId": 166,
+      "rightModuleId": 169,
+      "data": {
+        "panelTheme": 0,
+        "presets": [
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          }
+        ]
+      },
+      "pos": [
+        21,
+        0
+      ]
+    },
+    {
+      "id": 169,
+      "plugin": "Stoermelder-P1",
+      "version": "1.6.3",
+      "model": "TransitEx",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        },
+        {
+          "id": 6,
+          "value": 0.0
+        },
+        {
+          "id": 7,
+          "value": 0.0
+        },
+        {
+          "id": 8,
+          "value": 0.0
+        },
+        {
+          "id": 9,
+          "value": 0.0
+        },
+        {
+          "id": 10,
+          "value": 0.0
+        },
+        {
+          "id": 11,
+          "value": 0.0
+        }
+      ],
+      "leftModuleId": 168,
+      "rightModuleId": 171,
+      "data": {
+        "panelTheme": 0,
+        "presets": [
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": true,
+            "slot": [
+              0.642667294,
+              0.941517472,
+              0.853539467,
+              0.504097164,
+              0.0
+            ]
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": true,
+            "slot": [
+              0.342587531,
+              0.497940242,
+              0.164254904,
+              1.0,
+              9.49828339
+            ]
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": true,
+            "slot": [
+              0.686818779,
+              0.76822567,
+              0.734397233,
+              1.0,
+              9.49828339
+            ]
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          }
+        ]
+      },
+      "pos": [
+        23,
+        0
+      ]
+    },
+    {
+      "id": 171,
+      "plugin": "Stoermelder-P1",
+      "version": "1.6.3",
+      "model": "TransitEx",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        },
+        {
+          "id": 6,
+          "value": 0.0
+        },
+        {
+          "id": 7,
+          "value": 0.0
+        },
+        {
+          "id": 8,
+          "value": 0.0
+        },
+        {
+          "id": 9,
+          "value": 0.0
+        },
+        {
+          "id": 10,
+          "value": 0.0
+        },
+        {
+          "id": 11,
+          "value": 0.0
+        }
+      ],
+      "leftModuleId": 169,
+      "rightModuleId": 172,
+      "data": {
+        "panelTheme": 0,
+        "presets": [
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": true,
+            "slot": [
+              0.115144134,
+              0.361052573,
+              0.761433423,
+              0.926763117,
+              9.49828339
+            ]
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          }
+        ]
+      },
+      "pos": [
+        25,
+        0
+      ]
+    },
+    {
+      "id": 172,
+      "plugin": "Stoermelder-P1",
+      "version": "1.6.3",
+      "model": "TransitEx",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        },
+        {
+          "id": 6,
+          "value": 0.0
+        },
+        {
+          "id": 7,
+          "value": 0.0
+        },
+        {
+          "id": 8,
+          "value": 0.0
+        },
+        {
+          "id": 9,
+          "value": 0.0
+        },
+        {
+          "id": 10,
+          "value": 0.0
+        },
+        {
+          "id": 11,
+          "value": 0.0
+        }
+      ],
+      "leftModuleId": 171,
+      "rightModuleId": 173,
+      "data": {
+        "panelTheme": 0,
+        "presets": [
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          }
+        ]
+      },
+      "pos": [
+        27,
+        0
+      ]
+    },
+    {
+      "id": 173,
+      "plugin": "Stoermelder-P1",
+      "version": "1.6.3",
+      "model": "TransitEx",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        },
+        {
+          "id": 6,
+          "value": 0.0
+        },
+        {
+          "id": 7,
+          "value": 0.0
+        },
+        {
+          "id": 8,
+          "value": 0.0
+        },
+        {
+          "id": 9,
+          "value": 0.0
+        },
+        {
+          "id": 10,
+          "value": 0.0
+        },
+        {
+          "id": 11,
+          "value": 0.0
+        }
+      ],
+      "leftModuleId": 172,
+      "rightModuleId": 174,
+      "data": {
+        "panelTheme": 0,
+        "presets": [
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          }
+        ]
+      },
+      "pos": [
+        29,
+        0
+      ]
+    },
+    {
+      "id": 174,
+      "plugin": "Stoermelder-P1",
+      "version": "1.6.3",
+      "model": "TransitEx",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        },
+        {
+          "id": 6,
+          "value": 0.0
+        },
+        {
+          "id": 7,
+          "value": 0.0
+        },
+        {
+          "id": 8,
+          "value": 0.0
+        },
+        {
+          "id": 9,
+          "value": 0.0
+        },
+        {
+          "id": 10,
+          "value": 0.0
+        },
+        {
+          "id": 11,
+          "value": 0.0
+        }
+      ],
+      "leftModuleId": 173,
+      "rightModuleId": 175,
+      "data": {
+        "panelTheme": 0,
+        "presets": [
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          }
+        ]
+      },
+      "pos": [
+        31,
+        0
+      ]
+    },
+    {
+      "id": 175,
+      "plugin": "Stoermelder-P1",
+      "version": "1.6.3",
+      "model": "TransitEx",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        },
+        {
+          "id": 6,
+          "value": 0.0
+        },
+        {
+          "id": 7,
+          "value": 0.0
+        },
+        {
+          "id": 8,
+          "value": 0.0
+        },
+        {
+          "id": 9,
+          "value": 0.0
+        },
+        {
+          "id": 10,
+          "value": 0.0
+        },
+        {
+          "id": 11,
+          "value": 0.0
+        }
+      ],
+      "leftModuleId": 174,
+      "data": {
+        "panelTheme": 0,
+        "presets": [
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          }
+        ]
+      },
+      "pos": [
+        33,
+        0
+      ]
+    },
+    {
+      "id": 176,
+      "plugin": "Stoermelder-P1",
+      "version": "1.6.3",
+      "model": "Transit",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        },
+        {
+          "id": 6,
+          "value": 0.0
+        },
+        {
+          "id": 7,
+          "value": 0.0
+        },
+        {
+          "id": 8,
+          "value": 0.0
+        },
+        {
+          "id": 9,
+          "value": 0.0
+        },
+        {
+          "id": 10,
+          "value": 0.0
+        },
+        {
+          "id": 11,
+          "value": 0.0
+        },
+        {
+          "id": 12,
+          "value": 0.0
+        },
+        {
+          "id": 13,
+          "value": 0.5
+        },
+        {
+          "id": 14,
+          "value": 0.0
+        }
+      ],
+      "leftModuleId": 177,
+      "data": {
+        "panelTheme": 1,
+        "presets": [
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          }
+        ],
+        "mappingIndicatorHidden": false,
+        "presetProcessDivision": 8,
+        "slotCvMode": 2,
+        "outMode": 0,
+        "preset": -1,
+        "presetCount": 12,
+        "sourceMaps": [
+          {
+            "moduleId": 177,
+            "paramId": 0
+          },
+          {
+            "moduleId": 177,
+            "paramId": 1
+          },
+          {
+            "moduleId": 177,
+            "paramId": 2
+          },
+          {
+            "moduleId": 177,
+            "paramId": 3
+          },
+          {
+            "moduleId": 177,
+            "paramId": 4
+          },
+          {
+            "moduleId": 177,
+            "paramId": 5
+          },
+          {
+            "moduleId": 177,
+            "paramId": 6
+          },
+          {
+            "moduleId": 177,
+            "paramId": 7
+          },
+          {
+            "moduleId": 177,
+            "paramId": 8
+          },
+          {
+            "moduleId": 177,
+            "paramId": 9
+          },
+          {
+            "moduleId": 177,
+            "paramId": 10
+          },
+          {
+            "moduleId": 177,
+            "paramId": 11
+          },
+          {
+            "moduleId": 177,
+            "paramId": 12
+          },
+          {
+            "moduleId": 177,
+            "paramId": 13
+          },
+          {
+            "moduleId": 177,
+            "paramId": 14
+          },
+          {
+            "moduleId": 177,
+            "paramId": 15
+          },
+          {
+            "moduleId": 177,
+            "paramId": 16
+          },
+          {
+            "moduleId": 177,
+            "paramId": 17
+          }
+        ]
+      },
+      "pos": [
+        26,
+        2
+      ]
+    },
+    {
+      "id": 177,
+      "plugin": "AudibleInstruments",
+      "version": "1.3.1",
+      "model": "Stages",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.5
+        },
+        {
+          "id": 1,
+          "value": 0.5
+        },
+        {
+          "id": 2,
+          "value": 0.5
+        },
+        {
+          "id": 3,
+          "value": 0.5
+        },
+        {
+          "id": 4,
+          "value": 0.5
+        },
+        {
+          "id": 5,
+          "value": 0.5
+        },
+        {
+          "id": 6,
+          "value": 0.0
+        },
+        {
+          "id": 7,
+          "value": 0.0
+        },
+        {
+          "id": 8,
+          "value": 0.0
+        },
+        {
+          "id": 9,
+          "value": 0.0
+        },
+        {
+          "id": 10,
+          "value": 0.0
+        },
+        {
+          "id": 11,
+          "value": 0.0
+        },
+        {
+          "id": 12,
+          "value": 0.5
+        },
+        {
+          "id": 13,
+          "value": 0.5
+        },
+        {
+          "id": 14,
+          "value": 0.5
+        },
+        {
+          "id": 15,
+          "value": 0.5
+        },
+        {
+          "id": 16,
+          "value": 0.5
+        },
+        {
+          "id": 17,
+          "value": 0.5
+        }
+      ],
+      "rightModuleId": 176,
+      "data": {
+        "configurations": [
+          {
+            "type": 0,
+            "loop": false
+          },
+          {
+            "type": 0,
+            "loop": false
+          },
+          {
+            "type": 0,
+            "loop": false
+          },
+          {
+            "type": 0,
+            "loop": false
+          },
+          {
+            "type": 0,
+            "loop": false
+          },
+          {
+            "type": 0,
+            "loop": false
+          }
+        ]
+      },
+      "pos": [
+        12,
+        2
+      ]
+    },
+    {
+      "id": 178,
+      "plugin": "Stoermelder-P1",
+      "version": "1.6.3",
+      "model": "Transit",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        },
+        {
+          "id": 6,
+          "value": 0.0
+        },
+        {
+          "id": 7,
+          "value": 0.0
+        },
+        {
+          "id": 8,
+          "value": 0.0
+        },
+        {
+          "id": 9,
+          "value": 0.0
+        },
+        {
+          "id": 10,
+          "value": 0.0
+        },
+        {
+          "id": 11,
+          "value": 0.0
+        },
+        {
+          "id": 12,
+          "value": 0.0
+        },
+        {
+          "id": 13,
+          "value": 0.5
+        },
+        {
+          "id": 14,
+          "value": 0.0
+        }
+      ],
+      "data": {
+        "panelTheme": 1,
+        "presets": [
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          }
+        ],
+        "mappingIndicatorHidden": false,
+        "presetProcessDivision": 8,
+        "slotCvMode": 2,
+        "outMode": 0,
+        "preset": -1,
+        "presetCount": 12,
+        "sourceMaps": [
+          {
+            "moduleId": 179,
+            "paramId": 0
+          },
+          {
+            "moduleId": 179,
+            "paramId": 1
+          },
+          {
+            "moduleId": 179,
+            "paramId": 2
+          },
+          {
+            "moduleId": 179,
+            "paramId": 3
+          },
+          {
+            "moduleId": 179,
+            "paramId": 4
+          },
+          {
+            "moduleId": 179,
+            "paramId": 5
+          },
+          {
+            "moduleId": 179,
+            "paramId": 6
+          },
+          {
+            "moduleId": 179,
+            "paramId": 7
+          },
+          {
+            "moduleId": 179,
+            "paramId": 8
+          },
+          {
+            "moduleId": 179,
+            "paramId": 9
+          }
+        ]
+      },
+      "pos": [
+        26,
+        4
+      ]
+    },
+    {
+      "id": 179,
+      "plugin": "AudibleInstruments",
+      "version": "1.3.1",
+      "model": "Shelves",
+      "params": [
+        {
+          "id": 0,
+          "value": 9.30482006
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 9.30482006
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 2.16096401
+        },
+        {
+          "id": 5,
+          "value": 9.30482006
+        },
+        {
+          "id": 6,
+          "value": 0.0
+        },
+        {
+          "id": 7,
+          "value": 2.16096401
+        },
+        {
+          "id": 8,
+          "value": 9.30482006
+        },
+        {
+          "id": 9,
+          "value": 0.0
+        }
+      ],
+      "data": {
+        "preGain": false
+      },
+      "pos": [
+        4,
+        4
+      ]
+    },
+    {
+      "id": 180,
+      "plugin": "Stoermelder-P1",
+      "version": "1.6.3",
+      "model": "Transit",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        },
+        {
+          "id": 6,
+          "value": 0.0
+        },
+        {
+          "id": 7,
+          "value": 0.0
+        },
+        {
+          "id": 8,
+          "value": 0.0
+        },
+        {
+          "id": 9,
+          "value": 0.0
+        },
+        {
+          "id": 10,
+          "value": 0.0
+        },
+        {
+          "id": 11,
+          "value": 0.0
+        },
+        {
+          "id": 12,
+          "value": 0.0
+        },
+        {
+          "id": 13,
+          "value": 0.5
+        },
+        {
+          "id": 14,
+          "value": 0.0
+        }
+      ],
+      "data": {
+        "panelTheme": 1,
+        "presets": [
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          }
+        ],
+        "mappingIndicatorHidden": false,
+        "presetProcessDivision": 8,
+        "slotCvMode": 2,
+        "outMode": 0,
+        "preset": -1,
+        "presetCount": 12,
+        "sourceMaps": [
+          {
+            "moduleId": 181,
+            "paramId": 0
+          },
+          {
+            "moduleId": 181,
+            "paramId": 1
+          },
+          {
+            "moduleId": 181,
+            "paramId": 2
+          },
+          {
+            "moduleId": 181,
+            "paramId": 3
+          }
+        ]
+      },
+      "pos": [
+        26,
+        6
+      ]
+    },
+    {
+      "id": 181,
+      "plugin": "Fundamental",
+      "version": "1.4.0",
+      "model": "8vert",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": -0.00300000003
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        },
+        {
+          "id": 6,
+          "value": 0.0
+        },
+        {
+          "id": 7,
+          "value": 0.0
+        }
+      ],
+      "pos": [
+        12,
+        6
+      ]
+    },
+    {
+      "id": 189,
+      "plugin": "Stoermelder-P1",
+      "version": "1.6.3",
+      "model": "Transit",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        },
+        {
+          "id": 6,
+          "value": 0.0
+        },
+        {
+          "id": 7,
+          "value": 0.0
+        },
+        {
+          "id": 8,
+          "value": 0.0
+        },
+        {
+          "id": 9,
+          "value": 0.0
+        },
+        {
+          "id": 10,
+          "value": 0.0
+        },
+        {
+          "id": 11,
+          "value": 0.0
+        },
+        {
+          "id": 12,
+          "value": 0.0
+        },
+        {
+          "id": 13,
+          "value": 0.5
+        },
+        {
+          "id": 14,
+          "value": 0.0
+        }
+      ],
+      "data": {
+        "panelTheme": 1,
+        "presets": [
+          {
+            "slotUsed": true,
+            "slot": [
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          {
+            "slotUsed": true,
+            "slot": [
+              1.0,
+              1.0,
+              0.185412973,
+              0.452699333,
+              1.0
+            ]
+          },
+          {
+            "slotUsed": true,
+            "slot": [
+              1.0,
+              1.40997088,
+              0.185412973,
+              1.02121329,
+              0.350875884
+            ]
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          }
+        ],
+        "mappingIndicatorHidden": false,
+        "presetProcessDivision": 8,
+        "slotCvMode": 2,
+        "outMode": 0,
+        "preset": 1,
+        "presetCount": 12,
+        "sourceMaps": [
+          {
+            "moduleId": 190,
+            "paramId": 0
+          },
+          {
+            "moduleId": 190,
+            "paramId": 1
+          },
+          {
+            "moduleId": 190,
+            "paramId": 2
+          },
+          {
+            "moduleId": 190,
+            "paramId": 3
+          },
+          {
+            "moduleId": 190,
+            "paramId": 4
+          }
+        ]
+      },
+      "pos": [
+        26,
+        8
+      ]
+    },
+    {
+      "id": 190,
+      "plugin": "Fundamental",
+      "version": "1.4.0",
+      "model": "VCMixer",
+      "params": [
+        {
+          "id": 0,
+          "value": 1.0
+        },
+        {
+          "id": 1,
+          "value": 1.0
+        },
+        {
+          "id": 2,
+          "value": 0.185431957
+        },
+        {
+          "id": 3,
+          "value": 0.45246172
+        },
+        {
+          "id": 4,
+          "value": 1.0
+        }
+      ],
+      "pos": [
+        12,
+        8
+      ]
+    },
+    {
+      "id": 192,
+      "plugin": "Stoermelder-P1",
+      "version": "1.6.3",
+      "model": "Transit",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        },
+        {
+          "id": 6,
+          "value": 0.0
+        },
+        {
+          "id": 7,
+          "value": 0.0
+        },
+        {
+          "id": 8,
+          "value": 0.0
+        },
+        {
+          "id": 9,
+          "value": 0.0
+        },
+        {
+          "id": 10,
+          "value": 0.0
+        },
+        {
+          "id": 11,
+          "value": 0.0
+        },
+        {
+          "id": 12,
+          "value": 0.0
+        },
+        {
+          "id": 13,
+          "value": 0.5
+        },
+        {
+          "id": 14,
+          "value": 0.0
+        }
+      ],
+      "data": {
+        "panelTheme": 1,
+        "presets": [
+          {
+            "slotUsed": true,
+            "slot": [
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          {
+            "slotUsed": true,
+            "slot": [
+              1.0,
+              1.0,
+              0.185412973,
+              0.452699333,
+              1.0
+            ]
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          }
+        ],
+        "mappingIndicatorHidden": false,
+        "presetProcessDivision": 8,
+        "slotCvMode": 2,
+        "outMode": 0,
+        "preset": 1,
+        "presetCount": 12,
+        "sourceMaps": [
+          {
+            "moduleId": 193,
+            "paramId": 0
+          },
+          {
+            "moduleId": 193,
+            "paramId": 1
+          },
+          {
+            "moduleId": 193,
+            "paramId": 2
+          },
+          {
+            "moduleId": 193,
+            "paramId": 3
+          },
+          {
+            "moduleId": 193,
+            "paramId": 4
+          }
+        ]
+      },
+      "pos": [
+        26,
+        10
+      ]
+    },
+    {
+      "id": 193,
+      "plugin": "Fundamental",
+      "version": "1.4.0",
+      "model": "VCMixer",
+      "params": [
+        {
+          "id": 0,
+          "value": 1.0
+        },
+        {
+          "id": 1,
+          "value": 1.0
+        },
+        {
+          "id": 2,
+          "value": 0.18536669
+        },
+        {
+          "id": 3,
+          "value": 0.452777743
+        },
+        {
+          "id": 4,
+          "value": 1.0
+        }
+      ],
+      "pos": [
+        12,
+        10
+      ]
+    },
+    {
+      "id": 194,
+      "plugin": "Stoermelder-P1",
+      "version": "1.6.3",
+      "model": "Transit",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        },
+        {
+          "id": 6,
+          "value": 0.0
+        },
+        {
+          "id": 7,
+          "value": 0.0
+        },
+        {
+          "id": 8,
+          "value": 0.0
+        },
+        {
+          "id": 9,
+          "value": 0.0
+        },
+        {
+          "id": 10,
+          "value": 0.0
+        },
+        {
+          "id": 11,
+          "value": 0.0
+        },
+        {
+          "id": 12,
+          "value": 0.0
+        },
+        {
+          "id": 13,
+          "value": 0.644000173
+        },
+        {
+          "id": 14,
+          "value": 1.0
+        }
+      ],
+      "data": {
+        "panelTheme": 1,
+        "presets": [
+          {
+            "slotUsed": true,
+            "slot": [
+              0.0150000006,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "slotUsed": true,
+            "slot": [
+              3.04977894,
+              1.17254972,
+              3.95852041,
+              2.43361187,
+              2.60280657,
+              1.25494421,
+              0.347296596,
+              4.07274437,
+              2.37426996,
+              0.0165975094,
+              5.05706024,
+              6.71414614,
+              4.29715538,
+              5.01466513,
+              6.93996382,
+              8.46286678
+            ]
+          },
+          {
+            "slotUsed": true,
+            "slot": [
+              1.11762106,
+              5.18647861,
+              9.24845886,
+              1.28651798,
+              8.10722446,
+              4.95985556,
+              0.97637713,
+              4.04498816,
+              9.60997963,
+              4.96690321,
+              1.72190905,
+              6.93581009,
+              7.52705193,
+              4.00106239,
+              3.55487061,
+              3.47989559
+            ]
+          },
+          {
+            "slotUsed": true,
+            "slot": [
+              8.34192848,
+              5.41087151,
+              5.01410866,
+              4.51102638,
+              0.980751514,
+              0.109345913,
+              8.25098324,
+              1.58075392,
+              4.84330702,
+              9.95333862,
+              8.77656364,
+              4.6234746,
+              2.75262117,
+              1.4636755,
+              1.09078526,
+              0.900372863
+            ]
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          }
+        ],
+        "mappingIndicatorHidden": false,
+        "presetProcessDivision": 8,
+        "slotCvMode": 2,
+        "outMode": 0,
+        "preset": 3,
+        "presetCount": 4,
+        "sourceMaps": [
+          {
+            "moduleId": 195,
+            "paramId": 4
+          },
+          {
+            "moduleId": 195,
+            "paramId": 5
+          },
+          {
+            "moduleId": 195,
+            "paramId": 6
+          },
+          {
+            "moduleId": 195,
+            "paramId": 7
+          },
+          {
+            "moduleId": 195,
+            "paramId": 8
+          },
+          {
+            "moduleId": 195,
+            "paramId": 9
+          },
+          {
+            "moduleId": 195,
+            "paramId": 10
+          },
+          {
+            "moduleId": 195,
+            "paramId": 11
+          },
+          {
+            "moduleId": 195,
+            "paramId": 12
+          },
+          {
+            "moduleId": 195,
+            "paramId": 13
+          },
+          {
+            "moduleId": 195,
+            "paramId": 14
+          },
+          {
+            "moduleId": 195,
+            "paramId": 15
+          },
+          {
+            "moduleId": 195,
+            "paramId": 16
+          },
+          {
+            "moduleId": 195,
+            "paramId": 17
+          },
+          {
+            "moduleId": 195,
+            "paramId": 18
+          },
+          {
+            "moduleId": 195,
+            "paramId": 19
+          }
+        ]
+      },
+      "pos": [
+        26,
+        12
+      ]
+    },
+    {
+      "id": 195,
+      "plugin": "Fundamental",
+      "version": "1.4.0",
+      "model": "SEQ3",
+      "params": [
+        {
+          "id": 0,
+          "value": 2.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 8.0
+        },
+        {
+          "id": 4,
+          "value": 6.70144415
+        },
+        {
+          "id": 5,
+          "value": 5.2787118
+        },
+        {
+          "id": 6,
+          "value": 5.8851614
+        },
+        {
+          "id": 7,
+          "value": 3.78315926
+        },
+        {
+          "id": 8,
+          "value": 2.51927328
+        },
+        {
+          "id": 9,
+          "value": 1.15811396
+        },
+        {
+          "id": 10,
+          "value": 6.55395651
+        },
+        {
+          "id": 11,
+          "value": 2.14559793
+        },
+        {
+          "id": 12,
+          "value": 5.80204678
+        },
+        {
+          "id": 13,
+          "value": 8.70223808
+        },
+        {
+          "id": 14,
+          "value": 7.20063829
+        },
+        {
+          "id": 15,
+          "value": 5.14425087
+        },
+        {
+          "id": 16,
+          "value": 3.78840184
+        },
+        {
+          "id": 17,
+          "value": 2.06325865
+        },
+        {
+          "id": 18,
+          "value": 1.7167418
+        },
+        {
+          "id": 19,
+          "value": 1.58191562
+        },
+        {
+          "id": 20,
+          "value": 0.0
+        },
+        {
+          "id": 21,
+          "value": 0.0
+        },
+        {
+          "id": 22,
+          "value": 0.0
+        },
+        {
+          "id": 23,
+          "value": 0.0
+        },
+        {
+          "id": 24,
+          "value": 0.0
+        },
+        {
+          "id": 25,
+          "value": 0.0
+        },
+        {
+          "id": 26,
+          "value": 0.0
+        },
+        {
+          "id": 27,
+          "value": 0.0
+        },
+        {
+          "id": 28,
+          "value": 0.0
+        },
+        {
+          "id": 29,
+          "value": 0.0
+        },
+        {
+          "id": 30,
+          "value": 0.0
+        },
+        {
+          "id": 31,
+          "value": 0.0
+        },
+        {
+          "id": 32,
+          "value": 0.0
+        },
+        {
+          "id": 33,
+          "value": 0.0
+        },
+        {
+          "id": 34,
+          "value": 0.0
+        },
+        {
+          "id": 35,
+          "value": 0.0
+        }
+      ],
+      "data": {
+        "running": true,
+        "gates": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      "pos": [
+        0,
+        12
+      ]
+    },
+    {
+      "id": 196,
+      "plugin": "Stoermelder-P1",
+      "version": "1.6.3",
+      "model": "Transit",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        },
+        {
+          "id": 6,
+          "value": 0.0
+        },
+        {
+          "id": 7,
+          "value": 0.0
+        },
+        {
+          "id": 8,
+          "value": 0.0
+        },
+        {
+          "id": 9,
+          "value": 0.0
+        },
+        {
+          "id": 10,
+          "value": 0.0
+        },
+        {
+          "id": 11,
+          "value": 0.0
+        },
+        {
+          "id": 12,
+          "value": 0.0
+        },
+        {
+          "id": 13,
+          "value": 0.703999758
+        },
+        {
+          "id": 14,
+          "value": -1.0
+        }
+      ],
+      "data": {
+        "panelTheme": 1,
+        "presets": [
+          {
+            "slotUsed": true,
+            "slot": [
+              0.5
+            ]
+          },
+          {
+            "slotUsed": true,
+            "slot": [
+              0.0
+            ]
+          },
+          {
+            "slotUsed": true,
+            "slot": [
+              1.0
+            ]
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          }
+        ],
+        "mappingIndicatorHidden": false,
+        "presetProcessDivision": 8,
+        "slotCvMode": 2,
+        "outMode": 0,
+        "preset": 1,
+        "presetCount": 12,
+        "sourceMaps": [
+          {
+            "moduleId": 198,
+            "paramId": 0
+          }
+        ]
+      },
+      "pos": [
+        26,
+        14
+      ]
+    },
+    {
+      "id": 197,
+      "plugin": "Fundamental",
+      "version": "1.4.0",
+      "model": "Scope",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 6.0
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        },
+        {
+          "id": 6,
+          "value": 0.0
+        },
+        {
+          "id": 7,
+          "value": 0.0
+        }
+      ],
+      "data": {
+        "lissajous": 0,
+        "external": 0
+      },
+      "pos": [
+        34,
+        14
+      ]
+    },
+    {
+      "id": 198,
+      "plugin": "AudibleInstruments",
+      "version": "1.3.1",
+      "model": "Shades",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.5
+        },
+        {
+          "id": 2,
+          "value": 0.5
+        },
+        {
+          "id": 3,
+          "value": 1.0
+        },
+        {
+          "id": 4,
+          "value": 1.0
+        },
+        {
+          "id": 5,
+          "value": 1.0
+        }
+      ],
+      "pos": [
+        17,
+        14
+      ]
+    },
+    {
+      "id": 199,
+      "plugin": "ImpromptuModular",
+      "version": "1.1.4",
+      "model": "Clocked-Clkd",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 80.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        },
+        {
+          "id": 6,
+          "value": 0.0
+        },
+        {
+          "id": 7,
+          "value": 0.0
+        },
+        {
+          "id": 8,
+          "value": 0.0
+        },
+        {
+          "id": 9,
+          "value": 0.0
+        }
+      ],
+      "data": {
+        "panelTheme": 1,
+        "running": true,
+        "bpmDetectionMode": false,
+        "restartOnStopStartRun": 0,
+        "sendResetOnRestart": false,
+        "ppqn": 4,
+        "resetClockOutputsHigh": true,
+        "momentaryRunInput": true,
+        "displayIndex": 0
+      },
+      "pos": [
+        35,
+        12
+      ]
+    },
+    {
+      "id": 200,
+      "plugin": "Stoermelder-P1",
+      "version": "1.6.3",
+      "model": "Transit",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        },
+        {
+          "id": 6,
+          "value": 0.0
+        },
+        {
+          "id": 7,
+          "value": 0.0
+        },
+        {
+          "id": 8,
+          "value": 0.0
+        },
+        {
+          "id": 9,
+          "value": 0.0
+        },
+        {
+          "id": 10,
+          "value": 0.0
+        },
+        {
+          "id": 11,
+          "value": 0.0
+        },
+        {
+          "id": 12,
+          "value": 0.0
+        },
+        {
+          "id": 13,
+          "value": 0.5
+        },
+        {
+          "id": 14,
+          "value": 0.0
+        }
+      ],
+      "rightModuleId": 206,
+      "data": {
+        "panelTheme": 1,
+        "presets": [
+          {
+            "slotUsed": true,
+            "slot": [
+              2.0
+            ]
+          },
+          {
+            "slotUsed": true,
+            "slot": [
+              -2.0
+            ]
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          }
+        ],
+        "mappingIndicatorHidden": false,
+        "presetProcessDivision": 8,
+        "slotCvMode": 2,
+        "outMode": 0,
+        "preset": 3,
+        "presetCount": 44,
+        "sourceMaps": [
+          {
+            "moduleId": 205,
+            "paramId": 0
+          }
+        ]
+      },
+      "pos": [
+        27,
+        16
+      ]
+    },
+    {
+      "id": 205,
+      "plugin": "Fundamental",
+      "version": "1.4.0",
+      "model": "Octave",
+      "params": [
+        {
+          "id": 0,
+          "value": -2.0
+        }
+      ],
+      "pos": [
+        20,
+        16
+      ]
+    },
+    {
+      "id": 206,
+      "plugin": "Stoermelder-P1",
+      "version": "1.6.3",
+      "model": "TransitEx",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        },
+        {
+          "id": 6,
+          "value": 0.0
+        },
+        {
+          "id": 7,
+          "value": 0.0
+        },
+        {
+          "id": 8,
+          "value": 0.0
+        },
+        {
+          "id": 9,
+          "value": 0.0
+        },
+        {
+          "id": 10,
+          "value": 0.0
+        },
+        {
+          "id": 11,
+          "value": 0.0
+        }
+      ],
+      "leftModuleId": 200,
+      "rightModuleId": 207,
+      "data": {
+        "panelTheme": 1,
+        "presets": [
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          }
+        ]
+      },
+      "pos": [
+        32,
+        16
+      ]
+    },
+    {
+      "id": 207,
+      "plugin": "Stoermelder-P1",
+      "version": "1.6.3",
+      "model": "TransitEx",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        },
+        {
+          "id": 6,
+          "value": 0.0
+        },
+        {
+          "id": 7,
+          "value": 0.0
+        },
+        {
+          "id": 8,
+          "value": 0.0
+        },
+        {
+          "id": 9,
+          "value": 0.0
+        },
+        {
+          "id": 10,
+          "value": 0.0
+        },
+        {
+          "id": 11,
+          "value": 0.0
+        }
+      ],
+      "leftModuleId": 206,
+      "rightModuleId": 208,
+      "data": {
+        "panelTheme": 1,
+        "presets": [
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          }
+        ]
+      },
+      "pos": [
+        34,
+        16
+      ]
+    },
+    {
+      "id": 208,
+      "plugin": "Stoermelder-P1",
+      "version": "1.6.3",
+      "model": "TransitEx",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        },
+        {
+          "id": 6,
+          "value": 0.0
+        },
+        {
+          "id": 7,
+          "value": 0.0
+        },
+        {
+          "id": 8,
+          "value": 0.0
+        },
+        {
+          "id": 9,
+          "value": 0.0
+        },
+        {
+          "id": 10,
+          "value": 0.0
+        },
+        {
+          "id": 11,
+          "value": 0.0
+        }
+      ],
+      "leftModuleId": 207,
+      "data": {
+        "panelTheme": 1,
+        "presets": [
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": true,
+            "slot": [
+              -2.0
+            ]
+          },
+          {
+            "slotUsed": true,
+            "slot": [
+              3.0
+            ]
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          },
+          {
+            "slotUsed": false
+          }
+        ]
+      },
+      "pos": [
+        36,
+        16
+      ]
+    },
+    {
+      "id": 209,
+      "plugin": "ImpromptuModular",
+      "version": "1.1.4",
+      "model": "Clocked-Clkd",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 180.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        },
+        {
+          "id": 6,
+          "value": 0.0
+        },
+        {
+          "id": 7,
+          "value": 0.0
+        },
+        {
+          "id": 8,
+          "value": 0.0
+        },
+        {
+          "id": 9,
+          "value": 0.0
+        }
+      ],
+      "data": {
+        "panelTheme": 1,
+        "running": true,
+        "bpmDetectionMode": false,
+        "restartOnStopStartRun": 0,
+        "sendResetOnRestart": false,
+        "ppqn": 4,
+        "resetClockOutputsHigh": true,
+        "momentaryRunInput": true,
+        "displayIndex": 0
+      },
+      "pos": [
+        6,
+        16
+      ]
+    }
+  ],
+  "cables": [
+    {
+      "id": 0,
+      "outputModuleId": 196,
+      "outputId": 0,
+      "inputModuleId": 197,
+      "inputId": 0,
+      "color": "#c9b70e"
+    },
+    {
+      "id": 2,
+      "outputModuleId": 199,
+      "outputId": 1,
+      "inputModuleId": 194,
+      "inputId": 0,
+      "color": "#0986ad"
+    },
+    {
+      "id": 3,
+      "outputModuleId": 209,
+      "outputId": 0,
+      "inputModuleId": 200,
+      "inputId": 0,
+      "color": "#c91847"
+    }
+  ]
+}
