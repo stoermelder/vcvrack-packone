@@ -85,7 +85,7 @@ struct X4Module : CVMapModuleBase<2> {
 			ParamQuantity* pqA = getParamQuantity(0);
 			if (pqA) {
 				float v = pqA->getScaledValue();
-				if (v != lastA[0]) {
+				if (!isNear(v, lastA[0])) {
 					lightArx[0]++;
 					lastA[0] = v;
 					params[PARAM_MAP_A + 1].setValue(v);
@@ -105,21 +105,21 @@ struct X4Module : CVMapModuleBase<2> {
 					float v1 = -1.f;
 					if (readParamA[1]) {
 						v1 = lastA[1] = params[PARAM_MAP_A + 1].getValue();
-						lightArx[1] += v1 != v;
+						lightArx[1] += !isNear(v1, v);
 					}
-					if (readParamA[2] && (v == v1 || v1 == -1.f)) {
+					if (readParamA[2] && (isNear(v, v1) || v1 == -1.f)) {
 						v1 = lastA[2] = params[PARAM_MAP_A + 2].getValue();
-						lightArx[2] += v1 != v;
+						lightArx[2] += !isNear(v1, v);
 					}
-					if (readParamA[3] && (v == v1 || v1 == -1.f)) {
+					if (readParamA[3] && (isNear(v, v1) || v1 == -1.f)) {
 						v1 = lastA[3] = params[PARAM_MAP_A + 3].getValue();
-						lightArx[3] += v1 != v;
+						lightArx[3] += !isNear(v1, v);
 					}
-					if (readParamA[4] && (v == v1 || v1 == -1.f)) {
+					if (readParamA[4] && (isNear(v, v1) || v1 == -1.f)) {
 						v1 = lastA[4] = params[PARAM_MAP_A + 4].getValue();
-						lightArx[4] += v1 != v;
+						lightArx[4] += !isNear(v1, v);
 					}
-					if (v1 != lastA[0] && v1 != -1.f) {
+					if (!isNear(v1, lastA[0]) && v1 != -1.f) {
 						lightAtx[0]++;
 						pqA->setScaledValue(v1);
 						params[PARAM_MAP_A + 1].setValue(v1);
@@ -142,7 +142,7 @@ struct X4Module : CVMapModuleBase<2> {
 			ParamQuantity* pqB = getParamQuantity(1);
 			if (pqB) {
 				float v = pqB->getScaledValue();
-				if (v != lastB[0]) {
+				if (!isNear(v, lastB[0])) {
 					lightBrx[0]++;
 					lastB[0] = v;
 					params[PARAM_MAP_B + 1].setValue(v);
@@ -162,19 +162,19 @@ struct X4Module : CVMapModuleBase<2> {
 					float v1 = -1.f;
 					if (readParamB[1]) {
 						v1 = lastB[1] = params[PARAM_MAP_B + 1].getValue();
-						lightBrx[1] += v1 != v;
+						lightBrx[1] += !isNear(v1, v);
 					}
-					if (readParamB[2] && (v == v1 || v1 == -1.f)) { 
+					if (readParamB[2] && (isNear(v, v1) || v1 == -1.f)) { 
 						v1 = lastB[2] = params[PARAM_MAP_B + 2].getValue();
-						lightBrx[2] += v1 != v;
+						lightBrx[2] += !isNear(v1, v);
 					}
-					if (readParamB[3] && (v == v1 || v1 == -1.f)) { 
+					if (readParamB[3] && (isNear(v, v1) || v1 == -1.f)) { 
 						v1 = lastB[3] = params[PARAM_MAP_B + 3].getValue();
-						lightBrx[3] += v1 != v;
+						lightBrx[3] += !isNear(v1, v);
 					}
-					if (readParamB[4] && (v == v1 || v1 == -1.f)) {
+					if (readParamB[4] && (isNear(v, v1) || v1 == -1.f)) {
 						v1 = lastB[4] = params[PARAM_MAP_B + 4].getValue();
-						lightBrx[4] += v1 != v;
+						lightBrx[4] += !isNear(v1, v);
 					}
 					if (v1 != lastB[0] && v1 != -1.f) {
 						lightBtx[0]++;
