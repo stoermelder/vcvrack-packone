@@ -1,6 +1,7 @@
 #pragma once
 #include "plugin.hpp"
 #include "settings.hpp"
+#include "StripIdFixModule.hpp"
 #include <chrono>
 
 
@@ -11,13 +12,13 @@ struct ParamHandleIndicator {
 	int indicateCount = 0;
 	float sampletime;
 
-	void process(float sampleTime) {
-		if (indicateCount > 0) {
+	void process(float sampleTime, bool force = false) {
+		if (indicateCount > 0 || force) {
 			this->sampletime += sampleTime;
 			if (this->sampletime > 0.2f) {
 				this->sampletime = 0;
 				indicateCount--;
-				handle->color = indicateCount % 2 == 1 ? color::BLACK : color;
+				handle->color = std::abs(indicateCount) % 2 == 1 ? color::BLACK : color;
 			}
 		}
 		else {
@@ -40,7 +41,7 @@ struct ParamHandleIndicator {
 // Abstract modules
 
 template< int MAX_CHANNELS >
-struct MapModuleBase : Module {
+struct MapModuleBase : Module, StripIdFixModule {
 	/** Number of maps */
 	int mapLen = 0;
 	/** The mapped param handle of each channel */
@@ -89,10 +90,10 @@ struct MapModuleBase : Module {
 	void process(const ProcessArgs& args) override {
 		if (indicatorDivider.process()) {
 			float t = indicatorDivider.getDivision() * args.sampleTime;
-			for (size_t i = 0; i < MAX_CHANNELS; i++) {
+			for (int i = 0; i < MAX_CHANNELS; i++) {
 				paramHandleIndicator[i].color = mappingIndicatorHidden ? color::BLACK_TRANSPARENT : mappingIndicatorColor;
 				if (paramHandles[i].moduleId >= 0) {
-					paramHandleIndicator[i].process(t);
+					paramHandleIndicator[i].process(t, learningId == i);
 				}
 			}
 		}
@@ -195,7 +196,7 @@ struct MapModuleBase : Module {
 		return rootJ;
 	}
 
-	void dataFromJson(json_t *rootJ) override {
+	void dataFromJson(json_t* rootJ) override {
 		clearMaps();
 
 		json_t* textScrollingJ = json_object_get(rootJ, "textScrolling");
@@ -208,16 +209,20 @@ struct MapModuleBase : Module {
 			json_t* mapJ;
 			size_t mapIndex;
 			json_array_foreach(mapsJ, mapIndex, mapJ) {
-				json_t *moduleIdJ = json_object_get(mapJ, "moduleId");
-				json_t *paramIdJ = json_object_get(mapJ, "paramId");
+				json_t* moduleIdJ = json_object_get(mapJ, "moduleId");
+				json_t* paramIdJ = json_object_get(mapJ, "paramId");
 				if (!(moduleIdJ && paramIdJ))
 					continue;
 				if (mapIndex >= MAX_CHANNELS)
 					continue;
-				APP->engine->updateParamHandle(&paramHandles[mapIndex], json_integer_value(moduleIdJ), json_integer_value(paramIdJ), false);
+				int moduleId = json_integer_value(moduleIdJ);
+				int paramId = json_integer_value(paramIdJ);
+				moduleId = idFix(moduleId);
+				APP->engine->updateParamHandle(&paramHandles[mapIndex], moduleId, paramId, false);
 			}
 		}
 		updateMapLen();
+		idFixClearMap();
 	}
 };
 
@@ -263,7 +268,7 @@ struct CVMapModuleBase : MapModuleBase<MAX_CHANNELS> {
 
 template< int MAX_CHANNELS, typename MODULE >
 struct MapModuleChoice : LedDisplayChoice {
-	MODULE* module;
+	MODULE* module = NULL;
 	bool processEvents = true;
 	int id;
 
@@ -274,6 +279,12 @@ struct MapModuleChoice : LedDisplayChoice {
 		box.size = mm2px(Vec(0, 7.5));
 		textOffset = Vec(6, 14.7);
 		color = nvgRGB(0xf0, 0xf0, 0xf0);
+	}
+
+	~MapModuleChoice() {
+		if (module && module->learningId == id) {
+			glfwSetCursor(APP->window->win, NULL);
+		}
 	}
 
 	void setModule(MODULE* module) {
@@ -337,6 +348,9 @@ struct MapModuleChoice : LedDisplayChoice {
 		// Reset touchedParam, unstable API
 		APP->scene->rack->touchedParam = NULL;
 		module->enableLearn(id);
+
+		GLFWcursor* cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
+		glfwSetCursor(APP->window->win, cursor);
 	}
 
 	void onDeselect(const event::Deselect& e) override {
@@ -355,6 +369,7 @@ struct MapModuleChoice : LedDisplayChoice {
 		else {
 			module->disableLearn(id);
 		}
+		glfwSetCursor(APP->window->win, NULL);
 	}
 
 	void step() override {
@@ -510,5 +525,12 @@ struct MapModuleDisplay : LedDisplay {
 			nvgStrokeColor(args.vg, color::mult(color::WHITE, 0.5f));
 			nvgStroke(args.vg);
 		}
+	}
+
+	void onHoverScroll(const event::HoverScroll& e) override {
+		if (module && module->locked) {
+			e.stopPropagating();
+		}
+		LedDisplay::onHoverScroll(e);
 	}
 };

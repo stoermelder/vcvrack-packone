@@ -119,20 +119,14 @@ struct PileModule : Module {
 };
 
 
-struct VoltageLedDisplay : LedDisplayChoice {
+struct VoltageLedDisplay : StoermelderLedDisplay {
 	PileModule* module;
-
-	VoltageLedDisplay() {
-		color = nvgRGB(0xef, 0xef, 0xef);
-		box.size = Vec(37.9f, 16.f);
-		textOffset = Vec(1.8f, 11.5f);
-	}
 
 	void step() override {
 		if (module) {
 			text = string::f("%+06.2f", std::max(std::min(module->currentVoltage, 99.99f), -99.99f));
 		} 
-		LedDisplayChoice::step();
+		StoermelderLedDisplay::step();
 	}
 };
 
@@ -146,6 +140,7 @@ struct PileWidget : ThemedModuleWidget<PileModule> {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
 		VoltageLedDisplay* ledDisplay = createWidgetCentered<VoltageLedDisplay>(Vec(22.5f, 43.0f));
+		ledDisplay->box.size = Vec(39.1f, 13.2f);
 		ledDisplay->module = module;
 		addChild(ledDisplay);
 

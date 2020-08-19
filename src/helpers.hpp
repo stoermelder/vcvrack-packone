@@ -22,7 +22,7 @@ struct ViewportCenterSmooth {
 	void trigger(Vec target, float zoom, float framerate, float transitionTime = 1.f) {
 		// source is at top-left, translate to center of screen
 		Vec source = APP->scene->rackScroll->offset;
-		source = source.plus(APP->scene->box.size.mult(0.5f));
+		source = source.plus(APP->scene->rackScroll->box.size.mult(0.5f));
 		source = source.div(APP->scene->rackScroll->zoomWidget->zoom);
 
 		this->source = source;
@@ -40,7 +40,7 @@ struct ViewportCenterSmooth {
 	void process() {
 		if (framecount == frame) return;
 
-		float t = float(frame) / float(framecount);
+		float t = float(frame) / float(framecount - 1);
 		// Sigmoid
 		t = t * 8.f - 4.f;
 		t = 1.f / (1.f + std::exp(-t));
@@ -60,7 +60,7 @@ struct ViewportCenterSmooth {
 		// Move the view
 		// NB: unstable API!
 		p = p.mult(APP->scene->rackScroll->zoomWidget->zoom);
-		p = p.minus(APP->scene->box.size.mult(0.5f));
+		p = p.minus(APP->scene->rackScroll->box.size.mult(0.5f));
 		APP->scene->rackScroll->offset = p;
 
 		frame++;
@@ -68,20 +68,34 @@ struct ViewportCenterSmooth {
 };
 
 struct ViewportCenter {
-	ViewportCenter(Widget* w) {
+	ViewportCenter(Widget* w, float zoomToWidget = -1.f) {
 		// NB: unstable API!
 		Vec target = w->box.pos;
 		target = target.plus(w->box.size.mult(0.5f));
 		target = target.mult(APP->scene->rackScroll->zoomWidget->zoom);
-		target = target.minus(APP->scene->box.size.mult(0.5f));
+		target = target.minus(APP->scene->rackScroll->box.size.mult(0.5f));
 		APP->scene->rackScroll->offset = target;
+		if (zoomToWidget > 0.f) {
+			rack::settings::zoom = std::log2(APP->scene->rackScroll->box.size.y / w->box.size.y * zoomToWidget);
+		}
 	}
 
 	ViewportCenter(Vec target) {
 		// NB: unstable API!
 		target = target.mult(APP->scene->rackScroll->zoomWidget->zoom);
-		target = target.minus(APP->scene->box.size.mult(0.5f));
+		target = target.minus(APP->scene->rackScroll->box.size.mult(0.5f));
 		APP->scene->rackScroll->offset = target;
+	}
+
+	ViewportCenter(Rect rect) {
+		// NB: unstable API!
+		Vec target = rect.getCenter();
+		target = target.mult(APP->scene->rackScroll->zoomWidget->zoom);
+		target = target.minus(APP->scene->rackScroll->box.size.mult(0.5f));
+		APP->scene->rackScroll->offset = target;
+		float zx = std::log2(APP->scene->rackScroll->box.size.x / rect.size.x * 0.9f);
+		float zy = std::log2(APP->scene->rackScroll->box.size.y / rect.size.y * 0.9f);
+		rack::settings::zoom = std::min(zx, zy);
 	}
 };
 

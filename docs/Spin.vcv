@@ -1,0 +1,269 @@
+{
+  "version": "1.1.6",
+  "modules": [
+    {
+      "id": 124,
+      "plugin": "Stoermelder-P1",
+      "version": "1.7.d33f671",
+      "model": "Spin",
+      "params": [
+        {
+          "id": 0,
+          "value": 1.0
+        }
+      ],
+      "rightModuleId": 129,
+      "data": {
+        "panelTheme": 1,
+        "mods": 0,
+        "clickMode": 1,
+        "clickHigh": true
+      },
+      "pos": [
+        7,
+        0
+      ]
+    },
+    {
+      "id": 125,
+      "plugin": "Stoermelder-P1",
+      "version": "1.7.d33f671",
+      "model": "Spin",
+      "params": [
+        {
+          "id": 0,
+          "value": 1.0
+        }
+      ],
+      "data": {
+        "panelTheme": 0,
+        "mods": 1,
+        "clickMode": 1,
+        "clickHigh": false
+      },
+      "pos": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": 126,
+      "plugin": "Stoermelder-P1",
+      "version": "1.7.d33f671",
+      "model": "Bolt",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        }
+      ],
+      "rightModuleId": 127,
+      "data": {
+        "panelTheme": 1,
+        "op": 3,
+        "opCvMode": 0,
+        "outCvMode": 0
+      },
+      "pos": [
+        29,
+        0
+      ]
+    },
+    {
+      "id": 127,
+      "plugin": "Fundamental",
+      "version": "1.4.0",
+      "model": "Scope",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 16.0
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        },
+        {
+          "id": 6,
+          "value": 0.0
+        },
+        {
+          "id": 7,
+          "value": 0.0
+        }
+      ],
+      "leftModuleId": 126,
+      "data": {
+        "lissajous": 0,
+        "external": 1
+      },
+      "pos": [
+        32,
+        0
+      ]
+    },
+    {
+      "id": 128,
+      "plugin": "Fundamental",
+      "version": "1.4.0",
+      "model": "VCF",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.487999916
+        },
+        {
+          "id": 1,
+          "value": 0.5
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        }
+      ],
+      "pos": [
+        17,
+        0
+      ]
+    },
+    {
+      "id": 129,
+      "plugin": "Stoermelder-P1",
+      "version": "1.7.d33f671",
+      "model": "Sail",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.200000003
+        }
+      ],
+      "leftModuleId": 124,
+      "data": {
+        "panelTheme": 1,
+        "inMode": 0,
+        "outMode": 0
+      },
+      "pos": [
+        10,
+        0
+      ]
+    },
+    {
+      "id": 130,
+      "plugin": "Stoermelder-P1",
+      "version": "1.7.d33f671",
+      "model": "Spin",
+      "params": [
+        {
+          "id": 0,
+          "value": 1.0
+        }
+      ],
+      "bypass": true,
+      "data": {
+        "panelTheme": 1,
+        "mods": 0,
+        "clickMode": 1,
+        "clickHigh": true
+      },
+      "pos": [
+        10,
+        2
+      ]
+    }
+  ],
+  "cables": [
+    {
+      "id": 13,
+      "outputModuleId": 124,
+      "outputId": 2,
+      "inputModuleId": 129,
+      "inputId": 1,
+      "color": "#0c8e15"
+    },
+    {
+      "id": 14,
+      "outputModuleId": 124,
+      "outputId": 1,
+      "inputModuleId": 129,
+      "inputId": 3,
+      "color": "#c91847"
+    },
+    {
+      "id": 15,
+      "outputModuleId": 124,
+      "outputId": 0,
+      "inputModuleId": 129,
+      "inputId": 4,
+      "color": "#0986ad"
+    },
+    {
+      "id": 16,
+      "outputModuleId": 124,
+      "outputId": 1,
+      "inputModuleId": 126,
+      "inputId": 2,
+      "color": "#c9b70e"
+    },
+    {
+      "id": 17,
+      "outputModuleId": 124,
+      "outputId": 0,
+      "inputModuleId": 126,
+      "inputId": 3,
+      "color": "#0c8e15"
+    },
+    {
+      "id": 18,
+      "outputModuleId": 126,
+      "outputId": 0,
+      "inputModuleId": 127,
+      "inputId": 2,
+      "color": "#c91847"
+    },
+    {
+      "id": 19,
+      "outputModuleId": 124,
+      "outputId": 1,
+      "inputModuleId": 127,
+      "inputId": 0,
+      "color": "#0986ad"
+    },
+    {
+      "id": 20,
+      "outputModuleId": 124,
+      "outputId": 0,
+      "inputModuleId": 127,
+      "inputId": 1,
+      "color": "#c9b70e"
+    }
+  ]
+}

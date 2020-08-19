@@ -1,16 +1,27 @@
 # stoermelder PackOne
 
 <!-- Version and License Badges -->
-![Version](https://img.shields.io/badge/version-1.6.3-green.svg?style=flat-square)
+![Version](https://img.shields.io/badge/version-1.7.0-green.svg?style=flat-square)
 ![Rack SDK](https://img.shields.io/badge/Rack--SDK-1.1.6-red.svg?style=flat-square)
 ![License](https://img.shields.io/badge/license-GPLv3-blue.svg?style=flat-square)
 ![Language](https://img.shields.io/badge/language-C++-yellow.svg?style=flat-square)
 
 The PackOne plugin gives you some modules for [VCV Rack](https://www.vcvrack.com).
 
-**Stable versions are released in the [VCV Library](https://vcvrack.com/plugins.html#packone). [Nightly builds](https://github.com/stoermelder/vcvrack-packone/releases/tag/Nightly) of the latest commit are also available for all platforms. Please review the [changelog](./CHANGELOG.md) for this plugin.**
+**Stable versions are released in the [VCV Library](https://vcvrack.com/plugins.html#packone).  
+[Nightly builds](https://github.com/stoermelder/vcvrack-packone/releases/tag/Nightly) of the latest commit are also available for all platforms. Please review the [changelog](./CHANGELOG.md) for this plugin.**
 
-![Intro image](./docs/intro.png)
+If you like my modules consider donating to https://paypal.me/stoermelder. Thank you for your support!
+
+## Latest additions to PackOne
+
+- [MEM](./docs/MidiCat.md#mem-expander): storage-expander for MIDI mapping-presets with MIDI-CAT
+- [SPIN](./docs/Spin.md): utility for converting mouse-wheel or middle mouse-button events into triggers
+- [STROKE](./docs/Stroke.md): utility which converts used-defined hotkeys into triggers or gates, also provides some special commands for Rack's enviroment
+- [TRANSIT](./docs/Transit.md): parameter-morpher and sequencer for up to 96 snapshots
+- [X4](./docs/X4.md): dual multiple for parameter-mapping
+
+![Intro image](./docs/intro-latest.png)
 
 - [AFFIX](./docs/Affix.md), [µAFFIX](./docs/Affix.md): inserts for polyphonic cables for adding offsets in volt, semitones or ocatves
 - [4ROUNDS](./docs/FourRounds.md): randomizer for up to 16 input signals to create 15 output signals
@@ -22,7 +33,7 @@ The PackOne plugin gives you some modules for [VCV Rack](https://www.vcvrack.com
 - [GLUE](./docs/Glue.md): label maker for your modules!
 - [GOTO](./docs/Goto.md): utility for jumping directly to 10 locations in your patch by hotkey or using MIDI
 - [GRIP](./docs/Grip.md): lock for module parameters
-- [INFIX, µINFIX](./docs/Infix.md): insert for polyphonic cables
+- [INFIX](./docs/Infix.md), [µINFIX](./docs/Infix.md): insert for polyphonic cables
 - [INTERMIX](./docs/Intermix.md): precision adder 8x8 advanced switch matrix with support for 8 scenes
 - [MAZE](./docs/Maze.md): 4 channel sequencer running on a 2-dimensional grid
 - [µMAP](./docs/CVMapMicro.md): a single instance of CV-MAP's slots with attenuverters
@@ -36,8 +47,9 @@ The PackOne plugin gives you some modules for [VCV Rack](https://www.vcvrack.com
 - [SIPO](./docs/Sipo.md): serial-in parallel-out shift register with polyphonic output and CV controls
 - [STRIP](./docs/Strip.md): manage a group of modules in a patch, providing load, save as, disable and randomize
 
+![Intro image](./docs/intro.png)
+
 Feel free to contact me or create a GitHub issue if you have any problems or questions!  
-If you like my modules consider donating to https://paypal.me/stoermelder. Thank you for your support! I'm also interested in any Doepfer Eurorack hardware modules ;-)
 
 ## Building
 

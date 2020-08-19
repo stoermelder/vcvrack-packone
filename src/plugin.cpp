@@ -18,12 +18,12 @@ void init(rack::Plugin* p) {
 	p->addModel(modelEightFace);
 	p->addModel(modelEightFaceX2);
 	p->addModel(modelMidiCat);
+	p->addModel(modelMidiCatEx);
 	p->addModel(modelSipo);
 	p->addModel(modelFourRounds);
 	p->addModel(modelArena);
 	p->addModel(modelMaze);
 	p->addModel(modelIntermix);
-	p->addModel(modelDetour);
 	p->addModel(modelSail);
 	p->addModel(modelPile);
 	p->addModel(modelPilePoly);
@@ -34,8 +34,11 @@ void init(rack::Plugin* p) {
 	p->addModel(modelGrip);
 	p->addModel(modelGlue);
 	p->addModel(modelGoto);
-	p->addModel(modelFr);
 	p->addModel(modelStroke);
+	p->addModel(modelSpin);
+	p->addModel(modelTransit);
+	p->addModel(modelTransitEx);
+	p->addModel(modelX4);
 	p->addModel(modelAudioInterface64);
 
 	pluginSettings.readFromJson();

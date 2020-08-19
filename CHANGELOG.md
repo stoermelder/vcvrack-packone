@@ -1,8 +1,50 @@
-## 1.7.0 (in development)
-- Module [DETOUR](./docs/Detour.md)
-    - New module, 8x8 send/return switch matrix with support for 8 scenes
-- Module [FLOWER](./docs/Flower.md)
-    - New module, pattern-driven 16-step sequencer
+## 1.7.0
+
+- Module [MEM](./docs/MidiCat.md#mem-expander)
+    - New expander-module for MIDI-CAT, storage-unit for MIDI mapping-presets with MIDI-CAT
+- Module [SPIN](./docs/SPIN.md)
+    - New module, converts mouse-wheel or middle mouse-button events into triggers
+- Module [STROKE](./docs/STROKE.md)
+    - New module, converts used-defined hotkeys into triggers or gates, also provides some special commands for Rack's enviroment
+- Module [TRANSIT](./docs/TRANSIT.md)
+    - New module, parameter-morpher and sequencer for up to 96 snapshots
+- Module [+T](./docs/TRANSIT.md)
+    - New module, expander for TRANSIT
+- Module [X4](./docs/X4.md)
+    - New module, dual multiple for parameter-mapping
+
+### Fixes and Changes
+
+- Module [ARENA](./docs/Arena.md)
+    - Fixed wrong calculation of output levels (#147, #113)
+- Module [CV-MAP](./docs/CVMap.md)
+    - Don't capture mouse scrolling if mapping slots are locked (#137)
+    - Blink mapping indicator of currently selected mapping slot
+- Module [CV-PAM](./docs/CVPam.md)
+    - Don't capture mouse scrolling if mapping slots are locked (#137)
+    - Blink mapping indicator of currently selected mapping slot
+- Module [GLUE](./docs/Glue.md)
+    - Implemented support for labels within STRIP, please be aware to include GLUE within your strip-file (#115)
+    - Added options for changing text coloring (#136)
+- Module [GRIP](./docs/Grip.md)
+    - Implemented support for parameter-mappings within STRIP (#151)
+- Module [GOTO](./docs/Goto.md)
+    - Added support for number pad keys (#134)
+- Module [µMAP](./docs/CVMapMicro.md)
+    - Fixed meaningless tooltip on Map-button
+    - Blink mapping indicator when activating the mapping button
+- Module [MIDI-CAT](./docs/MidiCat.md)
+    - Don't capture mouse scrolling if mapping slots are locked (#137)
+    - Blink mapping indicator of currently selected mapping slot
+    - Added option for automatic mapping of all parameters of a module on the left side or by module-select
+    - Mapping is aborted using ESC-key while hovering the mouse over the module
+    - Added option for sending MIDI "note on, velocity 0" on feedback for note off (#130)
+- Module [MIRROR](./docs/Mirror.md)
+    - Implemented support for parameter-mappings within STRIP
+- Module [ReMOVE Lite](./docs/ReMove.md)
+    - Blink mapping indicator when activating the mapping screen
+- Module [STRIP](./docs/Strip.md)
+    - Added option to randomize only parameters without the module's internal state (#135) 
 
 ## 1.6.3
 

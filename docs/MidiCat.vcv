@@ -1,0 +1,949 @@
+{
+  "version": "1.1.6",
+  "modules": [
+    {
+      "id": 134,
+      "plugin": "Stoermelder-P1",
+      "version": "1.7.d33f671",
+      "model": "MidiCat",
+      "params": [],
+      "rightModuleId": 135,
+      "data": {
+        "panelTheme": 1,
+        "textScrolling": true,
+        "mappingIndicatorHidden": false,
+        "locked": false,
+        "maps": [
+          {
+            "cc": 1,
+            "ccMode": 0,
+            "note": -1,
+            "noteMode": 0,
+            "moduleId": 139,
+            "paramId": 0,
+            "label": "",
+            "midiOptions": 0
+          },
+          {
+            "cc": 2,
+            "ccMode": 0,
+            "note": -1,
+            "noteMode": 0,
+            "moduleId": 139,
+            "paramId": 1,
+            "label": "",
+            "midiOptions": 0
+          },
+          {
+            "cc": 3,
+            "ccMode": 0,
+            "note": -1,
+            "noteMode": 0,
+            "moduleId": 139,
+            "paramId": 2,
+            "label": "",
+            "midiOptions": 0
+          },
+          {
+            "cc": 4,
+            "ccMode": 0,
+            "note": -1,
+            "noteMode": 0,
+            "moduleId": 139,
+            "paramId": 3,
+            "label": "",
+            "midiOptions": 0
+          },
+          {
+            "cc": 5,
+            "ccMode": 0,
+            "note": -1,
+            "noteMode": 0,
+            "moduleId": 139,
+            "paramId": 4,
+            "label": "",
+            "midiOptions": 0
+          },
+          {
+            "cc": 6,
+            "ccMode": 0,
+            "note": -1,
+            "noteMode": 0,
+            "moduleId": 139,
+            "paramId": 5,
+            "label": "",
+            "midiOptions": 0
+          },
+          {
+            "cc": -1,
+            "ccMode": 0,
+            "note": -1,
+            "noteMode": 0,
+            "moduleId": -1,
+            "paramId": 0,
+            "label": "",
+            "midiOptions": 0
+          }
+        ],
+        "midiInput": {
+          "driver": 4,
+          "deviceName": "MPKmini2 1",
+          "channel": -1
+        },
+        "midiOutput": {
+          "driver": 4,
+          "channel": 0
+        }
+      },
+      "pos": [
+        35,
+        6
+      ]
+    },
+    {
+      "id": 135,
+      "plugin": "Stoermelder-P1",
+      "version": "1.7.d33f671",
+      "model": "MidiCatEx",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        }
+      ],
+      "leftModuleId": 134,
+      "data": {
+        "panelTheme": 1,
+        "midiMap": [
+          {
+            "pluginSlug": "VultModules",
+            "moduleSlug": "Basal",
+            "pluginName": "Vult Modules",
+            "moduleName": "Basal",
+            "paramMap": [
+              {
+                "paramId": 0,
+                "cc": 1,
+                "ccMode": 0,
+                "note": -1,
+                "noteMode": 0,
+                "label": "",
+                "midiOptions": 0
+              },
+              {
+                "paramId": 1,
+                "cc": 2,
+                "ccMode": 0,
+                "note": -1,
+                "noteMode": 0,
+                "label": "",
+                "midiOptions": 0
+              },
+              {
+                "paramId": 2,
+                "cc": 3,
+                "ccMode": 0,
+                "note": -1,
+                "noteMode": 0,
+                "label": "",
+                "midiOptions": 0
+              },
+              {
+                "paramId": 3,
+                "cc": 4,
+                "ccMode": 0,
+                "note": -1,
+                "noteMode": 0,
+                "label": "",
+                "midiOptions": 0
+              },
+              {
+                "paramId": 4,
+                "cc": 5,
+                "ccMode": 0,
+                "note": -1,
+                "noteMode": 0,
+                "label": "",
+                "midiOptions": 0
+              },
+              {
+                "paramId": 5,
+                "cc": 6,
+                "ccMode": 0,
+                "note": -1,
+                "noteMode": 0,
+                "label": "",
+                "midiOptions": 0
+              }
+            ]
+          },
+          {
+            "pluginSlug": "VultModules",
+            "moduleSlug": "Bleak",
+            "pluginName": "Vult Modules",
+            "moduleName": "Bleak",
+            "paramMap": [
+              {
+                "paramId": 0,
+                "cc": 1,
+                "ccMode": 0,
+                "note": -1,
+                "noteMode": 0,
+                "label": "",
+                "midiOptions": 0
+              },
+              {
+                "paramId": 1,
+                "cc": 2,
+                "ccMode": 0,
+                "note": -1,
+                "noteMode": 0,
+                "label": "",
+                "midiOptions": 0
+              },
+              {
+                "paramId": 2,
+                "cc": 3,
+                "ccMode": 0,
+                "note": -1,
+                "noteMode": 0,
+                "label": "",
+                "midiOptions": 0
+              },
+              {
+                "paramId": 3,
+                "cc": 4,
+                "ccMode": 0,
+                "note": -1,
+                "noteMode": 0,
+                "label": "",
+                "midiOptions": 0
+              },
+              {
+                "paramId": 4,
+                "cc": 5,
+                "ccMode": 0,
+                "note": -1,
+                "noteMode": 0,
+                "label": "",
+                "midiOptions": 0
+              },
+              {
+                "paramId": 5,
+                "cc": 6,
+                "ccMode": 0,
+                "note": -1,
+                "noteMode": 0,
+                "label": "",
+                "midiOptions": 0
+              }
+            ]
+          }
+        ]
+      },
+      "pos": [
+        45,
+        6
+      ]
+    },
+    {
+      "id": 136,
+      "plugin": "VultModules",
+      "version": "1.11",
+      "model": "Basal",
+      "params": [
+        {
+          "id": 0,
+          "value": -0.511811018
+        },
+        {
+          "id": 1,
+          "value": 0.055118084
+        },
+        {
+          "id": 2,
+          "value": 0.740157485
+        },
+        {
+          "id": 3,
+          "value": -0.889763772
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        }
+      ],
+      "pos": [
+        7,
+        6
+      ]
+    },
+    {
+      "id": 139,
+      "plugin": "VultModules",
+      "version": "1.11",
+      "model": "Bleak",
+      "params": [
+        {
+          "id": 0,
+          "value": -0.307086587
+        },
+        {
+          "id": 1,
+          "value": -0.574803114
+        },
+        {
+          "id": 2,
+          "value": 0.732283473
+        },
+        {
+          "id": 3,
+          "value": -0.385826766
+        },
+        {
+          "id": 4,
+          "value": 0.5
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        }
+      ],
+      "pos": [
+        0,
+        6
+      ]
+    },
+    {
+      "id": 141,
+      "plugin": "VultModules",
+      "version": "1.11",
+      "model": "Bleak",
+      "params": [
+        {
+          "id": 0,
+          "value": -0.669291377
+        },
+        {
+          "id": 1,
+          "value": -0.307086587
+        },
+        {
+          "id": 2,
+          "value": 1.0
+        },
+        {
+          "id": 3,
+          "value": -0.92125982
+        },
+        {
+          "id": 4,
+          "value": 0.637795269
+        },
+        {
+          "id": 5,
+          "value": -0.417322814
+        }
+      ],
+      "pos": [
+        17,
+        6
+      ]
+    },
+    {
+      "id": 142,
+      "plugin": "VultModules",
+      "version": "1.11",
+      "model": "Basal",
+      "params": [
+        {
+          "id": 0,
+          "value": -0.417322814
+        },
+        {
+          "id": 1,
+          "value": 0.763779521
+        },
+        {
+          "id": 2,
+          "value": 0.11811024
+        },
+        {
+          "id": 3,
+          "value": 0.196850419
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        }
+      ],
+      "pos": [
+        24,
+        6
+      ]
+    },
+    {
+      "id": 143,
+      "plugin": "Stoermelder-P1",
+      "version": "1.7.d33f671",
+      "model": "MidiCat",
+      "params": [],
+      "data": {
+        "panelTheme": 1,
+        "textScrolling": true,
+        "mappingIndicatorHidden": false,
+        "locked": false,
+        "maps": [
+          {
+            "cc": 1,
+            "ccMode": 0,
+            "note": -1,
+            "noteMode": 0,
+            "moduleId": 144,
+            "paramId": 1,
+            "label": "",
+            "midiOptions": 0
+          },
+          {
+            "cc": 2,
+            "ccMode": 0,
+            "note": -1,
+            "noteMode": 0,
+            "moduleId": 144,
+            "paramId": 2,
+            "label": "",
+            "midiOptions": 0
+          },
+          {
+            "cc": 3,
+            "ccMode": 0,
+            "note": -1,
+            "noteMode": 0,
+            "moduleId": 144,
+            "paramId": 3,
+            "label": "",
+            "midiOptions": 0
+          },
+          {
+            "cc": 4,
+            "ccMode": 0,
+            "note": -1,
+            "noteMode": 0,
+            "moduleId": 144,
+            "paramId": 4,
+            "label": "",
+            "midiOptions": 0
+          },
+          {
+            "cc": -1,
+            "ccMode": 0,
+            "note": -1,
+            "noteMode": 0,
+            "moduleId": -1,
+            "paramId": 0,
+            "label": "",
+            "midiOptions": 0
+          }
+        ],
+        "midiInput": {
+          "driver": 4,
+          "channel": -1
+        },
+        "midiOutput": {
+          "driver": 4,
+          "channel": 0
+        }
+      },
+      "pos": [
+        36,
+        4
+      ]
+    },
+    {
+      "id": 144,
+      "plugin": "Fundamental",
+      "version": "1.4.0",
+      "model": "VCMixer",
+      "params": [
+        {
+          "id": 0,
+          "value": 1.0
+        },
+        {
+          "id": 1,
+          "value": 0.345201731
+        },
+        {
+          "id": 2,
+          "value": 0.267252952
+        },
+        {
+          "id": 3,
+          "value": 1.28058708
+        },
+        {
+          "id": 4,
+          "value": 0.0779487789
+        }
+      ],
+      "pos": [
+        50,
+        4
+      ]
+    },
+    {
+      "id": 145,
+      "plugin": "Stoermelder-P1",
+      "version": "1.7.d33f671",
+      "model": "MidiCat",
+      "params": [],
+      "data": {
+        "panelTheme": 1,
+        "textScrolling": true,
+        "mappingIndicatorHidden": false,
+        "locked": false,
+        "maps": [
+          {
+            "cc": 1,
+            "ccMode": 0,
+            "note": -1,
+            "noteMode": 0,
+            "moduleId": 146,
+            "paramId": 0,
+            "label": "",
+            "midiOptions": 0
+          },
+          {
+            "cc": 2,
+            "ccMode": 0,
+            "note": -1,
+            "noteMode": 0,
+            "moduleId": 146,
+            "paramId": 1,
+            "label": "",
+            "midiOptions": 0
+          },
+          {
+            "cc": 3,
+            "ccMode": 0,
+            "note": -1,
+            "noteMode": 0,
+            "moduleId": 146,
+            "paramId": 2,
+            "label": "",
+            "midiOptions": 0
+          },
+          {
+            "cc": 4,
+            "ccMode": 0,
+            "note": -1,
+            "noteMode": 0,
+            "moduleId": 146,
+            "paramId": 3,
+            "label": "",
+            "midiOptions": 0
+          },
+          {
+            "cc": -1,
+            "ccMode": 0,
+            "note": -1,
+            "noteMode": 0,
+            "moduleId": 146,
+            "paramId": 4,
+            "label": "",
+            "midiOptions": 0
+          },
+          {
+            "cc": -1,
+            "ccMode": 0,
+            "note": -1,
+            "noteMode": 0,
+            "moduleId": -1,
+            "paramId": 0,
+            "label": "",
+            "midiOptions": 0
+          }
+        ],
+        "midiInput": {
+          "driver": 4,
+          "channel": -1
+        },
+        "midiOutput": {
+          "driver": 4,
+          "channel": 0
+        }
+      },
+      "pos": [
+        36,
+        2
+      ]
+    },
+    {
+      "id": 146,
+      "plugin": "Fundamental",
+      "version": "1.4.0",
+      "model": "VCMixer",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.488188982
+        },
+        {
+          "id": 1,
+          "value": 0.267252952
+        },
+        {
+          "id": 2,
+          "value": 1.28058708
+        },
+        {
+          "id": 3,
+          "value": 0.0779487789
+        },
+        {
+          "id": 4,
+          "value": 1.0
+        }
+      ],
+      "pos": [
+        18,
+        2
+      ]
+    },
+    {
+      "id": 147,
+      "plugin": "Stoermelder-P1",
+      "version": "1.7.d33f671",
+      "model": "MidiCat",
+      "params": [],
+      "rightModuleId": 153,
+      "data": {
+        "panelTheme": 1,
+        "textScrolling": true,
+        "mappingIndicatorHidden": false,
+        "locked": false,
+        "maps": [
+          {
+            "cc": 1,
+            "ccMode": 0,
+            "note": -1,
+            "noteMode": 0,
+            "moduleId": 152,
+            "paramId": 1,
+            "label": "",
+            "midiOptions": 0
+          },
+          {
+            "cc": 2,
+            "ccMode": 0,
+            "note": -1,
+            "noteMode": 0,
+            "moduleId": 152,
+            "paramId": 2,
+            "label": "",
+            "midiOptions": 0
+          },
+          {
+            "cc": 3,
+            "ccMode": 0,
+            "note": -1,
+            "noteMode": 0,
+            "moduleId": 152,
+            "paramId": 3,
+            "label": "",
+            "midiOptions": 0
+          },
+          {
+            "cc": 4,
+            "ccMode": 0,
+            "note": -1,
+            "noteMode": 0,
+            "moduleId": 152,
+            "paramId": 4,
+            "label": "",
+            "midiOptions": 0
+          },
+          {
+            "cc": -1,
+            "ccMode": 0,
+            "note": -1,
+            "noteMode": 0,
+            "moduleId": -1,
+            "paramId": 0,
+            "label": "",
+            "midiOptions": 0
+          }
+        ],
+        "midiInput": {
+          "driver": 4,
+          "channel": -1
+        },
+        "midiOutput": {
+          "driver": 4,
+          "channel": 0
+        }
+      },
+      "pos": [
+        36,
+        0
+      ]
+    },
+    {
+      "id": 149,
+      "plugin": "Stoermelder-P1",
+      "version": "1.7.d33f671",
+      "model": "MidiCatEx",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        }
+      ],
+      "leftModuleId": 150,
+      "data": {
+        "panelTheme": 0,
+        "midiMap": []
+      },
+      "pos": [
+        27,
+        0
+      ]
+    },
+    {
+      "id": 150,
+      "plugin": "Stoermelder-P1",
+      "version": "1.7.d33f671",
+      "model": "MidiCat",
+      "params": [],
+      "rightModuleId": 149,
+      "data": {
+        "panelTheme": 0,
+        "textScrolling": true,
+        "mappingIndicatorHidden": false,
+        "locked": false,
+        "maps": [
+          {
+            "cc": -1,
+            "ccMode": 0,
+            "note": 74,
+            "noteMode": 0,
+            "moduleId": 152,
+            "paramId": 0,
+            "label": "",
+            "midiOptions": 0
+          },
+          {
+            "cc": -1,
+            "ccMode": 0,
+            "note": -1,
+            "noteMode": 0,
+            "moduleId": -1,
+            "paramId": 0,
+            "label": "",
+            "midiOptions": 0
+          }
+        ],
+        "midiInput": {
+          "driver": -11,
+          "deviceName": "QWERTY keyboard (US)",
+          "channel": -1
+        },
+        "midiOutput": {
+          "driver": 4,
+          "channel": 0
+        }
+      },
+      "pos": [
+        17,
+        0
+      ]
+    },
+    {
+      "id": 152,
+      "plugin": "Fundamental",
+      "version": "1.4.0",
+      "model": "VCMixer",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 1.0
+        },
+        {
+          "id": 2,
+          "value": 1.0
+        },
+        {
+          "id": 3,
+          "value": 1.0
+        },
+        {
+          "id": 4,
+          "value": 1.0
+        }
+      ],
+      "pos": [
+        67,
+        0
+      ]
+    },
+    {
+      "id": 153,
+      "plugin": "Stoermelder-P1",
+      "version": "1.7.d33f671",
+      "model": "MidiCatEx",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        }
+      ],
+      "leftModuleId": 147,
+      "data": {
+        "panelTheme": 1,
+        "midiMap": [
+          {
+            "pluginSlug": "VultModules",
+            "moduleSlug": "Basal",
+            "pluginName": "Vult Modules",
+            "moduleName": "Basal",
+            "paramMap": [
+              {
+                "paramId": 0,
+                "cc": 1,
+                "ccMode": 0,
+                "note": -1,
+                "noteMode": 0,
+                "label": "",
+                "midiOptions": 0
+              },
+              {
+                "paramId": 1,
+                "cc": 2,
+                "ccMode": 0,
+                "note": -1,
+                "noteMode": 0,
+                "label": "",
+                "midiOptions": 0
+              },
+              {
+                "paramId": 2,
+                "cc": 3,
+                "ccMode": 0,
+                "note": -1,
+                "noteMode": 0,
+                "label": "",
+                "midiOptions": 0
+              },
+              {
+                "paramId": 3,
+                "cc": 4,
+                "ccMode": 0,
+                "note": -1,
+                "noteMode": 0,
+                "label": "",
+                "midiOptions": 0
+              },
+              {
+                "paramId": 4,
+                "cc": -1,
+                "ccMode": 0,
+                "note": -1,
+                "noteMode": 0,
+                "label": "",
+                "midiOptions": 0
+              },
+              {
+                "paramId": 5,
+                "cc": -1,
+                "ccMode": 0,
+                "note": -1,
+                "noteMode": 0,
+                "label": "",
+                "midiOptions": 0
+              }
+            ]
+          },
+          {
+            "pluginSlug": "VultModules",
+            "moduleSlug": "Bleak",
+            "pluginName": "Vult Modules",
+            "moduleName": "Bleak",
+            "paramMap": [
+              {
+                "paramId": 0,
+                "cc": 1,
+                "ccMode": 0,
+                "note": -1,
+                "noteMode": 0,
+                "label": "",
+                "midiOptions": 0
+              },
+              {
+                "paramId": 1,
+                "cc": 2,
+                "ccMode": 0,
+                "note": -1,
+                "noteMode": 0,
+                "label": "",
+                "midiOptions": 0
+              },
+              {
+                "paramId": 2,
+                "cc": 3,
+                "ccMode": 0,
+                "note": -1,
+                "noteMode": 0,
+                "label": "",
+                "midiOptions": 0
+              },
+              {
+                "paramId": 3,
+                "cc": 4,
+                "ccMode": 0,
+                "note": -1,
+                "noteMode": 0,
+                "label": "",
+                "midiOptions": 0
+              },
+              {
+                "paramId": 4,
+                "cc": -1,
+                "ccMode": 0,
+                "note": -1,
+                "noteMode": 0,
+                "label": "",
+                "midiOptions": 0
+              },
+              {
+                "paramId": 5,
+                "cc": -1,
+                "ccMode": 0,
+                "note": -1,
+                "noteMode": 0,
+                "label": "",
+                "midiOptions": 0
+              }
+            ]
+          }
+        ]
+      },
+      "pos": [
+        46,
+        0
+      ]
+    }
+  ],
+  "cables": []
+}

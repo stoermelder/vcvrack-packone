@@ -1,4 +1,5 @@
 #include "plugin.hpp"
+#include "StripIdFixModule.hpp"
 
 namespace StoermelderPackOne {
 namespace Glue {
@@ -9,6 +10,9 @@ const static NVGcolor LABEL_COLOR_CYAN = nvgRGB(0x7a, 0xfc, 0xff);
 const static NVGcolor LABEL_COLOR_GREEN = nvgRGB(0x1b, 0xa8, 0xb1);
 const static NVGcolor LABEL_COLOR_PINK = nvgRGB(0xff, 0x65, 0xa3);
 const static NVGcolor LABEL_COLOR_WHITE = nvgRGB(0xfa, 0xfa, 0xfa);
+
+const static NVGcolor LABEL_FONTCOLOR_DEFAULT = nvgRGB(0x08, 0x08, 0x08);
+const static NVGcolor LABEL_FONTCOLOR_WHITE = nvgRGB(0xf8, 0xf8, 0xf8);
 
 const static float LABEL_OPACITY_MAX = 1.0f;
 const static float LABEL_OPACITY_MIN = 0.2f;
@@ -54,10 +58,11 @@ struct Label {
 	int font = 0;
 	std::string text;
 	NVGcolor color = LABEL_COLOR_YELLOW;
+	NVGcolor fontColor = LABEL_FONTCOLOR_DEFAULT;
 };
 
 
-struct GlueModule : Module {
+struct GlueModule : Module, StripIdFixModule {
 	enum ParamIds {
 		PARAM_UNLOCK,
 		PARAM_ADD_LABEL,
@@ -97,6 +102,8 @@ struct GlueModule : Module {
 	/** [Stored to JSON] default font for new labels */
 	int defaultFont;
 	/** [Stored to JSON] */
+	NVGcolor defaultFontColor;
+	/** [Stored to JSON] */
 	bool skewLabels;
 
 	bool resetRequested = false;
@@ -131,6 +138,7 @@ struct GlueModule : Module {
 		defaultOpacity = LABEL_OPACITY_MAX;
 		defaultColor = LABEL_COLOR_YELLOW;
 		defaultFont = 0;
+		defaultFontColor = LABEL_FONTCOLOR_DEFAULT;
 		skewLabels = true;
 		resetRequested = true;
 	}
@@ -144,6 +152,7 @@ struct GlueModule : Module {
 		l->color = defaultColor;
 		l->opacity = defaultOpacity;
 		l->font = defaultFont;
+		l->fontColor = defaultFontColor;
 		labels.push_back(l);
 		return l;
 	}
@@ -164,6 +173,7 @@ struct GlueModule : Module {
 		json_object_set_new(rootJ, "defaultOpacity", json_real(defaultOpacity));
 		json_object_set_new(rootJ, "defaultColor", json_string(color::toHexString(defaultColor).c_str()));
 		json_object_set_new(rootJ, "defaultFont", json_integer(defaultFont));
+		json_object_set_new(rootJ, "defaultFontColor", json_string(color::toHexString(defaultFontColor).c_str()));
 		json_object_set_new(rootJ, "skewLabels", json_boolean(skewLabels));
 
 		json_t* labelsJ = json_array();
@@ -180,6 +190,7 @@ struct GlueModule : Module {
 			json_object_set_new(labelJ, "text", json_string(l->text.c_str()));
 			json_object_set_new(labelJ, "color", json_string(color::toHexString(l->color).c_str()));
 			json_object_set_new(labelJ, "font", json_integer(l->font));
+			json_object_set_new(labelJ, "fontColor", json_string(color::toHexString(l->fontColor).c_str()));
 			json_array_append_new(labelsJ, labelJ);
 		}
 		json_object_set_new(rootJ, "labels", labelsJ);
@@ -197,10 +208,12 @@ struct GlueModule : Module {
 		json_t* defaultColorJ = json_object_get(rootJ, "defaultColor");
 		if (defaultColorJ) defaultColor = color::fromHexString(json_string_value(defaultColorJ));
 		defaultFont = json_integer_value(json_object_get(rootJ, "defaultFont"));
+		json_t* defaultFontColorJ = json_object_get(rootJ, "defaultFontColor");
+		if (defaultFontColorJ) defaultFontColor = color::fromHexString(json_string_value(defaultFontColorJ));
 		skewLabels = json_boolean_value(json_object_get(rootJ, "skewLabels"));
 
 		// Hack for preventing duplicating this module
-		if (APP->engine->getModule(id) != NULL) return;
+		if (APP->engine->getModule(id) != NULL && !idFixHasMap()) return;
 
 		for (Label* l : labels) {
 			delete l;
@@ -213,8 +226,12 @@ struct GlueModule : Module {
 			size_t labelIdx;
 			json_t* labelJ;
 			json_array_foreach(labelsJ, labelIdx, labelJ) {
+				int moduleId = json_integer_value(json_object_get(labelJ, "moduleId"));
+				moduleId = idFix(moduleId);
+				if (moduleId < 0) continue;
+				
 				Label* l = addLabel();
-				l->moduleId = json_integer_value(json_object_get(labelJ, "moduleId"));
+				l->moduleId = moduleId;
 				l->x = json_real_value(json_object_get(labelJ, "x"));
 				l->y = json_real_value(json_object_get(labelJ, "y"));
 				l->angle = json_real_value(json_object_get(labelJ, "angle"));
@@ -226,9 +243,12 @@ struct GlueModule : Module {
 				if (textJ) l->text = json_string_value(textJ);
 				l->color = color::fromHexString(json_string_value(json_object_get(labelJ, "color")));
 				l->font = json_integer_value(json_object_get(labelJ, "font"));
+				json_t* fontColorJ = json_object_get(labelJ, "fontColor");
+				if (fontColorJ) l->fontColor = color::fromHexString(json_string_value(fontColorJ));
 			}
 		}
 
+		idFixClearMap();
 		params[PARAM_UNLOCK].setValue(0.f);
 	}
 };
@@ -273,7 +293,7 @@ struct LabelDrawWidget : TransparentWidget {
 			nvgFontFaceId(args.vg, font[label->font]->handle);
 			nvgTextLetterSpacing(args.vg, -1.2f);
 			nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_TOP);
-			nvgFillColor(args.vg, color::alpha(nvgRGB(0x08, 0x08, 0x08), label->opacity));
+			nvgFillColor(args.vg, color::alpha(label->fontColor, label->opacity));
 			NVGtextRow textRow;
 			nvgTextBreakLines(args.vg, label->text.c_str(), NULL, d.size.x, &textRow, 1);
 			nvgTextBox(args.vg, d.pos.x, d.pos.y + 0.2f, d.size.x, textRow.start, textRow.end);
@@ -569,6 +589,54 @@ struct LabelWidget : widget::TransparentWidget {
 					}
 				};
 
+				struct FontItem : MenuItem {
+					Label* label;
+					int font;
+					void onAction(const event::Action& e) override {
+						label->font = font;
+					}
+					void step() override {
+						rightText = label->font == font ? "✔" : "";
+						MenuItem::step();
+					}
+				};
+
+				struct FontColorItem : MenuItem {
+					Label* label;
+					NVGcolor color;
+					void onAction(const event::Action& e) override {
+						label->fontColor = color;
+					}
+					void step() override {
+						rightText = color::toHexString(label->fontColor) == color::toHexString(color) ? "✔" : "";
+						MenuItem::step();
+					}
+				};
+
+				struct CustomFontColorField : ui::TextField {
+					Label* label;
+					bool* textSelected;
+					CustomFontColorField() {
+						box.size.x = 80.f;
+						placeholder = color::toHexString(LABEL_FONTCOLOR_DEFAULT);
+					}
+					void onSelectKey(const event::SelectKey& e) override {
+						if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
+							label->fontColor = color::fromHexString(trim(text));
+							ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
+							overlay->requestDelete();
+							e.consume(this);
+						}
+						if (!e.getTarget()) {
+							ui::TextField::onSelectKey(e);
+						}
+					}
+					void onButton(const event::Button& e) override {
+						*textSelected = false;
+						TextField::onButton(e);
+					}
+				};
+
 				struct ColorItem : MenuItem {
 					Label* label;
 					NVGcolor color;
@@ -605,18 +673,6 @@ struct LabelWidget : widget::TransparentWidget {
 					}
 				};
 
-				struct FontItem : MenuItem {
-					Label* label;
-					int font;
-					void onAction(const event::Action& e) override {
-						label->font = font;
-					}
-					void step() override {
-						rightText = label->font == font ? "✔" : "";
-						MenuItem::step();
-					}
-				};
-
 				menu->addChild(new SizeSlider(label));
 				menu->addChild(new WidthSlider(label));
 				menu->addChild(new OpacitySlider(label));
@@ -629,6 +685,11 @@ struct LabelWidget : widget::TransparentWidget {
 				menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Font"));
 				menu->addChild(construct<FontItem>(&MenuItem::text, "Default", &FontItem::label, label, &FontItem::font, 0));
 				menu->addChild(construct<FontItem>(&MenuItem::text, "Handwriting", &FontItem::label, label, &FontItem::font, 1));
+				menu->addChild(new MenuSeparator);
+				menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Font color"));
+				menu->addChild(construct<FontColorItem>(&MenuItem::text, "Black", &FontColorItem::label, label, &FontColorItem::color, LABEL_FONTCOLOR_DEFAULT));
+				menu->addChild(construct<FontColorItem>(&MenuItem::text, "White", &FontColorItem::label, label, &FontColorItem::color, LABEL_FONTCOLOR_WHITE));
+				menu->addChild(construct<CustomFontColorField>(&TextField::text, color::toHexString(label->fontColor), &CustomFontColorField::label, label, &CustomFontColorField::textSelected, textSelected));
 				menu->addChild(new MenuSeparator);
 				menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Color"));
 				menu->addChild(construct<ColorItem>(&MenuItem::text, "Yellow", &ColorItem::label, label, &ColorItem::color, LABEL_COLOR_YELLOW));
@@ -694,13 +755,15 @@ struct LabelRemoveAction : history::ModuleAction {
 		lw->label->size = label.size;
 		lw->label->angle = label.angle;
 		lw->label->skew = label.skew;
+		lw->label->color = label.color;
 		lw->label->opacity = label.opacity;
 		lw->label->text = label.text;
-		lw->label->color = label.color;
+		lw->label->font = label.font;
+		lw->label->fontColor = label.fontColor;
 	}
 
 	void redo() override {
-		// Nothing to do here, it's handled like any module removal by LabelContainer
+		// Nothing to do here, it's handled as any module removal by LabelContainer
 	}
 };
 
@@ -814,6 +877,7 @@ struct LabelContainer : widget::Widget {
 			l->color = labelTemplate->color;
 			l->opacity = labelTemplate->opacity;
 			l->font = labelTemplate->font;
+			l->fontColor = labelTemplate->fontColor;
 			labelTemplate = NULL;
 		}
 		LabelWidget* lw = new LabelWidget(l);
@@ -851,10 +915,16 @@ struct LabelContainer : widget::Widget {
 		// Enable edit mode
 		editMode = true;
 		learnMode = false;
+		glfwSetCursor(APP->window->win, NULL);
 	}
 
 	void toggleLearnMode() {
 		if (!hideMode) learnMode ^= true;
+		GLFWcursor* cursor = NULL;
+		if (learnMode) {
+			cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
+		}
+		glfwSetCursor(APP->window->win, cursor);
 	}
 
 	void toggleEditMode() {
@@ -1146,6 +1216,49 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 					}
 				};
 
+				struct FontItem : MenuItem {
+					GlueModule* module;
+					int font;
+					void onAction(const event::Action& e) override {
+						module->defaultFont = font;
+					}
+					void step() override {
+						rightText = module->defaultFont == font ? "✔" : "";
+						MenuItem::step();
+					}
+				};
+
+				struct FontColorItem : MenuItem {
+					GlueModule* module;
+					NVGcolor color;
+					void onAction(const event::Action& e) override {
+						module->defaultFontColor = color;
+					}
+					void step() override {
+						rightText = color::toHexString(module->defaultFontColor) == color::toHexString(color) ? "✔" : "";
+						MenuItem::step();
+					}
+				};
+
+				struct CustomFontColorField : ui::TextField {
+					GlueModule* module;
+					CustomFontColorField() {
+						box.size.x = 80.f;
+						placeholder = color::toHexString(LABEL_FONTCOLOR_DEFAULT);
+					}
+					void onSelectKey(const event::SelectKey& e) override {
+						if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
+							module->defaultFontColor = color::fromHexString(trim(text));
+							ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
+							overlay->requestDelete();
+							e.consume(this);
+						}
+						if (!e.getTarget()) {
+							ui::TextField::onSelectKey(e);
+						}
+					}
+				};
+
 				struct ColorItem : MenuItem {
 					GlueModule* module;
 					NVGcolor color;
@@ -1177,18 +1290,6 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 					}
 				};
 
-				struct FontItem : MenuItem {
-					GlueModule* module;
-					int font;
-					void onAction(const event::Action& e) override {
-						module->defaultFont = font;
-					}
-					void step() override {
-						rightText = module->defaultFont == font ? "✔" : "";
-						MenuItem::step();
-					}
-				};
-
 				menu->addChild(new SizeSlider(module));
 				menu->addChild(new WidthSlider(module));
 				menu->addChild(new OpacitySlider(module));
@@ -1201,6 +1302,11 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 				menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Default font"));
 				menu->addChild(construct<FontItem>(&MenuItem::text, "Default", &FontItem::module, module, &FontItem::font, 0));
 				menu->addChild(construct<FontItem>(&MenuItem::text, "Handwriting", &FontItem::module, module, &FontItem::font, 1));
+				menu->addChild(new MenuSeparator());
+				menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Default font color"));
+				menu->addChild(construct<FontColorItem>(&MenuItem::text, "Black", &FontColorItem::module, module, &FontColorItem::color, LABEL_FONTCOLOR_DEFAULT));
+				menu->addChild(construct<FontColorItem>(&MenuItem::text, "White", &FontColorItem::module, module, &FontColorItem::color, LABEL_FONTCOLOR_WHITE));
+				menu->addChild(construct<CustomFontColorField>(&TextField::text, color::toHexString(module->defaultFontColor), &CustomFontColorField::module, module));
 				menu->addChild(new MenuSeparator());
 				menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Default color"));
 				menu->addChild(construct<ColorItem>(&MenuItem::text, "Yellow", &ColorItem::module, module, &ColorItem::color, LABEL_COLOR_YELLOW));

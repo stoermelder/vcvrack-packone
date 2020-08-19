@@ -1,9 +1,9 @@
 #include "plugin.hpp"
+#include "StripIdFixModule.hpp"
 #include <osdialog.h>
 #include <plugin.hpp>
 #include <thread>
 #include <mutex>
-
 
 namespace Strip {
 
@@ -68,6 +68,8 @@ struct StripModule : Module {
 	std::set<std::tuple<int, int>> excludedParams;
 	/** [Stored to JSON] */
 	RANDOMEXCL randomExcl = RANDOMEXCL_EXC;
+	/** [Stored to JSON] */
+	bool randomParamsOnly;
 
 	dsp::SchmittTrigger modeTrigger;
 	dsp::SchmittTrigger onTrigger;
@@ -93,6 +95,7 @@ struct StripModule : Module {
 		// Aquire excludeMutex to get exclusive access to excludedParams
 		std::lock_guard<std::mutex> lockGuard(excludeMutex);
 		excludedParams.clear();
+		randomParamsOnly = false;
 		// Release excludeMutex
 	}
 
@@ -247,8 +250,9 @@ struct StripModule : Module {
 							break;
 					}
 				}
-				mw->module->onRandomize();
-
+				if (!randomParamsOnly) {
+					mw->module->onRandomize();
+				}
 				if (useHistory) {
 					h->newModuleJ = m->rightExpander.module->toJson();
 				}
@@ -288,8 +292,9 @@ struct StripModule : Module {
 							break;
 					}
 				}
-				mw->module->onRandomize();
-
+				if (!randomParamsOnly) {
+					mw->module->onRandomize();
+				}
 				if (useHistory) {
 					h->newModuleJ = m->leftExpander.module->toJson();
 				}
@@ -317,6 +322,7 @@ struct StripModule : Module {
 		} 
 		json_object_set_new(rootJ, "excludedParams", excludedParamsJ);
 		json_object_set_new(rootJ, "randomExcl", json_integer(randomExcl));
+		json_object_set_new(rootJ, "randomParamsOnly", json_boolean(randomParamsOnly));
 		return rootJ;
 		// Release excludeMutex
 	}
@@ -348,6 +354,8 @@ struct StripModule : Module {
 		}
 		json_t* randomExclJ = json_object_get(rootJ, "randomExcl");
 		randomExcl = (RANDOMEXCL)json_integer_value(randomExclJ);
+		json_t* randomParamsOnlyJ = json_object_get(rootJ, "randomParamsOnly");
+		if (randomParamsOnlyJ) randomParamsOnly = json_boolean_value(randomParamsOnlyJ);
 		// Release excludeMutex
 	}
 };
@@ -357,11 +365,9 @@ struct RandomExclMenuItem : MenuItem {
 	struct RandomExclItem : MenuItem {
 		StripModule* module;
 		RANDOMEXCL randomExcl;
-
 		void onAction(const event::Action& e) override {
 			module->randomExcl = randomExcl;
 		}
-
 		void step() override {
 			rightText = module->randomExcl == randomExcl ? "✔" : "";
 			MenuItem::step();
@@ -918,8 +924,7 @@ struct StripWidget : ThemedModuleWidget<StripModule> {
 		std::string modelSlug = json_string_value(json_object_get(moduleJ, "model"));
 
 		// Only handle some specific modules known to use mapping of parameters
-		if (!( (pluginSlug == "Stoermelder-P1" && (modelSlug == "CVMap" || modelSlug == "CVMapMicro" || modelSlug == "CVPam" || modelSlug == "ReMoveLite" || modelSlug == "MidiCat"))
-			|| (pluginSlug == "Core" && modelSlug == "MIDI-Map"))) 
+		if (!(pluginSlug == "Core" && modelSlug == "MIDI-Map"))
 			return;
 
 		json_t* dataJ = json_object_get(moduleJ, "data");
@@ -969,6 +974,9 @@ struct StripWidget : ThemedModuleWidget<StripModule> {
 						h->moduleId = mw->module->id;
 						h->oldModuleJ = mw->toJson();
 
+						StripIdFixModule* m = dynamic_cast<StripIdFixModule*>(mw->module);
+						if (m) m->idFixDataFromJson(modules);
+
 						mw->fromJson(moduleJ);
 
 						h->newModuleJ = mw->toJson();
@@ -992,6 +1000,9 @@ struct StripWidget : ThemedModuleWidget<StripModule> {
 						h->name = "load module preset";
 						h->moduleId = mw->module->id;
 						h->oldModuleJ = mw->toJson();
+
+						StripIdFixModule* m = dynamic_cast<StripIdFixModule*>(mw->module);
+						if (m) m->idFixDataFromJson(modules);
 
 						mw->fromJson(moduleJ);
 
@@ -1343,17 +1354,25 @@ struct StripWidget : ThemedModuleWidget<StripModule> {
 		ThemedModuleWidget<StripModule>::appendContextMenu(menu);
 		StripModule* module = dynamic_cast<StripModule*>(this->module);
 		assert(module);
+		menu->addChild(new MenuSeparator);
 
-		menu->addChild(new MenuSeparator());
+		struct RandomParamsOnlyItem : MenuItem {
+			StripModule* module;
+			void onAction(const event::Action& e) override {
+				module->randomParamsOnly ^= true;
+			}
+			void step() override {
+				rightText = module->randomParamsOnly ? "✔" : "";
+				MenuItem::step();
+			}
+		};
 
-		OnModeMenuItem* onModeMenuItem = construct<OnModeMenuItem>(&MenuItem::text, "Port/Switch ON mode", &OnModeMenuItem::module, module);
-		onModeMenuItem->rightText = RIGHT_ARROW;
-		menu->addChild(onModeMenuItem);
-		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<OnModeMenuItem>(&MenuItem::text, "Port/Switch ON mode", &MenuItem::rightText, RIGHT_ARROW, &OnModeMenuItem::module, module));
+		menu->addChild(construct<RandomParamsOnlyItem>(&MenuItem::text, "Randomize parameters only", &RandomParamsOnlyItem::module, module));
+		menu->addChild(new MenuSeparator);
 
 		struct CutGroupMenuItem : MenuItem {
 			StripWidget* moduleWidget;
-
 			void onAction(const event::Action& e) override {
 				moduleWidget->groupCutClipboard();
 			}
@@ -1361,7 +1380,6 @@ struct StripWidget : ThemedModuleWidget<StripModule> {
 
 		struct CopyGroupMenuItem : MenuItem {
 			StripWidget* moduleWidget;
-
 			void onAction(const event::Action& e) override {
 				moduleWidget->groupCopyClipboard();
 			}
@@ -1369,7 +1387,6 @@ struct StripWidget : ThemedModuleWidget<StripModule> {
 
 		struct PasteGroupMenuItem : MenuItem {
 			StripWidget* moduleWidget;
-
 			void onAction(const event::Action& e) override {
 				moduleWidget->groupPasteClipboard();
 			}
@@ -1377,7 +1394,6 @@ struct StripWidget : ThemedModuleWidget<StripModule> {
 
 		struct LoadGroupMenuItem : MenuItem {
 			StripWidget* moduleWidget;
-
 			void onAction(const event::Action& e) override {
 				moduleWidget->groupLoadFileDialog();
 			}
@@ -1385,26 +1401,17 @@ struct StripWidget : ThemedModuleWidget<StripModule> {
 
 		struct SaveGroupMenuItem : MenuItem {
 			StripWidget* moduleWidget;
-
 			void onAction(const event::Action& e) override {
 				moduleWidget->groupSaveFileDialog();
 			}
 		};
 
-		ui::MenuLabel* modelLabel = new ui::MenuLabel;
-		modelLabel->text = "Strip";
-		menu->addChild(modelLabel);
-
-		CutGroupMenuItem* cutGroupMenuItem = construct<CutGroupMenuItem>(&MenuItem::text, "Cut", &CutGroupMenuItem::moduleWidget, this);
-		menu->addChild(cutGroupMenuItem);
-		CopyGroupMenuItem* copyGroupMenuItem = construct<CopyGroupMenuItem>(&MenuItem::text, "Copy", &MenuItem::rightText, "Shift+C", &CopyGroupMenuItem::moduleWidget, this);
-		menu->addChild(copyGroupMenuItem);
-		PasteGroupMenuItem* pasteGroupMenuItem = construct<PasteGroupMenuItem>(&MenuItem::text, "Paste", &MenuItem::rightText, "Shift+V", &PasteGroupMenuItem::moduleWidget, this);
-		menu->addChild(pasteGroupMenuItem);
-		LoadGroupMenuItem* loadGroupMenuItem = construct<LoadGroupMenuItem>(&MenuItem::text, "Load", &LoadGroupMenuItem::moduleWidget, this);
-		menu->addChild(loadGroupMenuItem);
-		SaveGroupMenuItem* saveGroupMenuItem = construct<SaveGroupMenuItem>(&MenuItem::text, "Save as", &SaveGroupMenuItem::moduleWidget, this);
-		menu->addChild(saveGroupMenuItem);
+		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Strip"));
+		menu->addChild(construct<CutGroupMenuItem>(&MenuItem::text, "Cut", &CutGroupMenuItem::moduleWidget, this));
+		menu->addChild(construct<CopyGroupMenuItem>(&MenuItem::text, "Copy", &MenuItem::rightText, "Shift+C", &CopyGroupMenuItem::moduleWidget, this));
+		menu->addChild(construct<PasteGroupMenuItem>(&MenuItem::text, "Paste", &MenuItem::rightText, "Shift+V", &PasteGroupMenuItem::moduleWidget, this));
+		menu->addChild(construct<LoadGroupMenuItem>(&MenuItem::text, "Load", &LoadGroupMenuItem::moduleWidget, this));
+		menu->addChild(construct<SaveGroupMenuItem>(&MenuItem::text, "Save as", &SaveGroupMenuItem::moduleWidget, this));
 	}
 };
 

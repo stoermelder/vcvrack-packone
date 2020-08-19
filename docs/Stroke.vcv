@@ -1,0 +1,493 @@
+{
+  "version": "1.1.6",
+  "modules": [
+    {
+      "id": 117,
+      "plugin": "Stoermelder-P1",
+      "version": "1.7.2b39998",
+      "model": "Stroke",
+      "params": [],
+      "data": {
+        "panelTheme": 1,
+        "keys": [
+          {
+            "button": -1,
+            "key": 53,
+            "mods": 0,
+            "mode": 1,
+            "high": false,
+            "zoomModuleLevel": 0.0,
+            "cableColor": "#000000"
+          },
+          {
+            "button": -1,
+            "key": 54,
+            "mods": 0,
+            "mode": 1,
+            "high": false,
+            "zoomModuleLevel": 0.0,
+            "cableColor": "#000000"
+          },
+          {
+            "button": -1,
+            "key": 55,
+            "mods": 0,
+            "mode": 1,
+            "high": false,
+            "zoomModuleLevel": 0.0,
+            "cableColor": "#000000"
+          },
+          {
+            "button": -1,
+            "key": 54,
+            "mods": 4,
+            "mode": 1,
+            "high": false,
+            "zoomModuleLevel": 0.0,
+            "cableColor": "#000000"
+          },
+          {
+            "button": -1,
+            "key": 54,
+            "mods": 0,
+            "mode": 1,
+            "high": false,
+            "zoomModuleLevel": 0.0,
+            "cableColor": "#000000"
+          },
+          {
+            "button": -1,
+            "key": -1,
+            "mods": 0,
+            "mode": 1,
+            "high": false,
+            "zoomModuleLevel": 0.0,
+            "cableColor": "#000000"
+          },
+          {
+            "button": -1,
+            "key": -1,
+            "mods": 0,
+            "mode": 1,
+            "high": false,
+            "zoomModuleLevel": 0.0,
+            "cableColor": "#000000"
+          },
+          {
+            "button": -1,
+            "key": -1,
+            "mods": 0,
+            "mode": 1,
+            "high": false,
+            "zoomModuleLevel": 0.0,
+            "cableColor": "#000000"
+          },
+          {
+            "button": -1,
+            "key": -1,
+            "mods": 0,
+            "mode": 1,
+            "high": false,
+            "zoomModuleLevel": 0.0,
+            "cableColor": "#000000"
+          },
+          {
+            "button": -1,
+            "key": -1,
+            "mods": 0,
+            "mode": 1,
+            "high": false,
+            "zoomModuleLevel": 0.0,
+            "cableColor": "#000000"
+          }
+        ]
+      },
+      "pos": [
+        8,
+        0
+      ]
+    },
+    {
+      "id": 118,
+      "plugin": "Stoermelder-P1",
+      "version": "1.7.2b39998",
+      "model": "Stroke",
+      "params": [],
+      "data": {
+        "panelTheme": 0,
+        "keys": [
+          {
+            "button": -1,
+            "key": 70,
+            "mods": 2,
+            "mode": 1,
+            "high": false,
+            "zoomModuleLevel": 0.0,
+            "cableColor": "#000000"
+          },
+          {
+            "button": -1,
+            "key": 71,
+            "mods": 2,
+            "mode": 1,
+            "high": false,
+            "zoomModuleLevel": 0.0,
+            "cableColor": "#000000"
+          },
+          {
+            "button": -1,
+            "key": 88,
+            "mods": 3,
+            "mode": 1,
+            "high": false,
+            "zoomModuleLevel": 0.0,
+            "cableColor": "#000000"
+          },
+          {
+            "button": -1,
+            "key": 74,
+            "mods": 0,
+            "mode": 1,
+            "high": false,
+            "zoomModuleLevel": 0.0,
+            "cableColor": "#000000"
+          },
+          {
+            "button": -1,
+            "key": 32,
+            "mods": 0,
+            "mode": 1,
+            "high": false,
+            "zoomModuleLevel": 0.0,
+            "cableColor": "#000000"
+          },
+          {
+            "button": -1,
+            "key": -1,
+            "mods": 0,
+            "mode": 1,
+            "high": false,
+            "zoomModuleLevel": 0.0,
+            "cableColor": "#000000"
+          },
+          {
+            "button": -1,
+            "key": -1,
+            "mods": 0,
+            "mode": 1,
+            "high": false,
+            "zoomModuleLevel": 0.0,
+            "cableColor": "#000000"
+          },
+          {
+            "button": -1,
+            "key": -1,
+            "mods": 0,
+            "mode": 1,
+            "high": false,
+            "zoomModuleLevel": 0.0,
+            "cableColor": "#000000"
+          },
+          {
+            "button": -1,
+            "key": -1,
+            "mods": 0,
+            "mode": 1,
+            "high": false,
+            "zoomModuleLevel": 0.0,
+            "cableColor": "#000000"
+          },
+          {
+            "button": -1,
+            "key": -1,
+            "mods": 0,
+            "mode": 1,
+            "high": false,
+            "zoomModuleLevel": 0.0,
+            "cableColor": "#000000"
+          }
+        ]
+      },
+      "pos": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": 120,
+      "plugin": "Stoermelder-P1",
+      "version": "1.7.2b39998",
+      "model": "Stroke",
+      "params": [],
+      "data": {
+        "panelTheme": 1,
+        "keys": [
+          {
+            "button": -1,
+            "key": 49,
+            "mods": 0,
+            "mode": 1,
+            "high": false,
+            "zoomModuleLevel": 0.0,
+            "cableColor": "#000000"
+          },
+          {
+            "button": -1,
+            "key": 50,
+            "mods": 0,
+            "mode": 2,
+            "high": false,
+            "zoomModuleLevel": 0.0,
+            "cableColor": "#000000"
+          },
+          {
+            "button": -1,
+            "key": 51,
+            "mods": 0,
+            "mode": 3,
+            "high": false,
+            "zoomModuleLevel": 0.0,
+            "cableColor": "#000000"
+          },
+          {
+            "button": -1,
+            "key": -1,
+            "mods": 0,
+            "mode": 1,
+            "high": false,
+            "zoomModuleLevel": 0.0,
+            "cableColor": "#000000"
+          },
+          {
+            "button": -1,
+            "key": -1,
+            "mods": 0,
+            "mode": 1,
+            "high": false,
+            "zoomModuleLevel": 0.0,
+            "cableColor": "#000000"
+          },
+          {
+            "button": -1,
+            "key": -1,
+            "mods": 0,
+            "mode": 1,
+            "high": false,
+            "zoomModuleLevel": 0.0,
+            "cableColor": "#000000"
+          },
+          {
+            "button": -1,
+            "key": -1,
+            "mods": 0,
+            "mode": 1,
+            "high": false,
+            "zoomModuleLevel": 0.0,
+            "cableColor": "#000000"
+          },
+          {
+            "button": -1,
+            "key": -1,
+            "mods": 0,
+            "mode": 1,
+            "high": false,
+            "zoomModuleLevel": 0.0,
+            "cableColor": "#000000"
+          },
+          {
+            "button": -1,
+            "key": -1,
+            "mods": 0,
+            "mode": 1,
+            "high": false,
+            "zoomModuleLevel": 0.0,
+            "cableColor": "#000000"
+          },
+          {
+            "button": -1,
+            "key": -1,
+            "mods": 0,
+            "mode": 1,
+            "high": false,
+            "zoomModuleLevel": 0.0,
+            "cableColor": "#000000"
+          }
+        ]
+      },
+      "pos": [
+        1,
+        2
+      ]
+    },
+    {
+      "id": 121,
+      "plugin": "Fundamental",
+      "version": "1.4.0",
+      "model": "Scope",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 16.0
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        },
+        {
+          "id": 6,
+          "value": 0.0
+        },
+        {
+          "id": 7,
+          "value": 0.0
+        }
+      ],
+      "data": {
+        "lissajous": 0,
+        "external": 0
+      },
+      "pos": [
+        9,
+        2
+      ]
+    },
+    {
+      "id": 122,
+      "plugin": "Fundamental",
+      "version": "1.4.0",
+      "model": "Scope",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 6.0
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        },
+        {
+          "id": 6,
+          "value": 0.0
+        },
+        {
+          "id": 7,
+          "value": 0.0
+        }
+      ],
+      "data": {
+        "lissajous": 0,
+        "external": 0
+      },
+      "pos": [
+        24,
+        2
+      ]
+    },
+    {
+      "id": 123,
+      "plugin": "Fundamental",
+      "version": "1.4.0",
+      "model": "Scope",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 6.0
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        },
+        {
+          "id": 6,
+          "value": 0.0
+        },
+        {
+          "id": 7,
+          "value": 0.0
+        }
+      ],
+      "data": {
+        "lissajous": 0,
+        "external": 0
+      },
+      "pos": [
+        39,
+        2
+      ]
+    }
+  ],
+  "cables": [
+    {
+      "id": 0,
+      "outputModuleId": 120,
+      "outputId": 0,
+      "inputModuleId": 121,
+      "inputId": 0,
+      "color": "#c9b70e"
+    },
+    {
+      "id": 1,
+      "outputModuleId": 120,
+      "outputId": 1,
+      "inputModuleId": 122,
+      "inputId": 0,
+      "color": "#0c8e15"
+    },
+    {
+      "id": 2,
+      "outputModuleId": 120,
+      "outputId": 2,
+      "inputModuleId": 123,
+      "inputId": 0,
+      "color": "#c91847"
+    }
+  ]
+}
