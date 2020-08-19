@@ -24,7 +24,6 @@ void init(rack::Plugin* p) {
 	p->addModel(modelArena);
 	p->addModel(modelMaze);
 	p->addModel(modelIntermix);
-	p->addModel(modelDetour);
 	p->addModel(modelSail);
 	p->addModel(modelPile);
 	p->addModel(modelPilePoly);
@@ -37,13 +36,9 @@ void init(rack::Plugin* p) {
 	p->addModel(modelGoto);
 	p->addModel(modelStroke);
 	p->addModel(modelSpin);
-	p->addModel(modelFlowerSeq);
-	p->addModel(modelFlowerSeqEx);
-	p->addModel(modelFlowerTrig);
 	p->addModel(modelTransit);
 	p->addModel(modelTransitEx);
 	p->addModel(modelX4);
-	p->addModel(modelFacets);
 	p->addModel(modelAudioInterface64);
 
 	pluginSettings.readFromJson();

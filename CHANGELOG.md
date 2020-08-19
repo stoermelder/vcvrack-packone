@@ -1,11 +1,4 @@
-## 1.x.0 (in development)
-
-- Module [DETOUR](./docs/Detour.md)
-    - New module, 8x8 send/return switch matrix with support for 8 scenes
-- Module [FLOWER, SEEDS, OFFSPRING](./docs/Flower.md)
-    - New module, pattern-driven 16-step sequencer
-
-## 1.7.0 (in development)
+## 1.7.0
 
 - Module [MEM](./docs/MidiCat.md#mem-expander)
     - New expander-module for MIDI-CAT, storage-unit for MIDI mapping-presets with MIDI-CAT
