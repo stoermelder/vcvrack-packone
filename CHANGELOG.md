@@ -14,7 +14,7 @@
 - Module [STROKE](./docs/STROKE.md)
     - New module, converts used-defined hotkeys into triggers or gates, also provides some special commands for Rack's enviroment
 - Module [TRANSIT](./docs/TRANSIT.md)
-    - New module, parameter-morpher for up to 96 snapshots
+    - New module, parameter-morpher and sequencer for up to 96 snapshots
 - Module [+T](./docs/TRANSIT.md)
     - New module, expander for TRANSIT
 - Module [X4](./docs/X4.md)

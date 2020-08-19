@@ -255,8 +255,8 @@
 		{
 			"slug": "Transit",
 			"name": "TRANSIT",
-			"description": "",
-			"tags": ["Utility"],
+			"description": "Parameter-morpher and sequencer for up to 96 snapshots",
+			"tags": ["Utility", "Sequencer"],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Transit.md"
 		},
 		{

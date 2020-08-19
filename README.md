@@ -18,7 +18,7 @@ If you like my modules consider donating to https://paypal.me/stoermelder. Thank
 - [MEM](./docs/MidiCat.md#mem-expander): storage-expander for MIDI mapping-presets with MIDI-CAT
 - [SPIN](./docs/Spin.md): utility for converting mouse-wheel or middle mouse-button events into triggers
 - [STROKE](./docs/Stroke.md): utility which converts used-defined hotkeys into triggers or gates, also provides some special commands for Rack's enviroment
-- [TRANSIT](./docs/Transit.md): parameter-morpher for up to 96 snapshots
+- [TRANSIT](./docs/Transit.md): parameter-morpher and sequencer for up to 96 snapshots
 - [X4](./docs/X4.md): dual multiple for parameter-mapping
 
 ![Intro image](./docs/intro-latest.png)
