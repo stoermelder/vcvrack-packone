@@ -26,7 +26,7 @@
     {
       "id": 1036,
       "plugin": "Stoermelder-P1",
-      "version": "1.7.e080538",
+      "version": "1.7.218399f",
       "model": "CVMap",
       "params": [],
       "leftModuleId": 1052,
@@ -94,7 +94,7 @@
     {
       "id": 1037,
       "plugin": "Stoermelder-P1",
-      "version": "1.7.e080538",
+      "version": "1.7.218399f",
       "model": "CVPam",
       "params": [],
       "leftModuleId": 1062,
@@ -149,7 +149,7 @@
     {
       "id": 1038,
       "plugin": "Stoermelder-P1",
-      "version": "1.7.e080538",
+      "version": "1.7.218399f",
       "model": "Infix",
       "params": [],
       "leftModuleId": 1043,
@@ -165,7 +165,7 @@
     {
       "id": 1039,
       "plugin": "Stoermelder-P1",
-      "version": "1.7.e080538",
+      "version": "1.7.218399f",
       "model": "MidiCat",
       "params": [],
       "leftModuleId": 1042,
@@ -244,7 +244,7 @@
     {
       "id": 1040,
       "plugin": "Stoermelder-P1",
-      "version": "1.7.e080538",
+      "version": "1.7.218399f",
       "model": "RotorA",
       "params": [
         {
@@ -269,7 +269,7 @@
     {
       "id": 1041,
       "plugin": "Stoermelder-P1",
-      "version": "1.7.e080538",
+      "version": "1.7.218399f",
       "model": "ReMoveLite",
       "params": [
         {
@@ -485,7 +485,7 @@
     {
       "id": 1042,
       "plugin": "Stoermelder-P1",
-      "version": "1.7.e080538",
+      "version": "1.7.218399f",
       "model": "Strip",
       "params": [
         {
@@ -527,7 +527,7 @@
     {
       "id": 1043,
       "plugin": "Stoermelder-P1",
-      "version": "1.7.e080538",
+      "version": "1.7.218399f",
       "model": "CVMapMicro",
       "params": [
         {
@@ -567,7 +567,7 @@
     {
       "id": 1044,
       "plugin": "Stoermelder-P1",
-      "version": "1.7.e080538",
+      "version": "1.7.218399f",
       "model": "EightFace",
       "params": [
         {
@@ -653,7 +653,7 @@
     {
       "id": 1045,
       "plugin": "Stoermelder-P1",
-      "version": "1.7.e080538",
+      "version": "1.7.218399f",
       "model": "Bolt",
       "params": [
         {
@@ -979,7 +979,7 @@
     {
       "id": 1052,
       "plugin": "Stoermelder-P1",
-      "version": "1.7.e080538",
+      "version": "1.7.218399f",
       "model": "FourRounds",
       "params": [
         {
@@ -1102,7 +1102,7 @@
     {
       "id": 1053,
       "plugin": "Stoermelder-P1",
-      "version": "1.7.e080538",
+      "version": "1.7.218399f",
       "model": "Sipo",
       "params": [
         {
@@ -5226,7 +5226,7 @@
     {
       "id": 1054,
       "plugin": "Stoermelder-P1",
-      "version": "1.7.e080538",
+      "version": "1.7.218399f",
       "model": "Arena",
       "params": [
         {
@@ -5997,7 +5997,7 @@
     {
       "id": 1055,
       "plugin": "Stoermelder-P1",
-      "version": "1.7.e080538",
+      "version": "1.7.218399f",
       "model": "Maze",
       "params": [
         {
@@ -8130,7 +8130,7 @@
     {
       "id": 1056,
       "plugin": "Stoermelder-P1",
-      "version": "1.7.e080538",
+      "version": "1.7.218399f",
       "model": "EightFaceX2",
       "params": [
         {
@@ -9806,7 +9806,7 @@
     {
       "id": 1057,
       "plugin": "Stoermelder-P1",
-      "version": "1.7.e080538",
+      "version": "1.7.218399f",
       "model": "InfixMicro",
       "params": [],
       "leftModuleId": 1038,
@@ -9822,7 +9822,7 @@
     {
       "id": 1058,
       "plugin": "Stoermelder-P1",
-      "version": "1.7.e080538",
+      "version": "1.7.218399f",
       "model": "Intermix",
       "params": [
         {
@@ -11066,7 +11066,7 @@
     {
       "id": 1059,
       "plugin": "Stoermelder-P1",
-      "version": "1.7.e080538",
+      "version": "1.7.218399f",
       "model": "Sail",
       "params": [
         {
@@ -11093,7 +11093,7 @@
     {
       "id": 1060,
       "plugin": "Stoermelder-P1",
-      "version": "1.7.e080538",
+      "version": "1.7.218399f",
       "model": "Pile",
       "params": [
         {
@@ -11120,7 +11120,7 @@
     {
       "id": 1061,
       "plugin": "Stoermelder-P1",
-      "version": "1.7.e080538",
+      "version": "1.7.218399f",
       "model": "PilePoly",
       "params": [
         {
@@ -11164,7 +11164,7 @@
     {
       "id": 1062,
       "plugin": "Stoermelder-P1",
-      "version": "1.7.e080538",
+      "version": "1.7.218399f",
       "model": "Mirror",
       "params": [],
       "leftModuleId": 1039,
@@ -11215,7 +11215,7 @@
     {
       "id": 1063,
       "plugin": "Stoermelder-P1",
-      "version": "1.7.e080538",
+      "version": "1.7.218399f",
       "model": "Affix",
       "params": [
         {
@@ -11298,7 +11298,7 @@
     {
       "id": 1064,
       "plugin": "Stoermelder-P1",
-      "version": "1.7.e080538",
+      "version": "1.7.218399f",
       "model": "AffixMicro",
       "params": [
         {
@@ -11348,7 +11348,7 @@
     {
       "id": 1065,
       "plugin": "Stoermelder-P1",
-      "version": "1.7.e080538",
+      "version": "1.7.218399f",
       "model": "Grip",
       "params": [
         {
@@ -11413,7 +11413,7 @@
     {
       "id": 1066,
       "plugin": "Stoermelder-P1",
-      "version": "1.7.e080538",
+      "version": "1.7.218399f",
       "model": "Glue",
       "params": [
         {
@@ -11474,7 +11474,7 @@
     {
       "id": 1067,
       "plugin": "Stoermelder-P1",
-      "version": "1.7.e080538",
+      "version": "1.7.218399f",
       "model": "Goto",
       "params": [
         {
@@ -11597,7 +11597,7 @@
     {
       "id": 1068,
       "plugin": "Stoermelder-P1",
-      "version": "1.7.e080538",
+      "version": "1.7.218399f",
       "model": "Stroke",
       "params": [],
       "data": {
@@ -11686,14 +11686,14 @@
         ]
       },
       "pos": [
-        64,
+        42,
         0
       ]
     },
     {
       "id": 1069,
       "plugin": "Stoermelder-P1",
-      "version": "1.7.e080538",
+      "version": "1.7.218399f",
       "model": "Transit",
       "params": [
         {
@@ -11802,19 +11802,19 @@
         "presetProcessDivision": 8,
         "slotCvMode": 2,
         "outMode": 0,
-        "preset": -1,
+        "preset": 28,
         "presetCount": 42,
         "sourceMaps": []
       },
       "pos": [
-        35,
+        52,
         0
       ]
     },
     {
       "id": 1070,
       "plugin": "Stoermelder-P1",
-      "version": "1.7.e080538",
+      "version": "1.7.218399f",
       "model": "TransitEx",
       "params": [
         {
@@ -11910,14 +11910,14 @@
         ]
       },
       "pos": [
-        40,
+        57,
         0
       ]
     },
     {
       "id": 1071,
       "plugin": "Stoermelder-P1",
-      "version": "1.7.e080538",
+      "version": "1.7.218399f",
       "model": "X4",
       "params": [
         {
@@ -11996,14 +11996,14 @@
         ]
       },
       "pos": [
-        57,
+        67,
         0
       ]
     },
     {
       "id": 1072,
       "plugin": "Stoermelder-P1",
-      "version": "1.7.e080538",
+      "version": "1.7.218399f",
       "model": "MidiCatEx",
       "params": [
         {
@@ -12051,7 +12051,7 @@
     {
       "id": 1073,
       "plugin": "Stoermelder-P1",
-      "version": "1.7.e080538",
+      "version": "1.7.218399f",
       "model": "Spin",
       "params": [
         {
@@ -12066,14 +12066,14 @@
         "clickHigh": false
       },
       "pos": [
-        50,
+        35,
         0
       ]
     },
     {
       "id": 1074,
       "plugin": "Stoermelder-P1",
-      "version": "1.7.e080538",
+      "version": "1.7.218399f",
       "model": "MidiCat",
       "params": [],
       "rightModuleId": 1072,
@@ -12132,7 +12132,7 @@
     {
       "id": 1075,
       "plugin": "Stoermelder-P1",
-      "version": "1.7.e080538",
+      "version": "1.7.218399f",
       "model": "TransitEx",
       "params": [
         {
@@ -12228,14 +12228,14 @@
         ]
       },
       "pos": [
-        42,
+        59,
         0
       ]
     },
     {
       "id": 1076,
       "plugin": "Stoermelder-P1",
-      "version": "1.7.e080538",
+      "version": "1.7.218399f",
       "model": "TransitEx",
       "params": [
         {
@@ -12330,7 +12330,7 @@
         ]
       },
       "pos": [
-        44,
+        61,
         0
       ]
     }

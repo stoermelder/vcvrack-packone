@@ -269,7 +269,7 @@
 		{
 			"slug": "X4",
 			"name": "X4",
-			"description": "Mapping-multiplier",
+			"description": "Dual multiple for parameter-mapping",
 			"tags": ["Utility"],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/X4.md"
 		},

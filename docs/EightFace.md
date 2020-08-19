@@ -2,23 +2,25 @@
 
 8FACE is a module for storing, recalling and sequencing up to eight different presets of any module in Rack. It uses Rack's expander mechanism to attach to any module to its side and uses buttons and LEDs to manage each of its preset-slot. 8FACEx2 offers sixteen preset slots.
 
+[Omri Cohen](https://omricohencomposer.bandcamp.com/) did an amazing [tutorial video](https://www.youtube.com/watch?v=S2j6W2nvuC8) how to use this module.
+
 **Disclaimer: Loading presets of modules was not designed to be controlled by CV or modulated at audio rate. Please do not contact the developers of Rack or any modules when unexpected behaviour occurs or high CPU usage is noticeable.**
 
 ![8FACE Intro](./EightFace-intro.gif)
 
-### Usage
+## Usage
 
 Place 8FACE on the right side next to the module you like to manage. The triangle shaped LED begins to flash if a connection is established successfully. You can detach 8FACE and re-attach to another instance of the same module. When you place 8FACE next to a module and the LED turns red it means it had been configured for another model. In this case you can either check the model on the context menu or initialize 8FACE to its initial state. Since v1.2.0 you can place 8FACE on the left side of a module after changing the according setting on the context menu.
 
-### Write-mode
+## Write-mode
 
 Write-mode is used to save presets in 8FACE. You enter write mode by flipping the switch on the bottom to the "W"-position. To store a preset simply configure your module next to 8FACE and then short press a slot-button numbered 1 to 8. The LEDs next to the slot-button turn red when a slot is already in use. To clear a slot long-press a button. In write-mode any input on the SLOT-port is ignored and sequencing is disabled.
 
-### Read-mode
+## Read-mode
 
 Read-mode is enabled by default and can be selected by the switch on the bottom in "R"-position. LEDs lit in bright green signal slots in use, dim green slots are active but empty. A blue LED marks a slot which preset is currently applied to the module on the side. You can manually apply a preset with a short-press.
 
-### SLOT-port
+## SLOT-port
 
 The fun begins when you use the port labelled "SLOT" for selecting preset slots by CV. Although there are eight slots available it is possible to use less slots for sequencing: You can adjust the number of useable slots by long-pressing a slot-button while in read-mode. The LED turns off completely for slots that are currently disabled.
 
@@ -42,7 +44,7 @@ You can select a specific slot by voltage. A voltage 0-1.25V selects slot 1, 1.2
 - C4:
 This mode follows the V/Oct-standard. C4 selects slot 1, C#4 selects slot 2 and so on.
 - Arm (renamed from "Clock" in v1.1.0):
-This mode is kind a sample and hold. First apply a clock signal on SLOT. Then you "arm" any slot manually or by MIDI-mapping by its button (resulting a yellow LED) which will be activated on the next clock trigger (blue LED). This mode allows you manual preset changes sychronized to a clock.
+This mode is a kind of buffered trigger: First apply a clock signal on SLOT. Then you "arm" any slot manually or by MIDI-mapping by its button (resulting in a yellow LED) which will be activated on the next clock trigger (blue LED). This mode allows you manual preset changes synchronized to a clock.
 
 ![8FACE arm mode](./EightFace-clock.gif)
 
