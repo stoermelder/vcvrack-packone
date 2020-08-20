@@ -116,6 +116,7 @@ struct StrokeModule : Module {
 		ENUMS(LIGHT_ALT, PORTS),
 		ENUMS(LIGHT_CTRL, PORTS),
 		ENUMS(LIGHT_SHIFT, PORTS),
+		ENUMS(LIGHT_TRIG, PORTS),
 		NUM_LIGHTS
 	};
 
@@ -137,10 +138,14 @@ struct StrokeModule : Module {
 
 	dsp::PulseGenerator pulse[PORTS];
 
+	dsp::PulseGenerator lightPulse[PORTS];
+	dsp::ClockDivider lightDivider;
+
 	StrokeModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		onReset();
+		lightDivider.setDivision(512);
 	}
 
 	void onReset() override {
@@ -171,6 +176,13 @@ struct StrokeModule : Module {
 				}	
 			}
 		}
+
+		if (lightDivider.process()) {
+			for (size_t i = 0; i < PORTS; i++) {
+				bool b = lightPulse[i].process(lightDivider.getDivision() * args.sampleTime);
+				lights[LIGHT_TRIG + i].setBrightness(b);
+			}
+		}
 	}
 
 	void keyEnable(int idx) {
@@ -187,6 +199,7 @@ struct StrokeModule : Module {
 				keyTemp = &keys[idx];
 				break;
 		}
+		lightPulse[idx].trigger(0.2f);
 	}
 
 	void keyDisable(int idx) {
@@ -748,6 +761,7 @@ struct StrokeWidget : ThemedModuleWidget<StrokeModule<10>> {
 			ledDisplay->idx = i;
 			addChild(ledDisplay);
 
+			addChild(createLightCentered<TinyLight<YellowLight>>(Vec(60.2f, 40.f + i * 29.4f), module, StrokeModule<10>::LIGHT_TRIG + i));
 			addOutput(createOutputCentered<StoermelderPort>(Vec(71.8f, 50.1f + i * 29.4f), module, StrokeModule<10>::OUTPUT + i));
 		}
 	}

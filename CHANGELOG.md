@@ -9,6 +9,7 @@
 
 - Module [STROKE](./docs/STROKE.md)
     - Added command "Toggle engine pause"
+    - Added LEDs for signaling a triggered hotkey
 
 ## 1.7.0 (in development)
 
