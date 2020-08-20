@@ -96,7 +96,8 @@ enum class KEY_MODE {
 	S_CABLE_ROTATE = 22,
 	S_CABLE_VISIBILITY = 23,
 	S_FRAMERATE = 30,
-	S_RAIL = 31
+	S_RAIL = 31,
+	S_ENGINE_PAUSE = 32
 };
 
 template < int PORTS >
@@ -280,6 +281,8 @@ struct KeyContainer : Widget {
 					cmdFramerate(); break;
 				case KEY_MODE::S_RAIL:
 					cmdRail(); break;
+				case KEY_MODE::S_ENGINE_PAUSE:
+					cmdEnginePause(); break;
 				default:
 					break;
 			}
@@ -416,6 +419,10 @@ struct KeyContainer : Widget {
 		else {
 			APP->scene->rack->railFb->show();
 		}
+	}
+
+	void cmdEnginePause() {
+		APP->engine->setPaused(!APP->engine->isPaused());
 	}
 
 	void onButton(const event::Button& e) override {
@@ -708,6 +715,7 @@ struct KeyDisplay : StoermelderLedDisplay {
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Special commands"));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle framerate display", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_FRAMERATE));
 		//menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle rack rail", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_RAIL));
+		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle engine pause", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ENGINE_PAUSE));
 	}
 };
 

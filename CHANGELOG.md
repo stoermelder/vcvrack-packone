@@ -5,6 +5,11 @@
 - Module [FLOWER, SEEDS, OFFSPRING](./docs/Flower.md)
     - New module, pattern-driven 16-step sequencer
 
+### Fixes and Changes
+
+- Module [STROKE](./docs/STROKE.md)
+    - Added command "Toggle engine pause"
+
 ## 1.7.0 (in development)
 
 - Module [MEM](./docs/MidiCat.md#mem-expander)
