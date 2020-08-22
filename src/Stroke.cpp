@@ -97,7 +97,8 @@ enum class KEY_MODE {
 	S_CABLE_VISIBILITY = 23,
 	S_FRAMERATE = 30,
 	S_RAIL = 31,
-	S_ENGINE_PAUSE = 32
+	S_ENGINE_PAUSE = 32,
+	S_MODULE_LOCK = 33
 };
 
 template < int PORTS >
@@ -296,6 +297,8 @@ struct KeyContainer : Widget {
 					cmdRail(); break;
 				case KEY_MODE::S_ENGINE_PAUSE:
 					cmdEnginePause(); break;
+				case KEY_MODE::S_MODULE_LOCK:
+					cmdModuleLock(); break;
 				default:
 					break;
 			}
@@ -436,6 +439,10 @@ struct KeyContainer : Widget {
 
 	void cmdEnginePause() {
 		APP->engine->setPaused(!APP->engine->isPaused());
+	}
+
+	void cmdModuleLock() {
+		settings::lockModules ^= true;
 	}
 
 	void onButton(const event::Button& e) override {
@@ -729,6 +736,7 @@ struct KeyDisplay : StoermelderLedDisplay {
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle framerate display", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_FRAMERATE));
 		//menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle rack rail", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_RAIL));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle engine pause", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ENGINE_PAUSE));
+		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle lock modules", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_MODULE_LOCK));
 	}
 };
 
