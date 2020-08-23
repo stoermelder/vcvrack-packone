@@ -18,6 +18,8 @@
     - Added command "Toggle engine pause"
     - Added command "Toggle lock modules"
     - Added LEDs for signaling a triggered hotkey
+- Module [X4](./docs/X4.md)
+    - Fixed advancing to the lower button after the upper button has been mapped
 
 ## 1.7.0
 

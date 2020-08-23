@@ -217,6 +217,11 @@ struct X4Module : CVMapModuleBase<2> {
 		CVMapModuleBase<2>::process(args);
 	}
 
+	void commitLearn() override {
+		CVMapModuleBase<2>::commitLearn();
+		disableLearn(learningId);
+	}
+
 	json_t* dataToJson() override {
 		json_t* rootJ = CVMapModuleBase<2>::dataToJson();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
