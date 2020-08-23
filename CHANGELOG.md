@@ -7,6 +7,8 @@
 
 ### Fixes and Changes
 
+- Module [MIDI-CAT](./docs/MidiCat.md)
+    - Added MIDI filtering/slew limiting for CC and notes by slider on the context menu (#79)
 - Module [STROKE](./docs/STROKE.md)
     - Added command "Toggle engine pause"
     - Added LEDs for signaling a triggered hotkey
