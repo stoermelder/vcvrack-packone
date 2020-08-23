@@ -9,9 +9,11 @@
 
 - Module [CV-PAM](./docs/CVPam.md)
     - Fixed wrong channel count of the polyphonic output ports
+- Module [MEM](./docs/MidiCat.md#mem-expander)
+    - Added support for MIDI-CAT's new slew-limiting and scaling
 - Module [MIDI-CAT](./docs/MidiCat.md)
     - Added MIDI filtering/slew limiting for CC and notes by slider on the context menu (#79)
-    - Added attenuverters for limiting range with minimum and maximum (#169)
+    - Added scaling for limiting and transforming the MIDI-input and parameter-range (#169)
 - Module [STROKE](./docs/STROKE.md)
     - Added command "Toggle engine pause"
     - Added command "Toggle lock modules"

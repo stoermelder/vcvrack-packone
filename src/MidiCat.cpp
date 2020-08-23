@@ -703,6 +703,9 @@ struct MidiCatModule : Module, StripIdFixModule {
 			p->noteMode = notesMode[i];
 			p->label = textLabel[i];
 			p->midiOptions = midiOptions[i];
+			p->slew = midiParam[i].getSlew();
+			p->min = midiParam[i].getMin();
+			p->max = midiParam[i].getMax();
 			m->paramMap.push_back(p);
 		}
 		m->pluginName = module->model->plugin->name;
@@ -741,6 +744,9 @@ struct MidiCatModule : Module, StripIdFixModule {
 			notesMode[i] = it->noteMode;
 			textLabel[i] = it->label;
 			midiOptions[i] = it->midiOptions;
+			midiParam[i].setSlew(it->slew);
+			midiParam[i].setMin(it->min);
+			midiParam[i].setMax(it->max);
 			i++;
 		}
 		updateMapLen();
@@ -959,7 +965,7 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 		if (module->notes[id] >= 0) {
 			menu->addChild(new MenuSeparator());
 			menu->addChild(construct<NoteModeMenuItem>(&MenuItem::text, "Input mode for notes", &NoteModeMenuItem::module, module, &NoteModeMenuItem::id, id));
-			menu->addChild(construct<NoteVelZeroMenuItem>(&MenuItem::text, "Send \"note on, velocity 0\" on note off", &NoteVelZeroMenuItem::module, module, &NoteVelZeroMenuItem::id, id));
+			menu->addChild(construct<NoteVelZeroMenuItem>(&MenuItem::text, "Send \"note on, velocity 0\"", &NoteVelZeroMenuItem::module, module, &NoteVelZeroMenuItem::id, id));
 		}
 
 		struct SlewSlider : ui::Slider {
@@ -1168,13 +1174,13 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 			}
 		}; // LabelMenuItem
 
+		menu->addChild(new SlewSlider(&module->midiParam[id]));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Scaling"));
 		menu->addChild(construct<ScalingLabel>(&ScalingLabel::p, &module->midiParam[id]));
 		menu->addChild(new MinSlider(&module->midiParam[id]));
 		menu->addChild(new MaxSlider(&module->midiParam[id]));
 		menu->addChild(new MenuSeparator());
-		menu->addChild(new SlewSlider(&module->midiParam[id]));
 		menu->addChild(construct<LabelMenuItem>(&MenuItem::text, "Custom label", &LabelMenuItem::module, module, &LabelMenuItem::id, id));
 	}
 };

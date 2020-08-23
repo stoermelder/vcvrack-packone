@@ -28,6 +28,9 @@ struct MemParam {
 	NOTEMODE noteMode;
 	std::string label;
 	int midiOptions = 0;
+	float slew = 0.f;
+	float min = 0.f;
+	float max = 1.f;
 };
 
 struct MemModule {
