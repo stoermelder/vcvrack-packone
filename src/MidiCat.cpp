@@ -79,6 +79,7 @@ struct MidiCatParam {
 	void reset() {
 		filter.reset();
 		filterInitialized = false;
+		filterSlew = 0.f;
 		valueIn = -1;
 		value = -1.f;
 		valueOut = -1.f;
@@ -96,7 +97,7 @@ struct MidiCatParam {
 	}
 
 	void setMin(float v) {
-		min = std::max(v, 0.f);
+		min = clamp(v, -1.f, 2.f);
 		if (valueIn != -1) setValue(valueIn);
 	}
 	float getMin() {
@@ -104,7 +105,7 @@ struct MidiCatParam {
 	}
 
 	void setMax(float v) {
-		max = std::min(v, 1.f);
+		max = clamp(v, -1.f, 2.f);
 		if (valueIn != -1) setValue(valueIn);
 	}
 	float getMax() {
@@ -113,6 +114,7 @@ struct MidiCatParam {
 
 	void setValue(int i) {
 		float f = rescale(float(i), 0.f, 127.f, min, max);
+		f = clamp(f, 0.f, 1.f);
 		f = rescale(f, 0.f, 1.f, paramQuantity->getMinValue(), paramQuantity->getMaxValue());
 		valueIn = i;
 		value = f;
@@ -138,6 +140,7 @@ struct MidiCatParam {
 		if (valueOut == -1) value = valueOut = f;
 		f = rescale(f, paramQuantity->getMinValue(), paramQuantity->getMaxValue(), 0.f, 1.f);
 		f = rescale(f, min, max, 0.f, 127.f);
+		f = clamp(f, 0.f, 127.f);
 		int i = std::round(f);
 		if (valueIn == -1) valueIn = i;
 		return i;
@@ -597,7 +600,6 @@ struct MidiCatModule : Module, StripIdFixModule {
 			midiParam[learningId].setMin(midiParam[learningId - 1].getMin());
 			midiParam[learningId].setMax(midiParam[learningId - 1].getMax());
 		}
-		midiParam[learningId].reset();
 		textLabel[learningId] = "";
 
 		// Find next incomplete map
@@ -631,6 +633,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 
 	void learnParam(int id, int moduleId, int paramId) {
 		APP->engine->updateParamHandle(&paramHandles[id], moduleId, paramId, true);
+		midiParam[id].reset();
 		learnedParam = true;
 		commitLearn();
 		updateMapLen();
@@ -1013,7 +1016,7 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 					this->id = id;
 				}
 				void setValue(float value) override {
-					value = clamp(value, 0.f, 1.f);
+					value = clamp(value, -1.f, 2.f);
 					module->midiParam[id].setMin(value);
 				}
 				float getValue() override {
@@ -1021,6 +1024,12 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 				}
 				float getDefaultValue() override {
 					return 0.f;
+				}
+				float getMinValue() override {
+					return -1.f;
+				}
+				float getMaxValue() override {
+					return 2.f;
 				}
 				float getDisplayValue() override {
 					return getValue() * 100;
@@ -1058,7 +1067,7 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 					this->id = id;
 				}
 				void setValue(float value) override {
-					value = clamp(value, 0.f, 1.f);
+					value = clamp(value, -1.f, 2.f);
 					module->midiParam[id].setMax(value);
 				}
 				float getValue() override {
@@ -1066,6 +1075,12 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 				}
 				float getDefaultValue() override {
 					return 0.f;
+				}
+				float getMinValue() override {
+					return -1.f;
+				}
+				float getMaxValue() override {
+					return 2.f;
 				}
 				float getDisplayValue() override {
 					return getValue() * 100;
