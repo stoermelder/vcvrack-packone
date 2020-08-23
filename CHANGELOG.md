@@ -7,11 +7,14 @@
 
 ### Fixes and Changes
 
+- Module [CV-PAM](./docs/CVPam.md)
+    - Fixed wrong channel count of the polyphonic output ports
 - Module [MIDI-CAT](./docs/MidiCat.md)
     - Added MIDI filtering/slew limiting for CC and notes by slider on the context menu (#79)
     - Added attenuverters for limiting range with minimum and maximum (#169)
 - Module [STROKE](./docs/STROKE.md)
     - Added command "Toggle engine pause"
+    - Added command "Toggle lock modules"
     - Added LEDs for signaling a triggered hotkey
 
 ## 1.7.0
