@@ -1,4 +1,4 @@
-## 1.x.0 (in development)
+## 1.x.x (in development)
 
 - Module [DETOUR](./docs/Detour.md)
     - New module, 8x8 send/return switch matrix with support for 8 scenes
@@ -9,11 +9,12 @@
 
 - Module [MIDI-CAT](./docs/MidiCat.md)
     - Added MIDI filtering/slew limiting for CC and notes by slider on the context menu (#79)
+    - Added attenuverters for limiting range with minimum and maximum (#169)
 - Module [STROKE](./docs/STROKE.md)
     - Added command "Toggle engine pause"
     - Added LEDs for signaling a triggered hotkey
 
-## 1.7.0 (in development)
+## 1.7.0
 
 - Module [MEM](./docs/MidiCat.md#mem-expander)
     - New expander-module for MIDI-CAT, storage-unit for MIDI mapping-presets with MIDI-CAT
