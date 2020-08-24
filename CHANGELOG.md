@@ -2,13 +2,13 @@
 
 - Module [MEM](./docs/MidiCat.md#mem-expander)
     - New expander-module for MIDI-CAT, storage-unit for MIDI mapping-presets with MIDI-CAT
-- Module [SPIN](./docs/SPIN.md)
+- Module [SPIN](./docs/Spin.md)
     - New module, converts mouse-wheel or middle mouse-button events into triggers
-- Module [STROKE](./docs/STROKE.md)
+- Module [STROKE](./docs/Stroke.md)
     - New module, converts used-defined hotkeys into triggers or gates, also provides some special commands for Rack's enviroment
-- Module [TRANSIT](./docs/TRANSIT.md)
+- Module [TRANSIT](./docs/Transit.md)
     - New module, parameter-morpher and sequencer for up to 96 snapshots
-- Module [+T](./docs/TRANSIT.md)
+- Module [+T](./docs/Transit.md)
     - New module, expander for TRANSIT
 - Module [X4](./docs/X4.md)
     - New module, dual multiple for parameter-mapping
