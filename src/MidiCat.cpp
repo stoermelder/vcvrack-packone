@@ -70,11 +70,15 @@ struct MidiCatParam {
 	float max = 1.f;
 
 	dsp::ExponentialSlewLimiter filter;
-	bool filterInitialized = false;
-	float filterSlew = 0.f;
-	int valueIn = -1;
-	float value = -1.f;
-	float valueOut = -1.f;
+	bool filterInitialized;
+	float filterSlew;
+	int valueIn;
+	float value;
+	float valueOut;
+
+	MidiCatParam() {
+		reset();
+	}
 
 	void reset() {
 		filter.reset();
@@ -82,7 +86,7 @@ struct MidiCatParam {
 		filterSlew = 0.f;
 		valueIn = -1;
 		value = -1.f;
-		valueOut = -1.f;
+		valueOut = std::numeric_limits<float>::infinity();
 		min = 0.f;
 		max = 1.f;
 	}
@@ -121,7 +125,7 @@ struct MidiCatParam {
 	}
 
 	void process(float sampleTime = -1.f) {
-		if (valueOut == -1.f) return;
+		if (valueOut == std::numeric_limits<float>::infinity()) return;
 		// Set filter from param value if filter is uninitialized
 		if (!filterInitialized) {
 			filter.out = value = paramQuantity->getValue();
@@ -137,7 +141,7 @@ struct MidiCatParam {
 	int getValue() {
 		float f = paramQuantity->getValue();
 		if (isNear(valueOut, f)) return valueIn;
-		if (valueOut == -1) value = valueOut = f;
+		if (valueOut == std::numeric_limits<float>::infinity()) value = valueOut = f;
 		f = rescale(f, paramQuantity->getMinValue(), paramQuantity->getMaxValue(), 0.f, 1.f);
 		f = rescale(f, min, max, 0.f, 127.f);
 		f = clamp(f, 0.f, 127.f);
