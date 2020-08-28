@@ -1,14 +1,14 @@
 # stoermelder PackOne
 
 <!-- Version and License Badges -->
-![Version](https://img.shields.io/badge/version-1.6.3-green.svg?style=flat-square)
+![Version](https://img.shields.io/badge/version-1.8.0-green.svg?style=flat-square)
 ![Rack SDK](https://img.shields.io/badge/Rack--SDK-1.1.6-red.svg?style=flat-square)
 ![License](https://img.shields.io/badge/license-GPLv3-blue.svg?style=flat-square)
 ![Language](https://img.shields.io/badge/language-C++-yellow.svg?style=flat-square)
 
 The PackOne plugin gives you some modules for [VCV Rack](https://www.vcvrack.com).
 
-**Stable versions are released in the [VCV Library](https://vcvrack.com/plugins.html#packone).  
+**Stable versions are released in the [VCV Library](https://library.vcvrack.com/?brand=stoermelder).  
 [Nightly builds](https://github.com/stoermelder/vcvrack-packone/releases/tag/Nightly) of the latest commit are also available for all platforms. Please review the [changelog](./CHANGELOG.md) for this plugin.**
 
 If you like my modules consider donating to https://paypal.me/stoermelder. Thank you for your support!
