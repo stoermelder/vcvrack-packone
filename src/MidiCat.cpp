@@ -227,7 +227,9 @@ struct MidiCatModule : Module, StripIdFixModule {
 
 	MidiCatParam midiParam[MAX_CHANNELS];
 
-	dsp::ClockDivider loopDivider;
+	dsp::ClockDivider processDivider;
+	/** [Stored to JSON] */
+	int processDivision;
 	dsp::ClockDivider indicatorDivider;
 
 	// Pointer of the MEM-expander's attribute
@@ -242,7 +244,6 @@ struct MidiCatModule : Module, StripIdFixModule {
 			paramHandleIndicator[id].handle = &paramHandles[id];
 			APP->engine->addParamHandle(&paramHandles[id]);
 		}
-		loopDivider.setDivision(128);
 		indicatorDivider.setDivision(2048);
 		onReset();
 	}
@@ -277,6 +278,9 @@ struct MidiCatModule : Module, StripIdFixModule {
 		midiInput.reset();
 		midiOutput.reset();
 		midiOutput.midi::Output::reset();
+		processDivision = 64;
+		processDivider.setDivision(processDivision);
+		processDivider.reset();
 	}
 
 	void process(const ProcessArgs &args) override {
@@ -291,7 +295,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 		// step channels for parameter changes made manually every 128th loop. Notice
 		// that midi allows about 1000 messages per second, so checking for changes more often
 		// won't lead to higher precision on midi output.
-		if (changed || loopDivider.process()) {
+		if (processDivider.process() || changed) {
 			// Step channels
 			for (int id = 0; id < mapLen; id++) {
 				int cc = ccs[id];
@@ -349,7 +353,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 
 							if (t >= 0) {
 								//float v = rescale(t, 0.f, 127.f, paramQuantity->getMinValue(), paramQuantity->getMaxValue());
-								//v = valueFilters[id].process(args.sampleTime * loopDivider.getDivision(), v);
+								//v = valueFilters[id].process(args.sampleTime * processDivider.getDivision(), v);
 								//paramQuantity->setValue(v);
 								midiParam[id].setValue(t);
 							}
@@ -400,7 +404,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 							}
 						}
 
-						midiParam[id].process(args.sampleTime * loopDivider.getDivision());
+						midiParam[id].process(args.sampleTime * processDivider.getDivision());
 
 						// Midi feedback
 						//float v = paramQuantity->getValue();
@@ -435,6 +439,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 					} break;
 				}
 			}
+			processDivider.setDivision(processDivision);
 		}
 
 		if (indicatorDivider.process()) {
@@ -763,6 +768,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 		json_object_set_new(rootJ, "textScrolling", json_boolean(textScrolling));
 		json_object_set_new(rootJ, "mappingIndicatorHidden", json_boolean(mappingIndicatorHidden));
 		json_object_set_new(rootJ, "locked", json_boolean(locked));
+		json_object_set_new(rootJ, "processDivision", json_integer(processDivision));
 
 		json_t* mapsJ = json_array();
 		for (int id = 0; id < mapLen; id++) {
@@ -797,6 +803,8 @@ struct MidiCatModule : Module, StripIdFixModule {
 		mappingIndicatorHidden = json_boolean_value(mappingIndicatorHiddenJ);
 		json_t* lockedJ = json_object_get(rootJ, "locked");
 		if (lockedJ) locked = json_boolean_value(lockedJ);
+		json_t* processDivisionJ = json_object_get(rootJ, "processDivision");
+		if (processDivisionJ) processDivision = json_integer_value(processDivisionJ);
 
 		json_t* mapsJ = json_object_get(rootJ, "maps");
 		if (mapsJ) {
@@ -1469,7 +1477,42 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 			}
 		};
 
+		struct PrecisionMenuItem : MenuItem {
+			struct PrecisionItem : MenuItem {
+				MidiCatModule* module;
+				int sampleRate;
+				int division;
+				std::string text;
+				PrecisionItem() {
+					sampleRate = int(APP->engine->getSampleRate());
+				}
+				void onAction(const event::Action& e) override {
+					module->processDivision = division;
+				}
+				void step() override {
+					MenuItem::text = string::f("%s (%i Hz)", text.c_str(), sampleRate / division);
+					rightText = module->processDivision == division ? "✔" : "";
+					MenuItem::step();
+				}
+			};
+
+			MidiCatModule* module;
+			PrecisionMenuItem() {
+				rightText = RIGHT_ARROW;
+			}
+
+			Menu* createChildMenu() override {
+				Menu* menu = new Menu;
+				menu->addChild(construct<PrecisionItem>(&PrecisionItem::text, "Audio rate", &PrecisionItem::module, module, &PrecisionItem::division, 1));
+				menu->addChild(construct<PrecisionItem>(&PrecisionItem::text, "Higher CPU", &PrecisionItem::module, module, &PrecisionItem::division, 8));
+				menu->addChild(construct<PrecisionItem>(&PrecisionItem::text, "Moderate CPU", &PrecisionItem::module, module, &PrecisionItem::division, 64));
+				menu->addChild(construct<PrecisionItem>(&PrecisionItem::text, "Lowest CPU", &PrecisionItem::module, module, &PrecisionItem::division, 256));
+				return menu;
+			}
+		};
+
 		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<PrecisionMenuItem>(&MenuItem::text, "Precision", &PrecisionMenuItem::module, module));
 		menu->addChild(construct<MidiMapImportItem>(&MenuItem::text, "Import MIDI-MAP preset", &MidiMapImportItem::moduleWidget, this));
 		menu->addChild(construct<ResendMidiOutItem>(&MenuItem::text, "Re-send MIDI feedback", &ResendMidiOutItem::module, module));
 
