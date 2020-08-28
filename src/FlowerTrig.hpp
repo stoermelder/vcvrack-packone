@@ -4,6 +4,7 @@
 #include <bitset>
 #include <random>
 
+namespace StoermelderPackOne {
 namespace Flower {
 
 enum class TRIG_UI_STATE {
@@ -513,3 +514,4 @@ struct FlowerTrig {
 };
 
 } // namespace Flower
+} // namespace StoermelderPackOne

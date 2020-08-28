@@ -1,6 +1,6 @@
 #include "plugin.hpp"
 
-
+namespace StoermelderPackOne {
 namespace RotorA {
 
 struct RotorAModule : Module {
@@ -105,7 +105,6 @@ struct RotorAModule : Module {
 			}
 			for (int c = 0; c < 16; c++) {
 				bool active = c >= channelsOffset && c < channelsOffset + channels;
-				float v = outputs[POLY_OUTPUT].getVoltage(c) / 5.f;
 				lights[OUTPUT_LIGHTS + c * 3 + 0].setBrightness(active);
 				lights[OUTPUT_LIGHTS + c * 3 + 1].setBrightness(active);
 				lights[OUTPUT_LIGHTS + c * 3 + 2].setBrightness(active ? 1.f : c < channelsOffset ? 0.3f : 0.f);
@@ -154,5 +153,6 @@ struct RotorAWidget : ThemedModuleWidget<RotorAModule> {
 };
 
 } // namespace RotorA
+} // namespace StoermelderPackOne
 
-Model* modelRotorA = createModel<RotorA::RotorAModule, RotorA::RotorAWidget>("RotorA");
+Model* modelRotorA = createModel<StoermelderPackOne::RotorA::RotorAModule, StoermelderPackOne::RotorA::RotorAWidget>("RotorA");

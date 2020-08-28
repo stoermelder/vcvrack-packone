@@ -5,6 +5,7 @@
 #include <thread>
 #include <mutex>
 
+namespace StoermelderPackOne {
 namespace Strip {
 
 static const char PRESET_FILTERS[] = "stoermelder STRIP group preset (.vcvss):vcvss";
@@ -1416,5 +1417,6 @@ struct StripWidget : ThemedModuleWidget<StripModule> {
 };
 
 } // namespace Strip
+} // namespace StoermelderPackOne
 
-Model* modelStrip = createModel<Strip::StripModule, Strip::StripWidget>("Strip");
+Model* modelStrip = createModel<StoermelderPackOne::Strip::StripModule, StoermelderPackOne::Strip::StripWidget>("Strip");

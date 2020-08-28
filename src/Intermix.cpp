@@ -1,6 +1,7 @@
 #include "plugin.hpp"
 #include "digital.hpp"
 
+namespace StoermelderPackOne {
 namespace Intermix {
 
 const int SCENE_MAX = 8;
@@ -861,5 +862,6 @@ struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 };
 
 } // namespace Intermix
+} // namespace StoermelderPackOne
 
-Model* modelIntermix = createModel<Intermix::IntermixModule<8>, Intermix::IntermixWidget>("Intermix");
+Model* modelIntermix = createModel<StoermelderPackOne::Intermix::IntermixModule<8>, StoermelderPackOne::Intermix::IntermixWidget>("Intermix");

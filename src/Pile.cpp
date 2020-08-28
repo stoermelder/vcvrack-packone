@@ -1,6 +1,6 @@
 #include "plugin.hpp"
 
-
+namespace StoermelderPackOne {
 namespace Pile {
 
 enum RANGE {
@@ -195,5 +195,6 @@ struct PileWidget : ThemedModuleWidget<PileModule> {
 };
 
 } // namespace Pile
+} // namespace StoermelderPackOne
 
-Model* modelPile = createModel<Pile::PileModule, Pile::PileWidget>("Pile");
+Model* modelPile = createModel<StoermelderPackOne::Pile::PileModule, StoermelderPackOne::Pile::PileWidget>("Pile");

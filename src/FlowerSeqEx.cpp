@@ -1,6 +1,7 @@
 #include "plugin.hpp"
 #include "FlowerSeq.hpp"
 
+namespace StoermelderPackOne {
 namespace Flower {
 
 template < int STEPS, int PATTERNS, int PHRASES >
@@ -399,5 +400,6 @@ struct FlowerSeqExWidget : ThemedModuleWidget<FlowerSeqExModule<16, 8, 8>> {
 };
 
 } // namespace Flower
+} // namespace StoermelderPackOne
 
-Model* modelFlowerSeqEx = createModel<Flower::FlowerSeqExModule<16, 8, 8>, Flower::FlowerSeqExWidget>("FlowerSeqEx");
+Model* modelFlowerSeqEx = createModel<StoermelderPackOne::Flower::FlowerSeqExModule<16, 8, 8>, StoermelderPackOne::Flower::FlowerSeqExWidget>("FlowerSeqEx");

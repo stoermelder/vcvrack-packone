@@ -4,6 +4,7 @@
 #include <bitset>
 #include <random>
 
+namespace StoermelderPackOne {
 namespace Flower {
 
 enum class SEQ_UI_STATE {
@@ -685,3 +686,4 @@ struct FlowerSeq {
 };
 
 } // namespace Flower
+} // namespace StoermelderPackOne

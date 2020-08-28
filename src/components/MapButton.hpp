@@ -1,4 +1,3 @@
-
 #include "plugin.hpp"
 
 namespace StoermelderPackOne {

@@ -4,7 +4,7 @@
 #include <bitset>
 #include <random>
 
-
+namespace StoermelderPackOne {
 namespace Flower {
 
 enum class OUT_CV_MODE {
@@ -220,3 +220,4 @@ struct FlowerKnob : app::SvgKnob {
 };
 
 } // namespace Flower
+} // namespace StoermelderPackOne

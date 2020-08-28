@@ -4,7 +4,7 @@
 #include <condition_variable>
 #include <random>
 
-
+namespace StoermelderPackOne {
 namespace EightFace {
 
 enum SLOTCVMODE {
@@ -604,6 +604,7 @@ struct EightFaceX2Widget : ThemedModuleWidget<EightFaceModule<16>, EightFaceWidg
 };
 
 } // namespace EightFace
+} // namespace StoermelderPackOne
 
-Model* modelEightFace = createModel<EightFace::EightFaceModule<8>, EightFace::EightFaceWidget>("EightFace");
-Model* modelEightFaceX2 = createModel<EightFace::EightFaceModule<16>, EightFace::EightFaceX2Widget>("EightFaceX2");
+Model* modelEightFace = createModel<StoermelderPackOne::EightFace::EightFaceModule<8>, StoermelderPackOne::EightFace::EightFaceWidget>("EightFace");
+Model* modelEightFaceX2 = createModel<StoermelderPackOne::EightFace::EightFaceModule<16>, StoermelderPackOne::EightFace::EightFaceX2Widget>("EightFaceX2");

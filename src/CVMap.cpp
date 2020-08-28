@@ -2,6 +2,7 @@
 #include "MapModuleBase.hpp"
 #include <chrono>
 
+namespace StoermelderPackOne {
 namespace CVMap {
 
 static const int MAX_CHANNELS = 32;
@@ -249,5 +250,6 @@ struct CVMapWidget : ThemedModuleWidget<CVMapModule> {
 };
 
 } // namespace CVMap
+} // namespace StoermelderPackOne
 
-Model* modelCVMap = createModel<CVMap::CVMapModule, CVMap::CVMapWidget>("CVMap");
+Model* modelCVMap = createModel<StoermelderPackOne::CVMap::CVMapModule, StoermelderPackOne::CVMap::CVMapWidget>("CVMap");

@@ -2,6 +2,7 @@
 #include "FlowerSeq.hpp"
 #include <osdialog.h>
 
+namespace StoermelderPackOne {
 namespace Flower {
 
 enum class PHRASE_CV_MODE {
@@ -1263,5 +1264,6 @@ struct FlowerSeqWidget : ThemedModuleWidget<FlowerSeqModule<16, 8, 8>> {
 };
 
 } // namespace Flower
+} // namespace StoermelderPackOne
 
-Model* modelFlowerSeq = createModel<Flower::FlowerSeqModule<16, 8, 8>, Flower::FlowerSeqWidget>("FlowerSeq");
+Model* modelFlowerSeq = createModel<StoermelderPackOne::Flower::FlowerSeqModule<16, 8, 8>, StoermelderPackOne::Flower::FlowerSeqWidget>("FlowerSeq");

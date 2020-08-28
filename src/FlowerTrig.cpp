@@ -1,6 +1,7 @@
 #include "plugin.hpp"
 #include "FlowerTrig.hpp"
 
+namespace StoermelderPackOne {
 namespace Flower {
 
 template < int STEPS, int PATTERNS, int PHRASES >
@@ -289,5 +290,6 @@ struct FlowerTrigWidget : ThemedModuleWidget<FlowerTrigModule<16, 8, 8>> {
 };
 
 } // namespace Flower
+} // namespace StoermelderPackOne
 
-Model* modelFlowerTrig = createModel<Flower::FlowerTrigModule<16, 8, 8>, Flower::FlowerTrigWidget>("FlowerTrig");
+Model* modelFlowerTrig = createModel<StoermelderPackOne::Flower::FlowerTrigModule<16, 8, 8>, StoermelderPackOne::Flower::FlowerTrigWidget>("FlowerTrig");

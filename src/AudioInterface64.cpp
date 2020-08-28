@@ -6,7 +6,7 @@
 #include <mutex>
 #include <condition_variable>
 
-
+namespace StoermelderPackOne {
 namespace AudioInterface64 {
 
 template <int AUDIO_OUTPUTS, int AUDIO_INPUTS>
@@ -331,5 +331,6 @@ struct AudioInterface64Widget : ThemedModuleWidget<AudioInterface<64, 64>> {
 };
 
 } // namespace AudioInterface64
+} // namespace StoermelderPackOne
 
-Model* modelAudioInterface64 = createModel<AudioInterface64::AudioInterface<64, 64>, AudioInterface64::AudioInterface64Widget>("AudioInterface64");
+Model* modelAudioInterface64 = createModel<StoermelderPackOne::AudioInterface64::AudioInterface<64, 64>, StoermelderPackOne::AudioInterface64::AudioInterface64Widget>("AudioInterface64");

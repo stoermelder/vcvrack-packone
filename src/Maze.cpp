@@ -2,7 +2,7 @@
 #include "digital.hpp"
 #include <random>
 
-
+namespace StoermelderPackOne {
 namespace Maze {
 
 enum GRIDSTATE {
@@ -1156,5 +1156,6 @@ struct MazeWidget32 : ThemedModuleWidget<MazeModule<32, 4>> {
 };
 
 } // namespace Maze
+} // namespace StoermelderPackOne
 
-Model* modelMaze = createModel<Maze::MazeModule<32, 4>, Maze::MazeWidget32>("Maze");
+Model* modelMaze = createModel<StoermelderPackOne::Maze::MazeModule<32, 4>, StoermelderPackOne::Maze::MazeWidget32>("Maze");

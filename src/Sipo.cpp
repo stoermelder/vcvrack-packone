@@ -1,5 +1,6 @@
 #include "plugin.hpp"
 
+namespace StoermelderPackOne {
 namespace Sipo {
 
 static const int MAX_DATA = 4096;
@@ -154,5 +155,6 @@ struct SipoWidget : ThemedModuleWidget<SipoModule> {
 };
 
 } // namespace Sipo
+} // namespace StoermelderPackOne
 
-Model* modelSipo = createModel<Sipo::SipoModule, Sipo::SipoWidget>("Sipo");
+Model* modelSipo = createModel<StoermelderPackOne::Sipo::SipoModule, StoermelderPackOne::Sipo::SipoWidget>("Sipo");

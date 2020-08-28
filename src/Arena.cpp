@@ -2,6 +2,7 @@
 #include <chrono>
 #include <random>
 
+namespace StoermelderPackOne {
 namespace Arena {
 
 static const int SEQ_COUNT = 16;
@@ -2778,5 +2779,6 @@ struct ArenaWidget : ThemedModuleWidget<ArenaModule<8, 4>> {
 };
 
 } // namespace Arena
+} // namespace StoermelderPackOne
 
-Model* modelArena = createModel<Arena::ArenaModule<8, 4>, Arena::ArenaWidget>("Arena");
+Model* modelArena = createModel<StoermelderPackOne::Arena::ArenaModule<8, 4>, StoermelderPackOne::Arena::ArenaWidget>("Arena");
