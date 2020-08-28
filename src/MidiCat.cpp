@@ -795,12 +795,13 @@ struct MidiCatModule : Module, StripIdFixModule {
 
 	void dataFromJson(json_t* rootJ) override {
 		//clearMaps();
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 
 		json_t* textScrollingJ = json_object_get(rootJ, "textScrolling");
-		textScrolling = json_boolean_value(textScrollingJ);
+		if (textScrollingJ) textScrolling = json_boolean_value(textScrollingJ);
 		json_t* mappingIndicatorHiddenJ = json_object_get(rootJ, "mappingIndicatorHidden");
-		mappingIndicatorHidden = json_boolean_value(mappingIndicatorHiddenJ);
+		if (mappingIndicatorHiddenJ) mappingIndicatorHidden = json_boolean_value(mappingIndicatorHiddenJ);
 		json_t* lockedJ = json_object_get(rootJ, "locked");
 		if (lockedJ) locked = json_boolean_value(lockedJ);
 		json_t* processDivisionJ = json_object_get(rootJ, "processDivision");
@@ -827,24 +828,29 @@ struct MidiCatModule : Module, StripIdFixModule {
 				json_t* minJ = json_object_get(mapJ, "min");
 				json_t* maxJ = json_object_get(mapJ, "max");
 
-				if (!((ccJ || noteJ) && moduleIdJ && paramIdJ)) {
+				if (!(ccJ || noteJ)) {
 					ccs[mapIndex] = -1;
 					notes[mapIndex] = -1;
 					APP->engine->updateParamHandle(&paramHandles[mapIndex], -1, 0, true);
 					continue;
 				}
+				if (!(moduleIdJ || paramIdJ)) {
+					APP->engine->updateParamHandle(&paramHandles[mapIndex], -1, 0, true);
+				}
 
-				ccs[mapIndex] = json_integer_value(ccJ);
+				ccs[mapIndex] = ccJ ? json_integer_value(ccJ) : -1;
 				ccsMode[mapIndex] = (CCMODE)json_integer_value(ccModeJ);
 				notes[mapIndex] = noteJ ? json_integer_value(noteJ) : -1;
 				notesMode[mapIndex] = (NOTEMODE)json_integer_value(noteModeJ);
 				midiOptions[mapIndex] = json_integer_value(midiOptionsJ);
-				int moduleId = json_integer_value(moduleIdJ);
-				int paramId = json_integer_value(paramIdJ);
-				moduleId = idFix(moduleId);
-				if (moduleId != paramHandles[mapIndex].moduleId || paramId != paramHandles[mapIndex].paramId) {
-					APP->engine->updateParamHandle(&paramHandles[mapIndex], moduleId, paramId, false);
-					refreshParamHandleText(mapIndex);
+				int moduleId = moduleIdJ ? json_integer_value(moduleIdJ) : -1;
+				int paramId = paramIdJ ? json_integer_value(paramIdJ) : 0;
+				if (moduleId >= 0) {
+					moduleId = idFix(moduleId);
+					if (moduleId != paramHandles[mapIndex].moduleId || paramId != paramHandles[mapIndex].paramId) {
+						APP->engine->updateParamHandle(&paramHandles[mapIndex], moduleId, paramId, false);
+						refreshParamHandleText(mapIndex);
+					}
 				}
 				if (labelJ) textLabel[mapIndex] = json_string_value(labelJ);
 				if (slewJ) midiParam[mapIndex].setSlew(json_real_value(slewJ));
@@ -1511,11 +1517,6 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 			}
 		};
 
-		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<PrecisionMenuItem>(&MenuItem::text, "Precision", &PrecisionMenuItem::module, module));
-		menu->addChild(construct<MidiMapImportItem>(&MenuItem::text, "Import MIDI-MAP preset", &MidiMapImportItem::moduleWidget, this));
-		menu->addChild(construct<ResendMidiOutItem>(&MenuItem::text, "Re-send MIDI feedback", &ResendMidiOutItem::module, module));
-
 		struct MidiModeMenuItem : MenuItem {
 			MidiModeMenuItem() {
 				rightText = RIGHT_ARROW;
@@ -1542,6 +1543,12 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 				return menu;
 			}
 		};
+
+		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<PrecisionMenuItem>(&MenuItem::text, "Precision", &PrecisionMenuItem::module, module));
+		menu->addChild(construct<MidiModeMenuItem>(&MenuItem::text, "Mode", &MidiModeMenuItem::module, module));
+		menu->addChild(construct<ResendMidiOutItem>(&MenuItem::text, "Re-send MIDI feedback", &ResendMidiOutItem::module, module));
+		menu->addChild(construct<MidiMapImportItem>(&MenuItem::text, "Import MIDI-MAP preset", &MidiMapImportItem::moduleWidget, this));
 
 		struct TextScrollItem : MenuItem {
 			MidiCatModule* module;
@@ -1619,7 +1626,6 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 		};
 
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<MidiModeMenuItem>(&MenuItem::text, "Mode", &MidiModeMenuItem::module, module));
 		menu->addChild(construct<TextScrollItem>(&MenuItem::text, "Text scrolling", &TextScrollItem::module, module));
 		menu->addChild(construct<MappingIndicatorHiddenItem>(&MenuItem::text, "Hide mapping indicators", &MappingIndicatorHiddenItem::module, module));
 		menu->addChild(construct<LockedItem>(&MenuItem::text, "Lock mapping slots", &LockedItem::module, module));
