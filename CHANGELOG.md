@@ -1,7 +1,5 @@
 ## 1.x.x (in development)
 
-- Module [DETOUR](./docs/Detour.md)
-    - New module, 8x8 send/return switch matrix with support for 8 scenes
 - Module [FLOWER, SEEDS, OFFSPRING](./docs/Flower.md)
     - New module, pattern-driven 16-step sequencer
 

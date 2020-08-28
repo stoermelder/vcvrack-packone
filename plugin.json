@@ -140,14 +140,6 @@
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Intermix.md"
 		},
 		{
-			"slug": "Detour",
-			"name": "DETOUR",
-			"description": "Send/Return switch matrix with scene-support",
-			"tags": ["Mixer", "Switch", "Utility"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Detour.md",
-			"disabled": true
-		},
-		{
 			"slug": "Sail",
 			"name": "SAIL",
 			"description": "Control any parameter currently hovered by mouse with CV, especially useful with MIDI-CC or MIDI-STEP",

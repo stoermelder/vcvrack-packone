@@ -28,7 +28,6 @@ extern Model* modelFourRounds;
 extern Model* modelArena;
 extern Model* modelMaze;
 extern Model* modelIntermix;
-extern Model* modelDetour;
 extern Model* modelSail;
 extern Model* modelPile;
 extern Model* modelPilePoly;
