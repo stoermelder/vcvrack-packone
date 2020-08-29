@@ -10,10 +10,12 @@
 - Module [MEM](./docs/MidiCat.md#mem-expander)
     - Added support for MIDI-CAT's new slew-limiting and scaling
 - Module [MIDI-CAT](./docs/MidiCat.md)
-    - Added MIDI filtering/slew limiting for CC and notes by slider on the context menu (#79)
+    - Added context menu options for MIDI filtering/slew limiting for CC and notes by slider (#79)
     - Added scaling for limiting and transforming the MIDI-input and parameter-range (#169)
-    - Added precision-setting on context menu
+    - Added context menu options for precision/CPU-usage
+    - Added context menu options for MIDI-CAT on mapped parameters of target module
     - Added skipping of current slot with SPACE-key while in mapping-mode
+    - Added context menu option for clearing all mappings
 - Module [STROKE](./docs/Stroke.md)
     - Added command "Toggle engine pause"
     - Added command "Toggle lock modules"

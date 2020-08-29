@@ -572,7 +572,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 			APP->engine->updateParamHandle(&paramHandles[id], -1, 0, true);
 			refreshParamHandleText(id);
 		}
-		mapLen = 0;
+		mapLen = 1;
 	}
 
 	void updateMapLen() {
@@ -1640,6 +1640,13 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 			}
 		};
 
+		struct ClearMapsItem : MenuItem {
+			MidiCatModule* module;
+			void onAction(const event::Action& e) override {
+				module->clearMaps();
+			}
+		};
+
 		struct ModuleLearnExpanderMenuItem : MenuItem {
 			MidiCatModule* module;
 			ModuleLearnExpanderMenuItem() {
@@ -1687,6 +1694,7 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 		menu->addChild(construct<MappingIndicatorHiddenItem>(&MenuItem::text, "Hide mapping indicators", &MappingIndicatorHiddenItem::module, module));
 		menu->addChild(construct<LockedItem>(&MenuItem::text, "Lock mapping slots", &LockedItem::module, module));
 		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<ClearMapsItem>(&MenuItem::text, "Clear mappings", &ClearMapsItem::module, module));
 		menu->addChild(construct<ModuleLearnExpanderMenuItem>(&MenuItem::text, "Map module (left)", &ModuleLearnExpanderMenuItem::module, module));
 		menu->addChild(construct<ModuleLearnSelectMenuItem>(&MenuItem::text, "Map module (select)", &ModuleLearnSelectMenuItem::mw, this));
 
