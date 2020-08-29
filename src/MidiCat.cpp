@@ -64,27 +64,35 @@ enum MIDIMODE {
 };
 
 
-struct MidiCatParam {
+template<typename T, T UNINIT>
+struct ScaledMapParam {
 	ParamQuantity* paramQuantity;
+	T absoluteMin;
+	T absoluteMax;
 	float min = 0.f;
 	float max = 1.f;
 
 	dsp::ExponentialSlewLimiter filter;
 	bool filterInitialized;
 	float filterSlew;
-	int valueIn;
+	T valueIn;
 	float value;
 	float valueOut;
 
-	MidiCatParam() {
+	ScaledMapParam() {
 		reset();
+	}
+
+	void setAbsolutes(T min, T max) {
+		absoluteMin = min;
+		absoluteMax = max;
 	}
 
 	void reset() {
 		filter.reset();
 		filterInitialized = false;
 		filterSlew = 0.f;
-		valueIn = -1;
+		valueIn = UNINIT;
 		value = -1.f;
 		valueOut = std::numeric_limits<float>::infinity();
 		min = 0.f;
@@ -116,8 +124,8 @@ struct MidiCatParam {
 		return max;
 	}
 
-	void setValue(int i) {
-		float f = rescale(float(i), 0.f, 127.f, min, max);
+	void setValue(T i) {
+		float f = rescale(float(i), float(absoluteMin), float(absoluteMax), min, max);
 		f = clamp(f, 0.f, 1.f);
 		f = rescale(f, 0.f, 1.f, paramQuantity->getMinValue(), paramQuantity->getMaxValue());
 		valueIn = i;
@@ -138,19 +146,21 @@ struct MidiCatParam {
 		}
 	}
 
-	int getValue() {
+	T getValue() {
 		float f = paramQuantity->getValue();
 		if (isNear(valueOut, f)) return valueIn;
 		if (valueOut == std::numeric_limits<float>::infinity()) value = valueOut = f;
 		f = rescale(f, paramQuantity->getMinValue(), paramQuantity->getMaxValue(), 0.f, 1.f);
-		f = rescale(f, min, max, 0.f, 127.f);
+		f = rescale(f, min, max, float(absoluteMin), float(absoluteMax));
 		f = clamp(f, 0.f, 127.f);
-		int i = std::round(f);
-		if (valueIn == -1) valueIn = i;
+		int i = T(f);
+		if (valueIn == UNINIT) valueIn = i;
 		return i;
 	}
-}; // MidiCatParam
+}; // struct ScaledMapParam
 
+
+typedef ScaledMapParam<int, -1> MidiCatParam;
 
 struct MidiCatModule : Module, StripIdFixModule {
 	enum ParamIds {
@@ -243,6 +253,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 			paramHandleIndicator[id].color = mappingIndicatorColor;
 			paramHandleIndicator[id].handle = &paramHandles[id];
 			APP->engine->addParamHandle(&paramHandles[id]);
+			midiParam[id].setAbsolutes(0, 127);
 		}
 		indicatorDivider.setDivision(2048);
 		onReset();
