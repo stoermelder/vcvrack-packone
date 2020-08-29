@@ -620,6 +620,10 @@ struct MidiCatModule : Module, StripIdFixModule {
 	}
 
 	void enableLearn(int id) {
+		if (id == mapLen) {
+			disableLearn();
+			return;
+		}
 		if (learningId != id) {
 			learningId = id;
 			learnedCc = false;
@@ -1487,6 +1491,15 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 					disableLearn();
 					module->disableLearn();
 					e.consume(this);
+					break;
+				}
+				case GLFW_KEY_SPACE: {
+					if (module->learningId >= 0) {
+						MidiCatModule* module = dynamic_cast<MidiCatModule*>(this->module);
+						module->enableLearn(module->learningId + 1);
+						if (module->learningId == -1) disableLearn();
+						e.consume(this);
+					}
 					break;
 				}
 			}

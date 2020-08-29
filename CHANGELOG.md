@@ -13,6 +13,7 @@
     - Added MIDI filtering/slew limiting for CC and notes by slider on the context menu (#79)
     - Added scaling for limiting and transforming the MIDI-input and parameter-range (#169)
     - Added precision-setting on context menu
+    - Added skipping of current slot with SPACE-key while in mapping-mode
 - Module [STROKE](./docs/Stroke.md)
     - Added command "Toggle engine pause"
     - Added command "Toggle lock modules"
