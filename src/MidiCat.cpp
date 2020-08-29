@@ -153,7 +153,7 @@ struct ScaledMapParam {
 		f = rescale(f, paramQuantity->getMinValue(), paramQuantity->getMaxValue(), 0.f, 1.f);
 		f = rescale(f, min, max, float(absoluteMin), float(absoluteMax));
 		f = clamp(f, 0.f, 127.f);
-		int i = T(f);
+		T i = T(f);
 		if (valueIn == UNINIT) valueIn = i;
 		return i;
 	}
