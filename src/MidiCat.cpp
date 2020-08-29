@@ -2,7 +2,6 @@
 #include "MidiCat.hpp"
 #include "MapModuleBase.hpp"
 #include "StripIdFixModule.hpp"
-#include "digital/ScaledMapParam.hpp"
 #include <osdialog.h>
 
 namespace StoermelderPackOne {
@@ -64,8 +63,104 @@ enum MIDIMODE {
 	MIDIMODE_LOCATE = 1
 };
 
-int const ScaledMapParamUninit = -1;
-typedef ScaledMapParam<int, ScaledMapParamUninit> MidiCatParam;
+
+template<typename T, T const UNINIT>
+struct ScaledMapParam {
+	ParamQuantity* paramQuantity;
+	T absoluteMin;
+	T absoluteMax;
+	float min = 0.f;
+	float max = 1.f;
+
+	dsp::ExponentialSlewLimiter filter;
+	bool filterInitialized;
+	float filterSlew;
+	T valueIn;
+	float value;
+	float valueOut;
+
+	ScaledMapParam() {
+		reset();
+	}
+
+	void setAbsolutes(T min, T max) {
+		absoluteMin = min;
+		absoluteMax = max;
+	}
+
+	void reset() {
+		filter.reset();
+		filterInitialized = false;
+		filterSlew = 0.f;
+		valueIn = UNINIT;
+		value = -1.f;
+		valueOut = std::numeric_limits<float>::infinity();
+		min = 0.f;
+		max = 1.f;
+	}
+
+	void setSlew(float slew) {
+		filterSlew = slew;
+		float s = (1.f / slew) * 10.f;
+		filter.setRiseFall(s, s);
+	}
+	float getSlew() {
+		return filterSlew;
+	}
+
+	void setMin(float v) {
+		min = v;
+		if (valueIn != -1) setValue(valueIn);
+	}
+	float getMin() {
+		return min;
+	}
+
+	void setMax(float v) {
+		max = v;
+		if (valueIn != -1) setValue(valueIn);
+	}
+	float getMax() {
+		return max;
+	}
+
+	void setValue(T i) {
+		float f = rescale(float(i), float(absoluteMin), float(absoluteMax), min, max);
+		f = clamp(f, 0.f, 1.f);
+		f = rescale(f, 0.f, 1.f, paramQuantity->getMinValue(), paramQuantity->getMaxValue());
+		valueIn = i;
+		value = f;
+	}
+
+	void process(float sampleTime = -1.f) {
+		if (valueOut == std::numeric_limits<float>::infinity()) return;
+		// Set filter from param value if filter is uninitialized
+		if (!filterInitialized) {
+			filter.out = value = paramQuantity->getValue();
+			filterInitialized = true;
+		}
+		float f = filterSlew > 0.f && sampleTime > 0.f ? filter.process(sampleTime, value) : value;
+		if (valueOut != f) {
+			paramQuantity->setValue(f);
+			valueOut = f;
+		}
+	}
+
+	T getValue() {
+		float f = paramQuantity->getValue();
+		if (isNear(valueOut, f)) return valueIn;
+		if (valueOut == std::numeric_limits<float>::infinity()) value = valueOut = f;
+		f = rescale(f, paramQuantity->getMinValue(), paramQuantity->getMaxValue(), 0.f, 1.f);
+		f = rescale(f, min, max, float(absoluteMin), float(absoluteMax));
+		f = clamp(f, 0.f, 127.f);
+		int i = T(f);
+		if (valueIn == UNINIT) valueIn = i;
+		return i;
+	}
+}; // struct ScaledMapParam
+
+typedef ScaledMapParam<int, -1> MidiCatParam;
+
 
 struct MidiCatModule : Module, StripIdFixModule {
 	enum ParamIds {
