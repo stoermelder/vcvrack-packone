@@ -1384,6 +1384,10 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 			}
 		}
 
+		extendParamWidgetContextMenu();
+	}
+
+	void extendParamWidgetContextMenu() {
 		// Extend parameter's context menu with additional MenuItems
 		Widget* w = APP->event->getDraggedWidget();
 		if (!w) return;
@@ -1418,9 +1422,17 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 						}
 					};
 
+					struct ShowMidicatItem : MenuItem {
+						MidiCatWidget* mw;
+						void onAction(const event::Action& e) override {
+							StoermelderPackOne::Rack::ViewportCenter{mw};
+						}
+					};
+
 					menu->addChild(new MenuSeparator);
 					menu->addChild(construct<MenuLabel>(&MenuLabel::text, "MIDI-CAT"));
 					menu->addChild(construct<MapMenuItem>(&MenuItem::text, "Learn MIDI", &MapMenuItem::module, module, &MapMenuItem::id, i));
+					menu->addChild(construct<ShowMidicatItem>(&MenuItem::text, "Center mapping module", &ShowMidicatItem::mw, this));
 					break;
 				}
 			}
