@@ -1388,6 +1388,8 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 	}
 
 	void extendParamWidgetContextMenu() {
+		if (!module) return;
+
 		// Extend parameter's context menu with additional MenuItems
 		Widget* w = APP->event->getDraggedWidget();
 		if (!w) return;
