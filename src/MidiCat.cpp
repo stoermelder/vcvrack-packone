@@ -1256,6 +1256,8 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 
 	LEARN_MODE learnMode = LEARN_MODE::OFF;
 
+	Widget* lastSelectedWidget;
+
 	MidiCatWidget(MidiCatModule* module)
 		: ThemedModuleWidget<MidiCatModule>(module, "MidiCat") {
 		setModule(module);
@@ -1375,6 +1377,48 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 					enableLearn(LEARN_MODE::MEM);
 				}
 				module->mem->lights[0].setBrightness(learnMode == LEARN_MODE::MEM);
+			}
+		}
+
+		// Extend parameter's context menu with additional MenuItems
+		Widget* w = APP->event->getDraggedWidget();
+		if (!w) return;
+		if (w != lastSelectedWidget) {
+			lastSelectedWidget = w;
+			if (module->learningId >= 0) return;
+			ParamWidget* pw = dynamic_cast<ParamWidget*>(w);
+			if (!pw) return;
+			ParamQuantity* pq = pw->paramQuantity;
+			if (!pq) return;
+			ParamHandle* handle = APP->engine->getParamHandle(pq->module->id, pq->paramId);
+			if (!handle) return;
+			
+			for (int i = 0; i < module->mapLen; i++) {
+				if (&module->paramHandles[i] == handle) {
+					// Hack for attaching additional menu items to parameter's context menu
+					MenuOverlay* overlay;
+					for (Widget* child : APP->scene->children) {
+						overlay = dynamic_cast<MenuOverlay*>(child);
+						if (overlay) break;
+					}
+					if (!overlay) return;
+					Widget* w = overlay->children.front();
+					Menu* menu = dynamic_cast<Menu*>(w);
+					if (!menu) return;
+
+					struct MapMenuItem : MenuItem {
+						MidiCatModule* module;
+						int id;
+						void onAction(const event::Action& e) override {
+							module->enableLearn(id);
+						}
+					};
+
+					menu->addChild(new MenuSeparator);
+					menu->addChild(construct<MenuLabel>(&MenuLabel::text, "MIDI-CAT"));
+					menu->addChild(construct<MapMenuItem>(&MenuItem::text, "Learn MIDI", &MapMenuItem::module, module, &MapMenuItem::id, i));
+					break;
+				}
 			}
 		}
 	}
