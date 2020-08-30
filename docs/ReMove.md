@@ -4,9 +4,11 @@ ReMOVE Lite is a utility module for recording and replaying movements of any par
 
 ![ReMOVE Intro](./ReMove-intro.gif)
 
-A really epic [tutorial video](https://www.youtube.com/watch?v=Dd0EESJhPZA) from [Omri Cohen](https://omricohencomposer.bandcamp.com/) showcasing ReMOVE Lite.
+- A really epic [tutorial video](https://www.youtube.com/watch?v=Dd0EESJhPZA) from [Omri Cohen](https://omricohencomposer.bandcamp.com/) showcasing ReMOVE Lite.
 
-Another fabulous [tutorial video](https://www.youtube.com/watch?v=P9bFPuCLuMs) from [Artem Leonov](https://artemleonov.bandcamp.com/) using 8 instances of ReMOVE Lite with MIDI mapping.
+- Another fabulous [tutorial video](https://www.youtube.com/watch?v=P9bFPuCLuMs) from [Artem Leonov](https://artemleonov.bandcamp.com/) using 8 instances of ReMOVE Lite with MIDI mapping.
+
+- One more [tutorial video](https://www.youtube.com/watch?v=LcUlqqO7azE) from VCV Rack Renegade showing sound design techniques using ReMOVE Lite.
 
 ### Mapping of parameters
 
