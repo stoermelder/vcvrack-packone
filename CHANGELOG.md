@@ -9,6 +9,8 @@
     - Fixed wrong channel count of the polyphonic output ports
 - Module [MEM](./docs/MidiCat.md#mem-expander)
     - Added support for MIDI-CAT's new slew-limiting and scaling
+- Module [µMAP](./docs/CVMapMicro.md)
+    - Added input voltage display
 - Module [MIDI-CAT](./docs/MidiCat.md)
     - Added context menu options for MIDI filtering/slew limiting for CC and notes by slider (#79)
     - Added scaling for limiting and transforming the MIDI-input and parameter-range (#169)

@@ -1,4 +1,5 @@
 #include "plugin.hpp"
+#include "components/VoltageLedDisplay.hpp"
 
 namespace StoermelderPackOne {
 namespace Pile {
@@ -102,6 +103,10 @@ struct PileModule : Module {
 		outputs[OUTPUT].setVoltage(v);
 	}
 
+	float getCurrentVoltage() {
+		return currentVoltage;
+	}
+
 	json_t* dataToJson() override {
 		json_t *rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
@@ -119,18 +124,6 @@ struct PileModule : Module {
 };
 
 
-struct VoltageLedDisplay : StoermelderLedDisplay {
-	PileModule* module;
-
-	void step() override {
-		if (module) {
-			text = string::f("%+06.2f", std::max(std::min(module->currentVoltage, 99.99f), -99.99f));
-		} 
-		StoermelderLedDisplay::step();
-	}
-};
-
-
 struct PileWidget : ThemedModuleWidget<PileModule> {
 	PileWidget(PileModule* module)
 		: ThemedModuleWidget<PileModule>(module, "Pile") {
@@ -139,7 +132,7 @@ struct PileWidget : ThemedModuleWidget<PileModule> {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		VoltageLedDisplay* ledDisplay = createWidgetCentered<VoltageLedDisplay>(Vec(22.5f, 43.0f));
+		VoltageLedDisplay<PileModule>* ledDisplay = createWidgetCentered<VoltageLedDisplay<PileModule>>(Vec(22.5f, 43.0f));
 		ledDisplay->box.size = Vec(39.1f, 13.2f);
 		ledDisplay->module = module;
 		addChild(ledDisplay);
