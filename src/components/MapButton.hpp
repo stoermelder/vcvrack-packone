@@ -82,6 +82,7 @@ struct MapButton : LEDBezel {
 					}
 				};
 				menu->addChild(construct<IndicateItem>(&MenuItem::text, "Locate and indicate", &IndicateItem::module, module, &IndicateItem::id, id));
+				appendContextMenu(menu);
 			} 
 			else {
 				module->clearMap(id);
@@ -142,6 +143,8 @@ struct MapButton : LEDBezel {
 		s += paramQuantity->label;
 		return s;
 	}
+
+	virtual void appendContextMenu(Menu* menu) {}
 };
 
 template <typename BASE>
