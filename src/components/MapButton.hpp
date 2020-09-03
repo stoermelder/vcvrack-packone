@@ -5,10 +5,11 @@ namespace StoermelderPackOne {
 template <typename MODULE>
 struct MapParamQuantity : ParamQuantity {
 	MODULE* module;
+	int id = 0;
 	std::string getParamName() {
 		if (!module)
 			return "";
-		ParamHandle* paramHandle = &module->paramHandles[0];
+		ParamHandle* paramHandle = &module->paramHandles[id];
 		if (paramHandle->moduleId < 0)
 			return "";
 		ModuleWidget* mw = APP->scene->rack->getModule(paramHandle->moduleId);
