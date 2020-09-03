@@ -131,15 +131,15 @@ struct CVMapMicroWidget : ThemedModuleWidget<CVMapMicroModule> {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		VoltageLedDisplay<CVMapMicroModule>* ledDisplay = createWidgetCentered<VoltageLedDisplay<CVMapMicroModule>>(Vec(22.5f, 43.0f));
+		MapButton<CVMapMicroModule>* button = createParamCentered<MapButton<CVMapMicroModule>>(Vec(22.5f, 60.3f), module, CVMapMicroModule::MAP_PARAM);
+		button->setModule(module);
+		addParam(button);
+		addChild(createLightCentered<MapLight<GreenRedLight>>(Vec(22.5f, 60.3f), module, CVMapMicroModule::MAP_LIGHT));
+
+		VoltageLedDisplay<CVMapMicroModule>* ledDisplay = createWidgetCentered<VoltageLedDisplay<CVMapMicroModule>>(Vec(22.5f, 106.0f));
 		ledDisplay->box.size = Vec(39.1f, 13.2f);
 		ledDisplay->module = module;
 		addChild(ledDisplay);
-
-		MapButton<CVMapMicroModule>* button = createParamCentered<MapButton<CVMapMicroModule>>(Vec(22.5f, 78.8f), module, CVMapMicroModule::MAP_PARAM);
-		button->setModule(module);
-		addParam(button);
-		addChild(createLightCentered<MapLight<GreenRedLight>>(Vec(22.5f, 78.8f), module, CVMapMicroModule::MAP_LIGHT));
 
 		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 142.0f), module, CVMapMicroModule::INPUT));
 
@@ -158,11 +158,9 @@ struct CVMapMicroWidget : ThemedModuleWidget<CVMapMicroModule> {
 
 		struct LockItem : MenuItem {
 			CVMapMicroModule* module;
-
 			void onAction(const event::Action& e) override {
 				module->lockParameterChanges ^= true;
 			}
-
 			void step() override {
 				rightText = module->lockParameterChanges ? "Locked" : "Unlocked";
 				MenuItem::step();
@@ -171,11 +169,9 @@ struct CVMapMicroWidget : ThemedModuleWidget<CVMapMicroModule> {
 
 		struct UniBiItem : MenuItem {
 			CVMapMicroModule* module;
-
 			void onAction(const event::Action& e) override {
 				module->bipolarInput ^= true;
 			}
-
 			void step() override {
 				rightText = module->bipolarInput ? "-5V..5V" : "0V..10V";
 				MenuItem::step();
@@ -184,11 +180,9 @@ struct CVMapMicroWidget : ThemedModuleWidget<CVMapMicroModule> {
 
 		struct SignalOutputItem : MenuItem {
 			CVMapMicroModule* module;
-
 			void onAction(const event::Action& e) override {
 				module->invertedOutput ^= true;
 			}
-
 			void step() override {
 				rightText = module->invertedOutput ? "Inverted" : "Default";
 				MenuItem::step();
