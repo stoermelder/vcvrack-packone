@@ -66,6 +66,7 @@ jobs:
 
   - bash: |
       export RACK_DIR=$AGENT_TEMPDIRECTORY/Rack-SDK
+      sudo apt-get update
       sudo apt-get install libglu-dev --fix-missing
       make dist
       mkdir products_lin/
