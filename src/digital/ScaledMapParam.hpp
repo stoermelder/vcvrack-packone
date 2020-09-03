@@ -4,7 +4,7 @@ namespace StoermelderPackOne {
     
 template<typename T>
 struct ScaledMapParam {
-	ParamQuantity* paramQuantity;
+	ParamQuantity* paramQuantity = NULL;
 	T absoluteMin;
 	T absoluteMax;
 	T uninit;
@@ -50,7 +50,7 @@ struct ScaledMapParam {
 
 	void setMin(float v) {
 		min = v;
-		if (valueIn != -1) setValue(valueIn);
+		if (paramQuantity && valueIn != -1) setValue(valueIn);
 	}
 	float getMin() {
 		return min;
@@ -58,7 +58,7 @@ struct ScaledMapParam {
 
 	void setMax(float v) {
 		max = v;
-		if (valueIn != -1) setValue(valueIn);
+		if (paramQuantity && valueIn != -1) setValue(valueIn);
 	}
 	float getMax() {
 		return max;
