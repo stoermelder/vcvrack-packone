@@ -47,4 +47,5 @@ extern Model* modelTransit;
 extern Model* modelTransitEx;
 extern Model* modelX4;
 extern Model* modelFacets;
+extern Model* modelMacro;
 extern Model* modelAudioInterface64;

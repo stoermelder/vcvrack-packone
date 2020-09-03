@@ -189,6 +189,7 @@ struct MapModuleBase : Module, StripIdFixModule {
 			json_t* mapJ = json_object();
 			json_object_set_new(mapJ, "moduleId", json_integer(paramHandles[id].moduleId));
 			json_object_set_new(mapJ, "paramId", json_integer(paramHandles[id].paramId));
+			dataToJsonMap(mapJ, id);
 			json_array_append_new(mapsJ, mapJ);
 		}
 		json_object_set_new(rootJ, "maps", mapsJ);
@@ -219,11 +220,15 @@ struct MapModuleBase : Module, StripIdFixModule {
 				int paramId = json_integer_value(paramIdJ);
 				moduleId = idFix(moduleId);
 				APP->engine->updateParamHandle(&paramHandles[mapIndex], moduleId, paramId, false);
+				dataFromJsonMap(mapJ, mapIndex);
 			}
 		}
 		updateMapLen();
 		idFixClearMap();
 	}
+
+	virtual void dataToJsonMap(json_t* mapJ, int index) {}
+	virtual void dataFromJsonMap(json_t* mapJ, int index) {}
 };
 
 template< int MAX_CHANNELS >
