@@ -39,6 +39,14 @@ struct ScaledMapParam {
 		max = 1.f;
 	}
 
+	void setParamQuantity(PQ* pq) {
+		paramQuantity = pq;
+		if (paramQuantity && valueOut == std::numeric_limits<float>::infinity()) {
+			float f = paramQuantity->getValue();
+			value = valueOut = f;
+		}
+	}
+
 	void setSlew(float slew) {
 		filterSlew = slew;
 		float s = (1.f / slew) * 10.f;

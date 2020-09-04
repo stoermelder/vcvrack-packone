@@ -70,7 +70,7 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 			pq->output = &outputs[OUTPUT_CV + i];
 			pq->minValue = 0.f;
 			pq->maxValue = 10.f;
-			scaleCvs[i].paramQuantity = pq;
+			scaleCvs[i].setParamQuantity(pq);
 			scaleCvs[i].setAbsolutes(0.f, 1.f, std::numeric_limits<float>::infinity());
 		}
 
@@ -104,7 +104,7 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 		for (size_t i = 0; i < MAPS; i++) {
 			ParamQuantity* paramQuantity = getParamQuantity(i);
 			if (paramQuantity) {
-				scaleParam[i].paramQuantity = paramQuantity;
+				scaleParam[i].setParamQuantity(paramQuantity);
 
 				if (lockParameterChanges || lastValue[i] != v) {
 					scaleParam[i].setValue(v);
@@ -112,7 +112,6 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 				}
 
 				scaleParam[i].process(args.sampleTime);
-				scaleParam[i].getValue();
 			}
 		}
 
@@ -120,7 +119,6 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 			if (!outputs[OUTPUT_CV + i].isConnected()) continue;
 			scaleCvs[i].setValue(v);
 			scaleCvs[i].process(args.sampleTime);
-			scaleCvs[i].getValue();
 		}
 
 		if (lightDivider.process()) {
@@ -134,6 +132,7 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 	}
 
 	void commitLearn() override {
+		if (learningId >= 0) scaleParam[learningId].reset();
 		CVMapModuleBase<MAPS>::commitLearn();
 		disableLearn(learningId);
 	}
@@ -500,7 +499,7 @@ struct Macro4Widget : ThemedModuleWidget<MacroModule> {
 
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<LockItem>(&MenuItem::text, "Parameter changes", &LockItem::module, module));
-		menu->addChild(construct<UniBiItem>(&MenuItem::text, "Voltage range", &UniBiItem::module, module));
+		menu->addChild(construct<UniBiItem>(&MenuItem::text, "Input voltage", &UniBiItem::module, module));
 	}
 };
 
