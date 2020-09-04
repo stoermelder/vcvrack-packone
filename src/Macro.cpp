@@ -2,12 +2,14 @@
 #include "MapModuleBase.hpp"
 #include "components/MapButton.hpp"
 #include "components/VoltageLedDisplay.hpp"
+#include "components/Knobs.hpp"
 #include "digital/ScaledMapParam.hpp"
 
 namespace StoermelderPackOne {
 namespace Macro {
 
-static const int MAPS = 6;
+static const int MAPS = 4;
+static const int CVPORTS = 2;
 
 struct MacroModule : CVMapModuleBase<MAPS> {
 	enum ParamIds {
@@ -20,6 +22,7 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 		NUM_INPUTS
 	};
 	enum OutputIds {
+		ENUMS(OUTPUT_CV, CVPORTS),
 		NUM_OUTPUTS
 	};
 	enum LightIds {
@@ -28,8 +31,20 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 		NUM_LIGHTS
 	};
 
+	struct CvParamQuantity : ParamQuantity {
+		Output* output;
+		void setValue(float v) override {
+			output->setVoltage(v);
+		}
+		float getValue() override {
+			return output->getVoltage();
+		}
+	};
+
 	/** [Stored to Json] */
 	ScaledMapParam<float> scaleParam[MAPS];
+	/** [Stored to Json] */
+	ScaledMapParam<float, CvParamQuantity> scaleCvs[CVPORTS];
 
 	/** [Stored to JSON] */
 	int panelTheme = 0;
@@ -50,8 +65,23 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 			scaleParam[i].setAbsolutes(0.f, 1.f, std::numeric_limits<float>::infinity());
 		}
 
+		for (size_t i = 0; i < CVPORTS; i++) {
+			CvParamQuantity* pq = new CvParamQuantity;
+			pq->output = &outputs[OUTPUT_CV + i];
+			pq->minValue = 0.f;
+			pq->maxValue = 10.f;
+			scaleCvs[i].paramQuantity = pq;
+			scaleCvs[i].setAbsolutes(0.f, 1.f, std::numeric_limits<float>::infinity());
+		}
+
 		lightDivider.setDivision(1024);
 		onReset();
+	}
+
+	~MacroModule() {
+		for (size_t i = 0; i < CVPORTS; i++) {
+			delete scaleCvs[i].paramQuantity;
+		}
 	}
 
 	void onReset() override {
@@ -86,6 +116,13 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 			}
 		}
 
+		for (size_t i = 0; i < CVPORTS; i++) {
+			if (!outputs[OUTPUT_CV + i].isConnected()) continue;
+			scaleCvs[i].setValue(v);
+			scaleCvs[i].process(args.sampleTime);
+			scaleCvs[i].getValue();
+		}
+
 		if (lightDivider.process()) {
 			for (int i = 0; i < MAPS; i++) {
 				lights[LIGHT_MAP + i * 2].setBrightness(paramHandles[i].moduleId >= 0 && learningId != i ? 1.f : 0.f);
@@ -108,6 +145,18 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 	json_t* dataToJson() override {
 		json_t* rootJ = CVMapModuleBase<MAPS>::dataToJson();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
+
+		json_t* cvsJ = json_array();
+		for (int i = 0; i < CVPORTS; i++) {
+			json_t* cvJ = json_object();
+			json_object_set_new(cvJ, "slew", json_real(scaleCvs[i].getSlew()));
+			json_object_set_new(cvJ, "min", json_real(scaleCvs[i].getMin()));
+			json_object_set_new(cvJ, "max", json_real(scaleCvs[i].getMax()));
+			json_object_set_new(cvJ, "bipolar", json_boolean(scaleCvs[i].paramQuantity->minValue == -5.f));
+			json_array_append_new(cvsJ, cvJ);
+		}
+		json_object_set_new(rootJ, "cvs", cvsJ);
+
 		return rootJ;
 	}
 
@@ -120,6 +169,28 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 	void dataFromJson(json_t* rootJ) override {
 		CVMapModuleBase<MAPS>::dataFromJson(rootJ);
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+
+		json_t* cvsJ = json_object_get(rootJ, "cvs");
+		if (cvsJ) {
+			json_t* cvJ;
+			size_t i;
+			json_array_foreach(cvsJ, i, cvJ) {
+				if (i >= CVPORTS)
+					continue;
+				json_t* slewJ = json_object_get(cvJ, "slew");
+				json_t* minJ = json_object_get(cvJ, "min");
+				json_t* maxJ = json_object_get(cvJ, "max");
+				if (slewJ) scaleCvs[i].setSlew(json_real_value(slewJ));
+				if (minJ) scaleCvs[i].setMin(json_real_value(minJ));
+				if (maxJ) scaleCvs[i].setMax(json_real_value(maxJ));
+				json_t* bipolarJ = json_object_get(cvJ, "bipolar");
+				if (bipolarJ) {
+					bool bipolar = json_boolean_value(bipolarJ);
+					scaleCvs[i].paramQuantity->minValue = bipolar ? -5.f : 0.f;
+					scaleCvs[i].paramQuantity->maxValue = bipolar ? 5.f : 10.f;
+				}
+			}
+		}
 	}
 
 	void dataFromJsonMap(json_t* mapJ, int i) override {
@@ -133,167 +204,220 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 };
 
 
+template<typename SCALE = ScaledMapParam<float>>
+struct SlewSlider : ui::Slider {
+	struct SlewQuantity : Quantity {
+		const float SLEW_MIN = 0.f;
+		const float SLEW_MAX = 5.f;
+		SCALE* p;
+		void setValue(float value) override {
+			value = clamp(value, SLEW_MIN, SLEW_MAX);
+			p->setSlew(value);
+		}
+		float getValue() override {
+			return p->getSlew();
+		}
+		float getDefaultValue() override {
+			return 0.f;
+		}
+		std::string getLabel() override {
+			return "Slew-limiting";
+		}
+		int getDisplayPrecision() override {
+			return 2;
+		}
+		float getMaxValue() override {
+			return SLEW_MAX;
+		}
+		float getMinValue() override {
+			return SLEW_MIN;
+		}
+	}; // struct SlewQuantity
+
+	SlewSlider(SCALE* p) {
+		box.size.x = 220.0f;
+		quantity = construct<SlewQuantity>(&SlewQuantity::p, p);
+	}
+	~SlewSlider() {
+		delete quantity;
+	}
+}; // struct SlewSlider
+
+
+template<typename SCALE = ScaledMapParam<float>>
+struct ScalingLabel : MenuLabel {
+	SCALE* p;
+	void step() override {
+		float min = p->getMin();
+		float max = p->getMax();
+
+		float f1 = rescale(p->absoluteMin, p->absoluteMin, p->absoluteMax, min, max);
+		f1 = clamp(f1, 0.f, 1.f) * 100.f;
+		float f2 = rescale(p->absoluteMax, p->absoluteMin, p->absoluteMax, min, max);
+		f2 = clamp(f2, 0.f, 1.f) * 100.f;
+
+		float g1 = rescale(0.f, min, max, p->absoluteMin, p->absoluteMax);
+		g1 = clamp(g1, p->absoluteMin, p->absoluteMax);
+		float g1a = g1 * 100.f;
+		float g2 = rescale(1.f, min, max, p->absoluteMin, p->absoluteMax);
+		g2 = clamp(g2, p->absoluteMin, p->absoluteMax);
+		float g2a = g2 * 100.f;
+
+		text = string::f("[%.1f%, %.1f%] " RIGHT_ARROW " [%.1f%, %.1f%]", g1a, g2a, f1, f2);
+	}
+}; // struct ScalingLabel
+
+
+template<typename SCALE = ScaledMapParam<float>>
+struct MinSlider : ui::Slider {
+	struct MinQuantity : Quantity {
+		SCALE* p;
+		void setValue(float value) override {
+			value = clamp(value, -1.f, 2.f);
+			p->setMin(value);
+		}
+		float getValue() override {
+			return p->getMin();
+		}
+		float getDefaultValue() override {
+			return 0.f;
+		}
+		float getMinValue() override {
+			return -1.f;
+		}
+		float getMaxValue() override {
+			return 2.f;
+		}
+		float getDisplayValue() override {
+			return getValue() * 100;
+		}
+		void setDisplayValue(float displayValue) override {
+			setValue(displayValue / 100);
+		}
+		std::string getLabel() override {
+			return "Low";
+		}
+		std::string getUnit() override {
+			return "%";
+		}
+		int getDisplayPrecision() override {
+			return 3;
+		}
+	}; // struct MinQuantity
+
+	MinSlider(SCALE* p) {
+		box.size.x = 220.0f;
+		quantity = construct<MinQuantity>(&MinQuantity::p, p);
+	}
+	~MinSlider() {
+		delete quantity;
+	}
+}; // struct MinSlider
+
+
+template<typename SCALE = ScaledMapParam<float>>
+struct MaxSlider : ui::Slider {
+	struct MaxQuantity : Quantity {
+		SCALE* p;
+		void setValue(float value) override {
+			value = clamp(value, -1.f, 2.f);
+			p->setMax(value);
+		}
+		float getValue() override {
+			return p->getMax();
+		}
+		float getDefaultValue() override {
+			return 1.f;
+		}
+		float getMinValue() override {
+			return -1.f;
+		}
+		float getMaxValue() override {
+			return 2.f;
+		}
+		float getDisplayValue() override {
+			return getValue() * 100;
+		}
+		void setDisplayValue(float displayValue) override {
+			setValue(displayValue / 100);
+		}
+		std::string getLabel() override {
+			return "High";
+		}
+		std::string getUnit() override {
+			return "%";
+		}
+		int getDisplayPrecision() override {
+			return 3;
+		}
+	}; // struct MaxQuantity
+
+	MaxSlider(SCALE* p) {
+		box.size.x = 220.0f;
+		quantity = construct<MaxQuantity>(&MaxQuantity::p, p);
+	}
+	~MaxSlider() {
+		delete quantity;
+	}
+}; // struct MaxSlider
+
+
 struct MacroButton : MapButton<MacroModule> {
 	void appendContextMenu(Menu* menu) override {
-		struct SlewSlider : ui::Slider {
-			struct SlewQuantity : Quantity {
-				const float SLEW_MIN = 0.f;
-				const float SLEW_MAX = 5.f;
-				ScaledMapParam<float>* p;
-				void setValue(float value) override {
-					value = clamp(value, SLEW_MIN, SLEW_MAX);
-					p->setSlew(value);
-				}
-				float getValue() override {
-					return p->getSlew();
-				}
-				float getDefaultValue() override {
-					return 0.f;
-				}
-				std::string getLabel() override {
-					return "Slew-limiting";
-				}
-				int getDisplayPrecision() override {
-					return 2;
-				}
-				float getMaxValue() override {
-					return SLEW_MAX;
-				}
-				float getMinValue() override {
-					return SLEW_MIN;
-				}
-			}; // struct SlewQuantity
-
-			SlewSlider(ScaledMapParam<float>* p) {
-				box.size.x = 220.0f;
-				quantity = construct<SlewQuantity>(&SlewQuantity::p, p);
-			}
-			~SlewSlider() {
-				delete quantity;
-			}
-		}; // struct SlewSlider
-
-		struct ScalingLabel : MenuLabel {
-			ScaledMapParam<float>* p;
-			void step() override {
-				float min = p->getMin();
-				float max = p->getMax();
-
-				float f1 = rescale(p->absoluteMin, p->absoluteMin, p->absoluteMax, min, max);
-				f1 = clamp(f1, 0.f, 1.f) * 100.f;
-				float f2 = rescale(p->absoluteMax, p->absoluteMin, p->absoluteMax, min, max);
-				f2 = clamp(f2, 0.f, 1.f) * 100.f;
-
-				float g1 = rescale(0.f, min, max, p->absoluteMin, p->absoluteMax);
-				g1 = clamp(g1, p->absoluteMin, p->absoluteMax);
-				float g1a = g1 * 100.f;
-				float g2 = rescale(1.f, min, max, p->absoluteMin, p->absoluteMax);
-				g2 = clamp(g2, p->absoluteMin, p->absoluteMax);
-				float g2a = g2 * 100.f;
-
-				text = string::f("[%.1f%, %.1f%] " RIGHT_ARROW " [%.1f%, %.1f%]", g1a, g2a, f1, f2);
-			}
-		}; // struct ScalingLabel
-
-		struct MinSlider : ui::Slider {
-			struct MinQuantity : Quantity {
-				ScaledMapParam<float>* p;
-				void setValue(float value) override {
-					value = clamp(value, -1.f, 2.f);
-					p->setMin(value);
-				}
-				float getValue() override {
-					return p->getMin();
-				}
-				float getDefaultValue() override {
-					return 0.f;
-				}
-				float getMinValue() override {
-					return -1.f;
-				}
-				float getMaxValue() override {
-					return 2.f;
-				}
-				float getDisplayValue() override {
-					return getValue() * 100;
-				}
-				void setDisplayValue(float displayValue) override {
-					setValue(displayValue / 100);
-				}
-				std::string getLabel() override {
-					return "Low";
-				}
-				std::string getUnit() override {
-					return "%";
-				}
-				int getDisplayPrecision() override {
-					return 3;
-				}
-			}; // struct MinQuantity
-
-			MinSlider(ScaledMapParam<float>* p) {
-				box.size.x = 220.0f;
-				quantity = construct<MinQuantity>(&MinQuantity::p, p);
-			}
-			~MinSlider() {
-				delete quantity;
-			}
-		}; // struct MinSlider
-
-		struct MaxSlider : ui::Slider {
-			struct MaxQuantity : Quantity {
-				ScaledMapParam<float>* p;
-				void setValue(float value) override {
-					value = clamp(value, -1.f, 2.f);
-					p->setMax(value);
-				}
-				float getValue() override {
-					return p->getMax();
-				}
-				float getDefaultValue() override {
-					return 1.f;
-				}
-				float getMinValue() override {
-					return -1.f;
-				}
-				float getMaxValue() override {
-					return 2.f;
-				}
-				float getDisplayValue() override {
-					return getValue() * 100;
-				}
-				void setDisplayValue(float displayValue) override {
-					setValue(displayValue / 100);
-				}
-				std::string getLabel() override {
-					return "High";
-				}
-				std::string getUnit() override {
-					return "%";
-				}
-				int getDisplayPrecision() override {
-					return 3;
-				}
-			}; // struct MaxQuantity
-
-			MaxSlider(ScaledMapParam<float>* p) {
-				box.size.x = 220.0f;
-				quantity = construct<MaxQuantity>(&MaxQuantity::p, p);
-			}
-			~MaxSlider() {
-				delete quantity;
-			}
-		}; // struct MaxSlider
-
 		menu->addChild(new MenuSeparator());
-		menu->addChild(new SlewSlider(&module->scaleParam[id]));
+		menu->addChild(new SlewSlider<>(&module->scaleParam[id]));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Scaling"));
-		menu->addChild(construct<ScalingLabel>(&ScalingLabel::p, &module->scaleParam[id]));
-		menu->addChild(new MinSlider(&module->scaleParam[id]));
-		menu->addChild(new MaxSlider(&module->scaleParam[id]));
+		menu->addChild(construct<ScalingLabel<>>(&ScalingLabel<>::p, &module->scaleParam[id]));
+		menu->addChild(new MinSlider<>(&module->scaleParam[id]));
+		menu->addChild(new MaxSlider<>(&module->scaleParam[id]));
 	}
 };
+
+
+struct MacroPort : StoermelderPort {
+	typedef ScaledMapParam<float, MacroModule::CvParamQuantity> SCALE;
+	int id;
+
+	void onButton(const event::Button& e) override {
+		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
+			createContextMenu();
+			e.consume(this);
+		}
+		else {
+			StoermelderPort::onButton(e);
+		}
+	}
+
+	void createContextMenu() {
+		MacroModule* module = dynamic_cast<MacroModule*>(this->module);
+
+		struct BipolarItem : MenuItem {
+			MacroModule* module;
+			int id;
+			void onAction(const event::Action& e) override {
+				bool b = module->scaleCvs[id].paramQuantity->minValue == -5.f;
+				module->scaleCvs[id].paramQuantity->minValue = b ? 0.f : -5.f;
+				module->scaleCvs[id].paramQuantity->maxValue = b ? 10.f : 5.f;
+			}
+			void step() override {
+				MenuItem::step();
+				rightText = module->scaleCvs[id].paramQuantity->minValue == -5.f ? "-5V..5V" : "0V..10V";
+			}
+		};
+
+		Menu* menu = createMenu();
+		menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("CV port %i", id + 1)));
+		menu->addChild(construct<BipolarItem>(&MenuItem::text, "Output voltage", &BipolarItem::module, module, &BipolarItem::id, id));
+		menu->addChild(new SlewSlider<SCALE>(&module->scaleCvs[id]));
+		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Scaling"));
+		menu->addChild(construct<ScalingLabel<SCALE>>(&ScalingLabel<SCALE>::p, &module->scaleCvs[id]));
+		menu->addChild(new MinSlider<SCALE>(&module->scaleCvs[id]));
+		menu->addChild(new MaxSlider<SCALE>(&module->scaleCvs[id]));
+	}
+};
+
 
 struct Macro4Widget : ThemedModuleWidget<MacroModule> {
 	typedef MacroModule MODULE;
@@ -304,11 +428,6 @@ struct Macro4Widget : ThemedModuleWidget<MacroModule> {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		VoltageLedDisplay<MODULE>* ledDisplay = createWidgetCentered<VoltageLedDisplay<MODULE>>(Vec(22.5f, 290.7f));
-		ledDisplay->box.size = Vec(39.1f, 13.2f);
-		ledDisplay->module = module;
-		addChild(ledDisplay);
-
 		float o = 28.8f;
 		for (size_t i = 0; i < MAPS; i++) {
 			MacroButton* button = createParamCentered<MacroButton>(Vec(22.5f, 60.3f + o * i), module, MODULE::PARAM_MAP + i);
@@ -318,7 +437,19 @@ struct Macro4Widget : ThemedModuleWidget<MacroModule> {
 			addChild(createLightCentered<MapLight<GreenRedLight>>(Vec(22.5f, 60.3f + o * i), module, MODULE::LIGHT_MAP + i * 2));
 		}
 
-		addChild(createParamCentered<StoermelderSmallKnob>(Vec(22.5f, 242.5f), module, MODULE::PARAM_KNOB));
+		o = 28.1f;
+		for (size_t i = 0; i < CVPORTS; i++) {
+			MacroPort* p = createOutputCentered<MacroPort>(Vec(22.f, 191.f + o * i), module, MODULE::OUTPUT_CV + i);
+			p->id = i;
+			addOutput(p);
+		}
+
+		addChild(createParamCentered<StoermelderLargeKnob>(Vec(22.5f, 260.7f), module, MODULE::PARAM_KNOB));
+
+		VoltageLedDisplay<MODULE>* ledDisplay = createWidgetCentered<VoltageLedDisplay<MODULE>>(Vec(22.5f, 291.9f));
+		ledDisplay->box.size = Vec(39.1f, 13.2f);
+		ledDisplay->module = module;
+		addChild(ledDisplay);
 		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 327.9f), module, MODULE::INPUT));
 	}
 

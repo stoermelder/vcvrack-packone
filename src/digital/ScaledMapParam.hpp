@@ -2,9 +2,9 @@
 
 namespace StoermelderPackOne {
     
-template<typename T>
+template<typename T, typename PQ = ParamQuantity>
 struct ScaledMapParam {
-	ParamQuantity* paramQuantity = NULL;
+	PQ* paramQuantity = NULL;
 	T absoluteMin;
 	T absoluteMax;
 	T uninit;
