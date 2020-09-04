@@ -361,6 +361,16 @@ struct MaxSlider : ui::Slider {
 }; // struct MaxSlider
 
 
+template<typename SCALE = ScaledMapParam<float>>
+struct InvertedItem : MenuItem {
+	SCALE* p;
+	void onAction(const event::Action& e) override {
+		p->min = 1.f;
+		p->max = 0.f;
+	}
+}; // struct InvertedItem
+
+
 struct MacroButton : MapButton<MacroModule> {
 	void appendContextMenu(Menu* menu) override {
 		menu->addChild(new MenuSeparator());
@@ -370,8 +380,9 @@ struct MacroButton : MapButton<MacroModule> {
 		menu->addChild(construct<ScalingLabel<>>(&ScalingLabel<>::p, &module->scaleParam[id]));
 		menu->addChild(new MinSlider<>(&module->scaleParam[id]));
 		menu->addChild(new MaxSlider<>(&module->scaleParam[id]));
+		menu->addChild(construct<InvertedItem<>>(&MenuItem::text, "Preset \"Inverted\"", &InvertedItem<>::p, &module->scaleParam[id]));
 	}
-};
+}; // struct MacroButton
 
 
 struct MacroPort : StoermelderPort {
@@ -403,7 +414,7 @@ struct MacroPort : StoermelderPort {
 				MenuItem::step();
 				rightText = module->scaleCvs[id].paramQuantity->minValue == -5.f ? "-5V..5V" : "0V..10V";
 			}
-		};
+		}; // struct BipolarItem
 
 		struct DisconnectItem : MenuItem {
 			PortWidget* pw;
@@ -419,7 +430,7 @@ struct MacroPort : StoermelderPort {
 					delete cw;
 				}
 			}
-		};
+		}; // struct DisconnectItem
 
 		Menu* menu = createMenu();
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("CV port %i", id + 1)));
@@ -430,15 +441,16 @@ struct MacroPort : StoermelderPort {
 		menu->addChild(construct<ScalingLabel<SCALE>>(&ScalingLabel<SCALE>::p, &module->scaleCvs[id]));
 		menu->addChild(new MinSlider<SCALE>(&module->scaleCvs[id]));
 		menu->addChild(new MaxSlider<SCALE>(&module->scaleCvs[id]));
+		menu->addChild(construct<InvertedItem<SCALE>>(&MenuItem::text, "Preset \"Inverted\"", &InvertedItem<SCALE>::p, &module->scaleCvs[id]));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<DisconnectItem>(&MenuItem::text, "Disconnect", &DisconnectItem::pw, this));
 	}
-};
+}; // struct MacroPort
 
 
-struct Macro4Widget : ThemedModuleWidget<MacroModule> {
+struct MacroWidget : ThemedModuleWidget<MacroModule> {
 	typedef MacroModule MODULE;
-	Macro4Widget(MODULE* module)
+	MacroWidget(MODULE* module)
 		: ThemedModuleWidget<MODULE>(module, "Macro") {
 		setModule(module);
 
@@ -501,9 +513,9 @@ struct Macro4Widget : ThemedModuleWidget<MacroModule> {
 		menu->addChild(construct<LockItem>(&MenuItem::text, "Parameter changes", &LockItem::module, module));
 		menu->addChild(construct<UniBiItem>(&MenuItem::text, "Input voltage", &UniBiItem::module, module));
 	}
-};
+}; // struct MacroWidget
 
 } // namespace Macro
 } // namespace StoermelderPackOne
 
-Model* modelMacro = createModel<StoermelderPackOne::Macro::MacroModule, StoermelderPackOne::Macro::Macro4Widget>("Macro");
+Model* modelMacro = createModel<StoermelderPackOne::Macro::MacroModule, StoermelderPackOne::Macro::MacroWidget>("Macro");
