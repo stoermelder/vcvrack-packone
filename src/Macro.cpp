@@ -406,6 +406,22 @@ struct MacroPort : StoermelderPort {
 			}
 		};
 
+		struct DisconnectItem : MenuItem {
+			PortWidget* pw;
+			void onAction(const event::Action& e) override {
+				CableWidget* cw = APP->scene->rack->getTopCable(pw);
+				if (cw) {
+					// history::CableRemove
+					history::CableRemove* h = new history::CableRemove;
+					h->setCable(cw);
+					APP->history->push(h);
+
+					APP->scene->rack->removeCable(cw);
+					delete cw;
+				}
+			}
+		};
+
 		Menu* menu = createMenu();
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("CV port %i", id + 1)));
 		menu->addChild(construct<BipolarItem>(&MenuItem::text, "Output voltage", &BipolarItem::module, module, &BipolarItem::id, id));
@@ -415,6 +431,8 @@ struct MacroPort : StoermelderPort {
 		menu->addChild(construct<ScalingLabel<SCALE>>(&ScalingLabel<SCALE>::p, &module->scaleCvs[id]));
 		menu->addChild(new MinSlider<SCALE>(&module->scaleCvs[id]));
 		menu->addChild(new MaxSlider<SCALE>(&module->scaleCvs[id]));
+		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<DisconnectItem>(&MenuItem::text, "Disconnect", &DisconnectItem::pw, this));
 	}
 };
 
@@ -439,7 +457,7 @@ struct Macro4Widget : ThemedModuleWidget<MacroModule> {
 
 		o = 28.1f;
 		for (size_t i = 0; i < CVPORTS; i++) {
-			MacroPort* p = createOutputCentered<MacroPort>(Vec(22.f, 191.f + o * i), module, MODULE::OUTPUT_CV + i);
+			MacroPort* p = createOutputCentered<MacroPort>(Vec(22.5f, 191.f + o * i), module, MODULE::OUTPUT_CV + i);
 			p->id = i;
 			addOutput(p);
 		}
