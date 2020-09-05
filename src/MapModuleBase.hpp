@@ -115,6 +115,7 @@ struct MapModuleBase : Module, StripIdFixModule {
 	}
 
 	virtual void clearMap(int id) {
+		if (paramHandles[id].moduleId < 0) return;
 		learningId = -1;
 		APP->engine->updateParamHandle(&paramHandles[id], -1, 0, true);
 		valueFilters[id].reset();

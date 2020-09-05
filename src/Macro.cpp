@@ -137,6 +137,9 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 					}
 					scaleParam[i].process(deltaTime, lockParameterChanges);
 				}
+				else {
+					clearMap(i);
+				}
 			}
 
 			for (size_t i = 0; i < CVPORTS; i++) {
