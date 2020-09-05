@@ -3,6 +3,7 @@
 #include "MapModuleBase.hpp"
 #include "StripIdFixModule.hpp"
 #include "digital/ScaledMapParam.hpp"
+#include "components/MenuLabelEx.hpp"
 #include <osdialog.h>
 
 namespace StoermelderPackOne {
@@ -944,7 +945,7 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 			}; // struct SlewQuantity
 
 			SlewSlider(MidiCatParam* p) {
-				box.size.x = 140.0f;
+				box.size.x = 180.0f;
 				quantity = construct<SlewQuantity>(&SlewQuantity::p, p);
 			}
 			~SlewSlider() {
@@ -953,7 +954,24 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 		}; // struct SlewSlider
 
 
-		struct ScalingLabel : MenuLabel {
+		struct ScalingInputLabel : MenuLabelEx {
+			MidiCatParam* p;
+			void step() override {
+				float min = p->getMin();
+				float max = p->getMax();
+
+				float g1 = rescale(0.f, min, max, 0.f, 127.f);
+				g1 = clamp(g1, 0.f, 127.f);
+				int g1a = std::round(g1);
+				float g2 = rescale(1.f, min, max, 0.f, 127.f);
+				g2 = clamp(g2, 0.f, 127.f);
+				int g2a = std::round(g2);
+
+				rightText = string::f("[%i, %i]", g1a, g2a);
+			}
+		}; // struct ScalingInputLabel
+
+		struct ScalingOutputLabel : MenuLabelEx {
 			MidiCatParam* p;
 			void step() override {
 				float min = p->getMin();
@@ -964,16 +982,9 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 				float f2 = rescale(127.f, 0.f, 127.f, min, max);
 				f2 = clamp(f2, 0.f, 1.f) * 100.f;
 
-				float g1 = rescale(0.f, min, max, 0.f, 127.f);
-				g1 = clamp(g1, 0.f, 127.f);
-				int g1a = std::round(g1);
-				float g2 = rescale(1.f, min, max, 0.f, 127.f);
-				g2 = clamp(g2, 0.f, 127.f);
-				int g2a = std::round(g2);
-
-				text = string::f("[%i, %i] " RIGHT_ARROW " [%.1f%, %.1f%]", g1a, g2a, f1, f2);
+				rightText = string::f("[%.1f%, %.1f%]", f1, f2);
 			}
-		}; // struct ScalingLabel
+		}; // struct ScalingOutputLabel
 
 		struct MinSlider : ui::Slider {
 			struct MinQuantity : Quantity {
@@ -1012,7 +1023,7 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 			}; // struct MinQuantity
 
 			MinSlider(MidiCatParam* p) {
-				box.size.x = 140.0f;
+				box.size.x = 180.0f;
 				quantity = construct<MinQuantity>(&MinQuantity::p, p);
 			}
 			~MinSlider() {
@@ -1057,7 +1068,7 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 			}; // struct MaxQuantity
 
 			MaxSlider(MidiCatParam* p) {
-				box.size.x = 140.0f;
+				box.size.x = 180.0f;
 				quantity = construct<MaxQuantity>(&MaxQuantity::p, p);
 			}
 			~MaxSlider() {
@@ -1131,7 +1142,8 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 		menu->addChild(new SlewSlider(&module->midiParam[id]));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Scaling"));
-		menu->addChild(construct<ScalingLabel>(&ScalingLabel::p, &module->midiParam[id]));
+		menu->addChild(construct<ScalingInputLabel>(&MenuLabel::text, "Input", &ScalingInputLabel::p, &module->midiParam[id]));
+		menu->addChild(construct<ScalingOutputLabel>(&MenuLabel::text, "Output", &ScalingOutputLabel::p, &module->midiParam[id]));
 		menu->addChild(new MinSlider(&module->midiParam[id]));
 		menu->addChild(new MaxSlider(&module->midiParam[id]));
 		menu->addChild(construct<InvertedItem>(&MenuItem::text, "Preset \"Inverted\"", &InvertedItem::p, &module->midiParam[id]));
