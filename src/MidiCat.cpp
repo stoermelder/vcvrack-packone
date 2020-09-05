@@ -323,7 +323,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 							}
 						}
 
-						midiParam[id].process(args.sampleTime * processDivider.getDivision());
+						midiParam[id].process(args.sampleTime * float(processDivision));
 
 						// Midi feedback
 						//float v = paramQuantity->getValue();
@@ -358,7 +358,6 @@ struct MidiCatModule : Module, StripIdFixModule {
 					} break;
 				}
 			}
-			processDivider.setDivision(processDivision);
 		}
 
 		if (indicatorDivider.process()) {
@@ -682,6 +681,12 @@ struct MidiCatModule : Module, StripIdFixModule {
 			i++;
 		}
 		updateMapLen();
+	}
+
+	void setProcessDivision(int d) {
+		processDivision = d;
+		processDivider.setDivision(d);
+		processDivider.reset();
 	}
 
 	json_t* dataToJson() override {
@@ -1492,7 +1497,7 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 					sampleRate = int(APP->engine->getSampleRate());
 				}
 				void onAction(const event::Action& e) override {
-					module->processDivision = division;
+					module->setProcessDivision(division);
 				}
 				void step() override {
 					MenuItem::text = string::f("%s (%i Hz)", text.c_str(), sampleRate / division);
