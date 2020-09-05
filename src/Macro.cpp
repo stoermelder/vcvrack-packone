@@ -33,11 +33,21 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 
 	struct CvParamQuantity : ParamQuantity {
 		Output* output;
+		bool usePrepared = false;
+		float prepared;
 		void setValue(float v) override {
 			output->setVoltage(v);
 		}
 		float getValue() override {
+			if (usePrepared) {
+				usePrepared = false;
+				return prepared;
+			}
 			return output->getVoltage();
+		}
+		void prepare(float v) {
+			usePrepared = true;
+			prepared = v;
 		}
 	};
 
@@ -57,7 +67,7 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 		configParam(PARAM_KNOB, 0.f, 1.f, 0.f, "Macro knob", "%", 0.f, 100.f);
 
 		for (size_t i = 0; i < MAPS; i++) {
-			MacroModule::configParam<MapParamQuantity<MacroModule>>(PARAM_MAP + i, 0.f, 1.f, 0.f, string::f("Map %i", i + 1));
+			configParam<MapParamQuantity<MacroModule>>(PARAM_MAP + i, 0.f, 1.f, 0.f, string::f("Map %i", i + 1));
 			MapParamQuantity<MacroModule>* pq = dynamic_cast<MapParamQuantity<MacroModule>*>(paramQuantities[PARAM_MAP + i]);
 			pq->module = this;
 			pq->id = i;
@@ -88,6 +98,11 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 		CVMapModuleBase<MAPS>::onReset();
 		for (size_t i = 0; i < MAPS; i++) {
 			scaleParam[i].reset();
+		}
+		for (size_t i = 0; i < CVPORTS; i++) {
+			CvParamQuantity* pq = scaleCvs[i].paramQuantity;
+			scaleCvs[i].reset();
+			scaleCvs[i].setParamQuantity(pq);
 		}
 		lockParameterChanges = false;
 	}
@@ -154,6 +169,7 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 			json_object_set_new(cvJ, "min", json_real(scaleCvs[i].getMin()));
 			json_object_set_new(cvJ, "max", json_real(scaleCvs[i].getMax()));
 			json_object_set_new(cvJ, "bipolar", json_boolean(scaleCvs[i].paramQuantity->minValue == -5.f));
+			json_object_set_new(cvJ, "voltage", json_real(scaleCvs[i].valueOut));
 			json_array_append_new(cvsJ, cvJ);
 		}
 		json_object_set_new(rootJ, "cvs", cvsJ);
@@ -189,6 +205,13 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 					bool bipolar = json_boolean_value(bipolarJ);
 					scaleCvs[i].paramQuantity->minValue = bipolar ? -5.f : 0.f;
 					scaleCvs[i].paramQuantity->maxValue = bipolar ? 5.f : 10.f;
+				}
+				json_t* voltageJ = json_object_get(cvJ, "voltage");
+				if (voltageJ) {
+					float v = json_real_value(voltageJ);
+					scaleCvs[i].setValue(v);
+					// Store the last voltage as output-ports get initialized after loading
+					scaleCvs[i].paramQuantity->prepare(v);
 				}
 			}
 		}
@@ -476,7 +499,7 @@ struct MacroWidget : ThemedModuleWidget<MacroModule> {
 			addOutput(p);
 		}
 
-		addChild(createParamCentered<StoermelderLargeKnob>(Vec(22.5f, 260.7f), module, MODULE::PARAM_KNOB));
+		addParam(createParamCentered<StoermelderLargeKnob>(Vec(22.5f, 260.7f), module, MODULE::PARAM_KNOB));
 
 		VoltageLedDisplay<MODULE>* ledDisplay = createWidgetCentered<VoltageLedDisplay<MODULE>>(Vec(22.5f, 291.9f));
 		ledDisplay->box.size = Vec(39.1f, 13.2f);
