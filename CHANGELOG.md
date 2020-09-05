@@ -1,23 +1,25 @@
 ## 1.x.x (in development)
 
 - Module [FLOWER, SEEDS, OFFSPRING](./docs/Flower.md)
-    - New module, pattern-driven 16-step sequencer
+    - New modules, pattern-driven 16-step sequencer
+- Module [MACRO](./docs/Macro.md)
+    - New module, marco-knob for four parameter-mappings and two CV outputs
 
 ### Fixes and Changes
 
 - Module [CV-PAM](./docs/CVPam.md)
     - Fixed wrong channel count of the polyphonic output ports
 - Module [MEM](./docs/MidiCat.md#mem-expander)
-    - Added support for MIDI-CAT's new slew-limiting and scaling
+    - Added support for MIDI-CAT's new slew-limiting and scaling options
 - Module [µMAP](./docs/CVMapMicro.md)
     - Added input voltage display
 - Module [MIDI-CAT](./docs/MidiCat.md)
-    - Added context menu options for MIDI filtering/slew limiting for CC and notes by slider (#79)
-    - Added scaling for limiting and transforming the MIDI-input and parameter-range (#169)
+    - Added context menu sliders for MIDI filtering/slew-limiting for CCs and notes (#79)
+    - Added context menu sliders for scaling or transforming the MIDI-input and parameter-range (#169)
     - Added context menu options for precision/CPU-usage
-    - Added context menu options for MIDI-CAT on mapped parameters of target module
+    - Added context menu options on mapped parameters of target module for MIDI-CAT
     - Added skipping of current slot with SPACE-key while in mapping-mode
-    - Added context menu option for clearing all mappings
+    - Added context menu option for clearing all mapping-slots
 - Module [STROKE](./docs/Stroke.md)
     - Added command "Toggle engine pause"
     - Added command "Toggle lock modules"

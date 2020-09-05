@@ -98,6 +98,7 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 		CVMapModuleBase<MAPS>::onReset();
 		for (size_t i = 0; i < MAPS; i++) {
 			scaleParam[i].reset();
+			lastValue[i] = std::numeric_limits<float>::infinity();
 		}
 		for (size_t i = 0; i < CVPORTS; i++) {
 			CvParamQuantity* pq = scaleCvs[i].paramQuantity;
@@ -149,7 +150,10 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 	}
 
 	void commitLearn() override {
-		if (learningId >= 0) scaleParam[learningId].reset();
+		if (learningId >= 0) {
+			scaleParam[learningId].reset();
+			lastValue[learningId] = std::numeric_limits<float>::infinity();
+		}
 		CVMapModuleBase<MAPS>::commitLearn();
 		disableLearn(learningId);
 	}

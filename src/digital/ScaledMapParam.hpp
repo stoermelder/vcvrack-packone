@@ -84,7 +84,9 @@ struct ScaledMapParam {
 		if (valueOut == std::numeric_limits<float>::infinity()) return;
 		// Set filter from param value if filter is uninitialized
 		if (!filterInitialized) {
-			filter.out = value = paramQuantity->getValue();
+			filter.out = paramQuantity->getValue();
+			// If setValue has not been called yet use the parameter's current value
+			if (value == -1.f) value = filter.out;
 			filterInitialized = true;
 		}
 		float f = filterSlew > 0.f && sampleTime > 0.f ? filter.process(sampleTime, value) : value;
