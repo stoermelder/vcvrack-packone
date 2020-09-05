@@ -390,8 +390,8 @@ template<typename SCALE = ScaledMapParam<float>>
 struct InvertedItem : MenuItem {
 	SCALE* p;
 	void onAction(const event::Action& e) override {
-		p->min = 1.f;
-		p->max = 0.f;
+		p->setMin(1.f);
+		p->setMax(0.f);
 	}
 }; // struct InvertedItem
 

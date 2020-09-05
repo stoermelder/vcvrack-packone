@@ -237,6 +237,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 
 				switch (midiMode) {
 					case MIDIMODE::MIDIMODE_DEFAULT: {
+						// Setting the paramQuantity directly prevets resetting the output-value
 						midiParam[id].paramQuantity = paramQuantity;
 
 						// Check if CC value has been set
@@ -1062,8 +1063,8 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 		struct InvertedItem : MenuItem {
 			MidiCatParam* p;
 			void onAction(const event::Action& e) override {
-				p->min = 1.f;
-				p->max = 0.f;
+				p->setMin(1.f);
+				p->setMax(0.f);
 			}
 		}; // struct InvertedItem
 
