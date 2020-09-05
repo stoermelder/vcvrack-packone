@@ -41,11 +41,11 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 		float getValue() override {
 			if (usePrepared) {
 				usePrepared = false;
-				return prepared;
+				return rescale(prepared, 0.f, 1.f, getMinValue(), getMaxValue());
 			}
 			return output->getVoltage();
 		}
-		void prepare(float v) {
+		void prepareScaledValue(float v) {
 			usePrepared = true;
 			prepared = v;
 		}
@@ -188,7 +188,7 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 			json_object_set_new(cvJ, "min", json_real(scaleCvs[i].getMin()));
 			json_object_set_new(cvJ, "max", json_real(scaleCvs[i].getMax()));
 			json_object_set_new(cvJ, "bipolar", json_boolean(scaleCvs[i].paramQuantity->minValue == -5.f));
-			json_object_set_new(cvJ, "voltage", json_real(scaleCvs[i].valueOut));
+			json_object_set_new(cvJ, "value", json_real(scaleCvs[i].paramQuantity->getScaledValue()));
 			json_array_append_new(cvsJ, cvJ);
 		}
 		json_object_set_new(rootJ, "cvs", cvsJ);
@@ -230,12 +230,12 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 					scaleCvs[i].paramQuantity->minValue = bipolar ? -5.f : 0.f;
 					scaleCvs[i].paramQuantity->maxValue = bipolar ? 5.f : 10.f;
 				}
-				json_t* voltageJ = json_object_get(cvJ, "voltage");
-				if (voltageJ) {
-					float v = json_real_value(voltageJ);
+				json_t* valueJ = json_object_get(cvJ, "value");
+				if (valueJ) {
+					float v = json_real_value(valueJ);
+					// Store the last value as output-ports get initialized after loading
+					scaleCvs[i].paramQuantity->prepareScaledValue(v);
 					scaleCvs[i].setValue(v);
-					// Store the last voltage as output-ports get initialized after loading
-					scaleCvs[i].paramQuantity->prepare(v);
 				}
 			}
 		}
