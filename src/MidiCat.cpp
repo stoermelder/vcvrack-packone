@@ -620,7 +620,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 
 	void memSave(std::string pluginSlug, std::string moduleSlug) {
 		MemModule* m = new MemModule;
-		Module* module;
+		Module* module = NULL;
 		for (size_t i = 0; i < MAX_CHANNELS; i++) {
 			if (paramHandles[i].moduleId < 0) continue;
 			if (paramHandles[i].module->model->plugin->slug != pluginSlug && paramHandles[i].module->model->slug == moduleSlug) continue;
@@ -1059,6 +1059,14 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 			}
 		}; // struct MaxSlider
 
+		struct InvertedItem : MenuItem {
+			MidiCatParam* p;
+			void onAction(const event::Action& e) override {
+				p->min = 1.f;
+				p->max = 0.f;
+			}
+		}; // struct InvertedItem
+
 		struct LabelMenuItem : MenuItem {
 			MidiCatModule* module;
 			int id;
@@ -1120,6 +1128,7 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 		menu->addChild(construct<ScalingLabel>(&ScalingLabel::p, &module->midiParam[id]));
 		menu->addChild(new MinSlider(&module->midiParam[id]));
 		menu->addChild(new MaxSlider(&module->midiParam[id]));
+		menu->addChild(construct<InvertedItem>(&MenuItem::text, "Preset \"Inverted\"", &InvertedItem::p, &module->midiParam[id]));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<LabelMenuItem>(&MenuItem::text, "Custom label", &LabelMenuItem::module, module, &LabelMenuItem::id, id));
 	}
