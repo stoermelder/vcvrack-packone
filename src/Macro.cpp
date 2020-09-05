@@ -89,6 +89,7 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 		for (size_t i = 0; i < MAPS; i++) {
 			scaleParam[i].reset();
 		}
+		lockParameterChanges = false;
 	}
 
 	void process(const Module::ProcessArgs& args) override {
@@ -106,12 +107,12 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 			if (paramQuantity) {
 				scaleParam[i].setParamQuantity(paramQuantity);
 
-				if (lockParameterChanges || lastValue[i] != v) {
+				if (lastValue[i] != v) {
 					scaleParam[i].setValue(v);
 					lastValue[i] = v;
 				}
 
-				scaleParam[i].process(args.sampleTime);
+				scaleParam[i].process(args.sampleTime, lockParameterChanges);
 			}
 		}
 
