@@ -29,6 +29,7 @@ struct ScaledMapParam {
 	}
 
 	void reset() {
+		paramQuantity = NULL;
 		filter.reset();
 		filterInitialized = false;
 		filterSlew = 0.f;
@@ -42,8 +43,7 @@ struct ScaledMapParam {
 	void setParamQuantity(PQ* pq) {
 		paramQuantity = pq;
 		if (paramQuantity && valueOut == std::numeric_limits<float>::infinity()) {
-			float f = paramQuantity->getValue();
-			filter.out = value = valueOut = f;
+			valueOut = paramQuantity->getValue();
 		}
 	}
 
