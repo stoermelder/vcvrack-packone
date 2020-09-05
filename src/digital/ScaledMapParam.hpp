@@ -5,8 +5,8 @@ namespace StoermelderPackOne {
 template<typename T, typename PQ = ParamQuantity>
 struct ScaledMapParam {
 	PQ* paramQuantity = NULL;
-	T absoluteMin;
-	T absoluteMax;
+	float limitMin;
+	float limitMax;
 	T uninit;
 	float min = 0.f;
 	float max = 1.f;
@@ -22,9 +22,9 @@ struct ScaledMapParam {
 		reset();
 	}
 
-	void setAbsolutes(T min, T max, T uninit) {
-		absoluteMin = min;
-		absoluteMax = max;
+	void setLimits(T min, T max, T uninit) {
+		limitMin = float(min);
+		limitMax = float(max);
 		this->uninit = uninit;
 	}
 
@@ -43,7 +43,7 @@ struct ScaledMapParam {
 		paramQuantity = pq;
 		if (paramQuantity && valueOut == std::numeric_limits<float>::infinity()) {
 			float f = paramQuantity->getValue();
-			value = valueOut = f;
+			filter.out = value = valueOut = f;
 		}
 	}
 
@@ -73,7 +73,7 @@ struct ScaledMapParam {
 	}
 
 	void setValue(T i) {
-		float f = rescale(float(i), float(absoluteMin), float(absoluteMax), min, max);
+		float f = rescale(float(i), limitMin, limitMax, min, max);
 		f = clamp(f, 0.f, 1.f);
 		f = rescale(f, 0.f, 1.f, paramQuantity->getMinValue(), paramQuantity->getMaxValue());
 		valueIn = i;
@@ -99,11 +99,16 @@ struct ScaledMapParam {
 		if (isNear(valueOut, f)) return valueIn;
 		if (valueOut == std::numeric_limits<float>::infinity()) value = valueOut = f;
 		f = rescale(f, paramQuantity->getMinValue(), paramQuantity->getMaxValue(), 0.f, 1.f);
-		f = rescale(f, min, max, float(absoluteMin), float(absoluteMax));
-		f = clamp(f, 0.f, 127.f);
+		f = rescale(f, min, max, limitMin, limitMax);
+		f = clamp(f, limitMin, limitMax);
 		T i = T(f);
 		if (valueIn == uninit) valueIn = i;
 		return i;
+	}
+
+	float getLightBrightness() {
+		if (!paramQuantity) return 0.f;
+		return rescale(valueOut, paramQuantity->getMinValue(), paramQuantity->getMaxValue(), 0.f, 1.f);
 	}
 }; // struct ScaledMapParam
 

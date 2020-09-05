@@ -160,7 +160,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 			paramHandleIndicator[id].color = mappingIndicatorColor;
 			paramHandleIndicator[id].handle = &paramHandles[id];
 			APP->engine->addParamHandle(&paramHandles[id]);
-			midiParam[id].setAbsolutes(0, 127, -1);
+			midiParam[id].setLimits(0, 127, -1);
 		}
 		indicatorDivider.setDivision(2048);
 		onReset();

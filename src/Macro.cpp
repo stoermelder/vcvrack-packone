@@ -62,7 +62,7 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 			pq->module = this;
 			pq->id = i;
 			paramHandles[i].text = "MACRO";
-			scaleParam[i].setAbsolutes(0.f, 1.f, std::numeric_limits<float>::infinity());
+			scaleParam[i].setLimits(0.f, 1.f, std::numeric_limits<float>::infinity());
 		}
 
 		for (size_t i = 0; i < CVPORTS; i++) {
@@ -71,7 +71,7 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 			pq->minValue = 0.f;
 			pq->maxValue = 10.f;
 			scaleCvs[i].setParamQuantity(pq);
-			scaleCvs[i].setAbsolutes(0.f, 1.f, std::numeric_limits<float>::infinity());
+			scaleCvs[i].setLimits(0.f, 1.f, std::numeric_limits<float>::infinity());
 		}
 
 		lightDivider.setDivision(1024);
@@ -125,7 +125,7 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 			for (int i = 0; i < MAPS; i++) {
 				lights[LIGHT_MAP + i * 2].setBrightness(paramHandles[i].moduleId >= 0 && learningId != i ? 1.f : 0.f);
 				lights[LIGHT_MAP + i * 2 + 1].setBrightness(learningId == i ? 1.f : 0.f);
-				lights[LIGHT_MAP_CV + i].setBrightness(scaleParam[i].valueOut);
+				lights[LIGHT_MAP_CV + i].setBrightness(scaleParam[i].getLightBrightness());
 			}
 		}
 
@@ -251,16 +251,16 @@ struct ScalingLabel : MenuLabel {
 		float min = p->getMin();
 		float max = p->getMax();
 
-		float f1 = rescale(p->absoluteMin, p->absoluteMin, p->absoluteMax, min, max);
+		float f1 = rescale(p->limitMin, p->limitMin, p->limitMax, min, max);
 		f1 = clamp(f1, 0.f, 1.f) * 100.f;
-		float f2 = rescale(p->absoluteMax, p->absoluteMin, p->absoluteMax, min, max);
+		float f2 = rescale(p->limitMax, p->limitMin, p->limitMax, min, max);
 		f2 = clamp(f2, 0.f, 1.f) * 100.f;
 
-		float g1 = rescale(0.f, min, max, p->absoluteMin, p->absoluteMax);
-		g1 = clamp(g1, p->absoluteMin, p->absoluteMax);
+		float g1 = rescale(0.f, min, max, p->limitMin, p->limitMax);
+		g1 = clamp(g1, p->limitMin, p->limitMax);
 		float g1a = g1 * 100.f;
-		float g2 = rescale(1.f, min, max, p->absoluteMin, p->absoluteMax);
-		g2 = clamp(g2, p->absoluteMin, p->absoluteMax);
+		float g2 = rescale(1.f, min, max, p->limitMin, p->limitMax);
+		g2 = clamp(g2, p->limitMin, p->limitMax);
 		float g2a = g2 * 100.f;
 
 		text = string::f("[%.1f%, %.1f%] " RIGHT_ARROW " [%.1f%, %.1f%]", g1a, g2a, f1, f2);
