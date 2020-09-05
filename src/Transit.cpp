@@ -1,6 +1,7 @@
 #include "plugin.hpp"
 #include "digital.hpp"
 #include "TransitBase.hpp"
+#include "digital/ShapedSlewLimiter.hpp"
 #include <random>
 
 namespace StoermelderPackOne {
