@@ -43,7 +43,7 @@ struct ScaledMapParam {
 	void setParamQuantity(PQ* pq) {
 		paramQuantity = pq;
 		if (paramQuantity && valueOut == std::numeric_limits<float>::infinity()) {
-			valueOut = paramQuantity->getValue();
+			valueOut = paramQuantity->getScaledValue();
 		}
 	}
 
@@ -51,6 +51,7 @@ struct ScaledMapParam {
 		filterSlew = slew;
 		float s = (1.f / slew) * 10.f;
 		filter.setRiseFall(s, s);
+		if (filterSlew == 0.f) filterInitialized = false;
 	}
 	float getSlew() {
 		return filterSlew;
@@ -75,7 +76,6 @@ struct ScaledMapParam {
 	void setValue(T i) {
 		float f = rescale(float(i), limitMin, limitMax, min, max);
 		f = clamp(f, 0.f, 1.f);
-		f = rescale(f, 0.f, 1.f, paramQuantity->getMinValue(), paramQuantity->getMaxValue());
 		valueIn = i;
 		value = f;
 	}
@@ -84,23 +84,22 @@ struct ScaledMapParam {
 		if (valueOut == std::numeric_limits<float>::infinity()) return;
 		// Set filter from param value if filter is uninitialized
 		if (!filterInitialized) {
-			filter.out = paramQuantity->getValue();
+			filter.out = paramQuantity->getScaledValue();
 			// If setValue has not been called yet use the parameter's current value
 			if (value == -1.f) value = filter.out;
 			filterInitialized = true;
 		}
 		float f = filterSlew > 0.f && sampleTime > 0.f ? filter.process(sampleTime, value) : value;
 		if (valueOut != f || force) {
-			paramQuantity->setValue(f);
+			paramQuantity->setScaledValue(f);
 			valueOut = f;
 		}
 	}
 
 	T getValue() {
-		float f = paramQuantity->getValue();
+		float f = paramQuantity->getScaledValue();
 		if (isNear(valueOut, f)) return valueIn;
 		if (valueOut == std::numeric_limits<float>::infinity()) value = valueOut = f;
-		f = rescale(f, paramQuantity->getMinValue(), paramQuantity->getMaxValue(), 0.f, 1.f);
 		f = rescale(f, min, max, limitMin, limitMax);
 		f = clamp(f, limitMin, limitMax);
 		T i = T(f);
@@ -110,7 +109,7 @@ struct ScaledMapParam {
 
 	float getLightBrightness() {
 		if (!paramQuantity) return 0.f;
-		return rescale(valueOut, paramQuantity->getMinValue(), paramQuantity->getMaxValue(), 0.f, 1.f);
+		return valueOut;
 	}
 }; // struct ScaledMapParam
 
