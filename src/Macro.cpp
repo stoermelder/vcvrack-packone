@@ -27,7 +27,7 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 	};
 	enum LightIds {
 		ENUMS(LIGHT_MAP, 2 * MAPS),
-		ENUMS(LIGHT_MAP_CV, 2 * MAPS),
+		ENUMS(LIGHT_MAP_CV, MAPS),
 		NUM_LIGHTS
 	};
 
@@ -125,6 +125,7 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 			for (int i = 0; i < MAPS; i++) {
 				lights[LIGHT_MAP + i * 2].setBrightness(paramHandles[i].moduleId >= 0 && learningId != i ? 1.f : 0.f);
 				lights[LIGHT_MAP + i * 2 + 1].setBrightness(learningId == i ? 1.f : 0.f);
+				lights[LIGHT_MAP_CV + i].setBrightness(scaleParam[i].valueOut);
 			}
 		}
 
@@ -464,6 +465,7 @@ struct MacroWidget : ThemedModuleWidget<MacroModule> {
 			button->id = i;
 			addParam(button);
 			addChild(createLightCentered<MapLight<GreenRedLight>>(Vec(22.5f, 60.3f + o * i), module, MODULE::LIGHT_MAP + i * 2));
+			addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(33.6f, 50.7f + o * i), module, MODULE::LIGHT_MAP_CV + i));
 		}
 
 		o = 28.1f;
