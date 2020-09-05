@@ -56,6 +56,10 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 	/** [Stored to Json] */
 	ScaledMapParam<float, CvParamQuantity> scaleCvs[CVPORTS];
 
+	dsp::ClockDivider processDivider;
+	/** [Stored to JSON] */
+	int processDivision;
+
 	/** [Stored to JSON] */
 	int panelTheme = 0;
 
@@ -106,36 +110,40 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 			scaleCvs[i].setParamQuantity(pq);
 		}
 		lockParameterChanges = false;
+		processDivision = 64;
+		processDivider.setDivision(processDivision);
+		processDivider.reset();
 	}
 
 	void process(const Module::ProcessArgs& args) override {
-		float v = params[PARAM_KNOB].getValue();
+		if (processDivider.process()) {
+			float deltaTime = args.sampleTime * float(processDivision);
 
-		if (inputs[INPUT].isConnected()) {
-			float v1 = inputs[INPUT].getVoltage();
-			if (bipolarInput) v1 += 5.f;
-			v = v * v1;
-			v = rescale(v, 0.f, 10.f, 0.f, 1.f);
-		}
-
-		for (size_t i = 0; i < MAPS; i++) {
-			ParamQuantity* paramQuantity = getParamQuantity(i);
-			if (paramQuantity) {
-				scaleParam[i].setParamQuantity(paramQuantity);
-
-				if (lastValue[i] != v) {
-					scaleParam[i].setValue(v);
-					lastValue[i] = v;
-				}
-
-				scaleParam[i].process(args.sampleTime, lockParameterChanges);
+			float v = params[PARAM_KNOB].getValue();
+			if (inputs[INPUT].isConnected()) {
+				float v1 = inputs[INPUT].getVoltage();
+				if (bipolarInput) v1 += 5.f;
+				v = v * v1;
+				v = rescale(v, 0.f, 10.f, 0.f, 1.f);
 			}
-		}
 
-		for (size_t i = 0; i < CVPORTS; i++) {
-			if (!outputs[OUTPUT_CV + i].isConnected()) continue;
-			scaleCvs[i].setValue(v);
-			scaleCvs[i].process(args.sampleTime);
+			for (size_t i = 0; i < MAPS; i++) {
+				ParamQuantity* paramQuantity = getParamQuantity(i);
+				scaleParam[i].setParamQuantity(paramQuantity);
+				if (paramQuantity) {
+					if (lastValue[i] != v) {
+						scaleParam[i].setValue(v);
+						lastValue[i] = v;
+					}
+					scaleParam[i].process(deltaTime, lockParameterChanges);
+				}
+			}
+
+			for (size_t i = 0; i < CVPORTS; i++) {
+				if (!outputs[OUTPUT_CV + i].isConnected()) continue;
+				scaleCvs[i].setValue(v);
+				scaleCvs[i].process(deltaTime);
+			}
 		}
 
 		if (lightDivider.process()) {
@@ -158,6 +166,12 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 		disableLearn(learningId);
 	}
 
+	void setProcessDivision(int d) {
+		processDivision = d;
+		processDivider.setDivision(d);
+		processDivider.reset();
+	}
+
 	float getCurrentVoltage() {
 		return inputs[INPUT].getVoltage();
 	}
@@ -165,6 +179,7 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 	json_t* dataToJson() override {
 		json_t* rootJ = CVMapModuleBase<MAPS>::dataToJson();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
+		json_object_set_new(rootJ, "processDivision", json_integer(processDivision));
 
 		json_t* cvsJ = json_array();
 		for (int i = 0; i < CVPORTS; i++) {
@@ -190,6 +205,11 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 	void dataFromJson(json_t* rootJ) override {
 		CVMapModuleBase<MAPS>::dataFromJson(rootJ);
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		json_t* processDivisionJ = json_object_get(rootJ, "processDivision");
+		if (processDivisionJ) {
+			processDivision = json_integer_value(processDivisionJ);
+			processDivider.setDivision(processDivision);
+		} 
 
 		json_t* cvsJ = json_object_get(rootJ, "cvs");
 		if (cvsJ) {
@@ -517,6 +537,40 @@ struct MacroWidget : ThemedModuleWidget<MacroModule> {
 		MODULE* module = dynamic_cast<MODULE*>(this->module);
 		assert(module);
 
+		struct PrecisionMenuItem : MenuItem {
+			struct PrecisionItem : MenuItem {
+				MODULE* module;
+				int sampleRate;
+				int division;
+				std::string text;
+				PrecisionItem() {
+					sampleRate = int(APP->engine->getSampleRate());
+				}
+				void onAction(const event::Action& e) override {
+					module->setProcessDivision(division);
+				}
+				void step() override {
+					MenuItem::text = string::f("%s (%i Hz)", text.c_str(), sampleRate / division);
+					rightText = module->processDivision == division ? "✔" : "";
+					MenuItem::step();
+				}
+			};
+
+			MODULE* module;
+			PrecisionMenuItem() {
+				rightText = RIGHT_ARROW;
+			}
+
+			Menu* createChildMenu() override {
+				Menu* menu = new Menu;
+				menu->addChild(construct<PrecisionItem>(&PrecisionItem::text, "Audio rate", &PrecisionItem::module, module, &PrecisionItem::division, 1));
+				menu->addChild(construct<PrecisionItem>(&PrecisionItem::text, "Higher CPU", &PrecisionItem::module, module, &PrecisionItem::division, 8));
+				menu->addChild(construct<PrecisionItem>(&PrecisionItem::text, "Moderate CPU", &PrecisionItem::module, module, &PrecisionItem::division, 64));
+				menu->addChild(construct<PrecisionItem>(&PrecisionItem::text, "Lowest CPU", &PrecisionItem::module, module, &PrecisionItem::division, 256));
+				return menu;
+			}
+		};
+
 		struct LockItem : MenuItem {
 			MODULE* module;
 			void onAction(const event::Action& e) override {
@@ -539,6 +593,8 @@ struct MacroWidget : ThemedModuleWidget<MacroModule> {
 			}
 		};
 
+		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<PrecisionMenuItem>(&MenuItem::text, "Precision", &PrecisionMenuItem::module, module));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<LockItem>(&MenuItem::text, "Parameter changes", &LockItem::module, module));
 		menu->addChild(construct<UniBiItem>(&MenuItem::text, "Input voltage", &UniBiItem::module, module));
