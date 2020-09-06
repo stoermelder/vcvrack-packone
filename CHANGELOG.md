@@ -1,5 +1,7 @@
 ## 1.x.x (in development)
 
+- Module [RAW](./docs/Raw.md)
+    - New module, a digital effect based on the dynamics of bistable systems
 - Module [FLOWER, SEEDS, OFFSPRING](./docs/Flower.md)
     - New modules, pattern-driven 16-step sequencer
 - Module [MACRO](./docs/Macro.md)
