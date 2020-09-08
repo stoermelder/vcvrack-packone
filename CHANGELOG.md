@@ -1,3 +1,10 @@
+## 1.7.1
+
+### Fixes and Changes
+
+- Module [TRANSIT](./docs/Transit.md)
+    - Fixed worng snapshot-count when using +T expander after loading a patch
+
 ## 1.7.0
 
 - Module [MEM](./docs/MidiCat.md#mem-expander)
