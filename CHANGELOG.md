@@ -30,6 +30,13 @@
     - Fixed advancing to the lower button after the upper button has been mapped
     - Fixed wrong tooltip of lower mapping button
 
+## 1.7.1
+
+### Fixes and Changes
+
+- Module [TRANSIT](./docs/Transit.md)
+    - Fixed worng snapshot-count when using +T expander after loading a patch
+
 ## 1.7.0
 
 - Module [MEM](./docs/MidiCat.md#mem-expander)
