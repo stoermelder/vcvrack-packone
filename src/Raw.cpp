@@ -3,7 +3,6 @@
 /**
 
 	https://dafx2020.mdw.ac.at/proceedings/papers/DAFx2020_paper_6.pdf
-	https://ant-novak.com/posts/projects/2020-02-26_Bistable_Effect/
 
 	Authors (students):		Alexander Ramirez (https://www.linkedin.com/in/ajramirezm/)
 							Vikas Tokala (https://www.linkedin.com/in/vikastokala/)
@@ -46,11 +45,11 @@ struct RawModule : Module {
 
 	simd::float_4 y[4][2];
 	simd::float_4 x[4][3];
-	float Ts;
+	float Ts, Ts0001;
 	float A1, A2, A3;
 	float m, c, k, Fn, Wn, in_gain, out_gain;
 
-    dsp::ClockDivider paramDivider;
+	dsp::ClockDivider paramDivider;
 
 	/** [Stored to JSON] */
 	int panelTheme = 0;
@@ -78,16 +77,17 @@ struct RawModule : Module {
 
 	void prepareParameters() {
 		in_gain = pow(10.f, params[PARAM_GAIN_IN].getValue() / 20.f);
-		// for normalization of input voltage to [-1,1]
+		// for normalization of input voltage [-5V,5V] to [-1,1]
 		in_gain /= 5.0f;
 		Fn = params[PARAM_FN].getValue();
 		c = pow(10.f, params[PARAM_C].getValue());
 		k = params[PARAM_K].getValue();
 		out_gain = pow(10.f, params[PARAM_GAIN_OUT].getValue() / 20.f);
-		// for normalization of output voltage to [-5V,5V]
+		// for normalization of [-1,1] to output voltage [-5V,5V]
 		out_gain *= 5.0f; 
 
 		Ts = APP->engine->getSampleTime();
+		Ts0001 = Ts / 0.0001f;
 
 		// angular frequency
 		Wn = 2.0f * M_PI * Fn;
@@ -109,21 +109,25 @@ struct RawModule : Module {
 		}
 
 		for (int c = 0; c < channels; c += 4) {
-			// read the new sample (amplify input)
 			y[c / 4][0] = inputs[INPUT].getPolyVoltageSimd<simd::float_4>(c) * in_gain;
 
 			// displacement equation
 			x[c / 4][0] = (y[c / 4][1] - A2 * x[c / 4][1] - A3 * x[c / 4][2] - k * pow(x[c / 4][1], 3.f)) / A1;
 
 			// velocity (normalized by 10000)
-			simd::float_4 v = (x[c / 4][0] - x[c / 4][1]) / Ts * 0.0001f;
+			simd::float_4 v = (x[c / 4][0] - x[c / 4][1]) / Ts0001;
+
+			// this implementation behaves unstable to do some stupid "limiting"
+			// could possibly fixed with some oversampling, tbd
+			simd::float_4 b = simd::abs(v) > 100.f;
+			x[c / 4][0] = simd::ifelse(b, 0.f, x[c / 4][0]);
+			x[c / 4][1] = simd::ifelse(b, 0.f, x[c / 4][1]);
 
 			// shift buffers
 			y[c / 4][1] = y[c / 4][0];
 			x[c / 4][2] = x[c / 4][1];
 			x[c / 4][1] = x[c / 4][0];
 
-			// write output data
 			outputs[OUTPUT].setVoltageSimd(v * out_gain, c);
 		}
 
@@ -158,6 +162,15 @@ struct RawWidget : ThemedModuleWidget<RawModule> {
 	}
 
 	void appendContextMenu(Menu *menu) override {
+		struct PublicationItem : MenuItem {
+			void onAction(const event::Action& e) override {
+				std::thread t(system::openBrowser, "https://dafx2020.mdw.ac.at/proceedings/papers/DAFx2020_paper_6.pdf");
+				t.detach();
+			}
+		};
+
+		menu->addChild(construct<PublicationItem>(&MenuItem::text, "Publication"));
+
 		ThemedModuleWidget<RawModule>::appendContextMenu(menu);
 		RawModule* module = dynamic_cast<RawModule*>(this->module);
 		assert(module);
