@@ -221,7 +221,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 			t->ctrlWrite = BASE::ctrlWrite;
 			presetTotal += NUM_PRESETS;
 		}
-		presetCount = std::min(presetCount, presetTotal);
+		int presetCount = std::min(this->presetCount, presetTotal);
 
 		if (handleDivider.process()) {
 			for (size_t i = 0; i < sourceHandles.size(); i++) {
