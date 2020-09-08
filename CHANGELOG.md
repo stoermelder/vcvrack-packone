@@ -11,6 +11,8 @@
 
 - Module [CV-PAM](./docs/CVPam.md)
     - Fixed wrong channel count of the polyphonic output ports
+- Module [GRIP](./docs/Grip.md)
+    - Fixed crash on locking more than 32 parameters (#176)
 - Module [MEM](./docs/MidiCat.md#mem-expander)
     - Added support for MIDI-CAT's new slew-limiting and scaling options
 - Module [µMAP](./docs/CVMapMicro.md)

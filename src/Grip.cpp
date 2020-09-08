@@ -136,7 +136,7 @@ struct MapButton : TL1105 {
 	}
 
 	void onDeselect(const event::Deselect& e) override {
-		if (!module) return;
+		if (!module || module->learningId < 0) return;
 		// Check if a ParamWidget was touched
 		ParamWidget* touchedParam = APP->scene->rack->touchedParam;
 		if (touchedParam && touchedParam->paramQuantity->module != module) {
