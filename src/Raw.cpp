@@ -44,8 +44,8 @@ struct RawModule : Module {
 		NUM_LIGHTS
 	};
 
-	simd::float_4 y[4][2];
-	simd::float_4 x[4][3];
+	alignas(16) simd::float_4 y[4][2];
+	alignas(16) simd::float_4 x[4][3];
 	float Ts, Ts0001;
 	float A1, A2, A3;
 	float m, c, k, k3, Fn, Wn, in_gain, out_gain;
@@ -154,12 +154,12 @@ struct RawWidget : ThemedModuleWidget<RawModule> {
  		: ThemedModuleWidget<RawModule>(module, "Raw") {
 		setModule(module);
 
-		addParam(createParamCentered<StoermelderSmallKnob>(Vec(22.5f, 61.1f), module, RawModule::PARAM_GAIN_IN));
-		addParam(createParamCentered<StoermelderSmallKnob>(Vec(22.5f, 106.6f), module, RawModule::PARAM_FN));
-		addParam(createParamCentered<StoermelderSmallKnob>(Vec(22.5f, 144.1f), module, RawModule::PARAM_C));
-		addParam(createParamCentered<StoermelderSmallKnob>(Vec(22.5f, 181.6f), module, RawModule::PARAM_K));
-		addParam(createParamCentered<StoermelderSmallKnob>(Vec(22.5f, 201.6f), module, RawModule::PARAM_KMULT)); // temporary knob for testing new parameter
-		addParam(createParamCentered<StoermelderSmallKnob>(Vec(22.5f, 228.1f), module, RawModule::PARAM_GAIN_OUT));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(22.5f, 58.5f), module, RawModule::PARAM_GAIN_IN));
+		addParam(createParamCentered<StoermelderSmallKnob>(Vec(22.5f, 98.7f), module, RawModule::PARAM_FN));
+		addParam(createParamCentered<StoermelderSmallKnob>(Vec(22.5f, 132.0f), module, RawModule::PARAM_C));
+		addParam(createParamCentered<StoermelderSmallKnob>(Vec(22.5f, 165.3f), module, RawModule::PARAM_K));
+		addParam(createParamCentered<StoermelderSmallKnob>(Vec(22.5f, 198.6f), module, RawModule::PARAM_KMULT));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(22.5f, 241.0f), module, RawModule::PARAM_GAIN_OUT));
 
 		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 283.5f), module, RawModule::INPUT));
 		addOutput(createOutputCentered<StoermelderPort>(Vec(22.5f, 327.7f), module, RawModule::OUTPUT));
@@ -181,12 +181,13 @@ struct RawWidget : ThemedModuleWidget<RawModule> {
 
 		struct PresetItem : MenuItem {
 			RawModule* module;
-			float in_gain, f, c, k, out_gain;
+			float in_gain, f, c, k, k3, out_gain;
 			void onAction(const event::Action& e) override {
 				module->params[RawModule::PARAM_GAIN_IN].setValue(in_gain);
 				module->params[RawModule::PARAM_FN].setValue(f);
 				module->params[RawModule::PARAM_C].setValue(c);
 				module->params[RawModule::PARAM_K].setValue(k);
+				module->params[RawModule::PARAM_KMULT].setValue(k3);
 				module->params[RawModule::PARAM_GAIN_OUT].setValue(out_gain);
 				module->onReset();
 			} 
@@ -197,6 +198,7 @@ struct RawWidget : ThemedModuleWidget<RawModule> {
 		p1->f = 300.f;
 		p1->c = -4.f;
 		p1->k = 1.f;
+		p1->k3 = 0.f;
 		p1->out_gain = 15.f;
 
 		PresetItem* p2 = construct<PresetItem>(&MenuItem::text, "Preset 2", &PresetItem::module, module);
@@ -204,6 +206,7 @@ struct RawWidget : ThemedModuleWidget<RawModule> {
 		p2->f = 150.f;
 		p2->c = -4.f;
 		p2->k = 0.1f;
+		p2->k3 = 0.f;
 		p2->out_gain = -5.f;
 
 		PresetItem* p3 = construct<PresetItem>(&MenuItem::text, "Preset 3", &PresetItem::module, module);
@@ -211,6 +214,7 @@ struct RawWidget : ThemedModuleWidget<RawModule> {
 		p3->f = 1000.f;
 		p3->c = -4.f;
 		p3->k = 0.5f;
+		p3->k3 = 0.f;
 		p3->out_gain = -10.f;
 
 		PresetItem* p4 = construct<PresetItem>(&MenuItem::text, "Preset 4", &PresetItem::module, module);
@@ -218,6 +222,7 @@ struct RawWidget : ThemedModuleWidget<RawModule> {
 		p4->f = 200.f;
 		p4->c = -5.f;
 		p4->k = 0.2f;
+		p4->k3 = 0.f;
 		p4->out_gain = 0.f;
 
 		menu->addChild(new MenuSeparator);
