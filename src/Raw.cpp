@@ -71,7 +71,7 @@ struct RawModule : Module {
 		configParam(PARAM_C, -6.f, -3.f, -4.f, "Damping coefficient");
 		configParam(PARAM_K, 0.1f, 1.f, 0.5f, "Nonlinearity parameter");
 		configParam(PARAM_KMULT, -1.f, 1.f, 0.f, "Nonlinearity asymmetry", "", 5.f);
-		configParam(PARAM_GAIN_OUT, -20.f, 20.f, -10.f, "Output gain", "dB");
+		configParam(PARAM_GAIN_OUT, -20.f, 20.f, -5.f, "Output gain", "dB");
 		paramDivider.setDivision(64);
 		onReset();
 	}
