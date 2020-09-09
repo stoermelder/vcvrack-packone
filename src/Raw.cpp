@@ -64,8 +64,8 @@ struct RawModule : Module {
 		configParam(PARAM_K, 0.01f, 1.f, 0.5f, "Nonlinearity parameter");
 		configParam(PARAM_KMULT, -1.f, 1.f, 0.f, "Nonlinearity asymmetry", "", 10.f);
 		configParam(PARAM_GAIN_OUT, -20.f, 20.f, -10.f, "Output gain", "dB");
-		onReset();
 		paramDivider.setDivision(64);
+		onReset();
 	}
 
 	void onReset() override {
@@ -74,6 +74,8 @@ struct RawModule : Module {
 			y[c / 4][0] = y[c / 4][1] = 0.f;
 			x[c / 4][0] = x[c / 4][1] = x[c / 4][2] = 0.f;
 		}
+		prepareParameters();
+		Ts0001 = 0.2267f;
 		paramDivider.reset();
 	}
 
