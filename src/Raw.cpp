@@ -2,20 +2,28 @@
 
 /**
 
+	Hello Mr. Dill,
+
+	thank you very much for your interest in our work. Indeed, as this work is the result of a student 
+	project carried out at the University of Le Mans (a public university), we do not operate under 
+	any license. Feel free to use any part of our work. 
+
+	If possible, we would be pleased if you could refer either to the IMDEA study program or to our DAFx 
+	paper [1] attached to this email.
+
+	reference to the study program:
+	IMDEA (International Master's Degree in Electro-Acoustics), Le Mans University, France
+
+	reference to the paper:
+	[1] Alexander Ramirez, Vikas Tokala, Antonin Novak, Frederic Ablitzer and Manuel Melon, 
+	“Bistable Digital Audio Effect,” in Proceedings of the 23rd International Conference on Digital 
+	Audio Effects (eDAFx-2020, DAFx2020 in 21), Vol.1, Vienna, Austria, 2020-21, pp. 109-116
+
+	Best wishes
+
+	Antonin Novak
+
 	https://dafx2020.mdw.ac.at/proceedings/papers/DAFx2020_paper_6.pdf
-
-	Authors (students):		Alexander Ramirez (https://www.linkedin.com/in/ajramirezm/)
-							Vikas Tokala (https://www.linkedin.com/in/vikastokala/)
-
-	Supervisors: Antonin Novak, Frederic Ablitzer, Manuel Melon
-
-	Online demo: https://ant-novak.com/posts/projects/2020-02-26_Bistable_Effect/
-
-
-	International Master's Degree in ElectroAcoustics
-	Le Mans University, 72085 Le Mans, France.
-	contact address: antonin.novak@univ-lemans.fr
-	June 2019; Last revision: 27-Feb-2020
 
 **/
 
@@ -125,11 +133,11 @@ struct RawModule : Module {
 			// velocity (normalized by 10000)
 			simd::float_4 v = (x[c / 4][0] - x[c / 4][1]) / Ts0001;
 
-			// this implementation behaves unstable to do some stupid "limiting"
+			// this implementation behaves unstable, so do some stupid "limiting"
 			// could possibly fixed with some oversampling, tbd
-			simd::float_4 b = simd::abs(v) > 100.f;
-			x[c / 4][0] = simd::ifelse(b, 0.f, x[c / 4][0]);
-			x[c / 4][1] = simd::ifelse(b, 0.f, x[c / 4][1]);
+			// simd::float_4 b = simd::abs(v) > 100.f;
+			// x[c / 4][0] = simd::ifelse(b, 0.f, x[c / 4][0]);
+			// x[c / 4][1] = simd::ifelse(b, 0.f, x[c / 4][1]);
 
 			// shift buffers
 			y[c / 4][1] = y[c / 4][0];
@@ -204,7 +212,7 @@ struct RawWidget : ThemedModuleWidget<RawModule> {
 		p1->c = -4.f;
 		p1->k = 1.f;
 		p1->k3 = 0.f;
-		p1->out_gain = 15.f;
+		p1->out_gain = 8.f;
 
 		PresetItem* p2 = construct<PresetItem>(&MenuItem::text, "Preset 2", &PresetItem::module, module);
 		p2->in_gain = 15.f;
@@ -212,7 +220,7 @@ struct RawWidget : ThemedModuleWidget<RawModule> {
 		p2->c = -4.f;
 		p2->k = 0.1f;
 		p2->k3 = 0.f;
-		p2->out_gain = -5.f;
+		p2->out_gain = 8.f;
 
 		PresetItem* p3 = construct<PresetItem>(&MenuItem::text, "Preset 3", &PresetItem::module, module);
 		p3->in_gain = 15.f;
@@ -220,7 +228,7 @@ struct RawWidget : ThemedModuleWidget<RawModule> {
 		p3->c = -4.f;
 		p3->k = 0.5f;
 		p3->k3 = 0.f;
-		p3->out_gain = -10.f;
+		p3->out_gain = 0.f;
 
 		PresetItem* p4 = construct<PresetItem>(&MenuItem::text, "Preset 4", &PresetItem::module, module);
 		p4->in_gain = 0.f;
@@ -228,7 +236,7 @@ struct RawWidget : ThemedModuleWidget<RawModule> {
 		p4->c = -5.f;
 		p4->k = 0.2f;
 		p4->k3 = 0.f;
-		p4->out_gain = 0.f;
+		p4->out_gain = 6.f;
 
 		menu->addChild(new MenuSeparator);
 		menu->addChild(p1);
