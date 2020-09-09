@@ -28,6 +28,7 @@ struct RawModule : Module {
 		PARAM_FN,
 		PARAM_C,
 		PARAM_K,
+		PARAM_KMULT,
 		PARAM_GAIN_OUT,
 		NUM_PARAMS
 	};
@@ -47,7 +48,7 @@ struct RawModule : Module {
 	simd::float_4 x[4][3];
 	float Ts, Ts0001;
 	float A1, A2, A3;
-	float m, c, k, Fn, Wn, in_gain, out_gain;
+	float m, c, k, k3, Fn, Wn, in_gain, out_gain;
 
 	dsp::ClockDivider paramDivider;
 
@@ -61,6 +62,7 @@ struct RawModule : Module {
 		configParam(PARAM_FN, 20.f, 2000.f, 1000.f, "Resonance frequency", "Hz");
 		configParam(PARAM_C, -6.f, -3.f, -4.f, "Damping coefficient");
 		configParam(PARAM_K, 0.01f, 1.f, 0.5f, "Nonlinearity parameter");
+		configParam(PARAM_KMULT, -1.f, 1.f, 0.f, "Nonlinearity asymmetry", "", 10.f);
 		configParam(PARAM_GAIN_OUT, -20.f, 20.f, -10.f, "Output gain", "dB");
 		onReset();
 		paramDivider.setDivision(64);
@@ -82,6 +84,7 @@ struct RawModule : Module {
 		Fn = params[PARAM_FN].getValue();
 		c = pow(10.f, params[PARAM_C].getValue());
 		k = params[PARAM_K].getValue();
+		k3 = k * pow(10.f, params[PARAM_KMULT].getValue());
 		out_gain = pow(10.f, params[PARAM_GAIN_OUT].getValue() / 20.f);
 		// for normalization of [-1,1] to output voltage [-5V,5V]
 		out_gain *= 5.0f; 
@@ -112,7 +115,7 @@ struct RawModule : Module {
 			y[c / 4][0] = inputs[INPUT].getPolyVoltageSimd<simd::float_4>(c) * in_gain;
 
 			// displacement equation
-			x[c / 4][0] = (y[c / 4][1] - A2 * x[c / 4][1] - A3 * x[c / 4][2] - k * pow(x[c / 4][1], 3.f)) / A1;
+			x[c / 4][0] = (y[c / 4][1] - A2 * x[c / 4][1] - A3 * x[c / 4][2] - k3 * pow(x[c / 4][1], 3.f)) / A1;
 
 			// velocity (normalized by 10000)
 			simd::float_4 v = (x[c / 4][0] - x[c / 4][1]) / Ts0001;
@@ -155,6 +158,7 @@ struct RawWidget : ThemedModuleWidget<RawModule> {
 		addParam(createParamCentered<StoermelderSmallKnob>(Vec(22.5f, 106.6f), module, RawModule::PARAM_FN));
 		addParam(createParamCentered<StoermelderSmallKnob>(Vec(22.5f, 144.1f), module, RawModule::PARAM_C));
 		addParam(createParamCentered<StoermelderSmallKnob>(Vec(22.5f, 181.6f), module, RawModule::PARAM_K));
+		addParam(createParamCentered<StoermelderSmallKnob>(Vec(22.5f, 201.6f), module, RawModule::PARAM_KMULT)); // temporary knob for testing new parameter
 		addParam(createParamCentered<StoermelderSmallKnob>(Vec(22.5f, 228.1f), module, RawModule::PARAM_GAIN_OUT));
 
 		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 283.5f), module, RawModule::INPUT));
