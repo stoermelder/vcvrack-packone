@@ -36,32 +36,28 @@ struct FacetsModule : Module {
 	simd::float_4 input_level[UNITS / 4];
 	simd::float_4 param_level[UNITS / 4];
 
-	struct DCBlock {
-		float xm1 = 0;
-		float ym1 = 0;
-		float r = 0.995;
-
-		float process(float x) {
-			float y = x - xm1 + r * ym1;
-			xm1 = x;
-			ym1 = y;
-			return y;
-		}
-	};
-	
-	DCBlock dcblock;
+	dsp::RCFilter dcblock;
+	dsp::TBiquadFilter<simd::float_4> biquad[UNITS / 4];
 
 	FacetsModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		configParam(PARAM_INPUT, 0.f, 2.f, 1.f, "Input level");
+		configParam(PARAM_INPUT, 0.f, 2.f, 1.f, "Input level", "x");
 
 		for (int i = 0; i < UNITS; i++) {
 			configParam(PARAM_SHIFT_CV + i, 0.f, 1.f, 0.f, string::f("Shift unit %i CV attenuator", i + 1), "x");
 			configParam(PARAM_SHIFT + i, 0.f, 1.f, 1.f / (UNITS + 1) * (i + 1.f), string::f("Shift unit %i shift", i + 1));
 			configParam(PARAM_LEVEL + i, 0.f, 1.f, 0.5f, string::f("Shift unit %i sum level", i + 1));
 		}
+		for (int i = 0; i < UNITS / 4; i++) {
+			biquad[i].setParameters(dsp::TBiquadFilter<simd::float_4>::Type::LOWPASS, 0.4f, 1.f, 0.f);
+		}
+		onSampleRateChange();
 		onReset();
+	}
+
+	void onSampleRateChange() override {
+		dcblock.setCutoffFreq(20.f / APP->engine->getSampleRate());
 	}
 
 	void process(const ProcessArgs& args) override {
@@ -98,8 +94,12 @@ struct FacetsModule : Module {
 			simd::float_4 cv = input_cv[c / 4] * param_cv[c / 4] + param_shift[c / 4] * 10.f;
 			cv = simd::clamp(cv, 0.f, 10.f);
 			cv -= 5.f;
-			simd::float_4 comp = simd::ifelse(simd::float_4(in) > cv, -5.f, 5.f);
+			simd::float_4 comp = simd::ifelse(simd::float_4(in) >= cv, -5.f, 5.f);
 			simd::float_4 s = simd::float_4(in) + comp - cv;
+
+			// Filter at 0.4 * samplerate
+			s = biquad[c / 4].process(s);
+
 			outputs[OUTPUT_POLY].setVoltageSimd(s, c);
 			simd::float_4 l = param_level[c / 4] * input_level[c / 4] / 10.f;
 			s = s * l;
@@ -115,7 +115,8 @@ struct FacetsModule : Module {
 		}
 
 		// Block DC in the signal
-		out = dcblock.process(out);
+		dcblock.process(out);
+		out = dcblock.highpass();
 
 		outputs[OUTPUT_POLY].setChannels(UNITS);
 		outputs[OUTPUT].setVoltage(out);
