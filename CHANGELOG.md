@@ -4,8 +4,6 @@
     - New modules, pattern-driven 16-step sequencer
 - Module [MACRO](./docs/Macro.md)
     - New module, marco-knob for four parameter-mappings and two CV outputs
-- Module [MIRROR](./docs/Mirror.md)
-    - Added syncing of module presets even if bound module has no parameters (#189)
 - Module [RAW](./docs/Raw.md)
     - New module, a digital effect based on the dynamics of bistable systems
 
@@ -26,6 +24,9 @@
     - Added context menu options on mapped parameters of target module for MIDI-CAT
     - Added skipping of current slot with SPACE-key while in mapping-mode
     - Added context menu option for clearing all mapping-slots
+- Module [MIRROR](./docs/Mirror.md)
+    - Added syncing of module presets even if bound module has no parameters (#189)
+    - Added hotkey for syncing module presets
 - Module [STROKE](./docs/Stroke.md)
     - Added command "Toggle engine pause"
     - Added command "Toggle lock modules"

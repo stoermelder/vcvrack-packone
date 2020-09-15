@@ -520,7 +520,7 @@ struct MirrorWidget : ThemedModuleWidget<MirrorModule> {
 		menu->addChild(construct<AddAndBindTargetItem>(&MenuItem::text, "Add and map new module", &AddAndBindTargetItem::module, module, &AddAndBindTargetItem::mw, this));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<CvInputPortMenuItem>(&MenuItem::text, "CV ports", &CvInputPortMenuItem::module, module));
-		menu->addChild(construct<SyncPresetItem>(&MenuItem::text, "Sync module presets", &SyncPresetItem::mw, this));
+		menu->addChild(construct<SyncPresetItem>(&MenuItem::text, "Sync module presets", &MenuItem::rightText, RACK_MOD_SHIFT_NAME "+S", &SyncPresetItem::mw, this));
 	}
 
 	void syncPresets() {
@@ -567,6 +567,14 @@ struct MirrorWidget : ThemedModuleWidget<MirrorModule> {
 		json_t* preset = mw->toJson();
 		newMw->fromJson(preset);
 		json_decref(preset);
+	}
+
+	void onHoverKey(const event::HoverKey& e) override {
+		if (e.action == GLFW_PRESS && e.key == GLFW_KEY_S && (e.mods & RACK_MOD_MASK) == GLFW_MOD_SHIFT) {
+			syncPresets();
+			e.consume(this);
+		}
+		ThemedModuleWidget<MirrorModule>::onHoverKey(e);
 	}
 };
 
