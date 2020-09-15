@@ -103,6 +103,8 @@ struct MidiCatModule : Module, StripIdFixModule {
 	NOTEMODE notesMode[MAX_CHANNELS];
 	/** [Stored to JSON] */
 	int midiOptions[MAX_CHANNELS];
+	/** [Stored to JSON] */
+	bool midiIgnoreDevices;
 
 	/** [Stored to Json] The mapped param handle of each channel */
 	ParamHandle paramHandles[MAX_CHANNELS];
@@ -197,6 +199,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 		midiInput.reset();
 		midiOutput.reset();
 		midiOutput.midi::Output::reset();
+		midiIgnoreDevices = false;
 		processDivision = 64;
 		processDivider.setDivision(processDivision);
 		processDivider.reset();
@@ -717,6 +720,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 		}
 		json_object_set_new(rootJ, "maps", mapsJ);
 
+		json_object_set_new(rootJ, "midiIgnoreDevices", json_boolean(midiIgnoreDevices));
 		json_object_set_new(rootJ, "midiInput", midiInput.toJson());
 		json_object_set_new(rootJ, "midiOutput", midiOutput.toJson());
 		return rootJ;
@@ -791,10 +795,14 @@ struct MidiCatModule : Module, StripIdFixModule {
 		updateMapLen();
 		idFixClearMap();
 		
-		json_t* midiInputJ = json_object_get(rootJ, "midiInput");
-		if (midiInputJ) midiInput.fromJson(midiInputJ);
-		json_t* midiOutputJ = json_object_get(rootJ, "midiOutput");
-		if (midiOutputJ) midiOutput.fromJson(midiOutputJ);
+		if (!midiIgnoreDevices) {
+			json_t* midiIgnoreDevicesJ = json_object_get(rootJ, "midiIgnoreDevices");
+			if (midiIgnoreDevicesJ)	midiIgnoreDevices = json_boolean_value(midiIgnoreDevicesJ);
+			json_t* midiInputJ = json_object_get(rootJ, "midiInput");
+			if (midiInputJ) midiInput.fromJson(midiInputJ);
+			json_t* midiOutputJ = json_object_get(rootJ, "midiOutput");
+			if (midiOutputJ) midiOutput.fromJson(midiOutputJ);
+		}
 	}
 };
 
@@ -1142,7 +1150,8 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 		menu->addChild(new SlewSlider(&module->midiParam[id]));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Scaling"));
-		menu->addChild(construct<ScalingInputLabel>(&MenuLabel::text, "Input", &ScalingInputLabel::p, &module->midiParam[id]));
+		std::string l = string::f("Input %s", module->ccs[id] >= 0 ? "MIDI CC" : (module->notes[id] >= 0 ? "MIDI vel" : ""));
+		menu->addChild(construct<ScalingInputLabel>(&MenuLabel::text, l, &ScalingInputLabel::p, &module->midiParam[id]));
 		menu->addChild(construct<ScalingOutputLabel>(&MenuLabel::text, "Output", &ScalingOutputLabel::p, &module->midiParam[id]));
 		menu->addChild(new MinSlider(&module->midiParam[id]));
 		menu->addChild(new MaxSlider(&module->midiParam[id]));
@@ -1499,6 +1508,17 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 			}
 		};
 
+		struct IgnoreMidiDevicesItem : MenuItem {
+			MidiCatModule* module;
+			void onAction(const event::Action& e) override {
+				module->midiIgnoreDevices ^= true;
+			}
+			void step() override {
+				rightText = CHECKMARK(module->midiIgnoreDevices);
+				MenuItem::step();
+			}
+		};
+
 		struct PrecisionMenuItem : MenuItem {
 			struct PrecisionItem : MenuItem {
 				MidiCatModule* module;
@@ -1564,6 +1584,7 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 		menu->addChild(construct<PrecisionMenuItem>(&MenuItem::text, "Precision", &PrecisionMenuItem::module, module));
 		menu->addChild(construct<MidiModeMenuItem>(&MenuItem::text, "Mode", &MidiModeMenuItem::module, module));
 		menu->addChild(construct<ResendMidiOutItem>(&MenuItem::text, "Re-send MIDI feedback", &ResendMidiOutItem::module, module));
+		menu->addChild(construct<IgnoreMidiDevicesItem>(&MenuItem::text, "Ignore MIDI devices on presets", &IgnoreMidiDevicesItem::module, module));
 		menu->addChild(construct<MidiMapImportItem>(&MenuItem::text, "Import MIDI-MAP preset", &MidiMapImportItem::moduleWidget, this));
 
 		struct TextScrollItem : MenuItem {
