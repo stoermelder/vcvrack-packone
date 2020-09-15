@@ -1,11 +1,13 @@
 ## 1.x.x (in development)
 
-- Module [RAW](./docs/Raw.md)
-    - New module, a digital effect based on the dynamics of bistable systems
 - Module [FLOWER, SEEDS, OFFSPRING](./docs/Flower.md)
     - New modules, pattern-driven 16-step sequencer
 - Module [MACRO](./docs/Macro.md)
     - New module, marco-knob for four parameter-mappings and two CV outputs
+- Module [MIRROR](./docs/Mirror.md)
+    - Added syncing of module presets even if bound module has no parameters (#189)
+- Module [RAW](./docs/Raw.md)
+    - New module, a digital effect based on the dynamics of bistable systems
 
 ### Fixes and Changes
 

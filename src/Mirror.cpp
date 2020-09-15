@@ -33,6 +33,8 @@ struct MirrorModule : Module, StripIdFixModule {
 	std::string sourceModelName;
 	/** [Stored to JSON] */
 	int sourceModuleId;
+	/** [Stored to JSON] */
+	std::vector<int> targetModuleIds;
 
 	/** [Stored to JSON] */
 	bool audioRate;
@@ -89,6 +91,8 @@ struct MirrorModule : Module, StripIdFixModule {
 		for (int i = 0; i < 8; i++) {
 			cvParamId[i] = -1;
 		}
+
+		targetModuleIds.clear();
 		inChange = false;
 
 		sourcePluginSlug = "";
@@ -208,6 +212,8 @@ struct MirrorModule : Module, StripIdFixModule {
 			APP->engine->updateParamHandle(targetHandle, m->id, sourceHandle->paramId, true);
 			targetHandles.push_back(targetHandle);
 		}
+
+		targetModuleIds.push_back(m->id);
 		inChange = false;
 	}
 
@@ -256,6 +262,14 @@ struct MirrorModule : Module, StripIdFixModule {
 			json_array_append_new(cvInputsJ, cvInputJ);
 		}
 		json_object_set_new(rootJ, "cvInputs", cvInputsJ);
+
+		json_t* targetModulesJ = json_array();
+		for (size_t i = 0; i < targetModuleIds.size(); i++) {
+			json_t* targetModuleJ = json_object();
+			json_object_set_new(targetModuleJ, "moduleId", json_integer(targetModuleIds[i]));
+			json_array_append_new(targetModulesJ, targetModuleJ);
+		}
+		json_object_set_new(rootJ, "targetModules", targetModulesJ);
 
 		return rootJ;
 	}
@@ -335,6 +349,19 @@ struct MirrorModule : Module, StripIdFixModule {
 			json_array_foreach(cvInputsJ, cvInputIndex, cvInputJ) {
 				json_t* paramIdJ = json_object_get(cvInputJ, "paramId");
 				cvParamId[cvInputIndex] = json_integer_value(paramIdJ);
+			}
+		}
+
+		targetModuleIds.clear();
+		json_t* targetModulesJ = json_object_get(rootJ, "targetModules");
+		if (targetModulesJ) {
+			json_t* targetModuleJ;
+			size_t targetModuleIndex;
+			json_array_foreach(targetModulesJ, targetModuleIndex, targetModuleJ) {
+				json_t* moduleIdJ = json_object_get(targetModuleJ, "moduleId");
+				int moduleId = json_integer_value(moduleIdJ);
+				moduleId = idFix(moduleId);
+				targetModuleIds.push_back(moduleId);
 			}
 		}
 
@@ -501,13 +528,9 @@ struct MirrorWidget : ThemedModuleWidget<MirrorModule> {
 		if (!mw) return;
 		json_t* preset = mw->toJson();
 
-		int moduleId = -1;
-		for (ParamHandle* targetHandle : module->targetHandles) {
-			if (targetHandle->moduleId >= 0 && targetHandle->moduleId != moduleId) {
-				moduleId = targetHandle->moduleId;
-				mw = APP->scene->rack->getModule(moduleId);
-				mw->fromJson(preset);
-			}
+		for (int moduleId : module->targetModuleIds) {
+			mw = APP->scene->rack->getModule(moduleId);
+			if (mw) mw->fromJson(preset);
 		}
 
 		json_decref(preset);
