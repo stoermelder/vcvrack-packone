@@ -4,6 +4,7 @@
 #include "components/VoltageLedDisplay.hpp"
 #include "components/Knobs.hpp"
 #include "components/MenuLabelEx.hpp"
+#include "components/SubMenuSlider.hpp"
 #include "digital/ScaledMapParam.hpp"
 
 namespace StoermelderPackOne {
@@ -329,7 +330,7 @@ struct ScalingOutputLabel : MenuLabelEx {
 
 
 template<typename SCALE = ScaledMapParam<float>>
-struct MinSlider : ui::Slider {
+struct MinSlider : SubMenuSlider {
 	struct MinQuantity : Quantity {
 		SCALE* p;
 		void setValue(float value) override {
@@ -372,11 +373,46 @@ struct MinSlider : ui::Slider {
 	~MinSlider() {
 		delete quantity;
 	}
+
+	Menu* createChildMenu() override {
+		struct MinField : ui::TextField {
+			Quantity* quantity;
+			bool textSync = true;
+			MinField() {
+				box.size.x = 50.f;
+			}
+			void onSelectKey(const event::SelectKey& e) override {
+				if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
+					float v;
+					int n = std::sscanf(text.c_str(), "%f", &v);
+					if (n == 1) {
+						quantity->setDisplayValue(v);
+					}
+					e.consume(this);
+				}
+				if (!e.getTarget()) {
+					ui::TextField::onSelectKey(e);
+				}
+			}
+			void step() override {
+				if (textSync) text = quantity->getDisplayValueString();
+				TextField::step();
+			}
+			void onButton(const event::Button& e) override {
+				textSync = false;
+				TextField::onButton(e);
+			}
+		};
+
+		Menu* menu = new Menu;
+		menu->addChild(construct<MinField>(&MinField::quantity, quantity));
+		return menu;
+	}
 }; // struct MinSlider
 
 
 template<typename SCALE = ScaledMapParam<float>>
-struct MaxSlider : ui::Slider {
+struct MaxSlider : SubMenuSlider {
 	struct MaxQuantity : Quantity {
 		SCALE* p;
 		void setValue(float value) override {
@@ -418,6 +454,41 @@ struct MaxSlider : ui::Slider {
 	}
 	~MaxSlider() {
 		delete quantity;
+	}
+
+	Menu* createChildMenu() override {
+		struct MaxField : ui::TextField {
+			Quantity* quantity;
+			bool textSync = true;
+			MaxField() {
+				box.size.x = 50.f;
+			}
+			void onSelectKey(const event::SelectKey& e) override {
+				if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
+					float v;
+					int n = std::sscanf(text.c_str(), "%f", &v);
+					if (n == 1) {
+						quantity->setDisplayValue(v);
+					}
+					e.consume(this);
+				}
+				if (!e.getTarget()) {
+					ui::TextField::onSelectKey(e);
+				}
+			}
+			void step() override {
+				if (textSync) text = quantity->getDisplayValueString();
+				TextField::step();
+			}
+			void onButton(const event::Button& e) override {
+				textSync = false;
+				TextField::onButton(e);
+			}
+		};
+
+		Menu* menu = new Menu;
+		menu->addChild(construct<MaxField>(&MaxField::quantity, quantity));
+		return menu;
 	}
 }; // struct MaxSlider
 
