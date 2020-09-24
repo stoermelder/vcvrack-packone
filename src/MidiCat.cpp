@@ -146,6 +146,9 @@ struct MidiCatModule : Module, StripIdFixModule {
 
 	/** [Stored to Json] */
 	MidiCatParam midiParam[MAX_CHANNELS];
+	/** [Stored to Json] */
+	bool midiResendPeriodically;
+	dsp::ClockDivider midiResendDivider;
 
 	dsp::ClockDivider processDivider;
 	/** [Stored to JSON] */
@@ -166,6 +169,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 			midiParam[id].setLimits(0, 127, -1);
 		}
 		indicatorDivider.setDivision(2048);
+		midiResendDivider.setDivision(APP->engine->getSampleRate() / 2);
 		onReset();
 	}
 
@@ -200,9 +204,15 @@ struct MidiCatModule : Module, StripIdFixModule {
 		midiOutput.reset();
 		midiOutput.midi::Output::reset();
 		midiIgnoreDevices = false;
+		midiResendPeriodically = false;
+		midiResendDivider.reset();
 		processDivision = 64;
 		processDivider.setDivision(processDivision);
 		processDivider.reset();
+	}
+
+	void onSampleRateChange() override {
+		midiResendDivider.setDivision(APP->engine->getSampleRate() / 2);
 	}
 
 	void process(const ProcessArgs &args) override {
@@ -374,6 +384,9 @@ struct MidiCatModule : Module, StripIdFixModule {
 			}
 		}
 
+		if (midiResendPeriodically && midiResendDivider.process()) {
+			resendMidiOut();
+		}
 
 		Module* exp = rightExpander.module;
 		if (exp && exp->model->plugin->slug == "Stoermelder-P1" && exp->model->slug == "MidiCatEx") {
@@ -721,6 +734,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 		}
 		json_object_set_new(rootJ, "maps", mapsJ);
 
+		json_object_set_new(rootJ, "midiResendPeriodically", json_boolean(midiResendPeriodically));
 		json_object_set_new(rootJ, "midiIgnoreDevices", json_boolean(midiIgnoreDevices));
 		json_object_set_new(rootJ, "midiInput", midiInput.toJson());
 		json_object_set_new(rootJ, "midiOutput", midiOutput.toJson());
@@ -796,6 +810,9 @@ struct MidiCatModule : Module, StripIdFixModule {
 		updateMapLen();
 		idFixClearMap();
 		
+		json_t* midiResendPeriodicallyJ = json_object_get(rootJ, "midiResendPeriodically");
+		if (midiResendPeriodicallyJ) midiResendPeriodically = json_boolean_value(midiResendPeriodicallyJ);
+
 		if (!midiIgnoreDevices) {
 			json_t* midiIgnoreDevicesJ = json_object_get(rootJ, "midiIgnoreDevices");
 			if (midiIgnoreDevicesJ)	midiIgnoreDevices = json_boolean_value(midiIgnoreDevicesJ);
@@ -1506,6 +1523,23 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 			MidiCatModule* module;
 			void onAction(const event::Action& e) override {
 				module->resendMidiOut();
+			}
+
+			Menu* createChildMenu() override {
+				struct ResendMidiPeriodicallyItem : MenuItem {
+					MidiCatModule* module;
+					void onAction(const event::Action& e) override {
+						module->midiResendPeriodically ^= true;
+					}
+					void step() override {
+						rightText = CHECKMARK(module->midiResendPeriodically);
+						MenuItem::step();
+					}
+				};
+
+				Menu* menu = new Menu;
+				menu->addChild(construct<ResendMidiPeriodicallyItem>(&MenuItem::text, "Periodically", &ResendMidiPeriodicallyItem::module, module));
+				return menu;
 			}
 		};
 

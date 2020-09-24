@@ -26,6 +26,7 @@
     - Added context menu option for clearing all mapping-slots
     - Added option for ignoring MIDI device settings on preset load (#185)
     - Fixed broken "Re-send MIDI feedback" option
+    - Added context menu option for re-sending MIDI feedback periodically
 - Module [MIRROR](./docs/Mirror.md)
     - Added syncing of module presets even if bound module has no parameters (#189)
     - Added hotkey for syncing module presets
