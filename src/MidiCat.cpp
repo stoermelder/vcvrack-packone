@@ -617,6 +617,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 	}
 
 	void resendMidiOut() {
+		midiOutput.reset();
 		for (int i = 0; i < MAX_CHANNELS; i++) {
 			lastValueOut[i] = -1;
 		}
