@@ -8,7 +8,7 @@ enum MODE {
 	BEATSTEP_R2 = 1,
 	KK_REL = 10,
 	XTOUCH_R1 = 20,
-    AKAI_MPD218 = 30
+	AKAI_MPD218 = 30
 };
 
 struct MidiStepModule : Module {
