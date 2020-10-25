@@ -32,4 +32,8 @@ I don't own all of following devices so I can provide only limited supported for
 
 ![MIDI-STEP DJ Tech Tools controller](./MidiStep-DJTT.png)
 
+- **Akai MPD218.** Set the "Encoder Type" to "ENC 3FH/41H" in the MidiFighter Utility.
+
+![MIDI-STEP Akai MPD218 Editor](./MidiStep-Akai.png)
+
 MIDI-STEP was added in v1.5.0 of PackOne.
