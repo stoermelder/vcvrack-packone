@@ -32,7 +32,7 @@ I don't own all of following devices so I can provide only limited supported for
 
 ![MIDI-STEP DJ Tech Tools controller](./MidiStep-DJTT.png)
 
-- **Akai MPD218.** Set the "Encoder Type" to "ENC 3FH/41H" in the MidiFighter Utility.
+- **Akai MPD218.** Set the knob's "TYPE" to "INC/DEC 2" in the MPD218 Editor.
 
 ![MIDI-STEP Akai MPD218 Editor](./MidiStep-Akai.png)
 
