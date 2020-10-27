@@ -187,9 +187,9 @@ struct EightFaceModule : Module {
 							case SLOTCVMODE_TRIG_PINGPONG:
 								if (slotTrigger.process(inputs[SLOT_INPUT].getVoltage())) {
 									int n = preset + slotCvModeDir;
-									if (n == presetCount - 1) 
+									if (n >= presetCount - 1) 
 										slotCvModeDir = -1;
-									if (n == 0) 
+									if (n <= 0) 
 										slotCvModeDir = 1;
 									presetLoad(t, n);
 								}
