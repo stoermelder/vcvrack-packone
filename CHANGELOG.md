@@ -29,6 +29,8 @@
     - Added option for ignoring MIDI device settings on preset load (#185)
     - Fixed broken "Re-send MIDI feedback" option
     - Added context menu option for re-sending MIDI feedback periodically
+- Module [MIDI-STEP](./docs/MidiStep.md)
+    - Added option for Akai MPD218
 - Module [MIRROR](./docs/Mirror.md)
     - Added syncing of module presets even if bound module has no parameters (#189)
     - Added hotkey for syncing module presets
