@@ -13,6 +13,7 @@ enum class SLOTCVMODE {
 	TRIG_FWD = 2,
 	TRIG_REV = 4,
 	TRIG_PINGPONG = 5,
+	TRIG_ALT = 9,
 	TRIG_RANDOM = 6,
 	TRIG_RANDOM_WO_REPEAT = 7,
 	TRIG_RANDOM_WALK = 8,
@@ -74,6 +75,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 	/** [Stored to JSON] mode for SEQ CV input */
 	SLOTCVMODE slotCvMode = SLOTCVMODE::TRIG_FWD;
 	int slotCvModeDir = 1;
+	int slotCvModeAlt = 1;
 
 	/** [Stored to JSON] */
 	OUTMODE outMode;
@@ -269,6 +271,20 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 								slotCvModeDir = -1;
 							if (n <= 0)
 								slotCvModeDir = 1;
+							presetLoad(n);
+						}
+						break;
+					case SLOTCVMODE::TRIG_ALT:
+						if (slotTrigger.process(Module::inputs[INPUT_SLOT].getVoltage())) {
+							int n = 0;
+							if (preset == 0) {
+								n = slotCvModeAlt + slotCvModeDir;
+								if (n >= presetCount - 1)
+									slotCvModeDir = -1;
+								if (n <= 1)
+									slotCvModeDir = 1;
+								slotCvModeAlt = std::min(n, presetCount - 1);
+							}
 							presetLoad(n);
 						}
 						break;
@@ -840,6 +856,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger forward", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_FWD));
 				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger reverse", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_REV));
 				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger pingpong", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_PINGPONG));
+				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger alternating", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_ALT));
 				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger random", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_RANDOM));
 				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger pseudo-random", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_RANDOM_WO_REPEAT));
 				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger random walk", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_RANDOM_WALK));
