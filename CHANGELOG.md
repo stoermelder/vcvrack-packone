@@ -45,6 +45,7 @@
     - Added LEDs for signaling a triggered hotkey
 - Module [TRANSIT](./docs/Transit.md)
     - Added trigger-option "pseudo-random"
+    - Added trigger-option "random walk"
 - Module [X4](./docs/X4.md)
     - Fixed advancing to the lower button after the upper button has been mapped
     - Fixed wrong tooltip of lower mapping button
