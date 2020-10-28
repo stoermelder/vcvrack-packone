@@ -241,10 +241,6 @@ struct HexGrid {
 		cellMap[index.q][index.r] = c;
 	}
 
-	void setCursor(int id, RoundAxialVec pos) {
-		cursor[id].pos = pos;
-	}
-
 	RoundAxialVec axialToIndex(int q, int r) {
 		return RoundAxialVec(q + MAX_RADIUS, r + MAX_RADIUS);
 	}
@@ -255,10 +251,6 @@ struct HexGrid {
 	
 	RoundAxialVec indexToAxial(int q, int r) {
 		return RoundAxialVec(q - MAX_RADIUS, r - MAX_RADIUS);
-	}
-
-	RoundAxialVec indexToAxial(RoundAxialVec hex) {
-		return RoundAxialVec(hex.q - MAX_RADIUS, hex.r - MAX_RADIUS);
 	}
 
 	void setRadius(int r) {
@@ -274,17 +266,6 @@ struct HexGrid {
 		mirrorCenters[4] = CubeVec(	-usedRadius - 1,		-usedRadius,			2 * usedRadius + 1),		// ( z,  x,  y)
 		mirrorCenters[5] = CubeVec(	-(2 * usedRadius + 1),	usedRadius + 1,			usedRadius);				// (-y, -z, -x)
 	}
-
-	void wrapCell(CELL cell) {
-		CubeVec cubePos = axialToCube(cell.pos);
-		for (int i = 0; i < 6; i++) {
-			if (distance(cubePos, mirrorCenters[i]) <= usedRadius) {			// If distance from mirror center i is less than distance to grid center
-				cell.pos.q -= mirrorCenters[i].x;
-				cell.pos.r -= mirrorCenters[i].z;
-			}
-		}
-		setCell(cell);
-	}
 	
 	void wrapCursor(int id) {
 		CubeVec c = axialToCube(cursor[id].pos);
@@ -294,165 +275,6 @@ struct HexGrid {
 				cursor[id].pos.r -= mirrorCenters[i].z;
 			}
 		}
-	}
-
-	void moveCell(CELL cell, int direction) {
-		// Direction is expressed as relative to the center of a clock, 0 through 11.
-		// For flat-top hexagons, odd-numbered directions are oriented between neighboring cells and thus alternate: first clockwise, then counter
-		// For pointy-top hexagons, it is the even-numbered directions which demand these alternating movements
-		RoundAxialVec index = axialToIndex(cell.pos);
-		if (CELL_SHAPE == ROTATION::FLAT) {
-			switch (direction) {
-				case 0:
-					cell.r -= 1;
-					break;
-				case 1:
-					if (!cell.diagonalState) {
-						cell.q += 1;
-						cell.r -= 1;
-					}
-					else
-						cell.r -= 1;
-					cell.diagonalState = !cell.diagonalState;
-					break;
-				case 2:
-					cell.q += 1;
-					cell.r -= 1;
-					break;
-				case 3:
-					if (!cell.diagonalState)
-						cell.q += 1;
-					else {
-						cell.q += 1;
-						cell.r -= 1;
-					}
-					cell.diagonalState = !cell.diagonalState;
-					break;
-				case 4:
-					cell.q += 1;
-					break;
-				case 5:
-					if (!cell.diagonalState)
-						cell.r += 1;
-					else
-						cell.q += 1;
-					cell.diagonalState = !cell.diagonalState;
-					break;
-				case 6:
-					cell.r += 1;
-					break;
-				case 7:
-					if (!cell.diagonalState) {
-						cell.q -= 1;
-						cell.r += 1;
-					}
-					else
-						cell.r += 1;
-					cell.diagonalState = !cell.diagonalState;
-					break;
-				case 8:
-					cell.q -= 1;
-					cell.r += 1;
-					break;
-				case 9:
-					if (!cell.diagonalState)
-						cell.q -= 1;
-					else {
-						cell.q -= 1;
-						cell.r += 1;
-					}
-					cell.diagonalState = !cell.diagonalState;
-					break;
-				case 10:
-					cell.q -= 1;
-					break;
-				case 11:
-					if (!cell.diagonalState)
-						cell.r -= 1;
-					else
-						cell.q -= 1;
-					cell.diagonalState = !cell.diagonalState;
-					break;
-			}
-		}
-		else {
-			switch (direction) {
-				case 0:
-					if (!cell.diagonalState) {
-						cell.q += 1;
-						cell.r -= 1;
-					}
-					else
-						cell.r -= 1;
-					cell.diagonalState = !cell.diagonalState;
-					break;
-				case 1:
-					cell.q += 1;
-					cell.r -= 1;
-					break;
-				case 2:
-					if (!cell.diagonalState)
-						cell.q += 1;
-					else {
-						cell.q += 1;
-						cell.r -= 1;
-					}
-					cell.diagonalState = !cell.diagonalState;
-					break;
-				case 3:
-					cell.q += 1;
-					break;
-				case 4:
-					if (!cell.diagonalState)
-						cell.r += 1;
-					else
-						cell.q += 1;
-					cell.diagonalState = !cell.diagonalState;
-					break;
-				case 5:
-					cell.r += 1;
-					break;
-				case 6:
-					if (!cell.diagonalState) {
-						cell.q -= 1;
-						cell.r += 1;
-					}
-					else
-						cell.r += 1;
-					cell.diagonalState = !cell.diagonalState;
-					break;
-				case 7:
-					cell.q -= 1;
-					cell.r += 1;
-					break;
-				case 8:
-					if (!cell.diagonalState)
-						cell.q -= 1;
-					else {
-						cell.q -= 1;
-						cell.r += 1;
-					}
-					cell.diagonalState = !cell.diagonalState;
-					break;
-				case 9:
-					cell.q -= 1;
-					break;
-				case 10:
-					if (!cell.diagonalState)
-						cell.r -= 1;
-					else
-						cell.q -= 1;
-					cell.diagonalState = !cell.diagonalState;
-					break;
-				case 11:
-					cell.r -= 1;
-					break;
-			}
-		}
-		if (!cellVisible(cell.pos, usedRadius))
-			wrapCell(cell);
-		else 
-			setCell(cell);
 	}
 
 	void moveCursor(int id, int direction) {
@@ -471,7 +293,7 @@ struct HexGrid {
 					}
 					else
 						cursor[id].pos.r -= 1;
-					cursor[id].diagonalState = !cursor[id].diagonalState;
+					cursor[id].diagonalState ^= true;
 					break;
 				case 2:
 					cursor[id].pos.q += 1;
@@ -484,7 +306,7 @@ struct HexGrid {
 						cursor[id].pos.q += 1;
 						cursor[id].pos.r -= 1;
 					}
-					cursor[id].diagonalState = !cursor[id].diagonalState;
+					cursor[id].diagonalState ^= true;
 					break;
 				case 4:
 					cursor[id].pos.q += 1;
@@ -494,7 +316,7 @@ struct HexGrid {
 						cursor[id].pos.r += 1;
 					else
 						cursor[id].pos.q += 1;
-					cursor[id].diagonalState = !cursor[id].diagonalState;
+					cursor[id].diagonalState ^= true;
 					break;
 				case 6:
 					cursor[id].pos.r += 1;
@@ -506,7 +328,7 @@ struct HexGrid {
 					}
 					else
 						cursor[id].pos.r += 1;
-					cursor[id].diagonalState = !cursor[id].diagonalState;
+					cursor[id].diagonalState ^= true;
 					break;
 				case 8:
 					cursor[id].pos.q -= 1;
@@ -519,7 +341,7 @@ struct HexGrid {
 						cursor[id].pos.q -= 1;
 						cursor[id].pos.r += 1;
 					}
-					cursor[id].diagonalState = !cursor[id].diagonalState;
+					cursor[id].diagonalState ^= true;
 					break;
 				case 10:
 					cursor[id].pos.q -= 1;
@@ -529,7 +351,7 @@ struct HexGrid {
 						cursor[id].pos.r -= 1;
 					else
 						cursor[id].pos.q -= 1;
-					cursor[id].diagonalState = !cursor[id].diagonalState;
+					cursor[id].diagonalState ^= true;
 					break;
 			}
 		}
@@ -542,7 +364,7 @@ struct HexGrid {
 					}
 					else
 						cursor[id].pos.r -= 1;
-					cursor[id].diagonalState = !cursor[id].diagonalState;
+					cursor[id].diagonalState ^= true;
 					break;
 				case 1:
 					cursor[id].pos.q += 1;
@@ -555,7 +377,7 @@ struct HexGrid {
 						cursor[id].pos.q += 1;
 						cursor[id].pos.r -= 1;
 					}
-					cursor[id].diagonalState = !cursor[id].diagonalState;
+					cursor[id].diagonalState ^= true;
 					break;
 				case 3:
 					cursor[id].pos.q += 1;
@@ -565,7 +387,7 @@ struct HexGrid {
 						cursor[id].pos.r += 1;
 					else
 						cursor[id].pos.q += 1;
-					cursor[id].diagonalState = !cursor[id].diagonalState;
+					cursor[id].diagonalState ^= true;
 					break;
 				case 5:
 					cursor[id].pos.r += 1;
@@ -577,7 +399,7 @@ struct HexGrid {
 					}
 					else
 						cursor[id].pos.r += 1;
-					cursor[id].diagonalState = !cursor[id].diagonalState;
+					cursor[id].diagonalState ^= true;
 					break;
 				case 7:
 					cursor[id].pos.q -= 1;
@@ -590,7 +412,7 @@ struct HexGrid {
 						cursor[id].pos.q -= 1;
 						cursor[id].pos.r += 1;
 					}
-					cursor[id].diagonalState = !cursor[id].diagonalState;
+					cursor[id].diagonalState ^= true;
 					break;
 				case 9:
 					cursor[id].pos.q -= 1;
@@ -600,14 +422,14 @@ struct HexGrid {
 						cursor[id].pos.r -= 1;
 					else
 						cursor[id].pos.q -= 1;
-					cursor[id].diagonalState = !cursor[id].diagonalState;
+					cursor[id].diagonalState ^= true;
 					break;
 				case 11:
 					cursor[id].pos.r -= 1;
 					break;
 			}
 		}
-		if (!cellVisible(cursor[id].pos.q, cursor[id].pos.r, usedRadius))
+		if (!cellVisible(cursor[id].pos, usedRadius))
 			wrapCursor(id);
 	}
 
