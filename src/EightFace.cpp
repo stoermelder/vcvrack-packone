@@ -12,6 +12,7 @@ enum SLOTCVMODE {
 	SLOTCVMODE_TRIG_REV = 4,
 	SLOTCVMODE_TRIG_PINGPONG = 5,
 	SLOTCVMODE_TRIG_RANDOM = 6,
+	SLOTCVMODE_TRIG_RANDOM_WO_REPEATS = 7,
 	SLOTCVMODE_10V = 0,
 	SLOTCVMODE_C4 = 1,
 	SLOTCVMODE_ARM = 3
@@ -75,7 +76,7 @@ struct EightFaceModule : Module {
 	int slotCvModeDir = 1;
 
 	std::default_random_engine randGen{(uint16_t)std::chrono::system_clock::now().time_since_epoch().count()};
-	std::uniform_int_distribution<int>* randDist = NULL;
+	std::uniform_int_distribution<int> randDist;
 
 	int connected = 0;
 	int presetNext = -1;
@@ -119,7 +120,6 @@ struct EightFaceModule : Module {
 			if (presetSlotUsed[i])
 				json_decref(presetSlot[i]);
 		}
-		delete randDist;
 
 		workerIsRunning = false;
 		workerDoProcess = true;
@@ -144,8 +144,6 @@ struct EightFaceModule : Module {
 		pluginSlug = "";
 		moduleName = "";
 		connected = 0;
-		if (randDist) delete randDist;
-		randDist = new std::uniform_int_distribution<int>(0, presetCount - 1);
 		autoload = false;
 	}
 
@@ -195,8 +193,18 @@ struct EightFaceModule : Module {
 								}
 								break;
 							case SLOTCVMODE_TRIG_RANDOM:
-								if (slotTrigger.process(inputs[SLOT_INPUT].getVoltage()))
-									presetLoad(t, (*randDist)(randGen));
+								if (slotTrigger.process(inputs[SLOT_INPUT].getVoltage())) {
+									if (randDist.max() != presetCount - 1) randDist = std::uniform_int_distribution<int>(0, presetCount - 1);
+									presetLoad(t, randDist(randGen));
+								}
+								break;
+							case SLOTCVMODE_TRIG_RANDOM_WO_REPEATS:
+								if (slotTrigger.process(inputs[SLOT_INPUT].getVoltage())) {
+									if (randDist.max() != presetCount - 2) randDist = std::uniform_int_distribution<int>(0, presetCount - 2);
+									int p = randDist(randGen);
+									if (p >= preset) p++;
+									presetLoad(t, p);
+								}
 								break;
 							case SLOTCVMODE_ARM:
 								if (slotTrigger.process(inputs[SLOT_INPUT].getVoltage()))
@@ -352,8 +360,6 @@ struct EightFaceModule : Module {
 		if (preset >= p) preset = 0;
 		presetCount = p;
 		presetNext = -1;
-		delete randDist;
-		randDist = new std::uniform_int_distribution<int>(0, presetCount - 1);
 	}
 
 	json_t* dataToJson() override {
@@ -442,6 +448,7 @@ struct SlovCvModeMenuItem : MenuItem {
 		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger reverse", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_TRIG_REV));
 		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger pingpong", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_TRIG_PINGPONG));
 		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger random", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_TRIG_RANDOM));
+		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger pseudo-random", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_TRIG_RANDOM_WO_REPEATS));
 		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "0..10V", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_10V));
 		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "C4", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_C4));
 		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Arm", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_ARM));
