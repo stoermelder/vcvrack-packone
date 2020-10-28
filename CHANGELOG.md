@@ -15,6 +15,7 @@
     - Fixed hanging pingpong-mode when changing slots manually (#191, #203)
     - Added trigger-option "pseudo-random"
     - Added trigger-option "random walk"
+    - Added trigger-option "alternating"
 - Module [GRIP](./docs/Grip.md)
     - Fixed crash on locking more than 32 parameters (#176)
 - Module [MEM](./docs/MidiCat.md#mem-expander)
