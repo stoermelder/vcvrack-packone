@@ -13,6 +13,7 @@ enum SLOTCVMODE {
 	SLOTCVMODE_TRIG_PINGPONG = 5,
 	SLOTCVMODE_TRIG_RANDOM = 6,
 	SLOTCVMODE_TRIG_RANDOM_WO_REPEATS = 7,
+	SLOTCVMODE_TRIG_RANDOM_WALK = 8,
 	SLOTCVMODE_10V = 0,
 	SLOTCVMODE_C4 = 1,
 	SLOTCVMODE_ARM = 3
@@ -203,6 +204,12 @@ struct EightFaceModule : Module {
 									if (randDist.max() != presetCount - 2) randDist = std::uniform_int_distribution<int>(0, presetCount - 2);
 									int p = randDist(randGen);
 									if (p >= preset) p++;
+									presetLoad(t, p);
+								}
+								break;
+							case SLOTCVMODE_TRIG_RANDOM_WALK:
+								if (slotTrigger.process(inputs[SLOT_INPUT].getVoltage())) {
+									int p = std::min(std::max(0, preset + (random::u32() % 2 == 0 ? -1 : 1)), presetCount - 1);
 									presetLoad(t, p);
 								}
 								break;
@@ -449,6 +456,7 @@ struct SlovCvModeMenuItem : MenuItem {
 		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger pingpong", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_TRIG_PINGPONG));
 		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger random", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_TRIG_RANDOM));
 		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger pseudo-random", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_TRIG_RANDOM_WO_REPEATS));
+		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger random walk", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_TRIG_RANDOM_WALK));
 		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "0..10V", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_10V));
 		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "C4", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_C4));
 		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Arm", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_ARM));

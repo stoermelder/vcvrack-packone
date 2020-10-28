@@ -14,6 +14,7 @@
 - Modules [8FACE, 8FACEx2](./docs/EightFace.md)
     - Fixed hanging pingpong-mode when changing slots manually (#191, #203)
     - Added trigger-option "pseudo-random"
+    - Added trigger-option "random walk"
 - Module [GRIP](./docs/Grip.md)
     - Fixed crash on locking more than 32 parameters (#176)
 - Module [MEM](./docs/MidiCat.md#mem-expander)
