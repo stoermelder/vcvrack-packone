@@ -14,6 +14,7 @@ enum class SLOTCVMODE {
 	TRIG_REV = 4,
 	TRIG_PINGPONG = 5,
 	TRIG_RANDOM = 6,
+	TRIG_RANDOM_WO_REPEAT = 7,
 	VOLT = 0,
 	C4 = 1,
 	ARM = 3
@@ -274,6 +275,14 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 						if (slotTrigger.process(Module::inputs[INPUT_SLOT].getVoltage())) {
 							if (randDist.max() != presetCount - 1) randDist = std::uniform_int_distribution<int>(0, presetCount - 1);
 							presetLoad(randDist(randGen));
+						}
+						break;
+					case SLOTCVMODE::TRIG_RANDOM_WO_REPEAT:
+						if (slotTrigger.process(Module::inputs[INPUT_SLOT].getVoltage())) {
+							if (randDist.max() != presetCount - 2) randDist = std::uniform_int_distribution<int>(0, presetCount - 2);
+							int p = randDist(randGen);
+							if (p >= preset) p++;
+							presetLoad(p);
 						}
 						break;
 					case SLOTCVMODE::ARM:
@@ -825,6 +834,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger reverse", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_REV));
 				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger pingpong", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_PINGPONG));
 				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger random", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_RANDOM));
+				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger pseudo-random", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_RANDOM_WO_REPEAT));
 				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "0..10V", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::VOLT));
 				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "C4", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::C4));
 				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Arm", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::ARM));
