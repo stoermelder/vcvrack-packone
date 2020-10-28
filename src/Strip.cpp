@@ -881,11 +881,13 @@ struct StripWidget : ThemedModuleWidget<StripModule> {
 					// mw could be NULL, just move on
 					modules[oldId] = mw;
 
-					// ModuleAdd history action
-					history::ModuleAdd* h = new history::ModuleAdd;
-					h->name = "create module";
-					h->setModule(mw);
-					undoActions->push_back(h);
+					if (mw) {
+						// ModuleAdd history action
+						history::ModuleAdd* h = new history::ModuleAdd;
+						h->name = "create module";
+						h->setModule(mw);
+						undoActions->push_back(h);
+					}
 				}
 			}
 		}
@@ -900,11 +902,13 @@ struct StripWidget : ThemedModuleWidget<StripModule> {
 					ModuleWidget* mw = moduleToRack(moduleJ, true, box, oldId);
 					modules[oldId] = mw;
 
-					// ModuleAdd history action
-					history::ModuleAdd* h = new history::ModuleAdd;
-					h->name = "create module";
-					h->setModule(mw);
-					undoActions->push_back(h);
+					if (mw) {
+						// ModuleAdd history action
+						history::ModuleAdd* h = new history::ModuleAdd;
+						h->name = "create module";
+						h->setModule(mw);
+						undoActions->push_back(h);
+					}
 				}
 			}
 		}

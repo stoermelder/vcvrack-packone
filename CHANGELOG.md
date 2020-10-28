@@ -37,6 +37,7 @@
 - Module [STRIP](./docs/Strip.md)
     - Added hotkeys Shift+L (load), Shift+S (save as), Shift+X (cut)
     - Added context menu option "Load with replace" (#186)
+    - Fixed crash on loading vcvss-files with missing modules
 - Module [STROKE](./docs/Stroke.md)
     - Added command "Toggle engine pause"
     - Added command "Toggle lock modules"
