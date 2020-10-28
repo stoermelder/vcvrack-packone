@@ -265,9 +265,9 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 					case SLOTCVMODE::TRIG_PINGPONG:
 						if (slotTrigger.process(Module::inputs[INPUT_SLOT].getVoltage())) {
 							int n = preset + slotCvModeDir;
-							if (n == presetCount - 1) 
+							if (n >= presetCount - 1)
 								slotCvModeDir = -1;
-							if (n == 0) 
+							if (n <= 0)
 								slotCvModeDir = 1;
 							presetLoad(n);
 						}

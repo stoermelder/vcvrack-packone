@@ -45,6 +45,7 @@
     - Added command "Toggle lock modules"
     - Added LEDs for signaling a triggered hotkey
 - Module [TRANSIT](./docs/Transit.md)
+    - Fixed hanging pingpong-mode when changing slots manually
     - Added trigger-option "pseudo-random"
     - Added trigger-option "random walk"
 - Module [X4](./docs/X4.md)
