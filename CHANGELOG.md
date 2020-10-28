@@ -12,7 +12,7 @@
 - Module [CV-PAM](./docs/CVPam.md)
     - Fixed wrong channel count of the polyphonic output ports
 - Modules [8FACE, 8FACEx2](./docs/EightFace.md)
-    - Fixed hanging pingpong-mode when changing slots manually
+    - Fixed hanging pingpong-mode when changing slots manually (#191, #203)
 - Module [GRIP](./docs/Grip.md)
     - Fixed crash on locking more than 32 parameters (#176)
 - Module [MEM](./docs/MidiCat.md#mem-expander)
@@ -34,6 +34,9 @@
 - Module [MIRROR](./docs/Mirror.md)
     - Added syncing of module presets even if bound module has no parameters (#189)
     - Added hotkey for syncing module presets
+- Module [STRIP](./docs/Strip.md)
+    - Added hotkeys Shift+L (load), Shift+S (save as), Shift+X (cut)
+    - Added context menu option "Load with replace" (#186)
 - Module [STROKE](./docs/Stroke.md)
     - Added command "Toggle engine pause"
     - Added command "Toggle lock modules"

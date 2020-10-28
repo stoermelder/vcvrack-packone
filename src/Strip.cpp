@@ -686,7 +686,7 @@ struct StripWidget : ThemedModuleWidget<StripModule> {
 
 		if (toBeRemoved.size() > 0) {
 			history::ComplexAction* complexAction = new history::ComplexAction;
-			complexAction->name = "stoermelder STRIP cut";
+			complexAction->name = "stoermelder STRIP remove";
 
 			for (int id : toBeRemoved) {
 				ModuleWidget* mw = APP->scene->rack->getModule(id);
@@ -1308,7 +1308,7 @@ struct StripWidget : ThemedModuleWidget<StripModule> {
 		groupFromJson(rootJ);
 	}
 
-	void groupLoadFileDialog() {
+	void groupLoadFileDialog(bool remove) {
 		osdialog_filters* filters = osdialog_filters_parse(PRESET_FILTERS);
 		DEFER({
 			osdialog_filters_free(filters);
@@ -1324,6 +1324,7 @@ struct StripWidget : ThemedModuleWidget<StripModule> {
 			free(path);
 		});
 
+		if (remove) groupRemove();
 		groupLoadFile(path);
 	}
 
@@ -1335,6 +1336,22 @@ struct StripWidget : ThemedModuleWidget<StripModule> {
 
 		if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
 			switch (e.key) {
+				case GLFW_KEY_X: {
+					if ((e.mods & RACK_MOD_MASK) == GLFW_MOD_SHIFT) {
+						groupCutClipboard();
+						e.consume(this);
+					}
+				} break;
+				case GLFW_KEY_L: {
+					if ((e.mods & RACK_MOD_MASK) == GLFW_MOD_SHIFT) {
+						groupLoadFileDialog(false);
+						e.consume(this);
+					}
+					if ((e.mods & RACK_MOD_MASK) == (GLFW_MOD_SHIFT | GLFW_MOD_CONTROL)) {
+						groupLoadFileDialog(true);
+						e.consume(this);
+					}
+				} break;
 				case GLFW_KEY_C: {
 					if ((e.mods & RACK_MOD_MASK) == GLFW_MOD_SHIFT) {
 						groupCopyClipboard();
@@ -1344,6 +1361,12 @@ struct StripWidget : ThemedModuleWidget<StripModule> {
 				case GLFW_KEY_V: {
 					if ((e.mods & RACK_MOD_MASK) == GLFW_MOD_SHIFT) {
 						groupPasteClipboard();
+						e.consume(this);
+					}
+				} break;
+				case GLFW_KEY_S: {
+					if ((e.mods & RACK_MOD_MASK) == GLFW_MOD_SHIFT) {
+						groupSaveFileDialog();
 						e.consume(this);
 					}
 				} break;
@@ -1396,7 +1419,14 @@ struct StripWidget : ThemedModuleWidget<StripModule> {
 		struct LoadGroupMenuItem : MenuItem {
 			StripWidget* moduleWidget;
 			void onAction(const event::Action& e) override {
-				moduleWidget->groupLoadFileDialog();
+				moduleWidget->groupLoadFileDialog(false);
+			}
+		};
+
+		struct LoadReplaceGroupMenuItem : MenuItem {
+			StripWidget* moduleWidget;
+			void onAction(const event::Action& e) override {
+				moduleWidget->groupLoadFileDialog(true);
 			}
 		};
 
@@ -1408,11 +1438,12 @@ struct StripWidget : ThemedModuleWidget<StripModule> {
 		};
 
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Strip"));
-		menu->addChild(construct<CutGroupMenuItem>(&MenuItem::text, "Cut", &CutGroupMenuItem::moduleWidget, this));
-		menu->addChild(construct<CopyGroupMenuItem>(&MenuItem::text, "Copy", &MenuItem::rightText, "Shift+C", &CopyGroupMenuItem::moduleWidget, this));
-		menu->addChild(construct<PasteGroupMenuItem>(&MenuItem::text, "Paste", &MenuItem::rightText, "Shift+V", &PasteGroupMenuItem::moduleWidget, this));
-		menu->addChild(construct<LoadGroupMenuItem>(&MenuItem::text, "Load", &LoadGroupMenuItem::moduleWidget, this));
-		menu->addChild(construct<SaveGroupMenuItem>(&MenuItem::text, "Save as", &SaveGroupMenuItem::moduleWidget, this));
+		menu->addChild(construct<CutGroupMenuItem>(&MenuItem::text, "Cut", &MenuItem::rightText, RACK_MOD_SHIFT_NAME "+X", &CutGroupMenuItem::moduleWidget, this));
+		menu->addChild(construct<CopyGroupMenuItem>(&MenuItem::text, "Copy", &MenuItem::rightText, RACK_MOD_SHIFT_NAME "+C", &CopyGroupMenuItem::moduleWidget, this));
+		menu->addChild(construct<PasteGroupMenuItem>(&MenuItem::text, "Paste", &MenuItem::rightText, RACK_MOD_SHIFT_NAME "+V", &PasteGroupMenuItem::moduleWidget, this));
+		menu->addChild(construct<LoadGroupMenuItem>(&MenuItem::text, "Load", &MenuItem::rightText, RACK_MOD_SHIFT_NAME "+L", &LoadGroupMenuItem::moduleWidget, this));
+		menu->addChild(construct<LoadReplaceGroupMenuItem>(&MenuItem::text, "Load with replace", &MenuItem::rightText, RACK_MOD_CTRL_NAME "+" RACK_MOD_SHIFT_NAME "+L", &LoadReplaceGroupMenuItem::moduleWidget, this));
+		menu->addChild(construct<SaveGroupMenuItem>(&MenuItem::text, "Save as", &MenuItem::rightText, RACK_MOD_SHIFT_NAME "+S", &SaveGroupMenuItem::moduleWidget, this));
 	}
 };
 
