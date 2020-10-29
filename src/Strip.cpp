@@ -1399,6 +1399,55 @@ struct StripWidget : ThemedModuleWidget<StripModule> {
 		menu->addChild(construct<RandomParamsOnlyItem>(&MenuItem::text, "Randomize parameters only", &RandomParamsOnlyItem::module, module));
 		menu->addChild(new MenuSeparator);
 
+		struct PresetMenuItem : MenuItem {
+			struct FolderItem : ui::MenuItem {
+				std::string path;
+				void onAction(const event::Action& e) override {
+					std::thread t([ = ] {
+						system::openFolder(path);
+					});
+					t.detach();
+				}
+			};
+			struct PresetItem : MenuItem {
+				StripWidget* mw;
+				std::string presetPath;
+				void onAction(const event::Action& e) override {
+					mw->groupLoadFile(presetPath);
+				}
+			};
+
+			StripWidget* mw;
+			PresetMenuItem() {
+				rightText = RIGHT_ARROW;
+			}
+			Menu* createChildMenu() override {
+				Menu* menu = new Menu;
+
+				std::string presetDir = asset::plugin(mw->model->plugin, "presets/" + mw->model->slug);
+				menu->addChild(construct<FolderItem>(&MenuItem::text, "Open folder", &FolderItem::path, presetDir));
+
+				std::vector<std::string> presetPaths;
+				for (const std::string& presetPath : system::getEntries(presetDir)) {
+					presetPaths.push_back(presetPath);
+				}
+
+				if (!mw->model->presetPaths.empty()) {
+					menu->addChild(new MenuSeparator);
+					for (const std::string& presetPath : presetPaths) {
+						if (!endsWith(presetPath, ".vcvss")) continue;
+						std::string presetName = string::filenameBase(string::filename(presetPath));
+						menu->addChild(construct<PresetItem>(&MenuItem::text, presetName, &PresetItem::presetPath, presetPath, &PresetItem::mw, mw));
+					}
+				}
+				return menu;
+			}
+
+			bool endsWith(const std::string& str, const std::string& suffix) {
+				return str.size() >= suffix.size() && 0 == str.compare(str.size()-suffix.size(), suffix.size(), suffix);
+			}
+		};
+
 		struct CutGroupMenuItem : MenuItem {
 			StripWidget* moduleWidget;
 			void onAction(const event::Action& e) override {
@@ -1442,6 +1491,7 @@ struct StripWidget : ThemedModuleWidget<StripModule> {
 		};
 
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Strip"));
+		menu->addChild(construct<PresetMenuItem>(&MenuItem::text, "Preset", &PresetMenuItem::mw, this));
 		menu->addChild(construct<CutGroupMenuItem>(&MenuItem::text, "Cut", &MenuItem::rightText, RACK_MOD_SHIFT_NAME "+X", &CutGroupMenuItem::moduleWidget, this));
 		menu->addChild(construct<CopyGroupMenuItem>(&MenuItem::text, "Copy", &MenuItem::rightText, RACK_MOD_SHIFT_NAME "+C", &CopyGroupMenuItem::moduleWidget, this));
 		menu->addChild(construct<PasteGroupMenuItem>(&MenuItem::text, "Paste", &MenuItem::rightText, RACK_MOD_SHIFT_NAME "+V", &PasteGroupMenuItem::moduleWidget, this));

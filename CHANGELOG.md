@@ -43,6 +43,7 @@
     - Added hotkeys Shift+L (load), Shift+S (save as), Shift+X (cut)
     - Added context menu option "Load with replace" (#186)
     - Fixed crash on loading vcvss-files with missing modules
+    - Added context menu option for custom presets, listing all .vcvss-files in presets/Strip (#198)
 - Module [STROKE](./docs/Stroke.md)
     - Added command "Toggle engine pause"
     - Added command "Toggle lock modules"

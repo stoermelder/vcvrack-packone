@@ -1,0 +1,19 @@
+{
+  "stripVersion": 1,
+  "rightModules": [
+    {
+      "id": 29,
+      "plugin": "Core",
+      "version": "1.1.6",
+      "model": "Notes",
+      "params": [],
+      "leftModuleId": 28,
+      "text": "This a demo for stoermelder STRIP.\nHave fun!"
+    }
+  ],
+  "rightWidth": 240.0,
+  "leftModules": [],
+  "leftWidth": 0.0,
+  "cables": [],
+  "version": "1.1.6"
+}
