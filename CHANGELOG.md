@@ -2,6 +2,11 @@
 
 - Module [FLOWER, SEEDS, OFFSPRING](./docs/Flower.md)
     - New modules, pattern-driven 16-step sequencer
+
+## 1.8.0 (in development)
+
+- Module [HIVE](./docs/Hive.md)
+    - New module, 4 channel sequencer running on a 2-dimensional hexagonal grid
 - Module [MACRO](./docs/Macro.md)
     - New module, marco-knob for four parameter-mappings and two CV outputs
 - Module [RAW](./docs/Raw.md)
@@ -48,6 +53,7 @@
     - Added command "Toggle engine pause"
     - Added command "Toggle lock modules"
     - Added LEDs for signaling a triggered hotkey
+    - Allow loading presets (#187)
 - Module [TRANSIT](./docs/Transit.md)
     - Fixed hanging pingpong-mode when changing slots manually
     - Added trigger-option "pseudo-random"
