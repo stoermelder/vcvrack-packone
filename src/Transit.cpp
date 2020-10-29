@@ -427,13 +427,12 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		inChange = false;
 
 		ParamQuantity* pq = getParamQuantity(sourceHandle);
-		if (pq) {
-			float v = pq->getValue();
-			for (int i = 0; i < presetTotal; i++) {
-				TransitSlot* slot = expSlot(i);
-				if (!*(slot->presetSlotUsed)) continue;
-				slot->preset->push_back(v);
-			}
+		float v = pq ? pq->getValue() : 0.f;
+		for (int i = 0; i < presetTotal; i++) {
+			TransitSlot* slot = expSlot(i);
+			if (!*(slot->presetSlotUsed)) continue;
+			slot->preset->push_back(v);
+			assert(sourceHandles.size() == slot->preset->size());
 		}
 	}
 
@@ -539,10 +538,10 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		slot->preset->clear();
 		for (size_t i = 0; i < sourceHandles.size(); i++) {
 			ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
-			if (!pq) continue;
-			float v = pq->getValue();
+			float v = pq ? pq->getValue() : 0.f;
 			slot->preset->push_back(v);
 		}
+		assert(sourceHandles.size() == slot->preset->size());
 		preset = p;
 	}
 
@@ -564,16 +563,21 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		*(slot->presetSlotUsed) = true;
 		slot->preset->clear();
 		for (size_t i = 0; i < sourceHandles.size(); i++) {
-			ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
-			if (!pq || !pq->module) continue;
-			ModuleWidget* mw = APP->scene->rack->getModule(pq->module->id);
-			if (!mw) continue;
-			ParamWidget* pw = mw->getParam(pq->paramId);
-			if (!pw) continue;
-			pw->randomize();
-			float v = pq->getValue();
+			float v = 0.f;
+			{
+				ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
+				if (!pq || !pq->module) goto s;
+				ModuleWidget* mw = APP->scene->rack->getModule(pq->module->id);
+				if (!mw) goto s;
+				ParamWidget* pw = mw->getParam(pq->paramId);
+				if (!pw) goto s;
+				pw->randomize();
+				v = pq->getValue();
+			}
+			s:
 			slot->preset->push_back(v);
 		}
+		assert(sourceHandles.size() == slot->preset->size());
 		preset = p;
 	}
 
