@@ -167,6 +167,9 @@ struct RawWidget : ThemedModuleWidget<RawModule> {
  		: ThemedModuleWidget<RawModule>(module, "Raw") {
 		setModule(module);
 
+		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
+		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+
 		addParam(createParamCentered<StoermelderTrimpot>(Vec(22.5f, 58.5f), module, RawModule::PARAM_GAIN_IN));
 		addParam(createParamCentered<StoermelderSmallKnob>(Vec(22.5f, 98.7f), module, RawModule::PARAM_FN));
 		addParam(createParamCentered<StoermelderSmallKnob>(Vec(22.5f, 132.0f), module, RawModule::PARAM_C));
