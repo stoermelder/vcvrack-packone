@@ -158,6 +158,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 	// Pointer of the MEM-expander's attribute
 	std::map<std::pair<std::string, std::string>, MemModule*>* memStorage = NULL;
 	Module* mem = NULL;
+	int memModuleId = -1;
 
 	MidiCatModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
@@ -366,7 +367,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 							indicate = true;
 						}
 						if (indicate) {
-							ModuleWidget *mw = APP->scene->rack->getModule(paramQuantity->module->id);
+							ModuleWidget* mw = APP->scene->rack->getModule(paramQuantity->module->id);
 							paramHandleIndicator[id].indicate(mw);
 						}
 					} break;
@@ -508,6 +509,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 			refreshParamHandleText(id);
 		}
 		mapLen = 1;
+		memModuleId = -1;
 	}
 
 	void updateMapLen() {
@@ -619,7 +621,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 			text += string::f(" cc%02d", ccs[id]);
 		}
 		if (notes[id] >= 0) {
-			static const char *noteNames[] = {
+			static const char* noteNames[] = {
 				"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"
 			};
 			int oct = notes[id] / 12 - 1;
@@ -684,6 +686,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 		MemModule* map = it->second;
 
 		clearMaps();
+		memModuleId = m->id;
 		int i = 0;
 		for (MemParam* it : map->paramMap) {
 			learnParam(i, m->id, it->paramId);
@@ -699,6 +702,14 @@ struct MidiCatModule : Module, StripIdFixModule {
 			i++;
 		}
 		updateMapLen();
+	}
+
+	bool memApplyTest(Module* m) {
+		if (!m) return false;
+		auto p = std::pair<std::string, std::string>(m->model->plugin->slug, m->model->slug);
+		auto it = memStorage->find(p);
+		if (it == memStorage->end()) return false;
+		return true;
 	}
 
 	void setProcessDivision(int d) {
@@ -1220,6 +1231,10 @@ struct MidiCatMidiWidget : MidiWidget {
 struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 	MidiCatModule* module;
 	Module* mem;
+	BufferedTriggerParamQuantity* memPrevQuantity;
+	dsp::SchmittTrigger memPrevTrigger;
+	BufferedTriggerParamQuantity* memNextQuantity;
+	dsp::SchmittTrigger memNextTrigger;
 	BufferedTriggerParamQuantity* memParamQuantity;
 	dsp::SchmittTrigger memParamTrigger;
 
@@ -1343,11 +1358,23 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 			if (module->mem != mem) {
 				mem = module->mem;
 				if (mem) {
+					memPrevQuantity = dynamic_cast<BufferedTriggerParamQuantity*>(mem->paramQuantities[1]);
+					memPrevQuantity->resetBuffer();
+					memNextQuantity = dynamic_cast<BufferedTriggerParamQuantity*>(mem->paramQuantities[2]);
+					memNextQuantity->resetBuffer();
 					memParamQuantity = dynamic_cast<BufferedTriggerParamQuantity*>(mem->paramQuantities[0]);
 					memParamQuantity->resetBuffer();
 				}
 			}
 			if (mem) {
+				if (memPrevTrigger.process(memPrevQuantity->buffer)) {
+					memPrevQuantity->resetBuffer();
+					memPrevModule();
+				}
+				if (memNextTrigger.process(memNextQuantity->buffer)) {
+					memNextQuantity->resetBuffer();
+					memNextModule();
+				}
 				if (memParamTrigger.process(memParamQuantity->buffer)) {
 					memParamQuantity->resetBuffer();
 					enableLearn(LEARN_MODE::MEM);
@@ -1357,6 +1384,63 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 		}
 
 		extendParamWidgetContextMenu();
+	}
+
+	void memPrevModule() {
+		std::list<Widget*> modules = APP->scene->rack->moduleContainer->children;
+		auto sort = [&](Widget* w1, Widget* w2) {
+			auto t1 = std::make_tuple(w1->box.pos.y, w1->box.pos.x);
+			auto t2 = std::make_tuple(w2->box.pos.y, w2->box.pos.x);
+			return t1 > t2;
+		};
+		modules.sort(sort);
+		memScanModules(modules);
+	}
+
+	void memNextModule() {
+		std::list<Widget*> modules = APP->scene->rack->moduleContainer->children;
+		auto sort = [&](Widget* w1, Widget* w2) {
+			auto t1 = std::make_tuple(w1->box.pos.y, w1->box.pos.x);
+			auto t2 = std::make_tuple(w2->box.pos.y, w2->box.pos.x);
+			return t1 < t2;
+		};
+		modules.sort(sort);
+		memScanModules(modules);
+	}
+
+	void memScanModules(std::list<Widget*>& modules) {
+		f:
+		std::list<Widget*>::iterator it = modules.begin();
+		// Scan for current module in the list
+		if (module->memModuleId >= 0) {
+			for (; it != modules.end(); it++) {
+				ModuleWidget* mw = dynamic_cast<ModuleWidget*>(*it);
+				Module* m = mw->module;
+				if (m->id == module->memModuleId) {
+					module->memApplyTest(m);
+					it++;
+					break;
+				}
+			}
+			// Module not found
+			if (it == modules.end()) {
+				it = modules.begin();
+			}
+		}
+		// Scan for next module with stored mapping
+		for (; it != modules.end(); it++) {
+			ModuleWidget* mw = dynamic_cast<ModuleWidget*>(*it);
+			Module* m = mw->module;
+			if (module->memApplyTest(m)) {
+				module->memApply(m);
+				return;
+			}
+		}
+		// No module found yet -> retry from the beginning
+		if (module->memModuleId != -1) {
+			module->memModuleId = -1;
+			goto f;
+		}
 	}
 
 	void extendParamWidgetContextMenu() {
@@ -1606,7 +1690,7 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 				}
 			};
 
-			MidiCatModule *module;
+			MidiCatModule* module;
 			Menu* createChildMenu() override {
 				Menu* menu = new Menu;
 				menu->addChild(construct<MidiModeItem>(&MenuItem::text, "Operating", &MidiModeItem::module, module, &MidiModeItem::midiMode, MIDIMODE::MIDIMODE_DEFAULT));
@@ -1832,4 +1916,4 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 } // namespace MidiCat
 } // namespace StoermelderPackOne
 
-Model *modelMidiCat = createModel<StoermelderPackOne::MidiCat::MidiCatModule, StoermelderPackOne::MidiCat::MidiCatWidget>("MidiCat");
+Model* modelMidiCat = createModel<StoermelderPackOne::MidiCat::MidiCatModule, StoermelderPackOne::MidiCat::MidiCatWidget>("MidiCat");

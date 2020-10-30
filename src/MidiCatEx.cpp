@@ -7,6 +7,8 @@ namespace MidiCat {
 struct MidiCatExModule : Module {
 	enum ParamIds {
 		PARAM_APPLY,
+		PARAM_PREV,
+		PARAM_NEXT,
 		NUM_PARAMS
 	};
 	enum InputIds {
@@ -28,6 +30,8 @@ struct MidiCatExModule : Module {
 	MidiCatExModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+		configParam<BufferedTriggerParamQuantity>(PARAM_PREV, 0.f, 1.f, 0.f, "Scan for previous module mapping");
+		configParam<BufferedTriggerParamQuantity>(PARAM_NEXT, 0.f, 1.f, 0.f, "Scan for next module mapping");
 		configParam<BufferedTriggerParamQuantity>(PARAM_APPLY, 0.f, 1.f, 0.f, "Apply mapping");
 		onReset();
 	}
@@ -143,6 +147,8 @@ struct MidiCatExWidget : ThemedModuleWidget<MidiCatExModule> {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
+		addChild(createParamCentered<TL1105>(Vec(15.0f, 227.1f), module, MidiCatExModule::PARAM_PREV));
+		addChild(createParamCentered<TL1105>(Vec(15.0f, 258.5f), module, MidiCatExModule::PARAM_NEXT));
 		addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(15.f, 291.3f), module, MidiCatExModule::LIGHT_APPLY));
 		addChild(createParamCentered<TL1105>(Vec(15.0f, 306.7f), module, MidiCatExModule::PARAM_APPLY));
 		MemDisplay* memDisplay = createWidgetCentered<MemDisplay>(Vec(15.0f, 336.2f));
