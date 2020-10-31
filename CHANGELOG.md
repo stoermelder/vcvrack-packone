@@ -61,6 +61,7 @@
     - Added trigger-option "pseudo-random"
     - Added trigger-option "random walk"
     - Added trigger-option "alternating"
+    - Added trigger-option "shuffle"
     - Fixed broken snapshots on save after mapped modules have been deleted (#205)
 - Module [X4](./docs/X4.md)
     - Fixed advancing to the lower button after the upper button has been mapped

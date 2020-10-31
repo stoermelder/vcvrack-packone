@@ -17,6 +17,7 @@ enum class SLOTCVMODE {
 	TRIG_RANDOM = 6,
 	TRIG_RANDOM_WO_REPEAT = 7,
 	TRIG_RANDOM_WALK = 8,
+	TRIG_SHUFFLE = 10,
 	VOLT = 0,
 	C4 = 1,
 	ARM = 3
@@ -76,6 +77,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 	SLOTCVMODE slotCvMode = SLOTCVMODE::TRIG_FWD;
 	int slotCvModeDir = 1;
 	int slotCvModeAlt = 1;
+	std::vector<int> slotCvModeShuffle;
 
 	/** [Stored to JSON] */
 	OUTMODE outMode;
@@ -308,6 +310,20 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 							presetLoad(p);
 						}
 						break;
+					case SLOTCVMODE::TRIG_SHUFFLE:
+						if (slotTrigger.process(Module::inputs[INPUT_SLOT].getVoltage())) {
+							if (slotCvModeShuffle.size() == 0) {
+								for (int i = 0; i < presetCount; i++) {
+									if (preset == i) continue;
+									slotCvModeShuffle.push_back(i);
+								}
+								std::random_shuffle(std::begin(slotCvModeShuffle), std::end(slotCvModeShuffle));
+							}
+							int p = std::min(std::max(0, slotCvModeShuffle.back()), presetCount - 1);
+							slotCvModeShuffle.pop_back();
+							presetLoad(p);
+						}
+						break;
 					case SLOTCVMODE::ARM:
 						if (slotTrigger.process(Module::inputs[INPUT_SLOT].getVoltage())) {
 							presetLoad(presetNext);
@@ -529,7 +545,6 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 				pq->setValue(v);
 			}
 		}
-		presetProcessDivider.setDivision(presetProcessDivision);
 	}
 
 	void presetSave(int p) {
@@ -593,6 +608,16 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 			targetPreset->push_back(v);
 		}
 		if (preset == target) preset = -1;
+	}
+
+	void setProcessDivision(int d) {
+		presetProcessDivision = d;
+		presetProcessDivider.setDivision(presetProcessDivision);
+		presetProcessDivider.reset();
+	}
+
+	int getProcessDivision() {
+		return presetProcessDivision;
 	}
 
 	void transitSlotCmd(SLOT_CMD cmd, int i) override {
@@ -814,11 +839,11 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 				int division;
 				std::string text;
 				void onAction(const event::Action& e) override {
-					module->presetProcessDivision = division;
+					module->setProcessDivision(division);
 				}
 				void step() override {
 					MenuItem::text = string::f("%s (%i Hz)", text.c_str(), module->sampleRate / division);
-					rightText = module->presetProcessDivision == division ? "✔" : "";
+					rightText = module->getProcessDivision() == division ? "✔" : "";
 					MenuItem::step();
 				}
 			};
@@ -864,6 +889,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger random", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_RANDOM));
 				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger pseudo-random", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_RANDOM_WO_REPEAT));
 				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger random walk", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_RANDOM_WALK));
+				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger shuffle", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_SHUFFLE));
 				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "0..10V", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::VOLT));
 				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "C4", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::C4));
 				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Arm", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::ARM));
