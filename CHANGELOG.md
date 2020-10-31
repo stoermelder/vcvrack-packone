@@ -21,12 +21,14 @@
     - Added trigger-option "pseudo-random"
     - Added trigger-option "random walk"
     - Added trigger-option "alternating"
+    - Added trigger-option "shuffle"
 - Module [GRIP](./docs/Grip.md)
     - Fixed crash on locking more than 32 parameters (#176)
 - Module [INTERMIX](./docs/Intermix.md)
     - Added support for polyphony (#199)
 - Module [MEM](./docs/MidiCat.md#mem-expander)
     - Added support for MIDI-CAT's new slew-limiting and scaling options
+    - Added scanning for next or previous modules with stored mapping (#200)
 - Module [µMAP](./docs/CVMapMicro.md)
     - Added input voltage display
 - Module [MIDI-CAT](./docs/MidiCat.md)
