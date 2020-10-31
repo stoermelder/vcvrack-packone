@@ -149,7 +149,7 @@ struct MidiCatExWidget : ThemedModuleWidget<MidiCatExModule> {
 
 		addChild(createParamCentered<TL1105>(Vec(15.0f, 227.1f), module, MidiCatExModule::PARAM_PREV));
 		addChild(createParamCentered<TL1105>(Vec(15.0f, 258.5f), module, MidiCatExModule::PARAM_NEXT));
-		addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(15.f, 291.3f), module, MidiCatExModule::LIGHT_APPLY));
+		addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(15.f, 284.4f), module, MidiCatExModule::LIGHT_APPLY));
 		addChild(createParamCentered<TL1105>(Vec(15.0f, 306.7f), module, MidiCatExModule::PARAM_APPLY));
 		MemDisplay* memDisplay = createWidgetCentered<MemDisplay>(Vec(15.0f, 336.2f));
 		memDisplay->module = module;

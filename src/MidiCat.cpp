@@ -704,7 +704,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 		updateMapLen();
 	}
 
-	bool memApplyTest(Module* m) {
+	bool memTest(Module* m) {
 		if (!m) return false;
 		auto p = std::pair<std::string, std::string>(m->model->plugin->slug, m->model->slug);
 		auto it = memStorage->find(p);
@@ -1412,12 +1412,11 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 		f:
 		std::list<Widget*>::iterator it = modules.begin();
 		// Scan for current module in the list
-		if (module->memModuleId >= 0) {
+		if (module->memModuleId != -1) {
 			for (; it != modules.end(); it++) {
 				ModuleWidget* mw = dynamic_cast<ModuleWidget*>(*it);
 				Module* m = mw->module;
 				if (m->id == module->memModuleId) {
-					module->memApplyTest(m);
 					it++;
 					break;
 				}
@@ -1431,7 +1430,7 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 		for (; it != modules.end(); it++) {
 			ModuleWidget* mw = dynamic_cast<ModuleWidget*>(*it);
 			Module* m = mw->module;
-			if (module->memApplyTest(m)) {
+			if (module->memTest(m)) {
 				module->memApply(m);
 				return;
 			}
