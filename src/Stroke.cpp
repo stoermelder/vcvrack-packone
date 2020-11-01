@@ -662,124 +662,218 @@ struct KeyDisplay : StoermelderLedDisplay {
 			}
 		};
 
-		struct ModeZoomModuleCustomItem : MenuItem {
+		struct ParamMenuItem : MenuItem {
 			StrokeModule<PORTS>* module;
 			int idx;
 			void step() override {
-				rightText = module->keys[idx].mode == KEY_MODE::S_ZOOM_MODULE_CUSTOM ? "✔ " RIGHT_ARROW : "";
+				rightText = 
+					module->keys[idx].mode == KEY_MODE::S_PARAM_RAND ||
+					module->keys[idx].mode == KEY_MODE::S_PARAM_COPY ||
+					module->keys[idx].mode == KEY_MODE::S_PARAM_PASTE
+						? "✔" : RIGHT_ARROW;
 				MenuItem::step();
-			}
-			void onAction(const event::Action& e) override {
-				module->keys[idx].mode = KEY_MODE::S_ZOOM_MODULE_CUSTOM;
-				module->keys[idx].high = false;
-				module->keys[idx].data = "0";
 			}
 
 			Menu* createChildMenu() override {
-				struct ZoomModuleSlider : ui::Slider {
-					struct ZoomModuleQuantity : Quantity {
-						StrokeModule<PORTS>* module;
-						int idx;
-						ZoomModuleQuantity(StrokeModule<PORTS>* module, int idx) {
-							this->module = module;
-							this->idx = idx;
-						}
-						void setValue(float value) override {
-							module->keys[idx].data = string::f("%f", clamp(value, -2.f, 2.f));
-						}
-						float getValue() override {
-							return std::stof(module->keys[idx].data);
-						}
-						float getDefaultValue() override {
-							return 0.0f;
-						}
-						float getDisplayValue() override {
-							return std::round(std::pow(2.f, getValue()) * 100);
-						}
-						void setDisplayValue(float displayValue) override {
-							setValue(std::log2(displayValue / 100));
-						}
-						std::string getLabel() override {
-							return "Zoom";
-						}
-						std::string getUnit() override {
-							return "%";
-						}
-						float getMaxValue() override {
-							return 2.f;
-						}
-						float getMinValue() override {
-							return -2.f;
-						}
-					};
-
-					ZoomModuleSlider(StrokeModule<PORTS>* module, int idx) {
-						box.size.x = 180.0f;
-						quantity = new ZoomModuleQuantity(module, idx);
-					}
-					~ZoomModuleSlider() {
-						delete quantity;
-					}
-				};
-
-				if (module->keys[idx].mode == KEY_MODE::S_ZOOM_MODULE_CUSTOM) {
-					Menu* menu = new Menu;
-					menu->addChild(new ZoomModuleSlider(module, idx));
-					return menu;
-				}
-				return NULL;
+				Menu* menu = new Menu;
+				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Randomize", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_PARAM_RAND));
+				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Value copy", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_PARAM_COPY));
+				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Value paste", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_PARAM_PASTE));
+				return menu;
 			}
-		};
+		}; // struct ParamMenuItem
 
-		struct CableOpacityItem : ModeMenuItem {
-			void onAction(const event::Action& e) override {
-				ModeMenuItem::onAction(e);
-				ModeMenuItem::module->keys[ModeMenuItem::idx].data = "0";
-			}
-		};
-
-		struct CableColorMenuItem : MenuItem {
+		struct ViewMenuItem : MenuItem {
 			StrokeModule<PORTS>* module;
 			int idx;
 			void step() override {
-				rightText = module->keys[idx].mode == KEY_MODE::S_CABLE_COLOR ? "✔ " RIGHT_ARROW : "";
+				rightText = 
+					module->keys[idx].mode == KEY_MODE::S_ZOOM_MODULE_90 ||
+					module->keys[idx].mode == KEY_MODE::S_ZOOM_MODULE_30 ||
+					module->keys[idx].mode == KEY_MODE::S_ZOOM_MODULE_CUSTOM ||
+					module->keys[idx].mode == KEY_MODE::S_ZOOM_OUT ||
+					module->keys[idx].mode == KEY_MODE::S_ZOOM_TOGGLE
+						? "✔" : RIGHT_ARROW;
 				MenuItem::step();
-			}
-			void onAction(const event::Action& e) override {
-				module->keys[idx].mode = KEY_MODE::S_CABLE_COLOR;
-				module->keys[idx].high = false;
-				module->keys[idx].data = color::toHexString(color::BLACK);
 			}
 
 			Menu* createChildMenu() override {
-				struct ColorField : ui::TextField {
+				struct ModeZoomModuleCustomItem : MenuItem {
 					StrokeModule<PORTS>* module;
 					int idx;
-					ColorField() {
-						box.size.x = 80.f;
-						placeholder = color::toHexString(color::BLACK);
+					void step() override {
+						rightText = module->keys[idx].mode == KEY_MODE::S_ZOOM_MODULE_CUSTOM ? "✔ " RIGHT_ARROW : "";
+						MenuItem::step();
 					}
-					void onSelectKey(const event::SelectKey& e) override {
-						if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
-							module->keys[idx].data = string::trim(text);
-							ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
-							overlay->requestDelete();
-							e.consume(this);
+					void onAction(const event::Action& e) override {
+						module->keys[idx].mode = KEY_MODE::S_ZOOM_MODULE_CUSTOM;
+						module->keys[idx].high = false;
+						module->keys[idx].data = "0";
+					}
+
+					Menu* createChildMenu() override {
+						struct ZoomModuleSlider : ui::Slider {
+							struct ZoomModuleQuantity : Quantity {
+								StrokeModule<PORTS>* module;
+								int idx;
+								ZoomModuleQuantity(StrokeModule<PORTS>* module, int idx) {
+									this->module = module;
+									this->idx = idx;
+								}
+								void setValue(float value) override {
+									module->keys[idx].data = string::f("%f", clamp(value, -2.f, 2.f));
+								}
+								float getValue() override {
+									return std::stof(module->keys[idx].data);
+								}
+								float getDefaultValue() override {
+									return 0.0f;
+								}
+								float getDisplayValue() override {
+									return std::round(std::pow(2.f, getValue()) * 100);
+								}
+								void setDisplayValue(float displayValue) override {
+									setValue(std::log2(displayValue / 100));
+								}
+								std::string getLabel() override {
+									return "Zoom";
+								}
+								std::string getUnit() override {
+									return "%";
+								}
+								float getMaxValue() override {
+									return 2.f;
+								}
+								float getMinValue() override {
+									return -2.f;
+								}
+							};
+
+							ZoomModuleSlider(StrokeModule<PORTS>* module, int idx) {
+								box.size.x = 180.0f;
+								quantity = new ZoomModuleQuantity(module, idx);
+							}
+							~ZoomModuleSlider() {
+								delete quantity;
+							}
+						};
+
+						if (module->keys[idx].mode == KEY_MODE::S_ZOOM_MODULE_CUSTOM) {
+							Menu* menu = new Menu;
+							menu->addChild(new ZoomModuleSlider(module, idx));
+							return menu;
 						}
-						if (!e.getTarget()) {
-							ui::TextField::onSelectKey(e);
-						}
+						return NULL;
 					}
 				};
 
-				if (module->keys[idx].mode == KEY_MODE::S_CABLE_COLOR) {
-					Menu* menu = new Menu;
-					menu->addChild(construct<ColorField>(&ColorField::module, module, &ColorField::idx, idx, &TextField::text, module->keys[idx].data));
-					return menu;
-				}
-				return NULL;
+				Menu* menu = new Menu;
+				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom to module", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ZOOM_MODULE_90));
+				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom to module 1/3", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ZOOM_MODULE_30));
+				menu->addChild(construct<ModeZoomModuleCustomItem>(&MenuItem::text, "Zoom level to module", &ModeZoomModuleCustomItem::module, module, &ModeZoomModuleCustomItem::idx, idx));
+				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom out", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ZOOM_OUT));
+				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom toggle", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ZOOM_TOGGLE));
+				return menu;
 			}
-		};
+		}; // struct ViewMenuItem
+
+		struct CableMenuItem : MenuItem {
+			StrokeModule<PORTS>* module;
+			int idx;
+			void step() override {
+				rightText = 
+					module->keys[idx].mode == KEY_MODE::S_CABLE_OPACITY ||
+					module->keys[idx].mode == KEY_MODE::S_CABLE_VISIBILITY ||
+					module->keys[idx].mode == KEY_MODE::S_CABLE_COLOR_NEXT ||
+					module->keys[idx].mode == KEY_MODE::S_CABLE_COLOR ||
+					module->keys[idx].mode == KEY_MODE::S_CABLE_ROTATE
+						? "✔" : RIGHT_ARROW;
+				MenuItem::step();
+			}
+
+			Menu* createChildMenu() override {
+				struct CableOpacityItem : ModeMenuItem {
+					void onAction(const event::Action& e) override {
+						ModeMenuItem::onAction(e);
+						ModeMenuItem::module->keys[ModeMenuItem::idx].data = "0";
+					}
+				};
+
+				struct CableColorMenuItem : MenuItem {
+					StrokeModule<PORTS>* module;
+					int idx;
+					void step() override {
+						rightText = module->keys[idx].mode == KEY_MODE::S_CABLE_COLOR ? "✔ " RIGHT_ARROW : "";
+						MenuItem::step();
+					}
+					void onAction(const event::Action& e) override {
+						module->keys[idx].mode = KEY_MODE::S_CABLE_COLOR;
+						module->keys[idx].high = false;
+						module->keys[idx].data = color::toHexString(color::BLACK);
+					}
+
+					Menu* createChildMenu() override {
+						struct ColorField : ui::TextField {
+							StrokeModule<PORTS>* module;
+							int idx;
+							ColorField() {
+								box.size.x = 80.f;
+								placeholder = color::toHexString(color::BLACK);
+							}
+							void onSelectKey(const event::SelectKey& e) override {
+								if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
+									module->keys[idx].data = string::trim(text);
+									ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
+									overlay->requestDelete();
+									e.consume(this);
+								}
+								if (!e.getTarget()) {
+									ui::TextField::onSelectKey(e);
+								}
+							}
+						};
+
+						if (module->keys[idx].mode == KEY_MODE::S_CABLE_COLOR) {
+							Menu* menu = new Menu;
+							menu->addChild(construct<ColorField>(&ColorField::module, module, &ColorField::idx, idx, &TextField::text, module->keys[idx].data));
+							return menu;
+						}
+						return NULL;
+					}
+				};
+
+				Menu* menu = new Menu;
+				menu->addChild(construct<CableOpacityItem>(&MenuItem::text, "Toggle opacity", &CableOpacityItem::module, module, &CableOpacityItem::idx, idx, &CableOpacityItem::mode, KEY_MODE::S_CABLE_OPACITY));
+				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle visibility", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_CABLE_VISIBILITY));
+				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Next color", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_CABLE_COLOR_NEXT));
+				menu->addChild(construct<CableColorMenuItem>(&MenuItem::text, "Color", &CableColorMenuItem::module, module, &CableColorMenuItem::idx, idx));
+				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Rotate ordering", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_CABLE_ROTATE));
+				return menu;
+			}
+		}; // struct CableMenuItem
+
+		struct SpecialMenuItem : MenuItem {
+			StrokeModule<PORTS>* module;
+			int idx;
+			void step() override {
+				rightText = 
+					module->keys[idx].mode == KEY_MODE::S_FRAMERATE ||
+					module->keys[idx].mode == KEY_MODE::S_BUSBOARD ||
+					module->keys[idx].mode == KEY_MODE::S_ENGINE_PAUSE ||
+					module->keys[idx].mode == KEY_MODE::S_MODULE_LOCK
+						? "✔" : RIGHT_ARROW;
+				MenuItem::step();
+			}
+
+			Menu* createChildMenu() override {
+				Menu* menu = new Menu;
+				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle framerate display", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_FRAMERATE));
+				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle busboard", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_BUSBOARD));
+				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle engine pause", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ENGINE_PAUSE));
+				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle lock modules", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_MODULE_LOCK));
+				return menu;
+			}
+		}; // struct SpecialMenuItem
 
 		ui::Menu* menu = createMenu();
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("Hotkey %i", idx + 1)));
@@ -791,27 +885,10 @@ struct KeyDisplay : StoermelderLedDisplay {
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Trigger", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::CV_TRIGGER));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Gate", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::CV_GATE));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::CV_TOGGLE));
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Parameter commands"));
-		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Randomize", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_PARAM_RAND));
-		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Value copy", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_PARAM_COPY));
-		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Value paste", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_PARAM_PASTE));
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "View commands"));
-		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom to module", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ZOOM_MODULE_90));
-		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom to module 1/3", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ZOOM_MODULE_30));
-		menu->addChild(construct<ModeZoomModuleCustomItem>(&MenuItem::text, "Zoom level to module", &ModeZoomModuleCustomItem::module, module, &ModeZoomModuleCustomItem::idx, idx));
-		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom out", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ZOOM_OUT));
-		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom toggle", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ZOOM_TOGGLE));
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Cable commands"));
-		menu->addChild(construct<CableOpacityItem>(&MenuItem::text, "Toggle opacity", &CableOpacityItem::module, module, &CableOpacityItem::idx, idx, &CableOpacityItem::mode, KEY_MODE::S_CABLE_OPACITY));
-		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle visibility", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_CABLE_VISIBILITY));
-		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Next color", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_CABLE_COLOR_NEXT));
-		menu->addChild(construct<CableColorMenuItem>(&MenuItem::text, "Color", &CableColorMenuItem::module, module, &CableColorMenuItem::idx, idx));
-		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Rotate ordering", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_CABLE_ROTATE));
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Special commands"));
-		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle framerate display", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_FRAMERATE));
-		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle busboard", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_BUSBOARD));
-		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle engine pause", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ENGINE_PAUSE));
-		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle lock modules", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_MODULE_LOCK));
+		menu->addChild(construct<ParamMenuItem>(&MenuItem::text, "Parameter commands", &ParamMenuItem::module, module, &ParamMenuItem::idx, idx));
+		menu->addChild(construct<ViewMenuItem>(&MenuItem::text, "View commands", &ViewMenuItem::module, module, &ViewMenuItem::idx, idx));
+		menu->addChild(construct<CableMenuItem>(&MenuItem::text, "Cable commands", &CableMenuItem::module, module, &CableMenuItem::idx, idx));
+		menu->addChild(construct<SpecialMenuItem>(&MenuItem::text, "Special commands", &SpecialMenuItem::module, module, &SpecialMenuItem::idx, idx));
 	}
 };
 
