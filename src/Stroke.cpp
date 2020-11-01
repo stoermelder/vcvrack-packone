@@ -259,7 +259,6 @@ struct KeyContainer : Widget {
 	int learnIdx = -1;
 
 	float tempParamValue = 0.f;
-	float tempCableOpacity;
 
 	void step() override {
 		if (module && module->keyTemp != NULL) {
@@ -358,10 +357,10 @@ struct KeyContainer : Widget {
 
 	void cmdCableOpacity() {
 		if (settings::cableOpacity == 0.f) {
-			settings::cableOpacity = tempCableOpacity;
+			settings::cableOpacity = std::stof(module->keyTemp->data);
 		}
 		else {
-			tempCableOpacity = settings::cableOpacity;
+			module->keyTemp->data = string::f("%f", settings::cableOpacity);
 			settings::cableOpacity = 0.f;
 		}
 	}
@@ -663,6 +662,13 @@ struct KeyDisplay : StoermelderLedDisplay {
 			}
 		};
 
+		struct CableOpacityItem : ModeMenuItem {
+			void onAction(const event::Action& e) override {
+				ModeMenuItem::onAction(e);
+				ModeMenuItem::module->keys[ModeMenuItem::idx].data = "0";
+			}
+		};
+
 		struct CableColorMenuItem : MenuItem {
 			StrokeModule<PORTS>* module;
 			int idx;
@@ -727,7 +733,7 @@ struct KeyDisplay : StoermelderLedDisplay {
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom out", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ZOOM_OUT));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom toggle", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ZOOM_TOGGLE));
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Cable commands"));
-		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle opacity", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_CABLE_OPACITY));
+		menu->addChild(construct<CableOpacityItem>(&MenuItem::text, "Toggle opacity", &CableOpacityItem::module, module, &CableOpacityItem::idx, idx, &CableOpacityItem::mode, KEY_MODE::S_CABLE_OPACITY));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle visibility", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_CABLE_VISIBILITY));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Next color", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_CABLE_COLOR_NEXT));
 		menu->addChild(construct<CableColorMenuItem>(&MenuItem::text, "Color", &CableColorMenuItem::module, module, &CableColorMenuItem::idx, idx));

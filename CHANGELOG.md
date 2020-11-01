@@ -56,6 +56,7 @@
     - Added command "Toggle lock modules"
     - Added LEDs for signaling a triggered hotkey
     - Allow loading presets (#187)
+    - Improved behavior of command "Cable opacity" across restarts (#197)
 - Module [TRANSIT](./docs/Transit.md)
     - Fixed hanging pingpong-mode when changing slots manually
     - Added trigger-option "pseudo-random"
