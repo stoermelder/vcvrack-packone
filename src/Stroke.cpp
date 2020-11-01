@@ -96,7 +96,7 @@ enum class KEY_MODE {
 	S_CABLE_ROTATE = 22,
 	S_CABLE_VISIBILITY = 23,
 	S_FRAMERATE = 30,
-	S_RAIL = 31,
+	S_BUSBOARD = 31,
 	S_ENGINE_PAUSE = 32,
 	S_MODULE_LOCK = 33
 };
@@ -253,12 +253,72 @@ struct StrokeModule : Module {
 };
 
 
+struct ModifiedRackRail : RackRail {
+	bool drawRails = true;
+
+	void draw(const DrawArgs& args) override {
+		const float railHeight = 15;
+
+		// Background color
+		nvgBeginPath(args.vg);
+		nvgRect(args.vg, 0.0, 0.0, box.size.x, box.size.y);
+		nvgFillColor(args.vg, nvgRGB(0x30, 0x30, 0x30));
+		nvgFill(args.vg);
+
+		if (drawRails) {
+			// Rails
+			float holeRadius = 4.0;
+			for (float y = 0; y < box.size.y; y += RACK_GRID_HEIGHT) {
+				nvgFillColor(args.vg, nvgRGB(0xc9, 0xc9, 0xc9));
+				nvgStrokeWidth(args.vg, 1.0);
+				nvgStrokeColor(args.vg, nvgRGB(0x9d, 0x9f, 0xa2));
+				// Top rail
+				nvgBeginPath(args.vg);
+				nvgRect(args.vg, 0, y, box.size.x, railHeight);
+				for (float x = 0; x < box.size.x; x += RACK_GRID_WIDTH) {
+					nvgCircle(args.vg, x + RACK_GRID_WIDTH / 2, y + railHeight / 2, holeRadius);
+					nvgPathWinding(args.vg, NVG_HOLE);
+				}
+				nvgFill(args.vg);
+
+				nvgBeginPath(args.vg);
+				nvgMoveTo(args.vg, 0, y + railHeight - 0.5);
+				nvgLineTo(args.vg, box.size.x, y + railHeight - 0.5);
+				nvgStroke(args.vg);
+
+				// Bottom rail
+				nvgBeginPath(args.vg);
+				nvgRect(args.vg, 0, y + RACK_GRID_HEIGHT - railHeight, box.size.x, railHeight);
+				for (float x = 0; x < box.size.x; x += RACK_GRID_WIDTH) {
+					nvgCircle(args.vg, x + RACK_GRID_WIDTH / 2, y + RACK_GRID_HEIGHT - railHeight + railHeight / 2, holeRadius);
+					nvgPathWinding(args.vg, NVG_HOLE);
+				}
+				nvgFill(args.vg);
+
+				nvgBeginPath(args.vg);
+				nvgMoveTo(args.vg, 0, y + RACK_GRID_HEIGHT - 0.5);
+				nvgLineTo(args.vg, box.size.x, y + RACK_GRID_HEIGHT - 0.5);
+				nvgStroke(args.vg);
+			}
+		}
+	}
+}; // struct ModifiedRackRail
+
+
 template < int PORTS >
 struct KeyContainer : Widget {
 	StrokeModule<PORTS>* module = NULL;
 	int learnIdx = -1;
 
 	float tempParamValue = 0.f;
+
+	RackRail* rackrail = NULL;
+	RackRail* rackrackOrg;
+
+	~KeyContainer() {
+		cmdBusboard(true);
+		if (rackrail) delete rackrail;
+	}
 
 	void step() override {
 		if (module && module->keyTemp != NULL) {
@@ -292,8 +352,8 @@ struct KeyContainer : Widget {
 					cmdCableVisibility(); break;
 				case KEY_MODE::S_FRAMERATE:
 					cmdFramerate(); break;
-				case KEY_MODE::S_RAIL:
-					cmdRail(); break;
+				case KEY_MODE::S_BUSBOARD:
+					cmdBusboard(); break;
 				case KEY_MODE::S_ENGINE_PAUSE:
 					cmdEnginePause(); break;
 				case KEY_MODE::S_MODULE_LOCK:
@@ -427,13 +487,22 @@ struct KeyContainer : Widget {
 		}
 	}
 
-	void cmdRail() {
-		if (APP->scene->rack->railFb->visible) {
-			APP->scene->rack->railFb->hide();
+	void cmdBusboard(bool forceRemove = false) {
+		if (!rackrail) {
+			rackrail = new ModifiedRackRail;
+			rackrackOrg = APP->scene->rack->railFb->getFirstDescendantOfType<RackRail>();
 		}
-		else {
-			APP->scene->rack->railFb->show();
+
+		RackRail* r = APP->scene->rack->railFb->getFirstDescendantOfType<RackRail>();
+		if (r == rackrail) {
+			APP->scene->rack->railFb->removeChild(rackrail);
+			APP->scene->rack->railFb->addChild(rackrackOrg);
 		}
+		if (r != rackrail && !forceRemove) {
+			APP->scene->rack->railFb->removeChild(rackrackOrg);
+			APP->scene->rack->railFb->addChild(rackrail);
+		}
+		APP->scene->rack->railFb->dirty = true;
 	}
 
 	void cmdEnginePause() {
@@ -740,7 +809,7 @@ struct KeyDisplay : StoermelderLedDisplay {
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Rotate ordering", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_CABLE_ROTATE));
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Special commands"));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle framerate display", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_FRAMERATE));
-		//menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle rack rail", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_RAIL));
+		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle busboard", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_BUSBOARD));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle engine pause", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ENGINE_PAUSE));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle lock modules", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_MODULE_LOCK));
 	}
