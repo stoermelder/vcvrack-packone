@@ -46,6 +46,7 @@ void init(rack::Plugin* p) {
 	p->addModel(modelFacets);
 	p->addModel(modelMacro);
 	p->addModel(modelRaw);
+	p->addModel(modelMidiMon);
 	p->addModel(modelAudioInterface64);
 
 	pluginSettings.readFromJson();

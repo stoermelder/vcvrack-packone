@@ -9,6 +9,8 @@
     - New module, 4 channel sequencer running on a 2-dimensional hexagonal grid
 - Module [MACRO](./docs/Macro.md)
     - New module, marco-knob for four parameter-mappings and two CV outputs
+- Module [MIDI-MON](./docs/MidiMon.md)
+    - New module, monitor for MIDI messages
 - Module [RAW](./docs/Raw.md)
     - New module, a digital effect based on the dynamics of bistable systems
 
