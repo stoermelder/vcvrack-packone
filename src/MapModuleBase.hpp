@@ -310,30 +310,7 @@ struct MapModuleChoice : LedDisplayChoice {
 			e.consume(this);
 
 			if (module->paramHandles[id].moduleId >= 0) {
-				ui::Menu* menu = createMenu();
-				std::string header = "Parameter \"" + getParamName() + "\"";
-				menu->addChild(createMenuLabel(header));
-
-				struct UnmapItem : MenuItem {
-					MODULE* module;
-					int id;
-					void onAction(const event::Action& e) override {
-						module->clearMap(id);
-					}
-				};
-				menu->addChild(construct<UnmapItem>(&MenuItem::text, "Unmap", &UnmapItem::module, module, &UnmapItem::id, id));
-
-				struct IndicateItem : MenuItem {
-					MODULE* module;
-					int id;
-					void onAction(const event::Action& e) override {
-						ParamHandle* paramHandle = &module->paramHandles[id];
-						ModuleWidget* mw = APP->scene->rack->getModule(paramHandle->moduleId);
-						module->paramHandleIndicator[id].indicate(mw);
-					}
-				};
-				menu->addChild(construct<IndicateItem>(&MenuItem::text, "Locate and indicate", &IndicateItem::module, module, &IndicateItem::id, id));
-				appendContextMenu(menu);
+				createContextMenu();
 			} 
 			else {
 				module->clearMap(id);
@@ -341,8 +318,33 @@ struct MapModuleChoice : LedDisplayChoice {
 		}
 	}
 
-	virtual void appendContextMenu(Menu* menu) {
+	void createContextMenu() {
+		struct UnmapItem : MenuItem {
+			MODULE* module;
+			int id;
+			void onAction(const event::Action& e) override {
+				module->clearMap(id);
+			}
+		};
+
+		struct IndicateItem : MenuItem {
+			MODULE* module;
+			int id;
+			void onAction(const event::Action& e) override {
+				ParamHandle* paramHandle = &module->paramHandles[id];
+				ModuleWidget* mw = APP->scene->rack->getModule(paramHandle->moduleId);
+				module->paramHandleIndicator[id].indicate(mw);
+			}
+		};
+
+		ui::Menu* menu = createMenu();
+		menu->addChild(createMenuLabel("Parameter \"" + getParamName() + "\""));
+		menu->addChild(construct<IndicateItem>(&MenuItem::text, "Locate and indicate", &IndicateItem::module, module, &IndicateItem::id, id));
+		menu->addChild(construct<UnmapItem>(&MenuItem::text, "Unmap", &UnmapItem::module, module, &UnmapItem::id, id));
+		appendContextMenu(menu);
 	}
+
+	virtual void appendContextMenu(Menu* menu) { }
 
 	void onSelect(const event::Select& e) override {
 		if (!module) return;
