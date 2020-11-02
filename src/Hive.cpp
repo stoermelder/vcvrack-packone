@@ -837,7 +837,7 @@ struct HiveDrawHelper {
 
 
 template < typename MODULE >
-struct HiveStartPosEditWidget : OpaqueWidget, HiveDrawHelper<MODULE> {
+struct HiveStartPosEditWidget : LightWidget, HiveDrawHelper<MODULE> {
 	MODULE* module;
 	std::shared_ptr<Font> font;
 	int selectedId = -1;
@@ -921,7 +921,7 @@ struct HiveStartPosEditWidget : OpaqueWidget, HiveDrawHelper<MODULE> {
 				nvgFill(args.vg);
 			}
 
-			OpaqueWidget::draw(args);
+			LightWidget::draw(args);
 		}
 	}
 
@@ -951,7 +951,7 @@ struct HiveStartPosEditWidget : OpaqueWidget, HiveDrawHelper<MODULE> {
 					}
 				}
 			} 
-			OpaqueWidget::onButton(e);
+			LightWidget::onButton(e);
 		}
 	}
 
@@ -1103,7 +1103,7 @@ struct HiveStartPosEditWidget : OpaqueWidget, HiveDrawHelper<MODULE> {
 
 
 template < typename MODULE, typename CELL>
-struct HiveScreenWidget : OpaqueWidget, HiveDrawHelper<MODULE> {
+struct HiveScreenWidget : LightWidget, HiveDrawHelper<MODULE> {
 	MODULE* module;
 
 	HiveScreenWidget(MODULE* module) {
@@ -1114,7 +1114,7 @@ struct HiveScreenWidget : OpaqueWidget, HiveDrawHelper<MODULE> {
 	void draw(const DrawArgs& args) override {
 		if (module && module->currentState == MODULESTATE::GRID) {
 			HiveDrawHelper<MODULE>::draw(args, box);
-			OpaqueWidget::draw(args);
+			LightWidget::draw(args);
 		}
 	}
 
@@ -1144,7 +1144,7 @@ struct HiveScreenWidget : OpaqueWidget, HiveDrawHelper<MODULE> {
 					e.consume(this);
 				}
 			}
-			OpaqueWidget::onButton(e);
+			LightWidget::onButton(e);
 		}
 	}
 
