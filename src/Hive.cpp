@@ -1190,10 +1190,10 @@ struct HiveWidget : ThemedModuleWidget<HiveModule<MAX_RADIUS, 4>> {
 		resetEditWidget->box.size = turnWidget->box.size;
 		addChild(resetEditWidget);
 
-		addInput(createInputCentered<StoermelderPort>(Vec(23.8f, 60.9f), module, MODULE::SHIFT_L1_INPUT));
-		addInput(createInputCentered<StoermelderPort>(Vec(23.8f, 256.0f), module, MODULE::SHIFT_L2_INPUT));
-		addInput(createInputCentered<StoermelderPort>(Vec(306.2f, 60.9f), module, MODULE::SHIFT_R1_INPUT));
-		addInput(createInputCentered<StoermelderPort>(Vec(306.2f, 256.0f), module, MODULE::SHIFT_R2_INPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(24.2f, 60.9f), module, MODULE::SHIFT_L1_INPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(24.2f, 256.0f), module, MODULE::SHIFT_L2_INPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(305.8f, 60.9f), module, MODULE::SHIFT_R1_INPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(305.8f, 256.0f), module, MODULE::SHIFT_R2_INPUT));
 
 		addInput(createInputCentered<StoermelderPort>(Vec(119.4f, 292.2f), module, MODULE::CLK_INPUT + 0));
 		addInput(createInputCentered<StoermelderPort>(Vec(119.4f, 327.6f), module, MODULE::CLK_INPUT + 1));
