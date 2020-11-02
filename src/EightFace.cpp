@@ -235,7 +235,6 @@ struct EightFaceModule : Module {
 								if (slotTrigger.process(inputs[SLOT_INPUT].getVoltage())) {
 									if (slotCvModeShuffle.size() == 0) {
 										for (int i = 0; i < presetCount; i++) {
-											if (preset == i) continue;
 											slotCvModeShuffle.push_back(i);
 										}
 										std::random_shuffle(std::begin(slotCvModeShuffle), std::end(slotCvModeShuffle));
