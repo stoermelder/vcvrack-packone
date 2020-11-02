@@ -56,7 +56,7 @@
 - Module [STROKE](./docs/Stroke.md)
     - Added command "Toggle engine pause"
     - Added command "Toggle lock modules"
-    - Added command "Toggle Busboard"
+    - Added command "Toggle busboard"
     - Added LEDs for signaling a triggered hotkey
     - Allow loading presets (#187)
     - Improved behavior of command "Cable opacity" across restarts (#197)

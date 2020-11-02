@@ -60,10 +60,15 @@ Please note that the module also supports mouse-click events: If your mouse has 
 
 - **Toggle framerate widget**  
   Rack has a built-in widget for displaying the current rendering frame in the top-right window corner. Using this command toggles the visibility.
+- **Toggle busboard** (added in v1.8.0)  
+  Hides the busboard graphics on the background.
+- **Toggle engine pause** (added in v1.8.0)  
+  Triggers the option in the menu Engine -> Sample rate -> Pause.
+- **Toggle lock modules** (added in v1.8.0)  
+  Triggers the option in the menu View -> Lock modules.
 
 ### Bonus tips
 
-- The module's settings cannot be duplicated as it provides no use to have duplicate hotkey assignments.
 - While you can assign duplicate hotkeys only one of them will work.
 
 STROKE was added in v1.7.0 of PackOne.
