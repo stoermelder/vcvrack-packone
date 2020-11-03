@@ -4,7 +4,7 @@ MIRROR is a utility module used for synchronizing parameters of any module acros
 
 ![MIRROR intro](./Mirror-intro.png)
 
-First, MIRROR must be bound to another module by placing it directly to the left of MIRROR and using the option "Bind source module (left)". All parameters get mapped by MIRROR. Afterwards you can place another instance of the same module to the right of MIRROR and use the context menu option "Map module (right)" to map all parameters. Each parameter is now linked. You can repeat this procedure or, alternatively, you can automatically add a new instance of the module using "Add and map new module".  
+First, MIRROR must be bound to another module by placing it directly to the left of MIRROR and using the option _Bind source module (left)_. All parameters get mapped by MIRROR. Afterwards you can place another instance of the same module to the right of MIRROR and use the context menu option _Map module (right)_ to map all parameters. Each parameter is now linked. You can repeat this procedure or, alternatively, you can automatically add a new instance of the module using _Add and map new module_.  
 After the modules are bound to the left and right of MIRROR you can place them anywhere you want in Rack, mapped modules don't need to stay directly attached to MIRROR.
 
 ![MIRROR CV-ports](./Mirror-map.gif)
@@ -13,22 +13,24 @@ It is possible to unmap some parameters if sychronization is not desired. If the
 
 ![MIRROR CV-ports](./Mirror-unmap.gif)
 
-### CV-ports
+## CV-ports
 
 The module has eight input-ports (range 0..10V) which can be dynamically assigned to any parameter of the mapped modules and control it by CV. 
 
 ![MIRROR CV-ports](./Mirror-cv.gif)
 
-### Presets
+## Presets
 
 Many modules have an internal state which has nothing to do with the parameters on the panel. You can't automatically sync this internal state using MIRROR but you can trigger a manual sync to get all modules into the same initial state.
 
 ![MIRROR sync](./Mirror-sync.gif)
 
-### Additional features
+## Additional features
 
-Mapping many parameters can result in quite high CPU usage. If automation at audio rate is needed you can enable "Audio rate processing" on the context menu: By default only on every 32th audio sample every mapped parameter is updated and the CPU usage is reduced to about a 32th.
+- Mapping many parameters can result in quite high CPU usage. If automation at audio rate is needed you can enable _Audio rate processing_ on the context menu: By default only on every 32th audio sample every mapped parameter is updated and the CPU usage is reduced to about a 32th.
 
-If you find the mapping indicators distracting you can disable them on the context menu.
+- If you find the mapping indicators distracting you can disable them on the context menu.
+
+- Added in v1.8.0: The context menu option _Sync module presets_ works even if the mirrored module does not have any parameters, like [VCV Host](https://library.vcvrack.com/VCV-Host/Host).
 
 MIRROR was added in v1.6.0 of PackOne.
