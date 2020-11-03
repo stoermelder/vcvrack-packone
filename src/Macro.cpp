@@ -285,7 +285,7 @@ struct SlewSlider : ui::Slider {
 	}; // struct SlewQuantity
 
 	SlewSlider(SCALE* p) {
-		box.size.x = 180.0f;
+		box.size.x = 220.0f;
 		quantity = construct<SlewQuantity>(&SlewQuantity::p, p);
 	}
 	~SlewSlider() {
@@ -298,17 +298,15 @@ template<typename SCALE = ScaledMapParam<float>>
 struct ScalingInputLabel : MenuLabelEx {
 	SCALE* p;
 	void step() override {
-		float min = p->getMin();
-		float max = p->getMax();
+		float min = std::min(p->getMin(), p->getMax());
+		float max = std::max(p->getMin(), p->getMax());
 
 		float g1 = rescale(0.f, min, max, p->limitMin, p->limitMax);
 		g1 = clamp(g1, p->limitMin, p->limitMax);
-		float g1a = g1 * 100.f;
 		float g2 = rescale(1.f, min, max, p->limitMin, p->limitMax);
 		g2 = clamp(g2, p->limitMin, p->limitMax);
-		float g2a = g2 * 100.f;
 
-		rightText = string::f("[%.1f%, %.1f%]", g1a, g2a);
+		rightText = string::f("[%.1f%, %.1f%]", g1 * 100.f, g2 * 100.f);
 	}
 }; // struct ScalingInputLabel
 
@@ -327,6 +325,26 @@ struct ScalingOutputLabel : MenuLabelEx {
 		rightText = string::f("[%.1f%, %.1f%]", f1, f2);
 	}
 }; // struct ScalingOutputLabel
+
+template<typename SCALE = ScaledMapParam<float>>
+struct ScalingOutputLabelUnit : MenuLabelEx {
+	SCALE* p;
+	void step() override {
+		float min = p->getMin();
+		float max = p->getMax();
+
+		float f1 = rescale(p->limitMin, p->limitMin, p->limitMax, min, max);
+		f1 = clamp(f1, 0.f, 1.f);
+		float f2 = rescale(p->limitMax, p->limitMin, p->limitMax, min, max);
+		f2 = clamp(f2, 0.f, 1.f);
+
+		ParamQuantity* pq = p->paramQuantity;
+		min = rescale(f1, 0.f, 1.f, pq->getMinValue(), pq->getMaxValue());
+		max = rescale(f2, 0.f, 1.f, pq->getMinValue(), pq->getMaxValue());
+
+		rightText = string::f("[%.1fV, %.1fV]", min, max);
+	}
+}; // struct ScalingOutputLabelUnit
 
 
 template<typename SCALE = ScaledMapParam<float>>
@@ -367,46 +385,11 @@ struct MinSlider : SubMenuSlider {
 	}; // struct MinQuantity
 
 	MinSlider(SCALE* p) {
-		box.size.x = 180.0f;
+		box.size.x = 220.0f;
 		quantity = construct<MinQuantity>(&MinQuantity::p, p);
 	}
 	~MinSlider() {
 		delete quantity;
-	}
-
-	Menu* createChildMenu() override {
-		struct MinField : ui::TextField {
-			Quantity* quantity;
-			bool textSync = true;
-			MinField() {
-				box.size.x = 50.f;
-			}
-			void onSelectKey(const event::SelectKey& e) override {
-				if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
-					float v;
-					int n = std::sscanf(text.c_str(), "%f", &v);
-					if (n == 1) {
-						quantity->setDisplayValue(v);
-					}
-					e.consume(this);
-				}
-				if (!e.getTarget()) {
-					ui::TextField::onSelectKey(e);
-				}
-			}
-			void step() override {
-				if (textSync) text = quantity->getDisplayValueString();
-				TextField::step();
-			}
-			void onButton(const event::Button& e) override {
-				textSync = false;
-				TextField::onButton(e);
-			}
-		};
-
-		Menu* menu = new Menu;
-		menu->addChild(construct<MinField>(&MinField::quantity, quantity));
-		return menu;
 	}
 }; // struct MinSlider
 
@@ -449,46 +432,11 @@ struct MaxSlider : SubMenuSlider {
 	}; // struct MaxQuantity
 
 	MaxSlider(SCALE* p) {
-		box.size.x = 180.0f;
+		box.size.x = 220.0f;
 		quantity = construct<MaxQuantity>(&MaxQuantity::p, p);
 	}
 	~MaxSlider() {
 		delete quantity;
-	}
-
-	Menu* createChildMenu() override {
-		struct MaxField : ui::TextField {
-			Quantity* quantity;
-			bool textSync = true;
-			MaxField() {
-				box.size.x = 50.f;
-			}
-			void onSelectKey(const event::SelectKey& e) override {
-				if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
-					float v;
-					int n = std::sscanf(text.c_str(), "%f", &v);
-					if (n == 1) {
-						quantity->setDisplayValue(v);
-					}
-					e.consume(this);
-				}
-				if (!e.getTarget()) {
-					ui::TextField::onSelectKey(e);
-				}
-			}
-			void step() override {
-				if (textSync) text = quantity->getDisplayValueString();
-				TextField::step();
-			}
-			void onButton(const event::Button& e) override {
-				textSync = false;
-				TextField::onButton(e);
-			}
-		};
-
-		Menu* menu = new Menu;
-		menu->addChild(construct<MaxField>(&MaxField::quantity, quantity));
-		return menu;
 	}
 }; // struct MaxSlider
 
@@ -510,7 +458,7 @@ struct MacroButton : MapButton<MacroModule> {
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Scaling"));
 		menu->addChild(construct<ScalingInputLabel<>>(&MenuLabel::text, "Input", &ScalingInputLabel<>::p, &module->scaleParam[id]));
-		menu->addChild(construct<ScalingOutputLabel<>>(&MenuLabel::text, "Output", &ScalingOutputLabel<>::p, &module->scaleParam[id]));
+		menu->addChild(construct<ScalingOutputLabel<>>(&MenuLabel::text, "Parameter range", &ScalingOutputLabel<>::p, &module->scaleParam[id]));
 		menu->addChild(new MinSlider<>(&module->scaleParam[id]));
 		menu->addChild(new MaxSlider<>(&module->scaleParam[id]));
 		menu->addChild(construct<InvertedItem<>>(&MenuItem::text, "Preset \"Inverted\"", &InvertedItem<>::p, &module->scaleParam[id]));
@@ -571,8 +519,8 @@ struct MacroPort : StoermelderPort {
 		menu->addChild(new SlewSlider<SCALE>(&module->scaleCvs[id]));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Scaling"));
-		menu->addChild(construct<ScalingInputLabel<SCALE>>(&ScalingInputLabel<SCALE>::p, &module->scaleCvs[id]));
-		menu->addChild(construct<ScalingOutputLabel<SCALE>>(&ScalingOutputLabel<SCALE>::p, &module->scaleCvs[id]));
+		menu->addChild(construct<ScalingInputLabel<SCALE>>(&MenuLabel::text, "Input", &ScalingInputLabel<SCALE>::p, &module->scaleCvs[id]));
+		menu->addChild(construct<ScalingOutputLabelUnit<SCALE>>(&MenuLabel::text, "Output voltage", &ScalingOutputLabelUnit<SCALE>::p, &module->scaleCvs[id]));
 		menu->addChild(new MinSlider<SCALE>(&module->scaleCvs[id]));
 		menu->addChild(new MaxSlider<SCALE>(&module->scaleCvs[id]));
 		menu->addChild(construct<InvertedItem<SCALE>>(&MenuItem::text, "Preset \"Inverted\"", &InvertedItem<SCALE>::p, &module->scaleCvs[id]));
