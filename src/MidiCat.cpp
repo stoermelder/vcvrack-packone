@@ -4,6 +4,7 @@
 #include "StripIdFixModule.hpp"
 #include "digital/ScaledMapParam.hpp"
 #include "components/MenuLabelEx.hpp"
+#include "components/SubMenuSlider.hpp"
 #include <osdialog.h>
 
 namespace StoermelderPackOne {
@@ -1006,8 +1007,8 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 		struct ScalingInputLabel : MenuLabelEx {
 			MidiCatParam* p;
 			void step() override {
-				float min = p->getMin();
-				float max = p->getMax();
+				float min = std::min(p->getMin(), p->getMax());
+				float max = std::max(p->getMin(), p->getMax());
 
 				float g1 = rescale(0.f, min, max, 0.f, 127.f);
 				g1 = clamp(g1, 0.f, 127.f);
@@ -1035,7 +1036,7 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 			}
 		}; // struct ScalingOutputLabel
 
-		struct MinSlider : ui::Slider {
+		struct MinSlider : SubMenuSlider {
 			struct MinQuantity : Quantity {
 				MidiCatParam* p;
 				void setValue(float value) override {
@@ -1080,7 +1081,7 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 			}
 		}; // struct MinSlider
 
-		struct MaxSlider : ui::Slider {
+		struct MaxSlider : SubMenuSlider {
 			struct MaxQuantity : Quantity {
 				MidiCatParam* p;
 				void setValue(float value) override {
