@@ -442,13 +442,28 @@ struct MaxSlider : SubMenuSlider {
 
 
 template<typename SCALE = ScaledMapParam<float>>
-struct InvertedItem : MenuItem {
+struct PresetMenuItem : MenuItem {
 	SCALE* p;
-	void onAction(const event::Action& e) override {
-		p->setMin(1.f);
-		p->setMax(0.f);
+	PresetMenuItem() {
+		rightText = RIGHT_ARROW;
 	}
-}; // struct InvertedItem
+
+	Menu* createChildMenu() override {
+		struct PresetItem : MenuItem {
+			SCALE* p;
+			float min, max;
+			void onAction(const event::Action& e) override {
+				p->setMin(min);
+				p->setMax(max);
+			}
+		};
+
+		Menu* menu = new Menu;
+		menu->addChild(construct<PresetItem>(&MenuItem::text, "Default", &PresetItem::p, p, &PresetItem::min, 0.f, &PresetItem::max, 1.f));
+		menu->addChild(construct<PresetItem>(&MenuItem::text, "Inverted", &PresetItem::p, p, &PresetItem::min, 1.f, &PresetItem::max, 0.f));
+		return menu;
+	}
+}; // struct PresetMenuItem
 
 
 struct MacroButton : MapButton<MacroModule> {
@@ -461,7 +476,7 @@ struct MacroButton : MapButton<MacroModule> {
 		menu->addChild(construct<ScalingOutputLabel<>>(&MenuLabel::text, "Parameter range", &ScalingOutputLabel<>::p, &module->scaleParam[id]));
 		menu->addChild(new MinSlider<>(&module->scaleParam[id]));
 		menu->addChild(new MaxSlider<>(&module->scaleParam[id]));
-		menu->addChild(construct<InvertedItem<>>(&MenuItem::text, "Preset \"Inverted\"", &InvertedItem<>::p, &module->scaleParam[id]));
+		menu->addChild(construct<PresetMenuItem<>>(&MenuItem::text, "Preset", &PresetMenuItem<>::p, &module->scaleParam[id]));
 	}
 }; // struct MacroButton
 
@@ -523,7 +538,7 @@ struct MacroPort : StoermelderPort {
 		menu->addChild(construct<ScalingOutputLabelUnit<SCALE>>(&MenuLabel::text, "Output voltage", &ScalingOutputLabelUnit<SCALE>::p, &module->scaleCvs[id]));
 		menu->addChild(new MinSlider<SCALE>(&module->scaleCvs[id]));
 		menu->addChild(new MaxSlider<SCALE>(&module->scaleCvs[id]));
-		menu->addChild(construct<InvertedItem<SCALE>>(&MenuItem::text, "Preset \"Inverted\"", &InvertedItem<SCALE>::p, &module->scaleCvs[id]));
+		menu->addChild(construct<PresetMenuItem<SCALE>>(&MenuItem::text, "Presets", &PresetMenuItem<SCALE>::p, &module->scaleCvs[id]));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<DisconnectItem>(&MenuItem::text, "Disconnect", &DisconnectItem::pw, this));
 	}
