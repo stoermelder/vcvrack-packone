@@ -13,15 +13,18 @@ The PackOne plugin gives you some modules for [VCV Rack](https://www.vcvrack.com
 
 If you like my modules consider donating to https://paypal.me/stoermelder. Thank you for your support!
 
-## Latest additions to PackOne
+## Latest additions to PackOne 1.8
 
-- [MEM](./docs/MidiCat.md#mem-expander): storage-expander for MIDI mapping-presets with MIDI-CAT
-- [SPIN](./docs/Spin.md): utility for converting mouse-wheel or middle mouse-button events into triggers
-- [STROKE](./docs/Stroke.md): utility which converts used-defined hotkeys into triggers or gates, also provides some special commands for Rack's enviroment
-- [TRANSIT](./docs/Transit.md): parameter-morpher and sequencer for up to 96 snapshots
-- [X4](./docs/X4.md): dual multiple for parameter-mapping
+- [HIVE](./docs/Hive.md): 4 channel sequencer running on a 2-dimensional hexagonal grid, similar to [MAZE](./docs/Maze.md)
+- [MACRO](./docs/Macro.md): marco-knob for four parameter-mappings and two CV outputs
+- [MIDI-MON](./docs/MidiMon.md): input-monitor for MIDI messages
+- [RAW](./docs/Raw.md): a digital effect based on the dynamics of bistable systems
+- Also, [MIDI-CAT](./docs/MidiCat.md) has been hugely extended with slew-limiting and input-scaling
+- Many new features for existing modules, please refer to the [changelog](./CHANGELOG.md)
 
 ![Intro image](./docs/intro-latest.png)
+
+## The modules of PackOne
 
 - [AFFIX](./docs/Affix.md), [µAFFIX](./docs/Affix.md): inserts for polyphonic cables for adding offsets in volt, semitones or octaves
 - [4ROUNDS](./docs/FourRounds.md): randomizer for up to 16 input signals to create 15 output signals
@@ -36,6 +39,7 @@ If you like my modules consider donating to https://paypal.me/stoermelder. Thank
 - [INFIX](./docs/Infix.md), [µINFIX](./docs/Infix.md): insert for polyphonic cables
 - [INTERMIX](./docs/Intermix.md): precision adder 8x8 advanced switch matrix with support for 8 scenes
 - [MAZE](./docs/Maze.md): 4 channel sequencer running on a 2-dimensional grid
+- [MEM](./docs/MidiCat.md#mem-expander): storage-expander for MIDI mapping-presets with MIDI-CAT
 - [µMAP](./docs/CVMapMicro.md): a single instance of CV-MAP's slots with attenuverters
 - [MIDI-CAT](./docs/MidiCat.md): map parameters to midi controllers similar to MIDI-MAP with midi feedback and note mapping
 - [MIDI-STEP](./docs/MidiStep.md): utility for relative modes of endless knobs on your MIDI controller such as Arturia Beatstep
@@ -45,7 +49,11 @@ If you like my modules consider donating to https://paypal.me/stoermelder. Thank
 - [ROTOR Model A](./docs/RotorA.md): spread a carrier signal across 2-16 output channels using CV
 - [SAIL](./docs/Sail.md): control any parameter currently hovered by mouse with CV, especially useful with MIDI-CC
 - [SIPO](./docs/Sipo.md): serial-in parallel-out shift register with polyphonic output and CV controls
+- [SPIN](./docs/Spin.md): utility for converting mouse-wheel or middle mouse-button events into triggers
+- [STROKE](./docs/Stroke.md): utility which converts used-defined hotkeys into triggers or gates, also provides some special commands for Rack's enviroment
 - [STRIP](./docs/Strip.md): manage a group of modules in a patch, providing load, save as, disable and randomize
+- [TRANSIT](./docs/Transit.md): parameter-morpher and sequencer for up to 96 snapshots
+- [X4](./docs/X4.md): dual multiple for parameter-mapping
 
 ![Intro image](./docs/intro.png)
 
