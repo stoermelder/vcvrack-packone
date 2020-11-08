@@ -16,6 +16,8 @@
 
 ### Fixes and Changes
 
+- Module [ARENA](./docs/Arena.md)
+    - Fixed noise on OUT-ports (#190)
 - Module [CV-PAM](./docs/CVPam.md)
     - Fixed wrong channel count of the polyphonic output ports
 - Modules [8FACE, 8FACEx2](./docs/EightFace.md)
@@ -29,7 +31,7 @@
 - Module [INTERMIX](./docs/Intermix.md)
     - Added support for polyphony (#199)
 - Module [MEM](./docs/MidiCat.md#mem-expander)
-    - Added support for MIDI-CAT's new slew-limiting and scaling options
+    - Added support for MIDI-CAT's new slew-limiting and scaling options ([manual](./docs/MidiCat.md#slew-limiting-and-input-scaling))
     - Added scanning for next or previous modules with stored mapping ([manual](./docs/MidiCat.md#mem-scan)) (#200)
 - Module [µMAP](./docs/CVMapMicro.md)
     - Added input voltage display
