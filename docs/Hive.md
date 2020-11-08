@@ -23,6 +23,6 @@ HIVE was kindly contributed to PackOne by [Delexander](https://github.com/anlexm
 
 A lush example how HIVE and MAZE can work together:
 
-[![HIVE and MAZE](https://img.youtube.com/vi/NtzNKnPsqjo/0.jpg)](https://www.youtube.com/watch?v=NtzNKnPsqjo)
+[![HIVE and MAZE](https://img.youtube.com/vi/KYbfuj7EbbQ/0.jpg)](https://www.youtube.com/watch?v=KYbfuj7EbbQ)
 
-GRIP was added in v1.8.0 of PackOne.
+HIVE was added in v1.8.0 of PackOne.
