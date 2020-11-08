@@ -10,7 +10,7 @@
 - Module [MACRO](./docs/Macro.md)
     - New module, marco-knob for four parameter-mappings and two CV outputs
 - Module [MIDI-MON](./docs/MidiMon.md)
-    - New module, monitor for MIDI messages
+    - New module, input-monitor for MIDI messages
 - Module [RAW](./docs/Raw.md)
     - New module, a digital effect based on the dynamics of bistable systems
 
@@ -30,19 +30,19 @@
     - Added support for polyphony (#199)
 - Module [MEM](./docs/MidiCat.md#mem-expander)
     - Added support for MIDI-CAT's new slew-limiting and scaling options
-    - Added scanning for next or previous modules with stored mapping (#200)
+    - Added scanning for next or previous modules with stored mapping ([manual](./docs/MidiCat.md#mem-scan)) (#200)
 - Module [µMAP](./docs/CVMapMicro.md)
     - Added input voltage display
 - Module [MIDI-CAT](./docs/MidiCat.md)
-    - Added context menu sliders for MIDI filtering/slew-limiting for CCs and notes (#79)
-    - Added context menu sliders for scaling or transforming the MIDI-input and parameter-range (#169)
-    - Added context menu options for precision/CPU-usage
-    - Added context menu options on mapped parameters of target module for MIDI-CAT
+    - Added context menu sliders for MIDI filtering/slew-limiting for CCs and notes ([manual](./docs/MidiCat.md#slew-limiting)) (#79)
+    - Added context menu sliders for scaling or transforming the MIDI-input and parameter-range ([manual](./docs/MidiCat.md#input-scaling)) (#169)
+    - Added context menu options for precision/CPU-usage ([manual](./docs/MidiCat.md#precision))
+    - Added context menu options on mapped parameters of target module for MIDI-CAT ([manual](./docs/MidiCat.md#target-context))
     - Added skipping of current slot with SPACE-key while in mapping-mode
     - Added context menu option for clearing all mapping-slots
     - Added option for ignoring MIDI device settings on preset load (#185)
     - Fixed broken "Re-send MIDI feedback" option
-    - Added context menu option for re-sending MIDI feedback periodically
+    - Added context menu option for re-sending MIDI feedback periodically ([manual](./docs/MidiCat.md#feedback-periodically))
 - Module [MIDI-STEP](./docs/MidiStep.md)
     - Added option for Akai MPD218
 - Module [MIRROR](./docs/Mirror.md)
@@ -50,16 +50,16 @@
     - Added hotkey for syncing module presets
 - Module [STRIP](./docs/Strip.md)
     - Added hotkeys Shift+L (load), Shift+S (save as), Shift+X (cut)
-    - Added context menu option "Load with replace" (#186)
+    - Added context menu option "Load with replace" ([manual](./docs/Strip.md#load-and-replace)) (#186)
     - Fixed crash on loading vcvss-files with missing modules
-    - Added context menu option for custom presets, listing all .vcvss-files in presets/Strip (#198)
+    - Added context menu option for custom presets, listing all .vcvss-files in presets/Strip ([manual](./docs/Strip.md#preset)) (#198)
 - Module [STROKE](./docs/Stroke.md)
     - Added command "Toggle engine pause"
     - Added command "Toggle lock modules"
     - Added command "Toggle busboard"
     - Added LEDs for signaling a triggered hotkey
     - Allow loading presets (#187)
-    - Improved behavior of command "Cable opacity" across restarts (#197)
+    - Improved behavior of command "Cable opacity" across restarts of Rack (#197)
 - Module [TRANSIT](./docs/Transit.md)
     - Fixed hanging pingpong-mode when changing slots manually
     - Added trigger-option "pseudo-random"
