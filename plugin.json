@@ -231,27 +231,6 @@
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Spin.md"
 		},
 		{
-			"slug": "FlowerSeq",
-			"name": "FLOWER",
-			"description": "Pattern-base sequencer",
-			"tags": ["Sequencer"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Flower.md"
-		},
-		{
-			"slug": "FlowerSeqEx",
-			"name": "OFFSPRING",
-			"description": "Sequencer-expander for FLOWER",
-			"tags": ["Sequencer"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Flower.md"
-		},
-		{
-			"slug": "FlowerTrig",
-			"name": "SEEDS",
-			"description": "Sequencer-expander for FLOWER",
-			"tags": ["Sequencer"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Flower.md"
-		},
-		{
 			"slug": "Transit",
 			"name": "TRANSIT",
 			"description": "Parameter-morpher and sequencer for up to 96 snapshots",
@@ -271,13 +250,6 @@
 			"description": "Dual multiple for parameter-mapping",
 			"tags": ["Utility"],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/X4.md"
-		},
-		{
-			"slug": "Facets",
-			"name": "FACETS",
-			"description": "Wave multiplier/Phase shifter inspired by A-137-2",
-			"tags": ["Waveshaper", "Distortion"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Facets.md"
 		},
 		{
 			"slug": "Macro",

@@ -37,13 +37,9 @@ void init(rack::Plugin* p) {
 	p->addModel(modelGoto);
 	p->addModel(modelStroke);
 	p->addModel(modelSpin);
-	p->addModel(modelFlowerSeq);
-	p->addModel(modelFlowerSeqEx);
-	p->addModel(modelFlowerTrig);
 	p->addModel(modelTransit);
 	p->addModel(modelTransitEx);
 	p->addModel(modelX4);
-	p->addModel(modelFacets);
 	p->addModel(modelMacro);
 	p->addModel(modelRaw);
 	p->addModel(modelMidiMon);

@@ -1,9 +1,4 @@
-## 1.x.x (in development)
-
-- Modules [FLOWER, SEEDS, OFFSPRING](./docs/Flower.md)
-    - New modules, pattern-driven 16-step sequencer
-
-## 1.8.0 (in development)
+## 1.8.0
 
 - Module [HIVE](./docs/Hive.md)
     - New module, 4 channel sequencer running on a 2-dimensional hexagonal grid
