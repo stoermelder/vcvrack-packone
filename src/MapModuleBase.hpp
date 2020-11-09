@@ -475,6 +475,28 @@ struct MapModuleChoice : LedDisplayChoice {
 		s += paramQuantity->label;
 		return s;
 	}
+
+	void draw(const DrawArgs& args) override {
+		if (bgColor.a > 0.0) {
+			nvgScissor(args.vg, RECT_ARGS(args.clipBox));
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, 0, 0, box.size.x, box.size.y);
+			nvgFillColor(args.vg, bgColor);
+			nvgFill(args.vg);
+			nvgResetScissor(args.vg);
+		}
+
+		if (font->handle >= 0) {
+			Rect r = Rect(textOffset.x, 0.f, box.size.x - textOffset.x * 2, box.size.y).intersect(args.clipBox);
+			nvgScissor(args.vg, RECT_ARGS(r));
+			nvgFillColor(args.vg, color);
+			nvgFontFaceId(args.vg, font->handle);
+			nvgTextLetterSpacing(args.vg, 0.0);
+			nvgFontSize(args.vg, 12);
+			nvgText(args.vg, textOffset.x, textOffset.y, text.c_str(), NULL);
+			nvgResetScissor(args.vg);
+		}
+	}
 };
 
 template< int MAX_CHANNELS, typename MODULE, typename CHOICE = MapModuleChoice<MAX_CHANNELS, MODULE> >
