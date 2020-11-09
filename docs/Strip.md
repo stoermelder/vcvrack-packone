@@ -34,9 +34,18 @@ A useful feature of STRIP is its ability to save strips to files and load them a
 
 ![STRIP context menu](./Strip-context.png)
 
-All settings of the modules, all cables (including color) between modules within the strip and all parameter mappings (only for supported modules, e.g. by VCV MIDI-MAP or stoermelder CV-MAP) are saved. Also, copy and paste is available, by option in the context menu or by using keyboard shortcuts Shift+C and Shift+V. When using left-only or right-only mode only affected modules will be saved and loaded, even if a different mode was used for saving or copying. Existing modules will be moved right and left, respectively, to provide enough empty space for newly loaded or copied modules.
+All settings of the modules, all cables (including color) between modules within the strip and all parameter mappings (only for supported modules, e.g. by VCV MIDI-MAP or stoermelder CV-MAP) are saved. Also, copy and paste is available, by option in the context menu or by using keyboard shortcuts Shift+C and Shift+V.  
+<a name="load-and-replace"></a>
+Added in v1.8.0: The option _Load with replace_ removes all attached modules directly next to STRIP before the stored modules from the vcvss-file will be added.
+
+When using left-only or right-only mode only affected modules will be saved and loaded, even if a different mode was used for saving or copying. Existing modules will be moved right and left, respectively, to provide enough empty space for newly loaded or copied modules.  
 
 ![STRIP copy and paste](./Strip-copy.gif)
+
+<a name="preset"></a>
+Added in v1.8.0: The _Preset_ context menu option lists all vcvss-files stored in the folder \<Rack-user-folder\>/Stoermelder-P1/presets/Strip. The \<Rack-user-folder\> can be opened with the top-most subemnu item or according to the [offical documentation](https://vcvrack.com/manual/FAQ#where-is-the-rack-user-folder). Subfolders are not supported at the moment.
+
+![STRIP presets](./Strip-presets.png)
 
 The file-format "vcvss" for storing strips is very close to Rack's own format for storing patches or module presets. Compatibility in future versions should be no problem as long Rack will be able to load module preset files from older Rack versions.
 

@@ -2,7 +2,7 @@
 #include "digital.hpp"
 #include <random>
 
-
+namespace StoermelderPackOne {
 namespace Maze {
 
 enum GRIDSTATE {
@@ -772,7 +772,7 @@ struct MazeDrawHelper {
 
 
 template < typename MODULE >
-struct MazeStartPosEditWidget : OpaqueWidget, MazeDrawHelper<MODULE> {
+struct MazeStartPosEditWidget : LightWidget, MazeDrawHelper<MODULE> {
 	MODULE* module;
 	std::shared_ptr<Font> font;
 	int selectedId = -1;
@@ -829,7 +829,7 @@ struct MazeStartPosEditWidget : OpaqueWidget, MazeDrawHelper<MODULE> {
 				nvgFill(args.vg);
 			}
 
-			OpaqueWidget::draw(args);
+			LightWidget::draw(args);
 		}
 	}
 
@@ -858,7 +858,7 @@ struct MazeStartPosEditWidget : OpaqueWidget, MazeDrawHelper<MODULE> {
 					e.consume(this);
 				}
 			} 
-			OpaqueWidget::onButton(e);
+			LightWidget::onButton(e);
 		}
 	}
 
@@ -1007,7 +1007,7 @@ struct MazeStartPosEditWidget : OpaqueWidget, MazeDrawHelper<MODULE> {
 
 
 template < typename MODULE >
-struct MazeScreenWidget : OpaqueWidget, MazeDrawHelper<MODULE> {
+struct MazeScreenWidget : LightWidget, MazeDrawHelper<MODULE> {
 	MODULE* module;
 
 	MazeScreenWidget(MODULE* module) {
@@ -1020,7 +1020,7 @@ struct MazeScreenWidget : OpaqueWidget, MazeDrawHelper<MODULE> {
 	void draw(const DrawArgs& args) override {
 		if (module && module->currentState == MODULESTATE::GRID) {
 			MazeDrawHelper<MODULE>::draw(args, box);
-			OpaqueWidget::draw(args);
+			LightWidget::draw(args);
 		}
 	}
 
@@ -1050,7 +1050,7 @@ struct MazeScreenWidget : OpaqueWidget, MazeDrawHelper<MODULE> {
 				createContextMenu();
 				e.consume(this);
 			}
-			OpaqueWidget::onButton(e);
+			LightWidget::onButton(e);
 		}
 	}
 
@@ -1156,5 +1156,6 @@ struct MazeWidget32 : ThemedModuleWidget<MazeModule<32, 4>> {
 };
 
 } // namespace Maze
+} // namespace StoermelderPackOne
 
-Model* modelMaze = createModel<Maze::MazeModule<32, 4>, Maze::MazeWidget32>("Maze");
+Model* modelMaze = createModel<StoermelderPackOne::Maze::MazeModule<32, 4>, StoermelderPackOne::Maze::MazeWidget32>("Maze");

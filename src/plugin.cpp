@@ -23,6 +23,7 @@ void init(rack::Plugin* p) {
 	p->addModel(modelFourRounds);
 	p->addModel(modelArena);
 	p->addModel(modelMaze);
+	p->addModel(modelHive);
 	p->addModel(modelIntermix);
 	p->addModel(modelSail);
 	p->addModel(modelPile);
@@ -39,7 +40,36 @@ void init(rack::Plugin* p) {
 	p->addModel(modelTransit);
 	p->addModel(modelTransitEx);
 	p->addModel(modelX4);
+	p->addModel(modelMacro);
+	p->addModel(modelRaw);
+	p->addModel(modelMidiMon);
 	p->addModel(modelAudioInterface64);
+	p->addModel(modelMb);
 
 	pluginSettings.readFromJson();
 }
+
+
+namespace StoermelderPackOne {
+
+std::map<std::string, ModuleWidget*> singletons;
+
+bool registerSingleton(std::string name, ModuleWidget* mw) {
+	auto it = singletons.find(name);
+	if (it == singletons.end()) {
+		singletons[name] = mw;
+		return true;
+	}
+	return false;
+}
+
+bool unregisterSingleton(std::string name, ModuleWidget* mw) {
+	auto it = singletons.find(name);
+	if (it != singletons.end() && it->second == mw) {
+		singletons.erase(it);
+		return true;
+	}
+	return false;
+}
+
+} // namespace StoermelderPackOne

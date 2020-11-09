@@ -1,6 +1,7 @@
 #include "plugin.hpp"
 #include <random>
 
+namespace StoermelderPackOne {
 namespace FourRounds {
 
 enum MODE {
@@ -349,5 +350,6 @@ struct FourRoundsWidget : ThemedModuleWidget<FourRoundsModule> {
 };
 
 } // namespace FourRounds
+} // namespace StoermelderPackOne
 
-Model *modelFourRounds = createModel<FourRounds::FourRoundsModule, FourRounds::FourRoundsWidget>("FourRounds");
+Model *modelFourRounds = createModel<StoermelderPackOne::FourRounds::FourRoundsModule, StoermelderPackOne::FourRounds::FourRoundsWidget>("FourRounds");

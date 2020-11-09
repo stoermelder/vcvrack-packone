@@ -1,0 +1,333 @@
+{
+  "version": "1.1.6",
+  "modules": [
+    {
+      "id": 378,
+      "plugin": "Stoermelder-P1",
+      "version": "1.8.0",
+      "model": "Macro",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        }
+      ],
+      "data": {
+        "textScrolling": true,
+        "mappingIndicatorHidden": false,
+        "maps": [
+          {
+            "moduleId": -1,
+            "paramId": 0,
+            "slew": 0.0,
+            "min": 0.0,
+            "max": 1.0
+          },
+          {
+            "moduleId": 380,
+            "paramId": 2,
+            "slew": 0.0,
+            "min": 0.0,
+            "max": 1.0
+          },
+          {
+            "moduleId": 380,
+            "paramId": 3,
+            "slew": 0.0,
+            "min": 0.0,
+            "max": 1.0
+          },
+          {
+            "moduleId": -1,
+            "paramId": 0,
+            "slew": 0.0,
+            "min": 0.0,
+            "max": 1.0
+          }
+        ],
+        "lockParameterChanges": false,
+        "bipolarInput": false,
+        "panelTheme": 1,
+        "processDivision": 64,
+        "cvs": [
+          {
+            "slew": 0.0,
+            "min": 0.0,
+            "max": 1.0,
+            "bipolar": false,
+            "value": 0.0
+          },
+          {
+            "slew": 0.0,
+            "min": 0.0,
+            "max": 1.0,
+            "bipolar": false,
+            "value": 0.0
+          }
+        ]
+      },
+      "pos": [
+        12,
+        0
+      ]
+    },
+    {
+      "id": 379,
+      "plugin": "Stoermelder-P1",
+      "version": "1.8.0",
+      "model": "Macro",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.277500004
+        }
+      ],
+      "data": {
+        "textScrolling": true,
+        "mappingIndicatorHidden": false,
+        "maps": [
+          {
+            "moduleId": 380,
+            "paramId": 0,
+            "slew": 0.0,
+            "min": 0.0,
+            "max": 1.0
+          },
+          {
+            "moduleId": -1,
+            "paramId": 0,
+            "slew": 0.0,
+            "min": 0.0,
+            "max": 1.0
+          }
+        ],
+        "lockParameterChanges": false,
+        "bipolarInput": false,
+        "panelTheme": 0,
+        "processDivision": 64,
+        "cvs": [
+          {
+            "slew": 0.0,
+            "min": 0.0,
+            "max": 1.0,
+            "bipolar": false,
+            "value": 0.0
+          },
+          {
+            "slew": 0.0,
+            "min": 0.0,
+            "max": 1.0,
+            "bipolar": false,
+            "value": 0.0
+          }
+        ]
+      },
+      "pos": [
+        18,
+        0
+      ]
+    },
+    {
+      "id": 380,
+      "plugin": "Fundamental",
+      "version": "1.4.0",
+      "model": "8vert",
+      "params": [
+        {
+          "id": 0,
+          "value": -0.713620007
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": -1.0
+        },
+        {
+          "id": 3,
+          "value": -1.0
+        },
+        {
+          "id": 4,
+          "value": 0.515999973
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        },
+        {
+          "id": 6,
+          "value": 0.0
+        },
+        {
+          "id": 7,
+          "value": 0.0
+        }
+      ],
+      "pos": [
+        58,
+        0
+      ]
+    },
+    {
+      "id": 381,
+      "plugin": "Stoermelder-P1",
+      "version": "1.8.0",
+      "model": "Macro",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        }
+      ],
+      "data": {
+        "textScrolling": true,
+        "mappingIndicatorHidden": false,
+        "maps": [
+          {
+            "moduleId": 382,
+            "paramId": 0,
+            "slew": 0.0,
+            "min": 0.0,
+            "max": 1.0
+          },
+          {
+            "moduleId": -1,
+            "paramId": 0,
+            "slew": 0.0,
+            "min": 0.0,
+            "max": 1.0
+          }
+        ],
+        "lockParameterChanges": false,
+        "bipolarInput": false,
+        "panelTheme": 1,
+        "processDivision": 64,
+        "cvs": [
+          {
+            "slew": 0.0,
+            "min": 0.0,
+            "max": 1.0,
+            "bipolar": false,
+            "value": 0.0
+          },
+          {
+            "slew": 0.0,
+            "min": 0.0,
+            "max": 1.0,
+            "bipolar": false,
+            "value": 0.0
+          }
+        ]
+      },
+      "pos": [
+        12,
+        2
+      ]
+    },
+    {
+      "id": 382,
+      "plugin": "Fundamental",
+      "version": "1.4.0",
+      "model": "8vert",
+      "params": [
+        {
+          "id": 0,
+          "value": -1.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": -1.0
+        },
+        {
+          "id": 3,
+          "value": -1.0
+        },
+        {
+          "id": 4,
+          "value": 0.515999973
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        },
+        {
+          "id": 6,
+          "value": 0.0
+        },
+        {
+          "id": 7,
+          "value": 0.0
+        }
+      ],
+      "pos": [
+        0,
+        2
+      ]
+    }
+  ],
+  "cables": [
+    {
+      "id": 755,
+      "outputModuleId": 380,
+      "outputId": 4,
+      "inputModuleId": 379,
+      "inputId": 0,
+      "color": "#c91847"
+    }
+  ]
+}

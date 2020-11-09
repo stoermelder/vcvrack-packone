@@ -1,4 +1,3 @@
-
 #include "plugin.hpp"
 
 namespace StoermelderPackOne {
@@ -6,10 +5,11 @@ namespace StoermelderPackOne {
 template <typename MODULE>
 struct MapParamQuantity : ParamQuantity {
 	MODULE* module;
+	int id = 0;
 	std::string getParamName() {
 		if (!module)
 			return "";
-		ParamHandle* paramHandle = &module->paramHandles[0];
+		ParamHandle* paramHandle = &module->paramHandles[id];
 		if (paramHandle->moduleId < 0)
 			return "";
 		ModuleWidget* mw = APP->scene->rack->getModule(paramHandle->moduleId);
@@ -33,7 +33,7 @@ struct MapParamQuantity : ParamQuantity {
 
 	std::string getDisplayValueString() override {
 		std::string name = getParamName();
-		return name != "" ? "Mapped to \"" + name + "\"" : "Unmapped";
+		return name != "" ? "\"" + name + "\"" : "Unmapped";
 	}
 };
 
@@ -44,6 +44,13 @@ struct MapButton : LEDBezel {
 
 	void setModule(MODULE* module) {
 		this->module = module;
+	}
+
+	void step() override {
+		LEDBezel::step();
+		if (module && !module->paramHandles[id].module) {
+			module->clearMap(id);
+		}
 	}
 
 	void onButton(const event::Button& e) override {
@@ -82,10 +89,8 @@ struct MapButton : LEDBezel {
 					}
 				};
 				menu->addChild(construct<IndicateItem>(&MenuItem::text, "Locate and indicate", &IndicateItem::module, module, &IndicateItem::id, id));
+				appendContextMenu(menu);
 			} 
-			else {
-				module->clearMap(id);
-			}
 		}
 	}
 
@@ -142,6 +147,8 @@ struct MapButton : LEDBezel {
 		s += paramQuantity->label;
 		return s;
 	}
+
+	virtual void appendContextMenu(Menu* menu) {}
 };
 
 template <typename BASE>

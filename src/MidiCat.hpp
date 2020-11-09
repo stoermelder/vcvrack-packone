@@ -17,7 +17,8 @@ enum CCMODE {
 enum NOTEMODE {
 	NOTEMODE_MOMENTARY = 0,
 	NOTEMODE_MOMENTARY_VEL = 1,
-	NOTEMODE_TOGGLE = 2
+	NOTEMODE_TOGGLE = 2,
+	NOTEMODE_TOGGLE_VEL = 3
 };
 
 struct MemParam {
@@ -28,6 +29,9 @@ struct MemParam {
 	NOTEMODE noteMode;
 	std::string label;
 	int midiOptions = 0;
+	float slew = 0.f;
+	float min = 0.f;
+	float max = 1.f;
 };
 
 struct MemModule {

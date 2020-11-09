@@ -2,6 +2,7 @@
 #include "MapModuleBase.hpp"
 #include <chrono>
 
+namespace StoermelderPackOne {
 namespace CVPam {
 
 static const int MAX_CHANNELS = 32;
@@ -26,11 +27,11 @@ struct CVPamModule : MapModuleBase<MAX_CHANNELS> {
 
 	/** [Stored to JSON] */
 	int panelTheme = 0;
-	/** [Stored to Json] */
+	/** [Stored to JSON] */
 	bool bipolarOutput;
-	/** [Stored to Json] */
+	/** [Stored to JSON] */
 	bool audioRate;
-	/** [Stored to Json] */
+	/** [Stored to JSON] */
 	bool locked;
 	
 	dsp::ClockDivider processDivider;
@@ -57,30 +58,33 @@ struct CVPamModule : MapModuleBase<MAX_CHANNELS> {
 
 	void process(const ProcessArgs& args) override {
 		if (audioRate || processDivider.process()) {
-			int lastChannel_out1 = -1;
-			int lastChannel_out2 = -1;
+			int channelCount1 = 0;
+			int channelCount2 = 0;
 
 			// Step channels
-			for (int id = 0; id < mapLen; id++) {
-				lastChannel_out1 = id < 16 ? id : lastChannel_out1;
-				lastChannel_out2 = id >= 16 ? id - 16 : lastChannel_out2;
-				
-				ParamQuantity* paramQuantity = getParamQuantity(id);
-				if (paramQuantity == NULL) continue;
-				// set voltage
+			for (int i = 0; i < mapLen; i++) {
+				ParamQuantity* paramQuantity = getParamQuantity(i);
+				if (!paramQuantity) continue;
+
+				if (i < 16)
+					channelCount1 = i + 1;
+				if (i >= 16)
+					channelCount2 = i - 16 + 1;
+
+				// Set voltage
 				float v = paramQuantity->getScaledValue();
-				v = valueFilters[id].process(args.sampleTime, v);
+				v = valueFilters[i].process(args.sampleTime, v);
 				v = rescale(v, 0.f, 1.f, 0.f, 10.f);
 				if (bipolarOutput)
 					v -= 5.f;
-				if (id < 16) 
-					outputs[POLY_OUTPUT1].setVoltage(v, id); 
+				if (i < 16) 
+					outputs[POLY_OUTPUT1].setVoltage(v, i);
 				else 
-					outputs[POLY_OUTPUT2].setVoltage(v, id - 16);
+					outputs[POLY_OUTPUT2].setVoltage(v, i - 16);
 			}
 			
-			outputs[POLY_OUTPUT1].setChannels(lastChannel_out1 + 1);
-			outputs[POLY_OUTPUT2].setChannels(lastChannel_out2 + 1);
+			outputs[POLY_OUTPUT1].setChannels(channelCount1);
+			outputs[POLY_OUTPUT2].setChannels(channelCount2);
 		}
 
 		// Set channel lights infrequently
@@ -157,11 +161,9 @@ struct CVPamWidget : ThemedModuleWidget<CVPamModule> {
 
 		struct UniBiItem : MenuItem {
 			CVPamModule* module;
-
 			void onAction(const event::Action& e) override {
 				module->bipolarOutput ^= true;
 			}
-
 			void step() override {
 				rightText = module->bipolarOutput ? "-5V..5V" : "0V..10V";
 				MenuItem::step();
@@ -170,11 +172,9 @@ struct CVPamWidget : ThemedModuleWidget<CVPamModule> {
 
 		struct AudioRateItem : MenuItem {
 			CVPamModule* module;
-
 			void onAction(const event::Action& e) override {
 				module->audioRate ^= true;
 			}
-
 			void step() override {
 				rightText = module->audioRate ? "✔" : "";
 				MenuItem::step();
@@ -183,11 +183,9 @@ struct CVPamWidget : ThemedModuleWidget<CVPamModule> {
 
 		struct TextScrollItem : MenuItem {
 			CVPamModule* module;
-
 			void onAction(const event::Action& e) override {
 				module->textScrolling ^= true;
 			}
-
 			void step() override {
 				rightText = module->textScrolling ? "✔" : "";
 				MenuItem::step();
@@ -196,11 +194,9 @@ struct CVPamWidget : ThemedModuleWidget<CVPamModule> {
 
 		struct MappingIndicatorHiddenItem : MenuItem {
 			CVPamModule* module;
-
 			void onAction(const event::Action& e) override {
 				module->mappingIndicatorHidden ^= true;
 			}
-
 			void step() override {
 				rightText = module->mappingIndicatorHidden ? "✔" : "";
 				MenuItem::step();
@@ -209,11 +205,9 @@ struct CVPamWidget : ThemedModuleWidget<CVPamModule> {
 
 		struct LockedItem : MenuItem {
 			CVPamModule* module;
-
 			void onAction(const event::Action& e) override {
 				module->locked ^= true;
 			}
-
 			void step() override {
 				rightText = module->locked ? "✔" : "";
 				MenuItem::step();
@@ -231,5 +225,6 @@ struct CVPamWidget : ThemedModuleWidget<CVPamModule> {
 };
 
 } // namespace CVPam
+} // namespace StoermelderPackOne
 
-Model* modelCVPam = createModel<CVPam::CVPamModule, CVPam::CVPamWidget>("CVPam");
+Model* modelCVPam = createModel<StoermelderPackOne::CVPam::CVPamModule, StoermelderPackOne::CVPam::CVPamWidget>("CVPam");

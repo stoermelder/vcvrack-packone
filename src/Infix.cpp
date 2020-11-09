@@ -1,6 +1,6 @@
 #include "plugin.hpp"
 
-
+namespace StoermelderPackOne {
 namespace Infix {
 
 template < int CHANNELS >
@@ -111,6 +111,7 @@ struct InfixMicroWidget : ThemedModuleWidget<InfixModule<8>> {
 };
 
 } // namespace Infix
+} // namespace StoermelderPackOne
 
-Model* modelInfix = createModel<Infix::InfixModule<16>, Infix::InfixWidget>("Infix");
-Model* modelInfixMicro = createModel<Infix::InfixModule<8>, Infix::InfixMicroWidget>("InfixMicro");
+Model* modelInfix = createModel<StoermelderPackOne::Infix::InfixModule<16>, StoermelderPackOne::Infix::InfixWidget>("Infix");
+Model* modelInfixMicro = createModel<StoermelderPackOne::Infix::InfixModule<8>, StoermelderPackOne::Infix::InfixMicroWidget>("InfixMicro");

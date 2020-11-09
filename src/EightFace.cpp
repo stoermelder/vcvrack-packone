@@ -4,14 +4,18 @@
 #include <condition_variable>
 #include <random>
 
-
+namespace StoermelderPackOne {
 namespace EightFace {
 
 enum SLOTCVMODE {
 	SLOTCVMODE_TRIG_FWD = 2,
 	SLOTCVMODE_TRIG_REV = 4,
 	SLOTCVMODE_TRIG_PINGPONG = 5,
+	SLOTCVMODE_TRIG_ALT = 9,
 	SLOTCVMODE_TRIG_RANDOM = 6,
+	SLOTCVMODE_TRIG_RANDOM_WO_REPEATS = 7,
+	SLOTCVMODE_TRIG_RANDOM_WALK = 8,
+	SLOTCVMODE_TRIG_SHUFFLE = 10,
 	SLOTCVMODE_10V = 0,
 	SLOTCVMODE_C4 = 1,
 	SLOTCVMODE_ARM = 3
@@ -73,9 +77,11 @@ struct EightFaceModule : Module {
 	/** [Stored to JSON] mode for SEQ CV input */
 	SLOTCVMODE slotCvMode = SLOTCVMODE_TRIG_FWD;
 	int slotCvModeDir = 1;
+	int slotCvModeAlt = 1;
+	std::vector<int> slotCvModeShuffle;
 
 	std::default_random_engine randGen{(uint16_t)std::chrono::system_clock::now().time_since_epoch().count()};
-	std::uniform_int_distribution<int>* randDist = NULL;
+	std::uniform_int_distribution<int> randDist;
 
 	int connected = 0;
 	int presetNext = -1;
@@ -119,7 +125,6 @@ struct EightFaceModule : Module {
 			if (presetSlotUsed[i])
 				json_decref(presetSlot[i]);
 		}
-		delete randDist;
 
 		workerIsRunning = false;
 		workerDoProcess = true;
@@ -144,8 +149,6 @@ struct EightFaceModule : Module {
 		pluginSlug = "";
 		moduleName = "";
 		connected = 0;
-		if (randDist) delete randDist;
-		randDist = new std::uniform_int_distribution<int>(0, presetCount - 1);
 		autoload = false;
 	}
 
@@ -187,20 +190,64 @@ struct EightFaceModule : Module {
 							case SLOTCVMODE_TRIG_PINGPONG:
 								if (slotTrigger.process(inputs[SLOT_INPUT].getVoltage())) {
 									int n = preset + slotCvModeDir;
-									if (n == presetCount - 1) 
+									if (n >= presetCount - 1) 
 										slotCvModeDir = -1;
-									if (n == 0) 
+									if (n <= 0) 
 										slotCvModeDir = 1;
 									presetLoad(t, n);
 								}
 								break;
+							case SLOTCVMODE_TRIG_ALT:
+								if (slotTrigger.process(inputs[SLOT_INPUT].getVoltage())) {
+									int n = 0;
+									if (preset == 0) {
+										n = slotCvModeAlt + slotCvModeDir;
+										if (n >= presetCount - 1)
+											slotCvModeDir = -1;
+										if (n <= 1)
+											slotCvModeDir = 1;
+										slotCvModeAlt = std::min(n, presetCount - 1);
+									}
+									presetLoad(t, n);
+								}
+								break;
 							case SLOTCVMODE_TRIG_RANDOM:
-								if (slotTrigger.process(inputs[SLOT_INPUT].getVoltage()))
-									presetLoad(t, (*randDist)(randGen));
+								if (slotTrigger.process(inputs[SLOT_INPUT].getVoltage())) {
+									if (randDist.max() != presetCount - 1) randDist = std::uniform_int_distribution<int>(0, presetCount - 1);
+									presetLoad(t, randDist(randGen));
+								}
+								break;
+							case SLOTCVMODE_TRIG_RANDOM_WO_REPEATS:
+								if (slotTrigger.process(inputs[SLOT_INPUT].getVoltage())) {
+									if (randDist.max() != presetCount - 2) randDist = std::uniform_int_distribution<int>(0, presetCount - 2);
+									int p = randDist(randGen);
+									if (p >= preset) p++;
+									presetLoad(t, p);
+								}
+								break;
+							case SLOTCVMODE_TRIG_RANDOM_WALK:
+								if (slotTrigger.process(inputs[SLOT_INPUT].getVoltage())) {
+									int p = std::min(std::max(0, preset + (random::u32() % 2 == 0 ? -1 : 1)), presetCount - 1);
+									presetLoad(t, p);
+								}
+								break;
+							case SLOTCVMODE_TRIG_SHUFFLE:
+								if (slotTrigger.process(inputs[SLOT_INPUT].getVoltage())) {
+									if (slotCvModeShuffle.size() == 0) {
+										for (int i = 0; i < presetCount; i++) {
+											slotCvModeShuffle.push_back(i);
+										}
+										std::random_shuffle(std::begin(slotCvModeShuffle), std::end(slotCvModeShuffle));
+									}
+									int p = std::min(std::max(0, slotCvModeShuffle.back()), presetCount - 1);
+									slotCvModeShuffle.pop_back();
+									presetLoad(t, p);
+								}
 								break;
 							case SLOTCVMODE_ARM:
-								if (slotTrigger.process(inputs[SLOT_INPUT].getVoltage()))
+								if (slotTrigger.process(inputs[SLOT_INPUT].getVoltage())) {
 									presetLoad(t, presetNext);
+								}
 								break;
 						}
 					}
@@ -352,8 +399,6 @@ struct EightFaceModule : Module {
 		if (preset >= p) preset = 0;
 		presetCount = p;
 		presetNext = -1;
-		delete randDist;
-		randDist = new std::uniform_int_distribution<int>(0, presetCount - 1);
 	}
 
 	json_t* dataToJson() override {
@@ -441,7 +486,11 @@ struct SlovCvModeMenuItem : MenuItem {
 		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger forward", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_TRIG_FWD));
 		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger reverse", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_TRIG_REV));
 		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger pingpong", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_TRIG_PINGPONG));
+		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger alternating", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_TRIG_ALT));
 		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger random", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_TRIG_RANDOM));
+		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger pseudo-random", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_TRIG_RANDOM_WO_REPEATS));
+		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger random walk", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_TRIG_RANDOM_WALK));
+		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger shuffle", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_TRIG_SHUFFLE));
 		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "0..10V", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_10V));
 		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "C4", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_C4));
 		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Arm", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE_ARM));
@@ -604,6 +653,7 @@ struct EightFaceX2Widget : ThemedModuleWidget<EightFaceModule<16>, EightFaceWidg
 };
 
 } // namespace EightFace
+} // namespace StoermelderPackOne
 
-Model* modelEightFace = createModel<EightFace::EightFaceModule<8>, EightFace::EightFaceWidget>("EightFace");
-Model* modelEightFaceX2 = createModel<EightFace::EightFaceModule<16>, EightFace::EightFaceX2Widget>("EightFaceX2");
+Model* modelEightFace = createModel<StoermelderPackOne::EightFace::EightFaceModule<8>, StoermelderPackOne::EightFace::EightFaceWidget>("EightFace");
+Model* modelEightFaceX2 = createModel<StoermelderPackOne::EightFace::EightFaceModule<16>, StoermelderPackOne::EightFace::EightFaceX2Widget>("EightFaceX2");

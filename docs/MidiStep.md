@@ -32,4 +32,9 @@ I don't own all of following devices so I can provide only limited supported for
 
 ![MIDI-STEP DJ Tech Tools controller](./MidiStep-DJTT.png)
 
+<a name="akai-mpd218"></a>
+- **Akai MPD218.** Set the knob's "TYPE" to "INC/DEC 2" in the MPD218 Editor.
+
+![MIDI-STEP Akai MPD218 Editor](./MidiStep-Akai.png)
+
 MIDI-STEP was added in v1.5.0 of PackOne.

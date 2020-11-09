@@ -27,6 +27,7 @@ extern Model* modelSipo;
 extern Model* modelFourRounds;
 extern Model* modelArena;
 extern Model* modelMaze;
+extern Model* modelHive;
 extern Model* modelIntermix;
 extern Model* modelSail;
 extern Model* modelPile;
@@ -43,4 +44,16 @@ extern Model* modelSpin;
 extern Model* modelTransit;
 extern Model* modelTransitEx;
 extern Model* modelX4;
+extern Model* modelMacro;
+extern Model* modelRaw;
+extern Model* modelMidiMon;
 extern Model* modelAudioInterface64;
+extern Model* modelMb;
+
+
+namespace StoermelderPackOne {
+
+bool registerSingleton(std::string name, ModuleWidget* mw);
+bool unregisterSingleton(std::string name, ModuleWidget* mw);
+
+} // namespace StoermelderPackOne

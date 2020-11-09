@@ -50,9 +50,7 @@ jobs:
   - bash: |
       export RACK_DIR=$AGENT_TEMPDIRECTORY/Rack-SDK
       export CC=gcc
-
       make win-dist
-
       mkdir products_win/
       cp dist/*zip products_win/
     displayName: Build Windows Plugins
@@ -68,7 +66,8 @@ jobs:
 
   - bash: |
       export RACK_DIR=$AGENT_TEMPDIRECTORY/Rack-SDK
-      sudo apt-get install libglu-dev
+      sudo apt-get update
+      sudo apt-get install libglu-dev --fix-missing
       make dist
       mkdir products_lin/
       cp dist/*zip products_lin/

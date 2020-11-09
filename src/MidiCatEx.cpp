@@ -7,6 +7,8 @@ namespace MidiCat {
 struct MidiCatExModule : Module {
 	enum ParamIds {
 		PARAM_APPLY,
+		PARAM_PREV,
+		PARAM_NEXT,
 		NUM_PARAMS
 	};
 	enum InputIds {
@@ -28,6 +30,8 @@ struct MidiCatExModule : Module {
 	MidiCatExModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+		configParam<BufferedTriggerParamQuantity>(PARAM_PREV, 0.f, 1.f, 0.f, "Scan for previous module mapping");
+		configParam<BufferedTriggerParamQuantity>(PARAM_NEXT, 0.f, 1.f, 0.f, "Scan for next module mapping");
 		configParam<BufferedTriggerParamQuantity>(PARAM_APPLY, 0.f, 1.f, 0.f, "Apply mapping");
 		onReset();
 	}
@@ -72,6 +76,9 @@ struct MidiCatExModule : Module {
 				json_object_set_new(paramMapJJ, "noteMode", json_integer(p->noteMode));
 				json_object_set_new(paramMapJJ, "label", json_string(p->label.c_str()));
 				json_object_set_new(paramMapJJ, "midiOptions", json_integer(p->midiOptions));
+				json_object_set_new(paramMapJJ, "slew", json_real(p->slew));
+				json_object_set_new(paramMapJJ, "min", json_real(p->min));
+				json_object_set_new(paramMapJJ, "max", json_real(p->max));
 				json_array_append_new(paramMapJ, paramMapJJ);
 			}
 			json_object_set_new(midiMapJJ, "paramMap", paramMapJ);
@@ -109,6 +116,12 @@ struct MidiCatExModule : Module {
 				p->noteMode = (NOTEMODE)json_integer_value(json_object_get(paramMapJJ, "noteMode"));
 				p->label = json_string_value(json_object_get(paramMapJJ, "label"));
 				p->midiOptions = json_integer_value(json_object_get(paramMapJJ, "midiOptions"));
+				json_t* slewJ = json_object_get(paramMapJJ, "slew");
+				if (slewJ) p->slew = json_real_value(slewJ);
+				json_t* minJ = json_object_get(paramMapJJ, "min");
+				if (minJ) p->min = json_real_value(minJ);
+				json_t* maxJ = json_object_get(paramMapJJ, "max");
+				if (maxJ) p->max = json_real_value(maxJ);
 				a->paramMap.push_back(p);
 			}
 			midiMap[std::pair<std::string, std::string>(pluginSlug, moduleSlug)] = a;
@@ -134,7 +147,9 @@ struct MidiCatExWidget : ThemedModuleWidget<MidiCatExModule> {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(15.f, 291.3f), module, MidiCatExModule::LIGHT_APPLY));
+		addChild(createParamCentered<TL1105>(Vec(15.0f, 227.1f), module, MidiCatExModule::PARAM_PREV));
+		addChild(createParamCentered<TL1105>(Vec(15.0f, 258.5f), module, MidiCatExModule::PARAM_NEXT));
+		addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(15.f, 284.4f), module, MidiCatExModule::LIGHT_APPLY));
 		addChild(createParamCentered<TL1105>(Vec(15.0f, 306.7f), module, MidiCatExModule::PARAM_APPLY));
 		MemDisplay* memDisplay = createWidgetCentered<MemDisplay>(Vec(15.0f, 336.2f));
 		memDisplay->module = module;

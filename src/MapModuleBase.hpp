@@ -115,6 +115,7 @@ struct MapModuleBase : Module, StripIdFixModule {
 	}
 
 	virtual void clearMap(int id) {
+		if (paramHandles[id].moduleId < 0) return;
 		learningId = -1;
 		APP->engine->updateParamHandle(&paramHandles[id], -1, 0, true);
 		valueFilters[id].reset();
@@ -189,6 +190,7 @@ struct MapModuleBase : Module, StripIdFixModule {
 			json_t* mapJ = json_object();
 			json_object_set_new(mapJ, "moduleId", json_integer(paramHandles[id].moduleId));
 			json_object_set_new(mapJ, "paramId", json_integer(paramHandles[id].paramId));
+			dataToJsonMap(mapJ, id);
 			json_array_append_new(mapsJ, mapJ);
 		}
 		json_object_set_new(rootJ, "maps", mapsJ);
@@ -219,11 +221,15 @@ struct MapModuleBase : Module, StripIdFixModule {
 				int paramId = json_integer_value(paramIdJ);
 				moduleId = idFix(moduleId);
 				APP->engine->updateParamHandle(&paramHandles[mapIndex], moduleId, paramId, false);
+				dataFromJsonMap(mapJ, mapIndex);
 			}
 		}
 		updateMapLen();
 		idFixClearMap();
 	}
+
+	virtual void dataToJsonMap(json_t* mapJ, int index) {}
+	virtual void dataFromJsonMap(json_t* mapJ, int index) {}
 };
 
 template< int MAX_CHANNELS >
@@ -304,30 +310,7 @@ struct MapModuleChoice : LedDisplayChoice {
 			e.consume(this);
 
 			if (module->paramHandles[id].moduleId >= 0) {
-				ui::Menu* menu = createMenu();
-				std::string header = "Parameter \"" + getParamName() + "\"";
-				menu->addChild(createMenuLabel(header));
-
-				struct UnmapItem : MenuItem {
-					MODULE* module;
-					int id;
-					void onAction(const event::Action& e) override {
-						module->clearMap(id);
-					}
-				};
-				menu->addChild(construct<UnmapItem>(&MenuItem::text, "Unmap", &UnmapItem::module, module, &UnmapItem::id, id));
-
-				struct IndicateItem : MenuItem {
-					MODULE* module;
-					int id;
-					void onAction(const event::Action& e) override {
-						ParamHandle* paramHandle = &module->paramHandles[id];
-						ModuleWidget* mw = APP->scene->rack->getModule(paramHandle->moduleId);
-						module->paramHandleIndicator[id].indicate(mw);
-					}
-				};
-				menu->addChild(construct<IndicateItem>(&MenuItem::text, "Locate and indicate", &IndicateItem::module, module, &IndicateItem::id, id));
-				appendContextMenu(menu);
+				createContextMenu();
 			} 
 			else {
 				module->clearMap(id);
@@ -335,8 +318,33 @@ struct MapModuleChoice : LedDisplayChoice {
 		}
 	}
 
-	virtual void appendContextMenu(Menu* menu) {
+	void createContextMenu() {
+		struct UnmapItem : MenuItem {
+			MODULE* module;
+			int id;
+			void onAction(const event::Action& e) override {
+				module->clearMap(id);
+			}
+		};
+
+		struct IndicateItem : MenuItem {
+			MODULE* module;
+			int id;
+			void onAction(const event::Action& e) override {
+				ParamHandle* paramHandle = &module->paramHandles[id];
+				ModuleWidget* mw = APP->scene->rack->getModule(paramHandle->moduleId);
+				module->paramHandleIndicator[id].indicate(mw);
+			}
+		};
+
+		ui::Menu* menu = createMenu();
+		menu->addChild(createMenuLabel("Parameter \"" + getParamName() + "\""));
+		menu->addChild(construct<IndicateItem>(&MenuItem::text, "Locate and indicate", &IndicateItem::module, module, &IndicateItem::id, id));
+		menu->addChild(construct<UnmapItem>(&MenuItem::text, "Unmap", &UnmapItem::module, module, &UnmapItem::id, id));
+		appendContextMenu(menu);
 	}
+
+	virtual void appendContextMenu(Menu* menu) { }
 
 	void onSelect(const event::Select& e) override {
 		if (!module) return;
@@ -466,6 +474,28 @@ struct MapModuleChoice : LedDisplayChoice {
 		s += " ";
 		s += paramQuantity->label;
 		return s;
+	}
+
+	void draw(const DrawArgs& args) override {
+		if (bgColor.a > 0.0) {
+			nvgScissor(args.vg, RECT_ARGS(args.clipBox));
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, 0, 0, box.size.x, box.size.y);
+			nvgFillColor(args.vg, bgColor);
+			nvgFill(args.vg);
+			nvgResetScissor(args.vg);
+		}
+
+		if (font->handle >= 0) {
+			Rect r = Rect(textOffset.x, 0.f, box.size.x - textOffset.x * 2, box.size.y).intersect(args.clipBox);
+			nvgScissor(args.vg, RECT_ARGS(r));
+			nvgFillColor(args.vg, color);
+			nvgFontFaceId(args.vg, font->handle);
+			nvgTextLetterSpacing(args.vg, 0.0);
+			nvgFontSize(args.vg, 12);
+			nvgText(args.vg, textOffset.x, textOffset.y, text.c_str(), NULL);
+			nvgResetScissor(args.vg);
+		}
 	}
 };
 

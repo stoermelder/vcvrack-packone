@@ -1,6 +1,7 @@
 #include "plugin.hpp"
 #include "digital.hpp"
 
+namespace StoermelderPackOne {
 namespace Intermix {
 
 const int SCENE_MAX = 8;
@@ -112,7 +113,10 @@ struct IntermixModule : Module {
 
 	int sceneNext = -1;
 
-	LinearFade fader[PORTS][PORTS];
+	/** [Stored to JSON] */
+	int channelCount = 1;
+
+	LinearFade fader[PORTS][PORTS][PORT_MAX_CHANNELS];
 	//dsp::TSlewLimiter<simd::float_4> outputAtSlew[PORTS / 4];
 
 	dsp::SchmittTrigger sceneTrigger;
@@ -233,76 +237,84 @@ struct IntermixModule : Module {
 				scenes[sceneSelected].output[i] = params[PARAM_OUTPUT + i].getValue() == 0.f ? OM_OUT : OM_OFF;
 				scenes[sceneSelected].outputAt[i] = params[PARAM_AT + i].getValue();
 				for (int j = 0; j < PORTS; j++) {
-					fader[i][j].setRiseFall(f1, f2);
 					float p = params[PARAM_MATRIX + j * PORTS + i].getValue();
-					if (p != scenes[sceneSelected].matrix[i][j] && p == 1.f) fader[i][j].triggerFadeIn();
-					if (p != scenes[sceneSelected].matrix[i][j] && p == 0.f) fader[i][j].triggerFadeOut();
+					for (int c = 0; c < channelCount; c++) {
+						fader[i][j][c].setRiseFall(f1, f2);
+						if (p != scenes[sceneSelected].matrix[i][j] && p == 1.f) fader[i][j][c].triggerFadeIn();
+						if (p != scenes[sceneSelected].matrix[i][j] && p == 0.f) fader[i][j][c].triggerFadeOut();
+					}
 					scenes[sceneSelected].matrix[i][j] = currentMatrix[i][j] = p;
 				}
 			}
 		}
 
 		// DSP processing
-		simd::float_4 out[PORTS / 4] = {};
-		for (int i = 0; i < PORTS; i++) {
-			float v;
-			IN_MODE mode = sceneInputMode ? scenes[sceneSelected].input[i] : inputMode[i];
-			switch (mode) {
-				case IN_MODE::IM_OFF:
-					continue;
-				case IN_MODE::IM_DIRECT:
-					if (!inputs[INPUT + i].isConnected()) continue;
-					v = inputs[INPUT + i].getVoltage();
-					break;
-				case IN_MODE::IM_FADE:
-					if (!inputs[INPUT + i].isConnected()) continue;
-					v = inputs[INPUT + i].getVoltage();
-					for (int j = 0; j < PORTS; j++) {
-						currentMatrix[i][j] = fader[i][j].process(args.sampleTime);
-					}
-					break;
-				default:
-					v = (mode - 24) / 12.f;
-					break;
+		for (int c = 0; c < channelCount; c++) {
+			simd::float_4 out[PORTS / 4] = {};
+			for (int i = 0; i < PORTS; i++) {
+				float v;
+				IN_MODE mode = sceneInputMode ? scenes[sceneSelected].input[i] : inputMode[i];
+				switch (mode) {
+					case IN_MODE::IM_OFF:
+						continue;
+					case IN_MODE::IM_DIRECT:
+						if (!inputs[INPUT + i].isConnected()) continue;
+						v = inputs[INPUT + i].getPolyVoltage(c);
+						break;
+					case IN_MODE::IM_FADE:
+						if (!inputs[INPUT + i].isConnected()) continue;
+						v = inputs[INPUT + i].getPolyVoltage(c);
+						for (int j = 0; j < PORTS; j++) {
+							currentMatrix[i][j] = fader[i][j][c].process(args.sampleTime);
+						}
+						break;
+					default:
+						v = (mode - 24) / 12.f;
+						break;
+				}
+
+				for (int j = 0; j < PORTS; j+=4) {
+					simd::float_4 v1 = simd::float_4::load(&currentMatrix[i][j]);
+					simd::float_4 v2 = v1 * simd::float_4(v);
+					out[j / 4] += v2;
+				}
 			}
 
+
+			// -- Standard code --
+			/*
+			for (int i = 0; i < PORTS; i++) {
+				float v = scenes[sceneSelected].output[i] == OM_OUT ? out[i / 4][i % 4] : 0.f;
+				if (outputClamp) v = clamp(v, -10.f, 10.f);
+				outputs[OUTPUT + i].setVoltage(v);
+			}
+			*/
+			// -- Standard code --
+
+			// -- SIMD code --
+			simd::float_4 oc = outputClamp;
 			for (int j = 0; j < PORTS; j+=4) {
-				simd::float_4 v1 = simd::float_4::load(&currentMatrix[i][j]);
-				simd::float_4 v2 = v1 * simd::float_4(v);
-				out[j / 4] += v2;
+				// Check for OUT_MODE
+				simd::int32_4 o1 = simd::int32_4::load((int32_t*)&scenes[sceneSelected].output[j]);
+				simd::float_4 o2 = simd::float_4(o1 != 0) == -1.f;
+				out[j / 4] = simd::ifelse(o2, out[j / 4], simd::float_4::zero());
+				// Clamp if outputClamp it set
+				out[j / 4] = simd::ifelse(oc == 1.f, simd::clamp(out[j / 4], -10.f, 10.f), out[j / 4]);
+				// Attenuverters
+				simd::float_4 at = simd::float_4::load(&scenes[sceneSelected].outputAt[j]);
+				//at = outputAtSlew[j / 4].process(args.sampleTime, at);
+				out[j / 4] *= at;
 			}
-		}
 
-
-		// -- Standard code --
-		/*
-		for (int i = 0; i < PORTS; i++) {
-			float v = scenes[sceneSelected].output[i] == OM_OUT ? out[i / 4][i % 4] : 0.f;
-			if (outputClamp) v = clamp(v, -10.f, 10.f);
-			outputs[OUTPUT + i].setVoltage(v);
-		}
-		*/
-		// -- Standard code --
-
-		// -- SIMD code --
-		simd::float_4 c = outputClamp;
-		for (int j = 0; j < PORTS; j+=4) {
-			// Check for OUT_MODE
-			simd::int32_4 o1 = simd::int32_4::load((int32_t*)&scenes[sceneSelected].output[j]);
-			simd::float_4 o2 = simd::float_4(o1 != 0) == -1.f;
-			out[j / 4] = simd::ifelse(o2, out[j / 4], simd::float_4::zero());
-			// Clamp if outputClamp it set
-			out[j / 4] = simd::ifelse(c == 1.f, simd::clamp(out[j / 4], -10.f, 10.f), out[j / 4]);
-			// Attenuverters
-			simd::float_4 at = simd::float_4::load(&scenes[sceneSelected].outputAt[j]);
-			//at = outputAtSlew[j / 4].process(args.sampleTime, at);
-			out[j / 4] *= at;
+			for (int i = 0; i < PORTS; i++) {
+				outputs[OUTPUT + i].setVoltage(out[i / 4][i % 4], c);
+			}
+			// -- SIMD code --
 		}
 
 		for (int i = 0; i < PORTS; i++) {
-			outputs[OUTPUT + i].setVoltage(out[i / 4][i % 4]);
+			outputs[OUTPUT + i].setChannels(channelCount);
 		}
-		// -- SIMD code --
 
 		// Lights
 		if (lightDivider.process()) {
@@ -375,8 +387,10 @@ struct IntermixModule : Module {
 			for (int j = 0; j < PORTS; j++) {
 				float p = scenes[sceneSelected].matrix[i][j];
 				params[PARAM_MATRIX + j * PORTS + i].setValue(p);
-				if (p != scenes[scenePrevious].matrix[i][j] && p == 1.f) fader[i][j].triggerFadeIn();
-				if (p != scenes[scenePrevious].matrix[i][j] && p == 0.f) fader[i][j].triggerFadeOut();
+				for (int c = 0; c < channelCount; c++) {
+					if (p != scenes[scenePrevious].matrix[i][j] && p == 1.f) fader[i][j][c].triggerFadeIn();
+					if (p != scenes[scenePrevious].matrix[i][j] && p == 0.f) fader[i][j][c].triggerFadeOut();
+				}
 				currentMatrix[i][j] = p;
 			}
 		}
@@ -410,7 +424,9 @@ struct IntermixModule : Module {
 				scenes[sceneSelected].matrix[i][j] = 0.f;
 				params[PARAM_MATRIX + j * PORTS + i].setValue(0.f);
 				currentMatrix[i][j] = 0.f;
-				fader[i][j].reset(0.f);
+				for (int c = 0; c < channelCount; c++) {
+					fader[i][j][c].reset(0.f);
+				}
 			}
 		}
 	}
@@ -428,6 +444,7 @@ struct IntermixModule : Module {
 		json_object_set_new(rootJ, "padBrightness", json_real(padBrightness));
 		json_object_set_new(rootJ, "inputVisualize", json_boolean(inputVisualize));
 		json_object_set_new(rootJ, "outputClamp", json_boolean(outputClamp));
+		json_object_set_new(rootJ, "channelCount", json_integer(channelCount));
 
 		json_t* inputsJ = json_array();
 		for (int i = 0; i < PORTS; i++) {
@@ -473,6 +490,7 @@ struct IntermixModule : Module {
 		padBrightness = json_real_value(json_object_get(rootJ, "padBrightness"));
 		inputVisualize = json_boolean_value(json_object_get(rootJ, "inputVisualize"));
 		outputClamp = json_boolean_value(json_object_get(rootJ, "outputClamp"));
+		channelCount = json_integer_value(json_object_get(rootJ, "channelCount"));
 
 		json_t* inputsJ = json_object_get(rootJ, "inputMode");
 		json_t* inputJ;
@@ -517,7 +535,9 @@ struct IntermixModule : Module {
 			for (int j = 0; j < PORTS; j++) {
 				float v = scenes[sceneSelected].matrix[i][j];
 				currentMatrix[i][j] = v;
-				fader[i][j].reset(v);
+				for (int c = 0; c < PORT_MAX_CHANNELS; c++) {
+					fader[i][j][c].reset(v);
+				}
 			}
 		}
 	}
@@ -726,6 +746,33 @@ struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 		IntermixModule<PORTS>* module = dynamic_cast<IntermixModule<PORTS>*>(this->module);
 		assert(module);
 
+		struct NumberOfChannelsMenuItem : MenuItem {
+			NumberOfChannelsMenuItem() {
+				rightText = RIGHT_ARROW;
+			}
+
+			struct NumberOfChannelsItem : MenuItem {
+				IntermixModule<PORTS>* module;
+				int channelCount;
+				void onAction(const event::Action& e) override {
+					module->channelCount = channelCount;
+				}
+				void step() override {
+					rightText = module->channelCount == channelCount ? "✔" : "";
+					MenuItem::step();
+				}
+			};
+
+			IntermixModule<PORTS>* module;
+			Menu* createChildMenu() override {
+				Menu* menu = new Menu;
+				for (int i = 1; i <= PORT_MAX_CHANNELS; i++) {
+					menu->addChild(construct<NumberOfChannelsItem>(&MenuItem::text, string::f("%i", i), &NumberOfChannelsItem::module, module, &NumberOfChannelsItem::channelCount, i));
+				}
+				return menu;
+			}
+		};
+
 		struct SceneModeMenuItem : MenuItem {
 			SceneModeMenuItem() {
 				rightText = RIGHT_ARROW;
@@ -850,7 +897,9 @@ struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 		};
 
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<SceneModeMenuItem>(&MenuItem::text, "SCENE-port", &SceneModeMenuItem::module, module));
+		menu->addChild(construct<NumberOfChannelsMenuItem>(&MenuItem::text, "Channels", &NumberOfChannelsMenuItem::module, module));
+		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<SceneModeMenuItem>(&MenuItem::text, "Port SCENE-mode", &SceneModeMenuItem::module, module));
 		menu->addChild(construct<SceneInputModeItem>(&MenuItem::text, "Include input-mode in scenes", &SceneInputModeItem::module, module));
 		menu->addChild(construct<SceneAtModeItem>(&MenuItem::text, "Include attenuverters in scenes", &SceneAtModeItem::module, module));
 		menu->addChild(construct<OutputClampItem>(&MenuItem::text, "Limit output to -10..10V", &OutputClampItem::module, module));
@@ -861,5 +910,6 @@ struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 };
 
 } // namespace Intermix
+} // namespace StoermelderPackOne
 
-Model* modelIntermix = createModel<Intermix::IntermixModule<8>, Intermix::IntermixWidget>("Intermix");
+Model* modelIntermix = createModel<StoermelderPackOne::Intermix::IntermixModule<8>, StoermelderPackOne::Intermix::IntermixWidget>("Intermix");

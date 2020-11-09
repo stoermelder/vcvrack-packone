@@ -1,6 +1,6 @@
 #include "plugin.hpp"
 
-
+namespace StoermelderPackOne {
 namespace Bolt {
 
 const int BOLT_OP_AND = 0;
@@ -305,5 +305,6 @@ struct BoltWidget : ThemedModuleWidget<BoltModule> {
 };
 
 } // namespace Bolt
+} // namespace StoermelderPackOne
 
-Model *modelBolt = createModel<Bolt::BoltModule, Bolt::BoltWidget>("Bolt");
+Model *modelBolt = createModel<StoermelderPackOne::Bolt::BoltModule, StoermelderPackOne::Bolt::BoltWidget>("Bolt");

@@ -1,0 +1,136 @@
+{
+  "plugin": "Stoermelder-P1",
+  "model": "MidiCat",
+  "data": {
+    "maps": [
+      {
+        "cc": 1,
+        "ccMode": 0
+      },
+      {
+        "cc": 2,
+        "ccMode": 0
+      },
+      {
+        "cc": 3,
+        "ccMode": 0
+      },
+      {
+        "cc": 4,
+        "ccMode": 0
+      },
+      {
+        "cc": 5,
+        "ccMode": 0
+      },
+      {
+        "cc": 6,
+        "ccMode": 0
+      },
+      {
+        "cc": 7,
+        "ccMode": 0
+      },
+      {
+        "cc": 8,
+        "ccMode": 0
+      },
+      {
+        "cc": 9,
+        "ccMode": 0
+      },
+      {
+        "cc": 10,
+        "ccMode": 0
+      },
+      {
+        "cc": 11,
+        "ccMode": 0
+      },
+      {
+        "cc": 12,
+        "ccMode": 0
+      },
+      {
+        "cc": 13,
+        "ccMode": 0
+      },
+      {
+        "cc": 14,
+        "ccMode": 0
+      },
+      {
+        "cc": 15,
+        "ccMode": 0
+      },
+      {
+        "cc": 16,
+        "ccMode": 0
+      },
+      {
+        "cc": 17,
+        "ccMode": 0
+      },
+      {
+        "cc": 18,
+        "ccMode": 0
+      },
+      {
+        "cc": 19,
+        "ccMode": 0
+      },
+      {
+        "cc": 20,
+        "ccMode": 0
+      },
+      {
+        "cc": 21,
+        "ccMode": 0
+      },
+      {
+        "cc": 22,
+        "ccMode": 0
+      },
+      {
+        "cc": 23,
+        "ccMode": 0
+      },
+      {
+        "cc": 24,
+        "ccMode": 0
+      },
+      {
+        "cc": 25,
+        "ccMode": 0
+      },
+      {
+        "cc": 26,
+        "ccMode": 0
+      },
+      {
+        "cc": 27,
+        "ccMode": 0
+      },
+      {
+        "cc": 28,
+        "ccMode": 0
+      },
+      {
+        "cc": 29,
+        "ccMode": 0
+      },
+      {
+        "cc": 30,
+        "ccMode": 0
+      },
+      {
+        "cc": 31,
+        "ccMode": 0
+      },
+      {
+        "cc": 32,
+        "ccMode": 0
+      }
+    ]
+  }
+}

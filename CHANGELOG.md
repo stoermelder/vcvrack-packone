@@ -1,3 +1,69 @@
+## 1.8.0
+
+- Module [HIVE](./docs/Hive.md)
+    - New module, 4 channel sequencer running on a 2-dimensional hexagonal grid
+- Module [MACRO](./docs/Macro.md)
+    - New module, marco-knob for four parameter-mappings and two CV outputs
+- Module [MB](./docs/Mb.md)
+    - New module, experimental replacement for Rack's module browser, formerly available in Stoermelder's PackTau
+- Module [MIDI-MON](./docs/MidiMon.md)
+    - New module, input-monitor for MIDI messages
+- Module [RAW](./docs/Raw.md)
+    - New module, a digital effect based on the dynamics of bistable systems
+
+### Fixes and Changes
+
+- Module [ARENA](./docs/Arena.md)
+    - Fixed noise on OUT-ports (#190)
+- Module [CV-PAM](./docs/CVPam.md)
+    - Fixed wrong channel count of the polyphonic output ports
+- Modules [8FACE, 8FACEx2](./docs/EightFace.md)
+    - Fixed hanging pingpong-mode when changing slots manually (#191, #203)
+    - Added trigger-options "pseudo-random", "random walk", "alternating", "shuffle" ([manual](./docs/EightFace.md#trigger-modes))
+- Module [GRIP](./docs/Grip.md)
+    - Fixed crash on locking more than 32 parameters (#176)
+- Module [INTERMIX](./docs/Intermix.md)
+    - Added support for polyphony (#199)
+- Module [MEM](./docs/MidiCat.md#mem-expander)
+    - Added support for MIDI-CAT's new slew-limiting and scaling options ([manual](./docs/MidiCat.md#slew-limiting-and-input-scaling))
+    - Added scanning for next or previous modules with stored mapping ([manual](./docs/MidiCat.md#mem-scan)) (#200)
+- Module [µMAP](./docs/CVMapMicro.md)
+    - Added input voltage display
+- Module [MIDI-CAT](./docs/MidiCat.md)
+    - Added context menu sliders for MIDI filtering/slew-limiting for CCs and notes ([manual](./docs/MidiCat.md#slew-limiting)) (#79)
+    - Added context menu sliders for scaling or transforming the MIDI-input and parameter-range ([manual](./docs/MidiCat.md#input-scaling)) (#169)
+    - Added context menu options for precision/CPU-usage ([manual](./docs/MidiCat.md#precision))
+    - Added context menu options on mapped parameters of target module for MIDI-CAT ([manual](./docs/MidiCat.md#target-context))
+    - Added skipping of current slot with SPACE-key while in mapping-mode
+    - Added context menu option for clearing all mapping-slots
+    - Added option for ignoring MIDI device settings on preset load (#185)
+    - Fixed broken "Re-send MIDI feedback" option
+    - Added context menu option for re-sending MIDI feedback periodically ([manual](./docs/MidiCat.md#feedback-periodically))
+    - Added note-mode "Toggle + Velocity" ([manual](./docs/MidiCat.md#toggle-velocity))
+- Module [MIDI-STEP](./docs/MidiStep.md)
+    - Added option for Akai MPD218 ([manual](./docs/MidiStep.md#akai-mpd218))
+- Module [MIRROR](./docs/Mirror.md)
+    - Added syncing of module presets even if bound module has no parameters (#189)
+    - Added hotkey for syncing module presets
+- Module [STRIP](./docs/Strip.md)
+    - Added hotkeys Shift+L (load), Shift+S (save as), Shift+X (cut)
+    - Added context menu option "Load with replace" ([manual](./docs/Strip.md#load-and-replace)) (#186)
+    - Fixed crash on loading vcvss-files with missing modules
+    - Added context menu option for custom presets, listing all .vcvss-files in folder presets/Strip ([manual](./docs/Strip.md#preset)) (#198)
+- Module [STROKE](./docs/Stroke.md)
+    - Added commands "Toggle engine pause", "Toggle lock modules"
+    - Added command "Toggle busboard"
+    - Added LEDs for signaling an activated hotkey
+    - Allow loading presets (#187)
+    - Improved behavior of command "Cable opacity" across restarts of Rack (#197)
+- Module [TRANSIT](./docs/Transit.md)
+    - Fixed hanging pingpong-mode when changing slots manually
+    - Added trigger-options "pseudo-random", "random walk", "alternating", "shuffle" ([manual](./docs/Transit.md#sequencing-and-selecting-snapshots))
+    - Fixed broken snapshots on save after mapped modules have been deleted (#205)
+- Module [X4](./docs/X4.md)
+    - Fixed advancing to the lower button after the upper button has been mapped
+    - Fixed wrong tooltip of lower mapping button
+
 ## 1.7.1
 
 ### Fixes and Changes
@@ -15,7 +81,7 @@
     - New module, converts used-defined hotkeys into triggers or gates, also provides some special commands for Rack's enviroment
 - Module [TRANSIT](./docs/Transit.md)
     - New module, parameter-morpher and sequencer for up to 96 snapshots
-- Module [+T](./docs/Transit.md)
+- Module [+T](./docs/Transit.md#stoermelder-t-expander)
     - New module, expander for TRANSIT
 - Module [X4](./docs/X4.md)
     - New module, dual multiple for parameter-mapping

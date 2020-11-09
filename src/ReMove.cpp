@@ -3,7 +3,7 @@
 #include <thread>
 #include <random>
 
-
+namespace StoermelderPackOne {
 namespace ReMove {
 
 const int REMOVE_MAX_DATA = 64 * 1024;
@@ -1294,5 +1294,6 @@ struct ReMoveWidget : ThemedModuleWidget<ReMoveModule> {
 };
 
 } // namespace ReMove
+} // namespace StoermelderPackOne
 
-Model *modelReMoveLite = createModel<ReMove::ReMoveModule, ReMove::ReMoveWidget>("ReMoveLite");
+Model *modelReMoveLite = createModel<StoermelderPackOne::ReMove::ReMoveModule, StoermelderPackOne::ReMove::ReMoveWidget>("ReMoveLite");

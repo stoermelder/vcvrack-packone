@@ -5,6 +5,7 @@
 #include <thread>
 #include <mutex>
 
+namespace StoermelderPackOne {
 namespace Strip {
 
 static const char PRESET_FILTERS[] = "stoermelder STRIP group preset (.vcvss):vcvss";
@@ -685,7 +686,7 @@ struct StripWidget : ThemedModuleWidget<StripModule> {
 
 		if (toBeRemoved.size() > 0) {
 			history::ComplexAction* complexAction = new history::ComplexAction;
-			complexAction->name = "stoermelder STRIP cut";
+			complexAction->name = "stoermelder STRIP remove";
 
 			for (int id : toBeRemoved) {
 				ModuleWidget* mw = APP->scene->rack->getModule(id);
@@ -880,11 +881,13 @@ struct StripWidget : ThemedModuleWidget<StripModule> {
 					// mw could be NULL, just move on
 					modules[oldId] = mw;
 
-					// ModuleAdd history action
-					history::ModuleAdd* h = new history::ModuleAdd;
-					h->name = "create module";
-					h->setModule(mw);
-					undoActions->push_back(h);
+					if (mw) {
+						// ModuleAdd history action
+						history::ModuleAdd* h = new history::ModuleAdd;
+						h->name = "create module";
+						h->setModule(mw);
+						undoActions->push_back(h);
+					}
 				}
 			}
 		}
@@ -899,11 +902,13 @@ struct StripWidget : ThemedModuleWidget<StripModule> {
 					ModuleWidget* mw = moduleToRack(moduleJ, true, box, oldId);
 					modules[oldId] = mw;
 
-					// ModuleAdd history action
-					history::ModuleAdd* h = new history::ModuleAdd;
-					h->name = "create module";
-					h->setModule(mw);
-					undoActions->push_back(h);
+					if (mw) {
+						// ModuleAdd history action
+						history::ModuleAdd* h = new history::ModuleAdd;
+						h->name = "create module";
+						h->setModule(mw);
+						undoActions->push_back(h);
+					}
 				}
 			}
 		}
@@ -1307,7 +1312,7 @@ struct StripWidget : ThemedModuleWidget<StripModule> {
 		groupFromJson(rootJ);
 	}
 
-	void groupLoadFileDialog() {
+	void groupLoadFileDialog(bool remove) {
 		osdialog_filters* filters = osdialog_filters_parse(PRESET_FILTERS);
 		DEFER({
 			osdialog_filters_free(filters);
@@ -1323,6 +1328,7 @@ struct StripWidget : ThemedModuleWidget<StripModule> {
 			free(path);
 		});
 
+		if (remove) groupRemove();
 		groupLoadFile(path);
 	}
 
@@ -1334,6 +1340,22 @@ struct StripWidget : ThemedModuleWidget<StripModule> {
 
 		if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
 			switch (e.key) {
+				case GLFW_KEY_X: {
+					if ((e.mods & RACK_MOD_MASK) == GLFW_MOD_SHIFT) {
+						groupCutClipboard();
+						e.consume(this);
+					}
+				} break;
+				case GLFW_KEY_L: {
+					if ((e.mods & RACK_MOD_MASK) == GLFW_MOD_SHIFT) {
+						groupLoadFileDialog(false);
+						e.consume(this);
+					}
+					if ((e.mods & RACK_MOD_MASK) == (GLFW_MOD_SHIFT | GLFW_MOD_CONTROL)) {
+						groupLoadFileDialog(true);
+						e.consume(this);
+					}
+				} break;
 				case GLFW_KEY_C: {
 					if ((e.mods & RACK_MOD_MASK) == GLFW_MOD_SHIFT) {
 						groupCopyClipboard();
@@ -1343,6 +1365,12 @@ struct StripWidget : ThemedModuleWidget<StripModule> {
 				case GLFW_KEY_V: {
 					if ((e.mods & RACK_MOD_MASK) == GLFW_MOD_SHIFT) {
 						groupPasteClipboard();
+						e.consume(this);
+					}
+				} break;
+				case GLFW_KEY_S: {
+					if ((e.mods & RACK_MOD_MASK) == GLFW_MOD_SHIFT) {
+						groupSaveFileDialog();
 						e.consume(this);
 					}
 				} break;
@@ -1371,6 +1399,55 @@ struct StripWidget : ThemedModuleWidget<StripModule> {
 		menu->addChild(construct<RandomParamsOnlyItem>(&MenuItem::text, "Randomize parameters only", &RandomParamsOnlyItem::module, module));
 		menu->addChild(new MenuSeparator);
 
+		struct PresetMenuItem : MenuItem {
+			struct FolderItem : ui::MenuItem {
+				std::string path;
+				void onAction(const event::Action& e) override {
+					std::thread t([ = ] {
+						system::openFolder(path);
+					});
+					t.detach();
+				}
+			};
+			struct PresetItem : MenuItem {
+				StripWidget* mw;
+				std::string presetPath;
+				void onAction(const event::Action& e) override {
+					mw->groupLoadFile(presetPath);
+				}
+			};
+
+			StripWidget* mw;
+			PresetMenuItem() {
+				rightText = RIGHT_ARROW;
+			}
+			Menu* createChildMenu() override {
+				Menu* menu = new Menu;
+
+				std::string presetDir = asset::plugin(mw->model->plugin, "presets/" + mw->model->slug);
+				menu->addChild(construct<FolderItem>(&MenuItem::text, "Open folder", &FolderItem::path, presetDir));
+
+				std::vector<std::string> presetPaths;
+				for (const std::string& presetPath : system::getEntries(presetDir)) {
+					presetPaths.push_back(presetPath);
+				}
+
+				if (!mw->model->presetPaths.empty()) {
+					menu->addChild(new MenuSeparator);
+					for (const std::string& presetPath : presetPaths) {
+						if (!endsWith(presetPath, ".vcvss")) continue;
+						std::string presetName = string::filenameBase(string::filename(presetPath));
+						menu->addChild(construct<PresetItem>(&MenuItem::text, presetName, &PresetItem::presetPath, presetPath, &PresetItem::mw, mw));
+					}
+				}
+				return menu;
+			}
+
+			bool endsWith(const std::string& str, const std::string& suffix) {
+				return str.size() >= suffix.size() && 0 == str.compare(str.size()-suffix.size(), suffix.size(), suffix);
+			}
+		};
+
 		struct CutGroupMenuItem : MenuItem {
 			StripWidget* moduleWidget;
 			void onAction(const event::Action& e) override {
@@ -1395,7 +1472,14 @@ struct StripWidget : ThemedModuleWidget<StripModule> {
 		struct LoadGroupMenuItem : MenuItem {
 			StripWidget* moduleWidget;
 			void onAction(const event::Action& e) override {
-				moduleWidget->groupLoadFileDialog();
+				moduleWidget->groupLoadFileDialog(false);
+			}
+		};
+
+		struct LoadReplaceGroupMenuItem : MenuItem {
+			StripWidget* moduleWidget;
+			void onAction(const event::Action& e) override {
+				moduleWidget->groupLoadFileDialog(true);
 			}
 		};
 
@@ -1407,14 +1491,17 @@ struct StripWidget : ThemedModuleWidget<StripModule> {
 		};
 
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Strip"));
-		menu->addChild(construct<CutGroupMenuItem>(&MenuItem::text, "Cut", &CutGroupMenuItem::moduleWidget, this));
-		menu->addChild(construct<CopyGroupMenuItem>(&MenuItem::text, "Copy", &MenuItem::rightText, "Shift+C", &CopyGroupMenuItem::moduleWidget, this));
-		menu->addChild(construct<PasteGroupMenuItem>(&MenuItem::text, "Paste", &MenuItem::rightText, "Shift+V", &PasteGroupMenuItem::moduleWidget, this));
-		menu->addChild(construct<LoadGroupMenuItem>(&MenuItem::text, "Load", &LoadGroupMenuItem::moduleWidget, this));
-		menu->addChild(construct<SaveGroupMenuItem>(&MenuItem::text, "Save as", &SaveGroupMenuItem::moduleWidget, this));
+		menu->addChild(construct<PresetMenuItem>(&MenuItem::text, "Preset", &PresetMenuItem::mw, this));
+		menu->addChild(construct<CutGroupMenuItem>(&MenuItem::text, "Cut", &MenuItem::rightText, RACK_MOD_SHIFT_NAME "+X", &CutGroupMenuItem::moduleWidget, this));
+		menu->addChild(construct<CopyGroupMenuItem>(&MenuItem::text, "Copy", &MenuItem::rightText, RACK_MOD_SHIFT_NAME "+C", &CopyGroupMenuItem::moduleWidget, this));
+		menu->addChild(construct<PasteGroupMenuItem>(&MenuItem::text, "Paste", &MenuItem::rightText, RACK_MOD_SHIFT_NAME "+V", &PasteGroupMenuItem::moduleWidget, this));
+		menu->addChild(construct<LoadGroupMenuItem>(&MenuItem::text, "Load", &MenuItem::rightText, RACK_MOD_SHIFT_NAME "+L", &LoadGroupMenuItem::moduleWidget, this));
+		menu->addChild(construct<LoadReplaceGroupMenuItem>(&MenuItem::text, "Load with replace", &MenuItem::rightText, RACK_MOD_CTRL_NAME "+" RACK_MOD_SHIFT_NAME "+L", &LoadReplaceGroupMenuItem::moduleWidget, this));
+		menu->addChild(construct<SaveGroupMenuItem>(&MenuItem::text, "Save as", &MenuItem::rightText, RACK_MOD_SHIFT_NAME "+S", &SaveGroupMenuItem::moduleWidget, this));
 	}
 };
 
 } // namespace Strip
+} // namespace StoermelderPackOne
 
-Model* modelStrip = createModel<Strip::StripModule, Strip::StripWidget>("Strip");
+Model* modelStrip = createModel<StoermelderPackOne::Strip::StripModule, StoermelderPackOne::Strip::StripWidget>("Strip");

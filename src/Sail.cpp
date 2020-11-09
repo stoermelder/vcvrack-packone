@@ -1,6 +1,6 @@
 #include "plugin.hpp"
 
-
+namespace StoermelderPackOne {
 namespace Sail {
 
 enum class IN_MODE {
@@ -300,5 +300,6 @@ struct SailWidget : ThemedModuleWidget<SailModule> {
 };
 
 } // namespace Sail
+} // namespace StoermelderPackOne
 
-Model* modelSail = createModel<Sail::SailModule, Sail::SailWidget>("Sail");
+Model* modelSail = createModel<StoermelderPackOne::Sail::SailModule, StoermelderPackOne::Sail::SailWidget>("Sail");

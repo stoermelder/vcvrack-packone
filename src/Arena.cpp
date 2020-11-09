@@ -2,6 +2,7 @@
 #include <chrono>
 #include <random>
 
+namespace StoermelderPackOne {
 namespace Arena {
 
 static const int SEQ_COUNT = 16;
@@ -208,7 +209,7 @@ struct ArenaModule : Module {
 	}
 
 	void process(const ProcessArgs& args) override {
-		float inNorm[IN_PORTS];
+		float inNorm[IN_PORTS] = {0.f};
 		for (int j = 0; j < inportsUsed; j++) {
 			offsetX[j] = 0.f;
 			offsetY[j] = 0.f;
@@ -271,7 +272,7 @@ struct ArenaModule : Module {
 			}
 		}
 
-		float outNorm[IN_PORTS];
+		float outNorm[IN_PORTS] = {0.f};
 		for (int i = 0; i < mixportsUsed; i++) {
 			if (inputs[SEQ_INPUT + i].isConnected()) {
 				seqProcess(i);
@@ -2778,5 +2779,6 @@ struct ArenaWidget : ThemedModuleWidget<ArenaModule<8, 4>> {
 };
 
 } // namespace Arena
+} // namespace StoermelderPackOne
 
-Model* modelArena = createModel<Arena::ArenaModule<8, 4>, Arena::ArenaWidget>("Arena");
+Model* modelArena = createModel<StoermelderPackOne::Arena::ArenaModule<8, 4>, StoermelderPackOne::Arena::ArenaWidget>("Arena");

@@ -26,25 +26,32 @@ The fun begins when you use the port labelled "SLOT" for selecting preset slots 
 
 ![8FACE sequencing](./EightFace-context.png)
 
+<a name="trigger-modes"></a>
 There are different modes for SLOT-port available, configured by context menu option:
 
-- Trigger forward:
-A trigger on SLOT advances 8FACE to the next slot. Empty slots are part of the sequence but won't have any effect on the controlled module.
+- **Trigger forward**: A trigger on SLOT advances 8FACE to the next slot. Empty slots are part of the sequence but won't have any effect on the controlled module.
 
 ![8FACE sequencing](./EightFace-trig.gif)
 
-- Trigger reverse (added in v1.1.0):
-Same as "Trigger forward", but reverse direction.
-- Trigger pingpong (added in v1.1.0):
-Same as "Trigger forward", but loops first forward then reverse.
-- Trigger random (added in v1.1.0):
-Same as "Trigger forward", but chooses the next preset randomly.
-- 0..10V:
-You can select a specific slot by voltage. A voltage 0-1.25V selects slot 1, 1.25-2.5V selects slot 2, and so on if all eight slots are active. Keep in mind that adjusting the length of the sequence also adjusts the voltage range for selecting individual slots: A sequence with length 2 will select slot 1 on voltage 0-5V etc.
-- C4:
-This mode follows the V/Oct-standard. C4 selects slot 1, C#4 selects slot 2 and so on.
-- Arm (renamed from "Clock" in v1.1.0):
-This mode is a kind of buffered trigger: First apply a clock signal on SLOT. Then you "arm" any slot manually or by MIDI-mapping by its button (resulting in a yellow LED) which will be activated on the next clock trigger (blue LED). This mode allows you manual preset changes synchronized to a clock.
+- **Trigger reverse** (added in v1.1.0): Same as "Trigger forward" but in reverse direction.
+
+- **Trigger pingpong** (added in v1.1.0): Same as "Trigger forward" but loops first forward then reverse.
+
+- **Trigger alternating** (added in v1.8.0): Same as "Trigger forward" but progresses in the following manner (for 6 active slots): 1, 2, 1, 3, 1, 4, 1, 5, 1, 6, 1, 5, 1, 4, 1, 3, 1, 2, ...
+
+- **Trigger random** (added in v1.1.0): Same as "Trigger forward", but chooses the next preset randomly.
+
+- **Trigger pseudo-random** (added in v1.8.0): Same as "Trigger random" but never chooses a slot multiple times in a row (which happens on "random").
+
+- **Trigger random walk** (added in v1.8.0): Same as "Trigger forward" but chooses the next slot randomly right next to the currently active slot.
+
+- **Trigger shuffle** (added in v1.8.0): Same as "Trigger forward" but works on a random permutation of the active slots: Every slot will be enabled once before the next permutation is randomly generated.
+
+- **0..10V**: You can select a specific slot by voltage. A voltage 0-1.25V selects slot 1, 1.25-2.5V selects slot 2, and so on if all eight slots are active. Keep in mind that adjusting the length of the sequence also adjusts the voltage range for selecting individual slots: A sequence with length 2 will select slot 1 on voltage 0-5V etc.
+
+- **C4**: This mode follows the V/Oct-standard. C4 selects slot 1, C#4 selects slot 2 and so on.
+
+- **Arm** (renamed from "Clock" in v1.1.0): This mode is a kind of buffered trigger: First apply a clock signal on SLOT. Then you "arm" any slot manually or by MIDI-mapping by its button (resulting in a yellow LED) which will be activated on the next clock trigger (blue LED). This mode allows you manual preset changes synchronized to a clock.
 
 ![8FACE arm mode](./EightFace-clock.gif)
 

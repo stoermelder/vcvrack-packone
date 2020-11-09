@@ -71,11 +71,19 @@ Modes for _SEL_ on the contextual menu:
 - **Trigger forward**  
   A trigger advances TRANSIT to the next snapshot. Empty slots are part of the sequence but won't have any effect on the bound parameters. A trigger on _RESET_ restarts the sequence on snapshot 1.
 - **Trigger reverse**  
-  Same as "Trigger forward", but reverse direction. 
+  Same as "Trigger forward" but reverse direction.
 - **Trigger pingpong**  
-  Same as "Trigger forward", but loops first forward then reverse.
+  Same as "Trigger forward" but loops first forward then reverse.
+- **Trigger alternating** (added in v1.8.0)  
+  Same as "Trigger forward" but progresses in the following manner (for 6 active snapshots): 1, 2, 1, 3, 1, 4, 1, 5, 1, 6, 1, 5, 1, 4, 1, 3, 1, 2, ...
 - **Trigger random**  
-  Same as "Trigger forward", but chooses the next snapshot randomly.
+  Same as "Trigger forward" but chooses the next snapshot randomly.
+- **Trigger pseudo-random** (added in v1.8.0)  
+  Same as "Trigger random" but never chooses a snapshot multiple times in a row (which happens on "random").
+- **Trigger random walk** (added in v1.8.0)  
+  Same as "Trigger forward" but chooses the next snapshot randomly right next to the currently active snapshot.
+- **Trigger shuffle** (added in v1.8.0)  
+  Same as "Trigger forward" but works on a random permutation of the active snapshots: Every snapshot will be enabled once before the next permutation is randomly generated.
 - **0..10V**  
   You can select a specific snapshot by voltage. A voltage 0-0.833V selects slot 1, 0.833-0.166V selects slot 2, and so on, if all 12 snapshot-slots are active. Keep in mind that adjusting the length of the sequence also adjusts the voltage range for selecting individual slots: A sequence with length 2 will select slot 1 on voltage 0-5V etc.
 - **C4**  

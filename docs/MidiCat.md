@@ -3,21 +3,16 @@
 MIDI-CAT is a module for MIDI-mapping and an evolution of [VCV's MIDI-MAP](https://vcvrack.com/manual/Core.html#midi-map) with several additional features:
 
 - It can be configured for an MIDI output-port to send **controller feedback**, all your controls get initalized on patch-loading if your controller supports it!
-
 - It has two different **pickup-modes** for controllers without input or automatic adjustment, so your parameters won't change until your controls reach their current positions.
-
 - It allows mapping of **MIDI note messages**, providing momentary-mode, momentary-mode with velocity and toggle-mode.
-
 - You can switch the module to "Locate and indicate" mode, which will help you to retrace your midi controls to the mapped module and parameter.
-
 - CPU usage has been optimized.
+- And much much more...
 
 Besides these new features the module brings the goodies known from stoermelder's other mapping modules like...
 
 - ...text scrolling for long parameter names,
-
 - ..."Locate and indicate" on slot's context menu for finding mapped parameters and
-
 - ...unlocked parameters for changes by mouse or by preset loading or using a by preset-manager like stoermelder's [8FACE](./EightFace.md).
 
 ![MIDI-CAT intro](./MidiCat-intro.gif)
@@ -74,15 +69,36 @@ MIDI-CAT supports mapping of MIDI note-messages instead of MIDI CC. There are di
 
 - **Toggle**: Every MIDI "note on" message toggles the parameter between its minimum and maximum value (usually 0 and 1 for switches).
 
-Some controllers with push-buttons don't handle "note off" messages the way the message is intended, hence a mapping-slot can be switched with the option _Send "note on, velocity 0" on note off_ to send a "note on" message with "velocity 0" as MIDI feedback instead (since v1.7.0).
+<a name="toggle-velocity"></a>
+- **Toggle + Velocity**: Every MIDI "note on" message toggles the parameter between its minimum and the note's velocity value (added in v1.8.0).
+
+Some controllers with push-buttons don't handle "note off" messages the way the message is intended, hence a mapping-slot can be switched with the option _Send "note on, vel 0" on note off_ to send a "note on" message with "velocity 0" as MIDI feedback instead (since v1.7.0).
 
 ![MIDI-CAT module select](./MidiCat-map-note.png)
 
+## Slew-limiting and input-scaling
+
+<a name="slew-limiting"></a>
+Added in v1.8.0: Each mapping slot has its own setting for slew-limiting of the input value which applies an exponential filter. Small values for _Slew_ are smoothing incoming MIDI values which are quite "steppy" as MIDI supports only values 0-127 for CC and note velocity (14-bit MIDI is not supported at the moment). Larger values for _Slew_ give an overall steady movement of the mapped parameter on fast controller changes.  
+
+<a name="precision"></a>
+As slew-limiting can be a CPU-intensive operation when used on many parameters MIDI-CAT has an option to set the update frequency and thus its precision. This option can be found on the context menu and allows updating parameters on every audio sample which will cause the highest CPU usage but is rarely needed. Lower update frequencies also lower the CPU usage accordingly.
+
+<a name="input-scaling"></a>
+Added in v1.8.0: Each mapping slot has also two sliders (_Low_ and _High_) for scaling incoming MIDI values which allows you to adjust the range of the MIDI control and how the mapped parameter is affected. By setting the two sliders accordingly (MIDI values are ranging from 0 to 127) almost any linear transformation is possible, even inverting a MIDI control. For convenience some presets are provided and the current scaling transformation is shown on the context menu.
+
+Please note that slew-limiting and input-scaling also works fine with note-mapping.
+
+![MIDI-CAT input-scaling](./MidiCat-input-scaling.png)
+
 ## MIDI-feedback
 
-Any parameter change can be sent back to an MIDI output with the same CC or note. "Feedback" is useful for initialization of the controls on the MIDI device if it is supported, especially after loading a patch.
+Any parameter change can be sent back to an MIDI output with the same CC or note. "Feedback" is useful for initialization of the controls on the MIDI device if it is supported, especially after loading a patch. [Slew-limiting](#slew-limiting-and-input-scaling) it not applied on MIDI feedback.
 
-The option _Re-send MIDI feedback_ on MIDI-CAT's context menu allows you to manually send all values of mapped parameters back to your MIDI device (since v1.7.0). This can be useful if you switch your MIDI device while running Rack or the device behaves strangely and needs to be initalized again.
+The option _Re-send MIDI feedback_ on MIDI-CAT's context menu allows you to manually send the values of all mapped parameters back to your MIDI device (since v1.7.0). This option can be useful if you switch your MIDI device while running Rack or the device behaves strangely and needs to be initalized again.
+
+<a name="feedback-periodically"></a>
+For some MIDI controllers which don't support different simultaneous "layers" but different presets which can be switched (e.g. Behringer X-Touch Mini) there is an additional submenu option _Periodically_ (since v1.8.0): When enabled MIDI-CAT sends MIDI feedback twice a second for all mapped controls regardless of parameter has been changed.
 
 ## Additional features
 
@@ -99,6 +115,13 @@ The option _Re-send MIDI feedback_ on MIDI-CAT's context menu allows you to manu
 - Scrolling Rack's current view by mouse is interrupted by MIDI-CAT's list widget while hovered. As this behavior can be annoying all scrolling events are ignored if _Lock mapping slots_ is enabled (since v1.7.0).
 
 - An active mapping process can be aborted by hitting the ESC-key while hovering the mouse over MIDI-CAT (since v1.7.0).
+
+- An active mapping slot can be skipped by hitting the SPACE-key while hovering the mouse over MIDI-CAT (since v1.8.0).
+
+<a name="target-context"></a>
+- After a parameter has been mapped the parameter's context menu is extended with some addtional menu items allowing quick MIDI learning and centering it's mapping MIDI-CAT module on the center of the screen (since v1.8.0).
+
+![MIDI-CAT parameter's context menu](./MidiCat-target.png)
 
 MIDI-CAT was added in v1.1.0 of PackOne. 
 
@@ -119,7 +142,12 @@ Stored module-mappings can be recalled by context menu option _Apply mapping_ or
 
 MEM should be considered as a sort of "memory-unit" for MIDI-CAT: The module-specific mappings are saved inside the MEM-module and can be exported using Rack's preset functionality on the context menu. This means you can reuse the same mappings in different instances of MIDI-CAT or multiple patches, independently of any current mapping of MIDI-CAT.
 
-MEM is not designed to map and recall mappings for different types of modules the same time. If you desire to recall a specific mapping-setup into MIDI-CAT you can use stoermelder 8FACE which applies a complete setup by loading a preset of MIDI-CAT.
+MEM is not designed to map and recall mappings for different types of modules the same time. If you desire to recall a specific mapping-setup into MIDI-CAT you can use stoermelder [8FACE](./EightFace.md) which applies a complete setup by loading a preset of MIDI-CAT. For this purpose an option _Ignore MIDI devices on presets_ has been added (since v1.8.0) which skips any MIDI device settings when loading a preset into MIDI-CAT, only settings for all mapping slots will be recalled.
+
+<a name="mem-scan"></a>
+Added in v1.8.0: MEM has two buttons labeled _Prev_ and _Next_ which scan your patch from top-left to bottom-right and apply a stored mapping to the next/previous module of the current mapped module. Modules without a mapping available in MEM will be skipped while scanning obviously. This function is especially useful when triggering _Next_ and _Prev_ with a MIDI controller which allows you to control your patch without touching the mouse or keyboard and without static mapping, for example.
+
+![MEM workflow](./MidiCat-Mem-scan.gif)
 
 ## Tips for MEM
 
@@ -127,6 +155,6 @@ MEM is not designed to map and recall mappings for different types of modules th
 
 - You can remove any mapping using the the context menu _Delete_.
 
-- The push button on MEM can be mapped using any mapping module if like to activate _Apply mapping_ by MIDI or some other command.
+- All push buttons on MEM can be mapped using any mapping module if you like to activate _Apply mapping_ by MIDI or some other command.
 
 MEM for MIDI-CAT was added in v1.7.0 of PackOne.
