@@ -1,5 +1,6 @@
 #include "plugin.hpp"
 #include "StripIdFixModule.hpp"
+#include "components/MenuColorLabel.hpp"
 
 namespace StoermelderPackOne {
 namespace Glue {
@@ -601,75 +602,113 @@ struct LabelWidget : widget::TransparentWidget {
 					}
 				};
 
-				struct FontColorItem : MenuItem {
-					Label* label;
-					NVGcolor color;
-					void onAction(const event::Action& e) override {
-						label->fontColor = color;
-					}
-					void step() override {
-						rightText = color::toHexString(label->fontColor) == color::toHexString(color) ? "✔" : "";
-						MenuItem::step();
-					}
-				};
-
-				struct CustomFontColorField : ui::TextField {
+				struct FontColorMenuItem : MenuItem {
 					Label* label;
 					bool* textSelected;
-					CustomFontColorField() {
-						box.size.x = 80.f;
-						placeholder = color::toHexString(LABEL_FONTCOLOR_DEFAULT);
+					FontColorMenuItem() {
+						rightText = RIGHT_ARROW;
 					}
-					void onSelectKey(const event::SelectKey& e) override {
-						if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
-							label->fontColor = color::fromHexString(trim(text));
-							ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
-							overlay->requestDelete();
-							e.consume(this);
-						}
-						if (!e.getTarget()) {
-							ui::TextField::onSelectKey(e);
-						}
-					}
-					void onButton(const event::Button& e) override {
-						*textSelected = false;
-						TextField::onButton(e);
+
+					Menu* createChildMenu() override {
+						struct FontColorItem : MenuItem {
+							Label* label;
+							NVGcolor color;
+							void onAction(const event::Action& e) override {
+								label->fontColor = color;
+							}
+							void step() override {
+								rightText = color::toHexString(label->fontColor) == color::toHexString(color) ? "✔" : "";
+								MenuItem::step();
+							}
+						};
+
+						struct CustomFontColorField : ui::TextField {
+							Label* label;
+							bool* textSelected;
+							CustomFontColorField() {
+								box.size.x = 80.f;
+								placeholder = color::toHexString(LABEL_FONTCOLOR_DEFAULT);
+							}
+							void onSelectKey(const event::SelectKey& e) override {
+								if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
+									label->fontColor = color::fromHexString(trim(text));
+									ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
+									overlay->requestDelete();
+									e.consume(this);
+								}
+								if (!e.getTarget()) {
+									ui::TextField::onSelectKey(e);
+								}
+							}
+							void onButton(const event::Button& e) override {
+								*textSelected = false;
+								TextField::onButton(e);
+							}
+						};
+
+						Menu* menu = new Menu;
+						menu->addChild(construct<MenuColorLabel>(&MenuColorLabel::fillColor, label->fontColor));
+						menu->addChild(construct<FontColorItem>(&MenuItem::text, "Black", &FontColorItem::label, label, &FontColorItem::color, LABEL_FONTCOLOR_DEFAULT));
+						menu->addChild(construct<FontColorItem>(&MenuItem::text, "White", &FontColorItem::label, label, &FontColorItem::color, LABEL_FONTCOLOR_WHITE));
+						menu->addChild(construct<CustomFontColorField>(&TextField::text, color::toHexString(label->fontColor), &CustomFontColorField::label, label, &CustomFontColorField::textSelected, textSelected));
+						return menu;
 					}
 				};
 
-				struct ColorItem : MenuItem {
-					Label* label;
-					NVGcolor color;
-					void onAction(const event::Action& e) override {
-						label->color = color;
-					}
-					void step() override {
-						rightText = color::toHexString(label->color) == color::toHexString(color) ? "✔" : "";
-						MenuItem::step();
-					}
-				};
-
-				struct CustomColorField : ui::TextField {
+				struct ColorMenuItem : MenuItem {
 					Label* label;
 					bool* textSelected;
-					CustomColorField() {
-						box.size.x = 80.f;
-						placeholder = "#ffffff";
+					ColorMenuItem() {
+						rightText = RIGHT_ARROW;
 					}
-					void onSelectKey(const event::SelectKey& e) override {
-						if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
-							label->color = color::fromHexString(trim(text));
-							ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
-							overlay->requestDelete();
-							e.consume(this);
-						}
-						if (!e.getTarget()) {
-							ui::TextField::onSelectKey(e);
-						}
-					}
-					void onButton(const event::Button& e) override {
-						*textSelected = false;
-						TextField::onButton(e);
+
+					Menu* createChildMenu() override {
+						struct ColorItem : MenuItem {
+							Label* label;
+							NVGcolor color;
+							void onAction(const event::Action& e) override {
+								label->color = color;
+							}
+							void step() override {
+								rightText = color::toHexString(label->color) == color::toHexString(color) ? "✔" : "";
+								MenuItem::step();
+							}
+						};
+
+						struct CustomColorField : ui::TextField {
+							Label* label;
+							bool* textSelected;
+							CustomColorField() {
+								box.size.x = 80.f;
+								placeholder = "#ffffff";
+							}
+							void onSelectKey(const event::SelectKey& e) override {
+								if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
+									label->color = color::fromHexString(trim(text));
+									ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
+									overlay->requestDelete();
+									e.consume(this);
+								}
+								if (!e.getTarget()) {
+									ui::TextField::onSelectKey(e);
+								}
+							}
+							void onButton(const event::Button& e) override {
+								*textSelected = false;
+								TextField::onButton(e);
+							}
+						};
+
+						Menu* menu = new Menu;
+						menu->addChild(construct<MenuColorLabel>(&MenuColorLabel::fillColor, label->color));
+						menu->addChild(construct<ColorItem>(&MenuItem::text, "Yellow", &ColorItem::label, label, &ColorItem::color, LABEL_COLOR_YELLOW));
+						menu->addChild(construct<ColorItem>(&MenuItem::text, "Red", &ColorItem::label, label, &ColorItem::color, LABEL_COLOR_RED));
+						menu->addChild(construct<ColorItem>(&MenuItem::text, "Cyan", &ColorItem::label, label, &ColorItem::color, LABEL_COLOR_CYAN));
+						menu->addChild(construct<ColorItem>(&MenuItem::text, "Green", &ColorItem::label, label, &ColorItem::color, LABEL_COLOR_GREEN));
+						menu->addChild(construct<ColorItem>(&MenuItem::text, "Pink", &ColorItem::label, label, &ColorItem::color, LABEL_COLOR_PINK));
+						menu->addChild(construct<ColorItem>(&MenuItem::text, "White", &ColorItem::label, label, &ColorItem::color, LABEL_COLOR_WHITE));
+						menu->addChild(construct<CustomColorField>(&TextField::text, color::toHexString(label->color), &CustomColorField::label, label, &CustomColorField::textSelected, textSelected));
+						return menu;
 					}
 				};
 
@@ -682,23 +721,13 @@ struct LabelWidget : widget::TransparentWidget {
 				menu->addChild(construct<RotateItem>(&MenuItem::text, "90°", &RotateItem::label, label, &RotateItem::angle, 90.f));
 				menu->addChild(construct<RotateItem>(&MenuItem::text, "270°", &RotateItem::label, label, &RotateItem::angle, 270.f));
 				menu->addChild(new MenuSeparator);
+				menu->addChild(construct<ColorMenuItem>(&MenuItem::text, "Color", &ColorMenuItem::label, label, &ColorMenuItem::textSelected, textSelected));
+				menu->addChild(new MenuSeparator);
 				menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Font"));
 				menu->addChild(construct<FontItem>(&MenuItem::text, "Default", &FontItem::label, label, &FontItem::font, 0));
 				menu->addChild(construct<FontItem>(&MenuItem::text, "Handwriting", &FontItem::label, label, &FontItem::font, 1));
 				menu->addChild(new MenuSeparator);
-				menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Font color"));
-				menu->addChild(construct<FontColorItem>(&MenuItem::text, "Black", &FontColorItem::label, label, &FontColorItem::color, LABEL_FONTCOLOR_DEFAULT));
-				menu->addChild(construct<FontColorItem>(&MenuItem::text, "White", &FontColorItem::label, label, &FontColorItem::color, LABEL_FONTCOLOR_WHITE));
-				menu->addChild(construct<CustomFontColorField>(&TextField::text, color::toHexString(label->fontColor), &CustomFontColorField::label, label, &CustomFontColorField::textSelected, textSelected));
-				menu->addChild(new MenuSeparator);
-				menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Color"));
-				menu->addChild(construct<ColorItem>(&MenuItem::text, "Yellow", &ColorItem::label, label, &ColorItem::color, LABEL_COLOR_YELLOW));
-				menu->addChild(construct<ColorItem>(&MenuItem::text, "Red", &ColorItem::label, label, &ColorItem::color, LABEL_COLOR_RED));
-				menu->addChild(construct<ColorItem>(&MenuItem::text, "Cyan", &ColorItem::label, label, &ColorItem::color, LABEL_COLOR_CYAN));
-				menu->addChild(construct<ColorItem>(&MenuItem::text, "Green", &ColorItem::label, label, &ColorItem::color, LABEL_COLOR_GREEN));
-				menu->addChild(construct<ColorItem>(&MenuItem::text, "Pink", &ColorItem::label, label, &ColorItem::color, LABEL_COLOR_PINK));
-				menu->addChild(construct<ColorItem>(&MenuItem::text, "White", &ColorItem::label, label, &ColorItem::color, LABEL_COLOR_WHITE));
-				menu->addChild(construct<CustomColorField>(&TextField::text, color::toHexString(label->color), &CustomColorField::label, label, &CustomColorField::textSelected, textSelected));
+				menu->addChild(construct<FontColorMenuItem>(&MenuItem::text, "Font color", &FontColorMenuItem::label, label, &FontColorMenuItem::textSelected, textSelected));
 				return menu;
 			}
 		};
@@ -1228,65 +1257,101 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 					}
 				};
 
-				struct FontColorItem : MenuItem {
+				struct FontColorMenuItem : MenuItem {
 					GlueModule* module;
-					NVGcolor color;
-					void onAction(const event::Action& e) override {
-						module->defaultFontColor = color;
+					FontColorMenuItem() {
+						rightText = RIGHT_ARROW;
 					}
-					void step() override {
-						rightText = color::toHexString(module->defaultFontColor) == color::toHexString(color) ? "✔" : "";
-						MenuItem::step();
+
+					Menu* createChildMenu() override {
+						struct FontColorItem : MenuItem {
+							GlueModule* module;
+							NVGcolor color;
+							void onAction(const event::Action& e) override {
+								module->defaultFontColor = color;
+							}
+							void step() override {
+								rightText = color::toHexString(module->defaultFontColor) == color::toHexString(color) ? "✔" : "";
+								MenuItem::step();
+							}
+						};
+
+						struct CustomFontColorField : ui::TextField {
+							GlueModule* module;
+							CustomFontColorField() {
+								box.size.x = 80.f;
+								placeholder = color::toHexString(LABEL_FONTCOLOR_DEFAULT);
+							}
+							void onSelectKey(const event::SelectKey& e) override {
+								if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
+									module->defaultFontColor = color::fromHexString(trim(text));
+									ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
+									overlay->requestDelete();
+									e.consume(this);
+								}
+								if (!e.getTarget()) {
+									ui::TextField::onSelectKey(e);
+								}
+							}
+						};
+
+						Menu* menu = new Menu;
+						menu->addChild(construct<MenuColorLabel>(&MenuColorLabel::fillColor, module->defaultFontColor));
+						menu->addChild(construct<FontColorItem>(&MenuItem::text, "Black", &FontColorItem::module, module, &FontColorItem::color, LABEL_FONTCOLOR_DEFAULT));
+						menu->addChild(construct<FontColorItem>(&MenuItem::text, "White", &FontColorItem::module, module, &FontColorItem::color, LABEL_FONTCOLOR_WHITE));
+						menu->addChild(construct<CustomFontColorField>(&TextField::text, color::toHexString(module->defaultFontColor), &CustomFontColorField::module, module));
+						return menu;
 					}
 				};
 
-				struct CustomFontColorField : ui::TextField {
+				struct ColorMenuItem : MenuItem {
 					GlueModule* module;
-					CustomFontColorField() {
-						box.size.x = 80.f;
-						placeholder = color::toHexString(LABEL_FONTCOLOR_DEFAULT);
+					ColorMenuItem() {
+						rightText = RIGHT_ARROW;
 					}
-					void onSelectKey(const event::SelectKey& e) override {
-						if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
-							module->defaultFontColor = color::fromHexString(trim(text));
-							ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
-							overlay->requestDelete();
-							e.consume(this);
-						}
-						if (!e.getTarget()) {
-							ui::TextField::onSelectKey(e);
-						}
-					}
-				};
 
-				struct ColorItem : MenuItem {
-					GlueModule* module;
-					NVGcolor color;
-					void onAction(const event::Action& e) override {
-						module->defaultColor = color;
-					}
-					void step() override {
-						rightText = color::toHexString(module->defaultColor) == color::toHexString(color) ? "✔" : "";
-						MenuItem::step();
-					}
-				};
+					Menu* createChildMenu() override {
+						struct ColorItem : MenuItem {
+							GlueModule* module;
+							NVGcolor color;
+							void onAction(const event::Action& e) override {
+								module->defaultColor = color;
+							}
+							void step() override {
+								rightText = color::toHexString(module->defaultColor) == color::toHexString(color) ? "✔" : "";
+								MenuItem::step();
+							}
+						};
 
-				struct CustomColorField : ui::TextField {
-					GlueModule* module;
-					CustomColorField() {
-						box.size.x = 80.f;
-						placeholder = "#ffffff";
-					}
-					void onSelectKey(const event::SelectKey& e) override {
-						if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
-							module->defaultColor = color::fromHexString(trim(text));
-							ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
-							overlay->requestDelete();
-							e.consume(this);
-						}
-						if (!e.getTarget()) {
-							ui::TextField::onSelectKey(e);
-						}
+						struct CustomColorField : ui::TextField {
+							GlueModule* module;
+							CustomColorField() {
+								box.size.x = 80.f;
+								placeholder = "#ffffff";
+							}
+							void onSelectKey(const event::SelectKey& e) override {
+								if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
+									module->defaultColor = color::fromHexString(trim(text));
+									ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
+									overlay->requestDelete();
+									e.consume(this);
+								}
+								if (!e.getTarget()) {
+									ui::TextField::onSelectKey(e);
+								}
+							}
+						};
+
+						Menu* menu = new Menu;
+						menu->addChild(construct<MenuColorLabel>(&MenuColorLabel::fillColor, module->defaultColor));
+						menu->addChild(construct<ColorItem>(&MenuItem::text, "Yellow", &ColorItem::module, module, &ColorItem::color, LABEL_COLOR_YELLOW));
+						menu->addChild(construct<ColorItem>(&MenuItem::text, "Red", &ColorItem::module, module, &ColorItem::color, LABEL_COLOR_RED));
+						menu->addChild(construct<ColorItem>(&MenuItem::text, "Cyan", &ColorItem::module, module, &ColorItem::color, LABEL_COLOR_CYAN));
+						menu->addChild(construct<ColorItem>(&MenuItem::text, "Green", &ColorItem::module, module, &ColorItem::color, LABEL_COLOR_GREEN));
+						menu->addChild(construct<ColorItem>(&MenuItem::text, "Pink", &ColorItem::module, module, &ColorItem::color, LABEL_COLOR_PINK));
+						menu->addChild(construct<ColorItem>(&MenuItem::text, "White", &ColorItem::module, module, &ColorItem::color, LABEL_COLOR_WHITE));
+						menu->addChild(construct<CustomColorField>(&TextField::text, color::toHexString(module->defaultColor), &CustomColorField::module, module));
+						return menu;
 					}
 				};
 
@@ -1299,23 +1364,13 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 				menu->addChild(construct<RotateItem>(&MenuItem::text, "90°", &RotateItem::module, module, &RotateItem::angle, 90.f));
 				menu->addChild(construct<RotateItem>(&MenuItem::text, "270°", &RotateItem::module, module, &RotateItem::angle, 270.f));
 				menu->addChild(new MenuSeparator());
+				menu->addChild(construct<ColorMenuItem>(&MenuItem::text, "Default color", &ColorMenuItem::module, module));
+				menu->addChild(new MenuSeparator());
 				menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Default font"));
 				menu->addChild(construct<FontItem>(&MenuItem::text, "Default", &FontItem::module, module, &FontItem::font, 0));
 				menu->addChild(construct<FontItem>(&MenuItem::text, "Handwriting", &FontItem::module, module, &FontItem::font, 1));
 				menu->addChild(new MenuSeparator());
-				menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Default font color"));
-				menu->addChild(construct<FontColorItem>(&MenuItem::text, "Black", &FontColorItem::module, module, &FontColorItem::color, LABEL_FONTCOLOR_DEFAULT));
-				menu->addChild(construct<FontColorItem>(&MenuItem::text, "White", &FontColorItem::module, module, &FontColorItem::color, LABEL_FONTCOLOR_WHITE));
-				menu->addChild(construct<CustomFontColorField>(&TextField::text, color::toHexString(module->defaultFontColor), &CustomFontColorField::module, module));
-				menu->addChild(new MenuSeparator());
-				menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Default color"));
-				menu->addChild(construct<ColorItem>(&MenuItem::text, "Yellow", &ColorItem::module, module, &ColorItem::color, LABEL_COLOR_YELLOW));
-				menu->addChild(construct<ColorItem>(&MenuItem::text, "Red", &ColorItem::module, module, &ColorItem::color, LABEL_COLOR_RED));
-				menu->addChild(construct<ColorItem>(&MenuItem::text, "Cyan", &ColorItem::module, module, &ColorItem::color, LABEL_COLOR_CYAN));
-				menu->addChild(construct<ColorItem>(&MenuItem::text, "Green", &ColorItem::module, module, &ColorItem::color, LABEL_COLOR_GREEN));
-				menu->addChild(construct<ColorItem>(&MenuItem::text, "Pink", &ColorItem::module, module, &ColorItem::color, LABEL_COLOR_PINK));
-				menu->addChild(construct<ColorItem>(&MenuItem::text, "White", &ColorItem::module, module, &ColorItem::color, LABEL_COLOR_WHITE));
-				menu->addChild(construct<CustomColorField>(&TextField::text, color::toHexString(module->defaultColor), &CustomColorField::module, module));
+				menu->addChild(construct<FontColorMenuItem>(&MenuItem::text, "Default font color", &FontColorMenuItem::module, module));
 				return menu;
 			}
 		};
