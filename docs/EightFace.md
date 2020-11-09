@@ -26,6 +26,7 @@ The fun begins when you use the port labelled "SLOT" for selecting preset slots 
 
 ![8FACE sequencing](./EightFace-context.png)
 
+<a name="trigger-modes"></a>
 There are different modes for SLOT-port available, configured by context menu option:
 
 - **Trigger forward**: A trigger on SLOT advances 8FACE to the next slot. Empty slots are part of the sequence but won't have any effect on the controlled module.

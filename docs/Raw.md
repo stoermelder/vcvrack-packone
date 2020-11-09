@@ -9,7 +9,7 @@ RAW is a digital effect based on the dynamics of bistable systems, according to 
 > https://dafx2020.mdw.ac.at/proceedings/papers/DAFx2020_paper_6.pdf  
 > https://ant-novak.com/posts/projects/2020-02-26_Bistable_Effect
 
-Some contributions to the original implementation have been made by [Jatin Chowdhury](https://github.com/jatinchowdhury18) which improve stability of the algorithm and add an parameter for nonlinearity asymmetry.
+Some contributions to the original implementation have been made by [Jatin Chowdhury](https://github.com/jatinchowdhury18) which improve the stability of the algorithm and add a parameter for nonlinearity asymmetry.
 
 ![RAW intro](./Raw-intro.png)
 

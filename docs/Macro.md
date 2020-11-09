@@ -6,17 +6,19 @@ MACRO is an utility module for controlling four different parameters at once. It
 
 ## Mapping parameters
 
-You can bind up to four parameters of any module in your patch. You do this by activating a mapping button by click. While mapping is active the led it lit in red and turns green after you click onto a knob or fader of the module you like to control, also a small pink mapping indicator is shown next to the parameter.
+You can bind up to four parameters of any module in your patch. You do this by activating a mapping button by click. While mapping is active the led is lit in red and turns green after you click onto a knob or fader of the module you like to control, also a small pink mapping indicator is shown next to the parameter.
 
 ## Slew-limiting and scaling
 
-Each mapping slot and each CV output port has its own settings for slew-limiting and scaling the input value. The current scaling projection is shown on the context menu.
+Each mapping slot has its own setting for slew-limiting of the input value which applies an exponential filter. Small values for _Slew_ are smoothing incoming values and larger values  give an overall steady movement of the mapped parameters or CV outputs on fast input changes.
+
+Each mapping slot and CV output has also two sliders (_Low_ and _High_) for scaling input values which allows you to adjust the range and how the mapped parameter is affected. By setting the two sliders accordingly almost any linear transformation is possible, even inverting a parameter. For convenience some presets are provided and the current scaling transformation is shown on the context menu.
 
 ![MACRO context](./Macro-scaling.gif)
 
 ## IN-port
 
-The IN-port is optional and MACRO can be used without anything connected. In this case the value is taken from the big knob's current position. If voltage is applied to IN the knob acts as an attenuator, also the voltage range can be switch from unipolar (0..10V) to bipolar (-5..5V) on the context menu.
+The IN-port is optional in use and MACRO can be used leaving it unconnected. In this case the input value is taken from the big knob's current position. If voltage is applied to IN the knob acts as an attenuator, also the voltage range can be switch from unipolar (0..10V) to bipolar (-5..5V) on the context menu.
 
 ## Additional features
 

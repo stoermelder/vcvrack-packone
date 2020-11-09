@@ -79,11 +79,11 @@ struct ThemedModuleWidget : BASE {
 				};
 
 				Menu* menu = new Menu;
-				menu->addChild(construct<PanelThemeItem>(&MenuItem::text, "Blue panel", &PanelThemeItem::module, module, &PanelThemeItem::theme, 0));
-				menu->addChild(construct<PanelThemeItem>(&MenuItem::text, "Dark panel", &PanelThemeItem::module, module, &PanelThemeItem::theme, 1));
+				menu->addChild(construct<PanelThemeItem>(&MenuItem::text, "Blue", &PanelThemeItem::module, module, &PanelThemeItem::theme, 0));
+				menu->addChild(construct<PanelThemeItem>(&MenuItem::text, "Dark", &PanelThemeItem::module, module, &PanelThemeItem::theme, 1));
 				menu->addChild(new MenuSeparator);
-				menu->addChild(construct<PanelThemeDefaultItem>(&MenuItem::text, "Blue panel as default", &PanelThemeDefaultItem::theme, 0));
-				menu->addChild(construct<PanelThemeDefaultItem>(&MenuItem::text, "Dark panel as default", &PanelThemeDefaultItem::theme, 1));
+				menu->addChild(construct<PanelThemeDefaultItem>(&MenuItem::text, "Blue as default", &PanelThemeDefaultItem::theme, 0));
+				menu->addChild(construct<PanelThemeDefaultItem>(&MenuItem::text, "Dark as default", &PanelThemeDefaultItem::theme, 1));
 				return menu;
 			}
 		};
