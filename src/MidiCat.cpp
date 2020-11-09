@@ -268,8 +268,9 @@ struct MidiCatModule : Module, StripIdFixModule {
 									break;
 								case CCMODE_PICKUP1:
 									if (lastValueIn[id] != valuesCc[cc]) {
-										int p = (int)rescale(paramQuantity->getValue(), paramQuantity->getMinValue(), paramQuantity->getMaxValue(), 0.f, 127.f);
+										int p = midiParam[id].getValue();
 										if (p - 3 <= lastValueIn[id] && lastValueIn[id] <= p + 3) {
+											midiParam[id].resetFilter();
 											t = valuesCc[cc];
 										}
 										lastValueIn[id] = valuesCc[cc];
@@ -277,8 +278,9 @@ struct MidiCatModule : Module, StripIdFixModule {
 									break;
 								case CCMODE_PICKUP2:
 									if (lastValueIn[id] != valuesCc[cc]) {
-										int p = (int)rescale(paramQuantity->getValue(), paramQuantity->getMinValue(), paramQuantity->getMaxValue(), 0.f, 127.f);
+										int p = midiParam[id].getValue();
 										if (p - 3 <= lastValueIn[id] && lastValueIn[id] <= p + 3 && p - 7 <= valuesCc[cc] && valuesCc[cc] <= p + 7) {
+											midiParam[id].resetFilter();
 											t = valuesCc[cc];
 										}
 										lastValueIn[id] = valuesCc[cc];

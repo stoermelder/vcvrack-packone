@@ -40,6 +40,11 @@ struct ScaledMapParam {
 		max = 1.f;
 	}
 
+	void resetFilter() {
+		filter.reset();
+		filterInitialized = false;
+	}
+
 	void setParamQuantity(PQ* pq) {
 		paramQuantity = pq;
 		if (paramQuantity && valueOut == std::numeric_limits<float>::infinity()) {
