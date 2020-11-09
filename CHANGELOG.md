@@ -10,7 +10,7 @@
 - Module [MACRO](./docs/Macro.md)
     - New module, marco-knob for four parameter-mappings and two CV outputs
 - Module [MB](./docs/Mb.md)
-    - New module, experimantal replacement for Rack's module browser, formerly available in Stoermelder's PackTau
+    - New module, experimental replacement for Rack's module browser, formerly available in Stoermelder's PackTau
 - Module [MIDI-MON](./docs/MidiMon.md)
     - New module, input-monitor for MIDI messages
 - Module [RAW](./docs/Raw.md)
@@ -44,6 +44,7 @@
     - Added option for ignoring MIDI device settings on preset load (#185)
     - Fixed broken "Re-send MIDI feedback" option
     - Added context menu option for re-sending MIDI feedback periodically ([manual](./docs/MidiCat.md#feedback-periodically))
+    - Added note-mode "Toggle + Velocity" ([manual](./docs/MidiCat.md#toggle-velocity))
 - Module [MIDI-STEP](./docs/MidiStep.md)
     - Added option for Akai MPD218 ([manual](./docs/MidiStep.md#akai-mpd218))
 - Module [MIRROR](./docs/Mirror.md)

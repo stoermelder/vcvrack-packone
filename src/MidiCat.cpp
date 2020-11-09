@@ -291,9 +291,6 @@ struct MidiCatModule : Module, StripIdFixModule {
 							}
 
 							if (t >= 0) {
-								//float v = rescale(t, 0.f, 127.f, paramQuantity->getMinValue(), paramQuantity->getMaxValue());
-								//v = valueFilters[id].process(args.sampleTime * processDivider.getDivision(), v);
-								//paramQuantity->setValue(v);
 								midiParam[id].setValue(t);
 							}
 						}
@@ -333,12 +330,27 @@ struct MidiCatModule : Module, StripIdFixModule {
 										lastValueIn[id] = -1;
 									}
 									break;
+								case NOTEMODE::NOTEMODE_TOGGLE_VEL:
+									if (valuesNote[note] > 0 && (lastValueIn[id] == -1 || lastValueIn[id] >= 0)) {
+										t = valuesNote[note];
+										lastValueIn[id] = -2;
+									} 
+									else if (valuesNote[note] == 0 && lastValueIn[id] == -2) {
+										t = midiParam[id].getValue();
+										lastValueIn[id] = -3;
+									}
+									else if (valuesNote[note] > 0 && lastValueIn[id] == -3) {
+										t = 0;
+										lastValueIn[id] = -4;
+									}
+									else if (valuesNote[note] == 0 && lastValueIn[id] == -4) {
+										t = 0;
+										lastValueIn[id] = -1;
+									}
+									break;
 							}
 
 							if (t >= 0) {
-								//float v = rescale(t, 0.f, 127.f, paramQuantity->getMinValue(), paramQuantity->getMaxValue());
-								// Do not use filters on notes
-								//paramQuantity->setValue(v);
 								midiParam[id].setValue(t);
 							}
 						}
@@ -346,12 +358,10 @@ struct MidiCatModule : Module, StripIdFixModule {
 						midiParam[id].process(args.sampleTime * float(processDivision));
 
 						// Midi feedback
-						//float v = paramQuantity->getValue();
 						int v = midiParam[id].getValue();
 
 						if (lastValueOut[id] != v) {
 							lastValueOut[id] = v;
-							//v = rescale(v, paramQuantity->getMinValue(), paramQuantity->getMaxValue(), 0.f, 127.f);
 							if (cc >= 0 && ccsMode[id] == CCMODE_DIRECT)
 								lastValueIn[id] = valuesCc[cc] = v;
 							if (cc >= 0)
@@ -941,6 +951,7 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Momentary", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::NOTEMODE_MOMENTARY));
 				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Momentary + Velocity", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::NOTEMODE_MOMENTARY_VEL));
 				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Toggle", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::NOTEMODE_TOGGLE));
+				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Toggle + Velocity", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::NOTEMODE_TOGGLE_VEL));
 				return menu;
 			}
 		}; // struct NoteModeMenuItem

@@ -69,20 +69,25 @@ MIDI-CAT supports mapping of MIDI note-messages instead of MIDI CC. There are di
 
 - **Toggle**: Every MIDI "note on" message toggles the parameter between its minimum and maximum value (usually 0 and 1 for switches).
 
-Some controllers with push-buttons don't handle "note off" messages the way the message is intended, hence a mapping-slot can be switched with the option _Send "note on, velocity 0" on note off_ to send a "note on" message with "velocity 0" as MIDI feedback instead (since v1.7.0).
+<a name="toggle-velocity"></a>
+- **Toggle + Velocity**: Every MIDI "note on" message toggles the parameter between its minimum and the note's velocity value (added in v1.8.0).
+
+Some controllers with push-buttons don't handle "note off" messages the way the message is intended, hence a mapping-slot can be switched with the option _Send "note on, vel 0" on note off_ to send a "note on" message with "velocity 0" as MIDI feedback instead (since v1.7.0).
 
 ![MIDI-CAT module select](./MidiCat-map-note.png)
 
 ## Slew-limiting and input-scaling
 
 <a name="slew-limiting"></a>
-Added in v1.8.0: Each mapping slot has its own setting for slew-limiting of the input value which applies an exponential filter. Small values for _Slew_ are smoothing incoming MIDI values which are quite "steppy" as MIDI supports only values 0-127 for CC and note velocity (14-bit MIDI is not supported at the moment). Larger values for _Slew_ give an overall steady movement of the mapped parameter on fast controller changes.
+Added in v1.8.0: Each mapping slot has its own setting for slew-limiting of the input value which applies an exponential filter. Small values for _Slew_ are smoothing incoming MIDI values which are quite "steppy" as MIDI supports only values 0-127 for CC and note velocity (14-bit MIDI is not supported at the moment). Larger values for _Slew_ give an overall steady movement of the mapped parameter on fast controller changes.  
 
 <a name="precision"></a>
 As slew-limiting can be a CPU-intensive operation when used on many parameters MIDI-CAT has an option to set the update frequency and thus its precision. This option can be found on the context menu and allows updating parameters on every audio sample which will cause the highest CPU usage but is rarely needed. Lower update frequencies also lower the CPU usage accordingly.
 
 <a name="input-scaling"></a>
 Added in v1.8.0: Each mapping slot has also two sliders (_Low_ and _High_) for scaling incoming MIDI values which allows you to adjust the range of the MIDI control and how the mapped parameter is affected. By setting the two sliders accordingly (MIDI values are ranging from 0 to 127) almost any linear transformation is possible, even inverting a MIDI control. For convenience some presets are provided and the current scaling transformation is shown on the context menu.
+
+Please note that slew-limiting and input-scaling also works fine with note-mapping.
 
 ![MIDI-CAT input-scaling](./MidiCat-input-scaling.png)
 
