@@ -113,6 +113,8 @@ struct MidiCatModule : Module, StripIdFixModule {
 
 	/** Channel ID of the learning session */
 	int learningId;
+	/** Wether multiple slots or just one slot should be learned */
+	bool learnSingleSlot = false;
 	/** Whether the CC has been set during the learning session */
 	bool learnedCc;
 	int learnedCcLast = -1;
@@ -554,14 +556,14 @@ struct MidiCatModule : Module, StripIdFixModule {
 		textLabel[learningId] = "";
 
 		// Find next incomplete map
-		while (++learningId < MAX_CHANNELS) {
+		while (!learnSingleSlot && ++learningId < MAX_CHANNELS) {
 			if ((ccs[learningId] < 0 && notes[learningId] < 0) || paramHandles[learningId].moduleId < 0)
 				return;
 		}
 		learningId = -1;
 	}
 
-	void enableLearn(int id) {
+	void enableLearn(int id, bool learnSingle = false) {
 		if (id == mapLen) {
 			disableLearn();
 			return;
@@ -573,6 +575,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 			learnedNote = false;
 			learnedNoteLast = -1;
 			learnedParam = false;
+			learnSingleSlot = learnSingle;
 		}
 	}
 
@@ -1508,7 +1511,7 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 						MidiCatModule* module;
 						int id;
 						void onAction(const event::Action& e) override {
-							module->enableLearn(id);
+							module->enableLearn(id, true);
 						}
 					};
 
