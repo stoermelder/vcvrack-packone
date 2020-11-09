@@ -1,4 +1,5 @@
 #include "plugin.hpp"
+#include "components/MenuColorLabel.hpp"
 
 namespace StoermelderPackOne {
 namespace Stroke {
@@ -835,6 +836,7 @@ struct KeyDisplay : StoermelderLedDisplay {
 
 						if (module->keys[idx].mode == KEY_MODE::S_CABLE_COLOR) {
 							Menu* menu = new Menu;
+							menu->addChild(construct<MenuColorLabel>(&MenuColorLabel::fillColor, color::fromHexString(module->keys[idx].data)));
 							menu->addChild(construct<ColorField>(&ColorField::module, module, &ColorField::idx, idx, &TextField::text, module->keys[idx].data));
 							return menu;
 						}
