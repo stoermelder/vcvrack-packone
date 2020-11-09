@@ -1,6 +1,6 @@
 ## 1.x.x (in development)
 
-- Module [FLOWER, SEEDS, OFFSPRING](./docs/Flower.md)
+- Modules [FLOWER, SEEDS, OFFSPRING](./docs/Flower.md)
     - New modules, pattern-driven 16-step sequencer
 
 ## 1.8.0 (in development)
@@ -9,6 +9,8 @@
     - New module, 4 channel sequencer running on a 2-dimensional hexagonal grid
 - Module [MACRO](./docs/Macro.md)
     - New module, marco-knob for four parameter-mappings and two CV outputs
+- Module [MB](./docs/Mb.md)
+    - New module, experimantal replacement for Rack's module browser, formerly available in Stoermelder's PackTau
 - Module [MIDI-MON](./docs/MidiMon.md)
     - New module, input-monitor for MIDI messages
 - Module [RAW](./docs/Raw.md)
@@ -22,10 +24,7 @@
     - Fixed wrong channel count of the polyphonic output ports
 - Modules [8FACE, 8FACEx2](./docs/EightFace.md)
     - Fixed hanging pingpong-mode when changing slots manually (#191, #203)
-    - Added trigger-option "pseudo-random"
-    - Added trigger-option "random walk"
-    - Added trigger-option "alternating"
-    - Added trigger-option "shuffle"
+    - Added trigger-options "pseudo-random", "random walk", "alternating", "shuffle" ([manual](./docs/EightFace.md#trigger-modes))
 - Module [GRIP](./docs/Grip.md)
     - Fixed crash on locking more than 32 parameters (#176)
 - Module [INTERMIX](./docs/Intermix.md)
@@ -46,7 +45,7 @@
     - Fixed broken "Re-send MIDI feedback" option
     - Added context menu option for re-sending MIDI feedback periodically ([manual](./docs/MidiCat.md#feedback-periodically))
 - Module [MIDI-STEP](./docs/MidiStep.md)
-    - Added option for Akai MPD218
+    - Added option for Akai MPD218 ([manual](./docs/MidiStep.md#akai-mpd218))
 - Module [MIRROR](./docs/Mirror.md)
     - Added syncing of module presets even if bound module has no parameters (#189)
     - Added hotkey for syncing module presets
@@ -54,20 +53,16 @@
     - Added hotkeys Shift+L (load), Shift+S (save as), Shift+X (cut)
     - Added context menu option "Load with replace" ([manual](./docs/Strip.md#load-and-replace)) (#186)
     - Fixed crash on loading vcvss-files with missing modules
-    - Added context menu option for custom presets, listing all .vcvss-files in presets/Strip ([manual](./docs/Strip.md#preset)) (#198)
+    - Added context menu option for custom presets, listing all .vcvss-files in folder presets/Strip ([manual](./docs/Strip.md#preset)) (#198)
 - Module [STROKE](./docs/Stroke.md)
-    - Added command "Toggle engine pause"
-    - Added command "Toggle lock modules"
+    - Added commands "Toggle engine pause", "Toggle lock modules"
     - Added command "Toggle busboard"
-    - Added LEDs for signaling a triggered hotkey
+    - Added LEDs for signaling an activated hotkey
     - Allow loading presets (#187)
     - Improved behavior of command "Cable opacity" across restarts of Rack (#197)
 - Module [TRANSIT](./docs/Transit.md)
     - Fixed hanging pingpong-mode when changing slots manually
-    - Added trigger-option "pseudo-random"
-    - Added trigger-option "random walk"
-    - Added trigger-option "alternating"
-    - Added trigger-option "shuffle"
+    - Added trigger-options "pseudo-random", "random walk", "alternating", "shuffle" ([manual](./docs/Transit.md#sequencing-and-selecting-snapshots))
     - Fixed broken snapshots on save after mapped modules have been deleted (#205)
 - Module [X4](./docs/X4.md)
     - Fixed advancing to the lower button after the upper button has been mapped

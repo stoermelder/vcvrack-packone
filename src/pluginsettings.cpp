@@ -9,6 +9,10 @@ void StoermelderSettings::saveToJson() {
     json_t* settingsJ = json_object();
     json_object_set_new(settingsJ, "panelThemeDefault", json_integer(panelThemeDefault));
 
+    json_object_set(settingsJ, "mbModels", mbModelsJ);
+    json_object_set(settingsJ, "mbV1zoom", json_real(mbV1zoom));
+    json_object_set(settingsJ, "mbV1sort", json_integer(mbV1sort));
+
     std::string settingsFilename = rack::asset::user("Stoermelder-P1.json");
     FILE* file = fopen(settingsFilename.c_str(), "w");
     if (file) {
@@ -37,6 +41,13 @@ void StoermelderSettings::readFromJson() {
 
     json_t* panelThemeDefaultJ = json_object_get(settingsJ, "panelThemeDefault");
     if (panelThemeDefaultJ) panelThemeDefault = json_integer_value(panelThemeDefaultJ);
+
+    json_t* fmJ = json_object_get(settingsJ, "mbModels");
+    if (fmJ) mbModelsJ = json_copy(fmJ);
+    json_t* mbV1zoomJ = json_object_get(settingsJ, "mbV1zoom");
+    if (mbV1zoomJ) mbV1zoom = json_real_value(mbV1zoomJ);
+    json_t* mbV1sortJ = json_object_get(settingsJ, "mbV1sort");
+    if (mbV1sortJ) mbV1sort = json_integer_value(mbV1sortJ);
 
     fclose(file);
     json_decref(settingsJ);

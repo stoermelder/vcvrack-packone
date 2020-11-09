@@ -52,3 +52,12 @@ extern Model* modelMacro;
 extern Model* modelRaw;
 extern Model* modelMidiMon;
 extern Model* modelAudioInterface64;
+extern Model* modelMb;
+
+
+namespace StoermelderPackOne {
+
+bool registerSingleton(std::string name, ModuleWidget* mw);
+bool unregisterSingleton(std::string name, ModuleWidget* mw);
+
+} // namespace StoermelderPackOne

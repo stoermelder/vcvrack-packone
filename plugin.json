@@ -305,6 +305,13 @@
 			"name": "AUDIO-64",
 			"description": "Sends CV and audio to/from an audio device",
 			"tags": ["External"]
+		},
+		{
+			"slug": "Mb",
+			"name": "MB",
+			"description": "Experimantal replacement module browsers for Rack. Brings back the browser from Rack v0.6x and has a modified browser from Rack v1.x with adjustable preview size, favorites, extended filtering options and more.",
+			"tags": ["Utility"],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Mb.md"
 		}
 	]
 }
