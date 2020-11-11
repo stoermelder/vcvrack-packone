@@ -47,6 +47,7 @@ void init(rack::Plugin* p) {
 	p->addModel(modelMacro);
 	p->addModel(modelRaw);
 	p->addModel(modelMidiMon);
+	p->addModel(modelOrbit);
 	p->addModel(modelAudioInterface64);
 	p->addModel(modelMb);
 

@@ -51,6 +51,7 @@ extern Model* modelFacets;
 extern Model* modelMacro;
 extern Model* modelRaw;
 extern Model* modelMidiMon;
+extern Model* modelOrbit;
 extern Model* modelAudioInterface64;
 extern Model* modelMb;
 
