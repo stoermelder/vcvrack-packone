@@ -246,7 +246,7 @@ struct EightFaceModule : Module {
 								break;
 							case SLOTCVMODE_ARM:
 								if (slotTrigger.process(inputs[SLOT_INPUT].getVoltage())) {
-									presetLoad(t, presetNext);
+									presetLoad(t, presetNext, true);
 								}
 								break;
 						}

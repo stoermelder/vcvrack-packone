@@ -7,6 +7,11 @@
 - Modules [ORBIT](./docs/Orbit.md)
     - New module, a polyphonic stereo field spreader
 
+### Fixes and Changes
+
+- Modules [8FACE, 8FACEx2](./docs/EightFace.md)
+    - Load preset in Arm-mode even when the same slot was selected before (#212)
+
 ## 1.8.0
 
 - Module [HIVE](./docs/Hive.md)
