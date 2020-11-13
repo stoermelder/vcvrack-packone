@@ -273,11 +273,11 @@
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/X4.md"
 		},
 		{
-			"slug": "Facets",
-			"name": "FACETS",
-			"description": "Wave multiplier/Phase shifter inspired by A-137-2",
+			"slug": "Yaw",
+			"name": "YAW",
+			"description": "Wave multiplier/phase shifter inspired by A-137-2",
 			"tags": ["Waveshaper", "Distortion"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Facets.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Yaw.md"
 		},
 		{
 			"slug": "Macro",

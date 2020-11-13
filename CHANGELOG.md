@@ -2,8 +2,8 @@
 
 - Modules [FLOWER, SEEDS, OFFSPRING](./docs/Flower.md)
     - New modules, pattern-driven 16-step sequencer
-- Modules [FACETS](./docs/Facets.md)
-    - New module
+- Modules [YAW](./docs/Yaw.md)
+    - New module, a wave multiplier/phase shifter inspired by A-137-2
 - Modules [ORBIT](./docs/Orbit.md)
     - New module, a polyphonic stereo field spreader
 

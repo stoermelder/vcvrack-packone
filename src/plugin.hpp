@@ -47,7 +47,7 @@ extern Model* modelFlowerTrig;
 extern Model* modelTransit;
 extern Model* modelTransitEx;
 extern Model* modelX4;
-extern Model* modelFacets;
+extern Model* modelYaw;
 extern Model* modelMacro;
 extern Model* modelRaw;
 extern Model* modelMidiMon;
