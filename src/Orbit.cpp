@@ -28,6 +28,14 @@ struct LinearDrift {
 	}
 };
 
+
+enum class DISTRIBUTION {
+	EXTERNAL = 0,
+	NORMAL = 1,
+	NORMAL_MIRROR = 3,
+	UNIFORM = 2
+};
+
 struct OrbitModule : Module {
 	enum ParamIds {
 		PARAM_SPREAD,
@@ -36,7 +44,7 @@ struct OrbitModule : Module {
 	};
 	enum InputIds {
 		INPUT_SPREAD,
-		INPUT_SOURCE,
+		INPUT_DIST,
 		INPUT_IN,
 		INPUT_TRIG,
 		NUM_INPUTS
@@ -55,6 +63,8 @@ struct OrbitModule : Module {
 
 	/** [Stored to JSON] */
 	bool polyOut;
+	/** [Stored to JSON] */
+	DISTRIBUTION dist;
 
 	float pan[PORT_MAX_CHANNELS];
 	dsp::SchmittTrigger trigger[PORT_MAX_CHANNELS];
@@ -65,12 +75,13 @@ struct OrbitModule : Module {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configParam(PARAM_SPREAD, 0.f, 1.f, 0.5f, "Maximum stereo spread", "%", 0.f, 100.f);
-		configParam(PARAM_DRIFT, -1.f, 1.f, 0.f, "Drift (<0 --> L/R, >0 --> center)");
+		configParam(PARAM_DRIFT, -1.f, 1.f, 0.f, "Stereo drift (-1..0 --> L/R, 0..+1 --> center)");
 		onReset();
 	}
 
 	void onReset() override {
 		polyOut = false;
+		dist = DISTRIBUTION::NORMAL;
 		for (int c = 0; c < PORT_MAX_CHANNELS; c++) {
 			pan[c] = 0.5f;
 			clickFilter[c].setTau(0.005f);
@@ -81,7 +92,6 @@ struct OrbitModule : Module {
 
 	void process(const ProcessArgs& args) override {
 		int channels = inputs[INPUT_IN].getChannels();
-		float spread = inputs[INPUT_SPREAD].getNormalVoltage(10.f) / 10.f * params[PARAM_SPREAD].getValue();
 		float drift = params[PARAM_DRIFT].getValue();
 
 		float outL[PORT_MAX_CHANNELS];
@@ -93,8 +103,24 @@ struct OrbitModule : Module {
 			linearDrift[c].setDrift(drift);
 
 			if (trigger[c].process(inputs[INPUT_TRIG].getPolyVoltage(c))) {
-				float p = inputs[INPUT_SOURCE].isConnected() ? (inputs[INPUT_SOURCE].getPolyVoltage(c) / 5.f) : random::normal();
-				pan[c] = clamp(p * spread / 2.f + 0.5f, 0.f, 1.f);
+				float spread = inputs[INPUT_SPREAD].getNormalVoltage(10.f) / 10.f * params[PARAM_SPREAD].getValue();
+				float p; // position between 0 and 1, 0.5 is center
+				switch (dist) {
+					case DISTRIBUTION::EXTERNAL:
+						p = inputs[INPUT_DIST].getPolyVoltage(c) / 10.f + 0.5f;
+						break;
+					case DISTRIBUTION::NORMAL:
+						p = random::normal() / 6.f + 0.5f;
+						break;
+					case DISTRIBUTION::NORMAL_MIRROR:
+						p = random::normal();
+						p = (3.f * sgn(-p) + p) / 6.f + 0.5f;
+						break;
+					case DISTRIBUTION::UNIFORM:
+						p = random::uniform();
+						break;
+				}
+				pan[c] = clamp(p * spread, 0.f, 1.f);
 			}
 
 			pan[c] = linearDrift[c].process(args.sampleTime, pan[c]);
@@ -114,9 +140,9 @@ struct OrbitModule : Module {
 		}
 		else {
 			outputs[OUTPUT_L].setChannels(1);
-			outputs[OUTPUT_L].setVoltage(sumL / float(channels));
+			outputs[OUTPUT_L].setVoltage(sumL);
 			outputs[OUTPUT_R].setChannels(1);
-			outputs[OUTPUT_R].setVoltage(sumR / float(channels));
+			outputs[OUTPUT_R].setVoltage(sumR);
 		}
 	}
 
@@ -124,12 +150,14 @@ struct OrbitModule : Module {
 		json_t* rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 		json_object_set_new(rootJ, "polyOut", json_boolean(polyOut));
+		json_object_set_new(rootJ, "dist", json_integer((int)dist));
 		return rootJ;
 	}
 
 	void dataFromJson(json_t* rootJ) override {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 		polyOut = json_boolean_value(json_object_get(rootJ, "polyOut"));
+		dist = (DISTRIBUTION)json_integer_value(json_object_get(rootJ, "dist"));
 	}
 };
 
@@ -144,7 +172,7 @@ struct OrbitWidget : ThemedModuleWidget<OrbitModule> {
 		addParam(createParamCentered<StoermelderSmallKnob>(Vec(37.5f, 60.6f), module, OrbitModule::PARAM_SPREAD));
 		addInput(createInputCentered<StoermelderPort>(Vec(37.5f, 87.7f), module, OrbitModule::INPUT_SPREAD));
 		addParam(createParamCentered<StoermelderSmallKnob>(Vec(37.5f, 133.9f), module, OrbitModule::PARAM_DRIFT));
-		addInput(createInputCentered<StoermelderPort>(Vec(37.5f, 236.2f), module, OrbitModule::INPUT_SOURCE));
+		addInput(createInputCentered<StoermelderPort>(Vec(37.5f, 236.2f), module, OrbitModule::INPUT_DIST));
 
 		addInput(createInputCentered<StoermelderPort>(Vec(23.5f, 281.9f), module, OrbitModule::INPUT_IN));
 		addInput(createInputCentered<StoermelderPort>(Vec(51.5f, 281.9f), module, OrbitModule::INPUT_TRIG));
@@ -156,6 +184,33 @@ struct OrbitWidget : ThemedModuleWidget<OrbitModule> {
 		ThemedModuleWidget<OrbitModule>::appendContextMenu(menu);
 		OrbitModule* module = dynamic_cast<OrbitModule*>(this->module);
 		assert(module);
+
+		struct DistributionMenuItem : MenuItem {
+			struct DistributionItem : MenuItem {
+				OrbitModule* module;
+				DISTRIBUTION dist;
+				void onAction(const event::Action& e) override {
+					module->dist = dist;
+				}
+				void step() override {
+					rightText = CHECKMARK(module->dist == dist);
+					MenuItem::step();
+				}
+			};
+
+			OrbitModule* module;
+			DistributionMenuItem() {
+				rightText = RIGHT_ARROW;
+			}
+			Menu* createChildMenu() override {
+				Menu* menu = new Menu;
+				menu->addChild(construct<DistributionItem>(&MenuItem::text, "Normal", &DistributionItem::module, module, &DistributionItem::dist, DISTRIBUTION::NORMAL));
+				menu->addChild(construct<DistributionItem>(&MenuItem::text, "Normal \"mirrored\"", &DistributionItem::module, module, &DistributionItem::dist, DISTRIBUTION::NORMAL_MIRROR));
+				menu->addChild(construct<DistributionItem>(&MenuItem::text, "Uniform", &DistributionItem::module, module, &DistributionItem::dist, DISTRIBUTION::UNIFORM));
+				menu->addChild(construct<DistributionItem>(&MenuItem::text, "External", &DistributionItem::module, module, &DistributionItem::dist, DISTRIBUTION::EXTERNAL));
+				return menu;
+			}
+		};
 
 		struct PolyOutItem : MenuItem {
 			OrbitModule* module;
@@ -169,6 +224,7 @@ struct OrbitWidget : ThemedModuleWidget<OrbitModule> {
 		};
 
 		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<DistributionMenuItem>(&MenuItem::text, "Distribution", &DistributionMenuItem::module, module));
 		menu->addChild(construct<PolyOutItem>(&MenuItem::text, "Polyphonic output", &PolyOutItem::module, module));
 	}
 };
