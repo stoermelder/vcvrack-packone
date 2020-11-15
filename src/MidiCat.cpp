@@ -144,20 +144,25 @@ struct MidiCatModule : Module, StripIdFixModule {
 			return current;
 		}
 
-		void setValue(int value, bool force = false) {
+		void setValue(int value) {
+			if (cc == -1) return;
 			if (cc14bit) {
 				//module->midiOutput.setValue(value / 128, cc, force);
 				module->midiOutput.setValue(value / 128, cc, true);
 				module->midiOutput.setValue(value % 128, cc + 32, true);
 			}
 			else {
-				module->midiOutput.setValue(value, cc, force);
+				module->midiOutput.setValue(value, cc, current == -1);
 			}
 			current = value;
 		}
 
 		void reset() {
 			cc = -1;
+			current = -1;
+		}
+
+		void resetValue() {
 			current = -1;
 		}
 
@@ -210,13 +215,18 @@ struct MidiCatModule : Module, StripIdFixModule {
 			return current;
 		}
 
-		void setValue(int value, bool sendOnly, bool force) {
-			module->midiOutput.setGate(value, note, (module->midiOptions[id] >> MIDIOPTION_VELZERO_BIT) & 1U, force);
+		void setValue(int value, bool sendOnly) {
+			if (note == -1) return;
+			module->midiOutput.setGate(value, note, (module->midiOptions[id] >> MIDIOPTION_VELZERO_BIT) & 1U, current == -1);
 			if (!sendOnly) current = value;
 		}
 
 		void reset() {
 			note = -1;
+			current = -1;
+		}
+
+		void resetValue() {
 			current = -1;
 		}
 
@@ -357,17 +367,17 @@ struct MidiCatModule : Module, StripIdFixModule {
 
 	void process(const ProcessArgs &args) override {
 		midi::Message msg;
-		bool changed = false;
+		bool midiReceived = false;
 		while (midiInput.shift(&msg)) {
-			bool r = processMessage(msg);
-			changed = changed || r;
+			bool r = midiProcessMessage(msg);
+			midiReceived = midiReceived || r;
 		}
 
 		// Only step channels when some midi event has been received. Additionally
 		// step channels for parameter changes made manually every 128th loop. Notice
 		// that midi allows about 1000 messages per second, so checking for changes more often
 		// won't lead to higher precision on midi output.
-		if (processDivider.process() || changed) {
+		if (processDivider.process() || midiReceived) {
 			// Step channels
 			for (int id = 0; id < mapLen; id++) {
 				int cc = ccs[id].getCc();
@@ -391,7 +401,6 @@ struct MidiCatModule : Module, StripIdFixModule {
 
 				switch (midiMode) {
 					case MIDIMODE::MIDIMODE_DEFAULT: {
-						// Setting the paramQuantity directly prevets resetting the output-value
 						midiParam[id].paramQuantity = paramQuantity;
 
 						// Check if CC value has been set and changed
@@ -429,7 +438,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 							}
 						}
 
-						// Check if note value has been set
+						// Check if note value has been set and changed
 						if (note >= 0 && notes[id].process()) {
 							int t = -1;
 							switch (notes[id].noteMode) {
@@ -489,18 +498,18 @@ struct MidiCatModule : Module, StripIdFixModule {
 							}
 						}
 
+						// Process mapping of the parameter (slewing and scaling)
 						midiParam[id].process(args.sampleTime * float(processDivision));
 
-						// Midi feedback
+						// Retrieve the current value of the parameter (ignoring slew and scale)
 						int v = midiParam[id].getValue();
 
+						// Midi feedback
 						if (lastValueOut[id] != v) {
 							if (cc >= 0 && ccs[id].ccMode == CCMODE_DIRECT)
 								lastValueIn[id] = v;
-							if (cc >= 0)
-								ccs[id].setValue(v, lastValueOut[id] == -1);
-							if (note >= 0)
-								notes[id].setValue(v, lastValueIn[id] < 0, lastValueOut[id] == -1);
+							ccs[id].setValue(v);
+							notes[id].setValue(v, lastValueIn[id] < 0);
 							lastValueOut[id] = v;
 						}
 					} break;
@@ -535,7 +544,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 		}
 
 		if (midiResendPeriodically && midiResendDivider.process()) {
-			resendMidiOut();
+			midiResendFeedback();
 		}
 
 		Module* exp = rightExpander.module;
@@ -563,24 +572,24 @@ struct MidiCatModule : Module, StripIdFixModule {
 		}
 	}
 
-	bool processMessage(midi::Message msg) {
+	bool midiProcessMessage(midi::Message msg) {
 		switch (msg.getStatus()) {
 			// cc
 			case 0xb: {
-				return processCC(msg);
+				return midiCc(msg);
 			}
 			// note off
 			case 0x8: {
-				return processNoteRelease(msg);
+				return midiNoteRelease(msg);
 			}
 			// note on
 			case 0x9: {
 				if (msg.getValue() > 0) {
-					return processNotePress(msg);
+					return midiNotePress(msg);
 				}
 				else {
 					// Many keyboards send a "note on" command with 0 velocity to mean "note release"
-					return processNoteRelease(msg);
+					return midiNoteRelease(msg);
 				}
 			} 
 			default: {
@@ -589,7 +598,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 		}
 	}
 
-	bool processCC(midi::Message msg) {
+	bool midiCc(midi::Message msg) {
 		uint8_t cc = msg.getNote();
 		uint8_t value = msg.getValue();
 		// Learn
@@ -603,12 +612,12 @@ struct MidiCatModule : Module, StripIdFixModule {
 			updateMapLen();
 			refreshParamHandleText(learningId);
 		}
-		bool changed = valuesCc[cc] != value;
+		bool midiReceived = valuesCc[cc] != value;
 		valuesCc[cc] = value;
-		return changed;
+		return midiReceived;
 	}
 
-	bool processNotePress(midi::Message msg) {
+	bool midiNotePress(midi::Message msg) {
 		uint8_t note = msg.getNote();
 		uint8_t vel = msg.getValue();
 		// Learn
@@ -622,16 +631,24 @@ struct MidiCatModule : Module, StripIdFixModule {
 			updateMapLen();
 			refreshParamHandleText(learningId);
 		}
-		bool changed = valuesNote[note] != vel;
+		bool midiReceived = valuesNote[note] != vel;
 		valuesNote[note] = vel;
-		return changed;
+		return midiReceived;
 	}
 
-	bool processNoteRelease(midi::Message msg) {
+	bool midiNoteRelease(midi::Message msg) {
 		uint8_t note = msg.getNote();
-		bool changed = valuesNote[note] != 0;
+		bool midiReceived = valuesNote[note] != 0;
 		valuesNote[note] = 0;
-		return changed;
+		return midiReceived;
+	}
+
+	void midiResendFeedback() {
+		for (int i = 0; i < MAX_CHANNELS; i++) {
+			lastValueOut[i] = -1;
+			ccs[i].resetValue();
+			notes[i].resetValue();
+		}
 	}
 
 	void clearMap(int id, bool midiOnly = false) {
@@ -782,12 +799,6 @@ struct MidiCatModule : Module, StripIdFixModule {
 			text += string::f(" note %s%d", noteNames[semi], oct);
 		}
 		paramHandles[id].text = text;
-	}
-
-	void resendMidiOut() {
-		for (int i = 0; i < MAX_CHANNELS; i++) {
-			lastValueOut[i] = -1;
-		}
 	}
 
 	void memSave(std::string pluginSlug, std::string moduleSlug) {
@@ -1804,7 +1815,7 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 		struct ResendMidiOutItem : MenuItem {
 			MidiCatModule* module;
 			void onAction(const event::Action& e) override {
-				module->resendMidiOut();
+				module->midiResendFeedback();
 			}
 
 			Menu* createChildMenu() override {
