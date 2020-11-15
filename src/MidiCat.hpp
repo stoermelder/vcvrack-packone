@@ -25,6 +25,7 @@ struct MemParam {
 	int paramId = -1;
 	int cc = -1;
 	CCMODE ccMode;
+	bool cc14bit = false;
 	int note = -1;
 	NOTEMODE noteMode;
 	std::string label;

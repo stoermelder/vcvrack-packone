@@ -72,6 +72,7 @@ struct MidiCatExModule : Module {
 				json_object_set_new(paramMapJJ, "paramId", json_integer(p->paramId));
 				json_object_set_new(paramMapJJ, "cc", json_integer(p->cc));
 				json_object_set_new(paramMapJJ, "ccMode", json_integer(p->ccMode));
+				json_object_set_new(paramMapJJ, "cc14bit", json_boolean(p->cc14bit));
 				json_object_set_new(paramMapJJ, "note", json_integer(p->note));
 				json_object_set_new(paramMapJJ, "noteMode", json_integer(p->noteMode));
 				json_object_set_new(paramMapJJ, "label", json_string(p->label.c_str()));
@@ -112,6 +113,8 @@ struct MidiCatExModule : Module {
 				p->paramId = json_integer_value(json_object_get(paramMapJJ, "paramId"));
 				p->cc = json_integer_value(json_object_get(paramMapJJ, "cc"));
 				p->ccMode = (CCMODE)json_integer_value(json_object_get(paramMapJJ, "ccMode"));
+				json_t* cc14bitJ = json_object_get(paramMapJJ, "cc14bit");
+				if (cc14bitJ) p->cc14bit = json_boolean_value(cc14bitJ);
 				p->note = json_integer_value(json_object_get(paramMapJJ, "note"));
 				p->noteMode = (NOTEMODE)json_integer_value(json_object_get(paramMapJJ, "noteMode"));
 				p->label = json_string_value(json_object_get(paramMapJJ, "label"));
