@@ -6,7 +6,9 @@ template<typename T, typename PQ = ParamQuantity>
 struct ScaledMapParam {
 	PQ* paramQuantity = NULL;
 	float limitMin;
+	T limitMinT;
 	float limitMax;
+	T limitMaxT;
 	T uninit;
 	float min = 0.f;
 	float max = 1.f;
@@ -24,7 +26,9 @@ struct ScaledMapParam {
 
 	void setLimits(T min, T max, T uninit) {
 		limitMin = float(min);
+		limitMinT = min;
 		limitMax = float(max);
+		limitMaxT = max;
 		this->uninit = uninit;
 	}
 
