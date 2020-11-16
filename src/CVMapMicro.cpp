@@ -2,6 +2,7 @@
 #include "MapModuleBase.hpp"
 #include "components/MapButton.hpp"
 #include "components/VoltageLedDisplay.hpp"
+#include "components/ParamWidgetContextExtender.hpp"
 #include <chrono>
 
 namespace StoermelderPackOne {
@@ -123,7 +124,7 @@ struct CVMapMicroModule : CVMapModuleBase<1> {
 };
 
 
-struct CVMapMicroWidget : ThemedModuleWidget<CVMapMicroModule> {
+struct CVMapMicroWidget : ThemedModuleWidget<CVMapMicroModule>, ParamWidgetContextExtender {
 	CVMapMicroWidget(CVMapMicroModule* module)
 		: ThemedModuleWidget<CVMapMicroModule>(module, "CVMapMicro") {
 		setModule(module);
@@ -149,6 +150,11 @@ struct CVMapMicroWidget : ThemedModuleWidget<CVMapMicroModule> {
 		addParam(createParamCentered<StoermelderTrimpot>(Vec(22.5f, 280.4f), module, CVMapMicroModule::SCALE_PARAM));
 
 		addOutput(createOutputCentered<StoermelderPort>(Vec(22.5f, 327.4f), module, CVMapMicroModule::OUTPUT));
+	}
+
+	void step() override {
+		ParamWidgetContextExtender::step();
+		ThemedModuleWidget<CVMapMicroModule>::step();
 	}
 
 	void appendContextMenu(Menu* menu) override {
@@ -193,6 +199,26 @@ struct CVMapMicroWidget : ThemedModuleWidget<CVMapMicroModule> {
 		menu->addChild(construct<LockItem>(&MenuItem::text, "Parameter changes", &LockItem::module, module));
 		menu->addChild(construct<UniBiItem>(&MenuItem::text, "Voltage range", &UniBiItem::module, module));
 		menu->addChild(construct<SignalOutputItem>(&MenuItem::text, "OUT-port", &SignalOutputItem::module, module));
+	}
+
+	void extendParamWidgetContextMenu(ParamWidget* pw, Menu* menu) override {
+		ParamQuantity* pq = pw->paramQuantity;
+		if (!pq) return;
+
+		if (module->paramHandles[0].moduleId == pq->module->id && module->paramHandles[0].paramId == pq->paramId) {
+			struct CVMapMicroSlider : ui::Slider {
+				CVMapMicroSlider() {
+					box.size.x = 220.0f;
+				}
+			}; // struct CVMapMicroSlider
+
+			menu->addChild(new MenuSeparator);
+			menu->addChild(construct<MenuLabel>(&MenuLabel::text, "µMAP"));
+			menu->addChild(construct<CenterModuleItem>(&MenuItem::text, "Center mapping module", &CenterModuleItem::mw, this));
+			menu->addChild(new MenuSeparator);
+			menu->addChild(construct<CVMapMicroSlider>(&CVMapMicroSlider::quantity, module->paramQuantities[CVMapMicroModule::OFFSET_PARAM]));
+			menu->addChild(construct<CVMapMicroSlider>(&CVMapMicroSlider::quantity, module->paramQuantities[CVMapMicroModule::SCALE_PARAM]));
+		}
 	}
 };
 

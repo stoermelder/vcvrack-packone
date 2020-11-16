@@ -13,6 +13,8 @@
     - Load preset in Arm-mode even when the same slot was selected before (#212)
 - Module [MACRO](./docs/Macro.md)
     - Added context menu options on mapped parameters of target module for MACRO
+- Module [µMAP](./docs/CVMapMicro.md)
+    - Added context menu options on mapped parameters of target module for µMAP
 - Module [MIDI-CAT](./docs/MidiCat.md)
     - Added support for MIDI 14-bit CC
 - Module [STRIP](./docs/Strip.md)
