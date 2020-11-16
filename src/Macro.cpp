@@ -5,6 +5,7 @@
 #include "components/Knobs.hpp"
 #include "components/MenuLabelEx.hpp"
 #include "components/SubMenuSlider.hpp"
+#include "components/ParamWidgetContextExtender.hpp"
 #include "digital/ScaledMapParam.hpp"
 
 namespace StoermelderPackOne {
@@ -545,7 +546,7 @@ struct MacroPort : StoermelderPort {
 }; // struct MacroPort
 
 
-struct MacroWidget : ThemedModuleWidget<MacroModule> {
+struct MacroWidget : ThemedModuleWidget<MacroModule>, ParamWidgetContextExtender {
 	typedef MacroModule MODULE;
 	MacroWidget(MODULE* module)
 		: ThemedModuleWidget<MODULE>(module, "Macro") {
@@ -578,6 +579,11 @@ struct MacroWidget : ThemedModuleWidget<MacroModule> {
 		ledDisplay->module = module;
 		addChild(ledDisplay);
 		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 327.9f), module, MODULE::INPUT));
+	}
+
+	void step() override {
+		ParamWidgetContextExtender::step();
+		ThemedModuleWidget<MacroModule>::step();
 	}
 
 	void appendContextMenu(Menu* menu) override {
@@ -646,6 +652,28 @@ struct MacroWidget : ThemedModuleWidget<MacroModule> {
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<LockItem>(&MenuItem::text, "Parameter changes", &LockItem::module, module));
 		menu->addChild(construct<UniBiItem>(&MenuItem::text, "Input voltage", &UniBiItem::module, module));
+	}
+
+	void extendParamWidgetContextMenu(ParamWidget* pw, Menu* menu) override {
+		ParamQuantity* pq = pw->paramQuantity;
+		if (!pq) return;
+
+		for (int id = 0; id < module->mapLen; id++) {
+			if (module->paramHandles[id].moduleId == pq->module->id && module->paramHandles[id].paramId == pq->paramId) {
+				menu->addChild(new MenuSeparator);
+				menu->addChild(construct<MenuLabel>(&MenuLabel::text, "MACRO"));
+				menu->addChild(construct<CenterModuleItem>(&MenuItem::text, "Center mapping module", &CenterModuleItem::mw, this));
+				menu->addChild(new MenuSeparator);
+				menu->addChild(new SlewSlider<>(&module->scaleParam[id]));
+				menu->addChild(new MenuSeparator());
+				menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Scaling"));
+				menu->addChild(construct<ScalingInputLabel<>>(&MenuLabel::text, "Input", &ScalingInputLabel<>::p, &module->scaleParam[id]));
+				menu->addChild(construct<ScalingOutputLabel<>>(&MenuLabel::text, "Parameter range", &ScalingOutputLabel<>::p, &module->scaleParam[id]));
+				menu->addChild(new MinSlider<>(&module->scaleParam[id]));
+				menu->addChild(new MaxSlider<>(&module->scaleParam[id]));
+				menu->addChild(construct<PresetMenuItem<>>(&MenuItem::text, "Preset", &PresetMenuItem<>::p, &module->scaleParam[id]));
+			}
+		}
 	}
 }; // struct MacroWidget
 
