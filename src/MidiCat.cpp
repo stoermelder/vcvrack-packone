@@ -5,6 +5,7 @@
 #include "digital/ScaledMapParam.hpp"
 #include "components/MenuLabelEx.hpp"
 #include "components/SubMenuSlider.hpp"
+#include "components/ParamWidgetContextExtender.hpp"
 #include <osdialog.h>
 
 namespace StoermelderPackOne {
@@ -147,7 +148,6 @@ struct MidiCatModule : Module, StripIdFixModule {
 		void setValue(int value) {
 			if (cc == -1) return;
 			if (cc14bit) {
-				//module->midiOutput.setValue(value / 128, cc, force);
 				module->midiOutput.setValue(value / 128, cc, true);
 				module->midiOutput.setValue(value % 128, cc + 32, true);
 			}
@@ -402,10 +402,10 @@ struct MidiCatModule : Module, StripIdFixModule {
 				switch (midiMode) {
 					case MIDIMODE::MIDIMODE_DEFAULT: {
 						midiParam[id].paramQuantity = paramQuantity;
+						int t = -1;
 
 						// Check if CC value has been set and changed
 						if (cc >= 0 && ccs[id].process()) {
-							int t = -1;
 							switch (ccs[id].ccMode) {
 								case CCMODE_DIRECT:
 									if (lastValueIn[id] != ccs[id].getValue()) {
@@ -430,17 +430,12 @@ struct MidiCatModule : Module, StripIdFixModule {
 										}
 										lastValueIn[id] = ccs[id].getValue();
 									}
-										break;
-							}
-
-							if (t >= 0) {
-								midiParam[id].setValue(t);
+									break;
 							}
 						}
 
 						// Check if note value has been set and changed
 						if (note >= 0 && notes[id].process()) {
-							int t = -1;
 							switch (notes[id].noteMode) {
 								case NOTEMODE::NOTEMODE_MOMENTARY:
 									if (lastValueIn[id] != notes[id].getValue()) {
@@ -492,13 +487,14 @@ struct MidiCatModule : Module, StripIdFixModule {
 									}
 									break;
 							}
-
-							if (t >= 0) {
-								midiParam[id].setValue(t);
-							}
 						}
 
-						// Process mapping of the parameter (slewing and scaling)
+						// Set a new value for the mapped parameter
+						if (t >= 0) {
+							midiParam[id].setValue(t);
+						}
+
+						// Apply value on the mapped parameter (respecting slew and scale)
 						midiParam[id].process(args.sampleTime * float(processDivision));
 
 						// Retrieve the current value of the parameter (ignoring slew and scale)
@@ -1438,7 +1434,7 @@ struct MidiCatMidiWidget : MidiWidget {
 	}
 };
 
-struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
+struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExtender {
 	MidiCatModule* module;
 	Module* mem;
 	BufferedTriggerParamQuantity* memPrevQuantity;
@@ -1456,8 +1452,6 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 	};
 
 	LEARN_MODE learnMode = LEARN_MODE::OFF;
-
-	Widget* lastSelectedWidget;
 
 	MidiCatWidget(MidiCatModule* module)
 		: ThemedModuleWidget<MidiCatModule>(module, "MidiCat") {
@@ -1593,7 +1587,7 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 			}
 		}
 
-		extendParamWidgetContextMenu();
+		ParamWidgetContextExtender::step();
 	}
 
 	void memPrevModule() {
@@ -1652,56 +1646,40 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 		}
 	}
 
-	void extendParamWidgetContextMenu() {
+	void extendParamWidgetContextMenu(ParamWidget* pw) override {
 		if (!module) return;
+		if (module->learningId >= 0) return;
 
-		// Extend parameter's context menu with additional MenuItems
-		Widget* w = APP->event->getDraggedWidget();
-		if (!w) return;
-		if (w != lastSelectedWidget) {
-			lastSelectedWidget = w;
-			if (module->learningId >= 0) return;
-			ParamWidget* pw = dynamic_cast<ParamWidget*>(w);
-			if (!pw) return;
-			ParamQuantity* pq = pw->paramQuantity;
-			if (!pq) return;
-			ParamHandle* handle = APP->engine->getParamHandle(pq->module->id, pq->paramId);
-			if (!handle) return;
-			
-			for (int i = 0; i < module->mapLen; i++) {
-				if (&module->paramHandles[i] == handle) {
-					// Hack for attaching additional menu items to parameter's context menu
-					MenuOverlay* overlay;
-					for (Widget* child : APP->scene->children) {
-						overlay = dynamic_cast<MenuOverlay*>(child);
-						if (overlay) break;
+		ParamQuantity* pq = pw->paramQuantity;
+		if (!pq) return;
+		ParamHandle* handle = APP->engine->getParamHandle(pq->module->id, pq->paramId);
+		if (!handle) return;
+		
+		for (int i = 0; i < module->mapLen; i++) {
+			if (&module->paramHandles[i] == handle) {
+				Menu* menu = ParamWidgetContextExtender::getContextMenu();
+				if (!menu) return;
+
+				struct MapMenuItem : MenuItem {
+					MidiCatModule* module;
+					int id;
+					void onAction(const event::Action& e) override {
+						module->enableLearn(id, true);
 					}
-					if (!overlay) return;
-					Widget* w = overlay->children.front();
-					Menu* menu = dynamic_cast<Menu*>(w);
-					if (!menu) return;
+				};
 
-					struct MapMenuItem : MenuItem {
-						MidiCatModule* module;
-						int id;
-						void onAction(const event::Action& e) override {
-							module->enableLearn(id, true);
-						}
-					};
+				struct ShowMidicatItem : MenuItem {
+					MidiCatWidget* mw;
+					void onAction(const event::Action& e) override {
+						StoermelderPackOne::Rack::ViewportCenter{mw};
+					}
+				};
 
-					struct ShowMidicatItem : MenuItem {
-						MidiCatWidget* mw;
-						void onAction(const event::Action& e) override {
-							StoermelderPackOne::Rack::ViewportCenter{mw};
-						}
-					};
-
-					menu->addChild(new MenuSeparator);
-					menu->addChild(construct<MenuLabel>(&MenuLabel::text, "MIDI-CAT"));
-					menu->addChild(construct<MapMenuItem>(&MenuItem::text, "Learn MIDI", &MapMenuItem::module, module, &MapMenuItem::id, i));
-					menu->addChild(construct<ShowMidicatItem>(&MenuItem::text, "Center mapping module", &ShowMidicatItem::mw, this));
-					break;
-				}
+				menu->addChild(new MenuSeparator);
+				menu->addChild(construct<MenuLabel>(&MenuLabel::text, "MIDI-CAT"));
+				menu->addChild(construct<MapMenuItem>(&MenuItem::text, "Learn MIDI", &MapMenuItem::module, module, &MapMenuItem::id, i));
+				menu->addChild(construct<ShowMidicatItem>(&MenuItem::text, "Center mapping module", &ShowMidicatItem::mw, this));
+				break;
 			}
 		}
 	}
