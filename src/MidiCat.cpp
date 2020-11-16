@@ -1646,20 +1646,15 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 		}
 	}
 
-	void extendParamWidgetContextMenu(ParamWidget* pw) override {
+	void extendParamWidgetContextMenu(ParamWidget* pw, Menu* menu) override {
 		if (!module) return;
 		if (module->learningId >= 0) return;
 
 		ParamQuantity* pq = pw->paramQuantity;
 		if (!pq) return;
-		ParamHandle* handle = APP->engine->getParamHandle(pq->module->id, pq->paramId);
-		if (!handle) return;
 		
-		for (int i = 0; i < module->mapLen; i++) {
-			if (&module->paramHandles[i] == handle) {
-				Menu* menu = ParamWidgetContextExtender::getContextMenu();
-				if (!menu) return;
-
+		for (int id = 0; id < module->mapLen; id++) {
+			if (module->paramHandles[id].moduleId == pq->module->id && module->paramHandles[id].paramId == pq->paramId) {
 				struct MapMenuItem : MenuItem {
 					MidiCatModule* module;
 					int id;
@@ -1668,17 +1663,10 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 					}
 				};
 
-				struct ShowMidicatItem : MenuItem {
-					MidiCatWidget* mw;
-					void onAction(const event::Action& e) override {
-						StoermelderPackOne::Rack::ViewportCenter{mw};
-					}
-				};
-
 				menu->addChild(new MenuSeparator);
 				menu->addChild(construct<MenuLabel>(&MenuLabel::text, "MIDI-CAT"));
-				menu->addChild(construct<MapMenuItem>(&MenuItem::text, "Learn MIDI", &MapMenuItem::module, module, &MapMenuItem::id, i));
-				menu->addChild(construct<ShowMidicatItem>(&MenuItem::text, "Center mapping module", &ShowMidicatItem::mw, this));
+				menu->addChild(construct<MapMenuItem>(&MenuItem::text, "Learn MIDI", &MapMenuItem::module, module, &MapMenuItem::id, id));
+				menu->addChild(construct<CenterModuleItem>(&MenuItem::text, "Center mapping module", &CenterModuleItem::mw, this));
 				break;
 			}
 		}
