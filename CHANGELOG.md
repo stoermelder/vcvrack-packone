@@ -13,6 +13,8 @@
     - Load preset in Arm-mode even when the same slot was selected before (#212)
 - Module [MIDI-CAT](./docs/MidiCat.md)
     - Added support for MIDI 14-bit CC
+- Module [STRIP](./docs/Strip.md)
+    - Added context menu option "Load and replace" to preset-submenu (#215)
 
 ## 1.8.0
 

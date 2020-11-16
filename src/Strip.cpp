@@ -71,6 +71,8 @@ struct StripModule : Module {
 	RANDOMEXCL randomExcl = RANDOMEXCL_EXC;
 	/** [Stored to JSON] */
 	bool randomParamsOnly;
+	/** [Stored to JSON] */
+	bool presetLoadReplace;
 
 	dsp::SchmittTrigger modeTrigger;
 	dsp::SchmittTrigger onTrigger;
@@ -97,6 +99,7 @@ struct StripModule : Module {
 		std::lock_guard<std::mutex> lockGuard(excludeMutex);
 		excludedParams.clear();
 		randomParamsOnly = false;
+		presetLoadReplace = false;
 		// Release excludeMutex
 	}
 
@@ -324,6 +327,7 @@ struct StripModule : Module {
 		json_object_set_new(rootJ, "excludedParams", excludedParamsJ);
 		json_object_set_new(rootJ, "randomExcl", json_integer(randomExcl));
 		json_object_set_new(rootJ, "randomParamsOnly", json_boolean(randomParamsOnly));
+		json_object_set_new(rootJ, "presetLoadReplace", json_boolean(presetLoadReplace));
 		return rootJ;
 		// Release excludeMutex
 	}
@@ -357,6 +361,8 @@ struct StripModule : Module {
 		randomExcl = (RANDOMEXCL)json_integer_value(randomExclJ);
 		json_t* randomParamsOnlyJ = json_object_get(rootJ, "randomParamsOnly");
 		if (randomParamsOnlyJ) randomParamsOnly = json_boolean_value(randomParamsOnlyJ);
+		json_t* presetLoadReplaceJ = json_object_get(rootJ, "presetLoadReplace");
+		if (presetLoadReplaceJ) presetLoadReplace = json_boolean_value(presetLoadReplaceJ);
 		// Release excludeMutex
 	}
 };
@@ -605,30 +611,7 @@ struct ExcludeButton : TL1105 {
 	}
 };
 
-struct OnModeMenuItem : MenuItem {
-	struct OnModeItem : MenuItem {
-		StripModule* module;
-		ONMODE onMode;
 
-		void onAction(const event::Action& e) override {
-			module->onMode = onMode;
-		}
-
-		void step() override {
-			rightText = module->onMode == onMode ? "✔" : "";
-			MenuItem::step();
-		}
-	};
-
-	StripModule* module;
-	Menu* createChildMenu() override {
-		Menu *menu = new Menu;
-		menu->addChild(construct<OnModeItem>(&MenuItem::text, "Default", &OnModeItem::module, module, &OnModeItem::onMode, ONMODE_DEFAULT));
-		menu->addChild(construct<OnModeItem>(&MenuItem::text, "Toggle", &OnModeItem::module, module, &OnModeItem::onMode, ONMODE_TOGGLE));
-		menu->addChild(construct<OnModeItem>(&MenuItem::text, "High/Low", &OnModeItem::module, module, &OnModeItem::onMode, ONMODE_HIGHLOW));
-		return menu;
-	}
-};
 
 struct StripWidget : ThemedModuleWidget<StripModule> {
 	StripModule* module;
@@ -1384,6 +1367,29 @@ struct StripWidget : ThemedModuleWidget<StripModule> {
 		assert(module);
 		menu->addChild(new MenuSeparator);
 
+		struct OnModeMenuItem : MenuItem {
+			struct OnModeItem : MenuItem {
+				StripModule* module;
+				ONMODE onMode;
+				void onAction(const event::Action& e) override {
+					module->onMode = onMode;
+				}
+				void step() override {
+					rightText = module->onMode == onMode ? "✔" : "";
+					MenuItem::step();
+				}
+			};
+
+			StripModule* module;
+			Menu* createChildMenu() override {
+				Menu *menu = new Menu;
+				menu->addChild(construct<OnModeItem>(&MenuItem::text, "Default", &OnModeItem::module, module, &OnModeItem::onMode, ONMODE_DEFAULT));
+				menu->addChild(construct<OnModeItem>(&MenuItem::text, "Toggle", &OnModeItem::module, module, &OnModeItem::onMode, ONMODE_TOGGLE));
+				menu->addChild(construct<OnModeItem>(&MenuItem::text, "High/Low", &OnModeItem::module, module, &OnModeItem::onMode, ONMODE_HIGHLOW));
+				return menu;
+			}
+		};
+
 		struct RandomParamsOnlyItem : MenuItem {
 			StripModule* module;
 			void onAction(const event::Action& e) override {
@@ -1400,7 +1406,7 @@ struct StripWidget : ThemedModuleWidget<StripModule> {
 		menu->addChild(new MenuSeparator);
 
 		struct PresetMenuItem : MenuItem {
-			struct FolderItem : ui::MenuItem {
+			struct PresetFolderItem : MenuItem {
 				std::string path;
 				void onAction(const event::Action& e) override {
 					std::thread t([ = ] {
@@ -1409,14 +1415,31 @@ struct StripWidget : ThemedModuleWidget<StripModule> {
 					t.detach();
 				}
 			};
+
+			struct PresetLoadReplaceItem : MenuItem {
+				StripModule* module;
+				void onAction(const event::Action& e) override {
+					module->presetLoadReplace ^= true;
+					e.consume(NULL);
+				}
+				void step() override {
+					rightText = CHECKMARK(module->presetLoadReplace);
+					MenuItem::step();
+					box.size.x = 140.f;
+				}
+			};
+
 			struct PresetItem : MenuItem {
+				StripModule* module;
 				StripWidget* mw;
 				std::string presetPath;
 				void onAction(const event::Action& e) override {
+					if (module->presetLoadReplace) mw->groupRemove();
 					mw->groupLoadFile(presetPath);
 				}
 			};
 
+			StripModule* module;
 			StripWidget* mw;
 			PresetMenuItem() {
 				rightText = RIGHT_ARROW;
@@ -1425,7 +1448,8 @@ struct StripWidget : ThemedModuleWidget<StripModule> {
 				Menu* menu = new Menu;
 
 				std::string presetDir = asset::plugin(mw->model->plugin, "presets/" + mw->model->slug);
-				menu->addChild(construct<FolderItem>(&MenuItem::text, "Open folder", &FolderItem::path, presetDir));
+				menu->addChild(construct<PresetFolderItem>(&MenuItem::text, "Open folder", &PresetFolderItem::path, presetDir));
+				menu->addChild(construct<PresetLoadReplaceItem>(&MenuItem::text, "Load and replace", &PresetLoadReplaceItem::module, module));
 
 				std::vector<std::string> presetPaths;
 				for (const std::string& presetPath : system::getEntries(presetDir)) {
@@ -1437,7 +1461,7 @@ struct StripWidget : ThemedModuleWidget<StripModule> {
 					for (const std::string& presetPath : presetPaths) {
 						if (!endsWith(presetPath, ".vcvss")) continue;
 						std::string presetName = string::filenameBase(string::filename(presetPath));
-						menu->addChild(construct<PresetItem>(&MenuItem::text, presetName, &PresetItem::presetPath, presetPath, &PresetItem::mw, mw));
+						menu->addChild(construct<PresetItem>(&MenuItem::text, presetName, &PresetItem::presetPath, presetPath, &PresetItem::module, module, &PresetItem::mw, mw));
 					}
 				}
 				return menu;
@@ -1491,7 +1515,7 @@ struct StripWidget : ThemedModuleWidget<StripModule> {
 		};
 
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Strip"));
-		menu->addChild(construct<PresetMenuItem>(&MenuItem::text, "Preset", &PresetMenuItem::mw, this));
+		menu->addChild(construct<PresetMenuItem>(&MenuItem::text, "Preset", &PresetMenuItem::module, module, &PresetMenuItem::mw, this));
 		menu->addChild(construct<CutGroupMenuItem>(&MenuItem::text, "Cut", &MenuItem::rightText, RACK_MOD_SHIFT_NAME "+X", &CutGroupMenuItem::moduleWidget, this));
 		menu->addChild(construct<CopyGroupMenuItem>(&MenuItem::text, "Copy", &MenuItem::rightText, RACK_MOD_SHIFT_NAME "+C", &CopyGroupMenuItem::moduleWidget, this));
 		menu->addChild(construct<PasteGroupMenuItem>(&MenuItem::text, "Paste", &MenuItem::rightText, RACK_MOD_SHIFT_NAME "+V", &PasteGroupMenuItem::moduleWidget, this));
