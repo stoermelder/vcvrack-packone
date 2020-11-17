@@ -9,7 +9,7 @@ struct ClockMultiplier {
 
 	bool process() {
 		lastTickSamples++;
-		if (division > 0 && currentDivision > divisionMult) {
+		if (division > 0 && currentDivision > divisionMult && currentDivision < clock) {
 			currentDivision++;
 			divisionMult += division;
 			return true;

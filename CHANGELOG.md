@@ -11,8 +11,12 @@
 
 - Modules [8FACE, 8FACEx2](./docs/EightFace.md)
     - Load preset in Arm-mode even when the same slot was selected before (#212)
+- Module [HIVE](./docs/Hive.md)
+    - Fixed hanging ratchets on missing or stopped clock trigger (#216)
 - Module [MACRO](./docs/Macro.md)
     - Added context menu options on mapped parameters of target module for MACRO
+- Module [MAZE](./docs/Maze.md)
+    - Fixed hanging ratchets on missing or stopped clock trigger (#216)
 - Module [µMAP](./docs/CVMapMicro.md)
     - Added context menu options on mapped parameters of target module for µMAP
 - Module [MIDI-CAT](./docs/MidiCat.md)
