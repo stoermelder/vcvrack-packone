@@ -23,6 +23,8 @@
     - Added support for MIDI 14-bit CC
 - Module [STRIP](./docs/Strip.md)
     - Added context menu option "Load and replace" to preset-submenu (#215)
+- Module [TRANSIT](./docs/Transit.md)
+    - Added "Scan"-mode for CV-input which scan continously through snapshots (#182)
 
 ## 1.8.0
 

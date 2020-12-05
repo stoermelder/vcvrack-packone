@@ -20,10 +20,12 @@ enum class SLOTCVMODE {
 	TRIG_SHUFFLE = 10,
 	VOLT = 0,
 	C4 = 1,
-	ARM = 3
+	ARM = 3,
+	SCAN = 11
 };
 
 enum class OUTMODE {
+	OFF = -2,
 	POLY = -1,
 	ENV = 0,
 	GATE = 1,
@@ -68,6 +70,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 	int presetTotal;
 	int presetNext;
 	int presetCopy = -1;
+	float presetScanLast = -1.f;
 
 	/** Holds the last values on transitions */
 	std::vector<float> presetOld;
@@ -328,6 +331,8 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 							presetLoad(presetNext);
 						}
 						break;
+					default:
+						break;
 				}
 			}
 
@@ -368,7 +373,12 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 			}
 		}
 
-		presetProcess(args.sampleTime);
+		if (slotCvMode == SLOTCVMODE::SCAN) {
+			presetProcessScan();
+		} 
+		else {
+			presetProcess(args.sampleTime);
+		}
 
 		// Set lights infrequently
 		if (lightDivider.process()) {
@@ -457,7 +467,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 
 		TransitSlot* slot = expSlot(p);
 		if (!isNext) {
-			if (p != preset || force) {	
+			if (p != preset || force) {
 				preset = p;
 				presetNext = -1;
 				outSlotPulseGenerator.trigger();
@@ -527,6 +537,8 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 					BASE::outputs[OUTPUT].setVoltage(outEocPulseGenerator.process(deltaTime) ? 10.f : 0.f, 4);
 					BASE::outputs[OUTPUT].setChannels(5);
 					break;
+				default:
+					break;
 			}
 
 			if (s == 10.f) return;
@@ -542,6 +554,54 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 				float v = crossfade(oldValue, newValue, s);
 				if (s > (1.f - 5e-3f) && std::abs(std::round(v) - v) < 5e-3f) v = std::round(v);
 				pq->setValue(v);
+			}
+		}
+	}
+
+	void presetProcessScan() {
+		if (presetProcessDivider.process()) {
+			if (!BASE::inputs[INPUT_SLOT].isConnected()) return;
+			preset = -1;
+			float p = clamp(BASE::inputs[INPUT_SLOT].getVoltage(), 0.f, 10.f);
+			p = (presetCount - 1) * p / 10.f;
+			if (presetScanLast == p) return;
+			presetScanLast = p;
+
+			int p1 = std::floor(p);
+			TransitSlot* slot1 = expSlot(p1);
+			while (p1 >= 0 && !*(slot1->presetSlotUsed)) {
+				p1--;
+				slot1 = expSlot(p1);
+			}
+			
+			int p2 = std::ceil(p);
+			TransitSlot* slot2 = expSlot(p2);
+			while (p2 <= presetCount - 1 && !*(slot2->presetSlotUsed)) {
+				p2++;
+				slot2 = expSlot(p2);
+			}
+			
+			if (p1 < 0 && p2 >= presetCount) return;
+			if (p1 < 0) { p1 = p2; slot1 = slot2; }
+			if (p2 >= presetCount) p2 = p1;
+			
+			if (p1 != p2) {
+				p = (p - float(p1)) / (float(p2) - float(p1));
+				for (size_t i = 0; i < sourceHandles.size(); i++) {
+					ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
+					if (!pq) continue;
+					float v1 = (*slot1->preset)[i];
+					float v2 = (*slot2->preset)[i];
+					float v = crossfade(v1, v2, p);
+					pq->setValue(v);
+				}
+			}
+			else {
+				for (size_t i = 0; i < sourceHandles.size(); i++) {
+					ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
+					float v = (*slot1->preset)[i];
+					pq->setValue(v);
+				}
 			}
 		}
 	}
@@ -617,6 +677,16 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 
 	int getProcessDivision() {
 		return presetProcessDivision;
+	}
+
+	void setCvMode(SLOTCVMODE mode) {
+		slotCvMode = mode;
+		if (slotCvMode == SLOTCVMODE::SCAN) outMode = OUTMODE::OFF;
+	}
+
+	void setOutMode(OUTMODE mode) {
+		outMode = mode;
+		if (slotCvMode == SLOTCVMODE::SCAN) outMode = OUTMODE::OFF;
 	}
 
 	void transitSlotCmd(SLOT_CMD cmd, int i) override {
@@ -866,7 +936,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 				MODULE* module;
 				SLOTCVMODE slotCvMode;
 				void onAction(const event::Action& e) override {
-					module->slotCvMode = slotCvMode;
+					module->setCvMode(slotCvMode);
 				}
 				void step() override {
 					rightText = module->slotCvMode == slotCvMode ? "✔" : "";
@@ -892,6 +962,8 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "0..10V", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::VOLT));
 				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "C4", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::C4));
 				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Arm", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::ARM));
+				menu->addChild(new MenuSeparator);
+				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Scan", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::SCAN));
 				return menu;
 			}
 		};
@@ -901,7 +973,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 				MODULE* module;
 				OUTMODE outMode;
 				void onAction(const event::Action& e) override {
-					module->outMode = outMode;
+					module->setOutMode(outMode);
 				}
 				void step() override {
 					rightText = module->outMode == outMode ? "✔" : "";
@@ -923,6 +995,8 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Trigger fade end", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::TRIG_EOC));
 				menu->addChild(new MenuSeparator);
 				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Polyphonic", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::POLY));
+				menu->addChild(new MenuSeparator);
+				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Off", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::OFF));
 				return menu;
 			}
 		};
@@ -990,7 +1064,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 		menu->addChild(construct<MappingIndicatorHiddenItem>(&MenuItem::text, "Hide mapping indicators", &MappingIndicatorHiddenItem::module, module));
 		menu->addChild(construct<PrecisionMenuItem>(&MenuItem::text, "Precision", &PrecisionMenuItem::module, module));
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<SlotCvModeMenuItem>(&MenuItem::text, "Port SEL mode", &SlotCvModeMenuItem::module, module));
+		menu->addChild(construct<SlotCvModeMenuItem>(&MenuItem::text, "Port CV mode", &SlotCvModeMenuItem::module, module));
 		menu->addChild(construct<OutModeMenuItem>(&MenuItem::text, "Port OUT mode", &OutModeMenuItem::module, module));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<BindModuleItem>(&MenuItem::text, "Bind module (left)", &BindModuleItem::widget, this, &BindModuleItem::module, module));
