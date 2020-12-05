@@ -599,6 +599,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 			else {
 				for (size_t i = 0; i < sourceHandles.size(); i++) {
 					ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
+					if (!pq) continue;
 					float v = (*slot1->preset)[i];
 					pq->setValue(v);
 				}
