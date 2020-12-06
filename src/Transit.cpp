@@ -2,6 +2,7 @@
 #include "digital.hpp"
 #include "TransitBase.hpp"
 #include "digital/ShapedSlewLimiter.hpp"
+#include "components/ParamHandleIndicator.hpp"
 #include <random>
 
 namespace StoermelderPackOne {
@@ -113,6 +114,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 	dsp::ClockDivider lightDivider;
 	dsp::Timer lightTimer;
 	bool lightBlink = false;
+	ParamHandleIndicator paramHandleIndicator;
 
 	int sampleRate;
 
@@ -236,8 +238,11 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		if (handleDivider.process()) {
 			for (size_t i = 0; i < sourceHandles.size(); i++) {
 				ParamHandle* sourceHandle = sourceHandles[i];
+				if (paramHandleIndicator.handle == sourceHandle) continue;
 				sourceHandle->color = mappingIndicatorHidden ? color::BLACK_TRANSPARENT : nvgRGB(0x40, 0xff, 0xff);
 			}
+			paramHandleIndicator.color = mappingIndicatorHidden ? color::BLACK_TRANSPARENT : nvgRGB(0x40, 0xff, 0xff);
+			paramHandleIndicator.process(args.sampleTime * handleDivider.division);
 		}
 
 		// Read mode
@@ -1059,10 +1064,34 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 
 		struct ParameterMenuItem : MenuItem {
 			struct ParameterItem : MenuItem {
+				struct IndicateItem : MenuItem {
+					MODULE* module;
+					ParamHandle* handle;
+					void onAction(const event::Action& e) override {
+						ModuleWidget* mw = APP->scene->rack->getModule(handle->moduleId);
+						module->paramHandleIndicator.handle = handle;
+						module->paramHandleIndicator.indicate(mw);
+					}
+				};
+
+				struct UnbindItem : MenuItem {
+					MODULE* module;
+					ParamHandle* handle;
+					void onAction(const event::Action& e) override {
+						APP->engine->updateParamHandle(handle, -1, 0, true);
+					}
+				};
+
 				MODULE* module;
 				ParamHandle* handle;
-				void onAction(const event::Action& e) override {
-					APP->engine->updateParamHandle(handle, -1, 0, true);
+				ParameterItem() {
+					rightText = RIGHT_ARROW;
+				}
+				Menu* createChildMenu() override {
+					Menu* menu = new Menu;
+					menu->addChild(construct<IndicateItem>(&MenuItem::text, "Locate and indicate", &IndicateItem::module, module, &IndicateItem::handle, handle));
+					menu->addChild(construct<UnbindItem>(&MenuItem::text, "Unbind", &UnbindItem::module, module, &UnbindItem::handle, handle));
+					return menu;
 				}
 			};
 
@@ -1080,7 +1109,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 					ParamWidget* paramWidget = moduleWidget->getParam(handle->paramId);
 					if (!paramWidget) continue;
 					
-					std::string text = string::f("Unbind \"%s %s\"", moduleWidget->model->name.c_str(), paramWidget->paramQuantity->getLabel().c_str());
+					std::string text = string::f("%s %s", moduleWidget->model->name.c_str(), paramWidget->paramQuantity->getLabel().c_str());
 					menu->addChild(construct<ParameterItem>(&MenuItem::text, text, &ParameterItem::module, module, &ParameterItem::handle, handle));
 				}
 				return menu;

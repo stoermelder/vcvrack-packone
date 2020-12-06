@@ -2,40 +2,8 @@
 #include "plugin.hpp"
 #include "settings.hpp"
 #include "StripIdFixModule.hpp"
+#include "components/ParamHandleIndicator.hpp"
 #include <chrono>
-
-
-struct ParamHandleIndicator {
-	ParamHandle* handle;
-	NVGcolor color;
-		
-	int indicateCount = 0;
-	float sampletime;
-
-	void process(float sampleTime, bool force = false) {
-		if (indicateCount > 0 || force) {
-			this->sampletime += sampleTime;
-			if (this->sampletime > 0.2f) {
-				this->sampletime = 0;
-				indicateCount--;
-				handle->color = std::abs(indicateCount) % 2 == 1 ? color::BLACK : color;
-			}
-		}
-		else {
-			handle->color = color;
-		}
-	}
-
-	void indicate(ModuleWidget* mw) {
-		if (indicateCount > 0) return;
-		if (mw) {
-			// Move the view to center the mapped module
-			StoermelderPackOne::Rack::ViewportCenter{mw};
-			rack::settings::zoom = 1.f;
-		}
-		indicateCount = 20;
-	}	
-};
 
 
 // Abstract modules
@@ -46,7 +14,7 @@ struct MapModuleBase : Module, StripIdFixModule {
 	int mapLen = 0;
 	/** The mapped param handle of each channel */
 	ParamHandle paramHandles[MAX_CHANNELS];
-	ParamHandleIndicator paramHandleIndicator[MAX_CHANNELS];
+	StoermelderPackOne::ParamHandleIndicator paramHandleIndicator[MAX_CHANNELS];
 
 	/** Channel ID of the learning session */
 	int learningId;

@@ -27,6 +27,7 @@
     - Added context menu option "Load and replace" to preset-submenu (#215)
 - Module [TRANSIT](./docs/Transit.md)
     - Added "Scan"-mode for CV-input which scans continously through snapshots (#182)
+    - Added context menu option "Locate and indicate" for bound parameters
 
 ## 1.8.0
 
