@@ -25,13 +25,13 @@ enum class SLOTCVMODE {
 };
 
 enum class OUTMODE {
-	OFF = -2,
 	POLY = -1,
 	ENV = 0,
 	GATE = 1,
 	TRIG_SNAPSHOT = 4,
 	TRIG_SOC = 3,
-	TRIG_EOC = 2
+	TRIG_EOC = 2,
+	SCAN = 5
 };
 
 template <int NUM_PRESETS>
@@ -624,6 +624,9 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 					pq->setValue(v);
 				}
 			}
+
+			BASE::outputs[OUTPUT].setVoltage(presetScanLast / (presetCount - 1) * 10.f);
+			BASE::outputs[OUTPUT].setChannels(1);
 		}
 	}
 
@@ -702,12 +705,14 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 
 	void setCvMode(SLOTCVMODE mode) {
 		slotCvMode = mode;
-		if (slotCvMode == SLOTCVMODE::SCAN) outMode = OUTMODE::OFF;
+		if (slotCvMode == SLOTCVMODE::SCAN) outMode = OUTMODE::SCAN;
+		else if (outMode == OUTMODE::SCAN) outMode = OUTMODE::ENV;
 	}
 
 	void setOutMode(OUTMODE mode) {
 		outMode = mode;
-		if (slotCvMode == SLOTCVMODE::SCAN) outMode = OUTMODE::OFF;
+		if (slotCvMode == SLOTCVMODE::SCAN) outMode = OUTMODE::SCAN;
+		else if (outMode == OUTMODE::SCAN) outMode = OUTMODE::ENV;
 	}
 
 	void transitSlotCmd(SLOT_CMD cmd, int i) override {
@@ -1008,16 +1013,17 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 			}
 
 			Menu* createChildMenu() override {
+				bool scanMode = module->slotCvMode == SLOTCVMODE::SCAN;
 				Menu* menu = new Menu;
-				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Envelope", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::ENV));
-				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Gate", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::GATE));
-				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Trigger snapshot change", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::TRIG_SNAPSHOT));
-				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Trigger fade start", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::TRIG_SOC));
-				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Trigger fade end", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::TRIG_EOC));
+				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Envelope", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::ENV, &OutModeItem::disabled, scanMode));
+				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Gate", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::GATE, &OutModeItem::disabled, scanMode));
+				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Trigger snapshot change", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::TRIG_SNAPSHOT, &OutModeItem::disabled, scanMode));
+				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Trigger fade start", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::TRIG_SOC, &OutModeItem::disabled, scanMode));
+				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Trigger fade end", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::TRIG_EOC, &OutModeItem::disabled, scanMode));
 				menu->addChild(new MenuSeparator);
-				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Polyphonic", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::POLY));
+				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Polyphonic", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::POLY, &OutModeItem::disabled, scanMode));
 				menu->addChild(new MenuSeparator);
-				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Off", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::OFF));
+				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Scan", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::SCAN, &OutModeItem::disabled, !scanMode));
 				return menu;
 			}
 		};
