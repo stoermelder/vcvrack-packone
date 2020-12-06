@@ -47,7 +47,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		NUM_PARAMS
 	};
 	enum InputIds {
-		INPUT_SLOT,
+		INPUT_CV,
 		INPUT_RESET,
 		INPUT_FADE,
 		NUM_INPUTS
@@ -255,27 +255,27 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 				}
 			}
 
-			// SLOT input
-			if (Module::inputs[INPUT_SLOT].isConnected() && resetTimer.process(args.sampleTime) >= 1e-3f) {
+			// CV input
+			if (Module::inputs[INPUT_CV].isConnected() && resetTimer.process(args.sampleTime) >= 1e-3f) {
 				switch (slotCvMode) {
 					case SLOTCVMODE::VOLT:
-						presetLoad(std::floor(rescale(Module::inputs[INPUT_SLOT].getVoltage(), 0.f, 10.f, 0, presetCount)));
+						presetLoad(std::floor(rescale(Module::inputs[INPUT_CV].getVoltage(), 0.f, 10.f, 0, presetCount)));
 						break;
 					case SLOTCVMODE::C4:
-						presetLoad(std::round(clamp(Module::inputs[INPUT_SLOT].getVoltage() * 12.f, 0.f, presetTotal - 1.f)));
+						presetLoad(std::round(clamp(Module::inputs[INPUT_CV].getVoltage() * 12.f, 0.f, presetTotal - 1.f)));
 						break;
 					case SLOTCVMODE::TRIG_FWD:
-						if (slotTrigger.process(Module::inputs[INPUT_SLOT].getVoltage())) {
+						if (slotTrigger.process(Module::inputs[INPUT_CV].getVoltage())) {
 							presetLoad((preset + 1) % presetCount);
 						}
 						break;
 					case SLOTCVMODE::TRIG_REV:
-						if (slotTrigger.process(Module::inputs[INPUT_SLOT].getVoltage())) {
+						if (slotTrigger.process(Module::inputs[INPUT_CV].getVoltage())) {
 							presetLoad((preset - 1 + presetCount) % presetCount);
 						}
 						break;
 					case SLOTCVMODE::TRIG_PINGPONG:
-						if (slotTrigger.process(Module::inputs[INPUT_SLOT].getVoltage())) {
+						if (slotTrigger.process(Module::inputs[INPUT_CV].getVoltage())) {
 							int n = preset + slotCvModeDir;
 							if (n >= presetCount - 1)
 								slotCvModeDir = -1;
@@ -285,7 +285,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 						}
 						break;
 					case SLOTCVMODE::TRIG_ALT:
-						if (slotTrigger.process(Module::inputs[INPUT_SLOT].getVoltage())) {
+						if (slotTrigger.process(Module::inputs[INPUT_CV].getVoltage())) {
 							int n = 0;
 							if (preset == 0) {
 								n = slotCvModeAlt + slotCvModeDir;
@@ -299,13 +299,13 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 						}
 						break;
 					case SLOTCVMODE::TRIG_RANDOM:
-						if (slotTrigger.process(Module::inputs[INPUT_SLOT].getVoltage())) {
+						if (slotTrigger.process(Module::inputs[INPUT_CV].getVoltage())) {
 							if (randDist.max() != presetCount - 1) randDist = std::uniform_int_distribution<int>(0, presetCount - 1);
 							presetLoad(randDist(randGen));
 						}
 						break;
 					case SLOTCVMODE::TRIG_RANDOM_WO_REPEAT:
-						if (slotTrigger.process(Module::inputs[INPUT_SLOT].getVoltage())) {
+						if (slotTrigger.process(Module::inputs[INPUT_CV].getVoltage())) {
 							if (randDist.max() != presetCount - 2) randDist = std::uniform_int_distribution<int>(0, presetCount - 2);
 							int p = randDist(randGen);
 							if (p >= preset) p++;
@@ -313,13 +313,13 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 						}
 						break;
 					case SLOTCVMODE::TRIG_RANDOM_WALK:
-						if (slotTrigger.process(Module::inputs[INPUT_SLOT].getVoltage())) {
+						if (slotTrigger.process(Module::inputs[INPUT_CV].getVoltage())) {
 							int p = std::min(std::max(0, preset + (random::u32() % 2 == 0 ? -1 : 1)), presetCount - 1);
 							presetLoad(p);
 						}
 						break;
 					case SLOTCVMODE::TRIG_SHUFFLE:
-						if (slotTrigger.process(Module::inputs[INPUT_SLOT].getVoltage())) {
+						if (slotTrigger.process(Module::inputs[INPUT_CV].getVoltage())) {
 							if (slotCvModeShuffle.size() == 0) {
 								for (int i = 0; i < presetCount; i++) {
 									slotCvModeShuffle.push_back(i);
@@ -332,7 +332,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 						}
 						break;
 					case SLOTCVMODE::ARM:
-						if (slotTrigger.process(Module::inputs[INPUT_SLOT].getVoltage())) {
+						if (slotTrigger.process(Module::inputs[INPUT_CV].getVoltage())) {
 							presetLoad(presetNext);
 						}
 						break;
@@ -378,7 +378,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 			}
 		}
 
-		if (slotCvMode == SLOTCVMODE::SCAN) {
+		if (isScanCvActive()) {
 			presetProcessScan(args.sampleTime);
 		} 
 		else {
@@ -398,7 +398,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 				TransitSlot* slot = expSlot(i);
 				bool u = *(slot->presetSlotUsed);
 				if (!BASE::ctrlWrite) {
-					if (slotCvMode != SLOTCVMODE::SCAN) {
+					if (!isScanCvActive()) {
 						slot->lights[0].setBrightness(preset == i ? 1.f : (presetNext == i ? 1.f : 0.f));
 						slot->lights[1].setBrightness(preset == i ? 1.f : (presetCount > i ? (u ? 1.f : 0.25f) : 0.f));
 						slot->lights[2].setBrightness(preset == i ? 1.f : 0.f);
@@ -418,6 +418,10 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 				}
 			}
 		}
+	}
+
+	inline bool isScanCvActive() {
+		return slotCvMode == SLOTCVMODE::SCAN && BASE::inputs[INPUT_CV].isConnected();
 	}
 
 	ParamQuantity* getParamQuantity(ParamHandle* handle) {
@@ -575,16 +579,14 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 
 	void presetProcessScan(float sampleTime) {
 		if (presetProcessDivider.process()) {
-			if (!BASE::inputs[INPUT_SLOT].isConnected()) return;
 			preset = -1;
 			float deltaTime = sampleTime * presetProcessDivision;
 
-			float p = clamp(BASE::inputs[INPUT_SLOT].getVoltage(), 0.f, 10.f);
+			float p = clamp(BASE::inputs[INPUT_CV].getVoltage(), 0.f, 10.f);
 			p = (presetCount - 1) * p / 10.f;
 
 			float fade = BASE::inputs[INPUT_FADE].getVoltage() / 10.f + BASE::params[PARAM_FADE].getValue();
-			slewLimiter.setRise(fade);
-			slewLimiter.setFall(fade);
+			slewLimiter.setRiseFall(fade, fade);
 			float shape = BASE::params[PARAM_SHAPE].getValue();
 			slewLimiter.setShape(shape);
 			p = slewLimiter.process(p, deltaTime);
@@ -816,7 +818,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 		BASE::addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		BASE::addChild(createWidget<StoermelderBlackScrew>(Vec(BASE::box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		BASE::addInput(createInputCentered<StoermelderPort>(Vec(21.7f, 58.9f), module, MODULE::INPUT_SLOT));
+		BASE::addInput(createInputCentered<StoermelderPort>(Vec(21.7f, 58.9f), module, MODULE::INPUT_CV));
 		BASE::addInput(createInputCentered<StoermelderPort>(Vec(21.7f, 94.2f), module, MODULE::INPUT_RESET));
 
 		BASE::addParam(createParamCentered<LEDSliderWhite>(Vec(21.7f, 166.7f), module, MODULE::PARAM_FADE));
