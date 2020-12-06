@@ -21,10 +21,12 @@
     - Added context menu options on mapped parameters of target module for µMAP
 - Module [MIDI-CAT](./docs/MidiCat.md)
     - Added support for MIDI 14-bit CC
+- Module [RAW](./docs/Raw.md)
+    - Added basic limiting to prevent rare instabilities (#214)
 - Module [STRIP](./docs/Strip.md)
     - Added context menu option "Load and replace" to preset-submenu (#215)
 - Module [TRANSIT](./docs/Transit.md)
-    - Added "Scan"-mode for CV-input which scan continously through snapshots (#182)
+    - Added "Scan"-mode for CV-input which scans continously through snapshots (#182)
 
 ## 1.8.0
 

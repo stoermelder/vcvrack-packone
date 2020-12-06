@@ -133,11 +133,11 @@ struct RawModule : Module {
 			// velocity (normalized by 10000)
 			simd::float_4 v = (x[c / 4][0] - x[c / 4][1]) / Ts0001;
 
-			// this implementation behaves unstable, so do some stupid "limiting"
+			// the implementation behaves unstable in rare cases, so do some stupid "limiting"
 			// could possibly fixed with some oversampling, tbd
-			// simd::float_4 b = simd::abs(v) > 100.f;
-			// x[c / 4][0] = simd::ifelse(b, 0.f, x[c / 4][0]);
-			// x[c / 4][1] = simd::ifelse(b, 0.f, x[c / 4][1]);
+			simd::float_4 b = simd::abs(v) > 100.f;
+			x[c / 4][0] = simd::ifelse(b, 0.f, x[c / 4][0]);
+			x[c / 4][1] = simd::ifelse(b, 0.f, x[c / 4][1]);
 
 			// shift buffers
 			y[c / 4][1] = y[c / 4][0];
