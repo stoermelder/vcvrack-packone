@@ -22,7 +22,7 @@ enum class SLOTCVMODE {
 	VOLT = 0,
 	C4 = 1,
 	ARM = 3,
-	SCAN = 11
+	PHASE = 11
 };
 
 enum class OUTMODE {
@@ -32,7 +32,7 @@ enum class OUTMODE {
 	TRIG_SNAPSHOT = 4,
 	TRIG_SOC = 3,
 	TRIG_EOC = 2,
-	SCAN = 5
+	PHASE = 5
 };
 
 template <int NUM_PRESETS>
@@ -71,7 +71,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 	int presetTotal;
 	int presetNext;
 	int presetCopy = -1;
-	float presetScanLast = -1.f;
+	float presetPhaseLast = -1.f;
 
 	/** Holds the last values on transitions */
 	std::vector<float> presetOld;
@@ -378,8 +378,8 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 			}
 		}
 
-		if (isScanCvActive()) {
-			presetProcessScan(args.sampleTime);
+		if (isPhaseCvActive()) {
+			presetProcessPhase(args.sampleTime);
 		} 
 		else {
 			presetProcess(args.sampleTime);
@@ -393,12 +393,12 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 				lightBlink ^= true;
 			}
 			float intpart;
-			float frac = std::modf(presetScanLast, &intpart);
+			float frac = std::modf(presetPhaseLast, &intpart);
 			for (int i = 0; i < presetTotal; i++) {
 				TransitSlot* slot = expSlot(i);
 				bool u = *(slot->presetSlotUsed);
 				if (!BASE::ctrlWrite) {
-					if (!isScanCvActive()) {
+					if (!isPhaseCvActive()) {
 						slot->lights[0].setBrightness(preset == i ? 1.f : (presetNext == i ? 1.f : 0.f));
 						slot->lights[1].setBrightness(preset == i ? 1.f : (presetCount > i ? (u ? 1.f : 0.25f) : 0.f));
 						slot->lights[2].setBrightness(preset == i ? 1.f : 0.f);
@@ -420,8 +420,8 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		}
 	}
 
-	inline bool isScanCvActive() {
-		return slotCvMode == SLOTCVMODE::SCAN && BASE::inputs[INPUT_CV].isConnected();
+	inline bool isPhaseCvActive() {
+		return slotCvMode == SLOTCVMODE::PHASE && BASE::inputs[INPUT_CV].isConnected();
 	}
 
 	ParamQuantity* getParamQuantity(ParamHandle* handle) {
@@ -577,7 +577,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		}
 	}
 
-	void presetProcessScan(float sampleTime) {
+	void presetProcessPhase(float sampleTime) {
 		if (presetProcessDivider.process()) {
 			preset = -1;
 			float deltaTime = sampleTime * presetProcessDivision;
@@ -591,8 +591,8 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 			slewLimiter.setShape(shape);
 			p = slewLimiter.process(p, deltaTime);
 
-			if (presetScanLast == p) return;
-			presetScanLast = p;
+			if (presetPhaseLast == p) return;
+			presetPhaseLast = p;
 
 			int p1 = std::floor(p);
 			TransitSlot* slot1 = expSlot(p1);
@@ -632,7 +632,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 				}
 			}
 
-			BASE::outputs[OUTPUT].setVoltage(presetScanLast / (presetCount - 1) * 10.f);
+			BASE::outputs[OUTPUT].setVoltage(presetPhaseLast / (presetCount - 1) * 10.f);
 			BASE::outputs[OUTPUT].setChannels(1);
 		}
 	}
@@ -712,14 +712,14 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 
 	void setCvMode(SLOTCVMODE mode) {
 		slotCvMode = mode;
-		if (slotCvMode == SLOTCVMODE::SCAN) outMode = OUTMODE::SCAN;
-		else if (outMode == OUTMODE::SCAN) outMode = OUTMODE::ENV;
+		if (slotCvMode == SLOTCVMODE::PHASE) outMode = OUTMODE::PHASE;
+		else if (outMode == OUTMODE::PHASE) outMode = OUTMODE::ENV;
 	}
 
 	void setOutMode(OUTMODE mode) {
 		outMode = mode;
-		if (slotCvMode == SLOTCVMODE::SCAN) outMode = OUTMODE::SCAN;
-		else if (outMode == OUTMODE::SCAN) outMode = OUTMODE::ENV;
+		if (slotCvMode == SLOTCVMODE::PHASE) outMode = OUTMODE::PHASE;
+		else if (outMode == OUTMODE::PHASE) outMode = OUTMODE::ENV;
 	}
 
 	void transitSlotCmd(SLOT_CMD cmd, int i) override {
@@ -996,7 +996,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "C4", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::C4));
 				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Arm", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::ARM));
 				menu->addChild(new MenuSeparator);
-				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Scan", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::SCAN));
+				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Phase", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::PHASE));
 				return menu;
 			}
 		};
@@ -1020,17 +1020,17 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 			}
 
 			Menu* createChildMenu() override {
-				bool scanMode = module->slotCvMode == SLOTCVMODE::SCAN;
+				bool phaseMode = module->slotCvMode == SLOTCVMODE::PHASE;
 				Menu* menu = new Menu;
-				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Envelope", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::ENV, &OutModeItem::disabled, scanMode));
-				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Gate", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::GATE, &OutModeItem::disabled, scanMode));
-				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Trigger snapshot change", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::TRIG_SNAPSHOT, &OutModeItem::disabled, scanMode));
-				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Trigger fade start", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::TRIG_SOC, &OutModeItem::disabled, scanMode));
-				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Trigger fade end", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::TRIG_EOC, &OutModeItem::disabled, scanMode));
+				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Envelope", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::ENV, &OutModeItem::disabled, phaseMode));
+				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Gate", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::GATE, &OutModeItem::disabled, phaseMode));
+				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Trigger snapshot change", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::TRIG_SNAPSHOT, &OutModeItem::disabled, phaseMode));
+				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Trigger fade start", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::TRIG_SOC, &OutModeItem::disabled, phaseMode));
+				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Trigger fade end", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::TRIG_EOC, &OutModeItem::disabled, phaseMode));
 				menu->addChild(new MenuSeparator);
-				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Polyphonic", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::POLY, &OutModeItem::disabled, scanMode));
+				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Polyphonic", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::POLY, &OutModeItem::disabled, phaseMode));
 				menu->addChild(new MenuSeparator);
-				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Scan", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::SCAN, &OutModeItem::disabled, !scanMode));
+				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Phase", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::PHASE, &OutModeItem::disabled, !phaseMode));
 				return menu;
 			}
 		};
