@@ -374,7 +374,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		}
 
 		if (slotCvMode == SLOTCVMODE::SCAN) {
-			presetProcessScan();
+			presetProcessScan(args.sampleTime);
 		} 
 		else {
 			presetProcess(args.sampleTime);
@@ -558,12 +558,22 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		}
 	}
 
-	void presetProcessScan() {
+	void presetProcessScan(float sampleTime) {
 		if (presetProcessDivider.process()) {
 			if (!BASE::inputs[INPUT_SLOT].isConnected()) return;
 			preset = -1;
+			float deltaTime = sampleTime * presetProcessDivision;
+
 			float p = clamp(BASE::inputs[INPUT_SLOT].getVoltage(), 0.f, 10.f);
 			p = (presetCount - 1) * p / 10.f;
+
+			float fade = BASE::inputs[INPUT_FADE].getVoltage() / 10.f + BASE::params[PARAM_FADE].getValue();
+			slewLimiter.setRise(fade);
+			slewLimiter.setFall(fade);
+			float shape = BASE::params[PARAM_SHAPE].getValue();
+			slewLimiter.setShape(shape);
+			p = slewLimiter.process(p, deltaTime);
+
 			if (presetScanLast == p) return;
 			presetScanLast = p;
 
