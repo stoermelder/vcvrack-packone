@@ -387,13 +387,23 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 				lightTimer.reset();
 				lightBlink ^= true;
 			}
+			float intpart;
+			float frac = std::modf(presetScanLast, &intpart);
 			for (int i = 0; i < presetTotal; i++) {
 				TransitSlot* slot = expSlot(i);
 				bool u = *(slot->presetSlotUsed);
 				if (!BASE::ctrlWrite) {
-					slot->lights[0].setBrightness(preset == i ? 1.f : (presetNext == i ? 1.f : 0.f));
-					slot->lights[1].setBrightness(preset == i ? 1.f : (presetCount > i ? (u ? 1.f : 0.25f) : 0.f));
-					slot->lights[2].setBrightness(preset == i ? 1.f : 0.f);
+					if (slotCvMode != SLOTCVMODE::SCAN) {
+						slot->lights[0].setBrightness(preset == i ? 1.f : (presetNext == i ? 1.f : 0.f));
+						slot->lights[1].setBrightness(preset == i ? 1.f : (presetCount > i ? (u ? 1.f : 0.25f) : 0.f));
+						slot->lights[2].setBrightness(preset == i ? 1.f : 0.f);
+					}
+					else {
+						float f = (intpart == i) ? (1.f - frac) : (intpart + 1 == i) ? (frac) : 0.f;
+						slot->lights[0].setBrightness(f);
+						slot->lights[1].setBrightness(std::max(f, presetCount > i ? (u ? 1.f : 0.25f) : 0.f));
+						slot->lights[2].setBrightness(f);
+					}
 				}
 				else {
 					bool b = preset == i && lightBlink;
