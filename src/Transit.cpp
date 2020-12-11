@@ -11,6 +11,7 @@ namespace Transit {
 const int MAX_EXPANDERS = 7;
 
 enum class SLOTCVMODE {
+	OFF = -1,
 	TRIG_FWD = 2,
 	TRIG_REV = 4,
 	TRIG_PINGPONG = 5,
@@ -59,6 +60,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 	enum LightIds {
 		ENUMS(LIGHT_PRESET, NUM_PRESETS * 3),
 		LIGHT_LEARN,
+		LIGHT_CV,
 		NUM_LIGHTS
 	};
 
@@ -378,7 +380,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 			}
 		}
 
-		if (isPhaseCvActive()) {
+		if (isPhaseCvActive() && !BASE::ctrlWrite) {
 			presetProcessPhase(args.sampleTime);
 		} 
 		else {
@@ -417,6 +419,8 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 					slot->lights[2].setBrightness(b ? 0.7f : 0.f);
 				}
 			}
+
+			BASE::lights[LIGHT_CV].setBrightness((slotCvMode == SLOTCVMODE::OFF || (slotCvMode == SLOTCVMODE::PHASE && BASE::ctrlWrite)) && lightBlink);
 		}
 	}
 
@@ -818,6 +822,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 		BASE::addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		BASE::addChild(createWidget<StoermelderBlackScrew>(Vec(BASE::box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
+		BASE::addChild(createLightCentered<TinyLight<YellowLight>>(Vec(10.4f, 46.2f), module, MODULE::LIGHT_CV));
 		BASE::addInput(createInputCentered<StoermelderPort>(Vec(21.7f, 58.9f), module, MODULE::INPUT_CV));
 		BASE::addInput(createInputCentered<StoermelderPort>(Vec(21.7f, 94.2f), module, MODULE::INPUT_RESET));
 
@@ -829,7 +834,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 
 		BASE::addParam(createParamCentered<CKSSH>(Vec(21.7f, 336.2f), module, MODULE::PARAM_RW));
 
-		BASE::addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(7.4f, 336.2f), module, MODULE::LIGHT_LEARN));
+		BASE::addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(10.4f, 322.7f), module, MODULE::LIGHT_LEARN));
 
 		for (size_t i = 0; i < NUM_PRESETS; i++) {
 			float o = i * (288.7f / (NUM_PRESETS - 1));
@@ -997,6 +1002,8 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Arm", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::ARM));
 				menu->addChild(new MenuSeparator);
 				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Phase", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::PHASE));
+				menu->addChild(new MenuSeparator);
+				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Off", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::OFF));
 				return menu;
 			}
 		};
