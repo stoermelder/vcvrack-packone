@@ -21,6 +21,8 @@
     - Added context menu options on mapped parameters of target module for µMAP
 - Module [MIDI-CAT](./docs/MidiCat.md)
     - Added support for MIDI 14-bit CC
+- Module [MIDI-MON](./docs/MidiMon.md)
+    - Added support for more message types (program change, song select, song pointer)
 - Module [RAW](./docs/Raw.md)
     - Added basic limiting to prevent rare instabilities (#214)
 - Module [STRIP](./docs/Strip.md)
