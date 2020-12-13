@@ -652,6 +652,10 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 		BASE::idFixClearMap();
 		BASE::dataFromJson(rootJ);
 		Module::params[PARAM_RW].setValue(0.f);
+
+		if (autoload) {
+			presetLoad(0, false);
+		}
 	}
 };
 
@@ -774,6 +778,17 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 			}
 		};
 
+		struct AutoloadItem : MenuItem {
+			MODULE* module;
+			void onAction(const event::Action& e) override {
+				module->autoload ^= true;
+			}
+			void step() override {
+				rightText = module->autoload ? "✔" : "";
+				MenuItem::step();
+			}
+		};
+
 		struct BindModuleItem : MenuItem {
 			MODULE* module;
 			WIDGET* widget;
@@ -830,7 +845,7 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 				Menu* menu = new Menu;
 				for (typename MODULE::BoundModule* b : module->boundModules) {
 					ModuleWidget* mw = b->getModuleWidget();
-					std::string text = (!mw ? "[MISSING] " : "") + b->moduleName;
+					std::string text = (!mw ? "[ERROR] " : "") + b->moduleName;
 					menu->addChild(construct<ModuleItem>(&MenuItem::text, text, &ModuleItem::module, module, &ModuleItem::b, b));
 				}
 				return menu;
@@ -839,6 +854,7 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<SlotCvModeMenuItem>(&MenuItem::text, "Port CV mode", &SlotCvModeMenuItem::module, module));
+		menu->addChild(construct<AutoloadItem>(&MenuItem::text, "Autoload first preset", &AutoloadItem::module, module));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<BindModuleItem>(&MenuItem::text, "Bind module (left)", &BindModuleItem::widget, this, &BindModuleItem::module, module));
 		menu->addChild(construct<BindModuleSelectItem>(&MenuItem::text, "Bind module (select)", &BindModuleSelectItem::widget, this));
