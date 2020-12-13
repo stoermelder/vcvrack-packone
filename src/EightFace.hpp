@@ -11,7 +11,9 @@ const std::set<std::tuple<std::string, std::string>> guiModuleSlugs = {
 	std::make_tuple("Entrian-Sequencers", "Timeline"),
 	std::make_tuple("Entrian-Sequencers", "Melody"),
 	std::make_tuple("Entrian-Sequencers", "Drummer"),
-	std::make_tuple("Entrian-Sequencers", "CV")
+	std::make_tuple("Entrian-Sequencers", "CV"),
+	std::make_tuple("Entrian-AcousticDrums", "AcousticDrums"),
+	std::make_tuple("Entrian-AcousticDrums", "Drummer")
 };
 
 } // namespace EightFace
