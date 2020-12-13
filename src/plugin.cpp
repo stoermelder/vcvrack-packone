@@ -48,6 +48,8 @@ void init(rack::Plugin* p) {
 	p->addModel(modelRaw);
 	p->addModel(modelMidiMon);
 	p->addModel(modelOrbit);
+	p->addModel(modelEightFaceMk2);
+	p->addModel(modelEightFaceMk2Ex);
 	p->addModel(modelAudioInterface64);
 	p->addModel(modelMb);
 

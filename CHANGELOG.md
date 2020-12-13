@@ -1,5 +1,7 @@
 ## 1.x.x (in development)
 
+- Modules [8FACE mk2, +8](./docs/EightFaceMk2.md)
+    - New modules, evolution and replacement for 8FACE and 8FACEx2 (#63 #144 #154 #157 #162)
 - Modules [FLOWER, SEEDS, OFFSPRING](./docs/Flower.md)
     - New modules, pattern-driven 16-step sequencer
 - Modules [YAW](./docs/Yaw.md)
