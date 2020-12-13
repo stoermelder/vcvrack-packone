@@ -8,7 +8,7 @@
 namespace StoermelderPackOne {
 namespace CVMapMicro {
 
-static const float UINIT = 0;
+static const float UINIT = std::numeric_limits<float>::infinity();
 
 struct CVMapMicroModule : CVMapModuleBase<1> {
 	enum ParamIds {

@@ -1,7 +1,7 @@
 ## 1.x.x (in development)
 
 - Modules [8FACE mk2, +8](./docs/EightFaceMk2.md)
-    - New modules, evolution and replacement for 8FACE and 8FACEx2 (#63 #76 #144 #154 #157 #162)
+    - New modules, evolution and replacement for 8FACE and 8FACEx2 (#63 #76 #144 #154 #157 #158 #160 #162)
 - Modules [FLOWER, SEEDS, OFFSPRING](./docs/Flower.md)
     - New modules, pattern-driven 16-step sequencer
 - Modules [YAW](./docs/Yaw.md)
@@ -13,7 +13,9 @@
 
 - Modules [8FACE, 8FACEx2](./docs/EightFace.md)
     - Load preset in Arm-mode even when the same slot was selected before (#212)
-    - Added thread-handling for crashes when used with specific modules (#76)
+    - Improved thread-handling for crashes when used with specific modules (#76)
+- Module [CV-MAP](./docs/CVMap.md)
+    - Fixed wrong behavior when toggling to zero (#221)
 - Module [HIVE](./docs/Hive.md)
     - Fixed hanging ratchets on missing or stopped clock trigger (#216)
 - Module [MACRO](./docs/Macro.md)
@@ -22,6 +24,7 @@
     - Fixed hanging ratchets on missing or stopped clock trigger (#216)
 - Module [µMAP](./docs/CVMapMicro.md)
     - Added context menu options on mapped parameters of target module for µMAP
+    - Fixed wrong behavior when toggling to zero (#221)
 - Module [MIDI-CAT](./docs/MidiCat.md)
     - Added support for MIDI 14-bit CC
 - Module [MIDI-MON](./docs/MidiMon.md)

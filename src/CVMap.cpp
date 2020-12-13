@@ -6,7 +6,7 @@ namespace StoermelderPackOne {
 namespace CVMap {
 
 static const int MAX_CHANNELS = 32;
-static const float UINIT = 0;
+static const float UINIT = std::numeric_limits<float>::infinity();
 
 struct CVMapModule : CVMapModuleBase<MAX_CHANNELS> {
 	enum ParamIds {
