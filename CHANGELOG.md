@@ -1,7 +1,7 @@
 ## 1.x.x (in development)
 
 - Modules [8FACE mk2, +8](./docs/EightFaceMk2.md)
-    - New modules, evolution and replacement for 8FACE and 8FACEx2 (#63 #144 #154 #157 #162)
+    - New modules, evolution and replacement for 8FACE and 8FACEx2 (#63 #76 #144 #154 #157 #162)
 - Modules [FLOWER, SEEDS, OFFSPRING](./docs/Flower.md)
     - New modules, pattern-driven 16-step sequencer
 - Modules [YAW](./docs/Yaw.md)
@@ -13,6 +13,7 @@
 
 - Modules [8FACE, 8FACEx2](./docs/EightFace.md)
     - Load preset in Arm-mode even when the same slot was selected before (#212)
+    - Added thread-handling for crashes when used with specific modules (#76)
 - Module [HIVE](./docs/Hive.md)
     - Fixed hanging ratchets on missing or stopped clock trigger (#216)
 - Module [MACRO](./docs/Macro.md)

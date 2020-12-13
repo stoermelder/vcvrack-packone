@@ -1,5 +1,6 @@
 #include "plugin.hpp"
 #include "digital.hpp"
+#include "EightFace.hpp"
 #include "EightFaceMk2Base.hpp"
 #include <functional>
 #include <mutex>
@@ -89,6 +90,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 		std::string modelSlug;
 		std::string moduleName;
 		ModuleWidget* getModuleWidget() { return APP->scene->rack->getModule(moduleId); }
+		bool needsGuiThread = false;
 	};
 
 	/** [Stored to JSON] */
@@ -102,7 +104,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 	bool workerIsRunning = true;
 	bool workerDoProcess = false;
 	int workerPreset = -1;
-	ModuleWidget* workerModuleWidget;
+	dsp::RingBuffer<std::tuple<ModuleWidget*, json_t*>, 16> workerGuiQueue;
 
 
 	EightFaceMk2Module() {
@@ -127,7 +129,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 		boundModulesDivider.setDivision(APP->engine->getSampleRate());
 		lightDivider.setDivision(512);
 		onReset();
-		worker = new std::thread(&EightFaceMk2Module::workerProcess, this);
+		worker = new std::thread(&EightFaceMk2Module::processWorker, this);
 	}
 
 	~EightFaceMk2Module() {
@@ -395,6 +397,8 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 		b->moduleName = m->model->plugin->brand + " " + m->model->name;
 		b->modelSlug = m->model->slug;
 		b->pluginSlug = m->model->plugin->slug;
+		auto it = EightFace::guiModuleSlugs.find(std::make_tuple(b->pluginSlug, b->modelSlug));
+		b->needsGuiThread = it != EightFace::guiModuleSlugs.end();
 		boundModules.push_back(b);
 	}
 
@@ -449,7 +453,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 		}
 	}
 
-	void workerProcess() {
+	void processWorker() {
 		while (true) {
 			std::unique_lock<std::mutex> lock(workerMutex);
 			workerCondVar.wait(lock, std::bind(&EightFaceMk2Module::workerDoProcess, this));
@@ -467,12 +471,27 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 					if (b->pluginSlug != plugin || b->modelSlug != model) break;
 					ModuleWidget* mw = b->getModuleWidget();
 					if (!mw) continue;
-					mw->fromJson(vJ);
+
+					if (b->needsGuiThread) {
+						workerGuiQueue.push(std::make_tuple(mw, vJ));
+					}
+					else {
+						mw->fromJson(vJ);
+					}
 					break;
 				}
 			}
 
 			workerDoProcess = false;
+		}
+	}
+
+	void processGui() {
+		while (!workerGuiQueue.empty()) {
+			auto t = workerGuiQueue.shift();
+			ModuleWidget* mw = std::get<0>(t);
+			json_t* vJ = std::get<1>(t);
+			mw->fromJson(vJ);
 		}
 	}
 
@@ -623,6 +642,8 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 				b->pluginSlug = pluginSlug;
 				b->modelSlug = modelSlug;
 				b->moduleName = moduleName;
+				auto it = EightFace::guiModuleSlugs.find(std::make_tuple(b->pluginSlug, b->modelSlug));
+				b->needsGuiThread = it != EightFace::guiModuleSlugs.end();
 				boundModules.push_back(b);
 			}
 		}
@@ -640,12 +661,14 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 	typedef EightFaceMk2Widget<NUM_PRESETS> WIDGET;
 	typedef ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> BASE;
 	typedef EightFaceMk2Module<NUM_PRESETS> MODULE;
-	
+	MODULE* module;
+
 	bool learn = false;
 
 	EightFaceMk2Widget(MODULE* module)
 		: ThemedModuleWidget<MODULE>(module, "EightFaceMk2") {
 		BASE::setModule(module);
+		this->module = module;
 
 		BASE::addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		BASE::addChild(createWidget<StoermelderBlackScrew>(Vec(BASE::box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
@@ -683,13 +706,13 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 		if (!mw || mw == this) return;
 		Module* m = mw->module;
 		if (!m) return;
-		MODULE* module = dynamic_cast<MODULE*>(this->module);
 		module->bindModule(m);
 	}
 
 	void step() override {
 		if (BASE::module) {
 			BASE::module->lights[MODULE::LIGHT_LEARN].setBrightness(learn > 0);
+			module->processGui();
 		}
 		BASE::step();
 	}

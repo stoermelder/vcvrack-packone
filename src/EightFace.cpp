@@ -1,4 +1,5 @@
 #include "plugin.hpp"
+#include "EightFace.hpp"
 #include <functional>
 #include <mutex>
 #include <condition_variable>
@@ -60,6 +61,10 @@ struct EightFaceModule : Module {
 	/** [Stored to JSON] */
 	std::string modelSlug;
 	/** [Stored to JSON] */
+	std::string realPluginSlug;
+	/** [Stored to JSON] */
+	std::string realModelSlug;
+	/** [Stored to JSON] */
 	std::string moduleName;
 
 	/** [Stored to JSON] */
@@ -95,6 +100,8 @@ struct EightFaceModule : Module {
 	bool workerDoProcess = false;
 	int workerPreset = -1;
 	ModuleWidget* workerModuleWidget;
+	bool workerGui = false;
+	ModuleWidget* workerGuiModuleWidget = NULL;
 
 	LongPressButton typeButtons[NUM_PRESETS];
 	dsp::SchmittTrigger slotTrigger;
@@ -117,7 +124,7 @@ struct EightFaceModule : Module {
 		lightDivider.setDivision(512);
 		buttonDivider.setDivision(4);
 		onReset();
-		worker = new std::thread(&EightFaceModule::workerProcess, this);
+		worker = new std::thread(&EightFaceModule::processWorker, this);
 	}
 
 	~EightFaceModule() {
@@ -147,6 +154,8 @@ struct EightFaceModule : Module {
 		presetNext = -1;
 		modelSlug = "";
 		pluginSlug = "";
+		realModelSlug = "";
+		realPluginSlug = "";
 		moduleName = "";
 		connected = 0;
 		autoload = false;
@@ -326,13 +335,20 @@ struct EightFaceModule : Module {
 	}
 
 
-	void workerProcess() {
+	void processWorker() {
 		while (true) {
 			std::unique_lock<std::mutex> lock(workerMutex);
 			workerCondVar.wait(lock, std::bind(&EightFaceModule::workerDoProcess, this));
 			if (!workerIsRunning || workerPreset < 0) return;
 			workerModuleWidget->fromJson(presetSlot[workerPreset]);
 			workerDoProcess = false;
+		}
+	}
+
+	void processGui() {
+		if (workerGuiModuleWidget) {
+			workerGuiModuleWidget->fromJson(presetSlot[workerPreset]);
+			workerGuiModuleWidget = NULL;
 		}
 	}
 
@@ -346,11 +362,15 @@ struct EightFaceModule : Module {
 				presetNext = -1;
 				if (!presetSlotUsed[p]) return;
 				ModuleWidget* mw = APP->scene->rack->getModule(m->id);
-				//mw->fromJson(presetSlot[p]);
-				workerModuleWidget = mw;
 				workerPreset = p;
-				workerDoProcess = true;
-				workerCondVar.notify_one();
+				if (workerGui) {
+					workerGuiModuleWidget = mw;
+				}
+				else {
+					workerModuleWidget = mw;
+					workerDoProcess = true;
+					workerCondVar.notify_one();
+				}
 			}
 		}
 		else {
@@ -363,15 +383,10 @@ struct EightFaceModule : Module {
 		pluginSlug = m->model->plugin->name;
 		modelSlug = m->model->name;
 		moduleName = m->model->plugin->brand + " " + m->model->name;
-
-		// Do not handle some specific modules known to use mapping of parameters:
-		// Potential thread locking when multi-threading is enabled and parameter mappings
-		// are restored from preset.
-		/*
-		if (!( (pluginSlug == "Stoermelder-P1" && (modelSlug == "CVMap" || modelSlug == "CVMapMicro" || modelSlug == "CVPam" || modelSlug == "ReMoveLite" || modelSlug == "MidiCat"))
-			|| (pluginSlug == "Core" && modelSlug == "MIDI-Map")))
-			return;
-		*/
+		realPluginSlug = m->model->plugin->slug;
+		realModelSlug = m->model->slug;
+		auto it = guiModuleSlugs.find(std::make_tuple(realPluginSlug, realModelSlug));
+		workerGui = it != guiModuleSlugs.end();
 
 		ModuleWidget* mw = APP->scene->rack->getModule(m->id);
 		if (presetSlotUsed[p]) json_decref(presetSlot[p]);
@@ -407,6 +422,8 @@ struct EightFaceModule : Module {
 		json_object_set_new(rootJ, "mode", json_integer(mode));
 		json_object_set_new(rootJ, "pluginSlug", json_string(pluginSlug.c_str()));
 		json_object_set_new(rootJ, "modelSlug", json_string(modelSlug.c_str()));
+		json_object_set_new(rootJ, "realPluginSlug", json_string(realPluginSlug.c_str()));
+		json_object_set_new(rootJ, "realModelSlug", json_string(realModelSlug.c_str()));
 		json_object_set_new(rootJ, "moduleName", json_string(moduleName.c_str()));
 		json_object_set_new(rootJ, "slotCvMode", json_integer(slotCvMode));
 		json_object_set_new(rootJ, "preset", json_integer(preset));
@@ -432,6 +449,14 @@ struct EightFaceModule : Module {
 		if (modeJ) mode = (MODE)json_integer_value(modeJ);
 		pluginSlug = json_string_value(json_object_get(rootJ, "pluginSlug"));
 		modelSlug = json_string_value(json_object_get(rootJ, "modelSlug"));
+
+		json_t* realPluginSlugJ = json_object_get(rootJ, "realPluginSlug");
+		if (realPluginSlugJ) realPluginSlug = json_string_value(realPluginSlugJ);
+		json_t* realModelSlugJ = json_object_get(rootJ, "realModelSlug");
+		if (realModelSlugJ) realModelSlug = json_string_value(realModelSlugJ);
+		auto it = guiModuleSlugs.find(std::make_tuple(realPluginSlug, realModelSlug));
+		workerGui = it != guiModuleSlugs.end();
+
 		json_t* moduleNameJ = json_object_get(rootJ, "moduleName");
 		if (moduleNameJ) moduleName = json_string_value(json_object_get(rootJ, "moduleName"));
 		slotCvMode = (SLOTCVMODE)json_integer_value(json_object_get(rootJ, "slotCvMode"));
@@ -446,7 +471,7 @@ struct EightFaceModule : Module {
 			presetSlot[presetIndex] = json_deep_copy(json_object_get(presetJ, "slot"));
 		}
 
-		if (preset >= presetCount) 
+		if (preset >= presetCount)
 			preset = 0;
 
 		if (autoload) {
@@ -562,10 +587,12 @@ struct EightFaceWidgetTemplate : ModuleWidget {
 
 struct EightFaceWidget : ThemedModuleWidget<EightFaceModule<8>, EightFaceWidgetTemplate<EightFaceModule<8>>> {
 	typedef EightFaceModule<8> MODULE;
+	MODULE* module;
 
 	EightFaceWidget(MODULE* module)
 		: ThemedModuleWidget<MODULE, EightFaceWidgetTemplate<MODULE>>(module, "EightFace") {
 		setModule(module);
+		this->module = module;
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
@@ -595,6 +622,13 @@ struct EightFaceWidget : ThemedModuleWidget<EightFaceModule<8>, EightFaceWidgetT
 		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(22.5f, 305.4f), module, MODULE::PRESET_LIGHT + 7 * 3));
 
 		addParam(createParamCentered<CKSSH>(Vec(22.5f, 336.2f), module, MODULE::MODE_PARAM));
+	}
+
+	void step() override {
+		if (module) {
+			module->processGui();
+		}
+		ThemedModuleWidget<MODULE, EightFaceWidgetTemplate<MODULE>>::step();
 	}
 };
 
