@@ -88,7 +88,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 		std::string pluginSlug;
 		std::string modelSlug;
 		std::string moduleName;
-		ModuleWidget* mw = NULL;
+		ModuleWidget* getModuleWidget() { return APP->scene->rack->getModule(moduleId); }
 	};
 
 	/** [Stored to JSON] */
@@ -395,7 +395,6 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 		b->moduleName = m->model->plugin->brand + " " + m->model->name;
 		b->modelSlug = m->model->slug;
 		b->pluginSlug = m->model->plugin->slug;
-		b->mw = APP->scene->rack->getModule(m->id);
 		boundModules.push_back(b);
 	}
 
@@ -406,14 +405,14 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 		bindModule(m);
 	}
 
-	void unbindModule(int moduleId) {
+	void unbindModule(BoundModule* b) {
 		for (int i = 0; i < presetTotal; i++) {
 			EightFaceMk2Slot* slot = expSlot(i);
 			for (auto it = std::begin(*slot->preset); it != std::end(*slot->preset); it++) {
 				json_t* idJ = json_object_get(*it, "id");
 				if (!idJ) continue;
 				int id = json_integer_value(idJ);
-				if (id == moduleId) {
+				if (id == b->moduleId) {
 					slot->preset->erase(it);
 					break;
 				}
@@ -421,11 +420,12 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 			*(slot->presetSlotUsed) = slot->preset->size() > 0;
 		}
 		for (auto it = std::begin(boundModules); it != std::end(boundModules); it++) {
-			if ((*it)->moduleId == moduleId) {
+			if ((*it)->moduleId == b->moduleId) {
 				boundModules.erase(it);
 				break;
 			}
 		}
+		delete b;
 	}
 
 	void presetLoad(int p, bool isNext = false, bool force = false) {
@@ -465,9 +465,9 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 				for (BoundModule* b : boundModules) {
 					if (b->moduleId != moduleId) continue;
 					if (b->pluginSlug != plugin || b->modelSlug != model) break;
-					b->mw = APP->scene->rack->getModule(b->moduleId);
-					if (!b->mw) continue;
-					b->mw->fromJson(vJ);
+					ModuleWidget* mw = b->getModuleWidget();
+					if (!mw) continue;
+					mw->fromJson(vJ);
 					break;
 				}
 			}
@@ -487,9 +487,9 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 
 		*(slot->presetSlotUsed) = true;
 		for (BoundModule* b : boundModules) {
-			b->mw = APP->scene->rack->getModule(b->moduleId);
-			if (!b->mw) continue;
-			json_t* vJ = b->mw->toJson();
+			ModuleWidget* mw = b->getModuleWidget();
+			if (!mw) continue;
+			json_t* vJ = mw->toJson();
 			slot->preset->push_back(vJ);
 		}
 		preset = p;
@@ -515,9 +515,9 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 
 	void presetRandomize(int p) {
 		for (BoundModule* b : boundModules) {
-			b->mw = APP->scene->rack->getModule(b->moduleId);
-			if (!b->mw) continue;
-			b->mw->randomizeAction();
+			ModuleWidget* mw = b->getModuleWidget();
+			if (!mw) continue;
+			mw->randomizeAction();
 		}
 		presetSave(p);
 	}
@@ -623,7 +623,6 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 				b->pluginSlug = pluginSlug;
 				b->modelSlug = modelSlug;
 				b->moduleName = moduleName;
-				b->mw = APP->scene->rack->getModule(b->moduleId);
 				boundModules.push_back(b);
 			}
 		}
@@ -635,13 +634,14 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 	}
 };
 
+
 template <int NUM_PRESETS>
 struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> {
 	typedef EightFaceMk2Widget<NUM_PRESETS> WIDGET;
 	typedef ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> BASE;
 	typedef EightFaceMk2Module<NUM_PRESETS> MODULE;
 	
-	int learn = 0;
+	bool learn = false;
 
 	EightFaceMk2Widget(MODULE* module)
 		: ThemedModuleWidget<MODULE>(module, "EightFaceMk2") {
@@ -669,24 +669,22 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 	}
 
 	void onDeselect(const event::Deselect& e) override {
-		if (learn == 0) return;
+		if (!learn) return;
+
+		DEFER({
+			disableLearn();
+		});
+
+		// Learn module
+		Widget* w = APP->event->getDraggedWidget();
+		if (!w) return;
+		ModuleWidget* mw = dynamic_cast<ModuleWidget*>(w);
+		if (!mw) mw = w->getAncestorOfType<ModuleWidget>();
+		if (!mw || mw == this) return;
+		Module* m = mw->module;
+		if (!m) return;
 		MODULE* module = dynamic_cast<MODULE*>(this->module);
-
-		if (learn == 1) {
-			DEFER({
-				disableLearn();
-			});
-
-			// Learn module
-			Widget* w = APP->event->getDraggedWidget();
-			if (!w) return;
-			ModuleWidget* mw = dynamic_cast<ModuleWidget*>(w);
-			if (!mw) mw = w->getAncestorOfType<ModuleWidget>();
-			if (!mw || mw == this) return;
-			Module* m = mw->module;
-			if (!m) return;
-			module->bindModule(m);
-		}
+		module->bindModule(m);
 	}
 
 	void step() override {
@@ -696,18 +694,18 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 		BASE::step();
 	}
 
-	void enableLearn(int mode) {
-		learn = learn != mode ? mode : 0;
+	void enableLearn() {
+		learn ^= true;
 		APP->event->setSelected(this);
 		GLFWcursor* cursor = NULL;
-		if (learn != 0) {
+		if (learn) {
 			cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
 		}
 		glfwSetCursor(APP->window->win, cursor);
 	}
 
 	void disableLearn() {
-		learn = 0;
+		learn = false;
 		glfwSetCursor(APP->window->win, NULL);
 	}
 
@@ -765,16 +763,15 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 		struct BindModuleSelectItem : MenuItem {
 			WIDGET* widget;
 			void onAction(const event::Action& e) override {
-				widget->enableLearn(1);
+				widget->enableLearn();
 			}
 		};
 
 		struct ModuleMenuItem : MenuItem {
 			struct ModuleItem : MenuItem {
 				struct CenterItem : MenuItem {
-					typename MODULE::BoundModule* b;
+					ModuleWidget* mw;
 					void onAction(const event::Action& e) override {
-						ModuleWidget* mw = APP->scene->rack->getModule(b->moduleId);
 						StoermelderPackOne::Rack::ViewportCenter{mw};
 					}
 				};
@@ -783,7 +780,7 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 					MODULE* module;
 					typename MODULE::BoundModule* b;
 					void onAction(const event::Action& e) override {
-						module->unbindModule(b->moduleId);
+						module->unbindModule(b);
 					}
 				};
 
@@ -794,7 +791,8 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 				}
 				Menu* createChildMenu() override {
 					Menu* menu = new Menu;
-					if (b->mw) menu->addChild(construct<CenterItem>(&MenuItem::text, "Center module", &CenterItem::b, b));
+					ModuleWidget* mw = b->getModuleWidget();
+					if (mw) menu->addChild(construct<CenterItem>(&MenuItem::text, "Center module", &CenterItem::mw, mw));
 					menu->addChild(construct<UnbindItem>(&MenuItem::text, "Unbind", &UnbindItem::module, module, &UnbindItem::b, b));
 					return menu;
 				}
@@ -808,8 +806,8 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 			Menu* createChildMenu() override {
 				Menu* menu = new Menu;
 				for (typename MODULE::BoundModule* b : module->boundModules) {
-					b->mw = APP->scene->rack->getModule(b->moduleId);
-					std::string text = (!b->mw ? "[MISSING] " : "") + b->moduleName;
+					ModuleWidget* mw = b->getModuleWidget();
+					std::string text = (!mw ? "[MISSING] " : "") + b->moduleName;
 					menu->addChild(construct<ModuleItem>(&MenuItem::text, text, &ModuleItem::module, module, &ModuleItem::b, b));
 				}
 				return menu;
