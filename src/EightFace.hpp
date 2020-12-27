@@ -13,7 +13,10 @@ const std::set<std::tuple<std::string, std::string>> guiModuleSlugs = {
 	std::make_tuple("Entrian-Sequencers", "Drummer"),
 	std::make_tuple("Entrian-Sequencers", "CV"),
 	std::make_tuple("Entrian-AcousticDrums", "AcousticDrums"),
-	std::make_tuple("Entrian-AcousticDrums", "Drummer")
+	std::make_tuple("Entrian-AcousticDrums", "Drummer"),
+	std::make_tuple("VCV-Host", "Host"),
+	std::make_tuple("VCV-Host", "Host-FX"),
+	std::make_tuple("VCV-Host", "Host-XL")
 };
 
 } // namespace EightFace
