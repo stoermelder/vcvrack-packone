@@ -143,6 +143,7 @@ void modelUsageReset() {
 BrowserOverlay::BrowserOverlay() {
 	v1::modelBoxZoom = pluginSettings.mbV1zoom;
 	v1::modelBoxSort = pluginSettings.mbV1sort;
+	v1::hideBrands = pluginSettings.mbV1hideBrands;
 	moduleBrowserFromJson(pluginSettings.mbModelsJ);
 
 	mbWidgetBackup = APP->scene->moduleBrowser;
@@ -167,6 +168,7 @@ BrowserOverlay::~BrowserOverlay() {
 
 	pluginSettings.mbV1zoom = v1::modelBoxZoom;
 	pluginSettings.mbV1sort = v1::modelBoxSort;
+	pluginSettings.mbV1hideBrands = v1::hideBrands;
 	json_decref(pluginSettings.mbModelsJ);
 	pluginSettings.mbModelsJ = moduleBrowserToJson();
 	
@@ -304,9 +306,20 @@ struct MbWidget : ModuleWidget {
 				MenuItem::step();
 			}
 
+			struct HideBrandsItem : MenuItem {
+				void onAction(const event::Action& e) override {
+					v1::hideBrands ^= true;
+				}
+				void step() override {
+					rightText = v1::hideBrands ? "✔" : "";
+					MenuItem::step();
+				}
+			};
+
 			Menu* createChildMenu() override {
 				Menu* menu = new Menu;
 				menu->addChild(new v1::ModelZoomSlider);
+				menu->addChild(construct<HideBrandsItem>(&MenuItem::text, "Hide brand list"));
 				return menu;
 			}
 		};

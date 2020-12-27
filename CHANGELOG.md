@@ -1,9 +1,12 @@
 ## 1.x.x (in development)
 
-- Modules [8FACE mk2, +8](./docs/EightFaceMk2.md)
-    - New modules, evolution and replacement for 8FACE and 8FACEx2 (#63 #76 #144 #154 #157 #158 #160 #162)
 - Modules [FLOWER, SEEDS, OFFSPRING](./docs/Flower.md)
     - New modules, pattern-driven 16-step sequencer
+
+## 1.9.0 (in development)
+
+- Modules [8FACE mk2, +8](./docs/EightFaceMk2.md)
+    - New modules, evolution and replacement for 8FACE and 8FACEx2 (#63 #76 #144 #154 #157 #158 #160 #162)
 - Modules [YAW](./docs/Yaw.md)
     - New module, a wave multiplier/phase shifter inspired by A-137-2
 - Modules [ORBIT](./docs/Orbit.md)
@@ -15,16 +18,18 @@
     - Load preset in Arm-mode even when the same slot was selected before (#212)
     - Improved thread-handling for crashes when used with specific modules (#76)
 - Module [CV-MAP](./docs/CVMap.md)
-    - Fixed wrong behavior when toggling to zero (#221)
+    - Fixed wrong slot behavior when toggling input to 0V (#221)
 - Module [HIVE](./docs/Hive.md)
     - Fixed hanging ratchets on missing or stopped clock trigger (#216)
 - Module [MACRO](./docs/Macro.md)
     - Added context menu options on mapped parameters of target module for MACRO
 - Module [MAZE](./docs/Maze.md)
     - Fixed hanging ratchets on missing or stopped clock trigger (#216)
+- Module [MB](./docs/Mb.md)
+    - Added option to hide the "brands" section of the V1-browser (#223)
 - Module [µMAP](./docs/CVMapMicro.md)
     - Added context menu options on mapped parameters of target module for µMAP
-    - Fixed wrong behavior when toggling to zero (#221)
+    - Fixed wrong behavior when toggling input to 0V (#221)
 - Module [MIDI-CAT](./docs/MidiCat.md)
     - Added support for MIDI 14-bit CC
 - Module [MIDI-MON](./docs/MidiMon.md)

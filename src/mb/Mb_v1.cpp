@@ -16,6 +16,7 @@ enum class ModuleBrowserSort {
 
 float modelBoxZoom = 0.9f;
 int modelBoxSort = (int)ModuleBrowserSort::DEFAULT;
+bool hideBrands = false;
 
 
 // Static functions
@@ -685,22 +686,28 @@ void BrowserSidebar::step() {
 	favoriteList->box.pos = clearButton->box.getBottomLeft();
 	favoriteList->box.size.x = box.size.x;
 
-	float listHeight = (box.size.y - favoriteList->box.getBottom()) / 2;
+	float listHeight = hideBrands ? box.size.y : (box.size.y - favoriteList->box.getBottom()) / 2;
 	listHeight = std::floor(listHeight);
 
 	tagLabel->box.pos = favoriteList->box.getBottomLeft();
 	tagLabel->box.size.x = box.size.x;
 	tagScroll->box.pos = tagLabel->box.getBottomLeft();
-	tagScroll->box.size.y = listHeight - tagLabel->box.size.y;
 	tagScroll->box.size.x = box.size.x;
 	tagList->box.size.x = tagScroll->box.size.x;
+	tagScroll->box.size.y = listHeight - tagLabel->box.size.y;
 
-	brandLabel->box.pos = tagScroll->box.getBottomLeft();
-	brandLabel->box.size.x = box.size.x;
-	brandScroll->box.pos = brandLabel->box.getBottomLeft();
-	brandScroll->box.size.y = listHeight - brandLabel->box.size.y;
-	brandScroll->box.size.x = box.size.x;
-	brandList->box.size.x = brandScroll->box.size.x;
+	if (!hideBrands) {
+		brandLabel->box.pos = tagScroll->box.getBottomLeft();
+		brandLabel->box.size.x = box.size.x;
+		brandScroll->box.pos = brandLabel->box.getBottomLeft();
+		brandScroll->box.size.y = listHeight - brandLabel->box.size.y;
+		brandScroll->box.size.x = box.size.x;
+		brandList->box.size.x = brandScroll->box.size.x;
+	}
+
+	brandLabel->visible = !hideBrands;
+	brandScroll->visible = !hideBrands;
+	brandList->visible = !hideBrands;
 
 	Widget::step();
 }

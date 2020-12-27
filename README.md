@@ -17,7 +17,7 @@ If you like my modules consider donating to https://paypal.me/stoermelder. Thank
 
 - [HIVE](./docs/Hive.md): 4 channel sequencer running on a 2-dimensional hexagonal grid, similar to [MAZE](./docs/Maze.md)
 - [MACRO](./docs/Macro.md): marco-knob for four parameter-mappings and two CV outputs
-- [MB](./docs/Mb.md): experimental replacement for Rack's module browser, formerly available in [Stoermelder's PackTau](https://github.com/stoermelder/vcvrack-packtau)
+- [MB](./docs/Mb.md): experimental replacement for Rack's module browser, formerly available in [stoermelder's PackTau](https://github.com/stoermelder/vcvrack-packtau)
 - [MIDI-MON](./docs/MidiMon.md): input-monitor for MIDI messages
 - [RAW](./docs/Raw.md): a digital effect based on the dynamics of bistable systems
 - Also, [MIDI-CAT](./docs/MidiCat.md) has been hugely extended with slew-limiting and input-scaling
