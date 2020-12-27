@@ -438,34 +438,48 @@ struct ModelBox : widget::OpaqueWidget {
 };
 
 
-struct SortItem : ui::MenuItem {
-	ModuleBrowserSort sort;
+struct SortChoice : ui::ChoiceButton {
+	void onButton(const event::Button& e) override {
+		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
+			createContextMenu();
+			e.consume(this);
+		}
+	}
 
-	void onAction(const event::Action& e) override {
-		ModuleBrowser* browser = getAncestorOfType<ModuleBrowser>();
-		modelBoxSort = (int)sort;
-		browser->refresh(true);
+	void createContextMenu() {
+		Menu* menu = createMenu();
+		menu->box.pos = getAbsoluteOffset(Vec(0, box.size.y)).round();
+
+		struct SortItem : ui::MenuItem {
+			ModuleBrowserSort sort;
+			void onAction(const event::Action& e) override {
+				ModuleBrowser* browser = APP->scene->moduleBrowser->getFirstDescendantOfType<ModuleBrowser>();
+				modelBoxSort = (int)sort;
+				browser->refresh(true);
+			}
+		};
+
+		menu->addChild(construct<SortItem>(&MenuItem::text, "Recently updated", &SortItem::sort, ModuleBrowserSort::DEFAULT));
+		menu->addChild(construct<SortItem>(&MenuItem::text, "Last used", &SortItem::sort, ModuleBrowserSort::LAST_USED));
+		menu->addChild(construct<SortItem>(&MenuItem::text, "Most used", &SortItem::sort, ModuleBrowserSort::MOST_USED));
+		menu->addChild(construct<SortItem>(&MenuItem::text, "Random", &SortItem::sort, ModuleBrowserSort::RANDOM));
+		menu->addChild(construct<SortItem>(&MenuItem::text, "Module name", &SortItem::sort, ModuleBrowserSort::NAME));
 	}
 
 	void step() override {
-		// Skip the autosizing of MenuItem
-		Widget::step();
-		active = modelBoxSort == (int)sort;
-	}
-
-	void draw(const DrawArgs& args) override {
-		BNDwidgetState state = BND_DEFAULT;
-
-		if (APP->event->hoveredWidget == this)
-			state = BND_HOVER;
-
-		if (active)
-			state = BND_ACTIVE;
-
-		bndMenuItem(args.vg, 0.0, 0.0, box.size.x, box.size.y, state, -1, NULL);
-		const float BND_LABEL_FONT_SIZE = 13.f;
-		NVGcolor color = bndTextColor(&bndGetTheme()->menuItemTheme, state);
-		bndIconLabelValue(args.vg, 0.f, 0.f, box.size.x, box.size.y, -1, color, BND_CENTER, BND_LABEL_FONT_SIZE, text.c_str(), NULL);
+		switch ((ModuleBrowserSort)modelBoxSort) {
+			case ModuleBrowserSort::DEFAULT:
+				text = "Recently updated"; break;
+			case ModuleBrowserSort::LAST_USED:
+				text = "Last used"; break;
+			case ModuleBrowserSort::MOST_USED:
+				text = "Most used"; break;
+			case ModuleBrowserSort::RANDOM:
+				text = "Random"; break;
+			case ModuleBrowserSort::NAME:
+				text = "Module name"; break;
+		}
+		ChoiceButton::step();
 	}
 };
 
@@ -723,40 +737,10 @@ ModuleBrowser::ModuleBrowser() {
 	// modelLabel->box.size.x = 400;
 	addChild(modelLabel);
 
-	SortItem* modelSortDefaultItem = new SortItem;
-	modelSortDefaultItem->box.size.x = 125.f;
-	modelSortDefaultItem->sort = ModuleBrowserSort::DEFAULT;
-	modelSortDefaultItem->text = "Recently updated";
-	addChild(modelSortDefaultItem);
-	this->modelSortDefaultItem = modelSortDefaultItem;
-
-	SortItem* modelSortLastUsedItem = new SortItem;
-	modelSortLastUsedItem->box.size.x = 125.f;
-	modelSortLastUsedItem->sort = ModuleBrowserSort::LAST_USED;
-	modelSortLastUsedItem->text = "Last used";
-	addChild(modelSortLastUsedItem);
-	this->modelSortLastUsedItem = modelSortLastUsedItem;
-
-	SortItem* modelSortMostUsedItem = new SortItem;
-	modelSortMostUsedItem->box.size.x = 125.f;
-	modelSortMostUsedItem->sort = ModuleBrowserSort::MOST_USED;
-	modelSortMostUsedItem->text = "Most used";
-	addChild(modelSortMostUsedItem);
-	this->modelSortMostUsedItem = modelSortMostUsedItem;
-
-	SortItem* modelSortRandom = new SortItem;
-	modelSortRandom->box.size.x = 125.f;
-	modelSortRandom->sort = ModuleBrowserSort::RANDOM;
-	modelSortRandom->text = "Random";
-	addChild(modelSortRandom);
-	this->modelSortRandom = modelSortRandom;
-
-	SortItem* modelSortNameItem = new SortItem;
-	modelSortNameItem->box.size.x = 125.f;
-	modelSortNameItem->sort = ModuleBrowserSort::NAME;
-	modelSortNameItem->text = "Module name";
-	addChild(modelSortNameItem);
-	this->modelSortNameItem = modelSortNameItem;
+	ChoiceButton* modelSortChoice = new SortChoice;
+	modelSortChoice->box.size.x = 160.f;
+	addChild(modelSortChoice);
+	this->modelSortChoice = modelSortChoice;
 
 	modelZoomSlider = new ModelZoomSlider;
 	addChild(modelZoomSlider);
@@ -794,11 +778,7 @@ void ModuleBrowser::step() {
 
 	modelZoomSlider->box.pos = Vec(box.size.x - modelZoomSlider->box.size.x - 5, 5);
 
-	modelSortDefaultItem->box.pos = Vec(modelZoomSlider->box.pos.x - modelSortDefaultItem->box.size.x - 30, 5);
-	modelSortLastUsedItem->box.pos = Vec(modelSortDefaultItem->box.pos.x - modelSortLastUsedItem->box.size.x - 5, 5);
-	modelSortMostUsedItem->box.pos = Vec(modelSortLastUsedItem->box.pos.x - modelSortMostUsedItem->box.size.x - 5, 5);
-	modelSortRandom->box.pos = Vec(modelSortMostUsedItem->box.pos.x - modelSortRandom->box.size.x - 5, 5);
-	modelSortNameItem->box.pos = Vec(modelSortRandom->box.pos.x - modelSortNameItem->box.size.x - 5, 5);
+	modelSortChoice->box.pos =  Vec(modelZoomSlider->box.pos.x - modelSortChoice->box.size.x - 20, 5);
 
 	modelScroll->box.pos = sidebar->box.getTopRight().plus(math::Vec(0, 30));
 	modelScroll->box.size = box.size.minus(modelScroll->box.pos);

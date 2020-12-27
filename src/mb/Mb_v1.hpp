@@ -37,11 +37,7 @@ struct ModuleBrowser : widget::OpaqueWidget {
 	BrowserSidebar* sidebar;
 	ui::ScrollWidget* modelScroll;
 	ui::Label* modelLabel;
-	ui::MenuItem* modelSortDefaultItem;
-	ui::MenuItem* modelSortNameItem;
-	ui::MenuItem* modelSortLastUsedItem;
-	ui::MenuItem* modelSortMostUsedItem;
-	ui::MenuItem* modelSortRandom;
+	ui::ChoiceButton* modelSortChoice;
 	ui::Slider* modelZoomSlider;
 	ui::MarginLayout* modelMargin;
 	ui::SequentialLayout* modelContainer;
