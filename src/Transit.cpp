@@ -193,7 +193,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 			if (c == MAX_EXPANDERS + 1) break;
 			Module* exp = t->rightExpander.module;
 			if (!exp) break;
-			if (exp->model->plugin->slug != "Stoermelder-P1" || exp->model->slug != "TransitEx") break;
+			if (exp->model != modelTransitEx) break;
 			t = reinterpret_cast<TransitBase<NUM_PRESETS>*>(exp);
 			t->onReset();
 		}
@@ -225,7 +225,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 
 			Module* exp = m->rightExpander.module;
 			if (!exp) break;
-			if (exp->model->plugin->slug != "Stoermelder-P1" || exp->model->slug != "TransitEx") break;
+			if (exp->model != modelTransitEx) break;
 			m = exp;
 			t = reinterpret_cast<TransitBase<NUM_PRESETS>*>(exp);
 			if (t->ctrlModuleId >= 0 && t->ctrlModuleId != Module::id) t->onReset();
