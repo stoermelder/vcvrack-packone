@@ -64,6 +64,7 @@ struct EightFaceMk2ExModule : EightFaceMk2Base<NUM_PRESETS> {
 				BASE::preset[i].clear();
 			}
 			BASE::presetSlotUsed[i] = false;
+			BASE::textLabel[i] = "";
 			BASE::preset[i].clear();
 			BASE::lights[LIGHT_PRESET + (i * 3) + 0].setBrightness(0.f);
 			BASE::lights[LIGHT_PRESET + (i * 3) + 1].setBrightness(0.f);

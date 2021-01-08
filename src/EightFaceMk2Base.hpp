@@ -31,6 +31,8 @@ struct EightFaceMk2Base : Module, StripIdFixModule {
 	bool presetSlotUsed[NUM_PRESETS] = {false};
 	/** [Stored to JSON] */
 	std::vector<json_t*> preset[NUM_PRESETS];
+	/** [Stored to JSON] */
+	std::string textLabel[NUM_PRESETS];
 
 	LongPressButton presetButton[NUM_PRESETS];
 
@@ -53,6 +55,7 @@ struct EightFaceMk2Base : Module, StripIdFixModule {
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			json_t* presetJ = json_object();
 			json_object_set_new(presetJ, "slotUsed", json_boolean(EightFaceMk2Base<NUM_PRESETS>::presetSlotUsed[i]));
+			json_object_set_new(presetJ, "textLabel", json_string(EightFaceMk2Base<NUM_PRESETS>::textLabel[i].c_str()));
 			if (EightFaceMk2Base<NUM_PRESETS>::presetSlotUsed[i]) {
 				json_t* slotJ = json_array();
 				for (size_t j = 0; j < EightFaceMk2Base<NUM_PRESETS>::preset[i].size(); j++) {
@@ -75,6 +78,8 @@ struct EightFaceMk2Base : Module, StripIdFixModule {
 		size_t presetIndex;
 		json_array_foreach(presetsJ, presetIndex, presetJ) {
 			presetSlotUsed[presetIndex] = json_boolean_value(json_object_get(presetJ, "slotUsed"));
+			json_t* textLabelJ = json_object_get(presetJ, "textLabel");
+			if (textLabelJ) textLabel[presetIndex] = json_string_value(textLabelJ);
 			preset[presetIndex].clear();
 			if (presetSlotUsed[presetIndex]) {
 				json_t* slotJ = json_object_get(presetJ, "slot");
@@ -94,10 +99,10 @@ struct EightFaceMk2ParamQuantity : ParamQuantity {
 	int id;
 
 	std::string getDisplayValueString() override {
-		return module->presetSlotUsed[id] ? "Used" : "Empty";
+		return !module->textLabel[id].empty() ? module->textLabel[id] : (module->presetSlotUsed[id] ? "Used" : "Empty");
 	}
 	std::string getLabel() override {
-		return string::f("Snapshot #%d", module->ctrlOffset * NUM_PRESETS + id + 1);
+		return !module->textLabel[id].empty() ? "" : string::f("Snapshot #%d", module->ctrlOffset * NUM_PRESETS + id + 1);
 	}
 };
 
@@ -151,6 +156,67 @@ struct EightFaceMk2LedButton : LEDButton {
 			}
 		};
 
+		struct LabelMenuItem : MenuItem {
+			EightFaceMk2Base<NUM_PRESETS>* module;
+			int id;
+
+			LabelMenuItem() {
+				rightText = RIGHT_ARROW;
+			}
+
+			struct LabelField : ui::TextField {
+				EightFaceMk2Base<NUM_PRESETS>* module;
+				int id;
+				void onSelectKey(const event::SelectKey& e) override {
+					if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
+						module->textLabel[id] = text;
+
+						ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
+						overlay->requestDelete();
+						e.consume(this);
+					}
+
+					if (!e.getTarget()) {
+						ui::TextField::onSelectKey(e);
+					}
+				}
+
+				void step() override {
+					// Keep selected
+					APP->event->setSelected(this);
+					TextField::step();
+				}
+			};
+
+			struct ResetItem : ui::MenuItem {
+				EightFaceMk2Base<NUM_PRESETS>* module;
+				int id;
+				void onAction(const event::Action& e) override {
+					module->textLabel[id] = "";
+				}
+			};
+
+			Menu* createChildMenu() override {
+				Menu* menu = new Menu;
+
+				LabelField* labelField = new LabelField;
+				labelField->placeholder = "Label";
+				labelField->text = module->textLabel[id];
+				labelField->box.size.x = 180;
+				labelField->module = module;
+				labelField->id = id;
+				menu->addChild(labelField);
+
+				ResetItem* resetItem = new ResetItem;
+				resetItem->text = "Reset";
+				resetItem->module = module;
+				resetItem->id = id;
+				menu->addChild(resetItem);
+
+				return menu;
+			}
+		}; // struct LabelMenuItem
+
 		menu->addChild(new MenuSeparator);
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Snapshot"));
 		menu->addChild(construct<SlotItem>(&MenuItem::text, "Load", &MenuItem::rightText, RACK_MOD_SHIFT_NAME "+click", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::LOAD));
@@ -158,6 +224,8 @@ struct EightFaceMk2LedButton : LEDButton {
 		menu->addChild(construct<SlotItem>(&MenuItem::text, "Randomize and save", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::RANDOMIZE));
 		menu->addChild(construct<SlotItem>(&MenuItem::text, "Copy", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::COPY));
 		menu->addChild(construct<SlotItem>(&MenuItem::text, "Paste", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::PASTE));
+		menu->addChild(new MenuSeparator);
+		menu->addChild(construct<LabelMenuItem>(&MenuItem::text, "Custom label", &LabelMenuItem::module, module, &LabelMenuItem::id, id));
 	}
 };
 

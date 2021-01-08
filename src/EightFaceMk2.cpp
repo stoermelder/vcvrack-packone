@@ -161,6 +161,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 				BASE::preset[i].clear();
 			}
 			BASE::presetSlotUsed[i] = false;
+			BASE::textLabel[i] = "";
 		}
 		for (BoundModule* b : boundModules) {
 			delete b;
@@ -182,7 +183,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 			if (c == MAX_EXPANDERS + 1) break;
 			Module* exp = t->rightExpander.module;
 			if (!exp) break;
-			if (exp->model->plugin->slug != "Stoermelder-P1" || exp->model->slug != "EightFaceMk2Ex") break;
+			if (exp->model != modelEightFaceMk2Ex) break;
 			t = reinterpret_cast<EightFaceMk2Base<NUM_PRESETS>*>(exp);
 			t->onReset();
 		}
@@ -217,7 +218,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 
 			Module* exp = m->rightExpander.module;
 			if (!exp) break;
-			if (exp->model->plugin->slug != "Stoermelder-P1" || exp->model->slug != "EightFaceMk2Ex") break;
+			if (exp->model != modelEightFaceMk2Ex) break;
 			m = exp;
 			t = reinterpret_cast<EightFaceMk2Base<NUM_PRESETS>*>(exp);
 			if (t->ctrlModuleId >= 0 && t->ctrlModuleId != Module::id) t->onReset();
