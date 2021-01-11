@@ -48,6 +48,7 @@ struct TransitExModule : TransitBase<NUM_PRESETS> {
 	void onReset() override { 
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			BASE::presetSlotUsed[i] = false;
+			BASE::textLabel[i] = "";
 			BASE::preset[i].clear();
 			BASE::lights[LIGHT_PRESET + (i * 3) + 0].setBrightness(0.f);
 			BASE::lights[LIGHT_PRESET + (i * 3) + 1].setBrightness(0.f);

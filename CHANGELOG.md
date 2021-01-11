@@ -41,6 +41,7 @@
 - Module [TRANSIT](./docs/Transit.md)
     - Added "Phase"-mode for CV-input which scans continously through snapshots (#182)
     - Added context menu option "Locate and indicate" for bound parameters
+    - Added context menu option for custom text labels
     - Improved performance of +T expanders
 
 ## 1.8.0

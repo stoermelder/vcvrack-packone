@@ -167,6 +167,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			BASE::presetSlotUsed[i] = false;
+			BASE::textLabel[i] = "";
 			BASE::preset[i].clear();
 		}
 
