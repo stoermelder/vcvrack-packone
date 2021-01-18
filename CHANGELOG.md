@@ -38,6 +38,9 @@
     - Added basic limiting to prevent rare instabilities (#214)
 - Module [STRIP](./docs/Strip.md)
     - Added context menu option "Load and replace" to preset-submenu (#215)
+- Module [STROKE](./docs/Stroke.md)
+    - Fixed not working mappings caused by Num Lock state (#220)
+    - Fixed not working mappings caused by use of numpad keys (#220)
 - Module [TRANSIT](./docs/Transit.md)
     - Added "Phase"-mode for CV-input which scans continously through snapshots (#182)
     - Added context menu option "Locate and indicate" for bound parameters

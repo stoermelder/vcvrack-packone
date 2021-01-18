@@ -55,28 +55,35 @@ static std::string keyName(int key) {
 		case GLFW_KEY_PAGE_DOWN:		return "PG-DW";
 		case GLFW_KEY_HOME:				return "HOME";
 		case GLFW_KEY_END:				return "END";
-		case GLFW_KEY_KP_0:				return "KP 0";
-		case GLFW_KEY_KP_1:				return "KP 1";
-		case GLFW_KEY_KP_2:				return "KP 2";
-		case GLFW_KEY_KP_3:				return "KP 3";
-		case GLFW_KEY_KP_4:				return "KP 4";
-		case GLFW_KEY_KP_5:				return "KP 5";
-		case GLFW_KEY_KP_6:				return "KP 6";
-		case GLFW_KEY_KP_7:				return "KP 7";
-		case GLFW_KEY_KP_8:				return "KP 8";
-		case GLFW_KEY_KP_9:				return "KP 9";
+		case GLFW_KEY_PRINT_SCREEN:		return "PRINT";
+		case GLFW_KEY_PAUSE:			return "PAUSE";
 		case GLFW_KEY_KP_DIVIDE:		return "KP /";
 		case GLFW_KEY_KP_MULTIPLY:		return "KP *";
 		case GLFW_KEY_KP_SUBTRACT:		return "KP -";
 		case GLFW_KEY_KP_ADD:			return "KP +";
 		case GLFW_KEY_KP_DECIMAL:		return "KP .";
-		case GLFW_KEY_KP_EQUAL:			return "KP =";
-		case GLFW_KEY_KP_ENTER:			return "KP E";
-		case GLFW_KEY_PRINT_SCREEN:		return "PRINT";
-		case GLFW_KEY_PAUSE:			return "PAUSE";
 		default:						return "";
 	}
 }
+
+static int keyFix(int key) {
+	switch (key) {
+		case GLFW_KEY_KP_0:				return GLFW_KEY_0;
+		case GLFW_KEY_KP_1:				return GLFW_KEY_1;
+		case GLFW_KEY_KP_2:				return GLFW_KEY_2;
+		case GLFW_KEY_KP_3:				return GLFW_KEY_3;
+		case GLFW_KEY_KP_4:				return GLFW_KEY_4;
+		case GLFW_KEY_KP_5:				return GLFW_KEY_5;
+		case GLFW_KEY_KP_6:				return GLFW_KEY_6;
+		case GLFW_KEY_KP_7:				return GLFW_KEY_7;
+		case GLFW_KEY_KP_8:				return GLFW_KEY_8;
+		case GLFW_KEY_KP_9:				return GLFW_KEY_9;
+		case GLFW_KEY_KP_EQUAL:			return GLFW_KEY_EQUAL;
+		case GLFW_KEY_KP_ENTER:			return GLFW_KEY_ENTER;
+		default:						return key;
+	}
+}
+
 
 enum class KEY_MODE {
 	OFF = 0,
@@ -516,17 +523,19 @@ struct KeyContainer : Widget {
 
 	void onButton(const event::Button& e) override {
 		if (module && !module->bypass && e.button > 2) {
+			int e_mods = e.mods & (GLFW_MOD_ALT | GLFW_MOD_CONTROL | GLFW_MOD_SHIFT);
+
 			if (e.action == GLFW_PRESS) {
 				if (learnIdx >= 0) {
 					module->keys[learnIdx].button = e.button;
 					module->keys[learnIdx].key = -1;
-					module->keys[learnIdx].mods = e.mods;
+					module->keys[learnIdx].mods = e_mods;
 					learnIdx = -1;
 					e.consume(this);
 				}
 				else {
 					for (int i = 0; i < PORTS; i++) {
-						if (e.button == module->keys[i].button && e.mods == module->keys[i].mods) {
+						if (e.button == module->keys[i].button && e_mods == module->keys[i].mods) {
 							module->keyEnable(i);
 							e.consume(this);
 						}
@@ -535,7 +544,7 @@ struct KeyContainer : Widget {
 			}
 			if (e.action == RACK_HELD) {
 				for (int i = 0; i < PORTS; i++) {
-					if (e.button == module->keys[i].button && e.mods == module->keys[i].mods) {
+					if (e.button == module->keys[i].button && e_mods == module->keys[i].mods) {
 						e.consume(this);
 					}
 				}
@@ -554,20 +563,23 @@ struct KeyContainer : Widget {
 
 	void onHoverKey(const event::HoverKey& e) override {
 		if (module && !module->bypass) {
+			int e_mods = e.mods & (GLFW_MOD_ALT | GLFW_MOD_CONTROL | GLFW_MOD_SHIFT);
+			int e_key = keyFix(e.key);
+
 			if (e.action == GLFW_PRESS) {
 				if (learnIdx >= 0) {
-					std::string kn = keyName(e.key);
+					std::string kn = keyName(e_key);
 					if (!kn.empty()) {
 						module->keys[learnIdx].button = -1;
-						module->keys[learnIdx].key = e.key;
-						module->keys[learnIdx].mods = e.mods;
+						module->keys[learnIdx].key = e_key;
+						module->keys[learnIdx].mods = e_mods;
 						learnIdx = -1;
 						e.consume(this);
 					}
 				}
 				else {
 					for (int i = 0; i < PORTS; i++) {
-						if (e.key == module->keys[i].key && e.mods == module->keys[i].mods) {
+						if (e_key == module->keys[i].key && e_mods == module->keys[i].mods) {
 							module->keyEnable(i);
 							e.consume(this);
 						}
@@ -576,14 +588,14 @@ struct KeyContainer : Widget {
 			}
 			if (e.action == RACK_HELD) {
 				for (int i = 0; i < PORTS; i++) {
-					if (e.key == module->keys[i].key && e.mods == module->keys[i].mods) {
+					if (e_key == module->keys[i].key && e_mods == module->keys[i].mods) {
 						e.consume(this);
 					}
 				}
 			}
 			if (e.action == GLFW_RELEASE) {
 				for (int i = 0; i < PORTS; i++) {
-					if (e.key == module->keys[i].key) {
+					if (e_key == module->keys[i].key) {
 						module->keyDisable(i);
 						e.consume(this);
 					}
