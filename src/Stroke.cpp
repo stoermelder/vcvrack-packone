@@ -250,8 +250,8 @@ struct StrokeModule : Module {
 		for (int i = 0; i < PORTS; i++) {
 			json_t* keyJ = json_array_get(keysJ, i);
 			keys[i].button = json_integer_value(json_object_get(keyJ, "button"));
-			keys[i].key = json_integer_value(json_object_get(keyJ, "key"));
-			keys[i].mods = json_integer_value(json_object_get(keyJ, "mods"));
+			keys[i].key = keyFix(json_integer_value(json_object_get(keyJ, "key")));
+			keys[i].mods = json_integer_value(json_object_get(keyJ, "mods")) & (GLFW_MOD_ALT | GLFW_MOD_CONTROL | GLFW_MOD_SHIFT);
 			keys[i].mode = (KEY_MODE)json_integer_value(json_object_get(keyJ, "mode"));
 			keys[i].high = json_boolean_value(json_object_get(keyJ, "high"));
 			json_t* dataJ = json_object_get(keyJ, "data");
