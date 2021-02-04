@@ -226,7 +226,7 @@
 		{
 			"slug": "Spin",
 			"name": "SPIN",
-			"description": "Utility for converting mouse-wheel movement into triggers, also handles mouse-click of mouse, useful for SAIL",
+			"description": "Utility for converting mouse-wheel movement into triggers, also handles middle-click of mouse, useful for SAIL",
 			"tags": ["Utility"],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Spin.md"
 		},
@@ -320,6 +320,13 @@
 			"description": "Expander for 8FACE mk2",
 			"tags": ["Expander"],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/EightFaceMk2.md"
+		},
+		{
+			"slug": "MidiPlug",
+			"name": "MIDI-PLUG",
+			"description": "Virtual MIDI merger and splitter",
+			"tags": ["MIDI", "Utility"],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/MidiPlug.md"
 		},
 		{
 			"slug": "AudioInterface64",

@@ -54,6 +54,7 @@ extern Model* modelMidiMon;
 extern Model* modelOrbit;
 extern Model* modelEightFaceMk2;
 extern Model* modelEightFaceMk2Ex;
+extern Model* modelMidiPlug;
 extern Model* modelAudioInterface64;
 extern Model* modelMb;
 

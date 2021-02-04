@@ -7,10 +7,12 @@
 
 - Modules [8FACE mk2, +8](./docs/EightFaceMk2.md)
     - New modules, evolution and replacement for 8FACE and 8FACEx2 (#63 #76 #144 #154 #157 #158 #160 #162)
-- Modules [YAW](./docs/Yaw.md)
-    - New module, a wave multiplier/phase shifter inspired by A-137-2
+- Modules [MIDI-PLUG](./docs/MidiPlug.md)
+    - New module, a virtual MIDI merger and splitter
 - Modules [ORBIT](./docs/Orbit.md)
     - New module, a polyphonic stereo field spreader
+- Modules [YAW](./docs/Yaw.md)
+    - New module, a wave multiplier/phase shifter inspired by A-137-2
 
 ### Fixes and Changes
 
