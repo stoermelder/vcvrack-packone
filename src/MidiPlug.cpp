@@ -114,12 +114,12 @@ struct MidiPlugWidget : ThemedModuleWidget<MidiPlugModule> {
 		midiInput1Widget->setMidiPort(module ? &module->midiInput[1] : NULL);
 		addChild(midiInput1Widget);
 
-		MidiPlugMidiWidget* midiOutput0Widget = createWidget<MidiPlugMidiWidget>(Vec(10.0f, 190.f));
+		MidiPlugMidiWidget* midiOutput0Widget = createWidget<MidiPlugMidiWidget>(Vec(10.0f, 219.5f));
 		midiOutput0Widget->box.size = Vec(130.0f, 44.0f);
 		midiOutput0Widget->setMidiPort(module ? &module->midiOutput[0] : NULL);
 		addChild(midiOutput0Widget);
 
-		MidiPlugMidiWidget* midiOutput1Widget = createWidget<MidiPlugMidiWidget>(Vec(10.0f, 238.f));
+		MidiPlugMidiWidget* midiOutput1Widget = createWidget<MidiPlugMidiWidget>(Vec(10.0f, 267.6f));
 		midiOutput1Widget->box.size = Vec(130.0f, 44.0f);
 		midiOutput1Widget->setMidiPort(module ? &module->midiOutput[1] : NULL);
 		addChild(midiOutput1Widget);
