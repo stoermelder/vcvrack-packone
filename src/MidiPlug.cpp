@@ -9,9 +9,23 @@ struct MidiPlugModule : Module {
 
 	struct MidiPlugOutput : midi::Output {
 		void sendChannelMessage(midi::Message& message) {
+			if (channel >= 0) {
+				message.setChannel(channel);
+			}
 			if (outputDevice) {
 				outputDevice->sendMessage(message);
 			}
+		}
+
+		std::vector<int> getChannels() override {
+			std::vector<int> channels = midi::Output::getChannels();
+			channels.emplace(channels.begin(), -1);
+			return channels;
+		}
+
+		void reset1() {
+			reset();
+			channel = -1;
 		}
 	};
 
@@ -28,8 +42,8 @@ struct MidiPlugModule : Module {
 	void onReset() override {
 		midiInput[0].reset();
 		midiInput[1].reset();
-		midiOutput[0].reset();
-		midiOutput[1].reset();
+		midiOutput[0].reset1();
+		midiOutput[1].reset1();
 	}
 
 	void process(const ProcessArgs &args) override {
@@ -114,13 +128,13 @@ struct MidiPlugWidget : ThemedModuleWidget<MidiPlugModule> {
 		midiInput1Widget->setMidiPort(module ? &module->midiInput[1] : NULL);
 		addChild(midiInput1Widget);
 
-		MidiPlugMidiWidget* midiOutput0Widget = createWidget<MidiPlugMidiWidget>(Vec(10.0f, 219.5f));
-		midiOutput0Widget->box.size = Vec(130.0f, 44.0f);
+		MidiPlugMidiWidget* midiOutput0Widget = createWidget<MidiPlugMidiWidget>(Vec(10.0f, 204.8f));
+		midiOutput0Widget->box.size = Vec(130.0f, 67.0f);
 		midiOutput0Widget->setMidiPort(module ? &module->midiOutput[0] : NULL);
 		addChild(midiOutput0Widget);
 
-		MidiPlugMidiWidget* midiOutput1Widget = createWidget<MidiPlugMidiWidget>(Vec(10.0f, 267.6f));
-		midiOutput1Widget->box.size = Vec(130.0f, 44.0f);
+		MidiPlugMidiWidget* midiOutput1Widget = createWidget<MidiPlugMidiWidget>(Vec(10.0f, 275.8f));
+		midiOutput1Widget->box.size = Vec(130.0f, 67.0f);
 		midiOutput1Widget->setMidiPort(module ? &module->midiOutput[1] : NULL);
 		addChild(midiOutput1Widget);
 	}
