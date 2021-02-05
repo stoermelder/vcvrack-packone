@@ -9,9 +9,23 @@ struct MidiPlugModule : Module {
 	int panelTheme = 0;
 
 	struct MidiPlugOutput : midi::Output {
+		enum class MODE {
+			REPLACE = 1,
+			FILTER = 2
+		};
+		MODE plugMode;
+
 		void sendChannelMessage(midi::Message& message) {
 			if (channel >= 0) {
-				message.setChannel(channel);
+				switch (plugMode) {
+					case MODE::REPLACE:
+						message.setChannel(channel);
+						break;
+					case MODE::FILTER:
+						if (message.getChannel() != channel)
+							return;
+						break;
+				}
 			}
 			if (outputDevice) {
 				outputDevice->sendMessage(message);
@@ -24,9 +38,20 @@ struct MidiPlugModule : Module {
 			return channels;
 		}
 
-		void reset1() {
+		void resetEx() {
 			reset();
 			channel = -1;
+			plugMode = MODE::REPLACE;
+		}
+
+		json_t* toJsonEx() {
+			json_t* rootJ = midi::Output::toJson();
+			json_object_set_new(rootJ, "plugMode", json_integer((int)plugMode));
+			return rootJ;
+		}
+		void fronJsonEx(json_t* rootJ) {
+			plugMode = (MODE)json_integer_value(json_object_get(rootJ, "plugMode"));
+			midi::Output::fromJson(rootJ);
 		}
 	};
 
@@ -45,7 +70,7 @@ struct MidiPlugModule : Module {
 			midiInput[i].reset();
 		}
 		for (int i = 0; i < OUTPUT; i++) {
-			midiOutput[i].reset1();
+			midiOutput[i].resetEx();
 		}
 	}
 
@@ -72,7 +97,7 @@ struct MidiPlugModule : Module {
 
 		json_t* midiOutputJ = json_array();
 		for (int i = 0; i < OUTPUT; i++) {
-			json_array_append_new(midiOutputJ, midiOutput[i].toJson());
+			json_array_append_new(midiOutputJ, midiOutput[i].toJsonEx());
 		}
 		json_object_set_new(rootJ, "midiOutput", midiOutputJ);
 		return rootJ;
@@ -90,7 +115,7 @@ struct MidiPlugModule : Module {
 		json_t* midiOutputJ = json_object_get(rootJ, "midiOutput");
 		for (int i = 0; i < OUTPUT; i++) {
 			json_t* o = json_array_get(midiOutputJ, i);
-			midiOutput[i].fromJson(o);
+			midiOutput[i].fronJsonEx(o);
 		}
 	}
 };
@@ -121,15 +146,16 @@ struct MidiPlugMidiWidget : MidiWidget {
 };
 
 struct MidiPlugOutMidiWidget : MidiPlugMidiWidget {
-	midi::Port* port;
-	void setMidiPort(midi::Port* port) {
-		this->port = port;
+	MidiPlugModule<>::MidiPlugOutput* midiOutput;
+
+	void setMidiPort(MidiPlugModule<>::MidiPlugOutput* port) {
+		this->midiOutput = port;
 		MidiPlugMidiWidget::setMidiPort(port);
 	}
 
 	void step() override {
 		MidiWidget::step();
-		if (port->channel == -1) {
+		if (midiOutput->channel == -1) {
 			channelChoice->text = "Thru";
 		}
 	}
@@ -155,6 +181,23 @@ struct MidiPlugOutMidiWidget : MidiPlugMidiWidget {
 				break;
 			}
 		}
+
+		struct ModeMenuItem : MenuItem {
+			MidiPlugModule<>::MidiPlugOutput* midiOutput;
+			MidiPlugModule<>::MidiPlugOutput::MODE plugMode;
+			void onAction(const event::Action& e) override {
+				midiOutput->plugMode = plugMode;
+			}
+			void step() override {
+				rightText = CHECKMARK(midiOutput->plugMode == plugMode);
+				MenuItem::step();
+			}
+		};
+
+		menu->addChild(new MenuSeparator);
+		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Mode"));
+		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Replace", &ModeMenuItem::plugMode, MidiPlugModule<>::MidiPlugOutput::MODE::REPLACE, &ModeMenuItem::midiOutput, midiOutput));
+		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Filter", &ModeMenuItem::plugMode, MidiPlugModule<>::MidiPlugOutput::MODE::FILTER, &ModeMenuItem::midiOutput, midiOutput));
 	}
 };
 
