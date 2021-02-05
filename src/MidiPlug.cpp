@@ -3,6 +3,7 @@
 namespace StoermelderPackOne {
 namespace MidiPlug {
 
+template <int INPUT = 2, int OUTPUT = 2>
 struct MidiPlugModule : Module {
 	/** [Stored to JSON] */
 	int panelTheme = 0;
@@ -30,9 +31,9 @@ struct MidiPlugModule : Module {
 	};
 
 	/** [Stored to Json] */
-	midi::InputQueue midiInput[2];
+	midi::InputQueue midiInput[INPUT];
 	/** [Stored to Json] */
-	MidiPlugOutput midiOutput[2];
+	MidiPlugOutput midiOutput[OUTPUT];
 
 	MidiPlugModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
@@ -40,21 +41,22 @@ struct MidiPlugModule : Module {
 	}
 
 	void onReset() override {
-		midiInput[0].reset();
-		midiInput[1].reset();
-		midiOutput[0].reset1();
-		midiOutput[1].reset1();
+		for (int i = 0; i < INPUT; i++) {
+			midiInput[i].reset();
+		}
+		for (int i = 0; i < OUTPUT; i++) {
+			midiOutput[i].reset1();
+		}
 	}
 
 	void process(const ProcessArgs &args) override {
 		midi::Message msg;
-		while (midiInput[0].shift(&msg)) {
-			midiOutput[0].sendChannelMessage(msg);
-			midiOutput[1].sendChannelMessage(msg);
-		}
-		while (midiInput[1].shift(&msg)) {
-			midiOutput[0].sendChannelMessage(msg);
-			midiOutput[1].sendChannelMessage(msg);
+		for (int i = 0; i < INPUT; i++) {
+			while (midiInput[i].shift(&msg)) {
+				for (int j = 0; j < OUTPUT; j++) {
+					midiOutput[j].sendChannelMessage(msg);
+				}
+			}
 		}
 	}
 
@@ -62,24 +64,34 @@ struct MidiPlugModule : Module {
 		json_t* rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 
-		json_object_set_new(rootJ, "midiInput0", midiInput[0].toJson());
-		json_object_set_new(rootJ, "midiInput1", midiInput[1].toJson());
-		json_object_set_new(rootJ, "midiOutput0", midiOutput[0].toJson());
-		json_object_set_new(rootJ, "midiOutput1", midiOutput[1].toJson());
+		json_t* midiInputJ = json_array();
+		for (int i = 0; i < INPUT; i++) {
+			json_array_append_new(midiInputJ, midiInput[i].toJson());
+		}
+		json_object_set_new(rootJ, "midiInput", midiInputJ);
+
+		json_t* midiOutputJ = json_array();
+		for (int i = 0; i < OUTPUT; i++) {
+			json_array_append_new(midiOutputJ, midiOutput[i].toJson());
+		}
+		json_object_set_new(rootJ, "midiOutput", midiOutputJ);
 		return rootJ;
 	}
 
 	void dataFromJson(json_t* rootJ) override {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 
-		json_t* midiInput0J = json_object_get(rootJ, "midiInput0");
-		if (midiInput0J) midiInput[0].fromJson(midiInput0J);
-		json_t* midiInput1J = json_object_get(rootJ, "midiInput1");
-		if (midiInput1J) midiInput[1].fromJson(midiInput1J);
-		json_t* midiOutput0J = json_object_get(rootJ, "midiOutput0");
-		if (midiOutput0J) midiOutput[0].fromJson(midiOutput0J);
-		json_t* midiOutput1J = json_object_get(rootJ, "midiOutput1");
-		if (midiOutput1J) midiOutput[1].fromJson(midiOutput1J);
+		json_t* midiInputJ = json_object_get(rootJ, "midiInput");
+		for (int i = 0; i < INPUT; i++) {
+			json_t* o = json_array_get(midiInputJ, i);
+			midiInput[i].fromJson(o);
+		}
+
+		json_t* midiOutputJ = json_object_get(rootJ, "midiOutput");
+		for (int i = 0; i < OUTPUT; i++) {
+			json_t* o = json_array_get(midiOutputJ, i);
+			midiOutput[i].fromJson(o);
+		}
 	}
 };
 
@@ -108,9 +120,47 @@ struct MidiPlugMidiWidget : MidiWidget {
 	}
 };
 
-struct MidiPlugWidget : ThemedModuleWidget<MidiPlugModule> {
-	MidiPlugWidget(MidiPlugModule* module)
-		: ThemedModuleWidget<MidiPlugModule>(module, "MidiPlug") {
+struct MidiPlugOutMidiWidget : MidiPlugMidiWidget {
+	midi::Port* port;
+	void setMidiPort(midi::Port* port) {
+		this->port = port;
+		MidiPlugMidiWidget::setMidiPort(port);
+	}
+
+	void step() override {
+		MidiWidget::step();
+		if (port->channel == -1) {
+			channelChoice->text = "Thru";
+		}
+	}
+
+	void onButton(const event::Button& e) override {
+		MidiWidget::onButton(e);
+		MenuOverlay* overlay = NULL;
+		for (Widget* child : APP->scene->children) {
+			overlay = dynamic_cast<MenuOverlay*>(child);
+			if (overlay) break;
+		}
+		if (!overlay) return;
+		Widget* w = overlay->children.front();
+		Menu* menu = dynamic_cast<Menu*>(w);
+		if (!menu) return;
+		MenuLabel* menuLabel = dynamic_cast<MenuLabel*>(menu->children.front());
+		if (!menuLabel || menuLabel->text != "MIDI channel") return;
+
+		for (Widget* child : menu->children) {
+			MenuItem* m = dynamic_cast<MenuItem*>(child);
+			if (m && m->text == "All channels") {
+				m->text = "Thru";
+				break;
+			}
+		}
+	}
+};
+
+struct MidiPlugWidget : ThemedModuleWidget<MidiPlugModule<>> {
+	MidiPlugWidget(MidiPlugModule<>* module)
+		: ThemedModuleWidget<MidiPlugModule<>>(module, "MidiPlug") {
 		setModule(module);
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
@@ -128,12 +178,12 @@ struct MidiPlugWidget : ThemedModuleWidget<MidiPlugModule> {
 		midiInput1Widget->setMidiPort(module ? &module->midiInput[1] : NULL);
 		addChild(midiInput1Widget);
 
-		MidiPlugMidiWidget* midiOutput0Widget = createWidget<MidiPlugMidiWidget>(Vec(10.0f, 204.8f));
+		MidiPlugOutMidiWidget* midiOutput0Widget = createWidget<MidiPlugOutMidiWidget>(Vec(10.0f, 204.8f));
 		midiOutput0Widget->box.size = Vec(130.0f, 67.0f);
 		midiOutput0Widget->setMidiPort(module ? &module->midiOutput[0] : NULL);
 		addChild(midiOutput0Widget);
 
-		MidiPlugMidiWidget* midiOutput1Widget = createWidget<MidiPlugMidiWidget>(Vec(10.0f, 275.8f));
+		MidiPlugOutMidiWidget* midiOutput1Widget = createWidget<MidiPlugOutMidiWidget>(Vec(10.0f, 275.8f));
 		midiOutput1Widget->box.size = Vec(130.0f, 67.0f);
 		midiOutput1Widget->setMidiPort(module ? &module->midiOutput[1] : NULL);
 		addChild(midiOutput1Widget);
@@ -143,4 +193,4 @@ struct MidiPlugWidget : ThemedModuleWidget<MidiPlugModule> {
 } // namespace MidiPlug
 } // namespace StoermelderPackOne
 
-Model* modelMidiPlug = createModel<StoermelderPackOne::MidiPlug::MidiPlugModule, StoermelderPackOne::MidiPlug::MidiPlugWidget>("MidiPlug");
+Model* modelMidiPlug = createModel<StoermelderPackOne::MidiPlug::MidiPlugModule<>, StoermelderPackOne::MidiPlug::MidiPlugWidget>("MidiPlug");
