@@ -1,4 +1,5 @@
 #include "plugin.hpp"
+#include "components/MidiWidget.hpp"
 
 namespace StoermelderPackOne {
 namespace MidiStep {
@@ -206,31 +207,6 @@ struct MidiStepModule : Module {
 };
 
 
-struct MidiStepMidiWidget : MidiWidget {
-	void setMidiPort(midi::Port* port) {
-		MidiWidget::setMidiPort(port);
-
-		driverChoice->textOffset = Vec(6.f, 14.7f);
-		driverChoice->box.size = mm2px(Vec(driverChoice->box.size.x, 7.5f));
-		driverChoice->color = nvgRGB(0xf0, 0xf0, 0xf0);
-
-		driverSeparator->box.pos = driverChoice->box.getBottomLeft();
-
-		deviceChoice->textOffset = Vec(6.f, 14.7f);
-		deviceChoice->box.size = mm2px(Vec(deviceChoice->box.size.x, 7.5f));
-		deviceChoice->box.pos = driverChoice->box.getBottomLeft();
-		deviceChoice->color = nvgRGB(0xf0, 0xf0, 0xf0);
-
-		deviceSeparator->box.pos = deviceChoice->box.getBottomLeft();
-
-		channelChoice->textOffset = Vec(6.f, 14.7f);
-		channelChoice->box.size = mm2px(Vec(channelChoice->box.size.x, 7.5f));
-		channelChoice->box.pos = deviceChoice->box.getBottomLeft();
-		channelChoice->color = nvgRGB(0xf0, 0xf0, 0xf0);
-	}
-};
-
-
 template < int CHANNELS, int PORTS, class COICE >
 struct MidiStepLedDisplay : LedDisplay {
 	LedDisplaySeparator* hSeparators[CHANNELS / 4];
@@ -377,7 +353,7 @@ struct MidiStepWidget : ThemedModuleWidget<MidiStepModule> {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		MidiStepMidiWidget* midiInputWidget = createWidget<MidiStepMidiWidget>(Vec(10.0f, 36.4f));
+		MidiWidget<>* midiInputWidget = createWidget<MidiWidget<>>(Vec(10.0f, 36.4f));
 		midiInputWidget->box.size = Vec(130.0f, 67.0f);
 		midiInputWidget->setMidiPort(module ? &module->midiInput : NULL);
 		addChild(midiInputWidget);
