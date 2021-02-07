@@ -31,6 +31,12 @@ struct ScaledMapParam {
 		limitMaxT = max;
 		this->uninit = uninit;
 	}
+	T getLimitMin() {
+		return limitMinT;
+	}
+	T getLimitMax() {
+		return limitMaxT;
+	}
 
 	void reset() {
 		paramQuantity = NULL;
