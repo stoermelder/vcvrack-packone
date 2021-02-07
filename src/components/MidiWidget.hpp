@@ -1,6 +1,6 @@
 #pragma once
 #include "plugin.hpp"
-#include "LedDisplayChoiceCenter.hpp"
+#include "LedDisplayCenterChoiceEx.hpp"
 
 namespace StoermelderPackOne {
 
@@ -14,7 +14,7 @@ struct MidiDriverItem : ui::MenuItem {
 };
 
 template <class DRIVERITEM = MidiDriverItem>
-struct MidiDriverChoice : LedDisplayChoiceCenter {
+struct MidiDriverChoice : LedDisplayCenterChoiceEx {
 	midi::Port* port;
 	void onAction(const event::Action& e) override {
 		if (!port)
@@ -58,7 +58,7 @@ struct MidiDeviceItem : ui::MenuItem {
 };
 
 template <class DEVICEITEM = MidiDeviceItem>
-struct MidiDeviceChoice : LedDisplayChoiceCenter {
+struct MidiDeviceChoice : LedDisplayCenterChoiceEx {
 	midi::Port* port;
 	void onAction(const event::Action& e) override {
 		if (!port)
@@ -110,7 +110,7 @@ struct MidiChannelItem : ui::MenuItem {
 };
 
 template <class CHANNELITEM = MidiChannelItem>
-struct MidiChannelChoice : LedDisplayChoiceCenter {
+struct MidiChannelChoice : LedDisplayCenterChoiceEx {
 	midi::Port* port;
 	void onAction(const event::Action& e) override {
 		if (!port)

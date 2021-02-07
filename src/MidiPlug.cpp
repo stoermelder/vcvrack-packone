@@ -1,6 +1,6 @@
 #include "plugin.hpp"
 #include "components/MidiWidget.hpp"
-#include "components/LedDisplayChoiceCenter.hpp"
+#include "components/LedDisplayCenterChoiceEx.hpp"
 
 namespace StoermelderPackOne {
 namespace MidiPlug {
@@ -149,7 +149,7 @@ struct MidiPlugOutChannelChoice : MidiChannelChoice<> {
 	}
 };
 
-struct MidiPlugOutModeChoice : LedDisplayChoiceCenter {
+struct MidiPlugOutModeChoice : LedDisplayCenterChoiceEx {
 	typedef MidiPlugModule<>::MidiPlugOutput Output;
 	Output* port;
 
@@ -176,7 +176,7 @@ struct MidiPlugOutModeChoice : LedDisplayChoiceCenter {
 	}
 
 	void step() override {
-		LedDisplayChoiceCenter::step();
+		LedDisplayCenterChoiceEx::step();
 		if (!port) return;
 		if (port->channel == -1) {
 			text = "---";

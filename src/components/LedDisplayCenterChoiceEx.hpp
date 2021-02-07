@@ -3,8 +3,8 @@
 
 namespace StoermelderPackOne {
 
-struct LedDisplayChoiceCenter : LedDisplayChoice {
-	LedDisplayChoiceCenter() {
+struct LedDisplayCenterChoiceEx : LedDisplayChoice {
+	LedDisplayCenterChoiceEx() {
 		box.size = mm2px(math::Vec(0, 28.0 / 3));
 		color = nvgRGB(0xf0, 0xf0, 0xf0);
 		bgColor = nvgRGBAf(0, 0, 0, 0);
