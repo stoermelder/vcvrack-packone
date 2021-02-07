@@ -243,6 +243,7 @@ struct MidiDisplay : LedTextDisplay {
 		color = nvgRGB(0xf0, 0xf0, 0xf0);
 		fontSize = 10.f;
 	}
+
 	void step() override {
 		LedTextDisplay::step();
 		if (dirty) {
@@ -255,6 +256,11 @@ struct MidiDisplay : LedTextDisplay {
 				i++;
 			}
 		}
+	}
+
+	void reset() {
+		buffer->clear();
+		dirty = true;
 	}
 };
 
@@ -324,6 +330,14 @@ struct MidiMonWidget : ThemedModuleWidget<MidiMonModule> {
 		menu->addChild(construct<MsgItem>(&MenuItem::text, "Other", &MsgItem::s, &module->showSystemMsg));
 		// menu->addChild(construct<MsgItem>(&MenuItem::text, "System Exclusive", &MsgItem::s, &module->showSysExMsg));
 
+		struct ClearItem : MenuItem {
+			MidiMonWidget* mw;
+			void onAction(const event::Action& e) override {
+				mw->buffer.clear();
+				mw->textField->reset();
+			}
+		};
+
 		struct ExportItem : MenuItem {
 			MidiMonWidget* mw;
 			void onAction(const event::Action& e) override {
@@ -332,6 +346,7 @@ struct MidiMonWidget : ThemedModuleWidget<MidiMonModule> {
 		};
 
 		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<ClearItem>(&MenuItem::text, "Clear log", &ClearItem::mw, this));
 		menu->addChild(construct<ExportItem>(&MenuItem::text, "Export log", &ExportItem::mw, this));
 	}
 

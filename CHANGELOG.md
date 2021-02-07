@@ -36,6 +36,7 @@
     - Added support for MIDI 14-bit CC
 - Module [MIDI-MON](./docs/MidiMon.md)
     - Added support for more message types (program change, song select, song pointer)
+    - Added context menu option for clearing the log
 - Module [RAW](./docs/Raw.md)
     - Added basic limiting to prevent rare instabilities (#214)
 - Module [STRIP](./docs/Strip.md)
