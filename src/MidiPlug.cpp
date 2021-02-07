@@ -1,5 +1,6 @@
 #include "plugin.hpp"
 #include "components/MidiWidget.hpp"
+#include "components/LedDisplayChoiceCenter.hpp"
 
 namespace StoermelderPackOne {
 namespace MidiPlug {
@@ -148,7 +149,7 @@ struct MidiPlugOutChannelChoice : MidiChannelChoice<> {
 	}
 };
 
-struct MidiPlugOutModeChoice : LedDisplayChoice {
+struct MidiPlugOutModeChoice : LedDisplayChoiceCenter {
 	typedef MidiPlugModule<>::MidiPlugOutput Output;
 	Output* port;
 
@@ -175,7 +176,7 @@ struct MidiPlugOutModeChoice : LedDisplayChoice {
 	}
 
 	void step() override {
-		LedDisplayChoice::step();
+		LedDisplayChoiceCenter::step();
 		if (!port) return;
 		if (port->channel == -1) {
 			text = "---";
@@ -209,7 +210,6 @@ struct MidiPlugOutWidget : MidiWidget<MidiDriverChoice<>, MidiDeviceChoice<>, Mi
 		channelModeChoice = new MidiPlugOutModeChoice;
 		channelModeChoice->box.size = channelChoice->box.size;
 		channelModeChoice->box.pos = pos;
-		channelModeChoice->textOffset = Vec(6.f, 14.7f);
 		channelModeChoice->color = nvgRGB(0xf0, 0xf0, 0xf0);
 		channelModeChoice->port = port;
 		addChild(channelModeChoice);

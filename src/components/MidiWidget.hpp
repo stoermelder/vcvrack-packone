@@ -1,5 +1,6 @@
 #pragma once
 #include "plugin.hpp"
+#include "LedDisplayChoiceCenter.hpp"
 
 namespace StoermelderPackOne {
 
@@ -13,7 +14,7 @@ struct MidiDriverItem : ui::MenuItem {
 };
 
 template <class DRIVERITEM = MidiDriverItem>
-struct MidiDriverChoice : LedDisplayChoice {
+struct MidiDriverChoice : LedDisplayChoiceCenter {
 	midi::Port* port;
 	void onAction(const event::Action& e) override {
 		if (!port)
@@ -57,7 +58,7 @@ struct MidiDeviceItem : ui::MenuItem {
 };
 
 template <class DEVICEITEM = MidiDeviceItem>
-struct MidiDeviceChoice : LedDisplayChoice {
+struct MidiDeviceChoice : LedDisplayChoiceCenter {
 	midi::Port* port;
 	void onAction(const event::Action& e) override {
 		if (!port)
@@ -109,7 +110,7 @@ struct MidiChannelItem : ui::MenuItem {
 };
 
 template <class CHANNELITEM = MidiChannelItem>
-struct MidiChannelChoice : LedDisplayChoice {
+struct MidiChannelChoice : LedDisplayChoiceCenter {
 	midi::Port* port;
 	void onAction(const event::Action& e) override {
 		if (!port)
@@ -151,7 +152,7 @@ struct MidiWidget : LedDisplay {
 
 		TDRIVER* driverChoice = createWidget<TDRIVER>(pos);
 		driverChoice->box.size = Vec(box.size.x, 22.15f);
-		driverChoice->textOffset = Vec(6.f, 14.7f);
+		//driverChoice->textOffset = Vec(6.f, 14.7f);
 		driverChoice->color = nvgRGB(0xf0, 0xf0, 0xf0);
 		driverChoice->port = port;
 		addChild(driverChoice);
@@ -164,7 +165,7 @@ struct MidiWidget : LedDisplay {
 
 		TDEVICE* deviceChoice = createWidget<TDEVICE>(pos);
 		deviceChoice->box.size = Vec(box.size.x, 22.15f);
-		deviceChoice->textOffset = Vec(6.f, 14.7f);
+		//deviceChoice->textOffset = Vec(6.f, 14.7f);
 		deviceChoice->color = nvgRGB(0xf0, 0xf0, 0xf0);
 		deviceChoice->port = port;
 		addChild(deviceChoice);
@@ -177,7 +178,7 @@ struct MidiWidget : LedDisplay {
 
 		TCHANNEL* channelChoice = createWidget<TCHANNEL>(pos);
 		channelChoice->box.size = Vec(box.size.x, 22.15f);
-		channelChoice->textOffset = Vec(6.f, 14.7f);
+		//channelChoice->textOffset = Vec(6.f, 14.7f);
 		channelChoice->color = nvgRGB(0xf0, 0xf0, 0xf0);
 		channelChoice->port = port;
 		addChild(channelChoice);
