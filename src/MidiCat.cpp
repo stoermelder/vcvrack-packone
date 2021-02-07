@@ -146,7 +146,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 			return current;
 		}
 
-		void setValue(int value) {
+		void setValue(int value, bool sendOnly) {
 			if (cc == -1) return;
 			if (cc14bit) {
 				module->midiOutput.setValue(value / 128, cc, true);
@@ -155,7 +155,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 			else {
 				module->midiOutput.setValue(value, cc, current == -1);
 			}
-			current = value;
+			if (!sendOnly) current = value;
 		}
 
 		void reset() {
@@ -344,8 +344,8 @@ struct MidiCatModule : Module, StripIdFixModule {
 		for (int i = 0; i < MAX_CHANNELS; i++) {
 			lastValueIn[i] = -1;
 			lastValueOut[i] = -1;
-			ccs[i].ccMode = CCMODE::CCMODE_DIRECT;
-			notes[i].noteMode = NOTEMODE::NOTEMODE_MOMENTARY;
+			ccs[i].ccMode = CCMODE::DIRECT;
+			notes[i].noteMode = NOTEMODE::MOMENTARY;
 			textLabel[i] = "";
 			midiOptions[i] = 0;
 			midiParam[i].reset();
@@ -408,13 +408,13 @@ struct MidiCatModule : Module, StripIdFixModule {
 						// Check if CC value has been set and changed
 						if (cc >= 0 && ccs[id].process()) {
 							switch (ccs[id].ccMode) {
-								case CCMODE_DIRECT:
+								case CCMODE::DIRECT:
 									if (lastValueIn[id] != ccs[id].getValue()) {
 										lastValueIn[id] = ccs[id].getValue();
 										t = ccs[id].getValue();
 									}
 									break;
-								case CCMODE_PICKUP1:
+								case CCMODE::PICKUP1:
 									if (lastValueIn[id] != ccs[id].getValue()) {
 										if (midiParam[id].isNear(lastValueIn[id])) {
 											midiParam[id].resetFilter();
@@ -423,7 +423,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 										lastValueIn[id] = ccs[id].getValue();
 									}
 									break;
-								case CCMODE_PICKUP2:
+								case CCMODE::PICKUP2:
 									if (lastValueIn[id] != ccs[id].getValue()) {
 										if (midiParam[id].isNear(lastValueIn[id], ccs[id].getValue())) {
 											midiParam[id].resetFilter();
@@ -432,26 +432,62 @@ struct MidiCatModule : Module, StripIdFixModule {
 										lastValueIn[id] = ccs[id].getValue();
 									}
 									break;
+								case CCMODE::TOGGLE:
+									if (ccs[id].getValue() > 0 && (lastValueIn[id] == -1 || lastValueIn[id] >= 0)) {
+										t = midiParam[id].getLimitMax();
+										lastValueIn[id] = -2;
+									} 
+									else if (ccs[id].getValue() == 0 && lastValueIn[id] == -2) {
+										t = midiParam[id].getLimitMax();
+										lastValueIn[id] = -3;
+									}
+									else if (ccs[id].getValue() > 0 && lastValueIn[id] == -3) {
+										t = midiParam[id].getLimitMin();
+										lastValueIn[id] = -4;
+									}
+									else if (ccs[id].getValue() == 0 && lastValueIn[id] == -4) {
+										t = midiParam[id].getLimitMin();
+										lastValueIn[id] = -1;
+									}
+									break;
+								case CCMODE::TOGGLE_VALUE:
+									if (ccs[id].getValue() > 0 && (lastValueIn[id] == -1 || lastValueIn[id] >= 0)) {
+										t = ccs[id].getValue();
+										lastValueIn[id] = -2;
+									} 
+									else if (ccs[id].getValue() == 0 && lastValueIn[id] == -2) {
+										t = midiParam[id].getValue();
+										lastValueIn[id] = -3;
+									}
+									else if (ccs[id].getValue() > 0 && lastValueIn[id] == -3) {
+										t = midiParam[id].getLimitMin();
+										lastValueIn[id] = -4;
+									}
+									else if (ccs[id].getValue() == 0 && lastValueIn[id] == -4) {
+										t = midiParam[id].getLimitMin();
+										lastValueIn[id] = -1;
+									}
+									break;
 							}
 						}
 
 						// Check if note value has been set and changed
 						if (note >= 0 && notes[id].process()) {
 							switch (notes[id].noteMode) {
-								case NOTEMODE::NOTEMODE_MOMENTARY:
+								case NOTEMODE::MOMENTARY:
 									if (lastValueIn[id] != notes[id].getValue()) {
 										t = notes[id].getValue();
 										if (t > 0) t = 127;
 										lastValueIn[id] = notes[id].getValue();
 									} 
 									break;
-								case NOTEMODE::NOTEMODE_MOMENTARY_VEL:
+								case NOTEMODE::MOMENTARY_VEL:
 									if (lastValueIn[id] != notes[id].getValue()) {
 										t = notes[id].getValue();
 										lastValueIn[id] = notes[id].getValue();
 									}
 									break;
-								case NOTEMODE::NOTEMODE_TOGGLE:
+								case NOTEMODE::TOGGLE:
 									if (notes[id].getValue() > 0 && (lastValueIn[id] == -1 || lastValueIn[id] >= 0)) {
 										t = 127;
 										lastValueIn[id] = -2;
@@ -469,7 +505,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 										lastValueIn[id] = -1;
 									}
 									break;
-								case NOTEMODE::NOTEMODE_TOGGLE_VEL:
+								case NOTEMODE::TOGGLE_VEL:
 									if (notes[id].getValue() > 0 && (lastValueIn[id] == -1 || lastValueIn[id] >= 0)) {
 										t = notes[id].getValue();
 										lastValueIn[id] = -2;
@@ -503,9 +539,9 @@ struct MidiCatModule : Module, StripIdFixModule {
 
 						// Midi feedback
 						if (lastValueOut[id] != v) {
-							if (cc >= 0 && ccs[id].ccMode == CCMODE_DIRECT)
+							if (cc >= 0 && ccs[id].ccMode == CCMODE::DIRECT)
 								lastValueIn[id] = v;
-							ccs[id].setValue(v);
+							ccs[id].setValue(v, lastValueIn[id] < 0);
 							notes[id].setValue(v, lastValueIn[id] < 0);
 							lastValueOut[id] = v;
 						}
@@ -545,7 +581,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 		}
 
 		Module* exp = rightExpander.module;
-		if (exp && exp->model->plugin->slug == "Stoermelder-P1" && exp->model->slug == "MidiCatEx") {
+		if (exp && exp->model == modelMidiCatEx) {
 			memStorage = reinterpret_cast<std::map<std::pair<std::string, std::string>, MemModule*>*>(exp->leftExpander.consumerMessage);
 			mem = exp;
 		}
@@ -601,7 +637,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 		// Learn
 		if (learningId >= 0 && learnedCcLast != cc && learnedCcLast != cc - 32 && valuesCc[cc] != value) {
 			ccs[learningId].setCc(cc);
-			ccs[learningId].ccMode = CCMODE::CCMODE_DIRECT;
+			ccs[learningId].ccMode = CCMODE::DIRECT;
 			notes[learningId].setNote(-1);
 			learnedCc = true;
 			learnedCcLast = cc;
@@ -621,7 +657,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 		if (learningId >= 0 && learnedNoteLast != note) {
 			ccs[learningId].setCc(-1);
 			notes[learningId].setNote(note);
-			notes[learningId].noteMode = NOTEMODE::NOTEMODE_MOMENTARY;
+			notes[learningId].noteMode = NOTEMODE::MOMENTARY;
 			learnedNote = true;
 			learnedNoteLast = note;
 			commitLearn();
@@ -893,10 +929,10 @@ struct MidiCatModule : Module, StripIdFixModule {
 		for (int id = 0; id < mapLen; id++) {
 			json_t* mapJ = json_object();
 			json_object_set_new(mapJ, "cc", json_integer(ccs[id].getCc()));
-			json_object_set_new(mapJ, "ccMode", json_integer(ccs[id].ccMode));
+			json_object_set_new(mapJ, "ccMode", json_integer((int)ccs[id].ccMode));
 			json_object_set_new(mapJ, "cc14bit", json_boolean(ccs[id].get14bit()));
 			json_object_set_new(mapJ, "note", json_integer(notes[id].getNote()));
-			json_object_set_new(mapJ, "noteMode", json_integer(notes[id].noteMode));
+			json_object_set_new(mapJ, "noteMode", json_integer((int)notes[id].noteMode));
 			json_object_set_new(mapJ, "moduleId", json_integer(paramHandles[id].moduleId));
 			json_object_set_new(mapJ, "paramId", json_integer(paramHandles[id].paramId));
 			json_object_set_new(mapJ, "label", json_string(textLabel[id].c_str()));
@@ -1064,9 +1100,11 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 
 			Menu* createChildMenu() override {
 				Menu* menu = new Menu;
-				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Direct", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::CCMODE_DIRECT));
-				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Pickup (snap)", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::CCMODE_PICKUP1));
-				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Pickup (jump)", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::CCMODE_PICKUP2));
+				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Direct", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::DIRECT));
+				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Pickup (snap)", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::PICKUP1));
+				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Pickup (jump)", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::PICKUP2));
+				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Toggle", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::TOGGLE));
+				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Toggle + Value", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::TOGGLE_VALUE));
 				return menu;
 			}
 		}; // struct
@@ -1107,10 +1145,10 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 
 			Menu* createChildMenu() override {
 				Menu* menu = new Menu;
-				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Momentary", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::NOTEMODE_MOMENTARY));
-				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Momentary + Velocity", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::NOTEMODE_MOMENTARY_VEL));
-				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Toggle", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::NOTEMODE_TOGGLE));
-				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Toggle + Velocity", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::NOTEMODE_TOGGLE_VEL));
+				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Momentary", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::MOMENTARY));
+				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Momentary + Velocity", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::MOMENTARY_VEL));
+				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Toggle", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::TOGGLE));
+				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Toggle + Velocity", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::TOGGLE_VEL));
 				return menu;
 			}
 		}; // struct NoteModeMenuItem

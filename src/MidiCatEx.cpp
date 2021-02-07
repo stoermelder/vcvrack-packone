@@ -71,10 +71,10 @@ struct MidiCatExModule : Module {
 				json_t* paramMapJJ = json_object();
 				json_object_set_new(paramMapJJ, "paramId", json_integer(p->paramId));
 				json_object_set_new(paramMapJJ, "cc", json_integer(p->cc));
-				json_object_set_new(paramMapJJ, "ccMode", json_integer(p->ccMode));
+				json_object_set_new(paramMapJJ, "ccMode", json_integer((int)p->ccMode));
 				json_object_set_new(paramMapJJ, "cc14bit", json_boolean(p->cc14bit));
 				json_object_set_new(paramMapJJ, "note", json_integer(p->note));
-				json_object_set_new(paramMapJJ, "noteMode", json_integer(p->noteMode));
+				json_object_set_new(paramMapJJ, "noteMode", json_integer((int)p->noteMode));
 				json_object_set_new(paramMapJJ, "label", json_string(p->label.c_str()));
 				json_object_set_new(paramMapJJ, "midiOptions", json_integer(p->midiOptions));
 				json_object_set_new(paramMapJJ, "slew", json_real(p->slew));

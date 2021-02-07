@@ -34,6 +34,7 @@
     - Fixed wrong behavior when toggling input to 0V (#221)
 - Module [MIDI-CAT](./docs/MidiCat.md)
     - Added support for MIDI 14-bit CC
+    - Added toggle-modes for MIDI CC mappings (#225)
 - Module [MIDI-MON](./docs/MidiMon.md)
     - Added support for more message types (program change, song select, song pointer)
     - Added context menu option for clearing the log
