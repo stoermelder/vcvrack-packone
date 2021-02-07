@@ -150,8 +150,7 @@ struct MidiWidget : LedDisplay {
 		math::Vec pos;
 
 		TDRIVER* driverChoice = createWidget<TDRIVER>(pos);
-		driverChoice->box.size.x = box.size.x;
-		driverChoice->box.size = mm2px(Vec(driverChoice->box.size.x, 7.5f));
+		driverChoice->box.size = Vec(box.size.x, 22.15f);
 		driverChoice->textOffset = Vec(6.f, 14.7f);
 		driverChoice->color = nvgRGB(0xf0, 0xf0, 0xf0);
 		driverChoice->port = port;
@@ -164,8 +163,7 @@ struct MidiWidget : LedDisplay {
 		addChild(this->driverSeparator);
 
 		TDEVICE* deviceChoice = createWidget<TDEVICE>(pos);
-		deviceChoice->box.size.x = box.size.x;
-		deviceChoice->box.size = mm2px(Vec(deviceChoice->box.size.x, 7.5f));
+		deviceChoice->box.size = Vec(box.size.x, 22.15f);
 		deviceChoice->textOffset = Vec(6.f, 14.7f);
 		deviceChoice->color = nvgRGB(0xf0, 0xf0, 0xf0);
 		deviceChoice->port = port;
@@ -178,8 +176,7 @@ struct MidiWidget : LedDisplay {
 		addChild(this->deviceSeparator);
 
 		TCHANNEL* channelChoice = createWidget<TCHANNEL>(pos);
-		channelChoice->box.size.x = box.size.x;
-		channelChoice->box.size = mm2px(Vec(channelChoice->box.size.x, 7.5f));
+		channelChoice->box.size = Vec(box.size.x, 22.15f);
 		channelChoice->textOffset = Vec(6.f, 14.7f);
 		channelChoice->color = nvgRGB(0xf0, 0xf0, 0xf0);
 		channelChoice->port = port;

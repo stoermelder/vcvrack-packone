@@ -126,13 +126,6 @@ struct MidiPlugModule : Module {
 
 
 struct MidiPlugOutChannelChoice : MidiChannelChoice<> {
-	void step() override {
-		MidiChannelChoice<>::step();
-		if (port && port->channel == -1) {
-			text = "Thru";
-		}
-	}
-
 	ui::Menu* createContextMenu() override {
 		ui::Menu* menu = createMenu();
 		menu->addChild(createMenuLabel("MIDI channel"));
@@ -144,30 +137,85 @@ struct MidiPlugOutChannelChoice : MidiChannelChoice<> {
 			item->rightText = CHECKMARK(item->channel == port->channel);
 			menu->addChild(item);
 		}
+		return menu;
+	}
 
-		typedef MidiPlugModule<>::MidiPlugOutput Output;
+	void step() override {
+		MidiChannelChoice<>::step();
+		if (port && port->channel == -1) {
+			text = "Thru";
+		}
+	}
+};
+
+struct MidiPlugOutModeChoice : LedDisplayChoice {
+	typedef MidiPlugModule<>::MidiPlugOutput Output;
+	Output* port;
+
+	void onAction(const event::Action& e) override {
+		if (!port) return;
 
 		struct ModeMenuItem : MenuItem {
-			Output* midiOutput;
+			Output* port;
 			Output::MODE plugMode;
 			void onAction(const event::Action& e) override {
-				midiOutput->plugMode = plugMode;
+				port->plugMode = plugMode;
 			}
 			void step() override {
-				rightText = CHECKMARK(midiOutput->plugMode == plugMode);
+				rightText = CHECKMARK(port->plugMode == plugMode);
 				MenuItem::step();
 			}
 		};
 
-		Output* midiOutput = dynamic_cast<Output*>(port);
-		menu->addChild(new MenuSeparator);
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Mode"));
-		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Replace", &ModeMenuItem::plugMode, Output::MODE::REPLACE, &ModeMenuItem::midiOutput, midiOutput));
-		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Filter", &ModeMenuItem::plugMode, Output::MODE::FILTER, &ModeMenuItem::midiOutput, midiOutput));
-		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Block", &ModeMenuItem::plugMode, Output::MODE::BLOCK, &ModeMenuItem::midiOutput, midiOutput));
-		return menu;
+		ui::Menu* menu = createMenu();
+		menu->addChild(createMenuLabel("MIDI channel mode"));
+		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Replace channel", &ModeMenuItem::plugMode, Output::MODE::REPLACE, &ModeMenuItem::port, port));
+		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Filter to channel", &ModeMenuItem::plugMode, Output::MODE::FILTER, &ModeMenuItem::port, port));
+		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Block channel", &ModeMenuItem::plugMode, Output::MODE::BLOCK, &ModeMenuItem::port, port));
+	}
+
+	void step() override {
+		LedDisplayChoice::step();
+		if (!port) return;
+		if (port->channel == -1) {
+			text = "---";
+		}
+		else {
+			switch (port->plugMode) {
+				case Output::MODE::BLOCK:
+					text = "Block"; break;
+				case Output::MODE::FILTER:
+					text = "Filter"; break;
+				case Output::MODE::REPLACE:
+					text = "Replace"; break;
+			}
+		}
 	}
 };
+
+struct MidiPlugOutWidget : MidiWidget<MidiDriverChoice<>, MidiDeviceChoice<>, MidiPlugOutChannelChoice> {
+	MidiPlugOutModeChoice* channelModeChoice;
+
+	void setMidiPortEx(MidiPlugModule<>::MidiPlugOutput* port) {
+		MidiWidget<MidiDriverChoice<>, MidiDeviceChoice<>, MidiPlugOutChannelChoice>::setMidiPort(port);
+
+		channelChoice->box.size.x = channelChoice->box.size.x / 2.f;
+		Vec pos = Vec(channelChoice->box.pos.x + channelChoice->box.size.x, channelChoice->box.pos.y);
+
+		LedDisplaySeparator* s = createWidget<LedDisplaySeparator>(pos);
+		s->box.size.y = channelChoice->box.size.y;
+		addChild(s);
+
+		channelModeChoice = new MidiPlugOutModeChoice;
+		channelModeChoice->box.size = channelChoice->box.size;
+		channelModeChoice->box.pos = pos;
+		channelModeChoice->textOffset = Vec(6.f, 14.7f);
+		channelModeChoice->color = nvgRGB(0xf0, 0xf0, 0xf0);
+		channelModeChoice->port = port;
+		addChild(channelModeChoice);
+	}
+};
+
 
 struct MidiPlugWidget : ThemedModuleWidget<MidiPlugModule<>> {
 	MidiPlugWidget(MidiPlugModule<>* module)
@@ -189,16 +237,14 @@ struct MidiPlugWidget : ThemedModuleWidget<MidiPlugModule<>> {
 		midiInput1Widget->setMidiPort(module ? &module->midiInput[1] : NULL);
 		addChild(midiInput1Widget);
 
-		typedef StoermelderPackOne::MidiWidget<MidiDriverChoice<>, MidiDeviceChoice<>, MidiPlugOutChannelChoice> MidiOutWidget;
-
-		MidiOutWidget* midiOutput0Widget = createWidget<MidiOutWidget>(Vec(10.0f, 204.8f));
+		MidiPlugOutWidget* midiOutput0Widget = createWidget<MidiPlugOutWidget>(Vec(10.0f, 204.8f));
 		midiOutput0Widget->box.size = Vec(130.0f, 67.0f);
-		midiOutput0Widget->setMidiPort(module ? &module->midiOutput[0] : NULL);
+		midiOutput0Widget->setMidiPortEx(module ? &module->midiOutput[0] : NULL);
 		addChild(midiOutput0Widget);
 
-		MidiOutWidget* midiOutput1Widget = createWidget<MidiOutWidget>(Vec(10.0f, 275.8f));
+		MidiPlugOutWidget* midiOutput1Widget = createWidget<MidiPlugOutWidget>(Vec(10.0f, 275.8f));
 		midiOutput1Widget->box.size = Vec(130.0f, 67.0f);
-		midiOutput1Widget->setMidiPort(module ? &module->midiOutput[1] : NULL);
+		midiOutput1Widget->setMidiPortEx(module ? &module->midiOutput[1] : NULL);
 		addChild(midiOutput1Widget);
 	}
 };
