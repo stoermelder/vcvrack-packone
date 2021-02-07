@@ -3,16 +3,9 @@
 
 namespace StoermelderPackOne {
 
-struct LedDisplayChoiceCenter : widget::OpaqueWidget {
-	std::string text;
-	std::shared_ptr<Font> font;
-	math::Vec textOffset;
-	NVGcolor color;
-	NVGcolor bgColor;
-
+struct LedDisplayChoiceCenter : LedDisplayChoice {
 	LedDisplayChoiceCenter() {
 		box.size = mm2px(math::Vec(0, 28.0 / 3));
-		font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
 		color = nvgRGB(0xf0, 0xf0, 0xf0);
 		bgColor = nvgRGBAf(0, 0, 0, 0);
 		textOffset = math::Vec(0, 18);
@@ -27,7 +20,7 @@ struct LedDisplayChoiceCenter : widget::OpaqueWidget {
 			nvgFill(args.vg);
 		}
 
-		if (font->handle >= 0) {
+		if (font->handle >= 0 && !text.empty()) {
 			nvgFillColor(args.vg, color);
 			nvgFontFaceId(args.vg, font->handle);
 			nvgTextLetterSpacing(args.vg, -0.6f);
@@ -38,16 +31,6 @@ struct LedDisplayChoiceCenter : widget::OpaqueWidget {
 			nvgTextBox(args.vg, textOffset.x, textOffset.y, box.size.x, textRow.start, textRow.end);
 		}
 		nvgResetScissor(args.vg);
-	}
-
-	void onButton(const event::Button& e) override {
-		OpaqueWidget::onButton(e);
-
-		if (e.action == GLFW_PRESS && (e.button == GLFW_MOUSE_BUTTON_LEFT || e.button == GLFW_MOUSE_BUTTON_RIGHT)) {
-			event::Action eAction;
-			onAction(eAction);
-			e.consume(this);
-		}
 	}
 };
 
