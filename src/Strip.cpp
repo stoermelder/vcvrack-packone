@@ -1405,6 +1405,54 @@ struct StripWidget : ThemedModuleWidget<StripModule> {
 		menu->addChild(construct<RandomParamsOnlyItem>(&MenuItem::text, "Randomize parameters only", &RandomParamsOnlyItem::module, module));
 		menu->addChild(new MenuSeparator);
 
+		struct PresetItem : MenuItem {
+			StripModule* module;
+			StripWidget* mw;
+			std::string presetPath;
+			void onAction(const event::Action& e) override {
+				if (module->presetLoadReplace) mw->groupRemove();
+				mw->groupLoadFile(presetPath);
+			}
+		};
+
+		struct PresetSubItem : MenuItem {
+			StripModule* module;
+			StripWidget* mw;
+			std::string dir;
+			PresetSubItem() {
+				rightText = RIGHT_ARROW;
+			}
+			Menu* createChildMenu() override {
+				Menu* menu = new Menu;
+				populatePresets(module, mw, menu, dir);
+				return menu;
+			}
+
+			static void populatePresets(StripModule* module, StripWidget* mw, Menu* menu, std::string dir) {
+				auto endsWith = [](const std::string& str, const std::string& suffix) {
+					return str.size() >= suffix.size() && 0 == str.compare(str.size()-suffix.size(), suffix.size(), suffix);
+				};
+
+				std::vector<std::string> presetPaths;
+				for (const std::string& presetPath : system::getEntries(dir)) {
+					presetPaths.push_back(presetPath);
+				}
+
+				for (const std::string& presetPath : presetPaths) {
+					if (system::isDirectory(presetPath)) {
+						menu->addChild(construct<PresetSubItem>(&MenuItem::text, string::filename(presetPath), &PresetSubItem::dir, presetPath, &PresetSubItem::module, module, &PresetSubItem::mw, mw));
+					}
+				}
+				for (const std::string& presetPath : presetPaths) {
+					if (system::isFile(presetPath)) {
+						if (!endsWith(presetPath, ".vcvss")) continue;
+						std::string presetName = string::filenameBase(string::filename(presetPath));
+						menu->addChild(construct<PresetItem>(&MenuItem::text, presetName, &PresetItem::presetPath, presetPath, &PresetItem::module, module, &PresetItem::mw, mw));
+					}
+				}
+			}
+		};
+
 		struct PresetMenuItem : MenuItem {
 			struct PresetFolderItem : MenuItem {
 				std::string path;
@@ -1429,16 +1477,6 @@ struct StripWidget : ThemedModuleWidget<StripModule> {
 				}
 			};
 
-			struct PresetItem : MenuItem {
-				StripModule* module;
-				StripWidget* mw;
-				std::string presetPath;
-				void onAction(const event::Action& e) override {
-					if (module->presetLoadReplace) mw->groupRemove();
-					mw->groupLoadFile(presetPath);
-				}
-			};
-
 			StripModule* module;
 			StripWidget* mw;
 			PresetMenuItem() {
@@ -1451,24 +1489,11 @@ struct StripWidget : ThemedModuleWidget<StripModule> {
 				menu->addChild(construct<PresetFolderItem>(&MenuItem::text, "Open folder", &PresetFolderItem::path, presetDir));
 				menu->addChild(construct<PresetLoadReplaceItem>(&MenuItem::text, "Load and replace", &PresetLoadReplaceItem::module, module));
 
-				std::vector<std::string> presetPaths;
-				for (const std::string& presetPath : system::getEntries(presetDir)) {
-					presetPaths.push_back(presetPath);
-				}
-
 				if (!mw->model->presetPaths.empty()) {
 					menu->addChild(new MenuSeparator);
-					for (const std::string& presetPath : presetPaths) {
-						if (!endsWith(presetPath, ".vcvss")) continue;
-						std::string presetName = string::filenameBase(string::filename(presetPath));
-						menu->addChild(construct<PresetItem>(&MenuItem::text, presetName, &PresetItem::presetPath, presetPath, &PresetItem::module, module, &PresetItem::mw, mw));
-					}
+					PresetSubItem::populatePresets(module, mw, menu, presetDir);
 				}
 				return menu;
-			}
-
-			bool endsWith(const std::string& str, const std::string& suffix) {
-				return str.size() >= suffix.size() && 0 == str.compare(str.size()-suffix.size(), suffix.size(), suffix);
 			}
 		};
 
