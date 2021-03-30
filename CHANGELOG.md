@@ -35,6 +35,7 @@
 - Module [MIDI-CAT](./docs/MidiCat.md)
     - Added support for MIDI 14-bit CC
     - Added toggle-modes for MIDI CC mappings (#225)
+    - Fixed crash when binding modules with more than 128 parameters (#234)
 - Module [MIDI-MON](./docs/MidiMon.md)
     - Added support for more message types (program change, song select, song pointer)
     - Added context menu option for clearing the log

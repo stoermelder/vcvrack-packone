@@ -803,7 +803,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 				APP->engine->updateParamHandle(&paramHandles[i], -1, -1, true);
 			}
 		}
-		for (size_t i = 0; i < m->params.size(); i++) {
+		for (size_t i = 0; i < m->params.size() && i < MAX_CHANNELS; i++) {
 			learnParam(int(i), m->id, int(i));
 		}
 
