@@ -43,7 +43,7 @@ void init(rack::Plugin* p) {
 	p->addModel(modelTransit);
 	p->addModel(modelTransitEx);
 	p->addModel(modelX4);
-	p->addModel(modelYaw);
+	p->addModel(modelPrisma);
 	p->addModel(modelMacro);
 	p->addModel(modelRaw);
 	p->addModel(modelMidiMon);

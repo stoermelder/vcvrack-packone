@@ -11,7 +11,7 @@
     - New module, a virtual MIDI merger and splitter
 - Modules [ORBIT](./docs/Orbit.md)
     - New module, a polyphonic stereo field spreader
-- Modules [YAW](./docs/Yaw.md)
+- Modules [PRISMA](./docs/Prisma.md)
     - New module, a wave multiplier/phase shifter inspired by A-137-2
 
 ### Fixes and Changes
