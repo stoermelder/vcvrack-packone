@@ -827,6 +827,7 @@ struct KeyDisplay : StoermelderLedDisplay {
 
 					Menu* createChildMenu() override {
 						struct ColorField : ui::TextField {
+							MenuColorLabel* colorLabel;
 							StrokeModule<PORTS>* module;
 							int idx;
 							ColorField() {
@@ -834,6 +835,7 @@ struct KeyDisplay : StoermelderLedDisplay {
 								placeholder = color::toHexString(color::BLACK);
 							}
 							void onSelectKey(const event::SelectKey& e) override {
+								colorLabel->fillColor = color::fromHexString(string::trim(text));
 								if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
 									module->keys[idx].data = string::trim(text);
 									ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
@@ -848,8 +850,9 @@ struct KeyDisplay : StoermelderLedDisplay {
 
 						if (module->keys[idx].mode == KEY_MODE::S_CABLE_COLOR) {
 							Menu* menu = new Menu;
-							menu->addChild(construct<MenuColorLabel>(&MenuColorLabel::fillColor, color::fromHexString(module->keys[idx].data)));
-							menu->addChild(construct<ColorField>(&ColorField::module, module, &ColorField::idx, idx, &TextField::text, module->keys[idx].data));
+							MenuColorLabel* colorLabel = construct<MenuColorLabel>(&MenuColorLabel::fillColor, color::fromHexString(module->keys[idx].data));
+							menu->addChild(colorLabel);
+							menu->addChild(construct<ColorField>(&ColorField::module, module, &ColorField::colorLabel, colorLabel, &ColorField::idx, idx, &TextField::text, module->keys[idx].data));
 							return menu;
 						}
 						return NULL;
