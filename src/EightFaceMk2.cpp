@@ -719,13 +719,29 @@ struct ModuleOuterBoundsDrawerWidget : Widget {
 				nvgResetScissor(args.vg);
 				nvgTranslate(args.vg, p.x, p.y);
 				nvgBeginPath(args.vg);
-				nvgRect(args.vg, 0, 0, mw->box.size.x, mw->box.size.y);
+				nvgRect(args.vg, 1.f, 1.f, mw->box.size.x - 2.f, mw->box.size.y - 2.f);
 				nvgStrokeColor(args.vg, module->boxColor);
 				nvgStrokeWidth(args.vg, 2.f);
 				nvgStroke(args.vg);
 				nvgRestore(args.vg);
 			}
 		}
+		Widget::draw(args);
+	}
+};
+
+template <class MODULE>
+struct ModuleColorWidget : Widget {
+	MODULE* module = NULL;
+	ModuleColorWidget() {
+		box.size = Vec(13.0f, 4.5f);
+	}
+	void draw(const DrawArgs& args) override {
+		if (!module || !module->isBoxActive()) return;
+		nvgBeginPath(args.vg);
+		nvgRoundedRect(args.vg, 0.f, 0.f, box.size.x, box.size.y, 2.2f);
+		nvgFillColor(args.vg, module->boxColor);
+		nvgFill(args.vg);
 		Widget::draw(args);
 	}
 };
@@ -769,9 +785,9 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 		BASE::addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 58.9f), module, MODULE::INPUT_CV));
 		BASE::addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 94.2f), module, MODULE::INPUT_RESET));
 
-		BASE::addParam(createParamCentered<CKSSH>(Vec(22.5f, 336.2f), module, MODULE::PARAM_RW));
-
-		BASE::addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(11.4f, 322.7f), module, MODULE::LIGHT_LEARN));
+		ModuleColorWidget<MODULE>* cw = createWidgetCentered<ModuleColorWidget<MODULE>>(Vec(22.5f, 118.1f));
+		cw->module = module;
+		BASE::addChild(cw);
 
 		for (size_t i = 0; i < NUM_PRESETS; i++) {
 			float o = i * (164.8f / (NUM_PRESETS - 1));
@@ -781,6 +797,9 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 			BASE::addParam(ledButton);
 			BASE::addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(22.5f, 140.6f + o), module, MODULE::LIGHT_PRESET + i * 3));
 		}
+
+		BASE::addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(11.4f, 322.7f), module, MODULE::LIGHT_LEARN));
+		BASE::addParam(createParamCentered<CKSSH>(Vec(22.5f, 336.2f), module, MODULE::PARAM_RW));
 	}
 
 	~EightFaceMk2Widget() {
