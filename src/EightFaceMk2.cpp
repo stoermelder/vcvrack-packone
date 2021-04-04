@@ -1,5 +1,6 @@
 #include "plugin.hpp"
 #include "digital.hpp"
+#include "components/MenuColorLabel.hpp"
 #include "EightFace.hpp"
 #include "EightFaceMk2Base.hpp"
 #include <functional>
@@ -9,6 +10,22 @@
 
 namespace StoermelderPackOne {
 namespace EightFaceMk2 {
+
+const std::string WHITESPACE = " \n\r\t\f\v";
+
+std::string ltrim(const std::string& s) {
+	size_t start = s.find_first_not_of(WHITESPACE);
+	return (start == std::string::npos) ? "" : s.substr(start);
+}
+
+std::string rtrim(const std::string& s) {
+	size_t end = s.find_last_not_of(WHITESPACE);
+	return (end == std::string::npos) ? "" : s.substr(0, end + 1);
+}
+
+std::string trim(const std::string& s) {
+	return rtrim(ltrim(s));
+}
 
 const int MAX_EXPANDERS = 7;
 
@@ -98,6 +115,11 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 	/** [Stored to JSON] */
 	bool autoload = false;
 
+	/** [Stored to JSON] */
+	bool boxDraw;
+	/** [Stored to JSON] */
+	NVGcolor boxColor;
+
 	std::mutex workerMutex;
 	std::condition_variable workerCondVar;
 	std::thread* worker;
@@ -174,6 +196,8 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 		presetNext = -1;
 
 		autoload = false;
+		boxDraw = true;
+		boxColor = color::BLUE;
 
 		Module::onReset();
 		EightFaceMk2Base<NUM_PRESETS>* t = this;
@@ -582,12 +606,19 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 		}
 	}
 
+	bool isBoxActive() {
+		return boxDraw && !BASE::bypass;
+	}
+
 	json_t* dataToJson() override {
 		json_t* rootJ = BASE::dataToJson();
 
 		json_object_set_new(rootJ, "slotCvMode", json_integer((int)slotCvMode));
 		json_object_set_new(rootJ, "preset", json_integer(preset));
 		json_object_set_new(rootJ, "presetCount", json_integer(presetCount));
+
+		json_object_set_new(rootJ, "boxDraw", json_boolean(boxDraw));
+		json_object_set_new(rootJ, "boxColor", json_string(color::toHexString(boxColor).c_str()));
 
 		json_t* boundModulesJ = json_array();
 		for (BoundModule* b : boundModules) {
@@ -609,6 +640,10 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 		slotCvMode = (SLOTCVMODE)json_integer_value(json_object_get(rootJ, "slotCvMode"));
 		preset = json_integer_value(json_object_get(rootJ, "preset"));
 		presetCount = json_integer_value(json_object_get(rootJ, "presetCount"));
+
+		boxDraw = json_boolean_value(json_object_get(rootJ, "boxDraw"));
+		json_t* boxColorJ = json_object_get(rootJ, "boxColor");
+		if (boxColorJ) boxColor = color::fromHexString(json_string_value(boxColorJ));
 
 		if (preset >= presetCount) {
 			preset = -1;
@@ -661,6 +696,40 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 };
 
 
+template <class MODULE>
+struct ModuleOuterBoundsDrawerWidget : Widget {
+	MODULE* module = NULL;
+
+	void draw(const DrawArgs& args) override {
+		if (!module || !module->isBoxActive()) return;
+
+		Rect viewPort = getViewport(box);
+		for (typename MODULE::BoundModule* b : module->boundModules) {
+			ModuleWidget* mw = APP->scene->rack->getModule(b->moduleId);
+			if (!mw) continue;
+
+			Vec p1 = mw->getRelativeOffset(Vec(), this);
+			Vec p = getAbsoluteOffset(Vec()).neg();
+			p = p.plus(p1);
+			p = p.div(APP->scene->rackScroll->zoomWidget->zoom);
+
+			// Draw only if currently visible
+			if (viewPort.isIntersecting(Rect(p, mw->box.size))) {
+				nvgSave(args.vg);
+				nvgResetScissor(args.vg);
+				nvgTranslate(args.vg, p.x, p.y);
+				nvgBeginPath(args.vg);
+				nvgRect(args.vg, 0, 0, mw->box.size.x, mw->box.size.y);
+				nvgStrokeColor(args.vg, module->boxColor);
+				nvgStrokeWidth(args.vg, 2.f);
+				nvgStroke(args.vg);
+				nvgRestore(args.vg);
+			}
+		}
+		Widget::draw(args);
+	}
+};
+
 template <int NUM_PRESETS>
 struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> {
 	typedef EightFaceMk2Widget<NUM_PRESETS> WIDGET;
@@ -668,12 +737,30 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 	typedef EightFaceMk2Module<NUM_PRESETS> MODULE;
 	MODULE* module;
 
+	ModuleOuterBoundsDrawerWidget<MODULE>* boxDrawer = NULL;
 	bool learn = false;
 
 	EightFaceMk2Widget(MODULE* module)
 		: ThemedModuleWidget<MODULE>(module, "EightFaceMk2") {
 		BASE::setModule(module);
 		this->module = module;
+
+		if (module) {
+			boxDrawer = new ModuleOuterBoundsDrawerWidget<MODULE>;
+			boxDrawer->module = module;
+			// This is where the magic happens: add a new widget on top-level to Rack
+			APP->scene->rack->addChild(boxDrawer);
+
+			// Move the cable-widget to the end, boxes should appear below cables
+			// NB: this should be considered unstable API
+			std::list<Widget*>::iterator it;
+			for (it = APP->scene->rack->children.begin(); it != APP->scene->rack->children.end(); ++it){
+				if (*it == APP->scene->rack->cableContainer) break;
+			}
+			if (it != APP->scene->rack->children.end()) {
+				APP->scene->rack->children.splice(APP->scene->rack->children.end(), APP->scene->rack->children, it);
+			}
+		}
 
 		BASE::addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		BASE::addChild(createWidget<StoermelderBlackScrew>(Vec(BASE::box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
@@ -693,6 +780,13 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 			ledButton->id = i;
 			BASE::addParam(ledButton);
 			BASE::addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(22.5f, 140.6f + o), module, MODULE::LIGHT_PRESET + i * 3));
+		}
+	}
+
+	~EightFaceMk2Widget() {
+		if (boxDrawer) {
+			APP->scene->rack->removeChild(boxDrawer);
+			delete boxDrawer;
 		}
 	}
 
@@ -853,6 +947,53 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 			}
 		};
 
+		struct BoxDrawItem : MenuItem {
+			MODULE* module;
+			std::string rightTextEx;
+			void onAction(const event::Action& e) override {
+				module->boxDraw ^= true;
+			}
+			void step() override {
+				rightText = (module->boxDraw ? "✔ " : "") + rightTextEx;
+				MenuItem::step();
+			}
+		};
+
+		struct BoxColorMenuItem : MenuItem {
+			MODULE* module;
+			BoxColorMenuItem() {
+				rightText = RIGHT_ARROW;
+			}
+			Menu* createChildMenu() override {
+				struct ColorField : ui::TextField {
+					MODULE* module;
+					MenuColorLabel* colorLabel;
+					ColorField() {
+						box.size.x = 80.f;
+						placeholder = color::toHexString(color::BLACK);
+					}
+					void onSelectKey(const event::SelectKey& e) override {
+						colorLabel->fillColor = color::fromHexString(trim(text));
+						if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
+							module->boxColor = color::fromHexString(trim(text));
+							ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
+							overlay->requestDelete();
+							e.consume(this);
+						}
+						if (!e.getTarget()) {
+							ui::TextField::onSelectKey(e);
+						}
+					}
+				};
+
+				Menu* menu = new Menu;
+				MenuColorLabel* colorLabel = construct<MenuColorLabel>(&MenuColorLabel::fillColor, module->boxColor);
+				menu->addChild(colorLabel);
+				menu->addChild(construct<ColorField>(&ColorField::module, module, &TextField::text, color::toHexString(module->boxColor), &ColorField::module, module, &ColorField::colorLabel, colorLabel));
+				return menu;
+			}
+		};
+
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<SlotCvModeMenuItem>(&MenuItem::text, "Port CV mode", &SlotCvModeMenuItem::module, module));
 		menu->addChild(construct<AutoloadItem>(&MenuItem::text, "Autoload first preset", &AutoloadItem::module, module));
@@ -864,6 +1005,18 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 			menu->addChild(new MenuSeparator());
 			menu->addChild(construct<ModuleMenuItem>(&MenuItem::text, "Bound modules", &ModuleMenuItem::module, module));
 		}
+
+		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<BoxDrawItem>(&MenuItem::text, "Box visible", &BoxDrawItem::rightTextEx, RACK_MOD_SHIFT_NAME "+B", &BoxDrawItem::module, module));
+		menu->addChild(construct<BoxColorMenuItem>(&MenuItem::text, "Box color", &BoxColorMenuItem::module, module));
+	}
+
+	void onHoverKey(const event::HoverKey& e) override {
+		if (e.action == GLFW_PRESS && e.key == GLFW_KEY_B && (e.mods & RACK_MOD_MASK) == GLFW_MOD_SHIFT) {
+			module->boxDraw ^= true;
+			e.consume(this);
+		}
+		ModuleWidget::onHoverKey(e);
 	}
 };
 
