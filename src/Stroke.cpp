@@ -522,7 +522,7 @@ struct KeyContainer : Widget {
 	}
 
 	void onButton(const event::Button& e) override {
-		if (module && !module->bypass && e.button > 2) {
+		if (module && !module->bypass && (e.button > 2 || (e.mods & (GLFW_MOD_ALT | GLFW_MOD_CONTROL | GLFW_MOD_SHIFT))) != 0) {
 			int e_mods = e.mods & (GLFW_MOD_ALT | GLFW_MOD_CONTROL | GLFW_MOD_SHIFT);
 
 			if (e.action == GLFW_PRESS) {
@@ -626,7 +626,7 @@ struct KeyDisplay : StoermelderLedDisplay {
 		}
 		else if (module) {
 			color.a = 1.f;
-			text = module->keys[idx].key >= 0 ? keyName(module->keys[idx].key) : module->keys[idx].button > 0 ? string::f("MB %i", module->keys[idx].button + 1) : "";
+			text = module->keys[idx].key >= 0 ? keyName(module->keys[idx].key) : module->keys[idx].button >= 0 ? string::f("MB %i", module->keys[idx].button + 1) : "";
 			module->lights[StrokeModule<PORTS>::LIGHT_ALT + idx].setBrightness(module->keys[idx].mods & GLFW_MOD_ALT ? 0.7f : 0.f);
 			module->lights[StrokeModule<PORTS>::LIGHT_CTRL + idx].setBrightness(module->keys[idx].mods & GLFW_MOD_CONTROL ? 0.7f : 0.f);
 			module->lights[StrokeModule<PORTS>::LIGHT_SHIFT + idx].setBrightness(module->keys[idx].mods & GLFW_MOD_SHIFT ? 0.7f : 0.f);

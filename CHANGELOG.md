@@ -45,6 +45,7 @@
     - Added context menu option "Load and replace" to preset-submenu (#215)
     - Added support for sub-folders in preset-submenu (#230)
 - Module [STROKE](./docs/Stroke.md)
+    - Allow mapping mouse button 0/1 (left/right) in use with modifiers
     - Fixed not working mappings caused by Num Lock state (#220)
     - Fixed not working mappings caused by use of numpad keys (#220)
 - Module [TRANSIT](./docs/Transit.md)
