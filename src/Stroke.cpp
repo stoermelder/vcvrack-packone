@@ -261,120 +261,18 @@ struct StrokeModule : Module {
 };
 
 
-struct ModifiedRackRail : RackRail {
-	bool drawRails = true;
 
-	void draw(const DrawArgs& args) override {
-		const float railHeight = 15;
+// -- Commands --
 
-		// Background color
-		nvgBeginPath(args.vg);
-		nvgRect(args.vg, 0.0, 0.0, box.size.x, box.size.y);
-		nvgFillColor(args.vg, nvgRGB(0x30, 0x30, 0x30));
-		nvgFill(args.vg);
-
-		if (drawRails) {
-			// Rails
-			float holeRadius = 4.0;
-			for (float y = 0; y < box.size.y; y += RACK_GRID_HEIGHT) {
-				nvgFillColor(args.vg, nvgRGB(0xc9, 0xc9, 0xc9));
-				nvgStrokeWidth(args.vg, 1.0);
-				nvgStrokeColor(args.vg, nvgRGB(0x9d, 0x9f, 0xa2));
-				// Top rail
-				nvgBeginPath(args.vg);
-				nvgRect(args.vg, 0, y, box.size.x, railHeight);
-				for (float x = 0; x < box.size.x; x += RACK_GRID_WIDTH) {
-					nvgCircle(args.vg, x + RACK_GRID_WIDTH / 2, y + railHeight / 2, holeRadius);
-					nvgPathWinding(args.vg, NVG_HOLE);
-				}
-				nvgFill(args.vg);
-
-				nvgBeginPath(args.vg);
-				nvgMoveTo(args.vg, 0, y + railHeight - 0.5);
-				nvgLineTo(args.vg, box.size.x, y + railHeight - 0.5);
-				nvgStroke(args.vg);
-
-				// Bottom rail
-				nvgBeginPath(args.vg);
-				nvgRect(args.vg, 0, y + RACK_GRID_HEIGHT - railHeight, box.size.x, railHeight);
-				for (float x = 0; x < box.size.x; x += RACK_GRID_WIDTH) {
-					nvgCircle(args.vg, x + RACK_GRID_WIDTH / 2, y + RACK_GRID_HEIGHT - railHeight + railHeight / 2, holeRadius);
-					nvgPathWinding(args.vg, NVG_HOLE);
-				}
-				nvgFill(args.vg);
-
-				nvgBeginPath(args.vg);
-				nvgMoveTo(args.vg, 0, y + RACK_GRID_HEIGHT - 0.5);
-				nvgLineTo(args.vg, box.size.x, y + RACK_GRID_HEIGHT - 0.5);
-				nvgStroke(args.vg);
-			}
-		}
-	}
-}; // struct ModifiedRackRail
+struct CmdBase {
+	virtual ~CmdBase() { }
+	virtual void initialCmd(KEY_MODE keyMode) { }
+	virtual bool followUpCmd(KEY_MODE keyMode) { return false; }
+}; // struct CmdBase
 
 
-template < int PORTS >
-struct KeyContainer : Widget {
-	StrokeModule<PORTS>* module = NULL;
-	int learnIdx = -1;
-
-	float tempParamValue = 0.f;
-
-	RackRail* rackrail = NULL;
-	RackRail* rackrackOrg;
-
-	~KeyContainer() {
-		cmdBusboard(true);
-		if (rackrail) delete rackrail;
-	}
-
-	void step() override {
-		if (module && module->keyTemp != NULL) {
-			switch (module->keyTemp->mode) {
-				case KEY_MODE::S_PARAM_RAND:
-					cmdParamRand(); break;
-				case KEY_MODE::S_PARAM_COPY:
-					cmdParamCopy(); break;
-				case KEY_MODE::S_PARAM_PASTE:
-					cmdParamPaste(); break;
-				case KEY_MODE::S_ZOOM_MODULE_90:
-					cmdZoomModule(0.9f); break;
-				case KEY_MODE::S_ZOOM_MODULE_30:
-					cmdZoomModule(0.3f); break;
-				case KEY_MODE::S_ZOOM_MODULE_CUSTOM:
-					settings::zoom = std::stof(module->keyTemp->data);
-					cmdZoomModule(-1.f); break;
-				case KEY_MODE::S_ZOOM_OUT:
-					cmdZoomOut(); break;
-				case KEY_MODE::S_ZOOM_TOGGLE:
-					cmdZoomToggle(); break;
-				case KEY_MODE::S_CABLE_OPACITY:
-					cmdCableOpacity(); break;
-				case KEY_MODE::S_CABLE_COLOR_NEXT:
-					cmdCableColorNext(); break;
-				case KEY_MODE::S_CABLE_COLOR:
-					cmdCableColor(color::fromHexString(module->keyTemp->data)); break;
-				case KEY_MODE::S_CABLE_ROTATE:
-					cmdCableRotate(); break;
-				case KEY_MODE::S_CABLE_VISIBILITY:
-					cmdCableVisibility(); break;
-				case KEY_MODE::S_FRAMERATE:
-					cmdFramerate(); break;
-				case KEY_MODE::S_BUSBOARD:
-					cmdBusboard(); break;
-				case KEY_MODE::S_ENGINE_PAUSE:
-					cmdEnginePause(); break;
-				case KEY_MODE::S_MODULE_LOCK:
-					cmdModuleLock(); break;
-				default:
-					break;
-			}
-			module->keyTemp = NULL;
-		}
-		Widget::step();
-	}
-
-	void cmdParamRand() {
+struct CmdParamRand : CmdBase {
+	void initialCmd(KEY_MODE keyMode) override {
 		Widget* w = APP->event->getHoveredWidget();
 		if (!w) return;
 		ParamWidget* p = dynamic_cast<ParamWidget*>(w);
@@ -383,8 +281,12 @@ struct KeyContainer : Widget {
 		if (!q) return;
 		q->setScaledValue(random::uniform());
 	}
+}; // struct CmdParamRand
 
-	void cmdParamCopy() {
+
+struct CmdParamCopyPaste : CmdBase {
+	float tempParamValue = 0.f;
+	void initialCmd(KEY_MODE keyMode) override {
 		Widget* w = APP->event->getHoveredWidget();
 		if (!w) return;
 		ParamWidget* p = dynamic_cast<ParamWidget*>(w);
@@ -394,46 +296,85 @@ struct KeyContainer : Widget {
 		tempParamValue = q->getScaledValue();
 	}
 
-	void cmdParamPaste() {
+	bool followUpCmd(KEY_MODE keyMode) override {
+		if (keyMode != KEY_MODE::S_PARAM_PASTE) return false;
 		Widget* w = APP->event->getHoveredWidget();
-		if (!w) return;
+		if (!w) return true;
 		ParamWidget* p = dynamic_cast<ParamWidget*>(w);
-		if (!p) return;
+		if (!p) return true;
 		ParamQuantity* q = p->paramQuantity;
-		if (!q) return;
+		if (!q) return true;
 		q->setScaledValue(tempParamValue);
+		return true;
 	}
+}; // struct CmdParamCopyPase
 
-	void cmdZoomModule(float scale) {
+
+struct CmdZoomModule : CmdBase {
+	float scale;
+	void initialCmd(KEY_MODE keyMode) override {
+		zoomIn(scale);
+	}
+	static void zoomIn(float s) {
 		Widget* w = APP->event->getHoveredWidget();
 		if (!w) return;
 		ModuleWidget* mw = dynamic_cast<ModuleWidget*>(w);
 		if (!mw) mw = w->getAncestorOfType<ModuleWidget>();
 		if (!mw) return;
-		StoermelderPackOne::Rack::ViewportCenter{mw, scale};
+		StoermelderPackOne::Rack::ViewportCenter{mw, s};
 	}
+}; // struct CmdZoomModule
 
-	void cmdZoomOut() {
+
+struct CmdZoomModuleCustom : CmdBase {
+	std::string* data;
+	void initialCmd(KEY_MODE keyMode) override {
+		settings::zoom = std::stof(*data);
+		Widget* w = APP->event->getHoveredWidget();
+		if (!w) return;
+		ModuleWidget* mw = dynamic_cast<ModuleWidget*>(w);
+		if (!mw) mw = w->getAncestorOfType<ModuleWidget>();
+		if (!mw) return;
+		StoermelderPackOne::Rack::ViewportCenter{mw, -1.f};
+	}
+}; // struct CmdZoomModuleCustom
+
+
+struct CmdZoomOut : CmdBase {
+	void initialCmd(KEY_MODE keyMode) override {
+		zoomOut();
+	}
+	static void zoomOut() {
 		math::Rect moduleBox = APP->scene->rack->moduleContainer->getChildrenBoundingBox();
 		if (!moduleBox.size.isFinite()) return;
 		StoermelderPackOne::Rack::ViewportCenter{moduleBox};
 	}
+}; // struct CmdZoomOut
 
-	void cmdZoomToggle() {
-		if (settings::zoom > 1.f) cmdZoomOut(); else cmdZoomModule(0.9f);
+
+struct CmdZoomToggle : CmdBase {
+	void initialCmd(KEY_MODE keyMode) override {
+		if (settings::zoom > 1.f) CmdZoomOut::zoomOut(); else CmdZoomModule::zoomIn(0.9f);
 	}
+}; // struct CmdZoomToggle 
 
-	void cmdCableOpacity() {
+
+struct CmdCableOpacity : CmdBase {
+	std::string* data;
+	void initialCmd(KEY_MODE keyMode) override {
 		if (settings::cableOpacity == 0.f) {
-			settings::cableOpacity = std::stof(module->keyTemp->data);
+			settings::cableOpacity = std::stof(*data);
 		}
 		else {
-			module->keyTemp->data = string::f("%f", settings::cableOpacity);
+			*data = string::f("%f", settings::cableOpacity);
 			settings::cableOpacity = 0.f;
 		}
 	}
+}; // struct CmdCableOpacity
 
-	void cmdCableVisibility() {
+
+struct CmdCableVisibility : CmdBase {
+	void initialCmd(KEY_MODE keyMode) override {
 		if (APP->scene->rack->cableContainer->visible) {
 			APP->scene->rack->cableContainer->hide();
 		}
@@ -441,8 +382,11 @@ struct KeyContainer : Widget {
 			APP->scene->rack->cableContainer->show();
 		}
 	}
+}; // struct CmdCableVisibility
 
-	void cmdCableColorNext() {
+
+struct CmdCableColorNext : CmdBase {
+	void initialCmd(KEY_MODE keyMode) override {
 		Widget* w = APP->event->getHoveredWidget();
 		if (!w) return;
 		PortWidget* pw = dynamic_cast<PortWidget*>(w);
@@ -453,8 +397,13 @@ struct KeyContainer : Widget {
 		APP->scene->rack->nextCableColorId %= settings::cableColors.size();
 		cw->color = settings::cableColors[cid];
 	}
+}; // struct CmdCableColorNext
 
-	void cmdCableColor(NVGcolor c) {
+
+struct CmdCableColor : CmdBase {
+	std::string* data;
+	void initialCmd(KEY_MODE keyMode) override {
+		NVGcolor c = color::fromHexString(*data);
 		Widget* w = APP->event->getHoveredWidget();
 		if (!w) return;
 		PortWidget* pw = dynamic_cast<PortWidget*>(w);
@@ -463,8 +412,11 @@ struct KeyContainer : Widget {
 		if (!cw) return;
 		cw->color = c;
 	}
+}; // struct CmdCableColor
 
-	void cmdCableRotate() {
+
+struct CmdCableRotate : CmdBase {
+	void initialCmd(KEY_MODE keyMode) override {
 		Widget* w = APP->event->getHoveredWidget();
 		if (!w) return;
 		PortWidget* pw = dynamic_cast<PortWidget*>(w);
@@ -485,8 +437,11 @@ struct KeyContainer : Widget {
 			cc->children.splice(cc->children.end(), cc->children, it);
 		}
 	}
+}; // struct CmdCableRotate
 
-	void cmdFramerate() {
+
+struct CmdFramerate : CmdBase {
+	void initialCmd(KEY_MODE keyMode) override {
 		if (APP->scene->frameRateWidget->visible) {
 			APP->scene->frameRateWidget->hide();
 		}
@@ -494,8 +449,84 @@ struct KeyContainer : Widget {
 			APP->scene->frameRateWidget->show();
 		}
 	}
+}; // struct CmdFramerate
 
-	void cmdBusboard(bool forceRemove = false) {
+
+struct CmdEnginePause : CmdBase {
+	void initialCmd(KEY_MODE keyMode) override {
+		APP->engine->setPaused(!APP->engine->isPaused());
+	}
+}; // struct CmdEnginePause
+
+
+struct CmdModuleLock : CmdBase {
+	void initialCmd(KEY_MODE keyMode) override {
+		settings::lockModules ^= true;
+	}
+}; // struct CmdModuleLock
+
+
+struct CmdBusboard {
+	struct ModifiedRackRail : RackRail {
+		bool drawRails = true;
+
+		void draw(const DrawArgs& args) override {
+			const float railHeight = 15;
+
+			// Background color
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, 0.0, 0.0, box.size.x, box.size.y);
+			nvgFillColor(args.vg, nvgRGB(0x30, 0x30, 0x30));
+			nvgFill(args.vg);
+
+			if (drawRails) {
+				// Rails
+				float holeRadius = 4.0;
+				for (float y = 0; y < box.size.y; y += RACK_GRID_HEIGHT) {
+					nvgFillColor(args.vg, nvgRGB(0xc9, 0xc9, 0xc9));
+					nvgStrokeWidth(args.vg, 1.0);
+					nvgStrokeColor(args.vg, nvgRGB(0x9d, 0x9f, 0xa2));
+					// Top rail
+					nvgBeginPath(args.vg);
+					nvgRect(args.vg, 0, y, box.size.x, railHeight);
+					for (float x = 0; x < box.size.x; x += RACK_GRID_WIDTH) {
+						nvgCircle(args.vg, x + RACK_GRID_WIDTH / 2, y + railHeight / 2, holeRadius);
+						nvgPathWinding(args.vg, NVG_HOLE);
+					}
+					nvgFill(args.vg);
+
+					nvgBeginPath(args.vg);
+					nvgMoveTo(args.vg, 0, y + railHeight - 0.5);
+					nvgLineTo(args.vg, box.size.x, y + railHeight - 0.5);
+					nvgStroke(args.vg);
+
+					// Bottom rail
+					nvgBeginPath(args.vg);
+					nvgRect(args.vg, 0, y + RACK_GRID_HEIGHT - railHeight, box.size.x, railHeight);
+					for (float x = 0; x < box.size.x; x += RACK_GRID_WIDTH) {
+						nvgCircle(args.vg, x + RACK_GRID_WIDTH / 2, y + RACK_GRID_HEIGHT - railHeight + railHeight / 2, holeRadius);
+						nvgPathWinding(args.vg, NVG_HOLE);
+					}
+					nvgFill(args.vg);
+
+					nvgBeginPath(args.vg);
+					nvgMoveTo(args.vg, 0, y + RACK_GRID_HEIGHT - 0.5);
+					nvgLineTo(args.vg, box.size.x, y + RACK_GRID_HEIGHT - 0.5);
+					nvgStroke(args.vg);
+				}
+			}
+		}
+	}; // struct ModifiedRackRail
+
+	RackRail* rackrail = NULL;
+	RackRail* rackrackOrg = NULL;
+	
+	~CmdBusboard() {
+		process(true);
+		delete rackrail;
+	}
+
+	void process(bool forceRemove = false) {
 		if (!rackrail) {
 			rackrail = new ModifiedRackRail;
 			rackrackOrg = APP->scene->rack->railFb->getFirstDescendantOfType<RackRail>();
@@ -512,13 +543,85 @@ struct KeyContainer : Widget {
 		}
 		APP->scene->rack->railFb->dirty = true;
 	}
+}; // struct CmdBusboard
 
-	void cmdEnginePause() {
-		APP->engine->setPaused(!APP->engine->isPaused());
+
+// -- GUI --
+
+template < int PORTS >
+struct KeyContainer : Widget {
+	StrokeModule<PORTS>* module = NULL;
+	int learnIdx = -1;
+
+	CmdBase* previousCmd = NULL;
+	CmdBusboard* cmdBusboard = NULL;
+
+	~KeyContainer() {
+		if (previousCmd) delete previousCmd;
+		if (cmdBusboard) delete cmdBusboard;
 	}
 
-	void cmdModuleLock() {
-		settings::lockModules ^= true;
+	template <class T, typename... Args>
+	void processCmd(Args... args) {
+		if (previousCmd) {
+			bool handled = previousCmd->followUpCmd(module->keyTemp->mode);
+			if (handled) {
+				return;
+			}
+			else {
+				delete previousCmd;
+				previousCmd = NULL;
+			}
+		}
+		previousCmd = construct<T>(args...);
+		previousCmd->initialCmd(module->keyTemp->mode);
+	}
+
+	void step() override {
+		if (module && module->keyTemp != NULL) {
+			switch (module->keyTemp->mode) {
+				case KEY_MODE::S_PARAM_RAND:
+					processCmd<CmdParamRand>(); break;
+				case KEY_MODE::S_PARAM_COPY:
+					processCmd<CmdParamCopyPaste>(); break;
+				case KEY_MODE::S_PARAM_PASTE:
+					processCmd<CmdParamCopyPaste>(); break;
+				case KEY_MODE::S_ZOOM_MODULE_90:
+					processCmd<CmdZoomModule>(&CmdZoomModule::scale, 0.9f); break;
+				case KEY_MODE::S_ZOOM_MODULE_30:
+					processCmd<CmdZoomModule>(&CmdZoomModule::scale, 0.3f); break;
+				case KEY_MODE::S_ZOOM_MODULE_CUSTOM:
+					processCmd<CmdZoomModuleCustom>(&CmdZoomModuleCustom::data, &module->keyTemp->data); break;
+				case KEY_MODE::S_ZOOM_OUT:
+					processCmd<CmdZoomOut>(); break;
+				case KEY_MODE::S_ZOOM_TOGGLE:
+					processCmd<CmdZoomToggle>(); break;
+				case KEY_MODE::S_CABLE_OPACITY:
+					processCmd<CmdCableOpacity>(&CmdCableOpacity::data, &module->keyTemp->data); break;
+				case KEY_MODE::S_CABLE_COLOR_NEXT:
+					processCmd<CmdCableColorNext>(); break;
+				case KEY_MODE::S_CABLE_COLOR:
+					processCmd<CmdCableColor>(&CmdCableColor::data, &module->keyTemp->data); break;
+				case KEY_MODE::S_CABLE_ROTATE:
+					processCmd<CmdCableRotate>(); break;
+				case KEY_MODE::S_CABLE_VISIBILITY:
+					processCmd<CmdCableVisibility>(); break;
+				case KEY_MODE::S_FRAMERATE:
+					processCmd<CmdFramerate>(); break;
+				case KEY_MODE::S_ENGINE_PAUSE:
+					processCmd<CmdEnginePause>(); break;
+				case KEY_MODE::S_MODULE_LOCK:
+					processCmd<CmdModuleLock>(); break;
+				case KEY_MODE::S_BUSBOARD:
+					if (!cmdBusboard) cmdBusboard = new CmdBusboard;
+					cmdBusboard->process();
+					break;
+				default:
+					break;
+			}
+			module->keyTemp = NULL;
+		}
+		Widget::step();
 	}
 
 	void onButton(const event::Button& e) override {
