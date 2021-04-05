@@ -761,8 +761,8 @@ struct KeyContainer : Widget {
 					for (int i = 0; i < PORTS; i++) {
 						if (e.button == module->keys[i].button && e_mods == module->keys[i].mods) {
 							module->keyEnable(i);
-							// Do not consume mouse button events
-							// e.consume(this);
+							// Do not consume mouse events for buttons 0/1/2
+							if (e.button > 2) e.consume(this);
 						}
 					}
 				}
@@ -770,8 +770,8 @@ struct KeyContainer : Widget {
 			if (e.action == RACK_HELD) {
 				for (int i = 0; i < PORTS; i++) {
 					if (e.button == module->keys[i].button && e_mods == module->keys[i].mods) {
-						// Do not consume mouse button events
-						// e.consume(this);
+						// Do not consume mouse events for buttons 0/1/2
+						if (e.button > 2) e.consume(this);
 					}
 				}
 			}
@@ -779,8 +779,8 @@ struct KeyContainer : Widget {
 				for (int i = 0; i < PORTS; i++) {
 					if (e.button == module->keys[i].button) {
 						module->keyDisable(i);
-						// Do not consume mouse button events
-						// e.consume(this);
+						// Do not consume mouse events for buttons 0/1/2
+						if (e.button > 2) e.consume(this);
 					}
 				}
 			}
@@ -1093,7 +1093,7 @@ struct KeyDisplay : StoermelderLedDisplay {
 				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Next color", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_CABLE_COLOR_NEXT));
 				menu->addChild(construct<CableColorMenuItem>(&MenuItem::text, "Color", &CableColorMenuItem::module, module, &CableColorMenuItem::idx, idx));
 				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Rotate ordering", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_CABLE_ROTATE));
-				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Multi-drag (for mouse-buttons)", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_CABLE_MULTIDRAG));
+				//menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Multi-drag (for mouse-buttons)", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_CABLE_MULTIDRAG));
 				return menu;
 			}
 		}; // struct CableMenuItem
