@@ -103,6 +103,7 @@ enum class KEY_MODE {
 	S_CABLE_COLOR = 24,
 	S_CABLE_ROTATE = 22,
 	S_CABLE_VISIBILITY = 23,
+	S_CABLE_MULTIDRAG = 25,
 	S_FRAMERATE = 30,
 	S_BUSBOARD = 31,
 	S_ENGINE_PAUSE = 32,
@@ -144,6 +145,7 @@ struct StrokeModule : Module {
 	Key keys[PORTS];
 
 	Key* keyTemp = NULL;
+	Key* keyTempDisable = NULL;
 
 	dsp::PulseGenerator pulse[PORTS];
 
@@ -216,6 +218,7 @@ struct StrokeModule : Module {
 			case KEY_MODE::CV_GATE:
 				keys[idx].high = false; break;
 			default:
+				keyTempDisable = &keys[idx];
 				break;
 		}
 	}
@@ -297,7 +300,7 @@ struct CmdParamCopyPaste : CmdBase {
 	}
 
 	bool followUpCmd(KEY_MODE keyMode) override {
-		if (keyMode != KEY_MODE::S_PARAM_PASTE) return false;
+		if (keyMode != KEY_MODE::S_PARAM_PASTE) return true;
 		Widget* w = APP->event->getHoveredWidget();
 		if (!w) return true;
 		ParamWidget* p = dynamic_cast<ParamWidget*>(w);
@@ -305,7 +308,7 @@ struct CmdParamCopyPaste : CmdBase {
 		ParamQuantity* q = p->paramQuantity;
 		if (!q) return true;
 		q->setScaledValue(tempParamValue);
-		return true;
+		return false;
 	}
 }; // struct CmdParamCopyPase
 
@@ -440,6 +443,101 @@ struct CmdCableRotate : CmdBase {
 }; // struct CmdCableRotate
 
 
+struct CmdCableMultiDrag : CmdBase {
+	PortWidget* pwSource = NULL;
+	int cableId = -1;
+
+	void initialCmd(KEY_MODE keyMode) override {
+		Widget* w = APP->event->getHoveredWidget();
+		if (!w) return;
+		pwSource = dynamic_cast<PortWidget*>(w);
+		if (!pwSource) return;
+		if (!APP->scene->rack->incompleteCable) return;
+		cableId = APP->scene->rack->incompleteCable->cable->id;
+	}
+
+	bool followUpCmd(KEY_MODE keyMode) override {
+		if (keyMode != KEY_MODE::S_CABLE_MULTIDRAG) return true;
+		if (!pwSource || pwSource->type != PortWidget::Type::OUTPUT) return true;
+
+		CableWidget* cw1 = findCableWidget(cableId);
+		if (!cw1) return true;
+		PortWidget* pwTarget = cw1->outputPort;
+		std::list<CableWidget*> todo;
+
+		Widget* cc = APP->scene->rack->cableContainer;
+		std::list<Widget*>::iterator it;
+		for (it = cc->children.begin(); it != cc->children.end(); it++) {
+			CableWidget* cw = dynamic_cast<CableWidget*>(*it);
+			assert(cw);
+			// Ignore incomplete cables
+			if (!cw->isComplete())
+				continue;
+			if (cw->outputPort == pwSource) {
+				todo.push_back(cw);
+			}
+		}
+
+		if (todo.size() > 0) {
+			history::ComplexAction* hc = new history::ComplexAction;
+			hc->name = "multi-drag cables";
+
+			for (CableWidget* cw : todo) {
+				CableOutputChange* h = new CableOutputChange;
+				h->cableId = cw->cable->id;
+				h->oldOutputModuleId = cw->outputPort->module->id;
+				h->oldOutputId = cw->outputPort->portId;
+
+				cw->setOutput(pwTarget);
+
+				h->newOutputModuleId = cw->outputPort->module->id;
+				h->newOutputId = cw->outputPort->portId;
+				hc->push(h);
+			}
+
+			APP->history->push(hc);
+		}
+		return true;
+	}
+
+	static CableWidget* findCableWidget(int cableId) {
+		for (auto it = APP->scene->rack->cableContainer->children.begin(); it != APP->scene->rack->cableContainer->children.end(); it++) {
+			CableWidget* cw = dynamic_cast<CableWidget*>(*it);
+			if (cw->cable->id == cableId) return cw;
+		}
+		return NULL;
+	}
+
+	struct CableOutputChange : history::Action {
+		int cableId;
+		int oldOutputModuleId;
+		int oldOutputId;
+		int newOutputModuleId;
+		int newOutputId;
+
+		void undo() override {
+			CableWidget* cw = findCableWidget(cableId);
+			if (!cw) return;
+			app::ModuleWidget* outputModule = APP->scene->rack->getModule(oldOutputModuleId);
+			assert(outputModule);
+			app::PortWidget* outputPort = outputModule->getOutput(oldOutputId);
+			assert(outputPort);
+			cw->setOutput(outputPort);
+		}
+
+		void redo() override {
+			CableWidget* cw = findCableWidget(cableId);
+			if (!cw) return;
+			app::ModuleWidget* outputModule = APP->scene->rack->getModule(newOutputModuleId);
+			assert(outputModule);
+			app::PortWidget* outputPort = outputModule->getOutput(newOutputId);
+			assert(outputPort);
+			cw->setOutput(outputPort);
+		}
+	}; // struct CableOutputChange
+}; // struct CmdCableMultiDrag
+
+
 struct CmdFramerate : CmdBase {
 	void initialCmd(KEY_MODE keyMode) override {
 		if (APP->scene->frameRateWidget->visible) {
@@ -563,18 +661,30 @@ struct KeyContainer : Widget {
 
 	template <class T, typename... Args>
 	void processCmd(Args... args) {
+		KEY_MODE keyMode = module->keyTemp->mode;
 		if (previousCmd) {
-			bool handled = previousCmd->followUpCmd(module->keyTemp->mode);
-			if (handled) {
-				return;
+			bool shouldClear = previousCmd->followUpCmd(keyMode);
+			if (shouldClear) {
+				delete previousCmd;
+				previousCmd = NULL;
 			}
 			else {
+				return;
+			}
+		}
+		previousCmd = construct<T>(args...);
+		previousCmd->initialCmd(keyMode);
+	}
+
+	void processCmdDisable() {
+		KEY_MODE keyMode = module->keyTempDisable->mode;
+		if (previousCmd) {
+			bool shouldClear = previousCmd->followUpCmd(keyMode);
+			if (shouldClear) {
 				delete previousCmd;
 				previousCmd = NULL;
 			}
 		}
-		previousCmd = construct<T>(args...);
-		previousCmd->initialCmd(module->keyTemp->mode);
 	}
 
 	void step() override {
@@ -606,6 +716,8 @@ struct KeyContainer : Widget {
 					processCmd<CmdCableRotate>(); break;
 				case KEY_MODE::S_CABLE_VISIBILITY:
 					processCmd<CmdCableVisibility>(); break;
+				case KEY_MODE::S_CABLE_MULTIDRAG:
+					processCmd<CmdCableMultiDrag>(); break;
 				case KEY_MODE::S_FRAMERATE:
 					processCmd<CmdFramerate>(); break;
 				case KEY_MODE::S_ENGINE_PAUSE:
@@ -620,6 +732,15 @@ struct KeyContainer : Widget {
 					break;
 			}
 			module->keyTemp = NULL;
+		}
+		if (module && module->keyTempDisable != NULL) {
+			switch (module->keyTempDisable->mode) {
+				case KEY_MODE::S_CABLE_MULTIDRAG:
+					processCmdDisable(); break;
+				default:
+					break;
+			}
+			module->keyTempDisable = NULL;
 		}
 		Widget::step();
 	}
@@ -640,7 +761,8 @@ struct KeyContainer : Widget {
 					for (int i = 0; i < PORTS; i++) {
 						if (e.button == module->keys[i].button && e_mods == module->keys[i].mods) {
 							module->keyEnable(i);
-							e.consume(this);
+							// Do not consume mouse button events
+							// e.consume(this);
 						}
 					}
 				}
@@ -648,7 +770,8 @@ struct KeyContainer : Widget {
 			if (e.action == RACK_HELD) {
 				for (int i = 0; i < PORTS; i++) {
 					if (e.button == module->keys[i].button && e_mods == module->keys[i].mods) {
-						e.consume(this);
+						// Do not consume mouse button events
+						// e.consume(this);
 					}
 				}
 			}
@@ -656,7 +779,8 @@ struct KeyContainer : Widget {
 				for (int i = 0; i < PORTS; i++) {
 					if (e.button == module->keys[i].button) {
 						module->keyDisable(i);
-						e.consume(this);
+						// Do not consume mouse button events
+						// e.consume(this);
 					}
 				}
 			}
@@ -902,7 +1026,8 @@ struct KeyDisplay : StoermelderLedDisplay {
 					module->keys[idx].mode == KEY_MODE::S_CABLE_VISIBILITY ||
 					module->keys[idx].mode == KEY_MODE::S_CABLE_COLOR_NEXT ||
 					module->keys[idx].mode == KEY_MODE::S_CABLE_COLOR ||
-					module->keys[idx].mode == KEY_MODE::S_CABLE_ROTATE
+					module->keys[idx].mode == KEY_MODE::S_CABLE_ROTATE || 
+					module->keys[idx].mode == KEY_MODE::S_CABLE_MULTIDRAG
 						? "✔" : RIGHT_ARROW;
 				MenuItem::step();
 			}
@@ -968,6 +1093,7 @@ struct KeyDisplay : StoermelderLedDisplay {
 				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Next color", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_CABLE_COLOR_NEXT));
 				menu->addChild(construct<CableColorMenuItem>(&MenuItem::text, "Color", &CableColorMenuItem::module, module, &CableColorMenuItem::idx, idx));
 				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Rotate ordering", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_CABLE_ROTATE));
+				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Multi-drag (for mouse-buttons)", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_CABLE_MULTIDRAG));
 				return menu;
 			}
 		}; // struct CableMenuItem
