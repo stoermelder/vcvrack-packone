@@ -5,16 +5,16 @@
 namespace StoermelderPackOne {
 namespace Strip {
 
-enum ONMODE {
-	ONMODE_DEFAULT = 0,
-	ONMODE_TOGGLE = 1,
-	ONMODE_HIGHLOW = 2
+enum class ONMODE {
+	DEFAULT = 0,
+	TOGGLE = 1,
+	HIGHLOW = 2
 };
 
-enum RANDOMEXCL {
-	RANDOMEXCL_NONE = 0,
-	RANDOMEXCL_EXC = 1,
-	RANDOMEXCL_INC = 2
+enum class RANDOMEXCL {
+	NONE = 0,
+	EXC = 1,
+	INC = 2
 };
 
 
@@ -46,7 +46,7 @@ struct StripModule : StripModuleBase {
 	/** [Stored to JSON] */
 	int panelTheme = 0;
 	/** [Stored to JSON] usage of switch+port in "ON"-section */
-	ONMODE onMode = ONMODE_DEFAULT;
+	ONMODE onMode = ONMODE::DEFAULT;
 
 	bool lastState = false;
 
@@ -55,7 +55,7 @@ struct StripModule : StripModuleBase {
 	/** [Stored to JSON] */ 
 	std::set<std::tuple<int, int>> excludedParams;
 	/** [Stored to JSON] */
-	RANDOMEXCL randomExcl = RANDOMEXCL_EXC;
+	RANDOMEXCL randomExcl = RANDOMEXCL::EXC;
 	/** [Stored to JSON] */
 	bool randomParamsOnly;
 	/** [Stored to JSON] */
@@ -92,7 +92,7 @@ struct StripModule : StripModuleBase {
 
 	void process(const ProcessArgs& args) override {
 		if (modeTrigger.process(params[MODE_PARAM].getValue())) {
-			mode = (MODE)((mode + 1) % 3);
+			mode = (MODE)(((int)mode + 1) % 3);
 			lastState = true;
 		}
 
@@ -101,15 +101,15 @@ struct StripModule : StripModuleBase {
 		}
 
 		switch (onMode) {
-			case ONMODE_DEFAULT:
+			case ONMODE::DEFAULT:
 				if (onTrigger.process(params[ON_PARAM].getValue() + inputs[ON_INPUT].getVoltage()))
 					groupDisable(false, params[ON_PARAM].getValue() > 0.f);
 				break;
-			case ONMODE_TOGGLE:
+			case ONMODE::TOGGLE:
 				if (onTrigger.process(params[ON_PARAM].getValue() + inputs[ON_INPUT].getVoltage()))
 					groupDisable(!lastState, params[ON_PARAM].getValue() > 0.f);
 				break;
-			case ONMODE_HIGHLOW:
+			case ONMODE::HIGHLOW:
 				groupDisable(params[ON_PARAM].getValue() + inputs[ON_INPUT].getVoltage() < 1.f, params[ON_PARAM].getValue() > 0.f);
 				break;
 		}
@@ -120,8 +120,8 @@ struct StripModule : StripModuleBase {
 
 		// Set channel lights infrequently
 		if (lightDivider.process()) {
-			lights[RIGHT_LIGHT].setBrightness(mode == MODE_LEFTRIGHT || mode == MODE_RIGHT);
-			lights[LEFT_LIGHT].setBrightness(mode == MODE_LEFTRIGHT || mode == MODE_LEFT);
+			lights[RIGHT_LIGHT].setBrightness(mode == MODE::LEFTRIGHT || mode == MODE::RIGHT);
+			lights[LEFT_LIGHT].setBrightness(mode == MODE::LEFTRIGHT || mode == MODE::LEFT);
 
 			lights[EXCLUDE_LIGHT + 0].setBrightness(!excludeLearn && excludedParams.size() > 0 ? 1.f : 0.f);
 			lights[EXCLUDE_LIGHT + 1].setBrightness(excludeLearn ? 1.f : 0.f);
@@ -143,7 +143,7 @@ struct StripModule : StripModuleBase {
 			APP->history->push(complexAction);
 		}
 
-		if (mode == MODE_LEFTRIGHT || mode == MODE_RIGHT) {
+		if (mode == MODE::LEFTRIGHT || mode == MODE::RIGHT) {
 			Module* m = this;
 			while (true) {
 				if (!m || m->rightExpander.moduleId < 0) break;
@@ -168,7 +168,7 @@ struct StripModule : StripModuleBase {
 			}
 		}
 
-		if (mode == MODE_LEFTRIGHT || mode == MODE_LEFT) {
+		if (mode == MODE::LEFTRIGHT || mode == MODE::LEFT) {
 			Module* m = this;
 			while (true) {
 				if (!m || m->leftExpander.moduleId < 0) break;
@@ -209,7 +209,7 @@ struct StripModule : StripModuleBase {
 			APP->history->push(complexAction);
 		}
 
-		if (mode == MODE_LEFTRIGHT || mode == MODE_RIGHT) {
+		if (mode == MODE::LEFTRIGHT || mode == MODE::RIGHT) {
 			Module* m = this;
 			while (true) {
 				if (!m || m->rightExpander.moduleId < 0) break;
@@ -228,14 +228,14 @@ struct StripModule : StripModuleBase {
 				ModuleWidget* mw = APP->scene->rack->getModule(m->rightExpander.moduleId);
 				for (ParamWidget* param : mw->params) {
 					switch (randomExcl) {
-						case RANDOMEXCL_NONE:
+						case RANDOMEXCL::NONE:
 							param->randomize();
 							break;
-						case RANDOMEXCL_EXC:
+						case RANDOMEXCL::EXC:
 							if (excludedParams.find(std::make_tuple(m->rightExpander.moduleId, param->paramQuantity->paramId)) == excludedParams.end())
 								param->randomize();
 							break;
-						case RANDOMEXCL_INC:
+						case RANDOMEXCL::INC:
 							if (excludedParams.find(std::make_tuple(m->rightExpander.moduleId, param->paramQuantity->paramId)) != excludedParams.end())
 								param->randomize();
 							break;
@@ -251,7 +251,7 @@ struct StripModule : StripModuleBase {
 				m = m->rightExpander.module;
 			}
 		}
-		if (mode == MODE_LEFTRIGHT || mode == MODE_LEFT) {
+		if (mode == MODE::LEFTRIGHT || mode == MODE::LEFT) {
 			Module* m = this;
 			while (true) {
 				if (!m || m->leftExpander.moduleId < 0) break;
@@ -270,14 +270,14 @@ struct StripModule : StripModuleBase {
 				ModuleWidget* mw = APP->scene->rack->getModule(m->leftExpander.moduleId);
 				for (ParamWidget* param : mw->params) {
 					switch (randomExcl) {
-						case RANDOMEXCL_NONE:
+						case RANDOMEXCL::NONE:
 							param->randomize();
 							break;
-						case RANDOMEXCL_EXC:
+						case RANDOMEXCL::EXC:
 							if (excludedParams.find(std::make_tuple(m->leftExpander.moduleId, param->paramQuantity->paramId)) == excludedParams.end())
 								param->randomize();
 							break;
-						case RANDOMEXCL_INC:
+						case RANDOMEXCL::INC:
 							if (excludedParams.find(std::make_tuple(m->leftExpander.moduleId, param->paramQuantity->paramId)) != excludedParams.end())
 								param->randomize();
 							break;
@@ -299,7 +299,7 @@ struct StripModule : StripModuleBase {
 		json_t* rootJ = StripModuleBase::dataToJson();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 
-		json_object_set_new(rootJ, "onMode", json_integer(onMode));
+		json_object_set_new(rootJ, "onMode", json_integer((int)onMode));
 
 		json_t* excludedParamsJ = json_array();
 		// Aquire excludeMutex to get exclusive access to excludedParams
@@ -311,7 +311,7 @@ struct StripModule : StripModuleBase {
 			json_array_append_new(excludedParamsJ, excludedParamJ);
 		} 
 		json_object_set_new(rootJ, "excludedParams", excludedParamsJ);
-		json_object_set_new(rootJ, "randomExcl", json_integer(randomExcl));
+		json_object_set_new(rootJ, "randomExcl", json_integer((int)randomExcl));
 		json_object_set_new(rootJ, "randomParamsOnly", json_boolean(randomParamsOnly));
 		json_object_set_new(rootJ, "presetLoadReplace", json_boolean(presetLoadReplace));
 		return rootJ;
@@ -369,9 +369,9 @@ struct RandomExclMenuItem : MenuItem {
 	StripModule* module;
 	Menu* createChildMenu() override {
 		Menu* menu = new Menu;
-		menu->addChild(construct<RandomExclItem>(&MenuItem::text, "All", &RandomExclItem::module, module, &RandomExclItem::randomExcl, RANDOMEXCL_NONE));
-		menu->addChild(construct<RandomExclItem>(&MenuItem::text, "Exclude", &RandomExclItem::module, module, &RandomExclItem::randomExcl, RANDOMEXCL_EXC));
-		menu->addChild(construct<RandomExclItem>(&MenuItem::text, "Include", &RandomExclItem::module, module, &RandomExclItem::randomExcl, RANDOMEXCL_INC));
+		menu->addChild(construct<RandomExclItem>(&MenuItem::text, "All", &RandomExclItem::module, module, &RandomExclItem::randomExcl, RANDOMEXCL::NONE));
+		menu->addChild(construct<RandomExclItem>(&MenuItem::text, "Exclude", &RandomExclItem::module, module, &RandomExclItem::randomExcl, RANDOMEXCL::EXC));
+		menu->addChild(construct<RandomExclItem>(&MenuItem::text, "Include", &RandomExclItem::module, module, &RandomExclItem::randomExcl, RANDOMEXCL::INC));
 		return menu;
 	}
 };
@@ -455,7 +455,7 @@ struct ExcludeButton : TL1105 {
 	 */
 	void groupExcludeParam(int moduleId, int paramId) {
 		learn = false;
-		if (module->mode == MODE_LEFTRIGHT || module->mode == MODE_RIGHT) {
+		if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::RIGHT) {
 			Module* m = module;
 			while (true) {
 				if (!m || m->rightExpander.moduleId < 0) break;
@@ -475,7 +475,7 @@ struct ExcludeButton : TL1105 {
 				m = m->rightExpander.module;
 			}
 		}
-		if (module->mode == MODE_LEFTRIGHT || module->mode == MODE_LEFT) {
+		if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::LEFT) {
 			Module* m = module;
 			while (true) {
 				if (!m || m->leftExpander.moduleId < 0) break;
@@ -507,7 +507,7 @@ struct ExcludeButton : TL1105 {
 			return;
 
 		std::map<int, Module*> modules;
-		if (module->mode == MODE_LEFTRIGHT || module->mode == MODE_RIGHT) {
+		if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::RIGHT) {
 			Module* m = module;
 			while (true) {
 				if (!m || m->rightExpander.moduleId < 0) break;
@@ -515,7 +515,7 @@ struct ExcludeButton : TL1105 {
 				m = m->rightExpander.module;
 			}
 		}
-		if (module->mode == MODE_LEFTRIGHT || module->mode == MODE_LEFT) {
+		if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::LEFT) {
 			Module* m = module;
 			while (true) {
 				if (!m || m->leftExpander.moduleId < 0) break;
@@ -648,9 +648,9 @@ struct StripWidget : StripWidgetBase<StripModule> {
 			StripModule* module;
 			Menu* createChildMenu() override {
 				Menu *menu = new Menu;
-				menu->addChild(construct<OnModeItem>(&MenuItem::text, "Default", &OnModeItem::module, module, &OnModeItem::onMode, ONMODE_DEFAULT));
-				menu->addChild(construct<OnModeItem>(&MenuItem::text, "Toggle", &OnModeItem::module, module, &OnModeItem::onMode, ONMODE_TOGGLE));
-				menu->addChild(construct<OnModeItem>(&MenuItem::text, "High/Low", &OnModeItem::module, module, &OnModeItem::onMode, ONMODE_HIGHLOW));
+				menu->addChild(construct<OnModeItem>(&MenuItem::text, "Default", &OnModeItem::module, module, &OnModeItem::onMode, ONMODE::DEFAULT));
+				menu->addChild(construct<OnModeItem>(&MenuItem::text, "Toggle", &OnModeItem::module, module, &OnModeItem::onMode, ONMODE::TOGGLE));
+				menu->addChild(construct<OnModeItem>(&MenuItem::text, "High/Low", &OnModeItem::module, module, &OnModeItem::onMode, ONMODE::HIGHLOW));
 				return menu;
 			}
 		};

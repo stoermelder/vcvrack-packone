@@ -9,20 +9,20 @@ namespace Strip {
 
 static const char PRESET_FILTERS[] = "stoermelder STRIP group preset (.vcvss):vcvss";
 
-enum MODE {
-	MODE_LEFTRIGHT = 0,
-	MODE_RIGHT = 1,
-	MODE_LEFT = 2
+enum class MODE {
+	LEFTRIGHT = 0,
+	RIGHT = 1,
+	LEFT = 2
 };
 
 
 struct StripModuleBase : Module {
 	/** [Stored to JSON] left? right? both? */
-	MODE mode = MODE_LEFTRIGHT;
+	MODE mode = MODE::LEFTRIGHT;
 
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
-		json_object_set_new(rootJ, "mode", json_integer(mode));
+		json_object_set_new(rootJ, "mode", json_integer((int)mode));
 		return rootJ;
 	}
 
@@ -48,7 +48,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 	void groupRemove() {
 		// Collect all modules right next to this instance of STRIP.
 		std::vector<int> toBeRemoved;
-		if (module->mode == MODE_LEFTRIGHT || module->mode == MODE_RIGHT) {
+		if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::RIGHT) {
 			Module* m = module;
 			while (true) {
 				if (!m || m->rightExpander.moduleId < 0) break;
@@ -56,7 +56,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 				m = m->rightExpander.module;
 			}
 		}
-		if (module->mode == MODE_LEFTRIGHT || module->mode == MODE_LEFT) {
+		if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::LEFT) {
 			Module* m = module;
 			while (true) {
 				if (!m || m->leftExpander.moduleId < 0) break;
@@ -137,7 +137,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 			moduleMovePositions[mw->module->id] = mw->box.pos;
 		}
 
-		if (module->mode == MODE_LEFTRIGHT || module->mode == MODE_RIGHT) {
+		if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::RIGHT) {
 			float rightWidth = json_real_value(json_object_get(rootJ, "rightWidth"));
 			if (rightWidth > 0.f) {
 				Vec pos = BASE::box.pos;
@@ -148,7 +148,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 				APP->scene->rack->setModulePosForce(this, pos);
 			}
 		}
-		if (module->mode == MODE_LEFTRIGHT || module->mode == MODE_LEFT) {
+		if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::LEFT) {
 			float leftWidth = json_real_value(json_object_get(rootJ, "leftWidth"));
 				if (leftWidth > 0.f) {
 				Vec pos = BASE::box.pos;
@@ -249,7 +249,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 	std::vector<history::Action*>* groupFromJson_modules(json_t* rootJ, std::map<int, ModuleWidget*>& modules) {
 		std::vector<history::Action*>* undoActions = new std::vector<history::Action*>;
 
-		if (module->mode == MODE_LEFTRIGHT || module->mode == MODE_RIGHT) {
+		if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::RIGHT) {
 			Rect box = this->box;
 			json_t* rightModulesJ = json_object_get(rootJ, "rightModules");
 			if (rightModulesJ) {
@@ -272,7 +272,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 				}
 			}
 		}
-		if (module->mode == MODE_LEFTRIGHT || module->mode == MODE_LEFT) {
+		if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::LEFT) {
 			Rect box = this->box;
 			json_t* leftModulesJ = json_object_get(rootJ, "leftModules");
 			if (leftModulesJ) {
@@ -349,7 +349,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 			json_t* moduleJ;
 			size_t moduleIndex;
 			json_array_foreach(rightModulesJ, moduleIndex, moduleJ) {
-				if (module->mode == MODE_LEFTRIGHT || module->mode == MODE_RIGHT) {
+				if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::RIGHT) {
 					groupFromJson_presets_fixMapping(moduleJ, modules);
 					int oldId = json_integer_value(json_object_get(moduleJ, "id"));
 					ModuleWidget* mw = modules[oldId];
@@ -376,7 +376,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 			json_t* moduleJ;
 			size_t moduleIndex;
 			json_array_foreach(leftModulesJ, moduleIndex, moduleJ) {
-				if (module->mode == MODE_LEFTRIGHT || module->mode == MODE_LEFT) {
+				if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::LEFT) {
 					groupFromJson_presets_fixMapping(moduleJ, modules);
 					int oldId = json_integer_value(json_object_get(moduleJ, "id"));
 					ModuleWidget* mw = modules[oldId];
@@ -464,7 +464,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		
 		float rightWidth = 0.f;
 		json_t* rightModulesJ = json_array();
-		if (module->mode == MODE_LEFTRIGHT || module->mode == MODE_RIGHT) {
+		if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::RIGHT) {
 			Module* m = module;
 			while (true) {
 				if (!m || m->rightExpander.moduleId < 0) break;
@@ -480,7 +480,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 
 		float leftWidth = 0.f;
 		json_t* leftModulesJ = json_array();
-		if (module->mode == MODE_LEFTRIGHT || module->mode == MODE_LEFT) {
+		if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::LEFT) {
 			Module* m = module;
 			while (true) {
 				if (!m || m->leftExpander.moduleId < 0) break;
