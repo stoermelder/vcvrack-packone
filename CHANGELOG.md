@@ -19,6 +19,7 @@
 - Modules [8FACE, 8FACEx2](./docs/EightFace.md)
     - Load preset in Arm-mode even when the same slot was selected before (#212)
     - Improved thread-handling for crashes when used with specific modules (#76)
+    - Fixed broken "Autoload first preset" (#29)
 - Module [CV-MAP](./docs/CVMap.md)
     - Fixed wrong slot behavior when toggling input to 0V (#221)
 - Module [HIVE](./docs/Hive.md)

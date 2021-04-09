@@ -690,7 +690,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 		Module::params[PARAM_RW].setValue(0.f);
 
 		if (autoload) {
-			presetLoad(0, false);
+			presetLoad(0, false, true);
 		}
 	}
 };

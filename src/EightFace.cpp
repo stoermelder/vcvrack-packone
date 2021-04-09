@@ -478,7 +478,7 @@ struct EightFaceModule : Module {
 			Expander* exp = mode == MODE_LEFT ? &leftExpander : &rightExpander;
 			if (exp->moduleId >= 0 && exp->module) {
 				Module* t = exp->module;
-				presetLoad(t, 0, false);
+				presetLoad(t, 0, false, true);
 			}
 		}
 	}
