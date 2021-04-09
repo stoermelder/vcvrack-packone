@@ -64,7 +64,7 @@ TRANSIT provides three precision-settings on the contextual menu which influence
 
 ## Sequencing and selecting snapshots
 
-The fun begins when you use the port labelled _SEL_ for selecting snapshots by CV. Although there are 12 snapshot slots available it is possible to use less slots for sequencing: You can adjust the number of active slots by long-pressing a snapshot-button while in read-mode. The LEDs turns off completely for slots that are currently disabled.
+The fun begins when you use the port labelled _SEL_ for selecting snapshots by CV. Although there are 12 snapshot slots available it is possible to use less slots for sequencing: You can adjust the number of active slots (i.e. sequence length) by long-pressing a snapshot-button while in read-mode. The LEDs turns off completely for slots that are currently disabled.
 
 Modes for _SEL_ on the contextual menu:
 
