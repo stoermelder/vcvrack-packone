@@ -113,7 +113,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 	/** [Stored to JSON] */
 	std::vector<BoundModule*> boundModules;
 	/** [Stored to JSON] */
-	bool autoload = false;
+	EightFace::AUTOLOAD autoload = EightFace::AUTOLOAD::OFF;
 
 	/** [Stored to JSON] */
 	bool boxDraw;
@@ -195,7 +195,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 		presetCount = NUM_PRESETS;
 		presetNext = -1;
 
-		autoload = false;
+		autoload = EightFace::AUTOLOAD::OFF;
 		boxDraw = true;
 		boxColor = color::BLUE;
 
@@ -689,8 +689,15 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 		BASE::dataFromJson(rootJ);
 		Module::params[PARAM_RW].setValue(0.f);
 
-		if (autoload) {
-			presetLoad(0, false, true);
+		switch (autoload) {
+			case EightFace::AUTOLOAD::FIRST:
+				presetLoad(0, false, true);
+				break;
+			case EightFace::AUTOLOAD::LASTACTIVE:
+				presetLoad(preset, false, true);
+				break;
+			default:
+				break;
 		}
 	}
 };
@@ -892,14 +899,30 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 			}
 		};
 
-		struct AutoloadItem : MenuItem {
+		struct AutoloadMenuItem : MenuItem {
+			struct AutoloadItem : MenuItem {
+				MODULE* module;
+				EightFace::AUTOLOAD value;
+				void onAction(const event::Action& e) override {
+					module->autoload = value;
+				}
+				void step() override {
+					rightText = CHECKMARK(module->autoload == value);
+					MenuItem::step();
+				}
+			};
+
 			MODULE* module;
-			void onAction(const event::Action& e) override {
-				module->autoload ^= true;
+			AutoloadMenuItem() {
+				rightText = RIGHT_ARROW;
 			}
-			void step() override {
-				rightText = module->autoload ? "✔" : "";
-				MenuItem::step();
+
+			Menu* createChildMenu() override {
+				Menu* menu = new Menu;
+				menu->addChild(construct<AutoloadItem>(&MenuItem::text, "Off", &AutoloadItem::module, module, &AutoloadItem::value, EightFace::AUTOLOAD::OFF));
+				menu->addChild(construct<AutoloadItem>(&MenuItem::text, "First preset", &AutoloadItem::module, module, &AutoloadItem::value, EightFace::AUTOLOAD::FIRST));
+				menu->addChild(construct<AutoloadItem>(&MenuItem::text, "Last active preset", &AutoloadItem::module, module, &AutoloadItem::value, EightFace::AUTOLOAD::LASTACTIVE));
+				return menu;
 			}
 		};
 
@@ -1015,7 +1038,7 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<SlotCvModeMenuItem>(&MenuItem::text, "Port CV mode", &SlotCvModeMenuItem::module, module));
-		menu->addChild(construct<AutoloadItem>(&MenuItem::text, "Autoload first preset", &AutoloadItem::module, module));
+		menu->addChild(construct<AutoloadMenuItem>(&MenuItem::text, "Autoload", &AutoloadMenuItem::module, module));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<BindModuleItem>(&MenuItem::text, "Bind module (left)", &BindModuleItem::widget, this, &BindModuleItem::module, module));
 		menu->addChild(construct<BindModuleSelectItem>(&MenuItem::text, "Bind module (select)", &BindModuleSelectItem::widget, this));

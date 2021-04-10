@@ -77,7 +77,7 @@ struct EightFaceModule : Module {
 	/** [Stored to JSON] */
 	int presetCount = NUM_PRESETS;
 	/** [Stored to JSON] */
-	bool autoload = false;
+	AUTOLOAD autoload = AUTOLOAD::OFF;
 
 	/** [Stored to JSON] mode for SEQ CV input */
 	SLOTCVMODE slotCvMode = SLOTCVMODE_TRIG_FWD;
@@ -158,7 +158,7 @@ struct EightFaceModule : Module {
 		realPluginSlug = "";
 		moduleName = "";
 		connected = 0;
-		autoload = false;
+		autoload = AUTOLOAD::OFF;
 	}
 
 	void process(const ProcessArgs& args) override {
@@ -474,12 +474,25 @@ struct EightFaceModule : Module {
 		if (preset >= presetCount)
 			preset = 0;
 
-		if (autoload) {
-			Expander* exp = mode == MODE_LEFT ? &leftExpander : &rightExpander;
-			if (exp->moduleId >= 0 && exp->module) {
-				Module* t = exp->module;
-				presetLoad(t, 0, false, true);
+		switch (autoload) {
+			case AUTOLOAD::FIRST: {
+				Expander* exp = mode == MODE_LEFT ? &leftExpander : &rightExpander;
+				if (exp->moduleId >= 0 && exp->module) {
+					Module* t = exp->module;
+					presetLoad(t, 0, false, true);
+				}
+				break;
 			}
+			case AUTOLOAD::LASTACTIVE: {
+				Expander* exp = mode == MODE_LEFT ? &leftExpander : &rightExpander;
+				if (exp->moduleId >= 0 && exp->module) {
+					Module* t = exp->module;
+					presetLoad(t, preset, false, true);
+				}
+				break;
+			}
+			default:
+				break;
 		}
 	}
 };
@@ -524,16 +537,30 @@ struct SlovCvModeMenuItem : MenuItem {
 };
 
 template < typename MODULE >
-struct AutoloadItem : MenuItem {
-	MODULE* module;
+struct AutoloadMenuItem : MenuItem {
+	struct AutoloadItem : MenuItem {
+		MODULE* module;
+		AUTOLOAD value;
+		void onAction(const event::Action& e) override {
+			module->autoload = value;
+		}
+		void step() override {
+			rightText = CHECKMARK(module->autoload == value);
+			MenuItem::step();
+		}
+	};
 
-	void onAction(const event::Action& e) override {
-		module->autoload ^= true;
+	MODULE* module;
+	AutoloadMenuItem() {
+		rightText = RIGHT_ARROW;
 	}
 
-	void step() override {
-		rightText = module->autoload ? "✔" : "";
-		MenuItem::step();
+	Menu* createChildMenu() override {
+		Menu* menu = new Menu;
+		menu->addChild(construct<AutoloadItem>(&MenuItem::text, "Off", &AutoloadItem::module, module, &AutoloadItem::value, AUTOLOAD::OFF));
+		menu->addChild(construct<AutoloadItem>(&MenuItem::text, "First preset", &AutoloadItem::module, module, &AutoloadItem::value, AUTOLOAD::FIRST));
+		menu->addChild(construct<AutoloadItem>(&MenuItem::text, "Last active preset", &AutoloadItem::module, module, &AutoloadItem::value, AUTOLOAD::LASTACTIVE));
+		return menu;
 	}
 };
 
@@ -581,7 +608,7 @@ struct EightFaceWidgetTemplate : ModuleWidget {
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<SlovCvModeMenuItem<MODULE>>(&MenuItem::text, "Port SLOT mode", &SlovCvModeMenuItem<MODULE>::module, module));
 		menu->addChild(construct<ModeItem<MODULE>>(&MenuItem::text, "Module", &ModeItem<MODULE>::module, module));
-		menu->addChild(construct<AutoloadItem<MODULE>>(&MenuItem::text, "Autoload first preset", &AutoloadItem<MODULE>::module, module));
+		menu->addChild(construct<AutoloadMenuItem<MODULE>>(&MenuItem::text, "Autoload", &AutoloadMenuItem<MODULE>::module, module));
 	}
 };
 

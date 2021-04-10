@@ -19,5 +19,11 @@ const std::set<std::tuple<std::string, std::string>> guiModuleSlugs = {
 	std::make_tuple("VCV-Host", "Host-XL")
 };
 
+enum class AUTOLOAD {
+	OFF = 0,
+	FIRST = 1,
+	LASTACTIVE = 2
+};
+
 } // namespace EightFace
 } // namespace StoermelderPackOne
