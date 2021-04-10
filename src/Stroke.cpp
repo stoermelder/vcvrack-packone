@@ -140,6 +140,7 @@ struct StrokeModule : Module {
 		KEY_MODE mode;
 		bool high;
 		std::string data;
+		bool isMapped() { return button != -1 || key != -1; }
 	};
 
 	/** [Stored to JSON] */
@@ -881,11 +882,15 @@ struct KeyContainer : Widget {
 	}
 };
 
+
+
 template < int PORTS >
 struct KeyDisplay : StoermelderLedDisplay {
 	KeyContainer<PORTS>* keyContainer;
 	StrokeModule<PORTS>* module;
 	int idx;
+
+	ui::Tooltip* tooltip = NULL;
 
 	void step() override {
 		if (keyContainer && keyContainer->learnIdx == idx) {
@@ -1182,6 +1187,99 @@ struct KeyDisplay : StoermelderLedDisplay {
 		menu->addChild(construct<ViewMenuItem>(&MenuItem::text, "View commands", &ViewMenuItem::module, module, &ViewMenuItem::idx, idx));
 		menu->addChild(construct<CableMenuItem>(&MenuItem::text, "Cable commands", &CableMenuItem::module, module, &CableMenuItem::idx, idx));
 		menu->addChild(construct<SpecialMenuItem>(&MenuItem::text, "Special commands", &SpecialMenuItem::module, module, &SpecialMenuItem::idx, idx));
+	}
+
+	void onHover(const event::Hover& e) override {
+		Widget::onHover(e);
+		e.stopPropagating();
+		// Consume if not consumed by child
+		if (!e.isConsumed())
+			e.consume(this);
+	}
+
+	void onEnter(const event::Enter& e) override {
+		struct KeyDisplayTooltip : ui::Tooltip {
+			StrokeModule<PORTS>* module;
+			KeyDisplay* keyDisplay;
+
+			void step() override {
+				switch (module->keys[keyDisplay->idx].mode) {
+					case KEY_MODE::OFF:
+						text = "Off"; break;
+					case KEY_MODE::CV_TRIGGER:
+						text = "CV: Trigger"; break;
+					case KEY_MODE::CV_GATE:
+						text = "CV: Gate"; break;
+					case KEY_MODE::CV_TOGGLE:
+						text = "CV: Toggle"; break;
+					case KEY_MODE::S_PARAM_RAND:
+						text = "Parameter: Randomize"; break;
+					case KEY_MODE::S_PARAM_COPY:
+						text = "Parameter: Value copy"; break;
+					case KEY_MODE::S_PARAM_PASTE:
+						text = "Parameter: Value paste"; break;
+					case KEY_MODE::S_ZOOM_MODULE_90:
+						text = "View: Zoom to module"; break;
+					case KEY_MODE::S_ZOOM_MODULE_90_SMOOTH:
+						text = "View: Zoom to module (smooth)"; break;
+					case KEY_MODE::S_ZOOM_MODULE_30:
+						text = "View: Zoom to module 1/3"; break;
+					case KEY_MODE::S_ZOOM_MODULE_30_SMOOTH:
+						text = "View: Zoom to module 1/3 (smooth)"; break;
+					case KEY_MODE::S_ZOOM_MODULE_CUSTOM:
+						text = "View: Zoom level to module"; break;
+					case KEY_MODE::S_ZOOM_OUT:
+						text = "View: Zoom out"; break;
+					case KEY_MODE::S_ZOOM_OUT_SMOOTH:
+						text = "View: Zoom out (smooth)"; break;
+					case KEY_MODE::S_ZOOM_TOGGLE:
+						text = "View: Zoom toggle"; break;
+					case KEY_MODE::S_CABLE_OPACITY:
+						text = "Cable: Toggle opacity"; break;
+					case KEY_MODE::S_CABLE_COLOR_NEXT:
+						text = "Cable: Next color"; break;
+					case KEY_MODE::S_CABLE_COLOR:
+						text = "Cable: Color"; break;
+					case KEY_MODE::S_CABLE_ROTATE:
+						text = "Cable: Rotate ordering"; break;
+					case KEY_MODE::S_CABLE_VISIBILITY:
+						text = "Cable: Toggle visibility"; break;
+					case KEY_MODE::S_CABLE_MULTIDRAG:
+						break;
+					case KEY_MODE::S_FRAMERATE:
+						text = "Toggle framerate display"; break;
+					case KEY_MODE::S_ENGINE_PAUSE:
+						text = "Toggle engine pause"; break;
+					case KEY_MODE::S_MODULE_LOCK:
+						text = "Toggle lock modules"; break;
+					case KEY_MODE::S_BUSBOARD:
+						text = "Toggle busboard"; break;
+				}
+
+				Tooltip::step();
+				// Position at bottom-right of parameter
+				box.pos = keyDisplay->getAbsoluteOffset(keyDisplay->box.size).round();
+				// Fit inside parent (copied from Tooltip.cpp)
+				assert(parent);
+				box = box.nudge(parent->box.zeroPos());
+			}
+		};
+
+		if (settings::paramTooltip && !tooltip && module->keys[idx].isMapped()) {
+			KeyDisplayTooltip* keyDisplayTooltip = new KeyDisplayTooltip;
+			keyDisplayTooltip->module = module;
+			keyDisplayTooltip->keyDisplay = this;
+			APP->scene->addChild(keyDisplayTooltip);
+			tooltip = keyDisplayTooltip;
+		}
+	}
+
+	void onLeave(const event::Leave& e) override {
+		if (tooltip) {
+			APP->scene->removeChild(tooltip);
+			delete tooltip;
+			tooltip = NULL;
+		}
 	}
 };
 

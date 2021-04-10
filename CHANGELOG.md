@@ -51,6 +51,7 @@
     - Fixed not working mappings caused by Num Lock state (#220)
     - Fixed not working mappings caused by use of numpad keys (#220)
     - Added view-commands using smooth transitions (#139)
+    - Added tooltips for mapped commands
 - Module [TRANSIT](./docs/Transit.md)
     - Added "Phase"-mode for CV-input which scans continously through snapshots (#182)
     - Added context menu option "Locate and indicate" for bound parameters
