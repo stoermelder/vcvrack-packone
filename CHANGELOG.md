@@ -6,7 +6,7 @@
 ## 1.9.0 (in development)
 
 - Modules [8FACE mk2, +8](./docs/EightFaceMk2.md)
-    - New modules, evolution and replacement for 8FACE and 8FACEx2 (#63 #76 #144 #154 #157 #158 #160 #162)
+    - New modules, evolution of 8FACE and 8FACEx2 (#63 #76 #144 #154 #157 #158 #160 #162)
 - Modules [MIDI-PLUG](./docs/MidiPlug.md)
     - New module, a virtual MIDI merger and splitter
 - Modules [ORBIT](./docs/Orbit.md)
@@ -50,6 +50,7 @@
     - Allow mapping mouse buttons 0/1/2 (left/right/middle) in use with modifiers
     - Fixed not working mappings caused by Num Lock state (#220)
     - Fixed not working mappings caused by use of numpad keys (#220)
+    - Added view-commands using smooth transitions (#139)
 - Module [TRANSIT](./docs/Transit.md)
     - Added "Phase"-mode for CV-input which scans continously through snapshots (#182)
     - Added context menu option "Locate and indicate" for bound parameters
