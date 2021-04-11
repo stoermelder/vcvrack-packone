@@ -1,6 +1,7 @@
 #include "plugin.hpp"
 #include "components/MidiWidget.hpp"
 #include "components/LedDisplayCenterChoiceEx.hpp"
+#include <osdialog.h>
 
 namespace StoermelderPackOne {
 namespace MidiPlug {
@@ -246,6 +247,37 @@ struct MidiPlugWidget : ThemedModuleWidget<MidiPlugModule<>> {
 		midiOutput1Widget->box.size = Vec(130.0f, 67.0f);
 		midiOutput1Widget->setMidiPortEx(module ? &module->midiOutput[1] : NULL);
 		addChild(midiOutput1Widget);
+	}
+
+	void appendContextMenu(Menu* menu) override {
+		struct LoopbackDriverItem : MenuItem {
+			void step() override {
+				rightText = CHECKMARK(pluginSettings.midiLoopbackDriverEnabled);
+				MenuItem::step();
+			}
+			void onAction(const event::Action& e) override {
+				if (!pluginSettings.midiLoopbackDriverEnabled) {
+					std::string text = "After enabling the MIDI Loopback driver you will get an annoying error message every time you close the Rack. This will not harm your patches in any way. Furthermore it is possible to disable the MIDI Loopback driver at anytime you like.\n\nDo you want to enable the MIDI Loopback driver now?";
+					if (osdialog_message(OSDIALOG_INFO, OSDIALOG_YES_NO, text.c_str())) {
+						pluginSettings.midiLoopbackDriverEnabled = true;
+						pluginSettings.saveToJson();
+						text = "The MIDI Loopback driver will be enabled after the next restart of Rack.";
+						osdialog_message(OSDIALOG_INFO, OSDIALOG_OK, text.c_str());
+					}
+				} else {
+					std::string text = "You're about to disable the MIDI Loopback driver. Proceed?";
+					if (osdialog_message(OSDIALOG_INFO, OSDIALOG_YES_NO, text.c_str())) {
+						pluginSettings.midiLoopbackDriverEnabled = false;
+						pluginSettings.saveToJson();
+						text = "The MIDI Loopback driver has been disabled after the next restart of Rack.";
+						osdialog_message(OSDIALOG_INFO, OSDIALOG_OK, text.c_str());
+					}
+				}
+			}
+		}; // struct LoopbackDriverItem
+
+		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<LoopbackDriverItem>(&MenuItem::text, "MIDI Loopback driver"));
 	}
 };
 

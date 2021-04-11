@@ -9,6 +9,7 @@
     - New modules, evolution of 8FACE and 8FACEx2 (#63 #76 #144 #154 #157 #158 #160 #162)
 - Modules [MIDI-PLUG](./docs/MidiPlug.md)
     - New module, a virtual MIDI merger and splitter
+    - MIDI "Loopback" driver for routing outgoing MIDI messages back into Rack (enabled on the context menu)
 - Modules [ORBIT](./docs/Orbit.md)
     - New module, a polyphonic stereo field spreader
 - Modules [PRISMA](./docs/Prisma.md)

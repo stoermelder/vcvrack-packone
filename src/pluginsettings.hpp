@@ -9,6 +9,8 @@ struct StoermelderSettings {
 	int mbV1sort = 0;
 	bool mbV1hideBrands = false;
 
+	bool midiLoopbackDriverEnabled = false;
+
 	void saveToJson();
 	void readFromJson();
 };
