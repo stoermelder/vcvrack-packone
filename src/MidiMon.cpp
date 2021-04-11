@@ -60,7 +60,7 @@ struct MidiMonModule : Module {
 	void onReset() override {
 		showNoteMsg = true;
 		showKeyPressure = true;
-		showCcMsg = false;
+		showCcMsg = true;
 		showProgChangeMsg = true;
 		showChannelPressurelMsg = true;
 		showPitchWheelMsg = true;
@@ -102,7 +102,7 @@ struct MidiMonModule : Module {
 					uint8_t ch = msg.getChannel();
 					uint8_t note = msg.getNote();
 					uint8_t vel = msg.getValue();
-					std::string s = string::f("ch%i note %i vel %i", ch + 1, note, vel);
+					std::string s = string::f("ch%i note on  %i vel %i", ch + 1, note, vel);
 					midiLogMessages.push(std::make_tuple(timestamp, s));
 				} break;
 			case 0x8: // note off
