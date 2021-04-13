@@ -304,9 +304,12 @@ struct MidiCatModule : Module, StripIdFixModule {
 	dsp::ClockDivider indicatorDivider;
 
 	// Pointer of the MEM-expander's attribute
-	std::map<std::pair<std::string, std::string>, MemModule*>* memStorage = NULL;
-	Module* mem = NULL;
-	int memModuleId = -1;
+	std::map<std::pair<std::string, std::string>, MemModule*>* expMemStorage = NULL;
+	Module* expMem = NULL;
+	int expMemModuleId = -1;
+
+	Module* expMap = NULL;
+	int expMapModuleId = -1;
 
 	MidiCatModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
@@ -580,14 +583,33 @@ struct MidiCatModule : Module, StripIdFixModule {
 			midiResendFeedback();
 		}
 
+		// Expanders
+		bool expMemFound = false;
+		bool expMapFound = false;
 		Module* exp = rightExpander.module;
-		if (exp && exp->model == modelMidiCatEx) {
-			memStorage = reinterpret_cast<std::map<std::pair<std::string, std::string>, MemModule*>*>(exp->leftExpander.consumerMessage);
-			mem = exp;
+		for (int i = 0; i < 2; i++) {
+			if (!exp) break;
+			if (exp->model == modelMidiCatMem) {
+				expMemStorage = reinterpret_cast<std::map<std::pair<std::string, std::string>, MemModule*>*>(exp->leftExpander.consumerMessage);
+				expMem = exp;
+				expMemFound = true;
+				exp = exp->rightExpander.module;
+				continue;
+			}
+			if (exp->model == modelMidiCatMap) {
+				expMap = exp;
+				expMapFound = true;
+				exp = exp->rightExpander.module;
+				continue;
+			}
+			break;
 		}
-		else {
-			memStorage = NULL;
-			mem = NULL;
+		if (!expMemFound) {
+			expMemStorage = NULL;
+			expMem = NULL;
+		}
+		if (!expMapFound) {
+			expMap = NULL;
 		}
 	}
 
@@ -710,7 +732,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 			refreshParamHandleText(id);
 		}
 		mapLen = 1;
-		memModuleId = -1;
+		expMemModuleId = -1;
 	}
 
 	void updateMapLen() {
@@ -758,10 +780,21 @@ struct MidiCatModule : Module, StripIdFixModule {
 		learningId = -1;
 	}
 
-	void enableLearn(int id, bool learnSingle = false) {
+	int enableLearn(int id, bool learnSingle = false) {
+		if (id == -1) {
+			// Find next incomplete map
+			while (++id < MAX_CHANNELS) {
+				if (ccs[id].getCc() < 0 && notes[id].getNote() < 0 && paramHandles[id].moduleId < 0)
+					break;
+			}
+			if (id == MAX_CHANNELS) {
+				return -1;
+			}
+		}
+
 		if (id == mapLen) {
 			disableLearn();
-			return;
+			return -1;
 		}
 		if (learningId != id) {
 			learningId = id;
@@ -772,6 +805,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 			learnedParam = false;
 			learnSingleSlot = learnSingle;
 		}
+		return id;
 	}
 
 	void disableLearn() {
@@ -834,7 +868,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 		paramHandles[id].text = text;
 	}
 
-	void memSave(std::string pluginSlug, std::string moduleSlug) {
+	void expMemSave(std::string pluginSlug, std::string moduleSlug) {
 		MemModule* m = new MemModule;
 		Module* module = NULL;
 		for (size_t i = 0; i < MAX_CHANNELS; i++) {
@@ -860,30 +894,30 @@ struct MidiCatModule : Module, StripIdFixModule {
 		m->moduleName = module->model->name;
 
 		auto p = std::pair<std::string, std::string>(pluginSlug, moduleSlug);
-		auto it = memStorage->find(p);
-		if (it != memStorage->end()) {
+		auto it = expMemStorage->find(p);
+		if (it != expMemStorage->end()) {
 			delete it->second;
 		}
 
-		(*memStorage)[p] = m;
+		(*expMemStorage)[p] = m;
 	}
 
-	void memDelete(std::string pluginSlug, std::string moduleSlug) {
+	void expMemDelete(std::string pluginSlug, std::string moduleSlug) {
 		auto p = std::pair<std::string, std::string>(pluginSlug, moduleSlug);
-		auto it = memStorage->find(p);
+		auto it = expMemStorage->find(p);
 		delete it->second;
-		memStorage->erase(p);
+		expMemStorage->erase(p);
 	}
 
-	void memApply(Module* m) {
+	void expMemApply(Module* m) {
 		if (!m) return;
 		auto p = std::pair<std::string, std::string>(m->model->plugin->slug, m->model->slug);
-		auto it = memStorage->find(p);
-		if (it == memStorage->end()) return;
+		auto it = expMemStorage->find(p);
+		if (it == expMemStorage->end()) return;
 		MemModule* map = it->second;
 
 		clearMaps();
-		memModuleId = m->id;
+		expMemModuleId = m->id;
 		int i = 0;
 		for (MemParam* it : map->paramMap) {
 			learnParam(i, m->id, it->paramId);
@@ -902,11 +936,11 @@ struct MidiCatModule : Module, StripIdFixModule {
 		updateMapLen();
 	}
 
-	bool memTest(Module* m) {
+	bool expMemTest(Module* m) {
 		if (!m) return false;
 		auto p = std::pair<std::string, std::string>(m->model->plugin->slug, m->model->slug);
-		auto it = memStorage->find(p);
-		if (it == memStorage->end()) return false;
+		auto it = expMemStorage->find(p);
+		if (it == expMemStorage->end()) return false;
 		return true;
 	}
 
@@ -1451,13 +1485,18 @@ struct MidiCatDisplay : MapModuleDisplay<MAX_CHANNELS, MidiCatModule, MidiCatCho
 
 struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExtender {
 	MidiCatModule* module;
-	Module* mem;
-	BufferedTriggerParamQuantity* memPrevQuantity;
-	dsp::SchmittTrigger memPrevTrigger;
-	BufferedTriggerParamQuantity* memNextQuantity;
-	dsp::SchmittTrigger memNextTrigger;
-	BufferedTriggerParamQuantity* memParamQuantity;
-	dsp::SchmittTrigger memParamTrigger;
+
+	Module* expMem;
+	BufferedTriggerParamQuantity* expMemPrevQuantity;
+	dsp::SchmittTrigger expMemPrevTrigger;
+	BufferedTriggerParamQuantity* expMemNextQuantity;
+	dsp::SchmittTrigger expMemNextTrigger;
+	BufferedTriggerParamQuantity* expMemParamQuantity;
+	dsp::SchmittTrigger expMemParamTrigger;
+
+	MidiCatMapBase* expMap;
+	BufferedTriggerParamQuantity* expMapMapQuantity;
+	dsp::SchmittTrigger expMapMapTrigger;
 
 	enum class LEARN_MODE {
 		OFF = 0,
@@ -1574,38 +1613,54 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 	void step() override {
 		ThemedModuleWidget<MidiCatModule>::step();
 		if (module) {
-			if (module->mem != mem) {
-				mem = module->mem;
-				if (mem) {
-					memPrevQuantity = dynamic_cast<BufferedTriggerParamQuantity*>(mem->paramQuantities[1]);
-					memPrevQuantity->resetBuffer();
-					memNextQuantity = dynamic_cast<BufferedTriggerParamQuantity*>(mem->paramQuantities[2]);
-					memNextQuantity->resetBuffer();
-					memParamQuantity = dynamic_cast<BufferedTriggerParamQuantity*>(mem->paramQuantities[0]);
-					memParamQuantity->resetBuffer();
+			// MEM-expander
+			if (module->expMem != expMem) {
+				expMem = module->expMem;
+				if (expMem) {
+					expMemPrevQuantity = dynamic_cast<BufferedTriggerParamQuantity*>(expMem->paramQuantities[1]);
+					expMemPrevQuantity->resetBuffer();
+					expMemNextQuantity = dynamic_cast<BufferedTriggerParamQuantity*>(expMem->paramQuantities[2]);
+					expMemNextQuantity->resetBuffer();
+					expMemParamQuantity = dynamic_cast<BufferedTriggerParamQuantity*>(expMem->paramQuantities[0]);
+					expMemParamQuantity->resetBuffer();
 				}
 			}
-			if (mem) {
-				if (memPrevTrigger.process(memPrevQuantity->buffer)) {
-					memPrevQuantity->resetBuffer();
-					memPrevModule();
+			if (expMem) {
+				if (expMemPrevTrigger.process(expMemPrevQuantity->buffer)) {
+					expMemPrevQuantity->resetBuffer();
+					expMemPrevModule();
 				}
-				if (memNextTrigger.process(memNextQuantity->buffer)) {
-					memNextQuantity->resetBuffer();
-					memNextModule();
+				if (expMemNextTrigger.process(expMemNextQuantity->buffer)) {
+					expMemNextQuantity->resetBuffer();
+					expMemNextModule();
 				}
-				if (memParamTrigger.process(memParamQuantity->buffer)) {
-					memParamQuantity->resetBuffer();
+				if (expMemParamTrigger.process(expMemParamQuantity->buffer)) {
+					expMemParamQuantity->resetBuffer();
 					enableLearn(LEARN_MODE::MEM);
 				}
-				module->mem->lights[0].setBrightness(learnMode == LEARN_MODE::MEM);
+				module->expMem->lights[0].setBrightness(learnMode == LEARN_MODE::MEM);
+			}
+
+			// MAP-expander
+			if (module->expMap != (Module*)expMap) {
+				expMap = dynamic_cast<MidiCatMapBase*>(module->expMap);
+				if (expMap) {
+					expMapMapQuantity = dynamic_cast<BufferedTriggerParamQuantity*>(expMap->paramQuantities[0]);
+					expMapMapQuantity->resetBuffer();
+				}
+			}
+			if (expMap) {
+				if (expMapMapTrigger.process(expMapMapQuantity->buffer)) {
+					expMapMapQuantity->resetBuffer();
+					module->enableLearn(-1, true);
+				}
 			}
 		}
 
 		ParamWidgetContextExtender::step();
 	}
 
-	void memPrevModule() {
+	void expMemPrevModule() {
 		std::list<Widget*> modules = APP->scene->rack->moduleContainer->children;
 		auto sort = [&](Widget* w1, Widget* w2) {
 			auto t1 = std::make_tuple(w1->box.pos.y, w1->box.pos.x);
@@ -1613,10 +1668,10 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 			return t1 > t2;
 		};
 		modules.sort(sort);
-		memScanModules(modules);
+		expMemScanModules(modules);
 	}
 
-	void memNextModule() {
+	void expMemNextModule() {
 		std::list<Widget*> modules = APP->scene->rack->moduleContainer->children;
 		auto sort = [&](Widget* w1, Widget* w2) {
 			auto t1 = std::make_tuple(w1->box.pos.y, w1->box.pos.x);
@@ -1624,18 +1679,18 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 			return t1 < t2;
 		};
 		modules.sort(sort);
-		memScanModules(modules);
+		expMemScanModules(modules);
 	}
 
-	void memScanModules(std::list<Widget*>& modules) {
+	void expMemScanModules(std::list<Widget*>& modules) {
 		f:
 		std::list<Widget*>::iterator it = modules.begin();
 		// Scan for current module in the list
-		if (module->memModuleId != -1) {
+		if (module->expMemModuleId != -1) {
 			for (; it != modules.end(); it++) {
 				ModuleWidget* mw = dynamic_cast<ModuleWidget*>(*it);
 				Module* m = mw->module;
-				if (m->id == module->memModuleId) {
+				if (m->id == module->expMemModuleId) {
 					it++;
 					break;
 				}
@@ -1649,14 +1704,14 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 		for (; it != modules.end(); it++) {
 			ModuleWidget* mw = dynamic_cast<ModuleWidget*>(*it);
 			Module* m = mw->module;
-			if (module->memTest(m)) {
-				module->memApply(m);
+			if (module->expMemTest(m)) {
+				module->expMemApply(m);
 				return;
 			}
 		}
 		// No module found yet -> retry from the beginning
-		if (module->memModuleId != -1) {
-			module->memModuleId = -1;
+		if (module->expMemModuleId != -1) {
+			module->expMemModuleId = -1;
 			goto f;
 		}
 	}
@@ -1668,6 +1723,14 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 		ParamQuantity* pq = pw->paramQuantity;
 		if (!pq) return;
 		
+		std::list<Widget*>::iterator it = menu->children.begin();
+		for (; it != menu->children.end(); it++) {
+			MenuLabel* ml = dynamic_cast<MenuLabel*>(*it);
+			if (!ml) continue;
+			if (ml->text != "MIDI-CAT") continue;
+			break;
+		}
+
 		for (int id = 0; id < module->mapLen; id++) {
 			if (module->paramHandles[id].moduleId == pq->module->id && module->paramHandles[id].paramId == pq->paramId) {
 				struct MapMenuItem : MenuItem {
@@ -1678,11 +1741,49 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 					}
 				};
 
-				menu->addChild(new MenuSeparator);
-				menu->addChild(construct<MenuLabel>(&MenuLabel::text, "MIDI-CAT"));
-				menu->addChild(construct<MapMenuItem>(&MenuItem::text, "Learn MIDI", &MapMenuItem::module, module, &MapMenuItem::id, id));
-				menu->addChild(construct<CenterModuleItem>(&MenuItem::text, "Center mapping module", &CenterModuleItem::mw, this));
-				break;
+				MenuItem* mapMenuItem = construct<MapMenuItem>(&MenuItem::text, "Learn MIDI", &MapMenuItem::module, module, &MapMenuItem::id, id);
+				MenuItem* centerMenuItem = construct<CenterModuleItem>(&MenuItem::text, "Center mapping module", &CenterModuleItem::mw, this);
+				if (it == menu->children.end()) {
+					menu->addChild(new MenuSeparator);
+					menu->addChild(construct<MenuLabel>(&MenuLabel::text, "MIDI-CAT"));
+					menu->addChild(mapMenuItem);
+					menu->addChild(centerMenuItem);
+				}
+				else {
+					menu->addChild(centerMenuItem);
+					auto it1 = std::find(menu->children.begin(), menu->children.end(), centerMenuItem);
+					menu->children.splice(std::next(it), menu->children, it1);
+					menu->addChild(mapMenuItem);
+					auto it2 = std::find(menu->children.begin(), menu->children.end(), mapMenuItem);
+					menu->children.splice(std::next(it), menu->children, it2);
+				}
+				return;
+			}
+		}
+
+		if (expMap) {
+			std::string id = expMap->getMidiCatId();
+			if (id != "") {
+				struct MapMenuItem : MenuItem {
+					MidiCatModule* module;
+					ParamQuantity* pq;
+					void onAction(const event::Action& e) override {
+						int id = module->enableLearn(-1, true);
+						if (id >= 0) module->learnParam(id, pq->module->id, pq->paramId);
+					}
+				};
+
+				MenuItem* mapMenuItem = construct<MapMenuItem>(&MenuItem::text, string::f("Learn MIDI on \"%s\"", id.c_str()), &MapMenuItem::module, module, &MapMenuItem::pq, pq);
+				if (it == menu->children.end()) {
+					menu->addChild(new MenuSeparator);
+					menu->addChild(construct<MenuLabel>(&MenuLabel::text, "MIDI-CAT"));
+					menu->addChild(mapMenuItem);
+				}
+				else {
+					menu->addChild(mapMenuItem);
+					auto it2 = std::find(menu->children.begin(), menu->children.end(), mapMenuItem);
+					menu->children.splice(std::next(it), menu->children, it2);
+				}
 			}
 		}
 	}
@@ -1710,7 +1811,7 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 				case LEARN_MODE::BIND_KEEP:
 					module->moduleBind(m, true); break;
 				case LEARN_MODE::MEM:
-					module->memApply(m); break;
+					module->expMemApply(m); break;
 				case LEARN_MODE::OFF:
 					break;
 			}
@@ -1987,7 +2088,7 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 		menu->addChild(construct<ModuleLearnExpanderMenuItem>(&MenuItem::text, "Map module (left)", &ModuleLearnExpanderMenuItem::module, module));
 		menu->addChild(construct<ModuleLearnSelectMenuItem>(&MenuItem::text, "Map module (select)", &ModuleLearnSelectMenuItem::mw, this));
 
-		if (module->memStorage != NULL) appendContextMenuMem(menu);
+		if (module->expMemStorage != NULL) appendContextMenuMem(menu);
 	}
 
 	void appendContextMenuMem(Menu* menu) {
@@ -2015,7 +2116,7 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 							std::string pluginSlug;
 							std::string moduleSlug;
 							void onAction(const event::Action& e) override {
-								module->memDelete(pluginSlug, moduleSlug);
+								module->expMemDelete(pluginSlug, moduleSlug);
 							}
 						}; // DeleteItem
 
@@ -2026,7 +2127,7 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 				}; // MidimapModuleItem
 
 				std::list<std::pair<std::string, MidimapModuleItem*>> l; 
-				for (auto it : *module->memStorage) {
+				for (auto it : *module->expMemStorage) {
 					MemModule* a = it.second;
 					MidimapModuleItem* midimapModuleItem = new MidimapModuleItem;
 					midimapModuleItem->text = string::f("%s %s", a->pluginName.c_str(), a->moduleName.c_str());
@@ -2058,7 +2159,7 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 					std::string pluginSlug;
 					std::string moduleSlug;
 					void onAction(const event::Action& e) override {
-						module->memSave(pluginSlug, moduleSlug);
+						module->expMemSave(pluginSlug, moduleSlug);
 					}
 				}; // SaveItem
 

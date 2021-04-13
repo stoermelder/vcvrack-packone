@@ -23,6 +23,12 @@ enum class NOTEMODE {
 	TOGGLE_VEL = 3
 };
 
+
+struct MidiCatMapBase : Module {
+	virtual std::string getMidiCatId() { return ""; }
+};
+
+
 struct MemParam {
 	int paramId = -1;
 	int cc = -1;

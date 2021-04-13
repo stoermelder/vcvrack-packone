@@ -7,7 +7,9 @@
 
 - Modules [8FACE mk2, +8](./docs/EightFaceMk2.md)
     - New modules, evolution of 8FACE and 8FACEx2 (#63 #76 #144 #154 #157 #158 #160 #162)
-- Modules [MIDI-PLUG](./docs/MidiPlug.md)
+- Module [MIDI-CAT MAP](./docs/MidiCat.md#map-expander)
+    - New expander-module for MIDI-CAT, helper for mapping parameters by context menu (#232)
+- Module [MIDI-PLUG](./docs/MidiPlug.md)
     - New module, a virtual MIDI merger and splitter
     - MIDI "Loopback" driver for routing outgoing MIDI messages back into Rack (enabled on the context menu)
 - Modules [ORBIT](./docs/Orbit.md)

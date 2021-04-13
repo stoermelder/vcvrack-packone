@@ -4,7 +4,7 @@
 namespace StoermelderPackOne {
 namespace MidiCat {
 
-struct MidiCatExModule : Module {
+struct MidiCatMemModule : Module {
 	enum ParamIds {
 		PARAM_APPLY,
 		PARAM_PREV,
@@ -27,7 +27,7 @@ struct MidiCatExModule : Module {
 	/** [Stored to JSON] */
 	std::map<std::pair<std::string, std::string>, MemModule*> midiMap;
 
-	MidiCatExModule() {
+	MidiCatMemModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configParam<BufferedTriggerParamQuantity>(PARAM_PREV, 0.f, 1.f, 0.f, "Scan for previous module mapping");
@@ -134,7 +134,7 @@ struct MidiCatExModule : Module {
 
 
 struct MemDisplay : StoermelderLedDisplay {
-	MidiCatExModule* module;
+	MidiCatMemModule* module;
 	void step() override {
 		StoermelderLedDisplay::step();
 		if (!module) return;
@@ -142,18 +142,18 @@ struct MemDisplay : StoermelderLedDisplay {
 	}
 };
 
-struct MidiCatExWidget : ThemedModuleWidget<MidiCatExModule> {
-	MidiCatExWidget(MidiCatExModule* module)
-		: ThemedModuleWidget<MidiCatExModule>(module, "MidiCatEx") {
+struct MidiCatMemWidget : ThemedModuleWidget<MidiCatMemModule> {
+	MidiCatMemWidget(MidiCatMemModule* module)
+		: ThemedModuleWidget<MidiCatMemModule>(module, "MidiCatMem") {
 		setModule(module);
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addChild(createParamCentered<TL1105>(Vec(15.0f, 227.1f), module, MidiCatExModule::PARAM_PREV));
-		addChild(createParamCentered<TL1105>(Vec(15.0f, 258.5f), module, MidiCatExModule::PARAM_NEXT));
-		addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(15.f, 284.4f), module, MidiCatExModule::LIGHT_APPLY));
-		addChild(createParamCentered<TL1105>(Vec(15.0f, 306.7f), module, MidiCatExModule::PARAM_APPLY));
+		addChild(createParamCentered<TL1105>(Vec(15.0f, 227.1f), module, MidiCatMemModule::PARAM_PREV));
+		addChild(createParamCentered<TL1105>(Vec(15.0f, 258.5f), module, MidiCatMemModule::PARAM_NEXT));
+		addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(15.f, 284.4f), module, MidiCatMemModule::LIGHT_APPLY));
+		addChild(createParamCentered<TL1105>(Vec(15.0f, 306.7f), module, MidiCatMemModule::PARAM_APPLY));
 		MemDisplay* memDisplay = createWidgetCentered<MemDisplay>(Vec(15.0f, 336.2f));
 		memDisplay->module = module;
 		addChild(memDisplay);
@@ -163,4 +163,4 @@ struct MidiCatExWidget : ThemedModuleWidget<MidiCatExModule> {
 } // namespace MidiCat
 } // namespace StoermelderPackOne
 
-Model* modelMidiCatEx = createModel<StoermelderPackOne::MidiCat::MidiCatExModule, StoermelderPackOne::MidiCat::MidiCatExWidget>("MidiCatEx");
+Model* modelMidiCatMem = createModel<StoermelderPackOne::MidiCat::MidiCatMemModule, StoermelderPackOne::MidiCat::MidiCatMemWidget>("MidiCatEx");
