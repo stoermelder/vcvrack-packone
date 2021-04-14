@@ -1719,16 +1719,29 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 	void extendParamWidgetContextMenu(ParamWidget* pw, Menu* menu) override {
 		if (!module) return;
 		if (module->learningId >= 0) return;
-
 		ParamQuantity* pq = pw->paramQuantity;
 		if (!pq) return;
 		
-		std::list<Widget*>::iterator it = menu->children.begin();
-		for (; it != menu->children.end(); it++) {
-			MenuLabel* ml = dynamic_cast<MenuLabel*>(*it);
-			if (!ml) continue;
-			if (ml->text != "MIDI-CAT") continue;
-			break;
+		struct MidiCatLabel : MenuLabel {
+			MidiCatLabel() {
+				text = "MIDI-CAT";
+			}
+		};
+
+		std::list<Widget*>::iterator beg = menu->children.begin();
+		std::list<Widget*>::iterator end = menu->children.end();
+		std::list<Widget*>::iterator it1 = end;
+		std::list<Widget*>::iterator it2 = end;
+		
+		for (auto it = beg; it != end; it++) {
+			if (it1 == end) {
+				MidiCatLabel* ml = dynamic_cast<MidiCatLabel*>(*it);
+				if (ml) { it1 = it; continue; }
+			}
+			else {
+				CenterModuleItem* ml = dynamic_cast<CenterModuleItem*>(*it);
+				if (ml) { it2 = it; break; }
+			}
 		}
 
 		for (int id = 0; id < module->mapLen; id++) {
@@ -1743,19 +1756,19 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 
 				MenuItem* mapMenuItem = construct<MapMenuItem>(&MenuItem::text, "Learn MIDI", &MapMenuItem::module, module, &MapMenuItem::id, id);
 				MenuItem* centerMenuItem = construct<CenterModuleItem>(&MenuItem::text, "Center mapping module", &CenterModuleItem::mw, this);
-				if (it == menu->children.end()) {
+				if (it1 == end) {
 					menu->addChild(new MenuSeparator);
-					menu->addChild(construct<MenuLabel>(&MenuLabel::text, "MIDI-CAT"));
+					menu->addChild(construct<MidiCatLabel>());
 					menu->addChild(mapMenuItem);
 					menu->addChild(centerMenuItem);
 				}
 				else {
 					menu->addChild(centerMenuItem);
-					auto it1 = std::find(menu->children.begin(), menu->children.end(), centerMenuItem);
-					menu->children.splice(std::next(it), menu->children, it1);
+					auto it3 = std::find(beg, end, centerMenuItem);
+					menu->children.splice(std::next(it1), menu->children, it3);
 					menu->addChild(mapMenuItem);
-					auto it2 = std::find(menu->children.begin(), menu->children.end(), mapMenuItem);
-					menu->children.splice(std::next(it), menu->children, it2);
+					auto it4 = std::find(beg, end, mapMenuItem);
+					menu->children.splice(std::next(it1), menu->children, it4);
 				}
 				return;
 			}
@@ -1774,15 +1787,15 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 				};
 
 				MenuItem* mapMenuItem = construct<MapMenuItem>(&MenuItem::text, string::f("Learn MIDI on \"%s\"", id.c_str()), &MapMenuItem::module, module, &MapMenuItem::pq, pq);
-				if (it == menu->children.end()) {
+				if (it1 == end) {
 					menu->addChild(new MenuSeparator);
-					menu->addChild(construct<MenuLabel>(&MenuLabel::text, "MIDI-CAT"));
+					menu->addChild(construct<MidiCatLabel>());
 					menu->addChild(mapMenuItem);
 				}
 				else {
 					menu->addChild(mapMenuItem);
-					auto it2 = std::find(menu->children.begin(), menu->children.end(), mapMenuItem);
-					menu->children.splice(std::next(it), menu->children, it2);
+					auto it3 = std::find(beg, end, mapMenuItem);
+					menu->children.splice(std::next(it2 == end ? it1 : it2), menu->children, it3);
 				}
 			}
 		}

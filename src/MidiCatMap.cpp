@@ -75,26 +75,29 @@ struct IdDisplay : StoermelderLedDisplay {
 		struct IdField : ui::TextField {
 			MidiCatMapModule* module;
 			IdField() {
-				box.size.x = 80.f;
+				box.size.x = 60.f;
+			}
+			void step() override {
+				// Keep selected
+				APP->event->setSelected(this);
+				TextField::step();
 			}
 			void onSelectKey(const event::SelectKey& e) override {
 				if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
-					module->midiCatId = text;
+					module->midiCatId = text.substr(0, 2);
 
 					ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
 					overlay->requestDelete();
 					e.consume(this);
-				}
-
-				if (!e.getTarget() && text.length() < 2) {
-					ui::TextField::onSelectKey(e);
 				}
 			}
 		};
 
 		Menu* menu = createMenu();
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Identifier"));
-		menu->addChild(construct<IdField>(&TextField::text, module->midiCatId, &IdField::module, module));
+		IdField* idField = construct<IdField>(&TextField::text, module->midiCatId, &IdField::module, module);
+		idField->selectAll();
+		menu->addChild(idField);
 	}
 };
 
