@@ -1,5 +1,6 @@
 #include "plugin.hpp"
 #include "MidiCat.hpp"
+#include "components/LedTextField.hpp"
 
 namespace StoermelderPackOne {
 namespace MidiCat {
@@ -55,49 +56,13 @@ struct MidiCatMapModule : MidiCatMapBase {
 };
 
 
-struct IdDisplay : StoermelderLedDisplay {
+struct IdTextField : StoermelderTextField {
 	MidiCatMapModule* module;
 	void step() override {
-		StoermelderLedDisplay::step();
+		StoermelderTextField::step();
 		if (!module) return;
-		text = module->midiCatId;
-	}
-
-	void onButton(const event::Button& e) override {
-		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
-			createContextMenu();
-			e.consume(this);
-		}
-		StoermelderLedDisplay::onButton(e);
-	}
-
-	void createContextMenu() {
-		struct IdField : ui::TextField {
-			MidiCatMapModule* module;
-			IdField() {
-				box.size.x = 60.f;
-			}
-			void step() override {
-				// Keep selected
-				APP->event->setSelected(this);
-				TextField::step();
-			}
-			void onSelectKey(const event::SelectKey& e) override {
-				if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
-					module->midiCatId = text.substr(0, 2);
-
-					ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
-					overlay->requestDelete();
-					e.consume(this);
-				}
-			}
-		};
-
-		Menu* menu = createMenu();
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Identifier"));
-		IdField* idField = construct<IdField>(&TextField::text, module->midiCatId, &IdField::module, module);
-		idField->selectAll();
-		menu->addChild(idField);
+		if (isFocused) module->midiCatId = text;
+		else text = module->midiCatId;
 	}
 };
 
@@ -111,9 +76,12 @@ struct MidiCatMapWidget : ThemedModuleWidget<MidiCatMapModule> {
 
 		// addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(15.f, 284.4f), module, MidiCatMapModule::LIGHT_APPLY));
 		addChild(createParamCentered<TL1105>(Vec(15.0f, 306.7f), module, MidiCatMapModule::PARAM_MAP));
-		IdDisplay* idDisplay = createWidgetCentered<IdDisplay>(Vec(15.0f, 336.2f));
-		idDisplay->module = module;
-		addChild(idDisplay);
+
+		IdTextField* textField = createWidget<IdTextField>(Vec(5.3f, 329.5f));
+		textField->box.size = Vec(21.f, 13.f);
+		textField->maxTextLength = 2;
+		textField->module = module;
+		addChild(textField);
 	}
 };
 
