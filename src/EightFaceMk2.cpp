@@ -1,6 +1,7 @@
 #include "plugin.hpp"
 #include "digital.hpp"
 #include "components/MenuColorLabel.hpp"
+#include "components/MenuColorField.hpp"
 #include "EightFace.hpp"
 #include "EightFaceMk2Base.hpp"
 #include <functional>
@@ -1007,31 +1008,20 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 				rightText = RIGHT_ARROW;
 			}
 			Menu* createChildMenu() override {
-				struct ColorField : ui::TextField {
+				struct ColorField : MenuColorField {
 					MODULE* module;
-					MenuColorLabel* colorLabel;
-					ColorField() {
-						box.size.x = 80.f;
-						placeholder = color::toHexString(color::BLACK);
+					NVGcolor initColor() override {
+						return module->boxColor;
 					}
-					void onSelectKey(const event::SelectKey& e) override {
-						colorLabel->fillColor = color::fromHexString(trim(text));
-						if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
-							module->boxColor = color::fromHexString(trim(text));
-							ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
-							overlay->requestDelete();
-							e.consume(this);
-						}
-						if (!e.getTarget()) {
-							ui::TextField::onSelectKey(e);
-						}
+					void returnColor(NVGcolor color) override {
+						module->boxColor = color;
 					}
 				};
 
 				Menu* menu = new Menu;
 				MenuColorLabel* colorLabel = construct<MenuColorLabel>(&MenuColorLabel::fillColor, module->boxColor);
 				menu->addChild(colorLabel);
-				menu->addChild(construct<ColorField>(&ColorField::module, module, &TextField::text, color::toHexString(module->boxColor), &ColorField::module, module, &ColorField::colorLabel, colorLabel));
+				menu->addChild(construct<ColorField>(&ColorField::module, module, &MenuColorField::colorLabel, colorLabel));
 				return menu;
 			}
 		};

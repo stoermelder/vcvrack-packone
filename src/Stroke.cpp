@@ -1,5 +1,6 @@
 #include "plugin.hpp"
 #include "components/MenuColorLabel.hpp"
+#include "components/MenuColorField.hpp"
 
 namespace StoermelderPackOne {
 namespace Stroke {
@@ -1152,25 +1153,14 @@ struct KeyDisplay : StoermelderLedDisplay {
 					}
 
 					Menu* createChildMenu() override {
-						struct ColorField : ui::TextField {
-							MenuColorLabel* colorLabel;
+						struct ColorField : MenuColorField {
 							StrokeModule<PORTS>* module;
 							int idx;
-							ColorField() {
-								box.size.x = 80.f;
-								placeholder = color::toHexString(color::BLACK);
+							void returnColor(NVGcolor color) override {
+								module->keys[idx].data = color::toHexString(color);
 							}
-							void onSelectKey(const event::SelectKey& e) override {
-								colorLabel->fillColor = color::fromHexString(string::trim(text));
-								if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
-									module->keys[idx].data = string::trim(text);
-									ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
-									overlay->requestDelete();
-									e.consume(this);
-								}
-								if (!e.getTarget()) {
-									ui::TextField::onSelectKey(e);
-								}
+							NVGcolor initColor() override {
+								return module->keys[idx].data != "" ? color::fromHexString(module->keys[idx].data) : color::BLACK;
 							}
 						};
 
@@ -1178,7 +1168,7 @@ struct KeyDisplay : StoermelderLedDisplay {
 							Menu* menu = new Menu;
 							MenuColorLabel* colorLabel = construct<MenuColorLabel>(&MenuColorLabel::fillColor, color::fromHexString(module->keys[idx].data));
 							menu->addChild(colorLabel);
-							menu->addChild(construct<ColorField>(&ColorField::module, module, &ColorField::colorLabel, colorLabel, &ColorField::idx, idx, &TextField::text, module->keys[idx].data));
+							menu->addChild(construct<ColorField>(&ColorField::module, module, &MenuColorField::colorLabel, colorLabel, &ColorField::idx, idx));
 							return menu;
 						}
 						return NULL;
