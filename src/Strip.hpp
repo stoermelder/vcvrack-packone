@@ -188,7 +188,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		return undoActions;
 	}
 
-	void groupConnectionsCollect(std::list<std::tuple<std::string, int, PortWidget*>>& conn) {
+	void groupConnectionsCollect(std::list<std::tuple<std::string, int, PortWidget*, NVGcolor>>& conn) {
 		std::list<StripConBase*> toDo;
 		std::set<int> moduleIds;
 
@@ -222,7 +222,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 				auto it = moduleIds.find(c->outputPort->module->id);
 				// Other end is outside of this strip
 				if (it == moduleIds.end()) {
-					conn.push_back(std::make_tuple(sc->getConnId(), c->inputPort->portId, c->outputPort));
+					conn.push_back(std::make_tuple(sc->getConnId(), c->inputPort->portId, c->outputPort, c->color));
 				}
 			}
 			for (PortWidget* out : mw->outputs) {
@@ -231,14 +231,14 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 					auto it = moduleIds.find(c->inputPort->module->id);
 					// Other end is outside of this strip
 					if (it == moduleIds.end()) {
-						conn.push_back(std::make_tuple(sc->getConnId(), c->outputPort->portId, c->inputPort));
+						conn.push_back(std::make_tuple(sc->getConnId(), c->outputPort->portId, c->inputPort, c->color));
 					}
 				}
 			}
 		}
 	}
 
-	std::vector<history::Action*>* groupConnectionsRestore(std::list<std::tuple<std::string, int, PortWidget*>>& conn) {
+	std::vector<history::Action*>* groupConnectionsRestore(std::list<std::tuple<std::string, int, PortWidget*, NVGcolor>>& conn) {
 		std::vector<history::Action*>* undoActions = new std::vector<history::Action*>;
 		std::map<std::string, StripConBase*> toDo;
 
@@ -266,6 +266,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 			std::string connId = std::get<0>(t);
 			int portId = std::get<1>(t);
 			PortWidget* pw1 = std::get<2>(t);
+			NVGcolor color = std::get<3>(t);
 			assert(pw1);
 
 			auto it = toDo.find(connId);
@@ -276,11 +277,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 			assert(pw2);
 
 			CableWidget* cw = new CableWidget;
-			/*
-			if (colorStr) {
-				cw->color = color::fromHexString(colorStr);
-			}
-			*/
+			cw->color = color;
 
 			if (pw1->type == PortWidget::Type::INPUT) {
 				cw->setInput(pw1);
@@ -772,7 +769,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 	void groupReplaceFromJson(json_t* rootJ) {
 		warningLog = "";
 
-		std::list<std::tuple<std::string, int, PortWidget*>> conn;
+		std::list<std::tuple<std::string, int, PortWidget*, NVGcolor>> conn;
 
 		// Collect all connections outside the strip using StripCon modules
 		groupConnectionsCollect(conn);
