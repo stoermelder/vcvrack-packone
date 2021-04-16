@@ -77,6 +77,13 @@
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Strip.md"
 		},
 		{
+			"slug": "StripCon4",
+			"name": "STRIP/CON",
+			"description": "Utility module for STRIP keeping inputs/outputs connected",
+			"tags": ["Utility"],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Strip.md"
+		},
+		{
 			"slug": "EightFace",
 			"name": "8FACE",
 			"description": "Universal expander for sequencing up to eight presets of any module",

@@ -12,10 +12,12 @@
 - Module [MIDI-PLUG](./docs/MidiPlug.md)
     - New module, a virtual MIDI merger and splitter
     - MIDI "Loopback" driver for routing outgoing MIDI messages back into Rack (enabled on the context menu)
-- Modules [ORBIT](./docs/Orbit.md)
+- Module [ORBIT](./docs/Orbit.md)
     - New module, a polyphonic stereo field spreader
-- Modules [PRISMA](./docs/Prisma.md)
+- Module [PRISMA](./docs/Prisma.md)
     - New module, a wave multiplier/phase shifter inspired by A-137-2
+- Module [STRIP-CON](./docs/Strip.md)
+    - New module, a companion module for STRIP for keeping input/output connections while replacing strips
 
 ### Fixes and Changes
 

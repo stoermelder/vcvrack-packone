@@ -33,6 +33,12 @@ struct StripModuleBase : Module {
 };
 
 
+struct StripConBase : Module {
+	virtual size_t getPortNumber() { return 0; }
+	virtual std::string getConnId() { return ""; }
+};
+
+
 template <class MODULE>
 struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 	typedef ThemedModuleWidget<MODULE> BASE;
@@ -40,7 +46,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 	std::string warningLog;
 
 	StripWidgetBase(MODULE* module, std::string baseName)
-	: ThemedModuleWidget<MODULE>(module, baseName) {}
+	: ThemedModuleWidget<MODULE>(module, baseName) { }
 
 	/**
 	 * Removes all modules in the group. Used for "cut" in cut & paste.
@@ -176,6 +182,124 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 				mmh->oldPos = pos;
 				mmh->newPos = mw->box.pos;
 				undoActions->push_back(mmh);
+			}
+		}
+
+		return undoActions;
+	}
+
+	void groupConnectionsCollect(std::list<std::tuple<std::string, int, PortWidget*>>& conn) {
+		std::list<StripConBase*> toDo;
+		std::set<int> moduleIds;
+
+		if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::RIGHT) {
+			Module* m = module;
+			while (true) {
+				if (!m || m->rightExpander.moduleId < 0) break;
+				m = m->rightExpander.module;
+				StripConBase* sc = dynamic_cast<StripConBase*>(m);
+				if (sc) toDo.push_back(sc);
+				moduleIds.insert(m->id);
+			}
+		}
+		if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::LEFT) {
+			Module* m = module;
+			while (true) {
+				if (!m || m->leftExpander.moduleId < 0) break;
+				m = m->leftExpander.module;
+				StripConBase* sc = dynamic_cast<StripConBase*>(m);
+				if (sc) toDo.push_back(sc);
+				moduleIds.insert(m->id);
+			}
+		}
+
+		for (StripConBase* sc : toDo) {
+			ModuleWidget* mw = APP->scene->rack->getModule(sc->id);
+			for (PortWidget* in : mw->inputs) {
+				std::list<CableWidget*> cs = APP->scene->rack->getCablesOnPort(in);
+				CableWidget* c = cs.front();
+				if (!c) continue;
+				auto it = moduleIds.find(c->outputPort->module->id);
+				// Other end is outside of this strip
+				if (it == moduleIds.end()) {
+					conn.push_back(std::make_tuple(sc->getConnId(), c->inputPort->portId, c->outputPort));
+				}
+			}
+			for (PortWidget* out : mw->outputs) {
+				std::list<CableWidget*> cs = APP->scene->rack->getCablesOnPort(out);
+				for (CableWidget* c : cs) {
+					auto it = moduleIds.find(c->inputPort->module->id);
+					// Other end is outside of this strip
+					if (it == moduleIds.end()) {
+						conn.push_back(std::make_tuple(sc->getConnId(), c->outputPort->portId, c->inputPort));
+					}
+				}
+			}
+		}
+	}
+
+	std::vector<history::Action*>* groupConnectionsRestore(std::list<std::tuple<std::string, int, PortWidget*>>& conn) {
+		std::vector<history::Action*>* undoActions = new std::vector<history::Action*>;
+		std::map<std::string, StripConBase*> toDo;
+
+		if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::RIGHT) {
+			Module* m = module;
+			while (true) {
+				if (!m || m->rightExpander.moduleId < 0) break;
+				m = m->rightExpander.module;
+				StripConBase* sc = dynamic_cast<StripConBase*>(m);
+				if (sc) toDo[sc->getConnId()] = sc;
+
+			}
+		}
+		if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::LEFT) {
+			Module* m = module;
+			while (true) {
+				if (!m || m->leftExpander.moduleId < 0) break;
+				m = m->leftExpander.module;
+				StripConBase* sc = dynamic_cast<StripConBase*>(m);
+				if (sc) toDo[sc->getConnId()] = sc;
+			}
+		}
+
+		for (auto t : conn) {
+			std::string connId = std::get<0>(t);
+			int portId = std::get<1>(t);
+			PortWidget* pw1 = std::get<2>(t);
+			assert(pw1);
+
+			auto it = toDo.find(connId);
+			if (it == toDo.end()) continue;
+
+			ModuleWidget* mw = APP->scene->rack->getModule((*it).second->id);
+			PortWidget* pw2 = pw1->type == PortWidget::Type::INPUT ? mw->getOutput(portId) : mw->getInput(portId);
+			assert(pw2);
+
+			CableWidget* cw = new CableWidget;
+			/*
+			if (colorStr) {
+				cw->color = color::fromHexString(colorStr);
+			}
+			*/
+
+			if (pw1->type == PortWidget::Type::INPUT) {
+				cw->setInput(pw1);
+				cw->setOutput(pw2);
+			}
+			else {
+				cw->setOutput(pw1);
+				if (APP->scene->rack->getCablesOnPort(pw2).size() == 0) cw->setInput(pw2);
+			}
+			if (cw->isComplete()) {
+				APP->scene->rack->addCable(cw);
+
+				// history::CableAdd
+				history::CableAdd* h = new history::CableAdd;
+				h->setCable(cw);
+				undoActions->push_back(h);
+			}
+			else {
+				delete cw;
 			}
 		}
 
@@ -645,6 +769,55 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		APP->history->push(complexAction);
 	}
 
+	void groupReplaceFromJson(json_t* rootJ) {
+		warningLog = "";
+
+		std::list<std::tuple<std::string, int, PortWidget*>> conn;
+
+		// Collect all connections outside the strip using StripCon modules
+		groupConnectionsCollect(conn);
+
+		// Remove all modules adjacent to STRIP
+		groupRemove();
+
+		// Clear modules next to STRIP
+		std::vector<history::Action*>* h1 = groupClearSpace(rootJ);
+
+		// Maps old moduleId to the newly created module (with new id)
+		std::map<int, ModuleWidget*> modules;
+		// Add modules
+		std::vector<history::Action*>* h2 = groupFromJson_modules(rootJ, modules);
+		// Load presets for modules, also fixes parameter mappings
+		std::vector<history::Action*>* h3 = groupFromJson_presets(rootJ, modules);
+
+		// Add cables
+		std::vector<history::Action*>* h4 = groupFromJson_cables(rootJ, modules);
+
+		// Restore cables from StripCon-modules
+		std::vector<history::Action*>* h5 = groupConnectionsRestore(conn);
+
+		// Does nothing, but fixes https://github.com/VCVRack/Rack/issues/1444 for Rack <= 1.1.1
+		APP->scene->rack->requestModulePos(this, this->box.pos);
+
+		if (!warningLog.empty()) {
+			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, warningLog.c_str());
+		}
+
+		history::ComplexAction* complexAction = new history::ComplexAction;
+		complexAction->name = "stoermelder STRIP load";
+		for (history::Action* h : *h1) complexAction->push(h);
+		delete h1;
+		for (history::Action* h : *h2) complexAction->push(h);
+		delete h2;
+		for (history::Action* h : *h3) complexAction->push(h);
+		delete h3;
+		for (history::Action* h : *h4) complexAction->push(h);
+		delete h4;
+		for (history::Action* h : *h5) complexAction->push(h);
+		delete h5;
+		APP->history->push(complexAction);
+	}
+
 	void groupPasteClipboard() {
 		const char* moduleJson = glfwGetClipboardString(APP->window->win);
 		if (!moduleJson) {
@@ -666,7 +839,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		groupFromJson(rootJ);
 	}
 
-	void groupLoadFile(std::string filename) {
+	void groupLoadFile(std::string filename, bool replace) {
 		INFO("Loading preset %s", filename.c_str());
 
 		FILE* file = fopen(filename.c_str(), "r");
@@ -690,10 +863,11 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 			json_decref(rootJ);
 		});
 
-		groupFromJson(rootJ);
+		if (replace) groupReplaceFromJson(rootJ);
+		else groupFromJson(rootJ);
 	}
 
-	void groupLoadFileDialog(bool remove) {
+	void groupLoadFileDialog(bool replace) {
 		osdialog_filters* filters = osdialog_filters_parse(PRESET_FILTERS);
 		DEFER({
 			osdialog_filters_free(filters);
@@ -709,8 +883,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 			free(path);
 		});
 
-		if (remove) groupRemove();
-		groupLoadFile(path);
+		groupLoadFile(path, replace);
 	}
 
 
@@ -765,8 +938,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		StripWidgetBase* mw;
 		std::string presetPath;
 		void onAction(const event::Action& e) override {
-			if (module->presetLoadReplace) mw->groupRemove();
-			mw->groupLoadFile(presetPath);
+			mw->groupLoadFile(presetPath,module->presetLoadReplace);
 		}
 	};
 
