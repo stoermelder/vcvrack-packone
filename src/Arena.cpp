@@ -1,4 +1,5 @@
 #include "plugin.hpp"
+#include "components/LedTextDisplay.hpp"
 #include <chrono>
 #include <random>
 
@@ -109,6 +110,8 @@ struct ArenaModule : Module {
 
 	/** [Stored to JSON] */
 	float radius[IN_PORTS];
+	float radiusUi[IN_PORTS];
+	dsp::ExponentialFilter radiusFilter[IN_PORTS];
 	/** [Stored to JSON] */
 	float amount[IN_PORTS];
 	/** [Stored to JSON] */
@@ -165,6 +168,7 @@ struct ArenaModule : Module {
 			configParam(IN_X_PARAM + i, -1.f, 1.f, 0.f, string::f("Channel IN-%i x-pos attenuverter", i + 1), "x");
 			configParam(IN_Y_PARAM + i, -1.f, 1.f, 0.f, string::f("Channel IN-%i y-pos attenuverter", i + 1), "x");
 			configParam(MOD_PARAM + i, -1.f, 1.f, 0.f, string::f("Channel IN-%i Mod attenuverter", i + 1), "x");
+			radiusFilter[i].setTau(0.1f);
 		}
 		// outputs
 		for (int i = 0; i < MIX_PORTS; i++) {
@@ -211,6 +215,8 @@ struct ArenaModule : Module {
 	void process(const ProcessArgs& args) override {
 		float inNorm[IN_PORTS] = {0.f};
 		for (int j = 0; j < inportsUsed; j++) {
+			radius[j] = radiusFilter[j].process(args.sampleTime, radiusUi[j]);
+
 			offsetX[j] = 0.f;
 			offsetY[j] = 0.f;
 			switch (modMode[j]) {
@@ -1012,7 +1018,7 @@ struct RadiusSlider : ui::Slider {
 			this->id = id;
 		}
 		void setValue(float value) override {
-			module->radius[id] = math::clamp(value, 0.f, 1.f);
+			module->radiusUi[id] = value;
 		}
 		float getValue() override {
 			return module->radius[id];

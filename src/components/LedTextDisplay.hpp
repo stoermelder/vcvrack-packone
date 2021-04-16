@@ -3,6 +3,31 @@
 
 namespace StoermelderPackOne {
 
+
+struct StoermelderLedDisplay : LightWidget {
+	std::shared_ptr<Font> font;
+	NVGcolor color = nvgRGB(0xef, 0xef, 0xef);
+	std::string text;
+	Vec textOffset;
+
+	StoermelderLedDisplay() {
+		font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
+		box.size = Vec(39.1f, 13.2f);
+	}
+
+	void draw(const DrawArgs& args) override {
+		if (text.length() > 0) {
+			nvgFillColor(args.vg, color);
+			nvgFontFaceId(args.vg, font->handle);
+			nvgTextLetterSpacing(args.vg, 0.0);
+			nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+			nvgFontSize(args.vg, 12);
+			nvgTextBox(args.vg, 0.f, box.size.y / 2.f, box.size.x, text.c_str(), NULL);
+		}
+	}
+};
+
+
 struct LedTextDisplay : OpaqueWidget {
     std::string text;
     std::shared_ptr<Font> font;
