@@ -78,8 +78,15 @@
 		},
 		{
 			"slug": "StripCon4",
-			"name": "STRIP/CON",
+			"name": "STRIP-CON",
 			"description": "Utility module for STRIP keeping inputs/outputs connected",
+			"tags": ["Utility"],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Strip.md"
+		},
+		{
+			"slug": "StripBlock",
+			"name": "STRIP-BLOCK",
+			"description": "Utility module for blocking STRIP's expander mechanism",
 			"tags": ["Utility"],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Strip.md"
 		},

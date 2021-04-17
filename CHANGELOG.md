@@ -18,6 +18,8 @@
     - New module, a wave multiplier/phase shifter inspired by A-137-2
 - Module [STRIP-CON](./docs/Strip.md)
     - New module, a companion module for STRIP for keeping input/output connections while replacing strips
+- Module [STRIP-BLOCK](./docs/Strip.md)
+    - New module, a companion module for STRIP for blocking STRIP's expander-mechanism
 
 ### Fixes and Changes
 
