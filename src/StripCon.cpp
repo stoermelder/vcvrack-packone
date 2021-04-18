@@ -74,8 +74,8 @@ struct StripCon4Widget : ThemedModuleWidget<StripConModule<4>> {
 		: ThemedModuleWidget<MODULE>(module, "StripCon") {
 		setModule(module);
 
-		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - RACK_GRID_WIDTH, 0)));
-		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
+		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
 		IdTextField<MODULE>* textField = createWidget<IdTextField<MODULE>>(Vec(7.1f, 36.4f));
 		textField->box.size = Vec(33.1f, 13.2);
