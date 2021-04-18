@@ -32,6 +32,13 @@ struct StripConModule : Strip::StripConBase {
 		onReset();
 	}
 
+	void process(const ProcessArgs& args) override {
+		for (size_t i = 0; i < PORTS; i++) {
+			outputs[OUTPUT + i].writeVoltages(inputs[INPUT + i].getVoltages());
+			outputs[OUTPUT + i].setChannels(inputs[INPUT + i].getChannels());
+		}
+	}
+
 	std::string getConnId() override {
 		return conId;
 	}
