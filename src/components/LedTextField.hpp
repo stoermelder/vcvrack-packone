@@ -9,6 +9,7 @@ struct StoermelderTextField : LedDisplayTextField {
 	unsigned int maxTextLength;
 	NVGcolor bgColor;
 	bool isFocused = false;
+	bool doubleClick = false;
 
 	StoermelderTextField() {
 		maxTextLength = defaultMaxTextLength;
@@ -80,6 +81,20 @@ struct StoermelderTextField : LedDisplayTextField {
 		onDeselect(eDeselect);
 		APP->event->selectedWidget = NULL;
 		e.consume(NULL);
+	}
+
+	void onDoubleClick(const event::DoubleClick& e) override {
+		doubleClick = true;
+	}
+
+	void onButton(const event::Button &e) override {
+		if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_RELEASE) {
+			if (doubleClick) {
+				doubleClick = false;
+				selectAll();
+			}
+		}
+		LedDisplayTextField::onButton(e);
 	}
 
 	void onSelectText(const event::SelectText& e) override {
