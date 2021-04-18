@@ -790,11 +790,11 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		// Add cables
 		std::vector<history::Action*>* h4 = groupFromJson_cables(rootJ, modules);
 
-		// Restore cables from StripCon-modules
-		std::vector<history::Action*>* h5 = groupConnectionsRestore(conn);
-
 		// Does nothing, but fixes https://github.com/VCVRack/Rack/issues/1444 for Rack <= 1.1.1
 		APP->scene->rack->requestModulePos(this, this->box.pos);
+
+		// Restore cables from StripCon-modules
+		std::vector<history::Action*>* h5 = groupConnectionsRestore(conn);
 
 		if (!warningLog.empty()) {
 			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, warningLog.c_str());
