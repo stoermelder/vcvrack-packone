@@ -14,6 +14,7 @@ struct StoermelderTextField : LedDisplayTextField {
 		maxTextLength = defaultMaxTextLength;
 		textOffset = math::Vec(-0.8f, 0.f);
 		color = nvgRGB(0xef, 0xef, 0xef);
+		bgColor = color::BLACK_TRANSPARENT;
 	}
 
 	void draw(const DrawArgs& args) override {
