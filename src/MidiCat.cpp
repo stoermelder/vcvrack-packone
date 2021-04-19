@@ -91,19 +91,6 @@ struct MidiCatParam : ScaledMapParam<int> {
 
 
 struct MidiCatModule : Module, StripIdFixModule {
-	enum ParamIds {
-		NUM_PARAMS
-	};
-	enum InputIds {
-		NUM_INPUTS
-	};
-	enum OutputIds {
-		NUM_OUTPUTS
-	};
-	enum LightIds {
-		NUM_LIGHTS
-	};
-
 	/** [Stored to Json] */
 	midi::InputQueue midiInput;
 	/** [Stored to Json] */
@@ -277,7 +264,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 	bool locked;
 
 	NVGcolor mappingIndicatorColor = nvgRGB(0xff, 0xff, 0x40);
-	/** [Stored to JSON] */
+	/** [Stored to Json] */
 	bool mappingIndicatorHidden = false;
 
 	/** The value of each CC number */
@@ -292,6 +279,8 @@ struct MidiCatModule : Module, StripIdFixModule {
 	int lastValueInIndicate[MAX_CHANNELS];
 	int lastValueOut[MAX_CHANNELS];
 
+	dsp::RingBuffer<int, 8> changedSlots;
+
 	/** [Stored to Json] */
 	MidiCatParam midiParam[MAX_CHANNELS];
 	/** [Stored to Json] */
@@ -299,7 +288,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 	dsp::ClockDivider midiResendDivider;
 
 	dsp::ClockDivider processDivider;
-	/** [Stored to JSON] */
+	/** [Stored to Json] */
 	int processDivision;
 	dsp::ClockDivider indicatorDivider;
 
@@ -313,7 +302,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 
 	MidiCatModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
-		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+		config(0, 0, 0, 0);
 		for (int id = 0; id < MAX_CHANNELS; id++) {
 			paramHandleIndicator[id].color = mappingIndicatorColor;
 			paramHandleIndicator[id].handle = &paramHandles[id];
@@ -532,6 +521,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 						// Set a new value for the mapped parameter
 						if (t >= 0) {
 							midiParam[id].setValue(t);
+							if (changedSlots.capacity() > 0) changedSlots.push(id);
 						}
 
 						// Apply value on the mapped parameter (respecting slew and scale)
@@ -1483,8 +1473,104 @@ struct MidiCatDisplay : MapModuleDisplay<MAX_CHANNELS, MidiCatModule, MidiCatCho
 	}
 };
 
+
+struct MidiCatOverlay : TransparentWidget {
+	std::list<MidiCatDisplay*> registeredModules;
+	std::map<std::tuple<MidiCatDisplay*, int>, std::chrono::time_point<std::chrono::system_clock>> items;
+	std::shared_ptr<Font> font;
+
+	static MidiCatOverlay& instance() {
+		static MidiCatOverlay midiCatOverlay;
+		return midiCatOverlay;
+	}
+
+	MidiCatOverlay() {
+		font = APP->window->loadFont(asset::system("res/fonts/DejaVuSans.ttf"));
+	}
+
+	void registerModule(MidiCatDisplay* m) {
+		registeredModules.push_back(m);
+	}
+
+	void unregisterModule(MidiCatDisplay* m) {
+		registeredModules.remove(m);
+	}
+
+	bool hasModule() {
+		return registeredModules.size() > 0;
+	}
+
+	void draw(const DrawArgs& args) override {
+		auto now = std::chrono::system_clock::now();
+		for (MidiCatDisplay* md : registeredModules) {
+			while (!md->module->changedSlots.empty()) {
+				int s = md->module->changedSlots.shift();
+				items[std::make_tuple(md, s)] = now;
+			}
+		}
+
+		int n = items.size();
+		if (n > 0) {
+			float i = 0.f;
+			float width = 340.f;
+			float height = 80.f;
+			//float xOffset = 22.f;
+			float yOffset = 40.f;
+			NVGcolor fgColor = nvgRGB(0x2, 0x2, 0x2);
+			NVGcolor bgColor = color::alpha(nvgRGB(0xff, 0xff, 0xff), 0.75f);
+
+			for (auto it = items.begin(); it != items.end(); it++) {
+				MidiCatDisplay* md = std::get<0>(it->first);
+				int id = std::get<1>(it->first);
+
+				ParamQuantity* paramQuantity = md->choices[id]->getParamQuantity();
+				if (!paramQuantity) continue;
+				std::string label = md->choices[id]->getSlotLabel();
+				if (label == "") {
+					std::string s;
+					label += paramQuantity->module->model->name;
+					label += " ";
+					label += paramQuantity->label;
+				}
+
+				std::string value = paramQuantity->getDisplayValueString() + paramQuantity->getUnit();
+
+				float x = args.clipBox.pos.x + args.clipBox.size.x / 2.f; // + (-1.f * (n - 1.f) / 2.f + i) * (width + xOffset);
+				float y = args.clipBox.pos.y + args.clipBox.size.y - height - yOffset - (i * (height + 16.f));
+
+				nvgBeginPath(args.vg);
+				nvgRoundedRect(args.vg, x - width / 2.f, y, width, height, 8.f);
+				nvgFillColor(args.vg, bgColor);
+				nvgFill(args.vg);
+
+				nvgFontFaceId(args.vg, font->handle);
+				nvgTextLetterSpacing(args.vg, -1.2f);
+				nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_TOP);
+				nvgFillColor(args.vg, fgColor);
+				NVGtextRow textRow;
+
+				nvgFontSize(args.vg, 30.f);
+				nvgTextBreakLines(args.vg, value.c_str(), NULL, width - 10.f, &textRow, 1);
+				nvgTextBox(args.vg, x - width / 2.f, y + 10.f, width, textRow.start, textRow.end);
+
+				nvgFontSize(args.vg, 20.f);
+				nvgTextBreakLines(args.vg, label.c_str(), NULL, width - 10.f, &textRow, 2);
+				nvgTextBox(args.vg, x - width / 2.f, y + 50.f, width, textRow.start, textRow.end);
+
+				i++;
+				if (now - it->second > std::chrono::seconds{1}) {
+					items.erase(it);
+					break;
+				}
+			}
+		}
+	}
+};
+
+
 struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExtender {
 	MidiCatModule* module;
+	MidiCatDisplay* mapWidget;
 
 	Module* expMem;
 	BufferedTriggerParamQuantity* expMemPrevQuantity;
@@ -1527,16 +1613,20 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 		midiOutputWidget->setMidiPort(module ? &module->midiOutput : NULL);
 		addChild(midiOutputWidget);
 
-		MidiCatDisplay* mapWidget = createWidget<MidiCatDisplay>(Vec(10.0f, 178.5f));
+		mapWidget = createWidget<MidiCatDisplay>(Vec(10.0f, 178.5f));
 		mapWidget->box.size = Vec(130.0f, 164.7f);
 		mapWidget->setModule(module);
 		addChild(mapWidget);
+
+		enableOverlay();
 	}
 
 	~MidiCatWidget() {
 		if (learnMode != LEARN_MODE::OFF) {
 			glfwSetCursor(APP->window->win, NULL);
 		}
+
+		disableOverlay();
 	}
 
 	void loadMidiMapPreset_dialog() {
@@ -2214,6 +2304,24 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 		menu->addChild(construct<MapMenuItem>(&MenuItem::text, "Available mappings", &MapMenuItem::module, module));
 		menu->addChild(construct<SaveMenuItem>(&MenuItem::text, "Store mapping", &SaveMenuItem::module, module));
 		menu->addChild(construct<ApplyItem>(&MenuItem::text, "Apply mapping", &MenuItem::rightText, RACK_MOD_SHIFT_NAME "+V", &ApplyItem::mw, this));
+	}
+
+	void enableOverlay() {
+		if (module) {
+			if (!MidiCatOverlay::instance().hasModule()) {
+				APP->scene->rackScroll->addChild(&MidiCatOverlay::instance());
+			}
+			MidiCatOverlay::instance().registerModule(mapWidget);
+		}
+	}
+
+	void disableOverlay() {
+		if (module) {
+			MidiCatOverlay::instance().unregisterModule(mapWidget);
+			if (!MidiCatOverlay::instance().hasModule()) {
+				APP->scene->rackScroll->removeChild(&MidiCatOverlay::instance());
+			}
+		}
 	}
 };
 

@@ -417,6 +417,29 @@ struct MapModuleChoice : LedDisplayChoice {
 		return MAX_CHANNELS > 1 ? string::f("%02d ", id + 1) : "";
 	}
 
+	ParamQuantity* getParamQuantity() {
+		if (!module)
+			return NULL;
+		if (id >= module->mapLen)
+			return NULL;
+		ParamHandle* paramHandle = &module->paramHandles[id];
+		if (paramHandle->moduleId < 0)
+			return NULL;
+		ModuleWidget *mw = APP->scene->rack->getModule(paramHandle->moduleId);
+		if (!mw)
+			return NULL;
+		// Get the Module from the ModuleWidget instead of the ParamHandle.
+		// I think this is more elegant since this method is called in the app world instead of the engine world.
+		Module* m = mw->module;
+		if (!m)
+			return NULL;
+		int paramId = paramHandle->paramId;
+		if (paramId >= (int) m->params.size())
+			return NULL;
+		ParamQuantity* paramQuantity = m->paramQuantities[paramId];
+		return paramQuantity;
+	}
+
 	std::string getParamName() {
 		if (!module)
 			return "";
