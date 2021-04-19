@@ -279,7 +279,9 @@ struct MidiCatModule : Module, StripIdFixModule {
 	int lastValueInIndicate[MAX_CHANNELS];
 	int lastValueOut[MAX_CHANNELS];
 
-	dsp::RingBuffer<int, 8> changedSlots;
+	dsp::RingBuffer<int, 8> overlayQueue;
+	/** [Stored to Json] */
+	bool overlayEnabled;
 
 	/** [Stored to Json] */
 	MidiCatParam midiParam[MAX_CHANNELS];
@@ -352,6 +354,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 		processDivision = 64;
 		processDivider.setDivision(processDivision);
 		processDivider.reset();
+		overlayEnabled = true;
 	}
 
 	void onSampleRateChange() override {
@@ -521,7 +524,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 						// Set a new value for the mapped parameter
 						if (t >= 0) {
 							midiParam[id].setValue(t);
-							if (changedSlots.capacity() > 0) changedSlots.push(id);
+							if (overlayEnabled && overlayQueue.capacity() > 0) overlayQueue.push(id);
 						}
 
 						// Apply value on the mapped parameter (respecting slew and scale)
@@ -948,6 +951,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 		json_object_set_new(rootJ, "mappingIndicatorHidden", json_boolean(mappingIndicatorHidden));
 		json_object_set_new(rootJ, "locked", json_boolean(locked));
 		json_object_set_new(rootJ, "processDivision", json_integer(processDivision));
+		json_object_set_new(rootJ, "overlayEnabled", json_boolean(overlayEnabled));
 
 		json_t* mapsJ = json_array();
 		for (int id = 0; id < mapLen; id++) {
@@ -988,6 +992,8 @@ struct MidiCatModule : Module, StripIdFixModule {
 		if (lockedJ) locked = json_boolean_value(lockedJ);
 		json_t* processDivisionJ = json_object_get(rootJ, "processDivision");
 		if (processDivisionJ) processDivision = json_integer_value(processDivisionJ);
+		json_t* overlayEnabledJ = json_object_get(rootJ, "overlayEnabled");
+		if (overlayEnabledJ) overlayEnabled = json_boolean_value(overlayEnabledJ);
 
 		json_t* mapsJ = json_object_get(rootJ, "maps");
 		if (mapsJ) {
@@ -1503,8 +1509,8 @@ struct MidiCatOverlay : TransparentWidget {
 	void draw(const DrawArgs& args) override {
 		auto now = std::chrono::system_clock::now();
 		for (MidiCatDisplay* md : registeredModules) {
-			while (!md->module->changedSlots.empty()) {
-				int s = md->module->changedSlots.shift();
+			while (!md->module->overlayQueue.empty()) {
+				int s = md->module->overlayQueue.shift();
 				items[std::make_tuple(md, s)] = now;
 			}
 		}
@@ -1516,8 +1522,7 @@ struct MidiCatOverlay : TransparentWidget {
 			float height = 80.f;
 			//float xOffset = 22.f;
 			float yOffset = 40.f;
-			NVGcolor fgColor = nvgRGB(0x2, 0x2, 0x2);
-			NVGcolor bgColor = color::alpha(nvgRGB(0xff, 0xff, 0xff), 0.75f);
+			NVGcolor fgColor = bndGetTheme()->menuTheme.textColor;
 
 			for (auto it = items.begin(); it != items.end(); it++) {
 				MidiCatDisplay* md = std::get<0>(it->first);
@@ -1538,10 +1543,7 @@ struct MidiCatOverlay : TransparentWidget {
 				float x = args.clipBox.pos.x + args.clipBox.size.x / 2.f; // + (-1.f * (n - 1.f) / 2.f + i) * (width + xOffset);
 				float y = args.clipBox.pos.y + args.clipBox.size.y - height - yOffset - (i * (height + 16.f));
 
-				nvgBeginPath(args.vg);
-				nvgRoundedRect(args.vg, x - width / 2.f, y, width, height, 8.f);
-				nvgFillColor(args.vg, bgColor);
-				nvgFill(args.vg);
+				bndMenuBackground(args.vg, x - width / 2.f, y, width, height, BND_CORNER_NONE);
 
 				nvgFontFaceId(args.vg, font->handle);
 				nvgTextLetterSpacing(args.vg, -1.2f);
@@ -1549,7 +1551,7 @@ struct MidiCatOverlay : TransparentWidget {
 				nvgFillColor(args.vg, fgColor);
 				NVGtextRow textRow;
 
-				nvgFontSize(args.vg, 30.f);
+				nvgFontSize(args.vg, 32.f);
 				nvgTextBreakLines(args.vg, value.c_str(), NULL, width - 10.f, &textRow, 1);
 				nvgTextBox(args.vg, x - width / 2.f, y + 10.f, width, textRow.start, textRow.end);
 
@@ -2122,6 +2124,17 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 			}
 		}; // struct MappingIndicatorHiddenItem
 
+		struct OverlayEnabledItem : MenuItem {
+			MidiCatModule* module;
+			void onAction(const event::Action& e) override {
+				module->overlayEnabled ^= true;
+			}
+			void step() override {
+				rightText = module->overlayEnabled ? "✔" : "";
+				MenuItem::step();
+			}
+		}; // struct OverlayEnabledItem
+
 		struct LockedItem : MenuItem {
 			MidiCatModule* module;
 			void onAction(const event::Action& e) override {
@@ -2186,6 +2199,7 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 		menu->addChild(construct<TextScrollItem>(&MenuItem::text, "Text scrolling", &TextScrollItem::module, module));
 		menu->addChild(construct<MappingIndicatorHiddenItem>(&MenuItem::text, "Hide mapping indicators", &MappingIndicatorHiddenItem::module, module));
 		menu->addChild(construct<LockedItem>(&MenuItem::text, "Lock mapping slots", &LockedItem::module, module));
+		menu->addChild(construct<OverlayEnabledItem>(&MenuItem::text, "Status overlay", &OverlayEnabledItem::module, module));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<ClearMapsItem>(&MenuItem::text, "Clear mappings", &ClearMapsItem::module, module));
 		menu->addChild(construct<ModuleLearnExpanderMenuItem>(&MenuItem::text, "Map module (left)", &ModuleLearnExpanderMenuItem::module, module));
