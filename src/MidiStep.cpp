@@ -9,6 +9,7 @@ enum MODE {
 	BEATSTEP_R2 = 1,
 	KK_REL = 10,
 	XTOUCH_R1 = 20,
+	XTOUCH_R2 = 21,
 	AKAI_MPD218 = 30
 };
 
@@ -143,7 +144,7 @@ struct MidiStepModule : Module {
 
 		switch (mode) {
 			case MODE::BEATSTEP_R1:
-			case MODE::XTOUCH_R1: {
+			case MODE::XTOUCH_R2: {
 				if (value <= uint8_t(58)) decPulseCount[ccs[cc]] += 6;
 				else if (value <= uint8_t(61)) decPulseCount[ccs[cc]] += 4;
 				else if (value <= uint8_t(63)) decPulseCount[ccs[cc]] += 2;
@@ -155,9 +156,14 @@ struct MidiStepModule : Module {
 
 			case MODE::BEATSTEP_R2:
 			case MODE::KK_REL:
-			case MODE::AKAI_MPD218: {
+			case MODE::AKAI_MPD218:
+			case MODE::XTOUCH_R1: {
 				if (value == uint8_t(127)) decPulseCount[ccs[cc]] += 2;
+				else if (value == uint8_t(126)) decPulseCount[ccs[cc]] += 4;
+				else if (value == uint8_t(125)) decPulseCount[ccs[cc]] += 6;
 				if (value == uint8_t(1)) incPulseCount[ccs[cc]] += 2;
+				else if (value == uint8_t(2)) incPulseCount[ccs[cc]] += 4;
+				else if (value == uint8_t(3)) incPulseCount[ccs[cc]] += 6;
 				break;
 			}
 		}
@@ -411,6 +417,7 @@ struct MidiStepWidget : ThemedModuleWidget<MidiStepModule> {
 				menu->addChild(construct<ModeItem>(&MenuItem::text, "Beatstep Relative #2", &ModeItem::module, module, &ModeItem::mode, MODE::BEATSTEP_R2));
 				menu->addChild(construct<ModeItem>(&MenuItem::text, "NI Komplete Kontrol Relative", &ModeItem::module, module, &ModeItem::mode, MODE::KK_REL));
 				menu->addChild(construct<ModeItem>(&MenuItem::text, "Behringer X-TOUCH Relative1", &ModeItem::module, module, &ModeItem::mode, MODE::XTOUCH_R1));
+				menu->addChild(construct<ModeItem>(&MenuItem::text, "Behringer X-TOUCH Relative1", &ModeItem::module, module, &ModeItem::mode, MODE::XTOUCH_R2));
 				menu->addChild(construct<ModeItem>(&MenuItem::text, "Akai MPD218 INC/DEC 2", &ModeItem::module, module, &ModeItem::mode, MODE::AKAI_MPD218));
 				return menu;
 			}

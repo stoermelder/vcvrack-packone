@@ -49,6 +49,8 @@
 - Module [MIDI-MON](./docs/MidiMon.md)
     - Added support for more message types (program change, song select, song pointer)
     - Added context menu option for clearing the log
+- Module [MIDI-STEP](./docs/MidiStep.md)
+    - Fixed relative modes for Behringer X-Touch (#240)
 - Module [RAW](./docs/Raw.md)
     - Added basic limiting to prevent rare instabilities (#214)
 - Module [SAIL](./docs/Sail.md)
