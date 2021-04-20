@@ -7,6 +7,7 @@
 #include "components/SubMenuSlider.hpp"
 #include "components/ParamWidgetContextExtender.hpp"
 #include "components/MidiWidget.hpp"
+#include "components/OverlayMessageWidget.hpp"
 #include <osdialog.h>
 
 namespace StoermelderPackOne {
@@ -1466,7 +1467,7 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 };
 
 
-struct MidiCatDisplay : MapModuleDisplay<MAX_CHANNELS, MidiCatModule, MidiCatChoice> {
+struct MidiCatDisplay : MapModuleDisplay<MAX_CHANNELS, MidiCatModule, MidiCatChoice>, OverlayMessageProvider {
 	void step() override {
 		if (module) {
 			int mapLen = module->mapLen;
@@ -1477,95 +1478,29 @@ struct MidiCatDisplay : MapModuleDisplay<MAX_CHANNELS, MidiCatModule, MidiCatCho
 		}
 		MapModuleDisplay<MAX_CHANNELS, MidiCatModule, MidiCatChoice>::step();
 	}
-};
 
-
-struct MidiCatOverlay : TransparentWidget {
-	std::list<MidiCatDisplay*> registeredModules;
-	std::map<std::tuple<MidiCatDisplay*, int>, std::chrono::time_point<std::chrono::system_clock>> items;
-	std::shared_ptr<Font> font;
-
-	static MidiCatOverlay& instance() {
-		static MidiCatOverlay midiCatOverlay;
-		return midiCatOverlay;
+	int nextOverlayMessageId() override {
+		if (module->overlayQueue.empty())
+			return -1;
+		return module->overlayQueue.shift();
 	}
 
-	MidiCatOverlay() {
-		font = APP->window->loadFont(asset::system("res/fonts/DejaVuSans.ttf"));
-	}
+	const Message getOverlayMessage(int id) override {
+		ParamQuantity* paramQuantity = choices[id]->getParamQuantity();
+		if (!paramQuantity) return {};
 
-	void registerModule(MidiCatDisplay* m) {
-		registeredModules.push_back(m);
-	}
-
-	void unregisterModule(MidiCatDisplay* m) {
-		registeredModules.remove(m);
-	}
-
-	bool hasModule() {
-		return registeredModules.size() > 0;
-	}
-
-	void draw(const DrawArgs& args) override {
-		auto now = std::chrono::system_clock::now();
-		for (MidiCatDisplay* md : registeredModules) {
-			while (!md->module->overlayQueue.empty()) {
-				int s = md->module->overlayQueue.shift();
-				items[std::make_tuple(md, s)] = now;
-			}
+		std::string label = choices[id]->getSlotLabel();
+		if (label == "") {
+			std::string s;
+			label += paramQuantity->module->model->name;
+			label += " ";
+			label += paramQuantity->label;
 		}
 
-		int n = items.size();
-		if (n > 0) {
-			float i = 0.f;
-			float width = 340.f;
-			float height = 80.f;
-			//float xOffset = 22.f;
-			float yOffset = 40.f;
-			NVGcolor fgColor = bndGetTheme()->menuTheme.textColor;
-
-			for (auto it = items.begin(); it != items.end(); it++) {
-				MidiCatDisplay* md = std::get<0>(it->first);
-				int id = std::get<1>(it->first);
-
-				ParamQuantity* paramQuantity = md->choices[id]->getParamQuantity();
-				if (!paramQuantity) continue;
-				std::string label = md->choices[id]->getSlotLabel();
-				if (label == "") {
-					std::string s;
-					label += paramQuantity->module->model->name;
-					label += " ";
-					label += paramQuantity->label;
-				}
-
-				std::string value = paramQuantity->getDisplayValueString() + paramQuantity->getUnit();
-
-				float x = args.clipBox.pos.x + args.clipBox.size.x / 2.f; // + (-1.f * (n - 1.f) / 2.f + i) * (width + xOffset);
-				float y = args.clipBox.pos.y + args.clipBox.size.y - height - yOffset - (i * (height + 16.f));
-
-				bndMenuBackground(args.vg, x - width / 2.f, y, width, height, BND_CORNER_NONE);
-
-				nvgFontFaceId(args.vg, font->handle);
-				nvgTextLetterSpacing(args.vg, -1.2f);
-				nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_TOP);
-				nvgFillColor(args.vg, fgColor);
-				NVGtextRow textRow;
-
-				nvgFontSize(args.vg, 32.f);
-				nvgTextBreakLines(args.vg, value.c_str(), NULL, width - 10.f, &textRow, 1);
-				nvgTextBox(args.vg, x - width / 2.f, y + 10.f, width, textRow.start, textRow.end);
-
-				nvgFontSize(args.vg, 20.f);
-				nvgTextBreakLines(args.vg, label.c_str(), NULL, width - 10.f, &textRow, 2);
-				nvgTextBox(args.vg, x - width / 2.f, y + 50.f, width, textRow.start, textRow.end);
-
-				i++;
-				if (now - it->second > std::chrono::seconds{1}) {
-					items.erase(it);
-					break;
-				}
-			}
-		}
+		Message m;
+		m.subtitle = label;
+		m.title = paramQuantity->getDisplayValueString() + paramQuantity->getUnit();
+		return m;
 	}
 };
 
@@ -1620,7 +1555,9 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 		mapWidget->setModule(module);
 		addChild(mapWidget);
 
-		enableOverlay();
+		if (module) {
+			OverlayMessageWidget::registerProvider(mapWidget);
+		}
 	}
 
 	~MidiCatWidget() {
@@ -1628,7 +1565,9 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 			glfwSetCursor(APP->window->win, NULL);
 		}
 
-		disableOverlay();
+		if (module) {
+			OverlayMessageWidget::unregisterProvider(mapWidget);
+		}
 	}
 
 	void loadMidiMapPreset_dialog() {
@@ -2318,24 +2257,6 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 		menu->addChild(construct<MapMenuItem>(&MenuItem::text, "Available mappings", &MapMenuItem::module, module));
 		menu->addChild(construct<SaveMenuItem>(&MenuItem::text, "Store mapping", &SaveMenuItem::module, module));
 		menu->addChild(construct<ApplyItem>(&MenuItem::text, "Apply mapping", &MenuItem::rightText, RACK_MOD_SHIFT_NAME "+V", &ApplyItem::mw, this));
-	}
-
-	void enableOverlay() {
-		if (module) {
-			if (!MidiCatOverlay::instance().hasModule()) {
-				APP->scene->rackScroll->addChild(&MidiCatOverlay::instance());
-			}
-			MidiCatOverlay::instance().registerModule(mapWidget);
-		}
-	}
-
-	void disableOverlay() {
-		if (module) {
-			MidiCatOverlay::instance().unregisterModule(mapWidget);
-			if (!MidiCatOverlay::instance().hasModule()) {
-				APP->scene->rackScroll->removeChild(&MidiCatOverlay::instance());
-			}
-		}
 	}
 };
 
