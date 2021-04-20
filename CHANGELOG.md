@@ -51,6 +51,7 @@
     - Added context menu option for clearing the log
 - Module [MIDI-STEP](./docs/MidiStep.md)
     - Fixed relative modes for Behringer X-Touch (#240)
+    - Fixed duplicate mappings of the same CC (#240)
 - Module [RAW](./docs/Raw.md)
     - Added basic limiting to prevent rare instabilities (#214)
 - Module [SAIL](./docs/Sail.md)

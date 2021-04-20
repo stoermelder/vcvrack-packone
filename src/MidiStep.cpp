@@ -136,6 +136,9 @@ struct MidiStepModule : Module {
 			if (learnedCcs[learningId] >= 0) {
 				ccs[learnedCcs[learningId]] = -1;
 			}
+			if (ccs[cc] >= 0) {
+				learnedCcs[ccs[cc]] = -1;
+			}
 			ccs[cc] = learningId;
 			learnedCcs[learningId] = cc;
 			learningId = -1;
@@ -284,7 +287,7 @@ struct MidiStepCcChoice : LedDisplayChoice {
 		}
 		else {
 			if (id < PORTS || module->polyphonicOutput) {
-				text = string::f("%03d", module->learnedCcs[id]);
+				text = module->learnedCcs[id] >= 0 ? string::f("%03d", module->learnedCcs[id]) : "OFF";
 				color.a = 1.0;
 			}
 			else {
