@@ -133,15 +133,7 @@ struct MidiStepModule : Module {
 		value = clamp(value, 0, 127);
 		// Learn
 		if (learningId >= 0) {
-			if (learnedCcs[learningId] >= 0) {
-				ccs[learnedCcs[learningId]] = -1;
-			}
-			if (ccs[cc] >= 0) {
-				learnedCcs[ccs[cc]] = -1;
-			}
-			ccs[cc] = learningId;
-			learnedCcs[learningId] = cc;
-			learningId = -1;
+			learnCC(learningId, cc);
 			return;
 		}
 
@@ -172,6 +164,18 @@ struct MidiStepModule : Module {
 		}
 
 		values[cc] = value;
+	}
+
+	void learnCC(int learningId, uint8_t cc) {
+		if (learnedCcs[learningId] >= 0) {
+			ccs[learnedCcs[learningId]] = -1;
+		}
+		if (ccs[cc] >= 0) {
+			learnedCcs[ccs[cc]] = -1;
+		}
+		ccs[cc] = learningId;
+		learnedCcs[learningId] = cc;
+		learningId = -1;
 	}
 
 	json_t* dataToJson() override {
@@ -255,7 +259,7 @@ struct MidiStepLedDisplay : LedDisplay {
 
 
 template < int CHANNELS, int PORTS >
-struct MidiStepCcChoice : LedDisplayChoice {
+struct MidiStepCcChoice : LedDisplayCenterChoiceEx {
 	MidiStepModule* module;
 	int id;
 	int focusCc;
@@ -263,8 +267,7 @@ struct MidiStepCcChoice : LedDisplayChoice {
 	void setModule(MidiStepModule* module) {
 		this->module = module;
 		box.size.y = mm2px(6.666);
-		textOffset.y -= 4.f;
-		textOffset.x = box.size.x / 2.f;
+		textOffset.y -= 1.4f;
 		color = nvgRGB(0xf0, 0xf0, 0xf0);
 	}
 
@@ -274,20 +277,20 @@ struct MidiStepCcChoice : LedDisplayChoice {
 
 	void step() override {
 		if (!module) {
-			text = string::f("%03d", id);
+			text = string::f("%d", id);
 			return;
 		}
 		
 		if (module->learningId == id) {
 			if (0 <= focusCc)
-				text = string::f("%03d", focusCc);
+				text = string::f("%d", focusCc);
 			else
-				text = "---";
+				text = "LRN";
 			color.a = 0.5f;
 		}
 		else {
 			if (id < PORTS || module->polyphonicOutput) {
-				text = module->learnedCcs[id] >= 0 ? string::f("%03d", module->learnedCcs[id]) : "OFF";
+				text = module->learnedCcs[id] >= 0 ? string::f("%d", module->learnedCcs[id]) : "OFF";
 				color.a = 1.0;
 			}
 			else {
@@ -299,11 +302,6 @@ struct MidiStepCcChoice : LedDisplayChoice {
 				APP->event->setSelected(NULL);
 			}
 		}
-	}
-
-	void draw(const DrawArgs& args) override {
-		nvgTextAlign(args.vg, NVG_ALIGN_CENTER);
-		LedDisplayChoice::draw(args);
 	}
 
 	void onButton(const event::Button& e) override {
@@ -323,7 +321,7 @@ struct MidiStepCcChoice : LedDisplayChoice {
 		if (!module) return;
 		if (module->learningId == id) {
 			if (0 <= focusCc && focusCc < 128) {
-				module->learnedCcs[id] = focusCc;
+				module->learnCC(id, focusCc);
 			}
 			module->learningId = -1;
 		}
@@ -420,7 +418,7 @@ struct MidiStepWidget : ThemedModuleWidget<MidiStepModule> {
 				menu->addChild(construct<ModeItem>(&MenuItem::text, "Beatstep Relative #2", &ModeItem::module, module, &ModeItem::mode, MODE::BEATSTEP_R2));
 				menu->addChild(construct<ModeItem>(&MenuItem::text, "NI Komplete Kontrol Relative", &ModeItem::module, module, &ModeItem::mode, MODE::KK_REL));
 				menu->addChild(construct<ModeItem>(&MenuItem::text, "Behringer X-TOUCH Relative1", &ModeItem::module, module, &ModeItem::mode, MODE::XTOUCH_R1));
-				menu->addChild(construct<ModeItem>(&MenuItem::text, "Behringer X-TOUCH Relative1", &ModeItem::module, module, &ModeItem::mode, MODE::XTOUCH_R2));
+				menu->addChild(construct<ModeItem>(&MenuItem::text, "Behringer X-TOUCH Relative2", &ModeItem::module, module, &ModeItem::mode, MODE::XTOUCH_R2));
 				menu->addChild(construct<ModeItem>(&MenuItem::text, "Akai MPD218 INC/DEC 2", &ModeItem::module, module, &ModeItem::mode, MODE::AKAI_MPD218));
 				return menu;
 			}
