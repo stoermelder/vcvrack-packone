@@ -1,4 +1,5 @@
 #include "plugin.hpp"
+#include "components/OverlayMessageWidget.hpp"
 
 namespace StoermelderPackOne {
 namespace Sail {
@@ -45,6 +46,11 @@ struct SailModule : Module {
 	/** [Stored to JSON] */
 	OUT_MODE outMode;
 
+	dsp::RingBuffer<int, 8> overlayQueue;
+	/** [Stored to Json] */
+	bool overlayEnabled;
+	uint16_t overlayMessageId = 0;
+
 	bool fineMod;
 
 	float inVoltBase;
@@ -80,6 +86,7 @@ struct SailModule : Module {
 		inMode = IN_MODE::DIFF;
 		outMode = OUT_MODE::REDUCED;
 		slewLimiter.reset();
+		overlayEnabled = true;
 	}
 
 	void process(const ProcessArgs& args) override {
@@ -98,6 +105,7 @@ struct SailModule : Module {
 			// Copy to second variable as paramQuantity might become NULL through the app thread
 			if (paramQuantity != paramQuantityPriv) {
 				paramQuantityPriv = paramQuantity;
+				overlayMessageId++;
 				// Current parameter value
 				valuePrevious = paramQuantityPriv ? paramQuantityPriv->getScaledValue() : 0.f;
 				inVoltTarget = incdecTarget = slewLimiter.out = valuePrevious;
@@ -153,6 +161,7 @@ struct SailModule : Module {
 				if (delta != 0.f) {
 					paramQuantityPriv->moveScaledValue(delta);
 					valueBaseOut = paramQuantityPriv->getScaledValue();
+					if (overlayEnabled && overlayQueue.capacity() > 0) overlayQueue.push(overlayMessageId);
 				}
 
 				valuePrevious = valueNext;
@@ -186,6 +195,7 @@ struct SailModule : Module {
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 		json_object_set_new(rootJ, "inMode", json_integer((int)inMode));
 		json_object_set_new(rootJ, "outMode", json_integer((int)outMode));
+		json_object_set_new(rootJ, "overlayEnabled", json_boolean(overlayEnabled));
 		return rootJ;
 	}
 
@@ -193,11 +203,13 @@ struct SailModule : Module {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 		inMode = (IN_MODE)json_integer_value(json_object_get(rootJ, "inMode"));
 		outMode = (OUT_MODE)json_integer_value(json_object_get(rootJ, "outMode"));
+		json_t* overlayEnabledJ = json_object_get(rootJ, "overlayEnabled");
+		if (overlayEnabledJ) overlayEnabled = json_boolean_value(overlayEnabledJ);
 	}
 };
 
 
-struct SailWidget : ThemedModuleWidget<SailModule> {
+struct SailWidget : ThemedModuleWidget<SailModule>, OverlayMessageProvider {
 	SailWidget(SailModule* module)
 		: ThemedModuleWidget<SailModule>(module, "Sail") {
 		setModule(module);
@@ -219,6 +231,16 @@ struct SailWidget : ThemedModuleWidget<SailModule> {
 		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 283.5f), module, SailModule::INPUT_VALUE));
 
 		addOutput(createOutputCentered<StoermelderPort>(Vec(22.5f, 327.7f), module, SailModule::OUTPUT));
+
+		if (module) {
+			OverlayMessageWidget::registerProvider(this);
+		}
+	}
+
+	~SailWidget() {
+		if (module) {
+			OverlayMessageWidget::unregisterProvider(this);
+		}
 	}
 
 	void step() override {
@@ -234,6 +256,28 @@ struct SailWidget : ThemedModuleWidget<SailModule> {
 
 		module->paramQuantity = q;
 		module->fineMod = APP->window->getMods() & GLFW_MOD_SHIFT;
+	}
+
+	int nextOverlayMessageId() override {
+		if (module->overlayQueue.empty())
+			return -1;
+		return module->overlayQueue.shift();
+	}
+
+	const Message getOverlayMessage(int id) override {
+		if (module->overlayMessageId != id) return {};
+		ParamQuantity* paramQuantity = module->paramQuantityPriv;
+		if (!paramQuantity) return {};
+
+		std::string label;
+		label += paramQuantity->module->model->name;
+		label += " ";
+		label += paramQuantity->label;
+
+		Message m;
+		m.subtitle = label;
+		m.title = paramQuantity->getDisplayValueString() + paramQuantity->getUnit();
+		return m;
 	}
 
 	void appendContextMenu(Menu* menu) override {
@@ -293,9 +337,22 @@ struct SailWidget : ThemedModuleWidget<SailModule> {
 			}
 		};
 
+		struct OverlayEnabledItem : MenuItem {
+			SailModule* module;
+			void onAction(const event::Action& e) override {
+				module->overlayEnabled ^= true;
+			}
+			void step() override {
+				rightText = module->overlayEnabled ? "✔" : "";
+				MenuItem::step();
+			}
+		}; // struct OverlayEnabledItem
+
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<InModeMenuItem>(&MenuItem::text, "IN-mode", &InModeMenuItem::module, module));
 		menu->addChild(construct<OutModeMenuItem>(&MenuItem::text, "OUT-mode", &OutModeMenuItem::module, module));
+		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<OverlayEnabledItem>(&MenuItem::text, "Status overlay", &OverlayEnabledItem::module, module));
 	}
 };
 

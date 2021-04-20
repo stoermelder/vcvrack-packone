@@ -51,6 +51,8 @@
     - Added context menu option for clearing the log
 - Module [RAW](./docs/Raw.md)
     - Added basic limiting to prevent rare instabilities (#214)
+- Module [SAIL](./docs/Sail.md)
+    - Added an overlay showing current parameter changes on the bottom of the screen
 - Module [STRIP](./docs/Strip.md)
     - Added context menu option "Load and replace" to preset-submenu (#215)
     - Added support for sub-folders in preset-submenu (#230)
