@@ -52,6 +52,7 @@ struct SailModule : Module {
 	uint16_t overlayMessageId = 0;
 
 	bool fineMod;
+	bool isSwitch;
 
 	float inVoltBase;
 	float inVoltTarget;
@@ -148,20 +149,22 @@ struct SailModule : Module {
 					valueNext = incdecTarget;
 				}
 
-				// Apply slew limiting
-				float slew = inputs[INPUT_SLEW].isConnected() ? clamp(inputs[INPUT_SLEW].getVoltage(), 0.f, 5.f) : params[PARAM_SLEW].getValue();
-				if (slew > 0.f) {
-					slew = (1.f / slew) * 10.f;
-					slewLimiter.setRiseFall(slew, slew);
-					valueNext = slewLimiter.process(args.sampleTime * processDivider.getDivision(), valueNext);
-				}
+				if (!isSwitch) {
+					// Apply slew limiting
+					float slew = inputs[INPUT_SLEW].isConnected() ? clamp(inputs[INPUT_SLEW].getVoltage(), 0.f, 5.f) : params[PARAM_SLEW].getValue();
+					if (slew > 0.f) {
+						slew = (1.f / slew) * 10.f;
+						slewLimiter.setRiseFall(slew, slew);
+						valueNext = slewLimiter.process(args.sampleTime * processDivider.getDivision(), valueNext);
+					}
 
-				// Determine the relative change
-				float delta = valueNext - valuePrevious;
-				if (delta != 0.f) {
-					paramQuantityPriv->moveScaledValue(delta);
-					valueBaseOut = paramQuantityPriv->getScaledValue();
-					if (overlayEnabled && overlayQueue.capacity() > 0) overlayQueue.push(overlayMessageId);
+					// Determine the relative change
+					float delta = valueNext - valuePrevious;
+					if (delta != 0.f) {
+						paramQuantityPriv->moveScaledValue(delta);
+						valueBaseOut = paramQuantityPriv->getScaledValue();
+						if (overlayEnabled && overlayQueue.capacity() > 0) overlayQueue.push(overlayMessageId);
+					}
 				}
 
 				valuePrevious = valueNext;
@@ -253,9 +256,12 @@ struct SailWidget : ThemedModuleWidget<SailModule>, OverlayMessageProvider {
 		if (!p) { module->paramQuantity = NULL; return; }
 		ParamQuantity* q = p->paramQuantity;
 		if (!q) { module->paramQuantity = NULL; return; }
+		
+		Switch* sw = dynamic_cast<Switch*>(p);
 
 		module->paramQuantity = q;
 		module->fineMod = APP->window->getMods() & GLFW_MOD_SHIFT;
+		module->isSwitch = sw != NULL;
 	}
 
 	int nextOverlayMessageId() override {
