@@ -133,7 +133,7 @@ struct MidiStepModule : Module {
 		value = clamp(value, 0, 127);
 		// Learn
 		if (learningId >= 0) {
-			learnCC(learningId, cc);
+			learnCC(cc);
 			return;
 		}
 
@@ -166,7 +166,10 @@ struct MidiStepModule : Module {
 		values[cc] = value;
 	}
 
-	void learnCC(int learningId, uint8_t cc) {
+	void learnCC(uint8_t cc) {
+		if (learningId < 0) {
+			return;
+		}
 		if (learnedCcs[learningId] >= 0) {
 			ccs[learnedCcs[learningId]] = -1;
 		}
@@ -321,7 +324,7 @@ struct MidiStepCcChoice : LedDisplayCenterChoiceEx {
 		if (!module) return;
 		if (module->learningId == id) {
 			if (0 <= focusCc && focusCc < 128) {
-				module->learnCC(id, focusCc);
+				module->learnCC(focusCc);
 			}
 			module->learningId = -1;
 		}
