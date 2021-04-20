@@ -41,6 +41,8 @@
 - Module [µMAP](./docs/CVMapMicro.md)
     - Added context menu options on mapped parameters of target module for µMAP
     - Fixed wrong behavior when toggling input to 0V (#221)
+- Module [MAZE](./docs/Maze.md)
+    - Added new ratcheting modes ("Twos", "Threes", "Power of Two")
 - Module [MIDI-CAT](./docs/MidiCat.md)
     - Added support for MIDI 14-bit CC
     - Added toggle-modes for MIDI CC mappings (#225)
