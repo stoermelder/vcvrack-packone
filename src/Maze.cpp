@@ -5,25 +5,25 @@
 namespace StoermelderPackOne {
 namespace Maze {
 
-enum GRIDSTATE {
+enum class GRIDSTATE {
 	OFF = 0,
 	ON = 1,
 	RANDOM = 2
 };
 
-enum TURNMODE {
+enum class TURNMODE {
 	NINETY = 0,
 	ONEEIGHTY = 1
 };
 
-enum OUTMODE {
+enum class OUTMODE {
 	BI_5V = 0,
 	UNI_5V = 1,
 	UNI_3V = 2,
 	UNI_1V = 3
 };
 
-enum MODULESTATE {
+enum class MODULESTATE {
 	GRID = 0,
 	EDIT = 1
 };
@@ -359,7 +359,7 @@ struct MazeModule : Module {
 	}
 
 	void gridNextState(int i, int j) {
-		grid[i][j] = (GRIDSTATE)((grid[i][j] + 1) % 3);
+		grid[i][j] = (GRIDSTATE)(((int)grid[i][j] + 1) % 3);
 		if (grid[i][j] == GRIDSTATE::ON) gridCv[i][j] = random::uniform();
 		gridDirty = true;
 	}
@@ -385,7 +385,7 @@ struct MazeModule : Module {
 		json_t* gridJ = json_array();
 		for (int i = 0; i < SIZE; i++) {
 			for (int j = 0; j < SIZE; j++) {
-				json_array_append_new(gridJ, json_integer(grid[i][j]));
+				json_array_append_new(gridJ, json_integer((int)grid[i][j]));
 			}
 		}
 		json_object_set_new(rootJ, "grid", gridJ);
@@ -409,8 +409,8 @@ struct MazeModule : Module {
 			json_object_set_new(portJ, "yPos", json_integer(yPos[i]));
 			json_object_set_new(portJ, "xDir", json_integer(xDir[i]));
 			json_object_set_new(portJ, "yDir", json_integer(yDir[i]));
-			json_object_set_new(portJ, "turnMode", json_integer(turnMode[i]));
-			json_object_set_new(portJ, "outMode", json_integer(outMode[i]));
+			json_object_set_new(portJ, "turnMode", json_integer((int)turnMode[i]));
+			json_object_set_new(portJ, "outMode", json_integer((int)outMode[i]));
 			json_object_set_new(portJ, "ratchetingProb", json_real(ratchetingProb[i]));
 			json_object_set_new(portJ, "ratchetingEnabled", json_boolean(ratchetingEnabled[i]));
 			json_array_append_new(portsJ, portJ);
