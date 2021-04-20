@@ -32,17 +32,17 @@
     - Fixed wrong slot behavior when toggling input to 0V (#221)
 - Module [HIVE](./docs/Hive.md)
     - Fixed hanging ratchets on missing or stopped clock trigger (#216)
+    - Added new ratcheting modes ("Twos", "Threes", "Power of Two")
 - Module [MACRO](./docs/Macro.md)
     - Added context menu options on mapped parameters of target module for MACRO
 - Module [MAZE](./docs/Maze.md)
     - Fixed hanging ratchets on missing or stopped clock trigger (#216)
+    - Added new ratcheting modes ("Twos", "Threes", "Power of Two")
 - Module [MB](./docs/Mb.md)
     - Added option to hide the "brands" section of the V1-browser (#223)
 - Module [µMAP](./docs/CVMapMicro.md)
     - Added context menu options on mapped parameters of target module for µMAP
     - Fixed wrong behavior when toggling input to 0V (#221)
-- Module [MAZE](./docs/Maze.md)
-    - Added new ratcheting modes ("Twos", "Threes", "Power of Two")
 - Module [MIDI-CAT](./docs/MidiCat.md)
     - Added support for MIDI 14-bit CC
     - Added toggle-modes for MIDI CC mappings (#225)
