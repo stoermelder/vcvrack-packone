@@ -55,7 +55,7 @@ struct OverlayMessageWidget : TransparentWidget {
 		int n = items.size();
 		if (n > 0) {
 			float i = 0.f;
-			float width = 340.f;
+			float width = 380.f;
 			float height = 80.f;
 			//float xOffset = 22.f;
 			float yOffset = 40.f;
@@ -93,7 +93,7 @@ struct OverlayMessageWidget : TransparentWidget {
 				}
 				if (m.subtitle.size() > 0) {
 					nvgFontSize(args.vg, 20.f);
-					nvgTextBreakLines(args.vg, m.subtitle.c_str(), NULL, width - 10.f, &textRow, 2);
+					nvgTextBreakLines(args.vg, m.subtitle.c_str(), NULL, width - 10.f, &textRow, 1);
 					nvgTextBox(args.vg, x - width / 2.f, y + 50.f, width, textRow.start, textRow.end);
 				}
 
