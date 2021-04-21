@@ -275,13 +275,9 @@ struct SailWidget : ThemedModuleWidget<SailModule>, OverlayMessageProvider {
 		ParamQuantity* paramQuantity = module->paramQuantityPriv;
 		if (!paramQuantity) return;
 
-		std::string label;
-		label += paramQuantity->module->model->name;
-		label += " ";
-		label += paramQuantity->label;
-
-		m.subtitle = label;
 		m.title = paramQuantity->getDisplayValueString() + paramQuantity->getUnit();
+		m.subtitle[0] = paramQuantity->module->model->name;
+		m.subtitle[1] = paramQuantity->label;
 	}
 
 	void appendContextMenu(Menu* menu) override {

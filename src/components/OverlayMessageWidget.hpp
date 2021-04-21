@@ -6,8 +6,8 @@ namespace StoermelderPackOne {
 struct OverlayMessageProvider {
 	struct Message {
 		std::string title;
-		std::string subtitle;
-		bool empty() { return title.size() == 0 && subtitle.size() == 0; }
+		std::string subtitle[2];
+		bool empty() { return title.size() == 0 && subtitle[0].size() == 0; }
 	};
 
 	virtual int nextOverlayMessageId() { return -1; }
@@ -55,24 +55,23 @@ struct OverlayMessageWidget : TransparentWidget {
 		int n = items.size();
 		if (n > 0) {
 			float i = 0.f;
-			float width = 380.f;
-			float height = 80.f;
+			float width = 360.f;
+			float height = 100.f;
 			//float xOffset = 22.f;
 			float yOffset = 40.f;
 			NVGcolor fgColor = bndGetTheme()->menuTheme.textColor;
 
 			for (auto it = items.begin(); it != items.end(); it++) {
-				OverlayMessageProvider* p = std::get<0>(it->first);
-				int id = std::get<1>(it->first);
-
-				OverlayMessageProvider::Message m;
-				p->getOverlayMessage(id, m);
-
 				if (now - it->second > std::chrono::seconds{1}) {
 					items.erase(it);
 					break;
 				}
 
+				OverlayMessageProvider* p = std::get<0>(it->first);
+				int id = std::get<1>(it->first);
+
+				OverlayMessageProvider::Message m;
+				p->getOverlayMessage(id, m);
 				if (m.empty()) continue;
 
 				float x = args.clipBox.pos.x + args.clipBox.size.x / 2.f; // + (-1.f * (n - 1.f) / 2.f + i) * (width + xOffset);
@@ -86,15 +85,25 @@ struct OverlayMessageWidget : TransparentWidget {
 				nvgFillColor(args.vg, fgColor);
 				NVGtextRow textRow;
 
+				y += 10.f;
+
 				if (m.title.size() > 0) {
 					nvgFontSize(args.vg, 32.f);
 					nvgTextBreakLines(args.vg, m.title.c_str(), NULL, width - 10.f, &textRow, 1);
-					nvgTextBox(args.vg, x - width / 2.f, y + 10.f, width, textRow.start, textRow.end);
+					nvgTextBox(args.vg, x - width / 2.f, y, width, textRow.start, textRow.end);
+					y += 40.f;
 				}
-				if (m.subtitle.size() > 0) {
+				if (m.subtitle[0].size() > 0) {
 					nvgFontSize(args.vg, 20.f);
-					nvgTextBreakLines(args.vg, m.subtitle.c_str(), NULL, width - 10.f, &textRow, 1);
-					nvgTextBox(args.vg, x - width / 2.f, y + 50.f, width, textRow.start, textRow.end);
+					nvgTextBreakLines(args.vg, m.subtitle[0].c_str(), NULL, width - 10.f, &textRow, 1);
+					nvgTextBox(args.vg, x - width / 2.f, y, width, textRow.start, textRow.end);
+					y += 20.f;
+				}
+				if (m.subtitle[1].size() > 0) {
+					nvgFontSize(args.vg, 20.f);
+					nvgTextBreakLines(args.vg, m.subtitle[1].c_str(), NULL, width - 10.f, &textRow, 1);
+					nvgTextBox(args.vg, x - width / 2.f, y, width, textRow.start, textRow.end);
+					y += 20.f;
 				}
 
 				i++;

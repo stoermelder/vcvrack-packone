@@ -1490,15 +1490,11 @@ struct MidiCatDisplay : MapModuleDisplay<MAX_CHANNELS, MidiCatModule, MidiCatCho
 		if (!paramQuantity) return;
 
 		std::string label = choices[id]->getSlotLabel();
-		if (label == "") {
-			std::string s;
-			label += paramQuantity->module->model->name;
-			label += " ";
-			label += paramQuantity->label;
-		}
+		if (label == "") label = paramQuantity->label;
 
-		m.subtitle = label;
 		m.title = paramQuantity->getDisplayValueString() + paramQuantity->getUnit();
+		m.subtitle[0] = paramQuantity->module->model->name;
+		m.subtitle[1] = label;
 	}
 };
 
