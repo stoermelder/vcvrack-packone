@@ -270,20 +270,18 @@ struct SailWidget : ThemedModuleWidget<SailModule>, OverlayMessageProvider {
 		return module->overlayQueue.shift();
 	}
 
-	const Message getOverlayMessage(int id) override {
-		if (module->overlayMessageId != id) return {};
+	void getOverlayMessage(int id, Message& m) override {
+		if (module->overlayMessageId != id) return;
 		ParamQuantity* paramQuantity = module->paramQuantityPriv;
-		if (!paramQuantity) return {};
+		if (!paramQuantity) return;
 
 		std::string label;
 		label += paramQuantity->module->model->name;
 		label += " ";
 		label += paramQuantity->label;
 
-		Message m;
 		m.subtitle = label;
 		m.title = paramQuantity->getDisplayValueString() + paramQuantity->getUnit();
-		return m;
 	}
 
 	void appendContextMenu(Menu* menu) override {

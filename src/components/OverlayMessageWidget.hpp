@@ -11,7 +11,7 @@ struct OverlayMessageProvider {
 	};
 
 	virtual int nextOverlayMessageId() { return -1; }
-	virtual const Message getOverlayMessage(int id) { return {}; }
+	virtual void getOverlayMessage(int id, Message& m) { }
 };
 
 struct OverlayMessageWidget : TransparentWidget {
@@ -64,7 +64,9 @@ struct OverlayMessageWidget : TransparentWidget {
 			for (auto it = items.begin(); it != items.end(); it++) {
 				OverlayMessageProvider* p = std::get<0>(it->first);
 				int id = std::get<1>(it->first);
-				OverlayMessageProvider::Message m = p->getOverlayMessage(id);
+
+				OverlayMessageProvider::Message m;
+				p->getOverlayMessage(id, m);
 
 				if (now - it->second > std::chrono::seconds{1}) {
 					items.erase(it);

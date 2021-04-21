@@ -1485,9 +1485,9 @@ struct MidiCatDisplay : MapModuleDisplay<MAX_CHANNELS, MidiCatModule, MidiCatCho
 		return module->overlayQueue.shift();
 	}
 
-	const Message getOverlayMessage(int id) override {
+	void getOverlayMessage(int id, Message& m) override {
 		ParamQuantity* paramQuantity = choices[id]->getParamQuantity();
-		if (!paramQuantity) return {};
+		if (!paramQuantity) return;
 
 		std::string label = choices[id]->getSlotLabel();
 		if (label == "") {
@@ -1497,10 +1497,8 @@ struct MidiCatDisplay : MapModuleDisplay<MAX_CHANNELS, MidiCatModule, MidiCatCho
 			label += paramQuantity->label;
 		}
 
-		Message m;
 		m.subtitle = label;
 		m.title = paramQuantity->getDisplayValueString() + paramQuantity->getUnit();
-		return m;
 	}
 };
 
