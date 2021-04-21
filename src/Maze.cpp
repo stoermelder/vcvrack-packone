@@ -1018,8 +1018,8 @@ struct MazeStartPosEditWidget : LightWidget, MazeDrawHelper<MODULE> {
 			MODULE* module;
 			Menu* createChildMenu() override {
 				Menu* menu = new Menu;
-				menu->addChild(construct<RatchetingProbItem>(&MenuItem::text, "30%", &RatchetingProbItem::module, module, &RatchetingProbItem::id, id, &RatchetingProbItem::ratchetingProb, 0.3f));
-				menu->addChild(construct<RatchetingProbItem>(&MenuItem::text, "40%", &RatchetingProbItem::module, module, &RatchetingProbItem::id, id, &RatchetingProbItem::ratchetingProb, 0.4f));
+				menu->addChild(construct<RatchetingProbItem>(&MenuItem::text, "30%", &RatchetingProbItem::module, module, &RatchetingProbItem::id, id, &RatchetingProbItem::ratchetingProb, 0.7f));
+				menu->addChild(construct<RatchetingProbItem>(&MenuItem::text, "40%", &RatchetingProbItem::module, module, &RatchetingProbItem::id, id, &RatchetingProbItem::ratchetingProb, 0.6f));
 				menu->addChild(construct<RatchetingProbItem>(&MenuItem::text, "50%", &RatchetingProbItem::module, module, &RatchetingProbItem::id, id, &RatchetingProbItem::ratchetingProb, 0.5f));
 				menu->addChild(construct<RatchetingProbItem>(&MenuItem::text, "60%", &RatchetingProbItem::module, module, &RatchetingProbItem::id, id, &RatchetingProbItem::ratchetingProb, 0.4f));
 				menu->addChild(construct<RatchetingProbItem>(&MenuItem::text, "65%", &RatchetingProbItem::module, module, &RatchetingProbItem::id, id, &RatchetingProbItem::ratchetingProb, 0.35f));
