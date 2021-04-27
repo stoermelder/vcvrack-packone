@@ -39,6 +39,8 @@ struct PrismaModule : Module {
 	dsp::RCFilter dcblock;
 	dsp::TBiquadFilter<simd::float_4> biquad[UNITS / 4];
 
+	dsp::MinBlepGenerator<16, 32> minBlep[UNITS];
+
 	PrismaModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -60,25 +62,41 @@ struct PrismaModule : Module {
 		dcblock.setCutoffFreq(20.f / APP->engine->getSampleRate());
 	}
 
+	float compPrev[UNITS] = {0.f};
+	float inPrev = 0.f;
+
 	void process(const ProcessArgs& args) override {
 		float in = inputs[INPUT].getVoltage();
-		//in *= params[PARAM_INPUT].getValue();
+		in *= params[PARAM_INPUT].getValue();
 
-		/*
 		float out = in;
 		float div = params[PARAM_INPUT].getValue();
 		for (int i = 0; i < UNITS; i++) {
 			float cv = clamp(inputs[INPUT_SHIFT_CV + i].getVoltage() * params[PARAM_SHIFT_CV + i].getValue() + params[PARAM_SHIFT + i].getValue() * 10.f, 0.f, 10.f);
 			cv -= 5.f;
 			float comp = in > cv ? -5.f : 5.f;
+
+			if (comp != compPrev[i]) {
+				// discontinuity
+				float m1 = in - cv;
+				float m2 = inPrev - cv;
+				float d = m1 / (m1 - m2);
+				minBlep[i].insertDiscontinuity(-d, comp - compPrev[i]);
+			}
+			
+			compPrev[i] = comp;
+
 			float s = in + comp - cv;
+			s += minBlep[i].process();
 			outputs[OUTPUT_POLY].setVoltage(s, i);
 			float l = params[PARAM_LEVEL + i].getValue() * inputs[INPUT_LEVEL + i].getNormalVoltage(10.f) / 10.f;
 			out += (s * l);
 			div += l;
 		}
-		*/
 
+		inPrev = in;
+
+		/*
 		float out = 0.f;
 		out += in * params[PARAM_INPUT].getValue();
 
@@ -113,6 +131,7 @@ struct PrismaModule : Module {
 			//_l = _mm_hadd_ps(_l, _l);
 			//div += _l[0];
 		}
+		*/
 
 		// Block DC in the signal
 		dcblock.process(out);
