@@ -1074,6 +1074,34 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 		ThemedModuleWidget<GlueModule>::fromJson(rootJ);
 	}
 
+	void consolidate() {
+		std::list<ModuleWidget*> toBeRemoved;
+		for (Widget* w : APP->scene->rack->moduleContainer->children) {
+			GlueWidget* gw = dynamic_cast<GlueWidget*>(w);
+			if (!gw || gw == this) continue;
+			toBeRemoved.push_back(gw);
+		}
+		if (toBeRemoved.size() == 0) return;
+
+		history::ComplexAction* complexAction = new history::ComplexAction;
+		for (ModuleWidget* w : toBeRemoved) {
+			GlueWidget* gw = dynamic_cast<GlueWidget*>(w);
+
+			history::ModuleRemove* h = new history::ModuleRemove;
+			h->setModule(w);
+			complexAction->push(h);
+
+			for (Label* l : gw->module->labels) {
+				module->labels.push_back(l);
+			}
+			gw->module->labels.clear();
+			APP->scene->rack->removeModule(w);
+			delete w;
+		}
+		APP->history->push(complexAction);
+		module->resetRequested = true;
+	}
+
 	void appendContextMenu(Menu* menu) override {
 		ThemedModuleWidget<GlueModule>::appendContextMenu(menu);
 
@@ -1345,6 +1373,13 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 			}
 		};
 
+		struct ConsolidateItem : MenuItem {
+			GlueWidget* mw;
+			void onAction(const event::Action& e) override {
+				mw->consolidate();
+			}
+		};
+
 		struct LabelMenuItem : MenuItem {
 			LabelContainer* labelContainer;
 			Label* label;
@@ -1386,6 +1421,8 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 		menu->addChild(construct<SkewItem>(&MenuItem::text, "Skew labels", &SkewItem::module, module));
 
 		if (module->labels.size() > 0) {
+			menu->addChild(new MenuSeparator());
+			menu->addChild(construct<ConsolidateItem>(&MenuItem::text, "Consolidate GLUE", &ConsolidateItem::mw, this));
 			menu->addChild(new MenuSeparator());
 			menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Labels"));
 
