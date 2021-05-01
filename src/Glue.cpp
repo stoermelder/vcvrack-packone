@@ -177,7 +177,12 @@ struct GlueModule : Module, StripIdFixModule {
 		json_object_set_new(rootJ, "defaultFont", json_integer(defaultFont));
 		json_object_set_new(rootJ, "defaultFontColor", json_string(color::toHexString(defaultFontColor).c_str()));
 		json_object_set_new(rootJ, "skewLabels", json_boolean(skewLabels));
+		json_t* labelsJ = labelToJson();
+		json_object_set_new(rootJ, "labels", labelsJ);
+		return rootJ;
+	}
 
+	json_t* labelToJson() {
 		json_t* labelsJ = json_array();
 		for (Label* l : labels) {
 			json_t* labelJ = json_object();
@@ -195,9 +200,7 @@ struct GlueModule : Module, StripIdFixModule {
 			json_object_set_new(labelJ, "fontColor", json_string(color::toHexString(l->fontColor).c_str()));
 			json_array_append_new(labelsJ, labelJ);
 		}
-		json_object_set_new(rootJ, "labels", labelsJ);
-
-		return rootJ;
+		return labelsJ;
 	}
 
 	void dataFromJson(json_t* rootJ) override {
@@ -217,13 +220,20 @@ struct GlueModule : Module, StripIdFixModule {
 		// Hack for preventing duplicating this module
 		if (APP->engine->getModule(id) != NULL && !idFixHasMap()) return;
 
+		json_t* labelsJ = json_object_get(rootJ, "labels");
+		labelFromJson(labelsJ);
+
+		idFixClearMap();
+		params[PARAM_UNLOCK].setValue(0.f);
+	}
+
+	void labelFromJson(json_t* labelsJ) {
 		for (Label* l : labels) {
 			delete l;
 		}
 		labels.clear();
 		resetRequested = true;
 
-		json_t* labelsJ = json_object_get(rootJ, "labels");
 		if (labelsJ) {
 			size_t labelIdx;
 			json_t* labelJ;
@@ -249,9 +259,6 @@ struct GlueModule : Module, StripIdFixModule {
 				if (fontColorJ) l->fontColor = color::fromHexString(json_string_value(fontColorJ));
 			}
 		}
-
-		idFixClearMap();
-		params[PARAM_UNLOCK].setValue(0.f);
 	}
 };
 
@@ -1075,6 +1082,21 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 	}
 
 	void consolidate() {
+		struct GlueChangeAction : history::ModuleAction {
+			json_t* oldLabelJ;
+			json_t* newLabelJ;
+			void undo() override {
+				GlueWidget* mw = dynamic_cast<GlueWidget*>(APP->scene->rack->getModule(moduleId));
+				assert(mw);
+				mw->module->labelFromJson(oldLabelJ);
+			}
+			void redo() override {
+				GlueWidget* mw = dynamic_cast<GlueWidget*>(APP->scene->rack->getModule(moduleId));
+				assert(mw);
+				mw->module->labelFromJson(newLabelJ);
+			}
+		};
+
 		std::list<ModuleWidget*> toBeRemoved;
 		for (Widget* w : APP->scene->rack->moduleContainer->children) {
 			GlueWidget* gw = dynamic_cast<GlueWidget*>(w);
@@ -1084,6 +1106,13 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 		if (toBeRemoved.size() == 0) return;
 
 		history::ComplexAction* complexAction = new history::ComplexAction;
+		complexAction->name = "stoermelder GLUE consolidate";
+		
+		GlueChangeAction* mc = new GlueChangeAction;
+		mc->moduleId = module->id;
+		mc->oldLabelJ = module->labelToJson();
+		complexAction->push(mc);
+
 		for (ModuleWidget* w : toBeRemoved) {
 			GlueWidget* gw = dynamic_cast<GlueWidget*>(w);
 
@@ -1094,10 +1123,14 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 			for (Label* l : gw->module->labels) {
 				module->labels.push_back(l);
 			}
+
 			gw->module->labels.clear();
 			APP->scene->rack->removeModule(w);
 			delete w;
 		}
+
+		mc->newLabelJ = module->labelToJson();
+
 		APP->history->push(complexAction);
 		module->resetRequested = true;
 	}
