@@ -36,8 +36,8 @@ struct PrismaModule : Module {
 	simd::float_4 input_level[UNITS / 4];
 	simd::float_4 param_level[UNITS / 4];
 
-	dsp::RCFilter dcblock;
-	dsp::TBiquadFilter<simd::float_4> biquad[UNITS / 4];
+	dsp::RCFilter dcblock[UNITS];
+	dsp::TBiquadFilter<float> biquad[UNITS];
 
 	dsp::MinBlepGenerator<16, 32> minBlep[UNITS];
 
@@ -51,15 +51,17 @@ struct PrismaModule : Module {
 			configParam(PARAM_SHIFT + i, 0.f, 1.f, 1.f / (UNITS + 1) * (i + 1.f), string::f("Shift unit %i shift", i + 1));
 			configParam(PARAM_LEVEL + i, 0.f, 1.f, 0.5f, string::f("Shift unit %i sum level", i + 1));
 		}
-		for (int i = 0; i < UNITS / 4; i++) {
-			biquad[i].setParameters(dsp::TBiquadFilter<simd::float_4>::Type::LOWPASS, 0.4f, 1.f, 0.f);
+		for (int i = 0; i < UNITS; i++) {
+			biquad[i].setParameters(dsp::TBiquadFilter<float>::Type::LOWPASS, 0.4f, 1.f, 0.f);
 		}
 		onSampleRateChange();
 		onReset();
 	}
 
 	void onSampleRateChange() override {
-		dcblock.setCutoffFreq(20.f / APP->engine->getSampleRate());
+		for (int i = 0; i < UNITS; i++) {
+			dcblock[i].setCutoffFreq(40.f / APP->engine->getSampleRate());
+		}
 	}
 
 	float compPrev[UNITS] = {0.f};
@@ -69,7 +71,7 @@ struct PrismaModule : Module {
 		float in = inputs[INPUT].getVoltage();
 		in *= params[PARAM_INPUT].getValue();
 
-		float out = in;
+		float out = 0.f;
 		float div = params[PARAM_INPUT].getValue();
 		for (int i = 0; i < UNITS; i++) {
 			float cv = clamp(inputs[INPUT_SHIFT_CV + i].getVoltage() * params[PARAM_SHIFT_CV + i].getValue() + params[PARAM_SHIFT + i].getValue() * 10.f, 0.f, 10.f);
@@ -88,6 +90,14 @@ struct PrismaModule : Module {
 
 			float s = in + comp - cv;
 			s += minBlep[i].process();
+
+			// Filter at 0.4 * samplerate
+			s = biquad[i].process(s);
+
+			// Block DC in the signal
+			dcblock[i].process(s);
+			s = dcblock[i].highpass();
+
 			outputs[OUTPUT_POLY].setVoltage(s, i);
 			float l = params[PARAM_LEVEL + i].getValue() * inputs[INPUT_LEVEL + i].getNormalVoltage(10.f) / 10.f;
 			out += (s * l);
@@ -132,10 +142,6 @@ struct PrismaModule : Module {
 			//div += _l[0];
 		}
 		*/
-
-		// Block DC in the signal
-		dcblock.process(out);
-		out = dcblock.highpass();
 
 		outputs[OUTPUT_POLY].setChannels(UNITS);
 		outputs[OUTPUT].setVoltage(out);
