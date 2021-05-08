@@ -11,6 +11,8 @@ struct StoermelderSettings {
 
 	bool midiLoopbackDriverEnabled = false;
 
+	NVGcolor overlayTextColor = bndGetTheme()->menuTheme.textColor;
+
 	void saveToJson();
 	void readFromJson();
 };

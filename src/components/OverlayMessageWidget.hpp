@@ -59,7 +59,7 @@ struct OverlayMessageWidget : TransparentWidget {
 			float height = 100.f;
 			//float xOffset = 22.f;
 			float yOffset = 40.f;
-			NVGcolor fgColor = bndGetTheme()->menuTheme.textColor;
+			NVGcolor fgColor = pluginSettings.overlayTextColor;
 
 			for (auto it = items.begin(); it != items.end(); it++) {
 				if (now - it->second > std::chrono::seconds{1}) {

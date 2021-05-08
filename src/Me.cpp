@@ -93,6 +93,28 @@ struct MeWidget : ModuleWidget, OverlayMessageProvider {
 		m.subtitle[0] = paramQuantity->module->model->name;
 		m.subtitle[1] = paramQuantity->label;
 	}
+
+
+	void appendContextMenu(Menu* menu) override {
+		struct WhiteOverlayTextItem : MenuItem {
+			void step() override {
+				rightText = CHECKMARK(color::toHexString(pluginSettings.overlayTextColor) == color::toHexString(color::WHITE));
+				MenuItem::step();
+			}
+			void onAction(const event::Action& e) override {
+				if (color::toHexString(pluginSettings.overlayTextColor) != color::toHexString(color::WHITE)) {
+					pluginSettings.overlayTextColor = color::WHITE;
+				}
+				else {
+					pluginSettings.overlayTextColor = bndGetTheme()->menuTheme.textColor;
+				}
+				pluginSettings.saveToJson();
+			}
+		};
+
+		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<WhiteOverlayTextItem>(&MenuItem::text, "White overlay text"));
+	}
 };
 
 } // namespace Me
