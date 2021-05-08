@@ -60,6 +60,7 @@ extern Model* modelEightFaceMk2Ex;
 extern Model* modelMidiPlug;
 extern Model* modelAudioInterface64;
 extern Model* modelMb;
+extern Model* modelMe;
 
 
 namespace StoermelderPackOne {
