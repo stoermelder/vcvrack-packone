@@ -2,11 +2,17 @@
 
 - Modules [FLOWER, SEEDS, OFFSPRING](./docs/Flower.md)
     - New modules, pattern-driven 16-step sequencer
+- Module [PRISMA](./docs/Prisma.md)
+    - New module, a wave multiplier/phase shifter inspired by A-137-2
+- Module [STRIP-BLOCK](./docs/Strip.md)
+    - New module, a companion module for STRIP for blocking STRIP's expander-mechanism
 
 ## 1.9.0 (in development)
 
 - Modules [8FACE mk2, +8](./docs/EightFaceMk2.md)
     - New modules, evolution of 8FACE and 8FACEx2 (#63 #76 #144 #154 #157 #158 #160 #162)
+- Module [DIRT](./docs/Dirt.md)
+    - New module, crosstalk and noise for polyphonic cables
 - Module [MIDI-CAT MAP](./docs/MidiCat.md#map-expander)
     - New expander-module for MIDI-CAT, helper for mapping parameters by context menu (#232)
 - Module [MIDI-PLUG](./docs/MidiPlug.md)
@@ -14,12 +20,8 @@
     - MIDI "Loopback" driver for routing outgoing MIDI messages back into Rack (enabled on the context menu)
 - Module [ORBIT](./docs/Orbit.md)
     - New module, a polyphonic stereo field spreader
-- Module [PRISMA](./docs/Prisma.md)
-    - New module, a wave multiplier/phase shifter inspired by A-137-2
 - Module [STRIP-CON](./docs/Strip.md)
     - New module, a companion module for STRIP for keeping input/output connections while replacing strips
-- Module [STRIP-BLOCK](./docs/Strip.md)
-    - New module, a companion module for STRIP for blocking STRIP's expander-mechanism
 
 ### Fixes and Changes
 
