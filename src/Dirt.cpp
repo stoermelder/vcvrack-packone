@@ -43,8 +43,9 @@ struct NextGenerator {
 	}
 
 	void process(float* in, int channels) {
-		float f[channels] = {0.f};
+		float f[channels];
 		for (int i = 0; i < channels; i++) {
+			f[i] = 0.f;
 			// Apply shelfing on low and high end
 			f[i] += eqLow[i].process(in[i]);
 			f[i] += eqHigh[i].process(in[i]);
