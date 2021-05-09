@@ -3,10 +3,15 @@
 #include "settings.hpp"
 #include "StripIdFixModule.hpp"
 #include "components/ParamHandleIndicator.hpp"
+#include "components/MenuLabelEx.hpp"
+#include "components/SubMenuSlider.hpp"
+#include "digital/ScaledMapParam.hpp"
 #include <chrono>
 
 
 // Abstract modules
+
+namespace StoermelderPackOne {
 
 template< int MAX_CHANNELS >
 struct MapModuleBase : Module, StripIdFixModule {
@@ -555,3 +560,217 @@ struct MapModuleDisplay : LedDisplay {
 		LedDisplay::onHoverScroll(e);
 	}
 };
+
+
+template<typename SCALE = ScaledMapParam<float>>
+struct MapSlewSlider : ui::Slider {
+	struct SlewQuantity : Quantity {
+		const float SLEW_MIN = 0.f;
+		const float SLEW_MAX = 5.f;
+		SCALE* p;
+		void setValue(float value) override {
+			value = clamp(value, SLEW_MIN, SLEW_MAX);
+			p->setSlew(value);
+		}
+		float getValue() override {
+			return p->getSlew();
+		}
+		float getDefaultValue() override {
+			return 0.f;
+		}
+		std::string getLabel() override {
+			return "Slew-limiting";
+		}
+		int getDisplayPrecision() override {
+			return 2;
+		}
+		float getMaxValue() override {
+			return SLEW_MAX;
+		}
+		float getMinValue() override {
+			return SLEW_MIN;
+		}
+	}; // struct SlewQuantity
+
+	MapSlewSlider(SCALE* p) {
+		box.size.x = 220.0f;
+		quantity = construct<SlewQuantity>(&SlewQuantity::p, p);
+	}
+	~MapSlewSlider() {
+		delete quantity;
+	}
+}; // struct MapSlewSlider
+
+
+template<typename SCALE = ScaledMapParam<float>>
+struct MapScalingInputLabel : MenuLabelEx {
+	SCALE* p;
+	void step() override {
+		float min = std::min(p->getMin(), p->getMax());
+		float max = std::max(p->getMin(), p->getMax());
+
+		float g1 = rescale(0.f, min, max, p->limitMin, p->limitMax);
+		g1 = clamp(g1, p->limitMin, p->limitMax);
+		float g2 = rescale(1.f, min, max, p->limitMin, p->limitMax);
+		g2 = clamp(g2, p->limitMin, p->limitMax);
+
+		rightText = string::f("[%.1f%, %.1f%]", g1 * 100.f, g2 * 100.f);
+	}
+}; // struct MapScalingInputLabel
+
+template<typename SCALE = ScaledMapParam<float>>
+struct MapScalingOutputLabel : MenuLabelEx {
+	SCALE* p;
+	void step() override {
+		float min = p->getMin();
+		float max = p->getMax();
+
+		float f1 = rescale(p->limitMin, p->limitMin, p->limitMax, min, max);
+		f1 = clamp(f1, 0.f, 1.f) * 100.f;
+		float f2 = rescale(p->limitMax, p->limitMin, p->limitMax, min, max);
+		f2 = clamp(f2, 0.f, 1.f) * 100.f;
+
+		rightText = string::f("[%.1f%, %.1f%]", f1, f2);
+	}
+}; // struct MapScalingOutputLabel
+
+template<typename SCALE = ScaledMapParam<float>>
+struct MapScalingOutputLabelUnit : MenuLabelEx {
+	SCALE* p;
+	void step() override {
+		float min = p->getMin();
+		float max = p->getMax();
+
+		float f1 = rescale(p->limitMin, p->limitMin, p->limitMax, min, max);
+		f1 = clamp(f1, 0.f, 1.f);
+		float f2 = rescale(p->limitMax, p->limitMin, p->limitMax, min, max);
+		f2 = clamp(f2, 0.f, 1.f);
+
+		ParamQuantity* pq = p->paramQuantity;
+		min = rescale(f1, 0.f, 1.f, pq->getMinValue(), pq->getMaxValue());
+		max = rescale(f2, 0.f, 1.f, pq->getMinValue(), pq->getMaxValue());
+
+		rightText = string::f("[%.1fV, %.1fV]", min, max);
+	}
+}; // struct MapScalingOutputLabelUnit
+
+
+template<typename SCALE = ScaledMapParam<float>>
+struct MapMinSlider : SubMenuSlider {
+	struct MinQuantity : Quantity {
+		SCALE* p;
+		void setValue(float value) override {
+			value = clamp(value, -1.f, 2.f);
+			p->setMin(value);
+		}
+		float getValue() override {
+			return p->getMin();
+		}
+		float getDefaultValue() override {
+			return 0.f;
+		}
+		float getMinValue() override {
+			return -1.f;
+		}
+		float getMaxValue() override {
+			return 2.f;
+		}
+		float getDisplayValue() override {
+			return getValue() * 100;
+		}
+		void setDisplayValue(float displayValue) override {
+			setValue(displayValue / 100);
+		}
+		std::string getLabel() override {
+			return "Low";
+		}
+		std::string getUnit() override {
+			return "%";
+		}
+		int getDisplayPrecision() override {
+			return 3;
+		}
+	}; // struct MinQuantity
+
+	MapMinSlider(SCALE* p) {
+		box.size.x = 220.0f;
+		quantity = construct<MinQuantity>(&MinQuantity::p, p);
+	}
+	~MapMinSlider() {
+		delete quantity;
+	}
+}; // struct MapMinSlider
+
+
+template<typename SCALE = ScaledMapParam<float>>
+struct MapMaxSlider : SubMenuSlider {
+	struct MaxQuantity : Quantity {
+		SCALE* p;
+		void setValue(float value) override {
+			value = clamp(value, -1.f, 2.f);
+			p->setMax(value);
+		}
+		float getValue() override {
+			return p->getMax();
+		}
+		float getDefaultValue() override {
+			return 1.f;
+		}
+		float getMinValue() override {
+			return -1.f;
+		}
+		float getMaxValue() override {
+			return 2.f;
+		}
+		float getDisplayValue() override {
+			return getValue() * 100;
+		}
+		void setDisplayValue(float displayValue) override {
+			setValue(displayValue / 100);
+		}
+		std::string getLabel() override {
+			return "High";
+		}
+		std::string getUnit() override {
+			return "%";
+		}
+		int getDisplayPrecision() override {
+			return 3;
+		}
+	}; // struct MaxQuantity
+
+	MapMaxSlider(SCALE* p) {
+		box.size.x = 220.0f;
+		quantity = construct<MaxQuantity>(&MaxQuantity::p, p);
+	}
+	~MapMaxSlider() {
+		delete quantity;
+	}
+}; // struct MapMaxSlider
+
+
+template<typename SCALE = ScaledMapParam<float>>
+struct MapPresetMenuItem : MenuItem {
+	SCALE* p;
+	MapPresetMenuItem() {
+		rightText = RIGHT_ARROW;
+	}
+
+	Menu* createChildMenu() override {
+		struct PresetItem : MenuItem {
+			SCALE* p;
+			float min, max;
+			void onAction(const event::Action& e) override {
+				p->setMin(min);
+				p->setMax(max);
+			}
+		};
+
+		Menu* menu = new Menu;
+		menu->addChild(construct<PresetItem>(&MenuItem::text, "Default", &PresetItem::p, p, &PresetItem::min, 0.f, &PresetItem::max, 1.f));
+		menu->addChild(construct<PresetItem>(&MenuItem::text, "Inverted", &PresetItem::p, p, &PresetItem::min, 1.f, &PresetItem::max, 0.f));
+		return menu;
+	}
+}; // struct MapPresetMenuItem
+
+} // namespace StoermelderPackOne

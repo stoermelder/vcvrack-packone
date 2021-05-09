@@ -3,10 +3,7 @@
 #include "components/MapButton.hpp"
 #include "components/VoltageLedDisplay.hpp"
 #include "components/Knobs.hpp"
-#include "components/MenuLabelEx.hpp"
-#include "components/SubMenuSlider.hpp"
 #include "components/ParamWidgetContextExtender.hpp"
-#include "digital/ScaledMapParam.hpp"
 
 namespace StoermelderPackOne {
 namespace Macro {
@@ -255,229 +252,17 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 };
 
 
-template<typename SCALE = ScaledMapParam<float>>
-struct SlewSlider : ui::Slider {
-	struct SlewQuantity : Quantity {
-		const float SLEW_MIN = 0.f;
-		const float SLEW_MAX = 5.f;
-		SCALE* p;
-		void setValue(float value) override {
-			value = clamp(value, SLEW_MIN, SLEW_MAX);
-			p->setSlew(value);
-		}
-		float getValue() override {
-			return p->getSlew();
-		}
-		float getDefaultValue() override {
-			return 0.f;
-		}
-		std::string getLabel() override {
-			return "Slew-limiting";
-		}
-		int getDisplayPrecision() override {
-			return 2;
-		}
-		float getMaxValue() override {
-			return SLEW_MAX;
-		}
-		float getMinValue() override {
-			return SLEW_MIN;
-		}
-	}; // struct SlewQuantity
-
-	SlewSlider(SCALE* p) {
-		box.size.x = 220.0f;
-		quantity = construct<SlewQuantity>(&SlewQuantity::p, p);
-	}
-	~SlewSlider() {
-		delete quantity;
-	}
-}; // struct SlewSlider
-
-
-template<typename SCALE = ScaledMapParam<float>>
-struct ScalingInputLabel : MenuLabelEx {
-	SCALE* p;
-	void step() override {
-		float min = std::min(p->getMin(), p->getMax());
-		float max = std::max(p->getMin(), p->getMax());
-
-		float g1 = rescale(0.f, min, max, p->limitMin, p->limitMax);
-		g1 = clamp(g1, p->limitMin, p->limitMax);
-		float g2 = rescale(1.f, min, max, p->limitMin, p->limitMax);
-		g2 = clamp(g2, p->limitMin, p->limitMax);
-
-		rightText = string::f("[%.1f%, %.1f%]", g1 * 100.f, g2 * 100.f);
-	}
-}; // struct ScalingInputLabel
-
-template<typename SCALE = ScaledMapParam<float>>
-struct ScalingOutputLabel : MenuLabelEx {
-	SCALE* p;
-	void step() override {
-		float min = p->getMin();
-		float max = p->getMax();
-
-		float f1 = rescale(p->limitMin, p->limitMin, p->limitMax, min, max);
-		f1 = clamp(f1, 0.f, 1.f) * 100.f;
-		float f2 = rescale(p->limitMax, p->limitMin, p->limitMax, min, max);
-		f2 = clamp(f2, 0.f, 1.f) * 100.f;
-
-		rightText = string::f("[%.1f%, %.1f%]", f1, f2);
-	}
-}; // struct ScalingOutputLabel
-
-template<typename SCALE = ScaledMapParam<float>>
-struct ScalingOutputLabelUnit : MenuLabelEx {
-	SCALE* p;
-	void step() override {
-		float min = p->getMin();
-		float max = p->getMax();
-
-		float f1 = rescale(p->limitMin, p->limitMin, p->limitMax, min, max);
-		f1 = clamp(f1, 0.f, 1.f);
-		float f2 = rescale(p->limitMax, p->limitMin, p->limitMax, min, max);
-		f2 = clamp(f2, 0.f, 1.f);
-
-		ParamQuantity* pq = p->paramQuantity;
-		min = rescale(f1, 0.f, 1.f, pq->getMinValue(), pq->getMaxValue());
-		max = rescale(f2, 0.f, 1.f, pq->getMinValue(), pq->getMaxValue());
-
-		rightText = string::f("[%.1fV, %.1fV]", min, max);
-	}
-}; // struct ScalingOutputLabelUnit
-
-
-template<typename SCALE = ScaledMapParam<float>>
-struct MinSlider : SubMenuSlider {
-	struct MinQuantity : Quantity {
-		SCALE* p;
-		void setValue(float value) override {
-			value = clamp(value, -1.f, 2.f);
-			p->setMin(value);
-		}
-		float getValue() override {
-			return p->getMin();
-		}
-		float getDefaultValue() override {
-			return 0.f;
-		}
-		float getMinValue() override {
-			return -1.f;
-		}
-		float getMaxValue() override {
-			return 2.f;
-		}
-		float getDisplayValue() override {
-			return getValue() * 100;
-		}
-		void setDisplayValue(float displayValue) override {
-			setValue(displayValue / 100);
-		}
-		std::string getLabel() override {
-			return "Low";
-		}
-		std::string getUnit() override {
-			return "%";
-		}
-		int getDisplayPrecision() override {
-			return 3;
-		}
-	}; // struct MinQuantity
-
-	MinSlider(SCALE* p) {
-		box.size.x = 220.0f;
-		quantity = construct<MinQuantity>(&MinQuantity::p, p);
-	}
-	~MinSlider() {
-		delete quantity;
-	}
-}; // struct MinSlider
-
-
-template<typename SCALE = ScaledMapParam<float>>
-struct MaxSlider : SubMenuSlider {
-	struct MaxQuantity : Quantity {
-		SCALE* p;
-		void setValue(float value) override {
-			value = clamp(value, -1.f, 2.f);
-			p->setMax(value);
-		}
-		float getValue() override {
-			return p->getMax();
-		}
-		float getDefaultValue() override {
-			return 1.f;
-		}
-		float getMinValue() override {
-			return -1.f;
-		}
-		float getMaxValue() override {
-			return 2.f;
-		}
-		float getDisplayValue() override {
-			return getValue() * 100;
-		}
-		void setDisplayValue(float displayValue) override {
-			setValue(displayValue / 100);
-		}
-		std::string getLabel() override {
-			return "High";
-		}
-		std::string getUnit() override {
-			return "%";
-		}
-		int getDisplayPrecision() override {
-			return 3;
-		}
-	}; // struct MaxQuantity
-
-	MaxSlider(SCALE* p) {
-		box.size.x = 220.0f;
-		quantity = construct<MaxQuantity>(&MaxQuantity::p, p);
-	}
-	~MaxSlider() {
-		delete quantity;
-	}
-}; // struct MaxSlider
-
-
-template<typename SCALE = ScaledMapParam<float>>
-struct PresetMenuItem : MenuItem {
-	SCALE* p;
-	PresetMenuItem() {
-		rightText = RIGHT_ARROW;
-	}
-
-	Menu* createChildMenu() override {
-		struct PresetItem : MenuItem {
-			SCALE* p;
-			float min, max;
-			void onAction(const event::Action& e) override {
-				p->setMin(min);
-				p->setMax(max);
-			}
-		};
-
-		Menu* menu = new Menu;
-		menu->addChild(construct<PresetItem>(&MenuItem::text, "Default", &PresetItem::p, p, &PresetItem::min, 0.f, &PresetItem::max, 1.f));
-		menu->addChild(construct<PresetItem>(&MenuItem::text, "Inverted", &PresetItem::p, p, &PresetItem::min, 1.f, &PresetItem::max, 0.f));
-		return menu;
-	}
-}; // struct PresetMenuItem
-
-
 struct MacroButton : MapButton<MacroModule> {
 	void appendContextMenu(Menu* menu) override {
 		menu->addChild(new MenuSeparator());
-		menu->addChild(new SlewSlider<>(&module->scaleParam[id]));
+		menu->addChild(new MapSlewSlider<>(&module->scaleParam[id]));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Scaling"));
-		menu->addChild(construct<ScalingInputLabel<>>(&MenuLabel::text, "Input", &ScalingInputLabel<>::p, &module->scaleParam[id]));
-		menu->addChild(construct<ScalingOutputLabel<>>(&MenuLabel::text, "Parameter range", &ScalingOutputLabel<>::p, &module->scaleParam[id]));
-		menu->addChild(new MinSlider<>(&module->scaleParam[id]));
-		menu->addChild(new MaxSlider<>(&module->scaleParam[id]));
-		menu->addChild(construct<PresetMenuItem<>>(&MenuItem::text, "Preset", &PresetMenuItem<>::p, &module->scaleParam[id]));
+		menu->addChild(construct<MapScalingInputLabel<>>(&MenuLabel::text, "Input", &MapScalingInputLabel<>::p, &module->scaleParam[id]));
+		menu->addChild(construct<MapScalingOutputLabel<>>(&MenuLabel::text, "Parameter range", &MapScalingOutputLabel<>::p, &module->scaleParam[id]));
+		menu->addChild(new MapMinSlider<>(&module->scaleParam[id]));
+		menu->addChild(new MapMaxSlider<>(&module->scaleParam[id]));
+		menu->addChild(construct<MapPresetMenuItem<>>(&MenuItem::text, "Preset", &MapPresetMenuItem<>::p, &module->scaleParam[id]));
 	}
 }; // struct MacroButton
 
@@ -532,14 +317,14 @@ struct MacroPort : StoermelderPort {
 		Menu* menu = createMenu();
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("CV port %i", id + 1)));
 		menu->addChild(construct<BipolarItem>(&MenuItem::text, "Output voltage", &BipolarItem::module, module, &BipolarItem::id, id));
-		menu->addChild(new SlewSlider<SCALE>(&module->scaleCvs[id]));
+		menu->addChild(new MapSlewSlider<SCALE>(&module->scaleCvs[id]));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Scaling"));
-		menu->addChild(construct<ScalingInputLabel<SCALE>>(&MenuLabel::text, "Input", &ScalingInputLabel<SCALE>::p, &module->scaleCvs[id]));
-		menu->addChild(construct<ScalingOutputLabelUnit<SCALE>>(&MenuLabel::text, "Output voltage", &ScalingOutputLabelUnit<SCALE>::p, &module->scaleCvs[id]));
-		menu->addChild(new MinSlider<SCALE>(&module->scaleCvs[id]));
-		menu->addChild(new MaxSlider<SCALE>(&module->scaleCvs[id]));
-		menu->addChild(construct<PresetMenuItem<SCALE>>(&MenuItem::text, "Presets", &PresetMenuItem<SCALE>::p, &module->scaleCvs[id]));
+		menu->addChild(construct<MapScalingInputLabel<SCALE>>(&MenuLabel::text, "Input", &MapScalingInputLabel<SCALE>::p, &module->scaleCvs[id]));
+		menu->addChild(construct<MapScalingOutputLabelUnit<SCALE>>(&MenuLabel::text, "Output voltage", &MapScalingOutputLabelUnit<SCALE>::p, &module->scaleCvs[id]));
+		menu->addChild(new MapMinSlider<SCALE>(&module->scaleCvs[id]));
+		menu->addChild(new MapMaxSlider<SCALE>(&module->scaleCvs[id]));
+		menu->addChild(construct<MapPresetMenuItem<SCALE>>(&MenuItem::text, "Presets", &MapPresetMenuItem<SCALE>::p, &module->scaleCvs[id]));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<DisconnectItem>(&MenuItem::text, "Disconnect", &DisconnectItem::pw, this));
 	}
@@ -664,14 +449,14 @@ struct MacroWidget : ThemedModuleWidget<MacroModule>, ParamWidgetContextExtender
 				menu->addChild(construct<MenuLabel>(&MenuLabel::text, "MACRO"));
 				menu->addChild(construct<CenterModuleItem>(&MenuItem::text, "Center mapping module", &CenterModuleItem::mw, this));
 				menu->addChild(new MenuSeparator);
-				menu->addChild(new SlewSlider<>(&module->scaleParam[id]));
+				menu->addChild(new MapSlewSlider<>(&module->scaleParam[id]));
 				menu->addChild(new MenuSeparator());
 				menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Scaling"));
-				menu->addChild(construct<ScalingInputLabel<>>(&MenuLabel::text, "Input", &ScalingInputLabel<>::p, &module->scaleParam[id]));
-				menu->addChild(construct<ScalingOutputLabel<>>(&MenuLabel::text, "Parameter range", &ScalingOutputLabel<>::p, &module->scaleParam[id]));
-				menu->addChild(new MinSlider<>(&module->scaleParam[id]));
-				menu->addChild(new MaxSlider<>(&module->scaleParam[id]));
-				menu->addChild(construct<PresetMenuItem<>>(&MenuItem::text, "Preset", &PresetMenuItem<>::p, &module->scaleParam[id]));
+				menu->addChild(construct<MapScalingInputLabel<>>(&MenuLabel::text, "Input", &MapScalingInputLabel<>::p, &module->scaleParam[id]));
+				menu->addChild(construct<MapScalingOutputLabel<>>(&MenuLabel::text, "Parameter range", &MapScalingOutputLabel<>::p, &module->scaleParam[id]));
+				menu->addChild(new MapMinSlider<>(&module->scaleParam[id]));
+				menu->addChild(new MapMaxSlider<>(&module->scaleParam[id]));
+				menu->addChild(construct<MapPresetMenuItem<>>(&MenuItem::text, "Preset", &MapPresetMenuItem<>::p, &module->scaleParam[id]));
 			}
 		}
 	}
