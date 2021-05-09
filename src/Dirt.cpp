@@ -27,22 +27,35 @@ struct WhiteNoiseGenerator {
 };
 
 struct NextGenerator {
-	float ratioLeft;
-	float ratioRight;
+	float ratio[PORT_MAX_CHANNELS];
+
+	dsp::BiquadFilter eqLow[PORT_MAX_CHANNELS];
+	dsp::BiquadFilter eqHigh[PORT_MAX_CHANNELS];
 
 	void reset() {
-		// Exponential distribution
-		ratioLeft = -std::log(random::uniform()) * 0.015f;
-		ratioRight = -std::log(random::uniform()) * 0.015f;
+		for (int i = 0; i < PORT_MAX_CHANNELS; i++) {
+			eqLow[i].setParameters(dsp::BiquadFilter::LOWSHELF, 400.f / APP->engine->getSampleRate(), 1.f, 15.f);
+			eqHigh[i].setParameters(dsp::BiquadFilter::HIGHSHELF, 8000.f / APP->engine->getSampleRate(), 1.f, 15.f);
+
+			// Exponential distribution
+			ratio[i] = -std::log(random::uniform()) * 0.005f;
+		}
 	}
 
-	float process(float* in, int index, int channels) {
-		float r = 0.f;
-		if (index > 0) 
-			r += in[index - 1] * ratioLeft;
-		if (index < channels - 1)
-			r += in[index + 1] * ratioRight;
-		return r;
+	void process(float* in, int channels) {
+		float f[channels] = {0.f};
+		for (int i = 0; i < channels; i++) {
+			// Apply shelfing on low and high end
+			f[i] += eqLow[i].process(in[i]);
+			f[i] += eqHigh[i].process(in[i]);
+		}
+
+		for (int i = 0; i < channels; i++) {
+			if (i > 0) 
+				in[i] += f[i - 1] * ratio[i - 1];
+			if (i < channels - 1)
+				in[i] += f[i + 1] * ratio[i];
+		}
 	}
 };
 
@@ -66,15 +79,15 @@ struct DirtModule : Module {
 	int panelTheme = 0;
 
 	WhiteNoiseGenerator noise[PORT_MAX_CHANNELS];
-	NextGenerator next[PORT_MAX_CHANNELS];
+	NextGenerator next;
 
 	DirtModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		for (size_t i = 0; i < PORT_MAX_CHANNELS; i++) {
 			noise[i].reset();
-			next[i].reset();
  		}
+		next.reset();
 	}
 
 	void process(const ProcessArgs& args) override {
@@ -85,8 +98,8 @@ struct DirtModule : Module {
 
 		for (int i = 0; i < channels; i++) {
 			in[i] += noise[i].process();
-			in[i] += next[i].process(in, i, channels);
 		}
+		next.process(in, channels);
 
 		outputs[OUTPUT].setChannels(channels);
 		outputs[OUTPUT].writeVoltages(in);
@@ -100,8 +113,7 @@ struct DirtModule : Module {
 		for (int i = 0; i < PORT_MAX_CHANNELS; i++) {
 			json_t* channelJ = json_object();
 			json_object_set_new(channelJ, "noiseRatio", json_real(noise[i].ratio));
-			json_object_set_new(channelJ, "nextRatioLeft", json_real(next[i].ratioLeft));
-			json_object_set_new(channelJ, "nextRadioRight", json_real(next[i].ratioRight));
+			json_object_set_new(channelJ, "nextRatio", json_real(next.ratio[i]));
 			json_array_append_new(channelsJ, channelJ);
 		}
 		json_object_set_new(rootJ, "channels", channelsJ);
@@ -117,8 +129,7 @@ struct DirtModule : Module {
 		size_t i;
 		json_array_foreach(channelsJ, i, channelJ) {
 			noise[i].ratio = json_real_value(json_object_get(channelJ, "noiseRatio"));
-			next[i].ratioLeft = json_real_value(json_object_get(channelJ, "nextRatioLeft"));
-			next[i].ratioRight = json_real_value(json_object_get(channelJ, "nextRadioRight"));
+			next.ratio[i] = json_real_value(json_object_get(channelJ, "nextRatio"));
 		}
 	}
 };
