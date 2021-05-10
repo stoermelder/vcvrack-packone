@@ -1,5 +1,6 @@
 #include "plugin.hpp"
 #include "MapModuleBase.hpp"
+#include "components/ParamWidgetContextExtender.hpp"
 #include <chrono>
 
 namespace StoermelderPackOne {
@@ -147,7 +148,6 @@ struct CvMapChoice : MapModuleChoice<MAX_CHANNELS, CVMapModule> {
 	void appendContextMenu(Menu* menu) override {
 		menu->addChild(new MenuSeparator());
 		menu->addChild(new MapSlewSlider<>(&module->mapParam[id]));
-		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Scaling"));
 		menu->addChild(construct<MapScalingInputLabel<>>(&MenuLabel::text, "Input", &MapScalingInputLabel<>::p, &module->mapParam[id]));
 		menu->addChild(construct<MapScalingOutputLabel<>>(&MenuLabel::text, "Parameter range", &MapScalingOutputLabel<>::p, &module->mapParam[id]));
@@ -158,7 +158,7 @@ struct CvMapChoice : MapModuleChoice<MAX_CHANNELS, CVMapModule> {
 };
 
 
-struct CVMapWidget : ThemedModuleWidget<CVMapModule> {
+struct CVMapWidget : ThemedModuleWidget<CVMapModule>, ParamWidgetContextExtender {
 	CVMapWidget(CVMapModule* module)
 		: ThemedModuleWidget<CVMapModule>(module, "CVMap") {
 		setModule(module);
@@ -186,6 +186,10 @@ struct CVMapWidget : ThemedModuleWidget<CVMapModule> {
 		addChild(mapWidget);
 	}
 
+	void step() override {
+		ParamWidgetContextExtender::step();
+		ThemedModuleWidget<CVMapModule>::step();
+	}
 
 	void appendContextMenu(Menu* menu) override {
 		ThemedModuleWidget<CVMapModule>::appendContextMenu(menu);
@@ -266,6 +270,26 @@ struct CVMapWidget : ThemedModuleWidget<CVMapModule> {
 		menu->addChild(construct<TextScrollItem>(&MenuItem::text, "Text scrolling", &TextScrollItem::module, module));
 		menu->addChild(construct<MappingIndicatorHiddenItem>(&MenuItem::text, "Hide mapping indicators", &MappingIndicatorHiddenItem::module, module));
 		menu->addChild(construct<LockedItem>(&MenuItem::text, "Lock mapping slots", &LockedItem::module, module));
+	}
+
+	void extendParamWidgetContextMenu(ParamWidget* pw, Menu* menu) override {
+		ParamQuantity* pq = pw->paramQuantity;
+		if (!pq) return;
+
+		for (int id = 0; id < module->mapLen; id++) {
+			if (module->paramHandles[0].moduleId == pq->module->id && module->paramHandles[0].paramId == pq->paramId) {
+				menu->addChild(new MenuSeparator());
+				menu->addChild(construct<MenuLabel>(&MenuLabel::text, "CV-MAP"));
+				menu->addChild(construct<CenterModuleItem>(&MenuItem::text, "Center mapping module", &CenterModuleItem::mw, this));
+				menu->addChild(new MapSlewSlider<>(&module->mapParam[id]));
+				menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Scaling"));
+				menu->addChild(construct<MapScalingInputLabel<>>(&MenuLabel::text, "Input", &MapScalingInputLabel<>::p, &module->mapParam[id]));
+				menu->addChild(construct<MapScalingOutputLabel<>>(&MenuLabel::text, "Parameter range", &MapScalingOutputLabel<>::p, &module->mapParam[id]));
+				menu->addChild(new MapMinSlider<>(&module->mapParam[id]));
+				menu->addChild(new MapMaxSlider<>(&module->mapParam[id]));
+				return;
+			}
+		}
 	}
 };
 
