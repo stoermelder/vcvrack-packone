@@ -867,11 +867,12 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 			struct SlotCvModeItem : MenuItem {
 				MODULE* module;
 				SLOTCVMODE slotCvMode;
+				std::string rightTextEx;
 				void onAction(const event::Action& e) override {
 					module->setCvMode(slotCvMode);
 				}
 				void step() override {
-					rightText = module->slotCvMode == slotCvMode ? "✔" : "";
+					rightText = module->slotCvMode == slotCvMode ? "✔" : rightTextEx;
 					MenuItem::step();
 				}
 			};
@@ -895,7 +896,7 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "C4", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::C4));
 				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Arm", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::ARM));
 				menu->addChild(new MenuSeparator);
-				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Off", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::OFF));
+				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Off", &SlotCvModeItem::rightTextEx, RACK_MOD_SHIFT_NAME "+Q", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::OFF));
 				return menu;
 			}
 		};
@@ -1044,9 +1045,17 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 	}
 
 	void onHoverKey(const event::HoverKey& e) override {
-		if (e.action == GLFW_PRESS && e.key == GLFW_KEY_B && (e.mods & RACK_MOD_MASK) == GLFW_MOD_SHIFT) {
-			module->boxDraw ^= true;
-			e.consume(this);
+		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == GLFW_MOD_SHIFT) {
+			switch (e.key) {
+				case GLFW_KEY_B:
+					module->boxDraw ^= true;
+					e.consume(this);
+					break;
+				case GLFW_KEY_Q:
+					module->slotCvMode = SLOTCVMODE::OFF;
+					e.consume(this);
+					break;
+			}
 		}
 		ModuleWidget::onHoverKey(e);
 	}
