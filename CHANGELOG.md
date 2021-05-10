@@ -29,6 +29,7 @@
     - Load preset in Arm-mode even when the same slot was selected before (#212)
     - Improved thread-handling for crashes when used with specific modules (#76)
     - Added an option for auto-loading the last active preset
+    - Added "Off" as SLOT mode (#249)
     - Fixed broken "Autoload first preset" (#29)
 - Module [CV-MAP](./docs/CVMap.md)
     - Added context menu sliders for slew and scaling and transforming the input and parameter-range (#243)
