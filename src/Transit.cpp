@@ -848,17 +848,24 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 	}
 	
 	void onHoverKey(const event::HoverKey& e) override {
-		BASE::onHoverKey(e);
-		if (e.action == GLFW_PRESS && (e.mods & GLFW_MOD_SHIFT)) {
+		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == GLFW_MOD_SHIFT) {
+			MODULE* module = dynamic_cast<MODULE*>(this->module);
 			switch (e.key) {
 				case GLFW_KEY_B:
 					enableLearn(2);
+					e.consume(this);
 					break;
-				case GLFW_KEY_A: 
+				case GLFW_KEY_A:
 					enableLearn(3);
+					e.consume(this);
+					break;
+				case GLFW_KEY_Q:
+					module->slotCvMode = SLOTCVMODE::OFF;
+					e.consume(this);
 					break;
 			}
 		}
+		BASE::onHoverKey(e);
 	}
 
 	void onDeselect(const event::Deselect& e) override {
@@ -974,11 +981,12 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 			struct SlotCvModeItem : MenuItem {
 				MODULE* module;
 				SLOTCVMODE slotCvMode;
+				std::string rightTextEx;
 				void onAction(const event::Action& e) override {
 					module->setCvMode(slotCvMode);
 				}
 				void step() override {
-					rightText = module->slotCvMode == slotCvMode ? "✔" : "";
+					rightText = module->slotCvMode == slotCvMode ? "✔" : rightTextEx;
 					MenuItem::step();
 				}
 			};
@@ -1004,7 +1012,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 				menu->addChild(new MenuSeparator);
 				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Phase", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::PHASE));
 				menu->addChild(new MenuSeparator);
-				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Off", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::OFF));
+				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Off", &SlotCvModeItem::rightTextEx, RACK_MOD_SHIFT_NAME "+Q", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::OFF));
 				return menu;
 			}
 		};
