@@ -81,6 +81,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 
 	/** [Stored to JSON] mode for SEQ CV input */
 	SLOTCVMODE slotCvMode = SLOTCVMODE::TRIG_FWD;
+	SLOTCVMODE slotCvModeBak = SLOTCVMODE::OFF;
 	int slotCvModeDir = 1;
 	int slotCvModeAlt = 1;
 	std::vector<int> slotCvModeShuffle;
@@ -716,7 +717,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 	}
 
 	void setCvMode(SLOTCVMODE mode) {
-		slotCvMode = mode;
+		slotCvMode = slotCvModeBak = mode;
 		if (slotCvMode == SLOTCVMODE::PHASE) outMode = OUTMODE::PHASE;
 		else if (outMode == OUTMODE::PHASE) outMode = OUTMODE::ENV;
 	}
@@ -860,7 +861,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 					e.consume(this);
 					break;
 				case GLFW_KEY_Q:
-					module->slotCvMode = SLOTCVMODE::OFF;
+					module->slotCvMode = module->slotCvMode == SLOTCVMODE::OFF ? module->slotCvModeBak : SLOTCVMODE::OFF;
 					e.consume(this);
 					break;
 			}
@@ -981,12 +982,12 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 			struct SlotCvModeItem : MenuItem {
 				MODULE* module;
 				SLOTCVMODE slotCvMode;
-				std::string rightTextEx;
+				std::string rightTextEx = "";
 				void onAction(const event::Action& e) override {
 					module->setCvMode(slotCvMode);
 				}
 				void step() override {
-					rightText = module->slotCvMode == slotCvMode ? "✔" : rightTextEx;
+					rightText = string::f("%s %s", module->slotCvMode == slotCvMode ? "✔" : "", rightTextEx.c_str());
 					MenuItem::step();
 				}
 			};

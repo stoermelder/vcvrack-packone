@@ -82,6 +82,7 @@ struct EightFaceModule : Module {
 
 	/** [Stored to JSON] mode for SEQ CV input */
 	SLOTCVMODE slotCvMode = SLOTCVMODE::TRIG_FWD;
+	SLOTCVMODE slotCvModeBak = SLOTCVMODE::OFF;
 	int slotCvModeDir = 1;
 	int slotCvModeAlt = 1;
 	std::vector<int> slotCvModeShuffle;
@@ -92,7 +93,6 @@ struct EightFaceModule : Module {
 	int connected = 0;
 	int presetNext = -1;
 	float modeLight = 0;
-
 
 	std::mutex workerMutex;
 	std::condition_variable workerCondVar;
@@ -506,12 +506,12 @@ struct SlovCvModeMenuItem : MenuItem {
 	struct SlotCvModeItem : MenuItem {
 		MODULE* module;
 		SLOTCVMODE slotCvMode;
-		std::string rightTextEx;
+		std::string rightTextEx = "";
 		void onAction(const event::Action& e) override {
-			module->slotCvMode = slotCvMode;
+			module->slotCvMode = module->slotCvModeBak = slotCvMode;
 		}
 		void step() override {
-			rightText = module->slotCvMode == slotCvMode ? "✔" : rightTextEx;
+			rightText = string::f("%s %s", module->slotCvMode == slotCvMode ? "✔" : "", rightTextEx.c_str());
 			MenuItem::step();
 		}
 	};
@@ -620,7 +620,7 @@ struct EightFaceWidgetTemplate : ModuleWidget {
 			switch (e.key) {
 				case GLFW_KEY_Q:
 					MODULE* module = dynamic_cast<MODULE*>(this->module);
-					module->slotCvMode = SLOTCVMODE::OFF;
+					module->slotCvMode = module->slotCvMode == SLOTCVMODE::OFF ? module->slotCvModeBak : SLOTCVMODE::OFF;
 					e.consume(this);
 					break;
 			}
