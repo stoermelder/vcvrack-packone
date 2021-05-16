@@ -1,6 +1,7 @@
 #include "plugin.hpp"
 #include "components/MenuColorLabel.hpp"
 #include "components/MenuColorField.hpp"
+#include "ui/ModuleSelectProcessor.hpp"
 
 namespace StoermelderPackOne {
 namespace Stroke {
@@ -113,7 +114,8 @@ enum class KEY_MODE {
 	S_FRAMERATE = 30,
 	S_BUSBOARD = 31,
 	S_ENGINE_PAUSE = 32,
-	S_MODULE_LOCK = 33
+	S_MODULE_LOCK = 33,
+	S_MODULE_ADD = 34
 };
 
 template < int PORTS >
@@ -635,6 +637,47 @@ struct CmdModuleLock : CmdBase {
 }; // struct CmdModuleLock
 
 
+struct CmdModuleAdd : CmdBase {
+	std::string* data;
+	void initialCmd(KEY_MODE keyMode) override {
+		if (*data == "") return;
+		json_error_t error;
+		json_t* oJ = json_loads(data->c_str(), 0, &error);
+
+		json_t* moduleJ = json_object_get(oJ, "module");
+		// Get slugs
+		json_t* pluginSlugJ = json_object_get(moduleJ, "plugin");
+		if (!pluginSlugJ) return;
+		json_t* modelSlugJ = json_object_get(moduleJ, "model");
+		if (!modelSlugJ) return;
+
+		std::string pluginSlug = json_string_value(pluginSlugJ);
+		std::string modelSlug = json_string_value(modelSlugJ);
+
+		// Get Model
+		plugin::Model* model = plugin::getModel(pluginSlug, modelSlug);
+		if (!model) return;
+
+		// Create ModuleWidget
+		ModuleWidget* moduleWidget = model->createModuleWidget();
+		assert(moduleWidget);
+
+		moduleWidget->module->id = -1;
+		APP->scene->rack->addModuleAtMouse(moduleWidget);
+		moduleWidget->fromJson(moduleJ);
+		json_decref(oJ);
+
+		if (moduleWidget) {
+			// ModuleAdd history action
+			history::ModuleAdd* h = new history::ModuleAdd;
+			h->name = "create module";
+			h->setModule(moduleWidget);
+			APP->history->push(h);
+		}
+	}
+}; // struct CmdModuleAdd
+
+
 struct CmdBusboard {
 	struct ModifiedRackRail : RackRail {
 		bool drawRails = true;
@@ -717,10 +760,12 @@ struct CmdBusboard {
 
 // -- GUI --
 
-template < int PORTS >
+template<int PORTS>
 struct KeyContainer : Widget {
 	StrokeModule<PORTS>* module = NULL;
 	int learnIdx = -1;
+
+	ModuleSelectProcessor moduleSelectProcessor;
 
 	CmdBase* previousCmd = NULL;
 	CmdBusboard* cmdBusboard = NULL;
@@ -805,6 +850,8 @@ struct KeyContainer : Widget {
 					processCmd<CmdEnginePause>(); break;
 				case KEY_MODE::S_MODULE_LOCK:
 					processCmd<CmdModuleLock>(); break;
+				case KEY_MODE::S_MODULE_ADD:
+					processCmd<CmdModuleAdd>(&CmdModuleAdd::data, &module->keyTemp->data); break;
 				case KEY_MODE::S_BUSBOARD:
 					if (!cmdBusboard) cmdBusboard = new CmdBusboard;
 					cmdBusboard->process();
@@ -923,7 +970,7 @@ struct KeyContainer : Widget {
 
 
 
-template < int PORTS >
+template<int PORTS>
 struct KeyDisplay : StoermelderLedDisplay {
 	KeyContainer<PORTS>* keyContainer;
 	StrokeModule<PORTS>* module;
@@ -1116,6 +1163,75 @@ struct KeyDisplay : StoermelderLedDisplay {
 			}
 		}; // struct ViewMenuItem
 
+		struct ModuleMenuItem : MenuItem {
+			StrokeModule<PORTS>* module;
+			ModuleSelectProcessor* moduleSelectProcessor;
+			int idx;
+			void step() override {
+				rightText = 
+					module->keys[idx].mode == KEY_MODE::S_MODULE_ADD
+						? "✔" : RIGHT_ARROW;
+				MenuItem::step();
+			}
+
+			Menu* createChildMenu() override {
+				struct ModuleAddItem : ModeMenuItem {
+					ModuleSelectProcessor* moduleSelectProcessor;
+					void step() override {
+						ModeMenuItem::rightText = ModeMenuItem::module->keys[ModeMenuItem::idx].mode == KEY_MODE::S_MODULE_ADD ? "✔ " RIGHT_ARROW : "";
+						ModeMenuItem::step();
+					}
+					void onAction(const event::Action& e) override {
+						ModeMenuItem::module->keys[ModeMenuItem::idx].mode = KEY_MODE::S_MODULE_ADD;
+						ModeMenuItem::module->keys[ModeMenuItem::idx].high = false;
+						ModeMenuItem::module->keys[ModeMenuItem::idx].data = color::toHexString(color::BLACK);
+					}
+
+					Menu* createChildMenu() override {
+						struct MenuAddLearnItem : MenuItem {
+							std::string* data;
+							ModuleSelectProcessor* moduleSelectProcessor;
+							void onAction(const event::Action& e) override {
+								MenuItem::onAction(e);
+								*data = "";
+								std::string* _data = data;
+								auto callback = [_data](ModuleWidget* mw) {
+									json_t* oJ = json_object();
+									json_object_set_new(oJ, "name", json_string((mw->model->plugin->brand + " " + mw->module->model->name).c_str()));
+									json_object_set_new(oJ, "module", mw->toJson());
+									*_data = json_dumps(oJ, JSON_INDENT(2) | JSON_REAL_PRECISION(9));
+									json_decref(oJ);
+								};
+								moduleSelectProcessor->startLearn(callback);
+							}
+						};
+	
+						if (ModeMenuItem::module->keys[ModeMenuItem::idx].mode == KEY_MODE::S_MODULE_ADD) {
+							Menu* menu = new Menu;
+							MenuAddLearnItem* learnItem = construct<MenuAddLearnItem>(&MenuItem::text, "Learn module", &MenuAddLearnItem::moduleSelectProcessor, moduleSelectProcessor, &MenuAddLearnItem::data, &ModeMenuItem::module->keys[ModeMenuItem::idx].data);
+							menu->addChild(learnItem);
+
+							if (ModeMenuItem::module->keys[ModeMenuItem::idx].data != "") {
+								json_error_t error;
+								json_t* oJ = json_loads(ModeMenuItem::module->keys[ModeMenuItem::idx].data.c_str(), 0, &error);
+								std::string name = json_string_value(json_object_get(oJ, "name"));
+								menu->addChild(new MenuSeparator);
+								menu->addChild(construct<MenuLabel>(&MenuLabel::text, name));
+								json_decref(oJ);
+							}
+
+							return menu;
+						}
+						return NULL;
+					}
+				};
+
+				Menu* menu = new Menu;
+				menu->addChild(construct<ModuleAddItem>(&MenuItem::text, "Add module", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_MODULE_ADD, &ModuleAddItem::moduleSelectProcessor, moduleSelectProcessor));
+				return menu;
+			}
+		}; // struct ModuleMenuItem
+
 		struct CableMenuItem : MenuItem {
 			StrokeModule<PORTS>* module;
 			int idx;
@@ -1221,8 +1337,10 @@ struct KeyDisplay : StoermelderLedDisplay {
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::CV_TOGGLE));
 		menu->addChild(construct<ParamMenuItem>(&MenuItem::text, "Parameter commands", &ParamMenuItem::module, module, &ParamMenuItem::idx, idx));
 		menu->addChild(construct<ViewMenuItem>(&MenuItem::text, "View commands", &ViewMenuItem::module, module, &ViewMenuItem::idx, idx));
+		menu->addChild(construct<ModuleMenuItem>(&MenuItem::text, "Module commands", &ModuleMenuItem::module, module, &ModuleMenuItem::idx, idx, &ModuleMenuItem::moduleSelectProcessor, &keyContainer->moduleSelectProcessor));
 		menu->addChild(construct<CableMenuItem>(&MenuItem::text, "Cable commands", &CableMenuItem::module, module, &CableMenuItem::idx, idx));
 		menu->addChild(construct<SpecialMenuItem>(&MenuItem::text, "Special commands", &SpecialMenuItem::module, module, &SpecialMenuItem::idx, idx));
+		keyContainer->moduleSelectProcessor.setOwner(this);
 	}
 
 	void onHover(const event::Hover& e) override {
@@ -1292,6 +1410,8 @@ struct KeyDisplay : StoermelderLedDisplay {
 						text = "Toggle engine pause"; break;
 					case KEY_MODE::S_MODULE_LOCK:
 						text = "Toggle lock modules"; break;
+					case KEY_MODE::S_MODULE_ADD:
+						text = "Add module"; break;
 					case KEY_MODE::S_BUSBOARD:
 						text = "Toggle busboard"; break;
 				}
@@ -1320,6 +1440,11 @@ struct KeyDisplay : StoermelderLedDisplay {
 			delete tooltip;
 			tooltip = NULL;
 		}
+	}
+
+	void onDeselect(const event::Deselect& e) override {
+		StoermelderLedDisplay::onDeselect(e);
+		keyContainer->moduleSelectProcessor.processDeselect();
 	}
 };
 
