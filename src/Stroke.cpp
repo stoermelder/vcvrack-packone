@@ -91,6 +91,10 @@ enum class KEY_MODE {
 	S_ZOOM_MODULE_CUSTOM = 16,
 	S_ZOOM_OUT = 13,
 	S_ZOOM_TOGGLE = 15,
+	S_MOVE_LEFT = 40,
+	S_MOVE_RIGHT = 41,
+	S_MOVE_UP = 42,
+	S_MOVE_DOWN = 43,
 	S_CABLE_OPACITY = 20,
 	S_CABLE_COLOR_NEXT = 21,
 	S_CABLE_COLOR = 24,
@@ -208,6 +212,11 @@ struct StrokeModule : Module {
 		switch (keys[idx].mode) {
 			case KEY_MODE::CV_GATE:
 				keys[idx].high = false; break;
+			case KEY_MODE::S_MOVE_DOWN:
+			case KEY_MODE::S_MOVE_UP:
+			case KEY_MODE::S_MOVE_LEFT:
+			case KEY_MODE::S_MOVE_RIGHT:
+				keyTemp = NULL; break;
 			default:
 				break;
 		}
@@ -341,6 +350,14 @@ struct KeyContainer : Widget {
 					cmdZoomOut(); break;
 				case KEY_MODE::S_ZOOM_TOGGLE:
 					cmdZoomToggle(); break;
+				case KEY_MODE::S_MOVE_DOWN:
+					cmdMove(0, 5); break;
+				case KEY_MODE::S_MOVE_UP:
+					cmdMove(0, -5); break;
+				case KEY_MODE::S_MOVE_LEFT:
+					cmdMove(-5, 0); break;
+				case KEY_MODE::S_MOVE_RIGHT:
+					cmdMove(5, 0); break;
 				case KEY_MODE::S_CABLE_OPACITY:
 					cmdCableOpacity(); break;
 				case KEY_MODE::S_CABLE_COLOR_NEXT:
@@ -362,7 +379,15 @@ struct KeyContainer : Widget {
 				default:
 					break;
 			}
-			module->keyTemp = NULL;
+			switch (module->keyTemp->mode) {
+				case KEY_MODE::S_MOVE_DOWN:
+				case KEY_MODE::S_MOVE_UP:
+				case KEY_MODE::S_MOVE_LEFT:
+				case KEY_MODE::S_MOVE_RIGHT:
+					break;
+				default:
+					module->keyTemp = NULL;
+			}
 		}
 		Widget::step();
 	}
@@ -414,6 +439,13 @@ struct KeyContainer : Widget {
 
 	void cmdZoomToggle() {
 		if (settings::zoom > 1.f) cmdZoomOut(); else cmdZoomModule(0.9f);
+	}
+
+	void cmdMove(int x, int y) {
+		math::Vec newOffset = APP->scene->rackScroll->offset;
+		newOffset.x += math::clamp(x * 10.0f, -100.0f, 100.0f);
+		newOffset.y += math::clamp(y * 10.0f, -100.0f, 100.0f);
+		APP->scene->rackScroll->offset = newOffset;
 	}
 
 	void cmdCableOpacity() {
@@ -693,7 +725,11 @@ struct KeyDisplay : StoermelderLedDisplay {
 					module->keys[idx].mode == KEY_MODE::S_ZOOM_MODULE_30 ||
 					module->keys[idx].mode == KEY_MODE::S_ZOOM_MODULE_CUSTOM ||
 					module->keys[idx].mode == KEY_MODE::S_ZOOM_OUT ||
-					module->keys[idx].mode == KEY_MODE::S_ZOOM_TOGGLE
+					module->keys[idx].mode == KEY_MODE::S_ZOOM_TOGGLE ||
+					module->keys[idx].mode == KEY_MODE::S_MOVE_DOWN ||
+					module->keys[idx].mode == KEY_MODE::S_MOVE_UP ||
+					module->keys[idx].mode == KEY_MODE::S_MOVE_LEFT ||
+					module->keys[idx].mode == KEY_MODE::S_MOVE_RIGHT
 						? "✔" : RIGHT_ARROW;
 				MenuItem::step();
 			}
@@ -774,6 +810,10 @@ struct KeyDisplay : StoermelderLedDisplay {
 				menu->addChild(construct<ModeZoomModuleCustomItem>(&MenuItem::text, "Zoom level to module", &ModeZoomModuleCustomItem::module, module, &ModeZoomModuleCustomItem::idx, idx));
 				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom out", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ZOOM_OUT));
 				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom toggle", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ZOOM_TOGGLE));
+				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Move up", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_MOVE_UP));
+				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Move down", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_MOVE_DOWN));
+				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Move left", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_MOVE_LEFT));
+				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Move right", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_MOVE_RIGHT));
 				return menu;
 			}
 		}; // struct ViewMenuItem
