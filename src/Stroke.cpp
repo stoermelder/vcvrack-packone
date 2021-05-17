@@ -115,7 +115,11 @@ enum class KEY_MODE {
 	S_BUSBOARD = 31,
 	S_ENGINE_PAUSE = 32,
 	S_MODULE_LOCK = 33,
-	S_MODULE_ADD = 34
+	S_MODULE_ADD = 34,
+	S_SCROLL_LEFT = 40,
+	S_SCROLL_RIGHT = 41,
+	S_SCROLL_UP = 42,
+	S_SCROLL_DOWN = 43
 };
 
 template < int PORTS >
@@ -154,6 +158,7 @@ struct StrokeModule : Module {
 	Key keys[PORTS];
 
 	Key* keyTemp = NULL;
+	Key* keyTempHeld = NULL;
 	Key* keyTempDisable = NULL;
 
 	dsp::PulseGenerator pulse[PORTS];
@@ -220,6 +225,11 @@ struct StrokeModule : Module {
 				break;
 		}
 		lightPulse[idx].trigger(0.2f);
+	}
+
+	void keyHeld(int idx) {
+		keyTempHeld = &keys[idx];
+		lightPulse[idx].trigger(0.1f);
 	}
 
 	void keyDisable(int idx) {
@@ -678,6 +688,26 @@ struct CmdModuleAdd : CmdBase {
 }; // struct CmdModuleAdd
 
 
+struct CmdRackMove : CmdBase {
+	KEY_MODE keyMode;
+	float x = 0.f;
+	float y = 0.f;
+	float arrowSpeed = 30.0;
+	void initialCmd(KEY_MODE keyMode) override {
+		this->keyMode = keyMode;
+		math::Vec newOffset = APP->scene->rackScroll->offset;
+		newOffset.x += x * arrowSpeed;
+		newOffset.y += y * arrowSpeed;
+		APP->scene->rackScroll->offset = newOffset;
+	}
+	bool followUpCmd(KEY_MODE keyMode) override {
+		if (this->keyMode != keyMode) return true;
+		initialCmd(keyMode);
+		return false;
+	}
+};
+
+
 struct CmdBusboard {
 	struct ModifiedRackRail : RackRail {
 		bool drawRails = true;
@@ -792,6 +822,17 @@ struct KeyContainer : Widget {
 		previousCmd->initialCmd(keyMode);
 	}
 
+	void processCmdHeld() {
+		KEY_MODE keyMode = module->keyTempHeld->mode;
+		if (previousCmd) {
+			bool shouldClear = previousCmd->followUpCmd(keyMode);
+			if (shouldClear) {
+				delete previousCmd;
+				previousCmd = NULL;
+			}
+		}
+	}
+
 	void processCmdDisable() {
 		KEY_MODE keyMode = module->keyTempDisable->mode;
 		if (previousCmd) {
@@ -852,6 +893,14 @@ struct KeyContainer : Widget {
 					processCmd<CmdModuleLock>(); break;
 				case KEY_MODE::S_MODULE_ADD:
 					processCmd<CmdModuleAdd>(&CmdModuleAdd::data, &module->keyTemp->data); break;
+				case KEY_MODE::S_SCROLL_LEFT:
+					processCmd<CmdRackMove>(&CmdRackMove::x, -1.f, &CmdRackMove::y, 0.f); break;
+				case KEY_MODE::S_SCROLL_RIGHT:
+					processCmd<CmdRackMove>(&CmdRackMove::x, 1.f, &CmdRackMove::y, 0.f); break;
+				case KEY_MODE::S_SCROLL_UP:
+					processCmd<CmdRackMove>(&CmdRackMove::x, 0.f, &CmdRackMove::y, -1.f); break;
+				case KEY_MODE::S_SCROLL_DOWN:
+					processCmd<CmdRackMove>(&CmdRackMove::x, 0.f, &CmdRackMove::y, 1.f); break;
 				case KEY_MODE::S_BUSBOARD:
 					if (!cmdBusboard) cmdBusboard = new CmdBusboard;
 					cmdBusboard->process();
@@ -861,6 +910,20 @@ struct KeyContainer : Widget {
 			}
 			module->keyTemp = NULL;
 		}
+
+		if (module && module->keyTempHeld != NULL) {
+			switch (module->keyTempHeld->mode) {
+				case KEY_MODE::S_SCROLL_LEFT:
+				case KEY_MODE::S_SCROLL_RIGHT:
+				case KEY_MODE::S_SCROLL_UP:
+				case KEY_MODE::S_SCROLL_DOWN:
+					processCmdHeld(); break;
+				default:
+					break;
+			}
+			module->keyTempHeld = NULL;
+		}
+
 		if (module && module->keyTempDisable != NULL) {
 			switch (module->keyTempDisable->mode) {
 				case KEY_MODE::S_CABLE_MULTIDRAG:
@@ -947,6 +1010,7 @@ struct KeyContainer : Widget {
 			if (e.action == RACK_HELD) {
 				for (int i = 0; i < PORTS; i++) {
 					if (e_key == module->keys[i].key && e_mods == module->keys[i].mods) {
+						module->keyHeld(i);
 						e.consume(this);
 					}
 				}
@@ -1072,7 +1136,11 @@ struct KeyDisplay : StoermelderLedDisplay {
 					module->keys[idx].mode == KEY_MODE::S_ZOOM_OUT ||
 					module->keys[idx].mode == KEY_MODE::S_ZOOM_OUT_SMOOTH ||
 					module->keys[idx].mode == KEY_MODE::S_ZOOM_TOGGLE ||
-					module->keys[idx].mode == KEY_MODE::S_ZOOM_TOGGLE_SMOOTH
+					module->keys[idx].mode == KEY_MODE::S_ZOOM_TOGGLE_SMOOTH ||
+					module->keys[idx].mode == KEY_MODE::S_SCROLL_LEFT ||
+					module->keys[idx].mode == KEY_MODE::S_SCROLL_RIGHT ||
+					module->keys[idx].mode == KEY_MODE::S_SCROLL_UP ||
+					module->keys[idx].mode == KEY_MODE::S_SCROLL_DOWN
 						? "✔" : RIGHT_ARROW;
 				MenuItem::step();
 			}
@@ -1159,6 +1227,11 @@ struct KeyDisplay : StoermelderLedDisplay {
 				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom out (smooth)", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ZOOM_OUT_SMOOTH));
 				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom toggle", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ZOOM_TOGGLE));
 				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom toggle (smooth)", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ZOOM_TOGGLE_SMOOTH));
+				menu->addChild(new MenuSeparator);
+				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Scroll left", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_SCROLL_LEFT));
+				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Scroll right", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_SCROLL_RIGHT));
+				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Scroll up", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_SCROLL_UP));
+				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Scroll down", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_SCROLL_DOWN));
 				return menu;
 			}
 		}; // struct ViewMenuItem
@@ -1412,6 +1485,14 @@ struct KeyDisplay : StoermelderLedDisplay {
 						text = "Toggle lock modules"; break;
 					case KEY_MODE::S_MODULE_ADD:
 						text = "Add module"; break;
+					case KEY_MODE::S_SCROLL_LEFT:
+						text = "Scroll left"; break;
+					case KEY_MODE::S_SCROLL_RIGHT:
+						text = "Scroll right"; break;
+					case KEY_MODE::S_SCROLL_UP:
+						text = "Scroll up"; break;
+					case KEY_MODE::S_SCROLL_DOWN:
+						text = "Scroll down"; break;
 					case KEY_MODE::S_BUSBOARD:
 						text = "Toggle busboard"; break;
 				}
