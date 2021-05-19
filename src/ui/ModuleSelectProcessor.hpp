@@ -9,14 +9,14 @@ struct ModuleSelectProcessor {
 	};
 
 	Widget* owner;
-	std::function<void(ModuleWidget* mw)> callback;
+	std::function<void(ModuleWidget* mw, Vec pos)> callback;
 	LEARN_MODE learnMode = LEARN_MODE::OFF;
 
 	void setOwner(Widget* owner) {
 		this->owner = owner;
 	}
 
-	void startLearn(std::function<void(ModuleWidget* mw)> callback, LEARN_MODE mode = LEARN_MODE::DEFAULT) {
+	void startLearn(std::function<void(ModuleWidget* mw, Vec pos)> callback, LEARN_MODE mode = LEARN_MODE::DEFAULT) {
 		if (owner == NULL) return;
 		this->callback = callback;
 
@@ -48,7 +48,8 @@ struct ModuleSelectProcessor {
 			ModuleWidget* mw = dynamic_cast<ModuleWidget*>(w);
 			if (!mw) mw = w->getAncestorOfType<ModuleWidget>();
 			if (!mw || mw == owner) return;
-			if (callback) callback(mw);
+			Vec pos = w->getRelativeOffset(Vec(1.f, 1.f), mw);
+			if (callback) callback(mw, pos);
 		}
 	}
 };
