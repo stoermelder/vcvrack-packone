@@ -1257,7 +1257,7 @@ struct KeyDisplay : StoermelderLedDisplay {
 					void onAction(const event::Action& e) override {
 						ModeMenuItem::module->keys[ModeMenuItem::idx].mode = KEY_MODE::S_MODULE_ADD;
 						ModeMenuItem::module->keys[ModeMenuItem::idx].high = false;
-						ModeMenuItem::module->keys[ModeMenuItem::idx].data = color::toHexString(color::BLACK);
+						ModeMenuItem::module->keys[ModeMenuItem::idx].data = "";
 					}
 
 					Menu* createChildMenu() override {
@@ -1484,7 +1484,7 @@ struct KeyDisplay : StoermelderLedDisplay {
 					case KEY_MODE::S_MODULE_LOCK:
 						text = "Toggle lock modules"; break;
 					case KEY_MODE::S_MODULE_ADD:
-						text = "Add module"; break;
+						text = "Module: Add"; break;
 					case KEY_MODE::S_SCROLL_LEFT:
 						text = "Scroll left"; break;
 					case KEY_MODE::S_SCROLL_RIGHT:
