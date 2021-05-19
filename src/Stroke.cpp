@@ -700,6 +700,7 @@ struct CmdModuleDispatch : CmdBase {
 
 	bool followUpCmd(KEY_MODE keyMode) override { 
 		if (keyMode != KEY_MODE::S_MODULE_DISPATCH) return true;
+		if (*data == "") return true;
 		dispatch(GLFW_RELEASE);
 		return true;
 	}
@@ -1431,8 +1432,10 @@ struct KeyDisplay : StoermelderLedDisplay {
 								if (keyJ) {
 									std::string key = keyName(json_integer_value(keyJ));
 									int mods = json_integer_value(modsJ);
+									std::string alt = mods & GLFW_MOD_ALT ? RACK_MOD_ALT_NAME "+" : "";
 									std::string ctrl = mods & GLFW_MOD_CONTROL ? RACK_MOD_CTRL_NAME "+" : "";
-									std::string s = string::f("Hotkey: %s%s", ctrl.c_str(), key.c_str());
+									std::string shift = mods & GLFW_MOD_SHIFT ? RACK_MOD_SHIFT_NAME "+" : "";
+									std::string s = string::f("Hotkey: %s%s%s%s", alt.c_str(), ctrl.c_str(), shift.c_str(), key.c_str());
 									menu->addChild(construct<MenuLabel>(&MenuLabel::text, s));
 								}
 
@@ -1550,16 +1553,19 @@ struct KeyDisplay : StoermelderLedDisplay {
 		menu->addChild(construct<LearnMenuItem>(&MenuItem::text, "Learn", &LearnMenuItem::keyContainer, keyContainer, &LearnMenuItem::idx, idx));
 		menu->addChild(construct<ClearMenuItem>(&MenuItem::text, "Clear", &ClearMenuItem::module, module, &ClearMenuItem::idx, idx));
 		menu->addChild(new MenuSeparator);
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Output mode"));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Off", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::OFF));
+		menu->addChild(new MenuSeparator);
+		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "CV output"));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Trigger", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::CV_TRIGGER));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Gate", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::CV_GATE));
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::CV_TOGGLE));
-		menu->addChild(construct<ParamMenuItem>(&MenuItem::text, "Parameter commands", &ParamMenuItem::module, module, &ParamMenuItem::idx, idx));
-		menu->addChild(construct<ViewMenuItem>(&MenuItem::text, "View commands", &ViewMenuItem::module, module, &ViewMenuItem::idx, idx));
-		menu->addChild(construct<ModuleMenuItem>(&MenuItem::text, "Module commands", &ModuleMenuItem::module, module, &ModuleMenuItem::idx, idx, &ModuleMenuItem::keyContainer, keyContainer));
-		menu->addChild(construct<CableMenuItem>(&MenuItem::text, "Cable commands", &CableMenuItem::module, module, &CableMenuItem::idx, idx));
-		menu->addChild(construct<SpecialMenuItem>(&MenuItem::text, "Special commands", &SpecialMenuItem::module, module, &SpecialMenuItem::idx, idx));
+		menu->addChild(new MenuSeparator);
+		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Commands"));
+		menu->addChild(construct<ViewMenuItem>(&MenuItem::text, "View", &ViewMenuItem::module, module, &ViewMenuItem::idx, idx));
+		menu->addChild(construct<ParamMenuItem>(&MenuItem::text, "Parameters", &ParamMenuItem::module, module, &ParamMenuItem::idx, idx));
+		menu->addChild(construct<ModuleMenuItem>(&MenuItem::text, "Modules", &ModuleMenuItem::module, module, &ModuleMenuItem::idx, idx, &ModuleMenuItem::keyContainer, keyContainer));
+		menu->addChild(construct<CableMenuItem>(&MenuItem::text, "Cables", &CableMenuItem::module, module, &CableMenuItem::idx, idx));
+		menu->addChild(construct<SpecialMenuItem>(&MenuItem::text, "Special", &SpecialMenuItem::module, module, &SpecialMenuItem::idx, idx));
 		keyContainer->moduleSelectProcessor.setOwner(this);
 	}
 
