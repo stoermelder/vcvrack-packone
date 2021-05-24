@@ -300,8 +300,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 	Module* expMem = NULL;
 	int expMemModuleId = -1;
 
-	Module* expMap = NULL;
-	int expMapModuleId = -1;
+	Module* expCtx = NULL;
 
 	MidiCatModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
@@ -579,7 +578,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 
 		// Expanders
 		bool expMemFound = false;
-		bool expMapFound = false;
+		bool expCtxFound = false;
 		Module* exp = rightExpander.module;
 		for (int i = 0; i < 2; i++) {
 			if (!exp) break;
@@ -590,9 +589,9 @@ struct MidiCatModule : Module, StripIdFixModule {
 				exp = exp->rightExpander.module;
 				continue;
 			}
-			if (exp->model == modelMidiCatCtx && !expMapFound) {
-				expMap = exp;
-				expMapFound = true;
+			if (exp->model == modelMidiCatCtx && !expCtxFound) {
+				expCtx = exp;
+				expCtxFound = true;
 				exp = exp->rightExpander.module;
 				continue;
 			}
@@ -602,8 +601,8 @@ struct MidiCatModule : Module, StripIdFixModule {
 			expMemStorage = NULL;
 			expMem = NULL;
 		}
-		if (!expMapFound) {
-			expMap = NULL;
+		if (!expCtxFound) {
+			expCtx = NULL;
 		}
 	}
 
@@ -1511,9 +1510,9 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 	BufferedTriggerParamQuantity* expMemParamQuantity;
 	dsp::SchmittTrigger expMemParamTrigger;
 
-	MidiCatMapBase* expMap;
-	BufferedTriggerParamQuantity* expMapMapQuantity;
-	dsp::SchmittTrigger expMapMapTrigger;
+	MidiCatCtxBase* expCtx;
+	BufferedTriggerParamQuantity* expCtxMapQuantity;
+	dsp::SchmittTrigger expCtxMapTrigger;
 
 	enum class LEARN_MODE {
 		OFF = 0,
@@ -1666,17 +1665,17 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 				module->expMem->lights[0].setBrightness(learnMode == LEARN_MODE::MEM);
 			}
 
-			// MAP-expander
-			if (module->expMap != (Module*)expMap) {
-				expMap = dynamic_cast<MidiCatMapBase*>(module->expMap);
-				if (expMap) {
-					expMapMapQuantity = dynamic_cast<BufferedTriggerParamQuantity*>(expMap->paramQuantities[0]);
-					expMapMapQuantity->resetBuffer();
+			// CTX-expander
+			if (module->expCtx != (Module*)expCtx) {
+				expCtx = dynamic_cast<MidiCatCtxBase*>(module->expCtx);
+				if (expCtx) {
+					expCtxMapQuantity = dynamic_cast<BufferedTriggerParamQuantity*>(expCtx->paramQuantities[0]);
+					expCtxMapQuantity->resetBuffer();
 				}
 			}
-			if (expMap) {
-				if (expMapMapTrigger.process(expMapMapQuantity->buffer)) {
-					expMapMapQuantity->resetBuffer();
+			if (expCtx) {
+				if (expCtxMapTrigger.process(expCtxMapQuantity->buffer)) {
+					expCtxMapQuantity->resetBuffer();
 					module->enableLearn(-1, true);
 				}
 			}
@@ -1747,25 +1746,31 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 		ParamQuantity* pq = pw->paramQuantity;
 		if (!pq) return;
 		
-		struct MidiCatLabel : MenuLabel {
-			MidiCatLabel() {
+		struct MidiCatBeginItem : MenuLabel {
+			MidiCatBeginItem() {
 				text = "MIDI-CAT";
+			}
+		};
+
+		struct MidiCatEndItem : MenuEntry {
+			MidiCatEndItem() {
+				box.size = Vec();
 			}
 		};
 
 		std::list<Widget*>::iterator beg = menu->children.begin();
 		std::list<Widget*>::iterator end = menu->children.end();
-		std::list<Widget*>::iterator it1 = end;
-		std::list<Widget*>::iterator it2 = end;
+		std::list<Widget*>::iterator itCvBegin = end;
+		std::list<Widget*>::iterator itCvEnd = end;
 		
 		for (auto it = beg; it != end; it++) {
-			if (it1 == end) {
-				MidiCatLabel* ml = dynamic_cast<MidiCatLabel*>(*it);
-				if (ml) { it1 = it; continue; }
+			if (itCvBegin == end) {
+				MidiCatBeginItem* ml = dynamic_cast<MidiCatBeginItem*>(*it);
+				if (ml) { itCvBegin = it; continue; }
 			}
 			else {
-				CenterModuleItem* ml = dynamic_cast<CenterModuleItem*>(*it);
-				if (ml) { it2 = it; break; }
+				MidiCatEndItem* ml = dynamic_cast<MidiCatEndItem*>(*it);
+				if (ml) { itCvEnd = it; break; }
 			}
 		}
 
@@ -1779,35 +1784,39 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 					}
 				};
 
-				MenuItem* mapMenuItem = construct<MapMenuItem>(&MenuItem::text, "Learn MIDI", &MapMenuItem::module, module, &MapMenuItem::id, id);
-				MenuItem* centerMenuItem = construct<CenterModuleItem>(&MenuItem::text, "Center mapping module", &CenterModuleItem::mw, this);
-				if (it1 == end) {
+				std::list<Widget*> w;
+				w.push_back(construct<MapMenuItem>(&MenuItem::text, "Learn MIDI", &MapMenuItem::module, module, &MapMenuItem::id, id));
+				w.push_back(construct<CenterModuleItem>(&MenuItem::text, "Center mapping module", &CenterModuleItem::mw, this));
+				w.push_back(new SlewSlider(&module->midiParam[id]));
+				w.push_back(construct<MenuLabel>(&MenuLabel::text, "Scaling"));
+				std::string l = string::f("Input %s", module->ccs[id].getCc() >= 0 ? "MIDI CC" : (module->notes[id].getNote() >= 0 ? "MIDI vel" : ""));
+				w.push_back(construct<ScalingInputLabel>(&MenuLabel::text, l, &ScalingInputLabel::p, &module->midiParam[id]));
+				w.push_back(construct<ScalingOutputLabel>(&MenuLabel::text, "Parameter range", &ScalingOutputLabel::p, &module->midiParam[id]));
+				w.push_back(new MinSlider(&module->midiParam[id]));
+				w.push_back(new MaxSlider(&module->midiParam[id]));
+				w.push_back(new MidiCatEndItem);
+
+				if (itCvBegin == end) {
 					menu->addChild(new MenuSeparator);
-					menu->addChild(construct<MidiCatLabel>());
-					menu->addChild(mapMenuItem);
-					menu->addChild(centerMenuItem);
-					menu->addChild(new SlewSlider(&module->midiParam[id]));
-					menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Scaling"));
-					std::string l = string::f("Input %s", module->ccs[id].getCc() >= 0 ? "MIDI CC" : (module->notes[id].getNote() >= 0 ? "MIDI vel" : ""));
-					menu->addChild(construct<ScalingInputLabel>(&MenuLabel::text, l, &ScalingInputLabel::p, &module->midiParam[id]));
-					menu->addChild(construct<ScalingOutputLabel>(&MenuLabel::text, "Parameter range", &ScalingOutputLabel::p, &module->midiParam[id]));
-					menu->addChild(new MinSlider(&module->midiParam[id]));
-					menu->addChild(new MaxSlider(&module->midiParam[id]));
+					menu->addChild(construct<MidiCatBeginItem>());
+					for (Widget* wm : w) {
+						menu->addChild(wm);
+					}
 				}
 				else {
-					menu->addChild(centerMenuItem);
-					auto it3 = std::find(beg, end, centerMenuItem);
-					menu->children.splice(std::next(it1), menu->children, it3);
-					menu->addChild(mapMenuItem);
-					auto it4 = std::find(beg, end, mapMenuItem);
-					menu->children.splice(std::next(it1), menu->children, it4);
+					for (auto i = w.rbegin(); i != w.rend(); ++i) {
+						Widget* wm = *i;
+						menu->addChild(wm);
+						auto it = std::find(beg, end, wm);
+						menu->children.splice(std::next(itCvBegin), menu->children, it);
+					}
 				}
 				return;
 			}
 		}
 
-		if (expMap) {
-			std::string id = expMap->getMidiCatId();
+		if (expCtx) {
+			std::string id = expCtx->getMidiCatId();
 			if (id != "") {
 				struct MapMenuItem : MenuItem {
 					MidiCatModule* module;
@@ -1819,15 +1828,15 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 				};
 
 				MenuItem* mapMenuItem = construct<MapMenuItem>(&MenuItem::text, string::f("Learn MIDI on \"%s\"", id.c_str()), &MapMenuItem::module, module, &MapMenuItem::pq, pq);
-				if (it1 == end) {
+				if (itCvBegin == end) {
 					menu->addChild(new MenuSeparator);
-					menu->addChild(construct<MidiCatLabel>());
+					menu->addChild(construct<MidiCatBeginItem>());
 					menu->addChild(mapMenuItem);
 				}
 				else {
 					menu->addChild(mapMenuItem);
-					auto it3 = std::find(beg, end, mapMenuItem);
-					menu->children.splice(std::next(it2 == end ? it1 : it2), menu->children, it3);
+					auto it = std::find(beg, end, mapMenuItem);
+					menu->children.splice(std::next(itCvEnd == end ? itCvBegin : itCvEnd), menu->children, it);
 				}
 			}
 		}

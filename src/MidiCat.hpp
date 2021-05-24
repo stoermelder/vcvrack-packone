@@ -24,7 +24,7 @@ enum class NOTEMODE {
 };
 
 
-struct MidiCatMapBase : Module {
+struct MidiCatCtxBase : Module {
 	virtual std::string getMidiCatId() { return ""; }
 };
 

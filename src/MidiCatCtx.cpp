@@ -5,7 +5,7 @@
 namespace StoermelderPackOne {
 namespace MidiCat {
 
-struct MidiCatCtxModule : MidiCatMapBase {
+struct MidiCatCtxModule : MidiCatCtxBase {
 	enum ParamIds {
 		PARAM_MAP,
 		NUM_PARAMS
