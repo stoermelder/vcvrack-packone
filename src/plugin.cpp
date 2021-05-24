@@ -7,6 +7,7 @@ void init(rack::Plugin* p) {
 	pluginInstance = p;
 
 	p->addModel(modelCVMap);
+	p->addModel(modelCVMapCtx);
 	p->addModel(modelCVMapMicro);
 	p->addModel(modelCVPam);
 	p->addModel(modelRotorA);

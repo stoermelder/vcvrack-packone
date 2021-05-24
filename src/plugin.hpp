@@ -11,6 +11,7 @@ extern Plugin* pluginInstance;
 extern StoermelderSettings pluginSettings;
 
 extern Model* modelCVMap;
+extern Model* modelCVMapCtx;
 extern Model* modelCVMapMicro;
 extern Model* modelCVPam;
 extern Model* modelRotorA;

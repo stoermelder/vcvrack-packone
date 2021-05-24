@@ -11,6 +11,8 @@
 
 - Modules [8FACE mk2, +8](./docs/EightFaceMk2.md)
     - New modules, evolution of 8FACE and 8FACEx2 (#63 #76 #144 #154 #157 #158 #160 #162)
+- Module [CV-MAP CTX](./docs/CVMap.md#ctx-expander)
+    - New expander-module for CV-MAP, helper for mapping parameters by context menu (#256)
 - Module [DIRT](./docs/Dirt.md)
     - New module, crosstalk and noise for polyphonic cables
 - Module [MIDI-CAT CTX](./docs/MidiCat.md#ctx-expander)

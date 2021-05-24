@@ -1,5 +1,6 @@
 #include "plugin.hpp"
 #include "MapModuleBase.hpp"
+#include "CVMap.hpp"
 #include "components/ParamWidgetContextExtender.hpp"
 #include <chrono>
 
@@ -39,6 +40,8 @@ struct CVMapModule : CVMapModuleBase<MAX_CHANNELS> {
 	dsp::ClockDivider lightDivider;
 
 	ScaledMapParam<float> mapParam[MAX_CHANNELS];
+
+	Module* expCtx = NULL;
 
 	CVMapModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
@@ -102,6 +105,33 @@ struct CVMapModule : CVMapModuleBase<MAX_CHANNELS> {
 		}
 		
 		CVMapModuleBase<MAX_CHANNELS>::process(args);
+
+		// Expander
+		bool expCtxFound = false;
+		Module* exp = rightExpander.module;
+		for (int i = 0; i < 2; i++) {
+			if (!exp) break;
+			if (exp->model == modelCVMapCtx && !expCtxFound) {
+				expCtx = exp;
+				expCtxFound = true;
+				exp = exp->rightExpander.module;
+				continue;
+			}
+			break;
+		}
+		if (!expCtxFound) {
+			expCtx = NULL;
+		}
+	}
+
+	int getEmptySlotId() {
+		int i = -1;
+		// Find next incomplete map
+		while (++i < MAX_CHANNELS) {
+			if (paramHandles[i].moduleId < 0)
+				return i;
+		}
+		return -1;
 	}
 
 	json_t* dataToJson() override {
@@ -145,18 +175,21 @@ struct CVMapModule : CVMapModuleBase<MAX_CHANNELS> {
 struct InputChannelMenuItem : MenuItem {
 	struct InputChannelItem : MenuItem {
 		CVMapModule* module;
+		ParamQuantity* pq = NULL;
 		int id;
 		int channel;
 		void onAction(const event::Action& e) override {
+			if (pq) module->learnParam(id, pq->module->id, pq->paramId);
 			module->mapInput[id] = channel;
 		}
 		void step() override {
-			rightText = CHECKMARK(module->mapInput[id] == channel);
+			rightText = CHECKMARK(!pq && module->mapInput[id] == channel);
 			MenuItem::step();
 		}
 	}; // struct InputChannelItem
 
 	CVMapModule* module;
+	ParamQuantity* pq = NULL;
 	int id;
 	InputChannelMenuItem() {
 		rightText = RIGHT_ARROW;
@@ -165,7 +198,7 @@ struct InputChannelMenuItem : MenuItem {
 		Menu* menu = new Menu;
 		for (int i = 0; i < MAX_CHANNELS; i++) {
 			std::string text = string::f("Input %02d - Port %i Channel %i", i + 1, i / 16 + 1, i % 16 + 1);
-			menu->addChild(construct<InputChannelItem>(&MenuItem::text, text, &InputChannelItem::module, module, &InputChannelItem::id, id, &InputChannelItem::channel, i));
+			menu->addChild(construct<InputChannelItem>(&MenuItem::text, text, &InputChannelItem::module, module, &InputChannelItem::id, id, &InputChannelItem::channel, i, &InputChannelItem::pq, pq));
 		}
 		return menu;
 	}
@@ -192,9 +225,13 @@ struct CvMapChoice : MapModuleChoice<MAX_CHANNELS, CVMapModule> {
 
 
 struct CVMapWidget : ThemedModuleWidget<CVMapModule>, ParamWidgetContextExtender {
+	CVMapModule* module;
+	CVMapCtxBase* expCtx;
+
 	CVMapWidget(CVMapModule* module)
 		: ThemedModuleWidget<CVMapModule>(module, "CVMap") {
 		setModule(module);
+		this->module = module;
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
@@ -222,6 +259,13 @@ struct CVMapWidget : ThemedModuleWidget<CVMapModule>, ParamWidgetContextExtender
 	void step() override {
 		ParamWidgetContextExtender::step();
 		ThemedModuleWidget<CVMapModule>::step();
+
+		if (module) {
+			// CTX-expander
+			if (module->expCtx != (Module*)expCtx) {
+				expCtx = dynamic_cast<CVMapCtxBase*>(module->expCtx);
+			}
+		}
 	}
 
 	void appendContextMenu(Menu* menu) override {
@@ -309,19 +353,83 @@ struct CVMapWidget : ThemedModuleWidget<CVMapModule>, ParamWidgetContextExtender
 		ParamQuantity* pq = pw->paramQuantity;
 		if (!pq) return;
 
+		struct CVMapBeginItem : MenuLabel {
+			CVMapBeginItem() {
+				text = "CV-MAP";
+			}
+		};
+
+		struct CVMapEndItem : MenuEntry {
+			CVMapEndItem() {
+				box.size = Vec();
+			}
+		};
+
+		std::list<Widget*>::iterator beg = menu->children.begin();
+		std::list<Widget*>::iterator end = menu->children.end();
+		std::list<Widget*>::iterator itCvBegin = end;
+		std::list<Widget*>::iterator itCvEnd = end;
+		
+		for (auto it = beg; it != end; it++) {
+			if (itCvBegin == end) {
+				CVMapBeginItem* ml = dynamic_cast<CVMapBeginItem*>(*it);
+				if (ml) { itCvBegin = it; continue; }
+			}
+			else {
+				CVMapEndItem* ml = dynamic_cast<CVMapEndItem*>(*it);
+				if (ml) { itCvEnd = it; break; }
+			}
+		}
+
 		for (int id = 0; id < module->mapLen; id++) {
 			if (module->paramHandles[id].moduleId == pq->module->id && module->paramHandles[id].paramId == pq->paramId) {
-				menu->addChild(new MenuSeparator());
-				menu->addChild(construct<MenuLabel>(&MenuLabel::text, "CV-MAP"));
-				menu->addChild(construct<CenterModuleItem>(&MenuItem::text, "Center mapping module", &CenterModuleItem::mw, this));
-				menu->addChild(construct<InputChannelMenuItem>(&MenuItem::text, "Input channel", &InputChannelMenuItem::module, module, &InputChannelMenuItem::id, id));
-				menu->addChild(new MapSlewSlider<>(&module->mapParam[id]));
-				menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Scaling"));
-				menu->addChild(construct<MapScalingInputLabel<>>(&MenuLabel::text, "Input", &MapScalingInputLabel<>::p, &module->mapParam[id]));
-				menu->addChild(construct<MapScalingOutputLabel<>>(&MenuLabel::text, "Parameter range", &MapScalingOutputLabel<>::p, &module->mapParam[id]));
-				menu->addChild(new MapMinSlider<>(&module->mapParam[id]));
-				menu->addChild(new MapMaxSlider<>(&module->mapParam[id]));
+				std::list<Widget*> w;
+				w.push_back(construct<CenterModuleItem>(&MenuItem::text, "Center mapping module", &CenterModuleItem::mw, this));
+				w.push_back(construct<InputChannelMenuItem>(&MenuItem::text, "Input channel", &InputChannelMenuItem::module, module, &InputChannelMenuItem::id, id));
+				w.push_back(new MapSlewSlider<>(&module->mapParam[id]));
+				w.push_back(construct<MenuLabel>(&MenuLabel::text, "Scaling"));
+				w.push_back(construct<MapScalingInputLabel<>>(&MenuLabel::text, "Input", &MapScalingInputLabel<>::p, &module->mapParam[id]));
+				w.push_back(construct<MapScalingOutputLabel<>>(&MenuLabel::text, "Parameter range", &MapScalingOutputLabel<>::p, &module->mapParam[id]));
+				w.push_back(new MapMinSlider<>(&module->mapParam[id]));
+				w.push_back(new MapMaxSlider<>(&module->mapParam[id]));
+				w.push_back(new CVMapEndItem);
+
+				if (itCvBegin == end) {
+					menu->addChild(new MenuSeparator());
+					menu->addChild(construct<CVMapBeginItem>());
+					for (Widget* wm : w) {
+						menu->addChild(wm);
+					}
+				}
+				else {
+					for (auto i = w.rbegin(); i != w.rend(); ++i) {
+						Widget* wm = *i;
+						menu->addChild(wm);
+						auto it = std::find(beg, end, wm);
+						menu->children.splice(std::next(itCvBegin), menu->children, it);
+					}
+				}
 				return;
+			}
+		}
+
+		if (expCtx) {
+			std::string id = expCtx->getCVMapId();
+			if (id != "") {
+				int nextId = module->getEmptySlotId();
+				if (nextId >= 0) {
+					MenuItem* mapMenuItem = construct<InputChannelMenuItem>(&MenuItem::text, string::f("Map on \"%s\"", id.c_str()), &InputChannelMenuItem::module, module, &InputChannelMenuItem::id, nextId, &InputChannelMenuItem::pq, pq);
+					if (itCvBegin == end) {
+						menu->addChild(new MenuSeparator);
+						menu->addChild(construct<CVMapBeginItem>());
+						menu->addChild(mapMenuItem);
+					}
+					else {
+						menu->addChild(mapMenuItem);
+						auto it = std::find(beg, end, mapMenuItem);
+						menu->children.splice(std::next(itCvEnd == end ? itCvBegin : itCvEnd), menu->children, it);
+					}
+				}
 			}
 		}
 	}

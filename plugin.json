@@ -21,6 +21,13 @@
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/CVMap.md"
 		},
 		{
+			"slug": "CVMapCtx",
+			"name": "CTX for CV-MAP",
+			"description": "Expander for context menu mapping using CV-MAP",
+			"tags": ["Utility"],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/CVMap.md#ctx-expander"
+		},
+		{
 			"slug": "CVMapMicro",
 			"name": "µMAP",
 			"description": "Add CV automation to one parameter of any module",
