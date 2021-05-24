@@ -119,11 +119,11 @@
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/MidiCat.md#mem-expander"
 		},
 		{
-			"slug": "MidiCatMap",
-			"name": "MAP for MIDI-CAT",
-			"description": "Mapping-expander for MIDI-CAT",
+			"slug": "MidiCatCtx",
+			"name": "CTX for MIDI-CAT",
+			"description": "Expander for context menu mapping using MIDI-CAT",
 			"tags": ["Utility", "MIDI"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/MidiCat.md#map-expander"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/MidiCat.md#ctx-expander"
 		},
 		{
 			"slug": "Sipo",

@@ -5,7 +5,7 @@
 namespace StoermelderPackOne {
 namespace MidiCat {
 
-struct MidiCatMapModule : MidiCatMapBase {
+struct MidiCatCtxModule : MidiCatMapBase {
 	enum ParamIds {
 		PARAM_MAP,
 		NUM_PARAMS
@@ -26,7 +26,7 @@ struct MidiCatMapModule : MidiCatMapBase {
 	/** [Stored to JSON] */
 	std::string midiCatId;
 
-	MidiCatMapModule() {
+	MidiCatCtxModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configParam<BufferedTriggerParamQuantity>(PARAM_MAP, 0.f, 1.f, 0.f, "Start parameter mapping");
@@ -57,7 +57,7 @@ struct MidiCatMapModule : MidiCatMapBase {
 
 
 struct IdTextField : StoermelderTextField {
-	MidiCatMapModule* module;
+	MidiCatCtxModule* module;
 	void step() override {
 		StoermelderTextField::step();
 		if (!module) return;
@@ -66,16 +66,16 @@ struct IdTextField : StoermelderTextField {
 	}
 };
 
-struct MidiCatMapWidget : ThemedModuleWidget<MidiCatMapModule> {
-	MidiCatMapWidget(MidiCatMapModule* module)
-		: ThemedModuleWidget<MidiCatMapModule>(module, "MidiCatMap") {
+struct MidiCatCtxWidget : ThemedModuleWidget<MidiCatCtxModule> {
+	MidiCatCtxWidget(MidiCatCtxModule* module)
+		: ThemedModuleWidget<MidiCatCtxModule>(module, "MidiCatCtx") {
 		setModule(module);
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		// addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(15.f, 284.4f), module, MidiCatMapModule::LIGHT_APPLY));
-		addChild(createParamCentered<TL1105>(Vec(15.0f, 306.7f), module, MidiCatMapModule::PARAM_MAP));
+		// addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(15.f, 284.4f), module, MidiCatCtxModule::LIGHT_APPLY));
+		addChild(createParamCentered<TL1105>(Vec(15.0f, 306.7f), module, MidiCatCtxModule::PARAM_MAP));
 
 		IdTextField* textField = createWidget<IdTextField>(Vec(5.3f, 329.5f));
 		textField->box.size = Vec(21.f, 13.f);
@@ -88,4 +88,4 @@ struct MidiCatMapWidget : ThemedModuleWidget<MidiCatMapModule> {
 } // namespace MidiCat
 } // namespace StoermelderPackOne
 
-Model* modelMidiCatMap = createModel<StoermelderPackOne::MidiCat::MidiCatMapModule, StoermelderPackOne::MidiCat::MidiCatMapWidget>("MidiCatMap");
+Model* modelMidiCatCtx = createModel<StoermelderPackOne::MidiCat::MidiCatCtxModule, StoermelderPackOne::MidiCat::MidiCatCtxWidget>("MidiCatCtx");

@@ -583,14 +583,14 @@ struct MidiCatModule : Module, StripIdFixModule {
 		Module* exp = rightExpander.module;
 		for (int i = 0; i < 2; i++) {
 			if (!exp) break;
-			if (exp->model == modelMidiCatMem) {
+			if (exp->model == modelMidiCatMem && !expMemFound) {
 				expMemStorage = reinterpret_cast<std::map<std::pair<std::string, std::string>, MemModule*>*>(exp->leftExpander.consumerMessage);
 				expMem = exp;
 				expMemFound = true;
 				exp = exp->rightExpander.module;
 				continue;
 			}
-			if (exp->model == modelMidiCatMap) {
+			if (exp->model == modelMidiCatCtx && !expMapFound) {
 				expMap = exp;
 				expMapFound = true;
 				exp = exp->rightExpander.module;
@@ -1299,7 +1299,7 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Toggle + Value", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::TOGGLE_VALUE));
 				return menu;
 			}
-		}; // struct
+		}; // struct CcModeMenuItem
 		
 		struct Cc14bitItem : MenuItem {
 			MidiCatModule* module;

@@ -25,7 +25,7 @@ extern Model* modelEightFace;
 extern Model* modelEightFaceX2;
 extern Model* modelMidiCat;
 extern Model* modelMidiCatMem;
-extern Model* modelMidiCatMap;
+extern Model* modelMidiCatCtx;
 extern Model* modelSipo;
 extern Model* modelFourRounds;
 extern Model* modelArena;
