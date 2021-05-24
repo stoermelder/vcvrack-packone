@@ -32,6 +32,8 @@ struct CVMapModule : CVMapModuleBase<MAX_CHANNELS> {
 	bool audioRate;
 	/** [Stored to JSON] */
 	bool locked;
+	/** [Stored to JSON] */
+	int mapInput[MAX_CHANNELS];
 
 	dsp::ClockDivider processDivider;
 	dsp::ClockDivider lightDivider;
@@ -56,6 +58,7 @@ struct CVMapModule : CVMapModuleBase<MAX_CHANNELS> {
 		locked = false;
 		for (size_t i = 0; i < MAX_CHANNELS; i++) {
 			mapParam[i].reset();
+			mapInput[i] = i;
 		}
 	}
 
@@ -69,20 +72,12 @@ struct CVMapModule : CVMapModuleBase<MAX_CHANNELS> {
 				if (paramQuantity == NULL) continue;
 				mapParam[i].setParamQuantity(paramQuantity);
 
-				if (i < 16) {
-					// Skip unused channels on INPUT1
-					if (inputs[POLY_INPUT1].getChannels() == i) {
-						i = 15;
-						continue;
-					}
-				} else {
-					// Skip unused channels on INPUT2
-					if (inputs[POLY_INPUT2].getChannels() == i - 16) {
-						break;
-					}
-				}
+				Input in = mapInput[i] < 16 ? inputs[POLY_INPUT1] : inputs[POLY_INPUT2];
+				if (!in.isConnected()) continue;
+				int c = mapInput[i] % 16;
+				if (in.getChannels() < c) continue;
 
-				float t = (i < 16 ? inputs[POLY_INPUT1].getVoltage(i) : inputs[POLY_INPUT2].getVoltage(i - 16));
+				float t = in.getVoltage(c);
 				if (bipolarInput) t += 5.f;
 				t /= 10.f;
 
@@ -118,6 +113,7 @@ struct CVMapModule : CVMapModuleBase<MAX_CHANNELS> {
 	}
 
 	void dataToJsonMap(json_t* mapJ, int index) override {
+		json_object_set_new(mapJ, "input", json_integer(mapInput[index]));
 		json_object_set_new(mapJ, "slew", json_real(mapParam[index].getSlew()));
 		json_object_set_new(mapJ, "min", json_real(mapParam[index].getMin()));
 		json_object_set_new(mapJ, "max", json_real(mapParam[index].getMax()));
@@ -134,9 +130,11 @@ struct CVMapModule : CVMapModuleBase<MAX_CHANNELS> {
 	}
 
 	void dataFromJsonMap(json_t* mapJ, int index) override {
+		json_t* inputJ = json_object_get(mapJ, "input");
 		json_t* slewJ = json_object_get(mapJ, "slew");
 		json_t* minJ = json_object_get(mapJ, "min");
 		json_t* maxJ = json_object_get(mapJ, "max");
+		if (inputJ) mapInput[index] = json_integer_value(inputJ);
 		if (slewJ) mapParam[index].setSlew(json_real_value(slewJ));
 		if (minJ) mapParam[index].setMin(json_real_value(minJ));
 		if (maxJ) mapParam[index].setMax(json_real_value(maxJ));
@@ -144,9 +142,40 @@ struct CVMapModule : CVMapModuleBase<MAX_CHANNELS> {
 };
 
 
+struct InputChannelMenuItem : MenuItem {
+	struct InputChannelItem : MenuItem {
+		CVMapModule* module;
+		int id;
+		int channel;
+		void onAction(const event::Action& e) override {
+			module->mapInput[id] = channel;
+		}
+		void step() override {
+			rightText = CHECKMARK(module->mapInput[id] == channel);
+			MenuItem::step();
+		}
+	}; // struct InputChannelItem
+
+	CVMapModule* module;
+	int id;
+	InputChannelMenuItem() {
+		rightText = RIGHT_ARROW;
+	}
+	Menu* createChildMenu() override {
+		Menu* menu = new Menu;
+		for (int i = 0; i < MAX_CHANNELS; i++) {
+			std::string text = string::f("Input %02d - Port %i Channel %i", i + 1, i / 16 + 1, i % 16 + 1);
+			menu->addChild(construct<InputChannelItem>(&MenuItem::text, text, &InputChannelItem::module, module, &InputChannelItem::id, id, &InputChannelItem::channel, i));
+		}
+		return menu;
+	}
+}; // struct InputChannelMenuItem
+
+
 struct CvMapChoice : MapModuleChoice<MAX_CHANNELS, CVMapModule> {
 	void appendContextMenu(Menu* menu) override {
-		menu->addChild(new MenuSeparator());
+		menu->addChild(new MenuSeparator);
+		menu->addChild(construct<InputChannelMenuItem>(&MenuItem::text, "Input channel", &InputChannelMenuItem::module, module, &InputChannelMenuItem::id, id));
 		menu->addChild(new MapSlewSlider<>(&module->mapParam[id]));
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Scaling"));
 		menu->addChild(construct<MapScalingInputLabel<>>(&MenuLabel::text, "Input", &MapScalingInputLabel<>::p, &module->mapParam[id]));
@@ -155,7 +184,11 @@ struct CvMapChoice : MapModuleChoice<MAX_CHANNELS, CVMapModule> {
 		menu->addChild(new MapMaxSlider<>(&module->mapParam[id]));
 		menu->addChild(construct<MapPresetMenuItem<>>(&MenuItem::text, "Presets", &MapPresetMenuItem<>::p, &module->mapParam[id]));
 	}
-};
+
+	std::string getSlotPrefix() override {
+		return string::f("In%02d ", module->mapInput[id] + 1);
+	}
+}; // struct CvMapChoice
 
 
 struct CVMapWidget : ThemedModuleWidget<CVMapModule>, ParamWidgetContextExtender {
@@ -277,10 +310,11 @@ struct CVMapWidget : ThemedModuleWidget<CVMapModule>, ParamWidgetContextExtender
 		if (!pq) return;
 
 		for (int id = 0; id < module->mapLen; id++) {
-			if (module->paramHandles[0].moduleId == pq->module->id && module->paramHandles[0].paramId == pq->paramId) {
+			if (module->paramHandles[id].moduleId == pq->module->id && module->paramHandles[id].paramId == pq->paramId) {
 				menu->addChild(new MenuSeparator());
 				menu->addChild(construct<MenuLabel>(&MenuLabel::text, "CV-MAP"));
 				menu->addChild(construct<CenterModuleItem>(&MenuItem::text, "Center mapping module", &CenterModuleItem::mw, this));
+				menu->addChild(construct<InputChannelMenuItem>(&MenuItem::text, "Input channel", &InputChannelMenuItem::module, module, &InputChannelMenuItem::id, id));
 				menu->addChild(new MapSlewSlider<>(&module->mapParam[id]));
 				menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Scaling"));
 				menu->addChild(construct<MapScalingInputLabel<>>(&MenuLabel::text, "Input", &MapScalingInputLabel<>::p, &module->mapParam[id]));
