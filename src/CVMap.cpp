@@ -78,7 +78,7 @@ struct CVMapModule : CVMapModuleBase<MAX_CHANNELS> {
 				Input in = mapInput[i] < 16 ? inputs[POLY_INPUT1] : inputs[POLY_INPUT2];
 				if (!in.isConnected()) continue;
 				int c = mapInput[i] % 16;
-				if (in.getChannels() < c) continue;
+				if (c >= in.getChannels()) continue;
 
 				float t = in.getVoltage(c);
 				if (bipolarInput) t += 5.f;
