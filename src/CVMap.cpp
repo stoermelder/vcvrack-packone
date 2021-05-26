@@ -36,6 +36,15 @@ struct CVMapModule : CVMapModuleBase<MAX_CHANNELS> {
 	/** [Stored to JSON] */
 	int mapInput[MAX_CHANNELS];
 
+	struct InputConfig {
+		int channels;
+		/** [Stored to JSON] */
+		bool hideUnused;
+		/** [Stored to JSON] */
+		std::string label[16];
+	};
+	InputConfig inputConfig[2];
+
 	dsp::ClockDivider processDivider;
 	dsp::ClockDivider lightDivider;
 
@@ -62,6 +71,12 @@ struct CVMapModule : CVMapModuleBase<MAX_CHANNELS> {
 		for (size_t i = 0; i < MAX_CHANNELS; i++) {
 			mapParam[i].reset();
 			mapInput[i] = i;
+		}
+		for (size_t i = 0; i < 2; i++) {
+			inputConfig[i].hideUnused = true;
+			for (size_t j = 0; j < 16; j++) {
+				inputConfig[i].label[j] = "";
+			}
 		}
 	}
 
@@ -102,6 +117,9 @@ struct CVMapModule : CVMapModuleBase<MAX_CHANNELS> {
 				bool active = (c < inputs[POLY_INPUT2].getChannels());
 				lights[CHANNEL_LIGHTS2 + c].setBrightness(active);
 			}
+
+			inputConfig[0].channels = inputs[POLY_INPUT1].getChannels();
+			inputConfig[1].channels = inputs[POLY_INPUT2].getChannels();
 		}
 		
 		CVMapModuleBase<MAX_CHANNELS>::process(args);
@@ -139,6 +157,20 @@ struct CVMapModule : CVMapModuleBase<MAX_CHANNELS> {
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 		json_object_set_new(rootJ, "audioRate", json_boolean(audioRate));
 		json_object_set_new(rootJ, "locked", json_boolean(locked));
+
+		json_t* inputConfigsJ = json_array();
+		for (size_t i = 0; i < 2; i++) {
+			json_t* inputConfigJ = json_object();
+			json_object_set_new(inputConfigJ, "hideUnused", json_boolean(inputConfig[i].hideUnused));
+			json_t* labelJ = json_array();
+			for (size_t j = 0; j < 16; j++) {
+				json_array_append_new(labelJ, json_string(inputConfig[i].label[j].c_str()));
+			}
+			json_object_set_new(inputConfigJ, "label", labelJ);
+			json_array_append_new(inputConfigsJ, inputConfigJ);
+		}
+		json_object_set_new(rootJ, "inputConfig", inputConfigsJ);
+
 		return rootJ;
 	}
 
@@ -157,6 +189,21 @@ struct CVMapModule : CVMapModuleBase<MAX_CHANNELS> {
 		if (audioRateJ) audioRate = json_boolean_value(audioRateJ);
 		json_t* lockedJ = json_object_get(rootJ, "locked");
 		if (lockedJ) locked = json_boolean_value(lockedJ);
+
+		json_t* inputConfigsJ = json_object_get(rootJ, "inputConfig");
+		if (inputConfigsJ) {
+			size_t i;
+			json_t* inputConfigJ;
+			json_array_foreach(inputConfigsJ, i, inputConfigJ) {
+				inputConfig[i].hideUnused = json_boolean_value(json_object_get(inputConfigJ, "hideUnused"));
+				json_t* labelJ = json_object_get(inputConfigJ, "label");
+				size_t j;
+				json_t* lJ;
+				json_array_foreach(labelJ, j, lJ) {
+					inputConfig[i].label[j] = json_string_value(lJ);
+				}
+			}
+		}
 	}
 
 	void dataFromJsonMap(json_t* mapJ, int index) override {
@@ -170,6 +217,107 @@ struct CVMapModule : CVMapModuleBase<MAX_CHANNELS> {
 		if (maxJ) mapParam[index].setMax(json_real_value(maxJ));
 	}
 };
+
+
+struct CVMapPort : StoermelderPort {
+	int i;
+
+	void onButton(const event::Button& e) override {
+		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
+			createContextMenu();
+			e.consume(this);
+		}
+		else {
+			StoermelderPort::onButton(e);
+		}
+	}
+
+	void createContextMenu() {
+		CVMapModule* module = dynamic_cast<CVMapModule*>(this->module);
+
+		struct LabelMenuItem : MenuItem {
+			CVMapModule* module;
+			int i, j;
+			LabelMenuItem() {
+				rightText = RIGHT_ARROW;
+			}
+			struct LabelField : ui::TextField {
+				CVMapModule* module;
+				int i, j;
+				void onSelectKey(const event::SelectKey& e) override {
+					if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
+						module->inputConfig[i].label[j] = text;
+						ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
+						overlay->requestDelete();
+						e.consume(this);
+					}
+					if (!e.getTarget()) {
+						ui::TextField::onSelectKey(e);
+					}
+				}
+			};
+
+			struct ResetItem : ui::MenuItem {
+				CVMapModule* module;
+				int i, j;
+				void onAction(const event::Action& e) override {
+					module->inputConfig[i].label[j] = "";
+				}
+			};
+
+			Menu* createChildMenu() override {
+				Menu* menu = new Menu;
+				menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Custom label"));
+				LabelField* labelField = new LabelField;
+				labelField->text = module->inputConfig[i].label[j];
+				labelField->box.size.x = 180;
+				labelField->module = module;
+				labelField->i = i;
+				labelField->j = j;
+				menu->addChild(labelField);
+				menu->addChild(construct<ResetItem>(&MenuItem::text, "Reset", &ResetItem::module, module, &ResetItem::i, i, &ResetItem::j, j));
+				return menu;
+			}
+		}; // struct LabelMenuItem
+
+		struct HideUnusedItem : MenuItem {
+			CVMapModule* module;
+			int i;
+			void onAction(const event::Action& e) override {
+				module->inputConfig[i].hideUnused ^= true;
+			}
+			void step() override {
+				rightText = CHECKMARK(module->inputConfig[i].hideUnused);
+				MenuItem::step();
+			}
+		}; // struct HideUnusedItem
+
+		struct DisconnectItem : MenuItem {
+			PortWidget* pw;
+			void onAction(const event::Action& e) override {
+				CableWidget* cw = APP->scene->rack->getTopCable(pw);
+				if (cw) {
+					// history::CableRemove
+					history::CableRemove* h = new history::CableRemove;
+					h->setCable(cw);
+					APP->history->push(h);
+
+					APP->scene->rack->removeCable(cw);
+					delete cw;
+				}
+			}
+		}; // struct DisconnectItem
+
+		Menu* menu = createMenu();
+		menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("Port %i", i + 1)));
+		menu->addChild(construct<DisconnectItem>(&MenuItem::text, "Disconnect", &DisconnectItem::pw, this));
+		menu->addChild(new MenuSeparator());
+		for (size_t j = 0; j < 16; j++) {
+			menu->addChild(construct<LabelMenuItem>(&MenuItem::text, string::f("Channel %i", j + 1), &LabelMenuItem::module, module, &LabelMenuItem::i, i, &LabelMenuItem::j, j));
+		}
+		menu->addChild(construct<HideUnusedItem>(&MenuItem::text, "Hide unused", &HideUnusedItem::module, module, &HideUnusedItem::i, i));
+	}
+}; // struct CVMapPort
 
 
 struct InputChannelMenuItem : MenuItem {
@@ -196,16 +344,20 @@ struct InputChannelMenuItem : MenuItem {
 	}
 	Menu* createChildMenu() override {
 		Menu* menu = new Menu;
-		for (int i = 0; i < MAX_CHANNELS; i++) {
-			std::string text = string::f("Input %02d - Port %i Channel %i", i + 1, i / 16 + 1, i % 16 + 1);
-			menu->addChild(construct<InputChannelItem>(&MenuItem::text, text, &InputChannelItem::module, module, &InputChannelItem::id, id, &InputChannelItem::channel, i, &InputChannelItem::pq, pq));
+		for (int i = 0; i < 2; i++) {
+			for (int j = 0; j < 16; j++) {
+				if (module->inputConfig[i].hideUnused && j == module->inputConfig[i].channels) break;
+				std::string text = module->inputConfig[i].label[j] != "" ? module->inputConfig[i].label[j] :
+					string::f("Input %02d - Port %i Channel %i", i * 16 + j + 1, i + 1, j + 1);
+				menu->addChild(construct<InputChannelItem>(&MenuItem::text, text, &InputChannelItem::module, module, &InputChannelItem::id, id, &InputChannelItem::channel, i * 16 + j, &InputChannelItem::pq, pq));
+			}
 		}
 		return menu;
 	}
 }; // struct InputChannelMenuItem
 
 
-struct CvMapChoice : MapModuleChoice<MAX_CHANNELS, CVMapModule> {
+struct CVMapChoice : MapModuleChoice<MAX_CHANNELS, CVMapModule> {
 	void appendContextMenu(Menu* menu) override {
 		menu->addChild(new MenuSeparator);
 		menu->addChild(construct<InputChannelMenuItem>(&MenuItem::text, "Input channel", &InputChannelMenuItem::module, module, &InputChannelMenuItem::id, id));
@@ -221,7 +373,7 @@ struct CvMapChoice : MapModuleChoice<MAX_CHANNELS, CVMapModule> {
 	std::string getSlotPrefix() override {
 		return string::f("In%02d ", module->mapInput[id] + 1);
 	}
-}; // struct CvMapChoice
+}; // struct CVMapChoice
 
 
 struct CVMapWidget : ThemedModuleWidget<CVMapModule>, ParamWidgetContextExtender {
@@ -238,8 +390,12 @@ struct CVMapWidget : ThemedModuleWidget<CVMapModule>, ParamWidgetContextExtender
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(26.9f, 60.8f), module, CVMapModule::POLY_INPUT1));
-		addInput(createInputCentered<StoermelderPort>(Vec(123.1f, 60.8f), module, CVMapModule::POLY_INPUT2));
+		CVMapPort* input1 = createInputCentered<CVMapPort>(Vec(26.9f, 60.8f), module, CVMapModule::POLY_INPUT1);
+		input1->i = 0;
+		addInput(input1);
+		CVMapPort* input2 = createInputCentered<CVMapPort>(Vec(123.1f, 60.8f), module, CVMapModule::POLY_INPUT2);
+		input2->i = 1;
+		addInput(input2);
 
 		PolyLedWidget<>* w0 = createWidgetCentered<PolyLedWidget<>>(Vec(54.2f, 60.8f));
 		w0->setModule(module, CVMapModule::CHANNEL_LIGHTS1);
@@ -249,7 +405,7 @@ struct CVMapWidget : ThemedModuleWidget<CVMapModule>, ParamWidgetContextExtender
 		w1->setModule(module, CVMapModule::CHANNEL_LIGHTS2);
 		addChild(w1);
 
-		typedef MapModuleDisplay<MAX_CHANNELS, CVMapModule, CvMapChoice> TMapDisplay;
+		typedef MapModuleDisplay<MAX_CHANNELS, CVMapModule, CVMapChoice> TMapDisplay;
 		TMapDisplay* mapWidget = createWidget<TMapDisplay>(Vec(10.6f, 81.5f));
 		mapWidget->box.size = Vec(128.9f, 261.7f);
 		mapWidget->setModule(module);
