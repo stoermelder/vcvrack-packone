@@ -81,7 +81,7 @@
     - Added scroll-commands (#252)
     - Added tooltips for mapped commands
 - Module [TRANSIT](./docs/Transit.md)
-    - Added "Phase"-mode for CV-input which scans continously through snapshots (#182)
+    - Added "Phase"-mode for CV-input which scans continously through snapshots ([manual](./docs/Transit.md#phase)) (#182)
     - Added context menu option "Locate and indicate" for bound parameters
     - Added context menu option for custom text labels
     - Improved performance of +T expanders
