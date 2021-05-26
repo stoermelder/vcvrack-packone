@@ -15,7 +15,13 @@ The grid is the main part of MAZE with up to four color-coded "playheads". Playh
 - Half: The incoming clock signal is multiplied by a randomly chosen factor and multiple gate pulses are sent to the TRIG-port generating a ratcheting sequence. Although the exact number of triggers cannot be controlled there is a probability setting for each playhead to influence the geometric distribution in use for generating the number of gates: Higher percent-values mean that bigger factors of clock multiples are more likely.
 
 If "Ratcheting" is disabled by context menu option of a playhead (see 
-*Edit-mode* below) each half filled cell generates one single gate pulse with probability of 50%.
+*Edit-mode* below) each half filled cell generates one single gate pulse with probability of 50%.  
+<a name="ratchet"></a>
+Since v1.9.0 there is an additional setting for controlling the behavior of the ratchets:
+
+- Twos: Only even number of ratchets are generated.
+- Threes: Only numbers of ratchets divideable by three are generated.
+- Power of 2: The number of ratchets is a power of 2. Be aware that this setting can generate huge amounts of ratchets per clock-tick.
 
 ![MAZE ratcheting probability](./Maze-ratchet.png)
 
@@ -50,7 +56,7 @@ There are additional settings on the context menu of each playhead:
 * Start progressing direction: Right (default), Left, Up, Down
 * Behavior of TURN-triggers: 90 degrees (default) or 180 degrees
 * Output range of the respective CV-port, default is 0..3V
-* Ratcheting on/off (since v1.6.0)
+* Ratcheting (since v1.6.0, more options since v1.9.0)
 * Ratcheting probability (since v1.6.0)
 
 ![MAZE Edit-mode context menu](./Maze-edit2.png)

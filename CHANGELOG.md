@@ -41,12 +41,12 @@
     - Added option to consolidate all GLUE modules into the current one
 - Module [HIVE](./docs/Hive.md)
     - Fixed hanging ratchets on missing or stopped clock trigger (#216)
-    - Added new ratcheting modes ("Twos", "Threes", "Power of Two")
+    - Added new ratcheting modes ("Twos", "Threes", "Power of Two") ([manual](./docs/Maze.md#ratchet))
 - Module [MACRO](./docs/Macro.md)
     - Added context menu options on mapped parameters of target module for MACRO
 - Module [MAZE](./docs/Maze.md)
     - Fixed hanging ratchets on missing or stopped clock trigger (#216)
-    - Added new ratcheting modes ("Twos", "Threes", "Power of Two")
+    - Added new ratcheting modes ("Twos", "Threes", "Power of Two") ([manual](./docs/Maze.md#ratchet))
 - Module [MB](./docs/Mb.md)
     - Added option to hide the "brands" section of the V1-browser (#223)
 - Module [µMAP](./docs/CVMapMicro.md)
