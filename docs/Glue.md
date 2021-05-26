@@ -12,6 +12,9 @@ Labels can be placed after "arming" the labeling-mode with the button *LABEL* (t
 
 While in *unlocked mode* you can use the hotkeys CTRL+A to place a label at the current position of the mouse pointer and CTRL+X to remove a label while hovering over it.
 
+<a name="consolidate"></a>
+Since v1.9.0 there is a context menu option to consolidate the labels: If the current patch contains multiple GLUE-modules all except the current one will be removed and the labels are merged into one GLUE-module. This operation can be undo if needed.
+
 ## Opacity controls
 
 There are global controls for opacity available which affect all labels of a GLUE instance: *HIDE* hides all labels temporarily, this switch can also be MIDI-mapped. Two buttons on *OPACITY* increase or decrease the opacity of all labels by 5%.

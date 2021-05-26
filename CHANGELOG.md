@@ -38,7 +38,7 @@
     - Added arbitrary channel routings to allow every input channel assigned to any mapping slot
     - Fixed wrong slot behavior when toggling input to 0V (#221)
 - Module [GLUE](./docs/Glue.md)
-    - Added option to consolidate all GLUE modules into the current one
+    - Added option to consolidate all GLUE modules into the current one ([manual](./docs/Glue.md#consolidate))
 - Module [HIVE](./docs/Hive.md)
     - Fixed hanging ratchets on missing or stopped clock trigger (#216)
     - Added new ratcheting modes ("Twos", "Threes", "Power of Two") ([manual](./docs/Maze.md#ratchet))
