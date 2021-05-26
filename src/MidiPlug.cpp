@@ -19,22 +19,34 @@ struct MidiPlugModule : Module {
 		};
 		MODE plugMode;
 
-		void sendChannelMessage(midi::Message& message) {
+		void sendChannelMessage(midi::Message& msg) {
 			if (channel >= 0) {
-				switch (plugMode) {
-					case MODE::REPLACE:
-						message.setChannel(channel);
+				switch (msg.getStatus()) {
+					case 0x9: // note on
+					case 0x8: // note off
+					case 0xa: // key pressure
+					case 0xb: // cc
+					case 0xc: // program change
+					case 0xd: // channel pressure
+					case 0xe: // pitch wheel
+						switch (plugMode) {
+							case MODE::REPLACE:
+								msg.setChannel(channel);
+								break;
+							case MODE::FILTER:
+								if (msg.getChannel() != channel) return;
+								break;
+							case MODE::BLOCK:
+								if (msg.getChannel() == channel) return;
+								break;
+						}
 						break;
-					case MODE::FILTER:
-						if (message.getChannel() != channel) return;
-						break;
-					case MODE::BLOCK:
-						if (message.getChannel() == channel) return;
+					case 0xf: // system
 						break;
 				}
 			}
 			if (outputDevice) {
-				outputDevice->sendMessage(message);
+				outputDevice->sendMessage(msg);
 			}
 		}
 
@@ -250,6 +262,8 @@ struct MidiPlugWidget : ThemedModuleWidget<MidiPlugModule<>> {
 	}
 
 	void appendContextMenu(Menu* menu) override {
+		ThemedModuleWidget<MidiPlugModule<>>::appendContextMenu(menu);
+
 		struct LoopbackDriverItem : MenuItem {
 			void step() override {
 				rightText = CHECKMARK(pluginSettings.midiLoopbackDriverEnabled);
