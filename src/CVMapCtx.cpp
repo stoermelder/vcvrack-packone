@@ -71,11 +71,23 @@ struct CVMapCtxWidget : ThemedModuleWidget<CVMapCtxModule> {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		IdTextField* textField = createWidget<IdTextField>(Vec(5.3f, 329.5f));
-		textField->box.size = Vec(21.f, 13.f);
-		textField->maxTextLength = 2;
+		IdTextField* textField = createWidget<IdTextField>(Vec());
+		textField->textSize = 13.f;
+		textField->maxTextLength = 8;
 		textField->module = module;
-		addChild(textField);
+		textField->box.size = Vec(54.f, 13.f);
+
+		TransformWidget* tw = new TransformWidget;
+		tw->addChild(textField);
+		tw->box.pos = Vec(-12.f, 305.f);
+		tw->box.size = Vec(120.f, 13.f);
+		addChild(tw);
+
+		math::Vec center = textField->box.getCenter();
+		tw->identity();
+		tw->translate(center);
+		tw->rotate(-M_PI / 2);
+		tw->translate(center.neg());
 	}
 };
 

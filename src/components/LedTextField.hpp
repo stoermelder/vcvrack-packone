@@ -5,6 +5,7 @@
 namespace StoermelderPackOne {
 
 struct StoermelderTextField : LedDisplayTextField {
+	float textSize = 12.f;
 	const static unsigned int defaultMaxTextLength = 4;
 	unsigned int maxTextLength;
 	NVGcolor bgColor;
@@ -19,7 +20,7 @@ struct StoermelderTextField : LedDisplayTextField {
 	}
 
 	void draw(const DrawArgs& args) override {
-		nvgScissor(args.vg, RECT_ARGS(args.clipBox));
+		//nvgScissor(args.vg, RECT_ARGS(args.clipBox));
 
 		if (bgColor.a > 0.0) {
 			nvgBeginPath(args.vg);
@@ -33,7 +34,7 @@ struct StoermelderTextField : LedDisplayTextField {
 			nvgFontFaceId(args.vg, font->handle);
 			nvgTextLetterSpacing(args.vg, 0.0);
 			nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-			nvgFontSize(args.vg, 12);
+			nvgFontSize(args.vg, textSize);
 			nvgTextBox(args.vg, textOffset.x, box.size.y / 2.f, box.size.x, text.c_str(), NULL);
 		}
 
@@ -61,7 +62,7 @@ struct StoermelderTextField : LedDisplayTextField {
 			nvgFill(args.vg);
 		}
 
-		nvgResetScissor(args.vg);
+		//nvgResetScissor(args.vg);
 	}
 
 	void onSelect(const event::Select& e) override {
