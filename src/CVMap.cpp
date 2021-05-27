@@ -553,6 +553,7 @@ struct CVMapWidget : ThemedModuleWidget<CVMapModule>, ParamWidgetContextExtender
 				if (itCvBegin == end) {
 					menu->addChild(new MenuSeparator());
 					menu->addChild(construct<CVMapBeginItem>());
+					itCvBegin = std::prev(menu->children.end());
 					for (Widget* wm : w) {
 						menu->addChild(wm);
 					}
@@ -561,11 +562,12 @@ struct CVMapWidget : ThemedModuleWidget<CVMapModule>, ParamWidgetContextExtender
 					for (auto i = w.rbegin(); i != w.rend(); ++i) {
 						Widget* wm = *i;
 						menu->addChild(wm);
-						auto it = std::find(beg, end, wm);
+						auto it = std::prev(menu->children.end());
 						menu->children.splice(std::next(itCvBegin), menu->children, it);
 					}
 				}
-				return;
+				itCvEnd = std::prev(menu->children.end());
+				break;
 			}
 		}
 
