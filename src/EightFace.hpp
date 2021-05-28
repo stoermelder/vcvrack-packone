@@ -17,7 +17,7 @@ const std::set<std::tuple<std::string, std::string>> guiModuleSlugs = {
 	std::make_tuple("VCV-Host", "Host"),
 	std::make_tuple("VCV-Host", "Host-FX"),
 	std::make_tuple("VCV-Host", "Host-XL"),
-	std::make_tuple("stoermelder", "MidiCat")
+	std::make_tuple("Stoermelder-P1", "MidiCat")
 };
 
 enum class AUTOLOAD {
