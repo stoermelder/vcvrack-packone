@@ -36,6 +36,7 @@
 - Module [CV-MAP](./docs/CVMap.md)
     - Added context menu sliders for slew and scaling and transforming the input and parameter-range (#243)
     - Added arbitrary channel routings to allow every input channel assigned to any mapping slot
+    - Added context menu on the input ports for custom labeling the channels (#256)
     - Fixed wrong slot behavior when toggling input to 0V (#221)
 - Module [GLUE](./docs/Glue.md)
     - Added option to consolidate all GLUE modules into the current one ([manual](./docs/Glue.md#consolidate))
@@ -57,6 +58,7 @@
     - Added toggle-modes for MIDI CC mappings (#225)
     - Added an overlay showing current parameter changes on the bottom of the screen
     - Fixed crash when binding modules with more than 128 parameters (#234)
+    - Added option for clearing mapping slots on preset load (#259)
 - Module [MIDI-MON](./docs/MidiMon.md)
     - Added support for more message types (program change, song select, song pointer)
     - Added context menu option for clearing the log

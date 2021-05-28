@@ -239,6 +239,8 @@ struct MidiCatModule : Module, StripIdFixModule {
 	int midiOptions[MAX_CHANNELS];
 	/** [Stored to JSON] */
 	bool midiIgnoreDevices;
+	/** [Stored to JSON] */
+	bool clearMapsOnLoad;
 
 	/** [Stored to Json] The mapped param handle of each channel */
 	ParamHandle paramHandles[MAX_CHANNELS];
@@ -355,6 +357,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 		processDivider.setDivision(processDivision);
 		processDivider.reset();
 		overlayEnabled = true;
+		clearMapsOnLoad = false;
 	}
 
 	void onSampleRateChange() override {
@@ -952,6 +955,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 		json_object_set_new(rootJ, "locked", json_boolean(locked));
 		json_object_set_new(rootJ, "processDivision", json_integer(processDivision));
 		json_object_set_new(rootJ, "overlayEnabled", json_boolean(overlayEnabled));
+		json_object_set_new(rootJ, "clearMapsOnLoad", json_boolean(clearMapsOnLoad));
 
 		json_t* mapsJ = json_array();
 		for (int id = 0; id < mapLen; id++) {
@@ -980,7 +984,6 @@ struct MidiCatModule : Module, StripIdFixModule {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		//clearMaps();
 		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
 		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 
@@ -994,6 +997,12 @@ struct MidiCatModule : Module, StripIdFixModule {
 		if (processDivisionJ) processDivision = json_integer_value(processDivisionJ);
 		json_t* overlayEnabledJ = json_object_get(rootJ, "overlayEnabled");
 		if (overlayEnabledJ) overlayEnabled = json_boolean_value(overlayEnabledJ);
+		json_t* clearMapsOnLoadJ = json_object_get(rootJ, "clearMapsOnLoad");
+		if (clearMapsOnLoadJ) clearMapsOnLoad = json_boolean_value(clearMapsOnLoadJ);
+
+		if (clearMapsOnLoad) {
+			clearMaps();
+		}
 
 		json_t* mapsJ = json_object_get(rootJ, "maps");
 		if (mapsJ) {
@@ -1807,7 +1816,7 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 					for (auto i = w.rbegin(); i != w.rend(); ++i) {
 						Widget* wm = *i;
 						menu->addChild(wm);
-						auto it = std::find(beg, end, wm);
+						auto it = std::prev(menu->children.end());
 						menu->children.splice(std::next(itCvBegin), menu->children, it);
 					}
 				}
@@ -1972,16 +1981,41 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 			}
 		}; // struct ResendMidiOutItem
 
-		struct IgnoreMidiDevicesItem : MenuItem {
+		struct PresetLoadMenuItem : MenuItem {
+			struct IgnoreMidiDevicesItem : MenuItem {
+				MidiCatModule* module;
+				void onAction(const event::Action& e) override {
+					module->midiIgnoreDevices ^= true;
+				}
+				void step() override {
+					rightText = CHECKMARK(module->midiIgnoreDevices);
+					MenuItem::step();
+				}
+			}; // struct IgnoreMidiDevicesItem
+
+			struct ClearMapsOnLoadItem : MenuItem {
+				MidiCatModule* module;
+				void onAction(const event::Action& e) override {
+					module->clearMapsOnLoad ^= true;
+				}
+				void step() override {
+					rightText = CHECKMARK(module->clearMapsOnLoad);
+					MenuItem::step();
+				}
+			}; // struct ClearMapsOnLoadItem
+
 			MidiCatModule* module;
-			void onAction(const event::Action& e) override {
-				module->midiIgnoreDevices ^= true;
+			PresetLoadMenuItem() {
+				rightText = RIGHT_ARROW;
 			}
-			void step() override {
-				rightText = CHECKMARK(module->midiIgnoreDevices);
-				MenuItem::step();
+
+			Menu* createChildMenu() override {
+				Menu* menu = new Menu;
+				menu->addChild(construct<IgnoreMidiDevicesItem>(&MenuItem::text, "Ignore MIDI devices", &IgnoreMidiDevicesItem::module, module));
+				menu->addChild(construct<ClearMapsOnLoadItem>(&MenuItem::text, "Clear mapping slots", &ClearMapsOnLoadItem::module, module));
+				return menu;
 			}
-		}; // struct IgnoreMidiDevicesItem
+		};
 
 		struct PrecisionMenuItem : MenuItem {
 			struct PrecisionItem : MenuItem {
@@ -2045,10 +2079,10 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 		}; // struct MidiModeMenuItem
 
 		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<PresetLoadMenuItem>(&MenuItem::text, "Preset load", &PresetLoadMenuItem::module, module));
 		menu->addChild(construct<PrecisionMenuItem>(&MenuItem::text, "Precision", &PrecisionMenuItem::module, module));
 		menu->addChild(construct<MidiModeMenuItem>(&MenuItem::text, "Mode", &MidiModeMenuItem::module, module));
 		menu->addChild(construct<ResendMidiOutItem>(&MenuItem::text, "Re-send MIDI feedback", &ResendMidiOutItem::module, module));
-		menu->addChild(construct<IgnoreMidiDevicesItem>(&MenuItem::text, "Ignore MIDI devices on presets", &IgnoreMidiDevicesItem::module, module));
 		menu->addChild(construct<MidiMapImportItem>(&MenuItem::text, "Import MIDI-MAP preset", &MidiMapImportItem::moduleWidget, this));
 
 		struct TextScrollItem : MenuItem {
