@@ -24,6 +24,8 @@
     - New module, a polyphonic stereo field spreader
 - Module [STRIP-CON](./docs/Strip.md)
     - New module, a companion module for STRIP for keeping input/output connections while replacing strips
+- Module [ME](./docs/Me.md)
+    - New experimental module for "mouse enhacements", currently screen overlay for parameters changes
 
 ### Fixes and Changes
 
@@ -70,6 +72,8 @@
 - Module [SAIL](./docs/Sail.md)
     - Added an overlay showing current parameter changes on the bottom of the screen
     - Block adjustments on switch-parameters to avoid undefined behavior
+- Module [SPIN](./docs/Spin.md)
+    - Improved transition between scrolling and parameter adjustments on hovering (#260)
 - Module [STRIP](./docs/Strip.md)
     - Added context menu option "Load and replace" to preset-submenu (#215)
     - Added support for sub-folders in preset-submenu (#230)
