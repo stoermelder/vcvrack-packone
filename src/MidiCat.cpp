@@ -2135,27 +2135,53 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 		menu->addChild(construct<ResendMidiOutItem>(&MenuItem::text, "Re-send MIDI feedback", &ResendMidiOutItem::module, module));
 		menu->addChild(construct<MidiMapImportItem>(&MenuItem::text, "Import MIDI-MAP preset", &MidiMapImportItem::moduleWidget, this));
 
-		struct TextScrollItem : MenuItem {
+		struct UiMenuItem : MenuItem {
 			MidiCatModule* module;
-			void onAction(const event::Action& e) override {
-				module->textScrolling ^= true;
+			UiMenuItem() {
+				rightText = RIGHT_ARROW;
 			}
-			void step() override {
-				rightText = module->textScrolling ? "✔" : "";
-				MenuItem::step();
-			}
-		}; // struct TextScrollItem
 
-		struct MappingIndicatorHiddenItem : MenuItem {
-			MidiCatModule* module;
-			void onAction(const event::Action& e) override {
-				module->mappingIndicatorHidden ^= true;
+			Menu* createChildMenu() override {
+				struct TextScrollItem : MenuItem {
+					MidiCatModule* module;
+					void onAction(const event::Action& e) override {
+						module->textScrolling ^= true;
+					}
+					void step() override {
+						rightText = module->textScrolling ? "✔" : "";
+						MenuItem::step();
+					}
+				}; // struct TextScrollItem
+
+				struct MappingIndicatorHiddenItem : MenuItem {
+					MidiCatModule* module;
+					void onAction(const event::Action& e) override {
+						module->mappingIndicatorHidden ^= true;
+					}
+					void step() override {
+						rightText = module->mappingIndicatorHidden ? "✔" : "";
+						MenuItem::step();
+					}
+				}; // struct MappingIndicatorHiddenItem
+
+				struct LockedItem : MenuItem {
+					MidiCatModule* module;
+					void onAction(const event::Action& e) override {
+						module->locked ^= true;
+					}
+					void step() override {
+						rightText = module->locked ? "✔" : "";
+						MenuItem::step();
+					}
+				}; // struct LockedItem
+
+				Menu* menu = new Menu;
+				menu->addChild(construct<TextScrollItem>(&MenuItem::text, "Text scrolling", &TextScrollItem::module, module));
+				menu->addChild(construct<MappingIndicatorHiddenItem>(&MenuItem::text, "Hide mapping indicators", &MappingIndicatorHiddenItem::module, module));
+				menu->addChild(construct<LockedItem>(&MenuItem::text, "Lock mapping slots", &LockedItem::module, module));
+				return menu;
 			}
-			void step() override {
-				rightText = module->mappingIndicatorHidden ? "✔" : "";
-				MenuItem::step();
-			}
-		}; // struct MappingIndicatorHiddenItem
+		}; // struct UiMenuItem
 
 		struct OverlayEnabledItem : MenuItem {
 			MidiCatModule* module;
@@ -2167,17 +2193,6 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 				MenuItem::step();
 			}
 		}; // struct OverlayEnabledItem
-
-		struct LockedItem : MenuItem {
-			MidiCatModule* module;
-			void onAction(const event::Action& e) override {
-				module->locked ^= true;
-			}
-			void step() override {
-				rightText = module->locked ? "✔" : "";
-				MenuItem::step();
-			}
-		}; // struct LockedItem
 
 		struct ClearMapsItem : MenuItem {
 			MidiCatModule* module;
@@ -2229,9 +2244,7 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 		}; // struct ModuleLearnSelectMenuItem
 
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<TextScrollItem>(&MenuItem::text, "Text scrolling", &TextScrollItem::module, module));
-		menu->addChild(construct<MappingIndicatorHiddenItem>(&MenuItem::text, "Hide mapping indicators", &MappingIndicatorHiddenItem::module, module));
-		menu->addChild(construct<LockedItem>(&MenuItem::text, "Lock mapping slots", &LockedItem::module, module));
+		menu->addChild(construct<UiMenuItem>(&MenuItem::text, "User interface", &UiMenuItem::module, module));
 		menu->addChild(construct<OverlayEnabledItem>(&MenuItem::text, "Status overlay", &OverlayEnabledItem::module, module));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<ClearMapsItem>(&MenuItem::text, "Clear mappings", &ClearMapsItem::module, module));
