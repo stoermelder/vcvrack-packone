@@ -1827,33 +1827,36 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 		if (expCtx) {
 			std::string id = expCtx->getMidiCatId();
 			if (id != "") {
-				struct MapItem : MenuItem {
+				struct MapMenuItem : MenuItem {
 					MidiCatModule* module;
 					ParamQuantity* pq;
-					void onAction(const event::Action& e) override {
-						int id = module->enableLearn(-1, true);
-						if (id >= 0) module->learnParam(id, pq->module->id, pq->paramId);
-					}
-				};
-
-				struct RemapMenuItem : MenuItem {
-					struct RemapItem : MenuItem {
-						MidiCatModule* module;
-						ParamQuantity* pq;
-						int id;
-						void onAction(const event::Action& e) override {
-							module->learnParam(id, pq->module->id, pq->paramId);
-						}
-					};
-
-					MidiCatModule* module;
-					ParamQuantity* pq;
-					RemapMenuItem() {
+					MapMenuItem() {
 						rightText = RIGHT_ARROW;
 					}
 
 					Menu* createChildMenu() override {
+						struct MapEmptyItem : MenuItem {
+							MidiCatModule* module;
+							ParamQuantity* pq;
+							void onAction(const event::Action& e) override {
+								int id = module->enableLearn(-1, true);
+								if (id >= 0) module->learnParam(id, pq->module->id, pq->paramId);
+							}
+						};
+
+						struct RemapItem : MenuItem {
+							MidiCatModule* module;
+							ParamQuantity* pq;
+							int id;
+							void onAction(const event::Action& e) override {
+								module->learnParam(id, pq->module->id, pq->paramId);
+							}
+						};
+
 						Menu* menu = new Menu;
+						menu->addChild(construct<MapEmptyItem>(&MenuItem::text, "Learn MIDI", &MapEmptyItem::module, module, &MapEmptyItem::pq, pq));
+						menu->addChild(new MenuSeparator);
+
 						for (int i = 0; i < module->mapLen; i++) {
 							if (module->ccs[i].getCc() >= 0 || module->notes[i].getNote() >= 0) {
 								std::string text;
@@ -1861,15 +1864,15 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 									text = module->textLabel[i];
 								}
 								else if (module->ccs[i].getCc() >= 0) {
-									text = string::f("cc%02d ", module->ccs[i].getCc());
+									text = string::f("MIDI CC %02d", module->ccs[i].getCc());
 								}
 								else {
 									static const char* noteNames[] = {
-										" C", "C#", " D", "D#", " E", " F", "F#", " G", "G#", " A", "A#", " B"
+										"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"
 									};
 									int oct = module->notes[i].getNote() / 12 - 1;
 									int semi = module->notes[i].getNote() % 12;
-									text = string::f("%s%d ", noteNames[semi], oct);
+									text = string::f("MIDI note %s%d", noteNames[semi], oct);
 								}
 								menu->addChild(construct<RemapItem>(&MenuItem::text, text, &RemapItem::module, module, &RemapItem::pq, pq, &RemapItem::id, i));
 							}
@@ -1878,24 +1881,17 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 					} 
 				};
 
-				std::list<Widget*> w;
-				w.push_back(construct<MapItem>(&MenuItem::text, string::f("Learn MIDI on \"%s\"", id.c_str()), &MapItem::module, module, &MapItem::pq, pq));
-				w.push_back(construct<RemapMenuItem>(&MenuItem::text, string::f("Remap MIDI on \"%s\"", id.c_str()), &RemapMenuItem::module, module, &RemapMenuItem::pq, pq));
+				MenuItem* mapMenuItem = construct<MapMenuItem>(&MenuItem::text, string::f("Map on \"%s\"", id.c_str()), &MapMenuItem::module, module, &MapMenuItem::pq, pq);
 
 				if (itCvBegin == end) {
 					menu->addChild(new MenuSeparator);
 					menu->addChild(construct<MidiCatBeginItem>());
-					for (Widget* wm : w) {
-						menu->addChild(wm);
-					}
+					menu->addChild(mapMenuItem);
 				}
 				else {
-					for (auto i = w.rbegin(); i != w.rend(); ++i) {
-						Widget* wm = *i;
-						menu->addChild(wm);
-						auto it = std::prev(menu->children.end());
-						menu->children.splice(std::next(itCvBegin), menu->children, it);
-					}
+					menu->addChild(mapMenuItem);
+					auto it = std::find(beg, end, mapMenuItem);
+					menu->children.splice(std::next(itCvEnd == end ? itCvBegin : itCvEnd), menu->children, it);
 				}
 			}
 		}
