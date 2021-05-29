@@ -1767,6 +1767,82 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 			}
 		};
 
+		struct MapMenuItem : MenuItem {
+			MidiCatModule* module;
+			ParamQuantity* pq;
+			int currentId = -1;
+
+			MapMenuItem() {
+				rightText = RIGHT_ARROW;
+			}
+
+			Menu* createChildMenu() override {
+				struct MapItem : MenuItem {
+					MidiCatModule* module;
+					int currentId;
+					void onAction(const event::Action& e) override {
+						module->enableLearn(currentId, true);
+					}
+				};
+
+				struct MapEmptyItem : MenuItem {
+					MidiCatModule* module;
+					ParamQuantity* pq;
+					void onAction(const event::Action& e) override {
+						int id = module->enableLearn(-1, true);
+						if (id >= 0) module->learnParam(id, pq->module->id, pq->paramId);
+					}
+				};
+
+				struct RemapItem : MenuItem {
+					MidiCatModule* module;
+					ParamQuantity* pq;
+					int id;
+					int currentId;
+					void onAction(const event::Action& e) override {
+						module->learnParam(id, pq->module->id, pq->paramId);
+					}
+					void step() override {
+						rightText = CHECKMARK(id == currentId);
+						MenuItem::step();
+					}
+				};
+
+				Menu* menu = new Menu;
+				if (currentId < 0) {
+					menu->addChild(construct<MapEmptyItem>(&MenuItem::text, "Learn MIDI", &MapEmptyItem::module, module, &MapEmptyItem::pq, pq));
+				}
+				else {
+					menu->addChild(construct<MapItem>(&MenuItem::text, "Learn MIDI", &MapItem::module, module, &MapItem::currentId, currentId));
+				}
+
+				if (module->mapLen > 0) {
+					menu->addChild(new MenuSeparator);
+					for (int i = 0; i < module->mapLen; i++) {
+						if (module->ccs[i].getCc() >= 0 || module->notes[i].getNote() >= 0) {
+							std::string text;
+							if (module->textLabel[i] != "") {
+								text = module->textLabel[i];
+							}
+							else if (module->ccs[i].getCc() >= 0) {
+								text = string::f("MIDI CC %02d", module->ccs[i].getCc());
+							}
+							else {
+								static const char* noteNames[] = {
+									"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"
+								};
+								int oct = module->notes[i].getNote() / 12 - 1;
+								int semi = module->notes[i].getNote() % 12;
+								text = string::f("MIDI note %s%d", noteNames[semi], oct);
+							}
+							menu->addChild(construct<RemapItem>(&MenuItem::text, text, &RemapItem::module, module, &RemapItem::pq, pq, &RemapItem::id, i, &RemapItem::currentId, currentId));
+						}
+					}
+				}
+				return menu;
+			} 
+		};
+
 		std::list<Widget*>::iterator beg = menu->children.begin();
 		std::list<Widget*>::iterator end = menu->children.end();
 		std::list<Widget*>::iterator itCvBegin = end;
@@ -1785,17 +1861,9 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 
 		for (int id = 0; id < module->mapLen; id++) {
 			if (module->paramHandles[id].moduleId == pq->module->id && module->paramHandles[id].paramId == pq->paramId) {
-				struct MapItem : MenuItem {
-					MidiCatModule* module;
-					int id;
-					void onAction(const event::Action& e) override {
-						module->enableLearn(id, true);
-					}
-				};
-
+				std::string midiCatId = expCtx ? "on \"" + expCtx->getMidiCatId() + "\"" : "";
 				std::list<Widget*> w;
-				w.push_back(construct<CenterModuleItem>(&MenuItem::text, "Center mapping module", &CenterModuleItem::mw, this));
-				w.push_back(construct<MapItem>(&MenuItem::text, "Learn MIDI", &MapItem::module, module, &MapItem::id, id));
+				w.push_back(construct<MapMenuItem>(&MenuItem::text, string::f("Re-map %s", midiCatId.c_str()), &MapMenuItem::module, module, &MapMenuItem::pq, pq, &MapMenuItem::currentId, id));
 				w.push_back(new SlewSlider(&module->midiParam[id]));
 				w.push_back(construct<MenuLabel>(&MenuLabel::text, "Scaling"));
 				std::string l = string::f("Input %s", module->ccs[id].getCc() >= 0 ? "MIDI CC" : (module->notes[id].getNote() >= 0 ? "MIDI vel" : ""));
@@ -1803,6 +1871,7 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 				w.push_back(construct<ScalingOutputLabel>(&MenuLabel::text, "Parameter range", &ScalingOutputLabel::p, &module->midiParam[id]));
 				w.push_back(new MinSlider(&module->midiParam[id]));
 				w.push_back(new MaxSlider(&module->midiParam[id]));
+				w.push_back(construct<CenterModuleItem>(&MenuItem::text, "Go to mapping module", &CenterModuleItem::mw, this));
 				w.push_back(new MidiCatEndItem);
 
 				if (itCvBegin == end) {
@@ -1825,64 +1894,9 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 		}
 
 		if (expCtx) {
-			std::string id = expCtx->getMidiCatId();
-			if (id != "") {
-				struct MapMenuItem : MenuItem {
-					MidiCatModule* module;
-					ParamQuantity* pq;
-					MapMenuItem() {
-						rightText = RIGHT_ARROW;
-					}
-
-					Menu* createChildMenu() override {
-						struct MapEmptyItem : MenuItem {
-							MidiCatModule* module;
-							ParamQuantity* pq;
-							void onAction(const event::Action& e) override {
-								int id = module->enableLearn(-1, true);
-								if (id >= 0) module->learnParam(id, pq->module->id, pq->paramId);
-							}
-						};
-
-						struct RemapItem : MenuItem {
-							MidiCatModule* module;
-							ParamQuantity* pq;
-							int id;
-							void onAction(const event::Action& e) override {
-								module->learnParam(id, pq->module->id, pq->paramId);
-							}
-						};
-
-						Menu* menu = new Menu;
-						menu->addChild(construct<MapEmptyItem>(&MenuItem::text, "Learn MIDI", &MapEmptyItem::module, module, &MapEmptyItem::pq, pq));
-						menu->addChild(new MenuSeparator);
-
-						for (int i = 0; i < module->mapLen; i++) {
-							if (module->ccs[i].getCc() >= 0 || module->notes[i].getNote() >= 0) {
-								std::string text;
-								if (module->textLabel[i] != "") {
-									text = module->textLabel[i];
-								}
-								else if (module->ccs[i].getCc() >= 0) {
-									text = string::f("MIDI CC %02d", module->ccs[i].getCc());
-								}
-								else {
-									static const char* noteNames[] = {
-										"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"
-									};
-									int oct = module->notes[i].getNote() / 12 - 1;
-									int semi = module->notes[i].getNote() % 12;
-									text = string::f("MIDI note %s%d", noteNames[semi], oct);
-								}
-								menu->addChild(construct<RemapItem>(&MenuItem::text, text, &RemapItem::module, module, &RemapItem::pq, pq, &RemapItem::id, i));
-							}
-						}
-						return menu;
-					} 
-				};
-
-				MenuItem* mapMenuItem = construct<MapMenuItem>(&MenuItem::text, string::f("Map on \"%s\"", id.c_str()), &MapMenuItem::module, module, &MapMenuItem::pq, pq);
-
+			std::string midiCatId = expCtx->getMidiCatId();
+			if (midiCatId != "") {
+				MenuItem* mapMenuItem = construct<MapMenuItem>(&MenuItem::text, string::f("Map on \"%s\"", midiCatId.c_str()), &MapMenuItem::module, module, &MapMenuItem::pq, pq);
 				if (itCvBegin == end) {
 					menu->addChild(new MenuSeparator);
 					menu->addChild(construct<MidiCatBeginItem>());

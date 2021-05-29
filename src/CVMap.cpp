@@ -321,28 +321,30 @@ struct CVMapPort : StoermelderPort {
 
 
 struct InputChannelMenuItem : MenuItem {
-	struct InputChannelItem : MenuItem {
-		CVMapModule* module;
-		ParamQuantity* pq = NULL;
-		int id;
-		int channel;
-		void onAction(const event::Action& e) override {
-			if (pq) module->learnParam(id, pq->module->id, pq->paramId);
-			module->mapInput[id] = channel;
-		}
-		void step() override {
-			rightText = CHECKMARK(!pq && module->mapInput[id] == channel);
-			MenuItem::step();
-		}
-	}; // struct InputChannelItem
-
 	CVMapModule* module;
 	ParamQuantity* pq = NULL;
 	int id;
+
 	InputChannelMenuItem() {
 		rightText = RIGHT_ARROW;
 	}
+
 	Menu* createChildMenu() override {
+		struct InputChannelItem : MenuItem {
+			CVMapModule* module;
+			ParamQuantity* pq = NULL;
+			int id;
+			int channel;
+			void onAction(const event::Action& e) override {
+				if (pq) module->learnParam(id, pq->module->id, pq->paramId);
+				module->mapInput[id] = channel;
+			}
+			void step() override {
+				rightText = CHECKMARK(!pq && module->mapInput[id] == channel);
+				MenuItem::step();
+			}
+		}; // struct InputChannelItem
+
 		Menu* menu = new Menu;
 		for (int i = 0; i < 2; i++) {
 			for (int j = 0; j < 16; j++) {
@@ -539,15 +541,16 @@ struct CVMapWidget : ThemedModuleWidget<CVMapModule>, ParamWidgetContextExtender
 
 		for (int id = 0; id < module->mapLen; id++) {
 			if (module->paramHandles[id].moduleId == pq->module->id && module->paramHandles[id].paramId == pq->paramId) {
+				std::string cvMapId = expCtx ? "on \"" + expCtx->getCVMapId() + "\"" : "";
 				std::list<Widget*> w;
-				w.push_back(construct<CenterModuleItem>(&MenuItem::text, "Center mapping module", &CenterModuleItem::mw, this));
-				w.push_back(construct<InputChannelMenuItem>(&MenuItem::text, "Input channel", &InputChannelMenuItem::module, module, &InputChannelMenuItem::id, id));
+				w.push_back(construct<InputChannelMenuItem>(&MenuItem::text, string::f("Re-map %s", cvMapId.c_str()), &InputChannelMenuItem::module, module, &InputChannelMenuItem::id, id));
 				w.push_back(new MapSlewSlider<>(&module->mapParam[id]));
 				w.push_back(construct<MenuLabel>(&MenuLabel::text, "Scaling"));
 				w.push_back(construct<MapScalingInputLabel<>>(&MenuLabel::text, "Input", &MapScalingInputLabel<>::p, &module->mapParam[id]));
 				w.push_back(construct<MapScalingOutputLabel<>>(&MenuLabel::text, "Parameter range", &MapScalingOutputLabel<>::p, &module->mapParam[id]));
 				w.push_back(new MapMinSlider<>(&module->mapParam[id]));
 				w.push_back(new MapMaxSlider<>(&module->mapParam[id]));
+				w.push_back(construct<CenterModuleItem>(&MenuItem::text, "Go to mapping module", &CenterModuleItem::mw, this));
 				w.push_back(new CVMapEndItem);
 
 				if (itCvBegin == end) {
@@ -570,11 +573,11 @@ struct CVMapWidget : ThemedModuleWidget<CVMapModule>, ParamWidgetContextExtender
 		}
 
 		if (expCtx) {
-			std::string id = expCtx->getCVMapId();
-			if (id != "") {
+			std::string cvMapId = expCtx->getCVMapId();
+			if (cvMapId != "") {
 				int nextId = module->getEmptySlotId();
 				if (nextId >= 0) {
-					MenuItem* mapMenuItem = construct<InputChannelMenuItem>(&MenuItem::text, string::f("Map on \"%s\"", id.c_str()), &InputChannelMenuItem::module, module, &InputChannelMenuItem::id, nextId, &InputChannelMenuItem::pq, pq);
+					MenuItem* mapMenuItem = construct<InputChannelMenuItem>(&MenuItem::text, string::f("Map on \"%s\"", cvMapId.c_str()), &InputChannelMenuItem::module, module, &InputChannelMenuItem::id, nextId, &InputChannelMenuItem::pq, pq);
 					if (itCvBegin == end) {
 						menu->addChild(new MenuSeparator);
 						menu->addChild(construct<CVMapBeginItem>());
