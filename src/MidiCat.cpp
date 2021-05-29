@@ -1785,7 +1785,7 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 
 		for (int id = 0; id < module->mapLen; id++) {
 			if (module->paramHandles[id].moduleId == pq->module->id && module->paramHandles[id].paramId == pq->paramId) {
-				struct MapMenuItem : MenuItem {
+				struct MapItem : MenuItem {
 					MidiCatModule* module;
 					int id;
 					void onAction(const event::Action& e) override {
@@ -1794,8 +1794,8 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 				};
 
 				std::list<Widget*> w;
-				w.push_back(construct<MapMenuItem>(&MenuItem::text, "Learn MIDI", &MapMenuItem::module, module, &MapMenuItem::id, id));
 				w.push_back(construct<CenterModuleItem>(&MenuItem::text, "Center mapping module", &CenterModuleItem::mw, this));
+				w.push_back(construct<MapItem>(&MenuItem::text, "Learn MIDI", &MapItem::module, module, &MapItem::id, id));
 				w.push_back(new SlewSlider(&module->midiParam[id]));
 				w.push_back(construct<MenuLabel>(&MenuLabel::text, "Scaling"));
 				std::string l = string::f("Input %s", module->ccs[id].getCc() >= 0 ? "MIDI CC" : (module->notes[id].getNote() >= 0 ? "MIDI vel" : ""));
@@ -1827,7 +1827,7 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 		if (expCtx) {
 			std::string id = expCtx->getMidiCatId();
 			if (id != "") {
-				struct MapMenuItem : MenuItem {
+				struct MapItem : MenuItem {
 					MidiCatModule* module;
 					ParamQuantity* pq;
 					void onAction(const event::Action& e) override {
@@ -1836,16 +1836,66 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 					}
 				};
 
-				MenuItem* mapMenuItem = construct<MapMenuItem>(&MenuItem::text, string::f("Learn MIDI on \"%s\"", id.c_str()), &MapMenuItem::module, module, &MapMenuItem::pq, pq);
+				struct RemapMenuItem : MenuItem {
+					struct RemapItem : MenuItem {
+						MidiCatModule* module;
+						ParamQuantity* pq;
+						int id;
+						void onAction(const event::Action& e) override {
+							module->learnParam(id, pq->module->id, pq->paramId);
+						}
+					};
+
+					MidiCatModule* module;
+					ParamQuantity* pq;
+					RemapMenuItem() {
+						rightText = RIGHT_ARROW;
+					}
+
+					Menu* createChildMenu() override {
+						Menu* menu = new Menu;
+						for (int i = 0; i < module->mapLen; i++) {
+							if (module->ccs[i].getCc() >= 0 || module->notes[i].getNote() >= 0) {
+								std::string text;
+								if (module->textLabel[i] != "") {
+									text = module->textLabel[i];
+								}
+								else if (module->ccs[i].getCc() >= 0) {
+									text = string::f("cc%02d ", module->ccs[i].getCc());
+								}
+								else {
+									static const char* noteNames[] = {
+										" C", "C#", " D", "D#", " E", " F", "F#", " G", "G#", " A", "A#", " B"
+									};
+									int oct = module->notes[i].getNote() / 12 - 1;
+									int semi = module->notes[i].getNote() % 12;
+									text = string::f("%s%d ", noteNames[semi], oct);
+								}
+								menu->addChild(construct<RemapItem>(&MenuItem::text, text, &RemapItem::module, module, &RemapItem::pq, pq, &RemapItem::id, i));
+							}
+						}
+						return menu;
+					} 
+				};
+
+				std::list<Widget*> w;
+				w.push_back(construct<MapItem>(&MenuItem::text, string::f("Learn MIDI on \"%s\"", id.c_str()), &MapItem::module, module, &MapItem::pq, pq));
+				w.push_back(construct<RemapMenuItem>(&MenuItem::text, string::f("Remap MIDI on \"%s\"", id.c_str()), &RemapMenuItem::module, module, &RemapMenuItem::pq, pq));
+
 				if (itCvBegin == end) {
 					menu->addChild(new MenuSeparator);
 					menu->addChild(construct<MidiCatBeginItem>());
-					menu->addChild(mapMenuItem);
+					for (Widget* wm : w) {
+						menu->addChild(wm);
+					}
 				}
 				else {
-					menu->addChild(mapMenuItem);
-					auto it = std::find(beg, end, mapMenuItem);
-					menu->children.splice(std::next(itCvEnd == end ? itCvBegin : itCvEnd), menu->children, it);
+					for (auto i = w.rbegin(); i != w.rend(); ++i) {
+						Widget* wm = *i;
+						menu->addChild(wm);
+						auto it = std::prev(menu->children.end());
+						menu->children.splice(std::next(itCvBegin), menu->children, it);
+					}
 				}
 			}
 		}

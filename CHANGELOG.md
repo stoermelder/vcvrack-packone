@@ -16,7 +16,7 @@
 - Module [DIRT](./docs/Dirt.md)
     - New module, crosstalk and noise for polyphonic cables
 - Module [MIDI-CAT CTX](./docs/MidiCat.md#ctx-expander)
-    - New expander-module for MIDI-CAT, helper for mapping parameters by context menu (#232)
+    - New expander-module for MIDI-CAT, helper for mapping parameters by context menu (#232, #250)
 - Module [MIDI-PLUG](./docs/MidiPlug.md)
     - New module, a virtual MIDI merger and splitter
     - MIDI "Loopback" driver for routing outgoing MIDI messages back into Rack (enabled on the context menu)
