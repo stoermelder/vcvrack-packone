@@ -814,9 +814,9 @@ struct MidiCatModule : Module, StripIdFixModule {
 		}
 	}
 
-	void learnParam(int id, int moduleId, int paramId) {
+	void learnParam(int id, int moduleId, int paramId, bool resetMidi = true) {
 		APP->engine->updateParamHandle(&paramHandles[id], moduleId, paramId, true);
-		midiParam[id].reset();
+		if (resetMidi) midiParam[id].reset();
 		learnedParam = true;
 		commitLearn();
 		updateMapLen();
@@ -1800,7 +1800,7 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 					int id;
 					int currentId;
 					void onAction(const event::Action& e) override {
-						module->learnParam(id, pq->module->id, pq->paramId);
+						module->learnParam(id, pq->module->id, pq->paramId, false);
 					}
 					void step() override {
 						rightText = CHECKMARK(id == currentId);
