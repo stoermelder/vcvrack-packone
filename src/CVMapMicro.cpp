@@ -2,7 +2,7 @@
 #include "MapModuleBase.hpp"
 #include "components/MapButton.hpp"
 #include "components/VoltageLedDisplay.hpp"
-#include "components/ParamWidgetContextExtender.hpp"
+#include "ui/ParamWidgetContextExtender.hpp"
 #include <chrono>
 
 namespace StoermelderPackOne {

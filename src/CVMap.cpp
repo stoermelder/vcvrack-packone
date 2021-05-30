@@ -1,7 +1,7 @@
 #include "plugin.hpp"
 #include "MapModuleBase.hpp"
 #include "CVMap.hpp"
-#include "components/ParamWidgetContextExtender.hpp"
+#include "ui/ParamWidgetContextExtender.hpp"
 #include <chrono>
 
 namespace StoermelderPackOne {

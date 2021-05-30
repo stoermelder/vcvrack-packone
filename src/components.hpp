@@ -1,6 +1,6 @@
 #pragma once
 #include "plugin.hpp"
-#include "components/ThemedModuleWidget.hpp"
+#include "ui/ThemedModuleWidget.hpp"
 #include "components/LedTextDisplay.hpp"
 
 

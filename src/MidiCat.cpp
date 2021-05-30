@@ -5,8 +5,8 @@
 #include "digital/ScaledMapParam.hpp"
 #include "components/MenuLabelEx.hpp"
 #include "components/SubMenuSlider.hpp"
-#include "components/ParamWidgetContextExtender.hpp"
 #include "components/MidiWidget.hpp"
+#include "ui/ParamWidgetContextExtender.hpp"
 #include "ui/OverlayMessageWidget.hpp"
 #include <osdialog.h>
 

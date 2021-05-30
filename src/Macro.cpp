@@ -3,7 +3,7 @@
 #include "components/MapButton.hpp"
 #include "components/VoltageLedDisplay.hpp"
 #include "components/Knobs.hpp"
-#include "components/ParamWidgetContextExtender.hpp"
+#include "ui/ParamWidgetContextExtender.hpp"
 
 namespace StoermelderPackOne {
 namespace Macro {
