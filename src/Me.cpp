@@ -96,6 +96,15 @@ struct MeWidget : ModuleWidget, OverlayMessageProvider {
 
 
 	void appendContextMenu(Menu* menu) override {
+		struct OverlayLabel : MenuLabel {
+			OverlayLabel() {
+				text = "Overlay settings";
+			}
+			~OverlayLabel() {
+				pluginSettings.saveToJson();
+			}
+		};
+
 		struct WhiteOverlayTextItem : MenuItem {
 			void step() override {
 				rightText = CHECKMARK(color::toHexString(pluginSettings.overlayTextColor) == color::toHexString(color::WHITE));
@@ -108,7 +117,6 @@ struct MeWidget : ModuleWidget, OverlayMessageProvider {
 				else {
 					pluginSettings.overlayTextColor = bndGetTheme()->menuTheme.textColor;
 				}
-				pluginSettings.saveToJson();
 			}
 		};
 
@@ -118,7 +126,6 @@ struct MeWidget : ModuleWidget, OverlayMessageProvider {
 					OverlayMessageWidget::HPOS pos;
 					void onAction(const event::Action& e) override {
 						pluginSettings.overlayHpos = (int)pos;
-						pluginSettings.saveToJson();
 					}
 					void step() override {
 						rightText = CHECKMARK(pluginSettings.overlayHpos == (int)pos);
@@ -140,7 +147,6 @@ struct MeWidget : ModuleWidget, OverlayMessageProvider {
 					OverlayMessageWidget::VPOS pos;
 					void onAction(const event::Action& e) override {
 						pluginSettings.overlayVpos = (int)pos;
-						pluginSettings.saveToJson();
 					}
 					void step() override {
 						rightText = CHECKMARK(pluginSettings.overlayVpos == (int)pos);
@@ -155,11 +161,49 @@ struct MeWidget : ModuleWidget, OverlayMessageProvider {
 			}
 		};
 
+		struct OpacitySlider : ui::Slider {
+			struct OpacityQuantity : Quantity {
+				void setValue(float value) override {
+					pluginSettings.overlayOpacity = math::clamp(value, 0.f, 1.f);
+				}
+				float getValue() override {
+					return pluginSettings.overlayOpacity;
+				}
+				float getDefaultValue() override {
+					return 1.0f;
+				}
+				float getDisplayValue() override {
+					return getValue() * 100;
+				}
+				void setDisplayValue(float displayValue) override {
+					setValue(displayValue / 100);
+				}
+				std::string getLabel() override {
+					return "Opacity";
+				}
+				std::string getUnit() override {
+					return "%";
+				}
+				int getDisplayPrecision() override {
+					return 3;
+				}
+			};
+
+			OpacitySlider() {
+				box.size.x = 140.0f;
+				quantity = new OpacityQuantity();
+			}
+			~OpacitySlider() {
+				delete quantity;
+			}
+		};
+
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Overlay settings"));
+		menu->addChild(new OverlayLabel);
 		menu->addChild(construct<WhiteOverlayTextItem>(&MenuItem::text, "White text"));
 		menu->addChild(construct<HposMenuItem>(&MenuItem::text, "Horizontal position", &MenuItem::rightText, RIGHT_ARROW));
 		menu->addChild(construct<VposMenuItem>(&MenuItem::text, "Vertical position", &MenuItem::rightText, RIGHT_ARROW));
+		menu->addChild(new OpacitySlider);
 	}
 };
 

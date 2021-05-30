@@ -14,6 +14,7 @@ struct StoermelderSettings {
 	NVGcolor overlayTextColor = bndGetTheme()->menuTheme.textColor;
 	int overlayHpos = 0;
 	int overlayVpos = 0;
+	float overlayOpacity = 1.f;
 
 	void saveToJson();
 	void readFromJson();

@@ -72,6 +72,8 @@ struct OverlayMessageWidget : TransparentWidget {
 			float height = 100.f;
 			NVGcolor fgColor = pluginSettings.overlayTextColor;
 
+			nvgGlobalAlpha(args.vg, pluginSettings.overlayOpacity);
+
 			for (auto it = items.begin(); it != items.end(); it++) {
 				if (now - it->second > std::chrono::seconds{1}) {
 					items.erase(it);
