@@ -7,7 +7,7 @@
 #include "components/SubMenuSlider.hpp"
 #include "components/ParamWidgetContextExtender.hpp"
 #include "components/MidiWidget.hpp"
-#include "components/OverlayMessageWidget.hpp"
+#include "ui/OverlayMessageWidget.hpp"
 #include <osdialog.h>
 
 namespace StoermelderPackOne {

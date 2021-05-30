@@ -16,6 +16,8 @@ void StoermelderSettings::saveToJson() {
 	json_object_set(settingsJ, "midiLoopbackDriverEnabled", json_boolean(midiLoopbackDriverEnabled));
 
 	json_object_set(settingsJ, "overlayTextColor", json_string(rack::color::toHexString(overlayTextColor).c_str()));
+	json_object_set(settingsJ, "overlayHpos", json_integer(overlayHpos));
+	json_object_set(settingsJ, "overlayVpos", json_integer(overlayVpos));
 
 	std::string settingsFilename = rack::asset::user("Stoermelder-P1.json");
 	FILE* file = fopen(settingsFilename.c_str(), "w");
@@ -60,6 +62,10 @@ void StoermelderSettings::readFromJson() {
 
 	json_t* overlayTextColorJ = json_object_get(settingsJ, "overlayTextColor");
 	if (overlayTextColorJ) overlayTextColor = rack::color::fromHexString(json_string_value(overlayTextColorJ));
+	json_t* overlayHposJ = json_object_get(settingsJ, "overlayHpos");
+	if (overlayHposJ) overlayHpos = json_integer_value(overlayHposJ);
+	json_t* overlayVposJ = json_object_get(settingsJ, "overlayVpos");
+	if (overlayVposJ) overlayVpos = json_integer_value(overlayVposJ);
 
 	fclose(file);
 	json_decref(settingsJ);

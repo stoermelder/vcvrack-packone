@@ -1,5 +1,5 @@
 #include "plugin.hpp"
-#include "components/OverlayMessageWidget.hpp"
+#include "ui/OverlayMessageWidget.hpp"
 
 namespace StoermelderPackOne {
 namespace Sail {

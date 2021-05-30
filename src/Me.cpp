@@ -1,5 +1,5 @@
 #include "plugin.hpp"
-#include "components/OverlayMessageWidget.hpp"
+#include "ui/OverlayMessageWidget.hpp"
 
 namespace StoermelderPackOne {
 namespace Me {
@@ -112,8 +112,54 @@ struct MeWidget : ModuleWidget, OverlayMessageProvider {
 			}
 		};
 
+		struct HposMenuItem : MenuItem {
+			Menu* createChildMenu() override {
+				struct HposItem : MenuItem {
+					OverlayMessageWidget::HPOS pos;
+					void onAction(const event::Action& e) override {
+						pluginSettings.overlayHpos = (int)pos;
+						pluginSettings.saveToJson();
+					}
+					void step() override {
+						rightText = CHECKMARK(pluginSettings.overlayHpos == (int)pos);
+						MenuItem::step();
+					}
+				};
+
+				Menu* menu = new Menu;
+				menu->addChild(construct<HposItem>(&MenuItem::text, "Center", &HposItem::pos, OverlayMessageWidget::HPOS::CENTER));
+				menu->addChild(construct<HposItem>(&MenuItem::text, "Left", &HposItem::pos, OverlayMessageWidget::HPOS::LEFT));
+				menu->addChild(construct<HposItem>(&MenuItem::text, "Right", &HposItem::pos, OverlayMessageWidget::HPOS::RIGHT));
+				return menu;
+			}
+		};
+
+		struct VposMenuItem : MenuItem {
+			Menu* createChildMenu() override {
+				struct VposItem : MenuItem {
+					OverlayMessageWidget::VPOS pos;
+					void onAction(const event::Action& e) override {
+						pluginSettings.overlayVpos = (int)pos;
+						pluginSettings.saveToJson();
+					}
+					void step() override {
+						rightText = CHECKMARK(pluginSettings.overlayVpos == (int)pos);
+						MenuItem::step();
+					}
+				};
+
+				Menu* menu = new Menu;
+				menu->addChild(construct<VposItem>(&MenuItem::text, "Bottom", &VposItem::pos, OverlayMessageWidget::VPOS::BOTTOM));
+				menu->addChild(construct<VposItem>(&MenuItem::text, "Top", &VposItem::pos, OverlayMessageWidget::VPOS::TOP));
+				return menu;
+			}
+		};
+
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<WhiteOverlayTextItem>(&MenuItem::text, "White overlay text"));
+		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Overlay settings"));
+		menu->addChild(construct<WhiteOverlayTextItem>(&MenuItem::text, "White text"));
+		menu->addChild(construct<HposMenuItem>(&MenuItem::text, "Horizontal position", &MenuItem::rightText, RIGHT_ARROW));
+		menu->addChild(construct<VposMenuItem>(&MenuItem::text, "Vertical position", &MenuItem::rightText, RIGHT_ARROW));
 	}
 };
 

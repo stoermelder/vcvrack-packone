@@ -15,6 +15,19 @@ struct OverlayMessageProvider {
 };
 
 struct OverlayMessageWidget : TransparentWidget {
+	enum class VPOS {
+		BOTTOM = 0,
+		TOP = 1
+	};
+	enum HPOS {
+		CENTER = 0,
+		LEFT = 1,
+		RIGHT = 2
+	};
+
+	const float xOffset = 22.f;
+	const float yOffset = 40.f;
+
 	std::list<OverlayMessageProvider*> registeredProviders;
 	std::map<std::tuple<OverlayMessageProvider*, int>, std::chrono::time_point<std::chrono::system_clock>> items;
 	std::shared_ptr<Font> font;
@@ -57,8 +70,6 @@ struct OverlayMessageWidget : TransparentWidget {
 			float i = 0.f;
 			float width = 360.f;
 			float height = 100.f;
-			//float xOffset = 22.f;
-			float yOffset = 40.f;
 			NVGcolor fgColor = pluginSettings.overlayTextColor;
 
 			for (auto it = items.begin(); it != items.end(); it++) {
@@ -74,8 +85,28 @@ struct OverlayMessageWidget : TransparentWidget {
 				p->getOverlayMessage(id, m);
 				if (m.empty()) continue;
 
-				float x = args.clipBox.pos.x + args.clipBox.size.x / 2.f; // + (-1.f * (n - 1.f) / 2.f + i) * (width + xOffset);
-				float y = args.clipBox.pos.y + args.clipBox.size.y - height - yOffset - (i * (height + 16.f));
+				float x, y;
+
+				switch ((HPOS)pluginSettings.overlayHpos) { 
+					case HPOS::CENTER:
+						x = args.clipBox.pos.x + args.clipBox.size.x / 2.f; // + (-1.f * (n - 1.f) / 2.f + i) * (width + xOffset);
+						break;
+					case HPOS::LEFT:
+						x = args.clipBox.pos.x + 30.f + width / 2.f;
+						break;
+					case HPOS::RIGHT:
+						x = args.clipBox.pos.x + args.clipBox.size.x - 30.f - width / 2.f;
+						break;
+				}
+
+				switch ((VPOS)pluginSettings.overlayVpos) {
+					case VPOS::BOTTOM:
+						y = args.clipBox.pos.y + args.clipBox.size.y - height - yOffset - (i * (height + 16.f));
+						break;
+					case VPOS::TOP:
+						y = args.clipBox.pos.y + yOffset + (i * (height * 16.f));
+						break;
+				}
 
 				bndMenuBackground(args.vg, x - width / 2.f, y, width, height, BND_CORNER_NONE);
 
