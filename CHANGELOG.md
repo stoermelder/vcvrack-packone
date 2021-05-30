@@ -36,9 +36,9 @@
     - Added "Off" as SLOT mode (#249)
     - Fixed broken "Autoload first preset" (#29)
 - Module [CV-MAP](./docs/CVMap.md)
-    - Added context menu sliders for slew and scaling and transforming the input and parameter-range (#243)
-    - Added arbitrary channel routings to allow every input channel assigned to any mapping slot
-    - Added context menu on the input ports for custom labeling the channels (#256)
+    - Added context menu sliders for slew and scaling and transforming the input and parameter-range ([manual](./docs/CVMap.md#slew-limiting-and-input-scaling)) (#243)
+    - Added arbitrary channel routings to allow every input channel assigned to any mapping slot ([manual](./docs/CVMap.md#channel-routing))
+    - Added context menu on the input ports for custom labeling the channels ([manual](./docs/CVMap.md#input-labels)) (#256)
     - Fixed wrong slot behavior when toggling input to 0V (#221)
 - Module [GLUE](./docs/Glue.md)
     - Added option to consolidate all GLUE modules into the current one ([manual](./docs/Glue.md#consolidate))
