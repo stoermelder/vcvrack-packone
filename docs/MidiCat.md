@@ -1,4 +1,4 @@
-# stoermelder MIDI-CAT and MEM-expander
+# stoermelder MIDI-CAT and expanders MEM and CTX
 
 MIDI-CAT is a module for MIDI-mapping and an evolution of [VCV's MIDI-MAP](https://vcvrack.com/manual/Core.html#midi-map) with several additional features:
 
@@ -158,3 +158,15 @@ Added in v1.8.0: MEM has two buttons labeled _Prev_ and _Next_ which scan your p
 - All push buttons on MEM can be mapped using any mapping module if you like to activate _Apply mapping_ by MIDI or some other command.
 
 MEM for MIDI-CAT was added in v1.7.0 of PackOne.
+
+# CTX-expander
+
+CTX is a second companion module for MIDI-CAT: The expander allows you to name each instance of MIDI-CAT in your patch. This name can be addressed in every parameters' context menu for activating MIDI mapping or re-mapping parameters to an existing MIDI control or note mapping in another mapping slot of MIDI-CAT.
+
+CTX for MIDI-CAT must be placed on the right side of MIDI-CAT and can be used the same time as the MEM-expander. The display can hold up to 8 characters for naming MIDI-CAT.
+
+![CTX workflow](./MidiCat-Ctx.gif)
+
+Additionally MIDI-CAT CTX provides a button for activating mapping on the first empty mapping slot in MIDI-CAT. This button can also mapped to a MIDI controller which allows start MIDI mapping by a MIDI message.
+
+CTX for MIDI-CAT was added in v1.9.0 of PackOne.
