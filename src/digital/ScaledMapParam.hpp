@@ -39,16 +39,19 @@ struct ScaledMapParam {
 		return limitMaxT;
 	}
 
-	void reset() {
+	void reset(bool resetSettings = true) {
 		paramQuantity = NULL;
 		filter.reset();
 		filterInitialized = false;
-		filterSlew = 0.f;
 		valueIn = uninit;
 		value = -1.f;
 		valueOut = std::numeric_limits<float>::infinity();
-		min = 0.f;
-		max = 1.f;
+
+		if (resetSettings) {
+			filterSlew = 0.f;
+			min = 0.f;
+			max = 1.f;
+		}
 	}
 
 	void resetFilter() {

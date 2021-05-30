@@ -814,9 +814,9 @@ struct MidiCatModule : Module, StripIdFixModule {
 		}
 	}
 
-	void learnParam(int id, int moduleId, int paramId, bool resetMidi = true) {
+	void learnParam(int id, int moduleId, int paramId, bool resetMidiSettings = true) {
 		APP->engine->updateParamHandle(&paramHandles[id], moduleId, paramId, true);
-		if (resetMidi) midiParam[id].reset();
+		midiParam[id].reset(resetMidiSettings);
 		learnedParam = true;
 		commitLearn();
 		updateMapLen();
