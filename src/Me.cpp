@@ -96,6 +96,13 @@ struct MeWidget : ModuleWidget, OverlayMessageProvider {
 
 
 	void appendContextMenu(Menu* menu) override {
+		struct ManualItem : MenuItem {
+			void onAction(const event::Action& e) override {
+				std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Me.md");
+				t.detach();
+			}
+		};
+
 		struct OverlayLabel : MenuLabel {
 			OverlayLabel() {
 				text = "Overlay settings";
@@ -232,6 +239,8 @@ struct MeWidget : ModuleWidget, OverlayMessageProvider {
 			}
 		};
 
+		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(new OverlayLabel);
 		menu->addChild(construct<WhiteOverlayTextItem>(&MenuItem::text, "White text"));
