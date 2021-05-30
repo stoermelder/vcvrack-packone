@@ -27,6 +27,8 @@ struct OverlayMessageWidget : TransparentWidget {
 
 	const float xOffset = 22.f;
 	const float yOffset = 40.f;
+	const float xSize = 360.f;
+	const float ySize = 100.f;
 
 	std::list<OverlayMessageProvider*> registeredProviders;
 	std::map<std::tuple<OverlayMessageProvider*, int>, std::chrono::time_point<std::chrono::system_clock>> items;
@@ -68,8 +70,9 @@ struct OverlayMessageWidget : TransparentWidget {
 		int n = items.size();
 		if (n > 0) {
 			float i = 0.f;
-			float width = 360.f;
-			float height = 100.f;
+			float scale = pluginSettings.overlayScale;
+			float xSizeScale = xSize * scale;
+			float ySizeScale = ySize * scale;
 			NVGcolor fgColor = pluginSettings.overlayTextColor;
 
 			nvgGlobalAlpha(args.vg, pluginSettings.overlayOpacity);
@@ -91,52 +94,52 @@ struct OverlayMessageWidget : TransparentWidget {
 
 				switch ((HPOS)pluginSettings.overlayHpos) { 
 					case HPOS::CENTER:
-						x = args.clipBox.pos.x + args.clipBox.size.x / 2.f; // + (-1.f * (n - 1.f) / 2.f + i) * (width + xOffset);
+						x = args.clipBox.pos.x + args.clipBox.size.x / 2.f; // + (-1.f * (n - 1.f) / 2.f + i) * (xSizeScale + xOffset);
 						break;
 					case HPOS::LEFT:
-						x = args.clipBox.pos.x + 30.f + width / 2.f;
+						x = args.clipBox.pos.x + 30.f + xSizeScale / 2.f;
 						break;
 					case HPOS::RIGHT:
-						x = args.clipBox.pos.x + args.clipBox.size.x - 30.f - width / 2.f;
+						x = args.clipBox.pos.x + args.clipBox.size.x - 30.f - xSizeScale / 2.f;
 						break;
 				}
 
 				switch ((VPOS)pluginSettings.overlayVpos) {
 					case VPOS::BOTTOM:
-						y = args.clipBox.pos.y + args.clipBox.size.y - height - yOffset - (i * (height + 16.f));
+						y = args.clipBox.pos.y + args.clipBox.size.y - ySizeScale - yOffset - (i * (ySizeScale + 16.f));
 						break;
 					case VPOS::TOP:
-						y = args.clipBox.pos.y + yOffset + (i * (height * 16.f));
+						y = args.clipBox.pos.y + yOffset + (i * (ySizeScale + 16.f));
 						break;
 				}
 
-				bndMenuBackground(args.vg, x - width / 2.f, y, width, height, BND_CORNER_NONE);
+				bndMenuBackground(args.vg, x - xSizeScale / 2.f, y, xSizeScale, ySizeScale, BND_CORNER_NONE);
 
 				nvgFontFaceId(args.vg, font->handle);
-				nvgTextLetterSpacing(args.vg, -1.2f);
+				nvgTextLetterSpacing(args.vg, -1.2f * scale);
 				nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_TOP);
 				nvgFillColor(args.vg, fgColor);
 				NVGtextRow textRow;
 
-				y += 10.f;
+				y += 10.f * scale;
 
 				if (m.title.size() > 0) {
-					nvgFontSize(args.vg, 32.f);
-					nvgTextBreakLines(args.vg, m.title.c_str(), NULL, width - 10.f, &textRow, 1);
-					nvgTextBox(args.vg, x - width / 2.f, y, width, textRow.start, textRow.end);
-					y += 40.f;
+					nvgFontSize(args.vg, 32.f * scale);
+					nvgTextBreakLines(args.vg, m.title.c_str(), NULL, xSizeScale - 10.f, &textRow, 1);
+					nvgTextBox(args.vg, x - xSizeScale / 2.f, y, xSizeScale, textRow.start, textRow.end);
+					y += 40.f * scale;
 				}
 				if (m.subtitle[0].size() > 0) {
-					nvgFontSize(args.vg, 20.f);
-					nvgTextBreakLines(args.vg, m.subtitle[0].c_str(), NULL, width - 10.f, &textRow, 1);
-					nvgTextBox(args.vg, x - width / 2.f, y, width, textRow.start, textRow.end);
-					y += 20.f;
+					nvgFontSize(args.vg, 20.f * scale);
+					nvgTextBreakLines(args.vg, m.subtitle[0].c_str(), NULL, xSizeScale - 10.f, &textRow, 1);
+					nvgTextBox(args.vg, x - xSizeScale / 2.f, y, xSizeScale, textRow.start, textRow.end);
+					y += 20.f * scale;
 				}
 				if (m.subtitle[1].size() > 0) {
-					nvgFontSize(args.vg, 20.f);
-					nvgTextBreakLines(args.vg, m.subtitle[1].c_str(), NULL, width - 10.f, &textRow, 1);
-					nvgTextBox(args.vg, x - width / 2.f, y, width, textRow.start, textRow.end);
-					y += 20.f;
+					nvgFontSize(args.vg, 20.f * scale);
+					nvgTextBreakLines(args.vg, m.subtitle[1].c_str(), NULL, xSizeScale - 10.f, &textRow, 1);
+					nvgTextBox(args.vg, x - xSizeScale / 2.f, y, xSizeScale, textRow.start, textRow.end);
+					y += 20.f * scale;
 				}
 
 				i++;

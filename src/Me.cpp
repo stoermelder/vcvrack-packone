@@ -198,12 +198,47 @@ struct MeWidget : ModuleWidget, OverlayMessageProvider {
 			}
 		};
 
+		struct ScaleSlider : ui::Slider {
+			struct ScaleQuantity : Quantity {
+				void setValue(float value) override {
+					pluginSettings.overlayScale = math::clamp(value, 1.f, 5.f);
+				}
+				float getValue() override {
+					return pluginSettings.overlayScale;
+				}
+				float getDefaultValue() override {
+					return 1.0f;
+				}
+				std::string getLabel() override {
+					return "Scale";
+				}
+				int getDisplayPrecision() override {
+					return 3;
+				}
+				float getMinValue() override {
+					return 1.f;
+				}
+				float getMaxValue() override {
+					return 5.f;
+				}
+			};
+
+			ScaleSlider() {
+				box.size.x = 140.0f;
+				quantity = new ScaleQuantity();
+			}
+			~ScaleSlider() {
+				delete quantity;
+			}
+		};
+
 		menu->addChild(new MenuSeparator());
 		menu->addChild(new OverlayLabel);
 		menu->addChild(construct<WhiteOverlayTextItem>(&MenuItem::text, "White text"));
 		menu->addChild(construct<HposMenuItem>(&MenuItem::text, "Horizontal position", &MenuItem::rightText, RIGHT_ARROW));
 		menu->addChild(construct<VposMenuItem>(&MenuItem::text, "Vertical position", &MenuItem::rightText, RIGHT_ARROW));
 		menu->addChild(new OpacitySlider);
+		menu->addChild(new ScaleSlider);
 	}
 };
 

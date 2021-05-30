@@ -19,6 +19,7 @@ void StoermelderSettings::saveToJson() {
 	json_object_set(settingsJ, "overlayHpos", json_integer(overlayHpos));
 	json_object_set(settingsJ, "overlayVpos", json_integer(overlayVpos));
 	json_object_set(settingsJ, "overlayOpacity", json_real(overlayOpacity));
+	json_object_set(settingsJ, "overlayScale", json_real(overlayScale));
 
 	std::string settingsFilename = rack::asset::user("Stoermelder-P1.json");
 	FILE* file = fopen(settingsFilename.c_str(), "w");
@@ -69,6 +70,8 @@ void StoermelderSettings::readFromJson() {
 	if (overlayVposJ) overlayVpos = json_integer_value(overlayVposJ);
 	json_t* overlayOpacityJ = json_object_get(settingsJ, "overlayOpacity");
 	if (overlayOpacityJ) overlayOpacity = json_real_value(overlayOpacityJ);
+	json_t* overlayScaleJ = json_object_get(settingsJ, "overlayScale");
+	if (overlayScaleJ) overlayScale = json_real_value(overlayScaleJ);
 
 	fclose(file);
 	json_decref(settingsJ);
