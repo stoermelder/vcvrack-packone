@@ -68,7 +68,7 @@ struct IdTextField : StoermelderTextField {
 
 struct MidiCatCtxWidget : ThemedModuleWidget<MidiCatCtxModule> {
 	MidiCatCtxWidget(MidiCatCtxModule* module)
-		: ThemedModuleWidget<MidiCatCtxModule>(module, "MidiCatCtx") {
+		: ThemedModuleWidget<MidiCatCtxModule>(module, "MidiCatCtx", "MidiCat.md#ctx-expander") {
 		setModule(module);
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - RACK_GRID_WIDTH, 0)));

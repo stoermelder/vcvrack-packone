@@ -7,6 +7,7 @@ template < typename MODULE, typename BASE = ModuleWidget >
 struct ThemedModuleWidget : BASE {
 	MODULE* module;
 	std::string baseName;
+	std::string manualName;
 	int panelTheme = -1;
 
 	struct HalfPanel : SvgPanel {
@@ -19,9 +20,10 @@ struct ThemedModuleWidget : BASE {
 		}
 	};
 
-	ThemedModuleWidget(MODULE* module, std::string baseName) {
+	ThemedModuleWidget(MODULE* module, std::string baseName, std::string manualName = "") {
 		this->module = module;
 		this->baseName = baseName;
+		this->manualName = manualName;
 
 		if (module) {
 			// Normal operation
@@ -39,9 +41,9 @@ struct ThemedModuleWidget : BASE {
 
 	void appendContextMenu(Menu* menu) override {
 		struct ManualItem : MenuItem {
-			std::string baseName;
+			std::string manualName;
 			void onAction(const event::Action& e) override {
-				std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/" + baseName + ".md");
+				std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/" + manualName);
 				t.detach();
 			}
 		};
@@ -88,7 +90,7 @@ struct ThemedModuleWidget : BASE {
 			}
 		};
 
-		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual", &ManualItem::baseName, baseName));
+		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual", &ManualItem::manualName, manualName != "" ? manualName : (baseName + ".md")));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<PanelMenuItem>(&MenuItem::text, "Panel", &PanelMenuItem::module, module));
 		BASE::appendContextMenu(menu);

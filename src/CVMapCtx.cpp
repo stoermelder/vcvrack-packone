@@ -65,7 +65,7 @@ struct IdTextField : StoermelderTextField {
 
 struct CVMapCtxWidget : ThemedModuleWidget<CVMapCtxModule> {
 	CVMapCtxWidget(CVMapCtxModule* module)
-		: ThemedModuleWidget<CVMapCtxModule>(module, "CVMapCtx") {
+		: ThemedModuleWidget<CVMapCtxModule>(module, "CVMapCtx", "CVMap.md#ctx-expander") {
 		setModule(module);
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - RACK_GRID_WIDTH, 0)));

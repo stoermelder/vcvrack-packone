@@ -144,7 +144,7 @@ struct MemDisplay : StoermelderLedDisplay {
 
 struct MidiCatMemWidget : ThemedModuleWidget<MidiCatMemModule> {
 	MidiCatMemWidget(MidiCatMemModule* module)
-		: ThemedModuleWidget<MidiCatMemModule>(module, "MidiCatMem") {
+		: ThemedModuleWidget<MidiCatMemModule>(module, "MidiCatMem", "MidiCat.md#mem-expander") {
 		setModule(module);
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - RACK_GRID_WIDTH, 0)));
