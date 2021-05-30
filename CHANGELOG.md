@@ -1,5 +1,7 @@
 ## 1.x.x (in development)
 
+- Module [DIRT](./docs/Dirt.md)
+    - New module, crosstalk and noise for polyphonic cables
 - Modules [FLOWER, SEEDS, OFFSPRING](./docs/Flower.md)
     - New modules, pattern-driven 16-step sequencer
 - Module [PRISMA](./docs/Prisma.md)
@@ -13,8 +15,6 @@
     - New modules, evolution of 8FACE and 8FACEx2 (#63 #76 #144 #154 #157 #158 #160 #162)
 - Module [CV-MAP CTX](./docs/CVMap.md#ctx-expander)
     - New expander-module for CV-MAP, helper for mapping parameters by context menu (#256)
-- Module [DIRT](./docs/Dirt.md)
-    - New module, crosstalk and noise for polyphonic cables
 - Module [MIDI-CAT CTX](./docs/MidiCat.md#ctx-expander)
     - New expander-module for MIDI-CAT, helper for mapping parameters by context menu (#232, #250)
 - Module [MIDI-PLUG](./docs/MidiPlug.md)
@@ -25,7 +25,7 @@
 - Module [STRIP-CON](./docs/Strip.md)
     - New module, a companion module for STRIP for keeping input/output connections while replacing strips
 - Module [ME](./docs/Me.md)
-    - New experimental module for "mouse enhacements", currently screen overlay for parameters changes
+    - New experimental module for "mouse enhacements", provides a screen overlay for parameters changes
 
 ### Fixes and Changes
 
@@ -56,9 +56,9 @@
     - Added context menu options on mapped parameters of target module for µMAP
     - Fixed wrong behavior when toggling input to 0V (#221)
 - Module [MIDI-CAT](./docs/MidiCat.md)
-    - Added support for MIDI 14-bit CC
-    - Added toggle-modes for MIDI CC mappings (#225)
-    - Added an overlay showing current parameter changes on the bottom of the screen
+    - Added support for MIDI 14-bit CC ([manual](./docs/MidiCat.md#14-bit-cc))
+    - Added toggle-modes for MIDI CC mappings ([manual](./docs/MidiCat.md#toggle-cc)) (#225)
+    - Added an overlay showing current parameter changes on the bottom of the screen ([manual](./docs/MidiCat.md#overlay))
     - Fixed crash when binding modules with more than 128 parameters (#234)
     - Added option for clearing mapping slots on preset load (#259)
 - Module [MIDI-MON](./docs/MidiMon.md)
