@@ -1108,7 +1108,7 @@ struct KeyDisplay : StoermelderLedDisplay {
 
 	void step() override {
 		if (keyContainer && keyContainer->learnIdx == idx) {
-			color = keyContainer->learnIdxEx == idx ? color::RED : nvgRGBA(0xef, 0xef, 0xef, 0xa0);
+			color = keyContainer->learnCallback || keyContainer->learnIdxEx == idx ? color::RED : nvgRGBA(0xef, 0xef, 0xef, 0xa0);
 			text = "<LRN>";
 			module->lights[StrokeModule<PORTS>::LIGHT_ALT + idx].setBrightness(0.1f);
 			module->lights[StrokeModule<PORTS>::LIGHT_CTRL + idx].setBrightness(0.1f);
@@ -1406,6 +1406,7 @@ struct KeyDisplay : StoermelderLedDisplay {
 							int idx;
 							void onAction(const event::Action& e) override {
 								std::string* _data = &keyContainer->module->keys[idx].data;
+								if (*_data == "") return;
 								auto callback = [_data](int key, int mods) {
 									json_error_t error;
 									json_t* oJ = json_loads(_data->c_str(), 0, &error);

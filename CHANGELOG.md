@@ -82,9 +82,9 @@
     - Fixed not working mappings caused by Num Lock state (#220)
     - Fixed not working mappings caused by use of numpad keys (#220)
     - Added view-commands using smooth transitions (#139)
-    - Added "Add module" command
-    - Added "Send hotkey to module" command
-    - Added scroll-commands (#252)
+    - Added "Add module" command ([manual](./docs/Stroke.md#add-module))
+    - Added "Send hotkey to module" command ([manual](./docs/Stroke.md#module-send-hotkey))
+    - Added scroll-commands ([manual](./docs/Stroke.md#view-scroll)) (#252)
     - Added tooltips for mapped commands
 - Module [TRANSIT](./docs/Transit.md)
     - Added "Phase"-mode for CV-input which scans continously through snapshots ([manual](./docs/Transit.md#phase)) (#182)
