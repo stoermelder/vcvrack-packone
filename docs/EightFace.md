@@ -55,6 +55,6 @@ There are different modes for SLOT-port available, configured by context menu op
 
 ![8FACE arm mode](./EightFace-clock.gif)
 
-With the option "Autoload first preset" on the context menu you can autoload the first preset slot when a preset of 8FACE itself is loaded. This is useful when changing presets of 8FACE with another instance of 8FACE to aquire even more preset slots.
+With the option "Autoload first preset" on the context menu you can autoload the first preset slot when a preset of 8FACE itself is loaded. This is useful when changing presets of 8FACE with another instance of 8FACE to acquire even more preset slots.
 
 8FACE was added in v1.0.5 of PackOne. 8FACEx2 was added in v1.3.0 of PackOne.
