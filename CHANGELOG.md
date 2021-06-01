@@ -22,7 +22,7 @@
     - MIDI "Loopback" driver for routing outgoing MIDI messages back into Rack (enabled on the context menu)
 - Module [ORBIT](./docs/Orbit.md)
     - New module, a polyphonic stereo field spreader
-- Module [STRIP-CON](./docs/Strip.md)
+- Module [STRIP-CON](./docs/Strip.md#stoermelder-strip-con)
     - New module, a companion module for STRIP for keeping input/output connections while replacing strips
 - Module [ME](./docs/Me.md)
     - New experimental module for "mouse enhacements", provides a screen overlay for parameters changes

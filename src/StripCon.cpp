@@ -71,7 +71,7 @@ struct IdTextField : StoermelderTextField {
 struct StripCon4Widget : ThemedModuleWidget<StripConModule<4>> {
 	typedef StripConModule<4> MODULE;
 	StripCon4Widget(MODULE* module)
-		: ThemedModuleWidget<MODULE>(module, "StripCon") {
+		: ThemedModuleWidget<MODULE>(module, "StripCon", "Strip.md#stoermelder-strip-con") {
 		setModule(module);
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));

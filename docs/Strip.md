@@ -54,3 +54,11 @@ The file-format "vcvss" for storing strips is very close to Rack's own format fo
 - If you want to add some documentation for your strip just include a VCV Notes module and type in some text.
 
 STRIP was added in v1.0.4 of PackOne.
+
+# stoermelder STRIP-CON
+
+STRIP-CON is a companion module for STRIP: It is used to name some "patching-points" in your strip and keep the cables to the rest of your patch intact while you load different strips. Multiple STRIP-CON modules can be used in a STRIP and mapped by identical text label.
+
+[![STRIP-CON usage](https://img.youtube.com/vi/xGKoQdN9K60/0.jpg)](https://www.youtube.com/watch?v=xGKoQdN9K60)
+
+STRIP-CON was added in v1.9 of PackOne.
