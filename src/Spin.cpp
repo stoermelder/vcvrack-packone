@@ -126,6 +126,7 @@ struct SpinModule : Module {
 struct SpinContainer : widget::Widget {
 	SpinModule* module;
 	std::chrono::time_point<std::chrono::system_clock> lastHoverScroll = std::chrono::system_clock::now();
+	const int scrollLock = 500;
 
 	bool testParam() {
 		if (module->params[SpinModule::PARAM_ONLY].getValue() == 1.f) {
@@ -141,7 +142,7 @@ struct SpinContainer : widget::Widget {
 
 	void onHoverScroll(const event::HoverScroll& e) override {
 		auto now = std::chrono::system_clock::now();
-		if (!module->bypass && (APP->window->getMods() & RACK_MOD_MASK) == module->mods && testParam() && now - lastHoverScroll > std::chrono::milliseconds{350}) {
+		if (!module->bypass && (APP->window->getMods() & RACK_MOD_MASK) == module->mods && testParam() && now - lastHoverScroll > std::chrono::milliseconds{scrollLock}) {
 			module->delta = e.scrollDelta.y;
 			e.consume(this);
 		}
