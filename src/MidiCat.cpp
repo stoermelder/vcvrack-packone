@@ -104,6 +104,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 		MidiCatModule* module;
 		int id;
 		int current = -1;
+		uint32_t lastTs;
 
 		/** [Stored to Json] */
 		int cc;
@@ -115,16 +116,15 @@ struct MidiCatModule : Module, StripIdFixModule {
 		bool process() {
 			int previous = current;
 			if (cc14bit) {
-				if (module->valuesCc[cc] >= 0 && module->valuesCc[cc + 32] >= 0) {
+				if (module->valuesCcTs[cc] > lastTs && module->valuesCcTs[cc + 32] > lastTs) {
 					current = module->valuesCc[cc] * 128 + module->valuesCc[cc + 32];
-					module->valuesCc[cc] = -1;
-					module->valuesCc[cc + 32] = -1;
+					lastTs = module->ts;
 				}
 			}
 			else {
-				if (module->valuesCc[cc] >= 0) {
+				if (module->valuesCcTs[cc] > lastTs) {
 					current = module->valuesCc[cc];
-					module->valuesCc[cc] = -1;
+					lastTs = module->ts;
 				}
 			}
 			return current >= 0 && current != previous;
@@ -270,10 +270,14 @@ struct MidiCatModule : Module, StripIdFixModule {
 	/** [Stored to Json] */
 	bool mappingIndicatorHidden = false;
 
+	uint32_t ts = 0;
+
 	/** The value of each CC number */
 	int valuesCc[128];
+	uint32_t valuesCcTs[128];
 	/** The value of each note number */
 	int valuesNote[128];
+	uint32_t valuesNoteTs[128];
 
 	MIDIMODE midiMode = MIDIMODE::MIDIMODE_DEFAULT;
 
@@ -335,7 +339,9 @@ struct MidiCatModule : Module, StripIdFixModule {
 		mapLen = 1;
 		for (int i = 0; i < 128; i++) {
 			valuesCc[i] = -1;
+			valuesCcTs[i] = -1;
 			valuesNote[i] = -1;
+			valuesNoteTs[i] = -1;
 		}
 		for (int i = 0; i < MAX_CHANNELS; i++) {
 			lastValueIn[i] = -1;
@@ -365,6 +371,8 @@ struct MidiCatModule : Module, StripIdFixModule {
 	}
 
 	void process(const ProcessArgs &args) override {
+		ts++;
+
 		midi::Message msg;
 		bool midiReceived = false;
 		while (midiInput.shift(&msg)) {
@@ -665,6 +673,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 		}
 		bool midiReceived = valuesCc[cc] != value;
 		valuesCc[cc] = value;
+		valuesCcTs[cc] = ts;
 		return midiReceived;
 	}
 
@@ -684,6 +693,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 		}
 		bool midiReceived = valuesNote[note] != vel;
 		valuesNote[note] = vel;
+		valuesNoteTs[note] = ts;
 		return midiReceived;
 	}
 
