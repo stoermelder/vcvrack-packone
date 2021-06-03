@@ -11,6 +11,7 @@ enum class SLOT_CMD {
 	CLEAR,
 	RANDOMIZE,
 	COPY,
+	PASTE_PREVIEW,
 	PASTE
 };
 
@@ -44,7 +45,7 @@ struct TransitBase : Module, StripIdFixModule {
 
 	virtual TransitSlot* transitSlot(int i) { return NULL; }
 
-	virtual void transitSlotCmd(SLOT_CMD cmd, int i) { }
+	virtual int transitSlotCmd(SLOT_CMD cmd, int i) { return -1; }
 
 
 	json_t* dataToJson() override {
@@ -158,6 +159,15 @@ struct TransitLedButton : LEDButton {
 			}
 		};
 
+		struct PasteItem : SlotItem {
+			void step() override {
+				int i = this->module->transitSlotCmd(SLOT_CMD::PASTE_PREVIEW, this->id);
+				this->rightText = i >= 0 ? string::f("Slot %d", i + 1) : "";
+				this->disabled = i < 0;
+				SlotItem::step();
+			}
+		};
+
 		struct LabelMenuItem : MenuItem {
 			TransitBase<NUM_PRESETS>* module;
 			int id;
@@ -225,7 +235,7 @@ struct TransitLedButton : LEDButton {
 		menu->addChild(construct<SlotItem>(&MenuItem::text, "Clear", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::CLEAR));
 		menu->addChild(construct<SlotItem>(&MenuItem::text, "Randomize and save", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::RANDOMIZE));
 		menu->addChild(construct<SlotItem>(&MenuItem::text, "Copy", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::COPY));
-		menu->addChild(construct<SlotItem>(&MenuItem::text, "Paste", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::PASTE));
+		menu->addChild(construct<PasteItem>(&MenuItem::text, "Paste", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::PASTE));
 		menu->addChild(new MenuSeparator);
 		menu->addChild(construct<LabelMenuItem>(&MenuItem::text, "Custom label", &LabelMenuItem::module, module, &LabelMenuItem::id, id));
 	}

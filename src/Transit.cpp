@@ -728,18 +728,27 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		else if (outMode == OUTMODE::PHASE) outMode = OUTMODE::ENV;
 	}
 
-	void transitSlotCmd(SLOT_CMD cmd, int i) override {
+	int transitSlotCmd(SLOT_CMD cmd, int i) override {
 		switch (cmd) {
 			case SLOT_CMD::LOAD:
-				presetLoad(i); break;
+				presetLoad(i); 
+				return -1;
 			case SLOT_CMD::CLEAR:
-				presetClear(i); break;
+				presetClear(i);
+				return -1;
 			case SLOT_CMD::RANDOMIZE:
-				presetRandomize(i); break;
+				presetRandomize(i);
+				return -1;
 			case SLOT_CMD::COPY:
-				presetCopy = i; break;
+				presetCopy = *expSlot(i)->presetSlotUsed ? i : -1;
+				return -1;
+			case SLOT_CMD::PASTE_PREVIEW:
+				return presetCopy;
 			case SLOT_CMD::PASTE:
-				presetCopyPaste(presetCopy, i); break;
+				presetCopyPaste(presetCopy, i);
+				return -1;
+			default:
+				return -1;
 		}
 	}
 
