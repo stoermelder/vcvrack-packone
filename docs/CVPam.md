@@ -22,4 +22,4 @@ You can disable text scrolling if it distracts you (since v1.0.2).
 
 - Scrolling Rack's current view by mouse is interrupted by CV-PAM's list widget while hovered. As this behavior can be annoying all scrolling events are ignored if _Lock mapping slots_ is enabled (since v1.7.0).
 
-CV-PAM was added in v1.0.0 of PackOne.
+CV-PAM was added in v1.0 of PackOne.

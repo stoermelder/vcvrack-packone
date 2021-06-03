@@ -6,7 +6,7 @@
 
 - 8FACE mk2 can store up to 64 snapshots by its +8 expander.
 
-**Disclaimer: Loading presets of modules was not designed to be controlled by CV or modulated at audio rate. Please do not contact the developers of Rack or any modules when unexpected behaviour occurs (i.e. crashed) or high CPU usage is noticeable.**
+**Disclaimer: Loading presets of modules was not designed to be controlled by CV or modulated at audio rate. Please do not contact the developers of Rack or any modules when unexpected behaviour occurs (i.e. crashes) or high CPU usage is noticeable.**
 
 ![8FACE mk2 intro](./EightFaceMk2-intro.gif)
 

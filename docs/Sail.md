@@ -6,7 +6,7 @@ SAIL is an utility module. It allows you to control any module parameter which i
 
 This module is especially helpful if used together with VCV MIDI-CC: You can map a specific MIDI CC and change any parameter currently hovered with the same control on your MIDI device. The indicator-LED on top of the module signals whenever a parameter is currently hovered.
 
-### IN-port
+## IN-port
 
 There are two modes available on the context menu for the _IN_-port:  
 In "Differential" mode the delta changes in voltage are determined and applied on the current value of the hovered parameter. If the SHIFT-key is held or the _MOD_-port is high (>= 1V) the parameter control precision is increased by factor 10.  
@@ -14,17 +14,17 @@ In "Absolute" mode the input voltage (range 0..10V) is directly mapped onto the 
 
 ![SAIL OUT-port](./Sail-absolute.gif)
 
-### INC/DEC-ports
+## INC/DEC-ports
 
 SAIL supports triggers for incrementing and decrementing the current value of the hovered parameter, _STEP_ sets the change on every trigger in percent of the full range. If _INC/DEC_ is connected the _IN_-port will be ignored. These ports are useful when connected to [MIDI-STEP](./MidiStep.md) which outputs triggers for endless rotary knobs on MIDI controllers.
 
-### SLEW
+## SLEW
 
 The _SLEW_-parameter and input-port can be used to smoothen changes applied to the hovered parameter and make changes less "steppy".
 
 ![SAIL slew](./Sail-slew.gif)
 
-### OUT-port
+## OUT-port
 
 Additionally the module can convert the current value of the hovered parameter to voltage on the _OUT_-port. In "Reduced" mode only parameter changes made by SAIL itself will update the output voltage, in "Full" mode all changes (by mouse or MIDI-mapping) will update the output voltage.
 
@@ -41,4 +41,4 @@ Additionally the module can convert the current value of the hovered parameter t
 
 ![SAIL overlay](./Sail-overlay.gif)
 
-SAIL was added in v1.5.0 of PackOne.
+SAIL was added in v1.5 of PackOne.

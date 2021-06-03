@@ -1,4 +1,4 @@
-# stoermelder CV-MAP and expander CTX
+# stoermelder CV-MAP and CTX-expander
 
 The module CV-MAP is inspired by Rack v1's MIDI-MAP module: It allows you to modulate any parameter of any module by CV even if there is no CV input on the module itself.
 
@@ -59,7 +59,7 @@ Added in v1.9: Each mapping slot has also two sliders (_Low_ and _High_) for sca
 <a name="target-context"></a>
 - After a parameter has been mapped the parameter's context menu is extended with some addtional menu items allowing quick channel reassignment and centering it's mapping CV-MAP module on the center of the screen (since v1.9.0). There are even further options with the [CTX-expander](CVMap.md#ctx-expander).
 
-CV-MAP was added in v1.0.0 of PackOne.
+CV-MAP was added in v1.0 of PackOne.
 
 # CTX-expander
 
@@ -69,4 +69,8 @@ CTX for CV-MAP must be placed on the right side of CV-MAP. The display can hold 
 
 ![CV-MAP CTX](./CVMap-Ctx.gif)
 
-CTX for CV-MAP was added in v1.9.0 of PackOne.
+### A tutorial and showcase of **CV-MAP CTX** made by VCV Rack Ideas
+
+<a href="https://www.youtube.com/watch?v=BfQuliXOAkM" target="_blank"><img src="https://img.youtube.com/vi/BfQuliXOAkM/0.jpg" style="width:100%" /></a>
+
+CTX for CV-MAP was added in v1.9 of PackOne.

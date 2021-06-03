@@ -90,8 +90,8 @@ The module also supports mouse-button events: If your mouse has more than three 
 - **Toggle lock modules** (added in v1.8.0)  
   Triggers the option in the menu View -> Lock modules.
 
-### Bonus tips
+## Tips
 
 - While you can assign duplicate hotkeys only one of them will work.
 
-STROKE was added in v1.7.0 of PackOne.
+STROKE was added in v1.7 of PackOne.

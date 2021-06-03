@@ -6,8 +6,8 @@ ME (_mouse enhancements_) is an experimental utility module which provides a scr
 
 ## Overlay settings
 
-The screen overlay is used by different stoermelder modules (like MIDI-CAT and SAIL) and ME allows some graphical settings for the overlay which are applied globally.
+The screen overlay is used by different stoermelder modules (like [MIDI-CAT](MidiCat.md) and [SAIL](Sail.md)) and ME allows some graphical settings for the overlay which are applied globally.
 
 ![ME overlay settings](./Me-overlay.png)
 
-ME was added in v1.9.0 of PackOne.
+ME was added in v1.9 of PackOne.

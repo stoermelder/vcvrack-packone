@@ -4,15 +4,15 @@
 
 ![4ROUNDS Intro](./FourRounds-intro.gif)
 
-### Section TRIG
+## Section _TRIG_
 
 A new contest is carried out every time a trigger is received. The winners of each 1-on-1 match is selected randomly until only one signal remains.
 
-### Section INV
+## Section _INV_
 
-INV triggers the inversion of the state of the module. The losers of every 1-on-1 match become winners, the winners become losers.
+_INV_ triggers the inversion of the state of the module. The losers of every 1-on-1 match become winners, the winners become losers.
 
-### Modes
+## Modes
 
 The module provides currently three different operation modes selectable on the context menu:
 
@@ -22,4 +22,4 @@ The module provides currently three different operation modes selectable on the 
 
 ![4ROUNDS quantum mode](./FourRounds-quantum.gif)
 
-This module was added in v1.2.0 of PackOne.
+This module was added in v1.2 of PackOne.

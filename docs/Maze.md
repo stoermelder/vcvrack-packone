@@ -6,7 +6,7 @@ MAZE is a random ratcheting sequencer with 4 independent outputs which run on a 
 
 [Live stream](https://www.youtube.com/watch?v=pOcYGj1Qb9M) of [Omri Cohen](https://omricohencomposer.bandcamp.com/) using MAZE for sequencing.
 
-### The grid
+## The grid
 
 The grid is the main part of MAZE with up to four color-coded "playheads". Playheads are visible and enabled if one of their ports CV or TRIG outputs are connected. Each cell of the grid can have one of three states:
 
@@ -29,23 +29,23 @@ A mouse click into a grid cell cycles through the three different states. Additi
 
 The grid can be sized from 2x2 up to 32x32 with the slider on the context menu. The cells can also be randomized or randomized with "certainty" which generates no half filled cells.
 
-### CLK and RESET ports
+## _CLK_ and _RESET_ ports
 
-Each playhead has his own clock and reset port. Every clock-trigger moves the playhead one cell forward according to the current progressing direction. A reset-trigger returns the playhead to its start position which can be set on the *Edit-mode* of the grid. Triggers on CLK and RESET of the yellow channel are normalized to the other ports if no cable is connected. Normalization can also be disabled (since v1.6.0).
+Each playhead has his own clock and reset port. Every clock-trigger moves the playhead one cell forward according to the current progressing direction. A reset-trigger returns the playhead to its start position which can be set on the *Edit-mode* of the grid. Triggers on _CLK_ and _RESET_ of the yellow channel are normalized to the other ports if no cable is connected. Normalization can also be disabled (since v1.6.0).
 
 ![MAZE clock and reset](./Maze-clock.gif)
 
-### TURN ports 
+## _TURN_ ports 
 
-A trigger on the TURN-port turns the current progressing direction of the playhead 90 degrees to the right or 180 degrees (this setting is found in *Edit-mode*). Triggers of the yellow channel are normalized to the other ports. Normalization can also be disabled (since v1.6.0).
+A trigger on the _TURN_-port turns the current progressing direction of the playhead 90 degrees to the right or 180 degrees (this setting is found in *Edit-mode*). Triggers of the yellow channel are normalized to the other ports. Normalization can also be disabled (since v1.6.0).
 
 ![MAZE turn](./Maze-turn.gif)
 
-### SHIFT/L and SHIFT/R ports
+## _SHIFT/L_ and _SHIFT/R_ ports
 
-Triggers on SHIFT/L or SHIFT/R shift all playheads one lane to the left or to the right, respectively, according to the current progressing direction. It is a deliberate limitation of the module that shifts are only possible on all channels the same time.
+Triggers on _SHIFT/L_ or _SHIFT/R_ shift all playheads one lane to the left or to the right, respectively, according to the current progressing direction. It is a deliberate limitation of the module that shifts are only possible on all channels the same time.
 
-### Edit-mode of the grid
+## Edit-mode of the grid
 
 ![MAZE Edit-mode](./Maze-edit1.gif)
 
@@ -61,7 +61,7 @@ There are additional settings on the context menu of each playhead:
 
 ![MAZE Edit-mode context menu](./Maze-edit2.png)
 
-### Bonus tips
+## Tips
 
 * The module works with Rack's undo-functionality for all changes of the grid.
 * Some deliberate limitations have been set for this module:
@@ -72,4 +72,4 @@ There are additional settings on the context menu of each playhead:
   * CV values cannot be set manually.
 * The module continues its normal operation while in *Edit-mode*.
 
-MAZE was added in v1.3.0 of PackOne.
+MAZE was added in v1.3 of PackOne.

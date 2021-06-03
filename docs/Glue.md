@@ -45,7 +45,7 @@ The context menu option "Duplicate" arms the labeling mode. Click on any module 
 
 ![GLUE label appearance](./Glue-appear.png)
 
-## Bonus tips
+## Tips
 
 * Labels get deleted when a module is removed from Rack.
 * When undo-ing a delete operation of a module all labels will also reappear.
@@ -55,4 +55,4 @@ The context menu option "Duplicate" arms the labeling mode. Click on any module 
 * Labels are drawn above all module components but below cables.
 * GLUE supports labels within a stoermelder STRIP-file (since v1.7.0). Please note that GLUE must be included in the strip.
 
-GLUE was added in v1.6.0 of PackOne.
+GLUE was added in v1.6 of PackOne.

@@ -64,7 +64,7 @@ TRANSIT provides three precision-settings on the contextual menu which influence
 
 ## Sequencing and selecting snapshots
 
-The fun begins when you use the port labelled _SEL_ for selecting snapshots by CV. Although there are 12 snapshot slots available it is possible to use less slots for sequencing: You can adjust the number of active slots by long-pressing a snapshot-button while in read-mode. The LEDs turns off completely for slots that are currently disabled.
+The fun begins when you use the port labelled _SEL_ for selecting snapshots by CV. Although there are 12 snapshot slots available it is possible to use less slots for sequencing: You can adjust the number of active slots (i.e. sequence length) by long-pressing a snapshot-button while in read-mode. The LEDs turn off completely for slots that are currently disabled.
 
 Modes for _SEL_ on the contextual menu:
 
@@ -120,7 +120,7 @@ Note: These modes are unavailable if _SEL_-port operates in Phase-mode.
 
 ## Tips
 
-- TRANSIT is designed to morph parameter-snapshots, while stoermelder 8FACE is designed to apply different presets onto a module. Morphing between presets of modules is not possible because of technical reasons.
+- TRANSIT is designed to morph parameter-snapshots, while stoermelder [8FACE](./EightFace.md) and [8FACE mk2](./EightFaceMk2.md) are designed to apply different presets onto modues. Morphing between presets of modules is not possible because of technical reasons.
 
 - If you set the _OUT_-port to _Trigger fade stop_ and patch _OUT_ into _SEL_ TRANSIT will endlessly fade snapshots.
   
@@ -135,4 +135,4 @@ Once placed next to TRANSIT the expander works and behaves the same way TRANSIT 
 
 ![+T expander](./Transit-t.gif)
 
-+T was added in v1.7.0 of PackOne.
++T was added in v1.7 of PackOne.

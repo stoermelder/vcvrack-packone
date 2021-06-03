@@ -1,5 +1,5 @@
 {
-  "version": "1.1.6",
+  "version": "1.dev.2f5bff5",
   "modules": [
     {
       "id": 1,
@@ -19,8 +19,8 @@
         }
       },
       "pos": [
-        114,
-        4
+        130,
+        6
       ]
     },
     {
@@ -29,65 +29,154 @@
       "version": "1.8.0",
       "model": "CVMap",
       "params": [],
-      "rightModuleId": 1041,
+      "leftModuleId": 3696,
+      "rightModuleId": 1057,
       "data": {
         "textScrolling": true,
         "mappingIndicatorHidden": false,
         "maps": [
           {
             "moduleId": 1047,
-            "paramId": 2
-          },
-          {
-            "moduleId": 1046,
-            "paramId": 18
-          },
-          {
-            "moduleId": 1046,
-            "paramId": 19
-          },
-          {
-            "moduleId": 1046,
-            "paramId": 16
-          },
-          {
-            "moduleId": 1046,
-            "paramId": 15
+            "paramId": 2,
+            "input": 0,
+            "slew": 0.0,
+            "min": 0.0,
+            "max": 1.0
           },
           {
             "moduleId": -1,
-            "paramId": 0
-          },
-          {
-            "moduleId": 1048,
-            "paramId": 2
-          },
-          {
-            "moduleId": 1048,
-            "paramId": 3
-          },
-          {
-            "moduleId": 1048,
-            "paramId": 5
-          },
-          {
-            "moduleId": 1048,
-            "paramId": 4
+            "paramId": 0,
+            "input": 1,
+            "slew": 0.0,
+            "min": 0.0,
+            "max": 1.0
           },
           {
             "moduleId": -1,
-            "paramId": 0
+            "paramId": 0,
+            "input": 2,
+            "slew": 0.0,
+            "min": 0.0,
+            "max": 1.0
+          },
+          {
+            "moduleId": -1,
+            "paramId": 0,
+            "input": 3,
+            "slew": 0.0,
+            "min": 0.0,
+            "max": 1.0
+          },
+          {
+            "moduleId": -1,
+            "paramId": 0,
+            "input": 4,
+            "slew": 0.0,
+            "min": 0.0,
+            "max": 1.0
+          },
+          {
+            "moduleId": -1,
+            "paramId": 0,
+            "input": 5,
+            "slew": 0.0,
+            "min": 0.0,
+            "max": 1.0
+          },
+          {
+            "moduleId": 1048,
+            "paramId": 2,
+            "input": 6,
+            "slew": 0.0,
+            "min": 0.0,
+            "max": 1.0
+          },
+          {
+            "moduleId": 1048,
+            "paramId": 3,
+            "input": 7,
+            "slew": 0.0,
+            "min": 0.0,
+            "max": 1.0
+          },
+          {
+            "moduleId": 1048,
+            "paramId": 5,
+            "input": 8,
+            "slew": 0.0,
+            "min": 0.0,
+            "max": 1.0
+          },
+          {
+            "moduleId": 1048,
+            "paramId": 4,
+            "input": 9,
+            "slew": 0.0,
+            "min": 0.0,
+            "max": 1.0
+          },
+          {
+            "moduleId": -1,
+            "paramId": 0,
+            "input": 10,
+            "slew": 0.0,
+            "min": 0.0,
+            "max": 1.0
           }
         ],
         "lockParameterChanges": true,
         "bipolarInput": false,
         "panelTheme": 0,
         "audioRate": true,
-        "locked": false
+        "locked": false,
+        "inputConfig": [
+          {
+            "hideUnused": true,
+            "label": [
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              ""
+            ]
+          },
+          {
+            "hideUnused": true,
+            "label": [
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              ""
+            ]
+          }
+        ]
       },
       "pos": [
-        5,
-        4
+        24,
+        6
       ]
     },
     {
@@ -97,18 +186,18 @@
       "model": "CVPam",
       "params": [],
       "leftModuleId": 1072,
-      "rightModuleId": 1043,
+      "rightModuleId": 1038,
       "data": {
         "textScrolling": true,
         "mappingIndicatorHidden": false,
         "maps": [
           {
-            "moduleId": 1046,
-            "paramId": 1
+            "moduleId": -1,
+            "paramId": 0
           },
           {
-            "moduleId": 1046,
-            "paramId": 8
+            "moduleId": -1,
+            "paramId": 0
           },
           {
             "moduleId": 1047,
@@ -141,8 +230,8 @@
         "locked": false
       },
       "pos": [
-        36,
-        4
+        51,
+        6
       ]
     },
     {
@@ -151,14 +240,14 @@
       "version": "1.8.0",
       "model": "Infix",
       "params": [],
-      "leftModuleId": 1043,
+      "leftModuleId": 1037,
       "rightModuleId": 1056,
       "data": {
         "panelTheme": 0
       },
       "pos": [
-        49,
-        4
+        61,
+        6
       ]
     },
     {
@@ -167,7 +256,7 @@
       "version": "1.8.0",
       "model": "MidiCat",
       "params": [],
-      "leftModuleId": 1042,
+      "leftModuleId": 1071,
       "rightModuleId": 1072,
       "data": {
         "panelTheme": 0,
@@ -175,10 +264,13 @@
         "mappingIndicatorHidden": false,
         "locked": false,
         "processDivision": 64,
+        "overlayEnabled": true,
+        "clearMapsOnLoad": false,
         "maps": [
           {
             "cc": 48,
             "ccMode": 0,
+            "cc14bit": false,
             "note": -1,
             "noteMode": 0,
             "moduleId": 1050,
@@ -192,6 +284,7 @@
           {
             "cc": 49,
             "ccMode": 0,
+            "cc14bit": false,
             "note": -1,
             "noteMode": 0,
             "moduleId": 1050,
@@ -205,6 +298,7 @@
           {
             "cc": 50,
             "ccMode": 0,
+            "cc14bit": false,
             "note": -1,
             "noteMode": 0,
             "moduleId": 1050,
@@ -218,6 +312,7 @@
           {
             "cc": 51,
             "ccMode": 0,
+            "cc14bit": false,
             "note": -1,
             "noteMode": 0,
             "moduleId": 1050,
@@ -231,6 +326,7 @@
           {
             "cc": -1,
             "ccMode": 0,
+            "cc14bit": false,
             "note": -1,
             "noteMode": 0,
             "moduleId": -1,
@@ -254,8 +350,8 @@
         }
       },
       "pos": [
-        24,
-        4
+        39,
+        6
       ]
     },
     {
@@ -279,8 +375,8 @@
         "panelTheme": 1
       },
       "pos": [
-        23,
-        3
+        39,
+        5
       ]
     },
     {
@@ -314,8 +410,7 @@
           "value": 0.0
         }
       ],
-      "leftModuleId": 1036,
-      "rightModuleId": 1042,
+      "leftModuleId": 1067,
       "data": {
         "textScrolling": true,
         "mappingIndicatorHidden": false,
@@ -325,7 +420,7 @@
             "paramId": 0
           }
         ],
-        "panelTheme": 0,
+        "panelTheme": 1,
         "recorder": [
           {
             "seqData": [
@@ -495,8 +590,8 @@
         ]
       },
       "pos": [
-        15,
-        4
+        89,
+        5
       ]
     },
     {
@@ -526,19 +621,19 @@
           "value": 0.0
         }
       ],
-      "leftModuleId": 1041,
-      "rightModuleId": 1039,
+      "leftModuleId": 1053,
       "data": {
-        "panelTheme": 0,
         "mode": 1,
+        "panelTheme": 1,
         "onMode": 0,
         "excludedParams": [],
         "randomExcl": 1,
-        "randomParamsOnly": false
+        "randomParamsOnly": false,
+        "presetLoadReplace": false
       },
       "pos": [
-        21,
-        4
+        92,
+        7
       ]
     },
     {
@@ -560,8 +655,7 @@
           "value": 1.0
         }
       ],
-      "leftModuleId": 1037,
-      "rightModuleId": 1038,
+      "rightModuleId": 1068,
       "data": {
         "textScrolling": true,
         "mappingIndicatorHidden": false,
@@ -573,12 +667,12 @@
         ],
         "lockParameterChanges": true,
         "bipolarInput": false,
-        "panelTheme": 0,
+        "panelTheme": 1,
         "invertedOutput": false
       },
       "pos": [
-        46,
-        4
+        0,
+        7
       ]
     },
     {
@@ -624,13 +718,15 @@
           "value": 0.0
         }
       ],
-      "leftModuleId": 1057,
+      "leftModuleId": 1076,
       "rightModuleId": 1066,
       "data": {
         "panelTheme": 1,
         "mode": 0,
         "pluginSlug": "",
         "modelSlug": "",
+        "realPluginSlug": "",
+        "realModelSlug": "",
         "moduleName": "",
         "slotCvMode": 2,
         "preset": -1,
@@ -663,8 +759,8 @@
         ]
       },
       "pos": [
-        69,
-        3
+        80,
+        5
       ]
     },
     {
@@ -678,169 +774,17 @@
           "value": 0.0
         }
       ],
-      "leftModuleId": 1055,
+      "leftModuleId": 1068,
       "rightModuleId": 1065,
       "data": {
-        "panelTheme": 0,
+        "panelTheme": 1,
         "op": 1,
         "opCvMode": 0,
         "outCvMode": 0
       },
       "pos": [
-        80,
-        4
-      ]
-    },
-    {
-      "id": 1046,
-      "plugin": "VultModulesFree",
-      "version": "1.12",
-      "model": "Trummor2",
-      "params": [
-        {
-          "id": 0,
-          "value": 0.0500000007
-        },
-        {
-          "id": 1,
-          "value": 0.5
-        },
-        {
-          "id": 2,
-          "value": 0.0
-        },
-        {
-          "id": 3,
-          "value": 0.0
-        },
-        {
-          "id": 4,
-          "value": 0.0
-        },
-        {
-          "id": 5,
-          "value": 0.0
-        },
-        {
-          "id": 6,
-          "value": 0.0
-        },
-        {
-          "id": 7,
-          "value": 0.200000003
-        },
-        {
-          "id": 8,
-          "value": 0.398499995
-        },
-        {
-          "id": 9,
-          "value": 0.0
-        },
-        {
-          "id": 10,
-          "value": 0.0
-        },
-        {
-          "id": 11,
-          "value": 0.699999988
-        },
-        {
-          "id": 12,
-          "value": 0.100000001
-        },
-        {
-          "id": 13,
-          "value": 0.0
-        },
-        {
-          "id": 14,
-          "value": 0.0
-        },
-        {
-          "id": 15,
-          "value": 0.583774984
-        },
-        {
-          "id": 16,
-          "value": 0.0
-        },
-        {
-          "id": 17,
-          "value": 0.0
-        },
-        {
-          "id": 18,
-          "value": 0.0
-        },
-        {
-          "id": 19,
-          "value": 0.0485000014
-        },
-        {
-          "id": 20,
-          "value": 0.0500000007
-        },
-        {
-          "id": 21,
-          "value": 0.0
-        },
-        {
-          "id": 22,
-          "value": 0.0
-        },
-        {
-          "id": 23,
-          "value": 0.100000001
-        },
-        {
-          "id": 24,
-          "value": 0.0
-        },
-        {
-          "id": 25,
-          "value": 0.0
-        },
-        {
-          "id": 26,
-          "value": 0.0
-        },
-        {
-          "id": 27,
-          "value": 0.0
-        },
-        {
-          "id": 28,
-          "value": 0.0
-        },
-        {
-          "id": 29,
-          "value": 0.0
-        },
-        {
-          "id": 30,
-          "value": 0.0
-        },
-        {
-          "id": 31,
-          "value": 0.0
-        },
-        {
-          "id": 32,
-          "value": 0.0
-        }
-      ],
-      "rightModuleId": 1047,
-      "data": {
-        "mod_a": 0,
-        "mod_b": 0,
-        "mod_c": 0,
-        "mod_d": 0,
-        "mk2": true
-      },
-      "pos": [
-        114,
-        5
+        9,
+        7
       ]
     },
     {
@@ -878,11 +822,10 @@
           "value": 0.0
         }
       ],
-      "leftModuleId": 1046,
       "rightModuleId": 1048,
       "pos": [
-        134,
-        5
+        150,
+        7
       ]
     },
     {
@@ -922,8 +865,8 @@
       ],
       "leftModuleId": 1047,
       "pos": [
-        144,
-        5
+        160,
+        7
       ]
     },
     {
@@ -956,8 +899,8 @@
       "leftModuleId": 1,
       "rightModuleId": 1050,
       "pos": [
-        124,
-        4
+        140,
+        6
       ]
     },
     {
@@ -989,8 +932,8 @@
       ],
       "leftModuleId": 1049,
       "pos": [
-        132,
-        4
+        148,
+        6
       ]
     },
     {
@@ -1113,8 +1056,8 @@
         "inverted": false
       },
       "pos": [
-        27,
-        3
+        43,
+        5
       ]
     },
     {
@@ -1133,6 +1076,7 @@
         }
       ],
       "leftModuleId": 1054,
+      "rightModuleId": 1042,
       "data": {
         "panelTheme": 1,
         "data": [
@@ -5236,8 +5180,8 @@
         "dataPtr": 0
       },
       "pos": [
-        81,
-        5
+        89,
+        7
       ]
     },
     {
@@ -5638,7 +5582,7 @@
         "inports": [
           {
             "amount": 1.0,
-            "radius": 2.10499826e-10,
+            "radius": -0.00132703932,
             "modMode": 0,
             "modBipolar": false,
             "inputXBipolar": false,
@@ -5647,7 +5591,7 @@
           },
           {
             "amount": 1.0,
-            "radius": 0.000176642803,
+            "radius": -0.00132703932,
             "modMode": 0,
             "modBipolar": false,
             "inputXBipolar": false,
@@ -5656,7 +5600,7 @@
           },
           {
             "amount": 1.0,
-            "radius": 1.78671278e25,
+            "radius": -0.00132703932,
             "modMode": 0,
             "modBipolar": false,
             "inputXBipolar": false,
@@ -5665,7 +5609,7 @@
           },
           {
             "amount": 1.0,
-            "radius": 1.08775672e-19,
+            "radius": -0.00132703932,
             "modMode": 0,
             "modBipolar": false,
             "inputXBipolar": false,
@@ -5674,7 +5618,7 @@
           },
           {
             "amount": 1.0,
-            "radius": 0.000901899766,
+            "radius": -0.00132703932,
             "modMode": 0,
             "modBipolar": false,
             "inputXBipolar": false,
@@ -5683,7 +5627,7 @@
           },
           {
             "amount": 1.0,
-            "radius": 4.15862024e21,
+            "radius": -0.00132703932,
             "modMode": 0,
             "modBipolar": false,
             "inputXBipolar": false,
@@ -5692,7 +5636,7 @@
           },
           {
             "amount": 1.0,
-            "radius": 2.00548194e29,
+            "radius": -0.00132703932,
             "modMode": 0,
             "modBipolar": false,
             "inputXBipolar": false,
@@ -5701,7 +5645,7 @@
           },
           {
             "amount": 1.0,
-            "radius": 7.18378994e22,
+            "radius": -0.00132703932,
             "modMode": 0,
             "modBipolar": false,
             "inputXBipolar": false,
@@ -6007,8 +5951,8 @@
         "mixportsUsed": 4
       },
       "pos": [
-        33,
-        5
+        41,
+        7
       ]
     },
     {
@@ -6022,8 +5966,6 @@
           "value": 0.0
         }
       ],
-      "leftModuleId": 1056,
-      "rightModuleId": 1045,
       "data": {
         "panelTheme": 0,
         "grid": [
@@ -8091,7 +8033,7 @@
             "turnMode": 0,
             "outMode": 2,
             "ratchetingProb": 0.349999994,
-            "ratchetingEnabled": true
+            "ratchetingEnabled": 0
           },
           {
             "xStartPos": 0,
@@ -8105,7 +8047,7 @@
             "turnMode": 0,
             "outMode": 2,
             "ratchetingProb": 0.349999994,
-            "ratchetingEnabled": true
+            "ratchetingEnabled": 0
           },
           {
             "xStartPos": 0,
@@ -8119,7 +8061,7 @@
             "turnMode": 0,
             "outMode": 2,
             "ratchetingProb": 0.349999994,
-            "ratchetingEnabled": true
+            "ratchetingEnabled": 0
           },
           {
             "xStartPos": 0,
@@ -8133,15 +8075,15 @@
             "turnMode": 0,
             "outMode": 2,
             "ratchetingProb": 0.349999994,
-            "ratchetingEnabled": true
+            "ratchetingEnabled": 0
           }
         ],
         "usedSize": 14,
         "normalizePorts": true
       },
       "pos": [
-        58,
-        4
+        71,
+        6
       ]
     },
     {
@@ -8220,12 +8162,13 @@
         }
       ],
       "leftModuleId": 1038,
-      "rightModuleId": 1055,
       "data": {
         "panelTheme": 0,
         "mode": 0,
         "pluginSlug": "PackOne",
         "modelSlug": "ARENA",
+        "realPluginSlug": "",
+        "realModelSlug": "",
         "moduleName": "stoermelder ARENA",
         "slotCvMode": 2,
         "preset": 4,
@@ -9816,8 +9759,8 @@
         ]
       },
       "pos": [
-        54,
-        4
+        66,
+        6
       ]
     },
     {
@@ -9826,14 +9769,14 @@
       "version": "1.8.0",
       "model": "InfixMicro",
       "params": [],
-      "leftModuleId": 1071,
-      "rightModuleId": 1044,
+      "leftModuleId": 1036,
+      "rightModuleId": 1071,
       "data": {
-        "panelTheme": 1
+        "panelTheme": 0
       },
       "pos": [
-        66,
-        3
+        34,
+        6
       ]
     },
     {
@@ -10267,6 +10210,7 @@
           "value": 0.0
         }
       ],
+      "leftModuleId": 1065,
       "rightModuleId": 1054,
       "data": {
         "panelTheme": 1,
@@ -11077,8 +11021,8 @@
         "sceneCount": 8
       },
       "pos": [
-        6,
-        5
+        14,
+        7
       ]
     },
     {
@@ -11101,11 +11045,12 @@
       "data": {
         "panelTheme": 1,
         "inMode": 0,
-        "outMode": 0
+        "outMode": 0,
+        "overlayEnabled": true
       },
       "pos": [
-        14,
-        3
+        30,
+        5
       ]
     },
     {
@@ -11131,8 +11076,8 @@
         "currentVoltage": 0.0
       },
       "pos": [
-        17,
-        3
+        33,
+        5
       ]
     },
     {
@@ -11175,8 +11120,8 @@
         ]
       },
       "pos": [
-        20,
-        3
+        36,
+        5
       ]
     },
     {
@@ -11227,8 +11172,8 @@
         "targetModules": []
       },
       "pos": [
-        50,
-        3
+        66,
+        5
       ]
     },
     {
@@ -11302,6 +11247,7 @@
           "value": 0.0
         }
       ],
+      "leftModuleId": 3695,
       "rightModuleId": 1064,
       "data": {
         "panelTheme": 1,
@@ -11309,8 +11255,8 @@
         "numberOfChannels": 0
       },
       "pos": [
-        6,
-        3
+        22,
+        5
       ]
     },
     {
@@ -11360,8 +11306,8 @@
         "numberOfChannels": 0
       },
       "pos": [
-        11,
-        3
+        27,
+        5
       ]
     },
     {
@@ -11376,6 +11322,7 @@
         }
       ],
       "leftModuleId": 1045,
+      "rightModuleId": 1058,
       "data": {
         "textScrolling": true,
         "mappingIndicatorHidden": false,
@@ -11387,7 +11334,7 @@
         ],
         "lockParameterChanges": true,
         "bipolarInput": false,
-        "panelTheme": 0,
+        "panelTheme": 1,
         "audioRate": false,
         "lastValues": [
           124.715004,
@@ -11425,8 +11372,8 @@
         ]
       },
       "pos": [
-        83,
-        4
+        12,
+        7
       ]
     },
     {
@@ -11478,7 +11425,7 @@
             "opacity": 1.0,
             "width": 180.0,
             "size": 23.9839993,
-            "text": "PackOne v1.8",
+            "text": "PackOne v1.9",
             "color": "#dcff46",
             "font": 0,
             "fontColor": "#080808"
@@ -11486,8 +11433,8 @@
         ]
       },
       "pos": [
-        72,
-        3
+        83,
+        5
       ]
     },
     {
@@ -11538,7 +11485,7 @@
         }
       ],
       "leftModuleId": 1066,
-      "rightModuleId": 1068,
+      "rightModuleId": 1041,
       "data": {
         "panelTheme": 1,
         "triggerMode": 0,
@@ -11609,8 +11556,8 @@
         ]
       },
       "pos": [
-        75,
-        3
+        86,
+        5
       ]
     },
     {
@@ -11619,7 +11566,8 @@
       "version": "1.8.0",
       "model": "Stroke",
       "params": [],
-      "leftModuleId": 1067,
+      "leftModuleId": 1043,
+      "rightModuleId": 1045,
       "data": {
         "panelTheme": 1,
         "keys": [
@@ -11706,8 +11654,8 @@
         ]
       },
       "pos": [
-        78,
-        3
+        3,
+        7
       ]
     },
     {
@@ -11783,40 +11731,52 @@
         "panelTheme": 1,
         "presets": [
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           },
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           },
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           },
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           },
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           },
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           },
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           },
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           },
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           },
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           },
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           },
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           }
         ],
         "mappingIndicatorHidden": false,
@@ -11828,8 +11788,8 @@
         "sourceMaps": []
       },
       "pos": [
-        53,
-        3
+        69,
+        5
       ]
     },
     {
@@ -11893,46 +11853,58 @@
         "panelTheme": 1,
         "presets": [
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           },
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           },
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           },
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           },
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           },
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           },
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           },
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           },
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           },
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           },
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           },
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           }
         ]
       },
       "pos": [
-        58,
-        3
+        74,
+        5
       ]
     },
     {
@@ -11982,8 +11954,8 @@
           "value": 0.0
         }
       ],
-      "leftModuleId": 1076,
-      "rightModuleId": 1057,
+      "leftModuleId": 1057,
+      "rightModuleId": 1039,
       "data": {
         "textScrolling": true,
         "mappingIndicatorHidden": false,
@@ -11999,7 +11971,7 @@
         ],
         "lockParameterChanges": true,
         "bipolarInput": false,
-        "panelTheme": 1,
+        "panelTheme": 0,
         "audioRate": false,
         "readParam": [
           [
@@ -12019,8 +11991,8 @@
         ]
       },
       "pos": [
-        64,
-        3
+        37,
+        6
       ]
     },
     {
@@ -12057,6 +12029,7 @@
                 "paramId": 1,
                 "cc": -1,
                 "ccMode": 0,
+                "cc14bit": false,
                 "note": -1,
                 "noteMode": 0,
                 "label": "",
@@ -12069,6 +12042,7 @@
                 "paramId": 6,
                 "cc": -1,
                 "ccMode": 0,
+                "cc14bit": false,
                 "note": -1,
                 "noteMode": 0,
                 "label": "",
@@ -12082,8 +12056,8 @@
         ]
       },
       "pos": [
-        34,
-        4
+        49,
+        6
       ]
     },
     {
@@ -12106,8 +12080,8 @@
         "clickHigh": false
       },
       "pos": [
-        47,
-        3
+        63,
+        5
       ]
     },
     {
@@ -12171,46 +12145,58 @@
         "panelTheme": 1,
         "presets": [
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           },
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           },
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           },
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           },
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           },
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           },
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           },
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           },
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           },
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           },
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           },
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           }
         ]
       },
       "pos": [
-        60,
-        3
+        76,
+        5
       ]
     },
     {
@@ -12269,51 +12255,63 @@
         }
       ],
       "leftModuleId": 1075,
-      "rightModuleId": 1071,
+      "rightModuleId": 1044,
       "data": {
         "panelTheme": 1,
         "presets": [
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           },
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           },
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           },
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           },
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           },
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           },
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           },
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           },
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           },
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           },
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           },
           {
-            "slotUsed": false
+            "slotUsed": false,
+            "textLabel": ""
           }
         ]
       },
       "pos": [
-        62,
-        3
+        78,
+        5
       ]
     },
     {
@@ -12324,12 +12322,15 @@
       "params": [],
       "data": {
         "panelTheme": 1,
+        "showNoteMsg": true,
+        "showKeyPressure": false,
+        "showCcMsg": true,
+        "showProgChangeMsg": false,
+        "showChannelPressurelMsg": true,
+        "showPitchWheelMsg": true,
+        "showSysExMsg": false,
         "showClockMsg": false,
         "showSystemMsg": true,
-        "showNoteMsg": true,
-        "showPitchWheelMsg": true,
-        "showChannelPressurelMsg": true,
-        "showCcMsg": true,
         "midiInput": {
           "driver": 4,
           "deviceName": "loopMIDI Port A 1",
@@ -12337,8 +12338,8 @@
         }
       },
       "pos": [
-        34,
-        0
+        50,
+        2
       ]
     },
     {
@@ -12376,8 +12377,8 @@
         "panelTheme": 1
       },
       "pos": [
-        24,
-        0
+        40,
+        2
       ]
     },
     {
@@ -12441,8 +12442,8 @@
         ]
       },
       "pos": [
-        29,
-        0
+        45,
+        2
       ]
     },
     {
@@ -14684,7 +14685,7 @@
             "ninetyState": 0,
             "outMode": 2,
             "ratchetingProb": 0.349999994,
-            "ratchetingEnabled": true
+            "ratchetingEnabled": 0
           },
           {
             "qStartPos": -4,
@@ -14697,7 +14698,7 @@
             "ninetyState": 0,
             "outMode": 2,
             "ratchetingProb": 0.349999994,
-            "ratchetingEnabled": true
+            "ratchetingEnabled": 0
           },
           {
             "qStartPos": -4,
@@ -14710,7 +14711,7 @@
             "ninetyState": 0,
             "outMode": 2,
             "ratchetingProb": 0.349999994,
-            "ratchetingEnabled": true
+            "ratchetingEnabled": 0
           },
           {
             "qStartPos": -4,
@@ -14723,7 +14724,7 @@
             "ninetyState": 0,
             "outMode": 2,
             "ratchetingProb": 0.349999994,
-            "ratchetingEnabled": true
+            "ratchetingEnabled": 0
           }
         ],
         "usedRadius": 4,
@@ -14731,8 +14732,8 @@
         "normalizePorts": true
       },
       "pos": [
-        0,
-        0
+        16,
+        2
       ]
     },
     {
@@ -14745,8 +14746,2724 @@
         "mode": 1
       },
       "pos": [
-        52,
+        68,
+        2
+      ]
+    },
+    {
+      "id": 3687,
+      "plugin": "Stoermelder-P1",
+      "version": "1.8.0",
+      "model": "Orbit",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.5
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        }
+      ],
+      "data": {
+        "panelTheme": 1,
+        "polyOut": false,
+        "dist": 1
+      },
+      "pos": [
+        49,
         0
+      ]
+    },
+    {
+      "id": 3688,
+      "plugin": "Stoermelder-P1",
+      "version": "1.8.0",
+      "model": "Me",
+      "params": [],
+      "pos": [
+        64,
+        0
+      ]
+    },
+    {
+      "id": 3689,
+      "plugin": "Stoermelder-P1",
+      "version": "1.8.0",
+      "model": "EightFaceMk2",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        },
+        {
+          "id": 6,
+          "value": 0.0
+        },
+        {
+          "id": 7,
+          "value": 0.0
+        },
+        {
+          "id": 8,
+          "value": 0.0
+        }
+      ],
+      "data": {
+        "panelTheme": 1,
+        "presets": [
+          {
+            "slotUsed": false,
+            "textLabel": ""
+          },
+          {
+            "slotUsed": false,
+            "textLabel": ""
+          },
+          {
+            "slotUsed": false,
+            "textLabel": ""
+          },
+          {
+            "slotUsed": false,
+            "textLabel": ""
+          },
+          {
+            "slotUsed": false,
+            "textLabel": ""
+          },
+          {
+            "slotUsed": false,
+            "textLabel": ""
+          },
+          {
+            "slotUsed": false,
+            "textLabel": ""
+          },
+          {
+            "slotUsed": false,
+            "textLabel": ""
+          }
+        ],
+        "slotCvMode": 2,
+        "preset": -1,
+        "presetCount": 4,
+        "boxDraw": true,
+        "boxColor": "#0000ff",
+        "boundModules": []
+      },
+      "pos": [
+        17,
+        0
+      ]
+    },
+    {
+      "id": 3690,
+      "plugin": "Stoermelder-P1",
+      "version": "1.8.0",
+      "model": "MidiPlug",
+      "params": [],
+      "data": {
+        "panelTheme": 1,
+        "midiInput": [
+          {
+            "driver": 4,
+            "deviceName": "loopMIDI Port A 1",
+            "channel": -1
+          },
+          {
+            "driver": -12512,
+            "deviceName": "Port 1",
+            "channel": -1
+          }
+        ],
+        "midiOutput": [
+          {
+            "driver": 80627554,
+            "deviceName": "Port 1",
+            "channel": -1,
+            "plugMode": 1
+          },
+          {
+            "driver": 4,
+            "channel": -1,
+            "plugMode": 1
+          }
+        ]
+      },
+      "pos": [
+        36,
+        0
+      ]
+    },
+    {
+      "id": 3691,
+      "plugin": "Stoermelder-P1",
+      "version": "1.8.0",
+      "model": "StripBay4",
+      "params": [],
+      "data": {
+        "panelTheme": 1,
+        "conId": ""
+      },
+      "pos": [
+        57,
+        0
+      ]
+    },
+    {
+      "id": 3692,
+      "plugin": "Stoermelder-P1",
+      "version": "1.8.0",
+      "model": "EightFaceMk2Ex",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        },
+        {
+          "id": 6,
+          "value": 0.0
+        },
+        {
+          "id": 7,
+          "value": 0.0
+        }
+      ],
+      "data": {
+        "panelTheme": 1,
+        "presets": [
+          {
+            "slotUsed": false,
+            "textLabel": ""
+          },
+          {
+            "slotUsed": false,
+            "textLabel": ""
+          },
+          {
+            "slotUsed": false,
+            "textLabel": ""
+          },
+          {
+            "slotUsed": false,
+            "textLabel": ""
+          },
+          {
+            "slotUsed": false,
+            "textLabel": ""
+          },
+          {
+            "slotUsed": false,
+            "textLabel": ""
+          },
+          {
+            "slotUsed": false,
+            "textLabel": ""
+          },
+          {
+            "slotUsed": false,
+            "textLabel": ""
+          }
+        ]
+      },
+      "pos": [
+        21,
+        0
+      ]
+    },
+    {
+      "id": 3693,
+      "plugin": "Stoermelder-P1",
+      "version": "1.8.0",
+      "model": "CVMapCtx",
+      "params": [],
+      "data": {
+        "panelTheme": 1,
+        "cvMapId": "CTX"
+      },
+      "pos": [
+        26,
+        0
+      ]
+    },
+    {
+      "id": 3694,
+      "plugin": "Stoermelder-P1",
+      "version": "1.8.0",
+      "model": "MidiCatCtx",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        }
+      ],
+      "data": {
+        "panelTheme": 1,
+        "midiCatId": "CTX"
+      },
+      "pos": [
+        31,
+        0
+      ]
+    },
+    {
+      "id": 3695,
+      "plugin": "Stoermelder-P1",
+      "version": "1.8.0",
+      "model": "Hive",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        }
+      ],
+      "rightModuleId": 1063,
+      "data": {
+        "panelTheme": 1,
+        "grid": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          1,
+          0,
+          0,
+          1,
+          0,
+          2,
+          0,
+          0,
+          0,
+          0,
+          2,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          2,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          0,
+          2,
+          2,
+          1,
+          0,
+          1,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          2,
+          2,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          2,
+          2,
+          0,
+          1,
+          1,
+          0,
+          2,
+          1,
+          1,
+          0,
+          0,
+          1,
+          0,
+          2,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          2,
+          2,
+          0,
+          0,
+          0,
+          2,
+          1,
+          0,
+          2,
+          2,
+          0,
+          0,
+          1,
+          0,
+          0,
+          1,
+          1,
+          2,
+          1,
+          2,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          2,
+          2,
+          2,
+          1,
+          0,
+          0,
+          0,
+          1,
+          1,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          2,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          2,
+          0,
+          0,
+          1,
+          0,
+          0,
+          2,
+          0,
+          1,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          0,
+          2,
+          1,
+          0,
+          1,
+          1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          0,
+          0,
+          2,
+          1,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          1,
+          2,
+          0,
+          0,
+          0,
+          0,
+          2,
+          2,
+          0,
+          1,
+          0,
+          0,
+          2,
+          2,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          1,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          2,
+          1,
+          1,
+          2,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          1,
+          0,
+          2,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          2,
+          1,
+          1,
+          0,
+          2,
+          2,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          2,
+          2,
+          0,
+          0,
+          2,
+          1,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          0,
+          1,
+          2,
+          0,
+          2,
+          0,
+          0,
+          0,
+          1,
+          2,
+          2,
+          0,
+          0,
+          0,
+          0,
+          0,
+          2,
+          0,
+          1,
+          0,
+          0,
+          0,
+          2,
+          0,
+          1,
+          1,
+          0,
+          2,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          1,
+          1,
+          1,
+          2,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          2,
+          1,
+          2,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          2,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          2,
+          0,
+          1,
+          0,
+          0,
+          0,
+          1,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          1,
+          2,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          2,
+          2,
+          0,
+          1,
+          0,
+          1,
+          1,
+          0,
+          2,
+          2,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          2,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          2,
+          0,
+          2,
+          1,
+          0,
+          2,
+          1,
+          0,
+          1,
+          2,
+          0,
+          1,
+          0,
+          0,
+          2,
+          0,
+          0,
+          2,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          2,
+          1,
+          1,
+          1,
+          0,
+          1,
+          2,
+          0,
+          0,
+          1,
+          0,
+          2,
+          0,
+          1,
+          0,
+          2,
+          0,
+          2,
+          0,
+          1,
+          1,
+          1,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          2,
+          1,
+          0,
+          2,
+          0,
+          0,
+          0,
+          1,
+          2,
+          0,
+          0,
+          1,
+          0,
+          0,
+          2,
+          0,
+          2,
+          1,
+          2,
+          0,
+          0,
+          0,
+          1,
+          2,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          2,
+          2,
+          1,
+          0,
+          1,
+          0,
+          2,
+          0,
+          0,
+          2,
+          2,
+          1,
+          2,
+          2,
+          1,
+          0,
+          2,
+          0,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          1,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          2,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          1,
+          2,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          2,
+          2,
+          0,
+          0,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          2,
+          2,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          2,
+          0,
+          0,
+          2,
+          0,
+          2,
+          0,
+          0,
+          2,
+          1,
+          0,
+          2,
+          0,
+          0,
+          2,
+          1,
+          0,
+          1,
+          2,
+          2,
+          0,
+          1,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          1,
+          2,
+          0,
+          2,
+          1,
+          0,
+          2,
+          0,
+          1,
+          2,
+          0,
+          1,
+          0,
+          1,
+          0,
+          2,
+          0,
+          2,
+          1,
+          2,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          2,
+          0,
+          2,
+          0,
+          2,
+          2,
+          0,
+          0,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          1,
+          2,
+          2,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          2,
+          0,
+          2,
+          2,
+          0,
+          0,
+          2,
+          0,
+          2,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          2,
+          0,
+          1,
+          0,
+          0,
+          1,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          1,
+          0,
+          0,
+          2,
+          0,
+          0,
+          2,
+          2,
+          0,
+          2,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          2,
+          2,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          1,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          1,
+          1,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          2,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          2,
+          1,
+          0,
+          2,
+          0,
+          1,
+          0,
+          1,
+          2,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "gridCv": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.470759749,
+          0.0,
+          0.0,
+          0.605904341,
+          0.0,
+          0.0,
+          0.29578656,
+          0.0,
+          0.520900846,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.394885182,
+          0.712837815,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.241206646,
+          0.0,
+          0.0,
+          0.478838742,
+          0.0,
+          0.0,
+          0.965913057,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0258176327,
+          0.0,
+          0.0,
+          0.0,
+          0.803810239,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.578754544,
+          0.0173028708,
+          0.261206269,
+          0.0,
+          0.93095839,
+          0.349597514,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.383069098,
+          0.40175128,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.751287282,
+          0.0,
+          0.0,
+          0.0,
+          0.0843353868,
+          0.631024957,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.340241194,
+          0.0190682411,
+          0.0,
+          0.323946357,
+          0.208710432,
+          0.0,
+          0.898256302,
+          0.642336726,
+          0.528664768,
+          0.0,
+          0.0,
+          0.370614111,
+          0.0,
+          0.105076373,
+          0.0,
+          0.0,
+          0.0166487098,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0358833671,
+          0.0889074206,
+          0.0,
+          0.0,
+          0.0,
+          0.357663333,
+          0.693323731,
+          0.0,
+          0.972500682,
+          0.371435761,
+          0.0,
+          0.0,
+          0.771348953,
+          0.0,
+          0.0,
+          0.136698842,
+          0.128201187,
+          0.693362296,
+          0.145770371,
+          0.396327496,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.540941298,
+          0.0,
+          0.0,
+          0.868464768,
+          0.0,
+          0.0,
+          0.0,
+          0.156884849,
+          0.553482652,
+          0.848075449,
+          0.22076118,
+          0.0,
+          0.0,
+          0.0,
+          0.587998688,
+          0.929770589,
+          0.0,
+          0.0,
+          0.198383749,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.054526031,
+          0.0,
+          0.745074928,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0750445724,
+          0.0,
+          0.155696452,
+          0.0,
+          0.0,
+          0.771817267,
+          0.0,
+          0.0,
+          0.935132444,
+          0.0,
+          0.159715652,
+          0.772359431,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.456073463,
+          0.0,
+          0.0,
+          0.1571908,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.625420809,
+          0.301961064,
+          0.0,
+          0.102089226,
+          0.868132651,
+          0.0,
+          0.0,
+          0.902366161,
+          0.836752534,
+          0.0,
+          0.0,
+          0.0,
+          0.550989091,
+          0.681958973,
+          0.640842676,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.213932216,
+          0.0,
+          0.0,
+          0.668886602,
+          0.17752409,
+          0.0,
+          0.363024592,
+          0.0652182102,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.30348295,
+          0.899734497,
+          0.0,
+          0.994114816,
+          0.0,
+          0.0,
+          0.580210626,
+          0.544742525,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.029848516,
+          0.0,
+          0.960921586,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.257116079,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.221849382,
+          0.136163652,
+          0.195996165,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.605000615,
+          0.194306314,
+          0.906642556,
+          0.0605919361,
+          0.0,
+          0.0,
+          0.596168041,
+          0.0,
+          0.0,
+          0.0,
+          0.398492157,
+          0.0,
+          0.132836342,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0774627328,
+          0.0,
+          0.455589712,
+          0.511688828,
+          0.651443243,
+          0.0,
+          0.834123194,
+          0.825684905,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.369003654,
+          0.524030864,
+          0.0,
+          0.0,
+          0.3124578,
+          0.849395454,
+          0.0,
+          0.0,
+          0.0,
+          0.766526103,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.641749322,
+          0.146278679,
+          0.0,
+          0.831242204,
+          0.0,
+          0.0,
+          0.0,
+          0.145570874,
+          0.210366666,
+          0.744125605,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.495092928,
+          0.0,
+          0.429094553,
+          0.0,
+          0.0,
+          0.0,
+          0.895299494,
+          0.0,
+          0.261904657,
+          0.164622962,
+          0.0,
+          0.604414105,
+          0.0,
+          0.0,
+          0.0,
+          0.209414661,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.363881767,
+          0.0,
+          0.0,
+          0.0,
+          0.411529362,
+          0.234628558,
+          0.990715981,
+          0.466756225,
+          0.0,
+          0.0,
+          0.0,
+          0.563173473,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0786982775,
+          0.0,
+          0.0,
+          0.0,
+          0.422673821,
+          0.0,
+          0.0,
+          0.0,
+          0.102735162,
+          0.816713095,
+          0.874094605,
+          0.0,
+          0.0,
+          0.0,
+          0.233526707,
+          0.0,
+          0.0,
+          0.0,
+          0.528317988,
+          0.0,
+          0.153099656,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.373521149,
+          0.0,
+          0.0,
+          0.0,
+          0.882604003,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.284310102,
+          0.0,
+          0.0,
+          0.0,
+          0.632757664,
+          0.0,
+          0.0,
+          0.363607764,
+          0.0,
+          0.8927598,
+          0.0,
+          0.0,
+          0.0,
+          0.494951665,
+          0.549024522,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.841671467,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.122892082,
+          0.0,
+          0.522266507,
+          0.194538593,
+          0.782839,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.396273911,
+          0.0,
+          0.16108942,
+          0.242402256,
+          0.0,
+          0.855096102,
+          0.0,
+          0.661262691,
+          0.481448889,
+          0.0,
+          0.878966808,
+          0.468459904,
+          0.0,
+          0.0,
+          0.0,
+          0.347643018,
+          0.0,
+          0.0,
+          0.0344511867,
+          0.12668097,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.953935623,
+          0.0,
+          0.721295297,
+          0.032908082,
+          0.0,
+          0.231235921,
+          0.364629269,
+          0.0,
+          0.335059524,
+          0.576332033,
+          0.0,
+          0.571799934,
+          0.0,
+          0.0,
+          0.430399239,
+          0.0,
+          0.0,
+          0.240155756,
+          0.693609774,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.229477942,
+          0.0,
+          0.0,
+          0.326564074,
+          0.315701783,
+          0.472424507,
+          0.682590961,
+          0.0,
+          0.0978166461,
+          0.657286286,
+          0.0,
+          0.0,
+          0.649025679,
+          0.0,
+          0.153086662,
+          0.0,
+          0.911769509,
+          0.0,
+          0.462490022,
+          0.0,
+          0.968352437,
+          0.0,
+          0.854703963,
+          0.381869256,
+          0.306223214,
+          0.0,
+          0.83914721,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.600564837,
+          0.0549019575,
+          0.0,
+          0.0460746884,
+          0.0,
+          0.0,
+          0.0,
+          0.422079086,
+          0.435844362,
+          0.0,
+          0.0,
+          0.800011218,
+          0.0,
+          0.0,
+          0.463045597,
+          0.0,
+          0.537791848,
+          0.870941103,
+          0.305360258,
+          0.0,
+          0.0,
+          0.0,
+          0.599347651,
+          0.911613047,
+          0.0,
+          0.400439441,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.513338804,
+          0.925467312,
+          0.30859828,
+          0.0,
+          0.10392487,
+          0.0,
+          0.440188587,
+          0.0,
+          0.0,
+          0.845801294,
+          0.907229424,
+          0.777324319,
+          0.630886853,
+          0.32509625,
+          0.342535615,
+          0.0,
+          0.363850892,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.715299129,
+          0.0,
+          0.0,
+          0.0,
+          0.0665660501,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.76304853,
+          0.0,
+          0.0,
+          0.138320267,
+          0.0,
+          0.0,
+          0.942269802,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.124087095,
+          0.477127492,
+          0.0,
+          0.0,
+          0.0,
+          0.837213397,
+          0.0,
+          0.0,
+          0.920864999,
+          0.728468359,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.899490774,
+          0.147112429,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.742386281,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.131334186,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.506406724,
+          0.87814188,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.973841786,
+          0.720010459,
+          0.0,
+          0.0,
+          0.237739384,
+          0.0,
+          0.594354928,
+          0.0,
+          0.0,
+          0.466104329,
+          0.57931298,
+          0.0,
+          0.774554551,
+          0.0,
+          0.0,
+          0.171746194,
+          0.0466230512,
+          0.0,
+          0.610376775,
+          0.383932054,
+          0.26413244,
+          0.0,
+          0.949347079,
+          0.0,
+          0.0490033031,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.383662879,
+          0.0401905775,
+          0.585803449,
+          0.0,
+          0.919078767,
+          0.854774237,
+          0.0,
+          0.0496131182,
+          0.0,
+          0.285710692,
+          0.699729085,
+          0.0,
+          0.862539053,
+          0.0,
+          0.440150738,
+          0.0,
+          0.603833199,
+          0.0,
+          0.288957298,
+          0.282420397,
+          0.674074829,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.275576711,
+          0.0,
+          0.447573304,
+          0.0,
+          0.0728391409,
+          0.0,
+          0.247694016,
+          0.00304955244,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.791607797,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.479218602,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.599525869,
+          0.344205797,
+          0.918161154,
+          0.550328195,
+          0.0,
+          0.0,
+          0.541125894,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.918624103,
+          0.0,
+          0.726183176,
+          0.0,
+          0.573568046,
+          0.827216446,
+          0.0,
+          0.0,
+          0.854451239,
+          0.0,
+          0.327927351,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.731334865,
+          0.0,
+          0.921318471,
+          0.0,
+          0.0,
+          0.450061202,
+          0.0,
+          0.0,
+          0.0535379648,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.290099978,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.93472296,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.241267025,
+          0.0,
+          0.749510705,
+          0.0,
+          0.0,
+          0.328823984,
+          0.0,
+          0.0,
+          0.664523423,
+          0.361146629,
+          0.0,
+          0.376353562,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.889559448,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.794777691,
+          0.0,
+          0.0,
+          0.193779886,
+          0.930510283,
+          0.551643968,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.685952365,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.746621788,
+          0.0,
+          0.179809153,
+          0.0,
+          0.0,
+          0.0,
+          0.462288797,
+          0.0,
+          0.0,
+          0.0,
+          0.955497086,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.963798404,
+          0.0,
+          0.0,
+          0.0,
+          0.582318425,
+          0.263357282,
+          0.0,
+          0.0,
+          0.0,
+          0.953998446,
+          0.0,
+          0.0,
+          0.911335945,
+          0.0,
+          0.245325387,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.981444895,
+          0.625354886,
+          0.0,
+          0.201164901,
+          0.0,
+          0.738919079,
+          0.0,
+          0.0561487675,
+          0.645527422,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "mirrorCenters": [
+          {
+            "x": -4,
+            "y": 9,
+            "z": -5
+          },
+          {
+            "x": 5,
+            "y": 4,
+            "z": -9
+          },
+          {
+            "x": 9,
+            "y": -5,
+            "z": -4
+          },
+          {
+            "x": 4,
+            "y": -9,
+            "z": 5
+          },
+          {
+            "x": -5,
+            "y": -4,
+            "z": 9
+          },
+          {
+            "x": -9,
+            "y": 5,
+            "z": 4
+          }
+        ],
+        "ports": [
+          {
+            "qStartPos": -4,
+            "rStartPos": 0,
+            "startDir": 1,
+            "qPos": -4,
+            "rPos": 0,
+            "dir": 1,
+            "turnMode": 0,
+            "ninetyState": 0,
+            "outMode": 2,
+            "ratchetingProb": 0.349999994,
+            "ratchetingEnabled": 1
+          },
+          {
+            "qStartPos": -4,
+            "rStartPos": 1,
+            "startDir": 1,
+            "qPos": -4,
+            "rPos": 1,
+            "dir": 1,
+            "turnMode": 0,
+            "ninetyState": 0,
+            "outMode": 2,
+            "ratchetingProb": 0.349999994,
+            "ratchetingEnabled": 1
+          },
+          {
+            "qStartPos": -4,
+            "rStartPos": 2,
+            "startDir": 1,
+            "qPos": -4,
+            "rPos": 2,
+            "dir": 1,
+            "turnMode": 0,
+            "ninetyState": 0,
+            "outMode": 2,
+            "ratchetingProb": 0.349999994,
+            "ratchetingEnabled": 1
+          },
+          {
+            "qStartPos": -4,
+            "rStartPos": 3,
+            "startDir": 1,
+            "qPos": -4,
+            "rPos": 3,
+            "dir": 1,
+            "turnMode": 0,
+            "ninetyState": 0,
+            "outMode": 2,
+            "ratchetingProb": 0.349999994,
+            "ratchetingEnabled": 1
+          }
+        ],
+        "usedRadius": 4,
+        "sizeFactor": 16.2142849,
+        "normalizePorts": true
+      },
+      "pos": [
+        0,
+        5
+      ]
+    },
+    {
+      "id": 3696,
+      "plugin": "Stoermelder-P1",
+      "version": "1.8.0",
+      "model": "Raw",
+      "params": [
+        {
+          "id": 0,
+          "value": 15.0
+        },
+        {
+          "id": 1,
+          "value": 1000.0
+        },
+        {
+          "id": 2,
+          "value": -4.0
+        },
+        {
+          "id": 3,
+          "value": 0.5
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        },
+        {
+          "id": 5,
+          "value": -5.0
+        }
+      ],
+      "leftModuleId": 3697,
+      "rightModuleId": 1036,
+      "data": {
+        "panelTheme": 0
+      },
+      "pos": [
+        21,
+        6
+      ]
+    },
+    {
+      "id": 3697,
+      "plugin": "Stoermelder-P1",
+      "version": "1.8.0",
+      "model": "Macro",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        }
+      ],
+      "leftModuleId": 3698,
+      "rightModuleId": 3696,
+      "data": {
+        "textScrolling": true,
+        "mappingIndicatorHidden": false,
+        "maps": [],
+        "lockParameterChanges": false,
+        "bipolarInput": false,
+        "panelTheme": 0,
+        "processDivision": 64,
+        "cvs": [
+          {
+            "slew": 0.0,
+            "min": 0.0,
+            "max": 1.0,
+            "bipolar": false,
+            "value": 0.0
+          },
+          {
+            "slew": 0.0,
+            "min": 0.0,
+            "max": 1.0,
+            "bipolar": false,
+            "value": 0.0
+          }
+        ]
+      },
+      "pos": [
+        18,
+        6
+      ]
+    },
+    {
+      "id": 3698,
+      "plugin": "Stoermelder-P1",
+      "version": "1.8.0",
+      "model": "MidiMon",
+      "params": [],
+      "rightModuleId": 3697,
+      "data": {
+        "panelTheme": 0,
+        "showNoteMsg": true,
+        "showKeyPressure": true,
+        "showCcMsg": true,
+        "showProgChangeMsg": true,
+        "showChannelPressurelMsg": true,
+        "showPitchWheelMsg": true,
+        "showSysExMsg": false,
+        "showClockMsg": false,
+        "showSystemMsg": true,
+        "midiInput": {
+          "driver": 4,
+          "channel": -1
+        }
+      },
+      "pos": [
+        2,
+        6
       ]
     }
   ],

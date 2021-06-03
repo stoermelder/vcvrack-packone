@@ -49,7 +49,7 @@ Added in v1.8.0: The _Preset_ context menu option lists all vcvss-files stored i
 
 The file-format "vcvss" for storing strips is very close to Rack's own format for storing patches or module presets. Compatibility in future versions should be no problem as long Rack will be able to load module preset files from older Rack versions.
 
-## Bonus tips
+## Tips
 
 - If you want to add some documentation for your strip just include a VCV Notes module and type in some text.
 

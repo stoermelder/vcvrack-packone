@@ -138,11 +138,11 @@ For some MIDI controllers which don't support different simultaneous "layers" bu
 ![MIDI-CAT parameter's context menu](./MidiCat-target.png)
 
 <a name="overlay"></a>
-- MIDI-CAT uses an overlay window displaying parameter changes on the bottom of the screen (since v1.9.0). This overlay is enabled by default and can be disabled in the context menu. Some adjustments for the appearance of the overlay can be made with the [stoermelder ME](Me.md) module.
+- MIDI-CAT uses an overlay window displaying parameter changes on the bottom of the screen (since v1.9.0). This overlay is enabled by default and can be disabled in the context menu. Some adjustments for the appearance of the overlay can be made with the [stoermelder ME](./Me.md) module.
 
 ![MIDI-CAT overlay](./MidiCat-overlay.gif)
 
-MIDI-CAT was added in v1.1.0 of PackOne. 
+MIDI-CAT was added in v1.1 of PackOne. 
 
 # MEM-expander
 
@@ -176,7 +176,7 @@ Added in v1.8.0: MEM has two buttons labeled _Prev_ and _Next_ which scan your p
 
 - All push buttons on MEM can be mapped using any mapping module if you like to activate _Apply mapping_ by MIDI or some other command.
 
-MEM for MIDI-CAT was added in v1.7.0 of PackOne.
+MEM for MIDI-CAT was added in v1.7 of PackOne.
 
 # CTX-expander
 
@@ -188,4 +188,4 @@ CTX for MIDI-CAT must be placed on the right side of MIDI-CAT and can be used th
 
 Additionally MIDI-CAT CTX provides a button for activating mapping on the first empty mapping slot in MIDI-CAT. This button can also mapped to a MIDI controller which allows start MIDI mapping by a MIDI message.
 
-CTX for MIDI-CAT was added in v1.9.0 of PackOne.
+CTX for MIDI-CAT was added in v1.9 of PackOne.

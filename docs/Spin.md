@@ -17,4 +17,4 @@ There are some options found in the context menu:
 
 Please note that you cannot use multiple instances of this module with the same settings: Only the first instance will receive and handle events. However, you can use multiple instances with different modifiers.
 
-SPIN was added in v1.7.0 of PackOne.
+SPIN was added in v1.7 of PackOne.
