@@ -76,15 +76,15 @@ struct EightFaceMk2ExModule : EightFaceMk2Base<NUM_PRESETS> {
 		return &BASE::slot[i];
 	}
 
-	void faceSlotCmd(SLOT_CMD cmd, int i) override {
+	int faceSlotCmd(SLOT_CMD cmd, int i) override {
 		// Retrieve module from scene as this is called from the GUI thread
 		ModuleWidget* mw =  APP->scene->rack->getModule(BASE::ctrlModuleId);
-		if (!mw) return;
+		if (!mw) return -1;
 		Module* m = mw->module;
-		if (!m) return;
+		if (!m) return -1;
 		EightFaceMk2Base<NUM_PRESETS>* tm = dynamic_cast<EightFaceMk2Base<NUM_PRESETS>*>(m);
-		if (!tm) return;
-		tm->faceSlotCmd(cmd, i + BASE::ctrlOffset * NUM_PRESETS);
+		if (!tm) return -1;
+		return tm->faceSlotCmd(cmd, i + BASE::ctrlOffset * NUM_PRESETS);
 	}
 
 	void dataFromJson(json_t* rootJ) override {

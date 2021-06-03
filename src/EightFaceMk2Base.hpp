@@ -11,6 +11,7 @@ enum class SLOT_CMD {
 	CLEAR,
 	RANDOMIZE,
 	COPY,
+	PASTE_PREVIEW,
 	PASTE
 };
 
@@ -44,7 +45,7 @@ struct EightFaceMk2Base : Module, StripIdFixModule {
 
 	virtual EightFaceMk2Slot* faceSlot(int i) { return NULL; }
 
-	virtual void faceSlotCmd(SLOT_CMD cmd, int i) { }
+	virtual int faceSlotCmd(SLOT_CMD cmd, int i) { return -1; }
 
 
 	json_t* dataToJson() override {
@@ -156,6 +157,15 @@ struct EightFaceMk2LedButton : LEDButton {
 			}
 		};
 
+		struct PasteItem : SlotItem {
+			void step() override {
+				int i = this->module->faceSlotCmd(SLOT_CMD::PASTE_PREVIEW, this->id);
+				this->rightText = i >= 0 ? string::f("Slot %d", i + 1) : "";
+				this->disabled = i < 0;
+				SlotItem::step();
+			}
+		};
+
 		struct LabelMenuItem : MenuItem {
 			EightFaceMk2Base<NUM_PRESETS>* module;
 			int id;
@@ -223,7 +233,7 @@ struct EightFaceMk2LedButton : LEDButton {
 		menu->addChild(construct<SlotItem>(&MenuItem::text, "Clear", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::CLEAR));
 		menu->addChild(construct<SlotItem>(&MenuItem::text, "Randomize and save", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::RANDOMIZE));
 		menu->addChild(construct<SlotItem>(&MenuItem::text, "Copy", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::COPY));
-		menu->addChild(construct<SlotItem>(&MenuItem::text, "Paste", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::PASTE));
+		menu->addChild(construct<PasteItem>(&MenuItem::text, "Paste", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::PASTE));
 		menu->addChild(new MenuSeparator);
 		menu->addChild(construct<LabelMenuItem>(&MenuItem::text, "Custom label", &LabelMenuItem::module, module, &LabelMenuItem::id, id));
 	}
