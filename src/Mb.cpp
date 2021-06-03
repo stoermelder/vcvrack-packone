@@ -288,6 +288,13 @@ struct MbWidget : ModuleWidget {
 	void appendContextMenu(Menu* menu) override {
 		MbModule* module = dynamic_cast<MbModule*>(this->module);
 
+		struct ManualItem : MenuItem {
+			void onAction(const event::Action& e) override {
+				std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Mb.md");
+				t.detach();
+			}
+		};
+
 		struct ModeV06Item : MenuItem {
 			MbModule* module;
 			void onAction(const event::Action& e) override {
@@ -347,6 +354,8 @@ struct MbWidget : ModuleWidget {
 			}
 		};
 
+		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<ModeV06Item>(&MenuItem::text, "v0.6", &ModeV06Item::module, module));
 		menu->addChild(construct<ModeV1Item>(&MenuItem::text, "v1 mod", &ModeV1Item::module, module));
