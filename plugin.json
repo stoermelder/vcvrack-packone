@@ -84,11 +84,11 @@
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Strip.md"
 		},
 		{
-			"slug": "StripCon4",
-			"name": "STRIP-CON",
+			"slug": "StripBay4",
+			"name": "STRIP-BAY",
 			"description": "Utility module for STRIP keeping inputs/outputs connected",
 			"tags": ["Utility"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Strip.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Strip.md#stoermelder-strip-bay"
 		},
 		{
 			"slug": "StripBlock",

@@ -20,7 +20,7 @@ extern Model* modelBolt;
 extern Model* modelInfix;
 extern Model* modelInfixMicro;
 extern Model* modelStrip;
-extern Model* modelStripCon4;
+extern Model* modelStripBay4;
 extern Model* modelStripBlock;
 extern Model* modelEightFace;
 extern Model* modelEightFaceX2;

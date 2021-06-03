@@ -2,10 +2,10 @@
 #include "components/LedTextField.hpp"
 
 namespace StoermelderPackOne {
-namespace StripCon {
+namespace StripBay {
 
 template <size_t PORTS>
-struct StripConModule : Strip::StripConBase {
+struct StripBayModule : Strip::StripBayBase {
 	enum ParamIds {
 		NUM_PARAMS
 	};
@@ -26,7 +26,7 @@ struct StripConModule : Strip::StripConBase {
 	/** [Stored to JSON] */
 	std::string conId;
 
-	StripConModule() {
+	StripBayModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		onReset();
@@ -54,7 +54,7 @@ struct StripConModule : Strip::StripConBase {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 		conId = json_string_value(json_object_get(rootJ, "conId"));
 	}
-}; // struct StripConModule
+}; // struct StripBayModule
 
 
 template <class MODULE>
@@ -68,10 +68,10 @@ struct IdTextField : StoermelderTextField {
 	}
 };
 
-struct StripCon4Widget : ThemedModuleWidget<StripConModule<4>> {
-	typedef StripConModule<4> MODULE;
-	StripCon4Widget(MODULE* module)
-		: ThemedModuleWidget<MODULE>(module, "StripCon", "Strip.md#stoermelder-strip-con") {
+struct StripBay4Widget : ThemedModuleWidget<StripBayModule<4>> {
+	typedef StripBayModule<4> MODULE;
+	StripBay4Widget(MODULE* module)
+		: ThemedModuleWidget<MODULE>(module, "StripBay", "Strip.md#stoermelder-strip-bay") {
 		setModule(module);
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
@@ -92,10 +92,10 @@ struct StripCon4Widget : ThemedModuleWidget<StripConModule<4>> {
 		addOutput(createOutputCentered<StoermelderPort>(Vec(22.5f, 291.1f), module, MODULE::OUTPUT + 2));
 		addOutput(createOutputCentered<StoermelderPort>(Vec(22.5f, 327.5f), module, MODULE::OUTPUT + 3));
 	}
-}; // struct StripConWidget
+}; // struct StripBayWidget
 
 
-} // namespace StripCon
+} // namespace StripBay
 } // namespace StoermelderPackOne
 
-Model* modelStripCon4 = createModel<StoermelderPackOne::StripCon::StripConModule<4>, StoermelderPackOne::StripCon::StripCon4Widget>("StripCon4");
+Model* modelStripBay4 = createModel<StoermelderPackOne::StripBay::StripBayModule<4>, StoermelderPackOne::StripBay::StripBay4Widget>("StripBay4");

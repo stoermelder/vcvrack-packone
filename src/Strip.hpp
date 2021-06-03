@@ -33,7 +33,7 @@ struct StripModuleBase : Module {
 };
 
 
-struct StripConBase : Module {
+struct StripBayBase : Module {
 	virtual size_t getPortNumber() { return 0; }
 	virtual std::string getConnId() { return ""; }
 };
@@ -189,7 +189,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 	}
 
 	void groupConnectionsCollect(std::list<std::tuple<std::string, int, PortWidget*, NVGcolor>>& conn) {
-		std::list<StripConBase*> toDo;
+		std::list<StripBayBase*> toDo;
 		std::set<int> moduleIds;
 
 		if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::RIGHT) {
@@ -197,7 +197,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 			while (true) {
 				if (!m || m->rightExpander.moduleId < 0 || m->model == modelStripBlock) break;
 				m = m->rightExpander.module;
-				StripConBase* sc = dynamic_cast<StripConBase*>(m);
+				StripBayBase* sc = dynamic_cast<StripBayBase*>(m);
 				if (sc) toDo.push_back(sc);
 				moduleIds.insert(m->id);
 			}
@@ -207,13 +207,13 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 			while (true) {
 				if (!m || m->leftExpander.moduleId < 0 || m->model == modelStripBlock) break;
 				m = m->leftExpander.module;
-				StripConBase* sc = dynamic_cast<StripConBase*>(m);
+				StripBayBase* sc = dynamic_cast<StripBayBase*>(m);
 				if (sc) toDo.push_back(sc);
 				moduleIds.insert(m->id);
 			}
 		}
 
-		for (StripConBase* sc : toDo) {
+		for (StripBayBase* sc : toDo) {
 			ModuleWidget* mw = APP->scene->rack->getModule(sc->id);
 			for (PortWidget* in : mw->inputs) {
 				std::list<CableWidget*> cs = APP->scene->rack->getCablesOnPort(in);
@@ -240,14 +240,14 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 
 	std::vector<history::Action*>* groupConnectionsRestore(std::list<std::tuple<std::string, int, PortWidget*, NVGcolor>>& conn) {
 		std::vector<history::Action*>* undoActions = new std::vector<history::Action*>;
-		std::map<std::string, StripConBase*> toDo;
+		std::map<std::string, StripBayBase*> toDo;
 
 		if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::RIGHT) {
 			Module* m = module;
 			while (true) {
 				if (!m || m->rightExpander.moduleId < 0 || m->model == modelStripBlock) break;
 				m = m->rightExpander.module;
-				StripConBase* sc = dynamic_cast<StripConBase*>(m);
+				StripBayBase* sc = dynamic_cast<StripBayBase*>(m);
 				if (sc) toDo[sc->getConnId()] = sc;
 
 			}
@@ -257,7 +257,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 			while (true) {
 				if (!m || m->leftExpander.moduleId < 0 || m->model == modelStripBlock) break;
 				m = m->leftExpander.module;
-				StripConBase* sc = dynamic_cast<StripConBase*>(m);
+				StripBayBase* sc = dynamic_cast<StripBayBase*>(m);
 				if (sc) toDo[sc->getConnId()] = sc;
 			}
 		}
