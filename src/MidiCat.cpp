@@ -104,7 +104,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 		MidiCatModule* module;
 		int id;
 		int current = -1;
-		uint32_t lastTs;
+		uint32_t lastTs = 0;
 
 		/** [Stored to Json] */
 		int cc;
@@ -339,9 +339,9 @@ struct MidiCatModule : Module, StripIdFixModule {
 		mapLen = 1;
 		for (int i = 0; i < 128; i++) {
 			valuesCc[i] = -1;
-			valuesCcTs[i] = -1;
+			valuesCcTs[i] = 0;
 			valuesNote[i] = -1;
-			valuesNoteTs[i] = -1;
+			valuesNoteTs[i] = 0;
 		}
 		for (int i = 0; i < MAX_CHANNELS; i++) {
 			lastValueIn[i] = -1;
