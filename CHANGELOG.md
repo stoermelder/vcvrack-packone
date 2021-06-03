@@ -53,7 +53,7 @@
 - Module [MB](./docs/Mb.md)
     - Added option to hide the "brands" section of the V1-browser (#223)
 - Module [µMAP](./docs/CVMapMicro.md)
-    - Added context menu options on mapped parameters of target module for µMAP
+    - Added context menu options on mapped parameters of target module for µMAP ([manual](./docs/CVMapMicro.md#target-context))
     - Fixed wrong behavior when toggling input to 0V (#221)
 - Module [MIDI-CAT](./docs/MidiCat.md)
     - Added support for MIDI 14-bit CC ([manual](./docs/MidiCat.md#14-bit-cc))

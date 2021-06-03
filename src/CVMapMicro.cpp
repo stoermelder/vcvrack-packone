@@ -214,10 +214,9 @@ struct CVMapMicroWidget : ThemedModuleWidget<CVMapMicroModule>, ParamWidgetConte
 
 			menu->addChild(new MenuSeparator);
 			menu->addChild(construct<MenuLabel>(&MenuLabel::text, "µMAP"));
-			menu->addChild(construct<CenterModuleItem>(&MenuItem::text, "Center mapping module", &CenterModuleItem::mw, this));
-			menu->addChild(new MenuSeparator);
 			menu->addChild(construct<CVMapMicroSlider>(&CVMapMicroSlider::quantity, module->paramQuantities[CVMapMicroModule::OFFSET_PARAM]));
 			menu->addChild(construct<CVMapMicroSlider>(&CVMapMicroSlider::quantity, module->paramQuantities[CVMapMicroModule::SCALE_PARAM]));
+			menu->addChild(construct<CenterModuleItem>(&MenuItem::text, "Go to mapping module", &CenterModuleItem::mw, this));
 		}
 	}
 };
