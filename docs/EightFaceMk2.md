@@ -54,8 +54,8 @@ There are also some options on the context menu of the snapshot-buttons:
 
 ![8FACE mk2 write-mode](./EightFaceMk2-write-context.gif)
 
-A blinking white LED signals the snapshot applied at last. Please keep in mind that you can change bound modules manually which and these changes will not be recognized by 8FACE mk2.  
-In write-mode any input on the SEL-port is ignored and sequencing is disabled.
+A blinking white LED signals the snapshot applied at last. Please keep in mind that you can change bound modules manually and these changes will not be recognized by 8FACE mk2.  
+In write-mode any input on the _SEL_-port is ignored and sequencing is disabled.
 
 ## Sequencing and selecting snapshots
 
@@ -87,8 +87,6 @@ Modes for _SEL_ on the contextual menu:
   This mode follows the V/Oct-standard. C4 selects snapshot 1, C#4 selects snapshot 2 and so on.
 - **Arm**  
   This mode is a kind of "buffered trigger": First apply a clock signal on _SEL_. Then you "arm" any snapshot manually or by MIDI-mapping by its button (resulting in a yellow LED) which will be activated on the next clock trigger (white LED). This mode allows you manual snapshot activation synchronized to a clock.
-
-With the option "Autoload first preset" on the context menu you can autoload the first preset slot when a preset of 8FACE mk2 itself is loaded. This is useful when changing presets of 8FACE mk2 with another instance of 8FACE or 8FACE mk2 to aquire even more preset slots. The option "Autoload last active preset" works the same way.
 
 ## Tips
 
