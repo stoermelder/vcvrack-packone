@@ -91,13 +91,6 @@
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Strip.md#stoermelder-strip-bay"
 		},
 		{
-			"slug": "StripBlock",
-			"name": "STRIP-BLOCK",
-			"description": "Utility module for blocking STRIP's expander mechanism",
-			"tags": ["Utility"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Strip.md"
-		},
-		{
 			"slug": "EightFace",
 			"name": "8FACE",
 			"description": "Universal expander for sequencing up to eight presets of any module",
