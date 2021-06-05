@@ -466,6 +466,14 @@ struct EightFaceModule : Module {
 		preset = json_integer_value(json_object_get(rootJ, "preset"));
 		presetCount = json_integer_value(json_object_get(rootJ, "presetCount"));
 
+		for (int i = 0; i < NUM_PRESETS; i++) {
+			if (presetSlotUsed[i]) {
+				json_decref(presetSlot[i]);
+				presetSlot[i] = NULL;
+			}
+			presetSlotUsed[i] = false;
+		}
+
 		json_t* presetsJ = json_object_get(rootJ, "presets");
 		json_t* presetJ;
 		size_t presetIndex;
