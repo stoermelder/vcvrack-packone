@@ -92,6 +92,8 @@ Modes for _SEL_ on the contextual menu:
 
 - 8FACE mk2 is designed to apply different presets onto modules, while stoermelder [TRANSIT](./Transit.md) is designed to morph parameter-snapshots. Morphing between presets of modules is not possible because of technical reasons.
 
+- 8FACE mk2 does not support any preset-operations: 8FACE mk2 binds to any module in your patch which makes 8FACE mk2 not "transferable" to other module instances. In contrast, 8FACE (aka mk1) can be re-attached to another module instance as it uses the expander-mechanism in Rack. Thus, 8FACE mk2 cannot be sequenced with 8FACE or another 8FACE mk2.
+
 - Each snapshot can be named with a custom text label. This label is shown while hovering above the snapshot button if parameter tooltips are enabled.
 
 8FACE mk2 was added in v1.9 of PackOne.

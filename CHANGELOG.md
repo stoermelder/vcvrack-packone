@@ -1,4 +1,4 @@
-## 1.x.x (in development)
+## 1.10.x (in development)
 
 - Module [DIRT](./docs/Dirt.md)
     - New module, crosstalk and noise for polyphonic cables
@@ -9,7 +9,7 @@
 - Module [STRIP-BLOCK](./docs/Strip.md)
     - New module, a companion module for STRIP for blocking STRIP's expander-mechanism
 
-## 1.9.0 (in development)
+## 1.9.0
 
 - Modules [8FACE mk2, +8](./docs/EightFaceMk2.md)
     - New modules, evolution of 8FACE and 8FACEx2 (#63 #76 #144 #154 #157 #158 #160 #162)

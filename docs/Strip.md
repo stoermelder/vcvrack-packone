@@ -57,7 +57,7 @@ STRIP was added in v1.0.4 of PackOne.
 
 # stoermelder STRIP-BAY
 
-STRIP-BAY is a companion module for STRIP: It is used to name some "patching-points" like a patch-bay in your strip and keep the cables to the rest of your patch intact while you load different strips. Multiple STRIP-BAY modules can be used in a STRIP and mapped by identical text label.
+STRIP-BAY is a companion module for STRIP: It is used to name some "patching-points" like a patch-bay in your strip and keep the cables to the rest of your patch intact while you load different strips. Multiple STRIP-BAY modules can be used in a STRIP and mapped by identical text labels.
 
 [![STRIP-BAY usage](https://img.youtube.com/vi/xGKoQdN9K60/0.jpg)](https://www.youtube.com/watch?v=xGKoQdN9K60)
 

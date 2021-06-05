@@ -4,6 +4,14 @@ MB is a module for experimental replacement for Rack's module browser, formerly 
 
 ![MB intro](./Mb-intro.png)
 
+## Tips
+
+- Hidden modules can be shown again by hotkey CTRL+Space.
+
+- Hitting the Space-key will toggle the _Favorites_ category.
+
+- Favorites and hidden modules are stored in your local Rack-directory. You can share them or copy them to another computer by MB's export/import function on the context menu.
+
 ### Introduction by Omri Cohen
 
 <a href="https://www.youtube.com/embed/7DSTPIHWOVg?start=1640" target="_blank"><img src="https://img.youtube.com/vi/7DSTPIHWOVg/0.jpg" style="width:100%" /></a>

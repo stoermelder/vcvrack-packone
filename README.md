@@ -23,7 +23,7 @@ If you like my modules consider donating to https://paypal.me/stoermelder. Thank
 - [STRIP-BAY](./docs/Strip.md#stoermelder-strip-bay): a companion module for STRIP for keeping input/output connections while replacing strips
 - [ME](./docs/Me.md): experimental module for "mouse enhacements", provides a screen overlay for parameters changes
 - Also, [MIDI-CAT](./docs/MidiCat.md) has been hugely extended with support for MIDI 14-bit CC
-- Many new features for existing modules, please refer to the [changelog](./CHANGELOG.md)
+- Many new features for existing modules, please refer to the [changelog](./CHANGELOG.md#190)
 
 ![Intro image](./docs/intro-latest.png)
 
