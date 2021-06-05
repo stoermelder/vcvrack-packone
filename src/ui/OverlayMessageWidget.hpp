@@ -90,7 +90,7 @@ struct OverlayMessageWidget : TransparentWidget {
 				p->getOverlayMessage(id, m);
 				if (m.empty()) continue;
 
-				float x, y;
+				float x = 0.f, y = 0.f;
 
 				switch ((HPOS)pluginSettings.overlayHpos) { 
 					case HPOS::CENTER:

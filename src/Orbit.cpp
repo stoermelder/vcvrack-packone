@@ -104,7 +104,7 @@ struct OrbitModule : Module {
 
 			if (trigger[c].process(inputs[INPUT_TRIG].getPolyVoltage(c))) {
 				float spread = inputs[INPUT_SPREAD].getNormalVoltage(10.f) / 10.f * params[PARAM_SPREAD].getValue();
-				float p; // position between 0 and 1, 0.5 is center
+				float p = 0.5f; // position between 0 and 1, 0.5 is center
 				switch (dist) {
 					case DISTRIBUTION::EXTERNAL:
 						p = inputs[INPUT_DIST].getPolyVoltage(c) / 10.f + 0.5f;
