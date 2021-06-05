@@ -33,6 +33,17 @@ struct ViewportCenterSmooth {
 		this->frame = 0;
 	}
 
+	void trigger(Rect rect, float framerate, float transitionTime = 1.f) {
+		// NB: unstable API!
+		Vec target = rect.getCenter();
+		target = target.mult(APP->scene->rackScroll->zoomWidget->zoom);
+		target = target.minus(APP->scene->rackScroll->box.size.mult(0.5f));
+		float zx = std::log2(APP->scene->rackScroll->box.size.x / rect.size.x * 0.9f);
+		float zy = std::log2(APP->scene->rackScroll->box.size.y / rect.size.y * 0.9f);
+		float zoom = std::min(zx, zy);
+		trigger(rect.getCenter(), zoom, framerate, transitionTime);
+	}
+
 	void reset() {
 		frame = framecount = 0;
 	}

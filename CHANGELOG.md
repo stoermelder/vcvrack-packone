@@ -1,3 +1,87 @@
+## 1.9.0
+
+- Modules [8FACE mk2, +8](./docs/EightFaceMk2.md)
+    - New modules, evolution of 8FACE and 8FACEx2 (#63 #76 #144 #154 #157 #158 #160 #162)
+- Module [CV-MAP CTX](./docs/CVMap.md#ctx-expander)
+    - New expander-module for CV-MAP, helper for mapping parameters by context menu (#256)
+- Module [MIDI-CAT CTX](./docs/MidiCat.md#ctx-expander)
+    - New expander-module for MIDI-CAT, helper for mapping parameters by context menu (#232, #250)
+- Module [MIDI-PLUG](./docs/MidiPlug.md)
+    - New module, a virtual MIDI merger and splitter
+    - MIDI "Loopback" driver for routing outgoing MIDI messages back into Rack (enabled on the context menu)
+- Module [ORBIT](./docs/Orbit.md)
+    - New module, a polyphonic stereo field spreader
+- Module [STRIP-BAY](./docs/Strip.md#stoermelder-strip-bay)
+    - New module, a companion module for STRIP for keeping input/output connections while replacing strips
+- Module [ME](./docs/Me.md)
+    - New experimental module for "mouse enhacements", provides a screen overlay for parameters changes
+
+### Fixes and Changes
+
+- Modules [8FACE, 8FACEx2](./docs/EightFace.md)
+    - Load preset in Arm-mode even when the same slot was selected before (#212)
+    - Improved thread-handling for crashes when used with specific modules (#76)
+    - Added an option for auto-loading the last active preset
+    - Added "Off" as SLOT mode (#249)
+    - Fixed broken "Autoload first preset" (#29)
+- Module [CV-MAP](./docs/CVMap.md)
+    - Added context menu sliders for slew and scaling and transforming the input and parameter-range ([manual](./docs/CVMap.md#slew-limiting-and-input-scaling)) (#243)
+    - Added arbitrary channel routings to allow every input channel assigned to any mapping slot ([manual](./docs/CVMap.md#channel-routing))
+    - Added context menu on the input ports for custom labeling the channels ([manual](./docs/CVMap.md#input-labels)) (#256)
+    - Fixed wrong slot behavior when toggling input to 0V (#221)
+- Module [GLUE](./docs/Glue.md)
+    - Added option to consolidate all GLUE modules into the current one ([manual](./docs/Glue.md#consolidate))
+- Module [HIVE](./docs/Hive.md)
+    - Fixed hanging ratchets on missing or stopped clock trigger (#216)
+    - Added new ratcheting modes ("Twos", "Threes", "Power of Two") ([manual](./docs/Maze.md#ratchet))
+- Module [MACRO](./docs/Macro.md)
+    - Added context menu options on mapped parameters of target module for MACRO
+- Module [MAZE](./docs/Maze.md)
+    - Fixed hanging ratchets on missing or stopped clock trigger (#216)
+    - Added new ratcheting modes ("Twos", "Threes", "Power of Two") ([manual](./docs/Maze.md#ratchet))
+- Module [MB](./docs/Mb.md)
+    - Added option to hide the "brands" section of the V1-browser (#223)
+    - Added option to search module descriptions (https://github.com/stoermelder/vcvrack-packtau/pull/9)
+- Module [µMAP](./docs/CVMapMicro.md)
+    - Added context menu options on mapped parameters of target module for µMAP ([manual](./docs/CVMapMicro.md#target-context))
+    - Fixed wrong behavior when toggling input to 0V (#221)
+- Module [MIDI-CAT](./docs/MidiCat.md)
+    - Added support for MIDI 14-bit CC ([manual](./docs/MidiCat.md#14-bit-cc))
+    - Added toggle-modes for MIDI CC mappings ([manual](./docs/MidiCat.md#toggle-cc)) (#225)
+    - Added an overlay showing current parameter changes on the bottom of the screen ([manual](./docs/MidiCat.md#overlay))
+    - Fixed crash when binding modules with more than 128 parameters (#234)
+    - Added option for clearing mapping slots on preset load (#259)
+- Module [MIDI-MON](./docs/MidiMon.md)
+    - Added support for more message types (program change, song select, song pointer)
+    - Added context menu option for clearing the log
+- Module [MIDI-STEP](./docs/MidiStep.md)
+    - Fixed relative modes for Behringer X-Touch (#240)
+    - Fixed duplicate mappings of the same CC (#240)
+- Module [RAW](./docs/Raw.md)
+    - Added basic limiting to prevent rare instabilities (#214)
+- Module [SAIL](./docs/Sail.md)
+    - Added an overlay showing current parameter changes on the bottom of the screen
+    - Block adjustments on switch-parameters to avoid undefined behavior
+- Module [SPIN](./docs/Spin.md)
+    - Improved transition between scrolling and parameter adjustments on hovering (#260)
+- Module [STRIP](./docs/Strip.md)
+    - Added context menu option "Load and replace" to preset-submenu (#215)
+    - Added support for sub-folders in preset-submenu (#230)
+- Module [STROKE](./docs/Stroke.md)
+    - Allow mapping mouse buttons 0/1/2 (left/right/middle) in use with modifiers
+    - Fixed not working mappings caused by Num Lock state (#220)
+    - Fixed not working mappings caused by use of numpad keys (#220)
+    - Added view-commands using smooth transitions (#139)
+    - Added "Add module" command ([manual](./docs/Stroke.md#add-module))
+    - Added "Send hotkey to module" command ([manual](./docs/Stroke.md#module-send-hotkey))
+    - Added scroll-commands ([manual](./docs/Stroke.md#view-scroll)) (#252)
+    - Added tooltips for mapped commands
+- Module [TRANSIT](./docs/Transit.md)
+    - Added "Phase"-mode for CV-input which scans continously through snapshots ([manual](./docs/Transit.md#phase)) (#182)
+    - Added context menu option "Locate and indicate" for bound parameters
+    - Added context menu option for custom text labels
+    - Improved performance of +T expanders
+
 ## 1.8.0
 
 - Module [HIVE](./docs/Hive.md)

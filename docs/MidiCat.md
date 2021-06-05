@@ -1,4 +1,4 @@
-# stoermelder MIDI-CAT and MEM-expander
+# stoermelder MIDI-CAT and expanders MEM and CTX
 
 MIDI-CAT is a module for MIDI-mapping and an evolution of [VCV's MIDI-MAP](https://vcvrack.com/manual/Core.html#midi-map) with several additional features:
 
@@ -57,6 +57,12 @@ MIDI-CAT supports a technique sometimes called "soft-takeover" or "pickup": If t
 
 - **Pickup (jump)**: Same as snap-mode, but the control will loose the parameter when jumping to another value. This mode can be used if your MIDI controller supports switching templates and you don't want your parameters to change when loading a different template.
 
+<a name="toggle-cc"></a>
+- **Toggle**: Every MIDI _continuous control_ message toggles the parameter between its minimum and maximum value (usually 0 and 1 for switches) (added in v1.9.0).
+
+- **Toggle + Value**: Every MIDI _continuous control_ message toggles the parameter between its minimum and the control's value (added in v1.9.0).
+
+
 ![MIDI-CAT module select](./MidiCat-map-cc.png)
 
 ## Note-mapping
@@ -67,7 +73,7 @@ MIDI-CAT supports mapping of MIDI note-messages instead of MIDI CC. There are di
 
 - **Momentary + Velocity**: same as "Momentary", but the MIDI velocity of the note is mapped to the range of the parameter.
 
-- **Toggle**: Every MIDI "note on" message toggles the parameter between its minimum and maximum value (usually 0 and 1 for switches).
+- **Toggle**: Every MIDI _note on_ message toggles the parameter between its minimum and maximum value (usually 0 and 1 for switches).
 
 <a name="toggle-velocity"></a>
 - **Toggle + Velocity**: Every MIDI "note on" message toggles the parameter between its minimum and the note's velocity value (added in v1.8.0).
@@ -79,7 +85,7 @@ Some controllers with push-buttons don't handle "note off" messages the way the 
 ## Slew-limiting and input-scaling
 
 <a name="slew-limiting"></a>
-Added in v1.8.0: Each mapping slot has its own setting for slew-limiting of the input value which applies an exponential filter. Small values for _Slew_ are smoothing incoming MIDI values which are quite "steppy" as MIDI supports only values 0-127 for CC and note velocity (14-bit MIDI is not supported at the moment). Larger values for _Slew_ give an overall steady movement of the mapped parameter on fast controller changes.  
+Added in v1.8.0: Each mapping slot has its own setting for slew-limiting of the input value which applies an exponential filter. Small values for _Slew_ are smoothing incoming MIDI values which are quite "steppy" as MIDI supports only values 0-127 for CC and note velocity. Larger values for _Slew_ give an overall steady movement of the mapped parameter on fast controller changes.  
 
 <a name="precision"></a>
 As slew-limiting can be a CPU-intensive operation when used on many parameters MIDI-CAT has an option to set the update frequency and thus its precision. This option can be found on the context menu and allows updating parameters on every audio sample which will cause the highest CPU usage but is rarely needed. Lower update frequencies also lower the CPU usage accordingly.
@@ -90,6 +96,14 @@ Added in v1.8.0: Each mapping slot has also two sliders (_Low_ and _High_) for s
 Please note that slew-limiting and input-scaling also works fine with note-mapping.
 
 ![MIDI-CAT input-scaling](./MidiCat-input-scaling.png)
+
+## 14-bit CC
+
+MIDI 14-bit CC pairs are supported since v1.9.0: _continuous control_ messages 0-31 are combined pairwise with 32-63 for increasing the resolution of the value range from 0-127 to 0-16383. Of course the MIDI controller must support 14-bit CC as both messages must be always sent sequentially to make it work. 14-bit support can be enabled in each mapping slot assigned to MIDI CC 0-32.
+
+![MIDI-CAT 14-bit CC](./MidiCat-14bit.png)
+
+The increased value resolution is displayed on the context menu and all available options like scaling and slew work can be used like regular CCs.
 
 ## MIDI-feedback
 
@@ -118,12 +132,19 @@ For some MIDI controllers which don't support different simultaneous "layers" bu
 
 - An active mapping slot can be skipped by hitting the SPACE-key while hovering the mouse over MIDI-CAT (since v1.8.0).
 
+- Settings of a mapping slot are copied from the previous slot: If you set up the first mapping slot and map further mapping slots afterwards, these settings are copied over. Useful for settings like "Pickup" or "14-bit CC".
+
 <a name="target-context"></a>
-- After a parameter has been mapped the parameter's context menu is extended with some addtional menu items allowing quick MIDI learning and centering it's mapping MIDI-CAT module on the center of the screen (since v1.8.0).
+- After a parameter has been mapped the parameter's context menu is extended with some addtional menu items allowing quick MIDI learning and centering it's mapping MIDI-CAT module on the center of the screen (since v1.8.0). There are even further options with the [CTX-expander](MidiCat.md#ctx-expander).
 
 ![MIDI-CAT parameter's context menu](./MidiCat-target.png)
 
-MIDI-CAT was added in v1.1.0 of PackOne. 
+<a name="overlay"></a>
+- MIDI-CAT uses an overlay window displaying parameter changes on the bottom of the screen (since v1.9.0). This overlay is enabled by default and can be disabled in the context menu. Some adjustments for the appearance of the overlay can be made with the [stoermelder ME](./Me.md) module.
+
+![MIDI-CAT overlay](./MidiCat-overlay.gif)
+
+MIDI-CAT was added in v1.1 of PackOne. 
 
 # MEM-expander
 
@@ -157,4 +178,16 @@ Added in v1.8.0: MEM has two buttons labeled _Prev_ and _Next_ which scan your p
 
 - All push buttons on MEM can be mapped using any mapping module if you like to activate _Apply mapping_ by MIDI or some other command.
 
-MEM for MIDI-CAT was added in v1.7.0 of PackOne.
+MEM for MIDI-CAT was added in v1.7 of PackOne.
+
+# CTX-expander
+
+CTX is a second companion module for MIDI-CAT: The expander allows you to name each instance of MIDI-CAT in your patch. This name can be addressed in every parameters' context menu for activating MIDI mapping or re-mapping parameters to an existing MIDI control or note mapping in another mapping slot of MIDI-CAT.
+
+CTX for MIDI-CAT must be placed on the right side of MIDI-CAT and can be used the same time as the MEM-expander. The display can hold up to 8 characters for naming MIDI-CAT.
+
+![CTX workflow](./MidiCat-Ctx.gif)
+
+Additionally MIDI-CAT CTX provides a button for activating mapping on the first empty mapping slot in MIDI-CAT. This button can also mapped to a MIDI controller which allows start MIDI mapping by a MIDI message.
+
+CTX for MIDI-CAT was added in v1.9 of PackOne.

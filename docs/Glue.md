@@ -12,6 +12,9 @@ Labels can be placed after "arming" the labeling-mode with the button *LABEL* (t
 
 While in *unlocked mode* you can use the hotkeys CTRL+A to place a label at the current position of the mouse pointer and CTRL+X to remove a label while hovering over it.
 
+<a name="consolidate"></a>
+Since v1.9.0 there is a context menu option to consolidate the labels: If the current patch contains multiple GLUE-modules all except the current one will be removed and the labels are merged into one GLUE-module. This operation can be undo if needed.
+
 ## Opacity controls
 
 There are global controls for opacity available which affect all labels of a GLUE instance: *HIDE* hides all labels temporarily, this switch can also be MIDI-mapped. Two buttons on *OPACITY* increase or decrease the opacity of all labels by 5%.
@@ -42,7 +45,7 @@ The context menu option "Duplicate" arms the labeling mode. Click on any module 
 
 ![GLUE label appearance](./Glue-appear.png)
 
-## Bonus tips
+## Tips
 
 * Labels get deleted when a module is removed from Rack.
 * When undo-ing a delete operation of a module all labels will also reappear.
@@ -52,4 +55,4 @@ The context menu option "Duplicate" arms the labeling mode. Click on any module 
 * Labels are drawn above all module components but below cables.
 * GLUE supports labels within a stoermelder STRIP-file (since v1.7.0). Please note that GLUE must be included in the strip.
 
-GLUE was added in v1.6.0 of PackOne.
+GLUE was added in v1.6 of PackOne.

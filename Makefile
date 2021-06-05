@@ -1,6 +1,6 @@
 RACK_DIR ?= ../..
 
-SOURCES += $(wildcard src/*.cpp) $(wildcard src/mb/*.cpp)
+SOURCES += $(wildcard src/*.cpp) $(wildcard src/mb/*.cpp) $(wildcard src/drivers/*.cpp)
 
 DISTRIBUTABLES += $(wildcard LICENSE*) res presets
 

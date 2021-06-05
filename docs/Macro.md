@@ -16,12 +16,12 @@ Each mapping slot and CV output has also two sliders (_Low_ and _High_) for scal
 
 ![MACRO context](./Macro-scaling.gif)
 
-## IN-port
+## _IN_-port
 
-The IN-port is optional in use and MACRO can be used leaving it unconnected. In this case the input value is taken from the big knob's current position. If voltage is applied to IN the knob acts as an attenuator, also the voltage range can be switch from unipolar (0..10V) to bipolar (-5..5V) on the context menu.
+The _IN_-port is optional in use and MACRO can be used leaving it unconnected. In this case the input value is taken from the big knob's current position. If voltage is applied to IN the knob acts as an attenuator, also the voltage range can be switch from unipolar (0..10V) to bipolar (-5..5V) on the context menu.
 
 ## Additional features
 
 Mapping parameters can result in quite high CPU usage. As controlling parameters at audio rate is not needed in most of the cases you can switch four different performance settings using _Precision_ option on the context menu.
 
-MACRO was added in v1.8.0 of PackOne.
+MACRO was added in v1.8 of PackOne.

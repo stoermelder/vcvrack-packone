@@ -2,11 +2,13 @@
 
 8FACE is a module for storing, recalling and sequencing up to eight different presets of any module in Rack. It uses Rack's expander mechanism to attach to any module to its side and uses buttons and LEDs to manage each of its preset-slot. 8FACEx2 offers sixteen preset slots.
 
-[Omri Cohen](https://omricohencomposer.bandcamp.com/) did an amazing [tutorial video](https://www.youtube.com/watch?v=S2j6W2nvuC8) how to use this module.
-
-**Disclaimer: Loading presets of modules was not designed to be controlled by CV or modulated at audio rate. Please do not contact the developers of Rack or any modules when unexpected behaviour occurs or high CPU usage is noticeable.**
+**Disclaimer: Loading presets of modules was not designed to be controlled by CV or modulated at audio rate. Please do not contact the developers of Rack or any modules when unexpected behaviour (i.e. crashes) occurs or high CPU usage is noticeable.**
 
 ![8FACE Intro](./EightFace-intro.gif)
+
+### Amazing tutorial video from [Omri Cohen](https://omricohencomposer.bandcamp.com/)
+
+<a href="https://www.youtube.com/watch?v=S2j6W2nvuC8" target="_blank"><img src="https://img.youtube.com/vi/S2j6W2nvuC8/0.jpg" style="width:100%" /></a>
 
 ## Usage
 
@@ -22,7 +24,7 @@ Read-mode is enabled by default and can be selected by the switch on the bottom 
 
 ## SLOT-port
 
-The fun begins when you use the port labelled "SLOT" for selecting preset slots by CV. Although there are eight slots available it is possible to use less slots for sequencing: You can adjust the number of useable slots by long-pressing a slot-button while in read-mode. The LED turns off completely for slots that are currently disabled.
+The fun begins when you use the port labelled "SLOT" for selecting preset slots by CV. Although there are eight slots available it is possible to use less slots for sequencing: You can adjust the number of useable slots (i.e. sequence length) by long-pressing a slot-button while in read-mode. The LED turns off completely for slots that are currently disabled.
 
 ![8FACE sequencing](./EightFace-context.png)
 
@@ -55,6 +57,7 @@ There are different modes for SLOT-port available, configured by context menu op
 
 ![8FACE arm mode](./EightFace-clock.gif)
 
-With the option "Autoload first preset" on the context menu you can autoload the first preset slot when a preset of 8FACE itself is loaded. This is useful when changing presets of 8FACE with another instance of 8FACE to aquire even more preset slots.
+With the option "Autoload first preset" on the context menu you can autoload the first preset slot when a preset of 8FACE itself is loaded. This is useful when changing presets of 8FACE with another instance of 8FACE to aquire even more preset slots. The option "Autoload last active preset" works the same way.
 
-8FACE was added in v1.0.5 of PackOne. 8FACEx2 was added in v1.3.0 of PackOne.
+8FACE was added in v1.0.5 of PackOne.  
+8FACEx2 was added in v1.3 of PackOne.

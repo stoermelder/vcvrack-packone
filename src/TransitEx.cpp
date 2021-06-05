@@ -48,6 +48,7 @@ struct TransitExModule : TransitBase<NUM_PRESETS> {
 	void onReset() override { 
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			BASE::presetSlotUsed[i] = false;
+			BASE::textLabel[i] = "";
 			BASE::preset[i].clear();
 			BASE::lights[LIGHT_PRESET + (i * 3) + 0].setBrightness(0.f);
 			BASE::lights[LIGHT_PRESET + (i * 3) + 1].setBrightness(0.f);
@@ -59,15 +60,15 @@ struct TransitExModule : TransitBase<NUM_PRESETS> {
 		return &BASE::slot[i];
 	}
 
-	void transitSlotCmd(SLOT_CMD cmd, int i) override {
+	int transitSlotCmd(SLOT_CMD cmd, int i) override {
 		// Retrieve module from scene as this is called from the GUI thread
 		ModuleWidget* mw =  APP->scene->rack->getModule(BASE::ctrlModuleId);
-		if (!mw) return;
+		if (!mw) return -1;
 		Module* m = mw->module;
-		if (!m) return;
+		if (!m) return -1;
 		TransitBase<NUM_PRESETS>* tm = dynamic_cast<TransitBase<NUM_PRESETS>*>(m);
-		if (!tm) return;
-		tm->transitSlotCmd(cmd, i + BASE::ctrlOffset * NUM_PRESETS);
+		if (!tm) return -1;
+		return tm->transitSlotCmd(cmd, i + BASE::ctrlOffset * NUM_PRESETS);
 	}
 
 	void dataFromJson(json_t* rootJ) override {

@@ -32,27 +32,35 @@
 namespace StoermelderPackOne {
 namespace Hive {
 
-enum GRIDSTATE {
+enum class GRIDSTATE {
 	OFF = 0,
 	ON = 1,
 	RANDOM = 2
 };
 
-enum TURNMODE {
+enum class TURNMODE {
 	SIXTY = 0,				///
 	NINETY = 1,				/// Turn mode 90 alternates between 60 and 120
 	ONETWENTY = 2,			///
 	ONEEIGHTY = 3			///
 };
 
-enum OUTMODE {
+enum class OUTMODE {
 	BI_5V = 0,
 	UNI_5V = 1,
 	UNI_3V = 2,
 	UNI_1V = 3
 };
 
-enum MODULESTATE {
+enum class RATCHETMODE {
+	OFF = 0,
+	DEFAULT = 1,
+	MULT_TWO = 2,
+	MULT_THREE = 3,
+	POWER_TWO = 4
+};
+
+enum class MODULESTATE {
 	GRID = 0,
 	EDIT = 1
 };
@@ -90,7 +98,7 @@ struct HiveCursor : HexCell {
 	TURNMODE turnMode;
 	TURNMODE ninetyState;				/// Used for alternating turns in 90 degree turnmode
 	OUTMODE outMode;
-	bool ratchetingEnabled;
+	RATCHETMODE ratchetingEnabled;
 	float ratchetingProb;
 };
 
@@ -188,7 +196,7 @@ struct HiveModule : Module {
             grid.cursor[i].ninetyState = TURNMODE::SIXTY;														/// Turnmode 90 starts with a small turn first
 			grid.cursor[i].outMode = OUTMODE::UNI_3V;
 			resetTimer[i].reset();
-			grid.cursor[i].ratchetingEnabled = true;
+			grid.cursor[i].ratchetingEnabled = RATCHETMODE::DEFAULT;
 			ratchetingSetProb(i);
 		}
 		normalizePorts = true;
@@ -231,12 +239,22 @@ struct HiveModule : Module {
 						doPulse = true;
 						break;
 					case GRIDSTATE::RANDOM:
-						if (grid.cursor[i].ratchetingEnabled) {
-							if (geoDist[i])
-								multiplier[i].trigger((*geoDist[i])(randGen));
-						}
-						else {
-							doPulse = random::uniform() >= 0.5f;
+						switch (grid.cursor[i].ratchetingEnabled) {
+							case RATCHETMODE::OFF:
+								doPulse = random::uniform() >= 0.5f;
+								break;
+							case RATCHETMODE::DEFAULT:
+								if (geoDist[i]) multiplier[i].trigger((*geoDist[i])(randGen));
+								break;
+							case RATCHETMODE::MULT_TWO:
+								if (geoDist[i]) multiplier[i].trigger(2 * ((*geoDist[i])(randGen) + 1));
+								break;
+							case RATCHETMODE::MULT_THREE:
+								if (geoDist[i]) multiplier[i].trigger(3 * ((*geoDist[i])(randGen) + 1));
+								break;
+							case RATCHETMODE::POWER_TWO:
+								if (geoDist[i]) multiplier[i].trigger(std::pow(2, (*geoDist[i])(randGen)));
+								break;
 						}
 						break;
 				}
@@ -244,23 +262,23 @@ struct HiveModule : Module {
 
 			if (processTurnTrigger(i)) {
 				switch (grid.cursor[i].turnMode) {
-					case SIXTY:
+					case TURNMODE::SIXTY:
 						grid.cursor[i].dir = (DIRECTION)((grid.cursor[i].dir + 2) % 12);
 						break;
-					case NINETY:
-						if (grid.cursor[i].ninetyState == SIXTY) {
+					case TURNMODE::NINETY:
+						if (grid.cursor[i].ninetyState == TURNMODE::SIXTY) {
 							grid.cursor[i].dir = (DIRECTION)((grid.cursor[i].dir + 2) % 12);
-							grid.cursor[i].ninetyState = ONETWENTY;
+							grid.cursor[i].ninetyState = TURNMODE::ONETWENTY;
 						}
 						else {
 							grid.cursor[i].dir = (DIRECTION)((grid.cursor[i].dir + 4) % 12);
-							grid.cursor[i].ninetyState = SIXTY;
+							grid.cursor[i].ninetyState = TURNMODE::SIXTY;
 						}
 						break;
-					case ONETWENTY:
+					case TURNMODE::ONETWENTY:
 						grid.cursor[i].dir = (DIRECTION)((grid.cursor[i].dir + 4) % 12);
 						break;
-					case ONEEIGHTY:
+					case TURNMODE::ONEEIGHTY:
 						grid.cursor[i].dir = (DIRECTION)((grid.cursor[i].dir + 6) % 12);
 						break;
 				}
@@ -418,7 +436,7 @@ struct HiveModule : Module {
 	}
 
 	void cellNextState(HiveCell *cell) {
-		cell->state = (GRIDSTATE)((cell->state + 1) % 3);
+		cell->state = (GRIDSTATE)(((int)cell->state + 1) % 3);
 		if (cell->state == GRIDSTATE::ON) cell->cv = random::uniform();
 		grid.setCell(*cell);
 		gridDirty = true;
@@ -439,7 +457,7 @@ struct HiveModule : Module {
 		json_t* gridJ = json_array();
 		for (int q = 0; q < grid.arraySize; q++) {
 			for (int r = 0; r < grid.arraySize; r++) {
-				json_array_append_new(gridJ, json_integer(grid.cellMap[q][r].state));
+				json_array_append_new(gridJ, json_integer((int)grid.cellMap[q][r].state));
 			}
 		}
 		json_object_set_new(rootJ, "grid", gridJ);
@@ -471,11 +489,11 @@ struct HiveModule : Module {
 			json_object_set_new(portJ, "qPos", json_integer(grid.cursor[i].pos.q));
 			json_object_set_new(portJ, "rPos", json_integer(grid.cursor[i].pos.r));
 			json_object_set_new(portJ, "dir", json_integer(grid.cursor[i].dir));
-			json_object_set_new(portJ, "turnMode", json_integer(grid.cursor[i].turnMode));
-			json_object_set_new(portJ, "ninetyState", json_integer(grid.cursor[i].ninetyState));
-			json_object_set_new(portJ, "outMode", json_integer(grid.cursor[i].outMode));
+			json_object_set_new(portJ, "turnMode", json_integer((int)grid.cursor[i].turnMode));
+			json_object_set_new(portJ, "ninetyState", json_integer((int)grid.cursor[i].ninetyState));
+			json_object_set_new(portJ, "outMode", json_integer((int)grid.cursor[i].outMode));
 			json_object_set_new(portJ, "ratchetingProb", json_real(grid.cursor[i].ratchetingProb));
-			json_object_set_new(portJ, "ratchetingEnabled", json_boolean(grid.cursor[i].ratchetingEnabled));
+			json_object_set_new(portJ, "ratchetingEnabled", json_integer((int)grid.cursor[i].ratchetingEnabled));
 			json_array_append_new(portsJ, portJ);
 		}
 		json_object_set_new(rootJ, "ports", portsJ);
@@ -526,7 +544,7 @@ struct HiveModule : Module {
 			grid.cursor[portIndex].turnMode = (TURNMODE)json_integer_value(json_object_get(portJ, "turnMode"));
 			grid.cursor[portIndex].ninetyState = (TURNMODE)json_integer_value(json_object_get(portJ, "ninetyState"));
 			grid.cursor[portIndex].outMode = (OUTMODE)json_integer_value(json_object_get(portJ, "outMode"));
-			grid.cursor[portIndex].ratchetingEnabled = json_boolean_value(json_object_get(portJ, "ratchetingEnabled"));
+			grid.cursor[portIndex].ratchetingEnabled = (RATCHETMODE)json_integer_value(json_object_get(portJ, "ratchetingEnabled"));
 
 			json_t* ratchetingProbJ = json_object_get(portJ, "ratchetingProb");
 			if (ratchetingProbJ) {
@@ -544,7 +562,7 @@ struct HiveModule : Module {
 		json_t* ratchetingProbJ = json_object_get(rootJ, "ratchetingProb");
 		if (ratchetingEnabledJ) {
 			for (int i = 0; i < NUM_PORTS; i++) {
-				grid.cursor[i].ratchetingEnabled = json_boolean_value(ratchetingEnabledJ);
+				grid.cursor[i].ratchetingEnabled = (RATCHETMODE)json_integer_value(ratchetingEnabledJ);
 				ratchetingSetProb(i, json_real_value(ratchetingProbJ));
 			}
 		}
@@ -1041,17 +1059,33 @@ struct HiveStartPosEditWidget : LightWidget, HiveDrawHelper<MODULE> {
 		menu->addChild(construct<OutModeItem>(&MenuItem::text, "0..3V", &OutModeItem::module, module, &OutModeItem::id, selectedId, &OutModeItem::outMode, OUTMODE::UNI_3V));
 		menu->addChild(construct<OutModeItem>(&MenuItem::text, "0..1V", &OutModeItem::module, module, &OutModeItem::id, selectedId, &OutModeItem::outMode, OUTMODE::UNI_1V));
 
-		struct RatchetingMenuItem : MenuItem {
-			MODULE* module;
-			int id;
-
-			void onAction(const event::Action& e) override {
-				module->grid.cursor[id].ratchetingEnabled ^= true;
+		struct RatchetingModeMenuItem : MenuItem {
+			RatchetingModeMenuItem() {
+				rightText = RIGHT_ARROW;
 			}
+			struct RatchetingModeItem : MenuItem {
+				MODULE* module;
+				int id;
+				RATCHETMODE mode;
+				void onAction(const event::Action& e) override {
+					module->grid.cursor[id].ratchetingEnabled = mode;
+				}
+				void step() override {
+					rightText = CHECKMARK(module->grid.cursor[id].ratchetingEnabled == mode);
+					MenuItem::step();
+				}
+			};
 
-			void step() override {
-				rightText = module->grid.cursor[id].ratchetingEnabled ? "✔" : "";
-				MenuItem::step();
+			int id;
+			MODULE* module;
+			Menu* createChildMenu() override {
+				Menu* menu = new Menu;
+				menu->addChild(construct<RatchetingModeItem>(&MenuItem::text, "Off", &RatchetingModeItem::module, module, &RatchetingModeItem::id, id, &RatchetingModeItem::mode, RATCHETMODE::OFF));
+				menu->addChild(construct<RatchetingModeItem>(&MenuItem::text, "Default", &RatchetingModeItem::module, module, &RatchetingModeItem::id, id, &RatchetingModeItem::mode, RATCHETMODE::DEFAULT));
+				menu->addChild(construct<RatchetingModeItem>(&MenuItem::text, "Twos (2, 4, 6, 8...)", &RatchetingModeItem::module, module, &RatchetingModeItem::id, id, &RatchetingModeItem::mode, RATCHETMODE::MULT_TWO));
+				menu->addChild(construct<RatchetingModeItem>(&MenuItem::text, "Threes (3, 6, 9, 12...)", &RatchetingModeItem::module, module, &RatchetingModeItem::id, id, &RatchetingModeItem::mode, RATCHETMODE::MULT_THREE));
+				menu->addChild(construct<RatchetingModeItem>(&MenuItem::text, "Power of 2 (1, 2, 4, 8, 16...)", &RatchetingModeItem::module, module, &RatchetingModeItem::id, id, &RatchetingModeItem::mode, RATCHETMODE::POWER_TWO));
+				return menu;
 			}
 		};
 
@@ -1080,6 +1114,8 @@ struct HiveStartPosEditWidget : LightWidget, HiveDrawHelper<MODULE> {
 			MODULE* module;
 			Menu* createChildMenu() override {
 				Menu* menu = new Menu;
+				menu->addChild(construct<RatchetingProbItem>(&MenuItem::text, "30%", &RatchetingProbItem::module, module, &RatchetingProbItem::id, id, &RatchetingProbItem::ratchetingProb, 0.7f));
+				menu->addChild(construct<RatchetingProbItem>(&MenuItem::text, "40%", &RatchetingProbItem::module, module, &RatchetingProbItem::id, id, &RatchetingProbItem::ratchetingProb, 0.6f));
 				menu->addChild(construct<RatchetingProbItem>(&MenuItem::text, "50%", &RatchetingProbItem::module, module, &RatchetingProbItem::id, id, &RatchetingProbItem::ratchetingProb, 0.5f));
 				menu->addChild(construct<RatchetingProbItem>(&MenuItem::text, "60%", &RatchetingProbItem::module, module, &RatchetingProbItem::id, id, &RatchetingProbItem::ratchetingProb, 0.4f));
 				menu->addChild(construct<RatchetingProbItem>(&MenuItem::text, "65%", &RatchetingProbItem::module, module, &RatchetingProbItem::id, id, &RatchetingProbItem::ratchetingProb, 0.35f));
@@ -1091,7 +1127,7 @@ struct HiveStartPosEditWidget : LightWidget, HiveDrawHelper<MODULE> {
 		};
 
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<RatchetingMenuItem>(&MenuItem::text, "Ratcheting", &RatchetingMenuItem::module, module, &RatchetingMenuItem::id, selectedId));
+		menu->addChild(construct<RatchetingModeMenuItem>(&MenuItem::text, "Ratcheting", &RatchetingModeMenuItem::module, module, &RatchetingModeMenuItem::id, selectedId));
 		menu->addChild(construct<RatchetingProbMenuItem>(&MenuItem::text, "Ratcheting probability", &RatchetingProbMenuItem::module, module, &RatchetingProbMenuItem::id, selectedId));
 	}
 

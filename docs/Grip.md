@@ -11,4 +11,4 @@ One instance of GRIP can lock up to 32 parameters.
 
 GRIP supports locking parameters within a stoermelder STRIP-file (added in v1.7.0). Please note that GRIP must be included in the strip.
 
-GRIP was added in v1.6.0 of PackOne.
+GRIP was added in v1.6 of PackOne.

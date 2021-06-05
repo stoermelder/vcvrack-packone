@@ -1,0 +1,461 @@
+{
+  "stripVersion": 1,
+  "rightModules": [],
+  "rightWidth": 0.0,
+  "leftModules": [
+    {
+      "id": 39,
+      "plugin": "Stoermelder-P1",
+      "version": "1.8.f4128d0",
+      "model": "StripBay4",
+      "params": [],
+      "leftModuleId": 50,
+      "rightModuleId": 17,
+      "data": {
+        "panelTheme": 1,
+        "conId": "OUT"
+      }
+    },
+    {
+      "id": 50,
+      "plugin": "Bogaudio",
+      "version": "1.1.37",
+      "model": "Bogaudio-DGate",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0480000041
+        },
+        {
+          "id": 2,
+          "value": 1.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        }
+      ],
+      "leftModuleId": 53,
+      "rightModuleId": 39,
+      "data": {
+        "triggerOnLoad": true,
+        "shouldTriggerOnLoad": true
+      }
+    },
+    {
+      "id": 53,
+      "plugin": "Bogaudio",
+      "version": "1.1.37",
+      "model": "Bogaudio-Pressor",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.217500061
+        },
+        {
+          "id": 1,
+          "value": 1.0
+        },
+        {
+          "id": 2,
+          "value": 0.26849997
+        },
+        {
+          "id": 3,
+          "value": 0.385500014
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        },
+        {
+          "id": 6,
+          "value": 1.0
+        },
+        {
+          "id": 7,
+          "value": 1.0
+        },
+        {
+          "id": 8,
+          "value": 1.0
+        },
+        {
+          "id": 9,
+          "value": 1.0
+        }
+      ],
+      "leftModuleId": 54,
+      "rightModuleId": 50,
+      "data": {
+        "threshold_range": 1.0
+      }
+    },
+    {
+      "id": 54,
+      "plugin": "AudibleInstruments",
+      "version": "1.5.0",
+      "model": "Ripples",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.223500028
+        },
+        {
+          "id": 1,
+          "value": 9.16031742
+        },
+        {
+          "id": 2,
+          "value": 0.330000043
+        }
+      ],
+      "leftModuleId": 49,
+      "rightModuleId": 53
+    },
+    {
+      "id": 49,
+      "plugin": "squinkylabs-plug1",
+      "version": "1.0.17",
+      "model": "squinkylabs-super",
+      "params": [
+        {
+          "id": 0,
+          "value": -1.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        },
+        {
+          "id": 5,
+          "value": -1.13000011
+        },
+        {
+          "id": 6,
+          "value": -0.305000007
+        },
+        {
+          "id": 7,
+          "value": 0.0
+        },
+        {
+          "id": 8,
+          "value": 0.0
+        },
+        {
+          "id": 9,
+          "value": 0.0
+        }
+      ],
+      "leftModuleId": 44,
+      "rightModuleId": 54
+    },
+    {
+      "id": 44,
+      "plugin": "Bogaudio",
+      "version": "1.1.37",
+      "model": "Bogaudio-Reftone",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 3.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        }
+      ],
+      "leftModuleId": 57,
+      "rightModuleId": 49,
+      "data": {}
+    },
+    {
+      "id": 57,
+      "plugin": "Circlefade",
+      "version": "1.0.1",
+      "model": "Delay",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.485000014
+        },
+        {
+          "id": 1,
+          "value": 0.381000012
+        },
+        {
+          "id": 2,
+          "value": 0.432000041
+        }
+      ],
+      "leftModuleId": 48,
+      "rightModuleId": 44
+    },
+    {
+      "id": 48,
+      "plugin": "squinkylabs-plug1",
+      "version": "1.0.17",
+      "model": "squinkylabs-wvco",
+      "params": [
+        {
+          "id": 0,
+          "value": 3.0
+        },
+        {
+          "id": 1,
+          "value": 2.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        },
+        {
+          "id": 5,
+          "value": 64.3500137
+        },
+        {
+          "id": 6,
+          "value": 2.0
+        },
+        {
+          "id": 7,
+          "value": 26.8500023
+        },
+        {
+          "id": 8,
+          "value": 59.7999992
+        },
+        {
+          "id": 9,
+          "value": 4.6500001
+        },
+        {
+          "id": 10,
+          "value": 47.2500153
+        },
+        {
+          "id": 11,
+          "value": 100.0
+        },
+        {
+          "id": 12,
+          "value": 29.7500019
+        },
+        {
+          "id": 13,
+          "value": 1.0
+        },
+        {
+          "id": 14,
+          "value": 0.0
+        },
+        {
+          "id": 15,
+          "value": 1.0
+        },
+        {
+          "id": 16,
+          "value": 0.0
+        },
+        {
+          "id": 17,
+          "value": 0.0
+        },
+        {
+          "id": 18,
+          "value": 0.0
+        },
+        {
+          "id": 19,
+          "value": 1.0
+        }
+      ],
+      "leftModuleId": 46,
+      "rightModuleId": 57
+    },
+    {
+      "id": 46,
+      "plugin": "Bogaudio",
+      "version": "1.1.37",
+      "model": "Bogaudio-DGate",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.115230046
+        },
+        {
+          "id": 2,
+          "value": 1.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        }
+      ],
+      "leftModuleId": 47,
+      "rightModuleId": 48,
+      "data": {
+        "triggerOnLoad": true,
+        "shouldTriggerOnLoad": false
+      }
+    },
+    {
+      "id": 47,
+      "plugin": "Stoermelder-P1",
+      "version": "1.8.f4128d0",
+      "model": "StripBay4",
+      "params": [],
+      "rightModuleId": 46,
+      "data": {
+        "panelTheme": 1,
+        "conId": "CV"
+      }
+    }
+  ],
+  "leftWidth": 1050.0,
+  "cables": [
+    {
+      "outputModuleId": 50,
+      "outputId": 0,
+      "inputModuleId": 53,
+      "inputId": 1,
+      "color": "#c91847"
+    },
+    {
+      "outputModuleId": 46,
+      "outputId": 0,
+      "inputModuleId": 48,
+      "inputId": 3,
+      "color": "#c91847"
+    },
+    {
+      "outputModuleId": 47,
+      "outputId": 0,
+      "inputModuleId": 48,
+      "inputId": 0,
+      "color": "#c91847"
+    },
+    {
+      "outputModuleId": 47,
+      "outputId": 1,
+      "inputModuleId": 46,
+      "inputId": 0,
+      "color": "#0c8e15"
+    },
+    {
+      "outputModuleId": 47,
+      "outputId": 2,
+      "inputModuleId": 49,
+      "inputId": 1,
+      "color": "#0986ad"
+    },
+    {
+      "outputModuleId": 47,
+      "outputId": 2,
+      "inputModuleId": 50,
+      "inputId": 0,
+      "color": "#0c8e15"
+    },
+    {
+      "outputModuleId": 47,
+      "outputId": 3,
+      "inputModuleId": 49,
+      "inputId": 3,
+      "color": "#0c8e15"
+    },
+    {
+      "outputModuleId": 47,
+      "outputId": 3,
+      "inputModuleId": 54,
+      "inputId": 2,
+      "color": "#c91847"
+    },
+    {
+      "outputModuleId": 47,
+      "outputId": 3,
+      "inputModuleId": 48,
+      "inputId": 7,
+      "color": "#c91847"
+    },
+    {
+      "outputModuleId": 44,
+      "outputId": 0,
+      "inputModuleId": 49,
+      "inputId": 0,
+      "color": "#c91847"
+    },
+    {
+      "outputModuleId": 53,
+      "outputId": 1,
+      "inputModuleId": 39,
+      "inputId": 0,
+      "color": "#0986ad"
+    },
+    {
+      "outputModuleId": 49,
+      "outputId": 1,
+      "inputModuleId": 54,
+      "inputId": 3,
+      "color": "#0986ad"
+    },
+    {
+      "outputModuleId": 48,
+      "outputId": 0,
+      "inputModuleId": 57,
+      "inputId": 1,
+      "color": "#0986ad"
+    },
+    {
+      "outputModuleId": 57,
+      "outputId": 1,
+      "inputModuleId": 39,
+      "inputId": 1,
+      "color": "#c9b70e"
+    },
+    {
+      "outputModuleId": 54,
+      "outputId": 2,
+      "inputModuleId": 53,
+      "inputId": 0,
+      "color": "#c9b70e"
+    }
+  ],
+  "version": "1.1.6"
+}

@@ -12,4 +12,4 @@ The modules can be used to adjust the number of active channels within a polypho
 
 ![AFFIX channels](./Affix-channels.png)
 
-AFFIX and µAFFIX were added in v1.6.0 of PackOne.
+AFFIX and µAFFIX were added in v1.6 of PackOne.

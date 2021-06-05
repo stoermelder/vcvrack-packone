@@ -143,6 +143,8 @@ void modelUsageReset() {
 BrowserOverlay::BrowserOverlay() {
 	v1::modelBoxZoom = pluginSettings.mbV1zoom;
 	v1::modelBoxSort = pluginSettings.mbV1sort;
+	v1::hideBrands = pluginSettings.mbV1hideBrands;
+	v1::searchDescriptions = pluginSettings.mbV1searchDescriptions;
 	moduleBrowserFromJson(pluginSettings.mbModelsJ);
 
 	mbWidgetBackup = APP->scene->moduleBrowser;
@@ -160,13 +162,18 @@ BrowserOverlay::BrowserOverlay() {
 }
 
 BrowserOverlay::~BrowserOverlay() {
-	APP->scene->moduleBrowser = mbWidgetBackup;
-	APP->scene->addChild(mbWidgetBackup);
+	// Undo only when no other module messed with the browser
+	if (APP->scene->moduleBrowser == this) {
+		APP->scene->moduleBrowser = mbWidgetBackup;
+		APP->scene->addChild(mbWidgetBackup);
 
-	APP->scene->removeChild(this);
+		APP->scene->removeChild(this);
+	}
 
 	pluginSettings.mbV1zoom = v1::modelBoxZoom;
 	pluginSettings.mbV1sort = v1::modelBoxSort;
+	pluginSettings.mbV1hideBrands = v1::hideBrands;
+	pluginSettings.mbV1searchDescriptions = v1::searchDescriptions;
 	json_decref(pluginSettings.mbModelsJ);
 	pluginSettings.mbModelsJ = moduleBrowserToJson();
 	
@@ -283,6 +290,13 @@ struct MbWidget : ModuleWidget {
 	void appendContextMenu(Menu* menu) override {
 		MbModule* module = dynamic_cast<MbModule*>(this->module);
 
+		struct ManualItem : MenuItem {
+			void onAction(const event::Action& e) override {
+				std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Mb.md");
+				t.detach();
+			}
+		};
+
 		struct ModeV06Item : MenuItem {
 			MbModule* module;
 			void onAction(const event::Action& e) override {
@@ -304,9 +318,31 @@ struct MbWidget : ModuleWidget {
 				MenuItem::step();
 			}
 
+			struct HideBrandsItem : MenuItem {
+				void onAction(const event::Action& e) override {
+					v1::hideBrands ^= true;
+				}
+				void step() override {
+					rightText = v1::hideBrands ? "✔" : "";
+					MenuItem::step();
+				}
+			};
+
+			struct SearchDescriptionsItem : MenuItem {
+				void onAction(const event::Action& e) override {
+					v1::searchDescriptions ^= true;
+				}
+				void step() override {
+					rightText = v1::searchDescriptions ? "✔" : "";
+					MenuItem::step();
+				}
+			};
+
 			Menu* createChildMenu() override {
 				Menu* menu = new Menu;
 				menu->addChild(new v1::ModelZoomSlider);
+				menu->addChild(construct<HideBrandsItem>(&MenuItem::text, "Hide brand list"));
+				menu->addChild(construct<SearchDescriptionsItem>(&MenuItem::text, "Search descriptions"));
 				return menu;
 			}
 		};
@@ -331,6 +367,8 @@ struct MbWidget : ModuleWidget {
 			}
 		};
 
+		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<ModeV06Item>(&MenuItem::text, "v0.6", &ModeV06Item::module, module));
 		menu->addChild(construct<ModeV1Item>(&MenuItem::text, "v1 mod", &ModeV1Item::module, module));

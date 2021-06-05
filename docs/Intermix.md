@@ -9,4 +9,4 @@ INTERMIX is a precision-adder matrix with 8 inputs and 8 outputs.
 - Compatible with MIDI-mapping
 - Very low CPU-usage
 
-INTERMIX was added in v1.4.0 of PackOne.
+INTERMIX was added in v1.4 of PackOne.

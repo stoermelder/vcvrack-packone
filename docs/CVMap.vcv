@@ -1,0 +1,339 @@
+{
+  "version": "1.1.6",
+  "modules": [
+    {
+      "id": 74,
+      "plugin": "Stoermelder-P1",
+      "version": "1.8.8e9af64",
+      "model": "CVMap",
+      "params": [],
+      "rightModuleId": 75,
+      "data": {
+        "textScrolling": false,
+        "mappingIndicatorHidden": false,
+        "maps": [
+          {
+            "moduleId": -1,
+            "paramId": 0,
+            "input": 0,
+            "slew": 0.0,
+            "min": 0.0,
+            "max": 2.0
+          },
+          {
+            "moduleId": -1,
+            "paramId": 0,
+            "input": 1,
+            "slew": 0.0,
+            "min": 0.0,
+            "max": 1.24000013
+          },
+          {
+            "moduleId": -1,
+            "paramId": 0,
+            "input": 2,
+            "slew": 0.0,
+            "min": 0.0,
+            "max": 1.0
+          }
+        ],
+        "lockParameterChanges": true,
+        "bipolarInput": false,
+        "panelTheme": 1,
+        "audioRate": false,
+        "locked": false,
+        "inputConfig": [
+          {
+            "hideUnused": true,
+            "label": [
+              "LFO1",
+              "LFO2",
+              "LFO3",
+              "LFO4",
+              "LFO5",
+              "LFO6",
+              "LFO7",
+              "LFO8",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              ""
+            ]
+          },
+          {
+            "hideUnused": true,
+            "label": [
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              ""
+            ]
+          }
+        ]
+      },
+      "pos": [
+        19,
+        0
+      ]
+    },
+    {
+      "id": 75,
+      "plugin": "Stoermelder-P1",
+      "version": "1.8.8e9af64",
+      "model": "CVMapCtx",
+      "params": [],
+      "leftModuleId": 74,
+      "data": {
+        "panelTheme": 1,
+        "cvMapId": "OCTO"
+      },
+      "pos": [
+        29,
+        0
+      ]
+    },
+    {
+      "id": 76,
+      "plugin": "RJModules",
+      "version": "1.7.2",
+      "model": "Octo",
+      "params": [
+        {
+          "id": 0,
+          "value": 5.0
+        },
+        {
+          "id": 1,
+          "value": 1.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        }
+      ],
+      "rightModuleId": 77,
+      "wave": 3.0,
+      "pos": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": 77,
+      "plugin": "23volts",
+      "version": "1.1.5",
+      "model": "Merge8",
+      "params": [],
+      "leftModuleId": 76,
+      "data": {
+        "channels": -1
+      },
+      "pos": [
+        4,
+        0
+      ]
+    },
+    {
+      "id": 80,
+      "plugin": "CountModula",
+      "version": "1.14.0",
+      "model": "MatrixMixer",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.497000009
+        },
+        {
+          "id": 1,
+          "value": 0.5
+        },
+        {
+          "id": 2,
+          "value": 0.5
+        },
+        {
+          "id": 3,
+          "value": 0.5
+        },
+        {
+          "id": 4,
+          "value": 1.0
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        },
+        {
+          "id": 6,
+          "value": 0.5
+        },
+        {
+          "id": 7,
+          "value": 0.5
+        },
+        {
+          "id": 8,
+          "value": 0.5
+        },
+        {
+          "id": 9,
+          "value": 0.5
+        },
+        {
+          "id": 10,
+          "value": 1.0
+        },
+        {
+          "id": 11,
+          "value": 0.0
+        },
+        {
+          "id": 12,
+          "value": 0.5
+        },
+        {
+          "id": 13,
+          "value": 0.5
+        },
+        {
+          "id": 14,
+          "value": 0.5
+        },
+        {
+          "id": 15,
+          "value": 0.5
+        },
+        {
+          "id": 16,
+          "value": 1.0
+        },
+        {
+          "id": 17,
+          "value": 0.0
+        },
+        {
+          "id": 18,
+          "value": 0.5
+        },
+        {
+          "id": 19,
+          "value": 0.5
+        },
+        {
+          "id": 20,
+          "value": 0.5
+        },
+        {
+          "id": 21,
+          "value": 0.5
+        },
+        {
+          "id": 22,
+          "value": 1.0
+        },
+        {
+          "id": 23,
+          "value": 0.0
+        }
+      ],
+      "data": {
+        "moduleVersion": 1,
+        "theme": 5
+      },
+      "pos": [
+        35,
+        0
+      ]
+    }
+  ],
+  "cables": [
+    {
+      "id": 0,
+      "outputModuleId": 76,
+      "outputId": 0,
+      "inputModuleId": 77,
+      "inputId": 0,
+      "color": "#c9b70e"
+    },
+    {
+      "id": 1,
+      "outputModuleId": 76,
+      "outputId": 1,
+      "inputModuleId": 77,
+      "inputId": 1,
+      "color": "#0c8e15"
+    },
+    {
+      "id": 2,
+      "outputModuleId": 76,
+      "outputId": 2,
+      "inputModuleId": 77,
+      "inputId": 2,
+      "color": "#c91847"
+    },
+    {
+      "id": 3,
+      "outputModuleId": 76,
+      "outputId": 3,
+      "inputModuleId": 77,
+      "inputId": 3,
+      "color": "#0986ad"
+    },
+    {
+      "id": 4,
+      "outputModuleId": 76,
+      "outputId": 4,
+      "inputModuleId": 77,
+      "inputId": 4,
+      "color": "#c9b70e"
+    },
+    {
+      "id": 5,
+      "outputModuleId": 76,
+      "outputId": 5,
+      "inputModuleId": 77,
+      "inputId": 5,
+      "color": "#0c8e15"
+    },
+    {
+      "id": 6,
+      "outputModuleId": 76,
+      "outputId": 6,
+      "inputModuleId": 77,
+      "inputId": 6,
+      "color": "#c91847"
+    },
+    {
+      "id": 7,
+      "outputModuleId": 76,
+      "outputId": 7,
+      "inputModuleId": 77,
+      "inputId": 7,
+      "color": "#0986ad"
+    },
+    {
+      "id": 8,
+      "outputModuleId": 77,
+      "outputId": 0,
+      "inputModuleId": 74,
+      "inputId": 0,
+      "color": "#c9b70e"
+    }
+  ]
+}

@@ -49,8 +49,16 @@ Added in v1.8.0: The _Preset_ context menu option lists all vcvss-files stored i
 
 The file-format "vcvss" for storing strips is very close to Rack's own format for storing patches or module presets. Compatibility in future versions should be no problem as long Rack will be able to load module preset files from older Rack versions.
 
-## Bonus tips
+## Tips
 
 - If you want to add some documentation for your strip just include a VCV Notes module and type in some text.
 
 STRIP was added in v1.0.4 of PackOne.
+
+# stoermelder STRIP-BAY
+
+STRIP-BAY is a companion module for STRIP: It is used to name some "patching-points" like a patch-bay in your strip and keep the cables to the rest of your patch intact while you load different strips. Multiple STRIP-BAY modules can be used in a STRIP and mapped by identical text labels.
+
+[![STRIP-BAY usage](https://img.youtube.com/vi/xGKoQdN9K60/0.jpg)](https://www.youtube.com/watch?v=xGKoQdN9K60)
+
+STRIP-BAY was added in v1.9 of PackOne.

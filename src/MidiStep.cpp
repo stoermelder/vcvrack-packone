@@ -1,4 +1,5 @@
 #include "plugin.hpp"
+#include "components/MidiWidget.hpp"
 
 namespace StoermelderPackOne {
 namespace MidiStep {
@@ -8,6 +9,7 @@ enum MODE {
 	BEATSTEP_R2 = 1,
 	KK_REL = 10,
 	XTOUCH_R1 = 20,
+	XTOUCH_R2 = 21,
 	AKAI_MPD218 = 30
 };
 
@@ -131,18 +133,13 @@ struct MidiStepModule : Module {
 		value = clamp(value, 0, 127);
 		// Learn
 		if (learningId >= 0) {
-			if (learnedCcs[learningId] >= 0) {
-				ccs[learnedCcs[learningId]] = -1;
-			}
-			ccs[cc] = learningId;
-			learnedCcs[learningId] = cc;
-			learningId = -1;
+			learnCC(cc);
 			return;
 		}
 
 		switch (mode) {
 			case MODE::BEATSTEP_R1:
-			case MODE::XTOUCH_R1: {
+			case MODE::XTOUCH_R2: {
 				if (value <= uint8_t(58)) decPulseCount[ccs[cc]] += 6;
 				else if (value <= uint8_t(61)) decPulseCount[ccs[cc]] += 4;
 				else if (value <= uint8_t(63)) decPulseCount[ccs[cc]] += 2;
@@ -154,14 +151,34 @@ struct MidiStepModule : Module {
 
 			case MODE::BEATSTEP_R2:
 			case MODE::KK_REL:
-			case MODE::AKAI_MPD218: {
+			case MODE::AKAI_MPD218:
+			case MODE::XTOUCH_R1: {
 				if (value == uint8_t(127)) decPulseCount[ccs[cc]] += 2;
+				else if (value == uint8_t(126)) decPulseCount[ccs[cc]] += 4;
+				else if (value == uint8_t(125)) decPulseCount[ccs[cc]] += 6;
 				if (value == uint8_t(1)) incPulseCount[ccs[cc]] += 2;
+				else if (value == uint8_t(2)) incPulseCount[ccs[cc]] += 4;
+				else if (value == uint8_t(3)) incPulseCount[ccs[cc]] += 6;
 				break;
 			}
 		}
 
 		values[cc] = value;
+	}
+
+	void learnCC(uint8_t cc) {
+		if (learningId < 0) {
+			return;
+		}
+		if (learnedCcs[learningId] >= 0) {
+			ccs[learnedCcs[learningId]] = -1;
+		}
+		if (ccs[cc] >= 0) {
+			learnedCcs[ccs[cc]] = -1;
+		}
+		ccs[cc] = learningId;
+		learnedCcs[learningId] = cc;
+		learningId = -1;
 	}
 
 	json_t* dataToJson() override {
@@ -206,31 +223,6 @@ struct MidiStepModule : Module {
 };
 
 
-struct MidiStepMidiWidget : MidiWidget {
-	void setMidiPort(midi::Port* port) {
-		MidiWidget::setMidiPort(port);
-
-		driverChoice->textOffset = Vec(6.f, 14.7f);
-		driverChoice->box.size = mm2px(Vec(driverChoice->box.size.x, 7.5f));
-		driverChoice->color = nvgRGB(0xf0, 0xf0, 0xf0);
-
-		driverSeparator->box.pos = driverChoice->box.getBottomLeft();
-
-		deviceChoice->textOffset = Vec(6.f, 14.7f);
-		deviceChoice->box.size = mm2px(Vec(deviceChoice->box.size.x, 7.5f));
-		deviceChoice->box.pos = driverChoice->box.getBottomLeft();
-		deviceChoice->color = nvgRGB(0xf0, 0xf0, 0xf0);
-
-		deviceSeparator->box.pos = deviceChoice->box.getBottomLeft();
-
-		channelChoice->textOffset = Vec(6.f, 14.7f);
-		channelChoice->box.size = mm2px(Vec(channelChoice->box.size.x, 7.5f));
-		channelChoice->box.pos = deviceChoice->box.getBottomLeft();
-		channelChoice->color = nvgRGB(0xf0, 0xf0, 0xf0);
-	}
-};
-
-
 template < int CHANNELS, int PORTS, class COICE >
 struct MidiStepLedDisplay : LedDisplay {
 	LedDisplaySeparator* hSeparators[CHANNELS / 4];
@@ -270,7 +262,7 @@ struct MidiStepLedDisplay : LedDisplay {
 
 
 template < int CHANNELS, int PORTS >
-struct MidiStepCcChoice : LedDisplayChoice {
+struct MidiStepCcChoice : LedDisplayCenterChoiceEx {
 	MidiStepModule* module;
 	int id;
 	int focusCc;
@@ -278,8 +270,7 @@ struct MidiStepCcChoice : LedDisplayChoice {
 	void setModule(MidiStepModule* module) {
 		this->module = module;
 		box.size.y = mm2px(6.666);
-		textOffset.y -= 4.f;
-		textOffset.x = box.size.x / 2.f;
+		textOffset.y -= 1.4f;
 		color = nvgRGB(0xf0, 0xf0, 0xf0);
 	}
 
@@ -289,20 +280,20 @@ struct MidiStepCcChoice : LedDisplayChoice {
 
 	void step() override {
 		if (!module) {
-			text = string::f("%03d", id);
+			text = string::f("%d", id);
 			return;
 		}
 		
 		if (module->learningId == id) {
 			if (0 <= focusCc)
-				text = string::f("%03d", focusCc);
+				text = string::f("%d", focusCc);
 			else
-				text = "---";
+				text = "LRN";
 			color.a = 0.5f;
 		}
 		else {
 			if (id < PORTS || module->polyphonicOutput) {
-				text = string::f("%03d", module->learnedCcs[id]);
+				text = module->learnedCcs[id] >= 0 ? string::f("%d", module->learnedCcs[id]) : "OFF";
 				color.a = 1.0;
 			}
 			else {
@@ -314,11 +305,6 @@ struct MidiStepCcChoice : LedDisplayChoice {
 				APP->event->setSelected(NULL);
 			}
 		}
-	}
-
-	void draw(const DrawArgs& args) override {
-		nvgTextAlign(args.vg, NVG_ALIGN_CENTER);
-		LedDisplayChoice::draw(args);
 	}
 
 	void onButton(const event::Button& e) override {
@@ -338,7 +324,7 @@ struct MidiStepCcChoice : LedDisplayChoice {
 		if (!module) return;
 		if (module->learningId == id) {
 			if (0 <= focusCc && focusCc < 128) {
-				module->learnedCcs[id] = focusCc;
+				module->learnCC(focusCc);
 			}
 			module->learningId = -1;
 		}
@@ -377,7 +363,7 @@ struct MidiStepWidget : ThemedModuleWidget<MidiStepModule> {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		MidiStepMidiWidget* midiInputWidget = createWidget<MidiStepMidiWidget>(Vec(10.0f, 36.4f));
+		MidiWidget<>* midiInputWidget = createWidget<MidiWidget<>>(Vec(10.0f, 36.4f));
 		midiInputWidget->box.size = Vec(130.0f, 67.0f);
 		midiInputWidget->setMidiPort(module ? &module->midiInput : NULL);
 		addChild(midiInputWidget);
@@ -435,6 +421,7 @@ struct MidiStepWidget : ThemedModuleWidget<MidiStepModule> {
 				menu->addChild(construct<ModeItem>(&MenuItem::text, "Beatstep Relative #2", &ModeItem::module, module, &ModeItem::mode, MODE::BEATSTEP_R2));
 				menu->addChild(construct<ModeItem>(&MenuItem::text, "NI Komplete Kontrol Relative", &ModeItem::module, module, &ModeItem::mode, MODE::KK_REL));
 				menu->addChild(construct<ModeItem>(&MenuItem::text, "Behringer X-TOUCH Relative1", &ModeItem::module, module, &ModeItem::mode, MODE::XTOUCH_R1));
+				menu->addChild(construct<ModeItem>(&MenuItem::text, "Behringer X-TOUCH Relative2", &ModeItem::module, module, &ModeItem::mode, MODE::XTOUCH_R2));
 				menu->addChild(construct<ModeItem>(&MenuItem::text, "Akai MPD218 INC/DEC 2", &ModeItem::module, module, &ModeItem::mode, MODE::AKAI_MPD218));
 				return menu;
 			}

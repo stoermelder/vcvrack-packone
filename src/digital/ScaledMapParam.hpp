@@ -1,3 +1,4 @@
+#pragma once
 #include "plugin.hpp"
 
 namespace StoermelderPackOne {
@@ -6,7 +7,9 @@ template<typename T, typename PQ = ParamQuantity>
 struct ScaledMapParam {
 	PQ* paramQuantity = NULL;
 	float limitMin;
+	T limitMinT;
 	float limitMax;
+	T limitMaxT;
 	T uninit;
 	float min = 0.f;
 	float max = 1.f;
@@ -24,20 +27,31 @@ struct ScaledMapParam {
 
 	void setLimits(T min, T max, T uninit) {
 		limitMin = float(min);
+		limitMinT = min;
 		limitMax = float(max);
+		limitMaxT = max;
 		this->uninit = uninit;
 	}
+	T getLimitMin() {
+		return limitMinT;
+	}
+	T getLimitMax() {
+		return limitMaxT;
+	}
 
-	void reset() {
+	void reset(bool resetSettings = true) {
 		paramQuantity = NULL;
 		filter.reset();
 		filterInitialized = false;
-		filterSlew = 0.f;
 		valueIn = uninit;
 		value = -1.f;
 		valueOut = std::numeric_limits<float>::infinity();
-		min = 0.f;
-		max = 1.f;
+
+		if (resetSettings) {
+			filterSlew = 0.f;
+			min = 0.f;
+			max = 1.f;
+		}
 	}
 
 	void resetFilter() {

@@ -33,4 +33,4 @@ Many modules have an internal state which has nothing to do with the parameters 
 
 - Added in v1.8.0: The context menu option _Sync module presets_ works even if the mirrored module does not have any parameters, like [VCV Host](https://library.vcvrack.com/VCV-Host/Host).
 
-MIRROR was added in v1.6.0 of PackOne.
+MIRROR was added in v1.6 of PackOne.

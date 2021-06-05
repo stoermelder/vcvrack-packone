@@ -14,7 +14,7 @@ There are some settings on the context menu available:
 * **Center module**: This option is activated by default and causes the bound module to be centered on the screen. If this option is disabled GOTO will move the view-port to the exact same position as it was at binding time. This can be useful for setups with multiple screens.
 * **Ignore zoom level**: By default GOTO recalls the zoom level at binding time. Activating this option leaves the current zoom level untouched.
 
-### INPUT-port
+## _INPUT_-port
 
 It is possible to trigger a view-port change by CV which is especially useful with one of the MIDI-modules, like MIDI-CV, MIDI-GATE or MIDI-CC. As long as a cable is connected to the port the hotkeys SHIFT+1..0 are deactivated. There are two modes available: 
 
@@ -26,4 +26,4 @@ It is possible to trigger a view-port change by CV which is especially useful wi
 
 ![GOTO C5-A5](./Goto-c5.png)
 
-GOTO was added in v1.6.0 of PackOne.
+GOTO was added in v1.6 of PackOne.

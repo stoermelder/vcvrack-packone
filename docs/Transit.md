@@ -64,7 +64,7 @@ TRANSIT provides three precision-settings on the contextual menu which influence
 
 ## Sequencing and selecting snapshots
 
-The fun begins when you use the port labelled _SEL_ for selecting snapshots by CV. Although there are 12 snapshot slots available it is possible to use less slots for sequencing: You can adjust the number of active slots by long-pressing a snapshot-button while in read-mode. The LEDs turns off completely for slots that are currently disabled.
+The fun begins when you use the port labelled _SEL_ for selecting snapshots by CV. Although there are 12 snapshot slots available it is possible to use less slots for sequencing: You can adjust the number of active slots (i.e. sequence length) by long-pressing a snapshot-button while in read-mode. The LEDs turn off completely for slots that are currently disabled.
 
 Modes for _SEL_ on the contextual menu:
 
@@ -93,6 +93,10 @@ Modes for _SEL_ on the contextual menu:
 
 ![TRANSIT SEL-port](./Transit-sel.gif)
 
+<a name="phase"></a>
+ - **Phase** (added in v1.9.0)  
+   This mode behaves differently than the other modes: An input voltage of 0-10V scans continously through the stored snapshots. A voltage of 0V sets the parameters to the first snapshot, a voltage of 10V sets the parameters to the last active snapshot, in between the parameters are interpolated according to the used snapshots. Slew-limiting can be applied additionally using the _Fade_-slider.
+
 ## _OUT_-port
 
 TRANSIT brings an _OUT_-port for different purposes:
@@ -110,12 +114,17 @@ TRANSIT brings an _OUT_-port for different purposes:
 - **Poly**  
   Outputs a polyphonic signal combining all of the previous singals on the channels of the cable.
 
+Note: These modes are unavailable if _SEL_-port operates in Phase-mode.
+
 ![TRANSIT OUT-port](./Transit-out.gif)
 
 ## Tips
 
-- TRANSIT is designed to morph parameter-snapshots, while stoermelder 8FACE is designed to apply different presets onto a module. Morphing between presets of modules is not possible because of technical reasons.
+- TRANSIT is designed to morph parameter-snapshots, while stoermelder [8FACE](./EightFace.md) and [8FACE mk2](./EightFaceMk2.md) are designed to apply different presets onto modues. Morphing between presets of modules is not possible because of technical reasons.
+
 - If you set the _OUT_-port to _Trigger fade stop_ and patch _OUT_ into _SEL_ TRANSIT will endlessly fade snapshots.
+  
+- Each snapshot can be named with a custom text label. This label is shown while hovering above the snapshot button if parameter tooltips are enabled (added in v1.9.0).
 
 TRANSIT was added in v1.7.0 of PackOne.
 
@@ -126,4 +135,4 @@ Once placed next to TRANSIT the expander works and behaves the same way TRANSIT 
 
 ![+T expander](./Transit-t.gif)
 
-+T was added in v1.7.0 of PackOne.
++T was added in v1.7 of PackOne.

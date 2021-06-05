@@ -5,6 +5,9 @@
 #include "digital/ScaledMapParam.hpp"
 #include "components/MenuLabelEx.hpp"
 #include "components/SubMenuSlider.hpp"
+#include "components/MidiWidget.hpp"
+#include "ui/ParamWidgetContextExtender.hpp"
+#include "ui/OverlayMessageWidget.hpp"
 #include <osdialog.h>
 
 namespace StoermelderPackOne {
@@ -27,8 +30,8 @@ struct MidiCatOutput : midi::Output {
 		}
 	}
 
-	void setValue(int value, int cc) {
-		if (value == lastValues[cc])
+	void setValue(int value, int cc, bool force = false) {
+		if (value == lastValues[cc] && !force)
 			return;
 		lastValues[cc] = value;
 		// CC
@@ -39,22 +42,26 @@ struct MidiCatOutput : midi::Output {
 		sendMessage(m);
 	}
 
-	void setGate(int vel, int note, bool noteOffVelocityZero) {
-		if (vel > 0 && !lastGates[note]) {
+	void setGate(int vel, int note, bool noteOffVelocityZero, bool force = false) {
+		if (vel > 0) {
 			// Note on
-			midi::Message m;
-			m.setStatus(0x9);
-			m.setNote(note);
-			m.setValue(vel);
-			sendMessage(m);
+			if (!lastGates[note] || force) {
+				midi::Message m;
+				m.setStatus(0x9);
+				m.setNote(note);
+				m.setValue(vel);
+				sendMessage(m);
+			}
 		}
-		else if (vel == 0 && lastGates[note]) {
+		else if (vel == 0) {
 			// Note off
-			midi::Message m;
-			m.setStatus(noteOffVelocityZero ? 0x9 : 0x8);
-			m.setNote(note);
-			m.setValue(0);
-			sendMessage(m);
+			if (lastGates[note] || force) {
+				midi::Message m;
+				m.setStatus(noteOffVelocityZero ? 0x9 : 0x8);
+				m.setNote(note);
+				m.setValue(0);
+				sendMessage(m);
+			}
 		}
 		lastGates[note] = vel > 0;
 	}
@@ -67,23 +74,24 @@ enum MIDIMODE {
 };
 
 
-typedef ScaledMapParam<int> MidiCatParam;
+struct MidiCatParam : ScaledMapParam<int> {
+	bool isNear(int value, int jump = -1) {
+		if (value == -1) return false;
+		int p = getValue();
+		int delta3p = (limitMaxT - limitMinT + 1) * 3 / 100;
+		bool r = p - delta3p <= value && value <= p + delta3p;
+
+		if (jump >= 0) {
+			int delta7p = (limitMaxT - limitMinT + 1) * 7 / 100;
+			r = r && p - delta7p <= jump && jump <= p + delta7p;
+		}
+
+		return r;
+	}
+};
 
 
 struct MidiCatModule : Module, StripIdFixModule {
-	enum ParamIds {
-		NUM_PARAMS
-	};
-	enum InputIds {
-		NUM_INPUTS
-	};
-	enum OutputIds {
-		NUM_OUTPUTS
-	};
-	enum LightIds {
-		NUM_LIGHTS
-	};
-
 	/** [Stored to Json] */
 	midi::InputQueue midiInput;
 	/** [Stored to Json] */
@@ -92,20 +100,147 @@ struct MidiCatModule : Module, StripIdFixModule {
 	/** [Stored to JSON] */
 	int panelTheme = 0;
 
+	struct MidiCcAdapter {
+		MidiCatModule* module;
+		int id;
+		int current = -1;
+		uint32_t lastTs = 0;
+
+		/** [Stored to Json] */
+		int cc;
+		/** [Stored to Json] */
+		CCMODE ccMode;
+		/** [Stored to Json] */
+		bool cc14bit = false;
+
+		bool process() {
+			int previous = current;
+			if (cc14bit) {
+				if (module->valuesCcTs[cc] > lastTs && module->valuesCcTs[cc + 32] > lastTs) {
+					current = module->valuesCc[cc] * 128 + module->valuesCc[cc + 32];
+					lastTs = module->ts;
+				}
+			}
+			else {
+				if (module->valuesCcTs[cc] > lastTs) {
+					current = module->valuesCc[cc];
+					lastTs = module->ts;
+				}
+			}
+			return current >= 0 && current != previous;
+		}
+
+		int getValue() {
+			return current;
+		}
+
+		void setValue(int value, bool sendOnly) {
+			if (cc == -1) return;
+			if (cc14bit) {
+				module->midiOutput.setValue(value / 128, cc, true);
+				module->midiOutput.setValue(value % 128, cc + 32, true);
+			}
+			else {
+				module->midiOutput.setValue(value, cc, current == -1);
+			}
+			if (!sendOnly) current = value;
+		}
+
+		void reset() {
+			cc = -1;
+			current = -1;
+		}
+
+		void resetValue() {
+			current = -1;
+		}
+
+		int getCc() {
+			return cc;
+		}
+
+		void setCc(int cc) {
+			this->cc = cc;
+			if (cc == -1 || cc > 32) set14bit(false);
+			current = -1;
+		}
+
+		bool get14bit() {
+			return cc14bit;
+		}
+
+		void set14bit(bool value) {
+			cc14bit = value;
+			current = -1;
+			if (cc14bit) {
+				module->midiParam[id].setLimits(0, 128 * 128 - 1, -1);
+			}
+			else {
+				module->midiParam[id].setLimits(0, 127, -1);
+			}
+		}
+	};
+
+	struct MidiNoteAdapter {
+		MidiCatModule* module;
+		int id;
+		int current = -1;
+
+		/** [Stored to Json] */
+		int note;
+		/** [Stored to Json] Use the velocity value of each channel when notes are used */
+		NOTEMODE noteMode;
+
+		bool process() {
+			int previous = current;
+			if (module->valuesNote[note] >= 0) {
+				current = module->valuesNote[note];
+				module->valuesNote[note] = -1;
+			}
+			return current >= 0 && current != previous;
+		}
+
+		int getValue() {
+			return current;
+		}
+
+		void setValue(int value, bool sendOnly) {
+			if (note == -1) return;
+			module->midiOutput.setGate(value, note, (module->midiOptions[id] >> MIDIOPTION_VELZERO_BIT) & 1U, current == -1);
+			if (!sendOnly) current = value;
+		}
+
+		void reset() {
+			note = -1;
+			current = -1;
+		}
+
+		void resetValue() {
+			current = -1;
+		}
+
+		int getNote() {
+			return note;
+		}
+
+		void setNote(int note) {
+			this->note = note;
+			current = -1;
+		}
+	};
+
 	/** Number of maps */
 	int mapLen = 0;
 	/** [Stored to Json] The mapped CC number of each channel */
-	int ccs[MAX_CHANNELS];
-	/** [Stored to Json] */
-	CCMODE ccsMode[MAX_CHANNELS];
+	MidiCcAdapter ccs[MAX_CHANNELS];
 	/** [Stored to Json] The mapped note number of each channel */
-	int notes[MAX_CHANNELS];
-	/** [Stored to Json] Use the velocity value of each channel when notes are used */
-	NOTEMODE notesMode[MAX_CHANNELS];
+	MidiNoteAdapter notes[MAX_CHANNELS];
 	/** [Stored to JSON] */
 	int midiOptions[MAX_CHANNELS];
 	/** [Stored to JSON] */
 	bool midiIgnoreDevices;
+	/** [Stored to JSON] */
+	bool clearMapsOnLoad;
 
 	/** [Stored to Json] The mapped param handle of each channel */
 	ParamHandle paramHandles[MAX_CHANNELS];
@@ -132,13 +267,17 @@ struct MidiCatModule : Module, StripIdFixModule {
 	bool locked;
 
 	NVGcolor mappingIndicatorColor = nvgRGB(0xff, 0xff, 0x40);
-	/** [Stored to JSON] */
+	/** [Stored to Json] */
 	bool mappingIndicatorHidden = false;
+
+	uint32_t ts = 0;
 
 	/** The value of each CC number */
 	int valuesCc[128];
+	uint32_t valuesCcTs[128];
 	/** The value of each note number */
 	int valuesNote[128];
+	uint32_t valuesNoteTs[128];
 
 	MIDIMODE midiMode = MIDIMODE::MIDIMODE_DEFAULT;
 
@@ -147,6 +286,10 @@ struct MidiCatModule : Module, StripIdFixModule {
 	int lastValueInIndicate[MAX_CHANNELS];
 	int lastValueOut[MAX_CHANNELS];
 
+	dsp::RingBuffer<int, 8> overlayQueue;
+	/** [Stored to Json] */
+	bool overlayEnabled;
+
 	/** [Stored to Json] */
 	MidiCatParam midiParam[MAX_CHANNELS];
 	/** [Stored to Json] */
@@ -154,23 +297,27 @@ struct MidiCatModule : Module, StripIdFixModule {
 	dsp::ClockDivider midiResendDivider;
 
 	dsp::ClockDivider processDivider;
-	/** [Stored to JSON] */
+	/** [Stored to Json] */
 	int processDivision;
 	dsp::ClockDivider indicatorDivider;
 
 	// Pointer of the MEM-expander's attribute
-	std::map<std::pair<std::string, std::string>, MemModule*>* memStorage = NULL;
-	Module* mem = NULL;
-	int memModuleId = -1;
+	std::map<std::pair<std::string, std::string>, MemModule*>* expMemStorage = NULL;
+	Module* expMem = NULL;
+	int expMemModuleId = -1;
+
+	Module* expCtx = NULL;
 
 	MidiCatModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
-		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+		config(0, 0, 0, 0);
 		for (int id = 0; id < MAX_CHANNELS; id++) {
 			paramHandleIndicator[id].color = mappingIndicatorColor;
 			paramHandleIndicator[id].handle = &paramHandles[id];
 			APP->engine->addParamHandle(&paramHandles[id]);
 			midiParam[id].setLimits(0, 127, -1);
+			ccs[id].module = notes[id].module = this;
+			ccs[id].id = notes[id].id = id;
 		}
 		indicatorDivider.setDivision(2048);
 		midiResendDivider.setDivision(APP->engine->getSampleRate() / 2);
@@ -192,13 +339,15 @@ struct MidiCatModule : Module, StripIdFixModule {
 		mapLen = 1;
 		for (int i = 0; i < 128; i++) {
 			valuesCc[i] = -1;
+			valuesCcTs[i] = 0;
 			valuesNote[i] = -1;
+			valuesNoteTs[i] = 0;
 		}
 		for (int i = 0; i < MAX_CHANNELS; i++) {
 			lastValueIn[i] = -1;
 			lastValueOut[i] = -1;
-			ccsMode[i] = CCMODE::CCMODE_DIRECT;
-			notesMode[i] = NOTEMODE::NOTEMODE_MOMENTARY;
+			ccs[i].ccMode = CCMODE::DIRECT;
+			notes[i].noteMode = NOTEMODE::MOMENTARY;
 			textLabel[i] = "";
 			midiOptions[i] = 0;
 			midiParam[i].reset();
@@ -213,6 +362,8 @@ struct MidiCatModule : Module, StripIdFixModule {
 		processDivision = 64;
 		processDivider.setDivision(processDivision);
 		processDivider.reset();
+		overlayEnabled = true;
+		clearMapsOnLoad = false;
 	}
 
 	void onSampleRateChange() override {
@@ -220,22 +371,24 @@ struct MidiCatModule : Module, StripIdFixModule {
 	}
 
 	void process(const ProcessArgs &args) override {
+		ts++;
+
 		midi::Message msg;
-		bool changed = false;
+		bool midiReceived = false;
 		while (midiInput.shift(&msg)) {
-			bool r = processMessage(msg);
-			changed = changed || r;
+			bool r = midiProcessMessage(msg);
+			midiReceived = midiReceived || r;
 		}
 
 		// Only step channels when some midi event has been received. Additionally
 		// step channels for parameter changes made manually every 128th loop. Notice
 		// that midi allows about 1000 messages per second, so checking for changes more often
 		// won't lead to higher precision on midi output.
-		if (processDivider.process() || changed) {
+		if (processDivider.process() || midiReceived) {
 			// Step channels
 			for (int id = 0; id < mapLen; id++) {
-				int cc = ccs[id];
-				int note = notes[id];
+				int cc = ccs[id].getCc();
+				int note = notes[id].getNote();
 				if (cc < 0 && note < 0)
 					continue;
 
@@ -255,130 +408,160 @@ struct MidiCatModule : Module, StripIdFixModule {
 
 				switch (midiMode) {
 					case MIDIMODE::MIDIMODE_DEFAULT: {
-						// Setting the paramQuantity directly prevets resetting the output-value
 						midiParam[id].paramQuantity = paramQuantity;
+						int t = -1;
 
-						// Check if CC value has been set
-						if (cc >= 0 && valuesCc[cc] >= 0) {
-							int t = -1;
-							switch (ccsMode[id]) {
-								case CCMODE_DIRECT:
-									if (lastValueIn[id] != valuesCc[cc]) {
-										lastValueIn[id] = valuesCc[cc];
-										t = valuesCc[cc];
+						// Check if CC value has been set and changed
+						if (cc >= 0 && ccs[id].process()) {
+							switch (ccs[id].ccMode) {
+								case CCMODE::DIRECT:
+									if (lastValueIn[id] != ccs[id].getValue()) {
+										lastValueIn[id] = ccs[id].getValue();
+										t = ccs[id].getValue();
 									}
 									break;
-								case CCMODE_PICKUP1:
-									if (lastValueIn[id] != valuesCc[cc]) {
-										int p = midiParam[id].getValue();
-										if (p - 3 <= lastValueIn[id] && lastValueIn[id] <= p + 3) {
+								case CCMODE::PICKUP1:
+									if (lastValueIn[id] != ccs[id].getValue()) {
+										if (midiParam[id].isNear(lastValueIn[id])) {
 											midiParam[id].resetFilter();
-											t = valuesCc[cc];
+											t = ccs[id].getValue();
 										}
-										lastValueIn[id] = valuesCc[cc];
+										lastValueIn[id] = ccs[id].getValue();
 									}
 									break;
-								case CCMODE_PICKUP2:
-									if (lastValueIn[id] != valuesCc[cc]) {
-										int p = midiParam[id].getValue();
-										if (p - 3 <= lastValueIn[id] && lastValueIn[id] <= p + 3 && p - 7 <= valuesCc[cc] && valuesCc[cc] <= p + 7) {
+								case CCMODE::PICKUP2:
+									if (lastValueIn[id] != ccs[id].getValue()) {
+										if (midiParam[id].isNear(lastValueIn[id], ccs[id].getValue())) {
 											midiParam[id].resetFilter();
-											t = valuesCc[cc];
+											t = ccs[id].getValue();
 										}
-										lastValueIn[id] = valuesCc[cc];
+										lastValueIn[id] = ccs[id].getValue();
 									}
 									break;
-							}
-
-							if (t >= 0) {
-								midiParam[id].setValue(t);
-							}
-						}
-
-						// Check if note value has been set
-						if (note >= 0 && valuesNote[note] >= 0) {
-							int t = -1;
-							switch (notesMode[id]) {
-								case NOTEMODE::NOTEMODE_MOMENTARY:
-									if (lastValueIn[id] != valuesNote[note]) {
-										t = valuesNote[note];
-										if (t > 0) t = 127;
-										lastValueIn[id] = valuesNote[note];
-									} 
-									break;
-								case NOTEMODE::NOTEMODE_MOMENTARY_VEL:
-									if (lastValueIn[id] != valuesNote[note]) {
-										t = valuesNote[note];
-										lastValueIn[id] = valuesNote[note];
-									}
-									break;
-								case NOTEMODE::NOTEMODE_TOGGLE:
-									if (valuesNote[note] > 0 && (lastValueIn[id] == -1 || lastValueIn[id] >= 0)) {
-										t = 127;
+								case CCMODE::TOGGLE:
+									if (ccs[id].getValue() > 0 && (lastValueIn[id] == -1 || lastValueIn[id] >= 0)) {
+										t = midiParam[id].getLimitMax();
 										lastValueIn[id] = -2;
 									} 
-									else if (valuesNote[note] == 0 && lastValueIn[id] == -2) {
-										t = 127;
+									else if (ccs[id].getValue() == 0 && lastValueIn[id] == -2) {
+										t = midiParam[id].getLimitMax();
 										lastValueIn[id] = -3;
 									}
-									else if (valuesNote[note] > 0 && lastValueIn[id] == -3) {
-										t = 0;
+									else if (ccs[id].getValue() > 0 && lastValueIn[id] == -3) {
+										t = midiParam[id].getLimitMin();
 										lastValueIn[id] = -4;
 									}
-									else if (valuesNote[note] == 0 && lastValueIn[id] == -4) {
-										t = 0;
+									else if (ccs[id].getValue() == 0 && lastValueIn[id] == -4) {
+										t = midiParam[id].getLimitMin();
 										lastValueIn[id] = -1;
 									}
 									break;
-								case NOTEMODE::NOTEMODE_TOGGLE_VEL:
-									if (valuesNote[note] > 0 && (lastValueIn[id] == -1 || lastValueIn[id] >= 0)) {
-										t = valuesNote[note];
+								case CCMODE::TOGGLE_VALUE:
+									if (ccs[id].getValue() > 0 && (lastValueIn[id] == -1 || lastValueIn[id] >= 0)) {
+										t = ccs[id].getValue();
 										lastValueIn[id] = -2;
 									} 
-									else if (valuesNote[note] == 0 && lastValueIn[id] == -2) {
+									else if (ccs[id].getValue() == 0 && lastValueIn[id] == -2) {
 										t = midiParam[id].getValue();
 										lastValueIn[id] = -3;
 									}
-									else if (valuesNote[note] > 0 && lastValueIn[id] == -3) {
+									else if (ccs[id].getValue() > 0 && lastValueIn[id] == -3) {
+										t = midiParam[id].getLimitMin();
+										lastValueIn[id] = -4;
+									}
+									else if (ccs[id].getValue() == 0 && lastValueIn[id] == -4) {
+										t = midiParam[id].getLimitMin();
+										lastValueIn[id] = -1;
+									}
+									break;
+							}
+						}
+
+						// Check if note value has been set and changed
+						if (note >= 0 && notes[id].process()) {
+							switch (notes[id].noteMode) {
+								case NOTEMODE::MOMENTARY:
+									if (lastValueIn[id] != notes[id].getValue()) {
+										t = notes[id].getValue();
+										if (t > 0) t = 127;
+										lastValueIn[id] = notes[id].getValue();
+									} 
+									break;
+								case NOTEMODE::MOMENTARY_VEL:
+									if (lastValueIn[id] != notes[id].getValue()) {
+										t = notes[id].getValue();
+										lastValueIn[id] = notes[id].getValue();
+									}
+									break;
+								case NOTEMODE::TOGGLE:
+									if (notes[id].getValue() > 0 && (lastValueIn[id] == -1 || lastValueIn[id] >= 0)) {
+										t = 127;
+										lastValueIn[id] = -2;
+									} 
+									else if (notes[id].getValue() == 0 && lastValueIn[id] == -2) {
+										t = 127;
+										lastValueIn[id] = -3;
+									}
+									else if (notes[id].getValue() > 0 && lastValueIn[id] == -3) {
 										t = 0;
 										lastValueIn[id] = -4;
 									}
-									else if (valuesNote[note] == 0 && lastValueIn[id] == -4) {
+									else if (notes[id].getValue() == 0 && lastValueIn[id] == -4) {
+										t = 0;
+										lastValueIn[id] = -1;
+									}
+									break;
+								case NOTEMODE::TOGGLE_VEL:
+									if (notes[id].getValue() > 0 && (lastValueIn[id] == -1 || lastValueIn[id] >= 0)) {
+										t = notes[id].getValue();
+										lastValueIn[id] = -2;
+									} 
+									else if (notes[id].getValue() == 0 && lastValueIn[id] == -2) {
+										t = midiParam[id].getValue();
+										lastValueIn[id] = -3;
+									}
+									else if (notes[id].getValue() > 0 && lastValueIn[id] == -3) {
+										t = 0;
+										lastValueIn[id] = -4;
+									}
+									else if (notes[id].getValue() == 0 && lastValueIn[id] == -4) {
 										t = 0;
 										lastValueIn[id] = -1;
 									}
 									break;
 							}
-
-							if (t >= 0) {
-								midiParam[id].setValue(t);
-							}
 						}
 
+						// Set a new value for the mapped parameter
+						if (t >= 0) {
+							midiParam[id].setValue(t);
+							if (overlayEnabled && overlayQueue.capacity() > 0) overlayQueue.push(id);
+						}
+
+						// Apply value on the mapped parameter (respecting slew and scale)
 						midiParam[id].process(args.sampleTime * float(processDivision));
 
-						// Midi feedback
+						// Retrieve the current value of the parameter (ignoring slew and scale)
 						int v = midiParam[id].getValue();
 
+						// Midi feedback
 						if (lastValueOut[id] != v) {
+							if (cc >= 0 && ccs[id].ccMode == CCMODE::DIRECT)
+								lastValueIn[id] = v;
+							ccs[id].setValue(v, lastValueIn[id] < 0);
+							notes[id].setValue(v, lastValueIn[id] < 0);
 							lastValueOut[id] = v;
-							if (cc >= 0 && ccsMode[id] == CCMODE_DIRECT)
-								lastValueIn[id] = valuesCc[cc] = v;
-							if (cc >= 0)
-								midiOutput.setValue(v, cc);
-							if (note >= 0)
-								midiOutput.setGate(v, note, (midiOptions[id] >> MIDIOPTION_VELZERO_BIT) & 1U);
 						}
 					} break;
 
 					case MIDIMODE::MIDIMODE_LOCATE: {
 						bool indicate = false;
-						if ((cc >= 0 && valuesCc[cc] >= 0) && lastValueInIndicate[id] != valuesCc[cc]) {
-							lastValueInIndicate[id] = valuesCc[cc];
+						if ((cc >= 0 && ccs[id].getValue() >= 0) && lastValueInIndicate[id] != ccs[id].getValue()) {
+							lastValueInIndicate[id] = ccs[id].getValue();
 							indicate = true;
 						}
-						if ((note >= 0 && valuesNote[note] >= 0) && lastValueInIndicate[id] != valuesNote[note]) {
-							lastValueInIndicate[id] = valuesNote[note];
+						if ((note >= 0 && notes[id].getValue() >= 0) && lastValueInIndicate[id] != notes[id].getValue()) {
+							lastValueInIndicate[id] = notes[id].getValue();
 							indicate = true;
 						}
 						if (indicate) {
@@ -401,17 +584,36 @@ struct MidiCatModule : Module, StripIdFixModule {
 		}
 
 		if (midiResendPeriodically && midiResendDivider.process()) {
-			resendMidiOut();
+			midiResendFeedback();
 		}
 
+		// Expanders
+		bool expMemFound = false;
+		bool expCtxFound = false;
 		Module* exp = rightExpander.module;
-		if (exp && exp->model->plugin->slug == "Stoermelder-P1" && exp->model->slug == "MidiCatEx") {
-			memStorage = reinterpret_cast<std::map<std::pair<std::string, std::string>, MemModule*>*>(exp->leftExpander.consumerMessage);
-			mem = exp;
+		for (int i = 0; i < 2; i++) {
+			if (!exp) break;
+			if (exp->model == modelMidiCatMem && !expMemFound) {
+				expMemStorage = reinterpret_cast<std::map<std::pair<std::string, std::string>, MemModule*>*>(exp->leftExpander.consumerMessage);
+				expMem = exp;
+				expMemFound = true;
+				exp = exp->rightExpander.module;
+				continue;
+			}
+			if (exp->model == modelMidiCatCtx && !expCtxFound) {
+				expCtx = exp;
+				expCtxFound = true;
+				exp = exp->rightExpander.module;
+				continue;
+			}
+			break;
 		}
-		else {
-			memStorage = NULL;
-			mem = NULL;
+		if (!expMemFound) {
+			expMemStorage = NULL;
+			expMem = NULL;
+		}
+		if (!expCtxFound) {
+			expCtx = NULL;
 		}
 	}
 
@@ -429,24 +631,24 @@ struct MidiCatModule : Module, StripIdFixModule {
 		}
 	}
 
-	bool processMessage(midi::Message msg) {
+	bool midiProcessMessage(midi::Message msg) {
 		switch (msg.getStatus()) {
 			// cc
 			case 0xb: {
-				return processCC(msg);
+				return midiCc(msg);
 			}
 			// note off
 			case 0x8: {
-				return processNoteRelease(msg);
+				return midiNoteRelease(msg);
 			}
 			// note on
 			case 0x9: {
 				if (msg.getValue() > 0) {
-					return processNotePress(msg);
+					return midiNotePress(msg);
 				}
 				else {
 					// Many keyboards send a "note on" command with 0 velocity to mean "note release"
-					return processNoteRelease(msg);
+					return midiNoteRelease(msg);
 				}
 			} 
 			default: {
@@ -455,55 +657,65 @@ struct MidiCatModule : Module, StripIdFixModule {
 		}
 	}
 
-	bool processCC(midi::Message msg) {
+	bool midiCc(midi::Message msg) {
 		uint8_t cc = msg.getNote();
 		uint8_t value = msg.getValue();
 		// Learn
-		if (learningId >= 0 && learnedCcLast != cc && valuesCc[cc] != value) {
-			ccs[learningId] = cc;
-			ccsMode[learningId] = CCMODE::CCMODE_DIRECT;
-			notes[learningId] = -1;
+		if (learningId >= 0 && learnedCcLast != cc && learnedCcLast != cc - 32 && valuesCc[cc] != value) {
+			ccs[learningId].setCc(cc);
+			ccs[learningId].ccMode = CCMODE::DIRECT;
+			notes[learningId].setNote(-1);
 			learnedCc = true;
 			learnedCcLast = cc;
 			commitLearn();
 			updateMapLen();
 			refreshParamHandleText(learningId);
 		}
-		bool changed = valuesCc[cc] != value;
+		bool midiReceived = valuesCc[cc] != value;
 		valuesCc[cc] = value;
-		return changed;
+		valuesCcTs[cc] = ts;
+		return midiReceived;
 	}
 
-	bool processNotePress(midi::Message msg) {
+	bool midiNotePress(midi::Message msg) {
 		uint8_t note = msg.getNote();
 		uint8_t vel = msg.getValue();
 		// Learn
 		if (learningId >= 0 && learnedNoteLast != note) {
-			ccs[learningId] = -1;
-			notes[learningId] = note;
-			notesMode[learningId] = NOTEMODE::NOTEMODE_MOMENTARY;
+			ccs[learningId].setCc(-1);
+			notes[learningId].setNote(note);
+			notes[learningId].noteMode = NOTEMODE::MOMENTARY;
 			learnedNote = true;
 			learnedNoteLast = note;
 			commitLearn();
 			updateMapLen();
 			refreshParamHandleText(learningId);
 		}
-		bool changed = valuesNote[note] != vel;
+		bool midiReceived = valuesNote[note] != vel;
 		valuesNote[note] = vel;
-		return changed;
+		valuesNoteTs[note] = ts;
+		return midiReceived;
 	}
 
-	bool processNoteRelease(midi::Message msg) {
+	bool midiNoteRelease(midi::Message msg) {
 		uint8_t note = msg.getNote();
-		bool changed = valuesNote[note] != 0;
+		bool midiReceived = valuesNote[note] != 0;
 		valuesNote[note] = 0;
-		return changed;
+		return midiReceived;
+	}
+
+	void midiResendFeedback() {
+		for (int i = 0; i < MAX_CHANNELS; i++) {
+			lastValueOut[i] = -1;
+			ccs[i].resetValue();
+			notes[i].resetValue();
+		}
 	}
 
 	void clearMap(int id, bool midiOnly = false) {
 		learningId = -1;
-		ccs[id] = -1;
-		notes[id] = -1;
+		ccs[id].reset();
+		notes[id].reset();
 		midiOptions[id] = 0;
 		midiParam[id].reset();
 		if (!midiOnly) {
@@ -517,8 +729,8 @@ struct MidiCatModule : Module, StripIdFixModule {
 	void clearMaps() {
 		learningId = -1;
 		for (int id = 0; id < MAX_CHANNELS; id++) {
-			ccs[id] = -1;
-			notes[id] = -1;
+			ccs[id].reset();
+			notes[id].reset();
 			textLabel[id] = "";
 			midiOptions[id] = 0;
 			midiParam[id].reset();
@@ -526,14 +738,14 @@ struct MidiCatModule : Module, StripIdFixModule {
 			refreshParamHandleText(id);
 		}
 		mapLen = 1;
-		memModuleId = -1;
+		expMemModuleId = -1;
 	}
 
 	void updateMapLen() {
 		// Find last nonempty map
 		int id;
 		for (id = MAX_CHANNELS - 1; id >= 0; id--) {
-			if (ccs[id] >= 0 || notes[id] >= 0 || paramHandles[id].moduleId >= 0)
+			if (ccs[id].getCc() >= 0 || notes[id].getNote() >= 0 || paramHandles[id].moduleId >= 0)
 				break;
 		}
 		mapLen = id + 1;
@@ -556,8 +768,9 @@ struct MidiCatModule : Module, StripIdFixModule {
 		learnedParam = false;
 		// Copy modes from the previous slot
 		if (learningId > 0) {
-			ccsMode[learningId] = ccsMode[learningId - 1];
-			notesMode[learningId] = notesMode[learningId - 1];
+			ccs[learningId].ccMode = ccs[learningId - 1].ccMode;
+			ccs[learningId].set14bit(ccs[learningId - 1].get14bit());
+			notes[learningId].noteMode = notes[learningId - 1].noteMode;
 			midiOptions[learningId] = midiOptions[learningId - 1];
 			midiParam[learningId].setSlew(midiParam[learningId - 1].getSlew());
 			midiParam[learningId].setMin(midiParam[learningId - 1].getMin());
@@ -567,16 +780,27 @@ struct MidiCatModule : Module, StripIdFixModule {
 
 		// Find next incomplete map
 		while (!learnSingleSlot && ++learningId < MAX_CHANNELS) {
-			if ((ccs[learningId] < 0 && notes[learningId] < 0) || paramHandles[learningId].moduleId < 0)
+			if ((ccs[learningId].getCc() < 0 && notes[learningId].getNote() < 0) || paramHandles[learningId].moduleId < 0)
 				return;
 		}
 		learningId = -1;
 	}
 
-	void enableLearn(int id, bool learnSingle = false) {
+	int enableLearn(int id, bool learnSingle = false) {
+		if (id == -1) {
+			// Find next incomplete map
+			while (++id < MAX_CHANNELS) {
+				if (ccs[id].getCc() < 0 && notes[id].getNote() < 0 && paramHandles[id].moduleId < 0)
+					break;
+			}
+			if (id == MAX_CHANNELS) {
+				return -1;
+			}
+		}
+
 		if (id == mapLen) {
 			disableLearn();
-			return;
+			return -1;
 		}
 		if (learningId != id) {
 			learningId = id;
@@ -587,6 +811,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 			learnedParam = false;
 			learnSingleSlot = learnSingle;
 		}
+		return id;
 	}
 
 	void disableLearn() {
@@ -599,9 +824,9 @@ struct MidiCatModule : Module, StripIdFixModule {
 		}
 	}
 
-	void learnParam(int id, int moduleId, int paramId) {
+	void learnParam(int id, int moduleId, int paramId, bool resetMidiSettings = true) {
 		APP->engine->updateParamHandle(&paramHandles[id], moduleId, paramId, true);
-		midiParam[id].reset();
+		midiParam[id].reset(resetMidiSettings);
 		learnedParam = true;
 		commitLearn();
 		updateMapLen();
@@ -618,7 +843,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 				APP->engine->updateParamHandle(&paramHandles[i], -1, -1, true);
 			}
 		}
-		for (size_t i = 0; i < m->params.size(); i++) {
+		for (size_t i = 0; i < m->params.size() && i < MAX_CHANNELS; i++) {
 			learnParam(int(i), m->id, int(i));
 		}
 
@@ -635,28 +860,21 @@ struct MidiCatModule : Module, StripIdFixModule {
 
 	void refreshParamHandleText(int id) {
 		std::string text = "MIDI-CAT";
-		if (ccs[id] >= 0) {
-			text += string::f(" cc%02d", ccs[id]);
+		if (ccs[id].getCc() >= 0) {
+			text += string::f(" cc%02d", ccs[id].getCc());
 		}
-		if (notes[id] >= 0) {
+		if (notes[id].getNote() >= 0) {
 			static const char* noteNames[] = {
 				"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"
 			};
-			int oct = notes[id] / 12 - 1;
-			int semi = notes[id] % 12;
+			int oct = notes[id].getNote() / 12 - 1;
+			int semi = notes[id].getNote() % 12;
 			text += string::f(" note %s%d", noteNames[semi], oct);
 		}
 		paramHandles[id].text = text;
 	}
 
-	void resendMidiOut() {
-		midiOutput.reset();
-		for (int i = 0; i < MAX_CHANNELS; i++) {
-			lastValueOut[i] = -1;
-		}
-	}
-
-	void memSave(std::string pluginSlug, std::string moduleSlug) {
+	void expMemSave(std::string pluginSlug, std::string moduleSlug) {
 		MemModule* m = new MemModule;
 		Module* module = NULL;
 		for (size_t i = 0; i < MAX_CHANNELS; i++) {
@@ -666,10 +884,11 @@ struct MidiCatModule : Module, StripIdFixModule {
 
 			MemParam* p = new MemParam;
 			p->paramId = paramHandles[i].paramId;
-			p->cc = ccs[i];
-			p->ccMode = ccsMode[i];
-			p->note = notes[i];
-			p->noteMode = notesMode[i];
+			p->cc = ccs[i].getCc();
+			p->ccMode = ccs[i].ccMode;
+			p->cc14bit = ccs[i].get14bit();
+			p->note = notes[i].getNote();
+			p->noteMode = notes[i].noteMode;
 			p->label = textLabel[i];
 			p->midiOptions = midiOptions[i];
 			p->slew = midiParam[i].getSlew();
@@ -681,37 +900,38 @@ struct MidiCatModule : Module, StripIdFixModule {
 		m->moduleName = module->model->name;
 
 		auto p = std::pair<std::string, std::string>(pluginSlug, moduleSlug);
-		auto it = memStorage->find(p);
-		if (it != memStorage->end()) {
+		auto it = expMemStorage->find(p);
+		if (it != expMemStorage->end()) {
 			delete it->second;
 		}
 
-		(*memStorage)[p] = m;
+		(*expMemStorage)[p] = m;
 	}
 
-	void memDelete(std::string pluginSlug, std::string moduleSlug) {
+	void expMemDelete(std::string pluginSlug, std::string moduleSlug) {
 		auto p = std::pair<std::string, std::string>(pluginSlug, moduleSlug);
-		auto it = memStorage->find(p);
+		auto it = expMemStorage->find(p);
 		delete it->second;
-		memStorage->erase(p);
+		expMemStorage->erase(p);
 	}
 
-	void memApply(Module* m) {
+	void expMemApply(Module* m) {
 		if (!m) return;
 		auto p = std::pair<std::string, std::string>(m->model->plugin->slug, m->model->slug);
-		auto it = memStorage->find(p);
-		if (it == memStorage->end()) return;
+		auto it = expMemStorage->find(p);
+		if (it == expMemStorage->end()) return;
 		MemModule* map = it->second;
 
 		clearMaps();
-		memModuleId = m->id;
+		expMemModuleId = m->id;
 		int i = 0;
 		for (MemParam* it : map->paramMap) {
 			learnParam(i, m->id, it->paramId);
-			ccs[i] = it->cc;
-			ccsMode[i] = it->ccMode;
-			notes[i] = it->note;
-			notesMode[i] = it->noteMode;
+			ccs[i].setCc(it->cc);
+			ccs[i].ccMode = it->ccMode;
+			ccs[i].set14bit(it->cc14bit);
+			notes[i].setNote(it->note);
+			notes[i].noteMode = it->noteMode;
 			textLabel[i] = it->label;
 			midiOptions[i] = it->midiOptions;
 			midiParam[i].setSlew(it->slew);
@@ -722,11 +942,11 @@ struct MidiCatModule : Module, StripIdFixModule {
 		updateMapLen();
 	}
 
-	bool memTest(Module* m) {
+	bool expMemTest(Module* m) {
 		if (!m) return false;
 		auto p = std::pair<std::string, std::string>(m->model->plugin->slug, m->model->slug);
-		auto it = memStorage->find(p);
-		if (it == memStorage->end()) return false;
+		auto it = expMemStorage->find(p);
+		if (it == expMemStorage->end()) return false;
 		return true;
 	}
 
@@ -744,14 +964,17 @@ struct MidiCatModule : Module, StripIdFixModule {
 		json_object_set_new(rootJ, "mappingIndicatorHidden", json_boolean(mappingIndicatorHidden));
 		json_object_set_new(rootJ, "locked", json_boolean(locked));
 		json_object_set_new(rootJ, "processDivision", json_integer(processDivision));
+		json_object_set_new(rootJ, "overlayEnabled", json_boolean(overlayEnabled));
+		json_object_set_new(rootJ, "clearMapsOnLoad", json_boolean(clearMapsOnLoad));
 
 		json_t* mapsJ = json_array();
 		for (int id = 0; id < mapLen; id++) {
 			json_t* mapJ = json_object();
-			json_object_set_new(mapJ, "cc", json_integer(ccs[id]));
-			json_object_set_new(mapJ, "ccMode", json_integer(ccsMode[id]));
-			json_object_set_new(mapJ, "note", json_integer(notes[id]));
-			json_object_set_new(mapJ, "noteMode", json_integer(notesMode[id]));
+			json_object_set_new(mapJ, "cc", json_integer(ccs[id].getCc()));
+			json_object_set_new(mapJ, "ccMode", json_integer((int)ccs[id].ccMode));
+			json_object_set_new(mapJ, "cc14bit", json_boolean(ccs[id].get14bit()));
+			json_object_set_new(mapJ, "note", json_integer(notes[id].getNote()));
+			json_object_set_new(mapJ, "noteMode", json_integer((int)notes[id].noteMode));
 			json_object_set_new(mapJ, "moduleId", json_integer(paramHandles[id].moduleId));
 			json_object_set_new(mapJ, "paramId", json_integer(paramHandles[id].paramId));
 			json_object_set_new(mapJ, "label", json_string(textLabel[id].c_str()));
@@ -771,7 +994,6 @@ struct MidiCatModule : Module, StripIdFixModule {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		//clearMaps();
 		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
 		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 
@@ -783,6 +1005,14 @@ struct MidiCatModule : Module, StripIdFixModule {
 		if (lockedJ) locked = json_boolean_value(lockedJ);
 		json_t* processDivisionJ = json_object_get(rootJ, "processDivision");
 		if (processDivisionJ) processDivision = json_integer_value(processDivisionJ);
+		json_t* overlayEnabledJ = json_object_get(rootJ, "overlayEnabled");
+		if (overlayEnabledJ) overlayEnabled = json_boolean_value(overlayEnabledJ);
+		json_t* clearMapsOnLoadJ = json_object_get(rootJ, "clearMapsOnLoad");
+		if (clearMapsOnLoadJ) clearMapsOnLoad = json_boolean_value(clearMapsOnLoadJ);
+
+		if (clearMapsOnLoad) {
+			clearMaps();
+		}
 
 		json_t* mapsJ = json_object_get(rootJ, "maps");
 		if (mapsJ) {
@@ -795,6 +1025,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 
 				json_t* ccJ = json_object_get(mapJ, "cc");
 				json_t* ccModeJ = json_object_get(mapJ, "ccMode");
+				json_t* cc14bitJ = json_object_get(mapJ, "cc14bit");
 				json_t* noteJ = json_object_get(mapJ, "note");
 				json_t* noteModeJ = json_object_get(mapJ, "noteMode");
 				json_t* moduleIdJ = json_object_get(mapJ, "moduleId");
@@ -806,8 +1037,8 @@ struct MidiCatModule : Module, StripIdFixModule {
 				json_t* maxJ = json_object_get(mapJ, "max");
 
 				if (!(ccJ || noteJ)) {
-					ccs[mapIndex] = -1;
-					notes[mapIndex] = -1;
+					ccs[mapIndex].setCc(-1);
+					notes[mapIndex].setNote(-1);
 					APP->engine->updateParamHandle(&paramHandles[mapIndex], -1, 0, true);
 					continue;
 				}
@@ -815,10 +1046,11 @@ struct MidiCatModule : Module, StripIdFixModule {
 					APP->engine->updateParamHandle(&paramHandles[mapIndex], -1, 0, true);
 				}
 
-				ccs[mapIndex] = ccJ ? json_integer_value(ccJ) : -1;
-				ccsMode[mapIndex] = (CCMODE)json_integer_value(ccModeJ);
-				notes[mapIndex] = noteJ ? json_integer_value(noteJ) : -1;
-				notesMode[mapIndex] = (NOTEMODE)json_integer_value(noteModeJ);
+				ccs[mapIndex].setCc(ccJ ? json_integer_value(ccJ) : -1);
+				ccs[mapIndex].ccMode = (CCMODE)json_integer_value(ccModeJ);
+				if (cc14bitJ) ccs[mapIndex].set14bit(json_boolean_value(cc14bitJ));
+				notes[mapIndex].setNote(noteJ ? json_integer_value(noteJ) : -1);
+				notes[mapIndex].noteMode = (NOTEMODE)json_integer_value(noteModeJ);
 				midiOptions[mapIndex] = json_integer_value(midiOptionsJ);
 				int moduleId = moduleIdJ ? json_integer_value(moduleIdJ) : -1;
 				int paramId = paramIdJ ? json_integer_value(paramIdJ) : 0;
@@ -854,6 +1086,167 @@ struct MidiCatModule : Module, StripIdFixModule {
 };
 
 
+struct SlewSlider : ui::Slider {
+	struct SlewQuantity : Quantity {
+		const float SLEW_MIN = 0.f;
+		const float SLEW_MAX = 5.f;
+		MidiCatParam* p;
+		void setValue(float value) override {
+			value = clamp(value, SLEW_MIN, SLEW_MAX);
+			p->setSlew(value);
+		}
+		float getValue() override {
+			return p->getSlew();
+		}
+		float getDefaultValue() override {
+			return 0.f;
+		}
+		std::string getLabel() override {
+			return "Slew-limiting";
+		}
+		int getDisplayPrecision() override {
+			return 2;
+		}
+		float getMaxValue() override {
+			return SLEW_MAX;
+		}
+		float getMinValue() override {
+			return SLEW_MIN;
+		}
+	}; // struct SlewQuantity
+
+	SlewSlider(MidiCatParam* p) {
+		box.size.x = 220.0f;
+		quantity = construct<SlewQuantity>(&SlewQuantity::p, p);
+	}
+	~SlewSlider() {
+		delete quantity;
+	}
+}; // struct SlewSlider
+
+struct ScalingInputLabel : MenuLabelEx {
+	MidiCatParam* p;
+	void step() override {
+		float min = std::min(p->getMin(), p->getMax());
+		float max = std::max(p->getMin(), p->getMax());
+
+		float g1 = rescale(0.f, min, max, p->limitMin, p->limitMax);
+		g1 = clamp(g1, p->limitMin, p->limitMax);
+		int g1a = std::round(g1);
+		float g2 = rescale(1.f, min, max, p->limitMin, p->limitMax);
+		g2 = clamp(g2, p->limitMin, p->limitMax);
+		int g2a = std::round(g2);
+
+		rightText = string::f("[%i, %i]", g1a, g2a);
+	}
+}; // struct ScalingInputLabel
+
+struct ScalingOutputLabel : MenuLabelEx {
+	MidiCatParam* p;
+	void step() override {
+		float min = p->getMin();
+		float max = p->getMax();
+
+		float f1 = rescale(p->limitMin, p->limitMin, p->limitMax, min, max);
+		f1 = clamp(f1, 0.f, 1.f) * 100.f;
+		float f2 = rescale(p->limitMax, p->limitMin, p->limitMax, min, max);
+		f2 = clamp(f2, 0.f, 1.f) * 100.f;
+
+		rightText = string::f("[%.1f%, %.1f%]", f1, f2);
+	}
+}; // struct ScalingOutputLabel
+
+struct MinSlider : SubMenuSlider {
+	struct MinQuantity : Quantity {
+		MidiCatParam* p;
+		void setValue(float value) override {
+			value = clamp(value, -1.f, 2.f);
+			p->setMin(value);
+		}
+		float getValue() override {
+			return p->getMin();
+		}
+		float getDefaultValue() override {
+			return 0.f;
+		}
+		float getMinValue() override {
+			return -1.f;
+		}
+		float getMaxValue() override {
+			return 2.f;
+		}
+		float getDisplayValue() override {
+			return getValue() * 100;
+		}
+		void setDisplayValue(float displayValue) override {
+			setValue(displayValue / 100);
+		}
+		std::string getLabel() override {
+			return "Low";
+		}
+		std::string getUnit() override {
+			return "%";
+		}
+		int getDisplayPrecision() override {
+			return 3;
+		}
+	}; // struct MinQuantity
+
+	MinSlider(MidiCatParam* p) {
+		box.size.x = 220.0f;
+		quantity = construct<MinQuantity>(&MinQuantity::p, p);
+	}
+	~MinSlider() {
+		delete quantity;
+	}
+}; // struct MinSlider
+
+struct MaxSlider : SubMenuSlider {
+	struct MaxQuantity : Quantity {
+		MidiCatParam* p;
+		void setValue(float value) override {
+			value = clamp(value, -1.f, 2.f);
+			p->setMax(value);
+		}
+		float getValue() override {
+			return p->getMax();
+		}
+		float getDefaultValue() override {
+			return 1.f;
+		}
+		float getMinValue() override {
+			return -1.f;
+		}
+		float getMaxValue() override {
+			return 2.f;
+		}
+		float getDisplayValue() override {
+			return getValue() * 100;
+		}
+		void setDisplayValue(float displayValue) override {
+			setValue(displayValue / 100);
+		}
+		std::string getLabel() override {
+			return "High";
+		}
+		std::string getUnit() override {
+			return "%";
+		}
+		int getDisplayPrecision() override {
+			return 3;
+		}
+	}; // struct MaxQuantity
+
+	MaxSlider(MidiCatParam* p) {
+		box.size.x = 220.0f;
+		quantity = construct<MaxQuantity>(&MaxQuantity::p, p);
+	}
+	~MaxSlider() {
+		delete quantity;
+	}
+}; // struct MaxSlider
+
+
 struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 	MidiCatChoice() {
 		textOffset = Vec(6.f, 14.7f);
@@ -861,15 +1254,15 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 	}
 
 	std::string getSlotPrefix() override {
-		if (module->ccs[id] >= 0) {
-			return string::f("cc%02d ", module->ccs[id]);
+		if (module->ccs[id].getCc() >= 0) {
+			return string::f("cc%02d ", module->ccs[id].getCc());
 		}
-		else if (module->notes[id] >= 0) {
+		else if (module->notes[id].getNote() >= 0) {
 			static const char* noteNames[] = {
 				" C", "C#", " D", "D#", " E", " F", "F#", " G", "G#", " A", "A#", " B"
 			};
-			int oct = module->notes[id] / 12 - 1;
-			int semi = module->notes[id] % 12;
+			int oct = module->notes[id].getNote() / 12 - 1;
+			int semi = module->notes[id].getNote() % 12;
 			return string::f(" %s%d ", noteNames[semi], oct);
 		}
 		else if (module->paramHandles[id].moduleId >= 0) {
@@ -907,22 +1300,36 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 				CCMODE ccMode;
 
 				void onAction(const event::Action& e) override {
-					module->ccsMode[id] = ccMode;
+					module->ccs[id].ccMode = ccMode;
 				}
 				void step() override {
-					rightText = module->ccsMode[id] == ccMode ? "✔" : "";
+					rightText = module->ccs[id].ccMode == ccMode ? "✔" : "";
 					MenuItem::step();
 				}
 			};
 
 			Menu* createChildMenu() override {
 				Menu* menu = new Menu;
-				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Direct", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::CCMODE_DIRECT));
-				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Pickup (snap)", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::CCMODE_PICKUP1));
-				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Pickup (jump)", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::CCMODE_PICKUP2));
+				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Direct", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::DIRECT));
+				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Pickup (snap)", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::PICKUP1));
+				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Pickup (jump)", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::PICKUP2));
+				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Toggle", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::TOGGLE));
+				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Toggle + Value", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::TOGGLE_VALUE));
 				return menu;
 			}
 		}; // struct CcModeMenuItem
+		
+		struct Cc14bitItem : MenuItem {
+			MidiCatModule* module;
+			int id;
+			void onAction(const event::Action& e) override {
+				module->ccs[id].set14bit(!module->ccs[id].get14bit());
+			}
+			void step() override {
+				rightText = CHECKMARK(module->ccs[id].get14bit());
+				MenuItem::step();
+			}
+		};
 
 		struct NoteModeMenuItem : MenuItem {
 			MidiCatModule* module;
@@ -938,20 +1345,20 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 				NOTEMODE noteMode;
 
 				void onAction(const event::Action& e) override {
-					module->notesMode[id] = noteMode;
+					module->notes[id].noteMode = noteMode;
 				}
 				void step() override {
-					rightText = module->notesMode[id] == noteMode ? "✔" : "";
+					rightText = module->notes[id].noteMode == noteMode ? "✔" : "";
 					MenuItem::step();
 				}
 			};
 
 			Menu* createChildMenu() override {
 				Menu* menu = new Menu;
-				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Momentary", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::NOTEMODE_MOMENTARY));
-				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Momentary + Velocity", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::NOTEMODE_MOMENTARY_VEL));
-				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Toggle", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::NOTEMODE_TOGGLE));
-				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Toggle + Velocity", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::NOTEMODE_TOGGLE_VEL));
+				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Momentary", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::MOMENTARY));
+				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Momentary + Velocity", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::MOMENTARY_VEL));
+				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Toggle", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::TOGGLE));
+				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Toggle + Velocity", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::TOGGLE_VEL));
 				return menu;
 			}
 		}; // struct NoteModeMenuItem
@@ -969,178 +1376,19 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 			}
 		}; // struct NoteVelZeroMenuItem
 
-		if (module->ccs[id] >= 0 || module->notes[id] >= 0) {
+		if (module->ccs[id].getCc() >= 0 || module->notes[id].getNote() >= 0) {
 			menu->addChild(construct<UnmapMidiItem>(&MenuItem::text, "Clear MIDI assignment", &UnmapMidiItem::module, module, &UnmapMidiItem::id, id));
 		}
-		if (module->ccs[id] >= 0) {
+		if (module->ccs[id].getCc() >= 0) {
 			menu->addChild(new MenuSeparator());
 			menu->addChild(construct<CcModeMenuItem>(&MenuItem::text, "Input mode for CC", &CcModeMenuItem::module, module, &CcModeMenuItem::id, id));
+			menu->addChild(construct<Cc14bitItem>(&MenuItem::text, "14-bit", &MenuItem::disabled, module->ccs[id].getCc() > 32, &Cc14bitItem::module, module, &Cc14bitItem::id, id));
 		}
-		if (module->notes[id] >= 0) {
+		if (module->notes[id].getNote() >= 0) {
 			menu->addChild(new MenuSeparator());
 			menu->addChild(construct<NoteModeMenuItem>(&MenuItem::text, "Input mode for notes", &NoteModeMenuItem::module, module, &NoteModeMenuItem::id, id));
 			menu->addChild(construct<NoteVelZeroMenuItem>(&MenuItem::text, "Send \"note on, velocity 0\"", &NoteVelZeroMenuItem::module, module, &NoteVelZeroMenuItem::id, id));
 		}
-
-		struct SlewSlider : ui::Slider {
-			struct SlewQuantity : Quantity {
-				const float SLEW_MIN = 0.f;
-				const float SLEW_MAX = 5.f;
-				MidiCatParam* p;
-				void setValue(float value) override {
-					value = clamp(value, SLEW_MIN, SLEW_MAX);
-					p->setSlew(value);
-				}
-				float getValue() override {
-					return p->getSlew();
-				}
-				float getDefaultValue() override {
-					return 0.f;
-				}
-				std::string getLabel() override {
-					return "Slew-limiting";
-				}
-				int getDisplayPrecision() override {
-					return 2;
-				}
-				float getMaxValue() override {
-					return SLEW_MAX;
-				}
-				float getMinValue() override {
-					return SLEW_MIN;
-				}
-			}; // struct SlewQuantity
-
-			SlewSlider(MidiCatParam* p) {
-				box.size.x = 220.0f;
-				quantity = construct<SlewQuantity>(&SlewQuantity::p, p);
-			}
-			~SlewSlider() {
-				delete quantity;
-			}
-		}; // struct SlewSlider
-
-		struct ScalingInputLabel : MenuLabelEx {
-			MidiCatParam* p;
-			void step() override {
-				float min = std::min(p->getMin(), p->getMax());
-				float max = std::max(p->getMin(), p->getMax());
-
-				float g1 = rescale(0.f, min, max, 0.f, 127.f);
-				g1 = clamp(g1, 0.f, 127.f);
-				int g1a = std::round(g1);
-				float g2 = rescale(1.f, min, max, 0.f, 127.f);
-				g2 = clamp(g2, 0.f, 127.f);
-				int g2a = std::round(g2);
-
-				rightText = string::f("[%i, %i]", g1a, g2a);
-			}
-		}; // struct ScalingInputLabel
-
-		struct ScalingOutputLabel : MenuLabelEx {
-			MidiCatParam* p;
-			void step() override {
-				float min = p->getMin();
-				float max = p->getMax();
-
-				float f1 = rescale(0.f, 0.f, 127.f, min, max);
-				f1 = clamp(f1, 0.f, 1.f) * 100.f;
-				float f2 = rescale(127.f, 0.f, 127.f, min, max);
-				f2 = clamp(f2, 0.f, 1.f) * 100.f;
-
-				rightText = string::f("[%.1f%, %.1f%]", f1, f2);
-			}
-		}; // struct ScalingOutputLabel
-
-		struct MinSlider : SubMenuSlider {
-			struct MinQuantity : Quantity {
-				MidiCatParam* p;
-				void setValue(float value) override {
-					value = clamp(value, -1.f, 2.f);
-					p->setMin(value);
-				}
-				float getValue() override {
-					return p->getMin();
-				}
-				float getDefaultValue() override {
-					return 0.f;
-				}
-				float getMinValue() override {
-					return -1.f;
-				}
-				float getMaxValue() override {
-					return 2.f;
-				}
-				float getDisplayValue() override {
-					return getValue() * 100;
-				}
-				void setDisplayValue(float displayValue) override {
-					setValue(displayValue / 100);
-				}
-				std::string getLabel() override {
-					return "Low";
-				}
-				std::string getUnit() override {
-					return "%";
-				}
-				int getDisplayPrecision() override {
-					return 3;
-				}
-			}; // struct MinQuantity
-
-			MinSlider(MidiCatParam* p) {
-				box.size.x = 220.0f;
-				quantity = construct<MinQuantity>(&MinQuantity::p, p);
-			}
-			~MinSlider() {
-				delete quantity;
-			}
-		}; // struct MinSlider
-
-		struct MaxSlider : SubMenuSlider {
-			struct MaxQuantity : Quantity {
-				MidiCatParam* p;
-				void setValue(float value) override {
-					value = clamp(value, -1.f, 2.f);
-					p->setMax(value);
-				}
-				float getValue() override {
-					return p->getMax();
-				}
-				float getDefaultValue() override {
-					return 1.f;
-				}
-				float getMinValue() override {
-					return -1.f;
-				}
-				float getMaxValue() override {
-					return 2.f;
-				}
-				float getDisplayValue() override {
-					return getValue() * 100;
-				}
-				void setDisplayValue(float displayValue) override {
-					setValue(displayValue / 100);
-				}
-				std::string getLabel() override {
-					return "High";
-				}
-				std::string getUnit() override {
-					return "%";
-				}
-				int getDisplayPrecision() override {
-					return 3;
-				}
-			}; // struct MaxQuantity
-
-			MaxSlider(MidiCatParam* p) {
-				box.size.x = 220.0f;
-				quantity = construct<MaxQuantity>(&MaxQuantity::p, p);
-			}
-			~MaxSlider() {
-				delete quantity;
-			}
-		}; // struct MaxSlider
 
 		struct PresetMenuItem : MenuItem {
 			MidiCatModule* module;
@@ -1224,9 +1472,8 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 		}; // struct LabelMenuItem
 
 		menu->addChild(new SlewSlider(&module->midiParam[id]));
-		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Scaling"));
-		std::string l = string::f("Input %s", module->ccs[id] >= 0 ? "MIDI CC" : (module->notes[id] >= 0 ? "MIDI vel" : ""));
+		std::string l = string::f("Input %s", module->ccs[id].getCc() >= 0 ? "MIDI CC" : (module->notes[id].getNote() >= 0 ? "MIDI vel" : ""));
 		menu->addChild(construct<ScalingInputLabel>(&MenuLabel::text, l, &ScalingInputLabel::p, &module->midiParam[id]));
 		menu->addChild(construct<ScalingOutputLabel>(&MenuLabel::text, "Parameter range", &ScalingOutputLabel::p, &module->midiParam[id]));
 		menu->addChild(new MinSlider(&module->midiParam[id]));
@@ -1238,7 +1485,7 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 };
 
 
-struct MidiCatDisplay : MapModuleDisplay<MAX_CHANNELS, MidiCatModule, MidiCatChoice> {
+struct MidiCatDisplay : MapModuleDisplay<MAX_CHANNELS, MidiCatModule, MidiCatChoice>, OverlayMessageProvider {
 	void step() override {
 		if (module) {
 			int mapLen = module->mapLen;
@@ -1249,41 +1496,42 @@ struct MidiCatDisplay : MapModuleDisplay<MAX_CHANNELS, MidiCatModule, MidiCatCho
 		}
 		MapModuleDisplay<MAX_CHANNELS, MidiCatModule, MidiCatChoice>::step();
 	}
-};
 
-struct MidiCatMidiWidget : MidiWidget {
-	void setMidiPort(midi::Port* port) {
-		MidiWidget::setMidiPort(port);
+	int nextOverlayMessageId() override {
+		if (module->overlayQueue.empty())
+			return -1;
+		return module->overlayQueue.shift();
+	}
 
-		driverChoice->textOffset = Vec(6.f, 14.7f);
-		driverChoice->box.size = mm2px(Vec(driverChoice->box.size.x, 7.5f));
-		driverChoice->color = nvgRGB(0xf0, 0xf0, 0xf0);
+	void getOverlayMessage(int id, Message& m) override {
+		ParamQuantity* paramQuantity = choices[id]->getParamQuantity();
+		if (!paramQuantity) return;
 
-		driverSeparator->box.pos = driverChoice->box.getBottomLeft();
+		std::string label = choices[id]->getSlotLabel();
+		if (label == "") label = paramQuantity->label;
 
-		deviceChoice->textOffset = Vec(6.f, 14.7f);
-		deviceChoice->box.size = mm2px(Vec(deviceChoice->box.size.x, 7.5f));
-		deviceChoice->box.pos = driverChoice->box.getBottomLeft();
-		deviceChoice->color = nvgRGB(0xf0, 0xf0, 0xf0);
-
-		deviceSeparator->box.pos = deviceChoice->box.getBottomLeft();
-
-		channelChoice->textOffset = Vec(6.f, 14.7f);
-		channelChoice->box.size = mm2px(Vec(channelChoice->box.size.x, 7.5f));
-		channelChoice->box.pos = deviceChoice->box.getBottomLeft();
-		channelChoice->color = nvgRGB(0xf0, 0xf0, 0xf0);
+		m.title = paramQuantity->getDisplayValueString() + paramQuantity->getUnit();
+		m.subtitle[0] = paramQuantity->module->model->name;
+		m.subtitle[1] = label;
 	}
 };
 
-struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
+
+struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExtender {
 	MidiCatModule* module;
-	Module* mem;
-	BufferedTriggerParamQuantity* memPrevQuantity;
-	dsp::SchmittTrigger memPrevTrigger;
-	BufferedTriggerParamQuantity* memNextQuantity;
-	dsp::SchmittTrigger memNextTrigger;
-	BufferedTriggerParamQuantity* memParamQuantity;
-	dsp::SchmittTrigger memParamTrigger;
+	MidiCatDisplay* mapWidget;
+
+	Module* expMem;
+	BufferedTriggerParamQuantity* expMemPrevQuantity;
+	dsp::SchmittTrigger expMemPrevTrigger;
+	BufferedTriggerParamQuantity* expMemNextQuantity;
+	dsp::SchmittTrigger expMemNextTrigger;
+	BufferedTriggerParamQuantity* expMemParamQuantity;
+	dsp::SchmittTrigger expMemParamTrigger;
+
+	MidiCatCtxBase* expCtx;
+	BufferedTriggerParamQuantity* expCtxMapQuantity;
+	dsp::SchmittTrigger expCtxMapTrigger;
 
 	enum class LEARN_MODE {
 		OFF = 0,
@@ -1293,8 +1541,6 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 	};
 
 	LEARN_MODE learnMode = LEARN_MODE::OFF;
-
-	Widget* lastSelectedWidget;
 
 	MidiCatWidget(MidiCatModule* module)
 		: ThemedModuleWidget<MidiCatModule>(module, "MidiCat") {
@@ -1306,25 +1552,33 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		MidiCatMidiWidget* midiInputWidget = createWidget<MidiCatMidiWidget>(Vec(10.0f, 36.4f));
+		MidiWidget<>* midiInputWidget = createWidget<MidiWidget<>>(Vec(10.0f, 36.4f));
 		midiInputWidget->box.size = Vec(130.0f, 67.0f);
 		midiInputWidget->setMidiPort(module ? &module->midiInput : NULL);
 		addChild(midiInputWidget);
 
-		MidiCatMidiWidget* midiOutputWidget = createWidget<MidiCatMidiWidget>(Vec(10.0f, 107.4f));
+		MidiWidget<>* midiOutputWidget = createWidget<MidiWidget<>>(Vec(10.0f, 107.4f));
 		midiOutputWidget->box.size = Vec(130.0f, 67.0f);
 		midiOutputWidget->setMidiPort(module ? &module->midiOutput : NULL);
 		addChild(midiOutputWidget);
 
-		MidiCatDisplay* mapWidget = createWidget<MidiCatDisplay>(Vec(10.0f, 178.5f));
+		mapWidget = createWidget<MidiCatDisplay>(Vec(10.0f, 178.5f));
 		mapWidget->box.size = Vec(130.0f, 164.7f);
 		mapWidget->setModule(module);
 		addChild(mapWidget);
+
+		if (module) {
+			OverlayMessageWidget::registerProvider(mapWidget);
+		}
 	}
 
 	~MidiCatWidget() {
 		if (learnMode != LEARN_MODE::OFF) {
 			glfwSetCursor(APP->window->win, NULL);
+		}
+
+		if (module) {
+			OverlayMessageWidget::unregisterProvider(mapWidget);
 		}
 	}
 
@@ -1402,38 +1656,54 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 	void step() override {
 		ThemedModuleWidget<MidiCatModule>::step();
 		if (module) {
-			if (module->mem != mem) {
-				mem = module->mem;
-				if (mem) {
-					memPrevQuantity = dynamic_cast<BufferedTriggerParamQuantity*>(mem->paramQuantities[1]);
-					memPrevQuantity->resetBuffer();
-					memNextQuantity = dynamic_cast<BufferedTriggerParamQuantity*>(mem->paramQuantities[2]);
-					memNextQuantity->resetBuffer();
-					memParamQuantity = dynamic_cast<BufferedTriggerParamQuantity*>(mem->paramQuantities[0]);
-					memParamQuantity->resetBuffer();
+			// MEM-expander
+			if (module->expMem != expMem) {
+				expMem = module->expMem;
+				if (expMem) {
+					expMemPrevQuantity = dynamic_cast<BufferedTriggerParamQuantity*>(expMem->paramQuantities[1]);
+					expMemPrevQuantity->resetBuffer();
+					expMemNextQuantity = dynamic_cast<BufferedTriggerParamQuantity*>(expMem->paramQuantities[2]);
+					expMemNextQuantity->resetBuffer();
+					expMemParamQuantity = dynamic_cast<BufferedTriggerParamQuantity*>(expMem->paramQuantities[0]);
+					expMemParamQuantity->resetBuffer();
 				}
 			}
-			if (mem) {
-				if (memPrevTrigger.process(memPrevQuantity->buffer)) {
-					memPrevQuantity->resetBuffer();
-					memPrevModule();
+			if (expMem) {
+				if (expMemPrevTrigger.process(expMemPrevQuantity->buffer)) {
+					expMemPrevQuantity->resetBuffer();
+					expMemPrevModule();
 				}
-				if (memNextTrigger.process(memNextQuantity->buffer)) {
-					memNextQuantity->resetBuffer();
-					memNextModule();
+				if (expMemNextTrigger.process(expMemNextQuantity->buffer)) {
+					expMemNextQuantity->resetBuffer();
+					expMemNextModule();
 				}
-				if (memParamTrigger.process(memParamQuantity->buffer)) {
-					memParamQuantity->resetBuffer();
+				if (expMemParamTrigger.process(expMemParamQuantity->buffer)) {
+					expMemParamQuantity->resetBuffer();
 					enableLearn(LEARN_MODE::MEM);
 				}
-				module->mem->lights[0].setBrightness(learnMode == LEARN_MODE::MEM);
+				module->expMem->lights[0].setBrightness(learnMode == LEARN_MODE::MEM);
+			}
+
+			// CTX-expander
+			if (module->expCtx != (Module*)expCtx) {
+				expCtx = dynamic_cast<MidiCatCtxBase*>(module->expCtx);
+				if (expCtx) {
+					expCtxMapQuantity = dynamic_cast<BufferedTriggerParamQuantity*>(expCtx->paramQuantities[0]);
+					expCtxMapQuantity->resetBuffer();
+				}
+			}
+			if (expCtx) {
+				if (expCtxMapTrigger.process(expCtxMapQuantity->buffer)) {
+					expCtxMapQuantity->resetBuffer();
+					module->enableLearn(-1, true);
+				}
 			}
 		}
 
-		extendParamWidgetContextMenu();
+		ParamWidgetContextExtender::step();
 	}
 
-	void memPrevModule() {
+	void expMemPrevModule() {
 		std::list<Widget*> modules = APP->scene->rack->moduleContainer->children;
 		auto sort = [&](Widget* w1, Widget* w2) {
 			auto t1 = std::make_tuple(w1->box.pos.y, w1->box.pos.x);
@@ -1441,10 +1711,10 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 			return t1 > t2;
 		};
 		modules.sort(sort);
-		memScanModules(modules);
+		expMemScanModules(modules);
 	}
 
-	void memNextModule() {
+	void expMemNextModule() {
 		std::list<Widget*> modules = APP->scene->rack->moduleContainer->children;
 		auto sort = [&](Widget* w1, Widget* w2) {
 			auto t1 = std::make_tuple(w1->box.pos.y, w1->box.pos.x);
@@ -1452,18 +1722,18 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 			return t1 < t2;
 		};
 		modules.sort(sort);
-		memScanModules(modules);
+		expMemScanModules(modules);
 	}
 
-	void memScanModules(std::list<Widget*>& modules) {
+	void expMemScanModules(std::list<Widget*>& modules) {
 		f:
 		std::list<Widget*>::iterator it = modules.begin();
 		// Scan for current module in the list
-		if (module->memModuleId != -1) {
+		if (module->expMemModuleId != -1) {
 			for (; it != modules.end(); it++) {
 				ModuleWidget* mw = dynamic_cast<ModuleWidget*>(*it);
 				Module* m = mw->module;
-				if (m->id == module->memModuleId) {
+				if (m->id == module->expMemModuleId) {
 					it++;
 					break;
 				}
@@ -1477,67 +1747,175 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 		for (; it != modules.end(); it++) {
 			ModuleWidget* mw = dynamic_cast<ModuleWidget*>(*it);
 			Module* m = mw->module;
-			if (module->memTest(m)) {
-				module->memApply(m);
+			if (module->expMemTest(m)) {
+				module->expMemApply(m);
 				return;
 			}
 		}
 		// No module found yet -> retry from the beginning
-		if (module->memModuleId != -1) {
-			module->memModuleId = -1;
+		if (module->expMemModuleId != -1) {
+			module->expMemModuleId = -1;
 			goto f;
 		}
 	}
 
-	void extendParamWidgetContextMenu() {
+	void extendParamWidgetContextMenu(ParamWidget* pw, Menu* menu) override {
 		if (!module) return;
+		if (module->learningId >= 0) return;
+		ParamQuantity* pq = pw->paramQuantity;
+		if (!pq) return;
+		
+		struct MidiCatBeginItem : MenuLabel {
+			MidiCatBeginItem() {
+				text = "MIDI-CAT";
+			}
+		};
 
-		// Extend parameter's context menu with additional MenuItems
-		Widget* w = APP->event->getDraggedWidget();
-		if (!w) return;
-		if (w != lastSelectedWidget) {
-			lastSelectedWidget = w;
-			if (module->learningId >= 0) return;
-			ParamWidget* pw = dynamic_cast<ParamWidget*>(w);
-			if (!pw) return;
-			ParamQuantity* pq = pw->paramQuantity;
-			if (!pq) return;
-			ParamHandle* handle = APP->engine->getParamHandle(pq->module->id, pq->paramId);
-			if (!handle) return;
-			
-			for (int i = 0; i < module->mapLen; i++) {
-				if (&module->paramHandles[i] == handle) {
-					// Hack for attaching additional menu items to parameter's context menu
-					MenuOverlay* overlay;
-					for (Widget* child : APP->scene->children) {
-						overlay = dynamic_cast<MenuOverlay*>(child);
-						if (overlay) break;
+		struct MidiCatEndItem : MenuEntry {
+			MidiCatEndItem() {
+				box.size = Vec();
+			}
+		};
+
+		struct MapMenuItem : MenuItem {
+			MidiCatModule* module;
+			ParamQuantity* pq;
+			int currentId = -1;
+
+			MapMenuItem() {
+				rightText = RIGHT_ARROW;
+			}
+
+			Menu* createChildMenu() override {
+				struct MapItem : MenuItem {
+					MidiCatModule* module;
+					int currentId;
+					void onAction(const event::Action& e) override {
+						module->enableLearn(currentId, true);
 					}
-					if (!overlay) return;
-					Widget* w = overlay->children.front();
-					Menu* menu = dynamic_cast<Menu*>(w);
-					if (!menu) return;
+				};
 
-					struct MapMenuItem : MenuItem {
-						MidiCatModule* module;
-						int id;
-						void onAction(const event::Action& e) override {
-							module->enableLearn(id, true);
-						}
-					};
+				struct MapEmptyItem : MenuItem {
+					MidiCatModule* module;
+					ParamQuantity* pq;
+					void onAction(const event::Action& e) override {
+						int id = module->enableLearn(-1, true);
+						if (id >= 0) module->learnParam(id, pq->module->id, pq->paramId);
+					}
+				};
 
-					struct ShowMidicatItem : MenuItem {
-						MidiCatWidget* mw;
-						void onAction(const event::Action& e) override {
-							StoermelderPackOne::Rack::ViewportCenter{mw};
-						}
-					};
+				struct RemapItem : MenuItem {
+					MidiCatModule* module;
+					ParamQuantity* pq;
+					int id;
+					int currentId;
+					void onAction(const event::Action& e) override {
+						module->learnParam(id, pq->module->id, pq->paramId, false);
+					}
+					void step() override {
+						rightText = CHECKMARK(id == currentId);
+						MenuItem::step();
+					}
+				};
 
+				Menu* menu = new Menu;
+				if (currentId < 0) {
+					menu->addChild(construct<MapEmptyItem>(&MenuItem::text, "Learn MIDI", &MapEmptyItem::module, module, &MapEmptyItem::pq, pq));
+				}
+				else {
+					menu->addChild(construct<MapItem>(&MenuItem::text, "Learn MIDI", &MapItem::module, module, &MapItem::currentId, currentId));
+				}
+
+				if (module->mapLen > 0) {
 					menu->addChild(new MenuSeparator);
-					menu->addChild(construct<MenuLabel>(&MenuLabel::text, "MIDI-CAT"));
-					menu->addChild(construct<MapMenuItem>(&MenuItem::text, "Learn MIDI", &MapMenuItem::module, module, &MapMenuItem::id, i));
-					menu->addChild(construct<ShowMidicatItem>(&MenuItem::text, "Center mapping module", &ShowMidicatItem::mw, this));
-					break;
+					for (int i = 0; i < module->mapLen; i++) {
+						if (module->ccs[i].getCc() >= 0 || module->notes[i].getNote() >= 0) {
+							std::string text;
+							if (module->textLabel[i] != "") {
+								text = module->textLabel[i];
+							}
+							else if (module->ccs[i].getCc() >= 0) {
+								text = string::f("MIDI CC %02d", module->ccs[i].getCc());
+							}
+							else {
+								static const char* noteNames[] = {
+									"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"
+								};
+								int oct = module->notes[i].getNote() / 12 - 1;
+								int semi = module->notes[i].getNote() % 12;
+								text = string::f("MIDI note %s%d", noteNames[semi], oct);
+							}
+							menu->addChild(construct<RemapItem>(&MenuItem::text, text, &RemapItem::module, module, &RemapItem::pq, pq, &RemapItem::id, i, &RemapItem::currentId, currentId));
+						}
+					}
+				}
+				return menu;
+			} 
+		};
+
+		std::list<Widget*>::iterator beg = menu->children.begin();
+		std::list<Widget*>::iterator end = menu->children.end();
+		std::list<Widget*>::iterator itCvBegin = end;
+		std::list<Widget*>::iterator itCvEnd = end;
+		
+		for (auto it = beg; it != end; it++) {
+			if (itCvBegin == end) {
+				MidiCatBeginItem* ml = dynamic_cast<MidiCatBeginItem*>(*it);
+				if (ml) { itCvBegin = it; continue; }
+			}
+			else {
+				MidiCatEndItem* ml = dynamic_cast<MidiCatEndItem*>(*it);
+				if (ml) { itCvEnd = it; break; }
+			}
+		}
+
+		for (int id = 0; id < module->mapLen; id++) {
+			if (module->paramHandles[id].moduleId == pq->module->id && module->paramHandles[id].paramId == pq->paramId) {
+				std::string midiCatId = expCtx ? "on \"" + expCtx->getMidiCatId() + "\"" : "";
+				std::list<Widget*> w;
+				w.push_back(construct<MapMenuItem>(&MenuItem::text, string::f("Re-map %s", midiCatId.c_str()), &MapMenuItem::module, module, &MapMenuItem::pq, pq, &MapMenuItem::currentId, id));
+				w.push_back(new SlewSlider(&module->midiParam[id]));
+				w.push_back(construct<MenuLabel>(&MenuLabel::text, "Scaling"));
+				std::string l = string::f("Input %s", module->ccs[id].getCc() >= 0 ? "MIDI CC" : (module->notes[id].getNote() >= 0 ? "MIDI vel" : ""));
+				w.push_back(construct<ScalingInputLabel>(&MenuLabel::text, l, &ScalingInputLabel::p, &module->midiParam[id]));
+				w.push_back(construct<ScalingOutputLabel>(&MenuLabel::text, "Parameter range", &ScalingOutputLabel::p, &module->midiParam[id]));
+				w.push_back(new MinSlider(&module->midiParam[id]));
+				w.push_back(new MaxSlider(&module->midiParam[id]));
+				w.push_back(construct<CenterModuleItem>(&MenuItem::text, "Go to mapping module", &CenterModuleItem::mw, this));
+				w.push_back(new MidiCatEndItem);
+
+				if (itCvBegin == end) {
+					menu->addChild(new MenuSeparator);
+					menu->addChild(construct<MidiCatBeginItem>());
+					for (Widget* wm : w) {
+						menu->addChild(wm);
+					}
+				}
+				else {
+					for (auto i = w.rbegin(); i != w.rend(); ++i) {
+						Widget* wm = *i;
+						menu->addChild(wm);
+						auto it = std::prev(menu->children.end());
+						menu->children.splice(std::next(itCvBegin), menu->children, it);
+					}
+				}
+				return;
+			}
+		}
+
+		if (expCtx) {
+			std::string midiCatId = expCtx->getMidiCatId();
+			if (midiCatId != "") {
+				MenuItem* mapMenuItem = construct<MapMenuItem>(&MenuItem::text, string::f("Map on \"%s\"", midiCatId.c_str()), &MapMenuItem::module, module, &MapMenuItem::pq, pq);
+				if (itCvBegin == end) {
+					menu->addChild(new MenuSeparator);
+					menu->addChild(construct<MidiCatBeginItem>());
+					menu->addChild(mapMenuItem);
+				}
+				else {
+					menu->addChild(mapMenuItem);
+					auto it = std::find(beg, end, mapMenuItem);
+					menu->children.splice(std::next(itCvEnd == end ? itCvBegin : itCvEnd), menu->children, it);
 				}
 			}
 		}
@@ -1566,7 +1944,7 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 				case LEARN_MODE::BIND_KEEP:
 					module->moduleBind(m, true); break;
 				case LEARN_MODE::MEM:
-					module->memApply(m); break;
+					module->expMemApply(m); break;
 				case LEARN_MODE::OFF:
 					break;
 			}
@@ -1651,12 +2029,15 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 
 		struct ResendMidiOutItem : MenuItem {
 			MidiCatModule* module;
-			void onAction(const event::Action& e) override {
-				module->resendMidiOut();
-			}
-
 			Menu* createChildMenu() override {
-				struct ResendMidiPeriodicallyItem : MenuItem {
+				struct NowItem : MenuItem {
+					MidiCatModule* module;
+					void onAction(const event::Action& e) override {
+						module->midiResendFeedback();
+					}
+				};
+
+				struct PeriodicallyItem : MenuItem {
 					MidiCatModule* module;
 					void onAction(const event::Action& e) override {
 						module->midiResendPeriodically ^= true;
@@ -1668,21 +2049,47 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 				};
 
 				Menu* menu = new Menu;
-				menu->addChild(construct<ResendMidiPeriodicallyItem>(&MenuItem::text, "Periodically", &ResendMidiPeriodicallyItem::module, module));
+				menu->addChild(construct<NowItem>(&MenuItem::text, "Now", &NowItem::module, module));
+				menu->addChild(construct<PeriodicallyItem>(&MenuItem::text, "Periodically", &PeriodicallyItem::module, module));
 				return menu;
 			}
 		}; // struct ResendMidiOutItem
 
-		struct IgnoreMidiDevicesItem : MenuItem {
+		struct PresetLoadMenuItem : MenuItem {
+			struct IgnoreMidiDevicesItem : MenuItem {
+				MidiCatModule* module;
+				void onAction(const event::Action& e) override {
+					module->midiIgnoreDevices ^= true;
+				}
+				void step() override {
+					rightText = CHECKMARK(module->midiIgnoreDevices);
+					MenuItem::step();
+				}
+			}; // struct IgnoreMidiDevicesItem
+
+			struct ClearMapsOnLoadItem : MenuItem {
+				MidiCatModule* module;
+				void onAction(const event::Action& e) override {
+					module->clearMapsOnLoad ^= true;
+				}
+				void step() override {
+					rightText = CHECKMARK(module->clearMapsOnLoad);
+					MenuItem::step();
+				}
+			}; // struct ClearMapsOnLoadItem
+
 			MidiCatModule* module;
-			void onAction(const event::Action& e) override {
-				module->midiIgnoreDevices ^= true;
+			PresetLoadMenuItem() {
+				rightText = RIGHT_ARROW;
 			}
-			void step() override {
-				rightText = CHECKMARK(module->midiIgnoreDevices);
-				MenuItem::step();
+
+			Menu* createChildMenu() override {
+				Menu* menu = new Menu;
+				menu->addChild(construct<IgnoreMidiDevicesItem>(&MenuItem::text, "Ignore MIDI devices", &IgnoreMidiDevicesItem::module, module));
+				menu->addChild(construct<ClearMapsOnLoadItem>(&MenuItem::text, "Clear mapping slots", &ClearMapsOnLoadItem::module, module));
+				return menu;
 			}
-		}; // struct IgnoreMidiDevicesItem
+		};
 
 		struct PrecisionMenuItem : MenuItem {
 			struct PrecisionItem : MenuItem {
@@ -1746,44 +2153,70 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 		}; // struct MidiModeMenuItem
 
 		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<PresetLoadMenuItem>(&MenuItem::text, "Preset load", &PresetLoadMenuItem::module, module));
 		menu->addChild(construct<PrecisionMenuItem>(&MenuItem::text, "Precision", &PrecisionMenuItem::module, module));
 		menu->addChild(construct<MidiModeMenuItem>(&MenuItem::text, "Mode", &MidiModeMenuItem::module, module));
-		menu->addChild(construct<ResendMidiOutItem>(&MenuItem::text, "Re-send MIDI feedback", &ResendMidiOutItem::module, module));
-		menu->addChild(construct<IgnoreMidiDevicesItem>(&MenuItem::text, "Ignore MIDI devices on presets", &IgnoreMidiDevicesItem::module, module));
+		menu->addChild(construct<ResendMidiOutItem>(&MenuItem::text, "Re-send MIDI feedback", &MenuItem::rightText, RIGHT_ARROW, &ResendMidiOutItem::module, module));
 		menu->addChild(construct<MidiMapImportItem>(&MenuItem::text, "Import MIDI-MAP preset", &MidiMapImportItem::moduleWidget, this));
 
-		struct TextScrollItem : MenuItem {
+		struct UiMenuItem : MenuItem {
 			MidiCatModule* module;
-			void onAction(const event::Action& e) override {
-				module->textScrolling ^= true;
+			UiMenuItem() {
+				rightText = RIGHT_ARROW;
 			}
-			void step() override {
-				rightText = module->textScrolling ? "✔" : "";
-				MenuItem::step();
-			}
-		}; // struct TextScrollItem
 
-		struct MappingIndicatorHiddenItem : MenuItem {
-			MidiCatModule* module;
-			void onAction(const event::Action& e) override {
-				module->mappingIndicatorHidden ^= true;
-			}
-			void step() override {
-				rightText = module->mappingIndicatorHidden ? "✔" : "";
-				MenuItem::step();
-			}
-		}; // struct MappingIndicatorHiddenItem
+			Menu* createChildMenu() override {
+				struct TextScrollItem : MenuItem {
+					MidiCatModule* module;
+					void onAction(const event::Action& e) override {
+						module->textScrolling ^= true;
+					}
+					void step() override {
+						rightText = module->textScrolling ? "✔" : "";
+						MenuItem::step();
+					}
+				}; // struct TextScrollItem
 
-		struct LockedItem : MenuItem {
+				struct MappingIndicatorHiddenItem : MenuItem {
+					MidiCatModule* module;
+					void onAction(const event::Action& e) override {
+						module->mappingIndicatorHidden ^= true;
+					}
+					void step() override {
+						rightText = module->mappingIndicatorHidden ? "✔" : "";
+						MenuItem::step();
+					}
+				}; // struct MappingIndicatorHiddenItem
+
+				struct LockedItem : MenuItem {
+					MidiCatModule* module;
+					void onAction(const event::Action& e) override {
+						module->locked ^= true;
+					}
+					void step() override {
+						rightText = module->locked ? "✔" : "";
+						MenuItem::step();
+					}
+				}; // struct LockedItem
+
+				Menu* menu = new Menu;
+				menu->addChild(construct<TextScrollItem>(&MenuItem::text, "Text scrolling", &TextScrollItem::module, module));
+				menu->addChild(construct<MappingIndicatorHiddenItem>(&MenuItem::text, "Hide mapping indicators", &MappingIndicatorHiddenItem::module, module));
+				menu->addChild(construct<LockedItem>(&MenuItem::text, "Lock mapping slots", &LockedItem::module, module));
+				return menu;
+			}
+		}; // struct UiMenuItem
+
+		struct OverlayEnabledItem : MenuItem {
 			MidiCatModule* module;
 			void onAction(const event::Action& e) override {
-				module->locked ^= true;
+				module->overlayEnabled ^= true;
 			}
 			void step() override {
-				rightText = module->locked ? "✔" : "";
+				rightText = module->overlayEnabled ? "✔" : "";
 				MenuItem::step();
 			}
-		}; // struct LockedItem
+		}; // struct OverlayEnabledItem
 
 		struct ClearMapsItem : MenuItem {
 			MidiCatModule* module;
@@ -1835,15 +2268,14 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 		}; // struct ModuleLearnSelectMenuItem
 
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<TextScrollItem>(&MenuItem::text, "Text scrolling", &TextScrollItem::module, module));
-		menu->addChild(construct<MappingIndicatorHiddenItem>(&MenuItem::text, "Hide mapping indicators", &MappingIndicatorHiddenItem::module, module));
-		menu->addChild(construct<LockedItem>(&MenuItem::text, "Lock mapping slots", &LockedItem::module, module));
+		menu->addChild(construct<UiMenuItem>(&MenuItem::text, "User interface", &UiMenuItem::module, module));
+		menu->addChild(construct<OverlayEnabledItem>(&MenuItem::text, "Status overlay", &OverlayEnabledItem::module, module));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<ClearMapsItem>(&MenuItem::text, "Clear mappings", &ClearMapsItem::module, module));
 		menu->addChild(construct<ModuleLearnExpanderMenuItem>(&MenuItem::text, "Map module (left)", &ModuleLearnExpanderMenuItem::module, module));
 		menu->addChild(construct<ModuleLearnSelectMenuItem>(&MenuItem::text, "Map module (select)", &ModuleLearnSelectMenuItem::mw, this));
 
-		if (module->memStorage != NULL) appendContextMenuMem(menu);
+		if (module->expMemStorage != NULL) appendContextMenuMem(menu);
 	}
 
 	void appendContextMenuMem(Menu* menu) {
@@ -1871,7 +2303,7 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 							std::string pluginSlug;
 							std::string moduleSlug;
 							void onAction(const event::Action& e) override {
-								module->memDelete(pluginSlug, moduleSlug);
+								module->expMemDelete(pluginSlug, moduleSlug);
 							}
 						}; // DeleteItem
 
@@ -1882,7 +2314,7 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 				}; // MidimapModuleItem
 
 				std::list<std::pair<std::string, MidimapModuleItem*>> l; 
-				for (auto it : *module->memStorage) {
+				for (auto it : *module->expMemStorage) {
 					MemModule* a = it.second;
 					MidimapModuleItem* midimapModuleItem = new MidimapModuleItem;
 					midimapModuleItem->text = string::f("%s %s", a->pluginName.c_str(), a->moduleName.c_str());
@@ -1914,7 +2346,7 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule> {
 					std::string pluginSlug;
 					std::string moduleSlug;
 					void onAction(const event::Action& e) override {
-						module->memSave(pluginSlug, moduleSlug);
+						module->expMemSave(pluginSlug, moduleSlug);
 					}
 				}; // SaveItem
 

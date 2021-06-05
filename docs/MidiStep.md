@@ -12,7 +12,7 @@ In polyphonic mode (added in v1.6.0) all triggers are sent on the first ports (t
 
 ![MIDI-STEP polyphonic](./MidiStep-poly.png)
 
-### Tested hardware controllers
+## Tested hardware controllers
 
 I don't own all of following devices so I can provide only limited supported for setup and correct function. They have been tested successfully by users though. Feel free to contact me if you have a MIDI controller with endless rotary knobs which do not work with one of the existing relative protocols.
 
@@ -37,4 +37,4 @@ I don't own all of following devices so I can provide only limited supported for
 
 ![MIDI-STEP Akai MPD218 Editor](./MidiStep-Akai.png)
 
-MIDI-STEP was added in v1.5.0 of PackOne.
+MIDI-STEP was added in v1.5 of PackOne.
