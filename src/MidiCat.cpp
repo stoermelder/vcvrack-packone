@@ -2029,12 +2029,15 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 
 		struct ResendMidiOutItem : MenuItem {
 			MidiCatModule* module;
-			void onAction(const event::Action& e) override {
-				module->midiResendFeedback();
-			}
-
 			Menu* createChildMenu() override {
-				struct ResendMidiPeriodicallyItem : MenuItem {
+				struct NowItem : MenuItem {
+					MidiCatModule* module;
+					void onAction(const event::Action& e) override {
+						module->midiResendFeedback();
+					}
+				};
+
+				struct PeriodicallyItem : MenuItem {
 					MidiCatModule* module;
 					void onAction(const event::Action& e) override {
 						module->midiResendPeriodically ^= true;
@@ -2046,7 +2049,8 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 				};
 
 				Menu* menu = new Menu;
-				menu->addChild(construct<ResendMidiPeriodicallyItem>(&MenuItem::text, "Periodically", &ResendMidiPeriodicallyItem::module, module));
+				menu->addChild(construct<NowItem>(&MenuItem::text, "Now", &NowItem::module, module));
+				menu->addChild(construct<PeriodicallyItem>(&MenuItem::text, "Periodically", &PeriodicallyItem::module, module));
 				return menu;
 			}
 		}; // struct ResendMidiOutItem
@@ -2152,7 +2156,7 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 		menu->addChild(construct<PresetLoadMenuItem>(&MenuItem::text, "Preset load", &PresetLoadMenuItem::module, module));
 		menu->addChild(construct<PrecisionMenuItem>(&MenuItem::text, "Precision", &PrecisionMenuItem::module, module));
 		menu->addChild(construct<MidiModeMenuItem>(&MenuItem::text, "Mode", &MidiModeMenuItem::module, module));
-		menu->addChild(construct<ResendMidiOutItem>(&MenuItem::text, "Re-send MIDI feedback", &ResendMidiOutItem::module, module));
+		menu->addChild(construct<ResendMidiOutItem>(&MenuItem::text, "Re-send MIDI feedback", &MenuItem::rightText, RIGHT_ARROW, &ResendMidiOutItem::module, module));
 		menu->addChild(construct<MidiMapImportItem>(&MenuItem::text, "Import MIDI-MAP preset", &MidiMapImportItem::moduleWidget, this));
 
 		struct UiMenuItem : MenuItem {
