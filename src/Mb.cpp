@@ -144,6 +144,7 @@ BrowserOverlay::BrowserOverlay() {
 	v1::modelBoxZoom = pluginSettings.mbV1zoom;
 	v1::modelBoxSort = pluginSettings.mbV1sort;
 	v1::hideBrands = pluginSettings.mbV1hideBrands;
+	v1::searchDescriptions = pluginSettings.mbV1searchDescriptions;
 	moduleBrowserFromJson(pluginSettings.mbModelsJ);
 
 	mbWidgetBackup = APP->scene->moduleBrowser;
@@ -172,6 +173,7 @@ BrowserOverlay::~BrowserOverlay() {
 	pluginSettings.mbV1zoom = v1::modelBoxZoom;
 	pluginSettings.mbV1sort = v1::modelBoxSort;
 	pluginSettings.mbV1hideBrands = v1::hideBrands;
+	pluginSettings.mbV1searchDescriptions = v1::searchDescriptions;
 	json_decref(pluginSettings.mbModelsJ);
 	pluginSettings.mbModelsJ = moduleBrowserToJson();
 	
@@ -326,10 +328,21 @@ struct MbWidget : ModuleWidget {
 				}
 			};
 
+			struct SearchDescriptionsItem : MenuItem {
+				void onAction(const event::Action& e) override {
+					v1::searchDescriptions ^= true;
+				}
+				void step() override {
+					rightText = v1::searchDescriptions ? "✔" : "";
+					MenuItem::step();
+				}
+			};
+
 			Menu* createChildMenu() override {
 				Menu* menu = new Menu;
 				menu->addChild(new v1::ModelZoomSlider);
 				menu->addChild(construct<HideBrandsItem>(&MenuItem::text, "Hide brand list"));
+				menu->addChild(construct<SearchDescriptionsItem>(&MenuItem::text, "Search descriptions"));
 				return menu;
 			}
 		};

@@ -12,6 +12,10 @@ MB is a module for experimental replacement for Rack's module browser, formerly 
 
 - Favorites and hidden modules are stored in your local Rack-directory. You can share them or copy them to another computer by MB's export/import function on the context menu.
 
+- For _v1 mod_, by context menu option the "brands"-section can be hidden (added in v1.9.0).
+
+- For _v1 mod_, By context memu option also the modules' description can be searched (added in v1.9.0).
+
 ### Introduction by Omri Cohen
 
 <a href="https://www.youtube.com/embed/7DSTPIHWOVg?start=1640" target="_blank"><img src="https://img.youtube.com/vi/7DSTPIHWOVg/0.jpg" style="width:100%" /></a>

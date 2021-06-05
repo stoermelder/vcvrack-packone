@@ -12,6 +12,7 @@ namespace v1 {
 extern float modelBoxZoom;
 extern int modelBoxSort;
 extern bool hideBrands;
+extern bool searchDescriptions;
 
 struct ModelZoomSlider : ui::Slider { 
 	ModelZoomSlider();

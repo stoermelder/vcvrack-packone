@@ -17,6 +17,7 @@ enum class ModuleBrowserSort {
 float modelBoxZoom = 0.9f;
 int modelBoxSort = (int)ModuleBrowserSort::DEFAULT;
 bool hideBrands = false;
+bool searchDescriptions = false;
 
 
 // Static functions
@@ -38,6 +39,10 @@ static float modelScore(plugin::Model* model, const std::string& search) {
 			s += " ";
 			s += alias;
 		}
+	}
+	if (searchDescriptions) {
+		s += " ";
+		s += model->description;
 	}
 	float score = string::fuzzyScore(string::lowercase(s), string::lowercase(search));
 	return score;

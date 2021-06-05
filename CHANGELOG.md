@@ -52,6 +52,7 @@
     - Added new ratcheting modes ("Twos", "Threes", "Power of Two") ([manual](./docs/Maze.md#ratchet))
 - Module [MB](./docs/Mb.md)
     - Added option to hide the "brands" section of the V1-browser (#223)
+    - Added option to search module descriptions (https://github.com/stoermelder/vcvrack-packtau/pull/9)
 - Module [µMAP](./docs/CVMapMicro.md)
     - Added context menu options on mapped parameters of target module for µMAP ([manual](./docs/CVMapMicro.md#target-context))
     - Fixed wrong behavior when toggling input to 0V (#221)
