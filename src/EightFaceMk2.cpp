@@ -612,6 +612,9 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 			case SLOT_CMD::PASTE:
 				presetCopyPaste(presetCopy, i);
 				return -1;
+			case SLOT_CMD::SAVE:
+				presetSave(i);
+				return -1;
 			default:
 				return -1;
 		}
