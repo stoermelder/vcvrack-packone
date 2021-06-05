@@ -41,13 +41,9 @@ void init(rack::Plugin* p) {
 	p->addModel(modelGoto);
 	p->addModel(modelStroke);
 	p->addModel(modelSpin);
-	p->addModel(modelFlowerSeq);
-	p->addModel(modelFlowerSeqEx);
-	p->addModel(modelFlowerTrig);
 	p->addModel(modelTransit);
 	p->addModel(modelTransitEx);
 	p->addModel(modelX4);
-	p->addModel(modelPrisma);
 	p->addModel(modelMacro);
 	p->addModel(modelRaw);
 	p->addModel(modelMidiMon);
@@ -55,7 +51,6 @@ void init(rack::Plugin* p) {
 	p->addModel(modelEightFaceMk2);
 	p->addModel(modelEightFaceMk2Ex);
 	p->addModel(modelMidiPlug);
-	p->addModel(modelDirt);
 	p->addModel(modelAudioInterface64);
 	p->addModel(modelMb);
 	p->addModel(modelMe);
