@@ -1,5 +1,6 @@
 #include "plugin.hpp"
 #include "digital.hpp"
+#include "components/MatrixButton.hpp"
 
 namespace StoermelderPackOne {
 namespace Intermix {
@@ -781,11 +782,9 @@ struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 			struct SceneModeItem : MenuItem {
 				IntermixModule<PORTS>* module;
 				SCENE_CV_MODE sceneMode;
-				
 				void onAction(const event::Action& e) override {
 					module->sceneMode = sceneMode;
 				}
-
 				void step() override {
 					rightText = module->sceneMode == sceneMode ? "✔" : "";
 					MenuItem::step();
@@ -806,11 +805,9 @@ struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 
 		struct SceneInputModeItem : MenuItem {
 			IntermixModule<PORTS>* module;
-			
 			void onAction(const event::Action& e) override {
 				module->sceneInputMode ^= true;
 			}
-
 			void step() override {
 				rightText = module->sceneInputMode ? "✔" : "";
 				MenuItem::step();
@@ -819,11 +816,9 @@ struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 
 		struct SceneAtModeItem : MenuItem {
 			IntermixModule<PORTS>* module;
-			
 			void onAction(const event::Action& e) override {
 				module->sceneAtMode ^= true;
 			}
-
 			void step() override {
 				rightText = module->sceneAtMode ? "✔" : "";
 				MenuItem::step();
@@ -832,11 +827,9 @@ struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 
 		struct OutputClampItem : MenuItem {
 			IntermixModule<PORTS>* module;
-			
 			void onAction(const event::Action& e) override {
 				module->outputClamp ^= true;
 			}
-
 			void step() override {
 				rightText = module->outputClamp ? "✔" : "";
 				MenuItem::step();
@@ -845,11 +838,9 @@ struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 
 		struct InputVisualizeItem : MenuItem {
 			IntermixModule<PORTS>* module;
-			
 			void onAction(const event::Action& e) override {
 				module->inputVisualize ^= true;
 			}
-
 			void step() override {
 				rightText = module->inputVisualize ? "✔" : "";
 				MenuItem::step();
@@ -860,7 +851,6 @@ struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 			struct BrightnessQuantity : Quantity {
 				IntermixModule<PORTS>* module;
 				const float MAX = 2.f;
-
 				BrightnessQuantity(IntermixModule<PORTS>* module) {
 					this->module = module;
 				}
