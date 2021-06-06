@@ -70,7 +70,8 @@ extern Model* modelMe;
 
 namespace StoermelderPackOne {
 
-bool registerSingleton(std::string name, ModuleWidget* mw);
-bool unregisterSingleton(std::string name, ModuleWidget* mw);
+bool registerSingleton(std::string name, Widget* mw);
+bool unregisterSingleton(std::string name, Widget* mw);
+Widget* getSingleton(std::string name);
 
 } // namespace StoermelderPackOne
