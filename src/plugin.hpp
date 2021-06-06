@@ -33,6 +33,7 @@ extern Model* modelArena;
 extern Model* modelMaze;
 extern Model* modelHive;
 extern Model* modelIntermix;
+extern Model* modelIntermixGate;
 extern Model* modelSail;
 extern Model* modelPile;
 extern Model* modelPilePoly;

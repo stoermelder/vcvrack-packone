@@ -29,6 +29,7 @@ void init(rack::Plugin* p) {
 	p->addModel(modelMaze);
 	p->addModel(modelHive);
 	p->addModel(modelIntermix);
+	p->addModel(modelIntermixGate);
 	p->addModel(modelSail);
 	p->addModel(modelPile);
 	p->addModel(modelPilePoly);

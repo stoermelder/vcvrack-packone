@@ -1,5 +1,6 @@
 #include "plugin.hpp"
 #include "digital.hpp"
+#include "IntermixBase.hpp"
 #include "components/MatrixButton.hpp"
 
 namespace StoermelderPackOne {
@@ -51,7 +52,7 @@ enum OUT_MODE {
 };
 
 template < int PORTS >
-struct IntermixModule : Module {
+struct IntermixModule : Module, IntermixBase<PORTS> {
 	enum ParamIds {
 		ENUMS(PARAM_MATRIX, PORTS * PORTS),
 		ENUMS(PARAM_OUTPUT, PORTS),
@@ -356,6 +357,12 @@ struct IntermixModule : Module {
 				lights[LIGHT_OUTPUT + i].setSmoothBrightness(v, s);
 			}
 		}
+
+		// Expander
+		if (rightExpander.module && rightExpander.module->model == modelIntermixGate) {
+			rightExpander.producerMessage = (IntermixBase<PORTS>*)this;
+			rightExpander.messageFlipRequested = true;
+		}
 	}
 
 	inline void sceneSet(int scene) {
@@ -435,6 +442,18 @@ struct IntermixModule : Module {
 	void sceneSetCount(int count) {
 		sceneCount = count;
 		sceneSelected = std::min(sceneSelected, sceneCount - 1);
+	}
+
+	typename IntermixBase<PORTS>::IntermixMatrix expGetCurrentMatrix() override {
+		return currentMatrix;
+	}
+
+	typename IntermixBase<PORTS>::IntermixMatrix expGetMatrix() override {
+		return scenes[sceneSelected].matrix;
+	}
+
+	int expGetChannelCount() override { 
+		return channelCount; 
 	}
 
 	json_t* dataToJson() override {

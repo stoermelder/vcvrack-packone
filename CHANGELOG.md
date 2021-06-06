@@ -1,13 +1,20 @@
-## 1.10.x (in development)
+## 1.11.0 (in development)
 
 - Module [DIRT](./docs/Dirt.md)
     - New module, crosstalk and noise for polyphonic cables
 - Modules [FLOWER, SEEDS, OFFSPRING](./docs/Flower.md)
     - New modules, pattern-driven 16-step sequencer
+
+## 1.10.0 (in development)
+
+- Module [INTERMIX-GATE](./docs/Intermix.md#gate-expander)
+    - New expander-module for INTERMIX, outputs a gate-signal for each active row (#228)
 - Module [PRISMA](./docs/Prisma.md)
     - New module, a wave multiplier/phase shifter inspired by A-137-2
 - Module [STRIP-BLOCK](./docs/Strip.md)
     - New module, a companion module for STRIP for blocking STRIP's expander-mechanism
+
+### Fixes and Changes
 
 ## 1.9.0
 
