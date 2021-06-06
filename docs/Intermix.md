@@ -10,6 +10,10 @@ INTERMIX is a precision-adder matrix with 8 inputs and 8 outputs.
 - Very low CPU-usage
 - Polyphony support (added in v1.8.0)
 
+## Tips
+
+- The context menu option "Scene lock" prevents accidental changes made on the scenes, scene-buttons and output-buttons are still active (added in v1.10.0).
+
 INTERMIX was added in v1.4 of PackOne.
 
 ## GATE-expander

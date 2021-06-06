@@ -112,6 +112,8 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 	bool sceneAtMode;
 	/** [Stored to JSON] */
 	int sceneCount;
+	/** [Stored to JSON] */
+	bool sceneLock;
 
 	int sceneNext = -1;
 
@@ -171,6 +173,7 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 		sceneInputMode = false;
 		sceneAtMode = true;
 		sceneCount = SCENE_MAX;
+		sceneLock = false;
 		sceneSet(0);
 		Module::onReset();
 	}
@@ -525,6 +528,7 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 		json_object_set_new(rootJ, "sceneInputMode", json_boolean(sceneInputMode));
 		json_object_set_new(rootJ, "sceneAtMode", json_boolean(sceneAtMode));
 		json_object_set_new(rootJ, "sceneCount", json_integer(sceneCount));
+		json_object_set_new(rootJ, "sceneLock", json_boolean(sceneLock));
 		return rootJ;
 	}
 
@@ -574,6 +578,8 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 		if (sceneAtModeJ) sceneAtMode = json_boolean_value(sceneAtModeJ);
 		json_t* sceneCountJ = json_object_get(rootJ, "sceneCount");
 		if (sceneCountJ) sceneCount = json_integer_value(sceneCountJ);
+		json_t* sceneLockJ = json_object_get(rootJ, "sceneLock");
+		if (sceneLockJ) sceneLock = json_boolean_value(sceneLockJ);
 
 		for (int i = 0; i < PORTS; i++) {
 			for (int j = 0; j < PORTS; j++) {
@@ -731,10 +737,22 @@ struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 		addChild(sceneLedDisplay);
 		addInput(createInputCentered<StoermelderPort>(Vec(23.1f, 326.7f), module, IntermixModule<PORTS>::INPUT_SCENE));
 
+		struct IntermixMatrixButton : MatrixButton {
+			void onDragStart(const event::DragStart& e) override {
+				IntermixModule<PORTS>* module = dynamic_cast<IntermixModule<PORTS>*>(paramQuantity->module);
+				if (module->sceneLock) {
+					e.consume(this);
+				}
+				else {
+					MatrixButton::onDragStart(e);
+				}
+			}
+		};
+
 		for (int i = 0; i < PORTS; i++) {
 			for (int j = 0; j < PORTS; j++) {
 				Vec v = Vec(xMin + (xMax - xMin) / (PORTS - 1) * j, yMin + (yMax - yMin) / (PORTS - 1) * i);
-				addParam(createParamCentered<MatrixButton>(v, module, IntermixModule<PORTS>::PARAM_MATRIX + i * PORTS + j));
+				addParam(createParamCentered<IntermixMatrixButton>(v, module, IntermixModule<PORTS>::PARAM_MATRIX + i * PORTS + j));
 			}
 		}
 
@@ -814,6 +832,17 @@ struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 					menu->addChild(construct<NumberOfChannelsItem>(&MenuItem::text, string::f("%i", i), &NumberOfChannelsItem::module, module, &NumberOfChannelsItem::channelCount, i));
 				}
 				return menu;
+			}
+		};
+
+		struct SceneLockItem : MenuItem {
+			IntermixModule<PORTS>* module;
+			void onAction(const event::Action& e) override {
+				module->sceneLock ^= true;
+			}
+			void step() override {
+				rightText = CHECKMARK(module->sceneLock);
+				MenuItem::step();
 			}
 		};
 
@@ -930,6 +959,7 @@ struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 		};
 
 		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<SceneLockItem>(&MenuItem::text, "Scene lock", &SceneLockItem::module, module));
 		menu->addChild(construct<NumberOfChannelsMenuItem>(&MenuItem::text, "Channels", &NumberOfChannelsMenuItem::module, module));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<SceneModeMenuItem>(&MenuItem::text, "Port SCENE-mode", &SceneModeMenuItem::module, module));

@@ -20,6 +20,9 @@
 
 ### Fixes and Changes
 
+- Module [INTERMIX](./docs/Intermix.md)
+    - Added context menu option "Scene lock" to prevent accidental changes
+
 ## 1.9.0
 
 - Modules [8FACE mk2, +8](./docs/EightFaceMk2.md)
