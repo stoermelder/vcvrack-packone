@@ -40,17 +40,15 @@ struct IntermixEnvModule : Module {
 		Module* exp = leftExpander.module;
 		if (!exp || (exp->model != modelIntermix && exp->model != modelIntermixGate && exp->model != modelIntermixEnv) || !exp->rightExpander.consumerMessage) return;
 		IntermixBase<PORTS>* module = reinterpret_cast<IntermixBase<PORTS>*>(exp->rightExpander.consumerMessage);
-
+		rightExpander.producerMessage = module;
+		rightExpander.messageFlipRequested = true;
+		
 		// DSP
 		auto currentMatrix = module->expGetCurrentMatrix();
 		for (int i = 0; i < PORTS; i++) {
 			float v = currentMatrix[input][i];
 			outputs[OUTPUT + i].setVoltage(v * 10.f);
 		}
-
-		// Expander
-		rightExpander.producerMessage = module;
-		rightExpander.messageFlipRequested = true;
 	}
 
 	json_t* dataToJson() override {
@@ -130,7 +128,7 @@ struct IntermixEnvWidget : ThemedModuleWidget<IntermixEnvModule<8>> {
 			addOutput(createOutputCentered<StoermelderPort>(vo1, module, IntermixEnvModule<PORTS>::OUTPUT + i));
 		}
 
-		InputLedDisplay<PORTS>* ledDisplay = createWidgetCentered<InputLedDisplay<PORTS>>(Vec(29.1f, 294.1f));
+		InputLedDisplay<PORTS>* ledDisplay = createWidgetCentered<InputLedDisplay<PORTS>>(Vec(29.7f, 294.1f));
 		ledDisplay->module = module;
 		addChild(ledDisplay);
 	}
