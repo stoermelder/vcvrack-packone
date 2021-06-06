@@ -182,6 +182,13 @@
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Intermix.md#gate-expander"
 		},
 		{
+			"slug": "IntermixEnv",
+			"name": "INTERMIX-ENV",
+			"description": "Expander for INTERMIX outputting envelopes for a selected input-column",
+			"tags": ["Expander", "Polyphonic"],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Intermix.md#env-expander"
+		},
+		{
 			"slug": "Sail",
 			"name": "SAIL",
 			"description": "Control any parameter currently hovered by mouse with CV, especially useful with MIDI-CC or MIDI-STEP",

@@ -245,7 +245,9 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 						if (p != scenes[sceneSelected].matrix[i][j] && p == 1.f) fader[i][j][c].triggerFadeIn();
 						if (p != scenes[sceneSelected].matrix[i][j] && p == 0.f) fader[i][j][c].triggerFadeOut();
 					}
-					scenes[sceneSelected].matrix[i][j] = currentMatrix[i][j] = p;
+					scenes[sceneSelected].matrix[i][j] = p;
+					IN_MODE mode = sceneInputMode ? scenes[sceneSelected].input[i] : inputMode[i];
+					if (mode != IN_MODE::IM_FADE) currentMatrix[i][j] = p;
 				}
 			}
 		}
@@ -359,10 +361,8 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 		}
 
 		// Expander
-		if (rightExpander.module && rightExpander.module->model == modelIntermixGate) {
-			rightExpander.producerMessage = (IntermixBase<PORTS>*)this;
-			rightExpander.messageFlipRequested = true;
-		}
+		rightExpander.producerMessage = (IntermixBase<PORTS>*)this;
+		rightExpander.messageFlipRequested = true;
 	}
 
 	inline void sceneSet(int scene) {
@@ -448,12 +448,8 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 		return currentMatrix;
 	}
 
-	typename IntermixBase<PORTS>::IntermixMatrix expGetMatrix() override {
-		return scenes[sceneSelected].matrix;
-	}
-
 	int expGetChannelCount() override { 
-		return channelCount; 
+		return channelCount;
 	}
 
 	json_t* dataToJson() override {

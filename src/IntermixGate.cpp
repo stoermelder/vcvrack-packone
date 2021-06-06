@@ -32,7 +32,7 @@ struct IntermixGateModule : Module {
 	void process(const ProcessArgs& args) override {
 		// Expander
 		Module* exp = leftExpander.module;
-		if (!exp || exp->model != modelIntermix || !exp->rightExpander.consumerMessage) return;
+		if (!exp || (exp->model != modelIntermix && exp->model != modelIntermixGate && exp->model != modelIntermixEnv) || !exp->rightExpander.consumerMessage) return;
 		IntermixBase<PORTS>* module = reinterpret_cast<IntermixBase<PORTS>*>(exp->rightExpander.consumerMessage);
 
 		// DSP
@@ -48,6 +48,10 @@ struct IntermixGateModule : Module {
 		for (int i = 0; i < PORTS; i++) {
 			outputs[OUTPUT + i].setVoltage(out[i / 4][i % 4] > 0.f ? 10.f : 0.f);
 		}
+
+		// Expander
+		rightExpander.producerMessage = module;
+		rightExpander.messageFlipRequested = true;
 	}
 
 	json_t* dataToJson() override {

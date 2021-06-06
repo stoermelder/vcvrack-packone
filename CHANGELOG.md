@@ -7,6 +7,8 @@
 
 ## 1.10.0 (in development)
 
+- Module [INTERMIX-ENV](./docs/Intermix.md#env-expander)
+    - New expander-module for INTERMIX, outputs envelopes for a seleced input-column
 - Module [INTERMIX-GATE](./docs/Intermix.md#gate-expander)
     - New expander-module for INTERMIX, outputs a gate-signal for each active row (#228)
 - Module [PRISMA](./docs/Prisma.md)

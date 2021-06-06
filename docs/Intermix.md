@@ -14,8 +14,16 @@ INTERMIX was added in v1.4 of PackOne.
 
 ## GATE-expander
 
-The expander INTERMIX-GATE must be placed on the left-side of INTERMIX and outputs 10V whenever at least one input of the row is active.
+The expander INTERMIX-GATE must be placed on the right-side of INTERMIX (or one of its expanders) and outputs 10V whenever at least one pad is active of the row.
 
 ![INTERMIX-GATE expander](./Intermix-gate.gif)
 
 INTERMIX-GATE was added in v1.10 of PackOne.
+
+## ENV-expander
+
+The expander INTERMIX-ENV must be placed on the right-side of INTERMIX (or one of its expanders) and outputs envelopes for a specific input column, in case _FADE_ is activated. In other cases it outputs gate-signals whenever the pad is active.
+
+![INTERMIX-ENV expander](./Intermix-env.gif)
+
+INTERMIX-ENV was added in v1.10 of PackOne.
