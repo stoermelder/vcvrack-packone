@@ -7,6 +7,8 @@
 
 ## 1.10.0 (in development)
 
+- Module [INTERMIX-FADE](./docs/Intermix.md#fade-expander)
+    - New expander-module for INTERMIX, helper for setting individual fade values
 - Module [INTERMIX-ENV](./docs/Intermix.md#env-expander)
     - New expander-module for INTERMIX, outputs envelopes for a seleced input-column
 - Module [INTERMIX-GATE](./docs/Intermix.md#gate-expander)

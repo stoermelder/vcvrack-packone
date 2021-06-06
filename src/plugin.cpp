@@ -31,6 +31,7 @@ void init(rack::Plugin* p) {
 	p->addModel(modelIntermix);
 	p->addModel(modelIntermixGate);
 	p->addModel(modelIntermixEnv);
+	p->addModel(modelIntermixFade);
 	p->addModel(modelSail);
 	p->addModel(modelPile);
 	p->addModel(modelPilePoly);

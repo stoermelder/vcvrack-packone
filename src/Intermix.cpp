@@ -119,7 +119,11 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 	int channelCount = 1;
 
 	LinearFade fader[PORTS][PORTS][PORT_MAX_CHANNELS];
+	uint32_t fadeInTs[PORTS];
+	uint32_t fadeOutTs[PORTS];
 	//dsp::TSlewLimiter<simd::float_4> outputAtSlew[PORTS / 4];
+
+	uint32_t ts = 0;
 
 	dsp::SchmittTrigger sceneTrigger;
 	dsp::SchmittTrigger mapTrigger[PORTS];
@@ -143,7 +147,7 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 		}
 		configParam(PARAM_FADEIN, 0.f, 4.f, 0.f, "Fade in", "s");
 		configParam(PARAM_FADEOUT, 0.f, 4.f, 0.f, "Fade out", "s");
-		sceneDivider.setDivision(32);
+		sceneDivider.setDivision(64);
 		lightDivider.setDivision(512);
 		onReset();
 	}
@@ -172,6 +176,8 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 	}
 
 	void process(const ProcessArgs& args) override {
+		ts++;
+
 		if (inputs[INPUT_SCENE].isConnected()) {
 			switch (sceneMode) {
 				case SCENE_CV_MODE::OFF: {
@@ -236,12 +242,15 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 			float f1 = params[PARAM_FADEIN].getValue();
 			float f2 = params[PARAM_FADEOUT].getValue();
 			for (int i = 0; i < PORTS; i++) {
+				bool fadeIn = ts - fadeInTs[i] > sceneDivider.getDivision() * 2;
+				bool fadeOut = ts - fadeOutTs[i] > sceneDivider.getDivision() * 2;
 				scenes[sceneSelected].output[i] = params[PARAM_OUTPUT + i].getValue() == 0.f ? OM_OUT : OM_OFF;
 				scenes[sceneSelected].outputAt[i] = params[PARAM_AT + i].getValue();
 				for (int j = 0; j < PORTS; j++) {
 					float p = params[PARAM_MATRIX + j * PORTS + i].getValue();
 					for (int c = 0; c < channelCount; c++) {
-						fader[i][j][c].setRiseFall(f1, f2);
+						if (fadeIn) fader[i][j][c].setRise(f1);
+						if (fadeOut) fader[i][j][c].setFall(f2);
 						if (p != scenes[sceneSelected].matrix[i][j] && p == 1.f) fader[i][j][c].triggerFadeIn();
 						if (p != scenes[sceneSelected].matrix[i][j] && p == 0.f) fader[i][j][c].triggerFadeOut();
 					}
@@ -450,6 +459,25 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 
 	int expGetChannelCount() override { 
 		return channelCount;
+	}
+
+	void expSetFade(int i, float* fadeIn, float* fadeOut) override {
+		if (fadeIn) {
+			fadeInTs[i] = ts;
+			for (int j = 0; j < PORTS; j++) {
+				for (int c = 0; c < channelCount; c++) {
+					fader[i][j][c].setRise(fadeIn[j]);
+				}
+			}
+		}
+		if (fadeOut) {
+			fadeOutTs[i] = ts;
+			for (int j = 0; j < PORTS; j++) {
+				for (int c = 0; c < channelCount; c++) {
+					fader[i][j][c].setFall(fadeOut[j]);
+				}
+			}
+		}
 	}
 
 	json_t* dataToJson() override {
@@ -758,7 +786,7 @@ struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 	}
 
 	void appendContextMenu(Menu* menu) override {
-		ThemedModuleWidget<IntermixModule<8>>::appendContextMenu(menu);
+		ThemedModuleWidget<IntermixModule<PORTS>>::appendContextMenu(menu);
 		IntermixModule<PORTS>* module = dynamic_cast<IntermixModule<PORTS>*>(this->module);
 		assert(module);
 

@@ -27,3 +27,11 @@ The expander INTERMIX-ENV must be placed on the right-side of INTERMIX (or one o
 ![INTERMIX-ENV expander](./Intermix-env.gif)
 
 INTERMIX-ENV was added in v1.10 of PackOne.
+
+## FADE-expander
+
+The expander INTERMIX-FADE must be placed on the right-side of INTERMIX (or one of its expanders) and allows custom fade values for each pad of a selected input column. It can be used to set the values for fade-in and fade-out the same time or fade-in only or fade-out only. When the expander is detached or configured for another input column the default values from the main-module reapply.
+
+![INTERMIX-FADE expander](./Intermix-fade.gif)
+
+INTERMIX-FADE was added in v1.10 of PackOne.

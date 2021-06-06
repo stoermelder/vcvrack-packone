@@ -69,11 +69,19 @@ struct LinearFade {
 		last = 0.f;
 	}
 
-	inline void setRiseFall(float rise, float fall) {
+	inline void setRise(float rise) {
 		if (currentRise == this->rise) currentRise = rise;
-		currentFall = std::min(fall, currentFall);
 		this->rise = rise;
+	}
+
+	inline void setFall(float fall) {
+		currentFall = std::min(fall, currentFall);
 		this->fall = fall;
+	}
+
+	inline void setRiseFall(float rise, float fall) {
+		setRise(rise);
+		setFall(fall);
 	}
 
 	inline float process(float deltaTime) {

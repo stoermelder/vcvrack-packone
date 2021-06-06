@@ -4,19 +4,27 @@
 namespace StoermelderPackOne {
 namespace Intermix {
 
+enum class FADE {
+	INOUT = 0,
+	IN = 1,
+	OUT = 2
+};
+
 template<int PORTS>
-struct IntermixEnvModule : Module {
+struct IntermixFadeModule : Module {
 	enum ParamIds {
+		ENUMS(PARAM_FADE, PORTS),
 		NUM_PARAMS
 	};
 	enum InputIds {
 		NUM_INPUTS
 	};
 	enum OutputIds {
-		ENUMS(OUTPUT, PORTS),
 		NUM_OUTPUTS
 	};
 	enum LightIds {
+		LIGHT_IN,
+		LIGHT_OUT,
 		NUM_LIGHTS
 	};
 
@@ -24,15 +32,26 @@ struct IntermixEnvModule : Module {
 	int panelTheme = 0;
 	/** [Stored to JSON] */
 	int input;
+	/** [Stored to JSON] */
+	FADE fade;
 
-	IntermixEnvModule() {
+	dsp::ClockDivider sceneDivider;
+	dsp::ClockDivider lightDivider;
+
+	IntermixFadeModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+		for (int i = 0; i < PORTS; i++) {
+			configParam(PARAM_FADE + i, 0.f, 15.f, 1.f, "Fade", "s");
+		}
 		onReset();
+		sceneDivider.setDivision(64);
+		lightDivider.setDivision(512);
 	}
 
 	void onReset() override {
 		input = 0;
+		fade = FADE::INOUT;
 	}
 
 	void process(const ProcessArgs& args) override {
@@ -42,12 +61,20 @@ struct IntermixEnvModule : Module {
 		IntermixBase<PORTS>* module = reinterpret_cast<IntermixBase<PORTS>*>(exp->rightExpander.consumerMessage);
 		rightExpander.producerMessage = module;
 		rightExpander.messageFlipRequested = true;
-		
+
 		// DSP
-		auto currentMatrix = module->expGetCurrentMatrix();
-		for (int i = 0; i < PORTS; i++) {
-			float v = currentMatrix[input][i];
-			outputs[OUTPUT + i].setVoltage(v * 10.f);
+		if (sceneDivider.process()) {
+			float v[PORTS];
+			for (int i = 0; i < PORTS; i++) {
+				v[i] = params[PARAM_FADE + i].getValue();
+			}
+			module->expSetFade(input, fade == FADE::IN || fade == FADE::INOUT ? v : NULL, fade == FADE::OUT || fade == FADE::INOUT ? v : NULL);
+		}
+
+		// Lights
+		if (lightDivider.process()) {
+			lights[LIGHT_IN].setBrightness(fade == FADE::IN || fade == FADE::INOUT);
+			lights[LIGHT_OUT].setBrightness(fade == FADE::OUT || fade == FADE::INOUT);
 		}
 	}
 
@@ -55,19 +82,21 @@ struct IntermixEnvModule : Module {
 		json_t* rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 		json_object_set_new(rootJ, "input", json_integer(input));
+		json_object_set_new(rootJ, "fade", json_integer((int)fade));
 		return rootJ;
 	}
 
 	void dataFromJson(json_t* rootJ) override {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 		input = json_integer_value(json_object_get(rootJ, "input"));
+		fade = (FADE)json_integer_value(json_object_get(rootJ, "fade"));
 	}
 };
 
 
 template<int PORTS>
 struct InputLedDisplay : StoermelderPackOne::StoermelderLedDisplay {
-	IntermixEnvModule<PORTS>* module;
+	IntermixFadeModule<PORTS>* module;
 
 	void step() override {
 		if (module) {
@@ -91,7 +120,7 @@ struct InputLedDisplay : StoermelderPackOne::StoermelderLedDisplay {
 		ui::Menu* menu = createMenu();
 
 		struct InputItem : MenuItem {
-			IntermixEnvModule<PORTS>* module;
+			IntermixFadeModule<PORTS>* module;
 			int input;
 			void onAction(const event::Action& e) override {
 				module->input = input;
@@ -110,11 +139,11 @@ struct InputLedDisplay : StoermelderPackOne::StoermelderLedDisplay {
 };
 
 
-struct IntermixEnvWidget : ThemedModuleWidget<IntermixEnvModule<8>> {
+struct IntermixFadeWidget : ThemedModuleWidget<IntermixFadeModule<8>> {
 	const static int PORTS = 8;
 
-	IntermixEnvWidget(IntermixEnvModule<PORTS>* module)
-		: ThemedModuleWidget<IntermixEnvModule<8>>(module, "IntermixEnv") {
+	IntermixFadeWidget(IntermixFadeModule<PORTS>* module)
+		: ThemedModuleWidget<IntermixFadeModule<8>>(module, "IntermixFade") {
 		setModule(module);
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
@@ -125,16 +154,43 @@ struct IntermixEnvWidget : ThemedModuleWidget<IntermixEnvModule<8>> {
     
 		for (int i = 0; i < PORTS; i++) {
 			Vec vo1 = Vec(22.5f, yMin + (yMax - yMin) / (PORTS - 1) * i);
-			addOutput(createOutputCentered<StoermelderPort>(vo1, module, IntermixEnvModule<PORTS>::OUTPUT + i));
+			addParam(createParamCentered<StoermelderTrimpot>(vo1, module, IntermixFadeModule<PORTS>::PARAM_FADE + i));
 		}
 
-		InputLedDisplay<PORTS>* ledDisplay = createWidgetCentered<InputLedDisplay<PORTS>>(Vec(29.7f, 294.1f));
+		InputLedDisplay<PORTS>* ledDisplay = createWidgetCentered<InputLedDisplay<PORTS>>(Vec(29.1f, 294.1f));
 		ledDisplay->module = module;
 		addChild(ledDisplay);
+
+		addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(29.7f, 315.5f), module, IntermixFadeModule<PORTS>::LIGHT_IN));
+		addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(29.7f, 332.9f), module, IntermixFadeModule<PORTS>::LIGHT_OUT));
 	}
+
+	void appendContextMenu(Menu* menu) override {
+		ThemedModuleWidget<IntermixFadeModule<PORTS>>::appendContextMenu(menu);
+		IntermixFadeModule<PORTS>* module = dynamic_cast<IntermixFadeModule<PORTS>*>(this->module);
+		assert(module);
+
+		struct FadeItem : MenuItem {
+			IntermixFadeModule<PORTS>* module;
+			FADE fade;
+			void onAction(const event::Action& e) override {
+				module->fade = fade;
+			}
+			void step() override {
+				rightText = CHECKMARK(module->fade == fade);
+				MenuItem::step();
+			}
+		};
+
+		menu->addChild(new MenuSeparator);
+		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Mode"));
+		menu->addChild(construct<FadeItem>(&MenuItem::text, "In & Out", &FadeItem::module, module, &FadeItem::fade, FADE::INOUT));
+		menu->addChild(construct<FadeItem>(&MenuItem::text, "In", &FadeItem::module, module, &FadeItem::fade, FADE::IN));
+		menu->addChild(construct<FadeItem>(&MenuItem::text, "Out", &FadeItem::module, module, &FadeItem::fade, FADE::OUT));
+	};
 };
 
 } // namespace Intermix
 } // namespace StoermelderPackOne
 
-Model* modelIntermixEnv = createModel<StoermelderPackOne::Intermix::IntermixEnvModule<8>, StoermelderPackOne::Intermix::IntermixEnvWidget>("IntermixEnv");
+Model* modelIntermixFade = createModel<StoermelderPackOne::Intermix::IntermixFadeModule<8>, StoermelderPackOne::Intermix::IntermixFadeWidget>("IntermixFade");

@@ -178,15 +178,22 @@
 			"slug": "IntermixGate",
 			"name": "INTERMIX-GATE",
 			"description": "Expander for INTERMIX outputting a gate-signal for each active row",
-			"tags": ["Expander", "Polyphonic"],
+			"tags": ["Expander"],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Intermix.md#gate-expander"
 		},
 		{
 			"slug": "IntermixEnv",
 			"name": "INTERMIX-ENV",
 			"description": "Expander for INTERMIX outputting envelopes for a selected input-column",
-			"tags": ["Expander", "Polyphonic"],
+			"tags": ["Expander"],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Intermix.md#env-expander"
+		},
+		{
+			"slug": "IntermixFade",
+			"name": "INTERMIX-FADE",
+			"description": "Expander for INTERMIX for setting individual fade values",
+			"tags": ["Expander"],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Intermix.md#fade-expander"
 		},
 		{
 			"slug": "Sail",
