@@ -93,7 +93,7 @@
 		{
 			"slug": "StripBlock",
 			"name": "STRIP-BLOCK",
-			"description": "Utility module for blocking STRIP's expander mechanism",
+			"description": "Utility module for blocking STRIP's expander mechanism (preview)",
 			"tags": ["Utility"],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Strip.md"
 		},
@@ -282,21 +282,21 @@
 		{
 			"slug": "FlowerSeq",
 			"name": "FLOWER",
-			"description": "Pattern-base sequencer",
+			"description": "Pattern-based sequencer (preview)",
 			"tags": ["Sequencer"],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Flower.md"
 		},
 		{
 			"slug": "FlowerSeqEx",
 			"name": "OFFSPRING",
-			"description": "Sequencer-expander for FLOWER",
+			"description": "Sequencer-expander for FLOWER (preview)",
 			"tags": ["Sequencer"],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Flower.md"
 		},
 		{
 			"slug": "FlowerTrig",
 			"name": "SEEDS",
-			"description": "Sequencer-expander for FLOWER",
+			"description": "Sequencer-expander for FLOWER (preview)",
 			"tags": ["Sequencer"],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Flower.md"
 		},
@@ -324,7 +324,7 @@
 		{
 			"slug": "Prisma",
 			"name": "PRISMA",
-			"description": "Wave multiplier/phase shifter inspired by A-137-2",
+			"description": "Wave multiplier/phase shifter inspired by A-137-2 (preview)",
 			"tags": ["Waveshaper", "Distortion"],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Prisma.md"
 		},
@@ -380,9 +380,16 @@
 		{
 			"slug": "Dirt",
 			"name": "DIRT",
-			"description": "Crosstalk and noise for polyphonic cables",
+			"description": "Crosstalk and noise for polyphonic cables (preview)",
 			"tags": ["Polyphonic"],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Dirt.md"
+		},
+		{
+			"slug": "MidiKey",
+			"name": "MIDI-KEY",
+			"description": "Converts MIDI CC or note messages into keyboard events (preview)",
+			"tags": ["MIDI", "Utility"],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/MidiKey.md"
 		},
 		{
 			"slug": "AudioInterface64",

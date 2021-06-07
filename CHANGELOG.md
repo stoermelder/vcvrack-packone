@@ -13,6 +13,8 @@
     - New expander-module for INTERMIX, outputs envelopes for a seleced input-column
 - Module [INTERMIX-GATE](./docs/Intermix.md#gate-expander)
     - New expander-module for INTERMIX, outputs a gate-signal for each active row (#228)
+- Module [MIDI-KEY](./docs/MidiKey.md)
+    - New module, a helper for generating keyboard events from MIDI CC or note messages (#245)
 - Module [PRISMA](./docs/Prisma.md)
     - New module, a wave multiplier/phase shifter inspired by A-137-2
 - Module [STRIP-BLOCK](./docs/Strip.md)

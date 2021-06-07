@@ -63,6 +63,7 @@ extern Model* modelEightFaceMk2;
 extern Model* modelEightFaceMk2Ex;
 extern Model* modelMidiPlug;
 extern Model* modelDirt;
+extern Model* modelMidiKey;
 extern Model* modelAudioInterface64;
 extern Model* modelMb;
 extern Model* modelMe;
