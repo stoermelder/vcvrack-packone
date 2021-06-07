@@ -1147,6 +1147,43 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 			}
 		};
 
+		struct ModuleMenuItem : MenuItem {
+			MODULE* module;
+			ModuleMenuItem() {
+				rightText = RIGHT_ARROW;
+			}
+
+			Menu* createChildMenu() override {
+				struct UnbindItem : MenuItem {
+					MODULE* module;
+					int moduleId;
+					void onAction(const event::Action& e) override {
+						for (size_t i = 0; i < module->sourceHandles.size(); i++) {
+							ParamHandle* handle = module->sourceHandles[i];
+							if (handle->moduleId != moduleId) continue;
+							APP->engine->updateParamHandle(handle, -1, 0, true);
+						}
+					}
+				};
+
+				Menu* menu = new Menu;
+				std::set<int> moduleIds;
+				for (size_t i = 0; i < module->sourceHandles.size(); i++) {
+					ParamHandle* handle = module->sourceHandles[i];
+					if (moduleIds.find(handle->moduleId) == moduleIds.end())
+						moduleIds.insert(handle->moduleId);
+				}
+
+				for (int moduleId : moduleIds) {
+					ModuleWidget* moduleWidget = APP->scene->rack->getModule(moduleId);
+					if (!moduleWidget) continue;	
+					std::string text = string::f("Unbind \"%s %s\"", moduleWidget->model->plugin->name.c_str(), moduleWidget->model->name.c_str());
+					menu->addChild(construct<UnbindItem>(&MenuItem::text, text, &UnbindItem::module, module, &UnbindItem::moduleId, moduleId));
+				}
+				return menu;
+			}
+		};
+
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<MappingIndicatorHiddenItem>(&MenuItem::text, "Hide mapping indicators", &MappingIndicatorHiddenItem::module, module));
 		menu->addChild(construct<PrecisionMenuItem>(&MenuItem::text, "Precision", &PrecisionMenuItem::module, module));
@@ -1161,6 +1198,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 
 		if (module->sourceHandles.size() > 0) {
 			menu->addChild(new MenuSeparator());
+			menu->addChild(construct<ModuleMenuItem>(&MenuItem::text, "Bound modules", &ModuleMenuItem::module, module));
 			menu->addChild(construct<ParameterMenuItem>(&MenuItem::text, "Bound parameters", &ParameterMenuItem::module, module));
 		}
 	}
