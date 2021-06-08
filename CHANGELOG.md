@@ -7,21 +7,35 @@
 - Module [STRIP-BLOCK](./docs/Strip.md)
     - New module, a companion module for STRIP for blocking STRIP's expander-mechanism
 
+## 1.12.0 (in development)
+
+### New modules
+
+- Module [MIDI-KEY](./docs/MidiKey.md)
+    - A helper for generating keyboard events from MIDI CC or note messages (#245)
+
+## 1.11.0 (in development)
+
+### New modules
+
+- Module [PRISMA](./docs/Prisma.md)
+    - A wave multiplier/phase shifter inspired by A-137-2
+
 ## 1.10.0 (in development)
 
+### New modules
+
 - Module [INTERMIX-FADE](./docs/Intermix.md#fade-expander)
-    - New expander-module for INTERMIX, helper for setting individual fade values
+    - Expander for INTERMIX, helper for setting individual fade values
 - Module [INTERMIX-ENV](./docs/Intermix.md#env-expander)
-    - New expander-module for INTERMIX, outputs envelopes for a seleced input-column
+    - Expander for INTERMIX, outputs envelopes for a seleced input-column
 - Module [INTERMIX-GATE](./docs/Intermix.md#gate-expander)
-    - New expander-module for INTERMIX, outputs a gate-signal for each active row (#228)
-- Module [MIDI-KEY](./docs/MidiKey.md)
-    - New module, a helper for generating keyboard events from MIDI CC or note messages (#245)
-- Module [PRISMA](./docs/Prisma.md)
-    - New module, a wave multiplier/phase shifter inspired by A-137-2
+    - Expander for INTERMIX, outputs a gate-signal for each active row (#228)
 
 ### Fixes and Changes
 
+- Modules [8FACE, 8FACEx2](./docs/EightFace.md)
+    - Added "Auto"-mode besides "Read" and "Write" ([manual](./docs/EightFace.md#auto-mode)) (#251)
 - Module [INTERMIX](./docs/Intermix.md)
     - Added context menu option "Scene lock" to prevent accidental changes
 - Module [TRANSIT](./docs/Transit.md)
@@ -29,21 +43,23 @@
 
 ## 1.9.0
 
+### New modules
+
 - Modules [8FACE mk2, +8](./docs/EightFaceMk2.md)
-    - New modules, evolution of 8FACE and 8FACEx2 (#63 #76 #144 #154 #157 #158 #160 #162)
+    - Evolution of 8FACE and 8FACEx2 (#63 #76 #144 #154 #157 #158 #160 #162)
 - Module [CV-MAP CTX](./docs/CVMap.md#ctx-expander)
-    - New expander-module for CV-MAP, helper for mapping parameters by context menu (#256)
+    - Expander for CV-MAP, helper for mapping parameters by context menu (#256)
 - Module [MIDI-CAT CTX](./docs/MidiCat.md#ctx-expander)
-    - New expander-module for MIDI-CAT, helper for mapping parameters by context menu (#232, #250)
+    - Expander for MIDI-CAT, helper for mapping parameters by context menu (#232, #250)
 - Module [MIDI-PLUG](./docs/MidiPlug.md)
-    - New module, a virtual MIDI merger and splitter
+    - A virtual MIDI merger and splitter
     - MIDI "Loopback" driver for routing outgoing MIDI messages back into Rack (enabled on the context menu)
 - Module [ORBIT](./docs/Orbit.md)
-    - New module, a polyphonic stereo field spreader
+    - A polyphonic stereo field spreader
 - Module [STRIP-BAY](./docs/Strip.md#stoermelder-strip-bay)
-    - New module, a companion module for STRIP for keeping input/output connections while replacing strips
+    - A companion module for STRIP for keeping input/output connections while replacing strips
 - Module [ME](./docs/Me.md)
-    - New experimental module for "mouse enhacements", provides a screen overlay for parameters changes
+    - Experimental module for "mouse enhacements", provides a screen overlay for parameters changes
 
 ### Fixes and Changes
 

@@ -397,3 +397,24 @@ struct CKSSH : CKSS {
 		box.size = tw->box.size;
 	}
 };
+
+struct CKSSThreeH : CKSSThree {
+	CKSSThreeH() {
+		shadow->opacity = 0.0f;
+		fb->removeChild(sw);
+
+		TransformWidget* tw = new TransformWidget();
+		tw->addChild(sw);
+		fb->addChild(tw);
+
+		Vec center = sw->box.getCenter();
+		tw->translate(center);
+		tw->rotate(M_PI / 2.0f);
+		// Why does this not work as expected?!
+		tw->translate(Vec(center.y, sw->box.size.x + center.x + 1.3f).neg());
+
+		tw->box.size = sw->box.size.flip();
+		fb->box.size = tw->box.size;
+		box.size = tw->box.size;
+	}
+};
