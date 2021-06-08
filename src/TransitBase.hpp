@@ -16,6 +16,12 @@ enum class SLOT_CMD {
 	SAVE
 };
 
+enum class CTRLMODE {
+	READ,
+	AUTO,
+	WRITE
+};
+
 struct TransitSlot {
 	Param* param;
 	Light* lights;
@@ -40,7 +46,7 @@ struct TransitBase : Module, StripIdFixModule {
 
 	int ctrlModuleId = -1;
 	int ctrlOffset = 0;
-	bool ctrlWrite = false;
+	CTRLMODE ctrlMode = CTRLMODE::READ;
 
 	TransitSlot slot[NUM_PRESETS];
 
@@ -123,7 +129,7 @@ struct TransitLedButton : LEDButton {
 				e.consume(this);
 				eventConsumed = true;
 			}
-			else if (module->ctrlWrite && e.button == GLFW_MOUSE_BUTTON_RIGHT && (e.mods & RACK_MOD_MASK) == 0) {
+			else if (module->ctrlMode == CTRLMODE::WRITE && e.button == GLFW_MOUSE_BUTTON_RIGHT && (e.mods & RACK_MOD_MASK) == 0) {
 				LEDButton::onButton(e);
 				eventConsumed = false;
 				extendContextMenu();

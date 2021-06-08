@@ -42,7 +42,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 
 	enum ParamIds {
 		ENUMS(PARAM_PRESET, NUM_PRESETS),
-		PARAM_RW,
+		PARAM_CTRLMODE,
 		PARAM_FADE,
 		PARAM_SHAPE,
 		NUM_PARAMS
@@ -127,7 +127,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 	TransitModule() {
 		BASE::panelTheme = pluginSettings.panelThemeDefault;
 		Module::config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		Module::configParam(PARAM_RW, 0, 1, 0, "Read/write mode");
+		Module::configParam(PARAM_CTRLMODE, 0, 2, 0, "Read/Auto/Write mode");
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			Module::configParam<TransitParamQuantity<NUM_PRESETS>>(PARAM_PRESET + i, 0, 1, 0);
 			TransitParamQuantity<NUM_PRESETS>* pq = (TransitParamQuantity<NUM_PRESETS>*)Module::paramQuantities[PARAM_PRESET + i];
@@ -218,7 +218,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		presetTotal = NUM_PRESETS;
 		Module* m = this;
 		TransitBase<NUM_PRESETS>* t = this;
-		t->ctrlWrite = Module::params[PARAM_RW].getValue() > 0.f;
+		t->ctrlMode = (CTRLMODE)Module::params[PARAM_CTRLMODE].getValue();
 		int c = 0;
 		while (true) {
 			N[c] = t;
@@ -234,7 +234,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 			t->panelTheme = BASE::panelTheme;
 			t->ctrlModuleId = Module::id;
 			t->ctrlOffset = c;
-			t->ctrlWrite = BASE::ctrlWrite;
+			t->ctrlMode = BASE::ctrlMode;
 			presetTotal += NUM_PRESETS;
 		}
 		int presetCount = std::min(this->presetCount, presetTotal);
@@ -249,8 +249,8 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 			paramHandleIndicator.process(args.sampleTime * handleDivider.division);
 		}
 
-		// Read mode
-		if (!BASE::ctrlWrite) {
+		// Read & Auto mode
+		if (BASE::ctrlMode == CTRLMODE::READ || BASE::ctrlMode == CTRLMODE::AUTO) {
 			// RESET input
 			if (slotCvMode == SLOTCVMODE::TRIG_FWD || slotCvMode == SLOTCVMODE::TRIG_REV || slotCvMode == SLOTCVMODE::TRIG_PINGPONG) {
 				if (Module::inputs[INPUT_RESET].isConnected() && resetTrigger.process(Module::inputs[INPUT_RESET].getVoltage())) {
@@ -382,8 +382,10 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 			}
 		}
 
-		if (isPhaseCvActive() && !BASE::ctrlWrite) {
-			presetProcessPhase(args.sampleTime);
+		if (isPhaseCvActive()) {
+			if (BASE::ctrlMode == CTRLMODE::READ) {
+				presetProcessPhase(args.sampleTime);
+			}
 		} 
 		else {
 			presetProcess(args.sampleTime);
@@ -401,7 +403,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 			for (int i = 0; i < presetTotal; i++) {
 				TransitSlot* slot = expSlot(i);
 				bool u = *(slot->presetSlotUsed);
-				if (!BASE::ctrlWrite) {
+				if (BASE::ctrlMode == CTRLMODE::READ || BASE::ctrlMode == CTRLMODE::AUTO) {
 					if (!isPhaseCvActive()) {
 						slot->lights[0].setBrightness(preset == i ? 1.f : (presetNext == i ? 1.f : 0.f));
 						slot->lights[1].setBrightness(preset == i ? 1.f : (presetCount > i ? (u ? 1.f : 0.25f) : 0.f));
@@ -422,7 +424,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 				}
 			}
 
-			BASE::lights[LIGHT_CV].setBrightness((slotCvMode == SLOTCVMODE::OFF || (slotCvMode == SLOTCVMODE::PHASE && BASE::ctrlWrite)) && lightBlink);
+			BASE::lights[LIGHT_CV].setBrightness((slotCvMode == SLOTCVMODE::OFF || (slotCvMode == SLOTCVMODE::PHASE && BASE::ctrlMode == CTRLMODE::WRITE)) && lightBlink);
 		}
 	}
 
@@ -493,10 +495,23 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		TransitSlot* slot = expSlot(p);
 		if (!isNext) {
 			if (p != preset || force) {
+				int presetPrev = preset;
 				preset = p;
 				presetNext = -1;
 				outSlotPulseGenerator.trigger();
-				if (!*(slot->presetSlotUsed)) return;
+				if (!*(slot->presetSlotUsed)) 
+					return;
+				if (BASE::ctrlMode == CTRLMODE::AUTO) {
+					TransitSlot* slotPrev = expSlot(presetPrev);
+					if (*(slotPrev->presetSlotUsed)) {
+						slotPrev->preset->clear();
+						for (size_t i = 0; i < sourceHandles.size(); i++) {
+							ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
+							float v = pq ? pq->getValue() : 0.f;
+							slotPrev->preset->push_back(v);
+						}
+					}
+				}
 				slewLimiter.reset();
 				outSocPulseGenerator.trigger();
 				outEocArm = true;
@@ -817,7 +832,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 
 		BASE::idFixClearMap();
 		BASE::dataFromJson(rootJ);
-		Module::params[PARAM_RW].setValue(0.f);
+		Module::params[PARAM_CTRLMODE].setValue(0.f);
 	}
 };
 
@@ -846,9 +861,9 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 		BASE::addParam(createParamCentered<StoermelderTrimpot>(Vec(21.7f, 255.8f), module, MODULE::PARAM_SHAPE));
 		BASE::addOutput(createOutputCentered<StoermelderPort>(Vec(21.7f, 300.3f), module, MODULE::OUTPUT));
 
-		BASE::addParam(createParamCentered<CKSSH>(Vec(21.7f, 336.2f), module, MODULE::PARAM_RW));
+		BASE::addParam(createParamCentered<CKSSThreeH>(Vec(21.7f, 336.2f), module, MODULE::PARAM_CTRLMODE));
 
-		BASE::addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(10.4f, 322.7f), module, MODULE::LIGHT_LEARN));
+		BASE::addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(60.f, 355.7f), module, MODULE::LIGHT_LEARN));
 
 		for (size_t i = 0; i < NUM_PRESETS; i++) {
 			float o = i * (288.7f / (NUM_PRESETS - 1));
