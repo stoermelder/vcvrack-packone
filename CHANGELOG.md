@@ -38,6 +38,8 @@
     - Added "Auto"-mode besides "Read" and "Write" ([manual](./docs/EightFace.md#auto-mode)) (#251)
 - Module [INTERMIX](./docs/Intermix.md)
     - Added context menu option "Scene lock" to prevent accidental changes
+- Module [MIDI-CAT](./docs/MidiCat.md)
+    - Fixed broken multi-mapping for note-messages (#271)
 - Module [TRANSIT](./docs/Transit.md)
     - Added context menu option for unbinding all bound parameters of a module (#268)
     - Added "Auto"-mode besides "Read" and "Write" ([manual](./docs/Transit.md#auto-mode)) (#269)
