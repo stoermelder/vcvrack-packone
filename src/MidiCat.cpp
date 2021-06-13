@@ -702,6 +702,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 		uint8_t note = msg.getNote();
 		bool midiReceived = valuesNote[note] != 0;
 		valuesNote[note] = 0;
+		valuesNoteTs[note] = ts;
 		return midiReceived;
 	}
 
