@@ -229,27 +229,36 @@ struct CmdParamRand : CmdBase {
 
 
 struct CmdParamCopyPaste : CmdBase {
-	float tempParamValue = 0.f;
-	void initialCmd(KEY_MODE keyMode) override {
-		Widget* w = APP->event->getHoveredWidget();
-		if (!w) return;
-		ParamWidget* p = dynamic_cast<ParamWidget*>(w);
-		if (!p) return;
-		ParamQuantity* q = p->paramQuantity;
-		if (!q) return;
-		tempParamValue = q->getScaledValue();
-	}
+	static bool cmd(KEY_MODE keyMode) {
+		static float tempParamValue;
+		static bool tempParamInitialized = false;
 
-	bool followUpCmd(KEY_MODE keyMode) override {
-		if (keyMode != KEY_MODE::S_PARAM_PASTE) return true;
 		Widget* w = APP->event->getHoveredWidget();
 		if (!w) return true;
 		ParamWidget* p = dynamic_cast<ParamWidget*>(w);
 		if (!p) return true;
 		ParamQuantity* q = p->paramQuantity;
 		if (!q) return true;
-		q->setScaledValue(tempParamValue);
+
+		if (keyMode == KEY_MODE::S_PARAM_COPY) {
+			tempParamValue = q->getScaledValue();
+			tempParamInitialized = true;
+		}
+
+		if (keyMode == KEY_MODE::S_PARAM_PASTE && tempParamInitialized) {
+			q->setScaledValue(tempParamValue);
+		}
+
 		return false;
+	}
+
+	void initialCmd(KEY_MODE keyMode) override {
+		cmd(keyMode);
+	}
+
+	bool followUpCmd(KEY_MODE keyMode) override {
+		if (keyMode != KEY_MODE::S_PARAM_PASTE) return true;
+		return cmd(keyMode);
 	}
 }; // struct CmdParamCopyPase
 

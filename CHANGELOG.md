@@ -40,6 +40,8 @@
     - Added context menu option "Scene lock" to prevent accidental changes
 - Module [MIDI-CAT](./docs/MidiCat.md)
     - Fixed broken multi-mapping for note-messages (#271)
+- Module [STROKE](./docs/Stroke.md)
+    - Improved behavior of parameter copy/paste commands (#273)
 - Module [TRANSIT](./docs/Transit.md)
     - Added context menu option for unbinding all bound parameters of a module (#268)
     - Added "Auto"-mode besides "Read" and "Write" ([manual](./docs/Transit.md#auto-mode)) (#269)
