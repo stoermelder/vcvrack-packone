@@ -45,6 +45,7 @@
 - Module [TRANSIT](./docs/Transit.md)
     - Added context menu option for unbinding all bound parameters of a module (#268)
     - Added "Auto"-mode besides "Read" and "Write" ([manual](./docs/Transit.md#auto-mode)) (#269)
+    - Added "Shift back" context menu option (#274)
 
 ## 1.9.0
 

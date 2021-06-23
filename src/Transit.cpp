@@ -211,6 +211,12 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		return N[n]->transitSlot(index % NUM_PRESETS);
 	}
 
+	inline std::string* expSlotLabel(int index) {
+		if (index >= presetTotal) return NULL;
+		int n = index / NUM_PRESETS;
+		return &N[n]->textLabel[index % NUM_PRESETS];
+	}
+
 	void process(const Module::ProcessArgs& args) override {
 		if (inChange) return;
 		sampleRate = args.sampleRate;
@@ -675,6 +681,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		TransitSlot* slot = expSlot(p);
 		*(slot->presetSlotUsed) = false;
 		slot->preset->clear();
+		*expSlotLabel(p) = "";
 		if (preset == p) preset = -1;
 	}
 
@@ -721,6 +728,20 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		if (preset == target) preset = -1;
 	}
 
+	void presetShiftBack(int p) {
+		for (int i = presetTotal - 2; i >= p; i--) {
+			TransitSlot* slot = expSlot(i);
+			if (*(slot->presetSlotUsed)) {
+				presetCopyPaste(i, i + 1);
+				*expSlotLabel(i + 1) = *expSlotLabel(i);
+			}
+			else {
+				presetClear(i + 1);
+			}
+		}
+		presetClear(p);
+	}
+
 	void setProcessDivision(int d) {
 		presetProcessDivision = d;
 		presetProcessDivider.setDivision(presetProcessDivision);
@@ -764,6 +785,9 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 				return -1;
 			case SLOT_CMD::SAVE:
 				presetSave(i);
+				return -1;
+			case SLOT_CMD::SHIFTBACK:
+				presetShiftBack(i);
 				return -1;
 			default:
 				return -1;

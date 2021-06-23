@@ -13,7 +13,8 @@ enum class SLOT_CMD {
 	COPY,
 	PASTE_PREVIEW,
 	PASTE,
-	SAVE
+	SAVE,
+	SHIFTBACK
 };
 
 enum class CTRLMODE {
@@ -53,7 +54,6 @@ struct TransitBase : Module, StripIdFixModule {
 	virtual TransitSlot* transitSlot(int i) { return NULL; }
 
 	virtual int transitSlotCmd(SLOT_CMD cmd, int i) { return -1; }
-
 
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
@@ -244,6 +244,7 @@ struct TransitLedButton : LEDButton {
 		menu->addChild(construct<SlotItem>(&MenuItem::text, "Clear", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::CLEAR, &SlotItem::disabled, !module->presetSlotUsed[id]));
 		menu->addChild(construct<SlotItem>(&MenuItem::text, "Copy", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::COPY, &SlotItem::disabled, !module->presetSlotUsed[id]));
 		menu->addChild(construct<PasteItem>(&MenuItem::text, "Paste", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::PASTE));
+		menu->addChild(construct<SlotItem>(&MenuItem::text, "Shift back", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::SHIFTBACK));
 		menu->addChild(new MenuSeparator);
 		menu->addChild(construct<LabelMenuItem>(&MenuItem::text, "Custom label", &LabelMenuItem::module, module, &LabelMenuItem::id, id));
 	}
