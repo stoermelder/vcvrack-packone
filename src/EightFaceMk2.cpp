@@ -229,13 +229,19 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 		return N[n]->faceSlot(index % NUM_PRESETS);
 	}
 
+	inline std::string* expSlotLabel(int index) {
+		if (index >= presetTotal) return NULL;
+		int n = index / NUM_PRESETS;
+		return &N[n]->textLabel[index % NUM_PRESETS];
+	}
+
 	void process(const Module::ProcessArgs& args) override {
 		if (inChange) return;
 
 		presetTotal = NUM_PRESETS;
 		Module* m = this;
 		EightFaceMk2Base<NUM_PRESETS>* t = this;
-		t->ctrlWrite = Module::params[PARAM_RW].getValue() > 0.f;
+		t->ctrlMode = (CTRLMODE)Module::params[PARAM_RW].getValue();
 		int c = 0;
 		while (true) {
 			N[c] = t;
@@ -251,13 +257,13 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 			t->panelTheme = BASE::panelTheme;
 			t->ctrlModuleId = Module::id;
 			t->ctrlOffset = c;
-			t->ctrlWrite = BASE::ctrlWrite;
+			t->ctrlMode = BASE::ctrlMode;
 			presetTotal += NUM_PRESETS;
 		}
 		int presetCount = std::min(this->presetCount, presetTotal);
 
 		// Read mode
-		if (!BASE::ctrlWrite) {
+		if (BASE::ctrlMode == CTRLMODE::READ) {
 			// RESET input
 			if (slotCvMode == SLOTCVMODE::TRIG_FWD || slotCvMode == SLOTCVMODE::TRIG_REV || slotCvMode == SLOTCVMODE::TRIG_PINGPONG) {
 				if (Module::inputs[INPUT_RESET].isConnected() && resetTrigger.process(Module::inputs[INPUT_RESET].getVoltage())) {
@@ -399,7 +405,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 			for (int i = 0; i < presetTotal; i++) {
 				EightFaceMk2Slot* slot = expSlot(i);
 				bool u = *(slot->presetSlotUsed);
-				if (!BASE::ctrlWrite) {
+				if (BASE::ctrlMode == CTRLMODE::READ) {
 					slot->lights[0].setBrightness(preset == i ? 1.f : (presetNext == i ? 1.f : 0.f));
 					slot->lights[1].setBrightness(preset == i ? 1.f : (presetCount > i ? (u ? 1.f : 0.25f) : 0.f));
 					slot->lights[2].setBrightness(preset == i ? 1.f : 0.f);
@@ -548,6 +554,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 				json_decref(vJ);
 			}
 			slot->preset->clear();
+			*expSlotLabel(p) = "";
 		}
 		*(slot->presetSlotUsed) = false;
 		if (preset == p) preset = -1;
@@ -589,6 +596,20 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 		if (preset == target) preset = -1;
 	}
 
+	void presetShiftBack(int p) {
+		for (int i = presetTotal - 2; i >= p; i--) {
+			EightFaceMk2Slot* slot = expSlot(i);
+			if (*(slot->presetSlotUsed)) {
+				presetCopyPaste(i, i + 1);
+				*expSlotLabel(i + 1) = *expSlotLabel(i);
+			}
+			else {
+				presetClear(i + 1);
+			}
+		}
+		presetClear(p);
+	}
+
 	void setCvMode(SLOTCVMODE mode) {
 		slotCvMode = slotCvModeBak = mode;
 	}
@@ -614,6 +635,9 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 				return -1;
 			case SLOT_CMD::SAVE:
 				presetSave(i);
+				return -1;
+			case SLOT_CMD::SHIFTBACK:
+				presetShiftBack(i);
 				return -1;
 			default:
 				return -1;
