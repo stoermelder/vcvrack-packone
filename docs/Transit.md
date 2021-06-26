@@ -30,7 +30,7 @@ At least one parameter (knob, fader, switch...) must be bound to TRANSIT before 
 TRANSIT is designed to bind parameters from different modules the same time and technically there is no limitation on the number of parameters which can be bound. Please note that the CPU usage for morphing between snapshots increases linearly by the number of bound parameters.  
 Parameters can be unbound at any point by unmapping the mapping indicator. Please note that values stored in snapshots won't be deleted for unbound parameters.
 
-## Saving snapshots in write-mode 
+## Write-mode: saving snapshots
 
 Write-mode is used to save snapshots in TRANSIT after some parameters have been bound: A snapshot consists of the values all bound parameters are currently set to. You enter write-mode by flipping the switch on the bottom to the _W_-position. To store a snapshot simply short press one of the 12 snapshot-buttons and the LED on a snapshot-button is lit in red when a slot is in use. To clear a snapshot long-press the button. 
 
@@ -48,19 +48,27 @@ There are also some options on the context menu of the snapshot-buttons:
   Copies the snapshot to the clipboard.
 - **Paste**  
   Pastes the snapshot which has been copied before.
+- **Shift front** (added in v1.10.0)  
+  Moves all snapshot one slot forward, beginning from the initiating slot. If the first slot is used it gets deleted.
+- **Shift back** (added in v1.10.0)  
+  Moves all snapshot one slot backward, beginning from the initiating slot. If the last slot is used it gets deleted, also the number of currently active slots is unaffacted.
 
 ![TRANSIT write-mode](./Transit-write-context.gif)
 
 A blinking white LED signals the snapshot applied at last on the parameters. Please keep in mind that you can change bound parameters manually which will not be recognized by TRANSIT.  
 In write-mode any input on the SEL-port is ignored and sequencing is disabled.
 
-## Morphing between snapshots
+## Read-mode: morphing between snapshots
 
 Read-mode is the default operational mode of TRANSIT and is used to "load" or "apply" previously saved snapshots on the bound parameters. The interesting part of TRANSIT is its ability to "morph" the parameter values into the target snapshot: _FADE_ sets the amount of time it takes to reach the parameters' positions stored in the snapshot, this duration can also be controlled by CV (0-10V). There is also a trimpot for setting the shape of the transition, in the middle position the parameters are morphed linearly.
 
 ![TRANSIT morph](./Transit-morph.gif)
 
 TRANSIT provides three precision-settings on the contextual menu which influence the CPU usage when morphing snapshots: Audio rate, lower CPU (1/8 audio rate, default) and lowest CPU (1/64 audio rate).
+
+## Auto-mode
+
+Auto-mode (added in v1.10.0) stores snapshots automatically to the current slot right before moving on to the next slot. A typical workflow would look like this: Store a few snapshots using Write-mode as usual. Afterwards flip the switch to the middle "A"-position and start slow sequencing using the _SLOT_-port. Imagine slot 1 is active and TRANSIT will begin  morphing into slot 2 next. Right before the transition starts the current state of the parameters is stored into slot 1 preserving all adjustments made in the meantime. In contrast, Read-mode would simply load slot 2 and the snapshot stored in slot 1 will stay unchanged, discarding all changes made to the parameters. Note: Empty slots will stay empty, even in Auto-mode.
 
 ## Sequencing and selecting snapshots
 
@@ -118,6 +126,13 @@ Note: These modes are unavailable if _SEL_-port operates in Phase-mode.
 
 ![TRANSIT OUT-port](./Transit-out.gif)
 
+## +T expander
+
+TRANSIT provides 12 snapshot-slots and supports extending this number with +T expanders: The expander must be placed on the right side of TRANSIT. Up to seven instances of +T can be added to one instance of TRANSIT, providing 12 * 8 = 96 snapshot-slots in total.  
+Once placed next to TRANSIT the expander works and behaves the same way TRANSIT does and the setup is done analogously. +T itself provides no further options.
+
+![+T expander](./Transit-t.gif)
+
 ## Tips
 
 - TRANSIT is designed to morph parameter-snapshots, while stoermelder [8FACE](./EightFace.md) and [8FACE mk2](./EightFaceMk2.md) are designed to apply different presets onto modues. Morphing between presets of modules is not possible because of technical reasons.
@@ -126,13 +141,22 @@ Note: These modes are unavailable if _SEL_-port operates in Phase-mode.
   
 - Each snapshot can be named with a custom text label. This label is shown while hovering above the snapshot button if parameter tooltips are enabled (added in v1.9.0).
 
-TRANSIT was added in v1.7.0 of PackOne.
+## Changelog
 
-# stoermelder +T expander
-
-TRANSIT provides 12 snapshot-slots and supports extending this number with +T expanders: The expander must be placed on the right side of TRANSIT. Up to seven instances of +T can be added to one instance of TRANSIT, providing 12 * 8 = 96 snapshot-slots in total.  
-Once placed next to TRANSIT the expander works and behaves the same way TRANSIT does and the setup is done analogously. +T itself provides no further options.
-
-![+T expander](./Transit-t.gif)
-
-+T was added in v1.7 of PackOne.
+- v1.7.0
+    - Initial release of TRANSIT and +T
+- v1.7.1
+    - Fixed wrong snapshot-count when using +T expander after loading a patch
+- v1.8.0
+    - Fixed hanging pingpong-mode when changing slots manually
+    - Added trigger-options "pseudo-random", "random walk", "alternating", "shuffle"
+    - Fixed broken snapshots on save after mapped modules have been deleted (#205)
+- v1.9.0
+    - Added "Phase"-mode for CV-input which scans continously through snapshots (#182)
+    - Added context menu option "Locate and indicate" for bound parameters
+    - Added context menu option for custom text labels
+    - Improved performance of +T expanders
+- v1.10.0
+    - Added context menu option for unbinding all bound parameters of a module (#268)
+    - Added "Auto"-mode besides "Read" and "Write" (#269)
+    - Added "Shift front" and "Shift back" context menu options (#274)

@@ -1,5 +1,7 @@
 #include "plugin.hpp"
 #include "digital.hpp"
+#include "IntermixBase.hpp"
+#include "components/MatrixButton.hpp"
 
 namespace StoermelderPackOne {
 namespace Intermix {
@@ -50,7 +52,7 @@ enum OUT_MODE {
 };
 
 template < int PORTS >
-struct IntermixModule : Module {
+struct IntermixModule : Module, IntermixBase<PORTS> {
 	enum ParamIds {
 		ENUMS(PARAM_MATRIX, PORTS * PORTS),
 		ENUMS(PARAM_OUTPUT, PORTS),
@@ -110,6 +112,8 @@ struct IntermixModule : Module {
 	bool sceneAtMode;
 	/** [Stored to JSON] */
 	int sceneCount;
+	/** [Stored to JSON] */
+	bool sceneLock;
 
 	int sceneNext = -1;
 
@@ -117,7 +121,11 @@ struct IntermixModule : Module {
 	int channelCount = 1;
 
 	LinearFade fader[PORTS][PORTS][PORT_MAX_CHANNELS];
+	uint32_t fadeInTs[PORTS];
+	uint32_t fadeOutTs[PORTS];
 	//dsp::TSlewLimiter<simd::float_4> outputAtSlew[PORTS / 4];
+
+	uint32_t ts = 0;
 
 	dsp::SchmittTrigger sceneTrigger;
 	dsp::SchmittTrigger mapTrigger[PORTS];
@@ -141,7 +149,7 @@ struct IntermixModule : Module {
 		}
 		configParam(PARAM_FADEIN, 0.f, 4.f, 0.f, "Fade in", "s");
 		configParam(PARAM_FADEOUT, 0.f, 4.f, 0.f, "Fade out", "s");
-		sceneDivider.setDivision(32);
+		sceneDivider.setDivision(64);
 		lightDivider.setDivision(512);
 		onReset();
 	}
@@ -165,11 +173,25 @@ struct IntermixModule : Module {
 		sceneInputMode = false;
 		sceneAtMode = true;
 		sceneCount = SCENE_MAX;
+		sceneLock = false;
 		sceneSet(0);
 		Module::onReset();
 	}
 
+	void onRemove() override {
+		// hack for clearing the module-pointers on the expander-chain
+		Module* m = this;
+		while (m) {
+			if (m->model != modelIntermix && m->model != modelIntermixEnv && m->model != modelIntermixFade && m->model != modelIntermixGate) break;
+			m->rightExpander.producerMessage = NULL;
+			m->rightExpander.consumerMessage = NULL;
+			m = m->rightExpander.module;
+		}
+	}
+
 	void process(const ProcessArgs& args) override {
+		ts++;
+
 		if (inputs[INPUT_SCENE].isConnected()) {
 			switch (sceneMode) {
 				case SCENE_CV_MODE::OFF: {
@@ -234,16 +256,21 @@ struct IntermixModule : Module {
 			float f1 = params[PARAM_FADEIN].getValue();
 			float f2 = params[PARAM_FADEOUT].getValue();
 			for (int i = 0; i < PORTS; i++) {
+				bool fadeIn = ts - fadeInTs[i] > sceneDivider.getDivision() * 2;
+				bool fadeOut = ts - fadeOutTs[i] > sceneDivider.getDivision() * 2;
 				scenes[sceneSelected].output[i] = params[PARAM_OUTPUT + i].getValue() == 0.f ? OM_OUT : OM_OFF;
 				scenes[sceneSelected].outputAt[i] = params[PARAM_AT + i].getValue();
 				for (int j = 0; j < PORTS; j++) {
 					float p = params[PARAM_MATRIX + j * PORTS + i].getValue();
 					for (int c = 0; c < channelCount; c++) {
-						fader[i][j][c].setRiseFall(f1, f2);
+						if (fadeIn) fader[i][j][c].setRise(f1);
+						if (fadeOut) fader[i][j][c].setFall(f2);
 						if (p != scenes[sceneSelected].matrix[i][j] && p == 1.f) fader[i][j][c].triggerFadeIn();
 						if (p != scenes[sceneSelected].matrix[i][j] && p == 0.f) fader[i][j][c].triggerFadeOut();
 					}
-					scenes[sceneSelected].matrix[i][j] = currentMatrix[i][j] = p;
+					scenes[sceneSelected].matrix[i][j] = p;
+					IN_MODE mode = sceneInputMode ? scenes[sceneSelected].input[i] : inputMode[i];
+					if (mode != IN_MODE::IM_FADE) currentMatrix[i][j] = p;
 				}
 			}
 		}
@@ -355,6 +382,10 @@ struct IntermixModule : Module {
 				lights[LIGHT_OUTPUT + i].setSmoothBrightness(v, s);
 			}
 		}
+
+		// Expander
+		rightExpander.producerMessage = (IntermixBase<PORTS>*)this;
+		rightExpander.messageFlipRequested = true;
 	}
 
 	inline void sceneSet(int scene) {
@@ -436,6 +467,33 @@ struct IntermixModule : Module {
 		sceneSelected = std::min(sceneSelected, sceneCount - 1);
 	}
 
+	typename IntermixBase<PORTS>::IntermixMatrix expGetCurrentMatrix() override {
+		return currentMatrix;
+	}
+
+	int expGetChannelCount() override { 
+		return channelCount;
+	}
+
+	void expSetFade(int i, float* fadeIn, float* fadeOut) override {
+		if (fadeIn) {
+			fadeInTs[i] = ts;
+			for (int j = 0; j < PORTS; j++) {
+				for (int c = 0; c < channelCount; c++) {
+					fader[i][j][c].setRise(fadeIn[j]);
+				}
+			}
+		}
+		if (fadeOut) {
+			fadeOutTs[i] = ts;
+			for (int j = 0; j < PORTS; j++) {
+				for (int c = 0; c < channelCount; c++) {
+					fader[i][j][c].setFall(fadeOut[j]);
+				}
+			}
+		}
+	}
+
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
 
@@ -481,6 +539,7 @@ struct IntermixModule : Module {
 		json_object_set_new(rootJ, "sceneInputMode", json_boolean(sceneInputMode));
 		json_object_set_new(rootJ, "sceneAtMode", json_boolean(sceneAtMode));
 		json_object_set_new(rootJ, "sceneCount", json_integer(sceneCount));
+		json_object_set_new(rootJ, "sceneLock", json_boolean(sceneLock));
 		return rootJ;
 	}
 
@@ -530,6 +589,8 @@ struct IntermixModule : Module {
 		if (sceneAtModeJ) sceneAtMode = json_boolean_value(sceneAtModeJ);
 		json_t* sceneCountJ = json_object_get(rootJ, "sceneCount");
 		if (sceneCountJ) sceneCount = json_integer_value(sceneCountJ);
+		json_t* sceneLockJ = json_object_get(rootJ, "sceneLock");
+		if (sceneLockJ) sceneLock = json_boolean_value(sceneLockJ);
 
 		for (int i = 0; i < PORTS; i++) {
 			for (int j = 0; j < PORTS; j++) {
@@ -687,10 +748,22 @@ struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 		addChild(sceneLedDisplay);
 		addInput(createInputCentered<StoermelderPort>(Vec(23.1f, 326.7f), module, IntermixModule<PORTS>::INPUT_SCENE));
 
+		struct IntermixMatrixButton : MatrixButton {
+			void onDragStart(const event::DragStart& e) override {
+				IntermixModule<PORTS>* module = dynamic_cast<IntermixModule<PORTS>*>(paramQuantity->module);
+				if (module->sceneLock) {
+					e.consume(this);
+				}
+				else {
+					MatrixButton::onDragStart(e);
+				}
+			}
+		};
+
 		for (int i = 0; i < PORTS; i++) {
 			for (int j = 0; j < PORTS; j++) {
 				Vec v = Vec(xMin + (xMax - xMin) / (PORTS - 1) * j, yMin + (yMax - yMin) / (PORTS - 1) * i);
-				addParam(createParamCentered<MatrixButton>(v, module, IntermixModule<PORTS>::PARAM_MATRIX + i * PORTS + j));
+				addParam(createParamCentered<IntermixMatrixButton>(v, module, IntermixModule<PORTS>::PARAM_MATRIX + i * PORTS + j));
 			}
 		}
 
@@ -742,7 +815,7 @@ struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 	}
 
 	void appendContextMenu(Menu* menu) override {
-		ThemedModuleWidget<IntermixModule<8>>::appendContextMenu(menu);
+		ThemedModuleWidget<IntermixModule<PORTS>>::appendContextMenu(menu);
 		IntermixModule<PORTS>* module = dynamic_cast<IntermixModule<PORTS>*>(this->module);
 		assert(module);
 
@@ -773,6 +846,17 @@ struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 			}
 		};
 
+		struct SceneLockItem : MenuItem {
+			IntermixModule<PORTS>* module;
+			void onAction(const event::Action& e) override {
+				module->sceneLock ^= true;
+			}
+			void step() override {
+				rightText = CHECKMARK(module->sceneLock);
+				MenuItem::step();
+			}
+		};
+
 		struct SceneModeMenuItem : MenuItem {
 			SceneModeMenuItem() {
 				rightText = RIGHT_ARROW;
@@ -781,11 +865,9 @@ struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 			struct SceneModeItem : MenuItem {
 				IntermixModule<PORTS>* module;
 				SCENE_CV_MODE sceneMode;
-				
 				void onAction(const event::Action& e) override {
 					module->sceneMode = sceneMode;
 				}
-
 				void step() override {
 					rightText = module->sceneMode == sceneMode ? "✔" : "";
 					MenuItem::step();
@@ -806,11 +888,9 @@ struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 
 		struct SceneInputModeItem : MenuItem {
 			IntermixModule<PORTS>* module;
-			
 			void onAction(const event::Action& e) override {
 				module->sceneInputMode ^= true;
 			}
-
 			void step() override {
 				rightText = module->sceneInputMode ? "✔" : "";
 				MenuItem::step();
@@ -819,11 +899,9 @@ struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 
 		struct SceneAtModeItem : MenuItem {
 			IntermixModule<PORTS>* module;
-			
 			void onAction(const event::Action& e) override {
 				module->sceneAtMode ^= true;
 			}
-
 			void step() override {
 				rightText = module->sceneAtMode ? "✔" : "";
 				MenuItem::step();
@@ -832,11 +910,9 @@ struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 
 		struct OutputClampItem : MenuItem {
 			IntermixModule<PORTS>* module;
-			
 			void onAction(const event::Action& e) override {
 				module->outputClamp ^= true;
 			}
-
 			void step() override {
 				rightText = module->outputClamp ? "✔" : "";
 				MenuItem::step();
@@ -845,11 +921,9 @@ struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 
 		struct InputVisualizeItem : MenuItem {
 			IntermixModule<PORTS>* module;
-			
 			void onAction(const event::Action& e) override {
 				module->inputVisualize ^= true;
 			}
-
 			void step() override {
 				rightText = module->inputVisualize ? "✔" : "";
 				MenuItem::step();
@@ -860,7 +934,6 @@ struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 			struct BrightnessQuantity : Quantity {
 				IntermixModule<PORTS>* module;
 				const float MAX = 2.f;
-
 				BrightnessQuantity(IntermixModule<PORTS>* module) {
 					this->module = module;
 				}
@@ -897,6 +970,7 @@ struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 		};
 
 		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<SceneLockItem>(&MenuItem::text, "Scene lock", &SceneLockItem::module, module));
 		menu->addChild(construct<NumberOfChannelsMenuItem>(&MenuItem::text, "Channels", &NumberOfChannelsMenuItem::module, module));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<SceneModeMenuItem>(&MenuItem::text, "Port SCENE-mode", &SceneModeMenuItem::module, module));

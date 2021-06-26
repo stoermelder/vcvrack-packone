@@ -42,7 +42,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 
 	enum ParamIds {
 		ENUMS(PARAM_PRESET, NUM_PRESETS),
-		PARAM_RW,
+		PARAM_CTRLMODE,
 		PARAM_FADE,
 		PARAM_SHAPE,
 		NUM_PARAMS
@@ -127,7 +127,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 	TransitModule() {
 		BASE::panelTheme = pluginSettings.panelThemeDefault;
 		Module::config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		Module::configParam(PARAM_RW, 0, 1, 0, "Read/write mode");
+		Module::configParam<TriggerParamQuantity>(PARAM_CTRLMODE, 0, 2, 0, "Read/Auto/Write mode");
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			Module::configParam<TransitParamQuantity<NUM_PRESETS>>(PARAM_PRESET + i, 0, 1, 0);
 			TransitParamQuantity<NUM_PRESETS>* pq = (TransitParamQuantity<NUM_PRESETS>*)Module::paramQuantities[PARAM_PRESET + i];
@@ -211,6 +211,12 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		return N[n]->transitSlot(index % NUM_PRESETS);
 	}
 
+	inline std::string* expSlotLabel(int index) {
+		if (index >= presetTotal) return NULL;
+		int n = index / NUM_PRESETS;
+		return &N[n]->textLabel[index % NUM_PRESETS];
+	}
+
 	void process(const Module::ProcessArgs& args) override {
 		if (inChange) return;
 		sampleRate = args.sampleRate;
@@ -218,7 +224,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		presetTotal = NUM_PRESETS;
 		Module* m = this;
 		TransitBase<NUM_PRESETS>* t = this;
-		t->ctrlWrite = Module::params[PARAM_RW].getValue() > 0.f;
+		t->ctrlMode = (CTRLMODE)Module::params[PARAM_CTRLMODE].getValue();
 		int c = 0;
 		while (true) {
 			N[c] = t;
@@ -234,7 +240,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 			t->panelTheme = BASE::panelTheme;
 			t->ctrlModuleId = Module::id;
 			t->ctrlOffset = c;
-			t->ctrlWrite = BASE::ctrlWrite;
+			t->ctrlMode = BASE::ctrlMode;
 			presetTotal += NUM_PRESETS;
 		}
 		int presetCount = std::min(this->presetCount, presetTotal);
@@ -249,8 +255,8 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 			paramHandleIndicator.process(args.sampleTime * handleDivider.division);
 		}
 
-		// Read mode
-		if (!BASE::ctrlWrite) {
+		// Read & Auto mode
+		if (BASE::ctrlMode == CTRLMODE::READ || BASE::ctrlMode == CTRLMODE::AUTO) {
 			// RESET input
 			if (slotCvMode == SLOTCVMODE::TRIG_FWD || slotCvMode == SLOTCVMODE::TRIG_REV || slotCvMode == SLOTCVMODE::TRIG_PINGPONG) {
 				if (Module::inputs[INPUT_RESET].isConnected() && resetTrigger.process(Module::inputs[INPUT_RESET].getVoltage())) {
@@ -382,8 +388,10 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 			}
 		}
 
-		if (isPhaseCvActive() && !BASE::ctrlWrite) {
-			presetProcessPhase(args.sampleTime);
+		if (isPhaseCvActive()) {
+			if (BASE::ctrlMode == CTRLMODE::READ) {
+				presetProcessPhase(args.sampleTime);
+			}
 		} 
 		else {
 			presetProcess(args.sampleTime);
@@ -401,7 +409,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 			for (int i = 0; i < presetTotal; i++) {
 				TransitSlot* slot = expSlot(i);
 				bool u = *(slot->presetSlotUsed);
-				if (!BASE::ctrlWrite) {
+				if (BASE::ctrlMode == CTRLMODE::READ || BASE::ctrlMode == CTRLMODE::AUTO) {
 					if (!isPhaseCvActive()) {
 						slot->lights[0].setBrightness(preset == i ? 1.f : (presetNext == i ? 1.f : 0.f));
 						slot->lights[1].setBrightness(preset == i ? 1.f : (presetCount > i ? (u ? 1.f : 0.25f) : 0.f));
@@ -422,7 +430,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 				}
 			}
 
-			BASE::lights[LIGHT_CV].setBrightness((slotCvMode == SLOTCVMODE::OFF || (slotCvMode == SLOTCVMODE::PHASE && BASE::ctrlWrite)) && lightBlink);
+			BASE::lights[LIGHT_CV].setBrightness((slotCvMode == SLOTCVMODE::OFF || (slotCvMode == SLOTCVMODE::PHASE && BASE::ctrlMode == CTRLMODE::WRITE)) && lightBlink);
 		}
 	}
 
@@ -493,10 +501,23 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		TransitSlot* slot = expSlot(p);
 		if (!isNext) {
 			if (p != preset || force) {
+				int presetPrev = preset;
 				preset = p;
 				presetNext = -1;
 				outSlotPulseGenerator.trigger();
-				if (!*(slot->presetSlotUsed)) return;
+				if (!*(slot->presetSlotUsed)) 
+					return;
+				if (BASE::ctrlMode == CTRLMODE::AUTO) {
+					TransitSlot* slotPrev = expSlot(presetPrev);
+					if (*(slotPrev->presetSlotUsed)) {
+						slotPrev->preset->clear();
+						for (size_t i = 0; i < sourceHandles.size(); i++) {
+							ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
+							float v = pq ? pq->getValue() : 0.f;
+							slotPrev->preset->push_back(v);
+						}
+					}
+				}
 				slewLimiter.reset();
 				outSocPulseGenerator.trigger();
 				outEocArm = true;
@@ -660,6 +681,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		TransitSlot* slot = expSlot(p);
 		*(slot->presetSlotUsed) = false;
 		slot->preset->clear();
+		*expSlotLabel(p) = "";
 		if (preset == p) preset = -1;
 	}
 
@@ -706,6 +728,34 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		if (preset == target) preset = -1;
 	}
 
+	void presetShiftBack(int p) {
+		for (int i = presetTotal - 2; i >= p; i--) {
+			TransitSlot* slot = expSlot(i);
+			if (*(slot->presetSlotUsed)) {
+				presetCopyPaste(i, i + 1);
+				*expSlotLabel(i + 1) = *expSlotLabel(i);
+			}
+			else {
+				presetClear(i + 1);
+			}
+		}
+		presetClear(p);
+	}
+
+	void presetShiftFront(int p) {
+		for (int i = 1; i <= p; i++) {
+			TransitSlot* slot = expSlot(i);
+			if (*(slot->presetSlotUsed)) {
+				presetCopyPaste(i, i - 1);
+				*expSlotLabel(i - 1) = *expSlotLabel(i);
+			}
+			else {
+				presetClear(i - 1);
+			}
+		}
+		presetClear(p);
+	}
+
 	void setProcessDivision(int d) {
 		presetProcessDivision = d;
 		presetProcessDivider.setDivision(presetProcessDivision);
@@ -749,6 +799,12 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 				return -1;
 			case SLOT_CMD::SAVE:
 				presetSave(i);
+				return -1;
+			case SLOT_CMD::SHIFT_BACK:
+				presetShiftBack(i);
+				return -1;
+			case SLOT_CMD::SHIFT_FRONT:
+				presetShiftFront(i);
 				return -1;
 			default:
 				return -1;
@@ -817,7 +873,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 
 		BASE::idFixClearMap();
 		BASE::dataFromJson(rootJ);
-		Module::params[PARAM_RW].setValue(0.f);
+		Module::params[PARAM_CTRLMODE].setValue(0.f);
 	}
 };
 
@@ -846,9 +902,9 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 		BASE::addParam(createParamCentered<StoermelderTrimpot>(Vec(21.7f, 255.8f), module, MODULE::PARAM_SHAPE));
 		BASE::addOutput(createOutputCentered<StoermelderPort>(Vec(21.7f, 300.3f), module, MODULE::OUTPUT));
 
-		BASE::addParam(createParamCentered<CKSSH>(Vec(21.7f, 336.2f), module, MODULE::PARAM_RW));
+		BASE::addParam(createParamCentered<CKSSThreeH>(Vec(21.7f, 336.2f), module, MODULE::PARAM_CTRLMODE));
 
-		BASE::addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(10.4f, 322.7f), module, MODULE::LIGHT_LEARN));
+		BASE::addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(60.f, 355.7f), module, MODULE::LIGHT_LEARN));
 
 		for (size_t i = 0; i < NUM_PRESETS; i++) {
 			float o = i * (288.7f / (NUM_PRESETS - 1));
@@ -1147,6 +1203,43 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 			}
 		};
 
+		struct ModuleMenuItem : MenuItem {
+			MODULE* module;
+			ModuleMenuItem() {
+				rightText = RIGHT_ARROW;
+			}
+
+			Menu* createChildMenu() override {
+				struct UnbindItem : MenuItem {
+					MODULE* module;
+					int moduleId;
+					void onAction(const event::Action& e) override {
+						for (size_t i = 0; i < module->sourceHandles.size(); i++) {
+							ParamHandle* handle = module->sourceHandles[i];
+							if (handle->moduleId != moduleId) continue;
+							APP->engine->updateParamHandle(handle, -1, 0, true);
+						}
+					}
+				};
+
+				Menu* menu = new Menu;
+				std::set<int> moduleIds;
+				for (size_t i = 0; i < module->sourceHandles.size(); i++) {
+					ParamHandle* handle = module->sourceHandles[i];
+					if (moduleIds.find(handle->moduleId) == moduleIds.end())
+						moduleIds.insert(handle->moduleId);
+				}
+
+				for (int moduleId : moduleIds) {
+					ModuleWidget* moduleWidget = APP->scene->rack->getModule(moduleId);
+					if (!moduleWidget) continue;	
+					std::string text = string::f("Unbind \"%s %s\"", moduleWidget->model->plugin->name.c_str(), moduleWidget->model->name.c_str());
+					menu->addChild(construct<UnbindItem>(&MenuItem::text, text, &UnbindItem::module, module, &UnbindItem::moduleId, moduleId));
+				}
+				return menu;
+			}
+		};
+
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<MappingIndicatorHiddenItem>(&MenuItem::text, "Hide mapping indicators", &MappingIndicatorHiddenItem::module, module));
 		menu->addChild(construct<PrecisionMenuItem>(&MenuItem::text, "Precision", &PrecisionMenuItem::module, module));
@@ -1161,6 +1254,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 
 		if (module->sourceHandles.size() > 0) {
 			menu->addChild(new MenuSeparator());
+			menu->addChild(construct<ModuleMenuItem>(&MenuItem::text, "Bound modules", &ModuleMenuItem::module, module));
 			menu->addChild(construct<ParameterMenuItem>(&MenuItem::text, "Bound parameters", &ParameterMenuItem::module, module));
 		}
 	}

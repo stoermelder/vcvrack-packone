@@ -51,6 +51,10 @@ There are also some options on the context menu of the snapshot-buttons:
   Copies the snapshot to the clipboard.
 - **Paste**  
   Pastes the snapshot which has been copied before.
+- **Shift front** (added in v1.10.0)  
+  Moves all snapshot one slot forward, beginning from the initiating slot. If the first slot is used it gets deleted.
+- **Shift back** (added in v1.10.0)  
+  Moves all snapshot one slot backward, beginning from the initiating slot. If the last slot is used it gets deleted, also the number of currently active slots is unaffacted.
 
 ![8FACE mk2 write-mode](./EightFaceMk2-write-context.gif)
 
@@ -88,6 +92,13 @@ Modes for _SEL_ on the contextual menu:
 - **Arm**  
   This mode is a kind of "buffered trigger": First apply a clock signal on _SEL_. Then you "arm" any snapshot manually or by MIDI-mapping by its button (resulting in a yellow LED) which will be activated on the next clock trigger (white LED). This mode allows you manual snapshot activation synchronized to a clock.
 
+## +8 expander
+
+8FACE mk2 provides 8 snapshot-slots and supports extending this number with +8 expanders: The expander must be placed on the right side of 8FACE mk2. Up to seven instances of +8 can be added to one instance of 8FACE mk2, providing 8 * 8 = 64 snapshot-slots in total.  
+Once placed next to 8FACE mk2 the expander works and behaves the same way 8FACE mk2 does and the setup is done analogously. +8 itself provides no further options.
+
+![+8 expander](./EightFaceMk2-8.gif)
+
 ## Tips
 
 - 8FACE mk2 is designed to apply different presets onto modules, while stoermelder [TRANSIT](./Transit.md) is designed to morph parameter-snapshots. Morphing between presets of modules is not possible because of technical reasons.
@@ -96,13 +107,10 @@ Modes for _SEL_ on the contextual menu:
 
 - Each snapshot can be named with a custom text label. This label is shown while hovering above the snapshot button if parameter tooltips are enabled.
 
-8FACE mk2 was added in v1.9 of PackOne.
+## Changelog
 
-# +8 expander
-
-8FACE mk2 provides 8 snapshot-slots and supports extending this number with +8 expanders: The expander must be placed on the right side of 8FACE mk2. Up to seven instances of +8 can be added to one instance of 8FACE mk2, providing 8 * 8 = 64 snapshot-slots in total.  
-Once placed next to 8FACE mk2 the expander works and behaves the same way 8FACE mk2 does and the setup is done analogously. +8 itself provides no further options.
-
-![+8 expander](./EightFaceMk2-8.gif)
-
-+8 was added in v1.9 of PackOne.
+- v1.9.0
+    - Intial release of 8FACE mk2 and expander +8
+- v1.10.0
+    - Added "Auto"-mode besides "Read" and "Write" (#251)
+    - Added "Shift front" and "Shift back" context menu options (#275)

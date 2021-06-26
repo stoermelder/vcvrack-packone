@@ -1,20 +1,49 @@
+## 1.10.0
+
+### New modules
+
+- Module [INTERMIX-FADE](./docs/Intermix.md#fade-expander)
+    - Expander for INTERMIX, helper for setting individual fade values
+- Module [INTERMIX-ENV](./docs/Intermix.md#env-expander)
+    - Expander for INTERMIX, outputs envelopes for a seleced input-column
+- Module [INTERMIX-GATE](./docs/Intermix.md#gate-expander)
+    - Expander for INTERMIX, outputs a gate-signal for each active row (#228)
+
+### Fixes and Changes
+
+- Modules [8FACE, 8FACEx2](./docs/EightFace.md)
+    - Added "Auto"-mode besides "Read" and "Write" ([manual](./docs/EightFace.md#auto-mode)) (#251)
+    - Added "Shift front" and "Shift back" context menu options (#275)
+- Module [INTERMIX](./docs/Intermix.md)
+    - Added context menu option "Scene lock" to prevent accidental changes
+- Module [MIDI-CAT](./docs/MidiCat.md)
+    - Fixed broken multi-mapping for note-messages (#271)
+- Module [STROKE](./docs/Stroke.md)
+    - Improved behavior of parameter copy/paste commands (#273)
+- Module [TRANSIT](./docs/Transit.md)
+    - Added context menu option for unbinding all bound parameters of a module (#268)
+    - Added "Auto"-mode besides "Read" and "Write" ([manual](./docs/Transit.md#auto-mode)) (#269)
+    - Added "Shift front" and "Shift back" context menu options (#274)
+
 ## 1.9.0
 
+### New modules
+
 - Modules [8FACE mk2, +8](./docs/EightFaceMk2.md)
-    - New modules, evolution of 8FACE and 8FACEx2 (#63 #76 #144 #154 #157 #158 #160 #162)
+    - Evolution of 8FACE and 8FACEx2 (#63 #76 #144 #154 #157 #158 #160 #162)
 - Module [CV-MAP CTX](./docs/CVMap.md#ctx-expander)
-    - New expander-module for CV-MAP, helper for mapping parameters by context menu (#256)
+    - Expander for CV-MAP, helper for mapping parameters by context menu (#256)
 - Module [MIDI-CAT CTX](./docs/MidiCat.md#ctx-expander)
-    - New expander-module for MIDI-CAT, helper for mapping parameters by context menu (#232, #250)
+    - Expander for MIDI-CAT, helper for mapping parameters by context menu (#232, #250)
 - Module [MIDI-PLUG](./docs/MidiPlug.md)
-    - New module, a virtual MIDI merger and splitter
+    - A virtual MIDI merger and splitter
     - MIDI "Loopback" driver for routing outgoing MIDI messages back into Rack (enabled on the context menu)
 - Module [ORBIT](./docs/Orbit.md)
-    - New module, a polyphonic stereo field spreader
+    - A polyphonic stereo field spreader
 - Module [STRIP-BAY](./docs/Strip.md#stoermelder-strip-bay)
-    - New module, a companion module for STRIP for keeping input/output connections while replacing strips
+    - A companion module for STRIP for keeping input/output connections while replacing strips
 - Module [ME](./docs/Me.md)
-    - New experimental module for "mouse enhacements", provides a screen overlay for parameters changes
+    - Experimental module for "mouse enhacements", provides a screen overlay for parameters changes
 
 ### Fixes and Changes
 
@@ -153,7 +182,7 @@
 ### Fixes and Changes
 
 - Module [TRANSIT](./docs/Transit.md)
-    - Fixed worng snapshot-count when using +T expander after loading a patch
+    - Fixed wrong snapshot-count when using +T expander after loading a patch
 
 ## 1.7.0
 
@@ -165,7 +194,7 @@
     - New module, converts used-defined hotkeys into triggers or gates, also provides some special commands for Rack's enviroment
 - Module [TRANSIT](./docs/Transit.md)
     - New module, parameter-morpher and sequencer for up to 96 snapshots
-- Module [+T](./docs/Transit.md#stoermelder-t-expander)
+- Module [+T](./docs/Transit.md#t-expander)
     - New module, expander for TRANSIT
 - Module [X4](./docs/X4.md)
     - New module, dual multiple for parameter-mapping

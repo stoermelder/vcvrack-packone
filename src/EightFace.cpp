@@ -23,16 +23,21 @@ enum class SLOTCVMODE {
 	ARM = 3
 };
 
-enum MODE {
-	MODE_LEFT = 0,
-	MODE_RIGHT = 1
+enum class SIDE {
+	LEFT = 0,
+	RIGHT = 1
 };
 
+enum class CTRLMODE {
+	READ,
+	AUTO,
+	WRITE
+};
 
 template < int NUM_PRESETS >
 struct EightFaceModule : Module {
 	enum ParamIds {
-		MODE_PARAM,
+		CTRLMODE_PARAM,
 		ENUMS(PRESET_PARAM, NUM_PRESETS),
 		NUM_PARAMS
 	};
@@ -53,9 +58,11 @@ struct EightFaceModule : Module {
 
 	/** [Stored to JSON] */
 	int panelTheme = 0;
+	/** Current operating mode */
+	CTRLMODE ctrlMode = CTRLMODE::READ;
 
 	/** [Stored to JSON] left? right? */
-	MODE mode = MODE_LEFT;
+	SIDE side = SIDE::LEFT;
 
 	/** [Stored to JSON] */
 	std::string pluginSlug;
@@ -91,6 +98,7 @@ struct EightFaceModule : Module {
 	std::uniform_int_distribution<int> randDist;
 
 	int connected = 0;
+	int presetPrev = -1;
 	int presetNext = -1;
 	float modeLight = 0;
 
@@ -115,7 +123,7 @@ struct EightFaceModule : Module {
 	EightFaceModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		configParam(MODE_PARAM, 0, 1, 0, "Switch Read/write mode");
+		configParam<TriggerParamQuantity>(CTRLMODE_PARAM, 0, 2, 0, "Read/Auto/Write mode");
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			configParam(PRESET_PARAM + i, 0, 1, 0, string::f("Preset slot %d", i + 1));
 			typeButtons[i].param = &params[PRESET_PARAM + i];
@@ -152,6 +160,7 @@ struct EightFaceModule : Module {
 
 		preset = -1;
 		presetCount = NUM_PRESETS;
+		presetPrev = -1;
 		presetNext = -1;
 		modelSlug = "";
 		pluginSlug = "";
@@ -163,15 +172,17 @@ struct EightFaceModule : Module {
 	}
 
 	void process(const ProcessArgs& args) override {
-		Expander* exp = mode == MODE_LEFT ? &leftExpander : &rightExpander;
+		Expander* exp = side == SIDE::LEFT ? &leftExpander : &rightExpander;
 		if (exp->moduleId >= 0 && exp->module) {
 			Module* t = exp->module;
 			bool c = modelSlug == "" || (t->model->name == modelSlug && t->model->plugin->name == pluginSlug);
 			connected = c ? 2 : 1;
 
 			if (connected == 2) {
-				// Read mode
-				if (params[MODE_PARAM].getValue() == 0.f) {
+				ctrlMode = (CTRLMODE)params[CTRLMODE_PARAM].getValue();
+
+				// Read & Auto modes
+				if (ctrlMode == CTRLMODE::READ || ctrlMode == CTRLMODE::AUTO) {
 					// RESET input
 					if (slotCvMode == SLOTCVMODE::TRIG_FWD || slotCvMode == SLOTCVMODE::TRIG_REV || slotCvMode == SLOTCVMODE::TRIG_PINGPONG) {
 						if (inputs[RESET_INPUT].isConnected() && resetTrigger.process(inputs[RESET_INPUT].getVoltage())) {
@@ -309,7 +320,7 @@ struct EightFaceModule : Module {
 			modeLight += 0.7f * s;
 			if (modeLight > 1.5f) modeLight = 0.f;
 
-			if (mode == MODE_LEFT) {
+			if (side == SIDE::LEFT) {
 				lights[LEFT_LIGHT + 0].setBrightness(connected == 2 ? std::min(modeLight, 1.f) : 0.f);
 				lights[LEFT_LIGHT + 1].setBrightness(connected == 1 ? 1.f : 0.f);
 				lights[RIGHT_LIGHT + 0].setBrightness(0.f);
@@ -323,7 +334,7 @@ struct EightFaceModule : Module {
 			}
 
 			for (int i = 0; i < NUM_PRESETS; i++) {
-				if (params[MODE_PARAM].getValue() == 0.f) {
+				if (ctrlMode == CTRLMODE::READ || ctrlMode == CTRLMODE::AUTO) {
 					lights[PRESET_LIGHT + i * 3 + 0].setBrightness(presetNext == i ? 1.f : 0.f);
 					lights[PRESET_LIGHT + i * 3 + 1].setSmoothBrightness(preset != i && presetCount > i ? (presetSlotUsed[i] ? 1.f : 0.2f) : 0.f, s);
 					lights[PRESET_LIGHT + i * 3 + 2].setSmoothBrightness(preset == i ? 1.f : 0.f, s);
@@ -343,6 +354,10 @@ struct EightFaceModule : Module {
 			std::unique_lock<std::mutex> lock(workerMutex);
 			workerCondVar.wait(lock, std::bind(&EightFaceModule::workerDoProcess, this));
 			if (!workerIsRunning || workerPreset < 0) return;
+			if (ctrlMode == CTRLMODE::AUTO && presetPrev >= 0 && presetSlotUsed[presetPrev]) {
+				json_decref(presetSlot[presetPrev]);
+				presetSlot[presetPrev] = workerModuleWidget->toJson();
+			}
 			workerModuleWidget->fromJson(presetSlot[workerPreset]);
 			workerDoProcess = false;
 		}
@@ -350,6 +365,10 @@ struct EightFaceModule : Module {
 
 	void processGui() {
 		if (workerGuiModuleWidget) {
+			if (ctrlMode == CTRLMODE::AUTO && presetPrev >= 0 && presetSlotUsed[presetPrev]) {
+				json_decref(presetSlot[presetPrev]);
+				presetSlot[presetPrev] = workerModuleWidget->toJson();
+			}
 			workerGuiModuleWidget->fromJson(presetSlot[workerPreset]);
 			workerGuiModuleWidget = NULL;
 		}
@@ -361,6 +380,7 @@ struct EightFaceModule : Module {
 
 		if (!isNext) {
 			if (p != preset || force) {
+				presetPrev = preset;
 				preset = p;
 				presetNext = -1;
 				if (!presetSlotUsed[p]) return;
@@ -416,13 +436,14 @@ struct EightFaceModule : Module {
 	void presetSetCount(int p) {
 		if (preset >= p) preset = 0;
 		presetCount = p;
+		presetPrev = -1;
 		presetNext = -1;
 	}
 
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
-		json_object_set_new(rootJ, "mode", json_integer(mode));
+		json_object_set_new(rootJ, "mode", json_integer((int)side));
 		json_object_set_new(rootJ, "pluginSlug", json_string(pluginSlug.c_str()));
 		json_object_set_new(rootJ, "modelSlug", json_string(modelSlug.c_str()));
 		json_object_set_new(rootJ, "realPluginSlug", json_string(realPluginSlug.c_str()));
@@ -448,8 +469,8 @@ struct EightFaceModule : Module {
 	void dataFromJson(json_t* rootJ) override {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 
-		json_t* modeJ = json_object_get(rootJ, "mode");
-		if (modeJ) mode = (MODE)json_integer_value(modeJ);
+		json_t* sideJ = json_object_get(rootJ, "mode");
+		if (sideJ) side = (SIDE)json_integer_value(sideJ);
 		pluginSlug = json_string_value(json_object_get(rootJ, "pluginSlug"));
 		modelSlug = json_string_value(json_object_get(rootJ, "modelSlug"));
 
@@ -482,12 +503,13 @@ struct EightFaceModule : Module {
 			presetSlot[presetIndex] = json_deep_copy(json_object_get(presetJ, "slot"));
 		}
 
+		presetPrev = -1;
 		if (preset >= presetCount)
 			preset = 0;
 
 		switch (autoload) {
 			case AUTOLOAD::FIRST: {
-				Expander* exp = mode == MODE_LEFT ? &leftExpander : &rightExpander;
+				Expander* exp = side == SIDE::LEFT ? &leftExpander : &rightExpander;
 				if (exp->moduleId >= 0 && exp->module) {
 					Module* t = exp->module;
 					presetLoad(t, 0, false, true);
@@ -495,7 +517,7 @@ struct EightFaceModule : Module {
 				break;
 			}
 			case AUTOLOAD::LASTACTIVE: {
-				Expander* exp = mode == MODE_LEFT ? &leftExpander : &rightExpander;
+				Expander* exp = side == SIDE::LEFT ? &leftExpander : &rightExpander;
 				if (exp->moduleId >= 0 && exp->module) {
 					Module* t = exp->module;
 					presetLoad(t, preset, false, true);
@@ -505,6 +527,8 @@ struct EightFaceModule : Module {
 			default:
 				break;
 		}
+
+		params[CTRLMODE_PARAM].setValue(0.f);
 	}
 };
 
@@ -577,15 +601,13 @@ struct AutoloadMenuItem : MenuItem {
 };
 
 template < typename MODULE >
-struct ModeItem : MenuItem {
+struct SideItem : MenuItem {
 	MODULE* module;
-
 	void onAction(const event::Action& e) override {
-		module->mode = module->mode == MODE_LEFT ? MODE_RIGHT : MODE_LEFT;
+		module->side = module->side == SIDE::LEFT ? SIDE::RIGHT : SIDE::LEFT;
 	}
-
 	void step() override {
-		rightText = module->mode == MODE_LEFT ? "Left" : "Right";
+		rightText = module->side == SIDE::LEFT ? "Left" : "Right";
 		MenuItem::step();
 	}
 };
@@ -619,7 +641,7 @@ struct EightFaceWidgetTemplate : ModuleWidget {
 
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<SlovCvModeMenuItem<MODULE>>(&MenuItem::text, "Port SLOT mode", &SlovCvModeMenuItem<MODULE>::module, module));
-		menu->addChild(construct<ModeItem<MODULE>>(&MenuItem::text, "Module", &ModeItem<MODULE>::module, module));
+		menu->addChild(construct<SideItem<MODULE>>(&MenuItem::text, "Module", &SideItem<MODULE>::module, module));
 		menu->addChild(construct<AutoloadMenuItem<MODULE>>(&MenuItem::text, "Autoload", &AutoloadMenuItem<MODULE>::module, module));
 	}
 
@@ -673,7 +695,7 @@ struct EightFaceWidget : ThemedModuleWidget<EightFaceModule<8>, EightFaceWidgetT
 		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(22.5f, 281.9f), module, MODULE::PRESET_LIGHT + 6 * 3));
 		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(22.5f, 305.4f), module, MODULE::PRESET_LIGHT + 7 * 3));
 
-		addParam(createParamCentered<CKSSH>(Vec(22.5f, 336.2f), module, MODULE::MODE_PARAM));
+		addParam(createParamCentered<CKSSThreeH>(Vec(22.5f, 336.2f), module, MODULE::CTRLMODE_PARAM));
 	}
 
 	void step() override {
@@ -734,7 +756,7 @@ struct EightFaceX2Widget : ThemedModuleWidget<EightFaceModule<16>, EightFaceWidg
 		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(42.3f, 281.9f), module, MODULE::PRESET_LIGHT + 14 * 3));
 		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(42.3f, 305.4f), module, MODULE::PRESET_LIGHT + 15 * 3));
 
-		addParam(createParamCentered<CKSSH>(Vec(30.0f, 336.2f), module, MODULE::MODE_PARAM));
+		addParam(createParamCentered<CKSSThreeH>(Vec(30.0f, 336.2f), module, MODULE::CTRLMODE_PARAM));
 	}
 };
 

@@ -185,6 +185,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 		MidiCatModule* module;
 		int id;
 		int current = -1;
+		uint32_t lastTs = 0;
 
 		/** [Stored to Json] */
 		int note;
@@ -193,9 +194,9 @@ struct MidiCatModule : Module, StripIdFixModule {
 
 		bool process() {
 			int previous = current;
-			if (module->valuesNote[note] >= 0) {
+			if (module->valuesNoteTs[note] > lastTs) {
 				current = module->valuesNote[note];
-				module->valuesNote[note] = -1;
+				lastTs = module->ts;
 			}
 			return current >= 0 && current != previous;
 		}
@@ -701,6 +702,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 		uint8_t note = msg.getNote();
 		bool midiReceived = valuesNote[note] != 0;
 		valuesNote[note] = 0;
+		valuesNoteTs[note] = ts;
 		return midiReceived;
 	}
 

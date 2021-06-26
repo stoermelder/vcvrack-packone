@@ -21,7 +21,6 @@ extern Model* modelInfix;
 extern Model* modelInfixMicro;
 extern Model* modelStrip;
 extern Model* modelStripBay4;
-extern Model* modelStripBlock;
 extern Model* modelEightFace;
 extern Model* modelEightFaceX2;
 extern Model* modelMidiCat;
@@ -33,6 +32,9 @@ extern Model* modelArena;
 extern Model* modelMaze;
 extern Model* modelHive;
 extern Model* modelIntermix;
+extern Model* modelIntermixGate;
+extern Model* modelIntermixEnv;
+extern Model* modelIntermixFade;
 extern Model* modelSail;
 extern Model* modelPile;
 extern Model* modelPilePoly;
@@ -62,7 +64,8 @@ extern Model* modelMe;
 
 namespace StoermelderPackOne {
 
-bool registerSingleton(std::string name, ModuleWidget* mw);
-bool unregisterSingleton(std::string name, ModuleWidget* mw);
+bool registerSingleton(std::string name, Widget* mw);
+bool unregisterSingleton(std::string name, Widget* mw);
+Widget* getSingleton(std::string name);
 
 } // namespace StoermelderPackOne

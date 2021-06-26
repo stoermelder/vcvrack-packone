@@ -144,9 +144,7 @@ For some MIDI controllers which don't support different simultaneous "layers" bu
 
 ![MIDI-CAT overlay](./MidiCat-overlay.gif)
 
-MIDI-CAT was added in v1.1 of PackOne. 
-
-# MEM-expander
+## MEM-expander
 
 MEM is a companion module for MIDI-CAT: The expander allows you store an unlimited number of module-specific mappings which can be recalled for the same type of module without doing any mapping manually.  
 A typical workflow will look like this:
@@ -170,7 +168,7 @@ Added in v1.8.0: MEM has two buttons labeled _Prev_ and _Next_ which scan your p
 
 ![MEM workflow](./MidiCat-Mem-scan.gif)
 
-## Tips for MEM
+### Tips for MEM
 
 - MEM can store only one mapping of any specific module-type. If you store a mapping for a module which has a mapping already it will be replaced.
 
@@ -178,9 +176,7 @@ Added in v1.8.0: MEM has two buttons labeled _Prev_ and _Next_ which scan your p
 
 - All push buttons on MEM can be mapped using any mapping module if you like to activate _Apply mapping_ by MIDI or some other command.
 
-MEM for MIDI-CAT was added in v1.7 of PackOne.
-
-# CTX-expander
+## CTX-expander
 
 CTX is a second companion module for MIDI-CAT: The expander allows you to name each instance of MIDI-CAT in your patch. This name can be addressed in every parameters' context menu for activating MIDI mapping or re-mapping parameters to an existing MIDI control or note mapping in another mapping slot of MIDI-CAT.
 
@@ -190,4 +186,45 @@ CTX for MIDI-CAT must be placed on the right side of MIDI-CAT and can be used th
 
 Additionally MIDI-CAT CTX provides a button for activating mapping on the first empty mapping slot in MIDI-CAT. This button can also mapped to a MIDI controller which allows start MIDI mapping by a MIDI message.
 
-CTX for MIDI-CAT was added in v1.9 of PackOne.
+## Changelog
+
+- v1.1.0
+    - Initial release of MIDI-CAT
+- v1.3.0
+    - Fixed velocity-handling on note messages if in toggle-mode (does not need vel 127 anymore)
+- v1.4.0
+    - Fixed wrong handling of CC-mappings in Direct-mode on parameter changes made within Rack
+    - Added option to enter custom labels for mapping slots (#75)
+- v1.5.0
+    - Added option for hiding parameter indicator squares
+    - Added option for locking mapping slots to prevent changes by accident (#89)
+    - Fixed broken toggle-mode for MIDI note-mapping
+- v1.6.1
+    - Added option for re-sending MIDI feedback values
+- v1.7.0
+    - Added expander MEM for MIDI-CAT
+    - Don't capture mouse scrolling if mapping slots are locked (#137)
+    - Blink mapping indicator of currently selected mapping slot
+    - Added option for automatic mapping of all parameters of a module on the left side or by module-select
+    - Mapping is aborted using ESC-key while hovering the mouse over the module
+    - Added option for sending MIDI "note on, velocity 0" on feedback for note off (#130)
+- v1.8.0
+    - Added context menu sliders for MIDI filtering/slew-limiting for CCs and notes (#79)
+    - Added context menu sliders for scaling or transforming the MIDI-input and parameter-range (#169)
+    - Added context menu options for precision/CPU-usage
+    - Added context menu options on mapped parameters of target module for MIDI-CAT
+    - Added skipping of current slot with SPACE-key while in mapping-mode
+    - Added context menu option for clearing all mapping-slots
+    - Added option for ignoring MIDI device settings on preset load (#185)
+    - Fixed broken "Re-send MIDI feedback" option
+    - Added context menu option for re-sending MIDI feedback periodically
+    - Added note-mode "Toggle + Velocity"
+- v1.9.0
+    - Added expander CTX for MIDI-CAT
+    - Added support for MIDI 14-bit CC
+    - Added toggle-modes for MIDI CC mappings (#225)
+    - Added an overlay showing current parameter changes on the bottom of the screen
+    - Fixed crash when binding modules with more than 128 parameters (#234)
+    - Added option for clearing mapping slots on preset load (#259)
+- v1.10.0
+    - Fixed broken multi-mapping for note-messages (#271)

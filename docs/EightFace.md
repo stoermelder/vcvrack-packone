@@ -22,6 +22,10 @@ Write-mode is used to save presets in 8FACE. You enter write mode by flipping th
 
 Read-mode is enabled by default and can be selected by the switch on the bottom in "R"-position. LEDs lit in bright green signal slots in use, dim green slots are active but empty. A blue LED marks a slot which preset is currently applied to the module on the side. You can manually apply a preset with a short-press.
 
+## Auto-mode
+
+Auto-mode (added in v1.10.0) stores presets automatically to the current slot right before moving on to the next slot. A typical workflow would look like this: Store a few presets using Write-mode as usual. Afterwards flip the switch to the middle "A"-position and start slow sequencing using the _SLOT_-port. Imagine slot 1 is active and slot 2 will be loaded next. Right before moving to slot 2 the current state of the module is stored into slot 1 preserving all adjustments made in the meantime. In contrast, Read-mode would simply load slot 2 and the preset stored in slot 1 will stay unchanged, discarding all changes made to the module. Note: Empty slots will stay empty, even in Auto-mode.
+
 ## SLOT-port
 
 The fun begins when you use the port labelled "SLOT" for selecting preset slots by CV. Although there are eight slots available it is possible to use less slots for sequencing: You can adjust the number of useable slots (i.e. sequence length) by long-pressing a slot-button while in read-mode. The LED turns off completely for slots that are currently disabled.

@@ -13,7 +13,14 @@ enum class SLOT_CMD {
 	COPY,
 	PASTE_PREVIEW,
 	PASTE,
-	SAVE
+	SAVE,
+	SHIFT_BACK,
+	SHIFT_FRONT
+};
+
+enum class CTRLMODE {
+	READ,
+	WRITE
 };
 
 struct EightFaceMk2Slot {
@@ -40,7 +47,8 @@ struct EightFaceMk2Base : Module, StripIdFixModule {
 
 	int ctrlModuleId = -1;
 	int ctrlOffset = 0;
-	bool ctrlWrite = false;
+	/** Current operating mode */
+	CTRLMODE ctrlMode = CTRLMODE::READ;
 
 	EightFaceMk2Slot slot[NUM_PRESETS];
 
@@ -121,7 +129,7 @@ struct EightFaceMk2LedButton : LEDButton {
 				e.consume(this);
 				eventConsumed = true;
 			}
-			else if (module->ctrlWrite && e.button == GLFW_MOUSE_BUTTON_RIGHT && (e.mods & RACK_MOD_MASK) == 0) {
+			else if (module->ctrlMode == CTRLMODE::WRITE && e.button == GLFW_MOUSE_BUTTON_RIGHT && (e.mods & RACK_MOD_MASK) == 0) {
 				LEDButton::onButton(e);
 				eventConsumed = false;
 				extendContextMenu();
@@ -236,6 +244,9 @@ struct EightFaceMk2LedButton : LEDButton {
 		menu->addChild(construct<SlotItem>(&MenuItem::text, "Clear", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::CLEAR, &SlotItem::disabled, !module->presetSlotUsed[id]));
 		menu->addChild(construct<SlotItem>(&MenuItem::text, "Copy", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::COPY, &SlotItem::disabled, !module->presetSlotUsed[id]));
 		menu->addChild(construct<PasteItem>(&MenuItem::text, "Paste", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::PASTE));
+		menu->addChild(new MenuSeparator);
+		menu->addChild(construct<SlotItem>(&MenuItem::text, "Shift front", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::SHIFT_FRONT));
+		menu->addChild(construct<SlotItem>(&MenuItem::text, "Shift back", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::SHIFT_BACK));
 		menu->addChild(new MenuSeparator);
 		menu->addChild(construct<LabelMenuItem>(&MenuItem::text, "Custom label", &LabelMenuItem::module, module, &LabelMenuItem::id, id));
 	}

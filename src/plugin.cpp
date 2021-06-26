@@ -17,7 +17,6 @@ void init(rack::Plugin* p) {
 	p->addModel(modelInfixMicro);
 	p->addModel(modelStrip);
 	p->addModel(modelStripBay4);
-	p->addModel(modelStripBlock);
 	p->addModel(modelEightFace);
 	p->addModel(modelEightFaceX2);
 	p->addModel(modelMidiCat);
@@ -29,6 +28,9 @@ void init(rack::Plugin* p) {
 	p->addModel(modelMaze);
 	p->addModel(modelHive);
 	p->addModel(modelIntermix);
+	p->addModel(modelIntermixGate);
+	p->addModel(modelIntermixEnv);
+	p->addModel(modelIntermixFade);
 	p->addModel(modelSail);
 	p->addModel(modelPile);
 	p->addModel(modelPilePoly);
@@ -65,9 +67,9 @@ void init(rack::Plugin* p) {
 
 namespace StoermelderPackOne {
 
-std::map<std::string, ModuleWidget*> singletons;
+std::map<std::string, Widget*> singletons;
 
-bool registerSingleton(std::string name, ModuleWidget* mw) {
+bool registerSingleton(std::string name, Widget* mw) {
 	auto it = singletons.find(name);
 	if (it == singletons.end()) {
 		singletons[name] = mw;
@@ -76,13 +78,18 @@ bool registerSingleton(std::string name, ModuleWidget* mw) {
 	return false;
 }
 
-bool unregisterSingleton(std::string name, ModuleWidget* mw) {
+bool unregisterSingleton(std::string name, Widget* mw) {
 	auto it = singletons.find(name);
 	if (it != singletons.end() && it->second == mw) {
 		singletons.erase(it);
 		return true;
 	}
 	return false;
+}
+
+Widget* getSingleton(std::string name) {
+	auto it = singletons.find(name);
+	return it != singletons.end() ? it->second : NULL;
 }
 
 } // namespace StoermelderPackOne
