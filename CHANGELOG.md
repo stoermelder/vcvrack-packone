@@ -205,7 +205,7 @@
 ### Fixes and Changes
 
 - Module [TRANSIT](./docs/Transit.md)
-    - Fixed worng snapshot-count when using +T expander after loading a patch
+    - Fixed wrong snapshot-count when using +T expander after loading a patch
 
 ## 1.7.0
 
@@ -217,7 +217,7 @@
     - New module, converts used-defined hotkeys into triggers or gates, also provides some special commands for Rack's enviroment
 - Module [TRANSIT](./docs/Transit.md)
     - New module, parameter-morpher and sequencer for up to 96 snapshots
-- Module [+T](./docs/Transit.md#stoermelder-t-expander)
+- Module [+T](./docs/Transit.md#t-expander)
     - New module, expander for TRANSIT
 - Module [X4](./docs/X4.md)
     - New module, dual multiple for parameter-mapping

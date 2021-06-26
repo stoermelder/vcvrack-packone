@@ -126,6 +126,13 @@ Note: These modes are unavailable if _SEL_-port operates in Phase-mode.
 
 ![TRANSIT OUT-port](./Transit-out.gif)
 
+## +T expander
+
+TRANSIT provides 12 snapshot-slots and supports extending this number with +T expanders: The expander must be placed on the right side of TRANSIT. Up to seven instances of +T can be added to one instance of TRANSIT, providing 12 * 8 = 96 snapshot-slots in total.  
+Once placed next to TRANSIT the expander works and behaves the same way TRANSIT does and the setup is done analogously. +T itself provides no further options.
+
+![+T expander](./Transit-t.gif)
+
 ## Tips
 
 - TRANSIT is designed to morph parameter-snapshots, while stoermelder [8FACE](./EightFace.md) and [8FACE mk2](./EightFaceMk2.md) are designed to apply different presets onto modues. Morphing between presets of modules is not possible because of technical reasons.
@@ -137,9 +144,9 @@ Note: These modes are unavailable if _SEL_-port operates in Phase-mode.
 ## Changelog
 
 - v1.7.0
-    - Initial release
+    - Initial release of TRANSIT and +T
 - v1.7.1
-    - Fixed worng snapshot-count when using +T expander after loading a patch
+    - Fixed wrong snapshot-count when using +T expander after loading a patch
 - v1.8.0
     - Fixed hanging pingpong-mode when changing slots manually
     - Added trigger-options "pseudo-random", "random walk", "alternating", "shuffle"
@@ -153,12 +160,3 @@ Note: These modes are unavailable if _SEL_-port operates in Phase-mode.
     - Added context menu option for unbinding all bound parameters of a module (#268)
     - Added "Auto"-mode besides "Read" and "Write" (#269)
     - Added "Shift front" and "Shift back" context menu options (#274)
-
-# stoermelder +T expander
-
-TRANSIT provides 12 snapshot-slots and supports extending this number with +T expanders: The expander must be placed on the right side of TRANSIT. Up to seven instances of +T can be added to one instance of TRANSIT, providing 12 * 8 = 96 snapshot-slots in total.  
-Once placed next to TRANSIT the expander works and behaves the same way TRANSIT does and the setup is done analogously. +T itself provides no further options.
-
-![+T expander](./Transit-t.gif)
-
-+T was added in v1.7 of PackOne.
