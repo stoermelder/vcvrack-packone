@@ -178,6 +178,17 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 		Module::onReset();
 	}
 
+	void onRemove() override {
+		// hack for clearing the module-pointers on the expander-chain
+		Module* m = this;
+		while (m) {
+			if (m->model != modelIntermix && m->model != modelIntermixEnv && m->model != modelIntermixFade && m->model != modelIntermixGate) break;
+			m->rightExpander.producerMessage = NULL;
+			m->rightExpander.consumerMessage = NULL;
+			m = m->rightExpander.module;
+		}
+	}
+
 	void process(const ProcessArgs& args) override {
 		ts++;
 
