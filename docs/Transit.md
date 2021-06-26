@@ -48,6 +48,10 @@ There are also some options on the context menu of the snapshot-buttons:
   Copies the snapshot to the clipboard.
 - **Paste**  
   Pastes the snapshot which has been copied before.
+- **Shift front** (added in v1.10.0)  
+  Moves all snapshot one slot forward, beginning from the initiating slot. If the first slot is used it gets deleted.
+- **Shift back** (added in v1.10.0)  
+  Moves all snapshot one slot backward, beginning from the initiating slot. If the last slot is used it gets deleted, also the number of currently active slots is unaffacted.
 
 ![TRANSIT write-mode](./Transit-write-context.gif)
 
