@@ -134,7 +134,25 @@ Note: These modes are unavailable if _SEL_-port operates in Phase-mode.
   
 - Each snapshot can be named with a custom text label. This label is shown while hovering above the snapshot button if parameter tooltips are enabled (added in v1.9.0).
 
-TRANSIT was added in v1.7.0 of PackOne.
+## Changelog
+
+- v1.7.0
+    - Initial release
+- v1.7.1
+    - Fixed worng snapshot-count when using +T expander after loading a patch
+- v1.8.0
+    - Fixed hanging pingpong-mode when changing slots manually
+    - Added trigger-options "pseudo-random", "random walk", "alternating", "shuffle"
+    - Fixed broken snapshots on save after mapped modules have been deleted (#205)
+- v1.9.0
+    - Added "Phase"-mode for CV-input which scans continously through snapshots (#182)
+    - Added context menu option "Locate and indicate" for bound parameters
+    - Added context menu option for custom text labels
+    - Improved performance of +T expanders
+- v1.10.0
+    - Added context menu option for unbinding all bound parameters of a module (#268)
+    - Added "Auto"-mode besides "Read" and "Write" (#269)
+    - Added "Shift front" and "Shift back" context menu options (#274)
 
 # stoermelder +T expander
 
