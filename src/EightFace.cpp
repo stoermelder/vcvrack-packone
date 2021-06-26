@@ -123,7 +123,7 @@ struct EightFaceModule : Module {
 	EightFaceModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		configParam(CTRLMODE_PARAM, 0, 2, 0, "Read/Auto/Write mode");
+		configParam<TriggerParamQuantity>(CTRLMODE_PARAM, 0, 2, 0, "Read/Auto/Write mode");
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			configParam(PRESET_PARAM + i, 0, 1, 0, string::f("Preset slot %d", i + 1));
 			typeButtons[i].param = &params[PRESET_PARAM + i];
@@ -527,6 +527,8 @@ struct EightFaceModule : Module {
 			default:
 				break;
 		}
+
+		params[CTRLMODE_PARAM].setValue(0.f);
 	}
 };
 
