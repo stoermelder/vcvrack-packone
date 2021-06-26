@@ -1,5 +1,5 @@
 {
-  "version": "1.dev.2f5bff5",
+  "version": "1.1.6",
   "modules": [
     {
       "id": 1,
@@ -20,13 +20,13 @@
       },
       "pos": [
         130,
-        6
+        8
       ]
     },
     {
       "id": 1036,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "CVMap",
       "params": [],
       "leftModuleId": 3696,
@@ -176,13 +176,13 @@
       },
       "pos": [
         24,
-        6
+        8
       ]
     },
     {
       "id": 1037,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "CVPam",
       "params": [],
       "leftModuleId": 1072,
@@ -231,13 +231,13 @@
       },
       "pos": [
         51,
-        6
+        8
       ]
     },
     {
       "id": 1038,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "Infix",
       "params": [],
       "leftModuleId": 1037,
@@ -247,13 +247,13 @@
       },
       "pos": [
         61,
-        6
+        8
       ]
     },
     {
       "id": 1039,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "MidiCat",
       "params": [],
       "leftModuleId": 1071,
@@ -351,13 +351,13 @@
       },
       "pos": [
         39,
-        6
+        8
       ]
     },
     {
       "id": 1040,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "RotorA",
       "params": [
         {
@@ -376,13 +376,13 @@
       },
       "pos": [
         39,
-        5
+        7
       ]
     },
     {
       "id": 1041,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "ReMoveLite",
       "params": [
         {
@@ -591,13 +591,13 @@
       },
       "pos": [
         89,
-        5
+        7
       ]
     },
     {
       "id": 1042,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "Strip",
       "params": [
         {
@@ -633,13 +633,13 @@
       },
       "pos": [
         92,
-        7
+        9
       ]
     },
     {
       "id": 1043,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "CVMapMicro",
       "params": [
         {
@@ -672,13 +672,13 @@
       },
       "pos": [
         0,
-        7
+        9
       ]
     },
     {
       "id": 1044,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "EightFace",
       "params": [
         {
@@ -760,13 +760,13 @@
       },
       "pos": [
         80,
-        5
+        7
       ]
     },
     {
       "id": 1045,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "Bolt",
       "params": [
         {
@@ -784,7 +784,7 @@
       },
       "pos": [
         9,
-        7
+        9
       ]
     },
     {
@@ -825,7 +825,7 @@
       "rightModuleId": 1048,
       "pos": [
         150,
-        7
+        9
       ]
     },
     {
@@ -866,7 +866,7 @@
       "leftModuleId": 1047,
       "pos": [
         160,
-        7
+        9
       ]
     },
     {
@@ -900,7 +900,7 @@
       "rightModuleId": 1050,
       "pos": [
         140,
-        6
+        8
       ]
     },
     {
@@ -933,13 +933,13 @@
       "leftModuleId": 1049,
       "pos": [
         148,
-        6
+        8
       ]
     },
     {
       "id": 1052,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "FourRounds",
       "params": [
         {
@@ -1057,13 +1057,13 @@
       },
       "pos": [
         43,
-        5
+        7
       ]
     },
     {
       "id": 1053,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "Sipo",
       "params": [
         {
@@ -5181,13 +5181,13 @@
       },
       "pos": [
         89,
-        7
+        9
       ]
     },
     {
       "id": 1054,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "Arena",
       "params": [
         {
@@ -5582,7 +5582,7 @@
         "inports": [
           {
             "amount": 1.0,
-            "radius": -0.00132703932,
+            "radius": 4.7374572e30,
             "modMode": 0,
             "modBipolar": false,
             "inputXBipolar": false,
@@ -5591,7 +5591,7 @@
           },
           {
             "amount": 1.0,
-            "radius": -0.00132703932,
+            "radius": 0.000168976941,
             "modMode": 0,
             "modBipolar": false,
             "inputXBipolar": false,
@@ -5600,7 +5600,7 @@
           },
           {
             "amount": 1.0,
-            "radius": -0.00132703932,
+            "radius": 1.42158213e34,
             "modMode": 0,
             "modBipolar": false,
             "inputXBipolar": false,
@@ -5609,7 +5609,7 @@
           },
           {
             "amount": 1.0,
-            "radius": -0.00132703932,
+            "radius": 2.88222186e26,
             "modMode": 0,
             "modBipolar": false,
             "inputXBipolar": false,
@@ -5618,7 +5618,7 @@
           },
           {
             "amount": 1.0,
-            "radius": -0.00132703932,
+            "radius": 4.7994355e27,
             "modMode": 0,
             "modBipolar": false,
             "inputXBipolar": false,
@@ -5627,7 +5627,7 @@
           },
           {
             "amount": 1.0,
-            "radius": -0.00132703932,
+            "radius": 3.0110194e29,
             "modMode": 0,
             "modBipolar": false,
             "inputXBipolar": false,
@@ -5636,7 +5636,7 @@
           },
           {
             "amount": 1.0,
-            "radius": -0.00132703932,
+            "radius": 9.31103555e-39,
             "modMode": 0,
             "modBipolar": false,
             "inputXBipolar": false,
@@ -5645,7 +5645,7 @@
           },
           {
             "amount": 1.0,
-            "radius": -0.00132703932,
+            "radius": 7.15550734e22,
             "modMode": 0,
             "modBipolar": false,
             "inputXBipolar": false,
@@ -5952,13 +5952,13 @@
       },
       "pos": [
         41,
-        7
+        9
       ]
     },
     {
       "id": 1055,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "Maze",
       "params": [
         {
@@ -8083,13 +8083,13 @@
       },
       "pos": [
         71,
-        6
+        8
       ]
     },
     {
       "id": 1056,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "EightFaceX2",
       "params": [
         {
@@ -9760,13 +9760,13 @@
       },
       "pos": [
         66,
-        6
+        8
       ]
     },
     {
       "id": 1057,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "InfixMicro",
       "params": [],
       "leftModuleId": 1036,
@@ -9776,13 +9776,13 @@
       },
       "pos": [
         34,
-        6
+        8
       ]
     },
     {
       "id": 1058,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "Intermix",
       "params": [
         {
@@ -11018,17 +11018,18 @@
         "sceneMode": 0,
         "sceneInputMode": false,
         "sceneAtMode": true,
-        "sceneCount": 8
+        "sceneCount": 8,
+        "sceneLock": false
       },
       "pos": [
         14,
-        7
+        9
       ]
     },
     {
       "id": 1059,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "Sail",
       "params": [
         {
@@ -11050,13 +11051,13 @@
       },
       "pos": [
         30,
-        5
+        7
       ]
     },
     {
       "id": 1060,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "Pile",
       "params": [
         {
@@ -11077,13 +11078,13 @@
       },
       "pos": [
         33,
-        5
+        7
       ]
     },
     {
       "id": 1061,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "PilePoly",
       "params": [
         {
@@ -11121,13 +11122,13 @@
       },
       "pos": [
         36,
-        5
+        7
       ]
     },
     {
       "id": 1062,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "Mirror",
       "params": [],
       "leftModuleId": 1073,
@@ -11173,13 +11174,13 @@
       },
       "pos": [
         66,
-        5
+        7
       ]
     },
     {
       "id": 1063,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "Affix",
       "params": [
         {
@@ -11256,13 +11257,13 @@
       },
       "pos": [
         22,
-        5
+        7
       ]
     },
     {
       "id": 1064,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "AffixMicro",
       "params": [
         {
@@ -11307,13 +11308,13 @@
       },
       "pos": [
         27,
-        5
+        7
       ]
     },
     {
       "id": 1065,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "Grip",
       "params": [
         {
@@ -11373,13 +11374,13 @@
       },
       "pos": [
         12,
-        7
+        9
       ]
     },
     {
       "id": 1066,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "Glue",
       "params": [
         {
@@ -11434,13 +11435,13 @@
       },
       "pos": [
         83,
-        5
+        7
       ]
     },
     {
       "id": 1067,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "Goto",
       "params": [
         {
@@ -11557,13 +11558,13 @@
       },
       "pos": [
         86,
-        5
+        7
       ]
     },
     {
       "id": 1068,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "Stroke",
       "params": [],
       "leftModuleId": 1043,
@@ -11655,13 +11656,13 @@
       },
       "pos": [
         3,
-        7
+        9
       ]
     },
     {
       "id": 1069,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "Transit",
       "params": [
         {
@@ -11789,13 +11790,13 @@
       },
       "pos": [
         69,
-        5
+        7
       ]
     },
     {
       "id": 1070,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "TransitEx",
       "params": [
         {
@@ -11904,13 +11905,13 @@
       },
       "pos": [
         74,
-        5
+        7
       ]
     },
     {
       "id": 1071,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "X4",
       "params": [
         {
@@ -11992,13 +11993,13 @@
       },
       "pos": [
         37,
-        6
+        8
       ]
     },
     {
       "id": 1072,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "MidiCatEx",
       "params": [
         {
@@ -12057,13 +12058,13 @@
       },
       "pos": [
         49,
-        6
+        8
       ]
     },
     {
       "id": 1073,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "Spin",
       "params": [
         {
@@ -12081,13 +12082,13 @@
       },
       "pos": [
         63,
-        5
+        7
       ]
     },
     {
       "id": 1075,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "TransitEx",
       "params": [
         {
@@ -12196,13 +12197,13 @@
       },
       "pos": [
         76,
-        5
+        7
       ]
     },
     {
       "id": 1076,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "TransitEx",
       "params": [
         {
@@ -12311,13 +12312,13 @@
       },
       "pos": [
         78,
-        5
+        7
       ]
     },
     {
       "id": 1077,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "MidiMon",
       "params": [],
       "data": {
@@ -12333,19 +12334,18 @@
         "showSystemMsg": true,
         "midiInput": {
           "driver": 4,
-          "deviceName": "loopMIDI Port A 1",
           "channel": -1
         }
       },
       "pos": [
         50,
-        2
+        4
       ]
     },
     {
       "id": 1078,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "Raw",
       "params": [
         {
@@ -12378,13 +12378,13 @@
       },
       "pos": [
         40,
-        2
+        4
       ]
     },
     {
       "id": 1079,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "Macro",
       "params": [
         {
@@ -12443,13 +12443,13 @@
       },
       "pos": [
         45,
-        2
+        4
       ]
     },
     {
       "id": 1080,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "Hive",
       "params": [
         {
@@ -14733,13 +14733,13 @@
       },
       "pos": [
         16,
-        2
+        4
       ]
     },
     {
       "id": 3686,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "Mb",
       "params": [],
       "data": {
@@ -14747,13 +14747,13 @@
       },
       "pos": [
         68,
-        2
+        4
       ]
     },
     {
       "id": 3687,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "Orbit",
       "params": [
         {
@@ -14772,24 +14772,24 @@
       },
       "pos": [
         49,
-        0
+        2
       ]
     },
     {
       "id": 3688,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "Me",
       "params": [],
       "pos": [
         64,
-        0
+        2
       ]
     },
     {
       "id": 3689,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "EightFaceMk2",
       "params": [
         {
@@ -14874,13 +14874,13 @@
       },
       "pos": [
         17,
-        0
+        2
       ]
     },
     {
       "id": 3690,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "MidiPlug",
       "params": [],
       "data": {
@@ -14888,7 +14888,6 @@
         "midiInput": [
           {
             "driver": 4,
-            "deviceName": "loopMIDI Port A 1",
             "channel": -1
           },
           {
@@ -14913,13 +14912,13 @@
       },
       "pos": [
         36,
-        0
+        2
       ]
     },
     {
       "id": 3691,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "StripBay4",
       "params": [],
       "data": {
@@ -14928,13 +14927,13 @@
       },
       "pos": [
         57,
-        0
+        2
       ]
     },
     {
       "id": 3692,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "EightFaceMk2Ex",
       "params": [
         {
@@ -15009,13 +15008,13 @@
       },
       "pos": [
         21,
-        0
+        2
       ]
     },
     {
       "id": 3693,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "CVMapCtx",
       "params": [],
       "data": {
@@ -15024,13 +15023,13 @@
       },
       "pos": [
         26,
-        0
+        2
       ]
     },
     {
       "id": 3694,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "MidiCatCtx",
       "params": [
         {
@@ -15044,13 +15043,13 @@
       },
       "pos": [
         31,
-        0
+        2
       ]
     },
     {
       "id": 3695,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "Hive",
       "params": [
         {
@@ -17335,13 +17334,13 @@
       },
       "pos": [
         0,
-        5
+        7
       ]
     },
     {
       "id": 3696,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "Raw",
       "params": [
         {
@@ -17376,13 +17375,13 @@
       },
       "pos": [
         21,
-        6
+        8
       ]
     },
     {
       "id": 3697,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "Macro",
       "params": [
         {
@@ -17411,7 +17410,15 @@
       "data": {
         "textScrolling": true,
         "mappingIndicatorHidden": false,
-        "maps": [],
+        "maps": [
+          {
+            "moduleId": -1,
+            "paramId": 0,
+            "slew": 0.0,
+            "min": 0.0,
+            "max": 1.0
+          }
+        ],
         "lockParameterChanges": false,
         "bipolarInput": false,
         "panelTheme": 0,
@@ -17435,13 +17442,13 @@
       },
       "pos": [
         18,
-        6
+        8
       ]
     },
     {
       "id": 3698,
       "plugin": "Stoermelder-P1",
-      "version": "1.8.0",
+      "version": "1.9.74dbf68",
       "model": "MidiMon",
       "params": [],
       "rightModuleId": 3697,
@@ -17463,7 +17470,1331 @@
       },
       "pos": [
         2,
-        6
+        8
+      ]
+    },
+    {
+      "id": 3699,
+      "plugin": "Stoermelder-P1",
+      "version": "1.9.74dbf68",
+      "model": "IntermixGate",
+      "params": [],
+      "data": {
+        "panelTheme": 1
+      },
+      "pos": [
+        41,
+        0
+      ]
+    },
+    {
+      "id": 3700,
+      "plugin": "Stoermelder-P1",
+      "version": "1.9.74dbf68",
+      "model": "IntermixEnv",
+      "params": [],
+      "data": {
+        "panelTheme": 1,
+        "input": 0
+      },
+      "pos": [
+        46,
+        0
+      ]
+    },
+    {
+      "id": 3701,
+      "plugin": "Stoermelder-P1",
+      "version": "1.9.74dbf68",
+      "model": "IntermixFade",
+      "params": [
+        {
+          "id": 0,
+          "value": 1.0
+        },
+        {
+          "id": 1,
+          "value": 1.0
+        },
+        {
+          "id": 2,
+          "value": 1.0
+        },
+        {
+          "id": 3,
+          "value": 1.0
+        },
+        {
+          "id": 4,
+          "value": 1.0
+        },
+        {
+          "id": 5,
+          "value": 1.0
+        },
+        {
+          "id": 6,
+          "value": 1.0
+        },
+        {
+          "id": 7,
+          "value": 1.0
+        }
+      ],
+      "data": {
+        "panelTheme": 1,
+        "input": 0,
+        "fade": 0
+      },
+      "pos": [
+        51,
+        0
+      ]
+    },
+    {
+      "id": 3702,
+      "plugin": "Stoermelder-P1",
+      "version": "1.9.74dbf68",
+      "model": "Intermix",
+      "params": [
+        {
+          "id": 0,
+          "value": 0.0
+        },
+        {
+          "id": 1,
+          "value": 0.0
+        },
+        {
+          "id": 2,
+          "value": 0.0
+        },
+        {
+          "id": 3,
+          "value": 0.0
+        },
+        {
+          "id": 4,
+          "value": 0.0
+        },
+        {
+          "id": 5,
+          "value": 0.0
+        },
+        {
+          "id": 6,
+          "value": 0.0
+        },
+        {
+          "id": 7,
+          "value": 0.0
+        },
+        {
+          "id": 8,
+          "value": 0.0
+        },
+        {
+          "id": 9,
+          "value": 0.0
+        },
+        {
+          "id": 10,
+          "value": 0.0
+        },
+        {
+          "id": 11,
+          "value": 0.0
+        },
+        {
+          "id": 12,
+          "value": 0.0
+        },
+        {
+          "id": 13,
+          "value": 0.0
+        },
+        {
+          "id": 14,
+          "value": 0.0
+        },
+        {
+          "id": 15,
+          "value": 0.0
+        },
+        {
+          "id": 16,
+          "value": 0.0
+        },
+        {
+          "id": 17,
+          "value": 0.0
+        },
+        {
+          "id": 18,
+          "value": 0.0
+        },
+        {
+          "id": 19,
+          "value": 0.0
+        },
+        {
+          "id": 20,
+          "value": 0.0
+        },
+        {
+          "id": 21,
+          "value": 0.0
+        },
+        {
+          "id": 22,
+          "value": 0.0
+        },
+        {
+          "id": 23,
+          "value": 0.0
+        },
+        {
+          "id": 24,
+          "value": 0.0
+        },
+        {
+          "id": 25,
+          "value": 0.0
+        },
+        {
+          "id": 26,
+          "value": 0.0
+        },
+        {
+          "id": 27,
+          "value": 0.0
+        },
+        {
+          "id": 28,
+          "value": 0.0
+        },
+        {
+          "id": 29,
+          "value": 0.0
+        },
+        {
+          "id": 30,
+          "value": 0.0
+        },
+        {
+          "id": 31,
+          "value": 0.0
+        },
+        {
+          "id": 32,
+          "value": 0.0
+        },
+        {
+          "id": 33,
+          "value": 0.0
+        },
+        {
+          "id": 34,
+          "value": 0.0
+        },
+        {
+          "id": 35,
+          "value": 0.0
+        },
+        {
+          "id": 36,
+          "value": 0.0
+        },
+        {
+          "id": 37,
+          "value": 0.0
+        },
+        {
+          "id": 38,
+          "value": 0.0
+        },
+        {
+          "id": 39,
+          "value": 0.0
+        },
+        {
+          "id": 40,
+          "value": 0.0
+        },
+        {
+          "id": 41,
+          "value": 0.0
+        },
+        {
+          "id": 42,
+          "value": 0.0
+        },
+        {
+          "id": 43,
+          "value": 0.0
+        },
+        {
+          "id": 44,
+          "value": 0.0
+        },
+        {
+          "id": 45,
+          "value": 0.0
+        },
+        {
+          "id": 46,
+          "value": 0.0
+        },
+        {
+          "id": 47,
+          "value": 0.0
+        },
+        {
+          "id": 48,
+          "value": 0.0
+        },
+        {
+          "id": 49,
+          "value": 0.0
+        },
+        {
+          "id": 50,
+          "value": 0.0
+        },
+        {
+          "id": 51,
+          "value": 0.0
+        },
+        {
+          "id": 52,
+          "value": 0.0
+        },
+        {
+          "id": 53,
+          "value": 0.0
+        },
+        {
+          "id": 54,
+          "value": 0.0
+        },
+        {
+          "id": 55,
+          "value": 0.0
+        },
+        {
+          "id": 56,
+          "value": 0.0
+        },
+        {
+          "id": 57,
+          "value": 0.0
+        },
+        {
+          "id": 58,
+          "value": 0.0
+        },
+        {
+          "id": 59,
+          "value": 0.0
+        },
+        {
+          "id": 60,
+          "value": 0.0
+        },
+        {
+          "id": 61,
+          "value": 0.0
+        },
+        {
+          "id": 62,
+          "value": 0.0
+        },
+        {
+          "id": 63,
+          "value": 0.0
+        },
+        {
+          "id": 64,
+          "value": 0.0
+        },
+        {
+          "id": 65,
+          "value": 0.0
+        },
+        {
+          "id": 66,
+          "value": 0.0
+        },
+        {
+          "id": 67,
+          "value": 0.0
+        },
+        {
+          "id": 68,
+          "value": 0.0
+        },
+        {
+          "id": 69,
+          "value": 0.0
+        },
+        {
+          "id": 70,
+          "value": 0.0
+        },
+        {
+          "id": 71,
+          "value": 0.0
+        },
+        {
+          "id": 72,
+          "value": 1.0
+        },
+        {
+          "id": 73,
+          "value": 0.0
+        },
+        {
+          "id": 74,
+          "value": 0.0
+        },
+        {
+          "id": 75,
+          "value": 0.0
+        },
+        {
+          "id": 76,
+          "value": 0.0
+        },
+        {
+          "id": 77,
+          "value": 0.0
+        },
+        {
+          "id": 78,
+          "value": 0.0
+        },
+        {
+          "id": 79,
+          "value": 0.0
+        },
+        {
+          "id": 80,
+          "value": 1.0
+        },
+        {
+          "id": 81,
+          "value": 1.0
+        },
+        {
+          "id": 82,
+          "value": 1.0
+        },
+        {
+          "id": 83,
+          "value": 1.0
+        },
+        {
+          "id": 84,
+          "value": 1.0
+        },
+        {
+          "id": 85,
+          "value": 1.0
+        },
+        {
+          "id": 86,
+          "value": 1.0
+        },
+        {
+          "id": 87,
+          "value": 1.0
+        },
+        {
+          "id": 88,
+          "value": 0.0
+        },
+        {
+          "id": 89,
+          "value": 0.0
+        },
+        {
+          "id": 90,
+          "value": 0.0
+        },
+        {
+          "id": 91,
+          "value": 0.0
+        },
+        {
+          "id": 92,
+          "value": 0.0
+        },
+        {
+          "id": 93,
+          "value": 0.0
+        },
+        {
+          "id": 94,
+          "value": 0.0
+        },
+        {
+          "id": 95,
+          "value": 0.0
+        },
+        {
+          "id": 96,
+          "value": 0.0
+        },
+        {
+          "id": 97,
+          "value": 0.0
+        },
+        {
+          "id": 98,
+          "value": 0.0
+        },
+        {
+          "id": 99,
+          "value": 0.0
+        },
+        {
+          "id": 100,
+          "value": 0.0
+        },
+        {
+          "id": 101,
+          "value": 0.0
+        },
+        {
+          "id": 102,
+          "value": 0.0
+        },
+        {
+          "id": 103,
+          "value": 0.0
+        },
+        {
+          "id": 104,
+          "value": 0.0
+        },
+        {
+          "id": 105,
+          "value": 0.0
+        }
+      ],
+      "bypass": true,
+      "data": {
+        "panelTheme": 1,
+        "padBrightness": 0.75,
+        "inputVisualize": false,
+        "outputClamp": true,
+        "channelCount": 1,
+        "inputMode": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "scenes": [
+          {
+            "input": [
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1
+            ],
+            "output": [
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1
+            ],
+            "outputAt": [
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0
+            ],
+            "matrix": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "input": [
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1
+            ],
+            "output": [
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1
+            ],
+            "outputAt": [
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0
+            ],
+            "matrix": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "input": [
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1
+            ],
+            "output": [
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1
+            ],
+            "outputAt": [
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0
+            ],
+            "matrix": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "input": [
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1
+            ],
+            "output": [
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1
+            ],
+            "outputAt": [
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0
+            ],
+            "matrix": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "input": [
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1
+            ],
+            "output": [
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1
+            ],
+            "outputAt": [
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0
+            ],
+            "matrix": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "input": [
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1
+            ],
+            "output": [
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1
+            ],
+            "outputAt": [
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0
+            ],
+            "matrix": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "input": [
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1
+            ],
+            "output": [
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1
+            ],
+            "outputAt": [
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0
+            ],
+            "matrix": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "input": [
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1
+            ],
+            "output": [
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1,
+              1
+            ],
+            "outputAt": [
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0
+            ],
+            "matrix": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          }
+        ],
+        "sceneSelected": 0,
+        "sceneMode": 0,
+        "sceneInputMode": false,
+        "sceneAtMode": true,
+        "sceneCount": 8,
+        "sceneLock": false
+      },
+      "pos": [
+        12,
+        0
       ]
     }
   ],
