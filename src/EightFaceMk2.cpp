@@ -610,6 +610,20 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 		presetClear(p);
 	}
 
+	void presetShiftFront(int p) {
+		for (int i = 1; i <= p; i++) {
+			EightFaceMk2Slot* slot = expSlot(i);
+			if (*(slot->presetSlotUsed)) {
+				presetCopyPaste(i, i - 1);
+				*expSlotLabel(i - 1) = *expSlotLabel(i);
+			}
+			else {
+				presetClear(i - 1);
+			}
+		}
+		presetClear(p);
+	}
+
 	void setCvMode(SLOTCVMODE mode) {
 		slotCvMode = slotCvModeBak = mode;
 	}
@@ -636,8 +650,11 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 			case SLOT_CMD::SAVE:
 				presetSave(i);
 				return -1;
-			case SLOT_CMD::SHIFTBACK:
+			case SLOT_CMD::SHIFT_BACK:
 				presetShiftBack(i);
+				return -1;
+			case SLOT_CMD::SHIFT_FRONT:
+				presetShiftFront(i);
 				return -1;
 			default:
 				return -1;
