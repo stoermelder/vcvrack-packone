@@ -241,7 +241,7 @@ struct MidiDisplay : LedTextDisplay {
 
 	MidiDisplay() {
 		color = nvgRGB(0xf0, 0xf0, 0xf0);
-		fontSize = 10.f;
+		fontSize = 9.2f;
 	}
 
 	void step() override {
@@ -252,7 +252,7 @@ struct MidiDisplay : LedTextDisplay {
 			size_t i = 0;
 			for (std::tuple<float, std::string> s : *buffer) {
 				if (i >= size) break;
-				text += string::f("[%7.2f] %s\n", std::get<0>(s), std::get<1>(s).c_str());
+				text += string::f("[%9.4f] %s\n", std::get<0>(s), std::get<1>(s).c_str());
 				i++;
 			}
 		}
