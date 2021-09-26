@@ -32,9 +32,9 @@ struct MirrorModule : Module, StripIdFixModule {
 	/** [Stored to JSON] */
 	std::string sourceModelName;
 	/** [Stored to JSON] */
-	int sourceModuleId;
+	int64_t sourceModuleId;
 	/** [Stored to JSON] */
-	std::vector<int> targetModuleIds;
+	std::vector<int64_t> targetModuleIds;
 
 	/** [Stored to JSON] */
 	bool audioRate;
@@ -78,12 +78,12 @@ struct MirrorModule : Module, StripIdFixModule {
 	void onReset() override {
 		inChange = true;
 		for (ParamHandle* sourceHandle : sourceHandles) {
-			APP->engine->removeParamHandle(sourceHandle);
+			APP->engine->removeParamHandle_NoLock(sourceHandle);
 			delete sourceHandle;
 		}
 		sourceHandles.clear();
 		for (ParamHandle* targetHandle : targetHandles) {
-			APP->engine->removeParamHandle(targetHandle);
+			APP->engine->removeParamHandle_NoLock(targetHandle);
 			delete targetHandle;
 		}
 		targetHandles.clear();
@@ -310,7 +310,7 @@ struct MirrorModule : Module, StripIdFixModule {
 			size_t sourceMapIndex;
 			json_array_foreach(sourceMapsJ, sourceMapIndex, sourceMapJ) {
 				json_t* moduleIdJ = json_object_get(sourceMapJ, "moduleId");
-				int moduleId = json_integer_value(moduleIdJ);
+				int64_t moduleId = json_integer_value(moduleIdJ);
 				json_t* paramIdJ = json_object_get(sourceMapJ, "paramId");
 				int paramId = json_integer_value(paramIdJ);
 				moduleId = idFix(moduleId);
@@ -329,7 +329,7 @@ struct MirrorModule : Module, StripIdFixModule {
 			size_t targetMapIndex;
 			json_array_foreach(targetMapsJ, targetMapIndex, targetMapJ) {
 				json_t* moduleIdJ = json_object_get(targetMapJ, "moduleId");
-				int moduleId = json_integer_value(moduleIdJ);
+				int64_t moduleId = json_integer_value(moduleIdJ);
 				json_t* paramIdJ = json_object_get(targetMapJ, "paramId");
 				int paramId = json_integer_value(paramIdJ);
 				moduleId = idFix(moduleId);
@@ -359,7 +359,7 @@ struct MirrorModule : Module, StripIdFixModule {
 			size_t targetModuleIndex;
 			json_array_foreach(targetModulesJ, targetModuleIndex, targetModuleJ) {
 				json_t* moduleIdJ = json_object_get(targetModuleJ, "moduleId");
-				int moduleId = json_integer_value(moduleIdJ);
+				int64_t moduleId = json_integer_value(moduleIdJ);
 				moduleId = idFix(moduleId);
 				targetModuleIds.push_back(moduleId);
 			}
@@ -528,7 +528,7 @@ struct MirrorWidget : ThemedModuleWidget<MirrorModule> {
 		if (!mw) return;
 		json_t* preset = mw->toJson();
 
-		for (int moduleId : module->targetModuleIds) {
+		for (int64_t moduleId : module->targetModuleIds) {
 			mw = APP->scene->rack->getModule(moduleId);
 			if (mw) mw->fromJson(preset);
 		}
@@ -554,7 +554,7 @@ struct MirrorWidget : ThemedModuleWidget<MirrorModule> {
 		plugin::Model* model = plugin::getModel(module->sourcePluginSlug, module->sourceModelSlug);
 		if (!model) return;
 
-		// Clone Module
+		// Create Module
 		engine::Module* addedModule = model->createModule();
 		APP->engine->addModule(addedModule);
 
@@ -563,7 +563,6 @@ struct MirrorWidget : ThemedModuleWidget<MirrorModule> {
 		assert(newMw);
 		newMw->box.pos = box.pos;
 		newMw->box.pos.x += box.size.x;
-		newMw->module->id = -1;
 		APP->scene->rack->addModule(newMw);
 		APP->scene->rack->setModulePosForce(newMw, newMw->box.pos);
 

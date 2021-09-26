@@ -9,7 +9,7 @@ enum class TRIGGERMODE {
 };
 
 struct GotoTarget {
-	int moduleId = -1;
+	int64_t moduleId = -1;
 	float x = 0, y = 0;
 	float zoom = 1.f;
 };

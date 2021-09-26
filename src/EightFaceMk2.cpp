@@ -104,7 +104,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 
 
 	struct BoundModule {
-		int moduleId;
+		int64_t moduleId;
 		std::string pluginSlug;
 		std::string modelSlug;
 		std::string moduleName;
@@ -718,7 +718,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 			size_t boundModuleIndex;
 			json_array_foreach(boundModulesJ, boundModuleIndex, boundModuleJ) {
 				json_t* moduleIdJ = json_object_get(boundModuleJ, "moduleId");
-				int moduleId = json_integer_value(moduleIdJ);
+				int64_t moduleId = json_integer_value(moduleIdJ);
 				json_t* pluginSlugJ = json_object_get(boundModuleJ, "pluginSlug");
 				std::string pluginSlug = json_string_value(pluginSlugJ);
 				json_t* modelSlugJ = json_object_get(boundModuleJ, "modelSlug");

@@ -46,7 +46,7 @@ struct TransitBase : Module, StripIdFixModule {
 
 	LongPressButton presetButton[NUM_PRESETS];
 
-	int ctrlModuleId = -1;
+	int64_t ctrlModuleId = -1;
 	int ctrlOffset = 0;
 	CTRLMODE ctrlMode = CTRLMODE::READ;
 

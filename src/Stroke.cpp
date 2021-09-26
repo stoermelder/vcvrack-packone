@@ -523,9 +523,9 @@ struct CmdCableMultiDrag : CmdBase {
 
 	struct CableOutputChange : history::Action {
 		int cableId;
-		int oldOutputModuleId;
+		int64_t oldOutputModuleId;
 		int oldOutputId;
-		int newOutputModuleId;
+		int64_t newOutputModuleId;
 		int newOutputId;
 
 		void undo() override {
@@ -603,8 +603,6 @@ struct CmdModuleAdd : CmdBase {
 		// Create ModuleWidget
 		ModuleWidget* moduleWidget = model->createModuleWidget(addedModule);
 		assert(moduleWidget);
-
-		moduleWidget->module->id = -1;
 		APP->scene->rack->addModuleAtMouse(moduleWidget);
 		moduleWidget->fromJson(moduleJ);
 
@@ -640,7 +638,7 @@ struct CmdModuleDispatch : CmdBase {
 			json_decref(oJ);
 		});
 
-		int moduleId = json_integer_value(json_object_get(oJ, "moduleId"));
+		int64_t moduleId = json_integer_value(json_object_get(oJ, "moduleId"));
 		ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
 		if (!mw) return;
 

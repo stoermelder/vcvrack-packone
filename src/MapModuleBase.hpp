@@ -145,7 +145,7 @@ struct MapModuleBase : Module, StripIdFixModule {
 		}
 	}
 
-	virtual void learnParam(int id, int moduleId, int paramId) {
+	virtual void learnParam(int id, int64_t moduleId, int paramId) {
 		APP->engine->updateParamHandle(&paramHandles[id], moduleId, paramId, true);
 		learnedParam = true;
 		commitLearn();
@@ -190,7 +190,7 @@ struct MapModuleBase : Module, StripIdFixModule {
 					continue;
 				if (mapIndex >= MAX_CHANNELS)
 					continue;
-				int moduleId = json_integer_value(moduleIdJ);
+				int64_t moduleId = json_integer_value(moduleIdJ);
 				int paramId = json_integer_value(paramIdJ);
 				moduleId = idFix(moduleId);
 				APP->engine->updateParamHandle(&paramHandles[mapIndex], moduleId, paramId, false);
@@ -342,7 +342,7 @@ struct MapModuleChoice : LedDisplayChoice {
 		ParamWidget *touchedParam = APP->scene->rack->touchedParam;
 		if (touchedParam && touchedParam->getParamQuantity()->module != module) {
 			APP->scene->rack->touchedParam = NULL;
-			int moduleId = touchedParam->getParamQuantity()->module->id;
+			int64_t moduleId = touchedParam->getParamQuantity()->module->id;
 			int paramId = touchedParam->getParamQuantity()->paramId;
 			module->learnParam(id, moduleId, paramId);
 			hscrollCharOffset = 0;

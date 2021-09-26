@@ -53,7 +53,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 	 */
 	void groupRemove() {
 		// Collect all modules right next to this instance of STRIP.
-		std::vector<int> toBeRemoved;
+		std::vector<int64_t> toBeRemoved;
 		if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::RIGHT) {
 			Module* m = module;
 			while (true) {
@@ -190,7 +190,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 
 	void groupConnectionsCollect(std::list<std::tuple<std::string, int, PortWidget*, NVGcolor>>& conn) {
 		std::list<StripBayBase*> toDo;
-		std::set<int> moduleIds;
+		std::set<int64_t> moduleIds;
 
 		if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::RIGHT) {
 			Module* m = module;
@@ -316,7 +316,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 	 * @moduleJ
 	 * @oldId
 	 */
-	ModuleWidget* moduleFromJson(json_t* moduleJ, int& oldId) {
+	ModuleWidget* moduleFromJson(json_t* moduleJ, int64_t& oldId) {
 		// Get slugs
 		json_t* pluginSlugJ = json_object_get(moduleJ, "plugin");
 		if (!pluginSlugJ)
@@ -351,11 +351,10 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 	 * @box
 	 * @oldId
 	 */
-	ModuleWidget* moduleToRack(json_t* moduleJ, bool left, Rect& box, int& oldId) {
+	ModuleWidget* moduleToRack(json_t* moduleJ, bool left, Rect& box, int64_t& oldId) {
 		ModuleWidget* moduleWidget = moduleFromJson(moduleJ, oldId);
 		if (moduleWidget) {
 			moduleWidget->box.pos = left ? box.pos.minus(Vec(moduleWidget->box.size.x, 0)) : box.pos;
-			moduleWidget->module->id = -1;
 			APP->scene->rack->addModule(moduleWidget);
 			APP->scene->rack->setModulePosForce(moduleWidget, moduleWidget->box.pos);
 			box.size = moduleWidget->box.size;
@@ -378,7 +377,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 	 * @rootJ json-representation of the STRIP-file
 	 * @modules maps old module ids the new modules
 	 */
-	std::vector<history::Action*>* groupFromJson_modules(json_t* rootJ, std::map<int, ModuleWidget*>& modules) {
+	std::vector<history::Action*>* groupFromJson_modules(json_t* rootJ, std::map<int64_t, ModuleWidget*>& modules) {
 		std::vector<history::Action*>* undoActions = new std::vector<history::Action*>;
 
 		if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::RIGHT) {
@@ -388,7 +387,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 				json_t* moduleJ;
 				size_t moduleIndex;
 				json_array_foreach(rightModulesJ, moduleIndex, moduleJ) {
-					int oldId;
+					int64_t oldId = -1;
 					box.pos = box.pos.plus(Vec(box.size.x, 0));
 					ModuleWidget* mw = moduleToRack(moduleJ, false, box, oldId);
 					// mw could be NULL, just move on
@@ -411,7 +410,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 				json_t* moduleJ;
 				size_t moduleIndex;
 				json_array_foreach(leftModulesJ, moduleIndex, moduleJ) {
-					int oldId;
+					int64_t oldId = -1;
 					ModuleWidget* mw = moduleToRack(moduleJ, true, box, oldId);
 					modules[oldId] = mw;
 
@@ -437,7 +436,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 	 * @moduleJ json-representation of the module
 	 * @modules maps old module ids the new modules
 	 */
-	void groupFromJson_presets_fixMapping(json_t* moduleJ, std::map<int, ModuleWidget*>& modules) {
+	void groupFromJson_presets_fixMapping(json_t* moduleJ, std::map<int64_t, ModuleWidget*>& modules) {
 		std::string pluginSlug = json_string_value(json_object_get(moduleJ, "plugin"));
 		std::string modelSlug = json_string_value(json_object_get(moduleJ, "model"));
 
@@ -454,9 +453,9 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 				json_t* moduleIdJ = json_object_get(mapJ, "moduleId");
 				if (!moduleIdJ)
 					continue;
-				int oldId = json_integer_value(moduleIdJ);
+				int64_t oldId = json_integer_value(moduleIdJ);
 				if (oldId >= 0) {
-					int newId = -1;
+					int64_t newId = -1;
 					ModuleWidget* mw = modules[oldId];
 					if (mw != NULL) {
 						newId = mw->module->id;
@@ -473,7 +472,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 	 * @json json-representation of the STRIP-file
 	 * @modules maps old module ids the new modules
 	 */
-	std::vector<history::Action*>* groupFromJson_presets(json_t* rootJ, std::map<int, ModuleWidget*>& modules) {
+	std::vector<history::Action*>* groupFromJson_presets(json_t* rootJ, std::map<int64_t, ModuleWidget*>& modules) {
 		std::vector<history::Action*>* undoActions = new std::vector<history::Action*>;
 
 		json_t* rightModulesJ = json_object_get(rootJ, "rightModules");
@@ -483,7 +482,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 			json_array_foreach(rightModulesJ, moduleIndex, moduleJ) {
 				if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::RIGHT) {
 					groupFromJson_presets_fixMapping(moduleJ, modules);
-					int oldId = json_integer_value(json_object_get(moduleJ, "id"));
+					int64_t oldId = json_integer_value(json_object_get(moduleJ, "id"));
 					ModuleWidget* mw = modules[oldId];
 					if (mw != NULL) {
 						// history::ModuleChange
@@ -510,7 +509,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 			json_array_foreach(leftModulesJ, moduleIndex, moduleJ) {
 				if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::LEFT) {
 					groupFromJson_presets_fixMapping(moduleJ, modules);
-					int oldId = json_integer_value(json_object_get(moduleJ, "id"));
+					int64_t oldId = json_integer_value(json_object_get(moduleJ, "id"));
 					ModuleWidget* mw = modules[oldId];
 					if (mw != NULL) {
 						// history::ModuleChange
@@ -540,7 +539,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 	 * @rootJ json-representation of the STRIP-file
 	 * @modules maps old module ids the new modules
 	 */
-	std::vector<history::Action*>* groupFromJson_cables(json_t* rootJ, std::map<int, ModuleWidget*>& modules) {
+	std::vector<history::Action*>* groupFromJson_cables(json_t* rootJ, std::map<int64_t, ModuleWidget*>& modules) {
 		std::vector<history::Action*>* undoActions = new std::vector<history::Action*>;
 
 		json_t* cablesJ = json_object_get(rootJ, "cables");
@@ -548,9 +547,9 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 			json_t* cableJ;
 			size_t cableIndex;
 			json_array_foreach(cablesJ, cableIndex, cableJ) {
-				int outputModuleId = json_integer_value(json_object_get(cableJ, "outputModuleId"));
+				int64_t outputModuleId = json_integer_value(json_object_get(cableJ, "outputModuleId"));
 				int outputId = json_integer_value(json_object_get(cableJ, "outputId"));
-				int inputModuleId = json_integer_value(json_object_get(cableJ, "inputModuleId"));
+				int64_t inputModuleId = json_integer_value(json_object_get(cableJ, "inputModuleId"));
 				int inputId = json_integer_value(json_object_get(cableJ, "inputId"));
 				const char* colorStr = json_string_value(json_object_get(cableJ, "color"));
 
@@ -744,7 +743,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		std::vector<history::Action*>* h1 = groupClearSpace(rootJ);
 
 		// Maps old moduleId to the newly created module (with new id)
-		std::map<int, ModuleWidget*> modules;
+		std::map<int64_t, ModuleWidget*> modules;
 		// Add modules
 		std::vector<history::Action*>* h2 = groupFromJson_modules(rootJ, modules);
 		// Load presets for modules, also fixes parameter mappings
@@ -788,7 +787,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		std::vector<history::Action*>* h1 = groupClearSpace(rootJ);
 
 		// Maps old moduleId to the newly created module (with new id)
-		std::map<int, ModuleWidget*> modules;
+		std::map<int64_t, ModuleWidget*> modules;
 		// Add modules
 		std::vector<history::Action*>* h2 = groupFromJson_modules(rootJ, modules);
 		// Load presets for modules, also fixes parameter mappings

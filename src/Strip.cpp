@@ -53,7 +53,7 @@ struct StripModule : StripModuleBase {
 	std::mutex excludeMutex;
 	bool excludeLearn = false;
 	/** [Stored to JSON] */ 
-	std::set<std::tuple<int, int>> excludedParams;
+	std::set<std::tuple<int64_t, int>> excludedParams;
 	/** [Stored to JSON] */
 	RANDOMEXCL randomExcl = RANDOMEXCL::EXC;
 	/** [Stored to JSON] */
@@ -337,7 +337,7 @@ struct StripModule : StripModuleBase {
 				json_t* paramIdJ = json_object_get(excludedParamJ, "paramId");
 				if (!(moduleIdJ && paramIdJ)) 
 					continue;
-				int moduleId = json_integer_value(moduleIdJ); 
+				int64_t moduleId = json_integer_value(moduleIdJ); 
 				int paramId = json_integer_value(paramIdJ); 
 				excludedParams.insert(std::make_tuple(moduleId, paramId));
 			}
@@ -410,7 +410,7 @@ struct ExcludeButton : TL1105 {
 		// NB: unstable API
 		ParamWidget* touchedParam = APP->scene->rack->touchedParam;
 		if (touchedParam && touchedParam->getParamQuantity() && touchedParam->getParamQuantity()->module != module) {
-			int moduleId = touchedParam->getParamQuantity()->module->id;
+			int64_t moduleId = touchedParam->getParamQuantity()->module->id;
 			int paramId = touchedParam->getParamQuantity()->paramId;
 			groupExcludeParam(moduleId, paramId);
 		}
@@ -453,7 +453,7 @@ struct ExcludeButton : TL1105 {
 	/** 
 	 * Adds a parameter to the randomization exclusion list.
 	 */
-	void groupExcludeParam(int moduleId, int paramId) {
+	void groupExcludeParam(int64_t moduleId, int paramId) {
 		learn = false;
 		if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::RIGHT) {
 			Module* m = module;
@@ -528,7 +528,7 @@ struct ExcludeButton : TL1105 {
 		// Aquire excludeMutex to get exclusive access to excludedParams
 		std::lock_guard<std::mutex> lockGuard(module->excludeMutex);
 		for (auto it : module->excludedParams) {
-			int moduleId = std::get<0>(it);
+			int64_t moduleId = std::get<0>(it);
 			auto m = modules.find(moduleId);
 			if (m == modules.end()) {
 				toBeDeleted.push_back(it);
@@ -574,7 +574,7 @@ struct ExcludeButton : TL1105 {
 		// Aquire excludeMutex to get exclusive access to excludedParams
 		std::lock_guard<std::mutex> lockGuard(module->excludeMutex);
 		for (auto it : module->excludedParams) {
-			int moduleId = std::get<0>(it);
+			int64_t moduleId = std::get<0>(it);
 			int paramId = std::get<1>(it);
 			
 			ModuleWidget* moduleWidget = APP->scene->rack->getModule(moduleId);

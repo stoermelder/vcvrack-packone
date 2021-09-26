@@ -467,7 +467,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 	}
 
 
-	void bindParameter(int moduleId, int paramId) {
+	void bindParameter(int64_t moduleId, int paramId) {
 		for (ParamHandle* handle : sourceHandles) {
 			if (handle->moduleId == moduleId && handle->paramId == paramId) {
 				// Parameter already bound
@@ -852,7 +852,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 			size_t sourceMapIndex;
 			json_array_foreach(sourceMapsJ, sourceMapIndex, sourceMapJ) {
 				json_t* moduleIdJ = json_object_get(sourceMapJ, "moduleId");
-				int moduleId = json_integer_value(moduleIdJ);
+				int64_t moduleId = json_integer_value(moduleIdJ);
 				json_t* paramIdJ = json_object_get(sourceMapJ, "paramId");
 				int paramId = json_integer_value(paramIdJ);
 
@@ -957,7 +957,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 			ParamWidget* touchedParam = APP->scene->rack->touchedParam;
 			if (touchedParam && touchedParam->getParamQuantity()->module != module) {
 				APP->scene->rack->touchedParam = NULL;
-				int moduleId = touchedParam->getParamQuantity()->module->id;
+				int64_t moduleId = touchedParam->getParamQuantity()->module->id;
 				int paramId = touchedParam->getParamQuantity()->paramId;
 				module->bindParameter(moduleId, paramId);
 				if (learn == 2) { 
@@ -1207,7 +1207,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 			Menu* createChildMenu() override {
 				struct UnbindItem : MenuItem {
 					MODULE* module;
-					int moduleId;
+					int64_t moduleId;
 					void onAction(const event::Action& e) override {
 						for (size_t i = 0; i < module->sourceHandles.size(); i++) {
 							ParamHandle* handle = module->sourceHandles[i];
@@ -1218,16 +1218,16 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 				};
 
 				Menu* menu = new Menu;
-				std::set<int> moduleIds;
+				std::set<int64_t> moduleIds;
 				for (size_t i = 0; i < module->sourceHandles.size(); i++) {
 					ParamHandle* handle = module->sourceHandles[i];
 					if (moduleIds.find(handle->moduleId) == moduleIds.end())
 						moduleIds.insert(handle->moduleId);
 				}
 
-				for (int moduleId : moduleIds) {
+				for (int64_t moduleId : moduleIds) {
 					ModuleWidget* moduleWidget = APP->scene->rack->getModule(moduleId);
-					if (!moduleWidget) continue;	
+					if (!moduleWidget) continue;
 					std::string text = string::f("Unbind \"%s %s\"", moduleWidget->model->plugin->name.c_str(), moduleWidget->model->name.c_str());
 					menu->addChild(construct<UnbindItem>(&MenuItem::text, text, &UnbindItem::module, module, &UnbindItem::moduleId, moduleId));
 				}

@@ -49,7 +49,7 @@ std::string trim(const std::string& s) {
 
 
 struct Label {
-	int moduleId;
+	int64_t moduleId;
 	float x = 0.f;
 	float y = 0.f;
 	float width = LABEL_WIDTH_DEFAULT;
@@ -238,7 +238,7 @@ struct GlueModule : Module, StripIdFixModule {
 			size_t labelIdx;
 			json_t* labelJ;
 			json_array_foreach(labelsJ, labelIdx, labelJ) {
-				int moduleId = json_integer_value(json_object_get(labelJ, "moduleId"));
+				int64_t moduleId = json_integer_value(json_object_get(labelJ, "moduleId"));
 				moduleId = idFix(moduleId);
 				if (moduleId < 0) continue;
 				
@@ -750,7 +750,7 @@ struct LabelWidget : widget::TransparentWidget {
 template < typename WIDGET >
 struct LabelRemoveAction : history::ModuleAction {
 	Label label;
-	int moduleId;
+	int64_t moduleId;
 
 	void undo() override {
 		ModuleWidget* mw = APP->scene->rack->getModule(moduleId);

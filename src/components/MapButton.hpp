@@ -111,7 +111,7 @@ struct MapButton : LEDBezel {
 		ParamWidget* touchedParam = APP->scene->rack->touchedParam;
 		if (touchedParam && touchedParam->getParamQuantity()->module != module) {
 			APP->scene->rack->touchedParam = NULL;
-			int moduleId = touchedParam->getParamQuantity()->module->id;
+			int64_t moduleId = touchedParam->getParamQuantity()->module->id;
 			int paramId = touchedParam->getParamQuantity()->paramId;
 			module->learnParam(id, moduleId, paramId);
 		} 

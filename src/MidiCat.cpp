@@ -305,7 +305,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 	// Pointer of the MEM-expander's attribute
 	std::map<std::pair<std::string, std::string>, MemModule*>* expMemStorage = NULL;
 	Module* expMem = NULL;
-	int expMemModuleId = -1;
+	int64_t expMemModuleId = -1;
 
 	Module* expCtx = NULL;
 
@@ -826,7 +826,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 		}
 	}
 
-	void learnParam(int id, int moduleId, int paramId, bool resetMidiSettings = true) {
+	void learnParam(int id, int64_t moduleId, int paramId, bool resetMidiSettings = true) {
 		APP->engine->updateParamHandle(&paramHandles[id], moduleId, paramId, true);
 		midiParam[id].reset(resetMidiSettings);
 		learnedParam = true;
@@ -1054,7 +1054,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 				notes[mapIndex].setNote(noteJ ? json_integer_value(noteJ) : -1);
 				notes[mapIndex].noteMode = (NOTEMODE)json_integer_value(noteModeJ);
 				midiOptions[mapIndex] = json_integer_value(midiOptionsJ);
-				int moduleId = moduleIdJ ? json_integer_value(moduleIdJ) : -1;
+				int64_t moduleId = moduleIdJ ? json_integer_value(moduleIdJ) : -1;
 				int paramId = paramIdJ ? json_integer_value(paramIdJ) : 0;
 				if (moduleId >= 0) {
 					moduleId = idFix(moduleId);
@@ -2356,7 +2356,7 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 				std::list<std::pair<std::string, ppair>> list;
 				std::set<ppair> s;
 				for (size_t i = 0; i < MAX_CHANNELS; i++) {
-					int moduleId = module->paramHandles[i].moduleId;
+					int64_t moduleId = module->paramHandles[i].moduleId;
 					if (moduleId < 0) continue;
 					Module* m = module->paramHandles[i].module;
 					auto q = ppair(m->model->plugin->slug, m->model->slug);
