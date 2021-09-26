@@ -30,9 +30,9 @@ enum class KEY_MODE {
 	S_CABLE_COLOR = 24,
 	S_CABLE_ROTATE = 22,
 	S_CABLE_VISIBILITY = 23,
-	S_CABLE_MULTIDRAG = 25,
-	S_FRAMERATE = 30,
-	S_BUSBOARD = 31,
+	S_CABLE_MULTIDRAG = 25, // disabled
+	S_FRAMERATE = 30, // not supported in v2
+	S_BUSBOARD = 31, // not supported in v2
 	S_ENGINE_PAUSE = 32, // not supported in v2
 	S_MODULE_LOCK = 33,
 	S_MODULE_ADD = 34,
@@ -606,13 +606,11 @@ struct CmdModuleAdd : CmdBase {
 		APP->scene->rack->addModuleAtMouse(moduleWidget);
 		moduleWidget->fromJson(moduleJ);
 
-		if (moduleWidget) {
-			// ModuleAdd history action
-			history::ModuleAdd* h = new history::ModuleAdd;
-			h->name = "create module";
-			h->setModule(moduleWidget);
-			APP->history->push(h);
-		}
+		// ModuleAdd history action
+		history::ModuleAdd* h = new history::ModuleAdd;
+		h->name = "create module";
+		h->setModule(moduleWidget);
+		APP->history->push(h);
 	}
 }; // struct CmdModuleAdd
 
@@ -646,12 +644,14 @@ struct CmdModuleDispatch : CmdBase {
 		pos.x = json_real_value(json_object_get(oJ, "x"));
 		pos.y = json_real_value(json_object_get(oJ, "y"));
 		int key = json_integer_value(json_object_get(oJ, "key"));
+		int scancode = json_integer_value(json_object_get(oJ, "scancode"));
 		int mods = json_integer_value(json_object_get(oJ, "mods"));
 
 		EventContext c;
 		event::HoverKey e;
 		e.context = &c;
 		e.key = key;
+		e.keyName = glfwGetKeyName(key, scancode);
 		e.mods = mods;
 		e.action = action;
 		e.pos = pos;
@@ -767,7 +767,7 @@ struct KeyContainer : Widget {
 	StrokeModule<PORTS>* module = NULL;
 	int learnIdx = -1;
 	int learnIdxEx = -1;
-	std::function<void(int key, int mods)> learnCallback = { };
+	std::function<void(int key, int scancode, int mods)> learnCallback = { };
 
 	ModuleSelectProcessor moduleSelectProcessor;
 
@@ -967,7 +967,7 @@ struct KeyContainer : Widget {
 				if (learnCallback) {
 					std::string kn = keyName(e_key);
 					if (!kn.empty()) {
-						learnCallback(e_key, e_mods);
+						learnCallback(e_key, e.scancode, e_mods);
 						learnCallback = { };
 						learnIdx = -1;
 						e.consume(this);
@@ -1016,7 +1016,7 @@ struct KeyContainer : Widget {
 		learnIdx = learnIdx != idx ? idx : -1;
 	}
 
-	void enableLearn(int idx, std::function<void(int,int)> callback) {
+	void enableLearn(int idx, std::function<void(int,int,int)> callback) {
 		learnIdx = idx;
 		learnCallback = callback;
 	}
@@ -1333,10 +1333,11 @@ struct KeyDisplay : StoermelderLedDisplay {
 							void onAction(const event::Action& e) override {
 								std::string* _data = &keyContainer->module->keys[idx].data;
 								if (*_data == "") return;
-								auto callback = [_data](int key, int mods) {
+								auto callback = [_data](int key, int scancode, int mods) {
 									json_error_t error;
 									json_t* oJ = json_loads(_data->c_str(), 0, &error);
 									json_object_set_new(oJ, "key", json_integer(key));
+									json_object_set_new(oJ, "scancode", json_integer(scancode));
 									json_object_set_new(oJ, "mods", json_integer(mods));
 									*_data = json_dumps(oJ, JSON_INDENT(2) | JSON_REAL_PRECISION(9));
 									json_decref(oJ);
@@ -1470,9 +1471,9 @@ struct KeyDisplay : StoermelderLedDisplay {
 
 			Menu* createChildMenu() override {
 				Menu* menu = new Menu;
-				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle framerate display", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_FRAMERATE));
-				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle busboard", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_BUSBOARD));
-				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle engine pause", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ENGINE_PAUSE));
+				//menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle framerate display", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_FRAMERATE));
+				//menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle busboard", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_BUSBOARD));
+				//menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle engine pause", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ENGINE_PAUSE));
 				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle lock modules", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_MODULE_LOCK));
 				return menu;
 			}
