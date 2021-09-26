@@ -223,18 +223,18 @@ struct ModelBox : widget::OpaqueWidget {
 	}
 
 	void createPreview() {
+		zoomWidget = new widget::ZoomWidget;
+		previewWidget->addChild(zoomWidget);
+
 		previewFb = new widget::FramebufferWidget;
 		if (math::isNear(APP->window->pixelRatio, 1.0)) {
 			// Small details draw poorly at low DPI, so oversample when drawing to the framebuffer
 			previewFb->oversample = 2.0;
 		}
-		previewWidget->addChild(previewFb);
-
-		zoomWidget = new widget::ZoomWidget;
-		previewFb->addChild(zoomWidget);
+		zoomWidget->addChild(previewFb);
 
 		ModuleWidget* moduleWidget = model->createModuleWidget(NULL);
-		zoomWidget->addChild(moduleWidget);
+		previewFb->addChild(moduleWidget);
 		// Save the width, used for correct width of blank before rendered
 		modelBoxWidth = moduleWidget->box.size.x;
 
@@ -243,16 +243,9 @@ struct ModelBox : widget::OpaqueWidget {
 
 	void sizePreview() {
 		zoomWidget->setZoom(modelBoxZoom);
-
-		zoomWidget->box.size.x = modelBoxWidth * modelBoxZoom;
-		zoomWidget->box.size.y = RACK_GRID_HEIGHT * modelBoxZoom;
-		previewWidget->box.size.x = std::ceil(zoomWidget->box.size.x);
-		previewWidget->box.size.y = std::ceil(zoomWidget->box.size.y);
-		box.size = previewWidget->box.size;
-
-		// Not sure how to do this correctly but works for now
-		//previewFb->fbBox.size = previewWidget->box.size;
-		previewFb->setDirty(true);
+		previewFb->setDirty();
+		box.size.x = modelBoxWidth * modelBoxZoom;
+		box.size.y = RACK_GRID_HEIGHT * modelBoxZoom;
 	}
 
 	void deletePreview() {
@@ -281,6 +274,11 @@ struct ModelBox : widget::OpaqueWidget {
 		if (modelHidden) {
 			nvgGlobalAlpha(args.vg, 0.33);
 		}
+
+		// To avoid blinding the user when rack brightness is low, draw framebuffer with the same brightness.
+		float b = settings::rackBrightness;
+		nvgGlobalTint(args.vg, nvgRGBAf(b, b, b, 1));
+
 		OpaqueWidget::draw(args);
 	}
 
@@ -794,6 +792,7 @@ void ModuleBrowser::step() {
 	modelScroll->box.size = box.size.minus(modelScroll->box.pos);
 	modelMargin->box.size.x = modelScroll->box.size.x;
 	modelMargin->box.size.y = modelContainer->getChildrenBoundingBox().size.y + 2 * margin;
+	modelContainer->box.size.x = modelMargin->box.size.x - margin;
 
 	OpaqueWidget::step();
 }

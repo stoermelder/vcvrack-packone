@@ -71,9 +71,8 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 		configParam(PARAM_KNOB, 0.f, 1.f, 0.f, "Macro knob", "%", 0.f, 100.f);
 
 		for (int i = 0; i < MAPS; i++) {
-			configParam<MapParamQuantity<MacroModule>>(PARAM_MAP + i, 0.f, 1.f, 0.f, string::f("Map %i", i + 1));
-			MapParamQuantity<MacroModule>* pq = dynamic_cast<MapParamQuantity<MacroModule>*>(paramQuantities[PARAM_MAP + i]);
-			pq->module = this;
+			MapParamQuantity<MacroModule>* pq = configParam<MapParamQuantity<MacroModule>>(PARAM_MAP + i, 0.f, 1.f, 0.f, string::f("Map %i", i + 1));
+			pq->mymodule = this;
 			pq->id = i;
 			paramHandles[i].text = "MACRO";
 			scaleParam[i].setLimits(0.f, 1.f, std::numeric_limits<float>::infinity());

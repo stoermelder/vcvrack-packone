@@ -271,13 +271,10 @@ struct MidiPlugWidget : ThemedModuleWidget<MidiPlugModule<>> {
 			}
 			void onAction(const event::Action& e) override {
 				if (!pluginSettings.midiLoopbackDriverEnabled) {
-					std::string text = "After enabling the MIDI Loopback driver you will get an annoying error message every time you close the Rack. This will not harm your patches in any way. Furthermore it is possible to disable the MIDI Loopback driver at anytime you like.\n\nDo you want to enable the MIDI Loopback driver now?";
-					if (osdialog_message(OSDIALOG_INFO, OSDIALOG_YES_NO, text.c_str())) {
-						pluginSettings.midiLoopbackDriverEnabled = true;
-						pluginSettings.saveToJson();
-						text = "The MIDI Loopback driver will be enabled after the next restart of Rack.";
-						osdialog_message(OSDIALOG_INFO, OSDIALOG_OK, text.c_str());
-					}
+					pluginSettings.midiLoopbackDriverEnabled = true;
+					pluginSettings.saveToJson();
+					text = "The MIDI Loopback driver will be enabled after the next restart of Rack.";
+					osdialog_message(OSDIALOG_INFO, OSDIALOG_OK, text.c_str());
 				} else {
 					std::string text = "You're about to disable the MIDI Loopback driver. Proceed?";
 					if (osdialog_message(OSDIALOG_INFO, OSDIALOG_YES_NO, text.c_str())) {

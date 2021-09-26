@@ -129,11 +129,6 @@ struct EightFaceMk2LedButton : LEDButton {
 				e.consume(this);
 				eventConsumed = true;
 			}
-			else if (module->ctrlMode == CTRLMODE::WRITE && e.button == GLFW_MOUSE_BUTTON_RIGHT && (e.mods & RACK_MOD_MASK) == 0) {
-				LEDButton::onButton(e);
-				eventConsumed = false;
-				extendContextMenu();
-			}
 			else {
 				LEDButton::onButton(e);
 				eventConsumed = false;
@@ -149,13 +144,8 @@ struct EightFaceMk2LedButton : LEDButton {
 		LEDButton::onDragStart(e);
 	}
 
-	void extendContextMenu() {
-		// Hack for attaching additional menu items to parameter's context menu
-		MenuOverlay* overlay = APP->scene->getFirstDescendantOfType<MenuOverlay>();
-		if (!overlay) return;
-		Widget* w = overlay->children.front();
-		Menu* menu = dynamic_cast<Menu*>(w);
-		if (!menu) return;
+	void appendContextMenu(Menu* menu) override {
+		if (module->ctrlMode != CTRLMODE::WRITE) return;
 
 		struct SlotItem : MenuItem {
 			EightFaceMk2Base<NUM_PRESETS>* module;
