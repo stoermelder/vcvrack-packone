@@ -4,7 +4,6 @@
 #include <widget/ZoomWidget.hpp>
 #include <ui/ScrollWidget.hpp>
 #include <ui/SequentialLayout.hpp>
-#include <ui/MarginLayout.hpp>
 #include <ui/Label.hpp>
 #include <ui/TextField.hpp>
 #include <ui/MenuOverlay.hpp>
@@ -17,7 +16,7 @@
 #include <app/ModuleWidget.hpp>
 #include <app/Scene.hpp>
 #include <plugin.hpp>
-#include <app.hpp>
+#include <context.hpp>
 #include <plugin/Model.hpp>
 #include <string.hpp>
 #include <history.hpp>
@@ -54,7 +53,7 @@ static bool isModelMatch(Model *model, std::string search) {
 	s += model->name;
 	s += " ";
 	s += model->slug;
-	for (auto tag : model->tags) {
+	for (auto tag : model->tagIds) {
 		s += " ";
 		s += tag::tagAliases[tag][0];
 	}
@@ -167,9 +166,12 @@ struct ModelItem : BrowserListItem {
 	}
 
 	void onAction(const event::Action &e) override {
-		ModuleWidget *moduleWidget = model->createModuleWidget();
-		if (!moduleWidget)
-			return;
+		// Create Module
+		engine::Module* addedModule = model->createModule();
+		APP->engine->addModule(addedModule);
+
+		ModuleWidget *moduleWidget = model->createModuleWidget(addedModule);
+		if (!moduleWidget) return;
 		APP->scene->rack->addModuleAtMouse(moduleWidget);
 
 		// Push ModuleAdd history action
@@ -179,8 +181,8 @@ struct ModelItem : BrowserListItem {
 		APP->history->push(h);
 
 		// Hide Module Browser
-		APP->scene->moduleBrowser->hide();
-		APP->event->setSelected(moduleWidget);
+		APP->scene->browser->hide();
+		APP->event->setSelectedWidget(moduleWidget);
 
 		// Update usage data
 		modelUsageTouch(model);
@@ -364,7 +366,7 @@ struct ModuleBrowser : OpaqueWidget {
 				if (!model->plugin->brand.empty())
 					availableAuthors.insert(model->plugin->brand);
 				// Insert tag
-				for (auto tag : model->tags) {
+				for (auto tag : model->tagIds) {
 					if (tag != -1)
 						availableTags.insert(tag);
 				}
@@ -389,8 +391,8 @@ struct ModuleBrowser : OpaqueWidget {
 		if (!sAuthorFilter.empty() && model->plugin->brand != sAuthorFilter)
 			return false;
 		if (sTagFilter != -1) {
-			auto it = std::find(model->tags.begin(), model->tags.end(), sTagFilter);
-			if (it == model->tags.end())
+			auto it = std::find(model->tagIds.begin(), model->tagIds.end(), sTagFilter);
+			if (it == model->tagIds.end())
 				return false;
 		}
 		return true;
@@ -484,7 +486,7 @@ struct ModuleBrowser : OpaqueWidget {
 		moduleScroll->box.size.y = std::min(box.size.y - moduleScroll->box.pos.y, moduleList->box.size.y);
 		box.size.y = std::min(box.size.y, moduleScroll->box.getBottomRight().y);
 
-		APP->event->setSelected(searchField);
+		APP->event->setSelectedWidget(searchField);
 		Widget::step();
 	}
 };
@@ -493,7 +495,7 @@ struct ModuleBrowser : OpaqueWidget {
 // Implementations of inline methods above
 
 void BrowserListItem::doAction() {
-	event::Context context;
+	EventContext context;
 	event::Action eAction;
 	eAction.context = &context;
 	//eAction.consume(this);
@@ -567,7 +569,7 @@ void SearchModuleField::onSelectKey(const event::SelectKey &e) {
 			case GLFW_KEY_ESCAPE: {
 				BrowserOverlay* overlay = getAncestorOfType<BrowserOverlay>();
 				overlay->hide();
-				APP->event->setSelected(NULL);
+				APP->event->setSelectedWidget(NULL);
 				e.consume(this);
 				return;
 			} break;

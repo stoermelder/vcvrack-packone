@@ -136,9 +136,8 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 		Module::config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		Module::configParam(PARAM_RW, 0, 1, 0, "Read/write mode");
 		for (int i = 0; i < NUM_PRESETS; i++) {
-			Module::configParam<EightFaceMk2ParamQuantity<NUM_PRESETS>>(PARAM_PRESET + i, 0, 1, 0);
-			EightFaceMk2ParamQuantity<NUM_PRESETS>* pq = (EightFaceMk2ParamQuantity<NUM_PRESETS>*)Module::paramQuantities[PARAM_PRESET + i];
-			pq->module = this;
+			EightFaceMk2ParamQuantity<NUM_PRESETS>* pq = Module::configParam<EightFaceMk2ParamQuantity<NUM_PRESETS>>(PARAM_PRESET + i, 0, 1, 0);
+			pq->mymodule = this;
 			pq->id = i;
 			BASE::presetButton[i].param = &Module::params[PARAM_PRESET + i];
 
@@ -662,7 +661,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 	}
 
 	bool isBoxActive() {
-		return boxDraw && !BASE::bypass;
+		return boxDraw && !BASE::isBypassed();
 	}
 
 	json_t* dataToJson() override {
@@ -833,7 +832,7 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 			// NB: this should be considered unstable API
 			std::list<Widget*>::iterator it;
 			for (it = APP->scene->rack->children.begin(); it != APP->scene->rack->children.end(); ++it){
-				if (*it == APP->scene->rack->cableContainer) break;
+				if (*it == APP->scene->rack->getCableContainer()) break;
 			}
 			if (it != APP->scene->rack->children.end()) {
 				APP->scene->rack->children.splice(APP->scene->rack->children.end(), APP->scene->rack->children, it);
@@ -899,7 +898,7 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 
 	void enableLearn() {
 		learn ^= true;
-		APP->event->setSelected(this);
+		APP->event->setSelectedWidget(this);
 		GLFWcursor* cursor = NULL;
 		if (learn) {
 			cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);

@@ -19,11 +19,11 @@ enum class SEQ_UI_STATE {
 
 template< typename MODULE >
 struct SeqStepParamQuantity : ParamQuantity {
-	MODULE* module;
+	MODULE* mymodule;
 	int i;
 	float getDisplayValue() override {
-		if (module->seq.stepCvMode == SEQ_CV_MODE::ATTENUATE && module->inputs[module->INPUT_STEP + i].isConnected()) {
-			switch (module->seq.outCvMode) {
+		if (mymodule->seq.stepCvMode == SEQ_CV_MODE::ATTENUATE && mymodule->inputs[mymodule->INPUT_STEP + i].isConnected()) {
+			switch (mymodule->seq.outCvMode) {
 				case OUT_CV_MODE::BI_10V:
 				case OUT_CV_MODE::BI_5V:
 				case OUT_CV_MODE::BI_1V: return getSmoothValue() * 2.f - 1.f;
@@ -36,7 +36,7 @@ struct SeqStepParamQuantity : ParamQuantity {
 			}
 		}
 		else {
-			switch (module->seq.outCvMode) {
+			switch (mymodule->seq.outCvMode) {
 				case OUT_CV_MODE::BI_10V: return getSmoothValue() * 20.f - 10.f;
 				case OUT_CV_MODE::BI_5V: return getSmoothValue() * 10.f - 5.f;
 				case OUT_CV_MODE::BI_1V: return getSmoothValue() * 2.f - 1.f;
@@ -50,7 +50,7 @@ struct SeqStepParamQuantity : ParamQuantity {
 		}
 	}
 	void setDisplayValue(float displayValue) override {
-		switch (module->seq.outCvMode) {
+		switch (mymodule->seq.outCvMode) {
 			case OUT_CV_MODE::BI_10V: setValue((displayValue + 10.f) / 20.f); break;
 			case OUT_CV_MODE::BI_5V: setValue((displayValue + 5.f) / 10.f); break;
 			case OUT_CV_MODE::BI_1V: setValue((displayValue + 1.f) / 2.f); break;
@@ -62,34 +62,34 @@ struct SeqStepParamQuantity : ParamQuantity {
 		}
 	}
 	std::string getUnit() override {
-		return module->inputs[module->INPUT_STEP + i].isConnected() && module->seq.stepCvMode == SEQ_CV_MODE::ATTENUATE ? "x attenuate" : "V";
+		return mymodule->inputs[mymodule->INPUT_STEP + i].isConnected() && mymodule->seq.stepCvMode == SEQ_CV_MODE::ATTENUATE ? "x attenuate" : "V";
 	}
 }; // SeqStepParamQuantity
 
 template< typename MODULE, int STEPS >
 struct SeqStepButtonParamQuantity : ParamQuantity {
-	MODULE* module;
+	MODULE* mymodule;
 	int i;
 	std::string getDisplayValueString() override {
 		std::string s;
-		switch (module->seq.stepState) {
+		switch (mymodule->seq.stepState) {
 			default:
 			case SEQ_UI_STATE::DEFAULT:
 				return string::f("Step %i: %s\nAuxiliary voltage: %4.3fV\nProbability: %4.3f\nRatchets: %i\nSlew: %4.3f",
-					i + 1, module->seq.stepGet(i)->disabled ? "Off" : "On", module->seq.stepGet(i)->auxiliary, module->seq.stepGet(i)->probability, module->seq.stepGet(i)->ratchets, module->seq.stepGet(i)->slew);
+					i + 1, mymodule->seq.stepGet(i)->disabled ? "Off" : "On", mymodule->seq.stepGet(i)->auxiliary, mymodule->seq.stepGet(i)->probability, mymodule->seq.stepGet(i)->ratchets, mymodule->seq.stepGet(i)->slew);
 			case SEQ_UI_STATE::AUXILIARY:
 				return string::f("Step %i auxiliary voltage: %4.3fV\nShort press: select step %i\nLong press: set auxiliary voltage %4.3fV",
-					i + 1, module->seq.stepGet(i)->auxiliary, i + 1, float(i) / (STEPS - 1));
+					i + 1, mymodule->seq.stepGet(i)->auxiliary, i + 1, float(i) / (STEPS - 1));
 			case SEQ_UI_STATE::PROBABILITY:
 				return string::f("Step %i probability: %4.3f\nShort press: select step %i\nLong press: set probability value %4.3f",
-					i + 1, module->seq.stepGet(i)->probability, i + 1, float(i) / (STEPS - 1));
+					i + 1, mymodule->seq.stepGet(i)->probability, i + 1, float(i) / (STEPS - 1));
 			case SEQ_UI_STATE::RATCHETS:
 				s = string::f("\nLong press: set ratchets %i", i + 1);
 				return string::f("Step %i ratchets: %i\nShort press: select step %i",
-					i + 1, module->seq.stepGet(i)->ratchets, i + 1) + (i < 8 ? s : "");
+					i + 1, mymodule->seq.stepGet(i)->ratchets, i + 1) + (i < 8 ? s : "");
 			case SEQ_UI_STATE::SLEW:
 				return string::f("Step %i slew: %4.3f\nShort press: select step %i\nLong press: set slew value %4.3f",
-					i + 1, module->seq.stepGet(i)->slew, i + 1, float(i) / (STEPS - 1));
+					i + 1, mymodule->seq.stepGet(i)->slew, i + 1, float(i) / (STEPS - 1));
 		}
 		return "";
 	}
@@ -100,9 +100,9 @@ struct SeqStepButtonParamQuantity : ParamQuantity {
 
 template< typename MODULE >
 struct SeqStepModeParamQuantity : ParamQuantity {
-	MODULE* module;
+	MODULE* mymodule;
 	std::string getDisplayValueString() override {
-		switch (module->seq.stepState) {
+		switch (mymodule->seq.stepState) {
 			default:
 			case SEQ_UI_STATE::DEFAULT: return "Edit step on/off";
 			case SEQ_UI_STATE::AUXILIARY: return "Edit step auxiliary sequence";
@@ -116,27 +116,27 @@ struct SeqStepModeParamQuantity : ParamQuantity {
 
 template< typename MODULE >
 struct SeqFlowerKnobParamQuantity : ParamQuantity {
-	MODULE* module;
+	MODULE* mymodule;
 	std::string getDisplayValueString() override {
-		int i = module->seq.stepEditSelected;
-		switch (module->seq.stepState) {
+		int i = mymodule->seq.stepEditSelected;
+		switch (mymodule->seq.stepState) {
 			default:
 			case SEQ_UI_STATE::DEFAULT:
 				return "FLOWER control (use EDIT-button)";
 			case SEQ_UI_STATE::AUXILIARY:
-				return string::f("%4.3fV", module->seq.stepGet(i)->auxiliary);
+				return string::f("%4.3fV", mymodule->seq.stepGet(i)->auxiliary);
 			case SEQ_UI_STATE::PROBABILITY:
-				return string::f("%4.3f", module->seq.stepGet(i)->probability);
+				return string::f("%4.3f", mymodule->seq.stepGet(i)->probability);
 			case SEQ_UI_STATE::RATCHETS:
-				return string::f("%i", module->seq.stepGet(i)->ratchets);
+				return string::f("%i", mymodule->seq.stepGet(i)->ratchets);
 			case SEQ_UI_STATE::SLEW:
-				return string::f("%4.3f", module->seq.stepGet(i)->slew);
+				return string::f("%4.3f", mymodule->seq.stepGet(i)->slew);
 		}
 		return "";
 	}
 	std::string getLabel() override {
-		int i = module->seq.stepEditSelected;
-		switch (module->seq.stepState) {
+		int i = mymodule->seq.stepEditSelected;
+		switch (mymodule->seq.stepState) {
 			default:
 			case SEQ_UI_STATE::DEFAULT:
 				return "";

@@ -78,7 +78,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 			for (int id : toBeRemoved) {
 				ModuleWidget* mw = APP->scene->rack->getModule(id);
 
-				for (PortWidget* output : mw->outputs) {
+				for (PortWidget* output : mw->getOutputs()) {
 					for (CableWidget* cw : APP->scene->rack->getCablesOnPort(output)) {
 						if (!cw->isComplete())
 							continue;
@@ -92,7 +92,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 					}
 				}
 
-				for (PortWidget* input : mw->inputs) {
+				for (PortWidget* input : mw->getInputs()) {
 					for (CableWidget* cw : APP->scene->rack->getCablesOnPort(input)) {
 						if (!cw->isComplete())
 							continue;
@@ -137,7 +137,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		std::map<int, math::Vec> moduleMovePositions;
 
 		// NB: unstable API
-		for (widget::Widget* w : APP->scene->rack->moduleContainer->children) {
+		for (widget::Widget* w : APP->scene->rack->getModuleContainer()->children) {
 			ModuleWidget* mw = dynamic_cast<ModuleWidget*>(w);
 			assert(mw);
 			moduleMovePositions[mw->module->id] = mw->box.pos;
@@ -167,7 +167,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		}
 
 		// NB: unstable API
-		for (widget::Widget* w : APP->scene->rack->moduleContainer->children) {
+		for (widget::Widget* w : APP->scene->rack->getModuleContainer()->children) {
 			ModuleWidget* mw = dynamic_cast<ModuleWidget*>(w);
 			assert(mw);
 			// It is possible to add modules to the rack while dragging, so ignore modules that don't exist.
@@ -215,8 +215,8 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 
 		for (StripBayBase* sc : toDo) {
 			ModuleWidget* mw = APP->scene->rack->getModule(sc->id);
-			for (PortWidget* in : mw->inputs) {
-				std::list<CableWidget*> cs = APP->scene->rack->getCablesOnPort(in);
+			for (PortWidget* in : mw->getInputs()) {
+				std::vector<CableWidget*> cs = APP->scene->rack->getCablesOnPort(in);
 				CableWidget* c = cs.front();
 				if (!c) continue;
 				auto it = moduleIds.find(c->outputPort->module->id);
@@ -225,8 +225,8 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 					conn.push_back(std::make_tuple(sc->getConnId(), c->inputPort->portId, c->outputPort, c->color));
 				}
 			}
-			for (PortWidget* out : mw->outputs) {
-				std::list<CableWidget*> cs = APP->scene->rack->getCablesOnPort(out);
+			for (PortWidget* out : mw->getOutputs()) {
+				std::vector<CableWidget*> cs = APP->scene->rack->getCablesOnPort(out);
 				for (CableWidget* c : cs) {
 					auto it = moduleIds.find(c->inputPort->module->id);
 					// Other end is outside of this strip
@@ -273,31 +273,39 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 			if (it == toDo.end()) continue;
 
 			ModuleWidget* mw = APP->scene->rack->getModule((*it).second->id);
-			PortWidget* pw2 = pw1->type == PortWidget::Type::INPUT ? mw->getOutput(portId) : mw->getInput(portId);
+			PortWidget* pw2 = pw1->type == engine::Port::INPUT ? mw->getOutput(portId) : mw->getInput(portId);
 			assert(pw2);
 
+			engine::Cable* c = new engine::Cable;
+			if (pw1->type == engine::Port::INPUT) {
+				c->inputModule = pw1->module;
+				c->inputId = pw1->portId;
+				//cw->setInput(pw1);
+				c->outputModule = pw2->module;
+				c->outputId = pw2->portId;
+				//cw->setOutput(pw2);
+			}
+			else {
+				c->outputModule = pw1->module;
+				c->outputId = pw1->portId;
+				//cw->setOutput(pw1);
+				if (APP->scene->rack->getCablesOnPort(pw2).size() == 0) {
+					c->inputModule = pw2->module;
+					c->inputId = pw2->portId;
+					//cw->setInput(pw2);
+				}
+			}
+			APP->engine->addCable(c);
+
 			CableWidget* cw = new CableWidget;
+			cw->setCable(c);
 			cw->color = color;
+			APP->scene->rack->addCable(cw);
 
-			if (pw1->type == PortWidget::Type::INPUT) {
-				cw->setInput(pw1);
-				cw->setOutput(pw2);
-			}
-			else {
-				cw->setOutput(pw1);
-				if (APP->scene->rack->getCablesOnPort(pw2).size() == 0) cw->setInput(pw2);
-			}
-			if (cw->isComplete()) {
-				APP->scene->rack->addCable(cw);
-
-				// history::CableAdd
-				history::CableAdd* h = new history::CableAdd;
-				h->setCable(cw);
-				undoActions->push_back(h);
-			}
-			else {
-				delete cw;
-			}
+			// history::CableAdd
+			history::CableAdd* h = new history::CableAdd;
+			h->setCable(cw);
+			undoActions->push_back(h);
 		}
 
 		return undoActions;
@@ -324,11 +332,14 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 
 		// Get Model
 		plugin::Model* model = plugin::getModel(pluginSlug, modelSlug);
-		if (!model)
-			return NULL;
+		if (!model) return NULL;
+
+		// Create Module
+		engine::Module* addedModule = model->createModule();
+		APP->engine->addModule(addedModule);
 
 		// Create ModuleWidget
-		ModuleWidget* moduleWidget = model->createModuleWidget();
+		ModuleWidget* moduleWidget = model->createModuleWidget(addedModule);
 		assert(moduleWidget);
 		return moduleWidget;
 	}
@@ -548,30 +559,26 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 				// In case one of the modules could not be loaded
 				if (!outputModule || !inputModule) continue;
 
+				engine::Cable* c = new engine::Cable;
+				c->outputModule = outputModule->module;
+				c->outputId = outputId;
+				//cw->setOutput(port);
+				c->inputModule = inputModule->module;
+				c->inputId = inputId;
+				//cw->setInput(port);
+				APP->engine->addCable(c);
+
 				CableWidget* cw = new CableWidget;
+				cw->setCable(c);
 				if (colorStr) {
 					cw->color = color::fromHexString(colorStr);
 				}
-				for (PortWidget* port : outputModule->outputs) {
-					if (port->portId == outputId) {
-						cw->setOutput(port);
-						break;
-					}
-				}
-				for (PortWidget* port : inputModule->inputs) {
-					if (port->portId == inputId) {
-						cw->setInput(port);
-						break;
-					}
-				}
-				if (cw->isComplete()) {
-					APP->scene->rack->addCable(cw);
+				APP->scene->rack->addCable(cw);
 
-					// history::CableAdd
-					history::CableAdd* h = new history::CableAdd;
-					h->setCable(cw);
-					undoActions->push_back(h);
-				}
+				// history::CableAdd
+				history::CableAdd* h = new history::CableAdd;
+				h->setCable(cw);
+				undoActions->push_back(h);
 			}
 		}
 
@@ -620,7 +627,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		for (auto i = modules.begin(); i != modules.end(); ++i) {
 			ModuleWidget* outputModule = *i;
 			// It is enough to check the outputs, as inputs don't matter when the other end is outside of the group
-			for (PortWidget* output : outputModule->outputs) {
+			for (PortWidget* output : outputModule->getOutputs()) {
 				for (CableWidget* cw : APP->scene->rack->getCablesOnPort(output)) {
 					if (!cw->isComplete())
 						continue;
@@ -650,7 +657,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		json_object_set_new(rootJ, "leftWidth", json_real(leftWidth));
 		json_object_set_new(rootJ, "cables", cablesJ);
 
-		json_t* versionJ = json_string(app::APP_VERSION.c_str());
+		json_t* versionJ = json_string(rack::APP_VERSION.c_str());
 		json_object_set_new(rootJ, "version", versionJ);
 	}
 
@@ -722,7 +729,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		});
 
 		std::string pathStr = path;
-		std::string extension = string::filenameExtension(string::filename(pathStr));
+		std::string extension = system::getExtension(system::getFilename(pathStr));
 		if (extension.empty()) {
 			pathStr += ".vcvss";
 		}
@@ -964,13 +971,13 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 
 			for (const std::string& presetPath : presetPaths) {
 				if (system::isDirectory(presetPath)) {
-					menu->addChild(construct<PresetSubItem>(&MenuItem::text, string::filename(presetPath), &PresetSubItem::dir, presetPath, &PresetSubItem::module, module, &PresetSubItem::mw, mw));
+					menu->addChild(construct<PresetSubItem>(&MenuItem::text, system::getFilename(presetPath), &PresetSubItem::dir, presetPath, &PresetSubItem::module, module, &PresetSubItem::mw, mw));
 				}
 			}
 			for (const std::string& presetPath : presetPaths) {
 				if (system::isFile(presetPath)) {
 					if (!endsWith(presetPath, ".vcvss")) continue;
-					std::string presetName = string::filenameBase(string::filename(presetPath));
+					std::string presetName = system::getStem(system::getFilename(presetPath));
 					menu->addChild(construct<PresetItem>(&MenuItem::text, presetName, &PresetItem::presetPath, presetPath, &PresetItem::module, module, &PresetItem::mw, mw));
 				}
 			}
@@ -982,7 +989,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 			std::string path;
 			void onAction(const event::Action& e) override {
 				std::thread t([ = ] {
-					system::openFolder(path);
+					system::openDirectory(path);
 				});
 				t.detach();
 			}
@@ -1009,14 +1016,11 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		Menu* createChildMenu() override {
 			Menu* menu = new Menu;
 
-			std::string presetDir = asset::plugin(mw->model->plugin, "presets/" + mw->model->slug);
+			std::string presetDir = mw->model->getUserPresetDirectory();
 			menu->addChild(construct<PresetFolderItem>(&MenuItem::text, "Open folder", &PresetFolderItem::path, presetDir));
 			menu->addChild(construct<PresetLoadReplaceItem>(&MenuItem::text, "Load and replace", &PresetLoadReplaceItem::module, module));
-
-			if (!mw->model->presetPaths.empty()) {
-				menu->addChild(new MenuSeparator);
-				PresetSubItem::populatePresets(module, mw, menu, presetDir);
-			}
+			menu->addChild(new MenuSeparator);
+			PresetSubItem::populatePresets(module, mw, menu, presetDir);
 			return menu;
 		}
 	};

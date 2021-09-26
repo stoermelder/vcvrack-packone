@@ -68,11 +68,11 @@ struct FlowerSeqModule : Module {
 	typedef FlowerSeqModule<STEPS, PATTERNS, PHRASES> MODULE;
 
 	struct PatternParamQuantity : ParamQuantity {
-		MODULE* module;
+		MODULE* mymodule;
 		int i;
 		std::string getDisplayValueString() override {
 			std::string s = "";
-			switch (module->phrases[module->phraseIndex].patterns[i].type) {
+			switch (mymodule->phrases[mymodule->phraseIndex].patterns[i].type) {
 				case PATTERN_TYPE::SEQ_FWD: s = "Forward"; break;
 				case PATTERN_TYPE::SEQ_REV: s = "Reverse"; break;
 				case PATTERN_TYPE::SEQ_ADD_1V: s = "Add 1V"; break;
@@ -88,8 +88,8 @@ struct FlowerSeqModule : Module {
 				case PATTERN_TYPE::AUX_RAND: s = "Random auxiliary sequence"; break;
 				default: break;
 			}
-			if (module->phrases[module->phraseIndex].patterns[i].mult > 1) {
-				s += string::f(" (%i times)", module->phrases[module->phraseIndex].patterns[i].mult);
+			if (mymodule->phrases[mymodule->phraseIndex].patterns[i].mult > 1) {
+				s += string::f(" (%i times)", mymodule->phrases[mymodule->phraseIndex].patterns[i].mult);
 			}
 			s += "\nShort press: next pattern\nLong press: toggle number of repeats 1 -> 2 -> 3 -> 4";
 			return s;
@@ -210,9 +210,8 @@ struct FlowerSeqModule : Module {
 		}
 
 		for (int i = 0; i < PATTERNS; i++) {
-			configParam<PatternParamQuantity>(PARAM_PATTERN_SELECT + i, 0.f, 1.f, 0.f, string::f("Pattern %i", i + 1));
-			PatternParamQuantity* pq = dynamic_cast<PatternParamQuantity*>(paramQuantities[PARAM_PATTERN_SELECT + i]);
-			pq->module = this;
+			PatternParamQuantity* pq = configParam<PatternParamQuantity>(PARAM_PATTERN_SELECT + i, 0.f, 1.f, 0.f, string::f("Pattern %i", i + 1));
+			pq->mymodule = this;
 			pq->i = i;
 			patternButtons[i].param = &params[PARAM_PATTERN_SELECT + i];
 		}

@@ -192,7 +192,7 @@ struct PatternList {
 
 struct FlowerLight : RedGreenBlueLight {
 	FlowerLight() {
-		this->box.size = app::mm2px(math::Vec(4.6f, 4.6f));
+		this->box.size = mm2px(math::Vec(4.6f, 4.6f));
 	}
 	void drawHalo(const DrawArgs& args) override {
 		float radius = std::min(box.size.x, box.size.y) / 2.0;

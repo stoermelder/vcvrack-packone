@@ -33,7 +33,7 @@ enum class KEY_MODE {
 	S_CABLE_MULTIDRAG = 25,
 	S_FRAMERATE = 30,
 	S_BUSBOARD = 31,
-	S_ENGINE_PAUSE = 32,
+	S_ENGINE_PAUSE = 32, // not supported in v2
 	S_MODULE_LOCK = 33,
 	S_MODULE_ADD = 34,
 	S_MODULE_DISPATCH = 35,
@@ -221,7 +221,7 @@ struct CmdParamRand : CmdBase {
 		if (!w) return;
 		ParamWidget* p = dynamic_cast<ParamWidget*>(w);
 		if (!p) return;
-		ParamQuantity* q = p->paramQuantity;
+		ParamQuantity* q = p->getParamQuantity();
 		if (!q) return;
 		q->setScaledValue(random::uniform());
 	}
@@ -237,7 +237,7 @@ struct CmdParamCopyPaste : CmdBase {
 		if (!w) return true;
 		ParamWidget* p = dynamic_cast<ParamWidget*>(w);
 		if (!p) return true;
-		ParamQuantity* q = p->paramQuantity;
+		ParamQuantity* q = p->getParamQuantity();
 		if (!q) return true;
 
 		if (keyMode == KEY_MODE::S_PARAM_COPY) {
@@ -289,7 +289,7 @@ struct CmdZoomModuleSmooth : CmdBase {
 		if (!mw) mw = w->getAncestorOfType<ModuleWidget>();
 		if (!mw) return;
 		Vec p = mw->box.size.mult(Vec(1.f - scale, 1.f - scale));
-		viewportCenterSmooth.trigger(mw->box.grow(p), APP->window->getLastFrameRate(), 0.6f);
+		viewportCenterSmooth.trigger(mw->box.grow(p), 1.f / APP->window->getLastFrameDuration(), 0.6f);
 	}
 	void step() override {
 		viewportCenterSmooth.process();
@@ -321,7 +321,7 @@ struct CmdZoomModuleCustomSmooth : CmdBase {
 		ModuleWidget* mw = dynamic_cast<ModuleWidget*>(w);
 		if (!mw) mw = w->getAncestorOfType<ModuleWidget>();
 		if (!mw) return;
-		viewportCenterSmooth.trigger(mw, zoom, APP->window->getLastFrameRate(), 0.6f);
+		viewportCenterSmooth.trigger(mw, zoom, 1.f / APP->window->getLastFrameDuration(), 0.6f);
 	}
 	void step() override {
 		viewportCenterSmooth.process();
@@ -334,7 +334,7 @@ struct CmdZoomOut : CmdBase {
 		zoomOut();
 	}
 	static void zoomOut() {
-		math::Rect moduleBox = APP->scene->rack->moduleContainer->getChildrenBoundingBox();
+		math::Rect moduleBox = APP->scene->rack->getModuleContainer()->getChildrenBoundingBox();
 		if (!moduleBox.size.isFinite()) return;
 		StoermelderPackOne::Rack::ViewportCenter{moduleBox};
 	}
@@ -344,9 +344,9 @@ struct CmdZoomOut : CmdBase {
 struct CmdZoomOutSmooth : CmdBase {
 	StoermelderPackOne::Rack::ViewportCenterSmooth viewportCenterSmooth;
 	void initialCmd(KEY_MODE keyMode) override {
-		math::Rect moduleBox = APP->scene->rack->moduleContainer->getChildrenBoundingBox();
+		math::Rect moduleBox = APP->scene->rack->getModuleContainer()->getChildrenBoundingBox();
 		if (!moduleBox.size.isFinite()) return;
-		viewportCenterSmooth.trigger(moduleBox, APP->window->getLastFrameRate(), 0.6f);
+		viewportCenterSmooth.trigger(moduleBox, 1.f / APP->window->getLastFrameDuration(), 0.6f);
 	}
 	void step() override {
 		viewportCenterSmooth.process();
@@ -364,9 +364,9 @@ struct CmdZoomToggle : CmdBase {
 struct CmdZoomToggleSmooth : CmdZoomModuleSmooth {
 	void initialCmd(KEY_MODE keyMode) override {
 		if (settings::zoom > 1.f) {
-			math::Rect moduleBox = APP->scene->rack->moduleContainer->getChildrenBoundingBox();
+			math::Rect moduleBox = APP->scene->rack->getModuleContainer()->getChildrenBoundingBox();
 			if (!moduleBox.size.isFinite()) return;
-			viewportCenterSmooth.trigger(moduleBox, APP->window->getLastFrameRate(), 0.6f);
+			viewportCenterSmooth.trigger(moduleBox, 1.f / APP->window->getLastFrameDuration(), 0.6f);
 		}
 		else {
 			CmdZoomModuleSmooth::initialCmd(keyMode);
@@ -391,11 +391,11 @@ struct CmdCableOpacity : CmdBase {
 
 struct CmdCableVisibility : CmdBase {
 	void initialCmd(KEY_MODE keyMode) override {
-		if (APP->scene->rack->cableContainer->visible) {
-			APP->scene->rack->cableContainer->hide();
+		if (APP->scene->rack->getCableContainer()->visible) {
+			APP->scene->rack->getCableContainer()->hide();
 		}
 		else {
-			APP->scene->rack->cableContainer->show();
+			APP->scene->rack->getCableContainer()->show();
 		}
 	}
 }; // struct CmdCableVisibility
@@ -438,7 +438,7 @@ struct CmdCableRotate : CmdBase {
 		PortWidget* pw = dynamic_cast<PortWidget*>(w);
 		if (!pw) return;
 
-		Widget* cc = APP->scene->rack->cableContainer;
+		Widget* cc = APP->scene->rack->getCableContainer();
 		std::list<Widget*>::iterator it;
 		for (it = cc->children.begin(); it != cc->children.end(); it++) {
 			CableWidget* cw = dynamic_cast<CableWidget*>(*it);
@@ -455,7 +455,7 @@ struct CmdCableRotate : CmdBase {
 	}
 }; // struct CmdCableRotate
 
-
+/*
 struct CmdCableMultiDrag : CmdBase {
 	PortWidget* pwSource = NULL;
 	int cableId = -1;
@@ -478,7 +478,7 @@ struct CmdCableMultiDrag : CmdBase {
 		PortWidget* pwTarget = cw1->outputPort;
 		std::list<CableWidget*> todo;
 
-		Widget* cc = APP->scene->rack->cableContainer;
+		Widget* cc = APP->scene->rack->getCableContainer();
 		std::list<Widget*>::iterator it;
 		for (it = cc->children.begin(); it != cc->children.end(); it++) {
 			CableWidget* cw = dynamic_cast<CableWidget*>(*it);
@@ -514,7 +514,7 @@ struct CmdCableMultiDrag : CmdBase {
 	}
 
 	static CableWidget* findCableWidget(int cableId) {
-		for (auto it = APP->scene->rack->cableContainer->children.begin(); it != APP->scene->rack->cableContainer->children.end(); it++) {
+		for (auto it = APP->scene->rack->getCableContainer()->children.begin(); it != APP->scene->rack->cableContainer->children.end(); it++) {
 			CableWidget* cw = dynamic_cast<CableWidget*>(*it);
 			if (cw->cable->id == cableId) return cw;
 		}
@@ -549,8 +549,9 @@ struct CmdCableMultiDrag : CmdBase {
 		}
 	}; // struct CableOutputChange
 }; // struct CmdCableMultiDrag
+*/
 
-
+/*
 struct CmdFramerate : CmdBase {
 	void initialCmd(KEY_MODE keyMode) override {
 		if (APP->scene->frameRateWidget->visible) {
@@ -561,13 +562,7 @@ struct CmdFramerate : CmdBase {
 		}
 	}
 }; // struct CmdFramerate
-
-
-struct CmdEnginePause : CmdBase {
-	void initialCmd(KEY_MODE keyMode) override {
-		APP->engine->setPaused(!APP->engine->isPaused());
-	}
-}; // struct CmdEnginePause
+*/
 
 
 struct CmdModuleLock : CmdBase {
@@ -601,8 +596,12 @@ struct CmdModuleAdd : CmdBase {
 		plugin::Model* model = plugin::getModel(pluginSlug, modelSlug);
 		if (!model) return;
 
+		// Create Module
+		engine::Module* addedModule = model->createModule();
+		APP->engine->addModule(addedModule);
+
 		// Create ModuleWidget
-		ModuleWidget* moduleWidget = model->createModuleWidget();
+		ModuleWidget* moduleWidget = model->createModuleWidget(addedModule);
 		assert(moduleWidget);
 
 		moduleWidget->module->id = -1;
@@ -651,7 +650,7 @@ struct CmdModuleDispatch : CmdBase {
 		int key = json_integer_value(json_object_get(oJ, "key"));
 		int mods = json_integer_value(json_object_get(oJ, "mods"));
 
-		event::Context c;
+		EventContext c;
 		event::HoverKey e;
 		e.context = &c;
 		e.key = key;
@@ -682,7 +681,7 @@ struct CmdRackMove : CmdBase {
 	}
 };
 
-
+/*
 struct CmdBusboard {
 	struct ModifiedRackRail : RackRail {
 		bool drawRails = true;
@@ -761,7 +760,7 @@ struct CmdBusboard {
 		APP->scene->rack->railFb->dirty = true;
 	}
 }; // struct CmdBusboard
-
+*/
 
 // -- GUI --
 
@@ -775,11 +774,11 @@ struct KeyContainer : Widget {
 	ModuleSelectProcessor moduleSelectProcessor;
 
 	CmdBase* previousCmd = NULL;
-	CmdBusboard* cmdBusboard = NULL;
+	//CmdBusboard* cmdBusboard = NULL;
 
 	~KeyContainer() {
 		if (previousCmd) delete previousCmd;
-		if (cmdBusboard) delete cmdBusboard;
+		//if (cmdBusboard) delete cmdBusboard;
 	}
 
 	template <class T, typename... Args>
@@ -861,11 +860,11 @@ struct KeyContainer : Widget {
 				case KEY_MODE::S_CABLE_VISIBILITY:
 					processCmd<CmdCableVisibility>(); break;
 				case KEY_MODE::S_CABLE_MULTIDRAG:
-					processCmd<CmdCableMultiDrag>(); break;
+					//processCmd<CmdCableMultiDrag>(); 
+					break;
 				case KEY_MODE::S_FRAMERATE:
-					processCmd<CmdFramerate>(); break;
-				case KEY_MODE::S_ENGINE_PAUSE:
-					processCmd<CmdEnginePause>(); break;
+					//processCmd<CmdFramerate>();
+					break;
 				case KEY_MODE::S_MODULE_LOCK:
 					processCmd<CmdModuleLock>(); break;
 				case KEY_MODE::S_MODULE_ADD:
@@ -881,8 +880,8 @@ struct KeyContainer : Widget {
 				case KEY_MODE::S_SCROLL_DOWN:
 					processCmd<CmdRackMove>(&CmdRackMove::x, 0.f, &CmdRackMove::y, 1.f); break;
 				case KEY_MODE::S_BUSBOARD:
-					if (!cmdBusboard) cmdBusboard = new CmdBusboard;
-					cmdBusboard->process();
+					//if (!cmdBusboard) cmdBusboard = new CmdBusboard;
+					//cmdBusboard->process();
 					break;
 				default:
 					break;
@@ -919,7 +918,7 @@ struct KeyContainer : Widget {
 	}
 
 	void onButton(const event::Button& e) override {
-		if (module && !module->bypass && (e.button > 2 || (e.mods & (GLFW_MOD_ALT | GLFW_MOD_CONTROL | GLFW_MOD_SHIFT))) != 0) {
+		if (module && !module->isBypassed() && (e.button > 2 || (e.mods & (GLFW_MOD_ALT | GLFW_MOD_CONTROL | GLFW_MOD_SHIFT))) != 0) {
 			int e_mods = e.mods & (GLFW_MOD_ALT | GLFW_MOD_CONTROL | GLFW_MOD_SHIFT);
 
 			if (e.action == GLFW_PRESS) {
@@ -962,7 +961,7 @@ struct KeyContainer : Widget {
 	}
 
 	void onHoverKey(const event::HoverKey& e) override {
-		if (module && !module->bypass) {
+		if (module && !module->isBypassed()) {
 			int e_mods = e.mods & (GLFW_MOD_ALT | GLFW_MOD_CONTROL | GLFW_MOD_SHIFT);
 			int e_key = keyFix(e.key);
 
@@ -1594,7 +1593,7 @@ struct KeyDisplay : StoermelderLedDisplay {
 			}
 		};
 
-		if (settings::paramTooltip && !tooltip && module->keys[idx].isMapped()) {
+		if (settings::tooltips && !tooltip && module->keys[idx].isMapped()) {
 			KeyDisplayTooltip* keyDisplayTooltip = new KeyDisplayTooltip;
 			keyDisplayTooltip->module = module;
 			keyDisplayTooltip->keyDisplay = this;

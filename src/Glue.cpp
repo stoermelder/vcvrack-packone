@@ -396,7 +396,7 @@ struct LabelWidget : widget::TransparentWidget {
 
 	void onDragStart(const event::DragStart& e) override {
 		if (editMode && e.button == GLFW_MOUSE_BUTTON_LEFT) {
-			dragPos = APP->scene->rack->mousePos.minus(parent->box.pos);
+			dragPos = APP->scene->rack->getMousePos().minus(parent->box.pos);
 			dragPos = dragPos.minus(Vec(label->x, label->y));
 			e.consume(this);
 		}
@@ -405,7 +405,7 @@ struct LabelWidget : widget::TransparentWidget {
 
 	void onDragMove(const event::DragMove& e) override {
 		if (editMode && e.button == GLFW_MOUSE_BUTTON_LEFT) {
-			math::Vec npos = APP->scene->rack->mousePos.minus(parent->box.pos);
+			math::Vec npos = APP->scene->rack->getMousePos().minus(parent->box.pos);
 			math::Vec pos = npos.minus(dragPos);
 			label->x = pos.x;
 			label->y = pos.y;
@@ -433,7 +433,7 @@ struct LabelWidget : widget::TransparentWidget {
 			}
 			void step() override {
 				// Keep selected
-				if (textSelected) APP->event->setSelected(this);
+				if (textSelected) APP->event->setSelectedWidget(this);
 				TextField::step();
 				l->text = text;
 			}
@@ -918,7 +918,7 @@ struct LabelContainer : widget::Widget {
 		lw->label->moduleId = m->id;
 
 		// Move label to mouse click position
-		Vec pos = APP->scene->rack->mousePos;
+		Vec pos = APP->scene->rack->getMousePos();
 		pos = pos.minus(mw->box.pos);
 		lw->label->x = pos.x - lw->label->width / 2.f;
 		lw->label->y = pos.y - lw->label->size / 2.f;
@@ -1007,7 +1007,7 @@ struct OpacityMinusButton : TL1105 {
 struct HideSwitch : CKSS {
 	LabelContainer* labelContainer = NULL;
 	void step() override {
-		if (labelContainer) labelContainer->toggleHideMode(paramQuantity->getValue() > 0.f);
+		if (labelContainer) labelContainer->toggleHideMode(getParamQuantity()->getValue() > 0.f);
 		CKSS::step();
 	}
 };
@@ -1041,7 +1041,7 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 			// NB: this should be considered unstable API
 			std::list<Widget*>::iterator it;
 			for (it = APP->scene->rack->children.begin(); it != APP->scene->rack->children.end(); ++it){
-				if (*it == APP->scene->rack->cableContainer) break;
+				if (*it == APP->scene->rack->getCableContainer()) break;
 			}
 			if (it != APP->scene->rack->children.end()) {
 				APP->scene->rack->children.splice(APP->scene->rack->children.end(), APP->scene->rack->children, it);
@@ -1070,17 +1070,6 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 		}
 	}
 
-	void fromJson(json_t* rootJ) override {
-		// Handle data-storage from previous builds
-		json_t* dataJ = json_object_get(rootJ, "data");
-		json_t* labelsJ = json_object_get(rootJ, "labels");
-		if (dataJ && labelsJ) {
-			json_object_set(dataJ, "labels", labelsJ);
-			json_object_set(rootJ, "labels", NULL);
-		}
-		ThemedModuleWidget<GlueModule>::fromJson(rootJ);
-	}
-
 	void consolidate() {
 		struct GlueChangeAction : history::ModuleAction {
 			json_t* oldLabelJ;
@@ -1098,7 +1087,7 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 		};
 
 		std::list<ModuleWidget*> toBeRemoved;
-		for (Widget* w : APP->scene->rack->moduleContainer->children) {
+		for (Widget* w : APP->scene->rack->getModuleContainer()->children) {
 			GlueWidget* gw = dynamic_cast<GlueWidget*>(w);
 			if (!gw || gw == this) continue;
 			toBeRemoved.push_back(gw);

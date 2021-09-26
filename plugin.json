@@ -1,6 +1,6 @@
 {
 	"slug": "Stoermelder-P1",
-	"version": "1.10.0",
+	"version": "2.0.0",
 	"license": "GPL-3.0-only",
 	"author": "Benjamin Dill",
 	"name": "PackOne",
@@ -9,8 +9,8 @@
 	"pluginUrl": "https://github.com/stoermelder/vcvrack-packone",
 	"authorUrl": "https://github.com/stoermelder",
 	"sourceUrl": "https://github.com/stoermelder/vcvrack-packone.git",
-	"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/README.md",
-	"changelogUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/CHANGELOG.md",
+	"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/README.md",
+	"changelogUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/CHANGELOG.md",
 	"donateUrl": "https://paypal.me/stoermelder",
 	"modules": [
 		{
@@ -18,378 +18,378 @@
 			"name": "CV-MAP",
 			"description": "Add CV automation to 32 parameters of any module",
 			"tags": ["Utility", "Polyphonic", "Controller"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/CVMap.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/CVMap.md"
 		},
 		{
 			"slug": "CVMapCtx",
 			"name": "CTX for CV-MAP",
 			"description": "Expander for context menu mapping using CV-MAP",
 			"tags": ["Utility"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/CVMap.md#ctx-expander"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/CVMap.md#ctx-expander"
 		},
 		{
 			"slug": "CVMapMicro",
 			"name": "µMAP",
 			"description": "Add CV automation to one parameter of any module",
 			"tags": ["Utility", "Controller"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/CVMapMicro.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/CVMapMicro.md"
 		},
 		{
 			"slug": "CVPam",
 			"name": "CV-PAM",
 			"description": "Generate CV from any parameter change of any module",
 			"tags": ["Utility", "Polyphonic", "Controller"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/CVPam.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/CVPam.md"
 		},
 		{
 			"slug": "RotorA",
 			"name": "ROTOR Model A",
 			"description": "Rotates a signal across polyphonic channels",
 			"tags": ["Utility", "Polyphonic"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/RotorA.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/RotorA.md"
 		},
 		{
 			"slug": "ReMoveLite",
 			"name": "ReMOVE Lite",
 			"description": "Recorder for parameter automation",
 			"tags": ["Utility", "Recording", "Controller"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/ReMove.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/ReMove.md"
 		},
 		{
 			"slug": "Bolt",
 			"name": "BOLT",
 			"description": "Polyphonic logic boolean functions with modulation and sample & hold",
 			"tags": ["Utility", "Logic", "Polyphonic", "Sample and hold"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Bolt.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Bolt.md"
 		},
 		{
 			"slug": "Infix",
 			"name": "INFIX",
 			"description": "Insert for polyphonic cables",
 			"tags": ["Utility", "Polyphonic"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Infix.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Infix.md"
 		},
 		{
 			"slug": "InfixMicro",
 			"name": "µINFIX",
 			"description": "Insert for polyphonic cables",
 			"tags": ["Utility", "Polyphonic"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Infix.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Infix.md"
 		},
 		{
 			"slug": "Strip",
 			"name": "STRIP",
 			"description": "Manage a group of modules by using the expander-mechanism, providing load, save, copy, paste, disable, enable and randomize",
 			"tags": ["Utility", "Controller", "Random"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Strip.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Strip.md"
 		},
 		{
 			"slug": "StripBay4",
 			"name": "STRIP-BAY",
 			"description": "Utility module for STRIP keeping inputs/outputs connected",
 			"tags": ["Utility"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Strip.md#stoermelder-strip-bay"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Strip.md#stoermelder-strip-bay"
 		},
 		{
 			"slug": "StripBlock",
 			"name": "STRIP-BLOCK",
 			"description": "Utility module for blocking STRIP's expander mechanism (preview)",
 			"tags": ["Utility"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Strip.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Strip.md"
 		},
 		{
 			"slug": "EightFace",
 			"name": "8FACE",
 			"description": "Universal expander for sequencing up to eight presets of any module",
 			"tags": ["Utility", "Sequencer"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/EightFace.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/EightFace.md"
 		},
 		{
 			"slug": "EightFaceX2",
 			"name": "8FACEx2",
 			"description": "Universal expander for sequencing up to sixteen presets of any module",
 			"tags": ["Utility", "Sequencer"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/EightFace.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/EightFace.md"
 		},
 		{
 			"slug": "MidiCat",
 			"name": "MIDI-CAT",
 			"description": "Mapping module for MIDI CCs and notes to parameters of any module, similar to VCV MIDI-MAP",
 			"tags": ["Utility", "MIDI"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/MidiCat.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/MidiCat.md"
 		},
 		{
 			"slug": "MidiCatEx",
 			"name": "MEM for MIDI-CAT",
 			"description": "Memory-expander for MIDI-CAT",
 			"tags": ["Utility", "MIDI"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/MidiCat.md#mem-expander"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/MidiCat.md#mem-expander"
 		},
 		{
 			"slug": "MidiCatCtx",
 			"name": "CTX for MIDI-CAT",
 			"description": "Expander for context menu mapping using MIDI-CAT",
 			"tags": ["Utility", "MIDI"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/MidiCat.md#ctx-expander"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/MidiCat.md#ctx-expander"
 		},
 		{
 			"slug": "Sipo",
 			"name": "SIPO",
 			"description": "Serial-in parallel-out shift register with polyphonic output and CV controls for skipping and incrementing on sampled values",
 			"tags": ["Utility", "Sample and hold", "Digital", "Polyphonic"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Sipo.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Sipo.md"
 		},
 		{
 			"slug": "FourRounds",
 			"name": "4ROUNDS",
 			"description": "Randomizer for up to 16 input signals to create 15 output signals",
 			"tags": ["Utility", "Sample and hold", "Random", "Switch"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/FourRounds.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/FourRounds.md"
 		},
 		{
 			"slug": "Arena",
 			"name": "ARENA",
 			"description": "2-dimensional XY-Mixer for 8 sources with various modulation targets and fun graphical interface",
 			"tags": ["Utility", "Controller", "Mixer"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Arena.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Arena.md"
 		},
 		{
 			"slug": "Maze",
 			"name": "MAZE",
 			"description": "4 channel sequencer running on a 2-dimensional grid",
 			"tags": ["Sequencer", "Random"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Maze.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Maze.md"
 		},
 		{
 			"slug": "Hive",
 			"name": "HIVE",
 			"description": "4 channel sequencer running on a 2-dimensional hexagonal grid",
 			"tags": ["Sequencer", "Random"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Hive.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Hive.md"
 		},
 		{
 			"slug": "Intermix",
 			"name": "INTERMIX",
 			"description": "Precision adder 8x8 switch matrix with scene-support",
 			"tags": ["Mixer", "Polyphonic"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Intermix.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Intermix.md"
 		},
 		{
 			"slug": "IntermixGate",
 			"name": "INTERMIX-GATE",
 			"description": "Expander for INTERMIX outputting a gate-signal for each active row",
 			"tags": ["Expander"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Intermix.md#gate-expander"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Intermix.md#gate-expander"
 		},
 		{
 			"slug": "IntermixEnv",
 			"name": "INTERMIX-ENV",
 			"description": "Expander for INTERMIX outputting envelopes for a selected input-column",
 			"tags": ["Expander"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Intermix.md#env-expander"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Intermix.md#env-expander"
 		},
 		{
 			"slug": "IntermixFade",
 			"name": "INTERMIX-FADE",
 			"description": "Expander for INTERMIX for setting individual fade values",
 			"tags": ["Expander"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Intermix.md#fade-expander"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Intermix.md#fade-expander"
 		},
 		{
 			"slug": "Sail",
 			"name": "SAIL",
 			"description": "Control any parameter currently hovered by mouse with CV, especially useful with MIDI-CC or MIDI-STEP",
 			"tags": ["Utility"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Sail.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Sail.md"
 		},
 		{
 			"slug": "Pile",
 			"name": "PILE",
 			"description": "Translate increment triggers or decrement triggers in an absolute voltage, especially useful with MIDI-STEP, with slew support",
 			"tags": ["Utility"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Pile.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Pile.md"
 		},
 		{
 			"slug": "PilePoly",
 			"name": "POLY-PILE",
 			"description": "Translate increment triggers or decrement triggers in an absolute voltage, especially useful with MIDI-STEP, with slew support",
 			"tags": ["Utility", "Polyphonic"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Pile.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Pile.md"
 		},
 		{
 			"slug": "MidiStep",
 			"name": "MIDI-STEP",
 			"description": "Module for relative modes of endless knobs on your MIDI controller, such as Arturia Beatstep, Native Instruments Komplete Keyboards or Behringer X-TOUCH",
 			"tags": ["Utility", "MIDI", "Polyphonic"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/MidiStep.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/MidiStep.md"
 		},
 		{
 			"slug": "Mirror",
 			"name": "MIRROR",
 			"description": "Utility for synchronizing module parameters",
 			"tags": ["Utility"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Mirror.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Mirror.md"
 		},
 		{
 			"slug": "Affix",
 			"name": "AFFIX",
 			"description": "Insert for polyphonic cables for adding offsets in Volt, semitones or octaves (16 channels)",
 			"tags": ["Polyphonic", "Utility", "Attenuator"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Affix.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Affix.md"
 		},
 		{
 			"slug": "AffixMicro",
 			"name": "µAFFIX",
 			"description": "Insert for polyphonic cables for adding offsets in Volt, semitones or octaves (8 channels)",
 			"tags": ["Polyphonic", "Utility", "Attenuator"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Affix.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Affix.md"
 		},
 		{
 			"slug": "Grip",
 			"name": "GRIP",
 			"description": "Lock for module parameters",
 			"tags": ["Utility"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Grip.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Grip.md"
 		},
 		{
 			"slug": "Glue",
 			"name": "GLUE",
 			"description": "Label maker for your modules!",
 			"tags": ["Utility"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Glue.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Glue.md"
 		},
 		{
 			"slug": "Goto",
 			"name": "GOTO",
 			"description": "Utility for jumping directly to 10 locations in your patch by hotkey or using MIDI",
 			"tags": ["Utility"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Goto.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Goto.md"
 		},
 		{
 			"slug": "Stroke",
 			"name": "STROKE",
 			"description": "Utility for converting hotkeys to triggers, gates and some other special commands",
 			"tags": ["Utility", "Polyphonic"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Stroke.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Stroke.md"
 		},
 		{
 			"slug": "Spin",
 			"name": "SPIN",
 			"description": "Utility for converting mouse-wheel movement into triggers, also handles middle-click of mouse, useful for SAIL",
 			"tags": ["Utility"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Spin.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Spin.md"
 		},
 		{
 			"slug": "FlowerSeq",
 			"name": "FLOWER",
 			"description": "Pattern-based sequencer (preview)",
 			"tags": ["Sequencer"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Flower.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Flower.md"
 		},
 		{
 			"slug": "FlowerSeqEx",
 			"name": "OFFSPRING",
 			"description": "Sequencer-expander for FLOWER (preview)",
 			"tags": ["Sequencer"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Flower.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Flower.md"
 		},
 		{
 			"slug": "FlowerTrig",
 			"name": "SEEDS",
 			"description": "Sequencer-expander for FLOWER (preview)",
 			"tags": ["Sequencer"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Flower.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Flower.md"
 		},
 		{
 			"slug": "Transit",
 			"name": "TRANSIT",
 			"description": "Parameter-morpher and sequencer for up to 96 snapshots",
 			"tags": ["Utility", "Sequencer"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Transit.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Transit.md"
 		},
 		{
 			"slug": "TransitEx",
 			"name": "+T",
 			"description": "Expander for TRANSIT",
 			"tags": ["Utility"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Transit.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Transit.md"
 		},
 		{
 			"slug": "X4",
 			"name": "X4",
 			"description": "Dual multiple for parameter-mapping",
 			"tags": ["Utility"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/X4.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/X4.md"
 		},
 		{
 			"slug": "Prisma",
 			"name": "PRISMA",
 			"description": "Wave multiplier/phase shifter inspired by A-137-2 (preview)",
 			"tags": ["Waveshaper", "Distortion"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Prisma.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Prisma.md"
 		},
 		{
 			"slug": "Macro",
 			"name": "MACRO",
 			"description": "Macro-knob for controlling multiple parameters, with attenuverts and slew-limiting",
 			"tags": ["Utility"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Macro.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Macro.md"
 		},
 		{
 			"slug": "Raw",
 			"name": "RAW",
 			"description": "Digital effect based on the dynamics of bistable systems",
 			"tags": ["Distortion", "Digital"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Raw.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Raw.md"
 		},
 		{
 			"slug": "MidiMon",
 			"name": "MIDI-MON",
 			"description": "Monitor for MIDI messages",
 			"tags": ["MIDI", "Utility"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/MidiMon.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/MidiMon.md"
 		},
 		{
 			"slug": "Orbit",
 			"name": "ORBIT",
 			"description": "Polyphonic stereo field spreader",
 			"tags": ["Panning", "Effect", "Polyphonic"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Orbit.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Orbit.md"
 		},
 		{
 			"slug": "EightFaceMk2",
 			"name": "8FACE mk2",
 			"description": "Universal expander for sequencing up to eight presets of multiple modules",
 			"tags": ["Utility", "Sequencer"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/EightFaceMk2.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/EightFaceMk2.md"
 		},
 		{
 			"slug": "EightFaceMk2Ex",
 			"name": "+8",
 			"description": "Expander for 8FACE mk2",
 			"tags": ["Expander"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/EightFaceMk2.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/EightFaceMk2.md"
 		},
 		{
 			"slug": "MidiPlug",
 			"name": "MIDI-PLUG",
 			"description": "Virtual MIDI merger and splitter",
 			"tags": ["MIDI", "Utility"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/MidiPlug.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/MidiPlug.md"
 		},
 		{
 			"slug": "Dirt",
 			"name": "DIRT",
 			"description": "Crosstalk and noise for polyphonic cables (preview)",
 			"tags": ["Polyphonic"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Dirt.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Dirt.md"
 		},
 		{
 			"slug": "MidiKey",
 			"name": "MIDI-KEY",
 			"description": "Converts MIDI CC or note messages into keyboard events (preview)",
 			"tags": ["MIDI", "Utility"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/MidiKey.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/MidiKey.md"
 		},
 		{
 			"slug": "AudioInterface64",
@@ -402,14 +402,14 @@
 			"name": "MB",
 			"description": "Experimental replacement module browsers for Rack. Brings back the browser from Rack v0.6x and has a modified browser from Rack v1.x with adjustable preview size, favorites, extended filtering options and more.",
 			"tags": ["Utility"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Mb.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Mb.md"
 		},
 		{
 			"slug": "Me",
 			"name": "ME",
 			"description": "Mouse enhancements",
 			"tags": ["Utility"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Me.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Me.md"
 		}
 	]
 }

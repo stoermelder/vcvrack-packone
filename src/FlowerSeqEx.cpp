@@ -59,23 +59,19 @@ struct FlowerSeqExModule : Module {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configParam<TriggerParamQuantity>(PARAM_RAND, 0.f, 1.f, 0.f, "Randomize sequence");
 
-		configParam<SeqStepModeParamQuantity<MODULE>>(PARAM_STEPMODE, 0.f, 1.f, 0.f, "Mode");
-		auto pq1 = dynamic_cast<SeqStepModeParamQuantity<MODULE>*>(paramQuantities[PARAM_STEPMODE]);
-		pq1->module = this;
+		auto pq1 = configParam<SeqStepModeParamQuantity<MODULE>>(PARAM_STEPMODE, 0.f, 1.f, 0.f, "Mode");
+		pq1->mymodule = this;
 
-		configParam<SeqFlowerKnobParamQuantity<MODULE>>(PARAM_STEP_CENTER, -std::numeric_limits<float>::infinity(), std::numeric_limits<float>::infinity(), 0.f);
-		auto pq2 = dynamic_cast<SeqFlowerKnobParamQuantity<MODULE>*>(paramQuantities[PARAM_STEP_CENTER]);
-		pq2->module = this;
+		auto pq2 = configParam<SeqFlowerKnobParamQuantity<MODULE>>(PARAM_STEP_CENTER, -std::numeric_limits<float>::infinity(), std::numeric_limits<float>::infinity(), 0.f);
+		pq2->mymodule = this;
 
 		for (int i = 0; i < STEPS; i++) {
-			configParam<SeqStepParamQuantity<MODULE>>(PARAM_STEP + i, 0.f, 1.f, 0.5f, string::f("Step %i", i + 1), "V");
-			auto pq1 = dynamic_cast<SeqStepParamQuantity<MODULE>*>(paramQuantities[PARAM_STEP + i]);
-			pq1->module = this;
+			auto pq1 = configParam<SeqStepParamQuantity<MODULE>>(PARAM_STEP + i, 0.f, 1.f, 0.5f, string::f("Step %i", i + 1), "V");
+			pq1->mymodule = this;
 			pq1->i = i;
 
-			configParam<SeqStepButtonParamQuantity<MODULE, STEPS>>(PARAM_STEP_BUTTON + i, 0.f, 1.f, 0.f);
-			auto pq2 = dynamic_cast<SeqStepButtonParamQuantity<MODULE, STEPS>*>(paramQuantities[PARAM_STEP_BUTTON + i]);
-			pq2->module = this;
+			auto pq2 = configParam<SeqStepButtonParamQuantity<MODULE, STEPS>>(PARAM_STEP_BUTTON + i, 0.f, 1.f, 0.f);
+			pq2->mymodule = this;
 			pq2->i = i;
 		}
 

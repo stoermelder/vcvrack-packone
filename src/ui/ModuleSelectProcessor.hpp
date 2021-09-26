@@ -21,7 +21,7 @@ struct ModuleSelectProcessor {
 		this->callback = callback;
 
 		learnMode = learnMode == LEARN_MODE::OFF ? mode : LEARN_MODE::OFF;
-		APP->event->setSelected(owner);
+		APP->event->setSelectedWidget(owner);
 		GLFWcursor* cursor = NULL;
 		if (learnMode != LEARN_MODE::OFF) {
 			cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);

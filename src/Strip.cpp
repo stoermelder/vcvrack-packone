@@ -149,7 +149,7 @@ struct StripModule : StripModuleBase {
 				if (!m || m->rightExpander.moduleId < 0 || m->model == modelStripBlock) break;
 				// This is what "Module.hpp" says about bypass:
 				// "Module subclasses should not read/write this variable."
-				m->rightExpander.module->bypass = val;
+				m->rightExpander.module->setBypassed(val);
 				// Clear outputs and set to 1 channel
 				for (Output& output : m->rightExpander.module->outputs) {
 					// This zeros all voltages, but the channel is set to 1 if connected
@@ -160,7 +160,7 @@ struct StripModule : StripModuleBase {
 					// history::ModuleBypass
 					history::ModuleBypass* h = new history::ModuleBypass;
 					h->moduleId = m->rightExpander.module->id;
-					h->bypass = m->rightExpander.module->bypass;
+					h->bypassed = m->rightExpander.module->isBypassed();
 					complexAction->push(h);
 				}
 
@@ -174,7 +174,7 @@ struct StripModule : StripModuleBase {
 				if (!m || m->leftExpander.moduleId < 0 || m->model == modelStripBlock) break;
 				// This is what "Module.hpp" says about bypass:
 				// "Module subclasses should not read/write this variable."
-				m->leftExpander.module->bypass = val;
+				m->leftExpander.module->setBypassed(val);
 				// Clear outputs and set to 1 channel
 				for (Output& output : m->leftExpander.module->outputs) {
 					// This zeros all voltages, but the channel is set to 1 if connected
@@ -185,7 +185,7 @@ struct StripModule : StripModuleBase {
 					// history::ModuleBypass
 					history::ModuleBypass* h = new history::ModuleBypass;
 					h->moduleId = m->leftExpander.module->id;
-					h->bypass = m->leftExpander.module->bypass;
+					h->bypassed = m->leftExpander.module->isBypassed();
 					complexAction->push(h);
 				}
 
@@ -226,18 +226,18 @@ struct StripModule : StripModuleBase {
 				}
 
 				ModuleWidget* mw = APP->scene->rack->getModule(m->rightExpander.moduleId);
-				for (ParamWidget* param : mw->params) {
+				for (ParamWidget* param : mw->getParams()) {
 					switch (randomExcl) {
 						case RANDOMEXCL::NONE:
-							param->randomize();
+							param->getParamQuantity()->randomize();
 							break;
 						case RANDOMEXCL::EXC:
-							if (excludedParams.find(std::make_tuple(m->rightExpander.moduleId, param->paramQuantity->paramId)) == excludedParams.end())
-								param->randomize();
+							if (excludedParams.find(std::make_tuple(m->rightExpander.moduleId, param->getParamQuantity()->paramId)) == excludedParams.end())
+								param->getParamQuantity()->randomize();
 							break;
 						case RANDOMEXCL::INC:
-							if (excludedParams.find(std::make_tuple(m->rightExpander.moduleId, param->paramQuantity->paramId)) != excludedParams.end())
-								param->randomize();
+							if (excludedParams.find(std::make_tuple(m->rightExpander.moduleId, param->getParamQuantity()->paramId)) != excludedParams.end())
+								param->getParamQuantity()->randomize();
 							break;
 					}
 				}
@@ -268,18 +268,18 @@ struct StripModule : StripModuleBase {
 				}
 
 				ModuleWidget* mw = APP->scene->rack->getModule(m->leftExpander.moduleId);
-				for (ParamWidget* param : mw->params) {
+				for (ParamWidget* param : mw->getParams()) {
 					switch (randomExcl) {
 						case RANDOMEXCL::NONE:
-							param->randomize();
+							param->getParamQuantity()->randomize();
 							break;
 						case RANDOMEXCL::EXC:
-							if (excludedParams.find(std::make_tuple(m->leftExpander.moduleId, param->paramQuantity->paramId)) == excludedParams.end())
-								param->randomize();
+							if (excludedParams.find(std::make_tuple(m->leftExpander.moduleId, param->getParamQuantity()->paramId)) == excludedParams.end())
+								param->getParamQuantity()->randomize();
 							break;
 						case RANDOMEXCL::INC:
-							if (excludedParams.find(std::make_tuple(m->leftExpander.moduleId, param->paramQuantity->paramId)) != excludedParams.end())
-								param->randomize();
+							if (excludedParams.find(std::make_tuple(m->leftExpander.moduleId, param->getParamQuantity()->paramId)) != excludedParams.end())
+								param->getParamQuantity()->randomize();
 							break;
 					}
 				}
@@ -409,9 +409,9 @@ struct ExcludeButton : TL1105 {
 		// Check if a ParamWidget was touched
 		// NB: unstable API
 		ParamWidget* touchedParam = APP->scene->rack->touchedParam;
-		if (touchedParam && touchedParam->paramQuantity && touchedParam->paramQuantity->module != module) {
-			int moduleId = touchedParam->paramQuantity->module->id;
-			int paramId = touchedParam->paramQuantity->paramId;
+		if (touchedParam && touchedParam->getParamQuantity() && touchedParam->getParamQuantity()->module != module) {
+			int moduleId = touchedParam->getParamQuantity()->module->id;
+			int paramId = touchedParam->getParamQuantity()->paramId;
 			groupExcludeParam(moduleId, paramId);
 		}
 	}
@@ -461,8 +461,8 @@ struct ExcludeButton : TL1105 {
 				if (!m || m->rightExpander.moduleId < 0 || m->model == modelStripBlock) break;
 				if (m->rightExpander.moduleId == moduleId) {
 					ModuleWidget* mw = APP->scene->rack->getModule(m->rightExpander.moduleId);
-					for (ParamWidget* param : mw->params) {
-						if (param->paramQuantity && param->paramQuantity->paramId == paramId) {
+					for (ParamWidget* param : mw->getParams()) {
+						if (param->getParamQuantity() && param->getParamQuantity()->paramId == paramId) {
 							// Aquire excludeMutex to get exclusive access to excludedParams
 							std::lock_guard<std::mutex> lockGuard(module->excludeMutex);
 							module->excludedParams.insert(std::make_tuple(moduleId, paramId));
@@ -481,8 +481,8 @@ struct ExcludeButton : TL1105 {
 				if (!m || m->leftExpander.moduleId < 0 || m->model == modelStripBlock) break;
 				if (m->leftExpander.moduleId == moduleId) {
 					ModuleWidget* mw = APP->scene->rack->getModule(m->leftExpander.moduleId);
-					for (ParamWidget* param : mw->params) {
-						if (param->paramQuantity && param->paramQuantity->paramId == paramId) {
+					for (ParamWidget* param : mw->getParams()) {
+						if (param->getParamQuantity() && param->getParamQuantity()->paramId == paramId) {
 							// Aquire excludeMutex to get exclusive access to excludedParams
 							std::lock_guard<std::mutex> lockGuard(module->excludeMutex);
 							module->excludedParams.insert(std::make_tuple(moduleId, paramId));
@@ -585,7 +585,7 @@ struct ExcludeButton : TL1105 {
 			std::string text = "Parameter \"";
 			text += moduleWidget->model->name;
 			text += " ";
-			text += paramWidget->paramQuantity->getLabel();
+			text += paramWidget->getParamQuantity()->getLabel();
 			text += "\"";
 
 			ui::MenuLabel* modelLabel = new ui::MenuLabel;

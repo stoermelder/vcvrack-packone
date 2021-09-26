@@ -70,7 +70,7 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configParam(PARAM_KNOB, 0.f, 1.f, 0.f, "Macro knob", "%", 0.f, 100.f);
 
-		for (size_t i = 0; i < MAPS; i++) {
+		for (int i = 0; i < MAPS; i++) {
 			configParam<MapParamQuantity<MacroModule>>(PARAM_MAP + i, 0.f, 1.f, 0.f, string::f("Map %i", i + 1));
 			MapParamQuantity<MacroModule>* pq = dynamic_cast<MapParamQuantity<MacroModule>*>(paramQuantities[PARAM_MAP + i]);
 			pq->module = this;
@@ -79,7 +79,7 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 			scaleParam[i].setLimits(0.f, 1.f, std::numeric_limits<float>::infinity());
 		}
 
-		for (size_t i = 0; i < CVPORTS; i++) {
+		for (int i = 0; i < CVPORTS; i++) {
 			CvParamQuantity* pq = new CvParamQuantity;
 			pq->output = &outputs[OUTPUT_CV + i];
 			pq->minValue = 0.f;

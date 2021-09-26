@@ -238,10 +238,10 @@ struct GotoContainer : widget::Widget {
 				if (module->smoothTransition) {
 					float zoom = !module->ignoreZoom ? module->jumpPoints[i].zoom : rack::settings::zoom;
 					if (module->centerModule) {
-						viewportCenterSmooth.trigger(mw, zoom, APP->window->getLastFrameRate());
+						viewportCenterSmooth.trigger(mw, zoom, 1.f / APP->window->getLastFrameDuration());
 					}
 					else {
-						viewportCenterSmooth.trigger(Vec(module->jumpPoints[i].x, module->jumpPoints[i].y), zoom, APP->window->getLastFrameRate());
+						viewportCenterSmooth.trigger(Vec(module->jumpPoints[i].x, module->jumpPoints[i].y), zoom, 1.f / APP->window->getLastFrameDuration());
 					}
 				}
 				else {
@@ -283,9 +283,10 @@ struct GotoButton : LEDButton {
 	int id;
 
 	void step() override {
+		ParamQuantity* paramQuantity = getParamQuantity();
 		if (paramQuantity) {
 			lpb.param = paramQuantity->getParam();
-			switch (lpb.process(1.f / APP->window->getLastFrameRate())) {
+			switch (lpb.process(APP->window->getLastFrameDuration())) {
 				default:
 				case LongPressButton::NO_PRESS:
 					break;
@@ -341,17 +342,6 @@ struct GotoWidget : ThemedModuleWidget<GotoModule<10>> {
 			APP->scene->rack->removeChild(gotoContainer);
 			delete gotoContainer;
 		}
-	}
-
-	void fromJson(json_t* rootJ) override {
-		// Handle data-storage from previous builds
-		json_t* dataJ = json_object_get(rootJ, "data");
-		json_t* jumpPointsJ = json_object_get(rootJ, "jumpPoints");
-		if (dataJ && jumpPointsJ) {
-			json_object_set(dataJ, "jumpPoints", jumpPointsJ);
-			json_object_set(rootJ, "jumpPoints", NULL);
-		}
-		ThemedModuleWidget<GotoModule<10>>::fromJson(rootJ);
 	}
 
 	void appendContextMenu(Menu* menu) override {
