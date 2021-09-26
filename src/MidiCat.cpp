@@ -376,7 +376,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 
 		midi::Message msg;
 		bool midiReceived = false;
-		while (midiInput.shift(&msg)) {
+		while (midiInput.tryPop(&msg, args.frame)) {
 			bool r = midiProcessMessage(msg);
 			midiReceived = midiReceived || r;
 		}
@@ -1510,7 +1510,7 @@ struct MidiCatDisplay : MapModuleDisplay<MAX_CHANNELS, MidiCatModule, MidiCatCho
 		if (!paramQuantity) return;
 
 		std::string label = choices[id]->getSlotLabel();
-		if (label == "") label = paramQuantity->label;
+		if (label == "") label = paramQuantity->name;
 
 		m.title = paramQuantity->getDisplayValueString() + paramQuantity->getUnit();
 		m.subtitle[0] = paramQuantity->module->model->name;
@@ -1706,7 +1706,7 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 	}
 
 	void expMemPrevModule() {
-		std::list<Widget*> modules = APP->scene->rack->moduleContainer->children;
+		std::list<Widget*> modules = APP->scene->rack->getModuleContainer()->children;
 		auto sort = [&](Widget* w1, Widget* w2) {
 			auto t1 = std::make_tuple(w1->box.pos.y, w1->box.pos.x);
 			auto t2 = std::make_tuple(w2->box.pos.y, w2->box.pos.x);
@@ -1717,7 +1717,7 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 	}
 
 	void expMemNextModule() {
-		std::list<Widget*> modules = APP->scene->rack->moduleContainer->children;
+		std::list<Widget*> modules = APP->scene->rack->getModuleContainer()->children;
 		auto sort = [&](Widget* w1, Widget* w2) {
 			auto t1 = std::make_tuple(w1->box.pos.y, w1->box.pos.x);
 			auto t2 = std::make_tuple(w2->box.pos.y, w2->box.pos.x);
@@ -1764,7 +1764,7 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 	void extendParamWidgetContextMenu(ParamWidget* pw, Menu* menu) override {
 		if (!module) return;
 		if (module->learningId >= 0) return;
-		ParamQuantity* pq = pw->paramQuantity;
+		ParamQuantity* pq = pw->getParamQuantity();
 		if (!pq) return;
 		
 		struct MidiCatBeginItem : MenuLabel {
@@ -2005,7 +2005,7 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 
 	void enableLearn(LEARN_MODE mode) {
 		learnMode = learnMode == LEARN_MODE::OFF ? mode : LEARN_MODE::OFF;
-		APP->event->setSelected(this);
+		APP->event->setSelectedWidget(this);
 		GLFWcursor* cursor = NULL;
 		if (learnMode != LEARN_MODE::OFF) {
 			cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);

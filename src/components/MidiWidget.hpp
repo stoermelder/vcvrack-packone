@@ -25,11 +25,11 @@ struct MidiDriverChoice : LedDisplayCenterChoiceEx {
 	virtual ui::Menu* createContextMenu() {
 		ui::Menu* menu = createMenu();
 		menu->addChild(createMenuLabel("MIDI driver"));
-		for (int driverId : port->getDriverIds()) {
+		for (int driverId : midi::getDriverIds()) {
 			DRIVERITEM* item = new DRIVERITEM;
 			item->port = port;
 			item->driverId = driverId;
-			item->text = port->getDriverName(driverId);
+			item->text = midi::getDriver(driverId)->getName();
 			item->rightText = CHECKMARK(item->driverId == port->driverId);
 			menu->addChild(item);
 		}
@@ -37,7 +37,7 @@ struct MidiDriverChoice : LedDisplayCenterChoiceEx {
 	}
 
 	void step() override {
-		text = port ? port->getDriverName(port->driverId) : "";
+		text = port ? port->getDriver()->getName() : "";
 		if (text.empty()) {
 			text = "(No driver)";
 			color.a = 0.5f;

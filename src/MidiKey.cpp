@@ -79,7 +79,7 @@ struct MidiKeyModule : Module {
 
 	void process(const ProcessArgs &args) override {
 		midi::Message msg;
-		while (midiInput.shift(&msg)) {
+		while (midiInput.tryPop(&msg, args.frame)) {
 			midiProcessMessage(msg);
 		}
 	}
@@ -404,7 +404,7 @@ struct MidiKeyChoice : LedDisplayChoice {
 			bgColor = color;
 			bgColor.a = 0.15;
 			if (APP->event->getSelectedWidget() != this)
-				APP->event->setSelected(this);
+				APP->event->setSelectedWidget(this);
 		} 
 		else {
 			bgColor = nvgRGBA(0, 0, 0, 0);
@@ -589,7 +589,7 @@ struct MidiKeyWidget : ThemedModuleWidget<MidiKeyModule<>> {
 	void step() override {
 		while (module && module->keyEventQueue.size() > 0) {
 			event::HoverKey e = module->keyEventQueue.shift();
-			APP->event->handleKey(APP->window->mousePos, e.key, e.scancode, e.action, e.mods);
+			APP->event->handleKey(APP->scene->getMousePos(), e.key, e.scancode, e.action, e.mods);
 		}
 		ThemedModuleWidget<MidiKeyModule<>>::step();
 	}

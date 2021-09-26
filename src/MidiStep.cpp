@@ -76,7 +76,7 @@ struct MidiStepModule : Module {
 
 	void process(const ProcessArgs& args) override {
 		midi::Message msg;
-		while (midiInput.shift(&msg)) {
+		while (midiInput.tryPop(&msg, args.frame)) {
 			processMessage(msg);
 		}
 
@@ -302,7 +302,7 @@ struct MidiStepCcChoice : LedDisplayCenterChoiceEx {
 			}
 			// HACK
 			if (APP->event->getSelectedWidget() == this) {
-				APP->event->setSelected(NULL);
+				APP->event->setSelectedWidget(NULL);
 			}
 		}
 	}

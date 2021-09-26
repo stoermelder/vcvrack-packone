@@ -138,7 +138,7 @@ struct MemDisplay : StoermelderLedDisplay {
 	void step() override {
 		StoermelderLedDisplay::step();
 		if (!module) return;
-		text = string::f("%i", module->midiMap.size());
+		text = string::f("%i", (int)module->midiMap.size());
 	}
 };
 

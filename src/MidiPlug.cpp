@@ -92,10 +92,10 @@ struct MidiPlugModule : Module {
 		}
 	}
 
-	void process(const ProcessArgs &args) override {
+	void process(const ProcessArgs& args) override {
 		midi::Message msg;
 		for (int i = 0; i < INPUT; i++) {
-			while (midiInput[i].shift(&msg)) {
+			while (midiInput[i].tryPop(&msg, args.frame)) {
 				for (int j = 0; j < OUTPUT; j++) {
 					midiOutput[j].sendChannelMessage(msg);
 				}

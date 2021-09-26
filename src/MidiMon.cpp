@@ -88,7 +88,7 @@ struct MidiMonModule : Module {
 
 	void process(const ProcessArgs& args) override {
 		midi::Message msg;
-		while (midiInput.shift(&msg)) {
+		while (midiInput.tryPop(&msg, args.frame)) {
 			processMidi(msg);
 		}
 		sample++;
@@ -362,9 +362,9 @@ struct MidiMonWidget : ThemedModuleWidget<MidiMonModule> {
 			fclose(file);
 		});
 
-		fputs(string::f("%s v%s\n", app::APP_NAME.c_str(), app::APP_VERSION.c_str()).c_str(), file);
+		fputs(string::f("%s v%s\n", rack::APP_NAME.c_str(), rack::APP_VERSION.c_str()).c_str(), file);
 		fputs(string::f("%s\n", system::getOperatingSystemInfo().c_str()).c_str(), file);
-		fputs(string::f("MIDI driver: %s\n", module->midiInput.getDriverName(module->midiInput.driverId).c_str()).c_str(), file);
+		fputs(string::f("MIDI driver: %s\n", module->midiInput.getDriver()->getName().c_str()).c_str(), file);
 		fputs(string::f("MIDI device: %s\n", module->midiInput.getDeviceName(module->midiInput.deviceId).c_str()).c_str(), file);
 		fputs(string::f("MIDI channel: %s\n", module->midiInput.getChannelName(module->midiInput.channel).c_str()).c_str(), file);
 		fputs("--------------------------------------------------------------------\n", file);
@@ -383,8 +383,8 @@ struct MidiMonWidget : ThemedModuleWidget<MidiMonModule> {
 		});
 
 		std::string log = asset::user("MidiMon.log");
-		std::string dir = string::directory(log);
-		std::string filename = string::filename(log);
+		std::string dir = system::getDirectory(log);
+		std::string filename = system::getFilename(log);
 
 		char* path = osdialog_file(OSDIALOG_SAVE, dir.c_str(), NULL, filters);
 		if (!path) {
