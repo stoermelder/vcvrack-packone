@@ -750,7 +750,7 @@ struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 
 		struct IntermixMatrixButton : MatrixButton {
 			void onDragStart(const event::DragStart& e) override {
-				IntermixModule<PORTS>* module = dynamic_cast<IntermixModule<PORTS>*>(paramQuantity->module);
+				IntermixModule<PORTS>* module = dynamic_cast<IntermixModule<PORTS>*>(getParamQuantity()->module);
 				if (module->sceneLock) {
 					e.consume(this);
 				}

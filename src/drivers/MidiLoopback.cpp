@@ -8,7 +8,7 @@ const int LOOPBACK_DRIVER_ID = 80627554;
 
 
 struct LoopbackDevice : rack::midi::OutputDevice, rack::midi::InputDevice {
-	void sendMessage(midi::Message message) override {
+	void sendMessage(const midi::Message& message) override {
 		onMessage(message);
 	};
 };

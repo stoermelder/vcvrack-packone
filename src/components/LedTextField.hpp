@@ -29,7 +29,8 @@ struct StoermelderTextField : LedDisplayTextField {
 			nvgFill(args.vg);
 		}
 
-		if (text.length() > 0) {
+		std::shared_ptr<window::Font> font = APP->window->loadFont(fontPath);
+		if (text.length() > 0 && font && font->handle > 0) {
 			nvgFillColor(args.vg, color);
 			nvgFontFaceId(args.vg, font->handle);
 			nvgTextLetterSpacing(args.vg, 0.0);

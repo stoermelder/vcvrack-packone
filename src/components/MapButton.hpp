@@ -4,12 +4,12 @@ namespace StoermelderPackOne {
 
 template <typename MODULE>
 struct MapParamQuantity : ParamQuantity {
-	MODULE* module;
+	MODULE* mymodule;
 	int id = 0;
 	std::string getParamName() {
-		if (!module)
+		if (!mymodule)
 			return "";
-		ParamHandle* paramHandle = &module->paramHandles[id];
+		ParamHandle* paramHandle = &mymodule->paramHandles[id];
 		if (paramHandle->moduleId < 0)
 			return "";
 		ModuleWidget* mw = APP->scene->rack->getModule(paramHandle->moduleId);
@@ -27,7 +27,7 @@ struct MapParamQuantity : ParamQuantity {
 		std::string s;
 		s += mw->model->name;
 		s += " ";
-		s += paramQuantity->label;
+		s += paramQuantity->name;
 		return s;
 	}
 
@@ -109,10 +109,10 @@ struct MapButton : LEDBezel {
 		if (!module) return;
 		// Check if a ParamWidget was touched
 		ParamWidget* touchedParam = APP->scene->rack->touchedParam;
-		if (touchedParam && touchedParam->paramQuantity->module != module) {
+		if (touchedParam && touchedParam->getParamQuantity()->module != module) {
 			APP->scene->rack->touchedParam = NULL;
-			int moduleId = touchedParam->paramQuantity->module->id;
-			int paramId = touchedParam->paramQuantity->paramId;
+			int moduleId = touchedParam->getParamQuantity()->module->id;
+			int paramId = touchedParam->getParamQuantity()->paramId;
 			module->learnParam(id, moduleId, paramId);
 		} 
 		else {
@@ -144,11 +144,11 @@ struct MapButton : LEDBezel {
 		std::string s;
 		s += mw->model->name;
 		s += " ";
-		s += paramQuantity->label;
+		s += paramQuantity->name;
 		return s;
 	}
 
-	virtual void appendContextMenu(Menu* menu) {}
+	virtual void appendContextMenu(Menu* menu) override {}
 };
 
 template <typename BASE>

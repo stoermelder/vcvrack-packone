@@ -20,7 +20,8 @@ struct LedDisplayCenterChoiceEx : LedDisplayChoice {
 			nvgFill(args.vg);
 		}
 
-		if (font->handle >= 0 && !text.empty()) {
+		std::shared_ptr<window::Font> font = APP->window->loadFont(fontPath);
+		if (font && font->handle >= 0 && !text.empty()) {
 			nvgFillColor(args.vg, color);
 			nvgFontFaceId(args.vg, font->handle);
 			nvgTextLetterSpacing(args.vg, -0.6f);

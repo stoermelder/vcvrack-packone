@@ -254,7 +254,7 @@ struct SailWidget : ThemedModuleWidget<SailModule>, OverlayMessageProvider {
 		if (!w) { module->paramQuantity = NULL; return; }
 		ParamWidget* p = dynamic_cast<ParamWidget*>(w);
 		if (!p) { module->paramQuantity = NULL; return; }
-		ParamQuantity* q = p->paramQuantity;
+		ParamQuantity* q = p->getParamQuantity();
 		if (!q) { module->paramQuantity = NULL; return; }
 		
 		Switch* sw = dynamic_cast<Switch*>(p);
@@ -277,7 +277,7 @@ struct SailWidget : ThemedModuleWidget<SailModule>, OverlayMessageProvider {
 
 		m.title = paramQuantity->getDisplayValueString() + paramQuantity->getUnit();
 		m.subtitle[0] = paramQuantity->module->model->name;
-		m.subtitle[1] = paramQuantity->label;
+		m.subtitle[1] = paramQuantity->name;
 	}
 
 	void appendContextMenu(Menu* menu) override {

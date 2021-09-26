@@ -139,10 +139,10 @@ struct MapButton : TL1105 {
 		if (!module || module->learningId < 0) return;
 		// Check if a ParamWidget was touched
 		ParamWidget* touchedParam = APP->scene->rack->touchedParam;
-		if (touchedParam && touchedParam->paramQuantity->module != module) {
+		if (touchedParam && touchedParam->getParamQuantity()->module != module) {
 			APP->scene->rack->touchedParam = NULL;
-			int moduleId = touchedParam->paramQuantity->module->id;
-			int paramId = touchedParam->paramQuantity->paramId;
+			int moduleId = touchedParam->getParamQuantity()->module->id;
+			int paramId = touchedParam->getParamQuantity()->paramId;
 			module->learnParam(id, moduleId, paramId);
 		} 
 		else {
@@ -204,7 +204,7 @@ struct GripWidget : ThemedModuleWidget<GripModule> {
 				std::string s;
 				s += mw->model->name;
 				s += " ";
-				s += paramQuantity->label;
+				s += paramQuantity->name;
 				return s;
 			}
 		};

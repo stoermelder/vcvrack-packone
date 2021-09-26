@@ -465,7 +465,7 @@ struct MirrorWidget : ThemedModuleWidget<MirrorModule> {
 						ParamWidget* paramWidget = moduleWidget->getParam(sourceHandle->paramId);
 						if (!paramWidget) continue;
 						
-						std::string text = "Parameter " + paramWidget->paramQuantity->getLabel();
+						std::string text = "Parameter " + paramWidget->getParamQuantity()->getLabel();
 						menu->addChild(construct<CvInputItem>(&MenuItem::text, text, &CvInputItem::module, module, &CvInputItem::id, id, &CvInputItem::paramId, sourceHandle->paramId));
 					}
 					return menu;
@@ -554,8 +554,12 @@ struct MirrorWidget : ThemedModuleWidget<MirrorModule> {
 		plugin::Model* model = plugin::getModel(module->sourcePluginSlug, module->sourceModelSlug);
 		if (!model) return;
 
+		// Clone Module
+		engine::Module* addedModule = model->createModule();
+		APP->engine->addModule(addedModule);
+
 		// Create ModuleWidget
-		ModuleWidget* newMw = model->createModuleWidget();
+		ModuleWidget* newMw = model->createModuleWidget(addedModule);
 		assert(newMw);
 		newMw->box.pos = box.pos;
 		newMw->box.pos.x += box.size.x;

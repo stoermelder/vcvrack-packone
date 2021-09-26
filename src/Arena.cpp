@@ -1470,7 +1470,7 @@ struct ScreenDragWidget : OpaqueWidget {
 		if (e.button != GLFW_MOUSE_BUTTON_LEFT)
 			return;
 
-		dragPos = APP->scene->rack->mousePos.minus(box.pos);
+		dragPos = APP->scene->rack->getMousePos().minus(box.pos);
 
 		// history
 		dragAction = new XYChangeAction;
@@ -1495,7 +1495,7 @@ struct ScreenDragWidget : OpaqueWidget {
 		if (e.button != GLFW_MOUSE_BUTTON_LEFT)
 			return;
 
-		math::Vec pos = APP->scene->rack->mousePos.minus(dragPos);
+		math::Vec pos = APP->scene->rack->getMousePos().minus(dragPos);
 		float x = pos.x / (parent->box.size.x - box.size.x);
 		paramQuantityX->setValue(std::max(0.f, std::min(1.f, x)));
 		float y = pos.y / (parent->box.size.y - box.size.y);
@@ -2335,7 +2335,7 @@ struct SeqEditDragWidget : OpaqueWidget {
 		if (e.button != GLFW_MOUSE_BUTTON_LEFT)
 			return;
 
-		dragPos = APP->scene->rack->mousePos.minus(box.pos);
+		dragPos = APP->scene->mousePos.minus(box.pos);
 		timerClear = true;
 		module->seqData[id][seq].length = 0;
 
@@ -2355,7 +2355,7 @@ struct SeqEditDragWidget : OpaqueWidget {
 		if (e.button != GLFW_MOUSE_BUTTON_LEFT)
 			return;
 
-		math::Vec pos = APP->scene->rack->mousePos.minus(dragPos);
+		math::Vec pos = APP->scene->rack->getMousePos().minus(dragPos);
 		pos.x = std::max(0.f, std::min(pos.x, parent->box.size.x - box.size.x));
 		pos.y = std::max(0.f, std::min(pos.y, parent->box.size.y - box.size.y));
 		box.pos = pos;

@@ -957,7 +957,7 @@ struct HiveStartPosEditWidget : LightWidget, HiveDrawHelper<MODULE> {
 					}
 
 					if (e.button == GLFW_MOUSE_BUTTON_LEFT) {
-						dragPos = APP->scene->rack->mousePos.minus(e.pos);
+						dragPos = APP->scene->mousePos.minus(e.pos);
 						e.consume(this);
 					}
 					if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
@@ -980,7 +980,7 @@ struct HiveStartPosEditWidget : LightWidget, HiveDrawHelper<MODULE> {
 			if (selectedId == -1)
 				return;
 
-			math::Vec pos = APP->scene->rack->mousePos.minus(dragPos);
+			math::Vec pos = APP->scene->rack->getMousePos().minus(dragPos);
 			RoundAxialVec hex = pixelToHex(pos, module->sizeFactor, POINTY, ORIGIN);
 			if (cellVisible(hex.q, hex.r, module->grid.usedRadius)) {
 				module->grid.cursor[selectedId].startPos = hex;

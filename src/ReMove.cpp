@@ -240,7 +240,7 @@ struct ReMoveModule : MapModuleBase<1> {
                     // it is not a good idea to do dynamic casting in the DSP thread,
                     // so do this only once for each touched widget
                     ParamWidget *pw = dynamic_cast<ParamWidget*>(w);
-                    if (pw != NULL && pw->paramQuantity == getParamQuantity(0)) {
+                    if (pw != NULL && pw->getParamQuantity() == getParamQuantity(0)) {
                         recTouched = true;
                         recOutCvPulse.trigger();
                     }

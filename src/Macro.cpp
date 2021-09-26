@@ -440,7 +440,7 @@ struct MacroWidget : ThemedModuleWidget<MacroModule>, ParamWidgetContextExtender
 	}
 
 	void extendParamWidgetContextMenu(ParamWidget* pw, Menu* menu) override {
-		ParamQuantity* pq = pw->paramQuantity;
+		ParamQuantity* pq = pw->getParamQuantity();
 		if (!pq) return;
 
 		for (int id = 0; id < module->mapLen; id++) {

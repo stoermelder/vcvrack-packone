@@ -129,9 +129,8 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		Module::config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		Module::configParam<TriggerParamQuantity>(PARAM_CTRLMODE, 0, 2, 0, "Read/Auto/Write mode");
 		for (int i = 0; i < NUM_PRESETS; i++) {
-			Module::configParam<TransitParamQuantity<NUM_PRESETS>>(PARAM_PRESET + i, 0, 1, 0);
-			TransitParamQuantity<NUM_PRESETS>* pq = (TransitParamQuantity<NUM_PRESETS>*)Module::paramQuantities[PARAM_PRESET + i];
-			pq->module = this;
+			TransitParamQuantity<NUM_PRESETS>* pq = Module::configParam<TransitParamQuantity<NUM_PRESETS>>(PARAM_PRESET + i, 0, 1, 0);
+			pq->mymodule = this;
 			pq->id = i;
 			BASE::presetButton[i].param = &Module::params[PARAM_PRESET + i];
 
@@ -699,12 +698,8 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 			float v = 0.f;
 			{
 				ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
-				if (!pq || !pq->module) goto s;
-				ModuleWidget* mw = APP->scene->rack->getModule(pq->module->id);
-				if (!mw) goto s;
-				ParamWidget* pw = mw->getParam(pq->paramId);
-				if (!pw) goto s;
-				pw->randomize();
+				if (!pq) goto s;
+				pq->randomize();
 				v = pq->getValue();
 			}
 			s:
@@ -960,10 +955,10 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 		if (learn == 2 || learn == 3) {
 			// Check if a ParamWidget was touched, unstable API
 			ParamWidget* touchedParam = APP->scene->rack->touchedParam;
-			if (touchedParam && touchedParam->paramQuantity->module != module) {
+			if (touchedParam && touchedParam->getParamQuantity()->module != module) {
 				APP->scene->rack->touchedParam = NULL;
-				int moduleId = touchedParam->paramQuantity->module->id;
-				int paramId = touchedParam->paramQuantity->paramId;
+				int moduleId = touchedParam->getParamQuantity()->module->id;
+				int paramId = touchedParam->getParamQuantity()->paramId;
 				module->bindParameter(moduleId, paramId);
 				if (learn == 2) { 
 					disableLearn();
@@ -977,7 +972,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 
 	void step() override {
 		if (learn == 3 && APP->event->getSelectedWidget() != this) {
-			APP->event->setSelected(this);
+			APP->event->setSelectedWidget(this);
 		}
 		if (BASE::module) {
 			BASE::module->lights[MODULE::LIGHT_LEARN].setBrightness(learn > 0);
@@ -988,7 +983,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 	void enableLearn(int mode) {
 		learn = learn != mode ? mode : 0;
 		APP->scene->rack->touchedParam = NULL;
-		APP->event->setSelected(this);
+		APP->event->setSelectedWidget(this);
 		GLFWcursor* cursor = NULL;
 		if (learn != 0) {
 			cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
@@ -1196,7 +1191,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 					ParamWidget* paramWidget = moduleWidget->getParam(handle->paramId);
 					if (!paramWidget) continue;
 					
-					std::string text = string::f("%s %s", moduleWidget->model->name.c_str(), paramWidget->paramQuantity->getLabel().c_str());
+					std::string text = string::f("%s %s", moduleWidget->model->name.c_str(), paramWidget->getParamQuantity()->getLabel().c_str());
 					menu->addChild(construct<ParameterItem>(&MenuItem::text, text, &ParameterItem::module, module, &ParameterItem::handle, handle));
 				}
 				return menu;

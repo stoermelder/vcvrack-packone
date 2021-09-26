@@ -865,7 +865,7 @@ struct MazeStartPosEditWidget : LightWidget, MazeDrawHelper<MODULE> {
 				}
 
 				if (e.button == GLFW_MOUSE_BUTTON_LEFT) {
-					dragPos = APP->scene->rack->mousePos.minus(e.pos);
+					dragPos = APP->scene->rack->getMousePos().minus(e.pos);
 					e.consume(this);
 				}
 				if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
@@ -887,7 +887,7 @@ struct MazeStartPosEditWidget : LightWidget, MazeDrawHelper<MODULE> {
 			if (selectedId == -1)
 				return;
 
-			math::Vec pos = APP->scene->rack->mousePos.minus(dragPos);
+			math::Vec pos = APP->scene->rack->getMousePos().minus(dragPos);
 			int x = (int)std::floor((pos.x / box.size.x) * module->usedSize);
 			int y = (int)std::floor((pos.y / box.size.y) * module->usedSize);
 			module->xStartPos[selectedId] = std::max(0, std::min(x, module->usedSize - 1));

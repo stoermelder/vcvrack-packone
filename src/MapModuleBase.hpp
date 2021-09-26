@@ -340,10 +340,10 @@ struct MapModuleChoice : LedDisplayChoice {
 
 		// Check if a ParamWidget was touched, unstable API
 		ParamWidget *touchedParam = APP->scene->rack->touchedParam;
-		if (touchedParam && touchedParam->paramQuantity->module != module) {
+		if (touchedParam && touchedParam->getParamQuantity()->module != module) {
 			APP->scene->rack->touchedParam = NULL;
-			int moduleId = touchedParam->paramQuantity->module->id;
-			int paramId = touchedParam->paramQuantity->paramId;
+			int moduleId = touchedParam->getParamQuantity()->module->id;
+			int paramId = touchedParam->getParamQuantity()->paramId;
 			module->learnParam(id, moduleId, paramId);
 			hscrollCharOffset = 0;
 		} 
@@ -362,12 +362,12 @@ struct MapModuleChoice : LedDisplayChoice {
 			bgColor = color;
 			bgColor.a = 0.15;
 			if (APP->event->getSelectedWidget() != this)
-				APP->event->setSelected(this);
+				APP->event->setSelectedWidget(this);
 		} 
 		else {
 			bgColor = nvgRGBA(0, 0, 0, 0);
 			if (APP->event->getSelectedWidget() == this)
-				APP->event->setSelected(NULL);
+				APP->event->setSelectedWidget(NULL);
 		}
 
 		// Set text
@@ -468,7 +468,7 @@ struct MapModuleChoice : LedDisplayChoice {
 		std::string s;
 		s += mw->model->name;
 		s += " ";
-		s += paramQuantity->label;
+		s += paramQuantity->name;
 		return s;
 	}
 
@@ -482,7 +482,8 @@ struct MapModuleChoice : LedDisplayChoice {
 			nvgResetScissor(args.vg);
 		}
 
-		if (font->handle >= 0) {
+		std::shared_ptr<window::Font> font = APP->window->loadFont(fontPath);
+		if (font && font->handle >= 0) {
 			Rect r = Rect(textOffset.x, 0.f, box.size.x - textOffset.x * 2, box.size.y).intersect(args.clipBox);
 			nvgScissor(args.vg, RECT_ARGS(r));
 			nvgFillColor(args.vg, color);

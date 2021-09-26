@@ -40,14 +40,6 @@ struct ThemedModuleWidget : BASE {
 	}
 
 	void appendContextMenu(Menu* menu) override {
-		struct ManualItem : MenuItem {
-			std::string manualName;
-			void onAction(const event::Action& e) override {
-				std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/" + manualName);
-				t.detach();
-			}
-		};
-
 		struct PanelMenuItem : MenuItem {
 			MODULE* module;
 
@@ -90,7 +82,6 @@ struct ThemedModuleWidget : BASE {
 			}
 		};
 
-		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual", &ManualItem::manualName, manualName != "" ? manualName : (baseName + ".md")));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<PanelMenuItem>(&MenuItem::text, "Panel", &PanelMenuItem::module, module));
 		BASE::appendContextMenu(menu);

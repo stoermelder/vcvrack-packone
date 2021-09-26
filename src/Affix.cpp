@@ -29,11 +29,11 @@ struct AffixModule : Module {
 	};
 
 	struct AffixParamQuantity : ParamQuantity {
-		AffixModule<CHANNELS>* module;
+		AffixModule<CHANNELS>* mymodule;
 		float v = std::numeric_limits<float>::max();
 
 		float getValue() override {
-			switch (module->paramMode) {
+			switch (mymodule->paramMode) {
 				default:
 					return ParamQuantity::getValue();
 				case PARAM_MODE::SEMITONE:
@@ -45,7 +45,7 @@ struct AffixModule : Module {
 		}
 
 		void setValue(float value) override {
-			switch (module->paramMode) {
+			switch (mymodule->paramMode) {
 				default:
 				case PARAM_MODE::VOLTAGE: {
 					ParamQuantity::setValue(value);
@@ -67,7 +67,7 @@ struct AffixModule : Module {
 		}
 
 		std::string getDisplayValueString() override {
-			switch (module->paramMode) {
+			switch (mymodule->paramMode) {
 				default:
 				case PARAM_MODE::VOLTAGE: {
 					return ParamQuantity::getDisplayValueString();
@@ -87,7 +87,7 @@ struct AffixModule : Module {
 		}
 
 		void setDisplayValueString(std::string s) override {
-			switch (module->paramMode) {
+			switch (mymodule->paramMode) {
 				default:
 				case PARAM_MODE::VOLTAGE: {
 					ParamQuantity::setDisplayValueString(s);
@@ -114,7 +114,7 @@ struct AffixModule : Module {
 		}
 
 		std::string getString() override {
-			switch (module->paramMode) {
+			switch (mymodule->paramMode) {
 				default:
 				case PARAM_MODE::VOLTAGE: {
 					return string::f("%s: %sV", ParamQuantity::getLabel().c_str(), ParamQuantity::getDisplayValueString().c_str());
@@ -146,9 +146,8 @@ struct AffixModule : Module {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		for (int i = 0; i < CHANNELS; i++) {
-			configParam<AffixParamQuantity>(PARAM_MONO + i, -5.f, 5.f, 0.f, string::f("Channel %i", i + 1));
-			AffixParamQuantity* pq = dynamic_cast<AffixParamQuantity*>(paramQuantities[PARAM_MONO + i]);
-			pq->module = this;
+			AffixParamQuantity* pq = configParam<AffixParamQuantity>(PARAM_MONO + i, -5.f, 5.f, 0.f, string::f("Channel %i", i + 1));
+			pq->mymodule = this;
 		}
 		onReset();
 	}

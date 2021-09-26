@@ -312,7 +312,7 @@ struct CVMapPort : StoermelderPort {
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("Port %i", i + 1)));
 		menu->addChild(construct<DisconnectItem>(&MenuItem::text, "Disconnect", &DisconnectItem::pw, this));
 		menu->addChild(new MenuSeparator());
-		for (size_t j = 0; j < 16; j++) {
+		for (int j = 0; j < 16; j++) {
 			menu->addChild(construct<LabelMenuItem>(&MenuItem::text, string::f("Channel %i", j + 1), &LabelMenuItem::module, module, &LabelMenuItem::i, i, &LabelMenuItem::j, j));
 		}
 		menu->addChild(construct<HideUnusedItem>(&MenuItem::text, "Hide unused", &HideUnusedItem::module, module, &HideUnusedItem::i, i));
@@ -508,7 +508,7 @@ struct CVMapWidget : ThemedModuleWidget<CVMapModule>, ParamWidgetContextExtender
 	}
 
 	void extendParamWidgetContextMenu(ParamWidget* pw, Menu* menu) override {
-		ParamQuantity* pq = pw->paramQuantity;
+		ParamQuantity* pq = pw->getParamQuantity();
 		if (!pq) return;
 
 		struct CVMapBeginItem : MenuLabel {

@@ -134,7 +134,7 @@ struct SpinContainer : widget::Widget {
 			if (!w) return false;
 			ParamWidget* p = dynamic_cast<ParamWidget*>(w);
 			if (!p) return false;
-			ParamQuantity* q = p->paramQuantity;
+			ParamQuantity* q = p->getParamQuantity();
 			if (!q) return false;
 		}
 		return true;
@@ -142,7 +142,7 @@ struct SpinContainer : widget::Widget {
 
 	void onHoverScroll(const event::HoverScroll& e) override {
 		auto now = std::chrono::system_clock::now();
-		if (!module->bypass && (APP->window->getMods() & RACK_MOD_MASK) == module->mods && testParam() && now - lastHoverScroll > std::chrono::milliseconds{scrollLock}) {
+		if (!module->isBypassed() && (APP->window->getMods() & RACK_MOD_MASK) == module->mods && testParam() && now - lastHoverScroll > std::chrono::milliseconds{scrollLock}) {
 			module->delta = e.scrollDelta.y;
 			e.consume(this);
 		}
@@ -153,7 +153,7 @@ struct SpinContainer : widget::Widget {
 	}
 
 	void onButton(const event::Button& e) override {
-		if (!module->bypass && e.button == GLFW_MOUSE_BUTTON_MIDDLE && module->clickMode != CLICK_MODE::OFF && testParam()) {
+		if (!module->isBypassed() && e.button == GLFW_MOUSE_BUTTON_MIDDLE && module->clickMode != CLICK_MODE::OFF && testParam()) {
 			if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == module->mods) {
 				module->clickEnable();
 				e.consume(this);

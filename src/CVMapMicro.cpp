@@ -42,9 +42,8 @@ struct CVMapMicroModule : CVMapModuleBase<1> {
 	CVMapMicroModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		configParam<MapParamQuantity<CVMapMicroModule>>(MAP_PARAM, 0.f, 1.f, 0.f, "µMAP");
-		MapParamQuantity<CVMapMicroModule>* pq = dynamic_cast<MapParamQuantity<CVMapMicroModule>*>(paramQuantities[MAP_PARAM]);
-		pq->module = this;
+		MapParamQuantity<CVMapMicroModule>* pq = configParam<MapParamQuantity<CVMapMicroModule>>(MAP_PARAM, 0.f, 1.f, 0.f, "µMAP");
+		pq->mymodule = this;
 
 		configParam(OFFSET_PARAM, 0.f, 1.f, 0.f, "Input-offset", "%", 0.f, 100.f);
 		configParam(SCALE_PARAM, -2.f, 2.f, 1.f, "Input-scaling", "x");
@@ -202,7 +201,7 @@ struct CVMapMicroWidget : ThemedModuleWidget<CVMapMicroModule>, ParamWidgetConte
 	}
 
 	void extendParamWidgetContextMenu(ParamWidget* pw, Menu* menu) override {
-		ParamQuantity* pq = pw->paramQuantity;
+		ParamQuantity* pq = pw->getParamQuantity();
 		if (!pq) return;
 
 		if (module->paramHandles[0].moduleId == pq->module->id && module->paramHandles[0].paramId == pq->paramId) {
