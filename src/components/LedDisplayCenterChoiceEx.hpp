@@ -13,6 +13,8 @@ struct LedDisplayCenterChoiceEx : LedDisplayChoice {
 
 	void draw(const DrawArgs& args) override {
 		nvgScissor(args.vg, RECT_ARGS(args.clipBox));
+		nvgGlobalTint(args.vg, color::WHITE);
+
 		if (bgColor.a > 0.0) {
 			nvgBeginPath(args.vg);
 			nvgRect(args.vg, 0, 0, box.size.x, box.size.y);

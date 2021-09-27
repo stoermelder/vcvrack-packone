@@ -515,11 +515,13 @@ struct BrandItem : ui::MenuItem {
 			browser->brand = text;
 		browser->refresh(true);
 	}
+	/*
 	void step() override {
 		MenuItem::step();
 		ModuleBrowser* browser = getAncestorOfType<ModuleBrowser>();
-		disabled = !(browser->brand == text);
+		bool active = browser->brand == text;
 	}
+	*/
 };
 
 
@@ -533,11 +535,13 @@ struct TagItem : ui::MenuItem {
 			browser->tagId.insert(tagId);
 		browser->refresh(true);
 	}
+	/*
 	void step() override {
 		MenuItem::step();
 		ModuleBrowser* browser = getAncestorOfType<ModuleBrowser>();
-		disabled = !(browser->tagId.find(tagId) != browser->tagId.end());
+		bool active = browser->tagId.find(tagId) != browser->tagId.end();
 	}
+	*/
 };
 
 

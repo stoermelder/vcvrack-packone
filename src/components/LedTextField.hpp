@@ -20,6 +20,7 @@ struct StoermelderTextField : LedDisplayTextField {
 	}
 
 	void draw(const DrawArgs& args) override {
+		nvgGlobalTint(args.vg, color::WHITE);
 		//nvgScissor(args.vg, RECT_ARGS(args.clipBox));
 
 		if (bgColor.a > 0.0) {

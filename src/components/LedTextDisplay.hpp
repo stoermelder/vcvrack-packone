@@ -16,6 +16,7 @@ struct StoermelderLedDisplay : LightWidget {
 	}
 
 	void draw(const DrawArgs& args) override {
+		nvgGlobalTint(args.vg, color::WHITE);
 		if (text.length() > 0) {
 			nvgFillColor(args.vg, color);
 			nvgFontFaceId(args.vg, font->handle);
@@ -46,6 +47,8 @@ struct LedTextDisplay : OpaqueWidget {
 
 	void draw(const DrawArgs& args) override {
 		nvgScissor(args.vg, RECT_ARGS(args.clipBox));
+		nvgGlobalTint(args.vg, color::WHITE);
+
 		if (bgColor.a > 0.0) {
 			nvgBeginPath(args.vg);
 			nvgRoundedRect(args.vg, 0, 0, box.size.x, box.size.y, 5.0);

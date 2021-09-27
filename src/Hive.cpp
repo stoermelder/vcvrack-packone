@@ -816,6 +816,8 @@ struct HiveDrawHelper {
 		float cursorRadius = (sqrt(3.f) * module->sizeFactor) / 2.f;
 
 		nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
+		nvgGlobalTint(args.vg, color::WHITE);
+
 		for (int i = 0; i < module->numPorts; i++) {
 			if (module->currentState == MODULESTATE::EDIT || module->active[i]) {
 				c = hexToPixel(	module->currentState == MODULESTATE::EDIT ? module->grid.cursor[i].startPos : module->grid.cursor[i].pos, 
@@ -855,19 +857,20 @@ struct HiveDrawHelper {
 
 
 template < typename MODULE >
-struct HiveStartPosEditWidget : LightWidget, HiveDrawHelper<MODULE> {
-	MODULE* module;
-	std::shared_ptr<Font> font;
+struct HiveStartPosEditWidget : TransparentWidget, HiveDrawHelper<MODULE> {
+	MODULE* module;	
 	int selectedId = -1;
 	math::Vec dragPos;
 
 	HiveStartPosEditWidget(MODULE* module) {
-		font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
 		this->module = module;
 		HiveDrawHelper<MODULE>::module = module;
 	}
 
 	void draw(const DrawArgs& args) override {
+		std::shared_ptr<Font> font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
+		nvgGlobalTint(args.vg, color::WHITE);
+
 		if (module && module->currentState == MODULESTATE::EDIT) {
 			NVGcolor c = color::mult(color::WHITE, 0.7f);
 			float stroke = 1.f;
@@ -939,7 +942,7 @@ struct HiveStartPosEditWidget : LightWidget, HiveDrawHelper<MODULE> {
 				nvgFill(args.vg);
 			}
 
-			LightWidget::draw(args);
+			TransparentWidget::draw(args);
 		}
 	}
 
@@ -969,7 +972,7 @@ struct HiveStartPosEditWidget : LightWidget, HiveDrawHelper<MODULE> {
 					}
 				}
 			} 
-			LightWidget::onButton(e);
+			TransparentWidget::onButton(e);
 		}
 	}
 

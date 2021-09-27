@@ -753,6 +753,8 @@ struct MazeDrawHelper {
 		float r = box.size.y / module->usedSize / 2.f;
 
 		nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
+		nvgGlobalTint(args.vg, color::WHITE);
+
 		for (int i = 0; i < module->numPorts; i++) {
 			if (module->currentState == MODULESTATE::EDIT || module->active[i]) {
 				Vec c = Vec(xpos[i] * sizeX + r, ypos[i] * sizeY + r);
@@ -790,14 +792,12 @@ struct MazeDrawHelper {
 
 
 template < typename MODULE >
-struct MazeStartPosEditWidget : LightWidget, MazeDrawHelper<MODULE> {
+struct MazeStartPosEditWidget : TransparentWidget, MazeDrawHelper<MODULE> {
 	MODULE* module;
-	std::shared_ptr<Font> font;
 	int selectedId = -1;
 	math::Vec dragPos;
 
 	MazeStartPosEditWidget(MODULE* module) {
-		font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
 		this->module = module;
 		MazeDrawHelper<MODULE>::module = module;
 		MazeDrawHelper<MODULE>::xpos = module->xStartPos;
@@ -805,6 +805,9 @@ struct MazeStartPosEditWidget : LightWidget, MazeDrawHelper<MODULE> {
 	}
 
 	void draw(const DrawArgs& args) override {
+		std::shared_ptr<Font> font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
+		nvgGlobalTint(args.vg, color::WHITE);
+
 		if (module && module->currentState == MODULESTATE::EDIT) {
 			NVGcolor c = color::mult(color::WHITE, 0.7f);
 			float stroke = 1.f;
@@ -847,7 +850,7 @@ struct MazeStartPosEditWidget : LightWidget, MazeDrawHelper<MODULE> {
 				nvgFill(args.vg);
 			}
 
-			LightWidget::draw(args);
+			TransparentWidget::draw(args);
 		}
 	}
 
@@ -876,7 +879,7 @@ struct MazeStartPosEditWidget : LightWidget, MazeDrawHelper<MODULE> {
 					e.consume(this);
 				}
 			} 
-			LightWidget::onButton(e);
+			TransparentWidget::onButton(e);
 		}
 	}
 

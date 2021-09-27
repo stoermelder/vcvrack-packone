@@ -1523,6 +1523,7 @@ struct ScreenInportDragWidget : ScreenDragWidget<MODULE> {
 	}
 
 	void draw(const Widget::DrawArgs& args) override {
+		nvgGlobalTint(args.vg, color::WHITE);
 		if (AW::id + 1 > AW::module->inportsUsed) return;
 
 		if (AW::module->selectionTest(AW::type, AW::id)) {
@@ -1588,6 +1589,7 @@ struct ScreenMixportDragWidget : ScreenDragWidget<MODULE> {
 
 	void draw(const Widget::DrawArgs& args) override {
 		if (AW::id + 1 > AW::module->mixportsUsed) return;
+		nvgGlobalTint(args.vg, color::WHITE);
 		AW::draw(args);
 
 		nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);

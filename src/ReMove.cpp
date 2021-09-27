@@ -788,10 +788,12 @@ struct ReMoveDisplay : TransparentWidget {
         font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
     }
 
-    void draw(NVGcontext *vg) override {
+    void draw(NVGcontext* vg) override {
         if (!module) return;
         float maxX = box.size.x;
         float maxY = box.size.y;
+
+        nvgGlobalTint(vg, color::WHITE);
 
         // Draw ref line
         nvgStrokeColor(vg, nvgRGBA(0xff, 0xb0, 0xf3, 0x20));

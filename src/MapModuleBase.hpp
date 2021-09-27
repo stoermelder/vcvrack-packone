@@ -473,6 +473,8 @@ struct MapModuleChoice : LedDisplayChoice {
 	}
 
 	void draw(const DrawArgs& args) override {
+		nvgGlobalTint(args.vg, color::WHITE);
+
 		if (bgColor.a > 0.0) {
 			nvgScissor(args.vg, RECT_ARGS(args.clipBox));
 			nvgBeginPath(args.vg);
