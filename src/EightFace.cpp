@@ -105,6 +105,7 @@ struct EightFaceModule : Module {
 	std::mutex workerMutex;
 	std::condition_variable workerCondVar;
 	std::thread* worker;
+	Context* workerContext;
 	bool workerIsRunning = true;
 	bool workerDoProcess = false;
 	int workerPreset = -1;
@@ -133,6 +134,7 @@ struct EightFaceModule : Module {
 		lightDivider.setDivision(512);
 		buttonDivider.setDivision(4);
 		onReset();
+		workerContext = contextGet();
 		worker = new std::thread(&EightFaceModule::processWorker, this);
 	}
 
@@ -146,6 +148,7 @@ struct EightFaceModule : Module {
 		workerDoProcess = true;
 		workerCondVar.notify_one();
 		worker->join();
+		workerContext = NULL;
 		delete worker;
 	}
 
@@ -350,6 +353,7 @@ struct EightFaceModule : Module {
 
 
 	void processWorker() {
+		contextSet(workerContext);
 		while (true) {
 			std::unique_lock<std::mutex> lock(workerMutex);
 			workerCondVar.wait(lock, std::bind(&EightFaceModule::workerDoProcess, this));

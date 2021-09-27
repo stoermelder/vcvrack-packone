@@ -125,6 +125,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 	std::mutex workerMutex;
 	std::condition_variable workerCondVar;
 	std::thread* worker;
+	Context* workerContext;
 	bool workerIsRunning = true;
 	bool workerDoProcess = false;
 	int workerPreset = -1;
@@ -152,6 +153,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 		boundModulesDivider.setDivision(APP->engine->getSampleRate());
 		lightDivider.setDivision(512);
 		onReset();
+		workerContext = contextGet();
 		worker = new std::thread(&EightFaceMk2Module::processWorker, this);
 	}
 
@@ -171,6 +173,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 		workerDoProcess = true;
 		workerCondVar.notify_one();
 		worker->join();
+		workerContext = NULL;
 		delete worker;
 	}
 
@@ -486,6 +489,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 	}
 
 	void processWorker() {
+		contextSet(workerContext);
 		while (true) {
 			std::unique_lock<std::mutex> lock(workerMutex);
 			workerCondVar.wait(lock, std::bind(&EightFaceMk2Module::workerDoProcess, this));
