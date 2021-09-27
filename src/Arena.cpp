@@ -186,6 +186,7 @@ struct ArenaModule : Module {
 		selectionReset();
 		init();
 		for (int i = 0; i < IN_PORTS; i++) {
+			radius[i] = radiusUi[i] = 0.5f;
 			modMode[i] = MODMODE::RADIUS;
 			modBipolar[i] = false;
 			inputXBipolar[i] = false;
@@ -1018,19 +1019,20 @@ struct RadiusSlider : ui::Slider {
 			this->id = id;
 		}
 		void setValue(float value) override {
+			value = clamp(value, 0.f, 1.f);
 			module->radiusUi[id] = value;
 		}
 		float getValue() override {
-			return module->radius[id];
+			return module->radiusUi[id];
 		}
 		float getDefaultValue() override {
-			return 0.5;
+			return 0.5f;
 		}
 		float getDisplayValue() override {
-			return getValue() * 100;
+			return getValue() * 100.f;
 		}
 		void setDisplayValue(float displayValue) override {
-			setValue(displayValue / 100);
+			setValue(displayValue / 100.f);
 		}
 		std::string getLabel() override {
 			return "Radius";
@@ -2337,7 +2339,7 @@ struct SeqEditDragWidget : OpaqueWidget {
 		if (e.button != GLFW_MOUSE_BUTTON_LEFT)
 			return;
 
-		dragPos = APP->scene->mousePos.minus(box.pos);
+		dragPos = APP->scene->rack->getMousePos().minus(box.pos);
 		timerClear = true;
 		module->seqData[id][seq].length = 0;
 

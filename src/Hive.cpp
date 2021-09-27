@@ -858,7 +858,7 @@ struct HiveDrawHelper {
 
 template < typename MODULE >
 struct HiveStartPosEditWidget : TransparentWidget, HiveDrawHelper<MODULE> {
-	MODULE* module;	
+	MODULE* module;
 	int selectedId = -1;
 	math::Vec dragPos;
 
@@ -960,7 +960,7 @@ struct HiveStartPosEditWidget : TransparentWidget, HiveDrawHelper<MODULE> {
 					}
 
 					if (e.button == GLFW_MOUSE_BUTTON_LEFT) {
-						dragPos = APP->scene->mousePos.minus(e.pos);
+						dragPos = APP->scene->rack->getMousePos().minus(e.pos);
 						e.consume(this);
 					}
 					if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
