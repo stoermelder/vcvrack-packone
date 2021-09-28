@@ -609,8 +609,8 @@ struct StripWidget : StripWidgetBase<StripModule> {
 
 		addParam(createParamCentered<CKD6>(Vec(22.5f, 67.7f), module, StripModule::MODE_PARAM));
 
-		addChild(createLightCentered<TriangleLeftLight<SmallLight<GreenLight>>>(Vec(14.8f, 91.2f), module, StripModule::LEFT_LIGHT));
-		addChild(createLightCentered<TriangleRightLight<SmallLight<GreenLight>>>(Vec(30.2f, 91.2f), module, StripModule::RIGHT_LIGHT));
+		addChild(createLightCentered<TriangleLeftLight<GreenLight>>(Vec(14.8f, 91.2f), module, StripModule::LEFT_LIGHT));
+		addChild(createLightCentered<TriangleRightLight<GreenLight>>(Vec(30.2f, 91.2f), module, StripModule::RIGHT_LIGHT));
 
 		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 139.4f), module, StripModule::ON_INPUT));
 		addParam(createParamCentered<TL1105>(Vec(22.5f, 162.7f), module, StripModule::ON_PARAM));

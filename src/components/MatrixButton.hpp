@@ -9,6 +9,9 @@ struct MatrixButtonLight : BASE {
 		this->box.size = math::Vec(26.5f, 26.5f);
 	}
 
+	void drawBackground(const widget::Widget::DrawArgs& args) override {
+	}
+
 	void drawLight(const Widget::DrawArgs& args) override {
 		nvgBeginPath(args.vg);
 		nvgRoundedRect(args.vg, 0.8f, 0.8f, this->box.size.x - 2 * 0.8f, this->box.size.y - 2 * 0.8f, 3.4f);

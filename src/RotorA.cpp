@@ -141,7 +141,7 @@ struct RotorAWidget : ThemedModuleWidget<RotorAModule> {
 		addChild(w0);
 		addInput(createInputCentered<StoermelderPort>(Vec(30.f, 175.0f), module, RotorAModule::BASE_INPUT));
 
-		addParam(createParamCentered<RoundBlackSnapKnob>(Vec(30.f, 220.1f), module, RotorAModule::CHANNELS_PARAM));
+		addParam(createParamCentered<StoermelderSmallKnob>(Vec(30.f, 220.1f), module, RotorAModule::CHANNELS_PARAM));
 		StoermelderTrimpot* channelsOffset = createParamCentered<StoermelderTrimpot>(Vec(30.f, 259.1f), module, RotorAModule::CHANNELS_OFFSET_PARAM);
 		channelsOffset->snap = true;
 		addParam(channelsOffset);

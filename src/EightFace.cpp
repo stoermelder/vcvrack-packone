@@ -678,8 +678,8 @@ struct EightFaceWidget : ThemedModuleWidget<EightFaceModule<8>, EightFaceWidgetT
 		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 58.9f), module, MODULE::SLOT_INPUT));
 		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 95.2f), module, MODULE::RESET_INPUT));
 
-		addChild(createLightCentered<TriangleLeftLight<SmallLight<WhiteRedLight>>>(Vec(13.8f, 119.1f), module, MODULE::LEFT_LIGHT));
-		addChild(createLightCentered<TriangleRightLight<SmallLight<WhiteRedLight>>>(Vec(31.2f, 119.1f), module, MODULE::RIGHT_LIGHT));
+		addChild(createLightCentered<TriangleLeftLight<WhiteRedLight>>(Vec(13.8f, 119.1f), module, MODULE::LEFT_LIGHT));
+		addChild(createLightCentered<TriangleRightLight<WhiteRedLight>>(Vec(31.2f, 119.1f), module, MODULE::RIGHT_LIGHT));
 
 		addParam(createParamCentered<LEDButton>(Vec(22.5f, 140.6f), module, MODULE::PRESET_PARAM + 0));
 		addParam(createParamCentered<LEDButton>(Vec(22.5f, 164.1f), module, MODULE::PRESET_PARAM + 1));
@@ -723,8 +723,8 @@ struct EightFaceX2Widget : ThemedModuleWidget<EightFaceModule<16>, EightFaceWidg
 		addInput(createInputCentered<StoermelderPort>(Vec(30.0f, 58.9f), module, MODULE::SLOT_INPUT));
 		addInput(createInputCentered<StoermelderPort>(Vec(30.0f, 95.2f), module, MODULE::RESET_INPUT));
 
-		addChild(createLightCentered<TriangleLeftLight<SmallLight<WhiteRedLight>>>(Vec(21.3f, 119.1f), module, MODULE::LEFT_LIGHT));
-		addChild(createLightCentered<TriangleRightLight<SmallLight<WhiteRedLight>>>(Vec(38.7f, 119.1f), module, MODULE::RIGHT_LIGHT));
+		addChild(createLightCentered<TriangleLeftLight<WhiteRedLight>>(Vec(21.3f, 119.1f), module, MODULE::LEFT_LIGHT));
+		addChild(createLightCentered<TriangleRightLight<WhiteRedLight>>(Vec(38.7f, 119.1f), module, MODULE::RIGHT_LIGHT));
 
 		addParam(createParamCentered<LEDButton>(Vec(17.7f, 140.6f), module, MODULE::PRESET_PARAM + 0));
 		addParam(createParamCentered<LEDButton>(Vec(17.7f, 164.1f), module, MODULE::PRESET_PARAM + 1));

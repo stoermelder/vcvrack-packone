@@ -41,7 +41,11 @@ struct LongPressButton {
 
 template <typename TBase>
 struct TriangleLeftLight : TBase {
-	void drawLight(const widget::Widget::DrawArgs& args) override {
+	TriangleLeftLight() {
+		this->box.size = rack::mm2px(math::Vec(2.176, 2.176));
+	}
+
+	void drawBackground(const widget::Widget::DrawArgs& args) override {
 		nvgBeginPath(args.vg);
 		nvgMoveTo(args.vg, this->box.size.x, 0);
 		nvgLineTo(args.vg, this->box.size.x, this->box.size.y);
@@ -54,12 +58,6 @@ struct TriangleLeftLight : TBase {
 			nvgFill(args.vg);
 		}
 
-		// Foreground
-		if (this->color.a > 0.0) {
-			nvgFillColor(args.vg, this->color);
-			nvgFill(args.vg);
-		}
-
 		// Border
 		if (this->borderColor.a > 0.0) {
 			nvgStrokeWidth(args.vg, 0.5);
@@ -67,11 +65,29 @@ struct TriangleLeftLight : TBase {
 			nvgStroke(args.vg);
 		}
 	}
+
+	void drawLight(const widget::Widget::DrawArgs& args) override {
+		nvgBeginPath(args.vg);
+		nvgMoveTo(args.vg, this->box.size.x, 0);
+		nvgLineTo(args.vg, this->box.size.x, this->box.size.y);
+		nvgLineTo(args.vg, 0, this->box.size.y / 2.f);
+		nvgClosePath(args.vg);
+
+		// Foreground
+		if (this->color.a > 0.0) {
+			nvgFillColor(args.vg, this->color);
+			nvgFill(args.vg);
+		}
+	}
 };
 
 template <typename TBase>
 struct TriangleRightLight : TBase {
-	void drawLight(const widget::Widget::DrawArgs& args) override {
+	TriangleRightLight() {
+		this->box.size = rack::mm2px(math::Vec(2.176, 2.176));
+	}
+
+	void drawBackground(const widget::Widget::DrawArgs& args) override {
 		nvgBeginPath(args.vg);
 		nvgMoveTo(args.vg, 0, 0);
 		nvgLineTo(args.vg, 0, this->box.size.y);
@@ -84,17 +100,25 @@ struct TriangleRightLight : TBase {
 			nvgFill(args.vg);
 		}
 
-		// Foreground
-		if (this->color.a > 0.0) {
-			nvgFillColor(args.vg, this->color);
-			nvgFill(args.vg);
-		}
-
 		// Border
 		if (this->borderColor.a > 0.0) {
 			nvgStrokeWidth(args.vg, 0.5);
 			nvgStrokeColor(args.vg, this->borderColor);
 			nvgStroke(args.vg);
+		}
+	}
+
+	void drawLight(const widget::Widget::DrawArgs& args) override {
+		nvgBeginPath(args.vg);
+		nvgMoveTo(args.vg, 0, 0);
+		nvgLineTo(args.vg, 0, this->box.size.y);
+		nvgLineTo(args.vg, this->box.size.x, this->box.size.y / 2.f);
+		nvgClosePath(args.vg);
+
+		// Foreground
+		if (this->color.a > 0.0) {
+			nvgFillColor(args.vg, this->color);
+			nvgFill(args.vg);
 		}
 	}
 };
