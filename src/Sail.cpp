@@ -1,4 +1,5 @@
 #include "plugin.hpp"
+#include "components/Knobs.hpp"
 #include "ui/OverlayMessageWidget.hpp"
 
 namespace StoermelderPackOne {

@@ -1,5 +1,5 @@
 #include "plugin.hpp"
-
+#include "components/Knobs.hpp"
 
 namespace StoermelderPackOne {
 namespace Affix {

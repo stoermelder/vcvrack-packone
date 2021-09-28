@@ -2,6 +2,7 @@
 #include "digital.hpp"
 #include "TransitBase.hpp"
 #include "digital/ShapedSlewLimiter.hpp"
+#include "components/Knobs.hpp"
 #include "components/ParamHandleIndicator.hpp"
 #include <random>
 

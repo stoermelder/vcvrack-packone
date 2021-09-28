@@ -125,33 +125,10 @@ struct StoermelderBlackScrew : app::SvgScrew {
 	}
 };
 
-struct StoermelderTrimpot : app::SvgKnob {
-	StoermelderTrimpot() {
-		minAngle = -0.75 * M_PI;
-		maxAngle = 0.75 * M_PI;
-		setSvg(APP->window->loadSvg(asset::plugin(pluginInstance, "res/components/Trimpot.svg")));
-		sw->box.size = shadow->box.size = Vec(16.6f, 16.6f);
-	}
-};
-
-struct StoermelderTrimpotSnap : StoermelderTrimpot {
-	StoermelderTrimpotSnap() {
-		snap = true;
-	}
-};
-
-struct StoermelderSmallKnob : app::SvgKnob {
-	StoermelderSmallKnob() {
-		minAngle = -0.83 * M_PI;
-		maxAngle = 0.83 * M_PI;
-		setSvg(APP->window->loadSvg(asset::plugin(pluginInstance, "res/components/SmallKnob.svg")));
-		sw->box.size = shadow->box.size = Vec(22.7f, 22.7f);
-	}
-};
 
 struct StoermelderPort : app::SvgPort {
 	StoermelderPort() {
-		setSvg(APP->window->loadSvg(asset::plugin(pluginInstance, "res/components/Port.svg")));
+		setSvg(Svg::load(asset::plugin(pluginInstance, "res/components/Port.svg")));
 		box.size = shadow->box.size = Vec(22.2f, 22.2f);
 	}
 };

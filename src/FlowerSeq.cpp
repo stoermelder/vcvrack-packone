@@ -1,5 +1,6 @@
 #include "plugin.hpp"
 #include "FlowerSeq.hpp"
+#include "components/Knobs.hpp"
 #include <osdialog.h>
 
 namespace StoermelderPackOne {

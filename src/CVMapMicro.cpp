@@ -1,5 +1,6 @@
 #include "plugin.hpp"
 #include "MapModuleBase.hpp"
+#include "components/Knobs.hpp"
 #include "components/MapButton.hpp"
 #include "components/VoltageLedDisplay.hpp"
 #include "ui/ParamWidgetContextExtender.hpp"

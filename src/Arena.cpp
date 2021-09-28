@@ -1,4 +1,5 @@
 #include "plugin.hpp"
+#include "components/Knobs.hpp"
 #include "components/LedTextDisplay.hpp"
 #include <chrono>
 #include <random>

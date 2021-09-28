@@ -1,5 +1,6 @@
 #include "plugin.hpp"
 #include "IntermixBase.hpp"
+#include "components/Knobs.hpp"
 
 namespace StoermelderPackOne {
 namespace Intermix {
