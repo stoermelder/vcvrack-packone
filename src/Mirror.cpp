@@ -78,12 +78,12 @@ struct MirrorModule : Module, StripIdFixModule {
 	void onReset() override {
 		inChange = true;
 		for (ParamHandle* sourceHandle : sourceHandles) {
-			APP->engine->removeParamHandle_NoLock(sourceHandle);
+			APP->engine->removeParamHandle(sourceHandle);
 			delete sourceHandle;
 		}
 		sourceHandles.clear();
 		for (ParamHandle* targetHandle : targetHandles) {
-			APP->engine->removeParamHandle_NoLock(targetHandle);
+			APP->engine->removeParamHandle(targetHandle);
 			delete targetHandle;
 		}
 		targetHandles.clear();
