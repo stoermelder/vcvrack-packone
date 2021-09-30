@@ -1,6 +1,7 @@
 #include "Strip.hpp"
 #include <thread>
 #include <mutex>
+#include <condition_variable>
 
 namespace StoermelderPackOne {
 namespace Strip {
@@ -68,6 +69,14 @@ struct StripModule : StripModuleBase {
 
 	dsp::ClockDivider lightDivider;
 
+	std::mutex workerMutex;
+	std::condition_variable workerCondVar;
+	std::thread* worker;
+	Context* workerContext;
+	bool workerIsRunning = true;
+	bool worker_val;
+	bool worker_useHistory;
+
 	StripModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -79,6 +88,16 @@ struct StripModule : StripModuleBase {
 
 		lightDivider.setDivision(1024);
 		onReset();
+		workerContext = contextGet();
+		worker = new std::thread(&StripModule::processWorker, this);
+	}
+
+	~StripModule() {
+		workerIsRunning = false;
+		workerCondVar.notify_one();
+		worker->join();
+		workerContext = NULL;
+		delete worker;
 	}
 
 	void onReset() override {
@@ -128,11 +147,27 @@ struct StripModule : StripModuleBase {
 		}
 	}
 
+	void processWorker() {
+		contextSet(workerContext);
+		while (true) {
+			std::unique_lock<std::mutex> lock(workerMutex);
+			workerCondVar.wait(lock);
+			if (!workerIsRunning) return;
+			groupDisable_worker(worker_val, worker_useHistory);
+		}
+	}
+
+	void groupDisable(bool val, bool useHistory) {
+		worker_val = val;
+		worker_useHistory = useHistory;
+		workerCondVar.notify_one();
+	}
+
 	/** 
 	 * Disables/enables all modules of the current strip.
 	 * To be called from engine-thread only.
 	 */
-	void groupDisable(bool val, bool useHistory) {
+	void groupDisable_worker(bool val, bool useHistory) {
 		if (lastState == val) return;
 		lastState = val;
 
@@ -149,7 +184,7 @@ struct StripModule : StripModuleBase {
 				if (!m || m->rightExpander.moduleId < 0 || m->model == modelStripBlock) break;
 				// This is what "Module.hpp" says about bypass:
 				// "Module subclasses should not read/write this variable."
-				APP->engine->bypassModule(m->rightExpander.module, true);
+				APP->engine->bypassModule(m->rightExpander.module, val);
 				// Clear outputs and set to 1 channel
 				for (Output& output : m->rightExpander.module->outputs) {
 					// This zeros all voltages, but the channel is set to 1 if connected
@@ -612,12 +647,11 @@ struct StripWidget : StripWidgetBase<StripModule> {
 		addChild(createLightCentered<TriangleLeftLight<GreenLight>>(Vec(14.8f, 91.2f), module, StripModule::LEFT_LIGHT));
 		addChild(createLightCentered<TriangleRightLight<GreenLight>>(Vec(30.2f, 91.2f), module, StripModule::RIGHT_LIGHT));
 
-		/* Removed because it's currently not supported in Rack v2, maybe never will.
 		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 139.4f), module, StripModule::ON_INPUT));
 		addParam(createParamCentered<TL1105>(Vec(22.5f, 162.7f), module, StripModule::ON_PARAM));
 		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 205.1f), module, StripModule::OFF_INPUT));
 		addParam(createParamCentered<TL1105>(Vec(22.5f, 228.5f), module, StripModule::OFF_PARAM));
-		*/
+
 		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 270.3f), module, StripModule::RAND_INPUT));
 		addParam(createParamCentered<TL1105>(Vec(22.5f, 293.6f), module, StripModule::RAND_PARAM));
 
