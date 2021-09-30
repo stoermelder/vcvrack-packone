@@ -149,7 +149,7 @@ struct StripModule : StripModuleBase {
 				if (!m || m->rightExpander.moduleId < 0 || m->model == modelStripBlock) break;
 				// This is what "Module.hpp" says about bypass:
 				// "Module subclasses should not read/write this variable."
-				m->rightExpander.module->setBypassed(val);
+				APP->engine->bypassModule(m->rightExpander.module, true);
 				// Clear outputs and set to 1 channel
 				for (Output& output : m->rightExpander.module->outputs) {
 					// This zeros all voltages, but the channel is set to 1 if connected
@@ -174,7 +174,7 @@ struct StripModule : StripModuleBase {
 				if (!m || m->leftExpander.moduleId < 0 || m->model == modelStripBlock) break;
 				// This is what "Module.hpp" says about bypass:
 				// "Module subclasses should not read/write this variable."
-				m->leftExpander.module->setBypassed(val);
+				APP->engine->bypassModule(m->leftExpander.module, val);
 				// Clear outputs and set to 1 channel
 				for (Output& output : m->leftExpander.module->outputs) {
 					// This zeros all voltages, but the channel is set to 1 if connected
@@ -612,11 +612,12 @@ struct StripWidget : StripWidgetBase<StripModule> {
 		addChild(createLightCentered<TriangleLeftLight<GreenLight>>(Vec(14.8f, 91.2f), module, StripModule::LEFT_LIGHT));
 		addChild(createLightCentered<TriangleRightLight<GreenLight>>(Vec(30.2f, 91.2f), module, StripModule::RIGHT_LIGHT));
 
+		/* Removed because it's currently not supported in Rack v2, maybe never will.
 		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 139.4f), module, StripModule::ON_INPUT));
 		addParam(createParamCentered<TL1105>(Vec(22.5f, 162.7f), module, StripModule::ON_PARAM));
 		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 205.1f), module, StripModule::OFF_INPUT));
 		addParam(createParamCentered<TL1105>(Vec(22.5f, 228.5f), module, StripModule::OFF_PARAM));
-
+		*/
 		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 270.3f), module, StripModule::RAND_INPUT));
 		addParam(createParamCentered<TL1105>(Vec(22.5f, 293.6f), module, StripModule::RAND_PARAM));
 

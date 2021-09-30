@@ -75,7 +75,8 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 			history::ComplexAction* complexAction = new history::ComplexAction;
 			complexAction->name = "stoermelder STRIP remove";
 
-			for (int id : toBeRemoved) {
+			/*
+			for (int64_t id : toBeRemoved) {
 				ModuleWidget* mw = APP->scene->rack->getModule(id);
 
 				for (PortWidget* output : mw->getOutputs()) {
@@ -106,9 +107,13 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 					}
 				}
 			}
-
-			for (int id : toBeRemoved) {
+			*/
+		
+			for (int64_t id : toBeRemoved) {
 				ModuleWidget* mw = APP->scene->rack->getModule(id);
+
+				mw->appendDisconnectActions(complexAction);
+
 				// history::ModuleRemove
 				history::ModuleRemove* h = new history::ModuleRemove;
 				h->setModule(mw);
