@@ -68,6 +68,10 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 	MacroModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+		configInput(INPUT);
+		for (int i = 0; i < CVPORTS; i++) {
+			configOutput(OUTPUT_CV + i);
+		}
 		configParam(PARAM_KNOB, 0.f, 1.f, 0.f, "Macro knob", "%", 0.f, 100.f);
 
 		for (int i = 0; i < MAPS; i++) {
@@ -373,69 +377,26 @@ struct MacroWidget : ThemedModuleWidget<MacroModule>, ParamWidgetContextExtender
 	void appendContextMenu(Menu* menu) override {
 		ThemedModuleWidget<MODULE>::appendContextMenu(menu);
 		MODULE* module = dynamic_cast<MODULE*>(this->module);
-		assert(module);
 
-		struct PrecisionMenuItem : MenuItem {
-			struct PrecisionItem : MenuItem {
-				MODULE* module;
-				int sampleRate;
-				int division;
-				std::string text;
-				PrecisionItem() {
-					sampleRate = int(APP->engine->getSampleRate());
-				}
-				void onAction(const event::Action& e) override {
-					module->setProcessDivision(division);
-				}
-				void step() override {
-					MenuItem::text = string::f("%s (%i Hz)", text.c_str(), sampleRate / division);
-					rightText = module->processDivision == division ? "✔" : "";
-					MenuItem::step();
-				}
-			};
-
-			MODULE* module;
-			PrecisionMenuItem() {
-				rightText = RIGHT_ARROW;
-			}
-
-			Menu* createChildMenu() override {
-				Menu* menu = new Menu;
-				menu->addChild(construct<PrecisionItem>(&PrecisionItem::text, "Audio rate", &PrecisionItem::module, module, &PrecisionItem::division, 1));
-				menu->addChild(construct<PrecisionItem>(&PrecisionItem::text, "Higher CPU", &PrecisionItem::module, module, &PrecisionItem::division, 8));
-				menu->addChild(construct<PrecisionItem>(&PrecisionItem::text, "Moderate CPU", &PrecisionItem::module, module, &PrecisionItem::division, 64));
-				menu->addChild(construct<PrecisionItem>(&PrecisionItem::text, "Lowest CPU", &PrecisionItem::module, module, &PrecisionItem::division, 256));
-				return menu;
-			}
-		};
-
-		struct LockItem : MenuItem {
-			MODULE* module;
-			void onAction(const event::Action& e) override {
-				module->lockParameterChanges ^= true;
-			}
-			void step() override {
-				rightText = module->lockParameterChanges ? "Locked" : "Unlocked";
-				MenuItem::step();
-			}
-		};
-
-		struct UniBiItem : MenuItem {
-			MODULE* module;
-			void onAction(const event::Action& e) override {
-				module->bipolarInput ^= true;
-			}
-			void step() override {
-				rightText = module->bipolarInput ? "-5V..5V" : "0V..10V";
-				MenuItem::step();
-			}
-		};
-
+		int sampleRate = int(APP->engine->getSampleRate());
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<PrecisionMenuItem>(&MenuItem::text, "Precision", &PrecisionMenuItem::module, module));
+		menu->addChild(StoermelderPackOne::Rack::createMapSubmenuItem<int>("Precision",
+			{
+				{ 1, string::f("Audio rate (%i Hz)", sampleRate / 1) },
+				{ 8, string::f("High (%i Hz)", sampleRate / 8) },
+				{ 64, string::f("Moderate (%i Hz)", sampleRate / 64) },
+				{ 256, string::f("Lowest (%i Hz)", sampleRate / 256) }
+			},
+			[=]() {
+				return module->processDivision;
+			},
+			[=](int division) {
+				module->setProcessDivision(division);
+			}
+		));
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<LockItem>(&MenuItem::text, "Parameter changes", &LockItem::module, module));
-		menu->addChild(construct<UniBiItem>(&MenuItem::text, "Input voltage", &UniBiItem::module, module));
+		menu->addChild(createBoolPtrMenuItem("Parameter changes", &module->lockParameterChanges));
+		menu->addChild(createIndexPtrSubmenuItem("Input voltage", {"0V..10V", "-5V..5V"}, &module->bipolarInput));
 	}
 
 	void extendParamWidgetContextMenu(ParamWidget* pw, Menu* menu) override {

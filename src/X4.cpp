@@ -334,21 +334,9 @@ struct X4Widget : ThemedModuleWidget<X4Module> {
 	void appendContextMenu(Menu* menu) override {
 		ThemedModuleWidget<X4Module>::appendContextMenu(menu);
 		X4Module* module = dynamic_cast<X4Module*>(this->module);
-		assert(module);
-
-		struct AudioRateItem : MenuItem {
-			X4Module* module;
-			void onAction(const event::Action& e) override {
-				module->audioRate ^= true;
-			}
-			void step() override {
-				rightText = module->audioRate ? "✔" : "";
-				MenuItem::step();
-			}
-		};
 
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<AudioRateItem>(&MenuItem::text, "Audio rate processing", &AudioRateItem::module, module));
+		menu->addChild(createBoolPtrMenuItem("Audio rate processing", &module->audioRate));
 	}
 };
 

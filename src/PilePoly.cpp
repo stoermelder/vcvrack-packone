@@ -49,6 +49,12 @@ struct PilePolyModule : Module {
 	PilePolyModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+		configInput(INPUT_SLEW, "Slew CV");
+		configInput(INPUT_INC, "Increment"),
+		configInput(INPUT_DEC, "Decrement");
+		configInput(INPUT_RESET, "Reset");
+		configInput(INPUT_RESET_VOLT, "Reset voltage");
+		configOutput(OUTPUT, "Voltage");
 		configParam(PARAM_SLEW, 0.f, 5.f, 0.f, "Slew limiting", "s");
 		configParam(PARAM_STEP, 0.f, 5.f, 0.2f, "Stepsize", "V");
 		onReset();
@@ -171,38 +177,17 @@ struct PilePolyWidget : ThemedModuleWidget<PilePolyModule> {
 	void appendContextMenu(Menu* menu) override {
 		ThemedModuleWidget<PilePolyModule>::appendContextMenu(menu);
 
-		struct RangeMenuItem : MenuItem {
-			PilePolyModule* module;
-			RangeMenuItem() {
-				rightText = RIGHT_ARROW;
-			}
-
-			Menu* createChildMenu() override {
-				Menu* menu = new Menu;
-
-				struct RangeItem : MenuItem {
-					PilePolyModule* module;
-					RANGE range;
-					void onAction(const event::Action& e) override {
-						module->range = range;
-					}
-					void step() override {
-						rightText = module->range == range ? "✔" : "";
-						MenuItem::step();
-					}
-				};
-
-				menu->addChild(construct<RangeItem>(&MenuItem::text, "0..5V", &RangeItem::module, module, &RangeItem::range, RANGE::UNI_5V));
-				menu->addChild(construct<RangeItem>(&MenuItem::text, "0..10V", &RangeItem::module, module, &RangeItem::range, RANGE::UNI_10V));
-				menu->addChild(construct<RangeItem>(&MenuItem::text, "-5..5V", &RangeItem::module, module, &RangeItem::range, RANGE::BI_5V));
-				menu->addChild(construct<RangeItem>(&MenuItem::text, "-10..10V", &RangeItem::module, module, &RangeItem::range, RANGE::BI_10V));
-				menu->addChild(construct<RangeItem>(&MenuItem::text, "Unbounded", &RangeItem::module, module, &RangeItem::range, RANGE::UNBOUNDED));
-				return menu;
-			}
-		};
-
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<RangeMenuItem>(&MenuItem::text, "Voltage range", &RangeMenuItem::module, module));
+		menu->addChild(StoermelderPackOne::Rack::createMapPtrSubmenuItem<RANGE>("Voltage range",
+			{
+				{ RANGE::UNI_5V, "0..5V" },
+				{ RANGE::UNI_10V, "0..10V" },
+				{ RANGE::BI_5V, "-5..5V" },
+				{ RANGE::BI_10V, "-10..10V" },
+				{ RANGE::UNBOUNDED, "Unbounded" }
+			},
+			&module->range
+		));
 	}
 };
 

@@ -61,6 +61,8 @@ struct GotoModule : Module {
 	GotoModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+		configInput(INPUT_TRIG, "Jump point trigger");
+		inputInfos[INPUT_TRIG]->description = "Operating mode is set on the context menu.";
 		for (int i = 0; i < SLOTS; i++) {
 			configParam<TriggerParamQuantity>(PARAM_SLOT + i, 0, 1, 0, string::f("Jump point %i (SHIFT+%i)\nShort-press to jumo\nLong-press to learn/clear", i + 1, (i + 1) % 10));
 		}
@@ -347,67 +349,18 @@ struct GotoWidget : ThemedModuleWidget<GotoModule<10>> {
 	void appendContextMenu(Menu* menu) override {
 		ThemedModuleWidget<GotoModule<10>>::appendContextMenu(menu);
 
-		struct SmoothTransitionItem : MenuItem {
-			GotoModule<10>* module;
-			void onAction(const event::Action& e) override {
-				module->smoothTransition ^= true;
-			}
-			void step() override {
-				rightText = module->smoothTransition ? "✔" : "";
-				MenuItem::step();
-			}
-		};
-
-		struct CenterModuleItem : MenuItem {
-			GotoModule<10>* module;
-			void onAction(const event::Action& e) override {
-				module->centerModule ^= true;
-			}
-			void step() override {
-				rightText = module->centerModule ? "✔" : "";
-				MenuItem::step();
-			}
-		};
-
-		struct IgnoreZoomItem : MenuItem {
-			GotoModule<10>* module;
-			void onAction(const event::Action& e) override {
-				module->ignoreZoom ^= true;
-			}
-			void step() override {
-				rightText = module->ignoreZoom ? "✔" : "";
-				MenuItem::step();
-			}
-		};
-
-		struct TriggerModeMenuItem : MenuItem {
-			struct TriggerModeItem : MenuItem {
-				GotoModule<10>* module;
-				TRIGGERMODE triggerMode;
-				void onAction(const event::Action& e) override {
-					module->triggerMode = triggerMode;
-				}
-				void step() override {
-					rightText = module->triggerMode == triggerMode ? "✔" : "";
-					MenuItem::step();
-				}
-			};
-
-			GotoModule<10>* module;
-			Menu* createChildMenu() override {
-				Menu* menu = new Menu;
-				menu->addChild(construct<TriggerModeItem>(&MenuItem::text, "Polyphonic trigger", &TriggerModeItem::module, module, &TriggerModeItem::triggerMode, TRIGGERMODE::POLYTRIGGER));
-				menu->addChild(construct<TriggerModeItem>(&MenuItem::text, "C5-A5", &TriggerModeItem::module, module, &TriggerModeItem::triggerMode, TRIGGERMODE::C5));
-				return menu;
-			}
-		};
-
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<SmoothTransitionItem>(&MenuItem::text, "Smooth transition", &SmoothTransitionItem::module, module));
-		menu->addChild(construct<CenterModuleItem>(&MenuItem::text, "Center module", &CenterModuleItem::module, module));
-		menu->addChild(construct<IgnoreZoomItem>(&MenuItem::text, "Ignore zoom level", &IgnoreZoomItem::module, module));
+		menu->addChild(createBoolPtrMenuItem("Smooth transition", &module->smoothTransition));
+		menu->addChild(createBoolPtrMenuItem("Center module", &module->centerModule));
+		menu->addChild(createBoolPtrMenuItem("Ignore zoom level", &module->ignoreZoom));
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<TriggerModeMenuItem>(&MenuItem::text, "Trigger port-mode", &TriggerModeMenuItem::rightText, RIGHT_ARROW, &TriggerModeMenuItem::module, module));
+		menu->addChild(StoermelderPackOne::Rack::createMapPtrSubmenuItem<TRIGGERMODE>("Trigger port",
+			{
+				{ TRIGGERMODE::POLYTRIGGER, "Polyphonic trigger" },
+				{ TRIGGERMODE::C5, "C5-A5" }
+			},
+			&module->triggerMode
+		));
 	}
 };
 

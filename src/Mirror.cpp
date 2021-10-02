@@ -58,6 +58,9 @@ struct MirrorModule : Module, StripIdFixModule {
 	MirrorModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+		for (int i = 0; i < 8; i++) {
+			configInput(INPUT_CV + i, string::f("CV %i", i + 1));
+		}
 
 		processDivider.setDivision(32);
 		handleDivider.setDivision(4096);
@@ -392,135 +395,50 @@ struct MirrorWidget : ThemedModuleWidget<MirrorModule> {
 	void appendContextMenu(Menu* menu) override {
 		ThemedModuleWidget<MirrorModule>::appendContextMenu(menu);
 		MirrorModule* module = dynamic_cast<MirrorModule*>(this->module);
-		assert(module);
 
 		if (module->sourceModelSlug != "") {
 			menu->addChild(new MenuSeparator());
-
-			ui::MenuLabel* textLabel = new ui::MenuLabel;
-			textLabel->text = "Configured for...";
-			menu->addChild(textLabel);
-
-			ui::MenuLabel* modelLabel = new ui::MenuLabel;
-			modelLabel->text = module->sourcePluginName + " " + module->sourceModelName;
-			menu->addChild(modelLabel);
+			menu->addChild(createMenuLabel("Configured for..."));
+			menu->addChild(createMenuLabel(module->sourcePluginName + " " + module->sourceModelName));
 		}
 
-		struct AudioRateItem : MenuItem {
-			MirrorModule* module;
-			void onAction(const event::Action& e) override {
-				module->audioRate ^= true;
-			}
-			void step() override {
-				rightText = module->audioRate ? "✔" : "";
-				MenuItem::step();
-			}
-		};
-
-		struct MappingIndicatorHiddenItem : MenuItem {
-			MirrorModule* module;
-			void onAction(const event::Action& e) override {
-				module->mappingIndicatorHidden ^= true;
-			}
-			void step() override {
-				rightText = module->mappingIndicatorHidden ? "✔" : "";
-				MenuItem::step();
-			}
-		};
-
-		struct CvInputPortMenuItem : MenuItem {
-			MirrorModule* module;
-			CvInputPortMenuItem() {
-				rightText = RIGHT_ARROW;
-			}
-
-			struct CvInputPortItem : MenuItem {
-				MirrorModule* module;
-				int id;
-				CvInputPortItem() {
-					rightText = RIGHT_ARROW;
-				}
-
-				struct CvInputItem : MenuItem {
-					MirrorModule* module;
-					int id;
-					int paramId;
-					void onAction(const event::Action& e) override {
-						module->cvParamId[id] = paramId;
-					}
-					void step() override {
-						rightText = module->cvParamId[id] == paramId ? "✔" : "";
-						MenuItem::step();
-					}
-				};
-
-				Menu* createChildMenu() override {
-					Menu* menu = new Menu;
-					menu->addChild(construct<CvInputItem>(&MenuItem::text, "None", &CvInputItem::module, module, &CvInputItem::id, id, &CvInputItem::paramId, -1));
-					for (size_t i = 0; i < module->sourceHandles.size(); i++) {
-						ParamHandle* sourceHandle = module->sourceHandles[i];
-						if (!sourceHandle) continue;
-						ModuleWidget* moduleWidget = APP->scene->rack->getModule(sourceHandle->moduleId);
-						if (!moduleWidget) continue;
-						ParamWidget* paramWidget = moduleWidget->getParam(sourceHandle->paramId);
-						if (!paramWidget) continue;
-						
-						std::string text = "Parameter " + paramWidget->getParamQuantity()->getLabel();
-						menu->addChild(construct<CvInputItem>(&MenuItem::text, text, &CvInputItem::module, module, &CvInputItem::id, id, &CvInputItem::paramId, sourceHandle->paramId));
-					}
-					return menu;
-				}
-			};
-
-			Menu* createChildMenu() override {
-				Menu* menu = new Menu;
-				for (int i = 0; i < 8; i++) {
-					menu->addChild(construct<CvInputPortItem>(&MenuItem::text, string::f("CV port %i", i + 1), &CvInputPortItem::module, module, &CvInputPortItem::id, i));
-				}
-				return menu;
-			}
-		};
-
-		struct BindSourceItem : MenuItem {
-			MirrorModule* module;
-			void onAction(const event::Action& e) override {
-				module->bindToSource();
-			}
-		};
-
-		struct BindTargetItem : MenuItem {
-			MirrorModule* module;
-			void onAction(const event::Action& e) override {
-				module->bindToTarget();
-			}
-		};
-
-		struct AddAndBindTargetItem : MenuItem {
-			MirrorModule* module;
-			MirrorWidget* mw;
-			void onAction(const event::Action& e) override {
-				mw->addNewModule();
-				module->bindToTarget();
-			}
-		};
-
-		struct SyncPresetItem : MenuItem {
-			MirrorWidget* mw;
-			void onAction(const event::Action& e) override {
-				mw->syncPresets();
-			}
-		};
-
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<AudioRateItem>(&MenuItem::text, "Audio rate processing", &AudioRateItem::module, module));
-		menu->addChild(construct<MappingIndicatorHiddenItem>(&MenuItem::text, "Hide mapping indicators", &MappingIndicatorHiddenItem::module, module));
+		menu->addChild(createBoolPtrMenuItem("Audio rate processing", &module->audioRate));
+		menu->addChild(createBoolPtrMenuItem("Hide mapping indicators", &module->mappingIndicatorHidden));
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<BindSourceItem>(&MenuItem::text, "Bind source module (left)", &BindSourceItem::module, module));
-		menu->addChild(construct<BindTargetItem>(&MenuItem::text, "Map module (right)", &BindTargetItem::module, module));
-		menu->addChild(construct<AddAndBindTargetItem>(&MenuItem::text, "Add and map new module", &AddAndBindTargetItem::module, module, &AddAndBindTargetItem::mw, this));
+		menu->addChild(createMenuItem("Bind source module (left)", "", [=]() { module->bindToSource(); }));
+		menu->addChild(createMenuItem("Map module (right)", "", [=]() { module->bindToTarget(); }));
+		menu->addChild(createMenuItem("Add and map new module", "", [=]() { addNewModule(); module->bindToTarget(); }));
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<CvInputPortMenuItem>(&MenuItem::text, "CV ports", &CvInputPortMenuItem::module, module));
-		menu->addChild(construct<SyncPresetItem>(&MenuItem::text, "Sync module presets", &MenuItem::rightText, RACK_MOD_SHIFT_NAME "+S", &SyncPresetItem::mw, this));
+		menu->addChild(createSubmenuItem("CV inputs", "",
+			[=](Menu* menu) {
+				for (int pId = 0; pId < 8; pId++) {
+					menu->addChild(createSubmenuItem(string::f("CV %i input", pId + 1), "",
+						[=](Menu* menu) {
+							menu->addChild(createCheckMenuItem("None",
+								[=]() { return module->cvParamId[pId] == -1; },
+								[=]() { module->cvParamId[pId] = -1; }
+							));
+
+							for (size_t i = 0; i < module->sourceHandles.size(); i++) {
+								ParamHandle* sourceHandle = module->sourceHandles[i];
+								if (!sourceHandle) continue;
+								ModuleWidget* moduleWidget = APP->scene->rack->getModule(sourceHandle->moduleId);
+								if (!moduleWidget) continue;
+								ParamWidget* paramWidget = moduleWidget->getParam(sourceHandle->paramId);
+								if (!paramWidget) continue;
+								
+								menu->addChild(createCheckMenuItem("Parameter " + paramWidget->getParamQuantity()->getLabel(),
+									[=]() { return module->cvParamId[pId] == sourceHandle->paramId; },
+									[=]() {	module->cvParamId[pId] = sourceHandle->paramId; }
+								));
+							}
+						}
+					));
+				}
+			}
+		));
+		menu->addChild(createMenuItem("Sync module presets", RACK_MOD_SHIFT_NAME "+S", [=]() { syncPresets(); }));
 	}
 
 	void syncPresets() {

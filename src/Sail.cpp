@@ -75,8 +75,16 @@ struct SailModule : Module {
 	SailModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+		configInput(INPUT_VALUE, "Parameter value");
+		configInput(INPUT_FINE, "Fine adjustment gate");
+		inputInfos[INPUT_FINE]->description = "When high the INC/DEC-inputs apply fine adjustments on the hovered parameter.";
+		configInput(INPUT_SLEW, "Slew CV");
+		configInput(INPUT_INC, "Increment parameter");
+		configInput(INPUT_DEC, "Decrement parameter");
+		configOutput(OUTPUT, "Parameter value");
 		configParam(PARAM_SLEW, 0.f, 5.f, 0.f, "Slew limiting", "s");
 		configParam(PARAM_STEP, 0.f, 2.f, 0.2f, "Stepsize", "%", 0.f, 10.f);
+		configLight(LIGHT_ACTIVE, "Adjustable parameter indication");
 		processDivider.setDivision(32);
 		lightDivider.setDivision(512);
 		onReset();
@@ -284,76 +292,23 @@ struct SailWidget : ThemedModuleWidget<SailModule>, OverlayMessageProvider {
 	void appendContextMenu(Menu* menu) override {
 		ThemedModuleWidget<SailModule>::appendContextMenu(menu);
 
-		struct InModeMenuItem : MenuItem {
-			SailModule* module;
-			InModeMenuItem() {
-				rightText = RIGHT_ARROW;
-			}
-
-			Menu* createChildMenu() override {
-				Menu* menu = new Menu;
-
-				struct InModeItem : MenuItem {
-					SailModule* module;
-					IN_MODE inMode;
-					void onAction(const event::Action& e) override {
-						module->inMode = inMode;
-					}
-					void step() override {
-						rightText = module->inMode == inMode ? "✔" : "";
-						MenuItem::step();
-					}
-				};
-
-				menu->addChild(construct<InModeItem>(&MenuItem::text, "Differential", &InModeItem::module, module, &InModeItem::inMode, IN_MODE::DIFF));
-				menu->addChild(construct<InModeItem>(&MenuItem::text, "Absolute", &InModeItem::module, module, &InModeItem::inMode, IN_MODE::ABSOLUTE));
-				return menu;
-			}
-		};
-
-		struct OutModeMenuItem : MenuItem {
-			SailModule* module;
-			OutModeMenuItem() {
-				rightText = RIGHT_ARROW;
-			}
-
-			Menu* createChildMenu() override {
-				Menu* menu = new Menu;
-
-				struct OutModeItem : MenuItem {
-					SailModule* module;
-					OUT_MODE outMode;
-					void onAction(const event::Action& e) override {
-						module->outMode = outMode;
-					}
-					void step() override {
-						rightText = module->outMode == outMode ? "✔" : "";
-						MenuItem::step();
-					}
-				};
-
-				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Reduced", &OutModeItem::module, module, &OutModeItem::outMode, OUT_MODE::REDUCED));
-				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Continuous", &OutModeItem::module, module, &OutModeItem::outMode, OUT_MODE::FULL));
-				return menu;
-			}
-		};
-
-		struct OverlayEnabledItem : MenuItem {
-			SailModule* module;
-			void onAction(const event::Action& e) override {
-				module->overlayEnabled ^= true;
-			}
-			void step() override {
-				rightText = module->overlayEnabled ? "✔" : "";
-				MenuItem::step();
-			}
-		}; // struct OverlayEnabledItem
-
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<InModeMenuItem>(&MenuItem::text, "IN-mode", &InModeMenuItem::module, module));
-		menu->addChild(construct<OutModeMenuItem>(&MenuItem::text, "OUT-mode", &OutModeMenuItem::module, module));
+		menu->addChild(StoermelderPackOne::Rack::createMapPtrSubmenuItem<IN_MODE>("IN-mode",
+			{
+				{ IN_MODE::DIFF, "Differential" },
+				{ IN_MODE::ABSOLUTE, "Absolute" }
+			},
+			&module->inMode
+		));
+		menu->addChild(StoermelderPackOne::Rack::createMapPtrSubmenuItem<OUT_MODE>("OUT-mode",
+			{
+				{ OUT_MODE::REDUCED, "Reduced" },
+				{ OUT_MODE::FULL, "Continuous" }
+			},
+			&module->outMode
+		));
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<OverlayEnabledItem>(&MenuItem::text, "Status overlay", &OverlayEnabledItem::module, module));
+		menu->addChild(createBoolPtrMenuItem("Status overlay", &module->overlayEnabled));
 	}
 };
 

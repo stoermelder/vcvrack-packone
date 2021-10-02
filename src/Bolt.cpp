@@ -58,6 +58,15 @@ struct BoltModule : Module {
 	BoltModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+		configInput(TRIG_INPUT, "Trigger");
+		inputInfos[TRIG_INPUT]->description = "Optional, takes a new sample from the logic inputs.";
+		configInput(OP_INPUT, "Operator trigger");
+		inputInfos[OP_INPUT]->description = "Switches to the next logic mode.";
+		configInput(IN + 0, "Logic 1");
+		configInput(IN + 1, "Logic 2");
+		configInput(IN + 2, "Logic 3");
+		configInput(IN + 3, "Logic 4");
+		configOutput(OUTPUT, "Logic");
 
 		configParam<TriggerParamQuantity>(OP_PARAM, 0.0f, 1.0f, 0.0f, "Next operator");
 		lightDivider.setDivision(1024);
@@ -211,57 +220,6 @@ struct BoltModule : Module {
 };
 
 
-struct BoltOpCvModeMenuItem : MenuItem {
-	struct BoltOpCvModeItem : MenuItem {
-		BoltModule* module;
-		int opCvMode;
-
-		void onAction(const event::Action& e) override {
-			module->opCvMode = opCvMode;
-		}
-
-		void step() override {
-			rightText = module->opCvMode == opCvMode ? "✔" : "";
-			MenuItem::step();
-		}
-	};
-
-	BoltModule* module;
-	Menu* createChildMenu() override {
-		Menu *menu = new Menu;
-		menu->addChild(construct<BoltOpCvModeItem>(&MenuItem::text, "0..10V", &BoltOpCvModeItem::module, module, &BoltOpCvModeItem::opCvMode, BOLT_OPCV_MODE_10V));
-		menu->addChild(construct<BoltOpCvModeItem>(&MenuItem::text, "C4-E4", &BoltOpCvModeItem::module, module, &BoltOpCvModeItem::opCvMode, BOLT_OPCV_MODE_C4));
-		menu->addChild(construct<BoltOpCvModeItem>(&MenuItem::text, "Trigger", &BoltOpCvModeItem::module, module, &BoltOpCvModeItem::opCvMode, BOLT_OPCV_MODE_TRIG));
-		return menu;
-	}
-};
-
-struct BoltOutCvModeMenuItem : MenuItem {
-	struct BoltOutCvModeItem : MenuItem {
-		BoltModule* module;
-		int outCvMode;
-
-		void onAction(const event::Action& e) override {
-			module->outCvMode = outCvMode;
-		}
-
-		void step() override {
-			rightText = module->outCvMode == outCvMode ? "✔" : "";
-			MenuItem::step();
-		}
-	};
-
-	BoltModule* module;
-	Menu* createChildMenu() override {
-		Menu* menu = new Menu;
-		menu->addChild(construct<BoltOutCvModeItem>(&MenuItem::text, "Gate", &BoltOutCvModeItem::module, module, &BoltOutCvModeItem::outCvMode, BOLT_OUTCV_MODE_GATE));
-		menu->addChild(construct<BoltOutCvModeItem>(&MenuItem::text, "Trigger on high", &BoltOutCvModeItem::module, module, &BoltOutCvModeItem::outCvMode, BOLT_OUTCV_MODE_TRIG_HIGH));
-		menu->addChild(construct<BoltOutCvModeItem>(&MenuItem::text, "Trigger on change", &BoltOutCvModeItem::module, module, &BoltOutCvModeItem::outCvMode, BOLT_OUTCV_MODE_TRIG_CHANGE));
-		return menu;
-	}
-};
-
-
 struct BoltWidget : ThemedModuleWidget<BoltModule> {
 	BoltWidget(BoltModule* module)
 		: ThemedModuleWidget<BoltModule>(module, "Bolt") {
@@ -293,14 +251,22 @@ struct BoltWidget : ThemedModuleWidget<BoltModule> {
 		assert(module);
 
 		menu->addChild(new MenuSeparator());
-
-		BoltOpCvModeMenuItem* opCvModeMenuItem = construct<BoltOpCvModeMenuItem>(&MenuItem::text, "Port OP mode", &BoltOpCvModeMenuItem::module, module);
-		opCvModeMenuItem->rightText = RIGHT_ARROW;
-		menu->addChild(opCvModeMenuItem);
-
-		BoltOutCvModeMenuItem* outCvModeMenuItem = construct<BoltOutCvModeMenuItem>(&MenuItem::text, "Output mode", &BoltOutCvModeMenuItem::module, module);
-		outCvModeMenuItem->rightText = RIGHT_ARROW;
-		menu->addChild(outCvModeMenuItem);
+		menu->addChild(StoermelderPackOne::Rack::createMapPtrSubmenuItem<int>("Port OP mode",
+			{
+				{ BOLT_OPCV_MODE_10V, "0..10V" },
+				{ BOLT_OPCV_MODE_C4, "C4-E4" },
+				{ BOLT_OPCV_MODE_TRIG, "Trigger" }
+			},
+			&module->opCvMode
+		));
+		menu->addChild(StoermelderPackOne::Rack::createMapPtrSubmenuItem<int>("Output mode",
+			{
+				{ BOLT_OUTCV_MODE_GATE, "Gate" },
+				{ BOLT_OUTCV_MODE_TRIG_HIGH, "Trigger on high" },
+				{ BOLT_OUTCV_MODE_TRIG_CHANGE, "Trigger on change" }
+			},
+			&module->outCvMode
+		));
 	}
 };
 

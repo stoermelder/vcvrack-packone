@@ -3,7 +3,7 @@
 namespace StoermelderPackOne {
 namespace Infix {
 
-template < int CHANNELS >
+template <int CHANNELS>
 struct InfixModule : Module {
 	enum ParamIds {
 		NUM_PARAMS
@@ -25,6 +25,11 @@ struct InfixModule : Module {
 	InfixModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+		configInput(INPUT_POLY, "Polyphonic");
+		for (int i = 0; i < CHANNELS; i++) {
+			configInput(INPUT_MONO + i, string::f("Channel %i replacement", i + 1));
+		}
+		configOutput(OUTPUT_POLY, "Polyphonic");
 		lightDivider.setDivision(512);
 		onReset();
 	}

@@ -56,6 +56,12 @@ struct MidiStepModule : Module {
 	MidiStepModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+		for (int i = 0; i < PORTS; i++) {
+			configOutput(OUTPUT_DEC + i, string::f("Decrement %i trigger", i + 1));
+			configOutput(OUTPUT_INC + i, string::f("Increment %i trigger", i + 1));
+		}
+		outputInfos[OUTPUT_DEC]->description = outputInfos[OUTPUT_INC]->description = 
+			"Outputs polyphonic triggers if enabled on the context menu.";
 		onReset();
 	}
 
@@ -396,51 +402,20 @@ struct MidiStepWidget : ThemedModuleWidget<MidiStepModule> {
 		ThemedModuleWidget<MODULE>::appendContextMenu(menu);
 		MODULE* module = dynamic_cast<MODULE*>(this->module);
 
-		struct ModeMenuItem : MenuItem {
-			MODULE* module;
-			ModeMenuItem() {
-				rightText = RIGHT_ARROW;
-			}
-
-			Menu* createChildMenu() override {
-				Menu* menu = new Menu;
-
-				struct ModeItem : MenuItem {
-					MODULE* module;
-					MODE mode;
-					void onAction(const event::Action& e) override {
-						module->mode = mode;
-					}
-					void step() override {
-						rightText = module->mode == mode ? "✔" : "";
-						MenuItem::step();
-					}
-				};
-
-				menu->addChild(construct<ModeItem>(&MenuItem::text, "Beatstep Relative #1", &ModeItem::module, module, &ModeItem::mode, MODE::BEATSTEP_R1));
-				menu->addChild(construct<ModeItem>(&MenuItem::text, "Beatstep Relative #2", &ModeItem::module, module, &ModeItem::mode, MODE::BEATSTEP_R2));
-				menu->addChild(construct<ModeItem>(&MenuItem::text, "NI Komplete Kontrol Relative", &ModeItem::module, module, &ModeItem::mode, MODE::KK_REL));
-				menu->addChild(construct<ModeItem>(&MenuItem::text, "Behringer X-TOUCH Relative1", &ModeItem::module, module, &ModeItem::mode, MODE::XTOUCH_R1));
-				menu->addChild(construct<ModeItem>(&MenuItem::text, "Behringer X-TOUCH Relative2", &ModeItem::module, module, &ModeItem::mode, MODE::XTOUCH_R2));
-				menu->addChild(construct<ModeItem>(&MenuItem::text, "Akai MPD218 INC/DEC 2", &ModeItem::module, module, &ModeItem::mode, MODE::AKAI_MPD218));
-				return menu;
-			}
-		};
-
-		struct PolyphonicOutputItem : MenuItem {
-			MODULE* module;
-			void onAction(const event::Action& e) override {
-				module->polyphonicOutput ^= true;
-			}
-			void step() override {
-				rightText = module->polyphonicOutput ? "✔" : "";
-				MenuItem::step();
-			}
-		};
-
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Protocol", &ModeMenuItem::module, module));
-		menu->addChild(construct<PolyphonicOutputItem>(&MenuItem::text, "Polyphonic output", &PolyphonicOutputItem::module, module));
+		menu->addChild(StoermelderPackOne::Rack::createMapPtrSubmenuItem<MODE>("Protocol",
+			{
+				{ MODE::BEATSTEP_R1, "Beatstep Relative #1" },
+				{ MODE::BEATSTEP_R2, "Beatstep Relative #2" },
+				{ MODE::KK_REL, "NI Komplete Kontrol Relative" },
+				{ MODE::XTOUCH_R1, "Behringer X-TOUCH Relative1" },
+				{ MODE::XTOUCH_R2, "Behringer X-TOUCH Relative2" },
+				{ MODE::AKAI_MPD218, "Akai MPD218 INC/DEC 2" }
+			},
+			&module->mode,
+			false
+		));
+		menu->addChild(createBoolPtrMenuItem("Polyphonic output", &module->polyphonicOutput));
 	}
 };
 

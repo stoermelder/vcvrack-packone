@@ -10,7 +10,7 @@ enum class PARAM_MODE {
 	OCTAVE = 2
 };
 
-template < int CHANNELS >
+template <int CHANNELS>
 struct AffixModule : Module {
 	enum ParamIds {
 		ENUMS(PARAM_MONO, CHANNELS),
@@ -145,6 +145,9 @@ struct AffixModule : Module {
 	AffixModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+		configInput(INPUT_POLY, "Polyphonic");
+		inputInfos[INPUT_POLY]->description = "(optional)";
+		configOutput(OUTPUT_POLY, "Polyphonic");
 		for (int i = 0; i < CHANNELS; i++) {
 			AffixParamQuantity* pq = configParam<AffixParamQuantity>(PARAM_MONO + i, -5.f, 5.f, 0.f, string::f("Channel %i", i + 1));
 			pq->mymodule = this;
@@ -216,65 +219,31 @@ struct TAffixWidget : ThemedModuleWidget<MODULE> {
 	void appendContextMenu(Menu* menu) override {
 		ThemedModuleWidget<MODULE>::appendContextMenu(menu);
 		MODULE* module = dynamic_cast<MODULE*>(this->module);
-		assert(module);
-
-		struct ParamModeMenuItem : MenuItem {
-			MODULE* module;
-			ParamModeMenuItem() {
-				rightText = RIGHT_ARROW;
-			}
-
-			Menu* createChildMenu() override {
-				Menu* menu = new Menu;
-				struct ParamModeItem : MenuItem {
-					MODULE* module;
-					PARAM_MODE paramMode;
-					void onAction(const event::Action& e) override {
-						module->setParamMode(paramMode);
-					}
-					void step() override {
-						rightText = paramMode == module->paramMode ? "✔" : "";
-						MenuItem::step();
-					}
-				};
-
-				menu->addChild(construct<ParamModeItem>(&MenuItem::text, "Volt", &ParamModeItem::module, module, &ParamModeItem::paramMode, PARAM_MODE::VOLTAGE));
-				menu->addChild(construct<ParamModeItem>(&MenuItem::text, "Semitone", &ParamModeItem::module, module, &ParamModeItem::paramMode, PARAM_MODE::SEMITONE));
-				menu->addChild(construct<ParamModeItem>(&MenuItem::text, "Octave", &ParamModeItem::module, module, &ParamModeItem::paramMode, PARAM_MODE::OCTAVE));
-				return menu;
-			}
-		}; // ParamModeMenuItem
-
-		struct ChannelNumberMenuItem : MenuItem {
-			MODULE* module;
-			ChannelNumberMenuItem() {
-				rightText = RIGHT_ARROW;
-			}
-			Menu* createChildMenu() override {
-				Menu* menu = new Menu;
-				struct ChannelNumberItem : MenuItem {
-					MODULE* module;
-					int channels;
-					void onAction(const event::Action& e) override {
-						module->numberOfChannels = channels;
-					}
-					void step() override {
-						rightText = channels == module->numberOfChannels ? "✔" : "";
-						MenuItem::step();
-					}
-				};
-
-				menu->addChild(construct<ChannelNumberItem>(&MenuItem::text, "Automatic", &ChannelNumberItem::module, module, &ChannelNumberItem::channels, 0));
-				for (int i = 1; i <= module->getChannelNumber(); i++) {
-					menu->addChild(construct<ChannelNumberItem>(&MenuItem::text, string::f("%i", i), &ChannelNumberItem::module, module, &ChannelNumberItem::channels, i));
-				}
-				return menu;
-			}
-		}; // ChannelNumberMenuItem
 
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<ParamModeMenuItem>(&MenuItem::text, "Knob mode", &ParamModeMenuItem::module, module));
-		menu->addChild(construct<ChannelNumberMenuItem>(&MenuItem::text, "Channels", &ChannelNumberMenuItem::module, module));
+		menu->addChild(StoermelderPackOne::Rack::createMapSubmenuItem<PARAM_MODE>("Knob mode",
+			{
+				{ PARAM_MODE::VOLTAGE, "Volt" },
+				{ PARAM_MODE::SEMITONE, "Semitone" },
+				{ PARAM_MODE::OCTAVE, "Octave" }
+			},
+			[=]() {
+				return module->paramMode;
+			},
+			[=](PARAM_MODE paramMode) {
+				module->setParamMode(paramMode);
+			}
+		));
+		menu->addChild(createSubmenuItem("Channels", "",
+			[=](Menu* menu) {
+				for (int c = 0; c <= module->getChannelNumber(); c++) {
+					menu->addChild(createCheckMenuItem(c == 0 ? "Automatic" : string::f("%d", c),
+						[=]() { return module->numberOfChannels == c; },
+						[=]() { module->numberOfChannels = c; }
+					));
+				}
+			}
+		));
 	}
 };
 
