@@ -124,6 +124,9 @@ struct EightFaceModule : Module {
 	EightFaceModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+		configInput(SLOT_INPUT, "Slot selection");
+		inputInfos[SLOT_INPUT]->description = "Operating mode is set on the context menu.";
+		configInput(RESET_INPUT, "Reset");
 		configParam<TriggerParamQuantity>(CTRLMODE_PARAM, 0, 2, 0, "Read/Auto/Write mode");
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			configParam(PRESET_PARAM + i, 0, 1, 0, string::f("Preset slot %d", i + 1));
@@ -537,86 +540,6 @@ struct EightFaceModule : Module {
 };
 
 
-template < typename MODULE >
-struct SlovCvModeMenuItem : MenuItem {
-	struct SlotCvModeItem : MenuItem {
-		MODULE* module;
-		SLOTCVMODE slotCvMode;
-		std::string rightTextEx = "";
-		void onAction(const event::Action& e) override {
-			module->slotCvMode = module->slotCvModeBak = slotCvMode;
-		}
-		void step() override {
-			rightText = string::f("%s %s", module->slotCvMode == slotCvMode ? "✔" : "", rightTextEx.c_str());
-			MenuItem::step();
-		}
-	};
-
-	MODULE* module;
-	SlovCvModeMenuItem() {
-		rightText = RIGHT_ARROW;
-	}
-
-	Menu* createChildMenu() override {
-		Menu* menu = new Menu;
-		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger forward", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_FWD));
-		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger reverse", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_REV));
-		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger pingpong", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_PINGPONG));
-		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger alternating", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_ALT));
-		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger random", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_RANDOM));
-		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger pseudo-random", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_RANDOM_WO_REPEATS));
-		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger random walk", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_RANDOM_WALK));
-		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger shuffle", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_SHUFFLE));
-		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "0..10V", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::VOLT));
-		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "C4", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::C4));
-		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Arm", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::ARM));
-		menu->addChild(new MenuSeparator);
-		menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Off", &SlotCvModeItem::rightTextEx, RACK_MOD_SHIFT_NAME "+Q", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::OFF));
-		return menu;
-	}
-};
-
-template < typename MODULE >
-struct AutoloadMenuItem : MenuItem {
-	struct AutoloadItem : MenuItem {
-		MODULE* module;
-		AUTOLOAD value;
-		void onAction(const event::Action& e) override {
-			module->autoload = value;
-		}
-		void step() override {
-			rightText = CHECKMARK(module->autoload == value);
-			MenuItem::step();
-		}
-	};
-
-	MODULE* module;
-	AutoloadMenuItem() {
-		rightText = RIGHT_ARROW;
-	}
-
-	Menu* createChildMenu() override {
-		Menu* menu = new Menu;
-		menu->addChild(construct<AutoloadItem>(&MenuItem::text, "Off", &AutoloadItem::module, module, &AutoloadItem::value, AUTOLOAD::OFF));
-		menu->addChild(construct<AutoloadItem>(&MenuItem::text, "First preset", &AutoloadItem::module, module, &AutoloadItem::value, AUTOLOAD::FIRST));
-		menu->addChild(construct<AutoloadItem>(&MenuItem::text, "Last active preset", &AutoloadItem::module, module, &AutoloadItem::value, AUTOLOAD::LASTACTIVE));
-		return menu;
-	}
-};
-
-template < typename MODULE >
-struct SideItem : MenuItem {
-	MODULE* module;
-	void onAction(const event::Action& e) override {
-		module->side = module->side == SIDE::LEFT ? SIDE::RIGHT : SIDE::LEFT;
-	}
-	void step() override {
-		rightText = module->side == SIDE::LEFT ? "Left" : "Right";
-		MenuItem::step();
-	}
-};
-
-
 struct WhiteRedLight : GrayModuleLightWidget {
 	WhiteRedLight() {
 		this->addBaseColor(SCHEME_WHITE);
@@ -633,20 +556,63 @@ struct EightFaceWidgetTemplate : ModuleWidget {
 
 		if (module->moduleName != "") {
 			menu->addChild(new MenuSeparator());
-
-			ui::MenuLabel* textLabel = new ui::MenuLabel;
-			textLabel->text = "Configured for...";
-			menu->addChild(textLabel);
-
-			ui::MenuLabel* modelLabel = new ui::MenuLabel;
-			modelLabel->text = module->moduleName;
-			menu->addChild(modelLabel);
+			menu->addChild(createMenuLabel("Configured for..."));
+			menu->addChild(createMenuLabel(module->moduleName));
 		}
 
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<SlovCvModeMenuItem<MODULE>>(&MenuItem::text, "Port SLOT mode", &SlovCvModeMenuItem<MODULE>::module, module));
-		menu->addChild(construct<SideItem<MODULE>>(&MenuItem::text, "Module", &SideItem<MODULE>::module, module));
-		menu->addChild(construct<AutoloadMenuItem<MODULE>>(&MenuItem::text, "Autoload", &AutoloadMenuItem<MODULE>::module, module));
+		menu->addChild(createSubmenuItem("Port SLOT mode", "",
+			[=](Menu* menu) {	
+				struct SlotCvModeItem : MenuItem {
+					MODULE* module;
+					SLOTCVMODE slotCvMode;
+					std::string rightTextEx = "";
+					void onAction(const event::Action& e) override {
+						module->slotCvMode = module->slotCvModeBak = slotCvMode;
+					}
+					void step() override {
+						rightText = string::f("%s %s", module->slotCvMode == slotCvMode ? "✔" : "", rightTextEx.c_str());
+						MenuItem::step();
+					}
+				};
+
+				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger forward", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_FWD));
+				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger reverse", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_REV));
+				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger pingpong", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_PINGPONG));
+				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger alternating", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_ALT));
+				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger random", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_RANDOM));
+				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger pseudo-random", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_RANDOM_WO_REPEATS));
+				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger random walk", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_RANDOM_WALK));
+				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger shuffle", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_SHUFFLE));
+				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "0..10V", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::VOLT));
+				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "C4", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::C4));
+				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Arm", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::ARM));
+				menu->addChild(new MenuSeparator);
+				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Off", &SlotCvModeItem::rightTextEx, RACK_MOD_SHIFT_NAME "+Q", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::OFF));
+			}
+		));
+
+		struct SideItem : MenuItem {
+			MODULE* module;
+			void onAction(const event::Action& e) override {
+				module->side = module->side == SIDE::LEFT ? SIDE::RIGHT : SIDE::LEFT;
+			}
+			void step() override {
+				rightText = module->side == SIDE::LEFT ? "Left" : "Right";
+				MenuItem::step();
+			}
+		};
+
+		menu->addChild(construct<SideItem>(&MenuItem::text, "Module", &SideItem::module, module));
+		menu->addChild(StoermelderPackOne::Rack::createMapPtrSubmenuItem<AUTOLOAD>("Autoload", 
+			{
+				{ AUTOLOAD::OFF, "Off" },
+				{ AUTOLOAD::FIRST, "First preset" },
+				{ AUTOLOAD::LASTACTIVE, "Last active preset" }
+			},
+			&module->autoload,
+			false
+		));
 	}
 
 	void onHoverKey(const event::HoverKey& e) override {

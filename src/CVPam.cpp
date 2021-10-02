@@ -40,6 +40,10 @@ struct CVPamModule : MapModuleBase<MAX_CHANNELS> {
 	CVPamModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+		configOutput(POLY_OUTPUT1, "Polyphonic");
+		outputInfos[POLY_OUTPUT1]->description = "Slots 1-16";
+		configOutput(POLY_OUTPUT2, "Polyphonic");
+		outputInfos[POLY_OUTPUT2]->description = "Slots 17-32";
 		this->mappingIndicatorColor = nvgRGB(0x40, 0xff, 0xff);
 		for (int id = 0; id < MAX_CHANNELS; id++) {
 			paramHandles[id].text = string::f("CV-PAM Ch%02d", id + 1);
@@ -159,68 +163,13 @@ struct CVPamWidget : ThemedModuleWidget<CVPamModule> {
 		CVPamModule* module = dynamic_cast<CVPamModule*>(this->module);
 		assert(module);
 
-		struct UniBiItem : MenuItem {
-			CVPamModule* module;
-			void onAction(const event::Action& e) override {
-				module->bipolarOutput ^= true;
-			}
-			void step() override {
-				rightText = module->bipolarOutput ? "-5V..5V" : "0V..10V";
-				MenuItem::step();
-			}
-		};
-
-		struct AudioRateItem : MenuItem {
-			CVPamModule* module;
-			void onAction(const event::Action& e) override {
-				module->audioRate ^= true;
-			}
-			void step() override {
-				rightText = module->audioRate ? "✔" : "";
-				MenuItem::step();
-			}
-		};
-
-		struct TextScrollItem : MenuItem {
-			CVPamModule* module;
-			void onAction(const event::Action& e) override {
-				module->textScrolling ^= true;
-			}
-			void step() override {
-				rightText = module->textScrolling ? "✔" : "";
-				MenuItem::step();
-			}
-		};
-
-		struct MappingIndicatorHiddenItem : MenuItem {
-			CVPamModule* module;
-			void onAction(const event::Action& e) override {
-				module->mappingIndicatorHidden ^= true;
-			}
-			void step() override {
-				rightText = module->mappingIndicatorHidden ? "✔" : "";
-				MenuItem::step();
-			}
-		};
-
-		struct LockedItem : MenuItem {
-			CVPamModule* module;
-			void onAction(const event::Action& e) override {
-				module->locked ^= true;
-			}
-			void step() override {
-				rightText = module->locked ? "✔" : "";
-				MenuItem::step();
-			}
-		};
-
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<UniBiItem>(&MenuItem::text, "Signal output", &UniBiItem::module, module));
-		menu->addChild(construct<AudioRateItem>(&MenuItem::text, "Audio rate processing", &AudioRateItem::module, module));
+		menu->addChild(createIndexPtrSubmenuItem("Signal output", {"0V..10V", "-5V..5V"}, &module->bipolarOutput));
+		menu->addChild(createBoolPtrMenuItem("Audio rate processing", &module->audioRate));
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<TextScrollItem>(&MenuItem::text, "Text scrolling", &TextScrollItem::module, module));
-		menu->addChild(construct<MappingIndicatorHiddenItem>(&MenuItem::text, "Hide mapping indicators", &MappingIndicatorHiddenItem::module, module));
-		menu->addChild(construct<LockedItem>(&MenuItem::text, "Lock mapping slots", &LockedItem::module, module));
+		menu->addChild(createBoolPtrMenuItem("Text scrolling", &module->textScrolling));
+		menu->addChild(createBoolPtrMenuItem("Hide mapping indicators", &module->mappingIndicatorHidden));
+		menu->addChild(createBoolPtrMenuItem("Lock mapping slots", &module->locked));
 	}
 };
 

@@ -68,9 +68,9 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 	MacroModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		configInput(INPUT);
+		configInput(INPUT, "Voltage");
 		for (int i = 0; i < CVPORTS; i++) {
-			configOutput(OUTPUT_CV + i);
+			configOutput(OUTPUT_CV + i, string::f("CV %i", i + 1));
 		}
 		configParam(PARAM_KNOB, 0.f, 1.f, 0.f, "Macro knob", "%", 0.f, 100.f);
 
@@ -318,7 +318,7 @@ struct MacroPort : StoermelderPort {
 		}; // struct DisconnectItem
 
 		Menu* menu = createMenu();
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("CV port %i", id + 1)));
+		menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("CV %i input", id + 1)));
 		menu->addChild(construct<BipolarItem>(&MenuItem::text, "Output voltage", &BipolarItem::module, module, &BipolarItem::id, id));
 		menu->addChild(new MapSlewSlider<SCALE>(&module->scaleCvs[id]));
 		menu->addChild(new MenuSeparator());
@@ -395,7 +395,7 @@ struct MacroWidget : ThemedModuleWidget<MacroModule>, ParamWidgetContextExtender
 			}
 		));
 		menu->addChild(new MenuSeparator());
-		menu->addChild(createBoolPtrMenuItem("Parameter changes", &module->lockParameterChanges));
+		menu->addChild(createBoolPtrMenuItem("Lock parameter changes", &module->lockParameterChanges));
 		menu->addChild(createIndexPtrSubmenuItem("Input voltage", {"0V..10V", "-5V..5V"}, &module->bipolarInput));
 	}
 
