@@ -1,5 +1,6 @@
 #include "plugin.hpp"
-#include "StripIdFixModule.hpp"
+#include "helpers/StripIdFixModule.hpp"
+#include "helpers/TaskProcessor.hpp"
 #include <plugin.hpp>
 
 namespace StoermelderPackOne {
@@ -53,7 +54,7 @@ struct MirrorModule : Module, StripIdFixModule {
 	dsp::ClockDivider processDivider;
 	dsp::ClockDivider handleDivider;
 
-	dsp::RingBuffer<ParamHandle*, 16> handleClearTodo;
+	TaskProcessor<> taskProcessorUi;
 
 	MirrorModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
@@ -64,7 +65,7 @@ struct MirrorModule : Module, StripIdFixModule {
 
 		processDivider.setDivision(32);
 		handleDivider.setDivision(4096);
-		onReset();
+		reset(true);
 	}
 
 	~MirrorModule() {
@@ -79,24 +80,41 @@ struct MirrorModule : Module, StripIdFixModule {
 	}
 
 	void onReset() override {
-		inChange = true;
-		for (ParamHandle* sourceHandle : sourceHandles) {
-			APP->engine->removeParamHandle(sourceHandle);
-			delete sourceHandle;
+		reset(false, true);
+	}
+
+	void reset(bool stateOnly, bool createUiTask = false) {
+		if (!stateOnly) {
+			inChange = true;
+			auto cleanHandles = [=]() {
+				for (ParamHandle* sourceHandle : sourceHandles) {
+					APP->engine->removeParamHandle(sourceHandle);
+					delete sourceHandle;
+				}
+				for (ParamHandle* targetHandle : targetHandles) {
+					APP->engine->removeParamHandle(targetHandle);
+					delete targetHandle;
+				}
+
+				sourceHandles.clear();
+				targetHandles.clear();
+				inChange = false;
+			};
+
+			// Enqueue on the UI-thread as the engine's mutex could already be locked
+			if (createUiTask) {
+				taskProcessorUi.enqueue(cleanHandles);
+			}
+			else {
+				cleanHandles();
+			}
 		}
-		sourceHandles.clear();
-		for (ParamHandle* targetHandle : targetHandles) {
-			APP->engine->removeParamHandle(targetHandle);
-			delete targetHandle;
-		}
-		targetHandles.clear();
 
 		for (int i = 0; i < 8; i++) {
 			cvParamId[i] = -1;
 		}
 
 		targetModuleIds.clear();
-		inChange = false;
 
 		sourcePluginSlug = "";
 		sourcePluginName = "";
@@ -114,15 +132,28 @@ struct MirrorModule : Module, StripIdFixModule {
 			for (size_t i = 0; i < sourceHandles.size(); i++) {
 				ParamHandle* sourceHandle = sourceHandles[i];
 				sourceHandle->color = mappingIndicatorHidden ? color::BLACK_TRANSPARENT : nvgRGB(0x40, 0xff, 0xff);
+
 				size_t j = i;
+				std::list<std::function<void()>> handleList;
 				while (j < targetHandles.size()) {
 					ParamHandle* targetHandle = targetHandles[j];
 					targetHandle->color = mappingIndicatorHidden ? color::BLACK_TRANSPARENT : nvgRGB(0xff, 0x40, 0xff);
 					if (sourceHandle->moduleId < 0 && targetHandle->moduleId >= 0) {
 						// Unmap target parameter
-						if (!handleClearTodo.full()) handleClearTodo.push(targetHandle);
+						// This might cause a deadlock as the engine's mutex could already be locked
+						handleList.push_back([targetHandle]() {
+							APP->engine->updateParamHandle(targetHandle, -1, 0, true);
+						});
 					}
+
 					j += sourceHandles.size();
+				}
+
+				// Enqueue on the UI-thread for cleaning up ParamHandles
+				if (handleList.size() > 0) {
+					taskProcessorUi.enqueue([handleList]() {
+						for (std::function<void()> f : handleList) f();
+					});
 				}
 			}
 		}
@@ -177,11 +208,12 @@ struct MirrorModule : Module, StripIdFixModule {
 	}
 
 	void bindToSource() {
+		// Always called from the UI-thread
 		Expander* exp = &leftExpander;
 		if (exp->moduleId < 0) return;
 
 		inChange = true;
-		onReset();
+		reset(false, false);
 		Module* m = exp->module;
 		sourcePluginSlug = m->model->plugin->slug;
 		sourcePluginName = m->model->plugin->name;
@@ -201,10 +233,11 @@ struct MirrorModule : Module, StripIdFixModule {
 	}
 
 	void bindToTarget() {
+		// Always called from the UI-thread
 		Expander* exp = &rightExpander;
 		if (exp->moduleId < 0) return;
-		// Use this instead of "exp->module" as the expander might not be initialized yet
-		Module* m = APP->engine->getModule(exp->moduleId);
+		// This is called from the UI-thread, so get the Module from the scene
+		Module* m = APP->scene->rack->getModule(exp->moduleId)->getModule();
 		if (sourcePluginSlug != m->model->plugin->slug || sourceModelSlug != m->model->slug) return;
 
 		inChange = true;
@@ -218,14 +251,6 @@ struct MirrorModule : Module, StripIdFixModule {
 
 		targetModuleIds.push_back(m->id);
 		inChange = false;
-	}
-
-	void cleanUpHandles() {
-		// Called from the App-thread to avoid engine-deadlocks
-		while (handleClearTodo.size() > 0) {
-			ParamHandle* handle = handleClearTodo.shift();
-			APP->engine->updateParamHandle(handle, -1, 0, true);
-		}
 	}
 
 	json_t* dataToJson() override {
@@ -279,7 +304,7 @@ struct MirrorModule : Module, StripIdFixModule {
 
 	void dataFromJson(json_t* rootJ) override {
 		// Hack for preventing duplicating this module
-		if (APP->engine->getModule(id) != NULL && !idFixHasMap()) return;
+		//if (APP->engine->getModule(id) != NULL && !idFixHasMap()) return;
 
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 		audioRate = json_boolean_value(json_object_get(rootJ, "audioRate"));
@@ -307,6 +332,8 @@ struct MirrorModule : Module, StripIdFixModule {
 		}
 
 		inChange = true;
+		std::list<std::function<void()>> handleList;
+
 		json_t* sourceMapsJ = json_object_get(rootJ, "sourceMaps");
 		if (sourceMapsJ) {
 			json_t* sourceMapJ;
@@ -318,11 +345,14 @@ struct MirrorModule : Module, StripIdFixModule {
 				int paramId = json_integer_value(paramIdJ);
 				moduleId = idFix(moduleId);
 
-				ParamHandle* sourceHandle = new ParamHandle;
-				sourceHandle->text = "stoermelder MIRROR";
-				APP->engine->addParamHandle(sourceHandle);
-				APP->engine->updateParamHandle(sourceHandle, moduleId, paramId, false);
-				sourceHandles.push_back(sourceHandle);
+				// This might cause a deadlock as the engine's mutex could already be locked
+				handleList.push_back([=]() {
+					ParamHandle* sourceHandle = new ParamHandle;
+					sourceHandle->text = "stoermelder MIRROR";
+					APP->engine->addParamHandle(sourceHandle);
+					APP->engine->updateParamHandle(sourceHandle, moduleId, paramId, false);
+					sourceHandles.push_back(sourceHandle);
+				});
 			}
 		}
 
@@ -337,11 +367,14 @@ struct MirrorModule : Module, StripIdFixModule {
 				int paramId = json_integer_value(paramIdJ);
 				moduleId = idFix(moduleId);
 
-				ParamHandle* targetHandle = new ParamHandle;
-				targetHandle->text = "stoermelder MIRROR";
-				APP->engine->addParamHandle(targetHandle);
-				APP->engine->updateParamHandle(targetHandle, moduleId, paramId, false);
-				targetHandles.push_back(targetHandle);
+				// This might cause a deadlock as the engine's mutex could already be locked
+				handleList.push_back([=]() {
+					ParamHandle* targetHandle = new ParamHandle;
+					targetHandle->text = "stoermelder MIRROR";
+					APP->engine->addParamHandle(targetHandle);
+					APP->engine->updateParamHandle(targetHandle, moduleId, paramId, false);
+					targetHandles.push_back(targetHandle);
+				});
 			}
 		}
 
@@ -369,7 +402,12 @@ struct MirrorModule : Module, StripIdFixModule {
 		}
 
 		idFixClearMap();
-		inChange = false;
+
+		// Enqueue on the UI-thread for creating ParamHandles
+		taskProcessorUi.enqueue([=]() {
+			for (std::function<void()> f : handleList) f();
+			inChange = false;
+		});
 	}
 };
 
@@ -389,7 +427,7 @@ struct MirrorWidget : ThemedModuleWidget<MirrorModule> {
 
 	void step() override {
 		ThemedModuleWidget<MirrorModule>::step();
-		if (module) module->cleanUpHandles();
+		if (module) module->taskProcessorUi.process();
 	}
 
 	void appendContextMenu(Menu* menu) override {
