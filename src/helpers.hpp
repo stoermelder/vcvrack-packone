@@ -213,5 +213,15 @@ ui::MenuItem* createMapPtrSubmenuItem(std::string text, std::map<TEnum, std::str
 	);
 }
 
+/** Easy wrapper for createMenuItem() to modify a property with a specific value.
+Example:
+	menu->addChild(createValuePtrMenuItem("Loop", &module->mode, MODE::LOOP));
+*/
+template <typename T>
+ui::MenuItem* createValuePtrMenuItem(std::string text, T* ptr, T val) {
+	return createMenuItem(text, CHECKMARK(*ptr == val), [=]() { *ptr = val; });
+}
+
+
 } // namespace Rack
 } // namespace StoermelderPackOne

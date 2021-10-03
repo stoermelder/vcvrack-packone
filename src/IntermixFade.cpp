@@ -119,23 +119,10 @@ struct InputLedDisplay : StoermelderPackOne::StoermelderLedDisplay {
 
 	void createContextMenu() {
 		ui::Menu* menu = createMenu();
-
-		struct InputItem : MenuItem {
-			IntermixFadeModule<PORTS>* module;
-			int input;
-			void onAction(const event::Action& e) override {
-				module->input = input;
-			}
-			void step() override {
-				rightText = CHECKMARK(module->input == input);
-				MenuItem::step();
-			}
-		};
-
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Input"));
+		menu->addChild(createMenuLabel("Input"));
 		for (int i = 0; i < PORTS; i++) {
-			menu->addChild(construct<InputItem>(&MenuItem::text, string::f("%02u", i + 1), &InputItem::module, module, &InputItem::input, i));
-		};
+			menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem(string::f("%02u", i + 1), &module->input, i));
+		}
 	}
 };
 
@@ -169,25 +156,12 @@ struct IntermixFadeWidget : ThemedModuleWidget<IntermixFadeModule<8>> {
 	void appendContextMenu(Menu* menu) override {
 		ThemedModuleWidget<IntermixFadeModule<PORTS>>::appendContextMenu(menu);
 		IntermixFadeModule<PORTS>* module = dynamic_cast<IntermixFadeModule<PORTS>*>(this->module);
-		assert(module);
-
-		struct FadeItem : MenuItem {
-			IntermixFadeModule<PORTS>* module;
-			FADE fade;
-			void onAction(const event::Action& e) override {
-				module->fade = fade;
-			}
-			void step() override {
-				rightText = CHECKMARK(module->fade == fade);
-				MenuItem::step();
-			}
-		};
 
 		menu->addChild(new MenuSeparator);
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Mode"));
-		menu->addChild(construct<FadeItem>(&MenuItem::text, "In & Out", &FadeItem::module, module, &FadeItem::fade, FADE::INOUT));
-		menu->addChild(construct<FadeItem>(&MenuItem::text, "In", &FadeItem::module, module, &FadeItem::fade, FADE::IN));
-		menu->addChild(construct<FadeItem>(&MenuItem::text, "Out", &FadeItem::module, module, &FadeItem::fade, FADE::OUT));
+		menu->addChild(createMenuLabel("Mode"));
+		menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem("In & Out", &module->fade, FADE::INOUT));
+		menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem("In", &module->fade, FADE::IN));
+		menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem("Out", &module->fade, FADE::OUT));
 	};
 };
 

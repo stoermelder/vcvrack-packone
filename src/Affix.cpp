@@ -237,10 +237,7 @@ struct TAffixWidget : ThemedModuleWidget<MODULE> {
 		menu->addChild(createSubmenuItem("Channels", "",
 			[=](Menu* menu) {
 				for (int c = 0; c <= module->getChannelNumber(); c++) {
-					menu->addChild(createCheckMenuItem(c == 0 ? "Automatic" : string::f("%d", c),
-						[=]() { return module->numberOfChannels == c; },
-						[=]() { module->numberOfChannels = c; }
-					));
+					menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem(c == 0 ? "Automatic" : string::f("%d", c), &module->numberOfChannels, c));
 				}
 			}
 		));

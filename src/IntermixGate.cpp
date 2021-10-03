@@ -26,6 +26,9 @@ struct IntermixGateModule : Module {
 	IntermixGateModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+		for (int i = 0; i < PORTS; i++) {
+			configOutput(OUTPUT + i, string::f("Row %i active gate", i + 1));
+		}
 		onReset();
 	}
 

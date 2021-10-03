@@ -219,28 +219,16 @@ struct SpinWidget : ThemedModuleWidget<SpinModule> {
 			}
 		};
 
-		struct ClickMenuItem : MenuItem {
-			SpinModule* module;
-			CLICK_MODE mode;
-			void step() override {
-				rightText = CHECKMARK(module->clickMode == mode);
-				MenuItem::step();
-			}
-			void onAction(const event::Action& e) override {
-				module->clickMode = mode;
-			}
-		};
-
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Modifier"));
+		menu->addChild(createMenuLabel("Modifier"));
 		menu->addChild(construct<ModifierItem>(&MenuItem::text, RACK_MOD_SHIFT_NAME, &ModifierItem::module, module, &ModifierItem::mod, GLFW_MOD_SHIFT));
 		menu->addChild(construct<ModifierItem>(&MenuItem::text, RACK_MOD_CTRL_NAME, &ModifierItem::module, module, &ModifierItem::mod, RACK_MOD_CTRL));
 		menu->addChild(construct<ModifierItem>(&MenuItem::text, RACK_MOD_ALT_NAME, &ModifierItem::module, module, &ModifierItem::mod, GLFW_MOD_ALT));
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Middle click mode"));
-		menu->addChild(construct<ClickMenuItem>(&MenuItem::text, "Off", &ClickMenuItem::module, module, &ClickMenuItem::mode, CLICK_MODE::OFF));
-		menu->addChild(construct<ClickMenuItem>(&MenuItem::text, "Toggle", &ClickMenuItem::module, module, &ClickMenuItem::mode, CLICK_MODE::TOGGLE));
-		menu->addChild(construct<ClickMenuItem>(&MenuItem::text, "Trigger", &ClickMenuItem::module, module, &ClickMenuItem::mode, CLICK_MODE::TRIGGER));
-		menu->addChild(construct<ClickMenuItem>(&MenuItem::text, "Gate", &ClickMenuItem::module, module, &ClickMenuItem::mode, CLICK_MODE::GATE));
+		menu->addChild(createMenuLabel("Middle click mode"));
+		menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem("Off", &module->clickMode, CLICK_MODE::OFF));
+		menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem("Toggle", &module->clickMode, CLICK_MODE::TOGGLE));
+		menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem("Trigger", &module->clickMode, CLICK_MODE::TRIGGER));
+		menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem("Gate", &module->clickMode, CLICK_MODE::GATE));
 	}
 };
 

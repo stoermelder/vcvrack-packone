@@ -36,7 +36,7 @@ enum class MODULESTATE {
 	EDIT = 1
 };
 
-template < int SIZE, int NUM_PORTS >
+template <int SIZE, int NUM_PORTS>
 struct MazeModule : Module {
 	enum ParamIds {
 		RESET_PARAM,
@@ -128,6 +128,20 @@ struct MazeModule : Module {
 	MazeModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+		for (int i = 0; i < NUM_PORTS; i++) {
+			configInput(CLK_INPUT + i, string::f("Clock %i", i + 1));
+			if (i > 0) inputInfos[CLK_INPUT + i]->description = "Normalized to \"Yellow\" if not disabled on the context menu.";
+			configInput(RESET_INPUT + i, string::f("Reset %i", i + 1));
+			if (i > 0) inputInfos[RESET_INPUT + i]->description = "Normalized to \"Yellow\" if not disabled on the context menu.";
+			configInput(TURN_INPUT + i, string::f("Cursor turn %i", i + 1));
+			if (i > 0) inputInfos[TURN_INPUT + i]->description = "Normalized to \"Yellow\" if not disabled on the context menu.";
+			configOutput(TRIG_OUTPUT + i, string::f("Sequencer trigger %i", i + 1));
+			configOutput(CV_OUTPUT + i, string::f("Sequencer CV %i", i + 1));
+		}
+		configInput(SHIFT_L_INPUT, "Shift left");
+		inputInfos[SHIFT_L_INPUT]->description = "Shifts all cursors to the left according to their current moving direction.";
+		configInput(SHIFT_R_INPUT, "Shift right");
+		inputInfos[SHIFT_R_INPUT]->description = "Shifts all cursors to the right according to their current moving direction.";
 		lightDivider.setDivision(128);
 		onReset();
 	}
@@ -736,6 +750,13 @@ struct MazeGridWidget : FramebufferWidget {
 		}
 		FramebufferWidget::step();
 	}
+
+	void draw(const DrawArgs& args) override {
+		// Dim the display but don't darken ist completely
+		float b = std::max(0.4f, settings::rackBrightness);
+		nvgGlobalTint(args.vg, nvgRGBAf(b, b, b, 1.f));
+		FramebufferWidget::draw(args);
+	}
 };
 
 
@@ -918,124 +939,50 @@ struct MazeStartPosEditWidget : TransparentWidget, MazeDrawHelper<MODULE> {
 			}
 		};
 
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Start direction"));
+		menu->addChild(createMenuLabel("Start direction"));
 		menu->addChild(construct<DirectionItem>(&MenuItem::text, "Right", &DirectionItem::module, module, &DirectionItem::id, selectedId, &DirectionItem::xdir, 1, &DirectionItem::ydir, 0));
 		menu->addChild(construct<DirectionItem>(&MenuItem::text, "Down", &DirectionItem::module, module, &DirectionItem::id, selectedId, &DirectionItem::xdir, 0, &DirectionItem::ydir, 1));
 		menu->addChild(construct<DirectionItem>(&MenuItem::text, "Left", &DirectionItem::module, module, &DirectionItem::id, selectedId, &DirectionItem::xdir, -1, &DirectionItem::ydir, 0));
 		menu->addChild(construct<DirectionItem>(&MenuItem::text, "Up", &DirectionItem::module, module, &DirectionItem::id, selectedId, &DirectionItem::xdir, 0, &DirectionItem::ydir, -1));
 
-		struct TurnModeItem : MenuItem {
-			MODULE* module;
-			TURNMODE turnMode;
-			int id;
-
-			void onAction(const event::Action &e) override {
-				module->turnMode[id] = turnMode;
-			}
-
-			void step() override {
-				rightText = module->turnMode[id] == turnMode ? "✔" : "";
-				MenuItem::step();
-			}
-		};
+		menu->addChild(new MenuSeparator());
+		menu->addChild(createMenuLabel("Turn mode"));
+		menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem("Ninety", &module->turnMode[selectedId], TURNMODE::NINETY));
+		menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem("One-Eighty", &module->turnMode[selectedId], TURNMODE::ONEEIGHTY));
 
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Turn mode"));
-		menu->addChild(construct<TurnModeItem>(&MenuItem::text, "Ninety", &TurnModeItem::module, module, &TurnModeItem::id, selectedId, &TurnModeItem::turnMode, TURNMODE::NINETY));
-		menu->addChild(construct<TurnModeItem>(&MenuItem::text, "One-Eighty", &TurnModeItem::module, module, &TurnModeItem::id, selectedId, &TurnModeItem::turnMode, TURNMODE::ONEEIGHTY));
-
-		struct OutModeItem : MenuItem {
-			MODULE* module;
-			OUTMODE outMode;
-			int id;
-
-			void onAction(const event::Action &e) override {
-				module->outMode[id] = outMode;
-			}
-
-			void step() override {
-				rightText = module->outMode[id] == outMode ? "✔" : "";
-				MenuItem::step();
-			}
-		};
+		menu->addChild(createMenuLabel("CV mode"));
+		menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem("-5..5V", &module->outMode[selectedId], OUTMODE::BI_5V));
+		menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem("0..5V", &module->outMode[selectedId], OUTMODE::UNI_5V));
+		menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem("0..3V", &module->outMode[selectedId], OUTMODE::UNI_3V));
+		menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem("0..1V", &module->outMode[selectedId], OUTMODE::UNI_1V));
 
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "CV mode"));
-		menu->addChild(construct<OutModeItem>(&MenuItem::text, "-5..5V", &OutModeItem::module, module, &OutModeItem::id, selectedId, &OutModeItem::outMode, OUTMODE::BI_5V));
-		menu->addChild(construct<OutModeItem>(&MenuItem::text, "0..5V", &OutModeItem::module, module, &OutModeItem::id, selectedId, &OutModeItem::outMode, OUTMODE::UNI_5V));
-		menu->addChild(construct<OutModeItem>(&MenuItem::text, "0..3V", &OutModeItem::module, module, &OutModeItem::id, selectedId, &OutModeItem::outMode, OUTMODE::UNI_3V));
-		menu->addChild(construct<OutModeItem>(&MenuItem::text, "0..1V", &OutModeItem::module, module, &OutModeItem::id, selectedId, &OutModeItem::outMode, OUTMODE::UNI_1V));
+		menu->addChild(StoermelderPackOne::Rack::createMapPtrSubmenuItem("Ratcheting",
+			{
+				{ RATCHETMODE::OFF, "Off" },
+				{ RATCHETMODE::DEFAULT, "Default" },
+				{ RATCHETMODE::MULT_TWO, "Twos (2, 4, 6, 8...)" },
+				{ RATCHETMODE::MULT_THREE, "Threes (3, 6, 9, 12...)" },
+				{ RATCHETMODE::POWER_TWO, "Power of 2 (1, 2, 4, 8, 16...)" }
 
-		struct RatchetingModeMenuItem : MenuItem {
-			RatchetingModeMenuItem() {
-				rightText = RIGHT_ARROW;
-			}
-			struct RatchetingModeItem : MenuItem {
-				MODULE* module;
-				int id;
-				RATCHETMODE mode;
-				void onAction(const event::Action& e) override {
-					module->ratchetingEnabled[id] = mode;
-				}
-				void step() override {
-					rightText = CHECKMARK(module->ratchetingEnabled[id] == mode);
-					MenuItem::step();
-				}
-			};
-
-			int id;
-			MODULE* module;
-			Menu* createChildMenu() override {
-				Menu* menu = new Menu;
-				menu->addChild(construct<RatchetingModeItem>(&MenuItem::text, "Off", &RatchetingModeItem::module, module, &RatchetingModeItem::id, id, &RatchetingModeItem::mode, RATCHETMODE::OFF));
-				menu->addChild(construct<RatchetingModeItem>(&MenuItem::text, "Default", &RatchetingModeItem::module, module, &RatchetingModeItem::id, id, &RatchetingModeItem::mode, RATCHETMODE::DEFAULT));
-				menu->addChild(construct<RatchetingModeItem>(&MenuItem::text, "Twos (2, 4, 6, 8...)", &RatchetingModeItem::module, module, &RatchetingModeItem::id, id, &RatchetingModeItem::mode, RATCHETMODE::MULT_TWO));
-				menu->addChild(construct<RatchetingModeItem>(&MenuItem::text, "Threes (3, 6, 9, 12...)", &RatchetingModeItem::module, module, &RatchetingModeItem::id, id, &RatchetingModeItem::mode, RATCHETMODE::MULT_THREE));
-				menu->addChild(construct<RatchetingModeItem>(&MenuItem::text, "Power of 2 (1, 2, 4, 8, 16...)", &RatchetingModeItem::module, module, &RatchetingModeItem::id, id, &RatchetingModeItem::mode, RATCHETMODE::POWER_TWO));
-				return menu;
-			}
-		};
-
-		struct RatchetingProbMenuItem : MenuItem {
-			int id;
-
-			RatchetingProbMenuItem() {
-				rightText = RIGHT_ARROW;
-			}
-
-			struct RatchetingProbItem : MenuItem {
-				MODULE* module;
-				float ratchetingProb;
-				int id;
-
-				void onAction(const event::Action& e) override {
-					module->ratchetingSetProb(id, ratchetingProb);
-				}
-
-				void step() override {
-					rightText = module->ratchetingProb[id] == ratchetingProb ? "✔" : "";
-					MenuItem::step();
-				}
-			};
-
-			MODULE* module;
-			Menu* createChildMenu() override {
-				Menu* menu = new Menu;
-				menu->addChild(construct<RatchetingProbItem>(&MenuItem::text, "30%", &RatchetingProbItem::module, module, &RatchetingProbItem::id, id, &RatchetingProbItem::ratchetingProb, 0.7f));
-				menu->addChild(construct<RatchetingProbItem>(&MenuItem::text, "40%", &RatchetingProbItem::module, module, &RatchetingProbItem::id, id, &RatchetingProbItem::ratchetingProb, 0.6f));
-				menu->addChild(construct<RatchetingProbItem>(&MenuItem::text, "50%", &RatchetingProbItem::module, module, &RatchetingProbItem::id, id, &RatchetingProbItem::ratchetingProb, 0.5f));
-				menu->addChild(construct<RatchetingProbItem>(&MenuItem::text, "60%", &RatchetingProbItem::module, module, &RatchetingProbItem::id, id, &RatchetingProbItem::ratchetingProb, 0.4f));
-				menu->addChild(construct<RatchetingProbItem>(&MenuItem::text, "65%", &RatchetingProbItem::module, module, &RatchetingProbItem::id, id, &RatchetingProbItem::ratchetingProb, 0.35f));
-				menu->addChild(construct<RatchetingProbItem>(&MenuItem::text, "70%", &RatchetingProbItem::module, module, &RatchetingProbItem::id, id, &RatchetingProbItem::ratchetingProb, 0.3f));
-				menu->addChild(construct<RatchetingProbItem>(&MenuItem::text, "80%", &RatchetingProbItem::module, module, &RatchetingProbItem::id, id, &RatchetingProbItem::ratchetingProb, 0.2f));
-				menu->addChild(construct<RatchetingProbItem>(&MenuItem::text, "90%", &RatchetingProbItem::module, module, &RatchetingProbItem::id, id, &RatchetingProbItem::ratchetingProb, 0.1f));
-				return menu;
-			}
-		};
-
-		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<RatchetingModeMenuItem>(&MenuItem::text, "Ratcheting", &RatchetingModeMenuItem::module, module, &RatchetingModeMenuItem::id, selectedId));
-		menu->addChild(construct<RatchetingProbMenuItem>(&MenuItem::text, "Ratcheting probability", &RatchetingProbMenuItem::module, module, &RatchetingProbMenuItem::id, selectedId));
+			},
+			&module->ratchetingEnabled[selectedId]
+		));
+		menu->addChild(StoermelderPackOne::Rack::createMapSubmenuItem<float>("Ratcheting probability",
+			{
+				{ 0.7f, "30%" },
+				{ 0.6f, "40%" },
+				{ 0.5f, "50%" },
+				{ 0.4f, "60%" },
+				{ 0.35f, "65%" },
+				{ 0.3f, "70%" },
+				{ 0.2f, "80%" },
+				{ 0.1f, "90%" }
+			},
+			[=]() { return module->ratchetingProb[selectedId]; },
+			[=](float prob) { module->ratchetingSetProb(selectedId, prob); }
+		));
 	}
 
 	void createContextMenu() {
@@ -1097,7 +1044,7 @@ struct MazeScreenWidget : LightWidget, MazeDrawHelper<MODULE> {
 		ui::Menu* menu = createMenu();
 		menu->addChild(construct<ModuleStateMenuItem<MODULE>>(&MenuItem::text, "Enter Edit-mode", &ModuleStateMenuItem<MODULE>::module, module));
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Grid"));
+		menu->addChild(createMenuLabel("Grid"));
 		GridSizeSlider<MODULE>* sizeSlider = new GridSizeSlider<MODULE>(module);
 		sizeSlider->box.size.x = 200.0;
 		menu->addChild(sizeSlider);
@@ -1176,21 +1123,8 @@ struct MazeWidget32 : ThemedModuleWidget<MazeModule<32, 4>> {
 		ThemedModuleWidget<MODULE>::appendContextMenu(menu);
 		MODULE* module = dynamic_cast<MODULE*>(this->module);
 
-		struct NormalizePortsItem : MenuItem {
-			MODULE* module;
-			
-			void onAction(const event::Action& e) override {
-				module->normalizePorts ^= true;
-			}
-
-			void step() override {
-				rightText = module->normalizePorts ? "✔" : "";
-				MenuItem::step();
-			}
-		};
-
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<NormalizePortsItem>(&MenuItem::text, "Normalize inputs to Yellow", &NormalizePortsItem::module, module));
+		menu->addChild(createBoolPtrMenuItem("Normalize inputs to Yellow", &module->normalizePorts));
 	}
 };
 

@@ -2020,262 +2020,70 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 
 	void appendContextMenu(Menu* menu) override {
 		ThemedModuleWidget<MidiCatModule>::appendContextMenu(menu);
-		assert(module);
-
-		struct MidiMapImportItem : MenuItem {
-			MidiCatWidget* moduleWidget;
-			void onAction(const event::Action& e) override {
-				moduleWidget->loadMidiMapPreset_dialog();
-			}
-		}; // struct MidiMapImportItem
-
-		struct ResendMidiOutItem : MenuItem {
-			MidiCatModule* module;
-			Menu* createChildMenu() override {
-				struct NowItem : MenuItem {
-					MidiCatModule* module;
-					void onAction(const event::Action& e) override {
-						module->midiResendFeedback();
-					}
-				};
-
-				struct PeriodicallyItem : MenuItem {
-					MidiCatModule* module;
-					void onAction(const event::Action& e) override {
-						module->midiResendPeriodically ^= true;
-					}
-					void step() override {
-						rightText = CHECKMARK(module->midiResendPeriodically);
-						MenuItem::step();
-					}
-				};
-
-				Menu* menu = new Menu;
-				menu->addChild(construct<NowItem>(&MenuItem::text, "Now", &NowItem::module, module));
-				menu->addChild(construct<PeriodicallyItem>(&MenuItem::text, "Periodically", &PeriodicallyItem::module, module));
-				return menu;
-			}
-		}; // struct ResendMidiOutItem
-
-		struct PresetLoadMenuItem : MenuItem {
-			struct IgnoreMidiDevicesItem : MenuItem {
-				MidiCatModule* module;
-				void onAction(const event::Action& e) override {
-					module->midiIgnoreDevices ^= true;
-				}
-				void step() override {
-					rightText = CHECKMARK(module->midiIgnoreDevices);
-					MenuItem::step();
-				}
-			}; // struct IgnoreMidiDevicesItem
-
-			struct ClearMapsOnLoadItem : MenuItem {
-				MidiCatModule* module;
-				void onAction(const event::Action& e) override {
-					module->clearMapsOnLoad ^= true;
-				}
-				void step() override {
-					rightText = CHECKMARK(module->clearMapsOnLoad);
-					MenuItem::step();
-				}
-			}; // struct ClearMapsOnLoadItem
-
-			MidiCatModule* module;
-			PresetLoadMenuItem() {
-				rightText = RIGHT_ARROW;
-			}
-
-			Menu* createChildMenu() override {
-				Menu* menu = new Menu;
-				menu->addChild(construct<IgnoreMidiDevicesItem>(&MenuItem::text, "Ignore MIDI devices", &IgnoreMidiDevicesItem::module, module));
-				menu->addChild(construct<ClearMapsOnLoadItem>(&MenuItem::text, "Clear mapping slots", &ClearMapsOnLoadItem::module, module));
-				return menu;
-			}
-		};
-
-		struct PrecisionMenuItem : MenuItem {
-			struct PrecisionItem : MenuItem {
-				MidiCatModule* module;
-				int sampleRate;
-				int division;
-				std::string text;
-				PrecisionItem() {
-					sampleRate = int(APP->engine->getSampleRate());
-				}
-				void onAction(const event::Action& e) override {
-					module->setProcessDivision(division);
-				}
-				void step() override {
-					MenuItem::text = string::f("%s (%i Hz)", text.c_str(), sampleRate / division);
-					rightText = module->processDivision == division ? "✔" : "";
-					MenuItem::step();
-				}
-			};
-
-			MidiCatModule* module;
-			PrecisionMenuItem() {
-				rightText = RIGHT_ARROW;
-			}
-
-			Menu* createChildMenu() override {
-				Menu* menu = new Menu;
-				menu->addChild(construct<PrecisionItem>(&PrecisionItem::text, "Audio rate", &PrecisionItem::module, module, &PrecisionItem::division, 1));
-				menu->addChild(construct<PrecisionItem>(&PrecisionItem::text, "Higher CPU", &PrecisionItem::module, module, &PrecisionItem::division, 8));
-				menu->addChild(construct<PrecisionItem>(&PrecisionItem::text, "Moderate CPU", &PrecisionItem::module, module, &PrecisionItem::division, 64));
-				menu->addChild(construct<PrecisionItem>(&PrecisionItem::text, "Lowest CPU", &PrecisionItem::module, module, &PrecisionItem::division, 256));
-				return menu;
-			}
-		}; // struct PrecisionMenuItem
-
-		struct MidiModeMenuItem : MenuItem {
-			MidiModeMenuItem() {
-				rightText = RIGHT_ARROW;
-			}
-
-			struct MidiModeItem : MenuItem {
-				MidiCatModule* module;
-				MIDIMODE midiMode;
-
-				void onAction(const event::Action &e) override {
-					module->setMode(midiMode);
-				}
-				void step() override {
-					rightText = module->midiMode == midiMode ? "✔" : "";
-					MenuItem::step();
-				}
-			};
-
-			MidiCatModule* module;
-			Menu* createChildMenu() override {
-				Menu* menu = new Menu;
-				menu->addChild(construct<MidiModeItem>(&MenuItem::text, "Operating", &MidiModeItem::module, module, &MidiModeItem::midiMode, MIDIMODE::MIDIMODE_DEFAULT));
-				menu->addChild(construct<MidiModeItem>(&MenuItem::text, "Locate and indicate", &MidiModeItem::module, module, &MidiModeItem::midiMode, MIDIMODE::MIDIMODE_LOCATE));
-				return menu;
-			}
-		}; // struct MidiModeMenuItem
+		int sampleRate = int(APP->engine->getSampleRate());
 
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<PresetLoadMenuItem>(&MenuItem::text, "Preset load", &PresetLoadMenuItem::module, module));
-		menu->addChild(construct<PrecisionMenuItem>(&MenuItem::text, "Precision", &PrecisionMenuItem::module, module));
-		menu->addChild(construct<MidiModeMenuItem>(&MenuItem::text, "Mode", &MidiModeMenuItem::module, module));
-		menu->addChild(construct<ResendMidiOutItem>(&MenuItem::text, "Re-send MIDI feedback", &MenuItem::rightText, RIGHT_ARROW, &ResendMidiOutItem::module, module));
-		menu->addChild(construct<MidiMapImportItem>(&MenuItem::text, "Import MIDI-MAP preset", &MidiMapImportItem::moduleWidget, this));
-
-		struct UiMenuItem : MenuItem {
-			MidiCatModule* module;
-			UiMenuItem() {
-				rightText = RIGHT_ARROW;
+		menu->addChild(createSubmenuItem("Preset load", "",
+			[=](Menu* menu) {
+				menu->addChild(createBoolPtrMenuItem("Ignore MIDI devices", &module->midiIgnoreDevices));
+				menu->addChild(createBoolPtrMenuItem("Clear mapping slots", &module->clearMapsOnLoad));
 			}
-
-			Menu* createChildMenu() override {
-				struct TextScrollItem : MenuItem {
-					MidiCatModule* module;
-					void onAction(const event::Action& e) override {
-						module->textScrolling ^= true;
-					}
-					void step() override {
-						rightText = module->textScrolling ? "✔" : "";
-						MenuItem::step();
-					}
-				}; // struct TextScrollItem
-
-				struct MappingIndicatorHiddenItem : MenuItem {
-					MidiCatModule* module;
-					void onAction(const event::Action& e) override {
-						module->mappingIndicatorHidden ^= true;
-					}
-					void step() override {
-						rightText = module->mappingIndicatorHidden ? "✔" : "";
-						MenuItem::step();
-					}
-				}; // struct MappingIndicatorHiddenItem
-
-				struct LockedItem : MenuItem {
-					MidiCatModule* module;
-					void onAction(const event::Action& e) override {
-						module->locked ^= true;
-					}
-					void step() override {
-						rightText = module->locked ? "✔" : "";
-						MenuItem::step();
-					}
-				}; // struct LockedItem
-
-				Menu* menu = new Menu;
-				menu->addChild(construct<TextScrollItem>(&MenuItem::text, "Text scrolling", &TextScrollItem::module, module));
-				menu->addChild(construct<MappingIndicatorHiddenItem>(&MenuItem::text, "Hide mapping indicators", &MappingIndicatorHiddenItem::module, module));
-				menu->addChild(construct<LockedItem>(&MenuItem::text, "Lock mapping slots", &LockedItem::module, module));
-				return menu;
+		));
+		menu->addChild(StoermelderPackOne::Rack::createMapSubmenuItem<int>("Precision", {
+				{ 1, string::f("Audio rate (%i Hz)", sampleRate / 1) },
+				{ 8, string::f("High (%i Hz)", sampleRate / 8) },
+				{ 64, string::f("Moderate (%i Hz)", sampleRate / 64) },
+				{ 256, string::f("Lowest (%i Hz)", sampleRate / 256) }
+			},
+			[=]() {
+				return module->processDivision;
+			},
+			[=](int division) {
+				module->setProcessDivision(division);
 			}
-		}; // struct UiMenuItem
-
-		struct OverlayEnabledItem : MenuItem {
-			MidiCatModule* module;
-			void onAction(const event::Action& e) override {
-				module->overlayEnabled ^= true;
+		));
+		menu->addChild(StoermelderPackOne::Rack::createMapSubmenuItem<MIDIMODE>("Mode", {
+				{ MIDIMODE::MIDIMODE_DEFAULT, "Operating" },
+				{ MIDIMODE::MIDIMODE_LOCATE, "Locate and indicate" }
+			},
+			[=]() {
+				return module->midiMode;
+			},
+			[=](MIDIMODE midiMode) {
+				module->setMode(midiMode);
 			}
-			void step() override {
-				rightText = module->overlayEnabled ? "✔" : "";
-				MenuItem::step();
+		));
+		menu->addChild(createSubmenuItem("Re-send MIDI feedback", "",
+			[=](Menu* menu) {
+				menu->addChild(createMenuItem("Now", "", [=]() { module->midiResendFeedback(); }));
+				menu->addChild(createBoolPtrMenuItem("Periodically", &module->midiResendPeriodically));
 			}
-		}; // struct OverlayEnabledItem
-
-		struct ClearMapsItem : MenuItem {
-			MidiCatModule* module;
-			void onAction(const event::Action& e) override {
-				module->clearMaps();
-			}
-		}; // struct ClearMapsItem
-
-		struct ModuleLearnExpanderMenuItem : MenuItem {
-			MidiCatModule* module;
-			ModuleLearnExpanderMenuItem() {
-				rightText = RIGHT_ARROW;
-			}
-			Menu* createChildMenu() override {
-				struct ModuleLearnExpanderItem : MenuItem {
-					MidiCatModule* module;
-					bool keepCcAndNote;
-					void onAction(const event::Action& e) override {
-						module->moduleBindExpander(keepCcAndNote);
-					}
-				};
-
-				Menu* menu = new Menu;
-				menu->addChild(construct<ModuleLearnExpanderItem>(&MenuItem::text, "Clear first", &MenuItem::rightText, RACK_MOD_CTRL_NAME "+" RACK_MOD_SHIFT_NAME "+E", &ModuleLearnExpanderItem::module, module, &ModuleLearnExpanderItem::keepCcAndNote, false));
-				menu->addChild(construct<ModuleLearnExpanderItem>(&MenuItem::text, "Keep MIDI assignments", &MenuItem::rightText, RACK_MOD_SHIFT_NAME "+E", &ModuleLearnExpanderItem::module, module, &ModuleLearnExpanderItem::keepCcAndNote, true));
-				return menu;
-			}
-		}; // struct ModuleLearnExpanderMenuItem
-
-		struct ModuleLearnSelectMenuItem : MenuItem {
-			MidiCatWidget* mw;
-			ModuleLearnSelectMenuItem() {
-				rightText = RIGHT_ARROW;
-			}
-			Menu* createChildMenu() override {
-				struct ModuleLearnSelectItem : MenuItem {
-					MidiCatWidget* mw;
-					LEARN_MODE mode;
-					void onAction(const event::Action& e) override {
-						mw->enableLearn(mode);
-					}
-				};
-
-				Menu* menu = new Menu;
-				menu->addChild(construct<ModuleLearnSelectItem>(&MenuItem::text, "Clear first", &MenuItem::rightText, RACK_MOD_CTRL_NAME "+" RACK_MOD_SHIFT_NAME "+D", &ModuleLearnSelectItem::mw, mw, &ModuleLearnSelectItem::mode, LEARN_MODE::BIND_CLEAR));
-				menu->addChild(construct<ModuleLearnSelectItem>(&MenuItem::text, "Keep MIDI assignments", &MenuItem::rightText, RACK_MOD_SHIFT_NAME "+D", &ModuleLearnSelectItem::mw, mw, &ModuleLearnSelectItem::mode, LEARN_MODE::BIND_KEEP));
-				return menu;
-			}
-		}; // struct ModuleLearnSelectMenuItem
+		));
+		menu->addChild(createMenuItem("Import MIDI-MAP preset", "", [=]() { loadMidiMapPreset_dialog(); }));
 
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<UiMenuItem>(&MenuItem::text, "User interface", &UiMenuItem::module, module));
-		menu->addChild(construct<OverlayEnabledItem>(&MenuItem::text, "Status overlay", &OverlayEnabledItem::module, module));
+		menu->addChild(createSubmenuItem("User interface", "",
+			[=](Menu* menu) {
+				menu->addChild(createBoolPtrMenuItem("Text scrolling", &module->textScrolling));
+				menu->addChild(createBoolPtrMenuItem("Hide mapping indicators", &module->mappingIndicatorHidden));
+				menu->addChild(createBoolPtrMenuItem("Lock mapping slots", &module->locked));
+			}
+		));
+		menu->addChild(createBoolPtrMenuItem("Status overlay", &module->overlayEnabled));
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<ClearMapsItem>(&MenuItem::text, "Clear mappings", &ClearMapsItem::module, module));
-		menu->addChild(construct<ModuleLearnExpanderMenuItem>(&MenuItem::text, "Map module (left)", &ModuleLearnExpanderMenuItem::module, module));
-		menu->addChild(construct<ModuleLearnSelectMenuItem>(&MenuItem::text, "Map module (select)", &ModuleLearnSelectMenuItem::mw, this));
+		menu->addChild(createMenuItem("Clear mappings", "", [=]() { module->clearMaps(); }));
+		menu->addChild(createSubmenuItem("Map module (left)", "",
+			[=](Menu* menu) {
+				menu->addChild(createMenuItem("Clear first", RACK_MOD_CTRL_NAME "+" RACK_MOD_SHIFT_NAME "+E", [=]() { module->moduleBindExpander(false); }));
+				menu->addChild(createMenuItem("Keep MIDI assignments", RACK_MOD_SHIFT_NAME "+E", [=]() { module->moduleBindExpander(true); }));
+			}
+		));
+		menu->addChild(createSubmenuItem("Map module (select)", "",
+			[=](Menu* menu) {
+				menu->addChild(createMenuItem("Clear first", RACK_MOD_CTRL_NAME "+" RACK_MOD_SHIFT_NAME "+D", [=]() { enableLearn(LEARN_MODE::BIND_CLEAR); }));
+				menu->addChild(createMenuItem("Keep MIDI assignments", RACK_MOD_SHIFT_NAME "+D", [=]() { enableLearn(LEARN_MODE::BIND_KEEP); }));
+			}
+		));
 
 		if (module->expMemStorage != NULL) appendContextMenuMem(menu);
 	}
@@ -2378,18 +2186,11 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 			}
 		}; // SaveMenuItem
 
-		struct ApplyItem : MenuItem {
-			MidiCatWidget* mw;
-			void onAction(const event::Action& e) override {
-				mw->enableLearn(LEARN_MODE::MEM);
-			}
-		}; // ApplyItem
-
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "MEM-expander"));
+		menu->addChild(createMenuLabel("MEM-expander"));
 		menu->addChild(construct<MapMenuItem>(&MenuItem::text, "Available mappings", &MapMenuItem::module, module));
 		menu->addChild(construct<SaveMenuItem>(&MenuItem::text, "Store mapping", &SaveMenuItem::module, module));
-		menu->addChild(construct<ApplyItem>(&MenuItem::text, "Apply mapping", &MenuItem::rightText, RACK_MOD_SHIFT_NAME "+V", &ApplyItem::mw, this));
+		menu->addChild(createMenuItem("Apply mapping", RACK_MOD_SHIFT_NAME "+V", [=]() { enableLearn(LEARN_MODE::MEM); }));
 	}
 };
 

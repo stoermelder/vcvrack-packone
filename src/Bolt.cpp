@@ -248,7 +248,6 @@ struct BoltWidget : ThemedModuleWidget<BoltModule> {
 	void appendContextMenu(Menu* menu) override {
 		ThemedModuleWidget<BoltModule>::appendContextMenu(menu);
 		BoltModule* module = dynamic_cast<BoltModule*>(this->module);
-		assert(module);
 
 		menu->addChild(new MenuSeparator());
 		menu->addChild(StoermelderPackOne::Rack::createMapPtrSubmenuItem<int>("Port OP mode",

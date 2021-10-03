@@ -28,6 +28,9 @@ struct IntermixEnvModule : Module {
 	IntermixEnvModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+		for (int i = 0; i < PORTS; i++) {
+			configOutput(OUTPUT + i, string::f("Envelope %i", i + 1));
+		}
 		onReset();
 	}
 
@@ -89,22 +92,12 @@ struct InputLedDisplay : StoermelderPackOne::StoermelderLedDisplay {
 
 	void createContextMenu() {
 		ui::Menu* menu = createMenu();
-
-		struct InputItem : MenuItem {
-			IntermixEnvModule<PORTS>* module;
-			int input;
-			void onAction(const event::Action& e) override {
-				module->input = input;
-			}
-			void step() override {
-				rightText = CHECKMARK(module->input == input);
-				MenuItem::step();
-			}
-		};
-
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Input"));
+		menu->addChild(createMenuLabel("Input"));
 		for (int i = 0; i < PORTS; i++) {
-			menu->addChild(construct<InputItem>(&MenuItem::text, string::f("%02u", i + 1), &InputItem::module, module, &InputItem::input, i));
+			menu->addChild(createCheckMenuItem(string::f("%02u", i + 1),
+				[=]() { return module->input == i; },
+				[=]() { module->input = i; }
+			));
 		};
 	}
 };

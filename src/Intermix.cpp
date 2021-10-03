@@ -136,10 +136,13 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 	IntermixModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+		configInput(INPUT_SCENE, "Scene selection");
 		for (int i = 0; i < SCENE_MAX; i++) {
 			configParam(PARAM_SCENE + i, 0.f, 1.f, 0.f, string::f("Scene %i", i + 1));
 		}
 		for (int i = 0; i < PORTS; i++) {
+			configInput(INPUT + i, string::f("Signal %i", i + 1));
+			configOutput(OUTPUT + i, string::f("Mix %i", i + 1));
 			for (int j = 0; j < PORTS; j++) {
 				configParam<MatrixButtonParamQuantity>(PARAM_MATRIX + i * PORTS + j, 0.f, 1.f, 0.f, string::f("Input %i to Output %i", j + 1, i + 1));
 			}
@@ -665,44 +668,26 @@ struct InputLedDisplay : StoermelderLedDisplay {
 			}
 		};
 
-		struct InputSubtractItem : MenuItem {
-			MODULE* module;
-			int id;
-			InputSubtractItem() {
-				rightText = RIGHT_ARROW;
-			}
-			Menu* createChildMenu() override {
-				Menu* menu = new Menu;
-				for (int i = 12; i > 0; i--) {
-					menu->addChild(construct<InputItem>(&MenuItem::text, string::f("-%02i cent", i), &InputItem::module, module, &InputItem::id, id, &InputItem::inMode, (IN_MODE)(24 - i)));
-				}
-				return menu;
-			}
-		};
-
-		struct InputAddItem : MenuItem {
-			MODULE* module;
-			int id;
-			InputAddItem() {
-				rightText = RIGHT_ARROW;
-			}
-			Menu* createChildMenu() override {
-				Menu* menu = new Menu;
-				for (int i = 1; i <= 12; i++) {
-					menu->addChild(construct<InputItem>(&MenuItem::text, string::f("+%02i cent", i), &InputItem::module, module, &InputItem::id, id, &InputItem::inMode, (IN_MODE)(24 + i)));
-				}
-				return menu;
-			}
-		};
-
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Input mode"));
+		menu->addChild(createMenuLabel("Input mode"));
 		menu->addChild(construct<InputItem>(&MenuItem::text, "Off", &InputItem::module, module, &InputItem::id, id, &InputItem::inMode, IM_OFF));
 		menu->addChild(construct<InputItem>(&MenuItem::text, "Direct", &InputItem::module, module, &InputItem::id, id, &InputItem::inMode, IM_DIRECT));
 		menu->addChild(construct<InputItem>(&MenuItem::text, "Linear fade", &InputItem::module, module, &InputItem::id, id, &InputItem::inMode, IM_FADE));
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Constant voltage"));
-		menu->addChild(construct<InputSubtractItem>(&MenuItem::text, "Subtract", &InputSubtractItem::module, module, &InputSubtractItem::id, id));
-		menu->addChild(construct<InputAddItem>(&MenuItem::text, "Add", &InputAddItem::module, module, &InputAddItem::id, id));
+		menu->addChild(createMenuLabel("Constant voltage"));
+		menu->addChild(createSubmenuItem("Subtract", "",
+			[=](Menu* menu) {
+				for (int i = 12; i > 0; i--) {
+					menu->addChild(construct<InputItem>(&MenuItem::text, string::f("-%02i cent", i), &InputItem::module, module, &InputItem::id, id, &InputItem::inMode, (IN_MODE)(24 - i)));
+				}
+			}
+		));
+		menu->addChild(createSubmenuItem("Add", "",
+			[=](Menu* menu) {
+				for (int i = 1; i <= 12; i++) {
+					menu->addChild(construct<InputItem>(&MenuItem::text, string::f("+%02i cent", i), &InputItem::module, module, &InputItem::id, id, &InputItem::inMode, (IN_MODE)(24 + i)));
+				}
+			}
+		));
 	}
 };
 
@@ -818,118 +803,6 @@ struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 	void appendContextMenu(Menu* menu) override {
 		ThemedModuleWidget<IntermixModule<PORTS>>::appendContextMenu(menu);
 		IntermixModule<PORTS>* module = dynamic_cast<IntermixModule<PORTS>*>(this->module);
-		assert(module);
-
-		struct NumberOfChannelsMenuItem : MenuItem {
-			NumberOfChannelsMenuItem() {
-				rightText = RIGHT_ARROW;
-			}
-
-			struct NumberOfChannelsItem : MenuItem {
-				IntermixModule<PORTS>* module;
-				int channelCount;
-				void onAction(const event::Action& e) override {
-					module->channelCount = channelCount;
-				}
-				void step() override {
-					rightText = module->channelCount == channelCount ? "✔" : "";
-					MenuItem::step();
-				}
-			};
-
-			IntermixModule<PORTS>* module;
-			Menu* createChildMenu() override {
-				Menu* menu = new Menu;
-				for (int i = 1; i <= PORT_MAX_CHANNELS; i++) {
-					menu->addChild(construct<NumberOfChannelsItem>(&MenuItem::text, string::f("%i", i), &NumberOfChannelsItem::module, module, &NumberOfChannelsItem::channelCount, i));
-				}
-				return menu;
-			}
-		};
-
-		struct SceneLockItem : MenuItem {
-			IntermixModule<PORTS>* module;
-			void onAction(const event::Action& e) override {
-				module->sceneLock ^= true;
-			}
-			void step() override {
-				rightText = CHECKMARK(module->sceneLock);
-				MenuItem::step();
-			}
-		};
-
-		struct SceneModeMenuItem : MenuItem {
-			SceneModeMenuItem() {
-				rightText = RIGHT_ARROW;
-			}
-
-			struct SceneModeItem : MenuItem {
-				IntermixModule<PORTS>* module;
-				SCENE_CV_MODE sceneMode;
-				void onAction(const event::Action& e) override {
-					module->sceneMode = sceneMode;
-				}
-				void step() override {
-					rightText = module->sceneMode == sceneMode ? "✔" : "";
-					MenuItem::step();
-				}
-			};
-
-			IntermixModule<PORTS>* module;
-			Menu* createChildMenu() override {
-				Menu* menu = new Menu;
-				menu->addChild(construct<SceneModeItem>(&MenuItem::text, "Off", &SceneModeItem::module, module, &SceneModeItem::sceneMode, SCENE_CV_MODE::OFF));
-				menu->addChild(construct<SceneModeItem>(&MenuItem::text, "Trigger", &SceneModeItem::module, module, &SceneModeItem::sceneMode, SCENE_CV_MODE::TRIG_FWD));
-				menu->addChild(construct<SceneModeItem>(&MenuItem::text, "0..10V", &SceneModeItem::module, module, &SceneModeItem::sceneMode, SCENE_CV_MODE::VOLT));
-				menu->addChild(construct<SceneModeItem>(&MenuItem::text, "C4-G4", &SceneModeItem::module, module, &SceneModeItem::sceneMode, SCENE_CV_MODE::C4));
-				menu->addChild(construct<SceneModeItem>(&MenuItem::text, "Arm", &SceneModeItem::module, module, &SceneModeItem::sceneMode, SCENE_CV_MODE::ARM));
-				return menu;
-			}
-		};
-
-		struct SceneInputModeItem : MenuItem {
-			IntermixModule<PORTS>* module;
-			void onAction(const event::Action& e) override {
-				module->sceneInputMode ^= true;
-			}
-			void step() override {
-				rightText = module->sceneInputMode ? "✔" : "";
-				MenuItem::step();
-			}
-		};
-
-		struct SceneAtModeItem : MenuItem {
-			IntermixModule<PORTS>* module;
-			void onAction(const event::Action& e) override {
-				module->sceneAtMode ^= true;
-			}
-			void step() override {
-				rightText = module->sceneAtMode ? "✔" : "";
-				MenuItem::step();
-			}
-		};
-
-		struct OutputClampItem : MenuItem {
-			IntermixModule<PORTS>* module;
-			void onAction(const event::Action& e) override {
-				module->outputClamp ^= true;
-			}
-			void step() override {
-				rightText = module->outputClamp ? "✔" : "";
-				MenuItem::step();
-			}
-		};
-
-		struct InputVisualizeItem : MenuItem {
-			IntermixModule<PORTS>* module;
-			void onAction(const event::Action& e) override {
-				module->inputVisualize ^= true;
-			}
-			void step() override {
-				rightText = module->inputVisualize ? "✔" : "";
-				MenuItem::step();
-			}
-		};
 
 		struct BrightnessSlider : ui::Slider {
 			struct BrightnessQuantity : Quantity {
@@ -971,16 +844,31 @@ struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 		};
 
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<SceneLockItem>(&MenuItem::text, "Scene lock", &SceneLockItem::module, module));
-		menu->addChild(construct<NumberOfChannelsMenuItem>(&MenuItem::text, "Channels", &NumberOfChannelsMenuItem::module, module));
+		menu->addChild(createBoolPtrMenuItem("Scene lock", &module->sceneLock));
+		menu->addChild(createSubmenuItem("Channels", string::f("%i", module->channelCount),
+			[=](Menu* menu) {
+				for (int i = 1; i <= PORT_MAX_CHANNELS; i++) {
+					menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem(string::f("%i", i), &module->channelCount, i));
+				}
+			}
+		));
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<SceneModeMenuItem>(&MenuItem::text, "Port SCENE-mode", &SceneModeMenuItem::module, module));
-		menu->addChild(construct<SceneInputModeItem>(&MenuItem::text, "Include input-mode in scenes", &SceneInputModeItem::module, module));
-		menu->addChild(construct<SceneAtModeItem>(&MenuItem::text, "Include attenuverters in scenes", &SceneAtModeItem::module, module));
-		menu->addChild(construct<OutputClampItem>(&MenuItem::text, "Limit output to -10..10V", &OutputClampItem::module, module));
+		menu->addChild(StoermelderPackOne::Rack::createMapPtrSubmenuItem("Port SCENE-mode",
+			{
+				{ SCENE_CV_MODE::OFF, "Off" },
+				{ SCENE_CV_MODE::TRIG_FWD, "Trigger" },
+				{ SCENE_CV_MODE::VOLT, "0..10V" },
+				{ SCENE_CV_MODE::C4, "C4-G4" },
+				{ SCENE_CV_MODE::ARM, "Arm" }
+			},
+			&module->sceneMode
+		));
+		menu->addChild(createBoolPtrMenuItem("Include input-mode in scenes", &module->sceneInputMode));
+		menu->addChild(createBoolPtrMenuItem("Include attenuverters in scenes", &module->sceneAtMode));
+		menu->addChild(createBoolPtrMenuItem("Limit output to -10..10V", &module->outputClamp));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(new BrightnessSlider(module));
-		menu->addChild(construct<InputVisualizeItem>(&MenuItem::text, "Visualize input on pads", &InputVisualizeItem::module, module));
+		menu->addChild(createBoolPtrMenuItem("Visualize input on pads", &module->inputVisualize));
 	}
 };
 

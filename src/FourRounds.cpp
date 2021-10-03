@@ -59,8 +59,27 @@ struct FourRoundsModule : Module {
 	FourRoundsModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		configParam<TriggerParamQuantity>(TRIG_PARAM, 0.0f, 1.0f, 0.0f, "Trigger next contest");
-		configParam<TriggerParamQuantity>(INV_PARAM, 0.0f, 1.0f, 0.0f, "Invert current state");
+		configInput(TRIG_INPUT, "Contest trigger");
+		configInput(INV_INPUT, "Invert trigger");
+		for (int i = 0; i < 16; i++) {
+			configInput(ROUND1_INPUT + i, "Contest");
+		}
+		for (int i = 0; i < 8; i++) {
+			configOutput(ROUND2_OUTPUT + i, "Round 1 winner");
+			outputInfos[ROUND2_OUTPUT + i]->description = "The \"winner\" of the two contestants.";
+		}
+		for (int i = 0; i < 4; i++) {
+			configOutput(ROUND3_OUTPUT + i, "Round 2 winner");
+			outputInfos[ROUND3_OUTPUT + i]->description = "The \"winner\" of the two contestants of round 1.";
+		}
+		for (int i = 0; i < 2; i++) {
+			configOutput(ROUND4_OUTPUT + i, "Round 3 winner");
+			outputInfos[ROUND4_OUTPUT + i]->description = "The \"winner\" of the two contestants of round 2.";
+		}
+		configOutput(WINNER_OUTPUT, "Contest champion");
+		outputInfos[WINNER_OUTPUT]->description = "The \"winner\" of the two contestants of round 3.";
+		configParam<TriggerParamQuantity>(TRIG_PARAM, 0.0f, 1.0f, 0.0f, "New contest trigger");
+		configParam<TriggerParamQuantity>(INV_PARAM, 0.0f, 1.0f, 0.0f, "Invert state trigger");
 		lightDivider.setDivision(1024);
 		onReset();
 	}
@@ -324,28 +343,12 @@ struct FourRoundsWidget : ThemedModuleWidget<FourRoundsModule> {
 	void appendContextMenu(Menu *menu) override {
 		ThemedModuleWidget<FourRoundsModule>::appendContextMenu(menu);
 		FourRoundsModule* module = dynamic_cast<FourRoundsModule*>(this->module);
-		assert(module);
 
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Mode"));
-
-		struct ModeItem : MenuItem {
-			FourRoundsModule* module;
-			MODE mode;
-			
-			void onAction(const event::Action &e) override {
-				module->mode = mode;
-			}
-
-			void step() override {
-				rightText = module->mode == mode ? "✔" : "";
-				MenuItem::step();
-			}
-		};
-
-		menu->addChild(construct<ModeItem>(&MenuItem::text, "CV / audio", &ModeItem::module, module, &ModeItem::mode, MODE::DIRECT));
-		menu->addChild(construct<ModeItem>(&MenuItem::text, "Sample & hold", &ModeItem::module, module, &ModeItem::mode, MODE::SH));
-		menu->addChild(construct<ModeItem>(&MenuItem::text, "Quantum", &ModeItem::module, module, &ModeItem::mode, MODE::QUANTUM));
+		menu->addChild(createMenuLabel("Mode"));
+		menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem("CV / audio", &module->mode, MODE::DIRECT));
+		menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem("Sample & hold", &module->mode, MODE::SH));
+		menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem("Quantum", &module->mode, MODE::QUANTUM));
 	}
 };
 

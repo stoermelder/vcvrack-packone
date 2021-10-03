@@ -257,17 +257,9 @@ struct CVMapPort : StoermelderPort {
 				}
 			};
 
-			struct ResetItem : ui::MenuItem {
-				CVMapModule* module;
-				int i, j;
-				void onAction(const event::Action& e) override {
-					module->inputConfig[i].label[j] = "";
-				}
-			};
-
 			Menu* createChildMenu() override {
 				Menu* menu = new Menu;
-				menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Custom label"));
+				menu->addChild(createMenuLabel("Custom label"));
 				LabelField* labelField = new LabelField;
 				labelField->text = module->inputConfig[i].label[j];
 				labelField->box.size.x = 180;
@@ -275,22 +267,10 @@ struct CVMapPort : StoermelderPort {
 				labelField->i = i;
 				labelField->j = j;
 				menu->addChild(labelField);
-				menu->addChild(construct<ResetItem>(&MenuItem::text, "Reset", &ResetItem::module, module, &ResetItem::i, i, &ResetItem::j, j));
+				menu->addChild(createMenuItem("Reset", "", [=]() { module->inputConfig[i].label[j] = ""; }));
 				return menu;
 			}
 		}; // struct LabelMenuItem
-
-		struct HideUnusedItem : MenuItem {
-			CVMapModule* module;
-			int i;
-			void onAction(const event::Action& e) override {
-				module->inputConfig[i].hideUnused ^= true;
-			}
-			void step() override {
-				rightText = CHECKMARK(module->inputConfig[i].hideUnused);
-				MenuItem::step();
-			}
-		}; // struct HideUnusedItem
 
 		struct DisconnectItem : MenuItem {
 			PortWidget* pw;
@@ -309,13 +289,13 @@ struct CVMapPort : StoermelderPort {
 		}; // struct DisconnectItem
 
 		Menu* menu = createMenu();
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("Port %i", i + 1)));
+		menu->addChild(createMenuLabel(string::f("Port %i", i + 1)));
 		menu->addChild(construct<DisconnectItem>(&MenuItem::text, "Disconnect", &DisconnectItem::pw, this));
 		menu->addChild(new MenuSeparator());
 		for (int j = 0; j < 16; j++) {
 			menu->addChild(construct<LabelMenuItem>(&MenuItem::text, string::f("Channel %i", j + 1), &LabelMenuItem::module, module, &LabelMenuItem::i, i, &LabelMenuItem::j, j));
 		}
-		menu->addChild(construct<HideUnusedItem>(&MenuItem::text, "Hide unused", &HideUnusedItem::module, module, &HideUnusedItem::i, i));
+		menu->addChild(createBoolPtrMenuItem("Hide unused", &module->inputConfig[i].hideUnused));
 	}
 }; // struct CVMapPort
 
@@ -429,82 +409,15 @@ struct CVMapWidget : ThemedModuleWidget<CVMapModule>, ParamWidgetContextExtender
 	void appendContextMenu(Menu* menu) override {
 		ThemedModuleWidget<CVMapModule>::appendContextMenu(menu);
 		CVMapModule* module = dynamic_cast<CVMapModule*>(this->module);
-		assert(module);
-
-		struct LockItem : MenuItem {
-			CVMapModule* module;
-			void onAction(const event::Action& e) override {
-				module->lockParameterChanges ^= true;
-			}
-			void step() override {
-				rightText = module->lockParameterChanges ? "Locked" : "Unlocked";
-				MenuItem::step();
-			}
-		};
-
-		struct UniBiItem : MenuItem {
-			CVMapModule* module;
-			void onAction(const event::Action& e) override {
-				module->bipolarInput ^= true;
-			}
-			void step() override {
-				rightText = module->bipolarInput ? "-5V..5V" : "0V..10V";
-				MenuItem::step();
-			}
-		};
-
-		struct AudioRateItem : MenuItem {
-			CVMapModule* module;
-			void onAction(const event::Action& e) override {
-				module->audioRate ^= true;
-			}
-			void step() override {
-				rightText = module->audioRate ? "✔" : "";
-				MenuItem::step();
-			}
-		};
-
-		struct TextScrollItem : MenuItem {
-			CVMapModule* module;
-			void onAction(const event::Action& e) override {
-				module->textScrolling ^= true;
-			}
-			void step() override {
-				rightText = module->textScrolling ? "✔" : "";
-				MenuItem::step();
-			}
-		};
-
-		struct MappingIndicatorHiddenItem : MenuItem {
-			CVMapModule* module;
-			void onAction(const event::Action& e) override {
-				module->mappingIndicatorHidden ^= true;
-			}
-			void step() override {
-				rightText = module->mappingIndicatorHidden ? "✔" : "";
-				MenuItem::step();
-			}
-		};
-
-		struct LockedItem : MenuItem {
-			CVMapModule* module;
-			void onAction(const event::Action& e) override {
-				module->locked ^= true;
-			}
-			void step() override {
-				rightText = module->locked ? "✔" : "";
-				MenuItem::step();
-			}
-		};
 
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<LockItem>(&MenuItem::text, "Parameter changes", &LockItem::module, module));
-		menu->addChild(construct<UniBiItem>(&MenuItem::text, "Signal input", &UniBiItem::module, module));
-		menu->addChild(construct<AudioRateItem>(&MenuItem::text, "Audio rate processing", &AudioRateItem::module, module));
+		menu->addChild(createBoolPtrMenuItem("Lock parameter changes", &module->lockParameterChanges));
+		menu->addChild(createIndexPtrSubmenuItem("Signal input", {"0V..10V", "-5V..5V"}, &module->bipolarInput));
+		menu->addChild(createBoolPtrMenuItem("Audio rate processing", &module->audioRate));
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<TextScrollItem>(&MenuItem::text, "Text scrolling", &TextScrollItem::module, module));
-		menu->addChild(construct<MappingIndicatorHiddenItem>(&MenuItem::text, "Hide mapping indicators", &MappingIndicatorHiddenItem::module, module));
-		menu->addChild(construct<LockedItem>(&MenuItem::text, "Lock mapping slots", &LockedItem::module, module));
+		menu->addChild(createBoolPtrMenuItem("Text scrolling", &module->textScrolling));
+		menu->addChild(createBoolPtrMenuItem("Hide mapping indicators", &module->mappingIndicatorHidden));
+		menu->addChild(createBoolPtrMenuItem("Lock mapping slots", &module->locked));
 	}
 
 	void extendParamWidgetContextMenu(ParamWidget* pw, Menu* menu) override {
