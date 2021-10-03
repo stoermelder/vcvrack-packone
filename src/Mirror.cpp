@@ -207,8 +207,8 @@ struct MirrorModule : Module, StripIdFixModule {
 		return paramQuantity;
 	}
 
+	// Always called from the UI-thread
 	void bindToSource() {
-		// Always called from the UI-thread
 		Expander* exp = &leftExpander;
 		if (exp->moduleId < 0) return;
 
@@ -232,8 +232,8 @@ struct MirrorModule : Module, StripIdFixModule {
 		inChange = false;
 	}
 
+	// Always called from the UI-thread
 	void bindToTarget() {
-		// Always called from the UI-thread
 		Expander* exp = &rightExpander;
 		if (exp->moduleId < 0) return;
 		// This is called from the UI-thread, so get the Module from the scene

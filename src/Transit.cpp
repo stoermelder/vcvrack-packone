@@ -2,6 +2,7 @@
 #include "digital.hpp"
 #include "TransitBase.hpp"
 #include "digital/ShapedSlewLimiter.hpp"
+#include "helpers/TaskProcessor.hpp"
 #include "components/Knobs.hpp"
 #include "components/ParamHandleIndicator.hpp"
 #include <random>
@@ -124,6 +125,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 
 	TransitBase<NUM_PRESETS>* N[MAX_EXPANDERS + 1];
 	
+	TaskProcessor<> taskProcessorUi;
 
 	TransitModule() {
 		BASE::panelTheme = pluginSettings.panelThemeDefault;
@@ -147,7 +149,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		handleDivider.setDivision(4096);
 		lightDivider.setDivision(512);
 		buttonDivider.setDivision(128);
-		onReset();
+		reset(true);
 	}
 
 	~TransitModule() {
@@ -158,13 +160,29 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 	}
 
 	void onReset() override {
-		inChange = true;
-		for (ParamHandle* sourceHandle : sourceHandles) {
-			APP->engine->removeParamHandle(sourceHandle);
-			delete sourceHandle;
+		reset(false, true);
+	}
+
+	void reset(bool stateOnly, bool createUiTask = false) {
+		if (!stateOnly) {
+			inChange = true;
+			auto cleanHandles = [=]() {
+				for (ParamHandle* sourceHandle : sourceHandles) {
+					APP->engine->removeParamHandle(sourceHandle);
+					delete sourceHandle;
+				}
+				sourceHandles.clear();
+				inChange = false;
+			};
+
+			// Enqueue on the UI-thread as the engine's mutex could already be locked
+			if (createUiTask) {
+				taskProcessorUi.enqueue(cleanHandles);
+			}
+			else {
+				cleanHandles();
+			}
 		}
-		sourceHandles.clear();
-		inChange = false;
 
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			BASE::presetSlotUsed[i] = false;
@@ -453,6 +471,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		return paramQuantity;
 	}
 
+	// Always called from the UI-thread
 	void bindModule(Module* m) {
 		if (!m) return;
 		for (size_t i = 0; i < m->params.size(); i++) {
@@ -460,6 +479,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		}
 	}
 
+	// Always called from the UI-thread
 	void bindModuleExpander() {
 		Module::Expander* exp = &(Module::leftExpander);
 		if (exp->moduleId < 0) return;
@@ -467,7 +487,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		bindModule(m);
 	}
 
-
+	// Always called from the UI-thread
 	void bindParameter(int64_t moduleId, int paramId) {
 		for (ParamHandle* handle : sourceHandles) {
 			if (handle->moduleId == moduleId && handle->paramId == paramId) {
@@ -844,9 +864,11 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		}
 
 		// Hack for preventing duplicating this module
-		if (APP->engine->getModule(BASE::id) != NULL && !BASE::idFixHasMap()) return;
+		//if (APP->engine->getModule(BASE::id) != NULL && !BASE::idFixHasMap()) return;
 
 		inChange = true;
+		std::list<std::function<void()>> handleList;
+
 		json_t* sourceMapsJ = json_object_get(rootJ, "sourceMaps");
 		if (sourceMapsJ) {
 			json_t* sourceMapJ;
@@ -856,18 +878,27 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 				int64_t moduleId = json_integer_value(moduleIdJ);
 				json_t* paramIdJ = json_object_get(sourceMapJ, "paramId");
 				int paramId = json_integer_value(paramIdJ);
-
 				moduleId = BASE::idFix(moduleId);
-				ParamHandle* sourceHandle = new ParamHandle;
-				sourceHandle->text = "stoermelder TRANSIT";
-				APP->engine->addParamHandle(sourceHandle);
-				APP->engine->updateParamHandle(sourceHandle, moduleId, paramId, false);
-				sourceHandles.push_back(sourceHandle);
+
+				// This might cause a deadlock as the engine's mutex could already be locked
+				handleList.push_back([=]() {
+					ParamHandle* sourceHandle = new ParamHandle;
+					sourceHandle->text = "stoermelder TRANSIT";
+					APP->engine->addParamHandle(sourceHandle);
+					APP->engine->updateParamHandle(sourceHandle, moduleId, paramId, false);
+					sourceHandles.push_back(sourceHandle);
+				});
 			}
 		}
-		inChange = false;
 
 		BASE::idFixClearMap();
+
+		// Enqueue on the UI-thread for creating ParamHandles
+		taskProcessorUi.enqueue([=]() {
+			for (std::function<void()> f : handleList) f();
+			inChange = false;
+		});
+
 		BASE::dataFromJson(rootJ);
 		Module::params[PARAM_CTRLMODE].setValue(0.f);
 	}
@@ -979,6 +1010,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 			BASE::module->lights[MODULE::LIGHT_LEARN].setBrightness(learn > 0);
 		}
 		BASE::step();
+		if (BASE::module) BASE::module->taskProcessorUi.process();
 	}
 
 	void enableLearn(int mode) {
@@ -1000,7 +1032,6 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 	void appendContextMenu(Menu* menu) override {
 		ThemedModuleWidget<MODULE>::appendContextMenu(menu);
 		MODULE* module = dynamic_cast<MODULE*>(this->module);
-		assert(module);
 
 		struct MappingIndicatorHiddenItem : MenuItem {
 			MODULE* module;
