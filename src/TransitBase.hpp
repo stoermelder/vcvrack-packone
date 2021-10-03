@@ -1,7 +1,7 @@
 #pragma once
 #include "plugin.hpp"
 #include "digital.hpp"
-#include "StripIdFixModule.hpp"
+#include "helpers/StripIdFixModule.hpp"
 
 namespace StoermelderPackOne {
 namespace Transit {

@@ -1,5 +1,5 @@
 #include "plugin.hpp"
-#include "StripIdFixModule.hpp"
+#include "helpers/StripIdFixModule.hpp"
 #include "components/MenuColorLabel.hpp"
 #include "components/MenuColorField.hpp"
 

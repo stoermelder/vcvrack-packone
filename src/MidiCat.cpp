@@ -1,7 +1,7 @@
 #include "plugin.hpp"
 #include "MidiCat.hpp"
 #include "MapModuleBase.hpp"
-#include "StripIdFixModule.hpp"
+#include "helpers/StripIdFixModule.hpp"
 #include "digital/ScaledMapParam.hpp"
 #include "components/MenuLabelEx.hpp"
 #include "components/SubMenuSlider.hpp"

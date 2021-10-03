@@ -2,6 +2,8 @@
 #include "../plugin.hpp"
 #include <functional>
 
+namespace StoermelderPackOne {
+
 struct ModuleSelectProcessor {
 	enum class LEARN_MODE {
 		OFF = 0,
@@ -53,3 +55,5 @@ struct ModuleSelectProcessor {
 		}
 	}
 };
+
+} // namespace StoermelderPackOne

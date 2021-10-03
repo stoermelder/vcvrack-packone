@@ -1,6 +1,6 @@
 #pragma once
 #include "plugin.hpp"
-#include "StripIdFixModule.hpp"
+#include "helpers/StripIdFixModule.hpp"
 #include <osdialog.h>
 #include <plugin.hpp>
 

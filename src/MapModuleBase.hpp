@@ -1,7 +1,7 @@
 #pragma once
 #include "plugin.hpp"
 #include "settings.hpp"
-#include "StripIdFixModule.hpp"
+#include "helpers/StripIdFixModule.hpp"
 #include "components/ParamHandleIndicator.hpp"
 #include "components/MenuLabelEx.hpp"
 #include "components/SubMenuSlider.hpp"
