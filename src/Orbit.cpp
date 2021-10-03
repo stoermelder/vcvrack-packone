@@ -75,6 +75,17 @@ struct OrbitModule : Module {
 	OrbitModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+		configInput(INPUT_SPREAD, "Spread amount CV");
+		inputInfos[INPUT_SPREAD]->description = "Normalized to 10V (full stereo field).";
+		configInput(INPUT_DIST, "Distribution");
+		inputInfos[INPUT_DIST]->description = "Optional, used if distribution is set to \"External\", 0..10V.";
+		configInput(INPUT_IN, "Signal");
+		configInput(INPUT_TRIG, "Stereo spread trigger");
+		inputInfos[INPUT_TRIG]->description = "Polyphonic, normalized to the first channel.";
+		configOutput(OUTPUT_L, "Left channel");
+		outputInfos[OUTPUT_L]->description = "Downmixed signal, optional polyphonic by context menu option.";
+		configOutput(OUTPUT_R, "Right channel");
+		outputInfos[OUTPUT_R]->description = "Downmixed signal, optional polyphonic by context menu option.";
 		configParam(PARAM_SPREAD, 0.f, 1.f, 0.5f, "Maximum stereo spread", "%", 0.f, 100.f);
 		configParam(PARAM_DRIFT, -1.f, 1.f, 0.f, "Stereo drift (-1..0 --> L/R, 0..+1 --> center)");
 		onReset();
@@ -184,49 +195,18 @@ struct OrbitWidget : ThemedModuleWidget<OrbitModule> {
 	void appendContextMenu(Menu* menu) override {
 		ThemedModuleWidget<OrbitModule>::appendContextMenu(menu);
 		OrbitModule* module = dynamic_cast<OrbitModule*>(this->module);
-		assert(module);
-
-		struct DistributionMenuItem : MenuItem {
-			struct DistributionItem : MenuItem {
-				OrbitModule* module;
-				DISTRIBUTION dist;
-				void onAction(const event::Action& e) override {
-					module->dist = dist;
-				}
-				void step() override {
-					rightText = CHECKMARK(module->dist == dist);
-					MenuItem::step();
-				}
-			};
-
-			OrbitModule* module;
-			DistributionMenuItem() {
-				rightText = RIGHT_ARROW;
-			}
-			Menu* createChildMenu() override {
-				Menu* menu = new Menu;
-				menu->addChild(construct<DistributionItem>(&MenuItem::text, "Normal", &DistributionItem::module, module, &DistributionItem::dist, DISTRIBUTION::NORMAL));
-				menu->addChild(construct<DistributionItem>(&MenuItem::text, "Normal \"mirrored\"", &DistributionItem::module, module, &DistributionItem::dist, DISTRIBUTION::NORMAL_MIRROR));
-				menu->addChild(construct<DistributionItem>(&MenuItem::text, "Uniform", &DistributionItem::module, module, &DistributionItem::dist, DISTRIBUTION::UNIFORM));
-				menu->addChild(construct<DistributionItem>(&MenuItem::text, "External", &DistributionItem::module, module, &DistributionItem::dist, DISTRIBUTION::EXTERNAL));
-				return menu;
-			}
-		};
-
-		struct PolyOutItem : MenuItem {
-			OrbitModule* module;
-			void onAction(const event::Action& e) override {
-				module->polyOut ^= true;
-			}
-			void step() override {
-				rightText = CHECKMARK(module->polyOut);
-				MenuItem::step();
-			}
-		};
 
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<DistributionMenuItem>(&MenuItem::text, "Distribution", &DistributionMenuItem::module, module));
-		menu->addChild(construct<PolyOutItem>(&MenuItem::text, "Polyphonic output", &PolyOutItem::module, module));
+		menu->addChild(StoermelderPackOne::Rack::createMapPtrSubmenuItem("Distribution",
+			{
+				{ DISTRIBUTION::NORMAL, "Normal" },
+				{ DISTRIBUTION::NORMAL_MIRROR, "Normal \"mirrored\"" },
+				{ DISTRIBUTION::UNIFORM, "Uniform" },
+				{ DISTRIBUTION::EXTERNAL, "External" }
+			},
+			&module->dist
+		));
+		menu->addChild(createBoolPtrMenuItem("Polyphonic output", &module->polyOut));
 	}
 };
 

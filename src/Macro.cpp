@@ -322,7 +322,7 @@ struct MacroPort : StoermelderPort {
 		menu->addChild(construct<BipolarItem>(&MenuItem::text, "Output voltage", &BipolarItem::module, module, &BipolarItem::id, id));
 		menu->addChild(new MapSlewSlider<SCALE>(&module->scaleCvs[id]));
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Scaling"));
+		menu->addChild(createMenuLabel("Scaling"));
 		menu->addChild(construct<MapScalingInputLabel<SCALE>>(&MenuLabel::text, "Input", &MapScalingInputLabel<SCALE>::p, &module->scaleCvs[id]));
 		menu->addChild(construct<MapScalingOutputLabelUnit<SCALE>>(&MenuLabel::text, "Output voltage", &MapScalingOutputLabelUnit<SCALE>::p, &module->scaleCvs[id]));
 		menu->addChild(new MapMinSlider<SCALE>(&module->scaleCvs[id]));
@@ -406,12 +406,12 @@ struct MacroWidget : ThemedModuleWidget<MacroModule>, ParamWidgetContextExtender
 		for (int id = 0; id < module->mapLen; id++) {
 			if (module->paramHandles[id].moduleId == pq->module->id && module->paramHandles[id].paramId == pq->paramId) {
 				menu->addChild(new MenuSeparator);
-				menu->addChild(construct<MenuLabel>(&MenuLabel::text, "MACRO"));
+				menu->addChild(createMenuLabel("MACRO"));
 				menu->addChild(construct<CenterModuleItem>(&MenuItem::text, "Center mapping module", &CenterModuleItem::mw, this));
 				menu->addChild(new MenuSeparator);
 				menu->addChild(new MapSlewSlider<>(&module->scaleParam[id]));
 				menu->addChild(new MenuSeparator());
-				menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Scaling"));
+				menu->addChild(createMenuLabel("Scaling"));
 				menu->addChild(construct<MapScalingInputLabel<>>(&MenuLabel::text, "Input", &MapScalingInputLabel<>::p, &module->scaleParam[id]));
 				menu->addChild(construct<MapScalingOutputLabel<>>(&MenuLabel::text, "Parameter range", &MapScalingOutputLabel<>::p, &module->scaleParam[id]));
 				menu->addChild(new MapMinSlider<>(&module->scaleParam[id]));

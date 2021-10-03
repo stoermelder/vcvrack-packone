@@ -195,7 +195,7 @@ ui::MenuItem* createMapSubmenuItem(std::string text, std::map<TEnum, std::string
 
 /** Easy wrapper for createMapPtrSubmenuItem() that controls a mapped label at a pointer address.
 Example:
-	menu->addChild(createMapPtrSubmenuItem<QUALITY>("Mode",
+	menu->addChild(createMapPtrSubmenuItem("Mode",
 		{
 			{ QUALITY::HIFI, "Hi-fi" },
 			{ QUALITY::MIDFI, "Mid-fi" },

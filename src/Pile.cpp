@@ -159,7 +159,7 @@ struct PileWidget : ThemedModuleWidget<PileModule> {
 		ThemedModuleWidget<PileModule>::appendContextMenu(menu);
 
 		menu->addChild(new MenuSeparator());
-		menu->addChild(StoermelderPackOne::Rack::createMapPtrSubmenuItem<RANGE>("Voltage range",
+		menu->addChild(StoermelderPackOne::Rack::createMapPtrSubmenuItem("Voltage range",
 			{
 				{ RANGE::UNI_5V, "0..5V" },
 				{ RANGE::UNI_10V, "0..10V" },

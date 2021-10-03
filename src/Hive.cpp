@@ -821,7 +821,7 @@ struct HiveGridWidget : FramebufferWidget {
 	}
 
 	void draw(const DrawArgs& args) override {
-		// Dim the display but don't darken ist completely
+		// Dim the display but don't darken it completely
 		float b = std::max(0.4f, settings::rackBrightness);
 		nvgGlobalTint(args.vg, nvgRGBAf(b, b, b, 1.f));
 		FramebufferWidget::draw(args);

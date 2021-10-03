@@ -162,8 +162,13 @@ struct ArenaModule : Module {
 	ArenaModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		// inputs
+		// in-ports
 		for (int i = 0; i < IN_PORTS; i++) {
+			configInput(IN + i, string::f("Channel IN-%i", i + 1));
+			configInput(IN_X_INPUT + i, string::f("Channel IN-%i x-pos CV", i + 1));
+			configInput(IN_Y_INPUT + i, string::f("Channel IN-%i y-pos CV", i + 1));
+			configInput(MOD_INPUT + i, string::f("Channel IN-%i modulation", i + 1));
+			configOutput(OUT_OUTPUT + i, string::f("Channel IN-%i direct", i + 1));
 			configParam(IN_X_POS + i, 0.0f, 1.0f, 0.1f + float(i) * (0.8f / (IN_PORTS - 1)), string::f("Channel IN-%i x-pos", i + 1));
 			configParam(IN_Y_POS + i, 0.0f, 1.0f, 0.1f, string::f("Channel IN-%i y-pos", i + 1));
 			configParam(IN_X_PARAM + i, -1.f, 1.f, 0.f, string::f("Channel IN-%i x-pos attenuverter", i + 1), "x");
@@ -171,8 +176,13 @@ struct ArenaModule : Module {
 			configParam(MOD_PARAM + i, -1.f, 1.f, 0.f, string::f("Channel IN-%i Mod attenuverter", i + 1), "x");
 			radiusFilter[i].setTau(0.1f);
 		}
-		// outputs
+		// mix-ports
 		for (int i = 0; i < MIX_PORTS; i++) {
+			configInput(MIX_X_INPUT + i, string::f("Channel MIX-%i x-pos", i + 1));
+			configInput(MIX_Y_INPUT + i, string::f("Channel MIX-%i y-pos", i + 1));
+			configInput(SEQ_INPUT + i, string::f("Channel MIX-%i sequence select", i + 1));
+			configInput(SEQ_PH_INPUT + i, string::f("Channel MIX-%i sequence phase", i + 1));
+			configOutput(MIX_OUTPUT + i, string::f("Channel MIX-%i", i + 1));
 			configParam(MIX_VOL_PARAM + i, 0.0f, 2.0f, 1.0f, string::f("Channel MIX-%i volume", i + 1));
 			configParam(MIX_X_POS + i, 0.0f, 1.0f, 0.1f + float(i) * (0.8f / (MIX_PORTS - 1)), string::f("Channel MIX-%i x-pos", i + 1));
 			configParam(MIX_Y_POS + i, 0.0f, 1.0f, 0.9f, string::f("Channel MIX-%i y-pos", i + 1));
@@ -1654,7 +1664,7 @@ struct ScreenMixportDragWidget : ScreenDragWidget<MODULE> {
 
 	void createContextMenu() override {
 		ui::Menu* menu = createMenu();
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("Channel MIX-%i", AW::id + 1)));
+		menu->addChild(createMenuLabel(string::f("Channel MIX-%i", AW::id + 1)));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<SeqMenuItem<MODULE>>(&MenuItem::text, "Motion-Sequence", &SeqMenuItem<MODULE>::module, AW::module, &SeqMenuItem<MODULE>::id, AW::id));
 		menu->addChild(construct<SeqInterpolateMenuItem<MODULE>>(&MenuItem::text, "Interpolation", &SeqInterpolateMenuItem<MODULE>::module, AW::module, &SeqInterpolateMenuItem<MODULE>::id, AW::id));
@@ -1713,7 +1723,7 @@ struct ScreenWidget : OpaqueWidget {
 
 	void createContextMenu() {
 		ui::Menu* menu = createMenu();
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Arena"));
+		menu->addChild(createMenuLabel("Arena"));
 
 		struct InitItem : MenuItem {
 			MODULE* module;
@@ -2671,7 +2681,7 @@ struct SeqLedDisplay : StoermelderLedDisplay {
 
 	void createContextMenu() {
 		ui::Menu* menu = createMenu();
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("Channel MIX-%i", id + 1)));
+		menu->addChild(createMenuLabel(string::f("Channel MIX-%i", id + 1)));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<SeqMenuItem<MODULE>>(&MenuItem::text, "Motion-Sequence", &SeqMenuItem<MODULE>::module, module, &SeqMenuItem<MODULE>::id, id));
 		menu->addChild(construct<SeqInterpolateMenuItem<MODULE>>(&MenuItem::text, "Interpolation", &SeqInterpolateMenuItem<MODULE>::module, module, &SeqInterpolateMenuItem<MODULE>::id, id));
