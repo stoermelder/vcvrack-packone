@@ -19,6 +19,6 @@ struct TaskProcessor {
             queue.push(t);
         }
     }
-}; // struct ModuleTaskProcessor
+}; // struct TaskProcessor
 
 } // namespace StoermelderPackOne

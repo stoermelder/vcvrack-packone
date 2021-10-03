@@ -1,7 +1,5 @@
 #include "Strip.hpp"
-#include <thread>
-#include <mutex>
-#include <condition_variable>
+#include "helpers/TaskWorker.hpp"
 
 namespace StoermelderPackOne {
 namespace Strip {
@@ -69,13 +67,7 @@ struct StripModule : StripModuleBase {
 
 	dsp::ClockDivider lightDivider;
 
-	std::mutex workerMutex;
-	std::condition_variable workerCondVar;
-	std::thread* worker;
-	Context* workerContext;
-	bool workerIsRunning = true;
-	bool worker_val;
-	bool worker_useHistory;
+	TaskWorker taskWorker;
 
 	StripModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
@@ -88,16 +80,6 @@ struct StripModule : StripModuleBase {
 
 		lightDivider.setDivision(1024);
 		onReset();
-		workerContext = contextGet();
-		worker = new std::thread(&StripModule::processWorker, this);
-	}
-
-	~StripModule() {
-		workerIsRunning = false;
-		workerCondVar.notify_one();
-		worker->join();
-		workerContext = NULL;
-		delete worker;
 	}
 
 	void onReset() override {
@@ -147,27 +129,15 @@ struct StripModule : StripModuleBase {
 		}
 	}
 
-	void processWorker() {
-		contextSet(workerContext);
-		while (true) {
-			std::unique_lock<std::mutex> lock(workerMutex);
-			workerCondVar.wait(lock);
-			if (!workerIsRunning) return;
-			groupDisable_worker(worker_val, worker_useHistory);
-		}
-	}
-
 	void groupDisable(bool val, bool useHistory) {
-		worker_val = val;
-		worker_useHistory = useHistory;
-		workerCondVar.notify_one();
+		taskWorker.work([=]() { groupDisableWorker(val, useHistory); });
 	}
 
 	/** 
 	 * Disables/enables all modules of the current strip.
 	 * To be called from engine-thread only.
 	 */
-	void groupDisable_worker(bool val, bool useHistory) {
+	void groupDisableWorker(bool val, bool useHistory) {
 		if (lastState == val) return;
 		lastState = val;
 

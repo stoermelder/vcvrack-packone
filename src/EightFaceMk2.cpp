@@ -1,12 +1,10 @@
 #include "plugin.hpp"
 #include "digital.hpp"
+#include "helpers/TaskWorker.hpp"
 #include "components/MenuColorLabel.hpp"
 #include "components/MenuColorField.hpp"
 #include "EightFace.hpp"
 #include "EightFaceMk2Base.hpp"
-#include <functional>
-#include <mutex>
-#include <condition_variable>
 #include <random>
 
 namespace StoermelderPackOne {
@@ -122,15 +120,8 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 	/** [Stored to JSON] */
 	NVGcolor boxColor;
 
-	std::mutex workerMutex;
-	std::condition_variable workerCondVar;
-	std::thread* worker;
-	Context* workerContext;
-	bool workerIsRunning = true;
-	bool workerDoProcess = false;
-	int workerPreset = -1;
 	dsp::RingBuffer<std::tuple<ModuleWidget*, json_t*>, 16> workerGuiQueue;
-
+	TaskWorker taskWorker;
 
 	EightFaceMk2Module() {
 		BASE::panelTheme = pluginSettings.panelThemeDefault;
@@ -153,8 +144,6 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 		boundModulesDivider.setDivision(APP->engine->getSampleRate());
 		lightDivider.setDivision(512);
 		onReset();
-		workerContext = contextGet();
-		worker = new std::thread(&EightFaceMk2Module::processWorker, this);
 	}
 
 	~EightFaceMk2Module() {
@@ -168,13 +157,6 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 		for (BoundModule* b : boundModules) {
 			delete b;
 		}
-
-		workerIsRunning = false;
-		workerDoProcess = true;
-		workerCondVar.notify_one();
-		worker->join();
-		workerContext = NULL;
-		delete worker;
 	}
 
 	void onReset() override {
@@ -467,6 +449,42 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 		delete b;
 	}
 
+	void processWorker(int workerPreset) {
+		if (workerPreset < 0) return;
+
+		EightFaceMk2Slot* slot = expSlot(workerPreset);
+		for (json_t* vJ : *slot->preset) {
+			json_t* idJ = json_object_get(vJ, "id");
+			if (!idJ) continue;
+			int moduleId = json_integer_value(idJ);
+			std::string plugin = json_string_value(json_object_get(vJ, "plugin"));
+			std::string model = json_string_value(json_object_get(vJ, "model"));
+			for (BoundModule* b : boundModules) {
+				if (b->moduleId != moduleId) continue;
+				if (b->pluginSlug != plugin || b->modelSlug != model) break;
+				ModuleWidget* mw = b->getModuleWidget();
+				if (!mw) continue;
+
+				if (b->needsGuiThread) {
+					workerGuiQueue.push(std::make_tuple(mw, vJ));
+				}
+				else {
+					mw->fromJson(vJ);
+				}
+				break;
+			}
+		}
+	}
+
+	void processGui() {
+		while (!workerGuiQueue.empty()) {
+			auto t = workerGuiQueue.shift();
+			ModuleWidget* mw = std::get<0>(t);
+			json_t* vJ = std::get<1>(t);
+			mw->fromJson(vJ);
+		}
+	}
+
 	void presetLoad(int p, bool isNext = false, bool force = false) {
 		if (p < 0 || p >= presetCount)
 			return;
@@ -477,57 +495,12 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 				preset = p;
 				presetNext = -1;
 				if (!*(slot->presetSlotUsed)) return;
-				workerPreset = p;
-				workerDoProcess = true;
-				workerCondVar.notify_one();
+				taskWorker.work([=]() { processWorker(p); });
 			}
 		}
 		else {
 			if (!*(slot->presetSlotUsed)) return;
 			presetNext = p;
-		}
-	}
-
-	void processWorker() {
-		contextSet(workerContext);
-		while (true) {
-			std::unique_lock<std::mutex> lock(workerMutex);
-			workerCondVar.wait(lock, std::bind(&EightFaceMk2Module::workerDoProcess, this));
-			if (!workerIsRunning || workerPreset < 0) return;
-
-			EightFaceMk2Slot* slot = expSlot(workerPreset);
-			for (json_t* vJ : *slot->preset) {
-				json_t* idJ = json_object_get(vJ, "id");
-				if (!idJ) continue;
-				int moduleId = json_integer_value(idJ);
-				std::string plugin = json_string_value(json_object_get(vJ, "plugin"));
-				std::string model = json_string_value(json_object_get(vJ, "model"));
-				for (BoundModule* b : boundModules) {
-					if (b->moduleId != moduleId) continue;
-					if (b->pluginSlug != plugin || b->modelSlug != model) break;
-					ModuleWidget* mw = b->getModuleWidget();
-					if (!mw) continue;
-
-					if (b->needsGuiThread) {
-						workerGuiQueue.push(std::make_tuple(mw, vJ));
-					}
-					else {
-						mw->fromJson(vJ);
-					}
-					break;
-				}
-			}
-
-			workerDoProcess = false;
-		}
-	}
-
-	void processGui() {
-		while (!workerGuiQueue.empty()) {
-			auto t = workerGuiQueue.shift();
-			ModuleWidget* mw = std::get<0>(t);
-			json_t* vJ = std::get<1>(t);
-			mw->fromJson(vJ);
 		}
 	}
 
