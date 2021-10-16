@@ -133,7 +133,6 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		Module::configParam<TriggerParamQuantity>(PARAM_CTRLMODE, 0, 2, 0, "Read/Auto/Write mode");
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			TransitParamQuantity<NUM_PRESETS>* pq = Module::configParam<TransitParamQuantity<NUM_PRESETS>>(PARAM_PRESET + i, 0, 1, 0);
-			pq->mymodule = this;
 			pq->id = i;
 			BASE::presetButton[i].param = &Module::params[PARAM_PRESET + i];
 

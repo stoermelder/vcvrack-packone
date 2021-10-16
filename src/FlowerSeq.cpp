@@ -69,11 +69,11 @@ struct FlowerSeqModule : Module {
 	typedef FlowerSeqModule<STEPS, PATTERNS, PHRASES> MODULE;
 
 	struct PatternParamQuantity : ParamQuantity {
-		MODULE* mymodule;
 		int i;
 		std::string getDisplayValueString() override {
+			auto module = reinterpret_cast<MODULE*>(this->module);
 			std::string s = "";
-			switch (mymodule->phrases[mymodule->phraseIndex].patterns[i].type) {
+			switch (module->phrases[module->phraseIndex].patterns[i].type) {
 				case PATTERN_TYPE::SEQ_FWD: s = "Forward"; break;
 				case PATTERN_TYPE::SEQ_REV: s = "Reverse"; break;
 				case PATTERN_TYPE::SEQ_ADD_1V: s = "Add 1V"; break;
@@ -89,8 +89,8 @@ struct FlowerSeqModule : Module {
 				case PATTERN_TYPE::AUX_RAND: s = "Random auxiliary sequence"; break;
 				default: break;
 			}
-			if (mymodule->phrases[mymodule->phraseIndex].patterns[i].mult > 1) {
-				s += string::f(" (%i times)", mymodule->phrases[mymodule->phraseIndex].patterns[i].mult);
+			if (module->phrases[module->phraseIndex].patterns[i].mult > 1) {
+				s += string::f(" (%i times)", module->phrases[module->phraseIndex].patterns[i].mult);
 			}
 			s += "\nShort press: next pattern\nLong press: toggle number of repeats 1 -> 2 -> 3 -> 4";
 			return s;
@@ -187,22 +187,13 @@ struct FlowerSeqModule : Module {
 		configParam(PARAM_START, 0.f, STEPS - 1, 0.f, "Sequence start", "", 0.f, 1.f, 1.f);
 
 		configParam<SeqStepModeParamQuantity<MODULE>>(PARAM_STEPMODE, 0.f, 1.f, 0.f, "Mode");
-		auto pq1 = dynamic_cast<SeqStepModeParamQuantity<MODULE>*>(paramQuantities[PARAM_STEPMODE]);
-		pq1->module = this;
-
 		configParam<SeqFlowerKnobParamQuantity<MODULE>>(PARAM_STEP_CENTER, -std::numeric_limits<float>::infinity(), std::numeric_limits<float>::infinity(), 0.f);
-		auto pq2 = dynamic_cast<SeqFlowerKnobParamQuantity<MODULE>*>(paramQuantities[PARAM_STEP_CENTER]);
-		pq2->module = this;
 
 		for (int i = 0; i < STEPS; i++) {
-			configParam<SeqStepParamQuantity<MODULE>>(PARAM_STEP + i, 0.f, 1.f, 0.5f, string::f("Step %i", i + 1), "V");
-			auto pq1 = dynamic_cast<SeqStepParamQuantity<MODULE>*>(paramQuantities[PARAM_STEP + i]);
-			pq1->module = this;
+			auto pq1 = configParam<SeqStepParamQuantity<MODULE>>(PARAM_STEP + i, 0.f, 1.f, 0.5f, string::f("Step %i", i + 1), "V");
 			pq1->i = i;
 
-			configParam<SeqStepButtonParamQuantity<MODULE, STEPS>>(PARAM_STEP_BUTTON + i, 0.f, 1.f, 0.f);
-			auto pq2 = dynamic_cast<SeqStepButtonParamQuantity<MODULE, STEPS>*>(paramQuantities[PARAM_STEP_BUTTON + i]);
-			pq2->module = this;
+			auto pq2 = configParam<SeqStepButtonParamQuantity<MODULE, STEPS>>(PARAM_STEP_BUTTON + i, 0.f, 1.f, 0.f);
 			pq2->i = i;
 		}
 
@@ -212,7 +203,6 @@ struct FlowerSeqModule : Module {
 
 		for (int i = 0; i < PATTERNS; i++) {
 			PatternParamQuantity* pq = configParam<PatternParamQuantity>(PARAM_PATTERN_SELECT + i, 0.f, 1.f, 0.f, string::f("Pattern %i", i + 1));
-			pq->mymodule = this;
 			pq->i = i;
 			patternButtons[i].param = &params[PARAM_PATTERN_SELECT + i];
 		}

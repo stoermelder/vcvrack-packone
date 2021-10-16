@@ -43,8 +43,7 @@ struct CVMapMicroModule : CVMapModuleBase<1> {
 	CVMapMicroModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		MapParamQuantity<CVMapMicroModule>* pq = configParam<MapParamQuantity<CVMapMicroModule>>(MAP_PARAM, 0.f, 1.f, 0.f, "µMAP");
-		pq->mymodule = this;
+		configParam<MapParamQuantity<CVMapMicroModule>>(MAP_PARAM, 0.f, 1.f, 0.f, "µMAP");
 
 		configParam(OFFSET_PARAM, 0.f, 1.f, 0.f, "Input-offset", "%", 0.f, 100.f);
 		configParam(SCALE_PARAM, -2.f, 2.f, 1.f, "Input-scaling", "x");

@@ -106,14 +106,15 @@ struct TransitBase : Module, StripIdFixModule {
 
 template <int NUM_PRESETS>
 struct TransitParamQuantity : ParamQuantity {
-	TransitBase<NUM_PRESETS>* mymodule;
 	int id;
 
 	std::string getDisplayValueString() override {
-		return !mymodule->textLabel[id].empty() ? mymodule->textLabel[id] : (mymodule->presetSlotUsed[id] ? "Used" : "Empty");
+		auto module = reinterpret_cast<TransitBase<NUM_PRESETS>*>(this->module);
+		return !module->textLabel[id].empty() ? module->textLabel[id] : (module->presetSlotUsed[id] ? "Used" : "Empty");
 	}
 	std::string getLabel() override {
-		return !mymodule->textLabel[id].empty() ? "" : string::f("Snapshot #%d", mymodule->ctrlOffset * NUM_PRESETS + id + 1);
+		auto module = reinterpret_cast<TransitBase<NUM_PRESETS>*>(this->module);
+		return !module->textLabel[id].empty() ? "" : string::f("Snapshot #%d", module->ctrlOffset * NUM_PRESETS + id + 1);
 	}
 };
 

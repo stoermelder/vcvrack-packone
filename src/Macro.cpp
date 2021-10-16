@@ -76,7 +76,6 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 
 		for (int i = 0; i < MAPS; i++) {
 			MapParamQuantity<MacroModule>* pq = configParam<MapParamQuantity<MacroModule>>(PARAM_MAP + i, 0.f, 1.f, 0.f, string::f("Map %i", i + 1));
-			pq->mymodule = this;
 			pq->id = i;
 			paramHandles[i].text = "MACRO";
 			scaleParam[i].setLimits(0.f, 1.f, std::numeric_limits<float>::infinity());

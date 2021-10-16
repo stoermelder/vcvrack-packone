@@ -53,7 +53,6 @@ struct X4Module : CVMapModuleBase<2> {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configParam<MapParamQuantity<X4Module>>(PARAM_MAP_A, 0.f, 1.f, 0.f, "Map A");
 		MapParamQuantity<X4Module>* pq1 = dynamic_cast<MapParamQuantity<X4Module>*>(paramQuantities[PARAM_MAP_A]);
-		pq1->mymodule = this;
 		pq1->id = 0;
 		configParam(PARAM_MAP_A + 1, 0.f, 1.f, 0.f, "Param A-1");
 		configParam(PARAM_MAP_A + 2, 0.f, 1.f, 0.f, "Param A-2");
@@ -61,7 +60,6 @@ struct X4Module : CVMapModuleBase<2> {
 		configParam(PARAM_MAP_A + 4, 0.f, 1.f, 0.f, "Param A-4");
 		configParam<MapParamQuantity<X4Module>>(PARAM_MAP_B, 0.f, 1.f, 0.f, "Map B");
 		MapParamQuantity<X4Module>* pq2 = dynamic_cast<MapParamQuantity<X4Module>*>(paramQuantities[PARAM_MAP_B]);
-		pq2->mymodule = this;
 		pq2->id = 1;
 		configParam(PARAM_MAP_B + 1, 0.f, 1.f, 0.f, "Param B-1");
 		configParam(PARAM_MAP_B + 2, 0.f, 1.f, 0.f, "Param B-2");

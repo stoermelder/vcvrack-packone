@@ -105,14 +105,15 @@ struct EightFaceMk2Base : Module, StripIdFixModule {
 
 template <int NUM_PRESETS>
 struct EightFaceMk2ParamQuantity : ParamQuantity {
-	EightFaceMk2Base<NUM_PRESETS>* mymodule;
 	int id;
 
 	std::string getDisplayValueString() override {
-		return !mymodule->textLabel[id].empty() ? mymodule->textLabel[id] : (mymodule->presetSlotUsed[id] ? "Used" : "Empty");
+		auto module = reinterpret_cast<EightFaceMk2Base<NUM_PRESETS>*>(this->module);
+		return !module->textLabel[id].empty() ? module->textLabel[id] : (module->presetSlotUsed[id] ? "Used" : "Empty");
 	}
 	std::string getLabel() override {
-		return !mymodule->textLabel[id].empty() ? "" : string::f("Snapshot #%d", mymodule->ctrlOffset * NUM_PRESETS + id + 1);
+		auto module = reinterpret_cast<EightFaceMk2Base<NUM_PRESETS>*>(this->module);
+		return !module->textLabel[id].empty() ? "" : string::f("Snapshot #%d", module->ctrlOffset * NUM_PRESETS + id + 1);
 	}
 };
 

@@ -129,7 +129,6 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 		Module::configParam(PARAM_RW, 0, 1, 0, "Read/write mode");
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			EightFaceMk2ParamQuantity<NUM_PRESETS>* pq = Module::configParam<EightFaceMk2ParamQuantity<NUM_PRESETS>>(PARAM_PRESET + i, 0, 1, 0);
-			pq->mymodule = this;
 			pq->id = i;
 			BASE::presetButton[i].param = &Module::params[PARAM_PRESET + i];
 
