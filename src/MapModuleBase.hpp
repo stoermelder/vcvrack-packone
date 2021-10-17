@@ -472,28 +472,28 @@ struct MapModuleChoice : LedDisplayChoice {
 		return s;
 	}
 
-	void draw(const DrawArgs& args) override {
-		nvgGlobalTint(args.vg, color::WHITE);
+	void drawLayer(const DrawArgs& args, int layer) override {
+		if (layer == 1) {
+			if (bgColor.a > 0.0) {
+				nvgScissor(args.vg, RECT_ARGS(args.clipBox));
+				nvgBeginPath(args.vg);
+				nvgRect(args.vg, 0, 0, box.size.x, box.size.y);
+				nvgFillColor(args.vg, bgColor);
+				nvgFill(args.vg);
+				nvgResetScissor(args.vg);
+			}
 
-		if (bgColor.a > 0.0) {
-			nvgScissor(args.vg, RECT_ARGS(args.clipBox));
-			nvgBeginPath(args.vg);
-			nvgRect(args.vg, 0, 0, box.size.x, box.size.y);
-			nvgFillColor(args.vg, bgColor);
-			nvgFill(args.vg);
-			nvgResetScissor(args.vg);
-		}
-
-		std::shared_ptr<window::Font> font = APP->window->loadFont(fontPath);
-		if (font && font->handle >= 0) {
-			Rect r = Rect(textOffset.x, 0.f, box.size.x - textOffset.x * 2, box.size.y).intersect(args.clipBox);
-			nvgScissor(args.vg, RECT_ARGS(r));
-			nvgFillColor(args.vg, color);
-			nvgFontFaceId(args.vg, font->handle);
-			nvgTextLetterSpacing(args.vg, 0.0);
-			nvgFontSize(args.vg, 12);
-			nvgText(args.vg, textOffset.x, textOffset.y, text.c_str(), NULL);
-			nvgResetScissor(args.vg);
+			std::shared_ptr<window::Font> font = APP->window->loadFont(fontPath);
+			if (font && font->handle >= 0) {
+				Rect r = Rect(textOffset.x, 0.f, box.size.x - textOffset.x * 2, box.size.y).intersect(args.clipBox);
+				nvgScissor(args.vg, RECT_ARGS(r));
+				nvgFillColor(args.vg, color);
+				nvgFontFaceId(args.vg, font->handle);
+				nvgTextLetterSpacing(args.vg, 0.0);
+				nvgFontSize(args.vg, 12);
+				nvgText(args.vg, textOffset.x, textOffset.y, text.c_str(), NULL);
+				nvgResetScissor(args.vg);
+			}
 		}
 	}
 };

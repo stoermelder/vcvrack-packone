@@ -15,15 +15,16 @@ struct StoermelderLedDisplay : LightWidget {
 		box.size = Vec(39.1f, 13.2f);
 	}
 
-	void draw(const DrawArgs& args) override {
-		nvgGlobalTint(args.vg, color::WHITE);
-		if (text.length() > 0) {
-			nvgFillColor(args.vg, color);
-			nvgFontFaceId(args.vg, font->handle);
-			nvgTextLetterSpacing(args.vg, 0.0);
-			nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-			nvgFontSize(args.vg, 12);
-			nvgTextBox(args.vg, 0.f, box.size.y / 2.f, box.size.x, text.c_str(), NULL);
+	void drawLayer(const DrawArgs& args, int layer) override {
+		if (layer == 1) {
+			if (text.length() > 0) {
+				nvgFillColor(args.vg, color);
+				nvgFontFaceId(args.vg, font->handle);
+				nvgTextLetterSpacing(args.vg, 0.0);
+				nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+				nvgFontSize(args.vg, 12);
+				nvgTextBox(args.vg, 0.f, box.size.y / 2.f, box.size.x, text.c_str(), NULL);
+			}
 		}
 	}
 };
@@ -45,24 +46,24 @@ struct LedTextDisplay : OpaqueWidget {
 		textOffset = math::Vec(5, 2);
 	}
 
-	void draw(const DrawArgs& args) override {
+	void drawLayer(const DrawArgs& args, int layer) override {
 		nvgScissor(args.vg, RECT_ARGS(args.clipBox));
-		nvgGlobalTint(args.vg, color::WHITE);
+		if (layer == 1) {
+			if (bgColor.a > 0.0) {
+				nvgBeginPath(args.vg);
+				nvgRoundedRect(args.vg, 0, 0, box.size.x, box.size.y, 5.0);
+				nvgFillColor(args.vg, bgColor);
+				nvgFill(args.vg);
+			}
 
-		if (bgColor.a > 0.0) {
-			nvgBeginPath(args.vg);
-			nvgRoundedRect(args.vg, 0, 0, box.size.x, box.size.y, 5.0);
-			nvgFillColor(args.vg, bgColor);
-			nvgFill(args.vg);
-		}
+			if (font->handle >= 0) {
+				nvgFillColor(args.vg, color);
+				nvgFontFaceId(args.vg, font->handle);
+				nvgTextLetterSpacing(args.vg, 0.0);
 
-		if (font->handle >= 0) {
-			nvgFillColor(args.vg, color);
-			nvgFontFaceId(args.vg, font->handle);
-			nvgTextLetterSpacing(args.vg, 0.0);
-
-			nvgFontSize(args.vg, 12);
-			nvgTextBox(args.vg, textOffset.x, textOffset.y + fontSize, box.size.x - 2 * textOffset.x, text.c_str(), NULL);
+				nvgFontSize(args.vg, 12);
+				nvgTextBox(args.vg, textOffset.x, textOffset.y + fontSize, box.size.x - 2 * textOffset.x, text.c_str(), NULL);
+			}
 		}
 		nvgResetScissor(args.vg);
 	}

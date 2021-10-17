@@ -1535,36 +1535,36 @@ struct ScreenInportDragWidget : ScreenDragWidget<MODULE> {
 		AW::step();
 	}
 
-	void draw(const Widget::DrawArgs& args) override {
-		nvgGlobalTint(args.vg, color::WHITE);
-		if (AW::id + 1 > AW::module->inportsUsed) return;
+	void drawLayer(const Widget::DrawArgs& args, int layer) override {
+		if (layer == 1) {
+			if (AW::id + 1 > AW::module->inportsUsed) return;
 
-		if (AW::module->selectionTest(AW::type, AW::id)) {
-			// Draw outer circle and fill
-			Vec c = Vec(AW::box.size.x / 2.f, AW::box.size.y / 2.f);
-			Rect b = Rect(AW::box.pos.mult(-1), AW::parent->box.size);
-			nvgSave(args.vg);
-			nvgScissor(args.vg, b.pos.x, b.pos.y, b.size.x, b.size.y);
-			float sizeX = std::max(0.f, (AW::parent->box.size.x - 2 * AW::radius) * AW::module->radius[AW::id] - AW::radius);
-			float sizeY = std::max(0.f, (AW::parent->box.size.y - 2 * AW::radius) * AW::module->radius[AW::id] - AW::radius);
-			nvgBeginPath(args.vg);
-			nvgEllipse(args.vg, c.x, c.y, sizeX, sizeY);
-			nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
-			nvgStrokeColor(args.vg, color::mult(AW::color, 0.7f));
-			nvgStrokeWidth(args.vg, 0.6f);
-			nvgStroke(args.vg);
-			nvgFillColor(args.vg, color::mult(AW::color, 0.1f));
-			nvgFill(args.vg);
-			nvgResetScissor(args.vg);
-			nvgRestore(args.vg);
+			if (AW::module->selectionTest(AW::type, AW::id)) {
+				// Draw outer circle and fill
+				Vec c = Vec(AW::box.size.x / 2.f, AW::box.size.y / 2.f);
+				Rect b = Rect(AW::box.pos.mult(-1), AW::parent->box.size);
+				nvgSave(args.vg);
+				nvgScissor(args.vg, b.pos.x, b.pos.y, b.size.x, b.size.y);
+				float sizeX = std::max(0.f, (AW::parent->box.size.x - 2 * AW::radius) * AW::module->radius[AW::id] - AW::radius);
+				float sizeY = std::max(0.f, (AW::parent->box.size.y - 2 * AW::radius) * AW::module->radius[AW::id] - AW::radius);
+				nvgBeginPath(args.vg);
+				nvgEllipse(args.vg, c.x, c.y, sizeX, sizeY);
+				nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
+				nvgStrokeColor(args.vg, color::mult(AW::color, 0.7f));
+				nvgStrokeWidth(args.vg, 0.6f);
+				nvgStroke(args.vg);
+				nvgFillColor(args.vg, color::mult(AW::color, 0.1f));
+				nvgFill(args.vg);
+				nvgResetScissor(args.vg);
+				nvgRestore(args.vg);
 
-			AW::textColor = nvgRGBA(0, 16, 90, 200);
+				AW::textColor = nvgRGBA(0, 16, 90, 200);
+			}
+			else {
+				AW::textColor = AW::color;
+			}
 		}
-		else {
-			AW::textColor = AW::color;
-		}
-
-		AW::draw(args);
+		AW::drawLayer(args, layer);
 	}
 
 	void onButton(const event::Button& e) override {
@@ -1600,60 +1600,60 @@ struct ScreenMixportDragWidget : ScreenDragWidget<MODULE> {
 		AW::type = 1;
 	}
 
-	void draw(const Widget::DrawArgs& args) override {
+	void drawLayer(const Widget::DrawArgs& args, int layer) override {
 		if (AW::id + 1 > AW::module->mixportsUsed) return;
-		nvgGlobalTint(args.vg, color::WHITE);
-		AW::draw(args);
-
-		nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
-
-		// Draw lines between inputs and mixputs
-		Vec c = Vec(AW::box.size.x / 2.f, AW::box.size.y / 2.f);
-		float sizeX = AW::parent->box.size.x;
-		float sizeY = AW::parent->box.size.y;
-		for (int i = 0; i < AW::module->inportsUsed; i++) {
-			if (AW::module->dist[AW::id][i] < AW::module->radius[i]) {
-				float x = AW::module->params[MODULE::IN_X_POS + i].getValue() * (sizeX - 2.f * AW::radius);
-				float y = AW::module->params[MODULE::IN_Y_POS + i].getValue() * (sizeY - 2.f * AW::radius);
-				Vec p = AW::box.pos.mult(-1).plus(Vec(x, y)).plus(c);
-				Vec p_rad = p.minus(c).normalize().mult(AW::radius);
-				Vec s = c.plus(p_rad);
-				Vec t = p.minus(p_rad);
-				nvgBeginPath(args.vg);
-				nvgMoveTo(args.vg, s.x, s.y);
-				nvgLineTo(args.vg, t.x, t.y);
-				nvgStrokeColor(args.vg, color::mult(nvgRGB(0x29, 0xb2, 0xef), AW::module->amount[i]));
-				nvgStrokeWidth(args.vg, 1.0f);
-				nvgStroke(args.vg);
-			}
-		}
-
-		// Draw interpolated automation line if selected
-		if (AW::module->selectionTest(AW::type, AW::id)) {
-			float sizeX = AW::parent->box.size.x - AW::box.size.x;
-			float sizeY = AW::parent->box.size.y - AW::box.size.y;
-			Vec pos = AW::box.pos.mult(-1).plus(Vec(AW::radius, AW::radius));
-			nvgBeginPath(args.vg);
-			int segments = AW::module->seqLength(AW::id) * 5;
-			float seg1 = 1.f / segments;
-			for (int i = 0; i < segments; i++) {
-				Vec p = AW::module->seqValue(AW::id, seg1 * i);
-				if (i == 0)
-					nvgMoveTo(args.vg, pos.x + sizeX * p.x, pos.y + sizeY * p.y);
-				else
-					nvgLineTo(args.vg, pos.x + sizeX * p.x, pos.y + sizeY * p.y);
-			}
-			nvgStrokeColor(args.vg, color::mult(AW::color, 0.4f));
-			nvgLineCap(args.vg, NVG_ROUND);
-			nvgMiterLimit(args.vg, 2.0);
-			nvgStrokeWidth(args.vg, 1.0);
+		AW::drawLayer(args, layer);
+		if (layer == 1) {
 			nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
-			nvgStroke(args.vg);
 
-			AW::textColor = nvgRGBA(0, 16, 90, 200);
-		}
-		else {
-			AW::textColor = AW::color;
+			// Draw lines between inputs and mixputs
+			Vec c = Vec(AW::box.size.x / 2.f, AW::box.size.y / 2.f);
+			float sizeX = AW::parent->box.size.x;
+			float sizeY = AW::parent->box.size.y;
+			for (int i = 0; i < AW::module->inportsUsed; i++) {
+				if (AW::module->dist[AW::id][i] < AW::module->radius[i]) {
+					float x = AW::module->params[MODULE::IN_X_POS + i].getValue() * (sizeX - 2.f * AW::radius);
+					float y = AW::module->params[MODULE::IN_Y_POS + i].getValue() * (sizeY - 2.f * AW::radius);
+					Vec p = AW::box.pos.mult(-1).plus(Vec(x, y)).plus(c);
+					Vec p_rad = p.minus(c).normalize().mult(AW::radius);
+					Vec s = c.plus(p_rad);
+					Vec t = p.minus(p_rad);
+					nvgBeginPath(args.vg);
+					nvgMoveTo(args.vg, s.x, s.y);
+					nvgLineTo(args.vg, t.x, t.y);
+					nvgStrokeColor(args.vg, color::mult(nvgRGB(0x29, 0xb2, 0xef), AW::module->amount[i]));
+					nvgStrokeWidth(args.vg, 1.0f);
+					nvgStroke(args.vg);
+				}
+			}
+
+			// Draw interpolated automation line if selected
+			if (AW::module->selectionTest(AW::type, AW::id)) {
+				float sizeX = AW::parent->box.size.x - AW::box.size.x;
+				float sizeY = AW::parent->box.size.y - AW::box.size.y;
+				Vec pos = AW::box.pos.mult(-1).plus(Vec(AW::radius, AW::radius));
+				nvgBeginPath(args.vg);
+				int segments = AW::module->seqLength(AW::id) * 5;
+				float seg1 = 1.f / segments;
+				for (int i = 0; i < segments; i++) {
+					Vec p = AW::module->seqValue(AW::id, seg1 * i);
+					if (i == 0)
+						nvgMoveTo(args.vg, pos.x + sizeX * p.x, pos.y + sizeY * p.y);
+					else
+						nvgLineTo(args.vg, pos.x + sizeX * p.x, pos.y + sizeY * p.y);
+				}
+				nvgStrokeColor(args.vg, color::mult(AW::color, 0.4f));
+				nvgLineCap(args.vg, NVG_ROUND);
+				nvgMiterLimit(args.vg, 2.0);
+				nvgStrokeWidth(args.vg, 1.0);
+				nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
+				nvgStroke(args.vg);
+
+				AW::textColor = nvgRGBA(0, 16, 90, 200);
+			}
+			else {
+				AW::textColor = AW::color;
+			}
 		}
 	}
 
@@ -1676,7 +1676,7 @@ struct ScreenMixportDragWidget : ScreenDragWidget<MODULE> {
 };
 
 
-template < typename MODULE >
+template <typename MODULE>
 struct ScreenWidget : OpaqueWidget {
 	MODULE* module;
 
@@ -1702,8 +1702,48 @@ struct ScreenWidget : OpaqueWidget {
 		}
 	}
 
-	void draw(const DrawArgs& args) override {
-		if (module && module->seqEdit < 0) {
+	void drawLayer(const DrawArgs& args, int layer) override {
+		if (layer == 1 && module && module->seqEdit < 0) {
+			// Dim the display but don't darken it completely
+			float b = std::max(0.4f, settings::rackBrightness);
+			nvgGlobalTint(args.vg, nvgRGBAf(b, b, b, 1.f));
+
+			float sizeX = box.size.x / 8.f;
+			float sizeY = box.size.y / 8.f;
+
+			// Draw background
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+			nvgFillColor(args.vg, nvgRGB(0, 16, 90));
+			nvgFill(args.vg);
+
+			// Draw grid
+			nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
+			nvgStrokeWidth(args.vg, 0.6f);
+			for (int i = 1; i < 8; i++) {
+				float a = 0.075f;
+				nvgBeginPath(args.vg);
+				nvgMoveTo(args.vg, sizeX * float(i), 0.f);
+				nvgLineTo(args.vg, sizeX * float(i), box.size.y);
+				nvgStrokeColor(args.vg, color::mult(color::WHITE, a));
+				nvgStroke(args.vg);
+			}
+			for (int i = 1; i < 8; i++) {
+				float a = 0.075f;
+				nvgBeginPath(args.vg);
+				nvgMoveTo(args.vg, 0.f, sizeY * float(i));
+				nvgLineTo(args.vg, box.size.x, sizeY * float(i));
+				nvgStrokeColor(args.vg, color::mult(color::WHITE, a));
+				nvgStroke(args.vg);
+			}
+
+			// Draw outer rectangle
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+			nvgStrokeWidth(args.vg, 0.7f);
+			nvgStrokeColor(args.vg, color::mult(color::WHITE, 0.25f));
+			nvgStroke(args.vg);
+
 			OpaqueWidget::draw(args);
 		}
 	}
@@ -1943,7 +1983,7 @@ struct ScreenWidget : OpaqueWidget {
 };
 
 
-template < typename MODULE >
+template <typename MODULE>
 struct OpLedDisplay : StoermelderLedDisplay {
 	MODULE* module;
 	int id;
@@ -2004,7 +2044,7 @@ struct OpLedDisplay : StoermelderLedDisplay {
 
 
 
-template < typename MODULE >
+template <typename MODULE>
 struct SeqChangeAction : history::ModuleAction {
 	int portId;
 	int seqId;
@@ -2060,7 +2100,7 @@ struct SeqChangeAction : history::ModuleAction {
 	}
 };
 
-template < typename MODULE >
+template <typename MODULE>
 struct SeqPresetMenuItem : MenuItem {
 	float x = 1.0f;
 	float y = 1.0f;
@@ -2246,7 +2286,7 @@ struct SeqPresetMenuItem : MenuItem {
 
 // Seq-Edit widgets
 
-template < typename MODULE >
+template <typename MODULE>
 struct SeqEditDragWidget : OpaqueWidget {
 	const float radius = 8.f;
 	const float fontsize = 13.0f;
@@ -2393,7 +2433,7 @@ struct SeqEditDragWidget : OpaqueWidget {
 	}
 };
 
-template < typename MODULE >
+template <typename MODULE>
 struct SeqEditWidget : OpaqueWidget {
 	MODULE* module;
 	std::shared_ptr<Font> font;
@@ -2616,7 +2656,7 @@ struct SeqEditWidget : OpaqueWidget {
 
 // Various widgets
 
-template < typename MODULE >
+template <typename MODULE>
 struct SeqLedDisplay : StoermelderLedDisplay {
 	MODULE* module;
 	int id;
@@ -2701,7 +2741,7 @@ struct DummyMapButton : ParamWidget {
 	}
 };
 
-template < typename MODULE, typename LIGHT >
+template <typename MODULE, typename LIGHT>
 struct ClickableLight : MediumLight<LIGHT> {
 	int id;
 	int type;

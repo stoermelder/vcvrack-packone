@@ -751,11 +751,13 @@ struct MazeGridWidget : FramebufferWidget {
 		FramebufferWidget::step();
 	}
 
-	void draw(const DrawArgs& args) override {
-		// Dim the display but don't darken it completely
-		float b = std::max(0.4f, settings::rackBrightness);
-		nvgGlobalTint(args.vg, nvgRGBAf(b, b, b, 1.f));
-		FramebufferWidget::draw(args);
+	void drawLayer(const DrawArgs& args, int layer) override {
+		if (layer == 1) {
+			// Dim the display but don't darken it completely
+			float b = std::max(0.4f, settings::rackBrightness);
+			nvgGlobalTint(args.vg, nvgRGBAf(b, b, b, 1.f));
+			FramebufferWidget::draw(args);
+		}
 	}
 };
 
@@ -768,44 +770,44 @@ struct MazeDrawHelper {
 
 	NVGcolor colors[4] = { color::YELLOW, color::RED, color::CYAN, color::BLUE };
 
-	void draw(const Widget::DrawArgs& args, Rect box) {
+	void drawLayer(const Widget::DrawArgs& args, int layer, Rect box) {
 		float sizeX = box.size.x / module->usedSize;
 		float sizeY = box.size.y / module->usedSize;
 		float r = box.size.y / module->usedSize / 2.f;
 
-		nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
-		nvgGlobalTint(args.vg, color::WHITE);
-
-		for (int i = 0; i < module->numPorts; i++) {
-			if (module->currentState == MODULESTATE::EDIT || module->active[i]) {
-				Vec c = Vec(xpos[i] * sizeX + r, ypos[i] * sizeY + r);
-				// Inner circle
-				nvgGlobalCompositeOperation(args.vg, NVG_ATOP);
-				nvgBeginPath(args.vg);
-				nvgCircle(args.vg, c.x, c.y, r * 0.75f);
-				nvgFillColor(args.vg, color::mult(colors[i], 0.35f));
-				nvgFill(args.vg);
-				// Outer cirlce
-				nvgBeginPath(args.vg);
-				nvgCircle(args.vg, c.x, c.y, r - 0.7f);
-				nvgStrokeColor(args.vg, color::mult(colors[i], 0.9f));
-				nvgStrokeWidth(args.vg, 0.7f);
-				nvgStroke(args.vg);
+		if (layer == 1) {
+			nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
+			for (int i = 0; i < module->numPorts; i++) {
+				if (module->currentState == MODULESTATE::EDIT || module->active[i]) {
+					Vec c = Vec(xpos[i] * sizeX + r, ypos[i] * sizeY + r);
+					// Inner circle
+					nvgGlobalCompositeOperation(args.vg, NVG_ATOP);
+					nvgBeginPath(args.vg);
+					nvgCircle(args.vg, c.x, c.y, r * 0.75f);
+					nvgFillColor(args.vg, color::mult(colors[i], 0.35f));
+					nvgFill(args.vg);
+					// Outer cirlce
+					nvgBeginPath(args.vg);
+					nvgCircle(args.vg, c.x, c.y, r - 0.7f);
+					nvgStrokeColor(args.vg, color::mult(colors[i], 0.9f));
+					nvgStrokeWidth(args.vg, 0.7f);
+					nvgStroke(args.vg);
+				}
 			}
-		}
-		for (int i = 0; i < module->numPorts; i++) {
-			if (module->currentState == MODULESTATE::EDIT || module->active[i]) {
-				Vec c = Vec(xpos[i] * sizeX + r, ypos[i] * sizeY + r);
-				// Halo
-				NVGpaint paint;
-				NVGcolor icol = color::mult(colors[i], 0.25f);
-				NVGcolor ocol = nvgRGB(0, 0, 0);
-				nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
-				nvgBeginPath(args.vg);
-				nvgCircle(args.vg, c.x, c.y, r * 1.5f);
-				paint = nvgRadialGradient(args.vg, c.x, c.y, r, r * 1.5f, icol, ocol);
-				nvgFillPaint(args.vg, paint);
-				nvgFill(args.vg);
+			for (int i = 0; i < module->numPorts; i++) {
+				if (module->currentState == MODULESTATE::EDIT || module->active[i]) {
+					Vec c = Vec(xpos[i] * sizeX + r, ypos[i] * sizeY + r);
+					// Halo
+					NVGpaint paint;
+					NVGcolor icol = color::mult(colors[i], 0.25f);
+					NVGcolor ocol = nvgRGB(0, 0, 0);
+					nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
+					nvgBeginPath(args.vg);
+					nvgCircle(args.vg, c.x, c.y, r * 1.5f);
+					paint = nvgRadialGradient(args.vg, c.x, c.y, r, r * 1.5f, icol, ocol);
+					nvgFillPaint(args.vg, paint);
+					nvgFill(args.vg);
+				}
 			}
 		}
 	}
@@ -825,11 +827,9 @@ struct MazeStartPosEditWidget : TransparentWidget, MazeDrawHelper<MODULE> {
 		MazeDrawHelper<MODULE>::ypos = module->yStartPos;
 	}
 
-	void draw(const DrawArgs& args) override {
+	void drawLayer(const DrawArgs& args, int layer) override {
 		std::shared_ptr<Font> font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
-		nvgGlobalTint(args.vg, color::WHITE);
-
-		if (module && module->currentState == MODULESTATE::EDIT) {
+		if (layer == 1 && module && module->currentState == MODULESTATE::EDIT) {
 			NVGcolor c = color::mult(color::WHITE, 0.7f);
 			float stroke = 1.f;
 			nvgGlobalCompositeOperation(args.vg, NVG_ATOP);
@@ -848,7 +848,7 @@ struct MazeStartPosEditWidget : TransparentWidget, MazeDrawHelper<MODULE> {
 			nvgFillColor(args.vg, c);
 			nvgTextBox(args.vg, box.size.x - 40.f, box.size.y - 6.f, 120, "EDIT", NULL);
 
-			MazeDrawHelper<MODULE>::draw(args, box);
+			MazeDrawHelper<MODULE>::drawLayer(args, layer, box);
 
 			float r = box.size.y / module->usedSize / 2.f;
 			float rS = r * 0.75f;
@@ -871,7 +871,7 @@ struct MazeStartPosEditWidget : TransparentWidget, MazeDrawHelper<MODULE> {
 				nvgFill(args.vg);
 			}
 
-			TransparentWidget::draw(args);
+			TransparentWidget::drawLayer(args, layer);
 		}
 	}
 
@@ -1003,9 +1003,9 @@ struct MazeScreenWidget : LightWidget, MazeDrawHelper<MODULE> {
 		MazeDrawHelper<MODULE>::ypos = module->yPos;
 	}
 
-	void draw(const DrawArgs& args) override {
+	void drawLayer(const DrawArgs& args, int layer) override {
 		if (module && module->currentState == MODULESTATE::GRID) {
-			MazeDrawHelper<MODULE>::draw(args, box);
+			MazeDrawHelper<MODULE>::drawLayer(args, layer, box);
 			LightWidget::draw(args);
 		}
 	}

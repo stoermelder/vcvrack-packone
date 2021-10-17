@@ -789,72 +789,72 @@ struct ReMoveDisplay : TransparentWidget {
         font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
     }
 
-    void draw(NVGcontext* vg) override {
+    void drawLayer(const DrawArgs& args, int layer) override {
         if (!module) return;
         float maxX = box.size.x;
         float maxY = box.size.y;
 
-        nvgGlobalTint(vg, color::WHITE);
+        if (layer == 1) {
+            // Draw ref line
+            nvgStrokeColor(args.vg, nvgRGBA(0xff, 0xb0, 0xf3, 0x20));
+            nvgBeginPath(args.vg);
+            nvgMoveTo(args.vg, 0, maxY / 2);
+            nvgLineTo(args.vg, maxX, maxY / 2);
+            nvgClosePath(args.vg);
+            nvgStroke(args.vg);
 
-        // Draw ref line
-        nvgStrokeColor(vg, nvgRGBA(0xff, 0xb0, 0xf3, 0x20));
-        nvgBeginPath(vg);
-        nvgMoveTo(vg, 0, maxY / 2);
-        nvgLineTo(vg, maxX, maxY / 2);
-        nvgClosePath(vg);
-        nvgStroke(vg);
+            int seqPos = module->dataPtr - module->seqLow;
 
-        int seqPos = module->dataPtr - module->seqLow;
+            if (module->isRecording) {
+                // Draw text showing remaining time
+                float t = ((float)REMOVE_MAX_DATA / (float)module->seqCount - (float)seqPos) * module->sampleRate;
+                nvgFontSize(args.vg, 11);
+                nvgFontFaceId(args.vg, font->handle);
+                nvgTextLetterSpacing(args.vg, -2.2);
+                nvgFillColor(args.vg, nvgRGBA(0x66, 0x66, 0x66, 0xff));
+                nvgTextBox(args.vg, 6, box.size.y - 4, 120, string::f("REC -%.1fs", t).c_str(), NULL);
+            }
 
-        if (module->isRecording) {
-            // Draw text showing remaining time
-            float t = ((float)REMOVE_MAX_DATA / (float)module->seqCount - (float)seqPos) * module->sampleRate;
-            nvgFontSize(vg, 11);
-            nvgFontFaceId(vg, font->handle);
-            nvgTextLetterSpacing(vg, -2.2);
-            nvgFillColor(vg, nvgRGBA(0x66, 0x66, 0x66, 0xff));
-            nvgTextBox(vg, 6, box.size.y - 4, 120, string::f("REC -%.1fs", t).c_str(), NULL);
+            int seqLength = module->seqLength[module->seq];
+            if (seqLength < 2) return;
+
+            if (!module->isRecording && seqLength > 2) {
+                // Draw play line
+                nvgStrokeColor(args.vg, nvgRGBA(0xff, 0xb0, 0xf3, 0xb0));
+                nvgStrokeWidth(args.vg, 0.7);
+                nvgBeginPath(args.vg);
+                nvgMoveTo(args.vg, seqPos * maxX / seqLength, 0);
+                nvgLineTo(args.vg, seqPos * maxX / seqLength, maxY);
+                nvgClosePath(args.vg);
+                nvgStroke(args.vg);
+            }
+
+            // Draw automation-line
+            nvgStrokeColor(args.vg, nvgRGB(0xd8, 0xd8, 0xd8));
+            nvgSave(args.vg);
+            Rect b = Rect(Vec(0, 2), Vec(maxX, maxY - 4));
+            nvgScissor(args.vg, b.pos.x, b.pos.y, b.size.x, b.size.y);
+            nvgBeginPath(args.vg);
+            int c = std::min(seqLength, 120);
+            for (int i = 0; i < c; i++) {
+                float x = (float)i / (c - 1);
+                float y = module->seqData[module->seqLow + (int)floor(x * (seqLength - 1))] * 0.96f + 0.02f;
+                float px = b.pos.x + b.size.x * x;
+                float py = b.pos.y + b.size.y * (1.0 - y);
+                if (i == 0)
+                    nvgMoveTo(args.vg, px, py);
+                else
+                    nvgLineTo(args.vg, px, py);
+            }
+
+            nvgLineCap(args.vg, NVG_ROUND);
+            nvgMiterLimit(args.vg, 2.0);
+            nvgStrokeWidth(args.vg, 1.0);
+            nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
+            nvgStroke(args.vg);
+            nvgResetScissor(args.vg);
+            nvgRestore(args.vg);
         }
-
-        int seqLength = module->seqLength[module->seq];
-        if (seqLength < 2) return;
-
-        if (!module->isRecording && seqLength > 2) {
-            // Draw play line
-            nvgStrokeColor(vg, nvgRGBA(0xff, 0xb0, 0xf3, 0xb0));
-            nvgStrokeWidth(vg, 0.7);
-            nvgBeginPath(vg);
-            nvgMoveTo(vg, seqPos * maxX / seqLength, 0);
-            nvgLineTo(vg, seqPos * maxX / seqLength, maxY);
-            nvgClosePath(vg);
-            nvgStroke(vg);
-        }
-
-        // Draw automation-line
-        nvgStrokeColor(vg, nvgRGB(0xd8, 0xd8, 0xd8));
-        nvgSave(vg);
-        Rect b = Rect(Vec(0, 2), Vec(maxX, maxY - 4));
-        nvgScissor(vg, b.pos.x, b.pos.y, b.size.x, b.size.y);
-        nvgBeginPath(vg);
-        int c = std::min(seqLength, 120);
-        for (int i = 0; i < c; i++) {
-            float x = (float)i / (c - 1);
-            float y = module->seqData[module->seqLow + (int)floor(x * (seqLength - 1))] * 0.96f + 0.02f;
-            float px = b.pos.x + b.size.x * x;
-            float py = b.pos.y + b.size.y * (1.0 - y);
-            if (i == 0)
-                nvgMoveTo(vg, px, py);
-            else
-                nvgLineTo(vg, px, py);
-        }
-
-        nvgLineCap(vg, NVG_ROUND);
-        nvgMiterLimit(vg, 2.0);
-        nvgStrokeWidth(vg, 1.0);
-        nvgGlobalCompositeOperation(vg, NVG_LIGHTER);
-        nvgStroke(vg);
-        nvgResetScissor(vg);
-        nvgRestore(vg);
     }
 };
 

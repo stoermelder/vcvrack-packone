@@ -820,11 +820,13 @@ struct HiveGridWidget : FramebufferWidget {
 		FramebufferWidget::step();
 	}
 
-	void draw(const DrawArgs& args) override {
-		// Dim the display but don't darken it completely
-		float b = std::max(0.4f, settings::rackBrightness);
-		nvgGlobalTint(args.vg, nvgRGBAf(b, b, b, 1.f));
-		FramebufferWidget::draw(args);
+	void drawLayer(const DrawArgs& args, int layer) override {
+		if (layer == 1) {
+			// Dim the display but don't darken it completely
+			float b = std::max(0.4f, settings::rackBrightness);
+			nvgGlobalTint(args.vg, nvgRGBAf(b, b, b, 1.f));
+			FramebufferWidget::draw(args);
+		}
 	}
 };
 
@@ -837,44 +839,44 @@ struct HiveDrawHelper {
 
 	NVGcolor colors[4] = { color::YELLOW, color::RED, color::CYAN, color::BLUE };
 
-	void draw(const Widget::DrawArgs& args, Rect box) {
+	void drawLayer(const Widget::DrawArgs& args, int layer, Rect box) {
 		float cursorRadius = (sqrt(3.f) * module->sizeFactor) / 2.f;
+		if (layer == 1) {
+			nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
 
-		nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
-		nvgGlobalTint(args.vg, color::WHITE);
-
-		for (int i = 0; i < module->numPorts; i++) {
-			if (module->currentState == MODULESTATE::EDIT || module->active[i]) {
-				c = hexToPixel(	module->currentState == MODULESTATE::EDIT ? module->grid.cursor[i].startPos : module->grid.cursor[i].pos, 
-								module->sizeFactor, POINTY, ORIGIN);
-				// Inner circle
-				nvgGlobalCompositeOperation(args.vg, NVG_ATOP);
-				nvgBeginPath(args.vg);
-				nvgCircle(args.vg, c.x, c.y, cursorRadius * 0.75f);
-				nvgFillColor(args.vg, color::mult(colors[i], 0.35f));
-				nvgFill(args.vg);
-				// Outer cirlce
-				nvgBeginPath(args.vg);
-				nvgCircle(args.vg, c.x, c.y, cursorRadius - 0.7f);
-				nvgStrokeColor(args.vg, color::mult(colors[i], 0.9f));
-				nvgStrokeWidth(args.vg, 0.7f);
-				nvgStroke(args.vg);
+			for (int i = 0; i < module->numPorts; i++) {
+				if (module->currentState == MODULESTATE::EDIT || module->active[i]) {
+					c = hexToPixel(	module->currentState == MODULESTATE::EDIT ? module->grid.cursor[i].startPos : module->grid.cursor[i].pos, 
+									module->sizeFactor, POINTY, ORIGIN);
+					// Inner circle
+					nvgGlobalCompositeOperation(args.vg, NVG_ATOP);
+					nvgBeginPath(args.vg);
+					nvgCircle(args.vg, c.x, c.y, cursorRadius * 0.75f);
+					nvgFillColor(args.vg, color::mult(colors[i], 0.35f));
+					nvgFill(args.vg);
+					// Outer cirlce
+					nvgBeginPath(args.vg);
+					nvgCircle(args.vg, c.x, c.y, cursorRadius - 0.7f);
+					nvgStrokeColor(args.vg, color::mult(colors[i], 0.9f));
+					nvgStrokeWidth(args.vg, 0.7f);
+					nvgStroke(args.vg);
+				}
 			}
-		}
-		for (int i = 0; i < module->numPorts; i++) {
-			if (module->currentState == MODULESTATE::EDIT || module->active[i]) {
-				c = hexToPixel(	module->currentState == MODULESTATE::EDIT ? module->grid.cursor[i].startPos : module->grid.cursor[i].pos, 
-								module->sizeFactor, POINTY, ORIGIN);
-				// Halo
-				NVGpaint paint;
-				NVGcolor icol = color::mult(colors[i], 0.25f);
-				NVGcolor ocol = nvgRGB(0, 0, 0);
-				nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
-				nvgBeginPath(args.vg);
-				nvgCircle(args.vg, c.x, c.y, cursorRadius * 1.5f);
-				paint = nvgRadialGradient(args.vg, c.x, c.y, cursorRadius, cursorRadius * 1.5f, icol, ocol);
-				nvgFillPaint(args.vg, paint);
-				nvgFill(args.vg);
+			for (int i = 0; i < module->numPorts; i++) {
+				if (module->currentState == MODULESTATE::EDIT || module->active[i]) {
+					c = hexToPixel(	module->currentState == MODULESTATE::EDIT ? module->grid.cursor[i].startPos : module->grid.cursor[i].pos, 
+									module->sizeFactor, POINTY, ORIGIN);
+					// Halo
+					NVGpaint paint;
+					NVGcolor icol = color::mult(colors[i], 0.25f);
+					NVGcolor ocol = nvgRGB(0, 0, 0);
+					nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
+					nvgBeginPath(args.vg);
+					nvgCircle(args.vg, c.x, c.y, cursorRadius * 1.5f);
+					paint = nvgRadialGradient(args.vg, c.x, c.y, cursorRadius, cursorRadius * 1.5f, icol, ocol);
+					nvgFillPaint(args.vg, paint);
+					nvgFill(args.vg);
+				}
 			}
 		}
 	}
@@ -892,11 +894,9 @@ struct HiveStartPosEditWidget : TransparentWidget, HiveDrawHelper<MODULE> {
 		HiveDrawHelper<MODULE>::module = module;
 	}
 
-	void draw(const DrawArgs& args) override {
+	void drawLayer(const DrawArgs& args, int layer) override {
 		std::shared_ptr<Font> font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
-		nvgGlobalTint(args.vg, color::WHITE);
-
-		if (module && module->currentState == MODULESTATE::EDIT) {
+		if (layer == 1 && module && module->currentState == MODULESTATE::EDIT) {
 			NVGcolor c = color::mult(color::WHITE, 0.7f);
 			float stroke = 1.f;
 			nvgGlobalCompositeOperation(args.vg, NVG_ATOP);
@@ -915,7 +915,7 @@ struct HiveStartPosEditWidget : TransparentWidget, HiveDrawHelper<MODULE> {
 			nvgFillColor(args.vg, c);
 			nvgTextBox(args.vg, box.size.x - 101.25f, box.size.y - 6.f, 120, "EDIT", NULL);
 
-			HiveDrawHelper<MODULE>::draw(args, box);
+			HiveDrawHelper<MODULE>::drawLayer(args, layer, box);
 
 			float triangleRadius = (sqrt(3.f) * module->sizeFactor) / 2.f * 0.75f;
 
@@ -967,7 +967,7 @@ struct HiveStartPosEditWidget : TransparentWidget, HiveDrawHelper<MODULE> {
 				nvgFill(args.vg);
 			}
 
-			TransparentWidget::draw(args);
+			TransparentWidget::drawLayer(args, layer);
 		}
 	}
 
@@ -1085,9 +1085,9 @@ struct HiveScreenWidget : LightWidget, HiveDrawHelper<MODULE> {
 		HiveDrawHelper<MODULE>::module = module;
 	}
 
-	void draw(const DrawArgs& args) override {
+	void drawLayer(const DrawArgs& args, int layer) override {
 		if (module && module->currentState == MODULESTATE::GRID) {
-			HiveDrawHelper<MODULE>::draw(args, box);
+			HiveDrawHelper<MODULE>::drawLayer(args, layer, box);
 			LightWidget::draw(args);
 		}
 	}
