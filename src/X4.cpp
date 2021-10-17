@@ -269,7 +269,7 @@ struct X4Trimpot : StoermelderTrimpot {
 
 	void appendContextMenu(Menu* menu) override {
 		menu->addChild(new MenuSeparator);
-		menu->addChild(createBoolPtrMenuItem("Read", readParam));
+		menu->addChild(createBoolPtrMenuItem("Read", "", readParam));
 	}
 };
 
@@ -323,7 +323,7 @@ struct X4Widget : ThemedModuleWidget<X4Module> {
 		X4Module* module = dynamic_cast<X4Module*>(this->module);
 
 		menu->addChild(new MenuSeparator());
-		menu->addChild(createBoolPtrMenuItem("Audio rate processing", &module->audioRate));
+		menu->addChild(createBoolPtrMenuItem("Audio rate processing", "", &module->audioRate));
 	}
 };
 

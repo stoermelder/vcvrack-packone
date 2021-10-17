@@ -206,7 +206,7 @@ struct OrbitWidget : ThemedModuleWidget<OrbitModule> {
 			},
 			&module->dist
 		));
-		menu->addChild(createBoolPtrMenuItem("Polyphonic output", &module->polyOut));
+		menu->addChild(createBoolPtrMenuItem("Polyphonic output", "", &module->polyOut));
 	}
 };
 

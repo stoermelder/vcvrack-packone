@@ -198,7 +198,7 @@ struct GotoContainer : widget::Widget {
 			module->jumpPoints[learnJumpPoint].moduleId = m->id;
 			module->jumpPoints[learnJumpPoint].x = source.x;
 			module->jumpPoints[learnJumpPoint].y = source.y;
-			module->jumpPoints[learnJumpPoint].zoom = rack::settings::zoom;
+			module->jumpPoints[learnJumpPoint].zoom = APP->scene->rackScroll->getZoom();
 			learnJumpPoint = -1;
 		}
 
@@ -238,7 +238,7 @@ struct GotoContainer : widget::Widget {
 			ModuleWidget* mw = APP->scene->rack->getModule(module->jumpPoints[i].moduleId);
 			if (mw) {
 				if (module->smoothTransition) {
-					float zoom = !module->ignoreZoom ? module->jumpPoints[i].zoom : rack::settings::zoom;
+					float zoom = !module->ignoreZoom ? module->jumpPoints[i].zoom : APP->scene->rackScroll->getZoom();
 					if (module->centerModule) {
 						viewportCenterSmooth.trigger(mw, zoom, 1.f / APP->window->getLastFrameDuration());
 					}
@@ -254,7 +254,7 @@ struct GotoContainer : widget::Widget {
 						StoermelderPackOne::Rack::ViewportCenter{Vec(module->jumpPoints[i].x, module->jumpPoints[i].y)};
 					}
 					if (!module->ignoreZoom) {
-						rack::settings::zoom = module->jumpPoints[i].zoom;
+						APP->scene->rackScroll->setZoom(module->jumpPoints[i].zoom);
 					}
 				}
 			}
@@ -350,9 +350,9 @@ struct GotoWidget : ThemedModuleWidget<GotoModule<10>> {
 		ThemedModuleWidget<GotoModule<10>>::appendContextMenu(menu);
 
 		menu->addChild(new MenuSeparator());
-		menu->addChild(createBoolPtrMenuItem("Smooth transition", &module->smoothTransition));
-		menu->addChild(createBoolPtrMenuItem("Center module", &module->centerModule));
-		menu->addChild(createBoolPtrMenuItem("Ignore zoom level", &module->ignoreZoom));
+		menu->addChild(createBoolPtrMenuItem("Smooth transition", "", &module->smoothTransition));
+		menu->addChild(createBoolPtrMenuItem("Center module", "", &module->centerModule));
+		menu->addChild(createBoolPtrMenuItem("Ignore zoom level", "", &module->ignoreZoom));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(StoermelderPackOne::Rack::createMapPtrSubmenuItem<TRIGGERMODE>("Trigger port",
 			{

@@ -170,7 +170,7 @@ struct ModelItem : BrowserListItem {
 		engine::Module* addedModule = model->createModule();
 		APP->engine->addModule(addedModule);
 
-		ModuleWidget *moduleWidget = model->createModuleWidget(addedModule);
+		ModuleWidget* moduleWidget = model->createModuleWidget(addedModule);
 		if (!moduleWidget) return;
 		APP->scene->rack->addModuleAtMouse(moduleWidget);
 

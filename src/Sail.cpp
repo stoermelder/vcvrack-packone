@@ -308,7 +308,7 @@ struct SailWidget : ThemedModuleWidget<SailModule>, OverlayMessageProvider {
 			&module->outMode
 		));
 		menu->addChild(new MenuSeparator());
-		menu->addChild(createBoolPtrMenuItem("Status overlay", &module->overlayEnabled));
+		menu->addChild(createBoolPtrMenuItem("Status overlay", "", &module->overlayEnabled));
 	}
 };
 

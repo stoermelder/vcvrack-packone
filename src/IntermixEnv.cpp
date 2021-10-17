@@ -94,7 +94,7 @@ struct InputLedDisplay : StoermelderPackOne::StoermelderLedDisplay {
 		ui::Menu* menu = createMenu();
 		menu->addChild(createMenuLabel("Input"));
 		for (int i = 0; i < PORTS; i++) {
-			menu->addChild(createCheckMenuItem(string::f("%02u", i + 1),
+			menu->addChild(createCheckMenuItem(string::f("%02u", i + 1), "",
 				[=]() { return module->input == i; },
 				[=]() { module->input = i; }
 			));

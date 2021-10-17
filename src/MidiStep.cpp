@@ -415,7 +415,7 @@ struct MidiStepWidget : ThemedModuleWidget<MidiStepModule> {
 			&module->mode,
 			false
 		));
-		menu->addChild(createBoolPtrMenuItem("Polyphonic output", &module->polyphonicOutput));
+		menu->addChild(createBoolPtrMenuItem("Polyphonic output", "", &module->polyphonicOutput));
 	}
 };
 

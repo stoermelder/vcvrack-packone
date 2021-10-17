@@ -441,8 +441,8 @@ struct MirrorWidget : ThemedModuleWidget<MirrorModule> {
 		}
 
 		menu->addChild(new MenuSeparator());
-		menu->addChild(createBoolPtrMenuItem("Audio rate processing", &module->audioRate));
-		menu->addChild(createBoolPtrMenuItem("Hide mapping indicators", &module->mappingIndicatorHidden));
+		menu->addChild(createBoolPtrMenuItem("Audio rate processing", "", &module->audioRate));
+		menu->addChild(createBoolPtrMenuItem("Hide mapping indicators", "", &module->mappingIndicatorHidden));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuItem("Bind source module (left)", "", [=]() { module->bindToSource(); }));
 		menu->addChild(createMenuItem("Map module (right)", "", [=]() { module->bindToTarget(); }));
@@ -453,7 +453,7 @@ struct MirrorWidget : ThemedModuleWidget<MirrorModule> {
 				for (int pId = 0; pId < 8; pId++) {
 					menu->addChild(createSubmenuItem(string::f("CV %i input", pId + 1), "",
 						[=](Menu* menu) {
-							menu->addChild(createCheckMenuItem("None",
+							menu->addChild(createCheckMenuItem("None", "",
 								[=]() { return module->cvParamId[pId] == -1; },
 								[=]() { module->cvParamId[pId] = -1; }
 							));
@@ -466,7 +466,7 @@ struct MirrorWidget : ThemedModuleWidget<MirrorModule> {
 								ParamWidget* paramWidget = moduleWidget->getParam(sourceHandle->paramId);
 								if (!paramWidget) continue;
 								
-								menu->addChild(createCheckMenuItem("Parameter " + paramWidget->getParamQuantity()->getLabel(),
+								menu->addChild(createCheckMenuItem("Parameter " + paramWidget->getParamQuantity()->getLabel(), "",
 									[=]() { return module->cvParamId[pId] == sourceHandle->paramId; },
 									[=]() {	module->cvParamId[pId] = sourceHandle->paramId; }
 								));

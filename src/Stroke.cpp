@@ -43,7 +43,7 @@ enum class KEY_MODE {
 	S_SCROLL_DOWN = 43
 };
 
-template < int PORTS >
+template <int PORTS>
 struct StrokeModule : Module {
 	enum ParamIds {
 		NUM_PARAMS
@@ -90,6 +90,9 @@ struct StrokeModule : Module {
 	StrokeModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+		for (int i = 0; i < PORTS; i++) {
+			configOutput(OUTPUT + i, string::f("Hotkey %i trigger/gate", i + 1));
+		}
 		onReset();
 		lightDivider.setDivision(512);
 	}
@@ -300,7 +303,7 @@ struct CmdZoomModuleSmooth : CmdBase {
 struct CmdZoomModuleCustom : CmdBase {
 	std::string* data;
 	void initialCmd(KEY_MODE keyMode) override {
-		settings::zoom = std::stof(*data);
+		APP->scene->rackScroll->setZoom(std::stof(*data));
 		Widget* w = APP->event->getHoveredWidget();
 		if (!w) return;
 		ModuleWidget* mw = dynamic_cast<ModuleWidget*>(w);
@@ -356,14 +359,14 @@ struct CmdZoomOutSmooth : CmdBase {
 
 struct CmdZoomToggle : CmdBase {
 	void initialCmd(KEY_MODE keyMode) override {
-		if (settings::zoom > 1.f) CmdZoomOut::zoomOut(); else CmdZoomModule::zoomIn(0.9f);
+		if (APP->scene->rackScroll->getZoom() > 1.f) CmdZoomOut::zoomOut(); else CmdZoomModule::zoomIn(0.9f);
 	}
 }; // struct CmdZoomToggle
 
 
 struct CmdZoomToggleSmooth : CmdZoomModuleSmooth {
 	void initialCmd(KEY_MODE keyMode) override {
-		if (settings::zoom > 1.f) {
+		if (APP->scene->rackScroll->getZoom() > 1.f) {
 			math::Rect moduleBox = APP->scene->rack->getModuleContainer()->getChildrenBoundingBox();
 			if (!moduleBox.size.isFinite()) return;
 			viewportCenterSmooth.trigger(moduleBox, 1.f / APP->window->getLastFrameDuration(), 0.6f);
@@ -1059,24 +1062,6 @@ struct KeyDisplay : StoermelderLedDisplay {
 	}
 
 	void createContextMenu() {
-		struct LearnMenuItem : MenuItem {
-			KeyContainer<PORTS>* keyContainer;
-			int idx;
-			void onAction(const event::Action& e) override {
-				keyContainer->enableLearn(idx);
-			}
-		};
-
-		struct ClearMenuItem : MenuItem {
-			StrokeModule<PORTS>* module;
-			int idx;
-			void onAction(const event::Action& e) override {
-				module->keys[idx].button = -1;
-				module->keys[idx].key = -1;
-				module->keys[idx].mods = 0;
-			}
-		};
-
 		struct ModeMenuItem : MenuItem {
 			StrokeModule<PORTS>* module;
 			KEY_MODE mode;
@@ -1481,8 +1466,14 @@ struct KeyDisplay : StoermelderLedDisplay {
 
 		ui::Menu* menu = createMenu();
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("Hotkey %i", idx + 1)));
-		menu->addChild(construct<LearnMenuItem>(&MenuItem::text, "Learn", &LearnMenuItem::keyContainer, keyContainer, &LearnMenuItem::idx, idx));
-		menu->addChild(construct<ClearMenuItem>(&MenuItem::text, "Clear", &ClearMenuItem::module, module, &ClearMenuItem::idx, idx));
+		menu->addChild(createMenuItem("Learn", "", [=]() { keyContainer->enableLearn(idx); }));
+		menu->addChild(createMenuItem("Clear", "",
+			[=]() { 
+				module->keys[idx].button = -1;
+				module->keys[idx].key = -1;
+				module->keys[idx].mods = 0; 
+			}
+		));
 		menu->addChild(new MenuSeparator);
 		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Off", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::OFF));
 		menu->addChild(new MenuSeparator);

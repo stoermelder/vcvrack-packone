@@ -1124,7 +1124,7 @@ struct MazeWidget32 : ThemedModuleWidget<MazeModule<32, 4>> {
 		MODULE* module = dynamic_cast<MODULE*>(this->module);
 
 		menu->addChild(new MenuSeparator());
-		menu->addChild(createBoolPtrMenuItem("Normalize inputs to Yellow", &module->normalizePorts));
+		menu->addChild(createBoolPtrMenuItem("Normalize inputs to Yellow", "", &module->normalizePorts));
 	}
 };
 

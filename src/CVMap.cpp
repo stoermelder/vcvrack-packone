@@ -295,7 +295,7 @@ struct CVMapPort : StoermelderPort {
 		for (int j = 0; j < 16; j++) {
 			menu->addChild(construct<LabelMenuItem>(&MenuItem::text, string::f("Channel %i", j + 1), &LabelMenuItem::module, module, &LabelMenuItem::i, i, &LabelMenuItem::j, j));
 		}
-		menu->addChild(createBoolPtrMenuItem("Hide unused", &module->inputConfig[i].hideUnused));
+		menu->addChild(createBoolPtrMenuItem("Hide unused", "", &module->inputConfig[i].hideUnused));
 	}
 }; // struct CVMapPort
 
@@ -411,13 +411,13 @@ struct CVMapWidget : ThemedModuleWidget<CVMapModule>, ParamWidgetContextExtender
 		CVMapModule* module = dynamic_cast<CVMapModule*>(this->module);
 
 		menu->addChild(new MenuSeparator());
-		menu->addChild(createBoolPtrMenuItem("Lock parameter changes", &module->lockParameterChanges));
+		menu->addChild(createBoolPtrMenuItem("Lock parameter changes", "", &module->lockParameterChanges));
 		menu->addChild(createIndexPtrSubmenuItem("Signal input", {"0V..10V", "-5V..5V"}, &module->bipolarInput));
-		menu->addChild(createBoolPtrMenuItem("Audio rate processing", &module->audioRate));
+		menu->addChild(createBoolPtrMenuItem("Audio rate processing", "", &module->audioRate));
 		menu->addChild(new MenuSeparator());
-		menu->addChild(createBoolPtrMenuItem("Text scrolling", &module->textScrolling));
-		menu->addChild(createBoolPtrMenuItem("Hide mapping indicators", &module->mappingIndicatorHidden));
-		menu->addChild(createBoolPtrMenuItem("Lock mapping slots", &module->locked));
+		menu->addChild(createBoolPtrMenuItem("Text scrolling", "", &module->textScrolling));
+		menu->addChild(createBoolPtrMenuItem("Hide mapping indicators", "", &module->mappingIndicatorHidden));
+		menu->addChild(createBoolPtrMenuItem("Lock mapping slots", "", &module->locked));
 	}
 
 	void extendParamWidgetContextMenu(ParamWidget* pw, Menu* menu) override {

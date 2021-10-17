@@ -27,7 +27,7 @@ struct ViewportCenterSmooth {
 
 		this->source = source;
 		this->target = target;
-		this->sourceZoom = rack::settings::zoom;
+		this->sourceZoom = APP->scene->rackScroll->getZoom();
 		this->targetZoom = zoom;
 		this->framecount = int(transitionTime * framerate);
 		this->frame = 0;
@@ -65,7 +65,7 @@ struct ViewportCenterSmooth {
 		// Ignore tiny changes in zoom as they will cause graphical artifacts
 		if (std::abs(sourceZoom - targetZoom) > 0.01f) {
 			float z = sourceZoom * (1.f - t) + targetZoom * t;
-			rack::settings::zoom = z;
+			APP->scene->rackScroll->setZoom(z);
 		}
 
 		// Move the view
@@ -87,7 +87,7 @@ struct ViewportCenter {
 		target = target.minus(APP->scene->rackScroll->box.size.mult(0.5f));
 		APP->scene->rackScroll->offset = target;
 		if (zoomToWidget > 0.f) {
-			rack::settings::zoom = std::log2(APP->scene->rackScroll->box.size.y / w->box.size.y * zoomToWidget);
+			APP->scene->rackScroll->setZoom(std::log2(APP->scene->rackScroll->box.size.y / w->box.size.y * zoomToWidget));
 		}
 	}
 
@@ -106,7 +106,7 @@ struct ViewportCenter {
 		APP->scene->rackScroll->offset = target;
 		float zx = std::log2(APP->scene->rackScroll->box.size.x / rect.size.x * 0.9f);
 		float zy = std::log2(APP->scene->rackScroll->box.size.y / rect.size.y * 0.9f);
-		rack::settings::zoom = std::min(zx, zy);
+		APP->scene->rackScroll->setZoom(std::min(zx, zy));
 	}
 };
 

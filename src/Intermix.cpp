@@ -844,7 +844,7 @@ struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 		};
 
 		menu->addChild(new MenuSeparator());
-		menu->addChild(createBoolPtrMenuItem("Scene lock", &module->sceneLock));
+		menu->addChild(createBoolPtrMenuItem("Scene lock", "", &module->sceneLock));
 		menu->addChild(createSubmenuItem("Channels", string::f("%i", module->channelCount),
 			[=](Menu* menu) {
 				for (int i = 1; i <= PORT_MAX_CHANNELS; i++) {
@@ -863,12 +863,12 @@ struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 			},
 			&module->sceneMode
 		));
-		menu->addChild(createBoolPtrMenuItem("Include input-mode in scenes", &module->sceneInputMode));
-		menu->addChild(createBoolPtrMenuItem("Include attenuverters in scenes", &module->sceneAtMode));
-		menu->addChild(createBoolPtrMenuItem("Limit output to -10..10V", &module->outputClamp));
+		menu->addChild(createBoolPtrMenuItem("Include input-mode in scenes", "", &module->sceneInputMode));
+		menu->addChild(createBoolPtrMenuItem("Include attenuverters in scenes", "", &module->sceneAtMode));
+		menu->addChild(createBoolPtrMenuItem("Limit output to -10..10V", "", &module->outputClamp));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(new BrightnessSlider(module));
-		menu->addChild(createBoolPtrMenuItem("Visualize input on pads", &module->inputVisualize));
+		menu->addChild(createBoolPtrMenuItem("Visualize input on pads", "", &module->inputVisualize));
 	}
 };
 

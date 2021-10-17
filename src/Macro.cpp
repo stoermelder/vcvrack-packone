@@ -394,7 +394,7 @@ struct MacroWidget : ThemedModuleWidget<MacroModule>, ParamWidgetContextExtender
 			}
 		));
 		menu->addChild(new MenuSeparator());
-		menu->addChild(createBoolPtrMenuItem("Lock parameter changes", &module->lockParameterChanges));
+		menu->addChild(createBoolPtrMenuItem("Lock parameter changes", "", &module->lockParameterChanges));
 		menu->addChild(createIndexPtrSubmenuItem("Input voltage", {"0V..10V", "-5V..5V"}, &module->bipolarInput));
 	}
 

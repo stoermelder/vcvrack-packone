@@ -2025,8 +2025,8 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createSubmenuItem("Preset load", "",
 			[=](Menu* menu) {
-				menu->addChild(createBoolPtrMenuItem("Ignore MIDI devices", &module->midiIgnoreDevices));
-				menu->addChild(createBoolPtrMenuItem("Clear mapping slots", &module->clearMapsOnLoad));
+				menu->addChild(createBoolPtrMenuItem("Ignore MIDI devices", "", &module->midiIgnoreDevices));
+				menu->addChild(createBoolPtrMenuItem("Clear mapping slots", "", &module->clearMapsOnLoad));
 			}
 		));
 		menu->addChild(StoermelderPackOne::Rack::createMapSubmenuItem<int>("Precision", {
@@ -2056,7 +2056,7 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 		menu->addChild(createSubmenuItem("Re-send MIDI feedback", "",
 			[=](Menu* menu) {
 				menu->addChild(createMenuItem("Now", "", [=]() { module->midiResendFeedback(); }));
-				menu->addChild(createBoolPtrMenuItem("Periodically", &module->midiResendPeriodically));
+				menu->addChild(createBoolPtrMenuItem("Periodically", "", &module->midiResendPeriodically));
 			}
 		));
 		menu->addChild(createMenuItem("Import MIDI-MAP preset", "", [=]() { loadMidiMapPreset_dialog(); }));
@@ -2064,12 +2064,12 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createSubmenuItem("User interface", "",
 			[=](Menu* menu) {
-				menu->addChild(createBoolPtrMenuItem("Text scrolling", &module->textScrolling));
-				menu->addChild(createBoolPtrMenuItem("Hide mapping indicators", &module->mappingIndicatorHidden));
-				menu->addChild(createBoolPtrMenuItem("Lock mapping slots", &module->locked));
+				menu->addChild(createBoolPtrMenuItem("Text scrolling", "", &module->textScrolling));
+				menu->addChild(createBoolPtrMenuItem("Hide mapping indicators", "", &module->mappingIndicatorHidden));
+				menu->addChild(createBoolPtrMenuItem("Lock mapping slots", "", &module->locked));
 			}
 		));
-		menu->addChild(createBoolPtrMenuItem("Status overlay", &module->overlayEnabled));
+		menu->addChild(createBoolPtrMenuItem("Status overlay", "", &module->overlayEnabled));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuItem("Clear mappings", "", [=]() { module->clearMaps(); }));
 		menu->addChild(createSubmenuItem("Map module (left)", "",
