@@ -393,9 +393,9 @@ struct AudioInterface : Module {
 };
 
 
-struct Audio64Widget : AudioWidget {
+struct Audio64Widget : AudioDisplay {
 	void setAudioPort(audio::Port* port) {
-		AudioWidget::setAudioPort(port);
+		AudioDisplay::setAudioPort(port);
 
 		driverChoice->textOffset = Vec(6.f, 14.7f);
 		driverChoice->box.size = mm2px(Vec(driverChoice->box.size.x, 7.5f));
