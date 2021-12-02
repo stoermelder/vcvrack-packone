@@ -455,7 +455,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 		for (json_t* vJ : *slot->preset) {
 			json_t* idJ = json_object_get(vJ, "id");
 			if (!idJ) continue;
-			int moduleId = json_integer_value(idJ);
+			int64_t moduleId = json_integer_value(idJ);
 			std::string plugin = json_string_value(json_object_get(vJ, "plugin"));
 			std::string model = json_string_value(json_object_get(vJ, "model"));
 			for (BoundModule* b : boundModules) {

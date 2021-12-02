@@ -992,10 +992,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		struct PresetFolderItem : MenuItem {
 			std::string path;
 			void onAction(const event::Action& e) override {
-				std::thread t([ = ] {
-					system::openDirectory(path);
-				});
-				t.detach();
+				system::openDirectory(path);
 			}
 		};
 
@@ -1020,7 +1017,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		Menu* createChildMenu() override {
 			Menu* menu = new Menu;
 
-			std::string presetDir = mw->model->getUserPresetDirectory();
+			std::string presetDir = mw->model->getFactoryPresetDirectory();
 			menu->addChild(construct<PresetFolderItem>(&MenuItem::text, "Open folder", &PresetFolderItem::path, presetDir));
 			menu->addChild(construct<PresetLoadReplaceItem>(&MenuItem::text, "Load and replace", &PresetLoadReplaceItem::module, module));
 			menu->addChild(new MenuSeparator);

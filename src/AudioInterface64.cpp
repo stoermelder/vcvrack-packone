@@ -393,9 +393,9 @@ struct AudioInterface : Module {
 };
 
 
-struct Audio64Widget : AudioWidget {
+struct Audio64Display : AudioDisplay {
 	void setAudioPort(audio::Port* port) {
-		AudioWidget::setAudioPort(port);
+		AudioDisplay::setAudioPort(port);
 
 		driverChoice->textOffset = Vec(6.f, 14.7f);
 		driverChoice->box.size = mm2px(Vec(driverChoice->box.size.x, 7.5f));
@@ -466,10 +466,10 @@ struct AudioInterface64Widget : ThemedModuleWidget<AudioInterface<64, 64>> {
 			addChild(createLightCentered<TinyLight<GreenLight>>(Vec(278.9f - 9.8f + i * 32.2f, 314.5f), module, TAudioInterface::OUTPUT_LIGHTS + i * 4 + 3));
 		}
 
-		Audio64Widget* audioWidget = createWidget<Audio64Widget>(Vec(132.5f, 36.0f));
-		audioWidget->box.size = Vec(260.0f, 67.0f);
-		audioWidget->setAudioPort(module ? &module->port : NULL);
-		addChild(audioWidget);
+		Audio64Display* audioDisplay = createWidget<Audio64Display>(Vec(132.5f, 36.0f));
+		audioDisplay->box.size = Vec(260.0f, 67.0f);
+		audioDisplay->setAudioPort(module ? &module->port : NULL);
+		addChild(audioDisplay);
 	}
 
 	void appendContextMenu(Menu* menu) override {
