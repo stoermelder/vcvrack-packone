@@ -617,7 +617,7 @@ struct MapScalingInputLabel : MenuLabelEx {
 		float g2 = rescale(1.f, min, max, p->limitMin, p->limitMax);
 		g2 = clamp(g2, p->limitMin, p->limitMax);
 
-		rightText = string::f("[%.1f%, %.1f%]", g1 * 100.f, g2 * 100.f);
+		rightText = string::f("[%.1f%%, %.1f%%]", g1 * 100.f, g2 * 100.f);
 	}
 }; // struct MapScalingInputLabel
 
@@ -633,7 +633,7 @@ struct MapScalingOutputLabel : MenuLabelEx {
 		float f2 = rescale(p->limitMax, p->limitMin, p->limitMax, min, max);
 		f2 = clamp(f2, 0.f, 1.f) * 100.f;
 
-		rightText = string::f("[%.1f%, %.1f%]", f1, f2);
+		rightText = string::f("[%.1f%%, %.1f%%]", f1, f2);
 	}
 }; // struct MapScalingOutputLabel
 

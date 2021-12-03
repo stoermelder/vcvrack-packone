@@ -108,6 +108,7 @@ Vec hexToPixel(RoundAxialVec hex, float sizeFactor, ROTATION shape, Vec origin) 
 	float x, y;
 	if (shape == ROTATION::FLAT) {
 		// TODO
+	  x = y = 0.0; // until TODO is done, this silences a warning.
 	}
 	else {
 		x = (sqrt(3.f) * hex.q + sqrt(3.f)/2.f * hex.r) * sizeFactor + origin.x;
