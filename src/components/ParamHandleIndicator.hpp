@@ -30,7 +30,6 @@ struct ParamHandleIndicator {
 		if (mw) {
 			// Move the view to center the mapped module
 			StoermelderPackOne::Rack::ViewportCenter{mw};
-			APP->scene->rackScroll->setZoom(1.f);
 		}
 		indicateCount = 20;
 	}

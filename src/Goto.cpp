@@ -198,7 +198,7 @@ struct GotoContainer : widget::Widget {
 			module->jumpPoints[learnJumpPoint].moduleId = m->id;
 			module->jumpPoints[learnJumpPoint].x = source.x;
 			module->jumpPoints[learnJumpPoint].y = source.y;
-			module->jumpPoints[learnJumpPoint].zoom = APP->scene->rackScroll->getZoom();
+			module->jumpPoints[learnJumpPoint].zoom = std::log2(APP->scene->rackScroll->getZoom());
 			learnJumpPoint = -1;
 		}
 
@@ -238,7 +238,7 @@ struct GotoContainer : widget::Widget {
 			ModuleWidget* mw = APP->scene->rack->getModule(module->jumpPoints[i].moduleId);
 			if (mw) {
 				if (module->smoothTransition) {
-					float zoom = !module->ignoreZoom ? module->jumpPoints[i].zoom : APP->scene->rackScroll->getZoom();
+					float zoom = !module->ignoreZoom ? module->jumpPoints[i].zoom : std::log2(APP->scene->rackScroll->getZoom());
 					if (module->centerModule) {
 						viewportCenterSmooth.trigger(mw, zoom, 1.f / APP->window->getLastFrameDuration());
 					}
@@ -254,7 +254,7 @@ struct GotoContainer : widget::Widget {
 						StoermelderPackOne::Rack::ViewportCenter{Vec(module->jumpPoints[i].x, module->jumpPoints[i].y)};
 					}
 					if (!module->ignoreZoom) {
-						APP->scene->rackScroll->setZoom(module->jumpPoints[i].zoom);
+						APP->scene->rackScroll->setZoom(std::pow(2.f, module->jumpPoints[i].zoom));
 					}
 				}
 			}

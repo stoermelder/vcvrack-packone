@@ -303,7 +303,7 @@ struct CmdZoomModuleSmooth : CmdBase {
 struct CmdZoomModuleCustom : CmdBase {
 	std::string* data;
 	void initialCmd(KEY_MODE keyMode) override {
-		APP->scene->rackScroll->setZoom(std::stof(*data));
+		APP->scene->rackScroll->setZoom(std::pow(2.f, std::stof(*data)));
 		Widget* w = APP->event->getHoveredWidget();
 		if (!w) return;
 		ModuleWidget* mw = dynamic_cast<ModuleWidget*>(w);
@@ -359,14 +359,14 @@ struct CmdZoomOutSmooth : CmdBase {
 
 struct CmdZoomToggle : CmdBase {
 	void initialCmd(KEY_MODE keyMode) override {
-		if (APP->scene->rackScroll->getZoom() > 1.f) CmdZoomOut::zoomOut(); else CmdZoomModule::zoomIn(0.9f);
+		if (std::log2(APP->scene->rackScroll->getZoom()) > 1.f) CmdZoomOut::zoomOut(); else CmdZoomModule::zoomIn(0.9f);
 	}
 }; // struct CmdZoomToggle
 
 
 struct CmdZoomToggleSmooth : CmdZoomModuleSmooth {
 	void initialCmd(KEY_MODE keyMode) override {
-		if (APP->scene->rackScroll->getZoom() > 1.f) {
+		if (std::log2(APP->scene->rackScroll->getZoom()) > 1.f) {
 			math::Rect moduleBox = APP->scene->rack->getModuleContainer()->getChildrenBoundingBox();
 			if (!moduleBox.size.isFinite()) return;
 			viewportCenterSmooth.trigger(moduleBox, 1.f / APP->window->getLastFrameDuration(), 0.6f);
@@ -412,9 +412,7 @@ struct CmdCableColorNext : CmdBase {
 		if (!pw) return;
 		CableWidget* cw = APP->scene->rack->getTopCable(pw);
 		if (!cw) return;
-		int cid = APP->scene->rack->nextCableColorId++;
-		APP->scene->rack->nextCableColorId %= settings::cableColors.size();
-		cw->color = settings::cableColors[cid];
+		cw->color = APP->scene->rack->getNextCableColor();
 	}
 }; // struct CmdCableColorNext
 
@@ -1192,16 +1190,16 @@ struct KeyDisplay : StoermelderLedDisplay {
 				};
 
 				Menu* menu = new Menu;
-				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom to module", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ZOOM_MODULE_90));
-				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom to module (smooth)", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ZOOM_MODULE_90_SMOOTH));
-				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom to module 1/3", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ZOOM_MODULE_30));
-				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom to module 1/3 (smooth)", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ZOOM_MODULE_30_SMOOTH));
-				menu->addChild(construct<ModeZoomModuleCustomItem>(&MenuItem::text, "Zoom level to module", &ModeZoomModuleCustomItem::module, module, &ModeZoomModuleCustomItem::idx, idx, &ModeZoomModuleCustomItem::mode, KEY_MODE::S_ZOOM_MODULE_CUSTOM));
-				menu->addChild(construct<ModeZoomModuleCustomItem>(&MenuItem::text, "Zoom level to module (smooth)", &ModeZoomModuleCustomItem::module, module, &ModeZoomModuleCustomItem::idx, idx, &ModeZoomModuleCustomItem::mode, KEY_MODE::S_ZOOM_MODULE_CUSTOM_SMOOTH));
-				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom out", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ZOOM_OUT));
-				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom out (smooth)", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ZOOM_OUT_SMOOTH));
-				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom toggle", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ZOOM_TOGGLE));
-				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom toggle (smooth)", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ZOOM_TOGGLE_SMOOTH));
+				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom to module [incompatible]", &MenuItem::disabled, true, &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ZOOM_MODULE_90));
+				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom to module (smooth) [incompatible]", &MenuItem::disabled, true, &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ZOOM_MODULE_90_SMOOTH));
+				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom to module 1/3 [incompatible]", &MenuItem::disabled, true, &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ZOOM_MODULE_30));
+				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom to module 1/3 (smooth) [incompatible]", &MenuItem::disabled, true, &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ZOOM_MODULE_30_SMOOTH));
+				menu->addChild(construct<ModeZoomModuleCustomItem>(&MenuItem::text, "Zoom level to module [incompatible]", &MenuItem::disabled, true, &ModeZoomModuleCustomItem::module, module, &ModeZoomModuleCustomItem::idx, idx, &ModeZoomModuleCustomItem::mode, KEY_MODE::S_ZOOM_MODULE_CUSTOM));
+				menu->addChild(construct<ModeZoomModuleCustomItem>(&MenuItem::text, "Zoom level to module (smooth) [incompatible]", &MenuItem::disabled, true, &ModeZoomModuleCustomItem::module, module, &ModeZoomModuleCustomItem::idx, idx, &ModeZoomModuleCustomItem::mode, KEY_MODE::S_ZOOM_MODULE_CUSTOM_SMOOTH));
+				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom out [incompatible]", &MenuItem::disabled, true, &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ZOOM_OUT));
+				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom out (smooth) [incompatible]", &MenuItem::disabled, true, &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ZOOM_OUT_SMOOTH));
+				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom toggle [incompatible]", &MenuItem::disabled, true, &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ZOOM_TOGGLE));
+				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Zoom toggle (smooth) [incompatible]", &MenuItem::disabled, true, &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ZOOM_TOGGLE_SMOOTH));
 				menu->addChild(new MenuSeparator);
 				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Scroll left", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_SCROLL_LEFT));
 				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Scroll right", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_SCROLL_RIGHT));
