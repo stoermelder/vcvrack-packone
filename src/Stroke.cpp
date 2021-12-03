@@ -412,9 +412,7 @@ struct CmdCableColorNext : CmdBase {
 		if (!pw) return;
 		CableWidget* cw = APP->scene->rack->getTopCable(pw);
 		if (!cw) return;
-		int cid = APP->scene->rack->nextCableColorId++;
-		APP->scene->rack->nextCableColorId %= settings::cableColors.size();
-		cw->color = settings::cableColors[cid];
+		cw->color = APP->scene->rack->getNextCableColor();
 	}
 }; // struct CmdCableColorNext
 
