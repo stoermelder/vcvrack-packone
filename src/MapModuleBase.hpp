@@ -56,7 +56,9 @@ struct MapModuleBase : Module, StripIdFixModule {
 	void onReset() override {
 		learningId = -1;
 		learnedParam = false;
-		clearMaps();
+		// Use NoLock because we're already in an Engine write-lock if Engine::resetModule().
+		// We also might be in the constructor, which could cause problems, but when constructing, all ParamHandles will point to no Modules anyway.
+		clearMaps_NoLock();
 		mapLen = 0;
 	}
 
@@ -95,10 +97,10 @@ struct MapModuleBase : Module, StripIdFixModule {
 		updateMapLen();
 	}
 
-	virtual void clearMaps() {
+	void clearMaps_NoLock() {
 		learningId = -1;
 		for (int id = 0; id < MAX_CHANNELS; id++) {
-			APP->engine->updateParamHandle(&paramHandles[id], -1, 0, true);
+			APP->engine->updateParamHandle_NoLock(&paramHandles[id], -1, 0, true);
 			valueFilters[id].reset();
 		}
 		mapLen = 0;
@@ -172,7 +174,8 @@ struct MapModuleBase : Module, StripIdFixModule {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		clearMaps();
+		// Use NoLock because we're already in an Engine write-lock.
+		clearMaps_NoLock();
 
 		json_t* textScrollingJ = json_object_get(rootJ, "textScrolling");
 		textScrolling = json_boolean_value(textScrollingJ);
@@ -193,7 +196,7 @@ struct MapModuleBase : Module, StripIdFixModule {
 				int64_t moduleId = json_integer_value(moduleIdJ);
 				int paramId = json_integer_value(paramIdJ);
 				moduleId = idFix(moduleId);
-				APP->engine->updateParamHandle(&paramHandles[mapIndex], moduleId, paramId, false);
+				APP->engine->updateParamHandle_NoLock(&paramHandles[mapIndex], moduleId, paramId, false);
 				dataFromJsonMap(mapJ, mapIndex);
 			}
 		}

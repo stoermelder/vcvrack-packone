@@ -336,7 +336,9 @@ struct MidiCatModule : Module, StripIdFixModule {
 		learnedCc = false;
 		learnedNote = false;
 		learnedParam = false;
-		clearMaps();
+		// Use NoLock because we're already in an Engine write-lock if Engine::resetModule().
+		// We also might be in the MIDIMap() constructor, which could cause problems, but when constructing, all ParamHandles will point to no Modules anyway.
+		clearMaps_NoLock();
 		mapLen = 1;
 		for (int i = 0; i < 128; i++) {
 			valuesCc[i] = -1;
@@ -728,7 +730,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 		}
 	}
 
-	void clearMaps() {
+	void clearMaps_WithLock() {
 		learningId = -1;
 		for (int id = 0; id < MAX_CHANNELS; id++) {
 			ccs[id].reset();
@@ -737,6 +739,21 @@ struct MidiCatModule : Module, StripIdFixModule {
 			midiOptions[id] = 0;
 			midiParam[id].reset();
 			APP->engine->updateParamHandle(&paramHandles[id], -1, 0, true);
+			refreshParamHandleText(id);
+		}
+		mapLen = 1;
+		expMemModuleId = -1;
+	}
+
+	void clearMaps_NoLock() {
+		learningId = -1;
+		for (int id = 0; id < MAX_CHANNELS; id++) {
+			ccs[id].reset();
+			notes[id].reset();
+			textLabel[id] = "";
+			midiOptions[id] = 0;
+			midiParam[id].reset();
+			APP->engine->updateParamHandle_NoLock(&paramHandles[id], -1, 0, true);
 			refreshParamHandleText(id);
 		}
 		mapLen = 1;
@@ -837,7 +854,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 	void moduleBind(Module* m, bool keepCcAndNote) {
 		if (!m) return;
 		if (!keepCcAndNote) {
-			clearMaps();
+			clearMaps_WithLock();
 		}
 		else {
 			// Clean up some additional mappings on the end
@@ -924,7 +941,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 		if (it == expMemStorage->end()) return;
 		MemModule* map = it->second;
 
-		clearMaps();
+		clearMaps_WithLock();
 		expMemModuleId = m->id;
 		int i = 0;
 		for (MemParam* it : map->paramMap) {
@@ -1013,7 +1030,8 @@ struct MidiCatModule : Module, StripIdFixModule {
 		if (clearMapsOnLoadJ) clearMapsOnLoad = json_boolean_value(clearMapsOnLoadJ);
 
 		if (clearMapsOnLoad) {
-			clearMaps();
+			// Use NoLock because we're already in an Engine write-lock.
+			clearMaps_NoLock();
 		}
 
 		json_t* mapsJ = json_object_get(rootJ, "maps");
@@ -1041,11 +1059,11 @@ struct MidiCatModule : Module, StripIdFixModule {
 				if (!(ccJ || noteJ)) {
 					ccs[mapIndex].setCc(-1);
 					notes[mapIndex].setNote(-1);
-					APP->engine->updateParamHandle(&paramHandles[mapIndex], -1, 0, true);
+					APP->engine->updateParamHandle_NoLock(&paramHandles[mapIndex], -1, 0, true);
 					continue;
 				}
 				if (!(moduleIdJ || paramIdJ)) {
-					APP->engine->updateParamHandle(&paramHandles[mapIndex], -1, 0, true);
+					APP->engine->updateParamHandle_NoLock(&paramHandles[mapIndex], -1, 0, true);
 				}
 
 				ccs[mapIndex].setCc(ccJ ? json_integer_value(ccJ) : -1);
@@ -1059,7 +1077,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 				if (moduleId >= 0) {
 					moduleId = idFix(moduleId);
 					if (moduleId != paramHandles[mapIndex].moduleId || paramId != paramHandles[mapIndex].paramId) {
-						APP->engine->updateParamHandle(&paramHandles[mapIndex], moduleId, paramId, false);
+						APP->engine->updateParamHandle_NoLock(&paramHandles[mapIndex], moduleId, paramId, false);
 						refreshParamHandleText(mapIndex);
 					}
 				}
@@ -2071,7 +2089,7 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 		));
 		menu->addChild(createBoolPtrMenuItem("Status overlay", "", &module->overlayEnabled));
 		menu->addChild(new MenuSeparator());
-		menu->addChild(createMenuItem("Clear mappings", "", [=]() { module->clearMaps(); }));
+		menu->addChild(createMenuItem("Clear mappings", "", [=]() { module->clearMaps_WithLock(); }));
 		menu->addChild(createSubmenuItem("Map module (left)", "",
 			[=](Menu* menu) {
 				menu->addChild(createMenuItem("Clear first", RACK_MOD_CTRL_NAME "+" RACK_MOD_SHIFT_NAME "+E", [=]() { module->moduleBindExpander(false); }));
