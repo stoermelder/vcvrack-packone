@@ -20,5 +20,5 @@ endif
 	@# Copy distributables
 	cp -R $(DISTRIBUTABLES) dist/$(SLUG)/
 	@# Create ZIP package
-	echo "cd dist && 7z.exe a $(SLUG)-$(VERSION)-$(ARCH).vcvplugin -r $(SLUG)"
-	cd dist && 7z.exe a $(SLUG)-$(VERSION)-$(ARCH).vcvplugin -r $(SLUG)
+	echo "cd dist && 7z.exe a $(SLUG)-$(VERSION)-win.vcvplugin -r $(SLUG)"
+	cd dist && 7z.exe a $(SLUG)-$(VERSION)-win.vcvplugin -r $(SLUG)
