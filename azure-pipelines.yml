@@ -14,10 +14,10 @@ jobs:
   strategy:
     matrix:
       mac:
-        imageName: 'macos-10.14'
+        imageName: 'macos-10.15'
         isMac: true
       windows:
-        imageName: 'vs2017-win2016'
+        imageName: 'windows-2019'
         isWindows: true
       linux:
         imageName: 'ubuntu-18.04'
@@ -53,7 +53,7 @@ jobs:
       uname -a
       git submodule update --init --recursive
       pushd $AGENT_TEMPDIRECTORY
-      curl -o Rack-SDK.zip https://vcvrack.com/downloads/Rack-SDK-2.0.1-lin.zip
+      curl -o Rack-SDK.zip https://vcvrack.com/downloads/Rack-SDK-2.0.0-lin.zip
       unzip Rack-SDK.zip
     displayName: Get Linux Rack-SDK
     condition: variables.isLinux
