@@ -19,6 +19,5 @@ else
 endif
 	@# Copy distributables
 	cp -R $(DISTRIBUTABLES) dist/$(SLUG)/
-	@# Create ZIP package
-	echo "cd dist && 7z.exe a $(SLUG)-$(VERSION)-win.vcvplugin -r $(SLUG)"
-	cd dist && 7z.exe a $(SLUG)-$(VERSION)-win.vcvplugin -r $(SLUG)
+	@# Create vcvplugin package
+	cd dist && tar -c $(SLUG) | zstd -$(ZSTD_COMPRESSION_LEVEL) -o "$(SLUG)"-"$(VERSION)"-$(ARCH_OS_NAME).vcvplugin
