@@ -114,8 +114,11 @@ jobs:
 - job: UpdateGithubRelease
   dependsOn: Build
   condition: and(succeeded(), or(eq(variables['Build.SourceBranch'], 'refs/heads/v2-dev'), eq(variables['Build.SourceBranch'], 'refs/heads/azure-test')))
-  steps:
 
+  pool:
+    vmImage: 'ubuntu-18.04'
+
+  steps:
   - task: DownloadPipelineArtifact@0
     inputs:
       artifactName: 'PACKONE_ZIP_LINUX'
