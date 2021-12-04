@@ -16,7 +16,7 @@ But I read the directory RACK_INSTALL_DIR and use a default if that's not set
     --run           Builds and runs
     --debug         Builds and debugs
 
-If RACK_INSTALL_DIR isn't set, I default to ~/dev/VCVRack/V1.0
+If RACK_INSTALL_DIR isn't set, I default to ~/dev/VCVRack/V2.0
 
 A typical session could be
 
@@ -27,7 +27,7 @@ EOF
 }
 
 un=`uname`
-sdkversion=1.1.6
+sdkversion=2.0.0
 sdk="https://vcvrack.com/downloads/Rack-SDK-${sdkversion}.zip"
 slug=`jq -r '{slug} | .[]' plugin.json `
 
@@ -46,7 +46,7 @@ if [ -z "$runtime" ]; then
 fi
 
 if [ -z "$RACK_INSTALL_DIR" ]; then
-    RACK_INSTALL_DIR="${HOME}/dev/VCVRack/V1.0/"
+    RACK_INSTALL_DIR="${HOME}/dev/VCVRack/V2.0/"
     mkdir -p $RACK_INSTALL_DIR
 fi    
 

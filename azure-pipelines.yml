@@ -4,10 +4,10 @@
 # https://aka.ms/yaml
 
 trigger:
-- v1-dev
+- v2-dev
 
 pr:
-- v1-dev
+- v2-dev
 
 jobs:
 - job: Build
@@ -34,18 +34,34 @@ jobs:
   - bash: |
       uname -a
       git submodule update --init --recursive
-
       pushd $AGENT_TEMPDIRECTORY
-      curl -o Rack-SDK.zip https://vcvrack.com/downloads/Rack-SDK-1.1.6.zip
+      curl -o Rack-SDK.zip https://vcvrack.com/downloads/Rack-SDK-2.0.0-win.zip
       unzip Rack-SDK.zip
-      
-    displayName: Get Rack 
+    displayName: Get Windows Rack-SDK
+    condition: variables.isWindows
+
+  - bash: |
+      uname -a
+      git submodule update --init --recursive
+      pushd $AGENT_TEMPDIRECTORY
+      curl -o Rack-SDK.zip https://vcvrack.com/downloads/Rack-SDK-2.0.0-mac.zip
+      unzip Rack-SDK.zip
+    displayName: Get Mac Rack-SDK
+    condition: variables.isMac
+
+  - bash: |
+      uname -a
+      git submodule update --init --recursive
+      pushd $AGENT_TEMPDIRECTORY
+      curl -o Rack-SDK.zip https://vcvrack.com/downloads/Rack-SDK-2.0.1-lin.zip
+      unzip Rack-SDK.zip
+    displayName: Get Linux Rack-SDK
+    condition: variables.isLinux
 
   - bash: |
       chmod +x scripts/resetversion.sh
       ./scripts/resetversion.sh
     displayName: Update Version in plugins.json
-
 
   - bash: |
       export RACK_DIR=$AGENT_TEMPDIRECTORY/Rack-SDK
@@ -95,11 +111,9 @@ jobs:
     displayName: Publish Windows Zip
     condition: variables.isWindows
 
-
 - job: UpdateGithubRelease
   dependsOn: Build
-  condition: and(succeeded(), or(eq(variables['Build.SourceBranch'], 'refs/heads/v1-dev'), eq(variables['Build.SourceBranch'], 'refs/heads/azure-test')))
-
+  condition: and(succeeded(), or(eq(variables['Build.SourceBranch'], 'refs/heads/v2-dev'), eq(variables['Build.SourceBranch'], 'refs/heads/azure-test')))
   steps:
 
   - task: DownloadPipelineArtifact@0
