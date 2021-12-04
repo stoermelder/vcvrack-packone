@@ -265,14 +265,8 @@ struct GlueModule : Module, StripIdFixModule {
 
 
 struct LabelDrawWidget : TransparentWidget {
-	std::shared_ptr<Font> font[2];
 	Label* label;
 	Vec rotatedSize;
-
-	LabelDrawWidget() {
-		font[0] = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
-		font[1] = APP->window->loadFont(asset::plugin(pluginInstance, "res/fonts/RedkostComic.otf"));
-	}
 
 	void draw(const Widget::DrawArgs& args) override {
 		if (!label) return;
@@ -298,8 +292,18 @@ struct LabelDrawWidget : TransparentWidget {
 
 		// Draw text
 		if (label->text.length() > 0) {
+			std::shared_ptr<Font> font;
+			switch (label->font) {
+				case 0:
+					font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
+					break;
+				case 1:
+					font = APP->window->loadFont(asset::plugin(pluginInstance, "res/fonts/RedkostComic.otf"));
+					break;
+			}
+
 			nvgFontSize(args.vg, label->size);
-			nvgFontFaceId(args.vg, font[label->font]->handle);
+			nvgFontFaceId(args.vg, font->handle);
 			nvgTextLetterSpacing(args.vg, -1.2f);
 			nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_TOP);
 			nvgFillColor(args.vg, color::alpha(label->fontColor, label->opacity));

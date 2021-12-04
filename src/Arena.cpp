@@ -1374,8 +1374,7 @@ struct ScreenDragWidget : OpaqueWidget {
 	const float radius = 10.f;
 	const float fontsize = 13.0f;
 
-	MODULE* module;
-	std::shared_ptr<Font> font;
+	MODULE* module;	
 	ParamQuantity* paramQuantityX;
 	ParamQuantity* paramQuantityY;
 	NVGcolor color = nvgRGB(0x66, 0x66, 0x0);
@@ -1388,7 +1387,6 @@ struct ScreenDragWidget : OpaqueWidget {
 	XYChangeAction* dragAction;
 
 	ScreenDragWidget() {
-		font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
 		box.size = Vec(2 * radius, 2 * radius);
 	}
 
@@ -1445,6 +1443,7 @@ struct ScreenDragWidget : OpaqueWidget {
 		nvgGlobalCompositeOperation(args.vg, NVG_ATOP);
 
 		// Draw label
+		std::shared_ptr<Font> font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
 		nvgFontSize(args.vg, fontsize);
 		nvgFontFaceId(args.vg, font->handle);
 		nvgFillColor(args.vg, textColor);
@@ -2292,7 +2291,6 @@ struct SeqEditDragWidget : OpaqueWidget {
 	const float fontsize = 13.0f;
 
 	MODULE* module;
-	std::shared_ptr<Font> font;
 	NVGcolor color = color::RED;
 	int id = -1;
 	int seq = -1;
@@ -2304,7 +2302,6 @@ struct SeqEditDragWidget : OpaqueWidget {
 	bool timerClear;
 
 	SeqEditDragWidget() {
-		font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
 		box.size = Vec(2 * radius, 2 * radius);
 	}
 
@@ -2357,6 +2354,7 @@ struct SeqEditDragWidget : OpaqueWidget {
 			nvgFill(args.vg);
 
 			// Draw label
+			std::shared_ptr<Font> font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
 			nvgFontSize(args.vg, fontsize);
 			nvgFontFaceId(args.vg, font->handle);
 			nvgFillColor(args.vg, color);
@@ -2436,7 +2434,6 @@ struct SeqEditDragWidget : OpaqueWidget {
 template <typename MODULE>
 struct SeqEditWidget : OpaqueWidget {
 	MODULE* module;
-	std::shared_ptr<Font> font;
 	SeqEditDragWidget<MODULE>* recWidget;
 	int mixParamIdX;
 	int mixParamIdY;
@@ -2444,7 +2441,6 @@ struct SeqEditWidget : OpaqueWidget {
 	int lastSeqSelected = -1;
 
 	SeqEditWidget(MODULE* module, int mixParamIdX, int mixParamIdY) {
-		font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
 		this->module = module;
 		this->mixParamIdX = mixParamIdX;
 		this->mixParamIdY = mixParamIdY;
@@ -2485,6 +2481,7 @@ struct SeqEditWidget : OpaqueWidget {
 			nvgStroke(args.vg);
 
 			// Draw "EDIT" text
+			std::shared_ptr<Font> font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
 			nvgFontSize(args.vg, 22);
 			nvgFontFaceId(args.vg, font->handle);
 			nvgTextLetterSpacing(args.vg, -2.2);

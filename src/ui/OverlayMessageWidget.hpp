@@ -32,7 +32,6 @@ struct OverlayMessageWidget : TransparentWidget {
 
 	std::list<OverlayMessageProvider*> registeredProviders;
 	std::map<std::tuple<OverlayMessageProvider*, int>, std::chrono::time_point<std::chrono::system_clock>> items;
-	std::shared_ptr<Font> font;
 
 	static OverlayMessageWidget& instance() {
 		static OverlayMessageWidget overlayMessageWidget;
@@ -51,10 +50,6 @@ struct OverlayMessageWidget : TransparentWidget {
 		if (instance().registeredProviders.size() == 0) {
 			APP->scene->rackScroll->removeChild(&instance());
 		}
-	}
-
-	OverlayMessageWidget() {
-		font = APP->window->loadFont(asset::system("res/fonts/DejaVuSans.ttf"));
 	}
 
 	void draw(const DrawArgs& args) override {
@@ -115,6 +110,7 @@ struct OverlayMessageWidget : TransparentWidget {
 
 				bndMenuBackground(args.vg, x - xSizeScale / 2.f, y, xSizeScale, ySizeScale, BND_CORNER_NONE);
 
+				std::shared_ptr<Font> font = APP->window->loadFont(asset::system("res/fonts/DejaVuSans.ttf"));
 				nvgFontFaceId(args.vg, font->handle);
 				nvgTextLetterSpacing(args.vg, -1.2f * scale);
 				nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_TOP);

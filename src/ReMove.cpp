@@ -783,11 +783,6 @@ struct ReMoveModule : MapModuleBase<1> {
 
 struct ReMoveDisplay : TransparentWidget {
     ReMoveModule *module;
-    std::shared_ptr<Font> font;
-
-    ReMoveDisplay() {
-        font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
-    }
 
     void drawLayer(const DrawArgs& args, int layer) override {
         if (!module) return;
@@ -807,6 +802,7 @@ struct ReMoveDisplay : TransparentWidget {
 
             if (module->isRecording) {
                 // Draw text showing remaining time
+                std::shared_ptr<Font> font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
                 float t = ((float)REMOVE_MAX_DATA / (float)module->seqCount - (float)seqPos) * module->sampleRate;
                 nvgFontSize(args.vg, 11);
                 nvgFontFaceId(args.vg, font->handle);
