@@ -20,7 +20,7 @@ jobs:
         imageName: 'vs2017-win2016'
         isWindows: true
       linux:
-        imageName: 'ubuntu-16.04'
+        imageName: 'ubuntu-18.04'
         isLinux: true
 
   pool:
@@ -68,7 +68,7 @@ jobs:
       export CC=gcc
       make win-dist
       mkdir products_win/
-      cp dist/*zip products_win/
+      cp dist/*vcvplugin products_win/
     displayName: Build Windows Plugins
     condition: variables.isWindows
 
@@ -76,7 +76,7 @@ jobs:
       export RACK_DIR=$AGENT_TEMPDIRECTORY/Rack-SDK
       make dist
       mkdir products_mac/
-      cp dist/*zip products_mac/
+      cp dist/*vcvplugin products_mac/
     displayName: Build Mac Plugins
     condition: variables.isMac
 
@@ -86,7 +86,7 @@ jobs:
       sudo apt-get install libglu-dev --fix-missing
       make dist
       mkdir products_lin/
-      cp dist/*zip products_lin/
+      cp dist/*vcvplugin products_lin/
     displayName: Build Linux Plugins
     condition: variables.isLinux
 
@@ -94,21 +94,21 @@ jobs:
     inputs:
       artifactName: 'PACKONE_ZIP_LINUX'
       targetPath: 'products_lin/'
-    displayName: Publish Linux Zip
+    displayName: Publish Linux vcvplugin
     condition: variables.isLinux
 
   - task: PublishPipelineArtifact@0
     inputs:
       artifactName: 'PACKONE_ZIP_MACOS'
       targetPath: 'products_mac/'
-    displayName: Publish macOS Zip
+    displayName: Publish macOS vcvplugin
     condition: variables.isMac
 
   - task: PublishPipelineArtifact@0
     inputs:
       artifactName: 'PACKONE_ZIP_WIN'
       targetPath: 'products_win/'
-    displayName: Publish Windows Zip
+    displayName: Publish Windows vcvplugin
     condition: variables.isWindows
 
 - job: UpdateGithubRelease
@@ -134,7 +134,7 @@ jobs:
   - bash: |
      ls -l $(Build.ArtifactStagingDirectory)
      export EXTEND_TAG=`date "+%Y%m%d"`
-     for file in $(Build.ArtifactStagingDirectory)/*.zip; do mv "$file" "${file/.zip/-${EXTEND_TAG}.zip}"; done
+     for file in $(Build.ArtifactStagingDirectory)/*.vcvplugin; do mv "$file" "${file/.vcvplugin/-${EXTEND_TAG}.vcvplugin}"; done
      ls -l $(Build.ArtifactStagingDirectory)
     displayName: Tag asset names with Date
 
@@ -154,4 +154,4 @@ jobs:
       addChangeLog: false
       releaseNotesFile: $(Build.ArtifactStagingDirectory)/ReleaseNotes.md
       isPreRelease: true
-      assets: $(Build.ArtifactStagingDirectory)/*.zip
+      assets: $(Build.ArtifactStagingDirectory)/*.vcvplugin
