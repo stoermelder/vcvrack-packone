@@ -101,7 +101,7 @@ struct GripModule : CVMapModuleBase<MAX_CHANNELS> {
 	void dataFromJson(json_t* rootJ) override {
 		CVMapModuleBase<MAX_CHANNELS>::dataFromJson(rootJ);
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
-		audioRate = json_boolean_value(json_object_get(rootJ, "audioRate"));
+		audioRate = !settings::isPlugin && json_boolean_value(json_object_get(rootJ, "audioRate"));
 
 		json_t* lastValuesJ = json_object_get(rootJ, "lastValues");
 		for (int i = 0; i < MAX_CHANNELS; i++) {
@@ -209,8 +209,10 @@ struct GripWidget : ThemedModuleWidget<GripModule> {
 			}
 		};
 
-		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<AudioRateItem>(&MenuItem::text, "Audio rate processing", &AudioRateItem::module, module));
+		if (!settings::isPlugin) {
+			menu->addChild(new MenuSeparator());
+			menu->addChild(construct<AudioRateItem>(&MenuItem::text, "Audio rate processing", &AudioRateItem::module, module));
+		}
 
 		if (module->mapLen > 0) {
 			menu->addChild(new MenuSeparator());
