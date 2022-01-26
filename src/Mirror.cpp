@@ -307,7 +307,7 @@ struct MirrorModule : Module, StripIdFixModule {
 		//if (APP->engine->getModule(id) != NULL && !idFixHasMap()) return;
 
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
-		audioRate = json_boolean_value(json_object_get(rootJ, "audioRate"));
+		audioRate = !settings::isPlugin && json_boolean_value(json_object_get(rootJ, "audioRate"));
 		mappingIndicatorHidden = json_boolean_value(json_object_get(rootJ, "mappingIndicatorHidden"));
 
 		json_t* sourcePluginSlugJ = json_object_get(rootJ, "sourcePluginSlug");
@@ -441,7 +441,7 @@ struct MirrorWidget : ThemedModuleWidget<MirrorModule> {
 		}
 
 		menu->addChild(new MenuSeparator());
-		menu->addChild(createBoolPtrMenuItem("Audio rate processing", "", &module->audioRate));
+		if (!settings::isPlugin) menu->addChild(createBoolPtrMenuItem("Audio rate processing", "", &module->audioRate));
 		menu->addChild(createBoolPtrMenuItem("Hide mapping indicators", "", &module->mappingIndicatorHidden));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuItem("Bind source module (left)", "", [=]() { module->bindToSource(); }));

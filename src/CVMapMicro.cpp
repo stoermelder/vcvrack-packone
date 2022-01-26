@@ -37,7 +37,10 @@ struct CVMapMicroModule : CVMapModuleBase<1> {
 	int panelTheme = 0;
 	/** [Stored to Json] */
 	bool invertedOutput = false;
+	/** [Stored to JSON] */
+	bool audioRate;
 
+	dsp::ClockDivider processDivider;
 	dsp::ClockDivider lightDivider;
 
 	CVMapMicroModule() {
@@ -50,46 +53,54 @@ struct CVMapMicroModule : CVMapModuleBase<1> {
 
 		this->paramHandles[0].text = "µMAP";
 		lightDivider.setDivision(1024);
+		processDivider.setDivision(64);
 		onReset();
 	}
 
+	void onReset() override {
+		CVMapModuleBase<1>::onReset();
+		audioRate = !settings::isPlugin;
+	}
+
 	void process(const ProcessArgs& args) override {
-		if (inputs[INPUT].isConnected()) {
-			ParamQuantity* paramQuantity = getParamQuantity(0);
-			if (paramQuantity) {
-				// Set ParamQuantity
-				float v = inputs[INPUT].getVoltage();
-				if (bipolarInput)
-					v += 5.f;
-				v = rescale(v, 0.f, 10.f, 0.f, 1.f);
+		if (audioRate || processDivider.process()) {
+			if (inputs[INPUT].isConnected()) {
+				ParamQuantity* paramQuantity = getParamQuantity(0);
+				if (paramQuantity) {
+					// Set ParamQuantity
+					float v = inputs[INPUT].getVoltage();
+					if (bipolarInput)
+						v += 5.f;
+					v = rescale(v, 0.f, 10.f, 0.f, 1.f);
 
-				float o = inputs[OFFSET_INPUT].isConnected() ?
-					clamp(rescale(inputs[OFFSET_INPUT].getVoltage(), 0.f, 10.f, 0.f, 1.f), 0.f, 1.f) :
-					params[OFFSET_PARAM].getValue();
+					float o = inputs[OFFSET_INPUT].isConnected() ?
+						clamp(rescale(inputs[OFFSET_INPUT].getVoltage(), 0.f, 10.f, 0.f, 1.f), 0.f, 1.f) :
+						params[OFFSET_PARAM].getValue();
 
-				float s = inputs[SCALE_INPUT].isConnected() ?
-					clamp(rescale(inputs[SCALE_INPUT].getVoltage(), -10.f, 10.f, -2.f, 2.f), -2.f, 2.f) :
-					params[SCALE_PARAM].getValue();
+					float s = inputs[SCALE_INPUT].isConnected() ?
+						clamp(rescale(inputs[SCALE_INPUT].getVoltage(), -10.f, 10.f, -2.f, 2.f), -2.f, 2.f) :
+						params[SCALE_PARAM].getValue();
 
-				v = o + v * s;
-				v = clamp(v, 0.f, 1.f);
+					v = o + v * s;
+					v = clamp(v, 0.f, 1.f);
 
-				// If lastValue is unitialized set it to its current value, only executed once
-				if (lastValue[0] == UINIT)
-					lastValue[0] = v;
+					// If lastValue is unitialized set it to its current value, only executed once
+					if (lastValue[0] == UINIT)
+						lastValue[0] = v;
 
-				if (lockParameterChanges || lastValue[0] != v) {
-					paramQuantity->setScaledValue(v);
-					lastValue[0] = v;
+					if (lockParameterChanges || lastValue[0] != v) {
+						paramQuantity->setScaledValue(v);
+						lastValue[0] = v;
 
-					if (outputs[OUTPUT].isConnected()) {
-						if (invertedOutput)
-							v = 1 - v;
-						if (bipolarInput)
-							v = rescale(v, 0.f, 1.f, -5.f, 5.f);
-						else
-							v = rescale(v, 0.f, 1.f, 0.f, 10.f);
-						outputs[OUTPUT].setVoltage(v);
+						if (outputs[OUTPUT].isConnected()) {
+							if (invertedOutput)
+								v = 1 - v;
+							if (bipolarInput)
+								v = rescale(v, 0.f, 1.f, -5.f, 5.f);
+							else
+								v = rescale(v, 0.f, 1.f, 0.f, 10.f);
+							outputs[OUTPUT].setVoltage(v);
+						}
 					}
 				}
 			}
@@ -111,6 +122,7 @@ struct CVMapMicroModule : CVMapModuleBase<1> {
 		json_t* rootJ = CVMapModuleBase<1>::dataToJson();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 		json_object_set_new(rootJ, "invertedOutput", json_boolean(invertedOutput));
+		json_object_set_new(rootJ, "audioRate", json_boolean(audioRate));
 		return rootJ;
 	}
 
@@ -119,6 +131,8 @@ struct CVMapMicroModule : CVMapModuleBase<1> {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 		json_t* invertedOutputJ = json_object_get(rootJ, "invertedOutput");
 		if (invertedOutputJ) invertedOutput = json_boolean_value(invertedOutputJ);
+		json_t* audioRateJ = json_object_get(rootJ, "audioRate");
+		if (audioRateJ) audioRate = !settings::isPlugin && json_boolean_value(audioRateJ);
 	}
 };
 
@@ -198,6 +212,7 @@ struct CVMapMicroWidget : ThemedModuleWidget<CVMapMicroModule>, ParamWidgetConte
 		menu->addChild(construct<LockItem>(&MenuItem::text, "Parameter changes", &LockItem::module, module));
 		menu->addChild(construct<UniBiItem>(&MenuItem::text, "Voltage range", &UniBiItem::module, module));
 		menu->addChild(construct<SignalOutputItem>(&MenuItem::text, "OUT-port", &SignalOutputItem::module, module));
+		if (!settings::isPlugin) menu->addChild(createBoolPtrMenuItem("Audio rate processing", "", &module->audioRate));
 	}
 
 	void extendParamWidgetContextMenu(ParamWidget* pw, Menu* menu) override {

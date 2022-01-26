@@ -970,6 +970,9 @@ struct MidiCatModule : Module, StripIdFixModule {
 	}
 
 	void setProcessDivision(int d) {
+		if (settings::isPlugin) {
+			d = std::min(64, d);
+		}
 		processDivision = d;
 		processDivider.setDivision(d);
 		processDivider.reset();
@@ -1023,7 +1026,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 		json_t* lockedJ = json_object_get(rootJ, "locked");
 		if (lockedJ) locked = json_boolean_value(lockedJ);
 		json_t* processDivisionJ = json_object_get(rootJ, "processDivision");
-		if (processDivisionJ) processDivision = json_integer_value(processDivisionJ);
+		if (processDivisionJ) setProcessDivision(json_integer_value(processDivisionJ));
 		json_t* overlayEnabledJ = json_object_get(rootJ, "overlayEnabled");
 		if (overlayEnabledJ) overlayEnabled = json_boolean_value(overlayEnabledJ);
 		json_t* clearMapsOnLoadJ = json_object_get(rootJ, "clearMapsOnLoad");
@@ -2050,6 +2053,9 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 		menu->addChild(StoermelderPackOne::Rack::createMapSubmenuItem<int>("Precision", {
 				{ 1, string::f("Audio rate (%i Hz)", sampleRate / 1) },
 				{ 8, string::f("High (%i Hz)", sampleRate / 8) },
+				{ 64, string::f("Moderate (%i Hz)", sampleRate / 64) },
+				{ 256, string::f("Lowest (%i Hz)", sampleRate / 256) }
+			}, {
 				{ 64, string::f("Moderate (%i Hz)", sampleRate / 64) },
 				{ 256, string::f("Lowest (%i Hz)", sampleRate / 256) }
 			},

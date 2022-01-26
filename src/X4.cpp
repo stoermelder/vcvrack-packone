@@ -245,7 +245,7 @@ struct X4Module : CVMapModuleBase<2> {
 	void dataFromJson(json_t* rootJ) override {
 		CVMapModuleBase<2>::dataFromJson(rootJ);
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
-		audioRate = json_boolean_value(json_object_get(rootJ, "audioRate"));
+		audioRate = !settings::isPlugin && json_boolean_value(json_object_get(rootJ, "audioRate"));
 
 		json_t* readParamJ = json_object_get(rootJ, "readParam");
 		if (!readParamJ) return;
@@ -322,8 +322,10 @@ struct X4Widget : ThemedModuleWidget<X4Module> {
 		ThemedModuleWidget<X4Module>::appendContextMenu(menu);
 		X4Module* module = dynamic_cast<X4Module*>(this->module);
 
-		menu->addChild(new MenuSeparator());
-		menu->addChild(createBoolPtrMenuItem("Audio rate processing", "", &module->audioRate));
+		if (!settings::isPlugin) {
+			menu->addChild(new MenuSeparator());
+			menu->addChild(createBoolPtrMenuItem("Audio rate processing", "", &module->audioRate));
+		}
 	}
 };
 

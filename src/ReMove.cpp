@@ -96,6 +96,8 @@ struct ReMoveModule : MapModuleBase<1> {
 
     /** [Stored to JSON] */
     int panelTheme = 0;
+    /** [Stored to JSON] */
+    bool audioRate;
 
     /** [Stored to JSON] recorded data */
     float *seqData;
@@ -166,6 +168,7 @@ struct ReMoveModule : MapModuleBase<1> {
 
     dsp::SlewLimiter slewLimiter;
 
+    dsp::ClockDivider processDivider;
 	dsp::ClockDivider lightDivider;
 
     /** last touched parameter to avoid frequent dynamic casting */
@@ -188,6 +191,7 @@ struct ReMoveModule : MapModuleBase<1> {
         this->mappingIndicatorColor = nvgRGB(0x40, 0xff, 0xff);
         paramHandles[0].text = "ReMove Lite";
 
+        processDivider.setDivision(64);
         lightDivider.setDivision(1024);
         onReset();
     }
@@ -198,6 +202,7 @@ struct ReMoveModule : MapModuleBase<1> {
 
     void onReset() override {
         MapModuleBase::onReset();
+        audioRate = !settings::isPlugin;
         isPlaying = false;
         playDir = REMOVE_PLAYDIR_FWD;
         isRecording = false;
@@ -370,12 +375,14 @@ struct ReMoveModule : MapModuleBase<1> {
             // PHASE-input: if position-input is connected set the position directly, ignore playing
             if (inputs[PHASE_INPUT].isConnected()) {
                 isPlaying = false;
-                ParamQuantity *paramQuantity = getParamQuantity(0);
-                if (paramQuantity != NULL) {
-                    float v = clamp(inputs[PHASE_INPUT].getVoltage(), 0.f, 10.f);
-                    dataPtr = floor(rescale(v, 0.f, 10.f, seqLow, seqLow + seqLength[seq] - 1));
-                    v = seqData[dataPtr];
-                    setValue(v, paramQuantity);
+                if (audioRate || processDivider.process()) {
+                    ParamQuantity *paramQuantity = getParamQuantity(0);
+                    if (paramQuantity != NULL) {
+                        float v = clamp(inputs[PHASE_INPUT].getVoltage(), 0.f, 10.f);
+                        dataPtr = floor(rescale(v, 0.f, 10.f, seqLow, seqLow + seqLength[seq] - 1));
+                        v = seqData[dataPtr];
+                        setValue(v, paramQuantity);
+                    }
                 }
             }
 
@@ -617,6 +624,7 @@ struct ReMoveModule : MapModuleBase<1> {
     json_t *dataToJson() override {
         json_t *rootJ = MapModuleBase::dataToJson();
         json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
+        json_object_set_new(rootJ, "audioRate", json_boolean(audioRate));
 
         json_t *rec0J = json_object();
 
@@ -675,6 +683,8 @@ struct ReMoveModule : MapModuleBase<1> {
     void dataFromJson(json_t *rootJ) override {
         MapModuleBase::dataFromJson(rootJ);
         panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+        json_t* audioRateJ = json_object_get(rootJ, "audioRate");
+        if (audioRateJ) audioRate = !settings::isPlugin && json_boolean_value(audioRateJ);
 
         json_t *recJ = json_object_get(rootJ, "recorder");
         json_t *rec0J = json_array_get(recJ, 0);
@@ -1241,6 +1251,11 @@ struct ReMoveWidget : ThemedModuleWidget<ReMoveModule> {
         ThemedModuleWidget<ReMoveModule>::appendContextMenu(menu);
         ReMoveModule *module = dynamic_cast<ReMoveModule*>(this->module);
         assert(module);
+
+        if (!settings::isPlugin) {
+             menu->addChild(new MenuSeparator());
+            menu->addChild(createBoolPtrMenuItem("Audio rate processing", "", &module->audioRate));
+        }
 
         menu->addChild(new MenuSeparator());
 

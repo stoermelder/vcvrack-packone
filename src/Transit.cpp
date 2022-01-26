@@ -200,7 +200,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		outEocPulseGenerator.reset();
 
 		mappingIndicatorHidden = false;
-		presetProcessDivision = 8;
+		presetProcessDivision = settings::isPlugin ? 64 : 8;
 		presetProcessDivider.setDivision(presetProcessDivision);
 		presetProcessDivider.reset();
 		
@@ -772,6 +772,9 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 	}
 
 	void setProcessDivision(int d) {
+		if (settings::isPlugin) {
+			d = std::min(64, d);
+		}
 		presetProcessDivision = d;
 		presetProcessDivider.setDivision(presetProcessDivision);
 		presetProcessDivider.reset();
@@ -829,7 +832,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 	json_t* dataToJson() override {
 		json_t* rootJ = BASE::dataToJson();
 		json_object_set_new(rootJ, "mappingIndicatorHidden", json_boolean(mappingIndicatorHidden));
-		json_object_set_new(rootJ, "presetProcessDivision", json_integer(presetProcessDivision));
+		json_object_set_new(rootJ, "presetProcessDivision", json_integer(getProcessDivision()));
 
 		json_object_set_new(rootJ, "slotCvMode", json_integer((int)slotCvMode));
 		json_object_set_new(rootJ, "outMode", json_integer((int)outMode));
@@ -851,7 +854,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 	void dataFromJson(json_t* rootJ) override {
 		BASE::panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 		mappingIndicatorHidden = json_boolean_value(json_object_get(rootJ, "mappingIndicatorHidden"));
-		presetProcessDivision = json_integer_value(json_object_get(rootJ, "presetProcessDivision"));
+		setProcessDivision(json_integer_value(json_object_get(rootJ, "presetProcessDivision")));
 
 		slotCvMode = (SLOTCVMODE)json_integer_value(json_object_get(rootJ, "slotCvMode"));
 		outMode = (OUTMODE)json_integer_value(json_object_get(rootJ, "outMode"));
@@ -1030,6 +1033,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 
 	void appendContextMenu(Menu* menu) override {
 		ThemedModuleWidget<MODULE>::appendContextMenu(menu);
+		int sampleRate = int(APP->engine->getSampleRate());
 		MODULE* module = dynamic_cast<MODULE*>(this->module);
 
 		struct MappingIndicatorHiddenItem : MenuItem {
@@ -1043,34 +1047,20 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 			}
 		};
 
-		struct PrecisionMenuItem : MenuItem {
-			struct PrecisionItem : MenuItem {
-				MODULE* module;
-				int division;
-				std::string text;
-				void onAction(const event::Action& e) override {
-					module->setProcessDivision(division);
-				}
-				void step() override {
-					MenuItem::text = string::f("%s (%i Hz)", text.c_str(), module->sampleRate / division);
-					rightText = module->getProcessDivision() == division ? "✔" : "";
-					MenuItem::step();
-				}
-			};
-
-			MODULE* module;
-			PrecisionMenuItem() {
-				rightText = RIGHT_ARROW;
+		auto precisionMenuItem = StoermelderPackOne::Rack::createMapSubmenuItem<int>("Precision", {
+				{ 1, string::f("Audio rate (%i Hz)", sampleRate / 1) },
+				{ 8, string::f("Lower CPU (%i Hz)", sampleRate / 8) },
+				{ 64, string::f("Lowest CPU (%i Hz)", sampleRate / 64) },
+			}, {
+				{ 64, string::f("Lowest CPU (%i Hz)", sampleRate / 64) },
+			},
+			[=]() {
+				return module->getProcessDivision();
+			},
+			[=](int division) {
+				module->setProcessDivision(division);
 			}
-
-			Menu* createChildMenu() override {
-				Menu* menu = new Menu;
-				menu->addChild(construct<PrecisionItem>(&PrecisionItem::text, "Audio rate", &PrecisionItem::module, module, &PrecisionItem::division, 1));
-				menu->addChild(construct<PrecisionItem>(&PrecisionItem::text, "Lower CPU", &PrecisionItem::module, module, &PrecisionItem::division, 8));
-				menu->addChild(construct<PrecisionItem>(&PrecisionItem::text, "Lowest CPU", &PrecisionItem::module, module, &PrecisionItem::division, 64));
-				return menu;
-			}
-		};
+		);
 
 		struct SlotCvModeMenuItem : MenuItem {
 			struct SlotCvModeItem : MenuItem {
@@ -1268,7 +1258,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<MappingIndicatorHiddenItem>(&MenuItem::text, "Hide mapping indicators", &MappingIndicatorHiddenItem::module, module));
-		menu->addChild(construct<PrecisionMenuItem>(&MenuItem::text, "Precision", &PrecisionMenuItem::module, module));
+		menu->addChild(precisionMenuItem);
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<SlotCvModeMenuItem>(&MenuItem::text, "Port CV mode", &SlotCvModeMenuItem::module, module));
 		menu->addChild(construct<OutModeMenuItem>(&MenuItem::text, "Port OUT mode", &OutModeMenuItem::module, module));

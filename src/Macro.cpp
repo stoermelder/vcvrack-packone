@@ -169,6 +169,9 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 	}
 
 	void setProcessDivision(int d) {
+		if (settings::isPlugin) {
+			d = std::min(64, d);
+		}
 		processDivision = d;
 		processDivider.setDivision(d);
 		processDivider.reset();
@@ -383,6 +386,10 @@ struct MacroWidget : ThemedModuleWidget<MacroModule>, ParamWidgetContextExtender
 			{
 				{ 1, string::f("Audio rate (%i Hz)", sampleRate / 1) },
 				{ 8, string::f("High (%i Hz)", sampleRate / 8) },
+				{ 64, string::f("Moderate (%i Hz)", sampleRate / 64) },
+				{ 256, string::f("Lowest (%i Hz)", sampleRate / 256) }
+			},
+			{
 				{ 64, string::f("Moderate (%i Hz)", sampleRate / 64) },
 				{ 256, string::f("Lowest (%i Hz)", sampleRate / 256) }
 			},

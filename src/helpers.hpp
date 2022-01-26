@@ -124,7 +124,7 @@ Example:
 	));
 */
 template <typename TEnum, class TMenuItem = ui::MenuItem>
-ui::MenuItem* createMapSubmenuItem(std::string text, std::map<TEnum, std::string> labels, std::function<TEnum()> getter, std::function<void(TEnum val)> setter, bool showRightText = true, bool disabled = false, bool alwaysConsume = false) {
+ui::MenuItem* createMapSubmenuItem(std::string text, std::map<TEnum, std::string> labels, std::map<TEnum, std::string> labelsPlugin, std::function<TEnum()> getter, std::function<void(TEnum val)> setter, bool showRightText = true, bool disabled = false, bool alwaysConsume = false) {
 	struct IndexItem : ui::MenuItem {
 		std::function<TEnum()> getter;
 		std::function<void(TEnum)> setter;
@@ -182,12 +182,18 @@ ui::MenuItem* createMapSubmenuItem(std::string text, std::map<TEnum, std::string
 	Item* item = createMenuItem<Item>(text);
 	item->getter = getter;
 	item->setter = setter;
-	item->labels = labels;
+	item->labels = settings::isPlugin ? labelsPlugin : labels;
 	item->showRightText = showRightText;
 	item->disabled = disabled;
 	item->alwaysConsume = alwaysConsume;
 	return item;
 }
+
+template <typename TEnum, class TMenuItem = ui::MenuItem>
+ui::MenuItem* createMapSubmenuItem(std::string text, std::map<TEnum, std::string> labels, std::function<TEnum()> getter, std::function<void(TEnum val)> setter, bool showRightText = true, bool disabled = false, bool alwaysConsume = false) {
+	return createMapSubmenuItem(text, labels, labels, getter, setter, showRightText, disabled, alwaysConsume);
+}
+
 
 /** Easy wrapper for createMapPtrSubmenuItem() that controls a mapped label at a pointer address.
 Example:
