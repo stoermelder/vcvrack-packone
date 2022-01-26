@@ -189,9 +189,6 @@ struct StrokeModule : Module {
 	void dataFromJson(json_t* rootJ) override {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 
-		// Hack for preventing duplicating this module
-		// if (APP->engine->getModule(id) != NULL) return;
-
 		json_t* keysJ = json_object_get(rootJ, "keys");
 		for (int i = 0; i < PORTS; i++) {
 			json_t* keyJ = json_array_get(keysJ, i);

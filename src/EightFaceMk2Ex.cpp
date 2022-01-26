@@ -86,13 +86,6 @@ struct EightFaceMk2ExModule : EightFaceMk2Base<NUM_PRESETS> {
 		if (!tm) return -1;
 		return tm->faceSlotCmd(cmd, i + BASE::ctrlOffset * NUM_PRESETS);
 	}
-
-	void dataFromJson(json_t* rootJ) override {
-		// Hack for preventing duplicating this module
-		if (APP->engine->getModule(Module::id) != NULL && !BASE::idFixHasMap()) return;
-
-		BASE::dataFromJson(rootJ);
-	}
 };
 
 template <int NUM_PRESETS>
@@ -104,6 +97,7 @@ struct EightFaceMk2ExWidget : ThemedModuleWidget<EightFaceMk2ExModule<NUM_PRESET
 	EightFaceMk2ExWidget(MODULE* module)
 		: ThemedModuleWidget<MODULE>(module, "EightFaceMk2Ex") {
 		BASE::setModule(module);
+		BASE::disableDuplicateAction = true;
 
 		BASE::addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		BASE::addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));

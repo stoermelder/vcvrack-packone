@@ -865,9 +865,6 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 			preset = -1;
 		}
 
-		// Hack for preventing duplicating this module
-		//if (APP->engine->getModule(BASE::id) != NULL && !BASE::idFixHasMap()) return;
-
 		inChange = true;
 		std::list<std::function<void()>> handleList;
 
@@ -917,6 +914,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 	TransitWidget(MODULE* module)
 		: ThemedModuleWidget<MODULE>(module, "Transit") {
 		BASE::setModule(module);
+		BASE::disableDuplicateAction = true;
 
 		BASE::addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		BASE::addChild(createWidget<StoermelderBlackScrew>(Vec(BASE::box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));

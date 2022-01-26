@@ -10,6 +10,8 @@ struct ThemedModuleWidget : BASE {
 	std::string manualName;
 	int panelTheme = -1;
 
+	bool disableDuplicateAction = false;
+
 	struct HalfPanel : SvgPanel {
 		ThemedModuleWidget<MODULE, BASE>* w;
 		void draw(const DrawArgs& args) override {
@@ -40,6 +42,16 @@ struct ThemedModuleWidget : BASE {
 	}
 
 	void appendContextMenu(Menu* menu) override {
+		if (disableDuplicateAction) {
+			MenuItem* item = NULL;
+			for (auto rit = menu->children.begin(); rit != menu->children.end(); rit++) {
+				item = dynamic_cast<MenuItem*>(*rit);
+				if (item && (item->text == "Duplicate" || item->text == "└ with cables")) {
+					item->visible = false;
+				}
+			}
+		}
+
 		struct PanelMenuItem : MenuItem {
 			MODULE* module;
 
@@ -105,6 +117,25 @@ struct ThemedModuleWidget : BASE {
 			case 2:
 				return "res/bright/" + baseName + ".svg";
 		}
+	}
+
+	void onHoverKey(const Widget::HoverKeyEvent& e) override {
+		if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
+			if (e.keyName == "c" && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL) {
+				e.consume(NULL);
+				return;
+			}
+			if (disableDuplicateAction && e.keyName == "d" && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL) {
+				e.consume(NULL);
+				return;
+			}
+			if (disableDuplicateAction && e.keyName == "d" && (e.mods & RACK_MOD_MASK) == (RACK_MOD_CTRL | GLFW_MOD_SHIFT)) {
+				e.consume(NULL);
+				return;
+			}
+		}
+
+		ModuleWidget::onHoverKey(e);
 	}
 };
 

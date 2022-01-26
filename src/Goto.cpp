@@ -140,9 +140,6 @@ struct GotoModule : Module {
 		centerModule = json_boolean_value(json_object_get(rootJ, "centerModule"));
 		ignoreZoom = json_boolean_value(json_object_get(rootJ, "ignoreZoom"));
 
-		// Hack for preventing duplicating this module
-		if (APP->engine->getModule(id) != NULL) return;
-
 		json_t* jumpPointsJ = json_object_get(rootJ, "jumpPoints");
 		for (int i = 0; i < 10; i++) {
 			json_t* jumpPointJ = json_array_get(jumpPointsJ, i);
@@ -313,6 +310,7 @@ struct GotoWidget : ThemedModuleWidget<GotoModule<10>> {
 		: ThemedModuleWidget<GotoModule<10>>(module, "Goto") {
 		setModule(module);
 		this->module = module;
+		this->disableDuplicateAction = true;
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));

@@ -679,9 +679,6 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 			preset = -1;
 		}
 
-		// Hack for preventing duplicating this module
-		if (APP->engine->getModule(BASE::id) != NULL && !BASE::idFixHasMap()) return;
-
 		inChange = true;
 		for (BoundModule* b : boundModules) {
 			delete b;
@@ -797,6 +794,7 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 		: ThemedModuleWidget<MODULE>(module, "EightFaceMk2") {
 		BASE::setModule(module);
 		this->module = module;
+		this->disableDuplicateAction = true;
 
 		if (module) {
 			boxDrawer = new ModuleOuterBoundsDrawerWidget<MODULE>;

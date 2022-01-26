@@ -303,9 +303,6 @@ struct MirrorModule : Module, StripIdFixModule {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		// Hack for preventing duplicating this module
-		//if (APP->engine->getModule(id) != NULL && !idFixHasMap()) return;
-
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 		audioRate = !settings::isPlugin && json_boolean_value(json_object_get(rootJ, "audioRate"));
 		mappingIndicatorHidden = json_boolean_value(json_object_get(rootJ, "mappingIndicatorHidden"));
@@ -416,6 +413,7 @@ struct MirrorWidget : ThemedModuleWidget<MirrorModule> {
 	MirrorWidget(MirrorModule* module)
 		: ThemedModuleWidget<MirrorModule>(module, "Mirror") {
 		setModule(module);
+		disableDuplicateAction = true;
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));

@@ -122,10 +122,7 @@ struct GlueModule : Module, StripIdFixModule {
 	}
 
 	~GlueModule() {
-		for (Label* l : labels) {
-			delete l;
-		}
-		labels.clear();
+		clearLabels();
 	}
 
 	void onReset() override {
@@ -163,6 +160,14 @@ struct GlueModule : Module, StripIdFixModule {
 		// Make sure the widget is deleted before!
 		labels.remove(l);
 		delete l;
+	}
+
+	void clearLabels() {
+		for (Label* l : labels) {
+			delete l;
+		}
+		labels.clear();
+		resetRequested = true;
 	}
 
 	json_t* dataToJson() override {
@@ -217,9 +222,6 @@ struct GlueModule : Module, StripIdFixModule {
 		if (defaultFontColorJ) defaultFontColor = color::fromHexString(json_string_value(defaultFontColorJ));
 		skewLabels = json_boolean_value(json_object_get(rootJ, "skewLabels"));
 
-		// Hack for preventing duplicating this module
-		if (APP->engine->getModule(id) != NULL && !idFixHasMap()) return;
-
 		json_t* labelsJ = json_object_get(rootJ, "labels");
 		labelFromJson(labelsJ);
 
@@ -228,12 +230,7 @@ struct GlueModule : Module, StripIdFixModule {
 	}
 
 	void labelFromJson(json_t* labelsJ) {
-		for (Label* l : labels) {
-			delete l;
-		}
-		labels.clear();
-		resetRequested = true;
-
+		clearLabels();
 		if (labelsJ) {
 			size_t labelIdx;
 			json_t* labelJ;
@@ -1030,6 +1027,7 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 	GlueWidget(GlueModule* module)
 		: ThemedModuleWidget<GlueModule>(module, "Glue") {
 		setModule(module);
+		disableDuplicateAction = true;
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
