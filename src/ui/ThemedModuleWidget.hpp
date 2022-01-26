@@ -121,7 +121,7 @@ struct ThemedModuleWidget : BASE {
 
 	void onHoverKey(const Widget::HoverKeyEvent& e) override {
 		if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
-			if (e.keyName == "c" && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL) {
+			if (disableDuplicateAction && e.keyName == "c" && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL) {
 				e.consume(NULL);
 				return;
 			}
