@@ -200,7 +200,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		outEocPulseGenerator.reset();
 
 		mappingIndicatorHidden = false;
-		presetProcessDivision = settings::isPlugin ? 64 : 8;
+		presetProcessDivision = settings::isPlugin ? 256 : 8;
 		presetProcessDivider.setDivision(presetProcessDivision);
 		presetProcessDivider.reset();
 		
@@ -1049,8 +1049,12 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 				{ 1, string::f("Audio rate (%i Hz)", sampleRate / 1) },
 				{ 8, string::f("Lower CPU (%i Hz)", sampleRate / 8) },
 				{ 64, string::f("Lowest CPU (%i Hz)", sampleRate / 64) },
+				{ 256, string::f("Even lower CPU (%i Hz)", sampleRate / 256) },
+				{ 1024, string::f("Crazy low CPU (%i Hz)", sampleRate / 1024) }
 			}, {
 				{ 64, string::f("Lowest CPU (%i Hz)", sampleRate / 64) },
+				{ 256, string::f("Even lower CPU (%i Hz)", sampleRate / 256) },
+				{ 1024, string::f("Crazy low CPU (%i Hz)", sampleRate / 1024) }
 			},
 			[=]() {
 				return module->getProcessDivision();
