@@ -8,9 +8,9 @@ This build is automatically generated every time I push my changes. As such it i
 The latest stable build can be found at the [VCV Library](https://vcvrack.com/plugins.html#packone).
 
 These assets were built against
-https://vcvrack.com/downloads/Rack-SDK-2.0.0-win.zip
-https://vcvrack.com/downloads/Rack-SDK-2.0.0-mac.zip
-https://vcvrack.com/downloads/Rack-SDK-2.0.0-lin.zip
+https://vcvrack.com/downloads/Rack-SDK-2.0.6-win.zip
+https://vcvrack.com/downloads/Rack-SDK-2.0.6-mac.zip
+https://vcvrack.com/downloads/Rack-SDK-2.0.6-lin.zip
 
 The build date and most recent commits are:
 EOH
