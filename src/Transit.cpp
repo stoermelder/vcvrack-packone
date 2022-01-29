@@ -773,7 +773,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 
 	void setProcessDivision(int d) {
 		if (settings::isPlugin) {
-			d = std::min(64, d);
+			d = std::max(64, d);
 		}
 		presetProcessDivision = d;
 		presetProcessDivider.setDivision(presetProcessDivision);
