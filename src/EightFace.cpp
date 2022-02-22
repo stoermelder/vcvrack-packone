@@ -392,14 +392,16 @@ struct EightFaceModule : Module {
 				presetNext = -1;
 				if (!presetSlotUsed[p]) return;
 				ModuleWidget* mw = APP->scene->rack->getModule(m->id);
-				workerPreset = p;
-				if (workerGui) {
-					workerGuiModuleWidget = mw;
-				}
-				else {
-					workerModuleWidget = mw;
-					workerDoProcess = true;
-					workerCondVar.notify_one();
+				if (mw) {
+					workerPreset = p;
+					if (workerGui) {
+						workerGuiModuleWidget = mw;
+					}
+					else {
+						workerModuleWidget = mw;
+						workerDoProcess = true;
+						workerCondVar.notify_one();
+					}
 				}
 			}
 		}
@@ -514,6 +516,8 @@ struct EightFaceModule : Module {
 		if (preset >= presetCount)
 			preset = 0;
 
+		// TODO: This needs to be reviewed as presetLoad might fail on patch-load if this module
+		// is loaded before the expanded module
 		switch (autoload) {
 			case AUTOLOAD::FIRST: {
 				Expander* exp = side == SIDE::LEFT ? &leftExpander : &rightExpander;
