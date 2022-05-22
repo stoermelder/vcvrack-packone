@@ -164,10 +164,14 @@ struct MirrorModule : Module, StripIdFixModule {
 					float v = clamp(inputs[INPUT_CV + i].getVoltage(), 0.f, 10.f);
 					ParamHandle* sourceHandle = sourceHandles[cvParamId[i]];
 					ParamQuantity* sourceParamQuantity = getParamQuantity(sourceHandle);
-					if (sourceParamQuantity)
-						sourceParamQuantity->setScaledValue(v / 10.f);
-					else 
+					if (sourceParamQuantity) {
+						//sourceParamQuantity->setScaledValue(v / 10.f);
+						float vScaled = math::rescale(v / 10.f, 0.f, 1.f, sourceParamQuantity->getMinValue(), sourceParamQuantity->getMaxValue());
+						sourceParamQuantity->getParam()->setValue(vScaled);
+					}
+					else {
 						cvParamId[i] = -1;
+					}
 				}
 			}
 
@@ -181,9 +185,10 @@ struct MirrorModule : Module, StripIdFixModule {
 				while (i < (int)targetHandles.size()) {
 					ParamHandle* targetHandle = targetHandles[i];
 					ParamQuantity* targetParamQuantity = getParamQuantity(targetHandle);
-					if (targetParamQuantity)
-						targetParamQuantity->setValue(v);
-
+					if (targetParamQuantity) {
+						//targetParamQuantity->setValue(v);
+						targetParamQuantity->getParam()->setValue(v);
+					}
 					i += sourceHandles.size();
 				}
 			}
@@ -439,7 +444,7 @@ struct MirrorWidget : ThemedModuleWidget<MirrorModule> {
 		}
 
 		menu->addChild(new MenuSeparator());
-		if (!settings::isPlugin) menu->addChild(createBoolPtrMenuItem("Audio rate processing", "", &module->audioRate));
+		menu->addChild(createBoolPtrMenuItem("Audio rate processing", "", &module->audioRate));
 		menu->addChild(createBoolPtrMenuItem("Hide mapping indicators", "", &module->mappingIndicatorHidden));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuItem("Bind source module (left)", "", [=]() { module->bindToSource(); }));

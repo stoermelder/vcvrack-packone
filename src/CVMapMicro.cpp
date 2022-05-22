@@ -89,7 +89,9 @@ struct CVMapMicroModule : CVMapModuleBase<1> {
 						lastValue[0] = v;
 
 					if (lockParameterChanges || lastValue[0] != v) {
-						paramQuantity->setScaledValue(v);
+						//paramQuantity->setScaledValue(v);
+						float vScaled = math::rescale(v, 0.f, 1.f, paramQuantity->getMinValue(), paramQuantity->getMaxValue());
+						paramQuantity->getParam()->setValue(vScaled);
 						lastValue[0] = v;
 
 						if (outputs[OUTPUT].isConnected()) {
@@ -212,7 +214,7 @@ struct CVMapMicroWidget : ThemedModuleWidget<CVMapMicroModule>, ParamWidgetConte
 		menu->addChild(construct<LockItem>(&MenuItem::text, "Parameter changes", &LockItem::module, module));
 		menu->addChild(construct<UniBiItem>(&MenuItem::text, "Voltage range", &UniBiItem::module, module));
 		menu->addChild(construct<SignalOutputItem>(&MenuItem::text, "OUT-port", &SignalOutputItem::module, module));
-		if (!settings::isPlugin) menu->addChild(createBoolPtrMenuItem("Audio rate processing", "", &module->audioRate));
+		menu->addChild(createBoolPtrMenuItem("Audio rate processing", "", &module->audioRate));
 	}
 
 	void extendParamWidgetContextMenu(ParamWidget* pw, Menu* menu) override {

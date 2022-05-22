@@ -110,7 +110,9 @@ struct ScaledMapParam {
 		}
 		float f = filterSlew > 0.f && sampleTime > 0.f ? filter.process(sampleTime, value) : value;
 		if (valueOut != f || force) {
-			paramQuantity->setScaledValue(f);
+			//paramQuantity->setScaledValue(f);
+			float vScaled = math::rescale(f, 0.f, 1.f, paramQuantity->getMinValue(), paramQuantity->getMaxValue());
+			paramQuantity->getParam()->setValue(vScaled);
 			valueOut = f;
 		}
 	}

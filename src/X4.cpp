@@ -122,7 +122,9 @@ struct X4Module : CVMapModuleBase<2> {
 					}
 					if (!isNear(v1, lastA[0]) && v1 != -1.f) {
 						lightAtx[0]++;
-						pqA->setScaledValue(v1);
+						//pqA->setScaledValue(v1);
+						float vScaled = math::rescale(v1, 0.f, 1.f, pqA->getMinValue(), pqA->getMaxValue());
+						pqA->getParam()->setValue(vScaled);
 						params[PARAM_MAP_A + 1].setValue(v1);
 						lightAtx[1] += lastA[1] != v1;
 						lastA[1] = v1;
@@ -179,7 +181,9 @@ struct X4Module : CVMapModuleBase<2> {
 					}
 					if (v1 != lastB[0] && v1 != -1.f) {
 						lightBtx[0]++;
-						pqB->setScaledValue(v1);
+						//pqB->setScaledValue(v1);
+						float vScaled = math::rescale(v1, 0.f, 1.f, pqB->getMinValue(), pqB->getMaxValue());
+						pqB->getParam()->setValue(vScaled);
 						params[PARAM_MAP_B + 1].setValue(v1);
 						lightBtx[1] += lastB[1] != v1;
 						lastB[1] = v1;
@@ -322,10 +326,8 @@ struct X4Widget : ThemedModuleWidget<X4Module> {
 		ThemedModuleWidget<X4Module>::appendContextMenu(menu);
 		X4Module* module = dynamic_cast<X4Module*>(this->module);
 
-		if (!settings::isPlugin) {
-			menu->addChild(new MenuSeparator());
-			menu->addChild(createBoolPtrMenuItem("Audio rate processing", "", &module->audioRate));
-		}
+		menu->addChild(new MenuSeparator());
+		menu->addChild(createBoolPtrMenuItem("Audio rate processing", "", &module->audioRate));
 	}
 };
 

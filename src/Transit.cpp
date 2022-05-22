@@ -618,7 +618,8 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 				float newValue = presetNew[i];
 				float v = crossfade(oldValue, newValue, s);
 				if (s > (1.f - 5e-3f) && std::abs(std::round(v) - v) < 5e-3f) v = std::round(v);
-				pq->setValue(v);
+				//pq->setValue(v);
+				pq->getParam()->setValue(v);
 			}
 		}
 	}
@@ -666,7 +667,8 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 					float v1 = (*slot1->preset)[i];
 					float v2 = (*slot2->preset)[i];
 					float v = crossfade(v1, v2, p);
-					pq->setValue(v);
+					//pq->setValue(v);
+					pq->getParam()->setValue(v);
 				}
 			}
 			else {
@@ -674,7 +676,8 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 					ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
 					if (!pq) continue;
 					float v = (*slot1->preset)[i];
-					pq->setValue(v);
+					//pq->setValue(v);
+					pq->getParam()->setValue(v);
 				}
 			}
 
@@ -772,9 +775,11 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 	}
 
 	void setProcessDivision(int d) {
+		/*
 		if (settings::isPlugin) {
 			d = std::max(64, d);
 		}
+		*/
 		presetProcessDivision = d;
 		presetProcessDivider.setDivision(presetProcessDivision);
 		presetProcessDivider.reset();
@@ -1048,10 +1053,6 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 		auto precisionMenuItem = StoermelderPackOne::Rack::createMapSubmenuItem<int>("Precision", {
 				{ 1, string::f("Audio rate (%i Hz)", sampleRate / 1) },
 				{ 8, string::f("Lower CPU (%i Hz)", sampleRate / 8) },
-				{ 64, string::f("Lowest CPU (%i Hz)", sampleRate / 64) },
-				{ 256, string::f("Even lower CPU (%i Hz)", sampleRate / 256) },
-				{ 1024, string::f("Crazy low CPU (%i Hz)", sampleRate / 1024) }
-			}, {
 				{ 64, string::f("Lowest CPU (%i Hz)", sampleRate / 64) },
 				{ 256, string::f("Even lower CPU (%i Hz)", sampleRate / 256) },
 				{ 1024, string::f("Crazy low CPU (%i Hz)", sampleRate / 1024) }

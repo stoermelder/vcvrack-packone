@@ -58,7 +58,9 @@ struct GripModule : CVMapModuleBase<MAX_CHANNELS> {
 				if (paramQuantity == NULL) continue;
 
 				// Set ParamQuantity
-				paramQuantity->setScaledValue(lastValue[i]);
+				//paramQuantity->setScaledValue(lastValue[i]);
+				float vScaled = math::rescale(lastValue[i], 0.f, 1.f, paramQuantity->getMinValue(), paramQuantity->getMaxValue());
+				paramQuantity->getParam()->setValue(vScaled);
 			}
 		}
 
@@ -209,10 +211,8 @@ struct GripWidget : ThemedModuleWidget<GripModule> {
 			}
 		};
 
-		if (!settings::isPlugin) {
-			menu->addChild(new MenuSeparator());
-			menu->addChild(construct<AudioRateItem>(&MenuItem::text, "Audio rate processing", &AudioRateItem::module, module));
-		}
+		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<AudioRateItem>(&MenuItem::text, "Audio rate processing", &AudioRateItem::module, module));
 
 		if (module->mapLen > 0) {
 			menu->addChild(new MenuSeparator());

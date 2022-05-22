@@ -388,7 +388,7 @@ struct ReMoveModule : MapModuleBase<1> {
 
             if (isPlaying) {
                 if (sampleTimer.process(args.sampleTime) > sampleRate) {
-                    ParamQuantity *paramQuantity = getParamQuantity(0);
+                    ParamQuantity* paramQuantity = getParamQuantity(0);
                     if (paramQuantity == NULL)
                         isPlaying = false;
 
@@ -477,7 +477,7 @@ struct ReMoveModule : MapModuleBase<1> {
         return v;
     }
 
-    inline void setValue(float v, ParamQuantity *paramQuantity = NULL) {
+    inline void setValue(float v, ParamQuantity* paramQuantity = NULL) {
         //v = valueFilters[0].process(sampleTime, v);
         if (params[SLEW_PARAM].getValue() > 0.f) {
             float s = 100.f * (1.f - params[SLEW_PARAM].getValue());
@@ -486,7 +486,9 @@ struct ReMoveModule : MapModuleBase<1> {
         }
 
         if (paramQuantity) {
-            paramQuantity->setScaledValue(v);
+            //paramQuantity->setScaledValue(v);
+            float vScaled = math::rescale(v, 0.f, 1.f, paramQuantity->getMinValue(), paramQuantity->getMaxValue());
+            paramQuantity->getParam()->setValue(vScaled);
         }
         switch (outCvMode) {
             case OUTCVMODE_CV_UNI:
@@ -1252,10 +1254,8 @@ struct ReMoveWidget : ThemedModuleWidget<ReMoveModule> {
         ReMoveModule *module = dynamic_cast<ReMoveModule*>(this->module);
         assert(module);
 
-        if (!settings::isPlugin) {
-             menu->addChild(new MenuSeparator());
-            menu->addChild(createBoolPtrMenuItem("Audio rate processing", "", &module->audioRate));
-        }
+        menu->addChild(new MenuSeparator());
+        menu->addChild(createBoolPtrMenuItem("Audio rate processing", "", &module->audioRate));
 
         menu->addChild(new MenuSeparator());
 
