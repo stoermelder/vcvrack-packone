@@ -166,8 +166,7 @@ struct GotoContainer : widget::Widget {
 		divider.setDivision(APP->window->getMonitorRefreshRate());
 	}
 
-	void step() override {
-		Widget::step();
+	void draw(const DrawArgs& args) override {
 		if (!module) return;
 
 		if (module->resetRequested) {
