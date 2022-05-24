@@ -155,7 +155,8 @@ struct MidiMonModule : Module {
 					switch (msg.getChannel()) {
 						case 0x0: // sysex
 							if (showSysExMsg) {
-								// TOOO, not yet supported in Rack v1
+								std::string s = string::f("sysex message=%i bytes", msg.getSize());
+								midiLogMessages.push(std::make_tuple(timestamp, s));
 							} break;
 						case 0x2: // song pointer
 							if (showSystemMsg) {

@@ -200,7 +200,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		outEocPulseGenerator.reset();
 
 		mappingIndicatorHidden = false;
-		presetProcessDivision = settings::isPlugin ? 256 : 8;
+		presetProcessDivision = settings::isPlugin ? 256 : 64;
 		presetProcessDivider.setDivision(presetProcessDivision);
 		presetProcessDivider.reset();
 		
@@ -775,11 +775,6 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 	}
 
 	void setProcessDivision(int d) {
-		/*
-		if (settings::isPlugin) {
-			d = std::max(64, d);
-		}
-		*/
 		presetProcessDivision = d;
 		presetProcessDivider.setDivision(presetProcessDivision);
 		presetProcessDivider.reset();

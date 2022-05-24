@@ -686,7 +686,7 @@ struct ReMoveModule : MapModuleBase<1> {
         MapModuleBase::dataFromJson(rootJ);
         panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
         json_t* audioRateJ = json_object_get(rootJ, "audioRate");
-        if (audioRateJ) audioRate = !settings::isPlugin && json_boolean_value(audioRateJ);
+        if (audioRateJ) audioRate = json_boolean_value(audioRateJ);
 
         json_t *recJ = json_object_get(rootJ, "recorder");
         json_t *rec0J = json_array_get(recJ, 0);

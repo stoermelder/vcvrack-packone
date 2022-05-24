@@ -970,9 +970,6 @@ struct MidiCatModule : Module, StripIdFixModule {
 	}
 
 	void setProcessDivision(int d) {
-		if (settings::isPlugin) {
-			d = std::max(64, d);
-		}
 		processDivision = d;
 		processDivider.setDivision(d);
 		processDivider.reset();

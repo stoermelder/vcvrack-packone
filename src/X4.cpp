@@ -249,7 +249,7 @@ struct X4Module : CVMapModuleBase<2> {
 	void dataFromJson(json_t* rootJ) override {
 		CVMapModuleBase<2>::dataFromJson(rootJ);
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
-		audioRate = !settings::isPlugin && json_boolean_value(json_object_get(rootJ, "audioRate"));
+		audioRate = json_boolean_value(json_object_get(rootJ, "audioRate"));
 
 		json_t* readParamJ = json_object_get(rootJ, "readParam");
 		if (!readParamJ) return;
@@ -320,7 +320,6 @@ struct X4Widget : ThemedModuleWidget<X4Module> {
 			addChild(createLightCentered<TinyLight<BlueLight>>(Vec(24.0f, 231.7f + o * i), module, X4Module::LIGHT_TX_B + i + 1));
 		}
 	}
-
 
 	void appendContextMenu(Menu* menu) override {
 		ThemedModuleWidget<X4Module>::appendContextMenu(menu);

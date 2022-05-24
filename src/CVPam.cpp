@@ -122,7 +122,7 @@ struct CVPamModule : MapModuleBase<MAX_CHANNELS> {
 		json_t* bipolarOutputJ = json_object_get(rootJ, "bipolarOutput");
 		bipolarOutput = json_boolean_value(bipolarOutputJ);
 		json_t* audioRateJ = json_object_get(rootJ, "audioRate");
-		if (audioRateJ) audioRate = !settings::isPlugin && json_boolean_value(audioRateJ);
+		if (audioRateJ) audioRate = json_boolean_value(audioRateJ);
 		json_t* lockedJ = json_object_get(rootJ, "locked");
 		if (lockedJ) locked = json_boolean_value(lockedJ);
 	}
@@ -165,7 +165,7 @@ struct CVPamWidget : ThemedModuleWidget<CVPamModule> {
 
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createIndexPtrSubmenuItem("Signal output", {"0V..10V", "-5V..5V"}, &module->bipolarOutput));
-		if (!settings::isPlugin) menu->addChild(createBoolPtrMenuItem("Audio rate processing", "", &module->audioRate));
+		menu->addChild(createBoolPtrMenuItem("Audio rate processing", "", &module->audioRate));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createBoolPtrMenuItem("Text scrolling", "", &module->textScrolling));
 		menu->addChild(createBoolPtrMenuItem("Hide mapping indicators", "", &module->mappingIndicatorHidden));

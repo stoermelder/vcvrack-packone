@@ -309,7 +309,7 @@ struct MirrorModule : Module, StripIdFixModule {
 
 	void dataFromJson(json_t* rootJ) override {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
-		audioRate = !settings::isPlugin && json_boolean_value(json_object_get(rootJ, "audioRate"));
+		audioRate = json_boolean_value(json_object_get(rootJ, "audioRate"));
 		mappingIndicatorHidden = json_boolean_value(json_object_get(rootJ, "mappingIndicatorHidden"));
 
 		json_t* sourcePluginSlugJ = json_object_get(rootJ, "sourcePluginSlug");
