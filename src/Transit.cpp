@@ -91,6 +91,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 	/** [Stored to JSON] */
 	OUTMODE outMode;
 	bool outEocArm;
+	bool processing = false;
 	dsp::PulseGenerator outSlotPulseGenerator;
 	dsp::PulseGenerator outSocPulseGenerator;
 	dsp::PulseGenerator outEocPulseGenerator;
@@ -540,6 +541,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 				slewLimiter.reset();
 				outSocPulseGenerator.trigger();
 				outEocArm = true;
+				processing = true;
 				presetOld.clear();
 				presetNew.clear();
 				for (size_t i = 0; i < sourceHandles.size(); i++) {
@@ -558,7 +560,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 	}
 
 	void presetProcess(float sampleTime) {
-		if (presetProcessDivider.process()) {
+		if (processing && presetProcessDivider.process()) {
 			if (preset == -1) return;
 			float deltaTime = sampleTime * presetProcessDivision;
 
@@ -606,9 +608,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 					break;
 			}
 
-			if (s == 10.f) return;
-			s /= 10.f;
-
+			float s10 = s / 10.f;
 			for (size_t i = 0; i < sourceHandles.size(); i++) {
 				ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
 				if (!pq) continue;
@@ -616,10 +616,14 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 				float oldValue = presetOld[i];
 				if (presetNew.size() <= i) return;
 				float newValue = presetNew[i];
-				float v = crossfade(oldValue, newValue, s);
-				if (s > (1.f - 5e-3f) && std::abs(std::round(v) - v) < 5e-3f) v = std::round(v);
+				float v = crossfade(oldValue, newValue, s10);
+				if (s10 > (1.f - 5e-3f) && std::abs(std::round(v) - v) < 5e-3f) v = std::round(v);
 				//pq->setValue(v);
 				pq->getParam()->setValue(v);
+			}
+
+			if (s == 10.f) {
+				processing = false;
 			}
 		}
 	}
