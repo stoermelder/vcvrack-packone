@@ -25,6 +25,8 @@
 
 - Module [ARENA](./docs/Arena.md)
     - Fixed broken behavior of "Radius" sliders of "In"-ports
+- Module [TRANSIT](./docs/Transit.md)
+    - Added retrigger-function for CV-input channel 2 in C4 mode (#330)
 
 ## 1.10.0
 

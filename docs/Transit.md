@@ -95,7 +95,7 @@ Modes for _SEL_ on the contextual menu:
 - **0..10V**  
   You can select a specific snapshot by voltage. A voltage 0-0.833V selects slot 1, 0.833-0.166V selects slot 2, and so on, if all 12 snapshot-slots are active. Keep in mind that adjusting the length of the sequence also adjusts the voltage range for selecting individual slots: A sequence with length 2 will select slot 1 on voltage 0-5V etc.
 - **C4**  
-  This mode follows the V/Oct-standard. C4 selects snapshot 1, C#4 selects snapshot 2 and so on.
+  This mode follows the V/Oct-standard. C4 selects snapshot 1, C#4 selects snapshot 2 and so on. Channel 2 on the CV-input acts on triggers to re-trigger the currently selected snapshot.
 - **Arm**  
   This mode is a kind of "buffered trigger": First apply a clock signal on _SEL_. Then you "arm" any snapshot manually or by MIDI-mapping by its button (resulting in a yellow LED) which will be activated on the next clock trigger (white LED). This mode allows you manual snapshot activation synchronized to a clock.
 
