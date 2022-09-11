@@ -115,6 +115,7 @@ struct EightFaceModule : Module {
 
 	LongPressButton typeButtons[NUM_PRESETS];
 	dsp::SchmittTrigger slotTrigger;
+	dsp::SchmittTrigger slotC4Trigger;
 	dsp::SchmittTrigger resetTrigger;
 	dsp::Timer resetTimer;
 
@@ -205,6 +206,9 @@ struct EightFaceModule : Module {
 								break;
 							case SLOTCVMODE::C4:
 								presetLoad(t, std::round(clamp(inputs[SLOT_INPUT].getVoltage() * 12.f, 0.f, NUM_PRESETS - 1.f)));
+								if (inputs[SLOT_INPUT].getChannels() == 2 && slotC4Trigger.process(inputs[SLOT_INPUT].getVoltage(1))) {
+									presetLoad(t, std::round(clamp(inputs[SLOT_INPUT].getVoltage() * 12.f, 0.f, NUM_PRESETS - 1.f)), false, true);
+								}
 								break;
 							case SLOTCVMODE::TRIG_FWD:
 								if (slotTrigger.process(inputs[SLOT_INPUT].getVoltage()))

@@ -89,6 +89,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 	bool inChange = false;
 
 	dsp::SchmittTrigger slotTrigger;
+	dsp::SchmittTrigger slotC4Trigger;
 	dsp::SchmittTrigger resetTrigger;
 	dsp::Timer resetTimer;
 
@@ -263,6 +264,9 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 						break;
 					case SLOTCVMODE::C4:
 						presetLoad(std::round(clamp(Module::inputs[INPUT_CV].getVoltage() * 12.f, 0.f, presetTotal - 1.f)));
+						if (Module::inputs[INPUT_CV].getChannels() == 2 && slotC4Trigger.process(Module::inputs[INPUT_CV].getVoltage(1))) {
+							presetLoad(std::round(clamp(Module::inputs[INPUT_CV].getVoltage() * 12.f, 0.f, presetTotal - 1.f)), false, true);
+						}
 						break;
 					case SLOTCVMODE::TRIG_FWD:
 						if (slotTrigger.process(Module::inputs[INPUT_CV].getVoltage())) {

@@ -23,6 +23,10 @@
 
 ## 2.0.0 (in development)
 
+- Modules [8FACE, 8FACEx2](./docs/EightFace.md)
+    - Added retrigger-function for CV-input channel 2 in C4 mode (#330)
+- Module [8FACE mk2](./docs/EightFaceMk2.md)
+    - Added retrigger-function for CV-input channel 2 in C4 mode (#330)
 - Module [ARENA](./docs/Arena.md)
     - Fixed broken behavior of "Radius" sliders of "In"-ports
 - Module [TRANSIT](./docs/Transit.md)
