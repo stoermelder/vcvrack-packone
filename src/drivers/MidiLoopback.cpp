@@ -8,13 +8,25 @@ const int LOOPBACK_DRIVER_ID = 80627554;
 
 
 struct LoopbackDevice : rack::midi::OutputDevice, rack::midi::InputDevice {
+	int deviceId;
+
 	void sendMessage(const midi::Message& message) override {
 		onMessage(message);
-	};
+	}
+
+	std::string getName() override {
+		return string::f("Port %i", deviceId + 1);
+	}
 };
 
 struct LoopbackDriver : midi::Driver {
 	LoopbackDevice devices[LOOPBACK_DEVICE_NUM];
+
+	LoopbackDriver() {
+		for (int i = 0; i < LOOPBACK_DEVICE_NUM; i++) {
+			devices[i].deviceId = i;
+		}
+	}
 
 	std::string getName() override {
 		return "Loopback";
