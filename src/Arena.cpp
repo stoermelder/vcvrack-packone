@@ -801,7 +801,7 @@ struct ArenaModule : Module {
 		size_t inputIndex;
 		json_array_foreach(inportsJ, inputIndex, inportJ) {
 			amount[inputIndex] = json_real_value(json_object_get(inportJ, "amount"));
-			radius[inputIndex] = json_real_value(json_object_get(inportJ, "radius"));
+			radiusUi[inputIndex] = radius[inputIndex] = json_real_value(json_object_get(inportJ, "radius"));
 			modMode[inputIndex] = (MODMODE)json_integer_value(json_object_get(inportJ, "modMode"));
 			modBipolar[inputIndex] = json_boolean_value(json_object_get(inportJ, "modBipolar"));
 			inputXBipolar[inputIndex] = json_boolean_value(json_object_get(inportJ, "inputXBipolar"));
