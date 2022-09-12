@@ -1397,57 +1397,59 @@ struct ScreenDragWidget : OpaqueWidget {
 		box.pos.y = posY;
 	}
 
-	void draw(const Widget::DrawArgs& args) override {
-		Widget::draw(args);
+	void drawLayer(const Widget::DrawArgs& args, int layer) override {
 		if (!module) return;
 
-		Vec c = Vec(box.size.x / 2.f, box.size.y / 2.f);
+		if (layer == 1) {
+			Vec c = Vec(box.size.x / 2.f, box.size.y / 2.f);
 
-		nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
+			nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
 
-		if (module->selectionTest(type, id)) {
-			// Draw selection halo
-			float oradius = 1.8f * radius;
-			NVGpaint paint;
-			NVGcolor icol = color::mult(color, 0.25f);
-			NVGcolor ocol = nvgRGB(0, 0, 0);
+			if (module->selectionTest(type, id)) {
+				// Draw selection halo
+				float oradius = 1.8f * radius;
+				NVGpaint paint;
+				NVGcolor icol = color::mult(color, 0.25f);
+				NVGcolor ocol = nvgRGB(0, 0, 0);
 
-			Rect b = Rect(box.pos.mult(-1), parent->box.size);
-			nvgSave(args.vg);
-			nvgScissor(args.vg, b.pos.x, b.pos.y, b.size.x, b.size.y);
+				Rect b = Rect(box.pos.mult(-1), parent->box.size);
+				nvgSave(args.vg);
+				nvgScissor(args.vg, b.pos.x, b.pos.y, b.size.x, b.size.y);
+				nvgBeginPath(args.vg);
+				nvgCircle(args.vg, c.x, c.y, oradius);
+				paint = nvgRadialGradient(args.vg, c.x, c.y, radius, oradius, icol, ocol);
+				nvgFillPaint(args.vg, paint);
+				nvgFill(args.vg);
+				nvgResetScissor(args.vg);
+				nvgRestore(args.vg);
+			}
+
+			// Draw circle
 			nvgBeginPath(args.vg);
-			nvgCircle(args.vg, c.x, c.y, oradius);
-			paint = nvgRadialGradient(args.vg, c.x, c.y, radius, oradius, icol, ocol);
-			nvgFillPaint(args.vg, paint);
+			nvgCircle(args.vg, c.x, c.y, radius - 2.f);
+			nvgStrokeColor(args.vg, color);
+			nvgStrokeWidth(args.vg, 1.0f);
+			nvgStroke(args.vg);
+			nvgFillColor(args.vg, color::mult(color, 0.5f));
 			nvgFill(args.vg);
-			nvgResetScissor(args.vg);
-			nvgRestore(args.vg);
+
+			// Draw amount circle
+			nvgBeginPath(args.vg);
+			nvgCircle(args.vg, c.x, c.y, radius);
+			nvgStrokeColor(args.vg, color::mult(color, circleA));
+			nvgStrokeWidth(args.vg, 0.8f);
+			nvgStroke(args.vg);
+
+			nvgGlobalCompositeOperation(args.vg, NVG_ATOP);
+
+			// Draw label
+			std::shared_ptr<Font> font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
+			nvgFontSize(args.vg, fontsize);
+			nvgFontFaceId(args.vg, font->handle);
+			nvgFillColor(args.vg, textColor);
+			nvgTextBox(args.vg, c.x - 3.f, c.y + 4.f, 120, string::f("%i", id + 1).c_str(), NULL);
 		}
-
-		// Draw circle
-		nvgBeginPath(args.vg);
-		nvgCircle(args.vg, c.x, c.y, radius - 2.f);
-		nvgStrokeColor(args.vg, color);
-		nvgStrokeWidth(args.vg, 1.0f);
-		nvgStroke(args.vg);
-		nvgFillColor(args.vg, color::mult(color, 0.5f));
-		nvgFill(args.vg);
-
-		// Draw amount circle
-		nvgBeginPath(args.vg);
-		nvgCircle(args.vg, c.x, c.y, radius);
-		nvgStrokeColor(args.vg, color::mult(color, circleA));
-		nvgStrokeWidth(args.vg, 0.8f);
-		nvgStroke(args.vg);
-
-		nvgGlobalCompositeOperation(args.vg, NVG_ATOP);
-
-		// Draw label
-		std::shared_ptr<Font> font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
-		nvgFontSize(args.vg, fontsize);
-		nvgFontFaceId(args.vg, font->handle);
-		nvgFillColor(args.vg, textColor);
-		nvgTextBox(args.vg, c.x - 3.f, c.y + 4.f, 120, string::f("%i", id + 1).c_str(), NULL);
+		Widget::drawLayer(args, layer);
 	}
 
 	void onHover(const event::Hover& e) override {
@@ -1601,7 +1603,6 @@ struct ScreenMixportDragWidget : ScreenDragWidget<MODULE> {
 
 	void drawLayer(const Widget::DrawArgs& args, int layer) override {
 		if (AW::id + 1 > AW::module->mixportsUsed) return;
-		AW::drawLayer(args, layer);
 		if (layer == 1) {
 			nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
 
@@ -1654,6 +1655,7 @@ struct ScreenMixportDragWidget : ScreenDragWidget<MODULE> {
 				AW::textColor = AW::color;
 			}
 		}
+		AW::drawLayer(args, layer);
 	}
 
 	void onButton(const event::Button& e) override {
@@ -1742,9 +1744,8 @@ struct ScreenWidget : OpaqueWidget {
 			nvgStrokeWidth(args.vg, 0.7f);
 			nvgStrokeColor(args.vg, color::mult(color::WHITE, 0.25f));
 			nvgStroke(args.vg);
-
-			OpaqueWidget::draw(args);
 		}
+		OpaqueWidget::drawLayer(args, layer);
 	}
 
 	void onButton(const event::Button& e) override {
