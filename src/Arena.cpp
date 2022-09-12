@@ -1704,7 +1704,7 @@ struct ScreenWidget : OpaqueWidget {
 	}
 
 	void drawLayer(const DrawArgs& args, int layer) override {
-		if (layer == 1 && module && module->seqEdit < 0) {
+		if (layer == 1) {
 			// Dim the display but don't darken it completely
 			float b = std::max(0.4f, settings::rackBrightness);
 			nvgGlobalTint(args.vg, nvgRGBAf(b, b, b, 1.f));
@@ -1745,7 +1745,10 @@ struct ScreenWidget : OpaqueWidget {
 			nvgStrokeColor(args.vg, color::mult(color::WHITE, 0.25f));
 			nvgStroke(args.vg);
 		}
-		OpaqueWidget::drawLayer(args, layer);
+
+		if (module && module->seqEdit < 0) {
+			OpaqueWidget::drawLayer(args, layer);
+		}
 	}
 
 	void onButton(const event::Button& e) override {
@@ -2336,11 +2339,10 @@ struct SeqEditDragWidget : OpaqueWidget {
 		APP->history->push(h);
 	}
 
-	void draw(const Widget::DrawArgs& args) override {
-		Widget::draw(args);
+	void drawLayer(const Widget::DrawArgs& args, int layer) override {
 		if (!module) return;
 
-		if (id >= 0) {
+		if (layer == 1 && id >= 0) {
 			Vec c = Vec(box.size.x / 2.f, box.size.y / 2.f);
 
 			nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
@@ -2361,6 +2363,7 @@ struct SeqEditDragWidget : OpaqueWidget {
 			nvgFillColor(args.vg, color);
 			nvgTextBox(args.vg, c.x - 3.f, c.y + 4.f, 120, string::f("%i", id + 1).c_str(), NULL);
 		}
+		OpaqueWidget::drawLayer(args, layer);
 	}
 
 	void onHover(const event::Hover& e) override {
@@ -2469,49 +2472,55 @@ struct SeqEditWidget : OpaqueWidget {
 		lastSeqSelected = seqSelected;
 	}
 
-	void draw(const DrawArgs& args) override {
+	void drawLayer(const DrawArgs& args, int layer) override {
 		if (module && module->seqEdit >= 0) {
-			NVGcolor c = color::mult(color::WHITE, 0.7f);
-			float stroke = 1.f;
-			
-			// Draw outer border
-			nvgBeginPath(args.vg);
-			nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
-			nvgStrokeWidth(args.vg, stroke);
-			nvgStrokeColor(args.vg, c);
-			nvgStroke(args.vg);
+			if (layer == 1) {
+				// Dim the display but don't darken it completely
+				float b = std::max(0.4f, settings::rackBrightness);
+				nvgGlobalTint(args.vg, nvgRGBAf(b, b, b, 1.f));
 
-			// Draw "EDIT" text
-			std::shared_ptr<Font> font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
-			nvgFontSize(args.vg, 22);
-			nvgFontFaceId(args.vg, font->handle);
-			nvgTextLetterSpacing(args.vg, -2.2);
-			nvgFillColor(args.vg, c);
-			nvgTextBox(args.vg, box.size.x - 78.f, box.size.y - 6.f, 120, "SEQ-EDIT", NULL);
-
-			OpaqueWidget::draw(args);
-
-			// Draw raw automation line
-			SeqItem* s = &module->seqData[lastSeqId][lastSeqSelected];
-			if (s->length > 1) {
-				float sizeX = box.size.x - recWidget->box.size.x;
-				float sizeY = box.size.y - recWidget->box.size.y;
+				NVGcolor c = color::mult(color::WHITE, 0.7f);
+				float stroke = 1.f;
+				
+				// Draw outer border
 				nvgBeginPath(args.vg);
-				for (int i = 0; i < s->length; i++) {
-					float x = recWidget->box.size.x / 2.f + sizeX * s->x[i];
-					float y = recWidget->box.size.y / 2.f + sizeY * s->y[i];
-					if (i == 0)
-						nvgMoveTo(args.vg, x, y);
-					else
-						nvgLineTo(args.vg, x, y);
-				}
-
-				nvgStrokeColor(args.vg, nvgRGB(0xd8, 0xd8, 0xd8));
-				nvgLineCap(args.vg, NVG_ROUND);
-				nvgMiterLimit(args.vg, 2.0);
-				nvgStrokeWidth(args.vg, 1.0);
-				nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
+				nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+				nvgStrokeWidth(args.vg, stroke);
+				nvgStrokeColor(args.vg, c);
 				nvgStroke(args.vg);
+
+				// Draw "EDIT" text
+				std::shared_ptr<Font> font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
+				nvgFontSize(args.vg, 22);
+				nvgFontFaceId(args.vg, font->handle);
+				nvgTextLetterSpacing(args.vg, -2.2);
+				nvgFillColor(args.vg, c);
+				nvgTextBox(args.vg, box.size.x - 78.f, box.size.y - 6.f, 120, "SEQ-EDIT", NULL);
+
+				OpaqueWidget::drawLayer(args, layer);
+
+				// Draw raw automation line
+				SeqItem* s = &module->seqData[lastSeqId][lastSeqSelected];
+				if (s->length > 1) {
+					float sizeX = box.size.x - recWidget->box.size.x;
+					float sizeY = box.size.y - recWidget->box.size.y;
+					nvgBeginPath(args.vg);
+					for (int i = 0; i < s->length; i++) {
+						float x = recWidget->box.size.x / 2.f + sizeX * s->x[i];
+						float y = recWidget->box.size.y / 2.f + sizeY * s->y[i];
+						if (i == 0)
+							nvgMoveTo(args.vg, x, y);
+						else
+							nvgLineTo(args.vg, x, y);
+					}
+
+					nvgStrokeColor(args.vg, nvgRGB(0xd8, 0xd8, 0xd8));
+					nvgLineCap(args.vg, NVG_ROUND);
+					nvgMiterLimit(args.vg, 2.0);
+					nvgStrokeWidth(args.vg, 1.0);
+					nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
+					nvgStroke(args.vg);
+				}
 			}
 		}
 	}
