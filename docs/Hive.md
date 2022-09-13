@@ -4,24 +4,25 @@ HIVE is a random ratcheting sequencer with 4 independent outputs which run on a 
 
 ![HIVE Intro](./Hive-intro.gif)
 
-HIVE was kindly contributed to PackOne by [Delexander](https://github.com/anlexmatos) and this is what he says about the sequencer:  
-(from https://community.vcvrack.com/t/stoermelders-idea-und-development-thread/10515/236)
+HIVE was kindly contributed to PackOne by [Lexandra Maxine](https://github.com/xandramax) and this is what she has to say about the sequencer:  
 
-> [...]  
-> Some general thoughts on HIVE, for anyone curious:
+> I've been intrigued by hexagonal grids for about as long as I can remember, largely driven by experiences with strategy games played on hexagonally-gridded game boards: Battle for Wesnoth, Settlers of Catan, Civilization 5, and more recently abstract games from Nick Bentley like Bug, Circle of Life, and Blooms.
 > 
-> I’ve been intrigued by hexagonal grids for about as long as I can remember, largely driven by experiences with strategy games played on hexagonally-gridded game boards: Battle for Wesnoth, Settlers of Catan, Civilization 5, and more recently abstract games from Nick Bentley like Bug 1, Circle of Life 1, and Blooms 1.
+> In those scenarios involving strategic positioning and movement, the 6 degrees of hexagonal space create a significant impact in the flow, feel, and apparent complexity of the game.
+>
+> Also, I think that hexagonal grids and the games played upon them are pretty.
 > 
-> In scenarios like those involving strategic positioning and movement, the 6 degrees of hexagonal space create a significant impact in the structure, flow, feel, and apparent complexity of the game. Also, in my completely subjective opinion, hexagonal grids and the games played upon them have a striking visual appeal.
+> I wanted to explore the interface between the visual appearance of a grid and musical information which might be derived from it, as seen in MAZE. In my exploration of that module,I typically began with an idea which I would then translating into visual intent upon MAZE’s grid. After reacting to the result, I'd find myself reinterpereting the visual appearance of the grid.
 > 
-> I was also driven by an interest in the interface between the visual appearance of a grid and the pitch/amplitude and rhythm information derived from it, as seen in MAZE. Using MAZE to make music involves beginning perhaps with a musical idea, translating that into intent visually upon MAZE’s grid, hearing a (likely unexpected) result, and finally the resultant sound feeds backward psychologically and informs our perception of the visual appearance of the grid, or at least that’s how it seems to me.
+> It's like catching sight of a cloud that looks like a frog, *listening* to that frog, and beginning to see that it really looks a bit more like a butterfly. Then you tweak the cloud.
 > 
-> When a sequencer is also a visualizer, and sequences are programmed visually, and the sequencer has a bit of a mind of its own via randomization and probability, there seems to be a rich cyclic interaction between the aural and visual components of perception.
+> When a sequencer is also a visualizer, through human interaction there can be found a feedback loop from the visual to the aural and the aural to the visual. Building probability and randomization into the sequencer adds fuel to the process.
 > 
-> Playing with MAZE and then having the idea for HIVE provided me with a unique opportunity to explore that interest in hexagonal grids. I implemented it while wondering how that same sort of transformation from square to hexagonal in the strategy-space of a game might translate to some sort of an analogous transformation in the music-space of a sequencer, via MAZE’s laws of physics.  
-> [...]
+> Arriving at the concept for HIVE provided me with a unique opportunity to explore my hexagonal fascination. At the outset I wondered exactly how a grid transformation from square to hexagonal might translate to the music-space of a sequencer, while accounting for MAZE’s laws of physics. I found that the result was worth the effort.
+> 
+> For one, the density of hexagonal grids translates to increased variation in sequences produced from a given set of voltages. This means that the musical difference between a square grid of 8 musical notes and a hex grid of 7 notes is more nuanced than just one note. But it's also the case that the density of a hexagonal grid makes for a visual display of higher definition. It can be described as an increase in DPI. I think that's an asset for a sequencer which encourages interaction informed by visual perception.
 
-A lush example how HIVE and MAZE can work together:
+A lush example of how HIVE and MAZE can work together:
 
 [![HIVE and MAZE](https://img.youtube.com/vi/KYbfuj7EbbQ/0.jpg)](https://www.youtube.com/watch?v=KYbfuj7EbbQ)
 
