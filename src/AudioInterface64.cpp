@@ -33,8 +33,15 @@ struct AudioInterfacePort : audio::Port {
 		outputSrc.setQuality(6);
 	}
 
-	void setMaster() {
-		APP->engine->setMasterModule(module);
+	void setMaster(bool master = true) {
+		if (master) {
+			APP->engine->setMasterModule(module);
+		}
+		else {
+			// Unset master only if module is currently master
+			if (isMaster())
+				APP->engine->setMasterModule(NULL);
+		}
 	}
 
 	bool isMaster() {
@@ -42,6 +49,10 @@ struct AudioInterfacePort : audio::Port {
 	}
 
 	void processInput(const float* input, int inputStride, int frames) override {
+		deviceNumInputs = std::min(getNumInputs(), NUM_AUDIO_OUTPUTS);
+		deviceNumOutputs = std::min(getNumOutputs(), NUM_AUDIO_INPUTS);
+		deviceSampleRate = getSampleRate();
+
 		// DEBUG("%p: new device block ____________________________", this);
 		// Claim master module if there is none
 		if (!APP->engine->getMasterModule()) {
@@ -75,18 +86,9 @@ struct AudioInterfacePort : audio::Port {
 			// Set up sample rate converter
 			outputSrc.setRates(deviceSampleRate, engineSampleRate);
 			outputSrc.setChannels(deviceNumInputs);
-			// Convert audio input -> engine output
-			dsp::Frame<NUM_AUDIO_OUTPUTS> audioInputBuffer[frames];
-			std::memset(audioInputBuffer, 0, sizeof(audioInputBuffer));
-			for (int i = 0; i < frames; i++) {
-				for (int j = 0; j < deviceNumInputs; j++) {
-					float v = input[i * inputStride + j];
-					audioInputBuffer[i].samples[j] = v;
-				}
-			}
-			int audioInputFrames = frames;
+			int inputFrames = frames;
 			int outputFrames = engineOutputBuffer.capacity();
-			outputSrc.process(audioInputBuffer, &audioInputFrames, engineOutputBuffer.endData(), &outputFrames);
+			outputSrc.process(input, inputStride, &inputFrames, (float*) engineOutputBuffer.endData(), NUM_AUDIO_OUTPUTS, &outputFrames);
 			engineOutputBuffer.endIncr(outputFrames);
 			// Request exactly as many frames as we have in the engine output buffer.
 			requestedEngineFrames = engineOutputBuffer.size();
@@ -115,21 +117,20 @@ struct AudioInterfacePort : audio::Port {
 			inputSrc.setRates(engineSampleRate, deviceSampleRate);
 			inputSrc.setChannels(deviceNumOutputs);
 			// Convert engine input -> audio output
-			dsp::Frame<NUM_AUDIO_OUTPUTS> audioOutputBuffer[frames];
 			int inputFrames = engineInputBuffer.size();
-			int audioOutputFrames = frames;
-			inputSrc.process(engineInputBuffer.startData(), &inputFrames, audioOutputBuffer, &audioOutputFrames);
+			int outputFrames = frames;
+			inputSrc.process((const float*) engineInputBuffer.startData(), NUM_AUDIO_INPUTS, &inputFrames, output, outputStride, &outputFrames);
 			engineInputBuffer.startIncr(inputFrames);
-			// Copy the audio output buffer
-			for (int i = 0; i < audioOutputFrames; i++) {
+			// Clamp output samples
+			for (int i = 0; i < outputFrames; i++) {
 				for (int j = 0; j < deviceNumOutputs; j++) {
-					float v = audioOutputBuffer[i].samples[j];
+					float v = output[i * outputStride + j];
 					v = clamp(v, -1.f, 1.f);
 					output[i * outputStride + j] = v;
 				}
 			}
 			// Fill the rest of the audio output buffer with zeros
-			for (int i = audioOutputFrames; i < frames; i++) {
+			for (int i = outputFrames; i < frames; i++) {
 				for (int j = 0; j < deviceNumOutputs; j++) {
 					output[i * outputStride + j] = 0.f;
 				}
@@ -149,12 +150,9 @@ struct AudioInterfacePort : audio::Port {
 	}
 
 	void onStartStream() override {
-		deviceNumInputs = std::min(getNumInputs(), NUM_AUDIO_OUTPUTS);
-		deviceNumOutputs = std::min(getNumOutputs(), NUM_AUDIO_INPUTS);
-		deviceSampleRate = getSampleRate();
 		engineInputBuffer.clear();
 		engineOutputBuffer.clear();
-		// DEBUG("onStartStream %d %d %f", deviceNumInputs, deviceNumOutputs, deviceSampleRate);
+		// DEBUG("onStartStream");
 	}
 
 	void onStopStream() override {
@@ -163,6 +161,10 @@ struct AudioInterfacePort : audio::Port {
 		deviceSampleRate = 0.f;
 		engineInputBuffer.clear();
 		engineOutputBuffer.clear();
+		// We can be in an Engine write-lock here (e.g. onReset() calls this indirectly), so use non-locking master module API.
+		// setMaster(false);
+		if (APP->engine->getMasterModule() == module)
+			APP->engine->setMasterModule_NoLock(NULL);
 		// DEBUG("onStopStream");
 	}
 };
@@ -174,7 +176,7 @@ struct AudioInterface : Module {
 	static constexpr int NUM_OUTPUT_LIGHTS = (NUM_AUDIO_OUTPUTS > 2) ? (NUM_AUDIO_OUTPUTS / 2) : 0;
 
 	enum ParamIds {
-		ENUMS(GAIN_PARAM, NUM_AUDIO_INPUTS == 2),
+		ENUMS(LEVEL_PARAM, NUM_AUDIO_INPUTS == 2),
 		NUM_PARAMS
 	};
 	enum InputIds {
@@ -210,7 +212,7 @@ struct AudioInterface : Module {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		if (NUM_AUDIO_INPUTS == 2)
-			configParam(GAIN_PARAM, 0.f, 2.f, 1.f, "Level", " dB", -10, 40);
+			configParam(LEVEL_PARAM, 0.f, 2.f, 1.f, "Level", " dB", -10, 40);
 		for (int i = 0; i < NUM_AUDIO_INPUTS; i++)
 			configInput(AUDIO_INPUTS + i, string::f("To \"device output %d\"", i + 1));
 		for (int i = 0; i < NUM_AUDIO_OUTPUTS; i++)
@@ -228,6 +230,11 @@ struct AudioInterface : Module {
 		}
 
 		onReset();
+	}
+
+	~AudioInterface() {
+		// Close stream here before destructing AudioPort, so processBuffer() etc are not called on another thread while destructing.
+		port.setDriverId(-1);
 	}
 
 	void onReset() override {
@@ -279,7 +286,7 @@ struct AudioInterface : Module {
 
 			// Audio-2: Apply gain from knob
 			if (NUM_AUDIO_INPUTS == 2) {
-				float gain = std::pow(params[GAIN_PARAM].getValue(), 2.f);
+				float gain = std::pow(params[LEVEL_PARAM].getValue(), 2.f);
 				for (int i = 0; i < NUM_AUDIO_INPUTS; i++) {
 					inputFrame.samples[i] *= gain;
 				}
@@ -332,12 +339,12 @@ struct AudioInterface : Module {
 			// Audio-2: VU meter
 			if (NUM_AUDIO_INPUTS == 2) {
 				for (int i = 0; i < NUM_AUDIO_INPUTS; i++) {
-					lights[VU_LIGHTS + i * 6 + 0].setBrightness(vuMeter[i].getBrightness(0, 0));
-					lights[VU_LIGHTS + i * 6 + 1].setBrightness(vuMeter[i].getBrightness(-3, 0));
-					lights[VU_LIGHTS + i * 6 + 2].setBrightness(vuMeter[i].getBrightness(-6, -3));
-					lights[VU_LIGHTS + i * 6 + 3].setBrightness(vuMeter[i].getBrightness(-12, -6));
-					lights[VU_LIGHTS + i * 6 + 4].setBrightness(vuMeter[i].getBrightness(-24, -12));
-					lights[VU_LIGHTS + i * 6 + 5].setBrightness(vuMeter[i].getBrightness(-36, -24));
+					lights[VU_LIGHTS + i * 6 + 0].setBrightness(vuMeter[i].getBrightness(-3, 0));
+					lights[VU_LIGHTS + i * 6 + 1].setBrightness(vuMeter[i].getBrightness(-6, -3));
+					lights[VU_LIGHTS + i * 6 + 2].setBrightness(vuMeter[i].getBrightness(-12, -6));
+					lights[VU_LIGHTS + i * 6 + 3].setBrightness(vuMeter[i].getBrightness(-24, -12));
+					lights[VU_LIGHTS + i * 6 + 4].setBrightness(vuMeter[i].getBrightness(-36, -24));
+					lights[VU_LIGHTS + i * 6 + 5].setBrightness(vuMeter[i].getBrightness(-48, -36));
 				}
 			}
 			// Audio-8 and Audio-16: pair state lights
@@ -367,28 +374,20 @@ struct AudioInterface : Module {
 		json_t* rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 		json_object_set_new(rootJ, "audio", port.toJson());
+
 		json_object_set_new(rootJ, "dcFilter", json_boolean(dcFilterEnabled));
+
 		return rootJ;
 	}
 
 	void dataFromJson(json_t* rootJ) override {
 		json_t* audioJ = json_object_get(rootJ, "audio");
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
-		port.fromJson(audioJ);
+		if (audioJ)
+			port.fromJson(audioJ);
 
 		json_t* dcFilterJ = json_object_get(rootJ, "dcFilter");
 		if (dcFilterJ)
 			dcFilterEnabled = json_boolean_value(dcFilterJ);
-	}
-
-	/** Must be called when the Engine mutex is unlocked.
-	*/
-	void setMaster() {
-		APP->engine->setMasterModule(this);
-	}
-
-	bool isMaster() {
-		return APP->engine->getMasterModule() == this;
 	}
 };
 
@@ -455,15 +454,15 @@ struct AudioInterface64Widget : ThemedModuleWidget<AudioInterface<64, 64>> {
 			addOutput(createOutputCentered<StoermelderPort>(Vec(278.9f + i * 32.2f, 300.8f), module, TAudioInterface::AUDIO_OUTPUTS + i * 8 + 6));
 			addOutput(createOutputCentered<StoermelderPort>(Vec(278.9f + i * 32.2f, 328.1f), module, TAudioInterface::AUDIO_OUTPUTS + i * 8 + 7));
 
-			addChild(createLightCentered<TinyLight<GreenLight>>(Vec(21.3f + 9.8f + i * 32.2f, 150.1f), module, TAudioInterface::INPUT_LIGHTS + i * 4 + 0));
-			addChild(createLightCentered<TinyLight<GreenLight>>(Vec(21.3f + 9.8f + i * 32.2f, 205.0f), module, TAudioInterface::INPUT_LIGHTS + i * 4 + 1));
-			addChild(createLightCentered<TinyLight<GreenLight>>(Vec(21.3f + 9.8f + i * 32.2f, 259.9f), module, TAudioInterface::INPUT_LIGHTS + i * 4 + 2));
-			addChild(createLightCentered<TinyLight<GreenLight>>(Vec(21.3f + 9.8f + i * 32.2f, 314.5f), module, TAudioInterface::INPUT_LIGHTS + i * 4 + 3));
+			addChild(createLightCentered<TinyLight<GreenRedLight>>(Vec(21.3f + 9.8f + i * 32.2f, 150.1f), module, TAudioInterface::INPUT_LIGHTS + i * 4 + 2 * 0));
+			addChild(createLightCentered<TinyLight<GreenRedLight>>(Vec(21.3f + 9.8f + i * 32.2f, 205.0f), module, TAudioInterface::INPUT_LIGHTS + i * 4 + 2 * 1));
+			addChild(createLightCentered<TinyLight<GreenRedLight>>(Vec(21.3f + 9.8f + i * 32.2f, 259.9f), module, TAudioInterface::INPUT_LIGHTS + i * 4 + 2 * 2));
+			addChild(createLightCentered<TinyLight<GreenRedLight>>(Vec(21.3f + 9.8f + i * 32.2f, 314.5f), module, TAudioInterface::INPUT_LIGHTS + i * 4 + 2 * 3));
 
-			addChild(createLightCentered<TinyLight<GreenLight>>(Vec(278.9f - 9.8f + i * 32.2f, 146.0f), module, TAudioInterface::OUTPUT_LIGHTS + i * 4 + 0));
-			addChild(createLightCentered<TinyLight<GreenLight>>(Vec(278.9f - 9.8f + i * 32.2f, 205.0f), module, TAudioInterface::OUTPUT_LIGHTS + i * 4 + 1));
-			addChild(createLightCentered<TinyLight<GreenLight>>(Vec(278.9f - 9.8f + i * 32.2f, 259.9f), module, TAudioInterface::OUTPUT_LIGHTS + i * 4 + 2));
-			addChild(createLightCentered<TinyLight<GreenLight>>(Vec(278.9f - 9.8f + i * 32.2f, 314.5f), module, TAudioInterface::OUTPUT_LIGHTS + i * 4 + 3));
+			addChild(createLightCentered<TinyLight<GreenRedLight>>(Vec(278.9f - 9.8f + i * 32.2f, 146.0f), module, TAudioInterface::OUTPUT_LIGHTS + i * 4 + 2 * 0));
+			addChild(createLightCentered<TinyLight<GreenRedLight>>(Vec(278.9f - 9.8f + i * 32.2f, 205.0f), module, TAudioInterface::OUTPUT_LIGHTS + i * 4 + 2 * 1));
+			addChild(createLightCentered<TinyLight<GreenRedLight>>(Vec(278.9f - 9.8f + i * 32.2f, 259.9f), module, TAudioInterface::OUTPUT_LIGHTS + i * 4 + 2 * 2));
+			addChild(createLightCentered<TinyLight<GreenRedLight>>(Vec(278.9f - 9.8f + i * 32.2f, 314.5f), module, TAudioInterface::OUTPUT_LIGHTS + i * 4 + 2 * 3));
 		}
 
 		Audio64Display* audioDisplay = createWidget<Audio64Display>(Vec(132.5f, 36.0f));
@@ -477,9 +476,9 @@ struct AudioInterface64Widget : ThemedModuleWidget<AudioInterface<64, 64>> {
 
 		menu->addChild(new MenuSeparator);
 
-		menu->addChild(createCheckMenuItem("Master audio module", "",
-			[=]() {return module->isMaster();},
-			[=]() {module->setMaster();}
+		menu->addChild(createBoolMenuItem("Master audio module", "",
+			[=]() {return module->port.isMaster();},
+			[=](bool master) {module->port.setMaster(master);}
 		));
 
 		menu->addChild(createBoolPtrMenuItem("DC blocker", "", &module->dcFilterEnabled));
