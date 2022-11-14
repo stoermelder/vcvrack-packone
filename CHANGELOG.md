@@ -30,6 +30,8 @@
 - Module [ARENA](./docs/Arena.md)
     - Fixed broken behavior of "Radius" sliders of "In"-ports
     - Fixed broken patch-restore of "Radius" sliders (#331)
+- Module [GOTO](./docs/Goto.md)
+    - Added "top left" as a modules reference point for jump destination
 - Module [TRANSIT](./docs/Transit.md)
     - Added retrigger-function for CV-input channel 2 in C4 mode (#330)
     - Fixed premature end of processing and not reaching stored snapshot state (#329)

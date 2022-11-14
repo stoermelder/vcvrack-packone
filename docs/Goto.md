@@ -10,8 +10,8 @@ Every jump point of GOTO is bound to a specific module in your patch. The bindin
 
 There are some settings on the context menu available:
 
+* **Jump position**: This option causes the bound module to be centered on the screen or moved to the top left of the screen. If this option is set to _Absolute_ GOTO will move the view-port to the exact same position as it was at binding time. This can be useful for setups with multiple screens.
 * **Smooth transition**: By default the view-port jumps directly to the bound module. Activating this option moves the view-port smoothly to the new position. Be aware that this utilizes more graphical processing ressources of your system.
-* **Center module**: This option is activated by default and causes the bound module to be centered on the screen. If this option is disabled GOTO will move the view-port to the exact same position as it was at binding time. This can be useful for setups with multiple screens.
 * **Ignore zoom level**: By default GOTO recalls the zoom level at binding time. Activating this option leaves the current zoom level untouched.
 
 ## _INPUT_-port

@@ -104,6 +104,21 @@ struct ViewportCenter {
 	}
 };
 
+struct ViewportTopLeft {
+	ViewportTopLeft(Widget* w, float zoomToWidget = -1.f, float zoom = -1.f) {
+		float z;
+		if (zoomToWidget > 0.f)
+			z = APP->scene->rackScroll->getSize().y / w->getSize().y * zoomToWidget;
+		else if (zoom > 0.f)
+			z = std::pow(2.f, zoom);
+		else
+			z = 2.0f;
+		Vec target = w->getBox().getTopLeft();
+		APP->scene->rackScroll->setZoom(z);
+		APP->scene->rackScroll->setGridOffset((target - RACK_OFFSET) / RACK_GRID_SIZE);
+	}
+};
+
 
 /** Creates a MenuItem that when hovered, opens a submenu with several MenuItems identified by a map.
 Example:
