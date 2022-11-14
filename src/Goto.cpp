@@ -364,7 +364,7 @@ struct GotoWidget : ThemedModuleWidget<GotoModule<10>> {
 		menu->addChild(new MenuSeparator());
 		menu->addChild(StoermelderPackOne::Rack::createMapPtrSubmenuItem<JUMPPOS>("Jump position",
 			{
-				{ JUMPPOS::ABSOLUTE, "Absolute" },
+			//	{ JUMPPOS::ABSOLUTE, "Absolute" },
 				{ JUMPPOS::MODULE_CENTER, "Module centering" },
 				{ JUMPPOS::MODULE_TOPLEFT, "Module top left" }
 			},

@@ -32,6 +32,7 @@
     - Fixed broken patch-restore of "Radius" sliders (#331)
 - Module [GOTO](./docs/Goto.md)
     - Added "top left" as a modules reference point for jump destination
+    - Removed setting "Center module" as the disabled state did not work correctly
 - Module [TRANSIT](./docs/Transit.md)
     - Added retrigger-function for CV-input channel 2 in C4 mode (#330)
     - Fixed premature end of processing and not reaching stored snapshot state (#329)
