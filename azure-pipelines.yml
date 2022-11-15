@@ -116,7 +116,7 @@ jobs:
   condition: and(succeeded(), or(eq(variables['Build.SourceBranch'], 'refs/heads/v2-dev'), eq(variables['Build.SourceBranch'], 'refs/heads/azure-test')))
 
   pool:
-    vmImage: 'ubuntu-18.04'
+    vmImage: 'ubuntu-latest'
 
   steps:
   - task: DownloadPipelineArtifact@0
