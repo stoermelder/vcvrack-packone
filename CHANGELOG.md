@@ -25,6 +25,7 @@
 
 - Modules [8FACE, 8FACEx2](./docs/EightFace.md)
     - Added retrigger-function for CV-input channel 2 in C4 mode (#330)
+    - Fixed unconnected modules after patch reload (#338)
 - Module [8FACE mk2](./docs/EightFaceMk2.md)
     - Added retrigger-function for CV-input channel 2 in C4 mode (#330)
 - Module [ARENA](./docs/Arena.md)

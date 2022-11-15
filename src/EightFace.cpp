@@ -182,7 +182,7 @@ struct EightFaceModule : Module {
 		Expander* exp = side == SIDE::LEFT ? &leftExpander : &rightExpander;
 		if (exp->moduleId >= 0 && exp->module) {
 			Module* t = exp->module;
-			bool c = modelSlug == "" || (t->model->name == modelSlug && t->model->plugin->name == pluginSlug);
+			bool c = modelSlug == "" || (t->model->slug == realModelSlug && t->model->plugin->slug == realPluginSlug);
 			connected = c ? 2 : 1;
 
 			if (connected == 2) {
