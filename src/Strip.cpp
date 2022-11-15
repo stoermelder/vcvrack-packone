@@ -231,6 +231,7 @@ struct StripModule : StripModuleBase {
 				}
 
 				ModuleWidget* mw = APP->scene->rack->getModule(m->rightExpander.moduleId);
+				if(!mw) return;
 				for (ParamWidget* param : mw->getParams()) {
 					switch (randomExcl) {
 						case RANDOMEXCL::NONE:
@@ -273,6 +274,7 @@ struct StripModule : StripModuleBase {
 				}
 
 				ModuleWidget* mw = APP->scene->rack->getModule(m->leftExpander.moduleId);
+				if(!mw) return;
 				for (ParamWidget* param : mw->getParams()) {
 					switch (randomExcl) {
 						case RANDOMEXCL::NONE:
