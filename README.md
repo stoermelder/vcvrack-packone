@@ -3,7 +3,7 @@
 <!-- Version and License Badges -->
 ![Version](https://img.shields.io/badge/version-2.0.0-green.svg?style=flat-square)
 ![Rack SDK](https://img.shields.io/badge/Rack--SDK-2.0.0-red.svg?style=flat-square)
-![License](https://img.shields.io/badge/license-GPLv3-blue.svg?style=flat-square)
+![License](https://img.shields.io/badge/license-GPLv3+-blue.svg?style=flat-square)
 ![Language](https://img.shields.io/badge/language-C++-yellow.svg?style=flat-square)
 
 The PackOne plugin gives you some modules for [VCV Rack](https://www.vcvrack.com).
@@ -71,6 +71,7 @@ Feel free to contact me or create a GitHub issue if you have any problems or que
 
 ## Special thanks
 
+- [Lexandra Maxine](https://github.com/xandramax) for contributing [HIVE](./docs/Hive.md)
 - [Artem Leonov](https://artemleonov.bandcamp.com/) of [VCV Rack Ideas](https://www.youtube.com/channel/UCc0cXlzQdOwQSiyW30NQ7Sg) for his endless ideas, feature requests and testing, also for his great video tutorials
 - [Omri Cohen](https://omricohencomposer.bandcamp.com/) for his fabulous video tutorials and fun live streams
 - Andrew Belt for creating and developing VCV Rack
@@ -82,6 +83,6 @@ Follow the [build instructions](https://vcvrack.com/manual/Building.html#buildin
 
 ## License
 
-All **source code** is copyright © 2021 Benjamin Dill and is licensed under the [GNU General Public License, version v3.0](./LICENSE.txt).
+All **source code** is copyright © 2022 Benjamin Dill and is licensed under the [GNU General Public License, version v3.0](./LICENSE.txt).
 
 All **files** and **graphics** in the `res` and `res-src` directories are licensed under [CC BY-NC-ND 4.0](https://creativecommons.org/licenses/by-nc-nd/4.0/). You may not distribute modified adaptations of these graphics.

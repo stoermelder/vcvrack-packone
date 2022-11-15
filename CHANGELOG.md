@@ -23,6 +23,7 @@
 
 ## 2.0.0 (in development)
 
+- Changed license to GPL-3.0-or-later
 - Modules [8FACE, 8FACEx2](./docs/EightFace.md)
     - Added retrigger-function for CV-input channel 2 in C4 mode (#330)
     - Fixed unconnected modules after patch reload (#338)
