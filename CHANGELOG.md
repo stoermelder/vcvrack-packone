@@ -1,27 +1,4 @@
-## 2.x.x (in development)
-
-- Module [DIRT](./docs/Dirt.md)
-    - New module, crosstalk and noise for polyphonic cables
-- Modules [FLOWER, SEEDS, OFFSPRING](./docs/Flower.md)
-    - New modules, pattern-driven 16-step sequencer
-- Module [STRIP-BLOCK](./docs/Strip.md)
-    - New module, a companion module for STRIP for blocking STRIP's expander-mechanism
-
-## 2.2.0 (in development)
-
-### New modules
-
-- Module [MIDI-KEY](./docs/MidiKey.md)
-    - A helper for generating keyboard events from MIDI CC or note messages (#245)
-
-## 2.1.0 (in development)
-
-### New modules
-
-- Module [PRISMA](./docs/Prisma.md)
-    - A wave multiplier/phase shifter inspired by A-137-2
-
-## 2.0.0 (in development)
+## 2.0.beta1
 
 - Changed license to GPL-3.0-or-later
 - Modules [8FACE, 8FACEx2](./docs/EightFace.md)
