@@ -1,6 +1,6 @@
 {
 	"slug": "Stoermelder-P1",
-	"version": "2.0.0",
+	"version": "2.0.beta1",
 	"license": "GPL-3.0-or-later",
 	"author": "Benjamin Dill",
 	"name": "PackOne",
@@ -89,13 +89,6 @@
 			"description": "Utility module for STRIP keeping inputs/outputs connected",
 			"tags": ["Utility"],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Strip.md#stoermelder-strip-bay"
-		},
-		{
-			"slug": "StripBlock",
-			"name": "STRIP-BLOCK",
-			"description": "Utility module for blocking STRIP's expander mechanism (preview)",
-			"tags": ["Utility"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Strip.md"
 		},
 		{
 			"slug": "EightFace",
@@ -280,27 +273,6 @@
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Spin.md"
 		},
 		{
-			"slug": "FlowerSeq",
-			"name": "FLOWER",
-			"description": "Pattern-based sequencer (preview)",
-			"tags": ["Sequencer"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Flower.md"
-		},
-		{
-			"slug": "FlowerSeqEx",
-			"name": "OFFSPRING",
-			"description": "Sequencer-expander for FLOWER (preview)",
-			"tags": ["Sequencer"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Flower.md"
-		},
-		{
-			"slug": "FlowerTrig",
-			"name": "SEEDS",
-			"description": "Sequencer-expander for FLOWER (preview)",
-			"tags": ["Sequencer"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Flower.md"
-		},
-		{
 			"slug": "Transit",
 			"name": "TRANSIT",
 			"description": "Parameter-morpher and sequencer for up to 96 snapshots",
@@ -320,13 +292,6 @@
 			"description": "Dual multiple for parameter-mapping",
 			"tags": ["Utility"],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/X4.md"
-		},
-		{
-			"slug": "Prisma",
-			"name": "PRISMA",
-			"description": "Wave multiplier/phase shifter inspired by A-137-2 (preview)",
-			"tags": ["Waveshaper", "Distortion"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Prisma.md"
 		},
 		{
 			"slug": "Macro",
@@ -376,20 +341,6 @@
 			"description": "Virtual MIDI merger and splitter",
 			"tags": ["MIDI", "Utility"],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/MidiPlug.md"
-		},
-		{
-			"slug": "Dirt",
-			"name": "DIRT",
-			"description": "Crosstalk and noise for polyphonic cables (preview)",
-			"tags": ["Polyphonic"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Dirt.md"
-		},
-		{
-			"slug": "MidiKey",
-			"name": "MIDI-KEY",
-			"description": "Converts MIDI CC or note messages into keyboard events (preview)",
-			"tags": ["MIDI", "Utility"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/MidiKey.md"
 		},
 		{
 			"slug": "AudioInterface64",
