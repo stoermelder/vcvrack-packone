@@ -374,8 +374,8 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 					moduleWidget->box.pos = box.pos;
 					break;
 				case moduleToRackPos::POS:
-					box.pos = box.pos.mult(RACK_GRID_SIZE);
-					moduleWidget->box.pos = box.pos.plus(RACK_OFFSET);
+					//box.pos = box.pos.mult(RACK_GRID_SIZE);
+					moduleWidget->box.pos = box.pos; //.plus(RACK_OFFSET);
 					break;
 			}
 
@@ -455,10 +455,23 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 	std::vector<history::Action*>* groupSelectionFromJson_modules(json_t* rootJ, std::map<int64_t, ModuleWidget*>& modules) {
 		std::vector<history::Action*>* undoActions = new std::vector<history::Action*>;
 
+		Vec mousePos = APP->scene->rack->getMousePos();
 		json_t* modulesJ = json_object_get(rootJ, "modules");
 		if (modulesJ) {
 			json_t* moduleJ;
 			size_t moduleIndex;
+
+			double minX = std::numeric_limits<float>::infinity();
+			double minY = std::numeric_limits<float>::infinity();
+			json_array_foreach(modulesJ, moduleIndex, moduleJ) {
+				// pos
+				json_t* posJ = json_object_get(moduleJ, "pos");
+				double x = 0.0, y = 0.0;
+				json_unpack(posJ, "[F, F]", &x, &y);
+				minX = std::min(minX, x);
+				minY = std::min(minY, y);
+			}
+
 			json_array_foreach(modulesJ, moduleIndex, moduleJ) {
 				int64_t oldId = -1;
 
@@ -468,6 +481,8 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 				double x = 0.0, y = 0.0;
 				json_unpack(posJ, "[F, F]", &x, &y);
 				box.pos = math::Vec(x, y);
+				box.pos = box.pos.minus(Vec(minX, minY)).mult(RACK_GRID_SIZE);
+				box.pos = mousePos.plus(box.pos);
 
 				ModuleWidget* mw = moduleToRack(moduleJ, moduleToRackPos::POS, box, oldId);
 				// mw could be NULL, just move on

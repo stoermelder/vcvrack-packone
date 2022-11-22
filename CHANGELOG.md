@@ -26,7 +26,7 @@
 ### New modules
 
 - Module [S++](./docs/StripPp.md)
-    - Utility for pasting and importing Rack selections while preserving parameter mappings
+    - Utility for pasting and importing Rack selections while preserving parameter mappings and [GLUE](./docs/Glue.md) labels
 
 ## 2.0.beta1
 

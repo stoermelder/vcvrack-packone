@@ -15,10 +15,7 @@ If you like my modules consider donating to https://paypal.me/stoermelder. Thank
 
 ## Latest additions to PackOne - new in v2.0
 
-- [S++](./docs/StripPp.md): utility for pasting and importing Rack selections while preserving parameter mappings
-
-
-![Intro image](./docs/intro-latest.png)
+- [S++](./docs/StripPp.md): utility for pasting and importing Rack selections while preserving parameter mappings and [GLUE](./docs/Glue.md) labels
 
 ## The modules of PackOne
 
