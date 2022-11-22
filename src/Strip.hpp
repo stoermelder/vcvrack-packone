@@ -8,6 +8,7 @@ namespace StoermelderPackOne {
 namespace Strip {
 
 static const char PRESET_FILTERS[] = "stoermelder STRIP group preset (.vcvss):vcvss";
+static const char SELECTION_FILTERS[] = "VCV Rack module selection (.vcvs):vcvs";
 
 enum class MODE {
 	LEFTRIGHT = 0,
@@ -349,6 +350,12 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		return moduleWidget;
 	}
 
+	enum class moduleToRackPos {
+		LEFT,
+		RIGHT,
+		POS
+	};
+
 	/**
 	 *  Adds a new module to the rack from a json-representation.
 	 * @moduleJ
@@ -356,10 +363,22 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 	 * @box
 	 * @oldId
 	 */
-	ModuleWidget* moduleToRack(json_t* moduleJ, bool left, Rect& box, int64_t& oldId) {
+	ModuleWidget* moduleToRack(json_t* moduleJ, moduleToRackPos modPos, Rect& box, int64_t& oldId) {
 		ModuleWidget* moduleWidget = moduleFromJson(moduleJ, oldId);
 		if (moduleWidget) {
-			moduleWidget->box.pos = left ? box.pos.minus(Vec(moduleWidget->box.size.x, 0)) : box.pos;
+			switch (modPos) {
+				case moduleToRackPos::LEFT:
+					moduleWidget->box.pos = box.pos.minus(Vec(moduleWidget->box.size.x, 0));
+					break;
+				case moduleToRackPos::RIGHT:
+					moduleWidget->box.pos = box.pos;
+					break;
+				case moduleToRackPos::POS:
+					box.pos = box.pos.mult(RACK_GRID_SIZE);
+					moduleWidget->box.pos = box.pos.plus(RACK_OFFSET);
+					break;
+			}
+
 			APP->scene->rack->addModule(moduleWidget);
 			APP->scene->rack->setModulePosForce(moduleWidget, moduleWidget->box.pos);
 			box.size = moduleWidget->box.size;
@@ -394,7 +413,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 				json_array_foreach(rightModulesJ, moduleIndex, moduleJ) {
 					int64_t oldId = -1;
 					box.pos = box.pos.plus(Vec(box.size.x, 0));
-					ModuleWidget* mw = moduleToRack(moduleJ, false, box, oldId);
+					ModuleWidget* mw = moduleToRack(moduleJ, moduleToRackPos::RIGHT, box, oldId);
 					// mw could be NULL, just move on
 					modules[oldId] = mw;
 
@@ -416,7 +435,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 				size_t moduleIndex;
 				json_array_foreach(leftModulesJ, moduleIndex, moduleJ) {
 					int64_t oldId = -1;
-					ModuleWidget* mw = moduleToRack(moduleJ, true, box, oldId);
+					ModuleWidget* mw = moduleToRack(moduleJ, moduleToRackPos::LEFT, box, oldId);
 					modules[oldId] = mw;
 
 					if (mw) {
@@ -433,11 +452,47 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		return undoActions;
 	}
 
+	std::vector<history::Action*>* groupSelectionFromJson_modules(json_t* rootJ, std::map<int64_t, ModuleWidget*>& modules) {
+		std::vector<history::Action*>* undoActions = new std::vector<history::Action*>;
+
+		json_t* modulesJ = json_object_get(rootJ, "modules");
+		if (modulesJ) {
+			json_t* moduleJ;
+			size_t moduleIndex;
+			json_array_foreach(modulesJ, moduleIndex, moduleJ) {
+				int64_t oldId = -1;
+
+				// pos
+				Rect box;
+				json_t* posJ = json_object_get(moduleJ, "pos");
+				double x = 0.0, y = 0.0;
+				json_unpack(posJ, "[F, F]", &x, &y);
+				box.pos = math::Vec(x, y);
+
+				ModuleWidget* mw = moduleToRack(moduleJ, moduleToRackPos::POS, box, oldId);
+				// mw could be NULL, just move on
+				modules[oldId] = mw;
+
+				if (mw) {
+					// ModuleAdd history action
+					history::ModuleAdd* h = new history::ModuleAdd;
+					h->name = "create module";
+					h->setModule(mw);
+					undoActions->push_back(h);
+				}
+
+				APP->scene->rack->select(mw);
+			}
+		}
+
+		return undoActions;
+	}
+
 	/**
 	 * Fixes parameter mappings within a preset. This can be considered a hack because
-	 * Rack v1 offers no API for reading the mapping module of a parameter. So this replaces the
+	 * Rack v1/v2 offers no API for reading the mapping module of a parameter. This replaces the
 	 * module id in the preset JSON with the new module id to preserve correct mapping.
-	 * This means every module using mapping must be handled explicitly.
+	 * This means every module using mappings must be handled explicitly.
 	 * @moduleJ json-representation of the module
 	 * @modules maps old module ids the new modules
 	 */
@@ -532,6 +587,36 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 						undoActions->push_back(h);
 					}
 				}
+			}
+		}
+
+		return undoActions;
+	}
+
+	std::vector<history::Action*>* groupSelectionFromJson_presets(json_t* rootJ, std::map<int64_t, ModuleWidget*>& modules) {
+		std::vector<history::Action*>* undoActions = new std::vector<history::Action*>;
+
+		json_t* modulesJ = json_object_get(rootJ, "modules");
+		json_t* moduleJ;
+		size_t moduleIndex;
+		json_array_foreach(modulesJ, moduleIndex, moduleJ) {
+			groupFromJson_presets_fixMapping(moduleJ, modules);
+			int64_t oldId = json_integer_value(json_object_get(moduleJ, "id"));
+			ModuleWidget* mw = modules[oldId];
+			if (mw != NULL) {
+				// history::ModuleChange
+				history::ModuleChange* h = new history::ModuleChange;
+				h->name = "load module preset";
+				h->moduleId = mw->module->id;
+				h->oldModuleJ = mw->toJson();
+
+				StripIdFixModule* m = dynamic_cast<StripIdFixModule*>(mw->module);
+				if (m) m->idFixDataFromJson(modules);
+
+				mw->fromJson(moduleJ);
+
+				h->newModuleJ = mw->toJson();
+				undoActions->push_back(h);
 			}
 		}
 
@@ -747,7 +832,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		// Clear modules next to STRIP
 		std::vector<history::Action*>* h1 = groupClearSpace(rootJ);
 
-		// Maps old moduleId to the newly created module (with new id)
+		// Maps old moduleId to the newly created modules (with new id)
 		std::map<int64_t, ModuleWidget*> modules;
 		// Add modules
 		std::vector<history::Action*>* h2 = groupFromJson_modules(rootJ, modules);
@@ -776,6 +861,38 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		delete h4;
 		APP->history->push(complexAction);
 	}
+
+	void groupSelectionFromJson(json_t* rootJ) {
+		warningLog = "";
+
+		// Maps old moduleId to the newly created modules (with new id)
+		std::map<int64_t, ModuleWidget*> modules;
+		// Add modules
+		std::vector<history::Action*>* h2 = groupSelectionFromJson_modules(rootJ, modules);
+		// Load presets for modules, also fixes parameter mappings
+		std::vector<history::Action*>* h3 = groupSelectionFromJson_presets(rootJ, modules);
+
+		// Add cables
+		std::vector<history::Action*>* h4 = groupFromJson_cables(rootJ, modules);
+
+		// Does nothing, but fixes https://github.com/VCVRack/Rack/issues/1444 for Rack <= 1.1.1
+		APP->scene->rack->requestModulePos(this, this->box.pos);
+
+		if (!warningLog.empty()) {
+			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, warningLog.c_str());
+		}
+
+		history::ComplexAction* complexAction = new history::ComplexAction;
+		complexAction->name = "stoermelder STRIP selection load";
+		for (history::Action* h : *h2) complexAction->push(h);
+		delete h2;
+		for (history::Action* h : *h3) complexAction->push(h);
+		delete h3;
+		for (history::Action* h : *h4) complexAction->push(h);
+		delete h4;
+		APP->history->push(complexAction);
+	}
+
 
 	void groupReplaceFromJson(json_t* rootJ) {
 		warningLog = "";
@@ -847,6 +964,29 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		groupFromJson(rootJ);
 	}
 
+	void groupSelectionPasteClipboard() {
+		APP->scene->rack->deselectAll();
+
+		const char* moduleJson = glfwGetClipboardString(APP->window->win);
+		if (!moduleJson) {
+			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, "Could not get text from clipboard.");
+			return;
+		}
+
+		json_error_t error;
+		json_t* rootJ = json_loads(moduleJson, 0, &error);
+		if (!rootJ) {
+			std::string message = string::f("JSON parsing error at %s %d:%d %s", error.source, error.line, error.column, error.text);
+			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, message.c_str());
+			return;
+		}
+		DEFER({
+			json_decref(rootJ);
+		});
+
+		groupSelectionFromJson(rootJ);
+	}
+
 	void groupLoadFile(std::string filename, bool replace) {
 		INFO("Loading preset %s", filename.c_str());
 
@@ -892,6 +1032,45 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		});
 
 		groupLoadFile(path, replace);
+	}
+
+	void groupSelectionLoadFile(std::string path) {
+		FILE* file = std::fopen(path.c_str(), "r");
+		if (!file)
+			throw Exception("Could not load selection file %s", path.c_str());
+		DEFER({std::fclose(file);});
+
+		INFO("Loading selection %s", path.c_str());
+
+		json_error_t error;
+		json_t* rootJ = json_loadf(file, 0, &error);
+		if (!rootJ)
+			throw Exception("File is not a valid selection file. JSON parsing error at %s %d:%d %s", error.source, error.line, error.column, error.text);
+		DEFER({json_decref(rootJ);});
+
+		groupSelectionFromJson(rootJ);
+	}
+
+	void groupSelectionLoadFileDialog() {
+		std::string selectionDir = asset::user("selections");
+		system::createDirectories(selectionDir);
+
+		osdialog_filters* filters = osdialog_filters_parse(SELECTION_FILTERS);
+		DEFER({osdialog_filters_free(filters);});
+
+		char* pathC = osdialog_file(OSDIALOG_OPEN, selectionDir.c_str(), NULL, filters);
+		if (!pathC) {
+			// No path selected
+			return;
+		}
+		DEFER({std::free(pathC);});
+
+		try {
+			groupSelectionLoadFile(pathC);
+		}
+		catch (Exception& e) {
+			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, e.what());
+		}
 	}
 
 

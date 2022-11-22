@@ -22,6 +22,7 @@ extern Model* modelInfixMicro;
 extern Model* modelStrip;
 extern Model* modelStripBay4;
 extern Model* modelStripBlock;
+extern Model* modelStripPp;
 extern Model* modelEightFace;
 extern Model* modelEightFaceX2;
 extern Model* modelMidiCat;

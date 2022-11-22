@@ -21,7 +21,14 @@
 - Module [PRISMA](./docs/Prisma.md)
     - A wave multiplier/phase shifter inspired by A-137-2
 
-## 2.0.0 (in development)
+## 2.0.beta2 (in development)
+
+### New modules
+
+- Module [S++](./docs/StripPp.md)
+    - Utility for pasting and importing Rack selections while preserving parameter mappings
+
+## 2.0.beta1
 
 - Changed license to GPL-3.0-or-later
 - Modules [8FACE, 8FACEx2](./docs/EightFace.md)

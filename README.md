@@ -13,12 +13,10 @@ The PackOne plugin gives you some modules for [VCV Rack](https://www.vcvrack.com
 
 If you like my modules consider donating to https://paypal.me/stoermelder. Thank you for your support!
 
-## Latest additions to PackOne - new in v1.10
+## Latest additions to PackOne - new in v2.0
 
-- Module [INTERMIX-FADE](./docs/Intermix.md#fade-expander): expander-module for INTERMIX, helper for setting individual fade values
-- Module [INTERMIX-ENV](./docs/Intermix.md#env-expander): expander-module for INTERMIX, outputs envelopes for a seleced input-column
-- Module [INTERMIX-GATE](./docs/Intermix.md#gate-expander): expander-module for INTERMIX, outputs a gate-signal for each active row (#228)
-- New features for existing modules, please refer to the [changelog](./CHANGELOG.md#1100)
+- [S++](./docs/StripPp.md): utility for pasting and importing Rack selections while preserving parameter mappings
+
 
 ![Intro image](./docs/intro-latest.png)
 
@@ -39,6 +37,9 @@ If you like my modules consider donating to https://paypal.me/stoermelder. Thank
 - [HIVE](./docs/Hive.md): 4 channel sequencer running on a 2-dimensional hexagonal grid, similar to [MAZE](./docs/Maze.md)
 - [INFIX](./docs/Infix.md), [µINFIX](./docs/Infix.md): insert for polyphonic cables
 - [INTERMIX](./docs/Intermix.md): precision adder 8x8 advanced switch matrix with support for 8 scenes
+- [INTERMIX-FADE](./docs/Intermix.md#fade-expander): expander-module for INTERMIX, helper for setting individual fade values
+- [INTERMIX-ENV](./docs/Intermix.md#env-expander): expander-module for INTERMIX, outputs envelopes for a seleced input-column
+- [INTERMIX-GATE](./docs/Intermix.md#gate-expander): expander-module for INTERMIX, outputs a gate-signal for each active row (#228)
 - [MACRO](./docs/Macro.md): marco-knob for four parameter-mappings and two CV outputs
 - [MAZE](./docs/Maze.md): 4 channel sequencer running on a 2-dimensional grid
 - [MB](./docs/Mb.md): experimental replacement for Rack's module browser, formerly available in [stoermelder's PackTau](https://github.com/stoermelder/vcvrack-packtau)

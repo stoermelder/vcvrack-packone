@@ -18,6 +18,7 @@ void init(rack::Plugin* p) {
 	p->addModel(modelStrip);
 	p->addModel(modelStripBay4);
 	p->addModel(modelStripBlock);
+	p->addModel(modelStripPp);
 	p->addModel(modelEightFace);
 	p->addModel(modelEightFaceX2);
 	p->addModel(modelMidiCat);
