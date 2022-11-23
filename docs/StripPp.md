@@ -1,5 +1,6 @@
 # stoermelder S++
 
-S++ (aka STRIP++) is a utility module for pasting and importing Rack selections while preserving parameter mappings and [GLUE](Glue.md) labels
+S++ (aka STRIP++ or Selections++) is a utility module for pasting and importing Rack selections while preserving parameter mappings and [GLUE](Glue.md) labels.
 
-SAIL was added in v2.0 of PackOne.
+- v2.0.0
+    - Initial release of S++

@@ -94,4 +94,24 @@ The module also supports mouse-button events: If your mouse has more than three 
 
 - While you can assign duplicate hotkeys only one of them will work.
 
-STROKE was added in v1.7 of PackOne.
+## Changelog
+
+- v1.7.0
+    - Initial release of STROKE
+- v1.8.0
+    - Added commands "Toggle engine pause", "Toggle lock modules"
+    - Added command "Toggle busboard"
+    - Added LEDs for signaling an activated hotkey
+    - Allow loading presets (#187)
+    - Improved behavior of command "Cable opacity" across restarts of Rack (#197)
+- v1.9.0
+    - Allow mapping mouse buttons 0/1/2 (left/right/middle) in use with modifiers
+    - Fixed not working mappings caused by Num Lock state (#220)
+    - Fixed not working mappings caused by use of numpad keys (#220)
+    - Added view-commands using smooth transitions (#139)
+    - Added "Add module" command ([manual](./Stroke.md#add-module))
+    - Added "Send hotkey to module" command ([manual](./Stroke.md#module-send-hotkey))
+    - Added scroll-commands ([manual](./Stroke.md#view-scroll)) (#252)
+    - Added tooltips for mapped commands
+- v1.10.0
+    - Improved behavior of parameter copy/paste commands (#273)

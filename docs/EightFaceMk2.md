@@ -110,7 +110,6 @@ Once placed next to 8FACE mk2 the expander works and behaves the same way 8FACE 
 ## Changelog
 
 - v1.9.0
-    - Intial release of 8FACE mk2 and expander +8
-- v1.10.0
-    - Added "Auto"-mode besides "Read" and "Write" (#251)
-    - Added "Shift front" and "Shift back" context menu options (#275)
+    - Initial release of 8FACE mk2 and expander +8
+- v2.0.0
+    - Added retrigger-function for CV-input channel 2 in C4 mode (#330)
