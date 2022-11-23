@@ -26,7 +26,7 @@ struct WhiteNoiseGenerator {
 	}
 };
 
-struct NextGenerator {
+struct CrosstalkGenerator {
 	float ratio[PORT_MAX_CHANNELS];
 
 	dsp::BiquadFilter eqLow[PORT_MAX_CHANNELS];
@@ -78,9 +78,13 @@ struct DirtModule : Module {
 
 	/** [Stored to JSON] */
 	int panelTheme = 0;
+	/** [Stored to JSON] */
+	bool useWhiteNoise;
+	/** [Stored to JSON] */
+	bool useCrosstalk;
 
 	WhiteNoiseGenerator noise[PORT_MAX_CHANNELS];
-	NextGenerator next;
+	CrosstalkGenerator crosstalk;
 
 	DirtModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
@@ -88,7 +92,13 @@ struct DirtModule : Module {
 		for (size_t i = 0; i < PORT_MAX_CHANNELS; i++) {
 			noise[i].reset();
  		}
-		next.reset();
+		crosstalk.reset();
+	}
+
+	void onReset() override {
+		useWhiteNoise = true;
+		useCrosstalk = true;
+		Module::onReset();
 	}
 
 	void process(const ProcessArgs& args) override {
@@ -97,10 +107,15 @@ struct DirtModule : Module {
 		float in[channels];
 		inputs[INPUT].readVoltages(in);
 
-		for (int i = 0; i < channels; i++) {
-			in[i] += noise[i].process();
+		if (useWhiteNoise) {
+			for (int i = 0; i < channels; i++) {
+				in[i] += noise[i].process();
+			}
 		}
-		next.process(in, channels);
+
+		if (useCrosstalk) {
+			crosstalk.process(in, channels);
+		}
 
 		outputs[OUTPUT].setChannels(channels);
 		outputs[OUTPUT].writeVoltages(in);
@@ -109,12 +124,14 @@ struct DirtModule : Module {
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
+		json_object_set_new(rootJ, "useWhiteNoise", json_boolean(useWhiteNoise));
+		json_object_set_new(rootJ, "useCrosstalk", json_boolean(useCrosstalk));
 
 		json_t* channelsJ = json_array();
 		for (int i = 0; i < PORT_MAX_CHANNELS; i++) {
 			json_t* channelJ = json_object();
 			json_object_set_new(channelJ, "noiseRatio", json_real(noise[i].ratio));
-			json_object_set_new(channelJ, "nextRatio", json_real(next.ratio[i]));
+			json_object_set_new(channelJ, "crosstalkRatio", json_real(crosstalk.ratio[i]));
 			json_array_append_new(channelsJ, channelJ);
 		}
 		json_object_set_new(rootJ, "channels", channelsJ);
@@ -124,13 +141,15 @@ struct DirtModule : Module {
 
 	void dataFromJson(json_t* rootJ) override {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		useWhiteNoise = json_boolean_value(json_object_get(rootJ, "useWhiteNoise"));
+		useCrosstalk = json_boolean_value(json_object_get(rootJ, "useCrosstalk"));
 
 		json_t* channelsJ = json_object_get(rootJ, "presets");
 		json_t* channelJ;
 		size_t i;
 		json_array_foreach(channelsJ, i, channelJ) {
 			noise[i].ratio = json_real_value(json_object_get(channelJ, "noiseRatio"));
-			next.ratio[i] = json_real_value(json_object_get(channelJ, "nextRatio"));
+			crosstalk.ratio[i] = json_real_value(json_object_get(channelJ, "crosstalkRatio"));
 		}
 	}
 };
@@ -145,6 +164,16 @@ struct DirtWidget : ThemedModuleWidget<DirtModule> {
 
 		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 291.1f), module, DirtModule::INPUT));
 		addOutput(createOutputCentered<StoermelderPort>(Vec(22.5f, 327.5f), module, DirtModule::OUTPUT));
+	}
+
+	void appendContextMenu(Menu* menu) override {
+		ThemedModuleWidget<DirtModule>::appendContextMenu(menu);
+		DirtModule* module = dynamic_cast<DirtModule*>(this->module);
+		assert(module);
+
+		menu->addChild(new MenuSeparator());
+		menu->addChild(createBoolPtrMenuItem("Noise", "", &module->useWhiteNoise));
+		menu->addChild(createBoolPtrMenuItem("Crosstalk", "", &module->useCrosstalk));
 	}
 };
 

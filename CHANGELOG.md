@@ -1,7 +1,5 @@
 ## 2.x.x (in development)
 
-- Module [DIRT](./docs/Dirt.md)
-    - New module, crosstalk and noise for polyphonic cables
 - Modules [FLOWER, SEEDS, OFFSPRING](./docs/Flower.md)
     - New modules, pattern-driven 16-step sequencer
 - Module [STRIP-BLOCK](./docs/Strip.md)
@@ -25,8 +23,10 @@
 
 ### New modules
 
+- Module [DIRT](./docs/Dirt.md)
+    - New module, crosstalk and noise for polyphonic cables
 - Module [S++](./docs/StripPp.md)
-    - Utility for pasting and importing Rack selections while preserving parameter mappings and [GLUE](./docs/Glue.md) labels
+    - New module, utility for pasting and importing Rack selections while preserving parameter mappings and [GLUE](./docs/Glue.md) labels
 
 ## 2.0.beta1
 
