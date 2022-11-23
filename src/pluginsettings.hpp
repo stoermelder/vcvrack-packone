@@ -10,8 +10,6 @@ struct StoermelderSettings {
 	bool mbV1hideBrands = false;
 	bool mbV1searchDescriptions = false;
 
-	bool midiLoopbackDriverEnabled = false;
-
 	NVGcolor overlayTextColor = bndGetTheme()->menuTheme.textColor;
 	int overlayHpos = 0;
 	int overlayVpos = 0;

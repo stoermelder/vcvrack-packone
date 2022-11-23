@@ -260,36 +260,6 @@ struct MidiPlugWidget : ThemedModuleWidget<MidiPlugModule<>> {
 		midiOutput1Widget->setMidiPortEx(module ? &module->midiOutput[1] : NULL);
 		addChild(midiOutput1Widget);
 	}
-
-	void appendContextMenu(Menu* menu) override {
-		ThemedModuleWidget<MidiPlugModule<>>::appendContextMenu(menu);
-
-		struct LoopbackDriverItem : MenuItem {
-			void step() override {
-				rightText = CHECKMARK(pluginSettings.midiLoopbackDriverEnabled);
-				MenuItem::step();
-			}
-			void onAction(const event::Action& e) override {
-				if (!pluginSettings.midiLoopbackDriverEnabled) {
-					pluginSettings.midiLoopbackDriverEnabled = true;
-					pluginSettings.saveToJson();
-					text = "The MIDI Loopback driver will be enabled after the next restart of Rack.";
-					osdialog_message(OSDIALOG_INFO, OSDIALOG_OK, text.c_str());
-				} else {
-					std::string text = "You're about to disable the MIDI Loopback driver. Proceed?";
-					if (osdialog_message(OSDIALOG_INFO, OSDIALOG_YES_NO, text.c_str())) {
-						pluginSettings.midiLoopbackDriverEnabled = false;
-						pluginSettings.saveToJson();
-						text = "The MIDI Loopback driver has been disabled after the next restart of Rack.";
-						osdialog_message(OSDIALOG_INFO, OSDIALOG_OK, text.c_str());
-					}
-				}
-			}
-		}; // struct LoopbackDriverItem
-
-		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<LoopbackDriverItem>(&MenuItem::text, "MIDI Loopback driver"));
-	}
 };
 
 } // namespace MidiPlug

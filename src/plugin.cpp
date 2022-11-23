@@ -1,5 +1,4 @@
 #include "plugin.hpp"
-#include "drivers/MidiLoopback.hpp"
 
 Plugin* pluginInstance;
 
@@ -66,10 +65,6 @@ void init(rack::Plugin* p) {
 	p->addModel(modelMe);
 
 	pluginSettings.readFromJson();
-
-	if (pluginSettings.midiLoopbackDriverEnabled) {
-		StoermelderPackOne::MidiLoopback::init();
-	}
 }
 
 
