@@ -515,8 +515,13 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		std::string pluginSlug = json_string_value(json_object_get(moduleJ, "plugin"));
 		std::string modelSlug = json_string_value(json_object_get(moduleJ, "model"));
 
+		static const std::set<std::tuple<std::string, std::string>> moduleSlugs = {
+			std::make_tuple("Core", "MIDI-Map"),
+			std::make_tuple("MindMeldModular", "PatchMaster")
+		};
+
 		// Only handle some specific modules known to use mapping of parameters
-		if (!(pluginSlug == "Core" && modelSlug == "MIDI-Map"))
+		if (moduleSlugs.find(std::make_tuple(pluginSlug, modelSlug)) == moduleSlugs.end())
 			return;
 
 		json_t* dataJ = json_object_get(moduleJ, "data");
