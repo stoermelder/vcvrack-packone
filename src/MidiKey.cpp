@@ -265,8 +265,9 @@ struct MidiKeyModule : Module {
 		}
 	}
 
-	void learnKey(int key) {
+	void learnKey(int key, int mods) {
 		slot[learningId].key = key;
+		slot[learningId].mods = mods & (RACK_MOD_CTRL | GLFW_MOD_ALT | GLFW_MOD_SHIFT);
 		learnedKey = true;
 		commitLearn();
 		updateMapLen();
@@ -631,7 +632,7 @@ struct MidiKeyWidget : ThemedModuleWidget<MidiKeyModule<>> {
 			int e_key = keyFix(e.key);
 			std::string kn = keyName(e_key);
 			if (!kn.empty()) {
-				module->learnKey(e_key);
+				module->learnKey(e_key, e.mods);
 				e.consume(this);
 			}
 		}
