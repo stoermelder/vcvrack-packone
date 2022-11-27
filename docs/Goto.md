@@ -26,4 +26,13 @@ It is possible to trigger a view-port change by CV which is especially useful wi
 
 ![GOTO C5-A5](./Goto-c5.png)
 
-GOTO was added in v1.6 of PackOne.
+## Changelog
+
+- v1.6.0
+    - Initial release of GOTO
+- v1.7.0
+    - Added support for number pad keys (#134)
+- v2.0.0
+    - Added "top left" as a modules reference point for jump destination
+    - Removed setting "Center module" as the disabled state did not work correctly
+    - Fixed crash on patch-loading inside Rack VST (#342)

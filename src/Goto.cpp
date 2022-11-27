@@ -168,12 +168,9 @@ struct GotoContainer : widget::Widget {
 	dsp::ClockDivider divider;
 	int learnJumpPoint = -1;
 
-	GotoContainer() {
-		divider.setDivision(APP->window->getMonitorRefreshRate());
-	}
-
 	void draw(const DrawArgs& args) override {
 		if (!module) return;
+		divider.setDivision((uint32_t)APP->window->getMonitorRefreshRate());
 
 		if (module->resetRequested) {
 			learnJumpPoint = -1;

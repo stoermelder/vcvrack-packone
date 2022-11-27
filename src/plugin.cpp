@@ -1,5 +1,4 @@
 #include "plugin.hpp"
-#include "drivers/MidiLoopback.hpp"
 
 Plugin* pluginInstance;
 
@@ -17,6 +16,7 @@ void init(rack::Plugin* p) {
 	p->addModel(modelInfixMicro);
 	p->addModel(modelStrip);
 	p->addModel(modelStripBay4);
+	p->addModel(modelStripPp);
 	p->addModel(modelEightFace);
 	p->addModel(modelEightFaceX2);
 	p->addModel(modelMidiCat);
@@ -53,15 +53,13 @@ void init(rack::Plugin* p) {
 	p->addModel(modelEightFaceMk2);
 	p->addModel(modelEightFaceMk2Ex);
 	p->addModel(modelMidiPlug);
+	p->addModel(modelDirt);
+	p->addModel(modelMidiKey);
 	p->addModel(modelAudioInterface64);
 	p->addModel(modelMb);
 	p->addModel(modelMe);
 
 	pluginSettings.readFromJson();
-
-	if (pluginSettings.midiLoopbackDriverEnabled) {
-		StoermelderPackOne::MidiLoopback::init();
-	}
 }
 
 

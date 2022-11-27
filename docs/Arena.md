@@ -76,4 +76,16 @@ The colored circles on the center-screen representing inputs and mix-outputs can
 
 ![ARENA MIDI mapping](./Arena-map.gif)
 
-This module was added in v1.3 of PackOne.
+## Changelog
+
+- v1.3.0
+    - Initial release of ARENA
+- v1.4.0
+    - Added missing bipolar-mode for X/Y-inputs of the mix-channels
+- v1.7.0
+    - Fixed wrong calculation of output levels (#147, #113)
+- v1.8.0
+    - Fixed noise on OUT-ports (#190)
+- v2.0.0
+    - Fixed broken behavior of "Radius" sliders of "In"-ports
+    - Fixed broken patch-restore of "Radius" sliders (#331)

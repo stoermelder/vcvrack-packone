@@ -160,3 +160,6 @@ Once placed next to TRANSIT the expander works and behaves the same way TRANSIT 
     - Added context menu option for unbinding all bound parameters of a module (#268)
     - Added "Auto"-mode besides "Read" and "Write" (#269)
     - Added "Shift front" and "Shift back" context menu options (#274)
+- v2.0.0
+    - Added retrigger-function for CV-input channel 2 in C4 mode (#330)
+    - Fixed premature end of processing and not reaching stored snapshot state (#329)

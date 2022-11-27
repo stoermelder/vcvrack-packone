@@ -63,5 +63,34 @@ There are different modes for SLOT-port available, configured by context menu op
 
 With the option "Autoload first preset" on the context menu you can autoload the first preset slot when a preset of 8FACE itself is loaded. This is useful when changing presets of 8FACE with another instance of 8FACE to aquire even more preset slots. The option "Autoload last active preset" works the same way.
 
-8FACE was added in v1.0.5 of PackOne.  
-8FACEx2 was added in v1.3 of PackOne.
+## Changelog
+
+- v1.0.5
+    - Initial release of 8FACE
+- v1.1.0
+    - Using additional worker thread for applying presets to avoid engine deadlock on some modules (especially using parameter mapping)
+    - Added trigger modes "reverse", "pingpong" and "random" for SLOT-port
+    - Renamed "Clock"-mode to "Arm" for SLOT-port
+    - Added option to autoload first preset on load of 8FACE presets
+    - Fixed unusable SLOT-modes "0..10V" and "C4..G4"
+- v1.2.0
+    - Added option to switch between left and right side controlled module (#50)
+    - Follow voltage standards for Rack (ignore SLOT for 1ms after trigger on RESET)
+- v1.3.0
+    - Intial release of 8FACEx2
+    - Revised panel design with combined LED and buttons
+- v1.8.0
+    - Fixed hanging pingpong-mode when changing slots manually (#191, #203)
+    - Added trigger-options "pseudo-random", "random walk", "alternating", "shuffle" ([manual](./EightFace.md#trigger-modes))
+- v1.9.0
+    - Load preset in Arm-mode even when the same slot was selected before (#212)
+    - Improved thread-handling for crashes when used with specific modules (#76)
+    - Added an option for auto-loading the last active preset
+    - Added "Off" as SLOT mode (#249)
+    - Fixed broken "Autoload first preset" (#29)
+- v1.10.0
+    - Added "Auto"-mode besides "Read" and "Write" ([manual](./EightFace.md#auto-mode)) (#251)
+    - Added "Shift front" and "Shift back" context menu options (#275)
+- v2.0.0
+    - Added retrigger-function for CV-input channel 2 in C4 mode (#330)
+    - Fixed unconnected modules after patch reload (#338)

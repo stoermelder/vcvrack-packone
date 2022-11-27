@@ -152,6 +152,7 @@ struct StripModule : StripModuleBase {
 			Module* m = this;
 			while (true) {
 				if (!m || m->rightExpander.moduleId < 0) break;
+				if (!m->rightExpander.module) break;
 				// This is what "Module.hpp" says about bypass:
 				// "Module subclasses should not read/write this variable."
 				APP->engine->bypassModule(m->rightExpander.module, val);
@@ -177,6 +178,7 @@ struct StripModule : StripModuleBase {
 			Module* m = this;
 			while (true) {
 				if (!m || m->leftExpander.moduleId < 0) break;
+				if (!m->leftExpander.module) break;
 				// This is what "Module.hpp" says about bypass:
 				// "Module subclasses should not read/write this variable."
 				APP->engine->bypassModule(m->leftExpander.module, val);

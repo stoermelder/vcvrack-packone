@@ -1,6 +1,29 @@
+## 2.0.beta2
+
+### New modules
+
+- Module [DIRT](./docs/Dirt.md)
+    - New module, crosstalk and noise for polyphonic cables
+- Module [MIDI-KEY](./docs/MidiKey.md)
+    - New module, utility for generating keyboard events from MIDI CC or note messages (#245)
+- Module [S++](./docs/StripPp.md)
+    - New module, utility for pasting and importing Rack selections while preserving parameter mappings and [GLUE](./docs/Glue.md) labels
+
+### Fixes and Changes
+
+- Module [GOTO](./docs/Goto.md)
+    - Fixed crash on patch-loading inside Rack VST (#342)
+- Module [MIDI-PLUG](./docs/MidiPlug.md)
+    - Removed MIDI "Loopback" driver as a loopback driver is available offically since Rack 2.2.0
+- Module [STRIP](./docs/Strip.md)
+    - Fixed crash on disabling a group of modules (#341)
+
 ## 2.0.beta1
 
 - Changed license to GPL-3.0-or-later
+
+### Fixes and Changes
+
 - Modules [8FACE, 8FACEx2](./docs/EightFace.md)
     - Added retrigger-function for CV-input channel 2 in C4 mode (#330)
     - Fixed unconnected modules after patch reload (#338)
