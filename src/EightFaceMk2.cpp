@@ -128,6 +128,10 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 		BASE::panelTheme = pluginSettings.panelThemeDefault;
 		Module::config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		Module::configParam(PARAM_RW, 0, 1, 0, "Read/write mode");
+		Module::configInput(INPUT_CV, "Slot-selection");
+		Module::inputInfos[INPUT_CV]->description = "Channel 2 can retrigger the current slot in C4 mode";
+		Module::configInput(INPUT_RESET, "Sequencer-mode reset");
+
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			EightFaceMk2ParamQuantity<NUM_PRESETS>* pq = Module::configParam<EightFaceMk2ParamQuantity<NUM_PRESETS>>(PARAM_PRESET + i, 0, 1, 0);
 			pq->id = i;

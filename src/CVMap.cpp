@@ -55,6 +55,11 @@ struct CVMapModule : CVMapModuleBase<MAX_CHANNELS> {
 	CVMapModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+		configInput(POLY_INPUT1, "Polyphonic");
+		inputInfos[POLY_INPUT1]->description = "Slots 1-16";
+		configInput(POLY_INPUT2, "Polyphonic");
+		inputInfos[POLY_INPUT2]->description = "Slots 17-32";
+
 		for (int i = 0; i < MAX_CHANNELS; i++) {
 			paramHandles[i].text = string::f("CV-MAP Slot %02d", i + 1);
 			mapParam[i].setLimits(0.f, 1.f, std::numeric_limits<float>::infinity());

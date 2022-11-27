@@ -89,6 +89,8 @@ struct DirtModule : Module {
 	DirtModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+		configInput(INPUT, "Polyphonic");
+		configOutput(OUTPUT, "Polyphonic");
 		for (size_t i = 0; i < PORT_MAX_CHANNELS; i++) {
 			noise[i].reset();
  		}

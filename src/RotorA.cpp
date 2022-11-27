@@ -40,8 +40,15 @@ struct RotorAModule : Module {
 	RotorAModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+		configInput(MOD_INPUT, "Modulator");
+		inputInfos[MOD_INPUT]->description = "Defines how the carrier signal is modulated across the output channels.\nUnipolar (0V..10V) and monophonic.";
+		configInput(CAR_INPUT, "Carrier");
+		inputInfos[CAR_INPUT]->description = "The carrier signal is spread accross the channels according to the voltage of the modulator.\nMonophonic and optional.";
+		configInput(BASE_INPUT, "Base signal");
+		inputInfos[BASE_INPUT]->description = "An input signal on channel x will be sent to the output on channel x attenuverted using the carrier signal on channel x.\nPolyphonic and optional.";
 		configParam(CHANNELS_PARAM, 2, 16, 16, "Number of output channels");
 		configParam(CHANNELS_OFFSET_PARAM, 0, 14, 0, "Offset for output channels");
+		configOutput(POLY_OUTPUT, "Polyphonic");
 
 		lightDivider.setDivision(2048);
 		channelsDivider.setDivision(512);

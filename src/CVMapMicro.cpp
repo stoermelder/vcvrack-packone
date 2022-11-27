@@ -47,9 +47,12 @@ struct CVMapMicroModule : CVMapModuleBase<1> {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configParam<MapParamQuantity<CVMapMicroModule>>(MAP_PARAM, 0.f, 1.f, 0.f, "µMAP");
-
+		configInput(INPUT, "Parameter-automation CV");
+		configInput(OFFSET_INPUT, "CV offset");
 		configParam(OFFSET_PARAM, 0.f, 1.f, 0.f, "Input-offset", "%", 0.f, 100.f);
+		configInput(SCALE_INPUT, "CV scaling");
 		configParam(SCALE_PARAM, -2.f, 2.f, 1.f, "Input-scaling", "x");
+		configOutput(OUTPUT, "Parameter-automation CV");
 
 		this->paramHandles[0].text = "µMAP";
 		lightDivider.setDivision(1024);

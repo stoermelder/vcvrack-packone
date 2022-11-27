@@ -45,10 +45,17 @@ struct SipoModule : Module {
 	SipoModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		configParam(SKIP_PARAM, 0.f, MAX_DATA_32 - 1, 0.f, "Trigger-skip to the current value, 0 acts as a standard shift register");
-		configParam(INCR_PARAM, 0.f, MAX_DATA_32_16, 0.f, "Inrement between used cells, 0 acts as standard shift register");
-		data = new float[MAX_DATA];
+		configInput(TRIG_INPUT, "Trigger");
+		inputInfos[TRIG_INPUT]->description = "Samples the input signal and stores it to the register.";
+		configInput(SKIP_INPUT, "Skip CV");
+		configParam(SKIP_PARAM, 0.f, MAX_DATA_32 - 1, 0.f, "Skipped register cells for the output.\nA value x means register cell x is the voltage on output channel 1.\nA value of 0 acts as a standard shift register.");
+		configInput(INCR_INPUT, "Increment CV");
+		configParam(INCR_PARAM, 0.f, MAX_DATA_32_16, 0.f, "Increment between output register cells.\nA value of y means output channel 2 is y register cells behind channel 1.\nA value of 0 acts as standard shift register.");
+		configInput(SRC_INPUT, "Shift register");
+		inputInfos[SRC_INPUT]->description = "Monophonic.";
+		configOutput(POLY_OUTPUT, "Polyphonic");
 
+		data = new float[MAX_DATA];
 		onReset();
 		lightDivider.setDivision(512);
 	}

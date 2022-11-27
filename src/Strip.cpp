@@ -73,8 +73,11 @@ struct StripModule : StripModuleBase {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configParam<TriggerParamQuantity>(MODE_PARAM, 0, 1, 0, "Toggle left/right mode");
+		configInput(ON_INPUT, "Strip on/toggle trigger");
 		configParam<TriggerParamQuantity>(ON_PARAM, 0, 1, 0, "Switch/toggle strip on");
+		configInput(OFF_INPUT, "Strip off trigger");
 		configParam<TriggerParamQuantity>(OFF_PARAM, 0, 1, 0, "Switch strip off");
+		configInput(RAND_INPUT, "Strip randomization trigger");
 		configParam<TriggerParamQuantity>(RAND_PARAM, 0, 1, 0, "Randomize strip");
 		configParam(EXCLUDE_PARAM, 0, 1, 0, "Parameter randomization include/exclude");
 
