@@ -20,6 +20,8 @@ struct MidiKeyModule : Module {
 		/** [Stored to Json] */
 		int key = -1;
 		/** [Stored to Json] */
+		int mods = 0;
+		/** [Stored to Json] */
 		int cc = -1;
 		/** [Stored to Json] */
 		int note = -1;
@@ -69,6 +71,7 @@ struct MidiKeyModule : Module {
 			slot.v[i].cc = -1;
 			slot.v[i].note = -1;
 			slot.v[i].key = -1;
+			slot.v[i].mods = 0;
 		}
 		for (int i = 0; i < 128; i++) {
 			mapCc[i] = -1;
@@ -215,7 +218,10 @@ struct MidiKeyModule : Module {
 		learningId = -1;
 		slot[id].cc = -1;
 		slot[id].note = -1;
-		if (!midiOnly) slot[id].key = -1;
+		if (!midiOnly) {
+			slot[id].key = -1;
+			slot[id].mods = 0;
+		}
 		updateMapLen();
 	}
 
@@ -225,6 +231,7 @@ struct MidiKeyModule : Module {
 			slot[id].cc = -1;
 			slot[id].note = -1;
 			slot[id].key = -1;
+			slot[id].mods = 0;
 		}
 		mapLen = 1;
 	}
@@ -267,29 +274,29 @@ struct MidiKeyModule : Module {
 
 	void processKey(int id, uint8_t value) {
 		switch (id) {
-			case ID_CTRL: 
-				slot[ID_CTRL].active = value > 0; 
+			case ID_CTRL:
+				slot[ID_CTRL].active = value > 0;
 				return;
-			case ID_ALT: 
+			case ID_ALT:
 				slot[ID_ALT].active = value > 0;
 				return;
-			case ID_SHIFT: 
+			case ID_SHIFT:
 				slot[ID_SHIFT].active = value > 0;
 				return;
 			default: {
 				// Skip duplicate events
-				if ((value > 0 && slot[id].active) || (value == 0 && !slot[id].active)) 
+				if ((value > 0 && slot[id].active) || (value == 0 && !slot[id].active))
 					return;
 				event::HoverKey e;
 				e.key = slot[id].key;
 				e.scancode = glfwGetKeyScancode(e.key);
 				e.action = value > 0 ? GLFW_PRESS : GLFW_RELEASE;
 				e.mods = 0;
-				if (slot[ID_CTRL].active) 
+				if (slot[ID_CTRL].active || (slot[id].mods & RACK_MOD_CTRL))
 					e.mods = e.mods | RACK_MOD_CTRL;
-				if (slot[ID_ALT].active) 
+				if (slot[ID_ALT].active || (slot[id].mods & GLFW_MOD_ALT))
 					e.mods = e.mods | GLFW_MOD_ALT;
-				if (slot[ID_SHIFT].active) 
+				if (slot[ID_SHIFT].active || (slot[id].mods & GLFW_MOD_SHIFT))
 					e.mods = e.mods | GLFW_MOD_SHIFT;
 				keyEventQueue.push(e);
 				slot[id].active = value > 0;
@@ -307,6 +314,7 @@ struct MidiKeyModule : Module {
 		for (size_t i = 0; i < slot.v.size(); i++) {
 			json_t* mapJ = json_object();
 			json_object_set_new(mapJ, "key", json_integer(slot.v[i].key));
+			json_object_set_new(mapJ, "mods", json_integer(slot.v[i].mods));
 			json_object_set_new(mapJ, "cc", json_integer(slot.v[i].cc));
 			json_object_set_new(mapJ, "note", json_integer(slot.v[i].note));
 			json_array_append_new(mapsJ, mapJ);
@@ -326,6 +334,7 @@ struct MidiKeyModule : Module {
 		size_t i;
 		json_array_foreach(mapsJ, i, mapJ) {
 			slot.v[i].key = json_integer_value(json_object_get(mapJ, "key"));
+			slot.v[i].mods = json_integer_value(json_object_get(mapJ, "mods"));
 			slot.v[i].cc = json_integer_value(json_object_get(mapJ, "cc"));
 			slot.v[i].note = json_integer_value(json_object_get(mapJ, "note"));
 		}
@@ -393,7 +402,7 @@ struct MidiKeyChoice : LedDisplayChoice {
 		else if (module->slot[id].key >= 0 || id < -1) {
 			return "..... ";
 		}
-		return "     ";
+		return "      ";
 	}
 
 	void step() override {
@@ -412,15 +421,23 @@ struct MidiKeyChoice : LedDisplayChoice {
 
 		// Set text
 		if ((module->slot[id].key >= 0 && module->learningId != id) || id < -1) {
-			std::string prefix = getSlotPrefix();
 			std::string label = "";
 			switch (id) {
-				case ID_CTRL: label = RACK_MOD_CTRL_NAME; break;
-				case ID_ALT: label = RACK_MOD_ALT_NAME; break;
-				case ID_SHIFT: label = RACK_MOD_SHIFT_NAME; break;
-				default: label = string::f("-> %s", keyName(module->slot[id].key).c_str()); break;
+				case ID_CTRL:
+					label = RACK_MOD_CTRL_NAME; break;
+				case ID_ALT:
+					label = RACK_MOD_ALT_NAME; break;
+				case ID_SHIFT:
+					label = RACK_MOD_SHIFT_NAME; break;
+				default:
+					label = "> ";
+					if (module->slot[id].mods & RACK_MOD_CTRL) label += RACK_MOD_CTRL_NAME "+";
+					if (module->slot[id].mods & GLFW_MOD_ALT) label += RACK_MOD_ALT_NAME "+";
+					if (module->slot[id].mods & GLFW_MOD_SHIFT) label += RACK_MOD_SHIFT_NAME "+";
+					label += keyName(module->slot[id].key).c_str();
+					break;
 			}
-			text = prefix + label;
+			text = getSlotPrefix() + label;
 		} 
 		else {
 			if (module->learningId == id) {
@@ -459,21 +476,35 @@ struct MidiKeyChoice : LedDisplayChoice {
 		ui::Menu* menu = createMenu();
 		menu->addChild(construct<UnmapItem>(&MenuItem::text, "Unmap", &UnmapItem::module, module, &UnmapItem::id, id));
 		menu->addChild(construct<UnmapMidiItem>(&MenuItem::text, "Clear MIDI assignment", &UnmapMidiItem::module, module, &UnmapMidiItem::id, id));
+		menu->addChild(new MenuSeparator);
+		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Modifiers"));
+		menu->addChild(createCheckMenuItem(RACK_MOD_CTRL_NAME, "", [=]() { return module->slot[id].mods & RACK_MOD_CTRL; }, [=]() { module->slot[id].mods ^= RACK_MOD_CTRL; }));
+		menu->addChild(createCheckMenuItem(RACK_MOD_ALT_NAME, "", [=]() { return module->slot[id].mods & GLFW_MOD_ALT; }, [=]() { module->slot[id].mods ^= GLFW_MOD_ALT; }));
+		menu->addChild(createCheckMenuItem(RACK_MOD_SHIFT_NAME, "", [=]() { return module->slot[id].mods & GLFW_MOD_SHIFT; }, [=]() { module->slot[id].mods ^= GLFW_MOD_SHIFT; }));
 	}
 
 	void draw(const DrawArgs& args) override {
-		LedDisplayChoice::draw(args);
 		if (module && module->slot[id].active) {
-			float x = box.size.x - 20.f;
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, 0, 0, box.size.x, box.size.y);
+			nvgFillColor(args.vg, color::mult(color::YELLOW, 0.2f));
+			nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
+			nvgFill(args.vg);
+		}
+
+		LedDisplayChoice::draw(args);
+		/*
+		if (module && module->slot[id].active) {
+			float x = 48.f;
 			float y = box.size.y / 2.f;
 			// Light
 			nvgBeginPath(args.vg);
-			nvgCircle(args.vg, x, y, 1.5f);
-			nvgFillColor(args.vg, color);
+			nvgCircle(args.vg, x, y, 1.2f);
+			nvgFillColor(args.vg, color::YELLOW);
 			nvgFill(args.vg);
 			// Halo
 			nvgBeginPath(args.vg);
-			nvgCircle(args.vg, x, y, 4.5f);
+			nvgCircle(args.vg, x, y, 4.0f);
 			NVGpaint paint;
 			NVGcolor icol = color::mult(color, 0.6f);
 			NVGcolor ocol = nvgRGB(0, 0, 0);
@@ -482,6 +513,7 @@ struct MidiKeyChoice : LedDisplayChoice {
 			nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
 			nvgFill(args.vg);
 		}
+		*/
 	}
 };
 

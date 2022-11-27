@@ -16,6 +16,8 @@
 
 ### Fixes and Changes
 
+- Module [MIDI-KEY](./docs/MidiKey.md)
+    - Added options for slot-specific key modifiers (#344)
 - Module [STROKE](./docs/Stroke.md)
     - Added commands "Add random module", "Save module preset" and "Save module default preset" (#345)
 
