@@ -13,9 +13,10 @@ The PackOne plugin gives you some modules for [VCV Rack](https://www.vcvrack.com
 
 If you like my modules consider donating to https://paypal.me/stoermelder. Thank you for your support!
 
-## Latest additions to PackOne - new in v2.0
+## Latest additions to PackOne - new for v2.0
 
 - [DIRT](./docs/Dirt.md): generates crosstalk and noise for polyphonic cables
+- [MIDI-KEY](./docs/MidiKey.md): utility for generating keyboard events from MIDI CC or note messages
 - [S++](./docs/StripPp.md): utility for pasting and importing Rack selections while preserving parameter mappings and [GLUE](./docs/Glue.md) labels
 
 ## The modules of PackOne

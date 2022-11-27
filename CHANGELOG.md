@@ -26,11 +26,11 @@
 ### Fixes and Changes
 
 - Module [GOTO](./docs/Goto.md)
-    - fix crash on load as VST (#342)
+    - Fixed crash on patch-loading inside Rack VST (#342)
 - Module [MIDI-PLUG](./docs/MidiPlug.md)
     - Removed MIDI "Loopback" driver as a loopback driver is available offically since Rack 2.2.0
 - Module [STRIP](./docs/Strip.md)
-    - fix crash on disabling a group of modules (#341)
+    - Fixed crash on disabling a group of modules (#341)
 
 ## 2.0.beta1
 
