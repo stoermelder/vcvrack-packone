@@ -58,7 +58,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::RIGHT) {
 			Module* m = module;
 			while (true) {
-				if (!m || m->rightExpander.moduleId < 0 || m->model == modelStripBlock) break;
+				if (!m || m->rightExpander.moduleId < 0) break;
 				toBeRemoved.push_back(m->rightExpander.moduleId);
 				m = m->rightExpander.module;
 			}
@@ -66,7 +66,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::LEFT) {
 			Module* m = module;
 			while (true) {
-				if (!m || m->leftExpander.moduleId < 0 || m->model == modelStripBlock) break;
+				if (!m || m->leftExpander.moduleId < 0) break;
 				toBeRemoved.push_back(m->leftExpander.moduleId);
 				m = m->leftExpander.module;
 			}
@@ -201,7 +201,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::RIGHT) {
 			Module* m = module;
 			while (true) {
-				if (!m || m->rightExpander.moduleId < 0 || m->model == modelStripBlock) break;
+				if (!m || m->rightExpander.moduleId < 0) break;
 				m = m->rightExpander.module;
 				StripBayBase* sc = dynamic_cast<StripBayBase*>(m);
 				if (sc) toDo.push_back(sc);
@@ -211,7 +211,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::LEFT) {
 			Module* m = module;
 			while (true) {
-				if (!m || m->leftExpander.moduleId < 0 || m->model == modelStripBlock) break;
+				if (!m || m->leftExpander.moduleId < 0) break;
 				m = m->leftExpander.module;
 				StripBayBase* sc = dynamic_cast<StripBayBase*>(m);
 				if (sc) toDo.push_back(sc);
@@ -251,7 +251,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::RIGHT) {
 			Module* m = module;
 			while (true) {
-				if (!m || m->rightExpander.moduleId < 0 || m->model == modelStripBlock) break;
+				if (!m || m->rightExpander.moduleId < 0) break;
 				m = m->rightExpander.module;
 				StripBayBase* sc = dynamic_cast<StripBayBase*>(m);
 				if (sc) toDo[sc->getConnId()] = sc;
@@ -261,7 +261,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::LEFT) {
 			Module* m = module;
 			while (true) {
-				if (!m || m->leftExpander.moduleId < 0 || m->model == modelStripBlock) break;
+				if (!m || m->leftExpander.moduleId < 0) break;
 				m = m->leftExpander.module;
 				StripBayBase* sc = dynamic_cast<StripBayBase*>(m);
 				if (sc) toDo[sc->getConnId()] = sc;
@@ -704,7 +704,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::RIGHT) {
 			Module* m = module;
 			while (true) {
-				if (!m || m->rightExpander.moduleId < 0 || m->rightExpander.module->model == modelStripBlock) break;
+				if (!m || m->rightExpander.moduleId < 0) break;
 				ModuleWidget* mw = APP->scene->rack->getModule(m->rightExpander.moduleId);
 				json_t* moduleJ = mw->toJson();
 				assert(moduleJ);
@@ -720,7 +720,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::LEFT) {
 			Module* m = module;
 			while (true) {
-				if (!m || m->leftExpander.moduleId < 0 || m->leftExpander.module->model == modelStripBlock) break;
+				if (!m || m->leftExpander.moduleId < 0) break;
 				ModuleWidget* mw = APP->scene->rack->getModule(m->leftExpander.moduleId);
 				json_t* moduleJ = mw->toJson();
 				assert(moduleJ);
