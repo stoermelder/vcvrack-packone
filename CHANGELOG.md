@@ -12,7 +12,14 @@
 - Module [PRISMA](./docs/Prisma.md)
     - A wave multiplier/phase shifter inspired by A-137-2
 
-## 2.0.beta2 (in development)
+## 2.0.0 (in development)
+
+### Fixes and Changes
+
+- Module [STROKE](./docs/Stroke.md)
+    - Added commands "Add random module", "Save module preset" and "Save module default preset" (#345)
+
+## 2.0.beta2
 
 ### New modules
 

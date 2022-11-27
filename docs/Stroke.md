@@ -61,10 +61,16 @@ The module also supports mouse-button events: If your mouse has more than three 
 <a name="add-module"></a>
 - **Add module** (added in v1.9.0)  
   Adds a module with preset to the patch. Before this command can be used a module has to be "learned" by the option in the context sub-menu and pointing to a module. While learning a module is active the slot display turns red temporarily.
+- **Add random module** (added in v2.0.0)  
+  Adds a random module to the patch.
 <a name="module-send-hotkey"></a>
 - **Send hotkey to module** (added in v1.9.0)  
   Works as a shortcut for sending any hotkey to a module in the current patch. For example you can send "Ctrl+R" (Randomize) to a module in the patch, even without hovering the mouse pointer over the module. Before this command can be used a module and a hotkey has to be "learned" by the options in the context sub-menu. While learning a module is active the slot display turns red temporarily.  
   Please note this is an experimental command and might not work with every module and any hotkey.
+- **Save preset** (added in v2.0.0)  
+  Triggers the context menu option "Preset->Save as" of the hovered module, for saving the current module preset to save.
+- **Save default preset** (added in v2.0.0)  
+  Triggers the context menu option "Preset->Save default" of the hovered module, for storing the modules' default preset.
 
 ## Cable commands
 
@@ -115,3 +121,5 @@ The module also supports mouse-button events: If your mouse has more than three 
     - Added tooltips for mapped commands
 - v1.10.0
     - Improved behavior of parameter copy/paste commands (#273)
+- v2.0.0
+    - Added commands "Add random module", "Save module preset" and "Save module default preset" (#345)
