@@ -107,6 +107,8 @@ Once placed next to 8FACE mk2 the expander works and behaves the same way 8FACE 
 
 - Each snapshot can be named with a custom text label. This label is shown while hovering above the snapshot button if parameter tooltips are enabled.
 
+- [GLUE](./Glue.md) labels can be dynamically changed on different snapshots if a GLUE module is controlled by 8FACE mk2.
+
 ## Changelog
 
 - v1.9.0
