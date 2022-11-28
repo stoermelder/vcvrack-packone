@@ -12,10 +12,12 @@
 - Module [PRISMA](./docs/Prisma.md)
     - A wave multiplier/phase shifter inspired by A-137-2
 
-## 2.0.0 (in development)
+## 2.0.beta3 (in development)
 
 ### Fixes and Changes
 
+- Module [GLUE](./docs/Glue.md)
+    - Changed "Add label" hotkey to Ctrl+G (#305)
 - Module [MIDI-KEY](./docs/MidiKey.md)
     - Added options for slot-specific key modifiers (#344)
 - Module [STROKE](./docs/Stroke.md)
@@ -35,9 +37,9 @@
 ### Fixes and Changes
 
 - Module [GOTO](./docs/Goto.md)
-    - Fixed crash on patch-loading inside Rack VST (#342)
+    - Fixed crash on patch-loading inside Rack VST (and probably other plugin formats) (#342)
 - Module [MIDI-PLUG](./docs/MidiPlug.md)
-    - Removed MIDI "Loopback" driver as a loopback driver is available offically since Rack 2.2.0
+    - Removed MIDI "Loopback" driver as a loopback driver is available officially since Rack 2.2.0
 - Module [STRIP](./docs/Strip.md)
     - Fixed crash on disabling a group of modules (#341)
 
