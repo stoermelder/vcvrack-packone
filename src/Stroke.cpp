@@ -708,6 +708,7 @@ struct CmdModulePresetSave : CmdBase {
 		Widget* w = APP->event->getHoveredWidget();
 		if (!w) return;
 		ModuleWidget* mw = dynamic_cast<ModuleWidget*>(w);
+		if (!mw) mw = w->getAncestorOfType<ModuleWidget>();
 		if (!mw) return;
 		mw->saveDialog();
 	}
@@ -719,6 +720,7 @@ struct CmdModulePresetSaveDefault : CmdBase {
 		Widget* w = APP->event->getHoveredWidget();
 		if (!w) return;
 		ModuleWidget* mw = dynamic_cast<ModuleWidget*>(w);
+		if (!mw) mw = w->getAncestorOfType<ModuleWidget>();
 		if (!mw) return;
 		mw->saveTemplateDialog();
 	}
