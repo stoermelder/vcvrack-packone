@@ -24,4 +24,9 @@ ORBIT provides different options for generating the random positions of the inpu
 
 The output can be configured as polyphonic (with the same number of channels as _IN_) or summed to single channels for left and right.
 
-ORBIT was added in v1.9 of PackOne.
+## Changelog
+
+- v1.9.0
+    - Initial release of ORBIT
+- v2.0.0
+    - Added output level control (#286)

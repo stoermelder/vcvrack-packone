@@ -41,6 +41,7 @@ struct OrbitModule : Module {
 	enum ParamIds {
 		PARAM_SPREAD,
 		PARAM_DRIFT,
+		PARAM_LEVEL,
 		NUM_PARAMS
 	};
 	enum InputIds {
@@ -77,17 +78,18 @@ struct OrbitModule : Module {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configInput(INPUT_SPREAD, "Spread amount CV");
 		inputInfos[INPUT_SPREAD]->description = "Normalized to 10V (full stereo field).";
+		configParam(PARAM_SPREAD, 0.f, 1.f, 0.5f, "Maximum stereo spread", "%", 0.f, 100.f);
+		configParam(PARAM_DRIFT, -1.f, 1.f, 0.f, "Stereo drift (-1..0 --> L/R, 0..+1 --> center)");
 		configInput(INPUT_DIST, "Distribution");
 		inputInfos[INPUT_DIST]->description = "Optional, used if distribution is set to \"External\", 0..10V.";
 		configInput(INPUT_IN, "Signal");
 		configInput(INPUT_TRIG, "Stereo spread trigger");
 		inputInfos[INPUT_TRIG]->description = "Polyphonic, normalized to the first channel.";
+		configParam(PARAM_LEVEL, 0.f, M_SQRT2, 1.f, "Output level", " dB", -10.f, 40.f);
 		configOutput(OUTPUT_L, "Left channel");
 		outputInfos[OUTPUT_L]->description = "Downmixed signal, optional polyphonic by context menu option.";
 		configOutput(OUTPUT_R, "Right channel");
 		outputInfos[OUTPUT_R]->description = "Downmixed signal, optional polyphonic by context menu option.";
-		configParam(PARAM_SPREAD, 0.f, 1.f, 0.5f, "Maximum stereo spread", "%", 0.f, 100.f);
-		configParam(PARAM_DRIFT, -1.f, 1.f, 0.f, "Stereo drift (-1..0 --> L/R, 0..+1 --> center)");
 		onReset();
 	}
 
@@ -105,6 +107,7 @@ struct OrbitModule : Module {
 	void process(const ProcessArgs& args) override {
 		int channels = inputs[INPUT_IN].getChannels();
 		float drift = params[PARAM_DRIFT].getValue();
+		float level = std::pow(params[PARAM_LEVEL].getValue(), 2.f);
 
 		float outL[PORT_MAX_CHANNELS];
 		float sumL = 0.f;
@@ -138,9 +141,9 @@ struct OrbitModule : Module {
 			pan[c] = linearDrift[c].process(args.sampleTime, pan[c]);
 			float p = clickFilter[c].process(args.sampleTime, pan[c]);
 			float v = inputs[INPUT_IN].getVoltage(c);
-			outL[c] = p * v;
+			outL[c] = p * v * level;
 			sumL += outL[c];
-			outR[c] = (1.f - p) * v;
+			outR[c] = (1.f - p) * v * level;
 			sumR += outR[c];
 		}
 
@@ -184,10 +187,12 @@ struct OrbitWidget : ThemedModuleWidget<OrbitModule> {
 		addParam(createParamCentered<StoermelderSmallKnob>(Vec(37.5f, 60.6f), module, OrbitModule::PARAM_SPREAD));
 		addInput(createInputCentered<StoermelderPort>(Vec(37.5f, 87.7f), module, OrbitModule::INPUT_SPREAD));
 		addParam(createParamCentered<StoermelderSmallKnob>(Vec(37.5f, 133.9f), module, OrbitModule::PARAM_DRIFT));
-		addInput(createInputCentered<StoermelderPort>(Vec(37.5f, 236.2f), module, OrbitModule::INPUT_DIST));
+		addInput(createInputCentered<StoermelderPort>(Vec(37.5f, 221.2f), module, OrbitModule::INPUT_DIST));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(23.5f, 281.9f), module, OrbitModule::INPUT_IN));
-		addInput(createInputCentered<StoermelderPort>(Vec(51.5f, 281.9f), module, OrbitModule::INPUT_TRIG));
+		addInput(createInputCentered<StoermelderPort>(Vec(23.5f, 266.9f), module, OrbitModule::INPUT_IN));
+		addInput(createInputCentered<StoermelderPort>(Vec(51.5f, 266.9f), module, OrbitModule::INPUT_TRIG));
+
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(37.5f, 300.f), module, OrbitModule::PARAM_LEVEL));
 		addOutput(createOutputCentered<StoermelderPort>(Vec(23.5f, 327.7f), module, OrbitModule::OUTPUT_L));
 		addOutput(createOutputCentered<StoermelderPort>(Vec(51.5f, 327.7f), module, OrbitModule::OUTPUT_R));
 	}
