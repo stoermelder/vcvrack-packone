@@ -1,4 +1,5 @@
 #include "Strip.hpp"
+#include "sb/SelectionPreview.cpp"
 
 namespace StoermelderPackOne {
 namespace Strip {
@@ -20,6 +21,8 @@ struct StripPpModule : Module {
 
 	/** [Stored to JSON] */
 	int panelTheme = 0;
+	/** [Stored to JSON] */
+	bool showPreview = true;
 	MODE mode = MODE::LEFTRIGHT;
 
 	StripPpModule() {
@@ -31,19 +34,36 @@ struct StripPpModule : Module {
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
+		json_object_set_new(rootJ, "showPreview", json_boolean(showPreview));
 		return rootJ;
 	}
 
 	void dataFromJson(json_t* rootJ) override {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		showPreview = json_boolean_value(json_object_get(rootJ, "showPreview"));
 	}
 };
 
 
 
 struct StripPpWidget : StripWidgetBase<StripPpModule> {
-	struct StripPpContainer : widget::Widget {
+	struct StripPpContainer : Widget {
 		StripPpWidget* mw;
+		math::Vec dragPos;
+		StoermelderPackOne::SppPreview::SelectionPreview* sp;
+		std::function<void()> callback;
+
+		StripPpContainer() {
+			sp = new StoermelderPackOne::SppPreview::SelectionPreview;
+			sp->hide();
+			addChild(sp);
+		}
+
+		void onHover(const HoverEvent& e) override {
+			sp->box.pos = APP->scene->rack->getMousePos();
+			Widget::onHover(e);
+		}
+
 		void onHoverKey(const event::HoverKey& e) override {
 			if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == (GLFW_MOD_SHIFT | GLFW_MOD_CONTROL)) {
 				switch (e.key) {
@@ -52,11 +72,25 @@ struct StripPpWidget : StripWidgetBase<StripPpModule> {
 						e.consume(this);
 						break;
 					case GLFW_KEY_B:
-						mw->groupSelectionLoadFileDialog();
+						mw->groupSelectionLoad();
 						e.consume(this);
 						break;
 				}
 			}
+		}
+
+		void onButton(const ButtonEvent& e) override {
+			if (sp->isVisible()) {
+				callback();
+				sp->hide();
+			}
+			Widget::onButton(e);
+		}
+
+		void showSelectionPreview(std::string path, std::function<void()> action) {
+			callback = action;
+			sp->loadSelectionFile(path);
+			sp->show();
 		}
 	};
 
@@ -96,12 +130,28 @@ struct StripPpWidget : StripWidgetBase<StripPpModule> {
 		StripWidgetBase<StripPpModule>::step();
 	}
 
+	void groupSelectionLoad() {
+		if (module->showPreview) {
+			std::string path = groupSelectionLoadFileDialog(false);
+			if (path != "") {
+				stripPpContainer->showSelectionPreview(path, [=]() {
+					groupSelectionLoadFile(path);
+				});
+			}
+		}
+		else {
+			groupSelectionLoadFileDialog(true); 
+		}
+	}
+
 	void appendContextMenu(Menu* menu) override {
 		StripWidgetBase<StripPpModule>::appendContextMenu(menu);
 		menu->addChild(new MenuSeparator);
+		menu->addChild(createBoolPtrMenuItem("Show preview", "", &module->showPreview));
+		menu->addChild(new MenuSeparator);
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Selection"));
 		menu->addChild(createMenuItem("Paste", RACK_MOD_SHIFT_NAME "+" RACK_MOD_CTRL_NAME "+V", [=]() { groupSelectionPasteClipboard(); }));
-		menu->addChild(createMenuItem("Import", RACK_MOD_SHIFT_NAME "+" RACK_MOD_CTRL_NAME "+B", [=]() { groupSelectionLoadFileDialog(); }));
+		menu->addChild(createMenuItem("Import", RACK_MOD_SHIFT_NAME "+" RACK_MOD_CTRL_NAME "+B", [=]() { groupSelectionLoad(); }));
 	}
 };
 

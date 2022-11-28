@@ -1077,14 +1077,14 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		groupSelectionFromJson(rootJ);
 	}
 
-	void groupSelectionLoadFileDialog() {
+	std::string groupSelectionLoadFileDialog(bool load) {
 		osdialog_filters* filters = osdialog_filters_parse(SELECTION_FILTERS);
 		DEFER({osdialog_filters_free(filters);});
 
 		char* pathC = osdialog_file(OSDIALOG_OPEN, dirVcvs.c_str(), NULL, filters);
 		if (!pathC) {
 			// No path selected
-			return;
+			return "";
 		}
 		DEFER({
 			dirVcvs = system::getDirectory(std::string(pathC));
@@ -1092,11 +1092,13 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		});
 
 		try {
-			groupSelectionLoadFile(pathC);
+			if (load) groupSelectionLoadFile(pathC);
 		}
 		catch (Exception& e) {
 			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, e.what());
 		}
+
+		return std::string(pathC);
 	}
 
 
