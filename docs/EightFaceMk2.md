@@ -59,15 +59,15 @@ There are also some options on the context menu of the snapshot-buttons:
 ![8FACE mk2 write-mode](./EightFaceMk2-write-context.gif)
 
 A blinking white LED signals the snapshot applied at last. Please keep in mind that you can change bound modules manually and these changes will not be recognized by 8FACE mk2.  
-In write-mode any input on the _SEL_-port is ignored and sequencing is disabled.
+In write-mode any input on the _CV_-port is ignored and sequencing is disabled.
 
 ## Sequencing and selecting snapshots
 
-The fun begins when you use the port labelled _SEL_ for selecting snapshots by CV. Although there are 8 snapshot slots available it is possible to use less slots for sequencing: You can adjust the number of active slots (i.e. sequence length) by long-pressing a snapshot-button while in read-mode. The LEDs turn off completely for slots that are currently disabled.
+The fun begins when you use the port labelled _CV_ for selecting snapshots by CV. Although there are 8 snapshot slots available it is possible to use less slots for sequencing: You can adjust the number of active slots (i.e. sequence length) by long-pressing a snapshot-button while in read-mode. The LEDs turn off completely for slots that are currently disabled.
 
-![8FACE mk2 SEL-port](./EightFaceMk2-sel.gif)
+![8FACE mk2 CV-port](./EightFaceMk2-sel.gif)
 
-Modes for _SEL_ on the contextual menu:
+Modes for _CV_ on the contextual menu:
 
 - **Trigger forward**  
   A trigger advances 8FACE mk2 to the next snapshot. Empty slots are part of the sequence but won't have any effect on the bound modules. A trigger on _RESET_ restarts the sequence on snapshot 1.
@@ -88,9 +88,9 @@ Modes for _SEL_ on the contextual menu:
 - **0..10V**  
   You can select a specific snapshot by voltage. A voltage 0-0.833V selects slot 1, 0.833-0.166V selects slot 2, and so on, if all 12 snapshot-slots are active. Keep in mind that adjusting the length of the sequence also adjusts the voltage range for selecting individual slots: A sequence with length 2 will select slot 1 on voltage 0-5V etc.
 - **C4**  
-  This mode follows the V/Oct-standard. C4 selects snapshot 1, C#4 selects snapshot 2 and so on. Channel 2 on the _SEL_-input acts on triggers to re-trigger the currently selected snapshot.
+  This mode follows the V/Oct-standard. C4 selects snapshot 1, C#4 selects snapshot 2 and so on. Channel 2 on the _CV_-input acts on triggers to re-trigger the currently selected snapshot.
 - **Arm**  
-  This mode is a kind of "buffered trigger": First apply a clock signal on _SEL_. Then you "arm" any snapshot manually or by MIDI-mapping by its button (resulting in a yellow LED) which will be activated on the next clock trigger (white LED). This mode allows you manual snapshot activation synchronized to a clock.
+  This mode is a kind of "buffered trigger": First apply a clock signal on _CV_. Then you "arm" any snapshot manually or by MIDI-mapping by its button (resulting in a yellow LED) which will be activated on the next clock trigger (white LED). This mode allows you manual snapshot activation synchronized to a clock.
 
 ## +8 expander
 
