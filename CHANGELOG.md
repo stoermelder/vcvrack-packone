@@ -20,6 +20,8 @@
     - Changed "Add label" hotkey to Ctrl+G (#305)
 - Module [MIDI-KEY](./docs/MidiKey.md)
     - Added options for slot-specific key modifiers (#344)
+- Module [STRIP](./docs/Strip.md)
+    - Remember last used folder for strips and selections on dialogs (#307)
 - Module [STROKE](./docs/Stroke.md)
     - Added commands "Add random module", "Save module preset" and "Save module default preset" (#345)
 
