@@ -59,9 +59,9 @@ struct StripPpWidget : StripWidgetBase<StripPpModule> {
 			addChild(sp);
 		}
 
-		void onHover(const HoverEvent& e) override {
+		void draw(const DrawArgs& args) override {
 			sp->box.pos = APP->scene->rack->getMousePos();
-			Widget::onHover(e);
+			Widget::draw(args);
 		}
 
 		void onHoverKey(const event::HoverKey& e) override {
@@ -76,6 +76,9 @@ struct StripPpWidget : StripWidgetBase<StripPpModule> {
 						e.consume(this);
 						break;
 				}
+			}
+			if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ESCAPE) {
+				sp->hide();
 			}
 		}
 
@@ -146,6 +149,7 @@ struct StripPpWidget : StripWidgetBase<StripPpModule> {
 
 	void appendContextMenu(Menu* menu) override {
 		StripWidgetBase<StripPpModule>::appendContextMenu(menu);
+		if (!active) return;
 		menu->addChild(new MenuSeparator);
 		menu->addChild(createBoolPtrMenuItem("Show preview", "", &module->showPreview));
 		menu->addChild(new MenuSeparator);
