@@ -83,7 +83,7 @@ struct StripPpWidget : StripWidgetBase<StripPpModule> {
 		}
 
 		void onButton(const ButtonEvent& e) override {
-			if (sp->isVisible()) {
+			if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS && sp->isVisible()) {
 				callback();
 				sp->hide();
 			}
