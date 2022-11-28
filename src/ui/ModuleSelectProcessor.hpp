@@ -39,7 +39,7 @@ struct ModuleSelectProcessor {
 	}
 
 	void processDeselect() {
-		if (learnMode != LEARN_MODE::OFF) {
+		if (isLearning()) {
 			DEFER({
 				disableLearn();
 			});
@@ -53,6 +53,10 @@ struct ModuleSelectProcessor {
 			Vec pos = w->getRelativeOffset(Vec(1.f, 1.f), mw);
 			if (callback) callback(mw, pos);
 		}
+	}
+
+	bool isLearning() {
+		return learnMode != LEARN_MODE::OFF;
 	}
 };
 

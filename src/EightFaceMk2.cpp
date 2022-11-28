@@ -3,6 +3,7 @@
 #include "helpers/TaskWorker.hpp"
 #include "components/MenuColorLabel.hpp"
 #include "components/MenuColorField.hpp"
+#include "ui/ModuleSelectProcessor.hpp"
 #include "EightFace.hpp"
 #include "EightFaceMk2Base.hpp"
 #include <random>
@@ -796,7 +797,7 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 	MODULE* module;
 
 	ModuleOuterBoundsDrawerWidget<MODULE>* boxDrawer = NULL;
-	bool learn = false;
+	ModuleSelectProcessor moduleSelectProcessor;
 
 	EightFaceMk2Widget(MODULE* module)
 		: ThemedModuleWidget<MODULE>(module, "EightFaceMk2") {
@@ -853,44 +854,16 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 	}
 
 	void onDeselect(const event::Deselect& e) override {
-		if (!learn) return;
-
-		DEFER({
-			disableLearn();
-		});
-
-		// Learn module
-		Widget* w = APP->event->getDraggedWidget();
-		if (!w) return;
-		ModuleWidget* mw = dynamic_cast<ModuleWidget*>(w);
-		if (!mw) mw = w->getAncestorOfType<ModuleWidget>();
-		if (!mw || mw == this) return;
-		Module* m = mw->module;
-		if (!m) return;
-		module->bindModule(m);
+		BASE::onDeselect(e);
+		moduleSelectProcessor.processDeselect();
 	}
 
 	void step() override {
 		if (BASE::module) {
-			BASE::module->lights[MODULE::LIGHT_LEARN].setBrightness(learn > 0);
+			BASE::module->lights[MODULE::LIGHT_LEARN].setBrightness(moduleSelectProcessor.isLearning());
 			module->processGui();
 		}
 		BASE::step();
-	}
-
-	void enableLearn() {
-		learn ^= true;
-		APP->event->setSelectedWidget(this);
-		GLFWcursor* cursor = NULL;
-		if (learn) {
-			cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
-		}
-		glfwSetCursor(APP->window->win, cursor);
-	}
-
-	void disableLearn() {
-		learn = false;
-		glfwSetCursor(APP->window->win, NULL);
 	}
 
 	void appendContextMenu(Menu* menu) override {
@@ -967,15 +940,8 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 			MODULE* module;
 			WIDGET* widget;
 			void onAction(const event::Action& e) override {
-				widget->disableLearn();
+				widget->moduleSelectProcessor.disableLearn();
 				module->bindModuleExpander();
-			}
-		};
-
-		struct BindModuleSelectItem : MenuItem {
-			WIDGET* widget;
-			void onAction(const event::Action& e) override {
-				widget->enableLearn();
 			}
 		};
 
@@ -1067,7 +1033,12 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 		//menu->addChild(construct<AutoloadMenuItem>(&MenuItem::text, "Autoload", &AutoloadMenuItem::module, module));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<BindModuleItem>(&MenuItem::text, "Bind module (left)", &BindModuleItem::widget, this, &BindModuleItem::module, module));
-		menu->addChild(construct<BindModuleSelectItem>(&MenuItem::text, "Bind module (select)", &BindModuleSelectItem::widget, this));
+		menu->addChild(createMenuItem("Bind module (select)", "", [=]() {
+			moduleSelectProcessor.setOwner(this);
+			moduleSelectProcessor.startLearn([module](ModuleWidget* mw, Vec pos) {
+				module->bindModule(mw->module);
+			});
+		}));
 
 		if (module->boundModules.size() > 0) {
 			menu->addChild(new MenuSeparator());
