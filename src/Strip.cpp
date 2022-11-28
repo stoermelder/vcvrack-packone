@@ -643,95 +643,23 @@ struct StripWidget : StripWidgetBase<StripModule> {
 		StripModule* module = dynamic_cast<StripModule*>(this->module);
 		assert(module);
 		menu->addChild(new MenuSeparator);
-
-		struct OnModeMenuItem : MenuItem {
-			struct OnModeItem : MenuItem {
-				StripModule* module;
-				ONMODE onMode;
-				void onAction(const event::Action& e) override {
-					module->onMode = onMode;
-				}
-				void step() override {
-					rightText = module->onMode == onMode ? "✔" : "";
-					MenuItem::step();
-				}
-			};
-
-			StripModule* module;
-			Menu* createChildMenu() override {
-				Menu *menu = new Menu;
-				menu->addChild(construct<OnModeItem>(&MenuItem::text, "Default", &OnModeItem::module, module, &OnModeItem::onMode, ONMODE::DEFAULT));
-				menu->addChild(construct<OnModeItem>(&MenuItem::text, "Toggle", &OnModeItem::module, module, &OnModeItem::onMode, ONMODE::TOGGLE));
-				menu->addChild(construct<OnModeItem>(&MenuItem::text, "High/Low", &OnModeItem::module, module, &OnModeItem::onMode, ONMODE::HIGHLOW));
-				return menu;
+		menu->addChild(createSubmenuItem("Port/Switch ON mode", "",
+			[=](Menu* menu) {
+				menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem("Default", &module->onMode, ONMODE::DEFAULT));
+				menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem("Toggle", &module->onMode, ONMODE::TOGGLE));
+				menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem("High/Low", &module->onMode, ONMODE::HIGHLOW));
 			}
-		};
-
-		struct RandomParamsOnlyItem : MenuItem {
-			StripModule* module;
-			void onAction(const event::Action& e) override {
-				module->randomParamsOnly ^= true;
-			}
-			void step() override {
-				rightText = module->randomParamsOnly ? "✔" : "";
-				MenuItem::step();
-			}
-		};
-
-		menu->addChild(construct<OnModeMenuItem>(&MenuItem::text, "Port/Switch ON mode", &MenuItem::rightText, RIGHT_ARROW, &OnModeMenuItem::module, module));
-		menu->addChild(construct<RandomParamsOnlyItem>(&MenuItem::text, "Randomize parameters only", &RandomParamsOnlyItem::module, module));
+		));
+		menu->addChild(createBoolPtrMenuItem("Randomize parameters only", "", &module->randomParamsOnly));
 		menu->addChild(new MenuSeparator);
-
-		struct CutGroupMenuItem : MenuItem {
-			StripWidget* moduleWidget;
-			void onAction(const event::Action& e) override {
-				moduleWidget->groupCutClipboard();
-			}
-		};
-
-		struct CopyGroupMenuItem : MenuItem {
-			StripWidget* moduleWidget;
-			void onAction(const event::Action& e) override {
-				moduleWidget->groupCopyClipboard();
-			}
-		};
-
-		struct PasteGroupMenuItem : MenuItem {
-			StripWidget* moduleWidget;
-			void onAction(const event::Action& e) override {
-				moduleWidget->groupPasteClipboard();
-			}
-		};
-
-		struct LoadGroupMenuItem : MenuItem {
-			StripWidget* moduleWidget;
-			void onAction(const event::Action& e) override {
-				moduleWidget->groupLoadFileDialog(false);
-			}
-		};
-
-		struct LoadReplaceGroupMenuItem : MenuItem {
-			StripWidget* moduleWidget;
-			void onAction(const event::Action& e) override {
-				moduleWidget->groupLoadFileDialog(true);
-			}
-		};
-
-		struct SaveGroupMenuItem : MenuItem {
-			StripWidget* moduleWidget;
-			void onAction(const event::Action& e) override {
-				moduleWidget->groupSaveFileDialog();
-			}
-		};
-
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Strip"));
+		menu->addChild(createMenuLabel("Strip"));
 		menu->addChild(construct<PresetMenuItem>(&MenuItem::text, "Preset", &PresetMenuItem::module, module, &PresetMenuItem::mw, this));
-		menu->addChild(construct<CutGroupMenuItem>(&MenuItem::text, "Cut", &MenuItem::rightText, RACK_MOD_SHIFT_NAME "+X", &CutGroupMenuItem::moduleWidget, this));
-		menu->addChild(construct<CopyGroupMenuItem>(&MenuItem::text, "Copy", &MenuItem::rightText, RACK_MOD_SHIFT_NAME "+C", &CopyGroupMenuItem::moduleWidget, this));
-		menu->addChild(construct<PasteGroupMenuItem>(&MenuItem::text, "Paste", &MenuItem::rightText, RACK_MOD_SHIFT_NAME "+V", &PasteGroupMenuItem::moduleWidget, this));
-		menu->addChild(construct<LoadGroupMenuItem>(&MenuItem::text, "Load", &MenuItem::rightText, RACK_MOD_SHIFT_NAME "+L", &LoadGroupMenuItem::moduleWidget, this));
-		menu->addChild(construct<LoadReplaceGroupMenuItem>(&MenuItem::text, "Load with replace", &MenuItem::rightText, RACK_MOD_CTRL_NAME "+" RACK_MOD_SHIFT_NAME "+L", &LoadReplaceGroupMenuItem::moduleWidget, this));
-		menu->addChild(construct<SaveGroupMenuItem>(&MenuItem::text, "Save as", &MenuItem::rightText, RACK_MOD_SHIFT_NAME "+S", &SaveGroupMenuItem::moduleWidget, this));
+		menu->addChild(createMenuItem("Cut", RACK_MOD_SHIFT_NAME "+X", [=]() { groupCutClipboard(); }));
+		menu->addChild(createMenuItem("Copy", RACK_MOD_SHIFT_NAME "+C", [=]() { groupCopyClipboard(); }));
+		menu->addChild(createMenuItem("Paste", RACK_MOD_SHIFT_NAME "+V", [=]() { groupPasteClipboard(); }));
+		menu->addChild(createMenuItem("Load", RACK_MOD_SHIFT_NAME "+L", [=]() { groupLoadFileDialog(false); }));
+		menu->addChild(createMenuItem("Load with replace", RACK_MOD_CTRL_NAME "+" RACK_MOD_SHIFT_NAME "+L", [=]() { groupLoadFileDialog(true); }));
+		menu->addChild(createMenuItem("Save as", RACK_MOD_SHIFT_NAME "+S", [=]() { groupSaveFileDialog(); }));
 	}
 };
 
