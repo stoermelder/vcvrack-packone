@@ -860,6 +860,7 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 
 	void step() override {
 		if (BASE::module) {
+			moduleSelectProcessor.step();
 			BASE::module->lights[MODULE::LIGHT_LEARN].setBrightness(moduleSelectProcessor.isLearning());
 			module->processGui();
 		}
@@ -1033,11 +1034,17 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 		//menu->addChild(construct<AutoloadMenuItem>(&MenuItem::text, "Autoload", &AutoloadMenuItem::module, module));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<BindModuleItem>(&MenuItem::text, "Bind module (left)", &BindModuleItem::widget, this, &BindModuleItem::module, module));
-		menu->addChild(createMenuItem("Bind module (select)", "", [=]() {
+		menu->addChild(createMenuItem("Bind module (select one)", "", [=]() {
 			moduleSelectProcessor.setOwner(this);
 			moduleSelectProcessor.startLearn([module](ModuleWidget* mw, Vec pos) {
 				module->bindModule(mw->module);
 			});
+		}));
+		menu->addChild(createMenuItem("Bind module (select multiple)", "", [=]() {
+			moduleSelectProcessor.setOwner(this);
+			moduleSelectProcessor.startLearn([module](ModuleWidget* mw, Vec pos) {
+				module->bindModule(mw->module);
+			}, ModuleSelectProcessor::LEARN_MODE::MULTI);
 		}));
 
 		if (module->boundModules.size() > 0) {

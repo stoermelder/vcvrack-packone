@@ -19,10 +19,13 @@ At least one module must be bound to 8FACE mk2 before the module can be used. It
 
 ![8FACE mk2 bind left](./EightFaceMk2-bind-left.gif)
 
-- **Bind module (select)**  
-  Selecting _Bind module (select)_ turns the mouse pointer into a crosshair. After you click on the panel of a module this module gets bound by 8FACE mk2.
+- **Bind module (select one)**  
+  Selecting _Bind module (select one)_ turns the mouse pointer into a crosshair. After you click on the panel of a module this module gets bound by 8FACE mk2.
 
 ![8FACE mk2 bind select](./EightFaceMk2-bind-select.gif)
+
+- **Bind module (select multiple)**  
+  Same as _Bind module (select one)_ but allows selecting multiple modules in a row. Click on some empty space to stop the binding process.
 
 8FACE mk2 is designed to bind different modules the same time and technically there is no limitation on the number of modules which can be bound. Please note that loading presets of many modules can increase CPU usage, depending on the complexity of the bound modules.  
 Modules can be unbound at any point by context menu option. Please note that presets in snapshots won't be deleted for unbound modules.
@@ -115,3 +118,4 @@ Once placed next to 8FACE mk2 the expander works and behaves the same way 8FACE 
     - Initial release of 8FACE mk2 and expander +8
 - v2.0.0
     - Added retrigger-function for CV-input channel 2 in C4 mode (#330)
+    - Added "Bind module (select multiple)" option (#291)
