@@ -1062,10 +1062,8 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 
 	void groupSelectionLoadFile(std::string path) {
 		FILE* file = std::fopen(path.c_str(), "r");
-		if (!file)
-			throw Exception("Could not load selection file %s", path.c_str());
+		if (!file) return;
 		DEFER({std::fclose(file);});
-
 		INFO("Loading selection %s", path.c_str());
 
 		json_error_t error;
