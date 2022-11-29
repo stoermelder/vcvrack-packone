@@ -27,7 +27,7 @@
     - Added options for slot-specific key modifiers (#344)
 - Module [ORBIT](./docs/Orbit.md)
     - Added output level control (#286)
-- Module [S++](./docs/StripPp.md)
+- Module [STRIP++](./docs/StripPp.md)
     - Added selection perview before actual inserting modules
     - Added "Recent selection" context menu option
 - Module [STRIP](./docs/Strip.md)
@@ -43,7 +43,7 @@
     - New module, crosstalk and noise for polyphonic cables
 - Module [MIDI-KEY](./docs/MidiKey.md)
     - New module, utility for generating keyboard events from MIDI CC or note messages (#245)
-- Module [S++](./docs/StripPp.md)
+- Module [STRIP++](./docs/StripPp.md)
     - New module, utility for pasting and importing Rack selections while preserving parameter mappings and [GLUE](./docs/Glue.md) labels
 
 ### Fixes and Changes

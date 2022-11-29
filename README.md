@@ -1,8 +1,8 @@
 # stoermelder PackOne
 
 <!-- Version and License Badges -->
-![Version](https://img.shields.io/badge/version-2.0.0-green.svg?style=flat-square)
-![Rack SDK](https://img.shields.io/badge/Rack--SDK-2.0.0-red.svg?style=flat-square)
+![Version](https://img.shields.io/badge/version-2.0.beta2-green.svg?style=flat-square)
+![Rack SDK](https://img.shields.io/badge/Rack--SDK-2.1.0-red.svg?style=flat-square)
 ![License](https://img.shields.io/badge/license-GPLv3+-blue.svg?style=flat-square)
 ![Language](https://img.shields.io/badge/language-C++-yellow.svg?style=flat-square)
 
@@ -15,9 +15,9 @@ If you like my modules consider donating to https://paypal.me/stoermelder. Thank
 
 ## Latest additions to PackOne - new for v2.0
 
-- [DIRT](./docs/Dirt.md): generates crosstalk and noise for polyphonic cables
-- [MIDI-KEY](./docs/MidiKey.md): utility for generating keyboard events from MIDI CC or note messages
-- [S++](./docs/StripPp.md): utility for pasting and importing Rack selections while preserving parameter mappings and [GLUE](./docs/Glue.md) labels
+- [DIRT](./docs/Dirt.md): noise, crackles and crosstalk for polyphonic cables
+- [MIDI-KEY](./docs/MidiKey.md): utility for generating keyboard events from MIDI CC or Note messages
+- [STRIP++](./docs/StripPp.md): utility for pasting and importing Rack selections while preserving parameter mappings and [GLUE](./docs/Glue.md) labels
 
 ## The modules of PackOne
 
