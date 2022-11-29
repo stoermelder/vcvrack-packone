@@ -4,6 +4,15 @@
 namespace StoermelderPackOne {
 namespace Strip {
 
+static std::list<std::string> recentFiles;
+
+static void addRecentFile(std::string file) {
+	recentFiles.remove(file);
+	recentFiles.emplace_front(file);
+	if (recentFiles.size() > 10) recentFiles.remove(recentFiles.back());
+}
+
+
 struct StripPpModule : Module {
 	enum ParamIds {
 		NUM_PARAMS
@@ -23,6 +32,7 @@ struct StripPpModule : Module {
 	int panelTheme = 0;
 	/** [Stored to JSON] */
 	bool showPreview = true;
+
 	MODE mode = MODE::LEFTRIGHT;
 
 	StripPpModule() {
@@ -133,17 +143,28 @@ struct StripPpWidget : StripWidgetBase<StripPpModule> {
 		StripWidgetBase<StripPpModule>::step();
 	}
 
-	void groupSelectionLoad() {
+	void groupSelectionLoad(std::string path = "") {
 		if (module->showPreview) {
-			std::string path = groupSelectionLoadFileDialog(false);
-			if (path != "") {
+			if (path.empty()) {
+				path = groupSelectionLoadFileDialog(false);
+			}
+			if (!path.empty()) {
 				stripPpContainer->showSelectionPreview(path, [=]() {
 					groupSelectionLoadFile(path);
+					addRecentFile(path);
 				});
 			}
 		}
 		else {
-			groupSelectionLoadFileDialog(true); 
+			if (path.empty()) {
+				path = groupSelectionLoadFileDialog(true);
+			}
+			else {
+				groupSelectionLoadFile(path);
+			}
+			if (!path.empty()) {
+				addRecentFile(path);
+			}
 		}
 	}
 
@@ -156,6 +177,14 @@ struct StripPpWidget : StripWidgetBase<StripPpModule> {
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Selection"));
 		menu->addChild(createMenuItem("Paste", RACK_MOD_SHIFT_NAME "+" RACK_MOD_CTRL_NAME "+V", [=]() { groupSelectionPasteClipboard(); }));
 		menu->addChild(createMenuItem("Import", RACK_MOD_SHIFT_NAME "+" RACK_MOD_CTRL_NAME "+B", [=]() { groupSelectionLoad(); }));
+
+		if (recentFiles.size() > 0) {
+			menu->addChild(new MenuSeparator);
+			menu->addChild(createMenuLabel("Recent selections"));
+			for (std::string file : recentFiles) {
+				menu->addChild(createMenuItem(file, "", [=]() { groupSelectionLoad(file); }));
+			}
+		}
 	}
 };
 
