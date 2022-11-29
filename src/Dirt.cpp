@@ -60,6 +60,37 @@ struct CrosstalkGenerator {
 	}
 };
 
+struct CrackleGenerator {
+	std::mt19937 rng;
+	std::uniform_real_distribution<float> uniform;
+	float ratio[16];
+
+	CrackleGenerator() {
+		reset();
+	}
+
+	void reset() {
+		for (int i = 0; i < 16; i++) {
+			ratio[i] = 8.f + 5.f * random::uniform();
+		}
+
+		uniform = std::uniform_real_distribution<float>(0.0f, 1.0f);
+		rng.seed(std::random_device()());
+	}
+
+	void process(float* in, int channels) {
+		for (int i = 0; i < channels; i++) {
+			// Laplace distribution
+			// https://en.wikipedia.org/wiki/Laplace_distribution
+			float u = uniform(rng) - 0.5f;
+			float c = sgn(u) * std::log(1 - 2 * abs(u));
+			// "Filter" out small values
+			in[i] += abs(c) > ratio[i] ? 0.02f * c : 0.f;
+		}
+	}
+};
+
+
 struct DirtModule : Module {
 	enum ParamIds {
 		NUM_PARAMS
@@ -82,9 +113,12 @@ struct DirtModule : Module {
 	bool useWhiteNoise;
 	/** [Stored to JSON] */
 	bool useCrosstalk;
+	/** [Stored to JSON] */
+	bool useCrackle;
 
 	WhiteNoiseGenerator noise[PORT_MAX_CHANNELS];
 	CrosstalkGenerator crosstalk;
+	CrackleGenerator crackle;
 
 	DirtModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
@@ -100,6 +134,7 @@ struct DirtModule : Module {
 	void onReset() override {
 		useWhiteNoise = true;
 		useCrosstalk = true;
+		useCrackle = true;
 		Module::onReset();
 	}
 
@@ -119,6 +154,10 @@ struct DirtModule : Module {
 			crosstalk.process(in, channels);
 		}
 
+		if (useCrackle) {
+			crackle.process(in, channels);
+		}
+
 		outputs[OUTPUT].setChannels(channels);
 		outputs[OUTPUT].writeVoltages(in);
 	}
@@ -128,12 +167,14 @@ struct DirtModule : Module {
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 		json_object_set_new(rootJ, "useWhiteNoise", json_boolean(useWhiteNoise));
 		json_object_set_new(rootJ, "useCrosstalk", json_boolean(useCrosstalk));
+		json_object_set_new(rootJ, "useCrackle", json_boolean(useCrackle));
 
 		json_t* channelsJ = json_array();
 		for (int i = 0; i < PORT_MAX_CHANNELS; i++) {
 			json_t* channelJ = json_object();
 			json_object_set_new(channelJ, "noiseRatio", json_real(noise[i].ratio));
 			json_object_set_new(channelJ, "crosstalkRatio", json_real(crosstalk.ratio[i]));
+			json_object_set_new(channelJ, "crackleRatio", json_real(crackle.ratio[i]));
 			json_array_append_new(channelsJ, channelJ);
 		}
 		json_object_set_new(rootJ, "channels", channelsJ);
@@ -145,6 +186,7 @@ struct DirtModule : Module {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 		useWhiteNoise = json_boolean_value(json_object_get(rootJ, "useWhiteNoise"));
 		useCrosstalk = json_boolean_value(json_object_get(rootJ, "useCrosstalk"));
+		useCrackle = json_boolean_value(json_object_get(rootJ, "useCrackle"));
 
 		json_t* channelsJ = json_object_get(rootJ, "presets");
 		json_t* channelJ;
@@ -152,6 +194,7 @@ struct DirtModule : Module {
 		json_array_foreach(channelsJ, i, channelJ) {
 			noise[i].ratio = json_real_value(json_object_get(channelJ, "noiseRatio"));
 			crosstalk.ratio[i] = json_real_value(json_object_get(channelJ, "crosstalkRatio"));
+			crackle.ratio[i] = json_real_value(json_object_get(channelJ, "crackleRatio"));
 		}
 	}
 };
@@ -176,6 +219,7 @@ struct DirtWidget : ThemedModuleWidget<DirtModule> {
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createBoolPtrMenuItem("Noise", "", &module->useWhiteNoise));
 		menu->addChild(createBoolPtrMenuItem("Crosstalk", "", &module->useCrosstalk));
+		menu->addChild(createBoolPtrMenuItem("Crackle", "", &module->useCrackle));
 	}
 };
 

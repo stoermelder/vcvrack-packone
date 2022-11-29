@@ -18,6 +18,8 @@
 
 - Module [8FACE mk2](./docs/EightFaceMk2.md)
     - Added "Bind module (select multiple)" option (#291)
+- Module [DIRT](./docs/Dirt.md)
+    - Added crackle for polyphonic cables
 - Module [GLUE](./docs/Glue.md)
     - Changed "Add label" hotkey to Ctrl+G (#305)
 - Module [MIDI-KEY](./docs/MidiKey.md)
