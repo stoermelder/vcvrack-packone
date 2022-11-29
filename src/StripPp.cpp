@@ -115,6 +115,9 @@ struct StripPpWidget : StripWidgetBase<StripPpModule> {
 		this->module = module;
 		setModule(module);
 
+		addChild(createWidget<StoermelderBlackScrew>(Vec(0, 0)));
+		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 1 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+
 		addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(15.f, 330.0f), module, StripPpModule::LIGHT_ACTIVE));
 
 		if (module) {
