@@ -27,6 +27,9 @@
     - Added options for slot-specific key modifiers (#344)
 - Module [ORBIT](./docs/Orbit.md)
     - Added output level control (#286)
+- Module [S++](./docs/StripPp.md)
+    - Added selection perview before actual inserting modules
+    - Added "Recent selection" context menu option
 - Module [STRIP](./docs/Strip.md)
     - Remember last used folder for strips and selections on dialogs (#307)
 - Module [STROKE](./docs/Stroke.md)

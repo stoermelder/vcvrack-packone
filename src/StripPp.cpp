@@ -1,5 +1,5 @@
 #include "Strip.hpp"
-#include "sb/SelectionPreview.cpp"
+#include "strippp/SelectionPreview.cpp"
 
 namespace StoermelderPackOne {
 namespace Strip {
