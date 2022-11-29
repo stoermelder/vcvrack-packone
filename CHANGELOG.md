@@ -20,6 +20,7 @@
     - Added "Bind module (select multiple)" option (#291)
 - Module [DIRT](./docs/Dirt.md)
     - Added crackle for polyphonic cables
+    - Added switches for noise-types on front panel
 - Module [GLUE](./docs/Glue.md)
     - Changed "Add label" hotkey to Ctrl+G (#305)
 - Module [MIDI-KEY](./docs/MidiKey.md)

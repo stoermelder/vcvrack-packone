@@ -71,7 +71,7 @@ struct CrackleGenerator {
 
 	void reset() {
 		for (int i = 0; i < 16; i++) {
-			ratio[i] = 8.f + 5.f * random::uniform();
+			ratio[i] = 8.f + 5.5f * random::uniform();
 		}
 
 		uniform = std::uniform_real_distribution<float>(0.0f, 1.0f);
@@ -85,7 +85,7 @@ struct CrackleGenerator {
 			float u = uniform(rng) - 0.5f;
 			float c = sgn(u) * std::log(1 - 2 * abs(u));
 			// "Filter" out small values
-			in[i] += abs(c) > ratio[i] ? 0.02f * c : 0.f;
+			in[i] += abs(c) > ratio[i] ? 0.025f * c : 0.f;
 		}
 	}
 };
@@ -93,6 +93,9 @@ struct CrackleGenerator {
 
 struct DirtModule : Module {
 	enum ParamIds {
+		PARAM_NOISE,
+		PARAM_CROSSTALK,
+		PARAM_CRACKE,
 		NUM_PARAMS
 	};
 	enum InputIds {
@@ -109,12 +112,6 @@ struct DirtModule : Module {
 
 	/** [Stored to JSON] */
 	int panelTheme = 0;
-	/** [Stored to JSON] */
-	bool useWhiteNoise;
-	/** [Stored to JSON] */
-	bool useCrosstalk;
-	/** [Stored to JSON] */
-	bool useCrackle;
 
 	WhiteNoiseGenerator noise[PORT_MAX_CHANNELS];
 	CrosstalkGenerator crosstalk;
@@ -123,6 +120,9 @@ struct DirtModule : Module {
 	DirtModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+		configSwitch(PARAM_NOISE, 0.f, 1.f, 1.f, "White noise per channel", {"Off", "On"});
+		configSwitch(PARAM_CROSSTALK, 0.f, 1.f, 1.f, "Crosstalk between channels of a polyphonic cable", {"Off", "On"});
+		configSwitch(PARAM_CRACKE, 0.f, 1.f, 1.f, "Crackle per channel", {"Off", "On"});
 		configInput(INPUT, "Polyphonic");
 		configOutput(OUTPUT, "Polyphonic");
 		for (size_t i = 0; i < PORT_MAX_CHANNELS; i++) {
@@ -131,30 +131,23 @@ struct DirtModule : Module {
 		crosstalk.reset();
 	}
 
-	void onReset() override {
-		useWhiteNoise = true;
-		useCrosstalk = true;
-		useCrackle = true;
-		Module::onReset();
-	}
-
 	void process(const ProcessArgs& args) override {
 		int channels = inputs[INPUT].getChannels();
 
 		float in[channels];
 		inputs[INPUT].readVoltages(in);
 
-		if (useWhiteNoise) {
+		if (params[PARAM_NOISE].getValue() > 0.f) {
 			for (int i = 0; i < channels; i++) {
 				in[i] += noise[i].process();
 			}
 		}
 
-		if (useCrosstalk) {
+		if (params[PARAM_CROSSTALK].getValue() > 0.f) {
 			crosstalk.process(in, channels);
 		}
 
-		if (useCrackle) {
+		if (params[PARAM_CRACKE].getValue() > 0.f) {
 			crackle.process(in, channels);
 		}
 
@@ -165,9 +158,6 @@ struct DirtModule : Module {
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
-		json_object_set_new(rootJ, "useWhiteNoise", json_boolean(useWhiteNoise));
-		json_object_set_new(rootJ, "useCrosstalk", json_boolean(useCrosstalk));
-		json_object_set_new(rootJ, "useCrackle", json_boolean(useCrackle));
 
 		json_t* channelsJ = json_array();
 		for (int i = 0; i < PORT_MAX_CHANNELS; i++) {
@@ -184,9 +174,6 @@ struct DirtModule : Module {
 
 	void dataFromJson(json_t* rootJ) override {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
-		useWhiteNoise = json_boolean_value(json_object_get(rootJ, "useWhiteNoise"));
-		useCrosstalk = json_boolean_value(json_object_get(rootJ, "useCrosstalk"));
-		useCrackle = json_boolean_value(json_object_get(rootJ, "useCrackle"));
 
 		json_t* channelsJ = json_object_get(rootJ, "presets");
 		json_t* channelJ;
@@ -207,19 +194,12 @@ struct DirtWidget : ThemedModuleWidget<DirtModule> {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
+		addParam(createParamCentered<CKSS>(Vec(22.5f, 87.7f), module, DirtModule::PARAM_NOISE));
+		addParam(createParamCentered<CKSS>(Vec(22.5f, 128.1f), module, DirtModule::PARAM_CROSSTALK));
+		addParam(createParamCentered<CKSS>(Vec(22.5f, 168.5f), module, DirtModule::PARAM_CRACKE));
+
 		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 291.1f), module, DirtModule::INPUT));
 		addOutput(createOutputCentered<StoermelderPort>(Vec(22.5f, 327.5f), module, DirtModule::OUTPUT));
-	}
-
-	void appendContextMenu(Menu* menu) override {
-		ThemedModuleWidget<DirtModule>::appendContextMenu(menu);
-		DirtModule* module = dynamic_cast<DirtModule*>(this->module);
-		assert(module);
-
-		menu->addChild(new MenuSeparator());
-		menu->addChild(createBoolPtrMenuItem("Noise", "", &module->useWhiteNoise));
-		menu->addChild(createBoolPtrMenuItem("Crosstalk", "", &module->useCrosstalk));
-		menu->addChild(createBoolPtrMenuItem("Crackle", "", &module->useCrackle));
 	}
 };
 
