@@ -89,13 +89,22 @@ struct StripPpWidget : StripWidgetBase<StripPpModule> {
 			}
 			if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ESCAPE) {
 				sp->hide();
+				e.consume(this);
 			}
+			Widget::onHoverKey(e);
 		}
 
 		void onButton(const ButtonEvent& e) override {
-			if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS && sp->isVisible()) {
-				callback();
-				sp->hide();
+			if (e.action == GLFW_PRESS && sp->isVisible()) {
+				if (e.button == GLFW_MOUSE_BUTTON_LEFT) {
+					callback();
+					sp->hide();
+					e.consume(this);
+				}
+				if (e.button == GLFW_MOUSE_BUTTON_RIGHT) {
+					sp->hide();
+					e.consume(this);
+				}
 			}
 			Widget::onButton(e);
 		}
