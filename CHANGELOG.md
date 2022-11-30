@@ -23,6 +23,7 @@
     - Added switches for noise-types on front panel
 - Module [GLUE](./docs/Glue.md)
     - Changed "Add label" hotkey to Ctrl+G (#305)
+    - Added hotkey Ctrl+Shift+G for "Lock"
 - Module [MIDI-KEY](./docs/MidiKey.md)
     - Added options for slot-specific key modifiers (#344)
 - Module [ORBIT](./docs/Orbit.md)

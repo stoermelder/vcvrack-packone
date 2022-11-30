@@ -70,3 +70,4 @@ The context menu option "Duplicate" arms the labeling mode. Click on any module 
     - Added option to consolidate all GLUE modules into the current one
 - v2.0.0
     - Changed "Add label" hotkey from Ctrl+A to Ctrl+G (#305)
+    - Added hotkey Ctrl+Shift+G for "Lock"
