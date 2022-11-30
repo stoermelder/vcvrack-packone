@@ -391,7 +391,11 @@ struct MbWidget : ModuleWidget {
 		FILE* file = fopen(filename.c_str(), "w");
 		if (!file) {
 			std::string message = string::f("Could not write to patch file %s", filename.c_str());
+#ifdef USING_CARDINAL_NOT_RACK
+			async_dialog_message(message.c_str());
+#else
 			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, message.c_str());
+#endif
 		}
 		DEFER({
 			fclose(file);
@@ -401,12 +405,24 @@ struct MbWidget : ModuleWidget {
 	}
 
 	void exportSettingsDialog() {
+#ifdef USING_CARDINAL_NOT_RACK
+		WeakPtr<MbWidget> weakThis = this;
+		async_dialog_filebrowser(true, "stoermelder-mb.json", nullptr, "Export settings", [weakThis](char* path){
+			if (weakThis)
+				weakThis->exportSettingsDialog(path);
+		});
+#else
 		osdialog_filters* filters = osdialog_filters_parse(":json");
 		DEFER({
 			osdialog_filters_free(filters);
 		});
 
 		char* path = osdialog_file(OSDIALOG_SAVE, "", "stoermelder-mb.json", filters);
+		exportSettingsDialog(path);
+#endif
+	}
+
+	void exportSettingsDialog(char* path) {
 		if (!path) {
 			// No path selected
 			return;
@@ -430,7 +446,11 @@ struct MbWidget : ModuleWidget {
 		FILE* file = fopen(filename.c_str(), "r");
 		if (!file) {
 			std::string message = string::f("Could not load file %s", filename.c_str());
+#ifdef USING_CARDINAL_NOT_RACK
+			async_dialog_message(message.c_str());
+#else
 			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, message.c_str());
+#endif
 			return;
 		}
 		DEFER({
@@ -441,7 +461,11 @@ struct MbWidget : ModuleWidget {
 		json_t* rootJ = json_loadf(file, 0, &error);
 		if (!rootJ) {
 			std::string message = string::f("File is not a valid file. JSON parsing error at %s %d:%d %s", error.source, error.line, error.column, error.text);
+#ifdef USING_CARDINAL_NOT_RACK
+			async_dialog_message(message.c_str());
+#else
 			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, message.c_str());
+#endif
 			return;
 		}
 		DEFER({
@@ -452,12 +476,24 @@ struct MbWidget : ModuleWidget {
 	}
 
 	void importSettingsDialog() {
+#ifdef USING_CARDINAL_NOT_RACK
+		WeakPtr<MbWidget> weakThis = this;
+		async_dialog_filebrowser(false, "stoermelder-mb.json", nullptr, "Import settings", [weakThis](char* path){
+			if (weakThis)
+				weakThis->importSettingsDialog(path);
+		});
+#else
 		osdialog_filters* filters = osdialog_filters_parse(":json");
 		DEFER({
 			osdialog_filters_free(filters);
 		});
 
 		char* path = osdialog_file(OSDIALOG_OPEN, "", NULL, filters);
+		importSettingsDialog(path);
+#endif
+	}
+
+	void importSettingsDialog(char* path) {
 		if (!path) {
 			// No path selected
 			return;
