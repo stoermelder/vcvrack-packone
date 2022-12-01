@@ -348,7 +348,7 @@ struct FlowerSeqModule : Module {
 		// CLOCK-input
 		if (running) {
 			seqArgs->clock = inputs[INPUT_CLOCK].getVoltage();
-			if (resetTimer.process(args.sampleTime) >= 1e-3f && clockTrigger.process(seqArgs->clock)) {
+			if (clockTrigger.process(seqArgs->clock) && resetTimer.process(args.sampleTime) >= 1e-3f) {
 				seqArgs->patternTick = stepSetIndex(stepIndex + 1);
 				seqArgs->stepTick = true;
 				seqArgs->clockTick = true;
