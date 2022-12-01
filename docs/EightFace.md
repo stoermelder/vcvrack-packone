@@ -94,3 +94,5 @@ With the option "Autoload first preset" on the context menu you can autoload the
 - v2.0.0
     - Added retrigger-function for CV-input channel 2 in C4 mode (#330)
     - Fixed unconnected modules after patch reload (#338)
+    - Fixed broken reset-behavior for "Trigger forward", "Trigger reverse" and "Trigger pingpong" (#347)
+    - Added missing reset-handling for "Trigger alternating" and "Trigger shuffle"

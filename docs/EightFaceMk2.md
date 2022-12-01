@@ -119,3 +119,5 @@ Once placed next to 8FACE mk2 the expander works and behaves the same way 8FACE 
 - v2.0.0
     - Added retrigger-function for CV-input channel 2 in C4 mode (#330)
     - Added "Bind module (select multiple)" option (#291)
+    - Fixed broken reset-behavior for "Trigger forward", "Trigger reverse" and "Trigger pingpong" (#347)
+    - Added missing reset-handling for "Trigger alternating" and "Trigger shuffle"

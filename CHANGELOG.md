@@ -16,8 +16,13 @@
 
 ### Fixes and Changes
 
+- Modules [8FACE, 8FACEx2](./docs/EightFace.md)
+    - Fixed broken reset-behavior for "Trigger forward", "Trigger reverse" and "Trigger pingpong" (#347)
+    - Added missing reset-handling for "Trigger alternating" and "Trigger shuffle"
 - Module [8FACE mk2](./docs/EightFaceMk2.md)
     - Added "Bind module (select multiple)" option (#291)
+    - Fixed broken reset-behavior for "Trigger forward", "Trigger reverse" and "Trigger pingpong" (#347)
+    - Added missing reset-handling for "Trigger alternating" and "Trigger shuffle"
 - Module [DIRT](./docs/Dirt.md)
     - Added crackle for polyphonic cables
     - Added switches for noise-types on front panel
@@ -35,6 +40,9 @@
     - Remember last used folder for strips and selections on dialogs (#307)
 - Module [STROKE](./docs/Stroke.md)
     - Added commands "Add random module", "Save module preset" and "Save module default preset" (#345)
+- Module [TRANSIT](./docs/Transit.md)
+    - Fixed broken reset-behavior for "Trigger forward", "Trigger reverse" and "Trigger pingpong" (#347)
+    - Added missing reset-handling for "Trigger alternating" and "Trigger shuffle"
 
 ## 2.0.beta2
 

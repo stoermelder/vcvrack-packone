@@ -91,7 +91,7 @@ struct EightFaceModule : Module {
 	SLOTCVMODE slotCvMode = SLOTCVMODE::TRIG_FWD;
 	SLOTCVMODE slotCvModeBak = SLOTCVMODE::OFF;
 	int slotCvModeDir = 1;
-	int slotCvModeAlt = 1;
+	int slotCvModeAlt = 0;
 	std::vector<int> slotCvModeShuffle;
 
 	std::default_random_engine randGen{(uint16_t)std::chrono::system_clock::now().time_since_epoch().count()};
@@ -118,6 +118,7 @@ struct EightFaceModule : Module {
 	dsp::SchmittTrigger slotC4Trigger;
 	dsp::SchmittTrigger resetTrigger;
 	dsp::Timer resetTimer;
+	bool resetFlag = false;
 
 	dsp::ClockDivider lightDivider;
 	dsp::ClockDivider buttonDivider;
@@ -191,10 +192,17 @@ struct EightFaceModule : Module {
 				// Read & Auto modes
 				if (ctrlMode == CTRLMODE::READ || ctrlMode == CTRLMODE::AUTO) {
 					// RESET input
-					if (slotCvMode == SLOTCVMODE::TRIG_FWD || slotCvMode == SLOTCVMODE::TRIG_REV || slotCvMode == SLOTCVMODE::TRIG_PINGPONG) {
+					if (slotCvMode == SLOTCVMODE::TRIG_FWD ||
+						slotCvMode == SLOTCVMODE::TRIG_REV ||
+						slotCvMode == SLOTCVMODE::TRIG_PINGPONG ||
+						slotCvMode == SLOTCVMODE::TRIG_ALT ||
+						slotCvMode == SLOTCVMODE::TRIG_SHUFFLE) {
 						if (inputs[RESET_INPUT].isConnected() && resetTrigger.process(inputs[RESET_INPUT].getVoltage())) {
 							resetTimer.reset();
-							presetLoad(t, 0);
+							resetFlag = true;
+							slotCvModeDir = 1;
+							slotCvModeAlt = 0;
+							slotCvModeShuffle.clear();
 						}
 					}
 
@@ -211,12 +219,16 @@ struct EightFaceModule : Module {
 								}
 								break;
 							case SLOTCVMODE::TRIG_FWD:
-								if (slotTrigger.process(inputs[SLOT_INPUT].getVoltage()))
-									presetLoad(t, (preset + 1) % presetCount);
+								if (slotTrigger.process(inputs[SLOT_INPUT].getVoltage())) {
+									presetLoad(t, resetFlag ? 0 : ((preset + 1) % presetCount));
+									resetFlag = false;
+								}
 								break;
 							case SLOTCVMODE::TRIG_REV:
-								if (slotTrigger.process(inputs[SLOT_INPUT].getVoltage()))
-									presetLoad(t, (preset - 1 + presetCount) % presetCount);
+								if (slotTrigger.process(inputs[SLOT_INPUT].getVoltage())) {
+									presetLoad(t, resetFlag ? (presetCount - 1) : ((preset - 1 + presetCount) % presetCount));
+									resetFlag = false;
+								}
 								break;
 							case SLOTCVMODE::TRIG_PINGPONG:
 								if (slotTrigger.process(inputs[SLOT_INPUT].getVoltage())) {
@@ -225,7 +237,8 @@ struct EightFaceModule : Module {
 										slotCvModeDir = -1;
 									if (n <= 0) 
 										slotCvModeDir = 1;
-									presetLoad(t, n);
+									presetLoad(t, resetFlag ? 0 : n);
+									resetFlag = false;
 								}
 								break;
 							case SLOTCVMODE::TRIG_ALT:
@@ -239,7 +252,8 @@ struct EightFaceModule : Module {
 											slotCvModeDir = 1;
 										slotCvModeAlt = std::min(n, presetCount - 1);
 									}
-									presetLoad(t, n);
+									presetLoad(t, resetFlag ? 0 : n);
+									resetFlag = false;
 								}
 								break;
 							case SLOTCVMODE::TRIG_RANDOM:
@@ -273,6 +287,7 @@ struct EightFaceModule : Module {
 									int p = std::min(std::max(0, slotCvModeShuffle.back()), presetCount - 1);
 									slotCvModeShuffle.pop_back();
 									presetLoad(t, p);
+									resetFlag = false;
 								}
 								break;
 							case SLOTCVMODE::ARM:

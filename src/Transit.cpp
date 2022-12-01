@@ -85,7 +85,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 	SLOTCVMODE slotCvMode = SLOTCVMODE::TRIG_FWD;
 	SLOTCVMODE slotCvModeBak = SLOTCVMODE::OFF;
 	int slotCvModeDir = 1;
-	int slotCvModeAlt = 1;
+	int slotCvModeAlt = 0;
 	std::vector<int> slotCvModeShuffle;
 
 	/** [Stored to JSON] */
@@ -113,6 +113,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 	dsp::SchmittTrigger slotC4Trigger;
 	dsp::SchmittTrigger resetTrigger;
 	dsp::Timer resetTimer;
+	bool resetFlag = false;
 
 	StoermelderShapedSlewLimiter slewLimiter;
 	dsp::ClockDivider handleDivider;
@@ -277,10 +278,17 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		// Read & Auto mode
 		if (BASE::ctrlMode == CTRLMODE::READ || BASE::ctrlMode == CTRLMODE::AUTO) {
 			// RESET input
-			if (slotCvMode == SLOTCVMODE::TRIG_FWD || slotCvMode == SLOTCVMODE::TRIG_REV || slotCvMode == SLOTCVMODE::TRIG_PINGPONG) {
+			if (slotCvMode == SLOTCVMODE::TRIG_FWD ||
+				slotCvMode == SLOTCVMODE::TRIG_REV ||
+				slotCvMode == SLOTCVMODE::TRIG_PINGPONG ||
+				slotCvMode == SLOTCVMODE::TRIG_ALT ||
+				slotCvMode == SLOTCVMODE::TRIG_SHUFFLE) {
 				if (Module::inputs[INPUT_RESET].isConnected() && resetTrigger.process(Module::inputs[INPUT_RESET].getVoltage())) {
 					resetTimer.reset();
-					presetLoad(0);
+					resetFlag = true;
+					slotCvModeDir = 1;
+					slotCvModeAlt = 0;
+					slotCvModeShuffle.clear();
 				}
 			}
 
@@ -298,12 +306,14 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 						break;
 					case SLOTCVMODE::TRIG_FWD:
 						if (slotTrigger.process(Module::inputs[INPUT_CV].getVoltage())) {
-							presetLoad((preset + 1) % presetCount);
+							presetLoad(resetFlag ? 0 : ((preset + 1) % presetCount));
+							resetFlag = false;
 						}
 						break;
 					case SLOTCVMODE::TRIG_REV:
 						if (slotTrigger.process(Module::inputs[INPUT_CV].getVoltage())) {
-							presetLoad((preset - 1 + presetCount) % presetCount);
+							presetLoad(resetFlag ? (presetCount - 1) : ((preset - 1 + presetCount) % presetCount));
+							resetFlag = false;
 						}
 						break;
 					case SLOTCVMODE::TRIG_PINGPONG:
@@ -313,7 +323,8 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 								slotCvModeDir = -1;
 							if (n <= 0)
 								slotCvModeDir = 1;
-							presetLoad(n);
+							presetLoad(resetFlag ? 0 : n);
+							resetFlag = false;
 						}
 						break;
 					case SLOTCVMODE::TRIG_ALT:
@@ -327,7 +338,8 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 									slotCvModeDir = 1;
 								slotCvModeAlt = std::min(n, presetCount - 1);
 							}
-							presetLoad(n);
+							presetLoad(resetFlag ? 0 : n);
+							resetFlag = false;
 						}
 						break;
 					case SLOTCVMODE::TRIG_RANDOM:
@@ -361,6 +373,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 							int p = std::min(std::max(0, slotCvModeShuffle.back()), presetCount - 1);
 							slotCvModeShuffle.pop_back();
 							presetLoad(p);
+							resetFlag = false;
 						}
 						break;
 					case SLOTCVMODE::ARM:
