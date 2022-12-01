@@ -1,5 +1,7 @@
+#include "plugin.hpp"
 #include "Strip.hpp"
 #include "strippp/SelectionPreview.cpp"
+#include "components/MenuLabelEx.hpp"
 
 namespace StoermelderPackOne {
 namespace Strip {
@@ -87,7 +89,7 @@ struct StripPpWidget : StripWidgetBase<StripPpModule> {
 						break;
 				}
 			}
-			if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ESCAPE) {
+			if (e.action == GLFW_PRESS && (e.mods == RACK_MOD_MASK) == 0 && e.key == GLFW_KEY_ESCAPE) {
 				sp->hide();
 				e.consume(this);
 			}
@@ -122,6 +124,7 @@ struct StripPpWidget : StripWidgetBase<StripPpModule> {
 	StripPpWidget(StripPpModule* module)
 		: StripWidgetBase<StripPpModule>(module, "StripPp") {
 		this->module = module;
+		this->disableDuplicateAction = true;
 		setModule(module);
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 1 * RACK_GRID_WIDTH, 0.f)));
@@ -187,8 +190,12 @@ struct StripPpWidget : StripWidgetBase<StripPpModule> {
 		menu->addChild(createBoolPtrMenuItem("Show preview", "", &module->showPreview));
 		menu->addChild(new MenuSeparator);
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Selection"));
-		menu->addChild(createMenuItem("Paste", RACK_MOD_SHIFT_NAME "+" RACK_MOD_CTRL_NAME "+V", [=]() { groupSelectionPasteClipboard(); }));
-		menu->addChild(createMenuItem("Import", RACK_MOD_SHIFT_NAME "+" RACK_MOD_CTRL_NAME "+B", [=]() { groupSelectionLoad(); }));
+		menu->addChild(createMenuItem("Paste", RACK_MOD_CTRL_NAME "+" RACK_MOD_SHIFT_NAME "+V", [=]() { groupSelectionPasteClipboard(); }));
+		menu->addChild(createMenuItem("Import", RACK_MOD_CTRL_NAME "+" RACK_MOD_SHIFT_NAME "+B", [=]() { groupSelectionLoad(); }));
+
+		if (module->showPreview) {
+			menu->addChild(construct<MenuLabelEx>(&MenuLabelEx::text, "Abort import", &MenuLabelEx::rightText, "Esc/right-click"));
+		}
 
 		if (recentFiles.size() > 0) {
 			menu->addChild(new MenuSeparator);
