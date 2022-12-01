@@ -47,6 +47,7 @@
 - Module [STROKE](./docs/Stroke.md)
     - Added commands "Add random module", "Save module preset" and "Save module default preset" (#345)
 - Module [TRANSIT](./docs/Transit.md)
+    - Fixed broken Auto/Write-modes if CV-port is set to "Phase" (#282)
     - Fixed broken reset-behavior for "Trigger forward", "Trigger reverse" and "Trigger pingpong" (#347)
     - Added missing reset-handling for "Trigger alternating" and "Trigger shuffle"
 

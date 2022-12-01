@@ -440,10 +440,8 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 			}
 		}
 
-		if (isPhaseCvActive()) {
-			if (BASE::ctrlMode == CTRLMODE::READ) {
-				presetProcessPhase(args.sampleTime);
-			}
+		if (isPhaseCvActive() && BASE::ctrlMode == CTRLMODE::READ) {
+			presetProcessPhase(args.sampleTime);
 		} 
 		else {
 			presetProcess(args.sampleTime);
@@ -462,7 +460,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 				TransitSlot* slot = expSlot(i);
 				bool u = *(slot->presetSlotUsed);
 				if (BASE::ctrlMode == CTRLMODE::READ || BASE::ctrlMode == CTRLMODE::AUTO) {
-					if (!isPhaseCvActive()) {
+					if (!isPhaseCvActive() || BASE::ctrlMode == CTRLMODE::AUTO) {
 						slot->lights[0].setBrightness(preset == i ? 1.f : (presetNext == i ? 1.f : 0.f));
 						slot->lights[1].setBrightness(preset == i ? 1.f : (presetCount > i ? (u ? 1.f : 0.25f) : 0.f));
 						slot->lights[2].setBrightness(preset == i ? 1.f : 0.f);
@@ -561,7 +559,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 				outSlotPulseGenerator.trigger();
 				if (!*(slot->presetSlotUsed)) 
 					return;
-				if (BASE::ctrlMode == CTRLMODE::AUTO) {
+				if (BASE::ctrlMode == CTRLMODE::AUTO && presetPrev != -1) {
 					TransitSlot* slotPrev = expSlot(presetPrev);
 					if (*(slotPrev->presetSlotUsed)) {
 						slotPrev->preset->clear();
