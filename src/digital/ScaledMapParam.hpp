@@ -113,6 +113,7 @@ struct ScaledMapParam {
 			Param* param = paramQuantity->getParam();
 			if (param) {
 				float vScaled = math::rescale(f, 0.f, 1.f, paramQuantity->getMinValue(), paramQuantity->getMaxValue());
+				if (paramQuantity->snapEnabled) vScaled = std::round(vScaled);
 				paramQuantity->getParam()->setValue(vScaled);
 			}
 			else {
