@@ -33,6 +33,8 @@
     - Fixed broken reset-behavior
 - Module [MAZE](./docs/Maze.md)
     - Fixed broken reset-behavior
+- Module [MIDI-CAT](./docs/MidiCat.md)
+    - Fixed pickup of snapped parameters (#308)
 - Module [MIDI-KEY](./docs/MidiKey.md)
     - Added options for slot-specific key modifiers (#344)
 - Module [ORBIT](./docs/Orbit.md)

@@ -228,3 +228,5 @@ Additionally MIDI-CAT CTX provides a button for activating mapping on the first 
     - Added option for clearing mapping slots on preset load (#259)
 - v1.10.0
     - Fixed broken multi-mapping for note-messages (#271)
+- v2.0.0
+    - Fixed pickup of snapped parameters (#308)

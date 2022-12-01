@@ -127,7 +127,13 @@ struct ScaledMapParam {
 	T getValue() {
 		float f = paramQuantity->getScaledValue();
 		if (isNear(valueOut, f)) return valueIn;
+		// Reset the internal values to the actual parameter's value in case 
+		// getValue() is called before setValue() - for proper MIDI feedback
 		if (valueOut == std::numeric_limits<float>::infinity()) value = valueOut = f;
+		// If a parameter is snapped then the returned value of ParaQuantity can't be trusted
+		// -> simply return the input value
+		if (paramQuantity->snapEnabled) f = valueOut;
+
 		f = rescale(f, min, max, limitMin, limitMax);
 		f = clamp(f, limitMin, limitMax);
 		T i = T(f);
