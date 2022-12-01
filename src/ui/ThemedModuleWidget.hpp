@@ -8,7 +8,11 @@ struct ThemedModuleWidget : BASE {
 	MODULE* module;
 	std::string baseName;
 	std::string manualName;
+#ifdef USING_CARDINAL_NOT_RACK
+	int panelTheme = darkModeToTheme();
+#else
 	int panelTheme = -1;
+#endif
 
 	bool disableDuplicateAction = false;
 
@@ -27,6 +31,9 @@ struct ThemedModuleWidget : BASE {
 		this->baseName = baseName;
 		this->manualName = manualName;
 
+#ifdef USING_CARDINAL_NOT_RACK
+		BASE::setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, panel())));
+#else
 		if (module) {
 			// Normal operation
 			BASE::setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, panel())));
@@ -39,6 +46,7 @@ struct ThemedModuleWidget : BASE {
 			darkPanel->setBackground(APP->window->loadSvg(asset::plugin(pluginInstance, "res/dark/" + baseName + ".svg")));
 			BASE::addChild(darkPanel);
 		}
+#endif
 	}
 
 	void appendContextMenu(Menu* menu) override {
@@ -52,6 +60,7 @@ struct ThemedModuleWidget : BASE {
 			}
 		}
 
+#ifndef USING_CARDINAL_NOT_RACK
 		struct PanelMenuItem : MenuItem {
 			MODULE* module;
 
@@ -96,16 +105,35 @@ struct ThemedModuleWidget : BASE {
 
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<PanelMenuItem>(&MenuItem::text, "Panel", &PanelMenuItem::module, module));
+#endif
 		BASE::appendContextMenu(menu);
 	}
 
 	void step() override {
+#ifdef USING_CARDINAL_NOT_RACK
+		if (module) {
+			// Normal operation
+			module->panelTheme = darkModeToTheme();
+		} else {
+			// Module Browser
+			if (panelTheme != darkModeToTheme()) {
+				panelTheme = darkModeToTheme();
+				BASE::setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, panel())));
+			}
+		}
+#endif
 		if (module && module->panelTheme != panelTheme) {
 			panelTheme = module->panelTheme;
 			BASE::setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, panel())));
 		}
 		BASE::step();
 	}
+
+#ifdef USING_CARDINAL_NOT_RACK
+	static inline int darkModeToTheme() {
+		return settings::darkMode ? 1 : 0;
+	}
+#endif
 
 	std::string panel() {
 		switch (panelTheme) {
