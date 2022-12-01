@@ -39,7 +39,7 @@ struct ScaledMapParam {
 		return limitMaxT;
 	}
 
-	void reset(bool resetSettings = true) {
+	virtual void reset(bool resetSettings = true) {
 		paramQuantity = NULL;
 		filter.reset();
 		filterInitialized = false;
@@ -92,14 +92,14 @@ struct ScaledMapParam {
 		return max;
 	}
 
-	void setValue(T i) {
+	virtual void setValue(T i) {
 		float f = rescale(float(i), limitMin, limitMax, min, max);
 		f = clamp(f, 0.f, 1.f);
 		valueIn = i;
 		value = f;
 	}
 
-	void process(float sampleTime = -1.f, bool force = false) {
+	virtual void process(float sampleTime = -1.f, bool force = false) {
 		if (valueOut == std::numeric_limits<float>::infinity()) return;
 		// Set filter from param value if filter is uninitialized
 		if (!filterInitialized) {
@@ -124,7 +124,7 @@ struct ScaledMapParam {
 		}
 	}
 
-	T getValue() {
+	virtual T getValue() {
 		float f = paramQuantity->getScaledValue();
 		if (isNear(valueOut, f)) return valueIn;
 		// Reset the internal values to the actual parameter's value in case 

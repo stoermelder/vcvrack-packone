@@ -23,6 +23,7 @@ void init(rack::Plugin* p) {
 	p->addModel(modelMidiCat);
 	p->addModel(modelMidiCatMem);
 	p->addModel(modelMidiCatCtx);
+	p->addModel(modelMidiCatClk);
 	p->addModel(modelSipo);
 	p->addModel(modelFourRounds);
 	p->addModel(modelArena);

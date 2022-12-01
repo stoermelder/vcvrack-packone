@@ -75,6 +75,59 @@ enum MIDIMODE {
 
 
 struct MidiCatParam : ScaledMapParam<int> {
+	enum class CLOCKMODE {
+		OFF = 0,
+		ARM = 1,
+		ARM_DEFERRED_FEEDBACK = 2
+	};
+
+	CLOCKMODE clockMode = CLOCKMODE::OFF;
+	int clockSource = 0;
+
+	int setValueDeffered;
+	int getValueLast;
+
+	void reset(bool resetSettings = true) override {
+		if (resetSettings) {
+			clockMode = CLOCKMODE::OFF;
+			clockSource = 0;
+		}
+		ScaledMapParam<int>::reset(resetSettings);
+	}
+
+	void setValue(int i) override {
+		switch (clockMode) {
+			case CLOCKMODE::OFF:
+				ScaledMapParam<int>::setValue(i);
+				break;
+			case CLOCKMODE::ARM:
+			case CLOCKMODE::ARM_DEFERRED_FEEDBACK:
+				setValueDeffered = i;
+				break;
+		}
+	}
+
+	int getValue() override {
+		switch (clockMode) {
+			case CLOCKMODE::OFF:
+				return ScaledMapParam<int>::getValue();
+			case CLOCKMODE::ARM:
+				return setValueDeffered;
+			case CLOCKMODE::ARM_DEFERRED_FEEDBACK:
+				return getValueLast;
+		}
+		return 0;
+	}
+
+	void tick(int clock) {
+		if (clockMode != CLOCKMODE::OFF && clockSource == clock) {
+			ScaledMapParam<int>::setValue(setValueDeffered);
+		}
+		if (clockMode == CLOCKMODE::ARM_DEFERRED_FEEDBACK) {
+			getValueLast = ScaledMapParam<int>::getValue();
+		}
+	}
+
 	bool isNear(int value, int jump = -1) {
 		if (value == -1) return false;
 		int p = getValue();
@@ -308,6 +361,9 @@ struct MidiCatModule : Module, StripIdFixModule {
 	int64_t expMemModuleId = -1;
 
 	Module* expCtx = NULL;
+
+	Module* expClk = NULL;
+	dsp::SchmittTrigger expClkTrigger[4];
 
 	MidiCatModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
@@ -591,8 +647,10 @@ struct MidiCatModule : Module, StripIdFixModule {
 		}
 
 		// Expanders
+		// TODO: use WeakHandle instead
 		bool expMemFound = false;
 		bool expCtxFound = false;
+		bool expClkFound = false;
 		Module* exp = rightExpander.module;
 		for (int i = 0; i < 2; i++) {
 			if (!exp) break;
@@ -609,6 +667,12 @@ struct MidiCatModule : Module, StripIdFixModule {
 				exp = exp->rightExpander.module;
 				continue;
 			}
+			if (exp->model == modelMidiCatClk && !expClkFound) {
+				expClk = exp;
+				expClkFound = true;
+				exp = exp->rightExpander.module;
+				continue;
+			}
 			break;
 		}
 		if (!expMemFound) {
@@ -617,6 +681,18 @@ struct MidiCatModule : Module, StripIdFixModule {
 		}
 		if (!expCtxFound) {
 			expCtx = NULL;
+		}
+		if (!expClkFound) {
+			if (expClk) {
+				for (int i = 0; i < MAX_CHANNELS; i++) {
+					midiParam[i].clockMode = MidiCatParam::CLOCKMODE::OFF;
+					midiParam[i].clockSource = 0;
+				}
+			}
+			expClk = NULL;
+		}
+		else {
+			expClkProcess();
 		}
 	}
 
@@ -794,6 +870,8 @@ struct MidiCatModule : Module, StripIdFixModule {
 			midiParam[learningId].setSlew(midiParam[learningId - 1].getSlew());
 			midiParam[learningId].setMin(midiParam[learningId - 1].getMin());
 			midiParam[learningId].setMax(midiParam[learningId - 1].getMax());
+			midiParam[learningId].clockMode = midiParam[learningId - 1].clockMode;
+			midiParam[learningId].clockSource = midiParam[learningId - 1].clockSource;
 		}
 		textLabel[learningId] = "";
 
@@ -969,6 +1047,16 @@ struct MidiCatModule : Module, StripIdFixModule {
 		return true;
 	}
 
+	void expClkProcess() {
+		for (int i = 0; i < 4; i++) {
+			if (expClkTrigger[i].process(expClk->inputs[i].getVoltage())) {
+				for (int j = 0; j < mapLen; j++) {
+					midiParam[j].tick(i);
+				}
+			}
+		}
+	}
+
 	void setProcessDivision(int d) {
 		processDivision = d;
 		processDivider.setDivision(d);
@@ -1001,6 +1089,8 @@ struct MidiCatModule : Module, StripIdFixModule {
 			json_object_set_new(mapJ, "slew", json_real(midiParam[id].getSlew()));
 			json_object_set_new(mapJ, "min", json_real(midiParam[id].getMin()));
 			json_object_set_new(mapJ, "max", json_real(midiParam[id].getMax()));
+			json_object_set_new(mapJ, "clockMode", json_integer((int)midiParam[id].clockMode));
+			json_object_set_new(mapJ, "clockSource", json_integer(midiParam[id].clockSource));
 			json_array_append_new(mapsJ, mapJ);
 		}
 		json_object_set_new(rootJ, "maps", mapsJ);
@@ -1055,6 +1145,8 @@ struct MidiCatModule : Module, StripIdFixModule {
 				json_t* slewJ = json_object_get(mapJ, "slew");
 				json_t* minJ = json_object_get(mapJ, "min");
 				json_t* maxJ = json_object_get(mapJ, "max");
+				json_t* clockModeJ = json_object_get(mapJ, "clockMode");
+				json_t* clockSourceJ = json_object_get(mapJ, "clockSource");
 
 				if (!(ccJ || noteJ)) {
 					ccs[mapIndex].setCc(-1);
@@ -1085,6 +1177,8 @@ struct MidiCatModule : Module, StripIdFixModule {
 				if (slewJ) midiParam[mapIndex].setSlew(json_real_value(slewJ));
 				if (minJ) midiParam[mapIndex].setMin(json_real_value(minJ));
 				if (maxJ) midiParam[mapIndex].setMax(json_real_value(maxJ));
+				if (clockModeJ) midiParam[mapIndex].clockMode = (MidiCatParam::CLOCKMODE)json_integer_value(clockModeJ);
+				if (clockSourceJ) midiParam[mapIndex].clockSource = json_integer_value(clockSourceJ);
 			}
 		}
 
@@ -1501,6 +1595,28 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 		menu->addChild(construct<PresetMenuItem>(&MenuItem::text, "Presets", &PresetMenuItem::module, module, &PresetMenuItem::id, id));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<LabelMenuItem>(&MenuItem::text, "Custom label", &LabelMenuItem::module, module, &LabelMenuItem::id, id));
+
+		if (module->expClk != NULL) {
+			menu->addChild(new MenuSeparator());
+			menu->addChild(createMenuLabel("CLK-expander"));
+			menu->addChild(StoermelderPackOne::Rack::createMapPtrSubmenuItem("Clock mode",
+				{
+					{ MidiCatParam::CLOCKMODE::OFF, "Off" },
+					{ MidiCatParam::CLOCKMODE::ARM, "Arm - instant feedback" },
+					{ MidiCatParam::CLOCKMODE::ARM_DEFERRED_FEEDBACK, "Arm - deferred feedback" }
+				},
+				&module->midiParam[id].clockMode
+			));
+			menu->addChild(StoermelderPackOne::Rack::createMapPtrSubmenuItem("Source",
+				{
+					{ 0, "Clock 1" },
+					{ 1, "Clock 2" },
+					{ 2, "Clock 3" },
+					{ 3, "Clock 4" }
+				},
+				&module->midiParam[id].clockSource
+			));
+		}
 	}
 };
 
