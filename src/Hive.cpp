@@ -369,7 +369,7 @@ struct HiveModule : Module {
 	inline bool processClockTrigger(int port, float sampleTime) {
 		if (port == 0) {
 			resetTimer0 = resetTimer[0].process(sampleTime);
-			clockTrigger0 = resetTimer0 >= 1e-3f && clockTrigger[0].process(inputs[CLK_INPUT].getVoltage());
+			clockTrigger0 = clockTrigger[0].process(inputs[CLK_INPUT].getVoltage()) && resetTimer0 >= 1e-3f;
 			return clockTrigger0;
 		}
 		else {
@@ -378,7 +378,7 @@ struct HiveModule : Module {
 				r = resetTimer[port].process(sampleTime) >= 1e-3f;
 			}
 			if (inputs[CLK_INPUT + port].isConnected()) {
-				return r && clockTrigger[port].process(inputs[CLK_INPUT + port].getVoltage());
+				return clockTrigger[port].process(inputs[CLK_INPUT + port].getVoltage()) && r;
 			}
 			else {
 				return normalizePorts && clockTrigger0;
