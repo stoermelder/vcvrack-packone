@@ -738,7 +738,7 @@ struct LabelWidget : widget::TransparentWidget {
 	}
 
 	void onHoverKey(const event::HoverKey& e) override {
-		if (editMode && e.action == GLFW_PRESS && e.mods & GLFW_MOD_CONTROL && e.key == GLFW_KEY_X) {
+		if (editMode && e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && e.key == GLFW_KEY_X) {
 			requestedDelete = true;
 			e.consume(this);
 		}
