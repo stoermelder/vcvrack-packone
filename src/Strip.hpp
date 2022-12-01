@@ -516,7 +516,11 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		std::string modelSlug = json_string_value(json_object_get(moduleJ, "model"));
 
 		static const std::set<std::tuple<std::string, std::string>> moduleSlugs = {
+#ifdef USING_CARDINAL_NOT_RACK
+			std::make_tuple("Cardinal", "HostMIDIMap"),
+#else
 			std::make_tuple("Core", "MIDI-Map"),
+#endif
 			std::make_tuple("MindMeldModular", "PatchMaster")
 		};
 
@@ -812,7 +816,11 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		FILE* file = fopen(filename.c_str(), "w");
 		if (!file) {
 			std::string message = string::f("Could not write to patch file %s", filename.c_str());
+#ifdef USING_CARDINAL_NOT_RACK
+			async_dialog_message(message.c_str());
+#else
 			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, message.c_str());
+#endif
 		}
 		DEFER({
 			fclose(file);
@@ -828,7 +836,19 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		});
 
 		std::string dir = asset::user("patches");
+#ifdef USING_CARDINAL_NOT_RACK
+		WeakPtr<StripWidgetBase> weakThis = this;
+		async_dialog_filebrowser(true, "selection.vcvss", dir.c_str(), "Export selection", [weakThis](char* path){
+			if (weakThis)
+				weakThis->groupSaveFileDialog(path);
+		});
+#else
 		char* path = osdialog_file(OSDIALOG_SAVE, dir.c_str(), "Untitled.vcvss", filters);
+		groupSaveFileDialog(path);
+#endif
+	}
+
+	void groupSaveFileDialog(char* path) {
 		if (!path) {
 			// No path selected
 			return;
@@ -866,7 +886,11 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		APP->scene->rack->requestModulePos(this, this->box.pos);
 
 		if (!warningLog.empty()) {
+#ifdef USING_CARDINAL_NOT_RACK
+			async_dialog_message(warningLog.c_str());
+#else
 			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, warningLog.c_str());
+#endif
 		}
 
 		history::ComplexAction* complexAction = new history::ComplexAction;
@@ -899,7 +923,11 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		APP->scene->rack->requestModulePos(this, this->box.pos);
 
 		if (!warningLog.empty()) {
+#ifdef USING_CARDINAL_NOT_RACK
+			async_dialog_message(warningLog.c_str());
+#else
 			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, warningLog.c_str());
+#endif
 		}
 
 		history::ComplexAction* complexAction = new history::ComplexAction;
@@ -945,7 +973,11 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		std::vector<history::Action*>* h5 = groupConnectionsRestore(conn);
 
 		if (!warningLog.empty()) {
+#ifdef USING_CARDINAL_NOT_RACK
+			async_dialog_message(warningLog.c_str());
+#else
 			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, warningLog.c_str());
+#endif
 		}
 
 		history::ComplexAction* complexAction = new history::ComplexAction;
@@ -966,7 +998,11 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 	void groupPasteClipboard() {
 		const char* moduleJson = glfwGetClipboardString(APP->window->win);
 		if (!moduleJson) {
+#ifdef USING_CARDINAL_NOT_RACK
+			async_dialog_message("Could not get text from clipboard.");
+#else
 			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, "Could not get text from clipboard.");
+#endif
 			return;
 		}
 
@@ -974,7 +1010,11 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		json_t* rootJ = json_loads(moduleJson, 0, &error);
 		if (!rootJ) {
 			std::string message = string::f("JSON parsing error at %s %d:%d %s", error.source, error.line, error.column, error.text);
+#ifdef USING_CARDINAL_NOT_RACK
+			async_dialog_message(message.c_str());
+#else
 			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, message.c_str());
+#endif
 			return;
 		}
 		DEFER({
@@ -989,7 +1029,11 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 
 		const char* moduleJson = glfwGetClipboardString(APP->window->win);
 		if (!moduleJson) {
+#ifdef USING_CARDINAL_NOT_RACK
+			async_dialog_message("Could not get text from clipboard.");
+#else
 			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, "Could not get text from clipboard.");
+#endif
 			return;
 		}
 
@@ -997,7 +1041,11 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		json_t* rootJ = json_loads(moduleJson, 0, &error);
 		if (!rootJ) {
 			std::string message = string::f("JSON parsing error at %s %d:%d %s", error.source, error.line, error.column, error.text);
+#ifdef USING_CARDINAL_NOT_RACK
+			async_dialog_message(message.c_str());
+#else
 			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, message.c_str());
+#endif
 			return;
 		}
 		DEFER({
@@ -1013,7 +1061,11 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		FILE* file = fopen(filename.c_str(), "r");
 		if (!file) {
 			std::string message = string::f("Could not load file %s", filename.c_str());
+#ifdef USING_CARDINAL_NOT_RACK
+			async_dialog_message(message.c_str());
+#else
 			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, message.c_str());
+#endif
 			return;
 		}
 		DEFER({
@@ -1024,7 +1076,11 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		json_t* rootJ = json_loadf(file, 0, &error);
 		if (!rootJ) {
 			std::string message = string::f("File is not a valid file. JSON parsing error at %s %d:%d %s", error.source, error.line, error.column, error.text);
+#ifdef USING_CARDINAL_NOT_RACK
+			async_dialog_message(message.c_str());
+#else
 			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, message.c_str());
+#endif
 			return;
 		}
 		DEFER({
@@ -1036,12 +1092,22 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 	}
 
 	void groupLoadFileDialog(bool replace) {
+		std::string dir = asset::user("patches");
+#ifdef USING_CARDINAL_NOT_RACK
+		WeakPtr<StripWidgetBase> weakThis = this;
+		async_dialog_filebrowser(false, "selection.vcvss", dir.c_str(), "Import selection", [weakThis, replace](char* path){
+			if (!weakThis || !path)
+				return;
+
+			weakThis->groupLoadFile(path, replace);
+			std::free(path);
+		});
+#else
 		osdialog_filters* filters = osdialog_filters_parse(PRESET_FILTERS);
 		DEFER({
 			osdialog_filters_free(filters);
 		});
 
-		std::string dir = asset::user("patches");
 		char* path = osdialog_file(OSDIALOG_OPEN, dir.c_str(), NULL, filters);
 		if (!path) {
 			// No path selected
@@ -1052,6 +1118,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		});
 
 		groupLoadFile(path, replace);
+#endif
 	}
 
 	void groupSelectionLoadFile(std::string path) {
@@ -1075,6 +1142,22 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		std::string selectionDir = asset::user("selections");
 		system::createDirectories(selectionDir);
 
+#ifdef USING_CARDINAL_NOT_RACK
+		WeakPtr<StripWidgetBase> weakThis = this;
+		async_dialog_filebrowser(false, "selection.vcvss", selectionDir.c_str(), "Import selection", [weakThis](char* pathC){
+			if (!weakThis || !pathC)
+				return;
+
+			try {
+				weakThis->groupSelectionLoadFile(pathC);
+			}
+			catch (Exception& e) {
+				async_dialog_message(e.what());
+			}
+
+			std::free(pathC);
+		});
+#else
 		osdialog_filters* filters = osdialog_filters_parse(SELECTION_FILTERS);
 		DEFER({osdialog_filters_free(filters);});
 
@@ -1091,6 +1174,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		catch (Exception& e) {
 			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, e.what());
 		}
+#endif
 	}
 
 
