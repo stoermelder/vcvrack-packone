@@ -1,5 +1,22 @@
 #pragma once
 
+
+template<typename T>
+struct ChangeTrigger {
+	T state = true;
+
+	void reset() {
+		state = T();
+	}
+
+	bool process(T state) {
+		bool triggered = (state != this->state);
+		this->state = state;
+		return triggered;
+	}
+};
+
+
 struct ClockMultiplier {
 	uint32_t clock = 0;
 	uint32_t lastTickSamples = 0;

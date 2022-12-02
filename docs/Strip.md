@@ -79,6 +79,7 @@ The file-format "vcvss" for storing strips is very close to Rack's own format fo
     - Added support for sub-folders in preset-submenu (#230)
 - v2.0.0
     - Fixed crash on disabling a group of modules (#341)
+    - Fixed high CPU usage in High/Low-mode for bypass
     - Remember last used folder for strips and selections on dialogs (#307)
 
 # stoermelder STRIP-BAY

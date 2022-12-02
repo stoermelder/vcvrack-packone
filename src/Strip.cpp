@@ -1,4 +1,5 @@
 #include "Strip.hpp"
+#include "digital.hpp"
 #include "helpers/TaskWorker.hpp"
 
 namespace StoermelderPackOne {
@@ -63,6 +64,7 @@ struct StripModule : StripModuleBase {
 	dsp::SchmittTrigger modeTrigger;
 	dsp::SchmittTrigger onTrigger;
 	dsp::SchmittTrigger offPTrigger;
+	ChangeTrigger<float> highLowTrigger;
 	dsp::SchmittTrigger randTrigger;
 
 	dsp::ClockDivider lightDivider;
@@ -114,7 +116,8 @@ struct StripModule : StripModuleBase {
 					groupDisable(!lastState, params[ON_PARAM].getValue() > 0.f);
 				break;
 			case ONMODE::HIGHLOW:
-				groupDisable(params[ON_PARAM].getValue() + inputs[ON_INPUT].getVoltage() < 1.f, params[ON_PARAM].getValue() > 0.f);
+				if (highLowTrigger.process(params[ON_PARAM].getValue() + inputs[ON_INPUT].getVoltage()))
+					groupDisable(params[ON_PARAM].getValue() + inputs[ON_INPUT].getVoltage() < 1.f, params[ON_PARAM].getValue() > 0.f);
 				break;
 		}
 
