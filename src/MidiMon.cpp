@@ -307,48 +307,22 @@ struct MidiMonWidget : ThemedModuleWidget<MidiMonModule> {
 		ThemedModuleWidget<MidiMonModule>::appendContextMenu(menu);
 		MidiMonModule* module = dynamic_cast<MidiMonModule*>(this->module);
 
-		struct MsgItem : MenuItem {
-			bool* s;
-			void step() override {
-				rightText = CHECKMARK(*s);
-				MenuItem::step();
-			}
-			void onAction(const event::Action& e) override {
-				*s ^= true;
-			}
-		};
-
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuLabel("Channel MIDI messages"));
-		menu->addChild(construct<MsgItem>(&MenuItem::text, "Note on/off", &MsgItem::s, &module->showNoteMsg));
-		menu->addChild(construct<MsgItem>(&MenuItem::text, "Key pressure", &MsgItem::s, &module->showKeyPressure));
-		menu->addChild(construct<MsgItem>(&MenuItem::text, "CC", &MsgItem::s, &module->showCcMsg));
-		menu->addChild(construct<MsgItem>(&MenuItem::text, "Program change", &MsgItem::s, &module->showProgChangeMsg));
-		menu->addChild(construct<MsgItem>(&MenuItem::text, "Channel pressure", &MsgItem::s, &module->showChannelPressurelMsg));
-		menu->addChild(construct<MsgItem>(&MenuItem::text, "Pitch wheel", &MsgItem::s, &module->showPitchWheelMsg));
+		menu->addChild(createBoolPtrMenuItem("Note on/off", "", &module->showNoteMsg));
+		menu->addChild(createBoolPtrMenuItem("Key pressure", "", &module->showKeyPressure));
+		menu->addChild(createBoolPtrMenuItem("CC", "", &module->showCcMsg));
+		menu->addChild(createBoolPtrMenuItem("Program change", "", &module->showProgChangeMsg));
+		menu->addChild(createBoolPtrMenuItem("Channel pressure", "", &module->showChannelPressurelMsg));
+		menu->addChild(createBoolPtrMenuItem("Pitch wheel", "", &module->showPitchWheelMsg));
 		menu->addChild(createMenuLabel("System MIDI messages"));
-		menu->addChild(construct<MsgItem>(&MenuItem::text, "Clock", &MsgItem::s, &module->showClockMsg));
-		menu->addChild(construct<MsgItem>(&MenuItem::text, "Other", &MsgItem::s, &module->showSystemMsg));
+		menu->addChild(createBoolPtrMenuItem("Clock", "", &module->showClockMsg));
+		menu->addChild(createBoolPtrMenuItem("Other", "", &module->showSystemMsg));
 		// menu->addChild(construct<MsgItem>(&MenuItem::text, "System Exclusive", &MsgItem::s, &module->showSysExMsg));
 
-		struct ClearItem : MenuItem {
-			MidiMonWidget* mw;
-			void onAction(const event::Action& e) override {
-				mw->buffer.clear();
-				mw->textField->reset();
-			}
-		};
-
-		struct ExportItem : MenuItem {
-			MidiMonWidget* mw;
-			void onAction(const event::Action& e) override {
-				mw->exportLogDialog();
-			}
-		};
-
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<ClearItem>(&MenuItem::text, "Clear log", &ClearItem::mw, this));
-		menu->addChild(construct<ExportItem>(&MenuItem::text, "Export log", &ExportItem::mw, this));
+		menu->addChild(createMenuItem("Clear log", "", [this]() { buffer.clear(); textField->reset(); }));
+		menu->addChild(createMenuItem("Export log", "", [this]() { exportLogDialog(); }));
 	}
 
 	void exportLog(std::string filename) {

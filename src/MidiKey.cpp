@@ -458,27 +458,11 @@ struct MidiKeyChoice : LedDisplayChoice {
 	}
 
 	void createContextMenu() {
-		struct UnmapItem : MenuItem {
-			MODULE* module;
-			int id;
-			void onAction(const event::Action& e) override {
-				module->clearMap(id);
-			}
-		};
-
-		struct UnmapMidiItem : MenuItem {
-			MODULE* module;
-			int id;
-			void onAction(const event::Action& e) override {
-				module->clearMap(id, true);
-			}
-		}; // struct UnmapMidiItem
-
 		ui::Menu* menu = createMenu();
-		menu->addChild(construct<UnmapItem>(&MenuItem::text, "Unmap", &UnmapItem::module, module, &UnmapItem::id, id));
-		menu->addChild(construct<UnmapMidiItem>(&MenuItem::text, "Clear MIDI assignment", &UnmapMidiItem::module, module, &UnmapMidiItem::id, id));
+		menu->addChild(createMenuItem("Unmap", "", [=]() { module->clearMap(id); }));;
+		menu->addChild(createMenuItem("Clear MIDI assignment", "", [=]() { module->clearMap(id, true); }));
 		menu->addChild(new MenuSeparator);
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Modifiers"));
+		menu->addChild(createMenuLabel("Modifiers"));
 		menu->addChild(createCheckMenuItem(RACK_MOD_CTRL_NAME, "", [=]() { return module->slot[id].mods & RACK_MOD_CTRL; }, [=]() { module->slot[id].mods ^= RACK_MOD_CTRL; }));
 		menu->addChild(createCheckMenuItem(RACK_MOD_ALT_NAME, "", [=]() { return module->slot[id].mods & GLFW_MOD_ALT; }, [=]() { module->slot[id].mods ^= GLFW_MOD_ALT; }));
 		menu->addChild(createCheckMenuItem(RACK_MOD_SHIFT_NAME, "", [=]() { return module->slot[id].mods & GLFW_MOD_SHIFT; }, [=]() { module->slot[id].mods ^= GLFW_MOD_SHIFT; }));

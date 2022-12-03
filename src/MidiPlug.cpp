@@ -168,24 +168,11 @@ struct MidiPlugOutModeChoice : LedDisplayCenterChoiceEx {
 
 	void onAction(const event::Action& e) override {
 		if (!port) return;
-
-		struct ModeMenuItem : MenuItem {
-			Output* port;
-			Output::MODE plugMode;
-			void onAction(const event::Action& e) override {
-				port->plugMode = plugMode;
-			}
-			void step() override {
-				rightText = CHECKMARK(port->plugMode == plugMode);
-				MenuItem::step();
-			}
-		};
-
 		ui::Menu* menu = createMenu();
 		menu->addChild(createMenuLabel("MIDI channel mode"));
-		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Replace channel", &ModeMenuItem::plugMode, Output::MODE::REPLACE, &ModeMenuItem::port, port));
-		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Filter to channel", &ModeMenuItem::plugMode, Output::MODE::FILTER, &ModeMenuItem::port, port));
-		menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Block channel", &ModeMenuItem::plugMode, Output::MODE::BLOCK, &ModeMenuItem::port, port));
+		menu->addChild(Rack::createValuePtrMenuItem("Replace channel", &port->plugMode, Output::MODE::REPLACE));
+		menu->addChild(Rack::createValuePtrMenuItem("Filter to channel", &port->plugMode, Output::MODE::FILTER));
+		menu->addChild(Rack::createValuePtrMenuItem("Block channel", &port->plugMode, Output::MODE::BLOCK));
 	}
 
 	void step() override {
