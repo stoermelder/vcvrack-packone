@@ -355,13 +355,16 @@ struct MidiCatModule : Module, StripIdFixModule {
 	int processDivision;
 	dsp::ClockDivider indicatorDivider;
 
+	// MEM-expander
 	// Pointer of the MEM-expander's attribute
-	std::map<std::pair<std::string, std::string>, MemModule*>* expMemStorage = NULL;
 	Module* expMem = NULL;
 	int64_t expMemModuleId = -1;
+	std::map<std::pair<std::string, std::string>, MemModule*>* expMemStorage = NULL;
 
+	// CTX-expander
 	Module* expCtx = NULL;
 
+	// CLK-expander
 	Module* expClk = NULL;
 	dsp::SchmittTrigger expClkTrigger[4];
 
@@ -432,6 +435,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 	void process(const ProcessArgs &args) override {
 		ts++;
 
+		// Aquire new MIDI messages from the queue
 		midi::Message msg;
 		bool midiReceived = false;
 		while (midiInput.tryPop(&msg, args.frame)) {
@@ -444,194 +448,10 @@ struct MidiCatModule : Module, StripIdFixModule {
 		// that midi allows about 1000 messages per second, so checking for changes more often
 		// won't lead to higher precision on midi output.
 		if (processDivider.process() || midiReceived) {
-			// Step channels
-			for (int id = 0; id < mapLen; id++) {
-				int cc = ccs[id].getCc();
-				int note = notes[id].getNote();
-				if (cc < 0 && note < 0)
-					continue;
-
-				// Get Module
-				Module* module = paramHandles[id].module;
-				if (!module)
-					continue;
-
-				// Get ParamQuantity
-				int paramId = paramHandles[id].paramId;
-				ParamQuantity* paramQuantity = module->paramQuantities[paramId];
-				if (!paramQuantity)
-					continue;
-
-				if (!paramQuantity->isBounded())
-					continue;
-
-				switch (midiMode) {
-					case MIDIMODE::MIDIMODE_DEFAULT: {
-						midiParam[id].paramQuantity = paramQuantity;
-						int t = -1;
-
-						// Check if CC value has been set and changed
-						if (cc >= 0 && ccs[id].process()) {
-							switch (ccs[id].ccMode) {
-								case CCMODE::DIRECT:
-									if (lastValueIn[id] != ccs[id].getValue()) {
-										lastValueIn[id] = ccs[id].getValue();
-										t = ccs[id].getValue();
-									}
-									break;
-								case CCMODE::PICKUP1:
-									if (lastValueIn[id] != ccs[id].getValue()) {
-										if (midiParam[id].isNear(lastValueIn[id])) {
-											midiParam[id].resetFilter();
-											t = ccs[id].getValue();
-										}
-										lastValueIn[id] = ccs[id].getValue();
-									}
-									break;
-								case CCMODE::PICKUP2:
-									if (lastValueIn[id] != ccs[id].getValue()) {
-										if (midiParam[id].isNear(lastValueIn[id], ccs[id].getValue())) {
-											midiParam[id].resetFilter();
-											t = ccs[id].getValue();
-										}
-										lastValueIn[id] = ccs[id].getValue();
-									}
-									break;
-								case CCMODE::TOGGLE:
-									if (ccs[id].getValue() > 0 && (lastValueIn[id] == -1 || lastValueIn[id] >= 0)) {
-										t = midiParam[id].getLimitMax();
-										lastValueIn[id] = -2;
-									} 
-									else if (ccs[id].getValue() == 0 && lastValueIn[id] == -2) {
-										t = midiParam[id].getLimitMax();
-										lastValueIn[id] = -3;
-									}
-									else if (ccs[id].getValue() > 0 && lastValueIn[id] == -3) {
-										t = midiParam[id].getLimitMin();
-										lastValueIn[id] = -4;
-									}
-									else if (ccs[id].getValue() == 0 && lastValueIn[id] == -4) {
-										t = midiParam[id].getLimitMin();
-										lastValueIn[id] = -1;
-									}
-									break;
-								case CCMODE::TOGGLE_VALUE:
-									if (ccs[id].getValue() > 0 && (lastValueIn[id] == -1 || lastValueIn[id] >= 0)) {
-										t = ccs[id].getValue();
-										lastValueIn[id] = -2;
-									} 
-									else if (ccs[id].getValue() == 0 && lastValueIn[id] == -2) {
-										t = midiParam[id].getValue();
-										lastValueIn[id] = -3;
-									}
-									else if (ccs[id].getValue() > 0 && lastValueIn[id] == -3) {
-										t = midiParam[id].getLimitMin();
-										lastValueIn[id] = -4;
-									}
-									else if (ccs[id].getValue() == 0 && lastValueIn[id] == -4) {
-										t = midiParam[id].getLimitMin();
-										lastValueIn[id] = -1;
-									}
-									break;
-							}
-						}
-
-						// Check if note value has been set and changed
-						if (note >= 0 && notes[id].process()) {
-							switch (notes[id].noteMode) {
-								case NOTEMODE::MOMENTARY:
-									if (lastValueIn[id] != notes[id].getValue()) {
-										t = notes[id].getValue();
-										if (t > 0) t = 127;
-										lastValueIn[id] = notes[id].getValue();
-									} 
-									break;
-								case NOTEMODE::MOMENTARY_VEL:
-									if (lastValueIn[id] != notes[id].getValue()) {
-										t = notes[id].getValue();
-										lastValueIn[id] = notes[id].getValue();
-									}
-									break;
-								case NOTEMODE::TOGGLE:
-									if (notes[id].getValue() > 0 && (lastValueIn[id] == -1 || lastValueIn[id] >= 0)) {
-										t = 127;
-										lastValueIn[id] = -2;
-									} 
-									else if (notes[id].getValue() == 0 && lastValueIn[id] == -2) {
-										t = 127;
-										lastValueIn[id] = -3;
-									}
-									else if (notes[id].getValue() > 0 && lastValueIn[id] == -3) {
-										t = 0;
-										lastValueIn[id] = -4;
-									}
-									else if (notes[id].getValue() == 0 && lastValueIn[id] == -4) {
-										t = 0;
-										lastValueIn[id] = -1;
-									}
-									break;
-								case NOTEMODE::TOGGLE_VEL:
-									if (notes[id].getValue() > 0 && (lastValueIn[id] == -1 || lastValueIn[id] >= 0)) {
-										t = notes[id].getValue();
-										lastValueIn[id] = -2;
-									} 
-									else if (notes[id].getValue() == 0 && lastValueIn[id] == -2) {
-										t = midiParam[id].getValue();
-										lastValueIn[id] = -3;
-									}
-									else if (notes[id].getValue() > 0 && lastValueIn[id] == -3) {
-										t = 0;
-										lastValueIn[id] = -4;
-									}
-									else if (notes[id].getValue() == 0 && lastValueIn[id] == -4) {
-										t = 0;
-										lastValueIn[id] = -1;
-									}
-									break;
-							}
-						}
-
-						// Set a new value for the mapped parameter
-						if (t >= 0) {
-							midiParam[id].setValue(t);
-							if (overlayEnabled && overlayQueue.capacity() > 0) overlayQueue.push(id);
-						}
-
-						// Apply value on the mapped parameter (respecting slew and scale)
-						midiParam[id].process(args.sampleTime * float(processDivision));
-
-						// Retrieve the current value of the parameter (ignoring slew and scale)
-						int v = midiParam[id].getValue();
-
-						// Midi feedback
-						if (lastValueOut[id] != v) {
-							if (cc >= 0 && ccs[id].ccMode == CCMODE::DIRECT)
-								lastValueIn[id] = v;
-							ccs[id].setValue(v, lastValueIn[id] < 0);
-							notes[id].setValue(v, lastValueIn[id] < 0);
-							lastValueOut[id] = v;
-						}
-					} break;
-
-					case MIDIMODE::MIDIMODE_LOCATE: {
-						bool indicate = false;
-						if ((cc >= 0 && ccs[id].getValue() >= 0) && lastValueInIndicate[id] != ccs[id].getValue()) {
-							lastValueInIndicate[id] = ccs[id].getValue();
-							indicate = true;
-						}
-						if ((note >= 0 && notes[id].getValue() >= 0) && lastValueInIndicate[id] != notes[id].getValue()) {
-							lastValueInIndicate[id] = notes[id].getValue();
-							indicate = true;
-						}
-						if (indicate) {
-							ModuleWidget* mw = APP->scene->rack->getModule(paramQuantity->module->id);
-							paramHandleIndicator[id].indicate(mw);
-						}
-					} break;
-				}
-			}
+			processMappings(args.sampleTime);
 		}
 
+		// Handle indicators - blinking
 		if (indicatorDivider.process()) {
 			float t = indicatorDivider.getDivision() * args.sampleTime;
 			for (int i = 0; i < mapLen; i++) {
@@ -647,12 +467,11 @@ struct MidiCatModule : Module, StripIdFixModule {
 		}
 
 		// Expanders
-		// TODO: use WeakHandle instead
 		bool expMemFound = false;
 		bool expCtxFound = false;
 		bool expClkFound = false;
 		Module* exp = rightExpander.module;
-		for (int i = 0; i < 2; i++) {
+		for (int i = 0; i < 3; i++) {
 			if (!exp) break;
 			if (exp->model == modelMidiCatMem && !expMemFound) {
 				expMemStorage = reinterpret_cast<std::map<std::pair<std::string, std::string>, MemModule*>*>(exp->leftExpander.consumerMessage);
@@ -696,17 +515,191 @@ struct MidiCatModule : Module, StripIdFixModule {
 		}
 	}
 
-	void setMode(MIDIMODE midiMode) {
-		if (this->midiMode == midiMode)
-			return;
-		this->midiMode = midiMode;
-		switch (midiMode) {
-			case MIDIMODE::MIDIMODE_LOCATE:
-				for (int i = 0; i < MAX_CHANNELS; i++) 
-					lastValueInIndicate[i] = std::max(0, lastValueIn[i]);
-				break;
-			default:
-				break;
+	void processMappings(float sampleTime) {
+		for (int id = 0; id < mapLen; id++) {
+			int cc = ccs[id].getCc();
+			int note = notes[id].getNote();
+			if (cc < 0 && note < 0)
+				continue;
+
+			// Get Module
+			Module* module = paramHandles[id].module;
+			if (!module)
+				continue;
+
+			// Get ParamQuantity
+			int paramId = paramHandles[id].paramId;
+			ParamQuantity* paramQuantity = module->paramQuantities[paramId];
+			if (!paramQuantity)
+				continue;
+
+			if (!paramQuantity->isBounded())
+				continue;
+
+			switch (midiMode) {
+				case MIDIMODE::MIDIMODE_DEFAULT: {
+					midiParam[id].paramQuantity = paramQuantity;
+					int t = -1;
+
+					// Check if CC value has been set and changed
+					if (cc >= 0 && ccs[id].process()) {
+						switch (ccs[id].ccMode) {
+							case CCMODE::DIRECT:
+								if (lastValueIn[id] != ccs[id].getValue()) {
+									lastValueIn[id] = ccs[id].getValue();
+									t = ccs[id].getValue();
+								}
+								break;
+							case CCMODE::PICKUP1:
+								if (lastValueIn[id] != ccs[id].getValue()) {
+									if (midiParam[id].isNear(lastValueIn[id])) {
+										midiParam[id].resetFilter();
+										t = ccs[id].getValue();
+									}
+									lastValueIn[id] = ccs[id].getValue();
+								}
+								break;
+							case CCMODE::PICKUP2:
+								if (lastValueIn[id] != ccs[id].getValue()) {
+									if (midiParam[id].isNear(lastValueIn[id], ccs[id].getValue())) {
+										midiParam[id].resetFilter();
+										t = ccs[id].getValue();
+									}
+									lastValueIn[id] = ccs[id].getValue();
+								}
+								break;
+							case CCMODE::TOGGLE:
+								if (ccs[id].getValue() > 0 && (lastValueIn[id] == -1 || lastValueIn[id] >= 0)) {
+									t = midiParam[id].getLimitMax();
+									lastValueIn[id] = -2;
+								} 
+								else if (ccs[id].getValue() == 0 && lastValueIn[id] == -2) {
+									t = midiParam[id].getLimitMax();
+									lastValueIn[id] = -3;
+								}
+								else if (ccs[id].getValue() > 0 && lastValueIn[id] == -3) {
+									t = midiParam[id].getLimitMin();
+									lastValueIn[id] = -4;
+								}
+								else if (ccs[id].getValue() == 0 && lastValueIn[id] == -4) {
+									t = midiParam[id].getLimitMin();
+									lastValueIn[id] = -1;
+								}
+								break;
+							case CCMODE::TOGGLE_VALUE:
+								if (ccs[id].getValue() > 0 && (lastValueIn[id] == -1 || lastValueIn[id] >= 0)) {
+									t = ccs[id].getValue();
+									lastValueIn[id] = -2;
+								} 
+								else if (ccs[id].getValue() == 0 && lastValueIn[id] == -2) {
+									t = midiParam[id].getValue();
+									lastValueIn[id] = -3;
+								}
+								else if (ccs[id].getValue() > 0 && lastValueIn[id] == -3) {
+									t = midiParam[id].getLimitMin();
+									lastValueIn[id] = -4;
+								}
+								else if (ccs[id].getValue() == 0 && lastValueIn[id] == -4) {
+									t = midiParam[id].getLimitMin();
+									lastValueIn[id] = -1;
+								}
+								break;
+						}
+					}
+
+					// Check if note value has been set and changed
+					if (note >= 0 && notes[id].process()) {
+						switch (notes[id].noteMode) {
+							case NOTEMODE::MOMENTARY:
+								if (lastValueIn[id] != notes[id].getValue()) {
+									t = notes[id].getValue();
+									if (t > 0) t = 127;
+									lastValueIn[id] = notes[id].getValue();
+								} 
+								break;
+							case NOTEMODE::MOMENTARY_VEL:
+								if (lastValueIn[id] != notes[id].getValue()) {
+									t = notes[id].getValue();
+									lastValueIn[id] = notes[id].getValue();
+								}
+								break;
+							case NOTEMODE::TOGGLE:
+								if (notes[id].getValue() > 0 && (lastValueIn[id] == -1 || lastValueIn[id] >= 0)) {
+									t = 127;
+									lastValueIn[id] = -2;
+								} 
+								else if (notes[id].getValue() == 0 && lastValueIn[id] == -2) {
+									t = 127;
+									lastValueIn[id] = -3;
+								}
+								else if (notes[id].getValue() > 0 && lastValueIn[id] == -3) {
+									t = 0;
+									lastValueIn[id] = -4;
+								}
+								else if (notes[id].getValue() == 0 && lastValueIn[id] == -4) {
+									t = 0;
+									lastValueIn[id] = -1;
+								}
+								break;
+							case NOTEMODE::TOGGLE_VEL:
+								if (notes[id].getValue() > 0 && (lastValueIn[id] == -1 || lastValueIn[id] >= 0)) {
+									t = notes[id].getValue();
+									lastValueIn[id] = -2;
+								} 
+								else if (notes[id].getValue() == 0 && lastValueIn[id] == -2) {
+									t = midiParam[id].getValue();
+									lastValueIn[id] = -3;
+								}
+								else if (notes[id].getValue() > 0 && lastValueIn[id] == -3) {
+									t = 0;
+									lastValueIn[id] = -4;
+								}
+								else if (notes[id].getValue() == 0 && lastValueIn[id] == -4) {
+									t = 0;
+									lastValueIn[id] = -1;
+								}
+								break;
+						}
+					}
+
+					// Set a new value for the mapped parameter
+					if (t >= 0) {
+						midiParam[id].setValue(t);
+						if (overlayEnabled && overlayQueue.capacity() > 0) overlayQueue.push(id);
+					}
+
+					// Apply value on the mapped parameter (respecting slew and scale)
+					midiParam[id].process(sampleTime * float(processDivision));
+
+					// Retrieve the current value of the parameter (ignoring slew and scale)
+					int v = midiParam[id].getValue();
+
+					// Midi feedback
+					if (lastValueOut[id] != v) {
+						if (cc >= 0 && ccs[id].ccMode == CCMODE::DIRECT)
+							lastValueIn[id] = v;
+						ccs[id].setValue(v, lastValueIn[id] < 0);
+						notes[id].setValue(v, lastValueIn[id] < 0);
+						lastValueOut[id] = v;
+					}
+				} break;
+
+				case MIDIMODE::MIDIMODE_LOCATE: {
+					bool indicate = false;
+					if ((cc >= 0 && ccs[id].getValue() >= 0) && lastValueInIndicate[id] != ccs[id].getValue()) {
+						lastValueInIndicate[id] = ccs[id].getValue();
+						indicate = true;
+					}
+					if ((note >= 0 && notes[id].getValue() >= 0) && lastValueInIndicate[id] != notes[id].getValue()) {
+						lastValueInIndicate[id] = notes[id].getValue();
+						indicate = true;
+					}
+					if (indicate) {
+						ModuleWidget* mw = APP->scene->rack->getModule(paramQuantity->module->id);
+						paramHandleIndicator[id].indicate(mw);
+					}
+				} break;
+			}
 		}
 	}
 
@@ -1047,6 +1040,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 		return true;
 	}
 
+	// process-function for the CLK-expander - handles the four clock inputs
 	void expClkProcess() {
 		for (int i = 0; i < 4; i++) {
 			if (expClkTrigger[i].process(expClk->inputs[i].getVoltage())) {
@@ -1055,12 +1049,6 @@ struct MidiCatModule : Module, StripIdFixModule {
 				}
 			}
 		}
-	}
-
-	void setProcessDivision(int d) {
-		processDivision = d;
-		processDivider.setDivision(d);
-		processDivider.reset();
 	}
 
 	json_t* dataToJson() override {
@@ -1195,6 +1183,26 @@ struct MidiCatModule : Module, StripIdFixModule {
 			if (midiInputJ) midiInput.fromJson(midiInputJ);
 			json_t* midiOutputJ = json_object_get(rootJ, "midiOutput");
 			if (midiOutputJ) midiOutput.fromJson(midiOutputJ);
+		}
+	}
+
+	void setProcessDivision(int d) {
+		processDivision = d;
+		processDivider.setDivision(d);
+		processDivider.reset();
+	}
+
+	void setMode(MIDIMODE midiMode) {
+		if (this->midiMode == midiMode)
+			return;
+		this->midiMode = midiMode;
+		switch (midiMode) {
+			case MIDIMODE::MIDIMODE_LOCATE:
+				for (int i = 0; i < MAX_CHANNELS; i++)
+					lastValueInIndicate[i] = std::max(0, lastValueIn[i]);
+				break;
+			default:
+				break;
 		}
 	}
 };
@@ -1426,7 +1434,9 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 				Menu* menu = new Menu;
 				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Direct", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::DIRECT));
 				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Pickup (snap)", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::PICKUP1));
+				reinterpret_cast<MenuItem*>(menu->children.back())->disabled = module->midiParam[id].clockMode != MidiCatParam::CLOCKMODE::OFF;
 				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Pickup (jump)", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::PICKUP2));
+				reinterpret_cast<MenuItem*>(menu->children.back())->disabled = module->midiParam[id].clockMode != MidiCatParam::CLOCKMODE::OFF;
 				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Toggle", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::TOGGLE));
 				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Toggle + Value", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::TOGGLE_VALUE));
 				return menu;
@@ -1470,7 +1480,9 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 			Menu* createChildMenu() override {
 				Menu* menu = new Menu;
 				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Momentary", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::MOMENTARY));
+				reinterpret_cast<MenuItem*>(menu->children.back())->disabled = module->midiParam[id].clockMode != MidiCatParam::CLOCKMODE::OFF;
 				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Momentary + Velocity", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::MOMENTARY_VEL));
+				reinterpret_cast<MenuItem*>(menu->children.back())->disabled = module->midiParam[id].clockMode != MidiCatParam::CLOCKMODE::OFF;
 				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Toggle", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::TOGGLE));
 				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Toggle + Velocity", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::TOGGLE_VEL));
 				return menu;

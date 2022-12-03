@@ -52,10 +52,10 @@ struct MidiCatClkWidget : ThemedModuleWidget<MidiCatClkModule> {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(15.f, 212.7f), module, MidiCatClkModule::INPUT_CLOCK + 0));
-		addInput(createInputCentered<StoermelderPort>(Vec(15.f, 250.8f), module, MidiCatClkModule::INPUT_CLOCK + 1));
-		addInput(createInputCentered<StoermelderPort>(Vec(15.f, 289.0f), module, MidiCatClkModule::INPUT_CLOCK + 2));
-		addInput(createInputCentered<StoermelderPort>(Vec(15.f, 327.2f), module, MidiCatClkModule::INPUT_CLOCK + 3));
+		addInput(createInputCentered<StoermelderPort>(Vec(15.f, 217.2f), module, MidiCatClkModule::INPUT_CLOCK + 0));
+		addInput(createInputCentered<StoermelderPort>(Vec(15.f, 255.4f), module, MidiCatClkModule::INPUT_CLOCK + 1));
+		addInput(createInputCentered<StoermelderPort>(Vec(15.f, 293.5f), module, MidiCatClkModule::INPUT_CLOCK + 2));
+		addInput(createInputCentered<StoermelderPort>(Vec(15.f, 331.7f), module, MidiCatClkModule::INPUT_CLOCK + 3));
 	}
 };
 
