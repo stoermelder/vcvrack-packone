@@ -3,25 +3,23 @@
 
 namespace StoermelderPackOne {
 
-struct ParamHandleIndicator {
-	ParamHandle* handle = NULL;
+struct ParamHandleIndicator : ParamHandle {
 	NVGcolor color;
 		
 	int indicateCount = 0;
 	float sampletime;
 
 	void process(float sampleTime, bool force = false) {
-		if (!handle) return;
 		if (indicateCount > 0 || force) {
 			this->sampletime += sampleTime;
 			if (this->sampletime > 0.2f) {
 				this->sampletime = 0;
 				indicateCount--;
-				handle->color = std::abs(indicateCount) % 2 == 1 ? color::BLACK : color;
+				ParamHandle::color = std::abs(indicateCount) % 2 == 1 ? color::BLACK : color;
 			}
 		}
 		else {
-			handle->color = color;
+			ParamHandle::color = color;
 		}
 	}
 

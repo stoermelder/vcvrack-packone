@@ -297,8 +297,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 	bool clearMapsOnLoad;
 
 	/** [Stored to Json] The mapped param handle of each channel */
-	ParamHandle paramHandles[MAX_CHANNELS];
-	ParamHandleIndicator paramHandleIndicator[MAX_CHANNELS];
+	ParamHandleIndicator paramHandles[MAX_CHANNELS];
 
 	/** Channel ID of the learning session */
 	int learningId;
@@ -372,8 +371,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(0, 0, 0, 0);
 		for (int id = 0; id < MAX_CHANNELS; id++) {
-			paramHandleIndicator[id].color = mappingIndicatorColor;
-			paramHandleIndicator[id].handle = &paramHandles[id];
+			paramHandles[id].color = mappingIndicatorColor;
 			APP->engine->addParamHandle(&paramHandles[id]);
 			midiParam[id].setLimits(0, 127, -1);
 			ccs[id].module = notes[id].module = this;
@@ -455,9 +453,9 @@ struct MidiCatModule : Module, StripIdFixModule {
 		if (indicatorDivider.process()) {
 			float t = indicatorDivider.getDivision() * args.sampleTime;
 			for (int i = 0; i < mapLen; i++) {
-				paramHandleIndicator[i].color = mappingIndicatorHidden ? color::BLACK_TRANSPARENT : mappingIndicatorColor;
+				paramHandles[i].color = mappingIndicatorHidden ? color::BLACK_TRANSPARENT : mappingIndicatorColor;
 				if (paramHandles[i].moduleId >= 0) {
-					paramHandleIndicator[i].process(t, learningId == i);
+					paramHandles[i].process(t, learningId == i);
 				}
 			}
 		}
@@ -696,7 +694,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 					}
 					if (indicate) {
 						ModuleWidget* mw = APP->scene->rack->getModule(paramQuantity->module->id);
-						paramHandleIndicator[id].indicate(mw);
+						paramHandles[id].indicate(mw);
 					}
 				} break;
 			}

@@ -107,7 +107,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 	bool inChange = false;
 
 	/** [Stored to JSON] */
-	std::vector<ParamHandle*> sourceHandles;
+	std::vector<ParamHandleIndicator*> sourceHandles;
 
 	dsp::SchmittTrigger slotTrigger;
 	dsp::SchmittTrigger slotC4Trigger;
@@ -121,7 +121,6 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 	dsp::ClockDivider lightDivider;
 	dsp::Timer lightTimer;
 	bool lightBlink = false;
-	ParamHandleIndicator paramHandleIndicator;
 
 	int sampleRate;
 
@@ -265,13 +264,12 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		int presetCount = std::min(this->presetCount, presetTotal);
 
 		if (handleDivider.process()) {
+			float st = args.sampleTime * handleDivider.division;
 			for (size_t i = 0; i < sourceHandles.size(); i++) {
-				ParamHandle* sourceHandle = sourceHandles[i];
-				if (paramHandleIndicator.handle == sourceHandle) continue;
+				ParamHandleIndicator* sourceHandle = sourceHandles[i];
 				sourceHandle->color = mappingIndicatorHidden ? color::BLACK_TRANSPARENT : nvgRGB(0x40, 0xff, 0xff);
+				sourceHandle->process(st);
 			}
-			paramHandleIndicator.color = mappingIndicatorHidden ? color::BLACK_TRANSPARENT : nvgRGB(0x40, 0xff, 0xff);
-			paramHandleIndicator.process(args.sampleTime * handleDivider.division);
 		}
 
 		// Read & Auto mode
@@ -528,7 +526,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 			}
 		}
 
-		ParamHandle* sourceHandle = new ParamHandle;
+		ParamHandleIndicator* sourceHandle = new ParamHandleIndicator;
 		sourceHandle->text = "stoermelder TRANSIT";
 		APP->engine->addParamHandle(sourceHandle);
 		APP->engine->updateParamHandle(sourceHandle, moduleId, paramId, true);
@@ -917,7 +915,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 
 				// This might cause a deadlock as the engine's mutex could already be locked
 				handleList.push_back([=]() {
-					ParamHandle* sourceHandle = new ParamHandle;
+					ParamHandleIndicator* sourceHandle = new ParamHandleIndicator;
 					sourceHandle->text = "stoermelder TRANSIT";
 					APP->engine->addParamHandle(sourceHandle);
 					APP->engine->updateParamHandle(sourceHandle, moduleId, paramId, false);
@@ -1203,24 +1201,23 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 			struct ParameterItem : MenuItem {
 				struct IndicateItem : MenuItem {
 					MODULE* module;
-					ParamHandle* handle;
+					ParamHandleIndicator* handle;
 					void onAction(const event::Action& e) override {
 						ModuleWidget* mw = APP->scene->rack->getModule(handle->moduleId);
-						module->paramHandleIndicator.handle = handle;
-						module->paramHandleIndicator.indicate(mw);
+						handle->indicate(mw);
 					}
 				};
 
 				struct UnbindItem : MenuItem {
 					MODULE* module;
-					ParamHandle* handle;
+					ParamHandleIndicator* handle;
 					void onAction(const event::Action& e) override {
 						APP->engine->updateParamHandle(handle, -1, 0, true);
 					}
 				};
 
 				MODULE* module;
-				ParamHandle* handle;
+				ParamHandleIndicator* handle;
 				ParameterItem() {
 					rightText = RIGHT_ARROW;
 				}
@@ -1240,7 +1237,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 			Menu* createChildMenu() override {
 				Menu* menu = new Menu;
 				for (size_t i = 0; i < module->sourceHandles.size(); i++) {
-					ParamHandle* handle = module->sourceHandles[i];
+					ParamHandleIndicator* handle = module->sourceHandles[i];
 					ModuleWidget* moduleWidget = APP->scene->rack->getModule(handle->moduleId);
 					if (!moduleWidget) continue;
 					ParamWidget* paramWidget = moduleWidget->getParam(handle->paramId);

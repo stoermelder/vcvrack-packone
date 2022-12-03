@@ -85,7 +85,7 @@ struct MapButton : LEDBezel {
 					void onAction(const event::Action& e) override {
 						ParamHandle* paramHandle = &module->paramHandles[id];
 						ModuleWidget* mw = APP->scene->rack->getModule(paramHandle->moduleId);
-						module->paramHandleIndicator[id].indicate(mw);
+						module->paramHandles[id].indicate(mw);
 					}
 				};
 				menu->addChild(construct<IndicateItem>(&MenuItem::text, "Locate and indicate", &IndicateItem::module, module, &IndicateItem::id, id));

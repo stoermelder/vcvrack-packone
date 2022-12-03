@@ -18,8 +18,7 @@ struct MapModuleBase : Module, StripIdFixModule {
 	/** Number of maps */
 	int mapLen = 0;
 	/** The mapped param handle of each channel */
-	ParamHandle paramHandles[MAX_CHANNELS];
-	StoermelderPackOne::ParamHandleIndicator paramHandleIndicator[MAX_CHANNELS];
+	StoermelderPackOne::ParamHandleIndicator paramHandles[MAX_CHANNELS];
 
 	/** Channel ID of the learning session */
 	int learningId;
@@ -40,8 +39,7 @@ struct MapModuleBase : Module, StripIdFixModule {
 
 	MapModuleBase() {
 		for (int id = 0; id < MAX_CHANNELS; id++) {
-			paramHandleIndicator[id].color = mappingIndicatorColor;
-			paramHandleIndicator[id].handle = &paramHandles[id];
+			paramHandles[id].color = mappingIndicatorColor;
 			APP->engine->addParamHandle(&paramHandles[id]);
 		}
 		indicatorDivider.setDivision(2048);
@@ -66,9 +64,9 @@ struct MapModuleBase : Module, StripIdFixModule {
 		if (indicatorDivider.process()) {
 			float t = indicatorDivider.getDivision() * args.sampleTime;
 			for (int i = 0; i < MAX_CHANNELS; i++) {
-				paramHandleIndicator[i].color = mappingIndicatorHidden ? color::BLACK_TRANSPARENT : mappingIndicatorColor;
+				paramHandles[i].color = mappingIndicatorHidden ? color::BLACK_TRANSPARENT : mappingIndicatorColor;
 				if (paramHandles[i].moduleId >= 0) {
-					paramHandleIndicator[i].process(t, learningId == i);
+					paramHandles[i].process(t, learningId == i);
 				}
 			}
 		}
@@ -309,7 +307,7 @@ struct MapModuleChoice : LedDisplayChoice {
 			void onAction(const event::Action& e) override {
 				ParamHandle* paramHandle = &module->paramHandles[id];
 				ModuleWidget* mw = APP->scene->rack->getModule(paramHandle->moduleId);
-				module->paramHandleIndicator[id].indicate(mw);
+				module->paramHandles[id].indicate(mw);
 			}
 		};
 
