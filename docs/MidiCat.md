@@ -186,6 +186,18 @@ CTX for MIDI-CAT must be placed on the right side of MIDI-CAT and can be used th
 
 Additionally MIDI-CAT CTX provides a button for activating mapping on the first empty mapping slot in MIDI-CAT. This button can also mapped to a MIDI controller which allows start MIDI mapping by a MIDI message.
 
+## CLK-expander
+
+CLK is a companion module for MIDI-CAT which provides four additional clock-inputs. These clock-inputs can be used to time-quantize the incoming MIDI messages to running clocks or triggers or gates: When enabled the incoming MIDI message is buffered and applied to the parameter on the next trigger.  
+CLK for MIDI-CAT must be placed on the right side of MIDI-CAT and can be used together with the other expanders.
+
+![CTX workflow](./MidiCat-Clk.png)
+
+There are two modes with different behavior for MIDI-feedback:
+
+- On (instant feedback): The MIDI feedback message is sent as soon as the MIDI message arrives, even if the new value is not yet applied on the parameter.
+- On (deferred feedback): The MIDI feedback message is sent on the next clock-tick, the same time as the new value is applied on the parameter.
+
 ## Changelog
 
 - v1.1.0
@@ -229,4 +241,5 @@ Additionally MIDI-CAT CTX provides a button for activating mapping on the first 
 - v1.10.0
     - Fixed broken multi-mapping for note-messages (#271)
 - v2.0.0
-    - Fixed pickup of snapped parameters (#308)
+    - Added expander CLK for MIDI-CAT (#299)
+    - Fixed pickup of parameters with snapping (#308)

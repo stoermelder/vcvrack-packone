@@ -1611,11 +1611,11 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 		if (module->expClk != NULL) {
 			menu->addChild(new MenuSeparator());
 			menu->addChild(createMenuLabel("CLK-expander"));
-			menu->addChild(StoermelderPackOne::Rack::createMapPtrSubmenuItem("Clock mode",
+			menu->addChild(StoermelderPackOne::Rack::createMapPtrSubmenuItem("Quantization",
 				{
 					{ MidiCatParam::CLOCKMODE::OFF, "Off" },
-					{ MidiCatParam::CLOCKMODE::ARM, "Arm - instant feedback" },
-					{ MidiCatParam::CLOCKMODE::ARM_DEFERRED_FEEDBACK, "Arm - deferred feedback" }
+					{ MidiCatParam::CLOCKMODE::ARM, "On (instant feedback)" },
+					{ MidiCatParam::CLOCKMODE::ARM_DEFERRED_FEEDBACK, "On (deferred feedback)" }
 				},
 				&module->midiParam[id].clockMode
 			));

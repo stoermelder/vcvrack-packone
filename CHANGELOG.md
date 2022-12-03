@@ -14,6 +14,11 @@
 
 ## 2.0.beta3 (in development)
 
+### New modules
+
+- Module [MIDI-CAT CLK](./docs/MidiCat.md#clk-expander)
+    - New expander for MIDI-CAT, allows clock-quantization for mapped parameters (#299)
+
 ### Fixes and Changes
 
 - Modules [8FACE, 8FACEx2](./docs/EightFace.md)
@@ -34,7 +39,7 @@
 - Module [MAZE](./docs/Maze.md)
     - Fixed broken reset-behavior
 - Module [MIDI-CAT](./docs/MidiCat.md)
-    - Fixed pickup of snapped parameters (#308)
+    - Fixed pickup of parameters with snapping (#308)
 - Module [MIDI-KEY](./docs/MidiKey.md)
     - Added options for slot-specific key modifiers (#344)
 - Module [ORBIT](./docs/Orbit.md)
