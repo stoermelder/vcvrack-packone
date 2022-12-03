@@ -514,6 +514,8 @@ struct MidiCatModule : Module, StripIdFixModule {
 	}
 
 	void processMappings(float sampleTime) {
+		float st = sampleTime * float(processDivision);
+
 		for (int id = 0; id < mapLen; id++) {
 			int cc = ccs[id].getCc();
 			int note = notes[id].getNote();
@@ -667,7 +669,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 					}
 
 					// Apply value on the mapped parameter (respecting slew and scale)
-					midiParam[id].process(sampleTime * float(processDivision));
+					midiParam[id].process(st);
 
 					// Retrieve the current value of the parameter (ignoring slew and scale)
 					int v = midiParam[id].getValue();
@@ -2174,11 +2176,8 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 			}
 		));
 		menu->addChild(StoermelderPackOne::Rack::createMapSubmenuItem<int>("Precision", {
-				{ 1, string::f("Audio rate (%i Hz)", sampleRate / 1) },
+				{ 1, string::f("Samplerate (%i Hz)", sampleRate / 1) },
 				{ 8, string::f("High (%i Hz)", sampleRate / 8) },
-				{ 64, string::f("Moderate (%i Hz)", sampleRate / 64) },
-				{ 256, string::f("Lowest (%i Hz)", sampleRate / 256) }
-			}, {
 				{ 64, string::f("Moderate (%i Hz)", sampleRate / 64) },
 				{ 256, string::f("Lowest (%i Hz)", sampleRate / 256) }
 			},
