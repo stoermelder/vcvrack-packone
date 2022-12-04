@@ -43,6 +43,8 @@
 - Module [MIDI-KEY](./docs/MidiKey.md)
     - Added options for slot-specific key modifiers (#344)
     - Added options for sending hotkeys to a specific module
+- Module [MIDI-MON](./docs/MidiMon.md)
+    - Added support for SysEx messages
 - Module [ORBIT](./docs/Orbit.md)
     - Added output level control (#286)
 - Module [STRIP++](./docs/StripPp.md)

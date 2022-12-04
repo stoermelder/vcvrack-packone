@@ -2,6 +2,7 @@
 #include "components/LedTextDisplay.hpp"
 #include "components/MidiWidget.hpp"
 #include <osdialog.h>
+#include <iomanip>
 
 namespace StoermelderPackOne {
 namespace MidiMon {
@@ -41,6 +42,8 @@ struct MidiMonModule : Module {
 	/** [Stored to JSON] */
 	bool showSysExMsg;
 	/** [Stored to JSON] */
+	bool showSysExData;
+	/** [Stored to JSON] */
 	bool showClockMsg;
 	/** [Stored to JSON] */
 	bool showSystemMsg;
@@ -66,6 +69,7 @@ struct MidiMonModule : Module {
 		showPitchWheelMsg = true;
 
 		showSysExMsg = false;
+		showSysExData = false;
 		showClockMsg = false;
 		showSystemMsg = true;
 
@@ -155,8 +159,16 @@ struct MidiMonModule : Module {
 					switch (msg.getChannel()) {
 						case 0x0: // sysex
 							if (showSysExMsg) {
-								std::string s = string::f("sysex message=%i bytes", msg.getSize());
+								std::string s = string::f("sysex (%i bytes)", msg.getSize());
 								midiLogMessages.push(std::make_tuple(timestamp, s));
+								if (showSysExData) { // sysex bytes
+									std::ostringstream ss;
+									ss << std::hex;
+									for (int i = 0; i < msg.getSize(); i++) {
+										ss << std::setw(2) << std::setfill('0') << static_cast<int>(msg.bytes[i]) << " ";
+									}
+									midiLogMessages.push(std::make_tuple(-1.f, ss.str()));
+								}
 							} break;
 						case 0x2: // song pointer
 							if (showSystemMsg) {
@@ -208,6 +220,7 @@ struct MidiMonModule : Module {
 		json_object_set_new(rootJ, "showPitchWheelMsg", json_boolean(showPitchWheelMsg));
 
 		json_object_set_new(rootJ, "showSysExMsg", json_boolean(showSysExMsg));
+		json_object_set_new(rootJ, "showSysExData", json_boolean(showSysExMsg));
 		json_object_set_new(rootJ, "showClockMsg", json_boolean(showClockMsg));
 		json_object_set_new(rootJ, "showSystemMsg", json_boolean(showSystemMsg));
 
@@ -226,6 +239,7 @@ struct MidiMonModule : Module {
 		showPitchWheelMsg = json_boolean_value(json_object_get(rootJ, "showPitchWheelMsg"));
 
 		showSysExMsg = json_boolean_value(json_object_get(rootJ, "showSysExMsg"));
+		showSysExData = json_boolean_value(json_object_get(rootJ, "showSysExData"));
 		showClockMsg = json_boolean_value(json_object_get(rootJ, "showClockMsg"));
 		showSystemMsg = json_boolean_value(json_object_get(rootJ, "showSystemMsg"));
 
@@ -255,7 +269,13 @@ struct MidiDisplay : LedTextDisplay {
 			size_t i = 0;
 			for (std::tuple<float, std::string> s : *buffer) {
 				if (i >= size) break;
-				text += string::f("[%9.4f] %s\n", std::get<0>(s), std::get<1>(s).c_str());
+				float timestamp = std::get<0>(s);
+				if (timestamp >= 0.f) {
+					text += string::f("[%9.4f] %s\n", timestamp, std::get<1>(s).c_str());
+				}
+				else {
+					text += string::f("%s\n", std::get<1>(s).c_str());
+				}
 				i++;
 			}
 		}
@@ -314,18 +334,20 @@ struct MidiMonWidget : ThemedModuleWidget<MidiMonModule> {
 		MidiMonModule* module = dynamic_cast<MidiMonModule*>(this->module);
 
 		menu->addChild(new MenuSeparator());
-		menu->addChild(createMenuLabel("Channel MIDI messages"));
-		menu->addChild(createBoolPtrMenuItem("Note on/off", "", &module->showNoteMsg));
-		menu->addChild(createBoolPtrMenuItem("Key pressure", "", &module->showKeyPressure));
-		menu->addChild(createBoolPtrMenuItem("CC", "", &module->showCcMsg));
-		menu->addChild(createBoolPtrMenuItem("Program change", "", &module->showProgChangeMsg));
-		menu->addChild(createBoolPtrMenuItem("Channel pressure", "", &module->showChannelPressurelMsg));
-		menu->addChild(createBoolPtrMenuItem("Pitch wheel", "", &module->showPitchWheelMsg));
-		menu->addChild(createMenuLabel("System MIDI messages"));
-		menu->addChild(createBoolPtrMenuItem("Clock", "", &module->showClockMsg));
-		menu->addChild(createBoolPtrMenuItem("Other", "", &module->showSystemMsg));
-		// menu->addChild(construct<MsgItem>(&MenuItem::text, "System Exclusive", &MsgItem::s, &module->showSysExMsg));
-
+		menu->addChild(createSubmenuItem("Channel MIDI messages", "", [=](Menu* menu) {
+			menu->addChild(createBoolPtrMenuItem("Note on/off", "", &module->showNoteMsg));
+			menu->addChild(createBoolPtrMenuItem("Key pressure", "", &module->showKeyPressure));
+			menu->addChild(createBoolPtrMenuItem("CC", "", &module->showCcMsg));
+			menu->addChild(createBoolPtrMenuItem("Program change", "", &module->showProgChangeMsg));
+			menu->addChild(createBoolPtrMenuItem("Channel pressure", "", &module->showChannelPressurelMsg));
+			menu->addChild(createBoolPtrMenuItem("Pitch wheel", "", &module->showPitchWheelMsg));
+		}));
+		menu->addChild(createSubmenuItem("System MIDI messages", "", [=](Menu* menu) {
+			menu->addChild(createBoolPtrMenuItem("Clock", "", &module->showClockMsg));
+			menu->addChild(createBoolPtrMenuItem("Other", "", &module->showSystemMsg));
+			menu->addChild(createBoolPtrMenuItem("SysEx", "", &module->showSysExMsg));
+			menu->addChild(createBoolPtrMenuItem("SysEx Data", "", &module->showSysExData));
+		}));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuItem("Clear log", "", [this]() { resetLog(); }));
 		menu->addChild(createMenuItem("Export log", "", [this]() { exportLogDialog(); }));
@@ -358,7 +380,13 @@ struct MidiMonWidget : ThemedModuleWidget<MidiMonModule> {
 
 		for (std::list<std::tuple<float, std::string>>::reverse_iterator rit = buffer.rbegin(); rit != buffer.rend(); rit++) {
 			std::tuple<float, std::string> s = *rit;
-			fputs(string::f("[%11.4f] %s\n", std::get<0>(s), std::get<1>(s).c_str()).c_str(), file);
+			float timestamp = std::get<0>(s);
+			if (timestamp >= 0.f) {
+				fputs(string::f("[%11.4f] %s\n", timestamp, std::get<1>(s).c_str()).c_str(), file);
+			}
+			else {
+				fputs(string::f("%s\n", std::get<1>(s).c_str()).c_str(), file);
+			}
 		}
 	}
 
