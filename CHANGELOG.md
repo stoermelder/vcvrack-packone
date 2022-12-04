@@ -17,7 +17,7 @@
 ### New modules
 
 - Module [MIDI-CAT CLK](./docs/MidiCat.md#clk-expander)
-    - New expander for MIDI-CAT, allows clock-quantization for mapped parameters (#299)
+    - New expander for MIDI-CAT, allows trigger-quantization for mapped parameters (#299)
 
 ### Fixes and Changes
 
@@ -42,6 +42,7 @@
     - Fixed pickup of parameters with snapping (#308)
 - Module [MIDI-KEY](./docs/MidiKey.md)
     - Added options for slot-specific key modifiers (#344)
+    - Added options for sending hotkeys to a specific module
 - Module [ORBIT](./docs/Orbit.md)
     - Added output level control (#286)
 - Module [STRIP++](./docs/StripPp.md)

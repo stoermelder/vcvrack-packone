@@ -1,6 +1,7 @@
 #include "plugin.hpp"
 #include "components/MidiWidget.hpp"
 #include "ui/keyboard.hpp"
+#include "ui/ModuleSelectProcessor.hpp"
 
 namespace StoermelderPackOne {
 namespace MidiKey {
@@ -25,6 +26,9 @@ struct MidiKeyModule : Module {
 		int cc = -1;
 		/** [Stored to Json] */
 		int note = -1;
+		/** [Stored to Json] */
+		int64_t moduleId = -1;
+
 		bool active = false;
 	};
 
@@ -52,7 +56,8 @@ struct MidiKeyModule : Module {
 	/** Whether the key has been set during the learning session */
 	bool learnedKey;
 
-	dsp::RingBuffer<event::HoverKey, 8> keyEventQueue;
+	dsp::RingBuffer<std::tuple<event::HoverKey, int64_t>, 8> keyEventQueue;
+	ModuleSelectProcessor moduleSelectProcessor;
 
 	MidiKeyModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
@@ -291,6 +296,7 @@ struct MidiKeyModule : Module {
 				event::HoverKey e;
 				e.key = slot[id].key;
 				e.scancode = glfwGetKeyScancode(e.key);
+				e.keyName = glfwGetKeyName(e.key, e.scancode);
 				e.action = value > 0 ? GLFW_PRESS : GLFW_RELEASE;
 				e.mods = 0;
 				if (slot[ID_CTRL].active || (slot[id].mods & RACK_MOD_CTRL))
@@ -299,7 +305,7 @@ struct MidiKeyModule : Module {
 					e.mods = e.mods | GLFW_MOD_ALT;
 				if (slot[ID_SHIFT].active || (slot[id].mods & GLFW_MOD_SHIFT))
 					e.mods = e.mods | GLFW_MOD_SHIFT;
-				keyEventQueue.push(e);
+				keyEventQueue.push(std::make_tuple(e, slot[id].moduleId));
 				slot[id].active = value > 0;
 				return;
 			}
@@ -318,6 +324,7 @@ struct MidiKeyModule : Module {
 			json_object_set_new(mapJ, "mods", json_integer(slot.v[i].mods));
 			json_object_set_new(mapJ, "cc", json_integer(slot.v[i].cc));
 			json_object_set_new(mapJ, "note", json_integer(slot.v[i].note));
+			json_object_set_new(mapJ, "moduleId", json_integer(slot.v[i].moduleId));
 			json_array_append_new(mapsJ, mapJ);
 		}
 		json_object_set_new(rootJ, "maps", mapsJ);
@@ -338,6 +345,8 @@ struct MidiKeyModule : Module {
 			slot.v[i].mods = json_integer_value(json_object_get(mapJ, "mods"));
 			slot.v[i].cc = json_integer_value(json_object_get(mapJ, "cc"));
 			slot.v[i].note = json_integer_value(json_object_get(mapJ, "note"));
+			json_t* moduleIdJ = json_object_get(mapJ, "moduleId");
+			if (moduleIdJ) slot.v[i].moduleId = json_integer_value(moduleIdJ);
 		}
 		updateMapLen();
 	}
@@ -466,6 +475,24 @@ struct MidiKeyChoice : LedDisplayChoice {
 		menu->addChild(createCheckMenuItem(RACK_MOD_CTRL_NAME, "", [=]() { return module->slot[id].mods & RACK_MOD_CTRL; }, [=]() { module->slot[id].mods ^= RACK_MOD_CTRL; }));
 		menu->addChild(createCheckMenuItem(RACK_MOD_ALT_NAME, "", [=]() { return module->slot[id].mods & GLFW_MOD_ALT; }, [=]() { module->slot[id].mods ^= GLFW_MOD_ALT; }));
 		menu->addChild(createCheckMenuItem(RACK_MOD_SHIFT_NAME, "", [=]() { return module->slot[id].mods & GLFW_MOD_SHIFT; }, [=]() { module->slot[id].mods ^= GLFW_MOD_SHIFT; }));
+
+		menu->addChild(new MenuSeparator);
+		menu->addChild(createMenuLabel("Module"));
+		if (module->slot[id].moduleId != -1) {
+			ModuleWidget* mw = APP->scene->rack->getModule(module->slot[id].moduleId);
+			std::string name = mw ? string::f("%s %s", mw->model->plugin->brand.c_str(), mw->module->model->name.c_str()) : "<ERROR>";
+			menu->addChild(createMenuLabel(name));
+			if (mw) menu->addChild(createMenuItem("Show", "", [=]() { Rack::ViewportCenter{mw}; }));
+			menu->addChild(createMenuItem("Clear", "", [=]() { module->slot[id].moduleId = -1; }));
+		}
+		menu->addChild(createMenuItem("Learn", "", [=]() {
+			module->moduleSelectProcessor.setOwner(APP->scene->rack->getModule(module->id));
+			module->moduleSelectProcessor.startLearn([=](ModuleWidget* mw, Vec pos) {
+				int64_t moduleId = -1;
+				if (mw) moduleId = mw->module->getId();
+				if (moduleId != -1 || module->slot[id].moduleId != -1) module->slot[id].moduleId = moduleId;
+			});
+		}));
 	}
 
 	void draw(const DrawArgs& args) override {
@@ -605,10 +632,25 @@ struct MidiKeyWidget : ThemedModuleWidget<MidiKeyModule<>> {
 
 	void step() override {
 		while (module && module->keyEventQueue.size() > 0) {
-			event::HoverKey e = module->keyEventQueue.shift();
-			APP->event->handleKey(APP->scene->getMousePos(), e.key, e.scancode, e.action, e.mods);
+			std::tuple<event::HoverKey, int64_t> t = module->keyEventQueue.shift();
+			event::HoverKey e = std::get<0>(t);
+			int64_t moduleId = std::get<1>(t);
+			
+			if (moduleId != -1) {
+				ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
+				if (mw) mw->onHoverKey(e);
+			}
+			else {
+				Vec pos = APP->scene->getMousePos();
+				APP->event->handleKey(pos, e.key, e.scancode, e.action, e.mods);
+			}
 		}
 		ThemedModuleWidget<MidiKeyModule<>>::step();
+	}
+
+	void onDeselect(const event::Deselect& e) override {
+		ThemedModuleWidget<MidiKeyModule<>>::onDeselect(e);
+		if (module) module->moduleSelectProcessor.processDeselect();
 	}
 
 	void onHoverKey(const event::HoverKey& e) override {
