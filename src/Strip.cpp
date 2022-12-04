@@ -239,19 +239,22 @@ struct StripModule : StripModuleBase {
 				}
 
 				ModuleWidget* mw = APP->scene->rack->getModule(m->rightExpander.moduleId);
-				if(!mw) return;
+				if (!mw) return;
 				for (ParamWidget* param : mw->getParams()) {
+					ParamQuantity* paramQuantity = param->getParamQuantity();
+					if (!paramQuantity->randomizeEnabled) continue;
+
 					switch (randomExcl) {
 						case RANDOMEXCL::NONE:
-							param->getParamQuantity()->randomize();
+							paramQuantity->randomize();
 							break;
 						case RANDOMEXCL::EXC:
-							if (excludedParams.find(std::make_tuple(m->rightExpander.moduleId, param->getParamQuantity()->paramId)) == excludedParams.end())
-								param->getParamQuantity()->randomize();
+							if (excludedParams.find(std::make_tuple(m->rightExpander.moduleId, paramQuantity->paramId)) == excludedParams.end())
+								paramQuantity->randomize();
 							break;
 						case RANDOMEXCL::INC:
-							if (excludedParams.find(std::make_tuple(m->rightExpander.moduleId, param->getParamQuantity()->paramId)) != excludedParams.end())
-								param->getParamQuantity()->randomize();
+							if (excludedParams.find(std::make_tuple(m->rightExpander.moduleId, paramQuantity->paramId)) != excludedParams.end())
+								paramQuantity->randomize();
 							break;
 					}
 				}
@@ -282,19 +285,22 @@ struct StripModule : StripModuleBase {
 				}
 
 				ModuleWidget* mw = APP->scene->rack->getModule(m->leftExpander.moduleId);
-				if(!mw) return;
+				if (!mw) return;
 				for (ParamWidget* param : mw->getParams()) {
+					ParamQuantity* paramQuantity = param->getParamQuantity();
+					if (!paramQuantity->randomizeEnabled) continue;
+
 					switch (randomExcl) {
 						case RANDOMEXCL::NONE:
-							param->getParamQuantity()->randomize();
+							paramQuantity->randomize();
 							break;
 						case RANDOMEXCL::EXC:
-							if (excludedParams.find(std::make_tuple(m->leftExpander.moduleId, param->getParamQuantity()->paramId)) == excludedParams.end())
-								param->getParamQuantity()->randomize();
+							if (excludedParams.find(std::make_tuple(m->leftExpander.moduleId, paramQuantity->paramId)) == excludedParams.end())
+								paramQuantity->randomize();
 							break;
 						case RANDOMEXCL::INC:
-							if (excludedParams.find(std::make_tuple(m->leftExpander.moduleId, param->getParamQuantity()->paramId)) != excludedParams.end())
-								param->getParamQuantity()->randomize();
+							if (excludedParams.find(std::make_tuple(m->leftExpander.moduleId, paramQuantity->paramId)) != excludedParams.end())
+								paramQuantity->randomize();
 							break;
 					}
 				}

@@ -52,6 +52,7 @@
     - Added "Recent selection" context menu option
 - Module [STRIP](./docs/Strip.md)
     - Remember last used folder for strips and selections on dialogs (#307)
+    - "randomizeEnabled" of parameters is respected when randomizing (#349)
     - Fixed high CPU usage in High/Low-mode for bypass
 - Module [STROKE](./docs/Stroke.md)
     - Added commands "Add random module", "Save module preset" and "Save module default preset" (#345)
