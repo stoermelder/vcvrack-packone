@@ -74,7 +74,7 @@ struct MidiMonModule : Module {
 	}
 
 	void onSampleRateChange() override {
-		resetTimestamp();
+		if (sample != 0) resetTimestamp();
 	}
 
 	void resetTimestamp() {
@@ -242,7 +242,9 @@ struct MidiDisplay : LedTextDisplay {
 
 	MidiDisplay() {
 		color = nvgRGB(0xf0, 0xf0, 0xf0);
+		bgColor.a = 0.f;
 		fontSize = 9.2f;
+		textOffset.y += 2.f;
 	}
 
 	void step() override {
@@ -284,11 +286,15 @@ struct MidiMonWidget : ThemedModuleWidget<MidiMonModule> {
 		midiInputWidget->setMidiPort(module ? &module->midiInput : NULL);
 		addChild(midiInputWidget);
 
-		textField = createWidget<MidiDisplay>(Vec(10.f, 108.7f));
+		LedDisplay* textDisplay = createWidget<LedDisplay>(Vec(10.f, 108.7f));
+		textDisplay->box.size = Vec(219.9f, 234.1f);
+		addChild(textDisplay);
+
+		textField = createWidget<MidiDisplay>(Vec());
 		textField->module = module;
 		textField->buffer = &buffer;
-		textField->box.size = Vec(219.9f, 234.1f);
-		addChild(textField);
+		textField->box.size = textDisplay->box.size.minus(Vec(0.f, 4.f));
+		textDisplay->addChild(textField);
 	}
 
 	void step() override {
@@ -321,8 +327,14 @@ struct MidiMonWidget : ThemedModuleWidget<MidiMonModule> {
 		// menu->addChild(construct<MsgItem>(&MenuItem::text, "System Exclusive", &MsgItem::s, &module->showSysExMsg));
 
 		menu->addChild(new MenuSeparator());
-		menu->addChild(createMenuItem("Clear log", "", [this]() { buffer.clear(); textField->reset(); }));
+		menu->addChild(createMenuItem("Clear log", "", [this]() { resetLog(); }));
 		menu->addChild(createMenuItem("Export log", "", [this]() { exportLogDialog(); }));
+	}
+
+	void resetLog() {
+		buffer.clear();
+		module->resetTimestamp();
+		textField->reset();
 	}
 
 	void exportLog(std::string filename) {
