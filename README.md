@@ -15,7 +15,8 @@ If you like my modules consider donating to https://paypal.me/stoermelder. Thank
 
 ## Latest additions to PackOne - new for v2.0
 
-- [DIRT](./docs/Dirt.md): noise, crackles and crosstalk for polyphonic cables
+- [DIRT](./docs/Dirt.md): a module for noise, crackles and crosstalk on polyphonic cables
+- [MIDI-CAT CLK](./docs/MidiCat.md#clk-expander): expander for MIDI-CAT, allows trigger-quantization for mapped parameters (#299)
 - [MIDI-KEY](./docs/MidiKey.md): utility for generating keyboard events from MIDI CC or Note messages
 - [STRIP++](./docs/StripPp.md): utility for pasting and importing Rack selections while preserving parameter mappings and [GLUE](./docs/Glue.md) labels
 

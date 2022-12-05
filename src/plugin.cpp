@@ -16,7 +16,6 @@ void init(rack::Plugin* p) {
 	p->addModel(modelInfixMicro);
 	p->addModel(modelStrip);
 	p->addModel(modelStripBay4);
-	p->addModel(modelStripBlock);
 	p->addModel(modelStripPp);
 	p->addModel(modelEightFace);
 	p->addModel(modelEightFaceX2);
@@ -45,13 +44,9 @@ void init(rack::Plugin* p) {
 	p->addModel(modelGoto);
 	p->addModel(modelStroke);
 	p->addModel(modelSpin);
-	p->addModel(modelFlowerSeq);
-	p->addModel(modelFlowerSeqEx);
-	p->addModel(modelFlowerTrig);
 	p->addModel(modelTransit);
 	p->addModel(modelTransitEx);
 	p->addModel(modelX4);
-	p->addModel(modelPrisma);
 	p->addModel(modelMacro);
 	p->addModel(modelRaw);
 	p->addModel(modelMidiMon);
