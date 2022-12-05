@@ -3,6 +3,7 @@
 #include "helpers/TaskWorker.hpp"
 #include "components/MenuColorLabel.hpp"
 #include "components/MenuColorField.hpp"
+#include "ui/ModuleSelectProcessor.hpp"
 #include "EightFace.hpp"
 #include "EightFaceMk2Base.hpp"
 #include <random>
@@ -81,7 +82,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 	SLOTCVMODE slotCvMode = SLOTCVMODE::TRIG_FWD;
 	SLOTCVMODE slotCvModeBak = SLOTCVMODE::OFF;
 	int slotCvModeDir = 1;
-	int slotCvModeAlt = 1;
+	int slotCvModeAlt = 0;
 	std::vector<int> slotCvModeShuffle;
 
 	std::default_random_engine randGen{(uint16_t)std::chrono::system_clock::now().time_since_epoch().count()};
@@ -128,6 +129,10 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 		BASE::panelTheme = pluginSettings.panelThemeDefault;
 		Module::config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		Module::configParam(PARAM_RW, 0, 1, 0, "Read/write mode");
+		Module::configInput(INPUT_CV, "Slot-selection");
+		Module::inputInfos[INPUT_CV]->description = "Channel 2 can retrigger the current slot in C4 mode";
+		Module::configInput(INPUT_RESET, "Sequencer-mode reset");
+
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			EightFaceMk2ParamQuantity<NUM_PRESETS>* pq = Module::configParam<EightFaceMk2ParamQuantity<NUM_PRESETS>>(PARAM_PRESET + i, 0, 1, 0);
 			pq->id = i;
@@ -249,15 +254,37 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 		// Read mode
 		if (BASE::ctrlMode == CTRLMODE::READ) {
 			// RESET input
-			if (slotCvMode == SLOTCVMODE::TRIG_FWD || slotCvMode == SLOTCVMODE::TRIG_REV || slotCvMode == SLOTCVMODE::TRIG_PINGPONG) {
-				if (Module::inputs[INPUT_RESET].isConnected() && resetTrigger.process(Module::inputs[INPUT_RESET].getVoltage())) {
-					resetTimer.reset();
-					presetLoad(0);
+			if (resetTrigger.process(Module::inputs[INPUT_RESET].getVoltage())) {
+				resetTimer.reset();
+				switch (slotCvMode) {
+					case SLOTCVMODE::TRIG_FWD:
+						presetLoad(0);
+						break;
+					case SLOTCVMODE::TRIG_REV:
+						presetLoad(presetCount - 1);
+						break;
+					case SLOTCVMODE::TRIG_PINGPONG:
+						slotCvModeDir = 1;
+						presetLoad(0);
+						break;
+					case SLOTCVMODE::TRIG_ALT:
+						slotCvModeDir = 1;
+						slotCvModeAlt = 0;
+						presetLoad(0);
+						break;
+					case SLOTCVMODE::TRIG_SHUFFLE:
+						slotCvModeShuffle.clear();
+						break;
+					default:
+						break;
 				}
+			}
+			else {
+				resetTimer.process(args.sampleTime);
 			}
 
 			// CV input
-			if (Module::inputs[INPUT_CV].isConnected() && resetTimer.process(args.sampleTime) >= 1e-3f) {
+			if (Module::inputs[INPUT_CV].isConnected()) {
 				switch (slotCvMode) {
 					case SLOTCVMODE::VOLT:
 						presetLoad(std::floor(rescale(Module::inputs[INPUT_CV].getVoltage(), 0.f, 10.f, 0, presetCount)));
@@ -270,36 +297,44 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 						break;
 					case SLOTCVMODE::TRIG_FWD:
 						if (slotTrigger.process(Module::inputs[INPUT_CV].getVoltage())) {
-							presetLoad((preset + 1) % presetCount);
+							if (resetTimer.getTime() >= 1e-3f) {
+								presetLoad((preset + 1) % presetCount);
+							}
 						}
 						break;
 					case SLOTCVMODE::TRIG_REV:
 						if (slotTrigger.process(Module::inputs[INPUT_CV].getVoltage())) {
-							presetLoad((preset - 1 + presetCount) % presetCount);
+							if (resetTimer.getTime() >= 1e-3f) {
+								presetLoad((preset - 1 + presetCount) % presetCount);
+							}
 						}
 						break;
 					case SLOTCVMODE::TRIG_PINGPONG:
 						if (slotTrigger.process(Module::inputs[INPUT_CV].getVoltage())) {
-							int n = preset + slotCvModeDir;
-							if (n >= presetCount - 1)
-								slotCvModeDir = -1;
-							if (n <= 0)
-								slotCvModeDir = 1;
-							presetLoad(n);
+							if (resetTimer.getTime() >= 1e-3f) {
+								int n = preset + slotCvModeDir;
+								if (n >= presetCount - 1)
+									slotCvModeDir = -1;
+								if (n <= 0)
+									slotCvModeDir = 1;
+								presetLoad(n);
+							}
 						}
 						break;
 					case SLOTCVMODE::TRIG_ALT:
 						if (slotTrigger.process(Module::inputs[INPUT_CV].getVoltage())) {
-							int n = 0;
-							if (preset == 0) {
-								n = slotCvModeAlt + slotCvModeDir;
-								if (n >= presetCount - 1)
-									slotCvModeDir = -1;
-								if (n <= 1)
-									slotCvModeDir = 1;
-								slotCvModeAlt = std::min(n, presetCount - 1);
+							if (resetTimer.getTime() >= 1e-3f) {
+								int n = 0;
+								if (preset == 0) {
+									n = slotCvModeAlt + slotCvModeDir;
+									if (n >= presetCount - 1)
+										slotCvModeDir = -1;
+									if (n <= 1)
+										slotCvModeDir = 1;
+									slotCvModeAlt = std::min(n, presetCount - 1);
+								}
+								presetLoad(n);
 							}
-							presetLoad(n);
 						}
 						break;
 					case SLOTCVMODE::TRIG_RANDOM:
@@ -792,7 +827,7 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 	MODULE* module;
 
 	ModuleOuterBoundsDrawerWidget<MODULE>* boxDrawer = NULL;
-	bool learn = false;
+	ModuleSelectProcessor moduleSelectProcessor;
 
 	EightFaceMk2Widget(MODULE* module)
 		: ThemedModuleWidget<MODULE>(module, "EightFaceMk2") {
@@ -849,44 +884,17 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 	}
 
 	void onDeselect(const event::Deselect& e) override {
-		if (!learn) return;
-
-		DEFER({
-			disableLearn();
-		});
-
-		// Learn module
-		Widget* w = APP->event->getDraggedWidget();
-		if (!w) return;
-		ModuleWidget* mw = dynamic_cast<ModuleWidget*>(w);
-		if (!mw) mw = w->getAncestorOfType<ModuleWidget>();
-		if (!mw || mw == this) return;
-		Module* m = mw->module;
-		if (!m) return;
-		module->bindModule(m);
+		BASE::onDeselect(e);
+		moduleSelectProcessor.processDeselect();
 	}
 
 	void step() override {
 		if (BASE::module) {
-			BASE::module->lights[MODULE::LIGHT_LEARN].setBrightness(learn > 0);
+			moduleSelectProcessor.step();
+			BASE::module->lights[MODULE::LIGHT_LEARN].setBrightness(moduleSelectProcessor.isLearning());
 			module->processGui();
 		}
 		BASE::step();
-	}
-
-	void enableLearn() {
-		learn ^= true;
-		APP->event->setSelectedWidget(this);
-		GLFWcursor* cursor = NULL;
-		if (learn) {
-			cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
-		}
-		glfwSetCursor(APP->window->win, cursor);
-	}
-
-	void disableLearn() {
-		learn = false;
-		glfwSetCursor(APP->window->win, NULL);
 	}
 
 	void appendContextMenu(Menu* menu) override {
@@ -963,15 +971,8 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 			MODULE* module;
 			WIDGET* widget;
 			void onAction(const event::Action& e) override {
-				widget->disableLearn();
+				widget->moduleSelectProcessor.disableLearn();
 				module->bindModuleExpander();
-			}
-		};
-
-		struct BindModuleSelectItem : MenuItem {
-			WIDGET* widget;
-			void onAction(const event::Action& e) override {
-				widget->enableLearn();
 			}
 		};
 
@@ -1063,7 +1064,18 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 		//menu->addChild(construct<AutoloadMenuItem>(&MenuItem::text, "Autoload", &AutoloadMenuItem::module, module));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<BindModuleItem>(&MenuItem::text, "Bind module (left)", &BindModuleItem::widget, this, &BindModuleItem::module, module));
-		menu->addChild(construct<BindModuleSelectItem>(&MenuItem::text, "Bind module (select)", &BindModuleSelectItem::widget, this));
+		menu->addChild(createMenuItem("Bind module (select one)", "", [=]() {
+			moduleSelectProcessor.setOwner(this);
+			moduleSelectProcessor.startLearn([module](ModuleWidget* mw, Vec pos) {
+				module->bindModule(mw->module);
+			});
+		}));
+		menu->addChild(createMenuItem("Bind module (select multiple)", "", [=]() {
+			moduleSelectProcessor.setOwner(this);
+			moduleSelectProcessor.startLearn([module](ModuleWidget* mw, Vec pos) {
+				module->bindModule(mw->module);
+			}, ModuleSelectProcessor::LEARN_MODE::MULTI);
+		}));
 
 		if (module->boundModules.size() > 0) {
 			menu->addChild(new MenuSeparator());

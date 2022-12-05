@@ -1,4 +1,5 @@
 #include "plugin.hpp"
+#include "helpers.hpp"
 #include "helpers/StripIdFixModule.hpp"
 #include "components/MenuColorLabel.hpp"
 #include "components/MenuColorField.hpp"
@@ -113,8 +114,8 @@ struct GlueModule : Module, StripIdFixModule {
 	GlueModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		configParam<TriggerParamQuantity>(PARAM_UNLOCK, 0.f, 1.f, 0.f, "Unlock labels for editing");
-		configParam<TriggerParamQuantity>(PARAM_ADD_LABEL, 0.f, 1.f, 0.f, "Add label (Ctrl+A)");
+		configParam<TriggerParamQuantity>(PARAM_UNLOCK, 0.f, 1.f, 0.f, "Unlock labels for editing (" RACK_MOD_CTRL_NAME "+" RACK_MOD_SHIFT_NAME "+G");
+		configParam<TriggerParamQuantity>(PARAM_ADD_LABEL, 0.f, 1.f, 0.f, "Add label (" RACK_MOD_CTRL_NAME "+G)");
 		configParam<TriggerParamQuantity>(PARAM_OPACITY_PLUS, 0.f, 1.f, 0.f, string::f("Increase overall opacity by %i%%", int(LABEL_OPACITY_STEP * 100)));
 		configParam<TriggerParamQuantity>(PARAM_OPACITY_MINUS, 0.f, 1.f, 0.f, string::f("Decrease overall opacity by %i%%", int(LABEL_OPACITY_STEP * 100)));
 		configParam<TriggerParamQuantity>(PARAM_HIDE, 0.f, 1.f, 0.f, "Hide labels");
@@ -587,30 +588,6 @@ struct LabelWidget : widget::TransparentWidget {
 					}
 				};
 
-				struct RotateItem : MenuItem {
-					Label* label;
-					float angle;
-					void onAction(const event::Action& e) override {
-						label->angle = angle;
-					}
-					void step() override {
-						rightText = label->angle == angle ? "✔" : "";
-						MenuItem::step();
-					}
-				};
-
-				struct FontItem : MenuItem {
-					Label* label;
-					int font;
-					void onAction(const event::Action& e) override {
-						label->font = font;
-					}
-					void step() override {
-						rightText = label->font == font ? "✔" : "";
-						MenuItem::step();
-					}
-				};
-
 				struct FontColorMenuItem : MenuItem {
 					Label* label;
 					bool* textSelected;
@@ -699,46 +676,32 @@ struct LabelWidget : widget::TransparentWidget {
 				menu->addChild(new WidthSlider(label));
 				menu->addChild(new OpacitySlider(label));
 				menu->addChild(new MenuSeparator);
-				menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Rotation"));
-				menu->addChild(construct<RotateItem>(&MenuItem::text, "0°", &RotateItem::label, label, &RotateItem::angle, 0.f));
-				menu->addChild(construct<RotateItem>(&MenuItem::text, "90°", &RotateItem::label, label, &RotateItem::angle, 90.f));
-				menu->addChild(construct<RotateItem>(&MenuItem::text, "270°", &RotateItem::label, label, &RotateItem::angle, 270.f));
+				menu->addChild(createMenuLabel("Rotation"));
+				menu->addChild(Rack::createValuePtrMenuItem("0°", &label->angle, 0.f));
+				menu->addChild(Rack::createValuePtrMenuItem("90°", &label->angle, 90.f));
+				menu->addChild(Rack::createValuePtrMenuItem("270°", &label->angle, 270.f));
 				menu->addChild(new MenuSeparator);
 				menu->addChild(construct<ColorMenuItem>(&MenuItem::text, "Color", &ColorMenuItem::label, label, &ColorMenuItem::textSelected, textSelected));
 				menu->addChild(new MenuSeparator);
-				menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Font"));
-				menu->addChild(construct<FontItem>(&MenuItem::text, "Default", &FontItem::label, label, &FontItem::font, 0));
-				menu->addChild(construct<FontItem>(&MenuItem::text, "Handwriting", &FontItem::label, label, &FontItem::font, 1));
+				menu->addChild(createMenuLabel("Font"));
+				menu->addChild(Rack::createValuePtrMenuItem("Default", &label->font, 0));
+				menu->addChild(Rack::createValuePtrMenuItem("Handwriting", &label->font, 1));
 				menu->addChild(new MenuSeparator);
 				menu->addChild(construct<FontColorMenuItem>(&MenuItem::text, "Font color", &FontColorMenuItem::label, label, &FontColorMenuItem::textSelected, textSelected));
 				return menu;
 			}
 		};
 
-		struct LabelDuplicateItem : MenuItem {
-			LabelWidget* w;
-			void onAction(const event::Action& e) override {
-				w->requestedDuplicate = true;
-			}
-		};
-
-		struct LabelDeleteItem : MenuItem {
-			LabelWidget* w;
-			void onAction(const event::Action& e) override {
-				w->requestedDelete = true;
-			}
-		};
-
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Label"));
+		menu->addChild(createMenuLabel("Label"));
 		LabelField* labelField = construct<LabelField>()->setLabel(label);
 		menu->addChild(labelField);
 		menu->addChild(construct<AppearanceItem>(&AppearanceItem::text, "Appearance", &AppearanceItem::label, label, &AppearanceItem::textSelected, &labelField->textSelected));
-		menu->addChild(construct<LabelDuplicateItem>(&MenuItem::text, "Duplicate", &LabelDuplicateItem::w, this));
-		menu->addChild(construct<LabelDeleteItem>(&MenuItem::text, "Delete", &LabelDeleteItem::w, this, &LabelDeleteItem::rightText, "Ctrl+X"));
+		menu->addChild(createMenuItem("Duplicate", "", [=]() { requestedDuplicate = true; }));
+		menu->addChild(createMenuItem("Delete", "Ctrl+X", [=]() { requestedDelete = true; }));
 	}
 
 	void onHoverKey(const event::HoverKey& e) override {
-		if (editMode && e.action == GLFW_PRESS && e.mods & GLFW_MOD_CONTROL && e.key == GLFW_KEY_X) {
+		if (editMode && e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && e.key == GLFW_KEY_X) {
 			requestedDelete = true;
 			e.consume(this);
 		}
@@ -952,11 +915,17 @@ struct LabelContainer : widget::Widget {
 	}
 
 	void onHoverKey(const event::HoverKey& e) override {
-		if (editMode && e.action == GLFW_PRESS && e.key == GLFW_KEY_A && (e.mods & RACK_MOD_MASK) == GLFW_MOD_CONTROL) {
-			// Learn module
-			Widget* w = APP->event->getHoveredWidget();
-			addLabelAtMousePos(w);
-			e.consume(this);
+		if (e.action == GLFW_PRESS && e.key == GLFW_KEY_G) {
+			if (editMode && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL) {
+				// Learn module
+				Widget* w = APP->event->getHoveredWidget();
+				addLabelAtMousePos(w);
+				e.consume(this);
+			}
+			if ((e.mods & RACK_MOD_MASK) == (RACK_MOD_CTRL | GLFW_MOD_SHIFT)) {
+				toggleEditMode();
+				e.consume(this);
+			}
 		}
 		Widget::onHoverKey(e);
 	}
@@ -1260,30 +1229,6 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 					}
 				};
 
-				struct RotateItem : MenuItem {
-					GlueModule* module;
-					float angle;
-					void onAction(const event::Action& e) override {
-						module->defaultAngle = angle;
-					}
-					void step() override {
-						rightText = module->defaultAngle == angle ? "✔" : "";
-						MenuItem::step();
-					}
-				};
-
-				struct FontItem : MenuItem {
-					GlueModule* module;
-					int font;
-					void onAction(const event::Action& e) override {
-						module->defaultFont = font;
-					}
-					void step() override {
-						rightText = module->defaultFont == font ? "✔" : "";
-						MenuItem::step();
-					}
-				};
-
 				struct FontColorMenuItem : MenuItem {
 					GlueModule* module;
 					FontColorMenuItem() {
@@ -1370,37 +1315,19 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 				menu->addChild(new WidthSlider(module));
 				menu->addChild(new OpacitySlider(module));
 				menu->addChild(new MenuSeparator);
-				menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Default rotation"));
-				menu->addChild(construct<RotateItem>(&MenuItem::text, "0°", &RotateItem::module, module, &RotateItem::angle, 0.f));
-				menu->addChild(construct<RotateItem>(&MenuItem::text, "90°", &RotateItem::module, module, &RotateItem::angle, 90.f));
-				menu->addChild(construct<RotateItem>(&MenuItem::text, "270°", &RotateItem::module, module, &RotateItem::angle, 270.f));
+				menu->addChild(createMenuLabel("Default rotation"));
+				menu->addChild(Rack::createValuePtrMenuItem("0°", &module->defaultAngle, 0.f));
+				menu->addChild(Rack::createValuePtrMenuItem("90°", &module->defaultAngle, 90.f));
+				menu->addChild(Rack::createValuePtrMenuItem("270°", &module->defaultAngle, 270.f));
 				menu->addChild(new MenuSeparator());
 				menu->addChild(construct<ColorMenuItem>(&MenuItem::text, "Default color", &ColorMenuItem::module, module));
 				menu->addChild(new MenuSeparator());
-				menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Default font"));
-				menu->addChild(construct<FontItem>(&MenuItem::text, "Default", &FontItem::module, module, &FontItem::font, 0));
-				menu->addChild(construct<FontItem>(&MenuItem::text, "Handwriting", &FontItem::module, module, &FontItem::font, 1));
+				menu->addChild(createMenuLabel("Default font"));
+				menu->addChild(Rack::createValuePtrMenuItem("Default", &module->defaultFont, 0));
+				menu->addChild(Rack::createValuePtrMenuItem("Handwriting", &module->defaultFont, 1));
 				menu->addChild(new MenuSeparator());
 				menu->addChild(construct<FontColorMenuItem>(&MenuItem::text, "Default font color", &FontColorMenuItem::module, module));
 				return menu;
-			}
-		};
-
-		struct SkewItem : MenuItem {
-			GlueModule* module;
-			void onAction(const event::Action& e) override {
-				module->skewLabels ^= true;
-			}
-			void step() override {
-				rightText = module->skewLabels ? "✔" : "";
-				MenuItem::step();
-			}
-		};
-
-		struct ConsolidateItem : MenuItem {
-			GlueWidget* mw;
-			void onAction(const event::Action& e) override {
-				mw->consolidate();
 			}
 		};
 
@@ -1426,29 +1353,20 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 
 			Menu* createChildMenu() override {
 				Menu* menu = new Menu;
-
-				struct LabelDeleteItem : MenuItem {
-					LabelContainer* labelContainer;
-					Label* label;
-					void onAction(const event::Action& e) override {
-						labelContainer->removeLabelWidget(label);
-					}
-				};
-
-				menu->addChild(construct<LabelDeleteItem>(&MenuItem::text, "Delete", &LabelDeleteItem::labelContainer, labelContainer, &LabelDeleteItem::label, label));
+				menu->addChild(createMenuItem("Delete", "", [=]() { labelContainer->removeLabelWidget(label); }));
 				return menu;
 			}
 		};
 
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<DefaultAppearanceMenuItem>(&MenuItem::text, "Label appearance", &DefaultAppearanceMenuItem::module, module));
-		menu->addChild(construct<SkewItem>(&MenuItem::text, "Skew labels", &SkewItem::module, module));
+		menu->addChild(createBoolPtrMenuItem("Skew labels", "", &module->skewLabels));
 
 		if (module->labels.size() > 0) {
 			menu->addChild(new MenuSeparator());
-			menu->addChild(construct<ConsolidateItem>(&MenuItem::text, "Consolidate GLUE", &ConsolidateItem::mw, this));
+			menu->addChild(createMenuItem("Consolidate GLUE", "", [=]() { consolidate(); }));
 			menu->addChild(new MenuSeparator());
-			menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Labels"));
+			menu->addChild(createMenuLabel("Labels"));
 
 			for (Label* l : module->labels) {
 				menu->addChild(construct<LabelMenuItem>(&LabelMenuItem::labelContainer, labelContainer, &LabelMenuItem::label, l));

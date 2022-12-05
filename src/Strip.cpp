@@ -1,4 +1,5 @@
 #include "Strip.hpp"
+#include "digital.hpp"
 #include "helpers/TaskWorker.hpp"
 
 namespace StoermelderPackOne {
@@ -63,6 +64,7 @@ struct StripModule : StripModuleBase {
 	dsp::SchmittTrigger modeTrigger;
 	dsp::SchmittTrigger onTrigger;
 	dsp::SchmittTrigger offPTrigger;
+	ChangeTrigger<float> highLowTrigger;
 	dsp::SchmittTrigger randTrigger;
 
 	dsp::ClockDivider lightDivider;
@@ -73,8 +75,11 @@ struct StripModule : StripModuleBase {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configParam<TriggerParamQuantity>(MODE_PARAM, 0, 1, 0, "Toggle left/right mode");
+		configInput(ON_INPUT, "Strip on/toggle trigger");
 		configParam<TriggerParamQuantity>(ON_PARAM, 0, 1, 0, "Switch/toggle strip on");
+		configInput(OFF_INPUT, "Strip off trigger");
 		configParam<TriggerParamQuantity>(OFF_PARAM, 0, 1, 0, "Switch strip off");
+		configInput(RAND_INPUT, "Strip randomization trigger");
 		configParam<TriggerParamQuantity>(RAND_PARAM, 0, 1, 0, "Randomize strip");
 		configParam(EXCLUDE_PARAM, 0, 1, 0, "Parameter randomization include/exclude");
 
@@ -111,7 +116,8 @@ struct StripModule : StripModuleBase {
 					groupDisable(!lastState, params[ON_PARAM].getValue() > 0.f);
 				break;
 			case ONMODE::HIGHLOW:
-				groupDisable(params[ON_PARAM].getValue() + inputs[ON_INPUT].getVoltage() < 1.f, params[ON_PARAM].getValue() > 0.f);
+				if (highLowTrigger.process(params[ON_PARAM].getValue() + inputs[ON_INPUT].getVoltage()))
+					groupDisable(params[ON_PARAM].getValue() + inputs[ON_INPUT].getVoltage() < 1.f, params[ON_PARAM].getValue() > 0.f);
 				break;
 		}
 
@@ -233,19 +239,22 @@ struct StripModule : StripModuleBase {
 				}
 
 				ModuleWidget* mw = APP->scene->rack->getModule(m->rightExpander.moduleId);
-				if(!mw) return;
+				if (!mw) return;
 				for (ParamWidget* param : mw->getParams()) {
+					ParamQuantity* paramQuantity = param->getParamQuantity();
+					if (!paramQuantity->randomizeEnabled) continue;
+
 					switch (randomExcl) {
 						case RANDOMEXCL::NONE:
-							param->getParamQuantity()->randomize();
+							paramQuantity->randomize();
 							break;
 						case RANDOMEXCL::EXC:
-							if (excludedParams.find(std::make_tuple(m->rightExpander.moduleId, param->getParamQuantity()->paramId)) == excludedParams.end())
-								param->getParamQuantity()->randomize();
+							if (excludedParams.find(std::make_tuple(m->rightExpander.moduleId, paramQuantity->paramId)) == excludedParams.end())
+								paramQuantity->randomize();
 							break;
 						case RANDOMEXCL::INC:
-							if (excludedParams.find(std::make_tuple(m->rightExpander.moduleId, param->getParamQuantity()->paramId)) != excludedParams.end())
-								param->getParamQuantity()->randomize();
+							if (excludedParams.find(std::make_tuple(m->rightExpander.moduleId, paramQuantity->paramId)) != excludedParams.end())
+								paramQuantity->randomize();
 							break;
 					}
 				}
@@ -276,19 +285,22 @@ struct StripModule : StripModuleBase {
 				}
 
 				ModuleWidget* mw = APP->scene->rack->getModule(m->leftExpander.moduleId);
-				if(!mw) return;
+				if (!mw) return;
 				for (ParamWidget* param : mw->getParams()) {
+					ParamQuantity* paramQuantity = param->getParamQuantity();
+					if (!paramQuantity->randomizeEnabled) continue;
+
 					switch (randomExcl) {
 						case RANDOMEXCL::NONE:
-							param->getParamQuantity()->randomize();
+							paramQuantity->randomize();
 							break;
 						case RANDOMEXCL::EXC:
-							if (excludedParams.find(std::make_tuple(m->leftExpander.moduleId, param->getParamQuantity()->paramId)) == excludedParams.end())
-								param->getParamQuantity()->randomize();
+							if (excludedParams.find(std::make_tuple(m->leftExpander.moduleId, paramQuantity->paramId)) == excludedParams.end())
+								paramQuantity->randomize();
 							break;
 						case RANDOMEXCL::INC:
-							if (excludedParams.find(std::make_tuple(m->leftExpander.moduleId, param->getParamQuantity()->paramId)) != excludedParams.end())
-								param->getParamQuantity()->randomize();
+							if (excludedParams.find(std::make_tuple(m->leftExpander.moduleId, paramQuantity->paramId)) != excludedParams.end())
+								paramQuantity->randomize();
 							break;
 					}
 				}
@@ -640,95 +652,23 @@ struct StripWidget : StripWidgetBase<StripModule> {
 		StripModule* module = dynamic_cast<StripModule*>(this->module);
 		assert(module);
 		menu->addChild(new MenuSeparator);
-
-		struct OnModeMenuItem : MenuItem {
-			struct OnModeItem : MenuItem {
-				StripModule* module;
-				ONMODE onMode;
-				void onAction(const event::Action& e) override {
-					module->onMode = onMode;
-				}
-				void step() override {
-					rightText = module->onMode == onMode ? "✔" : "";
-					MenuItem::step();
-				}
-			};
-
-			StripModule* module;
-			Menu* createChildMenu() override {
-				Menu *menu = new Menu;
-				menu->addChild(construct<OnModeItem>(&MenuItem::text, "Default", &OnModeItem::module, module, &OnModeItem::onMode, ONMODE::DEFAULT));
-				menu->addChild(construct<OnModeItem>(&MenuItem::text, "Toggle", &OnModeItem::module, module, &OnModeItem::onMode, ONMODE::TOGGLE));
-				menu->addChild(construct<OnModeItem>(&MenuItem::text, "High/Low", &OnModeItem::module, module, &OnModeItem::onMode, ONMODE::HIGHLOW));
-				return menu;
+		menu->addChild(createSubmenuItem("Port/Switch ON mode", "",
+			[=](Menu* menu) {
+				menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem("Default", &module->onMode, ONMODE::DEFAULT));
+				menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem("Toggle", &module->onMode, ONMODE::TOGGLE));
+				menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem("High/Low", &module->onMode, ONMODE::HIGHLOW));
 			}
-		};
-
-		struct RandomParamsOnlyItem : MenuItem {
-			StripModule* module;
-			void onAction(const event::Action& e) override {
-				module->randomParamsOnly ^= true;
-			}
-			void step() override {
-				rightText = module->randomParamsOnly ? "✔" : "";
-				MenuItem::step();
-			}
-		};
-
-		menu->addChild(construct<OnModeMenuItem>(&MenuItem::text, "Port/Switch ON mode", &MenuItem::rightText, RIGHT_ARROW, &OnModeMenuItem::module, module));
-		menu->addChild(construct<RandomParamsOnlyItem>(&MenuItem::text, "Randomize parameters only", &RandomParamsOnlyItem::module, module));
+		));
+		menu->addChild(createBoolPtrMenuItem("Randomize parameters only", "", &module->randomParamsOnly));
 		menu->addChild(new MenuSeparator);
-
-		struct CutGroupMenuItem : MenuItem {
-			StripWidget* moduleWidget;
-			void onAction(const event::Action& e) override {
-				moduleWidget->groupCutClipboard();
-			}
-		};
-
-		struct CopyGroupMenuItem : MenuItem {
-			StripWidget* moduleWidget;
-			void onAction(const event::Action& e) override {
-				moduleWidget->groupCopyClipboard();
-			}
-		};
-
-		struct PasteGroupMenuItem : MenuItem {
-			StripWidget* moduleWidget;
-			void onAction(const event::Action& e) override {
-				moduleWidget->groupPasteClipboard();
-			}
-		};
-
-		struct LoadGroupMenuItem : MenuItem {
-			StripWidget* moduleWidget;
-			void onAction(const event::Action& e) override {
-				moduleWidget->groupLoadFileDialog(false);
-			}
-		};
-
-		struct LoadReplaceGroupMenuItem : MenuItem {
-			StripWidget* moduleWidget;
-			void onAction(const event::Action& e) override {
-				moduleWidget->groupLoadFileDialog(true);
-			}
-		};
-
-		struct SaveGroupMenuItem : MenuItem {
-			StripWidget* moduleWidget;
-			void onAction(const event::Action& e) override {
-				moduleWidget->groupSaveFileDialog();
-			}
-		};
-
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Strip"));
+		menu->addChild(createMenuLabel("Strip"));
 		menu->addChild(construct<PresetMenuItem>(&MenuItem::text, "Preset", &PresetMenuItem::module, module, &PresetMenuItem::mw, this));
-		menu->addChild(construct<CutGroupMenuItem>(&MenuItem::text, "Cut", &MenuItem::rightText, RACK_MOD_SHIFT_NAME "+X", &CutGroupMenuItem::moduleWidget, this));
-		menu->addChild(construct<CopyGroupMenuItem>(&MenuItem::text, "Copy", &MenuItem::rightText, RACK_MOD_SHIFT_NAME "+C", &CopyGroupMenuItem::moduleWidget, this));
-		menu->addChild(construct<PasteGroupMenuItem>(&MenuItem::text, "Paste", &MenuItem::rightText, RACK_MOD_SHIFT_NAME "+V", &PasteGroupMenuItem::moduleWidget, this));
-		menu->addChild(construct<LoadGroupMenuItem>(&MenuItem::text, "Load", &MenuItem::rightText, RACK_MOD_SHIFT_NAME "+L", &LoadGroupMenuItem::moduleWidget, this));
-		menu->addChild(construct<LoadReplaceGroupMenuItem>(&MenuItem::text, "Load with replace", &MenuItem::rightText, RACK_MOD_CTRL_NAME "+" RACK_MOD_SHIFT_NAME "+L", &LoadReplaceGroupMenuItem::moduleWidget, this));
-		menu->addChild(construct<SaveGroupMenuItem>(&MenuItem::text, "Save as", &MenuItem::rightText, RACK_MOD_SHIFT_NAME "+S", &SaveGroupMenuItem::moduleWidget, this));
+		menu->addChild(createMenuItem("Cut", RACK_MOD_SHIFT_NAME "+X", [=]() { groupCutClipboard(); }));
+		menu->addChild(createMenuItem("Copy", RACK_MOD_SHIFT_NAME "+C", [=]() { groupCopyClipboard(); }));
+		menu->addChild(createMenuItem("Paste", RACK_MOD_SHIFT_NAME "+V", [=]() { groupPasteClipboard(); }));
+		menu->addChild(createMenuItem("Load", RACK_MOD_SHIFT_NAME "+L", [=]() { groupLoadFileDialog(false); }));
+		menu->addChild(createMenuItem("Load with replace", RACK_MOD_CTRL_NAME "+" RACK_MOD_SHIFT_NAME "+L", [=]() { groupLoadFileDialog(true); }));
+		menu->addChild(createMenuItem("Save as", RACK_MOD_SHIFT_NAME "+S", [=]() { groupSaveFileDialog(); }));
 	}
 };
 

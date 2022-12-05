@@ -10,6 +10,10 @@ namespace Strip {
 static const char PRESET_FILTERS[] = "stoermelder STRIP group preset (.vcvss):vcvss";
 static const char SELECTION_FILTERS[] = "VCV Rack module selection (.vcvs):vcvs";
 
+static std::string dirVcvss = asset::user("patches");
+static std::string dirVcvs = asset::user("selections");
+
+
 enum class MODE {
 	LEFTRIGHT = 0,
 	RIGHT = 1,
@@ -43,6 +47,7 @@ struct StripBayBase : Module {
 template <class MODULE>
 struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 	typedef ThemedModuleWidget<MODULE> BASE;
+
 	MODULE* module;
 	std::string warningLog;
 
@@ -828,12 +833,13 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		});
 
 		std::string dir = asset::user("patches");
-		char* path = osdialog_file(OSDIALOG_SAVE, dir.c_str(), "Untitled.vcvss", filters);
+		char* path = osdialog_file(OSDIALOG_SAVE, dirVcvss.c_str(), "Untitled.vcvss", filters);
 		if (!path) {
 			// No path selected
 			return;
 		}
 		DEFER({
+			dirVcvss = system::getDirectory(std::string(path));
 			free(path);
 		});
 
@@ -1041,13 +1047,13 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 			osdialog_filters_free(filters);
 		});
 
-		std::string dir = asset::user("patches");
-		char* path = osdialog_file(OSDIALOG_OPEN, dir.c_str(), NULL, filters);
+		char* path = osdialog_file(OSDIALOG_OPEN, dirVcvss.c_str(), NULL, filters);
 		if (!path) {
 			// No path selected
 			return;
 		}
 		DEFER({
+			dirVcvss = system::getDirectory(std::string(path));
 			free(path);
 		});
 
@@ -1056,10 +1062,8 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 
 	void groupSelectionLoadFile(std::string path) {
 		FILE* file = std::fopen(path.c_str(), "r");
-		if (!file)
-			throw Exception("Could not load selection file %s", path.c_str());
+		if (!file) return;
 		DEFER({std::fclose(file);});
-
 		INFO("Loading selection %s", path.c_str());
 
 		json_error_t error;
@@ -1071,26 +1075,28 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		groupSelectionFromJson(rootJ);
 	}
 
-	void groupSelectionLoadFileDialog() {
-		std::string selectionDir = asset::user("selections");
-		system::createDirectories(selectionDir);
-
+	std::string groupSelectionLoadFileDialog(bool load) {
 		osdialog_filters* filters = osdialog_filters_parse(SELECTION_FILTERS);
 		DEFER({osdialog_filters_free(filters);});
 
-		char* pathC = osdialog_file(OSDIALOG_OPEN, selectionDir.c_str(), NULL, filters);
+		char* pathC = osdialog_file(OSDIALOG_OPEN, dirVcvs.c_str(), NULL, filters);
 		if (!pathC) {
 			// No path selected
-			return;
+			return "";
 		}
-		DEFER({std::free(pathC);});
+		DEFER({
+			dirVcvs = system::getDirectory(std::string(pathC));
+			std::free(pathC);
+		});
 
 		try {
-			groupSelectionLoadFile(pathC);
+			if (load) groupSelectionLoadFile(pathC);
 		}
 		catch (Exception& e) {
 			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, e.what());
 		}
+
+		return std::string(pathC);
 	}
 
 

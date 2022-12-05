@@ -1,3 +1,52 @@
+## 2.0.beta3
+
+### New modules
+
+- Module [MIDI-CAT CLK](./docs/MidiCat.md#clk-expander)
+    - New expander for MIDI-CAT, allows trigger-quantization for mapped parameters (#299)
+
+### Fixes and Changes
+
+- Modules [8FACE, 8FACEx2](./docs/EightFace.md)
+    - Fixed broken reset-behavior for "Trigger forward", "Trigger reverse" and "Trigger pingpong" (#347)
+    - Added missing reset-handling for "Trigger alternating" and "Trigger shuffle"
+- Module [8FACE mk2](./docs/EightFaceMk2.md)
+    - Added "Bind module (select multiple)" option (#291)
+    - Fixed broken reset-behavior for "Trigger forward", "Trigger reverse" and "Trigger pingpong" (#347)
+    - Added missing reset-handling for "Trigger alternating" and "Trigger shuffle"
+- Module [DIRT](./docs/Dirt.md)
+    - Added crackle for polyphonic cables
+    - Added switches for noise-types on front panel
+- Module [GLUE](./docs/Glue.md)
+    - Changed "Add label" hotkey to Ctrl+G (#305)
+    - Added hotkey Ctrl+Shift+G for "Lock"
+- Module [HIVE](./docs/Hive.md)
+    - Fixed broken reset-behavior
+- Module [MAZE](./docs/Maze.md)
+    - Fixed broken reset-behavior
+- Module [MIDI-CAT](./docs/MidiCat.md)
+    - Fixed pickup of parameters with snapping (#308)
+- Module [MIDI-KEY](./docs/MidiKey.md)
+    - Added options for slot-specific key modifiers (#344)
+    - Added options for sending hotkeys to a specific module
+- Module [MIDI-MON](./docs/MidiMon.md)
+    - Added support for SysEx messages
+- Module [ORBIT](./docs/Orbit.md)
+    - Added output level control (#286)
+- Module [STRIP++](./docs/StripPp.md)
+    - Added selection perview before actual inserting modules
+    - Added "Recent selection" context menu option
+- Module [STRIP](./docs/Strip.md)
+    - Remember last used folder for strips and selections on dialogs (#307)
+    - "randomizeEnabled" of parameters is respected when randomizing (#349)
+    - Fixed high CPU usage in High/Low-mode for bypass
+- Module [STROKE](./docs/Stroke.md)
+    - Added commands "Add random module", "Save module preset" and "Save module default preset" (#345)
+- Module [TRANSIT](./docs/Transit.md)
+    - Fixed broken Auto/Write-modes if CV-port is set to "Phase" (#282)
+    - Fixed broken reset-behavior for "Trigger forward", "Trigger reverse" and "Trigger pingpong" (#347)
+    - Added missing reset-handling for "Trigger alternating" and "Trigger shuffle"
+
 ## 2.0.beta2
 
 ### New modules
@@ -6,15 +55,15 @@
     - New module, crosstalk and noise for polyphonic cables
 - Module [MIDI-KEY](./docs/MidiKey.md)
     - New module, utility for generating keyboard events from MIDI CC or note messages (#245)
-- Module [S++](./docs/StripPp.md)
+- Module [STRIP++](./docs/StripPp.md)
     - New module, utility for pasting and importing Rack selections while preserving parameter mappings and [GLUE](./docs/Glue.md) labels
 
 ### Fixes and Changes
 
 - Module [GOTO](./docs/Goto.md)
-    - Fixed crash on patch-loading inside Rack VST (#342)
+    - Fixed crash on patch-loading inside Rack VST (and probably other plugin formats) (#342)
 - Module [MIDI-PLUG](./docs/MidiPlug.md)
-    - Removed MIDI "Loopback" driver as a loopback driver is available offically since Rack 2.2.0
+    - Removed MIDI "Loopback" driver as a loopback driver is available officially since Rack 2.2.0
 - Module [STRIP](./docs/Strip.md)
     - Fixed crash on disabling a group of modules (#341)
 

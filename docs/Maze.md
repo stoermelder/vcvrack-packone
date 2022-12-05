@@ -72,4 +72,15 @@ There are additional settings on the context menu of each playhead:
   * CV values cannot be set manually.
 * The module continues its normal operation while in *Edit-mode*.
 
-MAZE was added in v1.3 of PackOne.
+## Changelog
+
+- v1.3.0
+  - Initial release of MAZE
+- v1.6.0
+  - Added option for disabling normalization to the yellow input ports (#95)
+  - Added independent ratcheting settings for each sequencer-playhead (#94)
+- v1.9.0
+  - Fixed hanging ratchets on missing or stopped clock trigger (#216)
+  - Added new ratcheting modes ("Twos", "Threes", "Power of Two")
+- v2.0.0
+  - Fixed broken reset-behavior

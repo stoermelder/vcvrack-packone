@@ -75,6 +75,59 @@ enum MIDIMODE {
 
 
 struct MidiCatParam : ScaledMapParam<int> {
+	enum class CLOCKMODE {
+		OFF = 0,
+		ARM = 1,
+		ARM_DEFERRED_FEEDBACK = 2
+	};
+
+	CLOCKMODE clockMode = CLOCKMODE::OFF;
+	int clockSource = 0;
+
+	int setValueDeffered;
+	int getValueLast;
+
+	void reset(bool resetSettings = true) override {
+		if (resetSettings) {
+			clockMode = CLOCKMODE::OFF;
+			clockSource = 0;
+		}
+		ScaledMapParam<int>::reset(resetSettings);
+	}
+
+	void setValue(int i) override {
+		switch (clockMode) {
+			case CLOCKMODE::OFF:
+				ScaledMapParam<int>::setValue(i);
+				break;
+			case CLOCKMODE::ARM:
+			case CLOCKMODE::ARM_DEFERRED_FEEDBACK:
+				setValueDeffered = i;
+				break;
+		}
+	}
+
+	int getValue() override {
+		switch (clockMode) {
+			case CLOCKMODE::OFF:
+				return ScaledMapParam<int>::getValue();
+			case CLOCKMODE::ARM:
+				return setValueDeffered;
+			case CLOCKMODE::ARM_DEFERRED_FEEDBACK:
+				return getValueLast;
+		}
+		return 0;
+	}
+
+	void tick(int clock) {
+		if (clockMode != CLOCKMODE::OFF && clockSource == clock) {
+			ScaledMapParam<int>::setValue(setValueDeffered);
+		}
+		if (clockMode == CLOCKMODE::ARM_DEFERRED_FEEDBACK) {
+			getValueLast = ScaledMapParam<int>::getValue();
+		}
+	}
+
 	bool isNear(int value, int jump = -1) {
 		if (value == -1) return false;
 		int p = getValue();
@@ -244,8 +297,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 	bool clearMapsOnLoad;
 
 	/** [Stored to Json] The mapped param handle of each channel */
-	ParamHandle paramHandles[MAX_CHANNELS];
-	ParamHandleIndicator paramHandleIndicator[MAX_CHANNELS];
+	ParamHandleIndicator paramHandles[MAX_CHANNELS];
 
 	/** Channel ID of the learning session */
 	int learningId;
@@ -302,19 +354,24 @@ struct MidiCatModule : Module, StripIdFixModule {
 	int processDivision;
 	dsp::ClockDivider indicatorDivider;
 
+	// MEM-expander
 	// Pointer of the MEM-expander's attribute
-	std::map<std::pair<std::string, std::string>, MemModule*>* expMemStorage = NULL;
 	Module* expMem = NULL;
 	int64_t expMemModuleId = -1;
+	std::map<std::pair<std::string, std::string>, MemModule*>* expMemStorage = NULL;
 
+	// CTX-expander
 	Module* expCtx = NULL;
+
+	// CLK-expander
+	Module* expClk = NULL;
+	dsp::SchmittTrigger expClkTrigger[4];
 
 	MidiCatModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(0, 0, 0, 0);
 		for (int id = 0; id < MAX_CHANNELS; id++) {
-			paramHandleIndicator[id].color = mappingIndicatorColor;
-			paramHandleIndicator[id].handle = &paramHandles[id];
+			paramHandles[id].color = mappingIndicatorColor;
 			APP->engine->addParamHandle(&paramHandles[id]);
 			midiParam[id].setLimits(0, 127, -1);
 			ccs[id].module = notes[id].module = this;
@@ -376,6 +433,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 	void process(const ProcessArgs &args) override {
 		ts++;
 
+		// Aquire new MIDI messages from the queue
 		midi::Message msg;
 		bool midiReceived = false;
 		while (midiInput.tryPop(&msg, args.frame)) {
@@ -388,200 +446,16 @@ struct MidiCatModule : Module, StripIdFixModule {
 		// that midi allows about 1000 messages per second, so checking for changes more often
 		// won't lead to higher precision on midi output.
 		if (processDivider.process() || midiReceived) {
-			// Step channels
-			for (int id = 0; id < mapLen; id++) {
-				int cc = ccs[id].getCc();
-				int note = notes[id].getNote();
-				if (cc < 0 && note < 0)
-					continue;
-
-				// Get Module
-				Module* module = paramHandles[id].module;
-				if (!module)
-					continue;
-
-				// Get ParamQuantity
-				int paramId = paramHandles[id].paramId;
-				ParamQuantity* paramQuantity = module->paramQuantities[paramId];
-				if (!paramQuantity)
-					continue;
-
-				if (!paramQuantity->isBounded())
-					continue;
-
-				switch (midiMode) {
-					case MIDIMODE::MIDIMODE_DEFAULT: {
-						midiParam[id].paramQuantity = paramQuantity;
-						int t = -1;
-
-						// Check if CC value has been set and changed
-						if (cc >= 0 && ccs[id].process()) {
-							switch (ccs[id].ccMode) {
-								case CCMODE::DIRECT:
-									if (lastValueIn[id] != ccs[id].getValue()) {
-										lastValueIn[id] = ccs[id].getValue();
-										t = ccs[id].getValue();
-									}
-									break;
-								case CCMODE::PICKUP1:
-									if (lastValueIn[id] != ccs[id].getValue()) {
-										if (midiParam[id].isNear(lastValueIn[id])) {
-											midiParam[id].resetFilter();
-											t = ccs[id].getValue();
-										}
-										lastValueIn[id] = ccs[id].getValue();
-									}
-									break;
-								case CCMODE::PICKUP2:
-									if (lastValueIn[id] != ccs[id].getValue()) {
-										if (midiParam[id].isNear(lastValueIn[id], ccs[id].getValue())) {
-											midiParam[id].resetFilter();
-											t = ccs[id].getValue();
-										}
-										lastValueIn[id] = ccs[id].getValue();
-									}
-									break;
-								case CCMODE::TOGGLE:
-									if (ccs[id].getValue() > 0 && (lastValueIn[id] == -1 || lastValueIn[id] >= 0)) {
-										t = midiParam[id].getLimitMax();
-										lastValueIn[id] = -2;
-									} 
-									else if (ccs[id].getValue() == 0 && lastValueIn[id] == -2) {
-										t = midiParam[id].getLimitMax();
-										lastValueIn[id] = -3;
-									}
-									else if (ccs[id].getValue() > 0 && lastValueIn[id] == -3) {
-										t = midiParam[id].getLimitMin();
-										lastValueIn[id] = -4;
-									}
-									else if (ccs[id].getValue() == 0 && lastValueIn[id] == -4) {
-										t = midiParam[id].getLimitMin();
-										lastValueIn[id] = -1;
-									}
-									break;
-								case CCMODE::TOGGLE_VALUE:
-									if (ccs[id].getValue() > 0 && (lastValueIn[id] == -1 || lastValueIn[id] >= 0)) {
-										t = ccs[id].getValue();
-										lastValueIn[id] = -2;
-									} 
-									else if (ccs[id].getValue() == 0 && lastValueIn[id] == -2) {
-										t = midiParam[id].getValue();
-										lastValueIn[id] = -3;
-									}
-									else if (ccs[id].getValue() > 0 && lastValueIn[id] == -3) {
-										t = midiParam[id].getLimitMin();
-										lastValueIn[id] = -4;
-									}
-									else if (ccs[id].getValue() == 0 && lastValueIn[id] == -4) {
-										t = midiParam[id].getLimitMin();
-										lastValueIn[id] = -1;
-									}
-									break;
-							}
-						}
-
-						// Check if note value has been set and changed
-						if (note >= 0 && notes[id].process()) {
-							switch (notes[id].noteMode) {
-								case NOTEMODE::MOMENTARY:
-									if (lastValueIn[id] != notes[id].getValue()) {
-										t = notes[id].getValue();
-										if (t > 0) t = 127;
-										lastValueIn[id] = notes[id].getValue();
-									} 
-									break;
-								case NOTEMODE::MOMENTARY_VEL:
-									if (lastValueIn[id] != notes[id].getValue()) {
-										t = notes[id].getValue();
-										lastValueIn[id] = notes[id].getValue();
-									}
-									break;
-								case NOTEMODE::TOGGLE:
-									if (notes[id].getValue() > 0 && (lastValueIn[id] == -1 || lastValueIn[id] >= 0)) {
-										t = 127;
-										lastValueIn[id] = -2;
-									} 
-									else if (notes[id].getValue() == 0 && lastValueIn[id] == -2) {
-										t = 127;
-										lastValueIn[id] = -3;
-									}
-									else if (notes[id].getValue() > 0 && lastValueIn[id] == -3) {
-										t = 0;
-										lastValueIn[id] = -4;
-									}
-									else if (notes[id].getValue() == 0 && lastValueIn[id] == -4) {
-										t = 0;
-										lastValueIn[id] = -1;
-									}
-									break;
-								case NOTEMODE::TOGGLE_VEL:
-									if (notes[id].getValue() > 0 && (lastValueIn[id] == -1 || lastValueIn[id] >= 0)) {
-										t = notes[id].getValue();
-										lastValueIn[id] = -2;
-									} 
-									else if (notes[id].getValue() == 0 && lastValueIn[id] == -2) {
-										t = midiParam[id].getValue();
-										lastValueIn[id] = -3;
-									}
-									else if (notes[id].getValue() > 0 && lastValueIn[id] == -3) {
-										t = 0;
-										lastValueIn[id] = -4;
-									}
-									else if (notes[id].getValue() == 0 && lastValueIn[id] == -4) {
-										t = 0;
-										lastValueIn[id] = -1;
-									}
-									break;
-							}
-						}
-
-						// Set a new value for the mapped parameter
-						if (t >= 0) {
-							midiParam[id].setValue(t);
-							if (overlayEnabled && overlayQueue.capacity() > 0) overlayQueue.push(id);
-						}
-
-						// Apply value on the mapped parameter (respecting slew and scale)
-						midiParam[id].process(args.sampleTime * float(processDivision));
-
-						// Retrieve the current value of the parameter (ignoring slew and scale)
-						int v = midiParam[id].getValue();
-
-						// Midi feedback
-						if (lastValueOut[id] != v) {
-							if (cc >= 0 && ccs[id].ccMode == CCMODE::DIRECT)
-								lastValueIn[id] = v;
-							ccs[id].setValue(v, lastValueIn[id] < 0);
-							notes[id].setValue(v, lastValueIn[id] < 0);
-							lastValueOut[id] = v;
-						}
-					} break;
-
-					case MIDIMODE::MIDIMODE_LOCATE: {
-						bool indicate = false;
-						if ((cc >= 0 && ccs[id].getValue() >= 0) && lastValueInIndicate[id] != ccs[id].getValue()) {
-							lastValueInIndicate[id] = ccs[id].getValue();
-							indicate = true;
-						}
-						if ((note >= 0 && notes[id].getValue() >= 0) && lastValueInIndicate[id] != notes[id].getValue()) {
-							lastValueInIndicate[id] = notes[id].getValue();
-							indicate = true;
-						}
-						if (indicate) {
-							ModuleWidget* mw = APP->scene->rack->getModule(paramQuantity->module->id);
-							paramHandleIndicator[id].indicate(mw);
-						}
-					} break;
-				}
-			}
+			processMappings(args.sampleTime);
 		}
 
+		// Handle indicators - blinking
 		if (indicatorDivider.process()) {
 			float t = indicatorDivider.getDivision() * args.sampleTime;
 			for (int i = 0; i < mapLen; i++) {
-				paramHandleIndicator[i].color = mappingIndicatorHidden ? color::BLACK_TRANSPARENT : mappingIndicatorColor;
+				paramHandles[i].color = mappingIndicatorHidden ? color::BLACK_TRANSPARENT : mappingIndicatorColor;
 				if (paramHandles[i].moduleId >= 0) {
-					paramHandleIndicator[i].process(t, learningId == i);
+					paramHandles[i].process(t, learningId == i);
 				}
 			}
 		}
@@ -593,8 +467,9 @@ struct MidiCatModule : Module, StripIdFixModule {
 		// Expanders
 		bool expMemFound = false;
 		bool expCtxFound = false;
+		bool expClkFound = false;
 		Module* exp = rightExpander.module;
-		for (int i = 0; i < 2; i++) {
+		for (int i = 0; i < 3; i++) {
 			if (!exp) break;
 			if (exp->model == modelMidiCatMem && !expMemFound) {
 				expMemStorage = reinterpret_cast<std::map<std::pair<std::string, std::string>, MemModule*>*>(exp->leftExpander.consumerMessage);
@@ -609,6 +484,12 @@ struct MidiCatModule : Module, StripIdFixModule {
 				exp = exp->rightExpander.module;
 				continue;
 			}
+			if (exp->model == modelMidiCatClk && !expClkFound) {
+				expClk = exp;
+				expClkFound = true;
+				exp = exp->rightExpander.module;
+				continue;
+			}
 			break;
 		}
 		if (!expMemFound) {
@@ -618,19 +499,207 @@ struct MidiCatModule : Module, StripIdFixModule {
 		if (!expCtxFound) {
 			expCtx = NULL;
 		}
+		if (!expClkFound) {
+			if (expClk) {
+				for (int i = 0; i < MAX_CHANNELS; i++) {
+					midiParam[i].clockMode = MidiCatParam::CLOCKMODE::OFF;
+					midiParam[i].clockSource = 0;
+				}
+			}
+			expClk = NULL;
+		}
+		else {
+			expClkProcess();
+		}
 	}
 
-	void setMode(MIDIMODE midiMode) {
-		if (this->midiMode == midiMode)
-			return;
-		this->midiMode = midiMode;
-		switch (midiMode) {
-			case MIDIMODE::MIDIMODE_LOCATE:
-				for (int i = 0; i < MAX_CHANNELS; i++) 
-					lastValueInIndicate[i] = std::max(0, lastValueIn[i]);
-				break;
-			default:
-				break;
+	void processMappings(float sampleTime) {
+		float st = sampleTime * float(processDivision);
+
+		for (int id = 0; id < mapLen; id++) {
+			int cc = ccs[id].getCc();
+			int note = notes[id].getNote();
+			if (cc < 0 && note < 0)
+				continue;
+
+			// Get Module
+			Module* module = paramHandles[id].module;
+			if (!module)
+				continue;
+
+			// Get ParamQuantity
+			int paramId = paramHandles[id].paramId;
+			ParamQuantity* paramQuantity = module->paramQuantities[paramId];
+			if (!paramQuantity)
+				continue;
+
+			if (!paramQuantity->isBounded())
+				continue;
+
+			switch (midiMode) {
+				case MIDIMODE::MIDIMODE_DEFAULT: {
+					midiParam[id].paramQuantity = paramQuantity;
+					int t = -1;
+
+					// Check if CC value has been set and changed
+					if (cc >= 0 && ccs[id].process()) {
+						switch (ccs[id].ccMode) {
+							case CCMODE::DIRECT:
+								if (lastValueIn[id] != ccs[id].getValue()) {
+									lastValueIn[id] = ccs[id].getValue();
+									t = ccs[id].getValue();
+								}
+								break;
+							case CCMODE::PICKUP1:
+								if (lastValueIn[id] != ccs[id].getValue()) {
+									if (midiParam[id].isNear(lastValueIn[id])) {
+										midiParam[id].resetFilter();
+										t = ccs[id].getValue();
+									}
+									lastValueIn[id] = ccs[id].getValue();
+								}
+								break;
+							case CCMODE::PICKUP2:
+								if (lastValueIn[id] != ccs[id].getValue()) {
+									if (midiParam[id].isNear(lastValueIn[id], ccs[id].getValue())) {
+										midiParam[id].resetFilter();
+										t = ccs[id].getValue();
+									}
+									lastValueIn[id] = ccs[id].getValue();
+								}
+								break;
+							case CCMODE::TOGGLE:
+								if (ccs[id].getValue() > 0 && (lastValueIn[id] == -1 || lastValueIn[id] >= 0)) {
+									t = midiParam[id].getLimitMax();
+									lastValueIn[id] = -2;
+								} 
+								else if (ccs[id].getValue() == 0 && lastValueIn[id] == -2) {
+									t = midiParam[id].getLimitMax();
+									lastValueIn[id] = -3;
+								}
+								else if (ccs[id].getValue() > 0 && lastValueIn[id] == -3) {
+									t = midiParam[id].getLimitMin();
+									lastValueIn[id] = -4;
+								}
+								else if (ccs[id].getValue() == 0 && lastValueIn[id] == -4) {
+									t = midiParam[id].getLimitMin();
+									lastValueIn[id] = -1;
+								}
+								break;
+							case CCMODE::TOGGLE_VALUE:
+								if (ccs[id].getValue() > 0 && (lastValueIn[id] == -1 || lastValueIn[id] >= 0)) {
+									t = ccs[id].getValue();
+									lastValueIn[id] = -2;
+								} 
+								else if (ccs[id].getValue() == 0 && lastValueIn[id] == -2) {
+									t = midiParam[id].getValue();
+									lastValueIn[id] = -3;
+								}
+								else if (ccs[id].getValue() > 0 && lastValueIn[id] == -3) {
+									t = midiParam[id].getLimitMin();
+									lastValueIn[id] = -4;
+								}
+								else if (ccs[id].getValue() == 0 && lastValueIn[id] == -4) {
+									t = midiParam[id].getLimitMin();
+									lastValueIn[id] = -1;
+								}
+								break;
+						}
+					}
+
+					// Check if note value has been set and changed
+					if (note >= 0 && notes[id].process()) {
+						switch (notes[id].noteMode) {
+							case NOTEMODE::MOMENTARY:
+								if (lastValueIn[id] != notes[id].getValue()) {
+									t = notes[id].getValue();
+									if (t > 0) t = 127;
+									lastValueIn[id] = notes[id].getValue();
+								} 
+								break;
+							case NOTEMODE::MOMENTARY_VEL:
+								if (lastValueIn[id] != notes[id].getValue()) {
+									t = notes[id].getValue();
+									lastValueIn[id] = notes[id].getValue();
+								}
+								break;
+							case NOTEMODE::TOGGLE:
+								if (notes[id].getValue() > 0 && (lastValueIn[id] == -1 || lastValueIn[id] >= 0)) {
+									t = 127;
+									lastValueIn[id] = -2;
+								} 
+								else if (notes[id].getValue() == 0 && lastValueIn[id] == -2) {
+									t = 127;
+									lastValueIn[id] = -3;
+								}
+								else if (notes[id].getValue() > 0 && lastValueIn[id] == -3) {
+									t = 0;
+									lastValueIn[id] = -4;
+								}
+								else if (notes[id].getValue() == 0 && lastValueIn[id] == -4) {
+									t = 0;
+									lastValueIn[id] = -1;
+								}
+								break;
+							case NOTEMODE::TOGGLE_VEL:
+								if (notes[id].getValue() > 0 && (lastValueIn[id] == -1 || lastValueIn[id] >= 0)) {
+									t = notes[id].getValue();
+									lastValueIn[id] = -2;
+								} 
+								else if (notes[id].getValue() == 0 && lastValueIn[id] == -2) {
+									t = midiParam[id].getValue();
+									lastValueIn[id] = -3;
+								}
+								else if (notes[id].getValue() > 0 && lastValueIn[id] == -3) {
+									t = 0;
+									lastValueIn[id] = -4;
+								}
+								else if (notes[id].getValue() == 0 && lastValueIn[id] == -4) {
+									t = 0;
+									lastValueIn[id] = -1;
+								}
+								break;
+						}
+					}
+
+					// Set a new value for the mapped parameter
+					if (t >= 0) {
+						midiParam[id].setValue(t);
+						if (overlayEnabled && overlayQueue.capacity() > 0) overlayQueue.push(id);
+					}
+
+					// Apply value on the mapped parameter (respecting slew and scale)
+					midiParam[id].process(st);
+
+					// Retrieve the current value of the parameter (ignoring slew and scale)
+					int v = midiParam[id].getValue();
+
+					// Midi feedback
+					if (lastValueOut[id] != v) {
+						if (cc >= 0 && ccs[id].ccMode == CCMODE::DIRECT)
+							lastValueIn[id] = v;
+						ccs[id].setValue(v, lastValueIn[id] < 0);
+						notes[id].setValue(v, lastValueIn[id] < 0);
+						lastValueOut[id] = v;
+					}
+				} break;
+
+				case MIDIMODE::MIDIMODE_LOCATE: {
+					bool indicate = false;
+					if ((cc >= 0 && ccs[id].getValue() >= 0) && lastValueInIndicate[id] != ccs[id].getValue()) {
+						lastValueInIndicate[id] = ccs[id].getValue();
+						indicate = true;
+					}
+					if ((note >= 0 && notes[id].getValue() >= 0) && lastValueInIndicate[id] != notes[id].getValue()) {
+						lastValueInIndicate[id] = notes[id].getValue();
+						indicate = true;
+					}
+					if (indicate) {
+						ModuleWidget* mw = APP->scene->rack->getModule(paramQuantity->module->id);
+						paramHandles[id].indicate(mw);
+					}
+				} break;
+			}
 		}
 	}
 
@@ -794,6 +863,8 @@ struct MidiCatModule : Module, StripIdFixModule {
 			midiParam[learningId].setSlew(midiParam[learningId - 1].getSlew());
 			midiParam[learningId].setMin(midiParam[learningId - 1].getMin());
 			midiParam[learningId].setMax(midiParam[learningId - 1].getMax());
+			midiParam[learningId].clockMode = midiParam[learningId - 1].clockMode;
+			midiParam[learningId].clockSource = midiParam[learningId - 1].clockSource;
 		}
 		textLabel[learningId] = "";
 
@@ -969,10 +1040,15 @@ struct MidiCatModule : Module, StripIdFixModule {
 		return true;
 	}
 
-	void setProcessDivision(int d) {
-		processDivision = d;
-		processDivider.setDivision(d);
-		processDivider.reset();
+	// process-function for the CLK-expander - handles the four clock inputs
+	void expClkProcess() {
+		for (int i = 0; i < 4; i++) {
+			if (expClkTrigger[i].process(expClk->inputs[i].getVoltage())) {
+				for (int j = 0; j < mapLen; j++) {
+					midiParam[j].tick(i);
+				}
+			}
+		}
 	}
 
 	json_t* dataToJson() override {
@@ -1001,6 +1077,8 @@ struct MidiCatModule : Module, StripIdFixModule {
 			json_object_set_new(mapJ, "slew", json_real(midiParam[id].getSlew()));
 			json_object_set_new(mapJ, "min", json_real(midiParam[id].getMin()));
 			json_object_set_new(mapJ, "max", json_real(midiParam[id].getMax()));
+			json_object_set_new(mapJ, "clockMode", json_integer((int)midiParam[id].clockMode));
+			json_object_set_new(mapJ, "clockSource", json_integer(midiParam[id].clockSource));
 			json_array_append_new(mapsJ, mapJ);
 		}
 		json_object_set_new(rootJ, "maps", mapsJ);
@@ -1055,6 +1133,8 @@ struct MidiCatModule : Module, StripIdFixModule {
 				json_t* slewJ = json_object_get(mapJ, "slew");
 				json_t* minJ = json_object_get(mapJ, "min");
 				json_t* maxJ = json_object_get(mapJ, "max");
+				json_t* clockModeJ = json_object_get(mapJ, "clockMode");
+				json_t* clockSourceJ = json_object_get(mapJ, "clockSource");
 
 				if (!(ccJ || noteJ)) {
 					ccs[mapIndex].setCc(-1);
@@ -1085,6 +1165,8 @@ struct MidiCatModule : Module, StripIdFixModule {
 				if (slewJ) midiParam[mapIndex].setSlew(json_real_value(slewJ));
 				if (minJ) midiParam[mapIndex].setMin(json_real_value(minJ));
 				if (maxJ) midiParam[mapIndex].setMax(json_real_value(maxJ));
+				if (clockModeJ) midiParam[mapIndex].clockMode = (MidiCatParam::CLOCKMODE)json_integer_value(clockModeJ);
+				if (clockSourceJ) midiParam[mapIndex].clockSource = json_integer_value(clockSourceJ);
 			}
 		}
 
@@ -1101,6 +1183,26 @@ struct MidiCatModule : Module, StripIdFixModule {
 			if (midiInputJ) midiInput.fromJson(midiInputJ);
 			json_t* midiOutputJ = json_object_get(rootJ, "midiOutput");
 			if (midiOutputJ) midiOutput.fromJson(midiOutputJ);
+		}
+	}
+
+	void setProcessDivision(int d) {
+		processDivision = d;
+		processDivider.setDivision(d);
+		processDivider.reset();
+	}
+
+	void setMode(MIDIMODE midiMode) {
+		if (this->midiMode == midiMode)
+			return;
+		this->midiMode = midiMode;
+		switch (midiMode) {
+			case MIDIMODE::MIDIMODE_LOCATE:
+				for (int i = 0; i < MAX_CHANNELS; i++)
+					lastValueInIndicate[i] = std::max(0, lastValueIn[i]);
+				break;
+			default:
+				break;
 		}
 	}
 };
@@ -1332,7 +1434,9 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 				Menu* menu = new Menu;
 				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Direct", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::DIRECT));
 				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Pickup (snap)", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::PICKUP1));
+				reinterpret_cast<MenuItem*>(menu->children.back())->disabled = module->midiParam[id].clockMode != MidiCatParam::CLOCKMODE::OFF;
 				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Pickup (jump)", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::PICKUP2));
+				reinterpret_cast<MenuItem*>(menu->children.back())->disabled = module->midiParam[id].clockMode != MidiCatParam::CLOCKMODE::OFF;
 				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Toggle", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::TOGGLE));
 				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Toggle + Value", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::TOGGLE_VALUE));
 				return menu;
@@ -1376,7 +1480,9 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 			Menu* createChildMenu() override {
 				Menu* menu = new Menu;
 				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Momentary", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::MOMENTARY));
+				reinterpret_cast<MenuItem*>(menu->children.back())->disabled = module->midiParam[id].clockMode != MidiCatParam::CLOCKMODE::OFF;
 				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Momentary + Velocity", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::MOMENTARY_VEL));
+				reinterpret_cast<MenuItem*>(menu->children.back())->disabled = module->midiParam[id].clockMode != MidiCatParam::CLOCKMODE::OFF;
 				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Toggle", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::TOGGLE));
 				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Toggle + Velocity", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::TOGGLE_VEL));
 				return menu;
@@ -1501,6 +1607,28 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 		menu->addChild(construct<PresetMenuItem>(&MenuItem::text, "Presets", &PresetMenuItem::module, module, &PresetMenuItem::id, id));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<LabelMenuItem>(&MenuItem::text, "Custom label", &LabelMenuItem::module, module, &LabelMenuItem::id, id));
+
+		if (module->expClk != NULL) {
+			menu->addChild(new MenuSeparator());
+			menu->addChild(createMenuLabel("CLK-expander"));
+			menu->addChild(StoermelderPackOne::Rack::createMapPtrSubmenuItem("Quantization",
+				{
+					{ MidiCatParam::CLOCKMODE::OFF, "Off" },
+					{ MidiCatParam::CLOCKMODE::ARM, "On (instant feedback)" },
+					{ MidiCatParam::CLOCKMODE::ARM_DEFERRED_FEEDBACK, "On (deferred feedback)" }
+				},
+				&module->midiParam[id].clockMode
+			));
+			menu->addChild(StoermelderPackOne::Rack::createMapPtrSubmenuItem("Source",
+				{
+					{ 0, "Clock 1" },
+					{ 1, "Clock 2" },
+					{ 2, "Clock 3" },
+					{ 3, "Clock 4" }
+				},
+				&module->midiParam[id].clockSource
+			));
+		}
 	}
 };
 
@@ -2048,11 +2176,8 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 			}
 		));
 		menu->addChild(StoermelderPackOne::Rack::createMapSubmenuItem<int>("Precision", {
-				{ 1, string::f("Audio rate (%i Hz)", sampleRate / 1) },
+				{ 1, string::f("Samplerate (%i Hz)", sampleRate / 1) },
 				{ 8, string::f("High (%i Hz)", sampleRate / 8) },
-				{ 64, string::f("Moderate (%i Hz)", sampleRate / 64) },
-				{ 256, string::f("Lowest (%i Hz)", sampleRate / 256) }
-			}, {
 				{ 64, string::f("Moderate (%i Hz)", sampleRate / 64) },
 				{ 256, string::f("Lowest (%i Hz)", sampleRate / 256) }
 			},

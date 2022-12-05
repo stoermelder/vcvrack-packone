@@ -7,7 +7,8 @@ namespace StoermelderPackOne {
 struct ModuleSelectProcessor {
 	enum class LEARN_MODE {
 		OFF = 0,
-		DEFAULT = 1
+		SINGLE = 1,
+		MULTI = 2
 	};
 
 	Widget* owner;
@@ -18,11 +19,17 @@ struct ModuleSelectProcessor {
 		this->owner = owner;
 	}
 
-	void startLearn(std::function<void(ModuleWidget* mw, Vec pos)> callback, LEARN_MODE mode = LEARN_MODE::DEFAULT) {
-		if (owner == NULL) return;
-		this->callback = callback;
+	void startLearn(std::function<void(ModuleWidget* mw, Vec pos)> callback, LEARN_MODE mode = LEARN_MODE::SINGLE) {
+		if (owner == NULL) {
+			return;
+		}
+		if (learnMode != LEARN_MODE::OFF) {
+			disableLearn();
+			return;
+		}
 
-		learnMode = learnMode == LEARN_MODE::OFF ? mode : LEARN_MODE::OFF;
+		this->callback = callback;
+		learnMode = mode;
 		APP->event->setSelectedWidget(owner);
 		GLFWcursor* cursor = NULL;
 		if (learnMode != LEARN_MODE::OFF) {
@@ -35,13 +42,26 @@ struct ModuleSelectProcessor {
 		owner = NULL;
 		callback = { };
 		learnMode = LEARN_MODE::OFF;
-		glfwSetCursor(APP->window->win, NULL);
+		if (APP && APP->window && APP->window->win) {
+			glfwSetCursor(APP->window->win, NULL);
+		}
+	}
+
+	bool isLearning() {
+		return learnMode != LEARN_MODE::OFF;
+	}
+
+	void commitLearn(bool forceDisable) {
+		if (learnMode == LEARN_MODE::SINGLE || forceDisable) {
+			disableLearn();
+		}
 	}
 
 	void processDeselect() {
-		if (learnMode != LEARN_MODE::OFF) {
+		if (isLearning()) {
+			bool success = false;
 			DEFER({
-				disableLearn();
+				commitLearn(!success);
 			});
 
 			// Learn module
@@ -51,7 +71,15 @@ struct ModuleSelectProcessor {
 			if (!mw) mw = w->getAncestorOfType<ModuleWidget>();
 			if (!mw || mw == owner) return;
 			Vec pos = w->getRelativeOffset(Vec(1.f, 1.f), mw);
+			success = true;
 			if (callback) callback(mw, pos);
+		}
+	}
+
+	// Only needed with LEARN_MODE::MULTI
+	void step() {
+		if (learnMode == LEARN_MODE::MULTI && APP->event->getSelectedWidget() != owner) {
+			APP->event->setSelectedWidget(owner);
 		}
 	}
 };

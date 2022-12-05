@@ -163,3 +163,6 @@ Once placed next to TRANSIT the expander works and behaves the same way TRANSIT 
 - v2.0.0
     - Added retrigger-function for CV-input channel 2 in C4 mode (#330)
     - Fixed premature end of processing and not reaching stored snapshot state (#329)
+    - Fixed broken Auto/Write-modes if CV-port is set to "Phase" (#282)
+    - Fixed broken reset-behavior for "Trigger forward", "Trigger reverse" and "Trigger pingpong" (#347)
+    - Added missing reset-handling for "Trigger alternating" and "Trigger shuffle"

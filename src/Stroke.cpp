@@ -36,7 +36,10 @@ enum class KEY_MODE {
 	S_ENGINE_PAUSE = 32, // not supported in v2
 	S_MODULE_LOCK = 33,
 	S_MODULE_ADD = 34,
+	S_MODULE_ADD_RANDOM = 38,
 	S_MODULE_DISPATCH = 35,
+	S_MODULE_PRESET_SAVE = 36,
+	S_MODULE_PRESET_SAVE_DEFAULT = 37,
 	S_SCROLL_LEFT = 40,
 	S_SCROLL_RIGHT = 41,
 	S_SCROLL_UP = 42,
@@ -612,6 +615,49 @@ struct CmdModuleAdd : CmdBase {
 }; // struct CmdModuleAdd
 
 
+struct CmdModuleAddRandom : CmdBase {
+	static std::vector<std::tuple<std::string, std::string>> models;
+
+	void initModels() {
+		for (plugin::Plugin* plugin : rack::plugin::plugins) {
+			for (plugin::Model* model : plugin->models) {
+				models.push_back(std::make_tuple(plugin->slug, model->slug));
+			}
+		}
+	}
+
+	void initialCmd(KEY_MODE keyMode) override {
+		if (models.size() == 0) {
+			initModels();
+		}
+
+		// Choose a random model
+		std::tuple<std::string, std::string> m = models.at(random::u32() % models.size());
+
+		// Get Model
+		plugin::Model* model = plugin::getModel(std::get<0>(m), std::get<1>(m));
+		if (!model) return;
+
+		// Create Module
+		engine::Module* addedModule = model->createModule();
+		APP->engine->addModule(addedModule);
+
+		// Create ModuleWidget
+		ModuleWidget* moduleWidget = model->createModuleWidget(addedModule);
+		assert(moduleWidget);
+		APP->scene->rack->addModuleAtMouse(moduleWidget);
+
+		// ModuleAdd history action
+		history::ModuleAdd* h = new history::ModuleAdd;
+		h->name = "create module";
+		h->setModule(moduleWidget);
+		APP->history->push(h);
+	}
+}; // struct CmdModuleAddRandom
+
+std::vector<std::tuple<std::string, std::string>> CmdModuleAddRandom::models;
+
+
 struct CmdModuleDispatch : CmdBase {
 	std::string* data;
 	void initialCmd(KEY_MODE keyMode) override {
@@ -655,6 +701,30 @@ struct CmdModuleDispatch : CmdBase {
 		mw->onHoverKey(e);
 	}
 }; // struct CmdModuleDispatch
+
+
+struct CmdModulePresetSave : CmdBase {
+	void initialCmd(KEY_MODE keyMode) override {
+		Widget* w = APP->event->getHoveredWidget();
+		if (!w) return;
+		ModuleWidget* mw = dynamic_cast<ModuleWidget*>(w);
+		if (!mw) mw = w->getAncestorOfType<ModuleWidget>();
+		if (!mw) return;
+		mw->saveDialog();
+	}
+}; // struct CmdModulePresetSave
+
+
+struct CmdModulePresetSaveDefault : CmdBase {
+	void initialCmd(KEY_MODE keyMode) override {
+		Widget* w = APP->event->getHoveredWidget();
+		if (!w) return;
+		ModuleWidget* mw = dynamic_cast<ModuleWidget*>(w);
+		if (!mw) mw = w->getAncestorOfType<ModuleWidget>();
+		if (!mw) return;
+		mw->saveTemplateDialog();
+	}
+}; // struct CmdModulePresetSaveDefault
 
 
 struct CmdRackMove : CmdBase {
@@ -864,8 +934,14 @@ struct KeyContainer : Widget {
 					processCmd<CmdModuleLock>(); break;
 				case KEY_MODE::S_MODULE_ADD:
 					processCmd<CmdModuleAdd>(&CmdModuleAdd::data, &module->keyTemp->data); break;
+				case KEY_MODE::S_MODULE_ADD_RANDOM:
+					processCmd<CmdModuleAddRandom>(); break;
 				case KEY_MODE::S_MODULE_DISPATCH:
 					processCmd<CmdModuleDispatch>(&CmdModuleDispatch::data, &module->keyTemp->data); break;
+				case KEY_MODE::S_MODULE_PRESET_SAVE:
+					processCmd<CmdModulePresetSave>(); break;
+				case KEY_MODE::S_MODULE_PRESET_SAVE_DEFAULT:
+					processCmd<CmdModulePresetSaveDefault>(); break;
 				case KEY_MODE::S_SCROLL_LEFT:
 					processCmd<CmdRackMove>(&CmdRackMove::x, -1.f, &CmdRackMove::y, 0.f); break;
 				case KEY_MODE::S_SCROLL_RIGHT:
@@ -1210,8 +1286,11 @@ struct KeyDisplay : StoermelderLedDisplay {
 			int idx;
 			void step() override {
 				rightText = 
-					module->keys[idx].mode == KEY_MODE::S_MODULE_ADD ||
-					module->keys[idx].mode == KEY_MODE::S_MODULE_DISPATCH
+					module->keys[idx].mode == KEY_MODE::S_MODULE_ADD || 
+					module->keys[idx].mode == KEY_MODE::S_MODULE_ADD_RANDOM ||
+					module->keys[idx].mode == KEY_MODE::S_MODULE_DISPATCH ||
+					module->keys[idx].mode == KEY_MODE::S_MODULE_PRESET_SAVE || 
+					module->keys[idx].mode == KEY_MODE::S_MODULE_PRESET_SAVE_DEFAULT
 						? "✔" : RIGHT_ARROW;
 				MenuItem::step();
 			}
@@ -1359,7 +1438,10 @@ struct KeyDisplay : StoermelderLedDisplay {
 
 				Menu* menu = new Menu;
 				menu->addChild(construct<ModuleAddItem>(&MenuItem::text, "Add module", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_MODULE_ADD, &ModuleAddItem::keyContainer, keyContainer));
+				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Add random module", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_MODULE_ADD_RANDOM));
 				menu->addChild(construct<ModuleDispatchItem>(&MenuItem::text, "Send hotkey to module (experimental)", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_MODULE_DISPATCH, &ModuleDispatchItem::keyContainer, keyContainer));
+				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Save preset", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_MODULE_PRESET_SAVE));
+				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Save default preset", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_MODULE_PRESET_SAVE_DEFAULT));
 				return menu;
 			}
 		}; // struct ModuleMenuItem
@@ -1553,8 +1635,14 @@ struct KeyDisplay : StoermelderLedDisplay {
 						text = "Toggle lock modules"; break;
 					case KEY_MODE::S_MODULE_ADD:
 						text = "Module: Add"; break;
+					case KEY_MODE::S_MODULE_ADD_RANDOM:
+						text = "Module: Add random"; break;
 					case KEY_MODE::S_MODULE_DISPATCH:
 						text = "Module: Send hotkey"; break;
+					case KEY_MODE::S_MODULE_PRESET_SAVE:
+						text = "Module: Save preset"; break;
+					case KEY_MODE::S_MODULE_PRESET_SAVE_DEFAULT:
+						text = "Module: Save default preset"; break;
 					case KEY_MODE::S_SCROLL_LEFT:
 						text = "Scroll left"; break;
 					case KEY_MODE::S_SCROLL_RIGHT:

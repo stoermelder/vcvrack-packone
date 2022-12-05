@@ -39,7 +39,7 @@ struct ScaledMapParam {
 		return limitMaxT;
 	}
 
-	void reset(bool resetSettings = true) {
+	virtual void reset(bool resetSettings = true) {
 		paramQuantity = NULL;
 		filter.reset();
 		filterInitialized = false;
@@ -92,14 +92,14 @@ struct ScaledMapParam {
 		return max;
 	}
 
-	void setValue(T i) {
+	virtual void setValue(T i) {
 		float f = rescale(float(i), limitMin, limitMax, min, max);
 		f = clamp(f, 0.f, 1.f);
 		valueIn = i;
 		value = f;
 	}
 
-	void process(float sampleTime = -1.f, bool force = false) {
+	virtual void process(float sampleTime = -1.f, bool force = false) {
 		if (valueOut == std::numeric_limits<float>::infinity()) return;
 		// Set filter from param value if filter is uninitialized
 		if (!filterInitialized) {
@@ -113,6 +113,7 @@ struct ScaledMapParam {
 			Param* param = paramQuantity->getParam();
 			if (param) {
 				float vScaled = math::rescale(f, 0.f, 1.f, paramQuantity->getMinValue(), paramQuantity->getMaxValue());
+				if (paramQuantity->snapEnabled) vScaled = std::round(vScaled);
 				paramQuantity->getParam()->setValue(vScaled);
 			}
 			else {
@@ -123,10 +124,16 @@ struct ScaledMapParam {
 		}
 	}
 
-	T getValue() {
+	virtual T getValue() {
 		float f = paramQuantity->getScaledValue();
 		if (isNear(valueOut, f)) return valueIn;
+		// Reset the internal values to the actual parameter's value in case 
+		// getValue() is called before setValue() - for proper MIDI feedback
 		if (valueOut == std::numeric_limits<float>::infinity()) value = valueOut = f;
+		// If a parameter is snapped then the returned value of ParaQuantity can't be trusted
+		// -> simply return the input value
+		if (paramQuantity->snapEnabled) f = valueOut;
+
 		f = rescale(f, min, max, limitMin, limitMax);
 		f = clamp(f, limitMin, limitMax);
 		T i = T(f);

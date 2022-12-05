@@ -10,7 +10,7 @@ Labels can be placed after "arming" the labeling-mode with the button *LABEL* (t
 
 ![GLUE labeling](./Glue-label.gif)
 
-While in *unlocked mode* you can use the hotkeys CTRL+A to place a label at the current position of the mouse pointer and CTRL+X to remove a label while hovering over it.
+While in *unlocked mode* you can use the hotkeys CTRL+G to place a label at the current position of the mouse pointer and CTRL+X to remove a label while hovering over it.
 
 <a name="consolidate"></a>
 Since v1.9.0 there is a context menu option to consolidate the labels: If the current patch contains multiple GLUE-modules all except the current one will be removed and the labels are merged into one GLUE-module. This operation can be undo if needed.
@@ -55,4 +55,19 @@ The context menu option "Duplicate" arms the labeling mode. Click on any module 
 * Labels are drawn above all module components but below cables.
 * GLUE supports labels within a stoermelder STRIP-file (since v1.7.0). Please note that GLUE must be included in the strip.
 
-GLUE was added in v1.6 of PackOne.
+## Changelog
+
+- v1.6.0
+    - Initial release of GLUE
+- v1.6.1
+    - Fixed invalid initialization on new instances
+- v1.6.3
+    - Fixed crash on loading patches with empty labels
+- v1.7.0
+    - Implemented support for labels within STRIP, please be aware to include GLUE within your strip-file (#115)
+    - Added options for changing text coloring (#136)
+- v1.9.0
+    - Added option to consolidate all GLUE modules into the current one
+- v2.0.0
+    - Changed "Add label" hotkey from Ctrl+A to Ctrl+G (#305)
+    - Added hotkey Ctrl+Shift+G for "Lock"

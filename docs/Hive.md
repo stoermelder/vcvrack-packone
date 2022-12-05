@@ -26,4 +26,13 @@ A lush example of how HIVE and MAZE can work together:
 
 [![HIVE and MAZE](https://img.youtube.com/vi/KYbfuj7EbbQ/0.jpg)](https://www.youtube.com/watch?v=KYbfuj7EbbQ)
 
-HIVE was added in v1.8 of PackOne.
+
+## Changelog
+
+- v1.8.0
+  - Initial release of HIVE
+- v1.9.0
+  - Fixed hanging ratchets on missing or stopped clock trigger (#216)
+  - Added new ratcheting modes ("Twos", "Threes", "Power of Two")
+- v2.0.0
+  - Fixed broken reset-behavior

@@ -53,7 +53,35 @@ The file-format "vcvss" for storing strips is very close to Rack's own format fo
 
 - If you want to add some documentation for your strip just include a VCV Notes module and type in some text.
 
-STRIP was added in v1.0.4 of PackOne.
+## Changelog
+
+- v1.0.4
+    - Initial release of STRIP
+- v1.0.5
+    - Added "cut" for cut & paste in the context menu
+- v1.1.0
+    - Added button INC/EXC for including or excluding specific module parameter from randomization
+- v1.2.0
+    - Changed LEDs to triangle shape
+    - Load and save dialogs default to "patches" folder of the current user (#41)
+- v1.3.0
+    - Added utilization for Rack's undo-history on cutting strips and pasting/loading-strips (#11)
+    - Added utilization for Rack's undo-history on enable/disable or randomize if triggered manually (#11)
+- v1.7.0
+    - Added option to randomize only parameters without the module's internal state (#135) 
+- v1.8.0
+    - Added hotkeys Shift+L (load), Shift+S (save as), Shift+X (cut)
+    - Added context menu option "Load with replace" (#186)
+    - Fixed crash on loading vcvss-files with missing modules
+    - Added context menu option for custom presets, listing all .vcvss-files in folder presets/Strip (#198)
+- v1.9.0
+    - Added context menu option "Load and replace" to preset-submenu (#215)
+    - Added support for sub-folders in preset-submenu (#230)
+- v2.0.0
+    - Fixed crash on disabling a group of modules (#341)
+    - Fixed high CPU usage in High/Low-mode for bypass
+    - Remember last used folder for strips and selections on dialogs (#307)
+    - "randomizeEnabled" of parameters is respected when randomizing (#349)
 
 # stoermelder STRIP-BAY
 
@@ -61,4 +89,7 @@ STRIP-BAY is a companion module for STRIP: It is used to name some "patching-poi
 
 [![STRIP-BAY usage](https://img.youtube.com/vi/xGKoQdN9K60/0.jpg)](https://www.youtube.com/watch?v=xGKoQdN9K60)
 
-STRIP-BAY was added in v1.9 of PackOne.
+## Changelog
+
+- v1.9.0
+    - Initial release of STRIP-BAY

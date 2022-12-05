@@ -85,7 +85,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 	SLOTCVMODE slotCvMode = SLOTCVMODE::TRIG_FWD;
 	SLOTCVMODE slotCvModeBak = SLOTCVMODE::OFF;
 	int slotCvModeDir = 1;
-	int slotCvModeAlt = 1;
+	int slotCvModeAlt = 0;
 	std::vector<int> slotCvModeShuffle;
 
 	/** [Stored to JSON] */
@@ -107,7 +107,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 	bool inChange = false;
 
 	/** [Stored to JSON] */
-	std::vector<ParamHandle*> sourceHandles;
+	std::vector<ParamHandleIndicator*> sourceHandles;
 
 	dsp::SchmittTrigger slotTrigger;
 	dsp::SchmittTrigger slotC4Trigger;
@@ -121,7 +121,6 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 	dsp::ClockDivider lightDivider;
 	dsp::Timer lightTimer;
 	bool lightBlink = false;
-	ParamHandleIndicator paramHandleIndicator;
 
 	int sampleRate;
 
@@ -265,27 +264,48 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		int presetCount = std::min(this->presetCount, presetTotal);
 
 		if (handleDivider.process()) {
+			float st = args.sampleTime * handleDivider.division;
 			for (size_t i = 0; i < sourceHandles.size(); i++) {
-				ParamHandle* sourceHandle = sourceHandles[i];
-				if (paramHandleIndicator.handle == sourceHandle) continue;
+				ParamHandleIndicator* sourceHandle = sourceHandles[i];
 				sourceHandle->color = mappingIndicatorHidden ? color::BLACK_TRANSPARENT : nvgRGB(0x40, 0xff, 0xff);
+				sourceHandle->process(st);
 			}
-			paramHandleIndicator.color = mappingIndicatorHidden ? color::BLACK_TRANSPARENT : nvgRGB(0x40, 0xff, 0xff);
-			paramHandleIndicator.process(args.sampleTime * handleDivider.division);
 		}
 
 		// Read & Auto mode
 		if (BASE::ctrlMode == CTRLMODE::READ || BASE::ctrlMode == CTRLMODE::AUTO) {
 			// RESET input
-			if (slotCvMode == SLOTCVMODE::TRIG_FWD || slotCvMode == SLOTCVMODE::TRIG_REV || slotCvMode == SLOTCVMODE::TRIG_PINGPONG) {
-				if (Module::inputs[INPUT_RESET].isConnected() && resetTrigger.process(Module::inputs[INPUT_RESET].getVoltage())) {
-					resetTimer.reset();
-					presetLoad(0);
+			if (resetTrigger.process(Module::inputs[INPUT_RESET].getVoltage())) {
+				resetTimer.reset();
+				switch (slotCvMode) {
+					case SLOTCVMODE::TRIG_FWD:
+						presetLoad(0);
+						break;
+					case SLOTCVMODE::TRIG_REV:
+						presetLoad(presetCount - 1);
+						break;
+					case SLOTCVMODE::TRIG_PINGPONG:
+						slotCvModeDir = 1;
+						presetLoad(0);
+						break;
+					case SLOTCVMODE::TRIG_ALT:
+						slotCvModeDir = 1;
+						slotCvModeAlt = 0;
+						presetLoad(0);
+						break;
+					case SLOTCVMODE::TRIG_SHUFFLE:
+						slotCvModeShuffle.clear();
+						break;
+					default:
+						break;
 				}
+			} 
+			else {
+				resetTimer.process(args.sampleTime);
 			}
 
 			// CV input
-			if (Module::inputs[INPUT_CV].isConnected() && resetTimer.process(args.sampleTime) >= 1e-3f) {
+			if (Module::inputs[INPUT_CV].isConnected()) {
 				switch (slotCvMode) {
 					case SLOTCVMODE::VOLT:
 						presetLoad(std::floor(rescale(Module::inputs[INPUT_CV].getVoltage(), 0.f, 10.f, 0, presetCount)));
@@ -298,36 +318,44 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 						break;
 					case SLOTCVMODE::TRIG_FWD:
 						if (slotTrigger.process(Module::inputs[INPUT_CV].getVoltage())) {
-							presetLoad((preset + 1) % presetCount);
+							if (resetTimer.getTime() >= 1e-3f) {
+								presetLoad((preset + 1) % presetCount);
+							}
 						}
 						break;
 					case SLOTCVMODE::TRIG_REV:
 						if (slotTrigger.process(Module::inputs[INPUT_CV].getVoltage())) {
-							presetLoad((preset - 1 + presetCount) % presetCount);
+							if (resetTimer.getTime() >= 1e-3f) {
+								presetLoad((preset - 1 + presetCount) % presetCount);
+							}
 						}
 						break;
 					case SLOTCVMODE::TRIG_PINGPONG:
 						if (slotTrigger.process(Module::inputs[INPUT_CV].getVoltage())) {
-							int n = preset + slotCvModeDir;
-							if (n >= presetCount - 1)
-								slotCvModeDir = -1;
-							if (n <= 0)
-								slotCvModeDir = 1;
-							presetLoad(n);
+							if (resetTimer.getTime() >= 1e-3f) {
+								int n = preset + slotCvModeDir;
+								if (n >= presetCount - 1)
+									slotCvModeDir = -1;
+								if (n <= 0)
+									slotCvModeDir = 1;
+								presetLoad(n);
+							}
 						}
 						break;
 					case SLOTCVMODE::TRIG_ALT:
 						if (slotTrigger.process(Module::inputs[INPUT_CV].getVoltage())) {
-							int n = 0;
-							if (preset == 0) {
-								n = slotCvModeAlt + slotCvModeDir;
-								if (n >= presetCount - 1)
-									slotCvModeDir = -1;
-								if (n <= 1)
-									slotCvModeDir = 1;
-								slotCvModeAlt = std::min(n, presetCount - 1);
+							if (resetTimer.getTime() >= 1e-3f) {
+								int n = 0;
+								if (preset == 0) {
+									n = slotCvModeAlt + slotCvModeDir;
+									if (n >= presetCount - 1)
+										slotCvModeDir = -1;
+									if (n <= 1)
+										slotCvModeDir = 1;
+									slotCvModeAlt = std::min(n, presetCount - 1);
+								}
+								presetLoad(n);
 							}
-							presetLoad(n);
 						}
 						break;
 					case SLOTCVMODE::TRIG_RANDOM:
@@ -410,10 +438,8 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 			}
 		}
 
-		if (isPhaseCvActive()) {
-			if (BASE::ctrlMode == CTRLMODE::READ) {
-				presetProcessPhase(args.sampleTime);
-			}
+		if (isPhaseCvActive() && BASE::ctrlMode == CTRLMODE::READ) {
+			presetProcessPhase(args.sampleTime);
 		} 
 		else {
 			presetProcess(args.sampleTime);
@@ -432,7 +458,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 				TransitSlot* slot = expSlot(i);
 				bool u = *(slot->presetSlotUsed);
 				if (BASE::ctrlMode == CTRLMODE::READ || BASE::ctrlMode == CTRLMODE::AUTO) {
-					if (!isPhaseCvActive()) {
+					if (!isPhaseCvActive() || BASE::ctrlMode == CTRLMODE::AUTO) {
 						slot->lights[0].setBrightness(preset == i ? 1.f : (presetNext == i ? 1.f : 0.f));
 						slot->lights[1].setBrightness(preset == i ? 1.f : (presetCount > i ? (u ? 1.f : 0.25f) : 0.f));
 						slot->lights[2].setBrightness(preset == i ? 1.f : 0.f);
@@ -500,7 +526,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 			}
 		}
 
-		ParamHandle* sourceHandle = new ParamHandle;
+		ParamHandleIndicator* sourceHandle = new ParamHandleIndicator;
 		sourceHandle->text = "stoermelder TRANSIT";
 		APP->engine->addParamHandle(sourceHandle);
 		APP->engine->updateParamHandle(sourceHandle, moduleId, paramId, true);
@@ -531,7 +557,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 				outSlotPulseGenerator.trigger();
 				if (!*(slot->presetSlotUsed)) 
 					return;
-				if (BASE::ctrlMode == CTRLMODE::AUTO) {
+				if (BASE::ctrlMode == CTRLMODE::AUTO && presetPrev != -1) {
 					TransitSlot* slotPrev = expSlot(presetPrev);
 					if (*(slotPrev->presetSlotUsed)) {
 						slotPrev->preset->clear();
@@ -889,7 +915,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 
 				// This might cause a deadlock as the engine's mutex could already be locked
 				handleList.push_back([=]() {
-					ParamHandle* sourceHandle = new ParamHandle;
+					ParamHandleIndicator* sourceHandle = new ParamHandleIndicator;
 					sourceHandle->text = "stoermelder TRANSIT";
 					APP->engine->addParamHandle(sourceHandle);
 					APP->engine->updateParamHandle(sourceHandle, moduleId, paramId, false);
@@ -1175,24 +1201,23 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 			struct ParameterItem : MenuItem {
 				struct IndicateItem : MenuItem {
 					MODULE* module;
-					ParamHandle* handle;
+					ParamHandleIndicator* handle;
 					void onAction(const event::Action& e) override {
 						ModuleWidget* mw = APP->scene->rack->getModule(handle->moduleId);
-						module->paramHandleIndicator.handle = handle;
-						module->paramHandleIndicator.indicate(mw);
+						handle->indicate(mw);
 					}
 				};
 
 				struct UnbindItem : MenuItem {
 					MODULE* module;
-					ParamHandle* handle;
+					ParamHandleIndicator* handle;
 					void onAction(const event::Action& e) override {
 						APP->engine->updateParamHandle(handle, -1, 0, true);
 					}
 				};
 
 				MODULE* module;
-				ParamHandle* handle;
+				ParamHandleIndicator* handle;
 				ParameterItem() {
 					rightText = RIGHT_ARROW;
 				}
@@ -1212,7 +1237,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 			Menu* createChildMenu() override {
 				Menu* menu = new Menu;
 				for (size_t i = 0; i < module->sourceHandles.size(); i++) {
-					ParamHandle* handle = module->sourceHandles[i];
+					ParamHandleIndicator* handle = module->sourceHandles[i];
 					ModuleWidget* moduleWidget = APP->scene->rack->getModule(handle->moduleId);
 					if (!moduleWidget) continue;
 					ParamWidget* paramWidget = moduleWidget->getParam(handle->paramId);
