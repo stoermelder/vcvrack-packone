@@ -1,6 +1,7 @@
 #include "plugin.hpp"
 #include "components/LedTextDisplay.hpp"
 #include "components/MidiWidget.hpp"
+#include "components/LogDisplay.hpp"
 #include <osdialog.h>
 #include <iomanip>
 
@@ -249,47 +250,8 @@ struct MidiMonModule : Module {
 };
 
 
-struct MidiDisplay : LedTextDisplay {
-	MidiMonModule* module;
-	std::list<std::tuple<float, std::string>>* buffer;
-	bool dirty = true;
-
-	MidiDisplay() {
-		color = nvgRGB(0xf0, 0xf0, 0xf0);
-		bgColor.a = 0.f;
-		fontSize = 9.2f;
-		textOffset.y += 2.f;
-	}
-
-	void step() override {
-		LedTextDisplay::step();
-		if (dirty) {
-			text = "";
-			size_t size = std::min(buffer->size(), (size_t)(box.size.x / fontSize - 1));
-			size_t i = 0;
-			for (std::tuple<float, std::string> s : *buffer) {
-				if (i >= size) break;
-				float timestamp = std::get<0>(s);
-				if (timestamp >= 0.f) {
-					text += string::f("[%9.4f] %s\n", timestamp, std::get<1>(s).c_str());
-				}
-				else {
-					text += string::f("%s\n", std::get<1>(s).c_str());
-				}
-				i++;
-			}
-		}
-	}
-
-	void reset() {
-		buffer->clear();
-		dirty = true;
-	}
-};
-
-
 struct MidiMonWidget : ThemedModuleWidget<MidiMonModule> {
-	MidiDisplay* textField;
+	LogDisplay* logDisplay;
 	std::list<std::tuple<float, std::string>> buffer;
 	
 	MidiMonWidget(MidiMonModule* module)
@@ -310,11 +272,10 @@ struct MidiMonWidget : ThemedModuleWidget<MidiMonModule> {
 		textDisplay->box.size = Vec(219.9f, 234.1f);
 		addChild(textDisplay);
 
-		textField = createWidget<MidiDisplay>(Vec());
-		textField->module = module;
-		textField->buffer = &buffer;
-		textField->box.size = textDisplay->box.size.minus(Vec(0.f, 4.f));
-		textDisplay->addChild(textField);
+		logDisplay = createWidget<LogDisplay>(Vec());
+		logDisplay->buffer = &buffer;
+		logDisplay->box.size = textDisplay->box.size.minus(Vec(0.f, 4.f));
+		textDisplay->addChild(logDisplay);
 	}
 
 	void step() override {
@@ -325,7 +286,7 @@ struct MidiMonWidget : ThemedModuleWidget<MidiMonModule> {
 			if (buffer.size() == BUFFERSIZE) buffer.pop_back();
 			std::tuple<float, std::string> s = module->midiLogMessages.shift();
 			buffer.push_front(s);
-			textField->dirty = true;
+			logDisplay->dirty = true;
 		}
 	}
 
@@ -356,7 +317,7 @@ struct MidiMonWidget : ThemedModuleWidget<MidiMonModule> {
 	void resetLog() {
 		buffer.clear();
 		module->resetTimestamp();
-		textField->reset();
+		logDisplay->reset();
 	}
 
 	void exportLog(std::string filename) {
