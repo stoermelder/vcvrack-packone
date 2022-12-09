@@ -191,7 +191,7 @@ Additionally MIDI-CAT CTX provides a button for activating mapping on the first 
 CLK is a companion module for MIDI-CAT which provides four additional clock-inputs. These clock-inputs can be used to time-quantize the incoming MIDI messages to running clocks or triggers or gates: When enabled the incoming MIDI message is buffered and applied to the parameter on the next trigger.  
 CLK for MIDI-CAT must be placed on the right side of MIDI-CAT and can be used together with the other expanders.
 
-![CTX workflow](./MidiCat-Clk.png)
+![CLK workflow](./MidiCat-Clk.png)
 
 There are two modes with different behavior for MIDI-feedback:
 
