@@ -211,7 +211,7 @@ struct HiveModule : Module {
 			grid.cursor[i].pos.r = grid.cursor[i].startPos.r = (grid.usedRadius + 1) / NUM_PORTS * i;			/// Divide across SW edge
 			grid.cursor[i].dir = grid.cursor[i].startDir = DIRECTION::NE;
 			grid.cursor[i].turnMode = TURNMODE::SIXTY;															/// Start with small turns 
-            grid.cursor[i].ninetyState = TURNMODE::SIXTY;														/// Turnmode 90 starts with a small turn first
+			grid.cursor[i].ninetyState = TURNMODE::SIXTY;														/// Turnmode 90 starts with a small turn first
 			grid.cursor[i].outMode = OUTMODE::UNI_3V;
 			resetTimer[i].reset();
 			grid.cursor[i].ratchetingEnabled = RATCHETMODE::DEFAULT;
