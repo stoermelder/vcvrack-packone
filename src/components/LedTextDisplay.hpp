@@ -57,7 +57,7 @@ struct LedTextDisplay : OpaqueWidget {
 			nvgFillColor(args.vg, color);
 			nvgFontFaceId(args.vg, font->handle);
 			nvgTextLetterSpacing(args.vg, 0.0);
-			nvgFontSize(args.vg, 12);
+			nvgFontSize(args.vg, fontSize);
 			nvgTextBox(args.vg, textOffset.x, textOffset.y + fontSize, box.size.x - 2 * textOffset.x, text.c_str(), NULL);
 		}
 		nvgResetScissor(args.vg);
