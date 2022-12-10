@@ -170,34 +170,34 @@ struct PrismaWidget : ThemedModuleWidget<PrismaModule<4>> {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		
-		addInput(createInputCentered<StoermelderPort>(Vec(20.1f, 72.8f), module, PrismaModule<4>::INPUT_SHIFT_CV + 0));
-		addParam(createParamCentered<StoermelderTrimpot>(Vec(27.0f, 49.3f), module, PrismaModule<4>::PARAM_SHIFT_CV + 0));
-		addParam(createParamCentered<StoermelderSmallKnob>(Vec(52.5f, 67.9f), module, PrismaModule<4>::PARAM_SHIFT + 0));
-		addParam(createParamCentered<StoermelderTrimpot>(Vec(78.0f, 49.3f), module, PrismaModule<4>::PARAM_LEVEL + 0));
-		addInput(createInputCentered<StoermelderPort>(Vec(84.9f, 72.8f), module, PrismaModule<4>::INPUT_LEVEL + 0));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 72.8f), module, PrismaModule<4>::INPUT_SHIFT_CV + 0));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(33.6f, 47.9f), module, PrismaModule<4>::PARAM_SHIFT_CV + 0));
+		addParam(createParamCentered<StoermelderLargeKnob>(Vec(67.5f, 65.9f), module, PrismaModule<4>::PARAM_SHIFT + 0));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(101.4f, 47.9f), module, PrismaModule<4>::PARAM_LEVEL + 0));
+		addInput(createInputCentered<StoermelderPort>(Vec(112.5f, 72.8f), module, PrismaModule<4>::INPUT_LEVEL + 0));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(20.1f, 106.8f), module, PrismaModule<4>::INPUT_SHIFT_CV + 1));
-		addParam(createParamCentered<StoermelderTrimpot>(Vec(27.0f, 130.3f), module, PrismaModule<4>::PARAM_SHIFT_CV + 1));
-		addParam(createParamCentered<StoermelderSmallKnob>(Vec(52.5f, 111.7f), module, PrismaModule<4>::PARAM_SHIFT + 1));
-		addParam(createParamCentered<StoermelderTrimpot>(Vec(78.0f, 130.3f), module, PrismaModule<4>::PARAM_LEVEL + 1));
-		addInput(createInputCentered<StoermelderPort>(Vec(84.9f, 106.8f), module, PrismaModule<4>::INPUT_LEVEL + 1));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 129.f), module, PrismaModule<4>::INPUT_SHIFT_CV + 1));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(33.6f, 104.1f), module, PrismaModule<4>::PARAM_SHIFT_CV + 1));
+		addParam(createParamCentered<StoermelderLargeKnob>(Vec(67.5f, 122.1f), module, PrismaModule<4>::PARAM_SHIFT + 1));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(101.4f, 104.1f), module, PrismaModule<4>::PARAM_LEVEL + 1));
+		addInput(createInputCentered<StoermelderPort>(Vec(112.5f, 129.f), module, PrismaModule<4>::INPUT_LEVEL + 1));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(20.1f, 272.8f), module, PrismaModule<4>::INPUT_SHIFT_CV + 2));
-		addParam(createParamCentered<StoermelderTrimpot>(Vec(27.0f, 249.3f), module, PrismaModule<4>::PARAM_SHIFT_CV + 2));
-		addParam(createParamCentered<StoermelderSmallKnob>(Vec(52.5f, 267.9f), module, PrismaModule<4>::PARAM_SHIFT + 2));
-		addParam(createParamCentered<StoermelderTrimpot>(Vec(78.0f, 249.3f), module, PrismaModule<4>::PARAM_LEVEL + 2));
-		addInput(createInputCentered<StoermelderPort>(Vec(84.9f, 272.8f), module, PrismaModule<4>::INPUT_LEVEL + 2));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 185.2f), module, PrismaModule<4>::INPUT_SHIFT_CV + 2));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(33.6f, 160.3f), module, PrismaModule<4>::PARAM_SHIFT_CV + 2));
+		addParam(createParamCentered<StoermelderLargeKnob>(Vec(67.5f, 178.3f), module, PrismaModule<4>::PARAM_SHIFT + 2));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(101.4f, 160.3f), module, PrismaModule<4>::PARAM_LEVEL + 2));
+		addInput(createInputCentered<StoermelderPort>(Vec(112.5f, 185.2f), module, PrismaModule<4>::INPUT_LEVEL + 2));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(20.1f, 306.8f), module, PrismaModule<4>::INPUT_SHIFT_CV + 3));
-		addParam(createParamCentered<StoermelderTrimpot>(Vec(27.0f, 330.3f), module, PrismaModule<4>::PARAM_SHIFT_CV + 3));
-		addParam(createParamCentered<StoermelderSmallKnob>(Vec(52.5f, 311.7f), module, PrismaModule<4>::PARAM_SHIFT + 3));
-		addParam(createParamCentered<StoermelderTrimpot>(Vec(78.0f, 330.3f), module, PrismaModule<4>::PARAM_LEVEL + 3));
-		addInput(createInputCentered<StoermelderPort>(Vec(84.9f, 306.8f), module, PrismaModule<4>::INPUT_LEVEL + 3));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 241.4f), module, PrismaModule<4>::INPUT_SHIFT_CV + 3));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(33.6f, 216.5f), module, PrismaModule<4>::PARAM_SHIFT_CV + 3));
+		addParam(createParamCentered<StoermelderLargeKnob>(Vec(67.5f, 234.5f), module, PrismaModule<4>::PARAM_SHIFT + 3));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(101.4f, 216.5f), module, PrismaModule<4>::PARAM_LEVEL + 3));
+		addInput(createInputCentered<StoermelderPort>(Vec(112.5f, 241.4f), module, PrismaModule<4>::INPUT_LEVEL + 3));
 	
-		addInput(createInputCentered<StoermelderPort>(Vec(37.3f, 172.6f), module, PrismaModule<4>::INPUT));
-		addParam(createParamCentered<StoermelderSmallKnob>(Vec(67.7f, 172.6f), module, PrismaModule<4>::PARAM_INPUT));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(37.3f, 216.6f), module, PrismaModule<4>::OUTPUT_POLY));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(67.7f, 216.6f), module, PrismaModule<4>::OUTPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(52.3f, 285.f), module, PrismaModule<4>::INPUT));
+		addParam(createParamCentered<StoermelderSmallKnob>(Vec(82.7f, 285.f), module, PrismaModule<4>::PARAM_INPUT));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(52.3f, 327.9f), module, PrismaModule<4>::OUTPUT_POLY));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(82.7f, 327.9f), module, PrismaModule<4>::OUTPUT));
 	}
 };
 
