@@ -70,6 +70,8 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 	int preset;
 	/** [Stored to JSON] Number of currently active snapshots */
 	int presetCount;
+	/** [Stored to JSON] */
+	bool presetCountLongPress = true;
 
 	/** Total number of snapshots including expanders */
 	int presetTotal;
@@ -411,9 +413,11 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 						case LongPressButton::NO_PRESS:
 							break;
 						case LongPressButton::SHORT_PRESS:
-							presetLoad(i, slotCvMode == SLOTCVMODE::ARM, true); break;
+							presetLoad(i, slotCvMode == SLOTCVMODE::ARM, true);
+							break;
 						case LongPressButton::LONG_PRESS:
-							presetSetCount(i + 1); break;
+							if (presetCountLongPress) presetSetCount(i + 1);
+							break;
 					}
 				}
 			}
@@ -430,9 +434,11 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 						case LongPressButton::NO_PRESS:
 							break;
 						case LongPressButton::SHORT_PRESS:
-							presetSave(i); break;
+							presetSave(i);
+							break;
 						case LongPressButton::LONG_PRESS:
-							presetClear(i); break;
+							presetClear(i);
+							break;
 					}
 				}
 			}
@@ -872,6 +878,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		json_object_set_new(rootJ, "outMode", json_integer((int)outMode));
 		json_object_set_new(rootJ, "preset", json_integer(preset));
 		json_object_set_new(rootJ, "presetCount", json_integer(presetCount));
+		json_object_set_new(rootJ, "presetCountLongPress", json_boolean(presetCountLongPress));
 
 		json_t* sourceMapsJ = json_array();
 		for (size_t i = 0; i < sourceHandles.size(); i++) {
@@ -894,6 +901,8 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		outMode = (OUTMODE)json_integer_value(json_object_get(rootJ, "outMode"));
 		preset = json_integer_value(json_object_get(rootJ, "preset"));
 		presetCount = json_integer_value(json_object_get(rootJ, "presetCount"));
+		json_t* presetCountLongPressJ = json_object_get(rootJ, "presetCountLongPress");
+		if (presetCountLongPressJ) presetCountLongPress = json_boolean_value(presetCountLongPressJ);
 
 		if (preset >= presetCount) {
 			preset = -1;
@@ -1068,17 +1077,6 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 		int sampleRate = int(APP->engine->getSampleRate());
 		MODULE* module = dynamic_cast<MODULE*>(this->module);
 
-		struct MappingIndicatorHiddenItem : MenuItem {
-			MODULE* module;
-			void onAction(const event::Action& e) override {
-				module->mappingIndicatorHidden ^= true;
-			}
-			void step() override {
-				rightText = module->mappingIndicatorHidden ? "✔" : "";
-				MenuItem::step();
-			}
-		};
-
 		auto precisionMenuItem = StoermelderPackOne::Rack::createMapSubmenuItem<int>("Precision", {
 				{ 1, string::f("Audio rate (%i Hz)", sampleRate / 1) },
 				{ 8, string::f("Lower CPU (%i Hz)", sampleRate / 8) },
@@ -1093,6 +1091,63 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 				module->setProcessDivision(division);
 			}
 		);
+
+		struct NumberOfSlotsSlider : ui::Slider {
+			struct NumberOfSlotsQuantity : Quantity {
+				MODULE* module;
+				float v = -1.f;
+
+				NumberOfSlotsQuantity(MODULE* module) {
+					this->module = module;
+				}
+				void setValue(float value) override {
+					v = clamp(value, 1.f, float(module->presetTotal));
+					module->presetSetCount(int(v));
+				}
+				float getValue() override {
+					if (v < 0.f) v = module->presetCount;
+					return v;
+				}
+				float getDefaultValue() override {
+					return 8.f;
+				}
+				float getMinValue() override {
+					return 1.f;
+				}
+				float getMaxValue() override {
+					return float(module->presetTotal);
+				}
+				float getDisplayValue() override {
+					return getValue();
+				}
+				std::string getDisplayValueString() override {
+					int i = int(getValue());
+					return string::f("%i", i);
+				}
+				void setDisplayValue(float displayValue) override {
+					setValue(displayValue);
+				}
+				std::string getLabel() override {
+					return "Slots";
+				}
+				std::string getUnit() override {
+					return "";
+				}
+			};
+
+			NumberOfSlotsSlider(MODULE* module) {
+				box.size.x = 160.0;
+				quantity = new NumberOfSlotsQuantity(module);
+			}
+			~NumberOfSlotsSlider() {
+				delete quantity;
+			}
+			void onDragMove(const event::DragMove& e) override {
+				if (quantity) {
+					quantity->moveScaledValue(0.002f * e.mouseDelta.x);
+				}
+			}
+		};
 
 		struct SlotCvModeMenuItem : MenuItem {
 			struct SlotCvModeItem : MenuItem {
@@ -1288,9 +1343,15 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 		};
 
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<MappingIndicatorHiddenItem>(&MenuItem::text, "Hide mapping indicators", &MappingIndicatorHiddenItem::module, module));
+		menu->addChild(createBoolPtrMenuItem("Hide mapping indicators", "", &module->mappingIndicatorHidden));
 		menu->addChild(precisionMenuItem);
 		menu->addChild(new MenuSeparator());
+		menu->addChild(createSubmenuItem("Number of snapshots", string::f("%i", module->presetCount),
+			[=](Menu* menu) {
+				menu->addChild(new NumberOfSlotsSlider(module));
+				menu->addChild(createBoolPtrMenuItem("Set by long-press", "", &module->presetCountLongPress));
+			}
+		));
 		menu->addChild(construct<SlotCvModeMenuItem>(&MenuItem::text, "Port CV mode", &SlotCvModeMenuItem::module, module));
 		menu->addChild(construct<OutModeMenuItem>(&MenuItem::text, "Port OUT mode", &OutModeMenuItem::module, module));
 		menu->addChild(new MenuSeparator());

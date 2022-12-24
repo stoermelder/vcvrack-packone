@@ -1126,10 +1126,10 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 		};
 
 		menu->addChild(new MenuSeparator());
-		menu->addChild(createSubmenuItem("Number of slots", "",
+		menu->addChild(createSubmenuItem("Number of slots", string::f("%i", module->presetCount),
 			[=](Menu* menu) {
 				menu->addChild(new NumberOfSlotsSlider(module));
-				menu->addChild(createBoolPtrMenuItem("Set by long press", "", &module->presetCountLongPress));
+				menu->addChild(createBoolPtrMenuItem("Set by long-press", "", &module->presetCountLongPress));
 			}
 		));
 		menu->addChild(construct<SlotCvModeMenuItem>(&MenuItem::text, "Port CV mode", &SlotCvModeMenuItem::module, module));

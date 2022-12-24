@@ -166,3 +166,4 @@ Once placed next to TRANSIT the expander works and behaves the same way TRANSIT 
     - Fixed broken Auto/Write-modes if CV-port is set to "Phase" (#282)
     - Fixed broken reset-behavior for "Trigger forward", "Trigger reverse" and "Trigger pingpong" (#347)
     - Added missing reset-handling for "Trigger alternating" and "Trigger shuffle"
+    - Allow disabling of "long press" for changing the number of active slots (#354)
