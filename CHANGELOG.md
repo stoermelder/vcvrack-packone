@@ -12,7 +12,14 @@
 - Module [PRISMA](./docs/Prisma.md)
     - A wave multiplier/phase shifter inspired by A-137-2
 
-## 2.0.beta3 (in development)
+## 2.0.0 (in development)
+
+### Fixes and Changes
+
+- Module [MB](./docs/Mb.md)
+    - Fixed crash on exiting Rack's after adding MB (#352)
+
+## 2.0.beta3
 
 ### New modules
 
