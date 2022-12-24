@@ -1077,21 +1077,6 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 		int sampleRate = int(APP->engine->getSampleRate());
 		MODULE* module = dynamic_cast<MODULE*>(this->module);
 
-		auto precisionMenuItem = StoermelderPackOne::Rack::createMapSubmenuItem<int>("Precision", {
-				{ 1, string::f("Audio rate (%i Hz)", sampleRate / 1) },
-				{ 8, string::f("Lower CPU (%i Hz)", sampleRate / 8) },
-				{ 64, string::f("Lowest CPU (%i Hz)", sampleRate / 64) },
-				{ 256, string::f("Even lower CPU (%i Hz)", sampleRate / 256) },
-				{ 1024, string::f("Crazy low CPU (%i Hz)", sampleRate / 1024) }
-			},
-			[=]() {
-				return module->getProcessDivision();
-			},
-			[=](int division) {
-				module->setProcessDivision(division);
-			}
-		);
-
 		struct NumberOfSlotsSlider : ui::Slider {
 			struct NumberOfSlotsQuantity : Quantity {
 				MODULE* module;
@@ -1149,96 +1134,6 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 			}
 		};
 
-		struct SlotCvModeMenuItem : MenuItem {
-			struct SlotCvModeItem : MenuItem {
-				MODULE* module;
-				SLOTCVMODE slotCvMode;
-				std::string rightTextEx = "";
-				void onAction(const event::Action& e) override {
-					module->setCvMode(slotCvMode);
-				}
-				void step() override {
-					rightText = string::f("%s %s", module->slotCvMode == slotCvMode ? "✔" : "", rightTextEx.c_str());
-					MenuItem::step();
-				}
-			};
-
-			MODULE* module;
-			SlotCvModeMenuItem() {
-				rightText = RIGHT_ARROW;
-			}
-
-			Menu* createChildMenu() override {
-				Menu* menu = new Menu;
-				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger forward", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_FWD));
-				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger reverse", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_REV));
-				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger pingpong", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_PINGPONG));
-				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger alternating", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_ALT));
-				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger random", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_RANDOM));
-				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger pseudo-random", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_RANDOM_WO_REPEAT));
-				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger random walk", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_RANDOM_WALK));
-				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger shuffle", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_SHUFFLE));
-				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "0..10V", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::VOLT));
-				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "C4", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::C4));
-				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Arm", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::ARM));
-				menu->addChild(new MenuSeparator);
-				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Phase", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::PHASE));
-				menu->addChild(new MenuSeparator);
-				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Off", &SlotCvModeItem::rightTextEx, RACK_MOD_SHIFT_NAME "+Q", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::OFF));
-				return menu;
-			}
-		};
-
-		struct OutModeMenuItem : MenuItem {
-			struct OutModeItem : MenuItem {
-				MODULE* module;
-				OUTMODE outMode;
-				void onAction(const event::Action& e) override {
-					module->setOutMode(outMode);
-				}
-				void step() override {
-					rightText = module->outMode == outMode ? "✔" : "";
-					MenuItem::step();
-				}
-			};
-
-			MODULE* module;
-			OutModeMenuItem() {
-				rightText = RIGHT_ARROW;
-			}
-
-			Menu* createChildMenu() override {
-				bool phaseMode = module->slotCvMode == SLOTCVMODE::PHASE;
-				Menu* menu = new Menu;
-				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Envelope", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::ENV, &OutModeItem::disabled, phaseMode));
-				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Gate", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::GATE, &OutModeItem::disabled, phaseMode));
-				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Trigger snapshot change", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::TRIG_SNAPSHOT, &OutModeItem::disabled, phaseMode));
-				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Trigger fade start", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::TRIG_SOC, &OutModeItem::disabled, phaseMode));
-				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Trigger fade end", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::TRIG_EOC, &OutModeItem::disabled, phaseMode));
-				menu->addChild(new MenuSeparator);
-				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Polyphonic", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::POLY, &OutModeItem::disabled, phaseMode));
-				menu->addChild(new MenuSeparator);
-				menu->addChild(construct<OutModeItem>(&MenuItem::text, "Phase", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::PHASE, &OutModeItem::disabled, !phaseMode));
-				return menu;
-			}
-		};
-
-		struct BindModuleItem : MenuItem {
-			MODULE* module;
-			WIDGET* widget;
-			void onAction(const event::Action& e) override {
-				widget->disableLearn();
-				module->bindModuleExpander();
-			}
-		};
-
-		struct BindModuleSelectItem : MenuItem {
-			WIDGET* widget;
-			void onAction(const event::Action& e) override {
-				widget->enableLearn(1);
-			}
-		};
-
 		struct BindParameterItem : MenuItem {
 			WIDGET* widget;
 			int mode;
@@ -1252,79 +1147,96 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 			}
 		};
 
-		struct ParameterMenuItem : MenuItem {
-			struct ParameterItem : MenuItem {
-				struct IndicateItem : MenuItem {
-					MODULE* module;
-					ParamHandleIndicator* handle;
-					void onAction(const event::Action& e) override {
-						ModuleWidget* mw = APP->scene->rack->getModule(handle->moduleId);
-						handle->indicate(mw);
-					}
-				};
+		menu->addChild(new MenuSeparator());
+		menu->addChild(createBoolPtrMenuItem("Hide mapping indicators", "", &module->mappingIndicatorHidden));
+		menu->addChild(StoermelderPackOne::Rack::createMapSubmenuItem<int>("Precision", {
+				{ 1, string::f("Audio rate (%i Hz)", sampleRate / 1) },
+				{ 8, string::f("Lower CPU (%i Hz)", sampleRate / 8) },
+				{ 64, string::f("Lowest CPU (%i Hz)", sampleRate / 64) },
+				{ 256, string::f("Even lower CPU (%i Hz)", sampleRate / 256) },
+				{ 1024, string::f("Crazy low CPU (%i Hz)", sampleRate / 1024) }
+			},
+			[=]() {
+				return module->getProcessDivision();
+			},
+			[=](int division) {
+				module->setProcessDivision(division);
+			}
+		));
 
-				struct UnbindItem : MenuItem {
-					MODULE* module;
-					ParamHandleIndicator* handle;
-					void onAction(const event::Action& e) override {
-						APP->engine->updateParamHandle(handle, -1, 0, true);
-					}
-				};
+		menu->addChild(new MenuSeparator());
+		menu->addChild(createSubmenuItem("Number of snapshots", string::f("%i", module->presetCount),
+			[=](Menu* menu) {
+				menu->addChild(new NumberOfSlotsSlider(module));
+				menu->addChild(createBoolPtrMenuItem("Set by long-press", "", &module->presetCountLongPress));
+			}
+		));
 
+		menu->addChild(createSubmenuItem("Port CV mode", "", [=](Menu* menu) { 
+			struct SlotCvModeItem : MenuItem {
 				MODULE* module;
-				ParamHandleIndicator* handle;
-				ParameterItem() {
-					rightText = RIGHT_ARROW;
+				SLOTCVMODE slotCvMode;
+				std::string rightTextEx = "";
+				void onAction(const event::Action& e) override {
+					module->setCvMode(slotCvMode);
 				}
-				Menu* createChildMenu() override {
-					Menu* menu = new Menu;
-					menu->addChild(construct<IndicateItem>(&MenuItem::text, "Locate and indicate", &IndicateItem::module, module, &IndicateItem::handle, handle));
-					menu->addChild(construct<UnbindItem>(&MenuItem::text, "Unbind", &UnbindItem::module, module, &UnbindItem::handle, handle));
-					return menu;
+				void step() override {
+					rightText = string::f("%s %s", module->slotCvMode == slotCvMode ? "✔" : "", rightTextEx.c_str());
+					MenuItem::step();
 				}
 			};
 
-			MODULE* module;
-			ParameterMenuItem() {
-				rightText = RIGHT_ARROW;
-			}
+			menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger forward", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_FWD));
+			menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger reverse", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_REV));
+			menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger pingpong", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_PINGPONG));
+			menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger alternating", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_ALT));
+			menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger random", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_RANDOM));
+			menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger pseudo-random", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_RANDOM_WO_REPEAT));
+			menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger random walk", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_RANDOM_WALK));
+			menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger shuffle", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_SHUFFLE));
+			menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "0..10V", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::VOLT));
+			menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "C4", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::C4));
+			menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Arm", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::ARM));
+			menu->addChild(new MenuSeparator);
+			menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Phase", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::PHASE));
+			menu->addChild(new MenuSeparator);
+			menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Off", &SlotCvModeItem::rightTextEx, RACK_MOD_SHIFT_NAME "+Q", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::OFF));
+		}));
 
-			Menu* createChildMenu() override {
-				Menu* menu = new Menu;
-				for (size_t i = 0; i < module->sourceHandles.size(); i++) {
-					ParamHandleIndicator* handle = module->sourceHandles[i];
-					ModuleWidget* moduleWidget = APP->scene->rack->getModule(handle->moduleId);
-					if (!moduleWidget) continue;
-					ParamWidget* paramWidget = moduleWidget->getParam(handle->paramId);
-					if (!paramWidget) continue;
-					
-					std::string text = string::f("%s %s", moduleWidget->model->name.c_str(), paramWidget->getParamQuantity()->getLabel().c_str());
-					menu->addChild(construct<ParameterItem>(&MenuItem::text, text, &ParameterItem::module, module, &ParameterItem::handle, handle));
+		menu->addChild(createSubmenuItem("Port OUT mode", "", [=](Menu* menu) {
+			struct OutModeItem : MenuItem {
+				MODULE* module;
+				OUTMODE outMode;
+				void onAction(const event::Action& e) override {
+					module->setOutMode(outMode);
 				}
-				return menu;
-			}
-		};
+				void step() override {
+					rightText = module->outMode == outMode ? "✔" : "";
+					MenuItem::step();
+				}
+			};
 
-		struct ModuleMenuItem : MenuItem {
-			MODULE* module;
-			ModuleMenuItem() {
-				rightText = RIGHT_ARROW;
-			}
+			bool phaseMode = module->slotCvMode == SLOTCVMODE::PHASE;
+			menu->addChild(construct<OutModeItem>(&MenuItem::text, "Envelope", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::ENV, &OutModeItem::disabled, phaseMode));
+			menu->addChild(construct<OutModeItem>(&MenuItem::text, "Gate", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::GATE, &OutModeItem::disabled, phaseMode));
+			menu->addChild(construct<OutModeItem>(&MenuItem::text, "Trigger snapshot change", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::TRIG_SNAPSHOT, &OutModeItem::disabled, phaseMode));
+			menu->addChild(construct<OutModeItem>(&MenuItem::text, "Trigger fade start", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::TRIG_SOC, &OutModeItem::disabled, phaseMode));
+			menu->addChild(construct<OutModeItem>(&MenuItem::text, "Trigger fade end", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::TRIG_EOC, &OutModeItem::disabled, phaseMode));
+			menu->addChild(new MenuSeparator);
+			menu->addChild(construct<OutModeItem>(&MenuItem::text, "Polyphonic", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::POLY, &OutModeItem::disabled, phaseMode));
+			menu->addChild(new MenuSeparator);
+			menu->addChild(construct<OutModeItem>(&MenuItem::text, "Phase", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::PHASE, &OutModeItem::disabled, !phaseMode));
+		}));
 
-			Menu* createChildMenu() override {
-				struct UnbindItem : MenuItem {
-					MODULE* module;
-					int64_t moduleId;
-					void onAction(const event::Action& e) override {
-						for (size_t i = 0; i < module->sourceHandles.size(); i++) {
-							ParamHandle* handle = module->sourceHandles[i];
-							if (handle->moduleId != moduleId) continue;
-							APP->engine->updateParamHandle(handle, -1, 0, true);
-						}
-					}
-				};
+		menu->addChild(new MenuSeparator());
+		menu->addChild(createMenuItem("Bind module (left)", "", [=]() { disableLearn(); module->bindModuleExpander(); }));
+		menu->addChild(createMenuItem("Bind module (select)", "", [=]() { enableLearn(1); }));
+		menu->addChild(construct<BindParameterItem>(&MenuItem::text, "Bind single parameter", &BindParameterItem::rightText, RACK_MOD_SHIFT_NAME "+B", &BindParameterItem::widget, this, &BindParameterItem::mode, 2));
+		menu->addChild(construct<BindParameterItem>(&MenuItem::text, "Bind multiple parameters", &BindParameterItem::rightText, RACK_MOD_SHIFT_NAME "+A", &BindParameterItem::widget, this, &BindParameterItem::mode, 3));
 
-				Menu* menu = new Menu;
+		if (module->sourceHandles.size() > 0) {
+			menu->addChild(new MenuSeparator());
+			menu->addChild(createSubmenuItem("Bound modules", "", [=](Menu* menu) {
 				std::set<int64_t> moduleIds;
 				for (size_t i = 0; i < module->sourceHandles.size(); i++) {
 					ParamHandle* handle = module->sourceHandles[i];
@@ -1336,34 +1248,31 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 					ModuleWidget* moduleWidget = APP->scene->rack->getModule(moduleId);
 					if (!moduleWidget) continue;
 					std::string text = string::f("Unbind \"%s %s\"", moduleWidget->model->plugin->name.c_str(), moduleWidget->model->name.c_str());
-					menu->addChild(construct<UnbindItem>(&MenuItem::text, text, &UnbindItem::module, module, &UnbindItem::moduleId, moduleId));
+					menu->addChild(createMenuItem(text, "", [=]() {
+						for (size_t i = 0; i < module->sourceHandles.size(); i++) {
+							ParamHandle* handle = module->sourceHandles[i];
+							if (handle->moduleId != moduleId) continue;
+							APP->engine->updateParamHandle(handle, -1, 0, true);
+						}
+					}));
 				}
-				return menu;
-			}
-		};
+			}));
 
-		menu->addChild(new MenuSeparator());
-		menu->addChild(createBoolPtrMenuItem("Hide mapping indicators", "", &module->mappingIndicatorHidden));
-		menu->addChild(precisionMenuItem);
-		menu->addChild(new MenuSeparator());
-		menu->addChild(createSubmenuItem("Number of snapshots", string::f("%i", module->presetCount),
-			[=](Menu* menu) {
-				menu->addChild(new NumberOfSlotsSlider(module));
-				menu->addChild(createBoolPtrMenuItem("Set by long-press", "", &module->presetCountLongPress));
-			}
-		));
-		menu->addChild(construct<SlotCvModeMenuItem>(&MenuItem::text, "Port CV mode", &SlotCvModeMenuItem::module, module));
-		menu->addChild(construct<OutModeMenuItem>(&MenuItem::text, "Port OUT mode", &OutModeMenuItem::module, module));
-		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<BindModuleItem>(&MenuItem::text, "Bind module (left)", &BindModuleItem::widget, this, &BindModuleItem::module, module));
-		menu->addChild(construct<BindModuleSelectItem>(&MenuItem::text, "Bind module (select)", &BindModuleSelectItem::widget, this));
-		menu->addChild(construct<BindParameterItem>(&MenuItem::text, "Bind single parameter", &BindParameterItem::rightText, RACK_MOD_SHIFT_NAME "+B", &BindParameterItem::widget, this, &BindParameterItem::mode, 2));
-		menu->addChild(construct<BindParameterItem>(&MenuItem::text, "Bind multiple parameters", &BindParameterItem::rightText, RACK_MOD_SHIFT_NAME "+A", &BindParameterItem::widget, this, &BindParameterItem::mode, 3));
-
-		if (module->sourceHandles.size() > 0) {
-			menu->addChild(new MenuSeparator());
-			menu->addChild(construct<ModuleMenuItem>(&MenuItem::text, "Bound modules", &ModuleMenuItem::module, module));
-			menu->addChild(construct<ParameterMenuItem>(&MenuItem::text, "Bound parameters", &ParameterMenuItem::module, module));
+			menu->addChild(createSubmenuItem("Bound parameters", "", [=](Menu* menu) {
+				for (size_t i = 0; i < module->sourceHandles.size(); i++) {
+					ParamHandleIndicator* handle = module->sourceHandles[i];
+					ModuleWidget* moduleWidget = APP->scene->rack->getModule(handle->moduleId);
+					if (!moduleWidget) continue;
+					ParamWidget* paramWidget = moduleWidget->getParam(handle->paramId);
+					if (!paramWidget) continue;
+					
+					std::string text = string::f("%s %s", moduleWidget->model->name.c_str(), paramWidget->getParamQuantity()->getLabel().c_str());
+					menu->addChild(createSubmenuItem(text, "", [=](Menu* menu) {
+						menu->addChild(createMenuItem("Locate and indicate", "", [=]() { handle->indicate(APP->scene->rack->getModule(handle->moduleId)); }));
+						menu->addChild(createMenuItem("Unbind", "", [=]() { APP->engine->updateParamHandle(handle, -1, 0, true); }));
+					}));
+				}
+			}));
 		}
 	}
 };
