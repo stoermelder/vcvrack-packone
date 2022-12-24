@@ -96,3 +96,4 @@ With the option "Autoload first preset" on the context menu you can autoload the
     - Fixed unconnected modules after patch reload (#338)
     - Fixed broken reset-behavior for "Trigger forward", "Trigger reverse" and "Trigger pingpong" (#347)
     - Added missing reset-handling for "Trigger alternating" and "Trigger shuffle"
+    - Allow disabling of "long press" for changing the number of active slots (#354)

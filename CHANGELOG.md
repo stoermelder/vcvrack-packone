@@ -18,6 +18,8 @@
 
 - Modules [8FACE, 8FACEx2](./docs/EightFace.md)
     - Allow disabling of "long press" for changing the number of active slots (#354)
+- Module [8FACE mk2](./docs/EightFaceMk2.md)
+    - Allow disabling of "long press" for changing the number of active slots (#354)
 - Module [MB](./docs/Mb.md)
     - Fixed crash on exiting Rack's after adding MB (#352)
 

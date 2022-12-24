@@ -72,6 +72,8 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 	int preset;
 	/** [Stored to JSON] Number of currently active snapshots */
 	int presetCount;
+	/** [Stored to JSON] */
+	bool presetCountLongPress = true;
 
 	/** Total number of snapshots including expanders */
 	int presetTotal;
@@ -390,9 +392,11 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 						case LongPressButton::NO_PRESS:
 							break;
 						case LongPressButton::SHORT_PRESS:
-							presetLoad(i, slotCvMode == SLOTCVMODE::ARM, true); break;
+							presetLoad(i, slotCvMode == SLOTCVMODE::ARM, true);
+							break;
 						case LongPressButton::LONG_PRESS:
-							presetSetCount(i + 1); break;
+							if (presetCountLongPress) presetSetCount(i + 1);
+							break;
 					}
 				}
 			}
@@ -409,9 +413,11 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 						case LongPressButton::NO_PRESS:
 							break;
 						case LongPressButton::SHORT_PRESS:
-							presetSave(i); break;
+							presetSave(i);
+							break;
 						case LongPressButton::LONG_PRESS:
-							presetClear(i); break;
+							presetClear(i);
+							break;
 					}
 				}
 			}
@@ -685,6 +691,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 		json_object_set_new(rootJ, "slotCvMode", json_integer((int)slotCvMode));
 		json_object_set_new(rootJ, "preset", json_integer(preset));
 		json_object_set_new(rootJ, "presetCount", json_integer(presetCount));
+		json_object_set_new(rootJ, "presetCountLongPress", json_boolean(presetCountLongPress));
 
 		json_object_set_new(rootJ, "boxDraw", json_boolean(boxDraw));
 		json_object_set_new(rootJ, "boxColor", json_string(color::toHexString(boxColor).c_str()));
@@ -709,6 +716,8 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 		slotCvMode = (SLOTCVMODE)json_integer_value(json_object_get(rootJ, "slotCvMode"));
 		preset = json_integer_value(json_object_get(rootJ, "preset"));
 		presetCount = json_integer_value(json_object_get(rootJ, "presetCount"));
+		json_t* presetCountLongPressJ = json_object_get(rootJ, "presetCountLongPress");
+		if (presetCountLongPressJ) presetCountLongPress = json_boolean_value(presetCountLongPressJ);
 
 		boxDraw = json_boolean_value(json_object_get(rootJ, "boxDraw"));
 		json_t* boxColorJ = json_object_get(rootJ, "boxColor");
@@ -902,6 +911,63 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 		MODULE* module = dynamic_cast<MODULE*>(this->module);
 		assert(module);
 
+		struct NumberOfSlotsSlider : ui::Slider {
+			struct NumberOfSlotsQuantity : Quantity {
+				MODULE* module;
+				float v = -1.f;
+
+				NumberOfSlotsQuantity(MODULE* module) {
+					this->module = module;
+				}
+				void setValue(float value) override {
+					v = clamp(value, 1.f, float(module->presetTotal));
+					module->presetSetCount(int(v));
+				}
+				float getValue() override {
+					if (v < 0.f) v = module->presetCount;
+					return v;
+				}
+				float getDefaultValue() override {
+					return 8.f;
+				}
+				float getMinValue() override {
+					return 1.f;
+				}
+				float getMaxValue() override {
+					return float(module->presetTotal);
+				}
+				float getDisplayValue() override {
+					return getValue();
+				}
+				std::string getDisplayValueString() override {
+					int i = int(getValue());
+					return string::f("%i", i);
+				}
+				void setDisplayValue(float displayValue) override {
+					setValue(displayValue);
+				}
+				std::string getLabel() override {
+					return "Slots";
+				}
+				std::string getUnit() override {
+					return "";
+				}
+			};
+
+			NumberOfSlotsSlider(MODULE* module) {
+				box.size.x = 160.0;
+				quantity = new NumberOfSlotsQuantity(module);
+			}
+			~NumberOfSlotsSlider() {
+				delete quantity;
+			}
+			void onDragMove(const event::DragMove& e) override {
+				if (quantity) {
+					quantity->moveScaledValue(0.002f * e.mouseDelta.x);
+				}
+			}
+		};
+
 		struct SlotCvModeMenuItem : MenuItem {
 			struct SlotCvModeItem : MenuItem {
 				MODULE* module;
@@ -1060,6 +1126,12 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 		};
 
 		menu->addChild(new MenuSeparator());
+		menu->addChild(createSubmenuItem("Number of slots", "",
+			[=](Menu* menu) {
+				menu->addChild(new NumberOfSlotsSlider(module));
+				menu->addChild(createBoolPtrMenuItem("Set by long press", "", &module->presetCountLongPress));
+			}
+		));
 		menu->addChild(construct<SlotCvModeMenuItem>(&MenuItem::text, "Port CV mode", &SlotCvModeMenuItem::module, module));
 		//menu->addChild(construct<AutoloadMenuItem>(&MenuItem::text, "Autoload", &AutoloadMenuItem::module, module));
 		menu->addChild(new MenuSeparator());

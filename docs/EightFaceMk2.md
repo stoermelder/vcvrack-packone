@@ -121,3 +121,4 @@ Once placed next to 8FACE mk2 the expander works and behaves the same way 8FACE 
     - Added "Bind module (select multiple)" option (#291)
     - Fixed broken reset-behavior for "Trigger forward", "Trigger reverse" and "Trigger pingpong" (#347)
     - Added missing reset-handling for "Trigger alternating" and "Trigger shuffle"
+    - Allow disabling of "long press" for changing the number of active slots (#354)
