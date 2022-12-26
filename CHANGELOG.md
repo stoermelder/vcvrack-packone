@@ -20,6 +20,9 @@
     - Allow disabling of "long-press" for changing the number of active slots (#354)
 - Module [8FACE mk2](./docs/EightFaceMk2.md)
     - Allow disabling of "long-press" for changing the number of active slots (#354)
+    - Added HSL color picker for bound modules' box
+- Module [GLUE](./docs/Glue.md)
+    - Added HSL color picker
 - Module [MB](./docs/Mb.md)
     - Fixed crash on exiting Rack's after adding MB (#352)
 - Module [TRANSIT](./docs/Transit.md)

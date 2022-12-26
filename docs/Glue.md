@@ -71,3 +71,4 @@ The context menu option "Duplicate" arms the labeling mode. Click on any module 
 - v2.0.0
     - Changed "Add label" hotkey from Ctrl+A to Ctrl+G (#305)
     - Added hotkey Ctrl+Shift+G for "Lock"
+    - Added HSL color picker

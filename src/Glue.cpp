@@ -3,6 +3,7 @@
 #include "helpers/StripIdFixModule.hpp"
 #include "components/MenuColorLabel.hpp"
 #include "components/MenuColorField.hpp"
+#include "components/MenuColorPicker.hpp"
 
 namespace StoermelderPackOne {
 namespace Glue {
@@ -601,6 +602,7 @@ struct LabelWidget : widget::TransparentWidget {
 							NVGcolor color;
 							void onAction(const event::Action& e) override {
 								label->fontColor = color;
+								e.unconsume();
 							}
 							void step() override {
 								rightText = color::toHexString(label->fontColor) == color::toHexString(color) ? "✔" : "";
@@ -608,22 +610,14 @@ struct LabelWidget : widget::TransparentWidget {
 							}
 						};
 
-						struct CustomFontColorField : MenuColorField {
-							Label* label;
-							NVGcolor initColor() override {
-								return label->fontColor;
-							}
-							void returnColor(NVGcolor color) override {
-								label->fontColor = color;
-							}
-						};
-
 						Menu* menu = new Menu;
-						MenuColorLabel* colorLabel = construct<MenuColorLabel>(&MenuColorLabel::fillColor, label->fontColor);
-						menu->addChild(colorLabel);
+						menu->addChild(construct<MenuColorLabel>(&MenuColorLabel::fillColor, &label->fontColor));
+						menu->addChild(new MenuSeparator);
+						menu->addChild(construct<MenuColorPicker>(&MenuColorPicker::color, &label->fontColor));
+						menu->addChild(new MenuSeparator);
 						menu->addChild(construct<FontColorItem>(&MenuItem::text, "Black", &FontColorItem::label, label, &FontColorItem::color, LABEL_FONTCOLOR_DEFAULT));
 						menu->addChild(construct<FontColorItem>(&MenuItem::text, "White", &FontColorItem::label, label, &FontColorItem::color, LABEL_FONTCOLOR_WHITE));
-						menu->addChild(construct<CustomFontColorField>(&MenuColorField::colorLabel, colorLabel, &CustomFontColorField::label, label, &MenuColorField::textSelected, textSelected));
+						menu->addChild(construct<MenuColorField>(&MenuColorField::color, &label->fontColor, &MenuColorField::textSelected, textSelected));
 						return menu;
 					}
 				};
@@ -641,6 +635,7 @@ struct LabelWidget : widget::TransparentWidget {
 							NVGcolor color;
 							void onAction(const event::Action& e) override {
 								label->color = color;
+								e.unconsume();
 							}
 							void step() override {
 								rightText = color::toHexString(label->color) == color::toHexString(color) ? "✔" : "";
@@ -648,26 +643,18 @@ struct LabelWidget : widget::TransparentWidget {
 							}
 						};
 
-						struct CustomColorField : MenuColorField {
-							Label* label;
-							NVGcolor initColor() override {
-								return label->color;
-							}
-							void returnColor(NVGcolor color) override {
-								label->color = color;
-							}
-						};
-
 						Menu* menu = new Menu;
-						MenuColorLabel* colorLabel = construct<MenuColorLabel>(&MenuColorLabel::fillColor, label->color);
-						menu->addChild(colorLabel);
+						menu->addChild(construct<MenuColorLabel>(&MenuColorLabel::fillColor, &label->color));
+						menu->addChild(new MenuSeparator);
+						menu->addChild(construct<MenuColorPicker>(&MenuColorPicker::color, &label->color));
+						menu->addChild(new MenuSeparator);
 						menu->addChild(construct<ColorItem>(&MenuItem::text, "Yellow", &ColorItem::label, label, &ColorItem::color, LABEL_COLOR_YELLOW));
 						menu->addChild(construct<ColorItem>(&MenuItem::text, "Red", &ColorItem::label, label, &ColorItem::color, LABEL_COLOR_RED));
 						menu->addChild(construct<ColorItem>(&MenuItem::text, "Cyan", &ColorItem::label, label, &ColorItem::color, LABEL_COLOR_CYAN));
 						menu->addChild(construct<ColorItem>(&MenuItem::text, "Green", &ColorItem::label, label, &ColorItem::color, LABEL_COLOR_GREEN));
 						menu->addChild(construct<ColorItem>(&MenuItem::text, "Pink", &ColorItem::label, label, &ColorItem::color, LABEL_COLOR_PINK));
 						menu->addChild(construct<ColorItem>(&MenuItem::text, "White", &ColorItem::label, label, &ColorItem::color, LABEL_COLOR_WHITE));
-						menu->addChild(construct<CustomColorField>(&MenuColorField::colorLabel, colorLabel, &CustomColorField::label, label, &MenuColorField::textSelected, textSelected));
+						menu->addChild(construct<MenuColorField>(&MenuColorField::color, &label->color, &MenuColorField::textSelected, textSelected));
 						return menu;
 					}
 				};
@@ -1241,6 +1228,7 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 							NVGcolor color;
 							void onAction(const event::Action& e) override {
 								module->defaultFontColor = color;
+								e.unconsume();
 							}
 							void step() override {
 								rightText = color::toHexString(module->defaultFontColor) == color::toHexString(color) ? "✔" : "";
@@ -1248,22 +1236,14 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 							}
 						};
 
-						struct CustomFontColorField : MenuColorField {
-							GlueModule* module;
-							NVGcolor initColor() override {
-								return module->defaultFontColor;
-							}
-							void returnColor(NVGcolor color) override {
-								module->defaultFontColor = color;
-							}
-						};
-
 						Menu* menu = new Menu;
-						MenuColorLabel* colorLabel = construct<MenuColorLabel>(&MenuColorLabel::fillColor, module->defaultFontColor);
-						menu->addChild(colorLabel);
+						menu->addChild(construct<MenuColorLabel>(&MenuColorLabel::fillColor, &module->defaultFontColor));
+						menu->addChild(new MenuSeparator);
+						menu->addChild(construct<MenuColorPicker>(&MenuColorPicker::color, &module->defaultFontColor));
+						menu->addChild(new MenuSeparator);
 						menu->addChild(construct<FontColorItem>(&MenuItem::text, "Black", &FontColorItem::module, module, &FontColorItem::color, LABEL_FONTCOLOR_DEFAULT));
 						menu->addChild(construct<FontColorItem>(&MenuItem::text, "White", &FontColorItem::module, module, &FontColorItem::color, LABEL_FONTCOLOR_WHITE));
-						menu->addChild(construct<CustomFontColorField>(&MenuColorField::colorLabel, colorLabel, &CustomFontColorField::module, module));
+						menu->addChild(construct<MenuColorField>(&MenuColorField::color, &module->defaultFontColor));
 						return menu;
 					}
 				};
@@ -1280,6 +1260,7 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 							NVGcolor color;
 							void onAction(const event::Action& e) override {
 								module->defaultColor = color;
+								e.unconsume();
 							}
 							void step() override {
 								rightText = color::toHexString(module->defaultColor) == color::toHexString(color) ? "✔" : "";
@@ -1287,26 +1268,19 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 							}
 						};
 
-						struct CustomColorField : MenuColorField {
-							GlueModule* module;
-							NVGcolor initColor() override {
-								return module->defaultColor;
-							}
-							void returnColor(NVGcolor color) override {
-								module->defaultColor = color;
-							}
-						};
-
 						Menu* menu = new Menu;
-						MenuColorLabel* colorLabel = construct<MenuColorLabel>(&MenuColorLabel::fillColor, module->defaultColor);
+						MenuColorLabel* colorLabel = construct<MenuColorLabel>(&MenuColorLabel::fillColor, &module->defaultColor);
 						menu->addChild(colorLabel);
+						menu->addChild(new MenuSeparator);
+						menu->addChild(construct<MenuColorPicker>(&MenuColorPicker::color, &module->defaultColor));
+						menu->addChild(new MenuSeparator);
 						menu->addChild(construct<ColorItem>(&MenuItem::text, "Yellow", &ColorItem::module, module, &ColorItem::color, LABEL_COLOR_YELLOW));
 						menu->addChild(construct<ColorItem>(&MenuItem::text, "Red", &ColorItem::module, module, &ColorItem::color, LABEL_COLOR_RED));
 						menu->addChild(construct<ColorItem>(&MenuItem::text, "Cyan", &ColorItem::module, module, &ColorItem::color, LABEL_COLOR_CYAN));
 						menu->addChild(construct<ColorItem>(&MenuItem::text, "Green", &ColorItem::module, module, &ColorItem::color, LABEL_COLOR_GREEN));
 						menu->addChild(construct<ColorItem>(&MenuItem::text, "Pink", &ColorItem::module, module, &ColorItem::color, LABEL_COLOR_PINK));
 						menu->addChild(construct<ColorItem>(&MenuItem::text, "White", &ColorItem::module, module, &ColorItem::color, LABEL_COLOR_WHITE));
-						menu->addChild(construct<CustomColorField>(&MenuColorField::colorLabel, colorLabel, &CustomColorField::module, module));
+						menu->addChild(construct<MenuColorField>(&MenuColorField::color, &module->defaultColor));
 						return menu;
 					}
 				};

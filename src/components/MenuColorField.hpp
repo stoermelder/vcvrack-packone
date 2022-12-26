@@ -5,8 +5,8 @@
 namespace StoermelderPackOne {
 
 struct MenuColorField : ui::TextField {
-	bool firstRun = true;
-	MenuColorLabel* colorLabel = NULL;
+	NVGcolor* color;
+	NVGcolor textColor;
 	bool* textSelected = NULL;
 
 	MenuColorField() {
@@ -14,22 +14,23 @@ struct MenuColorField : ui::TextField {
 	}
 
 	void step() override {
-		if (firstRun) {
-			text = color::toHexString(initColor());
-			firstRun = false;
+		if (!color::isEqual(*color, textColor)) {
+			// color has been modified outside of this widget
+			text = color::toHexString(*color);
+			textColor = *color;
 		}
 		ui::TextField::step();
 	}
 
 	void onSelectKey(const event::SelectKey& e) override {
-		if (colorLabel) {
-			colorLabel->fillColor = color::fromHexString(rack::string::trim(text));
-		}
 		if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
-			returnColor(color::fromHexString(rack::string::trim(text)));
 			ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
 			overlay->requestDelete();
 			e.consume(this);
+		}
+		if (e.action == GLFW_RELEASE) {
+			*color = color::fromHexString(rack::string::trim(text));
+			textColor = *color;
 		}
 		if (!e.getTarget()) {
 			ui::TextField::onSelectKey(e);
@@ -40,9 +41,6 @@ struct MenuColorField : ui::TextField {
 		if (textSelected) *textSelected = false;
 		TextField::onButton(e);
 	}
-
-	virtual void returnColor(NVGcolor color) { }
-	virtual NVGcolor initColor() { return color::BLACK; }
 };
 
 

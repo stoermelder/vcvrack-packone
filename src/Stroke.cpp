@@ -1,6 +1,7 @@
 #include "plugin.hpp"
 #include "components/MenuColorLabel.hpp"
 #include "components/MenuColorField.hpp"
+#include "components/MenuColorPicker.hpp"
 #include "ui/ModuleSelectProcessor.hpp"
 #include "ui/keyboard.hpp"
 
@@ -1472,33 +1473,38 @@ struct KeyDisplay : StoermelderLedDisplay {
 				struct CableColorMenuItem : MenuItem {
 					StrokeModule<PORTS>* module;
 					int idx;
+					NVGcolor color;
+					bool firstRun = true;
+
 					void step() override {
-						rightText = module->keys[idx].mode == KEY_MODE::S_CABLE_COLOR ? "✔ " RIGHT_ARROW : "";
+						if (module->keys[idx].mode == KEY_MODE::S_CABLE_COLOR) {
+							if (firstRun) {
+								color = color::fromHexString(module->keys[idx].data);
+								firstRun = false;
+							}
+							module->keys[idx].data = color::toHexString(color);
+							rightText = "✔ " RIGHT_ARROW;
+						}
 						MenuItem::step();
 					}
+
 					void onAction(const event::Action& e) override {
-						module->keys[idx].mode = KEY_MODE::S_CABLE_COLOR;
-						module->keys[idx].high = false;
-						module->keys[idx].data = color::toHexString(color::BLACK);
+						if (module->keys[idx].mode != KEY_MODE::S_CABLE_COLOR) {
+							module->keys[idx].mode = KEY_MODE::S_CABLE_COLOR;
+							module->keys[idx].high = false;
+							module->keys[idx].data = color::toHexString(color::BLACK);
+						}
 					}
 
 					Menu* createChildMenu() override {
-						struct ColorField : MenuColorField {
-							StrokeModule<PORTS>* module;
-							int idx;
-							void returnColor(NVGcolor color) override {
-								module->keys[idx].data = color::toHexString(color);
-							}
-							NVGcolor initColor() override {
-								return module->keys[idx].data != "" ? color::fromHexString(module->keys[idx].data) : color::BLACK;
-							}
-						};
-
 						if (module->keys[idx].mode == KEY_MODE::S_CABLE_COLOR) {
+							
 							Menu* menu = new Menu;
-							MenuColorLabel* colorLabel = construct<MenuColorLabel>(&MenuColorLabel::fillColor, color::fromHexString(module->keys[idx].data));
-							menu->addChild(colorLabel);
-							menu->addChild(construct<ColorField>(&ColorField::module, module, &MenuColorField::colorLabel, colorLabel, &ColorField::idx, idx));
+							menu->addChild(construct<MenuColorLabel>(&MenuColorLabel::fillColor, &color));
+							menu->addChild(new MenuSeparator);
+							menu->addChild(construct<MenuColorPicker>(&MenuColorPicker::color, &color));
+							menu->addChild(new MenuSeparator);
+							menu->addChild(construct<MenuColorField>(&MenuColorField::color, &color));
 							return menu;
 						}
 						return NULL;

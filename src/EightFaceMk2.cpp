@@ -3,6 +3,7 @@
 #include "helpers/TaskWorker.hpp"
 #include "components/MenuColorLabel.hpp"
 #include "components/MenuColorField.hpp"
+#include "components/MenuColorPicker.hpp"
 #include "ui/ModuleSelectProcessor.hpp"
 #include "EightFace.hpp"
 #include "EightFaceMk2Base.hpp"
@@ -1107,20 +1108,12 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 				rightText = RIGHT_ARROW;
 			}
 			Menu* createChildMenu() override {
-				struct ColorField : MenuColorField {
-					MODULE* module;
-					NVGcolor initColor() override {
-						return module->boxColor;
-					}
-					void returnColor(NVGcolor color) override {
-						module->boxColor = color;
-					}
-				};
-
 				Menu* menu = new Menu;
-				MenuColorLabel* colorLabel = construct<MenuColorLabel>(&MenuColorLabel::fillColor, module->boxColor);
-				menu->addChild(colorLabel);
-				menu->addChild(construct<ColorField>(&ColorField::module, module, &MenuColorField::colorLabel, colorLabel));
+				menu->addChild(construct<MenuColorLabel>(&MenuColorLabel::fillColor, &module->boxColor));
+				menu->addChild(new MenuSeparator);
+				menu->addChild(construct<MenuColorPicker>(&MenuColorPicker::color, &module->boxColor));
+				menu->addChild(new MenuSeparator);
+				menu->addChild(construct<MenuColorField>(&MenuColorField::color, &module->boxColor));
 				return menu;
 			}
 		};
