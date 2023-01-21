@@ -110,90 +110,92 @@ struct SailModule : Module {
 			incdecTarget -= step;
 		}
 
-		ParamWidget* _hoveredWidget = hoveredWidget.get();
-		ParamQuantity* paramQuantity = NULL;
-		if (_hoveredWidget != nullptr) {
-			paramQuantity = _hoveredWidget->getParamQuantity();
-		}
-		// paramQuantity is guaranteed to be existing after this point as we are in the middle of a sample
-
-		if (processDivider.process() && paramQuantity && paramQuantity->module != this) {
-			if (paramQuantity->module->id != hoveredModuleId || paramQuantity->paramId != hoveredParamId) {
-				hoveredModuleId = paramQuantity->module->id;
-				hoveredParamId = paramQuantity->paramId;
-				overlayMessageId++;
-				// Current parameter value
-				valuePrevious = paramQuantity->getScaledValue();
-				inVoltTarget = incdecTarget = slewLimiter.out = valuePrevious;
-				inVoltBase = clamp(inputs[INPUT_VALUE].getVoltage() / 10.f, 0.f, 1.f);
+		if (processDivider.process()) {
+			ParamQuantity* paramQuantity = NULL;
+			ParamWidget* _hoveredWidget = hoveredWidget.get();
+			if (_hoveredWidget != nullptr) {
+				paramQuantity = _hoveredWidget->getParamQuantity();
 			}
+			// paramQuantity is guaranteed to be existing after this point as we are in the middle of a sample
 
-			if (paramQuantity->isBounded()) {
-				float valueNext = valuePrevious;
+			if (paramQuantity && paramQuantity->module != this) {
+				if (paramQuantity->module->id != hoveredModuleId || paramQuantity->paramId != hoveredParamId) {
+					hoveredModuleId = paramQuantity->module->id;
+					hoveredParamId = paramQuantity->paramId;
+					overlayMessageId++;
+					// Current parameter value
+					valuePrevious = paramQuantity->getScaledValue();
+					inVoltTarget = incdecTarget = slewLimiter.out = valuePrevious;
+					inVoltBase = clamp(inputs[INPUT_VALUE].getVoltage() / 10.f, 0.f, 1.f);
+				}
 
-				if (inputs[INPUT_VALUE].isConnected()) {
-					// IN-port
-					float inVolt = clamp(inputs[INPUT_VALUE].getVoltage() / 10.f, 0.f, 1.f);
-					switch (inMode) {
-						case IN_MODE::DIFF: {
-							// Change since last time
-							float d1 = inVolt - inVoltBase;
-							inVoltBase = inVolt;
-							if (fineMod || inputs[INPUT_FINE].getVoltage() >= 1.f) d1 *= FINE;
-							// Actual change of parameter after slew limiting
-							float d2 = inVoltTarget - valuePrevious;
-							// Reapply the sum of both
-							valueNext = clamp(valuePrevious + d1 + d2, 0.f, 1.f);
-							inVoltTarget = valueNext;
-							break;
-						}
-						case IN_MODE::ABSOLUTE: {
-							// Only move on input voltage change
-							if (inVolt != inVoltBase) {
-								valueNext = inVolt;
-								// Detach when target value has been reached
-								if (valuePrevious == inVolt) inVoltBase = inVolt;
+				if (paramQuantity->isBounded()) {
+					float valueNext = valuePrevious;
+
+					if (inputs[INPUT_VALUE].isConnected()) {
+						// IN-port
+						float inVolt = clamp(inputs[INPUT_VALUE].getVoltage() / 10.f, 0.f, 1.f);
+						switch (inMode) {
+							case IN_MODE::DIFF: {
+								// Change since last time
+								float d1 = inVolt - inVoltBase;
+								inVoltBase = inVolt;
+								if (fineMod || inputs[INPUT_FINE].getVoltage() >= 1.f) d1 *= FINE;
+								// Actual change of parameter after slew limiting
+								float d2 = inVoltTarget - valuePrevious;
+								// Reapply the sum of both
+								valueNext = clamp(valuePrevious + d1 + d2, 0.f, 1.f);
+								inVoltTarget = valueNext;
+								break;
 							}
-							break;
+							case IN_MODE::ABSOLUTE: {
+								// Only move on input voltage change
+								if (inVolt != inVoltBase) {
+									valueNext = inVolt;
+									// Detach when target value has been reached
+									if (valuePrevious == inVolt) inVoltBase = inVolt;
+								}
+								break;
+							}
 						}
 					}
-				}
-				else {
-					// INC/DEC-ports
-					incdecTarget = clamp(incdecTarget, 0.f, 1.f);
-					valueNext = incdecTarget;
-				}
+					else {
+						// INC/DEC-ports
+						incdecTarget = clamp(incdecTarget, 0.f, 1.f);
+						valueNext = incdecTarget;
+					}
 
-				// Apply slew limiting
-				float slew = inputs[INPUT_SLEW].isConnected() ? clamp(inputs[INPUT_SLEW].getVoltage(), 0.f, 5.f) : params[PARAM_SLEW].getValue();
-				if (slew > 0.f) {
-					slew = (1.f / slew) * 10.f;
-					slewLimiter.setRiseFall(slew, slew);
-					valueNext = slewLimiter.process(args.sampleTime * processDivider.getDivision(), valueNext);
-				}
+					// Apply slew limiting
+					float slew = inputs[INPUT_SLEW].isConnected() ? clamp(inputs[INPUT_SLEW].getVoltage(), 0.f, 5.f) : params[PARAM_SLEW].getValue();
+					if (slew > 0.f) {
+						slew = (1.f / slew) * 10.f;
+						slewLimiter.setRiseFall(slew, slew);
+						valueNext = slewLimiter.process(args.sampleTime * processDivider.getDivision(), valueNext);
+					}
 
-				// Determine the relative change
-				float delta = valueNext - valuePrevious;
-				if (delta != 0.f) {
-					paramQuantity->moveScaledValue(delta);
-					valueBaseOut = paramQuantity->getScaledValue();
-					if (overlayEnabled && overlayQueue.capacity() > 0) overlayQueue.push(overlayMessageId);
-				}
+					// Determine the relative change
+					float delta = valueNext - valuePrevious;
+					if (delta != 0.f) {
+						paramQuantity->moveScaledValue(delta);
+						valueBaseOut = paramQuantity->getScaledValue();
+						if (overlayEnabled && overlayQueue.capacity() > 0) overlayQueue.push(overlayMessageId);
+					}
 
-				valuePrevious = valueNext;
+					valuePrevious = valueNext;
 
-				if (outputs[OUTPUT].isConnected()) {
-					switch (outMode) {
-						case OUT_MODE::REDUCED: {
-							float v = paramQuantity->getScaledValue();
-							if (v != valueBaseOut) {
- 								outputs[OUTPUT].setVoltage(v * 10.f);
+					if (outputs[OUTPUT].isConnected()) {
+						switch (outMode) {
+							case OUT_MODE::REDUCED: {
+								float v = paramQuantity->getScaledValue();
+								if (v != valueBaseOut) {
+									outputs[OUTPUT].setVoltage(v * 10.f);
+								}
+								break;
 							}
-							break;
-						}
-						case OUT_MODE::FULL: {
-							outputs[OUTPUT].setVoltage(paramQuantity->getScaledValue() * 10.f);
-							break;
+							case OUT_MODE::FULL: {
+								outputs[OUTPUT].setVoltage(paramQuantity->getScaledValue() * 10.f);
+								break;
+							}
 						}
 					}
 				}
@@ -201,6 +203,13 @@ struct SailModule : Module {
 		}
 
 		if (lightDivider.process()) {
+			ParamQuantity* paramQuantity = NULL;
+			ParamWidget* _hoveredWidget = hoveredWidget.get();
+			if (_hoveredWidget != nullptr) {
+				paramQuantity = _hoveredWidget->getParamQuantity();
+			}
+			// paramQuantity is guaranteed to be existing after this point as we are in the middle of a sample
+
 			bool active = paramQuantity && paramQuantity->isBounded() && paramQuantity->module != this;
 			lights[LIGHT_ACTIVE].setSmoothBrightness(active ? 1.f : 0.f, args.sampleTime * lightDivider.getDivision());
 		}
@@ -209,7 +218,7 @@ struct SailModule : Module {
 	void setHoveredWidget(ParamWidget* pw) {
 		if (pw) {
 			if (hoveredModuleId != pw->module->id || hoveredParamId != pw->paramId) {
-				hoveredWidget = pw;
+				hoveredWidget.set(pw);
 			}
 		}
 		else {
