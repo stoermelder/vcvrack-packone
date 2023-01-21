@@ -27,6 +27,8 @@
     - Fixed crash on exiting Rack's after adding MB (#352)
 - Module [TRANSIT](./docs/Transit.md)
     - Allow disabling of "long-press" for changing the number of active snapshots (#354)
+- Module [SAIL](./docs/Sail.md)
+    - Fixed occasional crash (#358)
 
 ## 2.0.beta3
 

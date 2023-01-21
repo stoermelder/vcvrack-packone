@@ -61,7 +61,6 @@ struct SailModule : Module {
 	float valueBaseOut;
 	float valuePrevious;
 
-	bool hoveredWidgetNull = true;
 	WeakPtr<ParamWidget> hoveredWidget;
 	int64_t hoveredModuleId = -1;
 	int hoveredParamId = -1;
@@ -111,11 +110,12 @@ struct SailModule : Module {
 			incdecTarget -= step;
 		}
 
+		ParamWidget* _hoveredWidget = hoveredWidget.get();
 		ParamQuantity* paramQuantity = NULL;
-		// paramQuantity is guaranteed to be existing after this point as we are in the middle of a sample
-		if (!hoveredWidgetNull && hoveredWidget.get() != nullptr) {
-			paramQuantity = hoveredWidget->getParamQuantity();
+		if (_hoveredWidget != nullptr) {
+			paramQuantity = _hoveredWidget->getParamQuantity();
 		}
+		// paramQuantity is guaranteed to be existing after this point as we are in the middle of a sample
 
 		if (processDivider.process() && paramQuantity && paramQuantity->module != this) {
 			if (paramQuantity->module->id != hoveredModuleId || paramQuantity->paramId != hoveredParamId) {
@@ -208,13 +208,12 @@ struct SailModule : Module {
 
 	void setHoveredWidget(ParamWidget* pw) {
 		if (pw) {
-			hoveredWidgetNull = false;
 			if (hoveredModuleId != pw->module->id || hoveredParamId != pw->paramId) {
 				hoveredWidget = pw;
 			}
 		}
 		else {
-			hoveredWidgetNull = true;
+			hoveredWidget.set(nullptr);
 			hoveredModuleId = -1;
 			hoveredParamId = -1;
 		}
@@ -290,7 +289,7 @@ struct SailWidget : ThemedModuleWidget<SailModule>, OverlayMessageProvider {
 	}
 
 	void getOverlayMessage(int id, Message& m) override {
-		if (module->hoveredWidgetNull || module->overlayMessageId != id) return;
+		if (module->hoveredWidget.get() == nullptr || module->overlayMessageId != id) return;
 		ParamWidget* pw = module->hoveredWidget.get();
 		if (pw == nullptr) return;
 		ParamQuantity* paramQuantity = pw->getParamQuantity();
