@@ -53,6 +53,7 @@ struct SailModule : Module {
 	uint16_t overlayMessageId = 0;
 
 	bool fineMod;
+	bool isSwitch;
 
 	float inVoltBase;
 	float inVoltTarget;
@@ -61,9 +62,8 @@ struct SailModule : Module {
 	float valueBaseOut;
 	float valuePrevious;
 
-	WeakPtr<ParamWidget> hoveredWidget;
-	int64_t hoveredModuleId = -1;
-	int hoveredParamId = -1;
+	ParamQuantity* paramQuantity;
+	ParamQuantity* paramQuantityPriv;
 
 	dsp::SchmittTrigger incTrigger;
 	dsp::SchmittTrigger decTrigger;
@@ -92,6 +92,7 @@ struct SailModule : Module {
 
 	void onReset() override {
 		Module::onReset();
+		paramQuantity = NULL;
 		inMode = IN_MODE::DIFF;
 		outMode = OUT_MODE::REDUCED;
 		slewLimiter.reset();
@@ -111,60 +112,53 @@ struct SailModule : Module {
 		}
 
 		if (processDivider.process()) {
-			ParamQuantity* paramQuantity = NULL;
-			ParamWidget* _hoveredWidget = hoveredWidget.get();
-			if (_hoveredWidget != nullptr) {
-				paramQuantity = _hoveredWidget->getParamQuantity();
+			// Copy to second variable as paramQuantity might become NULL through the app thread
+			if (paramQuantity != paramQuantityPriv) {
+				paramQuantityPriv = paramQuantity;
+				overlayMessageId++;
+				// Current parameter value
+				valuePrevious = paramQuantityPriv ? paramQuantityPriv->getScaledValue() : 0.f;
+				inVoltTarget = incdecTarget = slewLimiter.out = valuePrevious;
+				inVoltBase = clamp(inputs[INPUT_VALUE].getVoltage() / 10.f, 0.f, 1.f);
 			}
-			// paramQuantity is guaranteed to be existing after this point as we are in the middle of a sample
 
-			if (paramQuantity && paramQuantity->module != this) {
-				if (paramQuantity->module->id != hoveredModuleId || paramQuantity->paramId != hoveredParamId) {
-					hoveredModuleId = paramQuantity->module->id;
-					hoveredParamId = paramQuantity->paramId;
-					overlayMessageId++;
-					// Current parameter value
-					valuePrevious = paramQuantity->getScaledValue();
-					inVoltTarget = incdecTarget = slewLimiter.out = valuePrevious;
-					inVoltBase = clamp(inputs[INPUT_VALUE].getVoltage() / 10.f, 0.f, 1.f);
-				}
+			if (paramQuantityPriv && paramQuantityPriv->isBounded() && paramQuantityPriv->module != this) {
+				float valueNext = valuePrevious;
 
-				if (paramQuantity->isBounded()) {
-					float valueNext = valuePrevious;
-
-					if (inputs[INPUT_VALUE].isConnected()) {
-						// IN-port
-						float inVolt = clamp(inputs[INPUT_VALUE].getVoltage() / 10.f, 0.f, 1.f);
-						switch (inMode) {
-							case IN_MODE::DIFF: {
-								// Change since last time
-								float d1 = inVolt - inVoltBase;
-								inVoltBase = inVolt;
-								if (fineMod || inputs[INPUT_FINE].getVoltage() >= 1.f) d1 *= FINE;
-								// Actual change of parameter after slew limiting
-								float d2 = inVoltTarget - valuePrevious;
-								// Reapply the sum of both
-								valueNext = clamp(valuePrevious + d1 + d2, 0.f, 1.f);
-								inVoltTarget = valueNext;
-								break;
+				if (inputs[INPUT_VALUE].isConnected()) {
+					// IN-port
+					float inVolt = clamp(inputs[INPUT_VALUE].getVoltage() / 10.f, 0.f, 1.f);
+					switch (inMode) {
+						case IN_MODE::DIFF: {
+							// Change since last time
+							float d1 = inVolt - inVoltBase;
+							inVoltBase = inVolt;
+							if (fineMod || inputs[INPUT_FINE].getVoltage() >= 1.f) d1 *= FINE;
+							// Actual change of parameter after slew limiting
+							float d2 = inVoltTarget - valuePrevious;
+							// Reapply the sum of both
+							valueNext = clamp(valuePrevious + d1 + d2, 0.f, 1.f);
+							inVoltTarget = valueNext;
+							break;
+						}
+						case IN_MODE::ABSOLUTE: {
+							// Only move on input voltage change
+							if (inVolt != inVoltBase) {
+								valueNext = inVolt;
+								// Detach when target value has been reached
+								if (valuePrevious == inVolt) inVoltBase = inVolt;
 							}
-							case IN_MODE::ABSOLUTE: {
-								// Only move on input voltage change
-								if (inVolt != inVoltBase) {
-									valueNext = inVolt;
-									// Detach when target value has been reached
-									if (valuePrevious == inVolt) inVoltBase = inVolt;
-								}
-								break;
-							}
+							break;
 						}
 					}
-					else {
-						// INC/DEC-ports
-						incdecTarget = clamp(incdecTarget, 0.f, 1.f);
-						valueNext = incdecTarget;
-					}
+				}
+				else {
+					// INC/DEC-ports
+					incdecTarget = clamp(incdecTarget, 0.f, 1.f);
+					valueNext = incdecTarget;
+				}
 
+				if (!isSwitch) {
 					// Apply slew limiting
 					float slew = inputs[INPUT_SLEW].isConnected() ? clamp(inputs[INPUT_SLEW].getVoltage(), 0.f, 5.f) : params[PARAM_SLEW].getValue();
 					if (slew > 0.f) {
@@ -176,26 +170,26 @@ struct SailModule : Module {
 					// Determine the relative change
 					float delta = valueNext - valuePrevious;
 					if (delta != 0.f) {
-						paramQuantity->moveScaledValue(delta);
-						valueBaseOut = paramQuantity->getScaledValue();
+						paramQuantityPriv->moveScaledValue(delta);
+						valueBaseOut = paramQuantityPriv->getScaledValue();
 						if (overlayEnabled && overlayQueue.capacity() > 0) overlayQueue.push(overlayMessageId);
 					}
+				}
 
-					valuePrevious = valueNext;
+				valuePrevious = valueNext;
 
-					if (outputs[OUTPUT].isConnected()) {
-						switch (outMode) {
-							case OUT_MODE::REDUCED: {
-								float v = paramQuantity->getScaledValue();
-								if (v != valueBaseOut) {
-									outputs[OUTPUT].setVoltage(v * 10.f);
-								}
-								break;
+				if (outputs[OUTPUT].isConnected()) {
+					switch (outMode) {
+						case OUT_MODE::REDUCED: {
+							float v = paramQuantityPriv->getScaledValue();
+							if (v != valueBaseOut) {
+ 								outputs[OUTPUT].setVoltage(v * 10.f);
 							}
-							case OUT_MODE::FULL: {
-								outputs[OUTPUT].setVoltage(paramQuantity->getScaledValue() * 10.f);
-								break;
-							}
+							break;
+						}
+						case OUT_MODE::FULL: {
+							outputs[OUTPUT].setVoltage(paramQuantityPriv->getScaledValue() * 10.f);
+							break;
 						}
 					}
 				}
@@ -203,28 +197,8 @@ struct SailModule : Module {
 		}
 
 		if (lightDivider.process()) {
-			ParamQuantity* paramQuantity = NULL;
-			ParamWidget* _hoveredWidget = hoveredWidget.get();
-			if (_hoveredWidget != nullptr) {
-				paramQuantity = _hoveredWidget->getParamQuantity();
-			}
-			// paramQuantity is guaranteed to be existing after this point as we are in the middle of a sample
-
-			bool active = paramQuantity && paramQuantity->isBounded() && paramQuantity->module != this;
+			bool active = paramQuantityPriv && paramQuantityPriv->isBounded() && paramQuantityPriv->module != this;
 			lights[LIGHT_ACTIVE].setSmoothBrightness(active ? 1.f : 0.f, args.sampleTime * lightDivider.getDivision());
-		}
-	}
-
-	void setHoveredWidget(ParamWidget* pw) {
-		if (pw) {
-			if (hoveredModuleId != pw->module->id || hoveredParamId != pw->paramId) {
-				hoveredWidget.set(pw);
-			}
-		}
-		else {
-			hoveredWidget.set(nullptr);
-			hoveredModuleId = -1;
-			hoveredParamId = -1;
 		}
 	}
 
@@ -284,11 +258,19 @@ struct SailWidget : ThemedModuleWidget<SailModule>, OverlayMessageProvider {
 	void step() override {
 		ThemedModuleWidget<SailModule>::step();
 		if (!module) return;
-		module->fineMod = APP->window->getMods() & GLFW_MOD_SHIFT;
 
 		Widget* w = APP->event->getHoveredWidget();
-		ParamWidget* pw = dynamic_cast<ParamWidget*>(w);
-		module->setHoveredWidget(pw);
+		if (!w) { module->paramQuantity = NULL; return; }
+		ParamWidget* p = dynamic_cast<ParamWidget*>(w);
+		if (!p) { module->paramQuantity = NULL; return; }
+		ParamQuantity* q = p->getParamQuantity();
+		if (!q) { module->paramQuantity = NULL; return; }
+		
+		Switch* sw = dynamic_cast<Switch*>(p);
+
+		module->paramQuantity = q;
+		module->fineMod = APP->window->getMods() & GLFW_MOD_SHIFT;
+		module->isSwitch = sw != NULL;
 	}
 
 	int nextOverlayMessageId() override {
@@ -298,10 +280,8 @@ struct SailWidget : ThemedModuleWidget<SailModule>, OverlayMessageProvider {
 	}
 
 	void getOverlayMessage(int id, Message& m) override {
-		if (module->hoveredWidget.get() == nullptr || module->overlayMessageId != id) return;
-		ParamWidget* pw = module->hoveredWidget.get();
-		if (pw == nullptr) return;
-		ParamQuantity* paramQuantity = pw->getParamQuantity();
+		if (module->overlayMessageId != id) return;
+		ParamQuantity* paramQuantity = module->paramQuantityPriv;
 		if (!paramQuantity) return;
 
 		m.title = paramQuantity->getDisplayValueString() + paramQuantity->getUnit();
