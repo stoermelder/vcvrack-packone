@@ -135,6 +135,9 @@ static ModuleWidget* chooseModel(plugin::Model* model) {
 	assert(moduleWidget);
 	APP->scene->rack->addModuleAtMouse(moduleWidget);
 
+	// Load template preset
+	moduleWidget->loadTemplate();
+
 	// Push ModuleAdd history action
 	history::ModuleAdd* h = new history::ModuleAdd;
 	h->name = "create module";

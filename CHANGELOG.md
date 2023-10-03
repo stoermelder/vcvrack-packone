@@ -25,6 +25,7 @@
     - Added HSL color picker
 - Module [MB](./docs/Mb.md)
     - Fixed crash on exiting Rack's after adding MB (#352)
+    - Added missing template loading after adding a module (#369)
 - Module [TRANSIT](./docs/Transit.md)
     - Allow disabling of "long-press" for changing the number of active snapshots (#354)
 - Module [SAIL](./docs/Sail.md)
