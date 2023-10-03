@@ -26,26 +26,26 @@ struct SeqStepParamQuantity : ParamQuantity {
 			switch (module->seq.outCvMode) {
 				case OUT_CV_MODE::BI_10V:
 				case OUT_CV_MODE::BI_5V:
-				case OUT_CV_MODE::BI_1V: return getSmoothValue() * 2.f - 1.f;
+				case OUT_CV_MODE::BI_1V: return getValue() * 2.f - 1.f;
 				case OUT_CV_MODE::UNI_10V:
 				case OUT_CV_MODE::UNI_5V:
 				case OUT_CV_MODE::UNI_3V:
 				case OUT_CV_MODE::UNI_2V:
 				case OUT_CV_MODE::UNI_1V:
-				default: return getSmoothValue();
+				default: return getValue();
 			}
 		}
 		else {
 			switch (module->seq.outCvMode) {
-				case OUT_CV_MODE::BI_10V: return getSmoothValue() * 20.f - 10.f;
-				case OUT_CV_MODE::BI_5V: return getSmoothValue() * 10.f - 5.f;
-				case OUT_CV_MODE::BI_1V: return getSmoothValue() * 2.f - 1.f;
-				case OUT_CV_MODE::UNI_10V: return getSmoothValue() * 10.f;
-				case OUT_CV_MODE::UNI_5V: return getSmoothValue() * 5.f;
-				case OUT_CV_MODE::UNI_3V: return getSmoothValue() * 3.f;
-				case OUT_CV_MODE::UNI_2V: return getSmoothValue() * 2.f;
+				case OUT_CV_MODE::BI_10V: return getValue() * 20.f - 10.f;
+				case OUT_CV_MODE::BI_5V: return getValue() * 10.f - 5.f;
+				case OUT_CV_MODE::BI_1V: return getValue() * 2.f - 1.f;
+				case OUT_CV_MODE::UNI_10V: return getValue() * 10.f;
+				case OUT_CV_MODE::UNI_5V: return getValue() * 5.f;
+				case OUT_CV_MODE::UNI_3V: return getValue() * 3.f;
+				case OUT_CV_MODE::UNI_2V: return getValue() * 2.f;
 				case OUT_CV_MODE::UNI_1V: 
-				default: return getSmoothValue();
+				default: return getValue();
 			}
 		}
 	}
