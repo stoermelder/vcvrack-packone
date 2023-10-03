@@ -1,6 +1,6 @@
 RACK_DIR ?= ../..
 
-SOURCES += $(wildcard src/*.cpp) $(wildcard src/mb/*.cpp) $(wildcard src/drivers/*.cpp)
+SOURCES += $(wildcard src/*.cpp) $(wildcard src/mb/*.cpp) $(wildcard src/drivers/*.cpp) src/elk/elk.c
 
 DISTRIBUTABLES += $(wildcard LICENSE*) res presets
 
@@ -20,4 +20,4 @@ endif
 	@# Copy distributables
 	cp -R $(DISTRIBUTABLES) dist/$(SLUG)/
 	@# Create vcvplugin package
-	cd dist && tar -c $(SLUG) | zstd -$(ZSTD_COMPRESSION_LEVEL) -o "$(SLUG)"-"$(VERSION)"-$(ARCH_OS_NAME).vcvplugin
+	cd dist && tar -c $(SLUG) | zstd -$(ZSTD_COMPRESSION_LEVEL) -o "$(SLUG)"-"$(VERSION)"-$(ARCH_NAME).vcvplugin
