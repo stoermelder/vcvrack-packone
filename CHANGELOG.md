@@ -29,6 +29,8 @@
     - Allow disabling of "long-press" for changing the number of active snapshots (#354)
 - Module [SAIL](./docs/Sail.md)
     - Fixed occasional crash (#358)
+- Module [SPIN](./docs/Spin.md)
+    - Fixed middle mouse button handling in Rack v2 (#372)
 
 ## 2.0.beta3
 

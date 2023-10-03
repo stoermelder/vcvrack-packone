@@ -192,13 +192,13 @@ struct SpinWidget : ThemedModuleWidget<SpinModule> {
 			mwContainer = new SpinContainer;
 			mwContainer->module = module;
 			// This is where the magic happens: add a new widget on top-level to Rack
-			APP->scene->rack->addChild(mwContainer);
+			APP->scene->addChild(mwContainer);
 		}
 	}
 
 	~SpinWidget() {
 		if (module) {
-			APP->scene->rack->removeChild(mwContainer);
+			APP->scene->removeChild(mwContainer);
 			delete mwContainer;
 		}
 	}
