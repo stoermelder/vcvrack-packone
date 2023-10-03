@@ -27,21 +27,21 @@ EOF
 }
 
 un=`uname`
-sdkversion=2.0.6
+sdkversion=2.4.1
 sdk="https://vcvrack.com/downloads/Rack-SDK-${sdkversion}.zip"
 slug=`jq -r '{slug} | .[]' plugin.json `
 
 if [ $un = "Darwin" ]; then
-    runtime="https://vcvrack.com/downloads/Rack-${sdkversion}-mac.zip"
+    runtime="https://vcvrack.com/downloads/Rack-${sdkversion}-mac-x64.zip"
     plugin=plugin.dylib
     mac=true
 fi
 if [ $un = "Linux" ]; then
-    runtime="https://vcvrack.com/downloads/Rack-${sdkversion}-lin.zip"
+    runtime="https://vcvrack.com/downloads/Rack-${sdkversion}-lin-x64.zip"
     plugin=plugin.so
 fi
 if [ -z "$runtime" ]; then
-    runtime="https://vcvrack.com/downloads/Rack-${sdkversion}-win.zip"
+    runtime="https://vcvrack.com/downloads/Rack-${sdkversion}-win-x64.zip"
     plugin=plugin.dll
 fi
 

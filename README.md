@@ -2,7 +2,7 @@
 
 <!-- Version and License Badges -->
 ![Version](https://img.shields.io/badge/version-2.0.beta2-green.svg?style=flat-square)
-![Rack SDK](https://img.shields.io/badge/Rack--SDK-2.1.0-red.svg?style=flat-square)
+![Rack SDK](https://img.shields.io/badge/Rack--SDK-2.4.1-red.svg?style=flat-square)
 ![License](https://img.shields.io/badge/license-GPLv3+-blue.svg?style=flat-square)
 ![Language](https://img.shields.io/badge/language-C++-yellow.svg?style=flat-square)
 
