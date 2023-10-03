@@ -761,7 +761,6 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 		}
 		inChange = false;
 
-		BASE::idFixClearMap();
 		BASE::dataFromJson(rootJ);
 		Module::params[PARAM_RW].setValue(0.f);
 

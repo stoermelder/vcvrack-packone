@@ -96,10 +96,17 @@ struct EightFaceMk2Base : Module, StripIdFixModule {
 				json_t* vJ;
 				size_t j;
 				json_array_foreach(slotJ, j, vJ) {
-					preset[presetIndex].push_back(json_deep_copy(vJ));
+					vJ = json_deep_copy(vJ);
+					json_t* idJ = json_object_get(vJ, "id");
+					int64_t moduleId = json_integer_value(idJ);
+					moduleId = idFix(moduleId);
+					json_object_set(vJ, "id", json_integer(moduleId));
+					preset[presetIndex].push_back(vJ);
 				}
 			}
 		}
+
+		idFixClearMap();
 	}
 };
 
