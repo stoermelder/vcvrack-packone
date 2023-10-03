@@ -57,16 +57,18 @@ struct GripModule : CVMapModuleBase<MAX_CHANNELS> {
 				ParamQuantity* paramQuantity = getParamQuantity(i);
 				if (paramQuantity == NULL) continue;
 
-				// Set ParamQuantity
-				//paramQuantity->setScaledValue(lastValue[i]);
-				float vScaled = math::rescale(lastValue[i], 0.f, 1.f, paramQuantity->getMinValue(), paramQuantity->getMaxValue());
-				paramQuantity->getParam()->setValue(vScaled);
+				if (paramQuantity->getScaledValue() != lastValue[i]) {
+					// Set ParamQuantity
+					paramQuantity->setScaledValue(lastValue[i]);
+				}
 			}
 		}
 
 		if (lightDivider.process()) {
 			lights[LIGHT_BIND].setBrightness(learningId >= 0 ? 1.f : 0.f);
 		}
+
+		CVMapModuleBase<MAX_CHANNELS>::process(args);
 	}
 
 	void commitLearn() override {

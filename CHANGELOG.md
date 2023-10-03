@@ -23,6 +23,8 @@
     - Added HSL color picker for bound modules' box
 - Module [GLUE](./docs/Glue.md)
     - Added HSL color picker
+- Module [GRIP](./docs/Grip.md)
+    - Fixed broken parameter locking (#360)
 - Module [MB](./docs/Mb.md)
     - Fixed crash on exiting Rack's after adding MB (#352)
     - Added missing template loading after adding a module (#369)
