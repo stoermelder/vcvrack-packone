@@ -80,7 +80,7 @@ struct RotorAModule : Module {
 
 		float mod = clamp(inputs[MOD_INPUT].getVoltage(), 0.f, 10.f);
 		float mod_p = mod / channelsSplit;
-		int mod_c = floor(mod_p);
+		int mod_c = std::min(std::max((int)floor(mod_p), 0), 14);
 		float mod_p2 = mod_p - (float)mod_c;
 		float mod_p1 = 1.f - mod_p2;
 
