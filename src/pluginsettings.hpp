@@ -2,7 +2,7 @@
 
 
 struct StoermelderSettings {
-	int panelThemeDefault = 0;
+	int panelThemeDefault = -1;
 
 	json_t* mbModelsJ;
 	float mbV1zoom = 0.85f;

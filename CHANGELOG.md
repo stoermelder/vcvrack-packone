@@ -37,6 +37,7 @@
     - Fixed crash in rare cases (Surge-modules) (#366)
 - Module [SPIN](./docs/Spin.md)
     - Fixed middle mouse button handling in Rack v2 (#372)
+- Added panel option to follow Rack's dark panel setting
 
 ## 2.0.beta3
 

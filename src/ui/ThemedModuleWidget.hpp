@@ -60,18 +60,6 @@ struct ThemedModuleWidget : BASE {
 			}
 
 			Menu* createChildMenu() override {
-				struct PanelThemeItem : MenuItem {
-					MODULE* module;
-					int theme;
-					void onAction(const event::Action& e) override {
-						module->panelTheme = theme;
-					}
-					void step() override {
-						rightText = module->panelTheme == theme ? "✔" : "";
-						MenuItem::step();
-					}
-				};
-
 				struct PanelThemeDefaultItem : MenuItem {
 					int theme;
 					void onAction(const event::Action& e) override {
@@ -85,11 +73,22 @@ struct ThemedModuleWidget : BASE {
 				};
 
 				Menu* menu = new Menu;
-				menu->addChild(construct<PanelThemeItem>(&MenuItem::text, "Blue", &PanelThemeItem::module, module, &PanelThemeItem::theme, 0));
-				menu->addChild(construct<PanelThemeItem>(&MenuItem::text, "Dark", &PanelThemeItem::module, module, &PanelThemeItem::theme, 1));
+				menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem("Blue", &module->panelTheme, 0));
+				menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem("Dark", &module->panelTheme, 1));
 				menu->addChild(new MenuSeparator);
 				menu->addChild(construct<PanelThemeDefaultItem>(&MenuItem::text, "Blue as default", &PanelThemeDefaultItem::theme, 0));
 				menu->addChild(construct<PanelThemeDefaultItem>(&MenuItem::text, "Dark as default", &PanelThemeDefaultItem::theme, 1));
+				menu->addChild(new MenuSeparator);
+				menu->addChild(createBoolMenuItem("Use Rack setting", "",
+					[=]() {
+						return module->panelTheme == -1;
+					}, 
+					[=](bool b) {
+						pluginSettings.panelThemeDefault = -1;
+						pluginSettings.saveToJson();
+						module->panelTheme = -1;
+					}
+				));
 				return menu;
 			}
 		};
@@ -100,9 +99,17 @@ struct ThemedModuleWidget : BASE {
 	}
 
 	void step() override {
-		if (module && module->panelTheme != panelTheme) {
-			panelTheme = module->panelTheme;
-			BASE::setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, panel())));
+		if (module) {
+			if (module->panelTheme == -1) {
+				if ((int)settings::preferDarkPanels != panelTheme) {
+					panelTheme = (int)settings::preferDarkPanels;
+					BASE::setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, panel())));
+				}
+			}
+			else if (module->panelTheme != panelTheme) {
+				panelTheme = module->panelTheme;
+				BASE::setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, panel())));
+			}
 		}
 		BASE::step();
 	}
