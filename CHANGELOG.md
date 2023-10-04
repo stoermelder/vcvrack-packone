@@ -35,6 +35,8 @@
     - Fixed occasional crash (#358)
 - Module [STRIP](./docs/Strip.md)
     - Fixed crash in rare cases (Surge-modules) (#366)
+- Module [STROKE](./docs/Stroke.md)
+    - Added commands "Zoom to specific module" and "Zoom to specific module (smooth)" (#357)
 - Module [SPIN](./docs/Spin.md)
     - Fixed middle mouse button handling in Rack v2 (#372)
 - Added panel option to follow Rack's dark panel setting

@@ -35,6 +35,10 @@ The module also supports mouse-button events: If your mouse has more than three 
   Centers the module on the screen which is currently hovered by the mouse pointer. The zoom level can be user-defined in the context menu.
 - **Zoom level to module (smooth)** (added in v1.9.0)  
   Same as "Zoom level to module" but changes the view smoothly.
+- **Zoom to specific module** (added in v2.0.0)  
+  Centers a specific module of the patch on the screen. Before this command can be used a module has to be "learned" by the option in the context sub-menu and pointing to a module. While learning a module is active the slot display turns red temporarily.
+- **Zoom to specific module (smooth)** (added in v2.0.0)  
+  Same as "Zoom to specific module" but changes the view smoothly.
 - **Zoom out**  
   Zooms out the current view so that everything fits on the screen.
 - **Zoom out (smooth)** (added in v1.9.0)  
@@ -123,3 +127,4 @@ The module also supports mouse-button events: If your mouse has more than three 
     - Improved behavior of parameter copy/paste commands (#273)
 - v2.0.0
     - Added commands "Add random module", "Save module preset" and "Save module default preset" (#345)
+    - Added commands "Zoom to specific module" and "Zoom to specific module (smooth)" (#357)
