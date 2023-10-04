@@ -21,6 +21,7 @@
 - Module [8FACE mk2](./docs/EightFaceMk2.md)
     - Allow disabling of "long-press" for changing the number of active slots (#354)
     - Added HSL color picker for bound modules' box
+    - Fixed broken module-id mapping when adding using STRIP or STRIP++
 - Module [GLUE](./docs/Glue.md)
     - Added HSL color picker
 - Module [GRIP](./docs/Grip.md)
@@ -32,6 +33,8 @@
     - Allow disabling of "long-press" for changing the number of active snapshots (#354)
 - Module [SAIL](./docs/Sail.md)
     - Fixed occasional crash (#358)
+- Module [STRIP](./docs/Strip.md)
+    - Fixed crash in rare cases (Surge-modules) (#366)
 - Module [SPIN](./docs/Spin.md)
     - Fixed middle mouse button handling in Rack v2 (#372)
 
