@@ -136,7 +136,8 @@ struct StripModule : StripModuleBase {
 	}
 
 	void groupDisable(bool val, bool useHistory) {
-		taskWorker.work([=]() { groupDisableWorker(val, useHistory); });
+		//taskWorker.work([=]() { groupDisableWorker(val, useHistory); });
+		taskWorker.work([=]() { groupDisableWorker(val, false); });
 	}
 
 	/** 
@@ -162,11 +163,6 @@ struct StripModule : StripModuleBase {
 				// This is what "Module.hpp" says about bypass:
 				// "Module subclasses should not read/write this variable."
 				APP->engine->bypassModule(m->rightExpander.module, val);
-				// Clear outputs and set to 1 channel
-				for (Output& output : m->rightExpander.module->outputs) {
-					// This zeros all voltages, but the channel is set to 1 if connected
-					output.setChannels(0);
-				}
 
 				if (useHistory) {
 					// history::ModuleBypass
@@ -188,11 +184,6 @@ struct StripModule : StripModuleBase {
 				// This is what "Module.hpp" says about bypass:
 				// "Module subclasses should not read/write this variable."
 				APP->engine->bypassModule(m->leftExpander.module, val);
-				// Clear outputs and set to 1 channel
-				for (Output& output : m->leftExpander.module->outputs) {
-					// This zeros all voltages, but the channel is set to 1 if connected
-					output.setChannels(0);
-				}
 
 				if (useHistory) {
 					// history::ModuleBypass
