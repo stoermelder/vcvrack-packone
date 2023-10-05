@@ -77,7 +77,7 @@ struct StripPpWidget : StripWidgetBase<StripPpModule> {
 		}
 
 		void onHoverKey(const event::HoverKey& e) override {
-			if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == (GLFW_MOD_SHIFT | RACK_MOD_CTRL) {
+			if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == (GLFW_MOD_SHIFT | RACK_MOD_CTRL)) {
 				switch (e.key) {
 					case GLFW_KEY_V:
 						mw->groupSelectionPasteClipboard();
