@@ -30,8 +30,8 @@ struct StripBayModule : Strip::StripBayBase {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		for (size_t i = 0; i < PORTS; i++) {
-			configInput(INPUT + i, string::f("Patchbay %lli", i + 1));
-			configOutput(OUTPUT + i, string::f("Patchbay %lli", i + 1));
+			configInput(INPUT + i, string::f("Patchbay %llu", i + 1));
+			configOutput(OUTPUT + i, string::f("Patchbay %llu", i + 1));
 		}
 		onReset();
 	}
