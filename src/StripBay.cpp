@@ -4,7 +4,7 @@
 namespace StoermelderPackOne {
 namespace StripBay {
 
-template <size_t PORTS>
+template <int PORTS>
 struct StripBayModule : Strip::StripBayBase {
 	enum ParamIds {
 		NUM_PARAMS
@@ -29,15 +29,15 @@ struct StripBayModule : Strip::StripBayBase {
 	StripBayModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		for (size_t i = 0; i < PORTS; i++) {
-			configInput(INPUT + i, string::f("Patchbay %llu", i + 1));
-			configOutput(OUTPUT + i, string::f("Patchbay %llu", i + 1));
+		for (int i = 0; i < PORTS; i++) {
+			configInput(INPUT + i, string::f("Patchbay %i", i + 1));
+			configOutput(OUTPUT + i, string::f("Patchbay %i", i + 1));
 		}
 		onReset();
 	}
 
 	void process(const ProcessArgs& args) override {
-		for (size_t i = 0; i < PORTS; i++) {
+		for (int i = 0; i < PORTS; i++) {
 			outputs[OUTPUT + i].writeVoltages(inputs[INPUT + i].getVoltages());
 			outputs[OUTPUT + i].setChannels(inputs[INPUT + i].getChannels());
 		}

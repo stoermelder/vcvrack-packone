@@ -1320,7 +1320,7 @@ struct KeyDisplay : StoermelderLedDisplay {
 								KeyContainer<PORTS>* _keyContainer = keyContainer;
 								std::string* _data = &keyContainer->module->keys[idx].data;
 								auto callback = [_keyContainer,_data](ModuleWidget* mw, Vec pos) {
-									*_data = string::f("%lli", mw->module->id);
+									*_data = string::f("%lld", (long long)mw->module->getId());
 									_keyContainer->learnIdx = _keyContainer->learnIdxEx = -1;
 								};
 								keyContainer->moduleSelectProcessor.startLearn(callback);
@@ -1339,7 +1339,7 @@ struct KeyDisplay : StoermelderLedDisplay {
 									std::string name = mw->model->plugin->brand + " " + mw->module->model->name;
 									menu->addChild(new MenuSeparator);
 									menu->addChild(construct<MenuLabel>(&MenuLabel::text, name));
-									menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("ID %lli", mw->module->id)));
+									menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("ID %lld", (long long)mw->module->getId())));
 								}
 							}
 
