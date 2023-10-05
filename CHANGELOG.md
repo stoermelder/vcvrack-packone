@@ -35,6 +35,8 @@
     - Fixed occasional crash (#358)
 - Module [STRIP](./docs/Strip.md)
     - Fixed crash in rare cases (Surge-modules) (#366)
+- Module [STRIP++](./docs/StripPp.md)
+    - fixed wrong hotkey modifier on Mac (Ctrl instead of Cmd)
 - Module [STROKE](./docs/Stroke.md)
     - Added commands "Zoom to specific module" and "Zoom to specific module (smooth)" (#357)
 - Module [SPIN](./docs/Spin.md)
