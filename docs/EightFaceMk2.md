@@ -123,3 +123,4 @@ Once placed next to 8FACE mk2 the expander works and behaves the same way 8FACE 
     - Added missing reset-handling for "Trigger alternating" and "Trigger shuffle"
     - Allow disabling of "long press" for changing the number of active slots (#354)
     - Added HSL color picker for bound modules' box
+    - Fixed broken module-id mapping when adding using STRIP or STRIP++

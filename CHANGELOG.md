@@ -29,8 +29,8 @@
 - Module [MB](./docs/Mb.md)
     - Fixed crash on exiting Rack's after adding MB (#352)
     - Added missing template loading after adding a module (#369)
-- Module [TRANSIT](./docs/Transit.md)
-    - Allow disabling of "long-press" for changing the number of active snapshots (#354)
+- Module [ROTOR mod A](./docs/RotorA.md)
+    - Fixed occasional crashes (#365)
 - Module [SAIL](./docs/Sail.md)
     - Fixed occasional crash (#358)
 - Module [STRIP](./docs/Strip.md)
@@ -39,6 +39,8 @@
     - Added commands "Zoom to specific module" and "Zoom to specific module (smooth)" (#357)
 - Module [SPIN](./docs/Spin.md)
     - Fixed middle mouse button handling in Rack v2 (#372)
+- Module [TRANSIT](./docs/Transit.md)
+    - Allow disabling of "long-press" for changing the number of active snapshots (#354)
 - Added panel option to follow Rack's dark panel setting
 
 ## 2.0.beta3

@@ -82,6 +82,7 @@ The file-format "vcvss" for storing strips is very close to Rack's own format fo
     - Fixed high CPU usage in High/Low-mode for bypass
     - Remember last used folder for strips and selections on dialogs (#307)
     - "randomizeEnabled" of parameters is respected when randomizing (#349)
+    - Fixed crash in rare cases (Surge-modules) (#366)
 
 # stoermelder STRIP-BAY
 
