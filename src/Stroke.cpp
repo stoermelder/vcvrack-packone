@@ -1341,6 +1341,7 @@ struct KeyDisplay : StoermelderLedDisplay {
 									menu->addChild(new MenuSeparator);
 									menu->addChild(construct<MenuLabel>(&MenuLabel::text, name));
 									menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("ID %lld", (long long)mw->module->getId())));
+									menu->addChild(createMenuItem("Center module", "", [mw]() { StoermelderPackOne::Rack::ViewportCenter{mw}; }));
 								}
 							}
 
@@ -1505,8 +1506,15 @@ struct KeyDisplay : StoermelderLedDisplay {
 								json_error_t error;
 								json_t* oJ = json_loads(ModeMenuItem::module->keys[ModeMenuItem::idx].data.c_str(), 0, &error);
 								std::string name = json_string_value(json_object_get(oJ, "name"));
+								int64_t moduleId = json_integer_value(json_object_get(oJ, "moduleId"));
+								ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
+
 								menu->addChild(new MenuSeparator);
-								menu->addChild(construct<MenuLabel>(&MenuLabel::text, name));
+								if (mw) {
+									menu->addChild(construct<MenuLabel>(&MenuLabel::text, name));
+									menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("ID %lld", (long long)mw->module->getId())));
+									menu->addChild(createMenuItem("Center module", "", [mw]() { StoermelderPackOne::Rack::ViewportCenter{mw}; }));
+								}
 
 								json_t* keyJ = json_object_get(oJ, "key");
 								json_t* modsJ = json_object_get(oJ, "mods");
