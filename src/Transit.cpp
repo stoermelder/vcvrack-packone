@@ -280,26 +280,39 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 			if (resetTrigger.process(Module::inputs[INPUT_RESET].getVoltage())) {
 				resetTimer.reset();
 				switch (slotCvMode) {
-					case SLOTCVMODE::TRIG_FWD:
+					case SLOTCVMODE::TRIG_FWD: {
 						presetLoad(0);
 						break;
-					case SLOTCVMODE::TRIG_REV:
+					}
+					case SLOTCVMODE::TRIG_REV: {
 						presetLoad(presetCount - 1);
 						break;
-					case SLOTCVMODE::TRIG_PINGPONG:
+					}
+					case SLOTCVMODE::TRIG_PINGPONG: {
 						slotCvModeDir = 1;
 						presetLoad(0);
 						break;
-					case SLOTCVMODE::TRIG_ALT:
+					}
+					case SLOTCVMODE::TRIG_ALT: {
 						slotCvModeDir = 1;
 						slotCvModeAlt = 0;
 						presetLoad(0);
 						break;
-					case SLOTCVMODE::TRIG_SHUFFLE:
+					}
+					case SLOTCVMODE::TRIG_SHUFFLE: {
 						slotCvModeShuffle.clear();
+						for (int i = 0; i < presetCount; i++) {
+							slotCvModeShuffle.push_back(i);
+						}
+						std::random_shuffle(std::begin(slotCvModeShuffle), std::end(slotCvModeShuffle));
+						int p = std::min(std::max(0, slotCvModeShuffle.back()), presetCount - 1);
+						slotCvModeShuffle.pop_back();
+						presetLoad(p);
 						break;
-					default:
+					}
+					default: {
 						break;
+					}
 				}
 			} 
 			else {
