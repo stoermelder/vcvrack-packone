@@ -294,19 +294,21 @@ struct MidiKeyModule : Module {
 				// Skip duplicate events
 				if ((value > 0 && slot[id].active) || (value == 0 && !slot[id].active))
 					return;
-				event::HoverKey e;
-				e.key = slot[id].key;
-				e.scancode = glfwGetKeyScancode(e.key);
-				e.keyName = glfwGetKeyName(e.key, e.scancode);
-				e.action = value > 0 ? GLFW_PRESS : GLFW_RELEASE;
-				e.mods = 0;
-				if (slot[ID_CTRL].active || (slot[id].mods & RACK_MOD_CTRL))
-					e.mods = e.mods | RACK_MOD_CTRL;
-				if (slot[ID_ALT].active || (slot[id].mods & GLFW_MOD_ALT))
-					e.mods = e.mods | GLFW_MOD_ALT;
-				if (slot[ID_SHIFT].active || (slot[id].mods & GLFW_MOD_SHIFT))
-					e.mods = e.mods | GLFW_MOD_SHIFT;
-				keyEventQueue.push(std::make_tuple(e, slot[id].moduleId));
+				if (slot[id].key != -1) {
+					event::HoverKey e;
+					e.key = slot[id].key;
+					e.scancode = glfwGetKeyScancode(e.key);
+					e.keyName = glfwGetKeyName(e.key, e.scancode);
+					e.action = value > 0 ? GLFW_PRESS : GLFW_RELEASE;
+					e.mods = 0;
+					if (slot[ID_CTRL].active || (slot[id].mods & RACK_MOD_CTRL))
+						e.mods = e.mods | RACK_MOD_CTRL;
+					if (slot[ID_ALT].active || (slot[id].mods & GLFW_MOD_ALT))
+						e.mods = e.mods | GLFW_MOD_ALT;
+					if (slot[ID_SHIFT].active || (slot[id].mods & GLFW_MOD_SHIFT))
+						e.mods = e.mods | GLFW_MOD_SHIFT;
+					keyEventQueue.push(std::make_tuple(e, slot[id].moduleId));
+				}
 				slot[id].active = value > 0;
 				return;
 			}
