@@ -18,7 +18,7 @@ struct LogDisplay : LedTextDisplay {
 		LedTextDisplay::step();
 		if (dirty) {
 			text = "";
-			size_t size = std::min(buffer->size(), (size_t)(box.size.x / fontSize - 1));
+			size_t size = std::min(buffer->size(), (size_t)(box.size.x / fontSize) + 1);
 			size_t i = 0;
 			for (std::tuple<float, std::string> s : *buffer) {
 				if (i >= size) break;
