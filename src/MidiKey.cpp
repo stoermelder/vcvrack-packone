@@ -2,6 +2,7 @@
 #include "components/MidiWidget.hpp"
 #include "ui/keyboard.hpp"
 #include "ui/ModuleSelectProcessor.hpp"
+#include "ui/ViewportHelper.hpp"
 
 namespace StoermelderPackOne {
 namespace MidiKey {

@@ -5,6 +5,7 @@
 #include "components/MenuColorField.hpp"
 #include "components/MenuColorPicker.hpp"
 #include "ui/ModuleSelectProcessor.hpp"
+#include "ui/ViewportHelper.hpp"
 #include "EightFace.hpp"
 #include "EightFaceMk2Base.hpp"
 #include <random>

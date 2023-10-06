@@ -1,4 +1,5 @@
 #include "plugin.hpp"
+#include "ui/ViewportHelper.hpp"
 
 namespace StoermelderPackOne {
 namespace Goto {

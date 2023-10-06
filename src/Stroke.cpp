@@ -4,6 +4,7 @@
 #include "components/MenuColorPicker.hpp"
 #include "ui/ModuleSelectProcessor.hpp"
 #include "ui/keyboard.hpp"
+#include "ui/ViewportHelper.hpp"
 
 namespace StoermelderPackOne {
 namespace Stroke {
