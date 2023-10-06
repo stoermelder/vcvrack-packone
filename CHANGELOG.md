@@ -12,7 +12,7 @@
 - Module [PRISMA](./docs/Prisma.md)
     - A wave multiplier/phase shifter inspired by A-137-2
 
-## 2.0.0 (in development)
+## 2.0.beta4 (in development)
 
 ### Fixes and Changes
 
@@ -26,6 +26,8 @@
     - Added HSL color picker
 - Module [GRIP](./docs/Grip.md)
     - Fixed broken parameter locking (#360)
+- Module [GOTO](./docs/Goto.md)
+    - Fixed broken zoom behavior when jumping by buttons on the panel
 - Module [MB](./docs/Mb.md)
     - Fixed crash on exiting Rack's after adding MB (#352)
     - Added missing template loading after adding a module (#369)

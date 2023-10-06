@@ -233,12 +233,16 @@ struct GotoContainer : widget::Widget {
 		}
 	}
 
+	void triggerJump(int i) {
+		module->jumpTrigger = i;
+	}
+
 	void executeJump(int i) {
 		if (module->jumpPoints[i].moduleId >= 0) {
 			ModuleWidget* mw = APP->scene->rack->getModule(module->jumpPoints[i].moduleId);
 			if (mw) {
+				float zoom = !module->ignoreZoom ? module->jumpPoints[i].zoom : std::log2(APP->scene->rackScroll->getZoom());
 				if (module->smoothTransition) {
-					float zoom = !module->ignoreZoom ? module->jumpPoints[i].zoom : std::log2(APP->scene->rackScroll->getZoom());
 					switch (module->jumpPos) {
 						case JUMPPOS::ABSOLUTE:
 							viewportCenterSmooth.trigger(Vec(module->jumpPoints[i].x, module->jumpPoints[i].y), zoom, 1.f / APP->window->getLastFrameDuration());
@@ -247,6 +251,7 @@ struct GotoContainer : widget::Widget {
 							viewportCenterSmooth.trigger(mw, zoom, 1.f / APP->window->getLastFrameDuration());
 							break;
 						case JUMPPOS::MODULE_TOPLEFT:
+							// not implemented
 							break;
 					}
 				}
@@ -256,14 +261,11 @@ struct GotoContainer : widget::Widget {
 							StoermelderPackOne::Rack::ViewportCenter{Vec(module->jumpPoints[i].x, module->jumpPoints[i].y)};
 							break;
 						case JUMPPOS::MODULE_CENTER:
-							StoermelderPackOne::Rack::ViewportCenter{mw};
+							StoermelderPackOne::Rack::ViewportCenter{mw, -1.f, zoom};
 							break;
 						case JUMPPOS::MODULE_TOPLEFT:
-							StoermelderPackOne::Rack::ViewportTopLeft{mw};
+							StoermelderPackOne::Rack::ViewportTopLeft{mw, -1.f, zoom};
 							break;
-					}
-					if (!module->ignoreZoom) {
-						APP->scene->rackScroll->setZoom(std::pow(2.f, module->jumpPoints[i].zoom));
 					}
 				}
 			}
@@ -302,7 +304,7 @@ struct GotoButton : LEDButton {
 				case LongPressButton::NO_PRESS:
 					break;
 				case LongPressButton::SHORT_PRESS:
-					gotoContainer->executeJump(id);
+					gotoContainer->triggerJump(id);
 					break;
 				case LongPressButton::LONG_PRESS:
 					gotoContainer->learnJump(id);

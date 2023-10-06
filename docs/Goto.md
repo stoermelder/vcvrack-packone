@@ -36,3 +36,4 @@ It is possible to trigger a view-port change by CV which is especially useful wi
     - Added "top left" as a modules reference point for jump destination
     - Removed setting "Center module" as the disabled state did not work correctly
     - Fixed crash on patch-loading inside Rack VST (#342)
+    - Fixed broken zoom behavior when jumping by buttons on the panel
