@@ -30,6 +30,7 @@
     - Fixed broken zoom behavior when jumping by buttons on the panel
 - Module [MB](./docs/Mb.md)
     - Fixed crash on exiting Rack's after adding MB (#352)
+    - Fixed wrong hotkey modifier on Mac (Ctrl instead of Cmd) on Space-key
     - Added missing template loading after adding a module (#369)
 - Module [ROTOR mod A](./docs/RotorA.md)
     - Fixed occasional crashes (#365)
