@@ -1118,7 +1118,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 						groupLoadFileDialog(false);
 						e.consume(this);
 					}
-					if ((e.mods & RACK_MOD_MASK) == (GLFW_MOD_SHIFT | GLFW_MOD_CONTROL)) {
+					if ((e.mods & RACK_MOD_MASK) == (GLFW_MOD_SHIFT | RACK_MOD_CTRL)) {
 						groupLoadFileDialog(true);
 						e.consume(this);
 					}

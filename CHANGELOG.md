@@ -38,6 +38,7 @@
     - Fixed occasional crash (#358)
 - Module [STRIP](./docs/Strip.md)
     - Fixed crash in rare cases (Surge-modules) (#366)
+    - Fixed wrong hotkey modifier on Mac (Ctrl instead of Cmd) on Cmd+Shift+L
 - Module [STRIP++](./docs/StripPp.md)
     - Fixed wrong hotkey modifier on Mac (Ctrl instead of Cmd)
 - Module [STROKE](./docs/Stroke.md)

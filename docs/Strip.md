@@ -83,6 +83,7 @@ The file-format "vcvss" for storing strips is very close to Rack's own format fo
     - Remember last used folder for strips and selections on dialogs (#307)
     - "randomizeEnabled" of parameters is respected when randomizing (#349)
     - Fixed crash in rare cases (Surge-modules) (#366)
+    - Fixed wrong hotkey modifier on Mac (Ctrl instead of Cmd) on Cmd+Shift+L
 
 # stoermelder STRIP-BAY
 
