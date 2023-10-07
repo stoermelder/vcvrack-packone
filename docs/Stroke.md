@@ -128,3 +128,4 @@ The module also supports mouse-button events: If your mouse has more than three 
 - v2.0.0
     - Added commands "Add random module", "Save module preset" and "Save module default preset" (#345)
     - Added commands "Zoom to specific module" and "Zoom to specific module (smooth)" (#357)
+    - Fixed wrong hotkey modifier on Mac (Ctrl instead of Cmd)

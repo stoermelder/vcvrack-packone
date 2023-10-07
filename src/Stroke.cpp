@@ -201,7 +201,7 @@ struct StrokeModule : Module {
 			json_t* keyJ = json_array_get(keysJ, i);
 			keys[i].button = json_integer_value(json_object_get(keyJ, "button"));
 			keys[i].key = keyFix(json_integer_value(json_object_get(keyJ, "key")));
-			keys[i].mods = json_integer_value(json_object_get(keyJ, "mods")) & (GLFW_MOD_ALT | GLFW_MOD_CONTROL | GLFW_MOD_SHIFT);
+			keys[i].mods = json_integer_value(json_object_get(keyJ, "mods")) & (GLFW_MOD_ALT | RACK_MOD_CTRL | GLFW_MOD_SHIFT);
 			keys[i].mode = (KEY_MODE)json_integer_value(json_object_get(keyJ, "mode"));
 			keys[i].high = json_boolean_value(json_object_get(keyJ, "high"));
 			json_t* dataJ = json_object_get(keyJ, "data");
@@ -1028,8 +1028,8 @@ struct KeyContainer : Widget {
 	}
 
 	void onButton(const event::Button& e) override {
-		if (module && !module->isBypassed() && (e.button > 2 || (e.mods & (GLFW_MOD_ALT | GLFW_MOD_CONTROL | GLFW_MOD_SHIFT))) != 0) {
-			int e_mods = e.mods & (GLFW_MOD_ALT | GLFW_MOD_CONTROL | GLFW_MOD_SHIFT);
+		if (module && !module->isBypassed() && (e.button > 2 || (e.mods & (GLFW_MOD_ALT | RACK_MOD_CTRL | GLFW_MOD_SHIFT))) != 0) {
+			int e_mods = e.mods & (GLFW_MOD_ALT | RACK_MOD_CTRL | GLFW_MOD_SHIFT);
 
 			if (e.action == GLFW_PRESS) {
 				if (learnIdx >= 0) {
@@ -1072,7 +1072,7 @@ struct KeyContainer : Widget {
 
 	void onHoverKey(const event::HoverKey& e) override {
 		if (module && !module->isBypassed()) {
-			int e_mods = e.mods & (GLFW_MOD_ALT | GLFW_MOD_CONTROL | GLFW_MOD_SHIFT);
+			int e_mods = e.mods & (GLFW_MOD_ALT | RACK_MOD_CTRL | GLFW_MOD_SHIFT);
 			int e_key = keyFix(e.key);
 
 			if (e.action == GLFW_PRESS) {
@@ -1156,7 +1156,7 @@ struct KeyDisplay : StoermelderLedDisplay {
 			color = nvgRGBA(0xef, 0xef, 0xef, 0xff);
 			text = module->keys[idx].key >= 0 ? keyName(module->keys[idx].key) : module->keys[idx].button >= 0 ? string::f("MB %i", module->keys[idx].button + 1) : "";
 			module->lights[StrokeModule<PORTS>::LIGHT_ALT + idx].setBrightness(module->keys[idx].mods & GLFW_MOD_ALT ? 0.7f : 0.f);
-			module->lights[StrokeModule<PORTS>::LIGHT_CTRL + idx].setBrightness(module->keys[idx].mods & GLFW_MOD_CONTROL ? 0.7f : 0.f);
+			module->lights[StrokeModule<PORTS>::LIGHT_CTRL + idx].setBrightness(module->keys[idx].mods & RACK_MOD_CTRL ? 0.7f : 0.f);
 			module->lights[StrokeModule<PORTS>::LIGHT_SHIFT + idx].setBrightness(module->keys[idx].mods & GLFW_MOD_SHIFT ? 0.7f : 0.f);
 		} 
 		StoermelderLedDisplay::step();
@@ -1522,7 +1522,7 @@ struct KeyDisplay : StoermelderLedDisplay {
 									std::string key = keyName(json_integer_value(keyJ));
 									int mods = json_integer_value(modsJ);
 									std::string alt = mods & GLFW_MOD_ALT ? RACK_MOD_ALT_NAME "+" : "";
-									std::string ctrl = mods & GLFW_MOD_CONTROL ? RACK_MOD_CTRL_NAME "+" : "";
+									std::string ctrl = mods & RACK_MOD_CTRL ? RACK_MOD_CTRL_NAME "+" : "";
 									std::string shift = mods & GLFW_MOD_SHIFT ? RACK_MOD_SHIFT_NAME "+" : "";
 									std::string s = string::f("Hotkey: %s%s%s%s", alt.c_str(), ctrl.c_str(), shift.c_str(), key.c_str());
 									menu->addChild(construct<MenuLabel>(&MenuLabel::text, s));
