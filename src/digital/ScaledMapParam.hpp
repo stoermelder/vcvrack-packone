@@ -131,8 +131,16 @@ struct ScaledMapParam {
 		// getValue() is called before setValue() - for proper MIDI feedback
 		if (valueOut == std::numeric_limits<float>::infinity()) value = valueOut = f;
 		// If a parameter is snapped then the returned value of ParaQuantity can't be trusted
-		// -> simply return the input value
-		if (paramQuantity->snapEnabled) f = valueOut;
+		// -> simply return the input value, assuming the value hasn't changed so much that
+		// it changes the value that would be snapped to.
+		if (paramQuantity->snapEnabled) {
+			size_t numSnaps = static_cast<size_t>(paramQuantity->maxValue - paramQuantity->minValue + 1);
+			size_t snapF = static_cast<size_t>(f * numSnaps + 0.5);
+			size_t snapOut = static_cast<size_t>(valueOut * numSnaps + 0.5);
+			if (snapF == snapOut) {
+				f = valueOut;
+			}
+		}
 
 		f = rescale(f, min, max, limitMin, limitMax);
 		f = clamp(f, limitMin, limitMax);
