@@ -16,12 +16,14 @@
 
 ### Fixes and Changes
 
+- Added panel option to follow Rack's dark panel setting
 - Modules [8FACE, 8FACEx2](./docs/EightFace.md)
     - Allow disabling of "long-press" for changing the number of active slots (#354)
 - Module [8FACE mk2](./docs/EightFaceMk2.md)
     - Allow disabling of "long-press" for changing the number of active slots (#354)
     - Added HSL color picker for bound modules' box
     - Fixed broken module-id mapping when adding using STRIP or STRIP++
+    - Fixed crash while exceding 0..10V in Volt-mode (#377)
 - Module [GLUE](./docs/Glue.md)
     - Added HSL color picker
 - Module [GRIP](./docs/Grip.md)
@@ -49,7 +51,6 @@
     - Fixed middle mouse button handling in Rack v2 (#372)
 - Module [TRANSIT](./docs/Transit.md)
     - Allow disabling of "long-press" for changing the number of active snapshots (#354)
-- Added panel option to follow Rack's dark panel setting
 
 ## 2.0.beta3
 

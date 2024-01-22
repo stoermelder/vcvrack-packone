@@ -124,3 +124,4 @@ Once placed next to 8FACE mk2 the expander works and behaves the same way 8FACE 
     - Allow disabling of "long press" for changing the number of active slots (#354)
     - Added HSL color picker for bound modules' box
     - Fixed broken module-id mapping when adding using STRIP or STRIP++
+    - Fixed crash while exceding 0..10V in Volt-mode (#377)
