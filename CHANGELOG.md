@@ -28,6 +28,7 @@
     - Fixed broken parameter locking (#360)
 - Module [GOTO](./docs/Goto.md)
     - Fixed broken zoom behavior when jumping by buttons on the panel
+    - Improved smooth transition speed on long distances (#376)
 - Module [MB](./docs/Mb.md)
     - Fixed crash on exiting Rack's after adding MB (#352)
     - Fixed wrong hotkey modifier on Mac (Ctrl instead of Cmd) on Space-key

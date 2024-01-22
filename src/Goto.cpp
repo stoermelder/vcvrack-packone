@@ -244,28 +244,40 @@ struct GotoContainer : widget::Widget {
 				float zoom = !module->ignoreZoom ? module->jumpPoints[i].zoom : std::log2(APP->scene->rackScroll->getZoom());
 				if (module->smoothTransition) {
 					switch (module->jumpPos) {
-						case JUMPPOS::ABSOLUTE:
+						case JUMPPOS::ABSOLUTE: {
 							viewportCenterSmooth.trigger(Vec(module->jumpPoints[i].x, module->jumpPoints[i].y), zoom, 1.f / APP->window->getLastFrameDuration());
 							break;
-						case JUMPPOS::MODULE_CENTER:
-							viewportCenterSmooth.trigger(mw, zoom, 1.f / APP->window->getLastFrameDuration());
+						}
+						case JUMPPOS::MODULE_CENTER: {
+							//viewportCenterSmooth.trigger(mw, zoom, 1.f / APP->window->getLastFrameDuration());
+							Vec source = APP->scene->rackScroll->offset / APP->scene->rackScroll->getZoom();
+							Vec center = APP->scene->rackScroll->getSize() * (1.f / APP->scene->rackScroll->getZoom()) * 0.5f;
+							Vec p1 = source + center;
+							Vec p2 = mw->getBox().getCenter();
+							float f = sqrt((p1.x - p2.x) * (p1.x - p2.x) + (p1.y - p2.y) * (p1.y - p2.y));
+							viewportCenterSmooth.trigger(mw, zoom, 1.f / APP->window->getLastFrameDuration(), f / 1000.f);
 							break;
-						case JUMPPOS::MODULE_TOPLEFT:
+						}
+						case JUMPPOS::MODULE_TOPLEFT: {
 							// not implemented
 							break;
+						}
 					}
 				}
 				else {
 					switch (module->jumpPos) {
-						case JUMPPOS::ABSOLUTE:
+						case JUMPPOS::ABSOLUTE: {
 							StoermelderPackOne::Rack::ViewportCenter{Vec(module->jumpPoints[i].x, module->jumpPoints[i].y)};
 							break;
-						case JUMPPOS::MODULE_CENTER:
+						}
+						case JUMPPOS::MODULE_CENTER: {
 							StoermelderPackOne::Rack::ViewportCenter{mw, -1.f, zoom};
 							break;
-						case JUMPPOS::MODULE_TOPLEFT:
+						}
+						case JUMPPOS::MODULE_TOPLEFT: {
 							StoermelderPackOne::Rack::ViewportTopLeft{mw, -1.f, zoom};
 							break;
+						}
 					}
 				}
 			}
