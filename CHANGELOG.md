@@ -24,6 +24,7 @@
     - Added HSL color picker for bound modules' box
     - Fixed broken module-id mapping when adding using STRIP or STRIP++
     - Fixed crash while exceding 0..10V in Volt-mode (#377)
+    - Increased maximum number of expanders to 15
 - Module [GLUE](./docs/Glue.md)
     - Added HSL color picker
 - Module [GRIP](./docs/Grip.md)

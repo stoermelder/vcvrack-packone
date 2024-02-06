@@ -128,7 +128,7 @@ Note: These modes are unavailable if _SEL_-port operates in Phase-mode.
 
 ## +T expander
 
-TRANSIT provides 12 snapshot-slots and supports extending this number with +T expanders: The expander must be placed on the right side of TRANSIT. Up to fiveteen instances of +T can be added to one instance of TRANSIT, providing 12 * 16 = 192 snapshot-slots in total.  
+TRANSIT provides 12 snapshot-slots and supports extending this number with +T expanders: The expander must be placed on the right side of TRANSIT. Up to fifeteen instances of +T can be added to one instance of TRANSIT, providing 12 * 16 = 192 snapshot-slots in total.  
 Once placed next to TRANSIT the expander works and behaves the same way TRANSIT does and the setup is done analogously. +T itself provides no further options.
 
 ![+T expander](./Transit-t.gif)

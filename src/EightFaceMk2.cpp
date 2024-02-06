@@ -29,7 +29,7 @@ std::string trim(const std::string& s) {
 	return rtrim(ltrim(s));
 }
 
-const int MAX_EXPANDERS = 7;
+const int MAX_EXPANDERS = 15;
 
 enum class SLOTCVMODE {
 	OFF = -1,

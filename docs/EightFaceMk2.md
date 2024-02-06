@@ -97,7 +97,7 @@ Modes for _CV_ on the contextual menu:
 
 ## +8 expander
 
-8FACE mk2 provides 8 snapshot-slots and supports extending this number with +8 expanders: The expander must be placed on the right side of 8FACE mk2. Up to seven instances of +8 can be added to one instance of 8FACE mk2, providing 8 * 8 = 64 snapshot-slots in total.  
+8FACE mk2 provides 8 snapshot-slots and supports extending this number with +8 expanders: The expander must be placed on the right side of 8FACE mk2. Up to fifeteen instances of +8 can be added to one instance of 8FACE mk2, providing 8 * 16 = 128 snapshot-slots in total.  
 Once placed next to 8FACE mk2 the expander works and behaves the same way 8FACE mk2 does and the setup is done analogously. +8 itself provides no further options.
 
 ![+8 expander](./EightFaceMk2-8.gif)
@@ -125,3 +125,4 @@ Once placed next to 8FACE mk2 the expander works and behaves the same way 8FACE 
     - Added HSL color picker for bound modules' box
     - Fixed broken module-id mapping when adding using STRIP or STRIP++
     - Fixed crash while exceding 0..10V in Volt-mode (#377)
+    - Increased maximum number of expanders to 15
