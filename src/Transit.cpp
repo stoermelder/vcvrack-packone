@@ -10,7 +10,7 @@
 namespace StoermelderPackOne {
 namespace Transit {
 
-const int MAX_EXPANDERS = 7;
+const int MAX_EXPANDERS = 15;
 
 enum class SLOTCVMODE {
 	OFF = -1,

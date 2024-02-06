@@ -51,6 +51,7 @@
     - Fixed middle mouse button handling in Rack v2 (#372)
 - Module [TRANSIT](./docs/Transit.md)
     - Allow disabling of "long-press" for changing the number of active snapshots (#354)
+    - Increased maximum number of expanders to 15 (#381)
 
 ## 2.0.beta3
 
