@@ -280,7 +280,10 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 			if (resetTrigger.process(Module::inputs[INPUT_RESET].getVoltage())) {
 				resetTimer.reset();
 				switch (slotCvMode) {
-					case SLOTCVMODE::TRIG_FWD: {
+					case SLOTCVMODE::TRIG_FWD:
+					case SLOTCVMODE::TRIG_RANDOM:
+					case SLOTCVMODE::TRIG_RANDOM_WALK:
+					case SLOTCVMODE::TRIG_RANDOM_WO_REPEAT: {
 						presetLoad(0);
 						break;
 					}

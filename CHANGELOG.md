@@ -54,6 +54,7 @@
 - Module [TRANSIT](./docs/Transit.md)
     - Allow disabling of "long-press" for changing the number of active snapshots (#354)
     - Increased maximum number of expanders to 15 (#381)
+    - Added missing reset-handling for "Trigger random", "Trigger pseudo-random" and "Trigger random walk"
 
 ## 2.0.beta3
 
