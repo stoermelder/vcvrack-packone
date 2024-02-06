@@ -25,6 +25,7 @@
     - Fixed broken module-id mapping when adding using STRIP or STRIP++
     - Fixed crash while exceding 0..10V in Volt-mode (#377)
     - Increased maximum number of expanders to 15
+    - Added missing reset-handling for "Trigger random", "Trigger pseudo-random" and "Trigger random walk"
 - Module [GLUE](./docs/Glue.md)
     - Added HSL color picker
 - Module [GRIP](./docs/Grip.md)

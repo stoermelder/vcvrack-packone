@@ -121,6 +121,7 @@ Once placed next to 8FACE mk2 the expander works and behaves the same way 8FACE 
     - Added "Bind module (select multiple)" option (#291)
     - Fixed broken reset-behavior for "Trigger forward", "Trigger reverse" and "Trigger pingpong" (#347)
     - Added missing reset-handling for "Trigger alternating" and "Trigger shuffle"
+    - Added missing reset-handling for "Trigger random", "Trigger pseudo-random" and "Trigger random walk"
     - Allow disabling of "long press" for changing the number of active slots (#354)
     - Added HSL color picker for bound modules' box
     - Fixed broken module-id mapping when adding using STRIP or STRIP++
