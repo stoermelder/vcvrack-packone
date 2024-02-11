@@ -49,6 +49,7 @@
 - Module [STROKE](./docs/Stroke.md)
     - Added commands "Zoom to specific module" and "Zoom to specific module (smooth)" (#357)
     - Fixed wrong hotkey modifier on Mac (Ctrl instead of Cmd)
+    - Fixed broken "Zoom to module" and "Zoom toggle" commands (#382)
 - Module [SPIN](./docs/Spin.md)
     - Fixed middle mouse button handling in Rack v2 (#372)
 - Module [TRANSIT](./docs/Transit.md)

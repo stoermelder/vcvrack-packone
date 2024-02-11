@@ -85,7 +85,7 @@ struct ViewportCenter {
 		float oldZoom = APP->scene->rackScroll->getZoom();
 		APP->scene->rackScroll->setZoom(z);
 		APP->scene->rackScroll->setGridOffset((target - viewport * 0.5f - RACK_OFFSET) / RACK_GRID_SIZE);
-		if (zoom == std::numeric_limits<float>::infinity()) {
+		if (zoom == std::numeric_limits<float>::infinity() && zoomToWidget == -1.f) {
 			APP->scene->rackScroll->setZoom(oldZoom);
 		}
 	}
