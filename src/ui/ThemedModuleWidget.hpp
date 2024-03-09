@@ -131,7 +131,7 @@ struct ThemedModuleWidget : BASE {
 
 #ifdef USING_CARDINAL_NOT_RACK
 	static inline int darkModeToTheme() {
-		return settings::darkMode ? 1 : 0;
+		return settings::preferDarkPanels ? 1 : 0;
 	}
 #endif
 
