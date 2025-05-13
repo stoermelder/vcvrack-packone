@@ -1,6 +1,9 @@
-#include "plugin.hpp"
+#pragma once
+#include <rack.hpp>
 
 namespace StoermelderPackOne {
+
+using namespace rack;
 
 template <typename MODULE>
 struct MapParamQuantity : ParamQuantity {

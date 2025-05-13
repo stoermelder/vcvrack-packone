@@ -1,5 +1,6 @@
 #pragma once
-#include "../plugin.hpp"
+#include <rack.hpp>
+#include "LedTextField.hpp"
 
 namespace StoermelderPackOne {
 

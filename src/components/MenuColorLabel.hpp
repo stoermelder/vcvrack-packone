@@ -1,7 +1,9 @@
 #pragma once
-#include "plugin.hpp"
+#include <rack.hpp>
 
 namespace StoermelderPackOne {
+
+using namespace rack;
 
 struct MenuColorLabel : MenuLabel {
 	NVGcolor* fillColor;

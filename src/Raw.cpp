@@ -1,5 +1,6 @@
 #include "plugin.hpp"
 #include "components/Knobs.hpp"
+#include <thread>
 
 /**
 
@@ -185,6 +186,7 @@ struct RawWidget : ThemedModuleWidget<RawModule> {
 	}
 
 	void appendContextMenu(Menu *menu) override {
+#ifndef METAMODULE
 		struct PublicationItem : MenuItem {
 			void onAction(const event::Action& e) override {
 				std::thread t(system::openBrowser, "https://dafx2020.mdw.ac.at/proceedings/papers/DAFx2020_paper_6.pdf");
@@ -193,6 +195,7 @@ struct RawWidget : ThemedModuleWidget<RawModule> {
 		};
 
 		menu->addChild(construct<PublicationItem>(&MenuItem::text, "Publication"));
+#endif
 
 		ThemedModuleWidget<RawModule>::appendContextMenu(menu);
 		RawModule* module = dynamic_cast<RawModule*>(this->module);

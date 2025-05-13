@@ -2,6 +2,7 @@
 #include "components/MenuColorLabel.hpp"
 #include "components/MenuColorField.hpp"
 #include "components/MenuColorPicker.hpp"
+#include "components/LedTextDisplay.hpp"
 #include "ui/ModuleSelectProcessor.hpp"
 #include "ui/keyboard.hpp"
 #include "ui/ViewportHelper.hpp"

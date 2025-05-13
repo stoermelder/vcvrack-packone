@@ -1,14 +1,15 @@
-#include "rack.hpp"
+#pragma once
+#include <rack.hpp>
 #include "components.hpp"
-#include "helpers.hpp"
+#include "pluginhelpers.hpp"
 #include "pluginsettings.hpp"
+#include "ui/ThemedModuleWidget.hpp"
 
 using namespace rack;
 
 
 extern Plugin* pluginInstance;
 
-extern StoermelderSettings pluginSettings;
 
 extern Model* modelCVMap;
 extern Model* modelCVMapCtx;
@@ -69,7 +70,6 @@ extern Model* modelMidiKey;
 extern Model* modelAudioInterface64;
 extern Model* modelMb;
 extern Model* modelMe;
-
 
 namespace StoermelderPackOne {
 

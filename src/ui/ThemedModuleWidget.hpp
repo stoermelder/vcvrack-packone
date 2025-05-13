@@ -1,7 +1,13 @@
-#include "plugin.hpp"
-#include <thread>
+#pragma once
+#include <rack.hpp>
+#include "../pluginhelpers.hpp"
+#include "../pluginsettings.hpp"
+
+extern Plugin* pluginInstance;
 
 namespace StoermelderPackOne {
+
+using namespace rack;
 
 template < typename MODULE, typename BASE = ModuleWidget >
 struct ThemedModuleWidget : BASE {

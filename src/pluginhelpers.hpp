@@ -1,9 +1,11 @@
 #pragma once
-#include "plugin.hpp"
-#include "settings.hpp"
+#include <rack.hpp>
+#include <settings.hpp>
 
 namespace StoermelderPackOne {
 namespace Rack {
+
+using namespace rack;
 
 /** Creates a MenuItem that when hovered, opens a submenu with several MenuItems identified by a map.
 Example:

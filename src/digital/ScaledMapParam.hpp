@@ -1,5 +1,5 @@
 #pragma once
-#include "plugin.hpp"
+#include <rack.hpp>
 
 namespace StoermelderPackOne {
     

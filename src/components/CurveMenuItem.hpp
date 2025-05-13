@@ -1,7 +1,9 @@
 #pragma once
-#include "plugin.hpp"
+#include <rack.hpp>
 
 namespace StoermelderPackOne {
+
+using namespace rack;
 
 struct CurveMenuItem : MenuItem {
     struct CurveQuantity : Quantity {
@@ -101,11 +103,11 @@ struct CurveMenuItem : MenuItem {
             }
 
             void draw(const DrawArgs& args) override {
-                nvgBeginPath(args.vg);
+                //nvgBeginPath(args.vg);
                 nvgStrokeColor(args.vg, rack::color::WHITE);
-                nvgRoundedRect(args.vg, 2.f, 2.f, box.size.x - 4.f, box.size.y - 4.f, 2.f);
-                nvgStroke(args.vg);
-                nvgStrokeWidth(args.vg, 1.0f);
+                //nvgRoundedRect(args.vg, 2.f, 2.f, box.size.x - 4.f, box.size.y - 4.f, 2.f);
+                //nvgStroke(args.vg);
+                //nvgStrokeWidth(args.vg, 1.0f);
 
                 float maxX = box.size.x;
                 float maxY = box.size.y;

@@ -4,6 +4,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <random>
+#include <thread>
 
 namespace StoermelderPackOne {
 namespace EightFace {
