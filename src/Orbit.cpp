@@ -171,7 +171,11 @@ struct OrbitModule : Module {
 
 	void dataFromJson(json_t* rootJ) override {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+#ifndef METAMODULE
 		polyOut = json_boolean_value(json_object_get(rootJ, "polyOut"));
+#else
+		polyOut = false;
+#endif
 		dist = (DISTRIBUTION)json_integer_value(json_object_get(rootJ, "dist"));
 	}
 };
@@ -211,7 +215,9 @@ struct OrbitWidget : ThemedModuleWidget<OrbitModule> {
 			},
 			&module->dist
 		));
+#ifndef METAMODULE
 		menu->addChild(createBoolPtrMenuItem("Polyphonic output", "", &module->polyOut));
+#endif
 	}
 };
 

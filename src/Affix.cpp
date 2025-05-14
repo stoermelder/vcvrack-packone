@@ -88,6 +88,7 @@ struct AffixModule : Module {
 			}
 		}
 
+#ifndef METAMODULE
 		void setDisplayValueString(std::string s) override {
 			AffixModule<CHANNELS>* module = reinterpret_cast<AffixModule<CHANNELS>*>(this->module);
 			switch (module->paramMode) {
@@ -115,6 +116,7 @@ struct AffixModule : Module {
 				}
 			}
 		}
+#endif
 
 		std::string getString() override {
 			AffixModule<CHANNELS>* module = reinterpret_cast<AffixModule<CHANNELS>*>(this->module);

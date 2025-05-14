@@ -5,6 +5,7 @@ Plugin* pluginInstance;
 void init(rack::Plugin* p) {
 	pluginInstance = p;
 
+#ifndef METAMODULE
 	p->addModel(modelCVMap);
 	p->addModel(modelCVMapCtx);
 	p->addModel(modelCVMapMicro);
@@ -64,6 +65,16 @@ void init(rack::Plugin* p) {
 	p->addModel(modelAudioInterface64);
 	p->addModel(modelMb);
 	p->addModel(modelMe);
+#else
+	p->addModel(modelBolt);
+	p->addModel(modelFourRounds);
+	p->addModel(modelMaze);
+	p->addModel(modelMidiStep);
+	p->addModel(modelHive);
+	p->addModel(modelOrbit);
+	p->addModel(modelPile);
+	p->addModel(modelRaw);
+#endif
 
 	pluginSettings.readFromJson();
 }

@@ -11,6 +11,7 @@ using namespace rack;
 extern Plugin* pluginInstance;
 
 
+#ifndef METAMODULE
 extern Model* modelCVMap;
 extern Model* modelCVMapCtx;
 extern Model* modelCVMapMicro;
@@ -70,6 +71,16 @@ extern Model* modelMidiKey;
 extern Model* modelAudioInterface64;
 extern Model* modelMb;
 extern Model* modelMe;
+#else
+extern Model* modelBolt;
+extern Model* modelFourRounds;
+extern Model* modelMaze;
+extern Model* modelMidiStep;
+extern Model* modelHive;
+extern Model* modelOrbit;
+extern Model* modelPile;
+extern Model* modelRaw;
+#endif
 
 namespace StoermelderPackOne {
 

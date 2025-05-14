@@ -23,7 +23,12 @@ struct StoermelderLedDisplay : LightWidget {
 				nvgTextLetterSpacing(args.vg, 0.0);
 				nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
 				nvgFontSize(args.vg, 12);
-				nvgTextBox(args.vg, 0.f, box.size.y / 2.f, box.size.x, text.c_str(), NULL);
+#ifndef METAMODULE
+				float xOffset = 0.f;
+#else
+				float xOffset = 12.f;
+#endif
+				nvgTextBox(args.vg, xOffset, box.size.y / 2.f, box.size.x, text.c_str(), NULL);
 			}
 		}
 	}

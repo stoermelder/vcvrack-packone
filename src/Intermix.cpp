@@ -182,6 +182,7 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 		Module::onReset();
 	}
 
+#ifndef METAMODULE
 	void onRemove() override {
 		// hack for clearing the module-pointers on the expander-chain
 		Module* m = this;
@@ -192,6 +193,7 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 			m = m->rightExpander.module;
 		}
 	}
+#endif
 
 	void process(const ProcessArgs& args) override {
 		ts++;
@@ -675,14 +677,14 @@ struct InputLedDisplay : StoermelderLedDisplay {
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuLabel("Constant voltage"));
 		menu->addChild(createSubmenuItem("Subtract", "",
-			[=](Menu* menu) {
+			[this](Menu* menu) {
 				for (int i = 12; i > 0; i--) {
 					menu->addChild(construct<InputItem>(&MenuItem::text, string::f("-%02i cent", i), &InputItem::module, module, &InputItem::id, id, &InputItem::inMode, (IN_MODE)(24 - i)));
 				}
 			}
 		));
 		menu->addChild(createSubmenuItem("Add", "",
-			[=](Menu* menu) {
+			[this](Menu* menu) {
 				for (int i = 1; i <= 12; i++) {
 					menu->addChild(construct<InputItem>(&MenuItem::text, string::f("+%02i cent", i), &InputItem::module, module, &InputItem::id, id, &InputItem::inMode, (IN_MODE)(24 + i)));
 				}

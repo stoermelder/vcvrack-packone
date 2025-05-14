@@ -154,7 +154,7 @@ struct StoermelderBlackScrew : app::SvgScrew {
 
 struct StoermelderPort : app::SvgPort {
 	StoermelderPort() {
-		setSvg(Svg::load(asset::plugin(pluginInstance, "res/components/Port.svg")));
+		setSvg(APP->window->loadSvg(asset::plugin(pluginInstance, "res/components/Port.svg")));
 		box.size = shadow->box.size = Vec(22.2f, 22.2f);
 	}
 };

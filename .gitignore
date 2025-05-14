@@ -1,0 +1,6 @@
+.vscode
+build
+dist
+metamodule/build
+metamodule/metamodule-plugins
+plugin.dll
