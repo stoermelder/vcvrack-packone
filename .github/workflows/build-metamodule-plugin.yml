@@ -21,7 +21,7 @@ jobs:
     strategy:
         matrix:
           gcc: ['12.3.Rel1']
-    name: "Build firmware on linux"
+    name: "Build plugin on linux"
     runs-on: ubuntu-24.04
     steps:
       - name: Install Arm GNU Toolchain (arm-none-eabi-gcc)
@@ -99,9 +99,6 @@ jobs:
       - uses: actions/download-artifact@v4.1.7
         with:
           path: _artifacts
-      - name: Extract artifact
-        run: |
-          unzip _artifacts/**/*.zip
       - name: Delete old release assets
         uses: mknejp/delete-release-assets@v1
         with:
