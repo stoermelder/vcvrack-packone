@@ -158,7 +158,7 @@ struct StripModule : StripModuleBase {
 		if (mode == MODE::LEFTRIGHT || mode == MODE::RIGHT) {
 			Module* m = this;
 			while (true) {
-				if (!m || m->rightExpander.moduleId < 0 || m->model == modelStripBlock) break;
+				if (!m || m->rightExpander.moduleId < 0) break;
 				if (!m->rightExpander.module) break;
 				// This is what "Module.hpp" says about bypass:
 				// "Module subclasses should not read/write this variable."
@@ -179,7 +179,7 @@ struct StripModule : StripModuleBase {
 		if (mode == MODE::LEFTRIGHT || mode == MODE::LEFT) {
 			Module* m = this;
 			while (true) {
-				if (!m || m->leftExpander.moduleId < 0 || m->model == modelStripBlock) break;
+				if (!m || m->leftExpander.moduleId < 0) break;
 				if (!m->leftExpander.module) break;
 				// This is what "Module.hpp" says about bypass:
 				// "Module subclasses should not read/write this variable."
@@ -216,7 +216,7 @@ struct StripModule : StripModuleBase {
 		if (mode == MODE::LEFTRIGHT || mode == MODE::RIGHT) {
 			Module* m = this;
 			while (true) {
-				if (!m || m->rightExpander.moduleId < 0 || m->model == modelStripBlock) break;
+				if (!m || m->rightExpander.moduleId < 0) break;
 				// Be careful: this function is called from the dsp-thread, but widgets belong
 				// to the app-world!
 
@@ -262,7 +262,7 @@ struct StripModule : StripModuleBase {
 		if (mode == MODE::LEFTRIGHT || mode == MODE::LEFT) {
 			Module* m = this;
 			while (true) {
-				if (!m || m->leftExpander.moduleId < 0 || m->model == modelStripBlock) break;
+				if (!m || m->leftExpander.moduleId < 0) break;
 				// Be careful: this function is called from the dsp-thread, but widgets belong
 				// to the app-world!
 
@@ -473,7 +473,7 @@ struct ExcludeButton : TL1105 {
 		if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::RIGHT) {
 			Module* m = module;
 			while (true) {
-				if (!m || m->rightExpander.moduleId < 0 || m->model == modelStripBlock) break;
+				if (!m || m->rightExpander.moduleId < 0) break;
 				if (m->rightExpander.moduleId == moduleId) {
 					ModuleWidget* mw = APP->scene->rack->getModule(m->rightExpander.moduleId);
 					for (ParamWidget* param : mw->getParams()) {
@@ -494,7 +494,7 @@ struct ExcludeButton : TL1105 {
 		if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::LEFT) {
 			Module* m = module;
 			while (true) {
-				if (!m || m->leftExpander.moduleId < 0 || m->model == modelStripBlock) break;
+				if (!m || m->leftExpander.moduleId < 0) break;
 				if (m->leftExpander.moduleId == moduleId) {
 					ModuleWidget* mw = APP->scene->rack->getModule(m->leftExpander.moduleId);
 					for (ParamWidget* param : mw->getParams()) {
@@ -527,7 +527,7 @@ struct ExcludeButton : TL1105 {
 		if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::RIGHT) {
 			Module* m = module;
 			while (true) {
-				if (!m || m->rightExpander.moduleId < 0 || m->model == modelStripBlock) break;
+				if (!m || m->rightExpander.moduleId < 0) break;
 				modules[m->rightExpander.moduleId] = m;
 				m = m->rightExpander.module;
 			}
@@ -535,7 +535,7 @@ struct ExcludeButton : TL1105 {
 		if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::LEFT) {
 			Module* m = module;
 			while (true) {
-				if (!m || m->leftExpander.moduleId < 0 || m->model == modelStripBlock) break;
+				if (!m || m->leftExpander.moduleId < 0) break;
 				modules[m->leftExpander.moduleId] = m;
 				m = m->leftExpander.module;
 			}
