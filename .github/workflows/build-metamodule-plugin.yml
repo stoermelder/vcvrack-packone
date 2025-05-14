@@ -11,7 +11,7 @@ on:
           - main
           - v2.0-dev
       do_release:
-        description: 'Create Release (must also select Tag above!")'
+        description: 'Create Release (must select Tag above)'
         required: true
         default: false
         type: boolean
@@ -68,7 +68,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          path: metamodule-plugins/*.mmplugin
+          path: metamodule/metamodule-plugins/*.mmplugin
           name: mmplugin
 
       - name: Release
