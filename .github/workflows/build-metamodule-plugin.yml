@@ -65,10 +65,8 @@ jobs:
           # Add version tag and required firmware version to the plugin file name:
           cd metamodule-plugins && for f in *.mmplugin; do mv $f ${f%.mmplugin}-${{ env.CI_REF_NAME }}.mmplugin; done;
 
-      - name: Release
-        if: ${{ inputs.do_release }} && startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
         with:
-          name: "Release: ${{ env.CI_REF_NAME }}"
-          files: |
-            metamodule-plugins/*.mmplugin
+          path: metamodule-plugins/*.mmplugin
+          name: mmplugin
