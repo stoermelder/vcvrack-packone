@@ -1,4 +1,4 @@
-name: Build VCV Rack Plugin
+name: Build VCV Rack plugin
 on: [push, pull_request]
 
 env:
