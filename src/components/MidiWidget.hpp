@@ -1,9 +1,10 @@
 #pragma once
-#include "plugin.hpp"
+#include <rack.hpp>
 #include "LedDisplayCenterChoiceEx.hpp"
 
 namespace StoermelderPackOne {
 
+using namespace rack;
 
 struct MidiDriverItem : ui::MenuItem {
 	midi::Port* port;

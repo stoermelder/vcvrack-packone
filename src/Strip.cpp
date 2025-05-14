@@ -74,14 +74,14 @@ struct StripModule : StripModuleBase {
 	StripModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		configParam<TriggerParamQuantity>(MODE_PARAM, 0, 1, 0, "Toggle left/right mode");
+		configSwitch(MODE_PARAM, 0.f, 1.f, 0.f, "Toggle left/right mode");
 		configInput(ON_INPUT, "Strip on/toggle trigger");
-		configParam<TriggerParamQuantity>(ON_PARAM, 0, 1, 0, "Switch/toggle strip on");
+		configSwitch(ON_PARAM, 0.f, 1.f, 0.f, "Switch/toggle strip on");
 		configInput(OFF_INPUT, "Strip off trigger");
-		configParam<TriggerParamQuantity>(OFF_PARAM, 0, 1, 0, "Switch strip off");
+		configSwitch(OFF_PARAM, 0.f, 1.f, 0.f, "Switch strip off");
 		configInput(RAND_INPUT, "Strip randomization trigger");
-		configParam<TriggerParamQuantity>(RAND_PARAM, 0, 1, 0, "Randomize strip");
-		configParam(EXCLUDE_PARAM, 0, 1, 0, "Parameter randomization include/exclude");
+		configSwitch(RAND_PARAM, 0.f, 1.f, 0.f, "Randomize strip");
+		configParam(EXCLUDE_PARAM, 0.f, 1.f, 0.f, "Parameter randomization include/exclude");
 
 		lightDivider.setDivision(1024);
 		onReset();

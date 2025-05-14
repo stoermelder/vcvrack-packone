@@ -1,0 +1,74 @@
+name: Build and release MetaModule plugin
+
+on:
+  workflow_dispatch:
+    inputs:
+      SDK_branch:
+        description: 'MetaModule SDK branch'
+        required: true
+        type: choice
+        options:
+          - main
+          - v2.0-dev
+      do_release:
+        description: 'Create Release (must also select Tag above!")'
+        required: true
+        default: false
+        type: boolean
+
+jobs:
+  build-lin:
+    strategy:
+        matrix:
+          gcc: ['12.3.Rel1']
+    name: "Build firmware on linux"
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install Arm GNU Toolchain (arm-none-eabi-gcc)
+        uses: carlosperate/arm-none-eabi-gcc-action@v1
+        with:
+          release: ${{ matrix.gcc }}
+
+      - name: Install cmake
+        uses: jwlawson/actions-setup-cmake@v1.13
+        with:
+          cmake-version: '3.26.x'
+
+      - name: Git setup
+        run: git config --global --add safe.directory '*'
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+
+      - name: Install linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install ninja-build
+
+      - name: Set Release Version
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: FranzDiebold/github-env-vars-action@v2
+
+      - name: Build
+        run: |
+          cd metamodule
+          mkdir -p metamodule-plugins
+          # Get the SDK
+          git clone -b ${{ inputs.SDK_branch }} https://github.com/4ms/metamodule-plugin-sdk --recursive 
+          # Validate plugin-mm.json syntax
+          jq -e . plugin-mm.json >/dev/null || exit 1
+          # Build the plugin
+          cmake -B build -G Ninja -DMETAMODULE_SDK_DIR=metamodule-plugin-sdk
+          cmake --build build
+          # Add version tag and required firmware version to the plugin file name:
+          cd metamodule-plugins && for f in *.mmplugin; do mv $f ${f%.mmplugin}-${{ env.CI_REF_NAME }}.mmplugin; done;
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/') && ${{ inputs.do_release }}
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Release: ${{ env.CI_REF_NAME }}"
+          files: |
+            metamodule-plugins/*.mmplugin

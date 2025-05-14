@@ -20,6 +20,7 @@ enum class SLOT_CMD {
 
 enum class CTRLMODE {
 	READ,
+	AUTO,
 	WRITE
 };
 

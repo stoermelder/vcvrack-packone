@@ -1,8 +1,10 @@
 #pragma once
-#include "../plugin.hpp"
+#include <rack.hpp>
 #include "LedTextDisplay.hpp"
 
 namespace StoermelderPackOne {
+
+using namespace rack;
 
 struct StoermelderTextField : LedDisplayTextField {
 	float textSize = 12.f;

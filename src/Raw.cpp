@@ -1,5 +1,6 @@
 #include "plugin.hpp"
 #include "components/Knobs.hpp"
+#include <thread>
 
 /**
 
@@ -73,8 +74,13 @@ struct RawModule : Module {
 		configParam(PARAM_K, 0.1f, 1.f, 0.5f, "Nonlinearity parameter");
 		configParam(PARAM_KMULT, -1.f, 1.f, 0.f, "Nonlinearity asymmetry", "", 5.f);
 		configParam(PARAM_GAIN_OUT, -20.f, 20.f, -5.f, "Output gain", "dB");
+#ifndef METAMODULE
 		configInput(INPUT, "Polyphonic audio");
 		configOutput(OUTPUT, "Polyphonic audio");
+#else
+		configInput(INPUT, "Audio");
+		configOutput(OUTPUT, "Audio");
+#endif
 		paramDivider.setDivision(64);
 		onReset();
 	}
@@ -185,6 +191,7 @@ struct RawWidget : ThemedModuleWidget<RawModule> {
 	}
 
 	void appendContextMenu(Menu *menu) override {
+#ifndef METAMODULE
 		struct PublicationItem : MenuItem {
 			void onAction(const event::Action& e) override {
 				std::thread t(system::openBrowser, "https://dafx2020.mdw.ac.at/proceedings/papers/DAFx2020_paper_6.pdf");
@@ -193,6 +200,7 @@ struct RawWidget : ThemedModuleWidget<RawModule> {
 		};
 
 		menu->addChild(construct<PublicationItem>(&MenuItem::text, "Publication"));
+#endif
 
 		ThemedModuleWidget<RawModule>::appendContextMenu(menu);
 		RawModule* module = dynamic_cast<RawModule*>(this->module);

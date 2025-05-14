@@ -38,6 +38,11 @@ enum class OUTMODE {
 	PHASE = 5
 };
 
+struct ParamHandleEx : ParamHandleIndicator {
+	bool isSwitch = false;
+};
+
+
 template <int NUM_PRESETS>
 struct TransitModule : TransitBase<NUM_PRESETS> {
 	typedef TransitBase<NUM_PRESETS> BASE;
@@ -82,6 +87,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 	/** Holds the last values on transitions */
 	std::vector<float> presetOld;
 	std::vector<float> presetNew;
+	float presetFadeTime;
 
 	/** [Stored to JSON] mode for SEQ CV input */
 	SLOTCVMODE slotCvMode = SLOTCVMODE::TRIG_FWD;
@@ -109,7 +115,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 	bool inChange = false;
 
 	/** [Stored to JSON] */
-	std::vector<ParamHandleIndicator*> sourceHandles;
+	std::vector<ParamHandleEx*> sourceHandles;
 
 	dsp::SchmittTrigger slotTrigger;
 	dsp::SchmittTrigger slotC4Trigger;
@@ -133,7 +139,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 	TransitModule() {
 		BASE::panelTheme = pluginSettings.panelThemeDefault;
 		Module::config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		Module::configParam<TriggerParamQuantity>(PARAM_CTRLMODE, 0, 2, 0, "Read/Auto/Write mode");
+		Module::configSwitch(PARAM_CTRLMODE, 0.f, 2.f, 0.f, "Operating mode", {"Read", "Auto", "Write"});
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			TransitParamQuantity<NUM_PRESETS>* pq = Module::configParam<TransitParamQuantity<NUM_PRESETS>>(PARAM_PRESET + i, 0, 1, 0);
 			pq->id = i;
@@ -147,6 +153,10 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		}
 		Module::configParam(PARAM_FADE, 0.f, 1.f, 0.5f, "Fade");
 		Module::configParam(PARAM_SHAPE, -1.f, 1.f, 0.f, "Shape");
+		Module::configInput(INPUT_CV, "CV");
+		Module::configInput(INPUT_RESET, "Reset trigger");
+		Module::configInput(INPUT_FADE, "Fade CV");
+		Module::configOutput(OUTPUT, "Envelope/trigger");
 
 		handleDivider.setDivision(4096);
 		lightDivider.setDivision(512);
@@ -189,6 +199,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			BASE::presetSlotUsed[i] = false;
 			BASE::textLabel[i] = "";
+			BASE::fadeTime[i] = -1.f;
 			BASE::preset[i].clear();
 		}
 
@@ -237,6 +248,12 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		return &N[n]->textLabel[index % NUM_PRESETS];
 	}
 
+	inline float expSlotFadeTime(int index) {
+		if (index >= presetTotal) return -1.f;
+		int n = index / NUM_PRESETS;
+		return N[n]->fadeTime[index % NUM_PRESETS];
+	}
+
 	void process(const Module::ProcessArgs& args) override {
 		if (inChange) return;
 		sampleRate = args.sampleRate;
@@ -268,7 +285,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		if (handleDivider.process()) {
 			float st = args.sampleTime * handleDivider.division;
 			for (size_t i = 0; i < sourceHandles.size(); i++) {
-				ParamHandleIndicator* sourceHandle = sourceHandles[i];
+				ParamHandleEx* sourceHandle = sourceHandles[i];
 				sourceHandle->color = mappingIndicatorHidden ? color::BLACK_TRANSPARENT : nvgRGB(0x40, 0xff, 0xff);
 				sourceHandle->process(st);
 			}
@@ -548,7 +565,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 			}
 		}
 
-		ParamHandleIndicator* sourceHandle = new ParamHandleIndicator;
+		ParamHandleEx* sourceHandle = new ParamHandleEx;
 		sourceHandle->text = "stoermelder TRANSIT";
 		APP->engine->addParamHandle(sourceHandle);
 		APP->engine->updateParamHandle(sourceHandle, moduleId, paramId, true);
@@ -557,6 +574,9 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		inChange = false;
 
 		ParamQuantity* pq = getParamQuantity(sourceHandle);
+		SwitchQuantity* spq = dynamic_cast<SwitchQuantity*>(pq);
+		sourceHandle->isSwitch = !!spq && pq->getMaxValue() != 1.f;
+
 		float v = pq ? pq->getValue() : 0.f;
 		for (int i = 0; i < presetTotal; i++) {
 			TransitSlot* slot = expSlot(i);
@@ -594,6 +614,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 				outSocPulseGenerator.trigger();
 				outEocArm = true;
 				processing = true;
+				presetFadeTime = expSlotFadeTime(p);
 				presetOld.clear();
 				presetNew.clear();
 				for (size_t i = 0; i < sourceHandles.size(); i++) {
@@ -616,7 +637,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 			if (preset == -1) return;
 			float deltaTime = sampleTime * presetProcessDivision;
 
-			float fade = BASE::inputs[INPUT_FADE].getVoltage() / 10.f + BASE::params[PARAM_FADE].getValue();
+			float fade = presetFadeTime < 0.f ? (BASE::inputs[INPUT_FADE].getVoltage() / 10.f + BASE::params[PARAM_FADE].getValue()) : presetFadeTime;
 			slewLimiter.setRise(fade);
 			float shape = BASE::params[PARAM_SHAPE].getValue();
 			slewLimiter.setShape(shape);
@@ -668,10 +689,17 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 				float oldValue = presetOld[i];
 				if (presetNew.size() <= i) return;
 				float newValue = presetNew[i];
-				float v = crossfade(oldValue, newValue, s10);
-				if (s10 > (1.f - 5e-3f) && std::abs(std::round(v) - v) < 5e-3f) v = std::round(v);
-				//pq->setValue(v);
-				pq->getParam()->setValue(v);
+
+				if (sourceHandles[i]->isSwitch) {
+					float v = s10 < 0.5f ? oldValue : newValue;
+					pq->getParam()->setValue(v);
+				}
+				else {
+					float v = crossfade(oldValue, newValue, s10);
+					if (s10 > (1.f - 5e-3f) && std::abs(std::round(v) - v) < 5e-3f) v = std::round(v);
+					//pq->setValue(v);
+					pq->getParam()->setValue(v);
+				}
 			}
 
 			if (s == 10.f) {
@@ -803,6 +831,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 	}
 
 	void presetShiftBack(int p) {
+		inChange = true;
 		for (int i = presetTotal - 2; i >= p; i--) {
 			TransitSlot* slot = expSlot(i);
 			if (*(slot->presetSlotUsed)) {
@@ -814,9 +843,11 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 			}
 		}
 		presetClear(p);
+		inChange = false;
 	}
 
 	void presetShiftFront(int p) {
+		inChange = true;
 		for (int i = 1; i <= p; i++) {
 			TransitSlot* slot = expSlot(i);
 			if (*(slot->presetSlotUsed)) {
@@ -828,6 +859,37 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 			}
 		}
 		presetClear(p);
+		inChange = false;
+	}
+
+	void presetCleanUp() {
+		inChange = true;
+		for (size_t i = 0; i < sourceHandles.size(); ) {
+			ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
+			if (!pq) {
+				for (int j = 0; j < presetTotal; j++) {
+					TransitSlot* slot = expSlot(j);
+					if (*(slot->presetSlotUsed)) {
+						if (slot->preset->size() > i) {
+							slot->preset->erase(slot->preset->begin() + i);
+						}
+					}
+					else {
+						presetClear(j);
+					}
+				}
+				sourceHandles.erase(sourceHandles.begin() + i);
+			}
+			else {
+				i++;
+			}
+		}
+		for (int j = 0; j < presetTotal; j++) {
+			TransitSlot* slot = expSlot(j);
+			if (!*(slot->presetSlotUsed)) continue;
+			assert(sourceHandles.size() == slot->preset->size());
+		}
+		inChange = false;
 	}
 
 	void setProcessDivision(int d) {
@@ -938,13 +1000,17 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 				int paramId = json_integer_value(paramIdJ);
 				moduleId = BASE::idFix(moduleId);
 
-				// This might cause a deadlock as the engine's mutex could already be locked
+				// This might cause a deadlock as the engine's mutex could already been locked
 				handleList.push_back([=]() {
-					ParamHandleIndicator* sourceHandle = new ParamHandleIndicator;
+					ParamHandleEx* sourceHandle = new ParamHandleEx;
 					sourceHandle->text = "stoermelder TRANSIT";
 					APP->engine->addParamHandle(sourceHandle);
 					APP->engine->updateParamHandle(sourceHandle, moduleId, paramId, false);
 					sourceHandles.push_back(sourceHandle);
+
+					ParamQuantity* pq = getParamQuantity(sourceHandle);
+					SwitchQuantity* spq = dynamic_cast<SwitchQuantity*>(pq);
+					sourceHandle->isSwitch = !!spq;
 				});
 			}
 		}
@@ -1252,14 +1318,15 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 
 		if (module->sourceHandles.size() > 0) {
 			menu->addChild(new MenuSeparator());
-			menu->addChild(createSubmenuItem("Bound modules", "", [=](Menu* menu) {
-				std::set<int64_t> moduleIds;
-				for (size_t i = 0; i < module->sourceHandles.size(); i++) {
-					ParamHandle* handle = module->sourceHandles[i];
-					if (moduleIds.find(handle->moduleId) == moduleIds.end())
-						moduleIds.insert(handle->moduleId);
-				}
 
+			std::set<int64_t> moduleIds;
+			for (size_t i = 0; i < module->sourceHandles.size(); i++) {
+				ParamHandle* handle = module->sourceHandles[i];
+				if (moduleIds.find(handle->moduleId) == moduleIds.end()) {
+					moduleIds.insert(handle->moduleId);
+				}
+			}
+			menu->addChild(createSubmenuItem(string::f("Bound modules: %lli", moduleIds.size()), "", [=](Menu* menu) {
 				for (int64_t moduleId : moduleIds) {
 					ModuleWidget* moduleWidget = APP->scene->rack->getModule(moduleId);
 					if (!moduleWidget) continue;
@@ -1274,21 +1341,30 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 				}
 			}));
 
-			menu->addChild(createSubmenuItem("Bound parameters", "", [=](Menu* menu) {
+			menu->addChild(createSubmenuItem(string::f("Bound parameters: %lli", module->sourceHandles.size()), "", [=](Menu* menu) {
 				for (size_t i = 0; i < module->sourceHandles.size(); i++) {
-					ParamHandleIndicator* handle = module->sourceHandles[i];
+					ParamHandleEx* handle = module->sourceHandles[i];
 					ModuleWidget* moduleWidget = APP->scene->rack->getModule(handle->moduleId);
 					if (!moduleWidget) continue;
+
 					ParamWidget* paramWidget = moduleWidget->getParam(handle->paramId);
-					if (!paramWidget) continue;
-					
-					std::string text = string::f("%s %s", moduleWidget->model->name.c_str(), paramWidget->getParamQuantity()->getLabel().c_str());
-					menu->addChild(createSubmenuItem(text, "", [=](Menu* menu) {
-						menu->addChild(createMenuItem("Locate and indicate", "", [=]() { handle->indicate(APP->scene->rack->getModule(handle->moduleId)); }));
-						menu->addChild(createMenuItem("Unbind", "", [=]() { APP->engine->updateParamHandle(handle, -1, 0, true); }));
-					}));
+					if (paramWidget) {
+						std::string text = string::f("%s %s", moduleWidget->model->name.c_str(), paramWidget->getParamQuantity()->getLabel().c_str());
+						menu->addChild(createSubmenuItem(text, "", [=](Menu* menu) {
+							menu->addChild(createMenuItem("Locate and indicate", "", [=]() { handle->indicate(APP->scene->rack->getModule(handle->moduleId)); }));
+							menu->addChild(createMenuItem("Unbind", "", [=]() { APP->engine->updateParamHandle(handle, -1, 0, true); }));
+						}));
+					}
+					else {
+						std::string text = string::f("%s <hidden parameter>", moduleWidget->model->name.c_str());
+						menu->addChild(createSubmenuItem(text, "", [=](Menu* menu) {
+							menu->addChild(createMenuItem("Unbind", "", [=]() { APP->engine->updateParamHandle(handle, -1, 0, true); }));
+						}));
+					}
 				}
 			}));
+
+			menu->addChild(createMenuItem("Clean invalid parameters up", "", [=]() { module->presetCleanUp(); }));
 		}
 	}
 };

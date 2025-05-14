@@ -1,5 +1,9 @@
 #include "plugin.hpp"
 #include "components/MidiWidget.hpp"
+#ifdef METAMODULE
+#include "CoreModules/midi/midi_message.hh"
+#include "util/circular_buffer.hh"
+#endif
 
 namespace StoermelderPackOne {
 namespace MidiStep {
@@ -10,7 +14,8 @@ enum MODE {
 	KK_REL = 10,
 	XTOUCH_R1 = 20,
 	XTOUCH_R2 = 21,
-	AKAI_MPD218 = 30
+	AKAI_MPD218 = 30,
+	HERCULES_DJCONTROL_STARLIGHT = 31
 };
 
 struct MidiStepModule : Module {
@@ -53,6 +58,10 @@ struct MidiStepModule : Module {
 	int decPulseCount[CHANNELS];
 	dsp::PulseGenerator decPulse[CHANNELS];
 
+#ifdef METAMODULE
+	CircularBuffer<midi::Message, 8> msg_history;
+#endif
+
 	MidiStepModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -83,6 +92,11 @@ struct MidiStepModule : Module {
 	void process(const ProcessArgs& args) override {
 		midi::Message msg;
 		while (midiInput.tryPop(&msg, args.frame)) {
+#ifdef METAMODULE
+			if (msg.getStatus() == 0xb) {
+				msg_history.put(msg);
+			}
+#endif
 			processMessage(msg);
 		}
 
@@ -158,6 +172,7 @@ struct MidiStepModule : Module {
 			case MODE::BEATSTEP_R2:
 			case MODE::KK_REL:
 			case MODE::AKAI_MPD218:
+			case MODE::HERCULES_DJCONTROL_STARLIGHT:
 			case MODE::XTOUCH_R1: {
 				if (value == uint8_t(127)) decPulseCount[ccs[cc]] += 2;
 				else if (value == uint8_t(126)) decPulseCount[ccs[cc]] += 4;
@@ -210,7 +225,11 @@ struct MidiStepModule : Module {
 
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 		mode = (MODE)json_integer_value(json_object_get(rootJ, "mode"));
+#ifndef METAMODULE
 		polyphonicOutput = json_boolean_value(json_object_get(rootJ, "polyphonicOutput"));
+#else
+		polyphonicOutput = false;
+#endif
 
 		json_t* ccsJ = json_object_get(rootJ, "ccs");
 		if (ccsJ) {
@@ -226,6 +245,21 @@ struct MidiStepModule : Module {
 		json_t* midiJ = json_object_get(rootJ, "midi");
 		if (midiJ) midiInput.fromJson(midiJ);
 	}
+
+#ifdef METAMODULE
+	size_t get_display_text(int led_id, std::span<char> text) override {
+		std::string chars = "";
+		for (auto i = 0u; i < msg_history.count(); i++) {
+			auto msg = msg_history.peek(i);
+			if (i != 0) chars += "\n";
+			chars += MetaModule::Midi::toPrettyString(msg.bytes);
+		}
+
+		size_t chars_to_copy = std::min(text.size(), chars.length());
+		std::copy(chars.begin(), chars.begin() + chars_to_copy, text.begin());
+		return chars_to_copy;
+	}
+#endif
 };
 
 
@@ -369,6 +403,7 @@ struct MidiStepWidget : ThemedModuleWidget<MidiStepModule> {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
+#ifndef METAMODULE
 		MidiWidget<>* midiInputWidget = createWidget<MidiWidget<>>(Vec(10.0f, 36.4f));
 		midiInputWidget->box.size = Vec(130.0f, 67.0f);
 		midiInputWidget->setMidiPort(module ? &module->midiInput : NULL);
@@ -378,6 +413,14 @@ struct MidiStepWidget : ThemedModuleWidget<MidiStepModule> {
 		midiWidget->box.size = Vec(130.0f, 79.0f);
 		midiWidget->setModule(module);
 		addChild(midiWidget);
+#else
+		auto display = createWidget<MetaModule::VCVTextDisplay>(Vec(10.0f, 36.4f) + Vec(9.f, 10.f));
+		display->box.size = Vec(130.0f, 67.0f + 79.0f + 10.f);
+		display->firstLightId = 0;
+		display->font = "Default_10";
+		display->color = Colors565::White;
+		addChild(display);
+#endif
 
 		addOutput(createOutputCentered<StoermelderPort>(Vec(27.9f, 232.7f), module, MODULE::OUTPUT_INC + 0));
 		addOutput(createOutputCentered<StoermelderPort>(Vec(56.1f, 232.7f), module, MODULE::OUTPUT_INC + 1));
@@ -410,12 +453,47 @@ struct MidiStepWidget : ThemedModuleWidget<MidiStepModule> {
 				{ MODE::KK_REL, "NI Komplete Kontrol Relative" },
 				{ MODE::XTOUCH_R1, "Behringer X-TOUCH Relative1" },
 				{ MODE::XTOUCH_R2, "Behringer X-TOUCH Relative2" },
-				{ MODE::AKAI_MPD218, "Akai MPD218 INC/DEC 2" }
+				{ MODE::AKAI_MPD218, "Akai MPD218 INC/DEC 2" },
+				{ MODE::HERCULES_DJCONTROL_STARLIGHT, "Hercules DJControl Starlight" }
 			},
 			&module->mode,
 			false
 		));
+#ifndef METAMODULE
 		menu->addChild(createBoolPtrMenuItem("Polyphonic output", "", &module->polyphonicOutput));
+#else
+		menu->addChild(new MenuSeparator());
+		menu->addChild(createSubmenuItem("MIDI channel",
+			[module]() {
+				auto chan = module->midiInput.getChannel();
+				return chan < 0 ? "Omni" : std::to_string(chan + 1);
+			},
+			[module](Menu* menu) {
+				for (int c = -1; c < 16; c++) {
+					menu->addChild(createCheckMenuItem((c < 0) ? "Omni" : string::f("Channel %d", c + 1), "",
+						[module, c]() { return module->midiInput.getChannel() == c; },
+						[module, c]() { module->midiInput.setChannel(c); }
+					));
+				}
+			}
+		));
+
+		for (int id = 0; id < 8; id++) {
+			menu->addChild(createSubmenuItem(string::f("CC interpreter %i", id + 1),
+				[module, id]() {
+					return module->learnedCcs[id] >= 0 ? string::f("%d", module->learnedCcs[id]) : "Off";
+				},
+				[module, id](Menu* menu) {
+					for (int cc = 0; cc < 128; cc++) {
+						menu->addChild(createCheckMenuItem(std::to_string(cc), "",
+							[module, id, cc]() { return module->learnedCcs[id] == cc; },
+							[module, id, cc]() { module->learningId = id; module->learnCC(cc); }
+						));
+					}
+				}
+			));
+		}
+#endif
 	}
 };
 

@@ -71,7 +71,7 @@ struct GotoModule : Module {
 		configInput(INPUT_TRIG, "Jump point trigger");
 		inputInfos[INPUT_TRIG]->description = "Operating mode is set on the context menu.";
 		for (int i = 0; i < SLOTS; i++) {
-			configParam<TriggerParamQuantity>(PARAM_SLOT + i, 0, 1, 0, string::f("Jump point %i (SHIFT+%i)\nShort-press to jumo\nLong-press to learn/clear", i + 1, (i + 1) % 10));
+			configSwitch(PARAM_SLOT + i, 0, 1, 0, string::f("Jump point %i (SHIFT+%i)\nShort-press to jumo\nLong-press to learn/clear", i + 1, (i + 1) % 10));
 		}
 		onReset();
 	}
@@ -241,7 +241,7 @@ struct GotoContainer : widget::Widget {
 		if (module->jumpPoints[i].moduleId >= 0) {
 			ModuleWidget* mw = APP->scene->rack->getModule(module->jumpPoints[i].moduleId);
 			if (mw) {
-				float zoom = !module->ignoreZoom ? module->jumpPoints[i].zoom : std::log2(APP->scene->rackScroll->getZoom());
+				float zoom = (!module->ignoreZoom) ? module->jumpPoints[i].zoom : std::log2(APP->scene->rackScroll->getZoom());
 				if (module->smoothTransition) {
 					switch (module->jumpPos) {
 						case JUMPPOS::ABSOLUTE: {
@@ -259,7 +259,13 @@ struct GotoContainer : widget::Widget {
 							break;
 						}
 						case JUMPPOS::MODULE_TOPLEFT: {
-							// not implemented
+							Vec source = APP->scene->rackScroll->offset / APP->scene->rackScroll->getZoom();
+							Vec center = APP->scene->rackScroll->getSize() * (1.f / APP->scene->rackScroll->getZoom()) * 0.5f;
+							Vec p1 = source + center;
+							Vec p2 = mw->getBox().getTopLeft();
+							p2 = p2 + (APP->scene->rackScroll->getSize() * (1.f / std::pow(2.f, zoom))) * 0.5f;
+							float f = sqrt((p1.x - p2.x) * (p1.x - p2.x) + (p1.y - p2.y) * (p1.y - p2.y));
+							viewportCenterSmooth.trigger(p2, zoom, 1.f / APP->window->getLastFrameDuration(), f / 1000.f);
 							break;
 						}
 					}
@@ -374,31 +380,16 @@ struct GotoWidget : ThemedModuleWidget<GotoModule<10>> {
 		ThemedModuleWidget<GotoModule<10>>::appendContextMenu(menu);
 
 		menu->addChild(new MenuSeparator());
-		menu->addChild(StoermelderPackOne::Rack::createMapPtrSubmenuItem<JUMPPOS>("Jump position",
-			{
-			//	{ JUMPPOS::ABSOLUTE, "Absolute" },
-				{ JUMPPOS::MODULE_CENTER, "Module centering" },
-				{ JUMPPOS::MODULE_TOPLEFT, "Module top left" }
-			},
-			&module->jumpPos
-		));
-
-		MenuItem* smoothMenuItem = createBoolPtrMenuItem("Smooth transition", "", &module->smoothTransition);
-		menu->addChild(smoothMenuItem);
-		if (module->jumpPos == JUMPPOS::MODULE_TOPLEFT) {
-			module->smoothTransition = false;
-			smoothMenuItem->disabled = true;
-		}
-
+		menu->addChild(createBoolPtrMenuItem("Smooth transition", "", &module->smoothTransition));
 		menu->addChild(createBoolPtrMenuItem("Ignore zoom level", "", &module->ignoreZoom));
 		menu->addChild(new MenuSeparator());
-		menu->addChild(StoermelderPackOne::Rack::createMapPtrSubmenuItem<TRIGGERMODE>("Trigger port",
-			{
-				{ TRIGGERMODE::POLYTRIGGER, "Polyphonic trigger" },
-				{ TRIGGERMODE::C5, "C5-A5" }
-			},
-			&module->triggerMode
-		));
+		menu->addChild(createMenuLabel("Jump position"));
+		menu->addChild(Rack::createValuePtrMenuItem("Module centering", &module->jumpPos, JUMPPOS::MODULE_CENTER));
+		menu->addChild(Rack::createValuePtrMenuItem("Module top left", &module->jumpPos, JUMPPOS::MODULE_TOPLEFT));
+		menu->addChild(new MenuSeparator());
+		menu->addChild(createMenuLabel("Trigger port"));
+		menu->addChild(Rack::createValuePtrMenuItem("Polyphonic trigger", &module->triggerMode, TRIGGERMODE::POLYTRIGGER));
+		menu->addChild(Rack::createValuePtrMenuItem("C5-A5", &module->triggerMode, TRIGGERMODE::C5));
 	}
 };
 

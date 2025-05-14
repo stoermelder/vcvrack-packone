@@ -40,8 +40,6 @@ For further modulation of the input-signals each channel has a MOD-input that ca
 
 ![ARENA modulation targets](./Arena-mod.png)
 
-Each MOD-port can be configured to accept a voltage range of -5..5V or 0..10V.
-
 ## MIX-ports
 
 ## SEQ-ports and PHASE-ports
@@ -89,3 +87,4 @@ The colored circles on the center-screen representing inputs and mix-outputs can
 - v2.0.0
     - Fixed broken behavior of "Radius" sliders of "In"-ports
     - Fixed broken patch-restore of "Radius" sliders (#331)
+    - Fixed behavior of attenuvertors for X/Y/MOD-inputs (#394)

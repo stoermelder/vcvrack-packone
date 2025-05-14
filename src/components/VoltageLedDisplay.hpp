@@ -1,4 +1,6 @@
-#include "plugin.hpp"
+#pragma once
+#include <rack.hpp>
+#include "LedTextDisplay.hpp"
 
 namespace StoermelderPackOne {
 

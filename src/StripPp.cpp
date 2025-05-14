@@ -112,9 +112,13 @@ struct StripPpWidget : StripWidgetBase<StripPpModule> {
 		}
 
 		void showSelectionPreview(std::string path, std::function<void()> action) {
-			callback = action;
-			sp->loadSelectionFile(path);
-			sp->show();
+			if (sp->loadSelectionFile(path)) {
+				callback = action;
+				sp->show();
+			}
+			else {
+				action();
+			}
 		}
 	};
 

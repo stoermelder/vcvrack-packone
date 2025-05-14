@@ -1,7 +1,13 @@
-#include "plugin.hpp"
-#include <thread>
+#pragma once
+#include <rack.hpp>
+#include "../pluginhelpers.hpp"
+#include "../pluginsettings.hpp"
+
+extern Plugin* pluginInstance;
 
 namespace StoermelderPackOne {
+
+using namespace rack;
 
 template < typename MODULE, typename BASE = ModuleWidget >
 struct ThemedModuleWidget : BASE {
@@ -27,6 +33,9 @@ struct ThemedModuleWidget : BASE {
 		this->baseName = baseName;
 		this->manualName = manualName;
 
+#ifdef METAMODULE
+		BASE::setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/" + baseName + ".svg")));
+#else
 		if (module) {
 			// Normal operation
 			BASE::setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, panel())));
@@ -39,8 +48,10 @@ struct ThemedModuleWidget : BASE {
 			darkPanel->setBackground(APP->window->loadSvg(asset::plugin(pluginInstance, "res/dark/" + baseName + ".svg")));
 			BASE::addChild(darkPanel);
 		}
+#endif
 	}
 
+#ifndef METAMODULE
 	void appendContextMenu(Menu* menu) override {
 		if (disableDuplicateAction) {
 			MenuItem* item = NULL;
@@ -144,6 +155,7 @@ struct ThemedModuleWidget : BASE {
 
 		ModuleWidget::onHoverKey(e);
 	}
+#endif
 };
 
 } // namespace StoermelderPackOne

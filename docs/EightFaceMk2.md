@@ -64,6 +64,10 @@ There are also some options on the context menu of the snapshot-buttons:
 A blinking white LED signals the snapshot applied at last. Please keep in mind that you can change bound modules manually and these changes will not be recognized by 8FACE mk2.  
 In write-mode any input on the _CV_-port is ignored and sequencing is disabled.
 
+## Auto-mode
+
+Auto-mode (added in v2.0.0) stores presets automatically to the current slot right before moving on to the next slot. A typical workflow would look like this: Store a few presets using Write-mode as usual. Afterwards flip the switch to the middle "A"-position and start slow sequencing using the _SLOT_-port. Imagine slot 1 is active and slot 2 will be loaded next. Right before moving to slot 2 the current state of the module is stored into slot 1 preserving all adjustments made in the meantime. In contrast, Read-mode would simply load slot 2 and the preset stored in slot 1 will stay unchanged, discarding all changes made to the module. Note: Empty slots will stay empty, even in Auto-mode.
+
 ## Sequencing and selecting snapshots
 
 The fun begins when you use the port labelled _CV_ for selecting snapshots by CV. Although there are 8 snapshot slots available it is possible to use less slots for sequencing: You can adjust the number of active slots (i.e. sequence length) by long-pressing a snapshot-button while in read-mode. The LEDs turn off completely for slots that are currently disabled.
@@ -127,3 +131,4 @@ Once placed next to 8FACE mk2 the expander works and behaves the same way 8FACE 
     - Fixed broken module-id mapping when adding using STRIP or STRIP++
     - Fixed crash while exceding 0..10V in Volt-mode (#377)
     - Increased maximum number of expanders to 15
+    - Added "Auto"-mode besides "Read" and "Write" ([manual](./EightFaceMk2.md#auto-mode)) (#276)

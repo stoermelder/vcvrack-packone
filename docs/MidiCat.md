@@ -243,3 +243,6 @@ There are two modes with different behavior for MIDI-feedback:
 - v2.0.0
     - Added expander CLK for MIDI-CAT (#299)
     - Fixed pickup of parameters with snapping (#308)
+    - Fixed broken button-handling of MIDI-CAT MEM and MIDI-CAT CTX when triggered by Parameter-mapping (#356)
+    - Added trigger-inputs for Prev and Next on MIDI-CAT MEM
+    - Implemented response curves (logarithmic/exponential) (#258)

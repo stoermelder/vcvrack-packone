@@ -1,8 +1,10 @@
 #pragma once
-#include "../plugin.hpp"
+#include <rack.hpp>
 #include "MenuColorLabel.hpp"
 
 namespace StoermelderPackOne {
+
+using namespace rack;
 
 struct MenuColorField : ui::TextField {
 	NVGcolor* color;

@@ -180,12 +180,20 @@ struct ReMoveModule : MapModuleBase<1> {
     ReMoveModule() {
         panelTheme = pluginSettings.panelThemeDefault;
         config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS); 
-        configParam<TriggerParamQuantity>(SEQP_PARAM, 0.0f, 1.0f, 0.0f, "Previous sequence");
-        configParam<TriggerParamQuantity>(SEQN_PARAM, 0.0f, 1.0f, 0.0f, "Next sequence");
-        configParam<TriggerParamQuantity>(RUN_PARAM, 0.0f, 1.0f, 0.0f, "Run");
-        configParam<TriggerParamQuantity>(RESET_PARAM, 0.0f, 1.0f, 0.0f, "Reset");
-        configParam<TriggerParamQuantity>(REC_PARAM, 0.0f, 1.0f, 0.0f, "Record");
+        configSwitch(SEQP_PARAM, 0.0f, 1.0f, 0.0f, "Previous sequence");
+        configSwitch(SEQN_PARAM, 0.0f, 1.0f, 0.0f, "Next sequence");
+        configSwitch(RUN_PARAM, 0.0f, 1.0f, 0.0f, "Run");
+        configSwitch(RESET_PARAM, 0.0f, 1.0f, 0.0f, "Reset");
+        configSwitch(REC_PARAM, 0.0f, 1.0f, 0.0f, "Record");
         configParam(SLEW_PARAM, 0.0f, 0.975f, 0.0f, "Slew");
+        configInput(RUN_INPUT, "Run gate/trigger");
+        configInput(RESET_INPUT, "Reset trigger");
+        configInput(PHASE_INPUT, "Phase CV");
+        configInput(SEQ_INPUT, "Sequence selection");
+        configInput(CV_INPUT, "Automation CV");
+        configInput(REC_INPUT, "Record trigger/gate");
+        configOutput(CV_OUTPUT, "Automation CV");
+        configOutput(REC_OUTPUT, "Record trigger/gate");
 
         seqData = new float[REMOVE_MAX_DATA];
         this->mappingIndicatorColor = nvgRGB(0x40, 0xff, 0xff);

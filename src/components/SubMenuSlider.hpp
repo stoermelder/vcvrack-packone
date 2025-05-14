@@ -1,7 +1,9 @@
 #pragma once
-#include "plugin.hpp"
+#include <rack.hpp>
 
 namespace StoermelderPackOne {
+
+using namespace rack;
 
 struct SubMenuSlider : MenuItem {
 	static constexpr float SENSITIVITY = 0.001f;

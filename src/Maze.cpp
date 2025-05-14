@@ -1,6 +1,7 @@
 #include "plugin.hpp"
 #include "digital.hpp"
 #include <random>
+#include <chrono>
 
 namespace StoermelderPackOne {
 namespace Maze {
@@ -35,6 +36,9 @@ enum class MODULESTATE {
 	GRID = 0,
 	EDIT = 1
 };
+
+const int MAX_SIZE = 32;
+const int MIN_SIZE = 2;
 
 template <int SIZE, int NUM_PORTS>
 struct MazeModule : Module {
@@ -561,7 +565,7 @@ struct GridSizeSlider : ui::Slider {
 			this->module = module;
 		}
 		void setValue(float value) override {
-			v = clamp(value, 2.f, 32.f);
+			v = clamp(value, float(MIN_SIZE), float(MAX_SIZE));
 			module->gridResize(int(v));
 		}
 		float getValue() override {
@@ -572,10 +576,10 @@ struct GridSizeSlider : ui::Slider {
 			return 8.f;
 		}
 		float getMinValue() override {
-			return 2.f;
+			return MIN_SIZE;
 		}
 		float getMaxValue() override {
-			return 32.f;
+			return MAX_SIZE;
 		}
 		float getDisplayValue() override {
 			return getValue();
@@ -658,74 +662,76 @@ struct MazeGridWidget : FramebufferWidget {
 			this->module = module;
 		}
 
-		void draw(const Widget::DrawArgs& args) override {
+		void drawLayer(const Widget::DrawArgs& args, int layer) override {
 			if (!module) return;
-			float sizeX = box.size.x / float(module->usedSize);
-			float sizeY = box.size.y / float(module->usedSize);
+			if (layer == 1) {
+				float sizeX = box.size.x / float(module->usedSize);
+				float sizeY = box.size.y / float(module->usedSize);
 
-			// Draw background
-			nvgBeginPath(args.vg);
-			nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
-			nvgFillColor(args.vg, nvgRGB(0, 16, 90));
-			nvgFill(args.vg);
-
-			// Draw grid
-			nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
-			nvgStrokeWidth(args.vg, 0.6f);
-			for (int i = 1; i < module->usedSize; i++) {
-				float a = 0.075f;
-				if (module->usedSize % 4 == 0) { if (i % 4 == 0) a = 0.2f; }
-				else if (module->usedSize % 3 == 0) { if (i % 3 == 0) a = 0.2f; }
-				else if (module->usedSize % 5 == 0) { if (i % 5 == 0) a = 0.2f; }
+				// Draw background
 				nvgBeginPath(args.vg);
-				nvgMoveTo(args.vg, sizeX * float(i), 0.f);
-				nvgLineTo(args.vg, sizeX * float(i), box.size.y);
-				nvgStrokeColor(args.vg, color::mult(color::WHITE, a));
-				nvgStroke(args.vg);
-			}
-			for (int i = 1; i < module->usedSize; i++) {
-				float a = 0.075f;
-				if (module->usedSize % 4 == 0) { if (i % 4 == 0) a = 0.2f; }
-				else if (module->usedSize % 3 == 0) { if (i % 3 == 0) a = 0.2f; }
-				else if (module->usedSize % 5 == 0) { if (i % 5 == 0) a = 0.2f; }
+				nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+				nvgFillColor(args.vg, nvgRGB(0, 16, 90));
+				nvgFill(args.vg);
+
+				// Draw grid
+				nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
+				nvgStrokeWidth(args.vg, 0.6f);
+				for (int i = 1; i < module->usedSize; i++) {
+					float a = 0.075f;
+					if (module->usedSize % 4 == 0) { if (i % 4 == 0) a = 0.2f; }
+					else if (module->usedSize % 3 == 0) { if (i % 3 == 0) a = 0.2f; }
+					else if (module->usedSize % 5 == 0) { if (i % 5 == 0) a = 0.2f; }
+					nvgBeginPath(args.vg);
+					nvgMoveTo(args.vg, sizeX * float(i), 0.f);
+					nvgLineTo(args.vg, sizeX * float(i), box.size.y);
+					nvgStrokeColor(args.vg, color::mult(color::WHITE, a));
+					nvgStroke(args.vg);
+				}
+				for (int i = 1; i < module->usedSize; i++) {
+					float a = 0.075f;
+					if (module->usedSize % 4 == 0) { if (i % 4 == 0) a = 0.2f; }
+					else if (module->usedSize % 3 == 0) { if (i % 3 == 0) a = 0.2f; }
+					else if (module->usedSize % 5 == 0) { if (i % 5 == 0) a = 0.2f; }
+					nvgBeginPath(args.vg);
+					nvgMoveTo(args.vg, 0.f, sizeY * float(i));
+					nvgLineTo(args.vg, box.size.x, sizeY * float(i));
+					nvgStrokeColor(args.vg, color::mult(color::WHITE, a));
+					nvgStroke(args.vg);
+				}
+
+				// Draw outer rectangle
 				nvgBeginPath(args.vg);
-				nvgMoveTo(args.vg, 0.f, sizeY * float(i));
-				nvgLineTo(args.vg, box.size.x, sizeY * float(i));
-				nvgStrokeColor(args.vg, color::mult(color::WHITE, a));
+				nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+				nvgStrokeWidth(args.vg, 0.7f);
+				nvgStrokeColor(args.vg, color::mult(color::WHITE, 0.25f));
 				nvgStroke(args.vg);
-			}
 
-			// Draw outer rectangle
-			nvgBeginPath(args.vg);
-			nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
-			nvgStrokeWidth(args.vg, 0.7f);
-			nvgStrokeColor(args.vg, color::mult(color::WHITE, 0.25f));
-			nvgStroke(args.vg);
-
-			// Draw grid cells
-			float stroke = 0.7f;
-			for (int i = 0; i < module->usedSize; i++) {
-				for (int j = 0; j < module->usedSize; j++) {
-					switch (module->grid[i][j]) {
-						case GRIDSTATE::ON:
-							nvgBeginPath(args.vg);
-							nvgRect(args.vg, i * sizeX + stroke / 2.f, j * sizeY + stroke / 2.f, sizeX - stroke, sizeY - stroke);
-							nvgFillColor(args.vg, color::mult(gridColor, 0.7f));
-							nvgFill(args.vg);
-							break;
-						case GRIDSTATE::RANDOM:
-							nvgBeginPath(args.vg);
-							nvgRect(args.vg, i * sizeX + stroke, j * sizeY + stroke, sizeX - stroke * 2.f, sizeY - stroke * 2.f);
-							nvgStrokeWidth(args.vg, stroke);
-							nvgStrokeColor(args.vg, color::mult(gridColor, 0.6f));
-							nvgStroke(args.vg);
-							nvgBeginPath(args.vg);
-							nvgRect(args.vg, i * sizeX + sizeX * 0.25f, j * sizeY + sizeY * 0.25f, sizeX * 0.5f, sizeY * 0.5f);
-							nvgFillColor(args.vg, color::mult(gridColor, 0.4f));
-							nvgFill(args.vg);
-							break;
-						case GRIDSTATE::OFF:
-							break;
+				// Draw grid cells
+				float stroke = 0.7f;
+				for (int i = 0; i < module->usedSize; i++) {
+					for (int j = 0; j < module->usedSize; j++) {
+						switch (module->grid[i][j]) {
+							case GRIDSTATE::ON:
+								nvgBeginPath(args.vg);
+								nvgRect(args.vg, i * sizeX + stroke / 2.f, j * sizeY + stroke / 2.f, sizeX - stroke, sizeY - stroke);
+								nvgFillColor(args.vg, color::mult(gridColor, 0.7f));
+								nvgFill(args.vg);
+								break;
+							case GRIDSTATE::RANDOM:
+								nvgBeginPath(args.vg);
+								nvgRect(args.vg, i * sizeX + stroke, j * sizeY + stroke, sizeX - stroke * 2.f, sizeY - stroke * 2.f);
+								nvgStrokeWidth(args.vg, stroke);
+								nvgStrokeColor(args.vg, color::mult(gridColor, 0.6f));
+								nvgStroke(args.vg);
+								nvgBeginPath(args.vg);
+								nvgRect(args.vg, i * sizeX + sizeX * 0.25f, j * sizeY + sizeY * 0.25f, sizeX * 0.5f, sizeY * 0.5f);
+								nvgFillColor(args.vg, color::mult(gridColor, 0.4f));
+								nvgFill(args.vg);
+								break;
+							case GRIDSTATE::OFF:
+								break;
+						}
 					}
 				}
 			}
@@ -756,8 +762,8 @@ struct MazeGridWidget : FramebufferWidget {
 			// Dim the display but don't darken it completely
 			float b = std::max(0.4f, settings::rackBrightness);
 			nvgGlobalTint(args.vg, nvgRGBAf(b, b, b, 1.f));
-			FramebufferWidget::draw(args);
 		}
+		FramebufferWidget::drawLayer(args, layer);
 	}
 };
 
@@ -870,9 +876,8 @@ struct MazeStartPosEditWidget : TransparentWidget, MazeDrawHelper<MODULE> {
 				nvgFillColor(args.vg, color::mult(color::WHITE, 0.9f));
 				nvgFill(args.vg);
 			}
-
-			TransparentWidget::drawLayer(args, layer);
 		}
+		TransparentWidget::drawLayer(args, layer);
 	}
 
 	void onButton(const event::Button& e) override {
@@ -980,8 +985,8 @@ struct MazeStartPosEditWidget : TransparentWidget, MazeDrawHelper<MODULE> {
 				{ 0.2f, "80%" },
 				{ 0.1f, "90%" }
 			},
-			[=]() { return module->ratchetingProb[selectedId]; },
-			[=](float prob) { module->ratchetingSetProb(selectedId, prob); }
+			[this]() { return module->ratchetingProb[selectedId]; },
+			[this](float prob) { module->ratchetingSetProb(selectedId, prob); }
 		));
 	}
 
@@ -1006,8 +1011,8 @@ struct MazeScreenWidget : LightWidget, MazeDrawHelper<MODULE> {
 	void drawLayer(const DrawArgs& args, int layer) override {
 		if (module && module->currentState == MODULESTATE::GRID) {
 			MazeDrawHelper<MODULE>::drawLayer(args, layer, box);
-			LightWidget::draw(args);
 		}
+		LightWidget::drawLayer(args, layer);
 	}
 
 	void onButton(const event::Button& e) override {
@@ -1043,15 +1048,6 @@ struct MazeScreenWidget : LightWidget, MazeDrawHelper<MODULE> {
 	void createContextMenu() {
 		ui::Menu* menu = createMenu();
 		menu->addChild(construct<ModuleStateMenuItem<MODULE>>(&MenuItem::text, "Enter Edit-mode", &ModuleStateMenuItem<MODULE>::module, module));
-		menu->addChild(new MenuSeparator());
-		menu->addChild(createMenuLabel("Grid"));
-		GridSizeSlider<MODULE>* sizeSlider = new GridSizeSlider<MODULE>(module);
-		sizeSlider->box.size.x = 200.0;
-		menu->addChild(sizeSlider);
-
-		menu->addChild(construct<GridRandomizeMenuItem<MODULE>>(&MenuItem::text, "Randomize", &GridRandomizeMenuItem<MODULE>::module, module));
-		menu->addChild(construct<GridRandomizeMenuItem<MODULE>>(&MenuItem::text, "Randomize certainty", &GridRandomizeMenuItem<MODULE>::module, module, &GridRandomizeMenuItem<MODULE>::useRandom, false));
-		menu->addChild(construct<GridClearMenuItem<MODULE>>(&MenuItem::text, "Clear", &GridClearMenuItem<MODULE>::module, module));
 	}
 };
 
@@ -1072,15 +1068,15 @@ struct MazeWidget32 : ThemedModuleWidget<MazeModule<32, 4>> {
 		gridWidget->box.size = Vec(227.f, 227.f);
 		addChild(gridWidget);
 
-		MazeScreenWidget<MODULE>* turnWidget = new MazeScreenWidget<MODULE>(module);
-		turnWidget->box.pos = gridWidget->box.pos;
-		turnWidget->box.size = gridWidget->box.size;
-		addChild(turnWidget);
+		MazeScreenWidget<MODULE>* screenWidget = new MazeScreenWidget<MODULE>(module);
+		screenWidget->box.pos = gridWidget->box.pos;
+		screenWidget->box.size = gridWidget->box.size;
+		addChild(screenWidget);
 
-		MazeStartPosEditWidget<MODULE>* resetEditWidget = new MazeStartPosEditWidget<MODULE>(module);
-		resetEditWidget->box.pos = turnWidget->box.pos;
-		resetEditWidget->box.size = turnWidget->box.size;
-		addChild(resetEditWidget);
+		MazeStartPosEditWidget<MODULE>* editWidget = new MazeStartPosEditWidget<MODULE>(module);
+		editWidget->box.pos = gridWidget->box.pos;
+		editWidget->box.size = gridWidget->box.size;
+		addChild(editWidget);
 
 		addInput(createInputCentered<StoermelderPort>(Vec(23.8f, 256.0f), module, MODULE::SHIFT_L_INPUT));
 		addInput(createInputCentered<StoermelderPort>(Vec(306.2f, 256.0f), module, MODULE::SHIFT_R_INPUT));
@@ -1100,28 +1096,54 @@ struct MazeWidget32 : ThemedModuleWidget<MazeModule<32, 4>> {
 		addInput(createInputCentered<StoermelderPort>(Vec(247.2f, 292.2f), module, MODULE::TURN_INPUT + 2));
 		addInput(createInputCentered<StoermelderPort>(Vec(247.2f, 327.6f), module, MODULE::TURN_INPUT + 3));
 
+#ifndef METAMODULE
 		addChild(createLightCentered<StoermelderPortLight<GreenLight>>(Vec(51.9f, 292.2f), module, MODULE::TRIG_LIGHT + 0));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(51.9f, 292.2f), module, MODULE::TRIG_OUTPUT + 0));
 		addChild(createLightCentered<StoermelderPortLight<GreenLight>>(Vec(51.9f, 327.6f), module, MODULE::TRIG_LIGHT + 1));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(51.9f, 327.6f), module, MODULE::TRIG_OUTPUT + 1));
 		addChild(createLightCentered<StoermelderPortLight<GreenLight>>(Vec(278.2f, 292.2f), module, MODULE::TRIG_LIGHT + 2));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(278.2f, 292.2f), module, MODULE::TRIG_OUTPUT + 2));
 		addChild(createLightCentered<StoermelderPortLight<GreenLight>>(Vec(278.2f, 327.6f), module, MODULE::TRIG_LIGHT + 3));
+#endif
+		addOutput(createOutputCentered<StoermelderPort>(Vec(51.9f, 292.2f), module, MODULE::TRIG_OUTPUT + 0));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(51.9f, 327.6f), module, MODULE::TRIG_OUTPUT + 1));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(278.2f, 292.2f), module, MODULE::TRIG_OUTPUT + 2));
 		addOutput(createOutputCentered<StoermelderPort>(Vec(278.2f, 327.6f), module, MODULE::TRIG_OUTPUT + 3));
 
+#ifndef METAMODULE
 		addChild(createLightCentered<StoermelderPortLight<GreenRedLight>>(Vec(23.8f, 292.2f), module, MODULE::CV_LIGHT + 0));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(23.8f, 292.2f), module, MODULE::CV_OUTPUT + 0));
 		addChild(createLightCentered<StoermelderPortLight<GreenRedLight>>(Vec(23.8f, 327.6f), module, MODULE::CV_LIGHT + 2));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(23.8f, 327.6f), module, MODULE::CV_OUTPUT + 1));
 		addChild(createLightCentered<StoermelderPortLight<GreenRedLight>>(Vec(306.2f, 292.2f), module, MODULE::CV_LIGHT + 4));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(306.2f, 292.2f), module, MODULE::CV_OUTPUT + 2));
 		addChild(createLightCentered<StoermelderPortLight<GreenRedLight>>(Vec(306.2f, 327.6f), module, MODULE::CV_LIGHT + 6));
+#endif
+		addOutput(createOutputCentered<StoermelderPort>(Vec(23.8f, 292.2f), module, MODULE::CV_OUTPUT + 0));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(23.8f, 327.6f), module, MODULE::CV_OUTPUT + 1));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(306.2f, 292.2f), module, MODULE::CV_OUTPUT + 2));
 		addOutput(createOutputCentered<StoermelderPort>(Vec(306.2f, 327.6f), module, MODULE::CV_OUTPUT + 3));
 	}
 
 	void appendContextMenu(Menu* menu) override {
 		ThemedModuleWidget<MODULE>::appendContextMenu(menu);
 		MODULE* module = dynamic_cast<MODULE*>(this->module);
+
+		menu->addChild(createMenuLabel("Grid"));
+#ifndef METAMODULE
+		GridSizeSlider<MODULE>* sizeSlider = new GridSizeSlider<MODULE>(module);
+		sizeSlider->box.size.x = 200.0;
+		menu->addChild(sizeSlider);
+#else
+		menu->addChild(createSubmenuItem("Dimension", "",
+			[module](Menu* menu) {
+				for (int i = 2; i <= 32; i++) {
+					menu->addChild(createCheckMenuItem(string::f("%i x %i", i, i), "",
+						[module, i]() { return module->usedSize == i; },
+						[module, i]() { module->gridResize(i); }
+					));
+				}
+			}
+		));
+#endif
+
+		menu->addChild(construct<GridRandomizeMenuItem<MODULE>>(&MenuItem::text, "Randomize", &GridRandomizeMenuItem<MODULE>::module, module));
+		menu->addChild(construct<GridRandomizeMenuItem<MODULE>>(&MenuItem::text, "Randomize certainty", &GridRandomizeMenuItem<MODULE>::module, module, &GridRandomizeMenuItem<MODULE>::useRandom, false));
+		menu->addChild(construct<GridClearMenuItem<MODULE>>(&MenuItem::text, "Clear", &GridClearMenuItem<MODULE>::module, module));
 
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createBoolPtrMenuItem("Normalize inputs to Yellow", "", &module->normalizePorts));

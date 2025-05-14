@@ -4,6 +4,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <random>
+#include <thread>
 
 namespace StoermelderPackOne {
 namespace EightFace {
@@ -132,9 +133,9 @@ struct EightFaceModule : Module {
 		configInput(SLOT_INPUT, "Slot selection");
 		inputInfos[SLOT_INPUT]->description = "Operating mode is set on the context menu.";
 		configInput(RESET_INPUT, "Reset");
-		configParam<TriggerParamQuantity>(CTRLMODE_PARAM, 0, 2, 0, "Read/Auto/Write mode");
+		configSwitch(CTRLMODE_PARAM, 0.f, 2.f, 0.f, "Operating mode", {"Read", "Auto", "Write"});
 		for (int i = 0; i < NUM_PRESETS; i++) {
-			configParam(PRESET_PARAM + i, 0, 1, 0, string::f("Preset slot %d", i + 1));
+			configSwitch(PRESET_PARAM + i, 0.f, 1.f, 0.f, string::f("Preset slot %d", i + 1));
 			typeButtons[i].param = &params[PRESET_PARAM + i];
 			presetSlotUsed[i] = false;
 		}

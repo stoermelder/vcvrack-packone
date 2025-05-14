@@ -1,8 +1,9 @@
 #pragma once
-#include "plugin.hpp"
+#include <rack.hpp>
 
 namespace StoermelderPackOne {
 
+using namespace rack;
 
 struct StoermelderLedDisplay : LightWidget {
 	NVGcolor color = nvgRGB(0xef, 0xef, 0xef);
@@ -22,9 +23,129 @@ struct StoermelderLedDisplay : LightWidget {
 				nvgTextLetterSpacing(args.vg, 0.0);
 				nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
 				nvgFontSize(args.vg, 12);
-				nvgTextBox(args.vg, 0.f, box.size.y / 2.f, box.size.x, text.c_str(), NULL);
+#ifndef METAMODULE
+				float xOffset = 0.f;
+#else
+				float xOffset = 12.f;
+#endif
+				nvgTextBox(args.vg, xOffset, box.size.y / 2.f, box.size.x, text.c_str(), NULL);
 			}
 		}
+	}
+};
+
+
+template < typename MODULE, int SCENE_MAX >
+struct SceneLedDisplay : StoermelderPackOne::StoermelderLedDisplay {
+	MODULE* module;
+
+	void step() override {
+		if (module) {
+			text = string::f("%02d", module->sceneSelected + 1);
+		} 
+		else {
+			text = "00";
+		}
+		StoermelderLedDisplay::step();
+	}
+
+	void onButton(const event::Button& e) override {
+		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
+			createContextMenu();
+			e.consume(this);
+		}
+		StoermelderLedDisplay::onButton(e);
+	}
+
+	void createContextMenu() {
+		ui::Menu* menu = createMenu();
+
+		struct SceneItem : MenuItem {
+			MODULE* module;
+			int scene;
+			
+			void onAction(const event::Action& e) override {
+				module->sceneSet(scene);
+			}
+
+			void step() override {
+				rightText = module->sceneSelected == scene ? "✔" : "";
+				MenuItem::step();
+			}
+		};
+
+		struct CopyMenuItem : MenuItem {
+			MODULE* module;
+			CopyMenuItem() {
+				rightText = RIGHT_ARROW;
+			}
+
+			Menu* createChildMenu() override {
+				Menu* menu = new Menu;
+
+				struct CopyItem : MenuItem {
+					MODULE* module;
+					int scene;
+					
+					void onAction(const event::Action& e) override {
+						module->sceneCopy(scene);
+					}
+				};
+
+				for (int i = 0; i < SCENE_MAX; i++) {
+					menu->addChild(construct<CopyItem>(&MenuItem::text, string::f("%02u", i + 1), &CopyItem::module, module, &CopyItem::scene, i));
+				}
+
+				return menu;
+			}
+		};
+
+		struct CountMenuItem : MenuItem {
+			MODULE* module;
+			CountMenuItem() {
+				rightText = RIGHT_ARROW;
+			}
+
+			Menu* createChildMenu() override {
+				Menu* menu = new Menu;
+
+				struct CountItem : MenuItem {
+					MODULE* module;
+					int count;
+					
+					void onAction(const event::Action& e) override {
+						module->sceneSetCount(count);
+					}
+
+					void step() override {
+						rightText = module->sceneCount == count ? "✔" : "";
+						MenuItem::step();
+					}
+				};
+
+				for (int i = 0; i < SCENE_MAX; i++) {
+					menu->addChild(construct<CountItem>(&MenuItem::text, string::f("%02u", i + 1), &CountItem::module, module, &CountItem::count, i + 1));
+				}
+
+				return menu;
+			}
+		};
+
+		struct ResetItem : MenuItem {
+			MODULE* module;
+			void onAction(const event::Action& e) override {
+				module->sceneReset();
+			}
+		};
+
+		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Scene"));
+		for (int i = 0; i < SCENE_MAX; i++) {
+			menu->addChild(construct<SceneItem>(&MenuItem::text, string::f("%02u", i + 1), &SceneItem::module, module, &SceneItem::scene, i));
+		}
+		menu->addChild(new MenuSeparator());
+		menu->addChild(construct<CountMenuItem>(&MenuItem::text, "Count", &CountMenuItem::module, module));
+		menu->addChild(construct<CopyMenuItem>(&MenuItem::text, "Copy to", &CopyMenuItem::module, module));
+		menu->addChild(construct<ResetItem>(&MenuItem::text, "Reset", &ResetItem::module, module));
 	}
 };
 

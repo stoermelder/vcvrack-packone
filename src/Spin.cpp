@@ -49,7 +49,7 @@ struct SpinModule : Module {
 		configOutput(OUTPUT_DEC, "Mouse wheel down trigger");
 		configOutput(OUTPUT_INC, "Mouse wheel up trigger");
 		configOutput(OUTPUT_CLICK, "Middle mouse button trigger");
-		configParam<TriggerParamQuantity>(PARAM_ONLY, 0.f, 1.f, 1.f, "Only active while parameter-hovering");
+		configSwitch(PARAM_ONLY, 0.f, 1.f, 1.f, "Only active while parameter-hovering");
 		onReset();
 	}
 

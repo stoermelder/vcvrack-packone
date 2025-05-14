@@ -1,5 +1,5 @@
 #pragma once
-#include "plugin.hpp"
+#include <rack.hpp>
 
 namespace StoermelderPackOne {
     
@@ -17,6 +17,10 @@ struct ScaledMapParam {
 	dsp::ExponentialSlewLimiter filter;
 	bool filterInitialized;
 	float filterSlew;
+
+	float curve = 0.f;
+	float curve_exp2_taylor5;
+
 	T valueIn;
 	float value;
 	float valueOut;
@@ -51,6 +55,7 @@ struct ScaledMapParam {
 			filterSlew = 0.f;
 			min = 0.f;
 			max = 1.f;
+			curve = 0.f;
 		}
 	}
 
@@ -74,6 +79,30 @@ struct ScaledMapParam {
 	}
 	float getSlew() {
 		return filterSlew;
+	}
+
+	void setCurve(float a) {
+		this->curve = a;
+		this->curve_exp2_taylor5 = dsp::exp2_taylor5(curve);
+	}
+	float getCurve() {
+		return curve;
+	}
+
+	float processCurve(float v) {
+		if (curve == 0.f) return v;
+		v = rack::rescale(v, min, max, 1.f, M_E);
+		v = std::exp(std::pow(std::log(v), curve_exp2_taylor5));
+		v = rack::rescale(v, 1.f, M_E, min, max);
+		return v;
+	}
+
+	float processCurveInverse(float v) {
+		if (curve == 0.f) return v;
+		v = rack::rescale(v, min, max, 1.f, M_E);
+		v = std::exp(std::pow(std::log(v), 1.f / curve_exp2_taylor5));
+		v = rack::rescale(v, 1.f, M_E, min, max);
+		return v;
 	}
 
 	void setMin(float v) {
@@ -109,6 +138,8 @@ struct ScaledMapParam {
 			filterInitialized = true;
 		}
 		float f = filterSlew > 0.f && sampleTime > 0.f ? filter.process(sampleTime, value) : value;
+		f = processCurve(f);
+
 		if (valueOut != f || force) {
 			Param* param = paramQuantity->getParam();
 			if (param) {
@@ -126,14 +157,20 @@ struct ScaledMapParam {
 
 	virtual T getValue() {
 		float f = paramQuantity->getScaledValue();
+		// Simply return the input-value if the Param's current value is almost unchanged
 		if (isNear(valueOut, f)) return valueIn;
-		// Reset the internal values to the actual parameter's value in case 
+
+		// Reset the internal values to the actual parameter's value in case
 		// getValue() is called before setValue() - for proper MIDI feedback
 		if (valueOut == std::numeric_limits<float>::infinity()) value = valueOut = f;
-		// If a parameter is snapped then the returned value of ParaQuantity can't be trusted
-		// -> simply return the input value
-		if (paramQuantity->snapEnabled) f = valueOut;
+		// If a parameter is snapped then the returned value of ParamQuantity can't be trusted
+		// -> Use the parameter's actual value bypassing ParamQuantity
+		if (paramQuantity->snapEnabled) {
+			f = paramQuantity->getParam()->getValue();
+			f = math::rescale(f, paramQuantity->getMinValue(), paramQuantity->getMaxValue(), 0.f, 1.f);
+		}
 
+		f = processCurveInverse(f);
 		f = rescale(f, min, max, limitMin, limitMax);
 		f = clamp(f, limitMin, limitMax);
 		T i = T(f);

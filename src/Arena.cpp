@@ -118,8 +118,6 @@ struct ArenaModule : Module {
 	/** [Stored to JSON] */
 	MODMODE modMode[IN_PORTS];
 	/** [Stored to JSON] */
-	bool modBipolar[IN_PORTS];
-	/** [Stored to JSON] */
 	bool inputXBipolar[IN_PORTS];
 	/** [Stored to JSON] */
 	bool inputYBipolar[IN_PORTS];
@@ -199,7 +197,6 @@ struct ArenaModule : Module {
 		for (int i = 0; i < IN_PORTS; i++) {
 			radius[i] = radiusUi[i] = 0.5f;
 			modMode[i] = MODMODE::RADIUS;
-			modBipolar[i] = false;
 			inputXBipolar[i] = false;
 			inputYBipolar[i] = false;
 			outputMode[i] = OUTPUTMODE::SCALE;
@@ -263,9 +260,9 @@ struct ArenaModule : Module {
 			float x = params[IN_X_POS + j].getValue();
 			if (inputs[IN_X_INPUT + j].isConnected()) {
 				float xd = inputs[IN_X_INPUT + j].getVoltage();
+				xd *= params[IN_X_PARAM + j].getValue();
 				xd += inputXBipolar[j] ? 5.f : 0.f;
 				x = clamp(xd / 10.f, 0.f, 1.f);
-				x *= params[IN_X_PARAM + j].getValue();
 			}
 			x += offsetX[j];
 			x = clamp(x, 0.f, 1.f);
@@ -274,9 +271,9 @@ struct ArenaModule : Module {
 			float y = params[IN_Y_POS + j].getValue();
 			if (inputs[IN_Y_INPUT + j].isConnected()) {
 				float yd = inputs[IN_Y_INPUT + j].getVoltage();
+				yd *= params[IN_Y_PARAM + j].getValue();
 				yd += inputYBipolar[j] ? 5.f : 0.f;
 				y = clamp(yd / 10.f, 0.f, 1.f);
-				y *= params[IN_Y_PARAM + j].getValue();
 			}
 			y += offsetY[j];
 			y = clamp(y, 0.f, 1.f);
@@ -408,9 +405,8 @@ struct ArenaModule : Module {
 
 	inline float getOpInput(int j) {
 		float v = inputs[MOD_INPUT + j].isConnected() ? inputs[MOD_INPUT + j].getVoltage() : 10.f;
-		v += modBipolar[j] ? 5.f : 0.f;
-		v = clamp(v / 10.f, 0.f, 1.f);
 		v *= params[MOD_PARAM + j].getValue();
+		v = clamp(v / 10.f, -1.f, 1.f);
 		return v;
 	}
 
@@ -752,7 +748,6 @@ struct ArenaModule : Module {
 			json_object_set_new(inportJ, "amount", json_real(amount[i]));
 			json_object_set_new(inportJ, "radius", json_real(radius[i]));
 			json_object_set_new(inportJ, "modMode", json_integer(modMode[i]));
-			json_object_set_new(inportJ, "modBipolar", json_boolean(modBipolar[i]));
 			json_object_set_new(inportJ, "inputXBipolar", json_boolean(inputXBipolar[i]));
 			json_object_set_new(inportJ, "inputYBipolar", json_boolean(inputYBipolar[i]));
 			json_object_set_new(inportJ, "outputMode", json_integer(outputMode[i]));
@@ -803,7 +798,6 @@ struct ArenaModule : Module {
 			amount[inputIndex] = json_real_value(json_object_get(inportJ, "amount"));
 			radiusUi[inputIndex] = radius[inputIndex] = json_real_value(json_object_get(inportJ, "radius"));
 			modMode[inputIndex] = (MODMODE)json_integer_value(json_object_get(inportJ, "modMode"));
-			modBipolar[inputIndex] = json_boolean_value(json_object_get(inportJ, "modBipolar"));
 			inputXBipolar[inputIndex] = json_boolean_value(json_object_get(inportJ, "inputXBipolar"));
 			inputYBipolar[inputIndex] = json_boolean_value(json_object_get(inportJ, "inputYBipolar"));
 			outputMode[inputIndex] = (OUTPUTMODE)json_integer_value(json_object_get(inportJ, "outputMode"));
@@ -927,20 +921,6 @@ struct ModModeMenuItem : MenuItem {
 		}
 	};
 
-	struct ModBipolarItem : MenuItem {
-		MODULE* module;
-		int id;
-
-		void onAction(const event::Action& e) override {
-			module->modBipolar[id] ^= true;
-		}
-
-		void step() override {
-			rightText = module->modBipolar[id] ? "-5V..5V" : "0V..10V";
-			MenuItem::step();
-		}
-	};
-
 	MODULE* module;
 	int id;
 	Menu* createChildMenu() override {
@@ -951,8 +931,6 @@ struct ModModeMenuItem : MenuItem {
 		menu->addChild(construct<ModeModeItem>(&MenuItem::text, "Offset x-pos", &ModeModeItem::module, module, &ModeModeItem::id, id, &ModeModeItem::modMode, MODMODE::OFFSET_X));
 		menu->addChild(construct<ModeModeItem>(&MenuItem::text, "Offset y-pos", &ModeModeItem::module, module, &ModeModeItem::id, id, &ModeModeItem::modMode, MODMODE::OFFSET_Y));
 		menu->addChild(construct<ModeModeItem>(&MenuItem::text, "Random walk", &ModeModeItem::module, module, &ModeModeItem::id, id, &ModeModeItem::modMode, MODMODE::WALK));
-		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<ModBipolarItem>(&MenuItem::text, "Voltage", &ModBipolarItem::module, module, &ModBipolarItem::id, id));
 		return menu;
 	}
 };

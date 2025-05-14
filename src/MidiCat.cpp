@@ -4,6 +4,7 @@
 #include "helpers/StripIdFixModule.hpp"
 #include "digital/ScaledMapParam.hpp"
 #include "components/MenuLabelEx.hpp"
+#include "components/CurveMenuItem.hpp"
 #include "components/SubMenuSlider.hpp"
 #include "components/MidiWidget.hpp"
 #include "ui/ParamWidgetContextExtender.hpp"
@@ -863,6 +864,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 			midiParam[learningId].setSlew(midiParam[learningId - 1].getSlew());
 			midiParam[learningId].setMin(midiParam[learningId - 1].getMin());
 			midiParam[learningId].setMax(midiParam[learningId - 1].getMax());
+			midiParam[learningId].setCurve(midiParam[learningId - 1].getCurve());
 			midiParam[learningId].clockMode = midiParam[learningId - 1].clockMode;
 			midiParam[learningId].clockSource = midiParam[learningId - 1].clockSource;
 		}
@@ -984,6 +986,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 			p->slew = midiParam[i].getSlew();
 			p->min = midiParam[i].getMin();
 			p->max = midiParam[i].getMax();
+			p->curve = midiParam[i].getCurve();
 			m->paramMap.push_back(p);
 		}
 		m->pluginName = module->model->plugin->name;
@@ -1027,6 +1030,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 			midiParam[i].setSlew(it->slew);
 			midiParam[i].setMin(it->min);
 			midiParam[i].setMax(it->max);
+			midiParam[i].setCurve(it->curve);
 			i++;
 		}
 		updateMapLen();
@@ -1077,6 +1081,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 			json_object_set_new(mapJ, "slew", json_real(midiParam[id].getSlew()));
 			json_object_set_new(mapJ, "min", json_real(midiParam[id].getMin()));
 			json_object_set_new(mapJ, "max", json_real(midiParam[id].getMax()));
+			json_object_set_new(mapJ, "curve", json_real(midiParam[id].getCurve()));
 			json_object_set_new(mapJ, "clockMode", json_integer((int)midiParam[id].clockMode));
 			json_object_set_new(mapJ, "clockSource", json_integer(midiParam[id].clockSource));
 			json_array_append_new(mapsJ, mapJ);
@@ -1133,6 +1138,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 				json_t* slewJ = json_object_get(mapJ, "slew");
 				json_t* minJ = json_object_get(mapJ, "min");
 				json_t* maxJ = json_object_get(mapJ, "max");
+				json_t* curveJ = json_object_get(mapJ, "curve");
 				json_t* clockModeJ = json_object_get(mapJ, "clockMode");
 				json_t* clockSourceJ = json_object_get(mapJ, "clockSource");
 
@@ -1165,6 +1171,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 				if (slewJ) midiParam[mapIndex].setSlew(json_real_value(slewJ));
 				if (minJ) midiParam[mapIndex].setMin(json_real_value(minJ));
 				if (maxJ) midiParam[mapIndex].setMax(json_real_value(maxJ));
+				if (curveJ) midiParam[mapIndex].setCurve(json_real_value(curveJ));
 				if (clockModeJ) midiParam[mapIndex].clockMode = (MidiCatParam::CLOCKMODE)json_integer_value(clockModeJ);
 				if (clockSourceJ) midiParam[mapIndex].clockSource = json_integer_value(clockSourceJ);
 			}
@@ -1245,6 +1252,21 @@ struct SlewSlider : ui::Slider {
 		delete quantity;
 	}
 }; // struct SlewSlider
+
+
+struct MidiCatCurveMenuItem : CurveMenuItem {
+	MidiCatParam* p;
+	MidiCatCurveMenuItem(MidiCatParam* p) {
+		this->p = p;
+	}
+	float getCurveValue() override {
+		return p->getCurve();
+	}
+	void setCurveValue(float v) override {
+		p->setCurve(v);
+	}
+};
+
 
 struct ScalingInputLabel : MenuLabelEx {
 	MidiCatParam* p;
@@ -1605,6 +1627,7 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 		menu->addChild(new MinSlider(&module->midiParam[id]));
 		menu->addChild(new MaxSlider(&module->midiParam[id]));
 		menu->addChild(construct<PresetMenuItem>(&MenuItem::text, "Presets", &PresetMenuItem::module, module, &PresetMenuItem::id, id));
+		menu->addChild(new MidiCatCurveMenuItem(&module->midiParam[id]));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<LabelMenuItem>(&MenuItem::text, "Custom label", &LabelMenuItem::module, module, &LabelMenuItem::id, id));
 
@@ -1670,16 +1693,12 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 	MidiCatDisplay* mapWidget;
 
 	Module* expMem;
-	BufferedTriggerParamQuantity* expMemPrevQuantity;
-	dsp::SchmittTrigger expMemPrevTrigger;
-	BufferedTriggerParamQuantity* expMemNextQuantity;
-	dsp::SchmittTrigger expMemNextTrigger;
-	BufferedTriggerParamQuantity* expMemParamQuantity;
-	dsp::SchmittTrigger expMemParamTrigger;
+	BufferedSwitchQuantity* expMemPrevQuantity;
+	BufferedSwitchQuantity* expMemNextQuantity;
+	BufferedSwitchQuantity* expMemParamQuantity;
 
 	MidiCatCtxBase* expCtx;
-	BufferedTriggerParamQuantity* expCtxMapQuantity;
-	dsp::SchmittTrigger expCtxMapTrigger;
+	BufferedSwitchQuantity* expCtxMapQuantity;
 
 	enum class LEARN_MODE {
 		OFF = 0,
@@ -1808,24 +1827,24 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 			if (module->expMem != expMem) {
 				expMem = module->expMem;
 				if (expMem) {
-					expMemPrevQuantity = dynamic_cast<BufferedTriggerParamQuantity*>(expMem->paramQuantities[1]);
+					expMemPrevQuantity = dynamic_cast<BufferedSwitchQuantity*>(expMem->paramQuantities[1]);
 					expMemPrevQuantity->resetBuffer();
-					expMemNextQuantity = dynamic_cast<BufferedTriggerParamQuantity*>(expMem->paramQuantities[2]);
+					expMemNextQuantity = dynamic_cast<BufferedSwitchQuantity*>(expMem->paramQuantities[2]);
 					expMemNextQuantity->resetBuffer();
-					expMemParamQuantity = dynamic_cast<BufferedTriggerParamQuantity*>(expMem->paramQuantities[0]);
+					expMemParamQuantity = dynamic_cast<BufferedSwitchQuantity*>(expMem->paramQuantities[0]);
 					expMemParamQuantity->resetBuffer();
 				}
 			}
 			if (expMem) {
-				if (expMemPrevTrigger.process(expMemPrevQuantity->buffer)) {
+				if (expMemPrevQuantity->getBuffer()) {
 					expMemPrevQuantity->resetBuffer();
 					expMemPrevModule();
 				}
-				if (expMemNextTrigger.process(expMemNextQuantity->buffer)) {
+				if (expMemNextQuantity->getBuffer()) {
 					expMemNextQuantity->resetBuffer();
 					expMemNextModule();
 				}
-				if (expMemParamTrigger.process(expMemParamQuantity->buffer)) {
+				if (expMemParamQuantity->getBuffer()) {
 					expMemParamQuantity->resetBuffer();
 					enableLearn(LEARN_MODE::MEM);
 				}
@@ -1836,12 +1855,12 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 			if (module->expCtx != (Module*)expCtx) {
 				expCtx = dynamic_cast<MidiCatCtxBase*>(module->expCtx);
 				if (expCtx) {
-					expCtxMapQuantity = dynamic_cast<BufferedTriggerParamQuantity*>(expCtx->paramQuantities[0]);
+					expCtxMapQuantity = dynamic_cast<BufferedSwitchQuantity*>(expCtx->paramQuantities[0]);
 					expCtxMapQuantity->resetBuffer();
 				}
 			}
 			if (expCtx) {
-				if (expCtxMapTrigger.process(expCtxMapQuantity->buffer)) {
+				if (expCtxMapQuantity->getBuffer()) {
 					expCtxMapQuantity->resetBuffer();
 					module->enableLearn(-1, true);
 				}
@@ -2029,6 +2048,7 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 				w.push_back(construct<ScalingOutputLabel>(&MenuLabel::text, "Parameter range", &ScalingOutputLabel::p, &module->midiParam[id]));
 				w.push_back(new MinSlider(&module->midiParam[id]));
 				w.push_back(new MaxSlider(&module->midiParam[id]));
+				w.push_back(new MidiCatCurveMenuItem(&module->midiParam[id]));
 				w.push_back(construct<CenterModuleItem>(&MenuItem::text, "Go to mapping module", &CenterModuleItem::mw, this));
 				w.push_back(new MidiCatEndItem);
 

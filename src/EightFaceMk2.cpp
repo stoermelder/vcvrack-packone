@@ -79,6 +79,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 
 	/** Total number of snapshots including expanders */
 	int presetTotal;
+	int presetPrev = -1;
 	int presetNext;
 	int presetCopy = -1;
 
@@ -132,7 +133,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 	EightFaceMk2Module() {
 		BASE::panelTheme = pluginSettings.panelThemeDefault;
 		Module::config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		Module::configParam(PARAM_RW, 0, 1, 0, "Read/write mode");
+		Module::configSwitch(PARAM_RW, 0.f, 2.f, 0.f, "Operating mode", {"Read", "Auto", "Write"});
 		Module::configInput(INPUT_CV, "Slot-selection");
 		Module::inputInfos[INPUT_CV]->description = "Channel 2 can retrigger the current slot in C4 mode";
 		Module::configInput(INPUT_RESET, "Sequencer-mode reset");
@@ -255,8 +256,8 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 		}
 		int presetCount = std::min(this->presetCount, presetTotal);
 
-		// Read mode
-		if (BASE::ctrlMode == CTRLMODE::READ) {
+		// Read & Auto modes
+		if (BASE::ctrlMode == CTRLMODE::READ || BASE::ctrlMode == CTRLMODE::AUTO) {
 			// RESET input
 			if (resetTrigger.process(Module::inputs[INPUT_RESET].getVoltage())) {
 				resetTimer.reset();
@@ -438,7 +439,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 			for (int i = 0; i < presetTotal; i++) {
 				EightFaceMk2Slot* slot = expSlot(i);
 				bool u = *(slot->presetSlotUsed);
-				if (BASE::ctrlMode == CTRLMODE::READ) {
+				if (BASE::ctrlMode == CTRLMODE::READ || BASE::ctrlMode == CTRLMODE::AUTO) {
 					slot->lights[0].setBrightness(preset == i ? 1.f : (presetNext == i ? 1.f : 0.f));
 					slot->lights[1].setBrightness(preset == i ? 1.f : (presetCount > i ? (u ? 1.f : 0.25f) : 0.f));
 					slot->lights[2].setBrightness(preset == i ? 1.f : 0.f);
@@ -502,6 +503,12 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 		if (workerPreset < 0) return;
 
 		EightFaceMk2Slot* slot = expSlot(workerPreset);
+		EightFaceMk2Slot* slotPrev = NULL;
+		if (presetPrev >= 0) {
+			slotPrev = expSlot(presetPrev);
+		}
+
+		int i = 0;
 		for (json_t* vJ : *slot->preset) {
 			json_t* idJ = json_object_get(vJ, "id");
 			if (!idJ) continue;
@@ -514,6 +521,10 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 				ModuleWidget* mw = b->getModuleWidget();
 				if (!mw) continue;
 
+				if (BASE::ctrlMode == CTRLMODE::AUTO && slotPrev && *slotPrev->presetSlotUsed) {
+					json_decref((*slotPrev->preset)[i]);
+					(*slotPrev->preset)[i] = mw->toJson();
+				}
 				if (b->needsGuiThread) {
 					workerGuiQueue.push(std::make_tuple(mw, vJ));
 				}
@@ -522,6 +533,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 				}
 				break;
 			}
+			i++;
 		}
 	}
 
@@ -541,6 +553,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 		EightFaceMk2Slot* slot = expSlot(p);
 		if (!isNext) {
 			if (p != preset || force) {
+				presetPrev = preset;
 				preset = p;
 				presetNext = -1;
 				if (!*(slot->presetSlotUsed)) return;
@@ -588,6 +601,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 	void presetSetCount(int p) {
 		if (preset >= p) preset = 0;
 		presetCount = p;
+		presetPrev = -1;
 		presetNext = -1;
 	}
 
@@ -872,6 +886,7 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 		BASE::addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 58.9f), module, MODULE::INPUT_CV));
 		BASE::addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 94.2f), module, MODULE::INPUT_RESET));
 
+		BASE::addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(11.4f, 118.1f), module, MODULE::LIGHT_LEARN));
 		ModuleColorWidget<MODULE>* cw = createWidgetCentered<ModuleColorWidget<MODULE>>(Vec(22.5f, 118.1f));
 		cw->module = module;
 		BASE::addChild(cw);
@@ -885,8 +900,7 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 			BASE::addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(22.5f, 140.6f + o), module, MODULE::LIGHT_PRESET + i * 3));
 		}
 
-		BASE::addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(11.4f, 322.7f), module, MODULE::LIGHT_LEARN));
-		BASE::addParam(createParamCentered<CKSSH>(Vec(22.5f, 336.2f), module, MODULE::PARAM_RW));
+		BASE::addParam(createParamCentered<CKSSThreeH>(Vec(22.5f, 336.2f), module, MODULE::PARAM_RW));
 	}
 
 	~EightFaceMk2Widget() {

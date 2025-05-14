@@ -1,9 +1,10 @@
 # stoermelder PackOne
 
 <!-- Version and License Badges -->
-![Version](https://img.shields.io/badge/version-2.0.beta4-green.svg?style=flat-square)
-![License](https://img.shields.io/badge/license-GPLv3+-blue.svg?style=flat-square)
-![Language](https://img.shields.io/badge/language-C++-yellow.svg?style=flat-square)
+![Version](https://img.shields.io/badge/Version-2.0.beta4-green.svg?style=flat-square)
+![Rack](https://img.shields.io/badge/VCV_Rack-v2-red.svg?style=flat-square)
+![License](https://img.shields.io/badge/License-GPLv3+-blue.svg?style=flat-square)
+![Language](https://img.shields.io/badge/Language-C++-yellow.svg?style=flat-square)
 
 The PackOne plugin gives you some modules for [VCV Rack](https://www.vcvrack.com).
 
@@ -83,6 +84,6 @@ Follow the [build instructions](https://vcvrack.com/manual/Building.html#buildin
 
 ## License
 
-All **source code** is copyright © 2022 Benjamin Dill and is licensed under the [GNU General Public License, version v3.0](./LICENSE.txt).
+All **source code** is copyright © 2024 Benjamin Dill and is licensed under the [GNU General Public License, version v3.0](./LICENSE.txt).
 
 All **files** and **graphics** in the `res` and `res-src` directories are licensed under [CC BY-NC-ND 4.0](https://creativecommons.org/licenses/by-nc-nd/4.0/). You may not distribute modified adaptations of these graphics.

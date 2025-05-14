@@ -19,3 +19,5 @@ struct StoermelderSettings {
 	void saveToJson();
 	void readFromJson();
 };
+
+extern StoermelderSettings pluginSettings;

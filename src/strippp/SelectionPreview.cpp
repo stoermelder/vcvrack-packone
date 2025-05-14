@@ -86,23 +86,24 @@ struct ModelBox : widget::OpaqueWidget {
 
 
 struct SelectionPreview : OpaqueWidget {
-	void loadSelectionFile(std::string path) {
+	bool loadSelectionFile(std::string path) {
 		FILE* file = std::fopen(path.c_str(), "r");
-		if (!file) return;
+		if (!file) return false;
 		DEFER({std::fclose(file);});
 		INFO("Loading selection %s", path.c_str());
 
 		json_error_t error;
 		json_t* rootJ = json_loadf(file, 0, &error);
-		if (!rootJ)
+		if (!rootJ) {
 			throw Exception("File is not a valid selection file. JSON parsing error at %s %d:%d %s", error.source, error.line, error.column, error.text);
+		}
 		DEFER({json_decref(rootJ);});
-		createPreview(rootJ);
+		return (createPreview(rootJ) > 0);
 	}
 
-	void createPreview(json_t* rootJ) {
+	int createPreview(json_t* rootJ) {
 		json_t* modulesJ = json_object_get(rootJ, "modules");
-		if (!modulesJ) return;
+		if (!modulesJ) return 0;
 
 		json_t* moduleJ;
 		size_t moduleIndex;
@@ -117,6 +118,7 @@ struct SelectionPreview : OpaqueWidget {
 			minY = std::min(minY, y);
 		}
 
+		int i = 0;
 		json_array_foreach(modulesJ, moduleIndex, moduleJ) {
 			json_t* posJ = json_object_get(moduleJ, "pos");
 			double x = 0.0, y = 0.0;
@@ -138,7 +140,9 @@ struct SelectionPreview : OpaqueWidget {
 			modelBox->setModel(model);
 			modelBox->box.pos = Vec(x - minX, y - minY).mult(RACK_GRID_SIZE);
 			addChild(modelBox);
+			i++;
 		}
+		return i;
 	}
 
 	void onHide(const HideEvent& e) override {

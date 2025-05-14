@@ -14,18 +14,18 @@ struct ViewportCenterSmooth {
 
 	void trigger(Widget* w, float zoom, float framerate, float transitionTime = 1.f) {
 		Vec target = w->getBox().getCenter();
-		zoom = std::pow(2.f, zoom);
 		trigger(target, zoom, framerate, transitionTime);
 	}
 
 	void trigger(Rect rect, float framerate, float transitionTime = 1.f) {
 		float zx = APP->scene->rackScroll->box.size.x / rect.size.x * 0.9f;
 		float zy = APP->scene->rackScroll->box.size.y / rect.size.y * 0.9f;
-		float zoom = std::min(zx, zy);
+		float zoom = std::log2(std::min(zx, zy));
 		trigger(rect.getCenter(), zoom, framerate, transitionTime);
 	}
 
 	void trigger(Vec target, float zoom, float framerate, float transitionTime = 1.f) {
+		zoom = std::pow(2.f, zoom);
 		// source is at top-left, translate to center of screen
 		Vec source = APP->scene->rackScroll->offset / APP->scene->rackScroll->getZoom();
 		Vec center = APP->scene->rackScroll->getSize() * (1.f / APP->scene->rackScroll->getZoom()) * 0.5f;

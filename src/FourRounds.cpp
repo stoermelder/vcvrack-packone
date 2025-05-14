@@ -1,5 +1,6 @@
 #include "plugin.hpp"
 #include <random>
+#include <chrono>
 
 namespace StoermelderPackOne {
 namespace FourRounds {
@@ -78,8 +79,8 @@ struct FourRoundsModule : Module {
 		}
 		configOutput(WINNER_OUTPUT, "Contest champion");
 		outputInfos[WINNER_OUTPUT]->description = "The \"winner\" of the two contestants of round 3.";
-		configParam<TriggerParamQuantity>(TRIG_PARAM, 0.0f, 1.0f, 0.0f, "New contest trigger");
-		configParam<TriggerParamQuantity>(INV_PARAM, 0.0f, 1.0f, 0.0f, "Invert state trigger");
+		configSwitch(TRIG_PARAM, 0.0f, 1.0f, 0.0f, "New contest trigger");
+		configSwitch(INV_PARAM, 0.0f, 1.0f, 0.0f, "Invert state trigger");
 		lightDivider.setDivision(1024);
 		onReset();
 	}

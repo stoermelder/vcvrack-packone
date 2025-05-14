@@ -26,10 +26,14 @@ struct MidiCatCtxModule : MidiCatCtxBase {
 	/** [Stored to JSON] */
 	std::string midiCatId;
 
+	dsp::ClockDivider processDivider;
+	dsp::SchmittTrigger mapTrigger;
+
 	MidiCatCtxModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		configParam<BufferedTriggerParamQuantity>(PARAM_MAP, 0.f, 1.f, 0.f, "Start parameter mapping");
+		configSwitch<BufferedSwitchQuantity>(PARAM_MAP, 0.f, 1.f, 0.f, "Start parameter mapping");
+		processDivider.setDivision(48);
 		onReset();
 	}
 
@@ -40,6 +44,14 @@ struct MidiCatCtxModule : MidiCatCtxBase {
 
 	std::string getMidiCatId() override {
 		return midiCatId;
+	}
+
+	void process(const ProcessArgs& args) override {
+		if (processDivider.process()) {
+			if (mapTrigger.process(params[PARAM_MAP].getValue())) {
+				reinterpret_cast<BufferedSwitchQuantity*>(paramQuantities[PARAM_MAP])->setBuffer();
+			}
+		}
 	}
 
 	json_t* dataToJson() override {
