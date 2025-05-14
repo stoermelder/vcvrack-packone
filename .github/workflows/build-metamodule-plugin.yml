@@ -70,7 +70,7 @@ jobs:
           cd metamodule-plugins && for f in *.mmplugin; do mv $f ${f%.mmplugin}-${{ env.CI_REF_NAME }}.mmplugin; done;
 
       - name: Rename plugin
-        if: !inputs.do_release
+        if: ${{ ! inputs.do_release }}
         run: |
           gitrev=`git rev-parse --short HEAD`
           cd metamodule
