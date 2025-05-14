@@ -99,6 +99,9 @@ jobs:
       - uses: actions/download-artifact@v4.1.7
         with:
           path: _artifacts
+      - name: Extract artifact
+        run: |
+          unzip _artifacts/**/*.zip
       - name: Delete old release assets
         uses: mknejp/delete-release-assets@v1
         with:
@@ -109,6 +112,6 @@ jobs:
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: _artifacts/**/mmplugin.zip
+          file: _artifacts/**/*.mmplugin
           tag: Nightly-MetaModule
           file_glob: true
