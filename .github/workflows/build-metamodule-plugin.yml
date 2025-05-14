@@ -1,4 +1,4 @@
-name: Build and release MetaModule plugin
+name: Build MetaModule plugin
 
 on:
   workflow_dispatch:
