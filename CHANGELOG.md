@@ -50,6 +50,8 @@
     - Fixed usage in multiple plugin-instances
 - Module [STRIP-BAY](./docs/Strip.md#stoermelder-strip-bay)
     - Fixed crash on stackable input-cables (#405)
+- Module [STROKE](./docs/Stroke.md)
+    - Added command "Minimize window"
 - Module [TRANSIT](./docs/Transit.md)
     - Added fade setting per slot
     - Improved handling on mapped switches (skipping all immediate values)
