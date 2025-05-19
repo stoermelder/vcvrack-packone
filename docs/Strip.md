@@ -97,3 +97,5 @@ STRIP-BAY is a companion module for STRIP: It is used to name some "patching-poi
 
 - v1.9.0
     - Initial release of STRIP-BAY
+- v2.0.0
+    - Fixed crash on stackable input-cables (#405)

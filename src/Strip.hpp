@@ -329,12 +329,12 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 			ModuleWidget* mw = APP->scene->rack->getModule(sc->id);
 			for (PortWidget* in : mw->getInputs()) {
 				std::vector<CableWidget*> cs = APP->scene->rack->getCablesOnPort(in);
-				CableWidget* c = cs.front();
-				if (!c) continue;
-				auto it = moduleIds.find(c->outputPort->module->id);
-				// Other end is outside of this strip
-				if (it == moduleIds.end()) {
-					conn.push_back(std::make_tuple(sc->getConnId(), c->inputPort->portId, c->outputPort, c->color));
+				for (CableWidget* c : cs) {
+					auto it = moduleIds.find(c->outputPort->module->id);
+					// Other end is outside of this strip
+					if (it == moduleIds.end()) {
+						conn.push_back(std::make_tuple(sc->getConnId(), c->inputPort->portId, c->outputPort, c->color));
+					}
 				}
 			}
 			for (PortWidget* out : mw->getOutputs()) {
@@ -358,7 +358,9 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 			Module* m = module;
 			while (true) {
 				if (!m || m->rightExpander.moduleId < 0) break;
-				m = m->rightExpander.module;
+				ModuleWidget* mw = APP->scene->rack->getModule(m->rightExpander.moduleId);
+				assert(mw);
+				m = mw->getModule();
 				StripBayBase* sc = dynamic_cast<StripBayBase*>(m);
 				if (sc) toDo[sc->getConnId()] = sc;
 
@@ -368,7 +370,9 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 			Module* m = module;
 			while (true) {
 				if (!m || m->leftExpander.moduleId < 0) break;
-				m = m->leftExpander.module;
+				ModuleWidget* mw = APP->scene->rack->getModule(m->leftExpander.moduleId);
+				assert(mw);
+				m = mw->getModule();
 				StripBayBase* sc = dynamic_cast<StripBayBase*>(m);
 				if (sc) toDo[sc->getConnId()] = sc;
 			}
@@ -401,11 +405,9 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 				c->outputModule = pw1->module;
 				c->outputId = pw1->portId;
 				//cw->setOutput(pw1);
-				if (APP->scene->rack->getCablesOnPort(pw2).size() == 0) {
-					c->inputModule = pw2->module;
-					c->inputId = pw2->portId;
-					//cw->setInput(pw2);
-				}
+				c->inputModule = pw2->module;
+				c->inputId = pw2->portId;
+				//cw->setInput(pw2);
 			}
 			APP->engine->addCable(c);
 
