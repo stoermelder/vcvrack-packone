@@ -20,6 +20,7 @@
     - Added "Auto"-mode besides "Read" and "Write" ([manual](./docs/EightFaceMk2.md#auto-mode)) (#276)
 - Module [AFFIX](./docs/Affix.md), [µAFFIX](./docs/Affix.md)
     - Fixed knob reset on double-click in Semitone/Octave-mode (#387)
+    - Fixed wrong output voltage in Semitone/Octave-mode after loading (#403) 
 - Module [ARENA](./docs/Arena.md)
     - Fixed behavior of attenuvertors for X/Y/MOD-inputs (#394)
 - Module [GOTO](./docs/Goto.md)

@@ -18,3 +18,4 @@ The modules can be used to adjust the number of active channels within a polypho
     - Initial release of AFFIX and µAFFIX
 - v2.0.0
     - Fixed knob reset on double-click in Semitone/Octave-mode (#387)
+    - Fixed wrong output voltage in Semitone/Octave-mode after loading (#403) 

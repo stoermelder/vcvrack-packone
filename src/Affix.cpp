@@ -184,7 +184,6 @@ struct AffixModule : Module {
 	}
 
 	void setParamMode(PARAM_MODE paramMode) {
-		if (this->paramMode == paramMode) return;
 		this->paramMode = paramMode;
 		if (this->paramMode == PARAM_MODE::SEMITONE || this->paramMode == PARAM_MODE::OCTAVE) {
 			// Snap value
@@ -208,7 +207,7 @@ struct AffixModule : Module {
 
 	void dataFromJson(json_t* rootJ) override {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
-		paramMode = (PARAM_MODE)json_integer_value(json_object_get(rootJ, "paramMode"));
+		setParamMode((PARAM_MODE)json_integer_value(json_object_get(rootJ, "paramMode")));
 		numberOfChannels = json_integer_value(json_object_get(rootJ, "numberOfChannels"));
 	}
 };
