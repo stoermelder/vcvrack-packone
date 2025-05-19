@@ -55,13 +55,13 @@ struct AffixModule : Module {
 				case PARAM_MODE::SEMITONE: {
 					v = clamp(value, getMinValue(), getMaxValue());
 					value = std::round(value * 12.f) / 12.f;
-					ParamQuantity::setValue(value);
+					ParamQuantity::setImmediateValue(value);
 					break;
 				}
 				case PARAM_MODE::OCTAVE: {
 					v = clamp(value, getMinValue(), getMaxValue());
-					value = std::round(value), 
-					ParamQuantity::setValue(value);
+					value = std::round(value);
+					ParamQuantity::setImmediateValue(value);
 					break;
 				}
 			}
