@@ -85,6 +85,7 @@ The file-format "vcvss" for storing strips is very close to Rack's own format fo
     - Fixed crash in rare cases (Surge-modules) (#366)
     - Fixed wrong hotkey modifier on Mac (Ctrl instead of Cmd) on Cmd+Shift+L
     - Ask to view unavailable modules on the VCV Library when loading a strip (#18)
+    - Fixed missing module-id mapping when adding using STRIP (#402)
 
 # stoermelder STRIP-BAY
 

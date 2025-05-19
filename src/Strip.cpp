@@ -18,7 +18,7 @@ enum class RANDOMEXCL {
 };
 
 
-struct StripModule : StripModuleBase {
+struct StripModule : StripModuleBase, StripIdFixModule {
 	enum ParamIds {
 		MODE_PARAM,
 		ON_PARAM,
@@ -81,7 +81,7 @@ struct StripModule : StripModuleBase {
 		configSwitch(OFF_PARAM, 0.f, 1.f, 0.f, "Switch strip off");
 		configInput(RAND_INPUT, "Strip randomization trigger");
 		configSwitch(RAND_PARAM, 0.f, 1.f, 0.f, "Randomize strip");
-		configParam(EXCLUDE_PARAM, 0.f, 1.f, 0.f, "Parameter randomization include/exclude");
+		configSwitch(EXCLUDE_PARAM, 0.f, 1.f, 0.f, "Parameter randomization include/exclude");
 
 		lightDivider.setDivision(1024);
 		onReset();
@@ -206,7 +206,7 @@ struct StripModule : StripModuleBase {
 		//std::lock_guard<std::mutex> lockGuard(excludeMutex);
 		// Do not lock the mutex as changes on excludedParams are rare events
 
-		history::ComplexAction* complexAction;
+		history::ComplexAction* complexAction = nullptr;
 		if (useHistory) {
 			complexAction = new history::ComplexAction;
 			complexAction->name = "stoermelder STRIP randomize";
@@ -220,7 +220,7 @@ struct StripModule : StripModuleBase {
 				// Be careful: this function is called from the dsp-thread, but widgets belong
 				// to the app-world!
 
-				history::ModuleChange* h;
+				history::ModuleChange* h = nullptr;
 				if (useHistory) {
 					// history::ModuleChange
 					h = new history::ModuleChange;
@@ -349,8 +349,9 @@ struct StripModule : StripModuleBase {
 				json_t* paramIdJ = json_object_get(excludedParamJ, "paramId");
 				if (!(moduleIdJ && paramIdJ)) 
 					continue;
-				int64_t moduleId = json_integer_value(moduleIdJ); 
-				int paramId = json_integer_value(paramIdJ); 
+				int64_t moduleId = json_integer_value(moduleIdJ);
+				int paramId = json_integer_value(paramIdJ);
+				moduleId = idFix(moduleId);
 				excludedParams.insert(std::make_tuple(moduleId, paramId));
 			}
 		}
@@ -360,6 +361,7 @@ struct StripModule : StripModuleBase {
 		if (randomParamsOnlyJ) randomParamsOnly = json_boolean_value(randomParamsOnlyJ);
 		json_t* presetLoadReplaceJ = json_object_get(rootJ, "presetLoadReplace");
 		if (presetLoadReplaceJ) presetLoadReplace = json_boolean_value(presetLoadReplaceJ);
+		idFixClearMap();
 		// Release excludeMutex
 	}
 };

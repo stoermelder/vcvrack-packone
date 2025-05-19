@@ -12,7 +12,7 @@
 - Module [PRISMA](./docs/Prisma.md)
     - A wave multiplier/phase shifter inspired by A-137-2
 
-## 2.0.x (in development)
+## 2.0.0 (in development)
 
 ### Fixes and Changes
 
@@ -42,6 +42,7 @@
     - Added option for Hercules DJControl Starlight (#361)
 - Module [STRIP](./docs/Strip.md)
     - Ask to view unavailable modules on the VCV Library when loading a strip (#18)
+    - Fixed missing module-id mapping when adding using STRIP or STRIP++ (#402)
 - Module [STRIP++](./docs/StripPp.md)
     - Ask to view unavailable modules on the VCV Library when loading a selection
     - Fixed usage in multiple plugin-instances
