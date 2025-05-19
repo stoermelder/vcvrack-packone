@@ -1152,11 +1152,17 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 				module->bindModule(mw->module);
 			});
 		}));
-		menu->addChild(createMenuItem("Bind module (select multiple)", "", [=]() {
+		menu->addChild(createMenuItem("Bind modules (select multiple)", "", [=]() {
 			moduleSelectProcessor.setOwner(this);
 			moduleSelectProcessor.startLearn([module](ModuleWidget* mw, Vec pos) {
 				module->bindModule(mw->module);
 			}, ModuleSelectProcessor::LEARN_MODE::MULTI);
+		}));
+		menu->addChild(createMenuItem("Bind modules (current selection)", "", [=]() {
+			for (ModuleWidget* mw : APP->scene->rack->getSelected()) {
+				module->bindModule(mw->module);
+			}
+			APP->scene->rack->deselectAll();
 		}));
 
 		if (module->boundModules.size() > 0) {

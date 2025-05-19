@@ -18,6 +18,7 @@
 
 - Module [8FACE mk2](./docs/EightFaceMk2.md)
     - Added "Auto"-mode besides "Read" and "Write" ([manual](./docs/EightFaceMk2.md#auto-mode)) (#276)
+    - Added option to bind currently selected modules
 - Module [AFFIX](./docs/Affix.md), [µAFFIX](./docs/Affix.md)
     - Fixed knob reset on double-click in Semitone/Octave-mode (#387)
     - Fixed wrong output voltage in Semitone/Octave-mode after loading (#403)
