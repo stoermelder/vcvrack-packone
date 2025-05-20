@@ -126,13 +126,15 @@ struct MidiCatParam : ScaledMapParam<int> {
 		}
 		else {
 			float f = 0.f;
-			for (int i = 0; i < lightNumColors; i++) 
-				f += paramQuantity->module->lights[lightFirstId + i].getBrightness();
-			f /= float(lightNumColors);
-			// Reset the internal values to the actual parameter's value in case
-			// getValue() is called before setValue() - for proper MIDI feedback
-			if (valueOut == std::numeric_limits<float>::infinity()) value = valueOut = f;
-			f = rescale(f, 0.f, 1.f, limitMin, limitMax);
+			if (paramQuantity->module->lights.size() >= size_t(lightFirstId + lightNumColors)) {
+				for (int i = 0; i < lightNumColors; i++) 
+					f += paramQuantity->module->lights[lightFirstId + i].getBrightness();
+				f /= float(lightNumColors);
+				// Reset the internal values to the actual parameter's value in case
+				// getValue() is called before setValue() - for proper MIDI feedback
+				if (valueOut == std::numeric_limits<float>::infinity()) value = valueOut = f;
+				f = rescale(f, 0.f, 1.f, limitMin, limitMax);
+			}
 			return f;
 		}
 		return 0;
@@ -1028,6 +1030,8 @@ struct MidiCatModule : Module, StripIdFixModule {
 			p->min = midiParam[i].getMin();
 			p->max = midiParam[i].getMax();
 			p->curve = midiParam[i].getCurve();
+			p->lightFirstId = midiParam[i].lightFirstId;
+			p->lightNumColors = midiParam[i].lightNumColors;
 			m->paramMap.push_back(p);
 		}
 		m->pluginName = module->model->plugin->name;
@@ -1072,6 +1076,8 @@ struct MidiCatModule : Module, StripIdFixModule {
 			midiParam[i].setMin(it->min);
 			midiParam[i].setMax(it->max);
 			midiParam[i].setCurve(it->curve);
+			midiParam[i].lightFirstId = it->lightFirstId;
+			midiParam[i].lightNumColors = it->lightNumColors;
 			i++;
 		}
 		updateMapLen();
@@ -1300,7 +1306,6 @@ struct SlewSlider : ui::Slider {
 	}
 }; // struct SlewSlider
 
-
 struct MidiCatCurveMenuItem : CurveMenuItem {
 	MidiCatParam* p;
 	MidiCatCurveMenuItem(MidiCatParam* p) {
@@ -1313,7 +1318,6 @@ struct MidiCatCurveMenuItem : CurveMenuItem {
 		p->setCurve(v);
 	}
 };
-
 
 struct ScalingInputLabel : MenuLabelEx {
 	MidiCatParam* p;
@@ -1641,8 +1645,10 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 
 		if (module->ccs[id].getCc() >= 0 || module->notes[id].getNote() >= 0) {
 			menu->addChild(construct<UnmapMidiItem>(&MenuItem::text, "Clear MIDI assignment", &UnmapMidiItem::module, module, &UnmapMidiItem::id, id));
-			menu->addChild(createMenuItem("Attach feedback to LED (experimental)", CHECKMARK(module->midiParam[id].hasLight()), [this] { enableLearnLight(); }));
 		}
+
+		menu->addChild(createMenuItem("Bind feedback to LED (experimental)", CHECKMARK(module->midiParam[id].hasLight()), [this] { enableLearnLight(); }));
+
 		if (module->ccs[id].getCc() >= 0) {
 			menu->addChild(new MenuSeparator());
 			menu->addChild(construct<CcModeMenuItem>(&MenuItem::text, "Input mode for CC", &CcModeMenuItem::module, module, &CcModeMenuItem::id, id));

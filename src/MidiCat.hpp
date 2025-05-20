@@ -43,6 +43,8 @@ struct MemParam {
 	float min = 0.f;
 	float max = 1.f;
 	float curve = 0.f;
+	int lightFirstId = -1;
+	int lightNumColors = 0;
 };
 
 struct MemModule {
