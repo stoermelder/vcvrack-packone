@@ -125,17 +125,17 @@ struct MidiCatParam : ScaledMapParam<int> {
 			}
 		}
 		else {
-			float f = 0.f;
+			int f = 0;
 			if (paramQuantity->module->lights.size() >= size_t(lightFirstId + lightNumColors)) {
-				for (int i = 0; i < lightNumColors; i++) 
-					f += paramQuantity->module->lights[lightFirstId + i].getBrightness();
-				f /= float(lightNumColors);
+				for (int i = 0; i < lightNumColors; i++) {
+					int b = int(std::ceilf(paramQuantity->module->lights[lightFirstId + i].getBrightness() * 4.f));
+					f += b << (i * 2);
+				}
 				// Reset the internal values to the actual parameter's value in case
 				// getValue() is called before setValue() - for proper MIDI feedback
 				if (valueOut == std::numeric_limits<float>::infinity()) value = valueOut = f;
-				f = rescale(f, 0.f, 1.f, limitMin, limitMax);
+				return std::min(f << ((3 - lightNumColors) * 2 + 1), 127);
 			}
-			return f;
 		}
 		return 0;
 	}
@@ -224,7 +224,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 				module->midiOutput.setValue(value % 128, cc + 32, true);
 			}
 			else {
-				module->midiOutput.setValue(value, cc, current == -1);
+				module->midiOutput.setValue(value, cc, current == -1 || sendOnly);
 			}
 			if (!sendOnly) current = value;
 		}
@@ -290,7 +290,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 
 		void setValue(int value, bool sendOnly) {
 			if (note == -1) return;
-			module->midiOutput.setGate(value, note, (module->midiOptions[id] >> MIDIOPTION_VELZERO_BIT) & 1U, current == -1);
+			module->midiOutput.setGate(value, note, (module->midiOptions[id] >> MIDIOPTION_VELZERO_BIT) & 1U, current == -1 || sendOnly);
 			if (!sendOnly) current = value;
 		}
 
@@ -1493,7 +1493,7 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 	}
 
 	void commitLearnLight(ModuleLightWidget* lw) {
-		if (lw && lw->module == module->midiParam[id].paramQuantity->module) {
+		if (lw && module->midiParam[id].paramQuantity && lw->module == module->midiParam[id].paramQuantity->module) {
 			module->getMap(id).setLight(lw->firstLightId, lw->getNumColors());
 		}
 		else {
