@@ -367,30 +367,6 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 };
 
 
-struct RandomExclMenuItem : MenuItem {
-	struct RandomExclItem : MenuItem {
-		StripModule* module;
-		RANDOMEXCL randomExcl;
-		void onAction(const event::Action& e) override {
-			module->randomExcl = randomExcl;
-		}
-		void step() override {
-			rightText = module->randomExcl == randomExcl ? "✔" : "";
-			MenuItem::step();
-		}
-	};
-
-	StripModule* module;
-	Menu* createChildMenu() override {
-		Menu* menu = new Menu;
-		menu->addChild(construct<RandomExclItem>(&MenuItem::text, "All", &RandomExclItem::module, module, &RandomExclItem::randomExcl, RANDOMEXCL::NONE));
-		menu->addChild(construct<RandomExclItem>(&MenuItem::text, "Exclude", &RandomExclItem::module, module, &RandomExclItem::randomExcl, RANDOMEXCL::EXC));
-		menu->addChild(construct<RandomExclItem>(&MenuItem::text, "Include", &RandomExclItem::module, module, &RandomExclItem::randomExcl, RANDOMEXCL::INC));
-		return menu;
-	}
-};
-
-
 struct ExcludeButton : TL1105 {
 	StripModule* module;
 	bool learn = false;
@@ -561,28 +537,17 @@ struct ExcludeButton : TL1105 {
 
 	void createContextMenu() {
 		ui::Menu* menu = createMenu();
-
-		ui::MenuLabel* modelLabel = new ui::MenuLabel;
-		modelLabel->text = "Parameter randomization";
-		menu->addChild(modelLabel);
-
-		RandomExclMenuItem* randomExclMenuItem = construct<RandomExclMenuItem>(&MenuItem::text, "Mode", &RandomExclMenuItem::module, module);
-		randomExclMenuItem->rightText = RIGHT_ARROW;
-		menu->addChild(randomExclMenuItem);
-
-		struct LabelButton : ui::MenuItem {
-			void onButton(const event::Button& e) override { }
-		};
-
-		LabelButton* help1Label = new LabelButton;
-		help1Label->rightText = "short press";
-		help1Label->text = "Learn";
-		menu->addChild(help1Label);
-
-		LabelButton* help2Label = new LabelButton;
-		help2Label->rightText = "long press";
-		help2Label->text = "Clear";
-		menu->addChild(help2Label);
+		menu->addChild(createMenuLabel("Parameter randomization"));
+		menu->addChild(StoermelderPackOne::Rack::createMapPtrSubmenuItem("Mode",
+			{
+				{ RANDOMEXCL::NONE, "All" },
+				{ RANDOMEXCL::EXC, "Exclude" },
+				{ RANDOMEXCL::INC, "Include" }
+			},
+			&module->randomExcl
+		));
+		menu->addChild(createMenuItem("Learn", "short press"));
+		menu->addChild(createMenuItem("Clear", "long press"));
 
 		if (module->excludedParams.size() == 0)
 			return;
@@ -608,9 +573,14 @@ struct ExcludeButton : TL1105 {
 			text += paramQuantity->getLabel();
 			text += "\"";
 
-			ui::MenuLabel* modelLabel = new ui::MenuLabel;
-			modelLabel->text = text;
-			menu->addChild(modelLabel);
+			menu->addChild(createSubmenuItem(text, "", [this, it](Menu* menu) {
+				menu->addChild(createMenuItem("Remove from list", "", [this, it]() {
+					// Aquire excludeMutex to get exclusive access to excludedParams
+					std::lock_guard<std::mutex> lockGuard(module->excludeMutex);
+					module->excludedParams.erase(it);
+					// Release excludeMutex
+				}));
+			}));
 		}
 		// Release excludeMutex
 	}

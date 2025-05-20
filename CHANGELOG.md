@@ -46,6 +46,7 @@
 - Module [STRIP](./docs/Strip.md)
     - Ask to view unavailable modules on the VCV Library when loading a strip (#18)
     - Fixed missing module-id mapping when adding using STRIP or STRIP++ (#402)
+    - Added option to remove items from included/excluded parameters list
 - Module [STRIP++](./docs/StripPp.md)
     - Ask to view unavailable modules on the VCV Library when loading a selection
     - Fixed usage in multiple plugin-instances
