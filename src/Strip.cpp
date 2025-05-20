@@ -421,8 +421,7 @@ struct ExcludeButton : TL1105 {
 		if (!learn)
 			return;
 		// Check if a ParamWidget was touched
-		// NB: unstable API
-		ParamWidget* touchedParam = APP->scene->rack->touchedParam;
+		ParamWidget* touchedParam = APP->scene->rack->getTouchedParam();
 		if (touchedParam) {
 			ParamQuantity* paramQuantity = touchedParam->getParamQuantity();
 			if (paramQuantity && paramQuantity->module != module) {
@@ -457,7 +456,7 @@ struct ExcludeButton : TL1105 {
 
 	void groupExcludeLearn() {
 		learn ^= true;
-		APP->scene->rack->touchedParam = NULL;
+		APP->scene->rack->setTouchedParam(NULL);
 	}
 
 	void groupExcludeClear() {

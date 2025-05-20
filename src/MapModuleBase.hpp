@@ -324,11 +324,11 @@ struct MapModuleChoice : LedDisplayChoice {
 		if (!module) return;
 		if (module->locked) return;
 
-		ScrollWidget *scroll = getAncestorOfType<ScrollWidget>();
+		ScrollWidget* scroll = getAncestorOfType<ScrollWidget>();
 		scroll->scrollTo(box);
 
-		// Reset touchedParam, unstable API
-		APP->scene->rack->touchedParam = NULL;
+		// Reset touchedParam
+		APP->scene->rack->setTouchedParam(NULL);
 		module->enableLearn(id);
 
 		GLFWcursor* cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
@@ -339,10 +339,10 @@ struct MapModuleChoice : LedDisplayChoice {
 		if (!module) return;
 		if (!processEvents) return;
 
-		// Check if a ParamWidget was touched, unstable API
-		ParamWidget *touchedParam = APP->scene->rack->touchedParam;
+		// Check if a ParamWidget was touched
+		ParamWidget* touchedParam = APP->scene->rack->getTouchedParam();
 		if (touchedParam && touchedParam->getParamQuantity()->module != module) {
-			APP->scene->rack->touchedParam = NULL;
+			APP->scene->rack->setTouchedParam(NULL);
 			int64_t moduleId = touchedParam->getParamQuantity()->module->id;
 			int paramId = touchedParam->getParamQuantity()->paramId;
 			module->learnParam(id, moduleId, paramId);

@@ -1110,10 +1110,10 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 		}
 
 		if (learn == 2 || learn == 3) {
-			// Check if a ParamWidget was touched, unstable API
-			ParamWidget* touchedParam = APP->scene->rack->touchedParam;
+			// Check if a ParamWidget was touched
+			ParamWidget* touchedParam = APP->scene->rack->getTouchedParam();
 			if (touchedParam && touchedParam->getParamQuantity()->module != module) {
-				APP->scene->rack->touchedParam = NULL;
+				APP->scene->rack->setTouchedParam(NULL);
 				int64_t moduleId = touchedParam->getParamQuantity()->module->id;
 				int paramId = touchedParam->getParamQuantity()->paramId;
 				module->bindParameter(moduleId, paramId);
@@ -1140,7 +1140,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 
 	void enableLearn(int mode) {
 		learn = learn != mode ? mode : 0;
-		APP->scene->rack->touchedParam = NULL;
+		APP->scene->rack->setTouchedParam(NULL);
 		APP->event->setSelectedWidget(this);
 		GLFWcursor* cursor = NULL;
 		if (learn != 0) {
