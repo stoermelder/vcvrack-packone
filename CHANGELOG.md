@@ -14,7 +14,9 @@
 
 ## 2.0.0 (in development)
 
-### Fixes and Changes
+- [Selected modules](./docs/MetaModule.md) are available on the [4ms MetaModule](https://4mscompany.com/p.php?p=990).
+
+### Changes and Fixes 
 
 - Module [8FACE mk2](./docs/EightFaceMk2.md)
     - Added "Auto"-mode besides "Read" and "Write" ([manual](./docs/EightFaceMk2.md#auto-mode)) (#276)
