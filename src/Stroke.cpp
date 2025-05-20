@@ -1640,7 +1640,8 @@ struct KeyDisplay : StoermelderLedDisplay {
 					module->keys[idx].mode == KEY_MODE::S_FRAMERATE ||
 					module->keys[idx].mode == KEY_MODE::S_BUSBOARD ||
 					module->keys[idx].mode == KEY_MODE::S_ENGINE_PAUSE ||
-					module->keys[idx].mode == KEY_MODE::S_MODULE_LOCK
+					module->keys[idx].mode == KEY_MODE::S_MODULE_LOCK ||
+					module->keys[idx].mode == KEY_MODE::S_WINDOW_MINIMIZE
 						? "✔" : RIGHT_ARROW;
 				MenuItem::step();
 			}

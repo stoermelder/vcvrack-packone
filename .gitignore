@@ -4,3 +4,5 @@ dist
 metamodule/build
 metamodule/metamodule-plugins
 plugin.dll
+plugin.dylib
+plugin.so
