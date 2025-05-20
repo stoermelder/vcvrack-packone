@@ -88,11 +88,16 @@ struct MidiCatParam : ScaledMapParam<int> {
 	int setValueDeffered;
 	int getValueLast;
 
+	int lightFirstId = -1;
+	int lightNumColors = 0;
+
 	void reset(bool resetSettings = true) override {
 		if (resetSettings) {
 			clockMode = CLOCKMODE::OFF;
 			clockSource = 0;
 		}
+		lightFirstId = -1;
+		lightNumColors = 0;
 		ScaledMapParam<int>::reset(resetSettings);
 	}
 
@@ -109,13 +114,26 @@ struct MidiCatParam : ScaledMapParam<int> {
 	}
 
 	int getValue() override {
-		switch (clockMode) {
-			case CLOCKMODE::OFF:
-				return ScaledMapParam<int>::getValue();
-			case CLOCKMODE::ARM:
-				return setValueDeffered;
-			case CLOCKMODE::ARM_DEFERRED_FEEDBACK:
-				return getValueLast;
+		if (!hasLight()) {
+			switch (clockMode) {
+				case CLOCKMODE::OFF:
+					return ScaledMapParam<int>::getValue();
+				case CLOCKMODE::ARM:
+					return setValueDeffered;
+				case CLOCKMODE::ARM_DEFERRED_FEEDBACK:
+					return getValueLast;
+			}
+		}
+		else {
+			float f = 0.f;
+			for (int i = 0; i < lightNumColors; i++) 
+				f += paramQuantity->module->lights[lightFirstId + i].getBrightness();
+			f /= float(lightNumColors);
+			// Reset the internal values to the actual parameter's value in case
+			// getValue() is called before setValue() - for proper MIDI feedback
+			if (valueOut == std::numeric_limits<float>::infinity()) value = valueOut = f;
+			f = rescale(f, 0.f, 1.f, limitMin, limitMax);
+			return f;
 		}
 		return 0;
 	}
@@ -141,6 +159,15 @@ struct MidiCatParam : ScaledMapParam<int> {
 		}
 
 		return r;
+	}
+
+	void setLight(int lightFirstId = -1, int lightNumColors = 0) {
+		this->lightFirstId = lightFirstId;
+		this->lightNumColors = lightNumColors;
+	}
+
+	inline bool hasLight() {
+		return lightFirstId >= 0;
 	}
 };
 
@@ -675,12 +702,19 @@ struct MidiCatModule : Module, StripIdFixModule {
 					// Retrieve the current value of the parameter (ignoring slew and scale)
 					int v = midiParam[id].getValue();
 
+					// In some cases the MIDI feedback is detached from the actual parameter value
+					// (toggle mode, attached to a light)
+					bool sendOnlyFeedback = false;
+					if (lastValueIn[id] < 0 || midiParam[id].hasLight()) {
+						sendOnlyFeedback = true;
+					}
+
 					// Midi feedback
 					if (lastValueOut[id] != v) {
 						if (cc >= 0 && ccs[id].ccMode == CCMODE::DIRECT)
 							lastValueIn[id] = v;
-						ccs[id].setValue(v, lastValueIn[id] < 0);
-						notes[id].setValue(v, lastValueIn[id] < 0);
+						ccs[id].setValue(v, sendOnlyFeedback);
+						notes[id].setValue(v, sendOnlyFeedback);
 						lastValueOut[id] = v;
 					}
 				} break;
@@ -786,6 +820,10 @@ struct MidiCatModule : Module, StripIdFixModule {
 		}
 	}
 
+	MidiCatParam& getMap(int id) {
+		return midiParam[id];
+	}
+
 	void clearMap(int id, bool midiOnly = false) {
 		learningId = -1;
 		ccs[id].reset();
@@ -855,6 +893,9 @@ struct MidiCatModule : Module, StripIdFixModule {
 		learnedCc = false;
 		learnedNote = false;
 		learnedParam = false;
+
+		// Reset attachment to light
+		midiParam[learningId].setLight();
 		// Copy modes from the previous slot
 		if (learningId > 0) {
 			ccs[learningId].ccMode = ccs[learningId - 1].ccMode;
@@ -1084,6 +1125,8 @@ struct MidiCatModule : Module, StripIdFixModule {
 			json_object_set_new(mapJ, "curve", json_real(midiParam[id].getCurve()));
 			json_object_set_new(mapJ, "clockMode", json_integer((int)midiParam[id].clockMode));
 			json_object_set_new(mapJ, "clockSource", json_integer(midiParam[id].clockSource));
+			json_object_set_new(mapJ, "lightFirstId", json_integer(midiParam[id].lightFirstId));
+			json_object_set_new(mapJ, "lightNumColors", json_integer(midiParam[id].lightNumColors));
 			json_array_append_new(mapsJ, mapJ);
 		}
 		json_object_set_new(rootJ, "maps", mapsJ);
@@ -1141,6 +1184,8 @@ struct MidiCatModule : Module, StripIdFixModule {
 				json_t* curveJ = json_object_get(mapJ, "curve");
 				json_t* clockModeJ = json_object_get(mapJ, "clockMode");
 				json_t* clockSourceJ = json_object_get(mapJ, "clockSource");
+				json_t* lightFirstIdJ = json_object_get(mapJ, "lightFirstId");
+				json_t* lightNumColorsJ = json_object_get(mapJ, "lightNumColors");
 
 				if (!(ccJ || noteJ)) {
 					ccs[mapIndex].setCc(-1);
@@ -1174,6 +1219,8 @@ struct MidiCatModule : Module, StripIdFixModule {
 				if (curveJ) midiParam[mapIndex].setCurve(json_real_value(curveJ));
 				if (clockModeJ) midiParam[mapIndex].clockMode = (MidiCatParam::CLOCKMODE)json_integer_value(clockModeJ);
 				if (clockSourceJ) midiParam[mapIndex].clockSource = json_integer_value(clockSourceJ);
+				if (lightFirstIdJ) midiParam[mapIndex].lightFirstId = json_integer_value(lightFirstIdJ);
+				if (lightNumColorsJ) midiParam[mapIndex].lightNumColors = json_integer_value(lightNumColorsJ);
 			}
 		}
 
@@ -1392,9 +1439,77 @@ struct MaxSlider : SubMenuSlider {
 
 
 struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
+	bool learnLight = false;
+
 	MidiCatChoice() {
 		textOffset = Vec(6.f, 14.7f);
 		color = nvgRGB(0xf0, 0xf0, 0xf0);
+	}
+
+	template <class T>
+	T getFirstDescendentByPos(Widget* w, Vec pos) {
+		for (auto it = w->children.rbegin(); it != w->children.rend(); it++) {
+			Widget* child = *it;
+			// Filter child by visibility and position
+			if (!child->visible)
+				continue;
+			if (!child->box.contains(pos))
+				continue;
+
+			T t = dynamic_cast<T>(child);
+			if (t) return t;
+
+			Vec pos1 = pos.minus(child->box.pos);
+			t = getFirstDescendentByPos<T>(child, pos1);
+			if (t) return t;
+		}
+		return NULL;
+	}
+
+	void onDeselect(const event::Deselect& e) override {
+		if (!module) return;
+		if (!processEvents) return;
+
+		if (learnLight) {
+			ModuleLightWidget* lw = NULL;
+			Widget* w = APP->event->getDraggedWidget();
+			if (w) {
+				ModuleWidget* mw = w->getAncestorOfType<ModuleWidget>();
+				if (mw) {
+					Vec pos = APP->scene->rack->getMousePos().minus(mw->box.pos);
+					lw = getFirstDescendentByPos<ModuleLightWidget*>(mw, pos);
+				}
+			}
+			commitLearnLight(lw);
+			e.consume(this);
+			return;
+		}
+
+		MapModuleChoice<MAX_CHANNELS, MidiCatModule>::onDeselect(e);
+	}
+
+	void commitLearnLight(ModuleLightWidget* lw) {
+		if (lw && lw->module == module->midiParam[id].paramQuantity->module) {
+			module->getMap(id).setLight(lw->firstLightId, lw->getNumColors());
+		}
+		else {
+			module->getMap(id).setLight();
+		}
+		disableLearnLight();
+	}
+
+	void enableLearnLight() {
+		learnLight = true;
+		module->enableLearn(id);
+		APP->event->setSelectedWidget(this);
+		GLFWcursor* cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
+		glfwSetCursor(APP->window->win, cursor);
+	}
+
+	void disableLearnLight() {
+		learnLight = false;
+		module->disableLearn();
+		glfwSetCursor(APP->window->win, NULL);
 	}
 
 	std::string getSlotPrefix() override {
@@ -1526,6 +1641,7 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 
 		if (module->ccs[id].getCc() >= 0 || module->notes[id].getNote() >= 0) {
 			menu->addChild(construct<UnmapMidiItem>(&MenuItem::text, "Clear MIDI assignment", &UnmapMidiItem::module, module, &UnmapMidiItem::id, id));
+			menu->addChild(createMenuItem("Attach feedback to LED (experimental)", CHECKMARK(module->midiParam[id].hasLight()), [this] { enableLearnLight(); }));
 		}
 		if (module->ccs[id].getCc() >= 0) {
 			menu->addChild(new MenuSeparator());
