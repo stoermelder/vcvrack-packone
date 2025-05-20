@@ -128,7 +128,7 @@ struct MidiCatParam : ScaledMapParam<int> {
 			int f = 0;
 			if (paramQuantity->module->lights.size() >= size_t(lightFirstId + lightNumColors)) {
 				for (int i = 0; i < lightNumColors; i++) {
-					int b = int(std::ceilf(paramQuantity->module->lights[lightFirstId + i].getBrightness() * 4.f));
+					int b = int(std::ceil(paramQuantity->module->lights[lightFirstId + i].getBrightness() * 4.f));
 					f += b << (i * 2);
 				}
 				// Reset the internal values to the actual parameter's value in case
