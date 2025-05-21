@@ -1503,7 +1503,7 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 	}
 
 	void commitLearnLight(ModuleLightWidget* lw) {
-		if (lw && module->midiParam[id].paramQuantity && lw->module == module->midiParam[id].paramQuantity->module) {
+		if (lw && lw->module == module->paramHandles[id].module) {
 			module->getMap(id).setLight(lw->firstLightId, lw->getNumColors());
 		}
 		else {
@@ -1527,8 +1527,12 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 	}
 
 	std::string getSlotPrefix() override {
+		std::string light = " ";
+		if (module->getMap(id).hasLight()) {
+			light = "*";
+		}
 		if (module->ccs[id].getCc() >= 0) {
-			return string::f("cc%02d ", module->ccs[id].getCc());
+			return string::f("cc%02d%s", module->ccs[id].getCc(), light);
 		}
 		else if (module->notes[id].getNote() >= 0) {
 			static const char* noteNames[] = {
@@ -1536,10 +1540,10 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 			};
 			int oct = module->notes[id].getNote() / 12 - 1;
 			int semi = module->notes[id].getNote() % 12;
-			return string::f(" %s%d ", noteNames[semi], oct);
+			return string::f(" %s%d%s", noteNames[semi], oct, light);
 		}
 		else if (module->paramHandles[id].moduleId >= 0) {
-			return ".... ";
+			return string::f("....%s", light);
 		}
 		else {
 			return "";
