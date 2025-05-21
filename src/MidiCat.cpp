@@ -166,6 +166,9 @@ struct MidiCatParam : ScaledMapParam<int> {
 	void setLight(int lightFirstId = -1, int lightNumColors = 0) {
 		this->lightFirstId = lightFirstId;
 		this->lightNumColors = lightNumColors;
+		if (lightFirstId >= 0 && clockMode == CLOCKMODE::ARM_DEFERRED_FEEDBACK) {
+			clockMode = CLOCKMODE::ARM;
+		}
 	}
 
 	inline bool hasLight() {
@@ -1763,14 +1766,25 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 		if (module->expClk != NULL) {
 			menu->addChild(new MenuSeparator());
 			menu->addChild(createMenuLabel("CLK-expander"));
-			menu->addChild(StoermelderPackOne::Rack::createMapPtrSubmenuItem("Quantization",
-				{
-					{ MidiCatParam::CLOCKMODE::OFF, "Off" },
-					{ MidiCatParam::CLOCKMODE::ARM, "On (instant feedback)" },
-					{ MidiCatParam::CLOCKMODE::ARM_DEFERRED_FEEDBACK, "On (deferred feedback)" }
-				},
-				&module->midiParam[id].clockMode
-			));
+			if (!module->getMap(id).hasLight()) {
+				menu->addChild(StoermelderPackOne::Rack::createMapPtrSubmenuItem("Quantization",
+					{
+						{ MidiCatParam::CLOCKMODE::OFF, "Off" },
+						{ MidiCatParam::CLOCKMODE::ARM, "On (instant feedback)" },
+						{ MidiCatParam::CLOCKMODE::ARM_DEFERRED_FEEDBACK, "On (deferred feedback)" }
+					},
+					&module->midiParam[id].clockMode
+				));
+			}
+			else {
+				menu->addChild(StoermelderPackOne::Rack::createMapPtrSubmenuItem("Quantization",
+					{
+						{ MidiCatParam::CLOCKMODE::OFF, "Off" },
+						{ MidiCatParam::CLOCKMODE::ARM, "On" },
+					},
+					&module->midiParam[id].clockMode
+				));
+			}
 			menu->addChild(StoermelderPackOne::Rack::createMapPtrSubmenuItem("Source",
 				{
 					{ 0, "Clock 1" },
