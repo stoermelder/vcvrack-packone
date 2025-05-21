@@ -125,8 +125,8 @@ struct MidiCatParam : ScaledMapParam<int> {
 			}
 		}
 		else {
-			int f = 0;
 			if (paramQuantity->module->lights.size() >= size_t(lightFirstId + lightNumColors)) {
+				int f = 0;
 				for (int i = 0; i < lightNumColors; i++) {
 					int b = int(std::ceil(paramQuantity->module->lights[lightFirstId + i].getBrightness() * 4.f));
 					f += b << (i * 2);
@@ -1490,6 +1490,13 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 		}
 
 		MapModuleChoice<MAX_CHANNELS, MidiCatModule>::onDeselect(e);
+	}
+
+	void step() override {
+		MapModuleChoice<MAX_CHANNELS, MidiCatModule>::step();
+		if (learnLight) {
+			text = getSlotPrefix() + "Binding LED...";
+		}
 	}
 
 	void commitLearnLight(ModuleLightWidget* lw) {
