@@ -332,7 +332,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 	/** [Stored to Json] The mapped param handle of each channel */
 	ParamHandleIndicator paramHandles[MAX_CHANNELS];
 
-	/** Channel ID of the learning session */
+	/** Channel ID of the learning session for MIDI/param mapping */
 	int learningId;
 	/** Wether multiple slots or just one slot should be learned */
 	bool learnSingleSlot = false;
@@ -344,6 +344,9 @@ struct MidiCatModule : Module, StripIdFixModule {
 	int learnedNoteLast = -1;
 	/** Whether the param has been set during the learning session */
 	bool learnedParam;
+
+	/** Channel ID of the learning session forLED binding */
+	int learningLightId = -1;
 
 	/** [Stored to Json] */
 	bool textScrolling = true;
@@ -899,9 +902,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 		learnedNote = false;
 		learnedParam = false;
 
-		// Reset attachment to light
-		midiParam[learningId].setLight();
-		// Copy modes from the previous slot
+		// Copy settings from the previous slot
 		if (learningId > 0) {
 			ccs[learningId].ccMode = ccs[learningId - 1].ccMode;
 			ccs[learningId].set14bit(ccs[learningId - 1].get14bit());
@@ -965,6 +966,8 @@ struct MidiCatModule : Module, StripIdFixModule {
 	void learnParam(int id, int64_t moduleId, int paramId, bool resetMidiSettings = true) {
 		APP->engine->updateParamHandle(&paramHandles[id], moduleId, paramId, true);
 		midiParam[id].reset(resetMidiSettings);
+		// Reset binding to light
+		midiParam[learningId].setLight();
 		learnedParam = true;
 		commitLearn();
 		updateMapLen();
@@ -1446,8 +1449,6 @@ struct MaxSlider : SubMenuSlider {
 
 
 struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
-	bool learnLight = false;
-
 	MidiCatChoice() {
 		textOffset = Vec(6.f, 14.7f);
 		color = nvgRGB(0xf0, 0xf0, 0xf0);
@@ -1477,7 +1478,7 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 		if (!module) return;
 		if (!processEvents) return;
 
-		if (learnLight) {
+		if (module->learningLightId == id) {
 			ModuleLightWidget* lw = NULL;
 			Widget* w = APP->event->getDraggedWidget();
 			if (w) {
@@ -1497,7 +1498,7 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 
 	void step() override {
 		MapModuleChoice<MAX_CHANNELS, MidiCatModule>::step();
-		if (learnLight) {
+		if (module && module->learningLightId == id) {
 			text = getSlotPrefix() + "Binding LED...";
 		}
 	}
@@ -1509,11 +1510,22 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 		else {
 			module->getMap(id).setLight();
 		}
+
+		// Find next slot for binding an LED
+		int learningId = id;
+		while (++learningId < MAX_CHANNELS) {
+			if (module->paramHandles[learningId].moduleId >= 0 && !module->getMap(learningId).hasLight()) {
+				module->learningLightId = learningId;
+				module->enableLearn(learningId);
+				return;
+			}
+		}
+
 		disableLearnLight();
 	}
 
 	void enableLearnLight() {
-		learnLight = true;
+		module->learningLightId = id;
 		module->enableLearn(id);
 		APP->event->setSelectedWidget(this);
 		GLFWcursor* cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
@@ -1521,7 +1533,7 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 	}
 
 	void disableLearnLight() {
-		learnLight = false;
+		module->learningLightId = -1;
 		module->disableLearn();
 		glfwSetCursor(APP->window->win, NULL);
 	}
