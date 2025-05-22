@@ -1448,6 +1448,142 @@ struct MaxSlider : SubMenuSlider {
 }; // struct MaxSlider
 
 
+struct MidiCatSelectionWidget : Widget {
+	enum class LEARN_MODE {
+		OFF = 0,
+		CLEAR = 1,
+		APPEND = 2
+	};
+
+	MidiCatModule* module;
+
+	LEARN_MODE learnMode = LEARN_MODE::OFF;
+	bool bindLights = false;
+
+	bool selecting = false;
+	math::Vec selectionStart;
+	math::Vec selectionEnd;
+	math::Vec mousePos;
+
+	void enableLearn(LEARN_MODE mode, bool bindLights = false) {
+		learnMode = learnMode == LEARN_MODE::OFF ? mode : LEARN_MODE::OFF;
+		this->bindLights = bindLights;
+		GLFWcursor* cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
+		glfwSetCursor(APP->window->win, cursor);
+	}
+
+	void onHover(const HoverEvent& e) override {
+		mousePos = e.pos;
+		Widget::onHover(e);
+	}
+
+	void onButton(const ButtonEvent& e) override {
+		if (learnMode != LEARN_MODE::OFF && e.button == GLFW_MOUSE_BUTTON_LEFT) {
+			e.consume(this);
+		}
+		Widget::onButton(e);
+	}
+
+	void onDragStart(const DragStartEvent& e) override {
+		if (learnMode != LEARN_MODE::OFF && e.button == GLFW_MOUSE_BUTTON_LEFT) {
+			selecting = true;
+			selectionStart = mousePos;
+			selectionEnd = mousePos;
+			e.consume(this);
+		}
+		Widget::onDragStart(e);
+	}
+
+	void onDragEnd(const DragEndEvent& e) override {
+		if (selecting && e.button == GLFW_MOUSE_BUTTON_LEFT) {
+			mapParamsFromRect();
+			selecting = false;
+			learnMode = LEARN_MODE::OFF;
+			glfwSetCursor(APP->window->win, NULL);
+			e.consume(this);
+		}
+		Widget::onDragEnd(e);
+	}
+
+	void onDragHover(const DragHoverEvent& e) override {
+		mousePos = e.pos;
+		if (selecting) {
+			selectionEnd = mousePos;
+		}
+		Widget::onDragHover(e);
+	}
+
+	void mapParamsFromRect() {
+		math::Rect selectionBox = math::Rect::fromCorners(selectionStart, selectionEnd);
+		std::list<ModuleWidget*> selected;
+		for (ModuleWidget* mw : APP->scene->rack->getModules()) {
+			if (selectionBox.intersects(mw->box)) {
+				selected.push_back(mw);
+			}
+		}
+		if (selected.size() != 1) {
+			return;
+		}
+
+		ModuleWidget* mw = selected.front();
+		std::list<ParamWidget*> selectedParams;
+		math::Rect selectionBox1(selectionBox.pos.minus(mw->box.pos), selectionBox.size);
+		getAllDescendentsByTypeAndBox<ParamWidget*>(mw, selectionBox1, selectedParams);
+
+		if (learnMode == LEARN_MODE::CLEAR) {
+			module->clearMaps_WithLock();
+		}
+
+		selectedParams.reverse();
+		for (ParamWidget* pw : selectedParams) {
+			int id = module->enableLearn(-1, true);
+			module->learnParam(id, pw->module->getId(), pw->paramId);
+
+			if (bindLights) {
+				std::list<ModuleLightWidget*> lw;
+				getAllDescendentsByTypeAndBox(mw, pw->box, lw);
+				if (lw.size() == 1) {
+					module->getMap(id).setLight(lw.front()->firstLightId, lw.front()->getNumColors());
+				}
+			}
+		}
+		module->disableLearn();
+	}
+
+	void draw(const DrawArgs& args) override {
+		// Draw selection rectangle
+		if (selecting) {
+			nvgBeginPath(args.vg);
+			math::Rect selectionBox = math::Rect::fromCorners(selectionStart, selectionEnd);
+			nvgRect(args.vg, RECT_ARGS(selectionBox));
+			nvgFillColor(args.vg, nvgRGBAf(0, 0, 1, 0.25));
+			nvgFill(args.vg);
+			nvgStrokeWidth(args.vg, 2.0);
+			nvgStrokeColor(args.vg, nvgRGBAf(0, 0, 1, 0.5));
+			nvgStroke(args.vg);
+		}
+	}
+
+	template <class T>
+	void getAllDescendentsByTypeAndBox(Widget* w, math::Rect selectionBox, std::list<T>& selected) {
+		for (auto it = w->children.rbegin(); it != w->children.rend(); it++) {
+			Widget* child = *it;
+			// Filter child by visibility and position
+			if (!child->visible)
+				continue;
+			if (!selectionBox.intersects(child->box))
+				continue;
+
+			math::Rect selectionBox1(selectionBox.pos.minus(child->box.pos), selectionBox.size);
+			getAllDescendentsByTypeAndBox<T>(child, selectionBox1, selected);
+			T t = dynamic_cast<T>(child);
+			if (t) {
+				selected.push_back(t);
+			}
+		}
+	}
+}; // struct MidiCatSelectionWidget
+
 struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 	MidiCatChoice() {
 		textOffset = Vec(6.f, 14.7f);
@@ -1673,7 +1809,7 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 			menu->addChild(construct<UnmapMidiItem>(&MenuItem::text, "Clear MIDI assignment", &UnmapMidiItem::module, module, &UnmapMidiItem::id, id));
 		}
 
-		menu->addChild(createMenuItem("Bind feedback to LED (experimental)", CHECKMARK(module->midiParam[id].hasLight()), [this] { enableLearnLight(); }));
+		menu->addChild(createMenuItem("Bind feedback to LED", CHECKMARK(module->midiParam[id].hasLight()), [this] { enableLearnLight(); }));
 
 		if (module->ccs[id].getCc() >= 0) {
 			menu->addChild(new MenuSeparator());
@@ -1814,7 +1950,6 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 	}
 };
 
-
 struct MidiCatDisplay : MapModuleDisplay<MAX_CHANNELS, MidiCatModule, MidiCatChoice>, OverlayMessageProvider {
 	void step() override {
 		if (module) {
@@ -1846,10 +1981,10 @@ struct MidiCatDisplay : MapModuleDisplay<MAX_CHANNELS, MidiCatModule, MidiCatCho
 	}
 };
 
-
 struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExtender {
 	MidiCatModule* module;
 	MidiCatDisplay* mapWidget;
+	MidiCatSelectionWidget* selectionWidget = NULL;
 
 	Module* expMem;
 	BufferedSwitchQuantity* expMemPrevQuantity;
@@ -1895,6 +2030,10 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 
 		if (module) {
 			OverlayMessageWidget::registerProvider(mapWidget);
+
+			selectionWidget = new MidiCatSelectionWidget;
+			selectionWidget->module = module;
+			APP->scene->rack->addChild(selectionWidget);
 		}
 	}
 
@@ -1905,6 +2044,11 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 
 		if (module) {
 			OverlayMessageWidget::unregisterProvider(mapWidget);
+		}
+
+		if (selectionWidget) {
+			APP->scene->rack->removeChild(selectionWidget);
+			delete selectionWidget;
 		}
 	}
 
@@ -2395,6 +2539,7 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 			}
 		));
 		menu->addChild(createBoolPtrMenuItem("Status overlay", "", &module->overlayEnabled));
+
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuItem("Clear mappings", "", [=]() { module->clearMaps_WithLock(); }));
 		menu->addChild(createSubmenuItem("Map module (left)", "",
@@ -2409,8 +2554,18 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 				menu->addChild(createMenuItem("Keep MIDI assignments", RACK_MOD_SHIFT_NAME "+D", [=]() { enableLearn(LEARN_MODE::BIND_KEEP); }));
 			}
 		));
+		menu->addChild(createSubmenuItem("Map parameters by selection", "",
+			[=](Menu* menu) {
+				menu->addChild(createMenuItem("Clear first", "", [=]() { selectionWidget->enableLearn(MidiCatSelectionWidget::LEARN_MODE::CLEAR); }));
+				menu->addChild(createMenuItem("Clear first, bind LEDs", "", [=]() { selectionWidget->enableLearn(MidiCatSelectionWidget::LEARN_MODE::CLEAR, true); }));
+				menu->addChild(createMenuItem("Append", "", [=]() { selectionWidget->enableLearn(MidiCatSelectionWidget::LEARN_MODE::APPEND); }));
+				menu->addChild(createMenuItem("Append, bind LEDs", "", [=]() { selectionWidget->enableLearn(MidiCatSelectionWidget::LEARN_MODE::APPEND, true); }));
+			}
+		));
 
-		if (module->expMemStorage != NULL) appendContextMenuMem(menu);
+		if (module->expMemStorage != NULL) {
+			appendContextMenuMem(menu);
+		}
 	}
 
 	void appendContextMenuMem(Menu* menu) {
