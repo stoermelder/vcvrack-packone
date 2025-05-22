@@ -131,9 +131,6 @@ struct MidiCatParam : ScaledMapParam<int> {
 					int b = int(std::ceil(paramQuantity->module->lights[lightFirstId + i].getBrightness() * 4.f));
 					f += b << (i * 2);
 				}
-				// Reset the internal values to the actual parameter's value in case
-				// getValue() is called before setValue() - for proper MIDI feedback
-				if (valueOut == std::numeric_limits<float>::infinity()) value = valueOut = f;
 				return std::min(f << ((3 - lightNumColors) * 2 + 1), 127);
 			}
 		}
@@ -574,7 +571,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 
 			switch (midiMode) {
 				case MIDIMODE::MIDIMODE_DEFAULT: {
-					midiParam[id].paramQuantity = paramQuantity;
+					midiParam[id].setParamQuantity(paramQuantity);
 					int t = -1;
 
 					// Check if CC value has been set and changed
@@ -1676,12 +1673,12 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 	}
 
 	std::string getSlotPrefix() override {
-		std::string light = " ";
+		char light = ' ';
 		if (module->getMap(id).hasLight()) {
-			light = "*";
+			light = '*';
 		}
 		if (module->ccs[id].getCc() >= 0) {
-			return string::f("cc%02d%s", module->ccs[id].getCc(), light);
+			return string::f("cc%02d%c", module->ccs[id].getCc(), light);
 		}
 		else if (module->notes[id].getNote() >= 0) {
 			static const char* noteNames[] = {
@@ -1689,10 +1686,10 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 			};
 			int oct = module->notes[id].getNote() / 12 - 1;
 			int semi = module->notes[id].getNote() % 12;
-			return string::f(" %s%d%s", noteNames[semi], oct, light);
+			return string::f(" %s%d%c", noteNames[semi], oct, light);
 		}
 		else if (module->paramHandles[id].moduleId >= 0) {
-			return string::f("....%s", light);
+			return string::f("....%c", light);
 		}
 		else {
 			return "";
