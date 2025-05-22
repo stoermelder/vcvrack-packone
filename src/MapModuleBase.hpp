@@ -293,28 +293,14 @@ struct MapModuleChoice : LedDisplayChoice {
 	}
 
 	void createContextMenu() {
-		struct UnmapItem : MenuItem {
-			MODULE* module;
-			int id;
-			void onAction(const event::Action& e) override {
-				module->clearMap(id);
-			}
-		};
-
-		struct IndicateItem : MenuItem {
-			MODULE* module;
-			int id;
-			void onAction(const event::Action& e) override {
-				ParamHandle* paramHandle = &module->paramHandles[id];
-				ModuleWidget* mw = APP->scene->rack->getModule(paramHandle->moduleId);
-				module->paramHandles[id].indicate(mw);
-			}
-		};
-
 		ui::Menu* menu = createMenu();
-		menu->addChild(createMenuLabel("Parameter \"" + getParamName() + "\""));
-		menu->addChild(construct<IndicateItem>(&MenuItem::text, "Locate and indicate", &IndicateItem::module, module, &IndicateItem::id, id));
-		menu->addChild(construct<UnmapItem>(&MenuItem::text, "Unmap", &UnmapItem::module, module, &UnmapItem::id, id));
+		menu->addChild(createMenuLabel(string::f("Parameter \"%s\"", getParamName())));
+		menu->addChild(createMenuItem("Locate and indicate", "", [=]() {
+			ParamHandle* paramHandle = &module->paramHandles[id];
+			ModuleWidget* mw = APP->scene->rack->getModule(paramHandle->moduleId);
+			module->paramHandles[id].indicate(mw);
+		}));
+		menu->addChild(createMenuItem("Unmap", "", [=]() { module->clearMap(id); }));
 		appendContextMenu(menu);
 	}
 

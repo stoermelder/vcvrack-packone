@@ -1614,7 +1614,12 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 		if (!module) return;
 		if (!processEvents) return;
 
-		if (module->learningLightId == id) {
+		// Light-binding was not triggerd by context menu, proceed with regular mapping
+		if (module->learningLightId != id) {
+			MapModuleChoice<MAX_CHANNELS, MidiCatModule>::onDeselect(e);
+		}
+
+		if (module->learningLightId == id || (module->learnedParam && id > 0 && module->getMap(id - 1).hasLight())) {
 			ModuleLightWidget* lw = NULL;
 			Widget* w = APP->event->getDraggedWidget();
 			if (w) {
@@ -1624,12 +1629,9 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 					lw = getFirstDescendentByPos<ModuleLightWidget*>(mw, pos);
 				}
 			}
-			commitLearnLight(lw);
+			commitLearnLight(lw, module->learningLightId == id);
 			e.consume(this);
-			return;
 		}
-
-		MapModuleChoice<MAX_CHANNELS, MidiCatModule>::onDeselect(e);
 	}
 
 	void step() override {
@@ -1639,25 +1641,24 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 		}
 	}
 
-	void commitLearnLight(ModuleLightWidget* lw) {
+	void commitLearnLight(ModuleLightWidget* lw, bool keepBinding = true) {
 		if (lw && lw->module == module->paramHandles[id].module) {
 			module->getMap(id).setLight(lw->firstLightId, lw->getNumColors());
 		}
-		else {
-			module->getMap(id).setLight();
-		}
 
-		// Find next slot for binding an LED
-		int learningId = id;
-		while (++learningId < MAX_CHANNELS) {
-			if (module->paramHandles[learningId].moduleId >= 0 && !module->getMap(learningId).hasLight()) {
-				module->learningLightId = learningId;
-				module->enableLearn(learningId);
-				return;
+		if (keepBinding) {
+			// Find next slot for binding an LED
+			int learningId = id;
+			while (++learningId < MAX_CHANNELS) {
+				if (module->paramHandles[learningId].moduleId >= 0 && !module->getMap(learningId).hasLight()) {
+					module->learningLightId = learningId;
+					module->enableLearn(learningId);
+					return;
+				}
 			}
-		}
 
-		disableLearnLight();
+			disableLearnLight();
+		}
 	}
 
 	void enableLearnLight() {
@@ -1703,14 +1704,6 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 	}
 
 	void appendContextMenu(Menu* menu) override {
-		struct UnmapMidiItem : MenuItem {
-			MidiCatModule* module;
-			int id;
-			void onAction(const event::Action& e) override {
-				module->clearMap(id, true);
-			}
-		}; // struct UnmapMidiItem
-
 		struct CcModeMenuItem : MenuItem {
 			MidiCatModule* module;
 			int id;
@@ -1806,10 +1799,13 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 		}; // struct NoteVelZeroMenuItem
 
 		if (module->ccs[id].getCc() >= 0 || module->notes[id].getNote() >= 0) {
-			menu->addChild(construct<UnmapMidiItem>(&MenuItem::text, "Clear MIDI assignment", &UnmapMidiItem::module, module, &UnmapMidiItem::id, id));
+			menu->addChild(createMenuItem("Clear MIDI assignment", "", [=]() { module->clearMap(id, true); }));
 		}
 
-		menu->addChild(createMenuItem("Bind feedback to LED", CHECKMARK(module->midiParam[id].hasLight()), [this] { enableLearnLight(); }));
+		menu->addChild(createMenuItem("Bind feedback to LED", CHECKMARK(module->getMap(id).hasLight()), [this] { enableLearnLight(); }));
+		if (module->midiParam[id].hasLight()) {
+			menu->addChild(createMenuItem("Remove LED binding", "", [this] { module->getMap(id).setLight(); }));
+		}
 
 		if (module->ccs[id].getCc() >= 0) {
 			menu->addChild(new MenuSeparator());
