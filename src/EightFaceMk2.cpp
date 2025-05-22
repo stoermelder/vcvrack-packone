@@ -1,5 +1,5 @@
 #include "plugin.hpp"
-#include "digital.hpp"
+#include "digital/digital.hpp"
 #include "helpers/TaskWorker.hpp"
 #include "components/MenuColorLabel.hpp"
 #include "components/MenuColorField.hpp"

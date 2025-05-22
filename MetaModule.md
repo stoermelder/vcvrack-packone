@@ -1,6 +1,6 @@
 ## PackOne for MetaModule
 
-Selected modules are available on the [4ms MetaModule](https://4mscompany.com/p.php?p=990). The latest deveopment build is available [here](https://github.com/stoermelder/vcvrack-packone/releases/tag/Nightly-MetaModule).
+Selected modules are available on the [4ms MetaModule](https://4mscompany.com/p.php?p=990). The latest development build is available [here](https://github.com/stoermelder/vcvrack-packone/releases/tag/Nightly-MetaModule).
 
 [4ROUNDS](https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/FourRounds.md): randomizer for up to 16 input signals to create 15 output signals  
 [BOLT](https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Bolt.md): polyphonic CV-modulateable boolean functions  

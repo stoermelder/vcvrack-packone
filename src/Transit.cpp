@@ -1,5 +1,5 @@
 #include "plugin.hpp"
-#include "digital.hpp"
+#include "digital/digital.hpp"
 #include "TransitBase.hpp"
 #include "digital/ShapedSlewLimiter.hpp"
 #include "helpers/TaskProcessor.hpp"

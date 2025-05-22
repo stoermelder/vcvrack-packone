@@ -1,5 +1,5 @@
 #include "plugin.hpp"
-#include "digital.hpp"
+#include "digital/digital.hpp"
 #include "EightFaceMk2Base.hpp"
 
 namespace StoermelderPackOne {

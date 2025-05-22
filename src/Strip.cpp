@@ -1,5 +1,5 @@
 #include "Strip.hpp"
-#include "digital.hpp"
+#include "digital/digital.hpp"
 #include "helpers/TaskWorker.hpp"
 
 namespace StoermelderPackOne {

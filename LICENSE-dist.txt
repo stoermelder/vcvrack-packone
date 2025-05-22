@@ -37,4 +37,4 @@ All VCV Rack source code is copyright © 2019 Andrew Belt and licensed under the
 #### BACONMUSIC ####
 
 Copyright © 2017-2019 Paul Walker
-Licsened under the Gnu Public License, version 3. https://www.gnu.org/licenses/gpl-3.0.en.html
+Licensed under the Gnu Public License, version 3. https://www.gnu.org/licenses/gpl-3.0.en.html

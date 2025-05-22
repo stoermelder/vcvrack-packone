@@ -1,6 +1,6 @@
 #pragma once
 #include <rack.hpp>
-#include "components.hpp"
+#include "components/components.hpp"
 #include "pluginhelpers.hpp"
 #include "pluginsettings.hpp"
 #include "ui/ThemedModuleWidget.hpp"

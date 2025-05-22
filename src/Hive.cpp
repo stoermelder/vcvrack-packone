@@ -25,7 +25,7 @@
  */
 
 #include "plugin.hpp"
-#include "digital.hpp"
+#include "digital/digital.hpp"
 #include "HiveGrid.hpp"
 #include <random>
 #include <chrono>

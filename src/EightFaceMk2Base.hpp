@@ -1,6 +1,6 @@
 #pragma once
 #include "plugin.hpp"
-#include "digital.hpp"
+#include "digital/digital.hpp"
 #include "helpers/StripIdFixModule.hpp"
 
 namespace StoermelderPackOne {
