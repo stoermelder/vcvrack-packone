@@ -2,6 +2,7 @@
 #include "components/Knobs.hpp"
 #include "components/LedTextDisplay.hpp"
 #include "components/XySeqWidget.hpp"
+#include "components/XyScreenWidget.hpp"
 #include <chrono>
 #include <random>
 
@@ -28,7 +29,7 @@ enum OUTPUTMODE {
 
 
 template <int IN_PORTS, int MIX_PORTS>
-struct ArenaModule : Module, XySeqModule<MIX_PORTS> {
+struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XySeqModule<MIX_PORTS> {
 	enum ParamIds {
 		ENUMS(IN_X_POS, IN_PORTS),
 		ENUMS(IN_Y_POS, IN_PORTS),
@@ -69,22 +70,15 @@ struct ArenaModule : Module, XySeqModule<MIX_PORTS> {
 		NUM_LIGHTS
 	};
 
+	typedef XyScreenModule<IN_PORTS> Sc;
 	typedef XySeqModule<MIX_PORTS> Seq;
 
 	const int numInports = IN_PORTS;
 	const int numMixports = MIX_PORTS;
-	int selectedId = -1;
-	int selectedType = -1;
 
 	/** [Stored to JSON] */
 	int panelTheme = 0;
 
-	/** [Stored to JSON] */
-	float radius[IN_PORTS];
-	float radiusUi[IN_PORTS];
-	dsp::ExponentialFilter radiusFilter[IN_PORTS];
-	/** [Stored to JSON] */
-	float amount[IN_PORTS];
 	/** [Stored to JSON] */
 	MODMODE modMode[IN_PORTS];
 	/** [Stored to JSON] */
@@ -128,7 +122,6 @@ struct ArenaModule : Module, XySeqModule<MIX_PORTS> {
 			configParam(IN_X_PARAM + i, -1.f, 1.f, 0.f, string::f("Channel IN-%i x-pos attenuverter", i + 1), "x");
 			configParam(IN_Y_PARAM + i, -1.f, 1.f, 0.f, string::f("Channel IN-%i y-pos attenuverter", i + 1), "x");
 			configParam(MOD_PARAM + i, -1.f, 1.f, 0.f, string::f("Channel IN-%i Mod attenuverter", i + 1), "x");
-			radiusFilter[i].setTau(0.1f);
 		}
 		// mix-ports
 		for (int i = 0; i < MIX_PORTS; i++) {
@@ -148,10 +141,9 @@ struct ArenaModule : Module, XySeqModule<MIX_PORTS> {
 	}
 
 	void onReset() override {
-		selectionReset();
+		Sc::screenSelectionReset();
 		init();
 		for (int i = 0; i < IN_PORTS; i++) {
-			radius[i] = radiusUi[i] = 0.5f;
 			modMode[i] = MODMODE::RADIUS;
 			inputXBipolar[i] = false;
 			inputYBipolar[i] = false;
@@ -161,35 +153,53 @@ struct ArenaModule : Module, XySeqModule<MIX_PORTS> {
 			mixportXBipolar[i] = false;
 			mixportYBipolar[i] = false;
 		}
+		Sc::screenReset();
 		Seq::seqReset();
 		Module::onReset();
 	}
 
 	void onRandomize() override {
-		randomizeInputAmount();
-		randomizeInputRadius();
-		randomizeInputX();
-		randomizeInputY();
+		Sc::screenRandAmount();
+		Sc::screenRandRadius();
+		Sc::screenRandX();
+		Sc::screenRandY();
 		Module::onRandomize();
+	}
+
+	void init() override {
+		for (int i = 0; i < IN_PORTS; i++) {
+			paramQuantities[IN_X_POS + i]->setValue(paramQuantities[IN_X_POS + i]->getDefaultValue());
+			paramQuantities[IN_Y_POS + i]->setValue(paramQuantities[IN_Y_POS + i]->getDefaultValue());
+			//lastInXpos[i] = -1.f;
+			//lastInYpos[i] = -1.f;
+		}
+		for (int i = 0; i < MIX_PORTS; i++) {
+			paramQuantities[MIX_X_POS + i]->setValue(paramQuantities[MIX_X_POS + i]->getDefaultValue());
+			paramQuantities[MIX_Y_POS + i]->setValue(paramQuantities[MIX_Y_POS + i]->getDefaultValue());
+			//lastMixXpos[i] = -1.f;
+			//lastMixYpos[i] = -1.f;
+		}
+		Sc::screenInit();
+		Seq::seqInit();
 	}
 
 	void process(const ProcessArgs& args) override {
 		float inNorm[IN_PORTS] = {0.f};
-		for (int j = 0; j < inportsUsed; j++) {
-			radius[j] = radiusFilter[j].process(args.sampleTime, radiusUi[j]);
+		Sc::screenProcess(args.sampleTime);
 
+		for (int j = 0; j < inportsUsed; j++) {
 			offsetX[j] = 0.f;
 			offsetY[j] = 0.f;
 			switch (modMode[j]) {
 				case MODMODE::RADIUS: {
 					if (inputs[MOD_INPUT + j].isConnected()) {
-						radius[j] = getOpInput(j);
+						Sc::radius[j] = getOpInput(j);
 					}
 					break;
 				}
 				case MODMODE::AMOUNT: {
 					if (inputs[MOD_INPUT + j].isConnected()) {
-						amount[j] = getOpInput(j);
+						Sc::amount[j] = getOpInput(j);
 					}
 					break;
 				}
@@ -234,7 +244,7 @@ struct ArenaModule : Module, XySeqModule<MIX_PORTS> {
 			if (inputs[IN + j].isConnected()) {
 				float sd = inputs[IN + j].getVoltage();
 				sd = clamp(sd, -10.f, 10.f);
-				sd *= amount[j];
+				sd *= Sc::amount[j];
 				inNorm[j] = sd;
 			}
 		}
@@ -284,7 +294,7 @@ struct ArenaModule : Module, XySeqModule<MIX_PORTS> {
 					dist[i][j] = inVec.minus(mixVec).norm();
 				//}
 
-				float r = radius[j];
+				float r = Sc::radius[j];
 				if (inputs[IN + j].isConnected() && dist[i][j] < r) {
 					float s = std::min(1.0f, (r - dist[i][j]) / r * 1.1f);
 					outNorm[j] += s;
@@ -347,10 +357,10 @@ struct ArenaModule : Module, XySeqModule<MIX_PORTS> {
 		// Set lights infrequently
 		if (lightDivider.process()) {
 			for (int i = 0; i < IN_PORTS; i++) {
-				lights[IN_SEL_LIGHT + i].setBrightness(selectedType == 0 && selectedId == i);
+				lights[IN_SEL_LIGHT + i].setBrightness(Sc::selectedType == 0 && Sc::selectedId == i);
 			}
 			for (int i = 0; i < MIX_PORTS; i++) {
-				lights[MIX_SEL_LIGHT + i].setBrightness(selectedType == 1 && selectedId == i);
+				lights[MIX_SEL_LIGHT + i].setBrightness(Sc::selectedType == 1 && Sc::selectedId == i);
 			}
 		}
 	}
@@ -362,67 +372,26 @@ struct ArenaModule : Module, XySeqModule<MIX_PORTS> {
 		return v;
 	}
 
-	inline void selectionSet(int type, int id) {
-		if (type == 0 && id + 1 > inportsUsed) return;
-		if (type == 1 && id + 1 > mixportsUsed) return;
-		selectedType = type;
-		selectedId = id;
-	}
-
-	inline bool selectionTest(int type, int id) {
-		return selectedType == type && selectedId == id;
-	}
-
-	inline void selectionReset() {
-		selectedType = -1;
-		selectedId = -1;
-	}
-
 	bool seqPortUsed(int port) override {
 		return port + 1 > mixportsUsed;
 	}
 
-
-	void init() {
-		for (int i = 0; i < IN_PORTS; i++) {
-			radius[i] = 0.5f;
-			amount[i] = 1.f;
-			paramQuantities[IN_X_POS + i]->setValue(paramQuantities[IN_X_POS + i]->getDefaultValue());
-			paramQuantities[IN_Y_POS + i]->setValue(paramQuantities[IN_Y_POS + i]->getDefaultValue());
-			//lastInXpos[i] = -1.f;
-			//lastInYpos[i] = -1.f;
-		}
-		for (int i = 0; i < MIX_PORTS; i++) {
-			paramQuantities[MIX_X_POS + i]->setValue(paramQuantities[MIX_X_POS + i]->getDefaultValue());
-			paramQuantities[MIX_Y_POS + i]->setValue(paramQuantities[MIX_Y_POS + i]->getDefaultValue());
-			//lastMixXpos[i] = -1.f;
-			//lastMixYpos[i] = -1.f;
-		}
-		Seq::seqInit();
+	engine::ParamQuantity* screenXpq(int type, int input) override {
+		if (type == 0)
+			return paramQuantities[IN_X_POS + input];
+		else
+			return paramQuantities[MIX_X_POS + input];
 	}
 
-	void randomizeInputAmount() {
-		for (int i = 0; i < IN_PORTS; i++) {
-			amount[i] = random::uniform();
-		}
+	engine::ParamQuantity* screenYpq(int type, int input) override {
+		if (type == 0)
+			return paramQuantities[IN_Y_POS + input];
+		else
+			return paramQuantities[MIX_Y_POS + input];
 	}
 
-	void randomizeInputRadius() {
-		for (int i = 0; i < IN_PORTS; i++) {
-			radius[i] = random::uniform();
-		}
-	}
-
-	void randomizeInputX() {
-		for (int i = 0; i < IN_PORTS; i++) {
-			params[IN_X_POS + i].setValue(random::uniform());
-		}
-	}
-
-	void randomizeInputY() {
-		for (int i = 0; i < IN_PORTS; i++) {
-			params[IN_Y_POS + i].setValue(random::uniform());
-		}
+	int screenItemCount(int type = 0) override {
+		 return type == 0 ? IN_PORTS : MIX_PORTS;
 	}
 
 	json_t* dataToJson() override {
@@ -432,8 +401,7 @@ struct ArenaModule : Module, XySeqModule<MIX_PORTS> {
 		json_t* inportsJ = json_array();
 		for (int i = 0; i < IN_PORTS; i++) {
 			json_t* inportJ = json_object();
-			json_object_set_new(inportJ, "amount", json_real(amount[i]));
-			json_object_set_new(inportJ, "radius", json_real(radius[i]));
+			Sc::dataToJson(inportJ, i);
 			json_object_set_new(inportJ, "modMode", json_integer(modMode[i]));
 			json_object_set_new(inportJ, "inputXBipolar", json_boolean(inputXBipolar[i]));
 			json_object_set_new(inportJ, "inputYBipolar", json_boolean(inputYBipolar[i]));
@@ -465,8 +433,7 @@ struct ArenaModule : Module, XySeqModule<MIX_PORTS> {
 		json_t* inportJ;
 		size_t inputIndex;
 		json_array_foreach(inportsJ, inputIndex, inportJ) {
-			amount[inputIndex] = json_real_value(json_object_get(inportJ, "amount"));
-			radiusUi[inputIndex] = radius[inputIndex] = json_real_value(json_object_get(inportJ, "radius"));
+			Sc::dataFromJson(inportJ, inputIndex);
 			modMode[inputIndex] = (MODMODE)json_integer_value(json_object_get(inportJ, "modMode"));
 			inputXBipolar[inputIndex] = json_boolean_value(json_object_get(inportJ, "inputXBipolar"));
 			inputYBipolar[inputIndex] = json_boolean_value(json_object_get(inportJ, "inputYBipolar"));
@@ -491,8 +458,8 @@ struct ArenaModule : Module, XySeqModule<MIX_PORTS> {
 // Context menus
 
 template <typename MODULE>
-struct InputXMenuItem : MenuItem {
-	InputXMenuItem() {
+struct ArenaInputXMenuItem : MenuItem {
+	ArenaInputXMenuItem() {
 		rightText = RIGHT_ARROW;
 	}
 
@@ -521,8 +488,8 @@ struct InputXMenuItem : MenuItem {
 
 
 template <typename MODULE>
-struct InputYMenuItem : MenuItem {
-	InputYMenuItem() {
+struct ArenaInputYMenuItem : MenuItem {
+	ArenaInputYMenuItem() {
 		rightText = RIGHT_ARROW;
 	}
 
@@ -551,8 +518,8 @@ struct InputYMenuItem : MenuItem {
 
 
 template <typename MODULE>
-struct ModModeMenuItem : MenuItem {
-	ModModeMenuItem() {
+struct ArenaModModeMenuItem : MenuItem {
+	ArenaModModeMenuItem() {
 		rightText = RIGHT_ARROW;
 	}
 
@@ -586,8 +553,8 @@ struct ModModeMenuItem : MenuItem {
 };
 
 template <typename MODULE>
-struct OutputModeMenuItem : MenuItem {
-	OutputModeMenuItem() {
+struct ArenaOutputModeMenuItem : MenuItem {
+	ArenaOutputModeMenuItem() {
 		rightText = RIGHT_ARROW;
 	}
 
@@ -622,217 +589,10 @@ struct OutputModeMenuItem : MenuItem {
 };
 
 
-template <typename MODULE>
-struct RadiusChangeAction : history::ModuleAction {
-	int inputId;
-	float oldValue;
-	float newValue;
-
-	RadiusChangeAction() {
-		name = "stoermelder ARENA radius change";
-	}
-
-	void undo() override {
-		app::ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
-		assert(mw);
-		MODULE* m = dynamic_cast<MODULE*>(mw->module);
-		m->radius[inputId] = oldValue;
-	}
-
-	void redo() override {
-		app::ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
-		assert(mw);
-		MODULE* m = dynamic_cast<MODULE*>(mw->module);
-		m->radius[inputId] = newValue;
-	}
-};
 
 template <typename MODULE>
-struct RadiusSlider : ui::Slider {
-	struct RadiusQuantity : Quantity {
-		MODULE* module;
-		int id;
-
-		RadiusQuantity(MODULE* module, int id) {
-			this->module = module;
-			this->id = id;
-		}
-		void setValue(float value) override {
-			value = clamp(value, 0.f, 1.f);
-			module->radiusUi[id] = value;
-		}
-		float getValue() override {
-			return module->radiusUi[id];
-		}
-		float getDefaultValue() override {
-			return 0.5f;
-		}
-		float getDisplayValue() override {
-			return getValue() * 100.f;
-		}
-		void setDisplayValue(float displayValue) override {
-			setValue(displayValue / 100.f);
-		}
-		std::string getLabel() override {
-			return "Radius";
-		}
-		std::string getUnit() override {
-			return "";
-		}
-	};
-
-	MODULE* module;
-	int id;
-	RadiusChangeAction<MODULE>* h;
-
-	RadiusSlider(MODULE* module, int id) {
-		this->module = module;
-		this->id = id;
-		quantity = new RadiusQuantity(module, id);
-	}
-	~RadiusSlider() {
-		delete quantity;
-	}
-
-	void onDragStart(const event::DragStart& e) override {
-		// history
-		h = new RadiusChangeAction<MODULE>;
-		h->moduleId = module->id;
-		h->inputId = id;
-		h->oldValue = module->radius[id];
-
-		ui::Slider::onDragStart(e);
-	}
-
-	void onDragEnd(const event::DragEnd& e) override {
-		h->newValue = module->radius[id];
-		APP->history->push(h);
-		h = NULL;
-
-		ui::Slider::onDragEnd(e);
-	}
-};
-
-
-template <typename MODULE>
-struct AmountChangeAction : history::ModuleAction {
-	int inputId;
-	float oldValue;
-	float newValue;
-
-	AmountChangeAction() {
-		name = "stoermelder ARENA amount change";
-	}
-
-	void undo() override {
-		app::ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
-		assert(mw);
-		MODULE* m = dynamic_cast<MODULE*>(mw->module);
-		m->amount[inputId] = oldValue;
-	}
-
-	void redo() override {
-		app::ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
-		assert(mw);
-		MODULE* m = dynamic_cast<MODULE*>(mw->module);
-		m->amount[inputId] = newValue;
-	}
-};
-
-template <typename MODULE>
-struct AmountSlider : ui::Slider {
-	struct AmountQuantity : Quantity {
-		MODULE* module;
-		int id;
-
-		AmountQuantity(MODULE* module, int id) {
-			this->module = module;
-			this->id = id;
-		}
-		void setValue(float value) override {
-			module->amount[id] = math::clamp(value, 0.f, 1.f);
-		}
-		float getValue() override {
-			return module->amount[id];
-		}
-		float getDefaultValue() override {
-			return 0.5;
-		}
-		float getDisplayValue() override {
-			return getValue() * 100;
-		}
-		void setDisplayValue(float displayValue) override {
-			setValue(displayValue / 100);
-		}
-		std::string getLabel() override {
-			return "Amount";
-		}
-		std::string getUnit() override {
-			return "%";
-		}
-	};
-
-	MODULE* module;
-	int id;
-	AmountChangeAction<MODULE>* h;
-
-	AmountSlider(MODULE* module, int id) {
-		this->module = module;
-		this->id = id;
-		quantity = new AmountQuantity(module, id);
-	}
-	~AmountSlider() {
-		delete quantity;
-	}
-
-	void onDragStart(const event::DragStart& e) override {
-		// history
-		h = new AmountChangeAction<MODULE>;
-		h->moduleId = module->id;
-		h->inputId = id;
-		h->oldValue = module->amount[id];
-
-		ui::Slider::onDragStart(e);
-	}
-
-	void onDragEnd(const event::DragEnd& e) override {
-		h->newValue = module->amount[id];
-		APP->history->push(h);
-		h = NULL;
-
-		ui::Slider::onDragEnd(e);
-	}
-};
-
-
-struct XYChangeAction : history::ModuleAction {
-	int paramXId, paramYId;
-	float oldX, oldY;
-	float newX, newY;
-
-	XYChangeAction() {
-		name = "stoermelder ARENA x/y-change";
-	}
-
-	void undo() override {
-		app::ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
-		assert(mw);
-		mw->module->params[paramXId].setValue(oldX);
-		mw->module->params[paramYId].setValue(oldY);
-	}
-
-	void redo() override {
-		app::ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
-		assert(mw);
-		mw->module->params[paramXId].setValue(newX);
-		mw->module->params[paramYId].setValue(newY);
-	}
-};
-
-
-template <typename MODULE>
-struct MixportXMenuItem : MenuItem {
-	MixportXMenuItem() {
+struct ArenaMixportXMenuItem : MenuItem {
+	ArenaMixportXMenuItem() {
 		rightText = RIGHT_ARROW;
 	}
 
@@ -860,8 +620,8 @@ struct MixportXMenuItem : MenuItem {
 };
 
 template <typename MODULE>
-struct MixportYMenuItem : MenuItem {
-	MixportYMenuItem() {
+struct ArenaMixportYMenuItem : MenuItem {
+	ArenaMixportYMenuItem() {
 		rightText = RIGHT_ARROW;
 	}
 
@@ -891,164 +651,12 @@ struct MixportYMenuItem : MenuItem {
 
 // Screen widgets
 
-template <typename MODULE>
-struct ScreenDragWidget : OpaqueWidget {
-	const float radius = 10.f;
-	const float fontsize = 13.0f;
-
-	MODULE* module;	
-	ParamQuantity* paramQuantityX;
-	ParamQuantity* paramQuantityY;
-	NVGcolor color = nvgRGB(0x66, 0x66, 0x0);
-	NVGcolor textColor = nvgRGB(0x66, 0x66, 0x0);
-	int id = -1;
-	int type = -1;
-	
-	float circleA = 1.f;
-	math::Vec dragPos;
-	XYChangeAction* dragAction;
-
-	ScreenDragWidget() {
-		box.size = Vec(2 * radius, 2 * radius);
-	}
-
-	void step() override {
-		float posX = paramQuantityX->getValue() * (parent->box.size.x - box.size.x);
-		box.pos.x = posX;
-		float posY = paramQuantityY->getValue() * (parent->box.size.y - box.size.y);
-		box.pos.y = posY;
-	}
-
-	void drawLayer(const Widget::DrawArgs& args, int layer) override {
-		if (!module) return;
-
-		if (layer == 1) {
-			Vec c = Vec(box.size.x / 2.f, box.size.y / 2.f);
-
-			nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
-
-			if (module->selectionTest(type, id)) {
-				// Draw selection halo
-				float oradius = 1.8f * radius;
-				NVGpaint paint;
-				NVGcolor icol = color::mult(color, 0.25f);
-				NVGcolor ocol = nvgRGB(0, 0, 0);
-
-				Rect b = Rect(box.pos.mult(-1), parent->box.size);
-				nvgSave(args.vg);
-				nvgScissor(args.vg, b.pos.x, b.pos.y, b.size.x, b.size.y);
-				nvgBeginPath(args.vg);
-				nvgCircle(args.vg, c.x, c.y, oradius);
-				paint = nvgRadialGradient(args.vg, c.x, c.y, radius, oradius, icol, ocol);
-				nvgFillPaint(args.vg, paint);
-				nvgFill(args.vg);
-				nvgResetScissor(args.vg);
-				nvgRestore(args.vg);
-			}
-
-			// Draw circle
-			nvgBeginPath(args.vg);
-			nvgCircle(args.vg, c.x, c.y, radius - 2.f);
-			nvgStrokeColor(args.vg, color);
-			nvgStrokeWidth(args.vg, 1.0f);
-			nvgStroke(args.vg);
-			nvgFillColor(args.vg, color::mult(color, 0.5f));
-			nvgFill(args.vg);
-
-			// Draw amount circle
-			nvgBeginPath(args.vg);
-			nvgCircle(args.vg, c.x, c.y, radius);
-			nvgStrokeColor(args.vg, color::mult(color, circleA));
-			nvgStrokeWidth(args.vg, 0.8f);
-			nvgStroke(args.vg);
-
-			nvgGlobalCompositeOperation(args.vg, NVG_ATOP);
-
-			// Draw label
-			std::shared_ptr<Font> font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
-			nvgFontSize(args.vg, fontsize);
-			nvgFontFaceId(args.vg, font->handle);
-			nvgFillColor(args.vg, textColor);
-			nvgTextBox(args.vg, c.x - 3.f, c.y + 4.f, 120, string::f("%i", id + 1).c_str(), NULL);
-		}
-		Widget::drawLayer(args, layer);
-	}
-
-	void onHover(const event::Hover& e) override {
-		math::Vec c = box.size.div(2);
-		float dist = e.pos.minus(c).norm();
-		if (dist <= c.x) {
-			OpaqueWidget::onHover(e);
-		}
-	}
-
-	void onButton(const event::Button& e) override {
-		math::Vec c = box.size.div(2);
-		float dist = e.pos.minus(c).norm();
-		if (dist <= c.x) {
-			OpaqueWidget::onButton(e);
-			if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
-				module->selectionSet(type, id);
-				e.consume(this);
-			}
-			if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
-				module->selectionSet(type, id);
-				createContextMenu();
-				e.consume(this);
-			}
-		}
-		else {
-			OpaqueWidget::onButton(e);
-		}
-	}
-
-	void onDragStart(const event::DragStart& e) override {
-		if (e.button != GLFW_MOUSE_BUTTON_LEFT)
-			return;
-
-		dragPos = APP->scene->rack->getMousePos().minus(box.pos);
-
-		// history
-		dragAction = new XYChangeAction;
-		dragAction->moduleId = module->id;
-		dragAction->paramXId = paramQuantityX->paramId;
-		dragAction->paramYId = paramQuantityY->paramId;
-		dragAction->oldX = paramQuantityX->getValue();
-		dragAction->oldY = paramQuantityY->getValue();
-	}
-
-	void onDragEnd(const event::DragEnd& e) override {
-		if (e.button != GLFW_MOUSE_BUTTON_LEFT)
-			return;
-
-		dragAction->newX = paramQuantityX->getValue();
-		dragAction->newY = paramQuantityY->getValue();
-		APP->history->push(dragAction);
-		dragAction = NULL;
-	}
-
-	void onDragMove(const event::DragMove& e) override {
-		if (e.button != GLFW_MOUSE_BUTTON_LEFT)
-			return;
-
-		math::Vec pos = APP->scene->rack->getMousePos().minus(dragPos);
-		float x = pos.x / (parent->box.size.x - box.size.x);
-		paramQuantityX->setValue(std::max(0.f, std::min(1.f, x)));
-		float y = pos.y / (parent->box.size.y - box.size.y);
-		paramQuantityY->setValue(std::max(0.f, std::min(1.f, y)));
-
-		OpaqueWidget::onDragMove(e);
-	}
-
-	virtual void createContextMenu() {}
-};
-
 
 template <typename MODULE>
-struct ScreenInportDragWidget : ScreenDragWidget<MODULE> {
-	typedef ScreenDragWidget<MODULE> AW;
+struct ArenaInportDragWidget : XyScreenDragWidget<MODULE> {
+	typedef XyScreenDragWidget<MODULE> AW;
 
-	ScreenInportDragWidget() {
+	ArenaInportDragWidget() {
 		AW::color = color::WHITE;
 		AW::type = 0;
 	}
@@ -1062,7 +670,7 @@ struct ScreenInportDragWidget : ScreenDragWidget<MODULE> {
 		if (layer == 1) {
 			if (AW::id + 1 > AW::module->inportsUsed) return;
 
-			if (AW::module->selectionTest(AW::type, AW::id)) {
+			if (AW::module->screenSelectionTest(AW::type, AW::id)) {
 				// Draw outer circle and fill
 				Vec c = Vec(AW::box.size.x / 2.f, AW::box.size.y / 2.f);
 				Rect b = Rect(AW::box.pos.mult(-1), AW::parent->box.size);
@@ -1092,33 +700,33 @@ struct ScreenInportDragWidget : ScreenDragWidget<MODULE> {
 
 	void onButton(const event::Button& e) override {
 		if (AW::id + 1 > AW::module->inportsUsed) return;
-		ScreenDragWidget<MODULE>::onButton(e);
+		AW::onButton(e);
 	}
 
 	void createContextMenu() override {
 		ui::Menu* menu = createMenu();
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("Channel IN-%i", AW::id + 1).c_str()));
 
-		AmountSlider<MODULE>* amountSlider = new AmountSlider<MODULE>(AW::module, AW::id);
+		XyScreenAmountSlider<MODULE>* amountSlider = new XyScreenAmountSlider<MODULE>(AW::module, AW::id);
 		amountSlider->box.size.x = 200.0;
 		menu->addChild(amountSlider);
 
-		RadiusSlider<MODULE>* radiusSlider = new RadiusSlider<MODULE>(AW::module, AW::id);
+		XyScreenRadiusSlider<MODULE>* radiusSlider = new XyScreenRadiusSlider<MODULE>(AW::module, AW::id);
 		radiusSlider->box.size.x = 200.0;
 		menu->addChild(radiusSlider);
 
-		menu->addChild(construct<InputXMenuItem<MODULE>>(&MenuItem::text, "X-port", &InputXMenuItem<MODULE>::module, AW::module, &InputXMenuItem<MODULE>::id, AW::id));
-		menu->addChild(construct<InputYMenuItem<MODULE>>(&MenuItem::text, "Y-port", &InputYMenuItem<MODULE>::module, AW::module, &InputYMenuItem<MODULE>::id, AW::id));
-		menu->addChild(construct<ModModeMenuItem<MODULE>>(&MenuItem::text, "MOD-port", &ModModeMenuItem<MODULE>::module, AW::module, &ModModeMenuItem<MODULE>::id, AW::id));
-		menu->addChild(construct<OutputModeMenuItem<MODULE>>(&MenuItem::text, "OUT-port", &OutputModeMenuItem<MODULE>::module, AW::module, &OutputModeMenuItem<MODULE>::id, AW::id));
+		menu->addChild(construct<ArenaInputXMenuItem<MODULE>>(&MenuItem::text, "X-port", &ArenaInputXMenuItem<MODULE>::module, AW::module, &ArenaInputXMenuItem<MODULE>::id, AW::id));
+		menu->addChild(construct<ArenaInputYMenuItem<MODULE>>(&MenuItem::text, "Y-port", &ArenaInputYMenuItem<MODULE>::module, AW::module, &ArenaInputYMenuItem<MODULE>::id, AW::id));
+		menu->addChild(construct<ArenaModModeMenuItem<MODULE>>(&MenuItem::text, "MOD-port", &ArenaModModeMenuItem<MODULE>::module, AW::module, &ArenaModModeMenuItem<MODULE>::id, AW::id));
+		menu->addChild(construct<ArenaOutputModeMenuItem<MODULE>>(&MenuItem::text, "OUT-port", &ArenaOutputModeMenuItem<MODULE>::module, AW::module, &ArenaOutputModeMenuItem<MODULE>::id, AW::id));
 	}
 };
 
 template <typename MODULE>
-struct ScreenMixportDragWidget : ScreenDragWidget<MODULE> {
-	typedef ScreenDragWidget<MODULE> AW;
+struct ArenaMixportDragWidget : XyScreenDragWidget<MODULE> {
+	typedef XyScreenDragWidget<MODULE> AW;
 
-	ScreenMixportDragWidget() {
+	ArenaMixportDragWidget() {
 		AW::color = color::YELLOW;
 		AW::type = 1;
 	}
@@ -1150,7 +758,7 @@ struct ScreenMixportDragWidget : ScreenDragWidget<MODULE> {
 			}
 
 			// Draw interpolated automation line if selected
-			if (AW::module->selectionTest(AW::type, AW::id)) {
+			if (AW::module->screenSelectionTest(AW::type, AW::id)) {
 				float sizeX = AW::parent->box.size.x - AW::box.size.x;
 				float sizeY = AW::parent->box.size.y - AW::box.size.y;
 				Vec pos = AW::box.pos.mult(-1).plus(Vec(AW::radius, AW::radius));
@@ -1193,249 +801,34 @@ struct ScreenMixportDragWidget : ScreenDragWidget<MODULE> {
 		menu->addChild(XySeqInterpolateMenuItem(AW::module, AW::id));
 		menu->addChild(XySeqTriggerMenuItem(AW::module, AW::id));
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<MixportXMenuItem<MODULE>>(&MenuItem::text, "X-port", &MixportXMenuItem<MODULE>::module, AW::module, &MixportXMenuItem<MODULE>::id, AW::id));
-		menu->addChild(construct<MixportYMenuItem<MODULE>>(&MenuItem::text, "Y-port", &MixportYMenuItem<MODULE>::module, AW::module, &MixportYMenuItem<MODULE>::id, AW::id));
+		menu->addChild(construct<ArenaMixportXMenuItem<MODULE>>(&MenuItem::text, "X-port", &ArenaMixportXMenuItem<MODULE>::module, AW::module, &ArenaMixportXMenuItem<MODULE>::id, AW::id));
+		menu->addChild(construct<ArenaMixportYMenuItem<MODULE>>(&MenuItem::text, "Y-port", &ArenaMixportYMenuItem<MODULE>::module, AW::module, &ArenaMixportYMenuItem<MODULE>::id, AW::id));
 	}
 };
 
 
 template <typename MODULE>
-struct ScreenWidget : OpaqueWidget {
+struct ArenaScreenWidget : XyScreenWidget<MODULE> {
 	MODULE* module;
 
-	ScreenWidget(MODULE* module, int inParamIdX, int inParamIdY, int mixParamIdX, int mixParamIdY) {
-		this->module = module;
+	ArenaScreenWidget(MODULE* module, int inParamIdX, int inParamIdY, int mixParamIdX, int mixParamIdY) : XyScreenWidget<MODULE>(module) {
 		if (module) {
 			for (int i = 0; i < module->numInports; i++) {
-				ScreenInportDragWidget<MODULE>* w = new ScreenInportDragWidget<MODULE>;
+				ArenaInportDragWidget<MODULE>* w = new ArenaInportDragWidget<MODULE>;
 				w->module = module;
-				w->paramQuantityX = module->paramQuantities[inParamIdX + i];
-				w->paramQuantityY = module->paramQuantities[inParamIdY + i];
 				w->id = i;
-				addChild(w);
+				XyScreenWidget<MODULE>::addChild(w);
 			}
 			for (int i = 0; i < module->numMixports; i++) {
-				ScreenMixportDragWidget<MODULE>* w = new ScreenMixportDragWidget<MODULE>;
+				ArenaMixportDragWidget<MODULE>* w = new ArenaMixportDragWidget<MODULE>;
 				w->module = module;
-				w->paramQuantityX = module->paramQuantities[mixParamIdX + i];
-				w->paramQuantityY = module->paramQuantities[mixParamIdY + i];
 				w->id = i;
-				addChild(w);
+				XyScreenWidget<MODULE>::addChild(w);
 			}
 		}
 	}
 
-	void drawLayer(const DrawArgs& args, int layer) override {
-		if (layer == 1) {
-			// Dim the display but don't darken it completely
-			float b = std::max(0.4f, settings::rackBrightness);
-			nvgGlobalTint(args.vg, nvgRGBAf(b, b, b, 1.f));
-
-			float sizeX = box.size.x / 8.f;
-			float sizeY = box.size.y / 8.f;
-
-			// Draw background
-			nvgBeginPath(args.vg);
-			nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
-			nvgFillColor(args.vg, nvgRGB(0, 16, 90));
-			nvgFill(args.vg);
-
-			// Draw grid
-			nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
-			nvgStrokeWidth(args.vg, 0.6f);
-			for (int i = 1; i < 8; i++) {
-				float a = 0.075f;
-				nvgBeginPath(args.vg);
-				nvgMoveTo(args.vg, sizeX * float(i), 0.f);
-				nvgLineTo(args.vg, sizeX * float(i), box.size.y);
-				nvgStrokeColor(args.vg, color::mult(color::WHITE, a));
-				nvgStroke(args.vg);
-			}
-			for (int i = 1; i < 8; i++) {
-				float a = 0.075f;
-				nvgBeginPath(args.vg);
-				nvgMoveTo(args.vg, 0.f, sizeY * float(i));
-				nvgLineTo(args.vg, box.size.x, sizeY * float(i));
-				nvgStrokeColor(args.vg, color::mult(color::WHITE, a));
-				nvgStroke(args.vg);
-			}
-
-			// Draw outer rectangle
-			nvgBeginPath(args.vg);
-			nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
-			nvgStrokeWidth(args.vg, 0.7f);
-			nvgStrokeColor(args.vg, color::mult(color::WHITE, 0.25f));
-			nvgStroke(args.vg);
-		}
-
-		if (module && module->seqEdit < 0) {
-			OpaqueWidget::drawLayer(args, layer);
-		}
-	}
-
-	void onButton(const event::Button& e) override {
-		if (module->seqEdit < 0) {
-			if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
-				module->selectionReset();
-			}
-			OpaqueWidget::onButton(e);
-			if (e.button == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT && !e.isConsumed()) {
-				createContextMenu();
-				e.consume(this);
-			}
-		}
-	}
-
-	void createContextMenu() {
-		ui::Menu* menu = createMenu();
-		menu->addChild(createMenuLabel("Arena"));
-
-		struct InitItem : MenuItem {
-			MODULE* module;
-			void onAction(const event::Action& e) override {
-				// history::ModuleChange
-				history::ModuleChange* h = new history::ModuleChange;
-				h->name = "stoermelder ARENA initialize";
-				h->moduleId = module->id;
-				h->oldModuleJ = module->toJson();
-
-				module->init();
-
-				h->newModuleJ = module->toJson();
-				APP->history->push(h);
-			}
-		};
-
-		struct RandomizeXYItem : MenuItem {
-			MODULE* module;
-			void onAction(const event::Action& e) override {
-				XYChangeAction* actions[module->numInports];
-				for (int i = 0; i < module->numInports; i++) {
-					actions[i] = new XYChangeAction;
-					actions[i]->moduleId = module->id;
-					actions[i]->paramXId = MODULE::IN_X_POS + i;
-					actions[i]->paramYId = MODULE::IN_Y_POS + i;
-					actions[i]->oldX = module->params[MODULE::IN_X_POS + i].getValue();
-					actions[i]->oldY = module->params[MODULE::IN_Y_POS + i].getValue();
-				}
-
-				module->randomizeInputX();
-				module->randomizeInputY();
-
-				history::ComplexAction* complexAction = new history::ComplexAction;
-				for (int i = 0; i < module->numInports; i++) {
-					actions[i]->newX = module->params[MODULE::IN_X_POS + i].getValue();
-					actions[i]->newY = module->params[MODULE::IN_Y_POS + i].getValue();
-					complexAction->push(actions[i]);
-				}
-
-				complexAction->name = "stoermelder ARENA randomize IN x-pos & y-pos";
-				APP->history->push(complexAction);
-			}
-		};
-
-		struct RandomizeXItem : MenuItem {
-			MODULE* module;
-			void onAction(const event::Action& e) override {
-				XYChangeAction* actions[module->numInports];
-				for (int i = 0; i < module->numInports; i++) {
-					actions[i] = new XYChangeAction;
-					actions[i]->moduleId = module->id;
-					actions[i]->paramXId = MODULE::IN_X_POS + i;
-					actions[i]->paramYId = MODULE::IN_Y_POS + i;
-					actions[i]->oldX = module->params[MODULE::IN_X_POS + i].getValue();
-					actions[i]->oldY = module->params[MODULE::IN_Y_POS + i].getValue();
-				}
-
-				module->randomizeInputX();
-
-				history::ComplexAction* complexAction = new history::ComplexAction;
-				for (int i = 0; i < module->numInports; i++) {
-					actions[i]->newX = module->params[MODULE::IN_X_POS + i].getValue();
-					actions[i]->newY = module->params[MODULE::IN_Y_POS + i].getValue();
-					complexAction->push(actions[i]);
-				}
-
-				complexAction->name = "stoermelder ARENA randomize IN x-pos";
-				APP->history->push(complexAction);
-			}
-		};
-
-		struct RandomizeYItem : MenuItem {
-			MODULE* module;
-			void onAction(const event::Action& e) override {
-				XYChangeAction* actions[module->numInports];
-				for (int i = 0; i < module->numInports; i++) {
-					actions[i] = new XYChangeAction;
-					actions[i]->moduleId = module->id;
-					actions[i]->paramXId = MODULE::IN_X_POS + i;
-					actions[i]->paramYId = MODULE::IN_Y_POS + i;
-					actions[i]->oldX = module->params[MODULE::IN_X_POS + i].getValue();
-					actions[i]->oldY = module->params[MODULE::IN_Y_POS + i].getValue();
-				}
-
-				module->randomizeInputY();
-
-				history::ComplexAction* complexAction = new history::ComplexAction;
-				for (int i = 0; i < module->numInports; i++) {
-					actions[i]->newX = module->params[MODULE::IN_X_POS + i].getValue();
-					actions[i]->newY = module->params[MODULE::IN_Y_POS + i].getValue();
-					complexAction->push(actions[i]);
-				}
-
-				complexAction->name = "stoermelder ARENA randomize IN y-pos";
-				APP->history->push(complexAction);
-			}
-		};
-
-		struct RandomizeAmountItem : MenuItem {
-			MODULE* module;
-			void onAction(const event::Action& e) override {
-				AmountChangeAction<MODULE>* actions[module->numInports];
-				for (int i = 0; i < module->numInports; i++) {
-					actions[i] = new AmountChangeAction<MODULE>;
-					actions[i]->moduleId = module->id;
-					actions[i]->inputId = i;
-					actions[i]->oldValue = module->amount[i];
-				}
-
-				module->randomizeInputAmount();
-
-				history::ComplexAction* complexAction = new history::ComplexAction;
-				for (int i = 0; i < module->numInports; i++) {
-					actions[i]->newValue = module->amount[i];
-					complexAction->push(actions[i]);
-				}
-
-				complexAction->name = "stoermelder ARENA randomize IN amount";
-				APP->history->push(complexAction);
-			}
-		};
-
-		struct RandomizeRadiusItem : MenuItem {
-			MODULE* module;
-			void onAction(const event::Action& e) override {
-				RadiusChangeAction<MODULE>* actions[module->numInports];
-				for (int i = 0; i < module->numInports; i++) {
-					actions[i] = new RadiusChangeAction<MODULE>;
-					actions[i]->moduleId = module->id;
-					actions[i]->inputId = i;
-					actions[i]->oldValue = module->radius[i];
-				}
-
-				module->randomizeInputRadius();
-
-				history::ComplexAction* complexAction = new history::ComplexAction;
-				for (int i = 0; i < module->numInports; i++) {
-					actions[i]->newValue = module->radius[i];
-					complexAction->push(actions[i]);
-				}
-
-				complexAction->name = "stoermelder ARENA randomize IN radius";
-				APP->history->push(complexAction);
-			}
-		};
-
+	void appendContextMenu(Menu* menu) override {
 		struct NumInportsMenuItem : MenuItem {
 			NumInportsMenuItem() {
 				rightText = RIGHT_ARROW;
@@ -1494,13 +887,6 @@ struct ScreenWidget : OpaqueWidget {
 			}
 		};
 
-		menu->addChild(construct<InitItem>(&MenuItem::text, "Initialize", &InitItem::module, module));
-		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<RandomizeXYItem>(&MenuItem::text, "Radomize IN x-pos & y-pos", &RandomizeXYItem::module, module));
-		menu->addChild(construct<RandomizeXItem>(&MenuItem::text, "Radomize IN x-pos", &RandomizeXItem::module, module));
-		menu->addChild(construct<RandomizeYItem>(&MenuItem::text, "Radomize IN y-pos", &RandomizeYItem::module, module));
-		menu->addChild(construct<RandomizeAmountItem>(&MenuItem::text, "Radomize IN amount", &RandomizeAmountItem::module, module));
-		menu->addChild(construct<RandomizeRadiusItem>(&MenuItem::text, "Radomize IN radius", &RandomizeRadiusItem::module, module));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<NumInportsMenuItem>(&MenuItem::text, "Number of IN-ports", &NumInportsMenuItem::module, module));
 		menu->addChild(construct<NumMixportsMenuItem>(&MenuItem::text, "Number of MIX-ports", &NumMixportsMenuItem::module, module));
@@ -1509,7 +895,7 @@ struct ScreenWidget : OpaqueWidget {
 
 
 template <typename MODULE>
-struct OpLedDisplay : StoermelderLedDisplay {
+struct ArenaOpLedDisplay : StoermelderLedDisplay {
 	MODULE* module;
 	int id;
 
@@ -1551,18 +937,18 @@ struct OpLedDisplay : StoermelderLedDisplay {
 		ui::Menu* menu = createMenu();
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("Channel IN-%i", id + 1)));
 
-		AmountSlider<MODULE>* amountSlider = new AmountSlider<MODULE>(module, id);
+		XyScreenAmountSlider<MODULE>* amountSlider = new XyScreenAmountSlider<MODULE>(module, id);
 		amountSlider->box.size.x = 200.0;
 		menu->addChild(amountSlider);
 
-		RadiusSlider<MODULE>* radiusSlider = new RadiusSlider<MODULE>(module, id);
+		XyScreenRadiusSlider<MODULE>* radiusSlider = new XyScreenRadiusSlider<MODULE>(module, id);
 		radiusSlider->box.size.x = 200.0;
 		menu->addChild(radiusSlider);
 
-		menu->addChild(construct<InputXMenuItem<MODULE>>(&MenuItem::text, "X-port", &InputXMenuItem<MODULE>::module, module, &InputXMenuItem<MODULE>::id, id));
-		menu->addChild(construct<InputYMenuItem<MODULE>>(&MenuItem::text, "Y-port", &InputYMenuItem<MODULE>::module, module, &InputYMenuItem<MODULE>::id, id));
-		menu->addChild(construct<ModModeMenuItem<MODULE>>(&MenuItem::text, "MOD-port", &ModModeMenuItem<MODULE>::module, module, &ModModeMenuItem<MODULE>::id, id));
-		menu->addChild(construct<OutputModeMenuItem<MODULE>>(&MenuItem::text, "OUT-port", &OutputModeMenuItem<MODULE>::module, module, &OutputModeMenuItem<MODULE>::id, id));
+		menu->addChild(construct<ArenaInputXMenuItem<MODULE>>(&MenuItem::text, "X-port", &ArenaInputXMenuItem<MODULE>::module, module, &ArenaInputXMenuItem<MODULE>::id, id));
+		menu->addChild(construct<ArenaInputYMenuItem<MODULE>>(&MenuItem::text, "Y-port", &ArenaInputYMenuItem<MODULE>::module, module, &ArenaInputYMenuItem<MODULE>::id, id));
+		menu->addChild(construct<ArenaModModeMenuItem<MODULE>>(&MenuItem::text, "MOD-port", &ArenaModModeMenuItem<MODULE>::module, module, &ArenaModModeMenuItem<MODULE>::id, id));
+		menu->addChild(construct<ArenaOutputModeMenuItem<MODULE>>(&MenuItem::text, "OUT-port", &ArenaOutputModeMenuItem<MODULE>::module, module, &ArenaOutputModeMenuItem<MODULE>::id, id));
 	}
 };
 
@@ -1576,8 +962,8 @@ struct ArenaXySeqLedDisplay : XySeqLedDisplay<ArenaModule<8, 4>> {
 
 	void appendContextMenu(Menu* menu) override {
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<MixportXMenuItem<MODULE>>(&MenuItem::text, "X-port", &MixportXMenuItem<MODULE>::module, module, &MixportXMenuItem<MODULE>::id, id));
-		menu->addChild(construct<MixportYMenuItem<MODULE>>(&MenuItem::text, "Y-port", &MixportYMenuItem<MODULE>::module, module, &MixportYMenuItem<MODULE>::id, id));
+		menu->addChild(construct<ArenaMixportXMenuItem<MODULE>>(&MenuItem::text, "X-port", &ArenaMixportXMenuItem<MODULE>::module, module, &ArenaMixportXMenuItem<MODULE>::id, id));
+		menu->addChild(construct<ArenaMixportYMenuItem<MODULE>>(&MenuItem::text, "Y-port", &ArenaMixportYMenuItem<MODULE>::module, module, &ArenaMixportYMenuItem<MODULE>::id, id));
 	}
 };
 
@@ -1598,10 +984,10 @@ struct ClickableLight : MediumLight<LIGHT> {
 	void onButton(const event::Button& e) override {
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
 			MODULE* m = dynamic_cast<MODULE*>(MediumLight<LIGHT>::module);
-			if (m->selectionTest(type, id))
-				m->selectionReset();
+			if (m->screenSelectionTest(type, id))
+				m->screenSelectionReset();
 			else
-				m->selectionSet(type, id);
+				m->screenSelectionSet(type, id);
 		}
 		MediumLight<LIGHT>::onButton(e);
 	}
@@ -1639,7 +1025,7 @@ struct ArenaWidget : ThemedModuleWidget<ArenaModule<8, 4>> {
 			addParam(createParamCentered<StoermelderTrimpot>(Vec(x, 164.4f), module, MODULE::IN_Y_PARAM + i));
 			addInput(createInputCentered<StoermelderPort>(Vec(x, 198.9f), module, MODULE::IN_Y_INPUT + i));
 
-			OpLedDisplay<MODULE>* arenaOpDisplay = createWidgetCentered<OpLedDisplay<MODULE>>(Vec(x, 227.0f));
+			ArenaOpLedDisplay<MODULE>* arenaOpDisplay = createWidgetCentered<ArenaOpLedDisplay<MODULE>>(Vec(x, 227.0f));
 			arenaOpDisplay->module = module;
 			arenaOpDisplay->id = i;
 			addChild(arenaOpDisplay);
@@ -1650,7 +1036,7 @@ struct ArenaWidget : ThemedModuleWidget<ArenaModule<8, 4>> {
 			addOutput(createOutputCentered<StoermelderPort>(Vec(x, 327.7f), module, MODULE::OUT_OUTPUT + i));
 		}
 
-		ScreenWidget<MODULE>* screenWidget = new ScreenWidget<MODULE>(module, MODULE::IN_X_POS, MODULE::IN_Y_POS, MODULE::MIX_X_POS, MODULE::MIX_Y_POS);
+		ArenaScreenWidget<MODULE>* screenWidget = new ArenaScreenWidget<MODULE>(module, MODULE::IN_X_POS, MODULE::IN_Y_POS, MODULE::MIX_X_POS, MODULE::MIX_Y_POS);
 		screenWidget->box.pos = Vec(213.2f, 42.1f);
 		screenWidget->box.size = Vec(293.6f, 296.0f);
 		addChild(screenWidget);
