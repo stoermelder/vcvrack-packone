@@ -60,26 +60,6 @@ struct XyScreenModule {
 		}
 	}
 	
-	void screenProcess(float sampleTime) {
-		for (uint8_t i = 0; i < INPUTS; i++) {
-			XyScreenParamQuantity* px = reinterpret_cast<XyScreenParamQuantity*>(screenXpq(0, i));
-			if (!px->hasHandle) {
-				px->getParam()->setValue(inputXfilter[i].process(sampleTime, inputUiX[i]));
-			}
-			else {
-				inputXfilter[i].out = inputUiX[i] = px->getParam()->getValue();
-			}
-			XyScreenParamQuantity* py = reinterpret_cast<XyScreenParamQuantity*>(screenYpq(0, i));
-			if (!py->hasHandle) {
-				py->getParam()->setValue(inputYfilter[i].process(sampleTime, inputUiY[i]));
-			}
-			else {
-				inputYfilter[i].out = inputUiY[i] = py->getParam()->getValue();
-			}
-			radius[i] = radiusFilter[i].process(sampleTime, radiusUi[i]);
-		}
-	}
-
 	inline void screenXyFiltered(uint8_t type, uint8_t id, float x, float y) {
 		if (type == 0) {
 			inputUiX[id] = x;
@@ -106,12 +86,16 @@ struct XyScreenModule {
 
 	virtual void screenItemImmediate(uint8_t type, uint8_t id, float x, float y) {}
 
-	inline float screenX(uint8_t type, uint8_t id) {
-		return screenXpq(type, id)->getParam()->getValue();
+	virtual inline float screenX(uint8_t type, uint8_t id) { return 0; }
+
+	inline float screenXproccesed(uint8_t id, float sampleTime) {
+		return inputXfilter[id].process(sampleTime, inputUiX[id]);
 	}
 
-	inline float screenY(uint8_t type, uint8_t id) {
-		return screenYpq(type, id)->getParam()->getValue();
+	virtual inline float screenY(uint8_t type, uint8_t id) { return 0; }
+
+	inline float screenYproccesed(uint8_t id, float sampleTime) {
+		return inputYfilter[id].process(sampleTime, inputUiY[id]);
 	}
 
 	void screenRandX() {
@@ -128,8 +112,10 @@ struct XyScreenModule {
 		}
 	}
 
-	inline float screenRadius(uint8_t id) {
-		return radiusUi[id];
+	virtual float screenRadius(uint8_t id) { return 0; }
+
+	inline float screenRadiusProcessed(uint8_t id, float sampleTime) {
+		return radiusFilter[id].process(sampleTime, radiusUi[id]);
 	}
 
 	inline void screenRadiusFiltered(uint8_t id, float r) {

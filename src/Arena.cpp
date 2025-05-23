@@ -101,9 +101,13 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XySeqModule<MIX_PORTS> {
 	float offsetX[IN_PORTS];
 	float offsetY[IN_PORTS];
 
-	float mixUiX[MIX_PORTS];
+	float inputInX[IN_PORTS];
+	float inputInY[IN_PORTS];
+	float radiusIn[IN_PORTS];
+
+	float mixUiX[MIX_PORTS], mixInX[MIX_PORTS];
 	dsp::ExponentialFilter mixXfilter[MIX_PORTS];
-	float mixUiY[MIX_PORTS];
+	float mixUiY[MIX_PORTS], mixInY[MIX_PORTS];
 	dsp::ExponentialFilter mixYfilter[MIX_PORTS];
 
 	dsp::ClockDivider lightDivider;
@@ -179,7 +183,7 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XySeqModule<MIX_PORTS> {
 
 	void process(const ProcessArgs& args) override {
 		float inNorm[IN_PORTS] = {0.f};
-		Sc::screenProcess(args.sampleTime);
+		processItems(args.sampleTime);
 
 		for (uint8_t j = 0; j < inportsUsed; j++) {
 			offsetX[j] = 0.f;
@@ -187,7 +191,10 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XySeqModule<MIX_PORTS> {
 			switch (modMode[j]) {
 				case MODMODE::RADIUS: {
 					if (inputs[MOD_INPUT + j].isConnected()) {
-						Sc::radius[j] = getOpInput(j);
+						radiusIn[j] = getOpInput(j);
+					}
+					else {
+						radiusIn[j] = Sc::screenRadiusProcessed(j, args.sampleTime);
 					}
 					break;
 				}
@@ -213,7 +220,7 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XySeqModule<MIX_PORTS> {
 				}
 			}
 
-			float x = params[IN_X_POS + j].getValue();
+			float x = inputInX[j]; // params[IN_X_POS + j].getValue();
 			if (inputs[IN_X_INPUT + j].isConnected()) {
 				float xd = inputs[IN_X_INPUT + j].getVoltage();
 				xd *= params[IN_X_PARAM + j].getValue();
@@ -224,7 +231,7 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XySeqModule<MIX_PORTS> {
 			x = clamp(x, 0.f, 1.f);
 			params[IN_X_POS + j].setValue(x);
 
-			float y = params[IN_Y_POS + j].getValue();
+			float y = inputInY[j]; // params[IN_Y_POS + j].getValue();
 			if (inputs[IN_Y_INPUT + j].isConnected()) {
 				float yd = inputs[IN_Y_INPUT + j].getVoltage();
 				yd *= params[IN_Y_PARAM + j].getValue();
@@ -243,7 +250,7 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XySeqModule<MIX_PORTS> {
 			}
 		}
 
-		processItem(args.sampleTime);
+
 
 		float outNorm[IN_PORTS] = {0.f};
 		for (uint8_t i = 0; i < mixportsUsed; i++) {
@@ -251,27 +258,40 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XySeqModule<MIX_PORTS> {
 				Seq::seqProcess(inputs[SEQ_INPUT + i], i);
 			}
 
+			bool setX = false, setY = false;
+
 			if (inputs[SEQ_PH_INPUT + i].isConnected()) {
 				float v = clamp(inputs[SEQ_PH_INPUT + i].getVoltage() / 10.f, 0.f, 1.f);
 				Vec d = Seq::seqValue(i, v);
 				params[MIX_X_POS + i].setValue(d.x);
+				setX = true;
 				params[MIX_Y_POS + i].setValue(d.y);
+				setY = true;
 			}
 
-			if (inputs[MIX_X_INPUT + i].isConnected()) {
+			if (!setX && inputs[MIX_X_INPUT + i].isConnected()) {
 				float x = inputs[MIX_X_INPUT + i].getVoltage() / 10.f;
 				x *= params[MIX_X_PARAM + i].getValue();
 				x += mixportXBipolar[i] ? 0.5f : 0.f;
 				x = clamp(x, 0.f, 1.f);
 				params[MIX_X_POS + i].setValue(x);
+				setX = true;
 			} 
 
-			if (inputs[MIX_Y_INPUT + i].isConnected()) {
+			if (!setY && inputs[MIX_Y_INPUT + i].isConnected()) {
 				float y = inputs[MIX_Y_INPUT + i].getVoltage() / 10.f;
 				y *= params[MIX_Y_PARAM + i].getValue();
 				y += mixportYBipolar[i] ? 0.5f : 0.f;
 				y = clamp(y, 0.f, 1.f);
 				params[MIX_Y_POS + i].setValue(y);
+				setY = true;
+			}
+
+			if (!setX) {
+				params[MIX_X_POS + i].setValue(mixInX[i]);
+			}
+			if (!setY) {
+				params[MIX_Y_POS + i].setValue(mixInY[i]);
 			}
 
 			float mixX = params[MIX_X_POS + i].getValue();
@@ -286,7 +306,7 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XySeqModule<MIX_PORTS> {
 				Vec inVec = Vec(inX, inY);
 				dist[i][j] = inVec.minus(mixVec).norm();
 
-				float r = Sc::radius[j];
+				float r = radiusIn[j];
 				if (inputs[IN + j].isConnected() && dist[i][j] < r) {
 					float s = std::min(1.0f, (r - dist[i][j]) / r * 1.1f);
 					outNorm[j] += s;
@@ -355,21 +375,38 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XySeqModule<MIX_PORTS> {
 		}
 	}
 
-	void processItem(float sampleTime) {
+	void processItems(float sampleTime) {
+		for (uint8_t i = 0; i < IN_PORTS; i++) {
+			XyScreenParamQuantity* px = reinterpret_cast<XyScreenParamQuantity*>(paramQuantities[IN_X_POS + i]);
+			if (!px->hasHandle) {
+				inputInX[i] = Sc::screenXproccesed(i, sampleTime);
+			}
+			else {
+				inputInX[i] = px->getParam()->getValue();
+			}
+			XyScreenParamQuantity* py = reinterpret_cast<XyScreenParamQuantity*>(paramQuantities[IN_Y_POS + i]);
+			if (!py->hasHandle) {
+				inputInY[i] = Sc::screenYproccesed(i, sampleTime);
+			}
+			else {
+				inputInY[i] = py->getParam()->getValue();
+			}
+		}
+
 		for (uint8_t i = 0; i < MIX_PORTS; i++) {
 			XyScreenParamQuantity* px = reinterpret_cast<XyScreenParamQuantity*>(paramQuantities[MIX_X_POS + i]);
 			if (!px->hasHandle) {
-				px->getParam()->setValue(mixXfilter[i].process(sampleTime, mixUiX[i]));
+				mixInX[i] = mixXfilter[i].process(sampleTime, mixUiX[i]);
 			}
 			else {
-				mixXfilter[id].out = mixUiX[id] = px->getParam()->getValue();
+				mixInX[i] = px->getParam()->getValue();
 			}
 			XyScreenParamQuantity* py = reinterpret_cast<XyScreenParamQuantity*>(paramQuantities[MIX_Y_POS + i]);
 			if (!py->hasHandle) {
-				py->getParam()->setValue(mixYfilter[i].process(sampleTime, mixUiY[i]));
+				mixInY[i] = mixYfilter[i].process(sampleTime, mixUiY[i]);
 			}
 			else {
-				mixYfilter[i].out = mixUiY[i] = py->getParam()->getValue();
+				mixInY[i] = py->getParam()->getValue();
 			}
 		}
 	}
@@ -403,6 +440,24 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XySeqModule<MIX_PORTS> {
 		 return type == 0 ? IN_PORTS : MIX_PORTS;
 	}
 
+	inline float screenX(uint8_t type, uint8_t id) override {
+		if (type == 0)
+			return paramQuantities[IN_X_POS + id]->getParam()->getValue();
+		else
+			return paramQuantities[MIX_X_POS + id]->getParam()->getValue();
+	}
+
+	inline float screenY(uint8_t type, uint8_t id) override {
+		if (type == 0)
+			return paramQuantities[IN_Y_POS + id]->getParam()->getValue();
+		else
+			return paramQuantities[MIX_Y_POS + id]->getParam()->getValue();
+	}
+
+	inline float screenRadius(uint8_t id) override {
+		return radiusIn[id];
+	}
+
 	inline void screenItemFiltered(uint8_t type, uint8_t id, float x, float y) override {
 		if (type == 1) {
 			mixUiX[id] = x;
@@ -418,7 +473,6 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XySeqModule<MIX_PORTS> {
 			mixYfilter[id].out = mixUiY[id] = y;
 		}
 	}
-
 
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
@@ -829,7 +883,7 @@ struct ArenaWidget : ThemedModuleWidget<ArenaModule<8, 4>> {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		for (int i = 0; i < IN_PORTS; i++) {
+		for (uint8_t i = 0; i < IN_PORTS; i++) {
 			float xs[] = { 24.1f, 604.7f };
 			float x = xs[i >= IN_PORTS / 2] + (i % (IN_PORTS / 2)) * 30.433f;
 			addInput(createInputCentered<StoermelderPort>(Vec(x, 61.1f), module, MODULE::IN + i));
@@ -865,7 +919,7 @@ struct ArenaWidget : ThemedModuleWidget<ArenaModule<8, 4>> {
 		seqEditWidget->box.size = screenWidget->box.size;
 		addChild(seqEditWidget);
 
-		for (int i = 0; i < MIX_PORTS; i++) {
+		for (uint8_t i = 0; i < MIX_PORTS; i++) {
 			float xs[] = { 154.3f, 534.9f };
 			float x = xs[i >= MIX_PORTS / 2] + (i % (MIX_PORTS / 2)) * 30.433f;
 			addParam(createParamCentered<StoermelderSmallKnob>(Vec(x, 61.1f), module, MODULE::MIX_VOL_PARAM + i));
