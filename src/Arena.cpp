@@ -1,14 +1,12 @@
 #include "plugin.hpp"
 #include "components/Knobs.hpp"
 #include "components/LedTextDisplay.hpp"
+#include "components/XySeqWidget.hpp"
 #include <chrono>
 #include <random>
 
 namespace StoermelderPackOne {
 namespace Arena {
-
-static const int SEQ_COUNT = 16;
-static const int SEQ_LENGTH = 128;
 
 enum MODMODE {
 	RADIUS = 0,
@@ -17,30 +15,6 @@ enum MODMODE {
 	OFFSET_Y = 3,
 //	ROTATE = 6,
 	WALK = 7
-};
-
-enum SEQMODE {
-	TRIG_FWD = 0,
-	TRIG_REV = 1,
-	TRIG_RANDOM_16 = 2,
-	TRIG_RANDOM_8 = 3,
-	TRIG_RANDOM_4 = 4,
-	VOLT = 10,
-	C4 = 11
-};
-
-enum SEQINTERPOLATE {
-	LINEAR = 0,
-	CUBIC = 1
-};
-
-enum SEQPRESET {
-	CIRCLE,
-	SPIRAL,
-	SAW,
-	SINE,
-	EIGHT,
-	ROSE
 };
 
 enum OUTPUTMODE {
@@ -52,15 +26,9 @@ enum OUTPUTMODE {
 	FOLD_BI = 5
 };
 
-struct SeqItem {
-	float x[SEQ_LENGTH];
-	float y[SEQ_LENGTH];
-	int length = 0;
-};
 
-
-template < int IN_PORTS, int MIX_PORTS >
-struct ArenaModule : Module {
+template <int IN_PORTS, int MIX_PORTS>
+struct ArenaModule : Module, XySeqModule<MIX_PORTS> {
 	enum ParamIds {
 		ENUMS(IN_X_POS, IN_PORTS),
 		ENUMS(IN_Y_POS, IN_PORTS),
@@ -101,6 +69,8 @@ struct ArenaModule : Module {
 		NUM_LIGHTS
 	};
 
+	typedef XySeqModule<MIX_PORTS> Seq;
+
 	const int numInports = IN_PORTS;
 	const int numMixports = MIX_PORTS;
 	int selectedId = -1;
@@ -132,19 +102,6 @@ struct ArenaModule : Module {
 	/** [Stored to JSON] */
 	int mixportsUsed = MIX_PORTS;
 
-	/** [Stored to JSON] */
-	SeqItem seqData[MIX_PORTS][SEQ_COUNT];
-	/** [Stored to JSON] */
-	SEQMODE seqMode[MIX_PORTS];
-	/** [Stored to JSON] */
-	SEQINTERPOLATE seqInterpolate[MIX_PORTS];
-	/** [Stored to JSON] */
-	int seqSelected[MIX_PORTS];
-	int seqEdit;
-
-	int seqCopyPort = -1;
-	int seqCopySeq = -1;
-
 	float dist[MIX_PORTS][IN_PORTS];
 	float offsetX[IN_PORTS];
 	float offsetY[IN_PORTS];
@@ -154,7 +111,6 @@ struct ArenaModule : Module {
 	//float lastMixXpos[MIX_PORTS];
 	//float lastMixYpos[MIX_PORTS];
 
-	dsp::SchmittTrigger seqTrigger[MIX_PORTS];
 	dsp::ClockDivider lightDivider;
 
 	ArenaModule() {
@@ -204,12 +160,8 @@ struct ArenaModule : Module {
 		for (int i = 0; i < MIX_PORTS; i++) {
 			mixportXBipolar[i] = false;
 			mixportYBipolar[i] = false;
-			seqSelected[i] = 0;
-			seqMode[i] = SEQMODE::TRIG_FWD;
-			seqInterpolate[i] = SEQINTERPOLATE::LINEAR;
 		}
-		seqCopyPort = -1;
-		seqCopySeq = -1;
+		Seq::seqReset();
 		Module::onReset();
 	}
 
@@ -290,12 +242,12 @@ struct ArenaModule : Module {
 		float outNorm[IN_PORTS] = {0.f};
 		for (int i = 0; i < mixportsUsed; i++) {
 			if (inputs[SEQ_INPUT + i].isConnected()) {
-				seqProcess(i);
+				Seq::seqProcess(inputs[SEQ_INPUT + i], i);
 			}
 
 			if (inputs[SEQ_PH_INPUT + i].isConnected()) {
 				float v = clamp(inputs[SEQ_PH_INPUT + i].getVoltage() / 10.f, 0.f, 1.f);
-				Vec d = seqValue(i, v);
+				Vec d = Seq::seqValue(i, v);
 				params[MIX_X_POS + i].setValue(d.x);
 				params[MIX_Y_POS + i].setValue(d.y);
 			}
@@ -426,271 +378,10 @@ struct ArenaModule : Module {
 		selectedId = -1;
 	}
 
-	int seqLength(int port) {
-		return seqData[port][seqSelected[port]].length;
+	bool seqPortUsed(int port) override {
+		return port + 1 > mixportsUsed;
 	}
 
-	void seqClear(int port) {
-		seqData[port][seqSelected[port]].length = 0;
-	}
-
-	Vec seqValue(int port, float pos) {
-		SeqItem* s = &seqData[port][seqSelected[port]];
-		if (s->length == 0) return Vec(0.5f, 0.5f);
-		int l = s->length - 1;
-
-		switch (seqInterpolate[port]) {
-			case SEQINTERPOLATE::LINEAR: {
-				float mu1 = l * pos;
-				float intf;
-				float mu = std::modf(mu1, &intf);
-				int i1 = int(intf);
-				int i2 = std::min(int(intf) + 1, l);
-				Vec a1 = Vec(s->x[i1], s->y[i1]);
-				Vec a2 = Vec(s->x[i2], s->y[i2]);
-				Vec d = a2.minus(a1).mult(mu).plus(a1);
-				return d;
-			}
-			case SEQINTERPOLATE::CUBIC: {
-				float mu1 = l * pos;
-				float intf;
-				float mu = std::modf(mu1, &intf);
-				int i0 = std::max(0, int(intf));
-				int i1 = int(intf);
-				int i2 = std::min(int(intf) + 1, l);
-				int i3 = std::min(int(intf) + 2, l);
-				float mu2 = mu * mu;
-				float x0 = -0.5f * s->x[i0] + 1.5f * s->x[i1] - 1.5f * s->x[i2] + 0.5f * s->x[i3];
-				float x1 = s->x[i0] - 2.5f * s->x[i1] + 2.f * s->x[i2] - 0.5f * s->x[i3];
-				float x2 = -0.5f * s->x[i0] + 0.5f * s->x[i2];
-				float x3 = s->x[i1];
-				float x = x0 * mu * mu2 + x1 * mu2 + x2 * mu + x3;
-				float y0 = -0.5f * s->y[i0] + 1.5f * s->y[i1] - 1.5f * s->y[i2] + 0.5f * s->y[i3];
-				float y1 = s->y[i0] - 2.5f * s->y[i1] + 2.f * s->y[i2] - 0.5f * s->y[i3];
-				float y2 = -0.5f * s->y[i0] + 0.5f * s->y[i2];
-				float y3 = s->y[i1];
-				float y = y0 * mu * mu2 + y1 * mu2 + y2 * mu + y3;
-				return Vec(x, y);
-			}
-			default: {
-				return Vec(0, 0);
-			}
-		}
-	}
-
-	void seqProcess(int port) {
-		switch (seqMode[port]) {
-			case SEQMODE::TRIG_FWD: {
-				if (seqTrigger[port].process(inputs[SEQ_INPUT + port].getVoltage())) {
-					int t = seqSelected[port];
-					do 
-						seqSelected[port] = (seqSelected[port] + 1) % SEQ_COUNT;
-					while (seqData[port][seqSelected[port]].length == 0 && seqSelected[port] != t);
-				}
-				break;
-			}
-			case SEQMODE::TRIG_REV: {
-				if (seqTrigger[port].process(inputs[SEQ_INPUT + port].getVoltage())) {
-					int t = seqSelected[port];
-					do 
-						seqSelected[port] = (seqSelected[port] - 1 + SEQ_COUNT) % SEQ_COUNT;
-					while (seqData[port][seqSelected[port]].length == 0 && seqSelected[port] != t);
-				}
-				break;
-			}
-			case SEQMODE::TRIG_RANDOM_16:
-				if (seqTrigger[port].process(inputs[SEQ_INPUT + port].getVoltage())) {
-					seqSelected[port] = std::floor(rescale(random::uniform(), 0.f, 1.f, 0.f, 16.f));
-				}
-				break;
-			case SEQMODE::TRIG_RANDOM_8:
-				if (seqTrigger[port].process(inputs[SEQ_INPUT + port].getVoltage())) {
-					seqSelected[port] = std::floor(rescale(random::uniform(), 0.f, 1.f, 0.f, 8.f));
-				}
-				break;
-			case SEQMODE::TRIG_RANDOM_4:
-				if (seqTrigger[port].process(inputs[SEQ_INPUT + port].getVoltage())) {
-					seqSelected[port] = std::floor(rescale(random::uniform(), 0.f, 1.f, 0.f, 4.f));
-				}
-				break;
-			case SEQMODE::C4: {
-				int s = std::round(clamp(inputs[SEQ_INPUT + port].getVoltage() * 12.f, 0.f, SEQ_COUNT - 1.f));
-				seqSelected[port] = s;
-				break;
-			}
-			case SEQMODE::VOLT: {
-				int s = std::floor(rescale(inputs[SEQ_INPUT + port].getVoltage(), 0.f, 10.f, 0, SEQ_COUNT - 1));
-				seqSelected[port] = s;
-				break;
-			}
-		}
-	}
-
-	void seqRandomize(int port) {
-		seqData[port][seqSelected[port]].length = 0;
-
-		unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
-		std::default_random_engine gen(seed);
-		std::normal_distribution<float> d{0.f, 0.1f};
-		dsp::ExponentialFilter filterX;
-		dsp::ExponentialFilter filterY;
-		filterX.setLambda(0.7f);
-		filterY.setLambda(0.7f);
-
-		// Random length
-		int l = std::max(0, std::min(int(SEQ_LENGTH / 4 + d(gen) * SEQ_LENGTH / 4), SEQ_LENGTH - 1));
-
-		// Set some start-value for the exponential filters
-		filterX.out = 0.5f + d(gen);
-		filterY.out = 0.5f + d(gen);
-		int dirX = d(gen) >= 0.f ? 1 : -1;
-		int dirY = d(gen) >= 0.f ? 1 : -1;
-		float pX = 0.5f;
-		float pY = 0.5f;
-		for (int c = 0; c < l; c++) {
-			// Reduce the number of direction changes, only when rand > 0
-			if (d(gen) >= 0.5f) dirX = dirX == -1 ? 1 : -1;
-			if (pX == 1.f) dirX = -1;
-			if (pX == 0.f) dirX = 1;
-			if (d(gen) >= 0.5f) dirY = dirY == -1 ? 1 : -1;
-			if (pY == 1.f) dirY = -1;
-			if (pY == 0.f) dirY = 1;
-			float r;
-
-			r = d(gen);
-			pX = filterX.process(1.f, pX + dirX * abs(r));
-			// Only range [0,1] is valid
-			pX = clamp(pX, 0.f, 1.f);
-			seqData[port][seqSelected[port]].x[c] = pX;
-
-			r = d(gen);
-			pY = filterY.process(1.f, pY + dirY * abs(r));
-			// Only range [0,1] is valid
-			pY = clamp(pY, 0.f, 1.f);
-			seqData[port][seqSelected[port]].y[c] = pY;
-		}
-		seqData[port][seqSelected[port]].length = l;
-	}
-
-	void seqPreset(int port, SEQPRESET preset, float x, float y, int parameter) {
-		auto _x = [x](float v) { return (v - 0.5f) * x + 0.5f; };
-		auto _y = [y](float v) { return (v - 0.5f) * y + 0.5f; };
-		
- 		switch (preset) {
-			case SEQPRESET::CIRCLE: {
-				seqData[port][seqSelected[port]].length = 0;
-				int l = SEQ_LENGTH / 4;
-				float p = 2.f * M_PI / (l - 1);
-				for (int i = 0; i < l; i++) {
-					seqData[port][seqSelected[port]].x[i] = _x(sin(i * p) / 2.f + 0.5f);
-					seqData[port][seqSelected[port]].y[i] = _y(cos(i * p) / 2.f + 0.5f);
-				}
-				seqData[port][seqSelected[port]].length = l;
-				break;
-			}
-			case SEQPRESET::SPIRAL: {
-				auto _s = [](float v, float s) { return (v - 0.5f) * s + 0.5f; };
-				seqData[port][seqSelected[port]].length = 0;
-				int l = SEQ_LENGTH;
-				float p = parameter * 2.f * M_PI / (l - 1);
-				for (int i = 0; i < l; i++) {
-					seqData[port][seqSelected[port]].x[i] = _x(_s(sin(i * p) / 2.f + 0.5f, 1.f / l * i));
-					seqData[port][seqSelected[port]].y[i] = _y(_s(cos(i * p) / 2.f + 0.5f, 1.f / l * i));
-				}
-				seqData[port][seqSelected[port]].length = l;
-				break;
-			}
-			case SEQPRESET::SAW: {
-				seqData[port][seqSelected[port]].length = 0;
-				seqData[port][seqSelected[port]].x[0] = _x(0.f);
-				seqData[port][seqSelected[port]].y[0] = _y(1.f);
-				int c = parameter;
-				for (int i = 0; i < c; i++) {
-					seqData[port][seqSelected[port]].x[i + 1] = _x(1.f / (c + 1) * (i + 1));
-					seqData[port][seqSelected[port]].y[i + 1] = _y(i % 2);
-				}
-				seqData[port][seqSelected[port]].x[c + 1] = _x(1.f);
-				seqData[port][seqSelected[port]].y[c + 1] = _y(0.f);
-				seqData[port][seqSelected[port]].length = c + 2;
-				break;
-			}
-			case SEQPRESET::SINE: {
-				seqData[port][seqSelected[port]].length = 0;
-				int l = SEQ_LENGTH;
-				float p = parameter * 2.f * M_PI / (l - 1);
-				for (int i = 0; i < l; i++) {
-					seqData[port][seqSelected[port]].x[i] = _x(1.f / l * i);
-					seqData[port][seqSelected[port]].y[i] = _y(sin(i * p) / 2.f + 0.5f);
-				}
-				seqData[port][seqSelected[port]].length = l;
-				break;
-			}
-			case SEQPRESET::EIGHT: {
-				auto _s = [](float v, float s) { return v / s + 0.5f; };
-				seqData[port][seqSelected[port]].length = 0;
-				int l = SEQ_LENGTH / 2.f;
-				float p = 2.f * M_PI / (l - 1);
-				float o = - M_PI / 2.f;
-				for (int i = 0; i < l; i++) {
-					seqData[port][seqSelected[port]].x[i] = _x(_s(std::cos(i * p + o), 2.f));
-					seqData[port][seqSelected[port]].y[i] = _y(_s(std::cos(i * p + o) * std::sin(i * p + o), 1.f));
-				}
-				seqData[port][seqSelected[port]].length = l;
-				break;
-			}
-			case SEQPRESET::ROSE: {
-				auto _s = [](float v) { return v / 2.f + 0.5f; };
-				seqData[port][seqSelected[port]].length = 0;
-				int l = SEQ_LENGTH;
-				float p = (parameter % 2 == 1 ? 2.f : 1.f) * 2.f * M_PI / (l - 1);
-				for (int i = 0; i < l; i++) {
-					seqData[port][seqSelected[port]].x[i] = _x(_s(std::cos(parameter / 2.f * i * p) * std::cos(i * p)));
-					seqData[port][seqSelected[port]].y[i] = _y(_s(std::cos(parameter / 2.f * i * p) * std::sin(i * p)));
-				}
-				seqData[port][seqSelected[port]].length = l;
-				break;
-			}
-		}
-	}
-
-	void seqRotate(int port, float angle) {
-		for (int i = 0; i < seqData[port][seqSelected[port]].length; i++) {
-			Vec p = Vec(seqData[port][seqSelected[port]].x[i], seqData[port][seqSelected[port]].y[i]);
-			p = p.plus(Vec(-0.5f, -0.5f));
-			p = p.rotate(angle);
-			p = p.minus(Vec(-0.5f, -0.5f));
-			seqData[port][seqSelected[port]].x[i] = std::max(0.f, std::min(p.x, 1.f));
-			seqData[port][seqSelected[port]].y[i] = std::max(0.f, std::min(p.y, 1.f));
-		}
-	}
-
-	void seqFlipHorizontally(int port) {
-		for (int i = 0; i < seqData[port][seqSelected[port]].length; i++) {
-			seqData[port][seqSelected[port]].y[i] = 1.f - seqData[port][seqSelected[port]].y[i];
-		}
-	}
-
-	void seqFlipVertically(int port) {
-		for (int i = 0; i < seqData[port][seqSelected[port]].length; i++) {
-			seqData[port][seqSelected[port]].x[i] = 1.f - seqData[port][seqSelected[port]].x[i];
-		}
-	}
-
-	void seqCopy(int port) {
-		seqCopyPort = port;
-		seqCopySeq = seqSelected[port];
-	}
-
-	void seqPaste(int port) {
-		if (seqCopyPort >= 0) {
-			seqData[port][seqSelected[port]].length = 0;
-			for (int i = 0; i < seqData[seqCopyPort][seqCopySeq].length; i++) {
-				seqData[port][seqSelected[port]].x[i] = seqData[seqCopyPort][seqCopySeq].x[i];
-				seqData[port][seqSelected[port]].y[i] = seqData[seqCopyPort][seqCopySeq].y[i];
-			}
-			seqData[port][seqSelected[port]].length = seqData[seqCopyPort][seqCopySeq].length;
-		}
-	}
 
 	void init() {
 		for (int i = 0; i < IN_PORTS; i++) {
@@ -702,16 +393,12 @@ struct ArenaModule : Module {
 			//lastInYpos[i] = -1.f;
 		}
 		for (int i = 0; i < MIX_PORTS; i++) {
-			seqSelected[i] = 0;
 			paramQuantities[MIX_X_POS + i]->setValue(paramQuantities[MIX_X_POS + i]->getDefaultValue());
 			paramQuantities[MIX_Y_POS + i]->setValue(paramQuantities[MIX_Y_POS + i]->getDefaultValue());
 			//lastMixXpos[i] = -1.f;
 			//lastMixYpos[i] = -1.f;
-			for (int j = 0; j < SEQ_COUNT; j++) {
-				seqData[i][j].length = 0;
-			}
 		}
-		seqEdit = -1;
+		Seq::seqInit();
 	}
 
 	void randomizeInputAmount() {
@@ -760,24 +447,7 @@ struct ArenaModule : Module {
 			json_t* mixportJ = json_object();
 			json_object_set_new(mixportJ, "mixportXBipolar", json_boolean(mixportXBipolar[i]));
 			json_object_set_new(mixportJ, "mixportYBipolar", json_boolean(mixportYBipolar[i]));
-			json_object_set_new(mixportJ, "seqSelected", json_integer(seqSelected[i]));
-			json_object_set_new(mixportJ, "seqMode", json_integer(seqMode[i]));
-			json_object_set_new(mixportJ, "seqInterpolate", json_integer(seqInterpolate[i]));
-			json_t* seqDataJ = json_array();
-			for (int j = 0; j < SEQ_COUNT; j++) {
-				SeqItem* s = &seqData[i][j];
-				json_t* seqItemJ = json_object();
-				json_t* xJ = json_array();
-				json_t* yJ = json_array();
-				for (int k = 0; k < s->length; k++) {
-					json_array_append_new(xJ, json_real(s->x[k]));
-					json_array_append_new(yJ, json_real(s->y[k]));
-				}
-				json_object_set_new(seqItemJ, "x", xJ);
-				json_object_set_new(seqItemJ, "y", yJ);
-				json_array_append_new(seqDataJ, seqItemJ);
-			}
-			json_object_set_new(mixportJ, "seqData", seqDataJ);
+			Seq::dataToJson(mixportJ, i);
 			json_array_append_new(mixportsJ, mixportJ);
 		}
 		json_object_set_new(rootJ, "mixports", mixportsJ);
@@ -809,27 +479,7 @@ struct ArenaModule : Module {
 		json_array_foreach(mixportsJ, mixputIndex, mixportJ) {
 			mixportXBipolar[mixputIndex] = json_boolean_value(json_object_get(mixportJ, "mixportXBipolar"));
 			mixportYBipolar[mixputIndex] = json_boolean_value(json_object_get(mixportJ, "mixportYBipolar"));
-			seqSelected[mixputIndex] = json_integer_value(json_object_get(mixportJ, "seqSelected"));
-			seqMode[mixputIndex] = (SEQMODE)json_integer_value(json_object_get(mixportJ, "seqMode"));
-			seqInterpolate[mixputIndex] = (SEQINTERPOLATE)json_integer_value(json_object_get(mixportJ, "seqInterpolate"));
-			json_t* seqDataJ = json_object_get(mixportJ, "seqData");
-			json_t* seqItemJ;
-			size_t seqItemIndex;
-			json_array_foreach(seqDataJ, seqItemIndex, seqItemJ) {
-				json_t* xsJ = json_object_get(seqItemJ, "x");
-				json_t* ysJ = json_object_get(seqItemJ, "y");
-				json_t* xJ;
-				size_t xIndex;
-				json_array_foreach(xsJ, xIndex, xJ) {
-					seqData[mixputIndex][seqItemIndex].x[xIndex] = json_real_value(xJ);
-				}
-				json_t* yJ;
-				size_t yIndex;
-				json_array_foreach(ysJ, yIndex, yJ) {
-					seqData[mixputIndex][seqItemIndex].y[yIndex] = json_real_value(yJ);
-				}
-				seqData[mixputIndex][seqItemIndex].length = yIndex;
-			}
+			Seq::dataFromJson(mixportJ, mixputIndex);
 		}
 
 		inportsUsed = json_integer_value(json_object_get(rootJ, "inportsUsed"));
@@ -840,7 +490,7 @@ struct ArenaModule : Module {
 
 // Context menus
 
-template < typename MODULE >
+template <typename MODULE>
 struct InputXMenuItem : MenuItem {
 	InputXMenuItem() {
 		rightText = RIGHT_ARROW;
@@ -870,7 +520,7 @@ struct InputXMenuItem : MenuItem {
 };
 
 
-template < typename MODULE >
+template <typename MODULE>
 struct InputYMenuItem : MenuItem {
 	InputYMenuItem() {
 		rightText = RIGHT_ARROW;
@@ -900,7 +550,7 @@ struct InputYMenuItem : MenuItem {
 };
 
 
-template < typename MODULE >
+template <typename MODULE>
 struct ModModeMenuItem : MenuItem {
 	ModModeMenuItem() {
 		rightText = RIGHT_ARROW;
@@ -935,7 +585,7 @@ struct ModModeMenuItem : MenuItem {
 	}
 };
 
-template < typename MODULE >
+template <typename MODULE>
 struct OutputModeMenuItem : MenuItem {
 	OutputModeMenuItem() {
 		rightText = RIGHT_ARROW;
@@ -972,7 +622,7 @@ struct OutputModeMenuItem : MenuItem {
 };
 
 
-template < typename MODULE >
+template <typename MODULE>
 struct RadiusChangeAction : history::ModuleAction {
 	int inputId;
 	float oldValue;
@@ -997,7 +647,7 @@ struct RadiusChangeAction : history::ModuleAction {
 	}
 };
 
-template < typename MODULE >
+template <typename MODULE>
 struct RadiusSlider : ui::Slider {
 	struct RadiusQuantity : Quantity {
 		MODULE* module;
@@ -1064,7 +714,7 @@ struct RadiusSlider : ui::Slider {
 };
 
 
-template < typename MODULE >
+template <typename MODULE>
 struct AmountChangeAction : history::ModuleAction {
 	int inputId;
 	float oldValue;
@@ -1089,7 +739,7 @@ struct AmountChangeAction : history::ModuleAction {
 	}
 };
 
-template < typename MODULE >
+template <typename MODULE>
 struct AmountSlider : ui::Slider {
 	struct AmountQuantity : Quantity {
 		MODULE* module;
@@ -1180,7 +830,7 @@ struct XYChangeAction : history::ModuleAction {
 };
 
 
-template < typename MODULE >
+template <typename MODULE>
 struct MixportXMenuItem : MenuItem {
 	MixportXMenuItem() {
 		rightText = RIGHT_ARROW;
@@ -1209,7 +859,7 @@ struct MixportXMenuItem : MenuItem {
 	}
 };
 
-template < typename MODULE >
+template <typename MODULE>
 struct MixportYMenuItem : MenuItem {
 	MixportYMenuItem() {
 		rightText = RIGHT_ARROW;
@@ -1239,115 +889,9 @@ struct MixportYMenuItem : MenuItem {
 };
 
 
-// Seq-Edit menu etc.
-
-template < typename MODULE >
-struct SeqMenuItem : MenuItem {
-	SeqMenuItem() {
-		rightText = RIGHT_ARROW;
-	}
-
-	struct SeqItem : MenuItem {
-		MODULE* module;
-		int id;
-		int seq;
-		
-		void onAction(const event::Action& e) override {
-			module->seqSelected[id] = seq;
-		}
-
-		void step() override {
-			rightText = module->seqSelected[id] == seq ? "✔" : "";
-			MenuItem::step();
-		}
-	};
-
-	MODULE* module;
-	int id;
-	Menu* createChildMenu() override {
-		Menu* menu = new Menu;
-		for (int i = 0; i < SEQ_COUNT; i++) {
-			menu->addChild(construct<SeqItem>(&MenuItem::text, string::f("%02u", i + 1), &SeqItem::module, module, &SeqItem::id, id, &SeqItem::seq, i));
-		}
-		return menu;
-	}
-};
-
-
-template < typename MODULE >
-struct SeqModeMenuItem : MenuItem {
-	SeqModeMenuItem() {
-		rightText = RIGHT_ARROW;
-	}
-
-	struct SeqModeItem : MenuItem {
-		MODULE* module;
-		int id;
-		SEQMODE seqMode;
-		
-		void onAction(const event::Action& e) override {
-			if (module->seqEdit != id)
-				module->seqMode[id] = seqMode;
-		}
-
-		void step() override {
-			rightText = module->seqMode[id] == seqMode ? "✔" : "";
-			MenuItem::step();
-		}
-	};
-
-	MODULE* module;
-	int id;
-	Menu* createChildMenu() override {
-		Menu* menu = new Menu;
-		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "Trigger forward", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::TRIG_FWD));
-		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "Trigger reverse", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::TRIG_REV));
-		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "Trigger random 1-16", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::TRIG_RANDOM_16));
-		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "Trigger random 1-8", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::TRIG_RANDOM_8));
-		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "Trigger random 1-4", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::TRIG_RANDOM_4));
-		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "0..10V", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::VOLT));
-		menu->addChild(construct<SeqModeItem>(&MenuItem::text, "C4-D#5", &SeqModeItem::module, module, &SeqModeItem::id, id, &SeqModeItem::seqMode, SEQMODE::C4));
-		return menu;
-	}
-};
-
-
-template < typename MODULE >
-struct SeqInterpolateMenuItem : MenuItem {
-	SeqInterpolateMenuItem() {
-		rightText = RIGHT_ARROW;
-	}
-
-	struct SeqInterpolateItem : MenuItem {
-		MODULE* module;
-		int id;
-		SEQINTERPOLATE seqInterpolate;
-		
-		void onAction(const event::Action& e) override {
-			module->seqInterpolate[id] = seqInterpolate;
-		}
-
-		void step() override {
-			rightText = module->seqInterpolate[id] == seqInterpolate ? "✔" : "";
-			MenuItem::step();
-		}
-	};
-
-	MODULE* module;
-	int id;
-	Menu* createChildMenu() override {
-		Menu* menu = new Menu;
-		menu->addChild(construct<SeqInterpolateItem>(&MenuItem::text, "Linear", &SeqInterpolateItem::module, module, &SeqInterpolateItem::id, id, &SeqInterpolateItem::seqInterpolate, SEQINTERPOLATE::LINEAR));
-		menu->addChild(construct<SeqInterpolateItem>(&MenuItem::text, "Cubic", &SeqInterpolateItem::module, module, &SeqInterpolateItem::id, id, &SeqInterpolateItem::seqInterpolate, SEQINTERPOLATE::CUBIC));
-		return menu;
-	}
-};
-
-
-
 // Screen widgets
 
-template < typename MODULE >
+template <typename MODULE>
 struct ScreenDragWidget : OpaqueWidget {
 	const float radius = 10.f;
 	const float fontsize = 13.0f;
@@ -1500,7 +1044,7 @@ struct ScreenDragWidget : OpaqueWidget {
 };
 
 
-template < typename MODULE >
+template <typename MODULE>
 struct ScreenInportDragWidget : ScreenDragWidget<MODULE> {
 	typedef ScreenDragWidget<MODULE> AW;
 
@@ -1570,7 +1114,7 @@ struct ScreenInportDragWidget : ScreenDragWidget<MODULE> {
 	}
 };
 
-template < typename MODULE >
+template <typename MODULE>
 struct ScreenMixportDragWidget : ScreenDragWidget<MODULE> {
 	typedef ScreenDragWidget<MODULE> AW;
 
@@ -1645,12 +1189,12 @@ struct ScreenMixportDragWidget : ScreenDragWidget<MODULE> {
 		ui::Menu* menu = createMenu();
 		menu->addChild(createMenuLabel(string::f("Channel MIX-%i", AW::id + 1)));
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<SeqMenuItem<MODULE>>(&MenuItem::text, "Motion-Sequence", &SeqMenuItem<MODULE>::module, AW::module, &SeqMenuItem<MODULE>::id, AW::id));
-		menu->addChild(construct<SeqInterpolateMenuItem<MODULE>>(&MenuItem::text, "Interpolation", &SeqInterpolateMenuItem<MODULE>::module, AW::module, &SeqInterpolateMenuItem<MODULE>::id, AW::id));
+		menu->addChild(XySeqSlotMenuItem(AW::module, AW::id));
+		menu->addChild(XySeqInterpolateMenuItem(AW::module, AW::id));
+		menu->addChild(XySeqTriggerMenuItem(AW::module, AW::id));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<MixportXMenuItem<MODULE>>(&MenuItem::text, "X-port", &MixportXMenuItem<MODULE>::module, AW::module, &MixportXMenuItem<MODULE>::id, AW::id));
 		menu->addChild(construct<MixportYMenuItem<MODULE>>(&MenuItem::text, "Y-port", &MixportYMenuItem<MODULE>::module, AW::module, &MixportYMenuItem<MODULE>::id, AW::id));
-		menu->addChild(construct<SeqModeMenuItem<MODULE>>(&MenuItem::text, "SEQ-port", &SeqModeMenuItem<MODULE>::module, AW::module, &SeqModeMenuItem<MODULE>::id, AW::id));
 	}
 };
 
@@ -2023,697 +1567,17 @@ struct OpLedDisplay : StoermelderLedDisplay {
 };
 
 
-
-
-template <typename MODULE>
-struct SeqChangeAction : history::ModuleAction {
-	int portId;
-	int seqId;
-	int oldSeqLength, newSeqLength;
-	float oldSeqX[SEQ_LENGTH], oldSeqY[SEQ_LENGTH];
-	float newSeqX[SEQ_LENGTH], newSeqY[SEQ_LENGTH];
-
-	SeqChangeAction() {
-		name = "stoermelder ARENA seq";
+struct ArenaXySeqLedDisplay : XySeqLedDisplay<ArenaModule<8, 4>> {
+	typedef ArenaModule<8, 4> MODULE;
+	
+	std::string getPortName() override {
+		return string::f("Channel MIX-%i", id + 1);
 	}
 
-	void setOld(MODULE* m, int portId, int seqId) {
-		this->moduleId = m->id;
-		this->portId = portId;
-		this->seqId = seqId;
-		oldSeqLength = m->seqData[portId][seqId].length;
-		for (int i = 0; i < oldSeqLength; i++) {
-			oldSeqX[i] = m->seqData[portId][seqId].x[i];
-			oldSeqY[i] = m->seqData[portId][seqId].y[i];
-		}
-	}
-
-	void setNew(MODULE* m) {
-		newSeqLength = m->seqData[portId][seqId].length;
-		for (int i = 0; i < newSeqLength; i++) {
-			newSeqX[i] = m->seqData[portId][seqId].x[i];
-			newSeqY[i] = m->seqData[portId][seqId].y[i];
-		}
-	}
-
-	void undo() override {
-		app::ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
-		assert(mw);
-		MODULE* m = dynamic_cast<MODULE*>(mw->module);
-		m->seqData[portId][seqId].length = 0;
-		for (int i = 0; i < oldSeqLength; i++) {
-			m->seqData[portId][seqId].x[i] = oldSeqX[i];
-			m->seqData[portId][seqId].y[i] = oldSeqY[i];
-		}
-		m->seqData[portId][seqId].length = oldSeqLength;
-	}
-
-	void redo() override {
-		app::ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
-		assert(mw);
-		MODULE* m = dynamic_cast<MODULE*>(mw->module);
-		m->seqData[portId][seqId].length = 0;
-		for (int i = 0; i < newSeqLength; i++) {
-			m->seqData[portId][seqId].x[i] = newSeqX[i];
-			m->seqData[portId][seqId].y[i] = newSeqY[i];
-		}
-		m->seqData[portId][seqId].length = newSeqLength;
-	}
-};
-
-template <typename MODULE>
-struct SeqPresetMenuItem : MenuItem {
-	float x = 1.0f;
-	float y = 1.0f;
-	int parameter = 6;
-
-	SeqPresetMenuItem() {
-		rightText = RIGHT_ARROW;
-	}
-
-	struct XSlider : ui::Slider {
-		struct XQuantity : Quantity {
-			SeqPresetMenuItem* item;
-
-			XQuantity(SeqPresetMenuItem* item) {
-				this->item = item;
-			}
-			void setValue(float value) override {
-				item->x = math::clamp(value, 0.f, 1.f);
-			}
-			float getValue() override {
-				return item->x;
-			}
-			float getDefaultValue() override {
-				return 0.5;
-			}
-			float getDisplayValue() override {
-				return getValue() * 100;
-			}
-			void setDisplayValue(float displayValue) override {
-				setValue(displayValue / 100);
-			}
-			std::string getLabel() override {
-				return "Scale x";
-			}
-			std::string getUnit() override {
-				return "%";
-			}
-		};
-
-		XSlider(SeqPresetMenuItem* item) {
-			quantity = new XQuantity(item);
-		}
-		~XSlider() {
-			delete quantity;
-		}
-	};
-
-	struct YSlider : ui::Slider {
-		struct YQuantity : Quantity {
-			SeqPresetMenuItem* item;
-
-			YQuantity(SeqPresetMenuItem* item) {
-				this->item = item;
-			}
-			void setValue(float value) override {
-				item->y = math::clamp(value, 0.f, 1.f);
-			}
-			float getValue() override {
-				return item->y;
-			}
-			float getDefaultValue() override {
-				return 0.5;
-			}
-			float getDisplayValue() override {
-				return getValue() * 100;
-			}
-			void setDisplayValue(float displayValue) override {
-				setValue(displayValue / 100);
-			}
-			std::string getLabel() override {
-				return "Scale y";
-			}
-			std::string getUnit() override {
-				return "%";
-			}
-		};
-
-		YSlider(SeqPresetMenuItem* item) {
-			quantity = new YQuantity(item);
-		}
-		~YSlider() {
-			delete quantity;
-		}
-	};
-
-	struct ParameterSlider : ui::Slider {
-		struct ParameterQuantity : Quantity {
-			SeqPresetMenuItem* item;
-			float v = -1.f;
-
-			ParameterQuantity(SeqPresetMenuItem* item) {
-				this->item = item;
-			}
-			void setValue(float value) override {
-				v = clamp(value, 2.f, 12.f);
-				item->parameter = int(v);
-			}
-			float getValue() override {
-				if (v < 0.f) v = item->parameter;
-				return v;
-			}
-			float getDefaultValue() override {
-				return 6.f;
-			}
-			float getMinValue() override {
-				return 2.f;
-			}
-			float getMaxValue() override {
-				return 12.f;
-			}
-			float getDisplayValue() override {
-				return getValue();
-			}
-			std::string getDisplayValueString() override {
-				int i = int(getValue());
-				return string::f("%i", i);
-			}
-			void setDisplayValue(float displayValue) override {
-				setValue(displayValue);
-			}
-			std::string getLabel() override {
-				return "Parameter";
-			}
-			std::string getUnit() override {
-				return "";
-			}
-		};
-
-		ParameterSlider(SeqPresetMenuItem* item) {
-			quantity = new ParameterQuantity(item);
-		}
-		~ParameterSlider() {
-			delete quantity;
-		}
-		void onDragMove(const event::DragMove& e) override {
-			if (quantity) {
-				quantity->moveScaledValue(0.002f * e.mouseDelta.x);
-			}
-		}
-	};
-
-	struct SeqPresetItem : MenuItem {
-		MODULE* module;
-		SEQPRESET preset;
-		SeqPresetMenuItem* item;
-		
-		void onAction(const event::Action& e) override {
-			// history
-			SeqChangeAction<MODULE>* h = new SeqChangeAction<MODULE>;
-			h->setOld(module, module->seqEdit, module->seqSelected[module->seqEdit]);
-			h->name += " preset";
-
-			module->seqPreset(module->seqEdit, preset, item->x, item->y, item->parameter);
-
-			h->setNew(module);
-			APP->history->push(h);
-		}
-	};
-
-	MODULE* module;
-	Menu* createChildMenu() override {
-		Menu* menu = new Menu;
-		menu->addChild(construct<SeqPresetItem>(&MenuItem::text, "Circle", &SeqPresetItem::module, module, &SeqPresetItem::item, this, &SeqPresetItem::preset, SEQPRESET::CIRCLE));
-		menu->addChild(construct<SeqPresetItem>(&MenuItem::text, "Spiral", &SeqPresetItem::module, module, &SeqPresetItem::item, this, &SeqPresetItem::preset, SEQPRESET::SPIRAL));
-		menu->addChild(construct<SeqPresetItem>(&MenuItem::text, "Saw", &SeqPresetItem::module, module, &SeqPresetItem::item, this, &SeqPresetItem::preset, SEQPRESET::SAW));
-		menu->addChild(construct<SeqPresetItem>(&MenuItem::text, "Sine", &SeqPresetItem::module, module, &SeqPresetItem::item, this, &SeqPresetItem::preset, SEQPRESET::SINE));
-		menu->addChild(construct<SeqPresetItem>(&MenuItem::text, "Eight", &SeqPresetItem::module, module, &SeqPresetItem::item, this, &SeqPresetItem::preset, SEQPRESET::EIGHT));
-		menu->addChild(construct<SeqPresetItem>(&MenuItem::text, "Rose", &SeqPresetItem::module, module, &SeqPresetItem::item, this, &SeqPresetItem::preset, SEQPRESET::ROSE));
-
-		XSlider* xSlider = new XSlider(this);
-		xSlider->box.size.x = 120.0f;
-		menu->addChild(xSlider);
-		YSlider* ySlider = new YSlider(this);
-		ySlider->box.size.x = 120.0f;
-		menu->addChild(ySlider);
-		ParameterSlider* parameterSlider = new ParameterSlider(this);
-		parameterSlider->box.size.x = 120.0f;
-		menu->addChild(parameterSlider);
-		return menu;
-	}
-};
-
-
-// Seq-Edit widgets
-
-template <typename MODULE>
-struct SeqEditDragWidget : OpaqueWidget {
-	const float radius = 8.f;
-	const float fontsize = 13.0f;
-
-	MODULE* module;
-	NVGcolor color = color::RED;
-	int id = -1;
-	int seq = -1;
-
-	int index;
-	math::Vec dragPos;
-	SeqChangeAction<MODULE>* dragChange;
-	std::chrono::time_point<std::chrono::system_clock> timer;
-	bool timerClear;
-
-	SeqEditDragWidget() {
-		box.size = Vec(2 * radius, 2 * radius);
-	}
-
-	void init(int id, int seq) {
-		this->id = id;
-		this->seq = seq;
-		index = 0;
-
-		if (id >= 0) {
-			if (module->seqData[id][seq].length == 0) {
-				box.pos.x = parent->box.size.x / 2.f - radius;
-				box.pos.y = parent->box.size.y / 2.f - radius;
-			}
-			else {
-				box.pos.x = (parent->box.size.x - box.size.x) * module->seqData[id][seq].x[0];
-				box.pos.y = (parent->box.size.y - box.size.y) * module->seqData[id][seq].y[0];
-			}
-		}
-	}
-
-	void clear() {
-		index = 0;
-
-		SeqChangeAction<MODULE>* h = new SeqChangeAction<MODULE>;
-		h->setOld(module, id, seq);
-		h->name += " clear";
-
-		module->seqData[id][seq].length = 0;
-
-		h->setNew(module);
-		APP->history->push(h);
-	}
-
-	void drawLayer(const Widget::DrawArgs& args, int layer) override {
-		if (!module) return;
-
-		if (layer == 1 && id >= 0) {
-			Vec c = Vec(box.size.x / 2.f, box.size.y / 2.f);
-
-			nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
-
-			// Draw circle
-			nvgBeginPath(args.vg);
-			nvgCircle(args.vg, c.x, c.y, radius);
-			nvgStrokeColor(args.vg, color);
-			nvgStrokeWidth(args.vg, 1.f);
-			nvgStroke(args.vg);
-			nvgFillColor(args.vg, color::mult(color, 0.5f));
-			nvgFill(args.vg);
-
-			// Draw label
-			std::shared_ptr<Font> font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
-			nvgFontSize(args.vg, fontsize);
-			nvgFontFaceId(args.vg, font->handle);
-			nvgFillColor(args.vg, color);
-			nvgTextBox(args.vg, c.x - 3.f, c.y + 4.f, 120, string::f("%i", id + 1).c_str(), NULL);
-		}
-		OpaqueWidget::drawLayer(args, layer);
-	}
-
-	void onHover(const event::Hover& e) override {
-		math::Vec c = box.size.div(2);
-		float dist = e.pos.minus(c).norm();
-		if (dist <= c.x) {
-			OpaqueWidget::onHover(e);
-		}
-	}
-
-	void onButton(const event::Button& e) override {
-		math::Vec c = box.size.div(2);
-		float dist = e.pos.minus(c).norm();
-		if (dist <= c.x) {
-			OpaqueWidget::onButton(e);
-			if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
-				e.consume(this);
-			}
-		}
-		else {
-			OpaqueWidget::onButton(e);
-		}
-	}
-
-	void onDragStart(const event::DragStart& e) override {
-		if (e.button != GLFW_MOUSE_BUTTON_LEFT)
-			return;
-
-		dragPos = APP->scene->rack->getMousePos().minus(box.pos);
-		timerClear = true;
-		module->seqData[id][seq].length = 0;
-
-		// history
-		dragChange = new SeqChangeAction<MODULE>;
-		dragChange->setOld(module, module->seqEdit, module->seqSelected[module->seqEdit]);
-		dragChange->name += " drag";
-	}
-
-	void onDragEnd(const event::DragEnd& e) override {
-		dragChange->setNew(module);
-		APP->history->push(dragChange);
-		dragChange = NULL;
-	}
-
-	void onDragMove(const event::DragMove& e) override {
-		if (e.button != GLFW_MOUSE_BUTTON_LEFT)
-			return;
-
-		math::Vec pos = APP->scene->rack->getMousePos().minus(dragPos);
-		pos.x = std::max(0.f, std::min(pos.x, parent->box.size.x - box.size.x));
-		pos.y = std::max(0.f, std::min(pos.y, parent->box.size.y - box.size.y));
-		box.pos = pos;
-
-		auto now = std::chrono::system_clock::now();
-		if (timerClear || now - timer > std::chrono::milliseconds{65}) {
-			if (index < SEQ_LENGTH) {
-				float x = pos.x / (parent->box.size.x - box.size.x);
-				float y = pos.y / (parent->box.size.y - box.size.y);
-
-				module->seqData[id][seq].x[index] = x;
-				module->seqData[id][seq].y[index] = y;
-				module->seqData[id][seq].length = index + 1;
-				index++;
-			}
-			timer = now;
-			timerClear = false;
-		}
-		OpaqueWidget::onDragMove(e);
-	}
-};
-
-template <typename MODULE>
-struct SeqEditWidget : OpaqueWidget {
-	MODULE* module;
-	SeqEditDragWidget<MODULE>* recWidget;
-	int mixParamIdX;
-	int mixParamIdY;
-	int lastSeqId = -1;
-	int lastSeqSelected = -1;
-
-	SeqEditWidget(MODULE* module, int mixParamIdX, int mixParamIdY) {
-		this->module = module;
-		this->mixParamIdX = mixParamIdX;
-		this->mixParamIdY = mixParamIdY;
-
-		recWidget = new SeqEditDragWidget<MODULE>;
-		recWidget->module = module;
-		addChild(recWidget);
-	}
-
-	void step() override {
-		OpaqueWidget::step();
-		if (!module) return;
-
-		int seqId = module->seqEdit;
-		int seqSelected = module->seqSelected[module->seqEdit];
-
-		if (module->seqEdit >= 0) {
-			if (lastSeqId != seqId || lastSeqSelected != seqSelected)
-				recWidget->init(seqId, seqSelected);
-		}
-		else {
-			recWidget->init(-1, -1);
-		}
-		lastSeqId = seqId;
-		lastSeqSelected = seqSelected;
-	}
-
-	void drawLayer(const DrawArgs& args, int layer) override {
-		if (module && module->seqEdit >= 0) {
-			if (layer == 1) {
-				// Dim the display but don't darken it completely
-				float b = std::max(0.4f, settings::rackBrightness);
-				nvgGlobalTint(args.vg, nvgRGBAf(b, b, b, 1.f));
-
-				NVGcolor c = color::mult(color::WHITE, 0.7f);
-				float stroke = 1.f;
-				
-				// Draw outer border
-				nvgBeginPath(args.vg);
-				nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
-				nvgStrokeWidth(args.vg, stroke);
-				nvgStrokeColor(args.vg, c);
-				nvgStroke(args.vg);
-
-				// Draw "EDIT" text
-				std::shared_ptr<Font> font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
-				nvgFontSize(args.vg, 22);
-				nvgFontFaceId(args.vg, font->handle);
-				nvgTextLetterSpacing(args.vg, -2.2);
-				nvgFillColor(args.vg, c);
-				nvgTextBox(args.vg, box.size.x - 78.f, box.size.y - 6.f, 120, "SEQ-EDIT", NULL);
-
-				OpaqueWidget::drawLayer(args, layer);
-
-				// Draw raw automation line
-				SeqItem* s = &module->seqData[lastSeqId][lastSeqSelected];
-				if (s->length > 1) {
-					float sizeX = box.size.x - recWidget->box.size.x;
-					float sizeY = box.size.y - recWidget->box.size.y;
-					nvgBeginPath(args.vg);
-					for (int i = 0; i < s->length; i++) {
-						float x = recWidget->box.size.x / 2.f + sizeX * s->x[i];
-						float y = recWidget->box.size.y / 2.f + sizeY * s->y[i];
-						if (i == 0)
-							nvgMoveTo(args.vg, x, y);
-						else
-							nvgLineTo(args.vg, x, y);
-					}
-
-					nvgStrokeColor(args.vg, nvgRGB(0xd8, 0xd8, 0xd8));
-					nvgLineCap(args.vg, NVG_ROUND);
-					nvgMiterLimit(args.vg, 2.0);
-					nvgStrokeWidth(args.vg, 1.0);
-					nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
-					nvgStroke(args.vg);
-				}
-			}
-		}
-	}
-
-	void onButton(const event::Button& e) override {
-		if (lastSeqId >= 0) {
-			Widget::onButton(e);
-			if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT && !e.isConsumed()) {
-				recWidget->box.pos.x = e.pos.x - recWidget->radius;
-				recWidget->box.pos.y = e.pos.y - recWidget->radius;
-				recWidget->clear();
-				e.consume(this);
-			}
-			if (e.button == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT && !e.isConsumed()) {
-				createContextMenu();
-				e.consume(this);
-			}
-		}
-	}
-
-	void createContextMenu() {
-		ui::Menu* menu = createMenu();
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Arena motion"));
-
-		struct SeqClearItem : MenuItem {
-			MODULE* module;
-			void onAction(const event::Action& e) override {
-				// history
-				SeqChangeAction<MODULE>* h = new SeqChangeAction<MODULE>;
-				h->setOld(module, module->seqEdit, module->seqSelected[module->seqEdit]);
-				h->name += " clear";
-
-				module->seqClear(module->seqEdit);
-
-				h->setNew(module);
-				APP->history->push(h);
-			}
-		};
-
-		struct SeqFilpHorizontallyItem : MenuItem {
-			MODULE* module;
-			void onAction(const event::Action& e) override {
-				// history
-				SeqChangeAction<MODULE>* h = new SeqChangeAction<MODULE>;
-				h->setOld(module, module->seqEdit, module->seqSelected[module->seqEdit]);
-				h->name += " flip horizontally";
-
-				module->seqFlipHorizontally(module->seqEdit);
-
-				h->setNew(module);
-				APP->history->push(h);
-			}
-		};
-
-		struct SeqFlipVerticallyItem : MenuItem {
-			MODULE* module;
-			void onAction(const event::Action& e) override {
-				// history
-				SeqChangeAction<MODULE>* h = new SeqChangeAction<MODULE>;
-				h->setOld(module, module->seqEdit, module->seqSelected[module->seqEdit]);
-				h->name += " flip vertically";
-
-				module->seqFlipVertically(module->seqEdit);
-
-				h->setNew(module);
-				APP->history->push(h);
-			}
-		};
-
-		struct SeqRotateItem : MenuItem {
-			MODULE* module;
-			float angle;
-			void onAction(const event::Action& e) override {
-				// history
-				SeqChangeAction<MODULE>* h = new SeqChangeAction<MODULE>;
-				h->setOld(module, module->seqEdit, module->seqSelected[module->seqEdit]);
-				h->name += " rotate";
-
-				module->seqRotate(module->seqEdit, angle);
-
-				h->setNew(module);
-				APP->history->push(h);
-			}
-		};
-
-		struct SeqRandomizeItem : MenuItem {
-			MODULE* module;
-			void onAction(const event::Action& e) override {
-				// history
-				SeqChangeAction<MODULE>* h = new SeqChangeAction<MODULE>;
-				h->setOld(module, module->seqEdit, module->seqSelected[module->seqEdit]);
-				h->name += " randomize";
-
-				module->seqRandomize(module->seqEdit);
-
-				h->setNew(module);
-				APP->history->push(h);
-			}
-		};
-
-		struct SeqCopyItem : MenuItem {
-			MODULE* module;
-			void onAction(const event::Action& e) override {
-				module->seqCopy(module->seqEdit);
-			}
-		};
-
-		struct SeqPasteItem : MenuItem {
-			MODULE* module;
-			void onAction(const event::Action& e) override {
-				// history
-				SeqChangeAction<MODULE>* h = new SeqChangeAction<MODULE>;
-				h->setOld(module, module->seqEdit, module->seqSelected[module->seqEdit]);
-				h->name += " paste";
-
-				module->seqPaste(module->seqEdit);
-
-				h->setNew(module);
-				APP->history->push(h);
-			}
-		};
-
-		menu->addChild(construct<SeqMenuItem<MODULE>>(&MenuItem::text, "Motion-Sequence", &SeqMenuItem<MODULE>::module, module, &SeqMenuItem<MODULE>::id, module->seqEdit));
-		menu->addChild(construct<SeqInterpolateMenuItem<MODULE>>(&MenuItem::text, "Interpolation", &SeqInterpolateMenuItem<MODULE>::module, module, &SeqInterpolateMenuItem<MODULE>::id, module->seqEdit));
-		menu->addChild(construct<MenuSeparator>());
-		menu->addChild(construct<SeqClearItem>(&MenuItem::text, "Clear", &SeqClearItem::module, module));
-		menu->addChild(construct<SeqFilpHorizontallyItem>(&MenuItem::text, "Flip horizontally", &SeqFilpHorizontallyItem::module, module));
-		menu->addChild(construct<SeqFlipVerticallyItem>(&MenuItem::text, "Flip vertically", &SeqFlipVerticallyItem::module, module));
-		menu->addChild(construct<SeqRotateItem>(&MenuItem::text, "Rotate 45 degrees", &SeqRotateItem::module, module, &SeqRotateItem::angle, M_PI / 4.f));
-		menu->addChild(construct<SeqRotateItem>(&MenuItem::text, "Rotate 90 degrees", &SeqRotateItem::module, module, &SeqRotateItem::angle, M_PI / 2.f));
-		menu->addChild(construct<MenuSeparator>());
-		menu->addChild(construct<SeqRandomizeItem>(&MenuItem::text, "Random motion", &SeqRandomizeItem::module, module));
-		menu->addChild(construct<SeqPresetMenuItem<MODULE>>(&MenuItem::text, "Preset", &SeqPresetMenuItem<MODULE>::module, module));
-		menu->addChild(construct<MenuSeparator>());
-		menu->addChild(construct<SeqCopyItem>(&MenuItem::text, "Copy", &SeqCopyItem::module, module));
-		menu->addChild(construct<SeqPasteItem>(&MenuItem::text, "Paste", &SeqPasteItem::module, module));
-	}
-};
-
-
-// Various widgets
-
-template <typename MODULE>
-struct SeqLedDisplay : StoermelderLedDisplay {
-	MODULE* module;
-	int id;
-
-	SeqLedDisplay() {
-		box.size = Vec(16.9f, 13.2f);
-	}
-
-	void step() override {
-		if (module) {
-			text = id + 1 > module->mixportsUsed ? "" : string::f("%02d", module->seqSelected[id] + 1);
-			color = module->seqEdit == id ? color::RED : nvgRGB(0xf0, 0xf0, 0xf0);
-		}
-		else {
-			text = "00";
-		}
-		StoermelderLedDisplay::step();
-	}
-
-	void onButton(const event::Button& e) override {
-		if (id + 1 > module->mixportsUsed) return;
-		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
-			createContextMenu();
-			e.consume(this);
-		}
-		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
-			if (module->seqEdit == id) {
-				module->seqEdit = -1;
-			}
-			else {
-				module->seqEdit = id;
-			}
-			e.consume(this);
-		}
-		StoermelderLedDisplay::onButton(e);
-	}
-
-	void draw(const DrawArgs& args) override {
-		StoermelderLedDisplay::draw(args);
-		if (module && module->seqEdit == id) {
-			drawRedHalo(args);
-		}
-	}
-
-	void drawRedHalo(const DrawArgs& args) {
-		float radiusX = box.size.x / 2.0;
-		float radiusY = box.size.x / 2.0;
-		float oradiusX = 2 * radiusX;
-		float oradiusY = 2 * radiusY;
-		nvgBeginPath(args.vg);
-		nvgRect(args.vg, radiusX - oradiusX, radiusY - oradiusY, 2 * oradiusX, 2 * oradiusY);
-
-		NVGpaint paint;
-		NVGcolor icol = color::mult(color, 0.65f);
-		NVGcolor ocol = nvgRGB(0, 0, 0);
-
-		paint = nvgRadialGradient(args.vg, radiusX, radiusY, radiusX, oradiusY, icol, ocol);
-		nvgFillPaint(args.vg, paint);
-		nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
-		nvgFill(args.vg);
-	}
-
-	void createContextMenu() {
-		ui::Menu* menu = createMenu();
-		menu->addChild(createMenuLabel(string::f("Channel MIX-%i", id + 1)));
-		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<SeqMenuItem<MODULE>>(&MenuItem::text, "Motion-Sequence", &SeqMenuItem<MODULE>::module, module, &SeqMenuItem<MODULE>::id, id));
-		menu->addChild(construct<SeqInterpolateMenuItem<MODULE>>(&MenuItem::text, "Interpolation", &SeqInterpolateMenuItem<MODULE>::module, module, &SeqInterpolateMenuItem<MODULE>::id, id));
+	void appendContextMenu(Menu* menu) override {
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<MixportXMenuItem<MODULE>>(&MenuItem::text, "X-port", &MixportXMenuItem<MODULE>::module, module, &MixportXMenuItem<MODULE>::id, id));
 		menu->addChild(construct<MixportYMenuItem<MODULE>>(&MenuItem::text, "Y-port", &MixportYMenuItem<MODULE>::module, module, &MixportYMenuItem<MODULE>::id, id));
-		menu->addChild(construct<SeqModeMenuItem<MODULE>>(&MenuItem::text, "SEQ-port", &SeqModeMenuItem<MODULE>::module, module, &SeqModeMenuItem<MODULE>::id, id));
 	}
 };
 
@@ -2791,7 +1655,7 @@ struct ArenaWidget : ThemedModuleWidget<ArenaModule<8, 4>> {
 		screenWidget->box.size = Vec(293.6f, 296.0f);
 		addChild(screenWidget);
 
-		SeqEditWidget<MODULE>* seqEditWidget = new SeqEditWidget<MODULE>(module, MODULE::MIX_X_POS, MODULE::MIX_Y_POS);
+		XySeqEditWidget<MODULE>* seqEditWidget = new XySeqEditWidget<MODULE>(module, MODULE::MIX_X_POS, MODULE::MIX_Y_POS);
 		seqEditWidget->box.pos = screenWidget->box.pos;
 		seqEditWidget->box.size = screenWidget->box.size;
 		addChild(seqEditWidget);
@@ -2815,7 +1679,7 @@ struct ArenaWidget : ThemedModuleWidget<ArenaModule<8, 4>> {
 			addOutput(createOutputCentered<StoermelderPort>(Vec(x, 327.7f), module, MODULE::MIX_OUTPUT + i));
 
 			addInput(createInputCentered<StoermelderPort>(Vec(x, 255.6f), module, MODULE::SEQ_INPUT + i));
-			SeqLedDisplay<MODULE>* arenaSeqDisplay1 = createWidgetCentered<SeqLedDisplay<MODULE>>(Vec(x, 227.0f));
+			ArenaXySeqLedDisplay* arenaSeqDisplay1 = createWidgetCentered<ArenaXySeqLedDisplay>(Vec(x, 227.0f));
 			arenaSeqDisplay1->module = module;
 			arenaSeqDisplay1->id = i;
 			addChild(arenaSeqDisplay1);
