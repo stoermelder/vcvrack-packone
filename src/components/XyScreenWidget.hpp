@@ -256,6 +256,7 @@ struct XyScreenRadiusSlider : ui::Slider {
 	XyScreenRadiusSlider(MODULE* module, int id) {
 		this->module = module;
 		this->id = id;
+		box.size.x = 200.0;
 		quantity = new RadiusQuantity(module, id);
 	}
 	~XyScreenRadiusSlider() {
@@ -346,6 +347,7 @@ struct XyScreenAmountSlider : ui::Slider {
 	XyScreenAmountSlider(MODULE* module, int id) {
 		this->module = module;
 		this->id = id;
+		box.size.x = 200.0;
 		quantity = new AmountQuantity(module, id);
 	}
 	~XyScreenAmountSlider() {
@@ -544,15 +546,9 @@ struct XyScreenDragWidget : OpaqueWidget {
 	void createContextMenu() {
 		ui::Menu* menu = createMenu();
 		if (type == 0) {
-			menu->addChild(construct<MenuLabel>(&MenuLabel::text, getItemName().c_str()));
-
-			XyScreenAmountSlider<MODULE>* amountSlider = new XyScreenAmountSlider<MODULE>(module, id);
-			amountSlider->box.size.x = 200.0;
-			menu->addChild(amountSlider);
-
-			XyScreenRadiusSlider<MODULE>* radiusSlider = new XyScreenRadiusSlider<MODULE>(module, id);
-			radiusSlider->box.size.x = 200.0;
-			menu->addChild(radiusSlider);
+			menu->addChild(createMenuLabel(getItemName()));
+			menu->addChild(new XyScreenAmountSlider<MODULE>(module, id));
+			menu->addChild(new XyScreenRadiusSlider<MODULE>(module, id));
 		}
 
 		appendContextMenu(menu);
@@ -635,76 +631,62 @@ struct XyScreenWidget : OpaqueWidget {
 	void createContextMenu() {
 		ui::Menu* menu = createMenu();
 		menu->addChild(createMenuLabel(module->model->name));
+		menu->addChild(createMenuItem("Initialize", "", [=] {
+			history::ModuleChange* h = new history::ModuleChange;
+			h->name = module->model->plugin->brand + " " + module->model->name + " initialize";
+			h->moduleId = module->id;
+			h->oldModuleJ = module->toJson();
 
-		struct InitItem : MenuItem {
-			MODULE* module;
-			void onAction(const event::Action& e) override {
-				history::ModuleChange* h = new history::ModuleChange;
-				h->name = module->model->plugin->brand + " " + module->model->name + " initialize";
-				h->moduleId = module->id;
-				h->oldModuleJ = module->toJson();
+			module->init();
 
-				module->init();
-
-				h->newModuleJ = module->toJson();
-				APP->history->push(h);
+			h->newModuleJ = module->toJson();
+			APP->history->push(h);
+		}));
+		menu->addChild(new MenuSeparator());
+		menu->addChild(createMenuItem("Radomize x-pos & y-pos", "", [=] {
+			XyScreenChangeAction<MODULE>* actions[module->screenItemCount()];
+			for (uint8_t i = 0; i < module->screenItemCount(); i++) {
+				actions[i] = new XyScreenChangeAction<MODULE>(module->id);
+				actions[i]->id = i;
+				actions[i]->oldX = module->screenX(0, i);
+				actions[i]->oldY = module->screenY(0, i);
 			}
-		};
 
-		struct RandomizeXYItem : MenuItem {
-			MODULE* module;
-			void onAction(const event::Action& e) override {
-				XyScreenChangeAction<MODULE>* actions[module->screenItemCount()];
-				for (uint8_t i = 0; i < module->screenItemCount(); i++) {
-					actions[i] = new XyScreenChangeAction<MODULE>(module->id);
-					actions[i]->id = i;
-					actions[i]->oldX = module->screenX(0, i);
-					actions[i]->oldY = module->screenY(0, i);
-				}
+			module->screenRandX();
+			module->screenRandY();
 
-				module->screenRandX();
-				module->screenRandY();
-
-				history::ComplexAction* complexAction = new history::ComplexAction;
-				for (uint8_t i = 0; i < module->screenItemCount(); i++) {
-					actions[i]->newX = module->screenX(0, i);
-					actions[i]->newY = module->screenY(0, i);
-					complexAction->push(actions[i]);
-				}
-
-				complexAction->name = module->model->plugin->brand + " " + module->model->name + " randomize x-pos & y-pos";
-				APP->history->push(complexAction);
+			history::ComplexAction* complexAction = new history::ComplexAction;
+			for (uint8_t i = 0; i < module->screenItemCount(); i++) {
+				actions[i]->newX = module->screenX(0, i);
+				actions[i]->newY = module->screenY(0, i);
+				complexAction->push(actions[i]);
 			}
-		};
 
-		struct RandomizeXItem : MenuItem {
-			MODULE* module;
-			void onAction(const event::Action& e) override {
-				XyScreenChangeAction<MODULE>* actions[module->screenItemCount()];
-				for (uint8_t i = 0; i < module->screenItemCount(); i++) {
-					actions[i] = new XyScreenChangeAction<MODULE>(module->id);
-					actions[i]->id = i;
-					actions[i]->oldX = module->screenX(0, i);
-					actions[i]->oldY = module->screenY(0, i);
-				}
-
-				module->screenRandX();
-
-				history::ComplexAction* complexAction = new history::ComplexAction;
-				for (uint8_t i = 0; i < module->screenItemCount(); i++) {
-					actions[i]->newX = module->screenX(0, i);
-					actions[i]->newY = module->screenY(0, i);
-					complexAction->push(actions[i]);
-				}
-
-				complexAction->name = module->model->plugin->brand + " " + module->model->name + " randomize x-pos";
-				APP->history->push(complexAction);
+			complexAction->name = module->model->plugin->brand + " " + module->model->name + " randomize x-pos & y-pos";
+			APP->history->push(complexAction);
+		}));
+		menu->addChild(createMenuItem("Radomize x-pos", "", [=] {
+			XyScreenChangeAction<MODULE>* actions[module->screenItemCount()];
+			for (uint8_t i = 0; i < module->screenItemCount(); i++) {
+				actions[i] = new XyScreenChangeAction<MODULE>(module->id);
+				actions[i]->id = i;
+				actions[i]->oldX = module->screenX(0, i);
+				actions[i]->oldY = module->screenY(0, i);
 			}
-		};
 
-		struct RandomizeYItem : MenuItem {
-			MODULE* module;
-			void onAction(const event::Action& e) override {
+			module->screenRandX();
+
+			history::ComplexAction* complexAction = new history::ComplexAction;
+			for (uint8_t i = 0; i < module->screenItemCount(); i++) {
+				actions[i]->newX = module->screenX(0, i);
+				actions[i]->newY = module->screenY(0, i);
+				complexAction->push(actions[i]);
+			}
+
+			complexAction->name = module->model->plugin->brand + " " + module->model->name + " randomize x-pos";
+			APP->history->push(complexAction);
+		}));
+		menu->addChild(createMenuItem("Radomize y-pos", "", [=] {
 				XyScreenChangeAction<MODULE>* actions[module->screenItemCount()];
 				for (uint8_t i = 0; i < module->screenItemCount(); i++) {
 					actions[i] = new XyScreenChangeAction<MODULE>(module->id);
@@ -724,62 +706,45 @@ struct XyScreenWidget : OpaqueWidget {
 
 				complexAction->name = module->model->plugin->brand + " " + module->model->name + " randomize IN y-pos";
 				APP->history->push(complexAction);
+		}));
+		menu->addChild(createMenuItem("Radomize amount", "", [=] {
+			XyScreenAmountChangeAction<MODULE>* actions[module->screenItemCount()];
+			for (uint8_t i = 0; i < module->screenItemCount(); i++) {
+				actions[i] = new XyScreenAmountChangeAction<MODULE>(module);
+				actions[i]->id = i;
+				actions[i]->oldValue = module->screenAmount(i);
 			}
-		};
 
-		struct RandomizeAmountItem : MenuItem {
-			MODULE* module;
-			void onAction(const event::Action& e) override {
-				XyScreenAmountChangeAction<MODULE>* actions[module->screenItemCount()];
-				for (uint8_t i = 0; i < module->screenItemCount(); i++) {
-					actions[i] = new XyScreenAmountChangeAction<MODULE>(module);
-					actions[i]->id = i;
-					actions[i]->oldValue = module->screenAmount(i);
-				}
+			module->screenRandAmount();
 
-				module->screenRandAmount();
-
-				history::ComplexAction* complexAction = new history::ComplexAction;
-				for (uint8_t i = 0; i < module->screenItemCount(); i++) {
-					actions[i]->newValue = module->screenAmount(i);
-					complexAction->push(actions[i]);
-				}
-
-				complexAction->name = module->model->plugin->brand + " " + module->model->name + " randomize amount";
-				APP->history->push(complexAction);
+			history::ComplexAction* complexAction = new history::ComplexAction;
+			for (uint8_t i = 0; i < module->screenItemCount(); i++) {
+				actions[i]->newValue = module->screenAmount(i);
+				complexAction->push(actions[i]);
 			}
-		};
 
-		struct RandomizeRadiusItem : MenuItem {
-			MODULE* module;
-			void onAction(const event::Action& e) override {
-				XyScreenRadiusChangeAction<MODULE>* actions[module->screenItemCount()];
-				for (uint8_t i = 0; i < module->screenItemCount(); i++) {
-					actions[i] = new XyScreenRadiusChangeAction<MODULE>(module);
-					actions[i]->id = i;
-					actions[i]->oldValue = module->screenRadius(i);
-				}
-
-				module->screenRandRadius();
-
-				history::ComplexAction* complexAction = new history::ComplexAction;
-				for (uint8_t i = 0; i < module->screenItemCount(); i++) {
-					actions[i]->newValue = module->screenRadius(i);
-					complexAction->push(actions[i]);
-				}
-
-				complexAction->name = module->model->plugin->brand + " " + module->model->name + " randomize radius";
-				APP->history->push(complexAction);
+			complexAction->name = module->model->plugin->brand + " " + module->model->name + " randomize amount";
+			APP->history->push(complexAction);
+		}));
+		menu->addChild(createMenuItem("Radomize radius", "", [=] {
+			XyScreenRadiusChangeAction<MODULE>* actions[module->screenItemCount()];
+			for (uint8_t i = 0; i < module->screenItemCount(); i++) {
+				actions[i] = new XyScreenRadiusChangeAction<MODULE>(module);
+				actions[i]->id = i;
+				actions[i]->oldValue = module->screenRadius(i);
 			}
-		};
 
-		menu->addChild(construct<InitItem>(&MenuItem::text, "Initialize", &InitItem::module, module));
-		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<RandomizeXYItem>(&MenuItem::text, "Radomize x-pos & y-pos", &RandomizeXYItem::module, module));
-		menu->addChild(construct<RandomizeXItem>(&MenuItem::text, "Radomize x-pos", &RandomizeXItem::module, module));
-		menu->addChild(construct<RandomizeYItem>(&MenuItem::text, "Radomize y-pos", &RandomizeYItem::module, module));
-		menu->addChild(construct<RandomizeAmountItem>(&MenuItem::text, "Radomize amount", &RandomizeAmountItem::module, module));
-		menu->addChild(construct<RandomizeRadiusItem>(&MenuItem::text, "Radomize radius", &RandomizeRadiusItem::module, module));
+			module->screenRandRadius();
+
+			history::ComplexAction* complexAction = new history::ComplexAction;
+			for (uint8_t i = 0; i < module->screenItemCount(); i++) {
+				actions[i]->newValue = module->screenRadius(i);
+				complexAction->push(actions[i]);
+			}
+
+			complexAction->name = module->model->plugin->brand + " " + module->model->name + " randomize radius";
+			APP->history->push(complexAction);
+		}));
 
 		appendContextMenu(menu);
 	}

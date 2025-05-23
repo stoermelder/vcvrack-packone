@@ -467,7 +467,7 @@ ui::MenuItem* XySeqInterpolateMenuItem(MODULE* module, int id) {
 
 template <typename MODULE>
 ui::MenuItem* XySeqSlotMenuItem(MODULE* module, int id) {
-	return createSubmenuItem("Slot", string::f("%02u", module->seqSelected[id]),
+	return createSubmenuItem("Slot", string::f("%02u", module->seqSelected[id] + 1),
 		[=](Menu* menu) {
 			for (int i = 0; i < XYSEQ_COUNT; i++) {
 				menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem(string::f("%02u", i + 1), &module->seqSelected[id], i));
