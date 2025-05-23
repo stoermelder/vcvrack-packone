@@ -14,9 +14,9 @@
 
 ## 2.0.0 (in development)
 
-- [Selected modules](./docs/MetaModule.md) are available on the [4ms MetaModule](https://4mscompany.com/p.php?p=990).
+- [Selected modules](./MetaModule.md) are available on the [4ms MetaModule](https://4mscompany.com/p.php?p=990).
 
-### Changes and Fixes 
+### Changes and Fixes
 
 - Module [8FACE mk2](./docs/EightFaceMk2.md)
     - Added "Auto"-mode besides "Read" and "Write" ([manual](./docs/EightFaceMk2.md#auto-mode)) (#276)
@@ -27,6 +27,7 @@
     - Don't use Rack's parameter smoothing in Semitone/Octave-mode (broken since Rack 2.3.0)
 - Module [ARENA](./docs/Arena.md)
     - Fixed behavior of attenuvertors for X/Y/MOD-inputs (#394)
+    - Fixed rough parameter updates on screen interaction because of display refresh rate (#210)
 - Module [GOTO](./docs/Goto.md)
     - Implemented smooth transition for "top left" jump destination (#388)
 - Module [MB](./docs/Mb.md)
