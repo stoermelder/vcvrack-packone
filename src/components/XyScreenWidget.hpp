@@ -13,163 +13,191 @@ struct XyScreenParamQuantity : ParamQuantity {
 
 template <uint8_t INPUTS>
 struct XyScreenModule {
-	float radiusUi[INPUTS];
-	dsp::ExponentialFilter radiusFilter[INPUTS];
 	/** [Stored to JSON] */
 	float radius[INPUTS];
+	/** [Stored to JSON] */
+	float amount[INPUTS];
+
+	float radiusUi[INPUTS];
+	dsp::ExponentialFilter radiusFilter[INPUTS];
+	float amountUi[INPUTS];
 
 	float inputUiX[INPUTS];
 	dsp::ExponentialFilter inputXfilter[INPUTS];
 	float inputUiY[INPUTS];
 	dsp::ExponentialFilter inputYfilter[INPUTS];
 
-	/** [Stored to JSON] */
-	float amount[INPUTS];
-
 	int8_t selectedId = -1;
 	int8_t selectedType = -1;
 
-	virtual void init() {}
-
-	virtual inline engine::ParamQuantity* screenXpq(uint8_t type, uint8_t id) {
+	virtual inline engine::ParamQuantity* scGetPqX(uint8_t type, uint8_t id) {
 		return NULL;
 	}
 
-	virtual inline engine::ParamQuantity* screenYpq(uint8_t type, uint8_t id) {
+	virtual inline engine::ParamQuantity* scGetPqY(uint8_t type, uint8_t id) {
 		return NULL;
 	}
 
-	virtual inline uint8_t screenItemCount(uint8_t type = 0) {
+	virtual inline uint8_t scGetItemCount(uint8_t type) {
 		return type == 0 ? INPUTS : 0;
 	}
 
-	void screenInit() {
-		for (uint8_t i = 0; i < INPUTS; i++) {
-			screenXyImmediate(0, i, screenXpq(0, i)->getDefaultValue(), screenYpq(0, i)->getDefaultValue());
-			inputXfilter[i].setTau(0.05f);
-			inputYfilter[i].setTau(0.05f);
-			screenRadiusImmediate(i, 0.5f);
-			radiusFilter[i].setTau(0.05f);
-			screenAmountImmediate(i, 1.f);
-		};
+	virtual inline uint8_t scGetItemCountActive(uint8_t type) { return 0; }
+
+	inline bool scIsActive(uint8_t type, uint8_t id) {
+		return id < scGetItemCountActive(type);
 	}
 
-	void screenReset() {
+	void scInit() {
 		for (uint8_t i = 0; i < INPUTS; i++) {
-			radius[i] = 0.5f;
+			inputXfilter[i].setTau(0.05f);
+			inputYfilter[i].setTau(0.05f);
+			radiusFilter[i].setTau(0.05f);
+		};
+		scInitItems();
+		scReset();
+	}
+
+	virtual void scInitItems() {}
+
+	void scReset() {
+		for (uint8_t i = 0; i < INPUTS; i++) {
+			scSetXyImmediate(0, i, scGetPqX(0, i)->getDefaultValue(), scGetPqY(0, i)->getDefaultValue());
+			scSetRadiusImmediate(i, 0.5f);
+			scSetAmountImmediate(i, 1.f);
 		}
 	}
 	
-	inline void screenXyFiltered(uint8_t type, uint8_t id, float x, float y) {
+	inline void scSetXyFiltered(uint8_t type, uint8_t id, float x, float y) {
 		if (type == 0) {
 			inputUiX[id] = x;
 			inputUiY[id] = y;
 		}
 		else {
-			screenItemFiltered(type, id, x, y);
+			scSetItemFiltered(type, id, x, y);
 		}
 	}
 
-	virtual inline void screenItemFiltered(uint8_t type, uint8_t id, float x, float y) {}
+	virtual inline void scSetItemFiltered(uint8_t type, uint8_t id, float x, float y) {}
 
-	inline void screenXyImmediate(uint8_t type, uint8_t id, float x, float y) {
+	inline void scSetXyImmediate(uint8_t type, uint8_t id, float x, float y) {
 		if (type == 0) {
-			screenXpq(type, id)->getParam()->setValue(x);
+			scGetPqX(type, id)->getParam()->setValue(x);
 			inputXfilter[id].out = inputUiX[id] = x;
-			screenYpq(type, id)->getParam()->setValue(y);
+			scGetPqY(type, id)->getParam()->setValue(y);
 			inputYfilter[id].out = inputUiY[id] = y;
 		}
 		else {
-			screenItemImmediate(type, id, x, y);
+			scSetItemImmediate(type, id, x, y);
 		}
 	}
 
-	virtual void screenItemImmediate(uint8_t type, uint8_t id, float x, float y) {}
+	virtual void scSetItemImmediate(uint8_t type, uint8_t id, float x, float y) {}
 
-	virtual inline float screenX(uint8_t type, uint8_t id) { return 0; }
+	virtual inline float scGetXFinal(uint8_t type, uint8_t id) { return 0; }
 
-	inline float screenXproccesed(uint8_t id, float sampleTime) {
+	inline float scGetXFiltered(uint8_t id, float sampleTime) {
 		return inputXfilter[id].process(sampleTime, inputUiX[id]);
 	}
 
-	virtual inline float screenY(uint8_t type, uint8_t id) { return 0; }
+	virtual inline float scGetYFinal(uint8_t type, uint8_t id) { return 0; }
 
-	inline float screenYproccesed(uint8_t id, float sampleTime) {
+	inline float scGetYFiltered(uint8_t id, float sampleTime) {
 		return inputYfilter[id].process(sampleTime, inputUiY[id]);
 	}
 
-	void screenRandX() {
+	void scRandomizeXAll() {
 		for (uint8_t i = 0; i < INPUTS; i++) {
 			inputXfilter[i].out = inputUiX[i] = random::uniform();
-			screenXpq(0, i)->getParam()->setValue(inputUiX[i]);
+			scGetPqX(0, i)->getParam()->setValue(inputUiX[i]);
 		}
 	}
 
-	void screenRandY() {
+	void scRandomizeYAll() {
 		for (uint8_t i = 0; i < INPUTS; i++) {
 			inputYfilter[i].out = inputUiY[i] = random::uniform();
-			screenYpq(0, i)->getParam()->setValue(inputUiY[i]);
+			scGetPqY(0, i)->getParam()->setValue(inputUiY[i]);
 		}
 	}
 
-	virtual float screenRadius(uint8_t id) { return 0; }
+	inline float scGetRadiusFinal(uint8_t id) { 
+		return radius[id];
+	}
 
-	inline float screenRadiusProcessed(uint8_t id, float sampleTime) {
+	inline void scSetRadiusFinal(uint8_t id, float a) { 
+		radius[id] = a;
+	}
+
+	inline float scGetRadiusFiltered(uint8_t id, float sampleTime) {
 		return radiusFilter[id].process(sampleTime, radiusUi[id]);
 	}
 
-	inline void screenRadiusFiltered(uint8_t id, float r) {
+	inline void scSetRadiusFiltered(uint8_t id, float r) {
 		radiusUi[id] = r;
 	}
 
-	inline void screenRadiusImmediate(uint8_t id, float r) {
-		radiusFilter[id].out = radius[id] = radiusUi[id] = r;
+	inline void scSetRadiusImmediate(uint8_t id, float r) {
+		radiusFilter[id].out = radiusUi[id] = r;
 	}
 
-	void screenRandRadius() {
+	void scRandomizeRadiusAll() {
 		for (uint8_t i = 0; i < INPUTS; i++) {
-			screenRadiusImmediate(i, random::uniform());
+			scSetRadiusImmediate(i, random::uniform());
 		}
 	}
 
-	inline float screenAmount(uint8_t id) {
+	inline float scGetAmountFinal(uint8_t id) { 
 		return amount[id];
 	}
 
-	inline void screenAmountImmediate(uint8_t id, float a) {
+	inline void scSetAmountFinal(uint8_t id, float a) { 
 		amount[id] = a;
 	}
 
-	void screenRandAmount() {
+	inline float scGetAmountFiltered(uint8_t id, float sampleTime) {
+		return amountUi[id];
+	}
+
+	inline void scSetAmountImmediate(uint8_t id, float a) {
+		amountUi[id] = a;
+	}
+
+	inline void scSetAmountFiltered(uint8_t id, float r) {
+		amountUi[id] = r;
+	}
+
+	void scRandomizeAmountAll() {
 		for (size_t i = 0; i < INPUTS; i++) {
-			screenAmountImmediate(i, random::uniform());
+			scSetAmountImmediate(i, random::uniform());
 		}
 	}
 
-	inline void screenSelectionSet(uint8_t type, uint8_t id) {
+	inline void scSetSelection(uint8_t type, uint8_t id) {
 		if (type == 0 && id + 1 > INPUTS) return;
 		//if (type == 1 && id + 1 > mixportsUsed) return;
 		selectedType = type;
 		selectedId = id;
 	}
 
-	inline bool screenSelectionTest(uint8_t type, uint8_t id) {
+	inline bool scIsSelected(uint8_t type, uint8_t id) {
 		return selectedType == type && selectedId == int8_t(id);
 	}
 
-	inline void screenSelectionReset() {
+	inline void scResetSelection() {
 		selectedType = -1;
 		selectedId = -1;
 	}
 
+	virtual inline float scGetDistance(uint8_t typeSource, uint8_t idSoruce, uint8_t typeDest, uint8_t idDest) { return 0.f; }
+
 	void dataToJson(json_t* dataJ, size_t id) {
-		json_object_set_new(dataJ, "amount", json_real(amount[id]));
-		json_object_set_new(dataJ, "radius", json_real(radius[id]));
+		json_object_set_new(dataJ, "radius", json_real(scGetRadiusFinal(id)));
+		json_object_set_new(dataJ, "amount", json_real(scGetAmountFinal(id)));
 	}
 
 	void dataFromJson(json_t* dataJ, size_t id) {
-		screenRadiusImmediate(id, json_real_value(json_object_get(dataJ, "radius")));
-		screenAmountImmediate(id, json_real_value(json_object_get(dataJ, "amount")));
+		scSetRadiusImmediate(id, json_real_value(json_object_get(dataJ, "radius")));
+		scSetAmountImmediate(id, json_real_value(json_object_get(dataJ, "amount")));
 	}
 };
 
@@ -189,14 +217,14 @@ struct XyScreenRadiusChangeAction : history::ModuleAction {
 		app::ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
 		assert(mw);
 		MODULE* m = dynamic_cast<MODULE*>(mw->module);
-		m->screenRadiusImmediate(id, oldValue);
+		m->scSetRadiusImmediate(id, oldValue);
 	}
 
 	void redo() override {
 		app::ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
 		assert(mw);
 		MODULE* m = dynamic_cast<MODULE*>(mw->module);
-		m->screenRadiusImmediate(id, newValue);
+		m->scSetRadiusImmediate(id, newValue);
 	}
 };
 
@@ -213,10 +241,10 @@ struct XyScreenRadiusSlider : ui::Slider {
 		}
 		void setValue(float value) override {
 			value = clamp(value);
-			module->screenRadiusFiltered(id, value);
+			module->scSetRadiusFiltered(id, value);
 		}
 		float getValue() override {
-			return module->screenRadius(id);
+			return module->scGetRadiusFinal(id);
 		}
 		float getDefaultValue() override {
 			return 0.5f;
@@ -253,12 +281,12 @@ struct XyScreenRadiusSlider : ui::Slider {
 		h = new XyScreenRadiusChangeAction<MODULE>(module);
 		h->moduleId = module->id;
 		h->id = id;
-		h->oldValue = module->radius[id];
+		h->oldValue = module->scGetRadiusFinal(id);
 		ui::Slider::onDragStart(e);
 	}
 
 	void onDragEnd(const event::DragEnd& e) override {
-		h->newValue = module->radius[id];
+		h->newValue = module->scGetRadiusFinal(id);
 		APP->history->push(h);
 		h = NULL;
 		ui::Slider::onDragEnd(e);
@@ -281,14 +309,14 @@ struct XyScreenAmountChangeAction : history::ModuleAction {
 		app::ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
 		assert(mw);
 		MODULE* m = dynamic_cast<MODULE*>(mw->module);
-		m->screenAmountImmediate(id, oldValue);
+		m->scSetAmountImmediate(id, oldValue);
 	}
 
 	void redo() override {
 		app::ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
 		assert(mw);
 		MODULE* m = dynamic_cast<MODULE*>(mw->module);
-		m->screenAmountImmediate(id, newValue);
+		m->scSetAmountImmediate(id, newValue);
 	}
 };
 
@@ -304,10 +332,10 @@ struct XyScreenAmountSlider : ui::Slider {
 			this->id = id;
 		}
 		void setValue(float value) override {
-			module->screenAmountImmediate(id, clamp(value));
+			module->scSetAmountFiltered(id, clamp(value));
 		}
 		float getValue() override {
-			return module->screenAmount(id);
+			return module->scGetAmountFinal(id);
 		}
 		float getDefaultValue() override {
 			return 0.5;
@@ -343,12 +371,12 @@ struct XyScreenAmountSlider : ui::Slider {
 	void onDragStart(const event::DragStart& e) override {
 		h = new XyScreenAmountChangeAction<MODULE>(module);
 		h->id = id;
-		h->oldValue = module->screenAmount(id);
+		h->oldValue = module->scGetAmountFinal(id);
 		ui::Slider::onDragStart(e);
 	}
 
 	void onDragEnd(const event::DragEnd& e) override {
-		h->newValue = module->screenAmount(id);
+		h->newValue = module->scGetAmountFinal(id);
 		APP->history->push(h);
 		h = NULL;
 		ui::Slider::onDragEnd(e);
@@ -373,14 +401,14 @@ struct XyScreenChangeAction : history::ModuleAction {
 		app::ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
 		assert(mw);
 		MODULE* m = dynamic_cast<MODULE*>(mw->getModule());
-		m->screenXyImmediate(type, id, oldX, oldY);
+		m->scSetXyImmediate(type, id, oldX, oldY);
 	}
 
 	void redo() override {
 		app::ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
 		assert(mw);
 		MODULE* m = dynamic_cast<MODULE*>(mw->getModule());
-		m->screenXyImmediate(type, id, newX, newY);
+		m->scSetXyImmediate(type, id, newX, newY);
 	}
 };
 
@@ -405,21 +433,80 @@ struct XyScreenDragWidget : OpaqueWidget {
 	}
 
 	void step() override {
-		float posX = module->screenX(type, id) * (parent->box.size.x - box.size.x);
+		if (type == 0) {
+			circleA = module->scGetAmountFinal(id);
+		}
+
+		float posX = module->scGetXFinal(type, id) * (parent->box.size.x - box.size.x);
 		box.pos.x = posX;
-		float posY = module->screenY(type, id) * (parent->box.size.y - box.size.y);
+		float posY = module->scGetYFinal(type, id) * (parent->box.size.y - box.size.y);
 		box.pos.y = posY;
 	}
 
 	void drawLayer(const Widget::DrawArgs& args, int layer) override {
-		if (!module) return;
+		if (!module)
+			return;
 
 		if (layer == 1) {
-			Vec c = Vec(box.size.x / 2.f, box.size.y / 2.f);
+			if (!module->scIsActive(type, id))
+				return;
 
+			if (type == 0) {
+				// Radius is only used for default type
+				if (module->scIsSelected(type, id)) {
+					// Draw circle and fill for radius-property
+					Vec c = Vec(box.size.x / 2.f, box.size.y / 2.f);
+					Rect b = Rect(box.pos.mult(-1), parent->box.size);
+					nvgSave(args.vg);
+					nvgScissor(args.vg, b.pos.x, b.pos.y, b.size.x, b.size.y);
+					float sizeX = std::max(0.f, (parent->box.size.x - 2 * radius) * module->scGetRadiusFinal(id) - radius);
+					float sizeY = std::max(0.f, (parent->box.size.y - 2 * radius) * module->scGetRadiusFinal(id) - radius);
+					nvgBeginPath(args.vg);
+					nvgEllipse(args.vg, c.x, c.y, sizeX, sizeY);
+					nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
+					nvgStrokeColor(args.vg, color::mult(color, 0.7f));
+					nvgStrokeWidth(args.vg, 0.6f);
+					nvgStroke(args.vg);
+					nvgFillColor(args.vg, color::mult(color, 0.1f));
+					nvgFill(args.vg);
+					nvgResetScissor(args.vg);
+					nvgRestore(args.vg);
+
+					textColor = nvgRGBA(0, 16, 90, 200);
+				}
+				else {
+					textColor = color;
+				}
+			}
+
+			if (type > 0) {
+				// Draw lines between type 0 and other items
+				nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
+				Vec c = Vec(box.size.x / 2.f, box.size.y / 2.f);
+				float sizeX = parent->box.size.x;
+				float sizeY = parent->box.size.y;
+				for (uint8_t i = 0; i < module->scGetItemCountActive(0); i++) {
+					if (module->scGetDistance(type, id, 0, i) < module->scGetRadiusFinal(i)) {
+						float x = module->scGetXFinal(0, i) * (sizeX - 2.f * radius);
+						float y = module->scGetYFinal(0, i) * (sizeY - 2.f * radius);
+						Vec p = box.pos.mult(-1).plus(Vec(x, y)).plus(c);
+						Vec p_rad = p.minus(c).normalize().mult(radius);
+						Vec s = c.plus(p_rad);
+						Vec t = p.minus(p_rad);
+						nvgBeginPath(args.vg);
+						nvgMoveTo(args.vg, s.x, s.y);
+						nvgLineTo(args.vg, t.x, t.y);
+						nvgStrokeColor(args.vg, color::mult(nvgRGB(0x29, 0xb2, 0xef), module->scGetAmountFinal(i)));
+						nvgStrokeWidth(args.vg, 1.0f);
+						nvgStroke(args.vg);
+					}
+				}
+			}
+
+			Vec c = Vec(box.size.x / 2.f, box.size.y / 2.f);
 			nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
 
-			if (module->screenSelectionTest(type, id)) {
+			if (module->scIsSelected(type, id)) {
 				// Draw selection halo
 				float oradius = 1.8f * radius;
 				NVGpaint paint;
@@ -436,9 +523,14 @@ struct XyScreenDragWidget : OpaqueWidget {
 				nvgFill(args.vg);
 				nvgResetScissor(args.vg);
 				nvgRestore(args.vg);
+
+				textColor = nvgRGBA(0, 16, 90, 200);
+			}
+			else {
+				textColor = color;
 			}
 
-			// Draw circle
+			// Draw inner circle
 			nvgBeginPath(args.vg);
 			nvgCircle(args.vg, c.x, c.y, radius - 2.f);
 			nvgStrokeColor(args.vg, color);
@@ -456,7 +548,7 @@ struct XyScreenDragWidget : OpaqueWidget {
 
 			nvgGlobalCompositeOperation(args.vg, NVG_ATOP);
 
-			// Draw label
+			// Draw text label
 			std::shared_ptr<Font> font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
 			nvgFontSize(args.vg, fontsize);
 			nvgFontFaceId(args.vg, font->handle);
@@ -475,16 +567,19 @@ struct XyScreenDragWidget : OpaqueWidget {
 	}
 
 	void onButton(const event::Button& e) override {
+		if (!module->scIsActive(type, id))
+			return;
+
 		math::Vec c = box.size.div(2);
 		float dist = e.pos.minus(c).norm();
 		if (dist <= c.x) {
 			OpaqueWidget::onButton(e);
 			if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
-				module->screenSelectionSet(type, id);
+				module->scSetSelection(type, id);
 				e.consume(this);
 			}
 			if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
-				module->screenSelectionSet(type, id);
+				module->scSetSelection(type, id);
 				createContextMenu();
 				e.consume(this);
 			}
@@ -503,16 +598,16 @@ struct XyScreenDragWidget : OpaqueWidget {
 		dragAction = new XyScreenChangeAction<MODULE>(module->id);
 		dragAction->id = id;
 		dragAction->type = type;
-		dragAction->oldX = module->screenX(type, id);
-		dragAction->oldY = module->screenY(type, id);
+		dragAction->oldX = module->scGetXFinal(type, id);
+		dragAction->oldY = module->scGetYFinal(type, id);
 	}
 
 	void onDragEnd(const event::DragEnd& e) override {
 		if (e.button != GLFW_MOUSE_BUTTON_LEFT)
 			return;
 
-		dragAction->newX = module->screenX(type, id);
-		dragAction->newY = module->screenY(type, id);
+		dragAction->newX = module->scGetXFinal(type, id);
+		dragAction->newY = module->scGetYFinal(type, id);
 		APP->history->push(dragAction);
 		dragAction = NULL;
 	}
@@ -524,19 +619,18 @@ struct XyScreenDragWidget : OpaqueWidget {
 		math::Vec pos = APP->scene->rack->getMousePos().minus(dragPos);
 		float x = pos.x / (parent->box.size.x - box.size.x);
 		float y = pos.y / (parent->box.size.y - box.size.y);
-		module->screenXyFiltered(type, id, clamp(x), clamp(y));
+		module->scSetXyFiltered(type, id, clamp(x), clamp(y));
 
 		OpaqueWidget::onDragMove(e);
 	}
 
 	void createContextMenu() {
 		ui::Menu* menu = createMenu();
+		menu->addChild(createMenuLabel(getItemName()));
 		if (type == 0) {
-			menu->addChild(createMenuLabel(getItemName()));
 			menu->addChild(new XyScreenAmountSlider<MODULE>(module, id));
 			menu->addChild(new XyScreenRadiusSlider<MODULE>(module, id));
 		}
-
 		appendContextMenu(menu);
 	}
 
@@ -604,7 +698,7 @@ struct XyScreenWidget : OpaqueWidget {
 	void onButton(const event::Button& e) override {
 		if (module->seqEdit < 0) {
 			if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
-				module->screenSelectionReset();
+				module->scResetSelection();
 			}
 			OpaqueWidget::onButton(e);
 			if (e.button == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT && !e.isConsumed()) {
@@ -623,111 +717,106 @@ struct XyScreenWidget : OpaqueWidget {
 			h->moduleId = module->id;
 			h->oldModuleJ = module->toJson();
 
-			module->init();
+			module->scInit();
 
 			h->newModuleJ = module->toJson();
 			APP->history->push(h);
 		}));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuItem("Radomize x-pos & y-pos", "", [=] {
-			XyScreenChangeAction<MODULE>* actions[module->screenItemCount()];
-			for (uint8_t i = 0; i < module->screenItemCount(); i++) {
+			XyScreenChangeAction<MODULE>* actions[module->scGetItemCount(0)];
+			for (uint8_t i = 0; i < module->scGetItemCount(0); i++) {
 				actions[i] = new XyScreenChangeAction<MODULE>(module->id);
 				actions[i]->id = i;
-				actions[i]->oldX = module->screenX(0, i);
-				actions[i]->oldY = module->screenY(0, i);
+				actions[i]->oldX = module->scGetXFinal(0, i);
+				actions[i]->oldY = module->scGetYFinal(0, i);
 			}
 
-			module->screenRandX();
-			module->screenRandY();
+			module->scRandomizeXAll();
+			module->scRandomizeYAll();
 
 			history::ComplexAction* complexAction = new history::ComplexAction;
-			for (uint8_t i = 0; i < module->screenItemCount(); i++) {
-				actions[i]->newX = module->screenX(0, i);
-				actions[i]->newY = module->screenY(0, i);
+			for (uint8_t i = 0; i < module->scGetItemCount(0); i++) {
+				actions[i]->newX = module->scGetXFinal(0, i);
+				actions[i]->newY = module->scGetYFinal(0, i);
 				complexAction->push(actions[i]);
 			}
-
 			complexAction->name = module->model->plugin->brand + " " + module->model->name + " randomize x-pos & y-pos";
 			APP->history->push(complexAction);
 		}));
 		menu->addChild(createMenuItem("Radomize x-pos", "", [=] {
-			XyScreenChangeAction<MODULE>* actions[module->screenItemCount()];
-			for (uint8_t i = 0; i < module->screenItemCount(); i++) {
+			XyScreenChangeAction<MODULE>* actions[module->scGetItemCount(0)];
+			for (uint8_t i = 0; i < module->scGetItemCount(0); i++) {
 				actions[i] = new XyScreenChangeAction<MODULE>(module->id);
 				actions[i]->id = i;
-				actions[i]->oldX = module->screenX(0, i);
-				actions[i]->oldY = module->screenY(0, i);
+				actions[i]->oldX = module->scGetXFinal(0, i);
+				actions[i]->oldY = module->scGetYFinal(0, i);
 			}
 
-			module->screenRandX();
+			module->scRandomizeXAll();
 
 			history::ComplexAction* complexAction = new history::ComplexAction;
-			for (uint8_t i = 0; i < module->screenItemCount(); i++) {
-				actions[i]->newX = module->screenX(0, i);
-				actions[i]->newY = module->screenY(0, i);
+			for (uint8_t i = 0; i < module->scGetItemCount(0); i++) {
+				actions[i]->newX = module->scGetXFinal(0, i);
+				actions[i]->newY = module->scGetYFinal(0, i);
 				complexAction->push(actions[i]);
 			}
-
 			complexAction->name = module->model->plugin->brand + " " + module->model->name + " randomize x-pos";
 			APP->history->push(complexAction);
 		}));
 		menu->addChild(createMenuItem("Radomize y-pos", "", [=] {
-				XyScreenChangeAction<MODULE>* actions[module->screenItemCount()];
-				for (uint8_t i = 0; i < module->screenItemCount(); i++) {
+				XyScreenChangeAction<MODULE>* actions[module->scGetItemCount(0)];
+				for (uint8_t i = 0; i < module->scGetItemCount(0); i++) {
 					actions[i] = new XyScreenChangeAction<MODULE>(module->id);
 					actions[i]->id = i;
-					actions[i]->oldX = module->screenX(0, i);
-					actions[i]->oldY = module->screenY(0, i);
+					actions[i]->oldX = module->scGetXFinal(0, i);
+					actions[i]->oldY = module->scGetYFinal(0, i);
 				}
 
-				module->screenRandY();
+				module->scRandomizeYAll();
 
 				history::ComplexAction* complexAction = new history::ComplexAction;
-				for (uint8_t i = 0; i < module->screenItemCount(); i++) {
-					actions[i]->newX = module->screenX(0, i);
-					actions[i]->newY = module->screenY(0, i);
+				for (uint8_t i = 0; i < module->scGetItemCount(0); i++) {
+					actions[i]->newX = module->scGetXFinal(0, i);
+					actions[i]->newY = module->scGetYFinal(0, i);
 					complexAction->push(actions[i]);
 				}
-
 				complexAction->name = module->model->plugin->brand + " " + module->model->name + " randomize IN y-pos";
 				APP->history->push(complexAction);
 		}));
 		menu->addChild(createMenuItem("Radomize amount", "", [=] {
-			XyScreenAmountChangeAction<MODULE>* actions[module->screenItemCount()];
-			for (uint8_t i = 0; i < module->screenItemCount(); i++) {
+			XyScreenAmountChangeAction<MODULE>* actions[module->scGetItemCount(0)];
+			for (uint8_t i = 0; i < module->scGetItemCount(0); i++) {
 				actions[i] = new XyScreenAmountChangeAction<MODULE>(module);
 				actions[i]->id = i;
-				actions[i]->oldValue = module->screenAmount(i);
+				actions[i]->oldValue = module->scGetAmountFinal(i);
 			}
 
-			module->screenRandAmount();
+			module->scRandomizeAmountAll();
 
 			history::ComplexAction* complexAction = new history::ComplexAction;
-			for (uint8_t i = 0; i < module->screenItemCount(); i++) {
-				actions[i]->newValue = module->screenAmount(i);
+			for (uint8_t i = 0; i < module->scGetItemCount(0); i++) {
+				actions[i]->newValue = module->scGetAmountFinal(i);
 				complexAction->push(actions[i]);
 			}
-
 			complexAction->name = module->model->plugin->brand + " " + module->model->name + " randomize amount";
 			APP->history->push(complexAction);
 		}));
 		menu->addChild(createMenuItem("Radomize radius", "", [=] {
-			XyScreenRadiusChangeAction<MODULE>* actions[module->screenItemCount()];
-			for (uint8_t i = 0; i < module->screenItemCount(); i++) {
+			XyScreenRadiusChangeAction<MODULE>* actions[module->scGetItemCount(0)];
+			for (uint8_t i = 0; i < module->scGetItemCount(0); i++) {
 				actions[i] = new XyScreenRadiusChangeAction<MODULE>(module);
 				actions[i]->id = i;
-				actions[i]->oldValue = module->screenRadius(i);
+				actions[i]->oldValue = module->scGetRadiusFinal(i);
 			}
 
-			module->screenRandRadius();
+			module->scRandomizeRadiusAll();
 
 			history::ComplexAction* complexAction = new history::ComplexAction;
-			for (uint8_t i = 0; i < module->screenItemCount(); i++) {
-				actions[i]->newValue = module->screenRadius(i);
+			for (uint8_t i = 0; i < module->scGetItemCount(0); i++) {
+				actions[i]->newValue = module->scGetRadiusFinal(i);
 				complexAction->push(actions[i]);
 			}
-
 			complexAction->name = module->model->plugin->brand + " " + module->model->name + " randomize radius";
 			APP->history->push(complexAction);
 		}));

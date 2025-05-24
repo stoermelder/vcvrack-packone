@@ -54,6 +54,7 @@ struct XySeqModule {
 	/** [Stored to JSON] */
 	int seqSelected[PORTS];
 	int seqEdit;
+	int seqPreview = -1;
 
 	int seqCopyPort = -1;
 	int seqCopySeq = -1;
@@ -865,8 +866,11 @@ struct XySeqEditWidget : OpaqueWidget {
 	}
 
 	void drawLayer(const DrawArgs& args, int layer) override {
-		if (module && module->seqEdit >= 0) {
-			if (layer == 1) {
+		if (!module)
+			return;
+
+		if (layer == 1) {
+			if (module->seqEdit >= 0) {
 				// Dim the display but don't darken it completely
 				float b = std::max(0.4f, settings::rackBrightness);
 				nvgGlobalTint(args.vg, nvgRGBAf(b, b, b, 1.f));
@@ -913,6 +917,31 @@ struct XySeqEditWidget : OpaqueWidget {
 					nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
 					nvgStroke(args.vg);
 				}
+			}
+
+			if (module->seqEdit < 0 && module->seqPreview >= 0) {
+				// Draw interpolated automation line if selected
+				float sizeX = box.size.x - recWidget->box.size.x;
+				float sizeY = box.size.y - recWidget->box.size.y;
+				nvgBeginPath(args.vg);
+				int segments = module->seqLength(module->seqPreview) * 5;
+				float seg1 = 1.f / segments;
+				for (int i = 0; i < segments; i++) {
+					Vec p = module->seqValue(module->seqPreview, seg1 * i);
+					float x = recWidget->box.size.x / 2.f + sizeX * p.x;
+					float y = recWidget->box.size.y / 2.f + sizeY * p.y;
+					if (i == 0)
+						nvgMoveTo(args.vg, x, y);
+					else
+						nvgLineTo(args.vg, x, y);
+				}
+
+				nvgStrokeColor(args.vg, color::mult(color::RED, 0.7f));
+				nvgLineCap(args.vg, NVG_ROUND);
+				nvgMiterLimit(args.vg, 2.0);
+				nvgStrokeWidth(args.vg, 1.0);
+				nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
+				nvgStroke(args.vg);
 			}
 		}
 	}
