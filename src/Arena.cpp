@@ -545,27 +545,38 @@ MenuItem* ArenaVoltageSubMenuItem(std::string text, bool* ptr) {
 }
 
 template <typename MODULE>
-MenuItem* ArenaModModeMenuItem(MODULE* module, uint8_t id) {
-	std::map<MODMODE, std::string> labels = {
+struct ArenaModModeMenuItem : MenuItem {
+	MODULE* module;
+	int id;
+	const std::map<MODMODE, std::string> labels = {
 		{ MODMODE::RADIUS, "Radius" },
 		{ MODMODE::AMOUNT, "Amount" },
 		{ MODMODE::OFFSET_X, "Offset x-pos" },
 		{ MODMODE::OFFSET_Y, "Offset y-pos" },
 		{ MODMODE::WALK, "Random walk" }
 	};
-	return createSubmenuItem("MOD-port", labels[module->modMode[id]],
-		[=](Menu* menu) {
-			menu->addChild(createMenuLabel("Modulation target"));
-			for (const auto& i : labels) {
-				menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem(i.second, &module->modMode[id], i.first));
-			}
+
+	ArenaModModeMenuItem(MODULE* module, int id) {
+		this->module = module;
+		this->id = id;
+		rightText = labels.at(module->modMode[id]) + "  " + RIGHT_ARROW;
+	}
+
+	Menu* createChildMenu() override {
+		Menu* menu = new Menu;
+		menu->addChild(createMenuLabel("Modulation target"));
+		for (const auto& i : labels) {
+			menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem(i.second, &module->modMode[id], i.first));
 		}
-	);
-}
+		return menu;
+	}
+};
 
 template <typename MODULE>
-MenuItem* ArenaOutputModeMenuItem(MODULE* module, uint8_t id) {
-	std::map<OUTPUTMODE, std::string> labels = {
+struct ArenaOutputModeMenuItem : MenuItem {
+	MODULE* module;
+	int id;
+	const std::map<OUTPUTMODE, std::string> labels = {
 		{ OUTPUTMODE::SCALE, "Scale" },
 		{ OUTPUTMODE::LIMIT, "Limit" },
 		{ OUTPUTMODE::CLIP_UNI, "Clip 0..10V" },
@@ -573,14 +584,21 @@ MenuItem* ArenaOutputModeMenuItem(MODULE* module, uint8_t id) {
 		{ OUTPUTMODE::FOLD_UNI, "Fold 0..10V" },
 		{ OUTPUTMODE::FOLD_BI, "Fold 0..10V" }
 	};
-	return createSubmenuItem("OUT-port", labels[module->outputMode[id]],
-		[=](Menu* menu) {
-			menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Mix mode"));
-			for (const auto& i : labels) {
-				menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem(i.second, &module->outputMode[id], i.first));
-			}
+
+	ArenaOutputModeMenuItem(MODULE* module, int id) {
+		this->module = module;
+		this->id = id;
+		rightText = labels.at(module->outputMode[id]) + "  " + RIGHT_ARROW;
+	}
+
+	Menu* createChildMenu() override {
+		Menu* menu = new Menu;
+		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Mix mode"));
+		for (const auto& i : labels) {
+			menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem(i.second, &module->outputMode[id], i.first));
 		}
-	);
+		return menu;
+	}
 };
 
 
@@ -602,8 +620,8 @@ struct ArenaInportDragWidget : XyScreenDragWidget<MODULE> {
 	void appendContextMenu(Menu* menu) override {
 		menu->addChild(ArenaVoltageSubMenuItem("X-port", &B::module->inputXBipolar[B::id]));
 		menu->addChild(ArenaVoltageSubMenuItem("Y-port", &B::module->inputYBipolar[B::id]));
-		menu->addChild(ArenaModModeMenuItem(B::module, B::id));
-		menu->addChild(ArenaOutputModeMenuItem(B::module, B::id));
+		menu->addChild(new ArenaModModeMenuItem<MODULE>(B::module, B::id));
+		menu->addChild(new ArenaOutputModeMenuItem<MODULE>(B::module, B::id));
 	}
 };
 
@@ -744,8 +762,8 @@ struct ArenaOpLedDisplay : StoermelderLedDisplay {
 		menu->addChild(new XyScreenRadiusSlider<MODULE>(module, id));
 		menu->addChild(ArenaVoltageSubMenuItem("X-port", &module->inputXBipolar[id]));
 		menu->addChild(ArenaVoltageSubMenuItem("Y-port", &module->inputYBipolar[id]));
-		menu->addChild(ArenaModModeMenuItem(module, id));
-		menu->addChild(ArenaOutputModeMenuItem(module, id));
+		menu->addChild(new ArenaModModeMenuItem<MODULE>(module, id));
+		menu->addChild(new ArenaOutputModeMenuItem<MODULE>(module, id));
 	}
 };
 
