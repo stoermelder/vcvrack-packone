@@ -453,47 +453,81 @@ struct XySeqChangeAction : history::ModuleAction {
 	}
 };
 
-
 template <typename MODULE>
-ui::MenuItem* XySeqInterpolateMenuItem(MODULE* module, int id) {
-	return StoermelderPackOne::Rack::createMapPtrSubmenuItem<XYSEQ_INTERPOLATE>("Interpolation",
-		{
-			{ XYSEQ_INTERPOLATE::LINEAR, "Linear" },
-			{ XYSEQ_INTERPOLATE::CUBIC, "Cubic" }
-		},
-		&module->seqInterpolate[id]
-	);
-}
+struct XySeqInterpolateMenuItem : MenuItem {
+	MODULE* module;
+	int id;
+	const std::map<XYSEQ_INTERPOLATE, std::string> labels = {
+		{ XYSEQ_INTERPOLATE::LINEAR, "Linear" },
+		{ XYSEQ_INTERPOLATE::CUBIC, "Cubic" }
+	};
 
+	XySeqInterpolateMenuItem(MODULE* module, int id) {
+		this->module = module;
+		this->id = id;
+		text = "Interpolation";
+		rightText = labels.at(module->seqInterpolate[id]) + "  " + RIGHT_ARROW;
+	}
 
-template <typename MODULE>
-ui::MenuItem* XySeqSlotMenuItem(MODULE* module, int id) {
-	return createSubmenuItem("Slot", string::f("%02u", module->seqSelected[id] + 1),
-		[=](Menu* menu) {
-			for (int i = 0; i < XYSEQ_COUNT; i++) {
-				menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem(string::f("%02u", i + 1), &module->seqSelected[id], i));
-			}
+	Menu* createChildMenu() override {
+		Menu* menu = new Menu;
+		for (const auto& i : labels) {
+			menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem(i.second, &module->seqInterpolate[id], i.first));
 		}
-	);
-}
-
+		return menu;
+	}
+};
 
 template <typename MODULE>
-ui::MenuItem* XySeqTriggerMenuItem(MODULE* module, int id) {
-	return StoermelderPackOne::Rack::createMapPtrSubmenuItem<XYSEQ_MODE>("Trigger mode",
-		{
-			{ XYSEQ_MODE::TRIG_FWD, "Trigger forward" },
-			{ XYSEQ_MODE::TRIG_REV, "Trigger reverse" },
-			{ XYSEQ_MODE::TRIG_RANDOM_16, "Trigger random 1-16" },
-			{ XYSEQ_MODE::TRIG_RANDOM_8, "Trigger random 1-8" },
-			{ XYSEQ_MODE::TRIG_RANDOM_4, "Trigger random 1-4" },
-			{ XYSEQ_MODE::VOLT, "0..10V" },
-			{ XYSEQ_MODE::C4, "C4-D#5" }
-		},
-		&module->seqMode[id]
-	);
-}
+struct XySeqSlotMenuItem : MenuItem {
+	MODULE* module;
+	int id;
 
+	XySeqSlotMenuItem(MODULE* module, int id) {
+		this->module = module;
+		this->id = id;
+		text = "Slot";
+		rightText = string::f("%02u", module->seqSelected[id] + 1) + "  " + RIGHT_ARROW;
+	}
+	
+	Menu* createChildMenu() override {
+		Menu* menu = new Menu;
+		for (int i = 0; i < XYSEQ_COUNT; i++) {
+			menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem(string::f("%02u", i + 1), &module->seqSelected[id], i));
+		}
+		return menu;
+	}
+};
+
+template <typename MODULE>
+struct XySeqTriggerMenuItem : MenuItem {
+	MODULE* module;
+	int id;
+	const std::map<XYSEQ_MODE, std::string> labels = {
+		{ XYSEQ_MODE::TRIG_FWD, "Trigger forward" },
+		{ XYSEQ_MODE::TRIG_REV, "Trigger reverse" },
+		{ XYSEQ_MODE::TRIG_RANDOM_16, "Trigger random 1-16" },
+		{ XYSEQ_MODE::TRIG_RANDOM_8, "Trigger random 1-8" },
+		{ XYSEQ_MODE::TRIG_RANDOM_4, "Trigger random 1-4" },
+		{ XYSEQ_MODE::VOLT, "0..10V" },
+		{ XYSEQ_MODE::C4, "C4-D#5" }
+	};
+
+	XySeqTriggerMenuItem(MODULE* module, int id) {
+		this->module = module;
+		this->id = id;
+		text = "Trigger mode";
+		rightText = labels.at(module->seqMode[id]) + "  " + RIGHT_ARROW;
+	}
+
+	Menu* createChildMenu() override {
+		Menu* menu = new Menu;
+		for (const auto& i : labels) {
+			menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem(i.second, &module->seqMode[id], i.first));
+		}
+		return menu;
+	}
+};
 
 template <typename MODULE>
 ui::MenuItem* XySeqPresetMenuItem(MODULE* module) {
@@ -975,9 +1009,9 @@ struct XySeqEditWidget : OpaqueWidget {
 		};
 
 		menu->addChild(createMenuLabel("Motion-Sequence"));
-		menu->addChild(XySeqSlotMenuItem(module, module->seqEdit));
-		menu->addChild(XySeqInterpolateMenuItem(module, module->seqEdit));
-		menu->addChild(XySeqTriggerMenuItem(module, module->seqEdit));
+		menu->addChild(new XySeqSlotMenuItem<MODULE>(module, module->seqEdit));
+		menu->addChild(new XySeqInterpolateMenuItem<MODULE>(module, module->seqEdit));
+		menu->addChild(new XySeqTriggerMenuItem<MODULE>(module, module->seqEdit));
 		menu->addChild(construct<MenuSeparator>());
 		menu->addChild(createMenuItem("Clear", "", [=] { h("clear", [=] { module->seqClear(module->seqEdit); }); }));
 		menu->addChild(createMenuItem("Flip horizontally", "", [=] { h("flip horizontally", [=] { module->seqFlipHorizontally(module->seqEdit); }); }));
@@ -1062,9 +1096,9 @@ struct XySeqLedDisplay : StoermelderLedDisplay {
 		menu->addChild(createMenuLabel(getPortName()));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuLabel("Motion-Sequence"));
-		menu->addChild(XySeqSlotMenuItem(module, id));
-		menu->addChild(XySeqInterpolateMenuItem(module, id));
-		menu->addChild(XySeqTriggerMenuItem(module, id));
+		menu->addChild(new XySeqSlotMenuItem<MODULE>(module, id));
+		menu->addChild(new XySeqInterpolateMenuItem<MODULE>(module, id));
+		menu->addChild(new XySeqTriggerMenuItem<MODULE>(module, id));
 	}
 
 	virtual std::string getPortName() { return string::f("Port %i", id + 1); }

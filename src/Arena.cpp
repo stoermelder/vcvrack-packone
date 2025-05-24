@@ -559,11 +559,8 @@ struct ArenaModModeMenuItem : MenuItem {
 	ArenaModModeMenuItem(MODULE* module, int id) {
 		this->module = module;
 		this->id = id;
-	}
-
-	void step() override {
+		text = "MOD-port";
 		rightText = labels.at(module->modMode[id]) + "  " + RIGHT_ARROW;
-		MenuItem::step();
 	}
 
 	Menu* createChildMenu() override {
@@ -592,11 +589,8 @@ struct ArenaOutputModeMenuItem : MenuItem {
 	ArenaOutputModeMenuItem(MODULE* module, int id) {
 		this->module = module;
 		this->id = id;
-	}
-
-	void step() override {
+		text = "OUT-port";
 		rightText = labels.at(module->outputMode[id]) + "  " + RIGHT_ARROW;
-		MenuItem::step();
 	}
 
 	Menu* createChildMenu() override {
@@ -651,9 +645,9 @@ struct ArenaMixportDragWidget : XyScreenDragWidget<MODULE> {
 		menu->addChild(ArenaVoltageSubMenuItem("Y-port", &B::module->mixportYBipolar[B::id]));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuLabel("Motion-Sequence"));
-		menu->addChild(XySeqSlotMenuItem(B::module, B::id));
-		menu->addChild(XySeqInterpolateMenuItem(B::module, B::id));
-		menu->addChild(XySeqTriggerMenuItem(B::module, B::id));
+		menu->addChild(new XySeqSlotMenuItem<MODULE>(B::module, B::id));
+		menu->addChild(new XySeqInterpolateMenuItem<MODULE>(B::module, B::id));
+		menu->addChild(new XySeqTriggerMenuItem<MODULE>(B::module, B::id));
 	}
 };
 
