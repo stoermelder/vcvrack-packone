@@ -673,11 +673,13 @@ struct ArenaXyScreenWidget : XyScreenWidget<MODULE> {
 	}
 
 	void step() override {
-		// Preview interpolated automation line if mixport is selected
-		B::module->seqPreview = -1;
-		for (uint8_t i = 0; i < B::module->scGetItemCountActive(1); i++) {
-			if (B::module->scIsSelected(1, i))
-				B::module->seqPreview = i;
+		if (B::module) {
+			// Preview interpolated automation line if mixport is selected
+			B::module->seqPreview = -1;
+			for (uint8_t i = 0; i < B::module->scGetItemCountActive(1); i++) {
+				if (B::module->scIsSelected(1, i))
+					B::module->seqPreview = i;
+			}
 		}
 		B::step();
 	}
