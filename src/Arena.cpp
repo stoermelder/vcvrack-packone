@@ -559,7 +559,11 @@ struct ArenaModModeMenuItem : MenuItem {
 	ArenaModModeMenuItem(MODULE* module, int id) {
 		this->module = module;
 		this->id = id;
-		rightText = std::string(labels.at(module->modMode[id]) + "  " + RIGHT_ARROW);
+	}
+
+	void step() override {
+		rightText = labels.at(module->modMode[id]) + "  " + RIGHT_ARROW;
+		MenuItem::step();
 	}
 
 	Menu* createChildMenu() override {
@@ -588,7 +592,11 @@ struct ArenaOutputModeMenuItem : MenuItem {
 	ArenaOutputModeMenuItem(MODULE* module, int id) {
 		this->module = module;
 		this->id = id;
-		rightText = std::string(labels.at(module->outputMode[id]) + "  " + RIGHT_ARROW);
+	}
+
+	void step() override {
+		rightText = labels.at(module->outputMode[id]) + "  " + RIGHT_ARROW;
+		MenuItem::step();
 	}
 
 	Menu* createChildMenu() override {
