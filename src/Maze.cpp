@@ -760,8 +760,8 @@ struct MazeGridWidget : FramebufferWidget {
 	void drawLayer(const DrawArgs& args, int layer) override {
 		if (layer == 1) {
 			// Dim the display but don't darken it completely
-			float b = std::max(0.4f, settings::rackBrightness);
-			nvgGlobalTint(args.vg, nvgRGBAf(b, b, b, 1.f));
+			float b = std::max(0.2f, settings::rackBrightness);
+			nvgGlobalAlpha(args.vg, b);
 		}
 		FramebufferWidget::drawLayer(args, layer);
 	}
