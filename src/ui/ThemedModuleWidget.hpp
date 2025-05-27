@@ -42,11 +42,12 @@ struct ThemedModuleWidget : BASE {
 		}
 		else {
 			// Module Browser
-			BASE::setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/" + baseName + ".svg")));
-			HalfPanel* darkPanel = new HalfPanel();
-			darkPanel->w = this;
-			darkPanel->setBackground(APP->window->loadSvg(asset::plugin(pluginInstance, "res/dark/" + baseName + ".svg")));
-			BASE::addChild(darkPanel);
+			if (!settings::preferDarkPanels) {
+				BASE::setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/" + baseName + ".svg")));
+			}
+			else {
+				BASE::setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/dark/" + baseName + ".svg")));
+			}
 		}
 #endif
 	}
