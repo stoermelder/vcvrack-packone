@@ -294,7 +294,7 @@ struct MapModuleChoice : LedDisplayChoice {
 
 	void createContextMenu() {
 		ui::Menu* menu = createMenu();
-		menu->addChild(createMenuLabel(string::f("Parameter \"%s\"", getParamName())));
+		menu->addChild(createMenuLabel(string::f("Parameter \"%s\"", getParamName().c_str())));
 		menu->addChild(createMenuItem("Locate and indicate", "", [=]() {
 			ParamHandle* paramHandle = &module->paramHandles[id];
 			ModuleWidget* mw = APP->scene->rack->getModule(paramHandle->moduleId);
