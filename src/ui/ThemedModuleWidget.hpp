@@ -110,8 +110,8 @@ struct ThemedModuleWidget : BASE {
 		if (!disableDarkPanel) {
 			menu->addChild(new MenuSeparator());
 			menu->addChild(construct<PanelMenuItem>(&MenuItem::text, "Panel", &PanelMenuItem::module, module));
-			BASE::appendContextMenu(menu);
 		}
+		BASE::appendContextMenu(menu);
 	}
 
 	void step() override {

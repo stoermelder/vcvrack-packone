@@ -1997,7 +1997,7 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 	LEARN_MODE learnMode = LEARN_MODE::OFF;
 
 	MidiCatBaseWidget(MidiCatModule* module, std::string baseName)
-		: ThemedModuleWidget<MidiCatModule>(module, baseName) {
+		: ThemedModuleWidget<MidiCatModule>(module, baseName, "MidiCat") {
 		setModule(module);
 		this->module = module;
 
