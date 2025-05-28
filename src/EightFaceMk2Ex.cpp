@@ -95,7 +95,7 @@ struct EightFaceMk2ExWidget : ThemedModuleWidget<EightFaceMk2ExModule<NUM_PRESET
 	typedef EightFaceMk2ExModule<NUM_PRESETS> MODULE;
 	
 	EightFaceMk2ExWidget(MODULE* module)
-		: ThemedModuleWidget<MODULE>(module, "EightFaceMk2Ex") {
+		: ThemedModuleWidget<MODULE>(module, "EightFaceMk2Ex", "EightFaceMk2", true) {
 		BASE::setModule(module);
 		BASE::disableDuplicateAction = true;
 

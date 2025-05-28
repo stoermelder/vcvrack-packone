@@ -17,6 +17,7 @@ struct ThemedModuleWidget : BASE {
 	int panelTheme = -1;
 
 	bool disableDuplicateAction = false;
+	bool disableDarkPanel = false;
 
 	struct HalfPanel : SvgPanel {
 		ThemedModuleWidget<MODULE, BASE>* w;
@@ -28,10 +29,11 @@ struct ThemedModuleWidget : BASE {
 		}
 	};
 
-	ThemedModuleWidget(MODULE* module, std::string baseName, std::string manualName = "") {
+	ThemedModuleWidget(MODULE* module, std::string baseName, std::string manualName = "", bool disableDarkPanel = false) {
 		this->module = module;
 		this->baseName = baseName;
 		this->manualName = manualName;
+		this->disableDarkPanel = disableDarkPanel;
 
 #ifdef METAMODULE
 		BASE::setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/" + baseName + ".svg")));
@@ -42,7 +44,7 @@ struct ThemedModuleWidget : BASE {
 		}
 		else {
 			// Module Browser
-			if (!settings::preferDarkPanels) {
+			if (!settings::preferDarkPanels || disableDarkPanel) {
 				BASE::setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/" + baseName + ".svg")));
 			}
 			else {
@@ -105,21 +107,24 @@ struct ThemedModuleWidget : BASE {
 			}
 		};
 
-		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<PanelMenuItem>(&MenuItem::text, "Panel", &PanelMenuItem::module, module));
-		BASE::appendContextMenu(menu);
+		if (!disableDarkPanel) {
+			menu->addChild(new MenuSeparator());
+			menu->addChild(construct<PanelMenuItem>(&MenuItem::text, "Panel", &PanelMenuItem::module, module));
+			BASE::appendContextMenu(menu);
+		}
 	}
 
 	void step() override {
 		if (module) {
+			int theme = -1;
 			if (module->panelTheme == -1) {
-				if ((int)settings::preferDarkPanels != panelTheme) {
-					panelTheme = (int)settings::preferDarkPanels;
-					BASE::setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, panel())));
-				}
+				theme = settings::preferDarkPanels && !disableDarkPanel ? 1 : 0;
 			}
-			else if (module->panelTheme != panelTheme) {
-				panelTheme = module->panelTheme;
+			else {
+				theme = disableDarkPanel ? 0 : module->panelTheme;
+			}
+			if (theme != panelTheme) {
+				panelTheme = theme;
 				BASE::setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, panel())));
 			}
 		}
@@ -127,7 +132,8 @@ struct ThemedModuleWidget : BASE {
 	}
 
 	std::string panel() {
-		switch (panelTheme) {
+		int theme = disableDarkPanel ? 0 : panelTheme;
+		switch (theme) {
 			default:
 			case 0:
 				return "res/" + baseName + ".svg";

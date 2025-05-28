@@ -857,7 +857,7 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 	ModuleSelectProcessor moduleSelectProcessor;
 
 	EightFaceMk2Widget(MODULE* module)
-		: ThemedModuleWidget<MODULE>(module, "EightFaceMk2") {
+		: ThemedModuleWidget<MODULE>(module, "EightFaceMk2", "", true) {
 		BASE::setModule(module);
 		this->module = module;
 		this->disableDuplicateAction = true;

@@ -750,7 +750,7 @@ struct EightFaceWidget : ThemedModuleWidget<EightFaceModule<8>, EightFaceWidgetT
 	MODULE* module;
 
 	EightFaceWidget(MODULE* module)
-		: ThemedModuleWidget<MODULE, EightFaceWidgetTemplate<MODULE>>(module, "EightFace") {
+		: ThemedModuleWidget<MODULE, EightFaceWidgetTemplate<MODULE>>(module, "EightFace", "", true) {
 		setModule(module);
 		this->module = module;
 
@@ -796,7 +796,7 @@ struct EightFaceX2Widget : ThemedModuleWidget<EightFaceModule<16>, EightFaceWidg
 	typedef EightFaceModule<16> MODULE;
 
 	EightFaceX2Widget(MODULE* module)
-		: ThemedModuleWidget<MODULE, EightFaceWidgetTemplate<MODULE>>(module, "EightFaceX2") {
+		: ThemedModuleWidget<MODULE, EightFaceWidgetTemplate<MODULE>>(module, "EightFaceX2", "EightFace", true) {
 		setModule(module);
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
