@@ -396,12 +396,12 @@ struct MidiMonWidget : ThemedModuleWidget<MidiMonModule> {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
 		MidiWidget<>* midiInputWidget = createWidget<MidiWidget<>>(Vec(0.f, 36.4f));
-		midiInputWidget->box.size = Vec(250.f, 67.0f);
+		midiInputWidget->box.size = Vec(240.f, 67.0f);
 		midiInputWidget->setMidiPort(module ? &module->midiInput : NULL, "In");
 		addChild(midiInputWidget);
 
 		LedDisplay* textDisplay = createWidget<LedDisplay>(Vec(0.f, 107.4f));
-		textDisplay->box.size = Vec(250.f, 235.4f);
+		textDisplay->box.size = Vec(240.f, 236.0f);
 		addChild(textDisplay);
 
 		logDisplay = createWidget<LogDisplay>(Vec());
