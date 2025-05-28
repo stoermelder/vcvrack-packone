@@ -93,8 +93,8 @@ struct MidiDeviceChoice : LedDisplayCenterChoiceEx {
 	}
 
 	void step() override {
-		if (port) {
-			text = port->getDeviceName(port->deviceId);
+		text = port ? port->getDeviceName(port->deviceId) : "";
+		if (!text.empty()) {
 			color.a = 1.f;
 		}
 		else {
@@ -137,8 +137,8 @@ struct MidiChannelChoice : LedDisplayCenterChoiceEx {
 	}
 
 	void step() override {
-		if (port) {
-			text = port->getChannelName(port->channel);
+		text = port ? port->getChannelName(port->channel) : "";
+		if (!text.empty()) {
 			color.a = 1.0f;
 		}
 		else {

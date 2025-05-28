@@ -7,7 +7,7 @@
 ![License](https://img.shields.io/badge/License-GPLv3+-blue.svg?style=flat-square)
 ![Language](https://img.shields.io/badge/Language-C++-yellow.svg?style=flat-square)
 
-**The PackOne plugin gives you some modules for [VCV Rack](https://www.vcvrack.com). Stable versions are released in the [VCV Library](https://library.vcvrack.com/?brand=stoermelder). [Selected modules](./docs/MetaModule.md) are also available on the [4ms MetaModule](https://4mscompany.com/p.php?p=990)!**
+**The PackOne plugin gives you some modules for [VCV Rack](https://www.vcvrack.com). Stable versions are released in the [VCV Library](https://library.vcvrack.com/?brand=stoermelder). [Selected modules](./MetaModule.md) are also available on the [4ms MetaModule](https://4mscompany.com/p.php?p=990)!**
 
 A [Development build](https://github.com/stoermelder/vcvrack-packone/releases/tag/Nightly) of the latest commit is also available for all platforms. Please review the [changelog](./CHANGELOG.md) for this plugin.
 
@@ -16,6 +16,7 @@ If you like my modules consider donating to https://paypal.me/stoermelder, but d
 ## Latest additions to PackOne - new for v2.0
 
 - [DIRT](./docs/Dirt.md): a module for noise, crackles and crosstalk on polyphonic cables
+- [MIDI-CAT XL](./docs/MidiCat.md): a wider panel version of MIDI-CAT with identical features and driver selection moved to the context menu
 - [MIDI-CAT CLK](./docs/MidiCat.md#clk-expander): expander for MIDI-CAT, allows trigger-quantization for mapped parameters (#299)
 - [MIDI-KEY](./docs/MidiKey.md): utility for generating keyboard events from MIDI CC or Note messages
 - [STRIP++](./docs/StripPp.md): utility for pasting and importing Rack selections while preserving parameter mappings and [GLUE](./docs/Glue.md) labels

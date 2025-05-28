@@ -119,6 +119,13 @@
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/MidiCat.md"
 		},
 		{
+			"slug": "MidiCatXl",
+			"name": "MIDI-CAT XL",
+			"description": "Mapping module for MIDI CCs and notes to parameters of any module, similar to VCV MIDI-MAP",
+			"tags": ["Utility", "MIDI"],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/MidiCat.md"
+		},
+		{
 			"slug": "MidiCatEx",
 			"name": "MEM for MIDI-CAT",
 			"description": "Memory-expander for MIDI-CAT",

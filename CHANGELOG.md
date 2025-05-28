@@ -16,6 +16,11 @@
 
 - [Selected modules](./MetaModule.md) are available on the [4ms MetaModule](https://4mscompany.com/p.php?p=990).
 
+### New modules
+
+- Module [MIDI-CAT XL](./docs/MidiCat.md)
+    - A wider panel version of MIDI-CAT with identical features and driver selection moved to the context menu
+
 ### Changes and Fixes
 
 - Module [8FACE mk2](./docs/EightFaceMk2.md)

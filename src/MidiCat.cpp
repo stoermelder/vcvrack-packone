@@ -1974,7 +1974,7 @@ struct MidiCatDisplay : MapModuleDisplay<MAX_CHANNELS, MidiCatModule, MidiCatCho
 	}
 };
 
-struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExtender {
+struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExtender {
 	MidiCatModule* module;
 	MidiCatDisplay* mapWidget;
 	MidiCatSelectionWidget* selectionWidget = NULL;
@@ -1996,8 +1996,8 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 
 	LEARN_MODE learnMode = LEARN_MODE::OFF;
 
-	MidiCatWidget(MidiCatModule* module)
-		: ThemedModuleWidget<MidiCatModule>(module, "MidiCat") {
+	MidiCatBaseWidget(MidiCatModule* module, std::string baseName)
+		: ThemedModuleWidget<MidiCatModule>(module, baseName) {
 		setModule(module);
 		this->module = module;
 
@@ -2006,37 +2006,16 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		MidiWidget<>* midiInputWidget = createWidget<MidiWidget<>>(Vec(10.0f, 36.4f));
-		midiInputWidget->box.size = Vec(130.0f, 67.0f);
-		midiInputWidget->setMidiPort(module ? &module->midiInput : NULL);
-		addChild(midiInputWidget);
-
-		MidiWidget<>* midiOutputWidget = createWidget<MidiWidget<>>(Vec(10.0f, 107.4f));
-		midiOutputWidget->box.size = Vec(130.0f, 67.0f);
-		midiOutputWidget->setMidiPort(module ? &module->midiOutput : NULL);
-		addChild(midiOutputWidget);
-
-		mapWidget = createWidget<MidiCatDisplay>(Vec(10.0f, 178.5f));
-		mapWidget->box.size = Vec(130.0f, 164.7f);
-		mapWidget->setModule(module);
-		addChild(mapWidget);
-
 		if (module) {
-			OverlayMessageWidget::registerProvider(mapWidget);
-
 			selectionWidget = new MidiCatSelectionWidget;
 			selectionWidget->module = module;
 			APP->scene->rack->addChild(selectionWidget);
 		}
 	}
 
-	~MidiCatWidget() {
+	~MidiCatBaseWidget() {
 		if (learnMode != LEARN_MODE::OFF) {
 			glfwSetCursor(APP->window->win, NULL);
-		}
-
-		if (module) {
-			OverlayMessageWidget::unregisterProvider(mapWidget);
 		}
 
 		if (selectionWidget) {
@@ -2667,7 +2646,64 @@ struct MidiCatWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContextExte
 	}
 };
 
+struct MidiCatWidget : MidiCatBaseWidget {
+	MidiCatWidget(MidiCatModule* module) : MidiCatBaseWidget(module, "MidiCat") {
+		MidiWidget<>* midiInputWidget = createWidget<MidiWidget<>>(Vec(0.0f, 36.4f));
+		midiInputWidget->box.size = Vec(150.0f, 67.0f);
+		midiInputWidget->setMidiPort(module ? &module->midiInput : NULL, "In");
+		addChild(midiInputWidget);
+
+		MidiWidget<>* midiOutputWidget = createWidget<MidiWidget<>>(Vec(0.0f, 107.4f));
+		midiOutputWidget->box.size = Vec(150.0f, 67.0f);
+		midiOutputWidget->setMidiPort(module ? &module->midiOutput : NULL, "Out");
+		addChild(midiOutputWidget);
+
+		mapWidget = createWidget<MidiCatDisplay>(Vec(0.0f, 178.5f));
+		mapWidget->box.size = Vec(150.0f, 164.7f);
+		mapWidget->setModule(module);
+		addChild(mapWidget);
+
+		if (module) {
+			OverlayMessageWidget::registerProvider(mapWidget);
+		}
+	}
+
+	~MidiCatWidget() {
+		if (module) {
+			OverlayMessageWidget::unregisterProvider(mapWidget);
+		}
+	}
+};
+
+struct MidiCatXlWidget : MidiCatBaseWidget {
+	MidiCatXlWidget(MidiCatModule* module) : MidiCatBaseWidget(module, "MidiCatXl") {
+		mapWidget = createWidget<MidiCatDisplay>(Vec(0.0f, 36.4f));
+		mapWidget->box.size = Vec(270.0f, 307.0f);
+		mapWidget->setModule(module);
+		addChild(mapWidget);
+
+		if (module) {
+			OverlayMessageWidget::registerProvider(mapWidget);
+		}
+	}
+
+	~MidiCatXlWidget() {
+		if (module) {
+			OverlayMessageWidget::unregisterProvider(mapWidget);
+		}
+	}
+
+	void appendContextMenu(Menu* menu) override {
+		menu->addChild(new MenuSeparator);
+		menu->addChild(createSubmenuItem("MIDI Input", "", [=](Menu* menu) { appendMidiMenu(menu, &module->midiInput); }));
+		menu->addChild(createSubmenuItem("MIDI Output", "", [=](Menu* menu) { appendMidiMenu(menu, &module->midiOutput); }));
+
+		MidiCatBaseWidget::appendContextMenu(menu);
+	}
+};
+
 } // namespace MidiCat
 } // namespace StoermelderPackOne
 
 Model* modelMidiCat = createModel<StoermelderPackOne::MidiCat::MidiCatModule, StoermelderPackOne::MidiCat::MidiCatWidget>("MidiCat");
+Model* modelMidiCatXl = createModel<StoermelderPackOne::MidiCat::MidiCatModule, StoermelderPackOne::MidiCat::MidiCatXlWidget>("MidiCatXl");

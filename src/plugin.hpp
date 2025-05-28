@@ -27,6 +27,7 @@ extern Model* modelStripPp;
 extern Model* modelEightFace;
 extern Model* modelEightFaceX2;
 extern Model* modelMidiCat;
+extern Model* modelMidiCatXl;
 extern Model* modelMidiCatMem;
 extern Model* modelMidiCatCtx;
 extern Model* modelMidiCatClk;
