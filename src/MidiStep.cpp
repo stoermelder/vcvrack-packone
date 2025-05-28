@@ -404,13 +404,13 @@ struct MidiStepWidget : ThemedModuleWidget<MidiStepModule> {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
 #ifndef METAMODULE
-		MidiWidget<>* midiInputWidget = createWidget<MidiWidget<>>(Vec(10.0f, 36.4f));
-		midiInputWidget->box.size = Vec(130.0f, 67.0f);
-		midiInputWidget->setMidiPort(module ? &module->midiInput : NULL);
+		MidiWidget<>* midiInputWidget = createWidget<MidiWidget<>>(Vec(0.0f, 36.4f));
+		midiInputWidget->box.size = Vec(150.0f, 67.0f);
+		midiInputWidget->setMidiPort(module ? &module->midiInput : NULL, "In");
 		addChild(midiInputWidget);
 
-		MidiStepLedDisplay<16, 8, MidiStepCcChoice<16, 8>>* midiWidget = createWidget<MidiStepLedDisplay<16, 8, MidiStepCcChoice<16, 8>>>(Vec(10.f, 108.7f));
-		midiWidget->box.size = Vec(130.0f, 79.0f);
+		MidiStepLedDisplay<16, 8, MidiStepCcChoice<16, 8>>* midiWidget = createWidget<MidiStepLedDisplay<16, 8, MidiStepCcChoice<16, 8>>>(Vec(0.f, 107.4f));
+		midiWidget->box.size = Vec(150.0f, 79.0f);
 		midiWidget->setModule(module);
 		addChild(midiWidget);
 #else

@@ -617,18 +617,18 @@ struct MidiKeyWidget : ThemedModuleWidget<MidiKeyModule<>> {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		MidiWidget<>* midiInputWidget = createWidget<MidiWidget<>>(Vec(10.0f, 36.4f));
-		midiInputWidget->box.size = Vec(130.0f, 67.0f);
-		midiInputWidget->setMidiPort(module ? &module->midiInput : NULL);
+		MidiWidget<>* midiInputWidget = createWidget<MidiWidget<>>(Vec(0.0f, 36.4f));
+		midiInputWidget->box.size = Vec(150.0f, 67.0f);
+		midiInputWidget->setMidiPort(module ? &module->midiInput : NULL, "In");
 		addChild(midiInputWidget);
 
-		MidiKeyModDisplay<>* modWidget = createWidget<MidiKeyModDisplay<>>(Vec(10.0f, 107.4f));
-		modWidget->box.size = Vec(130.0f, 67.0f);
+		MidiKeyModDisplay<>* modWidget = createWidget<MidiKeyModDisplay<>>(Vec(0.0f, 107.4f));
+		modWidget->box.size = Vec(150.0f, 67.0f);
 		modWidget->setModule(module);
 		addChild(modWidget);
 
-		MidiKeyDisplay<16>* mapWidget = createWidget<MidiKeyDisplay<16>>(Vec(10.0f, 178.5f));
-		mapWidget->box.size = Vec(130.0f, 164.7f);
+		MidiKeyDisplay<16>* mapWidget = createWidget<MidiKeyDisplay<16>>(Vec(0.0f, 178.5f));
+		mapWidget->box.size = Vec(150.0f, 164.7f);
 		mapWidget->setModule(module);
 		addChild(mapWidget);
 	}

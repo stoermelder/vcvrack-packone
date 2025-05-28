@@ -377,26 +377,26 @@ struct CVMapWidget : ThemedModuleWidget<CVMapModule>, ParamWidgetContextExtender
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		CVMapPort* input1 = createInputCentered<CVMapPort>(Vec(26.9f, 60.8f), module, CVMapModule::POLY_INPUT1);
+		typedef MapModuleDisplay<MAX_CHANNELS, CVMapModule, CVMapChoice> TMapDisplay;
+		TMapDisplay* mapWidget = createWidget<TMapDisplay>(Vec(0.f, 36.4f));
+		mapWidget->box.size = Vec(150.f, 261.7f);
+		mapWidget->setModule(module);
+		addChild(mapWidget);
+
+		CVMapPort* input1 = createInputCentered<CVMapPort>(Vec(26.9f, 327.8f), module, CVMapModule::POLY_INPUT1);
 		input1->i = 0;
 		addInput(input1);
-		CVMapPort* input2 = createInputCentered<CVMapPort>(Vec(123.1f, 60.8f), module, CVMapModule::POLY_INPUT2);
+		CVMapPort* input2 = createInputCentered<CVMapPort>(Vec(123.1f, 327.8f), module, CVMapModule::POLY_INPUT2);
 		input2->i = 1;
 		addInput(input2);
 
-		PolyLedWidget<>* w0 = createWidgetCentered<PolyLedWidget<>>(Vec(54.2f, 60.8f));
+		PolyLedWidget<>* w0 = createWidgetCentered<PolyLedWidget<>>(Vec(54.2f, 327.8f));
 		w0->setModule(module, CVMapModule::CHANNEL_LIGHTS1);
 		addChild(w0);
 
-		PolyLedWidget<>* w1 = createWidgetCentered<PolyLedWidget<>>(Vec(95.8f, 60.8f));
+		PolyLedWidget<>* w1 = createWidgetCentered<PolyLedWidget<>>(Vec(95.8f, 327.8f));
 		w1->setModule(module, CVMapModule::CHANNEL_LIGHTS2);
 		addChild(w1);
-
-		typedef MapModuleDisplay<MAX_CHANNELS, CVMapModule, CVMapChoice> TMapDisplay;
-		TMapDisplay* mapWidget = createWidget<TMapDisplay>(Vec(10.6f, 81.5f));
-		mapWidget->box.size = Vec(128.9f, 261.7f);
-		mapWidget->setModule(module);
-		addChild(mapWidget);
 	}
 
 	void step() override {

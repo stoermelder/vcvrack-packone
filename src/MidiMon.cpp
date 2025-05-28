@@ -5,6 +5,7 @@
 #include <osdialog.h>
 #include <list>
 #include <iomanip>
+#include <chrono>
 
 namespace StoermelderPackOne {
 namespace MidiMon {
@@ -394,13 +395,13 @@ struct MidiMonWidget : ThemedModuleWidget<MidiMonModule> {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		MidiWidget<>* midiInputWidget = createWidget<MidiWidget<>>(Vec(55.f, 36.4f));
-		midiInputWidget->box.size = Vec(130.0f, 67.0f);
-		midiInputWidget->setMidiPort(module ? &module->midiInput : NULL);
+		MidiWidget<>* midiInputWidget = createWidget<MidiWidget<>>(Vec(0.f, 36.4f));
+		midiInputWidget->box.size = Vec(250.f, 67.0f);
+		midiInputWidget->setMidiPort(module ? &module->midiInput : NULL, "In");
 		addChild(midiInputWidget);
 
-		LedDisplay* textDisplay = createWidget<LedDisplay>(Vec(10.f, 108.7f));
-		textDisplay->box.size = Vec(219.9f, 234.1f);
+		LedDisplay* textDisplay = createWidget<LedDisplay>(Vec(0.f, 107.4f));
+		textDisplay->box.size = Vec(250.f, 235.4f);
 		addChild(textDisplay);
 
 		logDisplay = createWidget<LogDisplay>(Vec());
@@ -435,15 +436,19 @@ struct MidiMonWidget : ThemedModuleWidget<MidiMonModule> {
 			menu->addChild(createBoolPtrMenuItem("Channel pressure", "", &module->showChannelPressurelMsg));
 			menu->addChild(createBoolPtrMenuItem("Pitch wheel", "", &module->showPitchWheelMsg));
 		}));
+#ifndef METAMODULE
 		menu->addChild(createSubmenuItem("System MIDI messages", "", [=](Menu* menu) {
 			menu->addChild(createBoolPtrMenuItem("Clock", "", &module->showClockMsg));
 			menu->addChild(createBoolPtrMenuItem("Other", "", &module->showSystemMsg));
 			menu->addChild(createBoolPtrMenuItem("SysEx", "", &module->showSysExMsg));
 			menu->addChild(createBoolPtrMenuItem("SysEx Data", "", &module->showSysExData));
 		}));
+#endif
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuItem("Clear log", "", [this]() { resetLog(); }));
+#ifndef METAMODULE
 		menu->addChild(createMenuItem("Export log", "", [this]() { exportLogDialog(); }));
+#endif
 	}
 
 	void resetLog() {
@@ -452,6 +457,7 @@ struct MidiMonWidget : ThemedModuleWidget<MidiMonModule> {
 		logDisplay->reset();
 	}
 
+#ifndef METAMODULE
 	void exportLog(std::string filename) {
 		INFO("Saving file %s", filename.c_str());
 
@@ -514,6 +520,7 @@ struct MidiMonWidget : ThemedModuleWidget<MidiMonModule> {
 		std::string pathStr = path;
 		exportLog(pathStr);
 	}
+#endif
 };
 
 } // namespace MidiMon

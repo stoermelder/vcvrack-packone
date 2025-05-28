@@ -197,8 +197,8 @@ struct MidiPlugOutModeChoice : LedDisplayCenterChoiceEx {
 struct MidiPlugOutWidget : MidiWidget<MidiDriverChoice<>, MidiDeviceChoice<>, MidiPlugOutChannelChoice> {
 	MidiPlugOutModeChoice* channelModeChoice;
 
-	void setMidiPortEx(MidiPlugModule<>::MidiPlugOutput* port) {
-		MidiWidget<MidiDriverChoice<>, MidiDeviceChoice<>, MidiPlugOutChannelChoice>::setMidiPort(port);
+	void setMidiPortEx(MidiPlugModule<>::MidiPlugOutput* port, std::string prefix) {
+		MidiWidget<MidiDriverChoice<>, MidiDeviceChoice<>, MidiPlugOutChannelChoice>::setMidiPort(port, prefix);
 
 		channelChoice->box.size.x = channelChoice->box.size.x / 2.f;
 		Vec pos = Vec(channelChoice->box.pos.x + channelChoice->box.size.x, channelChoice->box.pos.y);
@@ -227,24 +227,24 @@ struct MidiPlugWidget : ThemedModuleWidget<MidiPlugModule<>> {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		MidiWidget<>* midiInput0Widget = createWidget<MidiWidget<>>(Vec(10.0f, 36.4f));
-		midiInput0Widget->box.size = Vec(130.0f, 67.0f);
-		midiInput0Widget->setMidiPort(module ? &module->midiInput[0] : NULL);
+		MidiWidget<>* midiInput0Widget = createWidget<MidiWidget<>>(Vec(0.0f, 36.4f));
+		midiInput0Widget->box.size = Vec(150.0f, 67.0f);
+		midiInput0Widget->setMidiPort(module ? &module->midiInput[0] : NULL, "In1");
 		addChild(midiInput0Widget);
 
-		MidiWidget<>* midiInput1Widget = createWidget<MidiWidget<>>(Vec(10.0f, 107.4f));
-		midiInput1Widget->box.size = Vec(130.0f, 67.0f);
-		midiInput1Widget->setMidiPort(module ? &module->midiInput[1] : NULL);
+		MidiWidget<>* midiInput1Widget = createWidget<MidiWidget<>>(Vec(0.0f, 107.4f));
+		midiInput1Widget->box.size = Vec(150.0f, 67.0f);
+		midiInput1Widget->setMidiPort(module ? &module->midiInput[1] : NULL, "In2");
 		addChild(midiInput1Widget);
 
-		MidiPlugOutWidget* midiOutput0Widget = createWidget<MidiPlugOutWidget>(Vec(10.0f, 204.8f));
-		midiOutput0Widget->box.size = Vec(130.0f, 67.0f);
-		midiOutput0Widget->setMidiPortEx(module ? &module->midiOutput[0] : NULL);
+		MidiPlugOutWidget* midiOutput0Widget = createWidget<MidiPlugOutWidget>(Vec(0.0f, 204.8f));
+		midiOutput0Widget->box.size = Vec(150.0f, 67.0f);
+		midiOutput0Widget->setMidiPortEx(module ? &module->midiOutput[0] : NULL, "Out1");
 		addChild(midiOutput0Widget);
 
-		MidiPlugOutWidget* midiOutput1Widget = createWidget<MidiPlugOutWidget>(Vec(10.0f, 275.8f));
-		midiOutput1Widget->box.size = Vec(130.0f, 67.0f);
-		midiOutput1Widget->setMidiPortEx(module ? &module->midiOutput[1] : NULL);
+		MidiPlugOutWidget* midiOutput1Widget = createWidget<MidiPlugOutWidget>(Vec(0.0f, 275.8f));
+		midiOutput1Widget->box.size = Vec(150.0f, 67.0f);
+		midiOutput1Widget->setMidiPortEx(module ? &module->midiOutput[1] : NULL, "Out2");
 		addChild(midiOutput1Widget);
 	}
 };
