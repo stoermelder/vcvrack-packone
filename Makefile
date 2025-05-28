@@ -1,6 +1,6 @@
 RACK_DIR ?= ../..
 
-SOURCES += $(wildcard src/*.cpp) $(wildcard src/mb/*.cpp) $(wildcard src/drivers/*.cpp)
+SOURCES += $(wildcard src/*.cpp) $(wildcard src/mb/*.cpp) $(wildcard src/drivers/*.cpp) src/modules/midikit/MidiKit.cpp src/modules/midikit/elk.c
 
 DISTRIBUTABLES += $(wildcard LICENSE*) res presets
 
