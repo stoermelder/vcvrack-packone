@@ -282,27 +282,29 @@ struct MapModuleChoice : LedDisplayChoice {
 
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
 			e.consume(this);
-
-			if (module->paramHandles[id].moduleId >= 0) {
-				createContextMenu();
-			} 
-			else {
-				module->clearMap(id);
-			}
+			createContextMenu(module->paramHandles[id].moduleId >= 0);
 		}
 	}
 
-	void createContextMenu() {
+	void createContextMenu(bool isMapped) {
 		ui::Menu* menu = createMenu();
-		menu->addChild(createMenuLabel(string::f("Parameter \"%s\"", getParamName().c_str())));
-		menu->addChild(createMenuItem("Locate and indicate", "", [=]() {
-			ParamHandle* paramHandle = &module->paramHandles[id];
-			ModuleWidget* mw = APP->scene->rack->getModule(paramHandle->moduleId);
-			module->paramHandles[id].indicate(mw);
-		}));
-		menu->addChild(createMenuItem("Unmap", "", [=]() { module->clearMap(id); }));
-		appendContextMenu(menu);
+		prependContextMenu(menu);
+		if (isMapped) {
+			if (menu->children.size() > 0) {
+				menu->addChild(new MenuSeparator);
+			}
+			menu->addChild(createMenuLabel(string::f("Parameter \"%s\"", getParamName().c_str())));
+			menu->addChild(createMenuItem("Unmap", "", [=]() { module->clearMap(id); }));
+			menu->addChild(createMenuItem("Locate and indicate", "", [=]() {
+				ParamHandle* paramHandle = &module->paramHandles[id];
+				ModuleWidget* mw = APP->scene->rack->getModule(paramHandle->moduleId);
+				module->paramHandles[id].indicate(mw);
+			}));
+			appendContextMenu(menu);
+		}
 	}
+
+	virtual void prependContextMenu(Menu* menu) { }
 
 	virtual void appendContextMenu(Menu* menu) { }
 
