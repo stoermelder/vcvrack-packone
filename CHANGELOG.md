@@ -15,6 +15,7 @@
 ## 2.0.0 (in development)
 
 - [Selected modules](./MetaModule.md) are available on the [4ms MetaModule](https://4mscompany.com/p.php?p=990).
+- Modules [8FACE, 8FACEx2](./docs/EightFace.md) and [8FACE mk2](./docs/EightFaceMk2.md) are now considered experimental, because loading of presets into any module cannot be considered stable und issue-free in every case.
 
 ### New modules
 
@@ -49,6 +50,7 @@
     - Added trigger-inputs for Prev and Next
 - Module [MIDI-MON](./docs/MidiMon.md)
     - Added support for CC 14-bit/RPN/NRPN messages
+    - Reduced CPU usage
 - Module [MIDI-STEP](./docs/MidiStep.md)
     - Added option for Hercules DJControl Starlight (#361)
 - Module [STRIP](./docs/Strip.md)

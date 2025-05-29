@@ -14,3 +14,4 @@ MIDI-MON is an utility module for monitoring MIDI messages. Also export as text-
 - v2.0.0
     - Added support for SysEx messages
     - Added support for CC 14-bit/RPN/NRPN messages
+    - Reduced CPU usage
