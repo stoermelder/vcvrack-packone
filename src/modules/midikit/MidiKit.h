@@ -16,7 +16,6 @@ struct ScriptEngine {
 	virtual ~ScriptEngine() { }
 	std::function<void(std::string)> logCallback;
 	std::function<void(std::string, std::string, std::string)> overlayCallback;
-	std::function<void(int, Message&, uint64_t)> midiCallback;
 	std::function<void(int)> inputEnable;
 	std::function<float(int, int)> inputGetVoltage;
 	std::function<float(int)> trigGetVoltage;
@@ -25,7 +24,9 @@ struct ScriptEngine {
 	std::function<float(int)> paramGetValue;
 
 	virtual void loadScript(const char* script) { }
-	virtual void process(int midiPort, Message& msg) { }
+	virtual void processInMessage(int midiPort, Message& msg) { }
+	virtual void process() { }
+	virtual bool processOutMessage(int& midiPort, Message& msg) { return false; }
 
 	virtual std::string getInputName(int i) { return ""; }
 	virtual std::string getParamName(int i) { return ""; }

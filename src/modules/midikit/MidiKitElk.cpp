@@ -1,5 +1,6 @@
 #include "MidiKit.h"
 #include "elk.h"
+#include "../../helpers/TaskWorker.hpp"
 #include <iomanip>
 
 namespace StoermelderPackOne {
@@ -19,6 +20,11 @@ struct ElkScriptEngine : ScriptEngine {
 
 	char jsMem[64 * 1024];
 	struct js* js = NULL;
+
+	// TODO: share worker between all engines
+	TaskWorker taskWorker;
+	dsp::RingBuffer<std::tuple<int, Message>, 128> midiInQueue;
+	dsp::RingBuffer<std::tuple<int, Message, uint64_t>, 128> midiOutQueue;
 
 	const static int msgStoreSize = 32;
 	MessageEx msgStore[msgStoreSize];
@@ -139,7 +145,35 @@ struct ElkScriptEngine : ScriptEngine {
 		}
 	}
 
-	void process(int midiPort, Message& msg) override {
+	void processInMessage(int midiPort, Message& msg) override {
+		midiInQueue.push(std::make_tuple(midiPort, msg));
+	}
+
+	void process() override {
+		if (midiInQueue.size() > 0) {
+			taskWorker.work([this]() {
+				while (!midiInQueue.empty()) {
+					auto t = midiInQueue.shift();
+					int midiPort = std::get<0>(t);
+					midi::Message msg = std::get<1>(t);
+					process(midiPort, msg);
+				}
+			});
+		}
+	}
+
+	bool processOutMessage(int& midiPort, Message& msg) override {
+		if (!midiOutQueue.empty()) {
+			auto t = midiOutQueue.shift();
+			midiPort = std::get<0>(t);
+			msg = std::get<1>(t);
+			msg.frame = std::get<2>(t);
+			return true;
+		}
+		return false;
+	}
+
+	void process(int midiPort, Message& msg) {
 		if (js) {
 			msgStore[0].msg = msg;
 			msgStore[0].send = false;
@@ -153,11 +187,11 @@ struct ElkScriptEngine : ScriptEngine {
 
 			for (size_t i = 0; i < msgCount; i++) {
 				if (msgStore[i].send) {
-					midiCallback(msgStore[i].midiPort, msgStore[i].msg, msgStore[i].tick);
+					midiOutQueue.push(std::make_tuple(msgStore[i].midiPort, msgStore[i].msg, msgStore[i].tick));
 					if (msgStore[i].isNrpn) {
-						midiCallback(msgStore[i].midiPort, msgStore[i + 1].msg, msgStore[i].tick);
-						midiCallback(msgStore[i].midiPort, msgStore[i + 2].msg, msgStore[i].tick);
-						midiCallback(msgStore[i].midiPort, msgStore[i + 3].msg, msgStore[i].tick);
+						midiOutQueue.push(std::make_tuple(msgStore[i].midiPort, msgStore[i + 1].msg, msgStore[i].tick));
+						midiOutQueue.push(std::make_tuple(msgStore[i].midiPort, msgStore[i + 2].msg, msgStore[i].tick));
+						midiOutQueue.push(std::make_tuple(msgStore[i].midiPort, msgStore[i + 3].msg, msgStore[i].tick));
 						i += 3;
 					}
 				}
