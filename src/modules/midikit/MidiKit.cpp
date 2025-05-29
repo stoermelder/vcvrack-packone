@@ -4,6 +4,7 @@
 #include "../../components/MidiWidget.hpp"
 #include "../../components/LogDisplay.hpp"
 #include "../../ui/OverlayMessageWidget.hpp"
+#include "../../helpers/TaskWorker.hpp"
 #include <osdialog.h>
 #include <fstream>
 #include <queue>
@@ -156,6 +157,10 @@ struct MidiKitModule : Module {
 	uint64_t sample;
 	uint64_t trigTick;
 
+	TaskWorker taskWorker;
+	dsp::RingBuffer<Message, 16> seInputQueue;
+	dsp::RingBuffer<std::tuple<Message, uint64_t>, 16> seOutputQueue;
+
 	MidiKitModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -204,7 +209,8 @@ struct MidiKitModule : Module {
 			overlayMessage = std::make_tuple(s1, s2, s3);
 		};
 		se->midiCallback = [=](int midiPort, Message& msg, uint64_t trigTick) {
-			midiOutput.send(msg, trigTick);
+			//midiOutput.send(msg, trigTick);
+			seOutputQueue.push(std::make_tuple(msg, trigTick));
 		};
 
 		se->inputEnable = [=](int i) {
@@ -254,9 +260,26 @@ struct MidiKitModule : Module {
 		if (processDivider.process()) {
 			midi::Message msg;
 			while (midiInput.tryPop(&msg, args.frame)) {
-				se->process(0, msg);
+				// se->process(0, msg);
+				seInputQueue.push(msg);
 			}
 
+			if (seInputQueue.size() > 0) {
+				taskWorker.work([=]() {
+					while (!seInputQueue.empty()) {
+						midi::Message msg = seInputQueue.shift();
+						se->process(0, msg);
+					}
+				});
+			}
+	
+			while (!seOutputQueue.empty()) {
+				auto t = seOutputQueue.shift();
+				midi::Message msg = std::get<0>(t);
+				uint64_t trigTick = std::get<1>(t);
+				midiOutput.send(msg, trigTick);
+			}
+			
 			midiOutput.processFrame(args.frame);
 		}
 
