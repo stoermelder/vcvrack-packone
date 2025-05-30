@@ -2,6 +2,7 @@
 #include "elk.h"
 #include "../../helpers/TaskWorker.hpp"
 #include <iomanip>
+#include <regex>
 
 namespace StoermelderPackOne {
 namespace MidiScript {
@@ -38,6 +39,37 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		}
 
 		if (script[0] != '\0') {
+			// Analyze file header of this pattern:
+			//	/**
+			//	 * @target stoermelder MIDI-KIT
+			//	 * @engine Elk
+			//	 * @author stoermelder
+			//	 * @description Routes incoming CC messages on MIDI channel 1 to a MIDI channel set by parameter 1 on the panel
+			//	 */
+			//
+
+			// match /** ... */ on the beginning of the string
+			const std::regex header_regex(R"(^\/\*\*(.|\n)*\*\/.*$)", std::regex_constants::ECMAScript | std::regex_constants::__multiline);
+			std::cmatch m1;
+			if (std::regex_search(script, m1, header_regex)) {
+				std::string header = m1[0].str();
+				// match items in header according to "@topic text"
+				const std::regex at_regex(R"(@([a-z]+)\s(.*))", std::regex_constants::ECMAScript | std::regex_constants::__multiline);
+				auto words_begin = std::sregex_iterator(header.begin(), header.end(), at_regex);
+				auto words_end = std::sregex_iterator();
+				for (std::sregex_iterator i = words_begin; i != words_end; ++i) {
+					std::smatch m2 = *i;
+					std::string topic = m2[1].str();
+					std::string text = m2[2].str();
+					if (topic == "author") {
+						writeLog(string::f("Author: %s", text), false);
+					}
+					if (topic == "description") {
+						writeLog(text, false);
+					}
+				}
+			}
+
 			js = js_create(jsMem, sizeof(jsMem));
 			jsMap[js] = this;
 
@@ -80,7 +112,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 			jsval_t _param = js_eval(js,
 				"let param = {"
 				"	getName: function(i) { return \"Param \" + number.toString(i); },"
-				"	getValueFormat: function(i) { return number.toString(i); }"
+				"	getValueFormat: function(i) { return \"\"; }"
 				"};"
 				"param;", ~0U);
 			js_set(js, _param, "enable", js_mkfun(js_param_enable));							// void param.enable(int)
@@ -137,11 +169,11 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 				writeLog(js_str(js, r));
 			}
 			else {
-				writeLog("script loaded");
+				writeLog("Script loaded", false);
 			}
 		}
 		else {
-			writeLog("no script");
+			writeLog("No script", false);
 		}
 	}
 

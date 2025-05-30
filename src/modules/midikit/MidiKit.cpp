@@ -147,9 +147,14 @@ struct MidiKitModule : Module {
 			midiOutputCount = 1;
 		}
 
-		void writeLog(std::string log) override {
+		void writeLog(std::string log, bool useTimestamp = true) override {
 			float timestamp = float(module->sample) / module->sampleRate;
-			module->midiLogMessages.push(std::make_tuple(LOG_FORMAT::TIMESTAMP, timestamp, log));
+			if (useTimestamp) {
+				module->midiLogMessages.push(std::make_tuple(LOG_FORMAT::TIMESTAMP, timestamp, log));
+			}
+			else {
+				module->midiLogMessages.push(std::make_tuple(LOG_FORMAT::TEXT, timestamp, log));
+			}
 		};
 
 		void writeOverlay(std::string s1, std::string s2, std::string s3) override {

@@ -21,7 +21,7 @@ struct MidiScriptEngine {
 	virtual void process() { }
 	virtual bool processOutMessage(int& midiPort, Message& msg) { return false; }
 
-	virtual void writeLog(std::string) { }
+	virtual void writeLog(std::string, bool useTimestamp = true) { }
 	virtual void writeOverlay(std::string s1, std::string s2, std::string s3) { }
 	virtual void enableInput(int i) { }
 	virtual float getInputVoltage(int i, uint8_t ch) { return 0.f; }
@@ -54,7 +54,13 @@ struct MidiScriptEngineParamQuantity : ParamQuantity {
 		return enabled ? se->getParamName(paramId) : "";
 	}
 	std::string getDisplayValueString() override {
-		return enabled ? se->getParamFormatValue(paramId) : "<Disabled>";
+		if (enabled) {
+			std::string s = se->getParamFormatValue(paramId);
+			return !s.empty() ? s : ParamQuantity::getDisplayValueString();
+		}
+		else {
+			return "<Disabled>";
+		}
 	}
 };
 
