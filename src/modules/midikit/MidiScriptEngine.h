@@ -19,7 +19,7 @@ struct MidiScriptEngine {
 	virtual void loadScript(const char* script) { }
 	virtual void processInMessage(int midiPort, Message& msg) { }
 	virtual void process() { }
-	virtual bool processOutMessage(int& midiPort, Message& msg) { return false; }
+	virtual bool processOutMessage(int& midiPort, Message& msg, int& ticks) { return false; }
 
 	virtual void writeLog(std::string, bool useTimestamp = true) { }
 	virtual void writeOverlay(std::string s1, std::string s2, std::string s3) { }

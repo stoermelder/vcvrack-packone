@@ -222,12 +222,12 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		}
 	}
 
-	bool processOutMessage(int& midiPort, Message& msg) override {
+	bool processOutMessage(int& midiPort, Message& msg, int& ticks) override {
 		if (js && !midiOutQueue.empty()) {
 			auto t = midiOutQueue.shift();
 			midiPort = std::get<0>(t);
 			msg = std::get<1>(t);
-			msg.frame = std::get<2>(t);
+			ticks = std::get<2>(t);
 			return true;
 		}
 		return false;

@@ -251,8 +251,9 @@ struct MidiKitModule : Module {
 			se.process();
 
 			int midiPort;
-			while (se.processOutMessage(midiPort, msg)) {
-				midiOutput.send(msg, msg.frame);
+			int ticks;
+			while (se.processOutMessage(midiPort, msg, ticks)) {
+				midiOutput.send(msg, ticks);
 			}
 			
 			midiOutput.processFrame(args.frame);
