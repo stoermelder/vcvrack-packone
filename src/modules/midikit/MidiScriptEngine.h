@@ -16,6 +16,7 @@ struct MidiScriptEngine {
 
 	virtual ~MidiScriptEngine() { }
 
+	virtual void runAsync(std::function<void()> task) { }
 	virtual void loadScript(const char* script) { }
 	virtual void processInMessage(int midiPort, Message& msg) { }
 	virtual void process() { }
@@ -39,9 +40,13 @@ struct MidiScriptEngine {
 struct MidiScriptEnginePortInfo : PortInfo {
 	bool enabled;
 	MidiScriptEngine* se;
+	std::string bufferedName;
 
 	std::string getName() override {
-		return enabled ? se->getInputName(portId) : "<Disabled>";
+		se->runAsync([=] {
+			bufferedName = se->getInputName(portId);
+		});
+		return enabled ? bufferedName : "<Disabled>";
 	}
 };
 
@@ -49,13 +54,19 @@ struct MidiScriptEnginePortInfo : PortInfo {
 struct MidiScriptEngineParamQuantity : ParamQuantity {
 	bool enabled;
 	MidiScriptEngine* se;
+	std::string bufferedLabel;
+	std::string bufferedDisplayValue;
 
 	std::string getLabel() override {
-		return enabled ? se->getParamName(paramId) : "";
+		return enabled ? bufferedLabel : "";
 	}
 	std::string getDisplayValueString() override {
 		if (enabled) {
-			std::string s = se->getParamFormatValue(paramId);
+			se->runAsync([=] {
+				bufferedLabel = se->getParamName(paramId);
+				bufferedDisplayValue = se->getParamFormatValue(paramId);
+			});
+			std::string s = bufferedDisplayValue;
 			return !s.empty() ? s : ParamQuantity::getDisplayValueString();
 		}
 		else {

@@ -43,6 +43,10 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		}
 	}
 
+	void runAsync(std::function<void()> task) override {
+		taskWorker->work(task, APP);
+	}
+
 	void loadScript(const char* script) override {
 		if (js != NULL) {
 			jsMap.erase(js);
@@ -211,14 +215,14 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 
 	void process() override {
 		if (js && midiInQueue.size() > 0) {
-			taskWorker->work([this]() {
+			runAsync([this]() {
 				while (!midiInQueue.empty()) {
 					auto t = midiInQueue.shift();
 					int midiPort = std::get<0>(t);
 					midi::Message msg = std::get<1>(t);
 					process(midiPort, msg);
 				}
-			}, APP);
+			});
 		}
 	}
 
