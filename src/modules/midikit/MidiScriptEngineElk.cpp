@@ -218,7 +218,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 					midi::Message msg = std::get<1>(t);
 					process(midiPort, msg);
 				}
-			});
+			}, APP);
 		}
 	}
 
