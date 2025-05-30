@@ -1,5 +1,5 @@
-#include "MidiKit.h"
-#include "MidiKitElk.cpp"
+#include "MidiScriptEngine.h"
+#include "MidiScriptEngineElk.cpp"
 #include "../../components/Knobs.hpp"
 #include "../../components/MidiWidget.hpp"
 #include "../../components/LogDisplay.hpp"
@@ -45,7 +45,7 @@ struct MidiOutput : midi::Output {
 		channel = -1;
 	}
 
-	void send(Message& msg, uint64_t tick) {
+	void send(midi::Message& msg, uint64_t tick) {
 		if (tick != 0) {
 			TickSchedule s;
 			s.msg = msg;
@@ -94,27 +94,6 @@ struct MidiOutput : midi::Output {
 	}
 };
 
-struct ScriptEnginePortInfo : PortInfo {
-	bool enabled;
-	ScriptEngine** se;
-
-	std::string getName() override {
-		return enabled ? (*se)->getInputName(portId) : "<Disabled>";
-	}
-};
-
-struct ScriptEngineParamQuantity : ParamQuantity {
-	bool enabled;
-	ScriptEngine** se;
-
-	std::string getLabel() override {
-		return enabled ? (*se)->getParamName(paramId) : "";
-	}
-	std::string getDisplayValueString() override {
-		return enabled ? (*se)->getParamFormatValue(paramId) : "<Disabled>";
-	}
-};
-
 
 struct MidiKitModule : Module {
 	enum ParamIds {
@@ -143,7 +122,6 @@ struct MidiKitModule : Module {
 	/** [Stored to Json] */
 	std::string script = "";
 
-	ScriptEngine* se;
 	dsp::RingBuffer<std::tuple<LOG_FORMAT, float, std::string>, 512> midiLogMessages;
 
 	dsp::RingBuffer<int, 8> overlayQueue;
@@ -157,22 +135,73 @@ struct MidiKitModule : Module {
 	uint64_t trigTick;
 	float sampleRate;
 
+
+	struct MidiKitScriptEngineElk : MidiScript::Elk::MidiScriptEngineElk {
+		MidiKitModule* module;
+
+		MidiKitScriptEngineElk() {
+			inputCount = 4;
+			trigCount = 1;
+			paramCount = 4;
+			midiInputCount = 1;
+			midiOutputCount = 1;
+		}
+
+		void writeLog(std::string log) override {
+			float timestamp = float(module->sample) / module->sampleRate;
+			module->midiLogMessages.push(std::make_tuple(LOG_FORMAT::TIMESTAMP, timestamp, log));
+		};
+
+		void writeOverlay(std::string s1, std::string s2, std::string s3) override {
+			module->overlayQueue.push(0);
+			module->overlayMessage = std::make_tuple(s1, s2, s3);
+		};
+
+		void enableInput(int i) override {
+			reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(module->inputInfos[i])->enabled = true;
+		};
+
+		float getInputVoltage(int i, uint8_t ch) override {
+			if (reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(module->inputInfos[i])->enabled)
+				return module->inputs[INPUT + i].getVoltage(ch);
+			else
+				return 0.f;
+		};
+
+		float getTrigVoltage(int i) override {
+			return module->inputs[INPUT_TRIG + i].getVoltage();
+		};
+
+		uint64_t getTrigTicks(int i) override {
+			return module->trigTick;
+		};
+
+		void enableParam(int i) override {
+			reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(module->paramQuantities[i])->enabled = true;
+		};
+
+		float getParamValue(int i) override {
+			if (reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(module->paramQuantities[i])->enabled)
+				return module->params[PARAM + i].getValue();
+			else
+				return 0.f;
+		};
+	};
+
+	MidiKitScriptEngineElk se;
+
 	MidiKitModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configInput(INPUT_TRIG, "Trigger");
 		for (int i = 0; i < 4; i++) {
-			configInput<ScriptEnginePortInfo>(INPUT + i)->se = &se;
-			configParam<ScriptEngineParamQuantity>(PARAM + i, 0.f, 1.f, 0.f)->se = &se;
+			configInput<MidiScript::MidiScriptEnginePortInfo>(INPUT + i)->se = &se;
+			configParam<MidiScript::MidiScriptEngineParamQuantity>(PARAM + i, 0.f, 1.f, 0.f)->se = &se;
 		}
 
 		processDivider.setDivision(8);
-		initEngine();
+		se.module = this;
 		onReset();
-	}
-
-	~MidiKitModule() {
-		delete se;
 	}
 
 	void onReset() override {
@@ -181,56 +210,11 @@ struct MidiKitModule : Module {
 		sample = 0;
 		trigTick = 0;
 		for (int i = 0; i < 4; i++) {
-			reinterpret_cast<ScriptEnginePortInfo*>(inputInfos[i])->enabled = false;
-			reinterpret_cast<ScriptEngineParamQuantity*>(paramQuantities[i])->enabled = false;
+			reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(inputInfos[i])->enabled = false;
+			reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[i])->enabled = false;
 		}
 		midiLogMessages.push(std::make_tuple(LOG_FORMAT::RESET, 0.f, ""));
-		se->loadScript("");
-	}
-
-	void initEngine() {
-		se = new Elk::ElkScriptEngine;
-		se->inputCount = 4;
-		se->trigCount = 1;
-		se->paramCount = 4;
-		se->midiInputCount = 1;
-		se->midiOutputCount = 1;
-
-		se->logCallback = [=](std::string log) {
-			float timestamp = float(sample) / sampleRate;
-			midiLogMessages.push(std::make_tuple(LOG_FORMAT::TIMESTAMP, timestamp, log));
-		};
-		se->overlayCallback = [=](std::string s1, std::string s2, std::string s3) {
-			overlayQueue.push(0);
-			overlayMessage = std::make_tuple(s1, s2, s3);
-		};
-
-		se->inputEnable = [=](int i) {
-			reinterpret_cast<ScriptEnginePortInfo*>(inputInfos[i])->enabled = true;
-		};
-		se->inputGetVoltage = [=](int i, uint8_t ch) {
-			if (reinterpret_cast<ScriptEnginePortInfo*>(inputInfos[i])->enabled)
-				return inputs[INPUT + i].getVoltage(ch);
-			else
-				return 0.f;
-		};
-
-		se->trigGetVoltage = [=](int i) {
-			return inputs[INPUT_TRIG + i].getVoltage();
-		};
-		se->trigGetTicks = [=](int i) {
-			return trigTick;
-		};
-
-		se->paramEnable = [=](int i) {
-			reinterpret_cast<ScriptEngineParamQuantity*>(paramQuantities[i])->enabled = true;
-		};
-		se->paramGetValue = [=](int i) {
-			if (reinterpret_cast<ScriptEngineParamQuantity*>(paramQuantities[i])->enabled)
-				return params[PARAM + i].getValue();
-			else
-				return 0.f;
-		};
+		se.loadScript("");
 	}
 
 	void onSampleRateChange() override {
@@ -256,13 +240,13 @@ struct MidiKitModule : Module {
 		if (processDivider.process()) {
 			midi::Message msg;
 			while (midiInput.tryPop(&msg, args.frame)) {
-				se->processInMessage(0, msg);
+				se.processInMessage(0, msg);
 			}
 
-			se->process();
+			se.process();
 
 			int midiPort;
-			while (se->processOutMessage(midiPort, msg)) {
+			while (se.processOutMessage(midiPort, msg)) {
 				midiOutput.send(msg, msg.frame);
 			}
 			
@@ -300,11 +284,11 @@ struct MidiKitModule : Module {
 		sample = 0;
 		trigTick = 0;
 		for (int i = 0; i < 4; i++) {
-			reinterpret_cast<ScriptEnginePortInfo*>(inputInfos[i])->enabled = false;
-			reinterpret_cast<ScriptEngineParamQuantity*>(paramQuantities[i])->enabled = false;
+			reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(inputInfos[i])->enabled = false;
+			reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[i])->enabled = false;
 		}
 		midiLogMessages.push(std::make_tuple(LOG_FORMAT::RESET, 0.f, ""));
-		se->loadScript(script.c_str());
+		se.loadScript(script.c_str());
 	}
 };
 

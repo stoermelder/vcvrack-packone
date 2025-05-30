@@ -1,13 +1,13 @@
-#include "MidiKit.h"
+#include "MidiScriptEngine.h"
 #include "elk.h"
 #include "../../helpers/TaskWorker.hpp"
 #include <iomanip>
 
 namespace StoermelderPackOne {
-namespace MidiKit {
+namespace MidiScript {
 namespace Elk {
 
-struct ElkScriptEngine : ScriptEngine {
+struct MidiScriptEngineElk : MidiScriptEngine {
 	struct MessageEx {
 		int midiPort = 0;
 		Message msg;
@@ -16,7 +16,7 @@ struct ElkScriptEngine : ScriptEngine {
 		uint64_t tick = 0;
 	};
 
-	static std::map<struct js*, ElkScriptEngine*> jsMap;
+	static std::map<struct js*, MidiScriptEngineElk*> jsMap;
 
 	char jsMem[64 * 1024];
 	struct js* js = NULL;
@@ -134,14 +134,14 @@ struct ElkScriptEngine : ScriptEngine {
 
 			jsval_t r = js_eval(js, script, ~0U);
 			if (js_type(r) == JS_ERR) {
-				logCallback(js_str(js, r));
+				writeLog(js_str(js, r));
 			}
 			else {
-				logCallback("script loaded");
+				writeLog("script loaded");
 			}
 		}
 		else {
-			logCallback("no script");
+			writeLog("no script");
 		}
 	}
 
@@ -182,7 +182,7 @@ struct ElkScriptEngine : ScriptEngine {
 
 			jsval_t r = js_eval(js, string::f("processMidi(%i, 0)", midiPort + 1).c_str(), ~0U);
 			if (js_type(r) == JS_ERR) {
-				logCallback(js_str(js, r));
+				writeLog(js_str(js, r));
 			}
 
 			for (size_t i = 0; i < msgCount; i++) {
@@ -235,27 +235,27 @@ struct ElkScriptEngine : ScriptEngine {
 	static jsval_t js_log(struct js* js, jsval_t* args, int nargs) {
 		if (!js_chkargs(args, nargs, "s")) return js_mkerr(js, "log: bad args");
 		const char* log = js_getstr(js, args[0], NULL);
-		jsMap[js]->logCallback(log);
+		jsMap[js]->writeLog(log);
 		return js_mknull();
 	}
 
 	static jsval_t js_overlay(struct js* js, jsval_t* args, int nargs) {
 		if (js_chkargs(args, nargs, "s")) {
 			const char* s1 = js_getstr(js, args[0], NULL);
-			jsMap[js]->overlayCallback(s1, "", "");
+			jsMap[js]->writeOverlay(s1, "", "");
 			return js_mknull();
 		}
 		if (js_chkargs(args, nargs, "ss")) {
 			const char* s1 = js_getstr(js, args[0], NULL);
 			const char* s2 = js_getstr(js, args[1], NULL);
-			jsMap[js]->overlayCallback(s1, s2, "");
+			jsMap[js]->writeOverlay(s1, s2, "");
 			return js_mknull();
 		}
 		if (js_chkargs(args, nargs, "sss")) {
 			const char* s1 = js_getstr(js, args[0], NULL);
 			const char* s2 = js_getstr(js, args[1], NULL);
 			const char* s3 = js_getstr(js, args[2], NULL);
-			jsMap[js]->overlayCallback(s1, s2, s3);
+			jsMap[js]->writeOverlay(s1, s2, s3);
 			return js_mknull();
 		}
 		return js_mkerr(js, "overlay: bad args");
@@ -344,7 +344,7 @@ struct ElkScriptEngine : ScriptEngine {
 		if (!js_chkargs(args, nargs, "d")) return js_mkerr(js, "input.enable: bad args");
 		int i = js_getnum(args[0]);
 		if (i < 1 || i > jsMap[js]->inputCount) return js_mkerr(js, "input.enable: bad index");
-		jsMap[js]->inputEnable(i - 1);
+		jsMap[js]->enableInput(i - 1);
 		return js_mknull();
 	}
 
@@ -355,7 +355,7 @@ struct ElkScriptEngine : ScriptEngine {
 		uint8_t ch = 0;
 		if (nargs == 2) ch = js_getnum(args[1]);
 		if (ch < 1 || ch > PORT_MAX_CHANNELS) return js_mkerr(js, "input.getVoltage: bad channel");
-		return js_mknum(jsMap[js]->inputGetVoltage(i - 1, ch - 1));
+		return js_mknum(jsMap[js]->getInputVoltage(i - 1, ch - 1));
 	}
 
 	static jsval_t js_input_isHigh(struct js* js, jsval_t* args, int nargs) {
@@ -365,7 +365,7 @@ struct ElkScriptEngine : ScriptEngine {
 		uint8_t ch = 0;
 		if (nargs == 2) ch = js_getnum(args[1]);
 		if (ch < 1 || ch > PORT_MAX_CHANNELS) return js_mkerr(js, "input.isHigh: bad channel");
-		return js_mkbool(jsMap[js]->inputGetVoltage(i - 1, ch - 1) > 0.7f);
+		return js_mkbool(jsMap[js]->getInputVoltage(i - 1, ch - 1) > 0.7f);
 	}
 
 	static jsval_t js_input_isLow(struct js* js, jsval_t* args, int nargs) {
@@ -375,44 +375,44 @@ struct ElkScriptEngine : ScriptEngine {
 		uint8_t ch = 0;
 		if (nargs == 2) ch = js_getnum(args[1]);
 		if (ch < 1 || ch > PORT_MAX_CHANNELS) return js_mkerr(js, "input.isLow: bad channel");
-		return js_mkbool(jsMap[js]->inputGetVoltage(i - 1, ch - 1) < 0.7f);
+		return js_mkbool(jsMap[js]->getInputVoltage(i - 1, ch - 1) < 0.7f);
 	}
 
 	// trig
 
 	static jsval_t js_trig_getTicks(struct js* js, jsval_t* args, int nargs) {
 		if (nargs == 0) {
-			return js_mknum(jsMap[js]->trigGetTicks(0));
+			return js_mknum(jsMap[js]->getTrigTicks(0));
 		}
 		else {
 			if (!js_chkargs(args, nargs, "d")) return js_mkerr(js, "trig.getTicks: bad args");
 			int i = js_getnum(args[0]);
 			if (i < 1 || i > jsMap[js]->trigCount) return js_mkerr(js, "trig.getTicks: bad index");
-			return js_mknum(jsMap[js]->trigGetTicks(i - 1));
+			return js_mknum(jsMap[js]->getTrigTicks(i - 1));
 		}
 	}
 
 	static jsval_t js_trig_isHigh(struct js* js, jsval_t* args, int nargs) {
 		if (nargs == 0) {
-			return js_mkbool(jsMap[js]->trigGetVoltage(0) > 0.7f);
+			return js_mkbool(jsMap[js]->getTrigVoltage(0) > 0.7f);
 		}
 		else {
 			if (!js_chkargs(args, nargs, "d")) return js_mkerr(js, "trig.isHigh: bad args");
 			int i = js_getnum(args[0]);
 			if (i < 1 || i > jsMap[js]->trigCount) return js_mkerr(js, "trig.isHigh: bad index");
-			return js_mkbool(jsMap[js]->trigGetVoltage(i - 1) > 0.7f);
+			return js_mkbool(jsMap[js]->getTrigVoltage(i - 1) > 0.7f);
 		}
 	}
 
 	static jsval_t js_trig_isLow(struct js* js, jsval_t* args, int nargs) {
 		if (nargs == 0) {
-			return js_mkbool(jsMap[js]->trigGetVoltage(0) < 0.7f);
+			return js_mkbool(jsMap[js]->getTrigVoltage(0) < 0.7f);
 		}
 		else {
 			if (!js_chkargs(args, nargs, "d")) return js_mkerr(js, "trig.isLow: bad args");
 			int i = js_getnum(args[0]);
 			if (i < 1 || i > jsMap[js]->trigCount) return js_mkerr(js, "trig.isLow: bad index");
-			return js_mkbool(jsMap[js]->trigGetVoltage(i - 1) < 0.7f);
+			return js_mkbool(jsMap[js]->getTrigVoltage(i - 1) < 0.7f);
 		}
 	}
 
@@ -422,7 +422,7 @@ struct ElkScriptEngine : ScriptEngine {
 		if (!js_chkargs(args, nargs, "d")) return js_mkerr(js, "param.enable: bad args");
 		int i = js_getnum(args[0]);
 		if (i < 1 || i > jsMap[js]->paramCount) return js_mkerr(js, "param.enable: bad index");
-		jsMap[js]->paramEnable(i - 1);
+		jsMap[js]->enableParam(i - 1);
 		return js_mknull();
 	}
 
@@ -430,7 +430,7 @@ struct ElkScriptEngine : ScriptEngine {
 		if (!js_chkargs(args, nargs, "d")) return js_mkerr(js, "param.getValue: bad args");
 		int i = js_getnum(args[0]);
 		if (i < 1 || i > jsMap[js]->paramCount) return js_mkerr(js, "param.getValue: bad index");
-		return js_mknum(jsMap[js]->paramGetValue(i - 1));
+		return js_mknum(jsMap[js]->getParamValue(i - 1));
 	}
 
 	// midi
@@ -810,7 +810,7 @@ struct ElkScriptEngine : ScriptEngine {
 	static jsval_t js_midiOut_sendAfterTrigger(struct js* js, jsval_t* args, int nargs) {
 		if (nargs == 2 || nargs == 3) {
 			return js_midiOut(js, args, nargs, "d", "sendAfterTrigger", [js](jsval_t* args, MessageEx& s) {
-				int64_t currentTicks = jsMap[js]->trigGetTicks(0);
+				int64_t currentTicks = jsMap[js]->getTrigTicks(0);
 				int ticks = js_getnum(args[0]);
 				s.send = true;
 				s.tick = currentTicks + ticks;
@@ -821,7 +821,7 @@ struct ElkScriptEngine : ScriptEngine {
 			return js_midiOut(js, args, nargs, "dd", "sendAfterTrigger", [js](jsval_t* args, MessageEx& s) {
 				int trigPort = js_getnum(args[0]);
 				if (trigPort < 1 || trigPort > jsMap[js]->trigCount) return js_mkerr(js, "midiOut.sendAfterTrigger: bad trigInput index");
-				int64_t currentTicks = jsMap[js]->trigGetTicks(trigPort - 1);
+				int64_t currentTicks = jsMap[js]->getTrigTicks(trigPort - 1);
 				int ticks = js_getnum(args[1]);
 				s.send = true;
 				s.tick = currentTicks + ticks;
@@ -836,8 +836,8 @@ struct ElkScriptEngine : ScriptEngine {
 // std::map is not thread-safe by default but new script engines are only created by inserting a new module
 // which needs all Rack's engine-threads to synchronize anyway. Access to each js* is not "const" but
 // only done from one thread for each js* - thread-safety should no problem here.
-std::map<struct js*, ElkScriptEngine*> ElkScriptEngine::jsMap;
+std::map<struct js*, MidiScriptEngineElk*> MidiScriptEngineElk::jsMap;
 
 } // namespace Elk
-} // namespace MidiKit
+} // namespace MidiScript
 } // namespace StoermelderPackOne
