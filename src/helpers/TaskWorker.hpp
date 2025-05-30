@@ -35,9 +35,19 @@ struct TaskWorker {
 
 	void processWorker() {
 		contextSet(workerContext);
+
+#if defined ARCH_LIN
 		if (name != "") {
 			pthread_setname_np(pthread_self(), name.c_str());
 		}
+#elif defined ARCH_MAC
+	// Not supported (yet) on Mac
+#elif defined ARCH_WIN
+		if (name != "") {
+			pthread_setname_np(pthread_self(), name.c_str());
+		}
+#endif
+
 		while (true) {
 			std::unique_lock<std::mutex> lock(workerMutex);
 			workerCondVar.wait(lock, std::bind(&TaskWorker::workerDoProcess, this));
