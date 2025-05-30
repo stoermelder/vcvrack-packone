@@ -40,7 +40,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		}
 		else {
 			taskWorker = taskWorkerWeakPtr.lock();
-		}	
+		}
 	}
 
 	void loadScript(const char* script) override {
@@ -60,13 +60,18 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 			//	 */
 			//
 
+			std::string str = script;
+			// remove " * " trailing in comment lines
+			str = std::regex_replace(str, std::regex(R"(\n\s+\*\s+)"), "");
+			// remove remaining newlines
+			str = std::regex_replace(str, std::regex(R"(\n)"), "");
 			// match /** ... */ on the beginning of the string
-			const std::regex header_regex(R"(^\/\*\*(.|\n)*\*\/.*$)", std::regex_constants::ECMAScript | std::regex_constants::__multiline);
-			std::cmatch m1;
-			if (std::regex_search(script, m1, header_regex)) {
-				std::string header = m1[0].str();
+			const std::regex header_regex(R"(^\/\*\*(.*)\*\/.*$)");
+			std::smatch m1;
+			if (std::regex_search(str, m1, header_regex)) {
+				std::string header = m1[1].str();
 				// match items in header according to "@topic text"
-				const std::regex at_regex(R"(@([a-z]+)\s(.*))", std::regex_constants::ECMAScript | std::regex_constants::__multiline);
+				const std::regex at_regex(R"(@([a-z]+)\s([^@]*))");
 				auto words_begin = std::sregex_iterator(header.begin(), header.end(), at_regex);
 				auto words_end = std::sregex_iterator();
 				for (std::sregex_iterator i = words_begin; i != words_end; ++i) {
@@ -74,7 +79,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 					std::string topic = m2[1].str();
 					std::string text = m2[2].str();
 					if (topic == "author") {
-						writeLog(string::f("Author: %s", text), false);
+						writeLog(string::f("Author: %s", text.c_str()), false);
 					}
 					if (topic == "description") {
 						writeLog(text, false);
@@ -374,11 +379,11 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 	static jsval_t js_number_toString(struct js* js, jsval_t* args, int nargs) {
 		if (!js_chkargs(args, nargs, "d")) return js_mkerr(js, "number.toString: bad args");
 		float f = js_getnum(args[0]);
-		char str[7];
+		char str[8];
 		if (ceilf(f) == f)
-			sprintf(str, "%i", (int)f);
+			snprintf(str, 8, "%i", (int)f);
 		else
-			sprintf(str, "%f", f);
+			snprintf(str, 8, "%f", f);
 		return js_mkstr(js, str, 6);
 	}
 
@@ -841,7 +846,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 	}
 
 	static jsval_t js_midiOut_sendAfterMs(struct js* js, jsval_t* args, int nargs) {
-		return js_midiOut(js, args, nargs, "d", "sendAfterMs", [nargs](jsval_t* args, MessageEx& s) {
+		return js_midiOut(js, args, nargs, "d", "sendAfterMs", [](jsval_t* args, MessageEx& s) {
 			double ms = js_getnum(args[0]);
 			int64_t currentFrame = APP->engine->getFrame();
 			int64_t frame = ms / 1000.f / APP->engine->getSampleTime();
