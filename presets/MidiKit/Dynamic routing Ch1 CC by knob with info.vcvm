@@ -1,0 +1,26 @@
+{
+  "plugin": "Stoermelder-P1",
+  "model": "MidiKit",
+  "version": "2.0.0",
+  "params": [
+    {
+      "value": 0.62666672468185425,
+      "id": 0
+    },
+    {
+      "value": 0.0,
+      "id": 1
+    },
+    {
+      "value": 0.0,
+      "id": 2
+    },
+    {
+      "value": 0.0,
+      "id": 3
+    }
+  ],
+  "data": {
+    "script": "/**\n * @target stoermelder MIDI-KIT\n * @engine Elk\n * @author stoermelder\n * @description Routes incoming CC messages on MIDI channel 1 to a MIDI channel set by parameter 1 on the panel\n */\n\nparam.enable(1);\n\nparam.getName = function(port) {\n    if (port === 1) return \"MIDI Channel\";\n    return \"\";\n};\n\nparam.getValueFormat = function(port) {\n    if (port === 1) return number.toString(number.ceil(param.getValue(1) * 16));\n    return number.toString(param.getValue(i));\n};\n\nlet processMidi = function(midiPort, msg) {\n    if (midi.isCc(msg) && midi.getChannel(msg) === 1) {\n        let ch = number.ceil(param.getValue(1) * 16);\n        midi.setChannel(msg, ch);\n    }\n    midiOut.send(msg);\n};"
+  }
+}

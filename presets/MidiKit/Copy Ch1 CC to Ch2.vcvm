@@ -1,0 +1,26 @@
+{
+  "plugin": "Stoermelder-P1",
+  "model": "MidiKit",
+  "version": "2.0.0",
+  "params": [
+    {
+      "value": 0.0,
+      "id": 0
+    },
+    {
+      "value": 0.0,
+      "id": 1
+    },
+    {
+      "value": 0.0,
+      "id": 2
+    },
+    {
+      "value": 0.0,
+      "id": 3
+    }
+  ],
+  "data": {
+    "script": "/**\n * @target stoermelder MIDI-KIT\n * @engine Elk\n * @author stoermelder\n * @description Duplicates all CC messages on channel 1 on channel 2\n */\n\nlet processMidi = function(midiPort, msg) {\n    if (midi.getChannel(msg) === 1) {\n        if (midi.isCc(msg)) {\n            let msg2 = midi.create();\n            midi.setCc(msg2, 2, midi.getNote(msg), midi.getValue(msg));\n            midiOut.send(msg2);\n        }\n    }\n    midiOut.send(msg);\n};"
+  }
+}
