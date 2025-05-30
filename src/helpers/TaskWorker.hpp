@@ -3,6 +3,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <thread>
+#include <pthread.h>
 
 namespace StoermelderPackOne {
 
@@ -15,10 +16,12 @@ struct TaskWorker {
 	bool workerDoProcess = false;
 	int workerPreset = -1;
 	std::function<void()> workerTask;
+	std::string name;
 
-	TaskWorker() {
+	TaskWorker(std::string name = "") {
 		workerContext = contextGet();
 		worker = new std::thread(&TaskWorker::processWorker, this);
+		this->name = name;
 	}
 
 	~TaskWorker() {
@@ -32,6 +35,9 @@ struct TaskWorker {
 
 	void processWorker() {
 		contextSet(workerContext);
+		if (name != "") {
+			pthread_setname_np(pthread_self(), name.c_str());
+		}
 		while (true) {
 			std::unique_lock<std::mutex> lock(workerMutex);
 			workerCondVar.wait(lock, std::bind(&TaskWorker::workerDoProcess, this));
