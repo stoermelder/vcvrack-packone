@@ -18,6 +18,8 @@ struct TaskWorker {
 	std::function<void()> workerTask;
 	std::string name;
 
+	dsp::RingBuffer<std::tuple<std::function<void()>, Context*>, 32> workQueue;
+
 	TaskWorker(std::string name = "") {
 		workerContext = contextGet();
 		worker = new std::thread(&TaskWorker::processWorker, this);
@@ -34,8 +36,6 @@ struct TaskWorker {
 	}
 
 	void processWorker() {
-		contextSet(workerContext);
-
 #if defined ARCH_LIN
 		if (name != "") {
 			pthread_setname_np(pthread_self(), name.c_str());
@@ -52,13 +52,25 @@ struct TaskWorker {
 			std::unique_lock<std::mutex> lock(workerMutex);
 			workerCondVar.wait(lock, std::bind(&TaskWorker::workerDoProcess, this));
 			if (!workerIsRunning) return;
-			workerTask();
+			while (!workQueue.empty()) {
+				auto t = workQueue.shift();
+				std::function<void()> task = std::get<0>(t);
+				Context* context = std::get<1>(t);
+				contextSet(context);
+				task();
+			}
 			workerDoProcess = false;
 		}
 	}
 
 	void work(std::function<void()> task) {
-		workerTask = task;
+		workQueue.push(std::make_tuple(task, workerContext));
+		workerDoProcess = true;
+		workerCondVar.notify_one();
+	}
+
+	void work(std::function<void()> task, Context* context) {
+		workQueue.push(std::make_tuple(task, context));
 		workerDoProcess = true;
 		workerCondVar.notify_one();
 	}
