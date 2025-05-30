@@ -50,156 +50,167 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 			// no need for free() here as "js" completely operates in jsMem
 		}
 
-		if (script[0] != '\0') {
-			// Analyze file header of this pattern:
-			//	/**
-			//	 * @target stoermelder MIDI-KIT
-			//	 * @engine Elk
-			//	 * @author stoermelder
-			//	 * @description Routes incoming CC messages on MIDI channel 1 to a MIDI channel set by parameter 1 on the panel
-			//	 */
-			//
+		if (script[0] == '\0') {
+			writeLog("No script", false);
+			return;
+		}
 
-			std::string str = script;
-			// remove " * " trailing in comment lines
-			str = std::regex_replace(str, std::regex(R"(\n\s+\*\s+)"), "");
-			// remove remaining newlines
-			str = std::regex_replace(str, std::regex(R"(\n)"), "");
-			// match /** ... */ on the beginning of the string
-			const std::regex header_regex(R"(^\/\*\*(.*)\*\/.*$)");
-			std::smatch m1;
-			if (std::regex_search(str, m1, header_regex)) {
-				std::string header = m1[1].str();
-				// match items in header according to "@topic text"
-				const std::regex at_regex(R"(@([a-z]+)\s([^@]*))");
-				auto words_begin = std::sregex_iterator(header.begin(), header.end(), at_regex);
-				auto words_end = std::sregex_iterator();
-				for (std::sregex_iterator i = words_begin; i != words_end; ++i) {
-					std::smatch m2 = *i;
-					std::string topic = m2[1].str();
-					std::string text = m2[2].str();
-					if (topic == "author") {
-						writeLog(string::f("Author: %s", text.c_str()), false);
-					}
-					if (topic == "description") {
-						writeLog(text, false);
-					}
-				}
-			}
+		// Analyze file header of this pattern:
+		//	/**
+		//	 * @target stoermelder MIDI-KIT
+		//	 * @engine Elk
+		//	 * @author stoermelder
+		//	 * @description Routes incoming CC messages on MIDI channel 1 to a MIDI channel set by parameter 1 on the panel
+		//	 */
+		//
 
-			js = js_create(jsMem, sizeof(jsMem));
-			jsMap[js] = this;
-
-			// global functions
-			js_set(js, js_glob(js), "log", js_mkfun(js_log));									// void log(string)
-			js_set(js, js_glob(js), "overlay", js_mkfun(js_overlay));							// void overlay(string)
-
-			// number
-			jsval_t _number = js_mkobj(js);														// let number = {}
-			js_set(js, js_glob(js), "number", _number);
-			js_set(js, _number, "abs", js_mkfun(js_number_abs));
-			js_set(js, _number, "ceil", js_mkfun(js_number_ceil));
-			js_set(js, _number, "crossfade", js_mkfun(js_number_crossfade));
-			js_set(js, _number, "floor", js_mkfun(js_number_floor));
-			js_set(js, _number, "max", js_mkfun(js_number_max));
-			js_set(js, _number, "min", js_mkfun(js_number_min));
-			js_set(js, _number, "random", js_mkfun(js_number_random));
-			js_set(js, _number, "rescale", js_mkfun(js_number_rescale));
-			js_set(js, _number, "toString", js_mkfun(js_number_toString));
-
-			// input
-			jsval_t _input = js_eval(js,														// let input = {}
-				"let input = {"
-				"	getName: function(i) { return \"Port \" + number.toString(i); }"
-				"};"
-				"input;", ~0U);
-			js_set(js, _input, "enable", js_mkfun(js_input_enable));							// void input.enable(int)
-			js_set(js, _input, "getVoltage", js_mkfun(js_input_getVoltage));					// float input.getVoltage(int, [int])
-			js_set(js, _input, "isHigh", js_mkfun(js_input_isHigh));							// bool input.isHigh(int, [int])
-			js_set(js, _input, "isLow", js_mkfun(js_input_isLow));								// bool input.isLow(int, [int])
-
-			// trig
-			jsval_t _trig = js_mkobj(js);
-			js_set(js, js_glob(js), "trig", _trig);												// let trig = {}
-			js_set(js, _trig, "getTicks", js_mkfun(js_trig_getTicks));							// bool trig.getTicks(int)
-			js_set(js, _trig, "isHigh", js_mkfun(js_trig_isHigh));								// bool trig.isHigh(int)
-			js_set(js, _trig, "isLow", js_mkfun(js_trig_isLow));								// bool trig.isLow(int)
-
-			// param
-			jsval_t _param = js_eval(js,
-				"let param = {"
-				"	getName: function(i) { return \"Param \" + number.toString(i); },"
-				"	getValueFormat: function(i) { return \"\"; }"
-				"};"
-				"param;", ~0U);
-			js_set(js, _param, "enable", js_mkfun(js_param_enable));							// void param.enable(int)
-			js_set(js, _param, "getValue", js_mkfun(js_param_getValue));						// float param.getValue(int)
-
-			// midi
-			jsval_t _midi = js_mkobj(js);
-			js_set(js, js_glob(js), "midi", _midi);												// let midi = {}
-			js_set(js, _midi, "create", js_mkfun(js_midi_create));								// let msg = midi.create()
-			js_set(js, _midi, "createNRPN", js_mkfun(js_midi_createNrpn));						// let nrpn = midi.createNrpn()
-			js_set(js, _midi, "getChannel", js_mkfun(js_midi_getChannel));						// int midi.getChannel(msg)
-			js_set(js, _midi, "getLength", js_mkfun(js_midi_getLength));						// int midi.getLength(msg)
-			js_set(js, _midi, "getNote", js_mkfun(js_midi_getNote));							// int midi.getNote(msg)
-			js_set(js, _midi, "getPitchWheel", js_mkfun(js_midi_getPitchWheel));				// int midi.getPitchWheel(msg)
-			//js_set(js, _midi, "getType", js_mkfun(js_midi_getType));							// int midi.getType(msg)
-			js_set(js, _midi, "getSysExData", js_mkfun(js_midi_getSysExData));					// string midi.getSysExData(msg)
-			js_set(js, _midi, "getValue", js_mkfun(js_midi_getValue));							// int midi.getValue(msg)
-			js_set(js, _midi, "isCc", js_mkfun(js_midi_isCc));									// bool midi.isCc(msg)
-			js_set(js, _midi, "isChanPressure", js_mkfun(js_midi_isChanPressure));				// bool midi.isChannelPressure(msg)
-			js_set(js, _midi, "isClock", js_mkfun(js_midi_isClock));							// bool midi.isClock(msg)
-			js_set(js, _midi, "isContinue", js_mkfun(js_midi_isContinue));						// bool midi.isCcontinue(msg)
-			js_set(js, _midi, "isKeyPressure", js_mkfun(js_midi_isKeyPressure));				// bool midi.isKeyPressure(msg)
-			js_set(js, _midi, "isNoteOff", js_mkfun(js_midi_isNoteOff));						// bool midi.isNoteOff(msg)
-			js_set(js, _midi, "isNoteOn", js_mkfun(js_midi_isNoteOn));							// bool midi.isNoteOn(msg)
-			js_set(js, _midi, "isProgramChange", js_mkfun(js_midi_isProgramChange));			// bool midi.isProgramChange(msg)
-			js_set(js, _midi, "isPitchWheel", js_mkfun(js_midi_isPitchWheel));					// bool midi.isPitchWheel(msg)
-			js_set(js, _midi, "isStart", js_mkfun(js_midi_isStart));							// bool midi.isStart(msg)
-			js_set(js, _midi, "isStop", js_mkfun(js_midi_isStop));								// bool midi.isStop(msg)
-			js_set(js, _midi, "isSysEx", js_mkfun(js_midi_isSysEx));							// bool midi.isSysEx(msg)
-			js_set(js, _midi, "setCc", js_mkfun(js_midi_setCc));								// void midi.setCc(msg, channel, cc, value)
-			js_set(js, _midi, "setCc14bit", js_mkfun(js_midi_setCc14bit));						// void midi.setCc14bit(msg1, msg2, channel, cc, value)
-			js_set(js, _midi, "setChannel", js_mkfun(js_midi_setChannel));						// void midi.setChannel(msg, int)
-			js_set(js, _midi, "setChanPressure", js_mkfun(js_midi_setChanPressure));			// void midi.setChannelPressure(msg, channel, value)
-			js_set(js, _midi, "setKeyPressure", js_mkfun(js_midi_setKeyPressure));				// void midi.setKeyPressure(msg, channel, note, velocity)
-			js_set(js, _midi, "setNote", js_mkfun(js_midi_setNote));							// void midi.setNote(msg, int)
-			js_set(js, _midi, "setNoteOff", js_mkfun(js_midi_setNoteOff));						// void midi.setNoteOff(msg, channel, note)
-			js_set(js, _midi, "setNoteOn", js_mkfun(js_midi_setNoteOn));						// void midi.setNoteOn(msg, channel, note, velocity)
-			js_set(js, _midi, "setNRPN", js_mkfun(js_midi_setNrpn));							// void midi.setNrpn(nrpn, channel, number, value);
-			js_set(js, _midi, "setPitchWheel", js_mkfun(js_midi_setPitchWheel));				// bool midi.setPitchWheel(msg, value)
-			js_set(js, _midi, "setProgramChange", js_mkfun(js_midi_setProgramChange));			// void midi.setProgramChange(msg, channel, prg)
-			//js_set(js, _midi, "setType", js_mkfun(js_midi_setType));							// void midi.setType(msg)
-			js_set(js, _midi, "setSysEx", js_mkfun(js_midi_setSysEx));							// void midi.setSysEx(msg, string)
-			js_set(js, _midi, "setValue", js_mkfun(js_midi_setValue));							// void midi.setValue(msg, int)
-
-			// midiOut
-			jsval_t _midiOut = js_mkobj(js);
-			js_set(js, js_glob(js), "midiOut", _midiOut);										// let midiOut = {}
-			js_set(js, _midiOut, "send", js_mkfun(js_midiOut_send));							// void midiOut.send([midiPort], msg)
-			js_set(js, _midiOut, "sendAfterMs", js_mkfun(js_midiOut_sendAfterMs));				// void midiOut.sendAfterMs([midiPort], msg, ms)
-			js_set(js, _midiOut, "sendAfterTrigger", js_mkfun(js_midiOut_sendAfterTrigger));	// void midiOut.sendAfterTrigger([midiPort], msg, [trigPort], ticks)
-
-			jsval_t r = js_eval(js, script, ~0U);
-			if (js_type(r) == JS_ERR) {
-				writeLog(js_str(js, r));
-			}
-			else {
-				writeLog("Script loaded", false);
+		std::map<std::string, std::string> topics;
+		std::string str = script;
+		// remove " * " trailing in comment lines
+		str = std::regex_replace(str, std::regex(R"(\n\s+\*\s+)"), "");
+		// remove remaining newlines
+		str = std::regex_replace(str, std::regex(R"(\n)"), "");
+		// match /** ... */ on the beginning of the string
+		const std::regex header_regex(R"(^\/\*\*(.*)\*\/.*$)");
+		std::smatch m1;
+		if (std::regex_search(str, m1, header_regex)) {
+			std::string header = m1[1].str();
+			// match items in header according to "@topic text"
+			const std::regex at_regex(R"(@([a-z]+)\s([^@]*))");
+			auto words_begin = std::sregex_iterator(header.begin(), header.end(), at_regex);
+			auto words_end = std::sregex_iterator();
+			for (std::sregex_iterator i = words_begin; i != words_end; ++i) {
+				std::smatch m2 = *i;
+				std::string topic = m2[1].str();
+				std::string text = m2[2].str();
+				topics[topic] = text;
 			}
 		}
+
+		if (topics.find("engine") == topics.end() || topics["engine"] != "Elk") {
+			writeLog("Script is not compatible with MIDI-KIT", false);
+			return;
+		}
+
+		if (topics.find("author") != topics.end()) {
+			writeLog(string::f("Author: %s", topics["author"].c_str()), false);
+		}
+		if (topics.find("description") != topics.end()) {
+			writeLog(topics["description"], false);
+		}
+
+		js = js_create(jsMem, sizeof(jsMem));
+		jsMap[js] = this;
+
+		// global functions
+		js_set(js, js_glob(js), "log", js_mkfun(js_log));									// void log(string)
+		js_set(js, js_glob(js), "overlay", js_mkfun(js_overlay));							// void overlay(string)
+
+		// number
+		jsval_t _number = js_mkobj(js);														// let number = {}
+		js_set(js, js_glob(js), "number", _number);
+		js_set(js, _number, "abs", js_mkfun(js_number_abs));
+		js_set(js, _number, "ceil", js_mkfun(js_number_ceil));
+		js_set(js, _number, "crossfade", js_mkfun(js_number_crossfade));
+		js_set(js, _number, "floor", js_mkfun(js_number_floor));
+		js_set(js, _number, "max", js_mkfun(js_number_max));
+		js_set(js, _number, "min", js_mkfun(js_number_min));
+		js_set(js, _number, "random", js_mkfun(js_number_random));
+		js_set(js, _number, "rescale", js_mkfun(js_number_rescale));
+		js_set(js, _number, "toString", js_mkfun(js_number_toString));
+
+		// input
+		jsval_t _input = js_eval(js,														// let input = {}
+			"let input = {"
+			"	getName: function(i) { return \"Port \" + number.toString(i); }"
+			"};"
+			"input;", ~0U);
+		js_set(js, _input, "enable", js_mkfun(js_input_enable));							// void input.enable(int)
+		js_set(js, _input, "getVoltage", js_mkfun(js_input_getVoltage));					// float input.getVoltage(int, [int])
+		js_set(js, _input, "isHigh", js_mkfun(js_input_isHigh));							// bool input.isHigh(int, [int])
+		js_set(js, _input, "isLow", js_mkfun(js_input_isLow));								// bool input.isLow(int, [int])
+
+		// trig
+		jsval_t _trig = js_mkobj(js);
+		js_set(js, js_glob(js), "trig", _trig);												// let trig = {}
+		js_set(js, _trig, "getTicks", js_mkfun(js_trig_getTicks));							// bool trig.getTicks(int)
+		js_set(js, _trig, "isHigh", js_mkfun(js_trig_isHigh));								// bool trig.isHigh(int)
+		js_set(js, _trig, "isLow", js_mkfun(js_trig_isLow));								// bool trig.isLow(int)
+
+		// param
+		jsval_t _param = js_eval(js,
+			"let param = {"
+			"	getName: function(i) { return \"Param \" + number.toString(i); },"
+			"	getValueFormat: function(i) { return \"\"; }"
+			"};"
+			"param;", ~0U);
+		js_set(js, _param, "enable", js_mkfun(js_param_enable));							// void param.enable(int)
+		js_set(js, _param, "getValue", js_mkfun(js_param_getValue));						// float param.getValue(int)
+
+		// midi
+		jsval_t _midi = js_mkobj(js);
+		js_set(js, js_glob(js), "midi", _midi);												// let midi = {}
+		js_set(js, _midi, "create", js_mkfun(js_midi_create));								// let msg = midi.create()
+		js_set(js, _midi, "createNRPN", js_mkfun(js_midi_createNrpn));						// let nrpn = midi.createNrpn()
+		js_set(js, _midi, "getChannel", js_mkfun(js_midi_getChannel));						// int midi.getChannel(msg)
+		js_set(js, _midi, "getLength", js_mkfun(js_midi_getLength));						// int midi.getLength(msg)
+		js_set(js, _midi, "getNote", js_mkfun(js_midi_getNote));							// int midi.getNote(msg)
+		js_set(js, _midi, "getPitchWheel", js_mkfun(js_midi_getPitchWheel));				// int midi.getPitchWheel(msg)
+		//js_set(js, _midi, "getType", js_mkfun(js_midi_getType));							// int midi.getType(msg)
+		js_set(js, _midi, "getSysExData", js_mkfun(js_midi_getSysExData));					// string midi.getSysExData(msg)
+		js_set(js, _midi, "getValue", js_mkfun(js_midi_getValue));							// int midi.getValue(msg)
+		js_set(js, _midi, "isCc", js_mkfun(js_midi_isCc));									// bool midi.isCc(msg)
+		js_set(js, _midi, "isChanPressure", js_mkfun(js_midi_isChanPressure));				// bool midi.isChannelPressure(msg)
+		js_set(js, _midi, "isClock", js_mkfun(js_midi_isClock));							// bool midi.isClock(msg)
+		js_set(js, _midi, "isContinue", js_mkfun(js_midi_isContinue));						// bool midi.isCcontinue(msg)
+		js_set(js, _midi, "isKeyPressure", js_mkfun(js_midi_isKeyPressure));				// bool midi.isKeyPressure(msg)
+		js_set(js, _midi, "isNoteOff", js_mkfun(js_midi_isNoteOff));						// bool midi.isNoteOff(msg)
+		js_set(js, _midi, "isNoteOn", js_mkfun(js_midi_isNoteOn));							// bool midi.isNoteOn(msg)
+		js_set(js, _midi, "isProgramChange", js_mkfun(js_midi_isProgramChange));			// bool midi.isProgramChange(msg)
+		js_set(js, _midi, "isPitchWheel", js_mkfun(js_midi_isPitchWheel));					// bool midi.isPitchWheel(msg)
+		js_set(js, _midi, "isStart", js_mkfun(js_midi_isStart));							// bool midi.isStart(msg)
+		js_set(js, _midi, "isStop", js_mkfun(js_midi_isStop));								// bool midi.isStop(msg)
+		js_set(js, _midi, "isSysEx", js_mkfun(js_midi_isSysEx));							// bool midi.isSysEx(msg)
+		js_set(js, _midi, "setCc", js_mkfun(js_midi_setCc));								// void midi.setCc(msg, channel, cc, value)
+		js_set(js, _midi, "setCc14bit", js_mkfun(js_midi_setCc14bit));						// void midi.setCc14bit(msg1, msg2, channel, cc, value)
+		js_set(js, _midi, "setChannel", js_mkfun(js_midi_setChannel));						// void midi.setChannel(msg, int)
+		js_set(js, _midi, "setChanPressure", js_mkfun(js_midi_setChanPressure));			// void midi.setChannelPressure(msg, channel, value)
+		js_set(js, _midi, "setKeyPressure", js_mkfun(js_midi_setKeyPressure));				// void midi.setKeyPressure(msg, channel, note, velocity)
+		js_set(js, _midi, "setNote", js_mkfun(js_midi_setNote));							// void midi.setNote(msg, int)
+		js_set(js, _midi, "setNoteOff", js_mkfun(js_midi_setNoteOff));						// void midi.setNoteOff(msg, channel, note)
+		js_set(js, _midi, "setNoteOn", js_mkfun(js_midi_setNoteOn));						// void midi.setNoteOn(msg, channel, note, velocity)
+		js_set(js, _midi, "setNRPN", js_mkfun(js_midi_setNrpn));							// void midi.setNrpn(nrpn, channel, number, value);
+		js_set(js, _midi, "setPitchWheel", js_mkfun(js_midi_setPitchWheel));				// bool midi.setPitchWheel(msg, value)
+		js_set(js, _midi, "setProgramChange", js_mkfun(js_midi_setProgramChange));			// void midi.setProgramChange(msg, channel, prg)
+		//js_set(js, _midi, "setType", js_mkfun(js_midi_setType));							// void midi.setType(msg)
+		js_set(js, _midi, "setSysEx", js_mkfun(js_midi_setSysEx));							// void midi.setSysEx(msg, string)
+		js_set(js, _midi, "setValue", js_mkfun(js_midi_setValue));							// void midi.setValue(msg, int)
+
+		// midiOut
+		jsval_t _midiOut = js_mkobj(js);
+		js_set(js, js_glob(js), "midiOut", _midiOut);										// let midiOut = {}
+		js_set(js, _midiOut, "send", js_mkfun(js_midiOut_send));							// void midiOut.send([midiPort], msg)
+		js_set(js, _midiOut, "sendAfterMs", js_mkfun(js_midiOut_sendAfterMs));				// void midiOut.sendAfterMs([midiPort], msg, ms)
+		js_set(js, _midiOut, "sendAfterTrigger", js_mkfun(js_midiOut_sendAfterTrigger));	// void midiOut.sendAfterTrigger([midiPort], msg, [trigPort], ticks)
+
+		jsval_t r = js_eval(js, script, ~0U);
+		if (js_type(r) == JS_ERR) {
+			writeLog(string::f("Error while loading script: %s", js_str(js, r)), false);
+			js = NULL;
+		}
 		else {
-			writeLog("No script", false);
+			writeLog("Script loaded", false);
 		}
 	}
 
 	void processInMessage(int midiPort, Message& msg) override {
-		midiInQueue.push(std::make_tuple(midiPort, msg));
+		if (js) {
+			midiInQueue.push(std::make_tuple(midiPort, msg));
+		}
 	}
 
 	void process() override {
-		if (midiInQueue.size() > 0) {
+		if (js && midiInQueue.size() > 0) {
 			taskWorker->work([this]() {
 				while (!midiInQueue.empty()) {
 					auto t = midiInQueue.shift();
@@ -212,7 +223,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 	}
 
 	bool processOutMessage(int& midiPort, Message& msg) override {
-		if (!midiOutQueue.empty()) {
+		if (js && !midiOutQueue.empty()) {
 			auto t = midiOutQueue.shift();
 			midiPort = std::get<0>(t);
 			msg = std::get<1>(t);
