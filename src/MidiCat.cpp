@@ -1700,6 +1700,13 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 		return module->textLabel[id];
 	}
 
+	void prependContextMenu(Menu* menu) override {
+		menu->addChild(createSubmenuItem("MIDI-CAT Menu", "", [=](Menu* menu) {
+			ModuleWidget* moduleWidget = APP->scene->rack->getModule(module->getId());
+			moduleWidget->appendContextMenu(menu);
+		}));
+	}
+
 	void appendContextMenu(Menu* menu) override {
 		struct CcModeMenuItem : MenuItem {
 			MidiCatModule* module;
@@ -2460,9 +2467,18 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 	}
 
 	void appendContextMenu(Menu* menu) override {
-		ThemedModuleWidget<MidiCatModule>::appendContextMenu(menu);
-		int sampleRate = int(APP->engine->getSampleRate());
+		int menuSize = menu->children.size();
+		if (menuSize > 0) {
+			menu->addChild(new MenuSeparator());
+		}
+		menu->addChild(createSubmenuItem("MIDI Input", "", [=](Menu* menu) { appendMidiMenu(menu, &module->midiInput); }));
+		menu->addChild(createSubmenuItem("MIDI Output", "", [=](Menu* menu) { appendMidiMenu(menu, &module->midiOutput); }));
 
+		if (menuSize > 0) {
+			ThemedModuleWidget<MidiCatModule>::appendContextMenu(menu);
+		}
+
+		int sampleRate = int(APP->engine->getSampleRate());
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createSubmenuItem("Preset load", "",
 			[=](Menu* menu) {
@@ -2691,14 +2707,6 @@ struct MidiCatXlWidget : MidiCatBaseWidget {
 		if (module) {
 			OverlayMessageWidget::unregisterProvider(mapWidget);
 		}
-	}
-
-	void appendContextMenu(Menu* menu) override {
-		menu->addChild(new MenuSeparator);
-		menu->addChild(createSubmenuItem("MIDI Input", "", [=](Menu* menu) { appendMidiMenu(menu, &module->midiInput); }));
-		menu->addChild(createSubmenuItem("MIDI Output", "", [=](Menu* menu) { appendMidiMenu(menu, &module->midiOutput); }));
-
-		MidiCatBaseWidget::appendContextMenu(menu);
 	}
 };
 

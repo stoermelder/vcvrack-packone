@@ -345,6 +345,13 @@ struct InputChannelMenuItem : MenuItem {
 
 
 struct CVMapChoice : MapModuleChoice<MAX_CHANNELS, CVMapModule> {
+	void prependContextMenu(Menu* menu) override {
+		menu->addChild(createSubmenuItem("CV-MAP Menu", "", [=](Menu* menu) {
+			ModuleWidget* moduleWidget = APP->scene->rack->getModule(module->getId());
+			moduleWidget->appendContextMenu(menu);
+		}));
+	}
+
 	void appendContextMenu(Menu* menu) override {
 		menu->addChild(new MenuSeparator);
 		menu->addChild(construct<InputChannelMenuItem>(&MenuItem::text, "Input channel", &InputChannelMenuItem::module, module, &InputChannelMenuItem::id, id));
@@ -412,10 +419,12 @@ struct CVMapWidget : ThemedModuleWidget<CVMapModule>, ParamWidgetContextExtender
 	}
 
 	void appendContextMenu(Menu* menu) override {
-		ThemedModuleWidget<CVMapModule>::appendContextMenu(menu);
-		CVMapModule* module = dynamic_cast<CVMapModule*>(this->module);
+		if (menu->children.size() > 0) {
+			ThemedModuleWidget<CVMapModule>::appendContextMenu(menu);
+			menu->addChild(new MenuSeparator());
+		}
 
-		menu->addChild(new MenuSeparator());
+		CVMapModule* module = dynamic_cast<CVMapModule*>(this->module);
 		menu->addChild(createBoolPtrMenuItem("Lock parameter changes", "", &module->lockParameterChanges));
 		menu->addChild(createIndexPtrSubmenuItem("Signal input", {"0V..10V", "-5V..5V"}, &module->bipolarInput));
 		menu->addChild(createBoolPtrMenuItem("Audio rate processing", "", &module->audioRate));

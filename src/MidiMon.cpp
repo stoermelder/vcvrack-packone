@@ -56,16 +56,18 @@ struct MidiMonModule : Module {
 	/** [Stored to JSON] */
 	midi::InputQueue midiInput;
 
+	dsp::ClockDivider processDivider;
 	dsp::RingBuffer<std::tuple<LOG_FORMAT, float, std::string>, 512> midiLogMessages;
-	uint64_t sample;
+	bool isProcessing = false;
 
-	std::list<std::tuple<uint64_t, midi::Message>> ccQueue;
+	std::list<midi::Message> ccQueue;
 	int16_t ccNrpnParam[16] = {-1};
 	int16_t ccRpnParam[16] = {-1};
 
 	MidiMonModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+		processDivider.setDivision(512);
 		onReset();
 	}
 
@@ -93,7 +95,9 @@ struct MidiMonModule : Module {
 	}
 
 	void onSampleRateChange() override {
-		if (sample != 0) resetTimestamp();
+		if (isProcessing) {
+			resetTimestamp();
+		}
 	}
 
 	void resetTimestamp() {
@@ -102,19 +106,20 @@ struct MidiMonModule : Module {
 		std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", std::localtime(&now));
 		midiLogMessages.push(std::make_tuple(LOG_FORMAT::TIMESTAMP, 0.f, std::string(buf)));
 		midiLogMessages.push(std::make_tuple(LOG_FORMAT::TIMESTAMP, 0.f, string::f("sample rate %i", int(APP->engine->getSampleRate()))));
-		sample = 0;
 	}
 
 	void process(const ProcessArgs& args) override {
-		midi::Message msg;
-		while (midiInput.tryPop(&msg, args.frame)) {
-			processMidi(msg);
+		isProcessing = true;
+		if (processDivider.process()) {
+			midi::Message msg;
+			while (midiInput.tryPop(&msg, args.frame)) {
+				processMidi(msg);
+			}
 		}
-		sample++;
 	}
 
 	void processMidi(midi::Message& msg) {
-		float timestamp = float(sample) / APP->engine->getSampleRate();
+		float timestamp = float(msg.frame) / APP->engine->getSampleRate();
 		switch (msg.getStatus()) {
 			case 0x9: // note on
 				if (!midiLogMessages.full() && showNoteMsg) {
@@ -232,11 +237,9 @@ struct MidiMonModule : Module {
 
 		// RPN param
 		if (cc == 100 && ccQueue.size() > 0) {
-			std::tuple<uint64_t, midi::Message> prev = ccQueue.back();
-			uint64_t prevSample = std::get<0>(prev);
-			midi::Message prevMsg = std::get<1>(prev);
+			midi::Message prevMsg = ccQueue.back();
 
-			float delta = float(sample - prevSample) * APP->engine->getSampleTime();
+			float delta = float(msg.frame - prevMsg.frame) * APP->engine->getSampleTime();
 			if (prevMsg.getChannel() == ch && prevMsg.getNote() == 101 && delta < 0.1f) {
 				int16_t msb = prevMsg.bytes[2];
 				if (msb == 127 && value == 127) {
@@ -279,11 +282,9 @@ struct MidiMonModule : Module {
 
 		// NRPN param
 		if (cc == 98 && ccQueue.size() > 0) {
-			std::tuple<uint64_t, midi::Message> prev = ccQueue.back();
-			uint64_t prevSample = std::get<0>(prev);
-			midi::Message prevMsg = std::get<1>(prev);
+			midi::Message prevMsg = ccQueue.back();
 
-			float delta = float(sample - prevSample) * APP->engine->getSampleTime();
+			float delta = float(msg.frame - prevMsg.frame) * APP->engine->getSampleTime();
 			if (prevMsg.getChannel() == ch && prevMsg.getNote() == 99 && delta < 0.1f) {
 				int16_t number = int16_t(prevMsg.bytes[2]) * 128 + value;
 				midiLogMessages.push(std::make_tuple(LOG_FORMAT::INDENTED, 0.f, string::f("ch%i nrpn param=%i", ch + 1, number)));
@@ -299,11 +300,9 @@ struct MidiMonModule : Module {
 			// TODO
 		}
 		if (cc == 38 && ccQueue.size() > 0 && (ccNrpnParam[ch] >= 0 || ccRpnParam[ch] >= 0)) {
-			std::tuple<uint64_t, midi::Message> prev = ccQueue.back();
-			uint64_t prevSample = std::get<0>(prev);
-			midi::Message prevMsg = std::get<1>(prev);
+			midi::Message prevMsg = ccQueue.back();
 
-			float delta = float(sample - prevSample) * APP->engine->getSampleTime();
+			float delta = float(msg.frame - prevMsg.frame) * APP->engine->getSampleTime();
 			if (prevMsg.getChannel() == ch && prevMsg.getNote() == 6 && delta < 0.1f) {
 				int16_t value1 = int16_t(prevMsg.bytes[2]) * 128 + value;
 				if (ccRpnParam[ch] >= 0) {
@@ -320,11 +319,9 @@ struct MidiMonModule : Module {
 
 		// 14-bit CC
 		if (32 <= cc && cc < 64 && ccQueue.size() > 0 && !isDataEntry) {
-			std::tuple<uint64_t, midi::Message> prev = ccQueue.back();
-			uint64_t prevSample = std::get<0>(prev);
-			midi::Message prevMsg = std::get<1>(prev);
+			midi::Message prevMsg = ccQueue.back();
 
-			float delta = float(sample - prevSample) * APP->engine->getSampleTime();
+			float delta = float(msg.frame - prevMsg.frame) * APP->engine->getSampleTime();
 			if (ch == prevMsg.getChannel() && cc == prevMsg.getNote() + 32 && delta < 0.1f) {
 				int16_t value1 = int16_t(prevMsg.bytes[2]) * 128 + value;
 				std::string s = string::f("ch%i cc%i 14-bit=%i", ch + 1, prevMsg.getNote(), value1);
@@ -332,7 +329,7 @@ struct MidiMonModule : Module {
 			}
 		}
 
-		ccQueue.push_back(std::make_tuple(sample, msg));
+		ccQueue.push_back(msg);
 		if (ccQueue.size() > 3) {
 			ccQueue.pop_front();
 		}

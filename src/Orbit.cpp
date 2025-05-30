@@ -79,7 +79,8 @@ struct OrbitModule : Module {
 		configInput(INPUT_SPREAD, "Spread amount CV");
 		inputInfos[INPUT_SPREAD]->description = "Normalized to 10V (full stereo field).";
 		configParam(PARAM_SPREAD, 0.f, 1.f, 0.5f, "Maximum stereo spread", "%", 0.f, 100.f);
-		configParam(PARAM_DRIFT, -1.f, 1.f, 0.f, "Stereo drift (-1..0 --> L/R, 0..+1 --> center)");
+		ParamQuantity* p1 = configParam(PARAM_DRIFT, -1.f, 1.f, 0.f, "Stereo drift");
+		p1->description = "(-1..0 --> L/R, 0..+1 --> center)";
 		configInput(INPUT_DIST, "Distribution");
 		inputInfos[INPUT_DIST]->description = "Optional, used if distribution is set to \"External\", 0..10V.";
 		configInput(INPUT_IN, "Signal");
