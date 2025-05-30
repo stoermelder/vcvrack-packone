@@ -296,6 +296,10 @@ struct MidiKitModule : Module {
 		midiLogMessages.push(std::make_tuple(LOG_FORMAT::RESET, 0.f, ""));
 		se.loadScript(script.c_str());
 	}
+
+	void clearScript() {
+		loadScript("");
+	}
 };
 
 struct MidiKitWidget : ThemedModuleWidget<MidiKitModule>, OverlayMessageProvider {
@@ -382,6 +386,7 @@ struct MidiKitWidget : ThemedModuleWidget<MidiKitModule>, OverlayMessageProvider
 		ThemedModuleWidget<MidiKitModule>::appendContextMenu(menu);
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuLabel("Script"));
+		menu->addChild(createMenuItem("Clear", "", [=]() { module->clearScript(); }));
 		menu->addChild(createMenuItem("Paste from clipboard", RACK_MOD_ALT_NAME "+V", [=]() { pasteJsClipboard(); }));
 		menu->addChild(createMenuItem("Copy to clipboard", RACK_MOD_ALT_NAME "+C", [=]() { copyJsClipboard(); }));
 		menu->addChild(createMenuItem("Load", RACK_MOD_ALT_NAME "+L", [=]() { loadJsDialog(); }));
