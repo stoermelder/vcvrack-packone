@@ -1154,7 +1154,7 @@ struct RecButton : SvgSwitch {
     RecButton() {
         momentary = true;
         box.size = Vec(34.f, 34.f);
-        addFrame(APP->window->loadSvg(asset::plugin(pluginInstance, "res/RecButton.svg")));
+        addFrame(Svg::load(asset::plugin(pluginInstance, "res/RecButton.svg")));
     }
 };
 

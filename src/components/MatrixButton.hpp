@@ -24,8 +24,8 @@ struct MatrixButtonLight : BASE {
 
 struct MatrixButton : app::SvgSwitch {
 	MatrixButton() {
-		addFrame(APP->window->loadSvg(asset::plugin(pluginInstance, "res/components/MatrixButton.svg")));
-		addFrame(APP->window->loadSvg(asset::plugin(pluginInstance, "res/components/MatrixButton1.svg")));
+		addFrame(Svg::load(asset::plugin(pluginInstance, "res/components/MatrixButton.svg")));
+		addFrame(Svg::load(asset::plugin(pluginInstance, "res/components/MatrixButton1.svg")));
 		fb->removeChild(shadow);
 		delete shadow;
 	}

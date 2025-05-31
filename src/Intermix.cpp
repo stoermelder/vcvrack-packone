@@ -700,7 +700,7 @@ struct IntermixKnob : app::SvgKnob {
 	IntermixKnob() {
 		minAngle = -0.75 * M_PI;
 		maxAngle = 0.75 * M_PI;
-		setSvg(APP->window->loadSvg(asset::plugin(pluginInstance, "res/components/IntermixKnob.svg")));
+		setSvg(Svg::load(asset::plugin(pluginInstance, "res/components/IntermixKnob.svg")));
 		sw->setSize(Vec(22.7f, 22.7f));
 		fb->removeChild(shadow);
 		delete shadow;

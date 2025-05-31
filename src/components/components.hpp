@@ -136,7 +136,7 @@ struct StoermelderBlackScrew : app::SvgScrew {
 		tw->addChild(sw);
 		fb->addChild(tw);
 
-		setSvg(APP->window->loadSvg(asset::plugin(pluginInstance, "res/components/Screw.svg")));
+		setSvg(Svg::load(asset::plugin(pluginInstance, "res/components/Screw.svg")));
 
 		tw->box.size = sw->box.size;
 		box.size = tw->box.size;
@@ -154,7 +154,7 @@ struct StoermelderBlackScrew : app::SvgScrew {
 
 struct StoermelderPort : app::SvgPort {
 	StoermelderPort() {
-		setSvg(APP->window->loadSvg(asset::plugin(pluginInstance, "res/components/Port.svg")));
+		setSvg(Svg::load(asset::plugin(pluginInstance, "res/components/Port.svg")));
 		box.size = shadow->box.size = Vec(22.2f, 22.2f);
 	}
 };

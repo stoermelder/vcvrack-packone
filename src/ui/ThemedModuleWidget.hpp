@@ -36,19 +36,19 @@ struct ThemedModuleWidget : BASE {
 		this->disableDarkPanel = disableDarkPanel;
 
 #ifdef METAMODULE
-		BASE::setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/" + baseName + ".svg")));
+		BASE::setPanel(Svg::load(asset::plugin(pluginInstance, "res/" + baseName + ".svg")));
 #else
 		if (module) {
 			// Normal operation
-			BASE::setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, panel())));
+			BASE::setPanel(Svg::load(asset::plugin(pluginInstance, panel())));
 		}
 		else {
 			// Module Browser
 			if (!settings::preferDarkPanels || disableDarkPanel) {
-				BASE::setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/" + baseName + ".svg")));
+				BASE::setPanel(Svg::load(asset::plugin(pluginInstance, "res/" + baseName + ".svg")));
 			}
 			else {
-				BASE::setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/dark/" + baseName + ".svg")));
+				BASE::setPanel(Svg::load(asset::plugin(pluginInstance, "res/dark/" + baseName + ".svg")));
 			}
 		}
 #endif
@@ -125,7 +125,7 @@ struct ThemedModuleWidget : BASE {
 			}
 			if (theme != panelTheme) {
 				panelTheme = theme;
-				BASE::setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, panel())));
+				BASE::setPanel(Svg::load(asset::plugin(pluginInstance, panel())));
 			}
 		}
 		BASE::step();
