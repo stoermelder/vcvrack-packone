@@ -738,8 +738,14 @@ struct HiveGridWidget : FramebufferWidget {
 		}
 
 		void drawLayer(const Widget::DrawArgs& args, int layer) override {
-			if (!module) return;
 			if (layer == 1) {
+				float sizeFactor = 16.2142849f;
+				int usedRadius = 4;
+				if (module) {
+					sizeFactor = module->sizeFactor;
+					usedRadius = module->grid.usedRadius;
+				}
+
 				Vec hex;
 
 				// Draw background
@@ -748,40 +754,49 @@ struct HiveGridWidget : FramebufferWidget {
 				nvgFillColor(args.vg, nvgRGB(0, 16, 90));
 				nvgFill(args.vg);
 
+				// Draw gradient
+				nvgBeginPath(args.vg);
+				drawHex(ORIGIN, ORIGIN.x, FLAT, args.vg);
+				NVGcolor topColor = nvgRGBA(200, 200, 200, 40);
+				NVGcolor bottomColor = nvgRGBA(200, 200, 200, 0);
+				nvgFillPaint(args.vg, nvgLinearGradient(args.vg, 0.f, 0.f, 0.f, 80.f, topColor, bottomColor));
+				nvgFill(args.vg);
+
 				// Draw grid
 				nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
 				nvgStrokeWidth(args.vg, 0.6f);
 				nvgBeginPath(args.vg);
-				module->grid.drawGrid(module->sizeFactor, ORIGIN, args.vg);
+				MODULE::HIVEGRID::drawGrid(usedRadius, sizeFactor, ORIGIN, args.vg);
 				nvgStrokeColor(args.vg, color::mult(color::WHITE, 0.075f));
 				nvgStroke(args.vg);
 
 				// Draw outer edge
 				nvgBeginPath(args.vg);
-				module->grid.drawGridOutline(module->sizeFactor, ORIGIN, args.vg);
+				MODULE::HIVEGRID::drawGridOutline(usedRadius, sizeFactor, ORIGIN, args.vg);
 				nvgStrokeWidth(args.vg, 0.7f);
 				nvgStrokeColor(args.vg, color::mult(color::WHITE, 0.125f));
 				nvgStroke(args.vg);
 
 				// Draw grid cells
 				float stroke = 0.7f;
-				float onCellSizeFactor = module->sizeFactor - stroke / 2.f;
-				float randCellSizeFactor = module->sizeFactor - stroke;
-				float sCellSizeFactor = module->sizeFactor / 2.f;
+				float onCellSizeFactor = sizeFactor - stroke / 2.f;
+				float randCellSizeFactor = sizeFactor - stroke;
+				float sCellSizeFactor = sizeFactor / 2.f;
 
-				for (int q = -module->grid.usedRadius; q <= module->grid.usedRadius; q++) {
-					for (int r = -module->grid.usedRadius; r <= module->grid.usedRadius; r++) {
-						if (cellVisible(q, r, module->grid.usedRadius)) {
-							switch (module->grid.getCell(q, r).state) {
+				for (int q = -usedRadius; q <= usedRadius; q++) {
+					for (int r = -usedRadius; r <= usedRadius; r++) {
+						if (cellVisible(q, r, usedRadius)) {
+							GRIDSTATE state = module ? module->grid.getCell(q, r).state : (GRIDSTATE)int(std::round(random::normal() * 2.f));
+							switch (state) {
 								case GRIDSTATE::ON:
-									hex = hexToPixel(RoundAxialVec(q, r), module->sizeFactor, POINTY, ORIGIN);
+									hex = hexToPixel(RoundAxialVec(q, r), sizeFactor, POINTY, ORIGIN);
 									nvgBeginPath(args.vg);
 									drawHex(hex, onCellSizeFactor, POINTY, args.vg);
 									nvgFillColor(args.vg, color::mult(gridColor, 0.7f));
 									nvgFill(args.vg);
 									break;
 								case GRIDSTATE::RANDOM:
-									hex = hexToPixel(RoundAxialVec(q, r), module->sizeFactor, POINTY, ORIGIN);
+									hex = hexToPixel(RoundAxialVec(q, r), sizeFactor, POINTY, ORIGIN);
 									nvgBeginPath(args.vg);
 									drawHex(hex, randCellSizeFactor, POINTY, args.vg);
 									nvgStrokeWidth(args.vg, stroke);
@@ -815,10 +830,10 @@ struct HiveGridWidget : FramebufferWidget {
 	void step() override{
 		if (module && module->gridDirty) {
 			FramebufferWidget::dirty = true;
-			w->box.size = box.size;
 			w->gridColor = module->currentState == MODULESTATE::EDIT ? color::mult(color::WHITE, 0.35f) : color::WHITE;
 			module->gridDirty = false;
 		}
+		w->box.size = box.size;
 		FramebufferWidget::step();
 	}
 

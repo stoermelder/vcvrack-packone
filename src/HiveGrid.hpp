@@ -433,7 +433,7 @@ struct HexGrid {
 			wrapCursor(id);
 	}
 
-	void drawGrid(float cellSizeFactor, Vec gridOrigin, NVGcontext* ctx) {
+	static void drawGrid(int usedRadius, float cellSizeFactor, Vec gridOrigin, NVGcontext* ctx) {
 		Vec hex;
 		if (CELL_SHAPE == ROTATION::FLAT) {
 			// TODO
@@ -450,7 +450,7 @@ struct HexGrid {
 		}
 	}
 
-	void drawGridOutline(float cellSizeFactor, Vec gridOrigin, NVGcontext* ctx) {
+	static void drawGridOutline(int usedRadius, float cellSizeFactor, Vec gridOrigin, NVGcontext* ctx) {
 		int numPoints = 18 + (2 * (usedRadius - 1)) * 6;	// 3 for each corner hex, 2 for each edge hex
 		Vec borderPoint[numPoints];
 

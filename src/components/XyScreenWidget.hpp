@@ -662,6 +662,15 @@ struct XyScreenWidget : OpaqueWidget {
 			nvgFillColor(args.vg, nvgRGB(0, 16, 90));
 			nvgFill(args.vg);
 
+			// Draw gradient
+			math::Rect r = box.zeroPos();
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, RECT_ARGS(r));
+			NVGcolor topColor = nvgRGBA(200, 200, 200, 40);
+			NVGcolor bottomColor = nvgRGBA(200, 200, 200, 0);
+			nvgFillPaint(args.vg, nvgLinearGradient(args.vg, 0.f, 0.f, 0.f, 80.f, topColor, bottomColor));
+			nvgFill(args.vg);
+
 			// Draw grid
 			nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
 			nvgStrokeWidth(args.vg, 0.6f);
