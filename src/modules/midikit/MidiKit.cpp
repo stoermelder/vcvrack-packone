@@ -279,9 +279,9 @@ struct MidiKitModule : Module {
 		}
 
 		for (uint8_t i = 0; i < PORT_MAX_CHANNELS; i++) {
-			outputPulseGenerator[i].process(args.sampleTime);
+			bool s = outputPulseGenerator[i].process(args.sampleTime);
 			if (outputTriggerActive[i]) {
-				outputs[OUTPUT_TRIG].setVoltage(outputPulseGenerator[i].isHigh() ? 10.f : 0.f, i);
+				outputs[OUTPUT_TRIG].setVoltage(s ? 10.f : 0.f, i);
 			}
 		}
 
