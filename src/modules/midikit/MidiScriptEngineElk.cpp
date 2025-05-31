@@ -137,9 +137,13 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		// trig
 		jsval_t _trig = js_mkobj(js);
 		js_set(js, js_glob(js), "trig", _trig);												// let trig = {}
-		js_set(js, _trig, "getTicks", js_mkfun(js_trig_getTicks));							// bool trig.getTicks(int)
-		js_set(js, _trig, "isHigh", js_mkfun(js_trig_isHigh));								// bool trig.isHigh(int)
-		js_set(js, _trig, "isLow", js_mkfun(js_trig_isLow));								// bool trig.isLow(int)
+		js_set(js, _trig, "getTicks", js_mkfun(js_trig_getTicks));							// bool trig.getTicks(int, [int])
+		js_set(js, _trig, "isHigh", js_mkfun(js_trig_isHigh));								// bool trig.isHigh(int, [int])
+		js_set(js, _trig, "isLow", js_mkfun(js_trig_isLow));								// bool trig.isLow(int, [int])
+		js_set(js, _trig, "setGate", js_mkfun(js_trig_setGate));							// void trig.setGate(int, [int], float)
+		js_set(js, _trig, "setHigh", js_mkfun(js_trig_setHigh));							// void trig.setHigh(int, [int])
+		js_set(js, _trig, "setLow", js_mkfun(js_trig_setLow));								// void trig.setLow(int, [int])
+		js_set(js, _trig, "setTrigger", js_mkfun(js_trig_setTrigger));						// void trig.setTrigger(int, [int])
 
 		// param
 		jsval_t _param = js_eval(js,
@@ -445,39 +449,75 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 	// trig
 
 	static jsval_t js_trig_getTicks(struct js* js, jsval_t* args, int nargs) {
-		if (nargs == 0) {
-			return js_mknum(jsMap[js]->getTrigTicks(0));
-		}
-		else {
-			if (!js_chkargs(args, nargs, "d")) return js_mkerr(js, "trig.getTicks: bad args");
-			int i = js_getnum(args[0]);
-			if (i < 1 || i > jsMap[js]->inputTrigCount) return js_mkerr(js, "trig.getTicks: bad index");
-			return js_mknum(jsMap[js]->getTrigTicks(i - 1));
-		}
+		if (!js_chkargs(args, nargs, "d")) return js_mkerr(js, "trig.getTicks: bad args");
+		int i = js_getnum(args[0]);
+		if (i < 1 || i > jsMap[js]->inputTrigCount) return js_mkerr(js, "trig.getTicks: bad index");
+		return js_mknum(jsMap[js]->getTrigTicks(i - 1));
 	}
 
 	static jsval_t js_trig_isHigh(struct js* js, jsval_t* args, int nargs) {
-		if (nargs == 0) {
-			return js_mkbool(jsMap[js]->getTrigVoltage(0) > 0.7f);
-		}
-		else {
-			if (!js_chkargs(args, nargs, "d")) return js_mkerr(js, "trig.isHigh: bad args");
-			int i = js_getnum(args[0]);
-			if (i < 1 || i > jsMap[js]->inputTrigCount) return js_mkerr(js, "trig.isHigh: bad index");
-			return js_mkbool(jsMap[js]->getTrigVoltage(i - 1) > 0.7f);
-		}
+		if (!js_chkargs(args, nargs, "d") && !js_chkargs(args, nargs, "dd")) return js_mkerr(js, "trig.isHigh: bad args");
+		int i = js_getnum(args[0]);
+		if (i < 1 || i > jsMap[js]->inputTrigCount) return js_mkerr(js, "trig.isHigh: bad index");
+		int ch = 1;
+		if (nargs == 2) ch = js_getnum(args[1]);
+		if (ch < 1 || ch > PORT_MAX_CHANNELS) return js_mkerr(js, "trig.isHigh: bad channel");
+		return js_mkbool(jsMap[js]->getTrigVoltage(i - 1, ch - 1) > 0.7f);
 	}
 
 	static jsval_t js_trig_isLow(struct js* js, jsval_t* args, int nargs) {
-		if (nargs == 0) {
-			return js_mkbool(jsMap[js]->getTrigVoltage(0) < 0.7f);
-		}
-		else {
-			if (!js_chkargs(args, nargs, "d")) return js_mkerr(js, "trig.isLow: bad args");
-			int i = js_getnum(args[0]);
-			if (i < 1 || i > jsMap[js]->inputTrigCount) return js_mkerr(js, "trig.isLow: bad index");
-			return js_mkbool(jsMap[js]->getTrigVoltage(i - 1) < 0.7f);
-		}
+		if (!js_chkargs(args, nargs, "d") && !js_chkargs(args, nargs, "dd")) return js_mkerr(js, "trig.isLow: bad args");
+		int i = js_getnum(args[0]);
+		if (i < 1 || i > jsMap[js]->inputTrigCount) return js_mkerr(js, "trig.isLow: bad index");
+		int ch = 1;
+		if (nargs == 2) ch = js_getnum(args[1]);
+		if (ch < 1 || ch > PORT_MAX_CHANNELS) return js_mkerr(js, "trig.isLow: bad channel");
+		return js_mkbool(jsMap[js]->getTrigVoltage(i - 1, ch - 1) < 0.7f);
+	}
+
+	static jsval_t js_trig_setGate(struct js* js, jsval_t* args, int nargs) {
+		if (!js_chkargs(args, nargs, "dd") && !js_chkargs(args, nargs, "ddd")) return js_mkerr(js, "trig.setGate: bad args");
+		int i = js_getnum(args[0]);
+		if (i < 1 || i > jsMap[js]->outputTrigCount) return js_mkerr(js, "trig.setGate: bad index");
+		int ch = 1;
+		if (nargs == 3) ch = js_getnum(args[1]);
+		if (ch < 1 || ch > PORT_MAX_CHANNELS) return js_mkerr(js, "trig.setGate: bad channel");
+		float duration = js_getnum(args[nargs - 1]);
+		jsMap[js]->setTrig(i - 1, ch - 1, duration);
+		return js_mknull();
+	}
+
+	static jsval_t js_trig_setHigh(struct js* js, jsval_t* args, int nargs) {
+		if (!js_chkargs(args, nargs, "d") && !js_chkargs(args, nargs, "dd")) return js_mkerr(js, "trig.setHigh: bad args");
+		int i = js_getnum(args[0]);
+		if (i < 1 || i > jsMap[js]->outputTrigCount) return js_mkerr(js, "trig.setHigh: bad index");
+		int ch = 1;
+		if (nargs == 2) ch = js_getnum(args[1]);
+		if (ch < 1 || ch > PORT_MAX_CHANNELS) return js_mkerr(js, "trig.setHigh: bad channel");
+		jsMap[js]->setTrigVoltage(i - 1, ch - 1, 10.f);
+		return js_mknull();
+	}
+
+	static jsval_t js_trig_setLow(struct js* js, jsval_t* args, int nargs) {
+		if (!js_chkargs(args, nargs, "d") && !js_chkargs(args, nargs, "dd")) return js_mkerr(js, "trig.setHigh: bad args");
+		int i = js_getnum(args[0]);
+		if (i < 1 || i > jsMap[js]->outputTrigCount) return js_mkerr(js, "trig.setLow: bad index");
+		int ch = 1;
+		if (nargs == 2) ch = js_getnum(args[1]);
+		if (ch < 1 || ch > PORT_MAX_CHANNELS) return js_mkerr(js, "trig.setLow: bad channel");
+		jsMap[js]->setTrigVoltage(i - 1, ch - 1, 0.f);
+		return js_mknull();
+	}
+
+	static jsval_t js_trig_setTrigger(struct js* js, jsval_t* args, int nargs) {
+		if (!js_chkargs(args, nargs, "d") && !js_chkargs(args, nargs, "dd")) return js_mkerr(js, "trig.setHigh: bad args");
+		int i = js_getnum(args[0]);
+		if (i < 1 || i > jsMap[js]->outputTrigCount) return js_mkerr(js, "trig.setTrigger: bad index");
+		int ch = 1;
+		if (nargs == 2) ch = js_getnum(args[1]);
+		if (ch < 1 || ch > PORT_MAX_CHANNELS) return js_mkerr(js, "trig.setHigh: bad channel");
+		jsMap[js]->setTrig(i - 1, ch - 1);
+		return js_mknull();
 	}
 
 	// param

@@ -151,9 +151,13 @@ Be aware that there is no implicit casting, especially for casting numbers to st
 
 ### trig
 
-- `trig.getTicks([trigPort])`: Returns the number of triggers on trigger port `trigPort` (only *1* is supported in this version) since loading the script. If `trigPort` is omitted the default trigger port is selected.
-- `trig.isHigh([trigPort])`: Returns true if the voltage on trigger port `trigPort` (only *1* is supported in this version) is above 0.7V. If `trigPort` is omitted the default trigger port is selected.
-- `trig.isLow([trigPort])`: Returns true if the voltage on trigger port `trigPort` (only *1* is supported in this version) is below 0.7V. If `trigPort` is omitted the default trigger port is selected.
+- `trig.getTicks(trigPort)`: Returns the number of triggers on trigger input port `trigPort` (only *1* is supported in this version, on polyphonic channel 1) since loading the script. 
+- `trig.isHigh(trigPort, [channel = 1])`: Returns true if the voltage on trigger input port `trigPort` (only *1* is supported in this version) of polyphonic `channel` (1..16) is above 0.7V.
+- `trig.isLow(trigPort, [channel = 1])`: Returns true if the voltage on trigger input port `trigPort` (only *1* is supported in this version) of polyphonic `channel` (1..16) is below 0.7V.
+- `trig.setGate(trigPort, [channel = 1], duration)`: Sends a gate on trigger output port `trigPort` (only *1* is supported in this version) with length of `duration` ms on polyphonic `channel` (1..16).
+- `trig.setHigh(trigPort, [channel = 1])`: Sets the trigger output port `trigPort` (only *1* is supported in this version) to 10V on polyphonic `channel` (1..16).
+- `trig.setLow(trigPort, [channel = 1])`: Sets the trigger output port `trigPort` (only *1* is supported in this version) to 0V on polyphonic `channel` (1..16).
+- `trig.setTrigger(trigPort, [channel = 1])`: Sends a trigger on trigger output port `trigPort` (only *1* is supported in this version) on polyphonic `channel` (1..16).
 
 ### param
 
@@ -220,6 +224,11 @@ Some functions provide a parameter `midiPort` for selecting the output port. Cur
 - `midiOut.sendAfterMs([midiPort], msg, ms)`: Sends `msg` delayed on MIDI port `midiPort` (default port = *1*). The delay `ms` is specified in milliseconds. If `midiPort` is omitted the default MIDI output port is used.
 - `midiOut.sendAfterTrigger([midiPort], msg, [trigPort], ticks)`: Sends `msg` delayed on MIDI port `midiPort` (default output = *1*). The delay is specified in `ticks` of triggers on CV trigger input `trigPort`. If `midiPort` is omitted the default MIDI output port is used. If `trigPort` is omitted the default trigger port is selected.
 
+## Future feature ideas
+
+- Support for TTY ([Tipsy](https://github.com/baconpaul/tipsy-encoder))
+- Expander-modules
+- Another engine for supporting a different language
 
 ## Changelog
 

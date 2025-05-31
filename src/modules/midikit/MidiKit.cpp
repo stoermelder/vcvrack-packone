@@ -129,13 +129,15 @@ struct MidiKitModule : Module {
 	std::tuple<std::string, std::string, std::string> overlayMessage;
 
 	dsp::ClockDivider processDivider;
-	dsp::SchmittTrigger trig;
 	dsp::Timer rateLimiterTimer;
 
-	uint64_t sample;
-	uint64_t trigTick;
-	float sampleRate;
+	dsp::SchmittTrigger inputTrigger;
+	uint64_t inputTriggerTick;
+	bool outputTriggerActive[PORT_MAX_CHANNELS];
+	dsp::PulseGenerator outputPulseGenerator[PORT_MAX_CHANNELS];
 
+	uint64_t sample;
+	float sampleRate;
 
 	struct MidiKitScriptEngineElk : MidiScript::Elk::MidiScriptEngineElk {
 		MidiKitModule* module;
@@ -175,12 +177,12 @@ struct MidiKitModule : Module {
 				return 0.f;
 		};
 
-		float getTrigVoltage(int i) override {
-			return module->inputs[INPUT_TRIG + i].getVoltage();
+		float getTrigVoltage(int i, uint8_t ch) override {
+			return module->inputs[INPUT_TRIG + i].getVoltage(ch);
 		};
 
 		uint64_t getTrigTicks(int i) override {
-			return module->trigTick;
+			return module->inputTriggerTick;
 		};
 
 		void enableParam(int i) override {
@@ -193,6 +195,16 @@ struct MidiKitModule : Module {
 			else
 				return 0.f;
 		};
+
+		void setTrig(int i, uint8_t ch, float duration = 1e-3f) override {
+			module->outputTriggerActive[ch] = true;
+			module->outputPulseGenerator[ch].trigger(duration);
+		}
+
+		void setTrigVoltage(int i, uint8_t ch, float voltage) override {
+			module->outputTriggerActive[ch] = false;
+			module->outputs[OUTPUT_TRIG].setVoltage(voltage, ch);
+		}
 	};
 
 	MidiKitScriptEngineElk se;
@@ -216,12 +228,16 @@ struct MidiKitModule : Module {
 		midiInput.reset();
 		midiOutput.reset();
 		sample = 0;
-		trigTick = 0;
+		inputTriggerTick = 0;
 		for (int i = 0; i < 4; i++) {
 			reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(inputInfos[i])->enabled = false;
 			reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[i])->enabled = false;
 		}
 		midiLogMessages.push(std::make_tuple(LOG_FORMAT::RESET, 0.f, ""));
+		for (uint8_t i = 0; i < PORT_MAX_CHANNELS; i++) {
+			outputTriggerActive[i] = true;
+			outputPulseGenerator[i].reset();
+		} 
 		se.loadScript("");
 	}
 
@@ -240,9 +256,9 @@ struct MidiKitModule : Module {
 			return;
 		*/
 
-		if (trig.process(inputs[INPUT_TRIG].getVoltage())) {
-			trigTick++;
-			midiOutput.processTick(trigTick);
+		if (inputTrigger.process(inputs[INPUT_TRIG].getVoltage())) {
+			inputTriggerTick++;
+			midiOutput.processTick(inputTriggerTick);
 		}
 
 		if (processDivider.process()) {
@@ -260,6 +276,13 @@ struct MidiKitModule : Module {
 			}
 			
 			midiOutput.processFrame(args.frame);
+		}
+
+		for (uint8_t i = 0; i < PORT_MAX_CHANNELS; i++) {
+			outputPulseGenerator[i].process(args.sampleTime);
+			if (outputTriggerActive[i]) {
+				outputs[OUTPUT_TRIG].setVoltage(outputPulseGenerator[i].isHigh() ? 10.f : 0.f, i);
+			}
 		}
 
 		sample++;
@@ -291,7 +314,7 @@ struct MidiKitModule : Module {
 	void loadScript(std::string s) {
 		script = s;
 		sample = 0;
-		trigTick = 0;
+		inputTriggerTick = 0;
 		for (int i = 0; i < 4; i++) {
 			reinterpret_cast<MidiScript::MidiScriptEnginePortInfo*>(inputInfos[i])->enabled = false;
 			reinterpret_cast<MidiScript::MidiScriptEngineParamQuantity*>(paramQuantities[i])->enabled = false;
