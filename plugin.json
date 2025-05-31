@@ -350,6 +350,27 @@
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/MidiKey.md"
 		},
 		{
+			"slug": "FlowerSeq",
+			"name": "FLOWER",
+			"description": "",
+			"tags": ["Sequencer"],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/FlowerSeq.md"
+		},
+		{
+			"slug": "FlowerSeqEx",
+			"name": "OFFSPRING",
+			"description": "",
+			"tags": ["Sequencer"],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/FlowerSeq.md"
+		},
+		{
+			"slug": "FlowerSeqTrig",
+			"name": "SEEDS",
+			"description": "",
+			"tags": ["Sequencer"],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/FlowerSeq.md"
+		},
+		{
 			"slug": "AudioInterface64",
 			"name": "AUDIO-64",
 			"description": "Sends CV and audio to/from an audio device",
