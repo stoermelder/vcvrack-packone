@@ -9,7 +9,8 @@ using rack::midi::Message;
 
 struct MidiScriptEngine {
 	int inputCount;
-	int trigCount;
+	int inputTrigCount;
+	int outputTrigCount;
 	int paramCount;
 	int midiInputCount;
 	int midiOutputCount;

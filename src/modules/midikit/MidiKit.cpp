@@ -106,6 +106,7 @@ struct MidiKitModule : Module {
 		NUM_INPUTS
 	};
 	enum OutputIds {
+		OUTPUT_TRIG,
 		NUM_OUTPUTS
 	};
 	enum LightIds {
@@ -141,7 +142,8 @@ struct MidiKitModule : Module {
 
 		MidiKitScriptEngineElk() {
 			inputCount = 4;
-			trigCount = 1;
+			inputTrigCount = 1;
+			outputTrigCount = 1;
 			paramCount = 4;
 			midiInputCount = 1;
 			midiOutputCount = 1;
@@ -199,6 +201,7 @@ struct MidiKitModule : Module {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configInput(INPUT_TRIG, "Trigger");
+		configOutput(OUTPUT_TRIG, "Trigger");
 		for (int i = 0; i < 4; i++) {
 			configInput<MidiScript::MidiScriptEnginePortInfo>(INPUT + i)->se = &se;
 			configParam<MidiScript::MidiScriptEngineParamQuantity>(PARAM + i, 0.f, 1.f, 0.f)->se = &se;
@@ -323,7 +326,7 @@ struct MidiKitWidget : ThemedModuleWidget<MidiKitModule>, OverlayMessageProvider
 		display1->setMidiPort(module ? &module->midiInput : NULL, "In");
 		addChild(display1);
 
-		LedDisplay* textDisplay = createWidget<LedDisplay>(Vec(0.f, 86.2f));
+		LedDisplay* textDisplay = createWidget<LedDisplay>(Vec(0.f, 81.0f));
 		textDisplay->box.size = Vec(180.f, 140.6f);
 		addChild(textDisplay);
 
@@ -333,22 +336,24 @@ struct MidiKitWidget : ThemedModuleWidget<MidiKitModule>, OverlayMessageProvider
 		logDisplay->fontSize = 7.2f;
 		textDisplay->addChild(logDisplay);
 
-		MidiWidget<>* display2 = createWidget<MidiWidget<>>(Vec(0.f, 232.1f));
+		MidiWidget<>* display2 = createWidget<MidiWidget<>>(Vec(0.f, 221.6f));
 		display2->box.size = Vec(180.0f, 44.6f);
 		display2->setMidiPort(module ? &module->midiOutput : NULL, "Out");
 		addChild(display2);
 
-		addParam(createParamCentered<StoermelderTrimpot>(Vec(24.7f, 293.7f), module, MidiKitModule::PARAM + 0));
-		addParam(createParamCentered<StoermelderTrimpot>(Vec(56.2f, 293.7f), module, MidiKitModule::PARAM + 1));
-		addParam(createParamCentered<StoermelderTrimpot>(Vec(87.6f, 293.7f), module, MidiKitModule::PARAM + 2));
-		addParam(createParamCentered<StoermelderTrimpot>(Vec(119.1f, 293.7f), module, MidiKitModule::PARAM + 3));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(24.7f, 287.3f), module, MidiKitModule::PARAM + 0));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(56.2f, 287.3f), module, MidiKitModule::PARAM + 1));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(87.6f, 287.3f), module, MidiKitModule::PARAM + 2));
+		addParam(createParamCentered<StoermelderTrimpot>(Vec(119.1f, 287.3f), module, MidiKitModule::PARAM + 3));
 
 		addInput(createInputCentered<StoermelderPort>(Vec(24.7f, 328.4f), module, MidiKitModule::INPUT + 0));
 		addInput(createInputCentered<StoermelderPort>(Vec(56.2f, 328.4f), module, MidiKitModule::INPUT + 1));
 		addInput(createInputCentered<StoermelderPort>(Vec(87.6f, 328.4f), module, MidiKitModule::INPUT + 2));
 		addInput(createInputCentered<StoermelderPort>(Vec(119.1f, 328.4f), module, MidiKitModule::INPUT + 3));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(156.8f, 328.4f), module, MidiKitModule::INPUT_TRIG));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(156.f, 287.3f), module, MidiKitModule::OUTPUT_TRIG));
+
+		addInput(createInputCentered<StoermelderPort>(Vec(156.f, 328.4f), module, MidiKitModule::INPUT_TRIG));
 
 		if (module) {
 			OverlayMessageWidget::registerProvider(this);

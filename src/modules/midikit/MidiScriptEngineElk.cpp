@@ -451,7 +451,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		else {
 			if (!js_chkargs(args, nargs, "d")) return js_mkerr(js, "trig.getTicks: bad args");
 			int i = js_getnum(args[0]);
-			if (i < 1 || i > jsMap[js]->trigCount) return js_mkerr(js, "trig.getTicks: bad index");
+			if (i < 1 || i > jsMap[js]->inputTrigCount) return js_mkerr(js, "trig.getTicks: bad index");
 			return js_mknum(jsMap[js]->getTrigTicks(i - 1));
 		}
 	}
@@ -463,7 +463,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		else {
 			if (!js_chkargs(args, nargs, "d")) return js_mkerr(js, "trig.isHigh: bad args");
 			int i = js_getnum(args[0]);
-			if (i < 1 || i > jsMap[js]->trigCount) return js_mkerr(js, "trig.isHigh: bad index");
+			if (i < 1 || i > jsMap[js]->inputTrigCount) return js_mkerr(js, "trig.isHigh: bad index");
 			return js_mkbool(jsMap[js]->getTrigVoltage(i - 1) > 0.7f);
 		}
 	}
@@ -475,7 +475,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		else {
 			if (!js_chkargs(args, nargs, "d")) return js_mkerr(js, "trig.isLow: bad args");
 			int i = js_getnum(args[0]);
-			if (i < 1 || i > jsMap[js]->trigCount) return js_mkerr(js, "trig.isLow: bad index");
+			if (i < 1 || i > jsMap[js]->inputTrigCount) return js_mkerr(js, "trig.isLow: bad index");
 			return js_mkbool(jsMap[js]->getTrigVoltage(i - 1) < 0.7f);
 		}
 	}
@@ -884,7 +884,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 		if (nargs == 4) {
 			return js_midiOut(js, args, nargs, "dd", "sendAfterTrigger", [js](jsval_t* args, MessageEx& s) {
 				int trigPort = js_getnum(args[0]);
-				if (trigPort < 1 || trigPort > jsMap[js]->trigCount) return js_mkerr(js, "midiOut.sendAfterTrigger: bad trigInput index");
+				if (trigPort < 1 || trigPort > jsMap[js]->inputTrigCount) return js_mkerr(js, "midiOut.sendAfterTrigger: bad trigInput index");
 				int64_t currentTicks = jsMap[js]->getTrigTicks(trigPort - 1);
 				int ticks = js_getnum(args[1]);
 				s.send = true;
