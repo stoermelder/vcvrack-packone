@@ -805,6 +805,20 @@ struct ReMoveModule : MapModuleBase<1> {
 struct ReMoveDisplay : TransparentWidget {
     ReMoveModule* module;
 
+    void draw(const DrawArgs& args) override {
+        math::Rect r = box.zeroPos();
+
+        // Draw gradient
+        nvgBeginPath(args.vg);
+        nvgRect(args.vg, RECT_ARGS(r));
+        NVGcolor topColor = nvgRGBA(200, 200, 200, 40);
+        NVGcolor bottomColor = nvgRGBA(200, 200, 200, 0);
+        nvgFillPaint(args.vg, nvgLinearGradient(args.vg, 0.f, 0.f, 0.f, 30.f, topColor, bottomColor));
+        nvgFill(args.vg);
+
+        TransparentWidget::draw(args);
+    }
+
     void drawLayer(const DrawArgs& args, int layer) override {
         if (!module) return;
         float maxX = box.size.x;

@@ -663,10 +663,14 @@ struct MazeGridWidget : FramebufferWidget {
 		}
 
 		void drawLayer(const Widget::DrawArgs& args, int layer) override {
-			if (!module) return;
 			if (layer == 1) {
-				float sizeX = box.size.x / float(module->usedSize);
-				float sizeY = box.size.y / float(module->usedSize);
+				int usedSize = 8;
+				if (module) {
+					usedSize = module->usedSize;
+				}
+
+				float sizeX = box.size.x / float(usedSize);
+				float sizeY = box.size.y / float(usedSize);
 
 				// Draw background
 				nvgBeginPath(args.vg);
@@ -674,25 +678,34 @@ struct MazeGridWidget : FramebufferWidget {
 				nvgFillColor(args.vg, nvgRGB(0, 16, 90));
 				nvgFill(args.vg);
 
+				// Draw gradient
+				math::Rect r = box.zeroPos();
+				nvgBeginPath(args.vg);
+				nvgRect(args.vg, RECT_ARGS(r));
+				NVGcolor topColor = nvgRGBA(200, 200, 200, 40);
+				NVGcolor bottomColor = nvgRGBA(200, 200, 200, 0);
+				nvgFillPaint(args.vg, nvgLinearGradient(args.vg, 0.f, 0.f, 0.f, 80.f, topColor, bottomColor));
+				nvgFill(args.vg);
+
 				// Draw grid
 				nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
 				nvgStrokeWidth(args.vg, 0.6f);
-				for (int i = 1; i < module->usedSize; i++) {
+				for (int i = 1; i < usedSize; i++) {
 					float a = 0.075f;
-					if (module->usedSize % 4 == 0) { if (i % 4 == 0) a = 0.2f; }
-					else if (module->usedSize % 3 == 0) { if (i % 3 == 0) a = 0.2f; }
-					else if (module->usedSize % 5 == 0) { if (i % 5 == 0) a = 0.2f; }
+					if (usedSize % 4 == 0) { if (i % 4 == 0) a = 0.2f; }
+					else if (usedSize % 3 == 0) { if (i % 3 == 0) a = 0.2f; }
+					else if (usedSize % 5 == 0) { if (i % 5 == 0) a = 0.2f; }
 					nvgBeginPath(args.vg);
 					nvgMoveTo(args.vg, sizeX * float(i), 0.f);
 					nvgLineTo(args.vg, sizeX * float(i), box.size.y);
 					nvgStrokeColor(args.vg, color::mult(color::WHITE, a));
 					nvgStroke(args.vg);
 				}
-				for (int i = 1; i < module->usedSize; i++) {
+				for (int i = 1; i < usedSize; i++) {
 					float a = 0.075f;
-					if (module->usedSize % 4 == 0) { if (i % 4 == 0) a = 0.2f; }
-					else if (module->usedSize % 3 == 0) { if (i % 3 == 0) a = 0.2f; }
-					else if (module->usedSize % 5 == 0) { if (i % 5 == 0) a = 0.2f; }
+					if (usedSize % 4 == 0) { if (i % 4 == 0) a = 0.2f; }
+					else if (usedSize % 3 == 0) { if (i % 3 == 0) a = 0.2f; }
+					else if (usedSize % 5 == 0) { if (i % 5 == 0) a = 0.2f; }
 					nvgBeginPath(args.vg);
 					nvgMoveTo(args.vg, 0.f, sizeY * float(i));
 					nvgLineTo(args.vg, box.size.x, sizeY * float(i));
@@ -709,9 +722,10 @@ struct MazeGridWidget : FramebufferWidget {
 
 				// Draw grid cells
 				float stroke = 0.7f;
-				for (int i = 0; i < module->usedSize; i++) {
-					for (int j = 0; j < module->usedSize; j++) {
-						switch (module->grid[i][j]) {
+				for (int i = 0; i < usedSize; i++) {
+					for (int j = 0; j < usedSize; j++) {
+						GRIDSTATE state = module ? module->grid[i][j] : (GRIDSTATE)int(std::round(random::normal() * 2.f));
+						switch (state) {
 							case GRIDSTATE::ON:
 								nvgBeginPath(args.vg);
 								nvgRect(args.vg, i * sizeX + stroke / 2.f, j * sizeY + stroke / 2.f, sizeX - stroke, sizeY - stroke);
@@ -750,10 +764,10 @@ struct MazeGridWidget : FramebufferWidget {
 	void step() override{
 		if (module && module->gridDirty) {
 			FramebufferWidget::dirty = true;
-			w->box.size = box.size;
 			w->gridColor = module->currentState == MODULESTATE::EDIT ? color::mult(color::WHITE, 0.35f) : color::WHITE;
 			module->gridDirty = false;
 		}
+		w->box.size = box.size;
 		FramebufferWidget::step();
 	}
 
@@ -1011,8 +1025,8 @@ struct MazeScreenWidget : LightWidget, MazeDrawHelper<MODULE> {
 	void drawLayer(const DrawArgs& args, int layer) override {
 		if (module && module->currentState == MODULESTATE::GRID) {
 			MazeDrawHelper<MODULE>::drawLayer(args, layer, box);
+			LightWidget::drawLayer(args, layer);
 		}
-		LightWidget::drawLayer(args, layer);
 	}
 
 	void onButton(const event::Button& e) override {
