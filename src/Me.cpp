@@ -33,7 +33,7 @@ struct MeWidget : ModuleWidget, OverlayMessageProvider {
 
 	MeWidget(MeModule* module) {
 		setModule(module);
-		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/Me.svg")));
+		setPanel(Svg::load(asset::plugin(pluginInstance, "res/Me.svg")));
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(0, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 1 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));

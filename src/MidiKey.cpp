@@ -454,9 +454,9 @@ struct MidiKeyChoice : LedDisplayChoice {
 		} 
 		else {
 			if (module->learningId == id) {
-				text = getSlotPrefix() + "mapping...";
+				text = getSlotPrefix() + "Mapping...";
 			} else {
-				text = getSlotPrefix() + "unmapped";
+				text = getSlotPrefix() + "Unmapped";
 			}
 		}
 
@@ -564,7 +564,7 @@ struct MidiKeyDisplay : LedDisplay {
 	void step() override {
 		if (module) {
 			int mapLen = module->mapLen;
-			for (int id = 0; id < MAX_CHANNELS; id++) {
+			for (int id = 1; id < MAX_CHANNELS; id++) {
 				choices[id]->visible = (id < mapLen);
 				separators[id]->visible = (id < mapLen);
 			}
@@ -576,8 +576,9 @@ struct MidiKeyDisplay : LedDisplay {
 		this->module = module;
 
 		scroll = new ScrollWidget;
+		scroll->box.pos.y = 2.f;
 		scroll->box.size.x = box.size.x;
-		scroll->box.size.y = box.size.y - scroll->box.pos.y;
+		scroll->box.size.y = box.size.y - scroll->box.pos.y - 2.f;
 		addChild(scroll);
 
 		LedDisplaySeparator* separator = createWidget<LedDisplaySeparator>(scroll->box.pos);

@@ -502,16 +502,18 @@ struct MapModuleDisplay : LedDisplay {
 
 	void setModule(MODULE* module) {
 		this->module = module;
-
 		scroll = new ScrollWidget;
+		scroll->box.pos.y = 2.f;
 		scroll->box.size.x = box.size.x;
-		scroll->box.size.y = box.size.y - scroll->box.pos.y;
+		scroll->box.size.y = box.size.y - scroll->box.pos.y - 2.f;
 		addChild(scroll);
 
+		/*
 		LedDisplaySeparator* separator = createWidget<LedDisplaySeparator>(scroll->box.pos);
 		separator->box.size.x = box.size.x;
 		addChild(separator);
 		separators[0] = separator;
+		*/
 
 		Vec pos;
 		for (int id = 0; id < MAX_CHANNELS; id++) {
@@ -535,10 +537,11 @@ struct MapModuleDisplay : LedDisplay {
 
 	void draw(const DrawArgs& args) override {
 		LedDisplay::draw(args);
+
 		if (module && module->locked) {
 			float stroke = 2.f;
 			nvgBeginPath(args.vg);
-			nvgRoundedRect(args.vg, stroke / 2, stroke / 2, box.size.x - stroke, box.size.y - stroke, 5.0);
+			nvgRoundedRect(args.vg, stroke / 2.f, stroke / 2.f, box.size.x - stroke, box.size.y - stroke, 5.f);
 			nvgStrokeWidth(args.vg, stroke);
 			nvgStrokeColor(args.vg, color::mult(color::WHITE, 0.5f));
 			nvgStroke(args.vg);

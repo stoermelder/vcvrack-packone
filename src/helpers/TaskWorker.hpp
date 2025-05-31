@@ -14,8 +14,6 @@ struct TaskWorker {
 	Context* workerContext;
 	bool workerIsRunning = true;
 	bool workerDoProcess = false;
-	int workerPreset = -1;
-	std::function<void()> workerTask;
 	std::string name;
 
 	dsp::RingBuffer<std::tuple<std::function<void()>, Context*>, 32> workQueue;
@@ -64,9 +62,7 @@ struct TaskWorker {
 	}
 
 	void work(std::function<void()> task) {
-		workQueue.push(std::make_tuple(task, workerContext));
-		workerDoProcess = true;
-		workerCondVar.notify_one();
+		work(task, workerContext);
 	}
 
 	void work(std::function<void()> task, Context* context) {
