@@ -270,12 +270,13 @@ struct MidiStepLedDisplay : LedDisplay {
 	COICE* choices[4][CHANNELS / 4];
 
 	void setModule(MidiStepModule* module) {
-		Vec pos = Vec(0, 0);
+		Vec pos = Vec(0.f, 2.f);
 
 		// Add vSeparators
 		for (int x = 1; x < 4; x++) {
 			vSeparators[x] = createWidget<LedDisplaySeparator>(pos);
 			vSeparators[x]->box.pos.x = box.size.x / 4 * x;
+			vSeparators[x]->box.pos.y = 2.f;
 			addChild(vSeparators[x]);
 		}
 		// Add hSeparators and choice widgets
@@ -410,7 +411,7 @@ struct MidiStepWidget : ThemedModuleWidget<MidiStepModule> {
 		addChild(midiInputWidget);
 
 		MidiStepLedDisplay<16, 8, MidiStepCcChoice<16, 8>>* midiWidget = createWidget<MidiStepLedDisplay<16, 8, MidiStepCcChoice<16, 8>>>(Vec(0.f, 107.4f));
-		midiWidget->box.size = Vec(150.0f, 79.0f);
+		midiWidget->box.size = Vec(150.0f, 83.0f);
 		midiWidget->setModule(module);
 		addChild(midiWidget);
 #else
