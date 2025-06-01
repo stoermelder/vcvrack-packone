@@ -610,11 +610,6 @@ template <typename MODULE>
 struct ArenaInportDragWidget : XyScreenDragWidget<MODULE> {
 	typedef XyScreenDragWidget<MODULE> B;
 
-	ArenaInportDragWidget() {
-		B::color = color::WHITE;
-		B::type = 0;
-	}
-
  	std::string getItemName() override {
 		return string::f("Channel IN-%i", B::id + 1);
 	}
@@ -630,11 +625,6 @@ struct ArenaInportDragWidget : XyScreenDragWidget<MODULE> {
 template <typename MODULE>
 struct ArenaMixportDragWidget : XyScreenDragWidget<MODULE> {
 	typedef XyScreenDragWidget<MODULE> B;
-
-	ArenaMixportDragWidget() {
-		B::color = color::YELLOW;
-		B::type = 1;
-	}
 
  	std::string getItemName() override {
 		return string::f("Channel MIX-%i", B::id + 1);
@@ -653,51 +643,39 @@ struct ArenaMixportDragWidget : XyScreenDragWidget<MODULE> {
 
 template <typename MODULE>
 struct ArenaXyScreenWidget : XyScreenWidget<MODULE> {
-	typedef XyScreenWidget<MODULE> B;
-
 	ArenaXyScreenWidget(MODULE* module, int inParamIdX, int inParamIdY, int mixParamIdX, int mixParamIdY) : XyScreenWidget<MODULE>(module) {
-		if (module) {
-			for (uint8_t i = 0; i < module->scGetItemCount(0); i++) {
-				ArenaInportDragWidget<MODULE>* w = new ArenaInportDragWidget<MODULE>;
-				w->module = module;
-				w->id = i;
-				XyScreenWidget<MODULE>::addChild(w);
-			}
-			for (uint8_t i = 0; i < module->scGetItemCount(1); i++) {
-				ArenaMixportDragWidget<MODULE>* w = new ArenaMixportDragWidget<MODULE>;
-				w->module = module;
-				w->id = i;
-				XyScreenWidget<MODULE>::addChild(w);
-			}
-		}
+		uint8_t t0 = module ? module->scGetItemCount(0) : 8;
+		this->template createDragWidgets<ArenaInportDragWidget<MODULE>>(module, 0, t0, color::WHITE);
+		uint8_t t1 = module ? module->scGetItemCount(1) : 4;
+		this->template createDragWidgets<ArenaMixportDragWidget<MODULE>>(module, 1, t1, color::YELLOW);
 	}
 
 	void step() override {
-		if (B::module) {
+		if (this->module) {
 			// Preview interpolated automation line if mixport is selected
-			B::module->seqPreview = -1;
-			for (uint8_t i = 0; i < B::module->scGetItemCountActive(1); i++) {
-				if (B::module->scIsSelected(1, i))
-					B::module->seqPreview = i;
+			this->module->seqPreview = -1;
+			for (uint8_t i = 0; i < this->module->scGetItemCountActive(1); i++) {
+				if (this->module->scIsSelected(1, i))
+					this->module->seqPreview = i;
 			}
 		}
-		B::step();
+		XyScreenWidget<MODULE>::step();
 	}
 
 	void appendContextMenu(Menu* menu) override {
 		using StoermelderPackOne::Rack::createValuePtrMenuItem;
 		menu->addChild(new MenuSeparator());
-		menu->addChild(createSubmenuItem("Number of IN-ports", string::f("%i", B::module->inportsUsed),
+		menu->addChild(createSubmenuItem("Number of IN-ports", string::f("%i", this->module->inportsUsed),
 			[=](Menu* menu) {
-				for (int i = 0; i < B::module->scGetItemCount(0); i++) {
-					menu->addChild(createValuePtrMenuItem(string::f("%i", i + 1), &B::module->inportsUsed, i + 1));
+				for (int i = 0; i < this->module->scGetItemCount(0); i++) {
+					menu->addChild(createValuePtrMenuItem(string::f("%i", i + 1), &this->module->inportsUsed, i + 1));
 				}
 			}
 		));
-		menu->addChild(createSubmenuItem("Number of MIX-ports", string::f("%i", B::module->mixportsUsed),
+		menu->addChild(createSubmenuItem("Number of MIX-ports", string::f("%i", this->module->mixportsUsed),
 			[=](Menu* menu) {
-				for (int i = 0; i < B::module->scGetItemCount(1); i++) {
-					menu->addChild(createValuePtrMenuItem(string::f("%i", i + 1), &B::module->mixportsUsed, i + 1));
+				for (int i = 0; i < this->module->scGetItemCount(1); i++) {
+					menu->addChild(createValuePtrMenuItem(string::f("%i", i + 1), &this->module->mixportsUsed, i + 1));
 				}
 			}
 		));
