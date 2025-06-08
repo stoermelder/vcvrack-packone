@@ -838,11 +838,13 @@ struct HiveGridWidget : FramebufferWidget {
 	}
 
 	void drawLayer(const DrawArgs& args, int layer) override {
+#ifndef METAMODULE
 		if (layer == 1) {
 			// Dim the display but don't darken it completely
 			float b = std::max(0.2f, settings::rackBrightness);
 			nvgGlobalAlpha(args.vg, b);
 		}
+#endif
 		FramebufferWidget::drawLayer(args, layer);
 	}
 };
@@ -1093,7 +1095,7 @@ struct HiveStartPosEditWidget : TransparentWidget, HiveDrawHelper<MODULE> {
 
 
 template < typename MODULE, typename CELL>
-struct HiveScreenWidget : LightWidget, HiveDrawHelper<MODULE> {
+struct HiveScreenWidget : TransparentWidget, HiveDrawHelper<MODULE> {
 	MODULE* module;
 
 	HiveScreenWidget(MODULE* module) {
@@ -1102,9 +1104,9 @@ struct HiveScreenWidget : LightWidget, HiveDrawHelper<MODULE> {
 	}
 
 	void drawLayer(const DrawArgs& args, int layer) override {
+		TransparentWidget::drawLayer(args, layer);
 		if (module && module->currentState == MODULESTATE::GRID) {
 			HiveDrawHelper<MODULE>::drawLayer(args, layer, box);
-			LightWidget::draw(args);
 		}
 	}
 
@@ -1134,7 +1136,7 @@ struct HiveScreenWidget : LightWidget, HiveDrawHelper<MODULE> {
 					e.consume(this);
 				}
 			}
-			LightWidget::onButton(e);
+			TransparentWidget::onButton(e);
 		}
 	}
 
@@ -1161,19 +1163,21 @@ struct HiveWidget : ThemedModuleWidget<HiveModule<MAX_RADIUS, 4>> {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
 		HiveGridWidget<MODULE>* gridWidget = new HiveGridWidget<MODULE>(module);
-		gridWidget->box.pos = Vec(33.709f, 40.3f);
 		gridWidget->box.size = Vec(BOX_WIDTH, BOX_HEIGHT);
-		addChild(gridWidget);
 
 		HiveScreenWidget<MODULE, HiveCell>* screenWidget = new HiveScreenWidget<MODULE, HiveCell>(module);
-		screenWidget->box.pos = gridWidget->box.pos;
-		screenWidget->box.size = gridWidget->box.size;
+		screenWidget->box.pos = Vec(33.709f, 40.3f);
+		screenWidget->box.size = Vec(BOX_WIDTH, BOX_HEIGHT);
+		screenWidget->addChild(gridWidget);
 		addChild(screenWidget);
 
+		
+#ifndef METAMODULE
 		HiveStartPosEditWidget<MODULE>* editWidget = new HiveStartPosEditWidget<MODULE>(module);
-		editWidget->box.pos = gridWidget->box.pos;
-		editWidget->box.size = gridWidget->box.size;
+		editWidget->box.pos = screenWidget->box.pos;
+		editWidget->box.size = screenWidget->box.size;
 		addChild(editWidget);
+#endif
 
 		addInput(createInputCentered<StoermelderPort>(Vec(24.2f, 60.9f), module, MODULE::SHIFT_L1_INPUT));
 		addInput(createInputCentered<StoermelderPort>(Vec(24.2f, 256.0f), module, MODULE::SHIFT_L2_INPUT));
