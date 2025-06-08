@@ -772,11 +772,13 @@ struct MazeGridWidget : FramebufferWidget {
 	}
 
 	void drawLayer(const DrawArgs& args, int layer) override {
+#ifndef METAMODULE
 		if (layer == 1) {
 			// Dim the display but don't darken it completely
 			float b = std::max(0.2f, settings::rackBrightness);
 			nvgGlobalAlpha(args.vg, b);
 		}
+#endif
 		FramebufferWidget::drawLayer(args, layer);
 	}
 };
@@ -1012,7 +1014,7 @@ struct MazeStartPosEditWidget : TransparentWidget, MazeDrawHelper<MODULE> {
 
 
 template < typename MODULE >
-struct MazeScreenWidget : LightWidget, MazeDrawHelper<MODULE> {
+struct MazeScreenWidget : TransparentWidget, MazeDrawHelper<MODULE> {
 	MODULE* module;
 
 	MazeScreenWidget(MODULE* module) {
@@ -1023,9 +1025,9 @@ struct MazeScreenWidget : LightWidget, MazeDrawHelper<MODULE> {
 	}
 
 	void drawLayer(const DrawArgs& args, int layer) override {
+		TransparentWidget::drawLayer(args, layer);
 		if (module && module->currentState == MODULESTATE::GRID) {
 			MazeDrawHelper<MODULE>::drawLayer(args, layer, box);
-			LightWidget::drawLayer(args, layer);
 		}
 	}
 
@@ -1055,7 +1057,7 @@ struct MazeScreenWidget : LightWidget, MazeDrawHelper<MODULE> {
 				createContextMenu();
 				e.consume(this);
 			}
-			LightWidget::onButton(e);
+			TransparentWidget::onButton(e);
 		}
 	}
 
@@ -1082,19 +1084,20 @@ struct MazeWidget32 : ThemedModuleWidget<MazeModule<32, 4>> {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
 		MazeGridWidget<MODULE>* gridWidget = new MazeGridWidget<MODULE>(module);
-		gridWidget->box.pos = Vec(51.5f, 40.3f);
 		gridWidget->box.size = Vec(227.f, 227.f);
-		addChild(gridWidget);
 
 		MazeScreenWidget<MODULE>* screenWidget = new MazeScreenWidget<MODULE>(module);
-		screenWidget->box.pos = gridWidget->box.pos;
-		screenWidget->box.size = gridWidget->box.size;
+		screenWidget->box.pos = Vec(51.5f, 40.3f);
+		screenWidget->box.size = Vec(227.f, 227.f);
+		screenWidget->addChild(gridWidget);
 		addChild(screenWidget);
 
+#ifndef METAMODULE
 		MazeStartPosEditWidget<MODULE>* editWidget = new MazeStartPosEditWidget<MODULE>(module);
-		editWidget->box.pos = gridWidget->box.pos;
-		editWidget->box.size = gridWidget->box.size;
+		editWidget->box.pos = screenWidget->box.pos;
+		editWidget->box.size = screenWidget->box.size;
 		addChild(editWidget);
+#endif
 
 		addInput(createInputCentered<StoermelderPort>(Vec(23.8f, 256.0f), module, MODULE::SHIFT_L_INPUT));
 		addInput(createInputCentered<StoermelderPort>(Vec(306.2f, 256.0f), module, MODULE::SHIFT_R_INPUT));
