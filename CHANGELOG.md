@@ -5,17 +5,10 @@
 - Module [STRIP-BLOCK](./docs/Strip.md)
     - New module, a companion module for STRIP for blocking STRIP's expander-mechanism
 
-## 2.1.0 (in development)
-
-### New modules
-
-- Module [PRISMA](./docs/Prisma.md)
-    - A wave multiplier/phase shifter inspired by A-137-2
-
 ## 2.0.0 (in development)
 
 - [Selected modules](./MetaModule.md) are available on the [4ms MetaModule](https://4mscompany.com/p.php?p=990).
-- Modules [8FACE, 8FACEx2](./docs/EightFace.md) and [8FACE mk2](./docs/EightFaceMk2.md) are now considered experimental, because loading of presets into any module cannot be considered stable und issue-free in every case.
+- Modules [8FACE, 8FACEx2](./docs/EightFace.md) and [8FACE mk2](./docs/EightFaceMk2.md) are now considered experimental, because loading of presets into any module cannot be considered stable and issue-free in every case.
 
 ### New modules
 
@@ -43,6 +36,8 @@
 - Module [MIDI-CAT](./docs/MidiCat.md)
     - Implemented response curves (logarithmic/exponential) (#258)
     - Fixed MIDI-feedback for snapped parameters (#374)
+    - Implemented experimental LED binding for proper MIDI feedback on push-buttons (e.g. on VCV SEQ3 or Impromptu GATE-SEQ-64)
+    - Implemented alternative parameter binding by selection box
 - Module [MIDI-CAT CTX](./docs/MidiCat.md#ctx-expander)
     - Fixed broken button-handling when triggered by Parameter-mapping
 - Module [MIDI-CAT MEM](./docs/MidiCat.md#mem-expander)
@@ -67,7 +62,7 @@
 - Module [TRANSIT](./docs/Transit.md)
     - Added fade setting per slot
     - Improved handling on mapped switches (skipping all immediate values)
-    - Added context menu option to clean invalid bound parameters up (#383)
+    - Added context menu option to clean invalid parameters (#383)
 
 ## 2.0.beta4
 
