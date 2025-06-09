@@ -401,25 +401,48 @@ struct MidiKeyChoice : LedDisplayChoice {
 	}
 
 	std::string getSlotPrefix() {
-		if (module->slot[id].cc >= 0) {
-			return string::f("cc%03d ", module->slot[id].cc);
+		static const char* noteNames[] = {
+			" C", "C#", " D", "D#", " E", " F", "F#", " G", "G#", " A", "A#", " B"
+		};
+		if (module) {
+			if (module->slot[id].cc >= 0) {
+				return string::f("cc%03d ", module->slot[id].cc);
+			}
+			else if (module->slot[id].note >= 0) {
+
+				int oct = module->slot[id].note / 12 - 1;
+				int semi = module->slot[id].note % 12;
+				return string::f("  %s%d ", noteNames[semi], oct);
+			}
+			else if (module->slot[id].key >= 0 || id < -1) {
+				return "..... ";
+			}
+			return "      ";
 		}
-		else if (module->slot[id].note >= 0) {
-			static const char* noteNames[] = {
-				" C", "C#", " D", "D#", " E", " F", "F#", " G", "G#", " A", "A#", " B"
-			};
-			int oct = module->slot[id].note / 12 - 1;
-			int semi = module->slot[id].note % 12;
-			return string::f("  %s%d ", noteNames[semi], oct);
+		else {
+			// fake data for module browser
+			return string::f(" %s2 ", noteNames[id % 12]);
 		}
-		else if (module->slot[id].key >= 0 || id < -1) {
-			return "..... ";
-		}
-		return "      ";
 	}
 
 	void step() override {
-		if (!module) return;
+		if (!module) {
+			// for module browser
+			color.a = 0.5;
+			std::string label = "";
+			switch (id) {
+				case ID_CTRL:
+					label = RACK_MOD_CTRL_NAME; break;
+				case ID_ALT:
+					label = RACK_MOD_ALT_NAME; break;
+				case ID_SHIFT:
+					label = RACK_MOD_SHIFT_NAME; break;
+				default:
+					label = "> Unmapped"; break;
+			}
+			text = getSlotPrefix() + label;
+			return;
+		}
 
 		// Set bgColor and selected state
 		if (module->learningId == id) {
@@ -454,9 +477,9 @@ struct MidiKeyChoice : LedDisplayChoice {
 		} 
 		else {
 			if (module->learningId == id) {
-				text = getSlotPrefix() + "mapping...";
+				text = getSlotPrefix() + "Mapping...";
 			} else {
-				text = getSlotPrefix() + "unmapped";
+				text = getSlotPrefix() + "Unmapped";
 			}
 		}
 
@@ -564,7 +587,7 @@ struct MidiKeyDisplay : LedDisplay {
 	void step() override {
 		if (module) {
 			int mapLen = module->mapLen;
-			for (int id = 0; id < MAX_CHANNELS; id++) {
+			for (int id = 1; id < MAX_CHANNELS; id++) {
 				choices[id]->visible = (id < mapLen);
 				separators[id]->visible = (id < mapLen);
 			}
@@ -576,8 +599,9 @@ struct MidiKeyDisplay : LedDisplay {
 		this->module = module;
 
 		scroll = new ScrollWidget;
+		scroll->box.pos.y = 2.f;
 		scroll->box.size.x = box.size.x;
-		scroll->box.size.y = box.size.y - scroll->box.pos.y;
+		scroll->box.size.y = box.size.y - scroll->box.pos.y - 2.f;
 		addChild(scroll);
 
 		LedDisplaySeparator* separator = createWidget<LedDisplaySeparator>(scroll->box.pos);
@@ -617,18 +641,18 @@ struct MidiKeyWidget : ThemedModuleWidget<MidiKeyModule<>> {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		MidiWidget<>* midiInputWidget = createWidget<MidiWidget<>>(Vec(10.0f, 36.4f));
-		midiInputWidget->box.size = Vec(130.0f, 67.0f);
-		midiInputWidget->setMidiPort(module ? &module->midiInput : NULL);
+		MidiWidget<>* midiInputWidget = createWidget<MidiWidget<>>(Vec(0.0f, 36.4f));
+		midiInputWidget->box.size = Vec(150.0f, 67.0f);
+		midiInputWidget->setMidiPort(module ? &module->midiInput : NULL, "In");
 		addChild(midiInputWidget);
 
-		MidiKeyModDisplay<>* modWidget = createWidget<MidiKeyModDisplay<>>(Vec(10.0f, 107.4f));
-		modWidget->box.size = Vec(130.0f, 67.0f);
+		MidiKeyModDisplay<>* modWidget = createWidget<MidiKeyModDisplay<>>(Vec(0.0f, 107.4f));
+		modWidget->box.size = Vec(150.0f, 67.0f);
 		modWidget->setModule(module);
 		addChild(modWidget);
 
-		MidiKeyDisplay<16>* mapWidget = createWidget<MidiKeyDisplay<16>>(Vec(10.0f, 178.5f));
-		mapWidget->box.size = Vec(130.0f, 164.7f);
+		MidiKeyDisplay<16>* mapWidget = createWidget<MidiKeyDisplay<16>>(Vec(0.0f, 178.5f));
+		mapWidget->box.size = Vec(150.0f, 164.7f);
 		mapWidget->setModule(module);
 		addChild(mapWidget);
 	}

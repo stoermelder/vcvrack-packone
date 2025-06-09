@@ -47,6 +47,11 @@ In v1.7.0 new mapping options have been added to MIDI-CAT to achieve even faster
 
 ![MIDI-CAT module select](./MidiCat-map-select.gif)
 
+- **Map parameters by selection**  
+  *Added in v2.0.0*. This option allows you to map several parameters at once by applying a selection bound box around them. All parameters must be on the same module and the selection box cannot span multiple modules. The sub-option *Clear* clears all mappings of MIDI-CAT before and sub-option *Append* appends newly mapped parameters at the end. The options with additional *bind LED* are described in [LED-binding for MIDI-feedback](#led-binding-for-midi-feedback).
+
+![MIDI-CAT selection](./MidiCat-map-selection.gif)
+
 ## "Soft-takeover" or "Pickup" for CCs
 
 MIDI-CAT supports a technique sometimes called "soft-takeover" or "pickup": If the control on your MIDI device has a position different to the mapped parameter's position all incoming MIDI messages are ignored until the parameter's position has been "picked up". This method must be enabled for each mapping-slot in the context menu: 
@@ -112,7 +117,17 @@ Any parameter change can be sent back to an MIDI output with the same CC or note
 The option _Re-send MIDI feedback_ on MIDI-CAT's context menu allows you to manually send the values of all mapped parameters back to your MIDI device (since v1.7.0). This option can be useful if you switch your MIDI device while running Rack or the device behaves strangely and needs to be initalized again.
 
 <a name="feedback-periodically"></a>
-For some MIDI controllers which don't support different simultaneous "layers" but different presets which can be switched (e.g. Behringer X-Touch Mini) there is an additional submenu option _Periodically_ (since v1.8.0): When enabled MIDI-CAT sends MIDI feedback twice a second for all mapped controls regardless of parameter has been changed.
+For some MIDI controllers which don't support different simultaneous "layers" but different switchable presets (e.g. Behringer X-Touch Mini) there is an additional submenu option called _Periodically_ (since v1.8.0): When enabled MIDI-CAT sends MIDI-feedback twice a second for all mapped controls regardless if any parameter has been changed.
+
+## LED-binding for MIDI-feedback
+
+This is an experimental feature which was introduced in v2.0.0: It adds the ability to send MIDI-feedback according to the state of an LED on a module instead of the parameter's actual value. This is useful for buttons, which behave in a momentary way and do not represent the state of the parameter. Please note: The LED must be on the same module as the mapped parameter, it cannot be on any other module.  
+Here is a unpolished introduction video to demonstrate the configuration steps and how this feature works:
+
+[![LED-binding](https://img.youtube.com/vi/w6AYmfzIuZ4/hqdefault.jpg )](https://www.youtube.com/watch?v=w6AYmfzIuZ4)
+
+[stoermelder STRIP-file for Impromptu GATE-SEQ-64](MidiCat-LaunchPadMiniMk3-GateSeq64-FactoryCustom3.vcvss)  
+[Modified template for LaunchPad Mini Mk3](MidiCat-LaunchPadMiniMk3-FactoryCustom3.syx)
 
 ## Additional features
 
@@ -243,3 +258,8 @@ There are two modes with different behavior for MIDI-feedback:
 - v2.0.0
     - Added expander CLK for MIDI-CAT (#299)
     - Fixed pickup of parameters with snapping (#308)
+    - Fixed broken button-handling of MIDI-CAT MEM and MIDI-CAT CTX when triggered by Parameter-mapping (#356)
+    - Added trigger-inputs for Prev and Next on MIDI-CAT MEM
+    - Implemented response curves (logarithmic/exponential) (#258)
+    - Implemented experimental LED binding for proper MIDI feedback on push-buttons (e.g. on VCV SEQ3 or Impromptu GATE-SEQ-64) (#401)
+    - Implemented alternative parameter binding by selection box

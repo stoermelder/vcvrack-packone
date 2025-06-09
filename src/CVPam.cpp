@@ -139,22 +139,22 @@ struct CVPamWidget : ThemedModuleWidget<CVPamModule> {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addOutput(createOutputCentered<StoermelderPort>(Vec(26.9f, 60.8f), module, CVPamModule::POLY_OUTPUT1));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(123.1f, 60.8f), module, CVPamModule::POLY_OUTPUT2));
+		typedef MapModuleDisplay<MAX_CHANNELS, CVPamModule> TMapDisplay;
+		TMapDisplay* mapWidget = createWidget<TMapDisplay>(Vec(0.f, 36.4f));
+		mapWidget->box.size = Vec(150.f, 261.7f);
+		mapWidget->setModule(module);
+		addChild(mapWidget);
 
-		PolyLedWidget<>* w0 = createWidgetCentered<PolyLedWidget<>>(Vec(54.2f, 60.8f));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(26.9f, 327.8f), module, CVPamModule::POLY_OUTPUT1));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(123.1f, 327.8f), module, CVPamModule::POLY_OUTPUT2));
+
+		PolyLedWidget<>* w0 = createWidgetCentered<PolyLedWidget<>>(Vec(54.2f, 327.8f));
 		w0->setModule(module, CVPamModule::CHANNEL_LIGHTS1);
 		addChild(w0);
 
-		PolyLedWidget<>* w1 = createWidgetCentered<PolyLedWidget<>>(Vec(95.8f, 60.8f));
+		PolyLedWidget<>* w1 = createWidgetCentered<PolyLedWidget<>>(Vec(95.8f, 327.8f));
 		w1->setModule(module, CVPamModule::CHANNEL_LIGHTS2);
 		addChild(w1);
-
-		typedef MapModuleDisplay<MAX_CHANNELS, CVPamModule> TMapDisplay;
-		TMapDisplay* mapWidget = createWidget<TMapDisplay>(Vec(10.6f, 81.5f));
-		mapWidget->box.size = Vec(128.9f, 261.7f);
-		mapWidget->setModule(module);
-		addChild(mapWidget);
 	}
 
 

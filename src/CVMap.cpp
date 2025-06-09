@@ -345,6 +345,13 @@ struct InputChannelMenuItem : MenuItem {
 
 
 struct CVMapChoice : MapModuleChoice<MAX_CHANNELS, CVMapModule> {
+	void prependContextMenu(Menu* menu) override {
+		menu->addChild(createSubmenuItem("CV-MAP Menu", "", [=](Menu* menu) {
+			ModuleWidget* moduleWidget = APP->scene->rack->getModule(module->getId());
+			moduleWidget->appendContextMenu(menu);
+		}));
+	}
+
 	void appendContextMenu(Menu* menu) override {
 		menu->addChild(new MenuSeparator);
 		menu->addChild(construct<InputChannelMenuItem>(&MenuItem::text, "Input channel", &InputChannelMenuItem::module, module, &InputChannelMenuItem::id, id));
@@ -358,7 +365,13 @@ struct CVMapChoice : MapModuleChoice<MAX_CHANNELS, CVMapModule> {
 	}
 
 	std::string getSlotPrefix() override {
-		return string::f("In%02d ", module->mapInput[id] + 1);
+		if (module) {
+			return string::f("In%02d ", module->mapInput[id] + 1);
+		}
+		else {
+			// for module browser
+			return string::f("In%02d ", id + 1);
+		}
 	}
 }; // struct CVMapChoice
 
@@ -377,26 +390,26 @@ struct CVMapWidget : ThemedModuleWidget<CVMapModule>, ParamWidgetContextExtender
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		CVMapPort* input1 = createInputCentered<CVMapPort>(Vec(26.9f, 60.8f), module, CVMapModule::POLY_INPUT1);
+		typedef MapModuleDisplay<MAX_CHANNELS, CVMapModule, CVMapChoice> TMapDisplay;
+		TMapDisplay* mapWidget = createWidget<TMapDisplay>(Vec(0.f, 36.4f));
+		mapWidget->box.size = Vec(150.f, 261.7f);
+		mapWidget->setModule(module);
+		addChild(mapWidget);
+
+		CVMapPort* input1 = createInputCentered<CVMapPort>(Vec(26.9f, 327.8f), module, CVMapModule::POLY_INPUT1);
 		input1->i = 0;
 		addInput(input1);
-		CVMapPort* input2 = createInputCentered<CVMapPort>(Vec(123.1f, 60.8f), module, CVMapModule::POLY_INPUT2);
+		CVMapPort* input2 = createInputCentered<CVMapPort>(Vec(123.1f, 327.8f), module, CVMapModule::POLY_INPUT2);
 		input2->i = 1;
 		addInput(input2);
 
-		PolyLedWidget<>* w0 = createWidgetCentered<PolyLedWidget<>>(Vec(54.2f, 60.8f));
+		PolyLedWidget<>* w0 = createWidgetCentered<PolyLedWidget<>>(Vec(54.2f, 327.8f));
 		w0->setModule(module, CVMapModule::CHANNEL_LIGHTS1);
 		addChild(w0);
 
-		PolyLedWidget<>* w1 = createWidgetCentered<PolyLedWidget<>>(Vec(95.8f, 60.8f));
+		PolyLedWidget<>* w1 = createWidgetCentered<PolyLedWidget<>>(Vec(95.8f, 327.8f));
 		w1->setModule(module, CVMapModule::CHANNEL_LIGHTS2);
 		addChild(w1);
-
-		typedef MapModuleDisplay<MAX_CHANNELS, CVMapModule, CVMapChoice> TMapDisplay;
-		TMapDisplay* mapWidget = createWidget<TMapDisplay>(Vec(10.6f, 81.5f));
-		mapWidget->box.size = Vec(128.9f, 261.7f);
-		mapWidget->setModule(module);
-		addChild(mapWidget);
 	}
 
 	void step() override {
@@ -412,10 +425,12 @@ struct CVMapWidget : ThemedModuleWidget<CVMapModule>, ParamWidgetContextExtender
 	}
 
 	void appendContextMenu(Menu* menu) override {
-		ThemedModuleWidget<CVMapModule>::appendContextMenu(menu);
-		CVMapModule* module = dynamic_cast<CVMapModule*>(this->module);
+		if (menu->children.size() > 0) {
+			ThemedModuleWidget<CVMapModule>::appendContextMenu(menu);
+			menu->addChild(new MenuSeparator());
+		}
 
-		menu->addChild(new MenuSeparator());
+		CVMapModule* module = dynamic_cast<CVMapModule*>(this->module);
 		menu->addChild(createBoolPtrMenuItem("Lock parameter changes", "", &module->lockParameterChanges));
 		menu->addChild(createIndexPtrSubmenuItem("Signal input", {"0V..10V", "-5V..5V"}, &module->bipolarInput));
 		menu->addChild(createBoolPtrMenuItem("Audio rate processing", "", &module->audioRate));

@@ -1,5 +1,5 @@
 #include "Strip.hpp"
-#include "digital.hpp"
+#include "digital/digital.hpp"
 #include "helpers/TaskWorker.hpp"
 
 namespace StoermelderPackOne {
@@ -18,7 +18,7 @@ enum class RANDOMEXCL {
 };
 
 
-struct StripModule : StripModuleBase {
+struct StripModule : StripModuleBase, StripIdFixModule {
 	enum ParamIds {
 		MODE_PARAM,
 		ON_PARAM,
@@ -74,14 +74,14 @@ struct StripModule : StripModuleBase {
 	StripModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		configParam<TriggerParamQuantity>(MODE_PARAM, 0, 1, 0, "Toggle left/right mode");
+		configSwitch(MODE_PARAM, 0.f, 1.f, 0.f, "Toggle left/right mode");
 		configInput(ON_INPUT, "Strip on/toggle trigger");
-		configParam<TriggerParamQuantity>(ON_PARAM, 0, 1, 0, "Switch/toggle strip on");
+		configSwitch(ON_PARAM, 0.f, 1.f, 0.f, "Switch/toggle strip on");
 		configInput(OFF_INPUT, "Strip off trigger");
-		configParam<TriggerParamQuantity>(OFF_PARAM, 0, 1, 0, "Switch strip off");
+		configSwitch(OFF_PARAM, 0.f, 1.f, 0.f, "Switch strip off");
 		configInput(RAND_INPUT, "Strip randomization trigger");
-		configParam<TriggerParamQuantity>(RAND_PARAM, 0, 1, 0, "Randomize strip");
-		configParam(EXCLUDE_PARAM, 0, 1, 0, "Parameter randomization include/exclude");
+		configSwitch(RAND_PARAM, 0.f, 1.f, 0.f, "Randomize strip");
+		configSwitch(EXCLUDE_PARAM, 0.f, 1.f, 0.f, "Parameter randomization include/exclude");
 
 		lightDivider.setDivision(1024);
 		onReset();
@@ -206,7 +206,7 @@ struct StripModule : StripModuleBase {
 		//std::lock_guard<std::mutex> lockGuard(excludeMutex);
 		// Do not lock the mutex as changes on excludedParams are rare events
 
-		history::ComplexAction* complexAction;
+		history::ComplexAction* complexAction = nullptr;
 		if (useHistory) {
 			complexAction = new history::ComplexAction;
 			complexAction->name = "stoermelder STRIP randomize";
@@ -220,7 +220,7 @@ struct StripModule : StripModuleBase {
 				// Be careful: this function is called from the dsp-thread, but widgets belong
 				// to the app-world!
 
-				history::ModuleChange* h;
+				history::ModuleChange* h = nullptr;
 				if (useHistory) {
 					// history::ModuleChange
 					h = new history::ModuleChange;
@@ -349,8 +349,9 @@ struct StripModule : StripModuleBase {
 				json_t* paramIdJ = json_object_get(excludedParamJ, "paramId");
 				if (!(moduleIdJ && paramIdJ)) 
 					continue;
-				int64_t moduleId = json_integer_value(moduleIdJ); 
-				int paramId = json_integer_value(paramIdJ); 
+				int64_t moduleId = json_integer_value(moduleIdJ);
+				int paramId = json_integer_value(paramIdJ);
+				moduleId = idFix(moduleId);
 				excludedParams.insert(std::make_tuple(moduleId, paramId));
 			}
 		}
@@ -360,31 +361,8 @@ struct StripModule : StripModuleBase {
 		if (randomParamsOnlyJ) randomParamsOnly = json_boolean_value(randomParamsOnlyJ);
 		json_t* presetLoadReplaceJ = json_object_get(rootJ, "presetLoadReplace");
 		if (presetLoadReplaceJ) presetLoadReplace = json_boolean_value(presetLoadReplaceJ);
+		idFixClearMap();
 		// Release excludeMutex
-	}
-};
-
-
-struct RandomExclMenuItem : MenuItem {
-	struct RandomExclItem : MenuItem {
-		StripModule* module;
-		RANDOMEXCL randomExcl;
-		void onAction(const event::Action& e) override {
-			module->randomExcl = randomExcl;
-		}
-		void step() override {
-			rightText = module->randomExcl == randomExcl ? "✔" : "";
-			MenuItem::step();
-		}
-	};
-
-	StripModule* module;
-	Menu* createChildMenu() override {
-		Menu* menu = new Menu;
-		menu->addChild(construct<RandomExclItem>(&MenuItem::text, "All", &RandomExclItem::module, module, &RandomExclItem::randomExcl, RANDOMEXCL::NONE));
-		menu->addChild(construct<RandomExclItem>(&MenuItem::text, "Exclude", &RandomExclItem::module, module, &RandomExclItem::randomExcl, RANDOMEXCL::EXC));
-		menu->addChild(construct<RandomExclItem>(&MenuItem::text, "Include", &RandomExclItem::module, module, &RandomExclItem::randomExcl, RANDOMEXCL::INC));
-		return menu;
 	}
 };
 
@@ -419,8 +397,7 @@ struct ExcludeButton : TL1105 {
 		if (!learn)
 			return;
 		// Check if a ParamWidget was touched
-		// NB: unstable API
-		ParamWidget* touchedParam = APP->scene->rack->touchedParam;
+		ParamWidget* touchedParam = APP->scene->rack->getTouchedParam();
 		if (touchedParam) {
 			ParamQuantity* paramQuantity = touchedParam->getParamQuantity();
 			if (paramQuantity && paramQuantity->module != module) {
@@ -455,7 +432,7 @@ struct ExcludeButton : TL1105 {
 
 	void groupExcludeLearn() {
 		learn ^= true;
-		APP->scene->rack->touchedParam = NULL;
+		APP->scene->rack->setTouchedParam(NULL);
 	}
 
 	void groupExcludeClear() {
@@ -560,28 +537,17 @@ struct ExcludeButton : TL1105 {
 
 	void createContextMenu() {
 		ui::Menu* menu = createMenu();
-
-		ui::MenuLabel* modelLabel = new ui::MenuLabel;
-		modelLabel->text = "Parameter randomization";
-		menu->addChild(modelLabel);
-
-		RandomExclMenuItem* randomExclMenuItem = construct<RandomExclMenuItem>(&MenuItem::text, "Mode", &RandomExclMenuItem::module, module);
-		randomExclMenuItem->rightText = RIGHT_ARROW;
-		menu->addChild(randomExclMenuItem);
-
-		struct LabelButton : ui::MenuItem {
-			void onButton(const event::Button& e) override { }
-		};
-
-		LabelButton* help1Label = new LabelButton;
-		help1Label->rightText = "short press";
-		help1Label->text = "Learn";
-		menu->addChild(help1Label);
-
-		LabelButton* help2Label = new LabelButton;
-		help2Label->rightText = "long press";
-		help2Label->text = "Clear";
-		menu->addChild(help2Label);
+		menu->addChild(createMenuLabel("Parameter randomization"));
+		menu->addChild(StoermelderPackOne::Rack::createMapPtrSubmenuItem("Mode",
+			{
+				{ RANDOMEXCL::NONE, "All" },
+				{ RANDOMEXCL::EXC, "Exclude" },
+				{ RANDOMEXCL::INC, "Include" }
+			},
+			&module->randomExcl
+		));
+		menu->addChild(createMenuItem("Learn", "short press"));
+		menu->addChild(createMenuItem("Clear", "long press"));
 
 		if (module->excludedParams.size() == 0)
 			return;
@@ -607,9 +573,14 @@ struct ExcludeButton : TL1105 {
 			text += paramQuantity->getLabel();
 			text += "\"";
 
-			ui::MenuLabel* modelLabel = new ui::MenuLabel;
-			modelLabel->text = text;
-			menu->addChild(modelLabel);
+			menu->addChild(createSubmenuItem(text, "", [this, it](Menu* menu) {
+				menu->addChild(createMenuItem("Remove from list", "", [this, it]() {
+					// Aquire excludeMutex to get exclusive access to excludedParams
+					std::lock_guard<std::mutex> lockGuard(module->excludeMutex);
+					module->excludedParams.erase(it);
+					// Release excludeMutex
+				}));
+			}));
 		}
 		// Release excludeMutex
 	}

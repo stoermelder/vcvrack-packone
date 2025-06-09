@@ -68,7 +68,7 @@ struct BoltModule : Module {
 		configInput(IN + 3, "Logic 4");
 		configOutput(OUTPUT, "Logic");
 
-		configParam<TriggerParamQuantity>(OP_PARAM, 0.0f, 1.0f, 0.0f, "Next operator");
+		configSwitch(OP_PARAM, 0.0f, 1.0f, 0.0f, "Next operator");
 		lightDivider.setDivision(1024);
 		onReset();
 	}

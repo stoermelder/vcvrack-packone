@@ -84,6 +84,9 @@ The file-format "vcvss" for storing strips is very close to Rack's own format fo
     - "randomizeEnabled" of parameters is respected when randomizing (#349)
     - Fixed crash in rare cases (Surge-modules) (#366)
     - Fixed wrong hotkey modifier on Mac (Ctrl instead of Cmd) on Cmd+Shift+L
+    - Ask to view unavailable modules on the VCV Library when loading a strip (#18)
+    - Fixed missing module-id mapping when adding using STRIP (#402)
+    - Added option to remove items from included/excluded parameters list
 
 # stoermelder STRIP-BAY
 
@@ -95,3 +98,5 @@ STRIP-BAY is a companion module for STRIP: It is used to name some "patching-poi
 
 - v1.9.0
     - Initial release of STRIP-BAY
+- v2.0.0
+    - Fixed crash on stackable input-cables (#405)

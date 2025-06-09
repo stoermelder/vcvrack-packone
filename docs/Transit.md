@@ -169,3 +169,6 @@ Once placed next to TRANSIT the expander works and behaves the same way TRANSIT 
     - Added missing reset-handling for "Trigger random", "Trigger pseudo-random" and "Trigger random walk"
     - Allow disabling of "long press" for changing the number of active slots (#354)
     - Increased maximum number of expanders to 15 (#381)
+    - Added fade setting per slot
+    - Improved handling on mapped switches (skipping all immediate values)
+    - Added context menu option to clean invalid bound parameters up (#383)

@@ -1,7 +1,8 @@
 #pragma once
 #include "plugin.hpp"
-#include "digital.hpp"
+#include "digital/digital.hpp"
 #include "helpers/StripIdFixModule.hpp"
+#include "components/MenuLabelEx.hpp"
 
 namespace StoermelderPackOne {
 namespace Transit {
@@ -43,6 +44,8 @@ struct TransitBase : Module, StripIdFixModule {
 	std::vector<float> preset[NUM_PRESETS];
 	/** [Stored to JSON] */
 	std::string textLabel[NUM_PRESETS];
+	/** [Stored to JSON] */
+	float fadeTime[NUM_PRESETS];
 
 	LongPressButton presetButton[NUM_PRESETS];
 
@@ -65,6 +68,7 @@ struct TransitBase : Module, StripIdFixModule {
 			json_t* presetJ = json_object();
 			json_object_set_new(presetJ, "slotUsed", json_boolean(TransitBase<NUM_PRESETS>::presetSlotUsed[i]));
 			json_object_set_new(presetJ, "textLabel", json_string(TransitBase<NUM_PRESETS>::textLabel[i].c_str()));
+			json_object_set_new(presetJ, "fadeTime", json_real(TransitBase<NUM_PRESETS>::fadeTime[i]));
 			if (TransitBase<NUM_PRESETS>::presetSlotUsed[i]) {
 				json_t* slotJ = json_array();
 				for (size_t j = 0; j < TransitBase<NUM_PRESETS>::preset[i].size(); j++) {
@@ -90,6 +94,8 @@ struct TransitBase : Module, StripIdFixModule {
 			presetSlotUsed[presetIndex] = json_boolean_value(json_object_get(presetJ, "slotUsed"));
 			json_t* textLabelJ = json_object_get(presetJ, "textLabel");
 			if (textLabelJ) textLabel[presetIndex] = json_string_value(textLabelJ);
+			json_t* fadeTimeJ = json_object_get(presetJ, "fadeTime");
+			if (fadeTimeJ) fadeTime[presetIndex] = json_real_value(fadeTimeJ);
 			preset[presetIndex].clear();
 			if (presetSlotUsed[presetIndex]) {
 				json_t* slotJ = json_object_get(presetJ, "slot");
@@ -105,7 +111,7 @@ struct TransitBase : Module, StripIdFixModule {
 };
 
 template <int NUM_PRESETS>
-struct TransitParamQuantity : ParamQuantity {
+struct TransitParamQuantity : SwitchQuantity {
 	int id;
 
 	std::string getDisplayValueString() override {
@@ -114,7 +120,7 @@ struct TransitParamQuantity : ParamQuantity {
 	}
 	std::string getLabel() override {
 		auto module = reinterpret_cast<TransitBase<NUM_PRESETS>*>(this->module);
-		return !module->textLabel[id].empty() ? "" : string::f("Snapshot #%d", module->ctrlOffset * NUM_PRESETS + id + 1);
+		return string::f("Snapshot #%d", module->ctrlOffset * NUM_PRESETS + id + 1);
 	}
 };
 
@@ -229,7 +235,78 @@ struct TransitLedButton : LEDButton {
 		}; // struct LabelMenuItem
 
 		menu->addChild(new MenuSeparator);
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Snapshot"));
+		menu->addChild(createSubmenuItem("Fade", "",
+			[=](Menu* menu) {
+				menu->addChild(createCheckMenuItem("Parameter/CV", "",
+					[=]() {
+						return module->fadeTime[id] == -1.f;
+					},
+					[=]() {
+						module->fadeTime[id] = -1.f;
+					}
+				));
+
+				struct FadeTimeLabel : MenuLabelEx {
+					TransitBase<NUM_PRESETS>* module;
+					int id;
+					void step() override {
+						this->rightText = CHECKMARK(module->fadeTime[id] != -1.f);
+						MenuLabelEx::step();
+					}
+				};
+				menu->addChild(construct<FadeTimeLabel>(&MenuLabel::text, "Custom", &FadeTimeLabel::module, module, &FadeTimeLabel::id, id));
+
+				struct FadeTimeSlider : ui::Slider {
+					struct FadeTimeQuantity : Quantity {
+						TransitBase<NUM_PRESETS>* module;
+						int id;
+						FadeTimeQuantity(TransitBase<NUM_PRESETS>* module, int id) {
+							this->module = module;
+							this->id = id;
+						}
+						void setValue(float value) override {
+							if (value == -1.f) {
+								module->fadeTime[id] = value;
+								return;
+							}
+							module->fadeTime[id] = math::clamp(value, 0.f, 1.f);
+						}
+						float getValue() override {
+							return module->fadeTime[id];
+						}
+						float getDefaultValue() override {
+							return -1.f;
+						}
+						std::string getLabel() override {
+							return "Fade time";
+						}
+						std::string getString() override {
+							if (getValue() == -1.f) return "Default";
+							return Quantity::getString();
+						}
+						int getDisplayPrecision() override {
+							return 3;
+						}
+						float getMaxValue() override {
+							return 1.f;
+						}
+						float getMinValue() override {
+							return 0.f;
+						}
+					};
+
+					FadeTimeSlider(TransitBase<NUM_PRESETS>* module, int id) {
+						box.size.x = 160.0f;
+						quantity = new FadeTimeQuantity(module, id);
+					}
+					~FadeTimeSlider() {
+						delete quantity;
+					}
+				};
+				menu->addChild(new FadeTimeSlider(module, id));
+			}
+		));
+		menu->addChild(new MenuSeparator);
 		menu->addChild(construct<SlotItem>(&MenuItem::text, "Save", &MenuItem::rightText, "Click", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::SAVE));
 		menu->addChild(construct<SlotItem>(&MenuItem::text, "Randomize and save", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::RANDOMIZE));
 		menu->addChild(construct<SlotItem>(&MenuItem::text, "Load", &MenuItem::rightText, RACK_MOD_SHIFT_NAME "+Click", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::LOAD, &SlotItem::disabled, !module->presetSlotUsed[id]));

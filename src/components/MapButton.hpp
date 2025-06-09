@@ -1,6 +1,9 @@
-#include "plugin.hpp"
+#pragma once
+#include <rack.hpp>
 
 namespace StoermelderPackOne {
+
+using namespace rack;
 
 template <typename MODULE>
 struct MapParamQuantity : ParamQuantity {
@@ -98,7 +101,7 @@ struct MapButton : LEDBezel {
 		if (!module) return;
 
 		// Reset touchedParam
-		APP->scene->rack->touchedParam = NULL;
+		APP->scene->rack->setTouchedParam(NULL);
 		module->enableLearn(id);
 
 		GLFWcursor* cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
@@ -108,9 +111,9 @@ struct MapButton : LEDBezel {
 	void onDeselect(const event::Deselect& e) override {
 		if (!module) return;
 		// Check if a ParamWidget was touched
-		ParamWidget* touchedParam = APP->scene->rack->touchedParam;
+		ParamWidget* touchedParam = APP->scene->rack->getTouchedParam();
 		if (touchedParam && touchedParam->getParamQuantity()->module != module) {
-			APP->scene->rack->touchedParam = NULL;
+			APP->scene->rack->setTouchedParam(NULL);
 			int64_t moduleId = touchedParam->getParamQuantity()->module->id;
 			int paramId = touchedParam->getParamQuantity()->paramId;
 			module->learnParam(id, moduleId, paramId);

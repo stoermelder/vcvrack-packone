@@ -135,16 +135,16 @@ struct MapButton : TL1105 {
 		if (id == -1) return;
 
 		// Reset touchedParam
-		APP->scene->rack->touchedParam = NULL;
+		APP->scene->rack->setTouchedParam(NULL);
 		module->enableLearn(id);
 	}
 
 	void onDeselect(const event::Deselect& e) override {
 		if (!module || module->learningId < 0) return;
 		// Check if a ParamWidget was touched
-		ParamWidget* touchedParam = APP->scene->rack->touchedParam;
+		ParamWidget* touchedParam = APP->scene->rack->getTouchedParam();
 		if (touchedParam && touchedParam->getParamQuantity()->module != module) {
-			APP->scene->rack->touchedParam = NULL;
+			APP->scene->rack->setTouchedParam(NULL);
 			int64_t moduleId = touchedParam->getParamQuantity()->module->id;
 			int paramId = touchedParam->getParamQuantity()->paramId;
 			module->learnParam(id, moduleId, paramId);

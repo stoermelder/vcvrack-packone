@@ -1,5 +1,5 @@
 #include "plugin.hpp"
-#include "digital.hpp"
+#include "digital/digital.hpp"
 #include "EightFaceMk2Base.hpp"
 
 namespace StoermelderPackOne {
@@ -55,7 +55,7 @@ struct EightFaceMk2ExModule : EightFaceMk2Base<NUM_PRESETS> {
 		}
 	}
 
-	void onReset() override { 
+	void onReset() override {
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			if (BASE::presetSlotUsed[i]) {
 				for (json_t* vJ : BASE::preset[i]) {
@@ -95,12 +95,12 @@ struct EightFaceMk2ExWidget : ThemedModuleWidget<EightFaceMk2ExModule<NUM_PRESET
 	typedef EightFaceMk2ExModule<NUM_PRESETS> MODULE;
 	
 	EightFaceMk2ExWidget(MODULE* module)
-		: ThemedModuleWidget<MODULE>(module, "EightFaceMk2Ex") {
+		: ThemedModuleWidget<MODULE>(module, "EightFaceMk2Ex", "EightFaceMk2", true) {
 		BASE::setModule(module);
 		BASE::disableDuplicateAction = true;
 
-		BASE::addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
-		BASE::addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+		BASE::addChild(createWidget<StoermelderBlackScrew>(Vec(0, 0)));
+		BASE::addChild(createWidget<StoermelderBlackScrew>(Vec(BASE::box.size.x - 1 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
 		for (size_t i = 0; i < NUM_PRESETS; i++) {
 			float o = i * (164.8f / (NUM_PRESETS - 1));

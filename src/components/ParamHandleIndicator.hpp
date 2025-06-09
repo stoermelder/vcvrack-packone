@@ -1,8 +1,10 @@
 #pragma once
-#include "plugin.hpp"
+#include <rack.hpp>
 #include "../ui/ViewportHelper.hpp"
 
 namespace StoermelderPackOne {
+
+using namespace rack;
 
 struct ParamHandleIndicator : ParamHandle {
 	NVGcolor color;

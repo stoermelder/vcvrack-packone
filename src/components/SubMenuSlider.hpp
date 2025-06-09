@@ -1,7 +1,9 @@
 #pragma once
-#include "plugin.hpp"
+#include <rack.hpp>
 
 namespace StoermelderPackOne {
+
+using namespace rack;
 
 struct SubMenuSlider : MenuItem {
 	static constexpr float SENSITIVITY = 0.001f;
@@ -22,7 +24,11 @@ struct SubMenuSlider : MenuItem {
 
 		float progress = quantity ? quantity->getScaledValue() : 0.f;
 		std::string text = quantity ? quantity->getString() : "";
-		bndSlider(args.vg, 0.0, 0.0, box.size.x, box.size.y, BND_CORNER_NONE, state, progress, text.c_str(), NULL);
+
+		// If parent is a Menu, make corners sharp
+		ui::Menu* parentMenu = dynamic_cast<ui::Menu*>(getParent());
+		int flags = parentMenu ? BND_CORNER_ALL : BND_CORNER_NONE;
+		bndSlider(args.vg, 0.0, 0.0, box.size.x, box.size.y, flags, state, progress, text.c_str(), NULL);
 	}
 	
 	void onDragDrop(const event::DragDrop& e) override { }

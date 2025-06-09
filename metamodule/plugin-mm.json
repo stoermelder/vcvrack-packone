@@ -1,0 +1,43 @@
+{
+  "MetaModuleBrandName": "stoermelder",
+  "MetaModuleBrandSlug": "Stoermelder-P1",
+  "MetaModulePluginMaintainer": "Benjamin Dill",
+  "MetaModulePluginMaintainerEmail": "stoermelder@outlook.com",
+  "MetaModulePluginMaintainerUrl": "https://github.com/stoermelder/vcvrack-packone",
+  "MetaModuleDescription": "Selected modules from Stoermelder PackOne for MetaModule",
+  "MetaModuleIncludedModules":
+  [
+    {
+      "slug": "Bolt",
+      "name": "BOLT"
+    },
+    {
+      "slug": "FourRounds",
+      "name": "4ROUNDS"
+    },
+    {
+      "slug": "Maze",
+      "name": "MAZE"
+    },
+    {
+      "slug": "MidiStep",
+      "name": "MIDI-STEP"
+    },
+    {
+      "slug": "Hive",
+      "name": "HIVE"
+    },
+    {
+      "slug": "Orbit",
+      "name": "ORBIT"
+    },
+    {
+      "slug": "Pile",
+      "name": "PILE"
+    },
+    {
+      "slug": "Raw",
+      "name": "RAW"
+    }
+  ]
+}

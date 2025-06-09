@@ -1,20 +1,22 @@
 # stoermelder PackOne
 
 <!-- Version and License Badges -->
-![Version](https://img.shields.io/badge/version-2.0.beta4-green.svg?style=flat-square)
-![License](https://img.shields.io/badge/license-GPLv3+-blue.svg?style=flat-square)
-![Language](https://img.shields.io/badge/language-C++-yellow.svg?style=flat-square)
+![Version](https://img.shields.io/badge/Version-2.0.0-green.svg?style=flat-square)
+![Rack](https://img.shields.io/badge/VCV_Rack-v2-red.svg?style=flat-square)
+![MetaModule](https://img.shields.io/badge/MetaModule-v2-orange.svg?style=flat-square)
+![License](https://img.shields.io/badge/License-GPLv3+-blue.svg?style=flat-square)
+![Language](https://img.shields.io/badge/Language-C++-yellow.svg?style=flat-square)
 
-The PackOne plugin gives you some modules for [VCV Rack](https://www.vcvrack.com).
+**The PackOne plugin gives you some modules for [VCV Rack](https://www.vcvrack.com). Stable versions are released in the [VCV Library](https://library.vcvrack.com/?brand=stoermelder). [Selected modules](./MetaModule.md) are also available on the [4ms MetaModule](https://4mscompany.com/p.php?p=990)!**
 
-**Stable versions are released in the [VCV Library](https://library.vcvrack.com/?brand=stoermelder).  
-[Development builds](https://github.com/stoermelder/vcvrack-packone/releases/tag/Nightly) of the latest commit are also available for all platforms. Please review the [changelog](./CHANGELOG.md) for this plugin.**
+A [Development build](https://github.com/stoermelder/vcvrack-packone/releases/tag/Nightly) of the latest commit is also available for all platforms. Please review the [changelog](./CHANGELOG.md) for this plugin.
 
-If you like my modules consider donating to https://paypal.me/stoermelder. Thank you for your support!
+If you like my modules consider donating to https://paypal.me/stoermelder, but don't feel obligated to do so. Thank you for your support!
 
 ## Latest additions to PackOne - new for v2.0
 
 - [DIRT](./docs/Dirt.md): a module for noise, crackles and crosstalk on polyphonic cables
+- [MIDI-CAT XL](./docs/MidiCat.md): a wider panel version of MIDI-CAT with identical features and driver selection moved to the context menu
 - [MIDI-CAT CLK](./docs/MidiCat.md#clk-expander): expander for MIDI-CAT, allows trigger-quantization for mapped parameters (#299)
 - [MIDI-KEY](./docs/MidiKey.md): utility for generating keyboard events from MIDI CC or Note messages
 - [STRIP++](./docs/StripPp.md): utility for pasting and importing Rack selections while preserving parameter mappings and [GLUE](./docs/Glue.md) labels
@@ -75,14 +77,15 @@ Feel free to contact me or create a GitHub issue if you have any problems or que
 - [Artem Leonov](https://artemleonov.bandcamp.com/) of [VCV Rack Ideas](https://www.youtube.com/channel/UCc0cXlzQdOwQSiyW30NQ7Sg) for his endless ideas, feature requests and testing, also for his great video tutorials
 - [Omri Cohen](https://omricohencomposer.bandcamp.com/) for his fabulous video tutorials and fun live streams
 - Andrew Belt for creating and developing VCV Rack
-- All others who contributed ideas or made donations for the development of PackOne
+- 4ms Company for creating and developing MetaModule
+- All others who contributed ideas or made donations for the development of PackOne!
 
 ## Building
 
-Follow the [build instructions](https://vcvrack.com/manual/Building.html#building-rack-plugins) for VCV Rack.
+Follow the [build instructions](https://vcvrack.com/manual/Building#Building-Rack-plugins) for VCV Rack or the [build instructions](https://github.com/4ms/metamodule-plugin-sdk?tab=readme-ov-file#path-to-the-sdk) for MetaModule.
 
 ## License
 
-All **source code** is copyright © 2022 Benjamin Dill and is licensed under the [GNU General Public License, version v3.0](./LICENSE.txt).
+All **source code** is copyright © 2025 Benjamin Dill and is distributed under the [GNU General Public License, version v3.0](./LICENSE.txt) or any later version (SPDX: GPL-3.0-or-later).
 
-All **files** and **graphics** in the `res` and `res-src` directories are licensed under [CC BY-NC-ND 4.0](https://creativecommons.org/licenses/by-nc-nd/4.0/). You may not distribute modified adaptations of these graphics.
+All **files** and **graphics** in the `res` and `res-src` directories are distributed under [CC BY-NC-ND 4.0](https://creativecommons.org/licenses/by-nc-nd/4.0/) (SPDX: CC-BY-NC-ND-4.0). You may not distribute modified adaptations of these graphics.

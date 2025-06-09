@@ -282,41 +282,29 @@ struct MapModuleChoice : LedDisplayChoice {
 
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
 			e.consume(this);
-
-			if (module->paramHandles[id].moduleId >= 0) {
-				createContextMenu();
-			} 
-			else {
-				module->clearMap(id);
-			}
+			createContextMenu(module->paramHandles[id].moduleId >= 0);
 		}
 	}
 
-	void createContextMenu() {
-		struct UnmapItem : MenuItem {
-			MODULE* module;
-			int id;
-			void onAction(const event::Action& e) override {
-				module->clearMap(id);
+	void createContextMenu(bool isMapped) {
+		ui::Menu* menu = createMenu();
+		prependContextMenu(menu);
+		if (isMapped) {
+			if (menu->children.size() > 0) {
+				menu->addChild(new MenuSeparator);
 			}
-		};
-
-		struct IndicateItem : MenuItem {
-			MODULE* module;
-			int id;
-			void onAction(const event::Action& e) override {
+			menu->addChild(createMenuLabel(string::f("Parameter \"%s\"", getParamName().c_str())));
+			menu->addChild(createMenuItem("Unmap", "", [=]() { module->clearMap(id); }));
+			menu->addChild(createMenuItem("Locate and indicate", "", [=]() {
 				ParamHandle* paramHandle = &module->paramHandles[id];
 				ModuleWidget* mw = APP->scene->rack->getModule(paramHandle->moduleId);
 				module->paramHandles[id].indicate(mw);
-			}
-		};
-
-		ui::Menu* menu = createMenu();
-		menu->addChild(createMenuLabel("Parameter \"" + getParamName() + "\""));
-		menu->addChild(construct<IndicateItem>(&MenuItem::text, "Locate and indicate", &IndicateItem::module, module, &IndicateItem::id, id));
-		menu->addChild(construct<UnmapItem>(&MenuItem::text, "Unmap", &UnmapItem::module, module, &UnmapItem::id, id));
-		appendContextMenu(menu);
+			}));
+			appendContextMenu(menu);
+		}
 	}
+
+	virtual void prependContextMenu(Menu* menu) { }
 
 	virtual void appendContextMenu(Menu* menu) { }
 
@@ -324,11 +312,11 @@ struct MapModuleChoice : LedDisplayChoice {
 		if (!module) return;
 		if (module->locked) return;
 
-		ScrollWidget *scroll = getAncestorOfType<ScrollWidget>();
+		ScrollWidget* scroll = getAncestorOfType<ScrollWidget>();
 		scroll->scrollTo(box);
 
-		// Reset touchedParam, unstable API
-		APP->scene->rack->touchedParam = NULL;
+		// Reset touchedParam
+		APP->scene->rack->setTouchedParam(NULL);
 		module->enableLearn(id);
 
 		GLFWcursor* cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
@@ -339,10 +327,10 @@ struct MapModuleChoice : LedDisplayChoice {
 		if (!module) return;
 		if (!processEvents) return;
 
-		// Check if a ParamWidget was touched, unstable API
-		ParamWidget *touchedParam = APP->scene->rack->touchedParam;
+		// Check if a ParamWidget was touched
+		ParamWidget* touchedParam = APP->scene->rack->getTouchedParam();
 		if (touchedParam && touchedParam->getParamQuantity()->module != module) {
-			APP->scene->rack->touchedParam = NULL;
+			APP->scene->rack->setTouchedParam(NULL);
 			int64_t moduleId = touchedParam->getParamQuantity()->module->id;
 			int paramId = touchedParam->getParamQuantity()->paramId;
 			module->learnParam(id, moduleId, paramId);
@@ -355,8 +343,12 @@ struct MapModuleChoice : LedDisplayChoice {
 	}
 
 	void step() override {
-		if (!module)
+		if (!module) {
+			// for module browser
+			color.a = 0.5;
+			text = getSlotPrefix() + "Unmapped";
 			return;
+		}
 
 		// Set bgColor and selected state
 		if (module->learningId == id) {
@@ -454,7 +446,7 @@ struct MapModuleChoice : LedDisplayChoice {
 		ParamHandle* paramHandle = &module->paramHandles[id];
 		if (paramHandle->moduleId < 0)
 			return "";
-		ModuleWidget *mw = APP->scene->rack->getModule(paramHandle->moduleId);
+		ModuleWidget* mw = APP->scene->rack->getModule(paramHandle->moduleId);
 		if (!mw)
 			return "";
 		// Get the Module from the ModuleWidget instead of the ParamHandle.
@@ -514,16 +506,18 @@ struct MapModuleDisplay : LedDisplay {
 
 	void setModule(MODULE* module) {
 		this->module = module;
-
 		scroll = new ScrollWidget;
+		scroll->box.pos.y = 2.f;
 		scroll->box.size.x = box.size.x;
-		scroll->box.size.y = box.size.y - scroll->box.pos.y;
+		scroll->box.size.y = box.size.y - scroll->box.pos.y - 2.f;
 		addChild(scroll);
 
+		/*
 		LedDisplaySeparator* separator = createWidget<LedDisplaySeparator>(scroll->box.pos);
 		separator->box.size.x = box.size.x;
 		addChild(separator);
 		separators[0] = separator;
+		*/
 
 		Vec pos;
 		for (int id = 0; id < MAX_CHANNELS; id++) {
@@ -547,10 +541,11 @@ struct MapModuleDisplay : LedDisplay {
 
 	void draw(const DrawArgs& args) override {
 		LedDisplay::draw(args);
+
 		if (module && module->locked) {
 			float stroke = 2.f;
 			nvgBeginPath(args.vg);
-			nvgRoundedRect(args.vg, stroke / 2, stroke / 2, box.size.x - stroke, box.size.y - stroke, 5.0);
+			nvgRoundedRect(args.vg, stroke / 2.f, stroke / 2.f, box.size.x - stroke, box.size.y - stroke, 5.f);
 			nvgStrokeWidth(args.vg, stroke);
 			nvgStrokeColor(args.vg, color::mult(color::WHITE, 0.5f));
 			nvgStroke(args.vg);

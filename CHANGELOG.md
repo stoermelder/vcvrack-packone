@@ -1,3 +1,62 @@
+## 2.0.0
+
+- [Selected modules](./MetaModule.md) are available on the [4ms MetaModule](https://4mscompany.com/p.php?p=990).
+- Modules [8FACE, 8FACEx2](./docs/EightFace.md) and [8FACE mk2](./docs/EightFaceMk2.md) are now considered experimental, because loading of presets into any module cannot be considered stable and issue-free in every case.
+
+### New modules
+
+- Module [MIDI-CAT XL](./docs/MidiCat.md)
+    - A wider panel version of MIDI-CAT with identical features and driver selection moved to the context menu
+
+### Changes and Fixes
+
+- Module [8FACE mk2](./docs/EightFaceMk2.md)
+    - Added "Auto"-mode besides "Read" and "Write" ([manual](./docs/EightFaceMk2.md#auto-mode)) (#276)
+    - Added option to bind currently selected modules
+- Module [AFFIX](./docs/Affix.md), [µAFFIX](./docs/Affix.md)
+    - Fixed knob reset on double-click in Semitone/Octave-mode (#387)
+    - Fixed wrong output voltage in Semitone/Octave-mode after loading (#403)
+    - Don't use Rack's parameter smoothing in Semitone/Octave-mode (broken since Rack 2.3.0)
+- Module [ARENA](./docs/Arena.md)
+    - Fixed behavior of attenuvertors for X/Y/MOD-inputs (#394)
+    - Fixed coarse parameter updates on screen interaction because of display refresh rate (#210)
+- Module [GOTO](./docs/Goto.md)
+    - Implemented smooth transition for "top left" jump destination (#388)
+- Module [MB](./docs/Mb.md)
+    - Fixed usage in multiple plugin-instances
+- Module [ME](./docs/Me.md)
+    - Fixed usage in multiple plugin-instances
+- Module [MIDI-CAT](./docs/MidiCat.md)
+    - Implemented response curves (logarithmic/exponential) (#258)
+    - Fixed MIDI-feedback for snapped parameters (#374)
+    - Implemented experimental LED binding for proper MIDI feedback on push-buttons (e.g. on VCV SEQ3 or Impromptu GATE-SEQ-64) (#401)
+    - Implemented alternative parameter binding by selection box
+- Module [MIDI-CAT CTX](./docs/MidiCat.md#ctx-expander)
+    - Fixed broken button-handling when triggered by Parameter-mapping
+- Module [MIDI-CAT MEM](./docs/MidiCat.md#mem-expander)
+    - Fixed broken button-handling when triggered by Parameter-mapping (#356)
+    - Added trigger-inputs for Prev and Next
+- Module [MIDI-MON](./docs/MidiMon.md)
+    - Added support for CC 14-bit/RPN/NRPN messages
+    - Reduced CPU usage
+- Module [MIDI-STEP](./docs/MidiStep.md)
+    - Added option for Hercules DJControl Starlight (#361)
+- Module [STRIP](./docs/Strip.md)
+    - Ask to view unavailable modules on the VCV Library when loading a strip (#18)
+    - Fixed missing module-id mapping when adding using STRIP or STRIP++ (#402)
+    - Added option to remove items from included/excluded parameters list
+- Module [STRIP++](./docs/StripPp.md)
+    - Ask to view unavailable modules on the VCV Library when loading a selection
+    - Fixed usage in multiple plugin-instances
+- Module [STRIP-BAY](./docs/Strip.md#stoermelder-strip-bay)
+    - Fixed crash on stackable input-cables (#405)
+- Module [STROKE](./docs/Stroke.md)
+    - Added command "Minimize window"
+- Module [TRANSIT](./docs/Transit.md)
+    - Added fade setting per slot
+    - Improved handling on mapped switches (skipping all immediate values)
+    - Added context menu option to clean invalid parameters (#383)
+
 ## 2.0.beta4
 
 ### Fixes and Changes
@@ -272,9 +331,6 @@
     - Fixed crash on locking more than 32 parameters (#176)
 - Module [INTERMIX](./docs/Intermix.md)
     - Added support for polyphony (#199)
-- Module [MEM](./docs/MidiCat.md#mem-expander)
-    - Added support for MIDI-CAT's new slew-limiting and scaling options ([manual](./docs/MidiCat.md#slew-limiting-and-input-scaling))
-    - Added scanning for next or previous modules with stored mapping ([manual](./docs/MidiCat.md#mem-scan)) (#200)
 - Module [µMAP](./docs/CVMapMicro.md)
     - Added input voltage display
 - Module [MIDI-CAT](./docs/MidiCat.md)
@@ -288,6 +344,9 @@
     - Fixed broken "Re-send MIDI feedback" option
     - Added context menu option for re-sending MIDI feedback periodically ([manual](./docs/MidiCat.md#feedback-periodically))
     - Added note-mode "Toggle + Velocity" ([manual](./docs/MidiCat.md#toggle-velocity))
+- Module [MIDI-CAT MEM](./docs/MidiCat.md#mem-expander)
+    - Added support for MIDI-CAT's new slew-limiting and scaling options ([manual](./docs/MidiCat.md#slew-limiting-and-input-scaling))
+    - Added scanning for next or previous modules with stored mapping ([manual](./docs/MidiCat.md#mem-scan)) (#200)
 - Module [MIDI-STEP](./docs/MidiStep.md)
     - Added option for Akai MPD218 ([manual](./docs/MidiStep.md#akai-mpd218))
 - Module [MIRROR](./docs/Mirror.md)
@@ -321,7 +380,7 @@
 
 ## 1.7.0
 
-- Module [MEM](./docs/MidiCat.md#mem-expander)
+- Module [MIDI-CAT MEM](./docs/MidiCat.md#mem-expander)
     - New expander-module for MIDI-CAT, storage-unit for MIDI mapping-presets with MIDI-CAT
 - Module [SPIN](./docs/Spin.md)
     - New module, converts mouse-wheel or middle mouse-button events into triggers

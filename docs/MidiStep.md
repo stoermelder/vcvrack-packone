@@ -37,4 +37,6 @@ I don't own all of following devices so I can provide only limited supported for
 
 ![MIDI-STEP Akai MPD218 Editor](./MidiStep-Akai.png)
 
+- **Hercules DJControl Starlight**
+
 MIDI-STEP was added in v1.5 of PackOne.

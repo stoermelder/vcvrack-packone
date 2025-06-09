@@ -1,9 +1,10 @@
 #pragma once
-#include "plugin.hpp"
+#include <rack.hpp>
 #include "LedDisplayCenterChoiceEx.hpp"
 
 namespace StoermelderPackOne {
 
+using namespace rack;
 
 struct MidiDriverItem : ui::MenuItem {
 	midi::Port* port;
@@ -16,6 +17,8 @@ struct MidiDriverItem : ui::MenuItem {
 template <class DRIVERITEM = MidiDriverItem>
 struct MidiDriverChoice : LedDisplayCenterChoiceEx {
 	midi::Port* port;
+	std::string prefix = "";
+
 	void onAction(const event::Action& e) override {
 		if (!port)
 			return;
@@ -37,13 +40,14 @@ struct MidiDriverChoice : LedDisplayCenterChoiceEx {
 	}
 
 	void step() override {
-		text = port ? port->getDriver()->getName() : "";
-		if (text.empty()) {
-			text = "(No driver)";
-			color.a = 0.5f;
+		text = prefix + (prefix != "" ? + ": " : "");
+		if (port) {
+			text += port->getDriver()->getName();
+			color.a = 1.f;
 		}
 		else {
-			color.a = 1.f;
+			text += "(No driver)";
+			color.a = 0.5f;
 		}
 	}
 };
@@ -89,13 +93,13 @@ struct MidiDeviceChoice : LedDisplayCenterChoiceEx {
 	}
 
 	void step() override {
-		text = port ? port->getDeviceName(port->deviceId) : "";
-		if (text.empty()) {
-			text = "(No device)";
-			color.a = 0.5f;
+		text = port && port->deviceId >= 0 ? port->getDeviceName(port->deviceId) : "";
+		if (!text.empty()) {
+			color.a = 1.f;
 		}
 		else {
-			color.a = 1.f;
+			text = "(No device)";
+			color.a = 0.5f;
 		}
 	}
 };
@@ -133,7 +137,14 @@ struct MidiChannelChoice : LedDisplayCenterChoiceEx {
 	}
 
 	void step() override {
-		text = port ? port->getChannelName(port->channel) : "Channel 1";
+		text = port && port->channel >= 0 ? port->getChannelName(port->channel) : "";
+		if (!text.empty()) {
+			color.a = 1.0f;
+		}
+		else {
+			text = "(No channel)";
+			color.a = 0.5f;
+		}
 	}
 };
 
@@ -146,7 +157,7 @@ struct MidiWidget : LedDisplay {
 	LedDisplaySeparator* deviceSeparator;
 	TCHANNEL* channelChoice;
 
-	void setMidiPort(midi::Port* port) {
+	void setMidiPort(midi::Port* port, std::string prefix = "") {
 		clearChildren();
 		math::Vec pos;
 
@@ -155,6 +166,7 @@ struct MidiWidget : LedDisplay {
 		//driverChoice->textOffset = Vec(6.f, 14.7f);
 		driverChoice->color = nvgRGB(0xf0, 0xf0, 0xf0);
 		driverChoice->port = port;
+		driverChoice->prefix = prefix;
 		addChild(driverChoice);
 		pos = driverChoice->box.getBottomLeft();
 		this->driverChoice = driverChoice;

@@ -1,15 +1,17 @@
-#include "rack.hpp"
-#include "components.hpp"
-#include "helpers.hpp"
+#pragma once
+#include <rack.hpp>
+#include "components/components.hpp"
+#include "pluginhelpers.hpp"
 #include "pluginsettings.hpp"
+#include "ui/ThemedModuleWidget.hpp"
 
 using namespace rack;
 
 
 extern Plugin* pluginInstance;
 
-extern StoermelderSettings pluginSettings;
 
+#ifndef METAMODULE
 extern Model* modelCVMap;
 extern Model* modelCVMapCtx;
 extern Model* modelCVMapMicro;
@@ -25,6 +27,7 @@ extern Model* modelStripPp;
 extern Model* modelEightFace;
 extern Model* modelEightFaceX2;
 extern Model* modelMidiCat;
+extern Model* modelMidiCatXl;
 extern Model* modelMidiCatMem;
 extern Model* modelMidiCatCtx;
 extern Model* modelMidiCatClk;
@@ -64,7 +67,16 @@ extern Model* modelMidiKey;
 extern Model* modelAudioInterface64;
 extern Model* modelMb;
 extern Model* modelMe;
-
+#else
+extern Model* modelBolt;
+extern Model* modelFourRounds;
+extern Model* modelMaze;
+extern Model* modelMidiStep;
+extern Model* modelHive;
+extern Model* modelOrbit;
+extern Model* modelPile;
+extern Model* modelRaw;
+#endif
 
 namespace StoermelderPackOne {
 

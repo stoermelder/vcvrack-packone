@@ -91,14 +91,16 @@ The module also supports mouse-button events: If your mouse has more than three 
 
 ## Special commands
 
-- **Toggle framerate widget**  
+- **Toggle framerate widget** (disabled for Rack v2)  
   Rack has a built-in widget for displaying the current rendering frame in the top-right window corner. Using this command toggles the visibility.
-- **Toggle busboard** (added in v1.8.0)  
+- **Toggle busboard** (added in v1.8.0, disabled for Rack v2)  
   Hides the busboard graphics on the background.
-- **Toggle engine pause** (added in v1.8.0)  
+- **Toggle engine pause** (added in v1.8.0, disabled for Rack v2)  
   Triggers the option in the menu Engine -> Sample rate -> Pause.
 - **Toggle lock modules** (added in v1.8.0)  
   Triggers the option in the menu View -> Lock modules.
+- **Minimize window** (added in v2.0.0)
+  Minimizes the window of VCV Rack.
 
 ## Tips
 
@@ -128,5 +130,6 @@ The module also supports mouse-button events: If your mouse has more than three 
 - v2.0.0
     - Added commands "Add random module", "Save module preset" and "Save module default preset" (#345)
     - Added commands "Zoom to specific module" and "Zoom to specific module (smooth)" (#357)
+    - Added command "Minimize window"
     - Fixed wrong hotkey modifier on Mac (Ctrl instead of Cmd)
     - Fixed broken "Zoom to module" and "Zoom toggle" commands (#382)

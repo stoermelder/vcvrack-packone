@@ -2,6 +2,7 @@
 #include "components/MenuColorLabel.hpp"
 #include "components/MenuColorField.hpp"
 #include "components/MenuColorPicker.hpp"
+#include "components/LedTextDisplay.hpp"
 #include "ui/ModuleSelectProcessor.hpp"
 #include "ui/keyboard.hpp"
 #include "ui/ViewportHelper.hpp"
@@ -47,7 +48,8 @@ enum class KEY_MODE {
 	S_SCROLL_LEFT = 40,
 	S_SCROLL_RIGHT = 41,
 	S_SCROLL_UP = 42,
-	S_SCROLL_DOWN = 43
+	S_SCROLL_DOWN = 43,
+	S_WINDOW_MINIMIZE = 44
 };
 
 template <int PORTS>
@@ -863,6 +865,12 @@ struct CmdBusboard {
 }; // struct CmdBusboard
 */
 
+struct CmdWindowMinimize : CmdBase {
+	void initialCmd(KEY_MODE keyMode) override {
+		glfwIconifyWindow(APP->window->win);
+	}
+};
+
 // -- GUI --
 
 template<int PORTS>
@@ -994,6 +1002,8 @@ struct KeyContainer : Widget {
 					//if (!cmdBusboard) cmdBusboard = new CmdBusboard;
 					//cmdBusboard->process();
 					break;
+				case KEY_MODE::S_WINDOW_MINIMIZE:
+					processCmd<CmdWindowMinimize>(); break;
 				default:
 					break;
 			}
@@ -1630,7 +1640,8 @@ struct KeyDisplay : StoermelderLedDisplay {
 					module->keys[idx].mode == KEY_MODE::S_FRAMERATE ||
 					module->keys[idx].mode == KEY_MODE::S_BUSBOARD ||
 					module->keys[idx].mode == KEY_MODE::S_ENGINE_PAUSE ||
-					module->keys[idx].mode == KEY_MODE::S_MODULE_LOCK
+					module->keys[idx].mode == KEY_MODE::S_MODULE_LOCK ||
+					module->keys[idx].mode == KEY_MODE::S_WINDOW_MINIMIZE
 						? "✔" : RIGHT_ARROW;
 				MenuItem::step();
 			}
@@ -1641,6 +1652,7 @@ struct KeyDisplay : StoermelderLedDisplay {
 				//menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle busboard", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_BUSBOARD));
 				//menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle engine pause", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_ENGINE_PAUSE));
 				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Toggle lock modules", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_MODULE_LOCK));
+				menu->addChild(construct<ModeMenuItem>(&MenuItem::text, "Minimize window", &ModeMenuItem::module, module, &ModeMenuItem::idx, idx, &ModeMenuItem::mode, KEY_MODE::S_WINDOW_MINIMIZE));
 				return menu;
 			}
 		}; // struct SpecialMenuItem
@@ -1763,6 +1775,8 @@ struct KeyDisplay : StoermelderLedDisplay {
 						text = "Scroll down"; break;
 					case KEY_MODE::S_BUSBOARD:
 						text = "Toggle busboard"; break;
+					case KEY_MODE::S_WINDOW_MINIMIZE:
+						text = "Minimize window"; break;
 				}
 
 				Tooltip::step();

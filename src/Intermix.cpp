@@ -1,5 +1,5 @@
 #include "plugin.hpp"
-#include "digital.hpp"
+#include "digital/digital.hpp"
 #include "IntermixBase.hpp"
 #include "components/Knobs.hpp"
 #include "components/MatrixButton.hpp"
@@ -138,7 +138,7 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configInput(INPUT_SCENE, "Scene selection");
 		for (int i = 0; i < SCENE_MAX; i++) {
-			configParam(PARAM_SCENE + i, 0.f, 1.f, 0.f, string::f("Scene %i", i + 1));
+			configSwitch(PARAM_SCENE + i, 0.f, 1.f, 0.f, string::f("Scene %i", i + 1));
 		}
 		for (int i = 0; i < PORTS; i++) {
 			configInput(INPUT + i, string::f("Signal %i", i + 1));
@@ -146,10 +146,10 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 			for (int j = 0; j < PORTS; j++) {
 				configParam<MatrixButtonParamQuantity>(PARAM_MATRIX + i * PORTS + j, 0.f, 1.f, 0.f, string::f("Input %i to Output %i", j + 1, i + 1));
 			}
-			configParam(PARAM_OUTPUT + i, 0.f, 1.f, 0.f, string::f("Output %i disable", i + 1));
+			configSwitch(PARAM_OUTPUT + i, 0.f, 1.f, 0.f, string::f("Output %i disable", i + 1));
 			configParam(PARAM_AT + i, -2.f, 2.f, 1.f, string::f("Output %i attenuverter", i + 1), "x");
-			configParam(PARAM_X_MAP + i, 0.f, 1.f, 0.f, string::f("Matrix col %i", i + 1));
-			configParam(PARAM_Y_MAP + i, 0.f, 1.f, 0.f, string::f("Matrix row %i", i + 1));
+			configSwitch(PARAM_X_MAP + i, 0.f, 1.f, 0.f, string::f("Matrix col %i", i + 1));
+			configSwitch(PARAM_Y_MAP + i, 0.f, 1.f, 0.f, string::f("Matrix row %i", i + 1));
 		}
 		configParam(PARAM_FADEIN, 0.f, 4.f, 0.f, "Fade in", "s");
 		configParam(PARAM_FADEOUT, 0.f, 4.f, 0.f, "Fade out", "s");
@@ -182,6 +182,7 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 		Module::onReset();
 	}
 
+#ifndef METAMODULE
 	void onRemove() override {
 		// hack for clearing the module-pointers on the expander-chain
 		Module* m = this;
@@ -192,6 +193,7 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 			m = m->rightExpander.module;
 		}
 	}
+#endif
 
 	void process(const ProcessArgs& args) override {
 		ts++;
@@ -675,14 +677,14 @@ struct InputLedDisplay : StoermelderLedDisplay {
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuLabel("Constant voltage"));
 		menu->addChild(createSubmenuItem("Subtract", "",
-			[=](Menu* menu) {
+			[this](Menu* menu) {
 				for (int i = 12; i > 0; i--) {
 					menu->addChild(construct<InputItem>(&MenuItem::text, string::f("-%02i cent", i), &InputItem::module, module, &InputItem::id, id, &InputItem::inMode, (IN_MODE)(24 - i)));
 				}
 			}
 		));
 		menu->addChild(createSubmenuItem("Add", "",
-			[=](Menu* menu) {
+			[this](Menu* menu) {
 				for (int i = 1; i <= 12; i++) {
 					menu->addChild(construct<InputItem>(&MenuItem::text, string::f("+%02i cent", i), &InputItem::module, module, &InputItem::id, id, &InputItem::inMode, (IN_MODE)(24 + i)));
 				}
@@ -698,7 +700,7 @@ struct IntermixKnob : app::SvgKnob {
 	IntermixKnob() {
 		minAngle = -0.75 * M_PI;
 		maxAngle = 0.75 * M_PI;
-		setSvg(APP->window->loadSvg(asset::plugin(pluginInstance, "res/components/IntermixKnob.svg")));
+		setSvg(Svg::load(asset::plugin(pluginInstance, "res/components/IntermixKnob.svg")));
 		sw->setSize(Vec(22.7f, 22.7f));
 		fb->removeChild(shadow);
 		delete shadow;

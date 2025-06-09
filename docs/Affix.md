@@ -12,4 +12,11 @@ The modules can be used to adjust the number of active channels within a polypho
 
 ![AFFIX channels](./Affix-channels.png)
 
-AFFIX and µAFFIX were added in v1.6 of PackOne.
+## Changelog
+
+- v1.6.0
+    - Initial release of AFFIX and µAFFIX
+- v2.0.0
+    - Fixed knob reset on double-click in Semitone/Octave-mode (#387)
+    - Fixed wrong output voltage in Semitone/Octave-mode after loading (#403)
+    - Don't use Rack's parameter smoothing in Semitone/Octave-mode (broken since Rack 2.3.0)

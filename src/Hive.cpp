@@ -25,9 +25,10 @@
  */
 
 #include "plugin.hpp"
-#include "digital.hpp"
+#include "digital/digital.hpp"
 #include "HiveGrid.hpp"
 #include <random>
+#include <chrono>
 
 namespace StoermelderPackOne {
 namespace Hive {
@@ -736,64 +737,80 @@ struct HiveGridWidget : FramebufferWidget {
 			this->module = module;
 		}
 
-		void draw(const Widget::DrawArgs& args) override {
-			if (!module) return;
+		void drawLayer(const Widget::DrawArgs& args, int layer) override {
+			if (layer == 1) {
+				float sizeFactor = 16.2142849f;
+				int usedRadius = 4;
+				if (module) {
+					sizeFactor = module->sizeFactor;
+					usedRadius = module->grid.usedRadius;
+				}
 
-			Vec hex;
+				Vec hex;
 
-			// Draw background
-			nvgBeginPath(args.vg);
-			drawHex(ORIGIN, ORIGIN.x, FLAT, args.vg);
-			nvgFillColor(args.vg, nvgRGB(0, 16, 90));
-			nvgFill(args.vg);
+				// Draw background
+				nvgBeginPath(args.vg);
+				drawHex(ORIGIN, ORIGIN.x, FLAT, args.vg);
+				nvgFillColor(args.vg, nvgRGB(0, 16, 90));
+				nvgFill(args.vg);
 
-			// Draw grid
-			nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
-			nvgStrokeWidth(args.vg, 0.6f);
-			nvgBeginPath(args.vg);
-			module->grid.drawGrid(module->sizeFactor, ORIGIN, args.vg);
-			nvgStrokeColor(args.vg, color::mult(color::WHITE, 0.075f));
-			nvgStroke(args.vg);
+				// Draw gradient
+				nvgBeginPath(args.vg);
+				drawHex(ORIGIN, ORIGIN.x, FLAT, args.vg);
+				NVGcolor topColor = nvgRGBA(200, 200, 200, 40);
+				NVGcolor bottomColor = nvgRGBA(200, 200, 200, 0);
+				nvgFillPaint(args.vg, nvgLinearGradient(args.vg, 0.f, 0.f, 0.f, 80.f, topColor, bottomColor));
+				nvgFill(args.vg);
 
-			// Draw outer edge
-			nvgBeginPath(args.vg);
-			module->grid.drawGridOutline(module->sizeFactor, ORIGIN, args.vg);
-			nvgStrokeWidth(args.vg, 0.7f);
-			nvgStrokeColor(args.vg, color::mult(color::WHITE, 0.125f));
-			nvgStroke(args.vg);
+				// Draw grid
+				nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
+				nvgStrokeWidth(args.vg, 0.6f);
+				nvgBeginPath(args.vg);
+				MODULE::HIVEGRID::drawGrid(usedRadius, sizeFactor, ORIGIN, args.vg);
+				nvgStrokeColor(args.vg, color::mult(color::WHITE, 0.075f));
+				nvgStroke(args.vg);
 
-			// Draw grid cells
-			float stroke = 0.7f;
-			float onCellSizeFactor = module->sizeFactor - stroke / 2.f;
-			float randCellSizeFactor = module->sizeFactor - stroke;
-			float sCellSizeFactor = module->sizeFactor / 2.f;
+				// Draw outer edge
+				nvgBeginPath(args.vg);
+				MODULE::HIVEGRID::drawGridOutline(usedRadius, sizeFactor, ORIGIN, args.vg);
+				nvgStrokeWidth(args.vg, 0.7f);
+				nvgStrokeColor(args.vg, color::mult(color::WHITE, 0.125f));
+				nvgStroke(args.vg);
 
-			for (int q = -module->grid.usedRadius; q <= module->grid.usedRadius; q++) {
-				for (int r = -module->grid.usedRadius; r <= module->grid.usedRadius; r++) {
-					if (cellVisible(q, r, module->grid.usedRadius)) {
-						switch (module->grid.getCell(q, r).state) {
-							case GRIDSTATE::ON:
-								hex = hexToPixel(RoundAxialVec(q, r), module->sizeFactor, POINTY, ORIGIN);
-								nvgBeginPath(args.vg);
-								drawHex(hex, onCellSizeFactor, POINTY, args.vg);
-								nvgFillColor(args.vg, color::mult(gridColor, 0.7f));
-								nvgFill(args.vg);
-								break;
-							case GRIDSTATE::RANDOM:
-								hex = hexToPixel(RoundAxialVec(q, r), module->sizeFactor, POINTY, ORIGIN);
-								nvgBeginPath(args.vg);
-								drawHex(hex, randCellSizeFactor, POINTY, args.vg);
-								nvgStrokeWidth(args.vg, stroke);
-								nvgStrokeColor(args.vg, color::mult(gridColor, 0.6f));
-								nvgStroke(args.vg);
+				// Draw grid cells
+				float stroke = 0.7f;
+				float onCellSizeFactor = sizeFactor - stroke / 2.f;
+				float randCellSizeFactor = sizeFactor - stroke;
+				float sCellSizeFactor = sizeFactor / 2.f;
 
-								nvgBeginPath(args.vg);
-								drawHex(hex, sCellSizeFactor, POINTY, args.vg);
-								nvgFillColor(args.vg, color::mult(gridColor, 0.4f));
-								nvgFill(args.vg);
-								break;
-							case GRIDSTATE::OFF:
-								break;
+				for (int q = -usedRadius; q <= usedRadius; q++) {
+					for (int r = -usedRadius; r <= usedRadius; r++) {
+						if (cellVisible(q, r, usedRadius)) {
+							GRIDSTATE state = module ? module->grid.getCell(q, r).state : (GRIDSTATE)int(std::round(random::normal() * 2.f));
+							switch (state) {
+								case GRIDSTATE::ON:
+									hex = hexToPixel(RoundAxialVec(q, r), sizeFactor, POINTY, ORIGIN);
+									nvgBeginPath(args.vg);
+									drawHex(hex, onCellSizeFactor, POINTY, args.vg);
+									nvgFillColor(args.vg, color::mult(gridColor, 0.7f));
+									nvgFill(args.vg);
+									break;
+								case GRIDSTATE::RANDOM:
+									hex = hexToPixel(RoundAxialVec(q, r), sizeFactor, POINTY, ORIGIN);
+									nvgBeginPath(args.vg);
+									drawHex(hex, randCellSizeFactor, POINTY, args.vg);
+									nvgStrokeWidth(args.vg, stroke);
+									nvgStrokeColor(args.vg, color::mult(gridColor, 0.6f));
+									nvgStroke(args.vg);
+
+									nvgBeginPath(args.vg);
+									drawHex(hex, sCellSizeFactor, POINTY, args.vg);
+									nvgFillColor(args.vg, color::mult(gridColor, 0.4f));
+									nvgFill(args.vg);
+									break;
+								case GRIDSTATE::OFF:
+									break;
+							}
 						}
 					}
 				}
@@ -813,20 +830,22 @@ struct HiveGridWidget : FramebufferWidget {
 	void step() override{
 		if (module && module->gridDirty) {
 			FramebufferWidget::dirty = true;
-			w->box.size = box.size;
 			w->gridColor = module->currentState == MODULESTATE::EDIT ? color::mult(color::WHITE, 0.35f) : color::WHITE;
 			module->gridDirty = false;
 		}
+		w->box.size = box.size;
 		FramebufferWidget::step();
 	}
 
 	void drawLayer(const DrawArgs& args, int layer) override {
+#ifndef METAMODULE
 		if (layer == 1) {
 			// Dim the display but don't darken it completely
-			float b = std::max(0.4f, settings::rackBrightness);
-			nvgGlobalTint(args.vg, nvgRGBAf(b, b, b, 1.f));
-			FramebufferWidget::draw(args);
+			float b = std::max(0.2f, settings::rackBrightness);
+			nvgGlobalAlpha(args.vg, b);
 		}
+#endif
+		FramebufferWidget::drawLayer(args, layer);
 	}
 };
 
@@ -966,9 +985,8 @@ struct HiveStartPosEditWidget : TransparentWidget, HiveDrawHelper<MODULE> {
 				nvgFillColor(args.vg, color::mult(color::WHITE, 0.9f));
 				nvgFill(args.vg);
 			}
-
-			TransparentWidget::drawLayer(args, layer);
 		}
+		TransparentWidget::drawLayer(args, layer);
 	}
 
 	void onButton(const event::Button& e) override {
@@ -1064,8 +1082,8 @@ struct HiveStartPosEditWidget : TransparentWidget, HiveDrawHelper<MODULE> {
 				{ 0.2f, "80%" },
 				{ 0.1f, "90%" }
 			},
-			[=]() { return module->grid.cursor[selectedId].ratchetingProb; },
-			[=](float prob) { module->ratchetingSetProb(selectedId, prob); }
+			[this]() { return module->grid.cursor[selectedId].ratchetingProb; },
+			[this](float prob) { module->ratchetingSetProb(selectedId, prob); }
 		));
 	}
 
@@ -1077,7 +1095,7 @@ struct HiveStartPosEditWidget : TransparentWidget, HiveDrawHelper<MODULE> {
 
 
 template < typename MODULE, typename CELL>
-struct HiveScreenWidget : LightWidget, HiveDrawHelper<MODULE> {
+struct HiveScreenWidget : TransparentWidget, HiveDrawHelper<MODULE> {
 	MODULE* module;
 
 	HiveScreenWidget(MODULE* module) {
@@ -1086,9 +1104,9 @@ struct HiveScreenWidget : LightWidget, HiveDrawHelper<MODULE> {
 	}
 
 	void drawLayer(const DrawArgs& args, int layer) override {
+		TransparentWidget::drawLayer(args, layer);
 		if (module && module->currentState == MODULESTATE::GRID) {
 			HiveDrawHelper<MODULE>::drawLayer(args, layer, box);
-			LightWidget::draw(args);
 		}
 	}
 
@@ -1118,19 +1136,14 @@ struct HiveScreenWidget : LightWidget, HiveDrawHelper<MODULE> {
 					e.consume(this);
 				}
 			}
-			LightWidget::onButton(e);
+			TransparentWidget::onButton(e);
 		}
 	}
 
 	void createContextMenu() {
 		ui::Menu* menu = createMenu();
 		menu->addChild(construct<ModuleStateMenuItem<MODULE>>(&MenuItem::text, "Enter Edit-mode", &ModuleStateMenuItem<MODULE>::module, module));
-		menu->addChild(new MenuSeparator());
-		menu->addChild(createMenuLabel("Grid"));
-		GridSizeSlider<MODULE>* sizeSlider = new GridSizeSlider<MODULE>(module);
-		sizeSlider->box.size.x = 200.0;
-		menu->addChild(sizeSlider);
-
+		menu->addChild(new MenuSeparator);
 		menu->addChild(construct<GridRandomizeMenuItem<MODULE>>(&MenuItem::text, "Randomize", &GridRandomizeMenuItem<MODULE>::module, module));
 		menu->addChild(construct<GridRandomizeMenuItem<MODULE>>(&MenuItem::text, "Randomize certainty", &GridRandomizeMenuItem<MODULE>::module, module, &GridRandomizeMenuItem<MODULE>::useRandom, false));
 		menu->addChild(construct<GridClearMenuItem<MODULE>>(&MenuItem::text, "Clear", &GridClearMenuItem<MODULE>::module, module));
@@ -1150,19 +1163,21 @@ struct HiveWidget : ThemedModuleWidget<HiveModule<MAX_RADIUS, 4>> {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
 		HiveGridWidget<MODULE>* gridWidget = new HiveGridWidget<MODULE>(module);
-		gridWidget->box.pos = Vec(33.709f, 40.3f);
 		gridWidget->box.size = Vec(BOX_WIDTH, BOX_HEIGHT);
-		addChild(gridWidget);
 
-		HiveScreenWidget<MODULE, HiveCell>* turnWidget = new HiveScreenWidget<MODULE, HiveCell>(module);
-		turnWidget->box.pos = gridWidget->box.pos;
-		turnWidget->box.size = gridWidget->box.size;
-		addChild(turnWidget);
+		HiveScreenWidget<MODULE, HiveCell>* screenWidget = new HiveScreenWidget<MODULE, HiveCell>(module);
+		screenWidget->box.pos = Vec(33.709f, 40.3f);
+		screenWidget->box.size = Vec(BOX_WIDTH, BOX_HEIGHT);
+		screenWidget->addChild(gridWidget);
+		addChild(screenWidget);
 
-		HiveStartPosEditWidget<MODULE>* resetEditWidget = new HiveStartPosEditWidget<MODULE>(module);
-		resetEditWidget->box.pos = turnWidget->box.pos;
-		resetEditWidget->box.size = turnWidget->box.size;
-		addChild(resetEditWidget);
+		
+#ifndef METAMODULE
+		HiveStartPosEditWidget<MODULE>* editWidget = new HiveStartPosEditWidget<MODULE>(module);
+		editWidget->box.pos = screenWidget->box.pos;
+		editWidget->box.size = screenWidget->box.size;
+		addChild(editWidget);
+#endif
 
 		addInput(createInputCentered<StoermelderPort>(Vec(24.2f, 60.9f), module, MODULE::SHIFT_L1_INPUT));
 		addInput(createInputCentered<StoermelderPort>(Vec(24.2f, 256.0f), module, MODULE::SHIFT_L2_INPUT));
@@ -1184,28 +1199,54 @@ struct HiveWidget : ThemedModuleWidget<HiveModule<MAX_RADIUS, 4>> {
 		addInput(createInputCentered<StoermelderPort>(Vec(247.2f, 292.2f), module, MODULE::TURN_INPUT + 2));
 		addInput(createInputCentered<StoermelderPort>(Vec(247.2f, 327.6f), module, MODULE::TURN_INPUT + 3));
 
+#ifndef METAMODULE
 		addChild(createLightCentered<StoermelderPortLight<GreenLight>>(Vec(51.9f, 292.2f), module, MODULE::TRIG_LIGHT + 0));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(51.9f, 292.2f), module, MODULE::TRIG_OUTPUT + 0));
 		addChild(createLightCentered<StoermelderPortLight<GreenLight>>(Vec(51.9f, 327.6f), module, MODULE::TRIG_LIGHT + 1));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(51.9f, 327.6f), module, MODULE::TRIG_OUTPUT + 1));
 		addChild(createLightCentered<StoermelderPortLight<GreenLight>>(Vec(278.2f, 292.2f), module, MODULE::TRIG_LIGHT + 2));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(278.2f, 292.2f), module, MODULE::TRIG_OUTPUT + 2));
 		addChild(createLightCentered<StoermelderPortLight<GreenLight>>(Vec(278.2f, 327.6f), module, MODULE::TRIG_LIGHT + 3));
+#endif
+		addOutput(createOutputCentered<StoermelderPort>(Vec(51.9f, 292.2f), module, MODULE::TRIG_OUTPUT + 0));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(51.9f, 327.6f), module, MODULE::TRIG_OUTPUT + 1));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(278.2f, 292.2f), module, MODULE::TRIG_OUTPUT + 2));
 		addOutput(createOutputCentered<StoermelderPort>(Vec(278.2f, 327.6f), module, MODULE::TRIG_OUTPUT + 3));
 
+#ifndef METAMODULE
 		addChild(createLightCentered<StoermelderPortLight<GreenRedLight>>(Vec(23.8f, 292.2f), module, MODULE::CV_LIGHT + 0));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(23.8f, 292.2f), module, MODULE::CV_OUTPUT + 0));
 		addChild(createLightCentered<StoermelderPortLight<GreenRedLight>>(Vec(23.8f, 327.6f), module, MODULE::CV_LIGHT + 2));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(23.8f, 327.6f), module, MODULE::CV_OUTPUT + 1));
 		addChild(createLightCentered<StoermelderPortLight<GreenRedLight>>(Vec(306.2f, 292.2f), module, MODULE::CV_LIGHT + 4));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(306.2f, 292.2f), module, MODULE::CV_OUTPUT + 2));
 		addChild(createLightCentered<StoermelderPortLight<GreenRedLight>>(Vec(306.2f, 327.6f), module, MODULE::CV_LIGHT + 6));
+#endif
+		addOutput(createOutputCentered<StoermelderPort>(Vec(23.8f, 292.2f), module, MODULE::CV_OUTPUT + 0));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(23.8f, 327.6f), module, MODULE::CV_OUTPUT + 1));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(306.2f, 292.2f), module, MODULE::CV_OUTPUT + 2));
 		addOutput(createOutputCentered<StoermelderPort>(Vec(306.2f, 327.6f), module, MODULE::CV_OUTPUT + 3));
 	}
 
 	void appendContextMenu(Menu* menu) override {
 		ThemedModuleWidget<MODULE>::appendContextMenu(menu);
 		MODULE* module = dynamic_cast<MODULE*>(this->module);
+
+		menu->addChild(createMenuLabel("Grid"));
+#ifndef METAMODULE
+		GridSizeSlider<MODULE>* sizeSlider = new GridSizeSlider<MODULE>(module);
+		sizeSlider->box.size.x = 200.0;
+		menu->addChild(sizeSlider);
+#else
+		menu->addChild(createSubmenuItem("Dimension", "",
+			[module](Menu* menu) {
+				for (int i = MIN_RADIUS; i <= MAX_RADIUS; i++) {
+					menu->addChild(createCheckMenuItem(string::f("%i", i), "",
+						[module, i]() { return module->grid.usedRadius == i; },
+						[module, i]() { module->gridResize(i); }
+					));
+				}
+			}
+		));
+#endif
+
+		menu->addChild(construct<GridRandomizeMenuItem<MODULE>>(&MenuItem::text, "Randomize", &GridRandomizeMenuItem<MODULE>::module, module));
+		menu->addChild(construct<GridRandomizeMenuItem<MODULE>>(&MenuItem::text, "Randomize certainty", &GridRandomizeMenuItem<MODULE>::module, module, &GridRandomizeMenuItem<MODULE>::useRandom, false));
+		menu->addChild(construct<GridClearMenuItem<MODULE>>(&MenuItem::text, "Clear", &GridClearMenuItem<MODULE>::module, module));
 
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createBoolPtrMenuItem("Normalize inputs to Yellow", "", &module->normalizePorts));

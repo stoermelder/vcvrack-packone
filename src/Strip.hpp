@@ -54,6 +54,107 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 	StripWidgetBase(MODULE* module, std::string baseName)
 	: ThemedModuleWidget<MODULE>(module, baseName) { }
 
+	void groupCheckUnavailable(json_t* rootJ) {
+		std::set<std::string> pluginModuleSlugs;
+
+		size_t moduleIndex;
+		json_t* moduleJ;
+
+		json_t* rightModulesJ = json_object_get(rootJ, "rightModules");
+		if (rightModulesJ) {
+			json_array_foreach(rightModulesJ, moduleIndex, moduleJ) {
+				try {
+					// Get model
+					plugin::modelFromJson(moduleJ);
+				}
+				catch (Exception& e) {
+					// Get plugin and module slugs
+					json_t* pluginSlugJ = json_object_get(moduleJ, "plugin");
+					if (!pluginSlugJ) continue;
+
+					std::string pluginSlug = json_string_value(pluginSlugJ);
+
+					json_t* modelSlugJ = json_object_get(moduleJ, "model");
+					if (!modelSlugJ) continue;
+
+					std::string modelSlug = json_string_value(modelSlugJ);
+					pluginModuleSlugs.insert(pluginSlug + "/" + modelSlug);
+				}
+			}
+		}
+
+		json_t* leftModulesJ = json_object_get(rootJ, "leftModules");
+		if (leftModulesJ) {
+			json_array_foreach(leftModulesJ, moduleIndex, moduleJ) {
+				try {
+					// Get model
+					plugin::modelFromJson(moduleJ);
+				}
+				catch (Exception& e) {
+					// Get plugin and module slugs
+					json_t* pluginSlugJ = json_object_get(moduleJ, "plugin");
+					if (!pluginSlugJ) continue;
+
+					std::string pluginSlug = json_string_value(pluginSlugJ);
+
+					json_t* modelSlugJ = json_object_get(moduleJ, "model");
+					if (!modelSlugJ) continue;
+
+					std::string modelSlug = json_string_value(modelSlugJ);
+					pluginModuleSlugs.insert(pluginSlug + "/" + modelSlug);
+				}
+			}
+		}
+
+		if (!pluginModuleSlugs.empty()) {
+			std::string msg = "This selection/strip includes modules that are not installed. Show missing modules on the VCV Library?";
+			if (osdialog_message(OSDIALOG_WARNING, OSDIALOG_YES_NO, msg.c_str())) {
+				std::string url = "https://library.vcvrack.com/?modules=";
+				url += string::join(pluginModuleSlugs, ",");
+				system::openBrowser(url);
+			}
+		}
+	}
+
+	void groupSelectionCheckUnavailable(json_t* rootJ) {
+		std::set<std::string> pluginModuleSlugs;
+
+		json_t* modulesJ = json_object_get(rootJ, "modules");
+		if (!modulesJ) return;
+
+		size_t moduleIndex;
+		json_t* moduleJ;
+		json_array_foreach(modulesJ, moduleIndex, moduleJ) {
+			try {
+				// Get model
+				plugin::modelFromJson(moduleJ);
+			}
+			catch (Exception& e) {
+				// Get plugin and module slugs
+				json_t* pluginSlugJ = json_object_get(moduleJ, "plugin");
+				if (!pluginSlugJ) continue;
+
+				std::string pluginSlug = json_string_value(pluginSlugJ);
+
+				json_t* modelSlugJ = json_object_get(moduleJ, "model");
+				if (!modelSlugJ) continue;
+
+				std::string modelSlug = json_string_value(modelSlugJ);
+				pluginModuleSlugs.insert(pluginSlug + "/" + modelSlug);
+			}
+		}
+
+		if (!pluginModuleSlugs.empty()) {
+			std::string msg = "This selection/strip includes modules that are not installed. Show missing modules on the VCV Library?";
+			if (osdialog_message(OSDIALOG_WARNING, OSDIALOG_YES_NO, msg.c_str())) {
+				std::string url = "https://library.vcvrack.com/?modules=";
+				url += string::join(pluginModuleSlugs, ",");
+				system::openBrowser(url);
+			}
+		}
+	}
+
+
 	/**
 	 * Removes all modules in the group. Used for "cut" in cut & paste.
 	 */
@@ -228,12 +329,12 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 			ModuleWidget* mw = APP->scene->rack->getModule(sc->id);
 			for (PortWidget* in : mw->getInputs()) {
 				std::vector<CableWidget*> cs = APP->scene->rack->getCablesOnPort(in);
-				CableWidget* c = cs.front();
-				if (!c) continue;
-				auto it = moduleIds.find(c->outputPort->module->id);
-				// Other end is outside of this strip
-				if (it == moduleIds.end()) {
-					conn.push_back(std::make_tuple(sc->getConnId(), c->inputPort->portId, c->outputPort, c->color));
+				for (CableWidget* c : cs) {
+					auto it = moduleIds.find(c->outputPort->module->id);
+					// Other end is outside of this strip
+					if (it == moduleIds.end()) {
+						conn.push_back(std::make_tuple(sc->getConnId(), c->inputPort->portId, c->outputPort, c->color));
+					}
 				}
 			}
 			for (PortWidget* out : mw->getOutputs()) {
@@ -257,7 +358,9 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 			Module* m = module;
 			while (true) {
 				if (!m || m->rightExpander.moduleId < 0) break;
-				m = m->rightExpander.module;
+				ModuleWidget* mw = APP->scene->rack->getModule(m->rightExpander.moduleId);
+				assert(mw);
+				m = mw->getModule();
 				StripBayBase* sc = dynamic_cast<StripBayBase*>(m);
 				if (sc) toDo[sc->getConnId()] = sc;
 
@@ -267,7 +370,9 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 			Module* m = module;
 			while (true) {
 				if (!m || m->leftExpander.moduleId < 0) break;
-				m = m->leftExpander.module;
+				ModuleWidget* mw = APP->scene->rack->getModule(m->leftExpander.moduleId);
+				assert(mw);
+				m = mw->getModule();
 				StripBayBase* sc = dynamic_cast<StripBayBase*>(m);
 				if (sc) toDo[sc->getConnId()] = sc;
 			}
@@ -300,11 +405,9 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 				c->outputModule = pw1->module;
 				c->outputId = pw1->portId;
 				//cw->setOutput(pw1);
-				if (APP->scene->rack->getCablesOnPort(pw2).size() == 0) {
-					c->inputModule = pw2->module;
-					c->inputId = pw2->portId;
-					//cw->setInput(pw2);
-				}
+				c->inputModule = pw2->module;
+				c->inputId = pw2->portId;
+				//cw->setInput(pw2);
 			}
 			APP->engine->addCable(c);
 
@@ -395,7 +498,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 			std::string pluginSlug = json_string_value(pluginSlugJ);
 			json_t* modelSlugJ = json_object_get(moduleJ, "model");
 			std::string modelSlug = json_string_value(modelSlugJ);
-			warningLog += string::f("Could not find module \"%s\" of plugin \"%s\"\n", modelSlug.c_str(), pluginSlug.c_str());
+			//warningLog += string::f("Could not find module \"%s\" of plugin \"%s\"\n", modelSlug.c_str(), pluginSlug.c_str());
 			box = Rect(box.pos, Vec(0, 0));
 			return NULL;
 		}
@@ -919,7 +1022,6 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		APP->history->push(complexAction);
 	}
 
-
 	void groupReplaceFromJson(json_t* rootJ) {
 		warningLog = "";
 
@@ -1037,6 +1139,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 			json_decref(rootJ);
 		});
 
+		groupCheckUnavailable(rootJ);
 		if (replace) groupReplaceFromJson(rootJ);
 		else groupFromJson(rootJ);
 	}
@@ -1068,10 +1171,12 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 
 		json_error_t error;
 		json_t* rootJ = json_loadf(file, 0, &error);
-		if (!rootJ)
+		if (!rootJ) {
 			throw Exception("File is not a valid selection file. JSON parsing error at %s %d:%d %s", error.source, error.line, error.column, error.text);
+		}
 		DEFER({json_decref(rootJ);});
 
+		groupSelectionCheckUnavailable(rootJ);
 		groupSelectionFromJson(rootJ);
 	}
 

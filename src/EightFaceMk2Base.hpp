@@ -1,6 +1,6 @@
 #pragma once
 #include "plugin.hpp"
-#include "digital.hpp"
+#include "digital/digital.hpp"
 #include "helpers/StripIdFixModule.hpp"
 
 namespace StoermelderPackOne {
@@ -20,6 +20,7 @@ enum class SLOT_CMD {
 
 enum class CTRLMODE {
 	READ,
+	AUTO,
 	WRITE
 };
 

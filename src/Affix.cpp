@@ -55,13 +55,13 @@ struct AffixModule : Module {
 				case PARAM_MODE::SEMITONE: {
 					v = clamp(value, getMinValue(), getMaxValue());
 					value = std::round(value * 12.f) / 12.f;
-					ParamQuantity::setValue(value);
+					ParamQuantity::setImmediateValue(value);
 					break;
 				}
 				case PARAM_MODE::OCTAVE: {
 					v = clamp(value, getMinValue(), getMaxValue());
-					value = std::round(value), 
-					ParamQuantity::setValue(value);
+					value = std::round(value);
+					ParamQuantity::setImmediateValue(value);
 					break;
 				}
 			}
@@ -88,6 +88,7 @@ struct AffixModule : Module {
 			}
 		}
 
+#ifndef METAMODULE
 		void setDisplayValueString(std::string s) override {
 			AffixModule<CHANNELS>* module = reinterpret_cast<AffixModule<CHANNELS>*>(this->module);
 			switch (module->paramMode) {
@@ -115,6 +116,7 @@ struct AffixModule : Module {
 				}
 			}
 		}
+#endif
 
 		std::string getString() override {
 			AffixModule<CHANNELS>* module = reinterpret_cast<AffixModule<CHANNELS>*>(this->module);
@@ -135,6 +137,11 @@ struct AffixModule : Module {
 					return string::f("%s: %i oct", ParamQuantity::getLabel().c_str(), octaves);
 				}
 			}
+		}
+
+		void reset() override {
+			v = std::numeric_limits<float>::max();
+			ParamQuantity::reset();
 		}
 	}; // AffixParamQuantity
 
@@ -177,7 +184,6 @@ struct AffixModule : Module {
 	}
 
 	void setParamMode(PARAM_MODE paramMode) {
-		if (this->paramMode == paramMode) return;
 		this->paramMode = paramMode;
 		if (this->paramMode == PARAM_MODE::SEMITONE || this->paramMode == PARAM_MODE::OCTAVE) {
 			// Snap value
@@ -201,7 +207,7 @@ struct AffixModule : Module {
 
 	void dataFromJson(json_t* rootJ) override {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
-		paramMode = (PARAM_MODE)json_integer_value(json_object_get(rootJ, "paramMode"));
+		setParamMode((PARAM_MODE)json_integer_value(json_object_get(rootJ, "paramMode")));
 		numberOfChannels = json_integer_value(json_object_get(rootJ, "numberOfChannels"));
 	}
 };

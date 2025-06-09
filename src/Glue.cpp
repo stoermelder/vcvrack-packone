@@ -1,5 +1,4 @@
 #include "plugin.hpp"
-#include "helpers.hpp"
 #include "helpers/StripIdFixModule.hpp"
 #include "components/MenuColorLabel.hpp"
 #include "components/MenuColorField.hpp"
@@ -115,11 +114,11 @@ struct GlueModule : Module, StripIdFixModule {
 	GlueModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		configParam<TriggerParamQuantity>(PARAM_UNLOCK, 0.f, 1.f, 0.f, "Unlock labels for editing (" RACK_MOD_CTRL_NAME "+" RACK_MOD_SHIFT_NAME "+G");
-		configParam<TriggerParamQuantity>(PARAM_ADD_LABEL, 0.f, 1.f, 0.f, "Add label (" RACK_MOD_CTRL_NAME "+G)");
-		configParam<TriggerParamQuantity>(PARAM_OPACITY_PLUS, 0.f, 1.f, 0.f, string::f("Increase overall opacity by %i%%", int(LABEL_OPACITY_STEP * 100)));
-		configParam<TriggerParamQuantity>(PARAM_OPACITY_MINUS, 0.f, 1.f, 0.f, string::f("Decrease overall opacity by %i%%", int(LABEL_OPACITY_STEP * 100)));
-		configParam<TriggerParamQuantity>(PARAM_HIDE, 0.f, 1.f, 0.f, "Hide labels");
+		configSwitch(PARAM_UNLOCK, 0.f, 1.f, 0.f, "Unlock labels for editing (" RACK_MOD_CTRL_NAME "+" RACK_MOD_SHIFT_NAME "+G");
+		configSwitch(PARAM_ADD_LABEL, 0.f, 1.f, 0.f, "Add label (" RACK_MOD_CTRL_NAME "+G)");
+		configSwitch(PARAM_OPACITY_PLUS, 0.f, 1.f, 0.f, string::f("Increase overall opacity by %i%%", int(LABEL_OPACITY_STEP * 100)));
+		configSwitch(PARAM_OPACITY_MINUS, 0.f, 1.f, 0.f, string::f("Decrease overall opacity by %i%%", int(LABEL_OPACITY_STEP * 100)));
+		configSwitch(PARAM_HIDE, 0.f, 1.f, 0.f, "Hide labels");
 		onReset();
 	}
 

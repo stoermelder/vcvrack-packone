@@ -1,20 +1,22 @@
 #pragma once
-#include "plugin.hpp"
+#include <rack.hpp>
 
 namespace StoermelderPackOne {
+
+using namespace rack;
 
 struct StoermelderTrimpot : app::SvgKnob {
 	widget::SvgWidget* fg;
 	StoermelderTrimpot() {
 		minAngle = -0.75 * M_PI;
 		maxAngle = 0.75 * M_PI;
-
-		fg = new widget::SvgWidget;
-		fb->addChildAbove(fg, tw);
-
 		setSvg(Svg::load(asset::plugin(pluginInstance, "res/components/Trimpot.svg")));
+
+#ifndef METAMODULE
+		fg = new widget::SvgWidget;
 		fg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/components/Trimpot-fg.svg")));
-		sw->box.size = shadow->box.size = Vec(16.6f, 16.6f);
+		fb->addChildAbove(fg, tw);
+#endif
 	}
 };
 
@@ -29,13 +31,13 @@ struct StoermelderSmallKnob : app::SvgKnob {
 	StoermelderSmallKnob() {
 		minAngle = -0.83 * M_PI;
 		maxAngle = 0.83 * M_PI;
-
-		fg = new widget::SvgWidget;
-		fb->addChildAbove(fg, tw);
-
 		setSvg(Svg::load(asset::plugin(pluginInstance, "res/components/SmallKnob.svg")));
+
+#ifndef METAMODULE
+		fg = new widget::SvgWidget;
 		fg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/components/SmallKnob-fg.svg")));
-		sw->box.size = shadow->box.size = Vec(22.7f, 22.7f);
+		fb->addChildAbove(fg, tw);
+#endif
 	}
 };
 
@@ -45,13 +47,13 @@ struct StoermelderLargeKnob : app::SvgKnob {
 		minAngle = -0.83 * M_PI;
 		maxAngle = 0.83 * M_PI;
 		shadow->blurRadius = 1.5f;
+		setSvg(Svg::load(asset::plugin(pluginInstance, "res/components/LargeKnob.svg")));
 
+#ifndef METAMODULE
 		fg = new widget::SvgWidget;
-		fb->addChildAbove(fg, tw);
-
-		setSvg(APP->window->loadSvg(asset::plugin(pluginInstance, "res/components/LargeKnob.svg")));
 		fg->setSvg(Svg::load(asset::plugin(pluginInstance, "res/components/LargeKnob-fg.svg")));
-		sw->box.size = shadow->box.size = Vec(36.0f, 36.0f);
+		fb->addChildAbove(fg, tw);
+#endif
 	}
 };
 

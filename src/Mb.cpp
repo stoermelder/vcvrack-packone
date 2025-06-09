@@ -4,6 +4,7 @@
 #include "mb/Mb_v06.hpp"
 #include <osdialog.h>
 #include <chrono>
+#include <thread>
 
 namespace StoermelderPackOne {
 namespace Mb {
@@ -278,7 +279,10 @@ struct MbWidget : ModuleWidget {
 
 	MbWidget(MbModule* module) {
 		setModule(module);
-		setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/Mb.svg")));
+		setPanel(Svg::load(asset::plugin(pluginInstance, "res/Mb.svg")));
+
+		addChild(createWidget<StoermelderBlackScrew>(Vec(0, 0)));
+		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 1 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
 		addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(15.f, 330.0f), module, MbModule::LIGHT_ACTIVE));
 
