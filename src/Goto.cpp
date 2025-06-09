@@ -10,7 +10,7 @@ enum class TRIGGERMODE {
 };
 
 enum class JUMPPOS {
-	ABSOLUTE = 0,
+	ABSOLUTE = 0,	// deprecated, not supported anymore
 	MODULE_CENTER = 1,
 	MODULE_TOPLEFT = 2
 };
@@ -21,8 +21,7 @@ struct GotoTarget {
 	float zoom = 1.f;
 };
 
-
-template < int SLOTS >
+template <int SLOTS>
 struct GotoModule : Module {
 	enum ParamIds {
 		ENUMS(PARAM_SLOT, SLOTS),
@@ -65,13 +64,43 @@ struct GotoModule : Module {
 	/** Stores the last voltage seen on the input-port */
 	float triggerVoltage;
 
+
+	struct GotoSwitchQuantity : SwitchQuantity {
+		int jumpPoint;
+		int64_t cachedModuleId;
+		std::string cachedModuleName;
+
+		std::string getString() override {
+			GotoModule<SLOTS>* module = reinterpret_cast<GotoModule<SLOTS>*>(this->module);
+			if (module->jumpPoints[jumpPoint].moduleId != cachedModuleId) {
+				cachedModuleId = module->jumpPoints[jumpPoint].moduleId;
+				if (cachedModuleId >= 0) {
+					Module* m = APP->engine->getModule(cachedModuleId);
+					cachedModuleName = string::f("%s %s", m->model->plugin->brand.c_str(), m->model->name.c_str());
+				}
+				else {
+					cachedModuleName = "";
+				}
+			}
+			if (!cachedModuleName.empty()) {
+				return string::f("Jump point %i (SHIFT+%i): %s", jumpPoint + 1, (jumpPoint + 1) % 10, cachedModuleName.c_str());
+			}
+			else {
+				return string::f("Jump point %i (SHIFT+%i)", jumpPoint + 1, (jumpPoint + 1) % 10);
+			}
+		}
+	};
+
+
 	GotoModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configInput(INPUT_TRIG, "Jump point trigger");
 		inputInfos[INPUT_TRIG]->description = "Operating mode is set on the context menu.";
 		for (int i = 0; i < SLOTS; i++) {
-			configSwitch(PARAM_SLOT + i, 0, 1, 0, string::f("Jump point %i (SHIFT+%i)\nShort-press to jumo\nLong-press to learn/clear", i + 1, (i + 1) % 10));
+			auto pq = configSwitch<GotoSwitchQuantity>(PARAM_SLOT + i, 0.f, 1.f, 0.f);
+			pq->description = "Short-press to jump\nLong-press to learn/clear";
+			pq->jumpPoint = i;
 		}
 		onReset();
 	}
@@ -160,7 +189,7 @@ struct GotoModule : Module {
 
 
 
-template < int SLOTS >
+template <int SLOTS>
 struct GotoContainer : widget::Widget {
 	GotoModule<SLOTS>* module;
 	ModuleWidget* mw;
@@ -307,7 +336,7 @@ struct GotoContainer : widget::Widget {
 };
 
 
-template < typename CONTAINER >
+template <typename CONTAINER>
 struct GotoButton : LEDButton {
 	CONTAINER* gotoContainer;
 	LongPressButton lpb;
