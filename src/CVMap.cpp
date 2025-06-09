@@ -365,7 +365,13 @@ struct CVMapChoice : MapModuleChoice<MAX_CHANNELS, CVMapModule> {
 	}
 
 	std::string getSlotPrefix() override {
-		return string::f("In%02d ", module->mapInput[id] + 1);
+		if (module) {
+			return string::f("In%02d ", module->mapInput[id] + 1);
+		}
+		else {
+			// for module browser
+			return string::f("In%02d ", id + 1);
+		}
 	}
 }; // struct CVMapChoice
 

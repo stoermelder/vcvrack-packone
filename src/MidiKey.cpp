@@ -401,25 +401,48 @@ struct MidiKeyChoice : LedDisplayChoice {
 	}
 
 	std::string getSlotPrefix() {
-		if (module->slot[id].cc >= 0) {
-			return string::f("cc%03d ", module->slot[id].cc);
+		static const char* noteNames[] = {
+			" C", "C#", " D", "D#", " E", " F", "F#", " G", "G#", " A", "A#", " B"
+		};
+		if (module) {
+			if (module->slot[id].cc >= 0) {
+				return string::f("cc%03d ", module->slot[id].cc);
+			}
+			else if (module->slot[id].note >= 0) {
+
+				int oct = module->slot[id].note / 12 - 1;
+				int semi = module->slot[id].note % 12;
+				return string::f("  %s%d ", noteNames[semi], oct);
+			}
+			else if (module->slot[id].key >= 0 || id < -1) {
+				return "..... ";
+			}
+			return "      ";
 		}
-		else if (module->slot[id].note >= 0) {
-			static const char* noteNames[] = {
-				" C", "C#", " D", "D#", " E", " F", "F#", " G", "G#", " A", "A#", " B"
-			};
-			int oct = module->slot[id].note / 12 - 1;
-			int semi = module->slot[id].note % 12;
-			return string::f("  %s%d ", noteNames[semi], oct);
+		else {
+			// fake data for module browser
+			return string::f(" %s2 ", noteNames[id % 12]);
 		}
-		else if (module->slot[id].key >= 0 || id < -1) {
-			return "..... ";
-		}
-		return "      ";
 	}
 
 	void step() override {
-		if (!module) return;
+		if (!module) {
+			// for module browser
+			color.a = 0.5;
+			std::string label = "";
+			switch (id) {
+				case ID_CTRL:
+					label = RACK_MOD_CTRL_NAME; break;
+				case ID_ALT:
+					label = RACK_MOD_ALT_NAME; break;
+				case ID_SHIFT:
+					label = RACK_MOD_SHIFT_NAME; break;
+				default:
+					label = "> Unmapped"; break;
+			}
+			text = getSlotPrefix() + label;
+			return;
+		}
 
 		// Set bgColor and selected state
 		if (module->learningId == id) {

@@ -405,6 +405,20 @@ struct MidiMonWidget : ThemedModuleWidget<MidiMonModule> {
 		logDisplay->buffer = &buffer;
 		logDisplay->box.size = textDisplay->box.size.minus(Vec(0.f, 4.f));
 		textDisplay->addChild(logDisplay);
+
+		if (!module) {
+			// fake data for module browser
+			std::time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+			char buf[100] = {0};
+			std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", std::localtime(&now));
+			buffer.push_front(std::make_tuple(LOG_FORMAT::TIMESTAMP, 0.f, std::string(buf)));
+			buffer.push_front(std::make_tuple(LOG_FORMAT::TIMESTAMP, 0.f, string::f("sample rate %i", int(APP->engine->getSampleRate()))));
+			buffer.push_front(std::make_tuple(LOG_FORMAT::TIMESTAMP, 0.f, string::f("ch%i cc%i=%i", 5, 33, 101)));
+			buffer.push_front(std::make_tuple(LOG_FORMAT::TIMESTAMP, 0.f, string::f("ch%i note on  %i vel %i", 6, 41, 66)));
+			buffer.push_front(std::make_tuple(LOG_FORMAT::TIMESTAMP, 0.f, string::f("ch%i note off %i vel %i", 3, 66, 83)));
+			buffer.push_front(std::make_tuple(LOG_FORMAT::TIMESTAMP, 0.f, string::f("ch%i cc%i=%i", 3, 20, 4)));
+			buffer.push_front(std::make_tuple(LOG_FORMAT::TIMESTAMP, 0.f, string::f("ch%i cc%i=%i", 3, 63, 52)));
+		}
 	}
 
 	void step() override {
