@@ -1673,26 +1673,33 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 	}
 
 	std::string getSlotPrefix() override {
-		char light = ' ';
-		if (module->getMap(id).hasLight()) {
-			light = '*';
-		}
-		if (module->ccs[id].getCc() >= 0) {
-			return string::f("cc%02d%c", module->ccs[id].getCc(), light);
-		}
-		else if (module->notes[id].getNote() >= 0) {
-			static const char* noteNames[] = {
-				" C", "C#", " D", "D#", " E", " F", "F#", " G", "G#", " A", "A#", " B"
-			};
-			int oct = module->notes[id].getNote() / 12 - 1;
-			int semi = module->notes[id].getNote() % 12;
-			return string::f(" %s%d%c", noteNames[semi], oct, light);
-		}
-		else if (module->paramHandles[id].moduleId >= 0) {
-			return string::f("....%c", light);
+		static const char* noteNames[] = {
+			" C", "C#", " D", "D#", " E", " F", "F#", " G", "G#", " A", "A#", " B"
+		};
+		if (module) {
+			char light = ' ';
+			if (module->getMap(id).hasLight()) {
+				light = '*';
+			}
+			if (module->ccs[id].getCc() >= 0) {
+				return string::f("cc%02d%c", module->ccs[id].getCc(), light);
+			}
+			else if (module->notes[id].getNote() >= 0) {
+
+				int oct = module->notes[id].getNote() / 12 - 1;
+				int semi = module->notes[id].getNote() % 12;
+				return string::f(" %s%d%c", noteNames[semi], oct, light);
+			}
+			else if (module->paramHandles[id].moduleId >= 0) {
+				return string::f("....%c", light);
+			}
+			else {
+				return "";
+			}
 		}
 		else {
-			return "";
+			// fake data for module browser
+			return id % 2 == 0 ? string::f("cc%02d ", id) : string::f(" %s2 ", noteNames[id % 12]);
 		}
 	}
 

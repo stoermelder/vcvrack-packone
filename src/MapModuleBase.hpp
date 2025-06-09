@@ -343,8 +343,12 @@ struct MapModuleChoice : LedDisplayChoice {
 	}
 
 	void step() override {
-		if (!module)
+		if (!module) {
+			// for module browser
+			color.a = 0.5;
+			text = getSlotPrefix() + "Unmapped";
 			return;
+		}
 
 		// Set bgColor and selected state
 		if (module->learningId == id) {
@@ -442,7 +446,7 @@ struct MapModuleChoice : LedDisplayChoice {
 		ParamHandle* paramHandle = &module->paramHandles[id];
 		if (paramHandle->moduleId < 0)
 			return "";
-		ModuleWidget *mw = APP->scene->rack->getModule(paramHandle->moduleId);
+		ModuleWidget* mw = APP->scene->rack->getModule(paramHandle->moduleId);
 		if (!mw)
 			return "";
 		// Get the Module from the ModuleWidget instead of the ParamHandle.
