@@ -1806,7 +1806,7 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 			menu->addChild(createMenuItem("Clear MIDI assignment", "", [=]() { module->clearMap(id, true); }));
 		}
 
-		menu->addChild(createMenuItem("Bind feedback to LED", CHECKMARK(module->getMap(id).hasLight()), [this] { enableLearnLight(); }));
+		menu->addChild(createMenuItem("Bind feedback to LED (experimental)", CHECKMARK(module->getMap(id).hasLight()), [this] { enableLearnLight(); }));
 		if (module->midiParam[id].hasLight()) {
 			menu->addChild(createMenuItem("Remove LED binding", "", [this] { module->getMap(id).setLight(); }));
 		}
@@ -2545,9 +2545,9 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 		menu->addChild(createSubmenuItem("Map parameters by selection", "",
 			[=](Menu* menu) {
 				menu->addChild(createMenuItem("Clear first", "", [=]() { selectionWidget->enableLearn(MidiCatSelectionWidget::LEARN_MODE::CLEAR); }));
-				menu->addChild(createMenuItem("Clear first, bind LEDs", "", [=]() { selectionWidget->enableLearn(MidiCatSelectionWidget::LEARN_MODE::CLEAR, true); }));
+				menu->addChild(createMenuItem("Clear first, bind LEDs (experimental)", "", [=]() { selectionWidget->enableLearn(MidiCatSelectionWidget::LEARN_MODE::CLEAR, true); }));
 				menu->addChild(createMenuItem("Append", "", [=]() { selectionWidget->enableLearn(MidiCatSelectionWidget::LEARN_MODE::APPEND); }));
-				menu->addChild(createMenuItem("Append, bind LEDs", "", [=]() { selectionWidget->enableLearn(MidiCatSelectionWidget::LEARN_MODE::APPEND, true); }));
+				menu->addChild(createMenuItem("Append, bind LEDs (experimental)", "", [=]() { selectionWidget->enableLearn(MidiCatSelectionWidget::LEARN_MODE::APPEND, true); }));
 			}
 		));
 
