@@ -5,7 +5,7 @@
 - Module [STRIP-BLOCK](./docs/Strip.md)
     - New module, a companion module for STRIP for blocking STRIP's expander-mechanism
 
-## 2.0.0 (in development)
+## 2.0.0
 
 - [Selected modules](./MetaModule.md) are available on the [4ms MetaModule](https://4mscompany.com/p.php?p=990).
 - Modules [8FACE, 8FACEx2](./docs/EightFace.md) and [8FACE mk2](./docs/EightFaceMk2.md) are now considered experimental, because loading of presets into any module cannot be considered stable and issue-free in every case.
@@ -26,7 +26,7 @@
     - Don't use Rack's parameter smoothing in Semitone/Octave-mode (broken since Rack 2.3.0)
 - Module [ARENA](./docs/Arena.md)
     - Fixed behavior of attenuvertors for X/Y/MOD-inputs (#394)
-    - Fixed rough parameter updates on screen interaction because of display refresh rate (#210)
+    - Fixed coarse parameter updates on screen interaction because of display refresh rate (#210)
 - Module [GOTO](./docs/Goto.md)
     - Implemented smooth transition for "top left" jump destination (#388)
 - Module [MB](./docs/Mb.md)
@@ -36,7 +36,7 @@
 - Module [MIDI-CAT](./docs/MidiCat.md)
     - Implemented response curves (logarithmic/exponential) (#258)
     - Fixed MIDI-feedback for snapped parameters (#374)
-    - Implemented experimental LED binding for proper MIDI feedback on push-buttons (e.g. on VCV SEQ3 or Impromptu GATE-SEQ-64)
+    - Implemented experimental LED binding for proper MIDI feedback on push-buttons (e.g. on VCV SEQ3 or Impromptu GATE-SEQ-64) (#401)
     - Implemented alternative parameter binding by selection box
 - Module [MIDI-CAT CTX](./docs/MidiCat.md#ctx-expander)
     - Fixed broken button-handling when triggered by Parameter-mapping
