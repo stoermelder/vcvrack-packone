@@ -88,4 +88,4 @@ The colored circles on the center-screen representing inputs and mix-outputs can
     - Fixed broken behavior of "Radius" sliders of "In"-ports
     - Fixed broken patch-restore of "Radius" sliders (#331)
     - Fixed behavior of attenuvertors for X/Y/MOD-inputs (#394)
-    - Fixed rough parameter updates on screen interaction because of display refresh rate (#210)
+    - Fixed coarse parameter updates on screen interaction because of display refresh rate (#210)

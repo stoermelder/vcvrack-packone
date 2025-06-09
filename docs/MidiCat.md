@@ -261,5 +261,5 @@ There are two modes with different behavior for MIDI-feedback:
     - Fixed broken button-handling of MIDI-CAT MEM and MIDI-CAT CTX when triggered by Parameter-mapping (#356)
     - Added trigger-inputs for Prev and Next on MIDI-CAT MEM
     - Implemented response curves (logarithmic/exponential) (#258)
-    - Implemented experimental LED binding for proper MIDI feedback on push-buttons (e.g. on VCV SEQ3 or Impromptu GATE-SEQ-64)
+    - Implemented experimental LED binding for proper MIDI feedback on push-buttons (e.g. on VCV SEQ3 or Impromptu GATE-SEQ-64) (#401)
     - Implemented alternative parameter binding by selection box
