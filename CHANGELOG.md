@@ -1,10 +1,3 @@
-## 2.x.x (in development)
-
-- Modules [FLOWER, SEEDS, OFFSPRING](./docs/Flower.md)
-    - New modules, pattern-driven 16-step sequencer
-- Module [STRIP-BLOCK](./docs/Strip.md)
-    - New module, a companion module for STRIP for blocking STRIP's expander-mechanism
-
 ## 2.0.0
 
 - [Selected modules](./MetaModule.md) are available on the [4ms MetaModule](https://4mscompany.com/p.php?p=990).
