@@ -298,7 +298,10 @@ struct MidiKeyModule : Module {
 					event::HoverKey e;
 					e.key = slot[id].key;
 					e.scancode = glfwGetKeyScancode(e.key);
-					e.keyName = glfwGetKeyName(e.key, e.scancode);
+					const char* keyName = glfwGetKeyName(e.key, e.scancode);
+					if (keyName) {
+						e.keyName = keyName;
+					}
 					e.action = value > 0 ? GLFW_PRESS : GLFW_RELEASE;
 					e.mods = 0;
 					if (slot[ID_CTRL].active || (slot[id].mods & RACK_MOD_CTRL))
