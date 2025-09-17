@@ -1,7 +1,7 @@
 #include "plugin.hpp"
 #include "components/MidiWidget.hpp"
 #ifdef METAMODULE
-#include "CoreModules/midi/midi_message.hh"
+#include "midi/midi_message.hh"
 #include "util/circular_buffer.hh"
 #endif
 
