@@ -141,6 +141,8 @@ Once placed next to TRANSIT the expander works and behaves the same way TRANSIT 
   
 - Each snapshot can be named with a custom text label. This label is shown while hovering above the snapshot button if parameter tooltips are enabled (added in v1.9.0).
 
+- Parameter changes are not reported back to the plugin-host by default if Transit is used in a plugin-version of VCV Rack. In v2.1.0 a context menu option has been added to enable this behavior - it might cause higher CPU usage of the plugin.
+
 ## Changelog
 
 - v1.7.0
@@ -172,3 +174,5 @@ Once placed next to TRANSIT the expander works and behaves the same way TRANSIT 
     - Added fade setting per slot
     - Improved handling on mapped switches (skipping all immediate values)
     - Added context menu option to clean invalid bound parameters up (#383)
+- v2.1.0
+    - Added context menu option to report parameter updates to plugin-host (only in plugin-version of Rack) 

@@ -1,3 +1,14 @@
+## 2.1.0
+
+### Changes and Fixes
+
+- Modules [CV-MAP](./docs/CVMap.md), [µMAP](./docs/CVMapMicro.md), [MIDI-CAT](./docs/MidiCat.md), [ReMOVE Lite](./docs/ReMove.md), [X4](./docs/X4.md)
+    - Improved mapping logic to allow more parameters to be mapped (e.g. SurgeXTRack) (#410)
+- Module [MIDI-KEY](./docs/MidiKey.md)
+    - Fixed crash on mapped special keys like ENTER
+- Module [TRANSIT](./docs/Transit.md)
+    - Added context menu option to report parameter updates to plugin-host (only in plugin-version of Rack) 
+
 ## 2.0.0
 
 - [Selected modules](./MetaModule.md) are available on the [4ms MetaModule](https://4mscompany.com/p.php?p=990).
