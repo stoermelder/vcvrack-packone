@@ -116,6 +116,8 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 
 	/** [Stored to JSON] */
 	std::vector<ParamHandleEx*> sourceHandles;
+	/** [Stored to JSON] */
+	bool parameterChangesDirect = false;
 
 	dsp::SchmittTrigger slotTrigger;
 	dsp::SchmittTrigger slotC4Trigger;
@@ -218,6 +220,8 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		presetProcessDivider.setDivision(presetProcessDivision);
 		presetProcessDivider.reset();
 		
+		parameterChangesDirect = false;
+
 		Module::onReset();
 		TransitBase<NUM_PRESETS>* t = this;
 		int c = 0;
@@ -697,8 +701,10 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 				else {
 					float v = crossfade(oldValue, newValue, s10);
 					if (s10 > (1.f - 5e-3f) && std::abs(std::round(v) - v) < 5e-3f) v = std::round(v);
-					//pq->setValue(v);
-					pq->getParam()->setValue(v);
+					if (settings::isPlugin && parameterChangesDirect)
+						pq->setValue(v);
+					else
+						pq->getParam()->setValue(v);
 				}
 			}
 
@@ -751,8 +757,10 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 					float v1 = (*slot1->preset)[i];
 					float v2 = (*slot2->preset)[i];
 					float v = crossfade(v1, v2, p);
-					//pq->setValue(v);
-					pq->getParam()->setValue(v);
+					if (settings::isPlugin && parameterChangesDirect)
+						pq->setValue(v);
+					else
+						pq->getParam()->setValue(v);
 				}
 			}
 			else {
@@ -760,8 +768,11 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 					ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
 					if (!pq) continue;
 					float v = (*slot1->preset)[i];
-					//pq->setValue(v);
-					pq->getParam()->setValue(v);
+
+					if (settings::isPlugin && parameterChangesDirect)
+						pq->setValue(v);
+					else
+						pq->getParam()->setValue(v);
 				}
 			}
 
@@ -958,6 +969,8 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		json_object_set_new(rootJ, "presetCount", json_integer(presetCount));
 		json_object_set_new(rootJ, "presetCountLongPress", json_boolean(presetCountLongPress));
 
+		json_object_set_new(rootJ, "parameterChangesDirect", json_boolean(parameterChangesDirect));
+
 		json_t* sourceMapsJ = json_array();
 		for (size_t i = 0; i < sourceHandles.size(); i++) {
 			json_t* sourceMapJ = json_object();
@@ -981,6 +994,9 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		presetCount = json_integer_value(json_object_get(rootJ, "presetCount"));
 		json_t* presetCountLongPressJ = json_object_get(rootJ, "presetCountLongPress");
 		if (presetCountLongPressJ) presetCountLongPress = json_boolean_value(presetCountLongPressJ);
+
+		json_t* parameterChangesDirectJ = json_object_get(rootJ, "parameterChangesDirect");
+		if (parameterChangesDirectJ) parameterChangesDirect = json_boolean_value(parameterChangesDirectJ);
 
 		if (preset >= presetCount) {
 			preset = -1;
@@ -1245,6 +1261,9 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 				module->setProcessDivision(division);
 			}
 		));
+		if (settings::isPlugin) {
+			menu->addChild(createBoolPtrMenuItem("Report parameter changes", "", &module->parameterChangesDirect));			
+		}
 
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createSubmenuItem("Number of snapshots", string::f("%i", module->presetCount),

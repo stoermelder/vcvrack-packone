@@ -13,6 +13,8 @@
     - Improved mapping logic to allow more parameters to be mapped (e.g. SurgeXTRack) (#410)
 - Module [MIDI-KEY](./docs/MidiKey.md)
     - Fixed crash on mapped special keys like ENTER
+- Module [TRANSIT](./docs/Transit.md)
+    - Added context menu option to report parameter updates to plugin-host (only in plugin-version of Rack) 
 
 ## 2.0.0
 
