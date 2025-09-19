@@ -327,18 +327,21 @@ struct MapModuleChoice : LedDisplayChoice {
 		if (!module) return;
 		if (!processEvents) return;
 
-		// Check if a ParamWidget was touched
-		ParamWidget* touchedParam = APP->scene->rack->getTouchedParam();
-		if (touchedParam && touchedParam->getParamQuantity()->module != module) {
-			APP->scene->rack->setTouchedParam(NULL);
-			int64_t moduleId = touchedParam->getParamQuantity()->module->id;
-			int paramId = touchedParam->getParamQuantity()->paramId;
-			module->learnParam(id, moduleId, paramId);
-			hscrollCharOffset = 0;
-		} 
-		else {
-			module->disableLearn(id);
+		// Check if a ParamWidget was hovered
+		Widget* widget = APP->event->getHoveredWidget();
+		if (widget) {
+			ParamWidget* paramWidget = dynamic_cast<ParamWidget*>(widget);
+			if (paramWidget && paramWidget->getParamQuantity()->module != module) {
+				APP->scene->rack->setTouchedParam(NULL);
+				int64_t moduleId = paramWidget->getParamQuantity()->module->id;
+				int paramId = paramWidget->getParamQuantity()->paramId;
+				module->learnParam(id, moduleId, paramId);
+				hscrollCharOffset = 0;
+				glfwSetCursor(APP->window->win, NULL);
+				return;
+			}
 		}
+		module->disableLearn(id);
 		glfwSetCursor(APP->window->win, NULL);
 	}
 

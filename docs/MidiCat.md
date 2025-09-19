@@ -263,3 +263,5 @@ There are two modes with different behavior for MIDI-feedback:
     - Implemented response curves (logarithmic/exponential) (#258)
     - Implemented experimental LED binding for proper MIDI feedback on push-buttons (e.g. on VCV SEQ3 or Impromptu GATE-SEQ-64) (#401)
     - Implemented alternative parameter binding by selection box
+- v2.1.0
+    - Improved mapping logic to allow more parameters to be mapped (e.g. SurgeXTRack) (#410)
