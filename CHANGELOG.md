@@ -9,7 +9,7 @@
 
 ### Changes and Fixes
 
-- Modules [CV-MAP](./docs/CVMap.md), [µMAP](./docs/CVMapMicro.md), [MIDI-CAT](./docs/MidiCat.md), [ReMOVE Lite](./docs/ReMove.md), [X4](./docs/X4.md):
+- Modules [CV-MAP](./docs/CVMap.md), [µMAP](./docs/CVMapMicro.md), [MIDI-CAT](./docs/MidiCat.md), [ReMOVE Lite](./docs/ReMove.md), [X4](./docs/X4.md)
     - Improved mapping logic to allow more parameters to be mapped (e.g. SurgeXTRack) (#410)
 - Module [MIDI-KEY](./docs/MidiKey.md)
     - Fixed crash on mapped special keys like ENTER
