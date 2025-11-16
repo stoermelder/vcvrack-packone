@@ -22,6 +22,8 @@ The _IN_-port is optional in use and MACRO can be used leaving it unconnected. I
 
 ## Additional features
 
-Mapping parameters can result in quite high CPU usage. As controlling parameters at audio rate is not needed in most of the cases you can switch four different performance settings using _Precision_ option on the context menu.
+- Mapping parameters can result in quite high CPU usage. As controlling parameters at audio rate is not needed in most of the cases you can switch four different performance settings using _Precision_ option on the context menu.
+
+- Parameter changes are not reported back to the plugin-host by default if MACRO is used in a plugin-version of VCV Rack. In v2.2.0 a context menu option has been added to enable this behavior - it might cause higher CPU usage of the plugin.
 
 MACRO was added in v1.8 of PackOne.
