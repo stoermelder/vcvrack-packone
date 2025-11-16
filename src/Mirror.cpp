@@ -51,6 +51,9 @@ struct MirrorModule : Module, StripIdFixModule {
 	/** [Stored to JSON] */
 	int cvParamId[8];
 
+	/** [Stored to JSON] */
+	bool parameterChangesDirect = false;
+
 	dsp::ClockDivider processDivider;
 	dsp::ClockDivider handleDivider;
 
@@ -122,6 +125,8 @@ struct MirrorModule : Module, StripIdFixModule {
 		sourceModelName = "";
 		sourceModuleId = -1;
 		audioRate = false;
+
+		parameterChangesDirect = false;
 	}
 
 	void process(const ProcessArgs& args) override {
@@ -165,9 +170,11 @@ struct MirrorModule : Module, StripIdFixModule {
 					ParamHandle* sourceHandle = sourceHandles[cvParamId[i]];
 					ParamQuantity* sourceParamQuantity = getParamQuantity(sourceHandle);
 					if (sourceParamQuantity) {
-						//sourceParamQuantity->setScaledValue(v / 10.f);
 						float vScaled = math::rescale(v / 10.f, 0.f, 1.f, sourceParamQuantity->getMinValue(), sourceParamQuantity->getMaxValue());
-						sourceParamQuantity->getParam()->setValue(vScaled);
+						if (settings::isPlugin && parameterChangesDirect)
+							sourceParamQuantity->setValue(vScaled);
+						else
+							sourceParamQuantity->getParam()->setValue(vScaled);
 					}
 					else {
 						cvParamId[i] = -1;
@@ -186,8 +193,10 @@ struct MirrorModule : Module, StripIdFixModule {
 					ParamHandle* targetHandle = targetHandles[i];
 					ParamQuantity* targetParamQuantity = getParamQuantity(targetHandle);
 					if (targetParamQuantity) {
-						//targetParamQuantity->setValue(v);
-						targetParamQuantity->getParam()->setValue(v);
+						if (settings::isPlugin && parameterChangesDirect)
+							targetParamQuantity->setValue(v);
+						else
+							targetParamQuantity->getParam()->setValue(v);
 					}
 					i += sourceHandles.size();
 				}
@@ -264,6 +273,8 @@ struct MirrorModule : Module, StripIdFixModule {
 		json_object_set_new(rootJ, "audioRate", json_boolean(audioRate));
 		json_object_set_new(rootJ, "mappingIndicatorHidden", json_boolean(mappingIndicatorHidden));
 
+		json_object_set_new(rootJ, "parameterChangesDirect", json_boolean(parameterChangesDirect));
+
 		json_object_set_new(rootJ, "sourcePluginSlug", json_string(sourcePluginSlug.c_str()));
 		json_object_set_new(rootJ, "sourcePluginName", json_string(sourcePluginName.c_str()));
 		json_object_set_new(rootJ, "sourceModelSlug", json_string(sourceModelSlug.c_str()));
@@ -311,6 +322,9 @@ struct MirrorModule : Module, StripIdFixModule {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 		audioRate = json_boolean_value(json_object_get(rootJ, "audioRate"));
 		mappingIndicatorHidden = json_boolean_value(json_object_get(rootJ, "mappingIndicatorHidden"));
+
+		json_t* parameterChangesDirectJ = json_object_get(rootJ, "parameterChangesDirect");
+		if (parameterChangesDirectJ) setParameterChangesDirect(json_boolean_value(parameterChangesDirectJ));
 
 		json_t* sourcePluginSlugJ = json_object_get(rootJ, "sourcePluginSlug");
 		if (sourcePluginSlugJ) sourcePluginSlug = json_string_value(sourcePluginSlugJ);
@@ -411,6 +425,10 @@ struct MirrorModule : Module, StripIdFixModule {
 			inChange = false;
 		});
 	}
+
+	void setParameterChangesDirect(bool b) {
+		parameterChangesDirect = b;	
+	}
 };
 
 
@@ -445,6 +463,16 @@ struct MirrorWidget : ThemedModuleWidget<MirrorModule> {
 
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createBoolPtrMenuItem("Audio rate processing", "", &module->audioRate));
+		if (settings::isPlugin) {
+			menu->addChild(createBoolMenuItem("Report parameter changes", "", 
+				[=]() {
+					return module->parameterChangesDirect;
+				},
+				[=](bool b) {
+					module->setParameterChangesDirect(b);
+				}
+			));
+		}
 		menu->addChild(createBoolPtrMenuItem("Hide mapping indicators", "", &module->mappingIndicatorHidden));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuItem("Bind source module (left)", "", [=]() { module->bindToSource(); }));

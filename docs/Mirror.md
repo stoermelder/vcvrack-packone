@@ -33,4 +33,6 @@ Many modules have an internal state which has nothing to do with the parameters 
 
 - Added in v1.8.0: The context menu option _Sync module presets_ works even if the mirrored module does not have any parameters, like [VCV Host](https://library.vcvrack.com/VCV-Host/Host).
 
+- Parameter changes are not reported back to the plugin-host by default if MIRROR is used in a plugin-version of VCV Rack. In v2.2.0 a context menu option has been added to enable this behavior - it might cause higher CPU usage of the plugin.
+
 MIRROR was added in v1.6 of PackOne.
