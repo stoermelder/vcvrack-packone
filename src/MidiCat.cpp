@@ -386,6 +386,8 @@ struct MidiCatModule : Module, StripIdFixModule {
 	/** [Stored to Json] */
 	int processDivision;
 	dsp::ClockDivider indicatorDivider;
+	/** [Stored to JSON] */
+	bool parameterChangesDirect = false;
 
 	// MEM-expander
 	// Pointer of the MEM-expander's attribute
@@ -457,6 +459,8 @@ struct MidiCatModule : Module, StripIdFixModule {
 		processDivider.reset();
 		overlayEnabled = true;
 		clearMapsOnLoad = false;
+
+		parameterChangesDirect = false;
 	}
 
 	void onSampleRateChange() override {
@@ -1116,6 +1120,8 @@ struct MidiCatModule : Module, StripIdFixModule {
 		json_object_set_new(rootJ, "overlayEnabled", json_boolean(overlayEnabled));
 		json_object_set_new(rootJ, "clearMapsOnLoad", json_boolean(clearMapsOnLoad));
 
+		json_object_set_new(rootJ, "parameterChangesDirect", json_boolean(parameterChangesDirect));
+
 		json_t* mapsJ = json_array();
 		for (int id = 0; id < mapLen; id++) {
 			json_t* mapJ = json_object();
@@ -1168,6 +1174,9 @@ struct MidiCatModule : Module, StripIdFixModule {
 			// Use NoLock because we're already in an Engine write-lock.
 			clearMaps_NoLock();
 		}
+
+		json_t* parameterChangesDirectJ = json_object_get(rootJ, "parameterChangesDirect");
+		if (parameterChangesDirectJ) setParameterChangesDirect(json_boolean_value(parameterChangesDirectJ));
 
 		json_t* mapsJ = json_object_get(rootJ, "maps");
 		if (mapsJ) {
@@ -1267,6 +1276,13 @@ struct MidiCatModule : Module, StripIdFixModule {
 			default:
 				break;
 		}
+	}
+
+	void setParameterChangesDirect(bool b) {
+		parameterChangesDirect = b;
+		for (int id = 0; id < MAX_CHANNELS; id++) {
+			midiParam[id].parameterChangesDirect = parameterChangesDirect;
+		}		
 	}
 };
 
@@ -2506,6 +2522,16 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 				module->setProcessDivision(division);
 			}
 		));
+		if (settings::isPlugin) {
+			menu->addChild(createBoolMenuItem("Report parameter changes", "", 
+				[=]() {
+					return module->parameterChangesDirect;
+				},
+				[=](bool b) {
+					module->setParameterChangesDirect(b);
+				}
+			));
+		}
 		menu->addChild(StoermelderPackOne::Rack::createMapSubmenuItem<MIDIMODE>("Mode", {
 				{ MIDIMODE::MIDIMODE_DEFAULT, "Operating" },
 				{ MIDIMODE::MIDIMODE_LOCATE, "Locate and indicate" }

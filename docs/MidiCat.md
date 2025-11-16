@@ -159,6 +159,8 @@ Here is a unpolished introduction video to demonstrate the configuration steps a
 
 ![MIDI-CAT overlay](./MidiCat-overlay.gif)
 
+- Parameter changes are not reported back to the plugin-host by default if MIDI-CAT is used in a plugin-version of VCV Rack. In v2.2.0 a context menu option has been added to enable this behavior - it might cause higher CPU usage of the plugin.
+
 ## MEM-expander
 
 MEM is a companion module for MIDI-CAT: The expander allows you store an unlimited number of module-specific mappings which can be recalled for the same type of module without doing any mapping manually.  
@@ -265,3 +267,5 @@ There are two modes with different behavior for MIDI-feedback:
     - Implemented alternative parameter binding by selection box
 - v2.1.0
     - Improved mapping logic to allow more parameters to be mapped (e.g. SurgeXTRack) (#410)
+- v2.2.0
+    - Added context menu option to report parameter updates to plugin-host (only in plugin-version of Rack) 
