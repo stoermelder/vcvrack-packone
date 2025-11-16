@@ -19,8 +19,10 @@ In addition to [CV-MAP](./CVMap.md)'s capabilities µMAP has an OUT-port for out
 ## Tips
 
 <a name="target-context"></a>
-After a parameter has been mapped the parameter's context menu is extended with some addtional menu items allowing quick adjustments and centering it's mapping µMAP module on the center of the screen (since v1.9.0).
+- After a parameter has been mapped the parameter's context menu is extended with some addtional menu items allowing quick adjustments and centering it's mapping µMAP module on the center of the screen (since v1.9.0).
 
 ![µMAP context menu](./CVMapMicro-target.png)
+
+- Parameter changes are not reported back to the plugin-host by default if µMAP is used in a plugin-version of VCV Rack. In v2.2.0 a context menu option has been added to enable this behavior - it might cause higher CPU usage of the plugin.
 
 µMAP was added in v1.0.2 of PackOne.

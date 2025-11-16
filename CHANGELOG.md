@@ -12,7 +12,7 @@
 
 - Module [8FACE mk2](./docs/EightFaceMk2.md)
     - Improved robustness for expander +8
-- Modules [CV-MAP](./docs/CVMap.md), [MACRO](./docs/Macro.md), [MIDI-CAT](./docs/MidiCat.md)
+- Modules [CV-MAP](./docs/CVMap.md), [MACRO](./docs/Macro.md), [µMAP](./docs/CVMapMicro.md), [MIDI-CAT](./docs/MidiCat.md)
     - Added context menu option to report parameter updates to plugin-host (only in plugin-version of Rack) 
 - Module [TRANSIT](./docs/Transit.md)
     - Improved robustness for expander +T (e.g. crashes when using module-presets) (#412)
