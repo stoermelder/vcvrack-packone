@@ -101,5 +101,6 @@ The _OUT_-port outputs a voltage for the recorded sequence. It can be configured
 - Changing the sampling rate of the module will prevail all recorded data and the playback-speed will be higher or slower.
 - "Randomization" of the module generates some random automation curves (added in v1.0.5).
 - A simple compression is implemented to reduce the size of the patchfile.
+- Parameter changes are not reported back to the plugin-host by default if ReMOVE Lite is used in a plugin-version of VCV Rack. In v2.2.0 a context menu option has been added to enable this behavior - it might cause higher CPU usage of the plugin.
 
 ReMOVE Lite was added in v1.0.2 of PackOne.
