@@ -45,7 +45,8 @@ struct TransitExModule : TransitBase<NUM_PRESETS> {
 		onReset();
 	}
 
-	void onReset() override { 
+	void onReset() override {
+		BASE::ctrlUniqueId = -1;
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			BASE::presetSlotUsed[i] = false;
 			BASE::textLabel[i] = "";

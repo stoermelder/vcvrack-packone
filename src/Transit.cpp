@@ -205,6 +205,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 			BASE::preset[i].clear();
 		}
 
+		BASE::ctrlUniqueId = rack::random::uniform() * INT64_MAX;
 		preset = -1;
 		presetCount = NUM_PRESETS;
 		presetNext = -1;
@@ -223,17 +224,6 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		parameterChangesDirect = false;
 
 		Module::onReset();
-		TransitBase<NUM_PRESETS>* t = this;
-		int c = 0;
-		while (true) {
-			c++;
-			if (c == MAX_EXPANDERS + 1) break;
-			Module* exp = t->rightExpander.module;
-			if (!exp) break;
-			if (exp->model != modelTransitEx) break;
-			t = reinterpret_cast<TransitBase<NUM_PRESETS>*>(exp);
-			t->onReset();
-		}
 	}
 
 	TransitSlot* transitSlot(int i) override {
@@ -277,7 +267,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 			if (exp->model != modelTransitEx) break;
 			m = exp;
 			t = reinterpret_cast<TransitBase<NUM_PRESETS>*>(exp);
-			if (t->ctrlModuleId >= 0 && t->ctrlModuleId != Module::id) t->onReset();
+			if (t->ctrlUniqueId != BASE::ctrlUniqueId) expanderCleanUp(t);
 			t->panelTheme = BASE::panelTheme;
 			t->ctrlModuleId = Module::id;
 			t->ctrlOffset = c;
@@ -873,6 +863,26 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		inChange = false;
 	}
 
+	void expanderCleanUp(TransitBase<NUM_PRESETS>* t) {
+		bool invalid = false;
+		// ctrlUniqueId == -2 for presets before uniqueId was added
+		if (t->ctrlUniqueId == -2) {
+			for (int i = 0; i < NUM_PRESETS; i++) {
+				TransitSlot* slot = t->transitSlot(i);
+				if (*(slot->presetSlotUsed)) {
+					if (slot->preset->size() != sourceHandles.size()) {
+						invalid = true;
+						break;
+					}
+				}
+			}
+		}
+		if (t->ctrlUniqueId != -2 || invalid) {
+			t->onReset();
+		}
+		t->ctrlUniqueId = BASE::ctrlUniqueId;
+	}
+
 	void presetCleanUp() {
 		inChange = true;
 		for (size_t i = 0; i < sourceHandles.size(); ) {
@@ -1040,6 +1050,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		});
 
 		BASE::dataFromJson(rootJ);
+		if (BASE::ctrlUniqueId == -2) BASE::ctrlUniqueId = Module::id;
 		Module::params[PARAM_CTRLMODE].setValue(0.f);
 	}
 };

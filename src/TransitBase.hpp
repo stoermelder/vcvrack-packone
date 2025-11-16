@@ -50,6 +50,8 @@ struct TransitBase : Module, StripIdFixModule {
 	LongPressButton presetButton[NUM_PRESETS];
 
 	int64_t ctrlModuleId = -1;
+	/** [Stored to JSON] */
+	int64_t ctrlUniqueId = -1;
 	int ctrlOffset = 0;
 	CTRLMODE ctrlMode = CTRLMODE::READ;
 
@@ -62,6 +64,7 @@ struct TransitBase : Module, StripIdFixModule {
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(TransitBase<NUM_PRESETS>::panelTheme));
+		json_object_set_new(rootJ, "ctrlUniqueId", json_integer(ctrlUniqueId));
 
 		json_t* presetsJ = json_array();
 		for (int i = 0; i < NUM_PRESETS; i++) {
@@ -86,6 +89,9 @@ struct TransitBase : Module, StripIdFixModule {
 
 	void dataFromJson(json_t* rootJ) override {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+
+		json_t* ctrlUniqueIdJ = json_object_get(rootJ, "ctrlUniqueId");
+		ctrlUniqueId = ctrlUniqueIdJ ? json_integer_value(ctrlUniqueIdJ) : -2;
 
 		json_t* presetsJ = json_object_get(rootJ, "presets");
 		json_t* presetJ;
