@@ -37,6 +37,8 @@ struct X4Module : CVMapModuleBase<2> {
 	bool readParamA[5];
 	/** [Stored to Json] */
 	bool readParamB[5];
+	/** [Stored to JSON] */
+	bool parameterChangesDirect = false;
 
 	float lastA[5];
 	float lastB[5];
@@ -78,6 +80,9 @@ struct X4Module : CVMapModuleBase<2> {
 		for (size_t i = 0; i < 5; i++) {
 			readParamA[i] = readParamB[i] = true;
 		}
+
+		parameterChangesDirect = false;
+
 		CVMapModuleBase<2>::onReset();
 	}
 
@@ -121,10 +126,12 @@ struct X4Module : CVMapModuleBase<2> {
 						lightArx[4] += !isNear(v1, v);
 					}
 					if (!isNear(v1, lastA[0]) && v1 != -1.f) {
-						lightAtx[0]++;
-						//pqA->setScaledValue(v1);
+						lightAtx[0]++;					
 						float vScaled = math::rescale(v1, 0.f, 1.f, pqA->getMinValue(), pqA->getMaxValue());
-						pqA->getParam()->setValue(vScaled);
+						if (settings::isPlugin && parameterChangesDirect)
+							pqA->setValue(vScaled);
+						else
+							pqA->getParam()->setValue(vScaled);
 						params[PARAM_MAP_A + 1].setValue(v1);
 						lightAtx[1] += lastA[1] != v1;
 						lastA[1] = v1;
@@ -180,10 +187,12 @@ struct X4Module : CVMapModuleBase<2> {
 						lightBrx[4] += !isNear(v1, v);
 					}
 					if (v1 != lastB[0] && v1 != -1.f) {
-						lightBtx[0]++;
-						//pqB->setScaledValue(v1);
+						lightBtx[0]++;		
 						float vScaled = math::rescale(v1, 0.f, 1.f, pqB->getMinValue(), pqB->getMaxValue());
-						pqB->getParam()->setValue(vScaled);
+						if (settings::isPlugin && parameterChangesDirect)
+							pqB->setValue(vScaled);
+						else
+							pqB->getParam()->setValue(vScaled);
 						params[PARAM_MAP_B + 1].setValue(v1);
 						lightBtx[1] += lastB[1] != v1;
 						lastB[1] = v1;
@@ -232,6 +241,8 @@ struct X4Module : CVMapModuleBase<2> {
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 		json_object_set_new(rootJ, "audioRate", json_boolean(audioRate));
 
+		json_object_set_new(rootJ, "parameterChangesDirect", json_boolean(parameterChangesDirect));
+
 		json_t* readParamJ = json_array();
 		json_t* readParamAJ = json_array();
 		json_t* readParamBJ = json_array();
@@ -251,6 +262,9 @@ struct X4Module : CVMapModuleBase<2> {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 		audioRate = json_boolean_value(json_object_get(rootJ, "audioRate"));
 
+		json_t* parameterChangesDirectJ = json_object_get(rootJ, "parameterChangesDirect");
+		if (parameterChangesDirectJ) setParameterChangesDirect(json_boolean_value(parameterChangesDirectJ));
+
 		json_t* readParamJ = json_object_get(rootJ, "readParam");
 		if (!readParamJ) return;
 		json_t* readParamAJ = json_array_get(readParamJ, 0);
@@ -259,6 +273,10 @@ struct X4Module : CVMapModuleBase<2> {
 			readParamA[i] = json_boolean_value(json_array_get(readParamAJ, i));
 			readParamB[i] = json_boolean_value(json_array_get(readParamBJ, i));
 		}
+	}
+
+	void setParameterChangesDirect(bool b) {
+		parameterChangesDirect = b;	
 	}
 };
 
@@ -327,6 +345,16 @@ struct X4Widget : ThemedModuleWidget<X4Module> {
 
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createBoolPtrMenuItem("Audio rate processing", "", &module->audioRate));
+		if (settings::isPlugin) {
+			menu->addChild(createBoolMenuItem("Report parameter changes", "", 
+				[=]() {
+					return module->parameterChangesDirect;
+				},
+				[=](bool b) {
+					module->setParameterChangesDirect(b);
+				}
+			));
+		}
 	}
 };
 
