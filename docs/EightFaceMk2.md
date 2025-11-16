@@ -135,3 +135,5 @@ Once placed next to 8FACE mk2 the expander works and behaves the same way 8FACE 
     - Increased maximum number of expanders to 15
     - Added "Auto"-mode besides "Read" and "Write" ([manual](./EightFaceMk2.md#auto-mode)) (#276)
     - Added option to bind currently selected modules
+- v2.2.0
+    - Improved robustness for expander +8

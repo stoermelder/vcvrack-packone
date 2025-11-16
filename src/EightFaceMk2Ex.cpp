@@ -56,6 +56,7 @@ struct EightFaceMk2ExModule : EightFaceMk2Base<NUM_PRESETS> {
 	}
 
 	void onReset() override {
+		BASE::ctrlUniqueId = -1;
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			if (BASE::presetSlotUsed[i]) {
 				for (json_t* vJ : BASE::preset[i]) {

@@ -10,6 +10,8 @@
 
 ### Changes and Fixes
 
+- Module [8FACE mk2](./docs/EightFaceMk2.md)
+    - Improved robustness for expander +8
 - Module [MIDI-CAT](./docs/MidiCat.md)
     - Added context menu option to report parameter updates to plugin-host (only in plugin-version of Rack) 
 - Module [TRANSIT](./docs/Transit.md)
