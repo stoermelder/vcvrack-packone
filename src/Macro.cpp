@@ -59,6 +59,8 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 	dsp::ClockDivider processDivider;
 	/** [Stored to JSON] */
 	int processDivision;
+	/** [Stored to JSON] */
+	bool parameterChangesDirect = false;
 
 	/** [Stored to JSON] */
 	int panelTheme = 0;
@@ -115,6 +117,8 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 		processDivision = 64;
 		processDivider.setDivision(processDivision);
 		processDivider.reset();
+
+		parameterChangesDirect = false;
 	}
 
 	void process(const Module::ProcessArgs& args) override {
@@ -183,6 +187,8 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 		json_object_set_new(rootJ, "processDivision", json_integer(processDivision));
 
+		json_object_set_new(rootJ, "parameterChangesDirect", json_boolean(parameterChangesDirect));
+
 		json_t* cvsJ = json_array();
 		for (int i = 0; i < CVPORTS; i++) {
 			json_t* cvJ = json_object();
@@ -212,6 +218,9 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 			processDivision = json_integer_value(processDivisionJ);
 			processDivider.setDivision(processDivision);
 		} 
+
+		json_t* parameterChangesDirectJ = json_object_get(rootJ, "parameterChangesDirect");
+		if (parameterChangesDirectJ) setParameterChangesDirect(json_boolean_value(parameterChangesDirectJ));
 
 		json_t* cvsJ = json_object_get(rootJ, "cvs");
 		if (cvsJ) {
@@ -250,6 +259,13 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 		if (slewJ) scaleParam[i].setSlew(json_real_value(slewJ));
 		if (minJ) scaleParam[i].setMin(json_real_value(minJ));
 		if (maxJ) scaleParam[i].setMax(json_real_value(maxJ));
+	}
+
+	void setParameterChangesDirect(bool b) {
+		parameterChangesDirect = b;
+		for (int id = 0; id < MAPS; id++) {
+			scaleParam[id].parameterChangesDirect = parameterChangesDirect;
+		}		
 	}
 };
 
@@ -397,6 +413,16 @@ struct MacroWidget : ThemedModuleWidget<MacroModule>, ParamWidgetContextExtender
 				module->setProcessDivision(division);
 			}
 		));
+		if (settings::isPlugin) {
+			menu->addChild(createBoolMenuItem("Report parameter changes", "", 
+				[=]() {
+					return module->parameterChangesDirect;
+				},
+				[=](bool b) {
+					module->setParameterChangesDirect(b);
+				}
+			));
+		}
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createBoolPtrMenuItem("Lock parameter changes", "", &module->lockParameterChanges));
 		menu->addChild(createIndexPtrSubmenuItem("Input voltage", {"0V..10V", "-5V..5V"}, &module->bipolarInput));
