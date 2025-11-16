@@ -5,6 +5,14 @@
 - Module [STRIP-BLOCK](./docs/Strip.md)
     - New module, a companion module for STRIP for blocking STRIP's expander-mechanism
 
+
+## 2.2.0
+
+### Changes and Fixes
+
+- Module [MIDI-CAT](./docs/MidiCat.md)
+    - Added context menu option to report parameter updates to plugin-host (only in plugin-version of Rack) 
+
 ## 2.1.0
 
 ### Changes and Fixes

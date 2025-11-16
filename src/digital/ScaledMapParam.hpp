@@ -6,6 +6,7 @@ namespace StoermelderPackOne {
 template<typename T, typename PQ = ParamQuantity>
 struct ScaledMapParam {
 	PQ* paramQuantity = NULL;
+	bool parameterChangesDirect = false;
 	float limitMin;
 	T limitMinT;
 	float limitMax;
@@ -145,7 +146,10 @@ struct ScaledMapParam {
 			if (param) {
 				float vScaled = math::rescale(f, 0.f, 1.f, paramQuantity->getMinValue(), paramQuantity->getMaxValue());
 				if (paramQuantity->snapEnabled) vScaled = std::round(vScaled);
-				paramQuantity->getParam()->setValue(vScaled);
+				if (settings::isPlugin && parameterChangesDirect)
+					paramQuantity->setValue(vScaled);
+				else
+					param->setValue(vScaled);
 			}
 			else {
 				// Only used by "fake" paramQuantaties for CV-ports
