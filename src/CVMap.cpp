@@ -47,6 +47,8 @@ struct CVMapModule : CVMapModuleBase<MAX_CHANNELS> {
 
 	dsp::ClockDivider processDivider;
 	dsp::ClockDivider lightDivider;
+	/** [Stored to JSON] */
+	bool parameterChangesDirect = false;
 
 	ScaledMapParam<float> mapParam[MAX_CHANNELS];
 
@@ -83,6 +85,8 @@ struct CVMapModule : CVMapModuleBase<MAX_CHANNELS> {
 				inputConfig[i].label[j] = "";
 			}
 		}
+
+		parameterChangesDirect = false;
 	}
 
 	void process(const ProcessArgs& args) override {
@@ -163,6 +167,8 @@ struct CVMapModule : CVMapModuleBase<MAX_CHANNELS> {
 		json_object_set_new(rootJ, "audioRate", json_boolean(audioRate));
 		json_object_set_new(rootJ, "locked", json_boolean(locked));
 
+		json_object_set_new(rootJ, "parameterChangesDirect", json_boolean(parameterChangesDirect));
+
 		json_t* inputConfigsJ = json_array();
 		for (size_t i = 0; i < 2; i++) {
 			json_t* inputConfigJ = json_object();
@@ -195,6 +201,9 @@ struct CVMapModule : CVMapModuleBase<MAX_CHANNELS> {
 		json_t* lockedJ = json_object_get(rootJ, "locked");
 		if (lockedJ) locked = json_boolean_value(lockedJ);
 
+		json_t* parameterChangesDirectJ = json_object_get(rootJ, "parameterChangesDirect");
+		if (parameterChangesDirectJ) setParameterChangesDirect(json_boolean_value(parameterChangesDirectJ));
+
 		json_t* inputConfigsJ = json_object_get(rootJ, "inputConfig");
 		if (inputConfigsJ) {
 			size_t i;
@@ -220,6 +229,13 @@ struct CVMapModule : CVMapModuleBase<MAX_CHANNELS> {
 		if (slewJ) mapParam[index].setSlew(json_real_value(slewJ));
 		if (minJ) mapParam[index].setMin(json_real_value(minJ));
 		if (maxJ) mapParam[index].setMax(json_real_value(maxJ));
+	}
+
+	void setParameterChangesDirect(bool b) {
+		parameterChangesDirect = b;
+		for (int id = 0; id < MAX_CHANNELS; id++) {
+			mapParam[id].parameterChangesDirect = parameterChangesDirect;
+		}		
 	}
 };
 
@@ -434,6 +450,16 @@ struct CVMapWidget : ThemedModuleWidget<CVMapModule>, ParamWidgetContextExtender
 		menu->addChild(createBoolPtrMenuItem("Lock parameter changes", "", &module->lockParameterChanges));
 		menu->addChild(createIndexPtrSubmenuItem("Signal input", {"0V..10V", "-5V..5V"}, &module->bipolarInput));
 		menu->addChild(createBoolPtrMenuItem("Audio rate processing", "", &module->audioRate));
+		if (settings::isPlugin) {
+			menu->addChild(createBoolMenuItem("Report parameter changes", "", 
+				[=]() {
+					return module->parameterChangesDirect;
+				},
+				[=](bool b) {
+					module->setParameterChangesDirect(b);
+				}
+			));
+		}
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createBoolPtrMenuItem("Text scrolling", "", &module->textScrolling));
 		menu->addChild(createBoolPtrMenuItem("Hide mapping indicators", "", &module->mappingIndicatorHidden));

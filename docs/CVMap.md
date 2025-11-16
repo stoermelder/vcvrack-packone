@@ -59,6 +59,8 @@ Added in v1.9: Each mapping slot has also two sliders (_Low_ and _High_) for sca
 <a name="target-context"></a>
 - After a parameter has been mapped the parameter's context menu is extended with some addtional menu items allowing quick channel reassignment and centering it's mapping CV-MAP module on the center of the screen (since v1.9.0). There are even further options with the [CTX-expander](CVMap.md#ctx-expander).
 
+- Parameter changes are not reported back to the plugin-host by default if CV-MAP is used in a plugin-version of VCV Rack. In v2.2.0 a context menu option has been added to enable this behavior - it might cause higher CPU usage of the plugin.
+
 CV-MAP was added in v1.0 of PackOne.
 
 # CTX-expander
