@@ -42,6 +42,8 @@ struct CVMapMicroModule : CVMapModuleBase<1> {
 
 	dsp::ClockDivider processDivider;
 	dsp::ClockDivider lightDivider;
+	/** [Stored to JSON] */
+	bool parameterChangesDirect = false;
 
 	CVMapMicroModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
@@ -63,6 +65,7 @@ struct CVMapMicroModule : CVMapModuleBase<1> {
 	void onReset() override {
 		CVMapModuleBase<1>::onReset();
 		audioRate = !settings::isPlugin;
+		parameterChangesDirect = false;
 	}
 
 	void process(const ProcessArgs& args) override {
@@ -92,9 +95,11 @@ struct CVMapMicroModule : CVMapModuleBase<1> {
 						lastValue[0] = v;
 
 					if (lockParameterChanges || lastValue[0] != v) {
-						//paramQuantity->setScaledValue(v);
 						float vScaled = math::rescale(v, 0.f, 1.f, paramQuantity->getMinValue(), paramQuantity->getMaxValue());
-						paramQuantity->getParam()->setValue(vScaled);
+						if (settings::isPlugin && parameterChangesDirect)
+							paramQuantity->setValue(vScaled);
+						else 
+							paramQuantity->getParam()->setValue(vScaled);
 						lastValue[0] = v;
 
 						if (outputs[OUTPUT].isConnected()) {
@@ -128,6 +133,7 @@ struct CVMapMicroModule : CVMapModuleBase<1> {
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 		json_object_set_new(rootJ, "invertedOutput", json_boolean(invertedOutput));
 		json_object_set_new(rootJ, "audioRate", json_boolean(audioRate));
+		json_object_set_new(rootJ, "parameterChangesDirect", json_boolean(parameterChangesDirect));
 		return rootJ;
 	}
 
@@ -138,6 +144,12 @@ struct CVMapMicroModule : CVMapModuleBase<1> {
 		if (invertedOutputJ) invertedOutput = json_boolean_value(invertedOutputJ);
 		json_t* audioRateJ = json_object_get(rootJ, "audioRate");
 		if (audioRateJ) audioRate = json_boolean_value(audioRateJ);
+		json_t* parameterChangesDirectJ = json_object_get(rootJ, "parameterChangesDirect");
+		if (parameterChangesDirectJ) setParameterChangesDirect(json_boolean_value(parameterChangesDirectJ));
+	}
+
+	void setParameterChangesDirect(bool b) {
+		parameterChangesDirect = b;		
 	}
 };
 
@@ -218,6 +230,16 @@ struct CVMapMicroWidget : ThemedModuleWidget<CVMapMicroModule>, ParamWidgetConte
 		menu->addChild(construct<UniBiItem>(&MenuItem::text, "Voltage range", &UniBiItem::module, module));
 		menu->addChild(construct<SignalOutputItem>(&MenuItem::text, "OUT-port", &SignalOutputItem::module, module));
 		menu->addChild(createBoolPtrMenuItem("Audio rate processing", "", &module->audioRate));
+		if (settings::isPlugin) {
+			menu->addChild(createBoolMenuItem("Report parameter changes", "", 
+				[=]() {
+					return module->parameterChangesDirect;
+				},
+				[=](bool b) {
+					module->setParameterChangesDirect(b);
+				}
+			));
+		}
 	}
 
 	void extendParamWidgetContextMenu(ParamWidget* pw, Menu* menu) override {
