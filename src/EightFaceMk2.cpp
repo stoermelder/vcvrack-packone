@@ -187,6 +187,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 		boundModules.clear();
 		inChange = false;
 
+		BASE::ctrlUniqueId = rack::random::uniform() * INT64_MAX;
 		preset = -1;
 		presetCount = NUM_PRESETS;
 		presetNext = -1;
@@ -196,17 +197,6 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 		boxColor = color::BLUE;
 
 		Module::onReset();
-		EightFaceMk2Base<NUM_PRESETS>* t = this;
-		int c = 0;
-		while (true) {
-			c++;
-			if (c == MAX_EXPANDERS + 1) break;
-			Module* exp = t->rightExpander.module;
-			if (!exp) break;
-			if (exp->model != modelEightFaceMk2Ex) break;
-			t = reinterpret_cast<EightFaceMk2Base<NUM_PRESETS>*>(exp);
-			t->onReset();
-		}
 	}
 
 	void onSampleRateChange() override {
@@ -247,7 +237,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 			if (exp->model != modelEightFaceMk2Ex) break;
 			m = exp;
 			t = reinterpret_cast<EightFaceMk2Base<NUM_PRESETS>*>(exp);
-			if (t->ctrlModuleId >= 0 && t->ctrlModuleId != Module::id) t->onReset();
+			if (t->ctrlUniqueId != BASE::ctrlUniqueId) expanderCleanUp(t);
 			t->panelTheme = BASE::panelTheme;
 			t->ctrlModuleId = Module::id;
 			t->ctrlOffset = c;
@@ -663,6 +653,14 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 		presetClear(p);
 	}
 
+	void expanderCleanUp(EightFaceMk2Base<NUM_PRESETS>* t) {
+		// ctrlUniqueId == -2 for presets before uniqueId was added
+		if (t->ctrlUniqueId != -2 || (t->ctrlModuleId >= 0 && t->ctrlModuleId != Module::id)) {
+			t->onReset();
+		}
+		t->ctrlUniqueId = BASE::ctrlUniqueId;
+	}
+
 	void setCvMode(SLOTCVMODE mode) {
 		slotCvMode = slotCvModeBak = mode;
 	}
@@ -780,6 +778,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 		inChange = false;
 
 		BASE::dataFromJson(rootJ);
+		if (BASE::ctrlUniqueId == -2) BASE::ctrlUniqueId = Module::id;
 		Module::params[PARAM_RW].setValue(0.f);
 
 		switch (autoload) {
