@@ -12,6 +12,8 @@
 
 - Module [MIDI-CAT](./docs/MidiCat.md)
     - Added context menu option to report parameter updates to plugin-host (only in plugin-version of Rack) 
+- Module [TRANSIT](./docs/Transit.md)
+    - Improved robustness for expander +T (e.g. crashes when using module-presets) (#412)
 
 ## 2.1.0
 

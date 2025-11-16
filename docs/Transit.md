@@ -175,4 +175,6 @@ Once placed next to TRANSIT the expander works and behaves the same way TRANSIT 
     - Improved handling on mapped switches (skipping all immediate values)
     - Added context menu option to clean invalid bound parameters up (#383)
 - v2.1.0
-    - Added context menu option to report parameter updates to plugin-host (only in plugin-version of Rack) 
+    - Added context menu option to report parameter updates to plugin-host (only in plugin-version of Rack)
+- v2.2.0
+    - Improved robustness for expander +T (e.g. crashes when using module-presets) (#412)
