@@ -148,6 +148,9 @@ struct ReMoveModule : MapModuleBase<1> {
     PLAYMODE playMode = PLAYMODE_LOOP;
     int playDir = REMOVE_PLAYDIR_FWD;
 
+	/** [Stored to JSON] */
+	bool parameterChangesDirect = false;
+
     std::default_random_engine randGen{(uint16_t)std::chrono::system_clock::now().time_since_epoch().count()};
     std::uniform_int_distribution<int> randDist{0, REMOVE_MAX_SEQ - 1};
 
@@ -221,6 +224,8 @@ struct ReMoveModule : MapModuleBase<1> {
         seq = 0;
         seqResize(4);
         valueFilters[0].reset();
+
+        parameterChangesDirect = false;
     }
 
     void process(const ProcessArgs &args) override {
@@ -493,10 +498,12 @@ struct ReMoveModule : MapModuleBase<1> {
             v = slewLimiter.process(sampleRate, v);
         }
 
-        if (paramQuantity) {
-            //paramQuantity->setScaledValue(v);
+        if (paramQuantity) {    
             float vScaled = math::rescale(v, 0.f, 1.f, paramQuantity->getMinValue(), paramQuantity->getMaxValue());
-            paramQuantity->getParam()->setValue(vScaled);
+            if (settings::isPlugin && parameterChangesDirect)
+                paramQuantity->setValue(vScaled);
+            else
+                paramQuantity->getParam()->setValue(vScaled);
         }
         switch (outCvMode) {
             case OUTCVMODE_CV_UNI:
@@ -636,6 +643,8 @@ struct ReMoveModule : MapModuleBase<1> {
         json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
         json_object_set_new(rootJ, "audioRate", json_boolean(audioRate));
 
+		json_object_set_new(rootJ, "parameterChangesDirect", json_boolean(parameterChangesDirect));
+
         json_t* rec0J = json_object();
 
         int s = REMOVE_MAX_DATA / seqCount;
@@ -695,6 +704,9 @@ struct ReMoveModule : MapModuleBase<1> {
         panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
         json_t* audioRateJ = json_object_get(rootJ, "audioRate");
         if (audioRateJ) audioRate = json_boolean_value(audioRateJ);
+
+		json_t* parameterChangesDirectJ = json_object_get(rootJ, "parameterChangesDirect");
+		if (parameterChangesDirectJ) setParameterChangesDirect(json_boolean_value(parameterChangesDirectJ));
 
         json_t* recJ = json_object_get(rootJ, "recorder");
         json_t* rec0J = json_array_get(recJ, 0);
@@ -799,6 +811,10 @@ struct ReMoveModule : MapModuleBase<1> {
             seqLength[i] = l;
         }
     }
+
+	void setParameterChangesDirect(bool b) {
+		parameterChangesDirect = b;	
+	}
 };
 
 
@@ -1279,6 +1295,17 @@ struct ReMoveWidget : ThemedModuleWidget<ReMoveModule> {
 
         menu->addChild(new MenuSeparator());
         menu->addChild(createBoolPtrMenuItem("Audio rate processing", "", &module->audioRate));
+
+		if (settings::isPlugin) {
+			menu->addChild(createBoolMenuItem("Report parameter changes", "", 
+				[=]() {
+					return module->parameterChangesDirect;
+				},
+				[=](bool b) {
+					module->setParameterChangesDirect(b);
+				}
+			));
+		}
 
         menu->addChild(new MenuSeparator());
 
