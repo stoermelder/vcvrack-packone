@@ -268,4 +268,5 @@ There are two modes with different behavior for MIDI-feedback:
 - v2.1.0
     - Improved mapping logic to allow more parameters to be mapped (e.g. SurgeXTRack) (#410)
 - v2.2.0
-    - Added context menu option to report parameter updates to plugin-host (only in plugin-version of Rack) 
+    - Added context menu option to report parameter updates to plugin-host (only in plugin-version of Rack)
+    - Fixed broken MIDI feedback when loading stored mappings on MIDI-CAT MEM‚
