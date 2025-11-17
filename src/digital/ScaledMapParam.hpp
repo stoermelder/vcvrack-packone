@@ -162,7 +162,7 @@ struct ScaledMapParam {
 	virtual T getValue() {
 		float f = paramQuantity->getScaledValue();
 		// Simply return the input-value if the Param's current value is almost unchanged
-		if (isNear(valueOut, f)) return valueIn;
+		if (isNear(valueOut, f) && valueIn != -1) return valueIn;
 
 		// Reset the internal values to the actual parameter's value in case
 		// getValue() is called before setValue() - for proper MIDI feedback
