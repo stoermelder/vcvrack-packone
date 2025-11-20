@@ -56,5 +56,10 @@ struct MemModule {
 	}
 };
 
+struct MidiCatMemBase : Module {
+	virtual std::map<std::pair<std::string, std::string>, MemModule*>* getMemStorage() { return NULL; }
+	virtual std::set<int64_t>* getMemModuleRestriction() { return NULL; }
+};
+
 } // namespace MidiCat
 } // namespace StoermelderPackOne

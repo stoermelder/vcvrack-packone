@@ -1,10 +1,11 @@
 #include "plugin.hpp"
 #include "MidiCat.hpp"
+#include "helpers/StripIdFixModule.hpp"
 
 namespace StoermelderPackOne {
 namespace MidiCat {
 
-struct MidiCatMemModule : Module {
+struct MidiCatMemModule : MidiCatMemBase, StripIdFixModule {
 	enum ParamIds {
 		PARAM_APPLY,
 		PARAM_PREV,
@@ -28,6 +29,8 @@ struct MidiCatMemModule : Module {
 	int panelTheme = 0;
 	/** [Stored to JSON] */
 	std::map<std::pair<std::string, std::string>, MemModule*> midiMap;
+	/** [Stored to JSON] */
+	std::set<int64_t> moduleRestriction;
 
 	dsp::ClockDivider processDivider;
 	dsp::SchmittTrigger prevTrigger;
@@ -49,6 +52,7 @@ struct MidiCatMemModule : Module {
 	void onReset() override {
 		Module::onReset();
 		resetMap();
+		moduleRestriction.clear();
 	}
 
 	void resetMap() {
@@ -73,6 +77,14 @@ struct MidiCatMemModule : Module {
 				reinterpret_cast<BufferedSwitchQuantity*>(paramQuantities[PARAM_APPLY])->setBuffer();
 			}
 		}
+	}
+
+	std::map<std::pair<std::string, std::string>, MemModule*>* getMemStorage() override {
+		return &midiMap;
+	}
+
+	std::set<int64_t>* getMemModuleRestriction() override {
+		return &moduleRestriction;
 	}
 
 	json_t* dataToJson() override {
@@ -112,6 +124,12 @@ struct MidiCatMemModule : Module {
 			json_array_append_new(midiMapJ, midiMapJJ);
 		}
 		json_object_set_new(rootJ, "midiMap", midiMapJ);
+
+		json_t* moduleRestrictionJ = json_array();
+		for (auto it : moduleRestriction) {
+			json_array_append_new(moduleRestrictionJ, json_integer(it));
+		}
+		json_object_set_new(rootJ, "moduleRestriction", moduleRestrictionJ);
 
 		return rootJ;
 	}
@@ -160,6 +178,17 @@ struct MidiCatMemModule : Module {
 			}
 			midiMap[std::pair<std::string, std::string>(pluginSlug, moduleSlug)] = a;
 		}
+
+		moduleRestriction.clear();
+		json_t* moduleRestrictionJ = json_object_get(rootJ, "moduleRestriction");
+		if (moduleRestrictionJ) {
+			json_t* moduleRestrictionJJ;
+			json_array_foreach(moduleRestrictionJ, i, moduleRestrictionJJ) {
+				moduleRestriction.insert(idFix(json_integer_value(moduleRestrictionJJ)));
+			}
+		}
+
+		idFixClearMap();
 	}
 };
 

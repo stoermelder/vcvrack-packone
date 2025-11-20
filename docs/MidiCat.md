@@ -185,6 +185,8 @@ Added in v1.8.0: MEM has two buttons labeled _Prev_ and _Next_ which scan your p
 
 ![MEM workflow](./MidiCat-Mem-scan.gif)
 
+Added in v2.2.0: MEM has a restriction list to restrict the modules considered by the buttons _Prev_ and _Next_. By default, all modules in the current rack are considered if the restriction list is empty. The restriction list is managed by a selection of modules and pushing "Save". 
+
 ### Tips for MEM
 
 - MEM can store only one mapping of any specific module-type. If you store a mapping for a module which has a mapping already it will be replaced.
@@ -268,5 +270,6 @@ There are two modes with different behavior for MIDI-feedback:
 - v2.1.0
     - Improved mapping logic to allow more parameters to be mapped (e.g. SurgeXTRack) (#410)
 - v2.2.0
+    - Added module restriction list for MEM-expander
     - Added context menu option to report parameter updates to plugin-host (only in plugin-version of Rack)
-    - Fixed broken MIDI feedback when loading stored mappings on MIDI-CAT MEM‚
+    - Fixed broken MIDI feedback when loading stored mappings on MIDI-CAT MEM
