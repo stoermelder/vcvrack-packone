@@ -390,10 +390,8 @@ struct MidiCatModule : Module, StripIdFixModule {
 	bool parameterChangesDirect = false;
 
 	// MEM-expander
-	// Pointer of the MEM-expander's attribute
-	Module* expMem = NULL;
+	MidiCatMemBase* expMem = NULL;
 	int64_t expMemModuleId = -1;
-	std::map<std::pair<std::string, std::string>, MemModule*>* expMemStorage = NULL;
 
 	// CTX-expander
 	Module* expCtx = NULL;
@@ -509,8 +507,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 		for (int i = 0; i < 3; i++) {
 			if (!exp) break;
 			if (exp->model == modelMidiCatMem && !expMemFound) {
-				expMemStorage = reinterpret_cast<std::map<std::pair<std::string, std::string>, MemModule*>*>(exp->leftExpander.consumerMessage);
-				expMem = exp;
+				expMem = reinterpret_cast<MidiCatMemBase*>(exp);
 				expMemFound = true;
 				exp = exp->rightExpander.module;
 				continue;
@@ -530,7 +527,6 @@ struct MidiCatModule : Module, StripIdFixModule {
 			break;
 		}
 		if (!expMemFound) {
-			expMemStorage = NULL;
 			expMem = NULL;
 		}
 		if (!expCtxFound) {
@@ -1045,26 +1041,26 @@ struct MidiCatModule : Module, StripIdFixModule {
 		m->moduleName = module->model->name;
 
 		auto p = std::pair<std::string, std::string>(pluginSlug, moduleSlug);
-		auto it = expMemStorage->find(p);
-		if (it != expMemStorage->end()) {
+		auto it = expMem->getMemStorage()->find(p);
+		if (it != expMem->getMemStorage()->end()) {
 			delete it->second;
 		}
 
-		(*expMemStorage)[p] = m;
+		(*expMem->getMemStorage())[p] = m;
 	}
 
 	void expMemDelete(std::string pluginSlug, std::string moduleSlug) {
 		auto p = std::pair<std::string, std::string>(pluginSlug, moduleSlug);
-		auto it = expMemStorage->find(p);
+		auto it = expMem->getMemStorage()->find(p);
 		delete it->second;
-		expMemStorage->erase(p);
+		expMem->getMemStorage()->erase(p);
 	}
 
 	void expMemApply(Module* m) {
 		if (!m) return;
 		auto p = std::pair<std::string, std::string>(m->model->plugin->slug, m->model->slug);
-		auto it = expMemStorage->find(p);
-		if (it == expMemStorage->end()) return;
+		auto it = expMem->getMemStorage()->find(p);
+		if (it == expMem->getMemStorage()->end()) return;
 		MemModule* map = it->second;
 
 		clearMaps_WithLock();
@@ -1093,8 +1089,12 @@ struct MidiCatModule : Module, StripIdFixModule {
 	bool expMemTest(Module* m) {
 		if (!m) return false;
 		auto p = std::pair<std::string, std::string>(m->model->plugin->slug, m->model->slug);
-		auto it = expMemStorage->find(p);
-		if (it == expMemStorage->end()) return false;
+		auto it = expMem->getMemStorage()->find(p);
+		if (it == expMem->getMemStorage()->end()) return false;
+		if (expMem->getMemModuleRestriction()->size() > 0) {
+			auto it2 = expMem->getMemModuleRestriction()->find(m->getId());
+			if (it2 == expMem->getMemModuleRestriction()->end()) return false;
+		}
 		return true;
 	}
 
@@ -2009,7 +2009,7 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 	MidiCatDisplay* mapWidget;
 	MidiCatSelectionWidget* selectionWidget = NULL;
 
-	Module* expMem;
+	MidiCatMemBase* expMem;
 	BufferedSwitchQuantity* expMemPrevQuantity;
 	BufferedSwitchQuantity* expMemNextQuantity;
 	BufferedSwitchQuantity* expMemParamQuantity;
@@ -2584,7 +2584,7 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 			}
 		));
 
-		if (module->expMemStorage != NULL) {
+		if (module->expMem != NULL) {
 			appendContextMenuMem(menu);
 		}
 	}
@@ -2625,7 +2625,7 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 				}; // MidimapModuleItem
 
 				std::list<std::pair<std::string, MidimapModuleItem*>> l; 
-				for (auto it : *module->expMemStorage) {
+				for (auto it : *module->expMem->getMemStorage()) {
 					MemModule* a = it.second;
 					MidimapModuleItem* midimapModuleItem = new MidimapModuleItem;
 					midimapModuleItem->text = string::f("%s %s", a->pluginName.c_str(), a->moduleName.c_str());
@@ -2692,6 +2692,29 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 		menu->addChild(construct<MapMenuItem>(&MenuItem::text, "Available mappings", &MapMenuItem::module, module));
 		menu->addChild(construct<SaveMenuItem>(&MenuItem::text, "Store mapping", &SaveMenuItem::module, module));
 		menu->addChild(createMenuItem("Apply mapping", RACK_MOD_SHIFT_NAME "+V", [=]() { enableLearn(LEARN_MODE::MEM); }));
+		menu->addChild(createSubmenuItem("Restriction", 
+			expMem->getMemModuleRestriction()->size() == 0 ? "Disabled" : string::f("%i modules", expMem->getMemModuleRestriction()->size()),
+			[=](Menu* menu) {
+				if (APP->scene->rack->hasSelection()) {
+					menu->addChild(createMenuItem("Save selection", "", [=]() {
+						expMem->getMemModuleRestriction()->clear();
+						for (auto it : APP->scene->rack->getSelected()) {
+							expMem->getMemModuleRestriction()->insert(it->getModule()->getId());
+						}
+					}));
+				}
+				if (expMem->getMemModuleRestriction()->size() > 0) {
+					menu->addChild(createMenuItem("Show", "", [=]() {
+						APP->scene->rack->deselectAll();
+						for (auto it : *expMem->getMemModuleRestriction()) {
+							ModuleWidget* mw = APP->scene->rack->getModule(it);
+							APP->scene->rack->select(mw);
+						}
+					}));
+					menu->addChild(createMenuItem("Clear", "", [=]() { expMem->getMemModuleRestriction()->clear(); }));
+				}
+			}
+		));
 	}
 };
 
