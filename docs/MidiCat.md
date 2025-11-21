@@ -1,4 +1,4 @@
-# stoermelder MIDI-CAT and expanders MEM and CTX
+# stoermelder MIDI-CAT and expanders MEM, CTX, CLK and FINE
 
 MIDI-CAT is a module for MIDI-mapping and an evolution of [VCV's MIDI-MAP](https://vcvrack.com/manual/Core.html#midi-map) with several additional features:
 
