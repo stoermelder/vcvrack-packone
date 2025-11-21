@@ -76,29 +76,30 @@ enum MIDIMODE {
 
 struct MidiCatPrecisionProcessor {
 	bool pickedUp;
-	int midiMidPoint;
+	int midiRefPoint;
 	float paramValue;
 	float precision;
 
 	void init(int midiMin, int midiMax) {
 		pickedUp = false;
-		this->midiMidPoint = (midiMax - midiMin) / 2;
+		this->midiRefPoint = (midiMax - midiMin) / 2;
 	}
 
-	void setPrecision(float precision, float paramValue) {
+	void setPrecision(float precision, float paramValue, int midiRefPoint = -1) {
 		this->precision = precision;
 		this->paramValue = paramValue;
+		if (midiRefPoint != -1) this->midiRefPoint = midiRefPoint;
 	}
 
 	float process(int midiValue) {
 		if (!pickedUp) {
-			if (midiValue == midiMidPoint) {
+			if (midiValue == midiRefPoint) {
 				pickedUp = true;
 			}
 			return paramValue;
 		}
 		else {
-			float diff = float(midiValue - midiMidPoint) * precision;
+			float diff = float(midiValue - midiRefPoint) * precision;
 			return paramValue + diff;
 		}
 	}
@@ -1184,10 +1185,13 @@ struct MidiCatModule : Module, StripIdFixModule {
 			setFineMode(false, 0.f);
 		}
 		if (e2 == dsp::SchmittTrigger::TRIGGERED) {
-			setFineMode(true, 0.01f);
+			setFineMode(true, 0.01f, expFine01Trigger.isHigh());
 		}
 		if (e2 == dsp::SchmittTrigger::UNTRIGGERED) {
-			setFineMode(false, 0.f);
+			if (expFine01Trigger.isHigh())
+				setFineMode(true, 0.1f, true);
+			else
+				setFineMode(false, 0.f);
 		}
 	}
 
@@ -1367,7 +1371,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 		}		
 	}
 
-	void setFineMode(bool enabled, float precision) {
+	void setFineMode(bool enabled, float precision, bool updateRefPoint = false) {
 		if (enabled) {
 			if (!ccFineMode) {
 				for (int id = 0; id < MAX_CHANNELS; id++) {
@@ -1378,7 +1382,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 			}
 			for (int id = 0; id < MAX_CHANNELS; id++) {
 				if (midiParam[id].paramQuantity) {
-					midiParam[id].precProcessor.setPrecision(precision, midiParam[id].getRawValue());
+					midiParam[id].precProcessor.setPrecision(precision, midiParam[id].getRawValue(), updateRefPoint ? ccs[id].getValue() : -1);
 				}
 			}
 			ccFineMode = true;

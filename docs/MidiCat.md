@@ -219,8 +219,8 @@ There are two modes with different behavior for MIDI-feedback:
 
 ## FINE-expander
 
-FINE is a companion module for MIDI-CAT which provides ability to fine-tune mapped parameters. If the input/gate on either 10% input or 1% input is high, the mapping switches to fine mode: In fine mode, first the MIDI control must be moved to its center, then can be used to fine-tune the mapped parameter with 10% range or 1% range, respectively. Fine-tuning for a parameter can only be used on MIDI CC mappings with input mode set to "Pickup (snap)" or "Pickup (Jump)".  
-FINE for MIDI-CAT must be placed on the right side of MIDI-CAT and can be used together with the other expanders.
+FINE is a companion module for MIDI-CAT which provides ability to fine-tune mapped parameters. If the input/gate on either 10% input or 1% input is high, the module switches to fine-tuning mode: In fine-tuning mode, the MIDI control must be moved to its center, then fine-tunes the parameter with 10% range or 1% range, respectively. Fine-tuning for a parameter can only be used on MIDI CC mappings with input mode set to "Pickup (snap)" or "Pickup (jump)". Addtionally, the module switches from 10% range to 1% range and from 1% range to 10% range smoothly, if the 1% input is enabled while 10% input stays high. This means, finer adjustments can be made while holding two buttons without a need to center the MIDI control. After fine-tuning is finished and gates on 10% input and 1% input are low, the mapped MIDI control can pickup the current parameter value again.  
+FINE for MIDI-CAT must be placed on the right side of MIDI-CAT and can be used together with the other expanders. High gates for the two inputs can be created by [VCV MIDI-GATE](https://library.vcvrack.com/Core/MIDITriggerToCVInterface) using MIDI note messages or by [STROKE](./Stroke.md) using keyboard hotkeys, for example.
 
 ## Changelog
 
