@@ -105,4 +105,32 @@ Widget* getSingleton(std::string name) {
 	return it != singletons.end() ? it->second : NULL;
 }
 
+
+std::map<std::string, std::set<ExpanderChangeListener*>*> expanderListeners;
+
+void registerExpanderListener(std::string topic, ExpanderChangeListener* l) {
+	auto it = expanderListeners.find(topic);
+	if (it == expanderListeners.end()) {
+		expanderListeners[topic] = new std::set<ExpanderChangeListener *>;
+	}
+	expanderListeners[topic]->insert(l);
+}
+
+void unregisterExpanderListener(std::string topic, ExpanderChangeListener* l) {
+	expanderListeners[topic]->erase(l);
+	if (expanderListeners[topic]->size() == 0) {
+		delete expanderListeners[topic];
+		expanderListeners.erase(topic);
+	}
+}
+
+void notifyExpanderListeners(std::string topic) {
+	auto it = expanderListeners.find(topic);
+	if (it != expanderListeners.end()) {
+		for (auto l : *expanderListeners[topic]) {
+			l->expandersChanged = true;
+		}
+	}
+}
+
 } // namespace StoermelderPackOne

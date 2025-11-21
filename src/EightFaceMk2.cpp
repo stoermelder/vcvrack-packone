@@ -47,7 +47,7 @@ enum class SLOTCVMODE {
 };
 
 template <int NUM_PRESETS>
-struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
+struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListener {
 	typedef EightFaceMk2Base<NUM_PRESETS> BASE;
 
 	enum ParamIds {
@@ -132,6 +132,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 
 	EightFaceMk2Module() {
 		BASE::panelTheme = pluginSettings.panelThemeDefault;
+		registerExpanderListener("8FaceMk2", this);
 		Module::config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		Module::configSwitch(PARAM_RW, 0.f, 2.f, 0.f, "Operating mode", {"Read", "Auto", "Write"});
 		Module::configInput(INPUT_CV, "Slot-selection");
@@ -157,6 +158,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 	}
 
 	~EightFaceMk2Module() {
+		unregisterExpanderListener("8FaceMk2", this);
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			if (BASE::presetSlotUsed[i]) {
 				for (json_t* vJ : BASE::preset[i]) {
@@ -169,8 +171,13 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 		}
 	}
 
+	void onExpanderChange(const Module::ExpanderChangeEvent& e) override {
+		notifyExpanderListeners("8FaceMk2");
+	}
+
 	void onReset() override {
 		inChange = true;
+		expandersChanged = true;
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			if (BASE::presetSlotUsed[i]) {
 				for (json_t* vJ : BASE::preset[i]) {
@@ -222,27 +229,30 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS> {
 	void process(const Module::ProcessArgs& args) override {
 		if (inChange) return;
 
-		presetTotal = NUM_PRESETS;
-		Module* m = this;
-		EightFaceMk2Base<NUM_PRESETS>* t = this;
-		t->ctrlMode = (CTRLMODE)Module::params[PARAM_RW].getValue();
-		int c = 0;
-		while (true) {
-			N[c] = t;
-			c++;
-			if (c == MAX_EXPANDERS + 1) break;
+		if (expandersChanged) {
+			presetTotal = NUM_PRESETS;
+			Module* m = this;
+			EightFaceMk2Base<NUM_PRESETS>* t = this;
+			t->ctrlMode = (CTRLMODE)Module::params[PARAM_RW].getValue();
+			int c = 0;
+			while (true) {
+				N[c] = t;
+				c++;
+				if (c == MAX_EXPANDERS + 1) break;
 
-			Module* exp = m->rightExpander.module;
-			if (!exp) break;
-			if (exp->model != modelEightFaceMk2Ex) break;
-			m = exp;
-			t = reinterpret_cast<EightFaceMk2Base<NUM_PRESETS>*>(exp);
-			if (t->ctrlUniqueId != BASE::ctrlUniqueId) expanderCleanUp(t);
-			t->panelTheme = BASE::panelTheme;
-			t->ctrlModuleId = Module::id;
-			t->ctrlOffset = c;
-			t->ctrlMode = BASE::ctrlMode;
-			presetTotal += NUM_PRESETS;
+				Module* exp = m->rightExpander.module;
+				if (!exp) break;
+				if (exp->model != modelEightFaceMk2Ex) break;
+				m = exp;
+				t = reinterpret_cast<EightFaceMk2Base<NUM_PRESETS>*>(exp);
+				if (t->ctrlUniqueId != BASE::ctrlUniqueId) expanderCleanUp(t);
+				t->panelTheme = BASE::panelTheme;
+				t->ctrlModuleId = Module::id;
+				t->ctrlOffset = c;
+				t->ctrlMode = BASE::ctrlMode;
+				presetTotal += NUM_PRESETS;
+			}
+			expandersChanged = false;
 		}
 		int presetCount = std::min(this->presetCount, presetTotal);
 
