@@ -45,6 +45,10 @@ struct TransitExModule : TransitBase<NUM_PRESETS> {
 		onReset();
 	}
 
+	void onExpanderChange(const Module::ExpanderChangeEvent& e) override {
+		notifyExpanderListeners("Transit");
+	}
+
 	void onReset() override {
 		BASE::ctrlUniqueId = -1;
 		for (int i = 0; i < NUM_PRESETS; i++) {

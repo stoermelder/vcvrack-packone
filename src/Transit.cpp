@@ -44,7 +44,7 @@ struct ParamHandleEx : ParamHandleIndicator {
 
 
 template <int NUM_PRESETS>
-struct TransitModule : TransitBase<NUM_PRESETS> {
+struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 	typedef TransitBase<NUM_PRESETS> BASE;
 
 	enum ParamIds {
@@ -140,6 +140,7 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 
 	TransitModule() {
 		BASE::panelTheme = pluginSettings.panelThemeDefault;
+		registerExpanderListener("Transit", this);
 		Module::config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		Module::configSwitch(PARAM_CTRLMODE, 0.f, 2.f, 0.f, "Operating mode", {"Read", "Auto", "Write"});
 		for (int i = 0; i < NUM_PRESETS; i++) {
@@ -167,13 +168,19 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 	}
 
 	~TransitModule() {
+		unregisterExpanderListener("Transit", this);
 		for (ParamHandle* sourceHandle : sourceHandles) {
 			APP->engine->removeParamHandle(sourceHandle);
 			delete sourceHandle;
 		}
 	}
 
+	void onExpanderChange(const Module::ExpanderChangeEvent& e) override {
+		notifyExpanderListeners("Transit");
+	}
+
 	void onReset() override {
+		expandersChanged = true;
 		reset(false, true);
 	}
 
@@ -252,27 +259,30 @@ struct TransitModule : TransitBase<NUM_PRESETS> {
 		if (inChange) return;
 		sampleRate = args.sampleRate;
 
-		presetTotal = NUM_PRESETS;
-		Module* m = this;
-		TransitBase<NUM_PRESETS>* t = this;
-		t->ctrlMode = (CTRLMODE)Module::params[PARAM_CTRLMODE].getValue();
-		int c = 0;
-		while (true) {
-			N[c] = t;
-			c++;
-			if (c == MAX_EXPANDERS + 1) break;
+		if (expandersChanged) {
+			presetTotal = NUM_PRESETS;
+			Module* m = this;
+			TransitBase<NUM_PRESETS>* t = this;
+			t->ctrlMode = (CTRLMODE)Module::params[PARAM_CTRLMODE].getValue();
+			int c = 0;
+			while (true) {
+				N[c] = t;
+				c++;
+				if (c == MAX_EXPANDERS + 1) break;
 
-			Module* exp = m->rightExpander.module;
-			if (!exp) break;
-			if (exp->model != modelTransitEx) break;
-			m = exp;
-			t = reinterpret_cast<TransitBase<NUM_PRESETS>*>(exp);
-			if (t->ctrlUniqueId != BASE::ctrlUniqueId) expanderCleanUp(t);
-			t->panelTheme = BASE::panelTheme;
-			t->ctrlModuleId = Module::id;
-			t->ctrlOffset = c;
-			t->ctrlMode = BASE::ctrlMode;
-			presetTotal += NUM_PRESETS;
+				Module* exp = m->rightExpander.module;
+				if (!exp) break;
+				if (exp->model != modelTransitEx) break;
+				m = exp;
+				t = reinterpret_cast<TransitBase<NUM_PRESETS>*>(exp);
+				if (t->ctrlUniqueId != BASE::ctrlUniqueId) expanderCleanUp(t);
+				t->panelTheme = BASE::panelTheme;
+				t->ctrlModuleId = Module::id;
+				t->ctrlOffset = c;
+				t->ctrlMode = BASE::ctrlMode;
+				presetTotal += NUM_PRESETS;
+			}
+			expandersChanged = false;
 		}
 		int presetCount = std::min(this->presetCount, presetTotal);
 
