@@ -8,6 +8,11 @@
 
 ## 2.2.0
 
+### New modules
+
+- Module [MIDI-CAT FINE](./docs/MidiCat.md#fine-expander)
+    - New expander for MIDI-CAT, allows fine-tuning of MIDI CC parameter-mappings
+
 ### Changes and Fixes
 
 - Module [8FACE mk2](./docs/EightFaceMk2.md)

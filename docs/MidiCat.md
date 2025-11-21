@@ -217,6 +217,11 @@ There are two modes with different behavior for MIDI-feedback:
 - On (instant feedback): The MIDI feedback message is sent as soon as the MIDI message arrives, even if the new value is not yet applied on the parameter.
 - On (deferred feedback): The MIDI feedback message is sent on the next clock-tick, the same time as the new value is applied on the parameter.
 
+## FINE-expander
+
+FINE is a companion module for MIDI-CAT which provides ability to fine-tune mapped parameters. If the input/gate on either 10% input or 1% input is high, the mapping switches to fine mode: In fine mode, first the MIDI control must be moved to its center, then can be used to fine-tune the mapped parameter with 10% range or 1% range, respectively. Fine-tuning for a parameter can only be used on MIDI CC mappings with input mode set to "Pickup (snap)" or "Pickup (Jump)".  
+FINE for MIDI-CAT must be placed on the right side of MIDI-CAT and can be used together with the other expanders.
+
 ## Changelog
 
 - v1.1.0
@@ -270,6 +275,7 @@ There are two modes with different behavior for MIDI-feedback:
 - v2.1.0
     - Improved mapping logic to allow more parameters to be mapped (e.g. SurgeXTRack) (#410)
 - v2.2.0
+    - Added FINE-expander
     - Added module restriction list for MEM-expander
     - Added context menu option to report parameter updates to plugin-host (only in plugin-version of Rack)
     - Fixed broken MIDI feedback when loading stored mappings on MIDI-CAT MEM

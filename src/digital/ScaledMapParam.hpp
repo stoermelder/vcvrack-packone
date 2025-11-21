@@ -122,8 +122,8 @@ struct ScaledMapParam {
 		return max;
 	}
 
-	virtual void setValue(T i) {
-		float f = rescale(float(i), limitMin, limitMax, min, max);
+	virtual void setValue(float i) {
+		float f = rescale(i, limitMin, limitMax, min, max);
 		f = clamp(f, 0.f, 1.f);
 		valueIn = i;
 		value = f;
@@ -157,6 +157,19 @@ struct ScaledMapParam {
 			}
 			valueOut = f;
 		}
+	}
+
+	float getRawValue() {
+		float f = paramQuantity->getScaledValue();
+		if (paramQuantity->snapEnabled) {
+			f = paramQuantity->getParam()->getValue();
+			f = math::rescale(f, paramQuantity->getMinValue(), paramQuantity->getMaxValue(), 0.f, 1.f);
+		}
+
+		f = processCurveInverse(f);
+		f = rescale(f, min, max, limitMin, limitMax);
+		f = clamp(f, limitMin, limitMax);
+		return f;
 	}
 
 	virtual T getValue() {

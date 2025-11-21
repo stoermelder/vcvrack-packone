@@ -25,6 +25,7 @@ void init(rack::Plugin* p) {
 	p->addModel(modelMidiCatMem);
 	p->addModel(modelMidiCatCtx);
 	p->addModel(modelMidiCatClk);
+	p->addModel(modelMidiCatFine);
 	p->addModel(modelSipo);
 	p->addModel(modelFourRounds);
 	p->addModel(modelArena);
