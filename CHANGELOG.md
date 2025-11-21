@@ -1,11 +1,3 @@
-## 2.x.x (in development)
-
-- Modules [FLOWER, SEEDS, OFFSPRING](./docs/Flower.md)
-    - New modules, pattern-driven 16-step sequencer
-- Module [STRIP-BLOCK](./docs/Strip.md)
-    - New module, a companion module for STRIP for blocking STRIP's expander-mechanism
-
-
 ## 2.2.0
 
 ### New modules
