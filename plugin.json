@@ -133,6 +133,13 @@
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/MidiCat.md#clk-expander"
 		},
 		{
+			"slug": "MidiCatFine",
+			"name": "FINE for MIDI-CAT",
+			"description": "Expander for precision mode of MIDI-CAT",
+			"tags": ["Utility", "MIDI"],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/MidiCat.md#fine-expander"
+		},
+		{
 			"slug": "Sipo",
 			"name": "SIPO",
 			"description": "Serial-in parallel-out shift register with polyphonic output and CV controls for skipping and incrementing on sampled values",

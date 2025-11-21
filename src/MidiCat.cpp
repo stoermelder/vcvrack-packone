@@ -74,6 +74,35 @@ enum MIDIMODE {
 	MIDIMODE_LOCATE = 1
 };
 
+struct MidiCatPrecisionProcessor {
+	bool pickedUp;
+	int midiMidPoint;
+	float paramValue;
+	float precision;
+
+	void init(int midiMin, int midiMax) {
+		pickedUp = false;
+		this->midiMidPoint = (midiMax - midiMin) / 2;
+	}
+
+	void setPrecision(float precision, float paramValue) {
+		this->precision = precision;
+		this->paramValue = paramValue;
+	}
+
+	float process(int midiValue) {
+		if (!pickedUp) {
+			if (midiValue == midiMidPoint) {
+				pickedUp = true;
+			}
+			return paramValue;
+		}
+		else {
+			float diff = float(midiValue - midiMidPoint) * precision;
+			return paramValue + diff;
+		}
+	}
+};
 
 struct MidiCatParam : ScaledMapParam<int> {
 	enum class CLOCKMODE {
@@ -91,6 +120,8 @@ struct MidiCatParam : ScaledMapParam<int> {
 	int lightFirstId = -1;
 	int lightNumColors = 0;
 
+	MidiCatPrecisionProcessor precProcessor;
+
 	void reset(bool resetSettings = true) override {
 		if (resetSettings) {
 			clockMode = CLOCKMODE::OFF;
@@ -101,7 +132,7 @@ struct MidiCatParam : ScaledMapParam<int> {
 		ScaledMapParam<int>::reset(resetSettings);
 	}
 
-	void setValue(int i) override {
+	void setValue(float i) override {
 		switch (clockMode) {
 			case CLOCKMODE::OFF:
 				ScaledMapParam<int>::setValue(i);
@@ -366,6 +397,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 	uint32_t valuesNoteTs[128];
 
 	MIDIMODE midiMode = MIDIMODE::MIDIMODE_DEFAULT;
+	bool ccFineMode = false;
 
 	/** Track last values */
 	int lastValueIn[MAX_CHANNELS];
@@ -399,6 +431,11 @@ struct MidiCatModule : Module, StripIdFixModule {
 	// CLK-expander
 	Module* expClk = NULL;
 	dsp::SchmittTrigger expClkTrigger[4];
+
+	// FINE-expander
+	Module* expFine = NULL;
+	dsp::SchmittTrigger expFine01Trigger;
+	dsp::SchmittTrigger expFine001Trigger;
 
 	MidiCatModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
@@ -503,8 +540,9 @@ struct MidiCatModule : Module, StripIdFixModule {
 		bool expMemFound = false;
 		bool expCtxFound = false;
 		bool expClkFound = false;
+		bool expFineFound = false;
 		Module* exp = rightExpander.module;
-		for (int i = 0; i < 3; i++) {
+		for (int i = 0; i < 4; i++) {
 			if (!exp) break;
 			if (exp->model == modelMidiCatMem && !expMemFound) {
 				expMem = reinterpret_cast<MidiCatMemBase*>(exp);
@@ -521,6 +559,12 @@ struct MidiCatModule : Module, StripIdFixModule {
 			if (exp->model == modelMidiCatClk && !expClkFound) {
 				expClk = exp;
 				expClkFound = true;
+				exp = exp->rightExpander.module;
+				continue;
+			}
+			if (exp->model == modelMidiCatFine && !expFineFound) {
+				expFine = exp;
+				expFineFound = true;
 				exp = exp->rightExpander.module;
 				continue;
 			}
@@ -543,6 +587,13 @@ struct MidiCatModule : Module, StripIdFixModule {
 		}
 		else {
 			expClkProcess();
+		}
+		if (!expFineFound) {
+			expFine = NULL;
+			ccFineMode = false;
+		}
+		else {
+			expFineProcess();
 		}
 	}
 
@@ -573,6 +624,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 				case MIDIMODE::MIDIMODE_DEFAULT: {
 					midiParam[id].setParamQuantity(paramQuantity);
 					int t = -1;
+					float t_p = 0.f;
 
 					// Check if CC value has been set and changed
 					if (cc >= 0 && ccs[id].process()) {
@@ -585,18 +637,30 @@ struct MidiCatModule : Module, StripIdFixModule {
 								break;
 							case CCMODE::PICKUP1:
 								if (lastValueIn[id] != ccs[id].getValue()) {
-									if (midiParam[id].isNear(lastValueIn[id])) {
-										midiParam[id].resetFilter();
-										t = ccs[id].getValue();
+									if (!ccFineMode) {
+										if (midiParam[id].isNear(lastValueIn[id])) {
+											midiParam[id].resetFilter();
+											t = ccs[id].getValue();
+										}
+									}
+									else {
+										t = 0;
+										t_p = midiParam[id].precProcessor.process(ccs[id].getValue());
 									}
 									lastValueIn[id] = ccs[id].getValue();
 								}
 								break;
 							case CCMODE::PICKUP2:
 								if (lastValueIn[id] != ccs[id].getValue()) {
-									if (midiParam[id].isNear(lastValueIn[id], ccs[id].getValue())) {
-										midiParam[id].resetFilter();
-										t = ccs[id].getValue();
+									if (!ccFineMode) {
+										if (midiParam[id].isNear(lastValueIn[id], ccs[id].getValue())) {
+											midiParam[id].resetFilter();
+											t = ccs[id].getValue();
+										}
+									}
+									else {
+										t = 0;
+										t_p = midiParam[id].precProcessor.process(ccs[id].getValue());
 									}
 									lastValueIn[id] = ccs[id].getValue();
 								}
@@ -697,7 +761,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 
 					// Set a new value for the mapped parameter
 					if (t >= 0) {
-						midiParam[id].setValue(t);
+						midiParam[id].setValue(t + t_p);
 						if (overlayEnabled && overlayQueue.capacity() > 0) overlayQueue.push(id);
 					}
 
@@ -1109,6 +1173,24 @@ struct MidiCatModule : Module, StripIdFixModule {
 		}
 	}
 
+	// process-function for the FINE-expander
+	void expFineProcess() {
+		auto e1 = expFine01Trigger.processEvent(expFine->inputs[0].getVoltage());
+		auto e2 = expFine001Trigger.processEvent(expFine->inputs[1].getVoltage());
+		if (e1 == dsp::SchmittTrigger::TRIGGERED && !expFine001Trigger.isHigh()) {
+			setFineMode(true, 0.1f);
+		}
+		if (e1 == dsp::SchmittTrigger::UNTRIGGERED && !expFine001Trigger.isHigh()) {
+			setFineMode(false, 0.f);
+		}
+		if (e2 == dsp::SchmittTrigger::TRIGGERED) {
+			setFineMode(true, 0.01f);
+		}
+		if (e2 == dsp::SchmittTrigger::UNTRIGGERED) {
+			setFineMode(false, 0.f);
+		}
+	}
+
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
@@ -1283,6 +1365,27 @@ struct MidiCatModule : Module, StripIdFixModule {
 		for (int id = 0; id < MAX_CHANNELS; id++) {
 			midiParam[id].parameterChangesDirect = parameterChangesDirect;
 		}		
+	}
+
+	void setFineMode(bool enabled, float precision) {
+		if (enabled) {
+			if (!ccFineMode) {
+				for (int id = 0; id < MAX_CHANNELS; id++) {
+					if (midiParam[id].paramQuantity) {
+						midiParam[id].precProcessor.init(midiParam[id].getLimitMin(), midiParam[id].getLimitMax());
+					}
+				}
+			}
+			for (int id = 0; id < MAX_CHANNELS; id++) {
+				if (midiParam[id].paramQuantity) {
+					midiParam[id].precProcessor.setPrecision(precision, midiParam[id].getRawValue());
+				}
+			}
+			ccFineMode = true;
+		}
+		else {
+			ccFineMode = false;
+		}
 	}
 };
 

@@ -31,6 +31,7 @@ extern Model* modelMidiCatXl;
 extern Model* modelMidiCatMem;
 extern Model* modelMidiCatCtx;
 extern Model* modelMidiCatClk;
+extern Model* modelMidiCatFine;
 extern Model* modelSipo;
 extern Model* modelFourRounds;
 extern Model* modelArena;
