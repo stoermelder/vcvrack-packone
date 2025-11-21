@@ -105,28 +105,32 @@ Widget* getSingleton(std::string name) {
 }
 
 
-std::map<std::string, std::set<ExpanderChangeListener*>*> expanderListeners;
+std::map<std::tuple<std::string, Context*>, std::set<ExpanderChangeListener*>*> expanderListeners;
 
 void registerExpanderListener(std::string topic, ExpanderChangeListener* l) {
-	auto it = expanderListeners.find(topic);
+	auto index = std::make_tuple(topic, APP);
+	auto it = expanderListeners.find(index);
 	if (it == expanderListeners.end()) {
-		expanderListeners[topic] = new std::set<ExpanderChangeListener *>;
+		expanderListeners[index] = new std::set<ExpanderChangeListener *>;
 	}
-	expanderListeners[topic]->insert(l);
+	expanderListeners[index]->insert(l);
 }
 
 void unregisterExpanderListener(std::string topic, ExpanderChangeListener* l) {
-	expanderListeners[topic]->erase(l);
-	if (expanderListeners[topic]->size() == 0) {
-		delete expanderListeners[topic];
-		expanderListeners.erase(topic);
+	auto index = std::make_tuple(topic, APP);
+	auto i = expanderListeners[index];
+	i->erase(l);
+	if (i->size() == 0) {
+		delete i;
+		expanderListeners.erase(index);
 	}
 }
 
 void notifyExpanderListeners(std::string topic) {
-	auto it = expanderListeners.find(topic);
+	auto index = std::make_tuple(topic, APP);
+	auto it = expanderListeners.find(index);
 	if (it != expanderListeners.end()) {
-		for (auto l : *expanderListeners[topic]) {
+		for (auto l : *expanderListeners[index]) {
 			l->expandersChanged = true;
 		}
 	}
