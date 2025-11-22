@@ -14,14 +14,16 @@ enum class CCMODE {
 	PICKUP1 = 1,
 	PICKUP2 = 2,
 	TOGGLE = 3,
-	TOGGLE_VALUE = 4
+	TOGGLE_VALUE = 4,
+	SNAPPED = 5
 };
 
 enum class NOTEMODE {
 	MOMENTARY = 0,
 	MOMENTARY_VEL = 1,
 	TOGGLE = 2,
-	TOGGLE_VEL = 3
+	TOGGLE_VEL = 3,
+	SNAPPED = 4
 };
 
 

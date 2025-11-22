@@ -159,6 +159,8 @@ struct ScaledMapParam {
 		}
 	}
 
+	// Returns the current parameters's value applying all transformation inversely, but as float value
+	// (used for precise adjustments 10%/1%)
 	float getRawValue() {
 		float f = paramQuantity->getScaledValue();
 		if (paramQuantity->snapEnabled) {
@@ -193,6 +195,21 @@ struct ScaledMapParam {
 		T i = T(f);
 		if (valueIn == uninit) valueIn = i;
 		return i;
+	}
+
+	float getNextSnappedValue() {
+		if (paramQuantity->snapEnabled) {
+			float f = paramQuantity->getParam()->getValue();
+			f += 1.f;
+			f = math::rescale(f, paramQuantity->getMinValue(), paramQuantity->getMaxValue(), 0.f, 1.f);
+			if (f > max) f = min;
+			f = rescale(f, min, max, limitMin, limitMax);
+			f = clamp(f, limitMin, limitMax);
+			return f;
+		}
+		else {
+			return getValue();
+		}
 	}
 
 	float getLightBrightness() {
