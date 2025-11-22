@@ -513,17 +513,11 @@ struct MidiMonWidget : ThemedModuleWidget<MidiMonModule> {
 	}
 
 	void exportLogDialog() {
-		static const char PRESET_FILTERS[] = "*:*";
-		osdialog_filters* filters = osdialog_filters_parse(PRESET_FILTERS);
-		DEFER({
-			osdialog_filters_free(filters);
-		});
-
 		std::string log = asset::user("MidiMon.log");
 		std::string dir = system::getDirectory(log);
 		std::string filename = system::getFilename(log);
 
-		char* path = osdialog_file(OSDIALOG_SAVE, dir.c_str(), NULL, filters);
+		char* path = osdialog_file(OSDIALOG_SAVE, dir.c_str(), filename.c_str(), NULL);
 		if (!path) {
 			// No path selected
 			return;
