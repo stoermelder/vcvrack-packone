@@ -702,6 +702,15 @@ struct MidiCatModule : Module, StripIdFixModule {
 									lastValueIn[id] = -1;
 								}
 								break;
+							case CCMODE::SNAPPED:
+								if (lastValueIn[id] != -ccs[id].getValue()) {
+									if (ccs[id].getValue() > 0)
+										t = midiParam[id].getNextSnappedValue();
+									else
+										t = midiParam[id].getValue();
+									lastValueIn[id] = -ccs[id].getValue();
+								} 
+								break;
 						}
 					}
 
@@ -756,6 +765,15 @@ struct MidiCatModule : Module, StripIdFixModule {
 									t = 0;
 									lastValueIn[id] = -1;
 								}
+								break;
+							case NOTEMODE::SNAPPED:
+								if (lastValueIn[id] != -notes[id].getValue()) {
+									if (notes[id].getValue() > 0)
+										t = midiParam[id].getNextSnappedValue();
+									else
+										t = midiParam[id].getValue();
+									lastValueIn[id] = -notes[id].getValue();
+								} 
 								break;
 						}
 					}
@@ -1869,6 +1887,7 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 				reinterpret_cast<MenuItem*>(menu->children.back())->disabled = module->midiParam[id].clockMode != MidiCatParam::CLOCKMODE::OFF;
 				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Toggle", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::TOGGLE));
 				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Toggle + Value", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::TOGGLE_VALUE));
+				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Snapped", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::SNAPPED));
 				return menu;
 			}
 		}; // struct CcModeMenuItem
@@ -1915,6 +1934,7 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 				reinterpret_cast<MenuItem*>(menu->children.back())->disabled = module->midiParam[id].clockMode != MidiCatParam::CLOCKMODE::OFF;
 				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Toggle", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::TOGGLE));
 				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Toggle + Velocity", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::TOGGLE_VEL));
+				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Snapped", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::SNAPPED));
 				return menu;
 			}
 		}; // struct NoteModeMenuItem
