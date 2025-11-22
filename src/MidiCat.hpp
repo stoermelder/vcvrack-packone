@@ -15,7 +15,8 @@ enum class CCMODE {
 	PICKUP2 = 2,
 	TOGGLE = 3,
 	TOGGLE_VALUE = 4,
-	SNAPPED = 5
+	SNAPPED = 5,
+	SNAPPED_SL = 6
 };
 
 enum class NOTEMODE {
@@ -23,7 +24,8 @@ enum class NOTEMODE {
 	MOMENTARY_VEL = 1,
 	TOGGLE = 2,
 	TOGGLE_VEL = 3,
-	SNAPPED = 4
+	SNAPPED = 4,
+	SNAPPED_SL = 5
 };
 
 

@@ -197,10 +197,25 @@ struct ScaledMapParam {
 		return i;
 	}
 
+	float getPrevSnappedValue() {
+		if (paramQuantity->snapEnabled) {
+			float f = paramQuantity->getParam()->getValue();
+			f = std::round(f - 1.f);
+			f = math::rescale(f, paramQuantity->getMinValue(), paramQuantity->getMaxValue(), 0.f, 1.f);
+			if (f < min) f = max;
+			f = rescale(f, min, max, limitMin, limitMax);
+			f = clamp(f, limitMin, limitMax);
+			return f;
+		}
+		else {
+			return getValue();
+		}
+	}
+
 	float getNextSnappedValue() {
 		if (paramQuantity->snapEnabled) {
 			float f = paramQuantity->getParam()->getValue();
-			f += 1.f;
+			f = std::round(f + 1.f);
 			f = math::rescale(f, paramQuantity->getMinValue(), paramQuantity->getMaxValue(), 0.f, 1.f);
 			if (f > max) f = min;
 			f = rescale(f, min, max, limitMin, limitMax);
