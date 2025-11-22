@@ -221,6 +221,10 @@ struct MidiMonModule : Module {
 							if (showSystemMsg) {
 								midiLogMessages.push(std::make_tuple(LOG_FORMAT::TIMESTAMP, timestamp, "stop"));
 							} break;
+						case 0xf: // reset
+							if (showSystemMsg) {
+								midiLogMessages.push(std::make_tuple(LOG_FORMAT::TIMESTAMP, timestamp, "reset"));
+							} break;
 						default:
 							break;
 					}
