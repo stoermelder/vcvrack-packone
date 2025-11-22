@@ -52,7 +52,7 @@ In v1.7.0 new mapping options have been added to MIDI-CAT to achieve even faster
 
 ![MIDI-CAT selection](./MidiCat-map-selection.gif)
 
-## "Soft-takeover" or "Pickup" for CCs
+## Input modes for CCs ("Soft-takeover" or "Pickup")
 
 MIDI-CAT supports a technique sometimes called "soft-takeover" or "pickup": If the control on your MIDI device has a position different to the mapped parameter's position all incoming MIDI messages are ignored until the parameter's position has been "picked up". This method must be enabled for each mapping-slot in the context menu: 
 
@@ -67,7 +67,9 @@ MIDI-CAT supports a technique sometimes called "soft-takeover" or "pickup": If t
 
 - **Toggle + Value**: Every MIDI _continuous control_ message toggles the parameter between its minimum and the control's value (added in v1.9.0).
 
-- **Snapped**: Only useable for snapped parameters (for example "Steps" on [VCV SEQ3](https://library.vcvrack.com/Fundamental/SEQ3)). A CC message with value greater 0 increases the parameter to the next step and rolls over to the beginning (added in v2.2.0).
+- **Snapped**: Only useable for snapped parameters (for example "Steps" on [VCV SEQ3](https://library.vcvrack.com/Fundamental/SEQ3)). A MIDI CC message with value greater 0 increases the parameter to the next step and rolls over at the end of the range (added in v2.2.0).
+
+- **Snapped (short/long)**: Same as "Snapped", but responds to MIDI CC value = 0 and long pressing will decrease the parameter to the previous step (added in v2.2.0).
 
 ![MIDI-CAT module select](./MidiCat-map-cc.png)
 
@@ -86,7 +88,9 @@ MIDI-CAT supports mapping of MIDI note-messages instead of MIDI CC. There are di
 
 Some controllers with push-buttons don't handle "note off" messages the way the message is intended, hence a mapping-slot can be switched with the option _Send "note on, vel 0" on note off_ to send a "note on" message with "velocity 0" as MIDI feedback instead (since v1.7.0).
 
-- **Snapped**: Only useable for snapped parameters (for example "Steps" on [VCV SEQ3](https://library.vcvrack.com/Fundamental/SEQ3)). A "note on" message increases the parameter to the next step and rolls over to the beginning (added in v2.2.0).
+- **Snapped**: Only useable for snapped parameters (for example "Steps" on [VCV SEQ3](https://library.vcvrack.com/Fundamental/SEQ3)). A "note on" message increases the parameter to the next step and rolls over to the end of the range (added in v2.2.0).
+
+- **Snapped (short/long)**: Same as "Snapped", but responds to "note off" messages and long pressing a MIDI note will decrease the parameter to the previous step (added in v2.2.0).
 
 ![MIDI-CAT module select](./MidiCat-map-note.png)
 
@@ -280,6 +284,6 @@ FINE for MIDI-CAT must be placed on the right side of MIDI-CAT and can be used t
 - v2.2.0
     - Added FINE-expander
     - Added module restriction list for MEM-expander
-    - Added input mode "Snapped" for CC and Notes for use with snapped parameters
+    - Added input mode "Snapped" and "Snapped (short/long)" for CC and Notes for use with snapped parameters
     - Added context menu option to report parameter updates to plugin-host (only in plugin-version of Rack)
     - Fixed broken MIDI feedback when loading stored mappings on MIDI-CAT MEM

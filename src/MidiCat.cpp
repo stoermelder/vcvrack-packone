@@ -219,7 +219,8 @@ struct MidiCatModule : Module, StripIdFixModule {
 		MidiCatModule* module;
 		int id;
 		int current = -1;
-		uint32_t lastTs = 0;
+		uint64_t lastTs = 0;
+		uint64_t diffTs;
 
 		/** [Stored to Json] */
 		int cc;
@@ -233,12 +234,14 @@ struct MidiCatModule : Module, StripIdFixModule {
 			if (cc14bit) {
 				if (module->valuesCcTs[cc] > lastTs && module->valuesCcTs[cc + 32] > lastTs) {
 					current = module->valuesCc[cc] * 128 + module->valuesCc[cc + 32];
+					diffTs = module->ts - lastTs;
 					lastTs = module->ts;
 				}
 			}
 			else {
 				if (module->valuesCcTs[cc] > lastTs) {
 					current = module->valuesCc[cc];
+					diffTs = module->ts - lastTs;
 					lastTs = module->ts;
 				}
 			}
@@ -300,7 +303,8 @@ struct MidiCatModule : Module, StripIdFixModule {
 		MidiCatModule* module;
 		int id;
 		int current = -1;
-		uint32_t lastTs = 0;
+		uint64_t lastTs = 0;
+		uint64_t diffTs;
 
 		/** [Stored to Json] */
 		int note;
@@ -311,6 +315,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 			int previous = current;
 			if (module->valuesNoteTs[note] > lastTs) {
 				current = module->valuesNote[note];
+				diffTs = module->ts - lastTs;
 				lastTs = module->ts;
 			}
 			return current >= 0 && current != previous;
@@ -388,14 +393,14 @@ struct MidiCatModule : Module, StripIdFixModule {
 	/** [Stored to Json] */
 	bool mappingIndicatorHidden = false;
 
-	uint32_t ts = 0;
+	uint64_t ts = 0;
 
 	/** The value of each CC number */
 	int valuesCc[128];
-	uint32_t valuesCcTs[128];
+	uint64_t valuesCcTs[128];
 	/** The value of each note number */
 	int valuesNote[128];
-	uint32_t valuesNoteTs[128];
+	uint64_t valuesNoteTs[128];
 
 	MIDIMODE midiMode = MIDIMODE::MIDIMODE_DEFAULT;
 	bool ccFineMode = false;
@@ -703,13 +708,21 @@ struct MidiCatModule : Module, StripIdFixModule {
 								}
 								break;
 							case CCMODE::SNAPPED:
-								if (lastValueIn[id] != -ccs[id].getValue()) {
-									if (ccs[id].getValue() > 0)
+								if (ccs[id].getValue() > 0)
+									t = midiParam[id].getNextSnappedValue();
+								else
+									t = midiParam[id].getValue();
+								lastValueIn[id] = -1;
+								break;
+							case CCMODE::SNAPPED_SL:
+								if (ccs[id].getValue() == 0)
+									if (ccs[id].diffTs * 2 < APP->engine->getSampleRate())
 										t = midiParam[id].getNextSnappedValue();
 									else
-										t = midiParam[id].getValue();
-									lastValueIn[id] = -ccs[id].getValue();
-								} 
+										t = midiParam[id].getPrevSnappedValue();
+								else
+									t = midiParam[id].getValue();
+								lastValueIn[id] = -1;
 								break;
 						}
 					}
@@ -767,13 +780,23 @@ struct MidiCatModule : Module, StripIdFixModule {
 								}
 								break;
 							case NOTEMODE::SNAPPED:
-								if (lastValueIn[id] != -notes[id].getValue()) {
-									if (notes[id].getValue() > 0)
+								if (notes[id].getValue() > 0)
+									t = midiParam[id].getNextSnappedValue();
+								else
+									t = midiParam[id].getValue();
+								lastValueIn[id] = -1;
+								break;
+							case NOTEMODE::SNAPPED_SL:
+								if (notes[id].getValue() == 0) {
+									if (notes[id].diffTs * 2 < APP->engine->getSampleRate())
 										t = midiParam[id].getNextSnappedValue();
 									else
-										t = midiParam[id].getValue();
-									lastValueIn[id] = -notes[id].getValue();
-								} 
+										t = midiParam[id].getPrevSnappedValue();
+								}
+								else {
+									t = midiParam[id].getValue();
+								}
+								lastValueIn[id] = -1;
 								break;
 						}
 					}
@@ -1888,6 +1911,7 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Toggle", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::TOGGLE));
 				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Toggle + Value", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::TOGGLE_VALUE));
 				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Snapped", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::SNAPPED));
+				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Snapped (short/long)", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::SNAPPED_SL));
 				return menu;
 			}
 		}; // struct CcModeMenuItem
@@ -1935,6 +1959,7 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Toggle", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::TOGGLE));
 				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Toggle + Velocity", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::TOGGLE_VEL));
 				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Snapped", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::SNAPPED));
+				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Snapped (short/long)", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::SNAPPED_SL));
 				return menu;
 			}
 		}; // struct NoteModeMenuItem

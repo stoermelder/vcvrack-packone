@@ -12,7 +12,7 @@
 - Modules [CV-MAP](./docs/CVMap.md), [MACRO](./docs/Macro.md), [µMAP](./docs/CVMapMicro.md), [MIDI-CAT](./docs/MidiCat.md), [MIRROR](./docs/Mirror.md), [ReMOVE Lite](./docs/ReMove.md), [X4](./docs/X4.md)
     - Added context menu option to report parameter updates to plugin-host (only in plugin-version of Rack)
 - Nodule [MIDI-CAT](./docs/MidiCat.md)
-    - Added input mode "Snapped" for CC and Notes for use with snapped parameters
+    - Added input mode "Snapped" and "Snapped (short/long)" for CC and Notes for use with snapped parameters
 - Module [MIDI-CAT MEM](./docs/MidiCat.md#mem-expander)
     - Added module restriction list
     - Fixed broken MIDI feedback when loading stored mappings
