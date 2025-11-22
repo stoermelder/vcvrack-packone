@@ -851,16 +851,13 @@ struct MidiCatModule : Module, StripIdFixModule {
 
 	bool midiProcessMessage(midi::Message msg) {
 		switch (msg.getStatus()) {
-			// cc
-			case 0xb: {
+			case 0xb: { // cc
 				return midiCc(msg);
 			}
-			// note off
-			case 0x8: {
+			case 0x8: {	// note off
 				return midiNoteRelease(msg);
 			}
-			// note on
-			case 0x9: {
+			case 0x9: {	// note on
 				if (msg.getValue() > 0) {
 					return midiNotePress(msg);
 				}
@@ -868,7 +865,13 @@ struct MidiCatModule : Module, StripIdFixModule {
 					// Many keyboards send a "note on" command with 0 velocity to mean "note release"
 					return midiNoteRelease(msg);
 				}
-			} 
+			}
+			case 0xf: { // system
+				if (msg.getChannel() == 0xf) { // reset
+					midiReset();
+				}
+				return false;
+			}
 			default: {
 				return false;
 			}
@@ -928,6 +931,12 @@ struct MidiCatModule : Module, StripIdFixModule {
 			lastValueOut[i] = -1;
 			ccs[i].resetValue();
 			notes[i].resetValue();
+		}
+	}
+
+	void midiReset() {
+		for (size_t i = 0; i < MAX_CHANNELS; i++) {
+			lastValueIn[i] = -1;
 		}
 	}
 
@@ -2648,6 +2657,11 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 		}
 		menu->addChild(createSubmenuItem("MIDI Input", "", [=](Menu* menu) { appendMidiMenu(menu, &module->midiInput); }));
 		menu->addChild(createSubmenuItem("MIDI Output", "", [=](Menu* menu) { appendMidiMenu(menu, &module->midiOutput); }));
+		/*
+		menu->addChild(createMenuItem("Reset", "", [=]() {
+			module->midiReset();
+		}));
+		*/
 
 		if (menuSize > 0) {
 			ThemedModuleWidget<MidiCatModule>::appendContextMenu(menu);

@@ -13,6 +13,7 @@
     - Added context menu option to report parameter updates to plugin-host (only in plugin-version of Rack)
 - Nodule [MIDI-CAT](./docs/MidiCat.md)
     - Added input mode "Snapped" and "Snapped (short/long)" for CC and Notes for use with snapped parameters
+    - Added handling for MIDI System Reset message for resetting input-mode "Pickup (snap)".
 - Module [MIDI-CAT MEM](./docs/MidiCat.md#mem-expander)
     - Added module restriction list
     - Fixed broken MIDI feedback when loading stored mappings

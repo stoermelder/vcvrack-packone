@@ -166,7 +166,9 @@ Here is a unpolished introduction video to demonstrate the configuration steps a
 
 ![MIDI-CAT overlay](./MidiCat-overlay.gif)
 
-- Parameter changes are not reported back to the plugin-host by default if MIDI-CAT is used in a plugin-version of VCV Rack. In v2.2.0 a context menu option has been added to enable this behavior - it might cause higher CPU usage of the plugin.
+- Parameter changes are not reported back to the plugin-host by default if MIDI-CAT is used in a plugin-version of VCV Rack. A context menu optionis available to enable this behavior - it might cause higher CPU usage of the plugin (since v2.2.0).
+
+- MIDI-CAT can receive MIDI System Reset messages: For mapping-slots with input-mode "Pickup (snap)" it resets the mapping and the parameter can be picked up again. This can be useful for switching MIDI controller presets (since v2.2.0).
 
 ## MEM-expander
 
@@ -285,5 +287,6 @@ FINE for MIDI-CAT must be placed on the right side of MIDI-CAT and can be used t
     - Added FINE-expander
     - Added module restriction list for MEM-expander
     - Added input mode "Snapped" and "Snapped (short/long)" for CC and Notes for use with snapped parameters
+    - Added handling for MIDI System Reset message for resetting input-mode "Pickup (snap)".
     - Added context menu option to report parameter updates to plugin-host (only in plugin-version of Rack)
     - Fixed broken MIDI feedback when loading stored mappings on MIDI-CAT MEM
