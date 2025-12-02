@@ -117,6 +117,7 @@ struct EightFaceModule : Module {
 	ModuleWidget* workerModuleWidget;
 	bool workerGui = false;
 	ModuleWidget* workerGuiModuleWidget = NULL;
+	bool guiSafeMode = false;
 
 	LongPressButton typeButtons[NUM_PRESETS];
 	dsp::SchmittTrigger slotTrigger;
@@ -439,7 +440,7 @@ struct EightFaceModule : Module {
 				ModuleWidget* mw = APP->scene->rack->getModule(m->id);
 				if (mw) {
 					workerPreset = p;
-					if (workerGui) {
+					if (workerGui || guiSafeMode) {
 						workerGuiModuleWidget = mw;
 					}
 					else {
@@ -497,6 +498,9 @@ struct EightFaceModule : Module {
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
+
+		json_object_set_new(rootJ, "guiSafeMode", json_boolean(guiSafeMode));
+
 		json_object_set_new(rootJ, "mode", json_integer((int)side));
 		json_object_set_new(rootJ, "pluginSlug", json_string(pluginSlug.c_str()));
 		json_object_set_new(rootJ, "modelSlug", json_string(modelSlug.c_str()));
@@ -524,6 +528,9 @@ struct EightFaceModule : Module {
 	void dataFromJson(json_t* rootJ) override {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 
+		json_t* guiSafeModeJ = json_object_get(rootJ, "guiSafeMode");
+		if (guiSafeModeJ) guiSafeMode = json_boolean_value(guiSafeModeJ);
+	
 		json_t* sideJ = json_object_get(rootJ, "mode");
 		if (sideJ) side = (SIDE)json_integer_value(sideJ);
 		pluginSlug = json_string_value(json_object_get(rootJ, "pluginSlug"));
@@ -663,12 +670,12 @@ struct EightFaceWidgetTemplate : ModuleWidget {
 		MODULE* module = dynamic_cast<MODULE*>(this->module);
 		assert(module);
 
+		menu->addChild(new MenuSeparator());
 		if (module->moduleName != "") {
-			menu->addChild(new MenuSeparator());
 			menu->addChild(createMenuLabel("Configured for..."));
 			menu->addChild(createMenuLabel(module->moduleName));
 		}
-
+		menu->addChild(createBoolPtrMenuItem("Safe-mode (slower)", "", &module->guiSafeMode));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createSubmenuItem("Number of slots", string::f("%i", module->presetCount),
 			[=](Menu* menu) {
