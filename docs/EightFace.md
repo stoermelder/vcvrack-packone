@@ -63,6 +63,10 @@ There are different modes for SLOT-port available, configured by context menu op
 
 With the option "Autoload first preset" on the context menu you can autoload the first preset slot when a preset of 8FACE itself is loaded. This is useful when changing presets of 8FACE with another instance of 8FACE to aquire even more preset slots. The option "Autoload last active preset" works the same way.
 
+## Tips 
+
+- 8FACE is considered an experimental module, as loading presets into modules is not robust for every module and every patch. There is a "Safe-mode" context menu option, which should improve the situation if you are experiencing any issues or crashes. Safe-mode loads presets in slower way (technically said, preset-loading in done on the next rendered frame on the screen, added in v2.2.0).
+
 ## Changelog
 
 - v1.0.5
@@ -97,3 +101,5 @@ With the option "Autoload first preset" on the context menu you can autoload the
     - Fixed broken reset-behavior for "Trigger forward", "Trigger reverse" and "Trigger pingpong" (#347)
     - Added missing reset-handling for "Trigger alternating" and "Trigger shuffle"
     - Allow disabling of "long press" for changing the number of active slots (#354)
+- v2.2.0
+    - Added Safe-mode

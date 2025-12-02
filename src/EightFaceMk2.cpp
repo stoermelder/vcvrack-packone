@@ -127,8 +127,10 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 	/** [Stored to JSON] */
 	NVGcolor boxColor;
 
-	dsp::RingBuffer<std::tuple<ModuleWidget*, json_t*>, 16> workerGuiQueue;
+	dsp::RingBuffer<std::tuple<ModuleWidget*, json_t*>, 32> workerGuiQueue;
 	TaskWorker taskWorker;
+	/** [Stored to JSON] */
+	bool guiSafeMode = false;
 
 	EightFaceMk2Module() {
 		BASE::panelTheme = pluginSettings.panelThemeDefault;
@@ -525,7 +527,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 					json_decref((*slotPrev->preset)[i]);
 					(*slotPrev->preset)[i] = mw->toJson();
 				}
-				if (b->needsGuiThread) {
+				if (b->needsGuiThread || guiSafeMode) {
 					workerGuiQueue.push(std::make_tuple(mw, vJ));
 				}
 				else {
@@ -723,6 +725,8 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 		json_object_set_new(rootJ, "boxDraw", json_boolean(boxDraw));
 		json_object_set_new(rootJ, "boxColor", json_string(color::toHexString(boxColor).c_str()));
 
+		json_object_set_new(rootJ, "guiSafeMode", json_boolean(guiSafeMode));
+
 		json_t* boundModulesJ = json_array();
 		for (BoundModule* b : boundModules) {
 			json_t* boundModuleJ = json_object();
@@ -750,6 +754,9 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 		json_t* boxColorJ = json_object_get(rootJ, "boxColor");
 		if (boxColorJ) boxColor = color::fromHexString(json_string_value(boxColorJ));
 
+		json_t* guiSafeModeJ = json_object_get(rootJ, "guiSafeMode");
+		if (guiSafeModeJ) guiSafeMode = json_boolean_value(guiSafeModeJ);
+	
 		if (preset >= presetCount) {
 			preset = -1;
 		}
@@ -1144,6 +1151,8 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 			}
 		};
 
+		menu->addChild(new MenuSeparator());
+		menu->addChild(createBoolPtrMenuItem("Safe-mode (slower)", "", &module->guiSafeMode));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createSubmenuItem("Number of slots", string::f("%i", module->presetCount),
 			[=](Menu* menu) {

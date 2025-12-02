@@ -7,13 +7,16 @@
 
 ### Changes and Fixes
 
+- Modules [8FACE, 8FACEx2](./docs/EightFace.md)
+    - Added Safe-mode
 - Module [8FACE mk2](./docs/EightFaceMk2.md)
+    - Added Safe-mode
     - Improved robustness for expander +8
 - Modules [CV-MAP](./docs/CVMap.md), [MACRO](./docs/Macro.md), [µMAP](./docs/CVMapMicro.md), [MIDI-CAT](./docs/MidiCat.md), [MIRROR](./docs/Mirror.md), [ReMOVE Lite](./docs/ReMove.md), [X4](./docs/X4.md)
     - Added context menu option to report parameter updates to plugin-host (only in plugin-version of Rack)
 - Nodule [MIDI-CAT](./docs/MidiCat.md)
-    - Added input mode "Snapped" and "Snapped (short/long)" for CC and Notes for use with snapped parameters
-    - Added handling for MIDI System Reset message for resetting input-mode "Pickup (snap)".
+    - Added input-modes "Snapped" and "Snapped (short/long)" for CC and Notes for use with snapped parameters (e.g. "Steps" on VCV SEQ3)
+    - Added handling for MIDI System Reset message for resetting input-mode "Pickup (snap)"
 - Module [MIDI-CAT MEM](./docs/MidiCat.md#mem-expander)
     - Added module restriction list
     - Fixed broken MIDI feedback when loading stored mappings
