@@ -20,6 +20,9 @@ void StoermelderSettings::saveToJson() {
 	json_object_set(settingsJ, "overlayOpacity", json_real(overlayOpacity));
 	json_object_set(settingsJ, "overlayScale", json_real(overlayScale));
 
+	json_object_set(settingsJ, "stripDirVcvss", json_string(stripDirVcvss.c_str()));
+	json_object_set(settingsJ, "stripDirVcvs", json_string(stripDirVcvs.c_str()));
+
 	std::string settingsFilename = rack::asset::user("Stoermelder-P1.json");
 	FILE* file = fopen(settingsFilename.c_str(), "w");
 	if (file) {
@@ -70,6 +73,11 @@ void StoermelderSettings::readFromJson() {
 	if (overlayOpacityJ) overlayOpacity = json_real_value(overlayOpacityJ);
 	json_t* overlayScaleJ = json_object_get(settingsJ, "overlayScale");
 	if (overlayScaleJ) overlayScale = json_real_value(overlayScaleJ);
+
+	json_t* stripDirVcvssJ = json_object_get(settingsJ, "stripDirVcvss");
+	if (stripDirVcvssJ) stripDirVcvss = json_real_value(stripDirVcvssJ);
+	json_t* stripDirVcvsJ = json_object_get(settingsJ, "stripDirVcvs");
+	if (stripDirVcvsJ) stripDirVcvs = json_real_value(stripDirVcvsJ);
 
 	fclose(file);
 	json_decref(settingsJ);

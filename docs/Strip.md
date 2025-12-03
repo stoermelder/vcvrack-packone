@@ -100,3 +100,5 @@ STRIP-BAY is a companion module for STRIP: It is used to name some "patching-poi
     - Initial release of STRIP-BAY
 - v2.0.0
     - Fixed crash on stackable input-cables (#405)
+- v2.2.0
+    - Remember and recall file-dialog folder locations for vcvss and vcvs files
