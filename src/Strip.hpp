@@ -10,9 +10,6 @@ namespace Strip {
 static const char PRESET_FILTERS[] = "stoermelder STRIP group preset (.vcvss):vcvss";
 static const char SELECTION_FILTERS[] = "VCV Rack module selection (.vcvs):vcvs";
 
-static std::string dirVcvss = asset::user("patches");
-static std::string dirVcvs = asset::user("selections");
-
 
 enum class MODE {
 	LEFTRIGHT = 0,
@@ -936,13 +933,14 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		});
 
 		std::string dir = asset::user("patches");
-		char* path = osdialog_file(OSDIALOG_SAVE, dirVcvss.c_str(), "Untitled.vcvss", filters);
+		char* path = osdialog_file(OSDIALOG_SAVE, pluginSettings.stripDirVcvss.c_str(), "Untitled.vcvss", filters);
 		if (!path) {
 			// No path selected
 			return;
 		}
 		DEFER({
-			dirVcvss = system::getDirectory(std::string(path));
+			pluginSettings.stripDirVcvss = system::getDirectory(std::string(path));
+			pluginSettings.saveToJson();
 			free(path);
 		});
 
@@ -1150,13 +1148,14 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 			osdialog_filters_free(filters);
 		});
 
-		char* path = osdialog_file(OSDIALOG_OPEN, dirVcvss.c_str(), NULL, filters);
+		char* path = osdialog_file(OSDIALOG_OPEN, pluginSettings.stripDirVcvss.c_str(), NULL, filters);
 		if (!path) {
 			// No path selected
 			return;
 		}
 		DEFER({
-			dirVcvss = system::getDirectory(std::string(path));
+			pluginSettings.stripDirVcvss = system::getDirectory(std::string(path));
+			pluginSettings.saveToJson();
 			free(path);
 		});
 
@@ -1184,13 +1183,14 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		osdialog_filters* filters = osdialog_filters_parse(SELECTION_FILTERS);
 		DEFER({osdialog_filters_free(filters);});
 
-		char* pathC = osdialog_file(OSDIALOG_OPEN, dirVcvs.c_str(), NULL, filters);
+		char* pathC = osdialog_file(OSDIALOG_OPEN, pluginSettings.stripDirVcvs.c_str(), NULL, filters);
 		if (!pathC) {
 			// No path selected
 			return "";
 		}
 		DEFER({
-			dirVcvs = system::getDirectory(std::string(pathC));
+			pluginSettings.stripDirVcvs = system::getDirectory(std::string(pathC));
+			pluginSettings.saveToJson();
 			std::free(pathC);
 		});
 

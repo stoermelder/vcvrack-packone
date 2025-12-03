@@ -16,6 +16,9 @@ struct StoermelderSettings {
 	float overlayOpacity = 1.f;
 	float overlayScale = 1.f;
 
+	std::string stripDirVcvss = rack::asset::user("patches");
+	std::string stripDirVcvs = rack::asset::user("selections");
+
 	void saveToJson();
 	void readFromJson();
 };

@@ -22,6 +22,8 @@
 - Module [MIDI-CAT MEM](./docs/MidiCat.md#mem-expander)
     - Added module restriction list
     - Fixed broken MIDI feedback when loading stored mappings
+- Module [STRIP](./docs/Strip.md)
+    - Remember and recall file-dialog folder locations for vcvss and vcvs files
 - Module [TRANSIT](./docs/Transit.md)
     - Improved robustness for expander +T (e.g. crashes when using module-presets) (#412)
 
