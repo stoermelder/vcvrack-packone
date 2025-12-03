@@ -75,9 +75,9 @@ void StoermelderSettings::readFromJson() {
 	if (overlayScaleJ) overlayScale = json_real_value(overlayScaleJ);
 
 	json_t* stripDirVcvssJ = json_object_get(settingsJ, "stripDirVcvss");
-	if (stripDirVcvssJ) stripDirVcvss = json_real_value(stripDirVcvssJ);
+	if (stripDirVcvssJ) stripDirVcvss = json_string_value(stripDirVcvssJ);
 	json_t* stripDirVcvsJ = json_object_get(settingsJ, "stripDirVcvs");
-	if (stripDirVcvsJ) stripDirVcvs = json_real_value(stripDirVcvsJ);
+	if (stripDirVcvsJ) stripDirVcvs = json_string_value(stripDirVcvsJ);
 
 	fclose(file);
 	json_decref(settingsJ);
