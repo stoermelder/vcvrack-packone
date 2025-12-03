@@ -130,7 +130,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 	dsp::RingBuffer<std::tuple<ModuleWidget*, json_t*>, 32> workerGuiQueue;
 	TaskWorker taskWorker;
 	/** [Stored to JSON] */
-	bool guiSafeMode = false;
+	bool guiSafeMode = true;
 
 	EightFaceMk2Module() {
 		BASE::panelTheme = pluginSettings.panelThemeDefault;
@@ -195,6 +195,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 		}
 		boundModules.clear();
 		inChange = false;
+		guiSafeMode = true;
 
 		BASE::ctrlUniqueId = rack::random::uniform() * INT64_MAX;
 		preset = -1;
@@ -757,7 +758,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 		if (boxColorJ) boxColor = color::fromHexString(json_string_value(boxColorJ));
 
 		json_t* guiSafeModeJ = json_object_get(rootJ, "guiSafeMode");
-		if (guiSafeModeJ) guiSafeMode = json_boolean_value(guiSafeModeJ);
+		guiSafeMode = guiSafeModeJ ? json_boolean_value(guiSafeModeJ) : false;
 	
 		if (preset >= presetCount) {
 			preset = -1;
@@ -1154,7 +1155,7 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 		};
 
 		menu->addChild(new MenuSeparator());
-		menu->addChild(createBoolPtrMenuItem("Safe-mode (slower)", "", &module->guiSafeMode));
+		menu->addChild(createBoolPtrMenuItem("Safe-mode", "", &module->guiSafeMode));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createSubmenuItem("Number of slots", string::f("%i", module->presetCount),
 			[=](Menu* menu) {

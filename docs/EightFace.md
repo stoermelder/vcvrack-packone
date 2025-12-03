@@ -65,7 +65,7 @@ With the option "Autoload first preset" on the context menu you can autoload the
 
 ## Tips 
 
-- 8FACE is considered an experimental module, as loading presets into modules is not robust for every module and every patch. There is a "Safe-mode" context menu option, which should improve the situation if you are experiencing any issues or crashes. Safe-mode loads presets in slower way (technically said, preset-loading in done on the next rendered frame on the screen, added in v2.2.0).
+- 8FACE is using "Safe-mode" as default setting for loading presets (added in v2.2.0). Safe-mode loads presets in a slower way (technically said, preset-loading in done on the next rendered frame on the screen), but is stable. Disabling "Safe-mode" will load presets faster, but can cause crashes or other issues. "Safe-mode" won't make any noticable difference if snapshots are loaded manually by clicking snapshot buttons.
 
 ## Changelog
 
@@ -102,4 +102,4 @@ With the option "Autoload first preset" on the context menu you can autoload the
     - Added missing reset-handling for "Trigger alternating" and "Trigger shuffle"
     - Allow disabling of "long press" for changing the number of active slots (#354)
 - v2.2.0
-    - Added Safe-mode
+    - Added Safe-mode and use as new default setting
