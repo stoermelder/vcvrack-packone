@@ -259,11 +259,13 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 		if (inChange) return;
 		sampleRate = args.sampleRate;
 
-		if (expandersChanged) {
+		CTRLMODE ctrlMode = (CTRLMODE)Module::params[PARAM_CTRLMODE].getValue();
+
+		if (expandersChanged || ctrlMode != BASE::ctrlMode) {
 			presetTotal = NUM_PRESETS;
 			Module* m = this;
 			TransitBase<NUM_PRESETS>* t = this;
-			t->ctrlMode = (CTRLMODE)Module::params[PARAM_CTRLMODE].getValue();
+			t->ctrlMode = ctrlMode;
 			int c = 0;
 			while (true) {
 				N[c] = t;
