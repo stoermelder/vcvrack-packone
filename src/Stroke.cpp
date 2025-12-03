@@ -298,7 +298,7 @@ struct CmdZoomModuleSmooth : CmdBase {
 		if (!mw) mw = w->getAncestorOfType<ModuleWidget>();
 		if (!mw) return;
 		Vec p = mw->box.size.mult(Vec(1.f - scale, 1.f - scale));
-		viewportCenterSmooth.trigger(mw->box.grow(p), 1.f / APP->window->getLastFrameDuration(), 0.6f);
+		viewportCenterSmooth.trigger(mw->box.grow(p), -1.f, 1.f / APP->window->getLastFrameDuration(), 0.6f);
 	}
 	void step() override {
 		viewportCenterSmooth.process();
@@ -360,7 +360,7 @@ struct CmdZoomModuleIdSmooth : CmdBase {
 		ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
 		if (!mw) return;
 		Vec p = mw->box.size.mult(Vec(1.f - scale, 1.f - scale));
-		viewportCenterSmooth.trigger(mw->box.grow(p), 1.f / APP->window->getLastFrameDuration(), 0.6f);
+		viewportCenterSmooth.trigger(mw->box.grow(p), -1.f, 1.f / APP->window->getLastFrameDuration(), 0.6f);
 	}
 	void step() override {
 		viewportCenterSmooth.process();
@@ -386,7 +386,7 @@ struct CmdZoomOutSmooth : CmdBase {
 	void initialCmd(KEY_MODE keyMode) override {
 		math::Rect moduleBox = APP->scene->rack->getModuleContainer()->getChildrenBoundingBox();
 		if (!moduleBox.size.isFinite()) return;
-		viewportCenterSmooth.trigger(moduleBox, 1.f / APP->window->getLastFrameDuration(), 0.6f);
+		viewportCenterSmooth.trigger(moduleBox, -1.f, 1.f / APP->window->getLastFrameDuration(), 0.6f);
 	}
 	void step() override {
 		viewportCenterSmooth.process();
@@ -406,7 +406,7 @@ struct CmdZoomToggleSmooth : CmdZoomModuleSmooth {
 		if (std::log2(APP->scene->rackScroll->getZoom()) > 1.f) {
 			math::Rect moduleBox = APP->scene->rack->getModuleContainer()->getChildrenBoundingBox();
 			if (!moduleBox.size.isFinite()) return;
-			viewportCenterSmooth.trigger(moduleBox, 1.f / APP->window->getLastFrameDuration(), 0.6f);
+			viewportCenterSmooth.trigger(moduleBox, -1.f, 1.f / APP->window->getLastFrameDuration(), 0.6f);
 		}
 		else {
 			CmdZoomModuleSmooth::initialCmd(keyMode);
