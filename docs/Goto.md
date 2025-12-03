@@ -4,15 +4,16 @@ GOTO is an utility module which moves the current view-port of VCV Rack to inter
 
 ![GOTO intro](./Goto-intro.png)
 
-Every jump point of GOTO is bound to a specific module in your patch. The binding procedure is activated by long-pressing one of the buttons (lit in red) and selecting any module by mouse afterwards. Already used jump points are lit in yellow and can be cleared by another long-press on the button. The current zoom level of the view-port is also saved and will be recalled when a jump point is activated.
+Every jump point of GOTO is bound to a specific module or selection of modules in your patch. The binding procedure is activated by long-pressing one of the buttons (lit in red) and selecting any module by mouse afterwards. Alternatively a selection can be set by context menu option of the jump-point buttons.  
+Already used jump-points are lit in yellow and can be cleared by another long-press on the button. The current zoom level of the view-port is also saved and will be recalled when a jump-point is activated.
 
 ![GOTO jump](./Goto-jump.gif)
 
 There are some settings on the context menu available:
 
-* **Jump position**: This option causes the bound module to be centered on the screen or moved to the top left of the screen.
 * **Smooth transition**: By default the view-port jumps directly to the bound module. Activating this option moves the view-port smoothly to the new position. Be aware that this utilizes more graphical processing ressources of your system.
 * **Ignore zoom level**: By default GOTO recalls the zoom level at binding time. Activating this option leaves the current zoom level untouched.
+* **Jump position**: This option causes the bound module to be centered on the screen or moved to the top left of the screen.
 
 ## _INPUT_-port
 
@@ -37,3 +38,5 @@ It is possible to trigger a view-port change by CV which is especially useful wi
     - Removed setting "Center module" as the disabled state did not work correctly
     - Fixed crash on patch-loading inside Rack VST (#342)
     - Fixed broken zoom behavior when jumping by buttons on the panel
+- v2.2.0
+    - Extended jump-points for multiple modules/selections

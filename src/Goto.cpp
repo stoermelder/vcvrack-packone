@@ -1,5 +1,6 @@
 #include "plugin.hpp"
 #include "ui/ViewportHelper.hpp"
+#include "ui/ModuleSelectProcessor.hpp"
 
 namespace StoermelderPackOne {
 namespace Goto {
@@ -16,8 +17,7 @@ enum class JUMPPOS {
 };
 
 struct GotoTarget {
-	int64_t moduleId = -1;
-	float x = 0, y = 0;
+	std::vector<int64_t> moduleIds;
 	float zoom = 1.f;
 };
 
@@ -67,23 +67,11 @@ struct GotoModule : Module {
 
 	struct GotoSwitchQuantity : SwitchQuantity {
 		int jumpPoint;
-		int64_t cachedModuleId;
-		std::string cachedModuleName;
 
 		std::string getString() override {
 			GotoModule<SLOTS>* module = reinterpret_cast<GotoModule<SLOTS>*>(this->module);
-			if (module->jumpPoints[jumpPoint].moduleId != cachedModuleId) {
-				cachedModuleId = module->jumpPoints[jumpPoint].moduleId;
-				if (cachedModuleId >= 0) {
-					Module* m = APP->engine->getModule(cachedModuleId);
-					cachedModuleName = string::f("%s %s", m->model->plugin->brand.c_str(), m->model->name.c_str());
-				}
-				else {
-					cachedModuleName = "";
-				}
-			}
-			if (!cachedModuleName.empty()) {
-				return string::f("Jump point %i (SHIFT+%i): %s", jumpPoint + 1, (jumpPoint + 1) % 10, cachedModuleName.c_str());
+			if (module->jumpPoints[jumpPoint].moduleIds.size() > 0) {
+				return string::f("Jump point %i (SHIFT+%i): %i module(s)", jumpPoint + 1, (jumpPoint + 1) % 10, module->jumpPoints[jumpPoint].moduleIds.size());
 			}
 			else {
 				return string::f("Jump point %i (SHIFT+%i)", jumpPoint + 1, (jumpPoint + 1) % 10);
@@ -113,7 +101,7 @@ struct GotoModule : Module {
 		jumpPos = JUMPPOS::MODULE_CENTER;
 		ignoreZoom = false;
 		for (int i = 0; i < SLOTS; i++) {
-			jumpPoints[i].moduleId = -1;
+			jumpPoints[i].moduleIds.clear();
 		}
 		resetRequested = true;
 	}
@@ -157,9 +145,9 @@ struct GotoModule : Module {
 		json_t* jumpPointsJ = json_array();
 		for (GotoTarget jp : jumpPoints) {
 			json_t* jumpPointJ = json_object();
-			json_object_set_new(jumpPointJ, "moduleId", json_integer(jp.moduleId));
-			json_object_set_new(jumpPointJ, "x", json_real(jp.x));
-			json_object_set_new(jumpPointJ, "y", json_real(jp.y));
+			json_t* moduleIdsJ = json_array();
+			for (int64_t moduleId : jp.moduleIds) json_array_append_new(moduleIdsJ, json_integer(moduleId));
+			json_object_set_new(jumpPointJ, "moduleIds", moduleIdsJ);
 			json_object_set_new(jumpPointJ, "zoom", json_real(jp.zoom));
 			json_array_append_new(jumpPointsJ, jumpPointJ);
 		}
@@ -179,9 +167,19 @@ struct GotoModule : Module {
 		json_t* jumpPointsJ = json_object_get(rootJ, "jumpPoints");
 		for (int i = 0; i < 10; i++) {
 			json_t* jumpPointJ = json_array_get(jumpPointsJ, i);
-			jumpPoints[i].moduleId = json_integer_value(json_object_get(jumpPointJ, "moduleId"));
-			jumpPoints[i].x = json_real_value(json_object_get(jumpPointJ, "x"));
-			jumpPoints[i].y = json_real_value(json_object_get(jumpPointJ, "y"));
+			json_t* moduleIdJ = json_object_get(jumpPointJ, "moduleId");
+			if (moduleIdJ) {
+				jumpPoints[i].moduleIds.push_back(json_integer_value(moduleIdJ));
+			}
+			else {
+				json_t* moduleIdsJ = json_object_get(jumpPointJ, "moduleIds");
+				size_t j;
+				jumpPoints[i].moduleIds.clear();
+				json_array_foreach(moduleIdsJ, j, moduleIdJ) {
+					jumpPoints[i].moduleIds.push_back(json_integer_value(moduleIdJ));
+				}
+			}
+			
 			jumpPoints[i].zoom = json_real_value(json_object_get(jumpPointJ, "zoom"));
 		}
 	}
@@ -198,6 +196,8 @@ struct GotoContainer : widget::Widget {
 	dsp::ClockDivider divider;
 	int learnJumpPoint = -1;
 
+	ModuleSelectProcessor moduleSelectProcessor;
+
 	void draw(const DrawArgs& args) override {
 		if (!module) return;
 		divider.setDivision((uint32_t)APP->window->getMonitorRefreshRate());
@@ -210,40 +210,19 @@ struct GotoContainer : widget::Widget {
 
 		viewportCenterSmooth.process();
 
-		if (learnJumpPoint >= 0) {
-			// Learn module
-			Widget* w = APP->event->getSelectedWidget();
-			if (!w) goto j;
-			ModuleWidget* mw = dynamic_cast<ModuleWidget*>(w);
-			if (!mw) mw = w->getAncestorOfType<ModuleWidget>();
-			if (!mw || mw == this->mw) goto j;
-			Module* m = mw->module;
-			if (!m) goto j;
-
-			Vec source = APP->scene->rackScroll->offset;
-			source = source.plus(APP->scene->box.size.mult(0.5f));
-			source = source.div(APP->scene->rackScroll->zoomWidget->zoom);
-
-			module->jumpPoints[learnJumpPoint].moduleId = m->id;
-			module->jumpPoints[learnJumpPoint].x = source.x;
-			module->jumpPoints[learnJumpPoint].y = source.y;
-			module->jumpPoints[learnJumpPoint].zoom = std::log2(APP->scene->rackScroll->getZoom());
-			learnJumpPoint = -1;
-		}
-
-		j:
 		if (divider.process()) {
 			for (int i = 0; i < SLOTS; i++) {
-				if (module->jumpPoints[i].moduleId >= 0) {
-					ModuleWidget* mw = APP->scene->rack->getModule(module->jumpPoints[i].moduleId);
-					if (!mw) module->jumpPoints[i].moduleId = -1;
+				for (auto it = module->jumpPoints[i].moduleIds.begin(); it != module->jumpPoints[i].moduleIds.end();) {
+					ModuleWidget* mw = APP->scene->rack->getModule(*it);
+					if (!mw) it = module->jumpPoints[i].moduleIds.erase(it);
+					else it++;
 				}
 			}
 		}
 
 		for (int i = 0; i < SLOTS; i++) {
 			module->lights[GotoModule<SLOTS>::LIGHT_SLOT + i * 3 + 0].setBrightness(learnJumpPoint == i);
-			module->lights[GotoModule<SLOTS>::LIGHT_SLOT + i * 3 + 1].setBrightness(learnJumpPoint != i && module->jumpPoints[i].moduleId >= 0);
+			module->lights[GotoModule<SLOTS>::LIGHT_SLOT + i * 3 + 1].setBrightness(learnJumpPoint != i && module->jumpPoints[i].moduleIds.size() > 0);
 			module->lights[GotoModule<SLOTS>::LIGHT_SLOT + i * 3 + 2].setBrightness(0.f);
 		}
 
@@ -253,13 +232,36 @@ struct GotoContainer : widget::Widget {
 		}
 	}
 
+	bool hasJump(int i) {
+		return module->jumpPoints[i].moduleIds.size() > 0;
+	}
+
 	void learnJump(int i) {
-		if (module->jumpPoints[i].moduleId >= 0) {
-			module->jumpPoints[i].moduleId = -1;
+		if (hasJump(i)) {
+			clearJump(i);
 		}
 		else {
 			learnJumpPoint = i;
+			moduleSelectProcessor.setOwner(this);
+			moduleSelectProcessor.startLearn([=](ModuleWidget* mw, Vec pos) {
+				module->jumpPoints[learnJumpPoint].moduleIds.clear();
+				module->jumpPoints[learnJumpPoint].moduleIds.push_back(mw->module->getId());
+				module->jumpPoints[learnJumpPoint].zoom = std::log2(APP->scene->rackScroll->getZoom());
+				learnJumpPoint = -1;
+			});
 		}
+	}
+
+	void learnJump(int i, std::vector<int64_t>& moduleIds) {
+		module->jumpPoints[i].moduleIds.clear();
+		for(int64_t moduleId : moduleIds) {
+			module->jumpPoints[i].moduleIds.push_back(moduleId);
+		}
+		module->jumpPoints[i].zoom = std::log2(APP->scene->rackScroll->getZoom());
+	}
+
+	void clearJump(int i) {
+		module->jumpPoints[i].moduleIds.clear();
 	}
 
 	void triggerJump(int i) {
@@ -267,56 +269,74 @@ struct GotoContainer : widget::Widget {
 	}
 
 	void executeJump(int i) {
-		if (module->jumpPoints[i].moduleId >= 0) {
-			ModuleWidget* mw = APP->scene->rack->getModule(module->jumpPoints[i].moduleId);
-			if (mw) {
-				float zoom = (!module->ignoreZoom) ? module->jumpPoints[i].zoom : std::log2(APP->scene->rackScroll->getZoom());
-				if (module->smoothTransition) {
-					switch (module->jumpPos) {
-						case JUMPPOS::ABSOLUTE: {
-							viewportCenterSmooth.trigger(Vec(module->jumpPoints[i].x, module->jumpPoints[i].y), zoom, 1.f / APP->window->getLastFrameDuration());
-							break;
-						}
-						case JUMPPOS::MODULE_CENTER: {
-							//viewportCenterSmooth.trigger(mw, zoom, 1.f / APP->window->getLastFrameDuration());
-							Vec source = APP->scene->rackScroll->offset / APP->scene->rackScroll->getZoom();
-							Vec center = APP->scene->rackScroll->getSize() * (1.f / APP->scene->rackScroll->getZoom()) * 0.5f;
-							Vec p1 = source + center;
-							Vec p2 = mw->getBox().getCenter();
-							float f = sqrt((p1.x - p2.x) * (p1.x - p2.x) + (p1.y - p2.y) * (p1.y - p2.y));
-							viewportCenterSmooth.trigger(mw, zoom, 1.f / APP->window->getLastFrameDuration(), f / 1000.f);
-							break;
-						}
-						case JUMPPOS::MODULE_TOPLEFT: {
-							Vec source = APP->scene->rackScroll->offset / APP->scene->rackScroll->getZoom();
-							Vec center = APP->scene->rackScroll->getSize() * (1.f / APP->scene->rackScroll->getZoom()) * 0.5f;
-							Vec p1 = source + center;
-							Vec p2 = mw->getBox().getTopLeft();
-							p2 = p2 + (APP->scene->rackScroll->getSize() * (1.f / std::pow(2.f, zoom))) * 0.5f;
-							float f = sqrt((p1.x - p2.x) * (p1.x - p2.x) + (p1.y - p2.y) * (p1.y - p2.y));
-							viewportCenterSmooth.trigger(p2, zoom, 1.f / APP->window->getLastFrameDuration(), f / 1000.f);
-							break;
-						}
+		if (module->jumpPoints[i].moduleIds.size() > 0) {
+			math::Vec min = math::Vec(INFINITY, INFINITY);
+			math::Vec max = math::Vec(-INFINITY, -INFINITY);
+			for (int64_t moduleId : module->jumpPoints[i].moduleIds) {
+				ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
+				if (mw) {
+					min = min.min(mw->getBox().getTopLeft());
+					max = max.max(mw->getBox().getBottomRight());
+				}
+			}
+			math::Rect moduleBox = math::Rect::fromMinMax(min, max);
+
+			float zoom = (!module->ignoreZoom) ? module->jumpPoints[i].zoom : std::log2(APP->scene->rackScroll->getZoom());
+			if (module->smoothTransition) {
+				switch (module->jumpPos) {
+					case JUMPPOS::ABSOLUTE: {
+						// deprecated
+						break;
+					}
+					case JUMPPOS::MODULE_CENTER: {
+						//viewportCenterSmooth.trigger(mw, zoom, 1.f / APP->window->getLastFrameDuration());
+						Vec source = APP->scene->rackScroll->offset / APP->scene->rackScroll->getZoom();
+						Vec center = APP->scene->rackScroll->getSize() * (1.f / APP->scene->rackScroll->getZoom()) * 0.5f;
+						Vec p1 = source + center;
+						Vec p2 = moduleBox.getCenter();
+						float f = sqrt((p1.x - p2.x) * (p1.x - p2.x) + (p1.y - p2.y) * (p1.y - p2.y));
+						viewportCenterSmooth.trigger(moduleBox, zoom, 1.f / APP->window->getLastFrameDuration(), f / 1000.f);
+						break;
+					}
+					case JUMPPOS::MODULE_TOPLEFT: {
+						Vec source = APP->scene->rackScroll->offset / APP->scene->rackScroll->getZoom();
+						Vec center = APP->scene->rackScroll->getSize() * (1.f / APP->scene->rackScroll->getZoom()) * 0.5f;
+						Vec p1 = source + center;
+						Vec p2 = moduleBox.getTopLeft();
+						p2 = p2 + (APP->scene->rackScroll->getSize() * (1.f / std::pow(2.f, zoom))) * 0.5f;
+						float f = sqrt((p1.x - p2.x) * (p1.x - p2.x) + (p1.y - p2.y) * (p1.y - p2.y));
+						viewportCenterSmooth.trigger(p2, zoom, 1.f / APP->window->getLastFrameDuration(), f / 1000.f);
+						break;
 					}
 				}
-				else {
-					switch (module->jumpPos) {
-						case JUMPPOS::ABSOLUTE: {
-							StoermelderPackOne::Rack::ViewportCenter{Vec(module->jumpPoints[i].x, module->jumpPoints[i].y)};
-							break;
-						}
-						case JUMPPOS::MODULE_CENTER: {
-							StoermelderPackOne::Rack::ViewportCenter{mw, -1.f, zoom};
-							break;
-						}
-						case JUMPPOS::MODULE_TOPLEFT: {
-							StoermelderPackOne::Rack::ViewportTopLeft{mw, -1.f, zoom};
-							break;
-						}
+			}
+			else {
+				switch (module->jumpPos) {
+					case JUMPPOS::ABSOLUTE: {
+						// deprecated
+						break;
+					}
+					case JUMPPOS::MODULE_CENTER: {
+						StoermelderPackOne::Rack::ViewportCenter{moduleBox, -1.f, zoom};
+						break;
+					}
+					case JUMPPOS::MODULE_TOPLEFT: {
+						StoermelderPackOne::Rack::ViewportTopLeft{moduleBox, -1.f, zoom};
+						break;
 					}
 				}
 			}
 		}
+	}
+
+	void step() override {
+		moduleSelectProcessor.step();
+		Widget::step();
+	}
+
+	void onDeselect(const event::Deselect& e) override {
+		Widget::onDeselect(e);
+		moduleSelectProcessor.processDeselect();
 	}
 
 	void onHoverKey(const event::HoverKey& e) override {
@@ -325,7 +345,7 @@ struct GotoContainer : widget::Widget {
 			bool numkey2 = e.key >= GLFW_KEY_KP_0 && e.key <= GLFW_KEY_KP_9;
 			if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == GLFW_MOD_SHIFT && (numkey1 || numkey2)) {
 				int i = (e.key - (numkey1 ? GLFW_KEY_0 : GLFW_KEY_KP_0) + 9) % 10;
-				if (module->jumpPoints[i].moduleId >= 0) {
+				if (module->jumpPoints[i].moduleIds.size() > 0) {
 					executeJump(i);
 					e.consume(this);
 				}
@@ -359,6 +379,17 @@ struct GotoButton : LEDButton {
 			}
 		}
 		LEDButton::step();
+	}
+
+	void appendContextMenu(Menu* menu) override {
+		menu->addChild(createMenuItem("Clear", "", [=]() { gotoContainer->clearJump(id); }, !gotoContainer->hasJump(id)));
+		menu->addChild(createMenuItem("Learn current selection", "", [=]() {
+			std::vector<int64_t> moduleIds;
+			for (ModuleWidget* mw : APP->scene->rack->getSelected()) {
+				moduleIds.push_back(mw->module->getId());
+			}
+			gotoContainer->learnJump(id, moduleIds);
+		}, APP->scene->rack->getSelected().size() == 0));
 	}
 };
 

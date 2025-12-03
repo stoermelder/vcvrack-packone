@@ -14,6 +14,8 @@
     - Improved robustness for expander +8
 - Modules [CV-MAP](./docs/CVMap.md), [MACRO](./docs/Macro.md), [µMAP](./docs/CVMapMicro.md), [MIDI-CAT](./docs/MidiCat.md), [MIRROR](./docs/Mirror.md), [ReMOVE Lite](./docs/ReMove.md), [X4](./docs/X4.md)
     - Added context menu option to report parameter updates to plugin-host (only in plugin-version of Rack)
+- Module [GOTO](./docs/Goto.md)
+     - Extended jump-points for multiple modules/selections
 - Nodule [MIDI-CAT](./docs/MidiCat.md)
     - Added input-modes "Snapped" and "Snapped (short/long)" for CC and Notes for use with snapped parameters (e.g. "Steps" on VCV SEQ3)
     - Added handling for MIDI System Reset message for resetting input-mode "Pickup (snap)"
