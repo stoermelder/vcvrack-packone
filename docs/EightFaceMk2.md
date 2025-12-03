@@ -118,7 +118,7 @@ Once placed next to 8FACE mk2 the expander works and behaves the same way 8FACE 
 
 - [GLUE](./Glue.md) labels can be dynamically changed on different snapshots if a GLUE module is controlled by 8FACE mk2.
 
-- 8FACE mk2 is considered an experimental module, as loading presets into modules is not robust for every module and every patch. There is a "Safe-mode" context menu option, which should improve the situation if you are experiencing any issues or crashes. Safe-mode loads presets in slower way (technically said, preset-loading in done on the next rendered frame on the screen, added in v2.2.0).
+- 8FACE mk2 is using "Safe-mode" as default setting for loading presets (added in v2.2.0). Safe-mode loads presets in a slower way (technically said, preset-loading in done on the next rendered frame on the screen), but is stable. Disabling "Safe-mode" will load presets faster, but can cause crashes or other issues. "Safe-mode" won't make any noticable difference if snapshots are loaded manually by clicking snapshot buttons.
 
 ## Changelog
 
@@ -138,5 +138,5 @@ Once placed next to 8FACE mk2 the expander works and behaves the same way 8FACE 
     - Added "Auto"-mode besides "Read" and "Write" ([manual](./EightFaceMk2.md#auto-mode)) (#276)
     - Added option to bind currently selected modules
 - v2.2.0
-    - Added Safe-mode
+    - Added Safe-mode and use as new default setting
     - Improved robustness for expander +8

@@ -117,7 +117,7 @@ struct EightFaceModule : Module {
 	ModuleWidget* workerModuleWidget;
 	bool workerGui = false;
 	ModuleWidget* workerGuiModuleWidget = NULL;
-	bool guiSafeMode = false;
+	bool guiSafeMode = true;
 
 	LongPressButton typeButtons[NUM_PRESETS];
 	dsp::SchmittTrigger slotTrigger;
@@ -171,6 +171,7 @@ struct EightFaceModule : Module {
 			presetSlotUsed[i] = false;
 		}
 
+		guiSafeMode = true;
 		preset = -1;
 		presetCount = NUM_PRESETS;
 		presetPrev = -1;
@@ -529,7 +530,7 @@ struct EightFaceModule : Module {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 
 		json_t* guiSafeModeJ = json_object_get(rootJ, "guiSafeMode");
-		if (guiSafeModeJ) guiSafeMode = json_boolean_value(guiSafeModeJ);
+		guiSafeMode = guiSafeModeJ ? json_boolean_value(guiSafeModeJ) : false;
 	
 		json_t* sideJ = json_object_get(rootJ, "mode");
 		if (sideJ) side = (SIDE)json_integer_value(sideJ);
@@ -675,7 +676,7 @@ struct EightFaceWidgetTemplate : ModuleWidget {
 			menu->addChild(createMenuLabel("Configured for..."));
 			menu->addChild(createMenuLabel(module->moduleName));
 		}
-		menu->addChild(createBoolPtrMenuItem("Safe-mode (slower)", "", &module->guiSafeMode));
+		menu->addChild(createBoolPtrMenuItem("Safe-mode", "", &module->guiSafeMode));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createSubmenuItem("Number of slots", string::f("%i", module->presetCount),
 			[=](Menu* menu) {

@@ -8,9 +8,9 @@
 ### Changes and Fixes
 
 - Modules [8FACE, 8FACEx2](./docs/EightFace.md)
-    - Added Safe-mode
+    - Added Safe-mode and use as new default setting
 - Module [8FACE mk2](./docs/EightFaceMk2.md)
-    - Added Safe-mode
+    - Added Safe-mode and use as new default setting
     - Improved robustness for expander +8
 - Modules [CV-MAP](./docs/CVMap.md), [MACRO](./docs/Macro.md), [µMAP](./docs/CVMapMicro.md), [MIDI-CAT](./docs/MidiCat.md), [MIRROR](./docs/Mirror.md), [ReMOVE Lite](./docs/ReMove.md), [X4](./docs/X4.md)
     - Added context menu option to report parameter updates to plugin-host (only in plugin-version of Rack)
