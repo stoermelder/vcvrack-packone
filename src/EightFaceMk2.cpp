@@ -231,11 +231,13 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 	void process(const Module::ProcessArgs& args) override {
 		if (inChange) return;
 
-		if (expandersChanged) {
+		CTRLMODE ctrlMode = (CTRLMODE)Module::params[PARAM_RW].getValue();
+
+		if (expandersChanged || ctrlMode != BASE::ctrlMode) {
 			presetTotal = NUM_PRESETS;
 			Module* m = this;
 			EightFaceMk2Base<NUM_PRESETS>* t = this;
-			t->ctrlMode = (CTRLMODE)Module::params[PARAM_RW].getValue();
+			t->ctrlMode = ctrlMode;
 			int c = 0;
 			while (true) {
 				N[c] = t;
