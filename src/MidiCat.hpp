@@ -65,5 +65,12 @@ struct MidiCatMemBase : Module {
 	virtual std::set<int64_t>* getMemModuleRestriction() { return NULL; }
 };
 
+struct MidiCatFineBase : Module {
+	virtual float getLowRangeVoltage() { return 0.f; }
+	virtual float getHighRangeVoltage() { return 0.f; }
+	virtual float getLowRange() { return 0.f; }
+	virtual float getHighRange() { return 0.f; }
+};
+
 } // namespace MidiCat
 } // namespace StoermelderPackOne
