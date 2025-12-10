@@ -439,9 +439,9 @@ struct MidiCatModule : Module, StripIdFixModule {
 	dsp::SchmittTrigger expClkTrigger[4];
 
 	// FINE-expander
-	Module* expFine = NULL;
-	dsp::SchmittTrigger expFine01Trigger;
-	dsp::SchmittTrigger expFine001Trigger;
+	MidiCatFineBase* expFine = NULL;
+	dsp::SchmittTrigger expFineLowTrigger;
+	dsp::SchmittTrigger expFineHighTrigger;
 
 	MidiCatModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
@@ -569,7 +569,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 				continue;
 			}
 			if (exp->model == modelMidiCatFine && !expFineFound) {
-				expFine = exp;
+				expFine = reinterpret_cast<MidiCatFineBase*>(exp);
 				expFineFound = true;
 				exp = exp->rightExpander.module;
 				continue;
@@ -1226,20 +1226,20 @@ struct MidiCatModule : Module, StripIdFixModule {
 
 	// process-function for the FINE-expander
 	void expFineProcess() {
-		auto e1 = expFine01Trigger.processEvent(expFine->inputs[0].getVoltage());
-		auto e2 = expFine001Trigger.processEvent(expFine->inputs[1].getVoltage());
-		if (e1 == dsp::SchmittTrigger::TRIGGERED && !expFine001Trigger.isHigh()) {
-			setFineMode(true, 0.1f);
+		auto e1 = expFineLowTrigger.processEvent(expFine->getLowRangeVoltage());
+		auto e2 = expFineHighTrigger.processEvent(expFine->getHighRangeVoltage());
+		if (e1 == dsp::SchmittTrigger::TRIGGERED && !expFineHighTrigger.isHigh()) {
+			setFineMode(true, expFine->getLowRange());
 		}
-		if (e1 == dsp::SchmittTrigger::UNTRIGGERED && !expFine001Trigger.isHigh()) {
+		if (e1 == dsp::SchmittTrigger::UNTRIGGERED && !expFineHighTrigger.isHigh()) {
 			setFineMode(false, 0.f);
 		}
 		if (e2 == dsp::SchmittTrigger::TRIGGERED) {
-			setFineMode(true, 0.01f, expFine01Trigger.isHigh());
+			setFineMode(true, expFine->getHighRange(), expFineLowTrigger.isHigh());
 		}
 		if (e2 == dsp::SchmittTrigger::UNTRIGGERED) {
-			if (expFine01Trigger.isHigh())
-				setFineMode(true, 0.1f, true);
+			if (expFineLowTrigger.isHigh())
+				setFineMode(true, expFine->getLowRange(), true);
 			else
 				setFineMode(false, 0.f);
 		}

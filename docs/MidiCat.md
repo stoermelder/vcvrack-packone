@@ -60,7 +60,7 @@ MIDI-CAT supports a technique sometimes called "soft-takeover" or "pickup": If t
 
 - **Pickup (snap)**: MIDI CC messages are ignored until the control reaches the current value of the parameter. After that the MIDI control is "snaped" unto the parameter and will only unsnap if the parameter is changed from within Rack, e.g. manually by mouse or preset-loading.
 
-- **Pickup (jump)**: Same as snap-mode, but the control will loose the parameter when jumping to another value. This mode can be used if your MIDI controller supports switching templates and you don't want your parameters to change when loading a different template.
+- **Pickup (jump)**: Same as snap-mode, but the control will loose the parameter when jumping to another value (in detail: The received MIDI CC value differs by 7% from the actual parameter value, on the default MIDI CC value range 0-127 this is a change by +/-8 from the last MIDI message). This mode can be used if your MIDI controller supports switching templates and you don't want your parameters to change when loading a different template.
 
 <a name="toggle-cc"></a>
 - **Toggle**: Every MIDI _continuous control_ message toggles the parameter between its minimum and maximum value (usually 0 and 1 for switches) (added in v1.9.0).
@@ -228,7 +228,7 @@ There are two modes with different behavior for MIDI-feedback:
 
 ## FINE-expander
 
-FINE is a companion module for MIDI-CAT which provides ability to fine-tune mapped parameters. If the input/gate on either 10% input or 1% input is high, the module switches to fine-tuning mode: In fine-tuning mode, the MIDI control must be moved to its center, then fine-tunes the parameter with 10% range or 1% range, respectively. Fine-tuning for a parameter can only be used on MIDI CC mappings with input mode set to "Pickup (snap)" or "Pickup (jump)". Addtionally, the module switches from 10% range to 1% range and from 1% range to 10% range smoothly, if the 1% input is enabled while 10% input stays high. This means, finer adjustments can be made while holding two buttons without a need to center the MIDI control. After fine-tuning is finished and gates on 10% input and 1% input are low, the mapped MIDI control can pickup the current parameter value again.  
+FINE is a companion module for MIDI-CAT which provides ability to fine-tune mapped parameters. If the input/gate on either 10% input or 1/2/5% input is high, the module switches to fine-tuning mode: In fine-tuning mode, the MIDI control must be moved to its center, then fine-tunes the parameter with 10% range or 1/2/5% range, respectively. Fine-tuning for a parameter can only be used on MIDI CC mappings with input mode set to "Pickup (snap)" or "Pickup (jump)". Addtionally, the module switches from 10% range to 1/2/5% range and from 1/2/5% range to 10% range smoothly, if the 1/2/5% input is enabled while 10% input stays high. This means, finer adjustments can be made while holding two buttons without a need to center the MIDI control. After fine-tuning is finished and gates on 10% input and 1/2/5% input are low, the mapped MIDI control can pickup the current parameter value again.  
 FINE for MIDI-CAT must be placed on the right side of MIDI-CAT and can be used together with the other expanders. High gates for the two inputs can be created by [VCV MIDI-GATE](https://library.vcvrack.com/Core/MIDITriggerToCVInterface) using MIDI note messages or by [STROKE](./Stroke.md) using keyboard hotkeys, for example.
 
 ## Changelog
@@ -286,7 +286,7 @@ FINE for MIDI-CAT must be placed on the right side of MIDI-CAT and can be used t
 - v2.2.0
     - Added FINE-expander
     - Added module restriction list for MEM-expander
-    - Added input mode "Snapped" and "Snapped (short/long)" for CC and Notes for use with snapped parameters
-    - Added handling for MIDI System Reset message for resetting input-mode "Pickup (snap)".
+    - Added input-modes "Snapped" and "Snapped (short/long)" for CC and Notes for use with snapped parameters (e.g. "Steps" on VCV SEQ3)
+    - Added handling for MIDI System Reset message for resetting input-mode "Pickup (snap)"
     - Added context menu option to report parameter updates to plugin-host (only in plugin-version of Rack)
     - Fixed broken MIDI feedback when loading stored mappings on MIDI-CAT MEM
