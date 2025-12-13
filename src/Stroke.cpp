@@ -430,7 +430,7 @@ struct CmdCableOpacity : CmdBase {
 
 
 
-#define OLD_RACK_SDK() RACK_VERSION[0] == '2' && RACK_VERSION[2] == '5'
+#define OLD_RACK_SDK() _RACK_VERSION[0] == '2' && _RACK_VERSION[2] == '5'
 
 struct CmdCableVisibility : CmdBase {
 	void initialCmd(KEY_MODE keyMode) override {
