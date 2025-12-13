@@ -7,6 +7,9 @@
 #include "components/CurveMenuItem.hpp"
 #include "components/SubMenuSlider.hpp"
 #include "components/MidiWidget.hpp"
+#include "components/MenuColorField.hpp"
+#include "components/MenuColorLabel.hpp"
+#include "components/MenuColorPicker.hpp"
 #include "ui/ParamWidgetContextExtender.hpp"
 #include "ui/OverlayMessageWidget.hpp"
 #include <osdialog.h>
@@ -15,6 +18,7 @@ namespace StoermelderPackOne {
 namespace MidiCat {
 
 static const char PRESET_FILTERS[] = "VCV Rack module preset (.vcvm):vcvm";
+static const NVGcolor MAPPING_INDICATOR_COLOR_DEFAULT = nvgRGB(0xff, 0xff, 0x40);
 
 struct MidiCatOutput : midi::Output {
 	int lastValues[128];
@@ -389,7 +393,8 @@ struct MidiCatModule : Module, StripIdFixModule {
 	/** [Stored to Json] */
 	bool locked;
 
-	NVGcolor mappingIndicatorColor = nvgRGB(0xff, 0xff, 0x40);
+	/** [Stored to Json] */
+	NVGcolor mappingIndicatorColor = MAPPING_INDICATOR_COLOR_DEFAULT;
 	/** [Stored to Json] */
 	bool mappingIndicatorHidden = false;
 
@@ -488,6 +493,8 @@ struct MidiCatModule : Module, StripIdFixModule {
 			midiOptions[i] = 0;
 			midiParam[i].reset();
 		}
+		mappingIndicatorHidden = false;
+		mappingIndicatorColor = MAPPING_INDICATOR_COLOR_DEFAULT;
 		locked = false;
 		midiInput.reset();
 		midiOutput.reset();
@@ -1251,6 +1258,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 
 		json_object_set_new(rootJ, "textScrolling", json_boolean(textScrolling));
 		json_object_set_new(rootJ, "mappingIndicatorHidden", json_boolean(mappingIndicatorHidden));
+		json_object_set_new(rootJ, "mappingIndicatorColor", json_string(color::toHexString(mappingIndicatorColor).c_str()));
 		json_object_set_new(rootJ, "locked", json_boolean(locked));
 		json_object_set_new(rootJ, "processDivision", json_integer(processDivision));
 		json_object_set_new(rootJ, "overlayEnabled", json_boolean(overlayEnabled));
@@ -1297,6 +1305,8 @@ struct MidiCatModule : Module, StripIdFixModule {
 		if (textScrollingJ) textScrolling = json_boolean_value(textScrollingJ);
 		json_t* mappingIndicatorHiddenJ = json_object_get(rootJ, "mappingIndicatorHidden");
 		if (mappingIndicatorHiddenJ) mappingIndicatorHidden = json_boolean_value(mappingIndicatorHiddenJ);
+		json_t* mappingIndicatorColorJ = json_object_get(rootJ, "mappingIndicatorColor");
+		if (mappingIndicatorColorJ) mappingIndicatorColor = color::fromHexString(json_string_value(mappingIndicatorColorJ));
 		json_t* lockedJ = json_object_get(rootJ, "locked");
 		if (lockedJ) locked = json_boolean_value(lockedJ);
 		json_t* processDivisionJ = json_object_get(rootJ, "processDivision");
@@ -2721,8 +2731,15 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 		menu->addChild(createSubmenuItem("User interface", "",
 			[=](Menu* menu) {
 				menu->addChild(createBoolPtrMenuItem("Text scrolling", "", &module->textScrolling));
-				menu->addChild(createBoolPtrMenuItem("Hide mapping indicators", "", &module->mappingIndicatorHidden));
 				menu->addChild(createBoolPtrMenuItem("Lock mapping slots", "", &module->locked));
+				menu->addChild(new MenuSeparator);
+				menu->addChild(createMenuLabel("Mapping indicators"));
+				menu->addChild(createBoolPtrMenuItem("Hide", "", &module->mappingIndicatorHidden));
+				menu->addChild(construct<MenuColorLabel>(&MenuColorLabel::fillColor, &module->mappingIndicatorColor));
+				menu->addChild(construct<MenuColorPicker>(&MenuColorPicker::color, &module->mappingIndicatorColor));
+				menu->addChild(createMenuItem("Reset color", "", [=]() {
+					module->mappingIndicatorColor = MAPPING_INDICATOR_COLOR_DEFAULT;
+				}));
 			}
 		));
 		menu->addChild(createBoolPtrMenuItem("Status overlay", "", &module->overlayEnabled));
