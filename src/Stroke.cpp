@@ -429,20 +429,17 @@ struct CmdCableOpacity : CmdBase {
 }; // struct CmdCableOpacity
 
 
-
-#define OLD_RACK_SDK() _RACK_VERSION[0] == '2' && _RACK_VERSION[2] == '5'
-
 struct CmdCableVisibility : CmdBase {
 	void initialCmd(KEY_MODE keyMode) override {
 		if (APP->scene->rack->getCableContainer()->visible) {
 			APP->scene->rack->getCableContainer()->hide();
-#if OLD_RACK_SDK == 0
+#ifndef OLD_RACK_SDK
 			APP->scene->rack->getPlugContainer()->hide();
 #endif
 		}
 		else {
 			APP->scene->rack->getCableContainer()->show();
-#if OLD_RACK_SDK == 0
+#ifndef OLD_RACK_SDK
 			APP->scene->rack->getPlugContainer()->show();
 #endif
 		}
