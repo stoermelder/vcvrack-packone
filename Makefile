@@ -1,4 +1,6 @@
 RACK_DIR ?= ../..
+RACK_VERSION = $(shell sed -n 's/<h3>\(.*\)(.*).*/\1/p' $(RACK_DIR)/CHANGELOG.html | head -n 1)
+FLAGS += -D_RACK_VERSION=$(RACK_VERSION)
 
 SOURCES += $(wildcard src/*.cpp) $(wildcard src/mb/*.cpp) $(wildcard src/drivers/*.cpp) src/modules/midikit/MidiKit.cpp src/modules/midikit/elk.c
 
