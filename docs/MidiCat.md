@@ -287,6 +287,7 @@ FINE for MIDI-CAT must be placed on the right side of MIDI-CAT and can be used t
     - Added FINE-expander
     - Added module restriction list for MEM-expander
     - Added input-modes "Snapped" and "Snapped (short/long)" for CC and Notes for use with snapped parameters (e.g. "Steps" on VCV SEQ3)
+    - Added color setting for mapping indicators
     - Added handling for MIDI System Reset message for resetting input-mode "Pickup (snap)"
     - Added context menu option to report parameter updates to plugin-host (only in plugin-version of Rack)
     - Fixed broken MIDI feedback when loading stored mappings on MIDI-CAT MEM
