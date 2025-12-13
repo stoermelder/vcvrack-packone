@@ -2,7 +2,7 @@ RACK_DIR ?= ../..
 
 RACK_VERSION = $(shell sed -n 's/<h3>\(.*\..*\)\..*(.*)<\/h3>/\1/p' $(RACK_DIR)/CHANGELOG.html | head -n 1)
 ifeq ($(RACK_VERSION), 2.5)
-	FLAGS += -DRACK_OLD_SDK
+	FLAGS += -DRACK_SDK_2_5
 endif
 
 SOURCES += $(wildcard src/*.cpp) $(wildcard src/mb/*.cpp) $(wildcard src/drivers/*.cpp) src/modules/midikit/MidiKit.cpp src/modules/midikit/elk.c

@@ -433,13 +433,13 @@ struct CmdCableVisibility : CmdBase {
 	void initialCmd(KEY_MODE keyMode) override {
 		if (APP->scene->rack->getCableContainer()->visible) {
 			APP->scene->rack->getCableContainer()->hide();
-#ifndef OLD_RACK_SDK
+#ifndef RACK_SDK_2_5
 			APP->scene->rack->getPlugContainer()->hide();
 #endif
 		}
 		else {
 			APP->scene->rack->getCableContainer()->show();
-#ifndef OLD_RACK_SDK
+#ifndef RACK_SDK_2_5
 			APP->scene->rack->getPlugContainer()->show();
 #endif
 		}
