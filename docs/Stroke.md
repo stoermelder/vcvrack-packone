@@ -133,3 +133,5 @@ The module also supports mouse-button events: If your mouse has more than three 
     - Added command "Minimize window"
     - Fixed wrong hotkey modifier on Mac (Ctrl instead of Cmd)
     - Fixed broken "Zoom to module" and "Zoom toggle" commands (#382)
+- v2.2.0
+    - Fixed cables' "Toggle visibility" command
