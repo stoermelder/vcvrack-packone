@@ -15,7 +15,7 @@ There are some settings on the context menu available:
 * **Ignore zoom level**: By default GOTO recalls the zoom level at binding time. Activating this option leaves the current zoom level untouched.
 * **Jump position**: This option causes the bound module to be centered on the screen or moved to the top left of the screen.
 
-## _INPUT_-port
+### _INPUT_-port
 
 It is possible to trigger a view-port change by CV which is especially useful with one of the MIDI-modules, like MIDI-CV, MIDI-GATE or MIDI-CC. As long as a cable is connected to the port the hotkeys SHIFT+1..0 are deactivated. There are two modes available: 
 
@@ -27,7 +27,7 @@ It is possible to trigger a view-port change by CV which is especially useful wi
 
 ![GOTO C5-A5](./Goto-c5.png)
 
-## Changelog
+### Changelog
 
 - v1.6.0
     - Initial release of GOTO

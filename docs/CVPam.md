@@ -10,7 +10,7 @@ Using CV-PAM in combination with CP-MAP you can synchronize parameter changes of
 
 You can disable text scrolling if it distracts you (since v1.0.2).
 
-## Additional features
+### Additional features
 
 - Mapping many parameters can result in quite high CPU usage. If automation at audio rate is not needed you can disable "Audio rate processing" on the context menu: This way only on every 32th audio sample the mapped parameter is updated and the CPU usage drops to about a 32th (since v1.4.0).
 
@@ -22,4 +22,4 @@ You can disable text scrolling if it distracts you (since v1.0.2).
 
 - Scrolling Rack's current view by mouse is interrupted by CV-PAM's list widget while hovered. As this behavior can be annoying all scrolling events are ignored if _Lock mapping slots_ is enabled (since v1.7.0).
 
-CV-PAM was added in v1.0 of PackOne.
+CV-PAM was introduced in v1.0 of PackOne.

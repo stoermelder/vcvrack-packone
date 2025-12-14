@@ -16,7 +16,7 @@ It has been said that such functionality is somehow against the idea of "virtual
 
 You can disable text scrolling if it distracts you by context menu option (since v1.0.2).
 
-## Mapping parameters
+### Mapping parameters
 
 You can bind up to 32 mapping slots onto parameters of any module in your patch. You do this by activating a mapping slot with a mouse click. As long the mapping-mode is active the slot shows "Mapping...". Then click on the knob of the module you like to automate. The mapping slot binds to the knob by showing its name, also a small pink mapping indicator is shown next to the parameter. The mapping mode automatically moves to the next empty slot and can be deactivated by clicking anywhere in Rack except a parameter.
 
@@ -32,19 +32,19 @@ Before v1.9 of CV-MAP input channels 1-32 were "hard-wired" to mapping slots 1-3
 <a name="input-labels"></a>
 For making the channel assignment more intuitive each input channel can be labeled with some custom text: These labels are managed by context menus on the two input ports. This is even more useful with the [CTX-expander](CVMap.md#ctx-expander).
 
-## Unlocking parameters
+### Unlocking parameters
 
 By default mapped parameters can't be changed manually as the incoming voltage constantly sets the value of the parameter. To loosen this limitation you have an option to "unlock" parameters through the context menu: In "Unlock"-mode you can manually change parameters as long as their input voltage stays constant. However, when the input voltage changes the parameter will be set to the new value. The input voltage overrules manual changes.
 
 ![CV-MAP Intro](./CVMap-unlocked.gif)
 
-## Slew-limiting and input-scaling
+### Slew-limiting and input-scaling
 
 Added in v1.9: Each mapping slot has its own setting for slew-limiting of the input CV which applies an exponential filter. Larger values for _Slew_ give an overall steady movement of the mapped parameter on fast input changes.
 
 Added in v1.9: Each mapping slot has also two sliders (_Low_ and _High_) for scaling incoming CV values which allows you to adjust the range of the CV control and how the mapped parameter is affected. By setting the two sliders accordingly almost any linear transformation is possible, even inverting a CV control. For convenience some presets are provided and the current scaling transformation is shown on the context menu.
 
-## Additional features
+### Additional features
 
 - Mapping many parameters can result in quite high CPU usage. If automation at audio rate is not needed you can disable "Audio rate processing" on the context menu: This way only on every 32th audio sample the mapped parameter is updated and the CPU usage drops to about a 32th (since v1.4).
 

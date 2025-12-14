@@ -49,5 +49,4 @@ Many modules have internal states that are not reflected in their panel paramete
 - **Parameter change reporting in VCV Rack plugins**:
   By default, parameter changes are not reported back to the plugin host when using MIRROR in a plugin version of VCV Rack. In **v2.2.0**, an option was added to enable this behavior, though it may increase plugin CPU usage.
 
-
 MIRROR was introduced in v1.6 of PackOne.

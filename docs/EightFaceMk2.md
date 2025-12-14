@@ -10,7 +10,7 @@
 
 ![8FACE mk2 intro](./EightFaceMk2-intro.gif)
 
-## Binding modules
+### Binding modules
 
 At least one module must be bound to 8FACE mk2 before the module can be used. It provides two ways for binding modules which need to be enabled on the contextual menu:
 
@@ -38,7 +38,7 @@ All bound modules are decorated with a colored bounding box. The color of the bo
 
 ![8FACE mk2 bind select](./EightFaceMk2-box.gif)
 
-## Saving snapshots in write-mode 
+### Saving snapshots in write-mode 
 
 Write-mode is used to save snapshots in 8FACE mk2 after some modules have been bound: A snapshot consists of the presets all bound modules. You enter write-mode by flipping the switch on the bottom to the _W_-position. To store a snapshot simply short press one of the 8 snapshot-buttons and the LED on a snapshot-button is lit in red when a slot is in use. To clear a snapshot long-press the button. 
 
@@ -66,11 +66,11 @@ There are also some options on the context menu of the snapshot-buttons:
 A blinking white LED signals the snapshot applied at last. Please keep in mind that you can change bound modules manually and these changes will not be recognized by 8FACE mk2.  
 In write-mode any input on the _CV_-port is ignored and sequencing is disabled.
 
-## Auto-mode
+### Auto-mode
 
 Auto-mode (added in v2.0.0) stores presets automatically to the current slot right before moving on to the next slot. A typical workflow would look like this: Store a few presets using Write-mode as usual. Afterwards flip the switch to the middle "A"-position and start slow sequencing using the _SLOT_-port. Imagine slot 1 is active and slot 2 will be loaded next. Right before moving to slot 2 the current state of the module is stored into slot 1 preserving all adjustments made in the meantime. In contrast, Read-mode would simply load slot 2 and the preset stored in slot 1 will stay unchanged, discarding all changes made to the module. Note: Empty slots will stay empty, even in Auto-mode.
 
-## Sequencing and selecting snapshots
+### Sequencing and selecting snapshots
 
 The fun begins when you use the port labelled _CV_ for selecting snapshots by CV. Although there are 8 snapshot slots available it is possible to use less slots for sequencing: You can adjust the number of active slots (i.e. sequence length) by long-pressing a snapshot-button while in read-mode. The LEDs turn off completely for slots that are currently disabled.
 
@@ -101,14 +101,14 @@ Modes for _CV_ on the contextual menu:
 - **Arm**  
   This mode is a kind of "buffered trigger": First apply a clock signal on _CV_. Then you "arm" any snapshot manually or by MIDI-mapping by its button (resulting in a yellow LED) which will be activated on the next clock trigger (white LED). This mode allows you manual snapshot activation synchronized to a clock.
 
-## +8 expander
+### +8 expander
 
 8FACE mk2 provides 8 snapshot-slots and supports extending this number with +8 expanders: The expander must be placed on the right side of 8FACE mk2. Up to fifeteen instances of +8 can be added to one instance of 8FACE mk2, providing 8 * 16 = 128 snapshot-slots in total.  
 Once placed next to 8FACE mk2 the expander works and behaves the same way 8FACE mk2 does and the setup is done analogously. +8 itself provides no further options.
 
 ![+8 expander](./EightFaceMk2-8.gif)
 
-## Tips
+### Tips
 
 - 8FACE mk2 is designed to apply different presets onto modules, while stoermelder [TRANSIT](./Transit.md) is designed to morph parameter-snapshots. Morphing between presets of modules is not possible because of technical reasons.
 
@@ -120,7 +120,7 @@ Once placed next to 8FACE mk2 the expander works and behaves the same way 8FACE 
 
 - 8FACE mk2 is using "Safe-mode" as default setting for loading presets (added in v2.2.0). Safe-mode loads presets in a slower way (technically said, preset-loading in done on the next rendered frame on the screen), but is stable. Disabling "Safe-mode" will load presets faster, but can cause crashes or other issues. "Safe-mode" won't make any noticable difference if snapshots are loaded manually by clicking snapshot buttons.
 
-## Changelog
+### Changelog
 
 - v1.9.0
     - Initial release of 8FACE mk2 and expander +8

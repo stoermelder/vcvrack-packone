@@ -8,21 +8,21 @@ Applying triggers on the ports _INC_ and _DEC_ will increase and decrease, respe
 
 ![PILE increment/decrement](./Pile-incdec.gif)
 
-## SLEW
+### SLEW
 
 By default the output voltage jumps immediately to the target volume. By using the parameter labeled SLEW or its dedicated input-port (range 0..5V) the output slope will be limited with an exponential slew up to 5 seconds.
 
 ![PILE slew](./Pile-slew.png)
 
-## RESET
+### RESET
 
 PILE features a single _RESET_-port which can be used to set the output voltage induced by every input voltage change on _RESET_.
 
 POLY-PILE features a _RESET_-port for triggering a reset to 0V if no cable is connected to VOLT. In case of a cable patched to VOLT the output voltage is set to its incoming voltage. While the _RESET_-port is monophonic the VOLT-port is polyphonic and normalized to the first channel.
 
-## Tips
+### Tips
 
 PILE and POLY-PILE come quite handy together with the module MIDI-STEP which outputs increment and decrement triggers for endless rotary knobs on your MIDI-controller.
 
-PILE was added in v1.5 of PackOne.  
-POLY-PILE was added in v1.6 of PackOne.
+PILE was introduced in v1.5 of PackOne.  
+POLY-PILE was introduced in v1.6 of PackOne.
