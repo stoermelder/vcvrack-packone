@@ -4,11 +4,11 @@ MACRO is an utility module for controlling four different parameters at once. It
 
 ![MACRO intro](./Macro-intro.png)
 
-## Mapping parameters
+### Mapping parameters
 
 You can bind up to four parameters of any module in your patch. You do this by activating a mapping button by click. While mapping is active the led is lit in red and turns green after you click onto a knob or fader of the module you like to control, also a small pink mapping indicator is shown next to the parameter.
 
-## Slew-limiting and scaling
+### Slew-limiting and scaling
 
 Each mapping slot has its own setting for slew-limiting of the input value which applies an exponential filter. Small values for _Slew_ are smoothing incoming values and larger values  give an overall steady movement of the mapped parameters or CV outputs on fast input changes.
 
@@ -16,14 +16,14 @@ Each mapping slot and CV output has also two sliders (_Low_ and _High_) for scal
 
 ![MACRO context](./Macro-scaling.gif)
 
-## _IN_-port
+### _IN_-port
 
 The _IN_-port is optional in use and MACRO can be used leaving it unconnected. In this case the input value is taken from the big knob's current position. If voltage is applied to IN the knob acts as an attenuator, also the voltage range can be switch from unipolar (0..10V) to bipolar (-5..5V) on the context menu.
 
-## Additional features
+### Additional features
 
 - Mapping parameters can result in quite high CPU usage. As controlling parameters at audio rate is not needed in most of the cases you can switch four different performance settings using _Precision_ option on the context menu.
 
 - Parameter changes are not reported back to the plugin-host by default if MACRO is used in a plugin-version of VCV Rack. In v2.2.0 a context menu option has been added to enable this behavior - it might cause higher CPU usage of the plugin.
 
-MACRO was added in v1.8 of PackOne.
+MACRO was introduced in v1.8 of PackOne.

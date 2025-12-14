@@ -1,19 +1,24 @@
 # stoermelder MIDI-PLUG
 
-MIDI-PLUG is an utility module for MIDI-routing: It allows merging messages of different MIDI ports, filtering MIDI messages by channel and duplicating messages to two different output ports. 
+MIDI-PLUG is an utility module for MIDI routing that enables:
+- Merging messages from different MIDI ports
+- Filtering MIDI messages by channel
+- Duplicating messages to two separate output ports
 
 ![MIDI-PLUG intro](./MidiPlug-intro.png)
 
-Each of the two output (lower section) ports can be configured in two different operating modes:
+Each of the two output ports (located in the lower section) can be configured in different operating modes:
 
-- "Thru" sends every MIDI message untouched to the MIDI device.
+- "Thru" sends every MIDI message unmodified to the MIDI device.
 
-- The selection of a specific MIDI channel makes three sub-modes available:
+- When a specific MIDI channel is selected, three sub-modes become available:
 
-  - "Replace" replaces the MIDI channel of all messages with the selected channel.
-  - "Filter" filters to the selected MIDI channel, all other MIDI channels are ignored.
-  - "Block" blocks the selected MIDI channel, all other MIDI channels pass through.
+  - **Replace** replaces the MIDI channel of all messages with the selected channel.
+  - **Filter** filters to the selected MIDI channel, all other MIDI channels are ignored.
+  - **Block** blocks the selected MIDI channel, all other MIDI channels pass through unaffected.
 
-System messages pass through unaffected in every case. Please note that the input ports (upper section) also allow MIDI channel filtering before routed to the output ports.
+Additionally, the input ports (upper section) also support MIDI channel filtering before routing to the output ports.
 
-MIDI-PLUG was added in v1.9 of PackOne.
+Note: System messages always pass through unaffected in all modes.
+
+MIDI-PLUG was introduced in v1.9 of PackOne.

@@ -4,15 +4,15 @@
 
 ![4ROUNDS Intro](./FourRounds-intro.gif)
 
-## Section _TRIG_
+### Section _TRIG_
 
 A new contest begins whenever a trigger is received. Winners of each 1-on-1 match are randomly selected until only one signal remains as the overall winner.
 
-## Section _INV_
+### Section _INV_
 
 The _INV_ function inverts the module's state. Losers of all 1-on-1 matches become winners, and winners become losers.
 
-## Modes
+### Modes
 
 The module provides currently three different operation modes selectable on the context menu:
 

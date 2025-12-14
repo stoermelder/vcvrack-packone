@@ -39,4 +39,4 @@ I don't own all of following devices so I can provide only limited supported for
 
 - **Hercules DJControl Starlight**
 
-MIDI-STEP was added in v1.5 of PackOne.
+MIDI-STEP was introduced in v1.5 of PackOne.

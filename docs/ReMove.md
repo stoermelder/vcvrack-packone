@@ -8,11 +8,11 @@ A really epic [tutorial video](https://www.youtube.com/watch?v=Dd0EESJhPZA) from
 
 Another fabulous [tutorial video](https://www.youtube.com/watch?v=P9bFPuCLuMs) from [Artem Leonov](https://artemleonov.bandcamp.com/) using 8 instances of ReMOVE Lite with MIDI mapping.
 
-## Mapping of parameters
+### Mapping of parameters
 
 Parameter mapping is done by activating the mapping mode by mouse click on the display on the top. While showing "Mapping..." click on any parameter of any module in Rack to bind the module. You can unbind the parameter using the context menu of the display. Also, you can "locate" the module and mapped parameter if you got lost inside your rack.
 
-## Sample rate and number of sequences
+### Sample rate and number of sequences
 
 The module has a built-in storage for 64k samples. At full audio samplerate of 48kHz this storage corresponds to 1.3 seconds of recording. Such high precision is not needed for parameter automation, so ReMOVE Lite allows a samplerate of 2kHz at most. The lowest setting is 15Hz and gives you 15 samples per second which can still be ok for slowly changing parameters or low timing accuracy.
 Be careful using higher sample rates: Recorded sequences are stored inside the patchfile and these can get quite huge if several modules are used (to be precise: 64k samples each 4 byte size plus overhead for storing in JSON format, results in 2-3MB).
@@ -21,7 +21,7 @@ ReMOVE Lite can be configured to record 1, 2, 4 or 8 different sequences. The ma
 
 Both settings for samplerate and number of sequences can be found in the context menu.
 
-## Recording-Modes
+### Recording-Modes
 
 There are four different recording modes available, changed by context menu option:
 
@@ -38,7 +38,7 @@ This mode records exactly one sample of the value of the mapped parameter. This 
 
 Recording is only possible when a parameter is mapped, even when using the IN-port.
 
-## Play-Modes
+### Play-Modes
 
 Some modes for playback have been implemented:
 
@@ -50,7 +50,7 @@ Some modes for playback have been implemented:
 
 You can use the _PHASE_-input if you want a different playback speed or a completely different playback pattern. Added in v1.3.0: Additionally you change the SMTH-parameter for smoothing the recorded curve and for value jumps on sequence end or sequence change.
 
-## SEQ#-input
+### _SEQ#_-input
 
 The _SEQ#_-input allows you to select sequences by CV. There are three different modes available:
 
@@ -66,7 +66,7 @@ The ports _RUN_ and _RESET_ and their buttons are disabled and can't be used as 
 
 ![ReMOVE PHASE-input](./ReMove-phase.png)
 
-## RESET- and RUN-ports
+### _RESET_- and _RUN_-ports
 
 Same behaviour as most sequencers: _RUN_ can be configured for playback as "high" or "trigger", a trigger on _RESET_ restarts the currently selected playback mode from the beginning. Inputs are Disabled when currently recording or if _PHASE_-input is connected.
 
@@ -76,25 +76,25 @@ Using ReMOVE in a sequencer scenario that records a random source and plays it b
 
 ![ReMOVE sequencing](./ReMove-seq.gif)
 
-## REC-input
+### _REC_-input
 
-REC-input is used for starting and stopping recordings by CV trigger. Be aware that a trigger with record modes "Touch" and "Move" arms the recording only.
+_REC_-input is used for starting and stopping recordings by CV trigger. Be aware that a trigger with record modes "Touch" and "Move" arms the recording only.
 
-## REC-output
+### _REC_-output
 
 The _REC_-output can be configured as "gate" or "trigger" everytime a recording starts or stops.
 
-## IN-input
+## _IN_-input
 
 The port labeled _IN_ accepts 0..10V or -5..5V (configuration option is found in the context menu) and can be used to record parameter automation data from any external CV source. All parameter movements are ignored during a recording when a cable is connected to this port.
 
 ![ReMOVE IN-input](./ReMove-in.png)
 
-## OUT-output
+### _OUT_-output
 
 The _OUT_-port outputs a voltage for the recorded sequence. It can be configured for ranges 0..10V or -5..5V. Since v1.0.4 it outputs also CV while recording for monitoring purposes. Since v1.3.0 there is a third option EOC on the context-menu for outputting a trigger on the _OUT_-port every time the playback reaches the end of a sequence.
 
-## Tips
+### Tips
 
 - When duplicating an instance of the module all recorded sequences are also duplicated.
 - The module can be re-mapped to another parameter after a sequence has been recorded.
@@ -103,4 +103,4 @@ The _OUT_-port outputs a voltage for the recorded sequence. It can be configured
 - A simple compression is implemented to reduce the size of the patchfile.
 - Parameter changes are not reported back to the plugin-host by default if ReMOVE Lite is used in a plugin-version of VCV Rack. In v2.2.0 a context menu option has been added to enable this behavior - it might cause higher CPU usage of the plugin.
 
-ReMOVE Lite was added in v1.0.2 of PackOne.
+ReMOVE Lite was introduced in v1.0.2 of PackOne.

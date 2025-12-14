@@ -10,15 +10,15 @@
 
 <a href="https://www.youtube.com/watch?v=S2j6W2nvuC8" target="_blank"><img src="https://img.youtube.com/vi/S2j6W2nvuC8/0.jpg" style="width:100%" /></a>
 
-## Usage
+### Usage
 
 Place 8FACE on the right side next to the module you like to manage. The triangle shaped LED begins to flash if a connection is established successfully. You can detach 8FACE and re-attach to another instance of the same module. When you place 8FACE next to a module and the LED turns red it means it had been configured for another model. In this case you can either check the model on the context menu or initialize 8FACE to its initial state. Since v1.2.0 you can place 8FACE on the left side of a module after changing the according setting on the context menu.
 
-## Write-mode
+### Write-mode
 
 Write-mode is used to save presets in 8FACE. You enter write mode by flipping the switch on the bottom to the "W"-position. To store a preset simply configure your module next to 8FACE and then short press a slot-button numbered 1 to 8. The LEDs next to the slot-button turn red when a slot is already in use. To clear a slot long-press a button. In write-mode any input on the SLOT-port is ignored and sequencing is disabled.
 
-## Read-mode
+### Read-mode
 
 Read-mode is enabled by default and can be selected by the switch on the bottom in "R"-position. LEDs lit in bright green signal slots in use, dim green slots are active but empty. A blue LED marks a slot which preset is currently applied to the module on the side. You can manually apply a preset with a short-press.
 
@@ -26,7 +26,7 @@ Read-mode is enabled by default and can be selected by the switch on the bottom 
 
 Auto-mode (added in v1.10.0) stores presets automatically to the current slot right before moving on to the next slot. A typical workflow would look like this: Store a few presets using Write-mode as usual. Afterwards flip the switch to the middle "A"-position and start slow sequencing using the _SLOT_-port. Imagine slot 1 is active and slot 2 will be loaded next. Right before moving to slot 2 the current state of the module is stored into slot 1 preserving all adjustments made in the meantime. In contrast, Read-mode would simply load slot 2 and the preset stored in slot 1 will stay unchanged, discarding all changes made to the module. Note: Empty slots will stay empty, even in Auto-mode.
 
-## SLOT-port
+### SLOT-port
 
 The fun begins when you use the port labelled "SLOT" for selecting preset slots by CV. Although there are eight slots available it is possible to use less slots for sequencing: You can adjust the number of useable slots (i.e. sequence length) by long-pressing a slot-button while in read-mode. The LED turns off completely for slots that are currently disabled.
 
@@ -63,11 +63,11 @@ There are different modes for SLOT-port available, configured by context menu op
 
 With the option "Autoload first preset" on the context menu you can autoload the first preset slot when a preset of 8FACE itself is loaded. This is useful when changing presets of 8FACE with another instance of 8FACE to aquire even more preset slots. The option "Autoload last active preset" works the same way.
 
-## Tips 
+### Tips 
 
 - 8FACE is using "Safe-mode" as default setting for loading presets (added in v2.2.0). Safe-mode loads presets in a slower way (technically said, preset-loading in done on the next rendered frame on the screen), but is stable. Disabling "Safe-mode" will load presets faster, but can cause crashes or other issues. "Safe-mode" won't make any noticable difference if snapshots are loaded manually by clicking snapshot buttons.
 
-## Changelog
+### Changelog
 
 - v1.0.5
     - Initial release of 8FACE
