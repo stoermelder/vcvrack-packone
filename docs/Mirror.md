@@ -1,38 +1,53 @@
 # stoermelder MIRROR
 
-MIRROR is a utility module used for synchronizing parameters of any module across multiple instances of the same module. It is especially useful for monophonic modules in a polyphonic patch and the need to modulate or change all or some parameters the same time by the same amount.
+MIRROR is a utility module designed to synchronize parameters across multiple instances of the same module. It is particularly useful for ensuring that monophonic modules within a polyphonic patch share the same parameter values or changes simultaneously.
 
-![MIRROR intro](./Mirror-intro.png)
+![MIRROR Intro](./Mirror-intro.png)
 
-First, MIRROR must be bound to another module by placing it directly to the left of MIRROR and using the option _Bind source module (left)_. All parameters get mapped by MIRROR. Afterwards you can place another instance of the same module to the right of MIRROR and use the context menu option _Map module (right)_ to map all parameters. Each parameter is now linked. You can repeat this procedure or, alternatively, you can automatically add a new instance of the module using _Add and map new module_.  
-After the modules are bound to the left and right of MIRROR you can place them anywhere you want in Rack, mapped modules don't need to stay directly attached to MIRROR.
+### How to use MIRROR
 
-![MIRROR CV-ports](./Mirror-map.gif)
+- Place MIRROR between two instances of the same module.
+- Select the **_Bind source module (left)_** option to map all parameters of the module on the left side of MIRROR.
+- Place another instance of the same module to the right of MIRROR and select **_Map module (right)_** from the context menu to link all parameters.
+- Alternatively, use **_Add and map new module_** to automatically add and map a new instance.
 
-It is possible to unmap some parameters if sychronization is not desired. If the parameter is unmapped on the source module all synchronized instances will also drop the mapping. If a parameter is unmapped on a synchronized module only this instance won't mirror the parameter anymore.
+Once bound, mapped modules can be placed anywhere in your Rack patch. They do not need to remain directly connected to MIRROR.
 
-![MIRROR CV-ports](./Mirror-unmap.gif)
+![MIRROR Mapping Example](./Mirror-map.gif)
 
-## CV-ports
+### Unmapping Parameters
 
-The module has eight input-ports (range 0..10V) which can be dynamically assigned to any parameter of the mapped modules and control it by CV. 
+- You can selectively **unmap** parameters if synchronization is not required for specific parameters.
+  - If a parameter is unmapped on the **source module**, all synchronized instances will also lose the mapping.
+  - If a parameter is unmapped on a **synchronized module**, only that specific instance will no longer mirror the parameter.
 
-![MIRROR CV-ports](./Mirror-cv.gif)
+![MIRROR Unmapping Example](./Mirror-unmap.gif)
 
-## Presets
+### CV-Ports
 
-Many modules have an internal state which has nothing to do with the parameters on the panel. You can't automatically sync this internal state using MIRROR but you can trigger a manual sync to get all modules into the same initial state.
+MIRROR includes eight input ports (0–10V range) that can be dynamically assigned to any parameter of the mapped modules. These ports allow you to control parameters via external CV signals.
 
-![MIRROR sync](./Mirror-sync.gif)
+![MIRROR CV-Ports Example](./Mirror-cv.gif)
 
-## Additional features
+### Presets
 
-- Mapping many parameters can result in quite high CPU usage. If automation at audio rate is needed you can enable _Audio rate processing_ on the context menu: By default only on every 32th audio sample every mapped parameter is updated and the CPU usage is reduced to about a 32th.
+Many modules have internal states that are not reflected in their panel parameters. While MIRROR cannot automatically sync these internal states, you can manually trigger a **sync** to ensure all mirrored modules start in the same initial state.
 
-- If you find the mapping indicators distracting you can disable them on the context menu.
+![MIRROR Sync Example](./Mirror-sync.gif)
 
-- Added in v1.8.0: The context menu option _Sync module presets_ works even if the mirrored module does not have any parameters, like [VCV Host](https://library.vcvrack.com/VCV-Host/Host).
+### Additional Features
 
-- Parameter changes are not reported back to the plugin-host by default if MIRROR is used in a plugin-version of VCV Rack. In v2.2.0 a context menu option has been added to enable this behavior - it might cause higher CPU usage of the plugin.
+- **CPU Optimization**:
+  Mapping many parameters can increase CPU usage. If audio-rate automation is required, enable **_Audio rate processing_** in the context menu. By default, parameters are updated only every **32nd audio sample**, reducing CPU usage to roughly **1/32th** of the original load.
 
-MIRROR was added in v1.6 of PackOne.
+- **Disable mapping indicators**:
+  If the mapping indicators are distracting, you can disable them via the context menu.
+
+- **Syncing modules without parameters**:
+  Added in **v1.8.0**: The **_Sync module presets_** option works even if the mirrored module lacks parameters, such as with **[VCV Host](https://library.vcvrack.com/VCV-Host/Host)**.
+
+- **Parameter change reporting in VCV Rack plugins**:
+  By default, parameter changes are not reported back to the plugin host when using MIRROR in a plugin version of VCV Rack. In **v2.2.0**, an option was added to enable this behavior, though it may increase plugin CPU usage.
+
+
+MIRROR was introduced in v1.6 of PackOne.
