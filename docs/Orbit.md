@@ -1,32 +1,48 @@
 # stoermelder ORBIT
 
-ORBIT is a module designed for use in polyphonic scenarios: It adjusts the panning of each channel/voice of a polyphonic cable in the stereo image. 
+ORBIT is a module designed for use in polyphonic scenarios, allowing precise control over the panning of each channel/voice within a stereo image.
 
-![ORBIT intro](./Orbit-intro.png)
+![ORBIT Intro](./Orbit-intro.png)
 
-- _INPUT_ is the input signal, should be polyphonic.
+### Inputs and Controls
 
-- _TRIG_ triggers a new random position. If the trigger signal is monophonic all input channels get a new random position, if the trigger signal is polyphonic the corresponding input channel gets a new position, all other input channels stay unchanged.
+- **_INPUT_**: The polyphonic input signal to be processed.
 
-- _Spread_ adjusts the maximum amount of panning from 0% to 100%.  
+- **_TRIG_**: Triggers a new random panning position for one or more channels.
+  - If the trigger signal is **monophonic**, all input channels receive a new random panning position.
+  - If the trigger signal is **polyphonic**, only the corresponding input channel(s) receive a new panning position, while others remain unchanged.
 
-- _Drift_ controls, if the position in the stereo image is statically assigned or moving: Values from -1 to 0 drift the positions to the left or right, depending on the randomly assigned side of the input channel, values 1 to 0 drift to the center.
+- **_Spread_**: Adjusts the maximum panning range from **0%** (center) to **100%** (full stereo width).
 
-ORBIT provides different options for generating the random positions of the input channels, controlled by the _Distribution_ setting in the context menu:
+- **_Drift_**: Controls the dynamic behavior of panning positions.
+  - Values from **-1 to 0** gradually shift positions to the **left** or **right**, based on the randomly assigned side of the input channel.
+  - Values from **1 to 0** gradually shift positions toward the **center**.
 
-- **Normal**: The positions are generated according to a [normal distribution](https://en.wikipedia.org/wiki/Normal_distribution), a center position is more likely than the extreme positions.
+### Random Position Generation
 
-- **Normal (mirrored)**: The positions are generated according to a [normal distribution](https://en.wikipedia.org/wiki/Normal_distribution) but in a kind of "mirrored" sense, the extreme positions are more likely than center positions.
+ORBIT offers various methods for generating random panning positions, controlled via the **_Distribution_** setting in the context menu:
 
-- **Uniform**: The positions are generated [uniformly distributed](https://en.wikipedia.org/wiki/Continuous_uniform_distribution), every position in the stereo field has the same probability.
+- **Normal**:
+  Positions follow a [normal distribution](https://en.wikipedia.org/wiki/Normal_distribution), where center positions are more probable than extreme positions.
 
-- **External**: The position are generated from an external input connected to the _DIST_-port, it is used like a "Sample & Hold" or "Sample & Glide" if _Drift_ is set unequal to 0. The input can be monophonic or polyphonic and an input voltage 0-10V is expected.
+- **Normal (Mirrored)**:
+  Positions follow a mirrored [normal distribution](https://en.wikipedia.org/wiki/Normal_distribution), where extreme positions are more probable than center positions.
+
+- **Uniform**:
+  Positions are [uniformly distributed](https://en.wikipedia.org/wiki/Continuous_uniform_distribution) across the stereo field, with every position having equal probability.
+
+- **External**:
+  Panning positions are derived from an external input connected to the **_DIST_** port.
+  - Acts like a "Sample & Hold" or "Sample & Glide" if **_Drift_** is set to a non-zero value.
+  - Supports both **monophonic** and **polyphonic** inputs, expecting a voltage range of **0–10V**.
+
+### Output
 
 The output can be configured as polyphonic (with the same number of channels as _IN_) or summed to single channels for left and right.
 
-## Changelog
+### Changelog
 
 - v1.9.0
-    - Initial release of ORBIT
+  - Initial release of ORBIT
 - v2.0.0
-    - Added output level control (#286)
+  - Added output level control (#286)
