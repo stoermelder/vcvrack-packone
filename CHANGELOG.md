@@ -1,5 +1,7 @@
 ## 2.2.0
 
+Modules [8FACE, 8FACEx2](./docs/EightFace.md) and [8FACE mk2](./docs/EightFaceMk2.md) are now considered stable again. A "Safe-mode" has been implemented, which loads presets on the next rendered frame, introducing a minor delay. Disabling "Safe-mode" will load presets more quickly but may lead to crashes or other issues. If you load presets manually by clicking snapshot buttons, you'll will not notice any difference with "Safe-mode".
+
 ### New modules
 
 - Module [MIDI-CAT FINE](./docs/MidiCat.md#fine-expander)
@@ -29,7 +31,7 @@
 - Module [STRIP](./docs/Strip.md)
     - Remember and recall file-dialog folder locations for vcvss and vcvs files
 - Module [STROKE](./docs/Stroke.md)
-    - Fixed cables' "Toggle visibility" command
+    - Fixed cables' "Toggle visibility" command (cable plugs still visible)
 - Module [TRANSIT](./docs/Transit.md)
     - Improved robustness for expander +T (e.g. crashes when using module-presets) (#412)
 
@@ -46,8 +48,9 @@
 
 ## 2.0.0
 
-- [Selected modules](./MetaModule.md) are available on the [4ms MetaModule](https://4mscompany.com/p.php?p=990).
-- Modules [8FACE, 8FACEx2](./docs/EightFace.md) and [8FACE mk2](./docs/EightFaceMk2.md) are now considered experimental, because loading of presets into any module cannot be considered stable and issue-free in every case.
+[Selected modules](./MetaModule.md) are available on the [4ms MetaModule](https://4mscompany.com/p.php?p=990).
+
+Modules [8FACE, 8FACEx2](./docs/EightFace.md) and [8FACE mk2](./docs/EightFaceMk2.md) are now considered experimental, because loading of presets into any module cannot be considered stable and issue-free in every case.
 
 ### New modules
 

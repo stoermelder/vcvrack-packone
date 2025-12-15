@@ -5,6 +5,7 @@
 #include <condition_variable>
 #include <random>
 #include <thread>
+#include <osdialog.h>
 
 namespace StoermelderPackOne {
 namespace EightFace {
@@ -676,7 +677,18 @@ struct EightFaceWidgetTemplate : ModuleWidget {
 			menu->addChild(createMenuLabel("Configured for..."));
 			menu->addChild(createMenuLabel(module->moduleName));
 		}
-		menu->addChild(createBoolPtrMenuItem("Safe-mode", "", &module->guiSafeMode));
+		menu->addChild(createBoolMenuItem("Safe-mode", "",
+			[=]() {
+				return module->guiSafeMode;
+			},
+			[=](bool v) {
+				std::string msg = "Disabling \"Safe-mode\" will load presets more quickly but may lead to crashing VCV Rack or other issues. Proceed?";
+				if (module->guiSafeMode && !osdialog_message(OSDIALOG_WARNING, OSDIALOG_YES_NO, msg.c_str())) {
+					return;
+				}
+				module->guiSafeMode = v;
+			}
+		));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createSubmenuItem("Number of slots", string::f("%i", module->presetCount),
 			[=](Menu* menu) {
@@ -758,7 +770,7 @@ struct EightFaceWidget : ThemedModuleWidget<EightFaceModule<8>, EightFaceWidgetT
 	MODULE* module;
 
 	EightFaceWidget(MODULE* module)
-		: ThemedModuleWidget<MODULE, EightFaceWidgetTemplate<MODULE>>(module, "EightFace", "", true) {
+		: ThemedModuleWidget<MODULE, EightFaceWidgetTemplate<MODULE>>(module, "EightFace") {
 		setModule(module);
 		this->module = module;
 
@@ -804,7 +816,7 @@ struct EightFaceX2Widget : ThemedModuleWidget<EightFaceModule<16>, EightFaceWidg
 	typedef EightFaceModule<16> MODULE;
 
 	EightFaceX2Widget(MODULE* module)
-		: ThemedModuleWidget<MODULE, EightFaceWidgetTemplate<MODULE>>(module, "EightFaceX2", "EightFace", true) {
+		: ThemedModuleWidget<MODULE, EightFaceWidgetTemplate<MODULE>>(module, "EightFaceX2", "EightFace") {
 		setModule(module);
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));

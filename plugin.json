@@ -366,28 +366,28 @@
 		{
 			"slug": "EightFace",
 			"name": "8FACE",
-			"description": "Universal expander for sequencing up to eight presets of any module (experimental)",
+			"description": "Universal expander for sequencing up to eight presets of any module",
 			"tags": ["Utility", "Sequencer"],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/EightFace.md"
 		},
 		{
 			"slug": "EightFaceX2",
 			"name": "8FACEx2",
-			"description": "Universal expander for sequencing up to sixteen presets of any module (experimental)",
+			"description": "Universal expander for sequencing up to sixteen presets of any module",
 			"tags": ["Utility", "Sequencer"],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/EightFace.md"
 		},
 		{
 			"slug": "EightFaceMk2",
 			"name": "8FACE mk2",
-			"description": "Universal expander for sequencing up to eight presets of multiple modules (experimental)",
+			"description": "Universal expander for sequencing up to eight presets of multiple modules",
 			"tags": ["Utility", "Sequencer"],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/EightFaceMk2.md"
 		},
 		{
 			"slug": "EightFaceMk2Ex",
 			"name": "+8",
-			"description": "Expander for 8FACE mk2 (experimental)",
+			"description": "Expander for 8FACE mk2",
 			"tags": ["Expander"],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/EightFaceMk2.md"
 		},
