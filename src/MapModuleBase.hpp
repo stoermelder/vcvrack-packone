@@ -80,7 +80,7 @@ struct MapModuleBase : Module, StripIdFixModule {
 			return NULL;
 		// Get ParamQuantity
 		int paramId = paramHandles[id].paramId;
-		ParamQuantity* paramQuantity = module->paramQuantities[paramId];
+		ParamQuantity* paramQuantity = module->getParamQuantity(paramId);
 		if (!paramQuantity)
 			return NULL;
 		if (!paramQuantity->isBounded())
@@ -457,7 +457,7 @@ struct MapModuleChoice : LedDisplayChoice {
 		int paramId = paramHandle->paramId;
 		if (paramId >= (int) m->params.size())
 			return NULL;
-		ParamQuantity* paramQuantity = m->paramQuantities[paramId];
+		ParamQuantity* paramQuantity = m->getParamQuantity(paramId);
 		return paramQuantity;
 	}
 
@@ -480,11 +480,15 @@ struct MapModuleChoice : LedDisplayChoice {
 		int paramId = paramHandle->paramId;
 		if (paramId >= (int) m->params.size())
 			return "";
-		ParamQuantity* paramQuantity = m->paramQuantities[paramId];
+		ParamQuantity* paramQuantity = m->getParamQuantity(paramId);
 		std::string s;
 		s += mw->model->name;
 		s += " ";
-		s += paramQuantity->name;
+		ParamWidget* paramWidget = mw->getParam(paramId);
+		if (paramWidget)
+			s += paramQuantity->name;
+		else 
+			s += "<hidden parameter>";
 		return s;
 	}
 
