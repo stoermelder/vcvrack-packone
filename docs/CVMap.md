@@ -102,6 +102,7 @@ CTX for CV-MAP must be placed on the right side of CV-MAP. The display can hold 
 - v2.2.0
     - Added context menu option to report parameter updates to plugin-host (only in plugin-version of Rack)
     - Added mapping functions "Map module (left)" and "Map module (select)"
+    - Added color setting for mapping indicators
 
 CV-MAP was introduced in v1.0 of PackOne.  
 CTX for CV-MAP was introduced in v1.9 of PackOne.
