@@ -1006,155 +1006,6 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 			}
 		};
 
-		struct SlotCvModeMenuItem : MenuItem {
-			struct SlotCvModeItem : MenuItem {
-				MODULE* module;
-				SLOTCVMODE slotCvMode;
-				std::string rightTextEx = "";
-				void onAction(const event::Action& e) override {
-					module->setCvMode(slotCvMode);
-				}
-				void step() override {
-					rightText = string::f("%s %s", module->slotCvMode == slotCvMode ? "✔" : "", rightTextEx.c_str());
-					MenuItem::step();
-				}
-			};
-
-			MODULE* module;
-			SlotCvModeMenuItem() {
-				rightText = RIGHT_ARROW;
-			}
-
-			Menu* createChildMenu() override {
-				Menu* menu = new Menu;
-				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger forward", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_FWD));
-				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger reverse", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_REV));
-				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger pingpong", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_PINGPONG));
-				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger alternating", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_ALT));
-				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger random", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_RANDOM));
-				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger pseudo-random", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_RANDOM_WO_REPEAT));
-				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger random walk", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_RANDOM_WALK));
-				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger shuffle", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_SHUFFLE));
-				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "0..10V", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::VOLT));
-				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "C4", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::C4));
-				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Arm", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::ARM));
-				menu->addChild(new MenuSeparator);
-				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Off", &SlotCvModeItem::rightTextEx, RACK_MOD_SHIFT_NAME "+Q", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::OFF));
-				return menu;
-			}
-		};
-
-		struct AutoloadMenuItem : MenuItem {
-			struct AutoloadItem : MenuItem {
-				MODULE* module;
-				EightFace::AUTOLOAD value;
-				void onAction(const event::Action& e) override {
-					module->autoload = value;
-				}
-				void step() override {
-					rightText = CHECKMARK(module->autoload == value);
-					MenuItem::step();
-				}
-			};
-
-			MODULE* module;
-			AutoloadMenuItem() {
-				rightText = RIGHT_ARROW;
-			}
-
-			Menu* createChildMenu() override {
-				Menu* menu = new Menu;
-				menu->addChild(construct<AutoloadItem>(&MenuItem::text, "Off", &AutoloadItem::module, module, &AutoloadItem::value, EightFace::AUTOLOAD::OFF));
-				menu->addChild(construct<AutoloadItem>(&MenuItem::text, "First preset", &AutoloadItem::module, module, &AutoloadItem::value, EightFace::AUTOLOAD::FIRST));
-				menu->addChild(construct<AutoloadItem>(&MenuItem::text, "Last active preset", &AutoloadItem::module, module, &AutoloadItem::value, EightFace::AUTOLOAD::LASTACTIVE));
-				return menu;
-			}
-		};
-
-		struct BindModuleItem : MenuItem {
-			MODULE* module;
-			WIDGET* widget;
-			void onAction(const event::Action& e) override {
-				widget->moduleSelectProcessor.disableLearn();
-				module->bindModuleExpander();
-			}
-		};
-
-		struct ModuleMenuItem : MenuItem {
-			struct ModuleItem : MenuItem {
-				struct CenterItem : MenuItem {
-					ModuleWidget* mw;
-					void onAction(const event::Action& e) override {
-						StoermelderPackOne::Rack::ViewportCenter{mw};
-					}
-				};
-
-				struct UnbindItem : MenuItem {
-					MODULE* module;
-					typename MODULE::BoundModule* b;
-					void onAction(const event::Action& e) override {
-						module->unbindModule(b);
-					}
-				};
-
-				MODULE* module;
-				typename MODULE::BoundModule* b;
-				ModuleItem() {
-					rightText = RIGHT_ARROW;
-				}
-				Menu* createChildMenu() override {
-					Menu* menu = new Menu;
-					ModuleWidget* mw = b->getModuleWidget();
-					if (mw) menu->addChild(construct<CenterItem>(&MenuItem::text, "Center module", &CenterItem::mw, mw));
-					menu->addChild(construct<UnbindItem>(&MenuItem::text, "Unbind", &UnbindItem::module, module, &UnbindItem::b, b));
-					return menu;
-				}
-			};
-
-			MODULE* module;
-			ModuleMenuItem() {
-				rightText = RIGHT_ARROW;
-			}
-
-			Menu* createChildMenu() override {
-				Menu* menu = new Menu;
-				for (typename MODULE::BoundModule* b : module->boundModules) {
-					ModuleWidget* mw = b->getModuleWidget();
-					std::string text = (!mw ? "[ERROR] " : "") + b->moduleName;
-					menu->addChild(construct<ModuleItem>(&MenuItem::text, text, &ModuleItem::module, module, &ModuleItem::b, b));
-				}
-				return menu;
-			}
-		};
-
-		struct BoxDrawItem : MenuItem {
-			MODULE* module;
-			std::string rightTextEx;
-			void onAction(const event::Action& e) override {
-				module->boxDraw ^= true;
-			}
-			void step() override {
-				rightText = (module->boxDraw ? "✔ " : "") + rightTextEx;
-				MenuItem::step();
-			}
-		};
-
-		struct BoxColorMenuItem : MenuItem {
-			MODULE* module;
-			BoxColorMenuItem() {
-				rightText = RIGHT_ARROW;
-			}
-			Menu* createChildMenu() override {
-				Menu* menu = new Menu;
-				menu->addChild(construct<MenuColorLabel>(&MenuColorLabel::fillColor, &module->boxColor));
-				menu->addChild(new MenuSeparator);
-				menu->addChild(construct<MenuColorPicker>(&MenuColorPicker::color, &module->boxColor));
-				menu->addChild(new MenuSeparator);
-				menu->addChild(construct<MenuColorField>(&MenuColorField::color, &module->boxColor));
-				return menu;
-			}
-		};
-
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createBoolMenuItem("Safe-mode", "",
 			[=]() {
@@ -1175,10 +1026,67 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 				menu->addChild(createBoolPtrMenuItem("Set by long-press", "", &module->presetCountLongPress));
 			}
 		));
-		menu->addChild(construct<SlotCvModeMenuItem>(&MenuItem::text, "Port CV mode", &SlotCvModeMenuItem::module, module));
-		//menu->addChild(construct<AutoloadMenuItem>(&MenuItem::text, "Autoload", &AutoloadMenuItem::module, module));
+
+		const std::map<SLOTCVMODE, std::string> slotCvModes {
+			{ SLOTCVMODE::TRIG_FWD, "Trigger forward" },
+			{ SLOTCVMODE::TRIG_REV, "Trigger reverse" },
+			{ SLOTCVMODE::TRIG_PINGPONG, "Trigger pingpong" },
+			{ SLOTCVMODE::TRIG_ALT, "Trigger alternating" },
+			{ SLOTCVMODE::TRIG_RANDOM, "Trigger random" },
+			{ SLOTCVMODE::TRIG_RANDOM_WO_REPEAT, "Trigger pseudo-random" },
+			{ SLOTCVMODE::TRIG_RANDOM_WALK, "Trigger random walk" },
+			{ SLOTCVMODE::TRIG_SHUFFLE, "Trigger shuffle" },
+			{ SLOTCVMODE::VOLT, "0..10V" },
+			{ SLOTCVMODE::C4, "C4" },
+			{ SLOTCVMODE::ARM, "Arm" },
+			{ SLOTCVMODE::OFF, "Off" }
+		};
+
+		menu->addChild(createSubmenuItem("Port SLOT mode", slotCvModes.at(module->slotCvMode),
+			[=](Menu* menu) {
+				auto f = [=](SLOTCVMODE slotCvMode, std::string rightText = "") {
+					menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem(slotCvModes.at(slotCvMode), rightText, &module->slotCvMode, slotCvMode));
+				};
+				f(SLOTCVMODE::TRIG_FWD);
+				f(SLOTCVMODE::TRIG_REV);
+				f(SLOTCVMODE::TRIG_PINGPONG);
+				f(SLOTCVMODE::TRIG_ALT);
+				f(SLOTCVMODE::TRIG_RANDOM);
+				f(SLOTCVMODE::TRIG_RANDOM_WO_REPEAT);
+				f(SLOTCVMODE::TRIG_RANDOM_WALK);
+				f(SLOTCVMODE::TRIG_SHUFFLE);
+				f(SLOTCVMODE::VOLT);
+				f(SLOTCVMODE::C4);
+				f(SLOTCVMODE::ARM);
+				menu->addChild(new MenuSeparator);
+				f(SLOTCVMODE::OFF, RACK_MOD_SHIFT_NAME "+Q");
+			}
+		));
+		/*
+		menu->addChild(createSubmenuItem("Autoload", "",
+			[=](Menu* menu) {
+				menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem("Off", &module->autoload, EightFace::AUTOLOAD::OFF));
+				menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem("First preset", &module->autoload, EightFace::AUTOLOAD::FIRST));
+				menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem("Last active preset", &module->autoload, EightFace::AUTOLOAD::LASTACTIVE));
+			}
+		));
+		*/
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<BindModuleItem>(&MenuItem::text, "Bind module (left)", &BindModuleItem::widget, this, &BindModuleItem::module, module));
+		menu->addChild(createBoolPtrMenuItem("Box visible", RACK_MOD_SHIFT_NAME "+B", &module->boxDraw));
+		menu->addChild(createSubmenuItem("Box color", "", 
+			[=](Menu* menu) {
+				menu->addChild(construct<MenuColorLabel>(&MenuColorLabel::fillColor, &module->boxColor));
+				menu->addChild(new MenuSeparator);
+				menu->addChild(construct<MenuColorPicker>(&MenuColorPicker::color, &module->boxColor));
+				menu->addChild(new MenuSeparator);
+				menu->addChild(construct<MenuColorField>(&MenuColorField::color, &module->boxColor));
+			}
+		));
+		menu->addChild(new MenuSeparator());
+		menu->addChild(createMenuItem("Bind module (left)", "", [=]() {
+			moduleSelectProcessor.disableLearn();
+			module->bindModuleExpander();
+		}));
 		menu->addChild(createMenuItem("Bind module (select one)", "", [=]() {
 			moduleSelectProcessor.setOwner(this);
 			moduleSelectProcessor.startLearn([module](ModuleWidget* mw, Vec pos) {
@@ -1200,12 +1108,22 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 
 		if (module->boundModules.size() > 0) {
 			menu->addChild(new MenuSeparator());
-			menu->addChild(construct<ModuleMenuItem>(&MenuItem::text, "Bound modules", &ModuleMenuItem::module, module));
+			menu->addChild(createSubmenuItem("Bound modules", string::f("%i", module->boundModules.size()),
+				[=](Menu* menu) {
+					for (typename MODULE::BoundModule* b : module->boundModules) {
+						ModuleWidget* mw = b->getModuleWidget();
+						std::string text = (!mw ? "[ERROR] " : "") + b->moduleName;
+						menu->addChild(createSubmenuItem(text, "",
+							[=](Menu* menu) {
+								ModuleWidget* mw = b->getModuleWidget();
+								if (mw) menu->addChild(createMenuItem("Center module", "", [=]() { StoermelderPackOne::Rack::ViewportCenter{mw}; }));
+								menu->addChild(createMenuItem("Unbind", "", [=]() { module->unbindModule(b); }));
+							}
+						));
+					}
+				}
+			));
 		}
-
-		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<BoxDrawItem>(&MenuItem::text, "Box visible", &BoxDrawItem::rightTextEx, RACK_MOD_SHIFT_NAME "+B", &BoxDrawItem::module, module));
-		menu->addChild(construct<BoxColorMenuItem>(&MenuItem::text, "Box color", &BoxColorMenuItem::module, module));
 	}
 
 	void onHoverKey(const event::HoverKey& e) override {
