@@ -164,7 +164,7 @@ struct LinearFade4 {
 };
 
 
-struct StoermelderSlewLimiter {
+struct SlewLimiterEx {
 	// Minimum and maximum slopes in volts per second
 	const float slewMin = 0.1;
 	const float slewMax = 10000.f;
