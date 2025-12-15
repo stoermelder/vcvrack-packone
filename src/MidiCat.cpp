@@ -210,7 +210,7 @@ struct MidiCatParam : ScaledMapParam<int> {
 };
 
 
-struct MidiCatModule : Module, StripIdFixModule {
+struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 	/** [Stored to Json] */
 	midi::InputQueue midiInput;
 	/** [Stored to Json] */
@@ -450,6 +450,7 @@ struct MidiCatModule : Module, StripIdFixModule {
 
 	MidiCatModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
+		registerExpanderListener("MidiCat", this);
 		config(0, 0, 0, 0);
 		for (int id = 0; id < MAX_CHANNELS; id++) {
 			paramHandles[id].color = mappingIndicatorColor;
@@ -464,9 +465,14 @@ struct MidiCatModule : Module, StripIdFixModule {
 	}
 
 	~MidiCatModule() {
+		unregisterExpanderListener("MidiCat", this);
 		for (int id = 0; id < MAX_CHANNELS; id++) {
 			APP->engine->removeParamHandle(&paramHandles[id]);
 		}
+	}
+
+	void onExpanderChange(const Module::ExpanderChangeEvent& e) override {
+		notifyExpanderListeners("MidiCat");
 	}
 
 	void onReset() override {
@@ -550,64 +556,65 @@ struct MidiCatModule : Module, StripIdFixModule {
 		}
 
 		// Expanders
-		bool expMemFound = false;
-		bool expCtxFound = false;
-		bool expClkFound = false;
-		bool expFineFound = false;
-		Module* exp = rightExpander.module;
-		for (int i = 0; i < 4; i++) {
-			if (!exp) break;
-			if (exp->model == modelMidiCatMem && !expMemFound) {
-				expMem = reinterpret_cast<MidiCatMemBase*>(exp);
-				expMemFound = true;
-				exp = exp->rightExpander.module;
-				continue;
-			}
-			if (exp->model == modelMidiCatCtx && !expCtxFound) {
-				expCtx = exp;
-				expCtxFound = true;
-				exp = exp->rightExpander.module;
-				continue;
-			}
-			if (exp->model == modelMidiCatClk && !expClkFound) {
-				expClk = exp;
-				expClkFound = true;
-				exp = exp->rightExpander.module;
-				continue;
-			}
-			if (exp->model == modelMidiCatFine && !expFineFound) {
-				expFine = reinterpret_cast<MidiCatFineBase*>(exp);
-				expFineFound = true;
-				exp = exp->rightExpander.module;
-				continue;
-			}
-			break;
-		}
-		if (!expMemFound) {
-			expMem = NULL;
-		}
-		if (!expCtxFound) {
-			expCtx = NULL;
-		}
-		if (!expClkFound) {
-			if (expClk) {
-				for (int i = 0; i < MAX_CHANNELS; i++) {
-					midiParam[i].clockMode = MidiCatParam::CLOCKMODE::OFF;
-					midiParam[i].clockSource = 0;
+		if (expandersChanged) {
+			bool expMemFound = false;
+			bool expCtxFound = false;
+			bool expClkFound = false;
+			bool expFineFound = false;
+
+			Module* exp = rightExpander.module;
+			for (int i = 0; i < 4; i++) {
+				if (!exp) break;	
+				if (exp->model == modelMidiCatMem && !expMemFound) {
+					expMem = reinterpret_cast<MidiCatMemBase*>(exp);
+					expMemFound = true;
+					exp = exp->rightExpander.module;
+					continue;
 				}
+				if (exp->model == modelMidiCatCtx && !expCtxFound) {
+					expCtx = exp;
+					expCtxFound = true;
+					exp = exp->rightExpander.module;
+					continue;
+				}
+				if (exp->model == modelMidiCatClk && !expClkFound) {
+					expClk = exp;
+					expClkFound = true;
+					exp = exp->rightExpander.module;
+					continue;
+				}
+				if (exp->model == modelMidiCatFine && !expFineFound) {
+					expFine = reinterpret_cast<MidiCatFineBase*>(exp);
+					expFineFound = true;
+					exp = exp->rightExpander.module;
+					continue;
+				}
+				break;
 			}
-			expClk = NULL;
+
+			if (!expMemFound) {
+				expMem = NULL;
+			}
+			if (!expCtxFound) {
+				expCtx = NULL;
+			}
+			if (!expClkFound) {
+				if (expClk) {
+					for (int i = 0; i < MAX_CHANNELS; i++) {
+						midiParam[i].clockMode = MidiCatParam::CLOCKMODE::OFF;
+						midiParam[i].clockSource = 0;
+					}
+				}
+				expClk = NULL;
+			}
+			if (!expFineFound) {
+				expFine = NULL;
+				ccFineMode = false;
+			}
 		}
-		else {
-			expClkProcess();
-		}
-		if (!expFineFound) {
-			expFine = NULL;
-			ccFineMode = false;
-		}
-		else {
-			expFineProcess();
-		}
+
+		if (expClk) expClkProcess();
+		if (expFine) expFineProcess();
 	}
 
 	void processMappings(float sampleTime) {
@@ -2745,7 +2752,7 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 		menu->addChild(createBoolPtrMenuItem("Status overlay", "", &module->overlayEnabled));
 
 		menu->addChild(new MenuSeparator());
-		menu->addChild(createMenuItem("Clear mappings", "", [=]() { module->clearMaps_WithLock(); }));
+		menu->addChild(createMenuItem("Clear all mappings", "", [=]() { module->clearMaps_WithLock(); }));
 		menu->addChild(createSubmenuItem("Map module (left)", "",
 			[=](Menu* menu) {
 				menu->addChild(createMenuItem("Clear first", RACK_MOD_CTRL_NAME "+" RACK_MOD_SHIFT_NAME "+E", [=]() { module->moduleBindExpander(false); }));

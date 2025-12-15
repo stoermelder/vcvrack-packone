@@ -17,7 +17,7 @@ Besides these new features the module brings the goodies known from stoermelder'
 
 ![MIDI-CAT intro](./MidiCat-intro.gif)
 
-## Mapping parameters
+### Mapping parameters
 
 A typical workflow for mapping your MIDI-controller will look like this:
 
@@ -67,7 +67,7 @@ MIDI-CAT supports a technique sometimes called "soft-takeover" or "pickup": If t
 
 - **Toggle + Value**: Every MIDI _continuous control_ message toggles the parameter between its minimum and the control's value (added in v1.9.0).
 
-- **Snapped**: Only useable for snapped parameters (for example "Steps" on [VCV SEQ3](https://library.vcvrack.com/Fundamental/SEQ3)). A MIDI CC message with value greater 0 increases the parameter to the next step and rolls over at the end of the range (added in v2.2.0).
+- **Snapped**: Only useable for snapped parameters (for example "Steps" on [VCV SEQ3](https://library.vcvrack.com/Fundamental/SEQ3)). A MIDI CC message with value greater 0 advances the parameter to the next step and rolls over at the end of the range. This allows controlling a snapped parameter with a MIDI button (added in v2.2.0).
 
 - **Snapped (short/long)**: Same as "Snapped", but responds to MIDI CC value = 0 and long pressing will decrease the parameter to the previous step (added in v2.2.0).
 
@@ -94,7 +94,7 @@ Some controllers with push-buttons don't handle "note off" messages the way the 
 
 ![MIDI-CAT module select](./MidiCat-map-note.png)
 
-## Slew-limiting and input-scaling
+### Slew-limiting and input-scaling
 
 <a name="slew-limiting"></a>
 Added in v1.8.0: Each mapping slot has its own setting for slew-limiting of the input value which applies an exponential filter. Small values for _Slew_ are smoothing incoming MIDI values which are quite "steppy" as MIDI supports only values 0-127 for CC and note velocity. Larger values for _Slew_ give an overall steady movement of the mapped parameter on fast controller changes.  
@@ -109,7 +109,7 @@ Please note that slew-limiting and input-scaling also works fine with note-mappi
 
 ![MIDI-CAT input-scaling](./MidiCat-input-scaling.png)
 
-## 14-bit CC
+### 14-bit CC
 
 MIDI 14-bit CC pairs are supported since v1.9.0: _continuous control_ messages 0-31 are combined pairwise with 32-63 for increasing the resolution of the value range from 0-127 to 0-16383. Of course the MIDI controller must support 14-bit CC as both messages must be always sent sequentially to make it work. 14-bit support can be enabled in each mapping slot assigned to MIDI CC 0-32.
 
@@ -117,7 +117,7 @@ MIDI 14-bit CC pairs are supported since v1.9.0: _continuous control_ messages 0
 
 The increased value resolution is displayed on the context menu and all available options like scaling and slew work can be used like regular CCs.
 
-## MIDI-feedback
+### MIDI-feedback
 
 Any parameter change can be sent back to an MIDI output with the same CC or note. "Feedback" is useful for initialization of the controls on the MIDI device if it is supported, especially after loading a patch. [Slew-limiting](#slew-limiting-and-input-scaling) it not applied on MIDI feedback.
 

@@ -49,6 +49,10 @@ struct MidiCatMemModule : MidiCatMemBase, StripIdFixModule {
 		onReset();
 	}
 
+	void onExpanderChange(const Module::ExpanderChangeEvent& e) override {
+		notifyExpanderListeners("MidiCat");
+	}
+
 	void onReset() override {
 		Module::onReset();
 		resetMap();
