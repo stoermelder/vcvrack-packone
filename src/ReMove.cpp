@@ -171,8 +171,8 @@ struct ReMoveModule : MapModuleBase<1> {
 
     dsp::SlewLimiter slewLimiter;
 
-    dsp::ClockDivider processDivider;
-	dsp::ClockDivider lightDivider;
+    ClockDividerEx processDivider;
+	ClockDividerEx lightDivider;
 
     /** last touched parameter to avoid frequent dynamic casting */
     Widget* lastParamWidget;

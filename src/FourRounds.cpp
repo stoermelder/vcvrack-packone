@@ -55,7 +55,7 @@ struct FourRoundsModule : Module {
 
 	dsp::SchmittTrigger trigTrigger;
 	dsp::SchmittTrigger invTrigger;
-	dsp::ClockDivider lightDivider;
+	ClockDividerEx lightDivider;
 
 	FourRoundsModule() {
 		panelTheme = pluginSettings.panelThemeDefault;

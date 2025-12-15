@@ -126,8 +126,8 @@ struct EightFaceModule : Module {
 	dsp::SchmittTrigger resetTrigger;
 	dsp::Timer resetTimer;
 
-	dsp::ClockDivider lightDivider;
-	dsp::ClockDivider buttonDivider;
+	ClockDividerEx lightDivider;
+	ClockDividerEx buttonDivider;
 
 	EightFaceModule() {
 		panelTheme = pluginSettings.panelThemeDefault;

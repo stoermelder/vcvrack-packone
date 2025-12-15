@@ -27,8 +27,8 @@ struct GripModule : CVMapModuleBase<MAX_CHANNELS> {
 	/** [Stored to JSON] */
 	bool audioRate;
 
-	dsp::ClockDivider processDivider;
-	dsp::ClockDivider lightDivider;
+	ClockDividerEx processDivider;
+	ClockDividerEx lightDivider;
 
 	GripModule() {
 		panelTheme = pluginSettings.panelThemeDefault;

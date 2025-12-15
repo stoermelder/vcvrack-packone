@@ -60,7 +60,7 @@ struct RawModule : Module {
 	float A1, A2, A3;
 	float m, c, k, k3, Fn, Wn, in_gain, out_gain;
 
-	dsp::ClockDivider paramDivider;
+	ClockDividerEx paramDivider;
 
 	/** [Stored to JSON] */
 	int panelTheme = 0;

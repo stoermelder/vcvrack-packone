@@ -106,7 +106,7 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XySeqModule<MIX_PORTS> {
 	float mixUiY[MIX_PORTS], mixInY[MIX_PORTS];
 	dsp::ExponentialFilter mixYfilter[MIX_PORTS];
 
-	dsp::ClockDivider lightDivider;
+	ClockDividerEx lightDivider;
 
 	ArenaModule() {
 		panelTheme = pluginSettings.panelThemeDefault;

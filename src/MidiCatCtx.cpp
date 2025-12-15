@@ -26,7 +26,7 @@ struct MidiCatCtxModule : MidiCatCtxBase {
 	/** [Stored to JSON] */
 	std::string midiCatId;
 
-	dsp::ClockDivider processDivider;
+	ClockDividerEx processDivider;
 	dsp::SchmittTrigger mapTrigger;
 
 	MidiCatCtxModule() {

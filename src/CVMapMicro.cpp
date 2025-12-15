@@ -40,8 +40,8 @@ struct CVMapMicroModule : CVMapModuleBase<1> {
 	/** [Stored to JSON] */
 	bool audioRate;
 
-	dsp::ClockDivider processDivider;
-	dsp::ClockDivider lightDivider;
+	ClockDividerEx processDivider;
+	ClockDividerEx lightDivider;
 	/** [Stored to JSON] */
 	bool parameterChangesDirect = false;
 

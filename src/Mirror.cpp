@@ -54,8 +54,8 @@ struct MirrorModule : Module, StripIdFixModule {
 	/** [Stored to JSON] */
 	bool parameterChangesDirect = false;
 
-	dsp::ClockDivider processDivider;
-	dsp::ClockDivider handleDivider;
+	ClockDividerEx processDivider;
+	ClockDividerEx handleDivider;
 
 	TaskProcessor<> taskProcessorUi;
 

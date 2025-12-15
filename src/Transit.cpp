@@ -108,7 +108,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 	bool mappingIndicatorHidden = false;
 	/** [Stored to JSON] */
 	int presetProcessDivision;
-	dsp::ClockDivider presetProcessDivider;
+	ClockDividerEx presetProcessDivider;
 
 	std::default_random_engine randGen{(uint16_t)std::chrono::system_clock::now().time_since_epoch().count()};
 	std::uniform_int_distribution<int> randDist;
@@ -125,10 +125,10 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 	dsp::Timer resetTimer;
 
 	StoermelderShapedSlewLimiter slewLimiter;
-	dsp::ClockDivider handleDivider;
-	dsp::ClockDivider buttonDivider;
+	ClockDividerEx handleDivider;
+	ClockDividerEx buttonDivider;
 
-	dsp::ClockDivider lightDivider;
+	ClockDividerEx lightDivider;
 	dsp::Timer lightTimer;
 	bool lightBlink = false;
 

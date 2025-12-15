@@ -56,7 +56,7 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 	/** [Stored to Json] */
 	ScaledMapParam<float, CvParamQuantity> scaleCvs[CVPORTS];
 
-	dsp::ClockDivider processDivider;
+	ClockDividerEx processDivider;
 	/** [Stored to JSON] */
 	int processDivision;
 	/** [Stored to JSON] */
@@ -65,7 +65,7 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 	/** [Stored to JSON] */
 	int panelTheme = 0;
 
-	dsp::ClockDivider lightDivider;
+	ClockDividerEx lightDivider;
 
 	MacroModule() {
 		panelTheme = pluginSettings.panelThemeDefault;

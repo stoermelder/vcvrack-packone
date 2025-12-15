@@ -94,7 +94,7 @@ struct StrokeModule : Module {
 	dsp::PulseGenerator pulse[PORTS];
 
 	dsp::PulseGenerator lightPulse[PORTS];
-	dsp::ClockDivider lightDivider;
+	ClockDividerEx lightDivider;
 
 	StrokeModule() {
 		panelTheme = pluginSettings.panelThemeDefault;

@@ -100,9 +100,9 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 	dsp::SchmittTrigger resetTrigger;
 	dsp::Timer resetTimer;
 
-	dsp::ClockDivider buttonDivider;
-	dsp::ClockDivider boundModulesDivider;
-	dsp::ClockDivider lightDivider;
+	ClockDividerEx buttonDivider;
+	ClockDividerEx boundModulesDivider;
+	ClockDividerEx lightDivider;
 	dsp::Timer lightTimer;
 	bool lightBlink = false;
 

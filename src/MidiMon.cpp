@@ -56,7 +56,7 @@ struct MidiMonModule : Module {
 	/** [Stored to JSON] */
 	midi::InputQueue midiInput;
 
-	dsp::ClockDivider processDivider;
+	ClockDividerEx processDivider;
 	dsp::RingBuffer<std::tuple<LOG_FORMAT, float, std::string>, 512> midiLogMessages;
 	bool isProcessing = false;
 

@@ -423,12 +423,12 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 	MidiCatParam midiParam[MAX_CHANNELS];
 	/** [Stored to Json] */
 	bool midiResendPeriodically;
-	dsp::ClockDivider midiResendDivider;
+	ClockDividerEx midiResendDivider;
 
-	dsp::ClockDivider processDivider;
+	ClockDividerEx processDivider;
 	/** [Stored to Json] */
 	int processDivision;
-	dsp::ClockDivider indicatorDivider;
+	ClockDividerEx indicatorDivider;
 	/** [Stored to JSON] */
 	bool parameterChangesDirect = false;
 

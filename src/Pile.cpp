@@ -47,7 +47,7 @@ struct PileModule : Module {
 	dsp::SchmittTrigger decTrigger;
 	dsp::ExponentialSlewLimiter slewLimiter;
 
-	dsp::ClockDivider processDivider;
+	ClockDividerEx processDivider;
 
 	PileModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
