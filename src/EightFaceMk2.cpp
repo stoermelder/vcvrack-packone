@@ -9,6 +9,7 @@
 #include "EightFace.hpp"
 #include "EightFaceMk2Base.hpp"
 #include <random>
+#include <osdialog.h>
 
 namespace StoermelderPackOne {
 namespace EightFaceMk2 {
@@ -876,7 +877,7 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 	ModuleSelectProcessor moduleSelectProcessor;
 
 	EightFaceMk2Widget(MODULE* module)
-		: ThemedModuleWidget<MODULE>(module, "EightFaceMk2", "", true) {
+		: ThemedModuleWidget<MODULE>(module, "EightFaceMk2") {
 		BASE::setModule(module);
 		this->module = module;
 		this->disableDuplicateAction = true;
@@ -1155,7 +1156,18 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 		};
 
 		menu->addChild(new MenuSeparator());
-		menu->addChild(createBoolPtrMenuItem("Safe-mode", "", &module->guiSafeMode));
+		menu->addChild(createBoolMenuItem("Safe-mode", "",
+			[=]() {
+				return module->guiSafeMode;
+			},
+			[=](bool v) {
+				std::string msg = "Disabling \"Safe-mode\" will load presets more quickly but may lead to crashing VCV Rack or other issues. Proceed?";
+				if (module->guiSafeMode && !osdialog_message(OSDIALOG_WARNING, OSDIALOG_YES_NO, msg.c_str())) {
+					return;
+				}
+				module->guiSafeMode = v;
+			}
+		));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createSubmenuItem("Number of slots", string::f("%i", module->presetCount),
 			[=](Menu* menu) {
