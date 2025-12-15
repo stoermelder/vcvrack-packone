@@ -95,6 +95,15 @@ struct MapModuleBase : Module, StripIdFixModule {
 		updateMapLen();
 	}
 
+	void clearMaps_WithLock() {
+		learningId = -1;
+		for (int id = 0; id < MAX_CHANNELS; id++) {
+			APP->engine->updateParamHandle(&paramHandles[id], -1, 0, true);
+			valueFilters[id].reset();
+		}
+		mapLen = 0;
+	}
+
 	void clearMaps_NoLock() {
 		learningId = -1;
 		for (int id = 0; id < MAX_CHANNELS; id++) {

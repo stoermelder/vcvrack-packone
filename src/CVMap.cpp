@@ -237,6 +237,26 @@ struct CVMapModule : CVMapModuleBase<MAX_CHANNELS> {
 			mapParam[id].parameterChangesDirect = parameterChangesDirect;
 		}		
 	}
+
+	void moduleBind(Module* m) {
+		if (!m) return;
+		// Clean up some additional mappings on the end
+		for (int i = int(m->params.size()); i < mapLen; i++) {
+			APP->engine->updateParamHandle(&paramHandles[i], -1, -1, true);
+		}
+		for (size_t i = 0; i < m->params.size() && i < MAX_CHANNELS; i++) {
+			learnParam(int(i), m->id, int(i));
+		}
+		updateMapLen();
+	}
+
+	void moduleBindExpander() {
+		Module::Expander* exp = &leftExpander;
+		if (exp->moduleId < 0) return;
+		Module* m = exp->module;
+		if (!m) return;
+		moduleBind(m);
+	}
 };
 
 
@@ -396,6 +416,13 @@ struct CVMapWidget : ThemedModuleWidget<CVMapModule>, ParamWidgetContextExtender
 	CVMapModule* module;
 	CVMapCtxBase* expCtx;
 
+	enum class LEARN_MODE {
+		OFF = 0,
+		BIND_CLEAR = 1,
+	};
+
+	LEARN_MODE learnMode = LEARN_MODE::OFF;
+
 	CVMapWidget(CVMapModule* module)
 		: ThemedModuleWidget<CVMapModule>(module, "CVMap") {
 		setModule(module);
@@ -440,6 +467,47 @@ struct CVMapWidget : ThemedModuleWidget<CVMapModule>, ParamWidgetContextExtender
 		}
 	}
 
+	void onDeselect(const event::Deselect& e) override {
+		ModuleWidget::onDeselect(e);
+		if (learnMode != LEARN_MODE::OFF) {
+			DEFER({
+				disableLearn();
+			});
+
+			// Learn module
+			Widget* w = APP->event->getDraggedWidget();
+			if (!w) return;
+			ModuleWidget* mw = dynamic_cast<ModuleWidget*>(w);
+			if (!mw) mw = w->getAncestorOfType<ModuleWidget>();
+			if (!mw || mw == this) return;
+			Module* m = mw->module;
+			if (!m) return;
+
+			CVMapModule* module = dynamic_cast<CVMapModule*>(this->module);
+			switch (learnMode) {
+				case LEARN_MODE::BIND_CLEAR:
+					module->moduleBind(m); break;
+				case LEARN_MODE::OFF:
+					break;
+			}
+		}
+	}
+
+	void enableLearn(LEARN_MODE mode) {
+		learnMode = learnMode == LEARN_MODE::OFF ? mode : LEARN_MODE::OFF;
+		APP->event->setSelectedWidget(this);
+		GLFWcursor* cursor = NULL;
+		if (learnMode != LEARN_MODE::OFF) {
+			cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
+		}
+		glfwSetCursor(APP->window->win, cursor);
+	}
+
+	void disableLearn() {
+		learnMode = LEARN_MODE::OFF;
+		glfwSetCursor(APP->window->win, NULL);
+	}
+
 	void appendContextMenu(Menu* menu) override {
 		if (menu->children.size() > 0) {
 			ThemedModuleWidget<CVMapModule>::appendContextMenu(menu);
@@ -461,9 +529,16 @@ struct CVMapWidget : ThemedModuleWidget<CVMapModule>, ParamWidgetContextExtender
 			));
 		}
 		menu->addChild(new MenuSeparator());
-		menu->addChild(createBoolPtrMenuItem("Text scrolling", "", &module->textScrolling));
-		menu->addChild(createBoolPtrMenuItem("Hide mapping indicators", "", &module->mappingIndicatorHidden));
-		menu->addChild(createBoolPtrMenuItem("Lock mapping slots", "", &module->locked));
+		menu->addChild(createSubmenuItem("User interface", "", [=](Menu* menu) {
+			menu->addChild(createBoolPtrMenuItem("Text scrolling", "", &module->textScrolling));
+			menu->addChild(createBoolPtrMenuItem("Hide mapping indicators", "", &module->mappingIndicatorHidden));
+			menu->addChild(createBoolPtrMenuItem("Lock mapping slots", "", &module->locked));
+		}));
+
+		menu->addChild(new MenuSeparator);
+		menu->addChild(createMenuItem("Clear all mappings", "", [=]() { module->clearMaps_WithLock(); }));
+		menu->addChild(createMenuItem("Map module (left)", "", [=]() { module->moduleBindExpander(); }));
+		menu->addChild(createMenuItem("Map module (select)", "", [=]() { enableLearn(LEARN_MODE::BIND_CLEAR); }));
 	}
 
 	void extendParamWidgetContextMenu(ParamWidget* pw, Menu* menu) override {

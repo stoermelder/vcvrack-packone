@@ -61,9 +61,7 @@ Added in v1.9: Each mapping slot has also two sliders (_Low_ and _High_) for sca
 
 - Parameter changes are not reported back to the plugin-host by default if CV-MAP is used in a plugin-version of VCV Rack. In v2.2.0 a context menu option has been added to enable this behavior - it might cause higher CPU usage of the plugin.
 
-CV-MAP was added in v1.0 of PackOne.
-
-# CTX-expander
+## CTX-expander
 
 CTX is a companion module for CV-MAP: The expander allows you to name each instance of CV-MAP in your patch. This name can be addressed in every parameters' context menu for mapping or re-mapping parameters to input channels of the two input ports.
 
@@ -75,4 +73,35 @@ CTX for CV-MAP must be placed on the right side of CV-MAP. The display can hold 
 
 <a href="https://www.youtube.com/watch?v=BfQuliXOAkM" target="_blank"><img src="https://img.youtube.com/vi/BfQuliXOAkM/0.jpg" style="width:100%" /></a>
 
-CTX for CV-MAP was added in v1.9 of PackOne.
+
+## Changelog
+
+- v1.0.2
+    - Added context menu option (on LED display) to locate and blink indicator for mapped slots
+    - Added context menu option to disable text scrolling
+    - Added context menu option linking the online manual
+    - Improved panels
+- v1.1.0
+    - Fixed crash of Rack if deleting the module while in mapping mode
+- v1.4.0
+    - Added option to disable audio rate processing for lower cpu usage
+- v1.5.0
+    - Added option for hiding parameter indicator squares
+    - Added option for locking mapping slots to prevent changes by accident (#89)
+- v1.7.0
+    - Don't capture mouse scrolling if mapping slots are locked (#137)
+    - Blink mapping indicator of currently selected mapping slot
+- v1.9.0
+    - Added expander CV-MAP CTX, helper for mapping parameters by context menu (#256)
+    - Added context menu sliders for slew and scaling and transforming the input and parameter-range (#243)
+    - Added arbitrary channel routings to allow every input channel assigned to any mapping slot
+    - Added context menu on the input ports for custom labeling the channels (#256)
+    - Fixed wrong slot behavior when toggling input to 0V (#221)
+- v2.1.0
+    - Improved mapping logic to allow more parameters to be mapped (e.g. SurgeXTRack) (#410)
+- v2.2.0
+    - Added context menu option to report parameter updates to plugin-host (only in plugin-version of Rack)
+    - Added mapping functions "Map module (left)" and "Map module (select)"
+
+CV-MAP was introduced in v1.0 of PackOne.  
+CTX for CV-MAP was introduced in v1.9 of PackOne.
