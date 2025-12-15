@@ -17,7 +17,7 @@ enum class SLOTCVMODE {
 	TRIG_PINGPONG = 5,
 	TRIG_ALT = 9,
 	TRIG_RANDOM = 6,
-	TRIG_RANDOM_WO_REPEATS = 7,
+	TRIG_RANDOM_WO_REPEAT = 7,
 	TRIG_RANDOM_WALK = 8,
 	TRIG_SHUFFLE = 10,
 	VOLT = 0,
@@ -288,7 +288,7 @@ struct EightFaceModule : Module {
 									presetLoad(t, randDist(randGen));
 								}
 								break;
-							case SLOTCVMODE::TRIG_RANDOM_WO_REPEATS:
+							case SLOTCVMODE::TRIG_RANDOM_WO_REPEAT:
 								if (slotTrigger.process(inputs[SLOT_INPUT].getVoltage())) {
 									if (randDist.max() != presetCount - 2) randDist = std::uniform_int_distribution<int>(0, presetCount - 2);
 									int p = randDist(randGen);
@@ -697,34 +697,39 @@ struct EightFaceWidgetTemplate : ModuleWidget {
 			}
 		));
 
-		menu->addChild(createSubmenuItem("Port SLOT mode", "",
-			[=](Menu* menu) {
-				struct SlotCvModeItem : MenuItem {
-					MODULE* module;
-					SLOTCVMODE slotCvMode;
-					std::string rightTextEx = "";
-					void onAction(const event::Action& e) override {
-						module->slotCvMode = module->slotCvModeBak = slotCvMode;
-					}
-					void step() override {
-						rightText = string::f("%s %s", module->slotCvMode == slotCvMode ? "✔" : "", rightTextEx.c_str());
-						MenuItem::step();
-					}
-				};
+		const std::map<SLOTCVMODE, std::string> slotCvModes {
+			{ SLOTCVMODE::TRIG_FWD, "Trigger forward" },
+			{ SLOTCVMODE::TRIG_REV, "Trigger reverse" },
+			{ SLOTCVMODE::TRIG_PINGPONG, "Trigger pingpong" },
+			{ SLOTCVMODE::TRIG_ALT, "Trigger alternating" },
+			{ SLOTCVMODE::TRIG_RANDOM, "Trigger random" },
+			{ SLOTCVMODE::TRIG_RANDOM_WO_REPEAT, "Trigger pseudo-random" },
+			{ SLOTCVMODE::TRIG_RANDOM_WALK, "Trigger random walk" },
+			{ SLOTCVMODE::TRIG_SHUFFLE, "Trigger shuffle" },
+			{ SLOTCVMODE::VOLT, "0..10V" },
+			{ SLOTCVMODE::C4, "C4" },
+			{ SLOTCVMODE::ARM, "Arm" },
+			{ SLOTCVMODE::OFF, "Off" }
+		};
 
-				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger forward", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_FWD));
-				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger reverse", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_REV));
-				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger pingpong", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_PINGPONG));
-				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger alternating", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_ALT));
-				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger random", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_RANDOM));
-				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger pseudo-random", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_RANDOM_WO_REPEATS));
-				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger random walk", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_RANDOM_WALK));
-				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Trigger shuffle", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::TRIG_SHUFFLE));
-				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "0..10V", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::VOLT));
-				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "C4", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::C4));
-				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Arm", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::ARM));
+		menu->addChild(createSubmenuItem("Port SLOT mode", slotCvModes.at(module->slotCvMode),
+			[=](Menu* menu) {
+				auto f = [=](SLOTCVMODE slotCvMode, std::string rightText = "") {
+					menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem(slotCvModes.at(slotCvMode), rightText, &module->slotCvMode, slotCvMode));
+				};
+				f(SLOTCVMODE::TRIG_FWD);
+				f(SLOTCVMODE::TRIG_REV);
+				f(SLOTCVMODE::TRIG_PINGPONG);
+				f(SLOTCVMODE::TRIG_ALT);
+				f(SLOTCVMODE::TRIG_RANDOM);
+				f(SLOTCVMODE::TRIG_RANDOM_WO_REPEAT);
+				f(SLOTCVMODE::TRIG_RANDOM_WALK);
+				f(SLOTCVMODE::TRIG_SHUFFLE);
+				f(SLOTCVMODE::VOLT);
+				f(SLOTCVMODE::C4);
+				f(SLOTCVMODE::ARM);
 				menu->addChild(new MenuSeparator);
-				menu->addChild(construct<SlotCvModeItem>(&MenuItem::text, "Off", &SlotCvModeItem::rightTextEx, RACK_MOD_SHIFT_NAME "+Q", &SlotCvModeItem::module, module, &SlotCvModeItem::slotCvMode, SLOTCVMODE::OFF));
+				f(SLOTCVMODE::OFF, RACK_MOD_SHIFT_NAME "+Q");
 			}
 		));
 
@@ -746,8 +751,7 @@ struct EightFaceWidgetTemplate : ModuleWidget {
 				{ AUTOLOAD::FIRST, "First preset" },
 				{ AUTOLOAD::LASTACTIVE, "Last active preset" }
 			},
-			&module->autoload,
-			false
+			&module->autoload
 		));
 	}
 
