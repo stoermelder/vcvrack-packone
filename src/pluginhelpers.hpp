@@ -48,16 +48,18 @@ ui::MenuItem* createMapSubmenuItem(std::string text, std::map<TEnum, std::string
 		std::function<void(TEnum)> setter;
 		std::map<TEnum, std::string> labels;
 		TEnum currIndex;
+		bool currIndexInitialized = false;
 		bool showRightText;
 		bool alwaysConsume;
 
 		void step() override {
 			TEnum currIndex = getter();
 			if (showRightText) {
-				if (this->currIndex != currIndex) {
+				if (this->currIndex != currIndex || !this->currIndexInitialized) {
 					std::string label = labels[currIndex];
 					this->rightText = label + "  " + RIGHT_ARROW;
 					this->currIndex = currIndex;
+					this->currIndexInitialized = true;
 				}
 			}
 			else {
