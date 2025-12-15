@@ -34,6 +34,10 @@ struct MidiCatFineModule : MidiCatFineBase {
 		onReset();
 	}
 
+	void onExpanderChange(const Module::ExpanderChangeEvent& e) override {
+		notifyExpanderListeners("MidiCat");
+	}
+
 	void onReset() override {
 		panelTheme = pluginSettings.panelThemeDefault;
 		highRange = 0.01f;

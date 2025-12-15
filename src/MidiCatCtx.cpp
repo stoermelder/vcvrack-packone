@@ -37,6 +37,10 @@ struct MidiCatCtxModule : MidiCatCtxBase {
 		onReset();
 	}
 
+	void onExpanderChange(const Module::ExpanderChangeEvent& e) override {
+		notifyExpanderListeners("MidiCat");
+	}
+
 	void onReset() override {
 		Module::onReset();
 		midiCatId = "";

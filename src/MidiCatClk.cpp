@@ -32,6 +32,10 @@ struct MidiCatClkModule : Module {
 		onReset();
 	}
 
+	void onExpanderChange(const Module::ExpanderChangeEvent& e) override {
+		notifyExpanderListeners("MidiCat");
+	}
+
 	json_t* dataToJson() override {
 		json_t *rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
