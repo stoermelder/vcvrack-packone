@@ -1,6 +1,8 @@
 #include "plugin.hpp"
 #include "MapModuleBase.hpp"
 #include "CVMap.hpp"
+#include "components/MenuColorLabel.hpp"
+#include "components/MenuColorPicker.hpp"
 #include "ui/ParamWidgetContextExtender.hpp"
 #include <chrono>
 
@@ -531,8 +533,15 @@ struct CVMapWidget : ThemedModuleWidget<CVMapModule>, ParamWidgetContextExtender
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createSubmenuItem("User interface", "", [=](Menu* menu) {
 			menu->addChild(createBoolPtrMenuItem("Text scrolling", "", &module->textScrolling));
-			menu->addChild(createBoolPtrMenuItem("Hide mapping indicators", "", &module->mappingIndicatorHidden));
 			menu->addChild(createBoolPtrMenuItem("Lock mapping slots", "", &module->locked));
+			menu->addChild(new MenuSeparator);
+			menu->addChild(createMenuLabel("Mapping indicators"));
+			menu->addChild(createBoolPtrMenuItem("Hide", "", &module->mappingIndicatorHidden));
+			menu->addChild(construct<MenuColorLabel>(&MenuColorLabel::fillColor, &module->mappingIndicatorColor));
+			menu->addChild(construct<MenuColorPicker>(&MenuColorPicker::color, &module->mappingIndicatorColor));
+			menu->addChild(createMenuItem("Reset color", "", [=]() {
+				module->mappingIndicatorColor = module->MAPPING_INDICATOR_COLOR_DEFAULT;
+			}));
 		}));
 
 		menu->addChild(new MenuSeparator);

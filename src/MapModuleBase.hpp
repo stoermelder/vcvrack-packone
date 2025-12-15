@@ -28,6 +28,7 @@ struct MapModuleBase : Module, StripIdFixModule {
 	/** [Stored to JSON] */
 	bool textScrolling = true;
 
+	/** [Stored to JSON] */
 	NVGcolor mappingIndicatorColor = color::BLACK_TRANSPARENT;
 	/** [Stored to JSON] */
 	bool mappingIndicatorHidden = false;
@@ -166,6 +167,7 @@ struct MapModuleBase : Module, StripIdFixModule {
 		json_t* rootJ = json_object();
 		json_object_set_new(rootJ, "textScrolling", json_boolean(textScrolling));
 		json_object_set_new(rootJ, "mappingIndicatorHidden", json_boolean(mappingIndicatorHidden));
+		json_object_set_new(rootJ, "mappingIndicatorColor", json_string(color::toHexString(mappingIndicatorColor).c_str()));
 
 		json_t* mapsJ = json_array();
 		for (int id = 0; id < mapLen; id++) {
@@ -188,6 +190,8 @@ struct MapModuleBase : Module, StripIdFixModule {
 		textScrolling = json_boolean_value(textScrollingJ);
 		json_t* mappingIndicatorHiddenJ = json_object_get(rootJ, "mappingIndicatorHidden");
 		mappingIndicatorHidden = json_boolean_value(mappingIndicatorHiddenJ);
+		json_t* mappingIndicatorColorJ = json_object_get(rootJ, "mappingIndicatorColor");
+		if (mappingIndicatorColorJ) mappingIndicatorColor = color::fromHexString(json_string_value(mappingIndicatorColorJ));
 
 		json_t* mapsJ = json_object_get(rootJ, "maps");
 		if (mapsJ) {
@@ -224,8 +228,15 @@ struct CVMapModuleBase : MapModuleBase<MAX_CHANNELS> {
 	/** [Saved to JSON] Allow manual changes of target parameters */
 	bool lockParameterChanges = true;
 
+	const NVGcolor MAPPING_INDICATOR_COLOR_DEFAULT = nvgRGB(0xff, 0x40, 0xff);
+
 	CVMapModuleBase() {
-		this->mappingIndicatorColor = nvgRGB(0xff, 0x40, 0xff);
+		this->mappingIndicatorColor = MAPPING_INDICATOR_COLOR_DEFAULT;
+	}
+
+	void onReset() override {
+		this->mappingIndicatorColor = MAPPING_INDICATOR_COLOR_DEFAULT;
+		MapModuleBase<MAX_CHANNELS>::onReset();
 	}
 
 	void process(const Module::ProcessArgs &args) override {
