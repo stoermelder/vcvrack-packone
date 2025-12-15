@@ -32,7 +32,7 @@ struct MidiCatMemModule : MidiCatMemBase, StripIdFixModule {
 	/** [Stored to JSON] */
 	std::set<int64_t> moduleRestriction;
 
-	dsp::ClockDivider processDivider;
+	ClockDividerEx processDivider;
 	dsp::SchmittTrigger prevTrigger;
 	dsp::SchmittTrigger nextTrigger;
 	dsp::SchmittTrigger applyTrigger;

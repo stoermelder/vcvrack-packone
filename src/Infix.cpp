@@ -37,7 +37,7 @@ struct InfixModule : Module {
 	/** [Stored to JSON] */
 	int panelTheme = 0;
 
-	dsp::ClockDivider lightDivider;
+	ClockDividerEx lightDivider;
 
 	void process(const ProcessArgs& args) override {
 		int lastChannel = inputs[INPUT_POLY].getChannels();

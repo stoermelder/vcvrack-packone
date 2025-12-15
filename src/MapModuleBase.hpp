@@ -36,7 +36,7 @@ struct MapModuleBase : Module, StripIdFixModule {
 	/** The smoothing processor (normalized between 0 and 1) of each channel */
 	dsp::ExponentialFilter valueFilters[MAX_CHANNELS];
 
-	dsp::ClockDivider indicatorDivider;
+	ClockDividerEx indicatorDivider;
 
 	MapModuleBase() {
 		for (int id = 0; id < MAX_CHANNELS; id++) {

@@ -53,7 +53,7 @@ struct BoltModule : Module {
 	dsp::SchmittTrigger opCvTrigger;
 	dsp::PulseGenerator outPulseGenerator[16];
 
-	dsp::ClockDivider lightDivider;
+	ClockDividerEx lightDivider;
 
 	BoltModule() {
 		panelTheme = pluginSettings.panelThemeDefault;

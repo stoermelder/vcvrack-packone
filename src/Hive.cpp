@@ -171,7 +171,7 @@ struct HiveModule : Module {
 	MODULESTATE currentState = MODULESTATE::GRID;
 	bool gridDirty = true;
 
-	dsp::ClockDivider lightDivider;
+	ClockDividerEx lightDivider;
 
 
 	HiveModule() {

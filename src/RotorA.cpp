@@ -29,8 +29,8 @@ struct RotorAModule : Module {
 	/** [Stored to JSON] */
 	int panelTheme = 0;
 
-	dsp::ClockDivider lightDivider;
-	dsp::ClockDivider channelsDivider;
+	ClockDividerEx lightDivider;
+	ClockDividerEx channelsDivider;
 
 	int channels;
 	int channelsOffset;

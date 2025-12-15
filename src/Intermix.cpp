@@ -130,8 +130,8 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 
 	dsp::SchmittTrigger sceneTrigger;
 	dsp::SchmittTrigger mapTrigger[PORTS];
-	dsp::ClockDivider sceneDivider;
-	dsp::ClockDivider lightDivider;
+	ClockDividerEx sceneDivider;
+	ClockDividerEx lightDivider;
 
 	IntermixModule() {
 		panelTheme = pluginSettings.panelThemeDefault;

@@ -40,7 +40,7 @@ struct SipoModule : Module {
 	int dataUsed = 0;
 
 	dsp::SchmittTrigger clockTrigger;
-	dsp::ClockDivider lightDivider;
+	ClockDividerEx lightDivider;
 
 	SipoModule() {
 		panelTheme = pluginSettings.panelThemeDefault;

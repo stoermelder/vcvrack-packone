@@ -47,8 +47,8 @@ struct CVMapModule : CVMapModuleBase<MAX_CHANNELS> {
 	};
 	InputConfig inputConfig[2];
 
-	dsp::ClockDivider processDivider;
-	dsp::ClockDivider lightDivider;
+	ClockDividerEx processDivider;
+	ClockDividerEx lightDivider;
 	/** [Stored to JSON] */
 	bool parameterChangesDirect = false;
 

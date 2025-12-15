@@ -34,8 +34,8 @@ struct CVPamModule : MapModuleBase<MAX_CHANNELS> {
 	/** [Stored to JSON] */
 	bool locked;
 	
-	dsp::ClockDivider processDivider;
-	dsp::ClockDivider lightDivider;
+	ClockDividerEx processDivider;
+	ClockDividerEx lightDivider;
 
 	CVPamModule() {
 		panelTheme = pluginSettings.panelThemeDefault;

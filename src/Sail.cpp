@@ -68,8 +68,8 @@ struct SailModule : Module {
 	dsp::SchmittTrigger incTrigger;
 	dsp::SchmittTrigger decTrigger;
 
-	dsp::ClockDivider processDivider;
-	dsp::ClockDivider lightDivider;
+	ClockDividerEx processDivider;
+	ClockDividerEx lightDivider;
 	dsp::ExponentialSlewLimiter slewLimiter;
 
 	SailModule() {

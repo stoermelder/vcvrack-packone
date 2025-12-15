@@ -193,7 +193,7 @@ struct GotoContainer : widget::Widget {
 	ModuleWidget* mw;
 
 	StoermelderPackOne::Rack::ViewportCenterSmooth viewportCenterSmooth;
-	dsp::ClockDivider divider;
+	ClockDividerEx divider;
 	int learnJumpPoint = -1;
 
 	ModuleSelectProcessor moduleSelectProcessor;

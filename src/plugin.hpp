@@ -1,5 +1,6 @@
 #pragma once
 #include <rack.hpp>
+#include "digital/digital.hpp"
 #include "components/components.hpp"
 #include "pluginhelpers.hpp"
 #include "pluginsettings.hpp"

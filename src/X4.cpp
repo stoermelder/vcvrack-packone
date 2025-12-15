@@ -47,8 +47,8 @@ struct X4Module : CVMapModuleBase<2> {
 	int lightAtx[5];
 	int lightBtx[5];
 
-	dsp::ClockDivider processDivider;
-	dsp::ClockDivider lightDivider;
+	ClockDividerEx processDivider;
+	ClockDividerEx lightDivider;
 
 	X4Module() {
 		panelTheme = pluginSettings.panelThemeDefault;

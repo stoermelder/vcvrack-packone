@@ -67,7 +67,7 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 	ChangeTrigger<float> highLowTrigger;
 	dsp::SchmittTrigger randTrigger;
 
-	dsp::ClockDivider lightDivider;
+	ClockDividerEx lightDivider;
 
 	TaskWorker taskWorker;
 

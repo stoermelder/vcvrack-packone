@@ -127,7 +127,7 @@ struct MazeModule : Module {
 	MODULESTATE currentState = MODULESTATE::GRID;
 	bool gridDirty = true;
 
-	dsp::ClockDivider lightDivider;
+	ClockDividerEx lightDivider;
 
 	MazeModule() {
 		panelTheme = pluginSettings.panelThemeDefault;

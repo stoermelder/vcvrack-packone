@@ -36,8 +36,8 @@ struct IntermixFadeModule : Module {
 	/** [Stored to JSON] */
 	FADE fade;
 
-	dsp::ClockDivider sceneDivider;
-	dsp::ClockDivider lightDivider;
+	ClockDividerEx sceneDivider;
+	ClockDividerEx lightDivider;
 
 	IntermixFadeModule() {
 		panelTheme = pluginSettings.panelThemeDefault;

@@ -1,5 +1,6 @@
 #pragma once
 
+namespace StoermelderPackOne {
 
 template<typename T>
 struct ChangeTrigger {
@@ -120,9 +121,9 @@ struct LinearFade {
 struct LinearFade4 {
 	float rise = 1.f;
 	float fall = 1.f;
-	simd::float_4 currentRise;
-	simd::float_4 currentFall;
-	simd::float_4 last = 0.f;
+	rack::simd::float_4 currentRise;
+	rack::simd::float_4 currentFall;
+	rack::simd::float_4 last = 0.f;
 
 	void reset(int i, float last) {
 		currentRise[i] = rise;
@@ -143,20 +144,20 @@ struct LinearFade4 {
 	}
 
 	inline void setRiseFall(float rise, float fall) {
-		currentRise = simd::ifelse(currentRise == this->rise, rise, currentRise);
-		currentFall = simd::fmin(fall, currentFall);
+		currentRise = rack::simd::ifelse(currentRise == this->rise, rise, currentRise);
+		currentFall = rack::simd::fmin(fall, currentFall);
 		this->rise = rise;
 		this->fall = fall;
 	}
 
-	inline simd::float_4 process(float deltaTime) {
-		simd::float_4 r = last;
+	inline rack::simd::float_4 process(float deltaTime) {
+		rack::simd::float_4 r = last;
 
-		r = simd::ifelse(currentRise < rise, currentRise / rise, r);
-		currentRise = simd::ifelse(currentRise < rise, currentRise += deltaTime, currentRise);
+		r = rack::simd::ifelse(currentRise < rise, currentRise / rise, r);
+		currentRise = rack::simd::ifelse(currentRise < rise, currentRise += deltaTime, currentRise);
 
-		r = simd::ifelse(currentFall > 0.f, currentFall / fall, r);
-		currentFall = simd::ifelse(currentFall > 0.f, simd::fmax(currentFall - deltaTime, 0.f), currentFall);
+		r = rack::simd::ifelse(currentFall > 0.f, currentFall / fall, r);
+		currentFall = rack::simd::ifelse(currentFall > 0.f, rack::simd::fmax(currentFall - deltaTime, 0.f), currentFall);
 
 		return r;
 	}
@@ -197,17 +198,55 @@ struct StoermelderSlewLimiter {
 		// Rise
 		if (in > out) {
 			float slew = slewMax * std::pow(slewMin / slewMax, rise);
-			out += slew * crossfade(1.f, shapeScale * (in - out), shape) * sampleTime;
+			out += slew * rack::math::crossfade(1.f, shapeScale * (in - out), shape) * sampleTime;
 			if (out > in)
 				out = in;
 		}
 		// Fall
 		else if (in < out) {
 			float slew = slewMax * std::pow(slewMin / slewMax, fall);
-			out -= slew * crossfade(1.f, shapeScale * (out - in), shape) * sampleTime;
+			out -= slew * rack::math::crossfade(1.f, shapeScale * (out - in), shape) * sampleTime;
 			if (out < in)
 				out = in;
 		}
 		return out;
 	}
 };
+
+/**
+ Simple clock divider with random starting point, to avoid
+ collisions on the same frame and possible performance issues
+*/
+struct ClockDividerEx {
+	uint32_t clock = 0;
+	uint32_t division = 1;
+
+	void reset() {
+		clock = rack::random::u32() % division;
+	}
+
+	void setDivision(uint32_t division) {
+		this->division = division;
+		reset();
+	}
+
+	uint32_t getDivision() {
+		return division;
+	}
+
+	uint32_t getClock() {
+		return clock;
+	}
+
+	/** Returns true when the clock reaches `division` and resets. */
+	bool process() {
+		clock++;
+		if (clock >= division) {
+			clock = 0;
+			return true;
+		}
+		return false;
+	}
+};
+
+}

@@ -199,7 +199,7 @@ struct AudioInterface : Module {
 	dsp::RCFilter dcFilters[NUM_AUDIO_INPUTS];
 	bool dcFilterEnabled = false;
 
-	dsp::ClockDivider lightDivider;
+	ClockDividerEx lightDivider;
 	// For each pair of inputs/outputs
 	float inputClipTimers[(NUM_AUDIO_INPUTS > 0) ? NUM_INPUT_LIGHTS : 0] = {};
 	float outputClipTimers[(NUM_AUDIO_INPUTS > 0) ? NUM_OUTPUT_LIGHTS : 0] = {};
