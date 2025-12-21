@@ -392,6 +392,13 @@
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/EightFaceMk2.md"
 		},
 		{
+			"slug": "PanicRoom",
+			"name": "PANIC ROOM",
+			"description": "Restricts your modular space within Rack, making it impossible to patch outside of a defined area",
+			"tags": ["Utility"],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/PanicRoom.md"
+		},
+		{
 			"slug": "Mb",
 			"name": "MB",
 			"description": "Experimental replacement module browsers for Rack. Brings back the browser from Rack v0.6x and has a modified browser from Rack v1.x with adjustable preview size, favorites, extended filtering options and more.",

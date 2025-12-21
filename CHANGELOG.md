@@ -1,11 +1,13 @@
 ## 2.2.0
 
-Modules [8FACE, 8FACEx2](./docs/EightFace.md) and [8FACE mk2](./docs/EightFaceMk2.md) are now considered stable again. A "Safe-mode" has been implemented, which loads presets on the next rendered frame, introducing a minor delay. Disabling "Safe-mode" will load presets more quickly but may lead to crashes or other issues. If you load presets manually by clicking snapshot buttons, you'll will not notice any difference with "Safe-mode".
+Modules [8FACE, 8FACEx2](./docs/EightFace.md) and [8FACE mk2](./docs/EightFaceMk2.md) are now considered stable again. A "Safe-mode" has been implemented, which loads presets on the next rendered frame, introducing a minor delay. Disabling "Safe-mode" will load presets more quickly but may lead to crashes or other issues. If you load presets manually by clicking snapshot buttons or by MIDI, you will not notice any difference with "Safe-mode".
 
 ### New modules
 
 - Module [MIDI-CAT FINE](./docs/MidiCat.md#fine-expander)
     - New expander for MIDI-CAT, allows fine-tuning of MIDI CC parameter-mappings
+- Module [PANIC ROOM](./docs/PanicRoom.md)
+    - Restricts your modular space within Rack, making it impossible to patch outside of a defined area
 
 ### Changes and Fixes
 
