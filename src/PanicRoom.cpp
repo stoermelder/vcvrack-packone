@@ -1,7 +1,6 @@
 #include "plugin.hpp"
 #include <queue>
 #include "components/MenuColorLabel.hpp"
-#include "components/MenuColorField.hpp"
 #include "components/MenuColorPicker.hpp"
 
 namespace StoermelderPackOne {
@@ -95,21 +94,18 @@ struct PanicRoomModule : Module {
             outsideAlpha = json_number_value(outsideAlphaJ);
         }
     }
-    };
+};
 
 
-    struct PanicRoomRestrictionWidget : Widget {
+struct PanicRoomRestrictionWidget : Widget {
     PanicRoomModule* module;
-
     bool learnMode = false;
-    bool bindLights = false;
-
     bool selecting = false;
     math::Vec selectionStart;
     math::Vec selectionEnd;
     math::Vec mousePos;
 
-    void enableLearn(bool bindLights = false) {
+    void enableLearn() {
         learnMode = !learnMode;
         GLFWcursor* cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
         glfwSetCursor(APP->window->win, cursor);
@@ -163,7 +159,10 @@ struct PanicRoomModule : Module {
         Widget::onDragHover(e);
     }
 
-    void draw(const DrawArgs& args) override {
+    void drawLayer(const DrawArgs& args, int layer) override {
+        if (layer != 3)
+            return;
+
         if (selecting) {
             // Draw selection rectangle
             nvgBeginPath(args.vg);
@@ -197,6 +196,77 @@ struct PanicRoomModule : Module {
 }; // struct PanicRoomRestrictionWidget
 
 
+struct AlphaSlider : ui::Slider {
+    struct AlphaQuantity : Quantity {
+        PanicRoomModule* module;
+
+        AlphaQuantity(PanicRoomModule* module) {
+            this->module = module;
+        }
+        void setValue(float value) override {
+            module->outsideAlpha = math::clamp(value, 0.f, 1.f);
+        }
+        float getValue() override {
+            return module->outsideAlpha;
+        }
+        float getDefaultValue() override {
+            return 0.5f;
+        }
+        float getDisplayValue() override {
+            return getValue() * 100;
+        }
+        void setDisplayValue(float displayValue) override {
+            setValue(displayValue / 100.f);
+        }
+        std::string getLabel() override {
+            return "Opacity";
+        }
+        std::string getUnit() override {
+            return "%";
+        }
+    };
+
+    AlphaSlider(PanicRoomModule* module) {
+        this->box.size.x = 200.0;
+        quantity = new AlphaQuantity(module);
+    }
+    ~AlphaSlider() {
+        delete quantity;
+    }
+};
+
+struct SizeWidthField : ui::TextField {
+    PanicRoomModule* module;
+    void onSelectKey(const SelectKeyEvent& e) override {
+        if (e.action == GLFW_PRESS && (e.isKeyCommand(GLFW_KEY_ENTER) || e.isKeyCommand(GLFW_KEY_KP_ENTER))) {
+            float v = atoi(text.c_str());
+            int d = int(module->restrictionBox.size.x / RACK_GRID_WIDTH) - v;
+            module->restrictionBox.pos.x += d / 2 * RACK_GRID_WIDTH;
+            module->restrictionBox.size.x -= d * RACK_GRID_WIDTH;
+            ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
+            overlay->requestDelete();
+            e.consume(this);
+        }
+        TextField::onSelectKey(e);
+    }
+};
+
+struct SizeHeightField : ui::TextField {
+    PanicRoomModule* module;
+    void onSelectKey(const SelectKeyEvent& e) override {
+        if (e.action == GLFW_PRESS && (e.isKeyCommand(GLFW_KEY_ENTER) || e.isKeyCommand(GLFW_KEY_KP_ENTER))) {
+            float v = atoi(text.c_str());
+            int d = int(module->restrictionBox.size.y / RACK_GRID_HEIGHT) - v;
+            module->restrictionBox.pos.y += d / 2 * RACK_GRID_HEIGHT;
+            module->restrictionBox.size.y -= d * RACK_GRID_HEIGHT;
+            ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
+            overlay->requestDelete();
+            e.consume(this);
+        }
+        TextField::onSelectKey(e);
+    }
+};
+
 struct PanicRoomWidget : ThemedModuleWidget<PanicRoomModule> {
     PanicRoomModule* module;
     PanicRoomRestrictionWidget* selectionWidget;
@@ -208,7 +278,6 @@ struct PanicRoomWidget : ThemedModuleWidget<PanicRoomModule> {
 
         addChild(createWidget<StoermelderBlackScrew>(Vec(0, 0)));
         addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 1 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
-
 
         if (module) {
             selectionWidget = new PanicRoomRestrictionWidget;
@@ -252,16 +321,33 @@ struct PanicRoomWidget : ThemedModuleWidget<PanicRoomModule> {
                 }
             }
         }
-        ModuleWidget::step();
+        ThemedModuleWidget<PanicRoomModule>::step();
     }
 
     void appendContextMenu(ui::Menu* menu) override {
-        ModuleWidget::appendContextMenu(menu);
-        
+        ThemedModuleWidget<PanicRoomModule>::appendContextMenu(menu);
+     
         menu->addChild(new MenuSeparator());
         menu->addChild(createMenuItem("Learn", "", [=]() { selectionWidget->enableLearn(); }));
+        if (module->restrictionEnabled) {
+            menu->addChild(createSubmenuItem("Size", "", 
+                [=](Menu* menu) {
+                    menu->addChild(createMenuLabel("Width (HP)"));
+                    SizeWidthField* widthField = new SizeWidthField;
+                    widthField->box.size.x = 100;
+                    widthField->module = module;
+                    widthField->text = std::to_string((int)(module->restrictionBox.size.x / RACK_GRID_WIDTH));
+                    menu->addChild(widthField);
+                    menu->addChild(createMenuLabel("Height (Rows)"));
+                    SizeHeightField* heightField = new SizeHeightField;
+                    heightField->box.size.x = 100;
+                    heightField->module = module;
+                    heightField->text = std::to_string((int)(module->restrictionBox.size.y / RACK_GRID_HEIGHT));
+                    menu->addChild(heightField);
+                }
+            ));
+        }
         menu->addChild(createMenuItem("Clear", "", [=]() { module->restrictionEnabled = false; }));
-
         menu->addChild(new MenuSeparator());
         menu->addChild(createSubmenuItem("Outside color", "", 
             [=](Menu* menu) {
@@ -274,49 +360,9 @@ struct PanicRoomWidget : ThemedModuleWidget<PanicRoomModule> {
                 }));
             }
         ));
-
-        struct AlphaSlider : ui::Slider {
-            struct AlphaQuantity : Quantity {
-                PanicRoomModule* module;
-
-                AlphaQuantity(PanicRoomModule* module) {
-                    this->module = module;
-                }
-                void setValue(float value) override {
-                    module->outsideAlpha = math::clamp(value, 0.f, 1.f);
-                }
-                float getValue() override {
-                    return module->outsideAlpha;
-                }
-                float getDefaultValue() override {
-                    return 0.5f;
-                }
-                float getDisplayValue() override {
-                    return getValue() * 100;
-                }
-                void setDisplayValue(float displayValue) override {
-                    setValue(displayValue / 100.f);
-                }
-                std::string getLabel() override {
-                    return "Opacity";
-                }
-                std::string getUnit() override {
-                    return "%";
-                }
-            };
-
-            AlphaSlider(PanicRoomModule* module) {
-                this->box.size.x = 200.0;
-                quantity = new AlphaQuantity(module);
-            }
-            ~AlphaSlider() {
-                delete quantity;
-            }
-        };
-
         menu->addChild(new AlphaSlider(module));
     }
-    };
+};
 
 } // namespace PanicRoom
 } // namespace StoermelderPackOne
