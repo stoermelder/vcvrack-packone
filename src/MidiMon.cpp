@@ -63,6 +63,8 @@ struct MidiMonModule : Module {
 	std::list<midi::Message> ccQueue;
 	int16_t ccNrpnParam[16] = {-1};
 	int16_t ccRpnParam[16] = {-1};
+	// stores MSB values for 14-bit CCs (cc 0-31 -> indices 0-31)
+	int8_t cc14bitMsb[16][32] = {{-1}};
 
 	MidiMonModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
@@ -88,6 +90,9 @@ struct MidiMonModule : Module {
 		for (int i = 0; i < 16; i++) {
 			ccNrpnParam[i] = -1;
 			ccRpnParam[i] = -1;
+			for (int j = 0; j < 32; j++) {
+				cc14bitMsb[i][j] = -1;
+			}
 		}
 
 		resetTimestamp();
@@ -321,14 +326,18 @@ struct MidiMonModule : Module {
 			}
 		}
 
-		// 14-bit CC
-		if (32 <= cc && cc < 64 && ccQueue.size() > 0 && !isDataEntry) {
-			midi::Message prevMsg = ccQueue.back();
-
-			float delta = float(msg.frame - prevMsg.frame) * APP->engine->getSampleTime();
-			if (ch == prevMsg.getChannel() && cc == prevMsg.getNote() + 32 && delta < 0.1f) {
-				int16_t value1 = int16_t(prevMsg.bytes[2]) * 128 + value;
-				std::string s = string::f("ch%i cc%i 14-bit=%i", ch + 1, prevMsg.getNote(), value1);
+		// 14-bit CC (CC 0-31 for MSB, CC 32-63 for LSB)
+		if (!isDataEntry && cc < 32) {
+			// CC 0-31: Store as MSB for potential 14-bit CC
+			cc14bitMsb[ch][cc] = value;
+		}
+		if (!isDataEntry && 32 <= cc && cc < 64) {
+			// CC 32-63: LSB for 14-bit CC
+			uint8_t msbCc = cc - 32;
+			if (cc14bitMsb[ch][msbCc] >= 0) {
+				// We have a stored MSB, combine them
+				int16_t value14bit = int16_t(cc14bitMsb[ch][msbCc]) * 128 + value;
+				std::string s = string::f("ch%i cc%i 14-bit=%i", ch + 1, msbCc, value14bit);
 				midiLogMessages.push(std::make_tuple(LOG_FORMAT::INDENTED, 0.f, s));
 			}
 		}
