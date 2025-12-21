@@ -60,11 +60,15 @@ struct MidiMonModule : Module {
 	dsp::RingBuffer<std::tuple<LOG_FORMAT, float, std::string>, 512> midiLogMessages;
 	bool isProcessing = false;
 
-	std::list<midi::Message> ccQueue;
 	int16_t ccNrpnParam[16] = {-1};
 	int16_t ccRpnParam[16] = {-1};
 	// stores MSB values for 14-bit CCs (cc 0-31 -> indices 0-31)
 	int8_t cc14bitMsb[16][32] = {{-1}};
+	// stores MSB for RPN/NRPN data entry (CC 6) per channel, -1 = none
+	int8_t ccDataEntryMsb[16] = {-1};
+	// pending MSB for RPN (CC 101) and NRPN (CC 99) selection per channel
+	int8_t pendingRpnMsb[16] = {-1};
+	int8_t pendingNrpnMsb[16] = {-1};
 
 	MidiMonModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
@@ -90,6 +94,9 @@ struct MidiMonModule : Module {
 		for (int i = 0; i < 16; i++) {
 			ccNrpnParam[i] = -1;
 			ccRpnParam[i] = -1;
+			ccDataEntryMsb[i] = -1;
+			pendingRpnMsb[i] = -1;
+			pendingNrpnMsb[i] = -1;
 			for (int j = 0; j < 32; j++) {
 				cc14bitMsb[i][j] = -1;
 			}
@@ -244,107 +251,110 @@ struct MidiMonModule : Module {
 		uint8_t cc = msg.getNote();
 		int8_t value = msg.bytes[2];
 
-		// RPN param
-		if (cc == 100 && ccQueue.size() > 0) {
-			midi::Message prevMsg = ccQueue.back();
-
-			float delta = float(msg.frame - prevMsg.frame) * APP->engine->getSampleTime();
-			if (prevMsg.getChannel() == ch && prevMsg.getNote() == 101 && delta < 0.1f) {
-				int16_t msb = prevMsg.bytes[2];
-				if (msb == 127 && value == 127) {
+		// RPN selection: CC 101 (MSB) sets pending MSB, CC 100 (LSB) completes selection
+		if (cc == 101) {
+			pendingRpnMsb[ch] = value;
+			// don't return; record and continue
+		} else if (cc == 100) {
+			if (pendingRpnMsb[ch] >= 0) {
+				int16_t rpnMsb = pendingRpnMsb[ch];
+				int16_t rpnLsb = value;
+				int16_t rpnNumber = int16_t(rpnMsb) * 128 + rpnLsb;
+				// RPN reset: 127/127 resets both RPN and NRPN
+				if (rpnMsb == 127 && rpnLsb == 127) {
 					midiLogMessages.push(std::make_tuple(LOG_FORMAT::INDENTED, 0.f, string::f("ch%i rpn/nrpn reset", ch + 1)));
 					ccNrpnParam[ch] = ccRpnParam[ch] = -1;
-				}
-				if (msb == 0) {
-					switch (value) {
+					ccDataEntryMsb[ch] = -1;
+				} else {
+					// Recognize common RPNs when MSB==0 for nicer logging
+					switch (rpnNumber) {
 						case 0: // Pitch Bend Sensitivity
-							midiLogMessages.push(std::make_tuple(LOG_FORMAT::INDENTED, 0.f, string::f("ch%i rpn param=Pitch Bend Sensitivity", ch + 1)));
-							ccNrpnParam[ch] = -1;
-							ccRpnParam[ch] = 0;
+							midiLogMessages.push(std::make_tuple(LOG_FORMAT::INDENTED, 0.f, string::f("ch%i rpn param=0 (Pitch Bend Sensitivity)", ch + 1)));
 							break;
 						case 1: // Fine Tuning
-							midiLogMessages.push(std::make_tuple(LOG_FORMAT::INDENTED, 0.f, string::f("ch%i rpn param=Fine Tuning", ch + 1)));
-							ccNrpnParam[ch] = -1;
-							ccRpnParam[ch] = 1;
+							midiLogMessages.push(std::make_tuple(LOG_FORMAT::INDENTED, 0.f, string::f("ch%i rpn param=1 (Fine Tuning)", ch + 1)));
 							break;
 						case 2: // Coarse Tuning
-							midiLogMessages.push(std::make_tuple(LOG_FORMAT::INDENTED, 0.f, string::f("ch%i rpn param=Coarse Tuning", ch + 1)));
-							ccNrpnParam[ch] = -1;
-							ccRpnParam[ch] = 2;
+							midiLogMessages.push(std::make_tuple(LOG_FORMAT::INDENTED, 0.f, string::f("ch%i rpn param=2 (Coarse Tuning)", ch + 1)));
 							break;
 						case 3: // Tuning Program Select
-							midiLogMessages.push(std::make_tuple(LOG_FORMAT::INDENTED, 0.f, string::f("ch%i rpn param=Tuning Program Select", ch + 1)));
-							ccNrpnParam[ch] = -1;
-							ccRpnParam[ch] = 3;
+							midiLogMessages.push(std::make_tuple(LOG_FORMAT::INDENTED, 0.f, string::f("ch%i rpn param=3 (Tuning Program Select)", ch + 1)));
 							break;
 						case 4: // Tuning Bank Select
-							midiLogMessages.push(std::make_tuple(LOG_FORMAT::INDENTED, 0.f, string::f("ch%i rpn param=Tuning Bank Select", ch + 1)));
-							ccNrpnParam[ch] = -1;
-							ccRpnParam[ch] = 4;
+							midiLogMessages.push(std::make_tuple(LOG_FORMAT::INDENTED, 0.f, string::f("ch%i rpn param=4 (Tuning Bank Select)", ch + 1)));
 							break;
-						default:
+						default: // unknown RPN within MSB==0
+							midiLogMessages.push(std::make_tuple(LOG_FORMAT::INDENTED, 0.f, string::f("ch%i rpn param=%i selected", ch + 1, rpnNumber)));
 							break;
 					}
+					ccRpnParam[ch] = rpnNumber;
+					ccNrpnParam[ch] = -1;
+					// clear pending MSB
+					pendingRpnMsb[ch] = -1;
+					ccDataEntryMsb[ch] = -1;
 				}
 			}
 		}
 
-		// NRPN param
-		if (cc == 98 && ccQueue.size() > 0) {
-			midi::Message prevMsg = ccQueue.back();
-
-			float delta = float(msg.frame - prevMsg.frame) * APP->engine->getSampleTime();
-			if (prevMsg.getChannel() == ch && prevMsg.getNote() == 99 && delta < 0.1f) {
-				int16_t number = int16_t(prevMsg.bytes[2]) * 128 + value;
-				midiLogMessages.push(std::make_tuple(LOG_FORMAT::INDENTED, 0.f, string::f("ch%i nrpn param=%i", ch + 1, number)));
+		// NRPN selection: CC 99 (MSB) sets pending MSB, CC 98 (LSB) completes selection
+		else if (cc == 99) {
+			pendingNrpnMsb[ch] = value;
+		} else if (cc == 98) {
+			if (pendingNrpnMsb[ch] >= 0) {
+				int16_t nrpnMsb = pendingNrpnMsb[ch];
+				int16_t nrpnLsb = value;
+				int16_t number = int16_t(nrpnMsb) * 128 + nrpnLsb;
+				midiLogMessages.push(std::make_tuple(LOG_FORMAT::INDENTED, 0.f, string::f("ch%i nrpn param=%i selected", ch + 1, number)));
 				ccNrpnParam[ch] = number;
 				ccRpnParam[ch] = -1;
+				pendingNrpnMsb[ch] = -1;
+				ccDataEntryMsb[ch] = -1;
 			}
 		}
 
 		// RPN/NRPN data entry
-		bool isDataEntry = false;
 		if (cc == 6 && (ccNrpnParam[ch] >= 0 || ccRpnParam[ch] >= 0)) {
-			// cc38 is optional for LSB
-			// TODO
-		}
-		if (cc == 38 && ccQueue.size() > 0 && (ccNrpnParam[ch] >= 0 || ccRpnParam[ch] >= 0)) {
-			midi::Message prevMsg = ccQueue.back();
-
-			float delta = float(msg.frame - prevMsg.frame) * APP->engine->getSampleTime();
-			if (prevMsg.getChannel() == ch && prevMsg.getNote() == 6 && delta < 0.1f) {
-				int16_t value1 = int16_t(prevMsg.bytes[2]) * 128 + value;
-				if (ccRpnParam[ch] >= 0) {
-					std::string s = string::f("ch%i rpn %i=%i", ch + 1, ccRpnParam[ch], value1);
-					midiLogMessages.push(std::make_tuple(LOG_FORMAT::INDENTED, 0.f, s));
-				}
-				if (ccNrpnParam[ch] >= 0) {
-					std::string s = string::f("ch%i nrpn %i=%i", ch + 1, ccNrpnParam[ch], value1);
-					midiLogMessages.push(std::make_tuple(LOG_FORMAT::INDENTED, 0.f, s));
-				}
-				isDataEntry = true;
+			// Store MSB for potential LSBs (CC 38) that may follow; do not clear immediately
+			ccDataEntryMsb[ch] = value;
+			/*
+			// Log MSB-only entry as an indication (14-bit value MSB<<7)
+			int16_t msbOnly = int16_t(value) << 7;
+			if (ccRpnParam[ch] >= 0) {
+				midiLogMessages.push(std::make_tuple(LOG_FORMAT::INDENTED, 0.f, string::f("ch%i rpn %i MSB=%i", ch + 1, ccRpnParam[ch], msbOnly)));
+			} else if (ccNrpnParam[ch] >= 0) {
+				midiLogMessages.push(std::make_tuple(LOG_FORMAT::INDENTED, 0.f, string::f("ch%i nrpn %i MSB=%i", ch + 1, ccNrpnParam[ch], msbOnly)));
 			}
+			*/
 		}
-
-		// 14-bit CC (CC 0-31 for MSB, CC 32-63 for LSB)
-		if (!isDataEntry && cc < 32) {
-			// CC 0-31: Store as MSB for potential 14-bit CC
-			cc14bitMsb[ch][cc] = value;
-		}
-		if (!isDataEntry && 32 <= cc && cc < 64) {
-			// CC 32-63: LSB for 14-bit CC
-			uint8_t msbCc = cc - 32;
-			if (cc14bitMsb[ch][msbCc] >= 0) {
-				// We have a stored MSB, combine them
-				int16_t value14bit = int16_t(cc14bitMsb[ch][msbCc]) * 128 + value;
-				std::string s = string::f("ch%i cc%i 14-bit=%i", ch + 1, msbCc, value14bit);
+		else if (cc == 38 && (ccNrpnParam[ch] >= 0 || ccRpnParam[ch] >= 0)) {
+			int16_t finalValue;
+			if (ccDataEntryMsb[ch] >= 0) {
+				finalValue = int16_t(ccDataEntryMsb[ch]) * 128 + value;
+			} else {
+				finalValue = value; // LSB-only
+			}
+			if (ccRpnParam[ch] >= 0) {
+				std::string s = string::f("ch%i rpn param=%i value=%i", ch + 1, ccRpnParam[ch], finalValue);
+				midiLogMessages.push(std::make_tuple(LOG_FORMAT::INDENTED, 0.f, s));
+			}
+			if (ccNrpnParam[ch] >= 0) {
+				std::string s = string::f("ch%i nrpn param=%i value=%i", ch + 1, ccNrpnParam[ch], finalValue);
 				midiLogMessages.push(std::make_tuple(LOG_FORMAT::INDENTED, 0.f, s));
 			}
 		}
 
-		ccQueue.push_back(msg);
-		if (ccQueue.size() > 3) {
-			ccQueue.pop_front();
+		// 14-bit CC (CC 0-31 for MSB, CC 32-63 for LSB)
+		if (cc < 32) {
+			// CC 0-31: Store as MSB for potential 14-bit CC
+			cc14bitMsb[ch][cc] = value;
+		} else if (32 <= cc && cc < 64) {
+			// CC 32-63: LSB for 14-bit CC
+			uint8_t msbCc = cc - 32;
+			if (cc14bitMsb[ch][msbCc] >= 0) {
+				int16_t value14bit = int16_t(cc14bitMsb[ch][msbCc]) * 128 + value;
+				std::string s = string::f("ch%i 14-bit cc%i=%i", ch + 1, msbCc, value14bit);
+				midiLogMessages.push(std::make_tuple(LOG_FORMAT::INDENTED, 0.f, s));
+			}
 		}
 	}
 
