@@ -24,5 +24,7 @@ POLY-PILE features a _RESET_-port for triggering a reset to 0V if no cable is co
 
 PILE and POLY-PILE come quite handy together with the module MIDI-STEP which outputs increment and decrement triggers for endless rotary knobs on your MIDI-controller.
 
+## Changelog
+
 PILE was introduced in v1.5 of PackOne.  
 POLY-PILE was introduced in v1.6 of PackOne.

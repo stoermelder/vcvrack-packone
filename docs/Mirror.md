@@ -4,12 +4,12 @@ MIRROR is a utility module designed to synchronize parameters across multiple in
 
 ![MIRROR Intro](./Mirror-intro.png)
 
-### How to use MIRROR
+### How to use
 
 - Place MIRROR between two instances of the same module.
-- Select the **_Bind source module (left)_** option to map all parameters of the module on the left side of MIRROR.
-- Place another instance of the same module to the right of MIRROR and select **_Map module (right)_** from the context menu to link all parameters.
-- Alternatively, use **_Add and map new module_** to automatically add and map a new instance.
+- Select the _Bind source module (left)_ option to map all parameters of the module on the left side of MIRROR.
+- Place another instance of the same module to the right of MIRROR and select _Map module (right)_ from the context menu to link all parameters.
+- Alternatively, use _Add and map new module_ to automatically add and map a new instance.
 
 Once bound, mapped modules can be placed anywhere in your Rack patch. They do not need to remain directly connected to MIRROR.
 
@@ -31,22 +31,20 @@ MIRROR includes eight input ports (0–10V range) that can be dynamically assign
 
 ### Presets
 
-Many modules have internal states that are not reflected in their panel parameters. While MIRROR cannot automatically sync these internal states, you can manually trigger a **sync** to ensure all mirrored modules start in the same initial state.
+Many modules have internal states that are not reflected in their panel parameters. While MIRROR cannot automatically sync these internal states, you can manually trigger a sync to ensure all mirrored modules start in the same initial state.
 
 ![MIRROR Sync Example](./Mirror-sync.gif)
 
 ### Additional Features
 
-- **CPU Optimization**:
-  Mapping many parameters can increase CPU usage. If audio-rate automation is required, enable **_Audio rate processing_** in the context menu. By default, parameters are updated only every **32nd audio sample**, reducing CPU usage to roughly **1/32th** of the original load.
+- **CPU Optimization** - Mapping many parameters can increase CPU usage. If audio-rate automation is required, enable _Audio rate processing_ in the context menu. By default, parameters are updated only every **32nd audio sample**, reducing CPU usage to roughly **1/32th** of the original load.
 
-- **Disable mapping indicators**:
-  If the mapping indicators are distracting, you can disable them via the context menu.
+- **Disable mapping indicators** - If the mapping indicators are distracting, you can disable them via the context menu.
 
-- **Syncing modules without parameters**:
-  Added in **v1.8.0**: The **_Sync module presets_** option works even if the mirrored module lacks parameters, such as with **[VCV Host](https://library.vcvrack.com/VCV-Host/Host)**.
+- **Syncing modules without parameters** - Added in v1.8.0: The _Sync module presets_ option works even if the mirrored module lacks parameters, such as with [VCV Host](https://library.vcvrack.com/VCV-Host/Host).
 
-- **Parameter change reporting in VCV Rack plugins**:
-  By default, parameter changes are not reported back to the plugin host when using MIRROR in a plugin version of VCV Rack. In **v2.2.0**, an option was added to enable this behavior, though it may increase plugin CPU usage.
+- **Parameter change reporting in VCV Rack plugins** - By default, parameter changes are not reported back to the plugin host when using MIRROR in a plugin version of VCV Rack. In v2.2.0, an option was added to enable this behavior, though it may increase plugin CPU usage.
+
+## Changelog
 
 MIRROR was introduced in v1.6 of PackOne.

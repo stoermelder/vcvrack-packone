@@ -58,7 +58,7 @@ The _SEQ#_-input allows you to select sequences by CV. There are three different
 - C4-G4: Keyboard mode, C4 triggers sequence 1, G4 triggers sequence 8.
 - Trigger: When a trigger is received the module advances to the next sequence.
 
-## PHASE-input
+### PHASE-input
 
 The input labeled _PHASE_ accepts 0-10V and allows controlling the playhead directly: Voltages from 0 to 10V are mapped to the length of the sequence. Using an LFO's unipolar saw output or a clock with phase output like [ZZC's Clock-module](https://zzc-cv.github.io/en/clock-manipulation/clock) the playback can be synced to sequencers and you get behavior of Loop-mode, an LFO with triangle-output gives you ping pong-playback. Obviously multiple instances of the module can also be synchronized this way.
 
@@ -84,7 +84,7 @@ _REC_-input is used for starting and stopping recordings by CV trigger. Be aware
 
 The _REC_-output can be configured as "gate" or "trigger" everytime a recording starts or stops.
 
-## _IN_-input
+### _IN_-input
 
 The port labeled _IN_ accepts 0..10V or -5..5V (configuration option is found in the context menu) and can be used to record parameter automation data from any external CV source. All parameter movements are ignored during a recording when a cable is connected to this port.
 
@@ -102,5 +102,7 @@ The _OUT_-port outputs a voltage for the recorded sequence. It can be configured
 - "Randomization" of the module generates some random automation curves (added in v1.0.5).
 - A simple compression is implemented to reduce the size of the patchfile.
 - Parameter changes are not reported back to the plugin-host by default if ReMOVE Lite is used in a plugin-version of VCV Rack. In v2.2.0 a context menu option has been added to enable this behavior - it might cause higher CPU usage of the plugin.
+
+## Changelog
 
 ReMOVE Lite was introduced in v1.0.2 of PackOne.

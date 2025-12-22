@@ -6,4 +6,5 @@ INFIX is a utility module for inserting or replacing individual channels within 
 
 ![INFIX Intro](./Infix-replace.gif)
 
-INFIX was introduced in v1.0.3 of PackOne. µINFIX was introduced in v1.3.0.
+INFIX was introduced in v1.0.3 of PackOne.  
+µINFIX was introduced in v1.3.0.

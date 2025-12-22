@@ -1,6 +1,6 @@
 # stoermelder MIDI-PLUG
 
-MIDI-PLUG is an utility module for MIDI routing that enables:
+MIDI-PLUG is a utility module for MIDI routing that enables:
 - Merging messages from different MIDI ports
 - Filtering MIDI messages by channel
 - Duplicating messages to two separate output ports
@@ -9,7 +9,7 @@ MIDI-PLUG is an utility module for MIDI routing that enables:
 
 Each of the two output ports (located in the lower section) can be configured in different operating modes:
 
-- "Thru" sends every MIDI message unmodified to the MIDI device.
+- **Thru** sends every MIDI message unmodified to the MIDI device.
 
 - When a specific MIDI channel is selected, three sub-modes become available:
 

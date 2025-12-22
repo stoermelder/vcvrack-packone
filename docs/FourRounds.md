@@ -16,10 +16,12 @@ The _INV_ function inverts the module's state. Losers of all 1-on-1 matches beco
 
 The module provides currently three different operation modes selectable on the context menu:
 
-- In "CV / Audio" mode, the winning signal from each match is directly routed to its corresponding output. Active signals are shown by LEDs lit in green and an inverted state is shown by LEDs lit in red.
-- In "Sample & Hold" mode, a single sample of each input is captured upon receiving a trigger on TRIG.Green and red LEDs are used the same way as in "CV / audio" mode.
-- In "Quantum" mode, outputs are not binary (winners/losers) but a weighted mix of all input signals. The output reflects every possible state between inputs. The LEDs are lit in white signaling the weighting.
+- In **CV / Audio** mode, the winning signal from each match is directly routed to its corresponding output. Active signals are shown by LEDs lit in green and an inverted state is shown by LEDs lit in red.
+- In **Sample & Hold** mode, a single sample of each input is captured upon receiving a trigger on TRIG. Green and red LEDs are used the same way as in "CV / audio" mode.
+- In **Quantum** mode, outputs are not binary (winners/losers) but a weighted mix of all input signals. The output reflects every possible state between inputs. The LEDs are lit in white signaling the weighting.
 
 ![4ROUNDS quantum mode](./FourRounds-quantum.gif)
+
+## Changelog
 
 This module was introduced in v1.2 of PackOne.

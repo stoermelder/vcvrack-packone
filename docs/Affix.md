@@ -11,11 +11,11 @@ The knobs offer three modes via the context menu:
 
 ![AFFIX modes](./Affix-modes.png)
 
-The modules can adjust the number of active channels in polyphonic cables or output voltage even without an input signal. To do this, set the number of channels in the context menu. In "Auto" mode, the output matches the number of channels received on the input port.
+The modules can adjust the number of active channels in polyphonic cables or output voltage even without an input signal. To do this, set the number of channels in the context menu. In _Auto_ mode, the output matches the number of channels received on the input port.
 
 ![AFFIX channels](./Affix-channels.png)
 
-### Changelog
+## Changelog
 
 - v1.6.0
     - Initial release of AFFIX and µAFFIX

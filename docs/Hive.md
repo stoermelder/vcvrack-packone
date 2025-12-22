@@ -27,7 +27,7 @@ A lush example of how HIVE and MAZE can work together:
 [![HIVE and MAZE](https://img.youtube.com/vi/KYbfuj7EbbQ/0.jpg)](https://www.youtube.com/watch?v=KYbfuj7EbbQ)
 
 
-### Changelog
+## Changelog
 
 - v1.8.0
   - Initial release of HIVE
