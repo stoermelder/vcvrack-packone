@@ -1,6 +1,6 @@
 # stoermelder SAIL
 
-SAIL is an utility module. It allows you to control any module parameter which is currently hovered by the mouse pointer with CV.
+SAIL is a utility module. It allows you to control any module parameter which is currently hovered by the mouse pointer with CV.
 
 ![SAIL intro](./Sail-intro.png)
 
@@ -32,9 +32,9 @@ Additionally the module can convert the current value of the hovered parameter t
 
 ### Tips
 
-* You can use multiple instances of SAIL with different _STEP_-sizes for the _INC/DEC_-ports.
+- You can use multiple instances of SAIL with different _STEP_-sizes for the _INC/DEC_-ports.
 
-* You can use multiple instances of SAIL, one with _FINE_ permanently set to a high voltage and patched to a different CC of VCV MIDI-CC. This way one MIDI controller knob can be used for coarse control and one knob for fine control.
+- You can use multiple instances of SAIL, one with _FINE_ permanently set to a high voltage and patched to a different CC of VCV MIDI-CC. This way one MIDI controller knob can be used for coarse control and one knob for fine control.
 
 <a name="overlay"></a>
 * SAIL uses an overlay window displaying parameter changes on the bottom of the screen (since v1.9.0). This overlay is enabled by default and can be disabled in the context menu. Some adjustments for the appearance of the overlay can be made with the [stoermelder ME](./Me.md) module.

@@ -6,11 +6,11 @@ STRIP is a module for managing a strip of modules. A "strip" is a group of modul
 
 STRIP uses Rack v1's expander-mechanism to traverse the modules in a group. Changing the modules in a strip is simply moving them a bit in Rack and creating an empty space between the rest of the modules. 
 
-## MODE
+### MODE
 
 STRIP can be configured which modules will be considered as managed. By default STRIP handles all modules left and right of itself, but the _MODE_-button allows you to toggle to left-only or right-only. Which modules are affected is shown by the triangle-shaped LEDs on the panel.
 
-## ON, OFF, RAND
+### ON, OFF, RAND
 
 The sections _ON_, _OFF_ and _RAND_ provide CV control of options only available in the context menu of modules: _ON_ and _OFF_ triggers "Disable" with different modes, _RAND_ triggers "Randomize". 
 
@@ -20,15 +20,15 @@ The sections _ON_, _OFF_ and _RAND_ provide CV control of options only available
 
 The modes for the _ON_-section are:
 
-- **Default**: _ON_ enables the modules, _OFF_ disables the modules.
-- **Toggle**: _ON_ toggles enable/disable of the modules, _OFF_ disables the modules.
-- **High/Low**: _ON_ in high-state (button pressed or voltage >=1V) enables the modules, _ON_ in low-state (voltage <1V) disables the modules.
+- **Default** - _ON_ enables the modules, _OFF_ disables the modules.
+- **Toggle** - _ON_ toggles enable/disable of the modules, _OFF_ disables the modules.
+- **High/Low** - _ON_ in high-state (button pressed or voltage >=1V) enables the modules, _ON_ in low-state (voltage <1V) disables the modules.
 
 Added in v1.1.0: The button labeled _INC/EXC_ allows you to include or exclude some parameters within the strip from randomization. To add a parameter to the inclusion/exclusion list first enable learn mode by pressing _INC/EXC_, the LED turns red. Next, touch the parameter which should only be randomized or not be randomized. Learn mode will be automatically disabled and you can repeat the learning procedure for another parameter. Green light on the LED signals that at least one parameter has been included/excluded. A long press on the button resets all included/excluded parameters and the LED turns off. You can switch between inclusion-mode and exclusion-mode on the context menu of the _INC/EXC_-button.
 
 Added in v1.7.0: The option _Randomize parameters only_ on the contextual menu applies randomization only to parameters without touching the module's internal state. Every module-developer defines which attributes of a module are randomized by using the "Randomize"-function. STRIP can apply randomization only to parameters (knobs, faders, switches...).
 
-## Loading and saving, copying and pasting strips
+### Loading and saving, copying and pasting strips
 
 A useful feature of STRIP is its ability to save strips to files and load them afterwards. This allows you to build blocks of modules for some purpose (e.g. synth voices, fx sections, mixer consoles) and reuse them later in a different patch or quickly clone them within the same patch.
 
@@ -43,13 +43,13 @@ When using left-only or right-only mode only affected modules will be saved and 
 ![STRIP copy and paste](./Strip-copy.gif)
 
 <a name="preset"></a>
-Added in v1.8.0: The _Preset_ context menu option lists all vcvss-files stored in the folder \<Rack-user-folder\>/Stoermelder-P1/presets/Strip. The \<Rack-user-folder\> can be opened with the top-most subemnu item or according to the [offical documentation](https://vcvrack.com/manual/FAQ#where-is-the-rack-user-folder). Subfolders are not supported at the moment.
+Added in v1.8.0: The _Preset_ context menu option lists all vcvss-files stored in the folder \<Rack-user-folder\>/Stoermelder-P1/presets/Strip. The \<Rack-user-folder\> can be opened with the top‑most submenu item or according to the [official documentation](https://vcvrack.com/manual/FAQ#where-is-the-rack-user-folder). Subfolders are not supported at the moment.
 
 ![STRIP presets](./Strip-presets.png)
 
 The file-format "vcvss" for storing strips is very close to Rack's own format for storing patches or module presets. Compatibility in future versions should be no problem as long Rack will be able to load module preset files from older Rack versions.
 
-## Tips
+### Tips
 
 - If you want to add some documentation for your strip just include a VCV Notes module and type in some text.
 

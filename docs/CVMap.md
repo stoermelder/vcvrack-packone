@@ -22,7 +22,7 @@ You can bind up to 32 mapping slots onto parameters of any module in your patch.
 
 In the context menu of each mapping slot you find a option "Locate and indicate" which centers the module on screen and blinks the pink mapping indicator for a short time (since v1.0.2). It is useful when you get lost in what maps what.
 
-## Inputs
+### Inputs
 
 For saving some panel space the module uses two polyphonic input ports for receiving up to 32 voltages. In most cases you add an VCV Merge-module to combine the signals and send it to CV-MAP then. By default the input ports expect voltages between 0 and 10V but they can be switched to bipolar mode (-5 to 5V) in the context menu.
 
@@ -46,11 +46,11 @@ Added in v1.9: Each mapping slot has also two sliders (_Low_ and _High_) for sca
 
 ### Additional features
 
-- Mapping many parameters can result in quite high CPU usage. If automation at audio rate is not needed you can disable "Audio rate processing" on the context menu: This way only on every 32th audio sample the mapped parameter is updated and the CPU usage drops to about a 32th (since v1.4).
+- Mapping many parameters can result in quite high CPU usage. If automation at audio rate is not needed you can disable _Audio rate processing_ on the context menu: This way only on every 32th audio sample the mapped parameter is updated and the CPU usage drops to about a 32th (since v1.4).
 
 - If you find the pink mapping indicators distracting you can disable them on the context menu (since v1.5).
 
-- Accidental changes of the mapping slots can be prevented by the "Lock mapping slots" context menu option which locks access to the widget of the mapping slots (since v1.5.0).
+- Accidental changes of the mapping slots can be prevented by the _Lock mapping slots_ context menu option which locks access to the widget of the mapping slots (since v1.5.0).
 
 - A blinking mapping indicator will indicate the bound parameter of the mapping-slot which is currently selected (since v1.7). 
 
@@ -61,7 +61,7 @@ Added in v1.9: Each mapping slot has also two sliders (_Low_ and _High_) for sca
 
 - Parameter changes are not reported back to the plugin-host by default if CV-MAP is used in a plugin-version of VCV Rack. In v2.2.0 a context menu option has been added to enable this behavior - it might cause higher CPU usage of the plugin.
 
-## CTX-expander
+### CTX-expander
 
 CTX is a companion module for CV-MAP: The expander allows you to name each instance of CV-MAP in your patch. This name can be addressed in every parameters' context menu for mapping or re-mapping parameters to input channels of the two input ports.
 
@@ -72,7 +72,6 @@ CTX for CV-MAP must be placed on the right side of CV-MAP. The display can hold 
 ### A tutorial and showcase of **CV-MAP CTX** made by VCV Rack Ideas
 
 <a href="https://www.youtube.com/watch?v=BfQuliXOAkM" target="_blank"><img src="https://img.youtube.com/vi/BfQuliXOAkM/0.jpg" style="width:100%" /></a>
-
 
 ## Changelog
 

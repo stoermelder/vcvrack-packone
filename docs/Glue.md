@@ -1,6 +1,6 @@
 # stoermelder GLUE
 
-GLUE is an utility module that provides the ability to put small text labels on modules in VCV Rack.
+GLUE is a utility module that provides the ability to put small text labels on modules in VCV Rack.
 
 ![GLUE intro](./Glue-intro.png)
 
@@ -24,13 +24,14 @@ There are global controls for opacity available which affect all labels of a GLU
 ### Default appearance and skew
 
 While each label keeps its own settings for appearance the module provides default settings which will be applied on every new label. These settings are:
-* **Size**
-* **Width**
-* **Opacity**
-* **Rotation**: 0, 90 or 270 degrees
-* **Font**: Default (typewriter) and Handwriting
-* **Font-color**: Preset-colors or your own color hexstring (#ffffff) for font-drawing (since v1.7.0)
-* **Color**: Preset-colors or your own color hexstring (#ffffff)
+
+- **Size**
+- **Width**
+- **Opacity**
+- **Rotation** - 0, 90 or 270 degrees
+- **Font** - Default (typewriter) and Handwriting
+- **Font-color** - Preset-colors or your own color hexstring (#ffffff) for font-drawing (since v1.7.0)
+- **Color** - Preset-colors or your own color hexstring (#ffffff)
 
 ![GLUE default appearance](./Glue-default.png)
 
@@ -47,15 +48,15 @@ The context menu option "Duplicate" arms the labeling mode. Click on any module 
 
 ### Tips
 
-* Labels get deleted when a module is removed from Rack.
-* When undo-ing a delete operation of a module all labels will also reappear.
-* Duplicating a label won't duplicate the skew.
-* Duplicating an instance of GLUE won't duplicate any labels.
-* While a label is strictly attached to a module it can be placed 50% off in any direction.
-* Labels are drawn above all module components but below cables.
-* GLUE supports labels within a stoermelder STRIP-file (since v1.7.0). Please note that GLUE must be included in the strip.
+- Labels get deleted when a module is removed from Rack.
+- When undo-ing a delete operation of a module all labels will also reappear.
+- Duplicating a label won't duplicate the skew.
+- Duplicating an instance of GLUE won't duplicate any labels.
+- While a label is strictly attached to a module it can be placed 50% off in any direction.
+- Labels are drawn above all module components but below cables.
+- GLUE supports labels within a stoermelder STRIP-file (since v1.7.0). Please note that GLUE must be included in the strip.
 
-### Changelog
+## Changelog
 
 - v1.6.0
     - Initial release of GLUE

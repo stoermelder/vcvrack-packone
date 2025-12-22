@@ -1,6 +1,6 @@
 # stoermelder STRIP++
 
-STRIP++ is an utility module for importing and pasting Rack selections while preserving parameter mappings and **[GLUE labels](Glue.md)**.
+STRIP++ is a utility module for importing and pasting Rack selections while preserving parameter mappings and **[GLUE labels](Glue.md)**.
 
 ### How It Works
 
@@ -20,6 +20,7 @@ STRIP++ functions solely as an import utility and can be removed after completin
 
 ![STRIP++ Import Process](./StripPp-2.png)
 
-### Changelog
+## Changelog
+
 - v2.0.0
     - Initial release of STRIP++

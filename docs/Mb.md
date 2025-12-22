@@ -4,7 +4,7 @@ MB is a module for experimental replacement for Rack's module browser, formerly 
 
 ![MB intro](./Mb-intro.png)
 
-## Tips
+### Tips
 
 - Hidden modules can be shown again by hotkey CTRL+Space.
 
@@ -20,4 +20,6 @@ MB is a module for experimental replacement for Rack's module browser, formerly 
 
 <a href="https://www.youtube.com/embed/7DSTPIHWOVg?start=1640" target="_blank"><img src="https://img.youtube.com/vi/7DSTPIHWOVg/0.jpg" style="width:100%" /></a>
 
-MB was added in v1.8 of PackOne.
+## Changelog
+
+MB was introduced in v1.8 of PackOne.
