@@ -11,8 +11,11 @@ The module produces no signal on its own.
 The module has 8 input-ports with assigned controls for _Amount_ and _Radius_ and are routed their output-ports respectively. The signal sent to the _OUT_-port is calculated in this way: The amount is used to scale the input linearly between 0-100%. The radius defines the range of influence of the input-signal according to the euclidian distance between each of the _MIX_-objects in 2d-space considering the x/y coordinates of the objects. These weighted distances are summed in respect of one of the following _OUT_-modes:
 
 - **Scale** - Each _MIX_-port brings in at most $\frac{1}{n}$ * 100% of the input-signal if $n$ _MIX_-ports are active, so the output can reach 100% at most.
+
 - **Limit** - Each _MIX_-port brings in at most 100% of the input-signal and the output is limited at 100% of the input.
+
 - **Clip -5..5V / 0..10V** - Each _MIX_-port brings in at most 100% of the input-signal, the sum can be >100% but the output is hard limited on -5..5V or 0..10V.
+
 - **Fold -5..5V / 0..10V** - Each _MIX_-port brings in at most 100% of the input-signal, the sum can be >100% but the output is wave-folded on -5..5V or 0..10V.
 
 Each channel has several settings that can be changed by the context-menu of the small text-display or directly on the white circle in the center-screen.
@@ -34,8 +37,11 @@ The position in 2d-space of each input (and mix-output) can be changed by mouse 
 For further modulation of the input-signals each channel has a _MOD_-_input that can be used for different modulation targets shown in the channels text-display:
 
 - **RAD / radius (Default)** - The radius of an input determines the range within 2d-space in which the signal is sent to its _OUT_-port and to the _MIX_-ports.
+
 - **AMT / amount** - The amount determines how much of the input signal is entering the signal-path.
-- **O-X, O-Y / offset x-pos, offset y-pos** - The offsets for x/y-coordinates can be used in addition to the _X_/_Y_-ports to offset one of the CV-signals. 
+
+- **O-X, O-Y / offset x-pos, offset y-pos** - The offsets for x/y-coordinates can be used in addition to the _X_/_Y_-ports to offset one of the CV-signals.
+
 - **WLK / Random walk** - The position of the input in 2d-space is randomly modified.
 
 ![ARENA modulation targets](./Arena-mod.png)
@@ -59,9 +65,13 @@ There are some edit options available to modify a recorded path or one of the pr
 The _SEQ_-input allows you to select a sequence by CV. There are several modes available:
 
 - **Trigger forward** (Default) - When a trigger is received the module advances to the next sequence-slot.
+
 - **Trigger reverse** - When a trigger is received the module advances to the previous sequence-slot.
+
 - **Trigger random 1-16, 1-8 or 1-4** - When a trigger is received the module chooses a random sequence-slot within the selected range.
+
 - **0..10V** - The range is splitted evenly by 16. 0-0.625V selects sequence-slot 1, 0.625-1.25V sequence-slot 2 and so on.
+
 - **C4-D#5** - Keyboard mode, C4 triggers sequence-slot 1, D#5 triggers sequence-slot 16.
 
 ![ARENA motion sequences](./Arena-seq1.png)

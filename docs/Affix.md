@@ -5,9 +5,12 @@ AFFIX and µAFFIX are utility modules for polyphonic cables. They allow you to a
 ![AFFIX intro](./Affix-intro.png)
 
 The knobs offer three modes via the context menu:
-- **Volt**: Set the knobs to an exact voltage.
-- **Semitones**: Snap the offset in semitone steps (1/12V per step, per the 1V/Oct standard).
-- **Octave**: Snap the offset in 1V increments.
+
+- **Volt** - Set the knobs to an exact voltage.
+
+- **Semitones** - Snap the offset in semitone steps (1/12V per step, per the 1V/Oct standard).
+
+- **Octave** - Snap the offset in 1V increments.
 
 ![AFFIX modes](./Affix-modes.png)
 

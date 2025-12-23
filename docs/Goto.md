@@ -12,7 +12,9 @@ Already used jump points are lit in yellow and can be cleared by long‑pressing
 There are several settings available in the context menu:
 
 - **Smooth transition**: By default the viewport jumps directly to the bound module. Enabling this option moves the viewport smoothly to the new position, which may increase graphical processing load.
+
 - **Ignore zoom level**: By default GOTO recalls the zoom level at binding time. Enabling this option keeps the current zoom level unchanged.
+
 - **Jump position**: This option determines whether the bound module is centered on the screen or moved to the top‑left corner.
 
 ### _INPUT_-port

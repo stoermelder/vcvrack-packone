@@ -21,7 +21,9 @@ The sections _ON_, _OFF_ and _RAND_ provide CV control of options only available
 The modes for the _ON_-section are:
 
 - **Default** - _ON_ enables the modules, _OFF_ disables the modules.
+
 - **Toggle** - _ON_ toggles enable/disable of the modules, _OFF_ disables the modules.
+
 - **High/Low** - _ON_ in high-state (button pressed or voltage >=1V) enables the modules, _ON_ in low-state (voltage <1V) disables the modules.
 
 Added in v1.1.0: The button labeled _INC/EXC_ allows you to include or exclude some parameters within the strip from randomization. To add a parameter to the inclusion/exclusion list first enable learn mode by pressing _INC/EXC_, the LED turns red. Next, touch the parameter which should only be randomized or not be randomized. Learn mode will be automatically disabled and you can repeat the learning procedure for another parameter. Green light on the LED signals that at least one parameter has been included/excluded. A long press on the button resets all included/excluded parameters and the LED turns off. You can switch between inclusion-mode and exclusion-mode on the context menu of the _INC/EXC_-button.
@@ -90,7 +92,7 @@ The file-format "vcvss" for storing strips is very close to Rack's own format fo
 
 # stoermelder STRIP-BAY
 
-STRIP-BAY is a companion module for STRIP: It is used to name some "patching-points" like a patch-bay in your strip and keep the cables to the rest of your patch intact while you load different strips. Multiple STRIP-BAY modules can be used in a STRIP and mapped by identical text labels.
+STRIP-BAY is a companion module for STRIP: It is used to name some "patching-points" like a patch-bay in your strip and keep the cables to the rest of your patch intact while you load different strips. Multiple STRIP-BAY modules can be used in a STRIP and mapped by identical text identifiers.
 
 [![STRIP-BAY usage](https://img.youtube.com/vi/xGKoQdN9K60/0.jpg)](https://www.youtube.com/watch?v=xGKoQdN9K60)
 

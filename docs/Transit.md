@@ -1,6 +1,6 @@
 # stoermelder TRANSIT
 
-TRANSIT is a utility module for morphing other module's parameters between one "snapshot" to another utilizing Rack's parameter-mapping functionality. The module provides 12 snapshot-slots and can be extended with up to seven extender-modules called +T.
+TRANSIT is a utility module for morphing parameters of other modules between one "snapshot" to another utilizing Rack's parameter-mapping functionality. The module provides 12 snapshot-slots and can be extended with up to seven extender-modules called +T.
 
 There is a nice [video overview](https://www.youtube.com/watch?v=qnjBrlkcYOw) from [Artem Leonov](https://artemleonov.bandcamp.com/) of _VCV Rack Ideas_ showcasing a preview-build of TRANSIT.
 
@@ -19,6 +19,7 @@ At least one parameter (knob, fader, switch...) must be bound to TRANSIT before 
 ![TRANSIT bind select](./Transit-bind-select.gif)
 
 - **Bind single parameter** - Selecting _Bind single parameter_ turns the mouse pointer into a crosshair. After you click on a parameter of any module this parameter gets bound by TRANSIT.
+
 - **Bind multiple parameters** - This mode works the same way as _Bind single parameter_ except the binding mode is not disabled automatically and multiple parameters can be bound in a row.
 
 ![TRANSIT bind parameter](./Transit-bind-param.gif)
@@ -28,7 +29,7 @@ Parameters can be unbound at any point by unmapping the mapping indicator. Pleas
 
 ### Write-mode: saving snapshots
 
-Write-mode is used to save snapshots in TRANSIT after some parameters have been bound: A snapshot consists of the values all bound parameters are currently set to. You enter write-mode by flipping the switch on the bottom to the _W_-position. To store a snapshot simply short press one of the 12 snapshot-buttons and the LED on a snapshot-button is lit in red when a slot is in use. To clear a snapshot long-press the button. 
+Write-mode is used to save snapshots in TRANSIT after some parameters have been bound: A snapshot consists of the values all parameters of modules are currently set to. You enter write-mode by flipping the switch on the bottom to the _W_-position. To store a snapshot simply short press one of the 12 snapshot-buttons and the LED on a snapshot-button is lit in red when a slot is in use. To clear a snapshot long-press the button. 
 
 ![TRANSIT write-mode](./Transit-write.gif)
 
@@ -49,7 +50,7 @@ In write-mode any input on the _SEL_-port is ignored and sequencing is disabled.
 
 ### Read-mode: morphing between snapshots
 
-Read-mode is the default operational mode of TRANSIT and is used to "load" or "apply" previously saved snapshots on the bound parameters. The interesting part of TRANSIT is its ability to "morph" the parameter values into the target snapshot: _FADE_ sets the amount of time it takes to reach the parameters' positions stored in the snapshot, this duration can also be controlled by CV (0-10V). There is also a trimpot for setting the shape of the transition, in the middle position the parameters are morphed linearly.
+Read-mode is the default operational mode of TRANSIT and is used to "load" or "apply" previously saved snapshots on the parameters. The interesting part of TRANSIT is its ability to "morph" the parameter values into the target snapshot: _FADE_ sets the amount of time it takes to reach the parameters' positions stored in the snapshot, this duration can also be controlled by CV (0-10V). There is also a trimpot for setting the shape of the transition, in the middle position the parameters are morphed linearly.
 
 ![TRANSIT morph](./Transit-morph.gif)
 
@@ -65,16 +66,26 @@ The fun begins when you use the port labelled _SEL_ for selecting snapshots by C
 
 Modes for _SEL_ on the contextual menu:
 
-- **Trigger forward** - A trigger advances TRANSIT to the next snapshot. Empty slots are part of the sequence but won't have any effect on the bound parameters. A trigger on _RESET_ restarts the sequence on snapshot 1.
+- **Trigger forward** - A trigger advances TRANSIT to the next snapshot. Empty slots are part of the sequence but won't have any effect on the parameters. A trigger on _RESET_ restarts the sequence on snapshot 1.
+
 - **Trigger reverse** - Same as **Trigger forward** but reverse direction.
+
 - **Trigger pingpong** - Same as **Trigger forward** but loops first forward then reverse.
+
 - **Trigger alternating** (added in v1.8.0) - Same as **Trigger forward** but progresses in the following manner (for 6 active snapshots): 1, 2, 1, 3, 1, 4, 1, 5, 1, 6, 1, 5, 1, 4, 1, 3, 1, 2, ...
+
 - **Trigger random** - Same as **Trigger forward** but chooses the next snapshot randomly.
+
 - **Trigger pseudo-random** (added in v1.8.0) - Same as **Trigger random** but never chooses a snapshot multiple times in a row (which happens on "random").
+
 - **Trigger random walk** (added in v1.8.0) - Same as **Trigger forward** but chooses the next snapshot randomly right next to the currently active snapshot.
+
 - **Trigger shuffle** (added in v1.8.0) - Same as **Trigger forward** but works on a random permutation of the active snapshots: Every snapshot will be enabled once before the next permutation is randomly generated.
+
 - **0..10V** - You can select a specific snapshot by voltage. A voltage 0-0.833V selects slot 1, 0.833-0.166V selects slot 2, and so on, if all 12 snapshot-slots are active. Keep in mind that adjusting the length of the sequence also adjusts the voltage range for selecting individual slots: A sequence with length 2 will select slot 1 on voltage 0-5V etc.
+
 - **C4** - This mode follows the V/Oct-standard. C4 selects snapshot 1, C#4 selects snapshot 2 and so on. Channel 2 on the CV-input acts on triggers to re-trigger the currently selected snapshot.
+
 - **Arm** - This mode is a kind of "buffered trigger": First apply a clock signal on _SEL_. Then you "arm" any snapshot manually or by MIDI-mapping by its button (resulting in a yellow LED) which will be activated on the next clock trigger (white LED). This mode allows you manual snapshot activation synchronized to a clock.
 
 ![TRANSIT SEL-port](./Transit-sel.gif)
@@ -87,10 +98,15 @@ Modes for _SEL_ on the contextual menu:
 TRANSIT brings an _OUT_-port for different purposes:
 
 - **Envelope** - Outputs an envelope-like shape of the fading-curve starting at 0V and ending at 10V.
+
 - **Gate** - Outputs a 10V gate while a fade is in progress.
+
 - **Trigger snapshot change** - Outputs a 10V trigger signal everytime a new snapshot-slot is selected.
+
 - **Trigger fade start** - Outputs a 10V trigger on the start of every fade.
+
 - **Trigger fade stop** - Outputs a 10V trigger on the end of every fade.
+
 - **Poly** - Outputs a polyphonic signal combining all of the previous singals on the channels of the cable.
 
 Note: These modes are unavailable if _SEL_-port operates in Phase-mode.
