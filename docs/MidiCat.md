@@ -55,7 +55,7 @@ MIDI-CAT supports a technique sometimes called "soft-takeover" or "pickup": If t
 
 - **Pickup (snap)** - MIDI CC messages are ignored until the control reaches the current value of the parameter. After that the MIDI control is "snaped" unto the parameter and will only unsnap if the parameter is changed from within Rack, e.g. manually by mouse or preset-loading.
 
-- **Pickup (jump)** - Same as snap-mode, but the control will loose the parameter when jumping to another value (in detail: The received MIDI CC value differs by 7% from the actual parameter value, on the default MIDI CC value range 0-127 this is a change by +/-8 from the last MIDI message). This mode can be used if your MIDI controller supports switching templates and you don't want your parameters to change when loading a different template.
+- **Pickup (jump)** - Same as **Pickup (snap)**, but the control will loose the parameter when jumping to another value (in detail: The received MIDI CC value differs by 7% from the actual parameter value, on the default MIDI CC value range 0-127 this is a change by +/-8 from the last MIDI message). This mode can be used if your MIDI controller supports switching templates and you don't want your parameters to change when loading a different template.
 
 <a name="toggle-cc"></a>
 - **Toggle** (added in v1.9.0) - Every MIDI _continuous control_ message toggles the parameter between its minimum and maximum value (usually 0 and 1 for switches).
@@ -64,7 +64,7 @@ MIDI-CAT supports a technique sometimes called "soft-takeover" or "pickup": If t
 
 - **Snapped** (added in v2.2.0) - Only useable for snapped parameters (for example "Steps" on [VCV SEQ3](https://library.vcvrack.com/Fundamental/SEQ3)). A MIDI CC message with value greater 0 advances the parameter to the next step and rolls over at the end of the range. This allows controlling a snapped parameter with a MIDI button.
 
-- **Snapped (short/long)** (added in v2.2.0) - Same as "Snapped", but responds to MIDI CC value = 0 and long pressing will decrease the parameter to the previous step.
+- **Snapped (short/long)** (added in v2.2.0) - Same as **Snapped**, but responds to MIDI CC value = 0 and long pressing will decrease the parameter to the previous step.
 
 ![MIDI-CAT module select](./MidiCat-map-cc.png)
 
@@ -74,7 +74,7 @@ MIDI-CAT supports mapping of MIDI note-messages instead of MIDI CC. There are di
 
 - **Momentary** - Default setting, when a MIDI note is received the parameter will be set to its maximum value (an MIDI velocity of 127 is assumed).
 
-- **Momentary + Velocity** - same as "Momentary", but the MIDI velocity of the note is mapped to the range of the parameter.
+- **Momentary + Velocity** - same as **Momentary**, but the MIDI velocity of the note is mapped to the range of the parameter.
 
 - **Toggle** - Every MIDI _note on_ message toggles the parameter between its minimum and maximum value (usually 0 and 1 for switches).
 
@@ -85,7 +85,7 @@ Some controllers with push-buttons don't handle "note off" messages the way the 
 
 - **Snapped** (added in v2.2.0) - Only useable for snapped parameters (for example "Steps" on [VCV SEQ3](https://library.vcvrack.com/Fundamental/SEQ3)). A "note on" message increases the parameter to the next step and rolls over to the end of the range.
 
-- **Snapped (short/long)** (added in v2.2.0) - Same as "Snapped", but responds to "note off" messages and long pressing a MIDI note will decrease the parameter to the previous step.
+- **Snapped (short/long)** (added in v2.2.0) - Same as **Snapped**, but responds to "note off" messages and long pressing a MIDI note will decrease the parameter to the previous step.
 
 ![MIDI-CAT module select](./MidiCat-map-note.png)
 
@@ -135,7 +135,7 @@ Here is a unpolished introduction video to demonstrate the configuration steps a
 
 - The module allows you to import presets from VCV MIDI-MAP for a quick migration.
 
-- The module can be switched to "Locate and indicate"-mode: Received MIDI messages have no effect to the mapped parameters, instead the module is centered on the screen and the parameter mapping indicator flashes for a short period of time. When finished verifying all MIDI controls switch back to "Operating"-mode for normal module operation of MIDI-CAT.
+- The module can be switched to _Locate and indicate_-mode: Received MIDI messages have no effect to the mapped parameters, instead the module is centered on the screen and the parameter mapping indicator flashes for a short period of time. When finished verifying all MIDI controls switch back to _Operating_-mode for normal module operation of MIDI-CAT.
 
 - The text shown in every mapping slot can be replaced by a custom text label in the context menu (since v1.4.0).
 
@@ -163,7 +163,7 @@ Here is a unpolished introduction video to demonstrate the configuration steps a
 
 - Parameter changes are not reported back to the plugin-host by default if MIDI-CAT is used in a plugin-version of VCV Rack. A context menu optionis available to enable this behavior - it might cause higher CPU usage of the plugin (since v2.2.0).
 
-- MIDI-CAT can receive MIDI System Reset messages: For mapping-slots with input-mode "Pickup (snap)" it resets the mapping and the parameter can be picked up again. This can be useful for switching MIDI controller presets (since v2.2.0).
+- MIDI-CAT can receive MIDI System Reset messages: For mapping-slots with input-mode **Pickup (snap)** it resets the mapping and the parameter can be picked up again. This can be useful for switching MIDI controller presets (since v2.2.0).
 
 ### MEM-expander
 

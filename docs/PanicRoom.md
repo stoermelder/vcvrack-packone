@@ -1,6 +1,6 @@
 # stoermelder PANIC ROOM
 
-PANIC ROOM is an utility module. It restricts your modular space within Rack, making it impossible to patch outside of a defined area.
+PANIC ROOM is a utility module. It restricts your modular space within Rack, making it impossible to patch outside of a defined area.
 
 ### How to use
 

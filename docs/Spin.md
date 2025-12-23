@@ -12,6 +12,7 @@ _PARAM_ is switched to the lower position, events are handled constantly (accord
 There are several options available in the context menu:
 
 - The mouse wheel is primarily used in Rack to scroll the current view. The module provides modifiers: when enabled, mouse‑wheel events are only caught if the keyboard keys are held while scrolling. Modifiers can be combined or disabled entirely.
+
 - The middle click can be used to generate triggers, to generate gates (as long as the button is held), or to toggle the output value. Additionally, middle‑click handling can be disabled. Note that modifiers also apply to the middle click.
 
 ![SPIN options](./Spin-options.png)

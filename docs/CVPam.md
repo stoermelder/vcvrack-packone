@@ -13,9 +13,13 @@ Using CV‑PAM in combination with CP‑MAP lets you synchronize parameter chang
 - Text scrolling of the mapping slots can be disabled  (since v1.0.2).
 
 - **CPU usage** – Mapping many parameters can increase CPU usage. If audio‑rate automation is not required, disable _Audio rate processing_ from the context menu. This updates the mapped parameter only every 32nd audio sample, reducing CPU usage to roughly 1/32 (since v1.4.0).
+
 - **Pink mapping indicators** – If the pink indicators are distracting, disable them from the context menu (since v1.5.0).
+
 - **Lock mapping slots** – Prevent accidental changes by enabling the _Lock mapping slots_ option, which locks the mapping‑slot widgets (since v1.5.0).
+
 - **Blinking indicator** – A blinking indicator shows the bound parameter of the currently selected mapping slot (since v1.7.0).
+
 - **Scrolling interference** – Hovering over CV‑PAM’s list widget interrupts Rack view mouse scrolling. Enabling *Lock mapping slots* suppresses all mouse scrolling events while hovered (since v1.7.0).
 
 ## Changelog
