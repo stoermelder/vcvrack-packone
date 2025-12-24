@@ -1,5 +1,5 @@
 #include "MidiScriptEngine.h"
-#include "MidiScriptEngineElk.cpp"
+#include "MidiScriptEngineElk.h"
 #include "../../components/Knobs.hpp"
 #include "../../components/MidiWidget.hpp"
 #include "../../components/LogDisplay.hpp"

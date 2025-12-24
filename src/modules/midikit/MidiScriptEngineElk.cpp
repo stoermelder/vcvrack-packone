@@ -1,6 +1,6 @@
 #include "MidiScriptEngine.h"
 #include "elk.h"
-#include "../../helpers/TaskWorker.hpp"
+#include "../../utils/TaskWorker.hpp"
 #include <iomanip>
 #include <regex>
 
