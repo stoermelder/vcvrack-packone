@@ -1,10 +1,10 @@
 #pragma once
 #include <rack.hpp>
-#include "digital/digital.hpp"
 #include "components/components.hpp"
+#include "utils/digital.hpp"
+#include "ui/ThemedModuleWidget.hpp"
 #include "pluginhelpers.hpp"
 #include "pluginsettings.hpp"
-#include "ui/ThemedModuleWidget.hpp"
 
 using namespace rack;
 
