@@ -1357,7 +1357,7 @@ struct KeyDisplay : StoermelderLedDisplay {
 									menu->addChild(new MenuSeparator);
 									menu->addChild(construct<MenuLabel>(&MenuLabel::text, name));
 									menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("ID %lld", (long long)mw->module->getId())));
-									menu->addChild(createMenuItem("Center module", "", [mw]() { StoermelderPackOne::Rack::ViewportCenter{mw}; }));
+									menu->addChild(createMenuItem("Zoom to module", "", [mw]() { StoermelderPackOne::Rack::ViewportCenter{mw}; }));
 								}
 							}
 
@@ -1529,7 +1529,7 @@ struct KeyDisplay : StoermelderLedDisplay {
 								if (mw) {
 									menu->addChild(construct<MenuLabel>(&MenuLabel::text, name));
 									menu->addChild(construct<MenuLabel>(&MenuLabel::text, string::f("ID %lld", (long long)mw->module->getId())));
-									menu->addChild(createMenuItem("Center module", "", [mw]() { StoermelderPackOne::Rack::ViewportCenter{mw}; }));
+									menu->addChild(createMenuItem("Zoom to module", "", [mw]() { StoermelderPackOne::Rack::ViewportCenter{mw}; }));
 								}
 
 								json_t* keyJ = json_object_get(oJ, "key");
