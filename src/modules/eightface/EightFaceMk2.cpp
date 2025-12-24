@@ -1116,7 +1116,7 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 						menu->addChild(createSubmenuItem(text, "",
 							[=](Menu* menu) {
 								ModuleWidget* mw = b->getModuleWidget();
-								if (mw) menu->addChild(createMenuItem("Center module", "", [=]() { StoermelderPackOne::Rack::ViewportCenter{mw}; }));
+								if (mw) menu->addChild(createMenuItem("Zoom to module", "", [=]() { StoermelderPackOne::Rack::ViewportCenter{mw}; }));
 								menu->addChild(createMenuItem("Unbind", "", [=]() { module->unbindModule(b); }));
 							}
 						));

@@ -436,7 +436,7 @@ struct MacroWidget : ThemedModuleWidget<MacroModule>, ParamWidgetContextExtender
 			if (module->paramHandles[id].moduleId == pq->module->id && module->paramHandles[id].paramId == pq->paramId) {
 				menu->addChild(new MenuSeparator);
 				menu->addChild(createMenuLabel("MACRO"));
-				menu->addChild(construct<CenterModuleItem>(&MenuItem::text, "Center mapping module", &CenterModuleItem::mw, this));
+				menu->addChild(construct<CenterModuleItem>(&MenuItem::text, "Zoom to module", &CenterModuleItem::mw, this));
 				menu->addChild(new MenuSeparator);
 				menu->addChild(new MapSlewSlider<>(&module->scaleParam[id]));
 				menu->addChild(new MenuSeparator());
