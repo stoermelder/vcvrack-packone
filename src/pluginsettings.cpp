@@ -1,10 +1,11 @@
 #include <rack.hpp>
 #include "pluginsettings.hpp"
 
-StoermelderSettings pluginSettings;
+namespace StoermelderPackOne {
 
+Settings pluginSettings;
 
-void StoermelderSettings::saveToJson() {
+void Settings::saveToJson() {
 	json_t* settingsJ = json_object();
 	json_object_set_new(settingsJ, "panelThemeDefault", json_integer(panelThemeDefault));
 
@@ -32,7 +33,7 @@ void StoermelderSettings::saveToJson() {
 	json_decref(settingsJ);
 }
 
-void StoermelderSettings::readFromJson() {
+void Settings::readFromJson() {
 	std::string settingsFilename = rack::asset::user("Stoermelder-P1.json");
 	FILE* file = fopen(settingsFilename.c_str(), "r");
 	if (!file) {
@@ -82,3 +83,5 @@ void StoermelderSettings::readFromJson() {
 	fclose(file);
 	json_decref(settingsJ);
 }
+
+} // namespace StoermelderPackOne

@@ -74,7 +74,7 @@ void init(rack::Plugin* p) {
 	p->addModel(modelRaw);
 #endif
 
-	pluginSettings.readFromJson();
+	StoermelderPackOne::pluginSettings.readFromJson();
 }
 
 

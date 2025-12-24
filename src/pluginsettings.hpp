@@ -1,7 +1,8 @@
 #pragma once
 
+namespace StoermelderPackOne {
 
-struct StoermelderSettings {
+struct Settings {
 	int panelThemeDefault = -1;
 
 	json_t* mbModelsJ;
@@ -23,4 +24,6 @@ struct StoermelderSettings {
 	void readFromJson();
 };
 
-extern StoermelderSettings pluginSettings;
+extern Settings pluginSettings;
+
+} // namespace StoermelderPackOne

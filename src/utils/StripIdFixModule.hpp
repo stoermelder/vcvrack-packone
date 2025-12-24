@@ -1,5 +1,7 @@
 #pragma once
 
+namespace StoermelderPackOne {
+
 struct StripIdFixModule {
 	const std::map<int64_t, ModuleWidget*>* idFixMap = NULL;
 
@@ -22,3 +24,5 @@ struct StripIdFixModule {
 		this->idFixMap = NULL;
 	}
 };
+
+} // namespace StoermelderPackOne
