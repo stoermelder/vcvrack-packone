@@ -66,7 +66,6 @@ extern Model* modelEightFaceMk2Ex;
 extern Model* modelMidiPlug;
 extern Model* modelDirt;
 extern Model* modelMidiKey;
-extern Model* modelMidiKit;
 extern Model* modelPanicRoom;
 extern Model* modelMidiKit;
 extern Model* modelAudioInterface64;
