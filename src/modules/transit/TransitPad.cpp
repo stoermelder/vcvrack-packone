@@ -1,6 +1,6 @@
-#include "plugin.hpp"
-#include "components/XyScreenWidget.hpp"
-#include "components/XySeqWidget.hpp"
+#include "../../plugin.hpp"
+#include "../../components/XyScreenWidget.hpp"
+#include "../../components/XySeqWidget.hpp"
 
 namespace StoermelderPackOne {
 namespace Transit {
