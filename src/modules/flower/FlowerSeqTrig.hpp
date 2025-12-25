@@ -145,10 +145,10 @@ struct FlowerTrig {
 
 	LongPressButton stepButtons[STEPS];
 	dsp::BooleanTrigger stepModeTrigger;
-	StoermelderSlewLimiter stepGateEnv;
-	StoermelderSlewLimiter stepGateDecay;
-	StoermelderSlewLimiter stepEnv[STEPS];
-	StoermelderSlewLimiter stepDecay[STEPS];
+	SlewLimiterEx stepGateEnv;
+	SlewLimiterEx stepGateDecay;
+	SlewLimiterEx stepEnv[STEPS];
+	SlewLimiterEx stepDecay[STEPS];
 
 	dsp::PulseGenerator gatePulseGenerator;
 	dsp::PulseGenerator trigPulseGenerator;

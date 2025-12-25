@@ -30,6 +30,8 @@ struct XyScreenModule {
 	int8_t selectedId = -1;
 	int8_t selectedType = -1;
 
+	virtual ~XyScreenModule() { }
+
 	virtual inline engine::ParamQuantity* scGetPqX(uint8_t type, uint8_t id) {
 		return NULL;
 	}
@@ -44,7 +46,7 @@ struct XyScreenModule {
 
 	virtual inline uint8_t scGetItemCountActive(uint8_t type) { return 0; }
 
-	inline bool scIsActive(uint8_t type, uint8_t id) {
+	virtual inline bool scIsActive(uint8_t type, uint8_t id) {
 		return id < scGetItemCountActive(type);
 	}
 
@@ -120,7 +122,7 @@ struct XyScreenModule {
 		}
 	}
 
-	inline float scGetRadiusFinal(uint8_t id) { 
+	virtual inline float scGetRadiusFinal(uint8_t id) { 
 		return radius[id];
 	}
 
@@ -146,7 +148,7 @@ struct XyScreenModule {
 		}
 	}
 
-	inline float scGetAmountFinal(uint8_t id) { 
+	virtual inline float scGetAmountFinal(uint8_t id) { 
 		return amount[id];
 	}
 
@@ -199,8 +201,76 @@ struct XyScreenModule {
 		scSetRadiusImmediate(id, json_real_value(json_object_get(dataJ, "radius")));
 		scSetAmountImmediate(id, json_real_value(json_object_get(dataJ, "amount")));
 	}
+
+	std::string getModuleName() {
+		Module* m = dynamic_cast<Module*>(this);
+		return m->model->plugin->brand + " " + m->model->name;
+	}
 };
 
+
+struct XyScreenDummyModule : XyScreenModule<0> {
+	std::map<uint8_t, size_t> typeCount;
+	std::map<uint8_t, float> radius;
+	std::map<std::tuple<uint8_t, uint8_t>, float> x, y;
+	std::map<std::tuple<uint8_t, uint8_t, uint8_t>, float> dist;
+
+	int64_t getId() {
+		return 0;
+	}
+
+	void initType(uint8_t type, uint8_t count) {
+		typeCount[type] = count;
+		if (type == 0) {
+			for (uint8_t i = 0; i < count; i++) {
+				x[std::make_tuple(type, i)] = random::uniform();
+				y[std::make_tuple(type, i)] = 0.1f + random::uniform() * 0.5f;
+				radius[i] = 0.2f + random::uniform() * 0.3f;
+			}
+			selectedType = 0;
+			selectedId = 0;
+		}
+		else {
+			for (uint8_t i = 0; i < count; i++) {
+				x[std::make_tuple(type, i)] = random::uniform();
+				y[std::make_tuple(type, i)] = 0.4f + random::uniform() * 0.5f;
+				Vec mixVec = Vec(x[std::make_tuple(type, i)], y[std::make_tuple(type, i)]);
+				for (uint8_t j = 0; j < typeCount[0]; j++) {
+					Vec inVec = Vec(x[std::make_tuple(0, j)], y[std::make_tuple(0, j)]);
+					dist[std::make_tuple(type, i, j)] = inVec.minus(mixVec).norm();
+				}
+			}
+		}
+	}
+
+	uint8_t scGetItemCountActive(uint8_t type) override {
+		return typeCount[type];
+	}
+
+	bool scIsActive(uint8_t type, uint8_t id) override {
+		return true;
+	}
+
+	float scGetXFinal(uint8_t type, uint8_t id) override {
+		return x[std::make_tuple(type, id)];
+	}
+
+	float scGetYFinal(uint8_t type, uint8_t id) override {
+		return y[std::make_tuple(type, id)];
+	}
+	
+	float scGetAmountFinal(uint8_t id) override {
+		return 1.f;
+	}
+
+	float scGetRadiusFinal(uint8_t id) override {
+		return radius[id];
+	}
+
+	float scGetDistance(uint8_t typeSource, uint8_t idSource, uint8_t typeDest, uint8_t idDest) override {
+		return dist[std::make_tuple(typeSource, idSource, idDest)];
+	}
+};
 
 template <typename MODULE>
 struct XyScreenRadiusChangeAction : history::ModuleAction {
@@ -209,7 +279,7 @@ struct XyScreenRadiusChangeAction : history::ModuleAction {
 	float newValue;
 
 	XyScreenRadiusChangeAction(MODULE* m) {
-		name = m->model->plugin->brand + " " + m->model->name + " radius change";
+		name = m->getModuleName() + " radius change";
 		moduleId = m->getId();
 	}
 
@@ -279,7 +349,7 @@ struct XyScreenRadiusSlider : ui::Slider {
 
 	void onDragStart(const event::DragStart& e) override {
 		h = new XyScreenRadiusChangeAction<MODULE>(module);
-		h->moduleId = module->id;
+		h->moduleId = module->getId();
 		h->id = id;
 		h->oldValue = module->scGetRadiusFinal(id);
 		ui::Slider::onDragStart(e);
@@ -301,7 +371,7 @@ struct XyScreenAmountChangeAction : history::ModuleAction {
 	float newValue;
 
 	XyScreenAmountChangeAction(MODULE* m) {
-		name = m->model->plugin->brand + " " + m->model->name + " amount change";
+		name = m->getModuleName() + " amount change";
 		moduleId = m->getId();
 	}
 
@@ -595,7 +665,7 @@ struct XyScreenDragWidget : OpaqueWidget {
 
 		dragPos = APP->scene->rack->getMousePos().minus(box.pos);
 
-		dragAction = new XyScreenChangeAction<MODULE>(module->id);
+		dragAction = new XyScreenChangeAction<MODULE>(module->getId());
 		dragAction->id = id;
 		dragAction->type = type;
 		dragAction->oldX = module->scGetXFinal(type, id);
@@ -642,9 +712,47 @@ struct XyScreenDragWidget : OpaqueWidget {
 template <typename MODULE>
 struct XyScreenWidget : OpaqueWidget {
 	MODULE* module;
+	XyScreenDummyModule* dummyModule = NULL;
 
 	XyScreenWidget(MODULE* module) {
 		this->module = module;
+	}
+
+	~XyScreenWidget() {
+		if (dummyModule) {
+			delete dummyModule;
+		}
+	}
+
+	template <typename WIDGET>
+	void createDragWidgets(MODULE* module, uint8_t type, uint8_t count, NVGcolor color) {
+		// This is some over-complicated code for drawing something on the display in the module browser.
+		// We "inject" some nodes using a dummy module, satisfying the nodes methods for the display.
+		if (!module && !dummyModule) {
+			dummyModule = new XyScreenDummyModule;
+		}
+		if (dummyModule) {
+			dummyModule->initType(type, count);
+		}
+
+		for (uint8_t i = 0; i < count; i++) {
+			if (module) {
+				XyScreenDragWidget<MODULE>* w = new WIDGET;
+				w->module = module;
+				w->id = i;
+				w->type = type;
+				w->color = color;
+				addChild(w);
+			}
+			else {
+				XyScreenDragWidget<XyScreenDummyModule>* w = new XyScreenDragWidget<XyScreenDummyModule>;
+				w->module = dummyModule;
+				w->id = i;
+				w->type = type;
+				w->color = color;
+				addChild(w);
+			}
+		}
 	}
 
 	void drawLayer(const DrawArgs& args, int layer) override {
@@ -660,6 +768,15 @@ struct XyScreenWidget : OpaqueWidget {
 			nvgBeginPath(args.vg);
 			nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
 			nvgFillColor(args.vg, nvgRGB(0, 16, 90));
+			nvgFill(args.vg);
+
+			// Draw gradient
+			math::Rect r = box.zeroPos();
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, RECT_ARGS(r));
+			NVGcolor topColor = nvgRGBA(200, 200, 200, 40);
+			NVGcolor bottomColor = nvgRGBA(200, 200, 200, 0);
+			nvgFillPaint(args.vg, nvgLinearGradient(args.vg, 0.f, 0.f, 0.f, 80.f, topColor, bottomColor));
 			nvgFill(args.vg);
 
 			// Draw grid
@@ -690,7 +807,7 @@ struct XyScreenWidget : OpaqueWidget {
 			nvgStroke(args.vg);
 		}
 
-		if (module && module->seqEdit < 0) {
+		if (!module || module->seqEdit < 0) {
 			OpaqueWidget::drawLayer(args, layer);
 		}
 	}

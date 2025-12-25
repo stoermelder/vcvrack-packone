@@ -1,7 +1,7 @@
 # stoermelder PackOne
 
 <!-- Version and License Badges -->
-![Version](https://img.shields.io/badge/Version-2.0.0-green.svg?style=flat-square)
+![Version](https://img.shields.io/badge/Version-2.2.0-green.svg?style=flat-square)
 ![Rack](https://img.shields.io/badge/VCV_Rack-v2-red.svg?style=flat-square)
 ![MetaModule](https://img.shields.io/badge/MetaModule-v2-orange.svg?style=flat-square)
 ![License](https://img.shields.io/badge/License-GPLv3+-blue.svg?style=flat-square)
@@ -13,11 +13,12 @@ A [Development build](https://github.com/stoermelder/vcvrack-packone/releases/ta
 
 If you like my modules consider donating to https://paypal.me/stoermelder, but don't feel obligated to do so. Thank you for your support!
 
-## Latest additions to PackOne - new for v2.0
+## Latest additions to PackOne - new for v2.2
 
 - [DIRT](./docs/Dirt.md): a module for noise, crackles and crosstalk on polyphonic cables
 - [MIDI-CAT XL](./docs/MidiCat.md): a wider panel version of MIDI-CAT with identical features and driver selection moved to the context menu
 - [MIDI-CAT CLK](./docs/MidiCat.md#clk-expander): expander for MIDI-CAT, allows trigger-quantization for mapped parameters (#299)
+- [MIDI-CAT FINE](./docs/MidiCat.md#fine-expander): expander for MIDI-CAT, allows fine-tuning of MIDI CC parameter-mappings
 - [MIDI-KEY](./docs/MidiKey.md): utility for generating keyboard events from MIDI CC or Note messages
 - [STRIP++](./docs/StripPp.md): utility for pasting and importing Rack selections while preserving parameter mappings and [GLUE](./docs/Glue.md) labels
 

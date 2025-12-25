@@ -1,7 +1,8 @@
 #pragma once
 
+namespace StoermelderPackOne {
 
-struct StoermelderSettings {
+struct Settings {
 	int panelThemeDefault = -1;
 
 	json_t* mbModelsJ;
@@ -16,8 +17,13 @@ struct StoermelderSettings {
 	float overlayOpacity = 1.f;
 	float overlayScale = 1.f;
 
+	std::string stripDirVcvss = rack::asset::user("patches");
+	std::string stripDirVcvs = rack::asset::user("selections");
+
 	void saveToJson();
 	void readFromJson();
 };
 
-extern StoermelderSettings pluginSettings;
+extern Settings pluginSettings;
+
+} // namespace StoermelderPackOne

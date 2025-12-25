@@ -29,14 +29,14 @@ target_sources(Stoermelder-P1
     PRIVATE
     ${SOURCE_DIR}/plugin.cpp
     ${SOURCE_DIR}/pluginsettings.cpp
-    ${SOURCE_DIR}/Bolt.cpp
-    ${SOURCE_DIR}/FourRounds.cpp
-    ${SOURCE_DIR}/Hive.cpp
-    ${SOURCE_DIR}/Maze.cpp
-    ${SOURCE_DIR}/MidiStep.cpp
-    ${SOURCE_DIR}/Pile.cpp
-    ${SOURCE_DIR}/Orbit.cpp
-    ${SOURCE_DIR}/Raw.cpp
+    ${SOURCE_DIR}/modules/bolt/Bolt.cpp
+    ${SOURCE_DIR}/modules/fourrounds/FourRounds.cpp
+    ${SOURCE_DIR}/modules/maze/Hive.cpp
+    ${SOURCE_DIR}/modules/maze/Maze.cpp
+    ${SOURCE_DIR}/modules/midi/MidiStep.cpp
+    ${SOURCE_DIR}/modules/pile/Pile.cpp
+    ${SOURCE_DIR}/modules/orbit/Orbit.cpp
+    ${SOURCE_DIR}/modules/raw/Raw.cpp
 )
 
 # Add includes and compile options for source repo

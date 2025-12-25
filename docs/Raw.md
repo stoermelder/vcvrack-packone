@@ -13,4 +13,4 @@ Some contributions to the original implementation have been made by [Jatin Chowd
 
 ![RAW intro](./Raw-intro.png)
 
-RAW was added in v1.8.0 of PackOne.
+RAW was introduced in v1.8.0 of PackOne.

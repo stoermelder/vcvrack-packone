@@ -206,8 +206,8 @@ struct FlowerSeq {
 
 	LongPressButton stepButtons[STEPS];
 	dsp::BooleanTrigger stepModeTrigger;
-	StoermelderSlewLimiter stepSlew;
-	StoermelderSlewLimiter stepSlewTrigger;
+	SlewLimiterEx stepSlew;
+	SlewLimiterEx stepSlewTrigger;
 
 	dsp::PulseGenerator trigPulseGenerator;
 

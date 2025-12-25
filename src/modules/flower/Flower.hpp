@@ -1,6 +1,6 @@
 #pragma once
 #include "../../plugin.hpp"
-#include "../../digital/digital.hpp"
+#include "../../utils/digital.hpp"
 #include "../../components/Knobs.hpp"
 #include <bitset>
 #include <random>
