@@ -77,9 +77,13 @@ struct MessageEx {
     }
 };
 
+struct MidiProcessorHandler {
+    virtual bool processMidi(const MessageEx& msg) { return false; }
+};
+
 struct MidiProcessor {
     rack::midi::InputQueue midiInput;
-    std::vector<std::function<bool(MessageEx&)>> handlers;
+    std::vector<MidiProcessorHandler*> handlers;
     int16_t ccNrpnParam[16];
     int16_t ccRpnParam[16];
     int8_t cc14bitMsb[16][32];
@@ -96,6 +100,10 @@ struct MidiProcessor {
             pendingNrpnMsb[i] = -1;
             for (int j = 0; j < 32; ++j) cc14bitMsb[i][j] = -1;
         }
+    }
+
+    rack::midi::InputQueue& getInput() {
+        return midiInput;
     }
 
     void process(int64_t frame) {
@@ -300,20 +308,17 @@ struct MidiProcessor {
 
     void notify(MessageEx& m) {
         for (auto& handler : handlers) {
-            bool b = handler(m);
+            bool b = handler->processMidi(m);
             if (b) break;
         }
     }
 
-    void subscribe(std::function<bool(MessageEx&)> handler) {
+    void subscribe(MidiProcessorHandler* handler) {
         handlers.push_back(handler);
     }
     
-    void unsubscribe(const std::function<bool(MessageEx&)>& handler) {
-        auto it = std::find_if(handlers.begin(), handlers.end(), [&](const std::function<bool(MessageEx&)>& h) {
-            // Cannot reliably compare std::function targets; keep placeholder behavior.
-            return false;
-        });
+    void unsubscribe(MidiProcessorHandler* handler) {
+        auto it = std::find(handlers.begin(), handlers.end(), handler);
         if (it != handlers.end()) {
             handlers.erase(it);
         }
