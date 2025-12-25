@@ -1,4 +1,4 @@
-# stoermelder MIDI-CAT and expanders MEM and CTX
+# stoermelder MIDI-CAT and expanders MEM, CTX, CLK and FINE
 
 MIDI-CAT is a module for MIDI-mapping and an evolution of [VCV's MIDI-MAP](https://vcvrack.com/manual/Core.html#midi-map) with several additional features:
 
@@ -17,7 +17,7 @@ Besides these new features the module brings the goodies known from stoermelder'
 
 ![MIDI-CAT intro](./MidiCat-intro.gif)
 
-## Mapping parameters
+### Mapping parameters
 
 A typical workflow for mapping your MIDI-controller will look like this:
 
@@ -35,59 +35,61 @@ If you like to know more on MIDI-mapping in VCV Rack please refer to one of the 
 
 In v1.7.0 new mapping options have been added to MIDI-CAT to achieve even faster mappings without the need for touching every single parameter of a module:
 
-- **Map module (left)**  
-  Place MIDI-CAT directly on the left side of the module you like to map. Use the option _Map module (left)_ on the context menu to fill the mapping slots with all parameters of the module. Please note that there are two different variants available: _Clear first_ clears all mappings slots before the slots of MIDI-CAT are filled, _Keep MIDI assignments_ will not clear the assigned MIDI controls but all bindings to parameters. The latter option is useful if you want to reuse the controls of your MIDI device and re-map them onto a different module.  
-  Mapping can be also enabled by Ctrl/Cmd+Shift+E (_Clear first_) or Shift+E (_Keep MIDI assignments_).
+- **Map module (left)** - Place MIDI-CAT directly on the left side of the module you like to map. Use the option _Map module (left)_ on the context menu to fill the mapping slots with all parameters of the module. Please note that there are two different variants available: _Clear first_ clears all mappings slots before the slots of MIDI-CAT are filled, _Keep MIDI assignments_ will not clear the assigned MIDI controls but all bindings to parameters. The latter option is useful if you want to reuse the controls of your MIDI device and re-map them onto a different module. Mapping can be also enabled by Ctrl/Cmd+Shift+E (_Clear first_) or Shift+E (_Keep MIDI assignments_).
 
 ![MIDI-CAT module left](./MidiCat-map-left.gif)
 
-- **Map module (select)**  
-  This option changes your cursor into a crosshair which needs to be pointed onto any module within your patch by clicking on the panel. The variants _Clear first_ and _Keep MIDI assignments_ work the same way as for _Map module (left)_.  
-  Mapping can be also enabled by Ctrl/Cmd+Shift+D (_Clear first_) or Shift+D (_Keep MIDI assignments_).
+- **Map module (select)** - This option changes your cursor into a crosshair which needs to be pointed onto any module within your patch by clicking on the panel. The variants _Clear first_ and _Keep MIDI assignments_ work the same way as for _Map module (left)_. Mapping can be also enabled by Ctrl/Cmd+Shift+D (_Clear first_) or Shift+D (_Keep MIDI assignments_).
 
 ![MIDI-CAT module select](./MidiCat-map-select.gif)
 
-- **Map parameters by selection**  
-  *Added in v2.0.0*. This option allows you to map several parameters at once by applying a selection bound box around them. All parameters must be on the same module and the selection box cannot span multiple modules. The sub-option *Clear* clears all mappings of MIDI-CAT before and sub-option *Append* appends newly mapped parameters at the end. The options with additional *bind LED* are described in [LED-binding for MIDI-feedback](#led-binding-for-midi-feedback).
+- **Map parameters by selection** (Added in v2.0.0) - This option allows you to map several parameters at once by applying a selection bound box around them. All parameters must be on the same module and the selection box cannot span multiple modules. The sub-option *Clear* clears all mappings of MIDI-CAT before and sub-option *Append* appends newly mapped parameters at the end. The options with additional *bind LED* are described in [LED-binding for MIDI-feedback](#led-binding-for-midi-feedback).
 
 ![MIDI-CAT selection](./MidiCat-map-selection.gif)
 
-## "Soft-takeover" or "Pickup" for CCs
+### Input modes for CCs ("Soft-takeover" or "Pickup")
 
 MIDI-CAT supports a technique sometimes called "soft-takeover" or "pickup": If the control on your MIDI device has a position different to the mapped parameter's position all incoming MIDI messages are ignored until the parameter's position has been "picked up". This method must be enabled for each mapping-slot in the context menu: 
 
-- **Direct**: Every received MIDI CC message is directly applied to the mapped parameter (default).
+- **Direct** - Every received MIDI CC message is directly applied to the mapped parameter (default).
 
-- **Pickup (snap)**: MIDI CC messages are ignored until the control reaches the current value of the parameter. After that the MIDI control is "snaped" unto the parameter and will only unsnap if the parameter is changed from within Rack, e.g. manually by mouse or preset-loading.
+- **Pickup (snap)** - MIDI CC messages are ignored until the control reaches the current value of the parameter. After that the MIDI control is "snaped" unto the parameter and will only unsnap if the parameter is changed from within Rack, e.g. manually by mouse or preset-loading.
 
-- **Pickup (jump)**: Same as snap-mode, but the control will loose the parameter when jumping to another value. This mode can be used if your MIDI controller supports switching templates and you don't want your parameters to change when loading a different template.
+- **Pickup (jump)** - Same as **Pickup (snap)**, but the control will loose the parameter when jumping to another value (in detail: The received MIDI CC value differs by 7% from the actual parameter value, on the default MIDI CC value range 0-127 this is a change by +/-8 from the last MIDI message). This mode can be used if your MIDI controller supports switching templates and you don't want your parameters to change when loading a different template.
 
 <a name="toggle-cc"></a>
-- **Toggle**: Every MIDI _continuous control_ message toggles the parameter between its minimum and maximum value (usually 0 and 1 for switches) (added in v1.9.0).
+- **Toggle** (added in v1.9.0) - Every MIDI _continuous control_ message toggles the parameter between its minimum and maximum value (usually 0 and 1 for switches).
 
-- **Toggle + Value**: Every MIDI _continuous control_ message toggles the parameter between its minimum and the control's value (added in v1.9.0).
+- **Toggle + Value** (added in v1.9.0) - Every MIDI _continuous control_ message toggles the parameter between its minimum and the control's value.
 
+- **Snapped** (added in v2.2.0) - Only useable for snapped parameters (for example "Steps" on [VCV SEQ3](https://library.vcvrack.com/Fundamental/SEQ3)). A MIDI CC message with value greater 0 advances the parameter to the next step and rolls over at the end of the range. This allows controlling a snapped parameter with a MIDI button.
+
+- **Snapped (short/long)** (added in v2.2.0) - Same as **Snapped**, but responds to MIDI CC value = 0 and long pressing will decrease the parameter to the previous step.
 
 ![MIDI-CAT module select](./MidiCat-map-cc.png)
 
-## Note-mapping
+### Note-mapping
 
 MIDI-CAT supports mapping of MIDI note-messages instead of MIDI CC. There are different modes availbale as note-messages work differently to continuous controls:
 
-- **Momentary**: Default setting, when a MIDI note is received the parameter will be set to its maximum value (an MIDI velocity of 127 is assumed).
+- **Momentary** - Default setting, when a MIDI note is received the parameter will be set to its maximum value (an MIDI velocity of 127 is assumed).
 
-- **Momentary + Velocity**: same as "Momentary", but the MIDI velocity of the note is mapped to the range of the parameter.
+- **Momentary + Velocity** - same as **Momentary**, but the MIDI velocity of the note is mapped to the range of the parameter.
 
-- **Toggle**: Every MIDI _note on_ message toggles the parameter between its minimum and maximum value (usually 0 and 1 for switches).
+- **Toggle** - Every MIDI _note on_ message toggles the parameter between its minimum and maximum value (usually 0 and 1 for switches).
 
 <a name="toggle-velocity"></a>
-- **Toggle + Velocity**: Every MIDI "note on" message toggles the parameter between its minimum and the note's velocity value (added in v1.8.0).
+- **Toggle + Velocity** (added in v1.8.0) - Every MIDI "note on" message toggles the parameter between its minimum and the note's velocity value.
 
 Some controllers with push-buttons don't handle "note off" messages the way the message is intended, hence a mapping-slot can be switched with the option _Send "note on, vel 0" on note off_ to send a "note on" message with "velocity 0" as MIDI feedback instead (since v1.7.0).
 
+- **Snapped** (added in v2.2.0) - Only useable for snapped parameters (for example "Steps" on [VCV SEQ3](https://library.vcvrack.com/Fundamental/SEQ3)). A "note on" message increases the parameter to the next step and rolls over to the end of the range.
+
+- **Snapped (short/long)** (added in v2.2.0) - Same as **Snapped**, but responds to "note off" messages and long pressing a MIDI note will decrease the parameter to the previous step.
+
 ![MIDI-CAT module select](./MidiCat-map-note.png)
 
-## Slew-limiting and input-scaling
+### Slew-limiting and input-scaling
 
 <a name="slew-limiting"></a>
 Added in v1.8.0: Each mapping slot has its own setting for slew-limiting of the input value which applies an exponential filter. Small values for _Slew_ are smoothing incoming MIDI values which are quite "steppy" as MIDI supports only values 0-127 for CC and note velocity. Larger values for _Slew_ give an overall steady movement of the mapped parameter on fast controller changes.  
@@ -102,7 +104,7 @@ Please note that slew-limiting and input-scaling also works fine with note-mappi
 
 ![MIDI-CAT input-scaling](./MidiCat-input-scaling.png)
 
-## 14-bit CC
+### 14-bit CC
 
 MIDI 14-bit CC pairs are supported since v1.9.0: _continuous control_ messages 0-31 are combined pairwise with 32-63 for increasing the resolution of the value range from 0-127 to 0-16383. Of course the MIDI controller must support 14-bit CC as both messages must be always sent sequentially to make it work. 14-bit support can be enabled in each mapping slot assigned to MIDI CC 0-32.
 
@@ -110,7 +112,7 @@ MIDI 14-bit CC pairs are supported since v1.9.0: _continuous control_ messages 0
 
 The increased value resolution is displayed on the context menu and all available options like scaling and slew work can be used like regular CCs.
 
-## MIDI-feedback
+### MIDI-feedback
 
 Any parameter change can be sent back to an MIDI output with the same CC or note. "Feedback" is useful for initialization of the controls on the MIDI device if it is supported, especially after loading a patch. [Slew-limiting](#slew-limiting-and-input-scaling) it not applied on MIDI feedback.
 
@@ -119,7 +121,7 @@ The option _Re-send MIDI feedback_ on MIDI-CAT's context menu allows you to manu
 <a name="feedback-periodically"></a>
 For some MIDI controllers which don't support different simultaneous "layers" but different switchable presets (e.g. Behringer X-Touch Mini) there is an additional submenu option called _Periodically_ (since v1.8.0): When enabled MIDI-CAT sends MIDI-feedback twice a second for all mapped controls regardless if any parameter has been changed.
 
-## LED-binding for MIDI-feedback
+### LED-binding for MIDI-feedback
 
 This is an experimental feature which was introduced in v2.0.0: It adds the ability to send MIDI-feedback according to the state of an LED on a module instead of the parameter's actual value. This is useful for buttons, which behave in a momentary way and do not represent the state of the parameter. Please note: The LED must be on the same module as the mapped parameter, it cannot be on any other module.  
 Here is a unpolished introduction video to demonstrate the configuration steps and how this feature works:
@@ -129,11 +131,11 @@ Here is a unpolished introduction video to demonstrate the configuration steps a
 [stoermelder STRIP-file for Impromptu GATE-SEQ-64](MidiCat-LaunchPadMiniMk3-GateSeq64-FactoryCustom3.vcvss)  
 [Modified template for LaunchPad Mini Mk3](MidiCat-LaunchPadMiniMk3-FactoryCustom3.syx)
 
-## Additional features
+### Additional features
 
 - The module allows you to import presets from VCV MIDI-MAP for a quick migration.
 
-- The module can be switched to "Locate and indicate"-mode: Received MIDI messages have no effect to the mapped parameters, instead the module is centered on the screen and the parameter mapping indicator flashes for a short period of time. When finished verifying all MIDI controls switch back to "Operating"-mode for normal module operation of MIDI-CAT.
+- The module can be switched to _Locate and indicate_-mode: Received MIDI messages have no effect to the mapped parameters, instead the module is centered on the screen and the parameter mapping indicator flashes for a short period of time. When finished verifying all MIDI controls switch back to _Operating_-mode for normal module operation of MIDI-CAT.
 
 - The text shown in every mapping slot can be replaced by a custom text label in the context menu (since v1.4.0).
 
@@ -159,7 +161,11 @@ Here is a unpolished introduction video to demonstrate the configuration steps a
 
 ![MIDI-CAT overlay](./MidiCat-overlay.gif)
 
-## MEM-expander
+- Parameter changes are not reported back to the plugin-host by default if MIDI-CAT is used in a plugin-version of VCV Rack. A context menu optionis available to enable this behavior - it might cause higher CPU usage of the plugin (since v2.2.0).
+
+- MIDI-CAT can receive MIDI System Reset messages: For mapping-slots with input-mode **Pickup (snap)** it resets the mapping and the parameter can be picked up again. This can be useful for switching MIDI controller presets (since v2.2.0).
+
+### MEM-expander
 
 MEM is a companion module for MIDI-CAT: The expander allows you store an unlimited number of module-specific mappings which can be recalled for the same type of module without doing any mapping manually.  
 A typical workflow will look like this:
@@ -183,6 +189,8 @@ Added in v1.8.0: MEM has two buttons labeled _Prev_ and _Next_ which scan your p
 
 ![MEM workflow](./MidiCat-Mem-scan.gif)
 
+Added in v2.2.0: MEM has a restriction list to restrict the modules considered by the buttons _Prev_ and _Next_. By default, all modules in the current rack are considered if the restriction list is empty. The restriction list is managed by a selection of modules and pushing "Save". 
+
 ### Tips for MEM
 
 - MEM can store only one mapping of any specific module-type. If you store a mapping for a module which has a mapping already it will be replaced.
@@ -191,7 +199,7 @@ Added in v1.8.0: MEM has two buttons labeled _Prev_ and _Next_ which scan your p
 
 - All push buttons on MEM can be mapped using any mapping module if you like to activate _Apply mapping_ by MIDI or some other command.
 
-## CTX-expander
+### CTX-expander
 
 CTX is a second companion module for MIDI-CAT: The expander allows you to name each instance of MIDI-CAT in your patch. This name can be addressed in every parameters' context menu for activating MIDI mapping or re-mapping parameters to an existing MIDI control or note mapping in another mapping slot of MIDI-CAT.
 
@@ -201,7 +209,7 @@ CTX for MIDI-CAT must be placed on the right side of MIDI-CAT and can be used th
 
 Additionally MIDI-CAT CTX provides a button for activating mapping on the first empty mapping slot in MIDI-CAT. This button can also mapped to a MIDI controller which allows start MIDI mapping by a MIDI message.
 
-## CLK-expander
+### CLK-expander
 
 CLK is a companion module for MIDI-CAT which provides four additional clock-inputs. These clock-inputs can be used to time-quantize the incoming MIDI messages to running clocks or triggers or gates: When enabled the incoming MIDI message is buffered and applied to the parameter on the next trigger.  
 CLK for MIDI-CAT must be placed on the right side of MIDI-CAT and can be used together with the other expanders.
@@ -212,6 +220,11 @@ There are two modes with different behavior for MIDI-feedback:
 
 - On (instant feedback): The MIDI feedback message is sent as soon as the MIDI message arrives, even if the new value is not yet applied on the parameter.
 - On (deferred feedback): The MIDI feedback message is sent on the next clock-tick, the same time as the new value is applied on the parameter.
+
+### FINE-expander
+
+FINE is a companion module for MIDI-CAT which provides ability to fine-tune mapped parameters. If the input/gate on either 10% input or 1/2/5% input is high, the module switches to fine-tuning mode: In fine-tuning mode, the MIDI control must be moved to its center, then fine-tunes the parameter with 10% range or 1/2/5% range, respectively. Fine-tuning for a parameter can only be used on MIDI CC mappings with input mode set to "Pickup (snap)" or "Pickup (jump)". Addtionally, the module switches from 10% range to 1/2/5% range and from 1/2/5% range to 10% range smoothly, if the 1/2/5% input is enabled while 10% input stays high. This means, finer adjustments can be made while holding two buttons without a need to center the MIDI control. After fine-tuning is finished and gates on 10% input and 1/2/5% input are low, the mapped MIDI control can pickup the current parameter value again.  
+FINE for MIDI-CAT must be placed on the right side of MIDI-CAT and can be used together with the other expanders. High gates for the two inputs can be created by [VCV MIDI-GATE](https://library.vcvrack.com/Core/MIDITriggerToCVInterface) using MIDI note messages or by [STROKE](./Stroke.md) using keyboard hotkeys, for example.
 
 ## Changelog
 
@@ -265,3 +278,11 @@ There are two modes with different behavior for MIDI-feedback:
     - Implemented alternative parameter binding by selection box
 - v2.1.0
     - Improved mapping logic to allow more parameters to be mapped (e.g. SurgeXTRack) (#410)
+- v2.2.0
+    - Added FINE-expander
+    - Added module restriction list for MEM-expander
+    - Added input-modes "Snapped" and "Snapped (short/long)" for CC and Notes for use with snapped parameters (e.g. "Steps" on VCV SEQ3)
+    - Added color setting for mapping indicators
+    - Added handling for MIDI System Reset message for resetting input-mode "Pickup (snap)"
+    - Added context menu option to report parameter updates to plugin-host (only in plugin-version of Rack)
+    - Fixed broken MIDI feedback when loading stored mappings on MIDI-CAT MEM

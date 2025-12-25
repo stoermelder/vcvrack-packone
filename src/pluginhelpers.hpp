@@ -48,16 +48,18 @@ ui::MenuItem* createMapSubmenuItem(std::string text, std::map<TEnum, std::string
 		std::function<void(TEnum)> setter;
 		std::map<TEnum, std::string> labels;
 		TEnum currIndex;
+		bool currIndexInitialized = false;
 		bool showRightText;
 		bool alwaysConsume;
 
 		void step() override {
 			TEnum currIndex = getter();
 			if (showRightText) {
-				if (this->currIndex != currIndex) {
+				if (this->currIndex != currIndex || !this->currIndexInitialized) {
 					std::string label = labels[currIndex];
 					this->rightText = label + "  " + RIGHT_ARROW;
 					this->currIndex = currIndex;
+					this->currIndexInitialized = true;
 				}
 			}
 			else {
@@ -122,6 +124,15 @@ Example:
 template <typename T>
 ui::MenuItem* createValuePtrMenuItem(std::string text, T* ptr, T val) {
 	return createMenuItem(text, CHECKMARK(*ptr == val), [=]() { *ptr = val; });
+}
+
+/** Easy wrapper for createMenuItem() to modify a property with a specific value.
+Example:
+	menu->addChild(createValuePtrMenuItem("Loop", RACK_MOD_SHIFT_NAME "+L", &module->mode, MODE::LOOP));
+*/
+template <typename T>
+ui::MenuItem* createValuePtrMenuItem(std::string text, std::string rightText, T* ptr, T val) {
+	return createMenuItem(text, string::f("%s %s", rightText, CHECKMARK(*ptr == val)), [=]() { *ptr = val; });
 }
 
 

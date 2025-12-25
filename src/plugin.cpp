@@ -25,6 +25,7 @@ void init(rack::Plugin* p) {
 	p->addModel(modelMidiCatMem);
 	p->addModel(modelMidiCatCtx);
 	p->addModel(modelMidiCatClk);
+	p->addModel(modelMidiCatFine);
 	p->addModel(modelSipo);
 	p->addModel(modelFourRounds);
 	p->addModel(modelArena);
@@ -58,6 +59,7 @@ void init(rack::Plugin* p) {
 	p->addModel(modelMidiPlug);
 	p->addModel(modelDirt);
 	p->addModel(modelMidiKey);
+	p->addModel(modelPanicRoom);
 	p->addModel(modelAudioInterface64);
 	p->addModel(modelMb);
 	p->addModel(modelMe);
@@ -72,7 +74,7 @@ void init(rack::Plugin* p) {
 	p->addModel(modelRaw);
 #endif
 
-	pluginSettings.readFromJson();
+	StoermelderPackOne::pluginSettings.readFromJson();
 }
 
 
@@ -101,6 +103,38 @@ bool unregisterSingleton(std::string name, Widget* mw) {
 Widget* getSingleton(std::string name) {
 	auto it = singletons.find(std::make_tuple(name, APP));
 	return it != singletons.end() ? it->second : NULL;
+}
+
+
+std::map<std::tuple<std::string, Context*>, std::set<ExpanderChangeListener*>*> expanderListeners;
+
+void registerExpanderListener(std::string topic, ExpanderChangeListener* l) {
+	auto index = std::make_tuple(topic, APP);
+	auto it = expanderListeners.find(index);
+	if (it == expanderListeners.end()) {
+		expanderListeners[index] = new std::set<ExpanderChangeListener *>;
+	}
+	expanderListeners[index]->insert(l);
+}
+
+void unregisterExpanderListener(std::string topic, ExpanderChangeListener* l) {
+	auto index = std::make_tuple(topic, APP);
+	auto i = expanderListeners[index];
+	i->erase(l);
+	if (i->size() == 0) {
+		delete i;
+		expanderListeners.erase(index);
+	}
+}
+
+void notifyExpanderListeners(std::string topic) {
+	auto index = std::make_tuple(topic, APP);
+	auto it = expanderListeners.find(index);
+	if (it != expanderListeners.end()) {
+		for (auto l : *expanderListeners[index]) {
+			l->expandersChanged = true;
+		}
+	}
 }
 
 } // namespace StoermelderPackOne

@@ -1,14 +1,20 @@
 # stoermelder AFFIX and µAFFIX
 
-AFFIX and µAFFIX are utility modules for polyphonic cables: They allow you to add a voltage offset to each of the 16 and 8 channels, respectively, by adjusting a knob.
+AFFIX and µAFFIX are utility modules for polyphonic cables. They allow you to add a voltage offset to each of the 16 (AFFIX) and 8 (µAFFIX) channels by adjusting a knob.
 
 ![AFFIX intro](./Affix-intro.png)
 
-To make the modules more useful the knobs offer three different modes available on the context menu: "Volt" allows the knobs to be set to an exact voltage, "Semitones" snaps the offset in semitone steps according to the 1V/Oct-standard (1/12V per step) and "Octave" snaps the offset in 1V increments.
+The knobs offer three modes via the context menu:
+
+- **Volt** - Set the knobs to an exact voltage.
+
+- **Semitones** - Snap the offset in semitone steps (1/12V per step, per the 1V/Oct standard).
+
+- **Octave** - Snap the offset in 1V increments.
 
 ![AFFIX modes](./Affix-modes.png)
 
-The modules can be used to adjust the number of active channels within a polyphonic cable or send voltage even without an incoming signal at all: Just set the number of channels on the context menu. When set to "Auto" they output the same number of channels as received on the input port.
+The modules can adjust the number of active channels in polyphonic cables or output voltage even without an input signal. To do this, set the number of channels in the context menu. In _Auto_ mode, the output matches the number of channels received on the input port.
 
 ![AFFIX channels](./Affix-channels.png)
 

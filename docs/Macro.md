@@ -1,27 +1,42 @@
 # stoermelder MACRO
 
-MACRO is an utility module for controlling four different parameters at once. It has also two CV output ports controlled the same way and it provides built-in slew-limiting and scaling options, adjustable for every parameter and every port.
+MACRO is a utility module designed to control up to **four parameters** simultaneously. It includes **two CV output ports**, each configurable independently. Built-in slew-limiting and scaling options allow fine-tuned adjustments for every parameter and output.
 
 ![MACRO intro](./Macro-intro.png)
 
-## Mapping parameters
+### Mapping parameters
 
-You can bind up to four parameters of any module in your patch. You do this by activating a mapping button by click. While mapping is active the led is lit in red and turns green after you click onto a knob or fader of the module you like to control, also a small pink mapping indicator is shown next to the parameter.
+MACRO allows you to map up to four parameters from any module in your patch. To start mapping:
 
-## Slew-limiting and scaling
+- Click a mapping button (LED turns red).
+- Click a knob or fader on the target module.
+- The LED turns green, and a pink indicator appears next to the mapped parameter.
 
-Each mapping slot has its own setting for slew-limiting of the input value which applies an exponential filter. Small values for _Slew_ are smoothing incoming values and larger values  give an overall steady movement of the mapped parameters or CV outputs on fast input changes.
+### Slew-limiting
 
-Each mapping slot and CV output has also two sliders (_Low_ and _High_) for scaling input values which allows you to adjust the range and how the mapped parameter is affected. By setting the two sliders accordingly almost any linear transformation is possible, even inverting a parameter. For convenience some presets are provided and the current scaling transformation is shown on the context menu.
+Each mapping slot includes an exponential filter to smooth input changes:
+- Low slew values → smoother adjustments.
+- High slew values → faster, steadier parameter/CV output movement.
+
+### Scaling
+
+Each slot and CV output features Low/High sliders to:
+- Adjust the input range.
+- Apply linear transformations (e.g., inversion).
+- Presets are available, and the current scaling formula is displayed in the context menu.
 
 ![MACRO context](./Macro-scaling.gif)
 
-## _IN_-port
+### _IN_-port
 
-The _IN_-port is optional in use and MACRO can be used leaving it unconnected. In this case the input value is taken from the big knob's current position. If voltage is applied to IN the knob acts as an attenuator, also the voltage range can be switch from unipolar (0..10V) to bipolar (-5..5V) on the context menu.
+The usage of the _IN_-port is optional. If the port is unconnect, the input value is taken from the big knob's current position. If voltage is applied to _IN_, the knob acts as an attenuator and the voltage range can be switched from unipolar (0..10V) to bipolar (-5..5V) on the context menu.
 
-## Additional features
+### Additional features
 
-Mapping parameters can result in quite high CPU usage. As controlling parameters at audio rate is not needed in most of the cases you can switch four different performance settings using _Precision_ option on the context menu.
+- Mapping parameters can consume significant CPU resources. To optimize: Adjust four precision settings via the context menu (audio-rate control is rarely needed).
 
-MACRO was added in v1.8 of PackOne.
+- By default, MACRO does not report parameter changes to the host (VCV Rack plugin). v2.2.0+: Enable reporting via the context menu (this may increase CPU usage).
+
+## Changelog
+
+MACRO was introduced in v1.8 of PackOne.

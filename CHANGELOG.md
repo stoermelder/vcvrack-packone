@@ -1,9 +1,43 @@
-## 2.x.x (in development)
+## 2.2.0
 
-- Modules [FLOWER, SEEDS, OFFSPRING](./docs/Flower.md)
-    - New modules, pattern-driven 16-step sequencer
-- Module [STRIP-BLOCK](./docs/Strip.md)
-    - New module, a companion module for STRIP for blocking STRIP's expander-mechanism
+Modules [8FACE, 8FACEx2](./docs/EightFace.md) and [8FACE mk2](./docs/EightFaceMk2.md) are now considered stable again. A _Safe-mode_ has been implemented, which loads presets on the next rendered frame, introducing a minor delay. Disabling _Safe-mode_ will load presets more quickly but may lead to crashes or other issues. If you load presets manually by clicking snapshot buttons or by MIDI, you will not notice any difference with _Safe-mode_.
+
+### New modules
+
+- Module [MIDI-CAT FINE](./docs/MidiCat.md#fine-expander)
+    - New expander for MIDI-CAT, allows fine-tuning of MIDI CC parameter-mappings
+- Module [PANIC ROOM](./docs/PanicRoom.md)
+    - Restricts your modular space within Rack, making it impossible to patch outside of a defined area
+
+### Changes and Fixes
+
+- Modules [8FACE, 8FACEx2](./docs/EightFace.md)
+    - Added _Safe-mode_ and use as new default setting
+- Module [8FACE mk2](./docs/EightFaceMk2.md)
+    - Added _Safe-mode_ and use as new default setting
+    - Improved robustness for expander +8
+- Modules [CV-MAP](./docs/CVMap.md)
+    - Added mapping functions _Map module (left)_ and _Map module (select)_
+    - Added color setting for mapping indicators
+- Modules [CV-MAP](./docs/CVMap.md), [MACRO](./docs/Macro.md), [µMAP](./docs/CVMapMicro.md), [MIDI-CAT](./docs/MidiCat.md), [MIRROR](./docs/Mirror.md), [ReMOVE Lite](./docs/ReMove.md), [X4](./docs/X4.md)
+    - Added context menu option to report parameter updates to plugin-host (only in plugin-version of Rack)
+- Module [DIRT](./docs/Dirt.md)
+    - Added new defects _Pitch_, _Crush_ and _Dropout_
+- Module [GOTO](./docs/Goto.md)
+     - Extended jump-points for multiple modules/selections
+- Nodule [MIDI-CAT](./docs/MidiCat.md)
+    - Added input-modes _Snapped_ and _Snapped (short/long)_ for CC and Notes for use with snapped parameters (e.g. "Steps" on VCV SEQ3)
+    - Added handling for MIDI System Reset message for resetting input-mode _Pickup (snap)_
+    - Added color setting for mapping indicators
+- Module [MIDI-CAT MEM](./docs/MidiCat.md#mem-expander)
+    - Added module restriction list
+    - Fixed broken MIDI feedback when loading stored mappings
+- Module [STRIP](./docs/Strip.md)
+    - Remember and recall file-dialog folder locations for vcvss and vcvs files
+- Module [STROKE](./docs/Stroke.md)
+    - Fixed cables' _Toggle visibility_ command (cable plugs still visible)
+- Module [TRANSIT](./docs/Transit.md)
+    - Improved robustness for expander +T (e.g. crashes when using module-presets) (#412)
 
 ## 2.1.0
 
@@ -18,8 +52,9 @@
 
 ## 2.0.0
 
-- [Selected modules](./MetaModule.md) are available on the [4ms MetaModule](https://4mscompany.com/p.php?p=990).
-- Modules [8FACE, 8FACEx2](./docs/EightFace.md) and [8FACE mk2](./docs/EightFaceMk2.md) are now considered experimental, because loading of presets into any module cannot be considered stable and issue-free in every case.
+[Selected modules](./MetaModule.md) are available on the [4ms MetaModule](https://4mscompany.com/p.php?p=990).
+
+Modules [8FACE, 8FACEx2](./docs/EightFace.md) and [8FACE mk2](./docs/EightFaceMk2.md) are now considered experimental, because loading of presets into any module cannot be considered stable and issue-free in every case.
 
 ### New modules
 

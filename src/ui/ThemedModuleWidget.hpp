@@ -3,7 +3,7 @@
 #include "../pluginhelpers.hpp"
 #include "../pluginsettings.hpp"
 
-extern Plugin* pluginInstance;
+extern rack::plugin::Plugin* pluginInstance;
 
 namespace StoermelderPackOne {
 
