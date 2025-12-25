@@ -6,6 +6,7 @@
 #include <list>
 #include <iomanip>
 #include <chrono>
+#include "MidiProcessor.hpp"
 
 namespace StoermelderPackOne {
 namespace MidiMon {
@@ -54,26 +55,17 @@ struct MidiMonModule : Module {
 	bool showSystemMsg;
 
 	/** [Stored to JSON] */
-	midi::InputQueue midiInput;
+	MidiProcessor midiProcessor;
 
 	ClockDividerEx processDivider;
 	dsp::RingBuffer<std::tuple<LOG_FORMAT, float, std::string>, 512> midiLogMessages;
 	bool isProcessing = false;
 
-	int16_t ccNrpnParam[16] = {-1};
-	int16_t ccRpnParam[16] = {-1};
-	// stores MSB values for 14-bit CCs (cc 0-31 -> indices 0-31)
-	int8_t cc14bitMsb[16][32] = {{-1}};
-	// stores MSB for RPN/NRPN data entry (CC 6) per channel, -1 = none
-	int8_t ccDataEntryMsb[16] = {-1};
-	// pending MSB for RPN (CC 101) and NRPN (CC 99) selection per channel
-	int8_t pendingRpnMsb[16] = {-1};
-	int8_t pendingNrpnMsb[16] = {-1};
-
 	MidiMonModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		processDivider.setDivision(512);
+		midiProcessor.subscribe(std::bind(&MidiMonModule::handleMessage, this, std::placeholders::_1));
 		onReset();
 	}
 
@@ -91,271 +83,142 @@ struct MidiMonModule : Module {
 		showClockMsg = false;
 		showSystemMsg = true;
 
-		for (int i = 0; i < 16; i++) {
-			ccNrpnParam[i] = -1;
-			ccRpnParam[i] = -1;
-			ccDataEntryMsb[i] = -1;
-			pendingRpnMsb[i] = -1;
-			pendingNrpnMsb[i] = -1;
-			for (int j = 0; j < 32; j++) {
-				cc14bitMsb[i][j] = -1;
-			}
-		}
-
-		resetTimestamp();
+		logTimestampReset();
 		Module::onReset();
 	}
 
 	void onSampleRateChange() override {
 		if (isProcessing) {
-			resetTimestamp();
+			logTimestampReset();
 		}
-	}
-
-	void resetTimestamp() {
-		std::time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-		char buf[100] = {0};
-		std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", std::localtime(&now));
-		midiLogMessages.push(std::make_tuple(LOG_FORMAT::TIMESTAMP, 0.f, std::string(buf)));
-		midiLogMessages.push(std::make_tuple(LOG_FORMAT::TIMESTAMP, 0.f, string::f("sample rate %i", int(APP->engine->getSampleRate()))));
 	}
 
 	void process(const ProcessArgs& args) override {
 		isProcessing = true;
 		if (processDivider.process()) {
-			midi::Message msg;
-			while (midiInput.tryPop(&msg, args.frame)) {
-				processMidi(msg);
-			}
+			midiProcessor.process(args.frame);
 		}
 	}
 
-	void processMidi(midi::Message& msg) {
-		float timestamp = float(msg.frame) / APP->engine->getSampleRate();
-		switch (msg.getStatus()) {
-			case 0x9: // note on
-				if (!midiLogMessages.full() && showNoteMsg) {
-					uint8_t ch = msg.getChannel();
-					uint8_t note = msg.getNote();
-					uint8_t vel = msg.getValue();
-					std::string s = string::f("ch%i note on  %i vel %i", ch + 1, note, vel);
-					midiLogMessages.push(std::make_tuple(LOG_FORMAT::TIMESTAMP, timestamp, s));
-				} break;
-			case 0x8: // note off
-				if (!midiLogMessages.full() && showNoteMsg) {
-					uint8_t ch = msg.getChannel();
-					uint8_t note = msg.getNote();
-					uint8_t vel = msg.getValue();
-					std::string s = string::f("ch%i note off %i vel %i", ch + 1, note, vel);
-					midiLogMessages.push(std::make_tuple(LOG_FORMAT::TIMESTAMP, timestamp, s));
-				} break;
-			case 0xa: // key pressure
-				if (!midiLogMessages.full() && showKeyPressure) {
-					uint8_t ch = msg.getChannel();
-					uint8_t note = msg.getNote();
-					uint8_t value = msg.getValue();
-					std::string s = string::f("ch%i key-pressure %i vel %i", ch + 1, note, value);
-					midiLogMessages.push(std::make_tuple(LOG_FORMAT::TIMESTAMP, timestamp, s));
-				} break;
-			case 0xb: // cc
-				if (!midiLogMessages.full() && showCcMsg) {
-					uint8_t ch = msg.getChannel();
-					uint8_t cc = msg.getNote();
-					int8_t value = msg.bytes[2];
-					std::string s = string::f("ch%i cc%i=%i", ch + 1, cc, value);
-					midiLogMessages.push(std::make_tuple(LOG_FORMAT::TIMESTAMP, timestamp, s));
-					if (!midiLogMessages.full() && showCcExMsg) {
-						processMidiCcEx(msg);
+	void logMessage(bool showMessage, LOG_FORMAT logFormat, float timestamp, std::string s) {
+		if (!midiLogMessages.full() && showMessage) {
+			midiLogMessages.push(std::make_tuple(logFormat, timestamp, s));
+		}
+	}
+
+	void logTimestampReset() {
+		std::time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+		char buf[100] = {0};
+		std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", std::localtime(&now));
+		logMessage(true, LOG_FORMAT::TIMESTAMP, 0.f, std::string(buf));
+		logMessage(true, LOG_FORMAT::TIMESTAMP, 0.f, string::f("sample rate %i", int(APP->engine->getSampleRate())));
+	}
+
+	bool handleMessage(MessageEx& m) {
+		std::string s;
+		float timestamp = float(m.frame) / APP->engine->getSampleRate();
+		switch (m.type) {
+			case MessageEx::Type::NOTE_ON:
+				s = string::f("ch%02d note on  %i vel %i", m.getChannel() + 1, m.getNote(), m.getValue());
+				logMessage(showNoteMsg, LOG_FORMAT::TIMESTAMP, timestamp, s);
+				break;
+			case MessageEx::Type::NOTE_OFF:
+				s = string::f("ch%02d note off %i vel %i", m.getChannel() + 1, m.getNote(), m.getValue());
+				logMessage(showNoteMsg, LOG_FORMAT::TIMESTAMP, timestamp, s);
+				break;
+			case MessageEx::Type::KEY_PRESSURE:
+				s = string::f("ch%02d key-pressure %i vel %i", m.getChannel() + 1, m.getNote(), m.getValue());
+				logMessage(showKeyPressure, LOG_FORMAT::TIMESTAMP, timestamp, s);
+				break;
+			case MessageEx::Type::CC:
+				s = string::f("ch%02d cc%i=%i", m.getChannel() + 1, m.getNote(), m.getValue());
+				logMessage(showCcMsg, LOG_FORMAT::TIMESTAMP, timestamp, s);
+				break;
+			case MessageEx::Type::CC_14BIT:
+				s = string::f("ch%02d 14-bit cc%i=%i", m.getChannel() + 1, m.getNote(), m.getValue());
+				logMessage(showCcExMsg, LOG_FORMAT::INDENTED, 0.f, s);
+				break;
+			case MessageEx::Type::RPN:
+				if (m.getParamNumber() < 0) {
+					s = string::f("ch%02d rpn/nrpn reset", m.getChannel() + 1);
+				}
+				else if (m.getValue() >= 0) {
+					s = string::f("ch%02d rpn param=%i value=%i", m.getChannel() + 1, m.getParamNumber(), m.getValue());
+				}
+				else if (m.getParamNumber() == 0) {
+					s = string::f("ch%02d rpn param=0 (Pitch Bend Sensitivity)", m.getChannel() + 1);
+				}
+				else if (m.getParamNumber() == 1) {
+					s = string::f("ch%02d rpn param=1 (Fine Tuning)", m.getChannel() + 1);
+				}
+				else if (m.getParamNumber() == 2) {
+					s = string::f("ch%02d rpn param=2 (Coarse Tuning)", m.getChannel() + 1);
+				}
+				else if (m.getParamNumber() == 3) {
+					s = string::f("ch%02d rpn param=3 (Tuning Program Select)", m.getChannel() + 1);
+				}
+				else if (m.getParamNumber() == 4) {
+					s = string::f("ch%02d rpn param=4 (Tuning Bank Select)", m.getChannel() + 1);
+				}
+				logMessage(showCcExMsg, LOG_FORMAT::INDENTED, 0.f, s);
+				break;
+			case MessageEx::Type::NRPN:
+				if (m.getValue() >= 0) {
+					s = string::f("ch%02d nrpn param=%i value=%i", m.getChannel() + 1, m.getParamNumber(), m.getValue());
+				} 
+				else {
+					s = string::f("ch%02d nrpn param=%i selected", m.getChannel() + 1, m.getParamNumber());
+				}
+				logMessage(showCcExMsg, LOG_FORMAT::INDENTED, 0.f, s);
+				break;
+			case MessageEx::Type::PROGRAM_CHANGE:
+				s = string::f("ch%02d program=%i", m.getChannel() + 1, m.getNote());
+				logMessage(showProgChangeMsg, LOG_FORMAT::TIMESTAMP, timestamp, s);
+				break;
+			case MessageEx::Type::CHANNEL_PRESSURE:
+				s = string::f("ch%02d channel-pressure=%i", m.getChannel() + 1, m.getNote());
+				logMessage(showChannelPressurelMsg, LOG_FORMAT::TIMESTAMP, timestamp, s);
+				break;
+			case MessageEx::Type::PITCH_BEND:
+				s = string::f("ch%02d pitchbend=%i", m.getChannel() + 1, m.getValue());
+				logMessage(showPitchWheelMsg, LOG_FORMAT::TIMESTAMP, timestamp, s);
+				break;
+			case MessageEx::Type::SYSEX:
+				logMessage(showSysExMsg, LOG_FORMAT::TIMESTAMP, timestamp, string::f("sysex (%i data bytes)", m.getSysExSize() - 2));
+				if (showSysExData) {
+					std::ostringstream ss;
+					ss << std::hex;
+					for (int i = 0; i < m.getSysExSize(); i++) {
+						ss << std::setw(2) << std::setfill('0') << static_cast<int>(m.getSysExByte(i)) << " ";
 					}
-				} break;
-			case 0xc: // program change
-				if (!midiLogMessages.full() && showProgChangeMsg) {
-					uint8_t ch = msg.getChannel();
-					uint8_t prog = msg.getNote();
-					std::string s = string::f("ch%i program=%i", ch + 1, prog);
-					midiLogMessages.push(std::make_tuple(LOG_FORMAT::TIMESTAMP, timestamp, s));
-				} break;
-			case 0xd: // channel pressure
-				if (!midiLogMessages.full() && showChannelPressurelMsg) {
-					uint8_t ch = msg.getChannel();
-					uint8_t value = msg.getNote();
-					std::string s = string::f("ch%i channel-pressure=%i", ch + 1, value);
-					midiLogMessages.push(std::make_tuple(LOG_FORMAT::TIMESTAMP, timestamp, s));
-				} break;
-			case 0xe: // pitch wheel
-				if (!midiLogMessages.full() && showPitchWheelMsg) {
-					uint8_t ch = msg.getChannel();
-					uint16_t value = ((uint16_t)msg.getValue() << 7) | msg.getNote();
-					std::string s = string::f("ch%i pitchwheel=%i", ch + 1, value);
-					midiLogMessages.push(std::make_tuple(LOG_FORMAT::TIMESTAMP, timestamp, s));
-				} break;
-			case 0xf: // system
-				if (!midiLogMessages.full()) {
-					switch (msg.getChannel()) {
-						case 0x0: // sysex
-							if (showSysExMsg) {
-								std::string s = string::f("sysex (%i bytes)", msg.getSize());
-								midiLogMessages.push(std::make_tuple(LOG_FORMAT::TIMESTAMP, timestamp, s));
-								if (showSysExData) { // sysex bytes
-									std::ostringstream ss;
-									ss << std::hex;
-									for (int i = 0; i < msg.getSize(); i++) {
-										ss << std::setw(2) << std::setfill('0') << static_cast<int>(msg.bytes[i]) << " ";
-									}
-									midiLogMessages.push(std::make_tuple(LOG_FORMAT::TEXT, 0.f, ss.str()));
-								}
-							} break;
-						case 0x2: // song pointer
-							if (showSystemMsg) {
-								uint16_t value = ((uint16_t)msg.getValue() << 7) | msg.getNote();
-								std::string s = string::f("song pointer=%i", value);
-								midiLogMessages.push(std::make_tuple(LOG_FORMAT::TIMESTAMP, timestamp, s));
-							} break;
-						case 0x3: // song select
-							if (showSystemMsg) {
-								uint8_t song = msg.getNote();
-								std::string s = string::f("song select=%i", song);
-								midiLogMessages.push(std::make_tuple(LOG_FORMAT::TIMESTAMP, timestamp, s));
-							} break;
-						case 0x8: // timing clock
-							if (showClockMsg) {
-								midiLogMessages.push(std::make_tuple(LOG_FORMAT::TIMESTAMP, timestamp, "clock tick"));
-							} break;
-						case 0xa: // start
-							if (showSystemMsg) {
-								midiLogMessages.push(std::make_tuple(LOG_FORMAT::TIMESTAMP, timestamp, "start"));
-							} break;
-						case 0xb: // continue
-							if (showSystemMsg) {
-								midiLogMessages.push(std::make_tuple(LOG_FORMAT::TIMESTAMP, timestamp, "continue"));
-							} break;
-						case 0xc: // stop
-							if (showSystemMsg) {
-								midiLogMessages.push(std::make_tuple(LOG_FORMAT::TIMESTAMP, timestamp, "stop"));
-							} break;
-						case 0xf: // reset
-							if (showSystemMsg) {
-								midiLogMessages.push(std::make_tuple(LOG_FORMAT::TIMESTAMP, timestamp, "reset"));
-							} break;
-						default:
-							break;
-					}
-				} break;
+					logMessage(true, LOG_FORMAT::TEXT, 0.f, ss.str());
+				}
+				break;
+			case MessageEx::Type::SONG_POINTER:
+				logMessage(showSystemMsg, LOG_FORMAT::TIMESTAMP, timestamp, string::f("song pointer=%i", m.getValue()));
+				break;
+			case MessageEx::Type::SONG_SELECT:
+				logMessage(showSystemMsg, LOG_FORMAT::TIMESTAMP, timestamp, string::f("song select=%i", m.getNote()));
+				break;
+			case MessageEx::Type::CLOCK:
+				logMessage(showClockMsg, LOG_FORMAT::TIMESTAMP, timestamp, "clock tick");
+				break;
+			case MessageEx::Type::START:
+				logMessage(showSystemMsg, LOG_FORMAT::TIMESTAMP, timestamp, "start");
+				break;
+			case MessageEx::Type::CONTINUE:
+				logMessage(showSystemMsg, LOG_FORMAT::TIMESTAMP, timestamp, "continue");
+				break;
+			case MessageEx::Type::STOP:
+				logMessage(showSystemMsg, LOG_FORMAT::TIMESTAMP, timestamp, "stop");
+				break;
+			case MessageEx::Type::RESET:
+				logMessage(showSystemMsg, LOG_FORMAT::TIMESTAMP, timestamp, "reset");
+				break;
 			default:
 				break;
 		}
-	}
-
-	void processMidiCcEx(midi::Message& msg) {
-		uint8_t ch = msg.getChannel();
-		uint8_t cc = msg.getNote();
-		int8_t value = msg.bytes[2];
-
-		// RPN selection: CC 101 (MSB) sets pending MSB, CC 100 (LSB) completes selection
-		if (cc == 101) {
-			pendingRpnMsb[ch] = value;
-			// don't return; record and continue
-		} else if (cc == 100) {
-			if (pendingRpnMsb[ch] >= 0) {
-				int16_t rpnMsb = pendingRpnMsb[ch];
-				int16_t rpnLsb = value;
-				int16_t rpnNumber = int16_t(rpnMsb) * 128 + rpnLsb;
-				// RPN reset: 127/127 resets both RPN and NRPN
-				if (rpnMsb == 127 && rpnLsb == 127) {
-					midiLogMessages.push(std::make_tuple(LOG_FORMAT::INDENTED, 0.f, string::f("ch%i rpn/nrpn reset", ch + 1)));
-					ccNrpnParam[ch] = ccRpnParam[ch] = -1;
-					ccDataEntryMsb[ch] = -1;
-				} else {
-					// Recognize common RPNs when MSB==0 for nicer logging
-					switch (rpnNumber) {
-						case 0: // Pitch Bend Sensitivity
-							midiLogMessages.push(std::make_tuple(LOG_FORMAT::INDENTED, 0.f, string::f("ch%i rpn param=0 (Pitch Bend Sensitivity)", ch + 1)));
-							break;
-						case 1: // Fine Tuning
-							midiLogMessages.push(std::make_tuple(LOG_FORMAT::INDENTED, 0.f, string::f("ch%i rpn param=1 (Fine Tuning)", ch + 1)));
-							break;
-						case 2: // Coarse Tuning
-							midiLogMessages.push(std::make_tuple(LOG_FORMAT::INDENTED, 0.f, string::f("ch%i rpn param=2 (Coarse Tuning)", ch + 1)));
-							break;
-						case 3: // Tuning Program Select
-							midiLogMessages.push(std::make_tuple(LOG_FORMAT::INDENTED, 0.f, string::f("ch%i rpn param=3 (Tuning Program Select)", ch + 1)));
-							break;
-						case 4: // Tuning Bank Select
-							midiLogMessages.push(std::make_tuple(LOG_FORMAT::INDENTED, 0.f, string::f("ch%i rpn param=4 (Tuning Bank Select)", ch + 1)));
-							break;
-						default: // unknown RPN within MSB==0
-							midiLogMessages.push(std::make_tuple(LOG_FORMAT::INDENTED, 0.f, string::f("ch%i rpn param=%i selected", ch + 1, rpnNumber)));
-							break;
-					}
-					ccRpnParam[ch] = rpnNumber;
-					ccNrpnParam[ch] = -1;
-					// clear pending MSB
-					pendingRpnMsb[ch] = -1;
-					ccDataEntryMsb[ch] = -1;
-				}
-			}
-		}
-
-		// NRPN selection: CC 99 (MSB) sets pending MSB, CC 98 (LSB) completes selection
-		else if (cc == 99) {
-			pendingNrpnMsb[ch] = value;
-		} else if (cc == 98) {
-			if (pendingNrpnMsb[ch] >= 0) {
-				int16_t nrpnMsb = pendingNrpnMsb[ch];
-				int16_t nrpnLsb = value;
-				int16_t number = int16_t(nrpnMsb) * 128 + nrpnLsb;
-				midiLogMessages.push(std::make_tuple(LOG_FORMAT::INDENTED, 0.f, string::f("ch%i nrpn param=%i selected", ch + 1, number)));
-				ccNrpnParam[ch] = number;
-				ccRpnParam[ch] = -1;
-				pendingNrpnMsb[ch] = -1;
-				ccDataEntryMsb[ch] = -1;
-			}
-		}
-
-		// RPN/NRPN data entry
-		if (cc == 6 && (ccNrpnParam[ch] >= 0 || ccRpnParam[ch] >= 0)) {
-			// Store MSB for potential LSBs (CC 38) that may follow; do not clear immediately
-			ccDataEntryMsb[ch] = value;
-			/*
-			// Log MSB-only entry as an indication (14-bit value MSB<<7)
-			int16_t msbOnly = int16_t(value) << 7;
-			if (ccRpnParam[ch] >= 0) {
-				midiLogMessages.push(std::make_tuple(LOG_FORMAT::INDENTED, 0.f, string::f("ch%i rpn %i MSB=%i", ch + 1, ccRpnParam[ch], msbOnly)));
-			} else if (ccNrpnParam[ch] >= 0) {
-				midiLogMessages.push(std::make_tuple(LOG_FORMAT::INDENTED, 0.f, string::f("ch%i nrpn %i MSB=%i", ch + 1, ccNrpnParam[ch], msbOnly)));
-			}
-			*/
-		}
-		else if (cc == 38 && (ccNrpnParam[ch] >= 0 || ccRpnParam[ch] >= 0)) {
-			int16_t finalValue;
-			if (ccDataEntryMsb[ch] >= 0) {
-				finalValue = int16_t(ccDataEntryMsb[ch]) * 128 + value;
-			} else {
-				finalValue = value; // LSB-only
-			}
-			if (ccRpnParam[ch] >= 0) {
-				std::string s = string::f("ch%i rpn param=%i value=%i", ch + 1, ccRpnParam[ch], finalValue);
-				midiLogMessages.push(std::make_tuple(LOG_FORMAT::INDENTED, 0.f, s));
-			}
-			if (ccNrpnParam[ch] >= 0) {
-				std::string s = string::f("ch%i nrpn param=%i value=%i", ch + 1, ccNrpnParam[ch], finalValue);
-				midiLogMessages.push(std::make_tuple(LOG_FORMAT::INDENTED, 0.f, s));
-			}
-		}
-
-		// 14-bit CC (CC 0-31 for MSB, CC 32-63 for LSB)
-		if (cc < 32) {
-			// CC 0-31: Store as MSB for potential 14-bit CC
-			cc14bitMsb[ch][cc] = value;
-		} else if (32 <= cc && cc < 64) {
-			// CC 32-63: LSB for 14-bit CC
-			uint8_t msbCc = cc - 32;
-			if (cc14bitMsb[ch][msbCc] >= 0) {
-				int16_t value14bit = int16_t(cc14bitMsb[ch][msbCc]) * 128 + value;
-				std::string s = string::f("ch%i 14-bit cc%i=%i", ch + 1, msbCc, value14bit);
-				midiLogMessages.push(std::make_tuple(LOG_FORMAT::INDENTED, 0.f, s));
-			}
-		}
+		return false;
 	}
 
 	json_t* dataToJson() override {
@@ -375,7 +238,7 @@ struct MidiMonModule : Module {
 		json_object_set_new(rootJ, "showClockMsg", json_boolean(showClockMsg));
 		json_object_set_new(rootJ, "showSystemMsg", json_boolean(showSystemMsg));
 
-		json_object_set_new(rootJ, "midiInput", midiInput.toJson());
+		json_object_set_new(rootJ, "midiInput", midiProcessor.midiInput.toJson());
 		return rootJ;
 	}
 
@@ -397,7 +260,7 @@ struct MidiMonModule : Module {
 		showSystemMsg = json_boolean_value(json_object_get(rootJ, "showSystemMsg"));
 
 		json_t* midiInputJ = json_object_get(rootJ, "midiInput");
-		if (midiInputJ) midiInput.fromJson(midiInputJ);
+		if (midiInputJ) midiProcessor.midiInput.fromJson(midiInputJ);
 	}
 };
 
@@ -417,7 +280,7 @@ struct MidiMonWidget : ThemedModuleWidget<MidiMonModule> {
 
 		MidiWidget<>* midiInputWidget = createWidget<MidiWidget<>>(Vec(0.f, 36.4f));
 		midiInputWidget->box.size = Vec(240.f, 67.0f);
-		midiInputWidget->setMidiPort(module ? &module->midiInput : NULL, "In");
+		midiInputWidget->setMidiPort(module ? &module->midiProcessor.midiInput : NULL, "In");
 		addChild(midiInputWidget);
 
 		LedDisplay* textDisplay = createWidget<LedDisplay>(Vec(0.f, 107.4f));
@@ -452,8 +315,9 @@ struct MidiMonWidget : ThemedModuleWidget<MidiMonModule> {
 			if (buffer.size() == BUFFERSIZE) buffer.pop_back();
 			std::tuple<LOG_FORMAT, float, std::string> s = module->midiLogMessages.shift();
 			buffer.push_front(s);
-			logDisplay->dirty = true;
 		}
+		logDisplay->dirty = true;
+		logDisplay->setSize(Vec(240.f, std::max(236.0f, buffer.size() * 16.f)));
 	}
 
 	void appendContextMenu(Menu* menu) override {
@@ -461,7 +325,7 @@ struct MidiMonWidget : ThemedModuleWidget<MidiMonModule> {
 		MidiMonModule* module = dynamic_cast<MidiMonModule*>(this->module);
 
 		menu->addChild(new MenuSeparator());
-		menu->addChild(createSubmenuItem("Channel MIDI messages", "", [=](Menu* menu) {
+		menu->addChild(createSubmenuItem("MIDI channel messages", "", [=](Menu* menu) {
 			menu->addChild(createBoolPtrMenuItem("Note on/off", "", &module->showNoteMsg));
 			menu->addChild(createBoolPtrMenuItem("Key pressure", "", &module->showKeyPressure));
 			menu->addChild(createBoolPtrMenuItem("CC", "", &module->showCcMsg));
@@ -471,7 +335,7 @@ struct MidiMonWidget : ThemedModuleWidget<MidiMonModule> {
 			menu->addChild(createBoolPtrMenuItem("Pitch wheel", "", &module->showPitchWheelMsg));
 		}));
 #ifndef METAMODULE
-		menu->addChild(createSubmenuItem("System MIDI messages", "", [=](Menu* menu) {
+		menu->addChild(createSubmenuItem("MIDI system messages", "", [=](Menu* menu) {
 			menu->addChild(createBoolPtrMenuItem("Clock", "", &module->showClockMsg));
 			menu->addChild(createBoolPtrMenuItem("Other", "", &module->showSystemMsg));
 			menu->addChild(createBoolPtrMenuItem("SysEx", "", &module->showSysExMsg));
@@ -487,7 +351,7 @@ struct MidiMonWidget : ThemedModuleWidget<MidiMonModule> {
 
 	void resetLog() {
 		buffer.clear();
-		module->resetTimestamp();
+		module->logTimestampReset();
 		logDisplay->reset();
 	}
 
@@ -506,9 +370,9 @@ struct MidiMonWidget : ThemedModuleWidget<MidiMonModule> {
 
 		fputs(string::f("%s v%s\n", rack::APP_NAME.c_str(), rack::APP_VERSION.c_str()).c_str(), file);
 		fputs(string::f("%s\n", system::getOperatingSystemInfo().c_str()).c_str(), file);
-		fputs(string::f("MIDI driver: %s\n", module->midiInput.getDriver()->getName().c_str()).c_str(), file);
-		fputs(string::f("MIDI device: %s\n", module->midiInput.getDeviceName(module->midiInput.deviceId).c_str()).c_str(), file);
-		fputs(string::f("MIDI channel: %s\n", module->midiInput.getChannelName(module->midiInput.channel).c_str()).c_str(), file);
+		fputs(string::f("MIDI driver: %s\n", module->midiProcessor.midiInput.getDriver()->getName().c_str()).c_str(), file);
+		fputs(string::f("MIDI device: %s\n", module->midiProcessor.midiInput.getDeviceName(module->midiProcessor.midiInput.deviceId).c_str()).c_str(), file);
+		fputs(string::f("MIDI channel: %s\n", module->midiProcessor.midiInput.getChannelName(module->midiProcessor.midiInput.channel).c_str()).c_str(), file);
 		fputs("--------------------------------------------------------------------\n", file);
 
 		for (std::list<std::tuple<LOG_FORMAT, float, std::string>>::reverse_iterator rit = buffer.rbegin(); rit != buffer.rend(); rit++) {
