@@ -1,11 +1,27 @@
 # stoermelder MIDI-CAT and expanders MEM, CTX, CLK and FINE
 
+- [Mapping parameters](#mapping-parameters)
+- [Input modes for CCs](#input-modes-for-ccs-soft-takeover-or-pickup)
+- [Note-mapping](#note-mapping)
+- [Slew-limiting and input-scaling](#slew-limiting-and-input-scaling)
+- [14-bit CC](#14-bit-cc)
+- [MIDI-feedback](#midi-feedback)
+- [LED-binding for MIDI-feedback](#led-binding-for-midi-feedback)
+- [Additional features](#additional-features)
+- [MEM-expander](#mem-expander)
+- [CTX-expander](#ctx-expander)
+- [CLK-expander](#clk-expander)
+- [FINE-expander](#fine-expander)
+- [Changelog](#changelog)
+
+### Overview
+
 MIDI-CAT is a module for MIDI-mapping and an evolution of [VCV's MIDI-MAP](https://vcvrack.com/manual/Core.html#midi-map) with several additional features:
 
-- It can be configured for an MIDI output-port to send **controller feedback**, all your controls get initalized on patch-loading if your controller supports it!
 - It has two different **pickup-modes** for controllers without input or automatic adjustment, so your parameters won't change until your controls reach their current positions.
 - It allows mapping of **MIDI note messages**, providing momentary-mode, momentary-mode with velocity and toggle-mode.
-- You can switch the module to "Locate and indicate" mode, which will help you to retrace your midi controls to the mapped module and parameter.
+- It can be configured for a MIDI output-port to send **controller feedback**, all your controls get initialized on patch-loading if your controller supports it!
+- You can switch the module to "Locate and indicate" mode, which will help you to retrace your MIDI controls to the mapped module and parameter.
 - CPU usage has been optimized.
 - And much much more...
 
@@ -13,9 +29,38 @@ Besides these new features the module brings the goodies known from stoermelder'
 
 - ...text scrolling for long parameter names,
 - ..."Locate and indicate" on slot's context menu for finding mapped parameters and
-- ...unlocked parameters for changes by mouse or by preset loading or using a by preset-manager like stoermelder's [8FACE](./EightFace.md).
+- ...unlocked parameters for changes by mouse or by preset loading or using a preset-manager like stoermelder's [8FACE](./EightFace.md).
 
 ![MIDI-CAT intro](./MidiCat-intro.gif)
+
+## Quick Reference
+
+### CC Input Modes
+
+| Mode | Behavior | Best For |
+|------|----------|----------|
+| **Direct** | Immediate parameter change | Motorized faders, endless encoders |
+| **Pickup (snap)** | Wait for value match, then lock | Standard MIDI controllers |
+| **Pickup (jump)** | Same as snap, unlocks on jumps | Template switching controllers |
+| **Toggle** | Min/max toggle on any CC | Buttons controlling switches |
+| **Toggle + Value** | Min/value toggle |  |
+| **Snapped** | Advance to next step | Snapped parameters with discrete values |
+| **Snapped (short/long)** | Next/previous with long press | Snapped parameters with discrete values |
+
+### Note Input Modes
+
+| Mode | Behavior | Best For |
+|------|----------|----------|
+| **Momentary** | Max value on note-on | Drum pads, buttons |
+| **Momentary + Velocity** | Velocity-mapped value | Velocity-sensitive pads |
+| **Toggle** | Min/max toggle | Switches |
+| **Toggle + Velocity** | Min/velocity toggle |  |
+| **Snapped** | Advance to next step | Snapped parameters with discrete values |
+| **Snapped (short/long)** | Next/previous with long press | Snapped parameters with discrete values |
+
+### Expander Chain
+
+When using multiple expanders, they can be chained on the right side of MIDI-CAT in any order. All expanders (MEM, CTX, CLK, FINE) can be used simultaneously.
 
 ### Mapping parameters
 
@@ -27,7 +72,7 @@ A typical workflow for mapping your MIDI-controller will look like this:
 - Touch a control or key on your MIDI device. The slot will bind the MIDI CC or note message.
 - Repeat this process until all the desired parameters have been mapped.
 
-Since v1.7.0 a blinking mapping indicator will indicate the bound parameter the mapping-slot which is currently selected. 
+Since v1.7.0 a blinking mapping indicator will indicate the bound parameter for the mapping-slot which is currently selected. 
 
 ![MIDI-CAT mapping](./MidiCat-map.gif)
 
@@ -49,20 +94,20 @@ In v1.7.0 new mapping options have been added to MIDI-CAT to achieve even faster
 
 ### Input modes for CCs ("Soft-takeover" or "Pickup")
 
-MIDI-CAT supports a technique sometimes called "soft-takeover" or "pickup": If the control on your MIDI device has a position different to the mapped parameter's position all incoming MIDI messages are ignored until the parameter's position has been "picked up". This method must be enabled for each mapping-slot in the context menu: 
+MIDI-CAT supports a technique sometimes called "soft-takeover" or "pickup": If the control on your MIDI device has a position different to the mapped parameter's position all incoming MIDI messages are ignored until the parameter's position has been "picked up". This prevents unwanted parameter jumps when switching controller presets or loading patches. This method must be enabled for each mapping-slot in the context menu:
 
-- **Direct** - Every received MIDI CC message is directly applied to the mapped parameter (default).
+- **Direct** - Every received MIDI CC message is directly applied to the mapped parameter (default). Best for controllers with motorized faders or endless encoders.
 
-- **Pickup (snap)** - MIDI CC messages are ignored until the control reaches the current value of the parameter. After that the MIDI control is "snaped" unto the parameter and will only unsnap if the parameter is changed from within Rack, e.g. manually by mouse or preset-loading.
+- **Pickup (snap)** - MIDI CC messages are ignored until the control reaches the current value of the parameter. After that the MIDI control is "snapped" onto the parameter and will only unsnap if the parameter is changed from within Rack, e.g. manually by mouse or preset-loading.
 
-- **Pickup (jump)** - Same as **Pickup (snap)**, but the control will loose the parameter when jumping to another value (in detail: The received MIDI CC value differs by 7% from the actual parameter value, on the default MIDI CC value range 0-127 this is a change by +/-8 from the last MIDI message). This mode can be used if your MIDI controller supports switching templates and you don't want your parameters to change when loading a different template.
+- **Pickup (jump)** - Same as **Pickup (snap)**, but the control will lose the parameter when jumping to another value (in detail: The received MIDI CC value differs by 7% from the actual parameter value, on the default MIDI CC value range 0-127 this is a change by +/-8 from the last MIDI message). This mode can be used if your MIDI controller supports switching templates and you don't want your parameters to change when loading a different template.
 
 <a name="toggle-cc"></a>
 - **Toggle** (added in v1.9.0) - Every MIDI _continuous control_ message toggles the parameter between its minimum and maximum value (usually 0 and 1 for switches).
 
 - **Toggle + Value** (added in v1.9.0) - Every MIDI _continuous control_ message toggles the parameter between its minimum and the control's value.
 
-- **Snapped** (added in v2.2.0) - Only useable for snapped parameters (for example "Steps" on [VCV SEQ3](https://library.vcvrack.com/Fundamental/SEQ3)). A MIDI CC message with value greater 0 advances the parameter to the next step and rolls over at the end of the range. This allows controlling a snapped parameter with a MIDI button.
+- **Snapped** (added in v2.2.0) - Only usable for snapped parameters (for example "Steps" on [VCV SEQ3](https://library.vcvrack.com/Fundamental/SEQ3)). A MIDI CC message with value greater than 0 advances the parameter to the next step and rolls over at the end of the range. This allows controlling a snapped parameter with a MIDI button.
 
 - **Snapped (short/long)** (added in v2.2.0) - Same as **Snapped**, but responds to MIDI CC value = 0 and long pressing will decrease the parameter to the previous step.
 
@@ -70,7 +115,7 @@ MIDI-CAT supports a technique sometimes called "soft-takeover" or "pickup": If t
 
 ### Note-mapping
 
-MIDI-CAT supports mapping of MIDI note-messages instead of MIDI CC. There are different modes availbale as note-messages work differently to continuous controls:
+MIDI-CAT supports mapping of MIDI note-messages instead of MIDI CC. There are different modes available as note-messages work differently to continuous controls:
 
 - **Momentary** - Default setting, when a MIDI note is received the parameter will be set to its maximum value (an MIDI velocity of 127 is assumed).
 
@@ -83,7 +128,7 @@ MIDI-CAT supports mapping of MIDI note-messages instead of MIDI CC. There are di
 
 Some controllers with push-buttons don't handle "note off" messages the way the message is intended, hence a mapping-slot can be switched with the option _Send "note on, vel 0" on note off_ to send a "note on" message with "velocity 0" as MIDI feedback instead (since v1.7.0).
 
-- **Snapped** (added in v2.2.0) - Only useable for snapped parameters (for example "Steps" on [VCV SEQ3](https://library.vcvrack.com/Fundamental/SEQ3)). A "note on" message increases the parameter to the next step and rolls over to the end of the range.
+- **Snapped** (added in v2.2.0) - Only usable for snapped parameters (for example "Steps" on [VCV SEQ3](https://library.vcvrack.com/Fundamental/SEQ3)). A "note on" message increases the parameter to the next step and rolls over at the end of the range.
 
 - **Snapped (short/long)** (added in v2.2.0) - Same as **Snapped**, but responds to "note off" messages and long pressing a MIDI note will decrease the parameter to the previous step.
 
@@ -98,9 +143,9 @@ Added in v1.8.0: Each mapping slot has its own setting for slew-limiting of the 
 As slew-limiting can be a CPU-intensive operation when used on many parameters MIDI-CAT has an option to set the update frequency and thus its precision. This option can be found on the context menu and allows updating parameters on every audio sample which will cause the highest CPU usage but is rarely needed. Lower update frequencies also lower the CPU usage accordingly.
 
 <a name="input-scaling"></a>
-Added in v1.8.0: Each mapping slot has also two sliders (_Low_ and _High_) for scaling incoming MIDI values which allows you to adjust the range of the MIDI control and how the mapped parameter is affected. By setting the two sliders accordingly (MIDI values are ranging from 0 to 127) almost any linear transformation is possible, even inverting a MIDI control. For convenience some presets are provided and the current scaling transformation is shown on the context menu.
+Added in v1.8.0: Each mapping slot has also two sliders (_Low_ and _High_) for scaling incoming MIDI values which allows you to adjust the range of the MIDI control and how the mapped parameter is affected. By setting the two sliders accordingly (MIDI values range from 0 to 127) almost any linear transformation is possible, even inverting a MIDI control. For convenience some presets are provided and the current scaling transformation is shown on the context menu.
 
-Please note that slew-limiting and input-scaling also works fine with note-mapping.
+Please note that slew-limiting and input-scaling also work fine with note-mapping.
 
 ![MIDI-CAT input-scaling](./MidiCat-input-scaling.png)
 
@@ -110,13 +155,13 @@ MIDI 14-bit CC pairs are supported since v1.9.0: _continuous control_ messages 0
 
 ![MIDI-CAT 14-bit CC](./MidiCat-14bit.png)
 
-The increased value resolution is displayed on the context menu and all available options like scaling and slew work can be used like regular CCs.
+The increased value resolution is displayed on the context menu and all available options like scaling and slew can be used like regular CCs.
 
 ### MIDI-feedback
 
-Any parameter change can be sent back to an MIDI output with the same CC or note. "Feedback" is useful for initialization of the controls on the MIDI device if it is supported, especially after loading a patch. [Slew-limiting](#slew-limiting-and-input-scaling) it not applied on MIDI feedback.
+Any parameter change can be sent back to a MIDI output with the same CC or note. "Feedback" is useful for initialization of the controls on the MIDI device if it is supported, especially after loading a patch. [Slew-limiting](#slew-limiting-and-input-scaling) is not applied on MIDI feedback.
 
-The option _Re-send MIDI feedback_ on MIDI-CAT's context menu allows you to manually send the values of all mapped parameters back to your MIDI device (since v1.7.0). This option can be useful if you switch your MIDI device while running Rack or the device behaves strangely and needs to be initalized again.
+The option _Re-send MIDI feedback_ on MIDI-CAT's context menu allows you to manually send the values of all mapped parameters back to your MIDI device (since v1.7.0). This option can be useful if you switch your MIDI device while running Rack or the device behaves strangely and needs to be initialized again.
 
 <a name="feedback-periodically"></a>
 For some MIDI controllers which don't support different simultaneous "layers" but different switchable presets (e.g. Behringer X-Touch Mini) there is an additional submenu option called _Periodically_ (since v1.8.0): When enabled MIDI-CAT sends MIDI-feedback twice a second for all mapped controls regardless if any parameter has been changed.
@@ -149,10 +194,10 @@ Here is a unpolished introduction video to demonstrate the configuration steps a
 
 - An active mapping slot can be skipped by hitting the SPACE-key while hovering the mouse over MIDI-CAT (since v1.8.0).
 
-- Settings of a mapping slot are copied from the previous slot: If you set up the first mapping slot and map further mapping slots afterwards, these settings are copied over. Useful for settings like "Pickup" or "14-bit CC".
+- Settings of a mapping slot are copied from the previous slot: If you set up the first mapping slot and map further mapping slots afterwards, these settings are copied. Useful for settings like "Pickup" or "14-bit CC".
 
 <a name="target-context"></a>
-- After a parameter has been mapped the parameter's context menu is extended with some addtional menu items allowing quick MIDI learning and centering it's mapping MIDI-CAT module on the center of the screen (since v1.8.0). There are even further options with the [CTX-expander](MidiCat.md#ctx-expander).
+- After a parameter has been mapped the parameter's context menu is extended with some additional menu items allowing quick MIDI learning and centering its mapping MIDI-CAT module on the center of the screen (since v1.8.0). There are even further options with the [CTX-expander](MidiCat.md#ctx-expander).
 
 ![MIDI-CAT parameter's context menu](./MidiCat-target.png)
 
@@ -161,7 +206,7 @@ Here is a unpolished introduction video to demonstrate the configuration steps a
 
 ![MIDI-CAT overlay](./MidiCat-overlay.gif)
 
-- Parameter changes are not reported back to the plugin-host by default if MIDI-CAT is used in a plugin-version of VCV Rack. A context menu optionis available to enable this behavior - it might cause higher CPU usage of the plugin (since v2.2.0).
+- Parameter changes are not reported back to the plugin-host by default if MIDI-CAT is used in a plugin-version of VCV Rack. A context menu option is available to enable this behavior - it might cause higher CPU usage of the plugin (since v2.2.0).
 
 - MIDI-CAT can receive MIDI System Reset messages: For mapping-slots with input-mode **Pickup (snap)** it resets the mapping and the parameter can be picked up again. This can be useful for switching MIDI controller presets (since v2.2.0).
 
@@ -201,13 +246,13 @@ Added in v2.2.0: MEM has a restriction list to restrict the modules considered b
 
 ### CTX-expander
 
-CTX is a second companion module for MIDI-CAT: The expander allows you to name each instance of MIDI-CAT in your patch. This name can be addressed in every parameters' context menu for activating MIDI mapping or re-mapping parameters to an existing MIDI control or note mapping in another mapping slot of MIDI-CAT.
+CTX is a second companion module for MIDI-CAT: The expander allows you to name each instance of MIDI-CAT in your patch. This name can be addressed in every parameter's context menu for activating MIDI mapping or re-mapping parameters to an existing MIDI control or note mapping in another mapping slot of MIDI-CAT.
 
-CTX for MIDI-CAT must be placed on the right side of MIDI-CAT and can be used the same time as the MEM-expander. The display can hold up to 8 characters for naming MIDI-CAT.
+CTX for MIDI-CAT must be placed on the right side of MIDI-CAT and can be used at the same time as the MEM-expander. The display can hold up to 8 characters for naming MIDI-CAT.
 
 ![CTX workflow](./MidiCat-Ctx.gif)
 
-Additionally MIDI-CAT CTX provides a button for activating mapping on the first empty mapping slot in MIDI-CAT. This button can also mapped to a MIDI controller which allows start MIDI mapping by a MIDI message.
+Additionally, MIDI-CAT CTX provides a button for activating mapping on the first empty mapping slot in MIDI-CAT. This button can also be mapped to a MIDI controller which allows you to start MIDI mapping by a MIDI message.
 
 ### CLK-expander
 
@@ -223,7 +268,12 @@ There are two modes with different behavior for MIDI-feedback:
 
 ### FINE-expander
 
-FINE is a companion module for MIDI-CAT which provides ability to fine-tune mapped parameters. If the input/gate on either 10% input or 1/2/5% input is high, the module switches to fine-tuning mode: In fine-tuning mode, the MIDI control must be moved to its center, then fine-tunes the parameter with 10% range or 1/2/5% range, respectively. Fine-tuning for a parameter can only be used on MIDI CC mappings with input mode set to "Pickup (snap)" or "Pickup (jump)". Addtionally, the module switches from 10% range to 1/2/5% range and from 1/2/5% range to 10% range smoothly, if the 1/2/5% input is enabled while 10% input stays high. This means, finer adjustments can be made while holding two buttons without a need to center the MIDI control. After fine-tuning is finished and gates on 10% input and 1/2/5% input are low, the mapped MIDI control can pickup the current parameter value again.  
+FINE is a companion module for MIDI-CAT which provides the ability to fine-tune mapped parameters. When the input/gate on either the 10% input or 1/2/5% input is high, the module switches to fine-tuning mode. In fine-tuning mode, the MIDI control must be moved to its center, then it fine-tunes the parameter within a 10% range or 1/2/5% range, respectively.
+
+Fine-tuning for a parameter can only be used on MIDI CC mappings with input mode set to _Pickup (snap)_ or _Pickup (jump)_. Additionally, the module switches from 10% range to 1/2/5% range and from 1/2/5% range to 10% range smoothly if the 1/2/5% input is enabled while the 10% input stays high. This means finer adjustments can be made while holding two buttons without the need to center the MIDI control.
+
+After fine-tuning is finished and gates on 10% input and 1/2/5% input are low, the mapped MIDI control can pick up the current parameter value again.
+
 FINE for MIDI-CAT must be placed on the right side of MIDI-CAT and can be used together with the other expanders. High gates for the two inputs can be created by [VCV MIDI-GATE](https://library.vcvrack.com/Core/MIDITriggerToCVInterface) using MIDI note messages or by [STROKE](./Stroke.md) using keyboard hotkeys, for example.
 
 ## Changelog
