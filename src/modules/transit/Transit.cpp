@@ -180,11 +180,12 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 	}
 
 	void onReset() override {
-		expandersChanged = true;
 		reset(false, true);
 	}
 
 	void reset(bool stateOnly, bool createUiTask = false) {
+		expandersChanged = true;
+
 		if (!stateOnly) {
 			inChange = true;
 			auto cleanHandles = [=]() {
