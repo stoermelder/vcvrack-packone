@@ -5,20 +5,20 @@
 namespace StoermelderPackOne {
 namespace Transit {
 
-template <uint8_t SNAPSHOTS>
+template <uint8_t SNAPSHOTS = 8>
 struct TransitPadModule : Module, XyScreenModule<SNAPSHOTS>, XySeqModule<1> {
 	enum ParamIds {
 		ENUMS(SNAPSHOT_X_POS, SNAPSHOTS),
 		ENUMS(SNAPSHOT_Y_POS, SNAPSHOTS),
-		ENUMS(OUT_X_POS, 1),
-		ENUMS(OUT_Y_POS, 1),
+		OUT_X_POS,
+		OUT_Y_POS,
 		NUM_PARAMS
 	};
 	enum InputIds {
-		ENUMS(OUT_X_INPUT, 1),
-		ENUMS(OUT_Y_INPUT, 1),
-		ENUMS(OUT_SEQ_INPUT, 1),
-		ENUMS(OUT_SEQ_PH_INPUT, 1),
+		OUT_X_INPUT,
+		OUT_Y_INPUT,
+		OUT_SEQ_INPUT,
+		OUT_SEQ_PH_INPUT,
 		NUM_INPUTS
 	};
 	enum OutputIds {
@@ -35,9 +35,19 @@ struct TransitPadModule : Module, XyScreenModule<SNAPSHOTS>, XySeqModule<1> {
 	int panelTheme = 0;
 
 	/** [Stored to JSON] */
-	uint8_t snapshotsUsed;
+	int snapshotsUsed = SNAPSHOTS;
 
-	dsp::ClockDivider lightDivider;
+	float dist[SNAPSHOTS];
+
+	float inputInX[SNAPSHOTS];
+	float inputInY[SNAPSHOTS];
+
+	float outUiX, outInX;
+	dsp::ExponentialFilter outXfilter;
+	float outUiY, outInY;
+	dsp::ExponentialFilter outYfilter;
+
+	ClockDividerEx lightDivider;
 
 	TransitPadModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
@@ -56,6 +66,191 @@ struct TransitPadModule : Module, XyScreenModule<SNAPSHOTS>, XySeqModule<1> {
 
 		onReset();
 	}
+
+	void onReset() override {
+		Sc::scResetSelection();
+		init();
+		Sc::scReset();
+		Seq::seqReset();
+		Module::onReset();
+	}
+
+	void onRandomize() override {
+		Sc::scRandomizeAmountAll();
+		Sc::scRandomizeRadiusAll();
+		Sc::scRandomizeXAll();
+		Sc::scRandomizeYAll();
+		Module::onRandomize();
+	}
+
+	void init() {
+		scInitItems();
+		Sc::scInit();
+		Seq::seqInit();
+	}
+
+	void process(const ProcessArgs& args) override {
+		for (uint8_t j = 0; j < snapshotsUsed; j++) {
+			inputInX[j] = Sc::scGetXFiltered(j, args.sampleTime);
+			inputInY[j] = Sc::scGetYFiltered(j, args.sampleTime);
+
+			Sc::scSetRadiusFinal(j, Sc::scGetRadiusRaw(j, args.sampleTime));
+			Sc::scSetAmountFinal(j, Sc::scGetAmountFiltered(j, args.sampleTime));
+
+			float x = inputInX[j];
+			x = clamp(x, 0.f, 1.f);
+			params[SNAPSHOT_X_POS + j].setValue(x);
+
+			float y = inputInY[j];
+			y = clamp(y, 0.f, 1.f);
+			params[SNAPSHOT_Y_POS + j].setValue(y);
+		}
+
+		XyScreenParamQuantity* px = reinterpret_cast<XyScreenParamQuantity*>(paramQuantities[OUT_X_POS]);
+		if (!px->hasHandle)
+			outInX = outXfilter.process(args.sampleTime, outUiX);
+		else
+			outInX = px->getParam()->getValue();
+
+		XyScreenParamQuantity* py = reinterpret_cast<XyScreenParamQuantity*>(paramQuantities[OUT_Y_POS]);
+		if (!py->hasHandle)
+			outInY = outYfilter.process(args.sampleTime, outUiY);
+		else 
+			outInY = py->getParam()->getValue();
+
+		if (inputs[OUT_SEQ_INPUT].isConnected()) {
+			Seq::seqProcess(inputs[OUT_SEQ_INPUT], 0);
+		}
+
+		bool setX = false, setY = false;
+
+		if (inputs[OUT_SEQ_PH_INPUT].isConnected()) {
+			float v = clamp(inputs[OUT_SEQ_PH_INPUT].getVoltage() / 10.f, 0.f, 1.f);
+			Vec d = Seq::seqValue(0, v);
+			params[OUT_X_POS].setValue(d.x);
+			setX = true;
+			params[OUT_Y_POS].setValue(d.y);
+			setY = true;
+		}
+
+		if (!setX && inputs[OUT_X_INPUT].isConnected()) {
+			float x = inputs[OUT_X_INPUT].getVoltage() / 10.f;
+			x += 0.5f;
+			x = clamp(x, 0.f, 1.f);
+			params[OUT_X_POS].setValue(x);
+			setX = true;
+		} 
+
+		if (!setY && inputs[OUT_Y_INPUT].isConnected()) {
+			float y = inputs[OUT_Y_INPUT].getVoltage() / 10.f;
+			y += 0.5f;
+			y = clamp(y, 0.f, 1.f);
+			params[OUT_Y_POS].setValue(y);
+			setY = true;
+		}
+
+		if (!setX) {
+			params[OUT_X_POS].setValue(outInX);
+		}
+		if (!setY) {
+			params[OUT_Y_POS].setValue(outInY);
+		}
+
+		float outX = params[OUT_X_POS].getValue();
+		float outY = params[OUT_Y_POS].getValue();
+		Vec outVec = Vec(outX, outY);
+
+		for (int j = 0; j < snapshotsUsed; j++) {
+			float inX = params[SNAPSHOT_X_POS + j].getValue();
+			float inY = params[SNAPSHOT_Y_POS + j].getValue();
+
+			Vec inVec = Vec(inX, inY);
+			dist[j] = inVec.minus(outVec).norm();
+
+			float r = Sc::scGetRadiusFinal(j);
+			if (dist[j] < r) {
+				float s = std::min(1.0f, (r - dist[j]) / r * 1.1f);
+			}
+		}
+	}
+
+	bool seqPortUsed(int port) override {
+		return port + 1 > 1;
+	}
+
+	void scInitItems() override {		
+		scSetItemImmediate(1, 0, paramQuantities[OUT_X_POS]->getDefaultValue(), paramQuantities[OUT_Y_POS]->getDefaultValue());
+		outXfilter.setTau(0.05f);
+		outYfilter.setTau(0.05f);
+	}
+
+	inline uint8_t scGetItemCount(uint8_t type) override {
+		return type == 0 ? SNAPSHOTS : 1;
+	}
+
+	inline uint8_t scGetItemCountActive(uint8_t type) override {
+		return type == 0 ? snapshotsUsed : 1;
+	}
+
+	engine::ParamQuantity* scGetPqX(uint8_t type, uint8_t id) override {
+		if (type == 0)
+			return paramQuantities[SNAPSHOT_X_POS + id];
+		else
+			return paramQuantities[OUT_X_POS];
+	}
+
+	engine::ParamQuantity* scGetPqY(uint8_t type, uint8_t id) override {
+		if (type == 0)
+			return paramQuantities[SNAPSHOT_Y_POS + id];
+		else
+			return paramQuantities[OUT_Y_POS];
+	}
+
+	inline float scGetXFinal(uint8_t type, uint8_t id) override {
+		if (type == 0)
+			return paramQuantities[SNAPSHOT_X_POS + id]->getParam()->getValue();
+		else
+			return paramQuantities[OUT_X_POS]->getParam()->getValue();
+	}
+
+	inline float scGetYFinal(uint8_t type, uint8_t id) override {
+		if (type == 0)
+			return paramQuantities[SNAPSHOT_Y_POS + id]->getParam()->getValue();
+		else
+			return paramQuantities[OUT_Y_POS]->getParam()->getValue();
+	}
+
+	inline void scSetItemFiltered(uint8_t type, uint8_t id, float x, float y) override {
+		if (type == 1) {
+			outUiX = x;
+			outUiY = y;
+		}
+	}
+
+	inline void scSetItemImmediate(uint8_t type, uint8_t id, float x, float y) override {
+		if (type == 1) {
+			paramQuantities[OUT_X_POS]->getParam()->setValue(x);
+			outXfilter.out = outUiX = x;
+			paramQuantities[OUT_Y_POS]->getParam()->setValue(y);
+			outYfilter.out = outUiY = y;
+		}
+	}
+
+	inline float scGetDistance(uint8_t typeSource, uint8_t idSource, uint8_t typeDest, uint8_t idDest) override {
+		return dist[idDest];
+	}
+
+	json_t* dataToJson() override {
+		json_t* rootJ = json_object();
+		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
+		json_object_set_new(rootJ, "snapshotsUsed", json_integer(snapshotsUsed));
+		return rootJ;
+	}
+
+	void dataFromJson(json_t* rootJ) override {
+		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		snapshotsUsed = json_integer_value(json_object_get(rootJ, "snapshotsUsed"));
+	}
 };
 
 
@@ -63,88 +258,127 @@ template <typename MODULE>
 struct TransitPadSnapshotDragWidget : XyScreenDragWidget<MODULE> {
 	typedef XyScreenDragWidget<MODULE> AW;
 
-	TransitPadSnapshotDragWidget() {
-		AW::color = color::WHITE;
-		AW::type = 0;
-	}
-
-	void step() override {
-		AW::circleA = AW::module->amount[AW::id];
-		AW::step();
-	}
-
-	void drawLayer(const Widget::DrawArgs& args, int layer) override {
-		if (layer == 1) {
-			if (AW::id + 1 > AW::module->snapshotsUsed) return;
-
-			if (AW::module->scIsSelected(AW::type, AW::id)) {
-				// Draw outer circle and fill
-				Vec c = Vec(AW::box.size.x / 2.f, AW::box.size.y / 2.f);
-				Rect b = Rect(AW::box.pos.mult(-1), AW::parent->box.size);
-				nvgSave(args.vg);
-				nvgScissor(args.vg, b.pos.x, b.pos.y, b.size.x, b.size.y);
-				float sizeX = std::max(0.f, (AW::parent->box.size.x - 2 * AW::radius) * AW::module->scGetRadiusFinal(AW::id) - AW::radius);
-				float sizeY = std::max(0.f, (AW::parent->box.size.y - 2 * AW::radius) * AW::module->scGetRadiusFinal(AW::id) - AW::radius);
-				nvgBeginPath(args.vg);
-				nvgEllipse(args.vg, c.x, c.y, sizeX, sizeY);
-				nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
-				nvgStrokeColor(args.vg, color::mult(AW::color, 0.7f));
-				nvgStrokeWidth(args.vg, 0.6f);
-				nvgStroke(args.vg);
-				nvgFillColor(args.vg, color::mult(AW::color, 0.1f));
-				nvgFill(args.vg);
-				nvgResetScissor(args.vg);
-				nvgRestore(args.vg);
-
-				AW::textColor = nvgRGBA(0, 16, 90, 200);
-			}
-			else {
-				AW::textColor = AW::color;
-			}
-		}
-		AW::drawLayer(args, layer);
-	}
-
-	void onButton(const event::Button& e) override {
-		if (AW::id + 1 > AW::module->inportsUsed) return;
-		AW::onButton(e);
-	}
-
  	std::string getItemName() override {
 		return string::f("Snapshot %i", AW::id + 1);
 	}
+
+	/*
+	void appendContextMenu(Menu* menu) override {
+		menu->addChild(ArenaVoltageSubMenuItem("X-port", &B::module->inputXBipolar[B::id]));
+		menu->addChild(ArenaVoltageSubMenuItem("Y-port", &B::module->inputYBipolar[B::id]));
+		menu->addChild(new ArenaModModeMenuItem<MODULE>(B::module, B::id));
+		menu->addChild(new ArenaOutputModeMenuItem<MODULE>(B::module, B::id));
+	}
+	*/
 };
 
 
 template <typename MODULE>
-struct TransitPadScreenWidget : XyScreenWidget<MODULE> {
-	typedef XyScreenWidget<MODULE> B;
+struct TransitPadOutDragWidget : XyScreenDragWidget<MODULE> {
+	typedef XyScreenDragWidget<MODULE> B;
 
-	TransitPadScreenWidget(MODULE* module, int inParamIdX, int inParamIdY, int mixParamIdX, int mixParamIdY) : XyScreenWidget<MODULE>(module) {
-		if (module) {
-			for (uint8_t i = 0; i < module->numInports; i++) {
-				TransitPadSnapshotDragWidget<MODULE>* w = new TransitPadSnapshotDragWidget<MODULE>;
-				w->module = module;
-				w->id = i;
-				XyScreenWidget<MODULE>::addChild(w);
+ 	std::string getItemName() override {
+		return "Output";
+	}
+
+	/*
+	void appendContextMenu(Menu* menu) override {
+		menu->addChild(ArenaVoltageSubMenuItem("X-port", &B::module->mixportXBipolar[B::id]));
+		menu->addChild(ArenaVoltageSubMenuItem("Y-port", &B::module->mixportYBipolar[B::id]));
+		menu->addChild(new MenuSeparator());
+		menu->addChild(createMenuLabel("Motion-Sequence"));
+		menu->addChild(new XySeqSlotMenuItem<MODULE>(B::module, B::id));
+		menu->addChild(new XySeqInterpolateMenuItem<MODULE>(B::module, B::id));
+		menu->addChild(new XySeqTriggerMenuItem<MODULE>(B::module, B::id));
+	}
+	*/
+};
+
+template <typename MODULE>
+struct TransitPadXyScreenWidget : XyScreenWidget<MODULE> {
+	TransitPadXyScreenWidget(MODULE* module, int inParamIdX, int inParamIdY, int mixParamIdX, int mixParamIdY) : XyScreenWidget<MODULE>(module) {
+		uint8_t t0 = module ? module->scGetItemCount(0) : 8;
+		this->template createDragWidgets<TransitPadSnapshotDragWidget<MODULE>>(module, 0, t0, color::WHITE);
+		uint8_t t1 = module ? module->scGetItemCount(1) : 1;
+		this->template createDragWidgets<TransitPadOutDragWidget<MODULE>>(module, 1, t1, color::GREEN);
+	}
+
+	void step() override {
+		if (this->module) {
+			// Preview interpolated automation line if mixport is selected
+			this->module->seqPreview = -1;
+			for (uint8_t i = 0; i < this->module->scGetItemCountActive(1); i++) {
+				if (this->module->scIsSelected(1, i))
+					this->module->seqPreview = i;
 			}
 		}
+		XyScreenWidget<MODULE>::step();
 	}
 
 	void appendContextMenu(Menu* menu) override {
 		using StoermelderPackOne::Rack::createValuePtrMenuItem;
 		menu->addChild(new MenuSeparator());
-		menu->addChild(createSubmenuItem("Number of snapshots", string::f("%i", B::module->snapshotsUsed),
+		menu->addChild(createSubmenuItem("Number of IN-ports", string::f("%i", this->module->snapshotsUsed),
 			[=](Menu* menu) {
-				for (int i = 0; i < B::module->numInports; i++) {
-					menu->addChild(createValuePtrMenuItem(string::f("%i", i + 1), &B::module->snapshotsUsed, i + 1));
+				for (int i = 0; i < this->module->scGetItemCount(0); i++) {
+					menu->addChild(createValuePtrMenuItem(string::f("%i", i + 1), &this->module->snapshotsUsed, i + 1));
 				}
 			}
 		));
 	}
 };
 
+
+template <typename MODULE>
+struct TransitPadXySeqLedDisplay : XySeqLedDisplay<MODULE> {	
+	std::string getPortName() override {
+		return "Output";
+	}
+
+	/*
+	void appendContextMenu(Menu* menu) override {
+		menu->addChild(new MenuSeparator());
+		menu->addChild(ArenaVoltageSubMenuItem("X-port", &this->module->mixportXBipolar[this->id]));
+		menu->addChild(ArenaVoltageSubMenuItem("Y-port", &this->module->mixportYBipolar[this->id]));
+	}
+	*/
+};
+
+
+struct TransitPadWidget : ThemedModuleWidget<TransitPadModule<>> {
+	typedef TransitPadModule<> MODULE;
+
+	TransitPadWidget(MODULE* module) : ThemedModuleWidget<MODULE>(module, "TransitPad") {
+		setModule(module);
+
+		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
+		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
+		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+
+		addInput(createInputCentered<StoermelderPort>(Vec(22.9f, 327.0f), module, MODULE::OUT_SEQ_INPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(135.0f, 327.0f), module, MODULE::OUT_SEQ_PH_INPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(97.0f, 327.0f), module, MODULE::OUT_X_INPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(173.0f, 327.0f), module, MODULE::OUT_Y_INPUT));
+
+		TransitPadXyScreenWidget<MODULE>* screenWidget = new TransitPadXyScreenWidget<MODULE>(module, MODULE::SNAPSHOT_X_POS, MODULE::SNAPSHOT_Y_POS, MODULE::OUT_X_POS, MODULE::OUT_Y_POS);
+		screenWidget->box.pos = Vec(12.3f, 41.2f);
+		screenWidget->box.size = Vec(245.4f, 245.4f);
+		addChild(screenWidget);
+
+		XySeqEditWidget<MODULE>* seqEditWidget = new XySeqEditWidget<MODULE>(module, MODULE::OUT_X_POS, MODULE::OUT_Y_POS);
+		seqEditWidget->box.pos = screenWidget->box.pos;
+		seqEditWidget->box.size = screenWidget->box.size;
+		addChild(seqEditWidget);
+
+		TransitPadXySeqLedDisplay<MODULE>* seqDisplay1 = createWidgetCentered<TransitPadXySeqLedDisplay<MODULE>>(Vec(55.2f, 309.7f));
+		seqDisplay1->module = module;
+		seqDisplay1->id = 0;
+		addChild(seqDisplay1);
+	}
+};
+
 } // namespace Transit
 } // namespace StoermelderPackOne
 
-//Model* modelTransitPad = createModel<StoermelderPackOne::Transit::TransitPadModule<>, StoermelderPackOne::Transit::TransitPadWidget<>>("TransitPad");
+Model* modelTransitPad = createModel<StoermelderPackOne::Transit::TransitPadModule<8>, StoermelderPackOne::Transit::TransitPadWidget>("TransitPad");

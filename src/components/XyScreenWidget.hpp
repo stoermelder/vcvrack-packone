@@ -130,6 +130,10 @@ struct XyScreenModule {
 		radius[id] = a;
 	}
 
+	inline float scGetRadiusRaw(uint8_t id, float sampleTime) {
+		return radiusUi[id];
+	}
+
 	inline float scGetRadiusFiltered(uint8_t id, float sampleTime) {
 		return radiusFilter[id].process(sampleTime, radiusUi[id]);
 	}

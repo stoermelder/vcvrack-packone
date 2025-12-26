@@ -301,6 +301,13 @@
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Transit.md"
 		},
 		{
+			"slug": "TransitPad",
+			"name": "TRANSIT-PAD",
+			"description": "Expander for TRANSIT",
+			"tags": ["Utility"],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/Transit.md"
+		},
+		{
 			"slug": "X4",
 			"name": "X4",
 			"description": "Dual multiple for parameter-mapping",

@@ -49,6 +49,7 @@ void init(rack::Plugin* p) {
 	p->addModel(modelSpin);
 	p->addModel(modelTransit);
 	p->addModel(modelTransitEx);
+	p->addModel(modelTransitPad);
 	p->addModel(modelX4);
 	p->addModel(modelMacro);
 	p->addModel(modelRaw);
