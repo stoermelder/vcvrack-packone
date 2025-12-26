@@ -453,11 +453,11 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XySeqModule<MIX_PORTS> {
 		json_t* inportsJ = json_array();
 		for (uint8_t i = 0; i < IN_PORTS; i++) {
 			json_t* inportJ = json_object();
-			Sc::dataToJson(inportJ, i);
 			json_object_set_new(inportJ, "modMode", json_integer(modMode[i]));
 			json_object_set_new(inportJ, "inputXBipolar", json_boolean(inputXBipolar[i]));
 			json_object_set_new(inportJ, "inputYBipolar", json_boolean(inputYBipolar[i]));
 			json_object_set_new(inportJ, "outputMode", json_integer(outputMode[i]));
+			Sc::dataToJson(inportJ, 0, i);
 			json_array_append_new(inportsJ, inportJ);
 		}
 		json_object_set_new(rootJ, "inports", inportsJ);
@@ -467,6 +467,7 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XySeqModule<MIX_PORTS> {
 			json_t* mixportJ = json_object();
 			json_object_set_new(mixportJ, "mixportXBipolar", json_boolean(mixportXBipolar[i]));
 			json_object_set_new(mixportJ, "mixportYBipolar", json_boolean(mixportYBipolar[i]));
+			Sc::dataToJson(mixportJ, 1, i);
 			Seq::dataToJson(mixportJ, i);
 			json_array_append_new(mixportsJ, mixportJ);
 		}
@@ -498,7 +499,7 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XySeqModule<MIX_PORTS> {
 		json_array_foreach(mixportsJ, mixputIndex, mixportJ) {
 			mixportXBipolar[mixputIndex] = json_boolean_value(json_object_get(mixportJ, "mixportXBipolar"));
 			mixportYBipolar[mixputIndex] = json_boolean_value(json_object_get(mixportJ, "mixportYBipolar"));
-			Sc::dataFromJson(inportJ, 1, mixputIndex);
+			Sc::dataFromJson(mixportJ, 1, mixputIndex);
 			Seq::dataFromJson(mixportJ, mixputIndex);
 		}
 
