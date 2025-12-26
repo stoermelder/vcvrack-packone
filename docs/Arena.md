@@ -143,3 +143,5 @@ The colored circles on the center screen representing inputs and mix outputs can
     - Fixed broken patch-restore of "Radius" sliders (#331)
     - Fixed behavior of attenuvertors for X/Y/MOD-inputs (#394)
     - Fixed coarse parameter updates on screen interaction because of display refresh rate (#210)
+- v2.2.0
+    - Fixed broken preset loading
