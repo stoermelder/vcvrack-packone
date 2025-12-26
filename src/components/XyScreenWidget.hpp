@@ -196,9 +196,11 @@ struct XyScreenModule {
 
 	virtual inline float scGetDistance(uint8_t typeSource, uint8_t idSoruce, uint8_t typeDest, uint8_t idDest) { return 0.f; }
 
-	void dataToJson(json_t* dataJ, size_t id) {
-		json_object_set_new(dataJ, "radius", json_real(scGetRadiusFinal(id)));
-		json_object_set_new(dataJ, "amount", json_real(scGetAmountFinal(id)));
+	void dataToJson(json_t* dataJ, size_t type, size_t id) {
+		if (type == 0) {
+			json_object_set_new(dataJ, "radius", json_real(scGetRadiusFinal(id)));
+			json_object_set_new(dataJ, "amount", json_real(scGetAmountFinal(id)));
+		}
 	}
 
 	void dataFromJson(json_t* dataJ, size_t type, size_t id) {
