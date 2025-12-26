@@ -94,6 +94,18 @@ struct PanicRoomModule : Module {
             outsideAlpha = json_number_value(outsideAlphaJ);
         }
     }
+
+    void setWidth(float v) {
+        int d = int(restrictionBox.size.x / RACK_GRID_WIDTH) - v;
+        restrictionBox.pos.x += d / 2 * RACK_GRID_WIDTH;
+        restrictionBox.size.x -= d * RACK_GRID_WIDTH;
+    }
+
+    void setHeight(float v) {
+        int d = int(restrictionBox.size.y / RACK_GRID_HEIGHT) - v;
+        restrictionBox.pos.y += d / 2 * RACK_GRID_HEIGHT;
+        restrictionBox.size.y -= d * RACK_GRID_HEIGHT;
+    }
 };
 
 
@@ -187,9 +199,9 @@ struct PanicRoomRestrictionWidget : Widget {
 
             // Outline the box
             nvgBeginPath(args.vg);
-            nvgRect(args.vg, RECT_ARGS(module->restrictionBox));
-            nvgStrokeWidth(args.vg, 4.0);
-            nvgStrokeColor(args.vg, nvgRGBAf(c.r, c.g, c.b, std::max(0.f, module->outsideAlpha - 0.2f)));
+            nvgRect(args.vg, RECT_ARGS(module->restrictionBox.grow(8.f)));
+            nvgStrokeWidth(args.vg, 14.0);
+            nvgStrokeColor(args.vg, nvgRGBAf(c.r, c.g, c.b, std::max(0.f, module->outsideAlpha - 0.3f)));
             nvgStroke(args.vg);
         }
     }
@@ -240,9 +252,7 @@ struct SizeWidthField : ui::TextField {
     void onSelectKey(const SelectKeyEvent& e) override {
         if (e.action == GLFW_PRESS && (e.isKeyCommand(GLFW_KEY_ENTER) || e.isKeyCommand(GLFW_KEY_KP_ENTER))) {
             float v = atoi(text.c_str());
-            int d = int(module->restrictionBox.size.x / RACK_GRID_WIDTH) - v;
-            module->restrictionBox.pos.x += d / 2 * RACK_GRID_WIDTH;
-            module->restrictionBox.size.x -= d * RACK_GRID_WIDTH;
+            module->setWidth(v);
             ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
             overlay->requestDelete();
             e.consume(this);
@@ -256,9 +266,7 @@ struct SizeHeightField : ui::TextField {
     void onSelectKey(const SelectKeyEvent& e) override {
         if (e.action == GLFW_PRESS && (e.isKeyCommand(GLFW_KEY_ENTER) || e.isKeyCommand(GLFW_KEY_KP_ENTER))) {
             float v = atoi(text.c_str());
-            int d = int(module->restrictionBox.size.y / RACK_GRID_HEIGHT) - v;
-            module->restrictionBox.pos.y += d / 2 * RACK_GRID_HEIGHT;
-            module->restrictionBox.size.y -= d * RACK_GRID_HEIGHT;
+            module->setHeight(v);
             ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
             overlay->requestDelete();
             e.consume(this);
@@ -329,9 +337,9 @@ struct PanicRoomWidget : ThemedModuleWidget<PanicRoomModule> {
      
         menu->addChild(new MenuSeparator());
         menu->addChild(createMenuItem("Learn", "", [=]() { selectionWidget->enableLearn(); }));
-        if (module->restrictionEnabled) {
-            menu->addChild(createSubmenuItem("Size", "", 
-                [=](Menu* menu) {
+        menu->addChild(createSubmenuItem("Size", "", 
+            [=](Menu* menu) {
+                if (module->restrictionEnabled) {
                     menu->addChild(createMenuLabel("Width (HP)"));
                     SizeWidthField* widthField = new SizeWidthField;
                     widthField->box.size.x = 100;
@@ -345,8 +353,51 @@ struct PanicRoomWidget : ThemedModuleWidget<PanicRoomModule> {
                     heightField->text = std::to_string((int)(module->restrictionBox.size.y / RACK_GRID_HEIGHT));
                     menu->addChild(heightField);
                 }
-            ));
-        }
+            },
+            !module->restrictionEnabled
+        ));
+        // Size presets for common Eurorack cases
+        menu->addChild(createSubmenuItem("Size Presets", "",
+            [=](Menu* menu) {
+                auto addPreset = [&](const std::string& name, int hp, int rows) {
+                    menu->addChild(createMenuItem(name, "", [=]() {
+                        if (!module->restrictionEnabled) {
+                            // Determine center from modules if available, otherwise use rack center
+                            Vec center;
+                            auto modules = APP->scene->rack->getModules();
+                            float minX = INFINITY, minY = INFINITY, maxX = -INFINITY, maxY = -INFINITY;
+                            for (ModuleWidget* mw : modules) {
+                                const Rect& b = mw->box;
+                                minX = std::min(minX, b.pos.x);
+                                minY = std::min(minY, b.pos.y);
+                                maxX = std::max(maxX, b.pos.x + b.size.x);
+                                maxY = std::max(maxY, b.pos.y + b.size.y);
+                            }
+                            center = Vec((minX + maxX) / 2.0f, (minY + maxY) / 2.0f);
+
+                            Vec newSize = Vec(hp * RACK_GRID_WIDTH, rows * RACK_GRID_HEIGHT);
+                            Vec pos = center - newSize / 2.0f;
+                            pos = ((pos - RACK_OFFSET) / RACK_GRID_SIZE).floor() * RACK_GRID_SIZE + RACK_OFFSET;
+                            module->restrictionBox = math::Rect(pos, newSize);
+                            module->restrictionEnabled = true;
+                        }
+                        else {
+                            module->setWidth(hp);
+                            module->setHeight(rows);
+                        }
+                    }));
+                };
+
+                addPreset("Doepfer A-100LC9 (84 HP × 3 rows)", 84, 3);
+                addPreset("Doepfer A-100LC6 / A-100LCB (84 HP × 2 rows)", 84, 2);
+                addPreset("Doepfer A-100LMB (168 HP × 2 rows)", 168, 2);
+                addPreset("Doepfer A-100LMS9 (168 HP × 3 rows)", 168, 3);
+                addPreset("Doepfer A-100PMS12 (168 HP × 4 rows)", 168, 4);
+                addPreset("Behringer Eurorack Go (140 HP × 2 rows)", 140, 2);
+                addPreset("Tiptop Audio Mantis (104 HP × 2 rows)", 104, 2);
+                addPreset("Arturia RackBrute 3U (88 HP × 1 row)", 88, 1);
+            }
+        ));
         menu->addChild(createMenuItem("Clear", "", [=]() { module->restrictionEnabled = false; }));
         menu->addChild(new MenuSeparator());
         menu->addChild(createSubmenuItem("Outside color", "", 

@@ -476,6 +476,8 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 	}
 
 	void onReset() override {
+		expandersChanged = true;
+
 		learningId = -1;
 		learnedCc = false;
 		learnedNote = false;
@@ -611,6 +613,8 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 				expFine = NULL;
 				ccFineMode = false;
 			}
+
+			expandersChanged = false;
 		}
 
 		if (expClk) expClkProcess();

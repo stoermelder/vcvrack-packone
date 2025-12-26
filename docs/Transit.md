@@ -1,6 +1,18 @@
 # stoermelder TRANSIT
 
-TRANSIT is a utility module for morphing parameters of other modules between one "snapshot" to another utilizing Rack's parameter-mapping functionality. The module provides 12 snapshot-slots and can be extended with up to seven extender-modules called +T.
+- [Binding parameters](#binding-parameters)
+- [Write-mode: saving snapshots](#write-mode-saving-snapshots)
+- [Read-mode: morphing between snapshots](#read-mode-morphing-between-snapshots)
+- [Auto-mode](#auto-mode)
+- [Sequencing and selecting snapshots](#sequencing-and-selecting-snapshots)
+- [OUT-port](#out-port)
+- [+T expander](#t-expander)
+- [Tips](#tips)
+- [Changelog](#changelog)
+
+### Overview
+
+TRANSIT is a utility module for morphing parameters of other modules from one "snapshot" to another utilizing Rack's parameter-mapping functionality. The module provides 12 snapshot-slots and can be extended with up to fifteen extender-modules called +T.
 
 There is a nice [video overview](https://www.youtube.com/watch?v=qnjBrlkcYOw) from [Artem Leonov](https://artemleonov.bandcamp.com/) of _VCV Rack Ideas_ showcasing a preview-build of TRANSIT.
 
@@ -24,12 +36,13 @@ At least one parameter (knob, fader, switch...) must be bound to TRANSIT before 
 
 ![TRANSIT bind parameter](./Transit-bind-param.gif)
 
-TRANSIT is designed to bind parameters from different modules the same time and technically there is no limitation on the number of parameters which can be bound. Please note that the CPU usage for morphing between snapshots increases linearly by the number of bound parameters.  
+TRANSIT is designed to bind parameters from different modules at the same time and technically there is no limitation on the number of parameters which can be bound. Please note that the CPU usage for morphing between snapshots increases linearly with the number of bound parameters.
+
 Parameters can be unbound at any point by unmapping the mapping indicator. Please note that values stored in snapshots won't be deleted for unbound parameters.
 
 ### Write-mode: saving snapshots
 
-Write-mode is used to save snapshots in TRANSIT after some parameters have been bound: A snapshot consists of the values all parameters of modules are currently set to. You enter write-mode by flipping the switch on the bottom to the _W_-position. To store a snapshot simply short press one of the 12 snapshot-buttons and the LED on a snapshot-button is lit in red when a slot is in use. To clear a snapshot long-press the button. 
+Write-mode is used to save snapshots in TRANSIT after some parameters have been bound: A snapshot consists of the values all bound parameters are currently set to. You enter write-mode by flipping the switch on the bottom to the _W_-position. To store a snapshot simply short-press one of the 12 snapshot-buttons and the LED on a snapshot-button is lit in red when a slot is in use. To clear a snapshot long-press the button. 
 
 ![TRANSIT write-mode](./Transit-write.gif)
 
@@ -40,17 +53,18 @@ There are also some options on the context menu of the snapshot-buttons:
 - **Randomize and save** - Randomizes all bound parameters and saves a snapshot.
 - **Copy** - Copies the snapshot to the clipboard.
 - **Paste** - Pastes the snapshot which has been copied before.
-- **Shift front** (added in v1.10.0) - Moves all snapshot one slot forward, beginning from the initiating slot. If the first slot is used it gets deleted.
-- **Shift back** (added in v1.10.0) - Moves all snapshot one slot backward, beginning from the initiating slot. If the last slot is used it gets deleted, also the number of currently active slots is unaffacted.
+- **Shift front** (added in v1.10.0) - Moves all snapshots one slot forward, beginning from the initiating slot. If the first slot is used it gets deleted.
+- **Shift back** (added in v1.10.0) - Moves all snapshots one slot backward, beginning from the initiating slot. If the last slot is used it gets deleted, also the number of currently active slots is unaffected.
 
 ![TRANSIT write-mode](./Transit-write-context.gif)
 
-A blinking white LED signals the snapshot applied at last on the parameters. Please keep in mind that you can change bound parameters manually which will not be recognized by TRANSIT.  
+A blinking white LED signals the snapshot that was last applied to the parameters. Please keep in mind that you can change bound parameters manually which will not be recognized by TRANSIT.
+
 In write-mode any input on the _SEL_-port is ignored and sequencing is disabled.
 
 ### Read-mode: morphing between snapshots
 
-Read-mode is the default operational mode of TRANSIT and is used to "load" or "apply" previously saved snapshots on the parameters. The interesting part of TRANSIT is its ability to "morph" the parameter values into the target snapshot: _FADE_ sets the amount of time it takes to reach the parameters' positions stored in the snapshot, this duration can also be controlled by CV (0-10V). There is also a trimpot for setting the shape of the transition, in the middle position the parameters are morphed linearly.
+Read-mode is the default operational mode of TRANSIT and is used to "load" or "apply" previously saved snapshots to the parameters. The interesting part of TRANSIT is its ability to "morph" the parameter values into the target snapshot: _FADE_ sets the amount of time it takes to reach the parameters' positions stored in the snapshot, this duration can also be controlled by CV (0-10V). There is also a trimpot for setting the shape of the transition; in the middle position the parameters are morphed linearly.
 
 ![TRANSIT morph](./Transit-morph.gif)
 
@@ -58,7 +72,7 @@ TRANSIT provides three precision-settings on the contextual menu which influence
 
 ### Auto-mode
 
-Auto-mode (added in v1.10.0) stores snapshots automatically to the current slot right before moving on to the next slot. A typical workflow would look like this: Store a few snapshots using Write-mode as usual. Afterwards flip the switch to the middle "A"-position and start slow sequencing using the _SLOT_-port. Imagine slot 1 is active and TRANSIT will begin morphing into slot 2 next. Right before the transition starts the current state of the parameters is stored into slot 1 preserving all adjustments made in the meantime. In contrast, Read-mode would simply load slot 2 and the snapshot stored in slot 1 will stay unchanged, discarding all changes made to the parameters. Note: Empty slots will stay empty, even in Auto-mode.
+Auto-mode (added in v1.10.0) stores snapshots automatically to the current slot right before moving on to the next slot. A typical workflow would look like this: Store a few snapshots using Write-mode as usual. Afterwards flip the switch to the middle "A"-position and start slow sequencing using the _SEL_-port. Imagine slot 1 is active and TRANSIT will begin morphing into slot 2 next. Right before the transition starts the current state of the parameters is stored into slot 1 preserving all adjustments made in the meantime. In contrast, Read-mode would simply load slot 2 and the snapshot stored in slot 1 will stay unchanged, discarding all changes made to the parameters. Note: Empty slots will stay empty, even in Auto-mode.
 
 ### Sequencing and selecting snapshots
 
@@ -66,32 +80,22 @@ The fun begins when you use the port labelled _SEL_ for selecting snapshots by C
 
 Modes for _SEL_ on the contextual menu:
 
-- **Trigger forward** - A trigger advances TRANSIT to the next snapshot. Empty slots are part of the sequence but won't have any effect on the parameters. A trigger on _RESET_ restarts the sequence on snapshot 1.
-
-- **Trigger reverse** - Same as **Trigger forward** but reverse direction.
-
-- **Trigger pingpong** - Same as **Trigger forward** but loops first forward then reverse.
-
-- **Trigger alternating** (added in v1.8.0) - Same as **Trigger forward** but progresses in the following manner (for 6 active snapshots): 1, 2, 1, 3, 1, 4, 1, 5, 1, 6, 1, 5, 1, 4, 1, 3, 1, 2, ...
-
-- **Trigger random** - Same as **Trigger forward** but chooses the next snapshot randomly.
-
-- **Trigger pseudo-random** (added in v1.8.0) - Same as **Trigger random** but never chooses a snapshot multiple times in a row (which happens on "random").
-
-- **Trigger random walk** (added in v1.8.0) - Same as **Trigger forward** but chooses the next snapshot randomly right next to the currently active snapshot.
-
-- **Trigger shuffle** (added in v1.8.0) - Same as **Trigger forward** but works on a random permutation of the active snapshots: Every snapshot will be enabled once before the next permutation is randomly generated.
-
-- **0..10V** - You can select a specific snapshot by voltage. A voltage 0-0.833V selects slot 1, 0.833-0.166V selects slot 2, and so on, if all 12 snapshot-slots are active. Keep in mind that adjusting the length of the sequence also adjusts the voltage range for selecting individual slots: A sequence with length 2 will select slot 1 on voltage 0-5V etc.
-
-- **C4** - This mode follows the V/Oct-standard. C4 selects snapshot 1, C#4 selects snapshot 2 and so on. Channel 2 on the CV-input acts on triggers to re-trigger the currently selected snapshot.
-
-- **Arm** - This mode is a kind of "buffered trigger": First apply a clock signal on _SEL_. Then you "arm" any snapshot manually or by MIDI-mapping by its button (resulting in a yellow LED) which will be activated on the next clock trigger (white LED). This mode allows you manual snapshot activation synchronized to a clock.
+| Mode | Description |
+|------|-------------|
+| **Trigger forward** | A trigger advances TRANSIT to the next snapshot. Empty slots are part of the sequence but won't have any effect on the parameters. A trigger on _RESET_ restarts the sequence on snapshot 1. |
+| **Trigger reverse** | Same as **Trigger forward** but reverse direction. |
+| **Trigger pingpong** | Same as **Trigger forward** but loops first forward then reverse. |
+| **Trigger alternating** (added in v1.8.0) | Same as **Trigger forward** but progresses in the following manner (for 6 active snapshots): 1, 2, 1, 3, 1, 4, 1, 5, 1, 6, 1, 5, 1, 4, 1, 3, 1, 2, ... |
+| **Trigger random** | Same as **Trigger forward** but chooses the next snapshot randomly. |
+| **Trigger pseudo-random** (added in v1.8.0) | Same as **Trigger random** but never chooses a snapshot multiple times in a row (which happens on "random"). |
+| **Trigger random walk** (added in v1.8.0) | Same as **Trigger forward** but chooses the next snapshot randomly from those adjacent to the currently active snapshot. |
+| **Trigger shuffle** (added in v1.8.0) | Same as **Trigger forward** but works on a random permutation of the active snapshots: Every snapshot will be enabled once before the next permutation is randomly generated. |
+| **0..10V** | You can select a specific snapshot by voltage. A voltage of 0-0.833V selects slot 1, 0.833-1.666V selects slot 2, and so on, if all 12 snapshot-slots are active. Keep in mind that adjusting the length of the sequence also adjusts the voltage range for selecting individual slots: A sequence with length 2 will select slot 1 on voltage 0-5V, etc. |
+| **C4** | This mode follows the V/Oct-standard. C4 selects snapshot 1, C#4 selects snapshot 2 and so on. Channel 2 on the CV-input responds to triggers to re-trigger the currently selected snapshot. |
+| **Arm** | This mode is a kind of "buffered trigger": First apply a clock signal on _SEL_. Then you "arm" any snapshot manually or by MIDI-mapping its button (resulting in a yellow LED) which will be activated on the next clock trigger (white LED). This mode allows manual snapshot activation synchronized to a clock. |
+| **Phase** (added in v1.9.0) | This mode behaves differently than the other modes: An input voltage of 0-10V scans continuously through the stored snapshots. A voltage of 0V sets the parameters to the first snapshot, a voltage of 10V sets the parameters to the last active snapshot; in between the parameters are interpolated according to the used snapshots. Slew-limiting can be applied additionally using the _Fade_-slider. |
 
 ![TRANSIT SEL-port](./Transit-sel.gif)
-
-<a name="phase"></a>
-- **Phase** (added in v1.9.0) - This mode behaves differently than the other modes: An input voltage of 0-10V scans continously through the stored snapshots. A voltage of 0V sets the parameters to the first snapshot, a voltage of 10V sets the parameters to the last active snapshot, in between the parameters are interpolated according to the used snapshots. Slew-limiting can be applied additionally using the _Fade_-slider.
 
 ### _OUT_-port
 
@@ -101,13 +105,13 @@ TRANSIT brings an _OUT_-port for different purposes:
 
 - **Gate** - Outputs a 10V gate while a fade is in progress.
 
-- **Trigger snapshot change** - Outputs a 10V trigger signal everytime a new snapshot-slot is selected.
+- **Trigger snapshot change** - Outputs a 10V trigger signal every time a new snapshot-slot is selected.
 
-- **Trigger fade start** - Outputs a 10V trigger on the start of every fade.
+- **Trigger fade start** - Outputs a 10V trigger at the start of every fade.
 
-- **Trigger fade stop** - Outputs a 10V trigger on the end of every fade.
+- **Trigger fade stop** - Outputs a 10V trigger at the end of every fade.
 
-- **Poly** - Outputs a polyphonic signal combining all of the previous singals on the channels of the cable.
+- **Poly** - Outputs a polyphonic signal combining all of the previous signals on the channels of the cable.
 
 Note: These modes are unavailable if _SEL_-port operates in Phase-mode.
 
@@ -115,20 +119,21 @@ Note: These modes are unavailable if _SEL_-port operates in Phase-mode.
 
 ### +T expander
 
-TRANSIT provides 12 snapshot-slots and supports extending this number with +T expanders: The expander must be placed on the right side of TRANSIT. Up to fifeteen instances of +T can be added to one instance of TRANSIT, providing 12 * 16 = 192 snapshot-slots in total.  
+TRANSIT provides 12 snapshot-slots and supports extending this number with +T expanders: The expander must be placed on the right side of TRANSIT. Up to fifteen instances of +T can be added to one instance of TRANSIT, providing 12 × 16 = 192 snapshot-slots in total.
+
 Once placed next to TRANSIT the expander works and behaves the same way TRANSIT does and the setup is done analogously. +T itself provides no further options.
 
 ![+T expander](./Transit-t.gif)
 
 ### Tips
 
-- TRANSIT is designed to morph parameter-snapshots, while stoermelder [8FACE](./EightFace.md) and [8FACE mk2](./EightFaceMk2.md) are designed to apply different presets onto modues. Morphing between presets of modules is not possible because of technical reasons.
+- TRANSIT is designed to morph parameter-snapshots, while stoermelder [8FACE](./EightFace.md) and [8FACE mk2](./EightFaceMk2.md) are designed to apply different presets onto modules. Morphing between presets of modules is not possible for technical reasons.
 
-- If you set the _OUT_-port to _Trigger fade stop_ and patch _OUT_ into _SEL_ TRANSIT will endlessly fade snapshots.
-  
+- If you set the _OUT_-port to _Trigger fade stop_ and patch _OUT_ into _SEL_, TRANSIT will endlessly fade through snapshots.
+
 - Each snapshot can be named with a custom text label. This label is shown while hovering above the snapshot button if parameter tooltips are enabled (added in v1.9.0).
 
-- Parameter changes are not reported back to the plugin-host by default if Transit is used in a plugin-version of VCV Rack. In v2.1.0 a context menu option has been added to enable this behavior - it might cause higher CPU usage of the plugin.
+- Parameter changes are not reported back to the plugin-host by default if TRANSIT is used in a plugin-version of VCV Rack. In v2.1.0 a context menu option has been added to enable this behavior - it might cause higher CPU usage of the plugin.
 
 ## Changelog
 
@@ -141,7 +146,7 @@ Once placed next to TRANSIT the expander works and behaves the same way TRANSIT 
     - Added trigger-options "pseudo-random", "random walk", "alternating", "shuffle"
     - Fixed broken snapshots on save after mapped modules have been deleted (#205)
 - v1.9.0
-    - Added "Phase"-mode for CV-input which scans continously through snapshots (#182)
+    - Added "Phase"-mode for CV-input which scans continuously through snapshots (#182)
     - Added context menu option "Locate and indicate" for bound parameters
     - Added context menu option for custom text labels
     - Improved performance of +T expanders

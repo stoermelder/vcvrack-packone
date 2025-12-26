@@ -13,7 +13,7 @@ namespace MidiMon {
 
 const int BUFFERSIZE = 800;
 
-struct MidiMonModule : Module {
+struct MidiMonModule : Module, MidiProcessorHandler {
 	enum ParamIds {
 		NUM_PARAMS
 	};
@@ -65,7 +65,7 @@ struct MidiMonModule : Module {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		processDivider.setDivision(512);
-		midiProcessor.subscribe(std::bind(&MidiMonModule::handleMessage, this, std::placeholders::_1));
+		midiProcessor.subscribe(this);
 		onReset();
 	}
 
@@ -114,7 +114,8 @@ struct MidiMonModule : Module {
 		logMessage(true, LOG_FORMAT::TIMESTAMP, 0.f, string::f("sample rate %i", int(APP->engine->getSampleRate())));
 	}
 
-	bool handleMessage(MessageEx& m) {
+	// MidiProcessorHandler
+	bool processMidi(const MessageEx& m) override {
 		std::string s;
 		float timestamp = float(m.frame) / APP->engine->getSampleRate();
 		switch (m.type) {
@@ -238,7 +239,7 @@ struct MidiMonModule : Module {
 		json_object_set_new(rootJ, "showClockMsg", json_boolean(showClockMsg));
 		json_object_set_new(rootJ, "showSystemMsg", json_boolean(showSystemMsg));
 
-		json_object_set_new(rootJ, "midiInput", midiProcessor.midiInput.toJson());
+		json_object_set_new(rootJ, "midiInput", midiProcessor.getInput().toJson());
 		return rootJ;
 	}
 
@@ -260,7 +261,7 @@ struct MidiMonModule : Module {
 		showSystemMsg = json_boolean_value(json_object_get(rootJ, "showSystemMsg"));
 
 		json_t* midiInputJ = json_object_get(rootJ, "midiInput");
-		if (midiInputJ) midiProcessor.midiInput.fromJson(midiInputJ);
+		if (midiInputJ) midiProcessor.getInput().fromJson(midiInputJ);
 	}
 };
 
@@ -280,7 +281,7 @@ struct MidiMonWidget : ThemedModuleWidget<MidiMonModule> {
 
 		MidiWidget<>* midiInputWidget = createWidget<MidiWidget<>>(Vec(0.f, 36.4f));
 		midiInputWidget->box.size = Vec(240.f, 67.0f);
-		midiInputWidget->setMidiPort(module ? &module->midiProcessor.midiInput : NULL, "In");
+		midiInputWidget->setMidiPort(module ? &module->midiProcessor.getInput() : NULL, "In");
 		addChild(midiInputWidget);
 
 		LedDisplay* textDisplay = createWidget<LedDisplay>(Vec(0.f, 107.4f));
@@ -370,9 +371,9 @@ struct MidiMonWidget : ThemedModuleWidget<MidiMonModule> {
 
 		fputs(string::f("%s v%s\n", rack::APP_NAME.c_str(), rack::APP_VERSION.c_str()).c_str(), file);
 		fputs(string::f("%s\n", system::getOperatingSystemInfo().c_str()).c_str(), file);
-		fputs(string::f("MIDI driver: %s\n", module->midiProcessor.midiInput.getDriver()->getName().c_str()).c_str(), file);
-		fputs(string::f("MIDI device: %s\n", module->midiProcessor.midiInput.getDeviceName(module->midiProcessor.midiInput.deviceId).c_str()).c_str(), file);
-		fputs(string::f("MIDI channel: %s\n", module->midiProcessor.midiInput.getChannelName(module->midiProcessor.midiInput.channel).c_str()).c_str(), file);
+		fputs(string::f("MIDI driver: %s\n", module->midiProcessor.getInput().getDriver()->getName().c_str()).c_str(), file);
+		fputs(string::f("MIDI device: %s\n", module->midiProcessor.getInput().getDeviceName(module->midiProcessor.getInput().deviceId).c_str()).c_str(), file);
+		fputs(string::f("MIDI channel: %s\n", module->midiProcessor.getInput().getChannelName(module->midiProcessor.getInput().channel).c_str()).c_str(), file);
 		fputs("--------------------------------------------------------------------\n", file);
 
 		for (std::list<std::tuple<LOG_FORMAT, float, std::string>>::reverse_iterator rit = buffer.rbegin(); rit != buffer.rend(); rit++) {

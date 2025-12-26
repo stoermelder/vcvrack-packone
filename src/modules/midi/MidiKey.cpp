@@ -3,6 +3,7 @@
 #include "../../utils/keyboard.hpp"
 #include "../../ui/ModuleSelectProcessor.hpp"
 #include "../../ui/ViewportHelper.hpp"
+#include "MidiTrackingProcessor.hpp"
 
 namespace StoermelderPackOne {
 namespace MidiKey {
@@ -12,21 +13,15 @@ namespace MidiKey {
 #define ID_SHIFT -2
 
 template<int MAX_CHANNELS = 16>
-struct MidiKeyModule : Module {
+struct MidiKeyModule : Module, MidiTrackingProcessorHandler {
 	/** [Stored to JSON] */
 	int panelTheme = 0;
-	/** [Stored to Json] */
-	midi::InputQueue midiInput;
-
+	
 	struct SlotData {
 		/** [Stored to Json] */
 		int key = -1;
 		/** [Stored to Json] */
 		int mods = 0;
-		/** [Stored to Json] */
-		int cc = -1;
-		/** [Stored to Json] */
-		int note = -1;
 		/** [Stored to Json] */
 		int64_t moduleId = -1;
 
@@ -43,19 +38,16 @@ struct MidiKeyModule : Module {
 
 	/** [Stored to Json] */
 	SlotVector slot;
-	int mapCc[128];
-	int mapNote[128];
 
 	/** Number of maps */
 	int mapLen = 0;
 	/** Channel ID of the learning session */
 	int learningId;
-	/** Whether the CC has been set during the learning session */
-	bool learnedCc;
-	/** Whether the note has been set during the learning session */
-	bool learnedNote;
 	/** Whether the key has been set during the learning session */
 	bool learnedKey;
+
+	/** [Stored to JSON] */
+	MidiTrackingProcessor<MAX_CHANNELS + 3> trackingProcessor;
 
 	dsp::RingBuffer<std::tuple<event::HoverKey, int64_t>, 8> keyEventQueue;
 	ModuleSelectProcessor moduleSelectProcessor;
@@ -64,118 +56,61 @@ struct MidiKeyModule : Module {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(0, 0, 0, 0);
 		onReset();
+		trackingProcessor.handler = this;
+		trackingProcessor.enableCc();
+		trackingProcessor.enableNotes();
+	}
+
+	inline uint16_t getMapId(int id) {
+		return uint16_t(id < 0 ? (id + 4) : (id + 3));
+	}
+
+	inline int getMapIdRev(uint16_t mapId) {
+		return mapId >= 3 ? (mapId - 3) : (mapId - 4);
 	}
 
 	void onReset() override {
 		learningId = -1;
-		learnedCc = false;
-		learnedNote = false;
 		learnedKey = false;
 		clearMaps();
 		mapLen = 1;
 		for (size_t i = 0; i < slot.v.size(); i++) {
-			slot.v[i].cc = -1;
-			slot.v[i].note = -1;
 			slot.v[i].key = -1;
 			slot.v[i].mods = 0;
 		}
-		for (int i = 0; i < 128; i++) {
-			mapCc[i] = -1;
-			mapNote[i] = -1;
-		}
-		midiInput.reset();
+		trackingProcessor.disableMapLearn();
+		trackingProcessor.clearMaps();
+		trackingProcessor.getInput().reset();
 	}
 
 	void process(const ProcessArgs &args) override {
-		midi::Message msg;
-		while (midiInput.tryPop(&msg, args.frame)) {
-			midiProcessMessage(msg);
+		trackingProcessor.process(args.frame);
+	}
+
+	// MidiTrackingProcessorHandler
+	void processMapUpdate(MidiTrackingType type, uint16_t mapId, uint16_t value) override {
+		switch (type) {
+			case MidiTrackingType::NOTE:
+			case MidiTrackingType::CC:
+				processKey(getMapIdRev(mapId), value);
+				break;
+			default:
+				break;
 		}
 	}
 
-	void midiProcessMessage(midi::Message msg) {
-		switch (msg.getStatus()) {
-			// cc
-			case 0xb: {
-				midiCc(msg);
-				break;
-			}
-			// note off
-			case 0x8: {
-				midiNoteRelease(msg);
-				break;
-			}
-			// note on
-			case 0x9: {
-				if (msg.getValue() > 0) {
-					midiNotePress(msg);
-				}
-				else {
-					// Many keyboards send a "note on" command with 0 velocity to mean "note release"
-					midiNoteRelease(msg);
-				}
-				break;
-			} 
-			default: {
-				break;
-			}
-		}
-	}
-	
-	void midiCc(midi::Message msg) {
-		uint8_t cc = msg.getNote();
-		uint8_t value = msg.getValue();
-		// Learn
-		if (learningId != -1 && value > 0) {
-			slot[learningId].cc = cc;
-			slot[learningId].note = -1;
-			if (mapCc[cc] != -1 && mapCc[cc] != learningId) 
-				slot[mapCc[cc]].cc = -1;
-			mapCc[cc] = learningId;
-			learnedCc = true;
-			commitLearn();
-			updateMapLen();
-			return;
-		}
-		// Send
-		if (mapCc[cc] != -1) {
-			processKey(mapCc[cc], value);
-		}
-	}
-
-	void midiNotePress(midi::Message msg) {
-		uint8_t note = msg.getNote();
-		uint8_t vel = msg.getValue();
-		// Learn
-		if (learningId != -1 && vel > 0) {
-			slot[learningId].cc = -1;
-			slot[learningId].note = note;
-			if (mapNote[note] != -1 && mapNote[note] != learningId) 
-				slot[mapNote[note]].note = -1;
-			mapNote[note] = learningId;
-			learnedNote = true;
-			commitLearn();
-			updateMapLen();
-			return;
-		}
-		// Send
-		if (mapNote[note] != -1) {
-			processKey(mapNote[note], vel);
-		}
-	}
-
-	void midiNoteRelease(midi::Message msg) {
-		uint8_t note = msg.getNote();
-		if (mapNote[note] != -1) {
-			processKey(mapNote[note], 0);
-		}
+	// MidiTrackingProcessorHandler
+	void processMapLearn(MidiTrackingType type, uint16_t mapId) override {
+		commitLearn();
+		updateMapLen();
 	}
 
 	void enableLearn(int id) {
 		if (id == -1) {
 			// Find next incomplete map
 			while (++id < MAX_CHANNELS) {
-				if (slot[id].cc < 0 && slot[id].note < 0 && slot[id].key < 0)
+				auto m = trackingProcessor.getMap(getMapId(id));
+				if (m.type == MidiTrackingType::NONE && slot[id].key < 0)
 					break;
 			}
 			if (id == MAX_CHANNELS) {
@@ -189,41 +124,34 @@ struct MidiKeyModule : Module {
 		}
 		if (learningId != id) {
 			learningId = id;
-			learnedCc = false;
-			learnedNote = false;
 			learnedKey = false;
+			trackingProcessor.enableMapLearn(getMapId(id));
 		}
 		return;
 	}
 
-	void disableLearn() {
-		learningId = -1;
-	}
-
-	void disableLearn(int id) {
-		if (learningId == id) {
+	void disableLearn(int id = -1) {
+		if (id == -1 || learningId == id) {
 			learningId = -1;
+			trackingProcessor.disableMapLearn(getMapId(id));
 		}
 	}
 
 	void commitLearn() {
 		if (learningId == -1)
 			return;
-		if (!learnedCc && !learnedNote)
+		if (trackingProcessor.getMapLearn())
 			return;
 		if (!learnedKey && learningId >= 0)
 			return;
 		// Reset learned state
-		learnedCc = false;
-		learnedNote = false;
 		learnedKey = false;
 		learningId = -1;
 	}
 
 	void clearMap(int id, bool midiOnly = false) {
 		learningId = -1;
-		slot[id].cc = -1;
-		slot[id].note = -1;
+		trackingProcessor.clearMap(getMapId(id));
 		if (!midiOnly) {
 			slot[id].key = -1;
 			slot[id].mods = 0;
@@ -234,40 +162,25 @@ struct MidiKeyModule : Module {
 	void clearMaps() {
 		learningId = -1;
 		for (int id = 0; id < MAX_CHANNELS; id++) {
-			slot[id].cc = -1;
-			slot[id].note = -1;
 			slot[id].key = -1;
 			slot[id].mods = 0;
 		}
 		mapLen = 1;
+		trackingProcessor.clearMaps();
 	}
 
 	void updateMapLen() {
 		// Find last nonempty map
 		int id;
 		for (id = MAX_CHANNELS - 1; id >= 0; id--) {
-			if (slot[id].cc >= 0 || slot[id].note >= 0 || slot[id].key >= 0)
+			auto m = trackingProcessor.getMap(getMapId(id));
+			if (m.type != MidiTrackingType::NONE || slot[id].key >= 0)
 				break;
 		}
 		mapLen = id + 1;
 		// Add an empty "Mapping..." slot
 		if (mapLen < MAX_CHANNELS) {
 			mapLen++;
-		}
-
-		for (int i = 0; i < 128; i++) {
-			mapCc[i] = -1;
-			mapNote[i] = -1;
-		}
-		for (int i = 0; i < (int)slot.v.size(); i++) {
-			if (slot.v[i].cc >= 0) {
-				if (mapCc[slot.v[i].cc] != -1) slot[mapCc[slot.v[i].cc]].cc = -1;
-				mapCc[slot.v[i].cc] = i < 3 ? (i - 4) : (i - 3);
-			}
-			if (slot.v[i].note >= 0) {
-				if (mapNote[slot.v[i].note] != -1) slot[mapNote[slot.v[i].note]].note = -1;
-				mapNote[slot.v[i].note] = i < 3 ? (i - 4) : (i - 3);
-			}
 		}
 	}
 
@@ -321,26 +234,25 @@ struct MidiKeyModule : Module {
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
-		json_object_set_new(rootJ, "midiInput", midiInput.toJson());
 
 		json_t* mapsJ = json_array();
 		for (size_t i = 0; i < slot.v.size(); i++) {
 			json_t* mapJ = json_object();
 			json_object_set_new(mapJ, "key", json_integer(slot.v[i].key));
 			json_object_set_new(mapJ, "mods", json_integer(slot.v[i].mods));
-			json_object_set_new(mapJ, "cc", json_integer(slot.v[i].cc));
-			json_object_set_new(mapJ, "note", json_integer(slot.v[i].note));
 			json_object_set_new(mapJ, "moduleId", json_integer(slot.v[i].moduleId));
 			json_array_append_new(mapsJ, mapJ);
 		}
 		json_object_set_new(rootJ, "maps", mapsJ);
+
+		json_t* trackingProcessorJ = trackingProcessor.dataToJson();
+		json_object_set_new(rootJ, "trackingProcessor", trackingProcessorJ);
+
 		return rootJ;
 	}
 
 	void dataFromJson(json_t* rootJ) override {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
-		json_t* midiInputJ = json_object_get(rootJ, "midiInput");
-		midiInput.fromJson(midiInputJ);
 
 		clearMaps();
 		json_t* mapsJ = json_object_get(rootJ, "maps");
@@ -349,11 +261,37 @@ struct MidiKeyModule : Module {
 		json_array_foreach(mapsJ, i, mapJ) {
 			slot.v[i].key = json_integer_value(json_object_get(mapJ, "key"));
 			slot.v[i].mods = json_integer_value(json_object_get(mapJ, "mods"));
-			slot.v[i].cc = json_integer_value(json_object_get(mapJ, "cc"));
-			slot.v[i].note = json_integer_value(json_object_get(mapJ, "note"));
 			json_t* moduleIdJ = json_object_get(mapJ, "moduleId");
 			if (moduleIdJ) slot.v[i].moduleId = json_integer_value(moduleIdJ);
 		}
+
+		trackingProcessor.clearMaps();
+		json_t* trackingProcessorJ = json_object_get(rootJ, "trackingProcessor");
+		if (trackingProcessorJ) {
+			trackingProcessor.dataFromJson(trackingProcessorJ);
+		}
+		else {
+			// legacy format
+			json_t* midiInputJ = json_object_get(rootJ, "midiInput");
+			trackingProcessor.getInput().fromJson(midiInputJ);
+
+			json_t* mapsJ = json_object_get(rootJ, "maps");
+			json_t* mapJ;
+			size_t j;
+			json_array_foreach(mapsJ, j, mapJ) {
+				json_t* ccJ = json_object_get(mapJ, "cc");
+				int cc = json_integer_value(ccJ);
+				if (cc >= 0) {
+					trackingProcessor.setMap(MidiTrackingType::CC, j, cc);
+				}
+				json_t* noteJ = json_object_get(mapJ, "note");
+				int note = json_integer_value(noteJ);
+				if (note >= 0) {
+					trackingProcessor.setMap(MidiTrackingType::NOTE, j, note);
+				}
+			}
+		}
+
 		updateMapLen();
 	}
 };
@@ -408,13 +346,13 @@ struct MidiKeyChoice : LedDisplayChoice {
 			" C", "C#", " D", "D#", " E", " F", "F#", " G", "G#", " A", "A#", " B"
 		};
 		if (module) {
-			if (module->slot[id].cc >= 0) {
-				return string::f("cc%03d ", module->slot[id].cc);
+			auto m = module->trackingProcessor.getMap(module->getMapId(id));
+			if (m.type == MidiTrackingType::CC) {
+				return string::f("cc%03d ", m.param);
 			}
-			else if (module->slot[id].note >= 0) {
-
-				int oct = module->slot[id].note / 12 - 1;
-				int semi = module->slot[id].note % 12;
+			else if (m.type == MidiTrackingType::NOTE) {
+				int oct = m.param / 12 - 1;
+				int semi = m.param % 12;
 				return string::f("  %s%d ", noteNames[semi], oct);
 			}
 			else if (module->slot[id].key >= 0 || id < -1) {
@@ -646,7 +584,7 @@ struct MidiKeyWidget : ThemedModuleWidget<MidiKeyModule<>> {
 
 		MidiWidget<>* midiInputWidget = createWidget<MidiWidget<>>(Vec(0.0f, 36.4f));
 		midiInputWidget->box.size = Vec(150.0f, 67.0f);
-		midiInputWidget->setMidiPort(module ? &module->midiInput : NULL, "In");
+		midiInputWidget->setMidiPort(module ? &module->trackingProcessor.getInput() : NULL, "In");
 		addChild(midiInputWidget);
 
 		MidiKeyModDisplay<>* modWidget = createWidget<MidiKeyModDisplay<>>(Vec(0.0f, 107.4f));

@@ -16,6 +16,8 @@ Modules [8FACE, 8FACEx2](./docs/EightFace.md) and [8FACE mk2](./docs/EightFaceMk
 - Module [8FACE mk2](./docs/EightFaceMk2.md)
     - Added _Safe-mode_ and use as new default setting
     - Improved robustness for expander +8
+- Module [ARENA](./docs/Arena.md)
+    - Fixed broken preset loading
 - Modules [CV-MAP](./docs/CVMap.md)
     - Added mapping functions _Map module (left)_ and _Map module (select)_
     - Added color setting for mapping indicators

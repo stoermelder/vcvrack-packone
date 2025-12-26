@@ -96,13 +96,17 @@ struct XyScreenModule {
 
 	virtual void scSetItemImmediate(uint8_t type, uint8_t id, float x, float y) {}
 
-	virtual inline float scGetXFinal(uint8_t type, uint8_t id) { return 0; }
+	virtual inline float scGetXFinal(uint8_t type, uint8_t id) { 
+		return scGetPqX(type, id)->getParam()->getValue();
+	}
 
 	inline float scGetXFiltered(uint8_t id, float sampleTime) {
 		return inputXfilter[id].process(sampleTime, inputUiX[id]);
 	}
 
-	virtual inline float scGetYFinal(uint8_t type, uint8_t id) { return 0; }
+	virtual inline float scGetYFinal(uint8_t type, uint8_t id) { 
+		return scGetPqY(type, id)->getParam()->getValue();
+	}
 
 	inline float scGetYFiltered(uint8_t id, float sampleTime) {
 		return inputYfilter[id].process(sampleTime, inputUiY[id]);
@@ -201,9 +205,12 @@ struct XyScreenModule {
 		json_object_set_new(dataJ, "amount", json_real(scGetAmountFinal(id)));
 	}
 
-	void dataFromJson(json_t* dataJ, size_t id) {
-		scSetRadiusImmediate(id, json_real_value(json_object_get(dataJ, "radius")));
-		scSetAmountImmediate(id, json_real_value(json_object_get(dataJ, "amount")));
+	void dataFromJson(json_t* dataJ, size_t type, size_t id) {
+		if (type == 0) {
+			scSetRadiusImmediate(id, json_real_value(json_object_get(dataJ, "radius")));
+			scSetAmountImmediate(id, json_real_value(json_object_get(dataJ, "amount")));
+		}
+		scSetXyImmediate(type, id, scGetXFinal(type, id), scGetYFinal(type, id));
 	}
 
 	std::string getModuleName() {

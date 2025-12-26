@@ -1,6 +1,16 @@
 # stoermelder CV-MAP and CTX-expander
 
-The module CV-MAP is inspired by Rack v1's MIDI-MAP module: It allows you to modulate any parameter of any module by CV even if there is no CV input on the module itself.
+- [Mapping parameters](#mapping-parameters)
+- [Inputs](#inputs)
+- [Unlocking parameters](#unlocking-parameters)
+- [Slew-limiting and input-scaling](#slew-limiting-and-input-scaling)
+- [Additional features](#additional-features)
+- [CTX-expander](#ctx-expander)
+- [Changelog](#changelog)
+
+### Overview
+
+CV-MAP is inspired by Rack's MIDI-MAP module: It allows you to modulate any parameter of any module by CV even if there is no CV input on the module itself.
 
 Some videos about CV-MAP:
 
@@ -10,21 +20,21 @@ Some videos about CV-MAP:
 
 ![CV-MAP Intro](./CVMap-intro.png)
 
-It has been said that such functionality is somehow against the idea of "virtual modular" and it is some kind of bad design if CV-controlling things that were not intended to by their creators. Still, CV-MAP provides automation for your virtual knobs, switches and faders in Rack.
+It has been said that such functionality is somehow against the idea of "virtual modular" and it is a kind of bad design if CV-controlling things that were not intended by their creators. Still, CV-MAP provides automation for your virtual knobs, switches and faders in Rack.
 
 ![CV-MAP Intro](./CVMap-map.gif)
 
-You can disable text scrolling if it distracts you by context menu option (since v1.0.2).
+You can disable text scrolling if it distracts you using the context menu option (since v1.0.2).
 
 ### Mapping parameters
 
-You can bind up to 32 mapping slots onto parameters of any module in your patch. You do this by activating a mapping slot with a mouse click. As long the mapping-mode is active the slot shows "Mapping...". Then click on the knob of the module you like to automate. The mapping slot binds to the knob by showing its name, also a small pink mapping indicator is shown next to the parameter. The mapping mode automatically moves to the next empty slot and can be deactivated by clicking anywhere in Rack except a parameter.
+You can bind up to 32 mapping slots onto parameters of any module in your patch. You do this by activating a mapping slot with a mouse click. As long as the mapping-mode is active the slot shows "Mapping...". Then click on the knob of the module you like to automate. The mapping slot binds to the knob by showing its name; also a small pink mapping indicator is shown next to the parameter. The mapping mode automatically moves to the next empty slot and can be deactivated by clicking anywhere in Rack except a parameter.
 
-In the context menu of each mapping slot you find a option "Locate and indicate" which centers the module on screen and blinks the pink mapping indicator for a short time (since v1.0.2). It is useful when you get lost in what maps what.
+In the context menu of each mapping slot you find an option _Locate and indicate_ which centers the module on screen and blinks the pink mapping indicator for a short time (since v1.0.2). It is useful when you get lost in what maps what.
 
 ### Inputs
 
-For saving some panel space the module uses two polyphonic input ports for receiving up to 32 voltages. In most cases you add an VCV Merge-module to combine the signals and send it to CV-MAP then. By default the input ports expect voltages between 0 and 10V but they can be switched to bipolar mode (-5 to 5V) in the context menu.
+For saving some panel space the module uses two polyphonic input ports for receiving up to 32 voltages. In most cases you add a VCV Merge-module to combine the signals and send it to CV-MAP. By default the input ports expect voltages between 0 and 10V but they can be switched to bipolar mode (-5 to 5V) in the context menu.
 
 <a name="channel-routing"></a>
 Before v1.9 of CV-MAP input channels 1-32 were "hard-wired" to mapping slots 1-32, respectively. Since v1.9 input channels can be freely assigned to each mapping slot by context menu, while slot 1 uses channel 1, slot 2 channel 2 and so on, by default. This is especially useful for using the same input channel on multiple parameters or fast change of modulation sources.
@@ -57,13 +67,13 @@ Added in v1.9: Each mapping slot has also two sliders (_Low_ and _High_) for sca
 - Scrolling Rack's current view by mouse is interrupted by CV-MAP's list widget while hovered. As this behavior can be annoying all scrolling events are ignored if _Lock mapping slots_ is enabled (since v1.7).
 
 <a name="target-context"></a>
-- After a parameter has been mapped the parameter's context menu is extended with some addtional menu items allowing quick channel reassignment and centering it's mapping CV-MAP module on the center of the screen (since v1.9.0). There are even further options with the [CTX-expander](CVMap.md#ctx-expander).
+- After a parameter has been mapped the parameter's context menu is extended with some additional menu items allowing quick channel reassignment and centering its mapping CV-MAP module on the center of the screen (since v1.9.0). There are even further options with the [CTX-expander](CVMap.md#ctx-expander).
 
 - Parameter changes are not reported back to the plugin-host by default if CV-MAP is used in a plugin-version of VCV Rack. In v2.2.0 a context menu option has been added to enable this behavior - it might cause higher CPU usage of the plugin.
 
 ### CTX-expander
 
-CTX is a companion module for CV-MAP: The expander allows you to name each instance of CV-MAP in your patch. This name can be addressed in every parameters' context menu for mapping or re-mapping parameters to input channels of the two input ports.
+CTX is a companion module for CV-MAP: The expander allows you to name each instance of CV-MAP in your patch. This name can be addressed in every parameter's context menu for mapping or re-mapping parameters to input channels of the two input ports.
 
 CTX for CV-MAP must be placed on the right side of CV-MAP. The display can hold up to 8 characters for naming CV-MAP.
 
