@@ -131,7 +131,7 @@ struct TransitParamQuantity : SwitchQuantity {
 };
 
 template <int NUM_PRESETS>
-struct TransitLedButton : LEDButton {
+struct TransitLedButton : VCVButton {
 	TransitBase<NUM_PRESETS>* module;
 	int id;
 	bool eventConsumed = true;
