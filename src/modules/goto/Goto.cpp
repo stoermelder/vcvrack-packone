@@ -167,9 +167,11 @@ struct GotoModule : Module {
 
 		json_t* jumpPointsJ = json_object_get(rootJ, "jumpPoints");
 		for (int i = 0; i < 10; i++) {
+			jumpPoints[i].moduleIds.clear();
 			json_t* jumpPointJ = json_array_get(jumpPointsJ, i);
 			json_t* moduleIdJ = json_object_get(jumpPointJ, "moduleId");
 			if (moduleIdJ) {
+				// legacy support for single moduleId
 				jumpPoints[i].moduleIds.push_back(json_integer_value(moduleIdJ));
 			}
 			else {
