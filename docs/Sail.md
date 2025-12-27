@@ -40,4 +40,10 @@ Additionally, the module can convert the current value of the hovered parameter 
 
 ![SAIL overlay](./Sail-overlay.gif)
 
-SAIL was introduced in v1.5 of PackOne.
+## Changelog
+
+- v1.5.0
+    - Initial release
+    - Rewritten how target values are applied to parameters (improved behavior)
+- v1.9.0
+    - Added overlay showing current parameter changes on the bottom of the screen

@@ -6,5 +6,11 @@ INFIX is a utility module for inserting or replacing individual channels within 
 
 ![INFIX Intro](./Infix-replace.gif)
 
-INFIX was introduced in v1.0.3 of PackOne.  
-µINFIX was introduced in v1.3.0.
+## Changelog
+
+- v1.0.3
+    - Initial release
+- v1.3.0
+    - Added µINFIX, an 8-port variant of INFIX
+- v1.4.0
+    - Added LEDs for used channels on polyphonic cables

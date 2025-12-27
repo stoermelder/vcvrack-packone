@@ -64,7 +64,7 @@ In write-mode any input on the _SEL_-port is ignored and sequencing is disabled.
 
 ### Read-mode: morphing between snapshots
 
-Read-mode is the default operational mode of TRANSIT and is used to "load" or "apply" previously saved snapshots to the parameters. The interesting part of TRANSIT is its ability to "morph" the parameter values into the target snapshot: _FADE_ sets the amount of time it takes to reach the parameters' positions stored in the snapshot, this duration can also be controlled by CV (0-10V). There is also a trimpot for setting the shape of the transition; in the middle position the parameters are morphed linearly.
+Read-mode is the default operational mode of TRANSIT and is used to "load" or "apply" previously saved snapshots to the parameters. The interesting part of TRANSIT is its ability to "morph" the parameter values into the target snapshot: _FADE_ sets the amount of time it takes to reach the parameters' positions stored in the snapshot; this duration can also be controlled by CV (0–10 V). There is also a trimpot for setting the shape of the transition; in the middle position, the parameters are morphed linearly.
 
 ![TRANSIT morph](./Transit-morph.gif)
 

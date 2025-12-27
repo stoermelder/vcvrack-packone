@@ -156,49 +156,6 @@ static ModuleWidget* chooseModel(plugin::Model* model) {
 
 // Widgets
 
-ModelZoomSlider::ModelZoomSlider() {
-	struct ModelZoomQuantity : Quantity {
-		void setValue(float value) override {
-			v1::modelBoxZoom = math::clamp(value, PREVIEW_MIN, PREVIEW_MAX);
-		}
-		float getValue() override {
-			return v1::modelBoxZoom;
-		}
-		float getDefaultValue() override {
-			return 0.9f;
-		}
-		float getDisplayValue() override {
-			return getValue() * 100;
-		}
-		void setDisplayValue(float displayValue) override {
-			setValue(displayValue / 100);
-		}
-		std::string getLabel() override {
-			return "Preview";
-		}
-		std::string getUnit() override {
-			return "";
-		}
-		int getDisplayPrecision() override {
-			return 3;
-		}
-		float getMaxValue() override {
-			return PREVIEW_MAX;
-		}
-		float getMinValue() override {
-			return PREVIEW_MIN;
-		}
-	};
-
-	box.size.x = 180.0f;
-	quantity = new ModelZoomQuantity();
-}
-
-ModelZoomSlider::~ModelZoomSlider() {
-	delete quantity;
-}
-
-
 struct ModelBox : widget::OpaqueWidget {
 	plugin::Model* model;
 	widget::Widget* previewWidget;
@@ -767,7 +724,7 @@ ModuleBrowser::ModuleBrowser() {
 	addChild(modelSortChoice);
 	this->modelSortChoice = modelSortChoice;
 
-	modelZoomSlider = new ModelZoomSlider;
+	modelZoomSlider = Rack::createPtrSlider(&v1::modelBoxZoom, PREVIEW_MIN, PREVIEW_MAX, 0.9f, "Preview", "", 100.f, 180.0f);
 	addChild(modelZoomSlider);
 
 	modelScroll = new ui::ScrollWidget;

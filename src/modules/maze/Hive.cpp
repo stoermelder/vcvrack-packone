@@ -195,7 +195,6 @@ struct HiveModule : Module {
 		inputInfos[SHIFT_R1_INPUT]->description = "Shifts all cursors to the right up according to their current moving direction.";
 		configInput(SHIFT_R2_INPUT, "Shift right down");
 		inputInfos[SHIFT_R2_INPUT]->description = "Shifts all cursors to the right down according to their current moving direction.";
-		lightDivider.setDivision(128);
 		onReset();
 	}
 
@@ -203,6 +202,10 @@ struct HiveModule : Module {
 		for (int i = 0; i < NUM_PORTS; i++) {
 			delete geoDist[i];
 		}
+	}
+
+	void onSampleRateChange(const SampleRateChangeEvent& e) override {
+		lightDivider.setDivision(e.sampleRate / 100.f);
 	}
 
 	void onReset() override {

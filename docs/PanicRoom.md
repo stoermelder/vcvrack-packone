@@ -11,4 +11,4 @@ After adding PANIC ROOM to your patch, choose _Learn_ from the context menu and 
 ## Changelog
 
 - v2.2.0
-    - Inital release
+    - Initial release

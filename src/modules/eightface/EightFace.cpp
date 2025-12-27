@@ -142,7 +142,6 @@ struct EightFaceModule : Module {
 			presetSlotUsed[i] = false;
 		}
 
-		lightDivider.setDivision(512);
 		buttonDivider.setDivision(4);
 		onReset();
 		workerContext = contextGet();
@@ -161,6 +160,10 @@ struct EightFaceModule : Module {
 		worker->join();
 		workerContext = NULL;
 		delete worker;
+	}
+
+	void onSampleRateChange(const SampleRateChangeEvent& e) override {
+		lightDivider.setDivision(e.sampleRate / 100.f);
 	}
 
 	void onReset() override {

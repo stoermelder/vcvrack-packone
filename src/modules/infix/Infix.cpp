@@ -22,6 +22,11 @@ struct InfixModule : Module {
 		NUM_LIGHTS
 	};
 
+	/** [Stored to JSON] */
+	int panelTheme = 0;
+
+	ClockDividerEx lightDivider;
+
 	InfixModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -30,14 +35,12 @@ struct InfixModule : Module {
 			configInput(INPUT_MONO + i, string::f("Channel %i replacement", i + 1));
 		}
 		configOutput(OUTPUT_POLY, "Polyphonic");
-		lightDivider.setDivision(512);
 		onReset();
 	}
 
-	/** [Stored to JSON] */
-	int panelTheme = 0;
-
-	ClockDividerEx lightDivider;
+	void onSampleRateChange(const SampleRateChangeEvent& e) override {
+		lightDivider.setDivision(e.sampleRate / 100.f);
+	}
 
 	void process(const ProcessArgs& args) override {
 		int lastChannel = inputs[INPUT_POLY].getChannels();

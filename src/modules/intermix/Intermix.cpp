@@ -154,10 +154,13 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 		configParam(PARAM_FADEIN, 0.f, 4.f, 0.f, "Fade in", "s");
 		configParam(PARAM_FADEOUT, 0.f, 4.f, 0.f, "Fade out", "s");
 		sceneDivider.setDivision(64);
-		lightDivider.setDivision(512);
 		onReset();
 	}
 
+	void onSampleRateChange(const SampleRateChangeEvent& e) override {
+		lightDivider.setDivision(e.sampleRate / 100.f);
+	}
+	
 	void onReset() override {
 		padBrightness = 0.75f;
 		inputVisualize = false;

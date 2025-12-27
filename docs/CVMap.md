@@ -24,11 +24,11 @@ It has been said that such functionality is somehow against the idea of "virtual
 
 ![CV-MAP Intro](./CVMap-map.gif)
 
-You can disable text scrolling if it distracts you using the context menu option (since v1.0.2).
+You can disable text scrolling via the context menu option (since v1.0.2).
 
 ### Mapping parameters
 
-You can bind up to 32 mapping slots onto parameters of any module in your patch. You do this by activating a mapping slot with a mouse click. As long as the mapping-mode is active the slot shows "Mapping...". Then click on the knob of the module you like to automate. The mapping slot binds to the knob by showing its name; also a small pink mapping indicator is shown next to the parameter. The mapping mode automatically moves to the next empty slot and can be deactivated by clicking anywhere in Rack except a parameter.
+You can bind up to 32 mapping slots onto parameters of any module in your patch. You do this by activating a mapping slot with a mouse click. As long as the mapping-mode is active the slot shows "Mapping...". Then click on the knob of the module you want to automate. The mapping slot binds to the knob by showing its name; a small pink mapping indicator is shown next to the parameter. The mapping mode automatically moves to the next empty slot and can be deactivated by clicking anywhere in Rack except a parameter.
 
 In the context menu of each mapping slot you find an option _Locate and indicate_ which centers the module on screen and blinks the pink mapping indicator for a short time (since v1.0.2). It is useful when you get lost in what maps what.
 
@@ -56,7 +56,7 @@ Added in v1.9: Each mapping slot has also two sliders (_Low_ and _High_) for sca
 
 ### Additional features
 
-- Mapping many parameters can result in quite high CPU usage. If automation at audio rate is not needed you can disable _Audio rate processing_ on the context menu: This way only on every 32th audio sample the mapped parameter is updated and the CPU usage drops to about a 32th (since v1.4).
+- Mapping many parameters can result in quite high CPU usage. If automation at audio rate is not needed, you can disable _Audio rate processing_ in the context menu: this way the mapped parameter is updated only every 32nd audio sample and CPU usage drops to about 1/32 (since v1.4).
 
 - If you find the pink mapping indicators distracting you can disable them on the context menu (since v1.5).
 

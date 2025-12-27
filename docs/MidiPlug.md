@@ -21,4 +21,9 @@ Additionally, the input ports (upper section) also support MIDI channel filterin
 
 Note: System messages always pass through unaffected in all modes.
 
-MIDI-PLUG was introduced in v1.9 of PackOne.
+## Changelog
+
+- v1.9.0
+    - Initial release: MIDI-PLUG (virtual MIDI merger and splitter)
+- v2.0.0
+    - Removed MIDI "Loopback" driver as a dedicated loopback driver is available in Rack 2.2.0

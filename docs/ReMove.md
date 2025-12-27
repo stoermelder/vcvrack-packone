@@ -72,7 +72,7 @@ There are three different modes available:
 
 The input labeled _PHASE_ accepts 0–10V and allows controlling the playhead directly: voltages from 0 to 10V are mapped to the length of the sequence. Using an LFO's unipolar saw output or a clock with phase output, such as [ZZC's Clock module](https://zzc-cv.github.io/en/clock-manipulation/clock), the playback can be synced to sequencers, giving Loop-mode behavior. An LFO with triangle output gives you ping‑pong playback. Obviously multiple instances of the module can also be synchronized this way.
 
-The ports _RUN_ and _RESET_ and their buttons are disabled and can't be used as long a cable is connected to _PHASE_. From v1.0.4 on this is signaled by red LEDs next to the ports.
+The ports _RUN_ and _RESET_ and their buttons are disabled and can't be used as long as a cable is connected to _PHASE_. From v1.0.4 on this is signaled by red LEDs next to the ports.
 
 ![ReMOVE PHASE-input](./ReMove-phase.png)
 

@@ -1,4 +1,4 @@
-# stoermelder PILE and POLY-PILE Modules
+# stoermelder PILE and POLY-PILE
 
 PILE and POLY-PILE are utility modules that convert increment and decrement triggers into absolute voltage. PILE is monophonic; POLY-PILE supports up to 16 polyphonic channels.
 
@@ -26,5 +26,8 @@ PILE and POLY-PILE pair well with the MIDI-STEP module, which outputs increment 
 
 ## Changelog
 
-PILE was introduced in v1.5 of PackOne.  
-POLY-PILE was introduced in v1.6 of PackOne.
+- v1.5.0
+    - Initial release
+- v1.6.0
+    - Introduced POLY-PILE (polyphonic version of PILE)
+    - Removed slew-limiting after preset-load

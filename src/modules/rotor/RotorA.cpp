@@ -50,9 +50,12 @@ struct RotorAModule : Module {
 		configParam(CHANNELS_OFFSET_PARAM, 0, 14, 0, "Offset for output channels");
 		configOutput(POLY_OUTPUT, "Polyphonic");
 
-		lightDivider.setDivision(2048);
 		channelsDivider.setDivision(512);
 		onReset();
+	}
+
+	void onSampleRateChange(const SampleRateChangeEvent& e) override {
+		lightDivider.setDivision(e.sampleRate / 100.f);
 	}
 
 	void onReset() override {

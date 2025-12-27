@@ -146,7 +146,6 @@ struct MazeModule : Module {
 		inputInfos[SHIFT_L_INPUT]->description = "Shifts all cursors to the left according to their current moving direction.";
 		configInput(SHIFT_R_INPUT, "Shift right");
 		inputInfos[SHIFT_R_INPUT]->description = "Shifts all cursors to the right according to their current moving direction.";
-		lightDivider.setDivision(128);
 		onReset();
 	}
 
@@ -154,6 +153,10 @@ struct MazeModule : Module {
 		for (int i = 0; i < NUM_PORTS; i++) {
 			delete geoDist[i];
 		}
+	}
+
+	void onSampleRateChange(const SampleRateChangeEvent& e) override {
+		lightDivider.setDivision(e.sampleRate / 100.f);
 	}
 
 	void onReset() override {

@@ -71,8 +71,11 @@ struct X4Module : CVMapModuleBase<2> {
 		this->paramHandles[0].text = "X4";
 		this->paramHandles[1].text = "X4";
 		processDivider.setDivision(32);
-		lightDivider.setDivision(1024);
 		onReset();
+	}
+
+	void onSampleRateChange(const SampleRateChangeEvent& e) override {
+		lightDivider.setDivision(e.sampleRate / 100.f);
 	}
 
 	void onReset() override {

@@ -144,6 +144,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			EightFaceMk2ParamQuantity<NUM_PRESETS>* pq = Module::configParam<EightFaceMk2ParamQuantity<NUM_PRESETS>>(PARAM_PRESET + i, 0, 1, 0);
+			pq->module = this;
 			pq->id = i;
 			BASE::presetButton[i].param = &Module::params[PARAM_PRESET + i];
 
@@ -250,7 +251,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 				if (!exp) break;
 				if (exp->model != modelEightFaceMk2Ex) break;
 				m = exp;
-				t = reinterpret_cast<EightFaceMk2Base<NUM_PRESETS>*>(exp);
+				t = dynamic_cast<EightFaceMk2Base<NUM_PRESETS>*>(exp);
 				if (t->ctrlUniqueId != BASE::ctrlUniqueId) expanderCleanUp(t);
 				t->panelTheme = BASE::panelTheme;
 				t->ctrlModuleId = Module::id;
@@ -1073,15 +1074,7 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 		*/
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createBoolPtrMenuItem("Box visible", RACK_MOD_SHIFT_NAME "+B", &module->boxDraw));
-		menu->addChild(createSubmenuItem("Box color", "", 
-			[=](Menu* menu) {
-				menu->addChild(construct<MenuColorLabel>(&MenuColorLabel::fillColor, &module->boxColor));
-				menu->addChild(new MenuSeparator);
-				menu->addChild(construct<MenuColorPicker>(&MenuColorPicker::color, &module->boxColor));
-				menu->addChild(new MenuSeparator);
-				menu->addChild(construct<MenuColorField>(&MenuColorField::color, &module->boxColor));
-			}
-		));
+        menu->addChild(Rack::createColorSubmenuItem("Box color", &module->boxColor));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuItem("Bind module (left)", "", [=]() {
 			moduleSelectProcessor.disableLearn();

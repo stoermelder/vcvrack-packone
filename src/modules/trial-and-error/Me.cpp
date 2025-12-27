@@ -164,84 +164,13 @@ struct MeWidget : ModuleWidget, OverlayMessageProvider {
 			}
 		};
 
-		struct OpacitySlider : ui::Slider {
-			struct OpacityQuantity : Quantity {
-				void setValue(float value) override {
-					pluginSettings.overlayOpacity = math::clamp(value, 0.f, 1.f);
-				}
-				float getValue() override {
-					return pluginSettings.overlayOpacity;
-				}
-				float getDefaultValue() override {
-					return 1.0f;
-				}
-				float getDisplayValue() override {
-					return getValue() * 100;
-				}
-				void setDisplayValue(float displayValue) override {
-					setValue(displayValue / 100);
-				}
-				std::string getLabel() override {
-					return "Opacity";
-				}
-				std::string getUnit() override {
-					return "%";
-				}
-				int getDisplayPrecision() override {
-					return 3;
-				}
-			};
-
-			OpacitySlider() {
-				box.size.x = 140.0f;
-				quantity = new OpacityQuantity();
-			}
-			~OpacitySlider() {
-				delete quantity;
-			}
-		};
-
-		struct ScaleSlider : ui::Slider {
-			struct ScaleQuantity : Quantity {
-				void setValue(float value) override {
-					pluginSettings.overlayScale = math::clamp(value, 1.f, 5.f);
-				}
-				float getValue() override {
-					return pluginSettings.overlayScale;
-				}
-				float getDefaultValue() override {
-					return 1.0f;
-				}
-				std::string getLabel() override {
-					return "Scale";
-				}
-				int getDisplayPrecision() override {
-					return 3;
-				}
-				float getMinValue() override {
-					return 1.f;
-				}
-				float getMaxValue() override {
-					return 5.f;
-				}
-			};
-
-			ScaleSlider() {
-				box.size.x = 140.0f;
-				quantity = new ScaleQuantity();
-			}
-			~ScaleSlider() {
-				delete quantity;
-			}
-		};
-
 		menu->addChild(new MenuSeparator());
 		menu->addChild(new OverlayLabel);
 		menu->addChild(construct<WhiteOverlayTextItem>(&MenuItem::text, "White text"));
 		menu->addChild(construct<HposMenuItem>(&MenuItem::text, "Horizontal position", &MenuItem::rightText, RIGHT_ARROW));
 		menu->addChild(construct<VposMenuItem>(&MenuItem::text, "Vertical position", &MenuItem::rightText, RIGHT_ARROW));
-		menu->addChild(new OpacitySlider);
-		menu->addChild(new ScaleSlider);
+		menu->addChild(Rack::createPtrSlider(&pluginSettings.overlayOpacity, 0.f, 1.f, 1.0f, "Opacity", "%", 100.f, 140.0f));
+		menu->addChild(Rack::createPtrSlider(&pluginSettings.overlayScale, 1.f, 5.f, 1.0f, "Scale", "", 1.f, 140.0f));
 	}
 };
 

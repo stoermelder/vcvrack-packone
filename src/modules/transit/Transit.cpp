@@ -147,6 +147,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChang
 		Module::configSwitch(PARAM_CTRLMODE, 0.f, 2.f, 0.f, "Operating mode", {"Read", "Auto", "Write"});
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			TransitParamQuantity<NUM_PRESETS>* pq = Module::configParam<TransitParamQuantity<NUM_PRESETS>>(PARAM_PRESET + i, 0, 1, 0);
+			pq->module = this;
 			pq->id = i;
 			BASE::presetButton[i].param = &Module::params[PARAM_PRESET + i];
 
@@ -164,7 +165,6 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChang
 		Module::configOutput(OUTPUT, "Envelope/trigger");
 
 		handleDivider.setDivision(4096);
-		lightDivider.setDivision(512);
 		buttonDivider.setDivision(128);
 		reset(true);
 	}
@@ -175,6 +175,10 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChang
 			APP->engine->removeParamHandle(sourceHandle);
 			delete sourceHandle;
 		}
+	}
+
+	void onSampleRateChange(const Module::SampleRateChangeEvent& e) override {
+		lightDivider.setDivision(e.sampleRate / 100.f);
 	}
 
 	void onExpanderChange(const Module::ExpanderChangeEvent& e) override {
@@ -292,7 +296,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChang
 				}
 				if (exp->model != modelTransitEx) break;
 				m = exp;
-				t = reinterpret_cast<TransitBase<NUM_PRESETS>*>(exp);
+				t = dynamic_cast<TransitBase<NUM_PRESETS>*>(exp);
 				if (t->ctrlUniqueId != BASE::ctrlUniqueId) expanderCleanUp(t);
 				t->panelTheme = BASE::panelTheme;
 				t->ctrlModuleId = Module::id;

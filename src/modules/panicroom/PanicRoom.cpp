@@ -1,6 +1,4 @@
 #include "../../plugin.hpp"
-#include "../../components/MenuColorLabel.hpp"
-#include "../../components/MenuColorPicker.hpp"
 #include <queue>
 
 namespace StoermelderPackOne {
@@ -208,45 +206,6 @@ struct PanicRoomRestrictionWidget : Widget {
 }; // struct PanicRoomRestrictionWidget
 
 
-struct AlphaSlider : ui::Slider {
-    struct AlphaQuantity : Quantity {
-        PanicRoomModule* module;
-
-        AlphaQuantity(PanicRoomModule* module) {
-            this->module = module;
-        }
-        void setValue(float value) override {
-            module->outsideAlpha = math::clamp(value, 0.f, 1.f);
-        }
-        float getValue() override {
-            return module->outsideAlpha;
-        }
-        float getDefaultValue() override {
-            return 0.5f;
-        }
-        float getDisplayValue() override {
-            return getValue() * 100;
-        }
-        void setDisplayValue(float displayValue) override {
-            setValue(displayValue / 100.f);
-        }
-        std::string getLabel() override {
-            return "Opacity";
-        }
-        std::string getUnit() override {
-            return "%";
-        }
-    };
-
-    AlphaSlider(PanicRoomModule* module) {
-        this->box.size.x = 200.0;
-        quantity = new AlphaQuantity(module);
-    }
-    ~AlphaSlider() {
-        delete quantity;
-    }
-};
-
 struct SizeWidthField : ui::TextField {
     PanicRoomModule* module;
     void onSelectKey(const SelectKeyEvent& e) override {
@@ -400,18 +359,8 @@ struct PanicRoomWidget : ThemedModuleWidget<PanicRoomModule> {
         ));
         menu->addChild(createMenuItem("Clear", "", [=]() { module->restrictionEnabled = false; }));
         menu->addChild(new MenuSeparator());
-        menu->addChild(createSubmenuItem("Outside color", "", 
-            [=](Menu* menu) {
-                menu->addChild(construct<MenuColorLabel>(&MenuColorLabel::fillColor, &module->outsideColor));
-                menu->addChild(new MenuSeparator);
-                menu->addChild(construct<MenuColorPicker>(&MenuColorPicker::color, &module->outsideColor));
-                menu->addChild(new MenuSeparator);
-                menu->addChild(createMenuItem("Reset to default", "", [=]() {
-                    module->outsideColor = nvgRGBAf(0.f, 0.f, 0.f, 1.f);
-                }));
-            }
-        ));
-        menu->addChild(new AlphaSlider(module));
+        menu->addChild(Rack::createColorSubmenuItem("Outside color", &module->outsideColor, { { nvgRGBAf(0.f, 0.f, 0.f, 1.f), "Default (black)" } }));
+        menu->addChild(Rack::createPtrSlider(&module->outsideAlpha, 0.f, 1.f, 0.5f, "Opacity", "%", 100.f, 200.0f));
     }
 };
 

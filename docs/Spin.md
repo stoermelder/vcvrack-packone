@@ -19,4 +19,11 @@ There are several options available in the context menu:
 
 Please note that you cannot use multiple instances of this module with the same settings; only the first instance will receive and handle events. However, you can use multiple instances with different modifiers.
 
-SPIN was introduced in v1.7.0 of PackOne.
+## Changelog
+
+- v1.7.0
+    - Initial release
+- v1.9.0
+    - Improved transition between scrolling and parameter adjustments on hover (#260)
+- v2.0.0
+    - Fixed middle mouse button handling in Rack v2 (#372)

@@ -8,4 +8,7 @@ SIPO is a **serial-in, parallel-out (SIPO)** shift register module designed for 
 
 ![SIPO Intro Demo](./Sipo-intro.gif)
 
-SIPO was introduced in v1.2.0 of PackOne.
+## Changelog
+
+- v1.2.0
+    - Initial release

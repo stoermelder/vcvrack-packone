@@ -10,4 +10,9 @@ The screen overlay is used by different stoermelder modules (like [MIDI-CAT](Mid
 
 ![ME overlay settings](./Me-overlay.png)
 
-ME was introduced in v1.9 of PackOne.
+## Changelog
+
+- v1.9.0
+    - Initial release
+- v2.0.0
+    - Fixed usage in multiple plugin-instances

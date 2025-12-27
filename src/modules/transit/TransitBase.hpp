@@ -137,14 +137,13 @@ struct TransitPadInterface {
 
 template <int NUM_PRESETS>
 struct TransitParamQuantity : SwitchQuantity {
+	TransitBase<NUM_PRESETS>* module;
 	int id;
 
 	std::string getDisplayValueString() override {
-		auto module = reinterpret_cast<TransitBase<NUM_PRESETS>*>(this->module);
 		return !module->textLabel[id].empty() ? module->textLabel[id] : (module->presetSlotUsed[id] ? "Used" : "Empty");
 	}
 	std::string getLabel() override {
-		auto module = reinterpret_cast<TransitBase<NUM_PRESETS>*>(this->module);
 		return string::f("Snapshot #%d", module->ctrlOffset * NUM_PRESETS + id + 1);
 	}
 };
