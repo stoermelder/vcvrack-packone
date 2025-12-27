@@ -116,6 +116,18 @@ struct TransitBase : Module, StripIdFixModule {
 	}
 };
 
+struct TransitPadInterface {
+	struct TransitPadSource {
+		int id;
+		float factor;
+	};
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wreturn-stack-address"
+	virtual const std::vector<TransitPadSource>& getPadFactors() { return {}; }
+#pragma GCC diagnostic pop
+};
+
 template <int NUM_PRESETS>
 struct TransitParamQuantity : SwitchQuantity {
 	int id;

@@ -1,12 +1,13 @@
 #include "../../plugin.hpp"
 #include "../../components/XyScreenWidget.hpp"
 #include "../../components/XySeqWidget.hpp"
+#include "TransitBase.hpp"
 
 namespace StoermelderPackOne {
 namespace Transit {
 
 template <uint8_t SNAPSHOTS = 8>
-struct TransitPadModule : Module, XyScreenModule<SNAPSHOTS>, XySeqModule<1> {
+struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>, XySeqModule<1> {
 	enum ParamIds {
 		ENUMS(SNAPSHOT_X_POS, SNAPSHOTS),
 		ENUMS(SNAPSHOT_Y_POS, SNAPSHOTS),
@@ -47,6 +48,8 @@ struct TransitPadModule : Module, XyScreenModule<SNAPSHOTS>, XySeqModule<1> {
 	float outUiY, outInY;
 	dsp::ExponentialFilter outYfilter;
 
+	std::vector<TransitPadSource> snapshots;
+
 	ClockDividerEx lightDivider;
 
 	TransitPadModule() {
@@ -64,12 +67,21 @@ struct TransitPadModule : Module, XyScreenModule<SNAPSHOTS>, XySeqModule<1> {
 		configParam<XyScreenParamQuantity>(OUT_X_POS, 0.0f, 1.0f, 0.5f, "Output x-pos");
 		configParam<XyScreenParamQuantity>(OUT_Y_POS, 0.0f, 1.0f, 0.9f, "Output y-pos");
 
+		snapshots.resize(SNAPSHOTS);
 		onReset();
+	}
+
+	void onExpanderChange(const Module::ExpanderChangeEvent& e) override {
+		notifyExpanderListeners("Transit");
 	}
 
 	void onReset() override {
 		Sc::scResetSelection();
 		init();
+		for (size_t i = 0; i < SNAPSHOTS; i++) {
+			snapshots[i].id = -1;
+			snapshots[i].factor = 0.f;
+		}
 		Sc::scReset();
 		Seq::seqReset();
 		Module::onReset();
@@ -87,6 +99,11 @@ struct TransitPadModule : Module, XyScreenModule<SNAPSHOTS>, XySeqModule<1> {
 		scInitItems();
 		Sc::scInit();
 		Seq::seqInit();
+	}
+
+	// TransitPadInterface
+	const std::vector<TransitPadSource>& getPadFactors() override {
+		return snapshots;
 	}
 
 	void process(const ProcessArgs& args) override {
@@ -169,7 +186,10 @@ struct TransitPadModule : Module, XyScreenModule<SNAPSHOTS>, XySeqModule<1> {
 
 			float r = Sc::scGetRadiusFinal(j);
 			if (dist[j] < r) {
-				float s = std::min(1.0f, (r - dist[j]) / r * 1.1f);
+				snapshots[j].factor = std::min(1.0f, (r - dist[j]) / r * 1.1f);
+			}
+			else {
+				snapshots[j].factor = 0.f;
 			}
 		}
 	}
@@ -206,20 +226,6 @@ struct TransitPadModule : Module, XyScreenModule<SNAPSHOTS>, XySeqModule<1> {
 			return paramQuantities[OUT_Y_POS];
 	}
 
-	inline float scGetXFinal(uint8_t type, uint8_t id) override {
-		if (type == 0)
-			return paramQuantities[SNAPSHOT_X_POS + id]->getParam()->getValue();
-		else
-			return paramQuantities[OUT_X_POS]->getParam()->getValue();
-	}
-
-	inline float scGetYFinal(uint8_t type, uint8_t id) override {
-		if (type == 0)
-			return paramQuantities[SNAPSHOT_Y_POS + id]->getParam()->getValue();
-		else
-			return paramQuantities[OUT_Y_POS]->getParam()->getValue();
-	}
-
 	inline void scSetItemFiltered(uint8_t type, uint8_t id, float x, float y) override {
 		if (type == 1) {
 			outUiX = x;
@@ -244,12 +250,39 @@ struct TransitPadModule : Module, XyScreenModule<SNAPSHOTS>, XySeqModule<1> {
 		json_t* rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 		json_object_set_new(rootJ, "snapshotsUsed", json_integer(snapshotsUsed));
+
+		json_t* snapshotsJ = json_array();
+		for (uint8_t i = 0; i < SNAPSHOTS; i++) {
+			json_t* snapshotJ = json_object();
+			json_object_set_new(snapshotJ, "id", json_integer(snapshots[i].id));
+			Sc::dataToJson(snapshotJ, 0, i);
+			json_array_append_new(snapshotsJ, snapshotJ);
+		}
+		json_object_set_new(rootJ, "snapshots", snapshotsJ);
+
+		json_t* outputJ = json_object();
+		Sc::dataToJson(outputJ, 1, 0);
+		Seq::dataToJson(outputJ, 0);
+		json_object_set_new(rootJ, "output", outputJ);
+
 		return rootJ;
 	}
 
 	void dataFromJson(json_t* rootJ) override {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 		snapshotsUsed = json_integer_value(json_object_get(rootJ, "snapshotsUsed"));
+
+		json_t* snapshotsJ = json_object_get(rootJ, "snapshots");
+		json_t* snapshotJ;
+		uint8_t inputIndex;
+		json_array_foreach(snapshotsJ, inputIndex, snapshotJ) {
+			snapshots[inputIndex].id = json_integer_value(json_object_get(snapshotJ, "id"));
+			Sc::dataFromJson(snapshotJ, 0, inputIndex);
+		}
+
+		json_t* outputJ = json_object_get(rootJ, "output");
+		Sc::dataFromJson(outputJ, 1, 0);
+		Seq::dataFromJson(outputJ, 0);
 	}
 };
 
