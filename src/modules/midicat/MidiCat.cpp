@@ -1482,44 +1482,6 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 };
 
 
-struct SlewSlider : ui::Slider {
-	struct SlewQuantity : Quantity {
-		const float SLEW_MIN = 0.f;
-		const float SLEW_MAX = 5.f;
-		MidiCatParam* p;
-		void setValue(float value) override {
-			value = clamp(value, SLEW_MIN, SLEW_MAX);
-			p->setSlew(value);
-		}
-		float getValue() override {
-			return p->getSlew();
-		}
-		float getDefaultValue() override {
-			return 0.f;
-		}
-		std::string getLabel() override {
-			return "Slew-limiting";
-		}
-		int getDisplayPrecision() override {
-			return 2;
-		}
-		float getMaxValue() override {
-			return SLEW_MAX;
-		}
-		float getMinValue() override {
-			return SLEW_MIN;
-		}
-	}; // struct SlewQuantity
-
-	SlewSlider(MidiCatParam* p) {
-		box.size.x = 220.0f;
-		quantity = construct<SlewQuantity>(&SlewQuantity::p, p);
-	}
-	~SlewSlider() {
-		delete quantity;
-	}
-}; // struct SlewSlider
-
 struct MidiCatCurveMenuItem : CurveMenuItem {
 	MidiCatParam* p;
 	MidiCatCurveMenuItem(MidiCatParam* p) {
@@ -1564,96 +1526,6 @@ struct ScalingOutputLabel : MenuLabelEx {
 		rightText = string::f("[%.1f%%, %.1f%%]", f1, f2);
 	}
 }; // struct ScalingOutputLabel
-
-struct MinSlider : SubMenuSlider {
-	struct MinQuantity : Quantity {
-		MidiCatParam* p;
-		void setValue(float value) override {
-			value = clamp(value, -1.f, 2.f);
-			p->setMin(value);
-		}
-		float getValue() override {
-			return p->getMin();
-		}
-		float getDefaultValue() override {
-			return 0.f;
-		}
-		float getMinValue() override {
-			return -1.f;
-		}
-		float getMaxValue() override {
-			return 2.f;
-		}
-		float getDisplayValue() override {
-			return getValue() * 100;
-		}
-		void setDisplayValue(float displayValue) override {
-			setValue(displayValue / 100);
-		}
-		std::string getLabel() override {
-			return "Low";
-		}
-		std::string getUnit() override {
-			return "%";
-		}
-		int getDisplayPrecision() override {
-			return 3;
-		}
-	}; // struct MinQuantity
-
-	MinSlider(MidiCatParam* p) {
-		box.size.x = 220.0f;
-		quantity = construct<MinQuantity>(&MinQuantity::p, p);
-	}
-	~MinSlider() {
-		delete quantity;
-	}
-}; // struct MinSlider
-
-struct MaxSlider : SubMenuSlider {
-	struct MaxQuantity : Quantity {
-		MidiCatParam* p;
-		void setValue(float value) override {
-			value = clamp(value, -1.f, 2.f);
-			p->setMax(value);
-		}
-		float getValue() override {
-			return p->getMax();
-		}
-		float getDefaultValue() override {
-			return 1.f;
-		}
-		float getMinValue() override {
-			return -1.f;
-		}
-		float getMaxValue() override {
-			return 2.f;
-		}
-		float getDisplayValue() override {
-			return getValue() * 100;
-		}
-		void setDisplayValue(float displayValue) override {
-			setValue(displayValue / 100);
-		}
-		std::string getLabel() override {
-			return "High";
-		}
-		std::string getUnit() override {
-			return "%";
-		}
-		int getDisplayPrecision() override {
-			return 3;
-		}
-	}; // struct MaxQuantity
-
-	MaxSlider(MidiCatParam* p) {
-		box.size.x = 220.0f;
-		quantity = construct<MaxQuantity>(&MaxQuantity::p, p);
-	}
-	~MaxSlider() {
-		delete quantity;
-	}
-}; // struct MaxSlider
 
 
 struct MidiCatSelectionWidget : Widget {
@@ -2125,13 +1997,25 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 			}
 		}; // struct LabelMenuItem
 
-		menu->addChild(new SlewSlider(&module->midiParam[id]));
+		menu->addChild(Rack::createSlider(
+			[this]() { return module->midiParam[id].getSlew(); },
+			[this](float v) { module->midiParam[id].setSlew(clamp(v, 0.f, 5.f)); },
+			0.f, 5.f, 0.f, "Slew-limiting", "", 1.f, 220.0f
+		));
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Scaling"));
 		std::string l = string::f("Input %s", module->ccs[id].getCc() >= 0 ? "MIDI CC" : (module->notes[id].getNote() >= 0 ? "MIDI vel" : ""));
 		menu->addChild(construct<ScalingInputLabel>(&MenuLabel::text, l, &ScalingInputLabel::p, &module->midiParam[id]));
 		menu->addChild(construct<ScalingOutputLabel>(&MenuLabel::text, "Parameter range", &ScalingOutputLabel::p, &module->midiParam[id]));
-		menu->addChild(new MinSlider(&module->midiParam[id]));
-		menu->addChild(new MaxSlider(&module->midiParam[id]));
+		menu->addChild(Rack::createSlider(
+			[this]() { return module->midiParam[id].getMin(); },
+			[this](float v) { module->midiParam[id].setMin(v); },
+			-1.f, 2.f, 0.f, "Low", "%", 100.f, 220.0f
+		));
+		menu->addChild(Rack::createSlider(
+			[this]() { return module->midiParam[id].getMax(); },
+			[this](float v) { module->midiParam[id].setMax(v); },
+			-1.f, 2.f, 1.f, "High", "%", 100.f, 220.0f
+		));
 		menu->addChild(construct<PresetMenuItem>(&MenuItem::text, "Presets", &PresetMenuItem::module, module, &PresetMenuItem::id, id));
 		menu->addChild(new MidiCatCurveMenuItem(&module->midiParam[id]));
 		menu->addChild(new MenuSeparator());
@@ -2547,13 +2431,25 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 				std::string midiCatId = expCtx ? "on \"" + expCtx->getMidiCatId() + "\"" : "";
 				std::list<Widget*> w;
 				w.push_back(construct<MapMenuItem>(&MenuItem::text, string::f("Re-map %s", midiCatId.c_str()), &MapMenuItem::module, module, &MapMenuItem::pq, pq, &MapMenuItem::currentId, id));
-				w.push_back(new SlewSlider(&module->midiParam[id]));
+				w.push_back(Rack::createSlider(
+					[this, id]() { return module->midiParam[id].getSlew(); },
+					[this, id](float v) { module->midiParam[id].setSlew(clamp(v, 0.f, 5.f)); },
+					0.f, 5.f, 0.f, "Slew-limiting", "", 1.f, 220.0f
+				));
 				w.push_back(construct<MenuLabel>(&MenuLabel::text, "Scaling"));
 				std::string l = string::f("Input %s", module->ccs[id].getCc() >= 0 ? "MIDI CC" : (module->notes[id].getNote() >= 0 ? "MIDI vel" : ""));
 				w.push_back(construct<ScalingInputLabel>(&MenuLabel::text, l, &ScalingInputLabel::p, &module->midiParam[id]));
 				w.push_back(construct<ScalingOutputLabel>(&MenuLabel::text, "Parameter range", &ScalingOutputLabel::p, &module->midiParam[id]));
-				w.push_back(new MinSlider(&module->midiParam[id]));
-				w.push_back(new MaxSlider(&module->midiParam[id]));
+				w.push_back(Rack::createSlider(
+					[this, id]() { return module->midiParam[id].getMin(); },
+					[this, id](float v) { module->midiParam[id].setMin(v); },
+					-1.f, 2.f, 0.f, "Low", "%", 100.f, 220.0f
+				));
+				w.push_back(Rack::createSlider(
+					[this, id]() { return module->midiParam[id].getMax(); },
+					[this, id](float v) { module->midiParam[id].setMax(v); },
+					-1.f, 2.f, 1.f, "High", "%", 100.f, 220.0f
+				));
 				w.push_back(new MidiCatCurveMenuItem(&module->midiParam[id]));
 				w.push_back(construct<CenterModuleItem>(&MenuItem::text, "Go to mapping module", &CenterModuleItem::mw, this));
 				w.push_back(new MidiCatEndItem);

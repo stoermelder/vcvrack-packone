@@ -91,6 +91,18 @@ ui::MenuItem* createMapSubmenuItem(std::string text, std::map<TEnum, std::string
 	return item;
 }
 
+/** Easy wrapper that controls a mapped label at a pointer address.
+Example:
+	menu->addChild(createMapSubmenuItem("Mode",
+		{
+			{ QUALITY::HIFI, "Hi-fi" },
+			{ QUALITY::MIDFI, "Mid-fi" },
+			{ QUALITY::LOFI, "Lo-fi" }
+		},
+		[]() {  return module->mode; },
+		[=](QUALITY mode) {  module->mode = mode; },
+	));
+*/
 template <typename TEnum, class TMenuItem = ui::MenuItem>
 ui::MenuItem* createMapSubmenuItem(std::string text, std::map<TEnum, std::string> labels, std::function<TEnum()> getter, std::function<void(TEnum val)> setter, bool showRightText = true, bool disabled = false, bool alwaysConsume = false) {
 	return createMapSubmenuItem(text, labels, labels, getter, setter, showRightText, disabled, alwaysConsume);
@@ -135,6 +147,80 @@ ui::MenuItem* createValuePtrMenuItem(std::string text, std::string rightText, T*
 	return createMenuItem(text, string::f("%s %s", rightText, CHECKMARK(*ptr == val)), [=]() { *ptr = val; });
 }
 
+
+/** Easy wrapper for creating a slider that controls a float value via getter/setter functions.
+Example:
+	menu->addChild(createSlider(
+		[]() { return module->outsideAlpha; },
+		[=](float v) { module->outsideAlpha = v; },
+		0.f, 1.f, 0.5f, "Opacity", "%", 100.f
+	));
+*/
+inline ui::Slider* createSlider(std::function<float()> getter, std::function<void(float)> setter, float minValue = 0.f, float maxValue = 1.f, float defaultValue = 0.5f, std::string label = "Value", std::string unit = "", float displayMultiplier = 1.f, float width = 200.0f) {
+	struct SliderQuantity : Quantity {
+		std::function<float()> get;
+		std::function<void(float)> set;
+		float minVal;
+		float maxVal;
+		float defaultVal;
+		std::string lbl;
+		std::string unt;
+		float multiplier;
+
+		SliderQuantity(std::function<float()> g, std::function<void(float)> s, float minV, float maxV, float d, std::string l, std::string u, float m) : get(g), set(s), minVal(minV), maxVal(maxV), defaultVal(d), lbl(l), unt(u), multiplier(m) {}
+		void setValue(float value) override {
+			set(math::clamp(value, minVal, maxVal));
+		}
+		float getValue() override {
+			return get();
+		}
+		float getDefaultValue() override {
+			return defaultVal;
+		}
+		float getDisplayValue() override {
+			return getValue() * multiplier;
+		}
+		void setDisplayValue(float displayValue) override {
+			setValue(displayValue / multiplier);
+		}
+		std::string getLabel() override {
+			return lbl;
+		}
+		std::string getUnit() override {
+			return unt;
+		}
+		float getMinValue() override {
+			return minVal;
+		}
+		float getMaxValue() override {
+			return maxVal;
+		}
+	};
+
+	struct SliderWithQuantity : ui::Slider {
+		SliderWithQuantity(std::function<float()> g, std::function<void(float)> s, float minV, float maxV, float d, std::string l, std::string u, float m, float w) {
+			box.size.x = w;
+			quantity = new SliderQuantity(g, s, minV, maxV, d, l, u, m);
+		}
+		~SliderWithQuantity() {
+			delete quantity;
+		}
+	};
+
+	return new SliderWithQuantity(getter, setter, minValue, maxValue, defaultValue, label, unit, displayMultiplier, width);
+}
+
+/** Easy wrapper for creating a float slider that controls a float pointer.
+Example:
+	menu->addChild(createPtrSlider(&module->value, 0.f, 1.f, 0.5f, "Opacity", "%", 100.f));
+*/
+inline ui::Slider* createPtrSlider(float* valuePtr, float minValue = 0.f, float maxValue = 1.f, float defaultValue = 0.5f, std::string label = "Value", std::string unit = "", float displayMultiplier = 1.f, float width = 200.0f) {
+	return createSlider(
+		[=]() { return *valuePtr; },
+		[=](float v) { *valuePtr = v; },
+		minValue, maxValue, defaultValue, label, unit, displayMultiplier, width
+	);
+}
 
 } // namespace Rack
 } // namespace StoermelderPackOne

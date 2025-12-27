@@ -461,133 +461,6 @@ struct LabelWidget : widget::TransparentWidget {
 			Menu* createChildMenu() override {
 				Menu* menu = new Menu;
 
-				struct SizeSlider : ui::Slider {
-					struct SizeQuantity : Quantity {
-						Label* label;
-						SizeQuantity(Label* label) {
-							this->label = label;
-						}
-						void setValue(float value) override {
-							label->size = math::clamp(value, LABEL_SIZE_MIN, LABEL_SIZE_MAX);
-						}
-						float getValue() override {
-							return label->size;
-						}
-						float getDefaultValue() override {
-							return LABEL_SIZE_DEFAULT;
-						}
-						std::string getLabel() override {
-							return "Size";
-						}
-						int getDisplayPrecision() override {
-							return 3;
-						}
-						float getMaxValue() override {
-							return LABEL_SIZE_MAX;
-						}
-						float getMinValue() override {
-							return LABEL_SIZE_MIN;
-						}
-					};
-
-					Label* label;
-					SizeSlider(Label* label) {
-						this->label = label;
-						box.size.x = 140.0f;
-						quantity = new SizeQuantity(label);
-					}
-					~SizeSlider() {
-						delete quantity;
-					}
-				};
-
-				struct WidthSlider : ui::Slider {
-					struct WidthQuantity : Quantity {
-						Label* label;
-						WidthQuantity(Label* label) {
-							this->label = label;
-						}
-						void setValue(float value) override {
-							label->width = math::clamp(value, LABEL_WIDTH_MIN, LABEL_WIDTH_MAX);
-						}
-						float getValue() override {
-							return label->width;
-						}
-						float getDefaultValue() override {
-							return LABEL_WIDTH_DEFAULT;
-						}
-						std::string getLabel() override {
-							return "Width";
-						}
-						int getDisplayPrecision() override {
-							return 3;
-						}
-						float getMaxValue() override {
-							return LABEL_WIDTH_MAX;
-						}
-						float getMinValue() override {
-							return LABEL_WIDTH_MIN;
-						}
-					};
-
-					Label* label;
-					WidthSlider(Label* label) {
-						this->label = label;
-						box.size.x = 140.0f;
-						quantity = new WidthQuantity(label);
-					}
-					~WidthSlider() {
-						delete quantity;
-					}
-				};
-
-				struct OpacitySlider : ui::Slider {
-					struct OpacityQuantity : Quantity {
-						Label* label;
-						OpacityQuantity(Label* label) {
-							this->label = label;
-						}
-						void setValue(float value) override {
-							label->opacity = math::clamp(value, LABEL_OPACITY_MIN, LABEL_OPACITY_MAX);
-						}
-						float getValue() override {
-							return label->opacity;
-						}
-						float getDefaultValue() override {
-							return 1.0f;
-						}
-						float getDisplayValue() override {
-							return getValue() * 100;
-						}
-						void setDisplayValue(float displayValue) override {
-							setValue(displayValue / 100);
-						}
-						std::string getLabel() override {
-							return "Opacity";
-						}
-						std::string getUnit() override {
-							return "%";
-						}
-						int getDisplayPrecision() override {
-							return 3;
-						}
-						float getMaxValue() override {
-							return LABEL_OPACITY_MAX;
-						}
-						float getMinValue() override {
-							return LABEL_OPACITY_MIN;
-						}
-					};
-
-					OpacitySlider(Label* label) {
-						box.size.x = 140.0f;
-						quantity = new OpacityQuantity(label);
-					}
-					~OpacitySlider() {
-						delete quantity;
-					}
-				};
-
 				struct FontColorMenuItem : MenuItem {
 					Label* label;
 					bool* textSelected;
@@ -658,9 +531,9 @@ struct LabelWidget : widget::TransparentWidget {
 					}
 				};
 
-				menu->addChild(new SizeSlider(label));
-				menu->addChild(new WidthSlider(label));
-				menu->addChild(new OpacitySlider(label));
+				menu->addChild(Rack::createPtrSlider(&label->size, LABEL_SIZE_MIN, LABEL_SIZE_MAX, LABEL_SIZE_DEFAULT, "Size", "", 1.f, 140.0f));
+				menu->addChild(Rack::createPtrSlider(&label->width, LABEL_WIDTH_MIN, LABEL_WIDTH_MAX, LABEL_WIDTH_DEFAULT, "Width", "", 1.f, 140.0f));
+				menu->addChild(Rack::createPtrSlider(&label->opacity, LABEL_OPACITY_MIN, LABEL_OPACITY_MAX, 1.0f, "Opacity", "%", 100.f, 140.0f));
 				menu->addChild(new MenuSeparator);
 				menu->addChild(createMenuLabel("Rotation"));
 				menu->addChild(Rack::createValuePtrMenuItem("0°", &label->angle, 0.f));
@@ -1092,129 +965,6 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 			Menu* createChildMenu() override {
 				Menu* menu = new Menu;
 
-				struct SizeSlider : ui::Slider {
-					struct SizeQuantity : Quantity {
-						GlueModule* module;
-						SizeQuantity(GlueModule* module) {
-							this->module = module;
-						}
-						void setValue(float value) override {
-							module->defaultSize = math::clamp(value, LABEL_SIZE_MIN, LABEL_SIZE_MAX);
-						}
-						float getValue() override {
-							return module->defaultSize;
-						}
-						float getDefaultValue() override {
-							return LABEL_SIZE_DEFAULT;
-						}
-						std::string getLabel() override {
-							return "Default size";
-						}
-						int getDisplayPrecision() override {
-							return 3;
-						}
-						float getMaxValue() override {
-							return LABEL_SIZE_MAX;
-						}
-						float getMinValue() override {
-							return LABEL_SIZE_MIN;
-						}
-					};
-
-					SizeSlider(GlueModule* module) {
-						box.size.x = 160.0f;
-						quantity = new SizeQuantity(module);
-					}
-					~SizeSlider() {
-						delete quantity;
-					}
-				};
-
-				struct WidthSlider : ui::Slider {
-					struct WidthQuantity : Quantity {
-						GlueModule* module;
-						WidthQuantity(GlueModule* module) {
-							this->module = module;
-						}
-						void setValue(float value) override {
-							module->defaultWidth = math::clamp(value, LABEL_WIDTH_MIN, LABEL_WIDTH_MAX);
-						}
-						float getValue() override {
-							return module->defaultWidth;
-						}
-						float getDefaultValue() override {
-							return LABEL_WIDTH_DEFAULT;
-						}
-						std::string getLabel() override {
-							return "Default width";
-						}
-						int getDisplayPrecision() override {
-							return 3;
-						}
-						float getMaxValue() override {
-							return LABEL_WIDTH_MAX;
-						}
-						float getMinValue() override {
-							return LABEL_WIDTH_MIN;
-						}
-					};
-
-					WidthSlider(GlueModule* module) {
-						box.size.x = 160.0f;
-						quantity = new WidthQuantity(module);
-					}
-					~WidthSlider() {
-						delete quantity;
-					}
-				};
-
-				struct OpacitySlider : ui::Slider {
-					struct OpacityQuantity : Quantity {
-						GlueModule* module;
-						OpacityQuantity(GlueModule* module) {
-							this->module = module;
-						}
-						void setValue(float value) override {
-							module->defaultOpacity = math::clamp(value, LABEL_OPACITY_MIN, LABEL_OPACITY_MAX);
-						}
-						float getValue() override {
-							return module->defaultOpacity;
-						}
-						float getDefaultValue() override {
-							return 1.0f;
-						}
-						float getDisplayValue() override {
-							return getValue() * 100;
-						}
-						void setDisplayValue(float displayValue) override {
-							setValue(displayValue / 100);
-						}
-						std::string getLabel() override {
-							return "Default opacity";
-						}
-						std::string getUnit() override {
-							return "%";
-						}
-						int getDisplayPrecision() override {
-							return 3;
-						}
-						float getMaxValue() override {
-							return LABEL_OPACITY_MAX;
-						}
-						float getMinValue() override {
-							return LABEL_OPACITY_MIN;
-						}
-					};
-
-					OpacitySlider(GlueModule* module) {
-						box.size.x = 160.0f;
-						quantity = new OpacityQuantity(module);
-					}
-					~OpacitySlider() {
-						delete quantity;
-					}
-				};
-
 				struct FontColorMenuItem : MenuItem {
 					GlueModule* module;
 					FontColorMenuItem() {
@@ -1284,9 +1034,9 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 					}
 				};
 
-				menu->addChild(new SizeSlider(module));
-				menu->addChild(new WidthSlider(module));
-				menu->addChild(new OpacitySlider(module));
+				menu->addChild(Rack::createPtrSlider(&module->defaultSize, LABEL_SIZE_MIN, LABEL_SIZE_MAX, LABEL_SIZE_DEFAULT, "Default size", "", 1.f, 160.0f));
+				menu->addChild(Rack::createPtrSlider(&module->defaultWidth, LABEL_WIDTH_MIN, LABEL_WIDTH_MAX, LABEL_WIDTH_DEFAULT, "Default width", "", 1.f, 160.0f));
+				menu->addChild(Rack::createPtrSlider(&module->defaultOpacity, LABEL_OPACITY_MIN, LABEL_OPACITY_MAX, 1.0f, "Default opacity", "%", 100.f, 160.0f));
 				menu->addChild(new MenuSeparator);
 				menu->addChild(createMenuLabel("Default rotation"));
 				menu->addChild(Rack::createValuePtrMenuItem("0°", &module->defaultAngle, 0.f));
