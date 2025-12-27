@@ -118,7 +118,7 @@ struct EightFaceMk2Base : Module, StripIdFixModule {
 };
 
 template <int NUM_PRESETS>
-struct EightFaceMk2ParamQuantity : ParamQuantity {
+struct EightFaceMk2ParamQuantity : SwitchQuantity {
 	EightFaceMk2Base<NUM_PRESETS>* module;
 	int id;
 
