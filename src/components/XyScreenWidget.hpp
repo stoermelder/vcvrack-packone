@@ -640,7 +640,8 @@ struct XyScreenDragWidget : OpaqueWidget {
 			nvgFontSize(args.vg, fontsize);
 			nvgFontFaceId(args.vg, font->handle);
 			nvgFillColor(args.vg, textColor);
-			nvgTextBox(args.vg, c.x - 3.f, c.y + 4.f, 120, string::f("%i", id + 1).c_str(), NULL);
+			char buf[2] = { getItemChar(), '\0' };
+			nvgTextBox(args.vg, c.x - 3.f, c.y + 4.f, 120, buf, NULL);
 		}
 		Widget::drawLayer(args, layer);
 	}
@@ -721,7 +722,14 @@ struct XyScreenDragWidget : OpaqueWidget {
 		appendContextMenu(menu);
 	}
 
-	virtual std::string getItemName() { return string::f("Item %i", id + 1); }
+	virtual inline std::string getItemName() { 
+		return string::f("Item %i", id + 1); 
+	}
+
+	virtual inline char getItemChar() {
+		return '1' + id;
+	}
+
 	virtual void appendContextMenu(Menu* menu) {}
 };
 
