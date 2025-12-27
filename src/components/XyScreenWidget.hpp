@@ -65,8 +65,8 @@ struct XyScreenModule {
 	void scReset() {
 		for (uint8_t i = 0; i < INPUTS; i++) {
 			scSetXyImmediate(0, i, scGetPqX(0, i)->getDefaultValue(), scGetPqY(0, i)->getDefaultValue());
-			scSetRadiusImmediate(i, 0.5f);
-			scSetAmountImmediate(i, 1.f);
+			scSetRadiusImmediate(i, scGetRadiusDefault(i));
+			scSetAmountImmediate(i, scGetAmountDefault(i));
 		}
 	}
 	
@@ -126,6 +126,10 @@ struct XyScreenModule {
 		}
 	}
 
+	virtual inline float scGetRadiusDefault(uint8_t id) {
+		return 0.5f;
+	}
+
 	virtual inline float scGetRadiusFinal(uint8_t id) { 
 		return radius[id];
 	}
@@ -154,6 +158,10 @@ struct XyScreenModule {
 		for (uint8_t i = 0; i < INPUTS; i++) {
 			scSetRadiusImmediate(i, random::uniform());
 		}
+	}
+
+	virtual inline float scGetAmountDefault(uint8_t id) {
+		return 1.f;
 	}
 
 	virtual inline float scGetAmountFinal(uint8_t id) { 
