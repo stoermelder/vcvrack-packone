@@ -55,17 +55,30 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 	TransitPadModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		for (uint8_t i = 0; i < SNAPSHOTS; i++) {
-			configParam<XyScreenParamQuantity>(SNAPSHOT_X_POS + i, 0.0f, 1.0f, 0.1f + float(i) * (0.8f / (SNAPSHOTS - 1)), string::f("Snapshot %i x-pos", i + 1));
-			configParam<XyScreenParamQuantity>(SNAPSHOT_Y_POS + i, 0.0f, 1.0f, 0.1f, string::f("Snapshot %i y-pos", i + 1));
-		}
 
-		configInput(OUT_X_INPUT, "Output x-pos");
-		configInput(OUT_Y_INPUT, "Output y-pos");
-		configInput(OUT_SEQ_INPUT, "Output sequence select");
-		configInput(OUT_SEQ_PH_INPUT, "Output sequence phase");
-		configParam<XyScreenParamQuantity>(OUT_X_POS, 0.0f, 1.0f, 0.5f, "Output x-pos");
-		configParam<XyScreenParamQuantity>(OUT_Y_POS, 0.0f, 1.0f, 0.9f, "Output y-pos");
+		configParam<XyScreenParamQuantity>(SNAPSHOT_X_POS + 0, 0.0f, 1.0f, 0.1f, "Snapshot A x-pos");
+		configParam<XyScreenParamQuantity>(SNAPSHOT_Y_POS + 0, 0.0f, 1.0f, 0.1f, "Snapshot A y-pos");
+		configParam<XyScreenParamQuantity>(SNAPSHOT_X_POS + 1, 0.0f, 1.0f, 0.9f, "Snapshot B x-pos");
+		configParam<XyScreenParamQuantity>(SNAPSHOT_Y_POS + 1, 0.0f, 1.0f, 0.1f, "Snapshot B y-pos");	
+		configParam<XyScreenParamQuantity>(SNAPSHOT_X_POS + 2, 0.0f, 1.0f, 0.9f, "Snapshot C x-pos");
+		configParam<XyScreenParamQuantity>(SNAPSHOT_Y_POS + 2, 0.0f, 1.0f, 0.9f, "Snapshot C y-pos");
+		configParam<XyScreenParamQuantity>(SNAPSHOT_X_POS + 3, 0.0f, 1.0f, 0.1f, "Snapshot D x-pos");
+		configParam<XyScreenParamQuantity>(SNAPSHOT_Y_POS + 3, 0.0f, 1.0f, 0.9f, "Snapshot D y-pos");
+		configParam<XyScreenParamQuantity>(SNAPSHOT_X_POS + 4, 0.0f, 1.0f, 0.3f, "Snapshot E x-pos");
+		configParam<XyScreenParamQuantity>(SNAPSHOT_Y_POS + 4, 0.0f, 1.0f, 0.3f, "Snapshot E y-pos");
+		configParam<XyScreenParamQuantity>(SNAPSHOT_X_POS + 5, 0.0f, 1.0f, 0.7f, "Snapshot F x-pos");
+		configParam<XyScreenParamQuantity>(SNAPSHOT_Y_POS + 5, 0.0f, 1.0f, 0.3f, "Snapshot F y-pos");
+		configParam<XyScreenParamQuantity>(SNAPSHOT_X_POS + 6, 0.0f, 1.0f, 0.7f, "Snapshot G x-pos");
+		configParam<XyScreenParamQuantity>(SNAPSHOT_Y_POS + 6, 0.0f, 1.0f, 0.7f, "Snapshot G y-pos");
+		configParam<XyScreenParamQuantity>(SNAPSHOT_X_POS + 7, 0.0f, 1.0f, 0.3f, "Snapshot H x-pos");
+		configParam<XyScreenParamQuantity>(SNAPSHOT_Y_POS + 7, 0.0f, 1.0f, 0.7f, "Snapshot H y-pos");
+
+		configInput(OUT_X_INPUT, "Mix x-pos");
+		configInput(OUT_Y_INPUT, "Mix y-pos");
+		configInput(OUT_SEQ_INPUT, "Mix sequence select");
+		configInput(OUT_SEQ_PH_INPUT, "Mix sequence phase");
+		configParam<XyScreenParamQuantity>(OUT_X_POS, 0.0f, 1.0f, 0.5f, "Mix x-pos");
+		configParam<XyScreenParamQuantity>(OUT_Y_POS, 0.0f, 1.0f, 0.5f, "Mix y-pos");
 
 		snapshots.resize(SNAPSHOTS);
 		onReset();
@@ -79,9 +92,11 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		Sc::scResetSelection();
 		init();
 		for (size_t i = 0; i < SNAPSHOTS; i++) {
-			snapshots[i].id = -1;
-			snapshots[i].factor = 0.f;
+			snapshots[i].id = i < 4 ? i : -1;
+			snapshots[i].weight = 0.f;
 		}
+		snapshotsUsed = 4;
+
 		Sc::scReset();
 		Seq::seqReset();
 		Module::onReset();
@@ -124,16 +139,9 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		}
 
 		XyScreenParamQuantity* px = reinterpret_cast<XyScreenParamQuantity*>(paramQuantities[OUT_X_POS]);
-		if (!px->hasHandle)
-			outInX = outXfilter.process(args.sampleTime, outUiX);
-		else
-			outInX = px->getParam()->getValue();
-
+		outInX = px->hasHandle ? px->getParam()->getValue() : outXfilter.process(args.sampleTime, outUiX);
 		XyScreenParamQuantity* py = reinterpret_cast<XyScreenParamQuantity*>(paramQuantities[OUT_Y_POS]);
-		if (!py->hasHandle)
-			outInY = outYfilter.process(args.sampleTime, outUiY);
-		else 
-			outInY = py->getParam()->getValue();
+		outInY = py->hasHandle ? py->getParam()->getValue() : outYfilter.process(args.sampleTime, outUiY);
 
 		if (inputs[OUT_SEQ_INPUT].isConnected()) {
 			Seq::seqProcess(inputs[OUT_SEQ_INPUT], 0);
@@ -186,10 +194,10 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 
 			float r = Sc::scGetRadiusFinal(j);
 			if (dist[j] < r) {
-				snapshots[j].factor = std::min(1.0f, (r - dist[j]) / r * 1.1f);
+				snapshots[j].weight = std::min(1.0f, (r - dist[j]) / r * 1.1f);
 			}
 			else {
-				snapshots[j].factor = 0.f;
+				snapshots[j].weight = 0.f;
 			}
 		}
 	}
@@ -246,6 +254,10 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		return dist[idDest];
 	}
 
+	inline float scGetRadiusDefault(uint8_t type) override {
+		return 1.f;
+	}
+
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
@@ -292,17 +304,27 @@ struct TransitPadSnapshotDragWidget : XyScreenDragWidget<MODULE> {
 	typedef XyScreenDragWidget<MODULE> AW;
 
  	std::string getItemName() override {
-		return string::f("Snapshot %i", AW::id + 1);
+		if (AW::module->snapshots[AW::id].id >= 0) {
+			std::string custom = *AW::module->masterModule->expSlotLabel(AW::module->snapshots[AW::id].id);
+			if (custom != "")
+				return string::f("Snapshot #%i: %s", AW::module->snapshots[AW::id].id + 1, custom.c_str());
+			else
+				return string::f("Snapshot #%i", AW::module->snapshots[AW::id].id + 1);
+		}
+		else
+			return "No snapshot";
 	}
 
-	/*
-	void appendContextMenu(Menu* menu) override {
-		menu->addChild(ArenaVoltageSubMenuItem("X-port", &B::module->inputXBipolar[B::id]));
-		menu->addChild(ArenaVoltageSubMenuItem("Y-port", &B::module->inputYBipolar[B::id]));
-		menu->addChild(new ArenaModModeMenuItem<MODULE>(B::module, B::id));
-		menu->addChild(new ArenaOutputModeMenuItem<MODULE>(B::module, B::id));
+	char getItemChar() override {
+		return 'A' + AW::id;
 	}
-	*/
+
+	void appendContextMenu(Menu* menu) override {
+		menu->addChild(new MenuSeparator());
+		menu->addChild(createMenuItem("Bind snapshot", "", [=]() {
+			AW::module->snapshots[AW::id].id = AW::module->masterModule->transitSlotSelected();
+		}));
+	}
 };
 
 
@@ -311,26 +333,26 @@ struct TransitPadOutDragWidget : XyScreenDragWidget<MODULE> {
 	typedef XyScreenDragWidget<MODULE> B;
 
  	std::string getItemName() override {
-		return "Output";
+		return "Mix";
 	}
 
-	/*
+	char getItemChar() override {
+		return '+';
+	}
+
 	void appendContextMenu(Menu* menu) override {
-		menu->addChild(ArenaVoltageSubMenuItem("X-port", &B::module->mixportXBipolar[B::id]));
-		menu->addChild(ArenaVoltageSubMenuItem("Y-port", &B::module->mixportYBipolar[B::id]));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuLabel("Motion-Sequence"));
 		menu->addChild(new XySeqSlotMenuItem<MODULE>(B::module, B::id));
 		menu->addChild(new XySeqInterpolateMenuItem<MODULE>(B::module, B::id));
 		menu->addChild(new XySeqTriggerMenuItem<MODULE>(B::module, B::id));
 	}
-	*/
 };
 
 template <typename MODULE>
 struct TransitPadXyScreenWidget : XyScreenWidget<MODULE> {
 	TransitPadXyScreenWidget(MODULE* module, int inParamIdX, int inParamIdY, int mixParamIdX, int mixParamIdY) : XyScreenWidget<MODULE>(module) {
-		uint8_t t0 = module ? module->scGetItemCount(0) : 8;
+		uint8_t t0 = module ? module->scGetItemCount(0) : 4;
 		this->template createDragWidgets<TransitPadSnapshotDragWidget<MODULE>>(module, 0, t0, color::WHITE);
 		uint8_t t1 = module ? module->scGetItemCount(1) : 1;
 		this->template createDragWidgets<TransitPadOutDragWidget<MODULE>>(module, 1, t1, color::GREEN);
@@ -365,16 +387,8 @@ struct TransitPadXyScreenWidget : XyScreenWidget<MODULE> {
 template <typename MODULE>
 struct TransitPadXySeqLedDisplay : XySeqLedDisplay<MODULE> {	
 	std::string getPortName() override {
-		return "Output";
+		return "Mix";
 	}
-
-	/*
-	void appendContextMenu(Menu* menu) override {
-		menu->addChild(new MenuSeparator());
-		menu->addChild(ArenaVoltageSubMenuItem("X-port", &this->module->mixportXBipolar[this->id]));
-		menu->addChild(ArenaVoltageSubMenuItem("Y-port", &this->module->mixportYBipolar[this->id]));
-	}
-	*/
 };
 
 
@@ -393,6 +407,9 @@ struct TransitPadWidget : ThemedModuleWidget<TransitPadModule<>> {
 		addInput(createInputCentered<StoermelderPort>(Vec(135.0f, 327.0f), module, MODULE::OUT_SEQ_PH_INPUT));
 		addInput(createInputCentered<StoermelderPort>(Vec(97.0f, 327.0f), module, MODULE::OUT_X_INPUT));
 		addInput(createInputCentered<StoermelderPort>(Vec(173.0f, 327.0f), module, MODULE::OUT_Y_INPUT));
+
+		addParam(createParamCentered<XyScreenDummyMapButton>(Vec(104.3f, 309.4f), module, MODULE::OUT_X_POS));
+		addParam(createParamCentered<XyScreenDummyMapButton>(Vec(165.7f, 309.4f), module, MODULE::OUT_Y_POS));
 
 		TransitPadXyScreenWidget<MODULE>* screenWidget = new TransitPadXyScreenWidget<MODULE>(module, MODULE::SNAPSHOT_X_POS, MODULE::SNAPSHOT_Y_POS, MODULE::OUT_X_POS, MODULE::OUT_Y_POS);
 		screenWidget->box.pos = Vec(12.3f, 41.2f);

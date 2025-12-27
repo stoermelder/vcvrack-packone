@@ -45,7 +45,7 @@ struct ParamHandleEx : ParamHandleIndicator {
 
 
 template <int NUM_PRESETS>
-struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
+struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChangeListener {
 	typedef TransitBase<NUM_PRESETS> BASE;
 
 	enum ParamIds {
@@ -246,7 +246,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 		return N[n]->transitSlot(index % NUM_PRESETS);
 	}
 
-	inline std::string* expSlotLabel(int index) {
+	inline std::string* expSlotLabel(int index) override {
 		if (index >= presetTotal) return NULL;
 		int n = index / NUM_PRESETS;
 		return &N[n]->textLabel[index % NUM_PRESETS];
@@ -256,6 +256,11 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 		if (index >= presetTotal) return -1.f;
 		int n = index / NUM_PRESETS;
 		return N[n]->fadeTime[index % NUM_PRESETS];
+	}
+
+	// TransitPadMaster
+	int transitSlotSelected() override { 
+		return preset; 
 	}
 
 	void process(const Module::ProcessArgs& args) override {
@@ -280,6 +285,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 				if (!exp) break;	
 				if (exp->model == modelTransitPad) {
 					transitPad = dynamic_cast<TransitPadInterface*>(exp);
+					transitPad->masterModule = this;
 					slotCvMode = SLOTCVMODE::OFF;
 					outMode = OUTMODE::OFF;
 					break;
@@ -736,11 +742,39 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 
 	void presetProcessXyPad(float sampleTime) {
 		if (presetProcessDivider.process()) {
-			float deltaTime = sampleTime * presetProcessDivision;
-
 			auto snapshots = transitPad->getPadFactors();
+
+			float weight = 0.f;
+			std::vector<float> v(sourceHandles.size(), 0.f);
 			for (auto snapshot : snapshots) {
-				// TODO
+				if (snapshot.id < 0) continue;
+				TransitSlot* slot1 = expSlot(snapshot.id);
+				if (!*(slot1->presetSlotUsed)) continue;
+				weight += snapshot.weight;
+
+				for (size_t i = 0; i < sourceHandles.size(); i++) {
+					ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
+					if (!pq) continue;
+					float v1 = (*slot1->preset)[i];
+					v[i] += v1 * snapshot.weight;
+				}
+			}
+
+			if (weight > 0.f) {
+				for (auto snapshot : snapshots) {
+					if (snapshot.id < 0) continue;
+					TransitSlot* slot1 = expSlot(snapshot.id);
+					if (!*(slot1->presetSlotUsed)) continue;
+
+					for (size_t i = 0; i < sourceHandles.size(); i++) {
+						ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
+						if (!pq) continue;
+						if (settings::isPlugin && parameterChangesDirect)
+							pq->setValue(v[i] / weight);
+						else
+							pq->getParam()->setValue(v[i] / weight);
+					}
+				}
 			}
 
 			BASE::outputs[OUTPUT].setVoltage(0.f);

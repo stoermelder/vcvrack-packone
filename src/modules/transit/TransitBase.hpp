@@ -116,10 +116,16 @@ struct TransitBase : Module, StripIdFixModule {
 	}
 };
 
+struct TransitPadMaster {
+	virtual int transitSlotSelected() { return -1; }
+	virtual std::string* expSlotLabel(int i) { return nullptr; }
+};
+
 struct TransitPadInterface {
+	TransitPadMaster* masterModule = nullptr;
 	struct TransitPadSource {
 		int id;
-		float factor;
+		float weight;
 	};
 
 #pragma GCC diagnostic push
@@ -127,6 +133,7 @@ struct TransitPadInterface {
 	virtual const std::vector<TransitPadSource>& getPadFactors() { return {}; }
 #pragma GCC diagnostic pop
 };
+
 
 template <int NUM_PRESETS>
 struct TransitParamQuantity : SwitchQuantity {
