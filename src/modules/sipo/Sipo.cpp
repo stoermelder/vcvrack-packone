@@ -57,11 +57,14 @@ struct SipoModule : Module {
 
 		data = new float[MAX_DATA];
 		onReset();
-		lightDivider.setDivision(512);
 	}
 
 	~SipoModule() {
 		delete[] data;
+	}
+
+	void onSampleRateChange(const SampleRateChangeEvent& e) override {
+		lightDivider.setDivision(e.sampleRate / 100.f);
 	}
 
 	void onReset() override {

@@ -69,8 +69,11 @@ struct CVMapModule : CVMapModuleBase<MAX_CHANNELS> {
 			mapParam[i].setLimits(0.f, 1.f, std::numeric_limits<float>::infinity());
 		}
 		processDivider.setDivision(32);
-		lightDivider.setDivision(1024);
 		onReset();
+	}
+
+	void onSampleRateChange(const SampleRateChangeEvent& e) override {
+		lightDivider.setDivision(e.sampleRate / 100.f);
 	}
 
 	void onReset() override {

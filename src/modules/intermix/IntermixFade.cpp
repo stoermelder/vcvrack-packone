@@ -47,7 +47,10 @@ struct IntermixFadeModule : Module {
 		}
 		onReset();
 		sceneDivider.setDivision(64);
-		lightDivider.setDivision(512);
+	}
+
+	void onSampleRateChange(const SampleRateChangeEvent& e) override {
+		lightDivider.setDivision(e.sampleRate / 100.f);
 	}
 
 	void onReset() override {

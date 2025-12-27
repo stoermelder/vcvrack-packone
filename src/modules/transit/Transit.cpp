@@ -162,7 +162,6 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 		Module::configOutput(OUTPUT, "Envelope/trigger");
 
 		handleDivider.setDivision(4096);
-		lightDivider.setDivision(512);
 		buttonDivider.setDivision(128);
 		reset(true);
 	}
@@ -173,6 +172,10 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 			APP->engine->removeParamHandle(sourceHandle);
 			delete sourceHandle;
 		}
+	}
+
+	void onSampleRateChange(const Module::SampleRateChangeEvent& e) override {
+		lightDivider.setDivision(e.sampleRate / 100.f);
 	}
 
 	void onExpanderChange(const Module::ExpanderChangeEvent& e) override {

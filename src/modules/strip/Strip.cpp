@@ -82,9 +82,11 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 		configInput(RAND_INPUT, "Strip randomization trigger");
 		configSwitch(RAND_PARAM, 0.f, 1.f, 0.f, "Randomize strip");
 		configSwitch(EXCLUDE_PARAM, 0.f, 1.f, 0.f, "Parameter randomization include/exclude");
-
-		lightDivider.setDivision(1024);
 		onReset();
+	}
+
+	void onSampleRateChange(const SampleRateChangeEvent& e) override {
+		lightDivider.setDivision(e.sampleRate / 100.f);
 	}
 
 	void onReset() override {

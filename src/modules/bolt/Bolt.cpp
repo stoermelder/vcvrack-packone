@@ -69,8 +69,11 @@ struct BoltModule : Module {
 		configOutput(OUTPUT, "Logic");
 
 		configSwitch(OP_PARAM, 0.0f, 1.0f, 0.0f, "Next operator");
-		lightDivider.setDivision(1024);
 		onReset();
+	}
+
+	void onSampleRateChange(const SampleRateChangeEvent& e) override {
+		lightDivider.setDivision(e.sampleRate / 100.f);
 	}
 
 	void onReset() override {
