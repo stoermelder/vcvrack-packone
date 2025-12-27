@@ -93,12 +93,12 @@ struct TransitExWidget : ThemedModuleWidget<TransitExModule<NUM_PRESETS>> {
 		BASE::addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
 		for (size_t i = 0; i < NUM_PRESETS; i++) {
-			float o = i * (288.7f / (NUM_PRESETS - 1));
-			TransitLedButton<NUM_PRESETS>* ledButton = createParamCentered<TransitLedButton<NUM_PRESETS>>(Vec(15.0f, 45.4f + o), module, MODULE::PARAM_PRESET + i);
+			float o = i * (259.0f / (NUM_PRESETS - 1));
+			TransitLedButton<NUM_PRESETS>* ledButton = createParamCentered<TransitLedButton<NUM_PRESETS>>(Vec(15.0f, 46.4f + o), module, MODULE::PARAM_PRESET + i);
 			ledButton->module = module;
 			ledButton->id = i;
 			BASE::addParam(ledButton);
-			BASE::addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(15.0f, 45.4f + o), module, MODULE::LIGHT_PRESET + i * 3));
+			BASE::addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(15.0f, 46.4f + o), module, MODULE::LIGHT_PRESET + i * 3));
 		}
 	}
 };

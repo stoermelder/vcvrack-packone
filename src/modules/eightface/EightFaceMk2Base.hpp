@@ -132,7 +132,7 @@ struct EightFaceMk2ParamQuantity : ParamQuantity {
 };
 
 template <int NUM_PRESETS>
-struct EightFaceMk2LedButton : LEDButton {
+struct EightFaceMk2LedButton : VCVButton {
 	EightFaceMk2Base<NUM_PRESETS>* module;
 	int id;
 	bool eventConsumed = true;

@@ -917,7 +917,7 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 			ledButton->module = module;
 			ledButton->id = i;
 			BASE::addParam(ledButton);
-			BASE::addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(22.5f, 140.6f + o), module, MODULE::LIGHT_PRESET + i * 3));
+			BASE::addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(22.5f, 140.6f + o), module, MODULE::LIGHT_PRESET + i * 3));
 		}
 
 		BASE::addParam(createParamCentered<CKSSThreeH>(Vec(22.5f, 336.2f), module, MODULE::PARAM_RW));

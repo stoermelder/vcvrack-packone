@@ -1127,17 +1127,17 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 		BASE::addParam(createParamCentered<StoermelderTrimpot>(Vec(21.7f, 255.8f), module, MODULE::PARAM_SHAPE));
 		BASE::addOutput(createOutputCentered<StoermelderPort>(Vec(21.7f, 300.3f), module, MODULE::OUTPUT));
 
-		BASE::addParam(createParamCentered<CKSSThreeH>(Vec(21.7f, 336.2f), module, MODULE::PARAM_CTRLMODE));
+		BASE::addParam(createParamCentered<CKSSThreeH>(Vec(37.5f, 336.2f), module, MODULE::PARAM_CTRLMODE));
 
-		BASE::addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(60.f, 355.7f), module, MODULE::LIGHT_LEARN));
+		BASE::addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(10.4f, 336.2f), module, MODULE::LIGHT_LEARN));
 
 		for (size_t i = 0; i < NUM_PRESETS; i++) {
-			float o = i * (288.7f / (NUM_PRESETS - 1));
-			TransitLedButton<NUM_PRESETS>* ledButton = createParamCentered<TransitLedButton<NUM_PRESETS>>(Vec(60.0f, 45.4f + o), module, MODULE::PARAM_PRESET + i);
+			float o = i * (259.0f / (NUM_PRESETS - 1));
+			TransitLedButton<NUM_PRESETS>* ledButton = createParamCentered<TransitLedButton<NUM_PRESETS>>(Vec(60.0f, 46.4f + o), module, MODULE::PARAM_PRESET + i);
 			ledButton->module = module;
 			ledButton->id = i;
 			BASE::addParam(ledButton);
-			BASE::addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(60.0f, 45.4f + o), module, MODULE::LIGHT_PRESET + i * 3));
+			BASE::addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(60.0f, 46.4f + o), module, MODULE::LIGHT_PRESET + i * 3));
 		}
 	}
 	

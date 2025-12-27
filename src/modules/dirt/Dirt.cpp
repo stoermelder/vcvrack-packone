@@ -25,6 +25,12 @@ struct DirtModule : Module {
 		NUM_OUTPUTS
 	};
 	enum LightIds {
+		LIGHT_NOISE,
+		LIGHT_CROSSTALK,
+		LIGHT_CRACKE,
+		LIGHT_PITCH,
+		LIGHT_CRUSH,
+		LIGHT_DROPOUT,
 		NUM_LIGHTS
 	};
 
@@ -37,6 +43,8 @@ struct DirtModule : Module {
 	CrushDefectProcessor crushDefect;
 	DropoutDefectProcessor dropoutDefect;
 	PitchDefectProcessor pitchDefect;
+
+	ClockDividerEx lightDivider;
 
 	DirtModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
@@ -59,9 +67,19 @@ struct DirtModule : Module {
 		crushDefect.setRateChange(e.sampleRate);
 		dropoutDefect.setRateChange(e.sampleRate);
 		pitchDefect.setRateChange(e.sampleRate);
+		lightDivider.setDivision(e.sampleRate / 100.f);
 	}
 
 	void process(const ProcessArgs& args) override {
+		if (lightDivider.process()) {
+			lights[LIGHT_NOISE].setBrightness(params[PARAM_NOISE].getValue() > 0.f);
+			lights[LIGHT_CROSSTALK].setBrightness(params[PARAM_CROSSTALK].getValue() > 0.f);
+			lights[LIGHT_CRACKE].setBrightness(params[PARAM_CRACKE].getValue() > 0.f);
+			lights[LIGHT_PITCH].setBrightness(params[PARAM_PITCH].getValue() > 0.f);
+			lights[LIGHT_CRUSH].setBrightness(params[PARAM_CRUSH].getValue() > 0.f);
+			lights[LIGHT_DROPOUT].setBrightness(params[PARAM_DROPOUT].getValue() > 0.f);
+		}
+
 		int channels = inputs[INPUT].getChannels();
 		if (!inputs[INPUT].isConnected()) return;
 
@@ -153,13 +171,13 @@ struct DirtWidget : ThemedModuleWidget<DirtModule> {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addParam(createParamCentered<CKSS>(Vec(22.5f, 64.2f), module, DirtModule::PARAM_NOISE));
-		addParam(createParamCentered<CKSS>(Vec(22.5f, 102.6f), module, DirtModule::PARAM_CROSSTALK));
-		addParam(createParamCentered<CKSS>(Vec(22.5f, 141.0f), module, DirtModule::PARAM_CRACKE));
-		addParam(createParamCentered<CKSS>(Vec(22.5f, 179.5f), module, DirtModule::PARAM_PITCH));
-		addParam(createParamCentered<CKSS>(Vec(22.5f, 217.9f), module, DirtModule::PARAM_CRUSH));
-		addParam(createParamCentered<CKSS>(Vec(22.5f, 256.3f), module, DirtModule::PARAM_DROPOUT));
-
+		addParam(createLightParamCentered<VCVLightLatch<MediumSimpleLight<WhiteLight>>>(Vec(22.5f, 61.0f), module, DirtModule::PARAM_NOISE, DirtModule::LIGHT_NOISE));
+		addParam(createLightParamCentered<VCVLightLatch<MediumSimpleLight<WhiteLight>>>(Vec(22.5f, 98.0f), module, DirtModule::PARAM_CROSSTALK, DirtModule::LIGHT_CROSSTALK));
+		addParam(createLightParamCentered<VCVLightLatch<MediumSimpleLight<WhiteLight>>>(Vec(22.5f, 134.1f), module, DirtModule::PARAM_CRACKE, DirtModule::LIGHT_CRACKE));
+		addParam(createLightParamCentered<VCVLightLatch<MediumSimpleLight<WhiteLight>>>(Vec(22.5f, 170.6f), module, DirtModule::PARAM_PITCH, DirtModule::LIGHT_PITCH));
+		addParam(createLightParamCentered<VCVLightLatch<MediumSimpleLight<WhiteLight>>>(Vec(22.5f, 207.2f), module, DirtModule::PARAM_CRUSH, DirtModule::LIGHT_CRUSH));
+		addParam(createLightParamCentered<VCVLightLatch<MediumSimpleLight<WhiteLight>>>(Vec(22.5f, 243.7f), module, DirtModule::PARAM_DROPOUT, DirtModule::LIGHT_DROPOUT));
+		
 		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 291.1f), module, DirtModule::INPUT));
 		addOutput(createOutputCentered<StoermelderPort>(Vec(22.5f, 327.5f), module, DirtModule::OUTPUT));
 	}
