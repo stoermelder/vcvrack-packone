@@ -267,11 +267,13 @@ struct MidiMonModule : Module, MidiProcessorHandler {
 
 
 struct MidiMonWidget : ThemedModuleWidget<MidiMonModule> {
+	MidiMonModule* module;
 	LogDisplay* logDisplay;
 	std::list<std::tuple<LOG_FORMAT, float, std::string>> buffer;
 	
 	MidiMonWidget(MidiMonModule* module)
 		: ThemedModuleWidget<MidiMonModule>(module, "MidiMon") {
+		this->module = module;
 		setModule(module);
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
@@ -311,7 +313,6 @@ struct MidiMonWidget : ThemedModuleWidget<MidiMonModule> {
 	void step() override {
 		ThemedModuleWidget<MidiMonModule>::step();
 		if (!module) return;
-		MidiMonModule* module = reinterpret_cast<MidiMonModule*>(this->module);
 		while (!module->midiLogMessages.empty()) {
 			if (buffer.size() == BUFFERSIZE) buffer.pop_back();
 			std::tuple<LOG_FORMAT, float, std::string> s = module->midiLogMessages.shift();

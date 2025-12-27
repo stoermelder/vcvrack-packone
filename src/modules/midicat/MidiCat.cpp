@@ -568,7 +568,7 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 			for (int i = 0; i < 4; i++) {
 				if (!exp) break;	
 				if (exp->model == modelMidiCatMem && !expMemFound) {
-					expMem = reinterpret_cast<MidiCatMemBase*>(exp);
+					expMem = dynamic_cast<MidiCatMemBase*>(exp);
 					expMemFound = true;
 					exp = exp->rightExpander.module;
 					continue;
@@ -586,7 +586,7 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 					continue;
 				}
 				if (exp->model == modelMidiCatFine && !expFineFound) {
-					expFine = reinterpret_cast<MidiCatFineBase*>(exp);
+					expFine = dynamic_cast<MidiCatFineBase*>(exp);
 					expFineFound = true;
 					exp = exp->rightExpander.module;
 					continue;
@@ -1935,9 +1935,9 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 				Menu* menu = new Menu;
 				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Direct", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::DIRECT));
 				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Pickup (snap)", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::PICKUP1));
-				reinterpret_cast<MenuItem*>(menu->children.back())->disabled = module->midiParam[id].clockMode != MidiCatParam::CLOCKMODE::OFF;
+				dynamic_cast<MenuItem*>(menu->children.back())->disabled = module->midiParam[id].clockMode != MidiCatParam::CLOCKMODE::OFF;
 				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Pickup (jump)", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::PICKUP2));
-				reinterpret_cast<MenuItem*>(menu->children.back())->disabled = module->midiParam[id].clockMode != MidiCatParam::CLOCKMODE::OFF;
+				dynamic_cast<MenuItem*>(menu->children.back())->disabled = module->midiParam[id].clockMode != MidiCatParam::CLOCKMODE::OFF;
 				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Toggle", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::TOGGLE));
 				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Toggle + Value", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::TOGGLE_VALUE));
 				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Snapped", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::SNAPPED));
@@ -1983,9 +1983,9 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 			Menu* createChildMenu() override {
 				Menu* menu = new Menu;
 				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Momentary", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::MOMENTARY));
-				reinterpret_cast<MenuItem*>(menu->children.back())->disabled = module->midiParam[id].clockMode != MidiCatParam::CLOCKMODE::OFF;
+				dynamic_cast<MenuItem*>(menu->children.back())->disabled = module->midiParam[id].clockMode != MidiCatParam::CLOCKMODE::OFF;
 				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Momentary + Velocity", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::MOMENTARY_VEL));
-				reinterpret_cast<MenuItem*>(menu->children.back())->disabled = module->midiParam[id].clockMode != MidiCatParam::CLOCKMODE::OFF;
+				dynamic_cast<MenuItem*>(menu->children.back())->disabled = module->midiParam[id].clockMode != MidiCatParam::CLOCKMODE::OFF;
 				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Toggle", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::TOGGLE));
 				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Toggle + Velocity", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::TOGGLE_VEL));
 				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Snapped", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::SNAPPED));

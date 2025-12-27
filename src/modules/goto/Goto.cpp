@@ -66,10 +66,10 @@ struct GotoModule : Module {
 
 
 	struct GotoSwitchQuantity : SwitchQuantity {
+		GotoModule<SLOTS>* module;
 		int jumpPoint;
 
 		std::string getString() override {
-			GotoModule<SLOTS>* module = reinterpret_cast<GotoModule<SLOTS>*>(this->module);
 			if (module->jumpPoints[jumpPoint].moduleIds.size() > 0) {
 				return string::f("Jump point %i (SHIFT+%i): %i module(s)", jumpPoint + 1, (jumpPoint + 1) % 10, module->jumpPoints[jumpPoint].moduleIds.size());
 			}
@@ -87,6 +87,7 @@ struct GotoModule : Module {
 		inputInfos[INPUT_TRIG]->description = "Operating mode is set on the context menu.";
 		for (int i = 0; i < SLOTS; i++) {
 			auto pq = configSwitch<GotoSwitchQuantity>(PARAM_SLOT + i, 0.f, 1.f, 0.f);
+			pq->module = this;
 			pq->description = "Short-press to jump\nLong-press to learn/clear";
 			pq->jumpPoint = i;
 		}

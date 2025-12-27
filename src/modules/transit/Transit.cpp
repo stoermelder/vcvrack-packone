@@ -145,6 +145,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 		Module::configSwitch(PARAM_CTRLMODE, 0.f, 2.f, 0.f, "Operating mode", {"Read", "Auto", "Write"});
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			TransitParamQuantity<NUM_PRESETS>* pq = Module::configParam<TransitParamQuantity<NUM_PRESETS>>(PARAM_PRESET + i, 0, 1, 0);
+			pq->module = this;
 			pq->id = i;
 			BASE::presetButton[i].param = &Module::params[PARAM_PRESET + i];
 
@@ -280,7 +281,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 				if (!exp) break;
 				if (exp->model != modelTransitEx) break;
 				m = exp;
-				t = reinterpret_cast<TransitBase<NUM_PRESETS>*>(exp);
+				t = dynamic_cast<TransitBase<NUM_PRESETS>*>(exp);
 				if (t->ctrlUniqueId != BASE::ctrlUniqueId) expanderCleanUp(t);
 				t->panelTheme = BASE::panelTheme;
 				t->ctrlModuleId = Module::id;

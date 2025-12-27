@@ -29,10 +29,10 @@ struct AffixModule : Module {
 	};
 
 	struct AffixParamQuantity : ParamQuantity {
+		AffixModule<CHANNELS>* module;
 		float v = std::numeric_limits<float>::max();
 
 		float getValue() override {
-			AffixModule<CHANNELS>* module = reinterpret_cast<AffixModule<CHANNELS>*>(this->module);
 			switch (module->paramMode) {
 				default:
 					return ParamQuantity::getValue();
@@ -45,7 +45,6 @@ struct AffixModule : Module {
 		}
 
 		void setValue(float value) override {
-			AffixModule<CHANNELS>* module = reinterpret_cast<AffixModule<CHANNELS>*>(this->module);
 			switch (module->paramMode) {
 				default:
 				case PARAM_MODE::VOLTAGE: {
@@ -68,7 +67,6 @@ struct AffixModule : Module {
 		}
 
 		std::string getDisplayValueString() override {
-			AffixModule<CHANNELS>* module = reinterpret_cast<AffixModule<CHANNELS>*>(this->module);
 			switch (module->paramMode) {
 				default:
 				case PARAM_MODE::VOLTAGE: {
@@ -90,7 +88,6 @@ struct AffixModule : Module {
 
 #ifndef METAMODULE
 		void setDisplayValueString(std::string s) override {
-			AffixModule<CHANNELS>* module = reinterpret_cast<AffixModule<CHANNELS>*>(this->module);
 			switch (module->paramMode) {
 				default:
 				case PARAM_MODE::VOLTAGE: {
@@ -119,7 +116,6 @@ struct AffixModule : Module {
 #endif
 
 		std::string getString() override {
-			AffixModule<CHANNELS>* module = reinterpret_cast<AffixModule<CHANNELS>*>(this->module);
 			switch (module->paramMode) {
 				default:
 				case PARAM_MODE::VOLTAGE: {
@@ -160,7 +156,8 @@ struct AffixModule : Module {
 		inputInfos[INPUT_POLY]->description = "(optional)";
 		configOutput(OUTPUT_POLY, "Polyphonic");
 		for (int i = 0; i < CHANNELS; i++) {
-			configParam<AffixParamQuantity>(PARAM_MONO + i, -5.f, 5.f, 0.f, string::f("Channel %i", i + 1));
+			auto pq = configParam<AffixParamQuantity>(PARAM_MONO + i, -5.f, 5.f, 0.f, string::f("Channel %i", i + 1));
+			pq->module = this;
 		}
 		onReset();
 	}
