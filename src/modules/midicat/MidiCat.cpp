@@ -1462,6 +1462,23 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 			ccFineMode = false;
 		}
 	}
+
+	MidiCatParam::CLOCKMODE getClockMode(int id) {
+		return midiParam[id].clockMode;
+	}
+
+	void setClockMode(int id, MidiCatParam::CLOCKMODE mode) {
+		if (mode != MidiCatParam::CLOCKMODE::OFF) {
+			if (ccs[id].getCc() >= 0 && (ccs[id].ccMode == CCMODE::PICKUP1 || ccs[id].ccMode == CCMODE::PICKUP2)) {
+				ccs[id].ccMode = CCMODE::DIRECT;
+			}
+			if (notes[id].getNote() >= 0 && (notes[id].noteMode == NOTEMODE::MOMENTARY || notes[id].noteMode == NOTEMODE::MOMENTARY_VEL)) {
+				notes[id].noteMode = NOTEMODE::TOGGLE;
+			}
+			midiParam[id].setSlew(0.f);
+		}
+		midiParam[id].clockMode = mode;
+	}
 };
 
 
@@ -2124,22 +2141,24 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 			menu->addChild(new MenuSeparator());
 			menu->addChild(createMenuLabel("CLK-expander"));
 			if (!module->getMap(id).hasLight()) {
-				menu->addChild(StoermelderPackOne::Rack::createMapPtrSubmenuItem("Quantization",
+				menu->addChild(StoermelderPackOne::Rack::createMapSubmenuItem<MidiCatParam::CLOCKMODE>("Quantization",
 					{
 						{ MidiCatParam::CLOCKMODE::OFF, "Off" },
 						{ MidiCatParam::CLOCKMODE::ARM, "On (instant feedback)" },
 						{ MidiCatParam::CLOCKMODE::ARM_DEFERRED_FEEDBACK, "On (deferred feedback)" }
 					},
-					&module->midiParam[id].clockMode
+					[=]() { return module->getClockMode(id); },
+					[=](MidiCatParam::CLOCKMODE v) { module->setClockMode(id, v); }
 				));
 			}
 			else {
-				menu->addChild(StoermelderPackOne::Rack::createMapPtrSubmenuItem("Quantization",
+				menu->addChild(StoermelderPackOne::Rack::createMapSubmenuItem<MidiCatParam::CLOCKMODE>("Quantization",
 					{
 						{ MidiCatParam::CLOCKMODE::OFF, "Off" },
 						{ MidiCatParam::CLOCKMODE::ARM, "On" },
 					},
-					&module->midiParam[id].clockMode
+					[=]() { return module->getClockMode(id); },
+					[=](MidiCatParam::CLOCKMODE v) { module->setClockMode(id, v); }
 				));
 			}
 			menu->addChild(StoermelderPackOne::Rack::createMapPtrSubmenuItem("Source",
