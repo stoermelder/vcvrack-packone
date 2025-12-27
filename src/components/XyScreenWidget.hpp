@@ -206,7 +206,13 @@ struct XyScreenModule {
 		selectedId = -1;
 	}
 
-	virtual inline float scGetDistance(uint8_t typeSource, uint8_t idSoruce, uint8_t typeDest, uint8_t idDest) { return 0.f; }
+	virtual inline float scGetDistance(uint8_t typeSource, uint8_t idSoruce, uint8_t typeDest, uint8_t idDest) { 
+		return 0.f; 
+	}
+
+	virtual inline NVGcolor scGetColor(uint8_t type, uint8_t id) {
+		return type == 0 ? color::WHITE : color::YELLOW;
+	}
 
 	void dataToJson(json_t* dataJ, size_t type, size_t id) {
 		if (type == 0) {
@@ -510,7 +516,6 @@ struct XyScreenDragWidget : OpaqueWidget {
 	const float fontsize = 13.0f;
 
 	MODULE* module;
-	NVGcolor color = nvgRGB(0x66, 0x66, 0x0);
 	NVGcolor textColor = nvgRGB(0x66, 0x66, 0x0);
 	uint8_t id;
 	uint8_t type;
@@ -542,6 +547,8 @@ struct XyScreenDragWidget : OpaqueWidget {
 			if (!module->scIsActive(type, id))
 				return;
 
+			NVGcolor cc = module->scGetColor(type, id);
+
 			if (type == 0) {
 				// Radius is only used for default type
 				if (module->scIsSelected(type, id)) {
@@ -555,10 +562,10 @@ struct XyScreenDragWidget : OpaqueWidget {
 					nvgBeginPath(args.vg);
 					nvgEllipse(args.vg, c.x, c.y, sizeX, sizeY);
 					nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
-					nvgStrokeColor(args.vg, color::mult(color, 0.7f));
+					nvgStrokeColor(args.vg, color::mult(cc, 0.7f));
 					nvgStrokeWidth(args.vg, 0.6f);
 					nvgStroke(args.vg);
-					nvgFillColor(args.vg, color::mult(color, 0.1f));
+					nvgFillColor(args.vg, color::mult(cc, 0.1f));
 					nvgFill(args.vg);
 					nvgResetScissor(args.vg);
 					nvgRestore(args.vg);
@@ -566,7 +573,7 @@ struct XyScreenDragWidget : OpaqueWidget {
 					textColor = nvgRGBA(0, 16, 90, 200);
 				}
 				else {
-					textColor = color;
+					textColor = cc;
 				}
 			}
 
@@ -601,7 +608,7 @@ struct XyScreenDragWidget : OpaqueWidget {
 				// Draw selection halo
 				float oradius = 1.8f * radius;
 				NVGpaint paint;
-				NVGcolor icol = color::mult(color, 0.25f);
+				NVGcolor icol = color::mult(cc, 0.25f);
 				NVGcolor ocol = nvgRGB(0, 0, 0);
 
 				Rect b = Rect(box.pos.mult(-1), parent->box.size);
@@ -618,22 +625,22 @@ struct XyScreenDragWidget : OpaqueWidget {
 				textColor = nvgRGBA(0, 16, 90, 200);
 			}
 			else {
-				textColor = color;
+				textColor = cc;
 			}
 
 			// Draw inner circle
 			nvgBeginPath(args.vg);
 			nvgCircle(args.vg, c.x, c.y, radius - 2.f);
-			nvgStrokeColor(args.vg, color);
+			nvgStrokeColor(args.vg, cc);
 			nvgStrokeWidth(args.vg, 1.0f);
 			nvgStroke(args.vg);
-			nvgFillColor(args.vg, color::mult(color, 0.5f));
+			nvgFillColor(args.vg, color::mult(cc, 0.5f));
 			nvgFill(args.vg);
 
 			// Draw amount circle
 			nvgBeginPath(args.vg);
 			nvgCircle(args.vg, c.x, c.y, radius);
-			nvgStrokeColor(args.vg, color::mult(color, circleA));
+			nvgStrokeColor(args.vg, color::mult(cc, circleA));
 			nvgStrokeWidth(args.vg, 0.8f);
 			nvgStroke(args.vg);
 
@@ -754,7 +761,7 @@ struct XyScreenWidget : OpaqueWidget {
 	}
 
 	template <typename WIDGET>
-	void createDragWidgets(MODULE* module, uint8_t type, uint8_t count, NVGcolor color) {
+	void createDragWidgets(MODULE* module, uint8_t type, uint8_t count) {
 		// This is some over-complicated code for drawing something on the display in the module browser.
 		// We "inject" some nodes using a dummy module, satisfying the nodes methods for the display.
 		if (!module && !dummyModule) {
@@ -770,7 +777,6 @@ struct XyScreenWidget : OpaqueWidget {
 				w->module = module;
 				w->id = i;
 				w->type = type;
-				w->color = color;
 				addChild(w);
 			}
 			else {
@@ -778,7 +784,6 @@ struct XyScreenWidget : OpaqueWidget {
 				w->module = dummyModule;
 				w->id = i;
 				w->type = type;
-				w->color = color;
 				addChild(w);
 			}
 		}

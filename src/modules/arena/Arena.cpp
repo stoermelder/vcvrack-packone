@@ -626,9 +626,9 @@ template <typename MODULE>
 struct ArenaXyScreenWidget : XyScreenWidget<MODULE> {
 	ArenaXyScreenWidget(MODULE* module, int inParamIdX, int inParamIdY, int mixParamIdX, int mixParamIdY) : XyScreenWidget<MODULE>(module) {
 		uint8_t t0 = module ? module->scGetItemCount(0) : 8;
-		this->template createDragWidgets<ArenaInportDragWidget<MODULE>>(module, 0, t0, color::WHITE);
+		this->template createDragWidgets<ArenaInportDragWidget<MODULE>>(module, 0, t0);
 		uint8_t t1 = module ? module->scGetItemCount(1) : 4;
-		this->template createDragWidgets<ArenaMixportDragWidget<MODULE>>(module, 1, t1, color::YELLOW);
+		this->template createDragWidgets<ArenaMixportDragWidget<MODULE>>(module, 1, t1);
 	}
 
 	void step() override {

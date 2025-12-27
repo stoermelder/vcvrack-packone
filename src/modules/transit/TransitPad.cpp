@@ -91,10 +91,6 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 	void onReset() override {
 		Sc::scResetSelection();
 		init();
-		for (size_t i = 0; i < SNAPSHOTS; i++) {
-			snapshots[i].id = i < 4 ? i : -1;
-			snapshots[i].weight = 0.f;
-		}
 		snapshotsUsed = 4;
 
 		Sc::scReset();
@@ -210,6 +206,11 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		scSetItemImmediate(1, 0, paramQuantities[OUT_X_POS]->getDefaultValue(), paramQuantities[OUT_Y_POS]->getDefaultValue());
 		outXfilter.setTau(0.05f);
 		outYfilter.setTau(0.05f);
+		for (uint8_t i = 0; i < SNAPSHOTS; i++) {
+			snapshots[i].id = i < 4 ? i : -1;
+			snapshots[i].color = TransitPadSource::getDefaultColor();
+			snapshots[i].weight = 0.f;
+		}
 	}
 
 	inline uint8_t scGetItemCount(uint8_t type) override {
@@ -258,6 +259,10 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		return 1.f;
 	}
 
+	virtual inline NVGcolor scGetColor(uint8_t type, uint8_t id) override {
+		return type == 0 ? snapshots[id].color : color::WHITE;
+	}
+
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
@@ -267,6 +272,7 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		for (uint8_t i = 0; i < SNAPSHOTS; i++) {
 			json_t* snapshotJ = json_object();
 			json_object_set_new(snapshotJ, "id", json_integer(snapshots[i].id));
+        	json_object_set_new(snapshotJ, "color", json_string(color::toHexString(snapshots[i].color).c_str()));
 			Sc::dataToJson(snapshotJ, 0, i);
 			json_array_append_new(snapshotsJ, snapshotJ);
 		}
@@ -289,6 +295,7 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		uint8_t inputIndex;
 		json_array_foreach(snapshotsJ, inputIndex, snapshotJ) {
 			snapshots[inputIndex].id = json_integer_value(json_object_get(snapshotJ, "id"));
+			snapshots[inputIndex].color = color::fromHexString(json_string_value(json_object_get(snapshotJ, "color")));
 			Sc::dataFromJson(snapshotJ, 0, inputIndex);
 		}
 
@@ -303,6 +310,10 @@ template <typename MODULE>
 struct TransitPadSnapshotDragWidget : XyScreenDragWidget<MODULE> {
 	typedef XyScreenDragWidget<MODULE> AW;
 
+	char getItemChar() override {
+		return 'A' + AW::id;
+	}
+
  	std::string getItemName() override {
 		if (AW::module->snapshots[AW::id].id >= 0) {
 			std::string custom = *AW::module->masterModule->expSlotLabel(AW::module->snapshots[AW::id].id);
@@ -315,14 +326,23 @@ struct TransitPadSnapshotDragWidget : XyScreenDragWidget<MODULE> {
 			return "No snapshot";
 	}
 
-	char getItemChar() override {
-		return 'A' + AW::id;
-	}
-
 	void appendContextMenu(Menu* menu) override {
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuItem("Bind snapshot", "", [=]() {
 			AW::module->snapshots[AW::id].id = AW::module->masterModule->transitSlotSelected();
+		}));
+		menu->addChild(createMenuItem("Unbind snapshot", "", [=]() {
+			AW::module->snapshots[AW::id].id = -1;
+		}));
+		menu->addChild(new MenuSeparator());
+		menu->addChild(Rack::createColorSubmenuItem("Color", &AW::module->snapshots[AW::id].color, {
+			{ color::GREEN, "Green" },
+			{ color::YELLOW, "Yellow" },
+			{ color::RED, "Red" },
+			{ color::CYAN, "Cyan" },
+			{ color::MAGENTA, "Magenta" },
+			{ color::BLUE, "Blue" },
+			{ color::WHITE, "White" },
 		}));
 	}
 };
@@ -353,9 +373,9 @@ template <typename MODULE>
 struct TransitPadXyScreenWidget : XyScreenWidget<MODULE> {
 	TransitPadXyScreenWidget(MODULE* module, int inParamIdX, int inParamIdY, int mixParamIdX, int mixParamIdY) : XyScreenWidget<MODULE>(module) {
 		uint8_t t0 = module ? module->scGetItemCount(0) : 4;
-		this->template createDragWidgets<TransitPadSnapshotDragWidget<MODULE>>(module, 0, t0, color::WHITE);
+		this->template createDragWidgets<TransitPadSnapshotDragWidget<MODULE>>(module, 0, t0);
 		uint8_t t1 = module ? module->scGetItemCount(1) : 1;
-		this->template createDragWidgets<TransitPadOutDragWidget<MODULE>>(module, 1, t1, color::GREEN);
+		this->template createDragWidgets<TransitPadOutDragWidget<MODULE>>(module, 1, t1);
 	}
 
 	void step() override {
