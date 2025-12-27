@@ -37,7 +37,7 @@ Many modules have internal states that are not reflected in their panel paramete
 
 ### Additional Features
 
-- **CPU Optimization** - Mapping many parameters can increase CPU usage. If audio-rate automation is required, enable _Audio rate processing_ in the context menu. By default, parameters are updated only every **32nd audio sample**, reducing CPU usage to roughly **1/32th** of the original load.
+- **CPU Optimization** - Mapping many parameters can increase CPU usage. If audio-rate automation is required, enable _Audio rate processing_ in the context menu. By default, parameters are updated only every **32nd audio sample**, reducing CPU usage to roughly **1/32** of the original load.
 
 - **Disable mapping indicators** - If the mapping indicators are distracting, you can disable them via the context menu.
 
@@ -47,4 +47,13 @@ Many modules have internal states that are not reflected in their panel paramete
 
 ## Changelog
 
-MIRROR was introduced in v1.6 of PackOne.
+- v1.6.0
+    - Initial release
+- v1.7.0
+    - Added syncing of module presets even if bound module has no parameters
+    - Added hotkey for syncing module presets
+    - Implemented support for parameter-mappings within STRIP
+- v1.8.0
+    - Added _Sync module presets_ option to work even if the mirrored module lacks parameters
+- v2.2.0
+    - Added option to report parameter changes back to plugin-host (plugin-version option)

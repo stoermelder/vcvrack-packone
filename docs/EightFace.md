@@ -22,7 +22,7 @@
 
 ### Usage
 
-Place 8FACE on the right side next to the module you like to manage. The triangle-shaped LED begins to flash if a connection is established successfully. You can detach 8FACE and re-attach to another instance of the same module. When you place 8FACE next to a module and the LED turns red it means it had been configured for another model. In this case you can either check the model on the context menu or initialize 8FACE to its initial state. Since v1.2.0 you can place 8FACE on the left side of a module after changing the appropriate setting on the context menu.
+Place 8FACE on the right side next to the module that you would like to manage. The triangle-shaped LED begins to flash if a connection is established successfully. You can detach 8FACE and re-attach it to another instance of the same module. When you place 8FACE next to a module and the LED turns red, it means it has been configured for another model. In this case you can either check the model in the context menu or initialize 8FACE to its initial state. Since v1.2.0, you can place 8FACE on the left side of a module after changing the appropriate setting in the context menu.
 
 ### Write-mode
 

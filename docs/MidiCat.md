@@ -20,7 +20,7 @@ MIDI-CAT is a module for MIDI-mapping and an evolution of [VCV's MIDI-MAP](https
 
 - It has two different **pickup-modes** for controllers without input or automatic adjustment, so your parameters won't change until your controls reach their current positions.
 - It allows mapping of **MIDI note messages**, providing momentary-mode, momentary-mode with velocity and toggle-mode.
-- It can be configured for a MIDI output-port to send **controller feedback**, all your controls get initialized on patch-loading if your controller supports it!
+- It can be configured for a MIDI output port to send **controller feedback**. If your controller supports it, all your controls are initialized when a patch is loaded.
 - You can switch the module to "Locate and indicate" mode, which will help you to retrace your MIDI controls to the mapped module and parameter.
 - CPU usage has been optimized.
 - And much much more...
@@ -168,7 +168,7 @@ For some MIDI controllers which don't support different simultaneous "layers" bu
 
 ### LED-binding for MIDI-feedback
 
-This is an experimental feature which was introduced in v2.0.0: It adds the ability to send MIDI-feedback according to the state of an LED on a module instead of the parameter's actual value. This is useful for buttons, which behave in a momentary way and do not represent the state of the parameter. Please note: The LED must be on the same module as the mapped parameter, it cannot be on any other module.  
+This is an experimental feature which was introduced in v2.0.0: It adds the ability to send MIDI-feedback according to the state of an LED on a module instead of the parameter's actual value. This is useful for buttons, which behave in a momentary way and do not represent the state of the parameter. Please note: the LED must be on the same module as the mapped parameter and cannot be on any other module.
 Here is a unpolished introduction video to demonstrate the configuration steps and how this feature works:
 
 [![LED-binding](https://img.youtube.com/vi/w6AYmfzIuZ4/hqdefault.jpg )](https://www.youtube.com/watch?v=w6AYmfzIuZ4)
@@ -234,7 +234,7 @@ Added in v1.8.0: MEM has two buttons labeled _Prev_ and _Next_ which scan your p
 
 ![MEM workflow](./MidiCat-Mem-scan.gif)
 
-Added in v2.2.0: MEM has a restriction list to restrict the modules considered by the buttons _Prev_ and _Next_. By default, all modules in the current rack are considered if the restriction list is empty. The restriction list is managed by a selection of modules and pushing "Save". 
+Added in v2.2.0: MEM has a restriction list to restrict the modules considered by the buttons _Prev_ and _Next_. By default, all modules in the current patch are considered if the restriction list is empty. The restriction list is managed by selecting a group of modules and pushing "Save". 
 
 ### Tips for MEM
 

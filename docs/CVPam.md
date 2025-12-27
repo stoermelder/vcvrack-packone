@@ -4,7 +4,7 @@ CV‑PAM is the counterpart of [CV‑MAP](./CVMap.md). While CV‑MAP takes CV i
 
 ![CV-PAM intro](./CVPam-intro.png)
 
-Using CV‑PAM in combination with CP‑MAP lets you synchronize parameter changes across multiple instances of the same module (or different modules). For an all‑in‑one solution you can also use [MIRROR](./Mirror.md) (since v1.6.0).
+Using CV‑PAM in combination with CV‑MAP lets you synchronize parameter changes across multiple instances of the same module (or different modules). For an all‑in‑one solution you can also use [MIRROR](./Mirror.md) (since v1.6.0).
 
 ![CV-PAM sync](./CVPam-sync.gif)
 
@@ -24,4 +24,15 @@ Using CV‑PAM in combination with CP‑MAP lets you synchronize parameter chang
 
 ## Changelog
 
-CV‑PAM was introduced in v1.0 of PackOne.
+- v1.0.0
+    - Added text scrolling for longer module and parameter names
+- v1.0.2
+    - Added context menu options (locate & blink indicator on LED display, disable text scrolling, link online manual)
+- v1.4.0
+    - Added option to disable audio rate processing for lower CPU usage
+    - Added option for hiding parameter indicator squares
+- v1.7.0
+    - Don't capture mouse scrolling if mapping slots are locked
+    - Blink mapping indicator of currently selected mapping slot
+- v1.8.0
+    - Fixed wrong channel count of the polyphonic output ports

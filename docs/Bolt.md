@@ -41,3 +41,8 @@ The module offers three output modes:
 - **Trigger on high** – The module outputs a trigger whenever the boolean function changes from false to true.
 
 - **Trigger on change** – The module outputs a trigger whenever the boolean function changes.
+
+## Changelog
+
+- v1.0.2
+    - Initial release

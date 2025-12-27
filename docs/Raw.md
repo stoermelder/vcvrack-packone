@@ -13,4 +13,9 @@ Some contributions to the original implementation have been made by [Jatin Chowd
 
 ![RAW intro](./Raw-intro.png)
 
-RAW was introduced in v1.8.0 of PackOne.
+## Changelog
+
+- v1.8.0
+    - Initial release
+- v1.9.0
+    - Added basic limiting to prevent rare instabilities (#214)
