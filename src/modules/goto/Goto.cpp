@@ -360,7 +360,7 @@ struct GotoContainer : widget::Widget {
 
 
 template <typename CONTAINER>
-struct GotoButton : LEDButton {
+struct GotoButton : VCVButton {
 	CONTAINER* gotoContainer;
 	LongPressButton lpb;
 	int id;
@@ -427,7 +427,7 @@ struct GotoWidget : ThemedModuleWidget<GotoModule<10>> {
 			if (module) {
 				module->params[GotoModule<10>::PARAM_SLOT + i].setValue(0.f);
 			}
-			addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(22.5f, 76.4f + o), module, GotoModule<10>::LIGHT_SLOT + i * 3));
+			addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(22.5f, 76.4f + o), module, GotoModule<10>::LIGHT_SLOT + i * 3));
 		}
 		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 327.5f), module, GotoModule<10>::INPUT_TRIG));
 	}
