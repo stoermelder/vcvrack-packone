@@ -52,6 +52,7 @@ struct js {
 #define F_CALL 4U     // We're inside a function call
 #define F_BREAK 8U    // Exit the loop
 #define F_RETURN 16U  // Return has been executed
+#define F_NUMIDX 32U  // Next DOT prop came from numeric index (e.g. arr[0])
   jsoff_t clen;       // Code snippet length
   jsoff_t pos;        // Current parsing position
   jsoff_t toff;       // Offset of the last parsed token
@@ -86,9 +87,9 @@ struct js {
 // returns, js.size is restored back. So js.size is used as a stack pointer.
 
 // clang-format off
-enum { 
+enum {
   TOK_ERR, TOK_EOF, TOK_IDENTIFIER, TOK_NUMBER, TOK_STRING, TOK_SEMICOLON,
-  TOK_LPAREN, TOK_RPAREN, TOK_LBRACE, TOK_RBRACE,
+  TOK_LPAREN, TOK_RPAREN, TOK_LBRACE, TOK_RBRACE, TOK_LBRACKET, TOK_RBRACKET,
   // Keyword tokens
   TOK_BREAK = 50, TOK_CASE, TOK_CATCH, TOK_CLASS, TOK_CONST, TOK_CONTINUE,
   TOK_DEFAULT, TOK_DELETE, TOK_DO, TOK_ELSE, TOK_FINALLY, TOK_FOR, TOK_FUNC,
@@ -196,6 +197,15 @@ static size_t strobj(struct js *js, jsval_t obj, char *buf, size_t len) {
   while (next < js->brk && next != 0) {                    // Iterate over props
     jsoff_t koff = loadoff(js, next + (jsoff_t) sizeof(next));
     jsval_t val = loadval(js, next + (jsoff_t) (sizeof(next) + sizeof(koff)));
+    /* Skip printing the "length" property when it is numeric zero. This
+       makes empty arrays stringify as "{}" while still keeping the length
+       property available at runtime (e.g. after `let a = []`, `a.length` is 0). */
+    jsoff_t klen = offtolen(loadoff(js, koff));
+    const char *kptr = (const char *) &js->mem[koff + sizeof(koff)];
+    if (klen == 6 && memcmp(kptr, "length", 6) == 0 && vtype(val) == T_NUM && tod(val) == 0.0) {
+      next = loadoff(js, next) & ~3U;  // Load next prop offset
+      continue;
+    }
     // printf("PROP %u, koff %u\n", next & ~3, koff);
     n += cpy(buf + n, len - n, ",", n == 1 ? 0 : 1);
     n += tostr(js, mkval(T_STR, koff), buf + n, len - n);
@@ -277,7 +287,7 @@ const char *js_str(struct js *js, jsval_t value) {
   return buf;
 }
 
-static bool js_truthy(struct js *js, jsval_t v) {
+bool js_truthy(struct js *js, jsval_t v) {
   uint8_t t = vtype(v);
   return (t == T_BOOL && vdata(v) != 0) || (t == T_NUM && tod(v) != 0.0) ||
          (t == T_OBJ || t == T_FUNC) || (t == T_STR && vstrlen(js, v) > 0);
@@ -500,6 +510,8 @@ static uint8_t next(struct js *js) {
     case ')': TOK(TOK_RPAREN, 1);
     case '{': TOK(TOK_LBRACE, 1);
     case '}': TOK(TOK_RBRACE, 1);
+    case '[': TOK(TOK_LBRACKET, 1);
+    case ']': TOK(TOK_RBRACKET, 1);
     case ';': TOK(TOK_SEMICOLON, 1);
     case ',': TOK(TOK_COMMA, 1);
     case '!': if (LOOK(1, '=') && LOOK(2, '=')) TOK(TOK_NE, 3); TOK(TOK_NOT, 1);
@@ -656,15 +668,74 @@ static jsval_t do_string_op(struct js *js, uint8_t op, jsval_t l, jsval_t r) {
 }
 
 static jsval_t do_dot_op(struct js *js, jsval_t l, jsval_t r) {
-  const char *ptr = (char *) &js->code[coderefoff(r)];
   if (vtype(r) != T_CODEREF) return js_mkerr(js, "ident expected");
+  /* coderef offset may point into the current code buffer (for identifiers
+     parsed from source) or into JS memory (for keys created at runtime).
+     Choose the correct base accordingly. */
+  jsoff_t coff = coderefoff(r);
+  const char *ptr = NULL;
+  if (js->code != NULL && coff < (jsoff_t) js->clen) {
+    ptr = (const char *) &js->code[coff];
+  } else if (coff < js->brk) {
+    ptr = (const char *) &js->mem[coff];
+  } else {
+    /* Fallback to code buffer (keeps previous behavior for odd cases) */
+    ptr = (const char *) &js->code[coff];
+  }
   // Handle stringvalue.length
   if (vtype(l) == T_STR && streq(ptr, codereflen(r), "length", 6)) {
     return tov(offtolen(loadoff(js, (jsoff_t) vdata(l))));
   }
+  // Prevent setting length on arrays
+  if (streq(ptr, codereflen(r), "length", 6) && lkp(js, l, "length", 6) != 0) {
+    uint8_t prev_consumed = js->consumed;
+    uint8_t la = lookahead(js);
+    js->consumed = prev_consumed;
+    if (!(js->flags & F_NOEXEC) && (la == TOK_ASSIGN || la == TOK_PLUS_ASSIGN || la == TOK_MINUS_ASSIGN || la == TOK_MUL_ASSIGN || la == TOK_DIV_ASSIGN || la == TOK_REM_ASSIGN || la == TOK_SHL_ASSIGN || la == TOK_SHR_ASSIGN || la == TOK_ZSHR_ASSIGN || la == TOK_AND_ASSIGN || la == TOK_XOR_ASSIGN || la == TOK_OR_ASSIGN)) {
+      return js_mkerr(js, "cannot set array length");
+    }
+  }
   if (vtype(l) != T_OBJ) return js_mkerr(js, "lookup in non-obj");
   jsoff_t off = lkp(js, l, ptr, codereflen(r));
-  return off == 0 ? js_mkundef() : mkval(T_PROP, off);
+  if (off == 0) {
+    /* Property not found. If we're about to assign to it, create it so it
+       can be used as an lvalue; otherwise return undefined. */
+    uint8_t prev_consumed = js->consumed;
+    uint8_t la = lookahead(js);
+    js->consumed = prev_consumed; /* restore consumed state after lookahead */
+    if (!(js->flags & F_NOEXEC) && (la == TOK_ASSIGN || la == TOK_PLUS_ASSIGN || la == TOK_MINUS_ASSIGN || la == TOK_MUL_ASSIGN || la == TOK_DIV_ASSIGN || la == TOK_REM_ASSIGN || la == TOK_SHL_ASSIGN || la == TOK_SHR_ASSIGN || la == TOK_ZSHR_ASSIGN || la == TOK_AND_ASSIGN || la == TOK_XOR_ASSIGN || la == TOK_OR_ASSIGN)) {
+      jsval_t key = js_mkstr(js, ptr, codereflen(r));
+      if (is_err(key)) return key;
+      jsval_t p = setprop(js, l, key, js_mkundef());
+      if (is_err(p)) return p;
+      /* If key is numeric and object has a numeric 'length' property, update it */
+      jsoff_t koff = (jsoff_t) vdata(key);
+      jsoff_t klen = offtolen(loadoff(js, koff));
+      const char *kptr = (const char *) &js->mem[koff + sizeof(koff)];
+      bool is_num = true;
+      unsigned long idx = 0;
+      if (klen == 0) is_num = false;
+      for (jsoff_t i = 0; i < klen; i++) {
+        if (!is_digit(kptr[i])) { is_num = false; break; }
+        idx = idx * 10 + (unsigned long)(kptr[i] - '0');
+      }
+      if (is_num && (js->flags & F_NUMIDX)) {
+        jsoff_t lenprop = lkp(js, l, "length", 6);
+        if (lenprop != 0) {
+          jsval_t lenv = loadval(js, (jsoff_t) (lenprop + sizeof(lenprop) + sizeof(lenprop)));
+          if (vtype(lenv) == T_NUM) {
+            double newlen = (double) (idx + 1);
+            if (tod(lenv) < newlen) {
+              saveval(js, (jsoff_t) (lenprop + sizeof(lenprop) + sizeof(lenprop)), tov(newlen));
+            }
+          }
+        }
+      }
+      return p;
+    }
+    return js_mkundef();
+  }
+  return mkval(T_PROP, off);
 }
 
 static jsval_t js_call_params(struct js *js) {
@@ -789,8 +860,14 @@ static jsval_t do_op(struct js *js, uint8_t op, jsval_t lhs, jsval_t rhs) {
     case TOK_TYPEOF:  return js_mkstr(js, typestr(vtype(r)), strlen(typestr(vtype(r))));
     case TOK_CALL:    return do_call_op(js, l, r);
     case TOK_ASSIGN:  return assign(js, lhs, r);
-    case TOK_POSTINC: { do_assign_op(js, TOK_PLUS_ASSIGN, lhs, tov(1)); return l; }
-    case TOK_POSTDEC: { do_assign_op(js, TOK_MINUS_ASSIGN, lhs, tov(1)); return l; }
+    case TOK_POSTINC: {
+      if (vtype(lhs) != T_PROP) return js_mkerr(js, "bad lhs for ++");
+      do_assign_op(js, TOK_PLUS_ASSIGN, lhs, tov(1)); return l;
+    }
+    case TOK_POSTDEC: {
+      if (vtype(lhs) != T_PROP) return js_mkerr(js, "bad lhs for --");
+      do_assign_op(js, TOK_MINUS_ASSIGN, lhs, tov(1)); return l;
+    }
     case TOK_NOT:     if (vtype(r) == T_BOOL) return mkval(T_BOOL, !vdata(r)); break;
   }
   if (is_assign(op))    return do_assign_op(js, op, lhs, r);
@@ -889,6 +966,34 @@ static jsval_t js_obj_literal(struct js *js) {
   return obj;
 }
 
+static jsval_t js_array_literal(struct js *js) {
+  uint8_t exe = !(js->flags & F_NOEXEC);
+  jsval_t arr = exe ? mkobj(js, 0) : js_mkundef();
+  if (is_err(arr)) return arr;
+  js->consumed = 1;
+  jsoff_t index = 0;
+  while (next(js) != TOK_RBRACKET) {
+    jsval_t val = js_expr(js);
+    if (exe) {
+      if (is_err(val)) return val;
+      char key[20];
+      snprintf(key, sizeof(key), "%lu", (unsigned long) index);
+      jsval_t res = setprop(js, arr, js_mkstr(js, key, strlen(key)), resolveprop(js, val));
+      if (is_err(res)) return res;
+    }
+    index++;
+    if (next(js) == TOK_RBRACKET) break;
+    EXPECT(TOK_COMMA, );
+  }
+  EXPECT(TOK_RBRACKET, );
+  if (exe) {
+    // Set the length property
+    jsval_t res = setprop(js, arr, js_mkstr(js, "length", 6), tov((double)index));
+    if (is_err(res)) return res;
+  }
+  return arr;
+}
+
 static jsval_t js_func_literal(struct js *js) {
   uint8_t flags = js->flags;  // Save current flags
   js->consumed = 1;
@@ -949,6 +1054,7 @@ static jsval_t js_literal(struct js *js) {
     case TOK_NUMBER:      return js->tval;
     case TOK_STRING:      return js_str_literal(js);
     case TOK_LBRACE:      return js_obj_literal(js);
+    case TOK_LBRACKET:    return js_array_literal(js);
     case TOK_FUNC:        return js_func_literal(js);
     case TOK_NULL:        return js_mknull();
     case TOK_UNDEF:       return js_mkundef();
@@ -978,10 +1084,34 @@ static jsval_t js_call_dot(struct js *js) {
   if (vtype(res) == T_CODEREF) {
     res = lookup(js, &js->code[coderefoff(res)], codereflen(res));
   }
-  while (next(js) == TOK_LPAREN || next(js) == TOK_DOT) {
+  while (next(js) == TOK_LPAREN || next(js) == TOK_DOT || next(js) == TOK_LBRACKET) {
     if (js->tok == TOK_DOT) {
       js->consumed = 1;
       res = do_op(js, TOK_DOT, res, js_group(js));
+    } else if (js->tok == TOK_LBRACKET) {
+      js->consumed = 1;
+      jsval_t index = js_expr(js);
+      if (is_err(index)) return index;
+      EXPECT(TOK_RBRACKET, );
+      // Convert numeric index to string key
+      if (!(js->flags & F_NOEXEC)) {
+        index = resolveprop(js, index);
+        if (vtype(index) == T_NUM) {
+          char key[20];
+          snprintf(key, sizeof(key), "%ld", (long)tod(index));
+          jsval_t keystr = js_mkstr(js, key, strlen(key));
+          if (is_err(keystr)) return keystr;
+          uint8_t prev_flags = js->flags;
+          js->flags |= F_NUMIDX; /* mark this DOT op as coming from numeric index */
+          res = do_op(js, TOK_DOT, res, mkcoderef(vdata(keystr) + sizeof(jsoff_t), strlen(key)));
+          js->flags = prev_flags;
+        } else if (vtype(index) == T_STR) {
+          jsoff_t len, off = vstr(js, index, &len);
+          res = do_op(js, TOK_DOT, res, mkcoderef(off, len));
+        } else {
+          return js_mkerr(js, "invalid index type");
+        }
+      }
     } else {
       jsval_t params = js_call_params(js);
       if (is_err(params)) return params;

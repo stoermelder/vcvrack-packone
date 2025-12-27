@@ -1,17 +1,20 @@
 # stoermelder MIDI-KIT
 
-MIDI-KIT is scripting module for altering, filtering, delaying or generating MIDI messages. It provides a simple scripting engine which interprets a very basic subset of JavaScript.
+MIDI-KIT is a scripting module for altering, filtering, delaying, or generating MIDI messages. It provides a lightweight scripting engine that interprets a small subset of JavaScript.
 
 ## How it works
 
-The module uses internally a very basic implementation of a JavaScript engine (Elk 3) for interpreting your custom scripts. It is certainly not the fastest way for running JavaScript from C/C++ but MIDI messages are relatively rare events (in contrast to audio/dsp-processing).
+The module uses a lightweight JavaScript engine (Elk 3) to interpret your custom scripts. Elk is not optimized for raw performance, but MIDI events are typically sparse compared to audio/DSP processing and the engine is adequate for most MIDI scripting tasks.
 
-The module is purely event-driven: It is only active if a MIDI message arrives on the selected MIDI device. The programming interface provides an ability for creating new MIDI messages, one arriving message can result in up to 16 MIDI outgoing messages. Incoming MIDI messages are not automatically passed through to the MIDI out, instead   
-The module has four CV inputs and four parameters. These can be used within the script for adding some dynamic script configuration of modulation if needed.
+MIDI-KIT is event-driven: it runs only when a MIDI message arrives on the selected MIDI input. The scripting API lets you create new MIDI messages; a single incoming message may result in up to 16 outgoing messages. Incoming MIDI messages are not passed through automatically — scripts must explicitly call `midiOut.send()` to forward messages.
 
-MIDI-KIT can be used as an MIDI insert using the built-in MIDI Loopback driver of VCV Rack: incoming MIDI messages can be processed before reaching the actual MIDI module (like MIDI-CC or MIDI-CV or MIDI-MAP or MIDI-CAT). Outgoing MIDI messages can be processed the same way.
+The module also exposes four CV inputs and four panel parameters that can be read from scripts to add modulation or dynamic configuration.
+
+You can use MIDI-KIT as an insert effect via VCV Rack's built-in MIDI Loopback driver. This lets you process incoming messages before they reach other MIDI modules (for example, MIDI‑CC, MIDI‑CV, MIDI‑MAP, or MIDI‑CAT), and likewise process outgoing messages.
 
 ## Examples
+
+**Note:** Channels are 1..16, parameter and input indices are 1..4. The main entry point is `processMidi(midiPort, msg)`; in this version `midiPort` is always *1*.
 
 ### Basic pass-through
 The script passes all incoming MIDI messages to the default MIDI output port.
@@ -68,7 +71,7 @@ param.getName = function(port) {
 
 param.getValueFormat = function(port) {
     if (port === 1) return number.toString(number.ceil(param.getValue(1) * 16));
-    return number.toString(param.getValue(i));
+    return number.toString(param.getValue(port));
 };
 
 let processMidi = function(midiPort, msg) {
@@ -121,14 +124,15 @@ MIDI-KIT uses [Elk](https://github.com/cesanta/elk) for interpreting JavaScript.
 - Functions: `let f = function(x, y) { return x + y; };`
 - Objects: `let obj = {f: function(x) { return x * 2}}; obj.f(3);`
 - Every statement must end with a semicolon `;`
-- Strings are binary data chunks, not Unicode strings: `'Київ'.length === 8`
+- Strings are binary data chunks; their length counts bytes rather than Unicode code points: `'Київ'.length === 8`.
+- Arrays are supported.
 
 ### Not supported features
 
 - No `var`, no `const`. Use `let` (strict mode only)
 - No `do`, `switch`, `while`. Use `for`
 - No `=>` functions. Use `let f = function(...) {...};`
-- No arrays, closures, prototypes, `this`, `new`, `delete`
+- No closures, prototypes, `this`, `new`, `delete`
 - No standard library: no `Date`, `Regexp`, `Function`, `String`, `Number`
 
 Be aware that there is no implicit casting, especially for casting numbers to strings. For this purpose the function `number.toString` has been added.
@@ -163,21 +167,21 @@ Be aware that there is no implicit casting, especially for casting numbers to st
 
 - `param.enable(arg)`: Enables parameter with index `arg` (1..4).
 - `param.getName(arg)`: Callback function used by the module to display a tooltip text for the parameter. The default implementation can be replaced to display some additional information for the parameter.
-- `param.getValueFormat(arg)`: This function is used by the module to display a formated value on the tooltip for the parameter. The default implementation can be replaced.
+- `param.getValueFormat(arg)`: This function is used by the module to display a formatted value on the tooltip for the parameter. The default implementation can be replaced.
 - `param.getValue(arg)`: Reads the value of the parameter with index `arg` (1..4). The return value is interval [0, 1].
 
 ### number
 
-- `number.abs(x)`: Computes the absolut value of `x`.
+- `number.abs(x)`: Computes the absolute value of `x`.
 - `number.ceil(x)`: Computes the largest integer value not less than `x`.
 - `number.crossfade(a, b, p)`: Linearly interpolates between `a` and `b`, from `p = 0` to `p = 1`.
 - `number.floor(arg)`: Computes the largest integer value not greater than `arg`.
 - `number.max(arg1, arg2)`: Returns the greater of two arguments.
 - `number.min(arg1, arg2)`: Returns the smaller of two arguments.
 - `number.random()`: Returns a random number of interval [0, 1).
-- `number.rescale(x, xMin, xMax, yMin, yMax, [a])`: Rescales `x` from the range `[xMin, xMax]` to `[yMin, yMax]`, while `p` defines the curvature according to this formula for the interval [0, 1] with `a = 0` being linear scaling:
+- `number.rescale(x, xMin, xMax, yMin, yMax, [a])`: Rescales `x` from `[xMin, xMax]` to `[yMin, yMax]`. The optional parameter `a` controls the curvature of the mapping (`a = 0` is linear). See the image for example curves:
   $$ f(x) \frac{\ \exp\left(\left(\ln\left(x\left(e-1\right)+1\right)\right)^{\left(2^{a}\right)}\right)-1}{e-1} $$
-  Resulting in curves for `a = -4, -2, 0, 2, 4`:  
+  Resulting in curves for `a = -4, -2, 0, 2, 4`: 
   ![](./MidiKit-rescale.png)
 - `number.toString(arg)`: Converts `arg` to a string representation.
 
@@ -186,7 +190,7 @@ Be aware that there is no implicit casting, especially for casting numbers to st
 - `midi.create()`: Creates an empty MIDI message.
 - `midi.createNRPN()`: Creates an empty NRPN MIDI message (actually 4 MIDI messages).
 - `midi.getChannel(msg)`: Returns the MIDI channel (1..16) of `msg`.
-- `midi.getLength(msg)`: Returns the length of the MIDI message `msg`, for all common messages this will return *3*.
+- `midi.getLength(msg)`: Returns the length of the MIDI message `msg`. For common short messages this will return *3*; SysEx messages may be longer.
 - `midi.getNote(msg)`: Returns the MIDI note number (0..127) of `msg` (byte 2 of the MIDI message).
 - `midi.getSysExData(msg)`: Returns the data of a MIDI SysEx message `msg` as hexstring.
 - `midi.getPitchWheel(msg)`: Returns the MIDI pitch wheel (0..16383) value of `msg`.
