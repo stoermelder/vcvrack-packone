@@ -1,6 +1,10 @@
 #pragma once
 #include <rack.hpp>
 #include <settings.hpp>
+#include <vector>
+#include "components/MenuColorLabel.hpp"
+#include "components/MenuColorPicker.hpp"
+#include "components/MenuColorField.hpp"
 
 namespace StoermelderPackOne {
 namespace Rack {
@@ -145,6 +149,65 @@ Example:
 template <typename T>
 ui::MenuItem* createValuePtrMenuItem(std::string text, std::string rightText, T* ptr, T val) {
 	return createMenuItem(text, string::f("%s %s", rightText, CHECKMARK(*ptr == val)), [=]() { *ptr = val; });
+}
+
+
+/** Create a color submenu for a color pointer with presets, a picker and a hex field.
+Example:
+	menu->addChild(createColorSubmenuItem("Color", &module->defaultColor, {
+		{ LABEL_COLOR_YELLOW, "Yellow" },
+		{ LABEL_COLOR_RED, "Red" },
+		{ LABEL_COLOR_CYAN, "Cyan" }
+	}));
+*/
+inline ui::MenuItem* createColorSubmenuItem(std::string text, NVGcolor* colorPtr, std::vector<std::pair<NVGcolor, std::string>> presets = {}, bool includePicker = true, bool includeField = false, bool* textSelected = nullptr) {
+	struct ColorItem : ui::MenuItem {
+		NVGcolor color;
+		NVGcolor* colorPtr;
+		void onAction(const event::Action& e) override {
+			*colorPtr = color;
+			e.unconsume();
+		}
+		void step() override {
+			rightText = color::toHexString(*colorPtr) == color::toHexString(color) ? "✔" : "";
+			MenuItem::step();
+		}
+	};
+
+	struct Item : ui::MenuItem {
+		NVGcolor* colorPtr;
+		std::vector<std::pair<NVGcolor, std::string>> presets;
+		bool includePicker;
+		bool includeField;
+		bool* textSelected;
+		ui::Menu* createChildMenu() override {
+			ui::Menu* menu = new ui::Menu;
+			menu->addChild(construct<MenuColorLabel>(&MenuColorLabel::fillColor, colorPtr));
+			if (includePicker) {
+				menu->addChild(new MenuSeparator);
+				menu->addChild(construct<MenuColorPicker>(&MenuColorPicker::color, colorPtr));
+			}
+			if (!presets.empty()) {
+				menu->addChild(new MenuSeparator);
+				for (auto &p : presets) {
+					menu->addChild(construct<ColorItem>(&MenuItem::text, p.second.c_str(), &ColorItem::colorPtr, colorPtr, &ColorItem::color, p.first));
+				}
+			}
+			if (includeField) {
+				menu->addChild(construct<MenuColorField>(&MenuColorField::color, colorPtr, &MenuColorField::textSelected, textSelected));
+			}
+			return menu;
+		}
+	};
+
+	Item* item = createMenuItem<Item>(text);
+	item->colorPtr = colorPtr;
+	item->presets = presets;
+	item->includePicker = includePicker;
+	item->includeField = includeField;
+	item->textSelected = textSelected;
+	item->rightText = RIGHT_ARROW;
+	return item;
 }
 
 

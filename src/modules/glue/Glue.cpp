@@ -1,8 +1,5 @@
 #include "../../plugin.hpp"
 #include "../../utils/StripIdFixModule.hpp"
-#include "../../components/MenuColorLabel.hpp"
-#include "../../components/MenuColorField.hpp"
-#include "../../components/MenuColorPicker.hpp"
 
 namespace StoermelderPackOne {
 namespace Glue {
@@ -460,77 +457,6 @@ struct LabelWidget : widget::TransparentWidget {
 			}
 			Menu* createChildMenu() override {
 				Menu* menu = new Menu;
-
-				struct FontColorMenuItem : MenuItem {
-					Label* label;
-					bool* textSelected;
-					FontColorMenuItem() {
-						rightText = RIGHT_ARROW;
-					}
-
-					Menu* createChildMenu() override {
-						struct FontColorItem : MenuItem {
-							Label* label;
-							NVGcolor color;
-							void onAction(const event::Action& e) override {
-								label->fontColor = color;
-								e.unconsume();
-							}
-							void step() override {
-								rightText = color::toHexString(label->fontColor) == color::toHexString(color) ? "✔" : "";
-								MenuItem::step();
-							}
-						};
-
-						Menu* menu = new Menu;
-						menu->addChild(construct<MenuColorLabel>(&MenuColorLabel::fillColor, &label->fontColor));
-						menu->addChild(new MenuSeparator);
-						menu->addChild(construct<MenuColorPicker>(&MenuColorPicker::color, &label->fontColor));
-						menu->addChild(new MenuSeparator);
-						menu->addChild(construct<FontColorItem>(&MenuItem::text, "Black", &FontColorItem::label, label, &FontColorItem::color, LABEL_FONTCOLOR_DEFAULT));
-						menu->addChild(construct<FontColorItem>(&MenuItem::text, "White", &FontColorItem::label, label, &FontColorItem::color, LABEL_FONTCOLOR_WHITE));
-						menu->addChild(construct<MenuColorField>(&MenuColorField::color, &label->fontColor, &MenuColorField::textSelected, textSelected));
-						return menu;
-					}
-				};
-
-				struct ColorMenuItem : MenuItem {
-					Label* label;
-					bool* textSelected;
-					ColorMenuItem() {
-						rightText = RIGHT_ARROW;
-					}
-
-					Menu* createChildMenu() override {
-						struct ColorItem : MenuItem {
-							Label* label;
-							NVGcolor color;
-							void onAction(const event::Action& e) override {
-								label->color = color;
-								e.unconsume();
-							}
-							void step() override {
-								rightText = color::toHexString(label->color) == color::toHexString(color) ? "✔" : "";
-								MenuItem::step();
-							}
-						};
-
-						Menu* menu = new Menu;
-						menu->addChild(construct<MenuColorLabel>(&MenuColorLabel::fillColor, &label->color));
-						menu->addChild(new MenuSeparator);
-						menu->addChild(construct<MenuColorPicker>(&MenuColorPicker::color, &label->color));
-						menu->addChild(new MenuSeparator);
-						menu->addChild(construct<ColorItem>(&MenuItem::text, "Yellow", &ColorItem::label, label, &ColorItem::color, LABEL_COLOR_YELLOW));
-						menu->addChild(construct<ColorItem>(&MenuItem::text, "Red", &ColorItem::label, label, &ColorItem::color, LABEL_COLOR_RED));
-						menu->addChild(construct<ColorItem>(&MenuItem::text, "Cyan", &ColorItem::label, label, &ColorItem::color, LABEL_COLOR_CYAN));
-						menu->addChild(construct<ColorItem>(&MenuItem::text, "Green", &ColorItem::label, label, &ColorItem::color, LABEL_COLOR_GREEN));
-						menu->addChild(construct<ColorItem>(&MenuItem::text, "Pink", &ColorItem::label, label, &ColorItem::color, LABEL_COLOR_PINK));
-						menu->addChild(construct<ColorItem>(&MenuItem::text, "White", &ColorItem::label, label, &ColorItem::color, LABEL_COLOR_WHITE));
-						menu->addChild(construct<MenuColorField>(&MenuColorField::color, &label->color, &MenuColorField::textSelected, textSelected));
-						return menu;
-					}
-				};
-
 				menu->addChild(Rack::createPtrSlider(&label->size, LABEL_SIZE_MIN, LABEL_SIZE_MAX, LABEL_SIZE_DEFAULT, "Size", "", 1.f, 140.0f));
 				menu->addChild(Rack::createPtrSlider(&label->width, LABEL_WIDTH_MIN, LABEL_WIDTH_MAX, LABEL_WIDTH_DEFAULT, "Width", "", 1.f, 140.0f));
 				menu->addChild(Rack::createPtrSlider(&label->opacity, LABEL_OPACITY_MIN, LABEL_OPACITY_MAX, 1.0f, "Opacity", "%", 100.f, 140.0f));
@@ -540,13 +466,23 @@ struct LabelWidget : widget::TransparentWidget {
 				menu->addChild(Rack::createValuePtrMenuItem("90°", &label->angle, 90.f));
 				menu->addChild(Rack::createValuePtrMenuItem("270°", &label->angle, 270.f));
 				menu->addChild(new MenuSeparator);
-				menu->addChild(construct<ColorMenuItem>(&MenuItem::text, "Color", &ColorMenuItem::label, label, &ColorMenuItem::textSelected, textSelected));
+				menu->addChild(Rack::createColorSubmenuItem("Color", &label->color, {
+					{ LABEL_COLOR_YELLOW, "Yellow" },
+					{ LABEL_COLOR_RED, "Red" },
+					{ LABEL_COLOR_CYAN, "Cyan" },
+					{ LABEL_COLOR_GREEN, "Green" },
+					{ LABEL_COLOR_PINK, "Pink" },
+					{ LABEL_COLOR_WHITE, "White" }
+				}, true, true, textSelected));
 				menu->addChild(new MenuSeparator);
 				menu->addChild(createMenuLabel("Font"));
 				menu->addChild(Rack::createValuePtrMenuItem("Default", &label->font, 0));
 				menu->addChild(Rack::createValuePtrMenuItem("Handwriting", &label->font, 1));
 				menu->addChild(new MenuSeparator);
-				menu->addChild(construct<FontColorMenuItem>(&MenuItem::text, "Font color", &FontColorMenuItem::label, label, &FontColorMenuItem::textSelected, textSelected));
+				menu->addChild(Rack::createColorSubmenuItem("Font color", &label->fontColor, {
+					{ LABEL_FONTCOLOR_DEFAULT, "Black" },
+					{ LABEL_FONTCOLOR_WHITE, "White" }
+				}, true, true, textSelected));
 				return menu;
 			}
 		};
@@ -964,76 +900,6 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 			}
 			Menu* createChildMenu() override {
 				Menu* menu = new Menu;
-
-				struct FontColorMenuItem : MenuItem {
-					GlueModule* module;
-					FontColorMenuItem() {
-						rightText = RIGHT_ARROW;
-					}
-
-					Menu* createChildMenu() override {
-						struct FontColorItem : MenuItem {
-							GlueModule* module;
-							NVGcolor color;
-							void onAction(const event::Action& e) override {
-								module->defaultFontColor = color;
-								e.unconsume();
-							}
-							void step() override {
-								rightText = color::toHexString(module->defaultFontColor) == color::toHexString(color) ? "✔" : "";
-								MenuItem::step();
-							}
-						};
-
-						Menu* menu = new Menu;
-						menu->addChild(construct<MenuColorLabel>(&MenuColorLabel::fillColor, &module->defaultFontColor));
-						menu->addChild(new MenuSeparator);
-						menu->addChild(construct<MenuColorPicker>(&MenuColorPicker::color, &module->defaultFontColor));
-						menu->addChild(new MenuSeparator);
-						menu->addChild(construct<FontColorItem>(&MenuItem::text, "Black", &FontColorItem::module, module, &FontColorItem::color, LABEL_FONTCOLOR_DEFAULT));
-						menu->addChild(construct<FontColorItem>(&MenuItem::text, "White", &FontColorItem::module, module, &FontColorItem::color, LABEL_FONTCOLOR_WHITE));
-						menu->addChild(construct<MenuColorField>(&MenuColorField::color, &module->defaultFontColor));
-						return menu;
-					}
-				};
-
-				struct ColorMenuItem : MenuItem {
-					GlueModule* module;
-					ColorMenuItem() {
-						rightText = RIGHT_ARROW;
-					}
-
-					Menu* createChildMenu() override {
-						struct ColorItem : MenuItem {
-							GlueModule* module;
-							NVGcolor color;
-							void onAction(const event::Action& e) override {
-								module->defaultColor = color;
-								e.unconsume();
-							}
-							void step() override {
-								rightText = color::toHexString(module->defaultColor) == color::toHexString(color) ? "✔" : "";
-								MenuItem::step();
-							}
-						};
-
-						Menu* menu = new Menu;
-						MenuColorLabel* colorLabel = construct<MenuColorLabel>(&MenuColorLabel::fillColor, &module->defaultColor);
-						menu->addChild(colorLabel);
-						menu->addChild(new MenuSeparator);
-						menu->addChild(construct<MenuColorPicker>(&MenuColorPicker::color, &module->defaultColor));
-						menu->addChild(new MenuSeparator);
-						menu->addChild(construct<ColorItem>(&MenuItem::text, "Yellow", &ColorItem::module, module, &ColorItem::color, LABEL_COLOR_YELLOW));
-						menu->addChild(construct<ColorItem>(&MenuItem::text, "Red", &ColorItem::module, module, &ColorItem::color, LABEL_COLOR_RED));
-						menu->addChild(construct<ColorItem>(&MenuItem::text, "Cyan", &ColorItem::module, module, &ColorItem::color, LABEL_COLOR_CYAN));
-						menu->addChild(construct<ColorItem>(&MenuItem::text, "Green", &ColorItem::module, module, &ColorItem::color, LABEL_COLOR_GREEN));
-						menu->addChild(construct<ColorItem>(&MenuItem::text, "Pink", &ColorItem::module, module, &ColorItem::color, LABEL_COLOR_PINK));
-						menu->addChild(construct<ColorItem>(&MenuItem::text, "White", &ColorItem::module, module, &ColorItem::color, LABEL_COLOR_WHITE));
-						menu->addChild(construct<MenuColorField>(&MenuColorField::color, &module->defaultColor));
-						return menu;
-					}
-				};
-
 				menu->addChild(Rack::createPtrSlider(&module->defaultSize, LABEL_SIZE_MIN, LABEL_SIZE_MAX, LABEL_SIZE_DEFAULT, "Default size", "", 1.f, 160.0f));
 				menu->addChild(Rack::createPtrSlider(&module->defaultWidth, LABEL_WIDTH_MIN, LABEL_WIDTH_MAX, LABEL_WIDTH_DEFAULT, "Default width", "", 1.f, 160.0f));
 				menu->addChild(Rack::createPtrSlider(&module->defaultOpacity, LABEL_OPACITY_MIN, LABEL_OPACITY_MAX, 1.0f, "Default opacity", "%", 100.f, 160.0f));
@@ -1043,13 +909,23 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 				menu->addChild(Rack::createValuePtrMenuItem("90°", &module->defaultAngle, 90.f));
 				menu->addChild(Rack::createValuePtrMenuItem("270°", &module->defaultAngle, 270.f));
 				menu->addChild(new MenuSeparator());
-				menu->addChild(construct<ColorMenuItem>(&MenuItem::text, "Default color", &ColorMenuItem::module, module));
+				menu->addChild(Rack::createColorSubmenuItem("Default color", &module->defaultColor, {
+					{ LABEL_COLOR_YELLOW, "Yellow" },
+					{ LABEL_COLOR_RED, "Red" },
+					{ LABEL_COLOR_CYAN, "Cyan" },
+					{ LABEL_COLOR_GREEN, "Green" },
+					{ LABEL_COLOR_PINK, "Pink" },
+					{ LABEL_COLOR_WHITE, "White" }
+				}, true, true, nullptr));
 				menu->addChild(new MenuSeparator());
 				menu->addChild(createMenuLabel("Default font"));
 				menu->addChild(Rack::createValuePtrMenuItem("Default", &module->defaultFont, 0));
 				menu->addChild(Rack::createValuePtrMenuItem("Handwriting", &module->defaultFont, 1));
 				menu->addChild(new MenuSeparator());
-				menu->addChild(construct<FontColorMenuItem>(&MenuItem::text, "Default font color", &FontColorMenuItem::module, module));
+				menu->addChild(Rack::createColorSubmenuItem("Default font color", &module->defaultFontColor, {
+					{ LABEL_FONTCOLOR_DEFAULT, "Black" },
+					{ LABEL_FONTCOLOR_WHITE, "White" }
+				}, true, true, nullptr));
 				return menu;
 			}
 		};

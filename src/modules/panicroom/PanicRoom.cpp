@@ -1,6 +1,4 @@
 #include "../../plugin.hpp"
-#include "../../components/MenuColorLabel.hpp"
-#include "../../components/MenuColorPicker.hpp"
 #include <queue>
 
 namespace StoermelderPackOne {
@@ -361,17 +359,7 @@ struct PanicRoomWidget : ThemedModuleWidget<PanicRoomModule> {
         ));
         menu->addChild(createMenuItem("Clear", "", [=]() { module->restrictionEnabled = false; }));
         menu->addChild(new MenuSeparator());
-        menu->addChild(createSubmenuItem("Outside color", "", 
-            [=](Menu* menu) {
-                menu->addChild(construct<MenuColorLabel>(&MenuColorLabel::fillColor, &module->outsideColor));
-                menu->addChild(new MenuSeparator);
-                menu->addChild(construct<MenuColorPicker>(&MenuColorPicker::color, &module->outsideColor));
-                menu->addChild(new MenuSeparator);
-                menu->addChild(createMenuItem("Reset to default", "", [=]() {
-                    module->outsideColor = nvgRGBAf(0.f, 0.f, 0.f, 1.f);
-                }));
-            }
-        ));
+        menu->addChild(Rack::createColorSubmenuItem("Outside color", &module->outsideColor, { { nvgRGBAf(0.f, 0.f, 0.f, 1.f), "Default (black)" } }));
         menu->addChild(Rack::createPtrSlider(&module->outsideAlpha, 0.f, 1.f, 0.5f, "Opacity", "%", 100.f, 200.0f));
     }
 };

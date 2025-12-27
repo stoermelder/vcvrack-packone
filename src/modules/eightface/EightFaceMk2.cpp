@@ -1074,15 +1074,7 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 		*/
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createBoolPtrMenuItem("Box visible", RACK_MOD_SHIFT_NAME "+B", &module->boxDraw));
-		menu->addChild(createSubmenuItem("Box color", "", 
-			[=](Menu* menu) {
-				menu->addChild(construct<MenuColorLabel>(&MenuColorLabel::fillColor, &module->boxColor));
-				menu->addChild(new MenuSeparator);
-				menu->addChild(construct<MenuColorPicker>(&MenuColorPicker::color, &module->boxColor));
-				menu->addChild(new MenuSeparator);
-				menu->addChild(construct<MenuColorField>(&MenuColorField::color, &module->boxColor));
-			}
-		));
+        menu->addChild(Rack::createColorSubmenuItem("Box color", &module->boxColor));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuItem("Bind module (left)", "", [=]() {
 			moduleSelectProcessor.disableLearn();
