@@ -1,6 +1,7 @@
 #include "Strip.hpp"
 #include "../../utils/digital.hpp"
 #include "../../utils/TaskWorker.hpp"
+#include <atomic>
 
 namespace StoermelderPackOne {
 namespace Strip {
@@ -59,7 +60,7 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 	/** [Stored to JSON] usage of switch+port in "ON"-section */
 	ONMODE onMode = ONMODE::DEFAULT;
 
-	bool lastState = false;
+	std::atomic<bool> lastState{false};
 
 
 	/** [Stored to JSON] */
@@ -70,7 +71,7 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 	/*	Indicates that excludedParamsCopy is ready to be used */
 	std::atomic<bool> excludedParamsCopyReady{false};
 	/*  Indicates that excludedParams learn mode is ready - only used for LED */
-	bool excludeLearn = false;
+	std::atomic<bool> excludeLearn{false};
 
 	/** [Stored to JSON] */
 	RANDOMEXCL randomExcl = RANDOMEXCL::EXC;
@@ -117,7 +118,7 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 	void process(const ProcessArgs& args) override {
 		if (modeTrigger.process(params[MODE_PARAM].getValue())) {
 			mode = (MODE)(((int)mode + 1) % 3);
-			lastState = true;
+			lastState.store(true);
 		}
 
 		if (offPTrigger.process(params[OFF_PARAM].getValue() + inputs[OFF_INPUT].getVoltage())) {
@@ -131,7 +132,7 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 				break;
 			case ONMODE::TOGGLE:
 				if (onTrigger.process(params[ON_PARAM].getValue() + inputs[ON_INPUT].getVoltage()))
-					groupBypass(!lastState);
+				groupBypass(!lastState.load());
 				break;
 			case ONMODE::HIGHLOW:
 				if (highLowTrigger.process(params[ON_PARAM].getValue() + inputs[ON_INPUT].getVoltage()))
@@ -148,8 +149,8 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 			lights[RIGHT_LIGHT].setBrightness(mode == MODE::LEFTRIGHT || mode == MODE::RIGHT);
 			lights[LEFT_LIGHT].setBrightness(mode == MODE::LEFTRIGHT || mode == MODE::LEFT);
 
-			lights[EXCLUDE_LIGHT + 0].setBrightness(!excludeLearn && excludedParams.size() > 0 ? 1.f : 0.f);
-			lights[EXCLUDE_LIGHT + 1].setBrightness(excludeLearn ? 1.f : 0.f);
+			lights[EXCLUDE_LIGHT + 0].setBrightness(!excludeLearn.load() && excludedParams.size() > 0 ? 1.f : 0.f);
+			lights[EXCLUDE_LIGHT + 1].setBrightness(excludeLearn.load() ? 1.f : 0.f);
 		}
 
 		processTaskQueue();
@@ -250,8 +251,8 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 	 * To be called from a worker-thread only, as the engine call will lock.
 	 */
 	void groupBypassWorker(bool val) {
-		if (lastState == val) return;
-		lastState = val;
+		if (lastState.load() == val) return;
+		lastState.store(val);
 
 		if (mode == MODE::LEFTRIGHT || mode == MODE::RIGHT) {
 			Module* m = this;
@@ -622,7 +623,7 @@ struct ExcludeButton : TL1105 {
 			}
 		}
 		
-		module->excludeLearn = learn;
+		module->excludeLearn.store(learn);
 		TL1105::step();
 		// Deferred menu callback for populating excluded parameter list
 		if (menuCallback) menuCallback();
@@ -705,14 +706,15 @@ struct ExcludeButton : TL1105 {
 		module->groupExcludeCopyRequest();
 		// Wait until excludedParamsCopy is ready
 		menuCallback = [=]() {
-			if (!module->excludedParamsCopyReady)
+			if (!module->excludedParamsCopyReady.load())
 				return;
 
-			if (module->excludedParams.size() == 0)
+			auto copy = module->excludedParamsCopy;
+			if (copy.size() == 0)
 				return;
 
 			menu->addChild(new MenuSeparator());
-			for (auto it : module->excludedParamsCopy) {
+			for (auto it : copy) {
 				int64_t moduleId = std::get<0>(it);
 				int paramId = std::get<1>(it);
 				
@@ -734,9 +736,8 @@ struct ExcludeButton : TL1105 {
 						module->groupExcludeRemoveRequest(std::get<0>(it), std::get<1>(it));
 					}));
 				}));
-
-				menuCallback = nullptr;
 			}
+			menuCallback = nullptr;
 		};
 	}
 };
