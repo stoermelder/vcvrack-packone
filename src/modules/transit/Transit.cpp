@@ -112,10 +112,13 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 
 	std::default_random_engine randGen{(uint16_t)std::chrono::system_clock::now().time_since_epoch().count()};
 	std::uniform_int_distribution<int> randDist;
-	bool inChange = false;
 
 	/** [Stored to JSON] */
+	/*	This is owned by the engine thread */
 	std::vector<ParamHandleEx*> sourceHandles;
+	/*  Snapshot published for UI thread: shared_ptr to immutable. Use std::atomic_load/store for atomic access. */
+	std::shared_ptr<const std::vector<ParamHandleEx*>> sourceHandlesPtr;
+
 	/** [Stored to JSON] */
 	bool parameterChangesDirect = false;
 
@@ -136,11 +139,14 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 
 	TransitBase<NUM_PRESETS>* N[MAX_EXPANDERS + 1];
 	
-	TaskProcessor<> taskProcessorUi;
+	TaskProcessor<256> taskProcessorDsp;
+	TaskProcessor<256> taskProcessorUi;
 
 	TransitModule() {
 		BASE::panelTheme = pluginSettings.panelThemeDefault;
 		registerExpanderListener("Transit", this);
+		std::atomic_store(&sourceHandlesPtr, std::make_shared<const std::vector<ParamHandleEx*>>());
+
 		Module::config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		Module::configSwitch(PARAM_CTRLMODE, 0.f, 2.f, 0.f, "Operating mode", {"Read", "Auto", "Write"});
 		for (int i = 0; i < NUM_PRESETS; i++) {
@@ -191,23 +197,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 		expandersChanged = true;
 
 		if (!stateOnly) {
-			inChange = true;
-			auto cleanHandles = [=]() {
-				for (ParamHandle* sourceHandle : sourceHandles) {
-					APP->engine->removeParamHandle(sourceHandle);
-					delete sourceHandle;
-				}
-				sourceHandles.clear();
-				inChange = false;
-			};
-
-			// Enqueue on the UI-thread as the engine's mutex could already be locked
-			if (createUiTask) {
-				taskProcessorUi.enqueue(cleanHandles);
-			}
-			else {
-				cleanHandles();
-			}
+			taskProcessorUi.enqueue([=]() { bindClearParameterRequest(); });
 		}
 
 		for (int i = 0; i < NUM_PRESETS; i++) {
@@ -261,7 +251,6 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 	}
 
 	void process(const Module::ProcessArgs& args) override {
-		if (inChange) return;
 		sampleRate = args.sampleRate;
 
 		CTRLMODE ctrlMode = (CTRLMODE)Module::params[PARAM_CTRLMODE].getValue();
@@ -530,6 +519,8 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 
 			BASE::lights[LIGHT_CV].setBrightness((slotCvMode == SLOTCVMODE::OFF || (slotCvMode == SLOTCVMODE::PHASE && BASE::ctrlMode == CTRLMODE::WRITE)) && lightBlink);
 		}
+
+		taskProcessorDsp.process();
 	}
 
 	inline bool isPhaseCvActive() {
@@ -551,25 +542,33 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 		return paramQuantity;
 	}
 
-	// Always called from the UI-thread
-	void bindModule(Module* m) {
+	/** Bind all parameters of a module to be controlled by this Transit.
+	 *  Called from the UI-thread.
+	 */	 
+	void bindAddModuleRequest(Module* m) {
 		if (!m) return;
 		for (size_t i = 0; i < m->params.size(); i++) {
-			bindParameter(m->id, i);
+			bindAddParameterRequest(m->id, i);
 		}
 	}
 
-	// Always called from the UI-thread
-	void bindModuleExpander() {
+	/** Bind all parameters of the module next to Transit to be controlled by this Transit.
+	 *  Called from the UI-thread.
+	 */	 
+	void bindAddModuleExpanderRequest() {
 		Module::Expander* exp = &(Module::leftExpander);
 		if (exp->moduleId < 0) return;
 		Module* m = exp->module;
-		bindModule(m);
+		bindAddModuleRequest(m);
 	}
 
-	// Always called from the UI-thread
-	void bindParameter(int64_t moduleId, int paramId) {
-		for (ParamHandle* handle : sourceHandles) {
+	/** Bind a parameter to be controlled by this Transit.
+	 *  Called from the UI-thread.
+	 */	 
+	void bindAddParameterRequest(int64_t moduleId, int paramId, bool presetLoading = false) {
+		// Use atomic load to get the current snapshot
+		auto snap = std::atomic_load(&sourceHandlesPtr);
+		for (ParamHandle* handle : *snap) {
 			if (handle->moduleId == moduleId && handle->paramId == paramId) {
 				// Parameter already bound
 				return;
@@ -580,66 +579,47 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 		sourceHandle->text = "stoermelder TRANSIT";
 		APP->engine->addParamHandle(sourceHandle);
 		APP->engine->updateParamHandle(sourceHandle, moduleId, paramId, true);
-		inChange = true;
-		sourceHandles.push_back(sourceHandle);
-		inChange = false;
 
 		ParamQuantity* pq = getParamQuantity(sourceHandle);
 		SwitchQuantity* spq = dynamic_cast<SwitchQuantity*>(pq);
 		sourceHandle->isSwitch = !!spq && pq->getMaxValue() != 1.f;
 
-		float v = pq ? pq->getValue() : 0.f;
-		for (int i = 0; i < presetTotal; i++) {
-			TransitSlot* slot = expSlot(i);
-			if (!*(slot->presetSlotUsed)) continue;
-			slot->preset->push_back(v);
-			assert(sourceHandles.size() == slot->preset->size());
-		}
-	}
+		taskProcessorDsp.enqueue([=]() {
+			sourceHandles.push_back(sourceHandle);
 
-	void presetLoad(int p, bool isNext = false, bool force = false) {
-		if (p < 0 || p >= presetCount)
-			return;
-
-		TransitSlot* slot = expSlot(p);
-		if (!isNext) {
-			if (p != preset || force) {
-				int presetPrev = preset;
-				preset = p;
-				presetNext = -1;
-				outSlotPulseGenerator.trigger();
-				if (!*(slot->presetSlotUsed)) 
-					return;
-				if (BASE::ctrlMode == CTRLMODE::AUTO && presetPrev != -1) {
-					TransitSlot* slotPrev = expSlot(presetPrev);
-					if (*(slotPrev->presetSlotUsed)) {
-						slotPrev->preset->clear();
-						for (size_t i = 0; i < sourceHandles.size(); i++) {
-							ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
-							float v = pq ? pq->getValue() : 0.f;
-							slotPrev->preset->push_back(v);
-						}
-					}
-				}
-				slewLimiter.reset();
-				outSocPulseGenerator.trigger();
-				outEocArm = true;
-				processing = true;
-				presetFadeTime = expSlotFadeTime(p);
-				presetOld.clear();
-				presetNew.clear();
-				for (size_t i = 0; i < sourceHandles.size(); i++) {
-					ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
-					presetOld.push_back(pq ? pq->getValue() : 0.f);
-					if (slot->preset->size() > i) {
-						presetNew.push_back((*(slot->preset))[i]);
-					}
+			if (!presetLoading) {
+				// Fill up exisitng snapshots with default values, but only if we are
+				// not loading a preset into Tranit.
+				float v = pq ? pq->getValue() : 0.f;
+				for (int i = 0; i < presetTotal; i++) {
+					TransitSlot* slot = expSlot(i);
+					if (!*(slot->presetSlotUsed)) continue;
+					slot->preset->push_back(v);
+					assert(sourceHandles.size() == slot->preset->size());
 				}
 			}
+
+			// Publish new sourceHandles snapshot for the dsp thread
+			std::atomic_store(&sourceHandlesPtr, std::make_shared<const std::vector<ParamHandleEx*>>(sourceHandles));
+		});
+	}
+
+	/** Request to clear all ParamHandles owned by this Transit.
+	 *  Called from the UI-thread.
+	 */
+	void bindClearParameterRequest() {
+		// Use atomic load to get the current snapshot
+		auto snap = std::atomic_load(&sourceHandlesPtr);
+		for (ParamHandle* sourceHandle : *snap) {
+			APP->engine->removeParamHandle(sourceHandle);
+			delete sourceHandle;
 		}
-		else {
-			if (!*(slot->presetSlotUsed)) return;
-			presetNext = p;
+		
+		if (snap->size() > 0) {
+			taskProcessorDsp.enqueue([=]() {		
+				sourceHandles.clear();	
+				std::atomic_store(&sourceHandlesPtr, std::make_shared<const std::vector<ParamHandleEx*>>(sourceHandles));
+			});
 		}
 	}
 
@@ -788,6 +768,80 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 		}
 	}
 
+	void presetSetCount(int p) {
+		if (preset >= p) preset = 0;
+		presetCount = p;
+		presetNext = -1;
+	}
+
+	/** Requests to load preset p.
+	 *  Called from the UI thread.
+	 */
+	void presetLoadRequest(int p) {
+		taskProcessorDsp.enqueue([=]() { presetLoad(p); });
+	}
+
+	/** Load preset p.
+	 *  If isNext is true, preset p is loaded when the next trigger occurs.
+	 *  If force is true, preset p is loaded even if it is already active.
+	 *  Called from the engine thread only.
+	 */
+	void presetLoad(int p, bool isNext = false, bool force = false) {
+		if (p < 0 || p >= presetCount)
+			return;
+
+		TransitSlot* slot = expSlot(p);
+		if (!isNext) {
+			if (p != preset || force) {
+				int presetPrev = preset;
+				preset = p;
+				presetNext = -1;
+				outSlotPulseGenerator.trigger();
+				if (!*(slot->presetSlotUsed)) 
+					return;
+				if (BASE::ctrlMode == CTRLMODE::AUTO && presetPrev != -1) {
+					TransitSlot* slotPrev = expSlot(presetPrev);
+					if (*(slotPrev->presetSlotUsed)) {
+						slotPrev->preset->clear();
+						for (size_t i = 0; i < sourceHandles.size(); i++) {
+							ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
+							float v = pq ? pq->getValue() : 0.f;
+							slotPrev->preset->push_back(v);
+						}
+					}
+				}
+				slewLimiter.reset();
+				outSocPulseGenerator.trigger();
+				outEocArm = true;
+				processing = true;
+				presetFadeTime = expSlotFadeTime(p);
+				presetOld.clear();
+				presetNew.clear();
+				for (size_t i = 0; i < sourceHandles.size(); i++) {
+					ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
+					presetOld.push_back(pq ? pq->getValue() : 0.f);
+					if (slot->preset->size() > i) {
+						presetNew.push_back((*(slot->preset))[i]);
+					}
+				}
+			}
+		}
+		else {
+			if (!*(slot->presetSlotUsed)) return;
+			presetNext = p;
+		}
+	}
+
+	/** Requests to save the current parameter values into the specified preset slot.
+	 *  Called from the UI thread.
+	 */
+	void presetSaveRequest(int p) {
+		taskProcessorDsp.enqueue([=]() { presetSave(p); });
+	}
+
+	/** Saves the current parameter values into the specified preset slot.
+	 *  Called from the engine thread.
+	 */
 	void presetSave(int p) {
 		TransitSlot* slot = expSlot(p);
 		*(slot->presetSlotUsed) = true;
@@ -801,6 +855,16 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 		preset = p;
 	}
 
+	/** Requests to clear the specified preset slot.
+	 *  Called from the UI thread.
+	 */
+	void presetClearRequest(int p) {
+		taskProcessorDsp.enqueue([=]() { presetClear(p); });
+	}
+
+	/** Clears the specified preset slot.
+	 *  Called from the engine thread.
+	 */
 	void presetClear(int p) {
 		TransitSlot* slot = expSlot(p);
 		*(slot->presetSlotUsed) = false;
@@ -809,12 +873,17 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 		if (preset == p) preset = -1;
 	}
 
-	void presetSetCount(int p) {
-		if (preset >= p) preset = 0;
-		presetCount = p;
-		presetNext = -1;
-	}
+	/**
+	 * Requests randomize the specified preset slot.
+	 * Called from the UI thread.
+	 */
+	void presetRandomizeRequest(int p) {
+		taskProcessorDsp.enqueue([=]() { presetRandomize(p); });;
+	}	
 
+	/** Randomizes the specified preset slot.
+	 *  Called from the engine thread.
+	 */
 	void presetRandomize(int p) {
 		TransitSlot* slot = expSlot(p);
 		*(slot->presetSlotUsed) = true;
@@ -834,6 +903,16 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 		preset = p;
 	}
 
+	/** Requests copy-paste of the contents of one preset slot to another.
+	 *  Called from the UI thread.
+	 */
+	void presetCopyPasteRequest(int source, int target) {
+		taskProcessorDsp.enqueue([=]() { presetCopyPaste(source, target); });;
+	}	
+
+	/** Copies the contents of one preset slot to another.
+	 *  Called from the engine thread.
+	 */
 	void presetCopyPaste(int source, int target) {
 		TransitSlot* sourceSlot = expSlot(source);
 		TransitSlot* targetSlot = expSlot(target);
@@ -848,8 +927,17 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 		if (preset == target) preset = -1;
 	}
 
+	/** Requests shift all presets back starting from the specified preset slot.
+	 *  Called from the UI thread.
+	 */
+	void presetShiftBackRequest(int p) {
+		taskProcessorDsp.enqueue([=]() { presetShiftBack(p); });
+	}
+
+	/** Shifts all presets back starting from the specified preset slot.
+	 *  Called from the engine thread.
+	 */
 	void presetShiftBack(int p) {
-		inChange = true;
 		for (int i = presetTotal - 2; i >= p; i--) {
 			TransitSlot* slot = expSlot(i);
 			if (*(slot->presetSlotUsed)) {
@@ -861,11 +949,19 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 			}
 		}
 		presetClear(p);
-		inChange = false;
 	}
 
+	/** Requests shift all presets front starting from the specified preset slot.
+	 *  Called from the UI thread.
+	 */
+	void presetShiftFrontRequest(int p) {
+		taskProcessorDsp.enqueue([=]() { presetShiftFront(p); });
+	}
+
+	/** Shifts all presets front starting from the specified preset slot.
+	 *  Called from the engine thread.
+	 */
 	void presetShiftFront(int p) {
-		inChange = true;
 		for (int i = 1; i <= p; i++) {
 			TransitSlot* slot = expSlot(i);
 			if (*(slot->presetSlotUsed)) {
@@ -877,31 +973,19 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 			}
 		}
 		presetClear(p);
-		inChange = false;
 	}
 
-	void expanderCleanUp(TransitBase<NUM_PRESETS>* t) {
-		bool invalid = false;
-		// ctrlUniqueId == -2 for presets before uniqueId was added
-		if (t->ctrlUniqueId == -2) {
-			for (int i = 0; i < NUM_PRESETS; i++) {
-				TransitSlot* slot = t->transitSlot(i);
-				if (*(slot->presetSlotUsed)) {
-					if (slot->preset->size() != sourceHandles.size()) {
-						invalid = true;
-						break;
-					}
-				}
-			}
-		}
-		if (t->ctrlUniqueId != -2 || invalid) {
-			t->onReset();
-		}
-		t->ctrlUniqueId = BASE::ctrlUniqueId;
+	/** Requests to clean up presets by removing parameters that are no longer bound.
+	 *  Called from the UI thread.
+	 */
+	void presetCleanUpRequest() {
+		taskProcessorDsp.enqueue([=]() { presetCleanUp(); });
 	}
 
+	/** Cleans up presets by removing parameters that are no longer bound.
+	 *  Called from the engine thread.
+	 */
 	void presetCleanUp() {
-		inChange = true;
 		for (size_t i = 0; i < sourceHandles.size(); ) {
 			ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
 			if (!pq) {
@@ -927,7 +1011,32 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 			if (!*(slot->presetSlotUsed)) continue;
 			assert(sourceHandles.size() == slot->preset->size());
 		}
-		inChange = false;
+
+		// Publish new sourceHandles snapshot for the UI thread
+		std::atomic_store(&sourceHandlesPtr, std::make_shared<const std::vector<ParamHandleEx*>>(sourceHandles));
+	}
+
+	/** Cleans up an expander's presets if they are invalid.
+	 *  Called from the engine thread.
+	 */
+	void expanderCleanUp(TransitBase<NUM_PRESETS>* t) {
+		bool invalid = false;
+		// ctrlUniqueId == -2 for presets before uniqueId was added
+		if (t->ctrlUniqueId == -2) {
+			for (int i = 0; i < NUM_PRESETS; i++) {
+				TransitSlot* slot = t->transitSlot(i);
+				if (*(slot->presetSlotUsed)) {
+					if (slot->preset->size() != sourceHandles.size()) {
+						invalid = true;
+						break;
+					}
+				}
+			}
+		}
+		if (t->ctrlUniqueId != -2 || invalid) {
+			t->onReset();
+		}
+		t->ctrlUniqueId = BASE::ctrlUniqueId;
 	}
 
 	void setProcessDivision(int d) {
@@ -955,13 +1064,13 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 	int transitSlotCmd(SLOT_CMD cmd, int i) override {
 		switch (cmd) {
 			case SLOT_CMD::LOAD:
-				presetLoad(i); 
+				presetLoadRequest(i); 
 				return -1;
 			case SLOT_CMD::CLEAR:
-				presetClear(i);
+				presetClearRequest(i);
 				return -1;
 			case SLOT_CMD::RANDOMIZE:
-				presetRandomize(i);
+				presetRandomizeRequest(i);
 				return -1;
 			case SLOT_CMD::COPY:
 				presetCopy = *expSlot(i)->presetSlotUsed ? i : -1;
@@ -969,16 +1078,16 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 			case SLOT_CMD::PASTE_PREVIEW:
 				return presetCopy;
 			case SLOT_CMD::PASTE:
-				presetCopyPaste(presetCopy, i);
+				presetCopyPasteRequest(presetCopy, i);
 				return -1;
 			case SLOT_CMD::SAVE:
-				presetSave(i);
+				presetSaveRequest(i);
 				return -1;
 			case SLOT_CMD::SHIFT_BACK:
-				presetShiftBack(i);
+				presetShiftBackRequest(i);
 				return -1;
 			case SLOT_CMD::SHIFT_FRONT:
-				presetShiftFront(i);
+				presetShiftFrontRequest(i);
 				return -1;
 			default:
 				return -1;
@@ -998,11 +1107,12 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 
 		json_object_set_new(rootJ, "parameterChangesDirect", json_boolean(parameterChangesDirect));
 
+		auto snap = std::atomic_load(&sourceHandlesPtr);
 		json_t* sourceMapsJ = json_array();
-		for (size_t i = 0; i < sourceHandles.size(); i++) {
+		for (size_t i = 0; i < snap->size(); i++) {
 			json_t* sourceMapJ = json_object();
-			json_object_set_new(sourceMapJ, "moduleId", json_integer(sourceHandles[i]->moduleId));
-			json_object_set_new(sourceMapJ, "paramId", json_integer(sourceHandles[i]->paramId));
+			json_object_set_new(sourceMapJ, "moduleId", json_integer(snap->at(i)->moduleId));
+			json_object_set_new(sourceMapJ, "paramId", json_integer(snap->at(i)->paramId));
 			json_array_append_new(sourceMapsJ, sourceMapJ);
 		}
 		json_object_set_new(rootJ, "sourceMaps", sourceMapsJ);
@@ -1029,8 +1139,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 			preset = -1;
 		}
 
-		inChange = true;
-		std::list<std::function<void()>> handleList;
+		std::list<std::tuple<int64_t, int>> handleToDo;
 
 		json_t* sourceMapsJ = json_object_get(rootJ, "sourceMaps");
 		if (sourceMapsJ) {
@@ -1043,27 +1152,26 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 				int paramId = json_integer_value(paramIdJ);
 				moduleId = BASE::idFix(moduleId);
 
-				// This might cause a deadlock as the engine's mutex could already been locked
-				handleList.push_back([=]() {
-					ParamHandleEx* sourceHandle = new ParamHandleEx;
-					sourceHandle->text = "stoermelder TRANSIT";
-					APP->engine->addParamHandle(sourceHandle);
-					APP->engine->updateParamHandle(sourceHandle, moduleId, paramId, false);
-					sourceHandles.push_back(sourceHandle);
-
-					ParamQuantity* pq = getParamQuantity(sourceHandle);
-					SwitchQuantity* spq = dynamic_cast<SwitchQuantity*>(pq);
-					sourceHandle->isSwitch = !!spq;
-				});
+				
+				handleToDo.push_back(std::make_tuple(moduleId, paramId));
 			}
 		}
 
 		BASE::idFixClearMap();
 
-		// Enqueue on the UI-thread for creating ParamHandles
+		// Enqueue on the UI-thread for clearing ParamHandles
 		taskProcessorUi.enqueue([=]() {
-			for (std::function<void()> f : handleList) f();
-			inChange = false;
+			bindClearParameterRequest();
+		});
+		// Creating new ParamHandles will cause a deadlock as the engine's mutex could already been locked
+		taskProcessorUi.enqueue([=]() {
+			for (auto s : handleToDo) {
+				int64_t moduleId = std::get<0>(s);
+				int paramId = std::get<1>(s);
+				bindAddParameterRequest(moduleId, paramId, true);
+			}
+			// Publish new sourceHandles snapshot for the UI thread
+			std::atomic_store(&sourceHandlesPtr, std::make_shared<const std::vector<ParamHandleEx*>>(sourceHandles));
 		});
 
 		BASE::dataFromJson(rootJ);
@@ -1150,7 +1258,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 			if (!mw || mw == this) return;
 			Module* m = mw->module;
 			if (!m) return;
-			module->bindModule(m);
+			module->bindAddModuleRequest(m);
 		}
 
 		if (learn == 2 || learn == 3) {
@@ -1160,7 +1268,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 				APP->scene->rack->setTouchedParam(NULL);
 				int64_t moduleId = touchedParam->getParamQuantity()->module->id;
 				int paramId = touchedParam->getParamQuantity()->paramId;
-				module->bindParameter(moduleId, paramId);
+				module->bindAddParameterRequest(moduleId, paramId);
 				if (learn == 2) { 
 					disableLearn();
 				}
@@ -1358,17 +1466,19 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 		}));
 
 		menu->addChild(new MenuSeparator());
-		menu->addChild(createMenuItem("Bind module (left)", "", [=]() { disableLearn(); module->bindModuleExpander(); }));
+		menu->addChild(createMenuItem("Bind module (left)", "", [=]() { disableLearn(); module->bindAddModuleExpanderRequest(); }));
 		menu->addChild(createMenuItem("Bind module (select)", "", [=]() { enableLearn(1); }));
 		menu->addChild(construct<BindParameterItem>(&MenuItem::text, "Bind single parameter", &BindParameterItem::rightText, RACK_MOD_SHIFT_NAME "+B", &BindParameterItem::widget, this, &BindParameterItem::mode, 2));
 		menu->addChild(construct<BindParameterItem>(&MenuItem::text, "Bind multiple parameters", &BindParameterItem::rightText, RACK_MOD_SHIFT_NAME "+A", &BindParameterItem::widget, this, &BindParameterItem::mode, 3));
 
-		if (module->sourceHandles.size() > 0) {
+		// Use atomic snapshot published by the engine thread to avoid racing with engine mutations
+		auto snap = std::atomic_load(&module->sourceHandlesPtr);
+		if (snap->size() > 0) {
 			menu->addChild(new MenuSeparator());
 
 			std::set<int64_t> moduleIds;
-			for (size_t i = 0; i < module->sourceHandles.size(); i++) {
-				ParamHandle* handle = module->sourceHandles[i];
+			for (size_t i = 0; i < snap->size(); i++) {
+				ParamHandle* handle = snap->at(i);
 				if (moduleIds.find(handle->moduleId) == moduleIds.end()) {
 					moduleIds.insert(handle->moduleId);
 				}
@@ -1379,8 +1489,8 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 					if (!moduleWidget) continue;
 					std::string text = string::f("Unbind \"%s %s\"", moduleWidget->model->plugin->name.c_str(), moduleWidget->model->name.c_str());
 					menu->addChild(createMenuItem(text, "", [=]() {
-						for (size_t i = 0; i < module->sourceHandles.size(); i++) {
-							ParamHandle* handle = module->sourceHandles[i];
+						for (size_t i = 0; i < snap->size(); i++) {
+							ParamHandle* handle = snap->at(i);
 							if (handle->moduleId != moduleId) continue;
 							APP->engine->updateParamHandle(handle, -1, 0, true);
 						}
@@ -1388,9 +1498,9 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 				}
 			}));
 
-			menu->addChild(createSubmenuItem(string::f("Bound parameters: %lli", module->sourceHandles.size()), "", [=](Menu* menu) {
-				for (size_t i = 0; i < module->sourceHandles.size(); i++) {
-					ParamHandleEx* handle = module->sourceHandles[i];
+			menu->addChild(createSubmenuItem(string::f("Bound parameters: %lli", snap->size()), "", [=](Menu* menu) {
+				for (size_t i = 0; i < snap->size(); i++) {
+					ParamHandleEx* handle = (*snap)[i];
 					ModuleWidget* moduleWidget = APP->scene->rack->getModule(handle->moduleId);
 					if (!moduleWidget) continue;
 
@@ -1411,7 +1521,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 				}
 			}));
 
-			menu->addChild(createMenuItem("Clean invalid parameters up", "", [=]() { module->presetCleanUp(); }));
+			menu->addChild(createMenuItem("Clean invalid parameters up", "", [=]() { module->presetCleanUpRequest(); }));
 		}
 	}
 };
