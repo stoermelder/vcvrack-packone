@@ -2,6 +2,7 @@
 #include "../../utils/digital.hpp"
 #include "../../utils/TaskWorker.hpp"
 #include <atomic>
+#include <memory>
 
 namespace StoermelderPackOne {
 namespace Strip {
@@ -18,7 +19,7 @@ enum class RANDOMEXCL {
 	INC = 2
 };
 
-enum class TASKQUEUETYPE {
+enum class TASKQUEUECMD {
 	RANDOMIZE,
 	BYPASS_ON,
 	BYPASS_OFF,
@@ -26,7 +27,7 @@ enum class TASKQUEUETYPE {
 	EXCLUDED_PARAMS_CLEAR,
 	EXCLUDED_PARAMS_ADD,
 	EXCLUDED_PARAMS_REMOVE,
-	EXCLUDED_PARAMS_COPY
+	EXCLUDED_PARAMS_LOAD
 };
 
 
@@ -60,17 +61,18 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 	/** [Stored to JSON] usage of switch+port in "ON"-section */
 	ONMODE onMode = ONMODE::DEFAULT;
 
-	std::atomic<bool> lastState{false};
-
+	/** Last known bypass state of the strip */
+	std::atomic<bool> lastBypassState{false};
 
 	/** [Stored to JSON] */
 	/*	This is owned be the engine thread */
 	std::set<std::tuple<int64_t, int>> excludedParams;
-	/*	This is a copy of excludedParams owned by the UI thread */
-	std::set<std::tuple<int64_t, int>> excludedParamsCopy;
-	/*	Indicates that excludedParamsCopy is ready to be used */
-	std::atomic<bool> excludedParamsCopyReady{false};
-	/*  Indicates that excludedParams learn mode is ready - only used for LED */
+	/*  Snapshot published for UI thread: shared_ptr to immutable set. Use std::atomic_load/store for atomic access. */
+	std::shared_ptr<const std::set<std::tuple<int64_t, int>>> excludedParamsPtr;
+	/* 	Snapshot published by UI Thread, only used for loading presets */
+	std::shared_ptr<const std::set<std::tuple<int64_t, int>>> excludedParamsPtrUi;
+
+	/*  Indicates that learn mode is ready - only used for LED */
 	std::atomic<bool> excludeLearn{false};
 
 	/** [Stored to JSON] */
@@ -89,7 +91,7 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 	ClockDividerEx lightDivider;
 
 	TaskWorker taskWorker;
-	dsp::RingBuffer<std::tuple<TASKQUEUETYPE, int64_t, int>, 16> taskQueue;
+	dsp::RingBuffer<std::tuple<TASKQUEUECMD, int64_t, int>, 16> taskQueue;
 
 	StripModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
@@ -110,15 +112,17 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 	}
 
 	void onReset() override {
-		excludedParams.clear();
 		randomParamsOnly = false;
 		presetLoadReplace = false;
+		// Initialize snapshot to empty set so UI can read safely immediately
+		excludedParams.clear();
+		std::atomic_store(&excludedParamsPtr, std::make_shared<const std::set<std::tuple<int64_t, int>>>());
 	}
 
 	void process(const ProcessArgs& args) override {
 		if (modeTrigger.process(params[MODE_PARAM].getValue())) {
 			mode = (MODE)(((int)mode + 1) % 3);
-			lastState.store(true);
+			lastBypassState.store(true);
 		}
 
 		if (offPTrigger.process(params[OFF_PARAM].getValue() + inputs[OFF_INPUT].getVoltage())) {
@@ -132,7 +136,7 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 				break;
 			case ONMODE::TOGGLE:
 				if (onTrigger.process(params[ON_PARAM].getValue() + inputs[ON_INPUT].getVoltage()))
-				groupBypass(!lastState.load());
+				groupBypass(!lastBypassState.load());
 				break;
 			case ONMODE::HIGHLOW:
 				if (highLowTrigger.process(params[ON_PARAM].getValue() + inputs[ON_INPUT].getVoltage()))
@@ -164,38 +168,38 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 		while (!taskQueue.empty()) {
 			auto task = taskQueue.shift();
 			switch (std::get<0>(task)) {
-				case TASKQUEUETYPE::RANDOMIZE:
+				case TASKQUEUECMD::RANDOMIZE:
 					groupRandomize();
 					break;
-				case TASKQUEUETYPE::BYPASS_ON:
+				case TASKQUEUECMD::BYPASS_ON:
 					groupBypass(true);
 					break;
-				case TASKQUEUETYPE::BYPASS_OFF:
+				case TASKQUEUECMD::BYPASS_OFF:
 					groupBypass(false);
 					break;
-				case TASKQUEUETYPE::EXCLUDED_PARAMS_CLEANUP:
+				case TASKQUEUECMD::EXCLUDED_PARAMS_CLEANUP:
 					groupExcludeCleanup();
 					break;
-				case TASKQUEUETYPE::EXCLUDED_PARAMS_CLEAR:
+				case TASKQUEUECMD::EXCLUDED_PARAMS_CLEAR:
 					groupExcludeClear();
 					break;
-				case TASKQUEUETYPE::EXCLUDED_PARAMS_ADD:
+				case TASKQUEUECMD::EXCLUDED_PARAMS_ADD:
 					groupExcludeAdd(std::get<1>(task), std::get<2>(task));
 					break;
-				case TASKQUEUETYPE::EXCLUDED_PARAMS_REMOVE:
+				case TASKQUEUECMD::EXCLUDED_PARAMS_REMOVE:
 					groupExcludeRemove(std::get<1>(task), std::get<2>(task));
 					break;
-				case TASKQUEUETYPE::EXCLUDED_PARAMS_COPY:
-					groupExcludeCopy();
+				case TASKQUEUECMD::EXCLUDED_PARAMS_LOAD:
+					groupExcludeLoad();
 					break;
 			}
 		}
 	}
 
 	/** 
-	 * Sets bypass state of all modules of the current strip.
+	 * Requests setting bypass state of all modules of the current strip.
 	 * Adds a undo history entry.
-	 * To be called from UI-thread only.
+	 * Called from the UI-thread to schedule the execution on the dsp thread.
 	 */
 	void groupBypassRequest(bool val) {
 		history::ComplexAction* complexAction;	
@@ -235,7 +239,7 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 			}
 		}
 
-		taskQueue.push(std::make_tuple(val ? TASKQUEUETYPE::BYPASS_ON : TASKQUEUETYPE::BYPASS_OFF, -1, -1));
+		taskQueue.push(std::make_tuple(val ? TASKQUEUECMD::BYPASS_ON : TASKQUEUECMD::BYPASS_OFF, -1, -1));
 	}
 
 	/** 
@@ -248,11 +252,11 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 
 	/** 
 	 * Sets bypass state of all modules of the current strip.
-	 * To be called from a worker-thread only, as the engine call will lock.
+	 * To be called from a worker-thread only, as the engine will lock.
 	 */
 	void groupBypassWorker(bool val) {
-		if (lastState.load() == val) return;
-		lastState.store(val);
+		if (lastBypassState.load() == val) return;
+		lastBypassState.store(val);
 
 		if (mode == MODE::LEFTRIGHT || mode == MODE::RIGHT) {
 			Module* m = this;
@@ -282,9 +286,8 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 	}
 
 	/** 
-	 * Randomizes all modules of the current strip.
-	 * Adds a undo history entry.
-	 * To be called from UI-thread only.
+	 * Randomizes all modules of the current strip. Adds a undo history entry.
+	 * Called from the UI-thread to schedule the execution on the dsp thread.
 	 */
 	void groupRandomizeRequest() {
 		history::ComplexAction* complexAction = nullptr;	
@@ -327,7 +330,7 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 		}
 
 		// Notify dsp thread to randomize the strip
-		taskQueue.push(std::make_tuple(TASKQUEUETYPE::RANDOMIZE, -1, -1));
+		taskQueue.push(std::make_tuple(TASKQUEUECMD::RANDOMIZE, -1, -1));
 	}
 
 	/** 
@@ -360,7 +363,6 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 							break;
 					}
 				}
-
 				if (!randomParamsOnly) {
 					mNext->onRandomize();
 				}
@@ -406,10 +408,10 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 	/**
 	 * Requests cleanup of the currently list of excluded parameters from modules that are no longer 
 	 * within the current strip. 
-	 * Called from the UI-thread to schedule the cleanup on a worker-thread.
+	 * Called from the UI-thread to schedule the execution on the dsp thread.
 	 */
 	void groupExcludeCleanupRequest() {
-		taskQueue.push(std::make_tuple(TASKQUEUETYPE::EXCLUDED_PARAMS_CLEANUP, -1, -1));
+		taskQueue.push(std::make_tuple(TASKQUEUECMD::EXCLUDED_PARAMS_CLEANUP, -1, -1));
 	}
 
 	/**
@@ -449,17 +451,21 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 			}
 		}
 
-		for (auto it : toBeDeleted) {
-			excludedParams.erase(it);
+		if (toBeDeleted.size() > 0) {
+			for (auto it : toBeDeleted) {
+				excludedParams.erase(it);
+			}
+			// Publish updated snapshot for UI readers
+			std::atomic_store(&excludedParamsPtr, std::make_shared<const std::set<std::tuple<int64_t, int>>>(excludedParams));
 		}
 	}
 
 	/** 
-	 * Clears the list of excluded parameters.
-	 * To be called from UI-thread only.
+	 * Requests clearing the list of excluded parameters.
+	 * Called from the UI-thread to schedule the execution on the dsp thread.
 	 */
 	void groupExcludeClearRequest() {
-		taskQueue.push(std::make_tuple(TASKQUEUETYPE::EXCLUDED_PARAMS_CLEAR, -1, -1));
+		taskQueue.push(std::make_tuple(TASKQUEUECMD::EXCLUDED_PARAMS_CLEAR, -1, -1));
 	}
 
 	/** 
@@ -468,14 +474,15 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 	 */
 	void groupExcludeClear() {
 		excludedParams.clear();
+		std::atomic_store(&excludedParamsPtr, std::make_shared<const std::set<std::tuple<int64_t, int>>>());
 	}
 
 	/** 
-	 * Adds a parameter to the randomization exclusion list.
-	 * To be called from UI-thread only.
+	 * Requests adding a parameter to the randomization exclusion list.
+	 * Called from the UI-thread to schedule the execution on the dsp thread.
 	 */
 	void groupExcludeAddRequest(int64_t moduleId, int paramId) {
-		taskQueue.push(std::make_tuple(TASKQUEUETYPE::EXCLUDED_PARAMS_ADD, moduleId, paramId));
+		taskQueue.push(std::make_tuple(TASKQUEUECMD::EXCLUDED_PARAMS_ADD, moduleId, paramId));
 	}
 
 	/** 
@@ -492,6 +499,8 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 				if (!mNext) mNext = APP->engine->getModule(m->rightExpander.moduleId);
 				if (mNext->getId() == moduleId) {
 					excludedParams.insert(std::make_tuple(moduleId, paramId));
+					// Publish updated snapshot for UI readers
+					std::atomic_store(&excludedParamsPtr, std::make_shared<const std::set<std::tuple<int64_t, int>>>(excludedParams));
 					return;
 				}
 				m = mNext;
@@ -507,6 +516,8 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 				if (!mNext) mNext = APP->engine->getModule(m->leftExpander.moduleId);
 				if (mNext->getId() == moduleId) {
 					excludedParams.insert(std::make_tuple(moduleId, paramId));
+					// Publish updated snapshot for UI readers
+					std::atomic_store(&excludedParamsPtr, std::make_shared<const std::set<std::tuple<int64_t, int>>>(excludedParams));
 					return;
 				}
 				m = mNext;
@@ -515,11 +526,11 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 	}
 
 	/** 
-	 * Removes a parameter from the randomization exclusion list.
-	 * To be called from UI-thread only.
+	 * Requests removal a parameter from the randomization exclusion list.
+	 * Called from the UI-thread to schedule the execution on the dsp thread.
 	 */
 	void groupExcludeRemoveRequest(int64_t moduleId, int paramId) {
-		taskQueue.push(std::make_tuple(TASKQUEUETYPE::EXCLUDED_PARAMS_REMOVE, moduleId, paramId));
+		taskQueue.push(std::make_tuple(TASKQUEUECMD::EXCLUDED_PARAMS_REMOVE, moduleId, paramId));
 	}
 
 	/** 
@@ -528,46 +539,64 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 	 */
 	void groupExcludeRemove(int64_t moduleId, int paramId) {
 		excludedParams.erase(std::make_tuple(moduleId, paramId));
+		std::atomic_store(&excludedParamsPtr, std::make_shared<const std::set<std::tuple<int64_t, int>>>(excludedParams));
 	}
 
 	/** 
-	 * Requests a copy of the excluded parameters set to the UI-thread copy.
-	 * To be called from UI-thread only.
+	 * Requests loading the excluded parameters from the UI-published snapshot.
+	 * Called from the UI-thread to schedule the execution on the dsp thread.
 	 */
-	void groupExcludeCopyRequest() {
-		excludedParamsCopyReady.store(false);
-		taskQueue.push(std::make_tuple(TASKQUEUETYPE::EXCLUDED_PARAMS_COPY, -1, -1));
+	void groupExcludeLoadRequest() {
+		taskQueue.push(std::make_tuple(TASKQUEUECMD::EXCLUDED_PARAMS_LOAD, -1, -1));
 	}
 
 	/** 
-	 * Copies the excluded parameters set to the UI-thread copy.
+	 * Loads the excluded parameters from the UI-published snapshot.
 	 * To be called from engine-thread only.
 	 */
-	void groupExcludeCopy() {
-		excludedParamsCopy = excludedParams;
-		excludedParamsCopyReady.store(true);
+	void groupExcludeLoad() {
+		auto snapUi = std::atomic_load(&excludedParamsPtrUi);
+		if (snapUi) {
+			excludedParams = *snapUi;
+			// Publish updated snapshot for UI readers
+			std::atomic_store(&excludedParamsPtr, std::make_shared<const std::set<std::tuple<int64_t, int>>>(excludedParams));
+			std::atomic_store(&excludedParamsPtrUi, std::shared_ptr<const std::set<std::tuple<int64_t, int>>>{});
+		}
 	}
 
+	/** 
+	 * Serialization
+	 * This is called from the UI-thread only, access to excludedParams must be synchronized.
+	 */
 	json_t* dataToJson() override {
 		json_t* rootJ = StripModuleBase::dataToJson();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 
 		json_object_set_new(rootJ, "onMode", json_integer((int)onMode));
 
+		// Use atomic snapshot published by the engine thread
+		auto snap = std::atomic_load(&excludedParamsPtr);
 		json_t* excludedParamsJ = json_array();
-		for (auto t : excludedParams) {
-			json_t* excludedParamJ = json_object();
-			json_object_set_new(excludedParamJ, "moduleId", json_integer(std::get<0>(t)));
-			json_object_set_new(excludedParamJ, "paramId", json_integer(std::get<1>(t)));
-			json_array_append_new(excludedParamsJ, excludedParamJ);
-		} 
+		if (snap) {
+			for (auto t : *snap) {
+				json_t* excludedParamJ = json_object();
+				json_object_set_new(excludedParamJ, "moduleId", json_integer(std::get<0>(t)));
+				json_object_set_new(excludedParamJ, "paramId", json_integer(std::get<1>(t)));
+				json_array_append_new(excludedParamsJ, excludedParamJ);
+			}
+		}
 		json_object_set_new(rootJ, "excludedParams", excludedParamsJ);
+
 		json_object_set_new(rootJ, "randomExcl", json_integer((int)randomExcl));
 		json_object_set_new(rootJ, "randomParamsOnly", json_boolean(randomParamsOnly));
 		json_object_set_new(rootJ, "presetLoadReplace", json_boolean(presetLoadReplace));
 		return rootJ;
 	}
 
+	/** 
+	 * Deserialization
+	 * This is called from the UI-thread only, access to excludedParams must be synchronized.
+	 */
 	void dataFromJson(json_t* rootJ) override {
 		StripModuleBase::dataFromJson(rootJ);
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
@@ -576,8 +605,8 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 		onMode = (ONMODE)json_integer_value(onModeJ);
 
 		json_t* excludedParamsJ = json_object_get(rootJ, "excludedParams");
-		excludedParams.clear();
 		if (excludedParamsJ) {
+			auto snap = std::set<std::tuple<int64_t, int>>();
 			json_t* excludedParamJ;
 			size_t i; 
 			json_array_foreach(excludedParamsJ, i, excludedParamJ) {
@@ -588,9 +617,13 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 				int64_t moduleId = json_integer_value(moduleIdJ);
 				int paramId = json_integer_value(paramIdJ);
 				moduleId = idFix(moduleId);
-				excludedParams.insert(std::make_tuple(moduleId, paramId));
+				snap.insert(std::make_tuple(moduleId, paramId));
 			}
+			// Publish snapshot for engine thread
+			std::atomic_store(&excludedParamsPtrUi, std::make_shared<const std::set<std::tuple<int64_t, int>>>(snap));
+			groupExcludeLoadRequest();
 		}
+	
 		json_t* randomExclJ = json_object_get(rootJ, "randomExcl");
 		randomExcl = (RANDOMEXCL)json_integer_value(randomExclJ);
 		json_t* randomParamsOnlyJ = json_object_get(rootJ, "randomParamsOnly");
@@ -608,8 +641,6 @@ struct ExcludeButton : TL1105 {
 	bool pressed = false;
 	std::chrono::time_point<std::chrono::system_clock> pressedTime;
 
-	std::function<void()> menuCallback = nullptr;
-
 	void step() override {
 		if (!module)
 			return;
@@ -625,8 +656,6 @@ struct ExcludeButton : TL1105 {
 		
 		module->excludeLearn.store(learn);
 		TL1105::step();
-		// Deferred menu callback for populating excluded parameter list
-		if (menuCallback) menuCallback();
 		module->groupExcludeCleanupRequest();
 	}
 
@@ -703,42 +732,36 @@ struct ExcludeButton : TL1105 {
 			module->groupExcludeClearRequest();
 		}));
 
-		module->groupExcludeCopyRequest();
-		// Wait until excludedParamsCopy is ready
-		menuCallback = [=]() {
-			if (!module->excludedParamsCopyReady.load())
-				return;
+		// Use atomic snapshot published by the engine thread to avoid racing with engine mutations
+		auto snap = std::atomic_load(&module->excludedParamsPtr);
 
-			auto copy = module->excludedParamsCopy;
-			if (copy.size() == 0)
-				return;
+		if (!snap || snap->size() == 0)
+			return;
 
-			menu->addChild(new MenuSeparator());
-			for (auto it : copy) {
-				int64_t moduleId = std::get<0>(it);
-				int paramId = std::get<1>(it);
-				
-				ModuleWidget* moduleWidget = APP->scene->rack->getModule(moduleId);
-				if (!moduleWidget) continue;
-				ParamWidget* paramWidget = moduleWidget->getParam(paramId);
-				if (!paramWidget) continue;
-				ParamQuantity* paramQuantity = paramWidget->getParamQuantity();
-				if (!paramQuantity) continue;
+		menu->addChild(new MenuSeparator());
+		for (auto it : *snap) {
+			int64_t moduleId = std::get<0>(it);
+			int paramId = std::get<1>(it);
+			
+			ModuleWidget* moduleWidget = APP->scene->rack->getModule(moduleId);
+			if (!moduleWidget) continue;
+			ParamWidget* paramWidget = moduleWidget->getParam(paramId);
+			if (!paramWidget) continue;
+			ParamQuantity* paramQuantity = paramWidget->getParamQuantity();
+			if (!paramQuantity) continue;
 
-				std::string text = "Parameter \"";
-				text += moduleWidget->model->name;
-				text += " ";
-				text += paramQuantity->getLabel();
-				text += "\"";
+			std::string text = "Parameter \"";
+			text += moduleWidget->model->name;
+			text += " ";
+			text += paramQuantity->getLabel();
+			text += "\"";
 
-				menu->addChild(createSubmenuItem(text, "", [this, it](Menu* menu) {
-					menu->addChild(createMenuItem("Remove from list", "", [this, it]() {
-						module->groupExcludeRemoveRequest(std::get<0>(it), std::get<1>(it));
-					}));
+			menu->addChild(createSubmenuItem(text, "", [this, it](Menu* menu) {
+				menu->addChild(createMenuItem("Remove from list", "", [this, it]() {
+					module->groupExcludeRemoveRequest(std::get<0>(it), std::get<1>(it));
 				}));
-			}
-			menuCallback = nullptr;
-		};
+			}));
+		}
 	}
 };
 
