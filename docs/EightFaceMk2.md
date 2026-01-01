@@ -20,6 +20,16 @@
 
 ![8FACE mk2 intro](./EightFaceMk2-intro.gif)
 
+### Stability and performance
+
+8FACE mk2 includes a Stability and Performance option in the context menu with three modes:
+
+- _Safe mode_ (default) provides maximum stability. However, it may lock up the audio processing and cause stutters, pops, or other audible artifacts. This behavior is not caused by CPU overload but by fundamental design constraints in VCV Rack.
+
+- _Unsafe mode_ loads presets without locking the audio processing and therefore avoids audio artifacts. Depending on the module this can potentially cause instability or crashes; most modules work fine. _Unsafe mode_ and _Unsafe fast mode_ behave similarly when snapshots are loaded manually by clicking snapshot buttons (technically, preset loading occurs on the next rendered frame).
+
+- _Unsafe fast mode_ is similar to _Unsafe mode_ but uses an additional worker thread to apply presets. It is faster but may increase instability on some modules. Use this mode only if you require the fastest possible preset loading. This was the operating mode of 8FACE mk2 before v2.2.0. 
+
 ### Binding modules
 
 At least one module must be bound to 8FACE mk2 before the module can be used. It provides two ways for binding modules which need to be enabled on the contextual menu:
@@ -111,8 +121,6 @@ Once placed next to 8FACE mk2 the expander works and behaves the same way 8FACE 
 
 - [GLUE](./Glue.md) labels can be dynamically changed on different snapshots if a GLUE module is controlled by 8FACE mk2.
 
-- 8FACE mk2 uses "Safe-mode" as the default setting for loading presets (added in v2.2.0). Safe-mode loads presets in a slower way (technically speaking, preset-loading is done on the next rendered frame on the screen), but is stable. Disabling "Safe-mode" will load presets faster, but can cause crashes or other issues. "Safe-mode" won't make any noticeable difference if snapshots are loaded manually by clicking snapshot buttons.
-
 ## Changelog
 
 - v1.9.0
@@ -131,5 +139,5 @@ Once placed next to 8FACE mk2 the expander works and behaves the same way 8FACE 
     - Added "Auto"-mode besides "Read" and "Write" ([manual](./EightFaceMk2.md#auto-mode)) (#276)
     - Added option to bind currently selected modules
 - v2.2.0
-    - Added Safe-mode and use as new default setting
+    - Added stability mode setting and _Safe-mode_ and use as new default setting
     - Improved robustness for expander +8
