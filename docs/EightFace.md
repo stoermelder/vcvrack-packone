@@ -20,6 +20,16 @@
 
 <a href="https://www.youtube.com/watch?v=S2j6W2nvuC8" target="_blank"><img src="https://img.youtube.com/vi/S2j6W2nvuC8/0.jpg" style="width:100%" /></a>
 
+### Stability and performance
+
+8FACE includes a Stability and Performance option in the context menu with three modes:
+
+- _Safe mode_ (default) provides maximum stability. However, it may lock up the audio processing and cause stutters, pops, or other audible artifacts. This behavior is not caused by CPU overload but by fundamental design constraints in VCV Rack.
+
+- _Unsafe mode_ loads presets without locking the audio processing and therefore avoids audio artifacts. Depending on the module this can potentially cause instability or crashes; most modules work fine. _Unsafe mode_ and _Unsafe fast mode_ behave similarly when snapshots are loaded manually by clicking snapshot buttons (technically, preset loading occurs on the next rendered frame).
+
+- _Unsafe fast mode_ is similar to _Unsafe mode_ but uses an additional worker thread to apply presets. It is faster but may increase instability on some modules. Use this mode only if you require the fastest possible preset loading. This was the operating mode of 8FACE before v2.2.0. 
+
 ### Usage
 
 Place 8FACE on the right side next to the module that you would like to manage. The triangle-shaped LED begins to flash if a connection is established successfully. You can detach 8FACE and re-attach it to another instance of the same module. When you place 8FACE next to a module and the LED turns red, it means it has been configured for another model. In this case you can either check the model in the context menu or initialize 8FACE to its initial state. Since v1.2.0, you can place 8FACE on the left side of a module after changing the appropriate setting in the context menu.
@@ -66,10 +76,6 @@ There are different modes for _SLOT_-port available, configured by context menu 
 
 With the option _Autoload first preset_ on the context menu you can autoload the first preset slot when a preset of 8FACE itself is loaded. This is useful when changing presets of 8FACE with another instance of 8FACE to acquire even more preset slots. The option _Autoload last active preset_ works the same way.
 
-### Tips
-
-- 8FACE uses _Safe-mode_ as the default setting for loading presets (added in v2.2.0). _Safe-mode_ loads presets in a slower way (technically speaking, preset-loading is done on the next rendered frame on the screen), but is stable. Disabling _Safe-mode_ will load presets faster, but can cause crashes or other issues. _Safe-mode_ won't make any noticeable difference if snapshots are loaded manually by clicking snapshot buttons.
-
 ## Changelog
 
 - v1.0.5
@@ -105,5 +111,5 @@ With the option _Autoload first preset_ on the context menu you can autoload the
     - Added missing reset-handling for "Trigger alternating" and "Trigger shuffle"
     - Allow disabling of "long press" for changing the number of active slots (#354)
 - v2.2.0
-    - Added Safe-mode and use as new default setting
+    - Added stability mode setting and _Safe-mode_ and use as new default setting
     - Fixed not working on some modules (only 8FACEx2)

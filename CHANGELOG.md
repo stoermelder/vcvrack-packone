@@ -12,7 +12,7 @@ Modules [8FACE, 8FACEx2](./docs/EightFace.md) and [8FACE mk2](./docs/EightFaceMk
 ### Changes and Fixes
 
 - Modules [8FACE, 8FACEx2](./docs/EightFace.md)
-    - Added _Safe-mode_ and use as new default setting
+    - Added stability mode setting and _Safe-mode_ and use as new default setting
 - Modules [8FACEx2](./docs/EightFace.md)
     - Fixed not working on some modules (only 8FACEx2)
 - Module [8FACE mk2](./docs/EightFaceMk2.md)

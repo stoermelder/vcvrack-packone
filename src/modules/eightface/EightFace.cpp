@@ -36,6 +36,12 @@ enum class CTRLMODE {
 	WRITE
 };
 
+enum class GUISAFEMODE {
+	WORKER,
+	GUI,
+	GUI_WITH_LOCK
+};
+
 template<int NUM_PRESETS>
 struct EightFaceModule : Module {
 	enum ParamIds {
@@ -117,8 +123,8 @@ struct EightFaceModule : Module {
 	int workerPreset = -1;
 	ModuleWidget* workerModuleWidget;
 	bool workerGui = false;
-	ModuleWidget* workerGuiModuleWidget = NULL;
-	bool guiSafeMode = true;
+	std::atomic<ModuleWidget*> workerGuiModuleWidget{nullptr};
+	GUISAFEMODE guiSafeMode;
 
 	LongPressButton typeButtons[NUM_PRESETS];
 	dsp::SchmittTrigger slotTrigger;
@@ -175,7 +181,7 @@ struct EightFaceModule : Module {
 			presetSlotUsed[i] = false;
 		}
 
-		guiSafeMode = true;
+		guiSafeMode = GUISAFEMODE::GUI_WITH_LOCK;
 		preset = -1;
 		presetCount = NUM_PRESETS;
 		presetPrev = -1;
@@ -405,7 +411,6 @@ struct EightFaceModule : Module {
 		}
 	}
 
-
 	void processWorker() {
 		contextSet(workerContext);
 		while (true) {
@@ -422,13 +427,21 @@ struct EightFaceModule : Module {
 	}
 
 	void processGui() {
-		if (workerGuiModuleWidget) {
+		ModuleWidget* mw = workerGuiModuleWidget.load();
+		if (mw) {
 			if (ctrlMode == CTRLMODE::AUTO && presetPrev >= 0 && presetSlotUsed[presetPrev]) {
 				json_decref(presetSlot[presetPrev]);
 				presetSlot[presetPrev] = workerModuleWidget->toJson();
 			}
-			workerGuiModuleWidget->fromJson(presetSlot[workerPreset]);
-			workerGuiModuleWidget = NULL;
+
+			if (guiSafeMode == GUISAFEMODE::GUI) {
+				// This is an unlocked operation, it is not perfectly thread-safe, as the Engine
+				// thread would lock on preset loading
+				mw->module->fromJson(presetSlot[workerPreset]);
+			} else {
+				mw->fromJson(presetSlot[workerPreset]);
+			}
+			workerGuiModuleWidget.store(nullptr);
 		}
 	}
 
@@ -445,8 +458,8 @@ struct EightFaceModule : Module {
 				ModuleWidget* mw = APP->scene->rack->getModule(m->id);
 				if (mw) {
 					workerPreset = p;
-					if (workerGui || guiSafeMode) {
-						workerGuiModuleWidget = mw;
+					if (workerGui || guiSafeMode != GUISAFEMODE::WORKER) {
+						workerGuiModuleWidget.store(mw);
 					}
 					else {
 						workerModuleWidget = mw;
@@ -504,7 +517,7 @@ struct EightFaceModule : Module {
 		json_t* rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 
-		json_object_set_new(rootJ, "guiSafeMode", json_boolean(guiSafeMode));
+		json_object_set_new(rootJ, "guiSafeMode", json_integer((int)guiSafeMode));
 
 		json_object_set_new(rootJ, "mode", json_integer((int)side));
 		json_object_set_new(rootJ, "pluginSlug", json_string(pluginSlug.c_str()));
@@ -534,7 +547,7 @@ struct EightFaceModule : Module {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 
 		json_t* guiSafeModeJ = json_object_get(rootJ, "guiSafeMode");
-		guiSafeMode = guiSafeModeJ ? json_boolean_value(guiSafeModeJ) : false;
+		guiSafeMode = guiSafeModeJ ? (GUISAFEMODE)json_integer_value(guiSafeModeJ) : GUISAFEMODE::WORKER;
 	
 		json_t* sideJ = json_object_get(rootJ, "mode");
 		if (sideJ) side = (SIDE)json_integer_value(sideJ);
@@ -688,18 +701,34 @@ struct EightFaceWidgetTemplate : ThemedModuleWidget<MODULE> {
 			menu->addChild(createMenuLabel("Configured for..."));
 			menu->addChild(createMenuLabel(module->moduleName));
 		}
-		menu->addChild(createBoolMenuItem("Safe-mode", "",
-			[=]() {
-				return module->guiSafeMode;
-			},
+
+		menu->addChild(new MenuSeparator());
+		menu->addChild(createMenuLabel("Stability & performance mode"));
+		menu->addChild(createBoolMenuItem("Safe", "",
+			[=]() { return module->guiSafeMode == GUISAFEMODE::GUI_WITH_LOCK; },
 			[=](bool v) {
-				std::string msg = "Disabling \"Safe-mode\" will load presets more quickly but may lead to crashing VCV Rack or other issues. Proceed?";
-				if (module->guiSafeMode && !osdialog_message(OSDIALOG_WARNING, OSDIALOG_YES_NO, msg.c_str())) {
-					return;
-				}
-				module->guiSafeMode = v;
+				std::string msg = "Using \"Safe\" will load presets perfectly safe without risking any crashes, but may lead to performance issues (e.g. stuttering). Proceed?";
+				if (osdialog_message(OSDIALOG_WARNING, OSDIALOG_YES_NO, msg.c_str()))
+					module->guiSafeMode = GUISAFEMODE::GUI_WITH_LOCK;
 			}
 		));
+		menu->addChild(createBoolMenuItem("Unsafe", "",
+			[=]() { return module->guiSafeMode == GUISAFEMODE::GUI; },
+			[=](bool v) {
+				std::string msg = "Using \"Unsafe-mode\" will load presets quickly but may lead to crashing VCV Rack or other issues. Proceed?";
+				if (osdialog_message(OSDIALOG_WARNING, OSDIALOG_YES_NO, msg.c_str()))
+					module->guiSafeMode = GUISAFEMODE::GUI;
+			}
+		));
+		menu->addChild(createBoolMenuItem("Unsafe fast", "",
+			[=]() { return module->guiSafeMode == GUISAFEMODE::WORKER; },
+			[=](bool v) {
+				std::string msg = "Using \"Unsafe fast-mode\" will load presets most quickly but may lead to crashing VCV Rack or other issues. Proceed?";
+				if (osdialog_message(OSDIALOG_WARNING, OSDIALOG_YES_NO, msg.c_str()))
+					module->guiSafeMode = GUISAFEMODE::WORKER;
+			}
+		));
+
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createSubmenuItem("Number of slots", string::f("%i", module->presetCount),
 			[=](Menu* menu) {
