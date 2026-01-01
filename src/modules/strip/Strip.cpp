@@ -1,6 +1,7 @@
 #include "Strip.hpp"
 #include "../../utils/digital.hpp"
 #include "../../utils/TaskWorker.hpp"
+#include "../../utils/TaskProcessor.hpp"
 #include <atomic>
 #include <memory>
 
@@ -17,17 +18,6 @@ enum class RANDOMEXCL {
 	NONE = 0,
 	EXC = 1,
 	INC = 2
-};
-
-enum class TASKQUEUECMD {
-	RANDOMIZE,
-	BYPASS_ON,
-	BYPASS_OFF,
-	EXCLUDED_PARAMS_CLEANUP,
-	EXCLUDED_PARAMS_CLEAR,
-	EXCLUDED_PARAMS_ADD,
-	EXCLUDED_PARAMS_REMOVE,
-	EXCLUDED_PARAMS_LOAD
 };
 
 
@@ -91,7 +81,7 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 	ClockDividerEx lightDivider;
 
 	TaskWorker taskWorker;
-	dsp::RingBuffer<std::tuple<TASKQUEUECMD, int64_t, int>, 16> taskQueue;
+	TaskProcessor<16> taskProcessor;
 
 	StripModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
@@ -157,43 +147,7 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 			lights[EXCLUDE_LIGHT + 1].setBrightness(excludeLearn.load() ? 1.f : 0.f);
 		}
 
-		processTaskQueue();
-	}
-
-	/** 
-	 * Processes all pending tasks in the task queue.
-	 * To be called from the engine thread only.
-	 */
-	void processTaskQueue() {	
-		while (!taskQueue.empty()) {
-			auto task = taskQueue.shift();
-			switch (std::get<0>(task)) {
-				case TASKQUEUECMD::RANDOMIZE:
-					groupRandomize();
-					break;
-				case TASKQUEUECMD::BYPASS_ON:
-					groupBypass(true);
-					break;
-				case TASKQUEUECMD::BYPASS_OFF:
-					groupBypass(false);
-					break;
-				case TASKQUEUECMD::EXCLUDED_PARAMS_CLEANUP:
-					groupExcludeCleanup();
-					break;
-				case TASKQUEUECMD::EXCLUDED_PARAMS_CLEAR:
-					groupExcludeClear();
-					break;
-				case TASKQUEUECMD::EXCLUDED_PARAMS_ADD:
-					groupExcludeAdd(std::get<1>(task), std::get<2>(task));
-					break;
-				case TASKQUEUECMD::EXCLUDED_PARAMS_REMOVE:
-					groupExcludeRemove(std::get<1>(task), std::get<2>(task));
-					break;
-				case TASKQUEUECMD::EXCLUDED_PARAMS_LOAD:
-					groupExcludeLoad();
-					break;
-			}
-		}
+		taskProcessor.process();
 	}
 
 	/** 
@@ -239,7 +193,7 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 			}
 		}
 
-		taskQueue.push(std::make_tuple(val ? TASKQUEUECMD::BYPASS_ON : TASKQUEUECMD::BYPASS_OFF, -1, -1));
+		taskProcessor.enqueue([=]() { groupBypass(val); });
 	}
 
 	/** 
@@ -330,7 +284,7 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 		}
 
 		// Notify dsp thread to randomize the strip
-		taskQueue.push(std::make_tuple(TASKQUEUECMD::RANDOMIZE, -1, -1));
+		taskProcessor.enqueue([=]() { groupRandomize(); });
 	}
 
 	/** 
@@ -411,7 +365,7 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 	 * Called from the UI-thread to schedule the execution on the dsp thread.
 	 */
 	void groupExcludeCleanupRequest() {
-		taskQueue.push(std::make_tuple(TASKQUEUECMD::EXCLUDED_PARAMS_CLEANUP, -1, -1));
+		taskProcessor.enqueue([=]() { groupExcludeCleanup(); });
 	}
 
 	/**
@@ -465,7 +419,7 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 	 * Called from the UI-thread to schedule the execution on the dsp thread.
 	 */
 	void groupExcludeClearRequest() {
-		taskQueue.push(std::make_tuple(TASKQUEUECMD::EXCLUDED_PARAMS_CLEAR, -1, -1));
+		taskProcessor.enqueue([=]() { groupExcludeClear(); });
 	}
 
 	/** 
@@ -482,7 +436,7 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 	 * Called from the UI-thread to schedule the execution on the dsp thread.
 	 */
 	void groupExcludeAddRequest(int64_t moduleId, int paramId) {
-		taskQueue.push(std::make_tuple(TASKQUEUECMD::EXCLUDED_PARAMS_ADD, moduleId, paramId));
+		taskProcessor.enqueue([=]() { groupExcludeAdd(moduleId, paramId); });
 	}
 
 	/** 
@@ -530,7 +484,7 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 	 * Called from the UI-thread to schedule the execution on the dsp thread.
 	 */
 	void groupExcludeRemoveRequest(int64_t moduleId, int paramId) {
-		taskQueue.push(std::make_tuple(TASKQUEUECMD::EXCLUDED_PARAMS_REMOVE, moduleId, paramId));
+		taskProcessor.enqueue([=]() { groupExcludeRemove(moduleId, paramId); });
 	}
 
 	/** 
@@ -547,7 +501,7 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 	 * Called from the UI-thread to schedule the execution on the dsp thread.
 	 */
 	void groupExcludeLoadRequest() {
-		taskQueue.push(std::make_tuple(TASKQUEUECMD::EXCLUDED_PARAMS_LOAD, -1, -1));
+		taskProcessor.enqueue([=]() { groupExcludeLoad(); });
 	}
 
 	/** 
