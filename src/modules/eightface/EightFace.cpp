@@ -613,7 +613,15 @@ struct WhiteRedLight : GrayModuleLightWidget {
 
 
 template<typename MODULE>
-struct EightFaceWidgetTemplate : ModuleWidget {
+struct EightFaceWidgetTemplate : ThemedModuleWidget<MODULE> {
+	MODULE* module;
+
+	EightFaceWidgetTemplate(MODULE* module, std::string baseName) 
+	: ThemedModuleWidget<MODULE>(module, baseName, "EightFace") {
+		ThemedModuleWidget<MODULE>::setModule(module);
+		this->module = dynamic_cast<MODULE*>(module);
+	}
+
 	struct NumberOfSlotsSlider : ui::Slider {
 		struct NumberOfSlotsQuantity : Quantity {
 			MODULE* module;
@@ -768,18 +776,22 @@ struct EightFaceWidgetTemplate : ModuleWidget {
 					break;
 			}
 		}
-		ModuleWidget::onHoverKey(e);
+		ThemedModuleWidget<MODULE>::onHoverKey(e);
+	}
+
+	void step() override {
+		if (module) {
+			module->processGui();
+		}
+		ThemedModuleWidget<MODULE>::step();
 	}
 };
 
-struct EightFaceWidget : ThemedModuleWidget<EightFaceModule<8>, EightFaceWidgetTemplate<EightFaceModule<8>>> {
+struct EightFaceWidget : EightFaceWidgetTemplate<EightFaceModule<8>> {
 	typedef EightFaceModule<8> MODULE;
-	MODULE* module;
 
 	EightFaceWidget(MODULE* module)
-		: ThemedModuleWidget<MODULE, EightFaceWidgetTemplate<MODULE>>(module, "EightFace") {
-		setModule(module);
-		this->module = module;
+		: EightFaceWidgetTemplate<MODULE>(module, "EightFace") {
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
@@ -810,21 +822,13 @@ struct EightFaceWidget : ThemedModuleWidget<EightFaceModule<8>, EightFaceWidgetT
 
 		addParam(createParamCentered<CKSSThreeH>(Vec(22.5f, 336.2f), module, MODULE::CTRLMODE_PARAM));
 	}
-
-	void step() override {
-		if (module) {
-			module->processGui();
-		}
-		ThemedModuleWidget<MODULE, EightFaceWidgetTemplate<MODULE>>::step();
-	}
 };
 
-struct EightFaceX2Widget : ThemedModuleWidget<EightFaceModule<16>, EightFaceWidgetTemplate<EightFaceModule<16>>> {
+struct EightFaceX2Widget : EightFaceWidgetTemplate<EightFaceModule<16>> {
 	typedef EightFaceModule<16> MODULE;
 
 	EightFaceX2Widget(MODULE* module)
-		: ThemedModuleWidget<MODULE, EightFaceWidgetTemplate<MODULE>>(module, "EightFaceX2", "EightFace") {
-		setModule(module);
+		: EightFaceWidgetTemplate<MODULE>(module, "EightFaceX2") {
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
