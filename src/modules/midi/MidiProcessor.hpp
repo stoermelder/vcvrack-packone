@@ -290,7 +290,9 @@ struct MidiProcessor {
         // 14-bit CC (CC 0-31 for MSB, CC 32-63 for LSB)
         if (cc < 32) {
             // CC 0-31: Store as MSB for potential 14-bit CC
-            cc14bitMsb[ch][cc] = value;
+            // This is not according to standard, but to avoid spurious 14-bit CC messages
+            // after a MIDI reset, we ignore MSBs with value = 0.
+            if (value > 0 || cc14bitMsb[ch][cc] != -1) cc14bitMsb[ch][cc] = value;
         } 
         else if (32 <= cc && cc < 64) {
 			// CC 32-63: LSB for 14-bit CC
