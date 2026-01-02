@@ -33,6 +33,7 @@ Modules [8FACE, 8FACEx2](./docs/EightFace.md) and [8FACE mk2](./docs/EightFaceMk
     - Added input-modes _Snapped_ and _Snapped (short/long)_ for CC and Notes for use with snapped parameters (e.g. "Steps" on VCV SEQ3)
     - Added handling for MIDI System Reset message for resetting input-mode _Pickup (snap)_
     - Added color setting for mapping indicators
+    - Fixed mistaken copy-over of 14-bit CC flag from previous mapping slot on CCs >= 32
 - Module [MIDI-CAT MEM](./docs/MidiCat.md#mem-expander)
     - Added module restriction list
     - Fixed broken MIDI feedback when loading stored mappings

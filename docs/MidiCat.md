@@ -336,3 +336,4 @@ FINE for MIDI-CAT must be placed on the right side of MIDI-CAT and can be used t
     - Added handling for MIDI System Reset message for resetting input-mode "Pickup (snap)"
     - Added context menu option to report parameter updates to plugin-host (only in plugin-version of Rack)
     - Fixed broken MIDI feedback when loading stored mappings on MIDI-CAT MEM
+    - Fixed mistaken copy-over of 14-bit CC flag from previous mapping slot on CCs >= 32

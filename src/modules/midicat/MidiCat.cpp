@@ -1027,15 +1027,11 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 			return;
 		if (!learnedParam && paramHandles[learningId].moduleId < 0)
 			return;
-		// Reset learned state
-		learnedCc = false;
-		learnedNote = false;
-		learnedParam = false;
 
 		// Copy settings from the previous slot
 		if (learningId > 0) {
 			ccs[learningId].ccMode = ccs[learningId - 1].ccMode;
-			ccs[learningId].set14bit(ccs[learningId - 1].get14bit());
+			ccs[learningId].set14bit(ccs[learningId - 1].get14bit() && learnedCc && learnedCcLast < 32);
 			notes[learningId].noteMode = notes[learningId - 1].noteMode;
 			midiOptions[learningId] = midiOptions[learningId - 1];
 			midiParam[learningId].setSlew(midiParam[learningId - 1].getSlew());
@@ -1046,6 +1042,11 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 			midiParam[learningId].clockSource = midiParam[learningId - 1].clockSource;
 		}
 		textLabel[learningId] = "";
+
+		// Reset learned state
+		learnedCc = false;
+		learnedNote = false;
+		learnedParam = false;
 
 		// Find next incomplete map
 		while (!learnSingleSlot && ++learningId < MAX_CHANNELS) {
