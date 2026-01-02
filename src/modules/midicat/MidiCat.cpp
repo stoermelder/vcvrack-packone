@@ -842,6 +842,11 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 					if (lastValueOut[id] != v) {
 						if (cc >= 0 && ccs[id].ccMode == CCMODE::DIRECT)
 							lastValueIn[id] = v;
+						// Added 2026-01-02: Fixes feedback in note/momentary mode
+						// Update the internal state... does it break something else?
+						// -- Fixed wrong internal state after manual parameter adjustment
+						if (!sendOnlyFeedback) midiParam[id].setValue(v);
+						// --
 						ccs[id].setValue(v, sendOnlyFeedback);
 						notes[id].setValue(v, sendOnlyFeedback);
 						lastValueOut[id] = v;

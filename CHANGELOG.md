@@ -34,6 +34,7 @@ Modules [8FACE, 8FACEx2](./docs/EightFace.md) and [8FACE mk2](./docs/EightFaceMk
     - Added handling for MIDI System Reset message for resetting input-mode _Pickup (snap)_
     - Added color setting for mapping indicators
     - Fixed mistaken copy-over of 14-bit CC flag from previous mapping slot on CCs >= 32
+    - Fixed wrong internal state after manual parameter adjustment
 - Module [MIDI-CAT MEM](./docs/MidiCat.md#mem-expander)
     - Added module restriction list
     - Fixed broken MIDI feedback when loading stored mappings
