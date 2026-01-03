@@ -1,7 +1,9 @@
 #include "catch2/plugin.hpp"
 #include "../modules/midi/MidiTrackingProcessor.hpp"
+#include "../modules/midi/MidiTrackingProcessor.cpp"  // Include implementation for templates
 
 using namespace StoermelderPackOne;
+
 
 // Helper: construct a simple 3-byte MIDI message.
 // - statusNibble: high nibble of status (e.g., 0xb for CC)
@@ -29,8 +31,8 @@ struct TestHandler : MidiTrackingProcessorHandler {
 };
 
 
-TEST_CASE("CC map triggers updates") {
-	MidiTrackingProcessor<8> p;
+TEST_CASE("CC map triggers updates", "[MidiTrackingProcessor]") {
+	MidiTrackingProcessor<19> p;
 	TestHandler h;
 	p.handler = &h;
 	p.enableCc();
@@ -50,8 +52,8 @@ TEST_CASE("CC map triggers updates") {
 	REQUIRE(std::get<2>(h.updates[0]) == 55);
 }
 
-TEST_CASE("Note map on/off updates and velocity") {
-	MidiTrackingProcessor<6> p;
+TEST_CASE("Note map on/off updates and velocity", "[MidiTrackingProcessor]") {
+	MidiTrackingProcessor<19> p;
 	TestHandler h;
 	p.handler = &h;
 	p.enableNotes();
@@ -78,8 +80,8 @@ TEST_CASE("Note map on/off updates and velocity") {
 	REQUIRE(std::get<2>(h.updates.back()) == 0);
 }
 
-TEST_CASE("CC learn and then update") {
-	MidiTrackingProcessor<4> p;
+TEST_CASE("CC learn and then update", "[MidiTrackingProcessor]") {
+	MidiTrackingProcessor<19> p;
 	TestHandler h;
 	p.handler = &h;
 	p.enableCc();
@@ -112,8 +114,8 @@ TEST_CASE("CC learn and then update") {
 	REQUIRE(std::get<2>(h.updates[0]) == 99);
 }
 
-TEST_CASE("Note learn and disable learn behavior") {
-	MidiTrackingProcessor<3> p;
+TEST_CASE("Note learn and disable learn behavior", "[MidiTrackingProcessor]") {
+	MidiTrackingProcessor<19> p;
 	TestHandler h;
 	p.handler = &h;
 	p.enableNotes();
@@ -135,8 +137,8 @@ TEST_CASE("Note learn and disable learn behavior") {
 	REQUIRE(p.getMapLearn() == false);
 }
 
-TEST_CASE("Mapping persistence") {
-	MidiTrackingProcessor<5> p;
+TEST_CASE("Mapping persistence", "[MidiTrackingProcessor]") {
+	MidiTrackingProcessor<19> p;
 	TestHandler h;
 	p.handler = &h;
 	p.enableCc();
@@ -161,7 +163,7 @@ TEST_CASE("Mapping persistence") {
 
 	// JSON roundtrip: save and restore into a fresh processor
 	auto j = p.dataToJson();
-	MidiTrackingProcessor<5> p2;
+	MidiTrackingProcessor<19> p2;
 	TestHandler h2;
 	p2.handler = &h2;
 	p2.enableCc();
