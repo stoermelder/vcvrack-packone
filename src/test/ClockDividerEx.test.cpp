@@ -3,7 +3,7 @@
 
 using namespace StoermelderPackOne;
 
-TEST_CASE("Basic division and wrapping") {
+TEST_CASE("Basic division and wrapping", "[ClockDividerEx]") {
 	ClockDividerEx cd;
 	cd.setDivision(4);
 	// Force deterministic start
@@ -22,7 +22,7 @@ TEST_CASE("Basic division and wrapping") {
 	REQUIRE(triggers[2] == 11);
 }
 
-TEST_CASE("Reset produces clock in [0, division-1]") {
+TEST_CASE("Reset produces clock in [0, division-1]", "[ClockDividerEx]") {
 	ClockDividerEx cd;
 	cd.setDivision(5);
 	int failures = 0;
@@ -35,7 +35,7 @@ TEST_CASE("Reset produces clock in [0, division-1]") {
 	REQUIRE(failures == 0);
 }
 
-TEST_CASE("Division == 1 always triggers") {
+TEST_CASE("Division == 1 always triggers", "[ClockDividerEx]") {
 	ClockDividerEx cd;
 	cd.setDivision(1);
 	// Collect results for a few iterations
@@ -45,10 +45,11 @@ TEST_CASE("Division == 1 always triggers") {
 	}
 
 	CATCH_INFO("results size=" << results.size());
-	REQUIRE(std::all_of(results.begin(), results.end(), [](bool b){ return b; }));
+	auto triggers = std::all_of(results.begin(), results.end(), [](bool b){ return b; });
+	REQUIRE(triggers == true);
 }
 
-TEST_CASE("setDivision updates division and resets clock") {
+TEST_CASE("setDivision updates division and resets clock", "[ClockDividerEx]") {
 	ClockDividerEx cd;
 	cd.setDivision(7);
 	REQUIRE(cd.getDivision() == 7);

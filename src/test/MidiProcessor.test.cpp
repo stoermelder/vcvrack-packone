@@ -25,7 +25,7 @@ struct TestHandler : MidiProcessorHandler {
 };
 
 
-TEST_CASE("Note on/off messages") {
+TEST_CASE("Note on/off messages", "[MidiProcessor]") {
 	MidiProcessor mp;
 	TestHandler h;
 	mp.subscribe(&h);
@@ -56,7 +56,7 @@ TEST_CASE("Note on/off messages") {
 	REQUIRE(lastOff.getValue() == 0);
 }
 
-TEST_CASE("Clock and Start/Stop messages") {
+TEST_CASE("Clock and Start/Stop messages", "[MidiProcessor]") {
 	MidiProcessor mp;
 	TestHandler h;
 	mp.subscribe(&h);
@@ -89,7 +89,7 @@ TEST_CASE("Clock and Start/Stop messages") {
 	REQUIRE(lastStop.type == MessageEx::Type::STOP);
 }
 
-TEST_CASE("Pitch bend values are combined into extraValue") {
+TEST_CASE("Pitch bend values are combined into extraValue", "[MidiProcessor]") {
 	MidiProcessor mp;
 	TestHandler h;
 	mp.subscribe(&h);
@@ -108,7 +108,7 @@ TEST_CASE("Pitch bend values are combined into extraValue") {
 	REQUIRE(lastPb.getValue() == ((4 << 7) | 3));
 }
 
-TEST_CASE("14-bit CC combines MSB+LSB") {
+TEST_CASE("14-bit CC combines MSB+LSB", "[MidiProcessor]") {
 	MidiProcessor mp;
 	TestHandler h;
 	mp.subscribe(&h);
@@ -137,7 +137,7 @@ TEST_CASE("14-bit CC combines MSB+LSB") {
 	REQUIRE(last.getValue() == (3 * 128 + 10));
 }
 
-TEST_CASE("RPN selection, data entry and reset") {
+TEST_CASE("RPN selection, data entry and reset", "[MidiProcessor]") {
 	MidiProcessor mp;
 	TestHandler h;
 	mp.subscribe(&h);
@@ -187,7 +187,7 @@ TEST_CASE("RPN selection, data entry and reset") {
 	REQUIRE(resetMsg.getParamNumber() == -1);
 }
 
-TEST_CASE("NRPN selection and data entry") {
+TEST_CASE("NRPN selection and data entry", "[MidiProcessor]") {
 	MidiProcessor mp;
 	TestHandler h;
 	mp.subscribe(&h);

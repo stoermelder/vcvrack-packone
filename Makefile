@@ -42,11 +42,11 @@ build/test/%: src/test/%.cpp $(CURDIR)/src/test/catch2/catch_amalgamated.cpp
 	@$(CXX) -std=c++14 \
 		-I$(CURDIR)/src/test -I$(CURDIR)/src/test/catch2 $(FLAGS) -O0 \
 		-L$(RACK_DIR) -lRack \
-		-o $@ $(CURDIR)/src/test/catch2/catch_amalgamated.cpp $<
+		-o $@ $(CURDIR)/src/test/catch2/catch_amalgamated.cpp $(CURDIR)/$(TARGET) $< 
 
 # Build all test binaries
 # Also copy the Rack shared library to build/test/ to avoid runtime linking issues
-test: $(TEST_BINARIES)
+test: $(TEST_BINARIES) $(TARGET)
 	@mkdir -p build/test
 	@for f in ../../libRack.*; do \
 		if [ -e "$$f" ]; then \
@@ -55,6 +55,9 @@ test: $(TEST_BINARIES)
 			fi; \
 		fi; \
 	done
+	@if [ ! -e "build/test/$(TARGET)" ]; then \
+		cp "$(CURDIR)/$(TARGET)" build/test/ && echo "Copied $(TARGET) to build/test"; \
+	fi; \
 
 # Run all test binaries (exit non-zero on first failure)
 testrun: test

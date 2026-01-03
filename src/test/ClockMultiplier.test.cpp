@@ -3,7 +3,7 @@
 
 using namespace StoermelderPackOne;
 
-TEST_CASE("Division and triggering") {
+TEST_CASE("Division and triggering", "[ClockMultiplier]") {
 	ClockMultiplier cm;
 	const int clockCycleSamples = 20;
 	// Prepare a clock cycle of 20 samples
@@ -36,7 +36,7 @@ TEST_CASE("Division and triggering") {
 }
 
 
-TEST_CASE("Non-integer division spacing (div=3)") {
+TEST_CASE("Non-integer division spacing (div=3)", "[ClockMultiplier]") {
 	ClockMultiplier cm;
 	const int clockCycleSamples = 20;
 	cm.tick();
@@ -59,7 +59,7 @@ TEST_CASE("Non-integer division spacing (div=3)") {
 	REQUIRE(triggers[2] == 14);
 }
 
-TEST_CASE("Dense triggering when division fraction is small (div=32)") {
+TEST_CASE("Dense triggering when division fraction is small (div=32)", "[ClockMultiplier]") {
 	ClockMultiplier cm;
 	const int clockCycleSamples = 20;
 	cm.tick();
@@ -75,7 +75,7 @@ TEST_CASE("Dense triggering when division fraction is small (div=32)") {
 	REQUIRE(count == (clockCycleSamples - 1));
 }
 
-TEST_CASE("Reset and zero-division edge cases") {
+TEST_CASE("Reset and zero-division edge cases", "[ClockMultiplier]") {
 	ClockMultiplier cm;
 	const int clockCycleSamples = 20;
 	// Reset clears clock, so trigger should be ignored
