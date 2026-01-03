@@ -128,6 +128,8 @@ struct ThemedModuleWidget : BASE {
 				BASE::setPanel(Svg::load(asset::plugin(pluginInstance, panel())));
 			}
 		}
+
+		if (settings::headless) return;
 		BASE::step();
 	}
 

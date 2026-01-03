@@ -1,4 +1,3 @@
-
 #define CATCH_CONFIG_PREFIX_MESSAGES
 #include "catch2/catch_amalgamated.hpp"
 
@@ -15,5 +14,6 @@
 #    define DEPRECATED
 #  endif
 #endif
+
 #include "../plugin.hpp"
 using namespace Catch;

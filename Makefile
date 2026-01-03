@@ -31,6 +31,7 @@ ifdef SUCCESS
 endif
 
 TEST_SOURCES += $(wildcard src/test/*.test.cpp)
+TEST_ADD_SOURCES := $(CURDIR)/src/test/catch2/catch_amalgamated.cpp
 
 # Build each test source into its own executable under build/test/
 TEST_BINARIES := $(patsubst src/test/%.cpp,build/test/%,$(TEST_SOURCES))
@@ -42,7 +43,7 @@ build/test/%: src/test/%.cpp $(CURDIR)/src/test/catch2/catch_amalgamated.cpp
 	@$(CXX) -std=c++14 \
 		-I$(CURDIR)/src/test -I$(CURDIR)/src/test/catch2 $(FLAGS) -O0 \
 		-L$(RACK_DIR) -lRack \
-		-o $@ $(CURDIR)/src/test/catch2/catch_amalgamated.cpp $(CURDIR)/$(TARGET) $< 
+		-o $@ $(TEST_ADD_SOURCES) $(CURDIR)/$(TARGET) $< 
 
 # Build all test binaries
 # Also copy the Rack shared library to build/test/ to avoid runtime linking issues
@@ -61,5 +62,8 @@ test: $(TEST_BINARIES) $(TARGET)
 
 # Run all test binaries (exit non-zero on first failure)
 testrun: test
-	@echo "Running tests..."
-	@set -e; for t in $(TEST_BINARIES); do DYLD_LIBRARY_PATH=$(RACK_DIR) ./$$t $(TEST_SUCCESS_FLAG); done
+	echo "Running tests..."
+	@set -e; for t in $(TEST_BINARIES); do \
+		echo "Running test $$t..."; \
+		DYLD_LIBRARY_PATH=$(RACK_DIR) ./$$t $(TEST_SUCCESS_FLAG); \
+	done
