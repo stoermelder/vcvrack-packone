@@ -1555,7 +1555,7 @@ struct MidiCatSelectionWidget : Widget {
 		learnMode = learnMode == LEARN_MODE::OFF ? mode : LEARN_MODE::OFF;
 		this->bindLights = bindLights;
 		GLFWcursor* cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
-		glfwSetCursor(APP->window->win, cursor);
+		if (APP->window) glfwSetCursor(APP->window->win, cursor);
 	}
 
 	void onHover(const HoverEvent& e) override {
@@ -1585,7 +1585,7 @@ struct MidiCatSelectionWidget : Widget {
 			mapParamsFromRect();
 			selecting = false;
 			learnMode = LEARN_MODE::OFF;
-			glfwSetCursor(APP->window->win, NULL);
+			if (APP->window) glfwSetCursor(APP->window->win, NULL);
 			e.consume(this);
 		}
 		Widget::onDragEnd(e);
@@ -1752,13 +1752,13 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 		module->enableLearn(id);
 		APP->event->setSelectedWidget(this);
 		GLFWcursor* cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
-		glfwSetCursor(APP->window->win, cursor);
+		if (APP->window) glfwSetCursor(APP->window->win, cursor);
 	}
 
 	void disableLearnLight() {
 		module->learningLightId = -1;
 		module->disableLearn();
-		glfwSetCursor(APP->window->win, NULL);
+		if (APP->window) glfwSetCursor(APP->window->win, NULL);
 	}
 
 	std::string getSlotPrefix() override {
@@ -2135,8 +2135,8 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 	}
 
 	~MidiCatBaseWidget() {
-		if (learnMode != LEARN_MODE::OFF) {
-			glfwSetCursor(APP->window->win, NULL);
+		if (learnMode != LEARN_MODE::OFF && APP->window) {
+			if (APP->window) glfwSetCursor(APP->window->win, NULL);
 		}
 
 		if (selectionWidget) {
@@ -2584,12 +2584,12 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 		if (learnMode != LEARN_MODE::OFF) {
 			cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
 		}
-		glfwSetCursor(APP->window->win, cursor);
+		if (APP->window) glfwSetCursor(APP->window->win, cursor);
 	}
 
 	void disableLearn() {
 		learnMode = LEARN_MODE::OFF;
-		glfwSetCursor(APP->window->win, NULL);
+		if (APP->window) glfwSetCursor(APP->window->win, NULL);
 	}
 
 	void appendContextMenu(Menu* menu) override {

@@ -284,7 +284,7 @@ struct MapModuleChoice : LedDisplayChoice {
 
 	~MapModuleChoice() {
 		if (module && module->learningId == id) {
-			glfwSetCursor(APP->window->win, NULL);
+			if (APP->window) glfwSetCursor(APP->window->win, NULL);
 		}
 	}
 
@@ -341,7 +341,7 @@ struct MapModuleChoice : LedDisplayChoice {
 		module->enableLearn(id);
 
 		GLFWcursor* cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
-		glfwSetCursor(APP->window->win, cursor);
+		if (APP->window) glfwSetCursor(APP->window->win, cursor);
 	}
 
 	void onDeselect(const event::Deselect& e) override {
@@ -358,12 +358,12 @@ struct MapModuleChoice : LedDisplayChoice {
 				int paramId = paramWidget->getParamQuantity()->paramId;
 				module->learnParam(id, moduleId, paramId);
 				hscrollCharOffset = 0;
-				glfwSetCursor(APP->window->win, NULL);
+				if (APP->window) glfwSetCursor(APP->window->win, NULL);
 				return;
 			}
 		}
 		module->disableLearn(id);
-		glfwSetCursor(APP->window->win, NULL);
+		if (APP->window) glfwSetCursor(APP->window->win, NULL);
 	}
 
 	void step() override {

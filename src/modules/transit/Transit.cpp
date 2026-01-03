@@ -1298,12 +1298,12 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 		if (learn != 0) {
 			cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
 		}
-		glfwSetCursor(APP->window->win, cursor);
+		if (APP->window) glfwSetCursor(APP->window->win, cursor);
 	}
 
 	void disableLearn() {
 		learn = 0;
-		glfwSetCursor(APP->window->win, NULL);
+		if (APP->window) glfwSetCursor(APP->window->win, NULL);
 	}
 
 	void appendContextMenu(Menu* menu) override {

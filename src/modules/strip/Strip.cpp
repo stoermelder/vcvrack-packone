@@ -659,10 +659,10 @@ struct ExcludeButton : TL1105 {
 		learn ^= true;
 		if (learn) {
 			GLFWcursor* cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
-			glfwSetCursor(APP->window->win, cursor);
+			if (APP->window) glfwSetCursor(APP->window->win, cursor);
 		}
 		else {
-			glfwSetCursor(APP->window->win, NULL);
+			if (APP->window) glfwSetCursor(APP->window->win, NULL);
 		}
 		APP->scene->rack->setTouchedParam(NULL);
 	}
