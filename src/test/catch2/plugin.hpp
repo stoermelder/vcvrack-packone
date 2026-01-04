@@ -1,4 +1,6 @@
 #define CATCH_CONFIG_PREFIX_MESSAGES
+#define CATCH_CONFIG_THREAD_SAFE_ASSERTIONS
+#define CATCH_CONFIG_FAST_COMPILE
 #include "catch2/catch_amalgamated.hpp"
 
 // Avoid redefinition issues: replace Catch2's function-like DEPRECATED with an object-like one

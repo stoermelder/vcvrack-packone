@@ -3,7 +3,6 @@
 #include "../modules/midi/MidiKey.cpp"
 #include "MidiKey.vcvm.h"
 
-
 using namespace StoermelderPackOne;
 using namespace StoermelderPackOne::MidiKey;
 
@@ -21,15 +20,15 @@ static Test::TestContext<SceneEx> testContext;
 
 TEST_CASE("Construction and initialization", "[MidiKey]") {
 	MidiKeyModule<>* m = Test::createModule<MidiKeyModule<>>("MidiKey");
-	MidiKeyWidget* mw = Test::createModuleWidget<MidiKeyWidget>(m);
+	MidiKeyWidget* mw = Test::createWidget<MidiKeyWidget>(m);
 
-	Test::addModule(m, mw);
-	Test::removeModule(m, mw);
+	Test::registerModule(m, mw);
+	Test::unregisterModule(m, mw);
 }
 
 TEST_CASE("Preset loading", "[MidiKey]") {
 	MidiKeyModule<>* m = Test::createModule<MidiKeyModule<>>("MidiKey");
-	Test::addModule(m);
+	Test::registerModule(m);
 
 	json_error_t jerr;
 	json_t* moduleJ = json_loads(MidiKey_vcvm, 0, &jerr);
@@ -37,7 +36,7 @@ TEST_CASE("Preset loading", "[MidiKey]") {
 
 	json_decref(moduleJ);
 
-	Test::removeModule(m);
+	Test::unregisterModule(m);
 }
 
 TEST_CASE("Map ID inversion", "[MidiKey]") {
@@ -63,7 +62,7 @@ TEST_CASE("Map ID inversion", "[MidiKey]") {
 		REQUIRE(m->getMapIdRev(chanMapIds[i]) == i);
 	}
 
-	delete m;
+	Test::destroyModule(m);
 }
 
 TEST_CASE("Enable/disable learn and learnKey behavior", "[MidiKey]") {
@@ -81,7 +80,7 @@ TEST_CASE("Enable/disable learn and learnKey behavior", "[MidiKey]") {
 	REQUIRE(m->learningId == -1);
 	// mapLen should have increased at least to cover slot 0
 	REQUIRE(m->mapLen >= 1);
-	delete m;
+	Test::destroyModule(m);
 }
 
 TEST_CASE("ProcessMapUpdate toggles modifier slots and emits key events", "[MidiKey]") {
@@ -112,8 +111,8 @@ TEST_CASE("ProcessMapUpdate toggles modifier slots and emits key events", "[Midi
 	}
 
 	SECTION("Key event window propagate") {
-		MidiKeyWidget* mw = Test::createModuleWidget<MidiKeyWidget>(m);
-		Test::addModule(m, mw);
+		MidiKeyWidget* mw = Test::createWidget<MidiKeyWidget>(m);
+		Test::registerModule(m, mw);
 
 		// Process the press event
 		mw->step();
@@ -123,6 +122,8 @@ TEST_CASE("ProcessMapUpdate toggles modifier slots and emits key events", "[Midi
 		REQUIRE(testContext.scene->receivedKeys[0].action == GLFW_PRESS);
 		// Clean up
 		testContext.scene->receivedKeys.clear();
-		Test::removeModule(m, mw);
+		Test::unregisterModule(m, mw);
 	}
+
+	Test::destroyModule(m);
 }

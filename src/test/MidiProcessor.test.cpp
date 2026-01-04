@@ -1,19 +1,9 @@
 #include "catch2/plugin.hpp"
+#include "test_context.hpp"
 #include "../modules/midi/MidiProcessor.hpp"
 
 using namespace StoermelderPackOne;
 
-// Helper: construct a simple 3-byte MIDI message.
-// - statusNibble: high nibble of status (e.g., 0xb for CC)
-// - channel: low nibble (0-15)
-// - b1: first data byte (e.g., CC number)
-// - b2: second data byte (e.g., value)
-static rack::midi::Message makeMidiMessage(uint8_t statusNibble, uint8_t channel, uint8_t b1, uint8_t b2, int64_t frame = 0) {
-	rack::midi::Message m;
-	m.frame = frame;
-	m.bytes = { static_cast<unsigned char>((statusNibble << 4) | (channel & 0x0f)), static_cast<unsigned char>(b1), static_cast<unsigned char>(b2) };
-	return m;
-}
 
 // TestHandler collects messages emitted by MidiProcessor so assertions can inspect them.
 struct TestHandler : MidiProcessorHandler {
@@ -31,7 +21,7 @@ TEST_CASE("Note on/off messages", "[MidiProcessor]") {
 	mp.subscribe(&h);
 
 	// Note On: status 0x9, channel 4, note 60, velocity 100
-	auto noteOn = makeMidiMessage(0x9, 4, 60, 100);
+	auto noteOn = Test::makeMidiMessage(0x9, 4, 60, 100);
 	MessageEx mOn(noteOn);
 	mOn.type = MessageEx::Type::NOTE_ON;
 	mp.notify(mOn);
@@ -44,7 +34,7 @@ TEST_CASE("Note on/off messages", "[MidiProcessor]") {
 	REQUIRE(lastOn.getValue() == 100);
 
 	// Note Off: status 0x8, channel 4, note 60, velocity 0
-	auto noteOff = makeMidiMessage(0x8, 4, 60, 0);
+	auto noteOff = Test::makeMidiMessage(0x8, 4, 60, 0);
 	MessageEx mOff(noteOff);
 	mOff.type = MessageEx::Type::NOTE_OFF;
 	mp.notify(mOff);
@@ -62,7 +52,7 @@ TEST_CASE("Clock and Start/Stop messages", "[MidiProcessor]") {
 	mp.subscribe(&h);
 
 	// Timing Clock: system message 0xf with sys = 0x8
-	auto clockMsg = makeMidiMessage(0xf, 0x8, 0, 0);
+	auto clockMsg = Test::makeMidiMessage(0xf, 0x8, 0, 0);
 	MessageEx mClock(clockMsg);
 	mClock.type = MessageEx::Type::CLOCK;
 	mp.notify(mClock);
@@ -72,7 +62,7 @@ TEST_CASE("Clock and Start/Stop messages", "[MidiProcessor]") {
 	REQUIRE(lastClock.type == MessageEx::Type::CLOCK);
 
 	// Start/Stop: also test START (0xa) and STOP (0xc)
-	auto startMsg = makeMidiMessage(0xf, 0xa, 0, 0);
+	auto startMsg = Test::makeMidiMessage(0xf, 0xa, 0, 0);
 	MessageEx mStart(startMsg);
 	mStart.type = MessageEx::Type::START;
 	mp.notify(mStart);
@@ -80,7 +70,7 @@ TEST_CASE("Clock and Start/Stop messages", "[MidiProcessor]") {
 	MessageEx lastStart = h.msgs.back();
 	REQUIRE(lastStart.type == MessageEx::Type::START);
 
-	auto stopMsg = makeMidiMessage(0xf, 0xc, 0, 0);
+	auto stopMsg = Test::makeMidiMessage(0xf, 0xc, 0, 0);
 	MessageEx mStop(stopMsg);
 	mStop.type = MessageEx::Type::STOP;
 	mp.notify(mStop);
@@ -95,7 +85,7 @@ TEST_CASE("Pitch bend values are combined into extraValue", "[MidiProcessor]") {
 	mp.subscribe(&h);
 
 	// Pitch bend: status 0xe, channel 7, LSB=3, MSB=4 -> value = MSB<<7 | LSB
-	auto pb = makeMidiMessage(0xe, 7, 3, 4);
+	auto pb = Test::makeMidiMessage(0xe, 7, 3, 4);
 	MessageEx mpb(pb);
 	mpb.type = MessageEx::Type::PITCH_BEND;
 	// Emulate MidiProcessor behaviour: combine MSB and LSB into extraValue
@@ -115,14 +105,14 @@ TEST_CASE("14-bit CC combines MSB+LSB", "[MidiProcessor]") {
 
 	// Send MSB part of a 14-bit CC (CC number 5) with value 3.
 	// The processor stores MSB until a matching LSB (CC 32+5) arrives.
-	auto msgMsb = makeMidiMessage(0xb, 1, 5, 3);
+	auto msgMsb = Test::makeMidiMessage(0xb, 1, 5, 3);
 	MessageEx mMsb(msgMsb);
 	mMsb.type = MessageEx::Type::CC;
 	mp.notify(mMsb);
 	mp.processCc(msgMsb);
 
 	// Send the LSB (CC 37) which should combine with stored MSB and emit CC_14BIT.
-	auto msgLsb = makeMidiMessage(0xb, 1, 32 + 5, 10);
+	auto msgLsb = Test::makeMidiMessage(0xb, 1, 32 + 5, 10);
 	MessageEx mLsb(msgLsb);
 	mLsb.type = MessageEx::Type::CC;
 	mp.notify(mLsb);
@@ -144,9 +134,9 @@ TEST_CASE("RPN selection, data entry and reset", "[MidiProcessor]") {
 
 	// Select an RPN parameter using CC 101 (MSB) then CC 100 (LSB).
 	// The processor will notify an RPN selection with the combined param number = MSB*128 + LSB.
-	auto rpnMsb = makeMidiMessage(0xb, 2, 101, 1);
+	auto rpnMsb = Test::makeMidiMessage(0xb, 2, 101, 1);
 	mp.processCc(rpnMsb);
-	auto rpnLsb = makeMidiMessage(0xb, 2, 100, 2);
+	auto rpnLsb = Test::makeMidiMessage(0xb, 2, 100, 2);
 	mp.processCc(rpnLsb);
 
 	CATCH_INFO("RPN select: ch=" << int(rpnMsb.bytes[0] & 0x0f) << " msb=" << int(rpnMsb.bytes[2]) << " lsb=" << int(rpnLsb.bytes[2]));
@@ -159,7 +149,7 @@ TEST_CASE("RPN selection, data entry and reset", "[MidiProcessor]") {
 
 	// Data entry: CC 6 is MSB (may not emit a complete value yet), CC 38 is LSB that finalizes it.
 	// MSB alone should not produce a completed data message (we still have selection only)
-	auto dataMsb = makeMidiMessage(0xb, 2, 6, 10);
+	auto dataMsb = Test::makeMidiMessage(0xb, 2, 6, 10);
 	mp.processCc(dataMsb);
 	// no notification yet from MSB alone; last reported message remains the selection
 	MessageEx before = h.msgs.back();
@@ -167,7 +157,7 @@ TEST_CASE("RPN selection, data entry and reset", "[MidiProcessor]") {
 
 	// LSB completes the value; note that CC LSB processing may emit both the RPN data message
 	// and also a 14-bit CC message for other CC ranges, so search backwards for the RPN entry.
-	auto dataLsb = makeMidiMessage(0xb, 2, 38, 7);
+	auto dataLsb = Test::makeMidiMessage(0xb, 2, 38, 7);
 	mp.processCc(dataLsb);
 	// The CC LSB processing emits both RPN and a 14-bit CC; find the last RPN message
 	CATCH_INFO("RPN data: ch=" << int(dataLsb.bytes[0] & 0x0f) << " msb=" << int(dataMsb.bytes[2]) << " lsb=" << int(dataLsb.bytes[2]));
@@ -177,9 +167,9 @@ TEST_CASE("RPN selection, data entry and reset", "[MidiProcessor]") {
 	REQUIRE(itRpn->getValue() == (10 * 128 + 7));
 
 	// RPN reset: sending 127/127 resets selections and should notify an RPN with param -1
-	auto resetMsb = makeMidiMessage(0xb, 2, 101, 127);
+	auto resetMsb = Test::makeMidiMessage(0xb, 2, 101, 127);
 	mp.processCc(resetMsb);
-	auto resetLsb = makeMidiMessage(0xb, 2, 100, 127);
+	auto resetLsb = Test::makeMidiMessage(0xb, 2, 100, 127);
 	mp.processCc(resetLsb);
 	CATCH_INFO("RPN reset: ch=" << int(resetLsb.bytes[0] & 0x0f) << " msb=" << int(resetMsb.bytes[2]) << " lsb=" << int(resetLsb.bytes[2]));
 	MessageEx resetMsg = h.msgs.back();
@@ -193,9 +183,9 @@ TEST_CASE("NRPN selection and data entry", "[MidiProcessor]") {
 	mp.subscribe(&h);
 
 	// select NRPN: CC 99 (MSB) then CC 98 (LSB)
-	auto nrpnMsb = makeMidiMessage(0xb, 3, 99, 4);
+	auto nrpnMsb = Test::makeMidiMessage(0xb, 3, 99, 4);
 	mp.processCc(nrpnMsb);
-	auto nrpnLsb = makeMidiMessage(0xb, 3, 98, 5);
+	auto nrpnLsb = Test::makeMidiMessage(0xb, 3, 98, 5);
 	mp.processCc(nrpnLsb);
 	CATCH_INFO("NRPN select: ch=" << int(nrpnMsb.bytes[0] & 0x0f) << " msb=" << int(nrpnMsb.bytes[2]) << " lsb=" << int(nrpnLsb.bytes[2]));
 
@@ -204,9 +194,9 @@ TEST_CASE("NRPN selection and data entry", "[MidiProcessor]") {
 	REQUIRE(nrpnSelect.getParamNumber() == (4 * 128 + 5));
 
 	// data entry MSB then LSB
-	auto dataMsb = makeMidiMessage(0xb, 3, 6, 20);
+	auto dataMsb = Test::makeMidiMessage(0xb, 3, 6, 20);
 	mp.processCc(dataMsb);
-	auto dataLsb = makeMidiMessage(0xb, 3, 38, 2);
+	auto dataLsb = Test::makeMidiMessage(0xb, 3, 38, 2);
 	mp.processCc(dataLsb);
 	CATCH_INFO("NRPN data: ch=" << int(dataLsb.bytes[0] & 0x0f) << " msb=" << int(dataMsb.bytes[2]) << " lsb=" << int(dataLsb.bytes[2]));
 	// The CC LSB processing emits both NRPN and a 14-bit CC; find the last NRPN message
