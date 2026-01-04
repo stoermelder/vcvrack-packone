@@ -63,6 +63,8 @@ TEST_CASE("Construction and initialization", "[MidiCat]") {
 
 TEST_CASE("MIDI learning functionality", "[MidiCat]") {
 	MidiCatModule* module = Test::createModule<MidiCatModule>("MidiCat");
+	module->processDivider.setDivision(1); // Process every sample for testing
+	int j = 1;
 
 	SECTION("Learning CC assigns to correct channel") {
 		module->enableLearn(0, true);		
@@ -86,6 +88,21 @@ TEST_CASE("MIDI learning functionality", "[MidiCat]") {
 		module->enableLearn(0);
 		module->disableLearn();
 		REQUIRE(module->learningId == -1);
+	}
+
+	SECTION("All channels learn CC correctly") {
+		std::vector<int> v;
+		for (int i = 0; i < MAX_CHANNELS; i++) {
+			module->enableLearn(i, true);		
+			module->midiCc(Test::makeMidiMessage(0xb, 0, i, 64));
+			module->process(Test::makeProcessArgs(j++));
+			module->disableLearn();
+			 // All CCs should be assigned correctly and Note should be unassigned
+			if (module->ccs[i].getCc() != i || module->notes[i].getNote() != -1) {
+				v.push_back(i);
+			}
+		}
+		REQUIRE(v.size() == 0);
 	}
 
 	Test::destroyModule(module);

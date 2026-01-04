@@ -905,7 +905,7 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 		uint8_t cc = msg.getNote();
 		uint8_t value = msg.getValue();
 		// Learn
-		if (learningId >= 0 && learnedCcLast != cc && learnedCcLast != cc - 32 && valuesCc[cc] != value) {
+		if (learningId >= 0 && learnedCcLast != cc && (learnedCcLast == -1 || learnedCcLast != cc - 32) && valuesCc[cc] != value) {
 			ccs[learningId].setCc(cc);
 			ccs[learningId].ccMode = CCMODE::DIRECT;
 			notes[learningId].setNote(-1);
