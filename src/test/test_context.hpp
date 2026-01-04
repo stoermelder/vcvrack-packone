@@ -13,14 +13,6 @@ struct TestContext {
 	rack::Context* ctx = nullptr;
 	TScene* scene;
 
-#if defined(__clang__)
-	#pragma clang diagnostic push
-	#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-#elif defined(__GNUC__) || defined(__GNUG__)
-	#pragma GCC diagnostic push
-	#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-#endif
-
 	TestContext() {
 		// Ensure headless mode for tests
 		settings::headless = true;
@@ -33,20 +25,52 @@ struct TestContext {
 		scene = new TScene();
 		ctx->scene = scene;
 		ctx->event->rootWidget = ctx->scene;
+
+		pluginInstance = new Plugin();
+		init(pluginInstance);
 	}
 
 	~TestContext() {
+		delete pluginInstance;
+
 		// Context destructor handled by Rack; free our allocation
 		if (ctx) {
 			delete ctx;
 		}
 	}
-
-#if defined(__clang__)
-	#pragma clang diagnostic pop
-#elif defined(__GNUC__) || defined(__GNUG__)
-	#pragma GCC diagnostic pop
-#endif
 };
+
+
+template <typename T>
+static T* createModule(std::string modelSlug) {
+	Model* model = pluginInstance->getModel(modelSlug);
+	T* m = dynamic_cast<T*>(model->createModule());
+	return m;
+}
+
+template <typename T>
+static T* createModuleWidget(Module* m) {
+	T* mw = dynamic_cast<T*>(m->model->createModuleWidget(m));
+	return mw;
+}
+
+static void addModule(rack::Module* m, rack::ModuleWidget* mw = nullptr) {
+	APP->engine->addModule(m);
+	if (mw) {
+		APP->scene->rack->addModule(mw);
+	}
+}
+
+static void removeModule(rack::Module* m, rack::ModuleWidget* mw = nullptr) {
+	if (mw) {
+		APP->scene->rack->removeModule(mw);
+		// Deletes also m
+		delete mw;
+	}
+	else {
+		APP->engine->removeModule(m);
+		delete m;
+	}
+}
 
 } // namespace test

@@ -17,3 +17,12 @@
 
 #include "../plugin.hpp"
 using namespace Catch;
+
+// We will call several deprecated functions in the tests, thus disable warnings here
+#if defined(__clang__)
+	#pragma clang diagnostic push
+	#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#elif defined(__GNUC__) || defined(__GNUG__)
+	#pragma GCC diagnostic push
+	#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif

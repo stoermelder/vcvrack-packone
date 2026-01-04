@@ -1,78 +1,91 @@
 #include "catch2/plugin.hpp"
 #include "test_context.hpp"
 #include "../modules/midi/MidiKey.cpp"
+#include "MidiKey.vcvm.h"
 
 
 using namespace StoermelderPackOne;
 using namespace StoermelderPackOne::MidiKey;
 
-
-#if defined(__clang__)
-	#pragma clang diagnostic push
-	#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-#elif defined(__GNUC__) || defined(__GNUG__)
-	#pragma GCC diagnostic push
-	#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-#endif
 struct SceneEx : rack::app::Scene {
 	std::vector<event::HoverKey> receivedKeys;
 	void onHoverKey(const HoverKeyEvent& e) override {
 		receivedKeys.push_back(e);
 	}
 };
-#if defined(__clang__)
-	#pragma clang diagnostic pop
-#elif defined(__GNUC__) || defined(__GNUG__)
-	#pragma GCC diagnostic pop
-#endif
 
 // Define the single instance used by tests
 static Test::TestContext<SceneEx> testContext;
 
 
+
+TEST_CASE("Construction and initialization", "[MidiKey]") {
+	MidiKeyModule<>* m = Test::createModule<MidiKeyModule<>>("MidiKey");
+	MidiKeyWidget* mw = Test::createModuleWidget<MidiKeyWidget>(m);
+
+	Test::addModule(m, mw);
+	Test::removeModule(m, mw);
+}
+
+TEST_CASE("Preset loading", "[MidiKey]") {
+	MidiKeyModule<>* m = Test::createModule<MidiKeyModule<>>("MidiKey");
+	Test::addModule(m);
+
+	json_error_t jerr;
+	json_t* moduleJ = json_loads(MidiKey_vcvm, 0, &jerr);
+	m->dataFromJson(moduleJ);
+
+	json_decref(moduleJ);
+
+	Test::removeModule(m);
+}
+
 TEST_CASE("Map ID inversion", "[MidiKey]") {
-	MidiKeyModule<> m;
+	MidiKeyModule<>* m = Test::createModule<MidiKeyModule<>>("MidiKey");
+
 	// Check negative modifier IDs
 	int negIds[] = { ID_CTRL, ID_ALT, ID_SHIFT };
 	uint16_t negMapIds[3];
 	for (int i = 0; i < 3; ++i) {
-		negMapIds[i] = m.getMapId(negIds[i]);
+		negMapIds[i] = m->getMapId(negIds[i]);
 	}
 	// Check channel IDs 0..8
 	const int chanCount = 9;
 	uint16_t chanMapIds[chanCount];
 	for (int i = 0; i < chanCount; ++i) {
-		chanMapIds[i] = m.getMapId(i);
+		chanMapIds[i] = m->getMapId(i);
 	}
 	// Assertions after collection
 	for (int i = 0; i < 3; ++i) {
-		REQUIRE(m.getMapIdRev(negMapIds[i]) == negIds[i]);
+		REQUIRE(m->getMapIdRev(negMapIds[i]) == negIds[i]);
 	}
 	for (int i = 0; i < chanCount; ++i) {
-		REQUIRE(m.getMapIdRev(chanMapIds[i]) == i);
+		REQUIRE(m->getMapIdRev(chanMapIds[i]) == i);
 	}
+
+	delete m;
 }
 
 TEST_CASE("Enable/disable learn and learnKey behavior", "[MidiKey]") {
-	MidiKeyModule<> m;
+	MidiKeyModule<>* m = Test::createModule<MidiKeyModule<>>("MidiKey");
 	// Enable learn, then disable the tracking processor learn state and call learnKey
-	m.enableLearn(0);
-	REQUIRE(m.learningId == 0);
+	m->enableLearn(0);
+	REQUIRE(m->learningId == 0);
 	// Simulate that the tracking processor has finished learning MIDI (so commitLearn can proceed)
-	m.trackingProcessor.disableMapLearn();
+	m->trackingProcessor.disableMapLearn();
 	// Use a known key
-	m.learnKey(GLFW_KEY_A, 0);
+	m->learnKey(GLFW_KEY_A, 0);
 	// The slot must have been updated
-	REQUIRE(m.slot[0].key == GLFW_KEY_A);
+	REQUIRE(m->slot[0].key == GLFW_KEY_A);
 	// learningId should have been cleared by commitLearn
-	REQUIRE(m.learningId == -1);
+	REQUIRE(m->learningId == -1);
 	// mapLen should have increased at least to cover slot 0
-	REQUIRE(m.mapLen >= 1);
+	REQUIRE(m->mapLen >= 1);
+	delete m;
 }
 
 TEST_CASE("ProcessMapUpdate toggles modifier slots and emits key events", "[MidiKey]") {
-	MidiKeyModule<>* m = new MidiKeyModule<>();
-
+	MidiKeyModule<>* m = Test::createModule<MidiKeyModule<>>("MidiKey");
 	// Test modifier toggle: CTRL (-4 -> mapId 0)
 	m->processMapUpdate(MidiTrackingType::NOTE, m->getMapId(ID_CTRL), 1);
 	REQUIRE(m->slot[ID_CTRL].active == true);
@@ -99,10 +112,9 @@ TEST_CASE("ProcessMapUpdate toggles modifier slots and emits key events", "[Midi
 	}
 
 	SECTION("Key event window propagate") {
-		pluginInstance = new Plugin();
-		APP->engine->addModule(m);
+		MidiKeyWidget* mw = Test::createModuleWidget<MidiKeyWidget>(m);
+		Test::addModule(m, mw);
 
-		MidiKeyWidget* mw = new MidiKeyWidget(m);
 		// Process the press event
 		mw->step();
 
@@ -111,9 +123,6 @@ TEST_CASE("ProcessMapUpdate toggles modifier slots and emits key events", "[Midi
 		REQUIRE(testContext.scene->receivedKeys[0].action == GLFW_PRESS);
 		// Clean up
 		testContext.scene->receivedKeys.clear();
-
-		// Engine remove is handled in descructor
-		delete mw;
-		delete pluginInstance;
+		Test::removeModule(m, mw);
 	}
 }
