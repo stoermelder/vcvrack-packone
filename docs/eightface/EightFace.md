@@ -112,4 +112,4 @@ With the option _Autoload first preset_ on the context menu you can autoload the
     - Allow disabling of "long press" for changing the number of active slots (#354)
 - v2.2.0
     - Added stability mode setting and _Safe-mode_ and use as new default setting
-    - Fixed not working on some modules (only 8FACEx2)
+    - Fixed broken function on some modules (only 8FACEx2)
