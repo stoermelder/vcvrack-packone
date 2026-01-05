@@ -31,6 +31,7 @@ struct PanicRoomModule : Module {
     float outsideAlpha = 0.5f;
 
     PanicRoomModule() {
+		panelTheme = pluginSettings.panelThemeDefault;
         config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
         onReset();
     }
