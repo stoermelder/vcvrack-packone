@@ -685,7 +685,7 @@ struct LabelContainer : widget::Widget {
 		// Enable edit mode
 		editMode = true;
 		learnMode = false;
-		glfwSetCursor(APP->window->win, NULL);
+		if (APP->window) glfwSetCursor(APP->window->win, NULL);
 	}
 
 	void toggleLearnMode() {
@@ -694,7 +694,7 @@ struct LabelContainer : widget::Widget {
 		if (learnMode) {
 			cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
 		}
-		glfwSetCursor(APP->window->win, cursor);
+		if (APP->window) glfwSetCursor(APP->window->win, cursor);
 	}
 
 	void toggleEditMode() {

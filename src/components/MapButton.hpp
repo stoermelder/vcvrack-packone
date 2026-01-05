@@ -105,7 +105,7 @@ struct MapButton : LEDBezel {
 		module->enableLearn(id);
 
 		GLFWcursor* cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
-		glfwSetCursor(APP->window->win, cursor);
+		if (APP->window) glfwSetCursor(APP->window->win, cursor);
 	}
 
 	void onDeselect(const event::Deselect& e) override {
@@ -119,12 +119,12 @@ struct MapButton : LEDBezel {
 				int64_t moduleId = paramWidget->getParamQuantity()->module->id;
 				int paramId = paramWidget->getParamQuantity()->paramId;
 				module->learnParam(id, moduleId, paramId);
-				glfwSetCursor(APP->window->win, NULL);
+				if (APP->window) glfwSetCursor(APP->window->win, NULL);
 				return;
 			}
 		}
 		module->disableLearn(id);
-		glfwSetCursor(APP->window->win, NULL);
+		if (APP->window) glfwSetCursor(APP->window->win, NULL);
 	}
 
 	std::string getParamName() {

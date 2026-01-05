@@ -10,7 +10,7 @@
 
 ### Overview
 
-8FACE mk2 is a module for storing, recalling and sequencing different presets of any module in Rack. The _mk2_ version is an evolution of [8FACE](EightFace.md) and provides additional functions, inspired by [TRANSIT](./Transit.md):
+8FACE mk2 is a module for storing, recalling and sequencing different presets of any module in Rack. The _mk2_ version is an evolution of [8FACE](EightFace.md) and provides additional functions, inspired by [TRANSIT](../transit/Transit.md):
 
 - 8FACE mk2 can bind to multiple modules at the same time.
 
@@ -19,6 +19,16 @@
 **Disclaimer: Loading presets of modules was not designed to be controlled by CV or modulated at audio rate. Please do not contact the developers of Rack or any modules when unexpected behavior occurs (i.e. crashes) or high CPU usage is noticeable.**
 
 ![8FACE mk2 intro](./EightFaceMk2-intro.gif)
+
+### Stability and performance
+
+8FACE mk2 includes a Stability and Performance option in the context menu with three modes:
+
+- _Safe mode_ (default) provides maximum stability. However, it may lock up the audio processing and cause stutters, pops, or other audible artifacts. This behavior is not caused by CPU overload but by fundamental design constraints in VCV Rack.
+
+- _Unsafe mode_ loads presets without locking the audio processing and therefore avoids audio artifacts. Depending on the module this can potentially cause instability or crashes; most modules work fine. _Unsafe mode_ and _Unsafe fast mode_ behave similarly when snapshots are loaded manually by clicking snapshot buttons (technically, preset loading occurs on the next rendered frame).
+
+- _Unsafe fast mode_ is similar to _Unsafe mode_ but uses an additional worker thread to apply presets. It is faster but may increase instability on some modules. Use this mode only if you require the fastest possible preset loading. This was the operating mode of 8FACE mk2 before v2.2.0. 
 
 ### Binding modules
 
@@ -103,15 +113,13 @@ Once placed next to 8FACE mk2 the expander works and behaves the same way 8FACE 
 
 ### Tips
 
-- 8FACE mk2 is designed to apply different presets onto modules, while stoermelder [TRANSIT](./Transit.md) is designed to morph parameter-snapshots. Morphing between presets of modules is not possible for technical reasons.
+- 8FACE mk2 is designed to apply different presets onto modules, while stoermelder [TRANSIT](../transit/Transit.md) is designed to morph parameter-snapshots. Morphing between presets of modules is not possible for technical reasons.
 
 - 8FACE mk2 does not support any preset-operations: 8FACE mk2 binds to any module in your patch which makes 8FACE mk2 not "transferable" to other module instances. In contrast, 8FACE (aka mk1) can be re-attached to another module instance as it uses the expander-mechanism in Rack. Thus, 8FACE mk2 cannot be sequenced with 8FACE or another 8FACE mk2.
 
 - Each snapshot can be named with a custom text label. This label is shown while hovering above the snapshot button if parameter tooltips are enabled.
 
-- [GLUE](./Glue.md) labels can be dynamically changed on different snapshots if a GLUE module is controlled by 8FACE mk2.
-
-- 8FACE mk2 uses "Safe-mode" as the default setting for loading presets (added in v2.2.0). Safe-mode loads presets in a slower way (technically speaking, preset-loading is done on the next rendered frame on the screen), but is stable. Disabling "Safe-mode" will load presets faster, but can cause crashes or other issues. "Safe-mode" won't make any noticeable difference if snapshots are loaded manually by clicking snapshot buttons.
+- [GLUE](../glue/Glue.md) labels can be dynamically changed on different snapshots if a GLUE module is controlled by 8FACE mk2.
 
 ## Changelog
 
@@ -131,5 +139,5 @@ Once placed next to 8FACE mk2 the expander works and behaves the same way 8FACE 
     - Added "Auto"-mode besides "Read" and "Write" ([manual](./EightFaceMk2.md#auto-mode)) (#276)
     - Added option to bind currently selected modules
 - v2.2.0
-    - Added Safe-mode and use as new default setting
+    - Added stability mode setting and _Safe-mode_ and use as new default setting
     - Improved robustness for expander +8

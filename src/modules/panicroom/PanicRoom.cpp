@@ -118,7 +118,7 @@ struct PanicRoomRestrictionWidget : Widget {
     void enableLearn() {
         learnMode = !learnMode;
         GLFWcursor* cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
-        glfwSetCursor(APP->window->win, cursor);
+        if (APP->window) glfwSetCursor(APP->window->win, cursor);
     }
 
     void onHover(const HoverEvent& e) override {
@@ -155,7 +155,7 @@ struct PanicRoomRestrictionWidget : Widget {
 
             selecting = false;
             learnMode = false;
-            glfwSetCursor(APP->window->win, NULL);
+            if (APP->window) glfwSetCursor(APP->window->win, NULL);
             e.consume(this);
         }
         Widget::onDragEnd(e);

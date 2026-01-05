@@ -505,12 +505,12 @@ struct CVMapWidget : ThemedModuleWidget<CVMapModule>, ParamWidgetContextExtender
 		if (learnMode != LEARN_MODE::OFF) {
 			cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
 		}
-		glfwSetCursor(APP->window->win, cursor);
+		if (APP->window) glfwSetCursor(APP->window->win, cursor);
 	}
 
 	void disableLearn() {
 		learnMode = LEARN_MODE::OFF;
-		glfwSetCursor(APP->window->win, NULL);
+		if (APP->window) glfwSetCursor(APP->window->win, NULL);
 	}
 
 	void appendContextMenu(Menu* menu) override {
