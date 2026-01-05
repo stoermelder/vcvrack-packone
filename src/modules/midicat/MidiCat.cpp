@@ -833,8 +833,10 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 
 					// In some cases the MIDI feedback is detached from the actual parameter value
 					// (toggle mode, attached to a light)
+					// 2026-01-05: Also, do not update the parameter value here when in snap mode, because the tracked
+					// value might be different to the actual value due to snapping
 					bool sendOnlyFeedback = false;
-					if (lastValueIn[id] < 0 || midiParam[id].hasLight()) {
+					if (lastValueIn[id] < 0 || midiParam[id].hasLight() || paramQuantity->snapEnabled) {
 						sendOnlyFeedback = true;
 					}
 
@@ -842,9 +844,10 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 					if (lastValueOut[id] != v) {
 						if (cc >= 0 && ccs[id].ccMode == CCMODE::DIRECT)
 							lastValueIn[id] = v;
-						// Added 2026-01-02: Fixes feedback in note/momentary mode
+						// 2026-01-02: Fixes feedback in note/momentary mode
 						// Update the internal state... does it break something else?
 						// -- Fixed wrong internal state after manual parameter adjustment
+						// -- 2026-01-05: Breaks snapped params, but fixed by "sendOnlyFeedback"
 						if (!sendOnlyFeedback) midiParam[id].setValue(v);
 						// --
 						ccs[id].setValue(v, sendOnlyFeedback);
