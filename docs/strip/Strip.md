@@ -20,7 +20,7 @@ The sections _ON_, _OFF_ and _RAND_ provide CV control of options only available
 
 The modes for the _ON_-section are:
 
-- **Default** - _ON_ enables the modules, _OFF_ disables the modules.
+- **On only** - _ON_ enables the modules, _OFF_ disables the modules.
 
 - **Toggle** - _ON_ toggles enable/disable of the modules, _OFF_ disables the modules.
 

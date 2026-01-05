@@ -1,5 +1,5 @@
-#include "catch2/plugin.hpp"
-#include "../utils/digital.hpp"
+#include "../test/test_plugin.hpp"
+#include "digital.hpp"
 
 using namespace StoermelderPackOne;
 

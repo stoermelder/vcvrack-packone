@@ -26,12 +26,14 @@ void Settings::saveToJson() {
 
 	json_object_set(settingsJ, "midiEsxDriverEnabled", json_boolean(midiEsxDriverEnabled));
 
+#ifndef TESTING
 	std::string settingsFilename = rack::asset::user("Stoermelder-P1.json");
 	FILE* file = fopen(settingsFilename.c_str(), "w");
 	if (file) {
 		json_dumpf(settingsJ, file, JSON_INDENT(2) | JSON_REAL_PRECISION(9));
 		fclose(file);
 	}
+#endif
 	json_decref(settingsJ);
 }
 

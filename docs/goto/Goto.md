@@ -57,4 +57,4 @@ There are two modes available:
     - Fixed crash on patch-loading inside Rack VST (#342)
     - Fixed broken zoom behavior when jumping by buttons on the panel
 - v2.2.0
-    - Extended jump-points for multiple modules/selections (can now bind multiple modules to a single jump point)
+    - Jump-points can be multiple modules/a selection instead of a single module

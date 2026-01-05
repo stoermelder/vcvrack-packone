@@ -1,6 +1,7 @@
 ## 2.2.0
 
-Modules [8FACE, 8FACEx2](./docs/eightface/EightFace.md) and [8FACE mk2](./docs/eightface/EightFaceMk2.md) are now considered stable again. A _Safe-mode_ has been implemented, which loads presets on the next rendered frame, introducing a minor delay. Disabling _Safe-mode_ will load presets more quickly but may lead to crashes or other issues. If you load presets manually by clicking snapshot buttons or by MIDI, you will not notice any difference with _Safe-mode_.
+Modules [8FACE, 8FACEx2](./docs/eightface/EightFace.md) and [8FACE mk2](./docs/eightface/EightFaceMk2.md) are now considered stable again. A new _Safe-mode_ has been added, which loads presets into modules according to the supported way. This provides maximum stability. However, it may lock up the audio processing and cause stutters, pops, or other audible artifacts. This behavior is not caused by CPU overload but by fundamental design constraints in VCV Rack.  
+The old behavior can be restored using _Unsafe fast_-mode, which will load presets more quickly but may lead to crashes or other issues.
 
 ### New modules
 
@@ -12,14 +13,14 @@ Modules [8FACE, 8FACEx2](./docs/eightface/EightFace.md) and [8FACE mk2](./docs/e
 ### Changes and Fixes
 
 - Modules [8FACE, 8FACEx2](./docs/eightface/EightFace.md)
-    - Added stability mode setting and _Safe-mode_ and use as new default setting
+    - Added stability mode setting and _Safe-mode_, which is the new default setting
 - Modules [8FACEx2](./docs/eightface/EightFace.md)
-    - Fixed not working on some modules (only 8FACEx2)
+    - Fixed broken function on some modules (only 8FACEx2)
 - Module [8FACE mk2](./docs/eightface/EightFaceMk2.md)
-    - Added stability mode setting and _Safe-mode_ and use as new default setting
+    - Added stability mode setting and _Safe-mode_, which is the new default setting
     - Improved robustness for expander +8
 - Module [ARENA](./docs/arena/Arena.md)
-    - Fixed broken preset loading
+    - Fixed broken loading of presets and loading from saved patches
 - Modules [CV-MAP](./docs/cvmap/CVMap.md)
     - Added mapping functions _Map module (left)_ and _Map module (select)_
     - Added color setting for mapping indicators
@@ -28,14 +29,15 @@ Modules [8FACE, 8FACEx2](./docs/eightface/EightFace.md) and [8FACE mk2](./docs/e
 - Module [DIRT](./docs/dirt/Dirt.md)
     - Added new defects _Pitch_, _Crush_ and _Dropout_
 - Module [GOTO](./docs/goto/Goto.md)
-     - Extended jump-points for multiple modules/selections
+     - Jump-points can be multiple modules/a selection instead of a single module
 - Nodule [MIDI-CAT](./docs/midicat/MidiCat.md)
     - Added input-modes _Snapped_ and _Snapped (short/long)_ for CC and Notes for use with snapped parameters (e.g. "Steps" on VCV SEQ3)
     - Added handling for MIDI System Reset message for resetting input-mode _Pickup (snap)_
     - Added color setting for mapping indicators
     - Fixed mistaken copy-over of 14-bit CC flag from previous mapping slot on CCs >= 32
-    - Fixed wrong internal state after manual parameter adjustment
+    - Fixed missing parameter updates after manual adjustment in some situations
     - Fixed broken MIDI learning for CC 31
+    - Fixed broken _Locate and indicate_ mode
 - Module [MIDI-CAT MEM](./docs/midicat/MidiCat.md#mem-expander)
     - Added module restriction list
     - Fixed broken MIDI feedback when loading stored mappings
