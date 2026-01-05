@@ -1,6 +1,7 @@
 #include "../../plugin.hpp"
 #include "../../utils/StripIdFixModule.hpp"
 #include "../../utils/ScaledMapParam.hpp"
+#include "../../utils/TaskProcessor.hpp"
 #include "../../components/MenuLabelEx.hpp"
 #include "../../components/CurveMenuItem.hpp"
 #include "../../components/SubMenuSlider.hpp"
@@ -435,6 +436,8 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 	/** Holds the time needed for long presses */
 	uint64_t longPressDuration;
 
+	TaskProcessor<> taskProcessorUi;
+
 	// MEM-expander
 	MidiCatMemBase* expMem = NULL;
 	int64_t expMemModuleId = -1;
@@ -862,17 +865,20 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 
 				case MIDIMODE::MIDIMODE_LOCATE: {
 					bool indicate = false;
-					if ((cc >= 0 && ccs[id].getValue() >= 0) && lastValueInIndicate[id] != ccs[id].getValue()) {
-						lastValueInIndicate[id] = ccs[id].getValue();
+					if ((cc >= 0 && valuesCc[cc] >= 0) && lastValueInIndicate[id] != valuesCc[cc]) {
+						lastValueInIndicate[id] = valuesCc[cc];
 						indicate = true;
 					}
-					if ((note >= 0 && notes[id].getValue() >= 0) && lastValueInIndicate[id] != notes[id].getValue()) {
-						lastValueInIndicate[id] = notes[id].getValue();
+					if ((note >= 0 && valuesNote[note] >= 0) && lastValueInIndicate[id] != valuesNote[note]) {
+						lastValueInIndicate[id] = valuesNote[note];
 						indicate = true;
 					}
 					if (indicate) {
-						ModuleWidget* mw = APP->scene->rack->getModule(paramQuantity->module->id);
-						paramHandles[id].indicate(mw);
+						int64_t moduleId = paramQuantity->module->getId();
+						taskProcessorUi.enqueue([this, id, moduleId]() {
+							ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
+							paramHandles[id].indicate(mw);
+						});
 					}
 				} break;
 			}
@@ -2268,6 +2274,8 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 					module->enableLearn(-1, true);
 				}
 			}
+
+			module->taskProcessorUi.process();
 		}
 
 		ParamWidgetContextExtender::step();
