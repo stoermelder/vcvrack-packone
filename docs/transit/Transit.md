@@ -127,7 +127,7 @@ Once placed next to TRANSIT the expander works and behaves the same way TRANSIT 
 
 ### Tips
 
-- TRANSIT is designed to morph parameter-snapshots, while stoermelder [8FACE](./EightFace.md) and [8FACE mk2](./EightFaceMk2.md) are designed to apply different presets onto modules. Morphing between presets of modules is not possible for technical reasons.
+- TRANSIT is designed to morph parameter-snapshots, while stoermelder [8FACE](../eightface/EightFace.md) and [8FACE mk2](../eightface/EightFaceMk2.md) are designed to apply different presets onto modules. Morphing between presets of modules is not possible for technical reasons.
 
 - If you set the _OUT_-port to _Trigger fade stop_ and patch _OUT_ into _SEL_, TRANSIT will endlessly fade through snapshots.
 

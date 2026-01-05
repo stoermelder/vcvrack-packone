@@ -15,7 +15,7 @@ In "Differential" mode, the voltage delta is applied to the current value of the
 
 ### _INC_/_DEC_-ports
 
-SAIL supports triggers to increment or decrement the hovered parameter; the _STEP_ value sets the change per trigger as a percentage of the full range. If _INC_ or _DEC_ is connected, the _IN_ port is ignored. These ports are useful when connected to [MIDI‑STEP](./MidiStep.md), which outputs triggers for endless rotary knobs on MIDI controllers.
+SAIL supports triggers to increment or decrement the hovered parameter; the _STEP_ value sets the change per trigger as a percentage of the full range. If _INC_ or _DEC_ is connected, the _IN_ port is ignored. These ports are useful when connected to [MIDI‑STEP](../midi/MidiStep.md), which outputs triggers for endless rotary knobs on MIDI controllers.
 
 ### SLEW
 
@@ -36,7 +36,7 @@ Additionally, the module can convert the current value of the hovered parameter 
 - You can also use multiple instances of SAIL, one with _FINE_ permanently set to a high voltage and patched to a different CC of VCV MIDI‑CC. This allows one MIDI controller knob to provide coarse control and another knob to provide fine control.
 
 <a name="overlay"></a>
-- SAIL uses an overlay window that displays parameter changes at the bottom of the screen (since v1.9.0). The overlay is enabled by default and can be disabled via the context menu. Appearance adjustments can be made with the [stoermelder ME](./Me.md) module.
+- SAIL uses an overlay window that displays parameter changes at the bottom of the screen (since v1.9.0). The overlay is enabled by default and can be disabled via the context menu. Appearance adjustments can be made with the [stoermelder ME](../trial-and-error/Me.md) module.
 
 ![SAIL overlay](./Sail-overlay.gif)
 

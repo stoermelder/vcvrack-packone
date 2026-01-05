@@ -10,7 +10,7 @@
 
 ### Overview
 
-8FACE mk2 is a module for storing, recalling and sequencing different presets of any module in Rack. The _mk2_ version is an evolution of [8FACE](EightFace.md) and provides additional functions, inspired by [TRANSIT](./Transit.md):
+8FACE mk2 is a module for storing, recalling and sequencing different presets of any module in Rack. The _mk2_ version is an evolution of [8FACE](EightFace.md) and provides additional functions, inspired by [TRANSIT](../transit/Transit.md):
 
 - 8FACE mk2 can bind to multiple modules at the same time.
 
@@ -113,13 +113,13 @@ Once placed next to 8FACE mk2 the expander works and behaves the same way 8FACE 
 
 ### Tips
 
-- 8FACE mk2 is designed to apply different presets onto modules, while stoermelder [TRANSIT](./Transit.md) is designed to morph parameter-snapshots. Morphing between presets of modules is not possible for technical reasons.
+- 8FACE mk2 is designed to apply different presets onto modules, while stoermelder [TRANSIT](../transit/Transit.md) is designed to morph parameter-snapshots. Morphing between presets of modules is not possible for technical reasons.
 
 - 8FACE mk2 does not support any preset-operations: 8FACE mk2 binds to any module in your patch which makes 8FACE mk2 not "transferable" to other module instances. In contrast, 8FACE (aka mk1) can be re-attached to another module instance as it uses the expander-mechanism in Rack. Thus, 8FACE mk2 cannot be sequenced with 8FACE or another 8FACE mk2.
 
 - Each snapshot can be named with a custom text label. This label is shown while hovering above the snapshot button if parameter tooltips are enabled.
 
-- [GLUE](./Glue.md) labels can be dynamically changed on different snapshots if a GLUE module is controlled by 8FACE mk2.
+- [GLUE](../glue/Glue.md) labels can be dynamically changed on different snapshots if a GLUE module is controlled by 8FACE mk2.
 
 ## Changelog
 
