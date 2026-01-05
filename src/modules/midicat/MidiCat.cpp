@@ -872,7 +872,7 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 		}
 	}
 
-	bool midiProcessMessage(midi::Message msg) {
+	bool midiProcessMessage(const midi::Message& msg) {
 		switch (msg.getStatus()) {
 			case 0xb: { // cc
 				return midiCc(msg);
@@ -901,7 +901,7 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 		}
 	}
 
-	bool midiCc(midi::Message msg) {
+	bool midiCc(const midi::Message& msg) {
 		uint8_t cc = msg.getNote();
 		uint8_t value = msg.getValue();
 		// Learn
@@ -921,7 +921,7 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 		return midiReceived;
 	}
 
-	bool midiNotePress(midi::Message msg) {
+	bool midiNotePress(const midi::Message& msg) {
 		uint8_t note = msg.getNote();
 		uint8_t vel = msg.getValue();
 		// Learn
@@ -941,7 +941,7 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 		return midiReceived;
 	}
 
-	bool midiNoteRelease(midi::Message msg) {
+	bool midiNoteRelease(const midi::Message& msg) {
 		uint8_t note = msg.getNote();
 		bool midiReceived = valuesNote[note] != 0;
 		valuesNote[note] = 0;

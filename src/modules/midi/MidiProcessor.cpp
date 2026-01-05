@@ -3,7 +3,7 @@
 
 namespace StoermelderPackOne {
 
-MessageEx::MessageEx(rack::midi::Message& msg) {
+MessageEx::MessageEx(const rack::midi::Message& msg) {
 	this->msg = msg;
 	this->frame = msg.frame;
 }
@@ -142,7 +142,7 @@ void MidiProcessor::process(int64_t frame) {
 	}
 }
 
-void MidiProcessor::processCc(rack::midi::Message& msg) {
+void MidiProcessor::processCc(const rack::midi::Message& msg) {
 	uint8_t ch = msg.getChannel();
 	uint8_t cc = msg.getNote();
 	int8_t value = msg.bytes[2];
@@ -257,7 +257,7 @@ void MidiProcessor::processCc(rack::midi::Message& msg) {
 	}
 }
 
-void MidiProcessor::notify(MessageEx& m) {
+void MidiProcessor::notify(const MessageEx& m) {
 	for (auto& handler : handlers) {
 		bool b = handler->processMidi(m);
 		if (b) break;
