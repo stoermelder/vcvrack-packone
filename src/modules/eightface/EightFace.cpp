@@ -36,6 +36,12 @@ enum class CTRLMODE {
 	WRITE
 };
 
+enum class GUISAFEMODE {
+	WORKER,
+	GUI,
+	GUI_WITH_LOCK
+};
+
 template<int NUM_PRESETS>
 struct EightFaceModule : Module {
 	enum ParamIds {
@@ -117,8 +123,8 @@ struct EightFaceModule : Module {
 	int workerPreset = -1;
 	ModuleWidget* workerModuleWidget;
 	bool workerGui = false;
-	ModuleWidget* workerGuiModuleWidget = NULL;
-	bool guiSafeMode = true;
+	std::atomic<ModuleWidget*> workerGuiModuleWidget{nullptr};
+	GUISAFEMODE guiSafeMode;
 
 	LongPressButton typeButtons[NUM_PRESETS];
 	dsp::SchmittTrigger slotTrigger;
@@ -142,7 +148,6 @@ struct EightFaceModule : Module {
 			presetSlotUsed[i] = false;
 		}
 
-		lightDivider.setDivision(512);
 		buttonDivider.setDivision(4);
 		onReset();
 		workerContext = contextGet();
@@ -163,6 +168,10 @@ struct EightFaceModule : Module {
 		delete worker;
 	}
 
+	void onSampleRateChange(const SampleRateChangeEvent& e) override {
+		lightDivider.setDivision(e.sampleRate / 100.f);
+	}
+
 	void onReset() override {
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			if (presetSlotUsed[i]) {
@@ -172,7 +181,7 @@ struct EightFaceModule : Module {
 			presetSlotUsed[i] = false;
 		}
 
-		guiSafeMode = true;
+		guiSafeMode = GUISAFEMODE::GUI_WITH_LOCK;
 		preset = -1;
 		presetCount = NUM_PRESETS;
 		presetPrev = -1;
@@ -402,7 +411,6 @@ struct EightFaceModule : Module {
 		}
 	}
 
-
 	void processWorker() {
 		contextSet(workerContext);
 		while (true) {
@@ -419,13 +427,21 @@ struct EightFaceModule : Module {
 	}
 
 	void processGui() {
-		if (workerGuiModuleWidget) {
+		ModuleWidget* mw = workerGuiModuleWidget.load();
+		if (mw) {
 			if (ctrlMode == CTRLMODE::AUTO && presetPrev >= 0 && presetSlotUsed[presetPrev]) {
 				json_decref(presetSlot[presetPrev]);
 				presetSlot[presetPrev] = workerModuleWidget->toJson();
 			}
-			workerGuiModuleWidget->fromJson(presetSlot[workerPreset]);
-			workerGuiModuleWidget = NULL;
+
+			if (guiSafeMode == GUISAFEMODE::GUI) {
+				// This is an unlocked operation, it is not perfectly thread-safe, as the Engine
+				// thread would lock on preset loading
+				mw->module->fromJson(presetSlot[workerPreset]);
+			} else {
+				mw->fromJson(presetSlot[workerPreset]);
+			}
+			workerGuiModuleWidget.store(nullptr);
 		}
 	}
 
@@ -442,8 +458,8 @@ struct EightFaceModule : Module {
 				ModuleWidget* mw = APP->scene->rack->getModule(m->id);
 				if (mw) {
 					workerPreset = p;
-					if (workerGui || guiSafeMode) {
-						workerGuiModuleWidget = mw;
+					if (workerGui || guiSafeMode != GUISAFEMODE::WORKER) {
+						workerGuiModuleWidget.store(mw);
 					}
 					else {
 						workerModuleWidget = mw;
@@ -501,7 +517,7 @@ struct EightFaceModule : Module {
 		json_t* rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 
-		json_object_set_new(rootJ, "guiSafeMode", json_boolean(guiSafeMode));
+		json_object_set_new(rootJ, "guiSafeMode", json_integer((int)guiSafeMode));
 
 		json_object_set_new(rootJ, "mode", json_integer((int)side));
 		json_object_set_new(rootJ, "pluginSlug", json_string(pluginSlug.c_str()));
@@ -531,7 +547,7 @@ struct EightFaceModule : Module {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 
 		json_t* guiSafeModeJ = json_object_get(rootJ, "guiSafeMode");
-		guiSafeMode = guiSafeModeJ ? json_boolean_value(guiSafeModeJ) : false;
+		guiSafeMode = guiSafeModeJ ? (GUISAFEMODE)json_integer_value(guiSafeModeJ) : GUISAFEMODE::WORKER;
 	
 		json_t* sideJ = json_object_get(rootJ, "mode");
 		if (sideJ) side = (SIDE)json_integer_value(sideJ);
@@ -610,7 +626,15 @@ struct WhiteRedLight : GrayModuleLightWidget {
 
 
 template<typename MODULE>
-struct EightFaceWidgetTemplate : ModuleWidget {
+struct EightFaceWidgetTemplate : ThemedModuleWidget<MODULE> {
+	MODULE* module;
+
+	EightFaceWidgetTemplate(MODULE* module, std::string baseName) 
+	: ThemedModuleWidget<MODULE>(module, baseName, "EightFace") {
+		ThemedModuleWidget<MODULE>::setModule(module);
+		this->module = dynamic_cast<MODULE*>(module);
+	}
+
 	struct NumberOfSlotsSlider : ui::Slider {
 		struct NumberOfSlotsQuantity : Quantity {
 			MODULE* module;
@@ -677,18 +701,34 @@ struct EightFaceWidgetTemplate : ModuleWidget {
 			menu->addChild(createMenuLabel("Configured for..."));
 			menu->addChild(createMenuLabel(module->moduleName));
 		}
-		menu->addChild(createBoolMenuItem("Safe-mode", "",
-			[=]() {
-				return module->guiSafeMode;
-			},
+
+		menu->addChild(new MenuSeparator());
+		menu->addChild(createMenuLabel("Stability & performance mode"));
+		menu->addChild(createBoolMenuItem("Safe", "",
+			[=]() { return module->guiSafeMode == GUISAFEMODE::GUI_WITH_LOCK; },
 			[=](bool v) {
-				std::string msg = "Disabling \"Safe-mode\" will load presets more quickly but may lead to crashing VCV Rack or other issues. Proceed?";
-				if (module->guiSafeMode && !osdialog_message(OSDIALOG_WARNING, OSDIALOG_YES_NO, msg.c_str())) {
-					return;
-				}
-				module->guiSafeMode = v;
+				std::string msg = "Using \"Safe\" will load presets perfectly safe without risking any crashes, but may lead to performance issues (e.g. stuttering). Proceed?";
+				if (osdialog_message(OSDIALOG_WARNING, OSDIALOG_YES_NO, msg.c_str()))
+					module->guiSafeMode = GUISAFEMODE::GUI_WITH_LOCK;
 			}
 		));
+		menu->addChild(createBoolMenuItem("Unsafe", "",
+			[=]() { return module->guiSafeMode == GUISAFEMODE::GUI; },
+			[=](bool v) {
+				std::string msg = "Using \"Unsafe-mode\" will load presets quickly but may lead to crashing VCV Rack or other issues. Proceed?";
+				if (osdialog_message(OSDIALOG_WARNING, OSDIALOG_YES_NO, msg.c_str()))
+					module->guiSafeMode = GUISAFEMODE::GUI;
+			}
+		));
+		menu->addChild(createBoolMenuItem("Unsafe fast", "",
+			[=]() { return module->guiSafeMode == GUISAFEMODE::WORKER; },
+			[=](bool v) {
+				std::string msg = "Using \"Unsafe fast-mode\" will load presets most quickly but may lead to crashing VCV Rack or other issues. Proceed?";
+				if (osdialog_message(OSDIALOG_WARNING, OSDIALOG_YES_NO, msg.c_str()))
+					module->guiSafeMode = GUISAFEMODE::WORKER;
+			}
+		));
+
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createSubmenuItem("Number of slots", string::f("%i", module->presetCount),
 			[=](Menu* menu) {
@@ -765,18 +805,22 @@ struct EightFaceWidgetTemplate : ModuleWidget {
 					break;
 			}
 		}
-		ModuleWidget::onHoverKey(e);
+		ThemedModuleWidget<MODULE>::onHoverKey(e);
+	}
+
+	void step() override {
+		if (module) {
+			module->processGui();
+		}
+		ThemedModuleWidget<MODULE>::step();
 	}
 };
 
-struct EightFaceWidget : ThemedModuleWidget<EightFaceModule<8>, EightFaceWidgetTemplate<EightFaceModule<8>>> {
+struct EightFaceWidget : EightFaceWidgetTemplate<EightFaceModule<8>> {
 	typedef EightFaceModule<8> MODULE;
-	MODULE* module;
 
 	EightFaceWidget(MODULE* module)
-		: ThemedModuleWidget<MODULE, EightFaceWidgetTemplate<MODULE>>(module, "EightFace") {
-		setModule(module);
-		this->module = module;
+		: EightFaceWidgetTemplate<MODULE>(module, "EightFace") {
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
@@ -787,41 +831,33 @@ struct EightFaceWidget : ThemedModuleWidget<EightFaceModule<8>, EightFaceWidgetT
 		addChild(createLightCentered<TriangleLeftLight<WhiteRedLight>>(Vec(13.8f, 119.1f), module, MODULE::LEFT_LIGHT));
 		addChild(createLightCentered<TriangleRightLight<WhiteRedLight>>(Vec(31.2f, 119.1f), module, MODULE::RIGHT_LIGHT));
 
-		addParam(createParamCentered<LEDButton>(Vec(22.5f, 140.6f), module, MODULE::PRESET_PARAM + 0));
-		addParam(createParamCentered<LEDButton>(Vec(22.5f, 164.1f), module, MODULE::PRESET_PARAM + 1));
-		addParam(createParamCentered<LEDButton>(Vec(22.5f, 187.7f), module, MODULE::PRESET_PARAM + 2));
-		addParam(createParamCentered<LEDButton>(Vec(22.5f, 211.2f), module, MODULE::PRESET_PARAM + 3));
-		addParam(createParamCentered<LEDButton>(Vec(22.5f, 234.8f), module, MODULE::PRESET_PARAM + 4));
-		addParam(createParamCentered<LEDButton>(Vec(22.5f, 258.3f), module, MODULE::PRESET_PARAM + 5));
-		addParam(createParamCentered<LEDButton>(Vec(22.5f, 281.9f), module, MODULE::PRESET_PARAM + 6));
-		addParam(createParamCentered<LEDButton>(Vec(22.5f, 305.4f), module, MODULE::PRESET_PARAM + 7));
+		addParam(createParamCentered<VCVButton>(Vec(22.5f, 140.6f), module, MODULE::PRESET_PARAM + 0));
+		addParam(createParamCentered<VCVButton>(Vec(22.5f, 164.1f), module, MODULE::PRESET_PARAM + 1));
+		addParam(createParamCentered<VCVButton>(Vec(22.5f, 187.7f), module, MODULE::PRESET_PARAM + 2));
+		addParam(createParamCentered<VCVButton>(Vec(22.5f, 211.2f), module, MODULE::PRESET_PARAM + 3));
+		addParam(createParamCentered<VCVButton>(Vec(22.5f, 234.8f), module, MODULE::PRESET_PARAM + 4));
+		addParam(createParamCentered<VCVButton>(Vec(22.5f, 258.3f), module, MODULE::PRESET_PARAM + 5));
+		addParam(createParamCentered<VCVButton>(Vec(22.5f, 281.9f), module, MODULE::PRESET_PARAM + 6));
+		addParam(createParamCentered<VCVButton>(Vec(22.5f, 305.4f), module, MODULE::PRESET_PARAM + 7));
 
-		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(22.5f, 140.6f), module, MODULE::PRESET_LIGHT + 0 * 3));
-		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(22.5f, 164.1f), module, MODULE::PRESET_LIGHT + 1 * 3));
-		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(22.5f, 187.7f), module, MODULE::PRESET_LIGHT + 2 * 3));
-		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(22.5f, 211.2f), module, MODULE::PRESET_LIGHT + 3 * 3));
-		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(22.5f, 234.8f), module, MODULE::PRESET_LIGHT + 4 * 3));
-		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(22.5f, 258.3f), module, MODULE::PRESET_LIGHT + 5 * 3));
-		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(22.5f, 281.9f), module, MODULE::PRESET_LIGHT + 6 * 3));
-		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(22.5f, 305.4f), module, MODULE::PRESET_LIGHT + 7 * 3));
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(22.5f, 140.6f), module, MODULE::PRESET_LIGHT + 0 * 3));
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(22.5f, 164.1f), module, MODULE::PRESET_LIGHT + 1 * 3));
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(22.5f, 187.7f), module, MODULE::PRESET_LIGHT + 2 * 3));
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(22.5f, 211.2f), module, MODULE::PRESET_LIGHT + 3 * 3));
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(22.5f, 234.8f), module, MODULE::PRESET_LIGHT + 4 * 3));
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(22.5f, 258.3f), module, MODULE::PRESET_LIGHT + 5 * 3));
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(22.5f, 281.9f), module, MODULE::PRESET_LIGHT + 6 * 3));
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(22.5f, 305.4f), module, MODULE::PRESET_LIGHT + 7 * 3));
 
 		addParam(createParamCentered<CKSSThreeH>(Vec(22.5f, 336.2f), module, MODULE::CTRLMODE_PARAM));
 	}
-
-	void step() override {
-		if (module) {
-			module->processGui();
-		}
-		ThemedModuleWidget<MODULE, EightFaceWidgetTemplate<MODULE>>::step();
-	}
 };
 
-struct EightFaceX2Widget : ThemedModuleWidget<EightFaceModule<16>, EightFaceWidgetTemplate<EightFaceModule<16>>> {
+struct EightFaceX2Widget : EightFaceWidgetTemplate<EightFaceModule<16>> {
 	typedef EightFaceModule<16> MODULE;
 
 	EightFaceX2Widget(MODULE* module)
-		: ThemedModuleWidget<MODULE, EightFaceWidgetTemplate<MODULE>>(module, "EightFaceX2", "EightFace") {
-		setModule(module);
+		: EightFaceWidgetTemplate<MODULE>(module, "EightFaceX2") {
 
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
@@ -832,39 +868,39 @@ struct EightFaceX2Widget : ThemedModuleWidget<EightFaceModule<16>, EightFaceWidg
 		addChild(createLightCentered<TriangleLeftLight<WhiteRedLight>>(Vec(21.3f, 119.1f), module, MODULE::LEFT_LIGHT));
 		addChild(createLightCentered<TriangleRightLight<WhiteRedLight>>(Vec(38.7f, 119.1f), module, MODULE::RIGHT_LIGHT));
 
-		addParam(createParamCentered<LEDButton>(Vec(17.7f, 140.6f), module, MODULE::PRESET_PARAM + 0));
-		addParam(createParamCentered<LEDButton>(Vec(17.7f, 164.1f), module, MODULE::PRESET_PARAM + 1));
-		addParam(createParamCentered<LEDButton>(Vec(17.7f, 187.7f), module, MODULE::PRESET_PARAM + 2));
-		addParam(createParamCentered<LEDButton>(Vec(17.7f, 211.2f), module, MODULE::PRESET_PARAM + 3));
-		addParam(createParamCentered<LEDButton>(Vec(17.7f, 234.8f), module, MODULE::PRESET_PARAM + 4));
-		addParam(createParamCentered<LEDButton>(Vec(17.7f, 258.3f), module, MODULE::PRESET_PARAM + 5));
-		addParam(createParamCentered<LEDButton>(Vec(17.7f, 281.9f), module, MODULE::PRESET_PARAM + 6));
-		addParam(createParamCentered<LEDButton>(Vec(17.7f, 305.4f), module, MODULE::PRESET_PARAM + 7));
-		addParam(createParamCentered<LEDButton>(Vec(42.3f, 140.6f), module, MODULE::PRESET_PARAM + 8));
-		addParam(createParamCentered<LEDButton>(Vec(42.3f, 164.1f), module, MODULE::PRESET_PARAM + 9));
-		addParam(createParamCentered<LEDButton>(Vec(42.3f, 187.7f), module, MODULE::PRESET_PARAM + 10));
-		addParam(createParamCentered<LEDButton>(Vec(42.3f, 211.2f), module, MODULE::PRESET_PARAM + 11));
-		addParam(createParamCentered<LEDButton>(Vec(42.3f, 234.8f), module, MODULE::PRESET_PARAM + 12));
-		addParam(createParamCentered<LEDButton>(Vec(42.3f, 258.3f), module, MODULE::PRESET_PARAM + 13));
-		addParam(createParamCentered<LEDButton>(Vec(42.3f, 281.9f), module, MODULE::PRESET_PARAM + 14));
-		addParam(createParamCentered<LEDButton>(Vec(42.3f, 305.4f), module, MODULE::PRESET_PARAM + 15));
+		addParam(createParamCentered<VCVButton>(Vec(17.7f, 140.6f), module, MODULE::PRESET_PARAM + 0));
+		addParam(createParamCentered<VCVButton>(Vec(17.7f, 164.1f), module, MODULE::PRESET_PARAM + 1));
+		addParam(createParamCentered<VCVButton>(Vec(17.7f, 187.7f), module, MODULE::PRESET_PARAM + 2));
+		addParam(createParamCentered<VCVButton>(Vec(17.7f, 211.2f), module, MODULE::PRESET_PARAM + 3));
+		addParam(createParamCentered<VCVButton>(Vec(17.7f, 234.8f), module, MODULE::PRESET_PARAM + 4));
+		addParam(createParamCentered<VCVButton>(Vec(17.7f, 258.3f), module, MODULE::PRESET_PARAM + 5));
+		addParam(createParamCentered<VCVButton>(Vec(17.7f, 281.9f), module, MODULE::PRESET_PARAM + 6));
+		addParam(createParamCentered<VCVButton>(Vec(17.7f, 305.4f), module, MODULE::PRESET_PARAM + 7));
+		addParam(createParamCentered<VCVButton>(Vec(42.3f, 140.6f), module, MODULE::PRESET_PARAM + 8));
+		addParam(createParamCentered<VCVButton>(Vec(42.3f, 164.1f), module, MODULE::PRESET_PARAM + 9));
+		addParam(createParamCentered<VCVButton>(Vec(42.3f, 187.7f), module, MODULE::PRESET_PARAM + 10));
+		addParam(createParamCentered<VCVButton>(Vec(42.3f, 211.2f), module, MODULE::PRESET_PARAM + 11));
+		addParam(createParamCentered<VCVButton>(Vec(42.3f, 234.8f), module, MODULE::PRESET_PARAM + 12));
+		addParam(createParamCentered<VCVButton>(Vec(42.3f, 258.3f), module, MODULE::PRESET_PARAM + 13));
+		addParam(createParamCentered<VCVButton>(Vec(42.3f, 281.9f), module, MODULE::PRESET_PARAM + 14));
+		addParam(createParamCentered<VCVButton>(Vec(42.3f, 305.4f), module, MODULE::PRESET_PARAM + 15));
 
-		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(17.7f, 140.6f), module, MODULE::PRESET_LIGHT + 0 * 3));
-		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(17.7f, 164.1f), module, MODULE::PRESET_LIGHT + 1 * 3));
-		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(17.7f, 187.7f), module, MODULE::PRESET_LIGHT + 2 * 3));
-		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(17.7f, 211.2f), module, MODULE::PRESET_LIGHT + 3 * 3));
-		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(17.7f, 234.8f), module, MODULE::PRESET_LIGHT + 4 * 3));
-		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(17.7f, 258.3f), module, MODULE::PRESET_LIGHT + 5 * 3));
-		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(17.7f, 281.9f), module, MODULE::PRESET_LIGHT + 6 * 3));
-		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(17.7f, 305.4f), module, MODULE::PRESET_LIGHT + 7 * 3));
-		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(42.3f, 140.6f), module, MODULE::PRESET_LIGHT + 8 * 3));
-		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(42.3f, 164.1f), module, MODULE::PRESET_LIGHT + 9 * 3));
-		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(42.3f, 187.7f), module, MODULE::PRESET_LIGHT + 10 * 3));
-		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(42.3f, 211.2f), module, MODULE::PRESET_LIGHT + 11 * 3));
-		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(42.3f, 234.8f), module, MODULE::PRESET_LIGHT + 12 * 3));
-		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(42.3f, 258.3f), module, MODULE::PRESET_LIGHT + 13 * 3));
-		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(42.3f, 281.9f), module, MODULE::PRESET_LIGHT + 14 * 3));
-		addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(42.3f, 305.4f), module, MODULE::PRESET_LIGHT + 15 * 3));
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(17.7f, 140.6f), module, MODULE::PRESET_LIGHT + 0 * 3));
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(17.7f, 164.1f), module, MODULE::PRESET_LIGHT + 1 * 3));
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(17.7f, 187.7f), module, MODULE::PRESET_LIGHT + 2 * 3));
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(17.7f, 211.2f), module, MODULE::PRESET_LIGHT + 3 * 3));
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(17.7f, 234.8f), module, MODULE::PRESET_LIGHT + 4 * 3));
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(17.7f, 258.3f), module, MODULE::PRESET_LIGHT + 5 * 3));
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(17.7f, 281.9f), module, MODULE::PRESET_LIGHT + 6 * 3));
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(17.7f, 305.4f), module, MODULE::PRESET_LIGHT + 7 * 3));
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(42.3f, 140.6f), module, MODULE::PRESET_LIGHT + 8 * 3));
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(42.3f, 164.1f), module, MODULE::PRESET_LIGHT + 9 * 3));
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(42.3f, 187.7f), module, MODULE::PRESET_LIGHT + 10 * 3));
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(42.3f, 211.2f), module, MODULE::PRESET_LIGHT + 11 * 3));
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(42.3f, 234.8f), module, MODULE::PRESET_LIGHT + 12 * 3));
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(42.3f, 258.3f), module, MODULE::PRESET_LIGHT + 13 * 3));
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(42.3f, 281.9f), module, MODULE::PRESET_LIGHT + 14 * 3));
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(42.3f, 305.4f), module, MODULE::PRESET_LIGHT + 15 * 3));
 
 		addParam(createParamCentered<CKSSThreeH>(Vec(30.0f, 336.2f), module, MODULE::CTRLMODE_PARAM));
 	}

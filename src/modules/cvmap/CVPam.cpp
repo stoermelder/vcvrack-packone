@@ -50,7 +50,10 @@ struct CVPamModule : MapModuleBase<MAX_CHANNELS> {
 		}
 		onReset();
 		processDivider.setDivision(32);
-		lightDivider.setDivision(1024);
+	}
+
+	void onSampleRateChange(const SampleRateChangeEvent& e) override {
+		lightDivider.setDivision(e.sampleRate / 100.f);
 	}
 
 	void onReset() override {

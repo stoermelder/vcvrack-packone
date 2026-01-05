@@ -377,6 +377,7 @@
         <g transform="matrix(-1.61915,0.976243,1.1925,1.2662,883.529,-295.275)">
             <ellipse cx="12.85" cy="131.479" rx="0.65" ry="0.665" style="fill:white;fill-opacity:0.9;"/>
         </g>
+<<<<<<< HEAD
         <g>
             <g transform="matrix(0.920594,0,0,0.759609,957.291,-168.117)">
                 <ellipse cx="29.183" cy="141.909" rx="13.008" ry="12.614" style="fill:white;fill-opacity:0.3;"/>
@@ -427,5 +428,7 @@
                 <ellipse cx="29.183" cy="141.909" rx="13.008" ry="12.614" style="fill:white;fill-opacity:0.3;"/>
             </g>
         </g>
+=======
+>>>>>>> v2-dev
     </g>
 </svg>

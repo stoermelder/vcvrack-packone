@@ -66,10 +66,10 @@ struct GotoModule : Module {
 
 
 	struct GotoSwitchQuantity : SwitchQuantity {
+		GotoModule<SLOTS>* module;
 		int jumpPoint;
 
 		std::string getString() override {
-			GotoModule<SLOTS>* module = reinterpret_cast<GotoModule<SLOTS>*>(this->module);
 			if (module->jumpPoints[jumpPoint].moduleIds.size() > 0) {
 				return string::f("Jump point %i (SHIFT+%i): %i module(s)", jumpPoint + 1, (jumpPoint + 1) % 10, module->jumpPoints[jumpPoint].moduleIds.size());
 			}
@@ -87,6 +87,7 @@ struct GotoModule : Module {
 		inputInfos[INPUT_TRIG]->description = "Operating mode is set on the context menu.";
 		for (int i = 0; i < SLOTS; i++) {
 			auto pq = configSwitch<GotoSwitchQuantity>(PARAM_SLOT + i, 0.f, 1.f, 0.f);
+			pq->module = this;
 			pq->description = "Short-press to jump\nLong-press to learn/clear";
 			pq->jumpPoint = i;
 		}
@@ -166,9 +167,11 @@ struct GotoModule : Module {
 
 		json_t* jumpPointsJ = json_object_get(rootJ, "jumpPoints");
 		for (int i = 0; i < 10; i++) {
+			jumpPoints[i].moduleIds.clear();
 			json_t* jumpPointJ = json_array_get(jumpPointsJ, i);
 			json_t* moduleIdJ = json_object_get(jumpPointJ, "moduleId");
 			if (moduleIdJ) {
+				// legacy support for single moduleId
 				jumpPoints[i].moduleIds.push_back(json_integer_value(moduleIdJ));
 			}
 			else {
@@ -357,7 +360,7 @@ struct GotoContainer : widget::Widget {
 
 
 template <typename CONTAINER>
-struct GotoButton : LEDButton {
+struct GotoButton : VCVButton {
 	CONTAINER* gotoContainer;
 	LongPressButton lpb;
 	int id;
@@ -424,7 +427,7 @@ struct GotoWidget : ThemedModuleWidget<GotoModule<10>> {
 			if (module) {
 				module->params[GotoModule<10>::PARAM_SLOT + i].setValue(0.f);
 			}
-			addChild(createLightCentered<LargeLight<RedGreenBlueLight>>(Vec(22.5f, 76.4f + o), module, GotoModule<10>::LIGHT_SLOT + i * 3));
+			addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(22.5f, 76.4f + o), module, GotoModule<10>::LIGHT_SLOT + i * 3));
 		}
 		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 327.5f), module, GotoModule<10>::INPUT_TRIG));
 	}

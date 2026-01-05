@@ -92,7 +92,6 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 			scaleCvs[i].setLimits(0.f, 1.f, std::numeric_limits<float>::infinity());
 		}
 
-		lightDivider.setDivision(1024);
 		onReset();
 	}
 
@@ -100,6 +99,10 @@ struct MacroModule : CVMapModuleBase<MAPS> {
 		for (size_t i = 0; i < CVPORTS; i++) {
 			delete scaleCvs[i].paramQuantity;
 		}
+	}
+
+	void onSampleRateChange(const SampleRateChangeEvent& e) override {
+		lightDivider.setDivision(e.sampleRate / 100.f);
 	}
 
 	void onReset() override {

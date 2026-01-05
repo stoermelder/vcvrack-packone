@@ -1,6 +1,4 @@
 #include "../../plugin.hpp"
-#include "../../components/MenuColorLabel.hpp"
-#include "../../components/MenuColorPicker.hpp"
 #include <queue>
 
 namespace StoermelderPackOne {
@@ -94,6 +92,18 @@ struct PanicRoomModule : Module {
             outsideAlpha = json_number_value(outsideAlphaJ);
         }
     }
+
+    void setWidth(float v) {
+        int d = int(restrictionBox.size.x / RACK_GRID_WIDTH) - v;
+        restrictionBox.pos.x += d / 2 * RACK_GRID_WIDTH;
+        restrictionBox.size.x -= d * RACK_GRID_WIDTH;
+    }
+
+    void setHeight(float v) {
+        int d = int(restrictionBox.size.y / RACK_GRID_HEIGHT) - v;
+        restrictionBox.pos.y += d / 2 * RACK_GRID_HEIGHT;
+        restrictionBox.size.y -= d * RACK_GRID_HEIGHT;
+    }
 };
 
 
@@ -108,7 +118,7 @@ struct PanicRoomRestrictionWidget : Widget {
     void enableLearn() {
         learnMode = !learnMode;
         GLFWcursor* cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
-        glfwSetCursor(APP->window->win, cursor);
+        if (APP->window) glfwSetCursor(APP->window->win, cursor);
     }
 
     void onHover(const HoverEvent& e) override {
@@ -145,7 +155,7 @@ struct PanicRoomRestrictionWidget : Widget {
 
             selecting = false;
             learnMode = false;
-            glfwSetCursor(APP->window->win, NULL);
+            if (APP->window) glfwSetCursor(APP->window->win, NULL);
             e.consume(this);
         }
         Widget::onDragEnd(e);
@@ -187,62 +197,21 @@ struct PanicRoomRestrictionWidget : Widget {
 
             // Outline the box
             nvgBeginPath(args.vg);
-            nvgRect(args.vg, RECT_ARGS(module->restrictionBox));
-            nvgStrokeWidth(args.vg, 4.0);
-            nvgStrokeColor(args.vg, nvgRGBAf(c.r, c.g, c.b, std::max(0.f, module->outsideAlpha - 0.2f)));
+            nvgRect(args.vg, RECT_ARGS(module->restrictionBox.grow(8.f)));
+            nvgStrokeWidth(args.vg, 14.0);
+            nvgStrokeColor(args.vg, nvgRGBAf(c.r, c.g, c.b, std::max(0.f, module->outsideAlpha - 0.3f)));
             nvgStroke(args.vg);
         }
     }
 }; // struct PanicRoomRestrictionWidget
 
 
-struct AlphaSlider : ui::Slider {
-    struct AlphaQuantity : Quantity {
-        PanicRoomModule* module;
-
-        AlphaQuantity(PanicRoomModule* module) {
-            this->module = module;
-        }
-        void setValue(float value) override {
-            module->outsideAlpha = math::clamp(value, 0.f, 1.f);
-        }
-        float getValue() override {
-            return module->outsideAlpha;
-        }
-        float getDefaultValue() override {
-            return 0.5f;
-        }
-        float getDisplayValue() override {
-            return getValue() * 100;
-        }
-        void setDisplayValue(float displayValue) override {
-            setValue(displayValue / 100.f);
-        }
-        std::string getLabel() override {
-            return "Opacity";
-        }
-        std::string getUnit() override {
-            return "%";
-        }
-    };
-
-    AlphaSlider(PanicRoomModule* module) {
-        this->box.size.x = 200.0;
-        quantity = new AlphaQuantity(module);
-    }
-    ~AlphaSlider() {
-        delete quantity;
-    }
-};
-
 struct SizeWidthField : ui::TextField {
     PanicRoomModule* module;
     void onSelectKey(const SelectKeyEvent& e) override {
         if (e.action == GLFW_PRESS && (e.isKeyCommand(GLFW_KEY_ENTER) || e.isKeyCommand(GLFW_KEY_KP_ENTER))) {
             float v = atoi(text.c_str());
-            int d = int(module->restrictionBox.size.x / RACK_GRID_WIDTH) - v;
-            module->restrictionBox.pos.x += d / 2 * RACK_GRID_WIDTH;
-            module->restrictionBox.size.x -= d * RACK_GRID_WIDTH;
+            module->setWidth(v);
             ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
             overlay->requestDelete();
             e.consume(this);
@@ -256,9 +225,7 @@ struct SizeHeightField : ui::TextField {
     void onSelectKey(const SelectKeyEvent& e) override {
         if (e.action == GLFW_PRESS && (e.isKeyCommand(GLFW_KEY_ENTER) || e.isKeyCommand(GLFW_KEY_KP_ENTER))) {
             float v = atoi(text.c_str());
-            int d = int(module->restrictionBox.size.y / RACK_GRID_HEIGHT) - v;
-            module->restrictionBox.pos.y += d / 2 * RACK_GRID_HEIGHT;
-            module->restrictionBox.size.y -= d * RACK_GRID_HEIGHT;
+            module->setHeight(v);
             ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
             overlay->requestDelete();
             e.consume(this);
@@ -329,9 +296,9 @@ struct PanicRoomWidget : ThemedModuleWidget<PanicRoomModule> {
      
         menu->addChild(new MenuSeparator());
         menu->addChild(createMenuItem("Learn", "", [=]() { selectionWidget->enableLearn(); }));
-        if (module->restrictionEnabled) {
-            menu->addChild(createSubmenuItem("Size", "", 
-                [=](Menu* menu) {
+        menu->addChild(createSubmenuItem("Size", "", 
+            [=](Menu* menu) {
+                if (module->restrictionEnabled) {
                     menu->addChild(createMenuLabel("Width (HP)"));
                     SizeWidthField* widthField = new SizeWidthField;
                     widthField->box.size.x = 100;
@@ -345,22 +312,55 @@ struct PanicRoomWidget : ThemedModuleWidget<PanicRoomModule> {
                     heightField->text = std::to_string((int)(module->restrictionBox.size.y / RACK_GRID_HEIGHT));
                     menu->addChild(heightField);
                 }
-            ));
-        }
-        menu->addChild(createMenuItem("Clear", "", [=]() { module->restrictionEnabled = false; }));
-        menu->addChild(new MenuSeparator());
-        menu->addChild(createSubmenuItem("Outside color", "", 
+            },
+            !module->restrictionEnabled
+        ));
+        // Size presets for common Eurorack cases
+        menu->addChild(createSubmenuItem("Size Presets", "",
             [=](Menu* menu) {
-                menu->addChild(construct<MenuColorLabel>(&MenuColorLabel::fillColor, &module->outsideColor));
-                menu->addChild(new MenuSeparator);
-                menu->addChild(construct<MenuColorPicker>(&MenuColorPicker::color, &module->outsideColor));
-                menu->addChild(new MenuSeparator);
-                menu->addChild(createMenuItem("Reset to default", "", [=]() {
-                    module->outsideColor = nvgRGBAf(0.f, 0.f, 0.f, 1.f);
-                }));
+                auto addPreset = [&](const std::string& name, int hp, int rows) {
+                    menu->addChild(createMenuItem(name, "", [=]() {
+                        if (!module->restrictionEnabled) {
+                            // Determine center from modules if available, otherwise use rack center
+                            Vec center;
+                            auto modules = APP->scene->rack->getModules();
+                            float minX = INFINITY, minY = INFINITY, maxX = -INFINITY, maxY = -INFINITY;
+                            for (ModuleWidget* mw : modules) {
+                                const Rect& b = mw->box;
+                                minX = std::min(minX, b.pos.x);
+                                minY = std::min(minY, b.pos.y);
+                                maxX = std::max(maxX, b.pos.x + b.size.x);
+                                maxY = std::max(maxY, b.pos.y + b.size.y);
+                            }
+                            center = Vec((minX + maxX) / 2.0f, (minY + maxY) / 2.0f);
+
+                            Vec newSize = Vec(hp * RACK_GRID_WIDTH, rows * RACK_GRID_HEIGHT);
+                            Vec pos = center - newSize / 2.0f;
+                            pos = ((pos - RACK_OFFSET) / RACK_GRID_SIZE).floor() * RACK_GRID_SIZE + RACK_OFFSET;
+                            module->restrictionBox = math::Rect(pos, newSize);
+                            module->restrictionEnabled = true;
+                        }
+                        else {
+                            module->setWidth(hp);
+                            module->setHeight(rows);
+                        }
+                    }));
+                };
+
+                addPreset("Doepfer A-100LC9 (84 HP × 3 rows)", 84, 3);
+                addPreset("Doepfer A-100LC6 / A-100LCB (84 HP × 2 rows)", 84, 2);
+                addPreset("Doepfer A-100LMB (168 HP × 2 rows)", 168, 2);
+                addPreset("Doepfer A-100LMS9 (168 HP × 3 rows)", 168, 3);
+                addPreset("Doepfer A-100PMS12 (168 HP × 4 rows)", 168, 4);
+                addPreset("Behringer Eurorack Go (140 HP × 2 rows)", 140, 2);
+                addPreset("Tiptop Audio Mantis (104 HP × 2 rows)", 104, 2);
+                addPreset("Arturia RackBrute 3U (88 HP × 1 row)", 88, 1);
             }
         ));
-        menu->addChild(new AlphaSlider(module));
+        menu->addChild(createMenuItem("Clear", "", [=]() { module->restrictionEnabled = false; }));
+        menu->addChild(new MenuSeparator());
+        menu->addChild(Rack::createColorSubmenuItem("Outside color", &module->outsideColor, { { nvgRGBAf(0.f, 0.f, 0.f, 1.f), "Default (black)" } }));
+        menu->addChild(Rack::createPtrSlider(&module->outsideAlpha, 0.f, 1.f, 0.5f, "Opacity", "%", 100.f, 200.0f));
     }
 };
 

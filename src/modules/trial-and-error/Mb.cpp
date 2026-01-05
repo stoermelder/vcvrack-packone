@@ -363,7 +363,7 @@ struct MbWidget : ModuleWidget {
 
 			Menu* createChildMenu() override {
 				Menu* menu = new Menu;
-				menu->addChild(new v1::ModelZoomSlider);
+				menu->addChild(Rack::createPtrSlider(&v1::modelBoxZoom, PREVIEW_MIN, PREVIEW_MAX, 0.9f, "Preview", "", 100.f, 180.0f));
 				menu->addChild(construct<HideBrandsItem>(&MenuItem::text, "Hide brand list"));
 				menu->addChild(construct<SearchDescriptionsItem>(&MenuItem::text, "Search descriptions"));
 				return menu;

@@ -57,9 +57,12 @@ struct CVMapMicroModule : CVMapModuleBase<1> {
 		configOutput(OUTPUT, "Parameter-automation CV");
 
 		this->paramHandles[0].text = "µMAP";
-		lightDivider.setDivision(1024);
 		processDivider.setDivision(64);
 		onReset();
+	}
+
+	void onSampleRateChange(const SampleRateChangeEvent& e) override {
+		lightDivider.setDivision(e.sampleRate / 100.f);
 	}
 
 	void onReset() override {

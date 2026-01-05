@@ -432,6 +432,9 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 	/** [Stored to JSON] */
 	bool parameterChangesDirect = false;
 
+	/** Holds the time needed for long presses */
+	uint64_t longPressDuration;
+
 	// MEM-expander
 	MidiCatMemBase* expMem = NULL;
 	int64_t expMemModuleId = -1;
@@ -476,6 +479,8 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 	}
 
 	void onReset() override {
+		expandersChanged = true;
+
 		learningId = -1;
 		learnedCc = false;
 		learnedNote = false;
@@ -519,6 +524,7 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 
 	void onSampleRateChange() override {
 		midiResendDivider.setDivision(APP->engine->getSampleRate() / 2);
+		longPressDuration = (uint64_t)(APP->engine->getSampleRate() / 2);
 	}
 
 	void process(const ProcessArgs &args) override {
@@ -566,7 +572,7 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 			for (int i = 0; i < 4; i++) {
 				if (!exp) break;	
 				if (exp->model == modelMidiCatMem && !expMemFound) {
-					expMem = reinterpret_cast<MidiCatMemBase*>(exp);
+					expMem = dynamic_cast<MidiCatMemBase*>(exp);
 					expMemFound = true;
 					exp = exp->rightExpander.module;
 					continue;
@@ -584,7 +590,7 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 					continue;
 				}
 				if (exp->model == modelMidiCatFine && !expFineFound) {
-					expFine = reinterpret_cast<MidiCatFineBase*>(exp);
+					expFine = dynamic_cast<MidiCatFineBase*>(exp);
 					expFineFound = true;
 					exp = exp->rightExpander.module;
 					continue;
@@ -611,6 +617,8 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 				expFine = NULL;
 				ccFineMode = false;
 			}
+
+			expandersChanged = false;
 		}
 
 		if (expClk) expClkProcess();
@@ -730,7 +738,7 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 								break;
 							case CCMODE::SNAPPED_SL:
 								if (ccs[id].getValue() == 0)
-									if (ccs[id].diffTs * 2 < APP->engine->getSampleRate())
+									if (ccs[id].diffTs < longPressDuration)
 										t = midiParam[id].getNextSnappedValue();
 									else
 										t = midiParam[id].getPrevSnappedValue();
@@ -802,7 +810,7 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 								break;
 							case NOTEMODE::SNAPPED_SL:
 								if (notes[id].getValue() == 0) {
-									if (notes[id].diffTs * 2 < APP->engine->getSampleRate())
+									if (notes[id].diffTs < longPressDuration)
 										t = midiParam[id].getNextSnappedValue();
 									else
 										t = midiParam[id].getPrevSnappedValue();
@@ -829,8 +837,10 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 
 					// In some cases the MIDI feedback is detached from the actual parameter value
 					// (toggle mode, attached to a light)
+					// 2026-01-05: Also, do not update the parameter value here when in snap mode, because the tracked
+					// value might be different to the actual value due to snapping
 					bool sendOnlyFeedback = false;
-					if (lastValueIn[id] < 0 || midiParam[id].hasLight()) {
+					if (lastValueIn[id] < 0 || midiParam[id].hasLight() || paramQuantity->snapEnabled) {
 						sendOnlyFeedback = true;
 					}
 
@@ -838,6 +848,12 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 					if (lastValueOut[id] != v) {
 						if (cc >= 0 && ccs[id].ccMode == CCMODE::DIRECT)
 							lastValueIn[id] = v;
+						// 2026-01-02: Fixes feedback in note/momentary mode
+						// Update the internal state... does it break something else?
+						// -- Fixed wrong internal state after manual parameter adjustment
+						// -- 2026-01-05: Breaks snapped params, but fixed by "sendOnlyFeedback"
+						if (!sendOnlyFeedback) midiParam[id].setValue(v);
+						// --
 						ccs[id].setValue(v, sendOnlyFeedback);
 						notes[id].setValue(v, sendOnlyFeedback);
 						lastValueOut[id] = v;
@@ -863,7 +879,7 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 		}
 	}
 
-	bool midiProcessMessage(midi::Message msg) {
+	bool midiProcessMessage(const midi::Message& msg) {
 		switch (msg.getStatus()) {
 			case 0xb: { // cc
 				return midiCc(msg);
@@ -892,11 +908,11 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 		}
 	}
 
-	bool midiCc(midi::Message msg) {
+	bool midiCc(const midi::Message& msg) {
 		uint8_t cc = msg.getNote();
 		uint8_t value = msg.getValue();
 		// Learn
-		if (learningId >= 0 && learnedCcLast != cc && learnedCcLast != cc - 32 && valuesCc[cc] != value) {
+		if (learningId >= 0 && learnedCcLast != cc && (learnedCcLast == -1 || learnedCcLast != cc - 32) && valuesCc[cc] != value) {
 			ccs[learningId].setCc(cc);
 			ccs[learningId].ccMode = CCMODE::DIRECT;
 			notes[learningId].setNote(-1);
@@ -912,7 +928,7 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 		return midiReceived;
 	}
 
-	bool midiNotePress(midi::Message msg) {
+	bool midiNotePress(const midi::Message& msg) {
 		uint8_t note = msg.getNote();
 		uint8_t vel = msg.getValue();
 		// Learn
@@ -932,7 +948,7 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 		return midiReceived;
 	}
 
-	bool midiNoteRelease(midi::Message msg) {
+	bool midiNoteRelease(const midi::Message& msg) {
 		uint8_t note = msg.getNote();
 		bool midiReceived = valuesNote[note] != 0;
 		valuesNote[note] = 0;
@@ -1023,15 +1039,11 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 			return;
 		if (!learnedParam && paramHandles[learningId].moduleId < 0)
 			return;
-		// Reset learned state
-		learnedCc = false;
-		learnedNote = false;
-		learnedParam = false;
 
 		// Copy settings from the previous slot
 		if (learningId > 0) {
 			ccs[learningId].ccMode = ccs[learningId - 1].ccMode;
-			ccs[learningId].set14bit(ccs[learningId - 1].get14bit());
+			ccs[learningId].set14bit(ccs[learningId - 1].get14bit() && learnedCc && learnedCcLast < 32);
 			notes[learningId].noteMode = notes[learningId - 1].noteMode;
 			midiOptions[learningId] = midiOptions[learningId - 1];
 			midiParam[learningId].setSlew(midiParam[learningId - 1].getSlew());
@@ -1042,6 +1054,11 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 			midiParam[learningId].clockSource = midiParam[learningId - 1].clockSource;
 		}
 		textLabel[learningId] = "";
+
+		// Reset learned state
+		learnedCc = false;
+		learnedNote = false;
+		learnedParam = false;
 
 		// Find next incomplete map
 		while (!learnSingleSlot && ++learningId < MAX_CHANNELS) {
@@ -1458,46 +1475,25 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 			ccFineMode = false;
 		}
 	}
+
+	MidiCatParam::CLOCKMODE getClockMode(int id) {
+		return midiParam[id].clockMode;
+	}
+
+	void setClockMode(int id, MidiCatParam::CLOCKMODE mode) {
+		if (mode != MidiCatParam::CLOCKMODE::OFF) {
+			if (ccs[id].getCc() >= 0 && (ccs[id].ccMode == CCMODE::PICKUP1 || ccs[id].ccMode == CCMODE::PICKUP2)) {
+				ccs[id].ccMode = CCMODE::DIRECT;
+			}
+			if (notes[id].getNote() >= 0 && (notes[id].noteMode == NOTEMODE::MOMENTARY || notes[id].noteMode == NOTEMODE::MOMENTARY_VEL)) {
+				notes[id].noteMode = NOTEMODE::TOGGLE;
+			}
+			midiParam[id].setSlew(0.f);
+		}
+		midiParam[id].clockMode = mode;
+	}
 };
 
-
-struct SlewSlider : ui::Slider {
-	struct SlewQuantity : Quantity {
-		const float SLEW_MIN = 0.f;
-		const float SLEW_MAX = 5.f;
-		MidiCatParam* p;
-		void setValue(float value) override {
-			value = clamp(value, SLEW_MIN, SLEW_MAX);
-			p->setSlew(value);
-		}
-		float getValue() override {
-			return p->getSlew();
-		}
-		float getDefaultValue() override {
-			return 0.f;
-		}
-		std::string getLabel() override {
-			return "Slew-limiting";
-		}
-		int getDisplayPrecision() override {
-			return 2;
-		}
-		float getMaxValue() override {
-			return SLEW_MAX;
-		}
-		float getMinValue() override {
-			return SLEW_MIN;
-		}
-	}; // struct SlewQuantity
-
-	SlewSlider(MidiCatParam* p) {
-		box.size.x = 220.0f;
-		quantity = construct<SlewQuantity>(&SlewQuantity::p, p);
-	}
-	~SlewSlider() {
-		delete quantity;
-	}
-}; // struct SlewSlider
 
 struct MidiCatCurveMenuItem : CurveMenuItem {
 	MidiCatParam* p;
@@ -1544,96 +1540,6 @@ struct ScalingOutputLabel : MenuLabelEx {
 	}
 }; // struct ScalingOutputLabel
 
-struct MinSlider : SubMenuSlider {
-	struct MinQuantity : Quantity {
-		MidiCatParam* p;
-		void setValue(float value) override {
-			value = clamp(value, -1.f, 2.f);
-			p->setMin(value);
-		}
-		float getValue() override {
-			return p->getMin();
-		}
-		float getDefaultValue() override {
-			return 0.f;
-		}
-		float getMinValue() override {
-			return -1.f;
-		}
-		float getMaxValue() override {
-			return 2.f;
-		}
-		float getDisplayValue() override {
-			return getValue() * 100;
-		}
-		void setDisplayValue(float displayValue) override {
-			setValue(displayValue / 100);
-		}
-		std::string getLabel() override {
-			return "Low";
-		}
-		std::string getUnit() override {
-			return "%";
-		}
-		int getDisplayPrecision() override {
-			return 3;
-		}
-	}; // struct MinQuantity
-
-	MinSlider(MidiCatParam* p) {
-		box.size.x = 220.0f;
-		quantity = construct<MinQuantity>(&MinQuantity::p, p);
-	}
-	~MinSlider() {
-		delete quantity;
-	}
-}; // struct MinSlider
-
-struct MaxSlider : SubMenuSlider {
-	struct MaxQuantity : Quantity {
-		MidiCatParam* p;
-		void setValue(float value) override {
-			value = clamp(value, -1.f, 2.f);
-			p->setMax(value);
-		}
-		float getValue() override {
-			return p->getMax();
-		}
-		float getDefaultValue() override {
-			return 1.f;
-		}
-		float getMinValue() override {
-			return -1.f;
-		}
-		float getMaxValue() override {
-			return 2.f;
-		}
-		float getDisplayValue() override {
-			return getValue() * 100;
-		}
-		void setDisplayValue(float displayValue) override {
-			setValue(displayValue / 100);
-		}
-		std::string getLabel() override {
-			return "High";
-		}
-		std::string getUnit() override {
-			return "%";
-		}
-		int getDisplayPrecision() override {
-			return 3;
-		}
-	}; // struct MaxQuantity
-
-	MaxSlider(MidiCatParam* p) {
-		box.size.x = 220.0f;
-		quantity = construct<MaxQuantity>(&MaxQuantity::p, p);
-	}
-	~MaxSlider() {
-		delete quantity;
-	}
-}; // struct MaxSlider
-
 
 struct MidiCatSelectionWidget : Widget {
 	enum class LEARN_MODE {
@@ -1656,7 +1562,7 @@ struct MidiCatSelectionWidget : Widget {
 		learnMode = learnMode == LEARN_MODE::OFF ? mode : LEARN_MODE::OFF;
 		this->bindLights = bindLights;
 		GLFWcursor* cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
-		glfwSetCursor(APP->window->win, cursor);
+		if (APP->window) glfwSetCursor(APP->window->win, cursor);
 	}
 
 	void onHover(const HoverEvent& e) override {
@@ -1686,7 +1592,7 @@ struct MidiCatSelectionWidget : Widget {
 			mapParamsFromRect();
 			selecting = false;
 			learnMode = LEARN_MODE::OFF;
-			glfwSetCursor(APP->window->win, NULL);
+			if (APP->window) glfwSetCursor(APP->window->win, NULL);
 			e.consume(this);
 		}
 		Widget::onDragEnd(e);
@@ -1853,13 +1759,13 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 		module->enableLearn(id);
 		APP->event->setSelectedWidget(this);
 		GLFWcursor* cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
-		glfwSetCursor(APP->window->win, cursor);
+		if (APP->window) glfwSetCursor(APP->window->win, cursor);
 	}
 
 	void disableLearnLight() {
 		module->learningLightId = -1;
 		module->disableLearn();
-		glfwSetCursor(APP->window->win, NULL);
+		if (APP->window) glfwSetCursor(APP->window->win, NULL);
 	}
 
 	std::string getSlotPrefix() override {
@@ -1931,9 +1837,9 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 				Menu* menu = new Menu;
 				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Direct", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::DIRECT));
 				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Pickup (snap)", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::PICKUP1));
-				reinterpret_cast<MenuItem*>(menu->children.back())->disabled = module->midiParam[id].clockMode != MidiCatParam::CLOCKMODE::OFF;
+				dynamic_cast<MenuItem*>(menu->children.back())->disabled = module->midiParam[id].clockMode != MidiCatParam::CLOCKMODE::OFF;
 				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Pickup (jump)", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::PICKUP2));
-				reinterpret_cast<MenuItem*>(menu->children.back())->disabled = module->midiParam[id].clockMode != MidiCatParam::CLOCKMODE::OFF;
+				dynamic_cast<MenuItem*>(menu->children.back())->disabled = module->midiParam[id].clockMode != MidiCatParam::CLOCKMODE::OFF;
 				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Toggle", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::TOGGLE));
 				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Toggle + Value", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::TOGGLE_VALUE));
 				menu->addChild(construct<CcModeItem>(&MenuItem::text, "Snapped", &CcModeItem::module, module, &CcModeItem::id, id, &CcModeItem::ccMode, CCMODE::SNAPPED));
@@ -1979,9 +1885,9 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 			Menu* createChildMenu() override {
 				Menu* menu = new Menu;
 				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Momentary", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::MOMENTARY));
-				reinterpret_cast<MenuItem*>(menu->children.back())->disabled = module->midiParam[id].clockMode != MidiCatParam::CLOCKMODE::OFF;
+				dynamic_cast<MenuItem*>(menu->children.back())->disabled = module->midiParam[id].clockMode != MidiCatParam::CLOCKMODE::OFF;
 				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Momentary + Velocity", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::MOMENTARY_VEL));
-				reinterpret_cast<MenuItem*>(menu->children.back())->disabled = module->midiParam[id].clockMode != MidiCatParam::CLOCKMODE::OFF;
+				dynamic_cast<MenuItem*>(menu->children.back())->disabled = module->midiParam[id].clockMode != MidiCatParam::CLOCKMODE::OFF;
 				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Toggle", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::TOGGLE));
 				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Toggle + Velocity", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::TOGGLE_VEL));
 				menu->addChild(construct<NoteModeItem>(&MenuItem::text, "Snapped", &NoteModeItem::module, module, &NoteModeItem::id, id, &NoteModeItem::noteMode, NOTEMODE::SNAPPED));
@@ -2104,13 +2010,25 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 			}
 		}; // struct LabelMenuItem
 
-		menu->addChild(new SlewSlider(&module->midiParam[id]));
+		menu->addChild(Rack::createSlider(
+			[this]() { return module->midiParam[id].getSlew(); },
+			[this](float v) { module->midiParam[id].setSlew(clamp(v, 0.f, 5.f)); },
+			0.f, 5.f, 0.f, "Slew-limiting", "", 1.f, 220.0f
+		));
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Scaling"));
 		std::string l = string::f("Input %s", module->ccs[id].getCc() >= 0 ? "MIDI CC" : (module->notes[id].getNote() >= 0 ? "MIDI vel" : ""));
 		menu->addChild(construct<ScalingInputLabel>(&MenuLabel::text, l, &ScalingInputLabel::p, &module->midiParam[id]));
 		menu->addChild(construct<ScalingOutputLabel>(&MenuLabel::text, "Parameter range", &ScalingOutputLabel::p, &module->midiParam[id]));
-		menu->addChild(new MinSlider(&module->midiParam[id]));
-		menu->addChild(new MaxSlider(&module->midiParam[id]));
+		menu->addChild(Rack::createSlider(
+			[this]() { return module->midiParam[id].getMin(); },
+			[this](float v) { module->midiParam[id].setMin(v); },
+			-1.f, 2.f, 0.f, "Low", "%", 100.f, 220.0f
+		));
+		menu->addChild(Rack::createSlider(
+			[this]() { return module->midiParam[id].getMax(); },
+			[this](float v) { module->midiParam[id].setMax(v); },
+			-1.f, 2.f, 1.f, "High", "%", 100.f, 220.0f
+		));
 		menu->addChild(construct<PresetMenuItem>(&MenuItem::text, "Presets", &PresetMenuItem::module, module, &PresetMenuItem::id, id));
 		menu->addChild(new MidiCatCurveMenuItem(&module->midiParam[id]));
 		menu->addChild(new MenuSeparator());
@@ -2120,22 +2038,24 @@ struct MidiCatChoice : MapModuleChoice<MAX_CHANNELS, MidiCatModule> {
 			menu->addChild(new MenuSeparator());
 			menu->addChild(createMenuLabel("CLK-expander"));
 			if (!module->getMap(id).hasLight()) {
-				menu->addChild(StoermelderPackOne::Rack::createMapPtrSubmenuItem("Quantization",
+				menu->addChild(StoermelderPackOne::Rack::createMapSubmenuItem<MidiCatParam::CLOCKMODE>("Quantization",
 					{
 						{ MidiCatParam::CLOCKMODE::OFF, "Off" },
 						{ MidiCatParam::CLOCKMODE::ARM, "On (instant feedback)" },
 						{ MidiCatParam::CLOCKMODE::ARM_DEFERRED_FEEDBACK, "On (deferred feedback)" }
 					},
-					&module->midiParam[id].clockMode
+					[=]() { return module->getClockMode(id); },
+					[=](MidiCatParam::CLOCKMODE v) { module->setClockMode(id, v); }
 				));
 			}
 			else {
-				menu->addChild(StoermelderPackOne::Rack::createMapPtrSubmenuItem("Quantization",
+				menu->addChild(StoermelderPackOne::Rack::createMapSubmenuItem<MidiCatParam::CLOCKMODE>("Quantization",
 					{
 						{ MidiCatParam::CLOCKMODE::OFF, "Off" },
 						{ MidiCatParam::CLOCKMODE::ARM, "On" },
 					},
-					&module->midiParam[id].clockMode
+					[=]() { return module->getClockMode(id); },
+					[=](MidiCatParam::CLOCKMODE v) { module->setClockMode(id, v); }
 				));
 			}
 			menu->addChild(StoermelderPackOne::Rack::createMapPtrSubmenuItem("Source",
@@ -2222,8 +2142,8 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 	}
 
 	~MidiCatBaseWidget() {
-		if (learnMode != LEARN_MODE::OFF) {
-			glfwSetCursor(APP->window->win, NULL);
+		if (learnMode != LEARN_MODE::OFF && APP->window) {
+			if (APP->window) glfwSetCursor(APP->window->win, NULL);
 		}
 
 		if (selectionWidget) {
@@ -2524,13 +2444,25 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 				std::string midiCatId = expCtx ? "on \"" + expCtx->getMidiCatId() + "\"" : "";
 				std::list<Widget*> w;
 				w.push_back(construct<MapMenuItem>(&MenuItem::text, string::f("Re-map %s", midiCatId.c_str()), &MapMenuItem::module, module, &MapMenuItem::pq, pq, &MapMenuItem::currentId, id));
-				w.push_back(new SlewSlider(&module->midiParam[id]));
+				w.push_back(Rack::createSlider(
+					[this, id]() { return module->midiParam[id].getSlew(); },
+					[this, id](float v) { module->midiParam[id].setSlew(clamp(v, 0.f, 5.f)); },
+					0.f, 5.f, 0.f, "Slew-limiting", "", 1.f, 220.0f
+				));
 				w.push_back(construct<MenuLabel>(&MenuLabel::text, "Scaling"));
 				std::string l = string::f("Input %s", module->ccs[id].getCc() >= 0 ? "MIDI CC" : (module->notes[id].getNote() >= 0 ? "MIDI vel" : ""));
 				w.push_back(construct<ScalingInputLabel>(&MenuLabel::text, l, &ScalingInputLabel::p, &module->midiParam[id]));
 				w.push_back(construct<ScalingOutputLabel>(&MenuLabel::text, "Parameter range", &ScalingOutputLabel::p, &module->midiParam[id]));
-				w.push_back(new MinSlider(&module->midiParam[id]));
-				w.push_back(new MaxSlider(&module->midiParam[id]));
+				w.push_back(Rack::createSlider(
+					[this, id]() { return module->midiParam[id].getMin(); },
+					[this, id](float v) { module->midiParam[id].setMin(v); },
+					-1.f, 2.f, 0.f, "Low", "%", 100.f, 220.0f
+				));
+				w.push_back(Rack::createSlider(
+					[this, id]() { return module->midiParam[id].getMax(); },
+					[this, id](float v) { module->midiParam[id].setMax(v); },
+					-1.f, 2.f, 1.f, "High", "%", 100.f, 220.0f
+				));
 				w.push_back(new MidiCatCurveMenuItem(&module->midiParam[id]));
 				w.push_back(construct<CenterModuleItem>(&MenuItem::text, "Go to mapping module", &CenterModuleItem::mw, this));
 				w.push_back(new MidiCatEndItem);
@@ -2659,12 +2591,12 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 		if (learnMode != LEARN_MODE::OFF) {
 			cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
 		}
-		glfwSetCursor(APP->window->win, cursor);
+		if (APP->window) glfwSetCursor(APP->window->win, cursor);
 	}
 
 	void disableLearn() {
 		learnMode = LEARN_MODE::OFF;
-		glfwSetCursor(APP->window->win, NULL);
+		if (APP->window) glfwSetCursor(APP->window->win, NULL);
 	}
 
 	void appendContextMenu(Menu* menu) override {

@@ -69,8 +69,11 @@ struct CVMapModule : CVMapModuleBase<MAX_CHANNELS> {
 			mapParam[i].setLimits(0.f, 1.f, std::numeric_limits<float>::infinity());
 		}
 		processDivider.setDivision(32);
-		lightDivider.setDivision(1024);
 		onReset();
+	}
+
+	void onSampleRateChange(const SampleRateChangeEvent& e) override {
+		lightDivider.setDivision(e.sampleRate / 100.f);
 	}
 
 	void onReset() override {
@@ -502,12 +505,12 @@ struct CVMapWidget : ThemedModuleWidget<CVMapModule>, ParamWidgetContextExtender
 		if (learnMode != LEARN_MODE::OFF) {
 			cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
 		}
-		glfwSetCursor(APP->window->win, cursor);
+		if (APP->window) glfwSetCursor(APP->window->win, cursor);
 	}
 
 	void disableLearn() {
 		learnMode = LEARN_MODE::OFF;
-		glfwSetCursor(APP->window->win, NULL);
+		if (APP->window) glfwSetCursor(APP->window->win, NULL);
 	}
 
 	void appendContextMenu(Menu* menu) override {

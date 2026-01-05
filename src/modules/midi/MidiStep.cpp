@@ -137,7 +137,7 @@ struct MidiStepModule : Module {
 		}
 	}
 
-	void processMessage(midi::Message msg) {
+	void processMessage(const midi::Message& msg) {
 		switch (msg.getStatus()) {
 			case 0xb: { // cc
 				processCC(msg);
@@ -146,7 +146,7 @@ struct MidiStepModule : Module {
 		}
 	}
 
-	void processCC(midi::Message msg) {
+	void processCC(const midi::Message& msg) {
 		uint8_t cc = msg.getNote();
 
 		int8_t value = msg.bytes[2];

@@ -35,7 +35,6 @@ struct GripModule : CVMapModuleBase<MAX_CHANNELS> {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configParam<TriggerParamQuantity>(PARAM_BIND, 0.f, 1.f, 0.f, "Bind new parameter");
 		processDivider.setDivision(64);
-		lightDivider.setDivision(1024);
 
 		for (int i = 0; i < MAX_CHANNELS; i++) {
 			paramHandles[i].text = "stoermelder GRIP";
@@ -43,6 +42,10 @@ struct GripModule : CVMapModuleBase<MAX_CHANNELS> {
 		}
 
 		onReset();
+	}
+
+	void onSampleRateChange(const SampleRateChangeEvent& e) override {
+		lightDivider.setDivision(e.sampleRate / 100.f);
 	}
 
 	void onReset() override {
