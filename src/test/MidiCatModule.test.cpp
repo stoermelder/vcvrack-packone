@@ -649,7 +649,7 @@ TEST_CASE("Note Mode SNAPPED", "[MidiCat]") {
 	module->learnParam(0, testModule->id, TestModule::TEST_PARAM_4);
 	module->process(Test::makeProcessArgs(i++));
 	module->notes[0].noteMode = NOTEMODE::SNAPPED;
-	module->midiInput.onMessage(Test::makeMidiMessage(0x9, 0, 60, 0));
+	module->midiInput.onMessage(Test::makeMidiMessage(0x8, 0, 60, 0));
 	module->process(Test::makeProcessArgs(i++));
 
 	// Should start at min
@@ -659,14 +659,14 @@ TEST_CASE("Note Mode SNAPPED", "[MidiCat]") {
 	// First snap: should advance to 1
 	module->midiInput.onMessage(Test::makeMidiMessage(0x9, 0, 60, 100));
 	module->process(Test::makeProcessArgs(i++));
-	module->midiInput.onMessage(Test::makeMidiMessage(0x9, 0, 60, 0));
+	module->midiInput.onMessage(Test::makeMidiMessage(0x8, 0, 60, 0));
 	module->process(Test::makeProcessArgs(i++));
 	REQUIRE(pq->getValue() == 1.0f);
 
 	// Second snap: should advance to 2
 	module->midiInput.onMessage(Test::makeMidiMessage(0x9, 0, 60, 100));
 	module->process(Test::makeProcessArgs(i++));
-	module->midiInput.onMessage(Test::makeMidiMessage(0x9, 0, 60, 0));
+	module->midiInput.onMessage(Test::makeMidiMessage(0x8, 0, 60, 0));
 	module->process(Test::makeProcessArgs(i++));
 	REQUIRE(pq->getValue() == 2.0f);
 
@@ -680,7 +680,7 @@ TEST_CASE("Note Mode SNAPPED", "[MidiCat]") {
 	module->process(Test::makeProcessArgs(i++));
 	module->midiInput.onMessage(Test::makeMidiMessage(0x9, 0, 60, 100));
 	module->process(Test::makeProcessArgs(i++));
-	module->midiInput.onMessage(Test::makeMidiMessage(0x9, 0, 60, 0));
+	module->midiInput.onMessage(Test::makeMidiMessage(0x8, 0, 60, 0));
 	module->process(Test::makeProcessArgs(i++));
 	REQUIRE(pq->getValue() == pq->getMinValue());
 
@@ -824,11 +824,68 @@ TEST_CASE("MIDI feedback after preset load", "[MidiCat]") {
 	Test::destroyModule(module);
 }
 
+TEST_CASE("MIDIMODE LOCATE", "[MidiCat]") {
+    MidiCatModule* m = Test::createModule<MidiCatModule>("MidiCat");
+	MidiCatWidget* mw = Test::createWidget<MidiCatWidget>(m);
+    m->processDivider.setDivision(1);
+	Test::registerModule(m, mw);
+
+    TestModule* testModule = new TestModule();
+	testModule->id = Test::getModuleId();
+    Test::registerModule(testModule);
+
+	int j = 1;
+
+    SECTION("Locate indicates CC mappings") {
+        // Set up mapping for CC7 -> TEST_PARAM_1, with current CC value 64
+		const int paramId = 0;
+        m->enableLearn(paramId, true);
+        m->midiProcessMessage(Test::makeMidiMessage(0xb, 0, 7, 64)); // set CC value
+        m->learnParam(paramId, testModule->id, TestModule::TEST_PARAM_1);
+        m->process(Test::makeProcessArgs(j++));
+
+        // Enter locate mode
+        m->setMode(MIDIMODE::MIDIMODE_LOCATE);
+		// Trigger indication
+        m->midiProcessMessage(Test::makeMidiMessage(0xb, 0, 7, 100)); 
+        m->process(Test::makeProcessArgs(j++));
+		// step the widget to update indicator state
+		mw->step();
+
+		// Check for indication
+		REQUIRE(m->paramHandles[paramId].indicateCount != 0);
+    }
+
+    SECTION("Locate indicates Note mappings") {
+        // Set up mapping for note 60 -> TEST_PARAM_1, with current note value 100
+		const int paramId = 0;
+        m->enableLearn(paramId, true);
+        m->midiProcessMessage(Test::makeMidiMessage(0x9, 0, 60, 100)); // set note value
+        m->learnParam(paramId, testModule->id, TestModule::TEST_PARAM_1);
+        m->process(Test::makeProcessArgs(j++));
+        m->midiProcessMessage(Test::makeMidiMessage(0x8, 0, 60, 0));
+        m->process(Test::makeProcessArgs(j++));
+
+        m->setMode(MIDIMODE::MIDIMODE_LOCATE);
+		// Trigger indication
+        m->midiProcessMessage(Test::makeMidiMessage(0x9, 0, 60, 100)); // set note value
+        m->process(Test::makeProcessArgs(j++));
+		// step the widget to update indicator state
+		mw->step();
+
+		// Check for indication
+		REQUIRE(m->paramHandles[paramId].indicateCount != 0);
+    }
+
+    Test::unregisterModule(testModule);
+	Test::unregisterModule(m, mw);
+    Test::destroyModule(m);
+}
+
 /*
 
 TEST_CASE("Clear map functionality", "[MidiCat]") {
 	MidiCatModule* module = Test::createModule<MidiCatModule>("MidiCat");
-	
 	// Set up a mapping
 	module->ccs[0].setCc(10);
 	module->notes[0].setNote(60);
