@@ -19,27 +19,25 @@ struct TestContext {
 	TestContext() {
 		// Ensure headless mode for tests
 		settings::headless = true;
-		
-		if (rack::contextGet() != NULL) {
-			// Context already exists; reuse it
-			ctx = rack::contextGet();
-			scene = dynamic_cast<TScene*>(ctx->scene);
-			return;
-		}
 
-		ctx = new rack::Context();
-		rack::contextSet(ctx);
-		// Create a minimal EventState so code that dereferences APP->event won't segfault
-		ctx->engine = new rack::engine::Engine;
-		ctx->event = new rack::widget::EventState();
-		scene = new TScene();
-		ctx->scene = scene;
-		ctx->event->rootWidget = ctx->scene;
-
-		// If this is the first TestContext, create and initialize the plugin instance
+		// If this is the first TestContext, create and initialize the pluginInstance and context
 		if (testContextCount.fetch_add(1, std::memory_order_acq_rel) == 0) {
 			pluginInstance = new Plugin();
 			init(pluginInstance);
+
+			ctx = new rack::Context();
+			rack::contextSet(ctx);
+			// Create a minimal EventState so code that dereferences APP->event won't segfault
+			ctx->engine = new rack::engine::Engine;
+			ctx->event = new rack::widget::EventState();
+			scene = new TScene();
+			ctx->scene = scene;
+			ctx->event->rootWidget = ctx->scene;
+		}
+		else {
+			// Context already exists; reuse it
+			ctx = rack::contextGet();
+			scene = dynamic_cast<TScene*>(ctx->scene);
 		}
 	} 
 
@@ -48,11 +46,11 @@ struct TestContext {
 		if (testContextCount.fetch_sub(1, std::memory_order_acq_rel) == 1) {
 			delete pluginInstance;
 			pluginInstance = nullptr;
-		}
 
-		// Context destructor handled by Rack; free our allocation
-		if (ctx) {
-			delete ctx;
+			// Context destructor handled by Rack; free our allocation
+			if (ctx) {
+				delete ctx;
+			}
 		}
 	}
 };
@@ -62,6 +60,7 @@ template <typename T>
 static T* createModule(std::string modelSlug) {
 	Model* model = pluginInstance->getModel(modelSlug);
 	T* m = dynamic_cast<T*>(model->createModule());
+	m->onSampleRateChange();
 	return m;
 }
 

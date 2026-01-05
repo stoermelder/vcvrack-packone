@@ -1,10 +1,10 @@
 # stoermelder CV‑PAM
 
-CV‑PAM is the counterpart of [CV‑MAP](./CVMap.md). While CV‑MAP takes CV input and automates any knob, switch or slider, CV‑PAM does the opposite: you attach one of its 32 slots to a parameter of any module and it generates CV output from the parameter’s movements. The use‑cases for CV‑PAM are therefore not as varied as those for [CV-MAP](./CVMap.md).
+CV‑PAM is the counterpart of [CV‑MAP](CVMap.md). While CV‑MAP takes CV input and automates any knob, switch or slider, CV‑PAM does the opposite: you attach one of its 32 slots to a parameter of any module and it generates CV output from the parameter’s movements. The use‑cases for CV‑PAM are therefore not as varied as those for [CV-MAP](CVMap.md).
 
 ![CV-PAM intro](./CVPam-intro.png)
 
-Using CV‑PAM in combination with CV‑MAP lets you synchronize parameter changes across multiple instances of the same module (or different modules). For an all‑in‑one solution you can also use [MIRROR](./Mirror.md) (since v1.6.0).
+Using CV‑PAM in combination with CV‑MAP lets you synchronize parameter changes across multiple instances of the same module (or different modules). For an all‑in‑one solution you can also use [MIRROR](Mirror.md) (since v1.6.0).
 
 ![CV-PAM sync](./CVPam-sync.gif)
 

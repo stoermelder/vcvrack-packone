@@ -432,6 +432,9 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 	/** [Stored to JSON] */
 	bool parameterChangesDirect = false;
 
+	/** Holds the time needed for long presses */
+	uint64_t longPressDuration;
+
 	// MEM-expander
 	MidiCatMemBase* expMem = NULL;
 	int64_t expMemModuleId = -1;
@@ -521,6 +524,7 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 
 	void onSampleRateChange() override {
 		midiResendDivider.setDivision(APP->engine->getSampleRate() / 2);
+		longPressDuration = (uint64_t)(APP->engine->getSampleRate() / 2);
 	}
 
 	void process(const ProcessArgs &args) override {
@@ -734,7 +738,7 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 								break;
 							case CCMODE::SNAPPED_SL:
 								if (ccs[id].getValue() == 0)
-									if (ccs[id].diffTs * 2 < APP->engine->getSampleRate())
+									if (ccs[id].diffTs < longPressDuration)
 										t = midiParam[id].getNextSnappedValue();
 									else
 										t = midiParam[id].getPrevSnappedValue();
@@ -806,7 +810,7 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 								break;
 							case NOTEMODE::SNAPPED_SL:
 								if (notes[id].getValue() == 0) {
-									if (notes[id].diffTs * 2 < APP->engine->getSampleRate())
+									if (notes[id].diffTs < longPressDuration)
 										t = midiParam[id].getNextSnappedValue();
 									else
 										t = midiParam[id].getPrevSnappedValue();
@@ -833,8 +837,10 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 
 					// In some cases the MIDI feedback is detached from the actual parameter value
 					// (toggle mode, attached to a light)
+					// 2026-01-05: Also, do not update the parameter value here when in snap mode, because the tracked
+					// value might be different to the actual value due to snapping
 					bool sendOnlyFeedback = false;
-					if (lastValueIn[id] < 0 || midiParam[id].hasLight()) {
+					if (lastValueIn[id] < 0 || midiParam[id].hasLight() || paramQuantity->snapEnabled) {
 						sendOnlyFeedback = true;
 					}
 
@@ -842,9 +848,10 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 					if (lastValueOut[id] != v) {
 						if (cc >= 0 && ccs[id].ccMode == CCMODE::DIRECT)
 							lastValueIn[id] = v;
-						// Added 2026-01-02: Fixes feedback in note/momentary mode
+						// 2026-01-02: Fixes feedback in note/momentary mode
 						// Update the internal state... does it break something else?
 						// -- Fixed wrong internal state after manual parameter adjustment
+						// -- 2026-01-05: Breaks snapped params, but fixed by "sendOnlyFeedback"
 						if (!sendOnlyFeedback) midiParam[id].setValue(v);
 						// --
 						ccs[id].setValue(v, sendOnlyFeedback);
@@ -872,7 +879,7 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 		}
 	}
 
-	bool midiProcessMessage(midi::Message msg) {
+	bool midiProcessMessage(const midi::Message& msg) {
 		switch (msg.getStatus()) {
 			case 0xb: { // cc
 				return midiCc(msg);
@@ -901,7 +908,7 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 		}
 	}
 
-	bool midiCc(midi::Message msg) {
+	bool midiCc(const midi::Message& msg) {
 		uint8_t cc = msg.getNote();
 		uint8_t value = msg.getValue();
 		// Learn
@@ -921,7 +928,7 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 		return midiReceived;
 	}
 
-	bool midiNotePress(midi::Message msg) {
+	bool midiNotePress(const midi::Message& msg) {
 		uint8_t note = msg.getNote();
 		uint8_t vel = msg.getValue();
 		// Learn
@@ -941,7 +948,7 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 		return midiReceived;
 	}
 
-	bool midiNoteRelease(midi::Message msg) {
+	bool midiNoteRelease(const midi::Message& msg) {
 		uint8_t note = msg.getNote();
 		bool midiReceived = valuesNote[note] != 0;
 		valuesNote[note] = 0;

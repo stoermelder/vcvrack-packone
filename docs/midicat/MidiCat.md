@@ -29,7 +29,7 @@ Besides these new features the module brings the goodies known from stoermelder'
 
 - ...text scrolling for long parameter names,
 - ..."Locate and indicate" on slot's context menu for finding mapped parameters and
-- ...unlocked parameters for changes by mouse or by preset loading or using a preset-manager like stoermelder's [8FACE](./EightFace.md).
+- ...unlocked parameters for changes by mouse or by preset loading or using a preset-manager like stoermelder's [8FACE](../eightface/EightFace.md).
 
 ![MIDI-CAT intro](./MidiCat-intro.gif)
 
@@ -202,7 +202,7 @@ Here is a unpolished introduction video to demonstrate the configuration steps a
 ![MIDI-CAT parameter's context menu](./MidiCat-target.png)
 
 <a name="overlay"></a>
-- MIDI-CAT uses an overlay window displaying parameter changes on the bottom of the screen (since v1.9.0). This overlay is enabled by default and can be disabled in the context menu. Some adjustments for the appearance of the overlay can be made with the [stoermelder ME](./Me.md) module.
+- MIDI-CAT uses an overlay window displaying parameter changes on the bottom of the screen (since v1.9.0). This overlay is enabled by default and can be disabled in the context menu. Some adjustments for the appearance of the overlay can be made with the [stoermelder ME](../trial-and-error/Me.md) module.
 
 ![MIDI-CAT overlay](./MidiCat-overlay.gif)
 
@@ -227,7 +227,7 @@ Stored module-mappings can be recalled by context menu option _Apply mapping_ or
 
 MEM should be considered as a sort of "memory-unit" for MIDI-CAT: The module-specific mappings are saved inside the MEM-module and can be exported using Rack's preset functionality on the context menu. This means you can reuse the same mappings in different instances of MIDI-CAT or multiple patches, independently of any current mapping of MIDI-CAT.
 
-MEM is not designed to map and recall mappings for different types of modules the same time. If you desire to recall a specific mapping-setup into MIDI-CAT you can use stoermelder [8FACE](./EightFace.md) which applies a complete setup by loading a preset of MIDI-CAT. For this purpose an option _Ignore MIDI devices on presets_ has been added (since v1.8.0) which skips any MIDI device settings when loading a preset into MIDI-CAT, only settings for all mapping slots will be recalled.
+MEM is not designed to map and recall mappings for different types of modules the same time. If you desire to recall a specific mapping-setup into MIDI-CAT you can use stoermelder [8FACE](../eightface/EightFace.md) which applies a complete setup by loading a preset of MIDI-CAT. For this purpose an option _Ignore MIDI devices on presets_ has been added (since v1.8.0) which skips any MIDI device settings when loading a preset into MIDI-CAT, only settings for all mapping slots will be recalled.
 
 <a name="mem-scan"></a>
 Added in v1.8.0: MEM has two buttons labeled _Prev_ and _Next_ which scan your patch from top-left to bottom-right and apply a stored mapping to the next/previous module of the current mapped module. Modules without a mapping available in MEM will be skipped while scanning obviously. This function is especially useful when triggering _Next_ and _Prev_ with a MIDI controller which allows you to control your patch without touching the mouse or keyboard and without static mapping, for example.
@@ -274,7 +274,7 @@ Fine-tuning for a parameter can only be used on MIDI CC mappings with input mode
 
 After fine-tuning is finished and gates on 10% input and 1/2/5% input are low, the mapped MIDI control can pick up the current parameter value again.
 
-FINE for MIDI-CAT must be placed on the right side of MIDI-CAT and can be used together with the other expanders. High gates for the two inputs can be created by [VCV MIDI-GATE](https://library.vcvrack.com/Core/MIDITriggerToCVInterface) using MIDI note messages or by [STROKE](./Stroke.md) using keyboard hotkeys, for example.
+FINE for MIDI-CAT must be placed on the right side of MIDI-CAT and can be used together with the other expanders. High gates for the two inputs can be created by [VCV MIDI-GATE](https://library.vcvrack.com/Core/MIDITriggerToCVInterface) using MIDI note messages or by [STROKE](../stroke/Stroke.md) using keyboard hotkeys, for example.
 
 ## Changelog
 

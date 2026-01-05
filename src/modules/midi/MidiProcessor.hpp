@@ -34,7 +34,7 @@ struct MessageEx {
     int16_t paramNumber = -1;
     int16_t extraValue = -1;
 
-    MessageEx(rack::midi::Message& msg);
+    MessageEx(const rack::midi::Message& msg);
 
     uint8_t getChannel() const;
     uint8_t getNote() const;
@@ -64,9 +64,9 @@ struct MidiProcessor {
 
     rack::midi::InputQueue& getInput();
     void process(int64_t frame);
-    void processCc(rack::midi::Message& msg);
+    void processCc(const rack::midi::Message& msg);
 
-    void notify(MessageEx& m);
+    void notify(const MessageEx& m);
     void subscribe(MidiProcessorHandler* handler);
     void unsubscribe(MidiProcessorHandler* handler);
 };

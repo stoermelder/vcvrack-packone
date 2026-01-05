@@ -1,6 +1,6 @@
 # stoermelder SPIN
 
-SPIN is a utility module that converts mouse‑wheel events or middle mouse‑button clicks into triggers. It is especially useful with [SAIL](./Sail.md): together they provide mouse‑wheel control of hovered parameters and fine‑control via the middle mouse‑button.
+SPIN is a utility module that converts mouse‑wheel events or middle mouse‑button clicks into triggers. It is especially useful with [SAIL](../sail/Sail.md): together they provide mouse‑wheel control of hovered parameters and fine‑control via the middle mouse‑button.
 
 ![SPIN intro](./Spin-intro.gif)
 

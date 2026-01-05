@@ -37,7 +37,7 @@ TEST_ADD_SOURCES := $(CURDIR)/src/test/catch2/catch_amalgamated.cpp
 TEST_BINARIES := $(patsubst src/test/%.cpp,build/test/%,$(TEST_SOURCES))
 
 # Pattern rule to build an individual test executable
-build/test/%: src/test/%.cpp $(CURDIR)/src/test/catch2/catch_amalgamated.cpp
+build/test/%: src/test/%.cpp $(CURDIR)/src/test/catch2/catch_amalgamated.cpp $(CURDIR)/src/test/test_context.hpp
 	@mkdir -p $(dir $@)
 	@echo "Building test $@..."
 	@$(CXX) -std=c++14 \
@@ -56,14 +56,12 @@ test: $(TEST_BINARIES) $(TARGET)
 			fi; \
 		fi; \
 	done
-	@if [ ! -e "build/test/$(TARGET)" ]; then \
-		cp "$(CURDIR)/$(TARGET)" build/test/ && echo "Copied $(TARGET) to build/test"; \
-	fi; \
+	@cp "$(CURDIR)/$(TARGET)" build/test/ && echo "Copied $(TARGET) to build/test";
 
 # Run all test binaries (exit non-zero on first failure)
 testrun: test
 	echo "Running tests..."
 	@set -e; for t in $(TEST_BINARIES); do \
 		echo "Running test $$t..."; \
-		DYLD_LIBRARY_PATH=$(RACK_DIR) ./$$t $(TEST_SUCCESS_FLAG); \
+		DYLD_LIBRARY_PATH=$(RACK_DIR) ./$$t --order decl $(TEST_SUCCESS_FLAG); \
 	done
