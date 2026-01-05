@@ -403,7 +403,7 @@
 			"name": "MIDI-ESX",
 			"description": "MIDI converter for your Expert Sleepers hardware setup (ES-5, ES-8, ES-9 etc.)",
 			"tags": ["MIDI"],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/MidiEsx.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/midiesx/MidiEsx.md"
 		},
 		{
 			"slug": "Mb",
