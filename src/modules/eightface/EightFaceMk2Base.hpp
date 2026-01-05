@@ -118,21 +118,20 @@ struct EightFaceMk2Base : Module, StripIdFixModule {
 };
 
 template <int NUM_PRESETS>
-struct EightFaceMk2ParamQuantity : ParamQuantity {
+struct EightFaceMk2ParamQuantity : SwitchQuantity {
+	EightFaceMk2Base<NUM_PRESETS>* module;
 	int id;
 
 	std::string getDisplayValueString() override {
-		auto module = reinterpret_cast<EightFaceMk2Base<NUM_PRESETS>*>(this->module);
 		return !module->textLabel[id].empty() ? module->textLabel[id] : (module->presetSlotUsed[id] ? "Used" : "Empty");
 	}
 	std::string getLabel() override {
-		auto module = reinterpret_cast<EightFaceMk2Base<NUM_PRESETS>*>(this->module);
 		return !module->textLabel[id].empty() ? "" : string::f("Snapshot #%d", module->ctrlOffset * NUM_PRESETS + id + 1);
 	}
 };
 
 template <int NUM_PRESETS>
-struct EightFaceMk2LedButton : LEDButton {
+struct EightFaceMk2LedButton : VCVButton {
 	EightFaceMk2Base<NUM_PRESETS>* module;
 	int id;
 	bool eventConsumed = true;

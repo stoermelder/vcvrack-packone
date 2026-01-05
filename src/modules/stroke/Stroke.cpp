@@ -103,7 +103,10 @@ struct StrokeModule : Module {
 			configOutput(OUTPUT + i, string::f("Hotkey %i trigger/gate", i + 1));
 		}
 		onReset();
-		lightDivider.setDivision(512);
+	}
+
+	void onSampleRateChange(const SampleRateChangeEvent& e) override {
+		lightDivider.setDivision(e.sampleRate / 100.f);
 	}
 
 	void onReset() override {

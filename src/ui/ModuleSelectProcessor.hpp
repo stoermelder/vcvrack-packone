@@ -35,16 +35,14 @@ struct ModuleSelectProcessor {
 		if (learnMode != LEARN_MODE::OFF) {
 			cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
 		}
-		glfwSetCursor(APP->window->win, cursor);
+		if (APP->window) glfwSetCursor(APP->window->win, cursor);
 	}
 
 	void disableLearn() {
 		owner = NULL;
 		callback = { };
 		learnMode = LEARN_MODE::OFF;
-		if (APP && APP->window && APP->window->win) {
-			glfwSetCursor(APP->window->win, NULL);
-		}
+		if (APP->window) glfwSetCursor(APP->window->win, NULL);
 	}
 
 	bool isLearning() {

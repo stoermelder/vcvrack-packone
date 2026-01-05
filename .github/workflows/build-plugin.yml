@@ -148,6 +148,7 @@ jobs:
         with:
           token: ${{ github.token }}
           tag: Nightly # This may also be of the form 'refs/tags/staging'
+          fail-if-no-assets: false
           assets: '*'
       - name: Upload release assets
         uses: svenstaro/upload-release-action@v2

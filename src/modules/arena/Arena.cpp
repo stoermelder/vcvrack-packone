@@ -138,7 +138,10 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XySeqModule<MIX_PORTS> {
 			configParam(MIX_Y_PARAM + i, -1.f, 1.f, 0.f, string::f("Channel MIX-%i y-pos attenuverter", i + 1), "x");
 		}
 		onReset();
-		lightDivider.setDivision(512);
+	}
+
+	void onSampleRateChange(const SampleRateChangeEvent& e) override {
+		lightDivider.setDivision(e.sampleRate / 100.f);
 	}
 
 	void onReset() override {
@@ -178,19 +181,9 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XySeqModule<MIX_PORTS> {
 
 		for (uint8_t j = 0; j < inportsUsed; j++) {
 			XyScreenParamQuantity* px = reinterpret_cast<XyScreenParamQuantity*>(paramQuantities[IN_X_POS + j]);
-			if (!px->hasHandle) {
-				inputInX[j] = Sc::scGetXFiltered(j, args.sampleTime);
-			}
-			else {
-				inputInX[j] = px->getParam()->getValue();
-			}
+			inputInX[j] = px->hasHandle ? px->getParam()->getValue() : Sc::scGetXFiltered(j, args.sampleTime);
 			XyScreenParamQuantity* py = reinterpret_cast<XyScreenParamQuantity*>(paramQuantities[IN_Y_POS + j]);
-			if (!py->hasHandle) {
-				inputInY[j] = Sc::scGetYFiltered(j, args.sampleTime);
-			}
-			else {
-				inputInY[j] = py->getParam()->getValue();
-			}
+			inputInY[j] = py->hasHandle ? py->getParam()->getValue() : Sc::scGetYFiltered(j, args.sampleTime);
 
 			offsetX[j] = 0.f;
 			offsetY[j] = 0.f;
@@ -436,20 +429,6 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XySeqModule<MIX_PORTS> {
 			return paramQuantities[MIX_Y_POS + id];
 	}
 
-	inline float scGetXFinal(uint8_t type, uint8_t id) override {
-		if (type == 0)
-			return paramQuantities[IN_X_POS + id]->getParam()->getValue();
-		else
-			return paramQuantities[MIX_X_POS + id]->getParam()->getValue();
-	}
-
-	inline float scGetYFinal(uint8_t type, uint8_t id) override {
-		if (type == 0)
-			return paramQuantities[IN_Y_POS + id]->getParam()->getValue();
-		else
-			return paramQuantities[MIX_Y_POS + id]->getParam()->getValue();
-	}
-
 	inline void scSetItemFiltered(uint8_t type, uint8_t id, float x, float y) override {
 		if (type == 1) {
 			mixUiX[id] = x;
@@ -477,11 +456,11 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XySeqModule<MIX_PORTS> {
 		json_t* inportsJ = json_array();
 		for (uint8_t i = 0; i < IN_PORTS; i++) {
 			json_t* inportJ = json_object();
-			Sc::dataToJson(inportJ, i);
 			json_object_set_new(inportJ, "modMode", json_integer(modMode[i]));
 			json_object_set_new(inportJ, "inputXBipolar", json_boolean(inputXBipolar[i]));
 			json_object_set_new(inportJ, "inputYBipolar", json_boolean(inputYBipolar[i]));
 			json_object_set_new(inportJ, "outputMode", json_integer(outputMode[i]));
+			Sc::dataToJson(inportJ, 0, i);
 			json_array_append_new(inportsJ, inportJ);
 		}
 		json_object_set_new(rootJ, "inports", inportsJ);
@@ -491,6 +470,7 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XySeqModule<MIX_PORTS> {
 			json_t* mixportJ = json_object();
 			json_object_set_new(mixportJ, "mixportXBipolar", json_boolean(mixportXBipolar[i]));
 			json_object_set_new(mixportJ, "mixportYBipolar", json_boolean(mixportYBipolar[i]));
+			Sc::dataToJson(mixportJ, 1, i);
 			Seq::dataToJson(mixportJ, i);
 			json_array_append_new(mixportsJ, mixportJ);
 		}
@@ -508,12 +488,12 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XySeqModule<MIX_PORTS> {
 		json_t* inportsJ = json_object_get(rootJ, "inports");
 		json_t* inportJ;
 		uint8_t inputIndex;
-		json_array_foreach(inportsJ, inputIndex, inportJ) {
-			Sc::dataFromJson(inportJ, inputIndex);
+		json_array_foreach(inportsJ, inputIndex, inportJ) {	
 			modMode[inputIndex] = (MODMODE)json_integer_value(json_object_get(inportJ, "modMode"));
 			inputXBipolar[inputIndex] = json_boolean_value(json_object_get(inportJ, "inputXBipolar"));
 			inputYBipolar[inputIndex] = json_boolean_value(json_object_get(inportJ, "inputYBipolar"));
 			outputMode[inputIndex] = (OUTPUTMODE)json_integer_value(json_object_get(inportJ, "outputMode"));
+			Sc::dataFromJson(inportJ, 0, inputIndex);
 		}
 
 		json_t* mixportsJ = json_object_get(rootJ, "mixports");
@@ -522,6 +502,7 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XySeqModule<MIX_PORTS> {
 		json_array_foreach(mixportsJ, mixputIndex, mixportJ) {
 			mixportXBipolar[mixputIndex] = json_boolean_value(json_object_get(mixportJ, "mixportXBipolar"));
 			mixportYBipolar[mixputIndex] = json_boolean_value(json_object_get(mixportJ, "mixportYBipolar"));
+			Sc::dataFromJson(mixportJ, 1, mixputIndex);
 			Seq::dataFromJson(mixportJ, mixputIndex);
 		}
 

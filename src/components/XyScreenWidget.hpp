@@ -65,8 +65,8 @@ struct XyScreenModule {
 	void scReset() {
 		for (uint8_t i = 0; i < INPUTS; i++) {
 			scSetXyImmediate(0, i, scGetPqX(0, i)->getDefaultValue(), scGetPqY(0, i)->getDefaultValue());
-			scSetRadiusImmediate(i, 0.5f);
-			scSetAmountImmediate(i, 1.f);
+			scSetRadiusImmediate(i, scGetRadiusDefault(i));
+			scSetAmountImmediate(i, scGetAmountDefault(i));
 		}
 	}
 	
@@ -96,13 +96,17 @@ struct XyScreenModule {
 
 	virtual void scSetItemImmediate(uint8_t type, uint8_t id, float x, float y) {}
 
-	virtual inline float scGetXFinal(uint8_t type, uint8_t id) { return 0; }
+	virtual inline float scGetXFinal(uint8_t type, uint8_t id) { 
+		return scGetPqX(type, id)->getParam()->getValue();
+	}
 
 	inline float scGetXFiltered(uint8_t id, float sampleTime) {
 		return inputXfilter[id].process(sampleTime, inputUiX[id]);
 	}
 
-	virtual inline float scGetYFinal(uint8_t type, uint8_t id) { return 0; }
+	virtual inline float scGetYFinal(uint8_t type, uint8_t id) { 
+		return scGetPqY(type, id)->getParam()->getValue();
+	}
 
 	inline float scGetYFiltered(uint8_t id, float sampleTime) {
 		return inputYfilter[id].process(sampleTime, inputUiY[id]);
@@ -120,6 +124,10 @@ struct XyScreenModule {
 			inputYfilter[i].out = inputUiY[i] = random::uniform();
 			scGetPqY(0, i)->getParam()->setValue(inputUiY[i]);
 		}
+	}
+
+	virtual inline float scGetRadiusDefault(uint8_t id) {
+		return 0.5f;
 	}
 
 	virtual inline float scGetRadiusFinal(uint8_t id) { 
@@ -146,6 +154,10 @@ struct XyScreenModule {
 		for (uint8_t i = 0; i < INPUTS; i++) {
 			scSetRadiusImmediate(i, random::uniform());
 		}
+	}
+
+	virtual inline float scGetAmountDefault(uint8_t id) {
+		return 1.f;
 	}
 
 	virtual inline float scGetAmountFinal(uint8_t id) { 
@@ -192,14 +204,19 @@ struct XyScreenModule {
 
 	virtual inline float scGetDistance(uint8_t typeSource, uint8_t idSoruce, uint8_t typeDest, uint8_t idDest) { return 0.f; }
 
-	void dataToJson(json_t* dataJ, size_t id) {
-		json_object_set_new(dataJ, "radius", json_real(scGetRadiusFinal(id)));
-		json_object_set_new(dataJ, "amount", json_real(scGetAmountFinal(id)));
+	void dataToJson(json_t* dataJ, size_t type, size_t id) {
+		if (type == 0) {
+			json_object_set_new(dataJ, "radius", json_real(scGetRadiusFinal(id)));
+			json_object_set_new(dataJ, "amount", json_real(scGetAmountFinal(id)));
+		}
 	}
 
-	void dataFromJson(json_t* dataJ, size_t id) {
-		scSetRadiusImmediate(id, json_real_value(json_object_get(dataJ, "radius")));
-		scSetAmountImmediate(id, json_real_value(json_object_get(dataJ, "amount")));
+	void dataFromJson(json_t* dataJ, size_t type, size_t id) {
+		if (type == 0) {
+			scSetRadiusImmediate(id, json_real_value(json_object_get(dataJ, "radius")));
+			scSetAmountImmediate(id, json_real_value(json_object_get(dataJ, "amount")));
+		}
+		scSetXyImmediate(type, id, scGetXFinal(type, id), scGetYFinal(type, id));
 	}
 
 	std::string getModuleName() {
@@ -623,7 +640,8 @@ struct XyScreenDragWidget : OpaqueWidget {
 			nvgFontSize(args.vg, fontsize);
 			nvgFontFaceId(args.vg, font->handle);
 			nvgFillColor(args.vg, textColor);
-			nvgTextBox(args.vg, c.x - 3.f, c.y + 4.f, 120, string::f("%i", id + 1).c_str(), NULL);
+			char buf[2] = { getItemChar(), '\0' };
+			nvgTextBox(args.vg, c.x - 3.f, c.y + 4.f, 120, buf, NULL);
 		}
 		Widget::drawLayer(args, layer);
 	}
@@ -704,7 +722,14 @@ struct XyScreenDragWidget : OpaqueWidget {
 		appendContextMenu(menu);
 	}
 
-	virtual std::string getItemName() { return string::f("Item %i", id + 1); }
+	virtual inline std::string getItemName() { 
+		return string::f("Item %i", id + 1); 
+	}
+
+	virtual inline char getItemChar() {
+		return '1' + id;
+	}
+
 	virtual void appendContextMenu(Menu* menu) {}
 };
 

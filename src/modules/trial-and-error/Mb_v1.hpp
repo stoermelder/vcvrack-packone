@@ -13,11 +13,6 @@ extern int modelBoxSort;
 extern bool hideBrands;
 extern bool searchDescriptions;
 
-struct ModelZoomSlider : ui::Slider { 
-	ModelZoomSlider();
-	~ModelZoomSlider();
-};
-
 struct BrowserSidebar : widget::Widget {
 	ui::TextField* searchField;
 	ui::Button* clearButton;

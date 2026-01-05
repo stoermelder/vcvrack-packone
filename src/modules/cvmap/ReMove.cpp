@@ -203,13 +203,16 @@ struct ReMoveModule : MapModuleBase<1> {
         paramHandles[0].text = "ReMove Lite";
 
         processDivider.setDivision(64);
-        lightDivider.setDivision(1024);
         onReset();
     }
 
     ~ReMoveModule() {
         delete[] seqData;
     }
+
+	void onSampleRateChange(const SampleRateChangeEvent& e) override {
+		lightDivider.setDivision(e.sampleRate / 100.f);
+	}
 
     void onReset() override {
         MapModuleBase::onReset();

@@ -1,8 +1,5 @@
 #include "../../plugin.hpp"
 #include "../../utils/StripIdFixModule.hpp"
-#include "../../components/MenuColorLabel.hpp"
-#include "../../components/MenuColorField.hpp"
-#include "../../components/MenuColorPicker.hpp"
 
 namespace StoermelderPackOne {
 namespace Glue {
@@ -460,220 +457,32 @@ struct LabelWidget : widget::TransparentWidget {
 			}
 			Menu* createChildMenu() override {
 				Menu* menu = new Menu;
-
-				struct SizeSlider : ui::Slider {
-					struct SizeQuantity : Quantity {
-						Label* label;
-						SizeQuantity(Label* label) {
-							this->label = label;
-						}
-						void setValue(float value) override {
-							label->size = math::clamp(value, LABEL_SIZE_MIN, LABEL_SIZE_MAX);
-						}
-						float getValue() override {
-							return label->size;
-						}
-						float getDefaultValue() override {
-							return LABEL_SIZE_DEFAULT;
-						}
-						std::string getLabel() override {
-							return "Size";
-						}
-						int getDisplayPrecision() override {
-							return 3;
-						}
-						float getMaxValue() override {
-							return LABEL_SIZE_MAX;
-						}
-						float getMinValue() override {
-							return LABEL_SIZE_MIN;
-						}
-					};
-
-					Label* label;
-					SizeSlider(Label* label) {
-						this->label = label;
-						box.size.x = 140.0f;
-						quantity = new SizeQuantity(label);
-					}
-					~SizeSlider() {
-						delete quantity;
-					}
-				};
-
-				struct WidthSlider : ui::Slider {
-					struct WidthQuantity : Quantity {
-						Label* label;
-						WidthQuantity(Label* label) {
-							this->label = label;
-						}
-						void setValue(float value) override {
-							label->width = math::clamp(value, LABEL_WIDTH_MIN, LABEL_WIDTH_MAX);
-						}
-						float getValue() override {
-							return label->width;
-						}
-						float getDefaultValue() override {
-							return LABEL_WIDTH_DEFAULT;
-						}
-						std::string getLabel() override {
-							return "Width";
-						}
-						int getDisplayPrecision() override {
-							return 3;
-						}
-						float getMaxValue() override {
-							return LABEL_WIDTH_MAX;
-						}
-						float getMinValue() override {
-							return LABEL_WIDTH_MIN;
-						}
-					};
-
-					Label* label;
-					WidthSlider(Label* label) {
-						this->label = label;
-						box.size.x = 140.0f;
-						quantity = new WidthQuantity(label);
-					}
-					~WidthSlider() {
-						delete quantity;
-					}
-				};
-
-				struct OpacitySlider : ui::Slider {
-					struct OpacityQuantity : Quantity {
-						Label* label;
-						OpacityQuantity(Label* label) {
-							this->label = label;
-						}
-						void setValue(float value) override {
-							label->opacity = math::clamp(value, LABEL_OPACITY_MIN, LABEL_OPACITY_MAX);
-						}
-						float getValue() override {
-							return label->opacity;
-						}
-						float getDefaultValue() override {
-							return 1.0f;
-						}
-						float getDisplayValue() override {
-							return getValue() * 100;
-						}
-						void setDisplayValue(float displayValue) override {
-							setValue(displayValue / 100);
-						}
-						std::string getLabel() override {
-							return "Opacity";
-						}
-						std::string getUnit() override {
-							return "%";
-						}
-						int getDisplayPrecision() override {
-							return 3;
-						}
-						float getMaxValue() override {
-							return LABEL_OPACITY_MAX;
-						}
-						float getMinValue() override {
-							return LABEL_OPACITY_MIN;
-						}
-					};
-
-					OpacitySlider(Label* label) {
-						box.size.x = 140.0f;
-						quantity = new OpacityQuantity(label);
-					}
-					~OpacitySlider() {
-						delete quantity;
-					}
-				};
-
-				struct FontColorMenuItem : MenuItem {
-					Label* label;
-					bool* textSelected;
-					FontColorMenuItem() {
-						rightText = RIGHT_ARROW;
-					}
-
-					Menu* createChildMenu() override {
-						struct FontColorItem : MenuItem {
-							Label* label;
-							NVGcolor color;
-							void onAction(const event::Action& e) override {
-								label->fontColor = color;
-								e.unconsume();
-							}
-							void step() override {
-								rightText = color::toHexString(label->fontColor) == color::toHexString(color) ? "✔" : "";
-								MenuItem::step();
-							}
-						};
-
-						Menu* menu = new Menu;
-						menu->addChild(construct<MenuColorLabel>(&MenuColorLabel::fillColor, &label->fontColor));
-						menu->addChild(new MenuSeparator);
-						menu->addChild(construct<MenuColorPicker>(&MenuColorPicker::color, &label->fontColor));
-						menu->addChild(new MenuSeparator);
-						menu->addChild(construct<FontColorItem>(&MenuItem::text, "Black", &FontColorItem::label, label, &FontColorItem::color, LABEL_FONTCOLOR_DEFAULT));
-						menu->addChild(construct<FontColorItem>(&MenuItem::text, "White", &FontColorItem::label, label, &FontColorItem::color, LABEL_FONTCOLOR_WHITE));
-						menu->addChild(construct<MenuColorField>(&MenuColorField::color, &label->fontColor, &MenuColorField::textSelected, textSelected));
-						return menu;
-					}
-				};
-
-				struct ColorMenuItem : MenuItem {
-					Label* label;
-					bool* textSelected;
-					ColorMenuItem() {
-						rightText = RIGHT_ARROW;
-					}
-
-					Menu* createChildMenu() override {
-						struct ColorItem : MenuItem {
-							Label* label;
-							NVGcolor color;
-							void onAction(const event::Action& e) override {
-								label->color = color;
-								e.unconsume();
-							}
-							void step() override {
-								rightText = color::toHexString(label->color) == color::toHexString(color) ? "✔" : "";
-								MenuItem::step();
-							}
-						};
-
-						Menu* menu = new Menu;
-						menu->addChild(construct<MenuColorLabel>(&MenuColorLabel::fillColor, &label->color));
-						menu->addChild(new MenuSeparator);
-						menu->addChild(construct<MenuColorPicker>(&MenuColorPicker::color, &label->color));
-						menu->addChild(new MenuSeparator);
-						menu->addChild(construct<ColorItem>(&MenuItem::text, "Yellow", &ColorItem::label, label, &ColorItem::color, LABEL_COLOR_YELLOW));
-						menu->addChild(construct<ColorItem>(&MenuItem::text, "Red", &ColorItem::label, label, &ColorItem::color, LABEL_COLOR_RED));
-						menu->addChild(construct<ColorItem>(&MenuItem::text, "Cyan", &ColorItem::label, label, &ColorItem::color, LABEL_COLOR_CYAN));
-						menu->addChild(construct<ColorItem>(&MenuItem::text, "Green", &ColorItem::label, label, &ColorItem::color, LABEL_COLOR_GREEN));
-						menu->addChild(construct<ColorItem>(&MenuItem::text, "Pink", &ColorItem::label, label, &ColorItem::color, LABEL_COLOR_PINK));
-						menu->addChild(construct<ColorItem>(&MenuItem::text, "White", &ColorItem::label, label, &ColorItem::color, LABEL_COLOR_WHITE));
-						menu->addChild(construct<MenuColorField>(&MenuColorField::color, &label->color, &MenuColorField::textSelected, textSelected));
-						return menu;
-					}
-				};
-
-				menu->addChild(new SizeSlider(label));
-				menu->addChild(new WidthSlider(label));
-				menu->addChild(new OpacitySlider(label));
+				menu->addChild(Rack::createPtrSlider(&label->size, LABEL_SIZE_MIN, LABEL_SIZE_MAX, LABEL_SIZE_DEFAULT, "Size", "", 1.f, 140.0f));
+				menu->addChild(Rack::createPtrSlider(&label->width, LABEL_WIDTH_MIN, LABEL_WIDTH_MAX, LABEL_WIDTH_DEFAULT, "Width", "", 1.f, 140.0f));
+				menu->addChild(Rack::createPtrSlider(&label->opacity, LABEL_OPACITY_MIN, LABEL_OPACITY_MAX, 1.0f, "Opacity", "%", 100.f, 140.0f));
 				menu->addChild(new MenuSeparator);
 				menu->addChild(createMenuLabel("Rotation"));
 				menu->addChild(Rack::createValuePtrMenuItem("0°", &label->angle, 0.f));
 				menu->addChild(Rack::createValuePtrMenuItem("90°", &label->angle, 90.f));
 				menu->addChild(Rack::createValuePtrMenuItem("270°", &label->angle, 270.f));
 				menu->addChild(new MenuSeparator);
-				menu->addChild(construct<ColorMenuItem>(&MenuItem::text, "Color", &ColorMenuItem::label, label, &ColorMenuItem::textSelected, textSelected));
+				menu->addChild(Rack::createColorSubmenuItem("Color", &label->color, {
+					{ LABEL_COLOR_YELLOW, "Yellow" },
+					{ LABEL_COLOR_RED, "Red" },
+					{ LABEL_COLOR_CYAN, "Cyan" },
+					{ LABEL_COLOR_GREEN, "Green" },
+					{ LABEL_COLOR_PINK, "Pink" },
+					{ LABEL_COLOR_WHITE, "White" }
+				}, true, true, textSelected));
 				menu->addChild(new MenuSeparator);
 				menu->addChild(createMenuLabel("Font"));
 				menu->addChild(Rack::createValuePtrMenuItem("Default", &label->font, 0));
 				menu->addChild(Rack::createValuePtrMenuItem("Handwriting", &label->font, 1));
 				menu->addChild(new MenuSeparator);
-				menu->addChild(construct<FontColorMenuItem>(&MenuItem::text, "Font color", &FontColorMenuItem::label, label, &FontColorMenuItem::textSelected, textSelected));
+				menu->addChild(Rack::createColorSubmenuItem("Font color", &label->fontColor, {
+					{ LABEL_FONTCOLOR_DEFAULT, "Black" },
+					{ LABEL_FONTCOLOR_WHITE, "White" }
+				}, true, true, textSelected));
 				return menu;
 			}
 		};
@@ -876,7 +685,7 @@ struct LabelContainer : widget::Widget {
 		// Enable edit mode
 		editMode = true;
 		learnMode = false;
-		glfwSetCursor(APP->window->win, NULL);
+		if (APP->window) glfwSetCursor(APP->window->win, NULL);
 	}
 
 	void toggleLearnMode() {
@@ -885,7 +694,7 @@ struct LabelContainer : widget::Widget {
 		if (learnMode) {
 			cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
 		}
-		glfwSetCursor(APP->window->win, cursor);
+		if (APP->window) glfwSetCursor(APP->window->win, cursor);
 	}
 
 	void toggleEditMode() {
@@ -1091,215 +900,32 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 			}
 			Menu* createChildMenu() override {
 				Menu* menu = new Menu;
-
-				struct SizeSlider : ui::Slider {
-					struct SizeQuantity : Quantity {
-						GlueModule* module;
-						SizeQuantity(GlueModule* module) {
-							this->module = module;
-						}
-						void setValue(float value) override {
-							module->defaultSize = math::clamp(value, LABEL_SIZE_MIN, LABEL_SIZE_MAX);
-						}
-						float getValue() override {
-							return module->defaultSize;
-						}
-						float getDefaultValue() override {
-							return LABEL_SIZE_DEFAULT;
-						}
-						std::string getLabel() override {
-							return "Default size";
-						}
-						int getDisplayPrecision() override {
-							return 3;
-						}
-						float getMaxValue() override {
-							return LABEL_SIZE_MAX;
-						}
-						float getMinValue() override {
-							return LABEL_SIZE_MIN;
-						}
-					};
-
-					SizeSlider(GlueModule* module) {
-						box.size.x = 160.0f;
-						quantity = new SizeQuantity(module);
-					}
-					~SizeSlider() {
-						delete quantity;
-					}
-				};
-
-				struct WidthSlider : ui::Slider {
-					struct WidthQuantity : Quantity {
-						GlueModule* module;
-						WidthQuantity(GlueModule* module) {
-							this->module = module;
-						}
-						void setValue(float value) override {
-							module->defaultWidth = math::clamp(value, LABEL_WIDTH_MIN, LABEL_WIDTH_MAX);
-						}
-						float getValue() override {
-							return module->defaultWidth;
-						}
-						float getDefaultValue() override {
-							return LABEL_WIDTH_DEFAULT;
-						}
-						std::string getLabel() override {
-							return "Default width";
-						}
-						int getDisplayPrecision() override {
-							return 3;
-						}
-						float getMaxValue() override {
-							return LABEL_WIDTH_MAX;
-						}
-						float getMinValue() override {
-							return LABEL_WIDTH_MIN;
-						}
-					};
-
-					WidthSlider(GlueModule* module) {
-						box.size.x = 160.0f;
-						quantity = new WidthQuantity(module);
-					}
-					~WidthSlider() {
-						delete quantity;
-					}
-				};
-
-				struct OpacitySlider : ui::Slider {
-					struct OpacityQuantity : Quantity {
-						GlueModule* module;
-						OpacityQuantity(GlueModule* module) {
-							this->module = module;
-						}
-						void setValue(float value) override {
-							module->defaultOpacity = math::clamp(value, LABEL_OPACITY_MIN, LABEL_OPACITY_MAX);
-						}
-						float getValue() override {
-							return module->defaultOpacity;
-						}
-						float getDefaultValue() override {
-							return 1.0f;
-						}
-						float getDisplayValue() override {
-							return getValue() * 100;
-						}
-						void setDisplayValue(float displayValue) override {
-							setValue(displayValue / 100);
-						}
-						std::string getLabel() override {
-							return "Default opacity";
-						}
-						std::string getUnit() override {
-							return "%";
-						}
-						int getDisplayPrecision() override {
-							return 3;
-						}
-						float getMaxValue() override {
-							return LABEL_OPACITY_MAX;
-						}
-						float getMinValue() override {
-							return LABEL_OPACITY_MIN;
-						}
-					};
-
-					OpacitySlider(GlueModule* module) {
-						box.size.x = 160.0f;
-						quantity = new OpacityQuantity(module);
-					}
-					~OpacitySlider() {
-						delete quantity;
-					}
-				};
-
-				struct FontColorMenuItem : MenuItem {
-					GlueModule* module;
-					FontColorMenuItem() {
-						rightText = RIGHT_ARROW;
-					}
-
-					Menu* createChildMenu() override {
-						struct FontColorItem : MenuItem {
-							GlueModule* module;
-							NVGcolor color;
-							void onAction(const event::Action& e) override {
-								module->defaultFontColor = color;
-								e.unconsume();
-							}
-							void step() override {
-								rightText = color::toHexString(module->defaultFontColor) == color::toHexString(color) ? "✔" : "";
-								MenuItem::step();
-							}
-						};
-
-						Menu* menu = new Menu;
-						menu->addChild(construct<MenuColorLabel>(&MenuColorLabel::fillColor, &module->defaultFontColor));
-						menu->addChild(new MenuSeparator);
-						menu->addChild(construct<MenuColorPicker>(&MenuColorPicker::color, &module->defaultFontColor));
-						menu->addChild(new MenuSeparator);
-						menu->addChild(construct<FontColorItem>(&MenuItem::text, "Black", &FontColorItem::module, module, &FontColorItem::color, LABEL_FONTCOLOR_DEFAULT));
-						menu->addChild(construct<FontColorItem>(&MenuItem::text, "White", &FontColorItem::module, module, &FontColorItem::color, LABEL_FONTCOLOR_WHITE));
-						menu->addChild(construct<MenuColorField>(&MenuColorField::color, &module->defaultFontColor));
-						return menu;
-					}
-				};
-
-				struct ColorMenuItem : MenuItem {
-					GlueModule* module;
-					ColorMenuItem() {
-						rightText = RIGHT_ARROW;
-					}
-
-					Menu* createChildMenu() override {
-						struct ColorItem : MenuItem {
-							GlueModule* module;
-							NVGcolor color;
-							void onAction(const event::Action& e) override {
-								module->defaultColor = color;
-								e.unconsume();
-							}
-							void step() override {
-								rightText = color::toHexString(module->defaultColor) == color::toHexString(color) ? "✔" : "";
-								MenuItem::step();
-							}
-						};
-
-						Menu* menu = new Menu;
-						MenuColorLabel* colorLabel = construct<MenuColorLabel>(&MenuColorLabel::fillColor, &module->defaultColor);
-						menu->addChild(colorLabel);
-						menu->addChild(new MenuSeparator);
-						menu->addChild(construct<MenuColorPicker>(&MenuColorPicker::color, &module->defaultColor));
-						menu->addChild(new MenuSeparator);
-						menu->addChild(construct<ColorItem>(&MenuItem::text, "Yellow", &ColorItem::module, module, &ColorItem::color, LABEL_COLOR_YELLOW));
-						menu->addChild(construct<ColorItem>(&MenuItem::text, "Red", &ColorItem::module, module, &ColorItem::color, LABEL_COLOR_RED));
-						menu->addChild(construct<ColorItem>(&MenuItem::text, "Cyan", &ColorItem::module, module, &ColorItem::color, LABEL_COLOR_CYAN));
-						menu->addChild(construct<ColorItem>(&MenuItem::text, "Green", &ColorItem::module, module, &ColorItem::color, LABEL_COLOR_GREEN));
-						menu->addChild(construct<ColorItem>(&MenuItem::text, "Pink", &ColorItem::module, module, &ColorItem::color, LABEL_COLOR_PINK));
-						menu->addChild(construct<ColorItem>(&MenuItem::text, "White", &ColorItem::module, module, &ColorItem::color, LABEL_COLOR_WHITE));
-						menu->addChild(construct<MenuColorField>(&MenuColorField::color, &module->defaultColor));
-						return menu;
-					}
-				};
-
-				menu->addChild(new SizeSlider(module));
-				menu->addChild(new WidthSlider(module));
-				menu->addChild(new OpacitySlider(module));
+				menu->addChild(Rack::createPtrSlider(&module->defaultSize, LABEL_SIZE_MIN, LABEL_SIZE_MAX, LABEL_SIZE_DEFAULT, "Default size", "", 1.f, 160.0f));
+				menu->addChild(Rack::createPtrSlider(&module->defaultWidth, LABEL_WIDTH_MIN, LABEL_WIDTH_MAX, LABEL_WIDTH_DEFAULT, "Default width", "", 1.f, 160.0f));
+				menu->addChild(Rack::createPtrSlider(&module->defaultOpacity, LABEL_OPACITY_MIN, LABEL_OPACITY_MAX, 1.0f, "Default opacity", "%", 100.f, 160.0f));
 				menu->addChild(new MenuSeparator);
 				menu->addChild(createMenuLabel("Default rotation"));
 				menu->addChild(Rack::createValuePtrMenuItem("0°", &module->defaultAngle, 0.f));
 				menu->addChild(Rack::createValuePtrMenuItem("90°", &module->defaultAngle, 90.f));
 				menu->addChild(Rack::createValuePtrMenuItem("270°", &module->defaultAngle, 270.f));
 				menu->addChild(new MenuSeparator());
-				menu->addChild(construct<ColorMenuItem>(&MenuItem::text, "Default color", &ColorMenuItem::module, module));
+				menu->addChild(Rack::createColorSubmenuItem("Default color", &module->defaultColor, {
+					{ LABEL_COLOR_YELLOW, "Yellow" },
+					{ LABEL_COLOR_RED, "Red" },
+					{ LABEL_COLOR_CYAN, "Cyan" },
+					{ LABEL_COLOR_GREEN, "Green" },
+					{ LABEL_COLOR_PINK, "Pink" },
+					{ LABEL_COLOR_WHITE, "White" }
+				}, true, true, nullptr));
 				menu->addChild(new MenuSeparator());
 				menu->addChild(createMenuLabel("Default font"));
 				menu->addChild(Rack::createValuePtrMenuItem("Default", &module->defaultFont, 0));
 				menu->addChild(Rack::createValuePtrMenuItem("Handwriting", &module->defaultFont, 1));
 				menu->addChild(new MenuSeparator());
-				menu->addChild(construct<FontColorMenuItem>(&MenuItem::text, "Default font color", &FontColorMenuItem::module, module));
+				menu->addChild(Rack::createColorSubmenuItem("Default font color", &module->defaultFontColor, {
+					{ LABEL_FONTCOLOR_DEFAULT, "Black" },
+					{ LABEL_FONTCOLOR_WHITE, "White" }
+				}, true, true, nullptr));
 				return menu;
 			}
 		};

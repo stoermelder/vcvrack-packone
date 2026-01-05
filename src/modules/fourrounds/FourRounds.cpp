@@ -81,8 +81,11 @@ struct FourRoundsModule : Module {
 		outputInfos[WINNER_OUTPUT]->description = "The \"winner\" of the two contestants of round 3.";
 		configSwitch(TRIG_PARAM, 0.0f, 1.0f, 0.0f, "New contest trigger");
 		configSwitch(INV_PARAM, 0.0f, 1.0f, 0.0f, "Invert state trigger");
-		lightDivider.setDivision(1024);
 		onReset();
+	}
+
+	void onSampleRateChange(const SampleRateChangeEvent& e) override {
+		lightDivider.setDivision(e.sampleRate / 100.f);
 	}
 
 	void onReset() override {
