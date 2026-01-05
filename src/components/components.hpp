@@ -1,10 +1,11 @@
 #pragma once
 #include <rack.hpp>
 
+extern rack::plugin::Plugin* pluginInstance;
+
+namespace StoermelderPackOne {
 
 using namespace rack;
-
-extern Plugin* pluginInstance;
 
 struct LongPressButton {
 	enum Event {
@@ -246,8 +247,6 @@ struct PolyLedWidget : Widget {
 };
 
 
-
-
 struct TriggerParamQuantity : ParamQuantity {
 	std::string getDisplayValueString() override {
 		return ParamQuantity::getLabel();
@@ -304,3 +303,5 @@ struct CKSSThreeH : CKSSThree {
 		box.size = tw->box.size;
 	}
 };
+
+} // namespace StoermelderPackOne

@@ -1,9 +1,10 @@
 #pragma once
 #include <rack.hpp>
 #include "components/components.hpp"
+#include "utils/digital.hpp"
+#include "ui/ThemedModuleWidget.hpp"
 #include "pluginhelpers.hpp"
 #include "pluginsettings.hpp"
-#include "ui/ThemedModuleWidget.hpp"
 
 using namespace rack;
 
@@ -31,6 +32,7 @@ extern Model* modelMidiCatXl;
 extern Model* modelMidiCatMem;
 extern Model* modelMidiCatCtx;
 extern Model* modelMidiCatClk;
+extern Model* modelMidiCatFine;
 extern Model* modelSipo;
 extern Model* modelFourRounds;
 extern Model* modelArena;
@@ -64,6 +66,7 @@ extern Model* modelEightFaceMk2Ex;
 extern Model* modelMidiPlug;
 extern Model* modelDirt;
 extern Model* modelMidiKey;
+extern Model* modelPanicRoom;
 extern Model* modelAudioInterface64;
 extern Model* modelMb;
 extern Model* modelMe;
@@ -83,5 +86,14 @@ namespace StoermelderPackOne {
 bool registerSingleton(std::string name, Widget* mw);
 bool unregisterSingleton(std::string name, Widget* mw);
 Widget* getSingleton(std::string name);
+
+
+struct ExpanderChangeListener {
+    bool expandersChanged;
+};
+
+void registerExpanderListener(std::string topic, ExpanderChangeListener* l);
+void unregisterExpanderListener(std::string topic, ExpanderChangeListener* l);
+void notifyExpanderListeners(std::string topic);
 
 } // namespace StoermelderPackOne

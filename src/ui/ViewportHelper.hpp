@@ -17,10 +17,12 @@ struct ViewportCenterSmooth {
 		trigger(target, zoom, framerate, transitionTime);
 	}
 
-	void trigger(Rect rect, float framerate, float transitionTime = 1.f) {
-		float zx = APP->scene->rackScroll->box.size.x / rect.size.x * 0.9f;
-		float zy = APP->scene->rackScroll->box.size.y / rect.size.y * 0.9f;
-		float zoom = std::log2(std::min(zx, zy));
+	void trigger(Rect rect, float zoom, float framerate, float transitionTime = 1.f) {
+		if (zoom == -1.f) {
+			float zx = APP->scene->rackScroll->box.size.x / rect.size.x * 0.9f;
+			float zy = APP->scene->rackScroll->box.size.y / rect.size.y * 0.9f;
+			zoom = std::log2(std::min(zx, zy));
+		}
 		trigger(rect.getCenter(), zoom, framerate, transitionTime);
 	}
 
@@ -97,14 +99,27 @@ struct ViewportCenter {
 		APP->scene->rackScroll->setGridOffset((target - viewport * 0.5f - RACK_OFFSET) / RACK_GRID_SIZE);
 	}
 
-	ViewportCenter(Rect rect) {
+	ViewportCenter(Rect rect, float zoomToWidget = -1.f, float zoom = std::numeric_limits<float>::infinity()) {
+		float z;
+		if (zoomToWidget > 0.f) {
+			float zx = APP->scene->rackScroll->getSize().x / rect.size.x * 0.9f;
+			float zy = APP->scene->rackScroll->getSize().y / rect.size.y * 0.9f;
+			z = std::min(zx, zy) * zoomToWidget;
+		}
+		else if (zoom != std::numeric_limits<float>::infinity())
+			z = std::pow(2.f, zoom);
+		else
+			z = 2.0f;
+	
 		Vec target = rect.getCenter();
-		float zx = APP->scene->rackScroll->getSize().x / rect.size.x * 0.9f;
-		float zy = APP->scene->rackScroll->getSize().y / rect.size.y * 0.9f;
-		float z = std::min(zx, zy);
 		Vec viewport = APP->scene->rackScroll->getSize() * (1.f / z);
+
+		float oldZoom = APP->scene->rackScroll->getZoom();
 		APP->scene->rackScroll->setZoom(z);
 		APP->scene->rackScroll->setGridOffset((target - viewport * 0.5f - RACK_OFFSET) / RACK_GRID_SIZE);
+		if (zoom == std::numeric_limits<float>::infinity() && zoomToWidget == -1.f) {
+			APP->scene->rackScroll->setZoom(oldZoom);
+		}
 	}
 };
 
@@ -118,6 +133,27 @@ struct ViewportTopLeft {
 		else
 			z = 2.0f;
 		Vec target = w->getBox().getTopLeft();
+
+		float oldZoom = APP->scene->rackScroll->getZoom();
+		APP->scene->rackScroll->setZoom(z);
+		APP->scene->rackScroll->setGridOffset((target - RACK_OFFSET) / RACK_GRID_SIZE);
+		if (zoom == std::numeric_limits<float>::infinity()) {
+			APP->scene->rackScroll->setZoom(oldZoom);
+		}
+	}
+
+	ViewportTopLeft(Rect rect, float zoomToWidget = -1.f, float zoom = std::numeric_limits<float>::infinity()) {
+		float z;
+		if (zoomToWidget > 0.f) {
+			float zx = APP->scene->rackScroll->getSize().x / rect.size.x * 0.9f;
+			float zy = APP->scene->rackScroll->getSize().y / rect.size.y * 0.9f;
+			z = std::min(zx, zy) * zoomToWidget;
+		}
+		else if (zoom != std::numeric_limits<float>::infinity())
+			z = std::pow(2.f, zoom);
+		else
+			z = 2.0f;
+		Vec target = rect.getTopLeft();
 
 		float oldZoom = APP->scene->rackScroll->getZoom();
 		APP->scene->rackScroll->setZoom(z);

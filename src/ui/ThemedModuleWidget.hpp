@@ -3,7 +3,7 @@
 #include "../pluginhelpers.hpp"
 #include "../pluginsettings.hpp"
 
-extern Plugin* pluginInstance;
+extern rack::plugin::Plugin* pluginInstance;
 
 namespace StoermelderPackOne {
 
@@ -128,6 +128,8 @@ struct ThemedModuleWidget : BASE {
 				BASE::setPanel(Svg::load(asset::plugin(pluginInstance, panel())));
 			}
 		}
+
+		if (settings::headless) return;
 		BASE::step();
 	}
 

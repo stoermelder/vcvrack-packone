@@ -142,7 +142,7 @@ struct MidiChannelChoice : LedDisplayCenterChoiceEx {
 			color.a = 1.0f;
 		}
 		else {
-			text = "(No channel)";
+			text = "(All channels)";
 			color.a = 0.5f;
 		}
 	}

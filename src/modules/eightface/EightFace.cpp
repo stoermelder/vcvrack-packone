@@ -1,0 +1,913 @@
+#include "../../plugin.hpp"
+#include "EightFace.hpp"
+#include <functional>
+#include <mutex>
+#include <condition_variable>
+#include <random>
+#include <thread>
+#include <osdialog.h>
+
+namespace StoermelderPackOne {
+namespace EightFace {
+
+enum class SLOTCVMODE {
+	OFF = -1,
+	TRIG_FWD = 2,
+	TRIG_REV = 4,
+	TRIG_PINGPONG = 5,
+	TRIG_ALT = 9,
+	TRIG_RANDOM = 6,
+	TRIG_RANDOM_WO_REPEAT = 7,
+	TRIG_RANDOM_WALK = 8,
+	TRIG_SHUFFLE = 10,
+	VOLT = 0,
+	C4 = 1,
+	ARM = 3
+};
+
+enum class SIDE {
+	LEFT = 0,
+	RIGHT = 1
+};
+
+enum class CTRLMODE {
+	READ,
+	AUTO,
+	WRITE
+};
+
+enum class GUISAFEMODE {
+	WORKER,
+	GUI,
+	GUI_WITH_LOCK
+};
+
+template<int NUM_PRESETS>
+struct EightFaceModule : Module {
+	enum ParamIds {
+		CTRLMODE_PARAM,
+		ENUMS(PRESET_PARAM, NUM_PRESETS),
+		NUM_PARAMS
+	};
+	enum InputIds {
+		SLOT_INPUT,
+		RESET_INPUT,
+		NUM_INPUTS
+	};
+	enum OutputIds {
+		NUM_OUTPUTS
+	};
+	enum LightIds {
+		ENUMS(LEFT_LIGHT, 2),
+		ENUMS(RIGHT_LIGHT, 2),
+		ENUMS(PRESET_LIGHT, NUM_PRESETS * 3),
+		NUM_LIGHTS
+	};
+
+	/** [Stored to JSON] */
+	int panelTheme = 0;
+	/** Current operating mode */
+	CTRLMODE ctrlMode = CTRLMODE::READ;
+
+	/** [Stored to JSON] left? right? */
+	SIDE side = SIDE::LEFT;
+
+	/** [Stored to JSON] */
+	std::string pluginSlug;
+	/** [Stored to JSON] */
+	std::string modelSlug;
+	/** [Stored to JSON] */
+	std::string realPluginSlug;
+	/** [Stored to JSON] */
+	std::string realModelSlug;
+	/** [Stored to JSON] */
+	std::string moduleName;
+
+	/** [Stored to JSON] */
+	bool presetSlotUsed[NUM_PRESETS];
+	/** [Stored to JSON] */
+	json_t* presetSlot[NUM_PRESETS];
+
+	const int presetMax = NUM_PRESETS;
+	/** [Stored to JSON] */
+	int preset = 0;
+	/** [Stored to JSON] */
+	int presetCount = NUM_PRESETS;
+	/** [Stored to JSON] */
+	bool presetCountLongPress = true;
+
+	/** [Stored to JSON] */
+	AUTOLOAD autoload = AUTOLOAD::OFF;
+
+	/** [Stored to JSON] mode for SEQ CV input */
+	SLOTCVMODE slotCvMode = SLOTCVMODE::TRIG_FWD;
+	SLOTCVMODE slotCvModeBak = SLOTCVMODE::OFF;
+	int slotCvModeDir = 1;
+	int slotCvModeAlt = 0;
+	std::vector<int> slotCvModeShuffle;
+
+	std::default_random_engine randGen{(uint16_t)std::chrono::system_clock::now().time_since_epoch().count()};
+	std::uniform_int_distribution<int> randDist;
+
+	int connected = 0;
+	int presetPrev = -1;
+	int presetNext = -1;
+	float modeLight = 0;
+
+	std::mutex workerMutex;
+	std::condition_variable workerCondVar;
+	std::thread* worker;
+	Context* workerContext;
+	bool workerIsRunning = true;
+	bool workerDoProcess = false;
+	int workerPreset = -1;
+	ModuleWidget* workerModuleWidget;
+	bool workerGui = false;
+	std::atomic<ModuleWidget*> workerGuiModuleWidget{nullptr};
+	GUISAFEMODE guiSafeMode;
+
+	LongPressButton typeButtons[NUM_PRESETS];
+	dsp::SchmittTrigger slotTrigger;
+	dsp::SchmittTrigger slotC4Trigger;
+	dsp::SchmittTrigger resetTrigger;
+	dsp::Timer resetTimer;
+
+	ClockDividerEx lightDivider;
+	ClockDividerEx buttonDivider;
+
+	EightFaceModule() {
+		panelTheme = pluginSettings.panelThemeDefault;
+		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+		configInput(SLOT_INPUT, "Slot selection");
+		inputInfos[SLOT_INPUT]->description = "Operating mode is set on the context menu.";
+		configInput(RESET_INPUT, "Reset");
+		configSwitch(CTRLMODE_PARAM, 0.f, 2.f, 0.f, "Operating mode", {"Read", "Auto", "Write"});
+		for (int i = 0; i < NUM_PRESETS; i++) {
+			configSwitch(PRESET_PARAM + i, 0.f, 1.f, 0.f, string::f("Preset slot %d", i + 1));
+			typeButtons[i].param = &params[PRESET_PARAM + i];
+			presetSlotUsed[i] = false;
+		}
+
+		buttonDivider.setDivision(4);
+		onReset();
+		workerContext = contextGet();
+		worker = new std::thread(&EightFaceModule::processWorker, this);
+	}
+
+	~EightFaceModule() {
+		for (int i = 0; i < NUM_PRESETS; i++) {
+			if (presetSlotUsed[i])
+				json_decref(presetSlot[i]);
+		}
+
+		workerIsRunning = false;
+		workerDoProcess = true;
+		workerCondVar.notify_one();
+		worker->join();
+		workerContext = NULL;
+		delete worker;
+	}
+
+	void onSampleRateChange(const SampleRateChangeEvent& e) override {
+		lightDivider.setDivision(e.sampleRate / 100.f);
+	}
+
+	void onReset() override {
+		for (int i = 0; i < NUM_PRESETS; i++) {
+			if (presetSlotUsed[i]) {
+				json_decref(presetSlot[i]);
+				presetSlot[i] = NULL;
+			}
+			presetSlotUsed[i] = false;
+		}
+
+		guiSafeMode = GUISAFEMODE::GUI_WITH_LOCK;
+		preset = -1;
+		presetCount = NUM_PRESETS;
+		presetPrev = -1;
+		presetNext = -1;
+		modelSlug = "";
+		pluginSlug = "";
+		realModelSlug = "";
+		realPluginSlug = "";
+		moduleName = "";
+		connected = 0;
+		autoload = AUTOLOAD::OFF;
+	}
+
+	void process(const ProcessArgs& args) override {
+		Expander* exp = side == SIDE::LEFT ? &leftExpander : &rightExpander;
+		if (exp->moduleId >= 0 && exp->module) {
+			Module* t = exp->module;
+			bool c = modelSlug == "" || (t->model->slug == realModelSlug && t->model->plugin->slug == realPluginSlug);
+			connected = c ? 2 : 1;
+
+			if (connected == 2) {
+				ctrlMode = (CTRLMODE)params[CTRLMODE_PARAM].getValue();
+
+				// Read & Auto modes
+				if (ctrlMode == CTRLMODE::READ || ctrlMode == CTRLMODE::AUTO) {
+					// RESET input
+					if (resetTrigger.process(inputs[RESET_INPUT].getVoltage())) {
+						resetTimer.reset();
+						switch (slotCvMode) {
+							case SLOTCVMODE::TRIG_FWD:
+								presetLoad(t, 0);
+								break;
+							case SLOTCVMODE::TRIG_REV:
+								presetLoad(t, presetCount - 1);
+								break;
+							case SLOTCVMODE::TRIG_PINGPONG:
+								slotCvModeDir = 1;
+								presetLoad(t, 0);
+								break;
+							case SLOTCVMODE::TRIG_ALT:
+								slotCvModeDir = 1;
+								slotCvModeAlt = 0;
+								presetLoad(t, 0);
+								break;
+							case SLOTCVMODE::TRIG_SHUFFLE:
+								slotCvModeShuffle.clear();
+								break;
+							default:
+								break;
+						}
+					} 
+					else {
+						resetTimer.process(args.sampleTime);
+					}
+
+					// SLOT input
+					if (inputs[SLOT_INPUT].isConnected()) {
+						switch (slotCvMode) {
+							case SLOTCVMODE::VOLT:
+								presetLoad(t, std::floor(rescale(inputs[SLOT_INPUT].getVoltage(), 0.f, 10.f, 0, presetCount)));
+								break;
+							case SLOTCVMODE::C4:
+								presetLoad(t, std::round(clamp(inputs[SLOT_INPUT].getVoltage() * 12.f, 0.f, NUM_PRESETS - 1.f)));
+								if (inputs[SLOT_INPUT].getChannels() == 2 && slotC4Trigger.process(inputs[SLOT_INPUT].getVoltage(1))) {
+									presetLoad(t, std::round(clamp(inputs[SLOT_INPUT].getVoltage() * 12.f, 0.f, NUM_PRESETS - 1.f)), false, true);
+								}
+								break;
+							case SLOTCVMODE::TRIG_FWD:
+								if (slotTrigger.process(inputs[SLOT_INPUT].getVoltage())) {
+									if (resetTimer.getTime() >= 1e-3f) {
+										presetLoad(t, (preset + 1) % presetCount);
+									}
+								}
+								break;
+							case SLOTCVMODE::TRIG_REV:
+								if (slotTrigger.process(inputs[SLOT_INPUT].getVoltage())) {
+									if (resetTimer.getTime() >= 1e-3f) {
+										presetLoad(t, (preset - 1 + presetCount) % presetCount);
+									}
+								}
+								break;
+							case SLOTCVMODE::TRIG_PINGPONG:
+								if (slotTrigger.process(inputs[SLOT_INPUT].getVoltage())) {
+									if (resetTimer.getTime() >= 1e-3f) {
+										int n = preset + slotCvModeDir;
+										if (n >= presetCount - 1) 
+											slotCvModeDir = -1;
+										if (n <= 0) 
+											slotCvModeDir = 1;
+										presetLoad(t, n);
+									}
+								}
+								break;
+							case SLOTCVMODE::TRIG_ALT:
+								if (slotTrigger.process(inputs[SLOT_INPUT].getVoltage())) {
+									if (resetTimer.getTime() >= 1e-3f) {
+										int n = 0;
+										if (preset == 0) {
+											n = slotCvModeAlt + slotCvModeDir;
+											if (n >= presetCount - 1)
+												slotCvModeDir = -1;
+											if (n <= 1)
+												slotCvModeDir = 1;
+											slotCvModeAlt = std::min(n, presetCount - 1);
+										}
+										presetLoad(t, n);
+									}
+								}
+								break;
+							case SLOTCVMODE::TRIG_RANDOM:
+								if (slotTrigger.process(inputs[SLOT_INPUT].getVoltage())) {
+									if (randDist.max() != presetCount - 1) randDist = std::uniform_int_distribution<int>(0, presetCount - 1);
+									presetLoad(t, randDist(randGen));
+								}
+								break;
+							case SLOTCVMODE::TRIG_RANDOM_WO_REPEAT:
+								if (slotTrigger.process(inputs[SLOT_INPUT].getVoltage())) {
+									if (randDist.max() != presetCount - 2) randDist = std::uniform_int_distribution<int>(0, presetCount - 2);
+									int p = randDist(randGen);
+									if (p >= preset) p++;
+									presetLoad(t, p);
+								}
+								break;
+							case SLOTCVMODE::TRIG_RANDOM_WALK:
+								if (slotTrigger.process(inputs[SLOT_INPUT].getVoltage())) {
+									int p = std::min(std::max(0, preset + (random::u32() % 2 == 0 ? -1 : 1)), presetCount - 1);
+									presetLoad(t, p);
+								}
+								break;
+							case SLOTCVMODE::TRIG_SHUFFLE:
+								if (slotTrigger.process(inputs[SLOT_INPUT].getVoltage())) {
+									if (slotCvModeShuffle.size() == 0) {
+										for (int i = 0; i < presetCount; i++) {
+											slotCvModeShuffle.push_back(i);
+										}
+										std::random_shuffle(std::begin(slotCvModeShuffle), std::end(slotCvModeShuffle));
+									}
+									int p = std::min(std::max(0, slotCvModeShuffle.back()), presetCount - 1);
+									slotCvModeShuffle.pop_back();
+									presetLoad(t, p);
+								}
+								break;
+							case SLOTCVMODE::ARM:
+								if (slotTrigger.process(inputs[SLOT_INPUT].getVoltage())) {
+									presetLoad(t, presetNext, false, true);
+								}
+								break;
+							case SLOTCVMODE::OFF:
+								break;
+						}
+					}
+
+					// Buttons
+					if (buttonDivider.process()) {
+						float sampleTime = args.sampleTime * buttonDivider.division;
+						for (int i = 0; i < NUM_PRESETS; i++) {
+							switch (typeButtons[i].process(sampleTime)) {
+								default:
+								case LongPressButton::NO_PRESS:
+									break;
+								case LongPressButton::SHORT_PRESS:
+									presetLoad(t, i, slotCvMode == SLOTCVMODE::ARM, true);
+									break;
+								case LongPressButton::LONG_PRESS:
+									if (presetCountLongPress) presetSetCount(i + 1);
+									break;
+							}
+						}
+					}
+				}
+				// Write mode
+				else {
+					if (buttonDivider.process()) {
+						float sampleTime = args.sampleTime * buttonDivider.division;
+						for (int i = 0; i < NUM_PRESETS; i++) {
+							switch (typeButtons[i].process(sampleTime)) {
+								default:
+								case LongPressButton::NO_PRESS:
+									break;
+								case LongPressButton::SHORT_PRESS:
+									presetSave(t, i);
+									break;
+								case LongPressButton::LONG_PRESS:
+									presetClear(i);
+									break;
+							}
+						}
+					}
+				}
+			}
+		}
+		else {
+			connected = 0;
+		}
+
+		// Set channel lights infrequently
+		if (lightDivider.process()) {
+			float s = args.sampleTime * lightDivider.getDivision();
+			modeLight += 0.7f * s;
+			if (modeLight > 1.5f) modeLight = 0.f;
+
+			if (side == SIDE::LEFT) {
+				lights[LEFT_LIGHT + 0].setBrightness(connected == 2 ? std::min(modeLight, 1.f) : 0.f);
+				lights[LEFT_LIGHT + 1].setBrightness(connected == 1 ? 1.f : 0.f);
+				lights[RIGHT_LIGHT + 0].setBrightness(0.f);
+				lights[RIGHT_LIGHT + 1].setBrightness(0.f);
+			}
+			else {
+				lights[LEFT_LIGHT + 0].setBrightness(0.f);
+				lights[LEFT_LIGHT + 1].setBrightness(0.f);
+				lights[RIGHT_LIGHT + 0].setBrightness(connected == 2 ? std::min(modeLight, 1.f) : 0.f);
+				lights[RIGHT_LIGHT + 1].setBrightness(connected == 1 ? 1.f : 0.f);
+			}
+
+			for (int i = 0; i < NUM_PRESETS; i++) {
+				if (ctrlMode == CTRLMODE::READ || ctrlMode == CTRLMODE::AUTO) {
+					lights[PRESET_LIGHT + i * 3 + 0].setBrightness(presetNext == i ? 1.f : 0.f);
+					lights[PRESET_LIGHT + i * 3 + 1].setSmoothBrightness(preset != i && presetCount > i ? (presetSlotUsed[i] ? 1.f : 0.2f) : 0.f, s);
+					lights[PRESET_LIGHT + i * 3 + 2].setSmoothBrightness(preset == i ? 1.f : 0.f, s);
+				}
+				else {
+					lights[PRESET_LIGHT + i * 3 + 0].setBrightness(presetSlotUsed[i] ? 1.f : 0.f);
+					lights[PRESET_LIGHT + i * 3 + 1].setBrightness(0.f);
+					lights[PRESET_LIGHT + i * 3 + 2].setBrightness(0.f);
+				}
+			}
+		}
+	}
+
+	void processWorker() {
+		contextSet(workerContext);
+		while (true) {
+			std::unique_lock<std::mutex> lock(workerMutex);
+			workerCondVar.wait(lock, std::bind(&EightFaceModule::workerDoProcess, this));
+			if (!workerIsRunning || workerPreset < 0) return;
+			if (ctrlMode == CTRLMODE::AUTO && presetPrev >= 0 && presetSlotUsed[presetPrev]) {
+				json_decref(presetSlot[presetPrev]);
+				presetSlot[presetPrev] = workerModuleWidget->toJson();
+			}
+			workerModuleWidget->fromJson(presetSlot[workerPreset]);
+			workerDoProcess = false;
+		}
+	}
+
+	void processGui() {
+		ModuleWidget* mw = workerGuiModuleWidget.load();
+		if (mw) {
+			if (ctrlMode == CTRLMODE::AUTO && presetPrev >= 0 && presetSlotUsed[presetPrev]) {
+				json_decref(presetSlot[presetPrev]);
+				presetSlot[presetPrev] = workerModuleWidget->toJson();
+			}
+
+			if (guiSafeMode == GUISAFEMODE::GUI) {
+				// This is an unlocked operation, it is not perfectly thread-safe, as the Engine
+				// thread would lock on preset loading
+				mw->module->fromJson(presetSlot[workerPreset]);
+			} else {
+				mw->fromJson(presetSlot[workerPreset]);
+			}
+			workerGuiModuleWidget.store(nullptr);
+		}
+	}
+
+	void presetLoad(Module* m, int p, bool isNext = false, bool force = false) {
+		if (p < 0 || p >= presetCount)
+			return;
+
+		if (!isNext) {
+			if (p != preset || force) {
+				presetPrev = preset;
+				preset = p;
+				presetNext = -1;
+				if (!presetSlotUsed[p]) return;
+				ModuleWidget* mw = APP->scene->rack->getModule(m->id);
+				if (mw) {
+					workerPreset = p;
+					if (workerGui || guiSafeMode != GUISAFEMODE::WORKER) {
+						workerGuiModuleWidget.store(mw);
+					}
+					else {
+						workerModuleWidget = mw;
+						workerDoProcess = true;
+						workerCondVar.notify_one();
+					}
+				}
+			}
+		}
+		else {
+			if (!presetSlotUsed[p]) return;
+			presetNext = p;
+		}
+	}
+
+	void presetSave(Module* m, int p) {
+		pluginSlug = m->model->plugin->name;
+		modelSlug = m->model->name;
+		moduleName = m->model->plugin->brand + " " + m->model->name;
+		realPluginSlug = m->model->plugin->slug;
+		realModelSlug = m->model->slug;
+		auto it = guiModuleSlugs.find(std::make_tuple(realPluginSlug, realModelSlug));
+		workerGui = it != guiModuleSlugs.end();
+
+		ModuleWidget* mw = APP->scene->rack->getModule(m->id);
+		if (presetSlotUsed[p]) json_decref(presetSlot[p]);
+		presetSlotUsed[p] = true;
+		presetSlot[p] = mw->toJson();
+	}
+
+	void presetClear(int p) {
+		if (presetSlotUsed[p])
+			json_decref(presetSlot[p]);
+		presetSlot[p] = NULL;
+		presetSlotUsed[p] = false;
+		if (preset == p) preset = -1;
+		bool empty = true;
+		for (int i = 0; i < NUM_PRESETS; i++)
+			empty = empty && !presetSlotUsed[i];
+		if (empty) {
+			pluginSlug = "";
+			modelSlug = "";
+			moduleName = "";
+		}
+	}
+
+	void presetSetCount(int p) {
+		if (preset >= p) preset = 0;
+		presetCount = p;
+		presetPrev = -1;
+		presetNext = -1;
+	}
+
+	json_t* dataToJson() override {
+		json_t* rootJ = json_object();
+		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
+
+		json_object_set_new(rootJ, "guiSafeMode", json_integer((int)guiSafeMode));
+
+		json_object_set_new(rootJ, "mode", json_integer((int)side));
+		json_object_set_new(rootJ, "pluginSlug", json_string(pluginSlug.c_str()));
+		json_object_set_new(rootJ, "modelSlug", json_string(modelSlug.c_str()));
+		json_object_set_new(rootJ, "realPluginSlug", json_string(realPluginSlug.c_str()));
+		json_object_set_new(rootJ, "realModelSlug", json_string(realModelSlug.c_str()));
+		json_object_set_new(rootJ, "moduleName", json_string(moduleName.c_str()));
+		json_object_set_new(rootJ, "slotCvMode", json_integer((int)slotCvMode));
+		json_object_set_new(rootJ, "preset", json_integer(preset));
+		json_object_set_new(rootJ, "presetCount", json_integer(presetCount));
+		json_object_set_new(rootJ, "presetCountLongPress", json_boolean(presetCountLongPress));
+
+		json_t* presetsJ = json_array();
+		for (int i = 0; i < NUM_PRESETS; i++) {
+			json_t* presetJ = json_object();
+			json_object_set_new(presetJ, "slotUsed", json_boolean(presetSlotUsed[i]));
+			if (presetSlotUsed[i]) {
+				json_object_set(presetJ, "slot", presetSlot[i]);
+			}
+			json_array_append_new(presetsJ, presetJ);
+		}
+		json_object_set_new(rootJ, "presets", presetsJ);
+		return rootJ;
+	}
+
+	void dataFromJson(json_t* rootJ) override {
+		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+
+		json_t* guiSafeModeJ = json_object_get(rootJ, "guiSafeMode");
+		guiSafeMode = guiSafeModeJ ? (GUISAFEMODE)json_integer_value(guiSafeModeJ) : GUISAFEMODE::WORKER;
+	
+		json_t* sideJ = json_object_get(rootJ, "mode");
+		if (sideJ) side = (SIDE)json_integer_value(sideJ);
+		pluginSlug = json_string_value(json_object_get(rootJ, "pluginSlug"));
+		modelSlug = json_string_value(json_object_get(rootJ, "modelSlug"));
+
+		json_t* realPluginSlugJ = json_object_get(rootJ, "realPluginSlug");
+		if (realPluginSlugJ) realPluginSlug = json_string_value(realPluginSlugJ);
+		json_t* realModelSlugJ = json_object_get(rootJ, "realModelSlug");
+		if (realModelSlugJ) realModelSlug = json_string_value(realModelSlugJ);
+		auto it = guiModuleSlugs.find(std::make_tuple(realPluginSlug, realModelSlug));
+		workerGui = it != guiModuleSlugs.end();
+
+		json_t* moduleNameJ = json_object_get(rootJ, "moduleName");
+		if (moduleNameJ) moduleName = json_string_value(json_object_get(rootJ, "moduleName"));
+		slotCvMode = (SLOTCVMODE)json_integer_value(json_object_get(rootJ, "slotCvMode"));
+		preset = json_integer_value(json_object_get(rootJ, "preset"));
+		presetCount = json_integer_value(json_object_get(rootJ, "presetCount"));
+		json_t* presetCountLongPressJ = json_object_get(rootJ, "presetCountLongPress");
+		if (presetCountLongPressJ) presetCountLongPress = json_boolean_value(presetCountLongPressJ);
+
+		for (int i = 0; i < NUM_PRESETS; i++) {
+			if (presetSlotUsed[i]) {
+				json_decref(presetSlot[i]);
+				presetSlot[i] = NULL;
+			}
+			presetSlotUsed[i] = false;
+		}
+
+		json_t* presetsJ = json_object_get(rootJ, "presets");
+		json_t* presetJ;
+		size_t presetIndex;
+		json_array_foreach(presetsJ, presetIndex, presetJ) {
+			presetSlotUsed[presetIndex] = json_boolean_value(json_object_get(presetJ, "slotUsed"));
+			presetSlot[presetIndex] = json_deep_copy(json_object_get(presetJ, "slot"));
+		}
+
+		presetPrev = -1;
+		if (preset >= presetCount)
+			preset = 0;
+
+		// TODO: This needs to be reviewed as presetLoad might fail on patch-load if this module
+		// is loaded before the expanded module
+		switch (autoload) {
+			case AUTOLOAD::FIRST: {
+				Expander* exp = side == SIDE::LEFT ? &leftExpander : &rightExpander;
+				if (exp->moduleId >= 0 && exp->module) {
+					Module* t = exp->module;
+					presetLoad(t, 0, false, true);
+				}
+				break;
+			}
+			case AUTOLOAD::LASTACTIVE: {
+				Expander* exp = side == SIDE::LEFT ? &leftExpander : &rightExpander;
+				if (exp->moduleId >= 0 && exp->module) {
+					Module* t = exp->module;
+					presetLoad(t, preset, false, true);
+				}
+				break;
+			}
+			default:
+				break;
+		}
+
+		params[CTRLMODE_PARAM].setValue(0.f);
+	}
+};
+
+
+struct WhiteRedLight : GrayModuleLightWidget {
+	WhiteRedLight() {
+		this->addBaseColor(SCHEME_WHITE);
+		this->addBaseColor(SCHEME_RED);
+	}
+};
+
+
+template<typename MODULE>
+struct EightFaceWidgetTemplate : ThemedModuleWidget<MODULE> {
+	MODULE* module;
+
+	EightFaceWidgetTemplate(MODULE* module, std::string baseName) 
+	: ThemedModuleWidget<MODULE>(module, baseName, "EightFace") {
+		ThemedModuleWidget<MODULE>::setModule(module);
+		this->module = dynamic_cast<MODULE*>(module);
+	}
+
+	struct NumberOfSlotsSlider : ui::Slider {
+		struct NumberOfSlotsQuantity : Quantity {
+			MODULE* module;
+			float v = -1.f;
+
+			NumberOfSlotsQuantity(MODULE* module) {
+				this->module = module;
+			}
+			void setValue(float value) override {
+				v = clamp(value, 1.f, float(module->presetMax));
+				module->presetSetCount(int(v));
+			}
+			float getValue() override {
+				if (v < 0.f) v = module->presetCount;
+				return v;
+			}
+			float getDefaultValue() override {
+				return 8.f;
+			}
+			float getMinValue() override {
+				return 1.f;
+			}
+			float getMaxValue() override {
+				return float(module->presetMax);
+			}
+			float getDisplayValue() override {
+				return getValue();
+			}
+			std::string getDisplayValueString() override {
+				int i = int(getValue());
+				return string::f("%i", i);
+			}
+			void setDisplayValue(float displayValue) override {
+				setValue(displayValue);
+			}
+			std::string getLabel() override {
+				return "Slots";
+			}
+			std::string getUnit() override {
+				return "";
+			}
+		};
+
+		NumberOfSlotsSlider(MODULE* module) {
+			box.size.x = 160.0;
+			quantity = new NumberOfSlotsQuantity(module);
+		}
+		~NumberOfSlotsSlider() {
+			delete quantity;
+		}
+		void onDragMove(const event::DragMove& e) override {
+			if (quantity) {
+				quantity->moveScaledValue(0.002f * e.mouseDelta.x);
+			}
+		}
+	};
+
+	void appendContextMenu(Menu* menu) override {
+		MODULE* module = dynamic_cast<MODULE*>(this->module);
+		assert(module);
+
+		menu->addChild(new MenuSeparator());
+		if (module->moduleName != "") {
+			menu->addChild(createMenuLabel("Configured for..."));
+			menu->addChild(createMenuLabel(module->moduleName));
+		}
+
+		menu->addChild(new MenuSeparator());
+		menu->addChild(createMenuLabel("Stability & performance mode"));
+		menu->addChild(createBoolMenuItem("Safe", "",
+			[=]() { return module->guiSafeMode == GUISAFEMODE::GUI_WITH_LOCK; },
+			[=](bool v) {
+				std::string msg = "Using \"Safe\" will load presets perfectly safe without risking any crashes, but may lead to performance issues (e.g. stuttering). Proceed?";
+				if (osdialog_message(OSDIALOG_WARNING, OSDIALOG_YES_NO, msg.c_str()))
+					module->guiSafeMode = GUISAFEMODE::GUI_WITH_LOCK;
+			}
+		));
+		menu->addChild(createBoolMenuItem("Unsafe", "",
+			[=]() { return module->guiSafeMode == GUISAFEMODE::GUI; },
+			[=](bool v) {
+				std::string msg = "Using \"Unsafe-mode\" will load presets quickly but may lead to crashing VCV Rack or other issues. Proceed?";
+				if (osdialog_message(OSDIALOG_WARNING, OSDIALOG_YES_NO, msg.c_str()))
+					module->guiSafeMode = GUISAFEMODE::GUI;
+			}
+		));
+		menu->addChild(createBoolMenuItem("Unsafe fast", "",
+			[=]() { return module->guiSafeMode == GUISAFEMODE::WORKER; },
+			[=](bool v) {
+				std::string msg = "Using \"Unsafe fast-mode\" will load presets most quickly but may lead to crashing VCV Rack or other issues. Proceed?";
+				if (osdialog_message(OSDIALOG_WARNING, OSDIALOG_YES_NO, msg.c_str()))
+					module->guiSafeMode = GUISAFEMODE::WORKER;
+			}
+		));
+
+		menu->addChild(new MenuSeparator());
+		menu->addChild(createSubmenuItem("Number of slots", string::f("%i", module->presetCount),
+			[=](Menu* menu) {
+				menu->addChild(new NumberOfSlotsSlider(module));
+				menu->addChild(createBoolPtrMenuItem("Set by long-press", "", &module->presetCountLongPress));
+			}
+		));
+
+		const std::map<SLOTCVMODE, std::string> slotCvModes {
+			{ SLOTCVMODE::TRIG_FWD, "Trigger forward" },
+			{ SLOTCVMODE::TRIG_REV, "Trigger reverse" },
+			{ SLOTCVMODE::TRIG_PINGPONG, "Trigger pingpong" },
+			{ SLOTCVMODE::TRIG_ALT, "Trigger alternating" },
+			{ SLOTCVMODE::TRIG_RANDOM, "Trigger random" },
+			{ SLOTCVMODE::TRIG_RANDOM_WO_REPEAT, "Trigger pseudo-random" },
+			{ SLOTCVMODE::TRIG_RANDOM_WALK, "Trigger random walk" },
+			{ SLOTCVMODE::TRIG_SHUFFLE, "Trigger shuffle" },
+			{ SLOTCVMODE::VOLT, "0..10V" },
+			{ SLOTCVMODE::C4, "C4" },
+			{ SLOTCVMODE::ARM, "Arm" },
+			{ SLOTCVMODE::OFF, "Off" }
+		};
+
+		menu->addChild(createSubmenuItem("Port SLOT mode", slotCvModes.at(module->slotCvMode),
+			[=](Menu* menu) {
+				auto f = [=](SLOTCVMODE slotCvMode, std::string rightText = "") {
+					menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem(slotCvModes.at(slotCvMode), rightText, &module->slotCvMode, slotCvMode));
+				};
+				f(SLOTCVMODE::TRIG_FWD);
+				f(SLOTCVMODE::TRIG_REV);
+				f(SLOTCVMODE::TRIG_PINGPONG);
+				f(SLOTCVMODE::TRIG_ALT);
+				f(SLOTCVMODE::TRIG_RANDOM);
+				f(SLOTCVMODE::TRIG_RANDOM_WO_REPEAT);
+				f(SLOTCVMODE::TRIG_RANDOM_WALK);
+				f(SLOTCVMODE::TRIG_SHUFFLE);
+				f(SLOTCVMODE::VOLT);
+				f(SLOTCVMODE::C4);
+				f(SLOTCVMODE::ARM);
+				menu->addChild(new MenuSeparator);
+				f(SLOTCVMODE::OFF, RACK_MOD_SHIFT_NAME "+Q");
+			}
+		));
+
+		struct SideItem : MenuItem {
+			MODULE* module;
+			void onAction(const event::Action& e) override {
+				module->side = module->side == SIDE::LEFT ? SIDE::RIGHT : SIDE::LEFT;
+			}
+			void step() override {
+				rightText = module->side == SIDE::LEFT ? "Left" : "Right";
+				MenuItem::step();
+			}
+		};
+
+		menu->addChild(construct<SideItem>(&MenuItem::text, "Module", &SideItem::module, module));
+		menu->addChild(StoermelderPackOne::Rack::createMapPtrSubmenuItem<AUTOLOAD>("Autoload", 
+			{
+				{ AUTOLOAD::OFF, "Off" },
+				{ AUTOLOAD::FIRST, "First preset" },
+				{ AUTOLOAD::LASTACTIVE, "Last active preset" }
+			},
+			&module->autoload
+		));
+	}
+
+	void onHoverKey(const event::HoverKey& e) override {
+		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == GLFW_MOD_SHIFT) {
+			switch (e.key) {
+				case GLFW_KEY_Q:
+					MODULE* module = dynamic_cast<MODULE*>(this->module);
+					module->slotCvMode = module->slotCvMode == SLOTCVMODE::OFF ? module->slotCvModeBak : SLOTCVMODE::OFF;
+					e.consume(this);
+					break;
+			}
+		}
+		ThemedModuleWidget<MODULE>::onHoverKey(e);
+	}
+
+	void step() override {
+		if (module) {
+			module->processGui();
+		}
+		ThemedModuleWidget<MODULE>::step();
+	}
+};
+
+struct EightFaceWidget : EightFaceWidgetTemplate<EightFaceModule<8>> {
+	typedef EightFaceModule<8> MODULE;
+
+	EightFaceWidget(MODULE* module)
+		: EightFaceWidgetTemplate<MODULE>(module, "EightFace") {
+
+		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
+		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 58.9f), module, MODULE::SLOT_INPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(22.5f, 95.2f), module, MODULE::RESET_INPUT));
+
+		addChild(createLightCentered<TriangleLeftLight<WhiteRedLight>>(Vec(13.8f, 119.1f), module, MODULE::LEFT_LIGHT));
+		addChild(createLightCentered<TriangleRightLight<WhiteRedLight>>(Vec(31.2f, 119.1f), module, MODULE::RIGHT_LIGHT));
+
+		addParam(createParamCentered<VCVButton>(Vec(22.5f, 140.6f), module, MODULE::PRESET_PARAM + 0));
+		addParam(createParamCentered<VCVButton>(Vec(22.5f, 164.1f), module, MODULE::PRESET_PARAM + 1));
+		addParam(createParamCentered<VCVButton>(Vec(22.5f, 187.7f), module, MODULE::PRESET_PARAM + 2));
+		addParam(createParamCentered<VCVButton>(Vec(22.5f, 211.2f), module, MODULE::PRESET_PARAM + 3));
+		addParam(createParamCentered<VCVButton>(Vec(22.5f, 234.8f), module, MODULE::PRESET_PARAM + 4));
+		addParam(createParamCentered<VCVButton>(Vec(22.5f, 258.3f), module, MODULE::PRESET_PARAM + 5));
+		addParam(createParamCentered<VCVButton>(Vec(22.5f, 281.9f), module, MODULE::PRESET_PARAM + 6));
+		addParam(createParamCentered<VCVButton>(Vec(22.5f, 305.4f), module, MODULE::PRESET_PARAM + 7));
+
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(22.5f, 140.6f), module, MODULE::PRESET_LIGHT + 0 * 3));
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(22.5f, 164.1f), module, MODULE::PRESET_LIGHT + 1 * 3));
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(22.5f, 187.7f), module, MODULE::PRESET_LIGHT + 2 * 3));
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(22.5f, 211.2f), module, MODULE::PRESET_LIGHT + 3 * 3));
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(22.5f, 234.8f), module, MODULE::PRESET_LIGHT + 4 * 3));
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(22.5f, 258.3f), module, MODULE::PRESET_LIGHT + 5 * 3));
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(22.5f, 281.9f), module, MODULE::PRESET_LIGHT + 6 * 3));
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(22.5f, 305.4f), module, MODULE::PRESET_LIGHT + 7 * 3));
+
+		addParam(createParamCentered<CKSSThreeH>(Vec(22.5f, 336.2f), module, MODULE::CTRLMODE_PARAM));
+	}
+};
+
+struct EightFaceX2Widget : EightFaceWidgetTemplate<EightFaceModule<16>> {
+	typedef EightFaceModule<16> MODULE;
+
+	EightFaceX2Widget(MODULE* module)
+		: EightFaceWidgetTemplate<MODULE>(module, "EightFaceX2") {
+
+		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
+		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+
+		addInput(createInputCentered<StoermelderPort>(Vec(30.0f, 58.9f), module, MODULE::SLOT_INPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(30.0f, 95.2f), module, MODULE::RESET_INPUT));
+
+		addChild(createLightCentered<TriangleLeftLight<WhiteRedLight>>(Vec(21.3f, 119.1f), module, MODULE::LEFT_LIGHT));
+		addChild(createLightCentered<TriangleRightLight<WhiteRedLight>>(Vec(38.7f, 119.1f), module, MODULE::RIGHT_LIGHT));
+
+		addParam(createParamCentered<VCVButton>(Vec(17.7f, 140.6f), module, MODULE::PRESET_PARAM + 0));
+		addParam(createParamCentered<VCVButton>(Vec(17.7f, 164.1f), module, MODULE::PRESET_PARAM + 1));
+		addParam(createParamCentered<VCVButton>(Vec(17.7f, 187.7f), module, MODULE::PRESET_PARAM + 2));
+		addParam(createParamCentered<VCVButton>(Vec(17.7f, 211.2f), module, MODULE::PRESET_PARAM + 3));
+		addParam(createParamCentered<VCVButton>(Vec(17.7f, 234.8f), module, MODULE::PRESET_PARAM + 4));
+		addParam(createParamCentered<VCVButton>(Vec(17.7f, 258.3f), module, MODULE::PRESET_PARAM + 5));
+		addParam(createParamCentered<VCVButton>(Vec(17.7f, 281.9f), module, MODULE::PRESET_PARAM + 6));
+		addParam(createParamCentered<VCVButton>(Vec(17.7f, 305.4f), module, MODULE::PRESET_PARAM + 7));
+		addParam(createParamCentered<VCVButton>(Vec(42.3f, 140.6f), module, MODULE::PRESET_PARAM + 8));
+		addParam(createParamCentered<VCVButton>(Vec(42.3f, 164.1f), module, MODULE::PRESET_PARAM + 9));
+		addParam(createParamCentered<VCVButton>(Vec(42.3f, 187.7f), module, MODULE::PRESET_PARAM + 10));
+		addParam(createParamCentered<VCVButton>(Vec(42.3f, 211.2f), module, MODULE::PRESET_PARAM + 11));
+		addParam(createParamCentered<VCVButton>(Vec(42.3f, 234.8f), module, MODULE::PRESET_PARAM + 12));
+		addParam(createParamCentered<VCVButton>(Vec(42.3f, 258.3f), module, MODULE::PRESET_PARAM + 13));
+		addParam(createParamCentered<VCVButton>(Vec(42.3f, 281.9f), module, MODULE::PRESET_PARAM + 14));
+		addParam(createParamCentered<VCVButton>(Vec(42.3f, 305.4f), module, MODULE::PRESET_PARAM + 15));
+
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(17.7f, 140.6f), module, MODULE::PRESET_LIGHT + 0 * 3));
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(17.7f, 164.1f), module, MODULE::PRESET_LIGHT + 1 * 3));
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(17.7f, 187.7f), module, MODULE::PRESET_LIGHT + 2 * 3));
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(17.7f, 211.2f), module, MODULE::PRESET_LIGHT + 3 * 3));
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(17.7f, 234.8f), module, MODULE::PRESET_LIGHT + 4 * 3));
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(17.7f, 258.3f), module, MODULE::PRESET_LIGHT + 5 * 3));
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(17.7f, 281.9f), module, MODULE::PRESET_LIGHT + 6 * 3));
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(17.7f, 305.4f), module, MODULE::PRESET_LIGHT + 7 * 3));
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(42.3f, 140.6f), module, MODULE::PRESET_LIGHT + 8 * 3));
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(42.3f, 164.1f), module, MODULE::PRESET_LIGHT + 9 * 3));
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(42.3f, 187.7f), module, MODULE::PRESET_LIGHT + 10 * 3));
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(42.3f, 211.2f), module, MODULE::PRESET_LIGHT + 11 * 3));
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(42.3f, 234.8f), module, MODULE::PRESET_LIGHT + 12 * 3));
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(42.3f, 258.3f), module, MODULE::PRESET_LIGHT + 13 * 3));
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(42.3f, 281.9f), module, MODULE::PRESET_LIGHT + 14 * 3));
+		addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(42.3f, 305.4f), module, MODULE::PRESET_LIGHT + 15 * 3));
+
+		addParam(createParamCentered<CKSSThreeH>(Vec(30.0f, 336.2f), module, MODULE::CTRLMODE_PARAM));
+	}
+};
+
+} // namespace EightFace
+} // namespace StoermelderPackOne
+
+Model* modelEightFace = createModel<StoermelderPackOne::EightFace::EightFaceModule<8>, StoermelderPackOne::EightFace::EightFaceWidget>("EightFace");
+Model* modelEightFaceX2 = createModel<StoermelderPackOne::EightFace::EightFaceModule<16>, StoermelderPackOne::EightFace::EightFaceX2Widget>("EightFaceX2");
