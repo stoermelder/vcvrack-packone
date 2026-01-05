@@ -1,8 +1,8 @@
-#include "catch2/plugin.hpp"
-#include "test_context.hpp"
-#include "../modules/midicat/MidiCat.hpp"
-#include "../modules/midicat/MidiCat.cpp"
-#include "../modules/midi/MidiTrackingProcessor.cpp"  // Include implementation for templates
+#include "../../test/test_plugin.hpp"
+#include "../../test/test_context.hpp"
+#include "MidiCat.hpp"
+#include "MidiCat.cpp"
+#include "../midi/MidiTrackingProcessor.cpp"  // Include implementation for templates
 
 using namespace StoermelderPackOne::MidiCat;
 

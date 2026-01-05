@@ -1,5 +1,5 @@
 #pragma once
-#include "catch2/plugin.hpp"
+#include "test_plugin.hpp"
 #include <rack.hpp>
 #include <patch.hpp>
 #include <atomic>
