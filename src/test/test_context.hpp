@@ -60,6 +60,7 @@ template <typename T>
 static T* createModule(std::string modelSlug) {
 	Model* model = pluginInstance->getModel(modelSlug);
 	T* m = dynamic_cast<T*>(model->createModule());
+	m->onSampleRateChange();
 	return m;
 }
 

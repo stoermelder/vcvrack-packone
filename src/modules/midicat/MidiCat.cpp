@@ -432,6 +432,9 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 	/** [Stored to JSON] */
 	bool parameterChangesDirect = false;
 
+	/** Holds the time needed for long presses */
+	uint64_t longPressDuration;
+
 	// MEM-expander
 	MidiCatMemBase* expMem = NULL;
 	int64_t expMemModuleId = -1;
@@ -521,6 +524,7 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 
 	void onSampleRateChange() override {
 		midiResendDivider.setDivision(APP->engine->getSampleRate() / 2);
+		longPressDuration = (uint64_t)(APP->engine->getSampleRate() / 2);
 	}
 
 	void process(const ProcessArgs &args) override {
@@ -734,7 +738,7 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 								break;
 							case CCMODE::SNAPPED_SL:
 								if (ccs[id].getValue() == 0)
-									if (ccs[id].diffTs * 2 < APP->engine->getSampleRate())
+									if (ccs[id].diffTs < longPressDuration)
 										t = midiParam[id].getNextSnappedValue();
 									else
 										t = midiParam[id].getPrevSnappedValue();
@@ -806,7 +810,7 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 								break;
 							case NOTEMODE::SNAPPED_SL:
 								if (notes[id].getValue() == 0) {
-									if (notes[id].diffTs * 2 < APP->engine->getSampleRate())
+									if (notes[id].diffTs < longPressDuration)
 										t = midiParam[id].getNextSnappedValue();
 									else
 										t = midiParam[id].getPrevSnappedValue();
