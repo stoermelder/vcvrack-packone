@@ -339,4 +339,3 @@ FINE for MIDI-CAT must be placed on the right side of MIDI-CAT and can be used t
     - Fixed mistaken copy-over of 14-bit CC flag from previous mapping slot on CCs >= 32
     - Fixed wrong internal state after manual parameter adjustment
     - Fixed broken MIDI learning for CC 31
-    - Fixed incorrect behavior on snapped parameters with a high number of steps

@@ -36,7 +36,6 @@ Modules [8FACE, 8FACEx2](./docs/EightFace.md) and [8FACE mk2](./docs/EightFaceMk
     - Fixed mistaken copy-over of 14-bit CC flag from previous mapping slot on CCs >= 32
     - Fixed wrong internal state after manual parameter adjustment
     - Fixed broken MIDI learning for CC 31
-    - Fixed incorrect behavior on snapped parameters with a high number of steps
 - Module [MIDI-CAT MEM](./docs/MidiCat.md#mem-expander)
     - Added module restriction list
     - Fixed broken MIDI feedback when loading stored mappings
