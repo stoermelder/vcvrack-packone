@@ -170,7 +170,7 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 				// history::ModuleBypass
 				history::ModuleBypass* h = new history::ModuleBypass;
 				h->moduleId = m->rightExpander.module->id;
-				h->bypassed = m->rightExpander.module->isBypassed();
+				h->bypassed = !m->rightExpander.module->isBypassed();
 				complexAction->push(h);
 
 				m = m->rightExpander.module;
@@ -186,7 +186,7 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 				// history::ModuleBypass
 				history::ModuleBypass* h = new history::ModuleBypass;
 				h->moduleId = m->leftExpander.module->id;
-				h->bypassed = m->leftExpander.module->isBypassed();
+				h->bypassed = !m->leftExpander.module->isBypassed();
 				complexAction->push(h);
 
 				m = m->leftExpander.module;
@@ -209,7 +209,6 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 	 * To be called from a worker-thread only, as the engine will lock.
 	 */
 	void groupBypassWorker(bool val) {
-		if (lastBypassState.load() == val) return;
 		lastBypassState.store(val);
 
 		if (mode == MODE::LEFTRIGHT || mode == MODE::RIGHT) {
@@ -779,7 +778,7 @@ struct StripWidget : StripWidgetBase<StripModule> {
 		menu->addChild(new MenuSeparator);
 		menu->addChild(createSubmenuItem("Port/Switch ON mode", "",
 			[=](Menu* menu) {
-				menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem("Default", &module->onMode, ONMODE::DEFAULT));
+				menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem("On only", &module->onMode, ONMODE::DEFAULT));
 				menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem("Toggle", &module->onMode, ONMODE::TOGGLE));
 				menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem("High/Low", &module->onMode, ONMODE::HIGHLOW));
 			}
