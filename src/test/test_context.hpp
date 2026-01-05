@@ -56,10 +56,18 @@ struct TestContext {
 };
 
 
+static int64_t getModuleId() {
+	static std::atomic<int64_t> nextModuleId{1};
+	return nextModuleId.fetch_add(1, std::memory_order_acq_rel);
+}
+
+
+
 template <typename T>
 static T* createModule(std::string modelSlug) {
 	Model* model = pluginInstance->getModel(modelSlug);
 	T* m = dynamic_cast<T*>(model->createModule());
+	m->id = getModuleId();
 	m->onSampleRateChange();
 	return m;
 }
