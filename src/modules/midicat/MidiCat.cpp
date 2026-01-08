@@ -646,6 +646,8 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 
 			// Get ParamQuantity
 			int paramId = paramHandles[id].paramId;
+			if (paramId >= (int)module->paramQuantities.size())
+				continue;
 			ParamQuantity* paramQuantity = module->paramQuantities[paramId];
 			if (!paramQuantity)
 				continue;

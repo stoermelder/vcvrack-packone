@@ -81,6 +81,8 @@ struct MapModuleBase : Module, StripIdFixModule {
 			return NULL;
 		// Get ParamQuantity
 		int paramId = paramHandles[id].paramId;
+		if (paramId >= (int)module->paramQuantities.size())
+			return NULL;
 		ParamQuantity* paramQuantity = module->getParamQuantity(paramId);
 		if (!paramQuantity)
 			return NULL;
@@ -456,7 +458,7 @@ struct MapModuleChoice : LedDisplayChoice {
 		if (!m)
 			return NULL;
 		int paramId = paramHandle->paramId;
-		if (paramId >= (int) m->params.size())
+		if (paramId >= (int)m->params.size())
 			return NULL;
 		ParamQuantity* paramQuantity = m->getParamQuantity(paramId);
 		return paramQuantity;
@@ -479,7 +481,7 @@ struct MapModuleChoice : LedDisplayChoice {
 		if (!m)
 			return "";
 		int paramId = paramHandle->paramId;
-		if (paramId >= (int) m->params.size())
+		if (paramId >= (int)m->params.size())
 			return "";
 		ParamQuantity* paramQuantity = m->getParamQuantity(paramId);
 		std::string s;

@@ -536,6 +536,8 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 			return NULL;
 		// Get ParamQuantity
 		int paramId = handle->paramId;
+		if (paramId >= module->paramQuantities.size())
+			return NULL;
 		ParamQuantity* paramQuantity = module->paramQuantities[paramId];
 		if (!paramQuantity)
 			return NULL;

@@ -206,7 +206,7 @@ struct GripWidget : ThemedModuleWidget<GripModule> {
 				Module* m = mw->module;
 				if (!m) return "<ERROR>";
 				int paramId = paramHandle->paramId;
-				if (paramId >= (int) m->params.size()) return "<ERROR>";
+				if (paramId >= (int)m->params.size()) return "<ERROR>";
 				ParamQuantity* paramQuantity = m->paramQuantities[paramId];
 				std::string s;
 				s += mw->model->name;

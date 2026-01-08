@@ -24,7 +24,7 @@ struct MapParamQuantity : ParamQuantity {
 		if (!m)
 			return "";
 		int paramId = paramHandle->paramId;
-		if (paramId >= (int) m->params.size())
+		if (paramId >= (int)m->params.size())
 			return "";
 		ParamQuantity* paramQuantity = m->paramQuantities[paramId];
 		std::string s;
@@ -144,7 +144,7 @@ struct MapButton : LEDBezel {
 		if (!m)
 			return "<ERROR>";
 		int paramId = paramHandle->paramId;
-		if (paramId >= (int) m->params.size())
+		if (paramId >= (int)m->params.size())
 			return "<ERROR>";
 		ParamQuantity* paramQuantity = m->paramQuantities[paramId];
 		std::string s;
