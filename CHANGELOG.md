@@ -1,3 +1,10 @@
+## 2.3.0
+
+### Changes and Fixes
+
+- Module [STROKE](./docs/stroke/Stroke.md)
+    - Fixed broken _Zoom out_ command
+
 ## 2.2.0
 
 Modules [8FACE, 8FACEx2](./docs/eightface/EightFace.md) and [8FACE mk2](./docs/eightface/EightFaceMk2.md) are now considered stable again. A new _Safe-mode_ has been added, which loads presets into modules according to the supported way. This provides maximum stability. However, it may lock up the audio processing and cause stutters, pops, or other audible artifacts. This behavior is not caused by CPU overload but by fundamental design constraints in VCV Rack.  

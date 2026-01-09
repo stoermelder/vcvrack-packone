@@ -88,3 +88,5 @@ The module also supports mouse-button events: If your mouse has more than three 
     - Fixed broken _Zoom to module_ and _Zoom toggle_ commands (#382)
 - v2.2.0
     - Fixed cables' _Toggle visibility_ command
+- v2.3.0
+    - Fixed broken _Zoom out_ command
