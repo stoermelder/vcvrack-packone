@@ -914,9 +914,9 @@ struct XySeqEditWidget : OpaqueWidget {
 				
 				// Draw outer border
 				nvgBeginPath(args.vg);
-				nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+				nvgRect(args.vg, 2.f, 2.f, box.size.x - 4.f, box.size.y - 4.f);
 				nvgStrokeWidth(args.vg, stroke);
-				nvgStrokeColor(args.vg, c);
+				nvgStrokeColor(args.vg, color::mult(c, 0.7f));
 				nvgStroke(args.vg);
 
 				// Draw "EDIT" text
@@ -1074,18 +1074,18 @@ struct XySeqLedDisplay : StoermelderLedDisplay {
 	}
 
 	void drawRedHalo(const DrawArgs& args) {
-		float radiusX = box.size.x / 2.0;
-		float radiusY = box.size.x / 2.0;
-		float oradiusX = 2 * radiusX;
-		float oradiusY = 2 * radiusY;
+		float radiusX = box.size.x / 2.f;
+		float radiusY = box.size.y / 2.f;
+		float oradiusX = 2.f * radiusX;
+		float oradiusY = 2.f * radiusY;
 		nvgBeginPath(args.vg);
-		nvgRect(args.vg, radiusX - oradiusX, radiusY - oradiusY, 2 * oradiusX, 2 * oradiusY);
+		nvgRect(args.vg, radiusX - oradiusX, radiusY - oradiusY, 2.f * oradiusX, 2.f * oradiusY);
 
 		NVGpaint paint;
 		NVGcolor icol = color::mult(color, 0.65f);
-		NVGcolor ocol = nvgRGB(0, 0, 0);
+		NVGcolor ocol = nvgRGB(0.f, 0.f, 0.f);
 
-		paint = nvgRadialGradient(args.vg, radiusX, radiusY, radiusX, oradiusY, icol, ocol);
+		paint = nvgRadialGradient(args.vg, radiusX, radiusY, 0.2f, oradiusY, icol, ocol);
 		nvgFillPaint(args.vg, paint);
 		nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
 		nvgFill(args.vg);

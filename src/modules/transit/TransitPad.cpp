@@ -207,6 +207,7 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		outXfilter.setTau(0.05f);
 		outYfilter.setTau(0.05f);
 		for (uint8_t i = 0; i < SNAPSHOTS; i++) {
+			dist[i] = std::numeric_limits<float>::infinity();
 			snapshots[i].id = i < 4 ? i : -1;
 			snapshots[i].color = TransitPadSource::getDefaultColor();
 			snapshots[i].weight = 0.f;
@@ -288,15 +289,22 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 
 	void dataFromJson(json_t* rootJ) override {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
-		snapshotsUsed = json_integer_value(json_object_get(rootJ, "snapshotsUsed"));
+	
+		int su = json_integer_value(json_object_get(rootJ, "snapshotsUsed"));
+		snapshotsUsed = std::max(0, std::min(su, (int)SNAPSHOTS));
 
 		json_t* snapshotsJ = json_object_get(rootJ, "snapshots");
-		json_t* snapshotJ;
-		uint8_t inputIndex;
-		json_array_foreach(snapshotsJ, inputIndex, snapshotJ) {
-			snapshots[inputIndex].id = json_integer_value(json_object_get(snapshotJ, "id"));
-			snapshots[inputIndex].color = color::fromHexString(json_string_value(json_object_get(snapshotJ, "color")));
-			Sc::dataFromJson(snapshotJ, 0, inputIndex);
+		if (json_is_array(snapshotsJ)) {
+			size_t n = json_array_size(snapshotsJ);
+			size_t maxn = std::min((size_t)SNAPSHOTS, n);
+			for (size_t i = 0; i < maxn; ++i) {
+				json_t* snapshotJ = json_array_get(snapshotsJ, i);
+				if (!json_is_object(snapshotJ)) continue;
+				snapshots[i].id = json_integer_value(json_object_get(snapshotJ, "id"));
+				const char* cstr = json_string_value(json_object_get(snapshotJ, "color"));
+				if (cstr) snapshots[i].color = color::fromHexString(cstr);
+				Sc::dataFromJson(snapshotJ, 0, i);
+			}
 		}
 
 		json_t* outputJ = json_object_get(rootJ, "output");
@@ -423,17 +431,17 @@ struct TransitPadWidget : ThemedModuleWidget<TransitPadModule<>> {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(22.9f, 327.0f), module, MODULE::OUT_SEQ_INPUT));
-		addInput(createInputCentered<StoermelderPort>(Vec(135.0f, 327.0f), module, MODULE::OUT_SEQ_PH_INPUT));
-		addInput(createInputCentered<StoermelderPort>(Vec(97.0f, 327.0f), module, MODULE::OUT_X_INPUT));
-		addInput(createInputCentered<StoermelderPort>(Vec(173.0f, 327.0f), module, MODULE::OUT_Y_INPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(21.7f, 327.0f), module, MODULE::OUT_SEQ_INPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(89.5f, 327.0f), module, MODULE::OUT_SEQ_PH_INPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(127.5f, 327.0f), module, MODULE::OUT_X_INPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(165.5f, 327.0f), module, MODULE::OUT_Y_INPUT));
 
-		addParam(createParamCentered<XyScreenDummyMapButton>(Vec(104.3f, 309.4f), module, MODULE::OUT_X_POS));
-		addParam(createParamCentered<XyScreenDummyMapButton>(Vec(165.7f, 309.4f), module, MODULE::OUT_Y_POS));
+		addParam(createParamCentered<XyScreenDummyMapButton>(Vec(96.8f, 309.4f), module, MODULE::OUT_X_POS));
+		addParam(createParamCentered<XyScreenDummyMapButton>(Vec(158.2f, 309.4f), module, MODULE::OUT_Y_POS));
 
 		TransitPadXyScreenWidget<MODULE>* screenWidget = new TransitPadXyScreenWidget<MODULE>(module, MODULE::SNAPSHOT_X_POS, MODULE::SNAPSHOT_Y_POS, MODULE::OUT_X_POS, MODULE::OUT_Y_POS);
-		screenWidget->box.pos = Vec(12.3f, 41.2f);
-		screenWidget->box.size = Vec(245.4f, 245.4f);
+		screenWidget->box.pos = Vec(3.f, 39.4f);
+		screenWidget->box.size = Vec(249.f, 249.f);
 		addChild(screenWidget);
 
 		XySeqEditWidget<MODULE>* seqEditWidget = new XySeqEditWidget<MODULE>(module, MODULE::OUT_X_POS, MODULE::OUT_Y_POS);
@@ -441,7 +449,8 @@ struct TransitPadWidget : ThemedModuleWidget<TransitPadModule<>> {
 		seqEditWidget->box.size = screenWidget->box.size;
 		addChild(seqEditWidget);
 
-		TransitPadXySeqLedDisplay<MODULE>* seqDisplay1 = createWidgetCentered<TransitPadXySeqLedDisplay<MODULE>>(Vec(55.2f, 309.7f));
+		TransitPadXySeqLedDisplay<MODULE>* seqDisplay1 = createWidget<TransitPadXySeqLedDisplay<MODULE>>(Vec(43.3f, 303.1f));
+		seqDisplay1->box.size = Vec(24.6f, 13.2f);
 		seqDisplay1->module = module;
 		seqDisplay1->id = 0;
 		addChild(seqDisplay1);

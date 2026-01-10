@@ -798,19 +798,15 @@ struct XyScreenWidget : OpaqueWidget {
 			float sizeX = box.size.x / 8.f;
 			float sizeY = box.size.y / 8.f;
 
-			// Draw background
-			nvgBeginPath(args.vg);
-			nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
-			nvgFillColor(args.vg, nvgRGB(0, 16, 90));
-			nvgFill(args.vg);
+			math::Rect r = box.zeroPos().grow(Vec(3.f, 3.f));
 
-			// Draw gradient
-			math::Rect r = box.zeroPos();
+			// Black background
 			nvgBeginPath(args.vg);
 			nvgRect(args.vg, RECT_ARGS(r));
-			NVGcolor topColor = nvgRGBA(200, 200, 200, 40);
-			NVGcolor bottomColor = nvgRGBA(200, 200, 200, 0);
-			nvgFillPaint(args.vg, nvgLinearGradient(args.vg, 0.f, 0.f, 0.f, 80.f, topColor, bottomColor));
+			NVGcolor topColor = nvgRGB(0x22, 0x22, 0x22);
+			NVGcolor bottomColor = nvgRGB(0x12, 0x12, 0x12);
+			nvgFillPaint(args.vg, nvgLinearGradient(args.vg, 0.0, 0.0, 0.0, 25.0, topColor, bottomColor));
+			// nvgFillColor(args.vg, bottomColor);
 			nvgFill(args.vg);
 
 			// Draw grid
@@ -833,11 +829,37 @@ struct XyScreenWidget : OpaqueWidget {
 				nvgStroke(args.vg);
 			}
 
-			// Draw outer rectangle
+			nvgGlobalCompositeOperation(args.vg, NVG_SOURCE_OVER);
+
+			// Outer strokes
 			nvgBeginPath(args.vg);
-			nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
-			nvgStrokeWidth(args.vg, 0.7f);
-			nvgStrokeColor(args.vg, color::mult(color::WHITE, 0.25f));
+			nvgMoveTo(args.vg, r.pos.x, r.pos.y - 0.5);
+			nvgLineTo(args.vg, r.size.x + r.pos.x, r.pos.y - 0.5);
+			nvgStrokeColor(args.vg, nvgRGBAf(0, 0, 0, 0.24));
+			nvgStrokeWidth(args.vg, 1.0);
+			nvgStroke(args.vg);
+
+			nvgBeginPath(args.vg);
+			nvgMoveTo(args.vg, r.pos.x, r.size.y + 2 * r.pos.y + 0.5);
+			nvgLineTo(args.vg, r.size.x + r.pos.x, r.size.y + 2 * r.pos.y + 0.5);
+			nvgStrokeColor(args.vg, nvgRGBAf(1, 1, 1, 0.25));
+			nvgStrokeWidth(args.vg, 1.0);
+			nvgStroke(args.vg);
+
+			// Inner strokes
+			nvgBeginPath(args.vg);
+			nvgMoveTo(args.vg, r.pos.x, r.pos.y + 2.5);
+			nvgLineTo(args.vg, r.size.x + r.pos.x, r.pos.y + 2.5);
+			nvgStrokeColor(args.vg, nvgRGBAf(1, 1, 1, 0.20));
+			nvgStrokeWidth(args.vg, 1.0);
+			nvgStroke(args.vg);
+
+			// Black border
+			math::Rect rBorder = r.shrink(math::Vec(1, 1));
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, RECT_ARGS(rBorder));
+			nvgStrokeColor(args.vg, bottomColor);
+			nvgStrokeWidth(args.vg, 2.0);
 			nvgStroke(args.vg);
 		}
 
