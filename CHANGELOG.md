@@ -2,6 +2,8 @@
 
 ### Changes and Fixes
 
+- Module [SAIL](./docs/sail/Sail.md)
+    - Fixed occasional crash (#358)
 - Module [STROKE](./docs/stroke/Stroke.md)
     - Fixed broken _Zoom out_ command
 
