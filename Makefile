@@ -19,6 +19,7 @@ ifdef DEBUG
 	CXXFLAGS := $(filter-out -funsafe-math-optimizations,$(CXXFLAGS))
 	CXXFLAGS := $(filter-out -O3,$(CXXFLAGS))
 	CXXFLAGS += -O0 -g
+	CFLAGS := $(filter-out -O3,$(CFLAGS))
 	CFLAGS += -O0 -g
 endif
 
