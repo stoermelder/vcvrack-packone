@@ -6,13 +6,26 @@
 namespace StoermelderPackOne {
 namespace Transit {
 
-template <uint8_t SNAPSHOTS = 8>
+static const std::vector<std::pair<NVGcolor, std::string>> colors = {
+	{ color::GREEN, "Green" },
+	{ color::MAGENTA, "Magenta" },
+	{ color::BLUE, "Blue" },
+	{ color::YELLOW, "Yellow" },
+	{ color::CYAN, "Cyan" },
+	{ color::WHITE, "White" },
+	{ color::RED, "Red" },
+	{ color::mult(color::WHITE, 0.45f), "Grey" }
+};
+
+
+template <uint8_t SNAPSHOTS = 8, uint8_t SETS = 8>
 struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>, XySeqModule<1> {
 	enum ParamIds {
 		ENUMS(SNAPSHOT_X_POS, SNAPSHOTS),
 		ENUMS(SNAPSHOT_Y_POS, SNAPSHOTS),
 		OUT_X_POS,
 		OUT_Y_POS,
+		ENUMS(SET_PARAM, SETS),
 		NUM_PARAMS
 	};
 	enum InputIds {
@@ -26,6 +39,7 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		NUM_OUTPUTS
 	};
 	enum LightIds {
+		ENUMS(SET_LIGHT, SETS),
 		NUM_LIGHTS
 	};
 
@@ -48,13 +62,20 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 	float outUiY, outInY;
 	dsp::ExponentialFilter outYfilter;
 
-	std::vector<TransitPadSource> snapshots;
+	int currentSet = 0;
+	std::vector<TransitPadSource> snapshots[SETS];
+	NVGcolor setColor[SETS];
 
+	ClockDividerEx buttonDivider;
 	ClockDividerEx lightDivider;
 
 	TransitPadModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+
+		for (uint8_t s = 0; s < SETS; s++) {
+			configSwitch(SET_PARAM + s, 0.0f, 1.0f, 0.0f, string::f("Snapshot-set #%i", s + 1));
+		}
 
 		configParam<XyScreenParamQuantity>(SNAPSHOT_X_POS + 0, 0.0f, 1.0f, 0.1f, "Snapshot A x-pos");
 		configParam<XyScreenParamQuantity>(SNAPSHOT_Y_POS + 0, 0.0f, 1.0f, 0.1f, "Snapshot A y-pos");
@@ -80,11 +101,19 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		configParam<XyScreenParamQuantity>(OUT_X_POS, 0.0f, 1.0f, 0.5f, "Mix x-pos");
 		configParam<XyScreenParamQuantity>(OUT_Y_POS, 0.0f, 1.0f, 0.5f, "Mix y-pos");
 
-		snapshots.resize(SNAPSHOTS);
+		for (uint8_t s = 0; s < SETS; s++) {
+			snapshots[s].resize(SNAPSHOTS);
+		}
 		onReset();
 	}
 
+	void onSampleRateChange(const Module::SampleRateChangeEvent& e) override {
+		buttonDivider.setDivision(e.sampleRate / 1000.f);
+		lightDivider.setDivision(e.sampleRate / 100.f);
+	}
+
 	void onExpanderChange(const Module::ExpanderChangeEvent& e) override {
+		masterModule = nullptr;
 		notifyExpanderListeners("Transit");
 	}
 
@@ -92,6 +121,7 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		Sc::scResetSelection();
 		init();
 		snapshotsUsed = 4;
+		currentSet = 0;
 
 		Sc::scReset();
 		Seq::seqReset();
@@ -114,10 +144,19 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 
 	// TransitPadInterface
 	const std::vector<TransitPadSource>& getPadFactors() override {
-		return snapshots;
+		return snapshots[currentSet];
 	}
 
 	void process(const ProcessArgs& args) override {
+		if (buttonDivider.process()) {
+			for (uint8_t s = 0; s < SETS; s++) {
+				if (params[SET_PARAM + s].getValue() > 0.5f && currentSet != s) {
+					currentSet = s;
+					break;
+				}
+			}
+		}	
+
 		for (uint8_t j = 0; j < snapshotsUsed; j++) {
 			inputInX[j] = Sc::scGetXFiltered(j, args.sampleTime);
 			inputInY[j] = Sc::scGetYFiltered(j, args.sampleTime);
@@ -190,12 +229,22 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 
 			float r = Sc::scGetRadiusFinal(j);
 			if (dist[j] < r) {
-				snapshots[j].weight = std::min(1.0f, (r - dist[j]) / r * 1.1f);
+				snapshots[currentSet][j].weight = std::min(1.0f, (r - dist[j]) / r * 1.1f);
 			}
 			else {
-				snapshots[j].weight = 0.f;
+				snapshots[currentSet][j].weight = 0.f;
 			}
 		}
+
+		if (lightDivider.process()) {
+			for (uint8_t s = 0; s < SETS; s++) {
+				lights[SET_LIGHT + s].setBrightness(currentSet == s ? 1.0f : 0.0f);
+			}
+		}
+	}
+
+	size_t getSetCount() {
+		return SETS;
 	}
 
 	bool seqPortUsed(int port) override {
@@ -206,11 +255,13 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		scSetItemImmediate(1, 0, paramQuantities[OUT_X_POS]->getDefaultValue(), paramQuantities[OUT_Y_POS]->getDefaultValue());
 		outXfilter.setTau(0.05f);
 		outYfilter.setTau(0.05f);
-		for (uint8_t i = 0; i < SNAPSHOTS; i++) {
-			dist[i] = std::numeric_limits<float>::infinity();
-			snapshots[i].id = i < 4 ? i : -1;
-			snapshots[i].color = TransitPadSource::getDefaultColor();
-			snapshots[i].weight = 0.f;
+		for (uint8_t s = 0; s < SETS; s++) {
+			for (uint8_t i = 0; i < SNAPSHOTS; i++) {
+				dist[i] = std::numeric_limits<float>::infinity();
+				snapshots[s][i].id = i < 4 ? i : -1;
+				snapshots[s][i].weight = 0.f;
+			}
+			setColor[s] = colors[s % colors.size()].first;
 		}
 	}
 
@@ -261,7 +312,22 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 	}
 
 	virtual inline NVGcolor scGetColor(uint8_t type, uint8_t id) override {
-		return type == 0 ? snapshots[id].color : color::WHITE;
+		return type == 0 ? setColor[currentSet] : color::WHITE;
+	}
+
+	std::string getItemLabel(uint8_t s, uint8_t id) {
+		if (masterModule == nullptr)
+			return "<No TRANSIT module>";
+		if (snapshots[s][id].id >= 0) {
+			std::string custom = *masterModule->expSlotLabel(snapshots[s][id].id);
+			if (custom != "")
+				return string::f("Snapshot #%i: %s", snapshots[s][id].id + 1, custom.c_str());
+			else
+				return string::f("Snapshot #%i", snapshots[s][id].id + 1);
+		}
+		else {
+			return "No snapshot";
+		}
 	}
 
 	json_t* dataToJson() override {
@@ -269,15 +335,21 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 		json_object_set_new(rootJ, "snapshotsUsed", json_integer(snapshotsUsed));
 
-		json_t* snapshotsJ = json_array();
-		for (uint8_t i = 0; i < SNAPSHOTS; i++) {
-			json_t* snapshotJ = json_object();
-			json_object_set_new(snapshotJ, "id", json_integer(snapshots[i].id));
-        	json_object_set_new(snapshotJ, "color", json_string(color::toHexString(snapshots[i].color).c_str()));
-			Sc::dataToJson(snapshotJ, 0, i);
-			json_array_append_new(snapshotsJ, snapshotJ);
+		json_t* setsJ = json_array();
+		for (uint8_t s = 0; s < SETS; s++) {
+			json_t* setJ = json_object();
+			json_t* snapshotsJ = json_array();
+			for (uint8_t i = 0; i < SNAPSHOTS; i++) {
+				json_t* snapshotJ = json_object();
+				json_object_set_new(snapshotJ, "id", json_integer(snapshots[s][i].id));
+				Sc::dataToJson(snapshotJ, 0, i);
+				json_array_append_new(snapshotsJ, snapshotJ);
+			}
+			json_object_set_new(setJ, "snapshots", snapshotsJ);
+			json_object_set_new(setJ, "color", json_string(color::toHexString(setColor[s]).c_str()));
+			json_array_append_new(setsJ, setJ);
 		}
-		json_object_set_new(rootJ, "snapshots", snapshotsJ);
+		json_object_set_new(rootJ, "sets", setsJ);
 
 		json_t* outputJ = json_object();
 		Sc::dataToJson(outputJ, 1, 0);
@@ -293,18 +365,20 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		int su = json_integer_value(json_object_get(rootJ, "snapshotsUsed"));
 		snapshotsUsed = std::max(0, std::min(su, (int)SNAPSHOTS));
 
-		json_t* snapshotsJ = json_object_get(rootJ, "snapshots");
-		if (json_is_array(snapshotsJ)) {
-			size_t n = json_array_size(snapshotsJ);
-			size_t maxn = std::min((size_t)SNAPSHOTS, n);
-			for (size_t i = 0; i < maxn; ++i) {
-				json_t* snapshotJ = json_array_get(snapshotsJ, i);
-				if (!json_is_object(snapshotJ)) continue;
-				snapshots[i].id = json_integer_value(json_object_get(snapshotJ, "id"));
-				const char* cstr = json_string_value(json_object_get(snapshotJ, "color"));
-				if (cstr) snapshots[i].color = color::fromHexString(cstr);
-				Sc::dataFromJson(snapshotJ, 0, i);
+		json_t* setsJ = json_object_get(rootJ, "sets");
+		for (size_t s = 0; s < json_array_size(setsJ); ++s) {
+			json_t* setJ = json_array_get(setsJ, s);
+			json_t* snapshotsJ = json_object_get(setJ, "snapshots");
+			if (json_is_array(snapshotsJ)) {
+				size_t n = json_array_size(snapshotsJ);
+				size_t maxn = std::min((size_t)SNAPSHOTS, n);
+				for (size_t i = 0; i < maxn; ++i) {
+					json_t* snapshotJ = json_array_get(snapshotsJ, i);
+					snapshots[s][i].id = json_integer_value(json_object_get(snapshotJ, "id"));
+					Sc::dataFromJson(snapshotJ, 0, i);
+				}
 			}
+			setColor[s] = color::fromHexString(json_string_value(json_object_get(setJ, "color")));
 		}
 
 		json_t* outputJ = json_object_get(rootJ, "output");
@@ -323,35 +397,21 @@ struct TransitPadSnapshotDragWidget : XyScreenDragWidget<MODULE> {
 	}
 
  	std::string getItemName() override {
-		if (AW::module->snapshots[AW::id].id >= 0) {
-			std::string custom = *AW::module->masterModule->expSlotLabel(AW::module->snapshots[AW::id].id);
-			if (custom != "")
-				return string::f("Snapshot #%i: %s", AW::module->snapshots[AW::id].id + 1, custom.c_str());
-			else
-				return string::f("Snapshot #%i", AW::module->snapshots[AW::id].id + 1);
-		}
-		else
-			return "No snapshot";
+		return AW::module->getItemLabel(AW::module->currentSet, AW::id);
 	}
 
-	void appendContextMenu(Menu* menu) override {
-		menu->addChild(new MenuSeparator());
+	void prependContextMenu(Menu* menu) override {
 		menu->addChild(createMenuItem("Bind snapshot", "", [=]() {
-			AW::module->snapshots[AW::id].id = AW::module->masterModule->transitSlotSelected();
-		}));
+			AW::module->snapshots[AW::module->currentSet][AW::id].id = AW::module->masterModule->transitSlotSelected();
+		}, AW::module->masterModule == nullptr));
 		menu->addChild(createMenuItem("Unbind snapshot", "", [=]() {
-			AW::module->snapshots[AW::id].id = -1;
+			AW::module->snapshots[AW::module->currentSet][AW::id].id = -1;
 		}));
 		menu->addChild(new MenuSeparator());
-		menu->addChild(Rack::createColorSubmenuItem("Color", &AW::module->snapshots[AW::id].color, {
-			{ color::GREEN, "Green" },
-			{ color::YELLOW, "Yellow" },
-			{ color::RED, "Red" },
-			{ color::CYAN, "Cyan" },
-			{ color::MAGENTA, "Magenta" },
-			{ color::BLUE, "Blue" },
-			{ color::WHITE, "White" },
-		}));
+		menu->addChild(createMenuLabel("Current set"));
+		menu->addChild(Rack::createColorSubmenuItem("Color", &AW::module->setColor[AW::module->currentSet], colors));
+		menu->addChild(new MenuSeparator());
+		menu->addChild(createMenuLabel("All sets"));
 	}
 };
 
@@ -401,7 +461,7 @@ struct TransitPadXyScreenWidget : XyScreenWidget<MODULE> {
 	void appendContextMenu(Menu* menu) override {
 		using StoermelderPackOne::Rack::createValuePtrMenuItem;
 		menu->addChild(new MenuSeparator());
-		menu->addChild(createSubmenuItem("Number of IN-ports", string::f("%i", this->module->snapshotsUsed),
+		menu->addChild(createSubmenuItem("Number of snapshots", string::f("%i", this->module->snapshotsUsed),
 			[=](Menu* menu) {
 				for (int i = 0; i < this->module->scGetItemCount(0); i++) {
 					menu->addChild(createValuePtrMenuItem(string::f("%i", i + 1), &this->module->snapshotsUsed, i + 1));
@@ -420,28 +480,50 @@ struct TransitPadXySeqLedDisplay : XySeqLedDisplay<MODULE> {
 };
 
 
+template <typename MODULE>
+struct TransitPadSetButton : VCVButton {
+	MODULE* module;
+	size_t setIndex;
+	virtual void appendContextMenu(ui::Menu* menu) override {
+		menu->addChild(new MenuSeparator());
+		menu->addChild(Rack::createColorSubmenuItem("Color", &module->setColor[setIndex], colors));
+		menu->addChild(new MenuSeparator());
+		for (size_t i = 0; i < module->scGetItemCountActive(0); i++) {
+			menu->addChild(createMenuLabel(module->getItemLabel(setIndex, i))); 
+		}
+	}
+};
+
 struct TransitPadWidget : ThemedModuleWidget<TransitPadModule<>> {
 	typedef TransitPadModule<> MODULE;
 
 	TransitPadWidget(MODULE* module) : ThemedModuleWidget<MODULE>(module, "TransitPad") {
 		setModule(module);
 
+		for (size_t s = 0; s < module->getSetCount(); s++) {
+			TransitPadSetButton<MODULE>* button = createParamCentered<TransitPadSetButton<MODULE>>(Vec(17.6f + s * 27.1f, 46.4f), module, MODULE::SET_PARAM + s);
+			button->module = module;
+			button->setIndex = s;
+			addChild(button);
+			addChild(createLightCentered<MediumSimpleLight<WhiteLight>>(Vec(17.6f + s * 27.1f, 46.4f), module, MODULE::SET_LIGHT + s));
+		}
+
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addInput(createInputCentered<StoermelderPort>(Vec(21.7f, 327.0f), module, MODULE::OUT_SEQ_INPUT));
-		addInput(createInputCentered<StoermelderPort>(Vec(89.5f, 327.0f), module, MODULE::OUT_SEQ_PH_INPUT));
-		addInput(createInputCentered<StoermelderPort>(Vec(127.5f, 327.0f), module, MODULE::OUT_X_INPUT));
-		addInput(createInputCentered<StoermelderPort>(Vec(165.5f, 327.0f), module, MODULE::OUT_Y_INPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(21.0f, 327.0f), module, MODULE::OUT_SEQ_INPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(57.5f, 327.0f), module, MODULE::OUT_SEQ_PH_INPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(167.7f, 327.0f), module, MODULE::OUT_X_INPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(204.3f, 327.0f), module, MODULE::OUT_Y_INPUT));
 
-		addParam(createParamCentered<XyScreenDummyMapButton>(Vec(96.8f, 309.4f), module, MODULE::OUT_X_POS));
-		addParam(createParamCentered<XyScreenDummyMapButton>(Vec(158.2f, 309.4f), module, MODULE::OUT_Y_POS));
+		addParam(createParamCentered<XyScreenDummyMapButton>(Vec(175.0f, 309.4f), module, MODULE::OUT_X_POS));
+		addParam(createParamCentered<XyScreenDummyMapButton>(Vec(197.0f, 309.4f), module, MODULE::OUT_Y_POS));
 
 		TransitPadXyScreenWidget<MODULE>* screenWidget = new TransitPadXyScreenWidget<MODULE>(module, MODULE::SNAPSHOT_X_POS, MODULE::SNAPSHOT_Y_POS, MODULE::OUT_X_POS, MODULE::OUT_Y_POS);
-		screenWidget->box.pos = Vec(3.f, 39.4f);
-		screenWidget->box.size = Vec(249.f, 249.f);
+		screenWidget->box.pos = Vec(3.f, 63.3f + 3.f);
+		screenWidget->box.size = Vec(225.f - 6.f, 225.f - 6.f);
 		addChild(screenWidget);
 
 		XySeqEditWidget<MODULE>* seqEditWidget = new XySeqEditWidget<MODULE>(module, MODULE::OUT_X_POS, MODULE::OUT_Y_POS);
@@ -449,7 +531,7 @@ struct TransitPadWidget : ThemedModuleWidget<TransitPadModule<>> {
 		seqEditWidget->box.size = screenWidget->box.size;
 		addChild(seqEditWidget);
 
-		TransitPadXySeqLedDisplay<MODULE>* seqDisplay1 = createWidget<TransitPadXySeqLedDisplay<MODULE>>(Vec(43.3f, 303.1f));
+		TransitPadXySeqLedDisplay<MODULE>* seqDisplay1 = createWidget<TransitPadXySeqLedDisplay<MODULE>>(Vec(77.9f, 329.8f));
 		seqDisplay1->box.size = Vec(24.6f, 13.2f);
 		seqDisplay1->module = module;
 		seqDisplay1->id = 0;

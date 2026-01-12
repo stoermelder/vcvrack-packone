@@ -540,12 +540,10 @@ struct XyScreenDragWidget : OpaqueWidget {
 	}
 
 	void drawLayer(const Widget::DrawArgs& args, int layer) override {
-		if (!module)
-			return;
+		if (!module) return;
 
 		if (layer == 1) {
-			if (!module->scIsActive(type, id))
-				return;
+			if (!module->scIsActive(type, id)) return;
 
 			NVGcolor cc = module->scGetColor(type, id);
 
@@ -622,20 +620,22 @@ struct XyScreenDragWidget : OpaqueWidget {
 				nvgResetScissor(args.vg);
 				nvgRestore(args.vg);
 
-				textColor = nvgRGBA(0, 16, 90, 200);
+				textColor = type == 0 ? nvgRGBA(0, 16, 90, 200) : cc;
 			}
 			else {
 				textColor = cc;
 			}
 
 			// Draw inner circle
-			nvgBeginPath(args.vg);
-			nvgCircle(args.vg, c.x, c.y, radius - 2.f);
-			nvgStrokeColor(args.vg, cc);
-			nvgStrokeWidth(args.vg, 1.0f);
-			nvgStroke(args.vg);
-			nvgFillColor(args.vg, color::mult(cc, 0.5f));
-			nvgFill(args.vg);
+			if (type == 0) {
+				nvgBeginPath(args.vg);
+				nvgCircle(args.vg, c.x, c.y, radius - 2.f);
+				nvgStrokeColor(args.vg, cc);
+				nvgStrokeWidth(args.vg, 1.0f);
+				nvgStroke(args.vg);
+				nvgFillColor(args.vg, color::mult(cc, 0.5f));
+				nvgFill(args.vg);
+			}
 
 			// Draw amount circle
 			nvgBeginPath(args.vg);
@@ -726,6 +726,8 @@ struct XyScreenDragWidget : OpaqueWidget {
 	void createContextMenu() {
 		ui::Menu* menu = createMenu();
 		menu->addChild(createMenuLabel(getItemName()));
+		prependContextMenu(menu);
+
 		if (type == 0) {
 			menu->addChild(new XyScreenAmountSlider<MODULE>(module, id));
 			menu->addChild(new XyScreenRadiusSlider<MODULE>(module, id));
@@ -741,6 +743,7 @@ struct XyScreenDragWidget : OpaqueWidget {
 		return '1' + id;
 	}
 
+	virtual void prependContextMenu(Menu* menu) {}
 	virtual void appendContextMenu(Menu* menu) {}
 };
 
@@ -884,6 +887,8 @@ struct XyScreenWidget : OpaqueWidget {
 	void createContextMenu() {
 		ui::Menu* menu = createMenu();
 		menu->addChild(createMenuLabel(module->model->name));
+		prependContextMenu(menu);
+
 		menu->addChild(createMenuItem("Initialize", "", [=] {
 			history::ModuleChange* h = new history::ModuleChange;
 			h->name = module->model->plugin->brand + " " + module->model->name + " initialize";
@@ -997,6 +1002,7 @@ struct XyScreenWidget : OpaqueWidget {
 		appendContextMenu(menu);
 	}
 
+	virtual void prependContextMenu(Menu* menu) {}
 	virtual void appendContextMenu(Menu* menu) {}
 };
 

@@ -124,13 +124,9 @@ struct TransitPadMaster {
 struct TransitPadInterface {
 	TransitPadMaster* masterModule = nullptr;
 	struct TransitPadSource {
-		static const NVGcolor getDefaultColor() { return color::GREEN; }
+		float weight;
 		/** [Stored to JSON] */
 		int id;
-		/** [Stored to JSON] */
-		NVGcolor color = getDefaultColor();
-
-		float weight;
 	};
 
 #pragma GCC diagnostic push
