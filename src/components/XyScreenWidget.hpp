@@ -796,6 +796,7 @@ struct XyScreenWidget : OpaqueWidget {
 		if (layer == 1) {
 			// Dim the display but don't darken it completely
 			float b = std::max(0.2f, settings::rackBrightness);
+			float b_inv = 1.f + std::max(b - settings::rackBrightness, 0.f) * 8.f;
 			nvgGlobalAlpha(args.vg, b);
 
 			float sizeX = box.size.x / 8.f;
@@ -806,8 +807,8 @@ struct XyScreenWidget : OpaqueWidget {
 			// Black background
 			nvgBeginPath(args.vg);
 			nvgRect(args.vg, RECT_ARGS(r));
-			NVGcolor topColor = nvgRGB(0x22, 0x22, 0x22);
-			NVGcolor bottomColor = nvgRGB(0x12, 0x12, 0x12);
+			NVGcolor topColor = color::mult(nvgRGB(0x22, 0x22, 0x22), b_inv);
+			NVGcolor bottomColor = color::mult(nvgRGB(0x12, 0x12, 0x12), b_inv);
 			nvgFillPaint(args.vg, nvgLinearGradient(args.vg, 0.0, 0.0, 0.0, 25.0, topColor, bottomColor));
 			// nvgFillColor(args.vg, bottomColor);
 			nvgFill(args.vg);
