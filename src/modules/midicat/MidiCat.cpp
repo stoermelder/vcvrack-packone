@@ -1669,6 +1669,7 @@ struct MidiCatSelectionWidget : Widget {
 
 		selectedParams.reverse();
 		for (ParamWidget* pw : selectedParams) {
+			if (!pw->module) continue;
 			int id = module->enableLearn(-1, true);
 			module->learnParam(id, pw->module->getId(), pw->paramId);
 

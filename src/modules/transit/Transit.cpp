@@ -1259,6 +1259,7 @@ struct TransitSelectionWidget : Widget {
 
 		selectedParams.reverse();
 		for (ParamWidget* pw : selectedParams) {
+			if (!pw->module) continue;
 			module->bindAddParameterRequest(pw->module->getId(), pw->paramId);
 		}
 	}
@@ -1398,19 +1399,21 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 
 		if (learn == 2 || learn == 3) {
 			// Check if a ParamWidget was touched
-			ParamWidget* touchedParam = APP->scene->rack->getTouchedParam();
-			if (touchedParam && touchedParam->getParamQuantity()->module != module) {
-				APP->scene->rack->setTouchedParam(NULL);
-				int64_t moduleId = touchedParam->getParamQuantity()->module->id;
-				int paramId = touchedParam->getParamQuantity()->paramId;
-				module->bindAddParameterRequest(moduleId, paramId);
-				if (learn == 2) { 
-					disableLearn();
+			ParamWidget* pw = APP->scene->rack->getTouchedParam();
+			if (pw) {
+				ParamQuantity* pq = pw->getParamQuantity();
+				if (pq && pq->module && pq->module != module) {
+					APP->scene->rack->setTouchedParam(NULL);
+					int64_t moduleId = pq->module->id;
+					int paramId = pq->paramId;
+					module->bindAddParameterRequest(moduleId, paramId);
+					if (learn == 2) { 
+						disableLearn();
+					}
+					return;
 				}
 			}
-			else {
-				disableLearn();
-			}
+			disableLearn();
 		}
 	}
 
