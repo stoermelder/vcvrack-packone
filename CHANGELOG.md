@@ -6,6 +6,8 @@
     - Fixed occasional crash (#358)
 - Module [STROKE](./docs/stroke/Stroke.md)
     - Fixed broken _Zoom out_ command
+- Module [TRANSIT](./docs/transit/Transit.md)
+    - Implemented alternative parameter binding by selection box
 
 ## 2.2.0
 

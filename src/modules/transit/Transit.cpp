@@ -536,7 +536,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 			return NULL;
 		// Get ParamQuantity
 		int paramId = handle->paramId;
-		if (paramId >= module->paramQuantities.size())
+		if (paramId >= (int)module->paramQuantities.size())
 			return NULL;
 		ParamQuantity* paramQuantity = module->paramQuantities[paramId];
 		if (!paramQuantity)
@@ -1183,12 +1183,128 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 };
 
 template <int NUM_PRESETS>
+struct TransitSelectionWidget : Widget {
+	TransitModule<NUM_PRESETS>* module;
+
+	bool learn = false;
+
+	bool selecting = false;
+	math::Vec selectionStart;
+	math::Vec selectionEnd;
+	math::Vec mousePos;
+
+	void enableLearn() {
+		learn = !learn;
+		GLFWcursor* cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
+		if (APP->window) glfwSetCursor(APP->window->win, cursor);
+	}
+
+	void onHover(const HoverEvent& e) override {
+		mousePos = e.pos;
+		Widget::onHover(e);
+	}
+
+	void onButton(const ButtonEvent& e) override {
+		if (learn && e.button == GLFW_MOUSE_BUTTON_LEFT) {
+			e.consume(this);
+		}
+		Widget::onButton(e);
+	}
+
+	void onDragStart(const DragStartEvent& e) override {
+		if (learn && e.button == GLFW_MOUSE_BUTTON_LEFT) {
+			selecting = true;
+			selectionStart = mousePos;
+			selectionEnd = mousePos;
+			e.consume(this);
+		}
+		Widget::onDragStart(e);
+	}
+
+	void onDragEnd(const DragEndEvent& e) override {
+		if (selecting && e.button == GLFW_MOUSE_BUTTON_LEFT) {
+			mapParamsFromRect();
+			selecting = false;
+			learn = false;
+			if (APP->window) glfwSetCursor(APP->window->win, NULL);
+			e.consume(this);
+		}
+		Widget::onDragEnd(e);
+	}
+
+	void onDragHover(const DragHoverEvent& e) override {
+		mousePos = e.pos;
+		if (selecting) {
+			selectionEnd = mousePos;
+		}
+		Widget::onDragHover(e);
+	}
+
+	void mapParamsFromRect() {
+		math::Rect selectionBox = math::Rect::fromCorners(selectionStart, selectionEnd);
+		std::list<ModuleWidget*> selected;
+		for (ModuleWidget* mw : APP->scene->rack->getModules()) {
+			if (selectionBox.intersects(mw->box)) {
+				selected.push_back(mw);
+			}
+		}
+		if (selected.size() != 1) {
+			return;
+		}
+
+		ModuleWidget* mw = selected.front();
+		std::list<ParamWidget*> selectedParams;
+		math::Rect selectionBox1(selectionBox.pos.minus(mw->box.pos), selectionBox.size);
+		getAllDescendentsByTypeAndBox<ParamWidget*>(mw, selectionBox1, selectedParams);
+
+		selectedParams.reverse();
+		for (ParamWidget* pw : selectedParams) {
+			module->bindAddParameterRequest(pw->module->getId(), pw->paramId);
+		}
+	}
+
+	void draw(const DrawArgs& args) override {
+		// Draw selection rectangle
+		if (selecting) {
+			nvgBeginPath(args.vg);
+			math::Rect selectionBox = math::Rect::fromCorners(selectionStart, selectionEnd);
+			nvgRect(args.vg, RECT_ARGS(selectionBox));
+			nvgFillColor(args.vg, nvgRGBAf(0, 0, 1, 0.25));
+			nvgFill(args.vg);
+			nvgStrokeWidth(args.vg, 2.0);
+			nvgStrokeColor(args.vg, nvgRGBAf(0, 0, 1, 0.5));
+			nvgStroke(args.vg);
+		}
+	}
+
+	template <class T>
+	void getAllDescendentsByTypeAndBox(Widget* w, math::Rect selectionBox, std::list<T>& selected) {
+		for (auto it = w->children.rbegin(); it != w->children.rend(); it++) {
+			Widget* child = *it;
+			// Filter child by visibility and position
+			if (!child->visible)
+				continue;
+			if (!selectionBox.intersects(child->box))
+				continue;
+
+			math::Rect selectionBox1(selectionBox.pos.minus(child->box.pos), selectionBox.size);
+			getAllDescendentsByTypeAndBox<T>(child, selectionBox1, selected);
+			T t = dynamic_cast<T>(child);
+			if (t) {
+				selected.push_back(t);
+			}
+		}
+	}
+}; // struct TransitSelectionWidget
+
+template <int NUM_PRESETS>
 struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 	typedef TransitWidget<NUM_PRESETS> WIDGET;
 	typedef ThemedModuleWidget<TransitModule<NUM_PRESETS>> BASE;
 	typedef TransitModule<NUM_PRESETS> MODULE;
 	
 	int learn = 0;
+	TransitSelectionWidget<NUM_PRESETS>* selectionWidget = nullptr;
 
 	TransitWidget(MODULE* module)
 		: ThemedModuleWidget<MODULE>(module, "Transit") {
@@ -1219,6 +1335,23 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 			ledButton->id = i;
 			BASE::addParam(ledButton);
 			BASE::addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(60.0f, 46.4f + o), module, MODULE::LIGHT_PRESET + i * 3));
+		}
+
+		if (module) {
+			selectionWidget = new TransitSelectionWidget<NUM_PRESETS>;
+			selectionWidget->module = module;
+			APP->scene->rack->addChild(selectionWidget);
+		}
+	}
+
+	~TransitWidget() {
+		if (learn != 0 && APP->window) {
+			if (APP->window) glfwSetCursor(APP->window->win, NULL);
+		}
+
+		if (selectionWidget) {
+			APP->scene->rack->removeChild(selectionWidget);
+			delete selectionWidget;
 		}
 	}
 	
@@ -1472,6 +1605,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 		menu->addChild(createMenuItem("Bind module (select)", "", [=]() { enableLearn(1); }));
 		menu->addChild(construct<BindParameterItem>(&MenuItem::text, "Bind single parameter", &BindParameterItem::rightText, RACK_MOD_SHIFT_NAME "+B", &BindParameterItem::widget, this, &BindParameterItem::mode, 2));
 		menu->addChild(construct<BindParameterItem>(&MenuItem::text, "Bind multiple parameters", &BindParameterItem::rightText, RACK_MOD_SHIFT_NAME "+A", &BindParameterItem::widget, this, &BindParameterItem::mode, 3));
+		menu->addChild(createMenuItem("Bind parameters by selection", "", [=]() { selectionWidget->enableLearn(); }));
 
 		// Use atomic snapshot published by the engine thread to avoid racing with engine mutations
 		auto snap = std::atomic_load(&module->sourceHandlesPtr);
