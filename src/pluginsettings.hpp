@@ -20,6 +20,8 @@ struct Settings {
 	std::string stripDirVcvss = rack::asset::user("patches");
 	std::string stripDirVcvs = rack::asset::user("selections");
 
+	bool ahabMidiVirtualEnabled = false;
+
 	void saveToJson();
 	void readFromJson();
 };

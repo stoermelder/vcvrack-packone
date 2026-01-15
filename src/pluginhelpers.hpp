@@ -285,5 +285,21 @@ inline ui::Slider* createPtrSlider(float* valuePtr, float minValue = 0.f, float 
 	);
 }
 
+
+/** Helper to create a pre-configured TextField for menus or overlays.
+Example:
+	// inside a menu lambda
+	auto* tf = createTextField(module->sim->udpAddress(), 200.0f);
+	m->addChild(tf);
+	// retrieve value later via tf->text
+*/
+inline ui::TextField* createTextField(const std::string& initial = "", const std::string& placeHolder = "", float width = 120.0f) {
+	ui::TextField* tf = new ui::TextField();
+	tf->box.size.x = width;
+	tf->text = initial;
+	tf->placeholder = placeHolder;
+	return tf;
+}
+
 } // namespace Rack
 } // namespace StoermelderPackOne

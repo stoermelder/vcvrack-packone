@@ -1,0 +1,233 @@
+diff --git a/base.h b/base.h
+index 446b627..9308248 100644
+--- a/base.h
++++ b/base.h
+@@ -1,4 +1,7 @@
+ #pragma once
++#ifdef __cplusplus
++#define restrict
++#endif
+ #include <assert.h>
+ #include <limits.h>
+ #include <stdbool.h>
+@@ -108,6 +111,8 @@ static bool orca_is_valid_glyph(Glyph c) {
+   case ';':
+   case '=':
+   case '?':
++  case '<':
++  case '>':
+     return true;
+   }
+   return false;
+diff --git a/gbuffer.h b/gbuffer.h
+index 3bd6271..31e25e5 100644
+--- a/gbuffer.h
++++ b/gbuffer.h
+@@ -51,7 +51,7 @@ ORCA_OK_IF_UNUSED
+ static Mark_flags mbuffer_peek(Mark *mbuf, Usz height, Usz width, Usz y,
+                                Usz x) {
+   (void)height;
+-  return mbuf[y * width + x];
++  return (Mark_flags)mbuf[y * width + x];
+ }
+ 
+ ORCA_OK_IF_UNUSED
+@@ -61,7 +61,7 @@ static Mark_flags mbuffer_peek_relative(Mark *mbuf, Usz height, Usz width,
+   Isz x0 = (Isz)x + offs_x;
+   if (y0 >= (Isz)height || x0 >= (Isz)width || y0 < 0 || x0 < 0)
+     return Mark_flag_none;
+-  return mbuf[(Usz)y0 * width + (Usz)x0];
++  return (Mark_flags)mbuf[(Usz)y0 * width + (Usz)x0];
+ }
+ 
+ ORCA_OK_IF_UNUSED
+diff --git a/osc_out.c b/osc_out.c
+index 4711bd5..fede7b9 100644
+--- a/osc_out.c
++++ b/osc_out.c
+@@ -1,11 +1,16 @@
+ #include "osc_out.h"
++#ifdef _WIN32
++#include <winsock2.h>
++#include <ws2tcpip.h>
++#else
+ #include <arpa/inet.h>
+-#include <errno.h>
+ #include <netdb.h>
+ #include <netinet/in.h>
+-#include <stdio.h>
+ #include <sys/socket.h>
+ #include <sys/types.h>
++#endif
++#include <errno.h>
++#include <stdio.h>
+ 
+ struct Oosc_dev {
+   int fd;
+diff --git a/sim.c b/sim.c
+index 8390255..dfcf36b 100644
+--- a/sim.c
++++ b/sim.c
+@@ -70,6 +70,14 @@ static U8 midi_note_number_of(Glyph g) {
+   return (U8)(deg / 7 * 12 + (I8[]){0, 2, 4, 5, 7, 9, 11}[deg % 7] + sharp);
+ }
+ 
++// Inverse: map an absolute MIDI semitone number to the closest glyph.
++// Lowercase glyphs represent a sharp (one semitone above the natural).
++static Glyph from_midi_note_number(U8 note) {
++  static const int notes[12] = { 'C', 'c', 'D', 'd', 'E', 'F',
++                                 'f', 'G', 'g', 'A', 'a', 'B' };
++  return (Glyph)notes[note % 12];
++}
++
+ typedef struct {
+   Glyph *vars_slots;
+   Oevent_list *oevent_list;
+@@ -155,7 +163,9 @@ static void oper_poke_and_stun(Glyph *restrict gbuffer, Mark *restrict mbuffer,
+   _(':', midi)                                                                 \
+   _(';', udp)                                                                  \
+   _('=', osc)                                                                  \
+-  _('?', midipb)
++  _('?', midipb)                                                               \
++  _('<', vcvin)                                                                \
++  _('>', vcvout)                                                               \
+ 
+ #define ALPHA_OPERATORS(_)                                                     \
+   _('A', add)                                                                  \
+@@ -397,6 +407,88 @@ BEGIN_OPERATOR(midipb)
+   oe->lsb = (U8)(index_of(lsb_g) * 127 / 35);
+ END_OPERATOR
+ 
++BEGIN_OPERATOR(vcvin)
++  for (Usz i = 1; i < 4; ++i) {
++    PORT(0, (Isz)i, IN);
++  }
++  PORT(1, 0, OUT);
++  STOP_IF_NOT_BANGED;
++  Glyph a_g = PEEK(0, 1);
++  Glyph port_g = PEEK(0, 2);
++  Glyph b_g = PEEK(0, 3);
++  Usz a = index_of(a_g);
++  Usz b = index_of(b_g);
++  Usz port_index = index_of(port_g);
++  if (port_g == '.')
++    return;
++  if (b == 0)
++    b = 36;
++  Usz min, max;
++  if (a == b) {
++    POKE(1, 0, glyph_of(a));
++    return;
++  } else if (a < b) {
++    min = a;
++    max = b;
++  } else {
++    min = b;
++    max = a;
++  }
++  // Get value from C++ code
++  Usz val = custom_vcvin((void*)extra_params->oevent_list, port_index, min, max);
++  if (port_g >= 'a' && port_g <= 'd') {
++    // Letter ports 'a'..'d' => note mode
++    Glyph g = from_midi_note_number((U8)val);
++    POKE(1, 0, g);
++    return;
++  }
++  else {
++    POKE(1, 0, glyph_of(val));
++  }
++END_OPERATOR
++
++BEGIN_OPERATOR(vcvout)
++  for (Usz i = 1; i < 5; ++i) {
++    PORT(0, (Isz)i, IN);
++  }
++  STOP_IF_NOT_BANGED;
++  Glyph port_g = PEEK(0, 1);
++  Glyph a_g = PEEK(0, 2);
++  Glyph v_g = PEEK(0, 3);
++  Glyph b_g = PEEK(0, 4);
++  Usz a = index_of(a_g);
++  Usz b = index_of(b_g);
++  Usz port_index = index_of(port_g);
++  if (v_g == '.')
++    return;
++  if (port_g == '.')
++    return;
++  if (port_g >= 'a' && port_g <= 'd') {
++    // Letter ports 'a'..'d' => note mode
++    if (v_g == '.')
++      return;
++    U8 note_num = midi_note_number_of(v_g);
++    if (note_num == UINT8_MAX)
++      return;
++    custom_vcvout((void*)extra_params->oevent_list, port_index, a, 0.f, note_num);
++  }
++  else {
++    Usz v = index_of(v_g);
++    Usz min, max;
++    if (a == b) {
++      POKE(1, 0, glyph_of(a));
++      return;
++    } else if (a < b) {
++      min = a;
++      max = b;
++    } else {
++      min = b;
++      max = a;
++    }
++    custom_vcvout((void*)extra_params->oevent_list, port_index, min, max, v);
++  }
++END_OPERATOR
++
+ BEGIN_OPERATOR(add)
+   LOWERCASE_REQUIRES_BANG;
+   PORT(0, -1, IN | PARAM);
+diff --git a/sim.h b/sim.h
+index 1c10283..4da9ef9 100644
+--- a/sim.h
++++ b/sim.h
+@@ -2,6 +2,19 @@
+ #include "base.h"
+ #include "vmio.h"
+ 
++#ifdef __cplusplus
++extern "C" {
++#endif
++
+ void orca_run(Glyph *restrict gbuffer, Mark *restrict mbuffer, Usz height,
+               Usz width, Usz tick_number, Oevent_list *oevent_list,
+               Usz random_seed);
++
++// Function to get random value from C++ code
++Usz custom_vcvin(void* ptr, Usz port_num, Usz a, Usz b);
++// Function to write a CV value to C++ code
++void custom_vcvout(void* ptr, Usz port_num, Usz a, Usz b, Usz value);
++
++#ifdef __cplusplus
++}
++#endif
+diff --git a/sysmisc.c b/sysmisc.c
+index b91eaad..2452a93 100644
+--- a/sysmisc.c
++++ b/sysmisc.c
+@@ -1,6 +1,6 @@
+ #include "sysmisc.h"
+ #include "gbuffer.h"
+-#include "oso.h"
++#include "thirdparty/oso.h"
+ #include <ctype.h>
+ #include <errno.h>
+ #include <sys/stat.h>
+@@ -348,7 +348,11 @@ Conf_save_start_error conf_save_start(Conf_save *p,
+   if (!p->tempfile) {
+     // Try to create config dir, in case it doesn't exist. (XDG says we should
+     // do this, and use mode 0700.)
++#ifdef _WIN32
++    mkdir(osoc(dir));
++#else
+     mkdir(osoc(dir), 0700);
++#endif
+     p->tempfile = fopen(osoc(p->temppath), "w");
+   }
+   if (!p->tempfile) {

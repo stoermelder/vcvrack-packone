@@ -1,5 +1,10 @@
 ## 2.3.0
 
+### New modules
+
+- Module [AHAB](./docs/ahab/Ahab.md)
+    - A live programming environment for ORCA, an esoteric programming language designed to quickly create procedural sequencers
+
 ### Changes and Fixes
 
 - Module [SAIL](./docs/sail/Sail.md)
