@@ -340,3 +340,5 @@ FINE for MIDI-CAT must be placed on the right side of MIDI-CAT and can be used t
     - Fixed missing parameter updates after manual adjustment in some situations
     - Fixed broken MIDI learning for CC 31
     - Fixed broken _Locate and indicate_ mode
+- v2.3.0
+    - Added hotkey Ctrl/Cmd+Shift+R for resetting input-mode _Pickup (snap)_

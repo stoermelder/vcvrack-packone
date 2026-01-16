@@ -2624,6 +2624,14 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 					}
 					break;
 				}
+				case GLFW_KEY_R: {
+					if ((e.mods & RACK_MOD_MASK) == (RACK_MOD_SHIFT | RACK_MOD_CTRL)) {
+						MidiCatModule* module = dynamic_cast<MidiCatModule*>(this->module);
+						module->midiReset();
+						e.consume(this);
+					}
+					break;
+				}
 			}
 		}
 		ThemedModuleWidget<MidiCatModule>::onHoverKey(e);

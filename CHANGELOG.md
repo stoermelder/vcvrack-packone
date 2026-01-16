@@ -2,6 +2,8 @@
 
 ### Changes and Fixes
 
+- Module [MIDI-CAT](./docs/midicat/MidiCat.md)
+    - Added hotkey Ctrl/Cmd+Shift+R for resetting input-mode _Pickup (snap)_
 - Module [SAIL](./docs/sail/Sail.md)
     - Fixed occasional crash (#358)
 - Module [STROKE](./docs/stroke/Stroke.md)
@@ -41,7 +43,7 @@ The old behavior can be restored using _Unsafe fast_-mode, which will load prese
     - Added new defects _Pitch_, _Crush_ and _Dropout_
 - Module [GOTO](./docs/goto/Goto.md)
      - Jump-points can be multiple modules/a selection instead of a single module
-- Nodule [MIDI-CAT](./docs/midicat/MidiCat.md)
+- Module [MIDI-CAT](./docs/midicat/MidiCat.md)
     - Added input-modes _Snapped_ and _Snapped (short/long)_ for CC and Notes for use with snapped parameters (e.g. "Steps" on VCV SEQ3)
     - Added handling for MIDI System Reset message for resetting input-mode _Pickup (snap)_
     - Added color setting for mapping indicators
