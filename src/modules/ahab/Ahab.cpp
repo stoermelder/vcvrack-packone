@@ -1336,22 +1336,22 @@ struct AhabWidget : ThemedModuleWidget<AhabModule> {
 		: ThemedModuleWidget<AhabModule>(module, "Ahab") {
 		setModule(module);
 
-		addChild(createWidget<ThemedScrew>(Vec(RACK_GRID_WIDTH, 0)));
-		addChild(createWidget<ThemedScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
-		addChild(createWidget<ThemedScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
-		addChild(createWidget<ThemedScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
+		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
+		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addChild(createInputCentered<PJ301MPort>(math::Vec(22.5f, 67.9f), module, AhabModule::CLK_INPUT));
-		addChild(createInputCentered<PJ301MPort>(math::Vec(22.5f, 225.2f), module, AhabModule::IN_INPUT + 0));
-		addChild(createInputCentered<PJ301MPort>(math::Vec(22.5f, 258.9f), module, AhabModule::IN_INPUT + 1));
-		addChild(createInputCentered<PJ301MPort>(math::Vec(22.5f, 292.5f), module, AhabModule::IN_INPUT + 2));
-		addChild(createInputCentered<PJ301MPort>(math::Vec(22.5f, 326.2f), module, AhabModule::IN_INPUT + 3));
+		addChild(createInputCentered<StoermelderPort>(math::Vec(22.5f, 67.9f), module, AhabModule::CLK_INPUT));
+		addChild(createInputCentered<StoermelderPort>(math::Vec(22.5f, 225.2f), module, AhabModule::IN_INPUT + 0));
+		addChild(createInputCentered<StoermelderPort>(math::Vec(22.5f, 258.9f), module, AhabModule::IN_INPUT + 1));
+		addChild(createInputCentered<StoermelderPort>(math::Vec(22.5f, 292.5f), module, AhabModule::IN_INPUT + 2));
+		addChild(createInputCentered<StoermelderPort>(math::Vec(22.5f, 326.2f), module, AhabModule::IN_INPUT + 3));
 
-		addChild(createOutputCentered<PJ301MPort>(math::Vec(577.5f, 67.9f), module, AhabModule::CLK_OUTPUT));
-		addChild(createOutputCentered<PJ301MPort>(math::Vec(577.5f, 225.2f), module, AhabModule::OUT_OUTPUT + 0));
-		addChild(createOutputCentered<PJ301MPort>(math::Vec(577.5f, 258.9f), module, AhabModule::OUT_OUTPUT + 1));
-		addChild(createOutputCentered<PJ301MPort>(math::Vec(577.5f, 292.5f), module, AhabModule::OUT_OUTPUT + 2));
-		addChild(createOutputCentered<PJ301MPort>(math::Vec(577.5f, 326.2f), module, AhabModule::OUT_OUTPUT + 3));
+		addChild(createOutputCentered<StoermelderPort>(math::Vec(577.5f, 67.9f), module, AhabModule::CLK_OUTPUT));
+		addChild(createOutputCentered<StoermelderPort>(math::Vec(577.5f, 225.2f), module, AhabModule::OUT_OUTPUT + 0));
+		addChild(createOutputCentered<StoermelderPort>(math::Vec(577.5f, 258.9f), module, AhabModule::OUT_OUTPUT + 1));
+		addChild(createOutputCentered<StoermelderPort>(math::Vec(577.5f, 292.5f), module, AhabModule::OUT_OUTPUT + 2));
+		addChild(createOutputCentered<StoermelderPort>(math::Vec(577.5f, 326.2f), module, AhabModule::OUT_OUTPUT + 3));
 
 		addChild(createParamCentered<VCVButton>(math::Vec(22.5f, 107.7f), module, AhabModule::RUN_PARAM));
 		addChild(createLightCentered<MediumSimpleLight<WhiteLight>>(Vec(22.5f, 107.7f), module, AhabModule::RUN_LIGHT));
