@@ -223,25 +223,108 @@ struct TransitLedButton : VCVButton {
 	}
 
 	void appendContextMenu(Menu* menu) override {
-		if (module->ctrlMode != CTRLMODE::WRITE) return;
+		if (module->ctrlMode == CTRLMODE::WRITE) {
+			struct SlotItem : MenuItem {
+				TransitBase<NUM_PRESETS>* module;
+				int id;
+				SLOT_CMD cmd;
+				void onAction(const event::Action& e) override {
+					module->sendSlotCmd(cmd, id);
+				}
+			};
 
-		struct SlotItem : MenuItem {
-			TransitBase<NUM_PRESETS>* module;
-			int id;
-			SLOT_CMD cmd;
-			void onAction(const event::Action& e) override {
-				module->sendSlotCmd(cmd, id);
-			}
-		};
+			struct PasteItem : SlotItem {
+				void step() override {
+					int i = this->module->sendSlotCmd(SLOT_CMD::PASTE_PREVIEW, this->id);
+					this->rightText = i >= 0 ? string::f("Slot %d", i + 1) : "";
+					this->disabled = i < 0;
+					SlotItem::step();
+				}
+			};
 
-		struct PasteItem : SlotItem {
-			void step() override {
-				int i = this->module->sendSlotCmd(SLOT_CMD::PASTE_PREVIEW, this->id);
-				this->rightText = i >= 0 ? string::f("Slot %d", i + 1) : "";
-				this->disabled = i < 0;
-				SlotItem::step();
-			}
-		};
+			menu->addChild(new MenuSeparator);
+			menu->addChild(createSubmenuItem("Fade", "",
+				[=](Menu* menu) {
+					menu->addChild(createCheckMenuItem("Parameter/CV", "",
+						[=]() {
+							return module->fadeTime[id] == -1.f;
+						},
+						[=]() {
+							module->fadeTime[id] = -1.f;
+						}
+					));
+
+					struct FadeTimeLabel : MenuLabelEx {
+						TransitBase<NUM_PRESETS>* module;
+						int id;
+						void step() override {
+							this->rightText = CHECKMARK(module->fadeTime[id] != -1.f);
+							MenuLabelEx::step();
+						}
+					};
+					menu->addChild(construct<FadeTimeLabel>(&MenuLabel::text, "Custom", &FadeTimeLabel::module, module, &FadeTimeLabel::id, id));
+
+					struct FadeTimeSlider : ui::Slider {
+						struct FadeTimeQuantity : Quantity {
+							TransitBase<NUM_PRESETS>* module;
+							int id;
+							FadeTimeQuantity(TransitBase<NUM_PRESETS>* module, int id) {
+								this->module = module;
+								this->id = id;
+							}
+							void setValue(float value) override {
+								if (value == -1.f) {
+									module->fadeTime[id] = value;
+									return;
+								}
+								module->fadeTime[id] = math::clamp(value, 0.f, 1.f);
+							}
+							float getValue() override {
+								return module->fadeTime[id];
+							}
+							float getDefaultValue() override {
+								return -1.f;
+							}
+							std::string getLabel() override {
+								return "Fade time";
+							}
+							std::string getString() override {
+								if (getValue() == -1.f) return "Default";
+								return Quantity::getString();
+							}
+							int getDisplayPrecision() override {
+								return 3;
+							}
+							float getMaxValue() override {
+								return 1.f;
+							}
+							float getMinValue() override {
+								return 0.f;
+							}
+						};
+
+						FadeTimeSlider(TransitBase<NUM_PRESETS>* module, int id) {
+							box.size.x = 160.0f;
+							quantity = new FadeTimeQuantity(module, id);
+						}
+						~FadeTimeSlider() {
+							delete quantity;
+						}
+					};
+					menu->addChild(new FadeTimeSlider(module, id));
+				}
+			));
+			menu->addChild(new MenuSeparator);
+			menu->addChild(construct<SlotItem>(&MenuItem::text, "Save", &MenuItem::rightText, "Click", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::SAVE));
+			menu->addChild(construct<SlotItem>(&MenuItem::text, "Randomize and save", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::RANDOMIZE));
+			menu->addChild(construct<SlotItem>(&MenuItem::text, "Load", &MenuItem::rightText, RACK_MOD_SHIFT_NAME "+Click", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::LOAD, &SlotItem::disabled, !module->slot[id].isUsed()));
+			menu->addChild(construct<SlotItem>(&MenuItem::text, "Clear", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::CLEAR, &SlotItem::disabled, !module->slot[id].isUsed()));
+			menu->addChild(construct<SlotItem>(&MenuItem::text, "Copy", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::COPY, &SlotItem::disabled, !module->slot[id].isUsed()));
+			menu->addChild(construct<PasteItem>(&MenuItem::text, "Paste", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::PASTE));
+			menu->addChild(new MenuSeparator);
+			menu->addChild(construct<SlotItem>(&MenuItem::text, "Shift front", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::SHIFT_FRONT));
+			menu->addChild(construct<SlotItem>(&MenuItem::text, "Shift back", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::SHIFT_BACK));
+		}
 
 		struct LabelMenuItem : MenuItem {
 			TransitBase<NUM_PRESETS>* module;
@@ -304,88 +387,6 @@ struct TransitLedButton : VCVButton {
 			}
 		}; // struct LabelMenuItem
 
-		menu->addChild(new MenuSeparator);
-		menu->addChild(createSubmenuItem("Fade", "",
-			[=](Menu* menu) {
-				menu->addChild(createCheckMenuItem("Parameter/CV", "",
-					[=]() {
-						return module->fadeTime[id] == -1.f;
-					},
-					[=]() {
-						module->fadeTime[id] = -1.f;
-					}
-				));
-
-				struct FadeTimeLabel : MenuLabelEx {
-					TransitBase<NUM_PRESETS>* module;
-					int id;
-					void step() override {
-						this->rightText = CHECKMARK(module->fadeTime[id] != -1.f);
-						MenuLabelEx::step();
-					}
-				};
-				menu->addChild(construct<FadeTimeLabel>(&MenuLabel::text, "Custom", &FadeTimeLabel::module, module, &FadeTimeLabel::id, id));
-
-				struct FadeTimeSlider : ui::Slider {
-					struct FadeTimeQuantity : Quantity {
-						TransitBase<NUM_PRESETS>* module;
-						int id;
-						FadeTimeQuantity(TransitBase<NUM_PRESETS>* module, int id) {
-							this->module = module;
-							this->id = id;
-						}
-						void setValue(float value) override {
-							if (value == -1.f) {
-								module->fadeTime[id] = value;
-								return;
-							}
-							module->fadeTime[id] = math::clamp(value, 0.f, 1.f);
-						}
-						float getValue() override {
-							return module->fadeTime[id];
-						}
-						float getDefaultValue() override {
-							return -1.f;
-						}
-						std::string getLabel() override {
-							return "Fade time";
-						}
-						std::string getString() override {
-							if (getValue() == -1.f) return "Default";
-							return Quantity::getString();
-						}
-						int getDisplayPrecision() override {
-							return 3;
-						}
-						float getMaxValue() override {
-							return 1.f;
-						}
-						float getMinValue() override {
-							return 0.f;
-						}
-					};
-
-					FadeTimeSlider(TransitBase<NUM_PRESETS>* module, int id) {
-						box.size.x = 160.0f;
-						quantity = new FadeTimeQuantity(module, id);
-					}
-					~FadeTimeSlider() {
-						delete quantity;
-					}
-				};
-				menu->addChild(new FadeTimeSlider(module, id));
-			}
-		));
-		menu->addChild(new MenuSeparator);
-		menu->addChild(construct<SlotItem>(&MenuItem::text, "Save", &MenuItem::rightText, "Click", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::SAVE));
-		menu->addChild(construct<SlotItem>(&MenuItem::text, "Randomize and save", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::RANDOMIZE));
-		menu->addChild(construct<SlotItem>(&MenuItem::text, "Load", &MenuItem::rightText, RACK_MOD_SHIFT_NAME "+Click", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::LOAD, &SlotItem::disabled, !module->slot[id].isUsed()));
-		menu->addChild(construct<SlotItem>(&MenuItem::text, "Clear", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::CLEAR, &SlotItem::disabled, !module->slot[id].isUsed()));
-		menu->addChild(construct<SlotItem>(&MenuItem::text, "Copy", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::COPY, &SlotItem::disabled, !module->slot[id].isUsed()));
-		menu->addChild(construct<PasteItem>(&MenuItem::text, "Paste", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::PASTE));
-		menu->addChild(new MenuSeparator);
-		menu->addChild(construct<SlotItem>(&MenuItem::text, "Shift front", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::SHIFT_FRONT));
-		menu->addChild(construct<SlotItem>(&MenuItem::text, "Shift back", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::SHIFT_BACK));
 		menu->addChild(new MenuSeparator);
 		menu->addChild(construct<LabelMenuItem>(&MenuItem::text, "Custom label", &LabelMenuItem::module, module, &LabelMenuItem::id, id));
 		menu->addChild(createSubmenuItem("Custom color", "", [=](Menu* menu) {
