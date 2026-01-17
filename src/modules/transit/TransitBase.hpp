@@ -43,7 +43,7 @@ struct TransitBase : Module, StripIdFixModule {
 		}
 
 		inline Param* getParam() {
-			return owner->getParam(indexParam);
+			return &owner->getParam(indexParam);
 		}
 
 		inline Light* getLights() {
