@@ -499,7 +499,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 				}
 				else {
 					if (slot->isColorSet()) {
-						float f = preset != i || lightBlink ? 1.f : 0.1f;
+						float f = i < presetCount ? (preset != i || lightBlink ? 1.f : 0.1f) : 0.f;
 						NVGcolor c = slot->getColor();
 						slot->getLights()[0].setBrightnessSmooth(c.r * f, s);
 						slot->getLights()[1].setBrightnessSmooth(c.g * f, s);
