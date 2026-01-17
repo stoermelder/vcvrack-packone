@@ -46,6 +46,7 @@ struct ParamHandleEx : ParamHandleIndicator {
 template <int NUM_PRESETS>
 struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 	typedef TransitBase<NUM_PRESETS> BASE;
+	typedef typename TransitBase<NUM_PRESETS>::Slot SLOT;
 
 	enum ParamIds {
 		ENUMS(PARAM_PRESET, NUM_PRESETS),
@@ -155,11 +156,10 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 			pq->id = i;
 			BASE::presetButton[i].param = &Module::params[PARAM_PRESET + i];
 
-			BASE::slot[i].param = &Module::params[PARAM_PRESET + i];
-			BASE::slot[i].lights = &Module::lights[LIGHT_PRESET + i * 3];
-			BASE::slot[i].presetSlotUsed = &BASE::presetSlotUsed[i];
-			BASE::slot[i].preset = &BASE::preset[i];
-			BASE::slot[i].presetButton = &BASE::presetButton[i];
+			BASE::slot[i].owner = this;
+			BASE::slot[i].index = i;
+			BASE::slot[i].indexParam = PARAM_PRESET + i;
+			BASE::slot[i].indexLight = LIGHT_PRESET + i * 3;
 		}
 		Module::configParam(PARAM_FADE, 0.f, 1.f, 0.5f, "Fade");
 		Module::configParam(PARAM_SHAPE, -1.f, 1.f, 0.f, "Shape");
@@ -205,6 +205,8 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 			BASE::textLabel[i] = "";
 			BASE::fadeTime[i] = -1.f;
 			BASE::preset[i].clear();
+			BASE::slotColorSet[i] = false;
+			BASE::slotColor[i] = color::WHITE;
 		}
 
 		BASE::ctrlUniqueId = rack::random::uniform() * INT64_MAX;
@@ -228,26 +230,10 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 		Module::onReset();
 	}
 
-	TransitSlot* transitSlot(int i) override {
-		return &BASE::slot[i];
-	}
-
-	inline TransitSlot* expSlot(int index) {
+	inline SLOT* getSlot(int index) {
 		if (index >= presetTotal) return NULL;
 		int n = index / NUM_PRESETS;
-		return N[n]->transitSlot(index % NUM_PRESETS);
-	}
-
-	inline std::string* expSlotLabel(int index) {
-		if (index >= presetTotal) return NULL;
-		int n = index / NUM_PRESETS;
-		return &N[n]->textLabel[index % NUM_PRESETS];
-	}
-
-	inline float expSlotFadeTime(int index) {
-		if (index >= presetTotal) return -1.f;
-		int n = index / NUM_PRESETS;
-		return N[n]->fadeTime[index % NUM_PRESETS];
+		return &N[n]->slot[index % NUM_PRESETS];
 	}
 
 	void process(const Module::ProcessArgs& args) override {
@@ -440,8 +426,8 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 			if (buttonDivider.process()) {
 				float sampleTime = args.sampleTime * buttonDivider.division;
 				for (int i = 0; i < presetTotal; i++) {
-					TransitSlot* slot = expSlot(i);
-					switch (slot->presetButton->process(sampleTime)) {
+					SLOT* slot = getSlot(i);
+					switch (slot->getPresetButton()->process(sampleTime)) {
 						default:
 						case LongPressButton::NO_PRESS:
 							break;
@@ -461,8 +447,8 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 			if (buttonDivider.process()) {
 				float sampleTime = args.sampleTime * buttonDivider.division;
 				for (int i = 0; i < presetTotal; i++) {
-					TransitSlot* slot = expSlot(i);
-					switch (slot->presetButton->process(sampleTime)) {
+					SLOT* slot = getSlot(i);
+					switch (slot->getPresetButton()->process(sampleTime)) {
 						default:
 						case LongPressButton::NO_PRESS:
 							break;
@@ -484,7 +470,6 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 			presetProcess(args.sampleTime);
 		}
 
-		// Set lights infrequently
 		if (lightDivider.process()) {
 			float s = args.sampleTime * lightDivider.getDivision();
 			if (lightTimer.process(s) > 0.2f) {
@@ -494,26 +479,41 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 			float intpart;
 			float frac = std::modf(presetPhaseLast, &intpart);
 			for (int i = 0; i < presetTotal; i++) {
-				TransitSlot* slot = expSlot(i);
-				bool u = *(slot->presetSlotUsed);
-				if (BASE::ctrlMode == CTRLMODE::READ || BASE::ctrlMode == CTRLMODE::AUTO) {
-					if (!isPhaseCvActive() || BASE::ctrlMode == CTRLMODE::AUTO) {
-						slot->lights[0].setBrightness(preset == i ? 1.f : (presetNext == i ? 1.f : 0.f));
-						slot->lights[1].setBrightness(preset == i ? 1.f : (presetCount > i ? (u ? 1.f : 0.25f) : 0.f));
-						slot->lights[2].setBrightness(preset == i ? 1.f : 0.f);
+				SLOT* slot = getSlot(i);
+				bool u = slot->isUsed();
+
+				if ((BASE::ctrlMode == CTRLMODE::READ || BASE::ctrlMode == CTRLMODE::AUTO) && isPhaseCvActive()) {
+					float f = (intpart == i) ? (1.f - frac) : (intpart + 1 == i) ? (frac) : 0.f;
+					float b1 = std::max(f, presetCount > i ? (u ? 1.f : 0.25f) : 0.f);
+					if (slot->isColorSet()) {
+						NVGcolor c = slot->getColor();
+						slot->getLights()[0].setBrightness(std::max(c.r, f));
+						slot->getLights()[1].setBrightness(std::max(c.g, f));
+						slot->getLights()[2].setBrightness(std::max(c.b, f));
 					}
 					else {
-						float f = (intpart == i) ? (1.f - frac) : (intpart + 1 == i) ? (frac) : 0.f;
-						slot->lights[0].setBrightness(f);
-						slot->lights[1].setBrightness(std::max(f, presetCount > i ? (u ? 1.f : 0.25f) : 0.f));
-						slot->lights[2].setBrightness(f);
+						slot->getLights()[0].setBrightness(f);
+						slot->getLights()[1].setBrightness(b1);
+						slot->getLights()[2].setBrightness(f);
 					}
 				}
 				else {
-					bool b = preset == i && lightBlink;
-					slot->lights[0].setBrightness(b ? 0.7f : (u ? 1.f : 0.f));
-					slot->lights[1].setBrightness(b ? 0.7f : (u ? 0.f : (presetCount > i ? 0.05f : 0.f)));
-					slot->lights[2].setBrightness(b ? 0.7f : 0.f);
+					if (slot->isColorSet()) {
+						float f = preset != i || lightBlink ? 1.f : 0.1f;
+						NVGcolor c = slot->getColor();
+						slot->getLights()[0].setBrightnessSmooth(c.r * f, s);
+						slot->getLights()[1].setBrightnessSmooth(c.g * f, s);
+						slot->getLights()[2].setBrightnessSmooth(c.b * f, s);
+					}
+					else {
+						bool b = preset == i && lightBlink;
+						float b0 = b ? 0.7f : (u ? 1.f : 0.f);
+						float b1 = b ? 0.7f : (u ? 0.f : (presetCount > i ? 0.05f : 0.f));
+						float b2 = b ? 0.7f : 0.f;
+						slot->getLights()[0].setBrightnessSmooth(b0, s);
+						slot->getLights()[1].setBrightnessSmooth(b1, s);
+						slot->getLights()[2].setBrightnessSmooth(b2, s);
+					}
 				}
 			}
 
@@ -594,10 +594,10 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 				// not loading a preset into Tranit.
 				float v = pq ? pq->getValue() : 0.f;
 				for (int i = 0; i < presetTotal; i++) {
-					TransitSlot* slot = expSlot(i);
-					if (!*(slot->presetSlotUsed)) continue;
-					slot->preset->push_back(v);
-					assert(sourceHandles.size() == slot->preset->size());
+					SLOT* slot = getSlot(i);
+					if (!slot->isUsed()) continue;
+					slot->getPreset()->push_back(v);
+					assert(sourceHandles.size() == slot->getPreset()->size());
 				}
 			}
 
@@ -721,17 +721,17 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 			presetPhaseLast = p;
 
 			int p1 = std::floor(p);
-			TransitSlot* slot1 = expSlot(p1);
-			while (p1 >= 0 && !*(slot1->presetSlotUsed)) {
+			SLOT* slot1 = getSlot(p1);
+			while (p1 >= 0 && !slot1->isUsed()) {
 				p1--;
-				slot1 = expSlot(p1);
+				slot1 = getSlot(p1);
 			}
 			
 			int p2 = std::ceil(p);
-			TransitSlot* slot2 = expSlot(p2);
-			while (p2 <= presetCount - 1 && !*(slot2->presetSlotUsed)) {
+			SLOT* slot2 = getSlot(p2);
+			while (p2 <= presetCount - 1 && slot2 && !slot2->isUsed()) {
 				p2++;
-				slot2 = expSlot(p2);
+				slot2 = getSlot(p2);
 			}
 			
 			if (p1 < 0 && p2 >= presetCount) return;
@@ -743,8 +743,8 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 				for (size_t i = 0; i < sourceHandles.size(); i++) {
 					ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
 					if (!pq) continue;
-					float v1 = (*slot1->preset)[i];
-					float v2 = (*slot2->preset)[i];
+					float v1 = (*slot1->getPreset())[i];
+					float v2 = (*slot2->getPreset())[i];
 					float v = crossfade(v1, v2, p);
 					if (settings::isPlugin && parameterChangesDirect)
 						pq->setValue(v);
@@ -756,7 +756,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 				for (size_t i = 0; i < sourceHandles.size(); i++) {
 					ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
 					if (!pq) continue;
-					float v = (*slot1->preset)[i];
+					float v = (*slot1->getPreset())[i];
 
 					if (settings::isPlugin && parameterChangesDirect)
 						pq->setValue(v);
@@ -792,23 +792,23 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 		if (p < 0 || p >= presetCount)
 			return;
 
-		TransitSlot* slot = expSlot(p);
+		SLOT* slot = getSlot(p);
 		if (!isNext) {
 			if (p != preset || force) {
 				int presetPrev = preset;
 				preset = p;
 				presetNext = -1;
 				outSlotPulseGenerator.trigger();
-				if (!*(slot->presetSlotUsed)) 
+				if (!slot->isUsed()) 
 					return;
 				if (BASE::ctrlMode == CTRLMODE::AUTO && presetPrev != -1) {
-					TransitSlot* slotPrev = expSlot(presetPrev);
-					if (*(slotPrev->presetSlotUsed)) {
-						slotPrev->preset->clear();
+					SLOT* slotPrev = getSlot(presetPrev);
+					if (slotPrev->isUsed()) {
+						slotPrev->getPreset()->clear();
 						for (size_t i = 0; i < sourceHandles.size(); i++) {
 							ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
 							float v = pq ? pq->getValue() : 0.f;
-							slotPrev->preset->push_back(v);
+							slotPrev->getPreset()->push_back(v);
 						}
 					}
 				}
@@ -816,20 +816,20 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 				outSocPulseGenerator.trigger();
 				outEocArm = true;
 				processing = true;
-				presetFadeTime = expSlotFadeTime(p);
+				presetFadeTime = getSlot(p)->getFadeTime();
 				presetOld.clear();
 				presetNew.clear();
 				for (size_t i = 0; i < sourceHandles.size(); i++) {
 					ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
 					presetOld.push_back(pq ? pq->getValue() : 0.f);
-					if (slot->preset->size() > i) {
-						presetNew.push_back((*(slot->preset))[i]);
+					if (slot->getPreset()->size() > i) {
+						presetNew.push_back((*(slot->getPreset()))[i]);
 					}
 				}
 			}
 		}
 		else {
-			if (!*(slot->presetSlotUsed)) return;
+			if (!slot->isUsed()) return;
 			presetNext = p;
 		}
 	}
@@ -845,15 +845,15 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 	 *  Called from the engine thread.
 	 */
 	void presetSave(int p) {
-		TransitSlot* slot = expSlot(p);
-		*(slot->presetSlotUsed) = true;
-		slot->preset->clear();
+		SLOT* slot = getSlot(p);
+		slot->setUsed(true);
+		slot->getPreset()->clear();
 		for (size_t i = 0; i < sourceHandles.size(); i++) {
 			ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
 			float v = pq ? pq->getValue() : 0.f;
-			slot->preset->push_back(v);
+			slot->getPreset()->push_back(v);
 		}
-		assert(sourceHandles.size() == slot->preset->size());
+		assert(sourceHandles.size() == slot->getPreset()->size());
 		preset = p;
 	}
 
@@ -868,10 +868,12 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 	 *  Called from the engine thread.
 	 */
 	void presetClear(int p) {
-		TransitSlot* slot = expSlot(p);
-		*(slot->presetSlotUsed) = false;
-		slot->preset->clear();
-		*expSlotLabel(p) = "";
+		SLOT* slot = getSlot(p);
+		slot->setUsed(false);
+		slot->getPreset()->clear();
+		slot->setLabel("");
+		slot->setFadeTime(-1.f);
+		slot->setColor(color::WHITE, false);
 		if (preset == p) preset = -1;
 	}
 
@@ -887,9 +889,9 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 	 *  Called from the engine thread.
 	 */
 	void presetRandomize(int p) {
-		TransitSlot* slot = expSlot(p);
-		*(slot->presetSlotUsed) = true;
-		slot->preset->clear();
+		SLOT* slot = getSlot(p);
+		slot->setUsed(true);
+		slot->getPreset()->clear();
 		for (size_t i = 0; i < sourceHandles.size(); i++) {
 			float v = 0.f;
 			{
@@ -899,9 +901,9 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 				v = pq->getValue();
 			}
 			s:
-			slot->preset->push_back(v);
+			slot->getPreset()->push_back(v);
 		}
-		assert(sourceHandles.size() == slot->preset->size());
+		assert(sourceHandles.size() == slot->getPreset()->size());
 		preset = p;
 	}
 
@@ -916,12 +918,12 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 	 *  Called from the engine thread.
 	 */
 	void presetCopyPaste(int source, int target) {
-		TransitSlot* sourceSlot = expSlot(source);
-		TransitSlot* targetSlot = expSlot(target);
-		if (!*(sourceSlot->presetSlotUsed)) return;
-		*(targetSlot->presetSlotUsed) = true;
-		auto sourcePreset = sourceSlot->preset;
-		auto targetPreset = targetSlot->preset;
+		SLOT* sourceSlot = getSlot(source);
+		SLOT* targetSlot = getSlot(target);
+		if (!sourceSlot->isUsed()) return;
+		targetSlot->setUsed(true);
+		auto sourcePreset = sourceSlot->getPreset();
+		auto targetPreset = targetSlot->getPreset();
 		targetPreset->clear();
 		for (auto v : *sourcePreset) {
 			targetPreset->push_back(v);
@@ -941,10 +943,10 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 	 */
 	void presetShiftBack(int p) {
 		for (int i = presetTotal - 2; i >= p; i--) {
-			TransitSlot* slot = expSlot(i);
-			if (*(slot->presetSlotUsed)) {
+			SLOT* slot = getSlot(i);
+			if (slot->isUsed()) {
 				presetCopyPaste(i, i + 1);
-				*expSlotLabel(i + 1) = *expSlotLabel(i);
+				getSlot(i + 1)->setLabel(getSlot(i)->getLabel());
 			}
 			else {
 				presetClear(i + 1);
@@ -965,10 +967,10 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 	 */
 	void presetShiftFront(int p) {
 		for (int i = 1; i <= p; i++) {
-			TransitSlot* slot = expSlot(i);
-			if (*(slot->presetSlotUsed)) {
+			SLOT* slot = getSlot(i);
+			if (slot->isUsed()) {
 				presetCopyPaste(i, i - 1);
-				*expSlotLabel(i - 1) = *expSlotLabel(i);
+				getSlot(i - 1)->setLabel(getSlot(i)->getLabel());
 			}
 			else {
 				presetClear(i - 1);
@@ -992,10 +994,10 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 			ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
 			if (!pq) {
 				for (int j = 0; j < presetTotal; j++) {
-					TransitSlot* slot = expSlot(j);
-					if (*(slot->presetSlotUsed)) {
-						if (slot->preset->size() > i) {
-							slot->preset->erase(slot->preset->begin() + i);
+					SLOT* slot = getSlot(j);
+					if (slot->isUsed()) {
+						if (slot->getPreset()->size() > i) {
+							slot->getPreset()->erase(slot->getPreset()->begin() + i);
 						}
 					}
 					else {
@@ -1009,9 +1011,9 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 			}
 		}
 		for (int j = 0; j < presetTotal; j++) {
-			TransitSlot* slot = expSlot(j);
-			if (!*(slot->presetSlotUsed)) continue;
-			assert(sourceHandles.size() == slot->preset->size());
+			SLOT* slot = getSlot(j);
+			if (!slot->isUsed()) continue;
+			assert(sourceHandles.size() == slot->getPreset()->size());
 		}
 
 		// Publish new sourceHandles snapshot for the UI thread
@@ -1026,9 +1028,9 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 		// ctrlUniqueId == -2 for presets before uniqueId was added
 		if (t->ctrlUniqueId == -2) {
 			for (int i = 0; i < NUM_PRESETS; i++) {
-				TransitSlot* slot = t->transitSlot(i);
-				if (*(slot->presetSlotUsed)) {
-					if (slot->preset->size() != sourceHandles.size()) {
+				SLOT* slot = &t->slot[i];
+				if (slot->isUsed()) {
+					if (slot->getPreset()->size() != sourceHandles.size()) {
 						invalid = true;
 						break;
 					}
@@ -1063,7 +1065,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 		else if (outMode == OUTMODE::PHASE) outMode = OUTMODE::ENV;
 	}
 
-	int transitSlotCmd(SLOT_CMD cmd, int i) override {
+	int sendSlotCmd(SLOT_CMD cmd, int i) override {
 		switch (cmd) {
 			case SLOT_CMD::LOAD:
 				presetLoadRequest(i); 
@@ -1075,7 +1077,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 				presetRandomizeRequest(i);
 				return -1;
 			case SLOT_CMD::COPY:
-				presetCopy = *expSlot(i)->presetSlotUsed ? i : -1;
+				presetCopy = getSlot(i)->isUsed() ? i : -1;
 				return -1;
 			case SLOT_CMD::PASTE_PREVIEW:
 				return presetCopy;

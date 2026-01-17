@@ -9,7 +9,8 @@
 - Module [STROKE](./docs/stroke/Stroke.md)
     - Fixed broken _Zoom out_ command
 - Module [TRANSIT](./docs/transit/Transit.md)
-    - Implemented alternative parameter binding by selection box
+    - Added alternative parameter binding by selection box
+    - Added custom color LED setting per slot
 
 ## 2.2.0
 

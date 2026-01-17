@@ -25,16 +25,69 @@ enum class CTRLMODE {
 	WRITE
 };
 
-struct TransitSlot {
-	Param* param;
-	Light* lights;
-	bool* presetSlotUsed;
-	std::vector<float>* preset;
-	LongPressButton* presetButton;
-};
 
 template <int NUM_PRESETS>
 struct TransitBase : Module, StripIdFixModule {
+	struct Slot {
+		TransitBase* owner = NULL;
+		int index = -1;
+		int indexParam = -1;
+		int indexLight = -1;
+
+		inline std::vector<float>* getPreset() {
+			return &owner->preset[index];
+		}
+
+		inline LongPressButton* getPresetButton() {
+			return &owner->presetButton[index];
+		}
+
+		inline Param* getParam() {
+			return owner->getParam(indexParam);
+		}
+
+		inline Light* getLights() {
+			return &owner->lights[indexLight];
+		}
+
+		inline bool isUsed() {
+			return owner->presetSlotUsed[index];
+		}
+
+		inline void setUsed(bool used) {
+			owner->presetSlotUsed[index] = used;
+		}
+
+		inline std::string getLabel() {
+			return owner->textLabel[index];
+		}
+
+		inline float getFadeTime() {
+			return owner->fadeTime[index];
+		}
+
+		inline void setFadeTime(float time) {
+			owner->fadeTime[index] = time;
+		}
+
+		void setLabel(const std::string& label) {
+			owner->textLabel[index] = label;
+		}
+
+		bool isColorSet() {
+			return owner->slotColorSet[index];
+		}
+
+		NVGcolor getColor() {
+			return owner->slotColor[index];
+		}
+
+		void setColor(const NVGcolor& color, bool use = true) {
+			owner->slotColor[index] = color;
+			owner->slotColorSet[index] = use;
+		}
+	};
+
 	/** [Stored to JSON] */
 	int panelTheme = 0;
 	
@@ -46,6 +99,9 @@ struct TransitBase : Module, StripIdFixModule {
 	std::string textLabel[NUM_PRESETS];
 	/** [Stored to JSON] */
 	float fadeTime[NUM_PRESETS];
+	/** [Stored to JSON] optional hex color for a slot. When false, no custom color is used */
+	NVGcolor slotColor[NUM_PRESETS];
+	bool slotColorSet[NUM_PRESETS];
 
 	LongPressButton presetButton[NUM_PRESETS];
 
@@ -55,11 +111,9 @@ struct TransitBase : Module, StripIdFixModule {
 	int ctrlOffset = 0;
 	CTRLMODE ctrlMode = CTRLMODE::READ;
 
-	TransitSlot slot[NUM_PRESETS];
+	Slot slot[NUM_PRESETS];
 
-	virtual TransitSlot* transitSlot(int i) { return NULL; }
-
-	virtual int transitSlotCmd(SLOT_CMD cmd, int i) { return -1; }
+	virtual int sendSlotCmd(SLOT_CMD cmd, int i) { return -1; }
 
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
@@ -79,6 +133,9 @@ struct TransitBase : Module, StripIdFixModule {
 					json_array_append_new(slotJ, vJ);
 				}
 				json_object_set(presetJ, "slot", slotJ);
+			}
+			if (TransitBase<NUM_PRESETS>::slotColorSet[i]) {
+				json_object_set_new(presetJ, "color", json_string(color::toHexString(TransitBase<NUM_PRESETS>::slotColor[i]).c_str()));
 			}
 			json_array_append_new(presetsJ, presetJ);
 		}
@@ -102,6 +159,14 @@ struct TransitBase : Module, StripIdFixModule {
 			if (textLabelJ) textLabel[presetIndex] = json_string_value(textLabelJ);
 			json_t* fadeTimeJ = json_object_get(presetJ, "fadeTime");
 			if (fadeTimeJ) fadeTime[presetIndex] = json_real_value(fadeTimeJ);
+			json_t* colorJ = json_object_get(presetJ, "color");
+			if (colorJ) {
+				slotColor[presetIndex] = color::fromHexString(json_string_value(colorJ));
+				slotColorSet[presetIndex] = true;
+			}
+			else {
+				slotColorSet[presetIndex] = false;
+			}
 			preset[presetIndex].clear();
 			if (presetSlotUsed[presetIndex]) {
 				json_t* slotJ = json_object_get(presetJ, "slot");
@@ -122,7 +187,7 @@ struct TransitParamQuantity : SwitchQuantity {
 	int id;
 
 	std::string getDisplayValueString() override {
-		return !module->textLabel[id].empty() ? module->textLabel[id] : (module->presetSlotUsed[id] ? "Used" : "Empty");
+		return !module->textLabel[id].empty() ? module->textLabel[id] : (module->slot[id].isUsed() ? "Used" : "Empty");
 	}
 	std::string getLabel() override {
 		return string::f("Snapshot #%d", module->ctrlOffset * NUM_PRESETS + id + 1);
@@ -138,7 +203,7 @@ struct TransitLedButton : VCVButton {
 	void onButton(const event::Button& e) override {
 		if (e.action == GLFW_PRESS) {
 			if (e.button == GLFW_MOUSE_BUTTON_LEFT && (e.mods & RACK_MOD_MASK) == GLFW_MOD_SHIFT) {
-				module->transitSlotCmd(SLOT_CMD::LOAD, id);
+				module->sendSlotCmd(SLOT_CMD::LOAD, id);
 				e.consume(this);
 				eventConsumed = true;
 			}
@@ -165,13 +230,13 @@ struct TransitLedButton : VCVButton {
 			int id;
 			SLOT_CMD cmd;
 			void onAction(const event::Action& e) override {
-				module->transitSlotCmd(cmd, id);
+				module->sendSlotCmd(cmd, id);
 			}
 		};
 
 		struct PasteItem : SlotItem {
 			void step() override {
-				int i = this->module->transitSlotCmd(SLOT_CMD::PASTE_PREVIEW, this->id);
+				int i = this->module->sendSlotCmd(SLOT_CMD::PASTE_PREVIEW, this->id);
 				this->rightText = i >= 0 ? string::f("Slot %d", i + 1) : "";
 				this->disabled = i < 0;
 				SlotItem::step();
@@ -314,15 +379,28 @@ struct TransitLedButton : VCVButton {
 		menu->addChild(new MenuSeparator);
 		menu->addChild(construct<SlotItem>(&MenuItem::text, "Save", &MenuItem::rightText, "Click", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::SAVE));
 		menu->addChild(construct<SlotItem>(&MenuItem::text, "Randomize and save", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::RANDOMIZE));
-		menu->addChild(construct<SlotItem>(&MenuItem::text, "Load", &MenuItem::rightText, RACK_MOD_SHIFT_NAME "+Click", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::LOAD, &SlotItem::disabled, !module->presetSlotUsed[id]));
-		menu->addChild(construct<SlotItem>(&MenuItem::text, "Clear", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::CLEAR, &SlotItem::disabled, !module->presetSlotUsed[id]));
-		menu->addChild(construct<SlotItem>(&MenuItem::text, "Copy", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::COPY, &SlotItem::disabled, !module->presetSlotUsed[id]));
+		menu->addChild(construct<SlotItem>(&MenuItem::text, "Load", &MenuItem::rightText, RACK_MOD_SHIFT_NAME "+Click", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::LOAD, &SlotItem::disabled, !module->slot[id].isUsed()));
+		menu->addChild(construct<SlotItem>(&MenuItem::text, "Clear", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::CLEAR, &SlotItem::disabled, !module->slot[id].isUsed()));
+		menu->addChild(construct<SlotItem>(&MenuItem::text, "Copy", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::COPY, &SlotItem::disabled, !module->slot[id].isUsed()));
 		menu->addChild(construct<PasteItem>(&MenuItem::text, "Paste", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::PASTE));
 		menu->addChild(new MenuSeparator);
 		menu->addChild(construct<SlotItem>(&MenuItem::text, "Shift front", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::SHIFT_FRONT));
 		menu->addChild(construct<SlotItem>(&MenuItem::text, "Shift back", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::SHIFT_BACK));
 		menu->addChild(new MenuSeparator);
 		menu->addChild(construct<LabelMenuItem>(&MenuItem::text, "Custom label", &LabelMenuItem::module, module, &LabelMenuItem::id, id));
+		menu->addChild(createSubmenuItem("Custom color", "", [=](Menu* menu) {
+			menu->addChild(createBoolPtrMenuItem("Use color", "", &module->slotColorSet[id]));
+			menu->addChild(new MenuSeparator);
+			std::vector<std::pair<NVGcolor, std::string>> presets = {
+				{ color::YELLOW, "Yellow" },
+				{ color::RED, "Red" },
+				{ color::CYAN, "Cyan" },
+				{ color::GREEN, "Green" },
+				{ color::BLUE, "Blue" },
+				{ color::WHITE, "White" }
+			};
+			Rack::appendColorSubmenuItems(menu, &module->slotColor[id], presets, true, true);
+		}));
 	}
 };
 
