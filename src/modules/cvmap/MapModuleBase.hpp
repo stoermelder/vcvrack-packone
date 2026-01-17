@@ -81,6 +81,8 @@ struct MapModuleBase : Module, StripIdFixModule {
 			return NULL;
 		// Get ParamQuantity
 		int paramId = paramHandles[id].paramId;
+		if (paramId >= (int)module->paramQuantities.size())
+			return NULL;
 		ParamQuantity* paramQuantity = module->getParamQuantity(paramId);
 		if (!paramQuantity)
 			return NULL;
@@ -351,15 +353,18 @@ struct MapModuleChoice : LedDisplayChoice {
 		// Check if a ParamWidget was hovered
 		Widget* widget = APP->event->getHoveredWidget();
 		if (widget) {
-			ParamWidget* paramWidget = dynamic_cast<ParamWidget*>(widget);
-			if (paramWidget && paramWidget->getParamQuantity()->module != module) {
-				APP->scene->rack->setTouchedParam(NULL);
-				int64_t moduleId = paramWidget->getParamQuantity()->module->id;
-				int paramId = paramWidget->getParamQuantity()->paramId;
-				module->learnParam(id, moduleId, paramId);
-				hscrollCharOffset = 0;
-				if (APP->window) glfwSetCursor(APP->window->win, NULL);
-				return;
+			ParamWidget* pw = dynamic_cast<ParamWidget*>(widget);
+			if (pw) {
+				ParamQuantity* pq = pw->getParamQuantity();
+				if (pq && pq->module != module) {
+					APP->scene->rack->setTouchedParam(NULL);
+					int64_t moduleId = pq->module->id;
+					int paramId = pq->paramId;
+					module->learnParam(id, moduleId, paramId);
+					hscrollCharOffset = 0;
+					if (APP->window) glfwSetCursor(APP->window->win, NULL);
+					return;
+				}
 			}
 		}
 		module->disableLearn(id);
@@ -456,7 +461,7 @@ struct MapModuleChoice : LedDisplayChoice {
 		if (!m)
 			return NULL;
 		int paramId = paramHandle->paramId;
-		if (paramId >= (int) m->params.size())
+		if (paramId >= (int)m->params.size())
 			return NULL;
 		ParamQuantity* paramQuantity = m->getParamQuantity(paramId);
 		return paramQuantity;
@@ -479,7 +484,7 @@ struct MapModuleChoice : LedDisplayChoice {
 		if (!m)
 			return "";
 		int paramId = paramHandle->paramId;
-		if (paramId >= (int) m->params.size())
+		if (paramId >= (int)m->params.size())
 			return "";
 		ParamQuantity* paramQuantity = m->getParamQuantity(paramId);
 		std::string s;

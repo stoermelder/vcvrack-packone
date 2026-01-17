@@ -379,7 +379,7 @@ struct CmdZoomOut : CmdBase {
 	static void zoomOut() {
 		math::Rect moduleBox = APP->scene->rack->getModuleContainer()->getChildrenBoundingBox();
 		if (!moduleBox.size.isFinite()) return;
-		StoermelderPackOne::Rack::ViewportCenter{moduleBox};
+		StoermelderPackOne::Rack::ViewportCenter{moduleBox, 0.95f};
 	}
 }; // struct CmdZoomOut
 

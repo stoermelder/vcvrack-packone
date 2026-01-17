@@ -140,21 +140,27 @@ struct MapButton : TL1105 {
 		// Reset touchedParam
 		APP->scene->rack->setTouchedParam(NULL);
 		module->enableLearn(id);
+		GLFWcursor* cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
+		if (APP->window) glfwSetCursor(APP->window->win, cursor);
 	}
 
 	void onDeselect(const event::Deselect& e) override {
 		if (!module || module->learningId < 0) return;
 		// Check if a ParamWidget was touched
-		ParamWidget* touchedParam = APP->scene->rack->getTouchedParam();
-		if (touchedParam && touchedParam->getParamQuantity()->module != module) {
-			APP->scene->rack->setTouchedParam(NULL);
-			int64_t moduleId = touchedParam->getParamQuantity()->module->id;
-			int paramId = touchedParam->getParamQuantity()->paramId;
-			module->learnParam(id, moduleId, paramId);
-		} 
-		else {
-			module->disableLearn(id);
+		ParamWidget* pw = APP->scene->rack->getTouchedParam();
+		if (pw) {
+			ParamQuantity* pq = pw->getParamQuantity();
+			if (pq && pq->module && pq->module != module) {
+				APP->scene->rack->setTouchedParam(NULL);
+				int64_t moduleId = pq->module->id;
+				int paramId = pq->paramId;
+				module->learnParam(id, moduleId, paramId);
+				if (APP->window) glfwSetCursor(APP->window->win, NULL);
+				return;
+			}
 		}
+		module->disableLearn(id);
+		if (APP->window) glfwSetCursor(APP->window->win, NULL);
 	}
 };
 
@@ -206,7 +212,7 @@ struct GripWidget : ThemedModuleWidget<GripModule> {
 				Module* m = mw->module;
 				if (!m) return "<ERROR>";
 				int paramId = paramHandle->paramId;
-				if (paramId >= (int) m->params.size()) return "<ERROR>";
+				if (paramId >= (int)m->params.size()) return "<ERROR>";
 				ParamQuantity* paramQuantity = m->paramQuantities[paramId];
 				std::string s;
 				s += mw->model->name;

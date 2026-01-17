@@ -62,8 +62,9 @@ struct SailModule : Module {
 	float valueBaseOut;
 	float valuePrevious;
 
-	ParamQuantity* paramQuantity;
-	ParamQuantity* paramQuantityPriv;
+	size_t numModules = 0;
+	std::atomic<ParamQuantity*> pq{NULL};
+	ParamQuantity* pqDsp = NULL;
 
 	dsp::SchmittTrigger incTrigger;
 	dsp::SchmittTrigger decTrigger;
@@ -95,7 +96,8 @@ struct SailModule : Module {
 
 	void onReset() override {
 		Module::onReset();
-		paramQuantity = NULL;
+		pq.store(NULL);
+		pqDsp = NULL;
 		inMode = IN_MODE::DIFF;
 		outMode = OUT_MODE::REDUCED;
 		slewLimiter.reset();
@@ -114,18 +116,31 @@ struct SailModule : Module {
 			incdecTarget -= step;
 		}
 
+		// Problem: The UI thread may be in the middle of the destruction of the
+		// module and thus the ParamWidget when we access it here. The same time, the module
+		// may already have been removed from the engine, when entering this process() function.
+		// To prevent accessing a destructed ParamWidget, we check whether if the number of modules
+		// is the same as last time. If not, we discard the cached pointer for ParamQuantity.
+		// Checking the module in the engine is no option because this would require locking the engine.
+		size_t n = APP->engine->getNumModules();
+		if (n != numModules) {
+			numModules = n;
+			pq.store(NULL);
+		}
+
 		if (processDivider.process()) {
-			// Copy to second variable as paramQuantity might become NULL through the app thread
-			if (paramQuantity != paramQuantityPriv) {
-				paramQuantityPriv = paramQuantity;
+			ParamQuantity* pqCopy = pq.load();
+
+			if (pqDsp != pqCopy) {
+				pqDsp = pqCopy;
 				overlayMessageId++;
 				// Current parameter value
-				valuePrevious = paramQuantityPriv ? paramQuantityPriv->getScaledValue() : 0.f;
+				valuePrevious = pqCopy ? pqCopy->getScaledValue() : 0.f;
 				inVoltTarget = incdecTarget = slewLimiter.out = valuePrevious;
 				inVoltBase = clamp(inputs[INPUT_VALUE].getVoltage() / 10.f, 0.f, 1.f);
 			}
 
-			if (paramQuantityPriv && paramQuantityPriv->isBounded() && paramQuantityPriv->module != this) {
+			if (pqCopy && pqCopy->isBounded() && pqCopy->module != this) {
 				float valueNext = valuePrevious;
 
 				if (inputs[INPUT_VALUE].isConnected()) {
@@ -173,8 +188,8 @@ struct SailModule : Module {
 					// Determine the relative change
 					float delta = valueNext - valuePrevious;
 					if (delta != 0.f) {
-						paramQuantityPriv->moveScaledValue(delta);
-						valueBaseOut = paramQuantityPriv->getScaledValue();
+						pqCopy->moveScaledValue(delta);
+						valueBaseOut = pqCopy->getScaledValue();
 						if (overlayEnabled && overlayQueue.capacity() > 0) overlayQueue.push(overlayMessageId);
 					}
 				}
@@ -184,14 +199,14 @@ struct SailModule : Module {
 				if (outputs[OUTPUT].isConnected()) {
 					switch (outMode) {
 						case OUT_MODE::REDUCED: {
-							float v = paramQuantityPriv->getScaledValue();
+							float v = pqCopy->getScaledValue();
 							if (v != valueBaseOut) {
  								outputs[OUTPUT].setVoltage(v * 10.f);
 							}
 							break;
 						}
 						case OUT_MODE::FULL: {
-							outputs[OUTPUT].setVoltage(paramQuantityPriv->getScaledValue() * 10.f);
+							outputs[OUTPUT].setVoltage(pqCopy->getScaledValue() * 10.f);
 							break;
 						}
 					}
@@ -200,7 +215,8 @@ struct SailModule : Module {
 		}
 
 		if (lightDivider.process()) {
-			bool active = paramQuantityPriv && paramQuantityPriv->isBounded() && paramQuantityPriv->module != this;
+			ParamQuantity* pqCopy = pq.load();
+			bool active = pqCopy && pqCopy->isBounded() && pqCopy->module != this;
 			lights[LIGHT_ACTIVE].setSmoothBrightness(active ? 1.f : 0.f, args.sampleTime * lightDivider.getDivision());
 		}
 	}
@@ -263,15 +279,15 @@ struct SailWidget : ThemedModuleWidget<SailModule>, OverlayMessageProvider {
 		if (!module) return;
 
 		Widget* w = APP->event->getHoveredWidget();
-		if (!w) { module->paramQuantity = NULL; return; }
+		if (!w) { module->pq.store(NULL); return; }
 		ParamWidget* p = dynamic_cast<ParamWidget*>(w);
-		if (!p) { module->paramQuantity = NULL; return; }
+		if (!p) { module->pq.store(NULL); return; }
 		ParamQuantity* q = p->getParamQuantity();
-		if (!q) { module->paramQuantity = NULL; return; }
+		if (!q) { module->pq.store(NULL); return; }
 		
 		Switch* sw = dynamic_cast<Switch*>(p);
 
-		module->paramQuantity = q;
+		module->pq.store(q);
 		module->fineMod = APP->window->getMods() & GLFW_MOD_SHIFT;
 		module->isSwitch = sw != NULL;
 	}
@@ -284,12 +300,15 @@ struct SailWidget : ThemedModuleWidget<SailModule>, OverlayMessageProvider {
 
 	void getOverlayMessage(int id, Message& m) override {
 		if (module->overlayMessageId != id) return;
-		ParamQuantity* paramQuantity = module->paramQuantityPriv;
-		if (!paramQuantity) return;
 
-		m.title = paramQuantity->getDisplayValueString() + paramQuantity->getUnit();
-		m.subtitle[0] = paramQuantity->module->model->name;
-		m.subtitle[1] = paramQuantity->name;
+		// Here we assume that pqCopy is not null because we are on UI thread, so no desctruction
+		// can happen while we are here.
+		ParamQuantity* pqCopy = module->pq.load();
+		if (pqCopy) {
+			m.title = pqCopy->getDisplayValueString() + pqCopy->getUnit();
+			m.subtitle[0] = pqCopy->module->model->name;
+			m.subtitle[1] = pqCopy->name;
+		}
 	}
 
 	void appendContextMenu(Menu* menu) override {

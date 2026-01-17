@@ -319,7 +319,7 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		if (masterModule == nullptr)
 			return "<No TRANSIT module>";
 		if (snapshots[s][id].id >= 0) {
-			std::string custom = *masterModule->expSlotLabel(snapshots[s][id].id);
+			std::string custom = masterModule->getSlotLabel(snapshots[s][id].id);
 			if (custom != "")
 				return string::f("Snapshot #%i: %s", snapshots[s][id].id + 1, custom.c_str());
 			else
@@ -402,7 +402,7 @@ struct TransitPadSnapshotDragWidget : XyScreenDragWidget<MODULE> {
 
 	void prependContextMenu(Menu* menu) override {
 		menu->addChild(createMenuItem("Bind snapshot", "", [=]() {
-			AW::module->snapshots[AW::module->currentSet][AW::id].id = AW::module->masterModule->transitSlotSelected();
+			AW::module->snapshots[AW::module->currentSet][AW::id].id = AW::module->masterModule->getSelectedSlot();
 		}, AW::module->masterModule == nullptr));
 		menu->addChild(createMenuItem("Unbind snapshot", "", [=]() {
 			AW::module->snapshots[AW::module->currentSet][AW::id].id = -1;

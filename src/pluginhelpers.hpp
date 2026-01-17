@@ -152,16 +152,21 @@ ui::MenuItem* createValuePtrMenuItem(std::string text, std::string rightText, T*
 }
 
 
-/** Create a color submenu for a color pointer with presets, a picker and a hex field.
-Example:
-	menu->addChild(createColorSubmenuItem("Color", &module->defaultColor, {
-		{ LABEL_COLOR_YELLOW, "Yellow" },
-		{ LABEL_COLOR_RED, "Red" },
-		{ LABEL_COLOR_CYAN, "Cyan" }
-	}));
-*/
-inline ui::MenuItem* createColorSubmenuItem(std::string text, NVGcolor* colorPtr, std::vector<std::pair<NVGcolor, std::string>> presets = {}, bool includePicker = true, bool includeField = false, bool* textSelected = nullptr) {
-	struct ColorItem : ui::MenuItem {
+/** Append color controls (label, optional picker, presets and hex field) to an existing menu.
+ *  This allows callers to insert the color controls directly into an existing Menu rather than creating a submenu.
+ *
+ *  Example:
+ *    // Append the color controls directly into an existing menu (no extra submenu)
+ *    std::vector<std::pair<NVGcolor, std::string>> presets = {
+ *      { LABEL_COLOR_YELLOW, "Yellow" },
+ *      { LABEL_COLOR_RED, "Red" },
+ *      { LABEL_COLOR_CYAN, "Cyan" }
+ *    };
+ *    // Insert a color picker, presets and a hex field into 'menu' for 'module->slotColor[id]'
+ *    Rack::appendColorSubmenuItems(menu, &module->slotColor[id], presets, true, true);
+ */
+inline void appendColorSubmenuItems(ui::Menu* menu, NVGcolor* colorPtr, const std::vector<std::pair<NVGcolor, std::string>>& presets = {}, bool includePicker = true, bool includeField = false, bool* textSelected = nullptr) {
+	struct AppendColorItem : ui::MenuItem {
 		NVGcolor color;
 		NVGcolor* colorPtr;
 		void onAction(const event::Action& e) override {
@@ -174,6 +179,31 @@ inline ui::MenuItem* createColorSubmenuItem(std::string text, NVGcolor* colorPtr
 		}
 	};
 
+	menu->addChild(construct<MenuColorLabel>(&MenuColorLabel::fillColor, colorPtr));
+	if (includePicker) {
+		menu->addChild(new MenuSeparator);
+		menu->addChild(construct<MenuColorPicker>(&MenuColorPicker::color, colorPtr));
+	}
+	if (!presets.empty()) {
+		menu->addChild(new MenuSeparator);
+		for (auto &p : presets) {
+			menu->addChild(construct<AppendColorItem>(&MenuItem::text, p.second.c_str(), &AppendColorItem::colorPtr, colorPtr, &AppendColorItem::color, p.first));
+		}
+	}
+	if (includeField) {
+		menu->addChild(construct<MenuColorField>(&MenuColorField::color, colorPtr, &MenuColorField::textSelected, textSelected));
+	}
+}
+
+/** Create a color submenu for a color pointer with presets, a picker and a hex field.
+Example:
+	menu->addChild(createColorSubmenuItem("Color", &module->defaultColor, {
+		{ LABEL_COLOR_YELLOW, "Yellow" },
+		{ LABEL_COLOR_RED, "Red" },
+		{ LABEL_COLOR_CYAN, "Cyan" }
+	}));
+*/
+inline ui::MenuItem* createColorSubmenuItem(std::string text, NVGcolor* colorPtr, std::vector<std::pair<NVGcolor, std::string>> presets = {}, bool includePicker = true, bool includeField = false, bool* textSelected = nullptr) {
 	struct Item : ui::MenuItem {
 		NVGcolor* colorPtr;
 		std::vector<std::pair<NVGcolor, std::string>> presets;
@@ -182,20 +212,7 @@ inline ui::MenuItem* createColorSubmenuItem(std::string text, NVGcolor* colorPtr
 		bool* textSelected;
 		ui::Menu* createChildMenu() override {
 			ui::Menu* menu = new ui::Menu;
-			menu->addChild(construct<MenuColorLabel>(&MenuColorLabel::fillColor, colorPtr));
-			if (includePicker) {
-				menu->addChild(new MenuSeparator);
-				menu->addChild(construct<MenuColorPicker>(&MenuColorPicker::color, colorPtr));
-			}
-			if (!presets.empty()) {
-				menu->addChild(new MenuSeparator);
-				for (auto &p : presets) {
-					menu->addChild(construct<ColorItem>(&MenuItem::text, p.second.c_str(), &ColorItem::colorPtr, colorPtr, &ColorItem::color, p.first));
-				}
-			}
-			if (includeField) {
-				menu->addChild(construct<MenuColorField>(&MenuColorField::color, colorPtr, &MenuColorField::textSelected, textSelected));
-			}
+			appendColorSubmenuItems(menu, colorPtr, presets, includePicker, includeField, textSelected);
 			return menu;
 		}
 	};

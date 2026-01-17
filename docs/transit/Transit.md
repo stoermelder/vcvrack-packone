@@ -170,3 +170,6 @@ Once placed next to TRANSIT the expander works and behaves the same way TRANSIT 
     - Added context menu option to report parameter updates to plugin-host (only in plugin-version of Rack)
 - v2.2.0
     - Improved robustness for expander +T (e.g. crashes when using module-presets) (#412)
+- v2.3.0
+    - Added alternative parameter binding by selection box
+    - Added custom color LED setting per slot

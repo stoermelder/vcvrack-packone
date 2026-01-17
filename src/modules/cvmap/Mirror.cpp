@@ -213,6 +213,8 @@ struct MirrorModule : Module, StripIdFixModule {
 			return NULL;
 		// Get ParamQuantity
 		int paramId = handle->paramId;
+		if (paramId >= (int)module->paramQuantities.size())
+			return NULL;
 		ParamQuantity* paramQuantity = module->paramQuantities[paramId];
 		if (!paramQuantity)
 			return NULL;

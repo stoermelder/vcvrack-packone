@@ -1,6 +1,6 @@
-#include "catch2/plugin.hpp"
-#include "../modules/midi/MidiTrackingProcessor.hpp"
-#include "../modules/midi/MidiTrackingProcessor.cpp"  // Include implementation for templates
+#include "../../test/test_plugin.hpp"
+#include "MidiTrackingProcessor.hpp"
+#include "MidiTrackingProcessor.cpp"  // Include implementation for templates
 
 using namespace StoermelderPackOne;
 

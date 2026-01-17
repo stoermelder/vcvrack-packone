@@ -47,6 +47,7 @@ struct ParamHandleEx : ParamHandleIndicator {
 template <int NUM_PRESETS>
 struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChangeListener {
 	typedef TransitBase<NUM_PRESETS> BASE;
+	typedef typename TransitBase<NUM_PRESETS>::Slot SLOT;
 
 	enum ParamIds {
 		ENUMS(PARAM_PRESET, NUM_PRESETS),
@@ -157,11 +158,10 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChang
 			pq->id = i;
 			BASE::presetButton[i].param = &Module::params[PARAM_PRESET + i];
 
-			BASE::slot[i].param = &Module::params[PARAM_PRESET + i];
-			BASE::slot[i].lights = &Module::lights[LIGHT_PRESET + i * 3];
-			BASE::slot[i].presetSlotUsed = &BASE::presetSlotUsed[i];
-			BASE::slot[i].preset = &BASE::preset[i];
-			BASE::slot[i].presetButton = &BASE::presetButton[i];
+			BASE::slot[i].owner = this;
+			BASE::slot[i].index = i;
+			BASE::slot[i].indexParam = PARAM_PRESET + i;
+			BASE::slot[i].indexLight = LIGHT_PRESET + i * 3;
 		}
 		Module::configParam(PARAM_FADE, 0.f, 1.f, 0.5f, "Fade");
 		Module::configParam(PARAM_SHAPE, -1.f, 1.f, 0.f, "Shape");
@@ -207,6 +207,8 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChang
 			BASE::textLabel[i] = "";
 			BASE::fadeTime[i] = -1.f;
 			BASE::preset[i].clear();
+			BASE::slotColorSet[i] = false;
+			BASE::slotColor[i] = color::WHITE;
 		}
 
 		BASE::ctrlUniqueId = rack::random::uniform() * INT64_MAX;
@@ -230,31 +232,19 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChang
 		Module::onReset();
 	}
 
-	TransitSlot* transitSlot(int i) override {
-		return &BASE::slot[i];
-	}
-
-	inline TransitSlot* expSlot(int index) {
+	inline SLOT* getSlot(int index) {
 		if (index >= presetTotal) return NULL;
 		int n = index / NUM_PRESETS;
-		return N[n]->transitSlot(index % NUM_PRESETS);
-	}
-
-	inline std::string* expSlotLabel(int index) override {
-		if (index >= presetTotal) return NULL;
-		int n = index / NUM_PRESETS;
-		return &N[n]->textLabel[index % NUM_PRESETS];
-	}
-
-	inline float expSlotFadeTime(int index) {
-		if (index >= presetTotal) return -1.f;
-		int n = index / NUM_PRESETS;
-		return N[n]->fadeTime[index % NUM_PRESETS];
+		return &N[n]->slot[index % NUM_PRESETS];
 	}
 
 	// TransitPadMaster
-	int transitSlotSelected() override { 
+	int getSelectedSlot() override { 
 		return preset; 
+	}
+
+	std::string getSlotLabel(int i) override { 
+		return getSlot(i)->getLabel();
 	}
 
 	void process(const Module::ProcessArgs& args) override {
@@ -455,8 +445,8 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChang
 			if (buttonDivider.process()) {
 				float sampleTime = args.sampleTime * buttonDivider.division;
 				for (int i = 0; i < presetTotal; i++) {
-					TransitSlot* slot = expSlot(i);
-					switch (slot->presetButton->process(sampleTime)) {
+					SLOT* slot = getSlot(i);
+					switch (slot->getPresetButton()->process(sampleTime)) {
 						default:
 						case LongPressButton::NO_PRESS:
 							break;
@@ -476,8 +466,8 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChang
 			if (buttonDivider.process()) {
 				float sampleTime = args.sampleTime * buttonDivider.division;
 				for (int i = 0; i < presetTotal; i++) {
-					TransitSlot* slot = expSlot(i);
-					switch (slot->presetButton->process(sampleTime)) {
+					SLOT* slot = getSlot(i);
+					switch (slot->getPresetButton()->process(sampleTime)) {
 						default:
 						case LongPressButton::NO_PRESS:
 							break;
@@ -502,7 +492,6 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChang
 			presetProcess(args.sampleTime);
 		}
 
-		// Set lights infrequently
 		if (lightDivider.process()) {
 			float s = args.sampleTime * lightDivider.getDivision();
 			if (lightTimer.process(s) > 0.2f) {
@@ -512,26 +501,41 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChang
 			float intpart;
 			float frac = std::modf(presetPhaseLast, &intpart);
 			for (int i = 0; i < presetTotal; i++) {
-				TransitSlot* slot = expSlot(i);
-				bool u = *(slot->presetSlotUsed);
-				if (BASE::ctrlMode == CTRLMODE::READ || BASE::ctrlMode == CTRLMODE::AUTO) {
-					if (!isPhaseCvActive() || BASE::ctrlMode == CTRLMODE::AUTO) {
-						slot->lights[0].setBrightness(preset == i ? 1.f : (presetNext == i ? 1.f : 0.f));
-						slot->lights[1].setBrightness(preset == i ? 1.f : (presetCount > i ? (u ? 1.f : 0.25f) : 0.f));
-						slot->lights[2].setBrightness(preset == i ? 1.f : 0.f);
+				SLOT* slot = getSlot(i);
+				bool u = slot->isUsed();
+
+				if ((BASE::ctrlMode == CTRLMODE::READ || BASE::ctrlMode == CTRLMODE::AUTO) && isPhaseCvActive()) {
+					float f = (intpart == i) ? (1.f - frac) : (intpart + 1 == i) ? (frac) : 0.f;
+					float b1 = std::max(f, presetCount > i ? (u ? 1.f : 0.25f) : 0.f);
+					if (slot->isColorSet()) {
+						NVGcolor c = slot->getColor();
+						slot->getLights()[0].setBrightness(std::max(c.r, f));
+						slot->getLights()[1].setBrightness(std::max(c.g, f));
+						slot->getLights()[2].setBrightness(std::max(c.b, f));
 					}
 					else {
-						float f = (intpart == i) ? (1.f - frac) : (intpart + 1 == i) ? (frac) : 0.f;
-						slot->lights[0].setBrightness(f);
-						slot->lights[1].setBrightness(std::max(f, presetCount > i ? (u ? 1.f : 0.25f) : 0.f));
-						slot->lights[2].setBrightness(f);
+						slot->getLights()[0].setBrightness(f);
+						slot->getLights()[1].setBrightness(b1);
+						slot->getLights()[2].setBrightness(f);
 					}
 				}
 				else {
-					bool b = preset == i && lightBlink;
-					slot->lights[0].setBrightness(b ? 0.7f : (u ? 1.f : 0.f));
-					slot->lights[1].setBrightness(b ? 0.7f : (u ? 0.f : (presetCount > i ? 0.05f : 0.f)));
-					slot->lights[2].setBrightness(b ? 0.7f : 0.f);
+					if (slot->isColorSet()) {
+						float f = preset != i || lightBlink ? 1.f : 0.1f;
+						NVGcolor c = slot->getColor();
+						slot->getLights()[0].setBrightnessSmooth(c.r * f, s);
+						slot->getLights()[1].setBrightnessSmooth(c.g * f, s);
+						slot->getLights()[2].setBrightnessSmooth(c.b * f, s);
+					}
+					else {
+						bool b = preset == i && lightBlink;
+						float b0 = b ? 0.7f : (u ? 1.f : 0.f);
+						float b1 = b ? 0.7f : (u ? 0.f : (presetCount > i ? 0.05f : 0.f));
+						float b2 = b ? 0.7f : 0.f;
+						slot->getLights()[0].setBrightnessSmooth(b0, s);
+						slot->getLights()[1].setBrightnessSmooth(b1, s);
+						slot->getLights()[2].setBrightnessSmooth(b2, s);
+					}
 				}
 			}
 
@@ -558,6 +562,8 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChang
 			return NULL;
 		// Get ParamQuantity
 		int paramId = handle->paramId;
+		if (paramId >= (int)module->paramQuantities.size())
+			return NULL;
 		ParamQuantity* paramQuantity = module->paramQuantities[paramId];
 		if (!paramQuantity)
 			return NULL;
@@ -614,10 +620,10 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChang
 				// not loading a preset into Tranit.
 				float v = pq ? pq->getValue() : 0.f;
 				for (int i = 0; i < presetTotal; i++) {
-					TransitSlot* slot = expSlot(i);
-					if (!*(slot->presetSlotUsed)) continue;
-					slot->preset->push_back(v);
-					assert(sourceHandles.size() == slot->preset->size());
+					SLOT* slot = getSlot(i);
+					if (!slot->isUsed()) continue;
+					slot->getPreset()->push_back(v);
+					assert(sourceHandles.size() == slot->getPreset()->size());
 				}
 			}
 
@@ -732,14 +738,14 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChang
 			std::vector<float> v(sourceHandles.size(), 0.f);
 			for (auto snapshot : snapshots) {
 				if (snapshot.id < 0) continue;
-				TransitSlot* slot1 = expSlot(snapshot.id);
-				if (!*(slot1->presetSlotUsed)) continue;
+				SLOT* slot1 = getSlot(snapshot.id);
+				if (!slot1->isUsed()) continue;
 				weight += snapshot.weight;
 
 				for (size_t i = 0; i < sourceHandles.size(); i++) {
 					ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
 					if (!pq) continue;
-					float v1 = (*slot1->preset)[i];
+					float v1 = (*slot1->getPreset())[i];
 					v[i] += v1 * snapshot.weight;
 				}
 			}
@@ -747,8 +753,8 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChang
 			if (weight > 0.f) {
 				for (auto snapshot : snapshots) {
 					if (snapshot.id < 0) continue;
-					TransitSlot* slot1 = expSlot(snapshot.id);
-					if (!*(slot1->presetSlotUsed)) continue;
+					SLOT* slot1 = getSlot(snapshot.id);
+					if (!slot1->isUsed()) continue;
 
 					for (size_t i = 0; i < sourceHandles.size(); i++) {
 						ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
@@ -784,17 +790,17 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChang
 			presetPhaseLast = p;
 
 			int p1 = std::floor(p);
-			TransitSlot* slot1 = expSlot(p1);
-			while (p1 >= 0 && !*(slot1->presetSlotUsed)) {
+			SLOT* slot1 = getSlot(p1);
+			while (p1 >= 0 && !slot1->isUsed()) {
 				p1--;
-				slot1 = expSlot(p1);
+				slot1 = getSlot(p1);
 			}
 			
 			int p2 = std::ceil(p);
-			TransitSlot* slot2 = expSlot(p2);
-			while (p2 <= presetCount - 1 && !*(slot2->presetSlotUsed)) {
+			SLOT* slot2 = getSlot(p2);
+			while (p2 <= presetCount - 1 && slot2 && !slot2->isUsed()) {
 				p2++;
-				slot2 = expSlot(p2);
+				slot2 = getSlot(p2);
 			}
 			
 			if (p1 < 0 && p2 >= presetCount) return;
@@ -806,8 +812,8 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChang
 				for (size_t i = 0; i < sourceHandles.size(); i++) {
 					ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
 					if (!pq) continue;
-					float v1 = (*slot1->preset)[i];
-					float v2 = (*slot2->preset)[i];
+					float v1 = (*slot1->getPreset())[i];
+					float v2 = (*slot2->getPreset())[i];
 					float v = crossfade(v1, v2, p);
 					if (settings::isPlugin && parameterChangesDirect)
 						pq->setValue(v);
@@ -819,7 +825,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChang
 				for (size_t i = 0; i < sourceHandles.size(); i++) {
 					ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
 					if (!pq) continue;
-					float v = (*slot1->preset)[i];
+					float v = (*slot1->getPreset())[i];
 
 					if (settings::isPlugin && parameterChangesDirect)
 						pq->setValue(v);
@@ -855,23 +861,23 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChang
 		if (p < 0 || p >= presetCount)
 			return;
 
-		TransitSlot* slot = expSlot(p);
+		SLOT* slot = getSlot(p);
 		if (!isNext) {
 			if (p != preset || force) {
 				int presetPrev = preset;
 				preset = p;
 				presetNext = -1;
 				outSlotPulseGenerator.trigger();
-				if (!*(slot->presetSlotUsed)) 
+				if (!slot->isUsed()) 
 					return;
 				if (BASE::ctrlMode == CTRLMODE::AUTO && presetPrev != -1) {
-					TransitSlot* slotPrev = expSlot(presetPrev);
-					if (*(slotPrev->presetSlotUsed)) {
-						slotPrev->preset->clear();
+					SLOT* slotPrev = getSlot(presetPrev);
+					if (slotPrev->isUsed()) {
+						slotPrev->getPreset()->clear();
 						for (size_t i = 0; i < sourceHandles.size(); i++) {
 							ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
 							float v = pq ? pq->getValue() : 0.f;
-							slotPrev->preset->push_back(v);
+							slotPrev->getPreset()->push_back(v);
 						}
 					}
 				}
@@ -879,20 +885,20 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChang
 				outSocPulseGenerator.trigger();
 				outEocArm = true;
 				processing = true;
-				presetFadeTime = expSlotFadeTime(p);
+				presetFadeTime = getSlot(p)->getFadeTime();
 				presetOld.clear();
 				presetNew.clear();
 				for (size_t i = 0; i < sourceHandles.size(); i++) {
 					ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
 					presetOld.push_back(pq ? pq->getValue() : 0.f);
-					if (slot->preset->size() > i) {
-						presetNew.push_back((*(slot->preset))[i]);
+					if (slot->getPreset()->size() > i) {
+						presetNew.push_back((*(slot->getPreset()))[i]);
 					}
 				}
 			}
 		}
 		else {
-			if (!*(slot->presetSlotUsed)) return;
+			if (!slot->isUsed()) return;
 			presetNext = p;
 		}
 	}
@@ -908,15 +914,15 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChang
 	 *  Called from the engine thread.
 	 */
 	void presetSave(int p) {
-		TransitSlot* slot = expSlot(p);
-		*(slot->presetSlotUsed) = true;
-		slot->preset->clear();
+		SLOT* slot = getSlot(p);
+		slot->setUsed(true);
+		slot->getPreset()->clear();
 		for (size_t i = 0; i < sourceHandles.size(); i++) {
 			ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
 			float v = pq ? pq->getValue() : 0.f;
-			slot->preset->push_back(v);
+			slot->getPreset()->push_back(v);
 		}
-		assert(sourceHandles.size() == slot->preset->size());
+		assert(sourceHandles.size() == slot->getPreset()->size());
 		preset = p;
 	}
 
@@ -931,10 +937,12 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChang
 	 *  Called from the engine thread.
 	 */
 	void presetClear(int p) {
-		TransitSlot* slot = expSlot(p);
-		*(slot->presetSlotUsed) = false;
-		slot->preset->clear();
-		*expSlotLabel(p) = "";
+		SLOT* slot = getSlot(p);
+		slot->setUsed(false);
+		slot->getPreset()->clear();
+		slot->setLabel("");
+		slot->setFadeTime(-1.f);
+		slot->setColor(color::WHITE, false);
 		if (preset == p) preset = -1;
 	}
 
@@ -950,9 +958,9 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChang
 	 *  Called from the engine thread.
 	 */
 	void presetRandomize(int p) {
-		TransitSlot* slot = expSlot(p);
-		*(slot->presetSlotUsed) = true;
-		slot->preset->clear();
+		SLOT* slot = getSlot(p);
+		slot->setUsed(true);
+		slot->getPreset()->clear();
 		for (size_t i = 0; i < sourceHandles.size(); i++) {
 			float v = 0.f;
 			{
@@ -962,9 +970,9 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChang
 				v = pq->getValue();
 			}
 			s:
-			slot->preset->push_back(v);
+			slot->getPreset()->push_back(v);
 		}
-		assert(sourceHandles.size() == slot->preset->size());
+		assert(sourceHandles.size() == slot->getPreset()->size());
 		preset = p;
 	}
 
@@ -979,12 +987,12 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChang
 	 *  Called from the engine thread.
 	 */
 	void presetCopyPaste(int source, int target) {
-		TransitSlot* sourceSlot = expSlot(source);
-		TransitSlot* targetSlot = expSlot(target);
-		if (!*(sourceSlot->presetSlotUsed)) return;
-		*(targetSlot->presetSlotUsed) = true;
-		auto sourcePreset = sourceSlot->preset;
-		auto targetPreset = targetSlot->preset;
+		SLOT* sourceSlot = getSlot(source);
+		SLOT* targetSlot = getSlot(target);
+		if (!sourceSlot->isUsed()) return;
+		targetSlot->setUsed(true);
+		auto sourcePreset = sourceSlot->getPreset();
+		auto targetPreset = targetSlot->getPreset();
 		targetPreset->clear();
 		for (auto v : *sourcePreset) {
 			targetPreset->push_back(v);
@@ -1004,10 +1012,10 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChang
 	 */
 	void presetShiftBack(int p) {
 		for (int i = presetTotal - 2; i >= p; i--) {
-			TransitSlot* slot = expSlot(i);
-			if (*(slot->presetSlotUsed)) {
+			SLOT* slot = getSlot(i);
+			if (slot->isUsed()) {
 				presetCopyPaste(i, i + 1);
-				*expSlotLabel(i + 1) = *expSlotLabel(i);
+				getSlot(i + 1)->setLabel(getSlot(i)->getLabel());
 			}
 			else {
 				presetClear(i + 1);
@@ -1028,10 +1036,10 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChang
 	 */
 	void presetShiftFront(int p) {
 		for (int i = 1; i <= p; i++) {
-			TransitSlot* slot = expSlot(i);
-			if (*(slot->presetSlotUsed)) {
+			SLOT* slot = getSlot(i);
+			if (slot->isUsed()) {
 				presetCopyPaste(i, i - 1);
-				*expSlotLabel(i - 1) = *expSlotLabel(i);
+				getSlot(i - 1)->setLabel(getSlot(i)->getLabel());
 			}
 			else {
 				presetClear(i - 1);
@@ -1055,10 +1063,10 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChang
 			ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
 			if (!pq) {
 				for (int j = 0; j < presetTotal; j++) {
-					TransitSlot* slot = expSlot(j);
-					if (*(slot->presetSlotUsed)) {
-						if (slot->preset->size() > i) {
-							slot->preset->erase(slot->preset->begin() + i);
+					SLOT* slot = getSlot(j);
+					if (slot->isUsed()) {
+						if (slot->getPreset()->size() > i) {
+							slot->getPreset()->erase(slot->getPreset()->begin() + i);
 						}
 					}
 					else {
@@ -1072,9 +1080,9 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChang
 			}
 		}
 		for (int j = 0; j < presetTotal; j++) {
-			TransitSlot* slot = expSlot(j);
-			if (!*(slot->presetSlotUsed)) continue;
-			assert(sourceHandles.size() == slot->preset->size());
+			SLOT* slot = getSlot(j);
+			if (!slot->isUsed()) continue;
+			assert(sourceHandles.size() == slot->getPreset()->size());
 		}
 
 		// Publish new sourceHandles snapshot for the UI thread
@@ -1089,9 +1097,9 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChang
 		// ctrlUniqueId == -2 for presets before uniqueId was added
 		if (t->ctrlUniqueId == -2) {
 			for (int i = 0; i < NUM_PRESETS; i++) {
-				TransitSlot* slot = t->transitSlot(i);
-				if (*(slot->presetSlotUsed)) {
-					if (slot->preset->size() != sourceHandles.size()) {
+				SLOT* slot = &t->slot[i];
+				if (slot->isUsed()) {
+					if (slot->getPreset()->size() != sourceHandles.size()) {
 						invalid = true;
 						break;
 					}
@@ -1128,7 +1136,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChang
 		else if (outMode == OUTMODE::PHASE) outMode = OUTMODE::ENV;
 	}
 
-	int transitSlotCmd(SLOT_CMD cmd, int i) override {
+	int sendSlotCmd(SLOT_CMD cmd, int i) override {
 		switch (cmd) {
 			case SLOT_CMD::LOAD:
 				presetLoadRequest(i); 
@@ -1140,7 +1148,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChang
 				presetRandomizeRequest(i);
 				return -1;
 			case SLOT_CMD::COPY:
-				presetCopy = *expSlot(i)->presetSlotUsed ? i : -1;
+				presetCopy = getSlot(i)->isUsed() ? i : -1;
 				return -1;
 			case SLOT_CMD::PASTE_PREVIEW:
 				return presetCopy;
@@ -1248,12 +1256,129 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChang
 };
 
 template <int NUM_PRESETS>
+struct TransitSelectionWidget : Widget {
+	TransitModule<NUM_PRESETS>* module;
+
+	bool learn = false;
+
+	bool selecting = false;
+	math::Vec selectionStart;
+	math::Vec selectionEnd;
+	math::Vec mousePos;
+
+	void enableLearn() {
+		learn = !learn;
+		GLFWcursor* cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
+		if (APP->window) glfwSetCursor(APP->window->win, cursor);
+	}
+
+	void onHover(const HoverEvent& e) override {
+		mousePos = e.pos;
+		Widget::onHover(e);
+	}
+
+	void onButton(const ButtonEvent& e) override {
+		if (learn && e.button == GLFW_MOUSE_BUTTON_LEFT) {
+			e.consume(this);
+		}
+		Widget::onButton(e);
+	}
+
+	void onDragStart(const DragStartEvent& e) override {
+		if (learn && e.button == GLFW_MOUSE_BUTTON_LEFT) {
+			selecting = true;
+			selectionStart = mousePos;
+			selectionEnd = mousePos;
+			e.consume(this);
+		}
+		Widget::onDragStart(e);
+	}
+
+	void onDragEnd(const DragEndEvent& e) override {
+		if (selecting && e.button == GLFW_MOUSE_BUTTON_LEFT) {
+			mapParamsFromRect();
+			selecting = false;
+			learn = false;
+			if (APP->window) glfwSetCursor(APP->window->win, NULL);
+			e.consume(this);
+		}
+		Widget::onDragEnd(e);
+	}
+
+	void onDragHover(const DragHoverEvent& e) override {
+		mousePos = e.pos;
+		if (selecting) {
+			selectionEnd = mousePos;
+		}
+		Widget::onDragHover(e);
+	}
+
+	void mapParamsFromRect() {
+		math::Rect selectionBox = math::Rect::fromCorners(selectionStart, selectionEnd);
+		std::list<ModuleWidget*> selected;
+		for (ModuleWidget* mw : APP->scene->rack->getModules()) {
+			if (selectionBox.intersects(mw->box)) {
+				selected.push_back(mw);
+			}
+		}
+		if (selected.size() != 1) {
+			return;
+		}
+
+		ModuleWidget* mw = selected.front();
+		std::list<ParamWidget*> selectedParams;
+		math::Rect selectionBox1(selectionBox.pos.minus(mw->box.pos), selectionBox.size);
+		getAllDescendentsByTypeAndBox<ParamWidget*>(mw, selectionBox1, selectedParams);
+
+		selectedParams.reverse();
+		for (ParamWidget* pw : selectedParams) {
+			if (!pw->module) continue;
+			module->bindAddParameterRequest(pw->module->getId(), pw->paramId);
+		}
+	}
+
+	void draw(const DrawArgs& args) override {
+		// Draw selection rectangle
+		if (selecting) {
+			nvgBeginPath(args.vg);
+			math::Rect selectionBox = math::Rect::fromCorners(selectionStart, selectionEnd);
+			nvgRect(args.vg, RECT_ARGS(selectionBox));
+			nvgFillColor(args.vg, nvgRGBAf(0, 0, 1, 0.25));
+			nvgFill(args.vg);
+			nvgStrokeWidth(args.vg, 2.0);
+			nvgStrokeColor(args.vg, nvgRGBAf(0, 0, 1, 0.5));
+			nvgStroke(args.vg);
+		}
+	}
+
+	template <class T>
+	void getAllDescendentsByTypeAndBox(Widget* w, math::Rect selectionBox, std::list<T>& selected) {
+		for (auto it = w->children.rbegin(); it != w->children.rend(); it++) {
+			Widget* child = *it;
+			// Filter child by visibility and position
+			if (!child->visible)
+				continue;
+			if (!selectionBox.intersects(child->box))
+				continue;
+
+			math::Rect selectionBox1(selectionBox.pos.minus(child->box.pos), selectionBox.size);
+			getAllDescendentsByTypeAndBox<T>(child, selectionBox1, selected);
+			T t = dynamic_cast<T>(child);
+			if (t) {
+				selected.push_back(t);
+			}
+		}
+	}
+}; // struct TransitSelectionWidget
+
+template <int NUM_PRESETS>
 struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 	typedef TransitWidget<NUM_PRESETS> WIDGET;
 	typedef ThemedModuleWidget<TransitModule<NUM_PRESETS>> BASE;
 	typedef TransitModule<NUM_PRESETS> MODULE;
 	
 	int learn = 0;
+	TransitSelectionWidget<NUM_PRESETS>* selectionWidget = nullptr;
 
 	TransitWidget(MODULE* module)
 		: ThemedModuleWidget<MODULE>(module, "Transit") {
@@ -1284,6 +1409,23 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 			ledButton->id = i;
 			BASE::addParam(ledButton);
 			BASE::addChild(createLightCentered<MediumSimpleLight<RedGreenBlueLight>>(Vec(60.0f, 46.4f + o), module, MODULE::LIGHT_PRESET + i * 3));
+		}
+
+		if (module) {
+			selectionWidget = new TransitSelectionWidget<NUM_PRESETS>;
+			selectionWidget->module = module;
+			APP->scene->rack->addChild(selectionWidget);
+		}
+	}
+
+	~TransitWidget() {
+		if (learn != 0 && APP->window) {
+			if (APP->window) glfwSetCursor(APP->window->win, NULL);
+		}
+
+		if (selectionWidget) {
+			APP->scene->rack->removeChild(selectionWidget);
+			delete selectionWidget;
 		}
 	}
 	
@@ -1330,19 +1472,21 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 
 		if (learn == 2 || learn == 3) {
 			// Check if a ParamWidget was touched
-			ParamWidget* touchedParam = APP->scene->rack->getTouchedParam();
-			if (touchedParam && touchedParam->getParamQuantity()->module != module) {
-				APP->scene->rack->setTouchedParam(NULL);
-				int64_t moduleId = touchedParam->getParamQuantity()->module->id;
-				int paramId = touchedParam->getParamQuantity()->paramId;
-				module->bindAddParameterRequest(moduleId, paramId);
-				if (learn == 2) { 
-					disableLearn();
+			ParamWidget* pw = APP->scene->rack->getTouchedParam();
+			if (pw) {
+				ParamQuantity* pq = pw->getParamQuantity();
+				if (pq && pq->module && pq->module != module) {
+					APP->scene->rack->setTouchedParam(NULL);
+					int64_t moduleId = pq->module->id;
+					int paramId = pq->paramId;
+					module->bindAddParameterRequest(moduleId, paramId);
+					if (learn == 2) { 
+						disableLearn();
+					}
+					return;
 				}
 			}
-			else {
-				disableLearn();
-			}
+			disableLearn();
 		}
 	}
 
@@ -1541,6 +1685,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 		menu->addChild(createMenuItem("Bind module (select)", "", [=]() { enableLearn(1); }));
 		menu->addChild(construct<BindParameterItem>(&MenuItem::text, "Bind single parameter", &BindParameterItem::rightText, RACK_MOD_SHIFT_NAME "+B", &BindParameterItem::widget, this, &BindParameterItem::mode, 2));
 		menu->addChild(construct<BindParameterItem>(&MenuItem::text, "Bind multiple parameters", &BindParameterItem::rightText, RACK_MOD_SHIFT_NAME "+A", &BindParameterItem::widget, this, &BindParameterItem::mode, 3));
+		menu->addChild(createMenuItem("Bind parameters by selection", "", [=]() { selectionWidget->enableLearn(); }));
 
 		// Use atomic snapshot published by the engine thread to avoid racing with engine mutations
 		auto snap = std::atomic_load(&module->sourceHandlesPtr);
