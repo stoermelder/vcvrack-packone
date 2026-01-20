@@ -176,6 +176,25 @@ Here is a unpolished introduction video to demonstrate the configuration steps a
 [stoermelder STRIP-file for Impromptu GATE-SEQ-64](MidiCat-LaunchPadMiniMk3-GateSeq64-FactoryCustom3.vcvss)  
 [Modified template for LaunchPad Mini Mk3](MidiCat-LaunchPadMiniMk3-FactoryCustom3.syx)
 
+### Hotkeys
+
+For convenience, the following keyboard shortcuts are implemented for quick mapping and control. Most hotkeys are active while hovering the MIDI-CAT module; some are only active during an active mapping session.
+
+| Hotkey | Action | Notes |
+|--------|--------|-------|
+| `Shift + E` | Map module (left) — **Keep MIDI assignments** | Hover MIDI-CAT and use to map the module on the left without clearing existing CC/note assignments |
+| `Ctrl/Cmd + Shift + E` | Map module (left) — **Clear first** | Clears mapping slots before filling them from the module on the left |
+| `Shift + D` | Map module (select) — **Keep MIDI assignments** | Enable module-select mapping (cursor becomes crosshair) and keep MIDI assignments |
+| `Ctrl/Cmd + Shift + D` | Map module (select) — **Clear first** | Enable module-select mapping and clear existing mappings first |
+| `Shift + V` | **Apply mapping** (MEM) | Apply stored module mapping from MEM (also available from MEM panel) |
+| `Esc` | **Abort mapping** | Abort an active mapping operation while hovering MIDI-CAT |
+| `Space` | **Skip current mapping slot** | While in mapping mode, advances to the next slot |
+| `Ctrl/Cmd + Shift + R` | **Reset Pickup input-mode** | Resets the input-mode _Pickup (snap)_ (while hovering MIDI-CAT) |
+| `Ctrl/Cmd + Shift + I` (hold) | Temporarily activate **Direct** input-mode while held | Press & hold to force Direct mode; releases revert to previous mode |
+
+> Note: These hotkeys are implemented in the module code (`src/modules/midicat/MidiCat.cpp`) and are active when the MIDI-CAT widget is hovered (or during an active mapping session where indicated).
+
+
 ### Additional features
 
 - The module allows you to import presets from VCV MIDI-MAP for a quick migration.
@@ -342,3 +361,4 @@ FINE for MIDI-CAT must be placed on the right side of MIDI-CAT and can be used t
     - Fixed broken _Locate and indicate_ mode
 - v2.3.0
     - Added hotkey Ctrl/Cmd+Shift+R for resetting input-mode _Pickup (snap)_
+    - Added hotkey Ctrl/Cmd+Shift+I for temporarily activating input-mode _Direct_ while held

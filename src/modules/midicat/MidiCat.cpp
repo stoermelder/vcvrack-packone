@@ -410,6 +410,8 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 
 	MIDIMODE midiMode = MIDIMODE::MIDIMODE_DEFAULT;
 	bool ccFineMode = false;
+	// Use for temporary override of CC mode to DIRECT
+	bool ccModeOverride = false;
 
 	/** Track last values */
 	int lastValueIn[MAX_CHANNELS];
@@ -663,7 +665,8 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 
 					// Check if CC value has been set and changed
 					if (cc >= 0 && ccs[id].process()) {
-						switch (ccs[id].ccMode) {
+						CCMODE mode = ccModeOverride ? CCMODE::DIRECT : ccs[id].ccMode;
+						switch (mode) {
 							case CCMODE::DIRECT:
 								if (lastValueIn[id] != ccs[id].getValue()) {
 									lastValueIn[id] = ccs[id].getValue();
@@ -2632,8 +2635,29 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 					}
 					break;
 				}
+				case GLFW_KEY_I: {
+					if ((e.mods & RACK_MOD_MASK) == (RACK_MOD_SHIFT | RACK_MOD_CTRL)) {
+						MidiCatModule* module = dynamic_cast<MidiCatModule*>(this->module);
+						module->ccModeOverride = true;
+						e.consume(this);
+					}
+					break;
+				}
 			}
 		}
+		if (e.action == GLFW_RELEASE) {
+			switch (e.key) {
+				case GLFW_KEY_I: {
+					if ((e.mods & RACK_MOD_MASK) == (RACK_MOD_SHIFT | RACK_MOD_CTRL)) {
+						MidiCatModule* module = dynamic_cast<MidiCatModule*>(this->module);
+						module->ccModeOverride = false;
+						e.consume(this);
+					}
+					break;
+				}
+			}
+		}
+
 		ThemedModuleWidget<MidiCatModule>::onHoverKey(e);
 	}
 
