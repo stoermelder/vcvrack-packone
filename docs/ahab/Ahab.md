@@ -27,9 +27,21 @@ AHAB provides two additional operators that let your patterns interact with the 
   - Use digits for ports (1–4) to read numeric control values
   - Use letters for ports (a–d) to read pitch-style signals (handy for notes and V/Oct control).
 
+![AHAB CV I/O](in-1.png)
+This reads from input 1 and scales the value to a range of 0–5, which is mapped to the voltage range 0-10V. If input is 2V, the operator output will be 1.
+
+![AHAB CV I/O](in-2.png)
+This reads from input 1 (addressed as 'a') and outputs the note name for the corresponding V/Oct voltage. Octave and cents are ignored.
+
 - **'>'** (write) — Use '>' to send values from the pattern to the module's 4 output jacks.
   - Use The numeric ports (1–4) provide stepped control voltages useful for gates, triggers or stepped CV.
   - Use letters for ports (a–d) to write pitch voltages suitable for V/Oct synth inputs.
+
+![AHAB CV I/O](out-1.png)
+This writes to output 1 and scales the value 5 to a range of 0-6, which is mapped to the voltage range 0-10V. In this case, output 1 will be 8.33V.
+
+![AHAB CV I/O](out-2.png)
+This writes to output 1 (addressed as 'a') a V/Oct pitch voltage of D3 (third octave D).
 
 ### Feature Comparison
 
