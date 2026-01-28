@@ -103,8 +103,8 @@ struct AhabModule : Module {
 		delete sim;
 	}
 
-	void onSampleRateChange(const SampleRateChangeEvent& e) override {
-		lightDivider.setDivision(e.sampleRate / 100.f);
+	void onSampleRateChange() override {
+		lightDivider.setDivision(APP->engine->getSampleRate() / 100.f);
 	}
 
 	void onReset() override {
