@@ -4,6 +4,7 @@
 #include "AhabSim.hpp"
 #include "AhabMidiDriver.hpp"
 #include "AhabRenderer.hpp"
+#include "AhabRandomizer.hpp"
 #include <osdialog.h>
 
 extern "C" {
@@ -405,6 +406,20 @@ struct AhabSimWidget : OpaqueWidget {
 		Usz fh = module->sim->getFieldHeight();
 		Usz fw = module->sim->getFieldWidth();
 		module->sim->fillRectRequest(0, 0, fh, fw);
+	}
+
+	void simRandomize(float density = 0.3f) {
+		if (!module || !module->sim) return;
+		
+		// Get current selection bounds
+		Usz sy, sx, sh, sw;
+		renderer.getSelectionRect(sy, sx, sh, sw);
+		
+		// Use the AhabRandomizer class
+		StoermelderPackOne::Ahab::AhabRandomizer randomizer;
+		randomizer.randomize(module->sim, sy, sx, sh, sw, density);
+		
+		notifyUiChanged();
 	}
 
 	void simLoad() {
@@ -1210,6 +1225,21 @@ struct AhabSimWidget : OpaqueWidget {
 					}));
 				}
 			}
+		}));
+
+		menu->addChild(createSubmenuItem("Randomize selection", "", [this](ui::Menu* menu) {
+			menu->addChild(createMenuItem("Sparse (10%)", "", [this]() { 
+				simRandomize(0.1f); 
+				APP->event->setSelectedWidget(this);
+			}));
+			menu->addChild(createMenuItem("Medium (30%)", "", [this]() { 
+				simRandomize(0.3f); 
+				APP->event->setSelectedWidget(this);
+			}));
+			menu->addChild(createMenuItem("Very dense (50%)", "", [this]() { 
+				simRandomize(0.5f); 
+				APP->event->setSelectedWidget(this);
+			}));
 		}));
 
 		menu->addChild(new MenuSeparator());
