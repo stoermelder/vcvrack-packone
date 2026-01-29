@@ -46,7 +46,7 @@ std::string trim(const std::string& s) {
 }
 
 
-struct Label {
+struct ModuleLabel {
 	int64_t moduleId;
 	float x = 0.f;
 	float y = 0.f;
@@ -59,6 +59,36 @@ struct Label {
 	std::string text;
 	NVGcolor color = LABEL_COLOR_YELLOW;
 	NVGcolor fontColor = LABEL_FONTCOLOR_DEFAULT;
+};
+
+
+struct CableLabel {
+	int64_t cableId;
+	bool atInput = true; // Whether label is at input port (true) or output port (false)
+	float width = LABEL_WIDTH_DEFAULT;
+	float size = LABEL_SIZE_DEFAULT;
+	float distance = 40.f; // Distance from port along cable
+	int font = 0;
+	std::string text;
+	NVGcolor color = LABEL_COLOR_YELLOW; // Auto-set from cable, but can be overridden
+	NVGcolor fontColor = LABEL_FONTCOLOR_DEFAULT; // Auto-set for contrast
+	
+	// Transient port references for tracking during incomplete cable state (not stored to JSON)
+	PortWidget* lastOutputPort = NULL;
+	PortWidget* lastInputPort = NULL;
+	
+	// Cache for placement calculations
+	Vec cachedOutputPos = Vec(-1.f, -1.f);
+	Vec cachedInputPos = Vec(-1.f, -1.f);
+	float cachedWidth = 0.f;
+	float cachedSize = 0.f;
+	float cachedDistance = 0.f;
+	bool cachedAtInput = true;
+	Vec cachedBoxPos;
+	Vec cachedBoxSize;
+	float cachedLabelAngle = 0.f;
+	Vec cachedRotatedSize;
+	bool cacheValid = false;
 };
 
 
@@ -87,7 +117,13 @@ struct GlueModule : Module, StripIdFixModule {
 	int panelTheme = 0;
 
 	/** [Stored to JSON] the list of labels */
-	std::list<Label*> labels;
+	std::list<ModuleLabel*> moduleLabels;
+
+	/** [Stored to JSON] the list of cable labels */
+	std::list<CableLabel*> cableLabels;
+	
+	/** Transient list of cable labels requested for deletion */
+	std::list<CableLabel*> cableLabelsToDelete;
 
 	/** [Stored to JSON] default size for new labels */
 	float defaultSize;
@@ -112,7 +148,7 @@ struct GlueModule : Module, StripIdFixModule {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configSwitch(PARAM_UNLOCK, 0.f, 1.f, 0.f, "Unlock labels for editing (" RACK_MOD_CTRL_NAME "+" RACK_MOD_SHIFT_NAME "+G");
-		configSwitch(PARAM_ADD_LABEL, 0.f, 1.f, 0.f, "Add label (" RACK_MOD_CTRL_NAME "+G)");
+		configSwitch(PARAM_ADD_LABEL, 0.f, 1.f, 0.f, "Add module label (" RACK_MOD_CTRL_NAME "+G)");
 		configSwitch(PARAM_OPACITY_PLUS, 0.f, 1.f, 0.f, string::f("Increase overall opacity by %i%%", int(LABEL_OPACITY_STEP * 100)));
 		configSwitch(PARAM_OPACITY_MINUS, 0.f, 1.f, 0.f, string::f("Decrease overall opacity by %i%%", int(LABEL_OPACITY_STEP * 100)));
 		configSwitch(PARAM_HIDE, 0.f, 1.f, 0.f, "Hide labels");
@@ -121,14 +157,19 @@ struct GlueModule : Module, StripIdFixModule {
 
 	~GlueModule() {
 		clearLabels();
+		clearCableLabels();
 	}
 
 	void onReset() override {
 		Module::onReset();
-		for (Label* l : labels) {
+		for (ModuleLabel* l : moduleLabels) {
 			delete l;
 		}
-		labels.clear();
+		moduleLabels.clear();
+		for (CableLabel* cl : cableLabels) {
+			delete cl;
+		}
+		cableLabels.clear();
 		defaultSize = LABEL_SIZE_DEFAULT;
 		defaultWidth = LABEL_WIDTH_DEFAULT;
 		defaultAngle = 0.f;
@@ -140,8 +181,8 @@ struct GlueModule : Module, StripIdFixModule {
 		resetRequested = true;
 	}
 
-	Label* addLabel() {
-		Label* l = new Label;
+	ModuleLabel* addModuleLabel() {
+		ModuleLabel* l = new ModuleLabel;
 		l->size = defaultSize;
 		l->width = defaultWidth;
 		l->angle = defaultAngle;
@@ -150,21 +191,45 @@ struct GlueModule : Module, StripIdFixModule {
 		l->opacity = defaultOpacity;
 		l->font = defaultFont;
 		l->fontColor = defaultFontColor;
-		labels.push_back(l);
+		moduleLabels.push_back(l);
 		return l;
 	}
 
-	void removeLabel(Label* l) {
+	void removeModuleLabel(ModuleLabel* l) {
 		// Make sure the widget is deleted before!
-		labels.remove(l);
+		moduleLabels.remove(l);
 		delete l;
 	}
 
 	void clearLabels() {
-		for (Label* l : labels) {
+		for (ModuleLabel* l : moduleLabels) {
 			delete l;
 		}
-		labels.clear();
+		moduleLabels.clear();
+		resetRequested = true;
+	}
+
+	CableLabel* addCableLabel() {
+		CableLabel* cl = new CableLabel;
+		cl->size = defaultSize;
+		cl->width = defaultWidth;
+		cl->font = defaultFont;
+		cl->distance = rescale(rack::random::uniform(), 0.f, 1.f, 20.f, 40.f);
+		// color and fontColor are auto-set from cable
+		cableLabels.push_back(cl);
+		return cl;
+	}
+
+	void removeCableLabel(CableLabel* cl) {
+		cableLabels.remove(cl);
+		delete cl;
+	}
+
+	void clearCableLabels() {
+		for (CableLabel* cl : cableLabels) {
+			delete cl;
+		}
+		cableLabels.clear();
 		resetRequested = true;
 	}
 
@@ -180,14 +245,16 @@ struct GlueModule : Module, StripIdFixModule {
 		json_object_set_new(rootJ, "defaultFont", json_integer(defaultFont));
 		json_object_set_new(rootJ, "defaultFontColor", json_string(color::toHexString(defaultFontColor).c_str()));
 		json_object_set_new(rootJ, "skewLabels", json_boolean(skewLabels));
-		json_t* labelsJ = labelToJson();
+		json_t* labelsJ = moduleLabelToJson();
 		json_object_set_new(rootJ, "labels", labelsJ);
+		json_t* cableLabelsJ = cableLabelToJson();
+		json_object_set_new(rootJ, "cableLabels", cableLabelsJ);
 		return rootJ;
 	}
 
-	json_t* labelToJson() {
+	json_t* moduleLabelToJson() {
 		json_t* labelsJ = json_array();
-		for (Label* l : labels) {
+		for (ModuleLabel* l : moduleLabels) {
 			json_t* labelJ = json_object();
 			json_object_set_new(labelJ, "moduleId", json_integer(l->moduleId));
 			json_object_set_new(labelJ, "x", json_real(l->x));
@@ -206,6 +273,23 @@ struct GlueModule : Module, StripIdFixModule {
 		return labelsJ;
 	}
 
+	json_t* cableLabelToJson() {
+		json_t* cableLabelsJ = json_array();
+		for (CableLabel* cl : cableLabels) {
+			json_t* cableLabelJ = json_object();
+			json_object_set_new(cableLabelJ, "cableId", json_integer(cl->cableId));
+			json_object_set_new(cableLabelJ, "atInput", json_boolean(cl->atInput));
+			json_object_set_new(cableLabelJ, "width", json_real(cl->width));
+			json_object_set_new(cableLabelJ, "size", json_real(cl->size));
+			json_object_set_new(cableLabelJ, "distance", json_real(cl->distance));
+			json_object_set_new(cableLabelJ, "text", json_string(cl->text.c_str()));
+			json_object_set_new(cableLabelJ, "font", json_integer(cl->font));
+			// Note: color and fontColor are auto-calculated from cable, not saved
+			json_array_append_new(cableLabelsJ, cableLabelJ);
+		}
+		return cableLabelsJ;
+	}
+
 	void dataFromJson(json_t* rootJ) override {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 
@@ -221,13 +305,16 @@ struct GlueModule : Module, StripIdFixModule {
 		skewLabels = json_boolean_value(json_object_get(rootJ, "skewLabels"));
 
 		json_t* labelsJ = json_object_get(rootJ, "labels");
-		labelFromJson(labelsJ);
+		moduleLabelFromJson(labelsJ);
+
+		json_t* cableLabelsJ = json_object_get(rootJ, "cableLabels");
+		cableLabelFromJson(cableLabelsJ);
 
 		idFixClearMap();
 		params[PARAM_UNLOCK].setValue(0.f);
 	}
 
-	void labelFromJson(json_t* labelsJ) {
+	void moduleLabelFromJson(json_t* labelsJ) {
 		clearLabels();
 		if (labelsJ) {
 			size_t labelIdx;
@@ -237,7 +324,7 @@ struct GlueModule : Module, StripIdFixModule {
 				moduleId = idFix(moduleId);
 				if (moduleId < 0) continue;
 				
-				Label* l = addLabel();
+				ModuleLabel* l = addModuleLabel();
 				l->moduleId = moduleId;
 				l->x = json_real_value(json_object_get(labelJ, "x"));
 				l->y = json_real_value(json_object_get(labelJ, "y"));
@@ -255,12 +342,35 @@ struct GlueModule : Module, StripIdFixModule {
 			}
 		}
 	}
+
+	void cableLabelFromJson(json_t* cableLabelsJ) {
+		clearCableLabels();
+		if (cableLabelsJ) {
+			size_t labelIdx;
+			json_t* cableLabelJ;
+			json_array_foreach(cableLabelsJ, labelIdx, cableLabelJ) {
+				int64_t cableId = json_integer_value(json_object_get(cableLabelJ, "cableId"));
+				if (cableId < 0) continue;
+				
+				CableLabel* cl = addCableLabel();
+				cl->cableId = cableId;
+				cl->atInput = json_boolean_value(json_object_get(cableLabelJ, "atInput"));
+				cl->width = json_real_value(json_object_get(cableLabelJ, "width"));
+				cl->size = json_real_value(json_object_get(cableLabelJ, "size"));
+				json_t* distanceJ = json_object_get(cableLabelJ, "distance");
+				if (distanceJ) cl->distance = json_real_value(distanceJ);
+				json_t* textJ = json_object_get(cableLabelJ, "text");
+				if (textJ) cl->text = json_string_value(textJ);
+				cl->font = json_integer_value(json_object_get(cableLabelJ, "font"));
+			}
+		}
+	}
 };
 
 
 
-struct LabelDrawWidget : TransparentWidget {
-	Label* label;
+struct ModuleLabelDrawWidget : TransparentWidget {
+	ModuleLabel* label;
 	Vec rotatedSize;
 
 	void draw(const Widget::DrawArgs& args) override {
@@ -310,8 +420,8 @@ struct LabelDrawWidget : TransparentWidget {
 };
 
 
-struct LabelWidget : widget::TransparentWidget {
-	Label* label;
+struct ModuleLabelWidget : widget::TransparentWidget {
+	ModuleLabel* label;
 
 	bool requestedDelete = false;
 	bool requestedDuplicate = false;
@@ -320,17 +430,17 @@ struct LabelWidget : widget::TransparentWidget {
 
 	math::Vec dragPos;
 
-	LabelDrawWidget* widget;
+	ModuleLabelDrawWidget* widget;
 	TransformWidget* transformWidget;
 	float lastAngle = 360.f;
 	float lastSize = 0.f;
 	float lastWidth = 0.f;
 	bool lastSkew = false;
 
-	LabelWidget(Label* label) {
+	ModuleLabelWidget(ModuleLabel* label) {
 		this->label = label;
 
-		widget = new LabelDrawWidget;
+		widget = new ModuleLabelDrawWidget;
 		widget->label = label;
 		transformWidget = new TransformWidget;
 		transformWidget->addChild(widget);
@@ -417,14 +527,14 @@ struct LabelWidget : widget::TransparentWidget {
 		ui::Menu* menu = createMenu();
 
 		struct LabelField : ui::TextField {
-			Label* l;
+			ModuleLabel* l;
 			// Needed for input-blur on submenu
 			bool textSelected = true;
 			LabelField() {
 				box.size.x = 160.f;
 				placeholder = "Label";
 			}
-			LabelField* setLabel(Label* l) {
+			LabelField* setLabel(ModuleLabel* l) {
 				this->l = l;
 				setText(l->text);
 				selectAll();
@@ -450,7 +560,7 @@ struct LabelWidget : widget::TransparentWidget {
 		};
 
 		struct AppearanceItem : MenuItem {
-			Label* label;
+			ModuleLabel* label;
 			bool* textSelected;
 			AppearanceItem() {
 				rightText = RIGHT_ARROW;
@@ -487,7 +597,7 @@ struct LabelWidget : widget::TransparentWidget {
 			}
 		};
 
-		menu->addChild(createMenuLabel("Label"));
+		menu->addChild(createMenuLabel("Module Label"));
 		LabelField* labelField = construct<LabelField>()->setLabel(label);
 		menu->addChild(labelField);
 		menu->addChild(construct<AppearanceItem>(&AppearanceItem::text, "Appearance", &AppearanceItem::label, label, &AppearanceItem::textSelected, &labelField->textSelected));
@@ -505,10 +615,511 @@ struct LabelWidget : widget::TransparentWidget {
 };
 
 
+struct CableLabelDrawWidget : TransparentWidget {
+	CableLabel* cableLabel;
+	Vec rotatedSize;
+
+	void drawLayer(const Widget::DrawArgs& args, int layer) override {
+		if (layer != 3) return;
+		if (!cableLabel) return;
+
+		Rect d = Rect(Vec(0.f, 0.f), rotatedSize);
+
+		// Draw shadow
+		nvgBeginPath(args.vg);
+		float r = 4;
+		float c = 4;
+		math::Vec b = math::Vec(-2.f, -2.f);
+		nvgRect(args.vg, d.pos.x + b.x - r, d.pos.y + b.y - r, d.size.x - 2 * b.x + 2 * r, d.size.y - 2 * b.y + 2 * r);
+		NVGcolor shadowColor = nvgRGBAf(0.f, 0.f, 0.f, 0.1f);
+		NVGcolor transparentColor = nvgRGBAf(0.f, 0.f, 0.f, 0.f);
+		nvgFillPaint(args.vg, nvgBoxGradient(args.vg, d.pos.x + b.x, d.pos.y + b.y, d.size.x - 2 * b.x, d.size.y - 2 * b.y, c, r, shadowColor, transparentColor));
+		nvgFill(args.vg);
+
+		// Draw label
+		nvgBeginPath(args.vg);
+		nvgRect(args.vg, d.pos.x, d.pos.y, d.size.x, d.size.y);
+		nvgFillColor(args.vg, color::alpha(cableLabel->color, settings::cableOpacity));
+		nvgFill(args.vg);
+
+		// Draw text
+		if (cableLabel->text.length() > 0) {
+			std::shared_ptr<Font> font;
+			switch (cableLabel->font) {
+				case 0:
+					font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
+					break;
+				case 1:
+					font = APP->window->loadFont(asset::plugin(pluginInstance, "res/fonts/RedkostComic.otf"));
+					break;
+			}
+
+			nvgFontSize(args.vg, cableLabel->size);
+			nvgFontFaceId(args.vg, font->handle);
+			nvgTextLetterSpacing(args.vg, -1.2f);
+			nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_TOP);
+			nvgFillColor(args.vg, color::alpha(cableLabel->fontColor, settings::cableOpacity));
+			NVGtextRow textRow;
+			nvgTextBreakLines(args.vg, cableLabel->text.c_str(), NULL, d.size.x, &textRow, 1);
+			nvgTextBox(args.vg, d.pos.x, d.pos.y + 0.2f, d.size.x, textRow.start, textRow.end);
+		}
+	}
+};
+
+
+struct CableLabelWidget : widget::TransparentWidget {
+	CableLabel* cableLabel;
+
+	bool requestedDelete = false;
+	bool requestedDuplicate = false;
+	bool editMode = false;
+	bool skew = false;
+
+	CableLabelDrawWidget* widget;
+	TransformWidget* transformWidget;
+	float lastAngle = 360.f;
+	float lastSize = 0.f;
+	float lastWidth = 0.f;
+	bool lastSkew = false;
+
+	CableLabelWidget(CableLabel* cableLabel) {
+		this->cableLabel = cableLabel;
+
+		widget = new CableLabelDrawWidget;
+		widget->cableLabel = cableLabel;
+		transformWidget = new TransformWidget;
+		transformWidget->addChild(widget);
+		addChild(transformWidget);
+	}
+
+	void step() override {
+		// Find the cable in the rack - search by cable ID
+		CableWidget* cw = NULL;
+		for (Widget* w : APP->scene->rack->getCableContainer()->children) {
+			CableWidget* cwTest = dynamic_cast<CableWidget*>(w);
+			if (cwTest) {
+				// Match by cable ID if cable exists, or by stored ports if incomplete
+				if (cwTest->cable && cwTest->cable->id == cableLabel->cableId) {
+					cw = cwTest;
+					break;
+				}
+			}
+		}
+
+		// If cable not found, it might be incomplete - search by matching ports
+		if (!cw) {
+			for (Widget* w : APP->scene->rack->getCableContainer()->children) {
+				CableWidget* cwTest = dynamic_cast<CableWidget*>(w);
+				if (cwTest && !cwTest->cable) {
+					// Check if this incomplete cable matches our stored cable ID context
+					// by checking if it has the same ports as our labeled cable
+					if (cableLabel->lastOutputPort && cableLabel->lastInputPort) {
+						if (cwTest->outputPort == cableLabel->lastOutputPort || 
+						    cwTest->inputPort == cableLabel->lastInputPort) {
+							cw = cwTest;
+							break;
+						}
+					}
+				}
+			}
+		}
+
+		// Request deletion only if cable truly doesn't exist anymore
+		if (!cw) {
+			// Check if the cable still exists in engine
+			bool cableExistsInEngine = false;
+			for (Widget* w : APP->scene->rack->getCableContainer()->children) {
+				CableWidget* cwTest = dynamic_cast<CableWidget*>(w);
+				if (cwTest && cwTest->cable && cwTest->cable->id == cableLabel->cableId) {
+					cableExistsInEngine = true;
+					break;
+				}
+			}
+			if (!cableExistsInEngine) {
+				requestedDelete = true;
+			}
+			visible = false;
+			return;
+		}
+
+		// Store port references for tracking during incomplete state
+		if (cw->isComplete()) {
+			cableLabel->lastOutputPort = cw->outputPort;
+			cableLabel->lastInputPort = cw->inputPort;
+		}
+
+		// Show label even if cable is incomplete (being dragged), as long as we can position it
+		if (!cw->cable || !cw->isComplete()) {
+			// Only show if at least one port is connected so we can calculate position
+			if (!cw->outputPort && !cw->inputPort) {
+				visible = false;
+				return;
+			}
+			// For incomplete cables, we'll show the label where it would be
+		}
+		visible = true;
+
+		// Get positions
+		Vec outputPos = cw->getOutputPos();
+		Vec inputPos = cw->getInputPos();
+		
+		// Check if we can use cached calculations
+		if (cableLabel->cacheValid && 
+		    cableLabel->cachedOutputPos.equals(outputPos) && 
+		    cableLabel->cachedInputPos.equals(inputPos) &&
+		    cableLabel->cachedWidth == cableLabel->width &&
+		    cableLabel->cachedSize == cableLabel->size &&
+		    cableLabel->cachedDistance == cableLabel->distance &&
+		    cableLabel->cachedAtInput == cableLabel->atInput) {
+			// Use cached values
+			box.pos = cableLabel->cachedBoxPos;
+			box.size = cableLabel->cachedBoxSize;
+			widget->rotatedSize = cableLabel->cachedRotatedSize;
+			widget->box.size = box.size;
+			
+			// Set transform from cached angle
+			transformWidget->identity();
+			transformWidget->translate(Vec(box.size.x / 2.f, box.size.y / 2.f));
+			transformWidget->rotate(cableLabel->cachedLabelAngle);
+			transformWidget->translate(Vec(-cableLabel->width / 2.f, -cableLabel->size / 2.f));
+			
+			// Still need to update colors
+			cableLabel->color = cw->color;
+			float brightness = (cw->color.r * 0.299f + cw->color.g * 0.587f + cw->color.b * 0.114f);
+			cableLabel->fontColor = brightness > 0.5f ? LABEL_FONTCOLOR_DEFAULT : LABEL_FONTCOLOR_WHITE;
+			return;
+		}
+		
+		// Cache miss - need to recalculate
+		cableLabel->cachedOutputPos = outputPos;
+		cableLabel->cachedInputPos = inputPos;
+		cableLabel->cachedWidth = cableLabel->width;
+		cableLabel->cachedSize = cableLabel->size;
+		cableLabel->cachedDistance = cableLabel->distance;
+		cableLabel->cachedAtInput = cableLabel->atInput;
+		
+		// Calculate slump position (matching VCV Rack's getSlumpPos function)
+		// This is exactly how VCV Rack calculates the cable curve control point
+		float dist = outputPos.minus(inputPos).norm();
+		Vec slump = outputPos.plus(inputPos).div(2.f);
+		slump.y += (1.0f - settings::cableTension) * (150.0f + 1.0f * dist);
+		
+		// Adjust endpoints toward slump (matching VCV Rack's cable drawing)
+		outputPos = outputPos.plus(slump.minus(outputPos).normalize().mult(14.f));
+		inputPos = inputPos.plus(slump.minus(inputPos).normalize().mult(14.f));
+		
+		// Calculate position at configurable distance from port along the cable curve
+		// Use iterative approach to find t value that gives desired distance
+		float targetDist = cableLabel->distance; // Distance from port in pixels
+		
+		// Binary search for t value that gives target distance from the appropriate port
+		// For output-side labels, measure from output; for input-side labels, measure from input
+		float t = 0.f;
+		float tMin = 0.f;
+		float tMax = 0.5f; // Only search first half of cable
+		Vec referencePort = cableLabel->atInput ? inputPos : outputPos;
+		
+		for (int i = 0; i < 10; i++) {
+			t = (tMin + tMax) / 2.f;
+			float tTest = cableLabel->atInput ? (1.f - t) : t;
+			float oneMinusT = 1.f - tTest;
+			
+			// Calculate position at t
+			Vec pos = outputPos.mult(oneMinusT * oneMinusT)
+				.plus(slump.mult(2.f * oneMinusT * tTest))
+				.plus(inputPos.mult(tTest * tTest));
+			
+			// Measure distance from the reference port
+			float currentDist = pos.minus(referencePort).norm();
+			if (currentDist < targetDist) {
+				tMin = t;
+			}
+			else {
+				tMax = t;
+			}
+		}
+		
+		// Use the found t value (already adjusted for input/output in the search)
+		float tFinal = cableLabel->atInput ? (1.f - t) : t;
+		float oneMinusT = 1.f - tFinal;
+		
+		Vec labelCenter = outputPos.mult(oneMinusT * oneMinusT)
+			.plus(slump.mult(2.f * oneMinusT * tFinal))
+			.plus(inputPos.mult(tFinal * tFinal));
+		
+		// Calculate tangent vector (derivative of quadratic Bezier)
+		// B'(t) = 2(1-t)(P₁-P₀) + 2t(P₂-P₁)
+		Vec tangent = slump.minus(outputPos).mult(2.f * oneMinusT)
+			.plus(inputPos.minus(slump).mult(2.f * tFinal));
+		
+		// Calculate angle along the cable
+		float tangentAngle = std::atan2(tangent.y, tangent.x);
+		
+		// Rotate label 90° from tangent so short side (height) aligns with cable
+		// Keep text readable (never upside down)
+		float labelAngle = tangentAngle + M_PI / 2.f;
+		if (labelAngle < -M_PI / 2.f) labelAngle += M_PI;
+		if (labelAngle > M_PI / 2.f) labelAngle -= M_PI;
+		
+		// Set cable color (from cable widget)
+		cableLabel->color = cw->color;
+		
+		// Calculate contrasting font color based on cable color brightness
+		float brightness = (cw->color.r * 0.299f + cw->color.g * 0.587f + cw->color.b * 0.114f);
+		cableLabel->fontColor = brightness > 0.5f ? LABEL_FONTCOLOR_DEFAULT : LABEL_FONTCOLOR_WHITE;
+		
+		// Calculate perpendicular offset from cable, always pointing downward
+		float offsetDist = cableLabel->width / 2.f + 3.f; // Half the label's perpendicular extent + gap
+		// Perpendicular to tangent is at tangentAngle ± π/2
+		// Choose the perpendicular that points downward (positive Y)
+		float perpAngle = tangentAngle + M_PI / 2.f;
+		Vec perpDir = Vec(std::cos(perpAngle), std::sin(perpAngle));
+		// If this perpendicular points upward, flip it
+		if (perpDir.y < 0.f) {
+			perpAngle += M_PI;
+			perpDir = Vec(std::cos(perpAngle), std::sin(perpAngle));
+		}
+		Vec perpOffset = perpDir.mult(offsetDist);
+		
+		// Position label - box size is swapped due to 90° rotation
+		box.size = Vec(cableLabel->size, cableLabel->width);
+		box.pos = labelCenter.plus(perpOffset).minus(Vec(cableLabel->size / 2.f, cableLabel->width / 2.f));
+
+		widget->rotatedSize = Vec(cableLabel->width, cableLabel->size);
+		widget->box.size = box.size;
+
+		// Rotate label 90° from tangent
+		transformWidget->identity();
+		transformWidget->translate(Vec(box.size.x / 2.f, box.size.y / 2.f));
+		transformWidget->rotate(labelAngle);
+		transformWidget->translate(Vec(-cableLabel->width / 2.f, -cableLabel->size / 2.f));
+		
+		// Store in cache
+		cableLabel->cachedBoxPos = box.pos;
+		cableLabel->cachedBoxSize = box.size;
+		cableLabel->cachedLabelAngle = labelAngle;
+		cableLabel->cachedRotatedSize = widget->rotatedSize;
+		cableLabel->cacheValid = true;
+
+		TransparentWidget::step();
+	}
+
+	void onHoverKey(const event::HoverKey& e) override {
+		if (editMode && e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && e.key == GLFW_KEY_X) {
+			requestedDelete = true;
+			e.consume(this);
+		}
+		TransparentWidget::onHoverKey(e);
+	}
+};
+
+
+// Forward declaration
+struct LabelContainer;
+
+// Helper structure to store Glue module reference for adding cable labels
+struct GlueHelper {
+	static GlueModule* glueModule;
+	static LabelContainer* labelContainer;
+	
+	static void addCableLabelForCable(CableWidget* cw, bool atInput);
+	static bool getEditMode();
+};
+
+GlueModule* GlueHelper::glueModule = NULL;
+LabelContainer* GlueHelper::labelContainer = NULL;
+
+// Port context menu extender for adding cable labels
+struct PortWidgetContextExtender {
+	Widget* lastSelectedWidget = NULL;
+
+	struct AddCableLabelItem : MenuItem {
+		CableWidget* cw;
+		bool atInput;
+		CableLabel* existingLabel = NULL;
+
+		Menu* createChildMenu() override {
+			Menu* menu = new Menu;
+			menu->addChild(createMenuLabel("Cable Label"));
+
+			if (!existingLabel) {
+				menu->addChild(createMenuItem("Add", "", [=]() {
+					GlueHelper::addCableLabelForCable(cw, atInput);
+				}));
+				return menu;
+			}
+
+			struct CableLabelField : ui::TextField {
+				CableLabel* cl;
+				bool textSelected = true;
+				CableLabelField() {
+					box.size.x = 160.f;
+					placeholder = "Cable Label";
+				}
+				CableLabelField* setCableLabel(CableLabel* cl) {
+					this->cl = cl;
+					setText(cl->text);
+					selectAll();
+					return this;
+				}
+				void step() override {
+					if (textSelected) APP->event->setSelectedWidget(this);
+					TextField::step();
+					cl->text = text;
+				}
+				void onSelectKey(const event::SelectKey& e) override {
+					if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
+						cl->text = text;
+						ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
+						overlay->requestDelete();
+						e.consume(this);
+					}
+					if (!e.getTarget()) {
+						ui::TextField::onSelectKey(e);
+					}
+				}
+			};
+
+			struct CableAppearanceItem : MenuItem {
+				CableLabel* cableLabel;
+				bool* textSelected;
+				CableAppearanceItem() {
+					rightText = RIGHT_ARROW;
+				}
+				Menu* createChildMenu() override {
+					Menu* menu = new Menu;
+					menu->addChild(Rack::createPtrSlider(&cableLabel->size, LABEL_SIZE_MIN, LABEL_SIZE_MAX, LABEL_SIZE_DEFAULT, "Size", "", 1.f, 140.0f));
+					menu->addChild(Rack::createPtrSlider(&cableLabel->width, LABEL_WIDTH_MIN, LABEL_WIDTH_MAX, LABEL_WIDTH_DEFAULT, "Width", "", 1.f, 140.0f));
+					menu->addChild(Rack::createPtrSlider(&cableLabel->distance, 10.f, 200.f, 40.f, "Distance", "px", 1.f, 140.0f));
+					menu->addChild(new MenuSeparator);
+					menu->addChild(createMenuLabel("Font"));
+					menu->addChild(Rack::createValuePtrMenuItem("Default", &cableLabel->font, 0));
+					menu->addChild(Rack::createValuePtrMenuItem("Handwriting", &cableLabel->font, 1));
+					menu->addChild(new MenuSeparator);
+					menu->addChild(createMenuLabel("Position"));
+					
+					// Check if labels exist at other positions on this cable
+					bool inputLabelExists = false;
+					bool outputLabelExists = false;
+					if (GlueHelper::glueModule) {
+						for (CableLabel* cl : GlueHelper::glueModule->cableLabels) {
+							if (cl->cableId == cableLabel->cableId) {
+								if (cl->atInput) inputLabelExists = true;
+								else outputLabelExists = true;
+							}
+						}
+					}
+					
+					// Only allow switching to input if no label exists there (or this is already at input)
+					MenuItem* inputItem = Rack::createValuePtrMenuItem("At Input Port", &cableLabel->atInput, true);
+					if (inputLabelExists && !cableLabel->atInput) {
+						inputItem->disabled = true;
+					}
+					menu->addChild(inputItem);
+					
+					// Only allow switching to output if no label exists there (or this is already at output)
+					MenuItem* outputItem = Rack::createValuePtrMenuItem("At Output Port", &cableLabel->atInput, false);
+					if (outputLabelExists && cableLabel->atInput) {
+						outputItem->disabled = true;
+					}
+					menu->addChild(outputItem);
+					return menu;
+				}
+			};
+
+			CableLabelField* labelField = construct<CableLabelField>()->setCableLabel(existingLabel);
+			menu->addChild(labelField);
+			menu->addChild(construct<CableAppearanceItem>(&CableAppearanceItem::text, "Appearance", &CableAppearanceItem::cableLabel, existingLabel, &CableAppearanceItem::textSelected, &labelField->textSelected));
+			menu->addChild(createMenuItem("Delete", "", [=]() {
+				// Mark this cable label for deletion
+				if (GlueHelper::glueModule) {
+					GlueHelper::glueModule->cableLabelsToDelete.push_back(existingLabel);
+				}
+			}));
+			return menu;
+		}
+	};
+
+	void step() {
+		if (!GlueHelper::glueModule || !GlueHelper::labelContainer) return;
+		if (!GlueHelper::getEditMode()) return;
+
+		Widget* w = APP->event->getDraggedWidget();
+		if (!w) return;
+
+		// Only handle right button events
+		if (APP->event->dragButton != GLFW_MOUSE_BUTTON_RIGHT) {
+			lastSelectedWidget = NULL;
+			return;
+		}
+
+		if (w != lastSelectedWidget) {
+			lastSelectedWidget = w;
+
+			// Was the last touched widget a PortWidget?
+			PortWidget* pw = dynamic_cast<PortWidget*>(w);
+			if (!pw) return;
+
+			// Retrieve the context menu, if available
+			MenuOverlay* overlay = NULL;
+			for (auto rit = APP->scene->children.rbegin(); rit != APP->scene->children.rend(); rit++) {
+				overlay = dynamic_cast<MenuOverlay*>(*rit);
+				if (overlay) break;
+			}
+			if (!overlay) return;
+
+			Menu* menu = overlay->getFirstDescendantOfType<Menu>();
+			if (!menu) return;
+
+			extendPortWidgetContextMenu(pw, menu);
+		}
+	}
+
+	void extendPortWidgetContextMenu(PortWidget* pw, Menu* menu) {
+		if (!pw || !pw->module) return;
+
+		// Get cables connected to this port
+		std::vector<CableWidget*> cws = APP->scene->rack->getCompleteCablesOnPort(pw);
+		if (cws.empty()) return;
+
+		menu->addChild(new MenuSeparator);
+		menu->addChild(createMenuLabel("GLUE Cable Label"));
+
+		for (auto it = cws.rbegin(); it != cws.rend(); it++) {
+			CableWidget* cw = *it;
+			if (!cw->cable) continue;
+
+			PortWidget* otherPw = (pw->type == engine::Port::INPUT) ? cw->outputPort : cw->inputPort;
+			if (!otherPw) continue;
+
+			bool atInput = (pw->type == engine::Port::INPUT);
+			
+			// Check if label already exists for this cable at this port
+			CableLabel* existingLabel = NULL;
+			if (GlueHelper::glueModule) {
+				for (CableLabel* cl : GlueHelper::glueModule->cableLabels) {
+					if (cl->cableId == cw->cable->id) {
+						if (cl->atInput == atInput) {
+							existingLabel = cl;
+						} 
+					}
+				}
+			}
+
+			std::string labelText = otherPw->module->model->name + ": " + otherPw->getPortInfo()->getName();
+			AddCableLabelItem* item = createMenuItem<AddCableLabelItem>(labelText, RIGHT_ARROW);
+			item->cw = cw;
+			item->atInput = atInput;
+			item->existingLabel = existingLabel;
+			menu->addChild(item);
+		}
+	}
+};
+
 
 template < typename WIDGET >
-struct LabelRemoveAction : history::ModuleAction {
-	Label label;
+struct ModuleLabelRemoveAction : history::ModuleAction {
+	ModuleLabel label;
 	int64_t moduleId;
 
 	void undo() override {
@@ -517,7 +1128,7 @@ struct LabelRemoveAction : history::ModuleAction {
 		WIDGET* w = dynamic_cast<WIDGET*>(mw);
 		assert(w);
 
-		LabelWidget* lw = w->labelContainer->addLabelWidget();
+		ModuleLabelWidget* lw = w->labelContainer->addModuleLabelWidget();
 		lw->label->moduleId = label.moduleId;
 		lw->label->x = label.x;
 		lw->label->y = label.y;
@@ -551,10 +1162,12 @@ struct GlueWidget;
 
 struct LabelContainer : widget::Widget {
 	GlueModule* module;
-	std::list<Label*> labelsToBeDeleted;
+	std::list<ModuleLabel*> moduleLabelsToBeDeleted;
+	std::list<CableLabel*> cableLabelsToBeDeleted;
 
 	/** used when duplicating an existing label */
-	Label* labelTemplate = NULL;
+	ModuleLabel* moduleLabelTemplate = NULL;
+	CableLabel* cableLabelTemplate = NULL;
 
 	/** labels locked? */
 	bool editMode = false;
@@ -564,16 +1177,29 @@ struct LabelContainer : widget::Widget {
 	bool learnMode = false;
 
 	ModuleWidget* mw;
+	
+	/** Port context menu extender */
+	PortWidgetContextExtender portExtender;
 
 	void step() override {
 		Widget::step();
 		if (!module) return;
 
+		// Step the port extender to catch context menus
+		// Only do this if we're the registered Glue module (prevents duplicate menu entries)
+		if (this == GlueHelper::labelContainer) {
+			portExtender.step();
+		}
+
 		if (module->resetRequested) {
 			this->clearChildren();
-			for (Label* l : module->labels) {
-				LabelWidget* lw = new LabelWidget(l);
+			for (ModuleLabel* l : module->moduleLabels) {
+				ModuleLabelWidget* lw = new ModuleLabelWidget(l);
 				addChild(lw);
+			}
+			for (CableLabel* cl : module->cableLabels) {
+				CableLabelWidget* clw = new CableLabelWidget(cl);
+				addChild(clw);
 			}
 			module->resetRequested = false;
 			learnMode = false;
@@ -588,28 +1214,45 @@ struct LabelContainer : widget::Widget {
 
 		// Traverse labels, collect delete-requests
 		for (Widget* w : children) {
-			LabelWidget* lw = dynamic_cast<LabelWidget*>(w);
-			if (!lw) continue;
-			if (lw->requestedDelete) {
-				labelsToBeDeleted.push_back(lw->label);
-				labelTemplate = NULL;
+			ModuleLabelWidget* lw = dynamic_cast<ModuleLabelWidget*>(w);
+			if (lw) {
+				if (lw->requestedDelete) {
+					moduleLabelsToBeDeleted.push_back(lw->label);
+					moduleLabelTemplate = NULL;
+				}
+				if (lw->requestedDuplicate) {
+					lw->requestedDuplicate = false;
+					moduleLabelTemplate = lw->label;
+					learnMode = true;
+				}
+				lw->editMode = editMode;
+				lw->skew = module->skewLabels;
+				continue;
 			}
-			if (lw->requestedDuplicate) {
-				lw->requestedDuplicate = false;
-				labelTemplate = lw->label;
-				learnMode = true;
+
+			CableLabelWidget* clw = dynamic_cast<CableLabelWidget*>(w);
+			if (clw) {
+				if (clw->requestedDelete) {
+					cableLabelsToBeDeleted.push_back(clw->cableLabel);
+					cableLabelTemplate = NULL;
+				}
+				if (clw->requestedDuplicate) {
+					clw->requestedDuplicate = false;
+					cableLabelTemplate = clw->cableLabel;
+					// Can't learn for cable labels, they require explicit cable selection
+				}
+				clw->editMode = editMode;
+				// Cable labels don't use skew
 			}
-			lw->editMode = editMode;
-			lw->skew = module->skewLabels;
 		}
 
-		if (labelsToBeDeleted.size() > 0) {
+		if (moduleLabelsToBeDeleted.size() > 0) {
 			history::ComplexAction* complexAction = new history::ComplexAction;
 			complexAction->name = "remove module";
 			// First, undo "module removal" by a "double undo"
 			complexAction->push(new DoubleUndoAction);
-			for (Label* l : labelsToBeDeleted) {
-				LabelRemoveAction<GlueWidget>* a = new LabelRemoveAction<GlueWidget>;
+			for (ModuleLabel* l : moduleLabelsToBeDeleted) {
+				ModuleLabelRemoveAction<GlueWidget>* a = new ModuleLabelRemoveAction<GlueWidget>;
 				a->label = *l;
 				a->moduleId = mw->module->id;
 				complexAction->push(a);
@@ -618,7 +1261,22 @@ struct LabelContainer : widget::Widget {
 			// Second, undo the label removal
 			APP->history->push(complexAction);
 
-			labelsToBeDeleted.clear();
+			moduleLabelsToBeDeleted.clear();
+		}
+
+		if (cableLabelsToBeDeleted.size() > 0) {
+			for (CableLabel* cl : cableLabelsToBeDeleted) {
+				removeCableLabelWidget(cl);
+			}
+			cableLabelsToBeDeleted.clear();
+		}
+		
+		// Handle cable labels marked for deletion from menu
+		if (module->cableLabelsToDelete.size() > 0) {
+			for (CableLabel* cl : module->cableLabelsToDelete) {
+				removeCableLabelWidget(cl);
+			}
+			module->cableLabelsToDelete.clear();
 		}
 
 		module->lights[GlueModule::LIGHT_LEARN].setBrightness(learnMode);
@@ -629,38 +1287,84 @@ struct LabelContainer : widget::Widget {
 		if (!hideMode) Widget::draw(args);
 	}
 
-	LabelWidget* getLabelWidget(Label* l) {
+	void drawLayer(const DrawArgs& args, int layer) override {
+		if (!hideMode) Widget::drawLayer(args, layer);
+	}
+
+	ModuleLabelWidget* getModuleLabelWidget(ModuleLabel* l) {
 		for (Widget* w : children) {
-			LabelWidget* lw = dynamic_cast<LabelWidget*>(w);
+			ModuleLabelWidget* lw = dynamic_cast<ModuleLabelWidget*>(w);
 			if (!lw) continue;
 			if (lw->label == l) return lw;
 		}
 		return NULL;
 	}
 
-	LabelWidget* addLabelWidget() {
-		Label* l = module->addLabel();
-		if (labelTemplate) {
-			l->size = labelTemplate->size;
-			l->width = labelTemplate->width;
-			l->angle = labelTemplate->angle;
-			l->color = labelTemplate->color;
-			l->opacity = labelTemplate->opacity;
-			l->font = labelTemplate->font;
-			l->fontColor = labelTemplate->fontColor;
-			labelTemplate = NULL;
+	ModuleLabelWidget* addModuleLabelWidget() {
+		ModuleLabel* l = module->addModuleLabel();
+		if (moduleLabelTemplate) {
+			l->size = moduleLabelTemplate->size;
+			l->width = moduleLabelTemplate->width;
+			l->angle = moduleLabelTemplate->angle;
+			l->color = moduleLabelTemplate->color;
+			l->opacity = moduleLabelTemplate->opacity;
+			l->font = moduleLabelTemplate->font;
+			l->fontColor = moduleLabelTemplate->fontColor;
+			moduleLabelTemplate = NULL;
 		}
-		LabelWidget* lw = new LabelWidget(l);
+		ModuleLabelWidget* lw = new ModuleLabelWidget(l);
 		addChild(lw);
 		return lw;
 	}
 
-	void removeLabelWidget(Label* l) {
-		LabelWidget* lw = getLabelWidget(l);
+	void removeLabelWidget(ModuleLabel* l) {
+		ModuleLabelWidget* lw = getModuleLabelWidget(l);
 		if (!lw) return;
 		removeChild(lw);
 		delete lw;
-		module->removeLabel(l);
+		module->removeModuleLabel(l);
+	}
+
+	CableLabelWidget* getCableLabelWidget(CableLabel* cl) {
+		for (Widget* w : children) {
+			CableLabelWidget* clw = dynamic_cast<CableLabelWidget*>(w);
+			if (clw && clw->cableLabel == cl) return clw;
+		}
+		return NULL;
+	}
+
+	CableLabelWidget* addCableLabelWidget(int64_t cableId, bool atInput) {
+		// Check if label already exists for this cable and port
+		for (Widget* w : children) {
+			CableLabelWidget* existingClw = dynamic_cast<CableLabelWidget*>(w);
+			if (existingClw && existingClw->cableLabel->cableId == cableId && existingClw->cableLabel->atInput == atInput) {
+				return existingClw; // Return existing label instead of creating duplicate
+			}
+		}
+		
+		CableLabel* cl = module->addCableLabel();
+		cl->cableId = cableId;
+		cl->atInput = atInput;
+
+		if (cableLabelTemplate) {
+			cl->size = cableLabelTemplate->size;
+			cl->width = cableLabelTemplate->width;
+			cl->font = cableLabelTemplate->font;
+			// color and fontColor are auto-set from cable
+			cableLabelTemplate = NULL;
+		}
+		
+		CableLabelWidget* clw = new CableLabelWidget(cl);
+		addChild(clw);
+		return clw;
+	}
+
+	void removeCableLabelWidget(CableLabel* cl) {
+		CableLabelWidget* clw = getCableLabelWidget(cl);
+		if (!clw) return;
+		removeChild(clw);
+		delete clw;
+		module->removeCableLabel(cl);
 	}
 
 	void addLabelAtMousePos(Widget* w) {
@@ -672,7 +1376,7 @@ struct LabelContainer : widget::Widget {
 		if (!m) return;
 
 		// Create new label
-		LabelWidget* lw = addLabelWidget();
+		ModuleLabelWidget* lw = addModuleLabelWidget();
 		lw->label->text = m->model->name;
 		lw->label->moduleId = m->id;
 
@@ -727,6 +1431,28 @@ struct LabelContainer : widget::Widget {
 };
 
 
+// Implementation of GlueHelper::addCableLabelForCable
+void GlueHelper::addCableLabelForCable(CableWidget* cw, bool atInput) {
+	if (!glueModule || !labelContainer || !cw || !cw->cable) return;
+	
+	// Create cable label
+	CableLabelWidget* clw = labelContainer->addCableLabelWidget(cw->cable->id, atInput);
+	
+	// Set default text
+	PortWidget* pw = atInput ? cw->inputPort : cw->outputPort;
+	if (pw) {
+		clw->cableLabel->text = pw->getPortInfo()->getName();
+	}
+}
+
+bool GlueHelper::getEditMode() {
+	if (labelContainer) {
+		return labelContainer->editMode;
+	}
+	return false;
+}
+
+
 struct LabelButton : TL1105 {
 	LabelContainer* labelContainer;
 	void onButton(const event::Button& e) override {
@@ -751,7 +1477,7 @@ struct OpacityPlusButton : TL1105 {
 	GlueModule* module;
 	void onButton(const event::Button& e) override {
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
-			for (Label* l : module->labels)
+			for (ModuleLabel* l : module->moduleLabels)
 				l->opacity = std::min(l->opacity + LABEL_OPACITY_STEP, LABEL_OPACITY_MAX);
 		}
 		TL1105::onButton(e);
@@ -762,7 +1488,7 @@ struct OpacityMinusButton : TL1105 {
 	GlueModule* module;
 	void onButton(const event::Button& e) override {
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
-			for (Label* l : module->labels)
+			for (ModuleLabel* l : module->moduleLabels)
 				l->opacity = std::max(l->opacity - LABEL_OPACITY_STEP, LABEL_OPACITY_MIN);
 		}
 		TL1105::onButton(e);
@@ -803,6 +1529,13 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 			// This is where the magic happens: add a new widget on top-level to Rack
 			APP->scene->rack->addChild(labelContainer);
 
+			// Set global helper only if no Glue module is already registered
+			// This ensures only the first Glue module extends port context menus
+			if (!GlueHelper::glueModule) {
+				GlueHelper::glueModule = module;
+				GlueHelper::labelContainer = labelContainer;
+			}
+
 			// Move the cable-widget to the end, labels should appear below cables
 			// NB: this should be considered unstable API
 			std::list<Widget*>::iterator it;
@@ -831,6 +1564,12 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 
 	~GlueWidget() {
 		if (labelContainer) {
+			// Clear global helper only if this module is the one currently registered
+			if (GlueHelper::glueModule == module) {
+				GlueHelper::glueModule = NULL;
+				GlueHelper::labelContainer = NULL;
+			}
+			
 			APP->scene->rack->removeChild(labelContainer);
 			delete labelContainer;
 		}
@@ -843,12 +1582,12 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 			void undo() override {
 				GlueWidget* mw = dynamic_cast<GlueWidget*>(APP->scene->rack->getModule(moduleId));
 				assert(mw);
-				mw->module->labelFromJson(oldLabelJ);
+				mw->module->moduleLabelFromJson(oldLabelJ);
 			}
 			void redo() override {
 				GlueWidget* mw = dynamic_cast<GlueWidget*>(APP->scene->rack->getModule(moduleId));
 				assert(mw);
-				mw->module->labelFromJson(newLabelJ);
+				mw->module->moduleLabelFromJson(newLabelJ);
 			}
 		};
 
@@ -865,7 +1604,7 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 		
 		GlueChangeAction* mc = new GlueChangeAction;
 		mc->moduleId = module->id;
-		mc->oldLabelJ = module->labelToJson();
+		mc->oldLabelJ = module->moduleLabelToJson();
 		complexAction->push(mc);
 
 		for (ModuleWidget* w : toBeRemoved) {
@@ -875,16 +1614,16 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 			h->setModule(w);
 			complexAction->push(h);
 
-			for (Label* l : gw->module->labels) {
-				module->labels.push_back(l);
+			for (ModuleLabel* l : gw->module->moduleLabels) {
+				module->moduleLabels.push_back(l);
 			}
 
-			gw->module->labels.clear();
+			gw->module->moduleLabels.clear();
 			APP->scene->rack->removeModule(w);
 			delete w;
 		}
 
-		mc->newLabelJ = module->labelToJson();
+		mc->newLabelJ = module->moduleLabelToJson();
 
 		APP->history->push(complexAction);
 		module->resetRequested = true;
@@ -930,10 +1669,10 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 			}
 		};
 
-		struct LabelMenuItem : MenuItem {
+		struct ModuleLabelMenuItem : MenuItem {
 			LabelContainer* labelContainer;
-			Label* label;
-			LabelMenuItem() {
+			ModuleLabel* label;
+			ModuleLabelMenuItem() {
 				rightText = RIGHT_ARROW;
 			}
 			void step() override {
@@ -961,14 +1700,28 @@ struct GlueWidget : ThemedModuleWidget<GlueModule> {
 		menu->addChild(construct<DefaultAppearanceMenuItem>(&MenuItem::text, "Label appearance", &DefaultAppearanceMenuItem::module, module));
 		menu->addChild(createBoolPtrMenuItem("Skew labels", "", &module->skewLabels));
 
-		if (module->labels.size() > 0) {
+		if (module->moduleLabels.size() > 0) {
 			menu->addChild(new MenuSeparator());
 			menu->addChild(createMenuItem("Consolidate GLUE", "", [=]() { consolidate(); }));
 			menu->addChild(new MenuSeparator());
-			menu->addChild(createMenuLabel("Labels"));
+			menu->addChild(createMenuLabel("Module Labels"));
 
-			for (Label* l : module->labels) {
-				menu->addChild(construct<LabelMenuItem>(&LabelMenuItem::labelContainer, labelContainer, &LabelMenuItem::label, l));
+			for (ModuleLabel* l : module->moduleLabels) {
+				menu->addChild(construct<ModuleLabelMenuItem>(&ModuleLabelMenuItem::labelContainer, labelContainer, &ModuleLabelMenuItem::label, l));
+			}
+		}
+
+		if (module->cableLabels.size() > 0) {
+			menu->addChild(new MenuSeparator());
+			menu->addChild(createMenuLabel("Cable Labels"));
+
+			for (CableLabel* cl : module->cableLabels) {
+				std::string text = cl->text.empty() ? "<empty>" : cl->text;
+				menu->addChild(createSubmenuItem(text, "", [=](Menu* menu) {
+					menu->addChild(createMenuItem("Delete", "", [=]() {
+						labelContainer->removeCableLabelWidget(cl);
+					}));
+				}));
 			}
 		}
 	}

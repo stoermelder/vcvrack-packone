@@ -2,6 +2,8 @@
 
 ### Changes and Fixes
 
+- Module [GLUE](./docs/glue/Glue.md)
+    - Added option to add labels to cables (#247)
 - Module [MIDI-CAT](./docs/midicat/MidiCat.md)
     - Added hotkey Ctrl/Cmd+Shift+R for resetting input-mode _Pickup (snap)_
     - Added hotkey Ctrl/Cmd+Shift+I for temporarily activating input-mode _Direct_ while held
