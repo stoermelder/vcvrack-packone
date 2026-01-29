@@ -2,14 +2,16 @@
 
 AHAB is a port of the [ORCA-C](https://github.com/hundredrabbits/Orca-c) project into a VCV Rack module.
 
-AHAB is a live, grid-based sequencer/patcher for creating patterns, rhythms and MIDI/CV output by typing simple characters into an on-panel field. AHAB lets you create live-running patterns by editing a small grid.
+AHAB is a livecoding sequencer based on [ORCA-C](https://github.com/hundredrabbits/Orca-c). Create patterns and melodies by typing characters into a grid. Every letter is an operator with its own function—build sequences by chaining them together.
 
+![AHAB Module](./intro.gif)
+
+**Getting started**  
 - Type to place characters in the field and build rhythmic or melodic patterns. 
 - Use the Run button or the spacebar to start and stop the engine. 
 - The module can output both sync pulses and musical data you can route to synths or other modules.
 
-Here are some resources to get you started with live-coding using AHAB/ORCA:
-
+**Resources**  
 - https://metasyn.srht.site/learn-orca
 - https://100r.co/media/content/projects/zine_orca.png
 - https://100r.co/site/orca.html
@@ -17,15 +19,17 @@ Here are some resources to get you started with live-coding using AHAB/ORCA:
 
 ### MIDI Routing
 
-The primary way to get musical data out of AHAB is via MIDI. AHAB can send MIDI to both to one of four virtual ports and one driver output. The virtual ports must be enabled on the context menu before they can be used in other MIDI-capable modules.
+The primary way to get musical data out of AHAB is via MIDI. AHAB can send MIDI to both to one of four virtual ports and one driver output. The virtual ports must be enabled on the context menu before they can be used in other MIDI-capable modules. Use operators like `:` (MIDI note) and `!` (MIDI CC) to control synths and other MIDI-capable modules.
 
-### CV operators '<' and '>'
+![AHAB MIDI I/O](./midi.png)
 
-AHAB provides two additional operators that let your patterns interact with the module's CV jacks:
+### CV operators `<` and `>`
 
-- **'<'** (read) — Use '<' to read values from the module's 4 input jacks.
-  - Use digits for ports (1–4) to read numeric control values
-  - Use letters for ports (a–d) to read pitch-style signals (handy for notes and V/Oct control).
+AHAB provides two custom operators for reading/writing CV values:
+
+- **`<`** (read) — Use `<` to read values from the module's 4 input jacks.
+  - `<1`, `<2`, `<3`, `<4` — Read numeric CV (0-10V mapped to 0-35)
+  - `<a`, `<b`, `<c`, `<d` — Read pitch CV (V/Oct, outputs semitone mod 12)
 
 ![AHAB CV I/O](in-1.png)
 
@@ -33,11 +37,11 @@ This reads from input 1 and scales the value to a range of 0–5, which is mappe
 
 ![AHAB CV I/O](in-2.png)
 
-This reads from input 1 (addressed as 'a') and outputs the note name for the corresponding V/Oct voltage. Octave and cents are ignored.
+This reads from input 1 (addressed as `a`) and outputs the note name for the corresponding V/Oct voltage. Octave and cents are ignored.
 
-- **'>'** (write) — Use '>' to send values from the pattern to the module's 4 output jacks.
-  - Use The numeric ports (1–4) provide stepped control voltages useful for gates, triggers or stepped CV.
-  - Use letters for ports (a–d) to write pitch voltages suitable for V/Oct synth inputs.
+- **`>`** (write) — Use `>` to send values from the pattern to the module's 4 output jacks.
+  - `>1`, `>2`, `>3`, `>4` — Write numeric CV (value in range 0-35 maps to 0-10V)
+  - `>a`, `>b`, `>c`, `>d` — Write pitch CV (value is semitone, e.g., `>a3` outputs D3 in V/Oct)
 
 ![AHAB CV I/O](out-1.png)
 
@@ -45,7 +49,7 @@ This writes to output 1 and scales the value 5 to a range of 0-6, which is mappe
 
 ![AHAB CV I/O](out-2.png)
 
-This writes to output 1 (addressed as 'a') a V/Oct pitch voltage of D3 (third octave D).
+This writes to output 1 (addressed as `a`) a V/Oct pitch voltage of D3 (third octave D).
 
 ### Feature Comparison
 
@@ -55,7 +59,7 @@ AHAB has some features not found in the original ORCA/ORCA-C:
 
 - The copy/paste clipboard is shared across all AHAB instances in your Rack. You can copy/cut from one AHAB module and paste into another. You can save the content of the clipboard to a text file and save it as an ORCA file.
 
-- Operators '<' and '>' let you read from and write to the module's CV ports.
+- Operators `<` and `>` let you read from and write to the module's CV ports.
 
 - The usable MIDI CC range can be configured in the context menu, allowing you to use a range different from 64-99, as in ORCA-C.
 
@@ -63,9 +67,9 @@ AHAB has some features not found in the original ORCA/ORCA-C:
 
 Features missing in AHAB compared to ORCA:
 
-- The operator $ (commander) is not available, as it is not in ORCA-C.
+- The operator `$` (commander) is not available, as it is not in ORCA-C.
 
-- Hotkey Ctrl/Cmd+P to trigger the operator at the cursor is not available, as ORCA-C does not support this feature.
+- Hotkey Ctrl/Cmd+`P` to trigger the operator at the cursor is not available, as ORCA-C does not support this feature.
 
 ### Keyboard Shortcuts
 
@@ -73,26 +77,26 @@ Features missing in AHAB compared to ORCA:
 |---|---|
 | Space | Toggle run/stop |
 | Backspace | Clear selected cells |
-| Ctrl/Cmd + Z | Undo |
-| Ctrl/Cmd + Shift + Z | Redo |
-| Ctrl/Cmd + N | Clear |
-| Ctrl/Cmd + O | Load file |
-| Ctrl/Cmd + B | Inject file |
-| Ctrl/Cmd + I | Toggle insert mode (cursor moves right) |
-| Ctrl/Cmd + A | Select all |
-| Ctrl/Cmd + C | Copy selected cells to clipboard |
-| Ctrl/Cmd + X | Cut selected cells to clipboard |
-| Ctrl/Cmd + V | Paste selected cells from clipboard |
-| Ctrl/Cmd + F | Run simulation for one frame |
-| Ctrl/Cmd + Shift + 7 | Toggle comment block |
-| Ctrl/Cmd + Shift + R | Reset frame number to zero |
+| Ctrl/Cmd + `Z` | Undo |
+| Ctrl/Cmd + Shift + `Z` | Redo |
+| Ctrl/Cmd + `N` | Clear |
+| Ctrl/Cmd + `O` | Load file |
+| Ctrl/Cmd + `B` | Inject file |
+| Ctrl/Cmd + `I` | Toggle insert mode (cursor moves right) |
+| Ctrl/Cmd + `A` | Select all |
+| Ctrl/Cmd + `C` | Copy selected cells to clipboard |
+| Ctrl/Cmd + `X` | Cut selected cells to clipboard |
+| Ctrl/Cmd + `V` | Paste selected cells from clipboard |
+| Ctrl/Cmd + `F` | Run simulation for one frame |
+| Ctrl/Cmd + Shift + `7` | Toggle comment block |
+| Ctrl/Cmd + Shift + `R` | Reset frame number to zero |
 | Arrow keys | Move cursor / Move selection |
 | Shift + Arrow keys | Expand selection |
 | Alt + Arrow keys | Move selected cells |
 | Ctrl/Cmd + Arrow keys | Move/expand in grid cells |
 | Escape | Clear selection |
-| {, } | Decrease/increase grid step rows |
-| [, ] | Decrease/increase grid step columns |
+| `{`, `}` | Decrease/increase grid step rows |
+| `[`, `]` | Decrease/increase grid step columns |
 
 ## Changelog
 
