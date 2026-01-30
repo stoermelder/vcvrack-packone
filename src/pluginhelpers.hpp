@@ -236,7 +236,8 @@ Example:
 		0.f, 1.f, 0.5f, "Opacity", "%", 100.f
 	));
 */
-inline ui::Slider* createSlider(std::function<float()> getter, std::function<void(float)> setter, float minValue = 0.f, float maxValue = 1.f, float defaultValue = 0.5f, std::string label = "Value", std::string unit = "", float displayMultiplier = 1.f, float width = 200.0f) {
+template<typename BASE = ui::Slider>
+inline BASE* createSliderT(std::function<float()> getter, std::function<void(float)> setter, float minValue = 0.f, float maxValue = 1.f, float defaultValue = 0.5f, std::string label = "Value", std::string unit = "", float displayMultiplier = 1.f, float width = 200.0f) {
 	struct SliderQuantity : Quantity {
 		std::function<float()> get;
 		std::function<void(float)> set;
@@ -277,29 +278,39 @@ inline ui::Slider* createSlider(std::function<float()> getter, std::function<voi
 		}
 	};
 
-	struct SliderWithQuantity : ui::Slider {
+	struct SliderWithQuantity : BASE {
 		SliderWithQuantity(std::function<float()> g, std::function<void(float)> s, float minV, float maxV, float d, std::string l, std::string u, float m, float w) {
-			box.size.x = w;
-			quantity = new SliderQuantity(g, s, minV, maxV, d, l, u, m);
+			this->box.size.x = w;
+			this->quantity = new SliderQuantity(g, s, minV, maxV, d, l, u, m);
 		}
 		~SliderWithQuantity() {
-			delete quantity;
+			delete this->quantity;
 		}
 	};
 
 	return new SliderWithQuantity(getter, setter, minValue, maxValue, defaultValue, label, unit, displayMultiplier, width);
 }
 
+inline ui::Slider* createSlider(std::function<float()> getter, std::function<void(float)> setter, float minValue = 0.f, float maxValue = 1.f, float defaultValue = 0.5f, std::string label = "Value", std::string unit = "", float displayMultiplier = 1.f, float width = 200.0f) {
+	return createSliderT<>(getter, setter, minValue, maxValue, defaultValue, label, unit, displayMultiplier, width);
+}
+
+
 /** Easy wrapper for creating a float slider that controls a float pointer.
 Example:
 	menu->addChild(createPtrSlider(&module->value, 0.f, 1.f, 0.5f, "Opacity", "%", 100.f));
 */
-inline ui::Slider* createPtrSlider(float* valuePtr, float minValue = 0.f, float maxValue = 1.f, float defaultValue = 0.5f, std::string label = "Value", std::string unit = "", float displayMultiplier = 1.f, float width = 200.0f) {
-	return createSlider(
+template<typename BASE = ui::Slider>
+inline BASE* createPtrSliderT(float* valuePtr, float minValue = 0.f, float maxValue = 1.f, float defaultValue = 0.5f, std::string label = "Value", std::string unit = "", float displayMultiplier = 1.f, float width = 200.0f) {
+	return createSliderT<BASE>(
 		[=]() { return *valuePtr; },
 		[=](float v) { *valuePtr = v; },
 		minValue, maxValue, defaultValue, label, unit, displayMultiplier, width
 	);
+}
+
+inline ui::Slider* createPtrSlider(float* valuePtr, float minValue = 0.f, float maxValue = 1.f, float defaultValue = 0.5f, std::string label = "Value", std::string unit = "", float displayMultiplier = 1.f, float width = 200.0f) {
+	return createPtrSliderT<>(valuePtr, minValue, maxValue, defaultValue, label, unit, displayMultiplier, width);
 }
 
 } // namespace Rack
