@@ -13,6 +13,7 @@
     - Fixed occasional crash (#358)
 - Module [STROKE](./docs/stroke/Stroke.md)
     - Fixed broken _Zoom out_ command
+    - Fixed broken Toggle-commands on different UI Scale
 - Module [TRANSIT](./docs/transit/Transit.md)
     - Added alternative parameter binding by selection box
     - Added custom color LED setting per slot
