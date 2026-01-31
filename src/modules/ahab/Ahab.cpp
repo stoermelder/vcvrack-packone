@@ -1151,23 +1151,21 @@ struct AhabSimWidget : OpaqueWidget {
 			));
 	
 			// Grid step settings
-			menu->addChild(Rack::createSlider(
-				[this]() { return (float)module->gridStepCol; },
-				[this](float v) {
-					int newv = std::max(1, (int)std::lround(v));
-					module->gridStepCol = newv;
+			menu->addChild(Rack::createSteppedSlider<int>(
+				[this]() { return module->gridStepCol; },
+				[this](int v) {
+					module->gridStepCol = std::max(1, v);
 					rendererGridStepChanged();
 				},
-				1.f, 32.f, (float)module->gridStepCol, "Grid step cols", " cells", 1.f, 200.f
+				1.f, 32.f, 8.f, "Grid step cols", " cells"
 			));
-			menu->addChild(Rack::createSlider(
-				[this]() { return (float)module->gridStepRow; },
-				[this](float v) {
-					int newv = std::max(1, (int)std::lround(v));
-					module->gridStepRow = newv;
+			menu->addChild(Rack::createSteppedSlider<int>(
+				[this]() { return module->gridStepRow; },
+				[this](int v) {
+					module->gridStepRow = std::max(1, v);
 					rendererGridStepChanged();
 				},
-				1.f, 32.f, (float)module->gridStepRow, "Grid step rows", " cells", 1.f, 200.f
+				1.f, 32.f, 8.f, "Grid step rows", " cells"
 			));
 		}));
 
