@@ -65,7 +65,7 @@ index 4711bd5..fede7b9 100644
  struct Oosc_dev {
    int fd;
 diff --git a/sim.c b/sim.c
-index 8390255..dfcf36b 100644
+index 8390255..d0f43ae 100644
 --- a/sim.c
 +++ b/sim.c
 @@ -70,6 +70,14 @@ static U8 midi_note_number_of(Glyph g) {
@@ -94,7 +94,7 @@ index 8390255..dfcf36b 100644
  
  #define ALPHA_OPERATORS(_)                                                     \
    _('A', add)                                                                  \
-@@ -397,6 +407,88 @@ BEGIN_OPERATOR(midipb)
+@@ -397,6 +407,90 @@ BEGIN_OPERATOR(midipb)
    oe->lsb = (U8)(index_of(lsb_g) * 127 / 35);
  END_OPERATOR
  
@@ -104,6 +104,7 @@ index 8390255..dfcf36b 100644
 +  }
 +  PORT(1, 0, OUT);
 +  STOP_IF_NOT_BANGED;
++  PORT(0, 0, OUT);
 +  Glyph a_g = PEEK(0, 1);
 +  Glyph port_g = PEEK(0, 2);
 +  Glyph b_g = PEEK(0, 3);
@@ -143,6 +144,7 @@ index 8390255..dfcf36b 100644
 +    PORT(0, (Isz)i, IN);
 +  }
 +  STOP_IF_NOT_BANGED;
++  PORT(0, 0, OUT);
 +  Glyph port_g = PEEK(0, 1);
 +  Glyph a_g = PEEK(0, 2);
 +  Glyph v_g = PEEK(0, 3);

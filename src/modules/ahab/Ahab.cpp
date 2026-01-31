@@ -544,7 +544,6 @@ struct AhabSimWidget : OpaqueWidget {
 				{'?', "pb: Sends MIDI pitch bench"},
 				{';', "udp: Sends UDP message"},
 				{'=', "osc: Sends OSC message"},
-				{'$', "self: Sends ORCA command"},
 				{'<', "cv-input: Reads a value from a CV input"},
 				{'>', "cv-output: Writes a value to a CV output"}
 			};
@@ -584,7 +583,6 @@ struct AhabSimWidget : OpaqueWidget {
 				{'Y', "  ←1: val\n  →1: output"},
 				{'Z', "  ←1: rate\n  →1: target\n  ↓1: output"},
 				{'*', "  (bangs neighbors)"},
-				{'$', "  →1+: command"},
 				{'<', "  →1: min\n  →2: port number (1-4 / a-d)\n  →3: max\n  ↓1: output"},
 				{'>', "  →1: port number (1-4 / a-d)\n  →2: min / octave\n  →3: val / note\n  →4: max"}
 			};
@@ -1065,14 +1063,10 @@ struct AhabSimWidget : OpaqueWidget {
 						Mark m = widget->display_mbuf.buffer[idx];
 						Mark_flags flags = (Mark_flags)m;
 						Glyph g = widget->display_field.buffer[idx];
-						if ((g == ':' || g == ';') && (!(flags & (Mark_flag_lock)) || (flags & Mark_flag_output))) {
-							visible = true;
-							text = widget->getOperatorDescription(g, m);
-						}
-						else if (g != '.' && !(flags & (Mark_flag_lock | Mark_flag_sleep))) {
-							visible = true;
-							text = widget->getOperatorDescription(g, m);
-						}
+						visible = 
+							((g == ':' || g == ';' || g == '%' || g == '?' || g == '!' || g == '=' || g == '<' || g == '>') && (!(flags & (Mark_flag_lock)) || (flags & Mark_flag_output))) || 
+							((g != '.') && !(flags & (Mark_flag_lock | Mark_flag_sleep)));
+						if (visible) text = widget->getOperatorDescription(g, m);
 					}
 				}
 				Tooltip::step();

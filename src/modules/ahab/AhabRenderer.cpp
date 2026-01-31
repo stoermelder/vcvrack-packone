@@ -93,18 +93,13 @@ bool AhabRenderer::pixelToCell(const math::Vec& pos, const math::Vec& areaSize, 
 	float cell_w, cell_h;
 	computeCellAndPadding(areaSize, f, cell_w, cell_h);
 	if (cell_w <= 0 || cell_h <= 0) return false;
-	float pad = this->pad;
+	if (pos.x < this->pad || pos.y < this->pad) return false;
+	if (pos.x >= areaSize.x - this->pad || pos.y >= areaSize.y - this->pad) return false;
 	// Event positions are already local to the Widget, so subtract only the padding
-	float rel_x = pos.x - pad;
-	float rel_y = pos.y - pad;
-	Usz fh = f && f->height ? f->height : 1;
-	Usz fw = f && f->width ? f->width : 1;
+	float rel_x = pos.x - this->pad - 0.5f;
+	float rel_y = pos.y - this->pad - 0.5f;
 	int cx = (int)std::floor(rel_x / cell_w);
 	int cy = (int)std::floor(rel_y / cell_h);
-	if (cx < 0) cx = 0;
-	if (cy < 0) cy = 0;
-	if ((Usz)cx >= fw) cx = (int)fw - 1;
-	if ((Usz)cy >= fh) cy = (int)fh - 1;
 	x = (Usz)cx; y = (Usz)cy;
 	return true;
 }
@@ -278,9 +273,18 @@ void AhabRenderer::draw(NVGcontext* vg, const Field* field, const Mark* mbuf, co
 				}
 			}	
 			if (mf & Mark_flag_output) {
-				// reverse: draw colored background and white fg
-				std::swap(fg, bg);
-				fg.a = 1.0f - fg.a; // invert transparency
+				// A_reverse in orca-c: swap fg/bg colors
+				// For terminal reverse video effect: if bg was transparent, use fg color as new bg
+				// and use black (or dark) as new fg for contrast
+				if (bg.a < 0.5f) {
+					// bg was transparent, so use the original fg as the new bg
+					bg = fg;
+					fg = nvgRGBAf(0.0f, 0.0f, 0.0f, 1.0f); // black text on colored bg
+				} 
+				else {
+					// Both were solid colors, just swap them
+					std::swap(fg, bg);
+				}
 			}
 			if (mf & Mark_flag_haste_input) {
 				fg = bgHasteInput;
