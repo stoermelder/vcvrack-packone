@@ -81,7 +81,7 @@ struct AhabRenderer {
 	NVGcolor bgOutput = nvgRGBAf(0.2f, 0.5f, 0.85f, 1.0f);
 	NVGcolor bgHasteInput = nvgRGBAf(0.06f, 0.66f, 0.66f, 1.0f);
 	NVGcolor fgLock = nvgRGBAf(0.45f, 0.45f, 0.45f, 1.0f);
-	NVGcolor fgSleep = nvgRGBAf(0.3f, 0.3f, 0.3f, 1.0f);
+	NVGcolor fgSleep = nvgRGBAf(0.4f, 0.4f, 0.4f, 1.0f);
 	NVGcolor intersectionColor = nvgRGBAf(0.3f, 0.3f, 0.3f, 1.f);
 	NVGcolor selectionFillColor = nvgRGBAf(1.f, 0.7f, 0.27f, 0.3f);
 	NVGcolor selectionStrokeColor = nvgRGBAf(1.0f, 1.0f, 1.0f, 0.15f);

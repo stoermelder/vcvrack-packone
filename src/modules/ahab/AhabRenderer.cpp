@@ -15,13 +15,9 @@ static AhabRenderer::GlyphClass glyph_class_of(char glyph) {
 		return AhabRenderer::Glyph_numeric;
 	switch (glyph) {
 		case 'N':
-		case 'n':
 		case 'E':
-		case 'e':
 		case 'S':
-		case 's':
 		case 'W':
-		case 'w':
 			return AhabRenderer::Glyph_movement;
 		case '!':
 		case ':':
@@ -31,7 +27,7 @@ static AhabRenderer::GlyphClass glyph_class_of(char glyph) {
 		case '?':
 		case '>':
 		case '<':
-			return AhabRenderer::Glyph_lowercase; // punctuation-like treated as lowercase
+			return AhabRenderer::Glyph_uppercase; // punctuation-like treated as lowercase
 		case '*':
 			return AhabRenderer::Glyph_bang;
 		case '#':
@@ -215,7 +211,7 @@ void AhabRenderer::draw(NVGcontext* vg, const Field* field, const Mark* mbuf, co
 	char highlightChar = '\0';
 	if (cursor_x < w && cursor_y < h) {
 		char cur = field->buffer[cursor_y * w + cursor_x];
-		if (cur >= 'a' && cur <= 'z') highlightChar = cur;
+		if ((cur >= 'a' && cur <= 'z') || (cur >= '0' && cur <= '9')) highlightChar = cur;
 	}
 
 	for (Usz ry = 0; ry < h; ++ry) {
@@ -245,10 +241,12 @@ void AhabRenderer::draw(NVGcontext* vg, const Field* field, const Mark* mbuf, co
 					fg = color::BLACK;
 					bg = bgUppercase;
 					break;
-				case AhabRenderer::Glyph_lowercase:
 				case AhabRenderer::Glyph_movement:
+					fg = bgUppercase;
+					break;
+				case AhabRenderer::Glyph_lowercase:
 				case AhabRenderer::Glyph_numeric:
-					fg = fgDefault;
+					fg = fgSleep;
 					break;
 				case AhabRenderer::Glyph_bang:
 					fg = fgDefault;
@@ -278,7 +276,7 @@ void AhabRenderer::draw(NVGcontext* vg, const Field* field, const Mark* mbuf, co
 				// and use black (or dark) as new fg for contrast
 				if (bg.a < 0.5f) {
 					// bg was transparent, so use the original fg as the new bg
-					bg = fg;
+					bg = fgDefault;
 					fg = nvgRGBAf(0.0f, 0.0f, 0.0f, 1.0f); // black text on colored bg
 				} 
 				else {
