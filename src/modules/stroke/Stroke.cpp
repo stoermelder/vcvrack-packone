@@ -399,14 +399,16 @@ struct CmdZoomOutSmooth : CmdBase {
 
 struct CmdZoomToggle : CmdBase {
 	void initialCmd(KEY_MODE keyMode) override {
-		if (std::log2(APP->scene->rackScroll->getZoom()) > 1.f) CmdZoomOut::zoomOut(); else CmdZoomModule::zoomIn(0.9f);
+		float visualZoom = APP->scene->rackScroll->getZoom() * APP->window->pixelRatio;
+		if (std::log2(visualZoom) > 1.f) CmdZoomOut::zoomOut(); else CmdZoomModule::zoomIn(0.9f);
 	}
 }; // struct CmdZoomToggle
 
 
 struct CmdZoomToggleSmooth : CmdZoomModuleSmooth {
 	void initialCmd(KEY_MODE keyMode) override {
-		if (std::log2(APP->scene->rackScroll->getZoom()) > 1.f) {
+		float visualZoom = APP->scene->rackScroll->getZoom() * APP->window->pixelRatio;
+		if (std::log2(visualZoom) > 1.f) {
 			math::Rect moduleBox = APP->scene->rack->getModuleContainer()->getChildrenBoundingBox();
 			if (!moduleBox.size.isFinite()) return;
 			viewportCenterSmooth.trigger(moduleBox, -1.f, 1.f / APP->window->getLastFrameDuration(), 0.6f);

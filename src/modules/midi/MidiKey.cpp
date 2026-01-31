@@ -362,7 +362,7 @@ struct MidiKeyChoice : LedDisplayChoice {
 		}
 		else {
 			// fake data for module browser
-			return string::f(" %s2 ", noteNames[id % 12]);
+			return string::f(" %s2 ", noteNames[std::abs(id) % 12]);
 		}
 	}
 

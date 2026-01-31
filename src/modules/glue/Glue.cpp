@@ -1,978 +1,501 @@
 #include "../../plugin.hpp"
-#include "../../utils/StripIdFixModule.hpp"
+#include "GlueWidget.hpp"
 
 namespace StoermelderPackOne {
 namespace Glue {
 
-const static NVGcolor LABEL_COLOR_YELLOW = nvgRGB(0xdc, 0xff, 0x46);
-const static NVGcolor LABEL_COLOR_RED = nvgRGB(0xff, 0x74, 0x55);
-const static NVGcolor LABEL_COLOR_CYAN = nvgRGB(0x7a, 0xfc, 0xff);
-const static NVGcolor LABEL_COLOR_GREEN = nvgRGB(0x1b, 0xa8, 0xb1);
-const static NVGcolor LABEL_COLOR_PINK = nvgRGB(0xff, 0x65, 0xa3);
-const static NVGcolor LABEL_COLOR_WHITE = nvgRGB(0xfa, 0xfa, 0xfa);
-
-const static NVGcolor LABEL_FONTCOLOR_DEFAULT = nvgRGB(0x08, 0x08, 0x08);
-const static NVGcolor LABEL_FONTCOLOR_WHITE = nvgRGB(0xf8, 0xf8, 0xf8);
-
-const static float LABEL_OPACITY_MAX = 1.0f;
-const static float LABEL_OPACITY_MIN = 0.2f;
-const static float LABEL_OPACITY_STEP = 0.05f;
-
-const static float LABEL_WIDTH_MAX = 180.f;
-const static float LABEL_WIDTH_MIN = 20.f;
-const static float LABEL_WIDTH_DEFAULT = 80.f;
-
-const static float LABEL_SIZE_MAX = 24.f;
-const static float LABEL_SIZE_MIN = 8.f;
-const static float LABEL_SIZE_DEFAULT = 16.f;
-
-const static float LABEL_SKEW_MAX = 3.5f;
-
-
-const std::string WHITESPACE = " \n\r\t\f\v";
-
-std::string ltrim(const std::string& s) {
-	size_t start = s.find_first_not_of(WHITESPACE);
-	return (start == std::string::npos) ? "" : s.substr(start);
+GlueModule::GlueModule() {
+	panelTheme = pluginSettings.panelThemeDefault;
+	config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+	configSwitch(PARAM_UNLOCK, 0.f, 1.f, 0.f, "Unlock labels for editing (" RACK_MOD_CTRL_NAME "+" RACK_MOD_SHIFT_NAME "+G");
+	configSwitch(PARAM_ADD_LABEL, 0.f, 1.f, 0.f, "Add module label (" RACK_MOD_CTRL_NAME "+G)");
+	configSwitch(PARAM_OPACITY_PLUS, 0.f, 1.f, 0.f, string::f("Increase overall opacity by %i%%", int(LABEL_OPACITY_STEP * 100)));
+	configSwitch(PARAM_OPACITY_MINUS, 0.f, 1.f, 0.f, string::f("Decrease overall opacity by %i%%", int(LABEL_OPACITY_STEP * 100)));
+	configSwitch(PARAM_HIDE, 0.f, 1.f, 0.f, "Hide labels");
+	onReset();
 }
 
-std::string rtrim(const std::string& s) {
-	size_t end = s.find_last_not_of(WHITESPACE);
-	return (end == std::string::npos) ? "" : s.substr(0, end + 1);
+GlueModule::~GlueModule() {
+	clearLabels();
+	clearCableLabels();
 }
 
-std::string trim(const std::string& s) {
-	return rtrim(ltrim(s));
-}
-
-
-struct Label {
-	int64_t moduleId;
-	float x = 0.f;
-	float y = 0.f;
-	float width = LABEL_WIDTH_DEFAULT;
-	float size = LABEL_SIZE_DEFAULT;
-	float angle = 0.f;
-	float skew = 0.f;
-	float opacity = 1.f;
-	int font = 0;
-	std::string text;
-	NVGcolor color = LABEL_COLOR_YELLOW;
-	NVGcolor fontColor = LABEL_FONTCOLOR_DEFAULT;
-};
-
-
-struct GlueModule : Module, StripIdFixModule {
-	enum ParamIds {
-		PARAM_UNLOCK,
-		PARAM_ADD_LABEL,
-		PARAM_OPACITY_PLUS,
-		PARAM_OPACITY_MINUS,
-		PARAM_HIDE,
-		NUM_PARAMS
-	};
-	enum InputIds {
-		NUM_INPUTS
-	};
-	enum OutputIds {
-		NUM_OUTPUTS
-	};
-	enum LightIds {
-		LIGHT_LEARN,
-		LIGHT_LOCK,
-		NUM_LIGHTS
-	};
-
-	/** [Stored to JSON] */
-	int panelTheme = 0;
-
-	/** [Stored to JSON] the list of labels */
-	std::list<Label*> labels;
-
-	/** [Stored to JSON] default size for new labels */
-	float defaultSize;
-	/** [Stored to JSON] default width for new labels */
-	float defaultWidth;
-	/** [Stored to JSON] default angle for new labels */
-	float defaultAngle;
-	/** [Stored to JSON] default opacity for new labels */
-	float defaultOpacity;
-	/** [Stored to JSON] default color for new labels */
-	NVGcolor defaultColor;
-	/** [Stored to JSON] default font for new labels */
-	int defaultFont;
-	/** [Stored to JSON] */
-	NVGcolor defaultFontColor;
-	/** [Stored to JSON] */
-	bool skewLabels;
-
-	bool resetRequested = false;
-
-	GlueModule() {
-		panelTheme = pluginSettings.panelThemeDefault;
-		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		configSwitch(PARAM_UNLOCK, 0.f, 1.f, 0.f, "Unlock labels for editing (" RACK_MOD_CTRL_NAME "+" RACK_MOD_SHIFT_NAME "+G");
-		configSwitch(PARAM_ADD_LABEL, 0.f, 1.f, 0.f, "Add label (" RACK_MOD_CTRL_NAME "+G)");
-		configSwitch(PARAM_OPACITY_PLUS, 0.f, 1.f, 0.f, string::f("Increase overall opacity by %i%%", int(LABEL_OPACITY_STEP * 100)));
-		configSwitch(PARAM_OPACITY_MINUS, 0.f, 1.f, 0.f, string::f("Decrease overall opacity by %i%%", int(LABEL_OPACITY_STEP * 100)));
-		configSwitch(PARAM_HIDE, 0.f, 1.f, 0.f, "Hide labels");
-		onReset();
-	}
-
-	~GlueModule() {
-		clearLabels();
-	}
-
-	void onReset() override {
-		Module::onReset();
-		for (Label* l : labels) {
-			delete l;
-		}
-		labels.clear();
-		defaultSize = LABEL_SIZE_DEFAULT;
-		defaultWidth = LABEL_WIDTH_DEFAULT;
-		defaultAngle = 0.f;
-		defaultOpacity = LABEL_OPACITY_MAX;
-		defaultColor = LABEL_COLOR_YELLOW;
-		defaultFont = 0;
-		defaultFontColor = LABEL_FONTCOLOR_DEFAULT;
-		skewLabels = true;
-		resetRequested = true;
-	}
-
-	Label* addLabel() {
-		Label* l = new Label;
-		l->size = defaultSize;
-		l->width = defaultWidth;
-		l->angle = defaultAngle;
-		l->skew = random::normal() * LABEL_SKEW_MAX;
-		l->color = defaultColor;
-		l->opacity = defaultOpacity;
-		l->font = defaultFont;
-		l->fontColor = defaultFontColor;
-		labels.push_back(l);
-		return l;
-	}
-
-	void removeLabel(Label* l) {
-		// Make sure the widget is deleted before!
-		labels.remove(l);
+void GlueModule::onReset() {
+	Module::onReset();
+	for (ModuleLabel* l : moduleLabels) {
 		delete l;
 	}
+	moduleLabels.clear();
+	for (CableLabel* cl : cableLabels) {
+		delete cl;
+	}
+	cableLabels.clear();
+	defaultSize = LABEL_SIZE_DEFAULT;
+	defaultWidth = LABEL_WIDTH_DEFAULT;
+	defaultAngle = 0.f;
+	defaultOpacity = LABEL_OPACITY_MAX;
+	defaultColor = LABEL_COLOR_YELLOW;
+	defaultFont = 0;
+	defaultFontColor = LABEL_FONTCOLOR_DEFAULT;
+	skewLabels = true;
+	resetRequested = true;
+}
 
-	void clearLabels() {
-		for (Label* l : labels) {
-			delete l;
+ModuleLabel* GlueModule::addModuleLabel() {
+	ModuleLabel* l = new ModuleLabel;
+	l->size = defaultSize;
+	l->width = defaultWidth;
+	l->angle = defaultAngle;
+	l->skew = random::normal() * LABEL_SKEW_MAX;
+	l->color = defaultColor;
+	l->opacity = defaultOpacity;
+	l->font = defaultFont;
+	l->fontColor = defaultFontColor;
+	moduleLabels.push_back(l);
+	return l;
+}
+
+void GlueModule::removeModuleLabel(ModuleLabel* l) {
+	// Make sure the widget is deleted before!
+	moduleLabels.remove(l);
+	delete l;
+}
+
+void GlueModule::clearLabels() {
+	for (ModuleLabel* l : moduleLabels) {
+		delete l;
+	}
+	moduleLabels.clear();
+	resetRequested = true;
+}
+
+CableLabel* GlueModule::addCableLabel() {
+	CableLabel* cl = new CableLabel;
+	cl->size = defaultSize;
+	cl->width = defaultWidth;
+	cl->font = defaultFont;
+	cl->distance = rescale(rack::random::uniform(), 0.f, 1.f, 20.f, 40.f);
+	// color and fontColor are auto-set from cable
+	cableLabels.push_back(cl);
+	return cl;
+}
+
+void GlueModule::removeCableLabel(CableLabel* cl) {
+	cableLabels.remove(cl);
+	delete cl;
+}
+
+void GlueModule::clearCableLabels() {
+	for (CableLabel* cl : cableLabels) {
+		delete cl;
+	}
+	cableLabels.clear();
+	resetRequested = true;
+}
+
+json_t* GlueModule::dataToJson() {
+	json_t* rootJ = json_object();
+	json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
+
+	json_object_set_new(rootJ, "defaultSize", json_real(defaultSize));
+	json_object_set_new(rootJ, "defaultWidth", json_real(defaultWidth));
+	json_object_set_new(rootJ, "defaultAngle", json_real(defaultAngle));
+	json_object_set_new(rootJ, "defaultOpacity", json_real(defaultOpacity));
+	json_object_set_new(rootJ, "defaultColor", json_string(color::toHexString(defaultColor).c_str()));
+	json_object_set_new(rootJ, "defaultFont", json_integer(defaultFont));
+	json_object_set_new(rootJ, "defaultFontColor", json_string(color::toHexString(defaultFontColor).c_str()));
+	json_object_set_new(rootJ, "skewLabels", json_boolean(skewLabels));
+	json_t* labelsJ = moduleLabelToJson();
+	json_object_set_new(rootJ, "labels", labelsJ);
+	json_t* cableLabelsJ = cableLabelToJson();
+	json_object_set_new(rootJ, "cableLabels", cableLabelsJ);
+	return rootJ;
+}
+
+json_t* GlueModule::moduleLabelToJson() {
+	json_t* labelsJ = json_array();
+	for (ModuleLabel* l : moduleLabels) {
+		json_t* labelJ = json_object();
+		json_object_set_new(labelJ, "moduleId", json_integer(l->moduleId));
+		json_object_set_new(labelJ, "x", json_real(l->x));
+		json_object_set_new(labelJ, "y", json_real(l->y));
+		json_object_set_new(labelJ, "angle", json_real(l->angle));
+		json_object_set_new(labelJ, "skew", json_real(l->skew));
+		json_object_set_new(labelJ, "opacity", json_real(l->opacity));
+		json_object_set_new(labelJ, "width", json_real(l->width));
+		json_object_set_new(labelJ, "size", json_real(l->size));
+		json_object_set_new(labelJ, "text", json_string(l->text.c_str()));
+		json_object_set_new(labelJ, "color", json_string(color::toHexString(l->color).c_str()));
+		json_object_set_new(labelJ, "font", json_integer(l->font));
+		json_object_set_new(labelJ, "fontColor", json_string(color::toHexString(l->fontColor).c_str()));
+		json_array_append_new(labelsJ, labelJ);
+	}
+	return labelsJ;
+}
+
+json_t* GlueModule::cableLabelToJson() {
+	json_t* cableLabelsJ = json_array();
+	for (CableLabel* cl : cableLabels) {
+		json_t* cableLabelJ = json_object();
+		json_object_set_new(cableLabelJ, "cableId", json_integer(cl->cableId));
+		json_object_set_new(cableLabelJ, "atInput", json_boolean(cl->atInput));
+		json_object_set_new(cableLabelJ, "width", json_real(cl->width));
+		json_object_set_new(cableLabelJ, "size", json_real(cl->size));
+		json_object_set_new(cableLabelJ, "distance", json_real(cl->distance));
+		json_object_set_new(cableLabelJ, "text", json_string(cl->text.c_str()));
+		json_object_set_new(cableLabelJ, "font", json_integer(cl->font));
+		// Note: color and fontColor are auto-calculated from cable, not saved
+		json_array_append_new(cableLabelsJ, cableLabelJ);
+	}
+	return cableLabelsJ;
+}
+
+void GlueModule::dataFromJson(json_t* rootJ) {
+	panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+
+	defaultSize = json_real_value(json_object_get(rootJ, "defaultSize"));
+	defaultWidth = json_real_value(json_object_get(rootJ, "defaultWidth"));
+	defaultAngle = json_real_value(json_object_get(rootJ, "defaultAngle"));
+	defaultOpacity = json_real_value(json_object_get(rootJ, "defaultOpacity"));
+	json_t* defaultColorJ = json_object_get(rootJ, "defaultColor");
+	if (defaultColorJ) defaultColor = color::fromHexString(json_string_value(defaultColorJ));
+	defaultFont = json_integer_value(json_object_get(rootJ, "defaultFont"));
+	json_t* defaultFontColorJ = json_object_get(rootJ, "defaultFontColor");
+	if (defaultFontColorJ) defaultFontColor = color::fromHexString(json_string_value(defaultFontColorJ));
+	skewLabels = json_boolean_value(json_object_get(rootJ, "skewLabels"));
+
+	json_t* labelsJ = json_object_get(rootJ, "labels");
+	moduleLabelFromJson(labelsJ);
+
+	json_t* cableLabelsJ = json_object_get(rootJ, "cableLabels");
+	cableLabelFromJson(cableLabelsJ);
+
+	idFixClearMap();
+	params[PARAM_UNLOCK].setValue(0.f);
+}
+
+void GlueModule::moduleLabelFromJson(json_t* labelsJ) {
+	clearLabels();
+	if (labelsJ) {
+		size_t labelIdx;
+		json_t* labelJ;
+		json_array_foreach(labelsJ, labelIdx, labelJ) {
+			int64_t moduleId = json_integer_value(json_object_get(labelJ, "moduleId"));
+			moduleId = idFix(moduleId);
+			if (moduleId < 0) continue;
+			
+			ModuleLabel* l = addModuleLabel();
+			l->moduleId = moduleId;
+			l->x = json_real_value(json_object_get(labelJ, "x"));
+			l->y = json_real_value(json_object_get(labelJ, "y"));
+			l->angle = json_real_value(json_object_get(labelJ, "angle"));
+			l->skew = json_real_value(json_object_get(labelJ, "skew"));
+			l->opacity = json_real_value(json_object_get(labelJ, "opacity"));
+			l->width = json_real_value(json_object_get(labelJ, "width"));
+			l->size = json_real_value(json_object_get(labelJ, "size"));
+			json_t* textJ = json_object_get(labelJ, "text");
+			if (textJ) l->text = json_string_value(textJ);
+			l->color = color::fromHexString(json_string_value(json_object_get(labelJ, "color")));
+			l->font = json_integer_value(json_object_get(labelJ, "font"));
+			json_t* fontColorJ = json_object_get(labelJ, "fontColor");
+			if (fontColorJ) l->fontColor = color::fromHexString(json_string_value(fontColorJ));
 		}
-		labels.clear();
-		resetRequested = true;
 	}
+}
 
-	json_t* dataToJson() override {
-		json_t* rootJ = json_object();
-		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
-
-		json_object_set_new(rootJ, "defaultSize", json_real(defaultSize));
-		json_object_set_new(rootJ, "defaultWidth", json_real(defaultWidth));
-		json_object_set_new(rootJ, "defaultAngle", json_real(defaultAngle));
-		json_object_set_new(rootJ, "defaultOpacity", json_real(defaultOpacity));
-		json_object_set_new(rootJ, "defaultColor", json_string(color::toHexString(defaultColor).c_str()));
-		json_object_set_new(rootJ, "defaultFont", json_integer(defaultFont));
-		json_object_set_new(rootJ, "defaultFontColor", json_string(color::toHexString(defaultFontColor).c_str()));
-		json_object_set_new(rootJ, "skewLabels", json_boolean(skewLabels));
-		json_t* labelsJ = labelToJson();
-		json_object_set_new(rootJ, "labels", labelsJ);
-		return rootJ;
-	}
-
-	json_t* labelToJson() {
-		json_t* labelsJ = json_array();
-		for (Label* l : labels) {
-			json_t* labelJ = json_object();
-			json_object_set_new(labelJ, "moduleId", json_integer(l->moduleId));
-			json_object_set_new(labelJ, "x", json_real(l->x));
-			json_object_set_new(labelJ, "y", json_real(l->y));
-			json_object_set_new(labelJ, "angle", json_real(l->angle));
-			json_object_set_new(labelJ, "skew", json_real(l->skew));
-			json_object_set_new(labelJ, "opacity", json_real(l->opacity));
-			json_object_set_new(labelJ, "width", json_real(l->width));
-			json_object_set_new(labelJ, "size", json_real(l->size));
-			json_object_set_new(labelJ, "text", json_string(l->text.c_str()));
-			json_object_set_new(labelJ, "color", json_string(color::toHexString(l->color).c_str()));
-			json_object_set_new(labelJ, "font", json_integer(l->font));
-			json_object_set_new(labelJ, "fontColor", json_string(color::toHexString(l->fontColor).c_str()));
-			json_array_append_new(labelsJ, labelJ);
-		}
-		return labelsJ;
-	}
-
-	void dataFromJson(json_t* rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
-
-		defaultSize = json_real_value(json_object_get(rootJ, "defaultSize"));
-		defaultWidth = json_real_value(json_object_get(rootJ, "defaultWidth"));
-		defaultAngle = json_real_value(json_object_get(rootJ, "defaultAngle"));
-		defaultOpacity = json_real_value(json_object_get(rootJ, "defaultOpacity"));
-		json_t* defaultColorJ = json_object_get(rootJ, "defaultColor");
-		if (defaultColorJ) defaultColor = color::fromHexString(json_string_value(defaultColorJ));
-		defaultFont = json_integer_value(json_object_get(rootJ, "defaultFont"));
-		json_t* defaultFontColorJ = json_object_get(rootJ, "defaultFontColor");
-		if (defaultFontColorJ) defaultFontColor = color::fromHexString(json_string_value(defaultFontColorJ));
-		skewLabels = json_boolean_value(json_object_get(rootJ, "skewLabels"));
-
-		json_t* labelsJ = json_object_get(rootJ, "labels");
-		labelFromJson(labelsJ);
-
-		idFixClearMap();
-		params[PARAM_UNLOCK].setValue(0.f);
-	}
-
-	void labelFromJson(json_t* labelsJ) {
-		clearLabels();
-		if (labelsJ) {
-			size_t labelIdx;
-			json_t* labelJ;
-			json_array_foreach(labelsJ, labelIdx, labelJ) {
-				int64_t moduleId = json_integer_value(json_object_get(labelJ, "moduleId"));
-				moduleId = idFix(moduleId);
-				if (moduleId < 0) continue;
-				
-				Label* l = addLabel();
-				l->moduleId = moduleId;
-				l->x = json_real_value(json_object_get(labelJ, "x"));
-				l->y = json_real_value(json_object_get(labelJ, "y"));
-				l->angle = json_real_value(json_object_get(labelJ, "angle"));
-				l->skew = json_real_value(json_object_get(labelJ, "skew"));
-				l->opacity = json_real_value(json_object_get(labelJ, "opacity"));
-				l->width = json_real_value(json_object_get(labelJ, "width"));
-				l->size = json_real_value(json_object_get(labelJ, "size"));
-				json_t* textJ = json_object_get(labelJ, "text");
-				if (textJ) l->text = json_string_value(textJ);
-				l->color = color::fromHexString(json_string_value(json_object_get(labelJ, "color")));
-				l->font = json_integer_value(json_object_get(labelJ, "font"));
-				json_t* fontColorJ = json_object_get(labelJ, "fontColor");
-				if (fontColorJ) l->fontColor = color::fromHexString(json_string_value(fontColorJ));
-			}
+void GlueModule::cableLabelFromJson(json_t* cableLabelsJ) {
+	clearCableLabels();
+	if (cableLabelsJ) {
+		size_t labelIdx;
+		json_t* cableLabelJ;
+		json_array_foreach(cableLabelsJ, labelIdx, cableLabelJ) {
+			int64_t cableId = json_integer_value(json_object_get(cableLabelJ, "cableId"));
+			if (cableId < 0) continue;
+			
+			CableLabel* cl = addCableLabel();
+			cl->cableId = cableId;
+			cl->atInput = json_boolean_value(json_object_get(cableLabelJ, "atInput"));
+			cl->width = json_real_value(json_object_get(cableLabelJ, "width"));
+			cl->size = json_real_value(json_object_get(cableLabelJ, "size"));
+			json_t* distanceJ = json_object_get(cableLabelJ, "distance");
+			if (distanceJ) cl->distance = json_real_value(distanceJ);
+			json_t* textJ = json_object_get(cableLabelJ, "text");
+			if (textJ) cl->text = json_string_value(textJ);
+			cl->font = json_integer_value(json_object_get(cableLabelJ, "font"));
 		}
 	}
-};
+}
 
 
+// GlueWidget button implementations
 
-struct LabelDrawWidget : TransparentWidget {
-	Label* label;
-	Vec rotatedSize;
+void LabelButton::onButton(const event::Button& e) {
+	if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
+		labelContainer->toggleLearnMode();
+	}
+	TL1105::onButton(e);
+}
 
-	void draw(const Widget::DrawArgs& args) override {
-		if (!label) return;
+void LockButton::onButton(const event::Button& e) {
+	if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
+		labelContainer->toggleEditMode();
+	}
+	TL1105::onButton(e);
+}
 
-		Rect d = Rect(Vec(0.f, 0.f), rotatedSize);
+void OpacityPlusButton::onButton(const event::Button& e) {
+	if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
+		for (ModuleLabel* l : module->moduleLabels)
+			l->opacity = std::min(l->opacity + LABEL_OPACITY_STEP, LABEL_OPACITY_MAX);
+	}
+	TL1105::onButton(e);
+}
 
-		// Draw shadow
-		nvgBeginPath(args.vg);
-		float r = 4; // Blur radius
-		float c = 4; // Corner radius
-		math::Vec b = math::Vec(-2.f, -2.f); // Offset from each corner
-		nvgRect(args.vg, d.pos.x + b.x - r, d.pos.y + b.y - r, d.size.x - 2 * b.x + 2 * r, d.size.y - 2 * b.y + 2 * r);
-		NVGcolor shadowColor = nvgRGBAf(0.f, 0.f, 0.f, 0.1f);
-		NVGcolor transparentColor = nvgRGBAf(0.f, 0.f, 0.f, 0.f);
-		nvgFillPaint(args.vg, nvgBoxGradient(args.vg, d.pos.x + b.x, d.pos.y + b.y, d.size.x - 2 * b.x, d.size.y - 2 * b.y, c, r, shadowColor, transparentColor));
-		nvgFill(args.vg);
+void OpacityMinusButton::onButton(const event::Button& e) {
+	if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
+		for (ModuleLabel* l : module->moduleLabels)
+			l->opacity = std::max(l->opacity - LABEL_OPACITY_STEP, LABEL_OPACITY_MIN);
+	}
+	TL1105::onButton(e);
+}
 
-		// Draw label
-		nvgBeginPath(args.vg);
-		nvgRect(args.vg, d.pos.x, d.pos.y, d.size.x, d.size.y);
-		nvgFillColor(args.vg, color::alpha(label->color, label->opacity));
-		nvgFill(args.vg);
+void HideSwitch::step() {
+	if (labelContainer) labelContainer->toggleHideMode(getParamQuantity()->getValue() > 0.f);
+	CKSS::step();
+}
 
-		// Draw text
-		if (label->text.length() > 0) {
-			std::shared_ptr<Font> font;
-			switch (label->font) {
-				case 0:
-					font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
-					break;
-				case 1:
-					font = APP->window->loadFont(asset::plugin(pluginInstance, "res/fonts/RedkostComic.otf"));
-					break;
-			}
 
-			nvgFontSize(args.vg, label->size);
-			nvgFontFaceId(args.vg, font->handle);
-			nvgTextLetterSpacing(args.vg, -1.2f);
-			nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_TOP);
-			nvgFillColor(args.vg, color::alpha(label->fontColor, label->opacity));
-			NVGtextRow textRow;
-			nvgTextBreakLines(args.vg, label->text.c_str(), NULL, d.size.x, &textRow, 1);
-			nvgTextBox(args.vg, d.pos.x, d.pos.y + 0.2f, d.size.x, textRow.start, textRow.end);
+// GlueWidget implementation
+
+GlueWidget::GlueWidget(GlueModule* module)
+	: ThemedModuleWidget<GlueModule>(module, "Glue") {
+	setModule(module);
+	disableDuplicateAction = true;
+
+	addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
+	addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+
+	if (module) {
+		labelContainer = new LabelContainer;
+		labelContainer->module = module;
+		labelContainer->mw = this;
+		// This is where the magic happens: add a new widget on top-level to Rack
+		APP->scene->rack->addChild(labelContainer);
+
+		// Move the cable-widget to the end, labels should appear below cables
+		// NB: this should be considered unstable API
+		std::list<Widget*>::iterator it;
+		for (it = APP->scene->rack->children.begin(); it != APP->scene->rack->children.end(); ++it){
+			if (*it == APP->scene->rack->getCableContainer()) break;
+		}
+		if (it != APP->scene->rack->children.end()) {
+			APP->scene->rack->children.splice(APP->scene->rack->children.end(), APP->scene->rack->children, it);
 		}
 	}
-};
 
+	addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(22.5f, 143.5f), module, GlueModule::LIGHT_LEARN));
+	addParam(createParamCentered<LabelButton>(Vec(22.5f, 158.8f), module, GlueModule::PARAM_ADD_LABEL));
 
-struct LabelWidget : widget::TransparentWidget {
-	Label* label;
+	addChild(createLightCentered<TinyLight<YellowLight>>(Vec(22.5f, 188.3f), module, GlueModule::LIGHT_LOCK));
+	addParam(createParamCentered<LockButton>(Vec(22.5f, 203.6f), module, GlueModule::PARAM_UNLOCK));
 
-	bool requestedDelete = false;
-	bool requestedDuplicate = false;
-	bool editMode = false;
-	bool skew = false;
+	OpacityPlusButton* b1 = rack::createParamCentered<OpacityPlusButton>(Vec(22.5f, 254.7f), module, GlueModule::PARAM_OPACITY_PLUS);
+	b1->module = module;
+	addParam(b1);
+	OpacityMinusButton* b2 = rack::createParamCentered<OpacityMinusButton>(Vec(22.5f, 286.3f), module, GlueModule::PARAM_OPACITY_MINUS);
+	b2->module = module;
+	addParam(b2);
+	addParam(createParamCentered<HideSwitch>(Vec(22.5f, 326.7f), module, GlueModule::PARAM_HIDE));
+}
 
-	math::Vec dragPos;
-
-	LabelDrawWidget* widget;
-	TransformWidget* transformWidget;
-	float lastAngle = 360.f;
-	float lastSize = 0.f;
-	float lastWidth = 0.f;
-	bool lastSkew = false;
-
-	LabelWidget(Label* label) {
-		this->label = label;
-
-		widget = new LabelDrawWidget;
-		widget->label = label;
-		transformWidget = new TransformWidget;
-		transformWidget->addChild(widget);
-		addChild(transformWidget);
+GlueWidget::~GlueWidget() {
+	if (labelContainer) {
+		APP->scene->rack->removeChild(labelContainer);
+		delete labelContainer;
 	}
+}
 
-	void step() override {
-		ModuleWidget* mw = APP->scene->rack->getModule(label->moduleId);
-		// Request label deletion if widget doen not exist anymore
-		if (!mw) {
-			requestedDelete = true;
-			return;
+void GlueWidget::consolidate() {
+	struct GlueChangeAction : history::ModuleAction {
+		json_t* oldLabelJ;
+		json_t* newLabelJ;
+		void undo() override {
+			GlueWidget* mw = dynamic_cast<GlueWidget*>(APP->scene->rack->getModule(moduleId));
+			assert(mw);
+			mw->module->moduleLabelFromJson(oldLabelJ);
 		}
+		void redo() override {
+			GlueWidget* mw = dynamic_cast<GlueWidget*>(APP->scene->rack->getModule(moduleId));
+			assert(mw);
+			mw->module->moduleLabelFromJson(newLabelJ);
+		}
+	};
 
-		// Clamp values
-		label->x = clamp(label->x, -label->width / 2.f, mw->box.size.x - label->width / 2.f);
-		label->y = clamp(label->y, -label->size / 2.f, mw->box.size.y - label->size / 2.f);
-		label->opacity = clamp(label->opacity, 0.f, 1.f);
+	std::list<ModuleWidget*> toBeRemoved;
+	for (Widget* w : APP->scene->rack->getModuleContainer()->children) {
+		GlueWidget* gw = dynamic_cast<GlueWidget*>(w);
+		if (!gw || gw == this) continue;
+		toBeRemoved.push_back(gw);
+	}
+	if (toBeRemoved.size() == 0) return;
+
+	history::ComplexAction* complexAction = new history::ComplexAction;
+	complexAction->name = "stoermelder GLUE consolidate";
 	
-		// Move according to the owning module
-		if (label->angle == 0 || label->angle == 180) {
-			box.size = Vec(label->width, label->size);
-			box.pos = mw->box.pos.plus(Vec(label->x, label->y));
-		}
-		else {
-			box.size = Vec(label->size, label->width);
-			box.pos = mw->box.pos.plus(Vec(label->x + label->width / 2.f - label->size / 2.f, label->y - label->width / 2.f + label->size / 2.f));;
-		}
+	GlueChangeAction* mc = new GlueChangeAction;
+	mc->moduleId = module->id;
+	mc->oldLabelJ = module->moduleLabelToJson();
+	complexAction->push(mc);
 
-		widget->rotatedSize = Vec(label->width, label->size);
-		widget->box.size = box.size;
+	for (ModuleWidget* w : toBeRemoved) {
+		GlueWidget* gw = dynamic_cast<GlueWidget*>(w);
 
-		// Rotate
-		if (label->angle != lastAngle || label->width != lastWidth || label->size != lastSize || lastSkew != skew) {
-			float angle = label->angle + (skew ? label->skew : 0.f);
-			transformWidget->identity();
-			transformWidget->translate(Vec(box.size.x / 2.f, box.size.y / 2.f));
-			transformWidget->rotate(M_PI/2.f * angle / 90.f);
-			transformWidget->translate(Vec(- label->width / 2.f, - label->size / 2.f));
-			lastAngle = label->angle;
-			lastWidth = label->width;
-			lastSize = label->size;
-			lastSkew = skew;
+		history::ModuleRemove* h = new history::ModuleRemove;
+		h->setModule(w);
+		complexAction->push(h);
+
+		for (ModuleLabel* l : gw->module->moduleLabels) {
+			module->moduleLabels.push_back(l);
 		}
 
-		TransparentWidget::step();
+		gw->module->moduleLabels.clear();
+		APP->scene->rack->removeModule(w);
+		delete w;
 	}
 
-	void onButton(const event::Button& e) override {
-		if (editMode && e.button == GLFW_MOUSE_BUTTON_LEFT) {
-			if (e.action == GLFW_PRESS) {
-				if (box.zeroPos().isContaining(e.pos))
-					e.consume(this);
-			}
+	mc->newLabelJ = module->moduleLabelToJson();
+
+	APP->history->push(complexAction);
+	module->resetRequested = true;
+}
+
+void GlueWidget::appendContextMenu(Menu* menu) {
+	ThemedModuleWidget<GlueModule>::appendContextMenu(menu);
+
+	struct DefaultAppearanceMenuItem : MenuItem {
+		GlueModule* module;
+		DefaultAppearanceMenuItem() {
+			rightText = RIGHT_ARROW;
 		}
-		if (editMode && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
-			createContextMenu();
-			e.consume(this);
+		Menu* createChildMenu() override {
+			Menu* menu = new Menu;
+			menu->addChild(Rack::createPtrSlider(&module->defaultSize, LABEL_SIZE_MIN, LABEL_SIZE_MAX, LABEL_SIZE_DEFAULT, "Default size", "", 1.f, 160.0f));
+			menu->addChild(Rack::createPtrSlider(&module->defaultWidth, LABEL_WIDTH_MIN, LABEL_WIDTH_MAX, LABEL_WIDTH_DEFAULT, "Default width", "", 1.f, 160.0f));
+			menu->addChild(Rack::createPtrSlider(&module->defaultOpacity, LABEL_OPACITY_MIN, LABEL_OPACITY_MAX, 1.0f, "Default opacity", "%", 100.f, 160.0f));
+			menu->addChild(new MenuSeparator);
+			menu->addChild(createMenuLabel("Default rotation"));
+			menu->addChild(Rack::createValuePtrMenuItem("0°", &module->defaultAngle, 0.f));
+			menu->addChild(Rack::createValuePtrMenuItem("90°", &module->defaultAngle, 90.f));
+			menu->addChild(Rack::createValuePtrMenuItem("270°", &module->defaultAngle, 270.f));
+			menu->addChild(new MenuSeparator());
+			menu->addChild(Rack::createColorSubmenuItem("Default color", &module->defaultColor, {
+				{ LABEL_COLOR_YELLOW, "Yellow" },
+				{ LABEL_COLOR_RED, "Red" },
+				{ LABEL_COLOR_CYAN, "Cyan" },
+				{ LABEL_COLOR_GREEN, "Green" },
+				{ LABEL_COLOR_PINK, "Pink" },
+				{ LABEL_COLOR_WHITE, "White" }
+			}, true, true, nullptr));
+			menu->addChild(new MenuSeparator());
+			menu->addChild(createMenuLabel("Default font"));
+			menu->addChild(Rack::createValuePtrMenuItem("Default", &module->defaultFont, 0));
+			menu->addChild(Rack::createValuePtrMenuItem("Handwriting", &module->defaultFont, 1));
+			menu->addChild(new MenuSeparator());
+			menu->addChild(Rack::createColorSubmenuItem("Default font color", &module->defaultFontColor, {
+				{ LABEL_FONTCOLOR_DEFAULT, "Black" },
+				{ LABEL_FONTCOLOR_WHITE, "White" }
+			}, true, true, nullptr));
+			return menu;
 		}
-		TransparentWidget::onButton(e);
-	}
+	};
 
-	void onDragStart(const event::DragStart& e) override {
-		if (editMode && e.button == GLFW_MOUSE_BUTTON_LEFT) {
-			dragPos = APP->scene->rack->getMousePos().minus(parent->box.pos);
-			dragPos = dragPos.minus(Vec(label->x, label->y));
-			e.consume(this);
+	struct ModuleLabelMenuItem : MenuItem {
+		LabelContainer* labelContainer;
+		ModuleLabel* label;
+		ModuleLabelMenuItem() {
+			rightText = RIGHT_ARROW;
 		}
-		TransparentWidget::onDragStart(e);
-	}
-
-	void onDragMove(const event::DragMove& e) override {
-		if (editMode && e.button == GLFW_MOUSE_BUTTON_LEFT) {
-			math::Vec npos = APP->scene->rack->getMousePos().minus(parent->box.pos);
-			math::Vec pos = npos.minus(dragPos);
-			label->x = pos.x;
-			label->y = pos.y;
-			e.consume(this);
-		}
-		TransparentWidget::onDragMove(e);
-	}
-
-	void createContextMenu() {
-		ui::Menu* menu = createMenu();
-
-		struct LabelField : ui::TextField {
-			Label* l;
-			// Needed for input-blur on submenu
-			bool textSelected = true;
-			LabelField() {
-				box.size.x = 160.f;
-				placeholder = "Label";
-			}
-			LabelField* setLabel(Label* l) {
-				this->l = l;
-				setText(l->text);
-				selectAll();
-				return this;
-			}
-			void step() override {
-				// Keep selected
-				if (textSelected) APP->event->setSelectedWidget(this);
-				TextField::step();
-				l->text = text;
-			}
-			void onSelectKey(const event::SelectKey& e) override {
-				if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
-					l->text = text;
-					ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
-					overlay->requestDelete();
-					e.consume(this);
-				}
-				if (!e.getTarget()) {
-					ui::TextField::onSelectKey(e);
-				}
-			}
-		};
-
-		struct AppearanceItem : MenuItem {
-			Label* label;
-			bool* textSelected;
-			AppearanceItem() {
-				rightText = RIGHT_ARROW;
-			}
-			Menu* createChildMenu() override {
-				Menu* menu = new Menu;
-				menu->addChild(Rack::createPtrSlider(&label->size, LABEL_SIZE_MIN, LABEL_SIZE_MAX, LABEL_SIZE_DEFAULT, "Size", "", 1.f, 140.0f));
-				menu->addChild(Rack::createPtrSlider(&label->width, LABEL_WIDTH_MIN, LABEL_WIDTH_MAX, LABEL_WIDTH_DEFAULT, "Width", "", 1.f, 140.0f));
-				menu->addChild(Rack::createPtrSlider(&label->opacity, LABEL_OPACITY_MIN, LABEL_OPACITY_MAX, 1.0f, "Opacity", "%", 100.f, 140.0f));
-				menu->addChild(new MenuSeparator);
-				menu->addChild(createMenuLabel("Rotation"));
-				menu->addChild(Rack::createValuePtrMenuItem("0°", &label->angle, 0.f));
-				menu->addChild(Rack::createValuePtrMenuItem("90°", &label->angle, 90.f));
-				menu->addChild(Rack::createValuePtrMenuItem("270°", &label->angle, 270.f));
-				menu->addChild(new MenuSeparator);
-				menu->addChild(Rack::createColorSubmenuItem("Color", &label->color, {
-					{ LABEL_COLOR_YELLOW, "Yellow" },
-					{ LABEL_COLOR_RED, "Red" },
-					{ LABEL_COLOR_CYAN, "Cyan" },
-					{ LABEL_COLOR_GREEN, "Green" },
-					{ LABEL_COLOR_PINK, "Pink" },
-					{ LABEL_COLOR_WHITE, "White" }
-				}, true, true, textSelected));
-				menu->addChild(new MenuSeparator);
-				menu->addChild(createMenuLabel("Font"));
-				menu->addChild(Rack::createValuePtrMenuItem("Default", &label->font, 0));
-				menu->addChild(Rack::createValuePtrMenuItem("Handwriting", &label->font, 1));
-				menu->addChild(new MenuSeparator);
-				menu->addChild(Rack::createColorSubmenuItem("Font color", &label->fontColor, {
-					{ LABEL_FONTCOLOR_DEFAULT, "Black" },
-					{ LABEL_FONTCOLOR_WHITE, "White" }
-				}, true, true, textSelected));
-				return menu;
-			}
-		};
-
-		menu->addChild(createMenuLabel("Label"));
-		LabelField* labelField = construct<LabelField>()->setLabel(label);
-		menu->addChild(labelField);
-		menu->addChild(construct<AppearanceItem>(&AppearanceItem::text, "Appearance", &AppearanceItem::label, label, &AppearanceItem::textSelected, &labelField->textSelected));
-		menu->addChild(createMenuItem("Duplicate", "", [=]() { requestedDuplicate = true; }));
-		menu->addChild(createMenuItem("Delete", "Ctrl+X", [=]() { requestedDelete = true; }));
-	}
-
-	void onHoverKey(const event::HoverKey& e) override {
-		if (editMode && e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && e.key == GLFW_KEY_X) {
-			requestedDelete = true;
-			e.consume(this);
-		}
-		TransparentWidget::onHoverKey(e);
-	}
-};
-
-
-
-template < typename WIDGET >
-struct LabelRemoveAction : history::ModuleAction {
-	Label label;
-	int64_t moduleId;
-
-	void undo() override {
-		ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
-		assert(mw);
-		WIDGET* w = dynamic_cast<WIDGET*>(mw);
-		assert(w);
-
-		LabelWidget* lw = w->labelContainer->addLabelWidget();
-		lw->label->moduleId = label.moduleId;
-		lw->label->x = label.x;
-		lw->label->y = label.y;
-		lw->label->width = label.width;
-		lw->label->size = label.size;
-		lw->label->angle = label.angle;
-		lw->label->skew = label.skew;
-		lw->label->color = label.color;
-		lw->label->opacity = label.opacity;
-		lw->label->text = label.text;
-		lw->label->font = label.font;
-		lw->label->fontColor = label.fontColor;
-	}
-
-	void redo() override {
-		// Nothing to do here, it's handled as any module removal by LabelContainer
-	}
-};
-
-struct DoubleUndoAction : history::ModuleAction {
-	void undo() override {
-		APP->history->undo();
-	}
-	void redo() override {
-		APP->history->redo();
-	}
-};
-
-
-struct GlueWidget;
-
-struct LabelContainer : widget::Widget {
-	GlueModule* module;
-	std::list<Label*> labelsToBeDeleted;
-
-	/** used when duplicating an existing label */
-	Label* labelTemplate = NULL;
-
-	/** labels locked? */
-	bool editMode = false;
-	/** labels hidden? gets its value from the module's parameter */
-	bool hideMode = false;
-	/** learning a module for a new label? */
-	bool learnMode = false;
-
-	ModuleWidget* mw;
-
-	void step() override {
-		Widget::step();
-		if (!module) return;
-
-		if (module->resetRequested) {
-			this->clearChildren();
-			for (Label* l : module->labels) {
-				LabelWidget* lw = new LabelWidget(l);
-				addChild(lw);
-			}
-			module->resetRequested = false;
-			learnMode = false;
-			editMode = false;
+		void step() override {
+			text = getModuleName() + " - " + label->text;
+			MenuItem::step();
 		}
 
-		// Learn module
-		if (learnMode) {
-			Widget* w = APP->event->getSelectedWidget();
-			addLabelAtMousePos(w);
+		std::string getModuleName() {
+			ModuleWidget* mw = APP->scene->rack->getModule(label->moduleId);
+			if (!mw) return "<ERROR>";
+			Module* m = mw->module;
+			if (!m) return "<ERROR>";
+			std::string s = mw->model->name;
+			return s;
 		}
 
-		// Traverse labels, collect delete-requests
-		for (Widget* w : children) {
-			LabelWidget* lw = dynamic_cast<LabelWidget*>(w);
-			if (!lw) continue;
-			if (lw->requestedDelete) {
-				labelsToBeDeleted.push_back(lw->label);
-				labelTemplate = NULL;
-			}
-			if (lw->requestedDuplicate) {
-				lw->requestedDuplicate = false;
-				labelTemplate = lw->label;
-				learnMode = true;
-			}
-			lw->editMode = editMode;
-			lw->skew = module->skewLabels;
+		Menu* createChildMenu() override {
+			Menu* menu = new Menu;
+			menu->addChild(createMenuItem("Delete", "", [=]() { labelContainer->removeLabelWidget(label); }));
+			return menu;
 		}
+	};
 
-		if (labelsToBeDeleted.size() > 0) {
-			history::ComplexAction* complexAction = new history::ComplexAction;
-			complexAction->name = "remove module";
-			// First, undo "module removal" by a "double undo"
-			complexAction->push(new DoubleUndoAction);
-			for (Label* l : labelsToBeDeleted) {
-				LabelRemoveAction<GlueWidget>* a = new LabelRemoveAction<GlueWidget>;
-				a->label = *l;
-				a->moduleId = mw->module->id;
-				complexAction->push(a);
-				removeLabelWidget(l);
-			}
-			// Second, undo the label removal
-			APP->history->push(complexAction);
+	menu->addChild(new MenuSeparator());
+	menu->addChild(construct<DefaultAppearanceMenuItem>(&MenuItem::text, "Label appearance", &DefaultAppearanceMenuItem::module, module));
+	menu->addChild(createBoolPtrMenuItem("Skew labels", "", &module->skewLabels));
 
-			labelsToBeDeleted.clear();
-		}
-
-		module->lights[GlueModule::LIGHT_LEARN].setBrightness(learnMode);
-		module->lights[GlueModule::LIGHT_LOCK].setBrightness(!editMode);
-	}
-
-	void draw(const DrawArgs& args) override {
-		if (!hideMode) Widget::draw(args);
-	}
-
-	LabelWidget* getLabelWidget(Label* l) {
-		for (Widget* w : children) {
-			LabelWidget* lw = dynamic_cast<LabelWidget*>(w);
-			if (!lw) continue;
-			if (lw->label == l) return lw;
-		}
-		return NULL;
-	}
-
-	LabelWidget* addLabelWidget() {
-		Label* l = module->addLabel();
-		if (labelTemplate) {
-			l->size = labelTemplate->size;
-			l->width = labelTemplate->width;
-			l->angle = labelTemplate->angle;
-			l->color = labelTemplate->color;
-			l->opacity = labelTemplate->opacity;
-			l->font = labelTemplate->font;
-			l->fontColor = labelTemplate->fontColor;
-			labelTemplate = NULL;
-		}
-		LabelWidget* lw = new LabelWidget(l);
-		addChild(lw);
-		return lw;
-	}
-
-	void removeLabelWidget(Label* l) {
-		LabelWidget* lw = getLabelWidget(l);
-		if (!lw) return;
-		removeChild(lw);
-		delete lw;
-		module->removeLabel(l);
-	}
-
-	void addLabelAtMousePos(Widget* w) {
-		if (!w) return;
-		ModuleWidget* mw = dynamic_cast<ModuleWidget*>(w);
-		if (!mw) mw = w->getAncestorOfType<ModuleWidget>();
-		if (!mw || mw == this->mw) return;
-		Module* m = mw->module;
-		if (!m) return;
-
-		// Create new label
-		LabelWidget* lw = addLabelWidget();
-		lw->label->text = m->model->name;
-		lw->label->moduleId = m->id;
-
-		// Move label to mouse click position
-		Vec pos = APP->scene->rack->getMousePos();
-		pos = pos.minus(mw->box.pos);
-		lw->label->x = pos.x - lw->label->width / 2.f;
-		lw->label->y = pos.y - lw->label->size / 2.f;
-
-		// Enable edit mode
-		editMode = true;
-		learnMode = false;
-		if (APP->window) glfwSetCursor(APP->window->win, NULL);
-	}
-
-	void toggleLearnMode() {
-		if (!hideMode) learnMode ^= true;
-		GLFWcursor* cursor = NULL;
-		if (learnMode) {
-			cursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
-		}
-		if (APP->window) glfwSetCursor(APP->window->win, cursor);
-	}
-
-	void toggleEditMode() {
-		if (!hideMode) editMode ^= true;
-	}
-
-	void toggleHideMode(bool doHide) {
-		hideMode = doHide;
-		if (hideMode) {
-			editMode = false;
-			learnMode = false;
-		}
-	}
-
-	void onHoverKey(const event::HoverKey& e) override {
-		if (e.action == GLFW_PRESS && e.key == GLFW_KEY_G) {
-			if (editMode && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL) {
-				// Learn module
-				Widget* w = APP->event->getHoveredWidget();
-				addLabelAtMousePos(w);
-				e.consume(this);
-			}
-			if ((e.mods & RACK_MOD_MASK) == (RACK_MOD_CTRL | GLFW_MOD_SHIFT)) {
-				toggleEditMode();
-				e.consume(this);
-			}
-		}
-		Widget::onHoverKey(e);
-	}
-};
-
-
-struct LabelButton : TL1105 {
-	LabelContainer* labelContainer;
-	void onButton(const event::Button& e) override {
-		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
-			labelContainer->toggleLearnMode();
-		}
-		TL1105::onButton(e);
-	}
-};
-
-struct LockButton : TL1105 {
-	LabelContainer* labelContainer;
-	void onButton(const event::Button& e) override {
-		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
-			labelContainer->toggleEditMode();
-		}
-		TL1105::onButton(e);
-	}
-};
-
-struct OpacityPlusButton : TL1105 {
-	GlueModule* module;
-	void onButton(const event::Button& e) override {
-		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
-			for (Label* l : module->labels)
-				l->opacity = std::min(l->opacity + LABEL_OPACITY_STEP, LABEL_OPACITY_MAX);
-		}
-		TL1105::onButton(e);
-	}
-};
-
-struct OpacityMinusButton : TL1105 {
-	GlueModule* module;
-	void onButton(const event::Button& e) override {
-		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
-			for (Label* l : module->labels)
-				l->opacity = std::max(l->opacity - LABEL_OPACITY_STEP, LABEL_OPACITY_MIN);
-		}
-		TL1105::onButton(e);
-	}
-};
-
-struct HideSwitch : CKSS {
-	LabelContainer* labelContainer = NULL;
-	void step() override {
-		if (labelContainer) labelContainer->toggleHideMode(getParamQuantity()->getValue() > 0.f);
-		CKSS::step();
-	}
-};
-
-
-struct GlueWidget : ThemedModuleWidget<GlueModule> {
-	LabelContainer* labelContainer = NULL;
-
-	template <class TParamWidget>
-	TParamWidget* createParamCentered(math::Vec pos, engine::Module* module, int paramId) {
-		TParamWidget* pw = rack::createParamCentered<TParamWidget>(pos, module, paramId);
-		pw->labelContainer = labelContainer;
-		return pw;
-	}
-
-	GlueWidget(GlueModule* module)
-		: ThemedModuleWidget<GlueModule>(module, "Glue") {
-		setModule(module);
-		disableDuplicateAction = true;
-
-		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
-		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
-
-		if (module) {
-			labelContainer = new LabelContainer;
-			labelContainer->module = module;
-			labelContainer->mw = this;
-			// This is where the magic happens: add a new widget on top-level to Rack
-			APP->scene->rack->addChild(labelContainer);
-
-			// Move the cable-widget to the end, labels should appear below cables
-			// NB: this should be considered unstable API
-			std::list<Widget*>::iterator it;
-			for (it = APP->scene->rack->children.begin(); it != APP->scene->rack->children.end(); ++it){
-				if (*it == APP->scene->rack->getCableContainer()) break;
-			}
-			if (it != APP->scene->rack->children.end()) {
-				APP->scene->rack->children.splice(APP->scene->rack->children.end(), APP->scene->rack->children, it);
-			}
-		}
-
-		addChild(createLightCentered<TinyLight<WhiteLight>>(Vec(22.5f, 143.5f), module, GlueModule::LIGHT_LEARN));
-		addParam(createParamCentered<LabelButton>(Vec(22.5f, 158.8f), module, GlueModule::PARAM_ADD_LABEL));
-
-		addChild(createLightCentered<TinyLight<YellowLight>>(Vec(22.5f, 188.3f), module, GlueModule::LIGHT_LOCK));
-		addParam(createParamCentered<LockButton>(Vec(22.5f, 203.6f), module, GlueModule::PARAM_UNLOCK));
-
-		OpacityPlusButton* b1 = rack::createParamCentered<OpacityPlusButton>(Vec(22.5f, 254.7f), module, GlueModule::PARAM_OPACITY_PLUS);
-		b1->module = module;
-		addParam(b1);
-		OpacityMinusButton* b2 = rack::createParamCentered<OpacityMinusButton>(Vec(22.5f, 286.3f), module, GlueModule::PARAM_OPACITY_MINUS);
-		b2->module = module;
-		addParam(b2);
-		addParam(createParamCentered<HideSwitch>(Vec(22.5f, 326.7f), module, GlueModule::PARAM_HIDE));
-	}
-
-	~GlueWidget() {
-		if (labelContainer) {
-			APP->scene->rack->removeChild(labelContainer);
-			delete labelContainer;
-		}
-	}
-
-	void consolidate() {
-		struct GlueChangeAction : history::ModuleAction {
-			json_t* oldLabelJ;
-			json_t* newLabelJ;
-			void undo() override {
-				GlueWidget* mw = dynamic_cast<GlueWidget*>(APP->scene->rack->getModule(moduleId));
-				assert(mw);
-				mw->module->labelFromJson(oldLabelJ);
-			}
-			void redo() override {
-				GlueWidget* mw = dynamic_cast<GlueWidget*>(APP->scene->rack->getModule(moduleId));
-				assert(mw);
-				mw->module->labelFromJson(newLabelJ);
-			}
-		};
-
-		std::list<ModuleWidget*> toBeRemoved;
-		for (Widget* w : APP->scene->rack->getModuleContainer()->children) {
-			GlueWidget* gw = dynamic_cast<GlueWidget*>(w);
-			if (!gw || gw == this) continue;
-			toBeRemoved.push_back(gw);
-		}
-		if (toBeRemoved.size() == 0) return;
-
-		history::ComplexAction* complexAction = new history::ComplexAction;
-		complexAction->name = "stoermelder GLUE consolidate";
-		
-		GlueChangeAction* mc = new GlueChangeAction;
-		mc->moduleId = module->id;
-		mc->oldLabelJ = module->labelToJson();
-		complexAction->push(mc);
-
-		for (ModuleWidget* w : toBeRemoved) {
-			GlueWidget* gw = dynamic_cast<GlueWidget*>(w);
-
-			history::ModuleRemove* h = new history::ModuleRemove;
-			h->setModule(w);
-			complexAction->push(h);
-
-			for (Label* l : gw->module->labels) {
-				module->labels.push_back(l);
-			}
-
-			gw->module->labels.clear();
-			APP->scene->rack->removeModule(w);
-			delete w;
-		}
-
-		mc->newLabelJ = module->labelToJson();
-
-		APP->history->push(complexAction);
-		module->resetRequested = true;
-	}
-
-	void appendContextMenu(Menu* menu) override {
-		ThemedModuleWidget<GlueModule>::appendContextMenu(menu);
-
-		struct DefaultAppearanceMenuItem : MenuItem {
-			GlueModule* module;
-			DefaultAppearanceMenuItem() {
-				rightText = RIGHT_ARROW;
-			}
-			Menu* createChildMenu() override {
-				Menu* menu = new Menu;
-				menu->addChild(Rack::createPtrSlider(&module->defaultSize, LABEL_SIZE_MIN, LABEL_SIZE_MAX, LABEL_SIZE_DEFAULT, "Default size", "", 1.f, 160.0f));
-				menu->addChild(Rack::createPtrSlider(&module->defaultWidth, LABEL_WIDTH_MIN, LABEL_WIDTH_MAX, LABEL_WIDTH_DEFAULT, "Default width", "", 1.f, 160.0f));
-				menu->addChild(Rack::createPtrSlider(&module->defaultOpacity, LABEL_OPACITY_MIN, LABEL_OPACITY_MAX, 1.0f, "Default opacity", "%", 100.f, 160.0f));
-				menu->addChild(new MenuSeparator);
-				menu->addChild(createMenuLabel("Default rotation"));
-				menu->addChild(Rack::createValuePtrMenuItem("0°", &module->defaultAngle, 0.f));
-				menu->addChild(Rack::createValuePtrMenuItem("90°", &module->defaultAngle, 90.f));
-				menu->addChild(Rack::createValuePtrMenuItem("270°", &module->defaultAngle, 270.f));
-				menu->addChild(new MenuSeparator());
-				menu->addChild(Rack::createColorSubmenuItem("Default color", &module->defaultColor, {
-					{ LABEL_COLOR_YELLOW, "Yellow" },
-					{ LABEL_COLOR_RED, "Red" },
-					{ LABEL_COLOR_CYAN, "Cyan" },
-					{ LABEL_COLOR_GREEN, "Green" },
-					{ LABEL_COLOR_PINK, "Pink" },
-					{ LABEL_COLOR_WHITE, "White" }
-				}, true, true, nullptr));
-				menu->addChild(new MenuSeparator());
-				menu->addChild(createMenuLabel("Default font"));
-				menu->addChild(Rack::createValuePtrMenuItem("Default", &module->defaultFont, 0));
-				menu->addChild(Rack::createValuePtrMenuItem("Handwriting", &module->defaultFont, 1));
-				menu->addChild(new MenuSeparator());
-				menu->addChild(Rack::createColorSubmenuItem("Default font color", &module->defaultFontColor, {
-					{ LABEL_FONTCOLOR_DEFAULT, "Black" },
-					{ LABEL_FONTCOLOR_WHITE, "White" }
-				}, true, true, nullptr));
-				return menu;
-			}
-		};
-
-		struct LabelMenuItem : MenuItem {
-			LabelContainer* labelContainer;
-			Label* label;
-			LabelMenuItem() {
-				rightText = RIGHT_ARROW;
-			}
-			void step() override {
-				text = getModuleName() + " - " + label->text;
-				MenuItem::step();
-			}
-
-			std::string getModuleName() {
-				ModuleWidget* mw = APP->scene->rack->getModule(label->moduleId);
-				if (!mw) return "<ERROR>";
-				Module* m = mw->module;
-				if (!m) return "<ERROR>";
-				std::string s = mw->model->name;
-				return s;
-			}
-
-			Menu* createChildMenu() override {
-				Menu* menu = new Menu;
-				menu->addChild(createMenuItem("Delete", "", [=]() { labelContainer->removeLabelWidget(label); }));
-				return menu;
-			}
-		};
-
+	if (module->moduleLabels.size() > 0) {
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<DefaultAppearanceMenuItem>(&MenuItem::text, "Label appearance", &DefaultAppearanceMenuItem::module, module));
-		menu->addChild(createBoolPtrMenuItem("Skew labels", "", &module->skewLabels));
+		menu->addChild(createMenuItem("Consolidate GLUE", "", [=]() { consolidate(); }));
+		menu->addChild(new MenuSeparator());
+		menu->addChild(createMenuLabel("Module Labels"));
 
-		if (module->labels.size() > 0) {
-			menu->addChild(new MenuSeparator());
-			menu->addChild(createMenuItem("Consolidate GLUE", "", [=]() { consolidate(); }));
-			menu->addChild(new MenuSeparator());
-			menu->addChild(createMenuLabel("Labels"));
-
-			for (Label* l : module->labels) {
-				menu->addChild(construct<LabelMenuItem>(&LabelMenuItem::labelContainer, labelContainer, &LabelMenuItem::label, l));
-			}
+		for (ModuleLabel* l : module->moduleLabels) {
+			menu->addChild(construct<ModuleLabelMenuItem>(&ModuleLabelMenuItem::labelContainer, labelContainer, &ModuleLabelMenuItem::label, l));
 		}
 	}
-};
+
+	if (module->cableLabels.size() > 0) {
+		menu->addChild(new MenuSeparator());
+		menu->addChild(createMenuLabel("Cable Labels"));
+
+		for (CableLabel* cl : module->cableLabels) {
+			std::string text = cl->text.empty() ? "<empty>" : cl->text;
+			menu->addChild(createSubmenuItem(text, "", [=](Menu* menu) {
+				menu->addChild(createMenuItem("Delete", "", [=]() {
+					labelContainer->removeCableLabelWidget(cl);
+				}));
+			}));
+		}
+	}
+}
+
+// Explicit template instantiation
+template struct ModuleLabelRemoveAction<GlueWidget>;
+
+// Undo action implementations
+template <>
+void ModuleLabelRemoveAction<GlueWidget>::undo() {
+	ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
+	assert(mw);
+	GlueWidget* w = dynamic_cast<GlueWidget*>(mw);
+	assert(w);
+
+	ModuleLabelWidget* lw = w->labelContainer->addModuleLabelWidget();
+	lw->label->moduleId = label.moduleId;
+	lw->label->x = label.x;
+	lw->label->y = label.y;
+	lw->label->width = label.width;
+	lw->label->size = label.size;
+	lw->label->angle = label.angle;
+	lw->label->skew = label.skew;
+	lw->label->color = label.color;
+	lw->label->opacity = label.opacity;
+	lw->label->text = label.text;
+	lw->label->font = label.font;
+	lw->label->fontColor = label.fontColor;
+}
+
+template <>
+void ModuleLabelRemoveAction<GlueWidget>::redo() {
+	// Nothing to do here, it's handled as any module removal by LabelContainer
+}
 
 } // namespace Glue
 } // namespace StoermelderPackOne

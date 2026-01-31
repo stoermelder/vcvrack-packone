@@ -1,7 +1,7 @@
 # stoermelder PackOne
 
 <!-- Version and License Badges -->
-![Version](https://img.shields.io/badge/Version-2.2.0-green.svg?style=flat-square)
+![Version](https://img.shields.io/badge/Version-2.3.0-green.svg?style=flat-square)
 ![Rack](https://img.shields.io/badge/VCV_Rack-v2-red.svg?style=flat-square)
 ![MetaModule](https://img.shields.io/badge/MetaModule-v2-orange.svg?style=flat-square)
 ![License](https://img.shields.io/badge/License-GPLv3+-blue.svg?style=flat-square)
@@ -12,15 +12,6 @@
 A [Development build](https://github.com/stoermelder/vcvrack-packone/releases/tag/Nightly) of the latest commit is also available for all platforms. Please review the [changelog](./CHANGELOG.md) for this plugin.
 
 If you like my modules consider donating to https://paypal.me/stoermelder, but don't feel obligated to do so. Thank you for your support!
-
-## Latest additions to PackOne - new for v2.2
-
-- [DIRT](./docs/dirt/Dirt.md): a module for noise, crackles and crosstalk on polyphonic cables
-- [MIDI-CAT XL](./docs/midicat/MidiCat.md): a wider panel version of MIDI-CAT with identical features and driver selection moved to the context menu
-- [MIDI-CAT CLK](./docs/midicat/MidiCat.md#clk-expander): expander for MIDI-CAT, allows trigger-quantization for mapped parameters (#299)
-- [MIDI-CAT FINE](./docs/midicat/MidiCat.md#fine-expander): expander for MIDI-CAT, allows fine-tuning of MIDI CC parameter-mappings
-- [MIDI-KEY](./docs/midi/MidiKey.md): utility for generating keyboard events from MIDI CC or Note messages
-- [STRIP++](./docs/strip/StripPp.md): utility for pasting and importing Rack selections while preserving parameter mappings and [GLUE](./docs/glue/Glue.md) labels
 
 ## The modules of PackOne
 
@@ -33,6 +24,7 @@ If you like my modules consider donating to https://paypal.me/stoermelder, but d
 - [CV-MAP](./docs/cvmap/CVMap.md): control 32 knobs/sliders/switches of any module by CV even when the module has no CV input
 - [CV-MAP CTX](./docs/cvmap/CVMap.md#ctx-expander): expander-module for CV-MAP, helper for mapping parameters by context menu
 - [CV-PAM](./docs/cvmap/CVPam.md): generate CV voltage by observing 32 knobs/sliders/switches of any module
+- [DIRT](./docs/dirt/Dirt.md): a module for noise, crackles and crosstalk on polyphonic cables
 - [GLUE](./docs/glue/Glue.md): label maker for your modules!
 - [GOTO](./docs/goto/Goto.md): utility for jumping directly to 10 locations in your patch by hotkey or using MIDI
 - [GRIP](./docs/cvmap/Grip.md): lock for module parameters
@@ -48,8 +40,12 @@ If you like my modules consider donating to https://paypal.me/stoermelder, but d
 - [ME](./docs/trial-and-error/Me.md): experimental module for "mouse enhacements", provides a screen overlay for parameters changes
 - [µMAP](./docs/cvmap/CVMapMicro.md): a single instance of CV-MAP's slots with attenuverters
 - [MIDI-CAT](./docs/midicat/MidiCat.md): map parameters to midi controllers similar to MIDI-MAP with midi feedback and note mapping
+- [MIDI-CAT CLK](./docs/midicat/MidiCat.md#clk-expander): expander for MIDI-CAT, allows trigger-quantization for mapped parameters (#299)
 - [MIDI-CAT CTX](./docs/midicat/MidiCat.md#ctx-expander): expander-module for MIDI-CAT, helper for mapping parameters by context menu
+- [MIDI-CAT FINE](./docs/midicat/MidiCat.md#fine-expander): expander for MIDI-CAT, allows fine-tuning of MIDI CC parameter-mappings
 - [MIDI-CAT MEM](./docs/midicat/MidiCat.md#mem-expander): storage-expander for MIDI mapping-presets with MIDI-CAT
+- [MIDI-CAT XL](./docs/midicat/MidiCat.md): a wider panel version of MIDI-CAT with identical features and driver selection moved to the context menu
+- [MIDI-KEY](./docs/midi/MidiKey.md): utility for generating keyboard events from MIDI CC or Note messages
 - [MIDI-MON](./docs/midi/MidiMon.md): input-monitor for MIDI messages
 - [MIDI-PLUG](./docs/midi/MidiPlug.md): a virtual MIDI merger and splitter
 - [MIDI-STEP](./docs/midi/MidiStep.md): utility for relative modes of endless knobs on your MIDI controller such as Arturia Beatstep
@@ -65,6 +61,7 @@ If you like my modules consider donating to https://paypal.me/stoermelder, but d
 - [STROKE](./docs/stroke/Stroke.md): utility which converts used-defined hotkeys into triggers or gates, also provides some special commands for Rack's enviroment
 - [STRIP](./docs/strip/Strip.md): manage a group of modules in a patch, providing load, save as, disable and randomize
 - [STRIP-BAY](./docs/strip/Strip.md#stoermelder-strip-bay): a companion module for STRIP for keeping input/output connections while replacing strips
+- [STRIP++](./docs/strip/StripPp.md): utility for pasting and importing Rack selections while preserving parameter mappings and [GLUE](./docs/glue/Glue.md) labels
 - [TRANSIT](./docs/transit/Transit.md): parameter-morpher and sequencer for up to 96 snapshots
 - [X4](./docs/cvmap/X4.md): dual multiple for parameter-mapping
 
@@ -87,6 +84,6 @@ Follow the [build instructions](https://vcvrack.com/manual/Building#Building-Rac
 
 ## License
 
-All **source code** is copyright © 2025 Benjamin Dill and is distributed under the [GNU General Public License, version v3.0](./LICENSE.txt) or any later version (SPDX: GPL-3.0-or-later).
+All **source code** is copyright © 2026 Benjamin Dill and is distributed under the [GNU General Public License, version v3.0](./LICENSE.txt) or any later version (SPDX: GPL-3.0-or-later).
 
 All **files** and **graphics** in the `res` and `res-src` directories are distributed under [CC BY-NC-ND 4.0](https://creativecommons.org/licenses/by-nc-nd/4.0/) (SPDX: CC-BY-NC-ND-4.0). You may not distribute modified adaptations of these graphics.

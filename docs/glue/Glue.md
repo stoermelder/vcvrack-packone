@@ -93,3 +93,5 @@ Since v1.9.0, GLUE can consolidate multiple instances of itself in a patch. If y
     - Changed "Add label" hotkey from Ctrl+A to Ctrl+G (#305)
     - Added hotkey Ctrl+Shift+G for "Lock"
     - Added HSL color picker
+- v2.3.0
+    - Added option to add labels to cables (#247)
