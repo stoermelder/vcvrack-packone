@@ -342,6 +342,12 @@ struct AhabSimWidget : OpaqueWidget {
 	}
 
 	~AhabSimWidget() {
+		// Clean up tooltip if it exists (prevents dangling reference)
+		if (tooltip) {
+			APP->scene->removeChild(tooltip);
+			delete tooltip;
+			tooltip = NULL;
+		}
 		mbuf_reusable_deinit(&display_mbuf);
 		field_deinit(&display_field);
 	}
@@ -923,7 +929,7 @@ struct AhabSimWidget : OpaqueWidget {
 		}
 
 		// Ctrl/Cmd+Shift+R -> Reset tick number to zero
-		if (e.action == GLFW_PRESS && (e.mods & (RACK_MOD_CTRL | RACK_MOD_SHIFT)) && e.key == GLFW_KEY_R) {
+		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == (RACK_MOD_CTRL | RACK_MOD_SHIFT) && e.key == GLFW_KEY_R) {
 			module->sim->resetTickNumber();
 			e.consume(this);
 		}

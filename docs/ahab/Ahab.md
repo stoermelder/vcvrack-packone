@@ -79,22 +79,22 @@ Features missing in AHAB compared to ORCA:
 | Backspace | Clear selected cells |
 | Ctrl/Cmd + `Z` | Undo |
 | Ctrl/Cmd + Shift + `Z` | Redo |
-| Ctrl/Cmd + `N` | Clear |
+| Ctrl/Cmd + `N` | Clear entire field |
 | Ctrl/Cmd + `O` | Load file |
-| Ctrl/Cmd + `B` | Inject file |
-| Ctrl/Cmd + `I` | Toggle insert mode (cursor moves right) |
+| Ctrl/Cmd + `B` | Inject file at cursor |
+| Ctrl/Cmd + `I` | Toggle insert mode (cursor moves right after typing) |
 | Ctrl/Cmd + `A` | Select all |
 | Ctrl/Cmd + `C` | Copy selected cells to clipboard |
 | Ctrl/Cmd + `X` | Cut selected cells to clipboard |
-| Ctrl/Cmd + `V` | Paste selected cells from clipboard |
+| Ctrl/Cmd + `V` | Paste clipboard at cursor |
 | Ctrl/Cmd + `F` | Run simulation for one frame |
-| Ctrl/Cmd + Shift + `7` | Toggle comment block |
-| Ctrl/Cmd + Shift + `R` | Reset frame number to zero |
-| Arrow keys | Move cursor / Move selection |
+| Ctrl/Cmd + Shift + `7` | Toggle comment block around selection |
+| Ctrl/Cmd + Shift + `R` | Reset frame counter to zero |
+| Arrow keys | Move cursor and selection |
 | Shift + Arrow keys | Expand selection |
 | Alt + Arrow keys | Move selected cells |
-| Ctrl/Cmd + Arrow keys | Move/expand in grid cells |
-| Escape | Clear selection |
+| Ctrl/Cmd + Arrow keys | Move by grid step (rows/cols) |
+| Escape | Collapse selection to cursor |
 | `{`, `}` | Decrease/increase grid step rows |
 | `[`, `]` | Decrease/increase grid step columns |
 

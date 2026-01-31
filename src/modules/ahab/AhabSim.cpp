@@ -503,6 +503,15 @@ void AhabSim::setFieldSizeRequest(Usz h, Usz w, bool doUndo) {
 
 // DSP thread operation - resize both field buffers, preserving overlapping region
 void AhabSim::setFieldSize(Usz height, Usz width) {
+	// Enforce maximum field size to prevent stack overflow from alloca.
+	// UI limits are 97x49, but clamp here for safety (max ~10KB on stack).
+	const Usz MAX_HEIGHT = 100;
+	const Usz MAX_WIDTH = 100;
+	if (height > MAX_HEIGHT) height = MAX_HEIGHT;
+	if (width > MAX_WIDTH) width = MAX_WIDTH;
+	if (height == 0) height = 1;
+	if (width == 0) width = 1;
+
 	int widx = write_idx_.load(std::memory_order_relaxed);
 	// Create a new field filled with '.' and copy the overlapping region from the current field
 	// Use a stack-allocated temporary buffer to avoid heap allocations on the DSP thread.
@@ -538,16 +547,20 @@ void AhabSim::setFieldSize(Usz height, Usz width) {
 // UI thread operation
 void AhabSim::undoRequest() {
 	if (ui_cmd_queue_.full()) return;
+	if (undo_history_.empty()) return; // Nothing to undo
+
 	UiCommand* cmd = new UiCommand(); 
+	if (!cmd) return;
 	cmd->type = UiCommandType::UNDO;  
-	ui_cmd_queue_.push(cmd);
 
 	// Pre-allocate a buffer for the redo operation on the UI thread
 	int ridx = read_idx_.load(std::memory_order_relaxed);
-	size_t sz = field_[ridx].height * field_[ridx].width;
+	size_t sz = (size_t)field_[ridx].height * (size_t)field_[ridx].width;
 	Glyph* tmpbuf = (Glyph*)malloc(sz);
+	if (!tmpbuf) { delete cmd; return; }
 	cmd->cells = tmpbuf;
 
+	ui_cmd_queue_.push(cmd);
 	notifyTick();
 }
 
@@ -588,15 +601,20 @@ void AhabSim::undo(Glyph* redoBuf) {
 // UI thread operation
 void AhabSim::redoRequest() {
 	if (ui_cmd_queue_.full()) return;
-	UiCommand* cmd = new UiCommand();
-	cmd->type = UiCommandType::REDO;
-	ui_cmd_queue_.push(cmd);
+	if (redo_history_.empty()) return; // Nothing to redo
 
-	// Pre-allocate a buffer for the redo operation on the UI thread
+	UiCommand* cmd = new UiCommand();
+	if (!cmd) return;
+	cmd->type = UiCommandType::REDO;
+
+	// Pre-allocate a buffer for the undo operation on the UI thread
 	int ridx = read_idx_.load(std::memory_order_relaxed);
-	size_t sz = field_[ridx].height * field_[ridx].width;
+	size_t sz = (size_t)field_[ridx].height * (size_t)field_[ridx].width;
 	Glyph* tmpbuf = (Glyph*)malloc(sz);
+	if (!tmpbuf) { delete cmd; return; }
 	cmd->cells = tmpbuf;
+
+	ui_cmd_queue_.push(cmd);
 
 	notifyTick();
 }
@@ -1006,7 +1024,9 @@ void AhabSim::sendOscInts(const char* osc_path, I32 const* vals, Usz count) {
 
 // Callback function for operator '<' to read CV port value
 extern "C" Usz custom_vcvin(void* ptr, Usz port_num, Usz a, Usz b) {
-	AhabSim* sim = callbackMap.at(ptr);
+	auto it = callbackMap.find(ptr);
+	if (it == callbackMap.end()) return 0;
+	AhabSim* sim = it->second;
 
 	// Numeric ports '1'..'4' -> index 1..4
 	if (port_num >= 1 && port_num <= 4) {
@@ -1035,14 +1055,19 @@ float AhabSim::readDspInput(size_t port_num) const {
 
 // Callback function for operator '>' to write CV port value
 extern "C" void custom_vcvout(void* ptr, Usz port_index, Usz a, Usz b, Usz value) {
-	AhabSim* sim = callbackMap.at(ptr);
+	auto it = callbackMap.find(ptr);
+	if (it == callbackMap.end()) return;
+	AhabSim* sim = it->second;
 
 	// Numeric ports '1'..'4' => port_num 0..3.
 	// value is glyph index (0..35). Voltage should be step / 3.5 (so 35 -> 10V).
-	// a = max, b = min
+	// a = min, b = max
 	if (port_index >= 1 && port_index <= 4) {
 		Usz s = std::min(std::max(a, value), b);
-		float voltage = float(s - a) / float(b - a) * 10.0f;
+		float voltage = 0.0f;
+		if (b > a) {
+			voltage = float(s - a) / float(b - a) * 10.0f;
+		}
 		sim->writeDspOutput(port_index - 1, voltage);
 		return;
 	}

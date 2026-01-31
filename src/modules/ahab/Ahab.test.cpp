@@ -501,9 +501,7 @@ TEST_CASE("AhabModule sample rate change", "[Ahab]") {
 	Test::registerModule(m);
 	
 	// Trigger sample rate change
-	Module::SampleRateChangeEvent e;
-	e.sampleRate = 48000.f;
-	m->onSampleRateChange(e);
+	m->onSampleRateChange();
 	
 	// Should not crash and light divider should update
 	// (we can't easily test the divider value directly)
