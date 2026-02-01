@@ -41,16 +41,17 @@ struct GripModule : CVMapModuleBase<MAX_CHANNELS> {
 			paramHandles[i].color = color::fromHexString("#CD5C5C");
 		}
 
-		onReset();
+		ResetEvent re;
+		onReset(re);
 	}
 
 	void onSampleRateChange(const SampleRateChangeEvent& e) override {
 		lightDivider.setDivision(e.sampleRate / 100.f);
 	}
 
-	void onReset() override {
+	void onReset(const ResetEvent& e) override {
 		audioRate = false;
-		CVMapModuleBase<MAX_CHANNELS>::onReset();
+		CVMapModuleBase<MAX_CHANNELS>::onReset(e);
 	}
 
 	void process(const ProcessArgs& args) override {

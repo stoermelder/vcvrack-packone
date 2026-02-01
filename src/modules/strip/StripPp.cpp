@@ -40,7 +40,9 @@ struct StripPpModule : Module {
 	StripPpModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		onReset();
+
+		ResetEvent re;
+		onReset(re);
 	}
 
 	json_t* dataToJson() override {

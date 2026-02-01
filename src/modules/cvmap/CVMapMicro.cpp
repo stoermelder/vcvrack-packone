@@ -58,15 +58,17 @@ struct CVMapMicroModule : CVMapModuleBase<1> {
 
 		this->paramHandles[0].text = "µMAP";
 		processDivider.setDivision(64);
-		onReset();
+
+		ResetEvent re;
+		onReset(re);
 	}
 
 	void onSampleRateChange(const SampleRateChangeEvent& e) override {
 		lightDivider.setDivision(e.sampleRate / 100.f);
 	}
 
-	void onReset() override {
-		CVMapModuleBase<1>::onReset();
+	void onReset(const ResetEvent& e) override {
+		CVMapModuleBase<1>::onReset(e);
 		audioRate = !settings::isPlugin;
 		parameterChangesDirect = false;
 	}

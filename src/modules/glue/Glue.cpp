@@ -12,7 +12,9 @@ GlueModule::GlueModule() {
 	configSwitch(PARAM_OPACITY_PLUS, 0.f, 1.f, 0.f, string::f("Increase overall opacity by %i%%", int(LABEL_OPACITY_STEP * 100)));
 	configSwitch(PARAM_OPACITY_MINUS, 0.f, 1.f, 0.f, string::f("Decrease overall opacity by %i%%", int(LABEL_OPACITY_STEP * 100)));
 	configSwitch(PARAM_HIDE, 0.f, 1.f, 0.f, "Hide labels");
-	onReset();
+
+	ResetEvent re;
+	onReset(re);
 }
 
 GlueModule::~GlueModule() {
@@ -20,8 +22,8 @@ GlueModule::~GlueModule() {
 	clearCableLabels();
 }
 
-void GlueModule::onReset() {
-	Module::onReset();
+void GlueModule::onReset(const ResetEvent& e) {
+	Module::onReset(e);
 	for (ModuleLabel* l : moduleLabels) {
 		delete l;
 	}

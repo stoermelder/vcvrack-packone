@@ -797,7 +797,8 @@ TEST_CASE("MIDI feedback after preset load", "[MidiCat]") {
 	// Get the current preset
 	json_t* preset = module->dataToJson();
 	// Reset the module, all mappings clear now
-	module->onReset();
+	Module::ResetEvent re;
+	module->onReset(re);
 	module->process(Test::makeProcessArgs(i++));
 
 	// only empty slot

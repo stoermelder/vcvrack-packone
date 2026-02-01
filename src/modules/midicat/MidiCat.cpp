@@ -469,7 +469,9 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 		}
 		indicatorDivider.setDivision(2048);
 		midiResendDivider.setDivision(APP->engine->getSampleRate() / 2);
-		onReset();
+
+		Module::ResetEvent re;
+		onReset(re);
 	}
 
 	~MidiCatModule() {
@@ -483,7 +485,7 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 		notifyExpanderListeners("MidiCat");
 	}
 
-	void onReset() override {
+	void onReset(const Module::ResetEvent& e) override {
 		expandersChanged = true;
 
 		learningId = -1;
@@ -527,11 +529,13 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 		clearMapsOnLoad = false;
 
 		parameterChangesDirect = false;
+
+		Module::onReset(e);
 	}
 
-	void onSampleRateChange() override {
-		midiResendDivider.setDivision(APP->engine->getSampleRate() / 2);
-		longPressDuration = (uint64_t)(APP->engine->getSampleRate() / 2);
+	void onSampleRateChange(const SampleRateChangeEvent& e) override {
+		midiResendDivider.setDivision(e.sampleRate / 2);
+		longPressDuration = (uint64_t)(e.sampleRate / 2);
 	}
 
 	void process(const ProcessArgs &args) override {

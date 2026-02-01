@@ -189,8 +189,9 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 		notifyExpanderListeners("Transit");
 	}
 
-	void onReset() override {
+	void onReset(const Module::ResetEvent& e) override {
 		reset(false, true);
+		Module::onReset(e);
 	}
 
 	void reset(bool stateOnly, bool createUiTask = false) {
@@ -226,8 +227,6 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 		presetProcessDivider.reset();
 		
 		parameterChangesDirect = false;
-
-		Module::onReset();
 	}
 
 	inline SLOT* getSlot(int index) {
@@ -1038,7 +1037,8 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 			}
 		}
 		if (t->ctrlUniqueId != -2 || invalid) {
-			t->onReset();
+			Module::ResetEvent re;
+			t->onReset(re);
 		}
 		t->ctrlUniqueId = BASE::ctrlUniqueId;
 	}

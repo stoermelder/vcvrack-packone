@@ -80,16 +80,19 @@ struct MidiPlugModule : Module {
 
 	MidiPlugModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
-		onReset();
+
+		ResetEvent re;
+		onReset(re);
 	}
 
-	void onReset() override {
+	void onReset(const ResetEvent& e) override {
 		for (int i = 0; i < INPUT; i++) {
 			midiInput[i].reset();
 		}
 		for (int i = 0; i < OUTPUT; i++) {
 			midiOutput[i].resetEx();
 		}
+		Module::onReset(e);
 	}
 
 	void process(const ProcessArgs& args) override {

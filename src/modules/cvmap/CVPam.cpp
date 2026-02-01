@@ -48,7 +48,10 @@ struct CVPamModule : MapModuleBase<MAX_CHANNELS> {
 		for (int id = 0; id < MAX_CHANNELS; id++) {
 			paramHandles[id].text = string::f("CV-PAM Ch%02d", id + 1);
 		}
-		onReset();
+
+		ResetEvent re;
+		onReset(re);
+
 		processDivider.setDivision(32);
 	}
 
@@ -56,11 +59,11 @@ struct CVPamModule : MapModuleBase<MAX_CHANNELS> {
 		lightDivider.setDivision(e.sampleRate / 100.f);
 	}
 
-	void onReset() override {
+	void onReset(const Module::ResetEvent& e) override {
 		bipolarOutput = false;
 		audioRate = true;
 		locked = false;
-		MapModuleBase<MAX_CHANNELS>::onReset();
+		MapModuleBase<MAX_CHANNELS>::onReset(e);
 	}
 
 	void process(const ProcessArgs& args) override {

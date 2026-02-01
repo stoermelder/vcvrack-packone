@@ -60,7 +60,7 @@ struct GlueModule : Module, StripIdFixModule {
 	GlueModule();
 	~GlueModule();
 
-	void onReset() override;
+	void onReset(const ResetEvent& e) override;
 	ModuleLabel* addModuleLabel();
 	void removeModuleLabel(ModuleLabel* l);
 	void clearLabels();
