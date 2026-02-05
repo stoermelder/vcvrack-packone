@@ -7,6 +7,7 @@
 - Module [MIDI-CAT](./docs/midicat/MidiCat.md)
     - Added hotkey Ctrl/Cmd+Shift+R for resetting input-mode _Pickup (snap)_
     - Added hotkey Ctrl/Cmd+Shift+I for temporarily activating input-mode _Direct_ while held
+    - Added hotkey Ctrl/Cmd+Shift+F for re-sending MIDI feedback
 - Module [MIDI-KEY](./docs/midi/MidiKey.md)
     - Fixed occasional crash in browser preview
 - Module [SAIL](./docs/sail/Sail.md)

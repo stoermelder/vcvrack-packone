@@ -187,12 +187,13 @@ For convenience, the following keyboard shortcuts are implemented for quick mapp
 | `Shift + D` | Map module (select) — **Keep MIDI assignments** | Enable module-select mapping (cursor becomes crosshair) and keep MIDI assignments |
 | `Ctrl/Cmd + Shift + D` | Map module (select) — **Clear first** | Enable module-select mapping and clear existing mappings first |
 | `Shift + V` | **Apply mapping** (MEM) | Apply stored module mapping from MEM (also available from MEM panel) |
-| `Esc` | **Abort mapping** | Abort an active mapping operation while hovering MIDI-CAT |
+| `Esc` | **Abort mapping** | Abort an active mapping operation |
 | `Space` | **Skip current mapping slot** | While in mapping mode, advances to the next slot |
-| `Ctrl/Cmd + Shift + R` | **Reset Pickup input-mode** | Resets the input-mode _Pickup (snap)_ (while hovering MIDI-CAT) |
+| `Ctrl/Cmd + Shift + R` | **Reset Pickup input-mode** | Resets the input-mode _Pickup (snap)_ |
+| `Ctrl/Cmd + Shift + F` | **Re-send MIDI feedback** | Manually send MIDI feedback for all mapped parameters |
 | `Ctrl/Cmd + Shift + I` (hold) | Temporarily activate **Direct** input-mode while held | Press & hold to force Direct mode; releases revert to previous mode |
 
-> Note: These hotkeys are implemented in the module code (`src/modules/midicat/MidiCat.cpp`) and are active when the MIDI-CAT widget is hovered (or during an active mapping session where indicated).
+Note: These hotkeys are active when the MIDI-CAT widget is hovered.
 
 
 ### Additional features
@@ -362,3 +363,4 @@ FINE for MIDI-CAT must be placed on the right side of MIDI-CAT and can be used t
 - v2.3.0
     - Added hotkey Ctrl/Cmd+Shift+R for resetting input-mode _Pickup (snap)_
     - Added hotkey Ctrl/Cmd+Shift+I for temporarily activating input-mode _Direct_ while held
+    - Added hotkey Ctrl/Cmd+Shift+F for re-sending MIDI feedback
