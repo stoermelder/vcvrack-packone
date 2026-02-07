@@ -166,8 +166,8 @@ TEST_CASE("Glyph setting and retrieval", "[AhabSim]") {
 	sim.process();
 	
 	Usz h, w;
-	int idx = sim.getDisplayBuffer(h, w);
-	Glyph const* buffer = sim.getFieldBuffer(idx);
+	sim.getDisplayBuffer(h, w);
+	Glyph const* buffer = sim.getFieldBuffer();
 	
 	REQUIRE(buffer[2 * w + 3] == 'X');
 }
@@ -182,8 +182,8 @@ TEST_CASE("Fill rectangle operation", "[AhabSim]") {
 	sim.process();
 	
 	Usz h, w;
-	int idx = sim.getDisplayBuffer(h, w);
-	Glyph const* buffer = sim.getFieldBuffer(idx);
+	sim.getDisplayBuffer(h, w);
+	Glyph const* buffer = sim.getFieldBuffer();
 	
 	// Check that region is filled
 	for (Usz y = 2; y < 5; ++y) {
@@ -212,8 +212,8 @@ TEST_CASE("Cut rectangle operation", "[AhabSim]") {
 	sim.process();
 	
 	Usz h, w;
-	int idx = sim.getDisplayBuffer(h, w);
-	Glyph const* buffer = sim.getFieldBuffer(idx);
+	sim.getDisplayBuffer(h, w);
+	Glyph const* buffer = sim.getFieldBuffer();
 	
 	// Check that region is cleared
 	for (Usz y = 1; y < 3; ++y) {
@@ -238,8 +238,8 @@ TEST_CASE("Move rectangle operation", "[AhabSim]") {
 	sim.process();
 	
 	Usz h, w;
-	int idx = sim.getDisplayBuffer(h, w);
-	Glyph const* buffer = sim.getFieldBuffer(idx);
+	sim.getDisplayBuffer(h, w);
+	Glyph const* buffer = sim.getFieldBuffer();
 	
 	// Original region should be cleared
 	for (Usz y = 2; y < 4; ++y) {
@@ -271,8 +271,8 @@ TEST_CASE("Paste cells operation", "[AhabSim]") {
 	sim.process();
 	
 	Usz h, w;
-	int idx = sim.getDisplayBuffer(h, w);
-	Glyph const* buffer = sim.getFieldBuffer(idx);
+	sim.getDisplayBuffer(h, w);
+	Glyph const* buffer = sim.getFieldBuffer();
 	
 	// Check pasted content
 	REQUIRE(buffer[1 * w + 1] == 'A');
@@ -297,8 +297,8 @@ TEST_CASE("Replace field operation", "[AhabSim]") {
 	REQUIRE(sim.getFieldWidth() == 2);
 	
 	Usz h, w;
-	int idx = sim.getDisplayBuffer(h, w);
-	Glyph const* buffer = sim.getFieldBuffer(idx);
+	sim.getDisplayBuffer(h, w);
+	Glyph const* buffer = sim.getFieldBuffer();
 	
 	REQUIRE(buffer[0] == '1');
 	REQUIRE(buffer[1] == '2');
@@ -324,8 +324,8 @@ TEST_CASE("Undo and redo functionality", "[AhabSim]") {
 	sim.process();
 	
 	Usz h, w;
-	int idx = sim.getDisplayBuffer(h, w);
-	Glyph const* buffer = sim.getFieldBuffer(idx);
+	sim.getDisplayBuffer(h, w);
+	Glyph const* buffer = sim.getFieldBuffer();
 	
 	// Should be back to '.'
 	REQUIRE(buffer[1 * w + 1] == '.');
@@ -335,8 +335,8 @@ TEST_CASE("Undo and redo functionality", "[AhabSim]") {
 	sim.redoRequest();
 	sim.process();
 	
-	idx = sim.getDisplayBuffer(h, w);
-	buffer = sim.getFieldBuffer(idx);
+	sim.getDisplayBuffer(h, w);
+	buffer = sim.getFieldBuffer();
 	
 	// Should have 'X' again
 	REQUIRE(buffer[1 * w + 1] == 'X');
@@ -389,8 +389,8 @@ TEST_CASE("Reset clears field and state", "[AhabSim]") {
 	REQUIRE(sim.getTickNumber() == 0);
 	
 	Usz h, w;
-	int idx = sim.getDisplayBuffer(h, w);
-	Glyph const* buffer = sim.getFieldBuffer(idx);
+	sim.getDisplayBuffer(h, w);
+	Glyph const* buffer = sim.getFieldBuffer();
 	
 	// Field should be cleared
 	for (Usz i = 0; i < h * w; ++i) {
@@ -529,8 +529,8 @@ TEST_CASE("Deserialization from JSON", "[AhabSim]") {
 	REQUIRE(sim.getOscPort() == "7000");
 	
 	Usz h, w;
-	int idx = sim.getDisplayBuffer(h, w);
-	Glyph const* buffer = sim.getFieldBuffer(idx);
+	sim.getDisplayBuffer(h, w);
+	Glyph const* buffer = sim.getFieldBuffer();
 	REQUIRE(buffer[0] == 'A');
 	REQUIRE(buffer[1] == 'B');
 	
@@ -578,12 +578,10 @@ TEST_CASE("Display buffer access is thread-safe", "[AhabSim]") {
 	
 	// Get display buffer multiple times - should be consistent
 	Usz h1, w1;
-	int idx1 = sim.getDisplayBuffer(h1, w1);
+	sim.getDisplayBuffer(h1, w1);
 	
 	Usz h2, w2;
-	int idx2 = sim.getDisplayBuffer(h2, w2);
-	
-	REQUIRE(idx1 == idx2);
+	sim.getDisplayBuffer(h2, w2);
 	REQUIRE(h1 == h2);
 	REQUIRE(w1 == w2);
 	REQUIRE(h1 == 10);
@@ -609,8 +607,8 @@ TEST_CASE("Clipping behavior for paste outside bounds", "[AhabSim]") {
 	REQUIRE(out_w == 2);
 	
 	Usz h, w;
-	int idx = sim.getDisplayBuffer(h, w);
-	Glyph const* buffer = sim.getFieldBuffer(idx);
+	sim.getDisplayBuffer(h, w);
+	Glyph const* buffer = sim.getFieldBuffer();
 	
 	// Check that only the clipped portion was pasted
 	REQUIRE(buffer[3 * w + 3] == 'A');

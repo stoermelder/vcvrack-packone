@@ -143,12 +143,11 @@ public:
 	json_t* toJson() const;
 	void fromJson(json_t* rootJ);
 
-	// Get read buffer index for display (double buffering). Returns buffer index (0-1)
-	// and fills out dimensions. Called from widget thread - lock-free.
-	int getDisplayBuffer(Usz& height, Usz& width) const;
-	// Get pointer to field buffer by index (for display reads only)
-	Glyph const* getFieldBuffer(int idx) const;
-	Mark const* getMbufBuffer(int idx) const;
+	// Get display buffer dimensions (no longer uses indices with single buffer)
+	void getDisplayBuffer(Usz& height, Usz& width) const;
+	// Get pointer to field buffer
+	Glyph const* getFieldBuffer() const;
+	Mark const* getMbufBuffer() const;
 
 	// Helpers for field management
 	void setFieldSize(Usz height, Usz width);
@@ -201,15 +200,8 @@ public:
 	std::string getOscPort() const { return oscPort_; }
 
 private:
-	// Double buffering for lock-free access:
-	// - DSP thread writes to `write_idx_`
-	// - Widget thread reads from `read_idx_`
-	// We copy the just-written buffer into the read buffer before swapping to
-	// keep Field and mark buffers consistent when publishing UI updates.
-	Field field_[2];
-	Mbuf_reusable mbuf_[2];
-	std::atomic<int> write_idx_{0};  // Written by DSP thread
-	std::atomic<int> read_idx_{1};   // Currently being read by widget
+	Field field_;
+	Mbuf_reusable mbuf_;
 
 	Oevent_list oevent_list_;
 	std::atomic<Usz> tick_number_;
