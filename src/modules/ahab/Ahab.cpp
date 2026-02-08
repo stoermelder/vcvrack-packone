@@ -97,18 +97,20 @@ struct AhabModule : Module {
 		sim->setDspTickCallback(std::bind(&AhabModule::processEvents, this, std::placeholders::_1));
 		sim->setDspInputReader(std::bind(&AhabModule::readDspInput, this, std::placeholders::_1));
 		sim->setDspOutputWriter(std::bind(&AhabModule::writeDspOutput, this, std::placeholders::_1, std::placeholders::_2));
-		onReset();
+		
+		ResetEvent e;
+		onReset(e);
 	}
 
 	~AhabModule() override {
 		delete sim;
 	}
 
-	void onSampleRateChange() override {
-		lightDivider.setDivision(APP->engine->getSampleRate() / 100.f);
+	void onSampleRateChange(const SampleRateChangeEvent& e) override {
+		lightDivider.setDivision(e.sampleRate / 100.f);
 	}
 
-	void onReset() override {
+	void onReset(const ResetEvent& e) override {
 		clkInConnectTrigger.state = dsp::SchmittTrigger::LOW;
 		clkInDisconnectTrigger.state = dsp::SchmittTrigger::LOW;
 		midiVirtualPortId = 0;
@@ -127,6 +129,8 @@ struct AhabModule : Module {
 		simRunning = true;
 		sim->setFieldSize(25, 49);
 		sim->reset();
+
+		Module::onReset(e);
 	}
 
 	void process(const ProcessArgs &args) override {

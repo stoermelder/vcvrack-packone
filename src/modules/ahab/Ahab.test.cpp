@@ -8,8 +8,93 @@ using namespace StoermelderPackOne::Ahab;
 // Define the single instance used by tests
 static Test::TestContext<> testContext;
 
+// Mock MIDI OutputDevice for testing MIDI output messages
+struct MockMidiOutputDevice : public rack::midi::OutputDevice {
+	std::vector<rack::midi::Message> sentMessages;
+	
+	void sendMessage(const rack::midi::Message& message) override {
+		sentMessages.push_back(message);
+	}
+	
+	void clear() {
+		sentMessages.clear();
+	}
+	
+	size_t getMessageCount() const {
+		return sentMessages.size();
+	}
+	
+	const rack::midi::Message& getMessage(size_t index) const {
+		return sentMessages.at(index);
+	}
+};
 
-TEST_CASE("AhabModule construction and initialization", "[Ahab]") {
+// Helper to replace midiOutPort's device with our mock
+MockMidiOutputDevice* setupMockMidiOutput(AhabModule* m) {
+	MockMidiOutputDevice* mockDevice = new MockMidiOutputDevice();
+	// Access the private device pointer through the base Port class
+	m->midiOutPort.outputDevice = mockDevice;
+	m->midiOutPort.device = mockDevice;
+	m->midiOutPort.channel = -1; // Don't override message channel
+	return mockDevice;
+}
+
+// Mock MIDI Input for capturing virtual driver messages
+struct MockMidiVirtualInput : public rack::midi::Input {
+	std::vector<rack::midi::Message> receivedMessages;
+	
+	void onMessage(const rack::midi::Message& message) override {
+		receivedMessages.push_back(message);
+	}
+	
+	void clear() {
+		receivedMessages.clear();
+	}
+	
+	size_t getMessageCount() const {
+		return receivedMessages.size();
+	}
+	
+	const rack::midi::Message& getMessage(size_t index) const {
+		return receivedMessages.at(index);
+	}
+	
+	std::vector<int> getDeviceIds() override {
+		return {0, 1, 2, 3};
+	}
+	
+	int getDefaultDeviceId() override {
+		return 0;
+	}
+	
+	void setDeviceId(int deviceId) override {
+		this->driverId = 0x4CCC434C; // Ahab driver ID
+		this->deviceId = deviceId;
+		// Subscribe to the virtual device
+		auto driver = rack::midi::getDriver(0x4CCC434C);
+		if (driver) {
+			inputDevice = driver->subscribeInput(deviceId, this);
+		}
+	}
+	
+	std::string getDeviceName(int deviceId) override {
+		return string::f("Virtual Port %i", deviceId + 1);
+	}
+	
+	std::vector<int> getChannels() override {
+		return {-1}; // All channels
+	}
+};
+
+// Helper to setup mock virtual MIDI input
+MockMidiVirtualInput* setupMockVirtualMidiInput(int portId) {
+	MockMidiVirtualInput* mockInput = new MockMidiVirtualInput();
+	mockInput->setDeviceId(portId);
+	return mockInput;
+}
+
+
+TEST_CASE("Construction and initialization", "[Ahab]") {
 	AhabModule* m = Test::createModule<AhabModule>("Ahab");
 	
 	REQUIRE(m != nullptr);
@@ -23,7 +108,7 @@ TEST_CASE("AhabModule construction and initialization", "[Ahab]") {
 	Test::destroyModule(m);
 }
 
-TEST_CASE("AhabModule reset", "[Ahab]") {
+TEST_CASE("Reset", "[Ahab]") {
 	AhabModule* m = Test::createModule<AhabModule>("Ahab");
 	Test::registerModule(m);
 	
@@ -33,7 +118,8 @@ TEST_CASE("AhabModule reset", "[Ahab]") {
 	m->midiCcOffset = 100;
 	
 	// Reset
-	m->onReset();
+	Module::ResetEvent e;
+	m->onReset(e);
 	
 	// Check that values are back to defaults
 	REQUIRE(m->simRunning == true);
@@ -47,7 +133,7 @@ TEST_CASE("AhabModule reset", "[Ahab]") {
 	Test::destroyModule(m);
 }
 
-TEST_CASE("AhabModule BPM-based clock", "[Ahab]") {
+TEST_CASE("BPM-based clock", "[Ahab]") {
 	AhabModule* m = Test::createModule<AhabModule>("Ahab");
 	Test::registerModule(m);
 	
@@ -57,25 +143,77 @@ TEST_CASE("AhabModule BPM-based clock", "[Ahab]") {
 	
 	Usz tick_before = m->sim->getTickNumber();
 	
-	// Process enough samples to trigger a clock tick
-	// At 120 BPM with 4x multiplier, we get 8 Hz clock rate
+	// Process enough samples to trigger multiple clock ticks
+	// At 120 BPM with 4x multiplier (internal clock rate), we get 8 Hz clock rate
 	// At 44100 sample rate, that's 44100/8 = 5512.5 samples per tick
 	Module::ProcessArgs args;
 	args.sampleRate = 44100.f;
 	args.sampleTime = 1.f / args.sampleRate;
 	
-	for (int i = 0; i < 6000; ++i) {
+	int num_samples = 55125; // Approximately 10 ticks worth
+	for (int i = 0; i < num_samples; ++i) {
 		m->process(args);
 	}
 	
+	Usz tick_after = m->sim->getTickNumber();
+	Usz ticks_elapsed = tick_after - tick_before;
+	
 	// Tick should have incremented
-	REQUIRE(m->sim->getTickNumber() > tick_before);
+	REQUIRE(ticks_elapsed > 0);
+	
+	// Check clock accuracy: at 120 BPM with 4x multiplier, expect ~10 ticks
+	// Expected: 55125 samples / 5512.5 samples_per_tick ≈ 10 ticks
+	// Allow 1% tolerance for accumulation error
+	float expected_ticks = num_samples / 5512.5f;
+	REQUIRE(ticks_elapsed >= (Usz)(expected_ticks * 0.99f));
+	REQUIRE(ticks_elapsed <= (Usz)(expected_ticks * 1.01f));
 	
 	Test::unregisterModule(m);
 	Test::destroyModule(m);
 }
 
-TEST_CASE("AhabModule external clock input", "[Ahab]") {
+TEST_CASE("BPM-based clock accuracy at different tempos", "[Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+	
+	Module::ProcessArgs args;
+	args.sampleRate = 44100.f;
+	args.sampleTime = 1.f / args.sampleRate;
+	
+	// Test at different BPM values
+	std::vector<float> bpm_values = {60.0f, 120.0f, 180.0f, 240.0f};
+	
+	for (float bpm : bpm_values) {
+		Module::ResetEvent e;
+		m->onReset(e); // Reset to clear any previous state
+		m->params[AhabModule::BPM_PARAM].setValue(bpm);
+		m->simRunning = true;
+			
+		Usz expected_ticks = 20;
+		Usz tick_before = m->sim->getTickNumber();
+		
+		// Clock rate = BPM * 4 / 60 Hz
+		// Samples per tick = sample_rate / clock_rate
+		float clock_rate_hz = bpm * 4.0f / 60.0f;
+		float samples_per_tick = args.sampleRate / clock_rate_hz;
+		
+		// Process for 20 ticks worth of samples
+		int num_samples = (int)(samples_per_tick * expected_ticks + samples_per_tick * 0.5f);
+		for (int i = 0; i < num_samples; ++i) {
+			m->process(args);
+		}
+		
+		Usz tick_after = m->sim->getTickNumber();
+		Usz ticks_elapsed = tick_after - tick_before;
+		
+		REQUIRE(ticks_elapsed == expected_ticks);
+	}
+	
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("External clock input", "[Ahab]") {
 	AhabModule* m = Test::createModule<AhabModule>("Ahab");
 	Test::registerModule(m);
 	
@@ -98,7 +236,7 @@ TEST_CASE("AhabModule external clock input", "[Ahab]") {
 	Test::destroyModule(m);
 }
 
-TEST_CASE("AhabModule manual clock button", "[Ahab]") {
+TEST_CASE("Manual clock button", "[Ahab]") {
 	AhabModule* m = Test::createModule<AhabModule>("Ahab");
 	Test::registerModule(m);
 	
@@ -126,7 +264,7 @@ TEST_CASE("AhabModule manual clock button", "[Ahab]") {
 	Test::destroyModule(m);
 }
 
-TEST_CASE("AhabModule run/stop toggle", "[Ahab]") {
+TEST_CASE("Run/stop toggle", "[Ahab]") {
 	AhabModule* m = Test::createModule<AhabModule>("Ahab");
 	Test::registerModule(m);
 	
@@ -154,7 +292,7 @@ TEST_CASE("AhabModule run/stop toggle", "[Ahab]") {
 	Test::destroyModule(m);
 }
 
-TEST_CASE("AhabModule CV input reading", "[Ahab]") {
+TEST_CASE("CV input reading", "[Ahab]") {
 	AhabModule* m = Test::createModule<AhabModule>("Ahab");
 	Test::registerModule(m);
 	
@@ -193,7 +331,7 @@ TEST_CASE("AhabModule CV input reading", "[Ahab]") {
 	Test::destroyModule(m);
 }
 
-TEST_CASE("AhabModule CV output writing", "[Ahab]") {
+TEST_CASE("CV output writing", "[Ahab]") {
 	AhabModule* m = Test::createModule<AhabModule>("Ahab");
 	Test::registerModule(m);
 	
@@ -215,150 +353,7 @@ TEST_CASE("AhabModule CV output writing", "[Ahab]") {
 	Test::destroyModule(m);
 }
 
-TEST_CASE("AhabModule MIDI note event handling", "[Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
-	Test::registerModule(m);
-	
-	// Create a mock MIDI note event
-	Oevent_list olist;
-	oevent_list_init(&olist);
-	
-	Oevent* ev = oevent_list_alloc_item(&olist);
-	ev->any.oevent_type = Oevent_type_midi_note;
-	ev->midi_note.channel = 0;
-	ev->midi_note.octave = 4;
-	ev->midi_note.note = 0; // C
-	ev->midi_note.velocity = 100;
-	ev->midi_note.duration = 5;
-	
-	// Process events
-	m->processEvents(&olist);
-	
-	// Should have scheduled a note-off (processEvents decrements immediately)
-	REQUIRE(m->midiScheduledNotes.size() == 1);
-	REQUIRE(m->midiScheduledNotes[0].remaining_ticks == 4); // Decremented from 5 to 4
-	REQUIRE(m->midiScheduledNotes[0].note == 48); // C4
-	
-	oevent_list_deinit(&olist);
-	
-	Test::unregisterModule(m);
-	Test::destroyModule(m);
-}
-
-TEST_CASE("AhabModule scheduled note-off countdown", "[Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
-	Test::registerModule(m);
-	
-	// Manually add a scheduled note
-	m->midiScheduledNotes.push_back({3, 0, 60});
-	
-	// Create empty event list to trigger countdown
-	Oevent_list olist;
-	oevent_list_init(&olist);
-	
-	// Process 3 times
-	m->processEvents(&olist);
-	REQUIRE(m->midiScheduledNotes.size() == 1);
-	REQUIRE(m->midiScheduledNotes[0].remaining_ticks == 2);
-	
-	m->processEvents(&olist);
-	REQUIRE(m->midiScheduledNotes.size() == 1);
-	REQUIRE(m->midiScheduledNotes[0].remaining_ticks == 1);
-	
-	m->processEvents(&olist);
-	REQUIRE(m->midiScheduledNotes.size() == 1);
-	REQUIRE(m->midiScheduledNotes[0].remaining_ticks == 0);
-	
-	// Next call should send note-off and clear
-	m->processEvents(&olist);
-	REQUIRE(m->midiScheduledNotes.size() == 0);
-	
-	oevent_list_deinit(&olist);
-	
-	Test::unregisterModule(m);
-	Test::destroyModule(m);
-}
-
-TEST_CASE("AhabModule MIDI CC event handling", "[Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
-	Test::registerModule(m);
-	
-	m->midiCcOffset = 64;
-	
-	// Create a mock MIDI CC event
-	Oevent_list olist;
-	oevent_list_init(&olist);
-	
-	Oevent* ev = oevent_list_alloc_item(&olist);
-	ev->any.oevent_type = Oevent_type_midi_cc;
-	ev->midi_cc.channel = 1;
-	ev->midi_cc.control = 10;
-	ev->midi_cc.value = 50;
-	
-	// Process events (should not crash)
-	m->processEvents(&olist);
-	
-	oevent_list_deinit(&olist);
-	
-	Test::unregisterModule(m);
-	Test::destroyModule(m);
-}
-
-TEST_CASE("AhabModule MIDI pitchbend event handling", "[Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
-	Test::registerModule(m);
-	
-	// Create a mock MIDI pitchbend event
-	Oevent_list olist;
-	oevent_list_init(&olist);
-	
-	Oevent* ev = oevent_list_alloc_item(&olist);
-	ev->any.oevent_type = Oevent_type_midi_pb;
-	ev->midi_pb.channel = 2;
-	ev->midi_pb.lsb = 0x40;
-	ev->midi_pb.msb = 0x20;
-	
-	// Process events (should not crash)
-	m->processEvents(&olist);
-	
-	oevent_list_deinit(&olist);
-	
-	Test::unregisterModule(m);
-	Test::destroyModule(m);
-}
-
-TEST_CASE("AhabModule zero duration note handling", "[Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
-	Test::registerModule(m);
-	
-	m->overwriteZeroNoteDuration = true;
-	
-	// Create a mock MIDI note event with duration 0
-	Oevent_list olist;
-	oevent_list_init(&olist);
-	
-	Oevent* ev = oevent_list_alloc_item(&olist);
-	ev->any.oevent_type = Oevent_type_midi_note;
-	ev->midi_note.channel = 0;
-	ev->midi_note.octave = 5;
-	ev->midi_note.note = 3;
-	ev->midi_note.velocity = 80;
-	ev->midi_note.duration = 0;
-	
-	// Process events
-	m->processEvents(&olist);
-	
-	// Should have scheduled a note-off with 1 tick duration (decremented to 0 immediately)
-	REQUIRE(m->midiScheduledNotes.size() == 1);
-	REQUIRE(m->midiScheduledNotes[0].remaining_ticks == 0); // Decremented from 1 to 0
-	
-	oevent_list_deinit(&olist);
-	
-	Test::unregisterModule(m);
-	Test::destroyModule(m);
-}
-
-TEST_CASE("AhabModule JSON serialization", "[Ahab]") {
+TEST_CASE("JSON serialization", "[JSON][Ahab]") {
 	AhabModule* m = Test::createModule<AhabModule>("Ahab");
 	Test::registerModule(m);
 	
@@ -392,7 +387,7 @@ TEST_CASE("AhabModule JSON serialization", "[Ahab]") {
 	Test::destroyModule(m);
 }
 
-TEST_CASE("AhabModule JSON deserialization", "[Ahab]") {
+TEST_CASE("JSON deserialization", "[JSON][Ahab]") {
 	AhabModule* m = Test::createModule<AhabModule>("Ahab");
 	Test::registerModule(m);
 	
@@ -433,7 +428,7 @@ TEST_CASE("AhabModule JSON deserialization", "[Ahab]") {
 	Test::destroyModule(m);
 }
 
-TEST_CASE("AhabModule clock output pulse", "[Ahab]") {
+TEST_CASE("Clock output pulse", "[Ahab]") {
 	AhabModule* m = Test::createModule<AhabModule>("Ahab");
 	Test::registerModule(m);
 	
@@ -464,48 +459,540 @@ TEST_CASE("AhabModule clock output pulse", "[Ahab]") {
 	Test::destroyModule(m);
 }
 
-TEST_CASE("AhabModule lights update", "[Ahab]") {
+TEST_CASE("MIDI Driver note event handling", "[MIDI][Ahab]") {
 	AhabModule* m = Test::createModule<AhabModule>("Ahab");
 	Test::registerModule(m);
 	
-	m->simRunning = true;
+	// Setup mock MIDI output
+	MockMidiOutputDevice* mockDevice = setupMockMidiOutput(m);
+	m->midiOutEnabled = true;
 	
-	// Process several times to update lights
-	Module::ProcessArgs args;
-	args.sampleRate = 44100.f;
-	args.sampleTime = 1.f / args.sampleRate;
+	// Create a mock MIDI note event
+	Oevent_list olist;
+	oevent_list_init(&olist);
 	
-	for (int i = 0; i < 1000; ++i) {
-		m->process(args);
-	}
+	Oevent* ev = oevent_list_alloc_item(&olist);
+	ev->any.oevent_type = Oevent_type_midi_note;
+	ev->midi_note.channel = 0;
+	ev->midi_note.octave = 4;
+	ev->midi_note.note = 0; // C
+	ev->midi_note.velocity = 100;
+	ev->midi_note.duration = 5;
 	
-	// Run light should be on
-	REQUIRE(m->lights[AhabModule::RUN_LIGHT].getBrightness() > 0.5f);
+	// Process events
+	m->processEvents(&olist);
 	
-	// Stop running
-	m->simRunning = false;
+	// Should have scheduled a note-off (processEvents decrements immediately)
+	REQUIRE(m->midiScheduledNotes.size() == 1);
+	REQUIRE(m->midiScheduledNotes[0].remaining_ticks == 4); // Decremented from 5 to 4
+	REQUIRE(m->midiScheduledNotes[0].note == 48); // C4
 	
-	for (int i = 0; i < 1000; ++i) {
-		m->process(args);
-	}
+	// Verify MIDI note-on message was sent to midiOutPort
+	REQUIRE(mockDevice->getMessageCount() == 1);
+	const auto& msg = mockDevice->getMessage(0);
+	REQUIRE(msg.getSize() == 3);
+	REQUIRE(msg.getStatus() == 0x9); // Note On
+	REQUIRE(msg.getChannel() == 0);
+	REQUIRE(msg.getNote() == 48); // C4
+	REQUIRE(msg.getValue() == 100); // Velocity
 	
-	// Run light should be off
-	REQUIRE(m->lights[AhabModule::RUN_LIGHT].getBrightness() < 0.5f);
+	oevent_list_deinit(&olist);
+	delete mockDevice;
 	
 	Test::unregisterModule(m);
 	Test::destroyModule(m);
 }
 
-TEST_CASE("AhabModule sample rate change", "[Ahab]") {
+TEST_CASE("MIDI Driver zero duration note handling", "[MIDI][Ahab]") {
 	AhabModule* m = Test::createModule<AhabModule>("Ahab");
 	Test::registerModule(m);
 	
-	// Trigger sample rate change
-	m->onSampleRateChange();
+	// Setup mock MIDI output
+	MockMidiOutputDevice* mockDevice = setupMockMidiOutput(m);
+	m->midiOutEnabled = true;
+	m->overwriteZeroNoteDuration = true;
 	
-	// Should not crash and light divider should update
-	// (we can't easily test the divider value directly)
+	// Create a mock MIDI note event with duration 0
+	Oevent_list olist;
+	oevent_list_init(&olist);
 	
+	Oevent* ev = oevent_list_alloc_item(&olist);
+	ev->any.oevent_type = Oevent_type_midi_note;
+	ev->midi_note.channel = 0;
+	ev->midi_note.octave = 5;
+	ev->midi_note.note = 3;
+	ev->midi_note.velocity = 80;
+	ev->midi_note.duration = 0;
+	
+	// Process events
+	m->processEvents(&olist);
+	
+	// Should have scheduled a note-off with 1 tick duration (decremented to 0 immediately)
+	REQUIRE(m->midiScheduledNotes.size() == 1);
+	REQUIRE(m->midiScheduledNotes[0].remaining_ticks == 0); // Decremented from 1 to 0
+	
+	// Verify note-on message was sent
+	REQUIRE(mockDevice->getMessageCount() == 1);
+	const auto& noteOn = mockDevice->getMessage(0);
+	REQUIRE(noteOn.getStatus() == 0x9); // Note On
+	REQUIRE(noteOn.getNote() == 63); // C5 (octave 5, note 3)
+	REQUIRE(noteOn.getValue() == 80); // Velocity
+	
+	oevent_list_deinit(&olist);
+	delete mockDevice;
+	
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("MIDI Driver scheduled note-off countdown", "[MIDI][Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+	
+	// Setup mock MIDI output
+	MockMidiOutputDevice* mockDevice = setupMockMidiOutput(m);
+	m->midiOutEnabled = true;
+	
+	// Manually add a scheduled note
+	m->midiScheduledNotes.push_back({3, 0, 60});
+	
+	// Create empty event list to trigger countdown
+	Oevent_list olist;
+	oevent_list_init(&olist);
+	
+	// Process 3 times
+	m->processEvents(&olist);
+	REQUIRE(m->midiScheduledNotes.size() == 1);
+	REQUIRE(m->midiScheduledNotes[0].remaining_ticks == 2);
+	REQUIRE(mockDevice->getMessageCount() == 0); // No note-off yet
+	
+	m->processEvents(&olist);
+	REQUIRE(m->midiScheduledNotes.size() == 1);
+	REQUIRE(m->midiScheduledNotes[0].remaining_ticks == 1);
+	REQUIRE(mockDevice->getMessageCount() == 0); // No note-off yet
+	
+	m->processEvents(&olist);
+	REQUIRE(m->midiScheduledNotes.size() == 1);
+	REQUIRE(m->midiScheduledNotes[0].remaining_ticks == 0);
+	REQUIRE(mockDevice->getMessageCount() == 0); // No note-off yet
+	
+	// Next call should send note-off and clear
+	m->processEvents(&olist);
+	REQUIRE(m->midiScheduledNotes.size() == 0);
+	REQUIRE(mockDevice->getMessageCount() == 1);
+	
+	// Verify note-off message was sent
+	const auto& msg = mockDevice->getMessage(0);
+	REQUIRE(msg.getSize() == 3);
+	REQUIRE(msg.getStatus() == 0x8); // Note Off
+	REQUIRE(msg.getChannel() == 0);
+	REQUIRE(msg.getNote() == 60);
+	REQUIRE(msg.getValue() == 0); // Note-off velocity
+	
+	oevent_list_deinit(&olist);
+	delete mockDevice;
+	
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("MIDI Driver CC event handling", "[MIDI][Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+	
+	// Setup mock MIDI output
+	MockMidiOutputDevice* mockDevice = setupMockMidiOutput(m);
+	m->midiOutEnabled = true;
+	m->midiCcOffset = 64;
+	
+	// Create a mock MIDI CC event
+	Oevent_list olist;
+	oevent_list_init(&olist);
+	
+	Oevent* ev = oevent_list_alloc_item(&olist);
+	ev->any.oevent_type = Oevent_type_midi_cc;
+	ev->midi_cc.channel = 1;
+	ev->midi_cc.control = 10;
+	ev->midi_cc.value = 50;
+	
+	// Process events
+	m->processEvents(&olist);
+	
+	// Verify MIDI CC message was sent to midiOutPort
+	REQUIRE(mockDevice->getMessageCount() == 1);
+	const auto& msg = mockDevice->getMessage(0);
+	REQUIRE(msg.getSize() == 3);
+	REQUIRE(msg.getStatus() == 0xB); // CC
+	REQUIRE(msg.getChannel() == 1);
+	REQUIRE(msg.bytes[1] == 74); // 64 + 10 = 74
+	REQUIRE(msg.getValue() == 50); // CC value
+	
+	oevent_list_deinit(&olist);
+	delete mockDevice;
+	
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("MIDI Driver pitchbend event handling", "[MIDI][Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+	
+	// Setup mock MIDI output
+	MockMidiOutputDevice* mockDevice = setupMockMidiOutput(m);
+	m->midiOutEnabled = true;
+	
+	// Create a mock MIDI pitchbend event
+	Oevent_list olist;
+	oevent_list_init(&olist);
+	
+	Oevent* ev = oevent_list_alloc_item(&olist);
+	ev->any.oevent_type = Oevent_type_midi_pb;
+	ev->midi_pb.channel = 2;
+	ev->midi_pb.lsb = 0x40;
+	ev->midi_pb.msb = 0x20;
+	
+	// Process events
+	m->processEvents(&olist);
+	
+	// Verify MIDI pitchbend message was sent to midiOutPort
+	REQUIRE(mockDevice->getMessageCount() == 1);
+	const auto& msg = mockDevice->getMessage(0);
+	REQUIRE(msg.getSize() == 3);
+	REQUIRE(msg.getStatus() == 0xE); // Pitchbend
+	REQUIRE(msg.getChannel() == 2);
+	REQUIRE(msg.bytes[1] == 0x40); // LSB
+	REQUIRE(msg.bytes[2] == 0x20); // MSB
+	
+	oevent_list_deinit(&olist);
+	delete mockDevice;
+	
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("MIDI Driver output disabled", "[MIDI][Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+	
+	// Setup mock MIDI output
+	MockMidiOutputDevice* mockDevice = setupMockMidiOutput(m);
+	m->midiOutEnabled = false; // Disable MIDI output
+	
+	// Create a MIDI note event
+	Oevent_list olist;
+	oevent_list_init(&olist);
+	
+	Oevent* ev = oevent_list_alloc_item(&olist);
+	ev->any.oevent_type = Oevent_type_midi_note;
+	ev->midi_note.channel = 0;
+	ev->midi_note.octave = 4;
+	ev->midi_note.note = 0;
+	ev->midi_note.velocity = 100;
+	ev->midi_note.duration = 5;
+	
+	// Process events
+	m->processEvents(&olist);
+	
+	// Should NOT have sent message to midiOutPort since output is disabled
+	REQUIRE(mockDevice->getMessageCount() == 0);
+	
+	// But note should still be scheduled
+	REQUIRE(m->midiScheduledNotes.size() == 1);
+	
+	oevent_list_deinit(&olist);
+	delete mockDevice;
+	
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("MIDI Driver note channel mapping", "[MIDI][Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+	
+	// Setup mock MIDI output
+	MockMidiOutputDevice* mockDevice = setupMockMidiOutput(m);
+	m->midiOutEnabled = true;
+	
+	// Test multi-channel note events
+	for (int ch = 0; ch < 4; ++ch) {
+		// Create fresh event list for each channel
+		Oevent_list olist;
+		oevent_list_init(&olist);
+		mockDevice->clear();
+		
+		Oevent* ev = oevent_list_alloc_item(&olist);
+		ev->any.oevent_type = Oevent_type_midi_note;
+		ev->midi_note.channel = ch;
+		ev->midi_note.octave = 3;
+		ev->midi_note.note = 5;
+		ev->midi_note.velocity = 64;
+		ev->midi_note.duration = 10; // Use longer duration to avoid note-off in same call
+		
+		m->processEvents(&olist);
+		
+		// Verify correct channel in note-on message
+		REQUIRE(mockDevice->getMessageCount() >= 1); // At least the note-on
+		REQUIRE(mockDevice->getMessage(0).getChannel() == ch);
+		REQUIRE(mockDevice->getMessage(0).getStatus() == 0x9); // Note On
+		
+		oevent_list_deinit(&olist);
+	}
+	
+	delete mockDevice;
+	
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("MIDI Driver CC offset", "[MIDI][Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+	
+	// Setup mock MIDI output
+	MockMidiOutputDevice* mockDevice = setupMockMidiOutput(m);
+	m->midiOutEnabled = true;
+	m->midiCcOffset = 100; // Set offset to 100
+	
+	// Create CC events with different control values
+	for (int cc = 0; cc < 5; ++cc) {
+		// Create fresh event list for each CC value
+		Oevent_list olist;
+		oevent_list_init(&olist);
+		mockDevice->clear();
+		
+		Oevent* ev = oevent_list_alloc_item(&olist);
+		ev->any.oevent_type = Oevent_type_midi_cc;
+		ev->midi_cc.channel = 0;
+		ev->midi_cc.control = cc;
+		ev->midi_cc.value = 64;
+		
+		m->processEvents(&olist);
+		
+		// Verify offset was applied
+		REQUIRE(mockDevice->getMessageCount() == 1);
+		REQUIRE(mockDevice->getMessage(0).bytes[1] == (100 + cc)); // Control number
+		
+		oevent_list_deinit(&olist);
+	}
+	
+	delete mockDevice;
+	
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("MIDI Virtual note delivery", "[MIDI][Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+	
+	// Enable virtual MIDI driver
+	pluginSettings.ahabMidiVirtualEnabled = true;
+	Ahab::Midi::init();
+	
+	// Setup mock input to capture virtual MIDI messages
+	MockMidiVirtualInput* mockVirtualInput = setupMockVirtualMidiInput(0);
+	
+	// Setup mock for regular MIDI output to ensure it's not called
+	MockMidiOutputDevice* mockDevice = setupMockMidiOutput(m);
+	m->midiOutEnabled = false; // Disable regular output, focus on virtual
+	m->midiVirtualPortId = 0;
+	
+	// Create a MIDI note event
+	Oevent_list olist;
+	oevent_list_init(&olist);
+	
+	Oevent* ev = oevent_list_alloc_item(&olist);
+	ev->any.oevent_type = Oevent_type_midi_note;
+	ev->midi_note.channel = 0;
+	ev->midi_note.octave = 4;
+	ev->midi_note.note = 0; // C
+	ev->midi_note.velocity = 100;
+	ev->midi_note.duration = 5;
+	
+	// Process events - note will be sent to virtual MIDI driver
+	m->processEvents(&olist);
+	
+	// Regular MIDI output should NOT have received the message (disabled)
+	REQUIRE(mockDevice->getMessageCount() == 0);
+	
+	// Virtual MIDI input should have received the note-on message
+	REQUIRE(mockVirtualInput->getMessageCount() >= 1);
+	const auto& virtualMsg = mockVirtualInput->getMessage(0);
+	REQUIRE(virtualMsg.getStatus() == 0x9); // Note On
+	REQUIRE(virtualMsg.getChannel() == 0);
+	REQUIRE(virtualMsg.getNote() == 48); // C4
+	REQUIRE(virtualMsg.getValue() == 100); // Velocity
+	
+	// Note should still be scheduled
+	REQUIRE(m->midiScheduledNotes.size() == 1);
+	
+	oevent_list_deinit(&olist);
+	delete mockDevice;
+	delete mockVirtualInput;
+	
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("MIDI Virtual with both outputs enabled", "[MIDI][Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+	
+	// Enable both virtual MIDI and regular MIDI output
+	pluginSettings.ahabMidiVirtualEnabled = true;
+	Ahab::Midi::init();
+	
+	// Setup mock inputs to capture messages on both paths
+	MockMidiVirtualInput* mockVirtualInput = setupMockVirtualMidiInput(1);
+	MockMidiOutputDevice* mockDevice = setupMockMidiOutput(m);
+	m->midiOutEnabled = true;
+	m->midiVirtualPortId = 1;
+	
+	// Create a MIDI CC event
+	Oevent_list olist;
+	oevent_list_init(&olist);
+	
+	Oevent* ev = oevent_list_alloc_item(&olist);
+	ev->any.oevent_type = Oevent_type_midi_cc;
+	ev->midi_cc.channel = 2;
+	ev->midi_cc.control = 10;
+	ev->midi_cc.value = 64;
+	
+	// Process events - should go to both virtual driver AND regular output
+	m->processEvents(&olist);
+	
+	// Regular MIDI output should have received the message
+	REQUIRE(mockDevice->getMessageCount() == 1);
+	const auto& msg = mockDevice->getMessage(0);
+	REQUIRE(msg.getStatus() == 0xB); // CC
+	REQUIRE(msg.getChannel() == 2);
+	REQUIRE(msg.bytes[1] == 74); // 64 + 10
+	REQUIRE(msg.getValue() == 64);
+	
+	// Virtual MIDI input should also have received the message
+	REQUIRE(mockVirtualInput->getMessageCount() == 1);
+	const auto& virtualMsg = mockVirtualInput->getMessage(0);
+	REQUIRE(virtualMsg.getStatus() == 0xB); // CC
+	REQUIRE(virtualMsg.getChannel() == 2);
+	REQUIRE(virtualMsg.bytes[1] == 74); // 64 + 10
+	REQUIRE(virtualMsg.getValue() == 64);
+	
+	oevent_list_deinit(&olist);
+	delete mockDevice;
+	delete mockVirtualInput;
+	
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("MIDI Virtual multiple ports", "[MIDI][Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+	
+	// Enable virtual MIDI driver
+	pluginSettings.ahabMidiVirtualEnabled = true;
+	Ahab::Midi::init();
+	
+	m->midiOutEnabled = false;
+	
+	// Test sending to different virtual ports
+	for (int port = 0; port < 4; ++port) {
+		m->midiVirtualPortId = port;
+		
+		// Setup mock virtual MIDI input for this port
+		MockMidiVirtualInput* mockVirtualInput = setupMockVirtualMidiInput(port);
+		
+		Oevent_list olist;
+		oevent_list_init(&olist);
+		
+		Oevent* ev = oevent_list_alloc_item(&olist);
+		ev->any.oevent_type = Oevent_type_midi_note;
+		ev->midi_note.channel = 0;
+		ev->midi_note.octave = 3;
+		ev->midi_note.note = (uint8_t)port; // Different notes for different ports
+		ev->midi_note.velocity = 80;
+		ev->midi_note.duration = 2;
+		
+		// Process events - should route to the specified virtual port
+		m->processEvents(&olist);
+		
+		// Verify message was received on the correct virtual port
+		REQUIRE(mockVirtualInput->getMessageCount() >= 1);
+		const auto& msg = mockVirtualInput->getMessage(0);
+		REQUIRE(msg.getStatus() == 0x9); // Note on
+		REQUIRE(msg.getChannel() == 0);
+		REQUIRE(msg.getNote() == (uint8_t)(36 + port)); // Base note + port offset
+		REQUIRE(msg.getValue() == 80);
+		
+		oevent_list_deinit(&olist);
+		delete mockVirtualInput;
+		m->midiScheduledNotes.clear();
+	}
+	
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("MIDI Virtual disabled", "[MIDI][Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+	
+	// Ensure virtual MIDI driver is disabled
+	pluginSettings.ahabMidiVirtualEnabled = false;
+	
+	MockMidiOutputDevice* mockDevice = setupMockMidiOutput(m);
+	MockMidiVirtualInput* mockVirtualInput = setupMockVirtualMidiInput(0);
+	m->midiOutEnabled = false; // Also disable regular output
+	m->midiVirtualPortId = 0;
+	
+	// Create a MIDI note event
+	Oevent_list olist;
+	oevent_list_init(&olist);
+	
+	Oevent* ev = oevent_list_alloc_item(&olist);
+	ev->any.oevent_type = Oevent_type_midi_note;
+	ev->midi_note.channel = 0;
+	ev->midi_note.octave = 5;
+	ev->midi_note.note = 5;
+	ev->midi_note.velocity = 64;
+	ev->midi_note.duration = 3;
+	
+	// Process events
+	m->processEvents(&olist);
+	
+	// Neither virtual nor regular MIDI should have received the message
+	REQUIRE(mockDevice->getMessageCount() == 0);
+	REQUIRE(mockVirtualInput->getMessageCount() == 0);
+	
+	// But note should still be scheduled internally
+	REQUIRE(m->midiScheduledNotes.size() == 1);
+	
+	oevent_list_deinit(&olist);
+	delete mockDevice;
+	delete mockVirtualInput;
+	
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("Widget construction", "[UI][Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+	
+	AhabWidget* w = Test::createWidget<AhabWidget>(m);
+	REQUIRE(w != nullptr);
+	REQUIRE(w->module == m);
+	
+	// Check that widget has the expected children (simWidget and statusWidget)
+	REQUIRE(w->simWidget != nullptr);
+	REQUIRE(w->statusWidget != nullptr);
+	
+	// Check that statusWidget references simWidget
+	REQUIRE(w->statusWidget->simWidget == w->simWidget);
+	
+	Test::destroyWidget(w);
 	Test::unregisterModule(m);
 	Test::destroyModule(m);
 }

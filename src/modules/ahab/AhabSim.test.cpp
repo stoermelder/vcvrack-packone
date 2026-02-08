@@ -12,6 +12,16 @@ static Test::TestContext<> testContext;
 extern "C" Usz custom_vcvin(void* ptr, Usz port_num, Usz a, Usz b);
 extern "C" void custom_vcvout(void* ptr, Usz port_index, Usz a, Usz b, Usz value);
 
+
+TEST_CASE("Construction", "[AhabSim]") {
+	AhabSim sim;
+	REQUIRE(sim.getTickNumber() == 0);
+	REQUIRE(sim.getRandomSeed() == 0);
+	REQUIRE(sim.getFieldHeight() >= 1);
+	REQUIRE(sim.getFieldWidth() >= 1);
+	REQUIRE(sim.getEventCount() == 0);
+}
+
 TEST_CASE("Op vcvin ports 1-4 map to voltage range", "[AhabSim]") {
 	AhabSim sim;
 	size_t in_port = 0.f; float in_voltage = 10.0f;
@@ -98,14 +108,6 @@ TEST_CASE("Op vcvout ports A-D write v/oct conversion", "[AhabSim]") {
 	REQUIRE(out_voltage == Approx(3.f));
 }
 
-TEST_CASE("AhabSim construction", "[AhabSim]") {
-	AhabSim sim;
-	REQUIRE(sim.getTickNumber() == 0);
-	REQUIRE(sim.getRandomSeed() == 0);
-	REQUIRE(sim.getFieldHeight() >= 1);
-	REQUIRE(sim.getFieldWidth() >= 1);
-	REQUIRE(sim.getEventCount() == 0);
-}
 
 TEST_CASE("Field serialization to ORCA text", "[AhabSim]") {
 	AhabSim sim;
