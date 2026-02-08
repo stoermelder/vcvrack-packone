@@ -467,7 +467,7 @@ TEST_CASE("Invalid port numbers rejected", "[AhabSim]") {
 	REQUIRE(sim.getUdpPort() == "8000"); // Should remain unchanged
 }
 
-TEST_CASE("Serialization to JSON", "[AhabSim]") {
+TEST_CASE("Serialization to JSON", "[JSON][AhabSim]") {
 	AhabSim sim;
 	
 	sim.setFieldSizeRequest(3, 4, false);
@@ -497,7 +497,7 @@ TEST_CASE("Serialization to JSON", "[AhabSim]") {
 	json_decref(j);
 }
 
-TEST_CASE("Deserialization from JSON", "[AhabSim]") {
+TEST_CASE("Deserialization from JSON", "[JSON][AhabSim]") {
 	AhabSim sim;
 	
 	// Create JSON manually

@@ -88,6 +88,14 @@ static T* createWidget(Module* m) {
 	return mw;
 }
 
+// Creates a ModuleWidget, without a module, the same way as the module browser
+template <typename T>
+static T* createWidget(std::string modelSlug) {
+	Model* m = pluginInstance->getModel(modelSlug);
+	T* mw = dynamic_cast<T*>(m->createModuleWidget(NULL));
+	return mw;
+}
+
 static void destroyWidget(rack::ModuleWidget* mw) {
 	mw->module = NULL;
 	delete mw;
@@ -112,9 +120,9 @@ static void unregisterModule(rack::Module* m, rack::ModuleWidget* mw = nullptr) 
 	}
 }
 
-static const Module::ProcessArgs makeProcessArgs(int64_t frame) {
+static const Module::ProcessArgs makeProcessArgs(int64_t frame, float sampleRate = 44100.f) {
 	Module::ProcessArgs args;
-	args.sampleRate = 44100.0f;
+	args.sampleRate = sampleRate;
 	args.sampleTime = 1.0f / args.sampleRate;
 	args.frame = frame;
 	return args;
