@@ -41,14 +41,15 @@ struct TransitExModule : TransitBase<NUM_PRESETS> {
 			BASE::slot[i].indexLight = LIGHT_PRESET + i * 3;
 		}
 
-		onReset();
+		Module::ResetEvent re;
+		onReset(re);
 	}
 
 	void onExpanderChange(const Module::ExpanderChangeEvent& e) override {
 		notifyExpanderListeners("Transit");
 	}
 
-	void onReset() override {
+	void onReset(const Module::ResetEvent& e) override {
 		BASE::ctrlUniqueId = -1;
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			BASE::presetSlotUsed[i] = false;
@@ -61,6 +62,7 @@ struct TransitExModule : TransitBase<NUM_PRESETS> {
 			BASE::lights[LIGHT_PRESET + (i * 3) + 1].setBrightness(0.f);
 			BASE::lights[LIGHT_PRESET + (i * 3) + 2].setBrightness(0.f);
 		}
+		BASE::onReset(e);
     }
 
 	int sendSlotCmd(SLOT_CMD cmd, int i) override {

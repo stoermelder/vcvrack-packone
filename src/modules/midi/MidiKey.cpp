@@ -55,7 +55,10 @@ struct MidiKeyModule : Module, MidiTrackingProcessorHandler {
 	MidiKeyModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(0, 0, 0, 0);
-		onReset();
+		
+		ResetEvent re;
+		onReset(re);
+
 		trackingProcessor.handler = this;
 		trackingProcessor.enableCc();
 		trackingProcessor.enableNotes();
@@ -69,7 +72,7 @@ struct MidiKeyModule : Module, MidiTrackingProcessorHandler {
 		return mapId >= 3 ? (mapId - 3) : (mapId - 4);
 	}
 
-	void onReset() override {
+	void onReset(const ResetEvent& e) override {
 		learningId = -1;
 		learnedKey = false;
 		clearMaps();
@@ -81,6 +84,7 @@ struct MidiKeyModule : Module, MidiTrackingProcessorHandler {
 		trackingProcessor.disableMapLearn();
 		trackingProcessor.clearMaps();
 		trackingProcessor.getInput().reset();
+		Module::onReset(e);
 	}
 
 	void process(const ProcessArgs &args) override {

@@ -87,15 +87,17 @@ struct SailModule : Module {
 		configParam(PARAM_STEP, 0.f, 2.f, 0.2f, "Stepsize", "%", 0.f, 10.f);
 		configLight(LIGHT_ACTIVE, "Adjustable parameter indication");
 		processDivider.setDivision(32);
-		onReset();
+
+		ResetEvent re;
+		onReset(re);
 	}
 
 	void onSampleRateChange(const SampleRateChangeEvent& e) override {
 		lightDivider.setDivision(e.sampleRate / 100.f);
 	}
 
-	void onReset() override {
-		Module::onReset();
+	void onReset(const ResetEvent& e) override {
+		Module::onReset(e);
 		pq.store(NULL);
 		pqDsp = NULL;
 		inMode = IN_MODE::DIFF;

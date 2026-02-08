@@ -68,7 +68,12 @@ static T* createModule(std::string modelSlug) {
 	Model* model = pluginInstance->getModel(modelSlug);
 	T* m = dynamic_cast<T*>(model->createModule());
 	m->id = getModuleId();
-	m->onSampleRateChange();
+
+	Module::SampleRateChangeEvent e;
+	e.sampleRate = APP->engine->getSampleRate();
+	e.sampleTime = 1.0f / e.sampleRate;
+	m->onSampleRateChange(e);
+
 	return m;
 }
 

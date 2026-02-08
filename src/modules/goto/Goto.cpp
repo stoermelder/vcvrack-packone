@@ -91,11 +91,13 @@ struct GotoModule : Module {
 			pq->description = "Short-press to jump\nLong-press to learn/clear";
 			pq->jumpPoint = i;
 		}
-		onReset();
+
+		ResetEvent re;
+		onReset(re);
 	}
 
-	void onReset() override {
-		Module::onReset();
+	void onReset(const ResetEvent& e) override {
+		Module::onReset(e);
 		triggerMode = TRIGGERMODE::POLYTRIGGER;
 		triggerVoltage = 0.f;
 		smoothTransition = false;

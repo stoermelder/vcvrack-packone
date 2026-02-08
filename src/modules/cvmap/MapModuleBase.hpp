@@ -53,13 +53,14 @@ struct MapModuleBase : Module, StripIdFixModule {
 		}
 	}
 
-	void onReset() override {
+	void onReset(const Module::ResetEvent& e) override {
 		learningId = -1;
 		learnedParam = false;
 		// Use NoLock because we're already in an Engine write-lock if Engine::resetModule().
 		// We also might be in the constructor, which could cause problems, but when constructing, all ParamHandles will point to no Modules anyway.
 		clearMaps_NoLock();
 		mapLen = 0;
+		Module::onReset(e);
 	}
 
 	void process(const ProcessArgs& args) override {
@@ -237,9 +238,9 @@ struct CVMapModuleBase : MapModuleBase<MAX_CHANNELS> {
 		this->mappingIndicatorColor = MAPPING_INDICATOR_COLOR_DEFAULT;
 	}
 
-	void onReset() override {
+	void onReset(const Module::ResetEvent& e) override {
 		this->mappingIndicatorColor = MAPPING_INDICATOR_COLOR_DEFAULT;
-		MapModuleBase<MAX_CHANNELS>::onReset();
+		MapModuleBase<MAX_CHANNELS>::onReset(e);
 	}
 
 	void process(const Module::ProcessArgs &args) override {

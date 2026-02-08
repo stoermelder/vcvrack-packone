@@ -102,15 +102,17 @@ struct StrokeModule : Module {
 		for (int i = 0; i < PORTS; i++) {
 			configOutput(OUTPUT + i, string::f("Hotkey %i trigger/gate", i + 1));
 		}
-		onReset();
+
+		ResetEvent re;
+		onReset(re);
 	}
 
 	void onSampleRateChange(const SampleRateChangeEvent& e) override {
 		lightDivider.setDivision(e.sampleRate / 100.f);
 	}
 
-	void onReset() override {
-		Module::onReset();
+	void onReset(const ResetEvent& e) override {
+		Module::onReset(e);
 		for (int i = 0; i < PORTS; i++) {
 			keys[i].button = -1;
 			keys[i].key = -1;

@@ -27,11 +27,13 @@ struct CVMapCtxModule : CVMapCtxBase {
 	CVMapCtxModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		onReset();
+
+		ResetEvent re;
+		onReset(re);
 	}
 
-	void onReset() override {
-		Module::onReset();
+	void onReset(const ResetEvent& e) override {
+		Module::onReset(e);
 		cvMapId = "";
 	}
 

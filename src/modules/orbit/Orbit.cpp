@@ -91,10 +91,12 @@ struct OrbitModule : Module {
 		outputInfos[OUTPUT_L]->description = "Downmixed signal, optional polyphonic by context menu option.";
 		configOutput(OUTPUT_R, "Right channel");
 		outputInfos[OUTPUT_R]->description = "Downmixed signal, optional polyphonic by context menu option.";
-		onReset();
+		
+		ResetEvent re;
+		onReset(re);
 	}
 
-	void onReset() override {
+	void onReset(const ResetEvent& e) override {
 		polyOut = false;
 		dist = DISTRIBUTION::NORMAL;
 		for (int c = 0; c < PORT_MAX_CHANNELS; c++) {
@@ -102,7 +104,7 @@ struct OrbitModule : Module {
 			clickFilter[c].setTau(0.005f);
 			linearDrift[c].setMinCenterMax(0.f, 0.5, 1.f);
 		}
-		Module::onReset();
+		Module::onReset(e);
 	}
 
 	void process(const ProcessArgs& args) override {

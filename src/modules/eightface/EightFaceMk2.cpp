@@ -165,7 +165,9 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 		buttonDivider.setDivision(128);
 		boundModulesDivider.setDivision(APP->engine->getSampleRate());
 		lightDivider.setDivision(512);
-		onReset();
+
+		Module::ResetEvent re;
+		onReset(re);
 	}
 
 	~EightFaceMk2Module() {
@@ -186,7 +188,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 		notifyExpanderListeners("8FaceMk2");
 	}
 
-	void onReset() override {
+	void onReset(const Module::ResetEvent& e) override {
 		inChange = true;
 		expandersChanged = true;
 		for (int i = 0; i < NUM_PRESETS; i++) {
@@ -215,11 +217,11 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 		boxDraw = true;
 		boxColor = color::BLUE;
 
-		Module::onReset();
+		Module::onReset(e);
 	}
 
-	void onSampleRateChange() override {
-		boundModulesDivider.setDivision(APP->engine->getSampleRate());
+	void onSampleRateChange(const Module::SampleRateChangeEvent& e) override {
+		boundModulesDivider.setDivision(e.sampleRate);
 	}
 
 	EightFaceMk2Slot* faceSlot(int i) override {
@@ -686,7 +688,8 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 	void expanderCleanUp(EightFaceMk2Base<NUM_PRESETS>* t) {
 		// ctrlUniqueId == -2 for presets before uniqueId was added
 		if (t->ctrlUniqueId != -2 || (t->ctrlModuleId >= 0 && t->ctrlModuleId != Module::id)) {
-			t->onReset();
+			Module::ResetEvent re;
+			t->onReset(re);
 		}
 		t->ctrlUniqueId = BASE::ctrlUniqueId;
 	}

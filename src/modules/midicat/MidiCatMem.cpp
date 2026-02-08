@@ -48,15 +48,17 @@ struct MidiCatMemModule : MidiCatMemBase, StripIdFixModule {
 		configInput(INPUT_PREV, "Previous preset trigger");
 		configInput(INPUT_NEXT, "Next preset trigger");
 		processDivider.setDivision(48);
-		onReset();
+
+		ResetEvent re;
+		onReset(re);
 	}
 
 	void onExpanderChange(const Module::ExpanderChangeEvent& e) override {
 		notifyExpanderListeners("MidiCat");
 	}
 
-	void onReset() override {
-		Module::onReset();
+	void onReset(const ResetEvent& e) override {
+		Module::onReset(e);
 		resetMap();
 		moduleRestriction.clear();
 	}

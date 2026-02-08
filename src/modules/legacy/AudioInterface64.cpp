@@ -161,7 +161,7 @@ struct AudioInterfacePort : audio::Port {
 		deviceSampleRate = 0.f;
 		engineInputBuffer.clear();
 		engineOutputBuffer.clear();
-		// We can be in an Engine write-lock here (e.g. onReset() calls this indirectly), so use non-locking master module API.
+		// We can be in an Engine write-lock here (e.g. onReset(e) calls this indirectly), so use non-locking master module API.
 		// setMaster(false);
 		if (APP->engine->getMasterModule() == module)
 			APP->engine->setMasterModule_NoLock(NULL);
@@ -229,7 +229,8 @@ struct AudioInterface : Module {
 			dcFilters[i].setCutoffFreq(10.f * sampleTime);
 		}
 
-		onReset();
+		ResetEvent re;
+		onReset(re);
 	}
 
 	~AudioInterface() {
@@ -237,13 +238,14 @@ struct AudioInterface : Module {
 		port.setDriverId(-1);
 	}
 
-	void onReset() override {
+	void onReset(const ResetEvent& e) override {
 		port.setDriverId(-1);
 
 		if (NUM_AUDIO_INPUTS == 2)
 			dcFilterEnabled = true;
 		else
 			dcFilterEnabled = false;
+		Module::onReset(e);
 	}
 
 	void onSampleRateChange(const SampleRateChangeEvent& e) override {

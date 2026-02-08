@@ -256,7 +256,9 @@ struct MbModule : Module {
 
 	MbModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		onReset();
+
+		Module::ResetEvent re;
+		onReset(re);
 	}
 
 	MODE mode = MODE::V1;

@@ -33,14 +33,17 @@ struct PanicRoomModule : Module {
     PanicRoomModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
         config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-        onReset();
+        
+		ResetEvent re;
+		onReset(re);
     }
 
-    void onReset() override {
+    void onReset(const ResetEvent& e) override {
         restrictionEnabled = false;
         restrictionBox = math::Rect();
         outsideColor = nvgRGBAf(0.f, 0.f, 0.f, 1.f);
         outsideAlpha = 0.5f;
+        Module::onReset(e);
     }
 
     json_t* dataToJson() override {
