@@ -2,32 +2,31 @@
 
 AHAB is a port of the [ORCA-C](https://github.com/hundredrabbits/Orca-c) project into a VCV Rack module.
 
-AHAB is a livecoding sequencer based on [ORCA-C](https://github.com/hundredrabbits/Orca-c). Create patterns and melodies by typing characters into a grid. Every letter is an operator with its own function—build sequences by chaining them together.
+AHAB is a livecoding sequencer based on [ORCA](https://github.com/hundredrabbits/Orca). Create patterns and melodies by typing characters into a grid. Every letter is an operator with its own function — build sequences by chaining them together.
 
 ![AHAB Module](./intro.gif)
 
 **Getting started**  
-- Type to place characters in the field and build rhythmic or melodic patterns. 
+
+- Type characters in the field and build rhythmic or melodic patterns. Examples from the ORCA tutorial are embedded in the module and are available on the context menu - they are a great place to start. 
+- The primary way to get musical data out of AHAB is via MIDI: AHAB can send MIDI to both one driver output and one of four virtual ports. The virtual ports must be enabled on the context menu before they can be used in other MIDI-capable modules. Use the operators `:` (MIDI note), `!` (MIDI CC) or `?` (MIDI pitchbend) to control synths and other modules.
 - Use the Run button or the spacebar to start and stop the engine. 
-- The module can output both sync pulses and musical data you can route to synths or other modules.
+- Please make sure to enable the option *Show tooltips* in VCV Rack's View menu - this will show a brief description of each operator when you hover over it.
+
+![AHAB MIDI I/O](./midi.png)
 
 **Resources**  
+
 - https://metasyn.srht.site/learn-orca
 - https://100r.co/media/content/projects/zine_orca.png
 - https://100r.co/site/orca.html
 - https://github.com/hundredrabbits/Orca
 
-### MIDI Routing
-
-The primary way to get musical data out of AHAB is via MIDI. AHAB can send MIDI to both to one of four virtual ports and one driver output. The virtual ports must be enabled on the context menu before they can be used in other MIDI-capable modules. Use operators like `:` (MIDI note) and `!` (MIDI CC) to control synths and other MIDI-capable modules.
-
-![AHAB MIDI I/O](./midi.png)
-
 ### CV operators `<` and `>`
 
-AHAB provides two custom operators for reading/writing CV values:
+AHAB provides two custom operators for reading/writing CV values. Both operators need a *bang* to update their output.
 
-- **`<`** (read) — Use `<` to read values from the module's 4 input jacks.
+- **CV Read-operator `<`** — Use `<` to read values from the module's 4 input jacks.
   - `<1`, `<2`, `<3`, `<4` — Read numeric CV (0-10V mapped to 0-35)
   - `<a`, `<b`, `<c`, `<d` — Read pitch CV (V/Oct, outputs semitone mod 12)
 
@@ -39,7 +38,7 @@ This reads from input 1 and scales the value to a range of 0–5, which is mappe
 
 This reads from input 1 (addressed as `a`) and outputs the note name for the corresponding V/Oct voltage. Octave and cents are ignored.
 
-- **`>`** (write) — Use `>` to send values from the pattern to the module's 4 output jacks.
+- **CV Write-operator `>`** — Use `>` to send values from the pattern to the module's 4 output jacks.
   - `>1`, `>2`, `>3`, `>4` — Write numeric CV (value in range 0-35 maps to 0-10V)
   - `>a`, `>b`, `>c`, `>d` — Write pitch CV (value is semitone, e.g., `>a3` outputs D3 in V/Oct)
 

@@ -549,7 +549,8 @@ struct AhabSimWidget : OpaqueWidget {
 				{';', "udp: Sends UDP message"},
 				{'=', "osc: Sends OSC message"},
 				{'<', "cv-input: Reads a value from a CV input"},
-				{'>', "cv-output: Writes a value to a CV output"}
+				{'>', "cv-output: Writes a value to a CV output"},
+				{'$', "command: not supported in Ahab"}
 			};
 			auto it = descriptions.find(g);
 			desc = (it != descriptions.end()) ? it->second : std::string(1, g) + ": variable / unknown operator";
