@@ -19,10 +19,11 @@
     - Fixed occasional crash (#358)
 - Module [STROKE](./docs/stroke/Stroke.md)
     - Fixed broken _Zoom out_ command
-    - Fixed broken Toggle-commands on different UI Scale
+    - Fixed broken Toggle-commands on different UI Scale (#415)
 - Module [TRANSIT](./docs/transit/Transit.md)
     - Added alternative parameter binding by selection box
     - Added custom color LED setting per slot
+    - Added option to set the first usable snapshot (instead of starting at 1) (#265)
 
 ## 2.2.0
 
