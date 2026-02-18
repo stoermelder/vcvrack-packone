@@ -13,9 +13,7 @@ struct SceneEx : rack::app::Scene {
 	}
 };
 
-// Define the single instance used by tests
-static Test::TestContext<SceneEx> testContext;
-
+Test::TestContext<SceneEx> testContext;
 
 
 TEST_CASE("Construction and initialization", "[MidiKey]") {

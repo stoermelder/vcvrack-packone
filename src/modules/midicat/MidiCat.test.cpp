@@ -7,7 +7,7 @@
 using namespace StoermelderPackOne::MidiCat;
 
 // Define the single instance used by tests
-static Test::TestContext<> testContext;
+Test::TestContext<> testContext;
 
 // Helper class to provide a test module with parameters
 struct TestModule : rack::Module {

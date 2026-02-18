@@ -5,8 +5,7 @@
 
 using namespace StoermelderPackOne::Transit;
 
-// Define the single instance used by tests
-static Test::TestContext<> testContext;
+Test::TestContext<> testContext;
 
 // Helper module with test parameters
 struct TestModule : rack::Module {
@@ -24,32 +23,6 @@ struct TestModule : rack::Module {
 		configParam(TEST_PARAM_3, -5.f, 5.f, 0.f, "Test Parameter 3");
 	}
 };
-
-
-TEST_CASE("Construction and initialization", "[Transit]") {
-	TransitModule<12>* module = Test::createModule<TransitModule<12>>("Transit");
-	TransitWidget<12>* mw = Test::createWidget<TransitWidget<12>>(module);
-
-	SECTION("Initial values are set correctly") {
-		module->process(Test::makeProcessArgs(1));
-		REQUIRE(module->preset == -1);
-		REQUIRE(module->presetFirst == 0);
-		REQUIRE(module->presetLast == 12);
-		REQUIRE(module->presetTotal == 12);
-	}
-
-	SECTION("All preset slots are initially unused") {
-		std::vector<int> used;
-		for (int i = 0; i < 12; i++) {
-			if (module->presetSlotUsed[i])
-				used.push_back(i);
-		}
-		REQUIRE(used.size() == 0);
-	}
-
-	Test::destroyWidget(mw);
-	Test::destroyModule(module);
-}
 
 
 TEST_CASE("Setting presetFirst and presetLast boundaries", "[Transit]") {

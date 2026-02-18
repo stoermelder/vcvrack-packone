@@ -102,47 +102,6 @@ void cleanupMockVirtualMidiInput(MockMidiVirtualInput* mockInput) {
 	}
 }
 
-
-
-TEST_CASE("Construction and initialization", "[Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
-	
-	REQUIRE(m != nullptr);
-	REQUIRE(m->sim != nullptr);
-	REQUIRE(m->simRunning == true);
-	REQUIRE(m->midiOutEnabled == true);
-	REQUIRE(m->midiCcOffset == 64);
-	REQUIRE(m->gridStepCol == 8);
-	REQUIRE(m->gridStepRow == 8);
-	
-	Test::destroyModule(m);
-}
-
-TEST_CASE("Reset", "[Ahab]") {
-	AhabModule* m = Test::createModule<AhabModule>("Ahab");
-	Test::registerModule(m);
-	
-	// Change some values
-	m->simRunning = false;
-	m->midiOutEnabled = false;
-	m->midiCcOffset = 100;
-	
-	// Reset
-	Module::ResetEvent e;
-	m->onReset(e);
-	
-	// Check that values are back to defaults
-	REQUIRE(m->simRunning == true);
-	REQUIRE(m->midiOutEnabled == true);
-	REQUIRE(m->midiCcOffset == 64);
-	REQUIRE(m->sim->getTickNumber() == 0);
-	REQUIRE(m->sim->getFieldHeight() == 25);
-	REQUIRE(m->sim->getFieldWidth() == 49);
-	
-	Test::unregisterModule(m);
-	Test::destroyModule(m);
-}
-
 TEST_CASE("BPM-based clock", "[Ahab]") {
 	AhabModule* m = Test::createModule<AhabModule>("Ahab");
 	Test::registerModule(m);

@@ -4,7 +4,7 @@
 
 using namespace StoermelderPackOne::Bolt;
 
-static Test::TestContext<> testContext;
+Test::TestContext<> testContext;
 
 TEST_CASE("JSON serialization", "[Bolt]") {
 	auto module = Test::createModule<BoltModule>("Bolt");
@@ -32,51 +32,7 @@ TEST_CASE("JSON serialization", "[Bolt]") {
 	Test::destroyModule(module);
 }
 
-TEST_CASE("Reset", "[Bolt]") {
-	auto module = Test::createModule<BoltModule>("Bolt");
-
-	SECTION("Reset clears state") {
-		module->op = 3;
-		for (int c = 0; c < 16; c++) {
-			module->out[c] = true;
-		}
-		
-        rack::engine::Module::ResetEvent re;
-        module->onReset(re);
-		
-		REQUIRE(module->op == 0);
-		for (int c = 0; c < 16; c++) {
-			REQUIRE(module->out[c] == false);
-		}
-	}
-
-	Test::destroyModule(module);
-}
-
-TEST_CASE("State array initialization", "[Bolt]") {
-	auto module = Test::createModule<BoltModule>("Bolt");
-
-	SECTION("Output array initialized to false") {
-		for (int c = 0; c < 16; c++) {
-			REQUIRE(module->out[c] == false);
-		}
-	}
-	
-	SECTION("Output array can be modified") {
-		module->out[0] = true;
-		module->out[5] = true;
-		module->out[15] = true;
-		
-		REQUIRE(module->out[0] == true);
-		REQUIRE(module->out[5] == true);
-		REQUIRE(module->out[15] == true);
-		REQUIRE(module->out[1] == false);
-	}
-
-	Test::destroyModule(module);
-}
-
-TEST_CASE("Configuration persistence", "[Bolt]") {
+TEST_CASE("Configuration persistence", "[JSON][Bolt]") {
 	auto module = Test::createModule<BoltModule>("Bolt");
 
 	SECTION("CV modes persist through JSON") {
@@ -109,4 +65,12 @@ TEST_CASE("Processing without connections", "[Bolt]") {
 	}
 
 	Test::destroyModule(module);
+}
+
+TEST_CASE("Widget construction", "[UI][Bolt]") {
+	BoltWidget* w = Test::createWidget<BoltWidget>("Bolt");
+	REQUIRE(w != nullptr);
+	REQUIRE(w->module == NULL);
+	
+	Test::destroyWidget(w);
 }

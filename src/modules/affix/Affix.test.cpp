@@ -11,8 +11,7 @@ static AffixModule<CHANNELS>* createAffixModule(std::string modelSlug) {
 	return module;
 }
 
-// Define the single instance used by tests
-static Test::TestContext<> testContext;
+Test::TestContext<> testContext;
 
 TEST_CASE("Voltage mode", "[Affix]") {
 	auto module = Test::createModule<AffixModule<16>>("Affix");
@@ -154,4 +153,12 @@ TEST_CASE("Octave mode", "[Affix]") {
 	}
 
 	Test::destroyModule(module);
+}
+
+TEST_CASE("Widget construction", "[UI][Affix]") {
+	AffixWidget* w = Test::createWidget<AffixWidget>("Affix");
+	REQUIRE(w != nullptr);
+	REQUIRE(w->module == NULL);
+	
+	Test::destroyWidget(w);
 }

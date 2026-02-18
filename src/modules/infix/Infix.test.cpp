@@ -4,7 +4,7 @@
 
 using namespace StoermelderPackOne::Infix;
 
-static Test::TestContext<> testContext;
+Test::TestContext<> testContext;
 
 TEST_CASE("JSON serialization", "[Infix]") {
 	auto module = Test::createModule<InfixModule<16>>("Infix");
@@ -103,4 +103,12 @@ TEST_CASE("Multiple independent serialization", "[Infix]") {
 	}
 
 	Test::destroyModule(module);
+}
+
+TEST_CASE("Widget construction", "[UI][Infix]") {
+	InfixWidget* w = Test::createWidget<InfixWidget>("Infix");
+	REQUIRE(w != nullptr);
+	REQUIRE(w->module == NULL);
+	
+	Test::destroyWidget(w);
 }
