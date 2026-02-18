@@ -355,6 +355,9 @@ struct MapModuleChoice : LedDisplayChoice {
 		Widget* widget = APP->event->getHoveredWidget();
 		if (widget) {
 			ParamWidget* pw = dynamic_cast<ParamWidget*>(widget);
+			if (!pw) {
+				pw = APP->scene->rack->getTouchedParam();
+			}
 			if (pw) {
 				ParamQuantity* pq = pw->getParamQuantity();
 				if (pq && pq->module != module) {
