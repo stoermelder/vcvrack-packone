@@ -1,5 +1,6 @@
 #include "../../plugin.hpp"
 #include "../../pluginhelpers.hpp"
+#include "../../components/Knobs.hpp"
 #include "orca_examples.hpp"
 #include "AhabSim.hpp"
 #include "AhabMidiDriver.hpp"
@@ -1391,7 +1392,7 @@ struct AhabWidget : ThemedModuleWidget<AhabModule> {
 		addChild(createParamCentered<VCVButton>(math::Vec(22.5f, 143.1f), module, AhabModule::CLK_PARAM));
 		addChild(createLightCentered<MediumSimpleLight<WhiteLight>>(Vec(22.5f, 143.1f), module, AhabModule::CLK_LIGHT));
 
-		addChild(createParamCentered<RoundBlackKnob>(math::Vec(577.5f, 111.5f), module, AhabModule::BPM_PARAM));
+		addChild(createParamCentered<StoermelderSmallKnob>(math::Vec(577.5f, 111.5f), module, AhabModule::BPM_PARAM));
 		
 		AhabSimFramebuffer* fb = new AhabSimFramebuffer();
 		fb->box.pos = math::Vec(45.f, 10.2f);
