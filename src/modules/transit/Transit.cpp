@@ -505,9 +505,9 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 						slot->getLights()[2].setBrightness(std::max(c.b, f));
 					}
 					else {
-						slot->getLights()[0].setBrightness(f);
+						slot->getLights()[0].setBrightness(b1);
 						slot->getLights()[1].setBrightness(b1);
-						slot->getLights()[2].setBrightness(f);
+						slot->getLights()[2].setBrightness(b1);
 					}
 				}
 				else {
@@ -523,9 +523,9 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 						float b0 = b ? 0.7f : (u ? 1.f : 0.f);
 						float b1 = b ? 0.7f : (u ? 0.f : (presetFirst <= i && i < presetLast ? 0.05f : 0.f));
 						float b2 = b ? 0.7f : 0.f;
-						slot->getLights()[0].setBrightnessSmooth(b0, s);
+						slot->getLights()[0].setBrightnessSmooth(b1, s);
 						slot->getLights()[1].setBrightnessSmooth(b1, s);
-						slot->getLights()[2].setBrightnessSmooth(b2, s);
+						slot->getLights()[2].setBrightnessSmooth(b1, s);
 					}
 				}
 			}
