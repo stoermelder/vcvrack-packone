@@ -442,7 +442,7 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XySeqModule<MIX_PORTS> {
 		if (type == 1) {
 			paramQuantities[MIX_X_POS + id]->getParam()->setValue(x);
 			mixXfilter[id].out = mixUiX[id] = x;
-			paramQuantities[MIX_X_POS + id]->getParam()->setValue(y);
+			paramQuantities[MIX_Y_POS + id]->getParam()->setValue(y);
 			mixYfilter[id].out = mixUiY[id] = y;
 		}
 	}
