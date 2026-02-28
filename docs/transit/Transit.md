@@ -178,3 +178,4 @@ Once placed next to TRANSIT the expander works and behaves the same way TRANSIT 
     - Added alternative parameter binding by selection box
     - Added custom color LED setting per slot
     - Added option to set the first usable snapshot (instead of starting at 1) (#265)
+    - Removed fade CV input clamping, allowing for more extreme fade times
