@@ -520,9 +520,9 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 					}
 					else {
 						bool b = preset == i && lightBlink;
-						float b0 = b ? 0.7f : (u ? 1.f : 0.f);
-						float b1 = b ? 0.7f : (u ? 0.f : (presetFirst <= i && i < presetLast ? 0.05f : 0.f));
-						float b2 = b ? 0.7f : 0.f;
+						//loat b0 = b ? 0.7f : (u ? 1.f : 0.f);
+						float b1 = b ? 1.0f : (presetFirst <= i && i < presetLast ? (u ? 0.4f : 0.05f) : 0.f);
+						//float b2 = b ? 0.7f : 0.f;
 						slot->getLights()[0].setBrightnessSmooth(b1, s);
 						slot->getLights()[1].setBrightnessSmooth(b1, s);
 						slot->getLights()[2].setBrightnessSmooth(b1, s);
