@@ -7,6 +7,8 @@
 
 ### Changes and Fixes
 
+- Module [8FACE mk2](./docs/eightface/EightFaceMk2.md)
+    - Fixed broken unbinding of modules (memory leak) (#396)
 - Module [GLUE](./docs/glue/Glue.md)
     - Added option to add labels to cables (#247)
 - Module [MIDI-CAT](./docs/midicat/MidiCat.md)

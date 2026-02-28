@@ -498,7 +498,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 			for (auto it = std::begin(*slot->preset); it != std::end(*slot->preset); it++) {
 				json_t* idJ = json_object_get(*it, "id");
 				if (!idJ) continue;
-				int id = json_integer_value(idJ);
+				int64_t id = json_integer_value(idJ);
 				if (id == b->moduleId) {
 					slot->preset->erase(it);
 					break;
