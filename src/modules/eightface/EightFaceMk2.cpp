@@ -472,9 +472,9 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 		}
 	}
 
-	void bindModule(Module* m) {
-		if (!m) return;
-		for (BoundModule* b : boundModules) if (b->moduleId == m->id) return;
+	std::string bindModule(Module* m) {
+		if (!m) return std::string();
+		for (BoundModule* b : boundModules) if (b->moduleId == m->id) return std::string();
 		BoundModule* b = new BoundModule;
 		b->moduleId = m->id;
 		b->moduleName = m->model->plugin->brand + " " + m->model->name;
@@ -483,13 +483,26 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 		auto it = EightFace::guiModuleSlugs.find(std::make_tuple(b->pluginSlug, b->modelSlug));
 		b->needsGuiThread = it != EightFace::guiModuleSlugs.end();
 		boundModules.push_back(b);
+
+		std::string ret;
+		ModuleWidget* mw = b->getModuleWidget();
+		json_t* vJ = mw->toJson();
+		char* moduleJson = json_dumps(vJ, JSON_INDENT(2) | JSON_REAL_PRECISION(9));
+		size_t size = strlen(moduleJson);
+		if (size > 400000) {
+			ret = string::f("The preset size of %s is about %ikb, which might cause performance issues.", b->moduleName, size / 1024);
+		}
+		free(moduleJson);
+		json_decref(vJ);
+
+		return ret;
 	}
 
-	void bindModuleExpander() {
+	std::string bindModuleExpander() {
 		Module::Expander* exp = &(Module::leftExpander);
-		if (exp->moduleId < 0) return;
+		if (exp->moduleId < 0) return std::string();
 		Module* m = exp->module;
-		bindModule(m);
+		return bindModule(m);
 	}
 
 	void unbindModule(BoundModule* b) {
@@ -892,6 +905,7 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 
 	ModuleOuterBoundsDrawerWidget<MODULE>* boxDrawer = NULL;
 	ModuleSelectProcessor moduleSelectProcessor;
+	std::string moduleSelectProcessorStr;
 
 	EightFaceMk2Widget(MODULE* module)
 		: ThemedModuleWidget<MODULE>(module, "EightFaceMk2") {
@@ -1108,23 +1122,43 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuItem("Bind module (left)", "", [=]() {
 			moduleSelectProcessor.disableLearn();
-			module->bindModuleExpander();
+			std::string s = module->bindModuleExpander();
+			if (!s.empty()) {
+				osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, s.c_str());
+			}
 		}));
 		menu->addChild(createMenuItem("Bind module (select one)", "", [=]() {
 			moduleSelectProcessor.setOwner(this);
 			moduleSelectProcessor.startLearn([module](ModuleWidget* mw, Vec pos) {
-				module->bindModule(mw->module);
+				std::string s = module->bindModule(mw->module);
+				if (!s.empty()) {
+					osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, s.c_str());
+				}
 			});
 		}));
 		menu->addChild(createMenuItem("Bind modules (select multiple)", "", [=]() {
 			moduleSelectProcessor.setOwner(this);
-			moduleSelectProcessor.startLearn([module](ModuleWidget* mw, Vec pos) {
-				module->bindModule(mw->module);
-			}, ModuleSelectProcessor::LEARN_MODE::MULTI);
+			moduleSelectProcessorStr = "";
+			moduleSelectProcessor.startLearn(
+				[this, module](ModuleWidget* mw, Vec pos) {
+					std::string s = module->bindModule(mw->module);
+					if (!s.empty()) moduleSelectProcessorStr += s + "\n";
+				}, ModuleSelectProcessor::LEARN_MODE::MULTI,
+				[this]() {
+					if (!moduleSelectProcessorStr.empty()) {
+						osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, moduleSelectProcessorStr.c_str());
+					}
+				}
+			);
 		}));
 		menu->addChild(createMenuItem("Bind modules (current selection)", "", [=]() {
+			std::string s;
 			for (ModuleWidget* mw : APP->scene->rack->getSelected()) {
-				module->bindModule(mw->module);
+				std::string _s = module->bindModule(mw->module);
+				if (!_s.empty()) s += _s + "\n";
+			}
+			if (!s.empty()) {
+				osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, s.c_str());
 			}
 			APP->scene->rack->deselectAll();
 		}));

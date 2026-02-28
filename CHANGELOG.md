@@ -8,6 +8,7 @@
 ### Changes and Fixes
 
 - Module [8FACE mk2](./docs/eightface/EightFaceMk2.md)
+    - Added performance warning for large module presets (#396)
     - Fixed broken unbinding of modules (memory leak) (#396)
 - Module [GLUE](./docs/glue/Glue.md)
     - Added option to add labels to cables (#247)
