@@ -1,6 +1,7 @@
 #include "../../plugin.hpp"
 #include "../../pluginhelpers.hpp"
 #include "../../components/Knobs.hpp"
+#include "../../ui/InfoWindow.hpp"
 #include "orca_examples.hpp"
 #include "AhabSim.hpp"
 #include "AhabMidiDriver.hpp"
@@ -40,6 +41,8 @@ struct AhabModule : Module {
 
 	/** [Stored to JSON] */
 	int panelTheme = 0;
+
+	bool hasDataLoaded = false;
 
 	AhabSim* sim = nullptr;
 	/** [Stored to JSON] */
@@ -307,6 +310,7 @@ struct AhabModule : Module {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
+		hasDataLoaded = true;
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 		midiVirtualPortId = json_integer_value(json_object_get(rootJ, "midiVirtualPortId"));
 		midiOutEnabled = json_boolean_value(json_object_get(rootJ, "midiOutEnabled"));
@@ -1406,6 +1410,18 @@ struct AhabWidget : ThemedModuleWidget<AhabModule> {
 		statusWidget->box.pos = math::Vec(562.f, 136.5f);
 		statusWidget->box.size = math::Vec(31.1, 50.8f);
 		addChild(statusWidget);
+
+		if (module && !module->hasDataLoaded && pluginSettings.ahabInfo) {
+			Widget* info = infoOverlayCreate(&pluginSettings.ahabInfo,
+				"stoermelder AHAB",
+				"AHAB is a livecoding sequencer based on ORCA, an esoteric programming "
+				"language designed to quickly create procedural sequencers, in which every "
+				"letter of the alphabet is an operation, where lowercase letters operate on bang, "
+				"uppercase letters operate each frame.\n"
+				"Examples and helpful links can be found in the context menu.",
+				"https://github.com/hundredrabbits/Orca");
+			addChild(info);
+		}
     }
 
 	void onButton(const event::Button& e) override {
