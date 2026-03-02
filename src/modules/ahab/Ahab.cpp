@@ -622,6 +622,15 @@ struct AhabSimWidget : OpaqueWidget {
 		OpaqueWidget::drawLayer(args, layer);
 		if (layer != 1) return; // only draw on main layer
 
+		if (APP->event->getSelectedWidget() == this) {
+			// Draw keyboard focus highlight rectangle
+			nvgBeginPath(args.vg);
+			nvgRoundedRect(args.vg, -2.f, -2.f, box.size.x + 4.f, box.size.y + 4.f, 2.5f);
+			nvgStrokeColor(args.vg, nvgRGBAf(1.f, 0.7f, 0.27f, 0.4f));
+			nvgStrokeWidth(args.vg, 3.5f);
+			nvgStroke(args.vg);
+		}
+
 		// Dim the display but don't darken it completely
 		float b = std::max(0.2f, settings::rackBrightness);
 		float b_inv = 1.f + std::max(b - settings::rackBrightness, 0.f) * 8.f;
