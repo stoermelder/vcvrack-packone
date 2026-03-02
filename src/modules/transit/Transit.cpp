@@ -92,6 +92,9 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 	std::vector<float> presetNew;
 	float presetFadeTime;
 
+	/** [Stored to JSON] */
+	bool clampFadeCv = true;
+
 	/** [Stored to JSON] mode for SEQ CV input */
 	SLOTCVMODE slotCvMode = SLOTCVMODE::TRIG_FWD;
 	SLOTCVMODE slotCvModeBak = SLOTCVMODE::OFF;
@@ -218,6 +221,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 		presetLast = NUM_PRESETS;
 		presetNext = -1;
 		slewLimiter.reset(10.f);
+		clampFadeCv = true;
 
 		outMode = OUTMODE::ENV;
 		outSlotPulseGenerator.reset();
@@ -643,6 +647,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 			if (preset == -1) return;
 			float deltaTime = sampleTime * presetProcessDivision;
 
+			slewLimiter.clamp = clampFadeCv;
 			float fade = presetFadeTime < 0.f ? (BASE::inputs[INPUT_FADE].getVoltage() / 10.f + BASE::params[PARAM_FADE].getValue()) : presetFadeTime;
 			slewLimiter.setRise(fade);
 			float shape = BASE::params[PARAM_SHAPE].getValue();
@@ -1138,7 +1143,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 		json_object_set_new(rootJ, "presetFirst", json_integer(presetFirst));
 		json_object_set_new(rootJ, "presetCount", json_integer(presetLast));
 		json_object_set_new(rootJ, "presetCountLongPress", json_boolean(presetCountLongPress));
-
+		json_object_set_new(rootJ, "clampFadeCv", json_boolean(clampFadeCv));
 		json_object_set_new(rootJ, "parameterChangesDirect", json_boolean(parameterChangesDirect));
 
 		auto snap = std::atomic_load(&sourceHandlesPtr);
@@ -1167,7 +1172,8 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 		presetLast = json_integer_value(json_object_get(rootJ, "presetCount"));
 		json_t* presetCountLongPressJ = json_object_get(rootJ, "presetCountLongPress");
 		if (presetCountLongPressJ) presetCountLongPress = json_boolean_value(presetCountLongPressJ);
-
+		json_t* clampFadeCvJ = json_object_get(rootJ, "clampFadeCv");
+		if (clampFadeCvJ) clampFadeCv = json_boolean_value(clampFadeCvJ);
 		json_t* parameterChangesDirectJ = json_object_get(rootJ, "parameterChangesDirect");
 		if (parameterChangesDirectJ) parameterChangesDirect = json_boolean_value(parameterChangesDirectJ);
 
@@ -1587,6 +1593,7 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 			menu->addChild(new MenuSeparator);
 			menu->addChild(construct<OutModeItem>(&MenuItem::text, "Phase", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::PHASE, &OutModeItem::disabled, !phaseMode));
 		}));
+		menu->addChild(createBoolPtrMenuItem("Clamp Fade CV input", "", &module->clampFadeCv));
 
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuItem("Bind module (left)", "", [=]() { disableLearn(); module->bindAddModuleExpanderRequest(); }));

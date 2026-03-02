@@ -27,7 +27,7 @@
     - Added alternative parameter binding by selection box
     - Added custom color LED setting per slot
     - Added option to set the first usable snapshot (instead of starting at 1) (#265)
-    - Removed fade CV input clamping, allowing for more extreme fade times
+    - Added option to disable fade CV input clamping, allowing for more extreme fade times
 
 ## 2.2.0
 
