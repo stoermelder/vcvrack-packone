@@ -216,6 +216,10 @@ TEST_CASE("Expander chain with gate module", "[IntermixGate]") {
 		gateModule1->rightExpander.module = gateModule2;
 		gateModule2->leftExpander.module = gateModule1;
 		
+		// Ensure models are set for expander checks
+		gateModule1->model = modelIntermixGate;
+		gateModule2->model = modelIntermixGate;
+		
 		intermixModule->currentMatrix[0][0] = 0.5f;
 		intermixModule->currentMatrix[1][1] = 0.5f;
 		

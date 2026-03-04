@@ -938,6 +938,174 @@ TEST_CASE("MIDI Virtual disabled", "[MIDI][Ahab]") {
 	Test::destroyModule(m);
 }
 
+TEST_CASE("MIDI note ordering - scheduled note-offs before new notes", "[MIDI][Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+	
+	// Setup mock MIDI output
+	MockMidiOutputDevice* mockDevice = setupMockMidiOutput(m);
+	m->midiOutEnabled = true;
+	
+	// First: Create a note that will be scheduled for note-off
+	Oevent_list olist1;
+	oevent_list_init(&olist1);
+	
+	Oevent* ev1 = oevent_list_alloc_item(&olist1);
+	ev1->any.oevent_type = Oevent_type_midi_note;
+	ev1->midi_note.channel = 0;
+	ev1->midi_note.octave = 4;
+	ev1->midi_note.note = 0; // C4
+	ev1->midi_note.velocity = 100;
+	ev1->midi_note.duration = 1; // Will schedule note-off with remaining_ticks = 0
+	
+	m->processEvents(&olist1);
+	oevent_list_deinit(&olist1);
+	
+	// First process should have MIDI note-on message
+	size_t messagesAfterFirstNote = mockDevice->getMessageCount();
+	REQUIRE(messagesAfterFirstNote == 1);
+	REQUIRE(mockDevice->getMessage(0).getStatus() == 0x9); // Note On
+	REQUIRE(mockDevice->getMessage(0).getNote() == 48); // C4
+	
+	// Now simulate the scheduled note-off being ready to send
+	// remaining_ticks should be 0 after first processEvents call
+	REQUIRE(m->midiScheduledNotes.size() == 1);
+	REQUIRE(m->midiScheduledNotes[0].remaining_ticks == 0);
+	REQUIRE(m->midiScheduledNotes[0].note == 48);
+	
+	// Second: In the same cycle, create a new note event that should come after the note-off
+	Oevent_list olist2;
+	oevent_list_init(&olist2);
+	
+	Oevent* ev2 = oevent_list_alloc_item(&olist2);
+	ev2->any.oevent_type = Oevent_type_midi_note;
+	ev2->midi_note.channel = 0;
+	ev2->midi_note.octave = 4;
+	ev2->midi_note.note = 1; // D4
+	ev2->midi_note.velocity = 100;
+	ev2->midi_note.duration = 10;
+	
+	m->processEvents(&olist2);
+	oevent_list_deinit(&olist2);
+	
+	// After second processEvents:
+	// - The scheduled note-off should have been processed FIRST
+	// - Then the new note-on should be processed
+	// Expected: Note-Off (C4), then Note-On (D4)
+	REQUIRE(mockDevice->getMessageCount() == 3);
+	
+	// Message 0: Original Note-On (C4)
+	REQUIRE(mockDevice->getMessage(0).getStatus() == 0x9);
+	REQUIRE(mockDevice->getMessage(0).getNote() == 48);
+	
+	// Message 1: Scheduled Note-Off (C4) - should come BEFORE the new note
+	REQUIRE(mockDevice->getMessage(1).getStatus() == 0x8); // Note Off
+	REQUIRE(mockDevice->getMessage(1).getNote() == 48);
+	REQUIRE(mockDevice->getMessage(1).getValue() == 0); // Note-off velocity
+	
+	// Message 2: New Note-On (D4 = octave 4, note 1)
+	REQUIRE(mockDevice->getMessage(2).getStatus() == 0x9);
+	REQUIRE(mockDevice->getMessage(2).getNote() == 49); // D4
+	
+	// Verify the scheduled note was removed
+	REQUIRE(m->midiScheduledNotes.size() == 1); // Only the D4 note-off remains
+	REQUIRE(m->midiScheduledNotes[0].note == 49);
+	
+	cleanupMockMidiOutput(m, mockDevice);
+	
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("MIDI note ordering - multiple simultaneous note transitions", "[MIDI][Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+	
+	// Setup mock MIDI output
+	MockMidiOutputDevice* mockDevice = setupMockMidiOutput(m);
+	m->midiOutEnabled = true;
+	
+	// Create three notes with duration 1 (will schedule note-offs with remaining_ticks = 0)
+	// Notes: C4 (0), D4 (1), E4 (2)
+	Oevent_list olist1;
+	oevent_list_init(&olist1);
+	
+	for (int i = 0; i < 3; ++i) {
+		Oevent* ev = oevent_list_alloc_item(&olist1);
+		ev->any.oevent_type = Oevent_type_midi_note;
+		ev->midi_note.channel = 0;
+		ev->midi_note.octave = 4;
+		ev->midi_note.note = i; // Notes 0, 1, 2
+		ev->midi_note.velocity = 100;
+		ev->midi_note.duration = 1;
+	}
+	
+	m->processEvents(&olist1);
+	oevent_list_deinit(&olist1);
+	
+	// Should have 3 note-ons
+	REQUIRE(mockDevice->getMessageCount() == 3);
+	
+	// Now in the second cycle, three note-offs should be scheduled and ready to send
+	REQUIRE(m->midiScheduledNotes.size() == 3);
+	for (size_t i = 0; i < m->midiScheduledNotes.size(); ++i) {
+		REQUIRE(m->midiScheduledNotes[i].remaining_ticks == 0);
+	}
+	
+	// Create three new notes in the same cycle
+	// Notes: C5 (0), D5 (1), E5 (2)
+	Oevent_list olist2;
+	oevent_list_init(&olist2);
+	
+	for (int i = 0; i < 3; ++i) {
+		Oevent* ev = oevent_list_alloc_item(&olist2);
+		ev->any.oevent_type = Oevent_type_midi_note;
+		ev->midi_note.channel = 0;
+		ev->midi_note.octave = 5;
+		ev->midi_note.note = i; // Notes 0, 1, 2
+		ev->midi_note.velocity = 100;
+		ev->midi_note.duration = 5;
+	}
+	
+	m->processEvents(&olist2);
+	oevent_list_deinit(&olist2);
+	
+	// After second processEvents:
+	// Expected message order:
+	// - 3 Note-Offs (C4=48, D4=49, E4=50) from scheduled notes - processed FIRST
+	// - 3 Note-Ons (C5=60, D5=61, E5=62) from new events - processed AFTER
+	REQUIRE(mockDevice->getMessageCount() == 9);
+	
+	// Messages 0-2: Original Note-Ons (C4, D4, E4)
+	REQUIRE(mockDevice->getMessage(0).getStatus() == 0x9);
+	REQUIRE(mockDevice->getMessage(0).getNote() == 48); // C4
+	REQUIRE(mockDevice->getMessage(1).getStatus() == 0x9);
+	REQUIRE(mockDevice->getMessage(1).getNote() == 49); // D4
+	REQUIRE(mockDevice->getMessage(2).getStatus() == 0x9);
+	REQUIRE(mockDevice->getMessage(2).getNote() == 50); // E4
+	
+	// Messages 3-5: Scheduled Note-Offs (C4, D4, E4) - come BEFORE new note-ons
+	REQUIRE(mockDevice->getMessage(3).getStatus() == 0x8); // Note Off
+	REQUIRE(mockDevice->getMessage(3).getNote() == 48); // C4
+	REQUIRE(mockDevice->getMessage(4).getStatus() == 0x8);
+	REQUIRE(mockDevice->getMessage(4).getNote() == 49); // D4
+	REQUIRE(mockDevice->getMessage(5).getStatus() == 0x8);
+	REQUIRE(mockDevice->getMessage(5).getNote() == 50); // E4
+	
+	// Messages 6-8: New Note-Ons (C5, D5, E5)
+	REQUIRE(mockDevice->getMessage(6).getStatus() == 0x9);
+	REQUIRE(mockDevice->getMessage(6).getNote() == 60); // C5
+	REQUIRE(mockDevice->getMessage(7).getStatus() == 0x9);
+	REQUIRE(mockDevice->getMessage(7).getNote() == 61); // D5
+	REQUIRE(mockDevice->getMessage(8).getStatus() == 0x9);
+	REQUIRE(mockDevice->getMessage(8).getNote() == 62); // E5
+	
+	cleanupMockMidiOutput(m, mockDevice);
+	
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
 TEST_CASE("Widget construction", "[UI][Ahab]") {
 	AhabWidget* w = Test::createWidget<AhabWidget>("Ahab");
 	REQUIRE(w != nullptr);

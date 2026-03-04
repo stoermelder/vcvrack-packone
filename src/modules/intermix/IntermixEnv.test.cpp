@@ -152,6 +152,10 @@ TEST_CASE("Expander chain", "[IntermixEnv]") {
 		envModule1->rightExpander.module = envModule2;
 		envModule2->leftExpander.module = envModule1;
 		
+		// Ensure models are set for expander checks
+		envModule1->model = modelIntermixEnv;
+		envModule2->model = modelIntermixEnv;
+		
 		intermixModule->currentMatrix[0][0] = 0.8f;
 		intermixModule->currentMatrix[1][0] = 0.4f;
 		
