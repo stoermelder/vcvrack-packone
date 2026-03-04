@@ -91,8 +91,10 @@ struct AhabModule : Module {
 		configSwitch(RUN_PARAM, 0.0, 1.0, 0.0, "Start/Stop");
 		configSwitch(CLK_PARAM, 0.0, 1.0, 0.0, "Clock");
 		for (size_t i = 0; i < 4; ++i) {
-			configInput(IN_INPUT + i, string::f("CV %zu", i + 1));
-			configOutput(OUT_OUTPUT + i, string::f("CV %zu", i + 1));
+			auto p1 = configInput(IN_INPUT + i, string::f("CV %zu", i + 1));
+			p1->description = "Use '<' operator to read voltage";
+			auto p2 = configOutput(OUT_OUTPUT + i, string::f("CV %zu", i + 1));
+			p2->description = "Use '>' operator to send voltage";
 		}
 		configInput(CLK_INPUT, "Clock");
 		configOutput(CLK_OUTPUT, "Clock");
@@ -147,7 +149,6 @@ struct AhabModule : Module {
 			if (simRunning) {
 				simRunning = false;
 				clockPhase = 0.0;
-				midiOutPort.reset();
 				sim->notifyTick();
 			}
 			else {
@@ -195,6 +196,24 @@ struct AhabModule : Module {
 
 	// Output callback from the simulator
 	void processEvents(const Oevent_list* olist) {
+		// Process scheduled note-offs (decrement by 1 tick)
+		for (auto it = midiScheduledNotes.begin(); it != midiScheduledNotes.end();) {	
+			if (it->remaining_ticks == 0) {
+				// Emit Note Off message
+ 				rack::midi::Message m;
+				m.setSize(3);
+				m.bytes[0] = ((0x8 & 0xf) << 4) | (it->channel & 0xf);
+				m.bytes[1] = it->note & 0x7f;
+				m.bytes[2] = 0;
+				sendMidiMessage(m);
+				it = midiScheduledNotes.erase(it);
+			} 
+			else {
+				--(it->remaining_ticks);
+				++it;
+			}
+		}
+
 		if (olist && olist->count > 0) {
 			for (Usz i = 0; i < olist->count; ++i) {
 				Oevent const* oe = &olist->buffer[i];
@@ -210,11 +229,11 @@ struct AhabModule : Module {
 						sendMidiMessage(m);
 						if (overwriteZeroNoteDuration && oe->midi_note.duration == 0) {
 							// Treat duration 0 as a short note (1 tick)
-							midiScheduledNotes.push_back({1, ch, m.bytes[1]});
+							midiScheduledNotes.push_back({0, ch, m.bytes[1]});
 						}
 						// schedule a note-off if duration > 0 (duration is 7 bits)
 						if (oe->midi_note.duration > 0) {
-							midiScheduledNotes.push_back({(Usz)oe->midi_note.duration, ch, m.bytes[1]});
+							midiScheduledNotes.push_back({(Usz)oe->midi_note.duration - 1, ch, m.bytes[1]});
 						}
 						break;
 					}
@@ -244,23 +263,6 @@ struct AhabModule : Module {
 						// OSC and UDP events are handled inside AhabSim::step()
 						break;
 				}
-			}
-		}
-
-		// Process scheduled note-offs (decrement by 1 tick)
-		for (auto it = midiScheduledNotes.begin(); it != midiScheduledNotes.end();) {	
-			if (it->remaining_ticks == 0) {
-				// Emit Note Off message
-				rack::midi::Message m;
-				m.setSize(3);
-				m.bytes[0] = ((0x8 & 0xf) << 4) | (it->channel & 0xf);
-				m.bytes[1] = it->note & 0x7f;
-				m.bytes[2] = 0;
-				sendMidiMessage(m);
-				it = midiScheduledNotes.erase(it);
-			} else {
-				--(it->remaining_ticks);
-				++it;
 			}
 		}
 
