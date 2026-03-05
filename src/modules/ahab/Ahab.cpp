@@ -2,6 +2,7 @@
 #include "../../pluginhelpers.hpp"
 #include "../../components/Knobs.hpp"
 #include "../../ui/InfoWindow.hpp"
+#include "../../ui/FocusMode.hpp"
 #include "orca_examples.hpp"
 #include "AhabSim.hpp"
 #include "AhabMidiDriver.hpp"
@@ -342,6 +343,7 @@ struct AhabSimWidget : OpaqueWidget {
 	math::Vec mouse_selection_start;
 	bool mouse_selecting = false;
 
+	FocusMode focusMode;
 	ui::Tooltip* tooltip = NULL;
 
 	// Temporary variables for field size changes
@@ -624,7 +626,7 @@ struct AhabSimWidget : OpaqueWidget {
 		OpaqueWidget::drawLayer(args, layer);
 		if (layer != 1) return; // only draw on main layer
 
-		if (APP->event->getSelectedWidget() == this) {
+		if (APP->event->getSelectedWidget() == this && !focusMode.active) {
 			// Draw keyboard focus highlight rectangle
 			nvgBeginPath(args.vg);
 			nvgRoundedRect(args.vg, -2.f, -2.f, box.size.x + 4.f, box.size.y + 4.f, 2.5f);
@@ -915,6 +917,15 @@ struct AhabSimWidget : OpaqueWidget {
 			return;
 		}
 
+		// Shift+Escape -> Exit focus mode
+		if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ESCAPE && (e.mods & RACK_MOD_MASK) == RACK_MOD_SHIFT) {
+			if (focusMode.active) {
+				focusMode.deactivate();
+			}
+			e.consume(this);
+			return;
+		}
+
 		// Escape -> Clear selection
 		if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ESCAPE) {
 			Usz cy, cx; renderer.getCursor(cy, cx);
@@ -1131,7 +1142,19 @@ struct AhabSimWidget : OpaqueWidget {
 		menu->addChild(createMenuItem("Zoom in", "", [this]() {
 			APP->scene->rackScroll->zoomToBound(Rect(parent->parent->box.pos + parent->box.pos, box.size).shrink(Vec(24.f, 24.f)));
 			APP->event->setSelectedWidget(this);
-		}));
+		}, focusMode.active));
+		menu->addChild(createMenuItem(focusMode.active ? "Exit focus mode" : "Focus mode", RACK_MOD_SHIFT_NAME "+Esc", 
+			[this]() {
+				if (focusMode.active) {
+					focusMode.deactivate();
+				} 
+				else {
+					APP->scene->rackScroll->zoomToBound(Rect(parent->parent->box.pos + parent->box.pos, box.size).grow(Vec(4.f, 4.f)));
+					focusMode.activate(this);
+				}
+				APP->event->setSelectedWidget(this);
+			}
+		));
 
 		menu->addChild(createSubmenuItem("Terminal", "", [this](ui::Menu* menu) {
 			fh = fh_ = module->sim->getFieldHeight();
