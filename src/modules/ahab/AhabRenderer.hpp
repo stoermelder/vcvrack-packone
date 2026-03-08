@@ -1,7 +1,7 @@
 #pragma once
 #include "../../plugin.hpp"
-#include "../../../dep/orca-c/field.h"
-#include "../../../dep/orca-c/gbuffer.h"
+#include "../../../orca-c/field.h"
+#include "../../../orca-c/gbuffer.h"
 #include <nanovg.h>
 
 namespace StoermelderPackOne {

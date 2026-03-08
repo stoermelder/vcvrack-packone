@@ -1,5 +1,5 @@
 extern "C" {
-	#include "../../../dep/orca-c/base.h"
+	#include "../../../orca-c/base.h"
 }
 
 namespace StoermelderPackOne {

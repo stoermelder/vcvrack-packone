@@ -2,13 +2,13 @@ RACK_DIR ?= ../..
 
 # Orca-c dependency
 ORCA_SOURCES = \
-	dep/orca-c/field.c \
-	dep/orca-c/gbuffer.c \
-	dep/orca-c/osc_out.c \
-	dep/orca-c/sim.c \
-	dep/orca-c/sysmisc.c \
-	dep/orca-c/vmio.c \
-	dep/orca-c/thirdparty/oso.c
+	orca-c/field.c \
+	orca-c/gbuffer.c \
+	orca-c/osc_out.c \
+	orca-c/sim.c \
+	orca-c/sysmisc.c \
+	orca-c/vmio.c \
+	orca-c/thirdparty/oso.c
 
 ORCA_GENERATED_HEADER := src/modules/ahab/orca_examples.hpp
 
