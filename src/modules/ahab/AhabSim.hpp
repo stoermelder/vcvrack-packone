@@ -10,11 +10,11 @@
 #include <dsp/ringbuffer.hpp>
 
 extern "C" {
-	#include "../../../dep/orca-c/field.h"
-	#include "../../../dep/orca-c/gbuffer.h"
-	#include "../../../dep/orca-c/vmio.h"
-	#include "../../../dep/orca-c/sim.h"
-	#include "../../../dep/orca-c/osc_out.h"
+	#include "../../../orca-c/field.h"
+	#include "../../../orca-c/gbuffer.h"
+	#include "../../../orca-c/vmio.h"
+	#include "../../../orca-c/sim.h"
+	#include "../../../orca-c/osc_out.h"
 }
 
 namespace StoermelderPackOne {

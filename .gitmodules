@@ -1,4 +1,5 @@
 [submodule "dep/orca-c"]
-	path = dep/orca-c
-	url = https://github.com/hundredrabbits/Orca-c.git
-	commit = 9df9786e2ad3c01955cdf4cdd5ae1fffad8fa5cc
+	path = orca-c
+	url = https://github.com/stoermelder/orca-c.git
+	branch = stoermelder-ahab
+	commit = 0675251617b419a3c25d0ccc2eb60f0775326613
