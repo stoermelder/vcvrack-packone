@@ -1,6 +1,6 @@
 {
 	"slug": "Stoermelder-P1",
-	"version": "2.2.0",
+	"version": "2.3.0",
 	"license": "GPL-3.0-or-later",
 	"author": "Benjamin Dill",
 	"name": "PackOne",
@@ -16,7 +16,7 @@
 		{
 			"slug": "Ahab",
 			"name": "AHAB",
-			"description": "A live programming environment for Orca, an esoteric programming language designed to quickly create procedural sequencers",
+			"description": "A live programming environment for ORCA, an esoteric programming language designed to quickly create procedural sequencers",
 			"tags": [
 				"Sequencer", 
 				"MIDI"
@@ -33,15 +33,6 @@
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/panicroom/PanicRoom.md"
 		},
 		{
-			"slug": "EightFaceMk2Ex",
-			"name": "+8",
-			"description": "Expander for 8FACE mk2",
-			"tags": [
-				"Expander"
-			],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/eightface/EightFaceMk2.md"
-		},
-		{
 			"slug": "EightFaceMk2",
 			"name": "8FACE mk2",
 			"description": "Universal expander for sequencing up to eight presets of multiple modules",
@@ -52,9 +43,18 @@
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/eightface/EightFaceMk2.md"
 		},
 		{
-			"slug": "EightFaceX2",
-			"name": "8FACEx2",
-			"description": "Universal expander for sequencing up to sixteen presets of any module",
+			"slug": "EightFaceMk2Ex",
+			"name": "+8",
+			"description": "Expander for 8FACE mk2",
+			"tags": [
+				"Expander"
+			],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/eightface/EightFaceMk2.md"
+		},
+		{
+			"slug": "EightFace",
+			"name": "8FACE",
+			"description": "Universal expander for sequencing up to eight presets of any module",
 			"tags": [
 				"Utility",
 				"Sequencer"
@@ -62,9 +62,9 @@
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/eightface/EightFace.md"
 		},
 		{
-			"slug": "EightFace",
-			"name": "8FACE",
-			"description": "Universal expander for sequencing up to eight presets of any module",
+			"slug": "EightFaceX2",
+			"name": "8FACEx2",
+			"description": "Universal expander for sequencing up to sixteen presets of any module",
 			"tags": [
 				"Utility",
 				"Sequencer"
@@ -159,21 +159,21 @@
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/cvmap/X4.md"
 		},
 		{
-			"slug": "TransitEx",
-			"name": "+T",
-			"description": "Expander for TRANSIT",
-			"tags": [
-				"Utility"
-			],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/transit/Transit.md"
-		},
-		{
 			"slug": "Transit",
 			"name": "TRANSIT",
 			"description": "Parameter-morpher and sequencer for up to 96 snapshots",
 			"tags": [
 				"Utility",
 				"Sequencer"
+			],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/transit/Transit.md"
+		},
+		{
+			"slug": "TransitEx",
+			"name": "+T",
+			"description": "Expander for TRANSIT",
+			"tags": [
+				"Utility"
 			],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/transit/Transit.md"
 		},
@@ -266,21 +266,21 @@
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/midi/MidiStep.md"
 		},
 		{
+			"slug": "Pile",
+			"name": "PILE",
+			"description": "Translate increment triggers or decrement triggers in an absolute voltage, especially useful with MIDI-STEP, with slew support",
+			"tags": [
+				"Utility"
+			],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/pile/Pile.md"
+		},
+		{
 			"slug": "PilePoly",
 			"name": "POLY-PILE",
 			"description": "Translate increment triggers or decrement triggers in an absolute voltage, especially useful with MIDI-STEP, with slew support",
 			"tags": [
 				"Utility",
 				"Polyphonic"
-			],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/pile/Pile.md"
-		},
-		{
-			"slug": "Pile",
-			"name": "PILE",
-			"description": "Translate increment triggers or decrement triggers in an absolute voltage, especially useful with MIDI-STEP, with slew support",
-			"tags": [
-				"Utility"
 			],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/pile/Pile.md"
 		},
@@ -292,6 +292,16 @@
 				"Utility"
 			],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/sail/Sail.md"
+		},
+		{
+			"slug": "Intermix",
+			"name": "INTERMIX",
+			"description": "Precision adder 8x8 switch matrix with scene-support",
+			"tags": [
+				"Mixer",
+				"Polyphonic"
+			],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/intermix/Intermix.md"
 		},
 		{
 			"slug": "IntermixFade",
@@ -319,16 +329,6 @@
 				"Expander"
 			],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/intermix/Intermix.md#gate-expander"
-		},
-		{
-			"slug": "Intermix",
-			"name": "INTERMIX",
-			"description": "Precision adder 8x8 switch matrix with scene-support",
-			"tags": [
-				"Mixer",
-				"Polyphonic"
-			],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/intermix/Intermix.md"
 		},
 		{
 			"slug": "Hive",
@@ -386,6 +386,26 @@
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/sipo/Sipo.md"
 		},
 		{
+			"slug": "MidiCatXl",
+			"name": "MIDI-CAT XL",
+			"description": "Mapping module for MIDI CCs and notes to parameters of any module, similar to VCV MIDI-MAP",
+			"tags": [
+				"Utility",
+				"MIDI"
+			],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/midicat/MidiCat.md"
+		},
+		{
+			"slug": "MidiCat",
+			"name": "MIDI-CAT",
+			"description": "Mapping module for MIDI CCs and notes to parameters of any module, similar to VCV MIDI-MAP",
+			"tags": [
+				"Utility",
+				"MIDI"
+			],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/midicat/MidiCat.md"
+		},
+		{
 			"slug": "MidiCatFine",
 			"name": "FINE for MIDI-CAT",
 			"description": "Expander for precision mode of MIDI-CAT",
@@ -424,26 +444,6 @@
 				"MIDI"
 			],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/midicat/MidiCat.md#mem-expander"
-		},
-		{
-			"slug": "MidiCatXl",
-			"name": "MIDI-CAT XL",
-			"description": "Mapping module for MIDI CCs and notes to parameters of any module, similar to VCV MIDI-MAP",
-			"tags": [
-				"Utility",
-				"MIDI"
-			],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/midicat/MidiCat.md"
-		},
-		{
-			"slug": "MidiCat",
-			"name": "MIDI-CAT",
-			"description": "Mapping module for MIDI CCs and notes to parameters of any module, similar to VCV MIDI-MAP",
-			"tags": [
-				"Utility",
-				"MIDI"
-			],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/midicat/MidiCat.md"
 		},
 		{
 			"slug": "StripPp",
@@ -549,15 +549,6 @@
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/cvmap/CVMapMicro.md"
 		},
 		{
-			"slug": "CVMapCtx",
-			"name": "CTX for CV-MAP",
-			"description": "Expander for context menu mapping using CV-MAP",
-			"tags": [
-				"Utility"
-			],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/cvmap/CVMap.md#ctx-expander"
-		},
-		{
 			"slug": "CVMap",
 			"name": "CV-MAP",
 			"description": "Add CV automation to 32 parameters of any module",
@@ -567,6 +558,15 @@
 				"Controller"
 			],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/cvmap/CVMap.md"
+		},
+		{
+			"slug": "CVMapCtx",
+			"name": "CTX for CV-MAP",
+			"description": "Expander for context menu mapping using CV-MAP",
+			"tags": [
+				"Utility"
+			],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/cvmap/CVMap.md#ctx-expander"
 		},
 		{
 			"slug": "Me",

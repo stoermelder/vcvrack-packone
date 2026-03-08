@@ -15,10 +15,11 @@ If you like my modules consider donating to https://paypal.me/stoermelder, but d
 
 ## The modules of PackOne
 
-- [AFFIX](./docs/affix/Affix.md), [µAFFIX](./docs/affix/Affix.md): inserts for polyphonic cables for adding offsets in volt, semitones or octaves
 - [4ROUNDS](./docs/fourrounds/FourRounds.md): randomizer for up to 16 input signals to create 15 output signals
 - [8FACE, 8FACEx2](./docs/eightface/EightFace.md): preset sequencer for eight or sixteen presets of any module working as an universal expander
 - [8FACE mk2, +8](./docs/eightface/EightFaceMk2.md): evolution and replacement for 8FACE and 8FACEx2
+- [AFFIX](./docs/affix/Affix.md), [µAFFIX](./docs/affix/Affix.md): inserts for polyphonic cables for adding offsets in volt, semitones or octaves
+- [AHAB](./docs/ahab/Ahab.md): A live programming environment for ORCA, an esoteric programming language designed to quickly create procedural sequencers
 - [ARENA](./docs/arena/Arena.md): 2-dimensional XY-Mixer for 8 sources with various modulation targets and fun graphical interface
 - [BOLT](./docs/bolt/Bolt.md): polyphonic CV-modulateable boolean functions
 - [CV-MAP](./docs/cvmap/CVMap.md): control 32 knobs/sliders/switches of any module by CV even when the module has no CV input
@@ -76,6 +77,7 @@ Feel free to contact me or create a GitHub issue if you have any problems or que
 - [Omri Cohen](https://omricohencomposer.bandcamp.com/) for his fabulous video tutorials and fun live streams
 - Andrew Belt for creating and developing VCV Rack
 - 4ms Company for creating and developing MetaModule
+- Hundredrabbits for creating and developing ORCA
 - All others who contributed ideas or made donations for the development of PackOne!
 
 ## Building
