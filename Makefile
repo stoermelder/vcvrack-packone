@@ -20,11 +20,6 @@ SOURCES := $(filter-out %.test.cpp,$(SOURCES))
 SOURCES += $(ORCA_SOURCES)
 
 
-orca-c:
-	mkdir -p dep/orca-c
-	git submodule update --init --recursive dep/orca-c
-	cd dep/orca-c && git apply ../../orca-c.diff
-
 # Creates a generated header embedding the ORCA example
 # files in `dep/orca-c/examples`. The header is regenerated when any example
 # file changes.
@@ -52,7 +47,6 @@ DISTRIBUTABLES += $(wildcard presets)
 
 # Dependencies
 DEP_LOCAL := dep
-DEPS += orca-c
 
 
 include $(RACK_DIR)/plugin.mk
