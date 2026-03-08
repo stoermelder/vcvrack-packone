@@ -56,7 +56,9 @@ struct SipoModule : Module {
 		configOutput(POLY_OUTPUT, "Polyphonic");
 
 		data = new float[MAX_DATA];
-		onReset();
+
+		Module::ResetEvent re;
+		onReset(re);
 	}
 
 	~SipoModule() {
@@ -67,12 +69,13 @@ struct SipoModule : Module {
 		lightDivider.setDivision(e.sampleRate / 100.f);
 	}
 
-	void onReset() override {
+	void onReset(const Module::ResetEvent& e) override {
 		dataPtr = 0;
 		dataUsed = 0;
 		for (int i = 0; i < MAX_DATA; i++) {
 			data[i] = 0.f;
 		}
+		Module::onReset(e);
 	}
 
 	void process(const ProcessArgs &args) override {

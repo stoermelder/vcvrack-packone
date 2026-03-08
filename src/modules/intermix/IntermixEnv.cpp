@@ -31,11 +31,14 @@ struct IntermixEnvModule : Module {
 		for (int i = 0; i < PORTS; i++) {
 			configOutput(OUTPUT + i, string::f("Envelope %i", i + 1));
 		}
-		onReset();
+
+		ResetEvent re;
+		onReset(re);
 	}
 
-	void onReset() override {
+	void onReset(const ResetEvent& e) override {
 		input = 0;
+		Module::onReset(e);
 	}
 
 	void process(const ProcessArgs& args) override {

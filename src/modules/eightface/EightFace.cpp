@@ -149,7 +149,10 @@ struct EightFaceModule : Module {
 		}
 
 		buttonDivider.setDivision(4);
-		onReset();
+
+		ResetEvent re;
+		onReset(re);
+
 		workerContext = contextGet();
 		worker = new std::thread(&EightFaceModule::processWorker, this);
 	}
@@ -172,7 +175,7 @@ struct EightFaceModule : Module {
 		lightDivider.setDivision(e.sampleRate / 100.f);
 	}
 
-	void onReset() override {
+	void onReset(const ResetEvent& e) override {
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			if (presetSlotUsed[i]) {
 				json_decref(presetSlot[i]);
@@ -193,6 +196,8 @@ struct EightFaceModule : Module {
 		moduleName = "";
 		connected = 0;
 		autoload = AUTOLOAD::OFF;
+
+		Module::onReset(e);
 	}
 
 	void process(const ProcessArgs& args) override {

@@ -1,5 +1,5 @@
 #pragma once
-#include "catch2/plugin.hpp"
+#include "test_plugin.hpp"
 #include <rack.hpp>
 #include <patch.hpp>
 #include <atomic>
@@ -56,11 +56,24 @@ struct TestContext {
 };
 
 
+static int64_t getModuleId() {
+	static std::atomic<int64_t> nextModuleId{1};
+	return nextModuleId.fetch_add(1, std::memory_order_acq_rel);
+}
+
+
+
 template <typename T>
 static T* createModule(std::string modelSlug) {
 	Model* model = pluginInstance->getModel(modelSlug);
 	T* m = dynamic_cast<T*>(model->createModule());
-	m->onSampleRateChange();
+	m->id = getModuleId();
+
+	Module::SampleRateChangeEvent e;
+	e.sampleRate = APP->engine->getSampleRate();
+	e.sampleTime = 1.0f / e.sampleRate;
+	m->onSampleRateChange(e);
+
 	return m;
 }
 
@@ -72,6 +85,14 @@ static void destroyModule(rack::Module* m) {
 template <typename T>
 static T* createWidget(Module* m) {
 	T* mw = dynamic_cast<T*>(m->model->createModuleWidget(m));
+	return mw;
+}
+
+// Creates a ModuleWidget, without a module, the same way as the module browser
+template <typename T>
+static T* createWidget(std::string modelSlug) {
+	Model* m = pluginInstance->getModel(modelSlug);
+	T* mw = dynamic_cast<T*>(m->createModuleWidget(NULL));
 	return mw;
 }
 
@@ -99,9 +120,9 @@ static void unregisterModule(rack::Module* m, rack::ModuleWidget* mw = nullptr) 
 	}
 }
 
-static const Module::ProcessArgs makeProcessArgs(int64_t frame) {
+static const Module::ProcessArgs makeProcessArgs(int64_t frame, float sampleRate = 44100.f) {
 	Module::ProcessArgs args;
-	args.sampleRate = 44100.0f;
+	args.sampleRate = sampleRate;
 	args.sampleTime = 1.0f / args.sampleRate;
 	args.frame = frame;
 	return args;

@@ -1,7 +1,7 @@
-#include "catch2/plugin.hpp"
-#include "test_context.hpp"
-#include "../modules/midi/MidiKey.cpp"
-#include "MidiKey.vcvm.h"
+#include "../../test/test_plugin.hpp"
+#include "../../test/test_context.hpp"
+#include "MidiKey.cpp"
+#include "MidiKey.vcvm.test.h"
 
 using namespace StoermelderPackOne;
 using namespace StoermelderPackOne::MidiKey;
@@ -13,9 +13,7 @@ struct SceneEx : rack::app::Scene {
 	}
 };
 
-// Define the single instance used by tests
-static Test::TestContext<SceneEx> testContext;
-
+Test::TestContext<SceneEx> testContext;
 
 
 TEST_CASE("Construction and initialization", "[MidiKey]") {
@@ -24,6 +22,7 @@ TEST_CASE("Construction and initialization", "[MidiKey]") {
 
 	Test::registerModule(m, mw);
 	Test::unregisterModule(m, mw);
+	Test::destroyModule(m);
 }
 
 TEST_CASE("Preset loading", "[MidiKey]") {
@@ -37,6 +36,7 @@ TEST_CASE("Preset loading", "[MidiKey]") {
 	json_decref(moduleJ);
 
 	Test::unregisterModule(m);
+	Test::destroyModule(m);
 }
 
 TEST_CASE("Map ID inversion", "[MidiKey]") {

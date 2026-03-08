@@ -137,14 +137,16 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XySeqModule<MIX_PORTS> {
 			configParam(MIX_X_PARAM + i, -1.f, 1.f, 0.f, string::f("Channel MIX-%i x-pos attenuverter", i + 1), "x");
 			configParam(MIX_Y_PARAM + i, -1.f, 1.f, 0.f, string::f("Channel MIX-%i y-pos attenuverter", i + 1), "x");
 		}
-		onReset();
+
+		ResetEvent re;
+		onReset(re);
 	}
 
 	void onSampleRateChange(const SampleRateChangeEvent& e) override {
 		lightDivider.setDivision(e.sampleRate / 100.f);
 	}
 
-	void onReset() override {
+	void onReset(const ResetEvent& e) override {
 		Sc::scResetSelection();
 		init();
 		for (size_t i = 0; i < IN_PORTS; i++) {
@@ -159,15 +161,15 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XySeqModule<MIX_PORTS> {
 		}
 		Sc::scReset();
 		Seq::seqReset();
-		Module::onReset();
+		Module::onReset(e);
 	}
 
-	void onRandomize() override {
+	void onRandomize(const RandomizeEvent& e) override {
 		Sc::scRandomizeAmountAll();
 		Sc::scRandomizeRadiusAll();
 		Sc::scRandomizeXAll();
 		Sc::scRandomizeYAll();
-		Module::onRandomize();
+		Module::onRandomize(e);
 	}
 
 	void init() {
@@ -440,7 +442,7 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XySeqModule<MIX_PORTS> {
 		if (type == 1) {
 			paramQuantities[MIX_X_POS + id]->getParam()->setValue(x);
 			mixXfilter[id].out = mixUiX[id] = x;
-			paramQuantities[MIX_X_POS + id]->getParam()->setValue(y);
+			paramQuantities[MIX_Y_POS + id]->getParam()->setValue(y);
 			mixYfilter[id].out = mixUiY[id] = y;
 		}
 	}

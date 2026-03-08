@@ -159,13 +159,15 @@ struct AffixModule : Module {
 			auto pq = configParam<AffixParamQuantity>(PARAM_MONO + i, -5.f, 5.f, 0.f, string::f("Channel %i", i + 1));
 			pq->module = this;
 		}
-		onReset();
+
+		ResetEvent re;
+		onReset(re);
 	}
 
-	void onReset() override {
+	void onReset(const ResetEvent& e) override {
 		paramMode = PARAM_MODE::VOLTAGE;
 		numberOfChannels = 0;
-		Module::onReset();
+		Module::onReset(e);
 	}
 
 	void process(const ProcessArgs& args) override {

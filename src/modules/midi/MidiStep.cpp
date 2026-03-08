@@ -71,10 +71,12 @@ struct MidiStepModule : Module {
 		}
 		outputInfos[OUTPUT_DEC]->description = outputInfos[OUTPUT_INC]->description = 
 			"Outputs polyphonic triggers if enabled on the context menu.";
-		onReset();
+
+		ResetEvent re;
+		onReset(re);
 	}
 
-	void onReset() override {
+	void onReset(const ResetEvent& e) override {
 		for (int i = 0; i < 128; i++) {
 			values[i] = 0;
 			ccs[i] = -1;
@@ -87,6 +89,7 @@ struct MidiStepModule : Module {
 		}
 		learningId = -1;
 		midiInput.reset();
+		Module::onReset(e);
 	}
 
 	void process(const ProcessArgs& args) override {

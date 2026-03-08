@@ -45,7 +45,10 @@ struct IntermixFadeModule : Module {
 		for (int i = 0; i < PORTS; i++) {
 			configParam(PARAM_FADE + i, 0.f, 15.f, 1.f, "Fade", "s");
 		}
-		onReset();
+
+		ResetEvent re;
+		onReset(re);
+
 		sceneDivider.setDivision(64);
 	}
 
@@ -53,9 +56,10 @@ struct IntermixFadeModule : Module {
 		lightDivider.setDivision(e.sampleRate / 100.f);
 	}
 
-	void onReset() override {
+	void onReset(const ResetEvent& e) override {
 		input = 0;
 		fade = FADE::INOUT;
+		Module::onReset(e);
 	}
 
 	void process(const ProcessArgs& args) override {

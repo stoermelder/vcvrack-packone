@@ -57,11 +57,13 @@ struct PilePolyModule : Module {
 		configOutput(OUTPUT, "Voltage");
 		configParam(PARAM_SLEW, 0.f, 5.f, 0.f, "Slew limiting", "s");
 		configParam(PARAM_STEP, 0.f, 5.f, 0.2f, "Stepsize", "V");
-		onReset();
+
+		Module::ResetEvent re;
+		onReset(re);
 	}
 
-	void onReset() override {
-		Module::onReset();
+	void onReset(const Module::ResetEvent& e) override {
+		Module::onReset(e);
 		range = RANGE::UNI_10V;
 		for (int i = 0; i < 4; i++) {
 			currentVoltage[i] = 0.f;

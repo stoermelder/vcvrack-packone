@@ -35,38 +35,37 @@ struct TransitExModule : TransitBase<NUM_PRESETS> {
 			pq->id = i;
 			BASE::presetButton[i].param = &Module::params[PARAM_PRESET + i];
 
-			BASE::slot[i].param = &Module::params[PARAM_PRESET + i];
-			BASE::slot[i].lights = &Module::lights[LIGHT_PRESET + i * 3];
-			BASE::slot[i].presetSlotUsed = &BASE::presetSlotUsed[i];
-			BASE::slot[i].preset = &BASE::preset[i];
-			BASE::slot[i].presetButton = &BASE::presetButton[i];
+			BASE::slot[i].owner = this;
+			BASE::slot[i].index = i;
+			BASE::slot[i].indexParam = PARAM_PRESET + i;
+			BASE::slot[i].indexLight = LIGHT_PRESET + i * 3;
 		}
 
-		onReset();
+		Module::ResetEvent re;
+		onReset(re);
 	}
 
 	void onExpanderChange(const Module::ExpanderChangeEvent& e) override {
 		notifyExpanderListeners("Transit");
 	}
 
-	void onReset() override {
+	void onReset(const Module::ResetEvent& e) override {
 		BASE::ctrlUniqueId = -1;
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			BASE::presetSlotUsed[i] = false;
 			BASE::textLabel[i] = "";
 			BASE::fadeTime[i] = -1.f;
 			BASE::preset[i].clear();
+			BASE::slotColorSet[i] = false;
+			BASE::slotColor[i] = color::WHITE;
 			BASE::lights[LIGHT_PRESET + (i * 3) + 0].setBrightness(0.f);
 			BASE::lights[LIGHT_PRESET + (i * 3) + 1].setBrightness(0.f);
 			BASE::lights[LIGHT_PRESET + (i * 3) + 2].setBrightness(0.f);
 		}
+		BASE::onReset(e);
     }
 
-	TransitSlot* transitSlot(int i) override {
-		return &BASE::slot[i];
-	}
-
-	int transitSlotCmd(SLOT_CMD cmd, int i) override {
+	int sendSlotCmd(SLOT_CMD cmd, int i) override {
 		// Retrieve module from scene as this is called from the GUI thread
 		ModuleWidget* mw =  APP->scene->rack->getModule(BASE::ctrlModuleId);
 		if (!mw) return -1;
@@ -74,7 +73,7 @@ struct TransitExModule : TransitBase<NUM_PRESETS> {
 		if (!m) return -1;
 		TransitBase<NUM_PRESETS>* tm = dynamic_cast<TransitBase<NUM_PRESETS>*>(m);
 		if (!tm) return -1;
-		return tm->transitSlotCmd(cmd, i + BASE::ctrlOffset * NUM_PRESETS);
+		return tm->sendSlotCmd(cmd, i + BASE::ctrlOffset * NUM_PRESETS);
 	}
 };
 

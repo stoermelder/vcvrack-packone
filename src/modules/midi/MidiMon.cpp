@@ -66,10 +66,12 @@ struct MidiMonModule : Module, MidiProcessorHandler {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		processDivider.setDivision(512);
 		midiProcessor.subscribe(this);
-		onReset();
+
+		ResetEvent re;
+		onReset(re);
 	}
 
-	void onReset() override {
+	void onReset(const ResetEvent& e) override {
 		showNoteMsg = true;
 		showKeyPressure = true;
 		showCcMsg = true;
@@ -84,10 +86,10 @@ struct MidiMonModule : Module, MidiProcessorHandler {
 		showSystemMsg = true;
 
 		logTimestampReset();
-		Module::onReset();
+		Module::onReset(e);
 	}
 
-	void onSampleRateChange() override {
+	void onSampleRateChange(const SampleRateChangeEvent& e) override {
 		if (isProcessing) {
 			logTimestampReset();
 		}

@@ -24,12 +24,17 @@ void Settings::saveToJson() {
 	json_object_set(settingsJ, "stripDirVcvss", json_string(stripDirVcvss.c_str()));
 	json_object_set(settingsJ, "stripDirVcvs", json_string(stripDirVcvs.c_str()));
 
+	json_object_set(settingsJ, "ahabInfo", json_boolean(ahabInfo));
+	json_object_set(settingsJ, "ahabMidiVirtualEnabled", json_boolean(ahabMidiVirtualEnabled));
+
+#ifndef TESTING
 	std::string settingsFilename = rack::asset::user("Stoermelder-P1.json");
 	FILE* file = fopen(settingsFilename.c_str(), "w");
 	if (file) {
 		json_dumpf(settingsJ, file, JSON_INDENT(2) | JSON_REAL_PRECISION(9));
 		fclose(file);
 	}
+#endif
 	json_decref(settingsJ);
 }
 
@@ -79,6 +84,11 @@ void Settings::readFromJson() {
 	if (stripDirVcvssJ) stripDirVcvss = json_string_value(stripDirVcvssJ);
 	json_t* stripDirVcvsJ = json_object_get(settingsJ, "stripDirVcvs");
 	if (stripDirVcvsJ) stripDirVcvs = json_string_value(stripDirVcvsJ);
+
+	json_t* ahabInfoJ = json_object_get(settingsJ, "ahabInfo");
+	if (ahabInfoJ) ahabInfo = json_boolean_value(ahabInfoJ);
+	json_t* ahabMidiVirtualEnabledJ = json_object_get(settingsJ, "ahabMidiVirtualEnabled");
+	if (ahabMidiVirtualEnabledJ) ahabMidiVirtualEnabled = json_boolean_value(ahabMidiVirtualEnabledJ);
 
 	fclose(file);
 	json_decref(settingsJ);

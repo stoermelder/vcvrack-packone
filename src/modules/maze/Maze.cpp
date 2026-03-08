@@ -146,7 +146,9 @@ struct MazeModule : Module {
 		inputInfos[SHIFT_L_INPUT]->description = "Shifts all cursors to the left according to their current moving direction.";
 		configInput(SHIFT_R_INPUT, "Shift right");
 		inputInfos[SHIFT_R_INPUT]->description = "Shifts all cursors to the right according to their current moving direction.";
-		onReset();
+
+		ResetEvent re;
+		onReset(re);
 	}
 
 	~MazeModule() {
@@ -159,7 +161,7 @@ struct MazeModule : Module {
 		lightDivider.setDivision(e.sampleRate / 100.f);
 	}
 
-	void onReset() override {
+	void onReset(const ResetEvent& e) override {
 		gridClear();
 		for (int i = 0; i < NUM_PORTS; i++) {
 			xPos[i] = xStartPos[i] = 0;
@@ -175,7 +177,7 @@ struct MazeModule : Module {
 
 		normalizePorts = true;
 		gridDirty = true;
-		Module::onReset();
+		Module::onReset(e);
 	}
 
 	void process(const ProcessArgs& args) override {

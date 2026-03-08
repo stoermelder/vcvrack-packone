@@ -1,0 +1,4 @@
+[submodule "dep/orca-c"]
+	path = dep/orca-c
+	url = https://github.com/hundredrabbits/Orca-c.git
+	commit = 9df9786e2ad3c01955cdf4cdd5ae1fffad8fa5cc

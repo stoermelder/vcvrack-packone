@@ -154,14 +154,16 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 		configParam(PARAM_FADEIN, 0.f, 4.f, 0.f, "Fade in", "s");
 		configParam(PARAM_FADEOUT, 0.f, 4.f, 0.f, "Fade out", "s");
 		sceneDivider.setDivision(64);
-		onReset();
+
+		ResetEvent re;
+		onReset(re);
 	}
 
 	void onSampleRateChange(const SampleRateChangeEvent& e) override {
 		lightDivider.setDivision(e.sampleRate / 100.f);
 	}
 	
-	void onReset() override {
+	void onReset(const ResetEvent& e) override {
 		padBrightness = 0.75f;
 		inputVisualize = false;
 		outputClamp = true;
@@ -182,11 +184,11 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 		sceneCount = SCENE_MAX;
 		sceneLock = false;
 		sceneSet(0);
-		Module::onReset();
+		Module::onReset(e);
 	}
 
 #ifndef METAMODULE
-	void onRemove() override {
+	void onRemove(const Module::RemoveEvent& e) override {
 		// hack for clearing the module-pointers on the expander-chain
 		Module* m = this;
 		while (m) {
@@ -195,6 +197,7 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 			m->rightExpander.consumerMessage = NULL;
 			m = m->rightExpander.module;
 		}
+		Module::onRemove(e);
 	}
 #endif
 
