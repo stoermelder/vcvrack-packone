@@ -1,3 +1,10 @@
+## 2.3.1
+
+### Changes and Fixes
+
+- Module [STRIP](./docs/strip/Strip.md)
+    - Fixed changed behavior on excluded/included parameters for randomization introduced in v2.3.0
+
 ## 2.3.0
 
 ### New modules

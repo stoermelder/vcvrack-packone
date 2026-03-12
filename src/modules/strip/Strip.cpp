@@ -320,8 +320,8 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 					}
 				}
 				if (!randomParamsOnly) {
-					RandomizeEvent re;
-					mNext->onRandomize(re);
+					// Note: onRandomize() and onRandomize(e) behave differently by default
+					mNext->onRandomize();
 				}
 
 				m = mNext;
@@ -354,8 +354,8 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 					}
 				}
 				if (!randomParamsOnly) {
-					RandomizeEvent re;
-					mNext->onRandomize(re);
+					// Note: onRandomize() and onRandomize(e) behave differently by default
+					mNext->onRandomize();
 				}
 
 				m = mNext;
