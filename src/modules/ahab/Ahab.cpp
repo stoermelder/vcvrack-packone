@@ -54,8 +54,8 @@ struct AhabModule : Module {
 	float clockPhase = 0.0f;  // Phase accumulator for timing
 
 	// Scheduled note-offs (handled on simulator tick)
-	struct ScheduledNote { Usz remaining_ticks; uint8_t channel; uint8_t note; };
-	std::vector<ScheduledNote> midiScheduledNotes;
+	struct ScheduledOff { Usz remaining_ticks; uint8_t channel; uint8_t note; };
+	std::vector<ScheduledOff> scheduledOffs;
 
 	/** [Stored to JSON] */
 	int midiVirtualPortId = 0;
@@ -103,7 +103,7 @@ struct AhabModule : Module {
 		sim = new AhabSim();
 		sim->setDspTickCallback(std::bind(&AhabModule::processEvents, this, std::placeholders::_1));
 		sim->setDspInputReader(std::bind(&AhabModule::readDspInput, this, std::placeholders::_1));
-		sim->setDspOutputWriter(std::bind(&AhabModule::writeDspOutput, this, std::placeholders::_1, std::placeholders::_2));
+		sim->setDspOutputWriter(std::bind(&AhabModule::writeDspOutput, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
 		
 		ResetEvent e;
 		onReset(e);
@@ -124,7 +124,7 @@ struct AhabModule : Module {
 		midiOutEnabled = true;
 		midiOutPort.reset();
 		midiCcOffset = 64;
-		midiScheduledNotes.clear();
+		scheduledOffs.clear();
 
 		overwriteZeroNoteDuration = true;
 
@@ -198,16 +198,23 @@ struct AhabModule : Module {
 	// Output callback from the simulator
 	void processEvents(const Oevent_list* olist) {
 		// Process scheduled note-offs (decrement by 1 tick)
-		for (auto it = midiScheduledNotes.begin(); it != midiScheduledNotes.end();) {	
+		for (auto it = scheduledOffs.begin(); it != scheduledOffs.end();) {	
 			if (it->remaining_ticks == 0) {
-				// Emit Note Off message
- 				rack::midi::Message m;
-				m.setSize(3);
-				m.bytes[0] = ((0x8 & 0xf) << 4) | (it->channel & 0xf);
-				m.bytes[1] = it->note & 0x7f;
-				m.bytes[2] = 0;
-				sendMidiMessage(m);
-				it = midiScheduledNotes.erase(it);
+				// MIDI note off
+				if (it->note < 255) {
+					// Emit Note Off message
+					rack::midi::Message m;
+					m.setSize(3);
+					m.bytes[0] = ((0x8 & 0xf) << 4) | (it->channel & 0xf);
+					m.bytes[1] = it->note & 0x7f;
+					m.bytes[2] = 0;
+					sendMidiMessage(m);
+				}
+				// CV gate end
+				else {
+					outputs[OUT_OUTPUT + it->channel].setVoltage(0.f);
+				}
+				it = scheduledOffs.erase(it);
 			} 
 			else {
 				--(it->remaining_ticks);
@@ -230,11 +237,11 @@ struct AhabModule : Module {
 						sendMidiMessage(m);
 						if (overwriteZeroNoteDuration && oe->midi_note.duration == 0) {
 							// Treat duration 0 as a short note (1 tick)
-							midiScheduledNotes.push_back({0, ch, m.bytes[1]});
+							scheduledOffs.push_back({0, ch, m.bytes[1]});
 						}
 						// schedule a note-off if duration > 0 (duration is 7 bits)
 						if (oe->midi_note.duration > 0) {
-							midiScheduledNotes.push_back({(Usz)oe->midi_note.duration - 1, ch, m.bytes[1]});
+							scheduledOffs.push_back({(Usz)oe->midi_note.duration - 1, ch, m.bytes[1]});
 						}
 						break;
 					}
@@ -290,10 +297,13 @@ struct AhabModule : Module {
 	}
 
 	// Output callback from the simulator, it tied to operator '>'
-	void writeDspOutput(size_t port_num, float value) {
+	void writeDspOutput(size_t port_num, float value, int gateTicks = 0) {
 		if (port_num > 3) port_num = 3;
 		int id = OUT_OUTPUT + (int)port_num;
 		outputs[id].setVoltage(value);
+		if (gateTicks > 0) {
+			scheduledOffs.push_back({(Usz)gateTicks, (uint8_t)port_num, (uint8_t)255});
+		}
 	}
 
 	json_t* dataToJson() override {
@@ -598,7 +608,7 @@ struct AhabSimWidget : OpaqueWidget {
 				{'Z', "  ←1: rate\n  →1: target\n  ↓1: output"},
 				{'*', "  (bangs neighbors)"},
 				{'<', "  →1: min\n  →2: port number (1-4 / a-d)\n  →3: max\n  ↓1: output"},
-				{'>', "  →1: port number (1-4 / a-d)\n  →2: min / octave\n  →3: val / note\n  →4: max"}
+				{'>', "cv mode\n  →1: port number (1-4)\n  →2: min\n  →3: val\n  →4: max\nnote mode\n  →1: port number (a-d)\n  →2: octave\n  →3: note\n  →4: gate length"}
 			};
 			auto pit = portInfos.find(g);
 			if (pit != portInfos.end()) {

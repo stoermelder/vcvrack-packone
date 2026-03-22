@@ -1,8 +1,9 @@
-## 2.3.2
+## 2.4.0
 
 ### Changes and Fixes
 
 - Module [AHAB](./docs/ahab/Ahab.md)
+    - Added gate length as a parameter for operator `>` in note mode (#420)
     - Fixed crash on operator `<` when using whithout maximum value set (#425)
 
 ## 2.3.1

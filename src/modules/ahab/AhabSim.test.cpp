@@ -78,51 +78,74 @@ TEST_CASE("Op vcvin with missing max defaults to 35 #425", "[AhabSim]") {
 
 TEST_CASE("Op vcvout ports 1-4 write scaled voltages", "[AhabSim]") {
 	AhabSim sim;
-	size_t out_port = 99; float out_voltage = 0.0f;
+	size_t out_port = 99; float out_voltage = 0.0f; int out_gate_ticks = -1;
 	void* ptr = (void*)sim.getEvents();
-	sim.setDspOutputWriter([&](size_t p, float v){ out_port = p; out_voltage = v;});
+	sim.setDspOutputWriter([&](size_t p, float v, int g){ out_port = p; out_voltage = v; out_gate_ticks = g; });
 
 	// Clamp value=35 in range [0,35] -> voltage should be 10.0f
 	custom_vcvout(ptr, 1, 0, 35, 35);
 	REQUIRE(out_port == 0);
 	REQUIRE(out_voltage == Approx(10.0f));
+	REQUIRE(out_gate_ticks == 0);
 
 	// Test mid value: value=20 in range [10,30] -> voltage should be 5v
 	custom_vcvout(ptr, 2, 10, 30, 20);
 	REQUIRE(out_port == 1);
 	REQUIRE(out_voltage == Approx(5.0f));
+	REQUIRE(out_gate_ticks == 0);
 
 	// Test lower bound: value=0 in range [5,25] -> voltage should be 0v
 	custom_vcvout(ptr, 3, 5, 25, 0);
 	REQUIRE(out_port == 2);
 	REQUIRE(out_voltage == Approx(0.0f));
+	REQUIRE(out_gate_ticks == 0);
 
 	// Test upper bound: value=20 in range [5,15] -> voltage should be 10v
 	custom_vcvout(ptr, 4, 5, 15, 20);
 	REQUIRE(out_port == 3);
 	REQUIRE(out_voltage == Approx(10.0f));
+	REQUIRE(out_gate_ticks == 0);
 }
 
 TEST_CASE("Op vcvout ports A-D write v/oct conversion", "[AhabSim]") {
 	AhabSim sim;
-	size_t out_port = 99; float out_voltage = 0.0f;
+	size_t out_port = 99; float out_voltage = 0.0f; int out_gate_ticks = -1;
 	void* ptr = (void*)sim.getEvents();
-	sim.setDspOutputWriter([&](size_t p, float v){ out_port = p; out_voltage = v; });
+	sim.setDspOutputWriter([&](size_t p, float v, int g){ out_port = p; out_voltage = v; out_gate_ticks = g; });
 	
 	// Letter port A (10) -> port 0. For a=1, value=3 -> (3 + 1*12)/12 = 1.25
-	custom_vcvout(ptr, 10, 1, 0, 3);
+	custom_vcvout(ptr, 10, 1, 4, 3);
 	REQUIRE(out_port == 0);
 	REQUIRE(out_voltage == Approx(1.f + 3 * 1.f / 12.f));
+	REQUIRE(out_gate_ticks == 4);
 
 	// Letter port B (11) -> port 1. For a=0, value=0 -> (0 + 0*12)/12 = 0.0
-	custom_vcvout(ptr, 11, 0, 0, 0);
+	custom_vcvout(ptr, 11, 0, 7, 0);
 	REQUIRE(out_port == 1);
 	REQUIRE(out_voltage == Approx(0.0f));
+	REQUIRE(out_gate_ticks == 7);
 
 	// Letter port C (12) -> port 2. For a=2, value=6 -> (6 + 2*12)/12 = 2.5
-	custom_vcvout(ptr, 12, 2, 0, 12);
+	custom_vcvout(ptr, 12, 2, 9, 12);
 	REQUIRE(out_port == 2);
 	REQUIRE(out_voltage == Approx(3.f));
+	REQUIRE(out_gate_ticks == 9);
+}
+
+TEST_CASE("Op vcvout letter-port gate length uses b parameter", "[AhabSim]") {
+	AhabSim sim;
+	size_t out_port = 99;
+	float out_voltage = 0.0f;
+	int out_gate_ticks = -1;
+	void* ptr = (void*)sim.getEvents();
+	sim.setDspOutputWriter([&](size_t p, float v, int g){ out_port = p; out_voltage = v; out_gate_ticks = g; });
+
+	// Letter port D (13) -> output port index 3.
+	// a = octave, b = gate ticks.
+	custom_vcvout(ptr, 13, 3, 11, 6);
+	REQUIRE(out_port == 3);
+	REQUIRE(out_voltage == Approx((6.f + 36.f) / 12.f));
+	REQUIRE(out_gate_ticks == 11);
 }
 
 
