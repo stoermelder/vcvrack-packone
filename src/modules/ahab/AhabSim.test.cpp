@@ -50,6 +50,32 @@ TEST_CASE("Op vcvin ports A-D map to semitone mod12", "[AhabSim]") {
 	REQUIRE(custom_vcvin(ptr, 13, 0, 0) == 0);
 }
 
+TEST_CASE("Op vcvin with missing max defaults to 35 #425", "[AhabSim]") {
+	AhabSim sim;
+
+	// Set port 1 to full-scale 10V to exercise 0-35 mapping.
+	sim.setDspInputReader([](size_t p){ return 10.0f; });
+
+	Usz out_h, out_w;
+	REQUIRE(sim.loadRectFromOrcaRequest(".<.1..\n.*....", 0, 0, out_h, out_w, true) == true);
+	REQUIRE(out_h == 2);
+	REQUIRE(out_w == 6);
+	// Apply the loaded field
+	sim.process();
+
+	// Execute one simulation tick (requires step request/process cycle)
+	sim.stepRequest();
+	sim.process();
+
+	// The operator should interpret missing max as 35, giving output value 35 -> 'z'
+	Usz h, w;
+	sim.getDisplayBuffer(h, w);
+	REQUIRE(h == 2);
+	REQUIRE(w == 6);
+	Glyph const* buffer = sim.getFieldBuffer();
+	REQUIRE(buffer[1 * w + 1] == 'z');
+}
+
 TEST_CASE("Op vcvout ports 1-4 write scaled voltages", "[AhabSim]") {
 	AhabSim sim;
 	size_t out_port = 99; float out_voltage = 0.0f;
