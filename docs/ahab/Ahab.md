@@ -101,3 +101,5 @@ Features missing in AHAB compared to ORCA:
 
 - v2.3.0
     - Initial release of AHAB
+- v2.3.2
+    - Fixed crash on operator `<` when using whithout maximum value set (#425)

@@ -1,3 +1,10 @@
+## 2.3.2
+
+### Changes and Fixes
+
+- Module [AHAB](./docs/ahab/Ahab.md)
+    - Fixed crash on operator `<` when using whithout maximum value set (#425)
+
 ## 2.3.1
 
 ### Changes and Fixes
