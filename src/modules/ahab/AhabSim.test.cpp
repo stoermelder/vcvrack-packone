@@ -658,3 +658,61 @@ TEST_CASE("Clipping behavior for paste outside bounds", "[AhabSim]") {
 	REQUIRE(buffer[4 * w + 3] == 'F');
 	REQUIRE(buffer[4 * w + 4] == 'G');
 }
+
+
+TEST_CASE("Successive E bang separation #426", "[AhabSim]") {
+	AhabSim sim;
+	
+	// Use a wide row to allow E operators to propagate.
+	sim.setFieldSizeRequest(1, 10, false);
+	sim.process();
+	Usz h, w;
+	sim.getDisplayBuffer(h, w);
+	REQUIRE(h == 1);
+	REQUIRE(w == 10);
+	Glyph const* buffer = sim.getFieldBuffer();
+
+	// First E injection at the left edge
+	sim.setGlyphRequest(0, 9, '#', Mark_flag_input, false);
+	sim.setGlyphRequest(0, 0, 'E', Mark_flag_input, false);
+	sim.process();
+	REQUIRE(buffer[0] == 'E');
+	REQUIRE(buffer[9] == '#');
+
+	// Advance two ticks so this E moves to x=2
+	for (int i = 0; i < 2; ++i) {
+		sim.stepRequest();
+		sim.process();
+	}
+	REQUIRE(buffer[2] == 'E');
+	REQUIRE(buffer[0] == '.'); // Original position should be cleared
+	REQUIRE(buffer[9] == '#'); // Should still be there
+
+	// Insert a second E at the origin and watch both move with separation.
+	sim.setGlyphRequest(0, 0, 'E', Mark_flag_input, false);
+	sim.process();
+	REQUIRE(buffer[0] == 'E');
+
+	// Step enough ticks to get the two E's at positions 6 and 8.
+	for (int i = 0; i < 6; ++i) {
+		sim.stepRequest();
+		sim.process();
+	}
+	REQUIRE(buffer[6] == 'E');
+	REQUIRE(buffer[8] == 'E');
+
+	// Next step should move them forward.
+	sim.stepRequest();
+	sim.process();
+	REQUIRE(buffer[6] == '.'); // Previous positions should be cleared
+	REQUIRE(buffer[7] == 'E'); // First E should have moved to 7
+	REQUIRE(buffer[8] == '*'); // Verify bang appears at expected location
+
+	sim.stepRequest();
+	sim.process();
+	// The bang of the first E triggers the bang of the second E. This behavior
+	// seems not to be consistent across different implementations of ORCA. For 
+	// now, we are testing how it behaves in ORCA-C and ORCA (JS).
+	REQUIRE(buffer[7] == '*');
+	REQUIRE(buffer[8] == '.');
+}
