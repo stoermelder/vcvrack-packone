@@ -11,7 +11,6 @@ namespace v1 {
 extern float modelBoxZoom;
 extern int modelBoxSort;
 extern bool hideBrands;
-extern bool searchDescriptions;
 
 struct BrowserSidebar : widget::Widget {
 	ui::TextField* searchField;

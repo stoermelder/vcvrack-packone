@@ -4,11 +4,40 @@
 #include "Mb_v2.hpp"
 #include "Mb_v06.hpp"
 #include <osdialog.h>
+#include <tag.hpp>
 #include <chrono>
 #include <thread>
 
 namespace StoermelderPackOne {
 namespace Mb {
+
+fuzzysearch::Database<plugin::Model*> modelDb;
+bool searchDescriptions = false;
+
+void modelDbInit() {
+	modelDb = fuzzysearch::Database<plugin::Model*>();
+	modelDb.setWeights({0.9f, 0.75f, 1.0f, 0.8f, 0.9f});
+	modelDb.setThreshold(0.5f);
+	for (plugin::Plugin* p : rack::plugin::plugins) {
+		for (plugin::Model* model : p->models) {
+			std::string tagStr;
+			for (int tagId : model->tagIds) {
+				for (const std::string& alias : rack::tag::tagAliases[tagId]) {
+					tagStr += alias;
+					tagStr += " ";
+				}
+			}
+			std::vector<std::string> fields = {
+				model->plugin->brand,
+				model->plugin->name,
+				model->name,
+				searchDescriptions ? model->description : "",
+				tagStr,
+			};
+			modelDb.addEntry(model, fields);
+		}
+	}
+}
 
 std::set<Model*> favoriteModels;
 std::set<Model*> hiddenModels;
@@ -215,8 +244,9 @@ BrowserOverlay::BrowserOverlay() {
 	v1::modelBoxZoom = pluginSettings.mbV1zoom;
 	v1::modelBoxSort = pluginSettings.mbV1sort;
 	v1::hideBrands = pluginSettings.mbV1hideBrands;
-	v1::searchDescriptions = pluginSettings.mbV1searchDescriptions;
+	searchDescriptions = pluginSettings.mbV1searchDescriptions;
 	moduleBrowserFromJson(pluginSettings.mbModelsJ);
+	modelDbInit();
 
 	mbWidgetBackup = APP->scene->browser;
 	mbWidgetBackup->hide();
@@ -266,7 +296,7 @@ BrowserOverlay::~BrowserOverlay() {
 	pluginSettings.mbV1zoom = v1::modelBoxZoom;
 	pluginSettings.mbV1sort = v1::modelBoxSort;
 	pluginSettings.mbV1hideBrands = v1::hideBrands;
-	pluginSettings.mbV1searchDescriptions = v1::searchDescriptions;
+	pluginSettings.mbV1searchDescriptions = searchDescriptions;
 	json_decref(pluginSettings.mbModelsJ);
 	pluginSettings.mbModelsJ = moduleBrowserToJson();
 	
@@ -395,13 +425,6 @@ struct MbWidget : ModuleWidget {
 	void appendContextMenu(Menu* menu) override {
 		MbModule* module = dynamic_cast<MbModule*>(this->module);
 
-		struct ManualItem : MenuItem {
-			void onAction(const event::Action& e) override {
-				std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Mb.md");
-				t.detach();
-			}
-		};
-
 		struct ModeV06Item : MenuItem {
 			MbModule* module;
 			void onAction(const event::Action& e) override {
@@ -409,17 +432,6 @@ struct MbWidget : ModuleWidget {
 			}
 			void step() override {
 				rightText = module->mode == MODE::V06 ? "✔" : "";
-				MenuItem::step();
-			}
-		};
-
-		struct ModeV2Item : MenuItem {
-			MbModule* module;
-			void onAction(const event::Action& e) override {
-				module->mode = MODE::V2;
-			}
-			void step() override {
-				rightText = module->mode == MODE::V2 ? "✔" : "";
 				MenuItem::step();
 			}
 		};
@@ -434,66 +446,47 @@ struct MbWidget : ModuleWidget {
 				MenuItem::step();
 			}
 
-			struct HideBrandsItem : MenuItem {
-				void onAction(const event::Action& e) override {
-					v1::hideBrands ^= true;
-				}
-				void step() override {
-					rightText = v1::hideBrands ? "✔" : "";
-					MenuItem::step();
-				}
-			};
-
-			struct SearchDescriptionsItem : MenuItem {
-				void onAction(const event::Action& e) override {
-					v1::searchDescriptions ^= true;
-				}
-				void step() override {
-					rightText = v1::searchDescriptions ? "✔" : "";
-					MenuItem::step();
-				}
-			};
-
 			Menu* createChildMenu() override {
 				Menu* menu = new Menu;
 				menu->addChild(Rack::createPtrSlider(&v1::modelBoxZoom, PREVIEW_MIN, PREVIEW_MAX, 0.9f, "Preview", "", 100.f, 180.0f));
-				menu->addChild(construct<HideBrandsItem>(&MenuItem::text, "Hide brand list"));
-				menu->addChild(construct<SearchDescriptionsItem>(&MenuItem::text, "Search descriptions"));
+				menu->addChild(createBoolPtrMenuItem("Hide brand list", "", &v1::hideBrands));
+				menu->addChild(createCheckMenuItem("Search descriptions", "",
+					[]() { return searchDescriptions; },
+					[]() { searchDescriptions ^= true; modelDbInit(); }
+				));
 				return menu;
 			}
 		};
 
-		struct ExportItem : MenuItem {
-			MbWidget* mw;
+		struct ModeV2Item : MenuItem {
+			MbModule* module;
 			void onAction(const event::Action& e) override {
-				mw->exportSettingsDialog();
+				module->mode = MODE::V2;
+			}
+			void step() override {
+				rightText = module->mode == MODE::V2 ? "✔" : "";
+				MenuItem::step();
+			}
+
+			Menu* createChildMenu() override {
+				Menu* menu = new Menu;
+				menu->addChild(createCheckMenuItem("Search descriptions", "",
+					[]() { return searchDescriptions; },
+					[]() { searchDescriptions ^= true; modelDbInit(); }
+				));
+				return menu;
 			}
 		};
 
-		struct ImportItem : MenuItem {
-			MbWidget* mw;
-			void onAction(const event::Action& e) override {
-				mw->importSettingsDialog();
-			}
-		};
-
-		struct ResetUsageDataItem : MenuItem {
-			void onAction(const event::Action& e) override {
-				modelUsageReset();
-			}
-		};
-
-		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<ModeV06Item>(&MenuItem::text, "v0.6", &ModeV06Item::module, module));
 		menu->addChild(construct<ModeV1Item>(&MenuItem::text, "v1 mod", &ModeV1Item::module, module));
 		menu->addChild(construct<ModeV2Item>(&MenuItem::text, "v2 mod", &ModeV2Item::module, module));
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<ExportItem>(&MenuItem::text, "Export favorites & hidden", &ExportItem::mw, this));
-		menu->addChild(construct<ImportItem>(&MenuItem::text, "Import favorites & hidden", &ImportItem::mw, this));
+		menu->addChild(createMenuItem("Export settings", "", [&]() { this->exportSettingsDialog(); }));
+		menu->addChild(createMenuItem("Import settings", "", [&]() { this->importSettingsDialog(); }));
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<ResetUsageDataItem>(&MenuItem::text, "Reset usage data"));
+		menu->addChild(createMenuItem("Reset usage data", "", []() { modelUsageReset(); }));
 	}
 
 	void exportSettings(std::string filename) {

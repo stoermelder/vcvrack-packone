@@ -1,6 +1,7 @@
 #pragma once
 #include "../../plugin.hpp"
 #include <plugin.hpp>
+#include <FuzzySearchDatabase.hpp>
 
 namespace StoermelderPackOne {
 namespace Mb {
@@ -30,6 +31,11 @@ void customTagRemove(Model* model, const std::string& tag);
 bool customTagHas(Model* model, const std::string& tag);
 std::set<std::string> customTagsForModel(Model* model);
 std::set<std::string> customTagsAll();
+
+// Shared fuzzy search database — initialized once by BrowserOverlay, re-initialized when searchDescriptions changes
+extern fuzzysearch::Database<plugin::Model*> modelDb;
+extern bool searchDescriptions;
+void modelDbInit();
 
 
 // Browser overlay

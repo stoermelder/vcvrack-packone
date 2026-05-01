@@ -1,7 +1,6 @@
 #include "Mb_v1.hpp"
 #include <tag.hpp>
 #include <thread>
-#include <FuzzySearchDatabase.hpp>
 
 namespace StoermelderPackOne {
 namespace Mb {
@@ -19,43 +18,9 @@ enum class ModuleBrowserSort {
 float modelBoxZoom = 0.9f;
 int modelBoxSort = (int)ModuleBrowserSort::FUZZY_SEARCH_SCORE;
 bool hideBrands = false;
-bool searchDescriptions = false;
 
 
 // Static functions
-
-static fuzzysearch::Database<plugin::Model*> modelDb;
-
-static bool modelDbInitialized = false;
-static bool modelDbSearchDescriptions = false;
-
-static void modelDbInit() {
-	modelDb = fuzzysearch::Database<plugin::Model*>();
-	modelDb.setWeights({0.9f, 0.75f, 1.0f, 0.8f, 0.9f});
-	modelDb.setThreshold(0.5f);
-
-	for (plugin::Plugin* plugin : rack::plugin::plugins) {
-		for (plugin::Model* model : plugin->models) {
-			std::string tagStr;
-			for (int tagId : model->tagIds) {
-				for (const std::string& alias : rack::tag::tagAliases[tagId]) {
-					tagStr += alias;
-					tagStr += " ";
-				}
-			}
-			std::vector<std::string> fields = {
-				model->plugin->brand,
-				model->plugin->name,
-				model->name,
-				searchDescriptions ? model->description : "",
-				tagStr,
-			};
-			modelDb.addEntry(model, fields);
-		}
-	}
-	modelDbInitialized = true;
-	modelDbSearchDescriptions = searchDescriptions;
-}
 
 static bool isModelVisible(plugin::Model* model, const bool& favourite, const std::string& brand, const std::set<int>& tagId, const std::set<std::string>& customTagFilter, const bool& hidden) {
 	// Filter favorite
@@ -915,11 +880,6 @@ void ModuleBrowser::refresh(bool resetScroll) {
 	if (resetScroll) {
 		// Reset scroll position
 		modelScroll->offset = math::Vec();
-	}
-
-	// Reinitialize fuzzy search database if needed
-	if (!modelDbInitialized || modelDbSearchDescriptions != searchDescriptions) {
-		modelDbInit();
 	}
 
 	// Compute search scores via fuzzy database

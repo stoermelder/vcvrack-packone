@@ -2,7 +2,6 @@
 #include <tag.hpp>
 #include <settings.hpp>
 #include <componentlibrary.hpp>
-#include <FuzzySearchDatabase.hpp>
 #include <thread>
 #include <algorithm>
 #include <numeric>
@@ -10,35 +9,6 @@
 namespace StoermelderPackOne {
 namespace Mb {
 namespace v2 {
-
-static fuzzysearch::Database<plugin::Model*> modelDb;
-static bool modelDbInitialized = false;
-
-static void modelDbInit() {
-	modelDb = fuzzysearch::Database<plugin::Model*>();
-	modelDb.setWeights({0.9f, 0.75f, 1.0f, 0.8f, 0.9f});
-	modelDb.setThreshold(0.5f);
-	for (plugin::Plugin* p : rack::plugin::plugins) {
-		for (plugin::Model* model : p->models) {
-			std::string tagStr;
-			for (int tagId : model->tagIds) {
-				for (const std::string& alias : rack::tag::tagAliases[tagId]) {
-					tagStr += alias;
-					tagStr += " ";
-				}
-			}
-			std::vector<std::string> fields = {
-				model->plugin->brand,
-				model->plugin->name,
-				model->name,
-				model->description,
-				tagStr,
-			};
-			modelDb.addEntry(model, fields);
-		}
-	}
-	modelDbInitialized = true;
-}
 
 static ModuleWidget* chooseModel(plugin::Model* model) {
 	engine::Module* addedModule = model->createModule();
@@ -1047,9 +1017,6 @@ void ModuleBrowser::refresh() {
 		}
 	}
 	else {
-		if (!modelDbInitialized)
-			modelDbInit();
-
 		auto results = modelDb.search(search);
 		for (auto& result : results)
 			prefilteredModelScores[result.key] = result.score;
