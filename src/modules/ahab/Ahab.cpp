@@ -615,8 +615,8 @@ struct AhabSimWidget : OpaqueWidget {
 				{'Y', "  ←1: val\n  →1: output"},
 				{'Z', "  ←1: rate\n  →1: target\n  ↓1: output"},
 				{'*', "  (bangs neighbors)"},
-				{'<', "  →1: min\n  →2: port number (1-4 / a-d)\n  →3: max\n  ↓1: output"},
-				{'>', "cv mode\n  →1: port number (1-4)\n  →2: min\n  →3: val\n  →4: max\nnote mode\n  →1: port number (a-d)\n  →2: octave\n  →3: note\n  →4: gate length"}
+				{'<', "  →1: min\n  →2: port number (1-4 for cv mode / a-d for v/oct mode)\n  →3: max\n  ↓1: output"},
+				{'>', "cv mode\n  →1: port number (1-4)\n  →2: min\n  →3: val\n  →4: max\nv/oct mode\n  →1: port number (a-d)\n  →2: octave\n  →3: note\n  →4: gate length"}
 			};
 			auto pit = portInfos.find(g);
 			if (pit != portInfos.end()) {
