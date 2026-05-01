@@ -103,4 +103,4 @@ jobs:
           draft: false
           prerelease: true
           files: |
-            _artifacts/**/*.vcvplugin
+            _artifacts/**/*.mmplugin
