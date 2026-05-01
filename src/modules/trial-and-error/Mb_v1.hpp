@@ -17,6 +17,9 @@ struct BrowserSidebar : widget::Widget {
 	ui::TextField* searchField;
 	ui::Button* clearButton;
 	ui::List* favoriteList;
+	ui::Label* customTagLabel;
+	ui::List* customTagList;
+	ui::ScrollWidget* customTagScroll;
 	ui::Label* tagLabel;
 	ui::List* tagList;
 	ui::ScrollWidget* tagScroll;
@@ -26,6 +29,7 @@ struct BrowserSidebar : widget::Widget {
 
 	BrowserSidebar();
 	void step() override;
+	void refreshCustomTagList();
 };
 
 struct ModuleBrowser : widget::OpaqueWidget {
@@ -41,6 +45,7 @@ struct ModuleBrowser : widget::OpaqueWidget {
 	bool favorites;
 	std::string brand;
 	std::set<int> tagId;
+	std::set<std::string> customTagFilter;
 	bool hidden;
 	std::set<int> emptyTagId;
 

@@ -12,6 +12,41 @@ namespace Mb {
 std::set<Model*> favoriteModels;
 std::set<Model*> hiddenModels;
 std::map<Model*, ModelUsage*> modelUsage;
+std::map<std::string, std::set<Model*>> customTagModels;
+
+void customTagAdd(Model* model, const std::string& tag) {
+	customTagModels[tag].insert(model);
+}
+
+void customTagRemove(Model* model, const std::string& tag) {
+	auto it = customTagModels.find(tag);
+	if (it == customTagModels.end()) return;
+	it->second.erase(model);
+	if (it->second.empty())
+		customTagModels.erase(it);
+}
+
+bool customTagHas(Model* model, const std::string& tag) {
+	auto it = customTagModels.find(tag);
+	if (it == customTagModels.end()) return false;
+	return it->second.find(model) != it->second.end();
+}
+
+std::set<std::string> customTagsForModel(Model* model) {
+	std::set<std::string> result;
+	for (auto& pair : customTagModels) {
+		if (pair.second.find(model) != pair.second.end())
+			result.insert(pair.first);
+	}
+	return result;
+}
+
+std::set<std::string> customTagsAll() {
+	std::set<std::string> result;
+	for (auto& pair : customTagModels)
+		result.insert(pair.first);
+	return result;
+}
 
 // JSON storage
 
@@ -35,6 +70,19 @@ json_t* moduleBrowserToJson(bool includeUsageData) {
 		json_array_append_new(hiddenJ, slugJ);
 	}
 	json_object_set_new(rootJ, "hidden", hiddenJ);
+
+	json_t* customTagsJ = json_object();
+	for (auto& pair : customTagModels) {
+		json_t* modelsJ = json_array();
+		for (Model* model : pair.second) {
+			json_t* slugJ = json_object();
+			json_object_set_new(slugJ, "plugin", json_string(model->plugin->slug.c_str()));
+			json_object_set_new(slugJ, "model", json_string(model->slug.c_str()));
+			json_array_append_new(modelsJ, slugJ);
+		}
+		json_object_set_new(customTagsJ, pair.first.c_str(), modelsJ);
+	}
+	json_object_set_new(rootJ, "customTags", customTagsJ);
 
 	if (includeUsageData) {
 		json_t* usageJ = json_array();
@@ -88,6 +136,27 @@ void moduleBrowserFromJson(json_t* rootJ) {
 			if (!model)
 				continue;
 			hiddenModels.insert(model);
+		}
+	}
+
+	json_t* customTagsJ = json_object_get(rootJ, "customTags");
+	if (customTagsJ) {
+		customTagModels.clear();
+		const char* tagName;
+		json_t* modelsJ;
+		json_object_foreach(customTagsJ, tagName, modelsJ) {
+			size_t i;
+			json_t* slugJ;
+			json_array_foreach(modelsJ, i, slugJ) {
+				json_t* pluginJ = json_object_get(slugJ, "plugin");
+				json_t* modelJ = json_object_get(slugJ, "model");
+				if (!pluginJ || !modelJ) continue;
+				std::string pluginSlug = json_string_value(pluginJ);
+				std::string modelSlug = json_string_value(modelJ);
+				Model* model = plugin::getModel(pluginSlug, modelSlug);
+				if (!model) continue;
+				customTagModels[tagName].insert(model);
+			}
 		}
 	}
 

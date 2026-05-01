@@ -7,6 +7,7 @@
     - Added reset input for tick counter (#429)
     - Fixed crash on operator `<` when using whithout maximum value set (#425)
 - Module [MB](./docs/trial-and-error/Mb.md)
+    - Added custom tags for used-defined module grouping
     - Added fuzzy search to v1 browser (similar to the default module browser)
     - Fixed broken "Favorite" category
 

@@ -23,6 +23,13 @@ void moduleBrowserFromJson(json_t* rootJ);
 extern std::set<Model*> favoriteModels;
 extern std::set<Model*> hiddenModels;
 extern std::map<Model*, ModelUsage*> modelUsage;
+extern std::map<std::string, std::set<Model*>> customTagModels;
+
+void customTagAdd(Model* model, const std::string& tag);
+void customTagRemove(Model* model, const std::string& tag);
+bool customTagHas(Model* model, const std::string& tag);
+std::set<std::string> customTagsForModel(Model* model);
+std::set<std::string> customTagsAll();
 
 
 // Browser overlay

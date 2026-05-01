@@ -57,7 +57,7 @@ static void modelDbInit() {
 	modelDbSearchDescriptions = searchDescriptions;
 }
 
-static bool isModelVisible(plugin::Model* model, const bool& favourite, const std::string& brand, const std::set<int>& tagId, const bool& hidden) {
+static bool isModelVisible(plugin::Model* model, const bool& favourite, const std::string& brand, const std::set<int>& tagId, const std::set<std::string>& customTagFilter, const bool& hidden) {
 	// Filter favorite
 	if (favourite) {
 		auto it = favoriteModels.find(model);
@@ -71,13 +71,17 @@ static bool isModelVisible(plugin::Model* model, const bool& favourite, const st
 			return false;
 	}
 
-	// Filter tag
-	if (tagId.size() > 0) {
-			for (auto t : tagId) {
-			auto it = std::find(model->tagIds.begin(), model->tagIds.end(), t);
-			if (it == model->tagIds.end())
-				return false;
-		}
+	// Filter built-in tags (AND: model must have all selected tags)
+	for (auto t : tagId) {
+		auto it = std::find(model->tagIds.begin(), model->tagIds.end(), t);
+		if (it == model->tagIds.end())
+			return false;
+	}
+
+	// Filter custom tags (AND: model must have all selected custom tags)
+	for (const auto& ct : customTagFilter) {
+		if (!customTagHas(model, ct))
+			return false;
 	}
 
 	// Filter hidden
@@ -356,6 +360,82 @@ struct ModelBox : widget::OpaqueWidget {
 		if (m) menu->addChild(new MenuSeparator);
 		menu->addChild(new FavoriteModelItem(model));
 		menu->addChild(new HiddenModelItem(model));
+
+		menu->addChild(new MenuSeparator);
+		menu->addChild(createMenuLabel("Custom Tags"));
+
+		struct NewCustomTagField : ui::TextField {
+			plugin::Model* model;
+
+			void onSelectKey(const event::SelectKey& e) override {
+				if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
+					std::string tag = string::trim(text);
+					if (!tag.empty()) {
+						// Use existing tag if one matches case-insensitively
+						for (const auto& existing : customTagsAll()) {
+							if (string::lowercase(existing) == string::lowercase(tag)) {
+								tag = existing;
+								break;
+							}
+						}
+						customTagAdd(model, tag);
+						ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
+						if (browser) {
+							browser->sidebar->refreshCustomTagList();
+							browser->refresh(false);
+						}
+					}
+					ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
+					if (overlay) overlay->requestDelete();
+					e.consume(this);
+					return;
+				}
+				if (!e.getTarget())
+					ui::TextField::onSelectKey(e);
+			}
+		};
+
+		struct ToggleCustomTagItem : MenuItem {
+			plugin::Model* model;
+			std::string tagName;
+
+			void onAction(const event::Action& e) override {
+				if (customTagHas(model, tagName)) {
+					customTagRemove(model, tagName);
+				}
+				else {
+					customTagAdd(model, tagName);
+				}
+				ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
+				if (browser) {
+					browser->sidebar->refreshCustomTagList();
+					browser->refresh(false);
+				}
+			}
+
+			void step() override {
+				rightText = CHECKMARK(customTagHas(model, tagName));
+				MenuItem::step();
+			}
+		};
+
+		NewCustomTagField* ntf = new NewCustomTagField;
+		ntf->box.size.x = 150.f;
+		ntf->placeholder = "New tag...";
+		ntf->model = model;
+		menu->addChild(ntf);
+		APP->event->setSelectedWidget(ntf);
+
+		auto allTags = customTagsAll();
+		if (!allTags.empty()) {
+			for (const auto& tag : allTags) {
+				ToggleCustomTagItem* item = new ToggleCustomTagItem;
+				item->text = tag;
+				item->model = model;
+				item->tagName = tag;
+				menu->addChild(item);
+			}
+		}
 	}
 
 	void onHoverKey(const event::HoverKey& e) override {
@@ -504,13 +584,35 @@ struct TagItem : ui::MenuItem {
 		rightText = CHECKMARK(browser->tagId.find(tagId) != browser->tagId.end());
 	}
 };
+
+
+struct CustomTagItem : ui::MenuItem {
+	std::string tagName;
+	void onAction(const event::Action& e) override {
+		ModuleBrowser* browser = getAncestorOfType<ModuleBrowser>();
+		if (browser->customTagFilter.find(tagName) != browser->customTagFilter.end())
+			browser->customTagFilter.erase(tagName);
+		else
+			browser->customTagFilter.insert(tagName);
+		browser->refresh(true);
+	}
+	void step() override {
+		ModuleBrowser* browser = getAncestorOfType<ModuleBrowser>();
+		if (browser) {
+			rightText = CHECKMARK(browser->customTagFilter.find(tagName) != browser->customTagFilter.end());
+		}
+		MenuItem::step();
+	}
 };
 
 
 struct BrowserSearchField : ui::TextField {
 	void step() override {
-		// Steal focus when step is called
-		APP->event->setSelectedWidget(this);
+		// Steal focus, but yield to any other TextField that has it
+		widget::Widget* selected = APP->event->getSelectedWidget();
+		if (!selected || !dynamic_cast<ui::TextField*>(selected)) {
+			APP->event->setSelectedWidget(this);
+		}
 		TextField::step();
 	}
 
@@ -618,6 +720,19 @@ BrowserSidebar::BrowserSidebar() {
 	favoriteItem->text = "Favorites";
 	favoriteList->addChild(favoriteItem);
 
+	// Custom tag label
+	customTagLabel = new ui::Label;
+	customTagLabel->color = nvgRGB(0x80, 0x80, 0x80);
+	customTagLabel->text = "Custom Tags";
+	addChild(customTagLabel);
+
+	// Custom tag list
+	customTagScroll = new ui::ScrollWidget;
+	addChild(customTagScroll);
+
+	customTagList = new ui::List;
+	customTagScroll->container->addChild(customTagList);
+
 	// Tag label
 	tagLabel = new ui::Label;
 	// tagLabel->fontSize = 16;
@@ -674,10 +789,28 @@ void BrowserSidebar::step() {
 	favoriteList->box.pos = clearButton->box.getBottomLeft();
 	favoriteList->box.size.x = box.size.x;
 
-	float listHeight = hideBrands ? box.size.y : (box.size.y - favoriteList->box.getBottom()) / 2;
-	listHeight = std::floor(listHeight);
+	bool hasCustomTags = !customTagList->children.empty();
+	customTagLabel->visible = hasCustomTags;
+	customTagScroll->visible = hasCustomTags;
 
-	tagLabel->box.pos = favoriteList->box.getBottomLeft();
+	// Divide remaining sidebar height equally among visible list sections
+	int numSections = (hasCustomTags ? 1 : 0) + 1 + (hideBrands ? 0 : 1);
+	float remainingHeight = box.size.y - favoriteList->box.getBottom();
+	float listHeight = std::floor(remainingHeight / numSections);
+
+	widget::Widget* anchor = favoriteList;
+
+	if (hasCustomTags) {
+		customTagLabel->box.pos = anchor->box.getBottomLeft();
+		customTagLabel->box.size.x = box.size.x;
+		customTagScroll->box.pos = customTagLabel->box.getBottomLeft();
+		customTagScroll->box.size.x = box.size.x;
+		customTagList->box.size.x = customTagScroll->box.size.x;
+		customTagScroll->box.size.y = listHeight - customTagLabel->box.size.y;
+		anchor = customTagScroll;
+	}
+
+	tagLabel->box.pos = anchor->box.getBottomLeft();
 	tagLabel->box.size.x = box.size.x;
 	tagScroll->box.pos = tagLabel->box.getBottomLeft();
 	tagScroll->box.size.x = box.size.x;
@@ -698,6 +831,16 @@ void BrowserSidebar::step() {
 	brandList->visible = !hideBrands;
 
 	Widget::step();
+}
+
+void BrowserSidebar::refreshCustomTagList() {
+	customTagList->clearChildren();
+	for (const auto& tag : customTagsAll()) {
+		CustomTagItem* item = new CustomTagItem;
+		item->text = tag;
+		item->tagName = tag;
+		customTagList->addChild(item);
+	}
 }
 
 
@@ -792,7 +935,7 @@ void ModuleBrowser::refresh(bool resetScroll) {
 	for (Widget* w : modelContainer->children) {
 		ModelBox* m = dynamic_cast<ModelBox*>(w);
 		assert(m);
-		bool visible = isModelVisible(m->model, favorites, brand, tagId, hidden);
+		bool visible = isModelVisible(m->model, favorites, brand, tagId, customTagFilter, hidden);
 		if (visible && !search.empty()) {
 			visible = searchScores.find(m->model) != searchScores.end();
 		}
@@ -881,7 +1024,7 @@ void ModuleBrowser::refresh(bool resetScroll) {
 	for (Widget* w : modelContainer->children) {
 		ModelBox* m = dynamic_cast<ModelBox*>(w);
 		assert(m);
-		if (!isModelVisible(m->model, favorites, "", emptyTagId, hidden))
+		if (!isModelVisible(m->model, favorites, "", emptyTagId, customTagFilter, hidden))
 			continue;
 		if (!search.empty() && searchScores.find(m->model) == searchScores.end())
 			continue;
@@ -892,7 +1035,7 @@ void ModuleBrowser::refresh(bool resetScroll) {
 		std::set<int> tagIdp1 = tagId;
 		if (itemTagId >= 0) tagIdp1.insert(itemTagId);
 		for (plugin::Model* model : filteredModels) {
-			if (isModelVisible(model, favorites, brand, tagIdp1, hidden))
+			if (isModelVisible(model, favorites, brand, tagIdp1, customTagFilter, hidden))
 				return true;
 		}
 		return false;
@@ -936,11 +1079,13 @@ void ModuleBrowser::clear(bool keepSearch) {
 	favorites = false;
 	brand = "";
 	tagId.clear();
+	customTagFilter.clear();
 	hidden = false;
 	refresh(true);
 }
 
 void ModuleBrowser::onShow(const event::Show& e) {
+	sidebar->refreshCustomTagList();
 	refresh(false);
 	OpaqueWidget::onShow(e);
 }
