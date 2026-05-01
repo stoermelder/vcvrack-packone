@@ -8,6 +8,7 @@
     - Fixed crash on operator `<` when using whithout maximum value set (#425)
 - Module [MB](./docs/trial-and-error/Mb.md)
     - Added fuzzy search to v1 browser (similar to the default module browser)
+    - Fixed broken "Favorite" category
 
 ## 2.3.1
 

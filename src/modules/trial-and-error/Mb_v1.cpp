@@ -466,7 +466,7 @@ struct FavoriteItem : ui::MenuItem {
 	void step() override {
 		MenuItem::step();
 		ModuleBrowser* browser = getAncestorOfType<ModuleBrowser>();
-		disabled = !browser->favorites;
+		rightText = CHECKMARK(browser->favorites);
 	}
 };
 
