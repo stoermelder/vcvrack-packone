@@ -1,12 +1,14 @@
 #include "Mb_v1.hpp"
 #include <tag.hpp>
 #include <thread>
+#include <FuzzySearchDatabase.hpp>
 
 namespace StoermelderPackOne {
 namespace Mb {
 namespace v1 {
 
 enum class ModuleBrowserSort {
+	FUZZY_SEARCH_SCORE = -1,
 	DEFAULT = 0,
 	NAME = 1,
 	LAST_USED = 2,
@@ -15,55 +17,47 @@ enum class ModuleBrowserSort {
 };
 
 float modelBoxZoom = 0.9f;
-int modelBoxSort = (int)ModuleBrowserSort::DEFAULT;
+int modelBoxSort = (int)ModuleBrowserSort::FUZZY_SEARCH_SCORE;
 bool hideBrands = false;
 bool searchDescriptions = false;
 
 
 // Static functions
 
-static float fuzzyScore(const std::string& s, const std::string& query) {
-	size_t pos = s.find(query);
-	if (pos == std::string::npos)
-		return 0.f;
+static fuzzysearch::Database<plugin::Model*> modelDb;
 
-	return (float)(query.size() + 1) / (s.size() + 1);
-}
+static bool modelDbInitialized = false;
+static bool modelDbSearchDescriptions = false;
 
-static float modelScore(plugin::Model* model, const std::string& search) {
-	if (search.empty())
-		return 1.f;
-	std::string s;
-	s += model->plugin->brand;
-	s += " ";
-	s += model->plugin->name;
-	s += " ";
-	s += model->name;
-	s += " ";
-	s += model->slug;
-	for (int tagId : model->tagIds) {
-		// Add all aliases of a tag
-		for (const std::string& alias : rack::tag::tagAliases[tagId]) {
-			s += " ";
-			s += alias;
+static void modelDbInit() {
+	modelDb = fuzzysearch::Database<plugin::Model*>();
+	modelDb.setWeights({0.9f, 0.75f, 1.0f, 0.8f, 0.9f});
+	modelDb.setThreshold(0.5f);
+
+	for (plugin::Plugin* plugin : rack::plugin::plugins) {
+		for (plugin::Model* model : plugin->models) {
+			std::string tagStr;
+			for (int tagId : model->tagIds) {
+				for (const std::string& alias : rack::tag::tagAliases[tagId]) {
+					tagStr += alias;
+					tagStr += " ";
+				}
+			}
+			std::vector<std::string> fields = {
+				model->plugin->brand,
+				model->plugin->name,
+				model->name,
+				searchDescriptions ? model->description : "",
+				tagStr,
+			};
+			modelDb.addEntry(model, fields);
 		}
 	}
-	if (searchDescriptions) {
-		s += " ";
-		s += model->description;
-	}
-	float score = fuzzyScore(string::lowercase(s), string::lowercase(search));
-	return score;
+	modelDbInitialized = true;
+	modelDbSearchDescriptions = searchDescriptions;
 }
 
-static bool isModelVisible(plugin::Model* model, const std::string& search, const bool& favourite, const std::string& brand, const std::set<int>& tagId, const bool& hidden) {
-	// Filter search query
-	if (search != "") {
-		float score = modelScore(model, search);
-		if (score <= 0.f)
-			return false;
-	}
-
+static bool isModelVisible(plugin::Model* model, const bool& favourite, const std::string& brand, const std::set<int>& tagId, const bool& hidden) {
 	// Filter favorite
 	if (favourite) {
 		auto it = favoriteModels.find(model);
@@ -435,6 +429,7 @@ struct SortChoice : ui::ChoiceButton {
 			}
 		};
 
+		menu->addChild(construct<SortItem>(&MenuItem::text, "Search score", &SortItem::sort, ModuleBrowserSort::FUZZY_SEARCH_SCORE));
 		menu->addChild(construct<SortItem>(&MenuItem::text, "Recently updated", &SortItem::sort, ModuleBrowserSort::DEFAULT));
 		menu->addChild(construct<SortItem>(&MenuItem::text, "Last used", &SortItem::sort, ModuleBrowserSort::LAST_USED));
 		menu->addChild(construct<SortItem>(&MenuItem::text, "Most used", &SortItem::sort, ModuleBrowserSort::MOST_USED));
@@ -444,6 +439,8 @@ struct SortChoice : ui::ChoiceButton {
 
 	void step() override {
 		switch ((ModuleBrowserSort)modelBoxSort) {
+			case ModuleBrowserSort::FUZZY_SEARCH_SCORE:
+				text = "Search score"; break;
 			case ModuleBrowserSort::DEFAULT:
 				text = "Recently updated"; break;
 			case ModuleBrowserSort::LAST_USED:
@@ -780,15 +777,43 @@ void ModuleBrowser::refresh(bool resetScroll) {
 		modelScroll->offset = math::Vec();
 	}
 
+	// Reinitialize fuzzy search database if needed
+	if (!modelDbInitialized || modelDbSearchDescriptions != searchDescriptions) {
+		modelDbInit();
+	}
+
+	// Compute search scores via fuzzy database
+	std::map<plugin::Model*, float> searchScores;
+	if (!search.empty()) {
+		auto results = modelDb.search(search);
+		for (auto& result : results) {
+			searchScores[result.key] = result.score;
+		}
+	}
+
 	// Filter ModelBoxes
 	for (Widget* w : modelContainer->children) {
 		ModelBox* m = dynamic_cast<ModelBox*>(w);
 		assert(m);
-		m->visible = isModelVisible(m->model, search, favorites, brand, tagId, hidden);
+		bool visible = isModelVisible(m->model, favorites, brand, tagId, hidden);
+		if (visible && !search.empty()) {
+			visible = searchScores.find(m->model) != searchScores.end();
+		}
+		m->visible = visible;
 		if (hidden && m->visible) m->modelHidden = isModelHidden(m->model);
 	}
 
 	// Sort ModelBoxes
+	auto sortFuzzySearchScore = [&](Widget* w1, Widget* w2) {
+		ModelBox* m1 = dynamic_cast<ModelBox*>(w1);
+		ModelBox* m2 = dynamic_cast<ModelBox*>(w2);
+		auto it1 = searchScores.find(m1->model);
+		auto it2 = searchScores.find(m2->model);
+		float s1 = (it1 != searchScores.end()) ? it1->second : 0.f;
+		float s2 = (it2 != searchScores.end()) ? it2->second : 0.f;
+		return s1 > s2;
+	};
+
 	auto sortDefault = [&](Widget* w1, Widget* w2) {
 		ModelBox* m1 = dynamic_cast<ModelBox*>(w1);
 		ModelBox* m2 = dynamic_cast<ModelBox*>(w2);
@@ -829,6 +854,11 @@ void ModuleBrowser::refresh(bool resetScroll) {
 	};
 
 	switch ((ModuleBrowserSort)modelBoxSort) {
+		case ModuleBrowserSort::FUZZY_SEARCH_SCORE:
+			if (!search.empty()) {
+				modelContainer->children.sort(sortFuzzySearchScore);
+				break;
+			}
 		case ModuleBrowserSort::DEFAULT:
 			modelContainer->children.sort(sortDefault);
 			break;
@@ -848,36 +878,24 @@ void ModuleBrowser::refresh(bool resetScroll) {
 			modelContainer->children.swap(s);
 			break;
 	}
-	
 
-	if (!search.empty()) {
-		std::map<Widget*, float> scores;
-		// Compute scores
-		for (Widget* w : modelContainer->children) {
-			ModelBox* m = dynamic_cast<ModelBox*>(w);
-			assert(m);
-			if (!m->visible)
-				continue;
-			scores[m] = modelScore(m->model, search);
-		}
-	}
-
-	// Filter the brand and tag lists
-
-	// Get modules that would be filtered by just the search query
+	// Get modules passing search + favorites + hidden (without brand/tag filter)
 	std::vector<plugin::Model*> filteredModels;
 	for (Widget* w : modelContainer->children) {
 		ModelBox* m = dynamic_cast<ModelBox*>(w);
 		assert(m);
-		if (isModelVisible(m->model, search, favorites, "", emptyTagId, hidden))
-			filteredModels.push_back(m->model);
+		if (!isModelVisible(m->model, favorites, "", emptyTagId, hidden))
+			continue;
+		if (!search.empty() && searchScores.find(m->model) == searchScores.end())
+			continue;
+		filteredModels.push_back(m->model);
 	}
 
 	auto hasModel = [&](const std::string& brand, int itemTagId = -1) -> bool {
 		std::set<int> tagIdp1 = tagId;
 		if (itemTagId >= 0) tagIdp1.insert(itemTagId);
 		for (plugin::Model* model : filteredModels) {
-			if (isModelVisible(model, "", favorites, brand, tagIdp1, hidden))
+			if (isModelVisible(model, favorites, brand, tagIdp1, hidden))
 				return true;
 		}
 		return false;
