@@ -100,7 +100,10 @@ jobs:
         with:
           name: Nightly-MetaModule
           tag_name: Nightly-MetaModule
+          target_commitish: v2-dev
           draft: false
           prerelease: true
+          body: |
+            This build is automatically generated.
           files: |
             _artifacts/**/*.mmplugin
