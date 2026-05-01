@@ -103,4 +103,5 @@ Features missing in AHAB compared to ORCA:
     - Initial release of AHAB
 - v2.4.0
     - Added gate length as a parameter for operator `>` in note mode (#420)
+    - Added reset input for tick counter (#429)
     - Fixed crash on operator `<` when using whithout maximum value set (#425)

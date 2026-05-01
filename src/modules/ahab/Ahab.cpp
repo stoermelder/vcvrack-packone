@@ -27,6 +27,7 @@ struct AhabModule : Module {
 	enum InputIds {
 		CLK_INPUT,
 		ENUMS(IN_INPUT, 4),
+		RESET_INPUT,
 		NUM_INPUTS
 	};
 	enum OutputIds {
@@ -82,6 +83,7 @@ struct AhabModule : Module {
 	dsp::SchmittTrigger clkInDisconnectTrigger;
 	dsp::SchmittTrigger clkInTrigger;
 	dsp::PulseGenerator clkPulseGen;
+	dsp::SchmittTrigger resetTrigger;
 
 	dsp::ClockDivider lightDivider;
 
@@ -98,6 +100,7 @@ struct AhabModule : Module {
 			p2->description = "Use '>' operator to send voltage";
 		}
 		configInput(CLK_INPUT, "Clock");
+		configInput(RESET_INPUT, "Reset");
 		configOutput(CLK_OUTPUT, "Clock");
 	
 		sim = new AhabSim();
@@ -171,6 +174,11 @@ struct AhabModule : Module {
 		if (simRunning && clkInTrigger.process(inputs[CLK_INPUT].getVoltage())) {
 			sim->step();
 			clockPhase = 0.0;  // Reset phase on external clock
+		}
+
+		// Reset input
+		if (resetTrigger.process(inputs[RESET_INPUT].getVoltage())) {
+			sim->resetTickNumber();
 		}
 
 		// Auto-advance simulation based on BPM when running and no external clock
@@ -1424,21 +1432,22 @@ struct AhabWidget : ThemedModuleWidget<AhabModule> {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
 		addChild(createInputCentered<StoermelderPort>(math::Vec(22.5f, 67.9f), module, AhabModule::CLK_INPUT));
-		addChild(createInputCentered<StoermelderPort>(math::Vec(22.5f, 225.2f), module, AhabModule::IN_INPUT + 0));
-		addChild(createInputCentered<StoermelderPort>(math::Vec(22.5f, 258.9f), module, AhabModule::IN_INPUT + 1));
-		addChild(createInputCentered<StoermelderPort>(math::Vec(22.5f, 292.5f), module, AhabModule::IN_INPUT + 2));
+		addChild(createInputCentered<StoermelderPort>(math::Vec(22.5f, 112.9f), module, AhabModule::RESET_INPUT));
+		addChild(createInputCentered<StoermelderPort>(math::Vec(22.5f, 228.3f), module, AhabModule::IN_INPUT + 0));
+		addChild(createInputCentered<StoermelderPort>(math::Vec(22.5f, 261.0f), module, AhabModule::IN_INPUT + 1));
+		addChild(createInputCentered<StoermelderPort>(math::Vec(22.5f, 293.7f), module, AhabModule::IN_INPUT + 2));
 		addChild(createInputCentered<StoermelderPort>(math::Vec(22.5f, 326.2f), module, AhabModule::IN_INPUT + 3));
 
 		addChild(createOutputCentered<StoermelderPort>(math::Vec(577.5f, 67.9f), module, AhabModule::CLK_OUTPUT));
-		addChild(createOutputCentered<StoermelderPort>(math::Vec(577.5f, 225.2f), module, AhabModule::OUT_OUTPUT + 0));
-		addChild(createOutputCentered<StoermelderPort>(math::Vec(577.5f, 258.9f), module, AhabModule::OUT_OUTPUT + 1));
-		addChild(createOutputCentered<StoermelderPort>(math::Vec(577.5f, 292.5f), module, AhabModule::OUT_OUTPUT + 2));
+		addChild(createOutputCentered<StoermelderPort>(math::Vec(577.5f, 228.3f), module, AhabModule::OUT_OUTPUT + 0));
+		addChild(createOutputCentered<StoermelderPort>(math::Vec(577.5f, 261.0f), module, AhabModule::OUT_OUTPUT + 1));
+		addChild(createOutputCentered<StoermelderPort>(math::Vec(577.5f, 293.7f), module, AhabModule::OUT_OUTPUT + 2));
 		addChild(createOutputCentered<StoermelderPort>(math::Vec(577.5f, 326.2f), module, AhabModule::OUT_OUTPUT + 3));
 
-		addChild(createParamCentered<VCVButton>(math::Vec(22.5f, 107.7f), module, AhabModule::RUN_PARAM));
-		addChild(createLightCentered<MediumSimpleLight<WhiteLight>>(Vec(22.5f, 107.7f), module, AhabModule::RUN_LIGHT));
-		addChild(createParamCentered<VCVButton>(math::Vec(22.5f, 143.1f), module, AhabModule::CLK_PARAM));
-		addChild(createLightCentered<MediumSimpleLight<WhiteLight>>(Vec(22.5f, 143.1f), module, AhabModule::CLK_LIGHT));
+		addChild(createParamCentered<VCVButton>(math::Vec(22.5f, 151.3f), module, AhabModule::RUN_PARAM));
+		addChild(createLightCentered<MediumSimpleLight<WhiteLight>>(Vec(22.5f, 151.3f), module, AhabModule::RUN_LIGHT));
+		addChild(createParamCentered<VCVButton>(math::Vec(22.5f, 182.3f), module, AhabModule::CLK_PARAM));
+		addChild(createLightCentered<MediumSimpleLight<WhiteLight>>(Vec(22.5f, 182.3f), module, AhabModule::CLK_LIGHT));
 
 		addChild(createParamCentered<StoermelderSmallKnob>(math::Vec(577.5f, 111.5f), module, AhabModule::BPM_PARAM));
 		
