@@ -7,7 +7,6 @@ namespace Mb {
 namespace v1 {
 
 enum class ModuleBrowserSort {
-	FUZZY_SEARCH_SCORE = -1,
 	DEFAULT = 0,
 	NAME = 1,
 	LAST_USED = 2,
@@ -16,7 +15,7 @@ enum class ModuleBrowserSort {
 };
 
 float modelBoxZoom = 0.9f;
-int modelBoxSort = (int)ModuleBrowserSort::FUZZY_SEARCH_SCORE;
+int modelBoxSort = (int)ModuleBrowserSort::DEFAULT;
 bool hideBrands = false;
 
 
@@ -474,7 +473,6 @@ struct SortChoice : ui::ChoiceButton {
 			}
 		};
 
-		menu->addChild(construct<SortItem>(&MenuItem::text, "Search score", &SortItem::sort, ModuleBrowserSort::FUZZY_SEARCH_SCORE));
 		menu->addChild(construct<SortItem>(&MenuItem::text, "Recently updated", &SortItem::sort, ModuleBrowserSort::DEFAULT));
 		menu->addChild(construct<SortItem>(&MenuItem::text, "Last used", &SortItem::sort, ModuleBrowserSort::LAST_USED));
 		menu->addChild(construct<SortItem>(&MenuItem::text, "Most used", &SortItem::sort, ModuleBrowserSort::MOST_USED));
@@ -484,8 +482,6 @@ struct SortChoice : ui::ChoiceButton {
 
 	void step() override {
 		switch ((ModuleBrowserSort)modelBoxSort) {
-			case ModuleBrowserSort::FUZZY_SEARCH_SCORE:
-				text = "Search score"; break;
 			case ModuleBrowserSort::DEFAULT:
 				text = "Recently updated"; break;
 			case ModuleBrowserSort::LAST_USED:
@@ -953,30 +949,30 @@ void ModuleBrowser::refresh(bool resetScroll) {
 		return t1 < t2;
 	};
 
-	switch ((ModuleBrowserSort)modelBoxSort) {
-		case ModuleBrowserSort::FUZZY_SEARCH_SCORE:
-			if (!search.empty()) {
-				modelContainer->children.sort(sortFuzzySearchScore);
+	if (sortBySearchScore && !search.empty()) {
+		modelContainer->children.sort(sortFuzzySearchScore);
+	}
+	else {
+		switch ((ModuleBrowserSort)modelBoxSort) {
+			case ModuleBrowserSort::DEFAULT:
+				modelContainer->children.sort(sortDefault);
 				break;
-			}
-		case ModuleBrowserSort::DEFAULT:
-			modelContainer->children.sort(sortDefault);
-			break;
-		case ModuleBrowserSort::NAME:
-			modelContainer->children.sort(sortByName);
-			break;
-		case ModuleBrowserSort::LAST_USED:
-			modelContainer->children.sort(sortByLastUsed);
-			break;
-		case ModuleBrowserSort::MOST_USED:
-			modelContainer->children.sort(sortByMostUsed);
-			break;
-		case ModuleBrowserSort::RANDOM:
-			std::vector<std::reference_wrapper<Widget*>> vec(modelContainer->children.begin(), modelContainer->children.end());
-			std::random_shuffle(vec.begin(), vec.end());
-			std::list<Widget*> s(vec.begin(), vec.end());
-			modelContainer->children.swap(s);
-			break;
+			case ModuleBrowserSort::NAME:
+				modelContainer->children.sort(sortByName);
+				break;
+			case ModuleBrowserSort::LAST_USED:
+				modelContainer->children.sort(sortByLastUsed);
+				break;
+			case ModuleBrowserSort::MOST_USED:
+				modelContainer->children.sort(sortByMostUsed);
+				break;
+			case ModuleBrowserSort::RANDOM:
+				std::vector<std::reference_wrapper<Widget*>> vec(modelContainer->children.begin(), modelContainer->children.end());
+				std::random_shuffle(vec.begin(), vec.end());
+				std::list<Widget*> s(vec.begin(), vec.end());
+				modelContainer->children.swap(s);
+				break;
+		}
 	}
 
 	// Get modules passing search + favorites + hidden (without brand/tag filter)

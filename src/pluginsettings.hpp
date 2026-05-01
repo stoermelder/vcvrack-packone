@@ -10,6 +10,7 @@ struct Settings {
 	int mbV1sort = 0;
 	bool mbV1hideBrands = false;
 	bool mbV1searchDescriptions = false;
+	bool mbSortBySearchScore = true;
 
 	NVGcolor overlayTextColor = bndGetTheme()->menuTheme.textColor;
 	int overlayHpos = 0;

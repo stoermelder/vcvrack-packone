@@ -729,12 +729,12 @@ struct SortButton : ui::ChoiceButton {
 		menu->box.size.x = box.size.x;
 
 		static const struct { settings::BrowserSort id; const char* name; } sorts[] = {
-			{settings::BROWSER_SORT_UPDATED,   "Recently updated"},
-			{settings::BROWSER_SORT_LAST_USED, "Last used"},
-			{settings::BROWSER_SORT_MOST_USED, "Most used"},
-			{settings::BROWSER_SORT_BRAND,     "Brand"},
-			{settings::BROWSER_SORT_NAME,      "Module name"},
-			{settings::BROWSER_SORT_RANDOM,    "Random"},
+			{ settings::BROWSER_SORT_UPDATED, "Recently updated" },
+			{ settings::BROWSER_SORT_LAST_USED, "Last used" },
+			{ settings::BROWSER_SORT_MOST_USED, "Most used" },
+			{ settings::BROWSER_SORT_BRAND, "Brand" },
+			{ settings::BROWSER_SORT_NAME, "Module name" },
+			{ settings::BROWSER_SORT_RANDOM, "Random" },
 		};
 		for (auto& s : sorts) {
 			SortItem* item = new SortItem;
@@ -964,13 +964,7 @@ void ModuleBrowser::refresh() {
 		m->visible = isModelVisible(m->model, brand, tagIds, favorite, hidden, customTagFilter);
 	}
 
-	if (search.empty()) {
-		for (Widget* w : modelContainer->children) {
-			ModelBox* m = reinterpret_cast<ModelBox*>(w);
-			if (m->visible)
-				prefilteredModelScores[m->model] = 1.f;
-		}
-
+	auto applyBrowserSort = [&]() {
 		if (settings::browserSort == settings::BROWSER_SORT_UPDATED) {
 			sortModelContainer(modelContainer, [this](ModelBox* m) {
 				plugin::Plugin* p = m->model->plugin;
@@ -1015,15 +1009,30 @@ void ModuleBrowser::refresh() {
 			std::list<Widget*> s(vec.begin(), vec.end());
 			modelContainer->children.swap(s);
 		}
+	};
+
+	if (search.empty()) {
+		for (Widget* w : modelContainer->children) {
+			ModelBox* m = reinterpret_cast<ModelBox*>(w);
+			if (m->visible)
+				prefilteredModelScores[m->model] = 1.f;
+		}
+
+		applyBrowserSort();
 	}
 	else {
 		auto results = modelDb.search(search);
 		for (auto& result : results)
 			prefilteredModelScores[result.key] = result.score;
 
-		sortModelContainer(modelContainer, [this](ModelBox* m) {
-			return -get(prefilteredModelScores, m->model, 0.f);
-		});
+		if (Mb::sortBySearchScore) {
+			sortModelContainer(modelContainer, [this](ModelBox* m) {
+				return -get(prefilteredModelScores, m->model, 0.f);
+			});
+		}
+		else {
+			applyBrowserSort();
+		}
 
 		for (Widget* w : modelContainer->children) {
 			ModelBox* m = reinterpret_cast<ModelBox*>(w);

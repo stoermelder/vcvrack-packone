@@ -35,6 +35,7 @@ std::set<std::string> customTagsAll();
 // Shared fuzzy search database — initialized once by BrowserOverlay, re-initialized when searchDescriptions changes
 extern fuzzysearch::Database<plugin::Model*> modelDb;
 extern bool searchDescriptions;
+extern bool sortBySearchScore;
 void modelDbInit();
 
 
