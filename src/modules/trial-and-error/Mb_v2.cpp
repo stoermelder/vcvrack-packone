@@ -90,11 +90,15 @@ static bool isModelHidden(plugin::Model* model) {
 
 
 static void openLayoutMenu(widget::Widget* button, std::vector<widget::Widget*> items) {
-	// Create a container that draws a menu background and holds the layout
+	// Container that draws a menu background and holds the layout
 	struct MenuContainer : widget::OpaqueWidget {
+		ui::ScrollWidget* scroll;
 		ui::SequentialLayout* layout;
 
 		MenuContainer() {
+			scroll = new ui::ScrollWidget;
+			addChild(scroll);
+
 			// Create horizontal sequential layout inside container
 			layout = new ui::SequentialLayout;
 			layout->orientation = ui::SequentialLayout::HORIZONTAL_ORIENTATION;
@@ -102,12 +106,13 @@ static void openLayoutMenu(widget::Widget* button, std::vector<widget::Widget*> 
 			layout->margin = Vec(5, 5);
 			layout->spacing = Vec(5, 5);
 			layout->box.size.y = 1.f;
-			addChild(layout);
+			scroll->container->addChild(layout);
 		}
 
 		void step() override {
+			box.size.y = std::min(layout->box.size.y, parent->box.size.y - box.pos.y - 20.f);
+			scroll->box.size = box.size;
 			layout->box.size.x = box.size.x;
-			box.size.y = layout->box.size.y;
 			OpaqueWidget::step();
 		}
 
@@ -540,7 +545,7 @@ struct BrandItem : ui::Button {
 		float bounds[4];
 		nvgTextBounds(args.vg, 0.f, 0.f, brand.c_str(), NULL, bounds);
 		box.size.x = bounds[2] - bounds[0] + 30.f;
-		box.size.y = bounds[3] - bounds[1] + 10.f;
+		box.size.y = bounds[3] - bounds[1] + 8.f;
 		Button::draw(args);
 	}
 };
@@ -560,7 +565,6 @@ struct BrandButton : ui::ChoiceButton {
 			item->text = b;
 			item->brand = b;
 			item->browser = browser;
-			item->box.size.y = 25;
 			items.push_back(item);
 		}
 
@@ -604,7 +608,7 @@ struct TagItem : ui::Button {
 		float bounds[4];
 		nvgTextBounds(args.vg, 0.f, 0.f, _text, NULL, bounds);
 		box.size.x = bounds[2] - bounds[0] + 30.f;
-		box.size.y = bounds[3] - bounds[1] + 10.f;
+		box.size.y = bounds[3] - bounds[1] + 8.f;
 		Button::draw(args);
 	}
 };
@@ -620,7 +624,6 @@ struct TagButton : ui::ChoiceButton {
 			item->text = tag::tagAliases[id][0];
 			item->tagId = id;
 			item->browser = browser;
-			item->box.size.y = 25;
 			items.push_back(item);
 		}
 
@@ -671,7 +674,7 @@ struct CustomTagFilterItem : ui::Button {
 		float bounds[4];
 		nvgTextBounds(args.vg, 0.f, 0.f, _text.c_str(), NULL, bounds);
 		box.size.x = bounds[2] - bounds[0] + 30.f;
-		box.size.y = bounds[3] - bounds[1] + 10.f;
+		box.size.y = bounds[3] - bounds[1] + 8.f;
 		Button::draw(args);
 	}
 };
@@ -685,10 +688,9 @@ struct CustomTagButton : ui::ChoiceButton {
 		auto allTags = customTagsAll();
 		for (const auto& tag : allTags) {
 			CustomTagFilterItem* item = new CustomTagFilterItem;
-			item->text = "#" + tag;
+			item->text = tag;
 			item->tagName = tag;
 			item->browser = browser;
-			item->box.size.y = 25;
 			items.push_back(item);
 		}
 
