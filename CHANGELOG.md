@@ -9,7 +9,8 @@
 - Module [MB](./docs/trial-and-error/Mb.md)
     - Added custom tags for used-defined module grouping
     - Added fuzzy search to v1 browser (similar to the default module browser)
-    - Fixed broken "Favorite" category
+    - Added "v2 mod" variation
+    - Fixed broken "Favorites" category
 
 ## 2.3.1
 

@@ -1,6 +1,7 @@
 #include "../../plugin.hpp"
 #include "Mb.hpp"
 #include "Mb_v1.hpp"
+#include "Mb_v2.hpp"
 #include "Mb_v06.hpp"
 #include <osdialog.h>
 #include <chrono>
@@ -246,6 +247,9 @@ BrowserOverlay::BrowserOverlay() {
 	mbV1 = new v1::ModuleBrowser;
 	addChild(mbV1);
 
+	mbV2 = new v2::ModuleBrowser;
+	addChild(mbV2);
+
 	APP->scene->browser = this;
 	APP->scene->addChild(this);
 }
@@ -274,10 +278,17 @@ void BrowserOverlay::step() {
 		case MODE::V06:
 			if (visible) mbV06->show(); else mbV06->hide();
 			mbV1->hide();
+			mbV2->hide();
 			break;
 		case MODE::V1:
 			mbV06->hide();
 			if (visible) mbV1->show(); else mbV1->hide();
+			mbV2->hide();
+			break;
+		case MODE::V2:
+			mbV06->hide();
+			mbV1->hide();
+			if (visible) mbV2->show(); else mbV2->hide();
 			break;
 	}
 
@@ -402,6 +413,17 @@ struct MbWidget : ModuleWidget {
 			}
 		};
 
+		struct ModeV2Item : MenuItem {
+			MbModule* module;
+			void onAction(const event::Action& e) override {
+				module->mode = MODE::V2;
+			}
+			void step() override {
+				rightText = module->mode == MODE::V2 ? "✔" : "";
+				MenuItem::step();
+			}
+		};
+
 		struct ModeV1Item : MenuItem {
 			MbModule* module;
 			void onAction(const event::Action& e) override {
@@ -466,6 +488,7 @@ struct MbWidget : ModuleWidget {
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<ModeV06Item>(&MenuItem::text, "v0.6", &ModeV06Item::module, module));
 		menu->addChild(construct<ModeV1Item>(&MenuItem::text, "v1 mod", &ModeV1Item::module, module));
+		menu->addChild(construct<ModeV2Item>(&MenuItem::text, "v2 mod", &ModeV2Item::module, module));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(construct<ExportItem>(&MenuItem::text, "Export favorites & hidden", &ExportItem::mw, this));
 		menu->addChild(construct<ImportItem>(&MenuItem::text, "Import favorites & hidden", &ImportItem::mw, this));

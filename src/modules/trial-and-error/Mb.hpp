@@ -36,13 +36,15 @@ std::set<std::string> customTagsAll();
 
 enum class MODE {
 	V06,
-	V1
+	V1,
+	V2
 };
 
 struct BrowserOverlay : widget::OpaqueWidget {
 	Widget* mbWidgetBackup;
 	Widget* mbV06;
 	Widget* mbV1;
+	Widget* mbV2;
 
 	MODE* mode;
 
