@@ -249,87 +249,32 @@ struct ModelBox : widget::OpaqueWidget {
 
 	void createContextMenu() {
 		Menu* menu = createMenu();
-
-		struct FilterBrandItem : MenuItem {
-			std::string brand;
-			void onAction(const event::Action& e) override {
-				ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
-				browser->brand = brand;
+		menu->addChild(createMenuLabel(model->plugin->name.c_str()));
+		menu->addChild(createMenuLabel(model->name.c_str()));
+		menu->addChild(createSubmenuItem("Details", "", [this](Menu* menu) {
+			model->appendContextMenu(menu, true);
+			// Remove "Favorite" menu item
+			auto f = menu->children.back();
+			menu->removeChild(f);
+			delete f;
+		}));
+		menu->addChild(createMenuItem(string::f("Filter by \"%s\"", model->plugin->brand.c_str()), "", [&]() {
+			ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
+			if (browser) {
+				browser->brand = model->plugin->brand;
 				browser->refresh(true);
 			}
-		};
+		}));
 
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, model->plugin->name.c_str()));
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, model->name.c_str()));
-		menu->addChild(construct<FilterBrandItem>(&MenuItem::text, string::f("Filter by \"%s\"", model->plugin->brand.c_str()), &FilterBrandItem::brand, model->plugin->brand));
 		menu->addChild(new MenuSeparator);
-		bool m = false;
-
-		struct ModuleUrlItem : ui::MenuItem {
-			std::string url;
-			void onAction(const event::Action& e) override {
-				std::thread t(system::openBrowser, url);
-				t.detach();
-			}
-		};
-
-		if (!model->plugin->pluginUrl.empty()) {
-			ModuleUrlItem* websiteItem = new ModuleUrlItem;
-			websiteItem->text = "Website";
-			websiteItem->url = model->plugin->pluginUrl;
-			menu->addChild(websiteItem);
-			m = true;
-		}
-
-		if (!model->plugin->manualUrl.empty()) {
-			ModuleUrlItem* manualItem = new ModuleUrlItem;
-			manualItem->text = "Manual";
-			manualItem->url = model->plugin->manualUrl;
-			menu->addChild(manualItem);
-			m = true;
-		}
-
-		struct FavoriteModelItem : MenuItem {
-			plugin::Model* model;
-			bool isFavorite = false;
-
-			FavoriteModelItem(plugin::Model* model) {
-				text = "Favorite";
-				this->model = model;
-				auto it = favoriteModels.find(model);
-				isFavorite = it != favoriteModels.end();
-			}
-			void onAction(const event::Action& e) override {
-				toggleModelFavorite(model);
-			}
-			void step() override {
-				rightText = string::f("%s %s", CHECKMARK(isFavorite), RACK_MOD_CTRL_NAME "+F");
-				MenuItem::step();
-			}
-		};
-
-		struct HiddenModelItem : MenuItem {
-			plugin::Model* model;
-			bool isHidden = false;
-
-			HiddenModelItem(plugin::Model* model) {
-				text = "Hidden";
-				this->model = model;
-				auto it = hiddenModels.find(model);
-				isHidden = it != hiddenModels.end();
-			}
-			void onAction(const event::Action& e) override {
-				toggleModelHidden(model);
-			}
-			void step() override {
-				rightText = string::f("%s %s", CHECKMARK(isHidden), RACK_MOD_CTRL_NAME "+H");
-				MenuItem::step();
-			}
-		};
-
-		if (m) menu->addChild(new MenuSeparator);
-		menu->addChild(new FavoriteModelItem(model));
-		menu->addChild(new HiddenModelItem(model));
+		menu->addChild(createCheckMenuItem("Favorite", RACK_MOD_CTRL_NAME "+F",
+			[&]() { return favoriteModels.find(model) != favoriteModels.end(); },
+			[&]() { toggleModelFavorite(model); }
+		));
+		menu->addChild(createCheckMenuItem("Hidden", RACK_MOD_CTRL_NAME "+H",
+			[&]() { return modelHidden; },
+			[&]() { toggleModelHidden(model); }
+		));
 
 		menu->addChild(new MenuSeparator);
 		menu->addChild(createMenuLabel("Custom Tags"));
