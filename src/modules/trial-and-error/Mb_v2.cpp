@@ -707,7 +707,7 @@ struct CustomTagButton : ui::ChoiceButton {
 	}
 
 	void step() override {
-		text = "Custom Tags";
+		text = "Custom Tag";
 		if (!browser->customTagFilter.empty()) {
 			text += ": ";
 			bool first = true;
