@@ -155,7 +155,7 @@ struct ModelItem : BrowserListItem {
 		pluginLabel->setPosition(Vec(0, itemMargin));
 		pluginLabel->alignment = Label::RIGHT_ALIGNMENT;
 		pluginLabel->text = model->plugin->slug + " " + model->plugin->version;
-		pluginLabel->color.a = 0.5;
+		//pluginLabel->color.a = 0.5;
 		addChild(pluginLabel);
 	}
 
