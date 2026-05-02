@@ -14,6 +14,7 @@ namespace Mb {
 fuzzysearch::Database<plugin::Model*> modelDb;
 bool searchDescriptions = false;
 bool sortBySearchScore = true;
+bool favoriteHighlight = true;
 
 void modelDbInit() {
 	modelDb = fuzzysearch::Database<plugin::Model*>();
@@ -247,6 +248,7 @@ BrowserOverlay::BrowserOverlay() {
 	v1::hideBrands = pluginSettings.mbV1hideBrands;
 	searchDescriptions = pluginSettings.mbV1searchDescriptions;
 	sortBySearchScore = pluginSettings.mbSortBySearchScore;
+	favoriteHighlight = pluginSettings.mbFavoriteHighlight;
 	moduleBrowserFromJson(pluginSettings.mbModelsJ);
 	modelDbInit();
 
@@ -300,6 +302,7 @@ BrowserOverlay::~BrowserOverlay() {
 	pluginSettings.mbV1hideBrands = v1::hideBrands;
 	pluginSettings.mbV1searchDescriptions = searchDescriptions;
 	pluginSettings.mbSortBySearchScore = sortBySearchScore;
+	pluginSettings.mbFavoriteHighlight = favoriteHighlight;
 	json_decref(pluginSettings.mbModelsJ);
 	pluginSettings.mbModelsJ = moduleBrowserToJson();
 	
@@ -463,6 +466,7 @@ struct MbWidget : ModuleWidget {
 			[]() { searchDescriptions ^= true; modelDbInit(); }
 		));
 		menu->addChild(createBoolPtrMenuItem("Sort by search score", "", &sortBySearchScore));
+		menu->addChild(createBoolPtrMenuItem("Highlight favorites", "", &favoriteHighlight));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createSubmenuItem("Menu settings", "", 
 			[&](Menu* menu) {

@@ -36,6 +36,7 @@ std::set<std::string> customTagsAll();
 extern fuzzysearch::Database<plugin::Model*> modelDb;
 extern bool searchDescriptions;
 extern bool sortBySearchScore;
+extern bool favoriteHighlight;
 void modelDbInit();
 
 

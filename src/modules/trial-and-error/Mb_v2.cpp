@@ -198,7 +198,7 @@ struct ModelBox : widget::OpaqueWidget {
 
 		OpaqueWidget::draw(args);
 
-		if (favoriteModels.find(model) != favoriteModels.end()) {
+		if (favoriteHighlight && favoriteModels.find(model) != favoriteModels.end()) {
 			nvgBeginPath(args.vg);
 			nvgRect(args.vg, 0, 0, box.size.x, box.size.y);
 			nvgStrokeWidth(args.vg, 2);

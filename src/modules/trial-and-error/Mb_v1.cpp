@@ -1,5 +1,6 @@
 #include "Mb_v1.hpp"
 #include <tag.hpp>
+#include <componentlibrary.hpp>
 #include <thread>
 
 namespace StoermelderPackOne {
@@ -207,6 +208,14 @@ struct ModelBox : widget::OpaqueWidget {
 		nvgGlobalTint(args.vg, nvgRGBAf(b, b, b, 1));
 
 		OpaqueWidget::draw(args);
+
+		if (favoriteHighlight && favoriteModels.find(model) != favoriteModels.end()) {
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, 0, 0, box.size.x, box.size.y);
+			nvgStrokeWidth(args.vg, 2);
+			nvgStrokeColor(args.vg, componentlibrary::SCHEME_YELLOW);
+			nvgStroke(args.vg);
+		}
 	}
 
 	void setTooltip(ui::Tooltip* tooltip) {

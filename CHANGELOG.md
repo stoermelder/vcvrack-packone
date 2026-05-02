@@ -8,10 +8,11 @@
     - Fixed crash on operator `<` when using whithout maximum value set (#425)
 - Module [MB](./docs/trial-and-error/Mb.md)
     - Added custom tags for used-defined module grouping
-    - Added fuzzy search to v1 browser (similar to the default module browser)
-    - Changed hotkey to toggle hidden modules to Shift+Space (because of Spotlight Search on Mac)
+    - Added fuzzy search (similar to the default module browser)
+    - Added option to highlight favorites
     - Added "v2 mod" variation
-    - Fixed broken "Favorites" category
+    - Changed hotkey to toggle hidden modules to Shift+Space (because of Spotlight on Mac)
+    - Fixed broken button of "Favorites" category
 
 ## 2.3.1
 

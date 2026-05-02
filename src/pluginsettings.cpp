@@ -15,6 +15,7 @@ void Settings::saveToJson() {
 	json_object_set(settingsJ, "mbV1hideBrands", json_boolean(mbV1hideBrands));
 	json_object_set(settingsJ, "mbV1searchDescriptions", json_boolean(mbV1searchDescriptions));
 	json_object_set(settingsJ, "mbSortBySearchScore", json_boolean(mbSortBySearchScore));
+	json_object_set(settingsJ, "mbFavoriteHighlight", json_boolean(mbFavoriteHighlight));
 
 	json_object_set(settingsJ, "overlayTextColor", json_string(rack::color::toHexString(overlayTextColor).c_str()));
 	json_object_set(settingsJ, "overlayHpos", json_integer(overlayHpos));
@@ -71,6 +72,8 @@ void Settings::readFromJson() {
     if (mbV1searchDescriptionsJ) mbV1searchDescriptions = json_boolean_value(mbV1searchDescriptionsJ);
 	json_t* mbSortBySearchScoreJ = json_object_get(settingsJ, "mbSortBySearchScore");
 	if (mbSortBySearchScoreJ) mbSortBySearchScore = json_boolean_value(mbSortBySearchScoreJ);
+	json_t* mbFavoriteHighlightJ = json_object_get(settingsJ, "mbFavoriteHighlight");
+	if (mbFavoriteHighlightJ) mbFavoriteHighlight = json_boolean_value(mbFavoriteHighlightJ);
 
 	json_t* overlayTextColorJ = json_object_get(settingsJ, "overlayTextColor");
 	if (overlayTextColorJ) overlayTextColor = rack::color::fromHexString(json_string_value(overlayTextColorJ));
