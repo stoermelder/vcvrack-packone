@@ -182,6 +182,29 @@ AutoTagResult customTagAuto() {
 }
 
 
+AutoTagResult customTagSearch(const std::string& query) {
+	fuzzysearch::Database<plugin::Model*> db;
+	db.setWeights({1.0f, 0.9f});
+	db.setThreshold(0.6f);
+	for (plugin::Plugin* p : rack::plugin::plugins) {
+		for (plugin::Model* model : p->models) {
+			db.addEntry(model, {model->name, model->description});
+		}
+	}
+
+	AutoTagResult result;
+	for (const auto& r : db.search(query)) {
+		plugin::Model* model = r.key;
+		if (!customTagHas(model, query)) {
+			result.assignments[query].insert(model);
+			result.total++;
+			result.perTag[query]++;
+		}
+	}
+	return result;
+}
+
+
 AutoTagResult customTagMetamodule() {
 	std::set<std::pair<std::string, std::string>> metamoduleModules = getMetamoduleModules();
 

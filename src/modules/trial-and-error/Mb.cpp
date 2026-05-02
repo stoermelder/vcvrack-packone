@@ -519,6 +519,40 @@ struct MbWidget : ModuleWidget {
 			result.apply();
 		}));
 
+		struct SearchTagField : ui::TextField {
+			void onSelectKey(const event::SelectKey& e) override {
+				if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
+					std::string query = string::trim(text);
+					if (!query.empty()) {
+						AutoTagResult preview = customTagSearch(query);
+						if (preview.total == 0) {
+							osdialog_message(OSDIALOG_INFO, OSDIALOG_OK,
+								string::f("No untagged modules found for \"%s\".", query.c_str()).c_str());
+						}
+						else {
+							std::string msg = string::f("Tag \"%s\" will be assigned to %d module%s. Continue?",
+								query.c_str(), preview.total, preview.total == 1 ? "" : "s");
+							if (osdialog_message(OSDIALOG_INFO, OSDIALOG_OK_CANCEL, msg.c_str())) {
+								preview.apply();
+								ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
+								if (overlay) overlay->requestDelete();
+							}
+						}
+					}
+					e.consume(this);
+					return;
+				}
+				ui::TextField::onSelectKey(e);
+			}
+		};
+
+		menu->addChild(createSubmenuItem("Auto-generate tag from search", "", [](Menu* menu) {
+			SearchTagField* stf = new SearchTagField;
+			stf->box.size.x = 200.f;
+			stf->placeholder = "Search term (= tag name)...";
+			menu->addChild(stf);
+		}));
+
 		auto unsortedTags = customTagsAll();
 		std::vector<std::string> tags(unsortedTags.begin(), unsortedTags.end());
 		std::sort(tags.begin(), tags.end(), [](const std::string& a, const std::string& b) {
