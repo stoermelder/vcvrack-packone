@@ -1018,6 +1018,20 @@ void ModuleBrowser::refresh(bool resetScroll) {
 	}
 	sidebar->tagLabel->text = string::f("Tags (%d)", tagsLen);
 
+	auto hasModelWithCustomTag = [&](const std::string& newTag) -> bool {
+		for (plugin::Model* model : filteredModels) {
+			if (isModelVisible(model, favorites, brand, tagId, customTagFilter, hidden) && customTagHas(model, newTag))
+				return true;
+		}
+		return false;
+	};
+
+	for (Widget* w : sidebar->customTagList->children) {
+		CustomTagItem* item = dynamic_cast<CustomTagItem*>(w);
+		assert(item);
+		item->disabled = !customTagFilter.count(item->tagName) && !hasModelWithCustomTag(item->tagName);
+	}
+
 	// Count models
 	int modelsLen = 0;
 	for (Widget* w : modelContainer->children) {
