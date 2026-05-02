@@ -29,6 +29,7 @@ extern std::map<std::string, std::set<Model*>> customTagModels;
 void customTagAdd(Model* model, const std::string& tag);
 void customTagRemove(Model* model, const std::string& tag);
 bool customTagHas(Model* model, const std::string& tag);
+void customTagDelete(const std::string& tag);
 std::set<std::string> customTagsForModel(Model* model);
 std::set<std::string> customTagsAll();
 

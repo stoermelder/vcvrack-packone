@@ -75,6 +75,10 @@ bool customTagHas(Model* model, const std::string& tag) {
 	return it->second.find(model) != it->second.end();
 }
 
+void customTagDelete(const std::string& tag) {
+	customTagModels.erase(customTagResolveKey(tag));
+}
+
 std::set<std::string> customTagsForModel(Model* model) {
 	std::set<std::string> result;
 	for (auto& pair : customTagModels) {
@@ -511,6 +515,9 @@ struct MbWidget : ModuleWidget {
 		));
 		menu->addChild(createBoolPtrMenuItem("Sort by search score", "", &sortBySearchScore));
 		menu->addChild(createBoolPtrMenuItem("Highlight favorites", "", &favoriteHighlight));
+
+		menu->addChild(new MenuSeparator());
+		menu->addChild(createMenuLabel("Custom tags"));
 		menu->addChild(createMenuItem("Auto-generate custom tags", "", []() {
 			AutoTagResult preview = autoTagApply(true);
 			if (preview.total == 0) {
@@ -528,6 +535,21 @@ struct MbWidget : ModuleWidget {
 				return;
 			autoTagApply();
 		}));
+
+		auto unsortedTags = customTagsAll();
+		std::vector<std::string> tags(unsortedTags.begin(), unsortedTags.end());
+		std::sort(tags.begin(), tags.end(), [](const std::string& a, const std::string& b) {
+			return string::lowercase(a) < string::lowercase(b);
+		});
+		if (!tags.empty()) {
+			menu->addChild(createSubmenuItem("Delete custom tag", "",
+				[tags](Menu* menu) {
+					for (const std::string& tag : tags) {
+						menu->addChild(createMenuItem(tag, "", [tag]() { customTagDelete(tag); }));
+					}
+				}
+			));
+		}
 
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createSubmenuItem("Menu settings", "",
