@@ -9,6 +9,7 @@
 - Module [MB](./docs/trial-and-error/Mb.md)
     - Added custom tags for used-defined module grouping
     - Added fuzzy search to v1 browser (similar to the default module browser)
+    - Changed hotkey to toggle hidden modules to Shift+Space (because of Spotlight Search on Mac)
     - Added "v2 mod" variation
     - Fixed broken "Favorites" category
 

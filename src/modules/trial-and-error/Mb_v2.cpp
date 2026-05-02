@@ -431,43 +431,55 @@ struct BrowserSearchField : ui::TextField {
 	}
 
 	void onSelectKey(const event::SelectKey& e) override {
-		if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
-			switch (e.key) {
-				case GLFW_KEY_ESCAPE: {
+		bool propagate = !e.getTarget();
+
+		switch (e.key) {
+			case GLFW_KEY_ESCAPE: {
+				if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
 					Mb::BrowserOverlay* overlay = getAncestorOfType<Mb::BrowserOverlay>();
 					overlay->hide();
-					e.consume(this);
-					return;
 				}
-				case GLFW_KEY_BACKSPACE: {
-					if (text == "") {
+				e.consume(this);
+				return;
+			}
+			case GLFW_KEY_BACKSPACE: {
+				if (text == "") {
+					if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
 						browser->clear();
-						e.consume(this);
 					}
-					break;
+					e.consume(this);
 				}
-				case GLFW_KEY_SPACE: {
-					if (string::trim(text) == "" && (e.mods & RACK_MOD_MASK) == 0) {
+				break;
+			}
+			case GLFW_KEY_SPACE: {
+				if (string::trim(text) == "" && (e.mods & RACK_MOD_MASK) == 0) {
+					if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
 						browser->favorite ^= true;
 						browser->refresh();
-						e.consume(this);
 					}
-					if ((e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL) {
-						browser->hidden ^= true;
-						setText(string::trim(text));
-						browser->refresh();
-						e.consume(this);
-					}
-					break;
+					setText("");
+					propagate = false;
+					e.consume(this);
 				}
+				if ((e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL || (e.mods & RACK_MOD_MASK) == RACK_MOD_SHIFT) {
+					if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
+						browser->hidden ^= true;
+						browser->refresh();
+					}
+					setText(string::trim(text));
+					propagate = false;
+					e.consume(this);
+				}
+				break;
 			}
 		}
 
-		bool propagate = !e.getTarget();
 		propagate = propagate && !((e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && e.key == GLFW_KEY_F);
 		propagate = propagate && !((e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && e.key == GLFW_KEY_H);
-		if (propagate)
-			ui::TextField::onSelectKey(e);
+
+		if (propagate) {
+  			ui::TextField::onSelectKey(e);
+		}
 	}
 
 	void onChange(const event::Change& e) override {

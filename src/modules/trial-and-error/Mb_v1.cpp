@@ -578,40 +578,50 @@ struct BrowserSearchField : ui::TextField {
 	}
 
 	void onSelectKey(const event::SelectKey& e) override {
-		if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
-			switch (e.key) {
-				case GLFW_KEY_ESCAPE: {
+		bool propagate = !e.getTarget();
+
+		switch (e.key) {
+			case GLFW_KEY_ESCAPE: {
+				if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
 					Mb::BrowserOverlay* overlay = getAncestorOfType<Mb::BrowserOverlay>();
 					overlay->hide();
-					e.consume(this);
-					break;
-				} 
-				case GLFW_KEY_BACKSPACE: {
-					if (text == "") {
+				}
+				e.consume(this);
+				break;
+			} 
+			case GLFW_KEY_BACKSPACE: {
+				if (text == "") {
+					if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
 						ModuleBrowser* browser = getAncestorOfType<ModuleBrowser>();
 						browser->clear(false);
-						e.consume(this);
 					}
-					break;
-				} 
-				case GLFW_KEY_SPACE: {
-					if (string::trim(text) == "" && (e.mods & RACK_MOD_MASK) == 0) {
+					e.consume(this);
+				}
+				break;
+			} 
+			case GLFW_KEY_SPACE: {
+				if (string::trim(text) == "" && (e.mods & RACK_MOD_MASK) == 0) {
+					if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
 						ModuleBrowser* browser = getAncestorOfType<ModuleBrowser>();
 						browser->favorites ^= true;
-						e.consume(this);
 					}
-					if ((e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL) {
+					setText("");
+					propagate = false;
+					e.consume(this);
+				}
+				if ((e.mods & RACK_MOD_MASK) == RACK_MOD_SHIFT) {
+					if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
 						ModuleBrowser* browser = getAncestorOfType<ModuleBrowser>();
 						browser->hidden ^= true;
-						setText(string::trim(text));
-						e.consume(this);
 					}
-					break;
+					setText(string::trim(text));
+					propagate = false;
+					e.consume(this);
 				}
+				break;
 			}
 		}
 
-		bool propagate = !e.getTarget();
 		propagate = propagate && !((e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && e.key == GLFW_KEY_F);
 		propagate = propagate && !((e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && e.key == GLFW_KEY_H);
 

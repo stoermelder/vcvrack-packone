@@ -6,7 +6,7 @@ MB is a module for experimental replacement for Rack's module browser, formerly 
 
 ### Tips
 
-- Hidden modules can be shown again by hotkey CTRL+Space.
+- Display of hidden modules can be toggled by hotkey Shift+Space.
 
 - Hitting the Space-key will toggle the _Favorites_ category.
 
