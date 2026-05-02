@@ -69,8 +69,9 @@ void customTagRemove(Model* model, const std::string& tag) {
 		customTagModels.erase(it);
 }
 
-bool customTagHas(Model* model, const std::string& tag) {
-	auto it = customTagModels.find(tag);
+bool customTagHas(Model* model, const std::string& tag, bool resolveKey) {
+	const std::string _tag = resolveKey ? customTagResolveKey(tag) : tag;
+	auto it = customTagModels.find(_tag);
 	if (it == customTagModels.end()) return false;
 	return it->second.find(model) != it->second.end();
 }
@@ -95,38 +96,6 @@ std::set<std::string> customTagsAll() {
 	return result;
 }
 
-AutoTagResult autoTagApply(bool dryRun) {
-	// Build a dedicated DB using name + description (always include description
-	// regardless of the global searchDescriptions setting).
-	fuzzysearch::Database<plugin::Model*> db;
-	db.setWeights({1.0f, 0.9f});
-	db.setThreshold(0.6f);
-	for (plugin::Plugin* p : rack::plugin::plugins) {
-		for (plugin::Model* model : p->models) {
-			db.addEntry(model, {model->name, model->description});
-		}
-	}
-
-	AutoTagResult result;
-	for (const AutoTagRule& rule : AUTO_TAG_RULES) {
-		// Union results across all keywords (OR logic).
-		std::set<plugin::Model*> matches;
-		for (const std::string& kw : rule.keywords) {
-			for (const auto& r : db.search(kw)) {
-				matches.insert(r.key);
-			}
-		}
-		for (plugin::Model* model : matches) {
-			if (!customTagHas(model, rule.tagName)) {
-				if (!dryRun)
-					customTagAdd(model, rule.tagName);
-				result.total++;
-				result.perTag[rule.tagName]++;
-			}
-		}
-	}
-	return result;
-}
 
 // JSON storage
 
@@ -519,21 +488,35 @@ struct MbWidget : ModuleWidget {
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuLabel("Custom tags"));
 		menu->addChild(createMenuItem("Auto-generate custom tags", "", []() {
-			AutoTagResult preview = autoTagApply(true);
-			if (preview.total == 0) {
+			AutoTagResult result = customTagAuto();
+			if (result.total == 0) {
 				osdialog_message(OSDIALOG_INFO, OSDIALOG_OK, "No new tag assignments found.");
 				return;
 			}
 			std::string msg = string::f("This will add %d new tag assignment%s across %d tag%s:\n\n",
-				preview.total, preview.total == 1 ? "" : "s",
-				(int)preview.perTag.size(), preview.perTag.size() == 1 ? "" : "s");
-			for (auto& pair : preview.perTag) {
+				result.total, result.total == 1 ? "" : "s",
+				(int)result.perTag.size(), result.perTag.size() == 1 ? "" : "s");
+			for (auto& pair : result.perTag) {
 				msg += string::f("  %s: %d module%s\n", pair.first.c_str(), pair.second, pair.second == 1 ? "" : "s");
 			}
 			msg += "\nExisting custom tags will not be removed. Continue?";
 			if (!osdialog_message(OSDIALOG_INFO, OSDIALOG_OK_CANCEL, msg.c_str()))
 				return;
-			autoTagApply();
+			result.apply();
+		}));
+		menu->addChild(createMenuItem("Auto-generate 'MetaModule' tag", "", []() {
+			if (!osdialog_message(OSDIALOG_INFO, OSDIALOG_OK_CANCEL, "This will connect to https://metamodule.info and download the module list. Continue?"))
+				return;
+			AutoTagResult result = customTagMetamodule();
+			if (result.total == 0) {
+				osdialog_message(OSDIALOG_INFO, OSDIALOG_OK, "No new tag assignments found.");
+				return;
+			}
+			std::string msg = string::f("This will add the 'MetaModule' tag to %d module%s. Continue?",
+				result.total, result.total == 1 ? "" : "s");
+			if (!osdialog_message(OSDIALOG_INFO, OSDIALOG_OK_CANCEL, msg.c_str()))
+				return;
+			result.apply();
 		}));
 
 		auto unsortedTags = customTagsAll();

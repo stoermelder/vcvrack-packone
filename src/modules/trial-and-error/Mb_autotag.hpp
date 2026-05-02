@@ -1,9 +1,25 @@
 #pragma once
 #include <string>
 #include <vector>
+#include <network.hpp>
+#include <cstdio>
 
 namespace StoermelderPackOne {
 namespace Mb {
+
+struct AutoTagResult {
+	int total = 0;
+	std::map<std::string, int> perTag;
+	std::map<std::string, std::set<plugin::Model*>> assignments;
+
+	void apply() const {
+		for (const auto& pair : assignments) {
+			for (plugin::Model* model : pair.second) {
+				customTagAdd(model, pair.first);
+			}
+		}
+	}
+};
 
 struct AutoTagRule {
 	std::string tagName;
@@ -87,6 +103,100 @@ static const std::vector<AutoTagRule> AUTO_TAG_RULES = {
 	{"Morphing",            {"morphing", "morph between"}},
 	{"Physical Model",      {"resonator", "waveguide"}},
 };
+
+
+// Downloads and parses https://metamodule.info/dl/plugins.yml.
+// Returns a set of (pluginSlug, moduleSlug) pairs for every MetaModule-compatible module.
+// The YAML structure uses indentation to distinguish plugin-level VCVSlug (8 spaces)
+// from module-level VCVSlug (16 spaces).
+std::set<std::pair<std::string, std::string>> getMetamoduleModules() {
+	std::set<std::pair<std::string, std::string>> result;
+
+	std::string tmpFile = rack::system::getTempDirectory() + "/metamodule-plugins.yml";
+	if (!rack::network::requestDownload("https://metamodule.info/dl/plugins.yml", tmpFile))
+		return result;
+
+	FILE* file = fopen(tmpFile.c_str(), "r");
+	if (!file) return result;
+
+	const std::string prefix = "VCVSlug: ";
+	std::string currentPlugin;
+	char buf[512];
+
+	while (fgets(buf, sizeof(buf), file)) {
+		std::string line(buf);
+		// Count leading spaces to determine nesting level
+		size_t indent = 0;
+		while (indent < line.size() && line[indent] == ' ') indent++;
+		std::string trimmed = line.substr(indent);
+		// Strip trailing whitespace/newline
+		while (!trimmed.empty() && (trimmed.back() == '\n' || trimmed.back() == '\r' || trimmed.back() == ' '))
+			trimmed.pop_back();
+
+		if (trimmed.find(prefix) != 0) continue;
+		std::string slug = trimmed.substr(prefix.size());
+
+		if (indent == 8) {
+			currentPlugin = slug;
+		} 
+		else if (indent == 16 && !currentPlugin.empty()) {
+			result.insert({currentPlugin, slug});
+		}
+	}
+
+	fclose(file);
+	std::remove(tmpFile.c_str());
+	return result;
+}
+
+
+AutoTagResult customTagAuto() {
+	// Build a dedicated DB using name + description (always include description
+	// regardless of the global searchDescriptions setting).
+	fuzzysearch::Database<plugin::Model*> db;
+	db.setWeights({1.0f, 0.9f});
+	db.setThreshold(0.6f);
+	for (plugin::Plugin* p : rack::plugin::plugins) {
+		for (plugin::Model* model : p->models) {
+			db.addEntry(model, {model->name, model->description});
+		}
+	}
+
+	AutoTagResult result;
+	for (const AutoTagRule& rule : AUTO_TAG_RULES) {
+		std::set<plugin::Model*> matches;
+		for (const std::string& kw : rule.keywords) {
+			for (const auto& r : db.search(kw)) {
+				matches.insert(r.key);
+			}
+		}
+		for (plugin::Model* model : matches) {
+			if (!customTagHas(model, rule.tagName, true)) {
+				result.assignments[rule.tagName].insert(model);
+				result.total++;
+				result.perTag[rule.tagName]++;
+			}
+		}
+	}
+	return result;
+}
+
+
+AutoTagResult customTagMetamodule() {
+	std::set<std::pair<std::string, std::string>> metamoduleModules = getMetamoduleModules();
+
+	AutoTagResult result;
+	for (plugin::Plugin* p : rack::plugin::plugins) {
+		for (plugin::Model* model : p->models) {
+			if (metamoduleModules.count({p->slug, model->slug}) && !customTagHas(model, "MetaModule", true)) {
+				result.assignments["MetaModule"].insert(model);
+				result.total++;
+				result.perTag["MetaModule"]++;
+			}
+		}
+	}
+	return result;
+}
 
 } // namespace Mb
 } // namespace StoermelderPackOne

@@ -8,6 +8,7 @@
     - Fixed crash on operator `<` when using whithout maximum value set (#425)
 - Module [MB](./docs/trial-and-error/Mb.md)
     - Added custom tags for used-defined module grouping
+    - Added auto-tagging, including MetaModule
     - Added fuzzy search (similar to the default module browser)
     - Added option to highlight favorites
     - Added "v2 mod" variation
