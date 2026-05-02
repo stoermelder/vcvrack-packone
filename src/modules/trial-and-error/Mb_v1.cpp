@@ -319,6 +319,7 @@ struct ModelBox : widget::OpaqueWidget {
 					browser->sidebar->refreshCustomTagList();
 					browser->refresh(false);
 				}
+				e.unconsume();
 			}
 
 			void step() override {
@@ -339,12 +340,36 @@ struct ModelBox : widget::OpaqueWidget {
 		std::sort(tags.begin(), tags.end(), [](const std::string& a, const std::string& b) {
 			return string::lowercase(a) < string::lowercase(b);
 		});
-		for (const auto& tag : tags) {
-			ToggleCustomTagItem* item = new ToggleCustomTagItem;
-			item->text = tag;
-			item->model = model;
-			item->tagName = tag;
-			menu->addChild(item);
+
+		plugin::Model* m = model;
+		auto addTagItems = [m](Menu* menu, const std::vector<std::string>& group) {
+			for (const auto& tag : group) {
+				ToggleCustomTagItem* item = new ToggleCustomTagItem;
+				item->text = tag;
+				item->model = m;
+				item->tagName = tag;
+				menu->addChild(item);
+			}
+		};
+
+		if (tags.size() <= 20) {
+			addTagItems(menu, tags);
+		} 
+		else {
+			const size_t numGroups = (tags.size() + 15) / 16;
+			const size_t GROUP_SIZE = (tags.size() + numGroups - 1) / numGroups;
+			for (size_t i = 0; i < tags.size(); i += GROUP_SIZE) {
+				size_t end = std::min(i + GROUP_SIZE, tags.size());
+				char first = (char)std::toupper((unsigned char)string::lowercase(tags[i])[0]);
+				char last  = (char)std::toupper((unsigned char)string::lowercase(tags[end - 1])[0]);
+				std::string label = first == last
+					? std::string(1, first)
+					: std::string(1, first) + "-" + std::string(1, last);
+				std::vector<std::string> group(tags.begin() + i, tags.begin() + end);
+				menu->addChild(createSubmenuItem(label, "", [addTagItems, group](Menu* menu) {
+					addTagItems(menu, group);
+				}));
+			}
 		}
 	}
 
