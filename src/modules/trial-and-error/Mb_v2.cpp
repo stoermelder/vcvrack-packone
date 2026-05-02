@@ -511,6 +511,7 @@ struct BrandItem : FilterItem {
 	}
 	void step() override {
 		selected = (browser->brand == brand);
+		disabled = !selected && !browser->hasVisibleModel(brand, browser->tagIds, browser->favorite, browser->hidden, browser->customTagFilter);
 		FilterItem::step();
 	}
 };
@@ -530,7 +531,6 @@ struct BrandButton : ui::ChoiceButton {
 			item->setRawText(b);
 			item->brand = b;
 			item->browser = browser;
-			item->disabled = (b != browser->brand) && !browser->hasVisibleModel(b, browser->tagIds, browser->favorite, browser->hidden, browser->customTagFilter);
 			items.push_back(item);
 		}
 
@@ -564,6 +564,14 @@ struct TagItem : FilterItem {
 	}
 	void step() override {
 		selected = (tagId >= 0) ? (browser->tagIds.find(tagId) != browser->tagIds.end()) : browser->tagIds.empty();
+		if (!selected) {
+			std::set<int> newTagIds = browser->tagIds;
+			newTagIds.insert(tagId);
+			disabled = !browser->hasVisibleModel(browser->brand, newTagIds, browser->favorite, browser->hidden, browser->customTagFilter);
+		}
+		else {
+			disabled = false;
+		}
 		FilterItem::step();
 	}
 };
@@ -579,14 +587,6 @@ struct TagButton : ui::ChoiceButton {
 			item->setRawText(tag::tagAliases[id][0]);
 			item->tagId = id;
 			item->browser = browser;
-			if (browser->tagIds.count(id)) {
-				item->disabled = false;
-			} 
-			else {
-				std::set<int> newTagIds = browser->tagIds;
-				newTagIds.insert(id);
-				item->disabled = !browser->hasVisibleModel(browser->brand, newTagIds, browser->favorite, browser->hidden, browser->customTagFilter);
-			}
 			items.push_back(item);
 		}
 
@@ -627,6 +627,14 @@ struct CustomTagFilterItem : FilterItem {
 	}
 	void step() override {
 		selected = tagName.empty() ? browser->customTagFilter.empty() : (browser->customTagFilter.find(tagName) != browser->customTagFilter.end());
+		if (!selected && !tagName.empty()) {
+			std::set<std::string> newFilter = browser->customTagFilter;
+			newFilter.insert(tagName);
+			disabled = !browser->hasVisibleModel(browser->brand, browser->tagIds, browser->favorite, browser->hidden, newFilter);
+		}
+		else {
+			disabled = false;
+		}
 		FilterItem::step();
 	}
 };
@@ -643,14 +651,6 @@ struct CustomTagButton : ui::ChoiceButton {
 			item->setRawText(tag);
 			item->tagName = tag;
 			item->browser = browser;
-			if (browser->customTagFilter.count(tag)) {
-				item->disabled = false;
-			} 
-			else {
-				std::set<std::string> newFilter = browser->customTagFilter;
-				newFilter.insert(tag);
-				item->disabled = !browser->hasVisibleModel(browser->brand, browser->tagIds, browser->favorite, browser->hidden, newFilter);
-			}
 			items.push_back(item);
 		}
 
