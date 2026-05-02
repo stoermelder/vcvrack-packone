@@ -133,6 +133,7 @@ struct ModelBox : widget::OpaqueWidget {
 	widget::FramebufferWidget* fb = NULL;
 	ModuleWidgetContainer* mwc = NULL;
 	ModuleWidget* moduleWidget = NULL;
+	bool modelHidden = false;
 
 	void setModel(plugin::Model* m) {
 		model = m;
@@ -192,6 +193,7 @@ struct ModelBox : widget::OpaqueWidget {
 		nvgFill(args.vg);
 
 		float b = math::clamp(settings::rackBrightness + 0.2f, 0.f, 1.f);
+		if (modelHidden) b *= 0.33f;
 		nvgGlobalTint(args.vg, nvgRGBAf(b, b, b, 1));
 
 		OpaqueWidget::draw(args);
@@ -338,7 +340,7 @@ struct ModelBox : widget::OpaqueWidget {
 		struct HiddenModelItem : MenuItem {
 			plugin::Model* model;
 			HiddenModelItem(plugin::Model* m) {
-				text = "Hide";
+				text = "Hidden";
 				model = m;
 			}
 			void onAction(const event::Action& e) override {
@@ -1052,14 +1054,15 @@ void ModuleBrowser::refresh() {
 		for (Widget* w : modelContainer->children) {
 			ModelBox* m = reinterpret_cast<ModelBox*>(w);
 			prefilteredModelScores[m->model] = 1.f;
+			if (hidden && m->visible) m->modelHidden = isModelHidden(m->model);
 		}
-
 		applyBrowserSort();
 	}
 	else {
 		auto results = modelDb.search(search);
-		for (auto& result : results)
+		for (auto& result : results) {
 			prefilteredModelScores[result.key] = result.score;
+		}
 
 		if (Mb::sortBySearchScore) {
 			sortModelContainer(modelContainer, [this](ModelBox* m) {
@@ -1072,8 +1075,10 @@ void ModuleBrowser::refresh() {
 
 		for (Widget* w : modelContainer->children) {
 			ModelBox* m = reinterpret_cast<ModelBox*>(w);
-			if (m->visible && prefilteredModelScores.find(m->model) == prefilteredModelScores.end())
+			if (m->visible && prefilteredModelScores.find(m->model) == prefilteredModelScores.end()) {
 				m->visible = false;
+			}
+			if (hidden && m->visible) m->modelHidden = isModelHidden(m->model);
 		}
 	}
 
@@ -1091,7 +1096,6 @@ void ModuleBrowser::clear() {
 	tagIds = {};
 	customTagFilter = {};
 	favorite = false;
-	hidden = false;
 	refresh();
 }
 

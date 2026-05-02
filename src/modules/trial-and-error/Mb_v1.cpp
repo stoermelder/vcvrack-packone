@@ -201,12 +201,9 @@ struct ModelBox : widget::OpaqueWidget {
 		nvgFillPaint(args.vg, nvgBoxGradient(args.vg, 0, 0, box.size.x, box.size.y, c, r, shadowColor, transparentColor));
 		nvgFill(args.vg);
 
-		if (modelHidden) {
-			nvgGlobalAlpha(args.vg, 0.33);
-		}
-
 		// To avoid blinding the user when rack brightness is low, draw framebuffer with the same brightness.
 		float b = math::clamp(settings::rackBrightness + 0.2f, 0.f, 1.f);
+		if (modelHidden) b *= 0.33f;
 		nvgGlobalTint(args.vg, nvgRGBAf(b, b, b, 1));
 
 		OpaqueWidget::draw(args);
@@ -307,7 +304,7 @@ struct ModelBox : widget::OpaqueWidget {
 			bool isHidden = false;
 
 			HiddenModelItem(plugin::Model* model) {
-				text = "Hide";
+				text = "Hidden";
 				this->model = model;
 				auto it = hiddenModels.find(model);
 				isHidden = it != hiddenModels.end();
@@ -1060,7 +1057,6 @@ void ModuleBrowser::clear(bool keepSearch) {
 	brand = "";
 	tagId.clear();
 	customTagFilter.clear();
-	hidden = false;
 	refresh(true);
 }
 
