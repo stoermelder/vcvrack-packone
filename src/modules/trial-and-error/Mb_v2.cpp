@@ -316,12 +316,6 @@ struct ModelBox : widget::OpaqueWidget {
 				if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
 					std::string tag = string::trim(text);
 					if (!tag.empty()) {
-						for (const auto& existing : customTagsAll()) {
-							if (string::lowercase(existing) == string::lowercase(tag)) {
-								tag = existing;
-								break;
-							}
-						}
 						customTagAdd(model, tag);
 						ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
 						if (browser) browser->refresh();
@@ -361,7 +355,12 @@ struct ModelBox : widget::OpaqueWidget {
 		menu->addChild(ntf);
 		APP->event->setSelectedWidget(ntf);
 
-		for (const auto& tag : customTagsAll()) {
+		auto unsortedTags = customTagsAll();
+		std::vector<std::string> tags(unsortedTags.begin(), unsortedTags.end());
+		std::sort(tags.begin(), tags.end(), [](const std::string& a, const std::string& b) {
+			return string::lowercase(a) < string::lowercase(b);
+		});
+		for (const auto& tag : tags) {
 			ToggleCustomTagItem* item = new ToggleCustomTagItem;
 			item->text = tag;
 			item->model = model;
@@ -645,8 +644,12 @@ struct CustomTagButton : ui::ChoiceButton {
 	void onAction(const event::Action& e) override {
 		std::vector<widget::Widget*> items;
 
-		auto allTags = customTagsAll();
-		for (const auto& tag : allTags) {
+		auto unsortedTags = customTagsAll();
+		std::vector<std::string> tags(unsortedTags.begin(), unsortedTags.end());
+		std::sort(tags.begin(), tags.end(), [](const std::string& a, const std::string& b) {
+			return string::lowercase(a) < string::lowercase(b);
+		});
+		for (const auto& tag : tags) {
 			CustomTagFilterItem* item = new CustomTagFilterItem;
 			item->setRawText(tag);
 			item->tagName = tag;

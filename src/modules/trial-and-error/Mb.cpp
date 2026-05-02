@@ -3,6 +3,7 @@
 #include "Mb_v1.hpp"
 #include "Mb_v2.hpp"
 #include "Mb_v06.hpp"
+#include "Mb_autotag.hpp"
 #include <osdialog.h>
 #include <tag.hpp>
 #include <chrono>
@@ -46,12 +47,22 @@ std::set<Model*> hiddenModels;
 std::map<Model*, ModelUsage*> modelUsage;
 std::map<std::string, std::set<Model*>> customTagModels;
 
+// Returns the existing map key that matches tag case-insensitively, or tag itself.
+static std::string customTagResolveKey(const std::string& tag) {
+	std::string lower = string::lowercase(tag);
+	for (auto& pair : customTagModels) {
+		if (string::lowercase(pair.first) == lower)
+			return pair.first;
+	}
+	return tag;
+}
+
 void customTagAdd(Model* model, const std::string& tag) {
-	customTagModels[tag].insert(model);
+	customTagModels[customTagResolveKey(tag)].insert(model);
 }
 
 void customTagRemove(Model* model, const std::string& tag) {
-	auto it = customTagModels.find(tag);
+	auto it = customTagModels.find(customTagResolveKey(tag));
 	if (it == customTagModels.end()) return;
 	it->second.erase(model);
 	if (it->second.empty())
@@ -77,6 +88,39 @@ std::set<std::string> customTagsAll() {
 	std::set<std::string> result;
 	for (auto& pair : customTagModels)
 		result.insert(pair.first);
+	return result;
+}
+
+AutoTagResult autoTagApply(bool dryRun) {
+	// Build a dedicated DB using name + description (always include description
+	// regardless of the global searchDescriptions setting).
+	fuzzysearch::Database<plugin::Model*> db;
+	db.setWeights({1.0f, 0.9f});
+	db.setThreshold(0.6f);
+	for (plugin::Plugin* p : rack::plugin::plugins) {
+		for (plugin::Model* model : p->models) {
+			db.addEntry(model, {model->name, model->description});
+		}
+	}
+
+	AutoTagResult result;
+	for (const AutoTagRule& rule : AUTO_TAG_RULES) {
+		// Union results across all keywords (OR logic).
+		std::set<plugin::Model*> matches;
+		for (const std::string& kw : rule.keywords) {
+			for (const auto& r : db.search(kw)) {
+				matches.insert(r.key);
+			}
+		}
+		for (plugin::Model* model : matches) {
+			if (!customTagHas(model, rule.tagName)) {
+				if (!dryRun)
+					customTagAdd(model, rule.tagName);
+				result.total++;
+				result.perTag[rule.tagName]++;
+			}
+		}
+	}
 	return result;
 }
 
@@ -467,8 +511,26 @@ struct MbWidget : ModuleWidget {
 		));
 		menu->addChild(createBoolPtrMenuItem("Sort by search score", "", &sortBySearchScore));
 		menu->addChild(createBoolPtrMenuItem("Highlight favorites", "", &favoriteHighlight));
+		menu->addChild(createMenuItem("Auto-generate custom tags", "", []() {
+			AutoTagResult preview = autoTagApply(true);
+			if (preview.total == 0) {
+				osdialog_message(OSDIALOG_INFO, OSDIALOG_OK, "No new tag assignments found.");
+				return;
+			}
+			std::string msg = string::f("This will add %d new tag assignment%s across %d tag%s:\n\n",
+				preview.total, preview.total == 1 ? "" : "s",
+				(int)preview.perTag.size(), preview.perTag.size() == 1 ? "" : "s");
+			for (auto& pair : preview.perTag) {
+				msg += string::f("  %s: %d module%s\n", pair.first.c_str(), pair.second, pair.second == 1 ? "" : "s");
+			}
+			msg += "\nExisting custom tags will not be removed. Continue?";
+			if (!osdialog_message(OSDIALOG_INFO, OSDIALOG_OK_CANCEL, msg.c_str()))
+				return;
+			autoTagApply();
+		}));
+
 		menu->addChild(new MenuSeparator());
-		menu->addChild(createSubmenuItem("Menu settings", "", 
+		menu->addChild(createSubmenuItem("Menu settings", "",
 			[&](Menu* menu) {
 				menu->addChild(createMenuItem("Export", "", [&]() { this->exportSettingsDialog(); }));
 				menu->addChild(createMenuItem("Import", "", [&]() { this->importSettingsDialog(); }));
