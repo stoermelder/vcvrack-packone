@@ -155,7 +155,7 @@ AutoTagResult customTagAuto() {
 	// regardless of the global searchDescriptions setting).
 	fuzzysearch::Database<plugin::Model*> db;
 	db.setWeights({1.0f, 0.9f});
-	db.setThreshold(0.6f);
+	db.setThreshold(0.7f);
 	for (plugin::Plugin* p : rack::plugin::plugins) {
 		for (plugin::Model* model : p->models) {
 			db.addEntry(model, {model->name, model->description});
@@ -185,7 +185,7 @@ AutoTagResult customTagAuto() {
 AutoTagResult customTagSearch(const std::string& query) {
 	fuzzysearch::Database<plugin::Model*> db;
 	db.setWeights({1.0f, 0.9f});
-	db.setThreshold(0.6f);
+	db.setThreshold(0.7f);
 	for (plugin::Plugin* p : rack::plugin::plugins) {
 		for (plugin::Model* model : p->models) {
 			db.addEntry(model, {model->name, model->description});
