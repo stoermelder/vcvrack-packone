@@ -500,7 +500,36 @@ struct BrowserSearchField : ui::TextField {
 };
 
 
-struct BrandItem : ui::Button {
+struct FilterItem : ui::Button {
+	bool disabled = false;
+	std::string rawText;
+	bool selected = false;
+
+	void onDragDrop(const DragDropEvent& e) override {
+		if (!disabled) Button::onDragDrop(e);
+	}
+
+	void draw(const DrawArgs& args) override {
+		float bounds[4];
+		nvgTextBounds(args.vg, 0.f, 0.f, rawText.c_str(), NULL, bounds);
+		box.size.x = bounds[2] - bounds[0] + 30.f;
+		box.size.y = bounds[3] - bounds[1] + 8.f;
+		text = string::f("%s %s", rawText, selected ? CHECKMARK(true) : "");
+
+		BNDwidgetState state = BND_DEFAULT;
+		if (!disabled) {
+			if (APP->event->getHoveredWidget() == this) state = BND_HOVER;
+			if (APP->event->getDraggedWidget() == this) state = BND_ACTIVE;
+		}
+		if (disabled) nvgSave(args.vg);
+		if (disabled) nvgGlobalAlpha(args.vg, 0.35f);
+		bndToolButton(args.vg, 0.0, 0.0, box.size.x, box.size.y, BND_CORNER_NONE, state, -1, text.c_str());
+		if (disabled) nvgRestore(args.vg);
+	}
+};
+
+
+struct BrandItem : FilterItem {
 	ModuleBrowser* browser;
 	std::string brand;
 	void onAction(const event::Action& e) override {
@@ -508,15 +537,9 @@ struct BrandItem : ui::Button {
 		browser->refresh();
 	}
 	void step() override {
-		text = string::f("%s %s", brand, browser->brand == brand ? CHECKMARK(true) : "");
+		rawText = brand;
+		selected = (browser->brand == brand);
 		Button::step();
-	}
-	void draw(const DrawArgs& args) override {
-		float bounds[4];
-		nvgTextBounds(args.vg, 0.f, 0.f, brand.c_str(), NULL, bounds);
-		box.size.x = bounds[2] - bounds[0] + 30.f;
-		box.size.y = bounds[3] - bounds[1] + 8.f;
-		Button::draw(args);
 	}
 };
 
@@ -532,9 +555,9 @@ struct BrandButton : ui::ChoiceButton {
 
 		for (const std::string& b : brands) {
 			BrandItem* item = new BrandItem;
-			item->text = b;
 			item->brand = b;
 			item->browser = browser;
+			item->disabled = (b != browser->brand) && !browser->hasVisibleModel(b, browser->tagIds, browser->favorite, browser->hidden, browser->customTagFilter);
 			items.push_back(item);
 		}
 
@@ -551,10 +574,9 @@ struct BrandButton : ui::ChoiceButton {
 };
 
 
-struct TagItem : ui::Button {
+struct TagItem : FilterItem {
 	ModuleBrowser* browser;
 	int tagId;
-	const char* _text;
 	void onAction(const event::Action& e) override {
 		if (tagId >= 0) {
 			auto it = browser->tagIds.find(tagId);
@@ -569,17 +591,9 @@ struct TagItem : ui::Button {
 		browser->refresh();
 	}
 	void step() override {
-		_text = tag::tagAliases[tagId][0].c_str();
-		bool isSelected = (tagId >= 0) ? (browser->tagIds.find(tagId) != browser->tagIds.end()) : browser->tagIds.empty();
-		text = string::f("%s %s", _text, isSelected ? CHECKMARK(true) : "");
+		rawText = tag::tagAliases[tagId][0];
+		selected = (tagId >= 0) ? (browser->tagIds.find(tagId) != browser->tagIds.end()) : browser->tagIds.empty();
 		Button::step();
-	}
-	void draw(const DrawArgs& args) override {
-		float bounds[4];
-		nvgTextBounds(args.vg, 0.f, 0.f, _text, NULL, bounds);
-		box.size.x = bounds[2] - bounds[0] + 30.f;
-		box.size.y = bounds[3] - bounds[1] + 8.f;
-		Button::draw(args);
 	}
 };
 
@@ -591,9 +605,16 @@ struct TagButton : ui::ChoiceButton {
 
 		for (int id = 0; id < (int)tag::tagAliases.size(); id++) {
 			TagItem* item = new TagItem;
-			item->text = tag::tagAliases[id][0];
 			item->tagId = id;
 			item->browser = browser;
+			if (browser->tagIds.count(id)) {
+				item->disabled = false;
+			} 
+			else {
+				std::set<int> newTagIds = browser->tagIds;
+				newTagIds.insert(id);
+				item->disabled = !browser->hasVisibleModel(browser->brand, newTagIds, browser->favorite, browser->hidden, browser->customTagFilter);
+			}
 			items.push_back(item);
 		}
 
@@ -617,10 +638,9 @@ struct TagButton : ui::ChoiceButton {
 };
 
 
-struct CustomTagFilterItem : ui::Button {
+struct CustomTagFilterItem : FilterItem {
 	ModuleBrowser* browser;
 	std::string tagName;
-	std::string _text;
 	void onAction(const event::Action& e) override {
 		if (tagName.empty()) {
 			browser->customTagFilter.clear();
@@ -635,17 +655,9 @@ struct CustomTagFilterItem : ui::Button {
 		browser->refresh();
 	}
 	void step() override {
-		_text = tagName;
-		bool isSelected = tagName.empty() ? browser->customTagFilter.empty() : (browser->customTagFilter.find(tagName) != browser->customTagFilter.end());
-		text = string::f("%s %s", _text, isSelected ? CHECKMARK(true) : "");
+		rawText = tagName;
+		selected = tagName.empty() ? browser->customTagFilter.empty() : (browser->customTagFilter.find(tagName) != browser->customTagFilter.end());
 		Button::step();
-	}
-	void draw(const DrawArgs& args) override {
-		float bounds[4];
-		nvgTextBounds(args.vg, 0.f, 0.f, _text.c_str(), NULL, bounds);
-		box.size.x = bounds[2] - bounds[0] + 30.f;
-		box.size.y = bounds[3] - bounds[1] + 8.f;
-		Button::draw(args);
 	}
 };
 
@@ -661,6 +673,14 @@ struct CustomTagButton : ui::ChoiceButton {
 			item->text = tag;
 			item->tagName = tag;
 			item->browser = browser;
+			if (browser->customTagFilter.count(tag)) {
+				item->disabled = false;
+			} 
+			else {
+				std::set<std::string> newFilter = browser->customTagFilter;
+				newFilter.insert(tag);
+				item->disabled = !browser->hasVisibleModel(browser->brand, browser->tagIds, browser->favorite, browser->hidden, newFilter);
+			}
 			items.push_back(item);
 		}
 
@@ -1014,8 +1034,7 @@ void ModuleBrowser::refresh() {
 	if (search.empty()) {
 		for (Widget* w : modelContainer->children) {
 			ModelBox* m = reinterpret_cast<ModelBox*>(w);
-			if (m->visible)
-				prefilteredModelScores[m->model] = 1.f;
+			prefilteredModelScores[m->model] = 1.f;
 		}
 
 		applyBrowserSort();
