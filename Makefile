@@ -25,7 +25,7 @@ SOURCES += $(ORCA_SOURCES)
 # file changes.
 orca-examples: $(ORCA_GENERATED_HEADER)
 
-$(ORCA_GENERATED_HEADER): src/modules/ahab/orca_examples.py $(shell find dep/orca-c/examples -type f -name '*.orca')
+$(ORCA_GENERATED_HEADER): src/modules/ahab/orca_examples.py $(shell find orca-c/examples -type f -name '*.orca')
 	python3 src/modules/ahab/orca_examples.py dep/orca-c/examples > $@
 
 include $(RACK_DIR)/arch.mk
