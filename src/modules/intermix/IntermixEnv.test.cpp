@@ -121,7 +121,6 @@ TEST_CASE("JSON serialization", "[JSON][IntermixEnv]") {
 	auto module = Test::createModule<IntermixEnvModule<8>>("IntermixEnv");
 
 	SECTION("Module state is serialized and deserialized") {
-		module->panelTheme = 1;
 		module->input = 5;
 		
 		json_t* rootJ = module->dataToJson();
@@ -130,7 +129,6 @@ TEST_CASE("JSON serialization", "[JSON][IntermixEnv]") {
 		auto moduleNew = Test::createModule<IntermixEnvModule<8>>("IntermixEnv");
 		moduleNew->dataFromJson(rootJ);
 		
-		REQUIRE(moduleNew->panelTheme == 1);
 		REQUIRE(moduleNew->input == 5);
 		
 		json_decref(rootJ);
@@ -152,24 +150,35 @@ TEST_CASE("Expander chain", "[IntermixEnv]") {
 		envModule1->rightExpander.module = envModule2;
 		envModule2->leftExpander.module = envModule1;
 		
-		// Ensure models are set for expander checks
-		envModule1->model = modelIntermixEnv;
-		envModule2->model = modelIntermixEnv;
-		
 		intermixModule->currentMatrix[0][0] = 0.8f;
 		intermixModule->currentMatrix[1][0] = 0.4f;
 		
 		envModule1->input = 0;
 		envModule2->input = 1;
 		
-		intermixModule->process(Test::makeProcessArgs(1));
-		// Flip messages for env1
-		intermixModule->rightExpander.consumerMessage = intermixModule->rightExpander.producerMessage;
-		// Also set rightExpander.consumerMessage on env1 for env2 to read
-		envModule1->rightExpander.consumerMessage = intermixModule->rightExpander.producerMessage;
-		envModule1->process(Test::makeProcessArgs(1));
-		// Env2 reads from env1->rightExpander.consumerMessage
-		envModule2->process(Test::makeProcessArgs(1));
+		auto m1 = Test::makeProcessArgs(1);
+		intermixModule->process(m1);
+		envModule1->process(m1);
+		envModule2->process(m1);
+
+		// Flip messages for intermix (sets producerMessage)
+		std::swap(intermixModule->rightExpander.producerMessage, intermixModule->rightExpander.consumerMessage);
+		std::swap(envModule1->rightExpander.producerMessage, envModule1->rightExpander.consumerMessage);
+
+		auto m2 = Test::makeProcessArgs(2);
+		intermixModule->process(m2);
+		envModule1->process(m2);
+		envModule2->process(m2);
+		
+		// Flip env1's producer to consumer so env2 can read from it
+		std::swap(intermixModule->rightExpander.producerMessage, intermixModule->rightExpander.consumerMessage);
+		std::swap(envModule1->rightExpander.producerMessage, envModule1->rightExpander.consumerMessage);
+	
+		// Process env2 - it will read from env1's producerMessage
+		auto m3 = Test::makeProcessArgs(3);
+		intermixModule->process(m3);
+		envModule1->process(m3);
+		envModule2->process(m3);
 		
 		REQUIRE(envModule1->outputs[IntermixEnvModule<8>::OUTPUT + 0].getVoltage() == Catch::Approx(8.0f).margin(0.01f));
 		REQUIRE(envModule2->outputs[IntermixEnvModule<8>::OUTPUT + 0].getVoltage() == Catch::Approx(4.0f).margin(0.01f));

@@ -216,19 +216,29 @@ TEST_CASE("Expander chain with gate module", "[IntermixGate]") {
 		gateModule1->rightExpander.module = gateModule2;
 		gateModule2->leftExpander.module = gateModule1;
 		
-		// Ensure models are set for expander checks
-		gateModule1->model = modelIntermixGate;
-		gateModule2->model = modelIntermixGate;
-		
 		intermixModule->currentMatrix[0][0] = 0.5f;
 		intermixModule->currentMatrix[1][1] = 0.5f;
-		
-		// Initial process to set up producer message
-		intermixModule->process(Test::makeProcessArgs(1));
-		intermixModule->rightExpander.consumerMessage = intermixModule->rightExpander.producerMessage;
-		gateModule1->process(Test::makeProcessArgs(1));
-		gateModule1->rightExpander.consumerMessage = gateModule1->rightExpander.producerMessage;
-		gateModule2->process(Test::makeProcessArgs(1));
+	
+		auto m1 = Test::makeProcessArgs(1);
+		intermixModule->process(m1);
+		gateModule1->process(m1);
+		gateModule2->process(m1);
+
+		std::swap(intermixModule->rightExpander.producerMessage, intermixModule->rightExpander.consumerMessage);
+		std::swap(gateModule1->rightExpander.producerMessage, gateModule1->rightExpander.consumerMessage);
+	
+		auto m2 = Test::makeProcessArgs(2);
+		intermixModule->process(m2);
+		gateModule1->process(m2);
+		gateModule2->process(m2);
+
+		std::swap(intermixModule->rightExpander.producerMessage, intermixModule->rightExpander.consumerMessage);
+		std::swap(gateModule1->rightExpander.producerMessage, gateModule1->rightExpander.consumerMessage);
+	
+		auto m3 = Test::makeProcessArgs(3);
+		intermixModule->process(m3);
+		gateModule1->process(m3);
+		gateModule2->process(m3);
 		
 		// Both should detect active connections
 		REQUIRE(gateModule1->outputs[IntermixGateModule<8>::OUTPUT + 0].getVoltage() == 10.f);
