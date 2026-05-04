@@ -1,7 +1,7 @@
 #pragma once
+#include "Mb.hpp"
 #include <string>
 #include <vector>
-#include <network.hpp>
 #include <cstdio>
 
 namespace StoermelderPackOne {
@@ -78,7 +78,7 @@ static const std::vector<AutoTagRule> AUTO_TAG_RULES = {
 	{"Monophonic",          {"monophonic", "monophony"}},
 	{"Stereo",              {"stereo"}},
 	{"Unison",              {"unison"}},     
-	{"Unison",              {"detune"}},     
+	{"Detune",              {"detune"}},     
 
 	// Modulation & CV utilities
 	{"Attenuverter",        {"attenuverter"}},
@@ -215,13 +215,17 @@ AutoTagResult customTagAuto() {
 		}
 		for (plugin::Model* model : matches) {
 			if (!rule.blockwords.empty()) {
-				std::string text = model->name + " " + model->description;
-				std::transform(text.begin(), text.end(), text.begin(), ::tolower);
 				bool blocked = false;
 				for (const std::string& bw : rule.blockwords) {
-					std::string lbw = bw;
-					std::transform(lbw.begin(), lbw.end(), lbw.begin(), ::tolower);
-					if (text.find(lbw) != std::string::npos) { blocked = true; break; }
+					// Search the fuzzy DB for the blockword. If any match has a high score, it's considered a block.
+					auto search_results = db.search(bw);
+					for (const auto& r : search_results) {
+						if (r.score >= 0.95f) { // Sensible condition: block if a high-confidence match is found
+							blocked = true;
+							break;
+						}
+					}
+					if (blocked) break;
 				}
 				if (blocked) continue;
 			}
