@@ -31,12 +31,7 @@ static ModuleWidget* chooseModel(plugin::Model* model) {
 }
 
 static void toggleModelFavorite(plugin::Model* model) {
-	auto it = favoriteModels.find(model);
-	if (it != favoriteModels.end())
-		favoriteModels.erase(model);
-	else
-		favoriteModels.insert(model);
-	hiddenModels.erase(model);
+	setModelFavorite(model, !isModelFavorite(model));
 
 	ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
 	if (browser && browser->favorite)
@@ -198,7 +193,7 @@ struct ModelBox : widget::OpaqueWidget {
 
 		OpaqueWidget::draw(args);
 
-		if (favoriteHighlight && favoriteModels.find(model) != favoriteModels.end()) {
+		if (favoriteHighlight && isModelFavorite(model)) {
 			nvgBeginPath(args.vg);
 			nvgRect(args.vg, 0, 0, box.size.x, box.size.y);
 			nvgStrokeWidth(args.vg, 2);
@@ -298,7 +293,7 @@ struct ModelBox : widget::OpaqueWidget {
 
 		menu->addChild(new MenuSeparator);
 		menu->addChild(createCheckMenuItem("Favorite", RACK_MOD_CTRL_NAME "+F",
-			[&]() { return favoriteModels.find(model) != favoriteModels.end(); },
+			[&]() { return isModelFavorite(model); },
 			[&]() { toggleModelFavorite(model); }
 		));
 		menu->addChild(createCheckMenuItem("Hidden", RACK_MOD_CTRL_NAME "+H",
@@ -940,7 +935,7 @@ void ModuleBrowser::draw(const DrawArgs& args) {
 }
 
 bool ModuleBrowser::isModelVisible(plugin::Model* model, const std::string& brand, const std::set<int>& tagIds, bool favorite, bool hidden, const std::set<std::string>& customTagFilter) {
-	if (favorite && favoriteModels.find(model) == favoriteModels.end())
+	if (favorite && !isModelFavorite(model))
 		return false;
 	if (!brand.empty() && model->plugin->brand != brand)
 		return false;

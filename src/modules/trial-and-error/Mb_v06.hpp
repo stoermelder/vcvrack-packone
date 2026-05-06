@@ -1,3 +1,4 @@
+#pragma once
 #include "Mb.hpp"
 #include <widget/OpaqueWidget.hpp>
 #include <widget/TransparentWidget.hpp>
@@ -141,8 +142,7 @@ struct ModelItem : BrowserListItem {
 		addChild(favoriteButton);
 
 		// Set favorite button initial state
-		auto it = favoriteModels.find(model);
-		if (it != favoriteModels.end())
+		if (isModelFavorite(model))
 			favoriteButton->quantity->setValue(1);
 		favoriteButton->model = model;
 
@@ -541,14 +541,7 @@ void ClearFilterItem::onAction(const event::Action &e) {
 void FavoriteRadioButton::onAction(const event::Action &e) {
 	if (!model)
 		return;
-	if (quantity->getValue() > 0.f) {
-		favoriteModels.insert(model);
-	}
-	else {
-		auto it = favoriteModels.find(model);
-		if (it != favoriteModels.end())
-			favoriteModels.erase(it);
-	}
+	setModelFavorite(model, quantity->getValue() > 0.f);
 
 	ModuleBrowser *moduleBrowser = getAncestorOfType<ModuleBrowser>();
 	if (moduleBrowser)

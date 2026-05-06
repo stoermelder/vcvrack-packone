@@ -10,6 +10,7 @@
     - Added custom tags for used-defined module grouping
     - Added auto-tagging, including MetaModule
     - Added fuzzy search (similar to the default module browser)
+    - Added option to select "Favorite" handling  (Legacy (MB) / (Built-in) VCV Rack)
     - Added option to highlight favorites
     - Added "v2 mod" variation
     - Changed hotkey to toggle hidden modules to Shift+Space (because of Spotlight on Mac)

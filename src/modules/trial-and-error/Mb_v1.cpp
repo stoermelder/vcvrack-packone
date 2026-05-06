@@ -25,8 +25,7 @@ bool hideBrands = false;
 static bool isModelVisible(plugin::Model* model, const bool& favourite, const std::string& brand, const std::set<int>& tagId, const std::set<std::string>& customTagFilter, const bool& hidden) {
 	// Filter favorite
 	if (favourite) {
-		auto it = favoriteModels.find(model);
-		if (it == favoriteModels.end())
+		if (!isModelFavorite(model))
 			return false;
 	}
 
@@ -60,12 +59,7 @@ static bool isModelVisible(plugin::Model* model, const bool& favourite, const st
 }
 
 static void toggleModelFavorite(Model* model) {
-	auto it = favoriteModels.find(model);
-	if (it != favoriteModels.end()) 
-		favoriteModels.erase(model);
-	else 
-		favoriteModels.insert(model);
-	hiddenModels.erase(model);
+	setModelFavorite(model, !isModelFavorite(model));
 
 	ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
 	if (browser->favorites) {
@@ -268,7 +262,7 @@ struct ModelBox : widget::OpaqueWidget {
 
 		menu->addChild(new MenuSeparator);
 		menu->addChild(createCheckMenuItem("Favorite", RACK_MOD_CTRL_NAME "+F",
-			[&]() { return favoriteModels.find(model) != favoriteModels.end(); },
+			[&]() { return isModelFavorite(model); },
 			[&]() { toggleModelFavorite(model); }
 		));
 		menu->addChild(createCheckMenuItem("Hidden", RACK_MOD_CTRL_NAME "+H",

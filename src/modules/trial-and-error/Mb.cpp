@@ -47,6 +47,35 @@ std::set<Model*> hiddenModels;
 std::map<Model*, ModelUsage*> modelUsage;
 std::map<std::string, std::set<Model*>> customTagModels;
 
+FavoriteMode favoriteMode = FavoriteMode::VCVRACK;
+
+bool isModelFavorite(Model* model) {
+	switch (favoriteMode) {
+		case FavoriteMode::VCVRACK:
+			return model->isFavorite();
+		case FavoriteMode::MB:
+			return favoriteModels.find(model) != favoriteModels.end();
+		case FavoriteMode::BOTH:
+			return model->isFavorite() || favoriteModels.find(model) != favoriteModels.end();
+	}
+}
+
+void setModelFavorite(Model* model, bool favorite) {
+	if (favoriteMode == FavoriteMode::VCVRACK || favoriteMode == FavoriteMode::BOTH) {
+		model->setFavorite(favorite);
+	}
+	if (favoriteMode == FavoriteMode::MB || favoriteMode == FavoriteMode::BOTH) {
+		if (favorite)
+			favoriteModels.insert(model);
+		else
+			favoriteModels.erase(model);
+	}
+	// Remove from hidden when favoriting
+	if (favorite) {
+		hiddenModels.erase(model);
+	}
+}
+
 // Returns the existing map key that matches tag case-insensitively, or tag itself.
 static std::string customTagResolveKey(const std::string& tag) {
 	std::string lower = string::lowercase(tag);
@@ -110,6 +139,7 @@ json_t* moduleBrowserToJson(bool includeUsageData) {
 		json_array_append_new(favoritesJ, slugJ);
 	}
 	json_object_set_new(rootJ, "favorites", favoritesJ);
+	json_object_set_new(rootJ, "favoriteMode", json_integer((int)favoriteMode));
 
 	json_t* hiddenJ = json_array();
 	for (Model* model : hiddenModels) {
@@ -167,6 +197,13 @@ void moduleBrowserFromJson(json_t* rootJ) {
 				continue;
 			favoriteModels.insert(model);
 		}
+	}
+	json_t* favoriteModeJ = json_object_get(rootJ, "favoriteMode");
+	if (favoriteModeJ) {
+		favoriteMode = (FavoriteMode)json_integer_value(favoriteModeJ);
+	}
+	else {
+		favoriteMode = FavoriteMode::MB;
 	}
 
 	json_t* hiddenJ = json_object_get(rootJ, "hidden");
@@ -483,6 +520,22 @@ struct MbWidget : ModuleWidget {
 			[]() { searchDescriptions ^= true; modelDbInit(); }
 		));
 		menu->addChild(createBoolPtrMenuItem("Sort by search score", "", &sortBySearchScore));
+		menu->addChild(createSubmenuItem("Favorite mode", "", [](Menu* menu) {
+			menu->addChild(createCheckMenuItem("Built-in (VCV Rack)", "",
+				[&]() { return favoriteMode == FavoriteMode::VCVRACK; },
+				[&]() { favoriteMode = FavoriteMode::VCVRACK; }
+			));
+			menu->addChild(createCheckMenuItem("Legacy (MB)", "",
+				[&]() { return favoriteMode == FavoriteMode::MB; },
+				[&]() { favoriteMode = FavoriteMode::MB; }
+			));
+			/*
+			menu->addChild(createCheckMenuItem("Both", "",
+				[&]() { return favoriteMode == FavoriteMode::BOTH; },
+				[&]() { favoriteMode = FavoriteMode::BOTH; }
+			));
+			*/
+		}));
 		menu->addChild(createBoolPtrMenuItem("Highlight favorites", "", &favoriteHighlight));
 
 		menu->addChild(new MenuSeparator());

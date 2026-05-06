@@ -33,6 +33,19 @@ void customTagDelete(const std::string& tag);
 std::set<std::string> customTagsForModel(Model* model);
 std::set<std::string> customTagsAll();
 
+// Favorite mode handling
+enum class FavoriteMode {
+	VCVRACK = 0,
+	MB = 1,
+	BOTH = 2
+};
+
+extern FavoriteMode favoriteMode;
+
+bool isModelFavorite(Model* model);
+void setModelFavorite(Model* model, bool favorite);
+
+
 // Shared fuzzy search database — initialized once by BrowserOverlay, re-initialized when searchDescriptions changes
 extern fuzzysearch::Database<plugin::Model*> modelDb;
 extern bool searchDescriptions;
