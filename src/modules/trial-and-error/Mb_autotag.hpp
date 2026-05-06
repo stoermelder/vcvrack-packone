@@ -145,139 +145,22 @@ static const std::vector<AutoTagRule> AUTO_TAG_RULES = {
 };
 
 
-// Downloads and parses https://metamodule.info/dl/plugins.yml.
-// Returns a set of (pluginSlug, moduleSlug) pairs for every MetaModule-compatible module.
-// The YAML structure uses indentation to distinguish plugin-level VCVSlug (8 spaces)
-// from module-level VCVSlug (16 spaces).
-std::set<std::pair<std::string, std::string>> getMetamoduleModules() {
-	std::set<std::pair<std::string, std::string>> result;
+AutoTagResult customTagAuto(const std::vector<AutoTagRule>& rules = AUTO_TAG_RULES, const std::vector<Plugin*>& plugins = rack::plugin::plugins);
 
-	std::string tmpFile = rack::system::getTempDirectory() + "/metamodule-plugins.yml";
-	if (!rack::network::requestDownload("https://metamodule.info/dl/plugins.yml", tmpFile))
-		return result;
-
-	FILE* file = fopen(tmpFile.c_str(), "r");
-	if (!file) return result;
-
-	const std::string prefix = "VCVSlug: ";
-	std::string currentPlugin;
-	char buf[512];
-
-	while (fgets(buf, sizeof(buf), file)) {
-		std::string line(buf);
-		// Count leading spaces to determine nesting level
-		size_t indent = 0;
-		while (indent < line.size() && line[indent] == ' ') indent++;
-		std::string trimmed = line.substr(indent);
-		// Strip trailing whitespace/newline
-		while (!trimmed.empty() && (trimmed.back() == '\n' || trimmed.back() == '\r' || trimmed.back() == ' '))
-			trimmed.pop_back();
-
-		if (trimmed.find(prefix) != 0) continue;
-		std::string slug = trimmed.substr(prefix.size());
-
-		if (indent == 8) {
-			currentPlugin = slug;
-		} 
-		else if (indent == 16 && !currentPlugin.empty()) {
-			result.insert({currentPlugin, slug});
-		}
-	}
-
-	fclose(file);
-	std::remove(tmpFile.c_str());
-	return result;
-}
+AutoTagResult customTagSearch(const std::string& query, const std::vector<Plugin*>& plugins = rack::plugin::plugins);
 
 
-AutoTagResult customTagAuto() {
-	// Build a dedicated DB using name + description (always include description
-	// regardless of the global searchDescriptions setting).
-	fuzzysearch::Database<plugin::Model*> db;
-	db.setWeights({0.9f, 1.f});
-	db.setThreshold(0.7f);
-	for (plugin::Plugin* p : rack::plugin::plugins) {
-		for (plugin::Model* model : p->models) {
-			db.addEntry(model, {model->name, model->description});
-		}
-	}
+// Internal function that performs the actual network download.
+// Exposed for testing - can be overridden in test to mock network behavior.
+const std::string downloadMetamoduleYaml();
 
-	AutoTagResult result;
-	for (const AutoTagRule& rule : AUTO_TAG_RULES) {
-		std::set<plugin::Model*> matches;
-		for (const std::string& kw : rule.keywords) {
-			bool multiWord = kw.find(' ') != std::string::npos;
-			float threshold = multiWord ? rule.minScore : rule.minScore + 0.05f;
-			for (const auto& r : db.search(kw)) {
-				if (r.score >= threshold)
-					matches.insert(r.key);
-			}
-		}
-		for (plugin::Model* model : matches) {
-			if (!rule.blockwords.empty()) {
-				bool blocked = false;
-				for (const std::string& bw : rule.blockwords) {
-					// Search the fuzzy DB for the blockword. If any match has a high score, it's considered a block.
-					auto search_results = db.search(bw);
-					for (const auto& r : search_results) {
-						if (r.score >= 0.95f) { // Sensible condition: block if a high-confidence match is found
-							blocked = true;
-							break;
-						}
-					}
-					if (blocked) break;
-				}
-				if (blocked) continue;
-			}
-			if (!customTagHas(model, rule.tagName, true)) {
-				result.assignments[rule.tagName].insert(model);
-				result.total++;
-				result.perTag[rule.tagName]++;
-			}
-		}
-	}
-	return result;
-}
+// Internal function that parses the downloaded YAML file.
+// Exposed for testing - can be overridden in test to mock parsing behavior.
+std::set<std::pair<std::string, std::string>> parseMetamoduleYaml(const std::string& tmpFile = downloadMetamoduleYaml());
 
-
-AutoTagResult customTagSearch(const std::string& query) {
-	fuzzysearch::Database<plugin::Model*> db;
-	db.setWeights({0.9f, 1.f});
-	db.setThreshold(0.7f);
-	for (plugin::Plugin* p : rack::plugin::plugins) {
-		for (plugin::Model* model : p->models) {
-			db.addEntry(model, {model->name, model->description});
-		}
-	}
-
-	AutoTagResult result;
-	for (const auto& r : db.search(query)) {
-		plugin::Model* model = r.key;
-		if (!customTagHas(model, query)) {
-			result.assignments[query].insert(model);
-			result.total++;
-			result.perTag[query]++;
-		}
-	}
-	return result;
-}
-
-
-AutoTagResult customTagMetamodule() {
-	std::set<std::pair<std::string, std::string>> metamoduleModules = getMetamoduleModules();
-
-	AutoTagResult result;
-	for (plugin::Plugin* p : rack::plugin::plugins) {
-		for (plugin::Model* model : p->models) {
-			if (metamoduleModules.count({p->slug, model->slug}) && !customTagHas(model, "MetaModule", true)) {
-				result.assignments["MetaModule"].insert(model);
-				result.total++;
-				result.perTag["MetaModule"]++;
-			}
-		}
-	}
-	return result;
-}
+// Assigns "MetaModule" tag to all modules from MetaModule-compatible plugins.
+AutoTagResult customTagMetamodule(std::set<std::pair<std::string, std::string>> metamoduleModules = parseMetamoduleYaml(),
+	const std::vector<Plugin*>& plugins = rack::plugin::plugins);
 
 } // namespace Mb
 } // namespace StoermelderPackOne
