@@ -9,6 +9,9 @@
 namespace StoermelderPackOne {
 namespace Reel {
 
+static const char SELECTION_FILTERS[] = "VCV Rack module selection (.vcvs):vcvs";
+
+
 struct ReelModule : Module, StripIdFixModule {
 	struct BoundModule {
 		int64_t moduleId;
@@ -92,13 +95,12 @@ struct ReelModule : Module, StripIdFixModule {
 	}
 
 	~ReelModule() {
-		for (BoundModule* b : boundModules) delete b;
+		clearBoundModules();
 	}
 
 	void onReset(const Module::ResetEvent& e) override {
 		slots.clear();
-		for (BoundModule* b : boundModules) delete b;
-		boundModules.clear();
+		clearBoundModules();
 		currentSlot = -1;
 		boxDraw = true;
 		boxColor = color::BLUE;
@@ -132,6 +134,49 @@ struct ReelModule : Module, StripIdFixModule {
 			}
 		}
 		delete b;
+	}
+
+	void clearBoundModules() {
+		for (BoundModule* b : boundModules) delete b;
+		boundModules.clear();
+	}
+
+	void remapSlotData(const std::map<int64_t, int64_t>& oldToNewIds) {
+		for (ReelSlot& slot : slots) {
+			if (!slot.used) continue;
+
+			for (json_t* vJ : slot.moduleStates) {
+				if (!vJ) continue;
+				json_t* idJ = json_object_get(vJ, "id");
+				if (!idJ) continue;
+				int64_t oldId = json_integer_value(idJ);
+				auto it = oldToNewIds.find(oldId);
+				if (it != oldToNewIds.end()) {
+					json_object_set_new(vJ, "id", json_integer(it->second));
+				}
+			}
+
+			if (slot.cablesJ) {
+				json_t* cableJ;
+				size_t ci;
+				json_array_foreach(slot.cablesJ, ci, cableJ) {
+					json_t* outJ = json_object_get(cableJ, "outputModuleId");
+					if (outJ) {
+						int64_t oldId = json_integer_value(outJ);
+						auto it = oldToNewIds.find(oldId);
+						if (it != oldToNewIds.end())
+							json_object_set_new(cableJ, "outputModuleId", json_integer(it->second));
+					}
+					json_t* inJ = json_object_get(cableJ, "inputModuleId");
+					if (inJ) {
+						int64_t oldId = json_integer_value(inJ);
+						auto it = oldToNewIds.find(oldId);
+						if (it != oldToNewIds.end())
+							json_object_set_new(cableJ, "inputModuleId", json_integer(it->second));
+					}
+				}
+			}
+		}
 	}
 
 	/** Capture current state of all bound modules and their internal cables into slot i.
@@ -944,91 +989,160 @@ struct ReelWidget : ThemedModuleWidget<ReelModule> {
 
 	/** Spawn new instances of every bound module using stored relative positions,
 	 *  rebind, and remap all stored slot IDs to the new modules. */
-	void recreateBoundModules(Vec startPos, const std::vector<Vec>& relativePositions) {
-		if (!module || module->boundModules.empty()) return;
+	/** Unified module placement handler for both bound modules and selection imports.
+	 *  moduleInfos: pairs of (model, relative position)
+	 *  relativePositions: parallel array of relative positions for each module
+	 *  bindAfterCreate: if true, bind created modules to this Reel
+	 *  rootJ: optional JSON root for cable recreation (may be NULL)
+	 *  idMap: optional map for remapping IDs (used for bound module recreation)
+	 */
+	void importModulesAt(Vec mousePos,
+			const std::vector<std::pair<plugin::Model*, Vec>>& moduleInfos,
+			const std::vector<Vec>& relativePositions,
+			bool bindAfterCreate,
+			json_t* rootJ,
+			std::map<int64_t, ModuleWidget*>* idMap) {
+		if (!module) return;
 
-		// old moduleId → newly created ModuleWidget
-		std::map<int64_t, ModuleWidget*> idMap;
+		std::map<int64_t, ModuleWidget*> modules;
+		if (idMap) modules = *idMap;
 
 		history::ComplexAction* complexAction = new history::ComplexAction;
-		complexAction->name = "REEL recreate bound modules";
+		complexAction->name = bindAfterCreate ? "REEL import selection" : "REEL recreate bound modules";
 
-		for (int i = 0; i < (int)module->boundModules.size(); i++) {
-			ReelModule::BoundModule* b = module->boundModules[i];
-			plugin::Model* model = plugin::getModel(b->pluginSlug, b->modelSlug);
-			if (!model) {
-				idMap[b->moduleId] = nullptr;
-				continue;
+		// Create modules
+		for (size_t i = 0; i < moduleInfos.size(); i++) {
+			plugin::Model* model = moduleInfos[i].first;
+			Vec relPos = (i < relativePositions.size()) ? relativePositions[i] : Vec(0, 0);
+			Vec pos = mousePos.plus(relPos);
+			int64_t oldId = -1;
+
+			// For bound modules, get oldId from BoundModule
+			if (i < module->boundModules.size()) {
+				oldId = module->boundModules[i]->moduleId;
 			}
 
-			Vec pos = startPos.plus(i < (int)relativePositions.size() ? relativePositions[i] : Vec(0, 0));
+			engine::Module* addedModule = model->createModule();
+			APP->engine->addModule(addedModule);
 
-			engine::Module* eng = model->createModule();
-			APP->engine->addModule(eng);
-
-			ModuleWidget* mw = model->createModuleWidget(eng);
+			ModuleWidget* mw = model->createModuleWidget(addedModule);
 			APP->scene->rack->addModule(mw);
 			APP->scene->rack->setModulePosForce(mw, pos);
+			APP->scene->rack->select(mw);
 
-			idMap[b->moduleId] = mw;
+			// Track widget - use oldId if available, otherwise use index
+			if (oldId >= 0) {
+				modules[oldId] = mw;
+			} else {
+				modules[addedModule->id] = mw;
+			}
 
 			history::ModuleAdd* h = new history::ModuleAdd;
-			h->name = "REEL add module";
+			h->name = bindAfterCreate ? "create module" : "REEL add module";
 			h->setModule(mw);
 			complexAction->push(h);
 		}
 
 		APP->history->push(complexAction);
 
-		// Remap all stored slot data (module state IDs and cable endpoint IDs)
-		for (ReelModule::ReelSlot& slot : module->slots) {
-			if (!slot.used) continue;
-
-			// Update module-state IDs so slotLoad can match them
-			for (json_t* vJ : slot.moduleStates) {
-				if (!vJ) continue;
-				json_t* idJ = json_object_get(vJ, "id");
-				if (!idJ) continue;
-				int64_t oldId = json_integer_value(idJ);
-				auto it = idMap.find(oldId);
-				if (it != idMap.end() && it->second) {
-					json_object_set_new(vJ, "id", json_integer(it->second->module->id));
-				}
-			}
-
-			// Update cable endpoint module IDs
-			if (slot.cablesJ) {
-				json_t* cableJ;
-				size_t ci;
-				json_array_foreach(slot.cablesJ, ci, cableJ) {
-					json_t* outJ = json_object_get(cableJ, "outputModuleId");
-					if (outJ) {
-						int64_t oldId = json_integer_value(outJ);
-						auto it = idMap.find(oldId);
-						if (it != idMap.end() && it->second)
-							json_object_set_new(cableJ, "outputModuleId", json_integer(it->second->module->id));
-					}
-					json_t* inJ = json_object_get(cableJ, "inputModuleId");
-					if (inJ) {
-						int64_t oldId = json_integer_value(inJ);
-						auto it = idMap.find(oldId);
-						if (it != idMap.end() && it->second)
-							json_object_set_new(cableJ, "inputModuleId", json_integer(it->second->module->id));
-					}
-				}
-			}
+		// Remap slot data IDs if needed (for bound module recreation)
+		std::map<int64_t, int64_t> oldToNewIds;
+		for (auto& kv : modules) {
+			if (kv.second) oldToNewIds[kv.first] = kv.second->module->id;
 		}
+		module->remapSlotData(oldToNewIds);
+		module->currentSlot = -1;
 
-		// Rebind: point every BoundModule to the newly created module
+		// Update the IDs of bound modules (for bound module recreation)
 		for (ReelModule::BoundModule* b : module->boundModules) {
-			auto it = idMap.find(b->moduleId);
-			if (it != idMap.end() && it->second) {
+			auto it = modules.find(b->moduleId);
+			if (it != modules.end() && it->second) {
 				b->moduleId = it->second->module->id;
 			}
 		}
 
-		// currentSlot refers to old IDs; reset it so no stale highlight shows
-		module->currentSlot = -1;
+		// Load presets and bind for selection import
+		if (bindAfterCreate && rootJ) {
+			// Load presets from JSON - match modules by position
+			json_t* modulesJ = json_object_get(rootJ, "modules");
+			if (modulesJ) {
+				size_t moduleIndex;
+				json_t* moduleJ;
+				int idx = 0;
+				json_array_foreach(modulesJ, moduleIndex, moduleJ) {
+					if (idx >= (int)moduleInfos.size()) break;
+
+					// Find widget by position matching
+					ModuleWidget* mw = NULL;
+					Vec relPos = (idx < (int)relativePositions.size()) ? relativePositions[idx] : Vec(0.f, 0.f);
+					Vec expectedPos = mousePos.plus(relPos);
+					for (auto& kv : modules) {
+						Vec diff = kv.second->box.pos.minus(expectedPos);
+						if (std::abs(diff.x) < 1.f && std::abs(diff.y) < 1.f) {
+							mw = kv.second;
+							break;
+						}
+					}
+					if (!mw) {
+						idx++;
+						continue;
+					}
+
+					StripIdFixModule* m = dynamic_cast<StripIdFixModule*>(mw->module);
+					if (m) m->idFixDataFromJson(modules);
+
+					mw->fromJson(moduleJ);
+					idx++;
+				}
+			}
+
+			// Load cables
+			json_t* cablesJ = json_object_get(rootJ, "cables");
+			if (cablesJ) {
+				json_t* cableJ;
+				size_t cableIndex;
+				json_array_foreach(cablesJ, cableIndex, cableJ) {
+					int64_t outputModuleId = json_integer_value(json_object_get(cableJ, "outputModuleId"));
+					int outputId = json_integer_value(json_object_get(cableJ, "outputId"));
+					int64_t inputModuleId = json_integer_value(json_object_get(cableJ, "inputModuleId"));
+					int inputId = json_integer_value(json_object_get(cableJ, "inputId"));
+					const char* colorStr = json_string_value(json_object_get(cableJ, "color"));
+
+					ModuleWidget* outputModule = NULL;
+					ModuleWidget* inputModule = NULL;
+					for (auto& kv : modules) {
+						if (kv.first == outputModuleId) outputModule = kv.second;
+						if (kv.first == inputModuleId) inputModule = kv.second;
+					}
+					if (!outputModule || !inputModule) continue;
+
+					engine::Cable* c = new engine::Cable;
+					c->outputModule = outputModule->module;
+					c->outputId = outputId;
+					c->inputModule = inputModule->module;
+					c->inputId = inputId;
+					APP->engine->addCable(c);
+
+					CableWidget* cw = new CableWidget;
+					cw->setCable(c);
+					if (colorStr) cw->color = color::fromHexString(colorStr);
+					APP->scene->rack->addCable(cw);
+				}
+			}
+
+			json_decref(rootJ);
+		}
+
+		// Bind created modules
+		if (bindAfterCreate) {
+			for (auto& kv : modules) {
+				ModuleWidget* mw = kv.second;
+				if (mw) {
+					std::string s = module->bindModule(mw->module);
+					if (!s.empty()) osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, s.c_str());
+				}
+			}
+		}
 	}
 
 	void showPlacementPreview() {
@@ -1056,9 +1170,120 @@ struct ReelWidget : ThemedModuleWidget<ReelModule> {
 			relativePositions.push_back(relPos);
 		}
 
-		placerContainer->showPreview(modelPositions, [=](Vec pos) {
-			recreateBoundModules(pos, relativePositions);
-		});
+		placerContainer->showPreview(modelPositions, 
+			[=](Vec pos) {
+				// Use unified importModulesAt for bound module recreation
+				std::vector<std::pair<plugin::Model*, Vec>> moduleInfos;
+				for (ReelModule::BoundModule* b : module->boundModules) {
+					plugin::Model* model = plugin::getModel(b->pluginSlug, b->modelSlug);
+					moduleInfos.push_back({model, Vec(0.f, 0.f)});
+				}
+				importModulesAt(pos, moduleInfos, relativePositions, false, NULL, NULL);
+			}
+		);
+	}
+
+	void importSelectionBind() {
+		osdialog_filters* filters = osdialog_filters_parse(SELECTION_FILTERS);
+		DEFER({osdialog_filters_free(filters);});
+
+		char* path = osdialog_file(OSDIALOG_OPEN, "", NULL, filters);
+		if (!path) return;
+		DEFER({std::free(path);});
+
+		// Load selection file
+		FILE* file = std::fopen(path, "r");
+		if (!file) return;
+		DEFER({std::fclose(file);});
+
+		json_error_t error;
+		json_t* rootJ = json_loadf(file, 0, &error);
+		if (!rootJ) {
+			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, string::f("File is not a valid selection file. JSON parsing error at %s %d:%d %s", error.source, error.line, error.column, error.text).c_str());
+			return;
+		}
+		// Increment ref count - will be decremented after user clicks or cancels
+		json_incref(rootJ);
+
+		// Check for unavailable modules and collect module data for preview
+		std::set<std::string> pluginModuleSlugs;
+		std::vector<std::pair<plugin::Model*, Vec>> modelPositions;
+		std::vector<json_t*> moduleJsonList;
+
+		double minX = std::numeric_limits<double>::infinity();
+		double minY = std::numeric_limits<double>::infinity();
+
+		json_t* modulesJ = json_object_get(rootJ, "modules");
+		if (modulesJ) {
+			json_t* moduleJ;
+			size_t moduleIndex;
+			json_array_foreach(modulesJ, moduleIndex, moduleJ) {
+				// Check if plugin/model available
+				json_t* pluginSlugJ = json_object_get(moduleJ, "plugin");
+				json_t* modelSlugJ = json_object_get(moduleJ, "model");
+				if (!pluginSlugJ || !modelSlugJ) continue;
+
+				std::string pluginSlug = json_string_value(pluginSlugJ);
+				std::string modelSlug = json_string_value(modelSlugJ);
+				try {
+					plugin::Model* model = plugin::modelFromJson(moduleJ);
+					modelPositions.push_back({model, Vec(0.f, 0.f)}); // placeholder
+				} catch (Exception& e) {
+					pluginModuleSlugs.insert(pluginSlug + "/" + modelSlug);
+					modelPositions.push_back({nullptr, Vec(0.f, 0.f)});
+				}
+				moduleJsonList.push_back(moduleJ);
+
+				// Compute min position for relative placement
+				json_t* posJ = json_object_get(moduleJ, "pos");
+				double x = 0.0, y = 0.0;
+				json_unpack(posJ, "[F, F]", &x, &y);
+				minX = std::min(minX, x);
+				minY = std::min(minY, y);
+			}
+
+			// Compute relative positions for preview
+			for (size_t i = 0; i < moduleJsonList.size(); i++) {
+				json_t* posJ = json_object_get(moduleJsonList[i], "pos");
+				double x = 0.0, y = 0.0;
+				json_unpack(posJ, "[F, F]", &x, &y);
+				Vec relPos = Vec(x, y).minus(Vec(minX, minY)) * RACK_GRID_SIZE;
+				if (i < modelPositions.size()) modelPositions[i].second = relPos;
+			}
+		}
+
+		if (!pluginModuleSlugs.empty()) {
+			std::string msg = "This selection includes modules that are not installed. Show missing modules on the VCV Library?";
+			if (osdialog_message(OSDIALOG_WARNING, OSDIALOG_YES_NO, msg.c_str())) {
+				std::string url = "https://library.vcvrack.com/?modules=";
+				url += string::join(pluginModuleSlugs, ",");
+				system::openBrowser(url);
+			}
+		}
+
+		// Show preview and set up callback for actual import
+		APP->scene->rack->deselectAll();
+
+		// Extract relative positions from modelPositions (second element of each pair)
+		std::vector<Vec> relativePositions;
+		for (auto& mp : modelPositions) {
+			relativePositions.push_back(mp.second);
+		}
+
+		// Build moduleInfos with just models (empty positions since we use relativePositions)
+		std::vector<std::pair<plugin::Model*, Vec>> moduleInfos;
+		for (auto& mp : modelPositions) {
+			moduleInfos.push_back({mp.first, Vec(0.f, 0.f)});
+		}
+
+		auto callback = [=](Vec pos) {
+			// Clear slots when importing a selection
+			module->slots.clear();
+			module->clearBoundModules();
+			// Use unified importModulesAt for selection import
+			importModulesAt(pos, moduleInfos, relativePositions, true, rootJ, NULL);
+		};
+		placerContainer->showPreview(modelPositions, callback);
 	}
 
 	void appendContextMenu(Menu* menu) override {
@@ -1075,6 +1300,9 @@ struct ReelWidget : ThemedModuleWidget<ReelModule> {
 			[=]() { showPlacementPreview(); },
 			module->boundModules.empty()
 		));
+		menu->addChild(createMenuItem("Bind from selection (.vcvs)", "", [=]() {
+			importSelectionBind();
+		}));
 
 		menu->addChild(new MenuSeparator);
 		bool noBound = !module || module->boundModules.empty();
