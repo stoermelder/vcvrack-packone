@@ -1,5 +1,10 @@
 ## 2.4.0
 
+### New modules
+
+- Module [REEL](./docs/reel/Reel.md)
+    - Patch-memory for a group of modules
+
 ### Changes and Fixes
 
 - Module [AHAB](./docs/ahab/Ahab.md)

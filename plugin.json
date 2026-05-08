@@ -14,6 +14,15 @@
 	"donateUrl": "https://paypal.me/stoermelder",
 	"modules": [
 		{
+			"slug": "Reel",
+			"name": "REEL",
+			"description": "Patch memory for a group of modules \u2014 captures module parameters and internal cables across named snapshot slots",
+			"tags": [
+				"Utility",
+				"Controller"
+			]
+		},
+		{
 			"slug": "Ahab",
 			"name": "AHAB",
 			"description": "A live programming environment for ORCA, an esoteric programming language designed to quickly create procedural sequencers",
