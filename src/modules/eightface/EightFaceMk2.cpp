@@ -208,7 +208,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 		inChange = false;
 		guiSafeMode = GUISAFEMODE::GUI_WITH_LOCK;
 
-		BASE::ctrlUniqueId = rack::random::uniform() * INT64_MAX;
+		BASE::ctrlUniqueId = (int64_t)(rack::random::uniform() * (float)INT64_MAX);
 		preset = -1;
 		presetCount = NUM_PRESETS;
 		presetNext = -1;
