@@ -7,6 +7,7 @@ using namespace StoermelderPackOne::Hive;
 
 using HiveMod = HiveModule<MAX_RADIUS, 4>;
 
+SYNC_MODEL(modelHive, "Hive");
 Test::TestContext<> testContext;
 
 // Warm up the reset timer so the clock trigger guard (>= 1ms) is satisfied
@@ -26,11 +27,15 @@ static void clockEdge(HiveMod* module, int frame = 200) {
 }
 
 TEST_CASE("Construction and initialization", "[Hive]") {
-	HiveMod* module = Test::createModule<HiveMod>("Hive");
-	HiveWidget* mw = Test::createWidget<HiveWidget>(module);
+	HiveMod* m = Test::createModule<HiveMod>("Hive");
+	HiveWidget* mw = Test::createWidget<HiveWidget>("Hive");
+
+	REQUIRE(m != nullptr);
+	REQUIRE(mw != nullptr);
+	REQUIRE(mw->module == nullptr);
 
 	Test::destroyWidget(mw);
-	Test::destroyModule(module);
+	Test::destroyModule(m);
 }
 
 TEST_CASE("Reset clears grid and restores cursor defaults", "[Hive]") {
@@ -129,11 +134,11 @@ TEST_CASE("Cursor stepping onto ON cell fires trigger and CV outputs", "[Hive]")
 	clockEdge(module);
 
 	SECTION("Trigger output fires (10V) on ON cell") {
-		REQUIRE(module->outputs[HiveMod::TRIG_OUTPUT].getVoltage() == Approx(10.f));
+		REQUIRE(module->outputs[HiveMod::TRIG_OUTPUT].getVoltage() == Catch::Approx(10.f));
 	}
 
 	SECTION("CV output reflects cell CV in UNI_3V mode") {
-		REQUIRE(module->outputs[HiveMod::CV_OUTPUT].getVoltage() == Approx(1.5f));
+		REQUIRE(module->outputs[HiveMod::CV_OUTPUT].getVoltage() == Catch::Approx(1.5f));
 	}
 
 	Test::destroyModule(module);
@@ -147,7 +152,7 @@ TEST_CASE("Cursor stepping onto OFF cell produces no trigger", "[Hive]") {
 	clockEdge(module);
 
 	SECTION("Trigger output stays at zero for OFF cell") {
-		REQUIRE(module->outputs[HiveMod::TRIG_OUTPUT].getVoltage() == Approx(0.f));
+		REQUIRE(module->outputs[HiveMod::TRIG_OUTPUT].getVoltage() == Catch::Approx(0.f));
 	}
 
 	Test::destroyModule(module);
@@ -261,7 +266,7 @@ TEST_CASE("JSON round-trip preserves grid state and cursor configuration", "[JSO
 	SECTION("Grid cell state and CV preserved") {
 		HiveCell c = module2->grid.getCell(RoundAxialVec(2, -1));
 		REQUIRE(c.state == GRIDSTATE::ON);
-		REQUIRE(c.cv == Approx(0.4f));
+		REQUIRE(c.cv == Catch::Approx(0.4f));
 	}
 
 	SECTION("Cursor 0 direction preserved") {

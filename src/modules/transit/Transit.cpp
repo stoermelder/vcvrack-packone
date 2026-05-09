@@ -215,7 +215,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 			BASE::slotColor[i] = color::WHITE;
 		}
 
-		BASE::ctrlUniqueId = rack::random::uniform() * INT64_MAX;
+		BASE::ctrlUniqueId = (int64_t)(rack::random::uniform() * (float)INT64_MAX);
 		preset = -1;
 		presetFirst = 0;
 		presetLast = NUM_PRESETS;

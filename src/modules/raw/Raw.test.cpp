@@ -5,8 +5,8 @@
 
 using namespace StoermelderPackOne::Raw;
 
+SYNC_MODEL(modelRaw, "Raw");
 Test::TestContext<> testContext;
-
 
 TEST_CASE("Construction and initialization", "[Raw]") {
 	RawModule* module = Test::createModule<RawModule>("Raw");
@@ -34,10 +34,10 @@ TEST_CASE("Reset clears internal delay buffers", "[Raw]") {
 		for (int c = 0; c < 4; c++) {
 			for (int d = 0; d < 3; d++) {
 				simd::float_4 v = module->x[c][d];
-				REQUIRE(v[0] == Approx(0.f));
-				REQUIRE(v[1] == Approx(0.f));
-				REQUIRE(v[2] == Approx(0.f));
-				REQUIRE(v[3] == Approx(0.f));
+				REQUIRE(v[0] == Catch::Approx(0.f));
+				REQUIRE(v[1] == Catch::Approx(0.f));
+				REQUIRE(v[2] == Catch::Approx(0.f));
+				REQUIRE(v[3] == Catch::Approx(0.f));
 			}
 		}
 	}
@@ -46,10 +46,10 @@ TEST_CASE("Reset clears internal delay buffers", "[Raw]") {
 		for (int c = 0; c < 4; c++) {
 			for (int d = 0; d < 2; d++) {
 				simd::float_4 v = module->y[c][d];
-				REQUIRE(v[0] == Approx(0.f));
-				REQUIRE(v[1] == Approx(0.f));
-				REQUIRE(v[2] == Approx(0.f));
-				REQUIRE(v[3] == Approx(0.f));
+				REQUIRE(v[0] == Catch::Approx(0.f));
+				REQUIRE(v[1] == Catch::Approx(0.f));
+				REQUIRE(v[2] == Catch::Approx(0.f));
+				REQUIRE(v[3] == Catch::Approx(0.f));
 			}
 		}
 	}
@@ -133,19 +133,19 @@ TEST_CASE("Output gain parameter is computed correctly by prepareParameters", "[
 	SECTION("-20 dB yields out_gain 0.5") {
 		module->params[RawModule::PARAM_GAIN_OUT].setValue(-20.f);
 		module->prepareParameters();
-		REQUIRE(module->out_gain == Approx(0.5f));
+		REQUIRE(module->out_gain == Catch::Approx(0.5f));
 	}
 
 	SECTION("0 dB yields out_gain 5.0") {
 		module->params[RawModule::PARAM_GAIN_OUT].setValue(0.f);
 		module->prepareParameters();
-		REQUIRE(module->out_gain == Approx(5.f));
+		REQUIRE(module->out_gain == Catch::Approx(5.f));
 	}
 
 	SECTION("+20 dB yields out_gain 50.0") {
 		module->params[RawModule::PARAM_GAIN_OUT].setValue(20.f);
 		module->prepareParameters();
-		REQUIRE(module->out_gain == Approx(50.f));
+		REQUIRE(module->out_gain == Catch::Approx(50.f));
 	}
 
 	Test::destroyModule(module);
@@ -163,7 +163,7 @@ TEST_CASE("Output voltage scales linearly with out_gain", "[Raw]") {
 	modLow->prepareParameters();
 	modHigh->prepareParameters();
 
-	REQUIRE(modHigh->out_gain / modLow->out_gain == Approx(100.f));
+	REQUIRE(modHigh->out_gain / modLow->out_gain == Catch::Approx(100.f));
 
 	// Seed identical resonator state for identical velocity
 	modLow->x[0][1]  = simd::float_4(0.1f, 0.f, 0.f, 0.f);
@@ -193,7 +193,7 @@ TEST_CASE("Output voltage scales linearly with out_gain", "[Raw]") {
 
 	SECTION("Output ratio matches gain ratio") {
 		if (std::abs(vLow) > 0.f) {
-			REQUIRE(std::abs(vHigh) / std::abs(vLow) == Approx(100.f).epsilon(0.01f));
+			REQUIRE(std::abs(vHigh) / std::abs(vLow) == Catch::Approx(100.f).epsilon(0.01f));
 		}
 	}
 

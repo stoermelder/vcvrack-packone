@@ -5,6 +5,10 @@
 
 using namespace StoermelderPackOne::Intermix;
 
+SYNC_MODEL(modelIntermix, "Intermix");
+SYNC_MODEL(modelIntermixFade, "IntermixFade");
+Test::TestContext<> testContext;
+
 // Forward declare Intermix module type for expander tests
 template<int PORTS>
 struct IntermixModuleMock : Module, IntermixBase<PORTS> {
@@ -41,8 +45,18 @@ struct IntermixModuleMock : Module, IntermixBase<PORTS> {
 	}
 };
 
-Test::TestContext<> testContext;
 
+TEST_CASE("Construction and initialization", "[IntermixFade]") {
+	IntermixFadeModule<8>* m = Test::createModule<IntermixFadeModule<8>>("IntermixFade");
+	IntermixFadeWidget* mw = Test::createWidget<IntermixFadeWidget>("IntermixFade");
+
+	REQUIRE(m != nullptr);
+	REQUIRE(mw != nullptr);
+	REQUIRE(mw->module == nullptr);
+
+	Test::destroyWidget(mw);
+	Test::destroyModule(m);
+}
 
 TEST_CASE("Reset behavior", "[IntermixFade]") {
 	auto module = Test::createModule<IntermixFadeModule<8>>("IntermixFade");
@@ -283,5 +297,45 @@ TEST_CASE("Different inputs with fade", "[IntermixFade]") {
 	}
 
 	Test::destroyModule(fadeModule);
+	delete intermixModule;
+}
+
+TEST_CASE("Expander chain", "[IntermixFade]") {
+	auto intermixModule = new IntermixModuleMock<8>();
+	auto fadeModule1 = Test::createModule<IntermixFadeModule<8>>("IntermixFade");
+	auto fadeModule2 = Test::createModule<IntermixFadeModule<8>>("IntermixFade");
+	Test::SimpleEngine engine;
+	engine.registerModules(intermixModule, fadeModule1, fadeModule2);
+
+	SECTION("Multiple expanders can chain") {
+		// Setup expander chain: Intermix -> Fade1 -> Fade2
+		intermixModule->rightExpander.module = fadeModule1;
+		fadeModule1->leftExpander.module = intermixModule;
+		fadeModule1->rightExpander.module = fadeModule2;
+		fadeModule2->leftExpander.module = fadeModule1;
+
+		intermixModule->channelCount = 1;
+
+		fadeModule1->input = 0;
+		fadeModule2->input = 1;
+		fadeModule1->fade = FADE::IN;
+		fadeModule2->fade = FADE::IN;
+
+		// Process many times to trigger divider (64 samples division)
+		for (int i = 0; i < 130; i++) {
+			engine.step();
+		}
+
+		// Verify fade1 sent fade in times to intermix
+		uint32_t fade1InTs = intermixModule->fadeInTs[0];
+		REQUIRE(fade1InTs > 0);
+
+		// Verify fade2 sent fade in times to fade1 (which should have forwarded)
+		uint32_t fade2InTs = intermixModule->fadeInTs[1];
+		REQUIRE(fade2InTs > 0);
+	}
+
+	Test::destroyModule(fadeModule2);
+	Test::destroyModule(fadeModule1);
 	delete intermixModule;
 }

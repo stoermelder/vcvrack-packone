@@ -4,7 +4,22 @@
 
 using namespace StoermelderPackOne::Intermix;
 
+SYNC_MODEL(modelIntermix, "Intermix");
 Test::TestContext<> testContext;
+
+
+TEST_CASE("Construction and initialization", "[Intermix]") {
+	IntermixModule<8>* m = Test::createModule<IntermixModule<8>>("Intermix");
+	IntermixWidget* mw = Test::createWidget<IntermixWidget>("Intermix");
+
+	REQUIRE(m != nullptr);
+	REQUIRE(mw != nullptr);
+	REQUIRE(mw->module == nullptr);
+
+	Test::destroyWidget(mw);
+	Test::destroyModule(m);
+}
+
 
 TEST_CASE("Scene selection", "[Intermix]") {
 	auto module = Test::createModule<IntermixModule<8>>("Intermix");
@@ -409,12 +424,4 @@ TEST_CASE("Polyphonic processing", "[Intermix]") {
 	}
 
 	Test::destroyModule(module);
-}
-
-TEST_CASE("Widget construction", "[UI][Intermix]") {
-	IntermixWidget* w = Test::createWidget<IntermixWidget>("Intermix");
-	REQUIRE(w != nullptr);
-	REQUIRE(w->module == NULL);
-	
-	Test::destroyWidget(w);
 }

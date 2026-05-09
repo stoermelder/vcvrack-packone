@@ -4,6 +4,7 @@
 #include "Mb_v2.hpp"
 #include "Mb_v06.hpp"
 #include "Mb_autotag.hpp"
+#include "Mb_autotag_widgets.hpp"
 #include <osdialog.h>
 #include <tag.hpp>
 #include <chrono>
@@ -541,21 +542,16 @@ struct MbWidget : ModuleWidget {
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuLabel("Custom tags"));
 		menu->addChild(createMenuItem("Auto-generate custom tags", "", []() {
-			AutoTagResult result = customTagAuto();
-			if (result.total == 0) {
+			auto result = std::make_shared<AutoTagResult>(customTagAuto());
+			if (result->total == 0) {
 				osdialog_message(OSDIALOG_INFO, OSDIALOG_OK, "No new tag assignments found.");
 				return;
 			}
-			std::string msg = string::f("This will add %d new tag assignment%s across %d tag%s:\n\n",
-				result.total, result.total == 1 ? "" : "s",
-				(int)result.perTag.size(), result.perTag.size() == 1 ? "" : "s");
-			for (auto& pair : result.perTag) {
-				msg += string::f("  %s: %d module%s\n", pair.first.c_str(), pair.second, pair.second == 1 ? "" : "s");
-			}
-			msg += "\nExisting custom tags will not be removed. Continue?";
-			if (!osdialog_message(OSDIALOG_INFO, OSDIALOG_OK_CANCEL, msg.c_str()))
-				return;
-			result.apply();
+			ui::MenuOverlay* overlay = new ui::MenuOverlay;
+			overlay->bgColor = nvgRGBAf(0.f, 0.f, 0.f, 0.5f);
+			AutoTagConfirmWidget* w = new AutoTagConfirmWidget(result);
+			overlay->addChild(w);
+			APP->scene->addChild(overlay);
 		}));
 		menu->addChild(createMenuItem("Auto-generate 'MetaModule' tag", "", []() {
 			if (!osdialog_message(OSDIALOG_INFO, OSDIALOG_OK_CANCEL, "This will connect to https://metamodule.info and download the module list. Continue?"))
@@ -565,31 +561,32 @@ struct MbWidget : ModuleWidget {
 				osdialog_message(OSDIALOG_INFO, OSDIALOG_OK, "No new tag assignments found.");
 				return;
 			}
-			std::string msg = string::f("This will add the 'MetaModule' tag to %d module%s. Continue?",
-				result.total, result.total == 1 ? "" : "s");
-			if (!osdialog_message(OSDIALOG_INFO, OSDIALOG_OK_CANCEL, msg.c_str()))
-				return;
-			result.apply();
+			auto resultWrap = std::make_shared<AutoTagResult>(result);
+			ui::MenuOverlay* overlay = new ui::MenuOverlay;
+			overlay->bgColor = nvgRGBAf(0.f, 0.f, 0.f, 0.5f);
+			AutoTagConfirmWidget* w = new AutoTagConfirmWidget(resultWrap);
+			overlay->addChild(w);
+			APP->scene->addChild(overlay);
 		}));
 
 		struct SearchTagField : ui::TextField {
+			std::string query;
 			void onSelectKey(const event::SelectKey& e) override {
 				if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
-					std::string query = string::trim(text);
+					query = string::trim(text);
 					if (!query.empty()) {
 						AutoTagResult preview = customTagSearch(query);
 						if (preview.total == 0) {
 							osdialog_message(OSDIALOG_INFO, OSDIALOG_OK,
-								string::f("No untagged modules found for \"%s\".", query.c_str()).c_str());
+								string::f("No untagged modules found for \"%s\"", query.c_str()).c_str());
 						}
 						else {
-							std::string msg = string::f("Tag \"%s\" will be assigned to %d module%s. Continue?",
-								query.c_str(), preview.total, preview.total == 1 ? "" : "s");
-							if (osdialog_message(OSDIALOG_INFO, OSDIALOG_OK_CANCEL, msg.c_str())) {
-								preview.apply();
-								ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
-								if (overlay) overlay->requestDelete();
-							}
+							auto resultWrap = std::make_shared<AutoTagResult>(preview);
+							ui::MenuOverlay* overlay = new ui::MenuOverlay;
+							overlay->bgColor = nvgRGBAf(0.f, 0.f, 0.f, 0.5f);
+							AutoTagConfirmWidget* w = new AutoTagConfirmWidget(resultWrap);
+							overlay->addChild(w);
+							APP->scene->addChild(overlay);
 						}
 					}
 					e.consume(this);

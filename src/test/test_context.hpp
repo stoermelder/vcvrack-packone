@@ -3,10 +3,37 @@
 #include <rack.hpp>
 #include <patch.hpp>
 #include <atomic>
+#include <vector>
+#include <string>
+#include <utility>
 
 namespace Test {
 
 static std::atomic<int> testContextCount{0};
+
+// Registry for model pointer sync (see registerModelSync below).
+static std::vector<std::pair<std::string, Model**>>& modelSyncRegistry() {
+	static std::vector<std::pair<std::string, Model**>> reg;
+	return reg;
+}
+
+// Call this before TestContext is created (typically as a file-scope static
+// initializer) to ensure a module's model global in this TU is updated to the
+// pointer registered by init() in the plugin dylib.
+//
+// Background: test binaries both #include a module's .cpp (defining a model
+// global in the test TU) and link the plugin dylib (which has its own copy of
+// that global used by init()). After init() runs, the registered pointer lives
+// in the dylib; process() compiled inline uses this TU's pointer. Without this
+// sync, expander model checks always fail.
+static void registerModelSync(const std::string& slug, Model** ptr) {
+	modelSyncRegistry().push_back({slug, ptr});
+}
+
+// Declare before TestContext to schedule a model pointer sync.
+// Usage: SYNC_MODEL(modelFoo, "Foo");
+#define SYNC_MODEL(ptr, slug) \
+	static bool _syncModel_##ptr = (Test::registerModelSync(slug, &ptr), true)
 
 // Test-only context initializer to prevent APP (rack::contextGet()) from being null
 // Included by test harness only.
@@ -24,6 +51,10 @@ struct TestContext {
 		if (testContextCount.fetch_add(1, std::memory_order_acq_rel) == 0) {
 			pluginInstance = new Plugin();
 			init(pluginInstance);
+
+			for (auto& entry : modelSyncRegistry()) {
+				if (auto* m = pluginInstance->getModel(entry.first)) *entry.second = m;
+			}
 
 			ctx = new rack::Context();
 			rack::contextSet(ctx);
@@ -139,5 +170,54 @@ static const rack::midi::Message makeMidiMessage(uint8_t statusNibble, uint8_t c
 	m.bytes = { static_cast<unsigned char>((statusNibble << 4) | (channel & 0x0f)), static_cast<unsigned char>(b1), static_cast<unsigned char>(b2) };
 	return m;
 }
+
+
+// SimpleEngine simulates a VCV Rack engine step for module testing.
+// This class manages anlist of modules and processes them in sequence,
+// automatically flipping expander producer/consumer messages between each step.
+// This mimics how the VCV Rack engine processes modules and flips expanders.
+//
+// Usage:
+// Test::SimpleEngine testEngine;
+// testEngine.registerModules(moduleA, moduleB); 
+// A -> B chain
+//
+// testEngine.step();  // Process both modules with message flipping
+// testEngine.step();  // Continue processing...
+struct SimpleEngine {
+	std::list<Module*> modules;
+	int frame = 0;
+
+	void step() {
+		auto args = Test::makeProcessArgs(frame);
+		for (Module* module : modules) {
+			module->process(args);
+			std::swap(module->leftExpander.producerMessage, module->leftExpander.consumerMessage);
+			std::swap(module->rightExpander.producerMessage, module->rightExpander.consumerMessage);
+		}
+		frame++;
+ 	}
+
+	void registerModule(Module* m) {
+		modules.push_back(m);
+	}
+
+	/// Register multiple modules at once.
+	void registerModule(std::initializer_list<Module*> modules) {
+		for (Module* m : modules) {
+			this->modules.push_back(m);
+		}
+	}
+
+	/// Register multiple modules with variadic template.
+	template <typename... T>
+	void registerModules(T*... _m) {
+		Module* arr[] = {_m...};
+		for (Module* m : arr) {
+			this->modules.push_back(m);
+		}
+	}
+};
+
 
 } // namespace Test
