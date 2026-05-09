@@ -82,8 +82,9 @@ struct MirrorModule : Module, StripIdFixModule {
 		}
 	}
 
-	void onReset() override {
+	void onReset(const Module::ResetEvent& e) override {
 		reset(false, true);
+		Module::onReset(e);
 	}
 
 	void reset(bool stateOnly, bool createUiTask = false) {

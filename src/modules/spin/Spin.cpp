@@ -50,11 +50,13 @@ struct SpinModule : Module {
 		configOutput(OUTPUT_INC, "Mouse wheel up trigger");
 		configOutput(OUTPUT_CLICK, "Middle mouse button trigger");
 		configSwitch(PARAM_ONLY, 0.f, 1.f, 1.f, "Only active while parameter-hovering");
-		onReset();
+
+		Module::ResetEvent re;
+		onReset(re);
 	}
 
-	void onReset() override {
-		Module::onReset();
+	void onReset(const Module::ResetEvent& e) override {
+		Module::onReset(e);
 		mods = GLFW_MOD_SHIFT;
 		clickMode = CLICK_MODE::TOGGLE;
 		clickHigh = false;

@@ -1,25 +1,65 @@
 # stoermelder MB
 
-MB is a module for experimental replacement for Rack's module browser, formerly available in stoermelder's PackTau. It brings back the browser from Rack v0.6x and has a modified browser from Rack v1.x with adjustable preview size, favorites, extended filtering options and more.
+MB is a module for experimental replacement for Rack's module browser, formerly available in stoermelder's PackTau. It brings back the browser from Rack v0.6x and has a modified browsers from Rack v1.x and v2.x with adjustable preview size, favorites, extended filtering options, custom tags and more.
 
 ![MB intro](./Mb-intro.png)
-
-### Tips
-
-- Hidden modules can be shown again by hotkey CTRL+Space.
-
-- Hitting the Space-key will toggle the _Favorites_ category.
-
-- Favorites and hidden modules are stored in your local Rack-directory. You can share them or copy them to another computer by MB's export/import function on the context menu.
-
-- For _v1 mod_, by context menu option the "brands"-section can be hidden (added in v1.9.0).
-
-- For _v1 mod_, By context memu option also the modules' description can be searched (added in v1.9.0).
 
 ### Introduction by Omri Cohen
 
 <a href="https://www.youtube.com/embed/7DSTPIHWOVg?start=1640" target="_blank"><img src="https://img.youtube.com/vi/7DSTPIHWOVg/0.jpg" style="width:100%" /></a>
 
+### Custom tags
+
+MB maintains its own custom tag system separate from Rack's built-in tags. Custom tags are stored in your local Rack directory and can be exported/shared like favorites and hidden module settings.
+
+**Adding custom tags** — Use the auto-generate functions described below, or add tags manually through the context menu of individual modules in the browser.
+
+**Viewing and managing tags** — The context menu on the module lists all existing custom tags with options to delete them.
+
+### Auto-generate custom tags
+
+MB can automatically assign custom tags to modules using keyword matching. The context menu offers three auto-tagging options:
+
+**Auto-generate custom tags** — Uses a curated rule set with ~70 tag categories covering synthesis techniques (Wavetable, FM Synthesis, Phase Modulation), filter types (Ladder Filter, Comb Filter), modulation utilities (Attenuverter, Comparator, Shift Register), effects (Bitcrusher, Tape, Spring Reverb), and more. Keywords are matched via fuzzy substring search against module names and descriptions.
+
+**Auto-generate 'MetaModule' tag** — Connects to https://metamodule.info to download a list of MetaModule-compatible plugins and assigns the "MetaModule" tag to matching modules.
+
+**Auto-generate tag from search** — Enter a custom search term (which becomes the tag name) and modules matching that query are tagged accordingly. For example, searching "Sequencer" would show all untagged modules containing "sequencer" in name/description.
+
+All three options show a confirmation dialog listing the proposed tag assignments, allowing you to verify or adjust individual assignments before applying.
+
+### Tips
+
+- Display of hidden modules can be toggled by hotkey Shift+Space.
+
+- Hitting the Space-key will toggle the _Favorites_ category.
+
+- Favorites and hidden modules are stored in your local Rack-directory. You can share them or copy them to another computer by MB's export/import function on the context menu.
+
+- For _v1 mod_ and _v2 mod_, by context menu option the "brands"-section can be hidden (added in v1.9.0).
+
+- For _v1 mod_ and _v2 mod_, by context memu option also the modules' description can be searched (added in v1.9.0).
+
+- **Favorite modes** — MB supports three favorite modes (VCVRACK, MB, or BOTH) controlling how favorites are stored and displayed.
+
 ## Changelog
 
-MB was introduced in v1.8 of PackOne.
+- v2.4.0
+    - Added custom tags for user-defined module grouping
+    - Added auto-tagging including MetaModule
+    - Added fuzzy search (similar to the default module browser)
+    - Added option to select "Favorite" handling (Legacy (MB) / Built-in VCV Rack)
+    - Added option to highlight favorites
+    - Added "v2 mod" variation
+    - Changed hotkey to toggle hidden modules to Shift+Space (because of Spotlight on Mac)
+    - Fixed broken button of "Favorites" category
+- v2.0.0
+    - Fixed usage in multiple plugin-instances
+    - Fixed crash on exiting Rack after adding MB (#352)
+    - Fixed wrong hotkey modifier on Mac (Ctrl instead of Cmd) on Space-key
+    - Added missing template loading after adding a module (#369)
+- v1.9
+    - Added option to hide the "brands" section of the V1-browser (#223)
+    - Added option to search module descriptions (https://github.com/stoermelder/vcvrack-packtau/pull/9)
+- v1.8
+    - Initial release

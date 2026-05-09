@@ -33,7 +33,9 @@ struct StripBayModule : Strip::StripBayBase {
 			configInput(INPUT + i, string::f("Patchbay %i", i + 1));
 			configOutput(OUTPUT + i, string::f("Patchbay %i", i + 1));
 		}
-		onReset();
+
+		ResetEvent re;
+		onReset(re);
 	}
 
 	void process(const ProcessArgs& args) override {

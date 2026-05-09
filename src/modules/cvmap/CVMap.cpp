@@ -69,15 +69,17 @@ struct CVMapModule : CVMapModuleBase<MAX_CHANNELS> {
 			mapParam[i].setLimits(0.f, 1.f, std::numeric_limits<float>::infinity());
 		}
 		processDivider.setDivision(32);
-		onReset();
+
+		ResetEvent re;
+		onReset(re);
 	}
 
 	void onSampleRateChange(const SampleRateChangeEvent& e) override {
 		lightDivider.setDivision(e.sampleRate / 100.f);
 	}
 
-	void onReset() override {
-		CVMapModuleBase<MAX_CHANNELS>::onReset();
+	void onReset(const ResetEvent& e) override {
+		CVMapModuleBase<MAX_CHANNELS>::onReset(e);
 		audioRate = false;
 		locked = false;
 		for (size_t i = 0; i < MAX_CHANNELS; i++) {

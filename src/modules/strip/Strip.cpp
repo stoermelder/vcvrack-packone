@@ -94,19 +94,22 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 		configInput(RAND_INPUT, "Strip randomization trigger");
 		configSwitch(RAND_PARAM, 0.f, 1.f, 0.f, "Randomize strip");
 		configSwitch(EXCLUDE_PARAM, 0.f, 1.f, 0.f, "Parameter randomization include/exclude");
-		onReset();
+
+		ResetEvent re;
+		onReset(re);
 	}
 
 	void onSampleRateChange(const SampleRateChangeEvent& e) override {
 		lightDivider.setDivision(e.sampleRate / 100.f);
 	}
 
-	void onReset() override {
+	void onReset(const ResetEvent& e) override {
 		randomParamsOnly = false;
 		presetLoadReplace = false;
 		// Initialize snapshot to empty set so UI can read safely immediately
 		excludedParams.clear();
 		std::atomic_store(&excludedParamsPtr, std::make_shared<const std::set<std::tuple<int64_t, int>>>());
+		Module::onReset(e);
 	}
 
 	void process(const ProcessArgs& args) override {
@@ -317,6 +320,7 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 					}
 				}
 				if (!randomParamsOnly) {
+					// Note: onRandomize() and onRandomize(e) behave differently by default
 					mNext->onRandomize();
 				}
 
@@ -350,6 +354,7 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 					}
 				}
 				if (!randomParamsOnly) {
+					// Note: onRandomize() and onRandomize(e) behave differently by default
 					mNext->onRandomize();
 				}
 

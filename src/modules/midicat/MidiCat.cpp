@@ -410,6 +410,8 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 
 	MIDIMODE midiMode = MIDIMODE::MIDIMODE_DEFAULT;
 	bool ccFineMode = false;
+	// Use for temporary override of CC mode to DIRECT
+	bool ccModeOverride = false;
 
 	/** Track last values */
 	int lastValueIn[MAX_CHANNELS];
@@ -467,7 +469,9 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 		}
 		indicatorDivider.setDivision(2048);
 		midiResendDivider.setDivision(APP->engine->getSampleRate() / 2);
-		onReset();
+
+		Module::ResetEvent re;
+		onReset(re);
 	}
 
 	~MidiCatModule() {
@@ -481,7 +485,7 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 		notifyExpanderListeners("MidiCat");
 	}
 
-	void onReset() override {
+	void onReset(const Module::ResetEvent& e) override {
 		expandersChanged = true;
 
 		learningId = -1;
@@ -525,11 +529,13 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 		clearMapsOnLoad = false;
 
 		parameterChangesDirect = false;
+
+		Module::onReset(e);
 	}
 
-	void onSampleRateChange() override {
-		midiResendDivider.setDivision(APP->engine->getSampleRate() / 2);
-		longPressDuration = (uint64_t)(APP->engine->getSampleRate() / 2);
+	void onSampleRateChange(const SampleRateChangeEvent& e) override {
+		midiResendDivider.setDivision(e.sampleRate / 2);
+		longPressDuration = (uint64_t)(e.sampleRate / 2);
 	}
 
 	void process(const ProcessArgs &args) override {
@@ -663,7 +669,8 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 
 					// Check if CC value has been set and changed
 					if (cc >= 0 && ccs[id].process()) {
-						switch (ccs[id].ccMode) {
+						CCMODE mode = ccModeOverride ? CCMODE::DIRECT : ccs[id].ccMode;
+						switch (mode) {
 							case CCMODE::DIRECT:
 								if (lastValueIn[id] != ccs[id].getValue()) {
 									lastValueIn[id] = ccs[id].getValue();
@@ -2632,8 +2639,37 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 					}
 					break;
 				}
+				case GLFW_KEY_F: {
+					if ((e.mods & RACK_MOD_MASK) == (RACK_MOD_SHIFT | RACK_MOD_CTRL)) {
+						MidiCatModule* module = dynamic_cast<MidiCatModule*>(this->module);
+						module->midiResendFeedback();
+						e.consume(this);
+					}
+					break;
+				}
+				case GLFW_KEY_I: {
+					if ((e.mods & RACK_MOD_MASK) == (RACK_MOD_SHIFT | RACK_MOD_CTRL)) {
+						MidiCatModule* module = dynamic_cast<MidiCatModule*>(this->module);
+						module->ccModeOverride = true;
+						e.consume(this);
+					}
+					break;
+				}
 			}
 		}
+		if (e.action == GLFW_RELEASE) {
+			switch (e.key) {
+				case GLFW_KEY_I: {
+					if ((e.mods & RACK_MOD_MASK) == (RACK_MOD_SHIFT | RACK_MOD_CTRL)) {
+						MidiCatModule* module = dynamic_cast<MidiCatModule*>(this->module);
+						module->ccModeOverride = false;
+						e.consume(this);
+					}
+					break;
+				}
+			}
+		}
+
 		ThemedModuleWidget<MidiCatModule>::onHoverKey(e);
 	}
 

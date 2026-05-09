@@ -15,8 +15,8 @@ jobs:
     name: Modify plugin version
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/cache@v4
+      - uses: actions/checkout@v6
+      - uses: actions/cache@v5
         id: plugin-version-cache
         with:
           path: plugin.json
@@ -40,10 +40,10 @@ jobs:
       matrix:
         platform: [win-x64, lin-x64]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           submodules: recursive
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         id: plugin-version-cache
         with:
           path: plugin.json
@@ -52,9 +52,10 @@ jobs:
         run: |
           export PLUGIN_DIR=$GITHUB_WORKSPACE
           pushd ${{ env.rack-plugin-toolchain-dir }}
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           make plugin-build-${{ matrix.platform }}
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           path: ${{ env.rack-plugin-toolchain-dir }}/plugin-build
           name: ${{ matrix.platform }}
@@ -68,10 +69,10 @@ jobs:
       matrix:
         platform: [x64, arm64]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           submodules: recursive
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         id: plugin-version-cache
         with:
           path: plugin.json
@@ -90,7 +91,7 @@ jobs:
           make dep
           make dist
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           path: dist/*.vcvplugin
           name: mac-${{ matrix.platform }}
@@ -103,7 +104,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:  [build, build-mac]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: FranzDiebold/github-env-vars-action@v2
       - name: Check if plugin version matches tag
         run: |
@@ -112,8 +113,11 @@ jobs:
             echo "Plugin version from plugin.json 'v$pluginversion' doesn't match with tag version '${{ env.CI_REF_NAME }}'"
             exit 1
           fi
+      - uses: actions/download-artifact@v8
+        with:
+          path: _artifacts
       - name: Create Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref }}
           name: Release ${{ env.CI_REF_NAME }}
@@ -121,16 +125,8 @@ jobs:
             ${{ env.CI_REPOSITORY_NAME }} VCV Rack Plugin ${{ env.CI_REF_NAME }}
           draft: false
           prerelease: false
-      - uses: actions/download-artifact@v4.1.7
-        with:
-          path: _artifacts
-      - name: Upload release assets
-        uses: svenstaro/upload-release-action@v2
-        with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: _artifacts/**/*.vcvplugin
-          tag: ${{ github.ref }}
-          file_glob: true
+          files: |
+            _artifacts/**/*.vcvplugin
 
   publish-nightly:
     name: Publish Nightly
@@ -140,20 +136,26 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build, build-mac]
     steps:
-      - uses: actions/download-artifact@v4.1.7
+      - uses: actions/checkout@v6
+      - name: Delete Nightly release
+        run: |
+          gh release delete Nightly --cleanup-tag --yes
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - uses: actions/download-artifact@v8
         with:
           path: _artifacts
-      - name: Delete old release assets
-        uses: mknejp/delete-release-assets@v1
+      - name: Create Nightly release
+        uses: softprops/action-gh-release@v3
         with:
-          token: ${{ github.token }}
-          tag: Nightly # This may also be of the form 'refs/tags/staging'
-          fail-if-no-assets: false
-          assets: '*'
-      - name: Upload release assets
-        uses: svenstaro/upload-release-action@v2
-        with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: _artifacts/**/*.vcvplugin
-          tag: Nightly
-          file_glob: true
+          name: Nightly
+          tag_name: Nightly
+          target_commitish: v2-dev
+          draft: false
+          prerelease: true
+          body: |
+            ## Automatically generated build
+            This build is automatically generated every time I push my changes.
+            As such it is the latest version of the code and may be unstable, unusable, unsuitable for human consumption, and so on.
+          files: |
+            _artifacts/**/*.vcvplugin

@@ -16,7 +16,9 @@ enum class SLOT_CMD {
 	PASTE,
 	SAVE,
 	SHIFT_BACK,
-	SHIFT_FRONT
+	SHIFT_FRONT,
+	SET_FIRST,
+	SET_LAST
 };
 
 enum class CTRLMODE {
@@ -243,16 +245,16 @@ struct TransitLedButton : VCVButton {
 	}
 
 	void appendContextMenu(Menu* menu) override {
-		if (module->ctrlMode == CTRLMODE::WRITE) {
-			struct SlotItem : MenuItem {
-				TransitBase<NUM_PRESETS>* module;
-				int id;
-				SLOT_CMD cmd;
-				void onAction(const event::Action& e) override {
-					module->sendSlotCmd(cmd, id);
-				}
-			};
+		struct SlotItem : MenuItem {
+			TransitBase<NUM_PRESETS>* module;
+			int id;
+			SLOT_CMD cmd;
+			void onAction(const event::Action& e) override {
+				module->sendSlotCmd(cmd, id);
+			}
+		};
 
+		if (module->ctrlMode == CTRLMODE::WRITE) {
 			struct PasteItem : SlotItem {
 				void step() override {
 					int i = this->module->sendSlotCmd(SLOT_CMD::PASTE_PREVIEW, this->id);
@@ -407,6 +409,9 @@ struct TransitLedButton : VCVButton {
 			}
 		}; // struct LabelMenuItem
 
+		menu->addChild(new MenuSeparator);
+		menu->addChild(construct<SlotItem>(&MenuItem::text, "Set as first", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::SET_FIRST));
+		menu->addChild(construct<SlotItem>(&MenuItem::text, "Set as last", &SlotItem::module, module, &SlotItem::id, id, &SlotItem::cmd, SLOT_CMD::SET_LAST));
 		menu->addChild(new MenuSeparator);
 		menu->addChild(construct<LabelMenuItem>(&MenuItem::text, "Custom label", &LabelMenuItem::module, module, &LabelMenuItem::id, id));
 		menu->addChild(createSubmenuItem("Custom color", "", [=](Menu* menu) {
