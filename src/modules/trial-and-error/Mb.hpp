@@ -76,7 +76,7 @@ struct BrowserOverlay : widget::OpaqueWidget {
 
 	MODE* mode;
 
-	BrowserOverlay(SppPreview::SelectionPreviewContainer* c);
+	BrowserOverlay();
 	~BrowserOverlay();
 
 	void step() override;

@@ -133,11 +133,11 @@ void SelectionBrowserSidebar::onShow(const event::Show& e) {
 }
 
 
-SelectionBrowser::SelectionBrowser(SppPreview::SelectionPreviewContainer* c) {
+SelectionBrowser::SelectionBrowser() {
 	sidebar = new SelectionBrowserSidebar;
 	addChild(sidebar);
 
-	preview = new SelectionPreview(c);
+	preview = new SelectionPreview;
 	addChild(preview);
 	sidebar->preview = preview;
 }

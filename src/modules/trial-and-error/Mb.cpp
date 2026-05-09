@@ -298,7 +298,7 @@ void modelUsageReset() {
 
 // Browser overlay
 
-BrowserOverlay::BrowserOverlay(SppPreview::SelectionPreviewContainer* c) {
+BrowserOverlay::BrowserOverlay() {
 	v1::modelBoxZoom = pluginSettings.mbV1zoom;
 	v1::modelBoxSort = pluginSettings.mbV1sort;
 	v1::hideBrands = pluginSettings.mbV1hideBrands;
@@ -344,7 +344,7 @@ BrowserOverlay::BrowserOverlay(SppPreview::SelectionPreviewContainer* c) {
 	mbV2->hide();
 	addChild(mbV2);
 
-	mbSelection = new selection::SelectionBrowser(c);
+	mbSelection = new selection::SelectionBrowser;
 	mbSelection->hide();
 	addChild(mbSelection);
 
@@ -478,7 +478,7 @@ struct MbModule : Module {
 
 
 struct MbWidget : ModuleWidget {
-	SppPreview::SelectionPreviewContainer* sppPreviewContainer;
+	SppPreview::SelectionPreviewContainer<Mb::BrowserOverlay>* sppPreviewContainer;
 	BrowserOverlay* browserOverlay;
 	bool active = false;
 
@@ -494,10 +494,10 @@ struct MbWidget : ModuleWidget {
 		if (module) {
 			active = registerSingleton("Mb", this);
 			if (active) {
-				sppPreviewContainer = new SppPreview::SelectionPreviewContainer;
+				sppPreviewContainer = new SppPreview::SelectionPreviewContainer<Mb::BrowserOverlay>;
 				APP->scene->rack->addChild(sppPreviewContainer);
 
-				browserOverlay = new BrowserOverlay(sppPreviewContainer);
+				browserOverlay = new BrowserOverlay;
 				browserOverlay->mode = &module->mode;
 				browserOverlay->hide();
 			}

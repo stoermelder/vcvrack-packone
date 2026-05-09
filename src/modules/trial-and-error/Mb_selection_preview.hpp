@@ -189,12 +189,6 @@ struct SelectionPreview : OpaqueWidget {
 	float scaledContentOffsetX = 0.f;
 	float scaledContentOffsetY = 0.f;
 
-	SppPreview::SelectionPreviewContainer* selectionContainer;
-
-	SelectionPreview(SppPreview::SelectionPreviewContainer* c) {
-		selectionContainer = c;
-	}
-
 	void fitPreviewToBox() {
 		if (children.empty()) return;
 		if (box.size.x <= 0 || box.size.y <= 0) return;
@@ -384,9 +378,13 @@ struct SelectionPreview : OpaqueWidget {
 	void onButton(const ButtonEvent& e) override {
 		if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS) {
 			APP->scene->browser->hide();
-			selectionContainer->showSelectionPreview(filePath, [&]() {
-				vcvsLoadFile(filePath);
-			});
+			auto selectionContainer = 
+				APP->scene->rack->getFirstDescendantOfType<SppPreview::SelectionPreviewContainer<Mb::BrowserOverlay>>();
+			if (selectionContainer) {
+				selectionContainer->showSelectionPreview(filePath, [&]() {
+					vcvsLoadFile(filePath);
+				});
+			}
 			e.consume(this);
 		}
 	}

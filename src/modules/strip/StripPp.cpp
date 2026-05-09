@@ -61,7 +61,7 @@ struct StripPpModule : Module {
 
 
 struct StripPpWidget : StripWidgetBase<StripPpModule> {
-	struct StripPpContainer : SppPreview::SelectionPreviewContainer {
+	struct StripPpContainer : SppPreview::SelectionPreviewContainer<StripPpWidget> {
 		StripPpWidget* mw;
 
 		void onHoverKey(const event::HoverKey& e) override {

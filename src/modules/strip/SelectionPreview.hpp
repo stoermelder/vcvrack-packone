@@ -151,6 +151,7 @@ struct SelectionPreview : OpaqueWidget {
 	}
 };
 
+template<typename T>
 struct SelectionPreviewContainer : Widget {
 	math::Vec dragPos;
 	StoermelderPackOne::SppPreview::SelectionPreview* sp;

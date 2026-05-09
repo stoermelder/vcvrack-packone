@@ -27,7 +27,7 @@ struct SelectionBrowser : widget::OpaqueWidget {
 	SelectionBrowserSidebar* sidebar;
 	SelectionPreview* preview;
 
-	SelectionBrowser(SppPreview::SelectionPreviewContainer* c);
+	SelectionBrowser();
 	void step() override;
 	void draw(const DrawArgs& args) override;
 };
