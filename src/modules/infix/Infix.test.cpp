@@ -4,6 +4,8 @@
 
 using namespace StoermelderPackOne::Infix;
 
+SYNC_MODEL(modelInfix, "Infix");
+SYNC_MODEL(modelInfixMicro, "InfixMicro");
 Test::TestContext<> testContext;
 
 TEST_CASE("JSON serialization", "[Infix]") {

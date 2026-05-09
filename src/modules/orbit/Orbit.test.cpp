@@ -5,6 +5,7 @@
 
 using namespace StoermelderPackOne::Orbit;
 
+SYNC_MODEL(modelOrbit, "Orbit");
 Test::TestContext<> testContext;
 
 TEST_CASE("Stereo panning basic", "[Orbit]") {

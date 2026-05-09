@@ -9,6 +9,8 @@
 
 using namespace StoermelderPackOne::Transit;
 
+SYNC_MODEL(modelTransit, "Transit");
+SYNC_MODEL(modelTransitEx, "TransitEx");
 Test::TestContext<> testContext;
 
 // Helper module with test parameters

@@ -4,6 +4,7 @@
 
 using namespace StoermelderPackOne::Mb;
 
+SYNC_MODEL(modelMb, "Mb");
 Test::TestContext<> testContext;
 
 

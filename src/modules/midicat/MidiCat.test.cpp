@@ -6,7 +6,7 @@
 
 using namespace StoermelderPackOne::MidiCat;
 
-// Define the single instance used by tests
+SYNC_MODEL(modelMidiCat, "MidiCat");
 Test::TestContext<> testContext;
 
 // Helper class to provide a test module with parameters

@@ -11,6 +11,8 @@ static AffixModule<CHANNELS>* createAffixModule(std::string modelSlug) {
 	return module;
 }
 
+SYNC_MODEL(modelAffix, "Affix");
+SYNC_MODEL(modelAffixMicro, "AffixMicro");
 Test::TestContext<> testContext;
 
 TEST_CASE("Voltage mode", "[Affix]") {

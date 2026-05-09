@@ -3,10 +3,37 @@
 #include <rack.hpp>
 #include <patch.hpp>
 #include <atomic>
+#include <vector>
+#include <string>
+#include <utility>
 
 namespace Test {
 
 static std::atomic<int> testContextCount{0};
+
+// Registry for model pointer sync (see registerModelSync below).
+static std::vector<std::pair<std::string, Model**>>& modelSyncRegistry() {
+	static std::vector<std::pair<std::string, Model**>> reg;
+	return reg;
+}
+
+// Call this before TestContext is created (typically as a file-scope static
+// initializer) to ensure a module's model global in this TU is updated to the
+// pointer registered by init() in the plugin dylib.
+//
+// Background: test binaries both #include a module's .cpp (defining a model
+// global in the test TU) and link the plugin dylib (which has its own copy of
+// that global used by init()). After init() runs, the registered pointer lives
+// in the dylib; process() compiled inline uses this TU's pointer. Without this
+// sync, expander model checks always fail.
+static void registerModelSync(const std::string& slug, Model** ptr) {
+	modelSyncRegistry().push_back({slug, ptr});
+}
+
+// Declare before TestContext to schedule a model pointer sync.
+// Usage: SYNC_MODEL(modelFoo, "Foo");
+#define SYNC_MODEL(ptr, slug) \
+	static bool _syncModel_##ptr = (Test::registerModelSync(slug, &ptr), true)
 
 // Test-only context initializer to prevent APP (rack::contextGet()) from being null
 // Included by test harness only.
@@ -24,6 +51,10 @@ struct TestContext {
 		if (testContextCount.fetch_add(1, std::memory_order_acq_rel) == 0) {
 			pluginInstance = new Plugin();
 			init(pluginInstance);
+
+			for (auto& entry : modelSyncRegistry()) {
+				if (auto* m = pluginInstance->getModel(entry.first)) *entry.second = m;
+			}
 
 			ctx = new rack::Context();
 			rack::contextSet(ctx);

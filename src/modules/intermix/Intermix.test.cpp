@@ -4,6 +4,7 @@
 
 using namespace StoermelderPackOne::Intermix;
 
+SYNC_MODEL(modelIntermix, "Intermix");
 Test::TestContext<> testContext;
 
 TEST_CASE("Scene selection", "[Intermix]") {

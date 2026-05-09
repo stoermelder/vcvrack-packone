@@ -5,6 +5,7 @@
 
 using namespace StoermelderPackOne::Goto;
 
+SYNC_MODEL(modelGoto, "Goto");
 Test::TestContext<> testContext;
 
 TEST_CASE("Construction and initialization", "[Goto]") {

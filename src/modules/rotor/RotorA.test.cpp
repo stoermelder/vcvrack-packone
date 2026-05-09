@@ -5,6 +5,7 @@
 
 using namespace StoermelderPackOne::RotorA;
 
+SYNC_MODEL(modelRotorA, "RotorA");
 Test::TestContext<> testContext;
 
 TEST_CASE("Basic modulation", "[RotorA]") {

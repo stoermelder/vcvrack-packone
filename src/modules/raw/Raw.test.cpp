@@ -5,8 +5,8 @@
 
 using namespace StoermelderPackOne::Raw;
 
+SYNC_MODEL(modelRaw, "Raw");
 Test::TestContext<> testContext;
-
 
 TEST_CASE("Construction and initialization", "[Raw]") {
 	RawModule* module = Test::createModule<RawModule>("Raw");

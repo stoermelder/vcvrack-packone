@@ -7,6 +7,7 @@ using namespace StoermelderPackOne::Hive;
 
 using HiveMod = HiveModule<MAX_RADIUS, 4>;
 
+SYNC_MODEL(modelHive, "Hive");
 Test::TestContext<> testContext;
 
 // Warm up the reset timer so the clock trigger guard (>= 1ms) is satisfied

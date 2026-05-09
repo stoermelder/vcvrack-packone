@@ -4,6 +4,7 @@
 
 using namespace StoermelderPackOne::Sipo;
 
+SYNC_MODEL(modelSipo, "Sipo");
 Test::TestContext<> testContext;
 
 TEST_CASE("JSON serialization", "[Sipo]") {

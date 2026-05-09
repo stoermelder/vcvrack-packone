@@ -5,6 +5,10 @@
 
 using namespace StoermelderPackOne::Intermix;
 
+SYNC_MODEL(modelIntermix, "Intermix");
+SYNC_MODEL(modelIntermixGate, "IntermixGate");
+Test::TestContext<> testContext;
+
 // Forward declare Intermix module type for expander tests
 template<int PORTS>
 struct IntermixModuleMock : Module, IntermixBase<PORTS> {
@@ -34,7 +38,6 @@ struct IntermixModuleMock : Module, IntermixBase<PORTS> {
 	}
 };
 
-Test::TestContext<> testContext;
 
 TEST_CASE("Expander connection", "[IntermixGate]") {
 	auto gateModule = Test::createModule<IntermixGateModule<8>>("IntermixGate");
@@ -245,6 +248,8 @@ TEST_CASE("Expander chain with gate module", "[IntermixGate]") {
 		REQUIRE(gateModule2->outputs[IntermixGateModule<8>::OUTPUT + 0].getVoltage() == 10.f);
 		REQUIRE(gateModule1->outputs[IntermixGateModule<8>::OUTPUT + 1].getVoltage() == 10.f);
 		REQUIRE(gateModule2->outputs[IntermixGateModule<8>::OUTPUT + 1].getVoltage() == 10.f);
+		REQUIRE(gateModule1->outputs[IntermixGateModule<8>::OUTPUT + 2].getVoltage() == 0.f);
+		REQUIRE(gateModule2->outputs[IntermixGateModule<8>::OUTPUT + 2].getVoltage() == 0.f);
 	}
 
 	Test::destroyModule(gateModule2);

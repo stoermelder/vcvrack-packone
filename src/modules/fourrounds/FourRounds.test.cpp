@@ -5,6 +5,7 @@
 
 using namespace StoermelderPackOne::FourRounds;
 
+SYNC_MODEL(modelFourRounds, "FourRounds");
 Test::TestContext<> testContext;
 
 TEST_CASE("Construction and initialization", "[FourRounds]") {

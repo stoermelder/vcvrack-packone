@@ -6,7 +6,7 @@
 using namespace StoermelderPackOne;
 using namespace StoermelderPackOne::Ahab;
 
-// Define the single instance used by tests
+SYNC_MODEL(modelAhab, "Ahab");
 static Test::TestContext<> testContext;
 
 // Mock MIDI OutputDevice for testing MIDI output messages

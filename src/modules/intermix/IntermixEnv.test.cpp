@@ -4,6 +4,10 @@
 
 using namespace StoermelderPackOne::Intermix;
 
+SYNC_MODEL(modelIntermix, "Intermix");
+SYNC_MODEL(modelIntermixEnv, "IntermixEnv");
+Test::TestContext<> testContext;
+
 // Forward declare Intermix module type for expander tests
 template<int PORTS>
 struct IntermixModuleMock : Module, IntermixBase<PORTS> {
@@ -33,7 +37,6 @@ struct IntermixModuleMock : Module, IntermixBase<PORTS> {
 	}
 };
 
-Test::TestContext<> testContext;
 
 TEST_CASE("Input selection", "[IntermixEnv]") {
 	auto module = Test::createModule<IntermixEnvModule<8>>("IntermixEnv");
@@ -181,7 +184,11 @@ TEST_CASE("Expander chain", "[IntermixEnv]") {
 		envModule2->process(m3);
 		
 		REQUIRE(envModule1->outputs[IntermixEnvModule<8>::OUTPUT + 0].getVoltage() == Catch::Approx(8.0f).margin(0.01f));
+		REQUIRE(envModule1->outputs[IntermixEnvModule<8>::OUTPUT + 1].getVoltage() == Catch::Approx(0.0f).margin(0.01f));
+		REQUIRE(envModule1->outputs[IntermixEnvModule<8>::OUTPUT + 2].getVoltage() == Catch::Approx(0.0f).margin(0.01f));
 		REQUIRE(envModule2->outputs[IntermixEnvModule<8>::OUTPUT + 0].getVoltage() == Catch::Approx(4.0f).margin(0.01f));
+		REQUIRE(envModule2->outputs[IntermixEnvModule<8>::OUTPUT + 1].getVoltage() == Catch::Approx(0.0f).margin(0.01f));
+		REQUIRE(envModule2->outputs[IntermixEnvModule<8>::OUTPUT + 3].getVoltage() == Catch::Approx(0.0f).margin(0.01f));
 	}
 
 	Test::destroyModule(envModule2);

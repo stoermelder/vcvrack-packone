@@ -5,6 +5,7 @@
 
 using namespace StoermelderPackOne::Pile;
 
+SYNC_MODEL(modelPile, "Pile");
 Test::TestContext<> testContext;
 
 TEST_CASE("Increment and decrement", "[Pile]") {

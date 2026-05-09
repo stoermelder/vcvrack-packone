@@ -5,6 +5,7 @@
 
 using namespace StoermelderPackOne::PilePoly;
 
+SYNC_MODEL(modelPilePoly, "PilePoly");
 Test::TestContext<> testContext;
 
 TEST_CASE("Polyphonic increment and decrement", "[PilePoly]") {

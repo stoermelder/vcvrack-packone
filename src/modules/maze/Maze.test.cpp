@@ -7,6 +7,7 @@ using namespace StoermelderPackOne::Maze;
 
 using MazeMod = MazeModule<32, 4>;
 
+SYNC_MODEL(modelMaze, "Maze");
 Test::TestContext<> testContext;
 
 // Warm up the reset timer so the clock trigger guard (>= 1ms) is satisfied

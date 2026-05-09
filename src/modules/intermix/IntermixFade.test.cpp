@@ -5,6 +5,10 @@
 
 using namespace StoermelderPackOne::Intermix;
 
+SYNC_MODEL(modelIntermix, "Intermix");
+SYNC_MODEL(modelIntermixFade, "IntermixFade");
+Test::TestContext<> testContext;
+
 // Forward declare Intermix module type for expander tests
 template<int PORTS>
 struct IntermixModuleMock : Module, IntermixBase<PORTS> {
@@ -40,8 +44,6 @@ struct IntermixModuleMock : Module, IntermixBase<PORTS> {
 		rightExpander.messageFlipRequested = true;
 	}
 };
-
-Test::TestContext<> testContext;
 
 
 TEST_CASE("Reset behavior", "[IntermixFade]") {
@@ -283,5 +285,67 @@ TEST_CASE("Different inputs with fade", "[IntermixFade]") {
 	}
 
 	Test::destroyModule(fadeModule);
+	delete intermixModule;
+}
+
+TEST_CASE("Expander chain", "[IntermixFade]") {
+	auto intermixModule = new IntermixModuleMock<8>();
+	auto fadeModule1 = Test::createModule<IntermixFadeModule<8>>("IntermixFade");
+	auto fadeModule2 = Test::createModule<IntermixFadeModule<8>>("IntermixFade");
+
+	SECTION("Multiple expanders can chain") {
+		// Setup expander chain: Intermix -> Fade1 -> Fade2
+		intermixModule->rightExpander.module = fadeModule1;
+		fadeModule1->leftExpander.module = intermixModule;
+		fadeModule1->rightExpander.module = fadeModule2;
+		fadeModule2->leftExpander.module = fadeModule1;
+		
+		intermixModule->channelCount = 1;
+		
+		fadeModule1->input = 0;
+		fadeModule2->input = 1;
+		fadeModule1->fade = FADE::IN;
+		fadeModule2->fade = FADE::IN;
+		
+		auto m1 = Test::makeProcessArgs(1);
+		intermixModule->process(m1);
+		fadeModule1->process(m1);
+		fadeModule2->process(m1);
+
+		// Flip messages for intermix (sets producerMessage)
+		std::swap(intermixModule->rightExpander.producerMessage, intermixModule->rightExpander.consumerMessage);
+		std::swap(fadeModule1->rightExpander.producerMessage, fadeModule1->rightExpander.consumerMessage);
+		std::swap(fadeModule1->leftExpander.producerMessage, fadeModule1->leftExpander.consumerMessage);
+		std::swap(fadeModule2->leftExpander.producerMessage, fadeModule2->leftExpander.consumerMessage);
+
+		// Process many times to trigger divider (64 samples division)
+		for (int i = 0; i < 100; i++) {
+			auto mi = Test::makeProcessArgs(i + 2);
+			intermixModule->process(mi);
+			fadeModule1->process(mi);
+			fadeModule2->process(mi);
+
+			std::swap(intermixModule->rightExpander.producerMessage, intermixModule->rightExpander.consumerMessage);
+			std::swap(fadeModule1->rightExpander.producerMessage, fadeModule1->rightExpander.consumerMessage);
+			std::swap(fadeModule1->leftExpander.producerMessage, fadeModule1->leftExpander.consumerMessage);
+			std::swap(fadeModule2->leftExpander.producerMessage, fadeModule2->leftExpander.consumerMessage);
+		}
+
+		auto m3 = Test::makeProcessArgs(102);
+		intermixModule->process(m3);
+		fadeModule1->process(m3);
+		fadeModule2->process(m3);
+
+		// Verify fade1 sent fade in times to intermix
+		uint32_t fade1InTs = intermixModule->fadeInTs[0];
+		REQUIRE(fade1InTs > 0);
+
+		// Verify fade2 sent fade in times to fade1 (which should have forwarded)
+		uint32_t fade2InTs = intermixModule->fadeInTs[1];
+		REQUIRE(fade2InTs > 0);
+	}
+
+	Test::destroyModule(fadeModule2);
+	Test::destroyModule(fadeModule1);
 	delete intermixModule;
 }

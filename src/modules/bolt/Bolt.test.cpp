@@ -4,6 +4,7 @@
 
 using namespace StoermelderPackOne::Bolt;
 
+SYNC_MODEL(modelBolt, "Bolt");
 Test::TestContext<> testContext;
 
 TEST_CASE("JSON serialization", "[Bolt]") {
