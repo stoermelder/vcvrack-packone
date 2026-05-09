@@ -171,4 +171,53 @@ static const rack::midi::Message makeMidiMessage(uint8_t statusNibble, uint8_t c
 	return m;
 }
 
+
+// SimpleEngine simulates a VCV Rack engine step for module testing.
+// This class manages anlist of modules and processes them in sequence,
+// automatically flipping expander producer/consumer messages between each step.
+// This mimics how the VCV Rack engine processes modules and flips expanders.
+//
+// Usage:
+// Test::SimpleEngine testEngine;
+// testEngine.registerModules(moduleA, moduleB); 
+// A -> B chain
+//
+// testEngine.step();  // Process both modules with message flipping
+// testEngine.step();  // Continue processing...
+struct SimpleEngine {
+	std::list<Module*> modules;
+	int frame = 0;
+
+	void step() {
+		auto args = Test::makeProcessArgs(frame);
+		for (Module* module : modules) {
+			module->process(args);
+			std::swap(module->leftExpander.producerMessage, module->leftExpander.consumerMessage);
+			std::swap(module->rightExpander.producerMessage, module->rightExpander.consumerMessage);
+		}
+		frame++;
+ 	}
+
+	void registerModule(Module* m) {
+		modules.push_back(m);
+	}
+
+	/// Register multiple modules at once.
+	void registerModule(std::initializer_list<Module*> modules) {
+		for (Module* m : modules) {
+			this->modules.push_back(m);
+		}
+	}
+
+	/// Register multiple modules with variadic template.
+	template <typename... T>
+	void registerModules(T*... _m) {
+		Module* arr[] = {_m...};
+		for (Module* m : arr) {
+			this->modules.push_back(m);
+		}
+	}
+};
+
+
 } // namespace Test
