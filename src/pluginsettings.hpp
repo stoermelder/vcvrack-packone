@@ -10,6 +10,8 @@ struct Settings {
 	int mbV1sort = 0;
 	bool mbV1hideBrands = false;
 	bool mbV1searchDescriptions = false;
+	bool mbSortBySearchScore = true;
+	bool mbFavoriteHighlight = true;
 
 	NVGcolor overlayTextColor = bndGetTheme()->menuTheme.textColor;
 	int overlayHpos = 0;
@@ -21,6 +23,9 @@ struct Settings {
 	std::string stripDirVcvs = rack::asset::user("selections");
 
 	bool midiEsxDriverEnabled = false;
+
+	bool ahabInfo = true;
+	bool ahabMidiVirtualEnabled = false;
 
 	void saveToJson();
 	void readFromJson();

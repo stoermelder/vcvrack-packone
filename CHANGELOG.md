@@ -1,3 +1,59 @@
+## 2.4.0
+
+### Changes and Fixes
+
+- Module [AHAB](./docs/ahab/Ahab.md)
+    - Added gate length as a parameter for operator `>` in note mode (#420)
+    - Added reset input for tick counter (#429)
+    - Fixed crash on operator `<` when using whithout maximum value set (#425)
+- Module [MB](./docs/trial-and-error/Mb.md)
+    - Added custom tags for used-defined module grouping
+    - Added auto-tagging, including MetaModule
+    - Added fuzzy search (similar to the default module browser)
+    - Added option to select "Favorite" handling  (Legacy (MB) / (Built-in) VCV Rack)
+    - Added option to highlight favorites
+    - Added "v2 mod" variation
+    - Changed hotkey to toggle hidden modules to Shift+Space (because of Spotlight on Mac)
+    - Fixed broken button of "Favorites" category
+
+## 2.3.1
+
+### Changes and Fixes
+
+- Module [STRIP](./docs/strip/Strip.md)
+    - Fixed changed behavior on excluded/included parameters for randomization introduced in v2.3.0
+
+## 2.3.0
+
+### New modules
+
+- Module [AHAB](./docs/ahab/Ahab.md)
+    - A live programming environment for ORCA, an esoteric programming language designed to quickly create procedural sequencers
+
+### Changes and Fixes
+
+- Module [8FACE mk2](./docs/eightface/EightFaceMk2.md)
+    - Added performance warning for large module presets (#396)
+    - Fixed broken unbinding of modules (memory leak) (#396)
+- Module [GLUE](./docs/glue/Glue.md)
+    - Added option to add labels to cables (#247)
+- Module [MIDI-CAT](./docs/midicat/MidiCat.md)
+    - Added hotkey Ctrl/Cmd+Shift+R for resetting input-mode _Pickup (snap)_
+    - Added hotkey Ctrl/Cmd+Shift+I for temporarily activating input-mode _Direct_ while held
+    - Added hotkey Ctrl/Cmd+Shift+F for re-sending MIDI feedback
+- Module [MIDI-KEY](./docs/midi/MidiKey.md)
+    - Fixed occasional crash in browser preview
+- Module [SAIL](./docs/sail/Sail.md)
+    - Fixed occasional crash (#358)
+- Module [STROKE](./docs/stroke/Stroke.md)
+    - Fixed broken _Zoom out_ command
+    - Fixed broken Toggle-commands on different UI Scale (#415)
+- Module [TRANSIT](./docs/transit/Transit.md)
+    - Added alternative parameter binding by selection box
+    - Added custom color LED setting per slot
+    - Added option to set the first usable snapshot (instead of starting at 1) (#265)
+    - Added option to disable fade CV input clamping, allowing for more extreme fade times
+
 ## 2.2.0
 
 Modules [8FACE, 8FACEx2](./docs/eightface/EightFace.md) and [8FACE mk2](./docs/eightface/EightFaceMk2.md) are now considered stable again. A new _Safe-mode_ has been added, which loads presets into modules according to the supported way. This provides maximum stability. However, it may lock up the audio processing and cause stutters, pops, or other audible artifacts. This behavior is not caused by CPU overload but by fundamental design constraints in VCV Rack.  
@@ -30,7 +86,7 @@ The old behavior can be restored using _Unsafe fast_-mode, which will load prese
     - Added new defects _Pitch_, _Crush_ and _Dropout_
 - Module [GOTO](./docs/goto/Goto.md)
      - Jump-points can be multiple modules/a selection instead of a single module
-- Nodule [MIDI-CAT](./docs/midicat/MidiCat.md)
+- Module [MIDI-CAT](./docs/midicat/MidiCat.md)
     - Added input-modes _Snapped_ and _Snapped (short/long)_ for CC and Notes for use with snapped parameters (e.g. "Steps" on VCV SEQ3)
     - Added handling for MIDI System Reset message for resetting input-mode _Pickup (snap)_
     - Added color setting for mapping indicators

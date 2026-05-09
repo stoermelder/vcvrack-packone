@@ -34,15 +34,17 @@ struct MidiCatCtxModule : MidiCatCtxBase {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configSwitch<BufferedSwitchQuantity>(PARAM_MAP, 0.f, 1.f, 0.f, "Start parameter mapping");
 		processDivider.setDivision(48);
-		onReset();
+
+		ResetEvent re;
+		onReset(re);
 	}
 
 	void onExpanderChange(const Module::ExpanderChangeEvent& e) override {
 		notifyExpanderListeners("MidiCat");
 	}
 
-	void onReset() override {
-		Module::onReset();
+	void onReset(const ResetEvent& e) override {
+		Module::onReset(e);
 		midiCatId = "";
 	}
 

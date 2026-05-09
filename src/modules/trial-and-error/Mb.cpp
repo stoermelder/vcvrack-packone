@@ -1,17 +1,131 @@
 #include "../../plugin.hpp"
 #include "Mb.hpp"
 #include "Mb_v1.hpp"
+#include "Mb_v2.hpp"
 #include "Mb_v06.hpp"
+#include "Mb_autotag.hpp"
+#include "Mb_autotag_widgets.hpp"
 #include <osdialog.h>
+#include <tag.hpp>
 #include <chrono>
 #include <thread>
 
 namespace StoermelderPackOne {
 namespace Mb {
 
+fuzzysearch::Database<plugin::Model*> modelDb;
+bool searchDescriptions = false;
+bool sortBySearchScore = true;
+bool favoriteHighlight = true;
+
+void modelDbInit() {
+	modelDb = fuzzysearch::Database<plugin::Model*>();
+	modelDb.setWeights({0.9f, 0.75f, 1.0f, 0.8f, 0.9f});
+	modelDb.setThreshold(0.5f);
+	for (plugin::Plugin* p : rack::plugin::plugins) {
+		for (plugin::Model* model : p->models) {
+			std::string tagStr;
+			for (int tagId : model->tagIds) {
+				for (const std::string& alias : rack::tag::tagAliases[tagId]) {
+					tagStr += alias;
+					tagStr += " ";
+				}
+			}
+			std::vector<std::string> fields = {
+				model->plugin->brand,
+				model->plugin->name,
+				model->name,
+				searchDescriptions ? model->description : "",
+				tagStr,
+			};
+			modelDb.addEntry(model, fields);
+		}
+	}
+}
+
 std::set<Model*> favoriteModels;
 std::set<Model*> hiddenModels;
 std::map<Model*, ModelUsage*> modelUsage;
+std::map<std::string, std::set<Model*>> customTagModels;
+
+FavoriteMode favoriteMode = FavoriteMode::VCVRACK;
+
+bool isModelFavorite(Model* model) {
+	switch (favoriteMode) {
+		case FavoriteMode::VCVRACK:
+			return model->isFavorite();
+		case FavoriteMode::MB:
+			return favoriteModels.find(model) != favoriteModels.end();
+		case FavoriteMode::BOTH:
+			return model->isFavorite() || favoriteModels.find(model) != favoriteModels.end();
+	}
+}
+
+void setModelFavorite(Model* model, bool favorite) {
+	if (favoriteMode == FavoriteMode::VCVRACK || favoriteMode == FavoriteMode::BOTH) {
+		model->setFavorite(favorite);
+	}
+	if (favoriteMode == FavoriteMode::MB || favoriteMode == FavoriteMode::BOTH) {
+		if (favorite)
+			favoriteModels.insert(model);
+		else
+			favoriteModels.erase(model);
+	}
+	// Remove from hidden when favoriting
+	if (favorite) {
+		hiddenModels.erase(model);
+	}
+}
+
+// Returns the existing map key that matches tag case-insensitively, or tag itself.
+static std::string customTagResolveKey(const std::string& tag) {
+	std::string lower = string::lowercase(tag);
+	for (auto& pair : customTagModels) {
+		if (string::lowercase(pair.first) == lower)
+			return pair.first;
+	}
+	return tag;
+}
+
+void customTagAdd(Model* model, const std::string& tag) {
+	customTagModels[customTagResolveKey(tag)].insert(model);
+}
+
+void customTagRemove(Model* model, const std::string& tag) {
+	auto it = customTagModels.find(customTagResolveKey(tag));
+	if (it == customTagModels.end()) return;
+	it->second.erase(model);
+	if (it->second.empty())
+		customTagModels.erase(it);
+}
+
+bool customTagHas(Model* model, const std::string& tag, bool resolveKey) {
+	const std::string _tag = resolveKey ? customTagResolveKey(tag) : tag;
+	auto it = customTagModels.find(_tag);
+	if (it == customTagModels.end()) return false;
+	return it->second.find(model) != it->second.end();
+}
+
+void customTagDelete(const std::string& tag) {
+	customTagModels.erase(customTagResolveKey(tag));
+}
+
+std::set<std::string> customTagsForModel(Model* model) {
+	std::set<std::string> result;
+	for (auto& pair : customTagModels) {
+		if (pair.second.find(model) != pair.second.end())
+			result.insert(pair.first);
+	}
+	return result;
+}
+
+std::set<std::string> customTagsAll() {
+	std::set<std::string> result;
+	for (auto& pair : customTagModels)
+		result.insert(pair.first);
+	return result;
+}
+
 
 // JSON storage
 
@@ -26,6 +140,7 @@ json_t* moduleBrowserToJson(bool includeUsageData) {
 		json_array_append_new(favoritesJ, slugJ);
 	}
 	json_object_set_new(rootJ, "favorites", favoritesJ);
+	json_object_set_new(rootJ, "favoriteMode", json_integer((int)favoriteMode));
 
 	json_t* hiddenJ = json_array();
 	for (Model* model : hiddenModels) {
@@ -35,6 +150,19 @@ json_t* moduleBrowserToJson(bool includeUsageData) {
 		json_array_append_new(hiddenJ, slugJ);
 	}
 	json_object_set_new(rootJ, "hidden", hiddenJ);
+
+	json_t* customTagsJ = json_object();
+	for (auto& pair : customTagModels) {
+		json_t* modelsJ = json_array();
+		for (Model* model : pair.second) {
+			json_t* slugJ = json_object();
+			json_object_set_new(slugJ, "plugin", json_string(model->plugin->slug.c_str()));
+			json_object_set_new(slugJ, "model", json_string(model->slug.c_str()));
+			json_array_append_new(modelsJ, slugJ);
+		}
+		json_object_set_new(customTagsJ, pair.first.c_str(), modelsJ);
+	}
+	json_object_set_new(rootJ, "customTags", customTagsJ);
 
 	if (includeUsageData) {
 		json_t* usageJ = json_array();
@@ -71,6 +199,13 @@ void moduleBrowserFromJson(json_t* rootJ) {
 			favoriteModels.insert(model);
 		}
 	}
+	json_t* favoriteModeJ = json_object_get(rootJ, "favoriteMode");
+	if (favoriteModeJ) {
+		favoriteMode = (FavoriteMode)json_integer_value(favoriteModeJ);
+	}
+	else {
+		favoriteMode = FavoriteMode::MB;
+	}
 
 	json_t* hiddenJ = json_object_get(rootJ, "hidden");
 	if (hiddenJ) {
@@ -88,6 +223,27 @@ void moduleBrowserFromJson(json_t* rootJ) {
 			if (!model)
 				continue;
 			hiddenModels.insert(model);
+		}
+	}
+
+	json_t* customTagsJ = json_object_get(rootJ, "customTags");
+	if (customTagsJ) {
+		customTagModels.clear();
+		const char* tagName;
+		json_t* modelsJ;
+		json_object_foreach(customTagsJ, tagName, modelsJ) {
+			size_t i;
+			json_t* slugJ;
+			json_array_foreach(modelsJ, i, slugJ) {
+				json_t* pluginJ = json_object_get(slugJ, "plugin");
+				json_t* modelJ = json_object_get(slugJ, "model");
+				if (!pluginJ || !modelJ) continue;
+				std::string pluginSlug = json_string_value(pluginJ);
+				std::string modelSlug = json_string_value(modelJ);
+				Model* model = plugin::getModel(pluginSlug, modelSlug);
+				if (!model) continue;
+				customTagModels[tagName].insert(model);
+			}
 		}
 	}
 
@@ -145,8 +301,11 @@ BrowserOverlay::BrowserOverlay() {
 	v1::modelBoxZoom = pluginSettings.mbV1zoom;
 	v1::modelBoxSort = pluginSettings.mbV1sort;
 	v1::hideBrands = pluginSettings.mbV1hideBrands;
-	v1::searchDescriptions = pluginSettings.mbV1searchDescriptions;
+	searchDescriptions = pluginSettings.mbV1searchDescriptions;
+	sortBySearchScore = pluginSettings.mbSortBySearchScore;
+	favoriteHighlight = pluginSettings.mbFavoriteHighlight;
 	moduleBrowserFromJson(pluginSettings.mbModelsJ);
+	modelDbInit();
 
 	mbWidgetBackup = APP->scene->browser;
 	mbWidgetBackup->hide();
@@ -177,6 +336,9 @@ BrowserOverlay::BrowserOverlay() {
 	mbV1 = new v1::ModuleBrowser;
 	addChild(mbV1);
 
+	mbV2 = new v2::ModuleBrowser;
+	addChild(mbV2);
+
 	APP->scene->browser = this;
 	APP->scene->addChild(this);
 }
@@ -193,7 +355,9 @@ BrowserOverlay::~BrowserOverlay() {
 	pluginSettings.mbV1zoom = v1::modelBoxZoom;
 	pluginSettings.mbV1sort = v1::modelBoxSort;
 	pluginSettings.mbV1hideBrands = v1::hideBrands;
-	pluginSettings.mbV1searchDescriptions = v1::searchDescriptions;
+	pluginSettings.mbV1searchDescriptions = searchDescriptions;
+	pluginSettings.mbSortBySearchScore = sortBySearchScore;
+	pluginSettings.mbFavoriteHighlight = favoriteHighlight;
 	json_decref(pluginSettings.mbModelsJ);
 	pluginSettings.mbModelsJ = moduleBrowserToJson();
 	
@@ -205,10 +369,17 @@ void BrowserOverlay::step() {
 		case MODE::V06:
 			if (visible) mbV06->show(); else mbV06->hide();
 			mbV1->hide();
+			mbV2->hide();
 			break;
 		case MODE::V1:
 			mbV06->hide();
 			if (visible) mbV1->show(); else mbV1->hide();
+			mbV2->hide();
+			break;
+		case MODE::V2:
+			mbV06->hide();
+			mbV1->hide();
+			if (visible) mbV2->show(); else mbV2->hide();
 			break;
 	}
 
@@ -256,7 +427,9 @@ struct MbModule : Module {
 
 	MbModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		onReset();
+
+		Module::ResetEvent re;
+		onReset(re);
 	}
 
 	MODE mode = MODE::V1;
@@ -313,24 +486,6 @@ struct MbWidget : ModuleWidget {
 	void appendContextMenu(Menu* menu) override {
 		MbModule* module = dynamic_cast<MbModule*>(this->module);
 
-		struct ManualItem : MenuItem {
-			void onAction(const event::Action& e) override {
-				std::thread t(system::openBrowser, "https://github.com/stoermelder/vcvrack-packone/blob/v1/docs/Mb.md");
-				t.detach();
-			}
-		};
-
-		struct ModeV06Item : MenuItem {
-			MbModule* module;
-			void onAction(const event::Action& e) override {
-				module->mode = MODE::V06;
-			}
-			void step() override {
-				rightText = module->mode == MODE::V06 ? "✔" : "";
-				MenuItem::step();
-			}
-		};
-
 		struct ModeV1Item : MenuItem {
 			MbModule* module;
 			void onAction(const event::Action& e) override {
@@ -341,65 +496,137 @@ struct MbWidget : ModuleWidget {
 				MenuItem::step();
 			}
 
-			struct HideBrandsItem : MenuItem {
-				void onAction(const event::Action& e) override {
-					v1::hideBrands ^= true;
-				}
-				void step() override {
-					rightText = v1::hideBrands ? "✔" : "";
-					MenuItem::step();
-				}
-			};
-
-			struct SearchDescriptionsItem : MenuItem {
-				void onAction(const event::Action& e) override {
-					v1::searchDescriptions ^= true;
-				}
-				void step() override {
-					rightText = v1::searchDescriptions ? "✔" : "";
-					MenuItem::step();
-				}
-			};
-
 			Menu* createChildMenu() override {
 				Menu* menu = new Menu;
 				menu->addChild(Rack::createPtrSlider(&v1::modelBoxZoom, PREVIEW_MIN, PREVIEW_MAX, 0.9f, "Preview", "", 100.f, 180.0f));
-				menu->addChild(construct<HideBrandsItem>(&MenuItem::text, "Hide brand list"));
-				menu->addChild(construct<SearchDescriptionsItem>(&MenuItem::text, "Search descriptions"));
+				menu->addChild(createBoolPtrMenuItem("Hide brand list", "", &v1::hideBrands));
 				return menu;
 			}
 		};
 
-		struct ExportItem : MenuItem {
-			MbWidget* mw;
-			void onAction(const event::Action& e) override {
-				mw->exportSettingsDialog();
-			}
-		};
-
-		struct ImportItem : MenuItem {
-			MbWidget* mw;
-			void onAction(const event::Action& e) override {
-				mw->importSettingsDialog();
-			}
-		};
-
-		struct ResetUsageDataItem : MenuItem {
-			void onAction(const event::Action& e) override {
-				modelUsageReset();
-			}
-		};
-
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<ManualItem>(&MenuItem::text, "Module Manual"));
-		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<ModeV06Item>(&MenuItem::text, "v0.6", &ModeV06Item::module, module));
+		menu->addChild(createCheckMenuItem("v0.6", "",
+			[module]() { return module->mode == MODE::V06; },
+			[module]() { module->mode = MODE::V06; }
+		));
 		menu->addChild(construct<ModeV1Item>(&MenuItem::text, "v1 mod", &ModeV1Item::module, module));
+		menu->addChild(createCheckMenuItem("v2 mod", "",
+			[module]() { return module->mode == MODE::V2; },
+			[module]() { module->mode = MODE::V2; }
+		));
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<ExportItem>(&MenuItem::text, "Export favorites & hidden", &ExportItem::mw, this));
-		menu->addChild(construct<ImportItem>(&MenuItem::text, "Import favorites & hidden", &ImportItem::mw, this));
+		menu->addChild(createMenuLabel("v1 & v2 settings"));
+		menu->addChild(createCheckMenuItem("Search descriptions", "",
+			[]() { return searchDescriptions; },
+			[]() { searchDescriptions ^= true; modelDbInit(); }
+		));
+		menu->addChild(createBoolPtrMenuItem("Sort by search score", "", &sortBySearchScore));
+		menu->addChild(createSubmenuItem("Favorite mode", "", [](Menu* menu) {
+			menu->addChild(createCheckMenuItem("Built-in (VCV Rack)", "",
+				[&]() { return favoriteMode == FavoriteMode::VCVRACK; },
+				[&]() { favoriteMode = FavoriteMode::VCVRACK; }
+			));
+			menu->addChild(createCheckMenuItem("Legacy (MB)", "",
+				[&]() { return favoriteMode == FavoriteMode::MB; },
+				[&]() { favoriteMode = FavoriteMode::MB; }
+			));
+			/*
+			menu->addChild(createCheckMenuItem("Both", "",
+				[&]() { return favoriteMode == FavoriteMode::BOTH; },
+				[&]() { favoriteMode = FavoriteMode::BOTH; }
+			));
+			*/
+		}));
+		menu->addChild(createBoolPtrMenuItem("Highlight favorites", "", &favoriteHighlight));
+
 		menu->addChild(new MenuSeparator());
-		menu->addChild(construct<ResetUsageDataItem>(&MenuItem::text, "Reset usage data"));
+		menu->addChild(createMenuLabel("Custom tags"));
+		menu->addChild(createMenuItem("Auto-generate custom tags", "", []() {
+			auto result = std::make_shared<AutoTagResult>(customTagAuto());
+			if (result->total == 0) {
+				osdialog_message(OSDIALOG_INFO, OSDIALOG_OK, "No new tag assignments found.");
+				return;
+			}
+			ui::MenuOverlay* overlay = new ui::MenuOverlay;
+			overlay->bgColor = nvgRGBAf(0.f, 0.f, 0.f, 0.5f);
+			AutoTagConfirmWidget* w = new AutoTagConfirmWidget(result);
+			overlay->addChild(w);
+			APP->scene->addChild(overlay);
+		}));
+		menu->addChild(createMenuItem("Auto-generate 'MetaModule' tag", "", []() {
+			if (!osdialog_message(OSDIALOG_INFO, OSDIALOG_OK_CANCEL, "This will connect to https://metamodule.info and download the module list. Continue?"))
+				return;
+			AutoTagResult result = customTagMetamodule();
+			if (result.total == 0) {
+				osdialog_message(OSDIALOG_INFO, OSDIALOG_OK, "No new tag assignments found.");
+				return;
+			}
+			auto resultWrap = std::make_shared<AutoTagResult>(result);
+			ui::MenuOverlay* overlay = new ui::MenuOverlay;
+			overlay->bgColor = nvgRGBAf(0.f, 0.f, 0.f, 0.5f);
+			AutoTagConfirmWidget* w = new AutoTagConfirmWidget(resultWrap);
+			overlay->addChild(w);
+			APP->scene->addChild(overlay);
+		}));
+
+		struct SearchTagField : ui::TextField {
+			std::string query;
+			void onSelectKey(const event::SelectKey& e) override {
+				if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
+					query = string::trim(text);
+					if (!query.empty()) {
+						AutoTagResult preview = customTagSearch(query);
+						if (preview.total == 0) {
+							osdialog_message(OSDIALOG_INFO, OSDIALOG_OK,
+								string::f("No untagged modules found for \"%s\"", query.c_str()).c_str());
+						}
+						else {
+							auto resultWrap = std::make_shared<AutoTagResult>(preview);
+							ui::MenuOverlay* overlay = new ui::MenuOverlay;
+							overlay->bgColor = nvgRGBAf(0.f, 0.f, 0.f, 0.5f);
+							AutoTagConfirmWidget* w = new AutoTagConfirmWidget(resultWrap);
+							overlay->addChild(w);
+							APP->scene->addChild(overlay);
+						}
+					}
+					e.consume(this);
+					return;
+				}
+				ui::TextField::onSelectKey(e);
+			}
+		};
+
+		menu->addChild(createSubmenuItem("Auto-generate tag from search", "", [](Menu* menu) {
+			SearchTagField* stf = new SearchTagField;
+			stf->box.size.x = 200.f;
+			stf->placeholder = "Search term (= tag name)...";
+			menu->addChild(stf);
+		}));
+
+		auto unsortedTags = customTagsAll();
+		std::vector<std::string> tags(unsortedTags.begin(), unsortedTags.end());
+		std::sort(tags.begin(), tags.end(), [](const std::string& a, const std::string& b) {
+			return string::lowercase(a) < string::lowercase(b);
+		});
+		if (!tags.empty()) {
+			menu->addChild(createSubmenuItem("Delete custom tag", "",
+				[tags](Menu* menu) {
+					for (const std::string& tag : tags) {
+						menu->addChild(createMenuItem(tag, "", [tag]() { customTagDelete(tag); }));
+					}
+				}
+			));
+		}
+
+		menu->addChild(new MenuSeparator());
+		menu->addChild(createSubmenuItem("Menu settings", "",
+			[&](Menu* menu) {
+				menu->addChild(createMenuItem("Export", "", [&]() { this->exportSettingsDialog(); }));
+				menu->addChild(createMenuItem("Import", "", [&]() { this->importSettingsDialog(); }));
+				menu->addChild(new MenuSeparator());
+				menu->addChild(createMenuItem("Reset usage data", "", []() { modelUsageReset(); }));
+			}
+		));
 	}
 
 	void exportSettings(std::string filename) {

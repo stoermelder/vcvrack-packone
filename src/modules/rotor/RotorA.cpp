@@ -51,15 +51,17 @@ struct RotorAModule : Module {
 		configOutput(POLY_OUTPUT, "Polyphonic");
 
 		channelsDivider.setDivision(512);
-		onReset();
+
+		Module::ResetEvent re;
+		onReset(re);
 	}
 
 	void onSampleRateChange(const SampleRateChangeEvent& e) override {
 		lightDivider.setDivision(e.sampleRate / 100.f);
 	}
 
-	void onReset() override {
-		Module::onReset();
+	void onReset(const Module::ResetEvent& e) override {
+		Module::onReset(e);
 		channels = ceil(params[CHANNELS_PARAM].getValue());
 		channelsOffset = 0;
 		channelsSplit = 10.f / (float)(channels - 1);

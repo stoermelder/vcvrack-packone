@@ -20,7 +20,6 @@
 #endif
 
 #include "../plugin.hpp"
-using namespace Catch;
 
 // We will call several deprecated functions in the tests, thus disable warnings here
 #if defined(__clang__)

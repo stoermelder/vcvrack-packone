@@ -1,16 +1,53 @@
 RACK_DIR ?= ../..
 
+# Orca-c dependency
+ORCA_SOURCES = \
+	orca-c/field.c \
+	orca-c/gbuffer.c \
+	orca-c/osc_out.c \
+	orca-c/sim.c \
+	orca-c/sysmisc.c \
+	orca-c/vmio.c \
+	orca-c/thirdparty/oso.c
+
+ORCA_GENERATED_HEADER := src/modules/ahab/orca_examples.hpp
+
 # Add .cpp files to the build
 SOURCES += $(wildcard src/*.cpp src/**/**/*.cpp)
 # Exclude test files from the main build
 SOURCES := $(filter-out src/test/%.cpp,$(SOURCES))
 SOURCES := $(filter-out %.test.cpp,$(SOURCES))
+SOURCES += $(ORCA_SOURCES)
+
+
+# Creates a generated header embedding the ORCA example
+# files in `dep/orca-c/examples`. The header is regenerated when any example
+# file changes.
+orca-examples: $(ORCA_GENERATED_HEADER)
+
+$(ORCA_GENERATED_HEADER): src/modules/ahab/orca_examples.py $(shell find orca-c/examples -type f -name '*.orca')
+	python3 src/modules/ahab/orca_examples.py dep/orca-c/examples > $@
+
+include $(RACK_DIR)/arch.mk
+
+# Link Winsock for Windows
+ifdef ARCH_WIN
+	LDFLAGS += -lws2_32
+endif
+
+# Ensure headers from the orca-c tree (and its thirdparty) are found
+INCLUDES += -Idep/orca-c -Idep/orca-c/thirdparty
+
 
 # Add files to the ZIP package when running `make dist`
 # The compiled plugin and "plugin.json" are automatically added.
 DISTRIBUTABLES += res
 DISTRIBUTABLES += $(wildcard LICENSE*)
 DISTRIBUTABLES += $(wildcard presets)
+
+# Dependencies
+DEP_LOCAL := dep
+
 
 include $(RACK_DIR)/plugin.mk
 
@@ -19,6 +56,7 @@ ifdef DEBUG
 	CXXFLAGS := $(filter-out -funsafe-math-optimizations,$(CXXFLAGS))
 	CXXFLAGS := $(filter-out -O3,$(CXXFLAGS))
 	CXXFLAGS += -O0 -g
+	CFLAGS := $(filter-out -O3,$(CFLAGS))
 	CFLAGS += -O0 -g
 endif
 

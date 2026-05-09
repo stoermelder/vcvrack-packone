@@ -14,6 +14,8 @@ void Settings::saveToJson() {
 	json_object_set(settingsJ, "mbV1sort", json_integer(mbV1sort));
 	json_object_set(settingsJ, "mbV1hideBrands", json_boolean(mbV1hideBrands));
 	json_object_set(settingsJ, "mbV1searchDescriptions", json_boolean(mbV1searchDescriptions));
+	json_object_set(settingsJ, "mbSortBySearchScore", json_boolean(mbSortBySearchScore));
+	json_object_set(settingsJ, "mbFavoriteHighlight", json_boolean(mbFavoriteHighlight));
 
 	json_object_set(settingsJ, "overlayTextColor", json_string(rack::color::toHexString(overlayTextColor).c_str()));
 	json_object_set(settingsJ, "overlayHpos", json_integer(overlayHpos));
@@ -25,6 +27,9 @@ void Settings::saveToJson() {
 	json_object_set(settingsJ, "stripDirVcvs", json_string(stripDirVcvs.c_str()));
 
 	json_object_set(settingsJ, "midiEsxDriverEnabled", json_boolean(midiEsxDriverEnabled));
+
+	json_object_set(settingsJ, "ahabInfo", json_boolean(ahabInfo));
+	json_object_set(settingsJ, "ahabMidiVirtualEnabled", json_boolean(ahabMidiVirtualEnabled));
 
 #ifndef TESTING
 	std::string settingsFilename = rack::asset::user("Stoermelder-P1.json");
@@ -67,6 +72,10 @@ void Settings::readFromJson() {
 	if (mbV1hideBrandsJ) mbV1hideBrands = json_boolean_value(mbV1hideBrandsJ);
     json_t* mbV1searchDescriptionsJ = json_object_get(settingsJ, "mbV1searchDescriptions");
     if (mbV1searchDescriptionsJ) mbV1searchDescriptions = json_boolean_value(mbV1searchDescriptionsJ);
+	json_t* mbSortBySearchScoreJ = json_object_get(settingsJ, "mbSortBySearchScore");
+	if (mbSortBySearchScoreJ) mbSortBySearchScore = json_boolean_value(mbSortBySearchScoreJ);
+	json_t* mbFavoriteHighlightJ = json_object_get(settingsJ, "mbFavoriteHighlight");
+	if (mbFavoriteHighlightJ) mbFavoriteHighlight = json_boolean_value(mbFavoriteHighlightJ);
 
 	json_t* overlayTextColorJ = json_object_get(settingsJ, "overlayTextColor");
 	if (overlayTextColorJ) overlayTextColor = rack::color::fromHexString(json_string_value(overlayTextColorJ));
@@ -86,6 +95,11 @@ void Settings::readFromJson() {
 
 	json_t* midiEsxDriverEnabledJ = json_object_get(settingsJ, "midiEsxDriverEnabled");
 	if (midiEsxDriverEnabledJ) midiEsxDriverEnabled = json_boolean_value(midiEsxDriverEnabledJ);
+
+	json_t* ahabInfoJ = json_object_get(settingsJ, "ahabInfo");
+	if (ahabInfoJ) ahabInfo = json_boolean_value(ahabInfoJ);
+	json_t* ahabMidiVirtualEnabledJ = json_object_get(settingsJ, "ahabMidiVirtualEnabled");
+	if (ahabMidiVirtualEnabledJ) ahabMidiVirtualEnabled = json_boolean_value(ahabMidiVirtualEnabledJ);
 
 	fclose(file);
 	json_decref(settingsJ);

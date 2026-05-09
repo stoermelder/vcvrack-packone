@@ -82,8 +82,9 @@ struct MirrorModule : Module, StripIdFixModule {
 		}
 	}
 
-	void onReset() override {
+	void onReset(const Module::ResetEvent& e) override {
 		reset(false, true);
+		Module::onReset(e);
 	}
 
 	void reset(bool stateOnly, bool createUiTask = false) {
@@ -213,6 +214,8 @@ struct MirrorModule : Module, StripIdFixModule {
 			return NULL;
 		// Get ParamQuantity
 		int paramId = handle->paramId;
+		if (paramId >= (int)module->paramQuantities.size())
+			return NULL;
 		ParamQuantity* paramQuantity = module->paramQuantities[paramId];
 		if (!paramQuantity)
 			return NULL;
