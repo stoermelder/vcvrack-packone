@@ -203,8 +203,10 @@ struct ReMoveModule : MapModuleBase<1> {
         paramHandles[0].text = "ReMove Lite";
 
         processDivider.setDivision(64);
-        onReset();
-    }
+
+        ResetEvent re;
+		onReset(re);
+	}
 
     ~ReMoveModule() {
         delete[] seqData;
@@ -214,8 +216,8 @@ struct ReMoveModule : MapModuleBase<1> {
 		lightDivider.setDivision(e.sampleRate / 100.f);
 	}
 
-    void onReset() override {
-        MapModuleBase::onReset();
+    void onReset(const ResetEvent& e) override {
+        MapModuleBase::onReset(e);
         audioRate = !settings::isPlugin;
         isPlaying = false;
         playDir = REMOVE_PLAYDIR_FWD;
@@ -632,7 +634,7 @@ struct ReMoveModule : MapModuleBase<1> {
 
 
     void clearMap(int id) override {
-        onReset();
+        rack::engine::Module::ResetEvent re; onReset(re);
         MapModuleBase::clearMap(id);
     }
 
@@ -785,7 +787,7 @@ struct ReMoveModule : MapModuleBase<1> {
         seqUpdate();
     }
 
-    void onRandomize() override {
+    void onRandomize(const RandomizeEvent& e) override {
         unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
         std::default_random_engine gen(seed);
         std::normal_distribution<float> d{0.f, 0.1f};
@@ -813,6 +815,8 @@ struct ReMoveModule : MapModuleBase<1> {
             }
             seqLength[i] = l;
         }
+
+        Module::onRandomize(e);
     }
 
 	void setParameterChangesDirect(bool b) {

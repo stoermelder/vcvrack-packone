@@ -72,17 +72,19 @@ TRANSIT provides three precision-settings on the contextual menu which influence
 
 ### Auto-mode
 
-Auto-mode (added in v1.10.0) stores snapshots automatically to the current slot right before moving on to the next slot. A typical workflow would look like this: Store a few snapshots using Write-mode as usual. Afterwards flip the switch to the middle "A"-position and start slow sequencing using the _SEL_-port. Imagine slot 1 is active and TRANSIT will begin morphing into slot 2 next. Right before the transition starts the current state of the parameters is stored into slot 1 preserving all adjustments made in the meantime. In contrast, Read-mode would simply load slot 2 and the snapshot stored in slot 1 will stay unchanged, discarding all changes made to the parameters. Note: Empty slots will stay empty, even in Auto-mode.
+Auto-mode (added in v1.10.0) stores snapshots automatically to the current slot right before moving on to the next slot. A typical workflow would look like this: Store a few snapshots using Write-mode as usual. Afterwards flip the switch to the middle "A"-position and start slow sequencing using the _SEL_-port. Imagine the first usable slot is active and TRANSIT will begin morphing into the next usable slot. Right before the transition starts the current state of the parameters is stored into the currently active slot, preserving all adjustments made in the meantime. In contrast, Read-mode would simply load the next slot and the snapshot stored in the current slot will stay unchanged, discarding all changes made to the parameters. Note: Empty slots will stay empty, even in Auto-mode.
 
 ### Sequencing and selecting snapshots
 
 The fun begins when you use the port labelled _SEL_ for selecting snapshots by CV. Although there are 12 snapshot slots available it is possible to use less slots for sequencing: You can adjust the number of active slots (i.e. sequence length) by long-pressing a snapshot-button while in read-mode. The LEDs turn off completely for slots that are currently disabled.
 
+You can change the range of usable snapshots by right‑clicking any snapshot button and choosing _Set as first_ or _Set as last_. The first usable snapshot becomes the new 'Snapshot 1' for sequencing, CV selection and Phase mode; the last usable snapshot sets the end of the sequence.
+
 Modes for _SEL_ on the contextual menu:
 
 | Mode | Description |
 |------|-------------|
-| **Trigger forward** | A trigger advances TRANSIT to the next snapshot. Empty slots are part of the sequence but won't have any effect on the parameters. A trigger on _RESET_ restarts the sequence on snapshot 1. |
+| **Trigger forward** | A trigger advances TRANSIT to the next snapshot. Empty slots are part of the sequence but won't have any effect on the parameters. A trigger on _RESET_ restarts the sequence on the first usable snapshot (see _Set as first_ above). |
 | **Trigger reverse** | Same as **Trigger forward** but reverse direction. |
 | **Trigger pingpong** | Same as **Trigger forward** but loops first forward then reverse. |
 | **Trigger alternating** (added in v1.8.0) | Same as **Trigger forward** but progresses in the following manner (for 6 active snapshots): 1, 2, 1, 3, 1, 4, 1, 5, 1, 6, 1, 5, 1, 4, 1, 3, 1, 2, ... |
@@ -90,10 +92,10 @@ Modes for _SEL_ on the contextual menu:
 | **Trigger pseudo-random** (added in v1.8.0) | Same as **Trigger random** but never chooses a snapshot multiple times in a row (which happens on "random"). |
 | **Trigger random walk** (added in v1.8.0) | Same as **Trigger forward** but chooses the next snapshot randomly from those adjacent to the currently active snapshot. |
 | **Trigger shuffle** (added in v1.8.0) | Same as **Trigger forward** but works on a random permutation of the active snapshots: Every snapshot will be enabled once before the next permutation is randomly generated. |
-| **0..10V** | You can select a specific snapshot by voltage. A voltage of 0-0.833V selects slot 1, 0.833-1.666V selects slot 2, and so on, if all 12 snapshot-slots are active. Keep in mind that adjusting the length of the sequence also adjusts the voltage range for selecting individual slots: A sequence with length 2 will select slot 1 on voltage 0-5V, etc. |
-| **C4** | This mode follows the V/Oct-standard. C4 selects snapshot 1, C#4 selects snapshot 2 and so on. Channel 2 on the CV-input responds to triggers to re-trigger the currently selected snapshot. |
+| **0..10V** | You can select a specific snapshot by voltage. A voltage of 0–0.833V selects the first usable slot, 0.833–1.666V selects the next one, and so on, if all 12 snapshot-slots are active. Keep in mind that adjusting the length of the sequence or the configured first/last slots also adjusts the voltage ranges: e.g. a sequence with length 2 will select the first usable slot on voltage 0–5V. |
+| **C4** | This mode follows the V/Oct standard. C4 selects the first usable snapshot, C#4 selects the next one and so on. Channel 2 on the CV-input responds to triggers to re-trigger the currently selected snapshot. |
 | **Arm** | This mode is a kind of "buffered trigger": First apply a clock signal on _SEL_. Then you "arm" any snapshot manually or by MIDI-mapping its button (resulting in a yellow LED) which will be activated on the next clock trigger (white LED). This mode allows manual snapshot activation synchronized to a clock. |
-| **Phase** (added in v1.9.0) | This mode behaves differently than the other modes: An input voltage of 0-10V scans continuously through the stored snapshots. A voltage of 0V sets the parameters to the first snapshot, a voltage of 10V sets the parameters to the last active snapshot; in between the parameters are interpolated according to the used snapshots. Slew-limiting can be applied additionally using the _Fade_-slider. |
+| **Phase** (added in v1.9.0) | This mode behaves differently than the other modes: An input voltage of 0–10V scans continuously through the stored snapshots. A voltage of 0V sets the parameters to the first usable snapshot, and 10V sets the parameters to the last active snapshot (as set via “Set as last”); in between the parameters are interpolated according to the used snapshots. Slew-limiting can be applied additionally using the _Fade_-slider. |
 
 ![TRANSIT SEL-port](./Transit-sel.gif)
 
@@ -133,6 +135,8 @@ Once placed next to TRANSIT the expander works and behaves the same way TRANSIT 
 
 - Each snapshot can be named with a custom text label. This label is shown while hovering above the snapshot button if parameter tooltips are enabled (added in v1.9.0).
 
+- You can set a different first and/or last usable snapshot by right‑clicking a snapshot button and choosing _Set as first_ or _Set as last_. This makes it possible to use a contiguous subset of snapshot-slots for sequencing and CV selection.
+
 - Parameter changes are not reported back to the plugin-host by default if TRANSIT is used in a plugin-version of VCV Rack. In v2.1.0 a context menu option has been added to enable this behavior - it might cause higher CPU usage of the plugin.
 
 ## Changelog
@@ -170,3 +174,8 @@ Once placed next to TRANSIT the expander works and behaves the same way TRANSIT 
     - Added context menu option to report parameter updates to plugin-host (only in plugin-version of Rack)
 - v2.2.0
     - Improved robustness for expander +T (e.g. crashes when using module-presets) (#412)
+- v2.3.0
+    - Added alternative parameter binding by selection box
+    - Added custom color LED setting per slot
+    - Added option to set the first usable snapshot (instead of starting at 1) (#265)
+    - Added option to disable fade CV input clamping, allowing for more extreme fade times

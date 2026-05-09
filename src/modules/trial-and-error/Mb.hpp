@@ -1,6 +1,7 @@
 #pragma once
 #include "../../plugin.hpp"
 #include <plugin.hpp>
+#include <FuzzySearchDatabase.hpp>
 
 namespace StoermelderPackOne {
 namespace Mb {
@@ -23,19 +24,49 @@ void moduleBrowserFromJson(json_t* rootJ);
 extern std::set<Model*> favoriteModels;
 extern std::set<Model*> hiddenModels;
 extern std::map<Model*, ModelUsage*> modelUsage;
+extern std::map<std::string, std::set<Model*>> customTagModels;
+
+void customTagAdd(Model* model, const std::string& tag);
+void customTagRemove(Model* model, const std::string& tag);
+bool customTagHas(Model* model, const std::string& tag, bool resolveKey = false);
+void customTagDelete(const std::string& tag);
+std::set<std::string> customTagsForModel(Model* model);
+std::set<std::string> customTagsAll();
+
+// Favorite mode handling
+enum class FavoriteMode {
+	VCVRACK = 0,
+	MB = 1,
+	BOTH = 2
+};
+
+extern FavoriteMode favoriteMode;
+
+bool isModelFavorite(Model* model);
+void setModelFavorite(Model* model, bool favorite);
+
+
+// Shared fuzzy search database — initialized once by BrowserOverlay, re-initialized when searchDescriptions changes
+extern fuzzysearch::Database<plugin::Model*> modelDb;
+extern bool searchDescriptions;
+extern bool sortBySearchScore;
+extern bool favoriteHighlight;
+void modelDbInit();
 
 
 // Browser overlay
 
 enum class MODE {
 	V06,
-	V1
+	V1,
+	V2
 };
 
 struct BrowserOverlay : widget::OpaqueWidget {
 	Widget* mbWidgetBackup;
 	Widget* mbV06;
 	Widget* mbV1;
+	Widget* mbV2;
 
 	MODE* mode;
 

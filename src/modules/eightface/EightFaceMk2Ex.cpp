@@ -42,7 +42,8 @@ struct EightFaceMk2ExModule : EightFaceMk2Base<NUM_PRESETS> {
 			BASE::slot[i].presetButton = &BASE::presetButton[i];
 		}
 
-		BASE::onReset();
+		Module::ResetEvent re;
+		BASE::onReset(re);
 	}
 
 	~EightFaceMk2ExModule() {
@@ -59,7 +60,7 @@ struct EightFaceMk2ExModule : EightFaceMk2Base<NUM_PRESETS> {
 		notifyExpanderListeners("8FaceMk2");
 	}
 
-	void onReset() override {
+	void onReset(const Module::ResetEvent& e) override {
 		BASE::ctrlUniqueId = -1;
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			if (BASE::presetSlotUsed[i]) {
@@ -75,6 +76,7 @@ struct EightFaceMk2ExModule : EightFaceMk2Base<NUM_PRESETS> {
 			BASE::lights[LIGHT_PRESET + (i * 3) + 1].setBrightness(0.f);
 			BASE::lights[LIGHT_PRESET + (i * 3) + 2].setBrightness(0.f);
 		}
+		BASE::onReset(e);
 	}
 
 	EightFaceMk2Slot* faceSlot(int i) override {

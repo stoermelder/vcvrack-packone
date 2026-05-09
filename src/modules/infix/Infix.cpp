@@ -35,7 +35,9 @@ struct InfixModule : Module {
 			configInput(INPUT_MONO + i, string::f("Channel %i replacement", i + 1));
 		}
 		configOutput(OUTPUT_POLY, "Polyphonic");
-		onReset();
+
+		ResetEvent re;
+		onReset(re);
 	}
 
 	void onSampleRateChange(const SampleRateChangeEvent& e) override {

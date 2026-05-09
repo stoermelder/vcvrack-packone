@@ -71,14 +71,16 @@ struct X4Module : CVMapModuleBase<2> {
 		this->paramHandles[0].text = "X4";
 		this->paramHandles[1].text = "X4";
 		processDivider.setDivision(32);
-		onReset();
+
+		ResetEvent re;
+		onReset(re);
 	}
 
 	void onSampleRateChange(const SampleRateChangeEvent& e) override {
 		lightDivider.setDivision(e.sampleRate / 100.f);
 	}
 
-	void onReset() override {
+	void onReset(const ResetEvent& e) override {
 		audioRate = false;
 		for (size_t i = 0; i < 5; i++) {
 			readParamA[i] = readParamB[i] = true;
@@ -86,7 +88,7 @@ struct X4Module : CVMapModuleBase<2> {
 
 		parameterChangesDirect = false;
 
-		CVMapModuleBase<2>::onReset();
+		CVMapModuleBase<2>::onReset(e);
 	}
 
 	void process(const ProcessArgs& args) override {

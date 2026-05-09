@@ -29,7 +29,9 @@ struct MidiCatClkModule : Module {
 		for (int i = 0; i < 4; i++) {
 			configInput(INPUT_CLOCK + i, string::f("Clock %i", i + 1));
 		}
-		onReset();
+
+		ResetEvent re;
+		onReset(re);
 	}
 
 	void onExpanderChange(const Module::ExpanderChangeEvent& e) override {

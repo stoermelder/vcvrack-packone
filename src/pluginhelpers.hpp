@@ -152,16 +152,21 @@ ui::MenuItem* createValuePtrMenuItem(std::string text, std::string rightText, T*
 }
 
 
-/** Create a color submenu for a color pointer with presets, a picker and a hex field.
-Example:
-	menu->addChild(createColorSubmenuItem("Color", &module->defaultColor, {
-		{ LABEL_COLOR_YELLOW, "Yellow" },
-		{ LABEL_COLOR_RED, "Red" },
-		{ LABEL_COLOR_CYAN, "Cyan" }
-	}));
-*/
-inline ui::MenuItem* createColorSubmenuItem(std::string text, NVGcolor* colorPtr, std::vector<std::pair<NVGcolor, std::string>> presets = {}, bool includePicker = true, bool includeField = false, bool* textSelected = nullptr) {
-	struct ColorItem : ui::MenuItem {
+/** Append color controls (label, optional picker, presets and hex field) to an existing menu.
+ *  This allows callers to insert the color controls directly into an existing Menu rather than creating a submenu.
+ *
+ *  Example:
+ *    // Append the color controls directly into an existing menu (no extra submenu)
+ *    std::vector<std::pair<NVGcolor, std::string>> presets = {
+ *      { LABEL_COLOR_YELLOW, "Yellow" },
+ *      { LABEL_COLOR_RED, "Red" },
+ *      { LABEL_COLOR_CYAN, "Cyan" }
+ *    };
+ *    // Insert a color picker, presets and a hex field into 'menu' for 'module->slotColor[id]'
+ *    Rack::appendColorSubmenuItems(menu, &module->slotColor[id], presets, true, true);
+ */
+inline void appendColorSubmenuItems(ui::Menu* menu, NVGcolor* colorPtr, const std::vector<std::pair<NVGcolor, std::string>>& presets = {}, bool includePicker = true, bool includeField = false, bool* textSelected = nullptr) {
+	struct AppendColorItem : ui::MenuItem {
 		NVGcolor color;
 		NVGcolor* colorPtr;
 		void onAction(const event::Action& e) override {
@@ -174,6 +179,31 @@ inline ui::MenuItem* createColorSubmenuItem(std::string text, NVGcolor* colorPtr
 		}
 	};
 
+	menu->addChild(construct<MenuColorLabel>(&MenuColorLabel::fillColor, colorPtr));
+	if (includePicker) {
+		menu->addChild(new MenuSeparator);
+		menu->addChild(construct<MenuColorPicker>(&MenuColorPicker::color, colorPtr));
+	}
+	if (!presets.empty()) {
+		menu->addChild(new MenuSeparator);
+		for (auto &p : presets) {
+			menu->addChild(construct<AppendColorItem>(&MenuItem::text, p.second.c_str(), &AppendColorItem::colorPtr, colorPtr, &AppendColorItem::color, p.first));
+		}
+	}
+	if (includeField) {
+		menu->addChild(construct<MenuColorField>(&MenuColorField::color, colorPtr, &MenuColorField::textSelected, textSelected));
+	}
+}
+
+/** Create a color submenu for a color pointer with presets, a picker and a hex field.
+Example:
+	menu->addChild(createColorSubmenuItem("Color", &module->defaultColor, {
+		{ LABEL_COLOR_YELLOW, "Yellow" },
+		{ LABEL_COLOR_RED, "Red" },
+		{ LABEL_COLOR_CYAN, "Cyan" }
+	}));
+*/
+inline ui::MenuItem* createColorSubmenuItem(std::string text, NVGcolor* colorPtr, std::vector<std::pair<NVGcolor, std::string>> presets = {}, bool includePicker = true, bool includeField = false, bool* textSelected = nullptr) {
 	struct Item : ui::MenuItem {
 		NVGcolor* colorPtr;
 		std::vector<std::pair<NVGcolor, std::string>> presets;
@@ -182,20 +212,7 @@ inline ui::MenuItem* createColorSubmenuItem(std::string text, NVGcolor* colorPtr
 		bool* textSelected;
 		ui::Menu* createChildMenu() override {
 			ui::Menu* menu = new ui::Menu;
-			menu->addChild(construct<MenuColorLabel>(&MenuColorLabel::fillColor, colorPtr));
-			if (includePicker) {
-				menu->addChild(new MenuSeparator);
-				menu->addChild(construct<MenuColorPicker>(&MenuColorPicker::color, colorPtr));
-			}
-			if (!presets.empty()) {
-				menu->addChild(new MenuSeparator);
-				for (auto &p : presets) {
-					menu->addChild(construct<ColorItem>(&MenuItem::text, p.second.c_str(), &ColorItem::colorPtr, colorPtr, &ColorItem::color, p.first));
-				}
-			}
-			if (includeField) {
-				menu->addChild(construct<MenuColorField>(&MenuColorField::color, colorPtr, &MenuColorField::textSelected, textSelected));
-			}
+			appendColorSubmenuItems(menu, colorPtr, presets, includePicker, includeField, textSelected);
 			return menu;
 		}
 	};
@@ -219,7 +236,8 @@ Example:
 		0.f, 1.f, 0.5f, "Opacity", "%", 100.f
 	));
 */
-inline ui::Slider* createSlider(std::function<float()> getter, std::function<void(float)> setter, float minValue = 0.f, float maxValue = 1.f, float defaultValue = 0.5f, std::string label = "Value", std::string unit = "", float displayMultiplier = 1.f, float width = 200.0f) {
+template<typename BASE = ui::Slider>
+inline BASE* createSliderT(std::function<float()> getter, std::function<void(float)> setter, float minValue = 0.f, float maxValue = 1.f, float defaultValue = 0.5f, std::string label = "Value", std::string unit = "", float displayMultiplier = 1.f, float width = 200.0f) {
 	struct SliderQuantity : Quantity {
 		std::function<float()> get;
 		std::function<void(float)> set;
@@ -260,29 +278,132 @@ inline ui::Slider* createSlider(std::function<float()> getter, std::function<voi
 		}
 	};
 
-	struct SliderWithQuantity : ui::Slider {
+	struct SliderWithQuantity : BASE {
 		SliderWithQuantity(std::function<float()> g, std::function<void(float)> s, float minV, float maxV, float d, std::string l, std::string u, float m, float w) {
-			box.size.x = w;
-			quantity = new SliderQuantity(g, s, minV, maxV, d, l, u, m);
+			this->box.size.x = w;
+			this->quantity = new SliderQuantity(g, s, minV, maxV, d, l, u, m);
 		}
 		~SliderWithQuantity() {
-			delete quantity;
+			delete this->quantity;
 		}
 	};
 
 	return new SliderWithQuantity(getter, setter, minValue, maxValue, defaultValue, label, unit, displayMultiplier, width);
 }
 
+inline ui::Slider* createSlider(std::function<float()> getter, std::function<void(float)> setter, float minValue = 0.f, float maxValue = 1.f, float defaultValue = 0.5f, std::string label = "Value", std::string unit = "", float displayMultiplier = 1.f, float width = 200.0f) {
+	return createSliderT<>(getter, setter, minValue, maxValue, defaultValue, label, unit, displayMultiplier, width);
+}
+
+
 /** Easy wrapper for creating a float slider that controls a float pointer.
 Example:
 	menu->addChild(createPtrSlider(&module->value, 0.f, 1.f, 0.5f, "Opacity", "%", 100.f));
 */
-inline ui::Slider* createPtrSlider(float* valuePtr, float minValue = 0.f, float maxValue = 1.f, float defaultValue = 0.5f, std::string label = "Value", std::string unit = "", float displayMultiplier = 1.f, float width = 200.0f) {
-	return createSlider(
+template<typename BASE = ui::Slider>
+inline BASE* createPtrSliderT(float* valuePtr, float minValue = 0.f, float maxValue = 1.f, float defaultValue = 0.5f, std::string label = "Value", std::string unit = "", float displayMultiplier = 1.f, float width = 200.0f) {
+	return createSliderT<BASE>(
 		[=]() { return *valuePtr; },
 		[=](float v) { *valuePtr = v; },
 		minValue, maxValue, defaultValue, label, unit, displayMultiplier, width
 	);
+}
+
+inline ui::Slider* createPtrSlider(float* valuePtr, float minValue = 0.f, float maxValue = 1.f, float defaultValue = 0.5f, std::string label = "Value", std::string unit = "", float displayMultiplier = 1.f, float width = 200.0f) {
+	return createPtrSliderT<>(valuePtr, minValue, maxValue, defaultValue, label, unit, displayMultiplier, width);
+}
+
+
+/** Easy wrapper for creating a slider that controls a float value via getter/setter functions.
+Example:
+	menu->addChild(createSteppedSlider<uint8_t>(
+		[=]() { return module->cc; },
+		[=](uint8_t v) { module->cc = v; },
+		0, 127, 0, 
+		"CC", "", [=](float v) { return string::f("CC %d", std::round(v)); },
+		140.f
+	));
+*/
+template<typename T>
+inline ui::Slider* createSteppedSlider(std::function<T()> getter, std::function<void(T)> setter, 
+		float minValue = 0.f, float maxValue = 1.f, float defaultValue = 0.5f, 
+		std::string label = "Value", std::string unit = "", std::function<std::string(T)> str = nullptr,
+		float width = 140.f) {
+	struct SliderQuantity : Quantity {
+		std::function<T()> get;
+		std::function<void(T)> set;
+		std::function<std::string(T)> str = nullptr;
+		float minVal;
+		float maxVal;
+		float defaultVal;
+		std::string lbl;
+		std::string unt;
+		float value;
+	
+		SliderQuantity(std::function<T()> g, std::function<void(T)> s, float minV, float maxV, float d, std::string l, std::string u, std::function<std::string(T)> s_)
+				: get(g), set(s), str(s_), minVal(minV), maxVal(maxV), defaultVal(d), lbl(l), unt(u) {
+			value = float(get());
+		}
+
+		void setValue(float value) override {
+			this->value = math::clamp(value, minVal, maxVal);
+			set(T(std::round(this->value)));
+		}
+		float getValue() override {
+			return value;
+		}
+		float getDefaultValue() override {
+			return defaultVal;
+		}
+		float getDisplayValue() override {
+			return this->value;
+		}
+		void setDisplayValue(float displayValue) override {
+		}
+		std::string getDisplayValueString() override {
+			return str ? str(T(std::round(value))) : string::f("%.0f", std::round(this->value));
+		}
+		std::string getLabel() override {
+			return lbl;
+		}
+		std::string getUnit() override {
+			return unt;
+		}
+		float getMinValue() override {
+			return minVal;
+		}
+		float getMaxValue() override {
+			return maxVal;
+		}
+	};
+
+	struct SliderWithQuantity : ui::Slider {
+		SliderWithQuantity(std::function<T()> g, std::function<void(T)> s, float minV, float maxV, float d, std::string l, std::string u, std::function<std::string(float)> str, float w) {
+			box.size.x = w;
+			quantity = new SliderQuantity(g, s, minV, maxV, d, l, u, str);
+		}
+		~SliderWithQuantity() {
+			delete quantity;
+		}
+	};
+
+	return new SliderWithQuantity(getter, setter, minValue, maxValue, defaultValue, label, unit, str, width);
+}
+
+
+/** Helper to create a pre-configured TextField for menus or overlays.
+Example:
+	// inside a menu lambda
+	auto* tf = createTextField(module->sim->udpAddress(), 200.0f);
+	m->addChild(tf);
+	// retrieve value later via tf->text
+*/
+inline ui::TextField* createTextField(const std::string& initial = "", const std::string& placeHolder = "", float width = 120.0f) {
+	ui::TextField* tf = new ui::TextField();
+	tf->box.size.x = width;
+	tf->text = initial;
+	tf->placeholder = placeHolder;
+	return tf;
 }
 
 } // namespace Rack

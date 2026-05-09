@@ -24,7 +24,7 @@ struct MapParamQuantity : ParamQuantity {
 		if (!m)
 			return "";
 		int paramId = paramHandle->paramId;
-		if (paramId >= (int) m->params.size())
+		if (paramId >= (int)m->params.size())
 			return "";
 		ParamQuantity* paramQuantity = m->paramQuantities[paramId];
 		std::string s;
@@ -113,14 +113,17 @@ struct MapButton : LEDBezel {
 		// Check if a ParamWidget was hovered
 		Widget* widget = APP->event->getHoveredWidget();
 		if (widget) {
-			ParamWidget* paramWidget = dynamic_cast<ParamWidget*>(widget);
-			if (paramWidget && paramWidget->getParamQuantity()->module != module) {
-				APP->scene->rack->setTouchedParam(NULL);
-				int64_t moduleId = paramWidget->getParamQuantity()->module->id;
-				int paramId = paramWidget->getParamQuantity()->paramId;
-				module->learnParam(id, moduleId, paramId);
-				if (APP->window) glfwSetCursor(APP->window->win, NULL);
-				return;
+			ParamWidget* pw = dynamic_cast<ParamWidget*>(widget);
+			if (pw) {
+				ParamQuantity* pq = pw->getParamQuantity();
+				if (pq && pq->module != module) {
+					APP->scene->rack->setTouchedParam(NULL);
+					int64_t moduleId = pq->module->id;
+					int paramId = pq->paramId;
+					module->learnParam(id, moduleId, paramId);
+					if (APP->window) glfwSetCursor(APP->window->win, NULL);
+					return;
+				}
 			}
 		}
 		module->disableLearn(id);
@@ -144,7 +147,7 @@ struct MapButton : LEDBezel {
 		if (!m)
 			return "<ERROR>";
 		int paramId = paramHandle->paramId;
-		if (paramId >= (int) m->params.size())
+		if (paramId >= (int)m->params.size())
 			return "<ERROR>";
 		ParamQuantity* paramQuantity = m->paramQuantities[paramId];
 		std::string s;

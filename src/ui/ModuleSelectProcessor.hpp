@@ -12,14 +12,16 @@ struct ModuleSelectProcessor {
 	};
 
 	Widget* owner;
-	std::function<void(ModuleWidget* mw, Vec pos)> callback;
+	std::function<void(ModuleWidget* mw, Vec pos)> learnCallback;
+	std::function<void()> abortCallback;
 	LEARN_MODE learnMode = LEARN_MODE::OFF;
 
 	void setOwner(Widget* owner) {
 		this->owner = owner;
 	}
 
-	void startLearn(std::function<void(ModuleWidget* mw, Vec pos)> callback, LEARN_MODE mode = LEARN_MODE::SINGLE) {
+	void startLearn(std::function<void(ModuleWidget* mw, Vec pos)> learnCallback, LEARN_MODE mode = LEARN_MODE::SINGLE,
+			std::function<void()> abortCallback = {}) {
 		if (owner == NULL) {
 			return;
 		}
@@ -28,7 +30,8 @@ struct ModuleSelectProcessor {
 			return;
 		}
 
-		this->callback = callback;
+		this->learnCallback = learnCallback;
+		this->abortCallback = abortCallback;
 		learnMode = mode;
 		APP->event->setSelectedWidget(owner);
 		GLFWcursor* cursor = NULL;
@@ -40,7 +43,9 @@ struct ModuleSelectProcessor {
 
 	void disableLearn() {
 		owner = NULL;
-		callback = { };
+		learnCallback = {};
+		if (abortCallback) abortCallback();
+		abortCallback = {};
 		learnMode = LEARN_MODE::OFF;
 		if (APP->window) glfwSetCursor(APP->window->win, NULL);
 	}
@@ -70,7 +75,7 @@ struct ModuleSelectProcessor {
 			if (!mw || mw == owner) return;
 			Vec pos = w->getRelativeOffset(Vec(1.f, 1.f), mw);
 			success = true;
-			if (callback) callback(mw, pos);
+			if (learnCallback) learnCallback(mw, pos);
 		}
 	}
 

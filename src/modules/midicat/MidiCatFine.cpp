@@ -31,16 +31,19 @@ struct MidiCatFineModule : MidiCatFineBase {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configInput(INPUT_LOWRANGE, "Lower precision range (10%) gate");
 		configInput(INPUT_HIGHRANGE, "Higher precision range (1/2/5%) gate");
-		onReset();
+
+		ResetEvent re;
+		onReset(re);
 	}
 
 	void onExpanderChange(const Module::ExpanderChangeEvent& e) override {
 		notifyExpanderListeners("MidiCat");
 	}
 
-	void onReset() override {
+	void onReset(const ResetEvent& e) override {
 		panelTheme = pluginSettings.panelThemeDefault;
 		highRange = 0.01f;
+		Module::onReset(e);
 	}
 
 	json_t* dataToJson() override {

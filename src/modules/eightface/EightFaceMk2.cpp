@@ -165,7 +165,9 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 		buttonDivider.setDivision(128);
 		boundModulesDivider.setDivision(APP->engine->getSampleRate());
 		lightDivider.setDivision(512);
-		onReset();
+
+		Module::ResetEvent re;
+		onReset(re);
 	}
 
 	~EightFaceMk2Module() {
@@ -186,7 +188,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 		notifyExpanderListeners("8FaceMk2");
 	}
 
-	void onReset() override {
+	void onReset(const Module::ResetEvent& e) override {
 		inChange = true;
 		expandersChanged = true;
 		for (int i = 0; i < NUM_PRESETS; i++) {
@@ -206,7 +208,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 		inChange = false;
 		guiSafeMode = GUISAFEMODE::GUI_WITH_LOCK;
 
-		BASE::ctrlUniqueId = rack::random::uniform() * INT64_MAX;
+		BASE::ctrlUniqueId = (int64_t)(rack::random::uniform() * (float)INT64_MAX);
 		preset = -1;
 		presetCount = NUM_PRESETS;
 		presetNext = -1;
@@ -215,11 +217,11 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 		boxDraw = true;
 		boxColor = color::BLUE;
 
-		Module::onReset();
+		Module::onReset(e);
 	}
 
-	void onSampleRateChange() override {
-		boundModulesDivider.setDivision(APP->engine->getSampleRate());
+	void onSampleRateChange(const Module::SampleRateChangeEvent& e) override {
+		boundModulesDivider.setDivision(e.sampleRate);
 	}
 
 	EightFaceMk2Slot* faceSlot(int i) override {
@@ -470,9 +472,9 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 		}
 	}
 
-	void bindModule(Module* m) {
-		if (!m) return;
-		for (BoundModule* b : boundModules) if (b->moduleId == m->id) return;
+	std::string bindModule(Module* m) {
+		if (!m) return std::string();
+		for (BoundModule* b : boundModules) if (b->moduleId == m->id) return std::string();
 		BoundModule* b = new BoundModule;
 		b->moduleId = m->id;
 		b->moduleName = m->model->plugin->brand + " " + m->model->name;
@@ -481,13 +483,26 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 		auto it = EightFace::guiModuleSlugs.find(std::make_tuple(b->pluginSlug, b->modelSlug));
 		b->needsGuiThread = it != EightFace::guiModuleSlugs.end();
 		boundModules.push_back(b);
+
+		std::string ret;
+		ModuleWidget* mw = b->getModuleWidget();
+		json_t* vJ = mw->toJson();
+		char* moduleJson = json_dumps(vJ, JSON_INDENT(2) | JSON_REAL_PRECISION(9));
+		size_t size = strlen(moduleJson);
+		if (size > 400000) {
+			ret = string::f("The preset size of %s is about %ikb, which might cause performance issues.", b->moduleName, size / 1024);
+		}
+		free(moduleJson);
+		json_decref(vJ);
+
+		return ret;
 	}
 
-	void bindModuleExpander() {
+	std::string bindModuleExpander() {
 		Module::Expander* exp = &(Module::leftExpander);
-		if (exp->moduleId < 0) return;
+		if (exp->moduleId < 0) return std::string();
 		Module* m = exp->module;
-		bindModule(m);
+		return bindModule(m);
 	}
 
 	void unbindModule(BoundModule* b) {
@@ -496,7 +511,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 			for (auto it = std::begin(*slot->preset); it != std::end(*slot->preset); it++) {
 				json_t* idJ = json_object_get(*it, "id");
 				if (!idJ) continue;
-				int id = json_integer_value(idJ);
+				int64_t id = json_integer_value(idJ);
 				if (id == b->moduleId) {
 					slot->preset->erase(it);
 					break;
@@ -686,7 +701,8 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 	void expanderCleanUp(EightFaceMk2Base<NUM_PRESETS>* t) {
 		// ctrlUniqueId == -2 for presets before uniqueId was added
 		if (t->ctrlUniqueId != -2 || (t->ctrlModuleId >= 0 && t->ctrlModuleId != Module::id)) {
-			t->onReset();
+			Module::ResetEvent re;
+			t->onReset(re);
 		}
 		t->ctrlUniqueId = BASE::ctrlUniqueId;
 	}
@@ -889,6 +905,7 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 
 	ModuleOuterBoundsDrawerWidget<MODULE>* boxDrawer = NULL;
 	ModuleSelectProcessor moduleSelectProcessor;
+	std::string moduleSelectProcessorStr;
 
 	EightFaceMk2Widget(MODULE* module)
 		: ThemedModuleWidget<MODULE>(module, "EightFaceMk2") {
@@ -1105,23 +1122,43 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuItem("Bind module (left)", "", [=]() {
 			moduleSelectProcessor.disableLearn();
-			module->bindModuleExpander();
+			std::string s = module->bindModuleExpander();
+			if (!s.empty()) {
+				osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, s.c_str());
+			}
 		}));
 		menu->addChild(createMenuItem("Bind module (select one)", "", [=]() {
 			moduleSelectProcessor.setOwner(this);
 			moduleSelectProcessor.startLearn([module](ModuleWidget* mw, Vec pos) {
-				module->bindModule(mw->module);
+				std::string s = module->bindModule(mw->module);
+				if (!s.empty()) {
+					osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, s.c_str());
+				}
 			});
 		}));
 		menu->addChild(createMenuItem("Bind modules (select multiple)", "", [=]() {
 			moduleSelectProcessor.setOwner(this);
-			moduleSelectProcessor.startLearn([module](ModuleWidget* mw, Vec pos) {
-				module->bindModule(mw->module);
-			}, ModuleSelectProcessor::LEARN_MODE::MULTI);
+			moduleSelectProcessorStr = "";
+			moduleSelectProcessor.startLearn(
+				[this, module](ModuleWidget* mw, Vec pos) {
+					std::string s = module->bindModule(mw->module);
+					if (!s.empty()) moduleSelectProcessorStr += s + "\n";
+				}, ModuleSelectProcessor::LEARN_MODE::MULTI,
+				[this]() {
+					if (!moduleSelectProcessorStr.empty()) {
+						osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, moduleSelectProcessorStr.c_str());
+					}
+				}
+			);
 		}));
 		menu->addChild(createMenuItem("Bind modules (current selection)", "", [=]() {
+			std::string s;
 			for (ModuleWidget* mw : APP->scene->rack->getSelected()) {
-				module->bindModule(mw->module);
+				std::string _s = module->bindModule(mw->module);
+				if (!_s.empty()) s += _s + "\n";
+			}
+			if (!s.empty()) {
+				osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, s.c_str());
 			}
 			APP->scene->rack->deselectAll();
 		}));

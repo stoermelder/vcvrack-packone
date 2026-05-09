@@ -28,8 +28,10 @@ struct MidiCatMemModule : MidiCatMemBase, StripIdFixModule {
 	/** [Stored to JSON] */
 	int panelTheme = 0;
 	/** [Stored to JSON] */
+	/** Owned by the UI thread */
 	std::map<std::pair<std::string, std::string>, MemModule*> midiMap;
 	/** [Stored to JSON] */
+	/** Owned by the UI thread */
 	std::set<int64_t> moduleRestriction;
 
 	ClockDividerEx processDivider;
@@ -46,15 +48,17 @@ struct MidiCatMemModule : MidiCatMemBase, StripIdFixModule {
 		configInput(INPUT_PREV, "Previous preset trigger");
 		configInput(INPUT_NEXT, "Next preset trigger");
 		processDivider.setDivision(48);
-		onReset();
+
+		ResetEvent re;
+		onReset(re);
 	}
 
 	void onExpanderChange(const Module::ExpanderChangeEvent& e) override {
 		notifyExpanderListeners("MidiCat");
 	}
 
-	void onReset() override {
-		Module::onReset();
+	void onReset(const ResetEvent& e) override {
+		Module::onReset(e);
 		resetMap();
 		moduleRestriction.clear();
 	}
