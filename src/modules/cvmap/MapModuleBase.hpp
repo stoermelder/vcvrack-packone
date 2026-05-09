@@ -53,13 +53,14 @@ struct MapModuleBase : Module, StripIdFixModule {
 		}
 	}
 
-	void onReset() override {
+	void onReset(const Module::ResetEvent& e) override {
 		learningId = -1;
 		learnedParam = false;
 		// Use NoLock because we're already in an Engine write-lock if Engine::resetModule().
 		// We also might be in the constructor, which could cause problems, but when constructing, all ParamHandles will point to no Modules anyway.
 		clearMaps_NoLock();
 		mapLen = 0;
+		Module::onReset(e);
 	}
 
 	void process(const ProcessArgs& args) override {
@@ -81,6 +82,8 @@ struct MapModuleBase : Module, StripIdFixModule {
 			return NULL;
 		// Get ParamQuantity
 		int paramId = paramHandles[id].paramId;
+		if (paramId >= (int)module->paramQuantities.size())
+			return NULL;
 		ParamQuantity* paramQuantity = module->getParamQuantity(paramId);
 		if (!paramQuantity)
 			return NULL;
@@ -235,9 +238,9 @@ struct CVMapModuleBase : MapModuleBase<MAX_CHANNELS> {
 		this->mappingIndicatorColor = MAPPING_INDICATOR_COLOR_DEFAULT;
 	}
 
-	void onReset() override {
+	void onReset(const Module::ResetEvent& e) override {
 		this->mappingIndicatorColor = MAPPING_INDICATOR_COLOR_DEFAULT;
-		MapModuleBase<MAX_CHANNELS>::onReset();
+		MapModuleBase<MAX_CHANNELS>::onReset(e);
 	}
 
 	void process(const Module::ProcessArgs &args) override {
@@ -351,15 +354,21 @@ struct MapModuleChoice : LedDisplayChoice {
 		// Check if a ParamWidget was hovered
 		Widget* widget = APP->event->getHoveredWidget();
 		if (widget) {
-			ParamWidget* paramWidget = dynamic_cast<ParamWidget*>(widget);
-			if (paramWidget && paramWidget->getParamQuantity()->module != module) {
-				APP->scene->rack->setTouchedParam(NULL);
-				int64_t moduleId = paramWidget->getParamQuantity()->module->id;
-				int paramId = paramWidget->getParamQuantity()->paramId;
-				module->learnParam(id, moduleId, paramId);
-				hscrollCharOffset = 0;
-				if (APP->window) glfwSetCursor(APP->window->win, NULL);
-				return;
+			ParamWidget* pw = dynamic_cast<ParamWidget*>(widget);
+			if (!pw) {
+				pw = APP->scene->rack->getTouchedParam();
+			}
+			if (pw) {
+				ParamQuantity* pq = pw->getParamQuantity();
+				if (pq && pq->module != module) {
+					APP->scene->rack->setTouchedParam(NULL);
+					int64_t moduleId = pq->module->id;
+					int paramId = pq->paramId;
+					module->learnParam(id, moduleId, paramId);
+					hscrollCharOffset = 0;
+					if (APP->window) glfwSetCursor(APP->window->win, NULL);
+					return;
+				}
 			}
 		}
 		module->disableLearn(id);
@@ -456,7 +465,7 @@ struct MapModuleChoice : LedDisplayChoice {
 		if (!m)
 			return NULL;
 		int paramId = paramHandle->paramId;
-		if (paramId >= (int) m->params.size())
+		if (paramId >= (int)m->params.size())
 			return NULL;
 		ParamQuantity* paramQuantity = m->getParamQuantity(paramId);
 		return paramQuantity;
@@ -479,7 +488,7 @@ struct MapModuleChoice : LedDisplayChoice {
 		if (!m)
 			return "";
 		int paramId = paramHandle->paramId;
-		if (paramId >= (int) m->params.size())
+		if (paramId >= (int)m->params.size())
 			return "";
 		ParamQuantity* paramQuantity = m->getParamQuantity(paramId);
 		std::string s;

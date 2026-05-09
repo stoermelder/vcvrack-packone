@@ -1,5 +1,6 @@
 #include "Mb_v1.hpp"
 #include <tag.hpp>
+#include <componentlibrary.hpp>
 #include <thread>
 
 namespace StoermelderPackOne {
@@ -17,57 +18,14 @@ enum class ModuleBrowserSort {
 float modelBoxZoom = 0.9f;
 int modelBoxSort = (int)ModuleBrowserSort::DEFAULT;
 bool hideBrands = false;
-bool searchDescriptions = false;
 
 
 // Static functions
 
-static float fuzzyScore(const std::string& s, const std::string& query) {
-	size_t pos = s.find(query);
-	if (pos == std::string::npos)
-		return 0.f;
-
-	return (float)(query.size() + 1) / (s.size() + 1);
-}
-
-static float modelScore(plugin::Model* model, const std::string& search) {
-	if (search.empty())
-		return 1.f;
-	std::string s;
-	s += model->plugin->brand;
-	s += " ";
-	s += model->plugin->name;
-	s += " ";
-	s += model->name;
-	s += " ";
-	s += model->slug;
-	for (int tagId : model->tagIds) {
-		// Add all aliases of a tag
-		for (const std::string& alias : rack::tag::tagAliases[tagId]) {
-			s += " ";
-			s += alias;
-		}
-	}
-	if (searchDescriptions) {
-		s += " ";
-		s += model->description;
-	}
-	float score = fuzzyScore(string::lowercase(s), string::lowercase(search));
-	return score;
-}
-
-static bool isModelVisible(plugin::Model* model, const std::string& search, const bool& favourite, const std::string& brand, const std::set<int>& tagId, const bool& hidden) {
-	// Filter search query
-	if (search != "") {
-		float score = modelScore(model, search);
-		if (score <= 0.f)
-			return false;
-	}
-
+static bool isModelVisible(plugin::Model* model, const bool& favourite, const std::string& brand, const std::set<int>& tagId, const std::set<std::string>& customTagFilter, const bool& hidden) {
 	// Filter favorite
 	if (favourite) {
-		auto it = favoriteModels.find(model);
-		if (it == favoriteModels.end())
+		if (!isModelFavorite(model))
 			return false;
 	}
 
@@ -77,13 +35,17 @@ static bool isModelVisible(plugin::Model* model, const std::string& search, cons
 			return false;
 	}
 
-	// Filter tag
-	if (tagId.size() > 0) {
-			for (auto t : tagId) {
-			auto it = std::find(model->tagIds.begin(), model->tagIds.end(), t);
-			if (it == model->tagIds.end())
-				return false;
-		}
+	// Filter built-in tags (AND: model must have all selected tags)
+	for (auto t : tagId) {
+		auto it = std::find(model->tagIds.begin(), model->tagIds.end(), t);
+		if (it == model->tagIds.end())
+			return false;
+	}
+
+	// Filter custom tags (AND: model must have all selected custom tags)
+	for (const auto& ct : customTagFilter) {
+		if (!customTagHas(model, ct))
+			return false;
 	}
 
 	// Filter hidden
@@ -97,12 +59,7 @@ static bool isModelVisible(plugin::Model* model, const std::string& search, cons
 }
 
 static void toggleModelFavorite(Model* model) {
-	auto it = favoriteModels.find(model);
-	if (it != favoriteModels.end()) 
-		favoriteModels.erase(model);
-	else 
-		favoriteModels.insert(model);
-	hiddenModels.erase(model);
+	setModelFavorite(model, !isModelFavorite(model));
 
 	ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
 	if (browser->favorites) {
@@ -239,15 +196,20 @@ struct ModelBox : widget::OpaqueWidget {
 		nvgFillPaint(args.vg, nvgBoxGradient(args.vg, 0, 0, box.size.x, box.size.y, c, r, shadowColor, transparentColor));
 		nvgFill(args.vg);
 
-		if (modelHidden) {
-			nvgGlobalAlpha(args.vg, 0.33);
-		}
-
 		// To avoid blinding the user when rack brightness is low, draw framebuffer with the same brightness.
 		float b = math::clamp(settings::rackBrightness + 0.2f, 0.f, 1.f);
+		if (modelHidden) b *= 0.33f;
 		nvgGlobalTint(args.vg, nvgRGBAf(b, b, b, 1));
 
 		OpaqueWidget::draw(args);
+
+		if (favoriteHighlight && favoriteModels.find(model) != favoriteModels.end()) {
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, 0, 0, box.size.x, box.size.y);
+			nvgStrokeWidth(args.vg, 2);
+			nvgStrokeColor(args.vg, componentlibrary::SCHEME_YELLOW);
+			nvgStroke(args.vg);
+		}
 	}
 
 	void setTooltip(ui::Tooltip* tooltip) {
@@ -281,87 +243,128 @@ struct ModelBox : widget::OpaqueWidget {
 
 	void createContextMenu() {
 		Menu* menu = createMenu();
-
-		struct FilterBrandItem : MenuItem {
-			std::string brand;
-			void onAction(const event::Action& e) override {
-				ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
-				browser->brand = brand;
+		menu->addChild(createMenuLabel(model->plugin->name.c_str()));
+		menu->addChild(createMenuLabel(model->name.c_str()));
+		menu->addChild(createSubmenuItem("Details", "", [this](Menu* menu) {
+			model->appendContextMenu(menu, true);
+			// Remove "Favorite" menu item
+			auto f = menu->children.back();
+			menu->removeChild(f);
+			delete f;
+		}));
+		menu->addChild(createMenuItem(string::f("Filter by \"%s\"", model->plugin->brand.c_str()), "", [&]() {
+			ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
+			if (browser) {
+				browser->brand = model->plugin->brand;
 				browser->refresh(true);
 			}
-		};
+		}));
 
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, model->plugin->name.c_str()));
-		menu->addChild(construct<MenuLabel>(&MenuLabel::text, model->name.c_str()));
-		menu->addChild(construct<FilterBrandItem>(&MenuItem::text, string::f("Filter by \"%s\"", model->plugin->brand.c_str()), &FilterBrandItem::brand, model->plugin->brand));
 		menu->addChild(new MenuSeparator);
-		bool m = false;
+		menu->addChild(createCheckMenuItem("Favorite", RACK_MOD_CTRL_NAME "+F",
+			[&]() { return isModelFavorite(model); },
+			[&]() { toggleModelFavorite(model); }
+		));
+		menu->addChild(createCheckMenuItem("Hidden", RACK_MOD_CTRL_NAME "+H",
+			[&]() { return modelHidden; },
+			[&]() { toggleModelHidden(model); }
+		));
 
-		struct ModuleUrlItem : ui::MenuItem {
-			std::string url;
-			void onAction(const event::Action& e) override {
-				std::thread t(system::openBrowser, url);
-				t.detach();
+		menu->addChild(new MenuSeparator);
+		menu->addChild(createMenuLabel("Custom Tags"));
+
+		struct NewCustomTagField : ui::TextField {
+			plugin::Model* model;
+
+			void onSelectKey(const event::SelectKey& e) override {
+				if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
+					std::string tag = string::trim(text);
+					if (!tag.empty()) {
+						customTagAdd(model, tag);
+						ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
+						if (browser) {
+							browser->sidebar->refreshCustomTagList();
+							browser->refresh(false);
+						}
+					}
+					ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
+					if (overlay) overlay->requestDelete();
+					e.consume(this);
+					return;
+				}
+				if (!e.getTarget())
+					ui::TextField::onSelectKey(e);
 			}
 		};
 
-		if (!model->plugin->pluginUrl.empty()) {
-			ModuleUrlItem* websiteItem = new ModuleUrlItem;
-			websiteItem->text = "Website";
-			websiteItem->url = model->plugin->pluginUrl;
-			menu->addChild(websiteItem);
-			m = true;
-		}
-
-		if (!model->plugin->manualUrl.empty()) {
-			ModuleUrlItem* manualItem = new ModuleUrlItem;
-			manualItem->text = "Manual";
-			manualItem->url = model->plugin->manualUrl;
-			menu->addChild(manualItem);
-			m = true;
-		}
-
-		struct FavoriteModelItem : MenuItem {
+		struct ToggleCustomTagItem : MenuItem {
 			plugin::Model* model;
-			bool isFavorite = false;
+			std::string tagName;
 
-			FavoriteModelItem(plugin::Model* model) {
-				text = "Favorite";
-				this->model = model;
-				auto it = favoriteModels.find(model);
-				isFavorite = it != favoriteModels.end();
-			}
 			void onAction(const event::Action& e) override {
-				toggleModelFavorite(model);
+				if (customTagHas(model, tagName)) {
+					customTagRemove(model, tagName);
+				}
+				else {
+					customTagAdd(model, tagName);
+				}
+				ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
+				if (browser) {
+					browser->sidebar->refreshCustomTagList();
+					browser->refresh(false);
+				}
+				e.unconsume();
 			}
+
 			void step() override {
-				rightText = string::f("%s %s", CHECKMARK(isFavorite), RACK_MOD_CTRL_NAME "+F");
+				rightText = CHECKMARK(customTagHas(model, tagName));
 				MenuItem::step();
 			}
 		};
 
-		struct HiddenModelItem : MenuItem {
-			plugin::Model* model;
-			bool isHidden = false;
+		NewCustomTagField* ntf = new NewCustomTagField;
+		ntf->box.size.x = 150.f;
+		ntf->placeholder = "New tag...";
+		ntf->model = model;
+		menu->addChild(ntf);
+		APP->event->setSelectedWidget(ntf);
 
-			HiddenModelItem(plugin::Model* model) {
-				text = "Hide";
-				this->model = model;
-				auto it = hiddenModels.find(model);
-				isHidden = it != hiddenModels.end();
-			}
-			void onAction(const event::Action& e) override {
-				toggleModelHidden(model);
-			}
-			void step() override {
-				rightText = string::f("%s %s", CHECKMARK(isHidden), RACK_MOD_CTRL_NAME "+H");
-				MenuItem::step();
+		auto unsortedTags = customTagsAll();
+		std::vector<std::string> tags(unsortedTags.begin(), unsortedTags.end());
+		std::sort(tags.begin(), tags.end(), [](const std::string& a, const std::string& b) {
+			return string::lowercase(a) < string::lowercase(b);
+		});
+
+		plugin::Model* m = model;
+		auto addTagItems = [m](Menu* menu, const std::vector<std::string>& group) {
+			for (const auto& tag : group) {
+				ToggleCustomTagItem* item = new ToggleCustomTagItem;
+				item->text = tag;
+				item->model = m;
+				item->tagName = tag;
+				menu->addChild(item);
 			}
 		};
 
-		if (m) menu->addChild(new MenuSeparator);
-		menu->addChild(new FavoriteModelItem(model));
-		menu->addChild(new HiddenModelItem(model));
+		if (tags.size() <= 20) {
+			addTagItems(menu, tags);
+		} 
+		else {
+			const size_t numGroups = (tags.size() + 15) / 16;
+			const size_t GROUP_SIZE = (tags.size() + numGroups - 1) / numGroups;
+			for (size_t i = 0; i < tags.size(); i += GROUP_SIZE) {
+				size_t end = std::min(i + GROUP_SIZE, tags.size());
+				char first = (char)std::toupper((unsigned char)string::lowercase(tags[i])[0]);
+				char last  = (char)std::toupper((unsigned char)string::lowercase(tags[end - 1])[0]);
+				std::string label = first == last
+					? std::string(1, first)
+					: std::string(1, first) + "-" + std::string(1, last);
+				std::vector<std::string> group(tags.begin() + i, tags.begin() + end);
+				menu->addChild(createSubmenuItem(label, "", [addTagItems, group](Menu* menu) {
+					addTagItems(menu, group);
+				}));
+			}
+		}
 	}
 
 	void onHoverKey(const event::HoverKey& e) override {
@@ -469,7 +472,7 @@ struct FavoriteItem : ui::MenuItem {
 	void step() override {
 		MenuItem::step();
 		ModuleBrowser* browser = getAncestorOfType<ModuleBrowser>();
-		disabled = !browser->favorites;
+		rightText = CHECKMARK(browser->favorites);
 	}
 };
 
@@ -483,13 +486,11 @@ struct BrandItem : ui::MenuItem {
 			browser->brand = text;
 		browser->refresh(true);
 	}
-	/*
 	void step() override {
 		MenuItem::step();
 		ModuleBrowser* browser = getAncestorOfType<ModuleBrowser>();
-		bool active = browser->brand == text;
+		rightText = CHECKMARK(browser->brand == text);
 	}
-	*/
 };
 
 
@@ -503,58 +504,89 @@ struct TagItem : ui::MenuItem {
 			browser->tagId.insert(tagId);
 		browser->refresh(true);
 	}
-	/*
 	void step() override {
 		MenuItem::step();
 		ModuleBrowser* browser = getAncestorOfType<ModuleBrowser>();
-		bool active = browser->tagId.find(tagId) != browser->tagId.end();
+		rightText = CHECKMARK(browser->tagId.find(tagId) != browser->tagId.end());
 	}
-	*/
+};
+
+
+struct CustomTagItem : ui::MenuItem {
+	std::string tagName;
+	void onAction(const event::Action& e) override {
+		ModuleBrowser* browser = getAncestorOfType<ModuleBrowser>();
+		if (browser->customTagFilter.find(tagName) != browser->customTagFilter.end())
+			browser->customTagFilter.erase(tagName);
+		else
+			browser->customTagFilter.insert(tagName);
+		browser->refresh(true);
+	}
+	void step() override {
+		ModuleBrowser* browser = getAncestorOfType<ModuleBrowser>();
+		if (browser) {
+			rightText = CHECKMARK(browser->customTagFilter.find(tagName) != browser->customTagFilter.end());
+		}
+		MenuItem::step();
+	}
 };
 
 
 struct BrowserSearchField : ui::TextField {
 	void step() override {
-		// Steal focus when step is called
-		APP->event->setSelectedWidget(this);
+		// Steal focus, but yield to any other TextField that has it
+		widget::Widget* selected = APP->event->getSelectedWidget();
+		if (!selected || !dynamic_cast<ui::TextField*>(selected)) {
+			APP->event->setSelectedWidget(this);
+		}
 		TextField::step();
 	}
 
 	void onSelectKey(const event::SelectKey& e) override {
-		if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
-			switch (e.key) {
-				case GLFW_KEY_ESCAPE: {
+		bool propagate = !e.getTarget();
+
+		switch (e.key) {
+			case GLFW_KEY_ESCAPE: {
+				if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
 					Mb::BrowserOverlay* overlay = getAncestorOfType<Mb::BrowserOverlay>();
 					overlay->hide();
-					e.consume(this);
-					break;
-				} 
-				case GLFW_KEY_BACKSPACE: {
-					if (text == "") {
+				}
+				e.consume(this);
+				break;
+			} 
+			case GLFW_KEY_BACKSPACE: {
+				if (text == "") {
+					if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
 						ModuleBrowser* browser = getAncestorOfType<ModuleBrowser>();
 						browser->clear(false);
-						e.consume(this);
 					}
-					break;
-				} 
-				case GLFW_KEY_SPACE: {
-					if (string::trim(text) == "" && (e.mods & RACK_MOD_MASK) == 0) {
+					e.consume(this);
+				}
+				break;
+			} 
+			case GLFW_KEY_SPACE: {
+				if (string::trim(text) == "" && (e.mods & RACK_MOD_MASK) == 0) {
+					if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
 						ModuleBrowser* browser = getAncestorOfType<ModuleBrowser>();
 						browser->favorites ^= true;
-						e.consume(this);
 					}
-					if ((e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL) {
+					setText("");
+					propagate = false;
+					e.consume(this);
+				}
+				if ((e.mods & RACK_MOD_MASK) == RACK_MOD_SHIFT) {
+					if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
 						ModuleBrowser* browser = getAncestorOfType<ModuleBrowser>();
 						browser->hidden ^= true;
-						setText(string::trim(text));
-						e.consume(this);
 					}
-					break;
+					setText(string::trim(text));
+					propagate = false;
+					e.consume(this);
 				}
+				break;
 			}
 		}
 
-		bool propagate = !e.getTarget();
 		propagate = propagate && !((e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && e.key == GLFW_KEY_F);
 		propagate = propagate && !((e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && e.key == GLFW_KEY_H);
 
@@ -624,6 +656,19 @@ BrowserSidebar::BrowserSidebar() {
 	favoriteItem->text = "Favorites";
 	favoriteList->addChild(favoriteItem);
 
+	// Custom tag label
+	customTagLabel = new ui::Label;
+	customTagLabel->color = nvgRGB(0x80, 0x80, 0x80);
+	customTagLabel->text = "Custom Tags";
+	addChild(customTagLabel);
+
+	// Custom tag list
+	customTagScroll = new ui::ScrollWidget;
+	addChild(customTagScroll);
+
+	customTagList = new ui::List;
+	customTagScroll->container->addChild(customTagList);
+
 	// Tag label
 	tagLabel = new ui::Label;
 	// tagLabel->fontSize = 16;
@@ -680,10 +725,28 @@ void BrowserSidebar::step() {
 	favoriteList->box.pos = clearButton->box.getBottomLeft();
 	favoriteList->box.size.x = box.size.x;
 
-	float listHeight = hideBrands ? box.size.y : (box.size.y - favoriteList->box.getBottom()) / 2;
-	listHeight = std::floor(listHeight);
+	bool hasCustomTags = !customTagList->children.empty();
+	customTagLabel->visible = hasCustomTags;
+	customTagScroll->visible = hasCustomTags;
 
-	tagLabel->box.pos = favoriteList->box.getBottomLeft();
+	// Divide remaining sidebar height equally among visible list sections
+	int numSections = (hasCustomTags ? 1 : 0) + 1 + (hideBrands ? 0 : 1);
+	float remainingHeight = box.size.y - favoriteList->box.getBottom();
+	float listHeight = std::floor(remainingHeight / numSections);
+
+	widget::Widget* anchor = favoriteList;
+
+	if (hasCustomTags) {
+		customTagLabel->box.pos = anchor->box.getBottomLeft();
+		customTagLabel->box.size.x = box.size.x;
+		customTagScroll->box.pos = customTagLabel->box.getBottomLeft();
+		customTagScroll->box.size.x = box.size.x;
+		customTagList->box.size.x = customTagScroll->box.size.x;
+		customTagScroll->box.size.y = listHeight - customTagLabel->box.size.y;
+		anchor = customTagScroll;
+	}
+
+	tagLabel->box.pos = anchor->box.getBottomLeft();
 	tagLabel->box.size.x = box.size.x;
 	tagScroll->box.pos = tagLabel->box.getBottomLeft();
 	tagScroll->box.size.x = box.size.x;
@@ -704,6 +767,21 @@ void BrowserSidebar::step() {
 	brandList->visible = !hideBrands;
 
 	Widget::step();
+}
+
+void BrowserSidebar::refreshCustomTagList() {
+	customTagList->clearChildren();
+	auto unsortedTags = customTagsAll();
+	std::vector<std::string> tags(unsortedTags.begin(), unsortedTags.end());
+	std::sort(tags.begin(), tags.end(), [](const std::string& a, const std::string& b) {
+		return string::lowercase(a) < string::lowercase(b);
+	});
+	for (const auto& tag : tags) {
+		CustomTagItem* item = new CustomTagItem;
+		item->text = tag;
+		item->tagName = tag;
+		customTagList->addChild(item);
+	}
 }
 
 
@@ -780,15 +858,38 @@ void ModuleBrowser::refresh(bool resetScroll) {
 		modelScroll->offset = math::Vec();
 	}
 
+	// Compute search scores via fuzzy database
+	std::map<plugin::Model*, float> searchScores;
+	if (!search.empty()) {
+		auto results = modelDb.search(search);
+		for (auto& result : results) {
+			searchScores[result.key] = result.score;
+		}
+	}
+
 	// Filter ModelBoxes
 	for (Widget* w : modelContainer->children) {
 		ModelBox* m = dynamic_cast<ModelBox*>(w);
 		assert(m);
-		m->visible = isModelVisible(m->model, search, favorites, brand, tagId, hidden);
+		bool visible = isModelVisible(m->model, favorites, brand, tagId, customTagFilter, hidden);
+		if (visible && !search.empty()) {
+			visible = searchScores.find(m->model) != searchScores.end();
+		}
+		m->visible = visible;
 		if (hidden && m->visible) m->modelHidden = isModelHidden(m->model);
 	}
 
 	// Sort ModelBoxes
+	auto sortFuzzySearchScore = [&](Widget* w1, Widget* w2) {
+		ModelBox* m1 = dynamic_cast<ModelBox*>(w1);
+		ModelBox* m2 = dynamic_cast<ModelBox*>(w2);
+		auto it1 = searchScores.find(m1->model);
+		auto it2 = searchScores.find(m2->model);
+		float s1 = (it1 != searchScores.end()) ? it1->second : 0.f;
+		float s2 = (it2 != searchScores.end()) ? it2->second : 0.f;
+		return s1 > s2;
+	};
+
 	auto sortDefault = [&](Widget* w1, Widget* w2) {
 		ModelBox* m1 = dynamic_cast<ModelBox*>(w1);
 		ModelBox* m2 = dynamic_cast<ModelBox*>(w2);
@@ -828,56 +929,49 @@ void ModuleBrowser::refresh(bool resetScroll) {
 		return t1 < t2;
 	};
 
-	switch ((ModuleBrowserSort)modelBoxSort) {
-		case ModuleBrowserSort::DEFAULT:
-			modelContainer->children.sort(sortDefault);
-			break;
-		case ModuleBrowserSort::NAME:
-			modelContainer->children.sort(sortByName);
-			break;
-		case ModuleBrowserSort::LAST_USED:
-			modelContainer->children.sort(sortByLastUsed);
-			break;
-		case ModuleBrowserSort::MOST_USED:
-			modelContainer->children.sort(sortByMostUsed);
-			break;
-		case ModuleBrowserSort::RANDOM:
-			std::vector<std::reference_wrapper<Widget*>> vec(modelContainer->children.begin(), modelContainer->children.end());
-			std::random_shuffle(vec.begin(), vec.end());
-			std::list<Widget*> s(vec.begin(), vec.end());
-			modelContainer->children.swap(s);
-			break;
+	if (sortBySearchScore && !search.empty()) {
+		modelContainer->children.sort(sortFuzzySearchScore);
 	}
-	
-
-	if (!search.empty()) {
-		std::map<Widget*, float> scores;
-		// Compute scores
-		for (Widget* w : modelContainer->children) {
-			ModelBox* m = dynamic_cast<ModelBox*>(w);
-			assert(m);
-			if (!m->visible)
-				continue;
-			scores[m] = modelScore(m->model, search);
+	else {
+		switch ((ModuleBrowserSort)modelBoxSort) {
+			case ModuleBrowserSort::DEFAULT:
+				modelContainer->children.sort(sortDefault);
+				break;
+			case ModuleBrowserSort::NAME:
+				modelContainer->children.sort(sortByName);
+				break;
+			case ModuleBrowserSort::LAST_USED:
+				modelContainer->children.sort(sortByLastUsed);
+				break;
+			case ModuleBrowserSort::MOST_USED:
+				modelContainer->children.sort(sortByMostUsed);
+				break;
+			case ModuleBrowserSort::RANDOM:
+				std::vector<std::reference_wrapper<Widget*>> vec(modelContainer->children.begin(), modelContainer->children.end());
+				std::random_shuffle(vec.begin(), vec.end());
+				std::list<Widget*> s(vec.begin(), vec.end());
+				modelContainer->children.swap(s);
+				break;
 		}
 	}
 
-	// Filter the brand and tag lists
-
-	// Get modules that would be filtered by just the search query
+	// Get modules passing search + favorites + hidden (without brand/tag filter)
 	std::vector<plugin::Model*> filteredModels;
 	for (Widget* w : modelContainer->children) {
 		ModelBox* m = dynamic_cast<ModelBox*>(w);
 		assert(m);
-		if (isModelVisible(m->model, search, favorites, "", emptyTagId, hidden))
-			filteredModels.push_back(m->model);
+		if (!isModelVisible(m->model, favorites, "", emptyTagId, customTagFilter, hidden))
+			continue;
+		if (!search.empty() && searchScores.find(m->model) == searchScores.end())
+			continue;
+		filteredModels.push_back(m->model);
 	}
 
 	auto hasModel = [&](const std::string& brand, int itemTagId = -1) -> bool {
 		std::set<int> tagIdp1 = tagId;
 		if (itemTagId >= 0) tagIdp1.insert(itemTagId);
 		for (plugin::Model* model : filteredModels) {
-			if (isModelVisible(model, "", favorites, brand, tagIdp1, hidden))
+			if (isModelVisible(model, favorites, brand, tagIdp1, customTagFilter, hidden))
 				return true;
 		}
 		return false;
@@ -904,6 +998,20 @@ void ModuleBrowser::refresh(bool resetScroll) {
 	}
 	sidebar->tagLabel->text = string::f("Tags (%d)", tagsLen);
 
+	auto hasModelWithCustomTag = [&](const std::string& newTag) -> bool {
+		for (plugin::Model* model : filteredModels) {
+			if (isModelVisible(model, favorites, brand, tagId, customTagFilter, hidden) && customTagHas(model, newTag))
+				return true;
+		}
+		return false;
+	};
+
+	for (Widget* w : sidebar->customTagList->children) {
+		CustomTagItem* item = dynamic_cast<CustomTagItem*>(w);
+		assert(item);
+		item->disabled = !customTagFilter.count(item->tagName) && !hasModelWithCustomTag(item->tagName);
+	}
+
 	// Count models
 	int modelsLen = 0;
 	for (Widget* w : modelContainer->children) {
@@ -921,11 +1029,12 @@ void ModuleBrowser::clear(bool keepSearch) {
 	favorites = false;
 	brand = "";
 	tagId.clear();
-	hidden = false;
+	customTagFilter.clear();
 	refresh(true);
 }
 
 void ModuleBrowser::onShow(const event::Show& e) {
+	sidebar->refreshCustomTagList();
 	refresh(false);
 	OpaqueWidget::onShow(e);
 }

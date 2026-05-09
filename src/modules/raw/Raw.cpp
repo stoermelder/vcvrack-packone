@@ -82,11 +82,13 @@ struct RawModule : Module {
 		configOutput(OUTPUT, "Audio");
 #endif
 		paramDivider.setDivision(64);
-		onReset();
+
+		Module::ResetEvent re;
+		onReset(re);
 	}
 
-	void onReset() override {
-		Module::onReset();
+ 	void onReset(const Module::ResetEvent& e) override {
+		Module::onReset(e);
 		for (int c = 0; c < 16; c += 4) {
 			y[c / 4][0] = y[c / 4][1] = 0.f;
 			x[c / 4][0] = x[c / 4][1] = x[c / 4][2] = 0.f;
@@ -216,7 +218,9 @@ struct RawWidget : ThemedModuleWidget<RawModule> {
 				module->params[RawModule::PARAM_K].setValue(k);
 				module->params[RawModule::PARAM_KMULT].setValue(k3);
 				module->params[RawModule::PARAM_GAIN_OUT].setValue(out_gain);
-				module->onReset();
+
+				Module::ResetEvent re; 
+				module->onReset(re);
 			} 
 		};
 

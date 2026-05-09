@@ -47,3 +47,5 @@ Additionally, the module can convert the current value of the hovered parameter 
     - Rewritten how target values are applied to parameters (improved behavior)
 - v1.9.0
     - Added overlay showing current parameter changes on the bottom of the screen
+- v2.3.0
+    - Fixed occasional crash (#358)

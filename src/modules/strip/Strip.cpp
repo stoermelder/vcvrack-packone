@@ -94,19 +94,22 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 		configInput(RAND_INPUT, "Strip randomization trigger");
 		configSwitch(RAND_PARAM, 0.f, 1.f, 0.f, "Randomize strip");
 		configSwitch(EXCLUDE_PARAM, 0.f, 1.f, 0.f, "Parameter randomization include/exclude");
-		onReset();
+
+		ResetEvent re;
+		onReset(re);
 	}
 
 	void onSampleRateChange(const SampleRateChangeEvent& e) override {
 		lightDivider.setDivision(e.sampleRate / 100.f);
 	}
 
-	void onReset() override {
+	void onReset(const ResetEvent& e) override {
 		randomParamsOnly = false;
 		presetLoadReplace = false;
 		// Initialize snapshot to empty set so UI can read safely immediately
 		excludedParams.clear();
 		std::atomic_store(&excludedParamsPtr, std::make_shared<const std::set<std::tuple<int64_t, int>>>());
+		Module::onReset(e);
 	}
 
 	void process(const ProcessArgs& args) override {
@@ -170,7 +173,7 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 				// history::ModuleBypass
 				history::ModuleBypass* h = new history::ModuleBypass;
 				h->moduleId = m->rightExpander.module->id;
-				h->bypassed = m->rightExpander.module->isBypassed();
+				h->bypassed = !m->rightExpander.module->isBypassed();
 				complexAction->push(h);
 
 				m = m->rightExpander.module;
@@ -186,7 +189,7 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 				// history::ModuleBypass
 				history::ModuleBypass* h = new history::ModuleBypass;
 				h->moduleId = m->leftExpander.module->id;
-				h->bypassed = m->leftExpander.module->isBypassed();
+				h->bypassed = !m->leftExpander.module->isBypassed();
 				complexAction->push(h);
 
 				m = m->leftExpander.module;
@@ -209,7 +212,6 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 	 * To be called from a worker-thread only, as the engine will lock.
 	 */
 	void groupBypassWorker(bool val) {
-		if (lastBypassState.load() == val) return;
 		lastBypassState.store(val);
 
 		if (mode == MODE::LEFTRIGHT || mode == MODE::RIGHT) {
@@ -318,6 +320,7 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 					}
 				}
 				if (!randomParamsOnly) {
+					// Note: onRandomize() and onRandomize(e) behave differently by default
 					mNext->onRandomize();
 				}
 
@@ -351,6 +354,7 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 					}
 				}
 				if (!randomParamsOnly) {
+					// Note: onRandomize() and onRandomize(e) behave differently by default
 					mNext->onRandomize();
 				}
 
@@ -779,7 +783,7 @@ struct StripWidget : StripWidgetBase<StripModule> {
 		menu->addChild(new MenuSeparator);
 		menu->addChild(createSubmenuItem("Port/Switch ON mode", "",
 			[=](Menu* menu) {
-				menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem("Default", &module->onMode, ONMODE::DEFAULT));
+				menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem("On only", &module->onMode, ONMODE::DEFAULT));
 				menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem("Toggle", &module->onMode, ONMODE::TOGGLE));
 				menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem("High/Low", &module->onMode, ONMODE::HIGHLOW));
 			}

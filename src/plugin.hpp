@@ -70,6 +70,7 @@ extern Model* modelFlowerSeq;
 extern Model* modelFlowerSeqEx;
 extern Model* modelFlowerSeqTrig;
 extern Model* modelPanicRoom;
+extern Model* modelAhab;
 extern Model* modelAudioInterface64;
 extern Model* modelMb;
 extern Model* modelMe;

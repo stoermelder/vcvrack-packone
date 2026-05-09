@@ -1,6 +1,7 @@
 #include "../../plugin.hpp"
 #include "../../utils/StripIdFixModule.hpp"
 #include "../../utils/ScaledMapParam.hpp"
+#include "../../utils/TaskProcessor.hpp"
 #include "../../components/MenuLabelEx.hpp"
 #include "../../components/CurveMenuItem.hpp"
 #include "../../components/SubMenuSlider.hpp"
@@ -409,6 +410,8 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 
 	MIDIMODE midiMode = MIDIMODE::MIDIMODE_DEFAULT;
 	bool ccFineMode = false;
+	// Use for temporary override of CC mode to DIRECT
+	bool ccModeOverride = false;
 
 	/** Track last values */
 	int lastValueIn[MAX_CHANNELS];
@@ -435,19 +438,21 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 	/** Holds the time needed for long presses */
 	uint64_t longPressDuration;
 
+	TaskProcessor<> taskProcessorUi;
+
 	// MEM-expander
-	MidiCatMemBase* expMem = NULL;
+	std::atomic<MidiCatMemBase*> expMem{NULL};
 	int64_t expMemModuleId = -1;
 
 	// CTX-expander
-	Module* expCtx = NULL;
+	std::atomic<MidiCatCtxBase*> expCtx{NULL};
 
 	// CLK-expander
-	Module* expClk = NULL;
+	std::atomic<Module*> expClk{NULL};
 	dsp::SchmittTrigger expClkTrigger[4];
 
 	// FINE-expander
-	MidiCatFineBase* expFine = NULL;
+	std::atomic<MidiCatFineBase*> expFine{NULL};
 	dsp::SchmittTrigger expFineLowTrigger;
 	dsp::SchmittTrigger expFineHighTrigger;
 
@@ -464,7 +469,9 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 		}
 		indicatorDivider.setDivision(2048);
 		midiResendDivider.setDivision(APP->engine->getSampleRate() / 2);
-		onReset();
+
+		Module::ResetEvent re;
+		onReset(re);
 	}
 
 	~MidiCatModule() {
@@ -478,15 +485,17 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 		notifyExpanderListeners("MidiCat");
 	}
 
-	void onReset() override {
+	void onReset(const Module::ResetEvent& e) override {
 		expandersChanged = true;
 
 		learningId = -1;
 		learnedCc = false;
 		learnedNote = false;
 		learnedParam = false;
-		// Use NoLock because we're already in an Engine write-lock if Engine::resetModule().
-		// We also might be in the MIDIMap() constructor, which could cause problems, but when constructing, all ParamHandles will point to no Modules anyway.
+		// Use NoLock because Engine::resetModule() already holds the engine write lock.
+		// We may also be called from the MIDIMap() constructor; that could be problematic, 
+		// but during construction all ParamHandles are unbound (they do not point to any Module),
+		// so this should be safe.
 		clearMaps_NoLock();
 		mapLen = 1;
 		for (int i = 0; i < 128; i++) {
@@ -520,11 +529,13 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 		clearMapsOnLoad = false;
 
 		parameterChangesDirect = false;
+
+		Module::onReset(e);
 	}
 
-	void onSampleRateChange() override {
-		midiResendDivider.setDivision(APP->engine->getSampleRate() / 2);
-		longPressDuration = (uint64_t)(APP->engine->getSampleRate() / 2);
+	void onSampleRateChange(const SampleRateChangeEvent& e) override {
+		midiResendDivider.setDivision(e.sampleRate / 2);
+		longPressDuration = (uint64_t)(e.sampleRate / 2);
 	}
 
 	void process(const ProcessArgs &args) override {
@@ -572,25 +583,25 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 			for (int i = 0; i < 4; i++) {
 				if (!exp) break;	
 				if (exp->model == modelMidiCatMem && !expMemFound) {
-					expMem = dynamic_cast<MidiCatMemBase*>(exp);
+					expMem.store(dynamic_cast<MidiCatMemBase*>(exp));
 					expMemFound = true;
 					exp = exp->rightExpander.module;
 					continue;
 				}
 				if (exp->model == modelMidiCatCtx && !expCtxFound) {
-					expCtx = exp;
+					expCtx.store(dynamic_cast<MidiCatCtxBase*>(exp));
 					expCtxFound = true;
 					exp = exp->rightExpander.module;
 					continue;
 				}
 				if (exp->model == modelMidiCatClk && !expClkFound) {
-					expClk = exp;
+					expClk.store(exp);
 					expClkFound = true;
 					exp = exp->rightExpander.module;
 					continue;
 				}
 				if (exp->model == modelMidiCatFine && !expFineFound) {
-					expFine = dynamic_cast<MidiCatFineBase*>(exp);
+					expFine.store(dynamic_cast<MidiCatFineBase*>(exp));
 					expFineFound = true;
 					exp = exp->rightExpander.module;
 					continue;
@@ -599,10 +610,10 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 			}
 
 			if (!expMemFound) {
-				expMem = NULL;
+				expMem.store(NULL);
 			}
 			if (!expCtxFound) {
-				expCtx = NULL;
+				expCtx.store(NULL);
 			}
 			if (!expClkFound) {
 				if (expClk) {
@@ -611,18 +622,18 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 						midiParam[i].clockSource = 0;
 					}
 				}
-				expClk = NULL;
+				expClk.store(NULL);
 			}
 			if (!expFineFound) {
-				expFine = NULL;
+				expFine.store(NULL);
 				ccFineMode = false;
 			}
 
 			expandersChanged = false;
 		}
 
-		if (expClk) expClkProcess();
-		if (expFine) expFineProcess();
+		if (expClk.load()) expClkProcess();
+		if (expFine.load()) expFineProcess();
 	}
 
 	void processMappings(float sampleTime) {
@@ -641,6 +652,8 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 
 			// Get ParamQuantity
 			int paramId = paramHandles[id].paramId;
+			if (paramId >= (int)module->paramQuantities.size())
+				continue;
 			ParamQuantity* paramQuantity = module->paramQuantities[paramId];
 			if (!paramQuantity)
 				continue;
@@ -656,7 +669,8 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 
 					// Check if CC value has been set and changed
 					if (cc >= 0 && ccs[id].process()) {
-						switch (ccs[id].ccMode) {
+						CCMODE mode = ccModeOverride ? CCMODE::DIRECT : ccs[id].ccMode;
+						switch (mode) {
 							case CCMODE::DIRECT:
 								if (lastValueIn[id] != ccs[id].getValue()) {
 									lastValueIn[id] = ccs[id].getValue();
@@ -858,23 +872,28 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 						notes[id].setValue(v, sendOnlyFeedback);
 						lastValueOut[id] = v;
 					}
-				} break;
+				} 
+				break;
 
 				case MIDIMODE::MIDIMODE_LOCATE: {
 					bool indicate = false;
-					if ((cc >= 0 && ccs[id].getValue() >= 0) && lastValueInIndicate[id] != ccs[id].getValue()) {
-						lastValueInIndicate[id] = ccs[id].getValue();
+					if ((cc >= 0 && valuesCc[cc] >= 0) && lastValueInIndicate[id] != valuesCc[cc]) {
+						lastValueInIndicate[id] = valuesCc[cc];
 						indicate = true;
 					}
-					if ((note >= 0 && notes[id].getValue() >= 0) && lastValueInIndicate[id] != notes[id].getValue()) {
-						lastValueInIndicate[id] = notes[id].getValue();
+					if ((note >= 0 && valuesNote[note] >= 0) && lastValueInIndicate[id] != valuesNote[note]) {
+						lastValueInIndicate[id] = valuesNote[note];
 						indicate = true;
 					}
 					if (indicate) {
-						ModuleWidget* mw = APP->scene->rack->getModule(paramQuantity->module->id);
-						paramHandles[id].indicate(mw);
+						int64_t moduleId = paramQuantity->module->getId();
+						taskProcessorUi.enqueue([this, id, moduleId]() {
+							ModuleWidget* mw = APP->scene->rack->getModule(moduleId);
+							paramHandles[id].indicate(mw);
+						});
 					}
-				} break;
+				} 
+				break;
 			}
 		}
 	}
@@ -1116,6 +1135,9 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 		updateMapLen();
 	}
 
+	/** Bind a module to the MIDI-CAT mappings.
+	 *  Called from the UI thread.
+	 */
 	void moduleBind(Module* m, bool keepCcAndNote) {
 		if (!m) return;
 		if (!keepCcAndNote) {
@@ -1134,6 +1156,9 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 		updateMapLen();
 	}
 
+	/** Bind the module connected to the expander to the MIDI-CAT mappings.
+	 *  Called from the UI thread.
+	 */
 	void moduleBindExpander(bool keepCcAndNote) {
 		Module::Expander* exp = &leftExpander;
 		if (exp->moduleId < 0) return;
@@ -1158,6 +1183,9 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 		paramHandles[id].text = text;
 	}
 
+	/** Save mapping to the expander for the given model.
+	 *  Called from the UI thread.
+	 */
 	void expMemSave(std::string pluginSlug, std::string moduleSlug) {
 		MemModule* m = new MemModule;
 		Module* module = NULL;
@@ -1186,6 +1214,7 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 		m->pluginName = module->model->plugin->name;
 		m->moduleName = module->model->name;
 
+		auto expMem = this->expMem.load();
 		auto p = std::pair<std::string, std::string>(pluginSlug, moduleSlug);
 		auto it = expMem->getMemStorage()->find(p);
 		if (it != expMem->getMemStorage()->end()) {
@@ -1195,15 +1224,23 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 		(*expMem->getMemStorage())[p] = m;
 	}
 
+	/** Delete mapping from the expander for the given model.
+	 *  Called from the UI thread.
+	 */
 	void expMemDelete(std::string pluginSlug, std::string moduleSlug) {
+		auto expMem = this->expMem.load();
 		auto p = std::pair<std::string, std::string>(pluginSlug, moduleSlug);
 		auto it = expMem->getMemStorage()->find(p);
 		delete it->second;
 		expMem->getMemStorage()->erase(p);
 	}
 
+	/** Apply mapping from the expander to the given module.
+	 *  Called from the UI thread.
+	 */
 	void expMemApply(Module* m) {
 		if (!m) return;
+		auto expMem = this->expMem.load();
 		auto p = std::pair<std::string, std::string>(m->model->plugin->slug, m->model->slug);
 		auto it = expMem->getMemStorage()->find(p);
 		if (it == expMem->getMemStorage()->end()) return;
@@ -1232,8 +1269,12 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 		updateMapLen();
 	}
 
+	/** Test if there is a mapping for the given module in the expander.
+	 *  Called from the UI thread.
+	 */
 	bool expMemTest(Module* m) {
 		if (!m) return false;
+		auto expMem = this->expMem.load();
 		auto p = std::pair<std::string, std::string>(m->model->plugin->slug, m->model->slug);
 		auto it = expMem->getMemStorage()->find(p);
 		if (it == expMem->getMemStorage()->end()) return false;
@@ -1244,8 +1285,11 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 		return true;
 	}
 
-	// process-function for the CLK-expander - handles the four clock inputs
+	/** process-function for the CLK-expander - handles the four clock inputs.
+	 *  Called from the dsp thread.
+	 */
 	void expClkProcess() {
+		auto expClk = this->expClk.load();
 		for (int i = 0; i < 4; i++) {
 			if (expClkTrigger[i].process(expClk->inputs[i].getVoltage())) {
 				for (int j = 0; j < mapLen; j++) {
@@ -1255,8 +1299,11 @@ struct MidiCatModule : Module, StripIdFixModule, ExpanderChangeListener {
 		}
 	}
 
-	// process-function for the FINE-expander
+	/** process-function for the FINE-expander.
+	 *  Called from the dsp thread.
+	 */
 	void expFineProcess() {
+		auto expFine = this->expFine.load();
 		auto e1 = expFineLowTrigger.processEvent(expFine->getLowRangeVoltage());
 		auto e2 = expFineHighTrigger.processEvent(expFine->getHighRangeVoltage());
 		if (e1 == dsp::SchmittTrigger::TRIGGERED && !expFineHighTrigger.isHigh()) {
@@ -1629,6 +1676,7 @@ struct MidiCatSelectionWidget : Widget {
 
 		selectedParams.reverse();
 		for (ParamWidget* pw : selectedParams) {
+			if (!pw->module) continue;
 			int id = module->enableLearn(-1, true);
 			module->learnParam(id, pw->module->getId(), pw->paramId);
 
@@ -2227,8 +2275,9 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 		ThemedModuleWidget<MidiCatModule>::step();
 		if (module) {
 			// MEM-expander
-			if (module->expMem != expMem) {
-				expMem = module->expMem;
+			auto expMem_ = module->expMem.load();
+			if (expMem_ != expMem) {
+				expMem = expMem_;
 				if (expMem) {
 					expMemPrevQuantity = dynamic_cast<BufferedSwitchQuantity*>(expMem->paramQuantities[1]);
 					expMemPrevQuantity->resetBuffer();
@@ -2251,12 +2300,13 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 					expMemParamQuantity->resetBuffer();
 					enableLearn(LEARN_MODE::MEM);
 				}
-				module->expMem->lights[0].setBrightness(learnMode == LEARN_MODE::MEM);
+				expMem->lights[0].setBrightness(learnMode == LEARN_MODE::MEM);
 			}
 
 			// CTX-expander
-			if (module->expCtx != (Module*)expCtx) {
-				expCtx = dynamic_cast<MidiCatCtxBase*>(module->expCtx);
+			auto expCtx_ = module->expCtx.load();
+			if (expCtx_ != expCtx) {
+				expCtx = expCtx_;
 				if (expCtx) {
 					expCtxMapQuantity = dynamic_cast<BufferedSwitchQuantity*>(expCtx->paramQuantities[0]);
 					expCtxMapQuantity->resetBuffer();
@@ -2268,40 +2318,42 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 					module->enableLearn(-1, true);
 				}
 			}
+
+			module->taskProcessorUi.process();
 		}
 
 		ParamWidgetContextExtender::step();
 	}
 
 	void expMemPrevModule() {
-		std::list<Widget*> modules = APP->scene->rack->getModuleContainer()->children;
+		std::vector<ModuleWidget*> modules = APP->scene->rack->getModules();
 		auto sort = [&](Widget* w1, Widget* w2) {
 			auto t1 = std::make_tuple(w1->box.pos.y, w1->box.pos.x);
 			auto t2 = std::make_tuple(w2->box.pos.y, w2->box.pos.x);
 			return t1 > t2;
 		};
-		modules.sort(sort);
+		std::sort(modules.begin(), modules.end(), sort);
 		expMemScanModules(modules);
 	}
 
 	void expMemNextModule() {
-		std::list<Widget*> modules = APP->scene->rack->getModuleContainer()->children;
+		std::vector<ModuleWidget*> modules = APP->scene->rack->getModules();
 		auto sort = [&](Widget* w1, Widget* w2) {
 			auto t1 = std::make_tuple(w1->box.pos.y, w1->box.pos.x);
 			auto t2 = std::make_tuple(w2->box.pos.y, w2->box.pos.x);
 			return t1 < t2;
 		};
-		modules.sort(sort);
+		std::sort(modules.begin(), modules.end(), sort);
 		expMemScanModules(modules);
 	}
 
-	void expMemScanModules(std::list<Widget*>& modules) {
+	void expMemScanModules(std::vector<ModuleWidget*>& modules) {
 		f:
-		std::list<Widget*>::iterator it = modules.begin();
+		std::vector<ModuleWidget*>::iterator it = modules.begin();
 		// Scan for current module in the list
 		if (module->expMemModuleId != -1) {
 			for (; it != modules.end(); it++) {
-				ModuleWidget* mw = dynamic_cast<ModuleWidget*>(*it);
+				ModuleWidget* mw = *it;
 				Module* m = mw->module;
 				if (m->id == module->expMemModuleId) {
 					it++;
@@ -2315,7 +2367,7 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 		}
 		// Scan for next module with stored mapping
 		for (; it != modules.end(); it++) {
-			ModuleWidget* mw = dynamic_cast<ModuleWidget*>(*it);
+			ModuleWidget* mw = *it;
 			Module* m = mw->module;
 			if (module->expMemTest(m)) {
 				module->expMemApply(m);
@@ -2579,8 +2631,45 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 					}
 					break;
 				}
+				case GLFW_KEY_R: {
+					if ((e.mods & RACK_MOD_MASK) == (RACK_MOD_SHIFT | RACK_MOD_CTRL)) {
+						MidiCatModule* module = dynamic_cast<MidiCatModule*>(this->module);
+						module->midiReset();
+						e.consume(this);
+					}
+					break;
+				}
+				case GLFW_KEY_F: {
+					if ((e.mods & RACK_MOD_MASK) == (RACK_MOD_SHIFT | RACK_MOD_CTRL)) {
+						MidiCatModule* module = dynamic_cast<MidiCatModule*>(this->module);
+						module->midiResendFeedback();
+						e.consume(this);
+					}
+					break;
+				}
+				case GLFW_KEY_I: {
+					if ((e.mods & RACK_MOD_MASK) == (RACK_MOD_SHIFT | RACK_MOD_CTRL)) {
+						MidiCatModule* module = dynamic_cast<MidiCatModule*>(this->module);
+						module->ccModeOverride = true;
+						e.consume(this);
+					}
+					break;
+				}
 			}
 		}
+		if (e.action == GLFW_RELEASE) {
+			switch (e.key) {
+				case GLFW_KEY_I: {
+					if ((e.mods & RACK_MOD_MASK) == (RACK_MOD_SHIFT | RACK_MOD_CTRL)) {
+						MidiCatModule* module = dynamic_cast<MidiCatModule*>(this->module);
+						module->ccModeOverride = false;
+						e.consume(this);
+					}
+					break;
+				}
+			}
+		}
+
 		ThemedModuleWidget<MidiCatModule>::onHoverKey(e);
 	}
 
@@ -2746,8 +2835,9 @@ struct MidiCatBaseWidget : ThemedModuleWidget<MidiCatModule>, ParamWidgetContext
 					}
 				}; // MidimapModuleItem
 
-				std::list<std::pair<std::string, MidimapModuleItem*>> l; 
-				for (auto it : *module->expMem->getMemStorage()) {
+				std::list<std::pair<std::string, MidimapModuleItem*>> l;
+				auto expMem = module->expMem.load();
+				for (auto it : *expMem->getMemStorage()) {
 					MemModule* a = it.second;
 					MidimapModuleItem* midimapModuleItem = new MidimapModuleItem;
 					midimapModuleItem->text = string::f("%s %s", a->pluginName.c_str(), a->moduleName.c_str());

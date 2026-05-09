@@ -1,7 +1,9 @@
 #define CATCH_CONFIG_PREFIX_MESSAGES
 #define CATCH_CONFIG_THREAD_SAFE_ASSERTIONS
 #define CATCH_CONFIG_FAST_COMPILE
-#include "catch2/catch_amalgamated.hpp"
+#include "catch_amalgamated.hpp"
+
+#define TESTING
 
 // Avoid redefinition issues: replace Catch2's function-like DEPRECATED with an object-like one
 #ifdef DEPRECATED
@@ -18,7 +20,6 @@
 #endif
 
 #include "../plugin.hpp"
-using namespace Catch;
 
 // We will call several deprecated functions in the tests, thus disable warnings here
 #if defined(__clang__)

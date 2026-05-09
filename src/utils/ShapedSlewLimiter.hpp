@@ -10,6 +10,7 @@ struct StoermelderShapedSlewLimiter {
 		HIGH
 	};
 
+	bool clamp = true;
 	float rise = 0.f;
 	float fall = 0.f;
 	float shape	= 0.f;
@@ -64,14 +65,14 @@ struct StoermelderShapedSlewLimiter {
 
 		if (delta > 0.f) {
 			// Rise
-			float riseCv = clamp(rise, 0.f, 1.f);
+			float riseCv = clamp ? rack::clamp(rise, 0.f, 1.f) : std::max(rise, 0.f);
 			float rise = minTime * std::pow(2.f, riseCv * 10.f);
 			out += shapeDelta(delta, rise) * sampleTime;
 			rising = (in - out > 1e-3f);
 		}
 		else {
 			// Fall
-			float fallCv = clamp(fall, 0.f, 1.f);
+			float fallCv = clamp ? rack::clamp(fall, 0.f, 1.f) : std::max(fall, 0.f);
 			float fall = minTime * std::pow(2.f, fallCv * 10.f);
 			out += shapeDelta(delta, fall) * sampleTime;
 			falling = (in - out < -1e-3f);

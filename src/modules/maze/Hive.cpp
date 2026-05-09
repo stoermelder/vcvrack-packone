@@ -195,7 +195,9 @@ struct HiveModule : Module {
 		inputInfos[SHIFT_R1_INPUT]->description = "Shifts all cursors to the right up according to their current moving direction.";
 		configInput(SHIFT_R2_INPUT, "Shift right down");
 		inputInfos[SHIFT_R2_INPUT]->description = "Shifts all cursors to the right down according to their current moving direction.";
-		onReset();
+
+		ResetEvent re;
+		onReset(re);
 	}
 
 	~HiveModule() {
@@ -208,7 +210,7 @@ struct HiveModule : Module {
 		lightDivider.setDivision(e.sampleRate / 100.f);
 	}
 
-	void onReset() override {
+	void onReset(const ResetEvent& e) override {
 		gridClear();
 		for (int i = 0; i < NUM_PORTS; i++) {
 			grid.cursor[i].pos.q = grid.cursor[i].startPos.q = -grid.usedRadius;								/// SW edge
@@ -223,7 +225,7 @@ struct HiveModule : Module {
 		}
 		normalizePorts = true;
 		gridDirty = true;
-		Module::onReset();
+		Module::onReset(e);
 	}
 
 	void process(const ProcessArgs& args) override {

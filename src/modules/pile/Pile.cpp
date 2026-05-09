@@ -60,11 +60,13 @@ struct PileModule : Module {
 		configParam(PARAM_SLEW, 0.f, 5.f, 0.f, "Slew limiting", "s");
 		configParam(PARAM_STEP, 0.f, 5.f, 0.2f, "Stepsize", "V");
 		processDivider.setDivision(32);
-		onReset();
+
+		Module::ResetEvent re;
+		onReset(re);
 	}
 
-	void onReset() override {
-		Module::onReset();
+	void onReset(const Module::ResetEvent& e) override {
+		Module::onReset(e);
 		currentVoltage = 0.f;
 		range = RANGE::UNI_10V;
 		lastResetVoltage = currentVoltage;

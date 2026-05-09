@@ -1,4 +1,5 @@
 #include "plugin.hpp"
+#include "modules/ahab/AhabMidiDriver.hpp"
 
 Plugin* pluginInstance;
 
@@ -63,9 +64,13 @@ void init(rack::Plugin* p) {
 	p->addModel(modelFlowerSeqEx);
 	p->addModel(modelFlowerSeqTrig);
 	p->addModel(modelPanicRoom);
+	p->addModel(modelAhab);
 	p->addModel(modelAudioInterface64);
 	p->addModel(modelMb);
 	p->addModel(modelMe);
+
+	StoermelderPackOne::pluginSettings.readFromJson();
+	StoermelderPackOne::Ahab::Midi::init();
 #else
 	p->addModel(modelBolt);
 	p->addModel(modelFourRounds);
@@ -76,8 +81,6 @@ void init(rack::Plugin* p) {
 	p->addModel(modelPile);
 	p->addModel(modelRaw);
 #endif
-
-	StoermelderPackOne::pluginSettings.readFromJson();
 }
 
 

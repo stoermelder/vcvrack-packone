@@ -1,6 +1,6 @@
-#include "catch2/plugin.hpp"
-#include "test_context.hpp"
-#include "../modules/midi/MidiProcessor.hpp"
+#include "../../test/test_plugin.hpp"
+#include "../../test/test_context.hpp"
+#include "MidiProcessor.hpp"
 
 using namespace StoermelderPackOne;
 

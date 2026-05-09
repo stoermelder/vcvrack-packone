@@ -20,7 +20,7 @@ The sections _ON_, _OFF_ and _RAND_ provide CV control of options only available
 
 The modes for the _ON_-section are:
 
-- **Default** - _ON_ enables the modules, _OFF_ disables the modules.
+- **On only** - _ON_ enables the modules, _OFF_ disables the modules.
 
 - **Toggle** - _ON_ toggles enable/disable of the modules, _OFF_ disables the modules.
 
@@ -104,3 +104,5 @@ STRIP-BAY is a companion module for STRIP: It is used to name some "patching-poi
     - Fixed crash on stackable input-cables (#405)
 - v2.2.0
     - Remember and recall file-dialog folder locations for vcvss and vcvs files
+- v2.3.1
+    - Fixed changed behavior on excluded/included parameters for randomization introduced in v2.3.0
