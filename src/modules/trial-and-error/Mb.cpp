@@ -5,6 +5,7 @@
 #include "Mb_v06.hpp"
 #include "Mb_autotag.hpp"
 #include "Mb_autotag_widgets.hpp"
+#include "Mb_selection.hpp"
 #include <osdialog.h>
 #include <tag.hpp>
 #include <chrono>
@@ -297,13 +298,14 @@ void modelUsageReset() {
 
 // Browser overlay
 
-BrowserOverlay::BrowserOverlay() {
+BrowserOverlay::BrowserOverlay(SppPreview::SelectionPreviewContainer* c) {
 	v1::modelBoxZoom = pluginSettings.mbV1zoom;
 	v1::modelBoxSort = pluginSettings.mbV1sort;
 	v1::hideBrands = pluginSettings.mbV1hideBrands;
 	searchDescriptions = pluginSettings.mbV1searchDescriptions;
 	sortBySearchScore = pluginSettings.mbSortBySearchScore;
 	favoriteHighlight = pluginSettings.mbFavoriteHighlight;
+	selection::rootFolder = selection::currentFolder = pluginSettings.mbSelectionRoot;
 	moduleBrowserFromJson(pluginSettings.mbModelsJ);
 	modelDbInit();
 
@@ -331,13 +333,20 @@ BrowserOverlay::BrowserOverlay() {
 
 
 	mbV06 = new v06::ModuleBrowser;
+	mbV06->hide();
 	addChild(mbV06);
 
 	mbV1 = new v1::ModuleBrowser;
+	mbV1->hide();
 	addChild(mbV1);
 
 	mbV2 = new v2::ModuleBrowser;
+	mbV2->hide();
 	addChild(mbV2);
+
+	mbSelection = new selection::SelectionBrowser(c);
+	mbSelection->hide();
+	addChild(mbSelection);
 
 	APP->scene->browser = this;
 	APP->scene->addChild(this);
@@ -358,6 +367,7 @@ BrowserOverlay::~BrowserOverlay() {
 	pluginSettings.mbV1searchDescriptions = searchDescriptions;
 	pluginSettings.mbSortBySearchScore = sortBySearchScore;
 	pluginSettings.mbFavoriteHighlight = favoriteHighlight;
+	pluginSettings.mbSelectionRoot = selection::rootFolder;
 	json_decref(pluginSettings.mbModelsJ);
 	pluginSettings.mbModelsJ = moduleBrowserToJson();
 	
@@ -365,26 +375,47 @@ BrowserOverlay::~BrowserOverlay() {
 }
 
 void BrowserOverlay::step() {
-	switch (*mode) {
-		case MODE::V06:
-			if (visible) mbV06->show(); else mbV06->hide();
-			mbV1->hide();
-			mbV2->hide();
-			break;
-		case MODE::V1:
-			mbV06->hide();
-			if (visible) mbV1->show(); else mbV1->hide();
-			mbV2->hide();
-			break;
-		case MODE::V2:
-			mbV06->hide();
-			mbV1->hide();
-			if (visible) mbV2->show(); else mbV2->hide();
-			break;
+	bool doActivate = false;
+	// Hide active browser
+	if (visibleBefore && !visible) {
+		if (mbActive) mbActive->hide();
+		visibleBefore = visible;
+		return;
+	}
+	// Show a browser
+	if (!visibleBefore && visible) {
+		if (mbActive) mbActive->hide();
+		visibleBefore = visible;
+		doActivate = true;
+	}
+	// Show selection browser on held Ctrl key
+	if (doActivate && (APP->window->getMods() & RACK_MOD_CTRL) == RACK_MOD_CTRL) {
+		if (mbActive) mbActive->hide();
+		mbSelection->show();
+		mbActive = mbSelection;
+		doActivate = false;
+	}
+	// Show one of the other browsers
+	if (doActivate) {
+		switch (*mode) {
+			case MODE::V06:
+				mbV06->show();
+				mbActive = mbV06;
+				break;
+			case MODE::V1:
+				mbV1->show();
+				mbActive = mbV1;
+				break;
+			case MODE::V2:
+				if (visible) mbV2->show();
+				mbActive = mbV2;
+				break;
+		}
 	}
 
 	box = parent->box.zeroPos();
-	// Only step if visible, since there are potentially thousands of descendants that don't need to be stepped.
+	// Only step if visible, since there are potentially thousands of descendants that 
+	// don't need to be stepped.
 	if (visible) OpaqueWidget::step();
 }
 
@@ -447,6 +478,7 @@ struct MbModule : Module {
 
 
 struct MbWidget : ModuleWidget {
+	SppPreview::SelectionPreviewContainer* sppPreviewContainer;
 	BrowserOverlay* browserOverlay;
 	bool active = false;
 
@@ -462,7 +494,10 @@ struct MbWidget : ModuleWidget {
 		if (module) {
 			active = registerSingleton("Mb", this);
 			if (active) {
-				browserOverlay = new BrowserOverlay;
+				sppPreviewContainer = new SppPreview::SelectionPreviewContainer;
+				APP->scene->rack->addChild(sppPreviewContainer);
+
+				browserOverlay = new BrowserOverlay(sppPreviewContainer);
 				browserOverlay->mode = &module->mode;
 				browserOverlay->hide();
 			}
@@ -473,6 +508,9 @@ struct MbWidget : ModuleWidget {
 		if (module && active) {
 			unregisterSingleton("Mb", this);
 			delete browserOverlay;
+
+			APP->scene->rack->removeChild(sppPreviewContainer);
+			delete sppPreviewContainer;
 		}
 	}
 
@@ -514,6 +552,23 @@ struct MbWidget : ModuleWidget {
 			[module]() { return module->mode == MODE::V2; },
 			[module]() { module->mode = MODE::V2; }
 		));
+		menu->addChild(createSubmenuItem("Selection browser", RACK_MOD_CTRL_NAME "+Right click", [](Menu* menu) {
+			menu->addChild(createMenuLabel(selection::rootFolder.empty() ? "(no folder selected)" : selection::rootFolder));
+			menu->addChild(createMenuItem("Select root folder...", "", []() {
+				std::string dir = asset::user("selections");
+				char* path = osdialog_file(OSDIALOG_OPEN_DIR, dir.c_str(), NULL, NULL);
+				if (!path) return;
+				selection::rootFolder = path;
+				selection::currentFolder = path;
+				free(path);
+			}));
+			if (!selection::rootFolder.empty()) {
+				menu->addChild(createMenuItem("Open in file explorer", "", []() {
+					system::openDirectory(selection::rootFolder);
+				}));
+			}
+		}));
+
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuLabel("v1 & v2 settings"));
 		menu->addChild(createCheckMenuItem("Search descriptions", "",

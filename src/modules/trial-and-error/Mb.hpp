@@ -1,5 +1,6 @@
 #pragma once
 #include "../../plugin.hpp"
+#include "../strip/SelectionPreview.hpp"
 #include <plugin.hpp>
 #include <FuzzySearchDatabase.hpp>
 
@@ -64,13 +65,18 @@ enum class MODE {
 
 struct BrowserOverlay : widget::OpaqueWidget {
 	Widget* mbWidgetBackup;
+
+	bool visibleBefore = false;
+	Widget* mbActive;
+
 	Widget* mbV06;
 	Widget* mbV1;
 	Widget* mbV2;
+	Widget* mbSelection;
 
 	MODE* mode;
 
-	BrowserOverlay();
+	BrowserOverlay(SppPreview::SelectionPreviewContainer* c);
 	~BrowserOverlay();
 
 	void step() override;
