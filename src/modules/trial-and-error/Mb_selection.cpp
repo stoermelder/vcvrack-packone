@@ -144,7 +144,7 @@ SelectionBrowser::SelectionBrowser() {
 
 void SelectionBrowser::step() {
 	if (!visible) return;
-	box = parent->box.zeroPos().grow(math::Vec(-70, -70));
+	box = parent->box.zeroPos().grow(math::Vec(-40, -40));
 
 	const float margin = 20.f;
 
