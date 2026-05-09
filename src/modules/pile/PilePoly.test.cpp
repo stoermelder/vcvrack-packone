@@ -8,6 +8,18 @@ using namespace StoermelderPackOne::PilePoly;
 SYNC_MODEL(modelPilePoly, "PilePoly");
 Test::TestContext<> testContext;
 
+TEST_CASE("Construction and initialization", "[PilePoly]") {
+	PilePolyModule* m = Test::createModule<PilePolyModule>("PilePoly");
+	PilePolyWidget* mw = Test::createWidget<PilePolyWidget>("PilePoly");
+
+	REQUIRE(m != nullptr);
+	REQUIRE(mw != nullptr);
+	REQUIRE(mw->module == nullptr);
+
+	Test::destroyWidget(mw);
+	Test::destroyModule(m);
+}
+
 TEST_CASE("Polyphonic increment and decrement", "[PilePoly]") {
 	auto module = Test::createModule<PilePolyModule>("PilePoly");
 

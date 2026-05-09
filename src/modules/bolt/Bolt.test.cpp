@@ -7,6 +7,18 @@ using namespace StoermelderPackOne::Bolt;
 SYNC_MODEL(modelBolt, "Bolt");
 Test::TestContext<> testContext;
 
+TEST_CASE("Construction and initialization", "[Bolt]") {
+	BoltModule* m = Test::createModule<BoltModule>("Bolt");
+	BoltWidget* mw = Test::createWidget<BoltWidget>("Bolt");
+
+	REQUIRE(m != nullptr);
+	REQUIRE(mw != nullptr);
+	REQUIRE(mw->module == nullptr);
+
+	Test::destroyWidget(mw);
+	Test::destroyModule(m);
+}
+
 TEST_CASE("JSON serialization", "[Bolt]") {
 	auto module = Test::createModule<BoltModule>("Bolt");
 
@@ -66,12 +78,4 @@ TEST_CASE("Processing without connections", "[Bolt]") {
 	}
 
 	Test::destroyModule(module);
-}
-
-TEST_CASE("Widget construction", "[UI][Bolt]") {
-	BoltWidget* w = Test::createWidget<BoltWidget>("Bolt");
-	REQUIRE(w != nullptr);
-	REQUIRE(w->module == NULL);
-	
-	Test::destroyWidget(w);
 }

@@ -27,11 +27,15 @@ static void clockEdge(MazeMod* module, int frame = 200) {
 }
 
 TEST_CASE("Construction and initialization", "[Maze]") {
-	MazeMod* module = Test::createModule<MazeMod>("Maze");
-	MazeWidget32* mw = Test::createWidget<MazeWidget32>(module);
+	MazeMod* m = Test::createModule<MazeMod>("Maze");
+	MazeWidget32* mw = Test::createWidget<MazeWidget32>("Maze");
+
+	REQUIRE(m != nullptr);
+	REQUIRE(mw != nullptr);
+	REQUIRE(mw->module == nullptr);
 
 	Test::destroyWidget(mw);
-	Test::destroyModule(module);
+	Test::destroyModule(m);
 }
 
 TEST_CASE("Reset clears grid and restores cursor defaults", "[Maze]") {
@@ -107,12 +111,12 @@ TEST_CASE("gridSetState writes cell state and CV", "[Maze]") {
 
 	SECTION("Cell (5,3) is ON with correct CV") {
 		REQUIRE(module->grid[5][3] == GRIDSTATE::ON);
-		REQUIRE(module->gridCv[5][3] == Approx(0.75f));
+		REQUIRE(module->gridCv[5][3] == Catch::Approx(0.75f));
 	}
 
 	SECTION("Cell (1,6) is RANDOM with correct CV") {
 		REQUIRE(module->grid[1][6] == GRIDSTATE::RANDOM);
-		REQUIRE(module->gridCv[1][6] == Approx(0.25f));
+		REQUIRE(module->gridCv[1][6] == Catch::Approx(0.25f));
 	}
 
 	Test::destroyModule(module);
@@ -156,11 +160,11 @@ TEST_CASE("Cursor stepping onto ON cell fires trigger and CV outputs", "[Maze]")
 	clockEdge(module);
 
 	SECTION("Trigger output fires (10V) when stepping onto ON cell") {
-		REQUIRE(module->outputs[MazeMod::TRIG_OUTPUT].getVoltage() == Approx(10.f));
+		REQUIRE(module->outputs[MazeMod::TRIG_OUTPUT].getVoltage() == Catch::Approx(10.f));
 	}
 
 	SECTION("CV output reflects cell CV in UNI_3V mode") {
-		REQUIRE(module->outputs[MazeMod::CV_OUTPUT].getVoltage() == Approx(1.5f));
+		REQUIRE(module->outputs[MazeMod::CV_OUTPUT].getVoltage() == Catch::Approx(1.5f));
 	}
 
 	Test::destroyModule(module);
@@ -174,7 +178,7 @@ TEST_CASE("Cursor stepping onto OFF cell produces no trigger", "[Maze]") {
 	clockEdge(module);
 
 	SECTION("Trigger output stays at zero for OFF cell") {
-		REQUIRE(module->outputs[MazeMod::TRIG_OUTPUT].getVoltage() == Approx(0.f));
+		REQUIRE(module->outputs[MazeMod::TRIG_OUTPUT].getVoltage() == Catch::Approx(0.f));
 	}
 
 	Test::destroyModule(module);
@@ -285,7 +289,7 @@ TEST_CASE("JSON round-trip preserves grid state and cursor configuration", "[JSO
 
 	SECTION("Grid cell ON state and CV preserved") {
 		REQUIRE(module2->grid[2][3] == GRIDSTATE::ON);
-		REQUIRE(module2->gridCv[2][3] == Approx(0.6f));
+		REQUIRE(module2->gridCv[2][3] == Catch::Approx(0.6f));
 	}
 
 	SECTION("Grid cell RANDOM state preserved") {

@@ -8,6 +8,18 @@ using namespace StoermelderPackOne::RotorA;
 SYNC_MODEL(modelRotorA, "RotorA");
 Test::TestContext<> testContext;
 
+TEST_CASE("Construction and initialization", "[RotorA]") {
+	RotorAModule* m = Test::createModule<RotorAModule>("RotorA");
+	RotorAWidget* mw = Test::createWidget<RotorAWidget>("RotorA");
+
+	REQUIRE(m != nullptr);
+	REQUIRE(mw != nullptr);
+	REQUIRE(mw->module == nullptr);
+
+	Test::destroyWidget(mw);
+	Test::destroyModule(m);
+}
+
 TEST_CASE("Basic modulation", "[RotorA]") {
 	auto module = Test::createModule<RotorAModule>("RotorA");
 
@@ -452,12 +464,4 @@ TEST_CASE("JSON serialization", "[JSON][RotorA]") {
 	}
 
 	Test::destroyModule(module);
-}
-
-TEST_CASE("Widget construction", "[UI][RotorA]") {
-	RotorAWidget* w = Test::createWidget<RotorAWidget>("RotorA");
-	REQUIRE(w != nullptr);
-	REQUIRE(w->module == NULL);
-	
-	Test::destroyWidget(w);
 }

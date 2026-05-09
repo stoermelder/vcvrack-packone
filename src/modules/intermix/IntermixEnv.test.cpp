@@ -38,6 +38,18 @@ struct IntermixModuleMock : Module, IntermixBase<PORTS> {
 };
 
 
+TEST_CASE("Construction and initialization", "[IntermixEnv]") {
+	IntermixEnvModule<8>* m = Test::createModule<IntermixEnvModule<8>>("IntermixEnv");
+	IntermixEnvWidget* mw = Test::createWidget<IntermixEnvWidget>("IntermixEnv");
+
+	REQUIRE(m != nullptr);
+	REQUIRE(mw != nullptr);
+	REQUIRE(mw->module == nullptr);
+
+	Test::destroyWidget(mw);
+	Test::destroyModule(m);
+}
+
 TEST_CASE("Input selection", "[IntermixEnv]") {
 	auto module = Test::createModule<IntermixEnvModule<8>>("IntermixEnv");
 

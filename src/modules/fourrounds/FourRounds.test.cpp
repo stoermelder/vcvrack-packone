@@ -9,11 +9,15 @@ SYNC_MODEL(modelFourRounds, "FourRounds");
 Test::TestContext<> testContext;
 
 TEST_CASE("Construction and initialization", "[FourRounds]") {
-	FourRoundsModule* module = Test::createModule<FourRoundsModule>("FourRounds");
-	FourRoundsWidget* mw = Test::createWidget<FourRoundsWidget>(module);
+	FourRoundsModule* m = Test::createModule<FourRoundsModule>("FourRounds");
+	FourRoundsWidget* mw = Test::createWidget<FourRoundsWidget>("FourRounds");
+
+	REQUIRE(m != nullptr);
+	REQUIRE(mw != nullptr);
+	REQUIRE(mw->module == nullptr);
 
 	Test::destroyWidget(mw);
-	Test::destroyModule(module);
+	Test::destroyModule(m);
 }
 
 TEST_CASE("DIRECT mode routes winner through the bracket", "[FourRounds]") {
@@ -34,12 +38,12 @@ TEST_CASE("DIRECT mode routes winner through the bracket", "[FourRounds]") {
 
 	SECTION("Round-2 outputs carry the winning voltage") {
 		for (int i = 0; i < 8; i++) {
-			REQUIRE(module->outputs[FourRoundsModule::ROUND2_OUTPUT + i].getVoltage() == Approx(5.f));
+			REQUIRE(module->outputs[FourRoundsModule::ROUND2_OUTPUT + i].getVoltage() == Catch::Approx(5.f));
 		}
 	}
 
 	SECTION("Winner output carries the winning voltage") {
-		REQUIRE(module->outputs[FourRoundsModule::WINNER_OUTPUT].getVoltage() == Approx(5.f));
+		REQUIRE(module->outputs[FourRoundsModule::WINNER_OUTPUT].getVoltage() == Catch::Approx(5.f));
 	}
 
 	Test::destroyModule(module);
@@ -63,12 +67,12 @@ TEST_CASE("DIRECT mode state=1 selects right input", "[FourRounds]") {
 
 	SECTION("Round-2 outputs carry the odd-input voltage") {
 		for (int i = 0; i < 8; i++) {
-			REQUIRE(module->outputs[FourRoundsModule::ROUND2_OUTPUT + i].getVoltage() == Approx(7.f));
+			REQUIRE(module->outputs[FourRoundsModule::ROUND2_OUTPUT + i].getVoltage() == Catch::Approx(7.f));
 		}
 	}
 
 	SECTION("Winner output carries the odd-input voltage") {
-		REQUIRE(module->outputs[FourRoundsModule::WINNER_OUTPUT].getVoltage() == Approx(7.f));
+		REQUIRE(module->outputs[FourRoundsModule::WINNER_OUTPUT].getVoltage() == Catch::Approx(7.f));
 	}
 
 	Test::destroyModule(module);
@@ -92,7 +96,7 @@ TEST_CASE("Inverted flag swaps winner selection", "[FourRounds]") {
 	module->process(Test::makeProcessArgs(1));
 
 	SECTION("Winner is the odd-side input when inverted") {
-		REQUIRE(module->outputs[FourRoundsModule::WINNER_OUTPUT].getVoltage() == Approx(9.f));
+		REQUIRE(module->outputs[FourRoundsModule::WINNER_OUTPUT].getVoltage() == Catch::Approx(9.f));
 	}
 
 	Test::destroyModule(module);
@@ -143,7 +147,7 @@ TEST_CASE("TRIG input captures lastValue in SH mode", "[FourRounds]") {
 
 	SECTION("lastValue[] stores the sampled input voltages") {
 		for (int i = 0; i < 16; i++) {
-			REQUIRE(module->lastValue[i] == Approx(float(i + 1)));
+			REQUIRE(module->lastValue[i] == Catch::Approx(float(i + 1)));
 		}
 	}
 
@@ -189,7 +193,7 @@ TEST_CASE("SH mode holds sampled voltages after input changes", "[FourRounds]") 
 	module->process(Test::makeProcessArgs(5));
 
 	SECTION("Winner reflects sampled voltage, not current input") {
-		REQUIRE(module->outputs[FourRoundsModule::WINNER_OUTPUT].getVoltage() == Approx(4.f));
+		REQUIRE(module->outputs[FourRoundsModule::WINNER_OUTPUT].getVoltage() == Catch::Approx(4.f));
 	}
 
 	Test::destroyModule(module);
@@ -214,12 +218,12 @@ TEST_CASE("QUANTUM mode blends inputs by state weight", "[FourRounds]") {
 
 	SECTION("Round-2 outputs are the blended voltage") {
 		for (int i = 0; i < 8; i++) {
-			REQUIRE(module->outputs[FourRoundsModule::ROUND2_OUTPUT + i].getVoltage() == Approx(6.f));
+			REQUIRE(module->outputs[FourRoundsModule::ROUND2_OUTPUT + i].getVoltage() == Catch::Approx(6.f));
 		}
 	}
 
 	SECTION("Winner output is the blended voltage") {
-		REQUIRE(module->outputs[FourRoundsModule::WINNER_OUTPUT].getVoltage() == Approx(6.f));
+		REQUIRE(module->outputs[FourRoundsModule::WINNER_OUTPUT].getVoltage() == Catch::Approx(6.f));
 	}
 
 	Test::destroyModule(module);
@@ -241,7 +245,7 @@ TEST_CASE("QUANTUM mode state=0 passes first input unchanged", "[FourRounds]") {
 	module->process(Test::makeProcessArgs(1));
 
 	SECTION("Winner equals first-input voltage") {
-		REQUIRE(module->outputs[FourRoundsModule::WINNER_OUTPUT].getVoltage() == Approx(3.f));
+		REQUIRE(module->outputs[FourRoundsModule::WINNER_OUTPUT].getVoltage() == Catch::Approx(3.f));
 	}
 
 	Test::destroyModule(module);
@@ -277,13 +281,13 @@ TEST_CASE("JSON round-trip preserves state", "[JSON][FourRounds]") {
 
 	SECTION("State array is preserved") {
 		for (int i = 0; i < FourRoundsModule::SIZE; i++) {
-			REQUIRE(module2->state[i] == Approx((i % 2 == 0) ? 0.f : 1.f));
+			REQUIRE(module2->state[i] == Catch::Approx((i % 2 == 0) ? 0.f : 1.f));
 		}
 	}
 
 	SECTION("lastValue array is preserved") {
 		for (int i = 0; i < 16; i++) {
-			REQUIRE(module2->lastValue[i] == Approx(float(i) * 0.5f));
+			REQUIRE(module2->lastValue[i] == Catch::Approx(float(i) * 0.5f));
 		}
 	}
 

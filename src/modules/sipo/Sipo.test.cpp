@@ -7,6 +7,18 @@ using namespace StoermelderPackOne::Sipo;
 SYNC_MODEL(modelSipo, "Sipo");
 Test::TestContext<> testContext;
 
+TEST_CASE("Construction and initialization", "[Sipo]") {
+	SipoModule* m = Test::createModule<SipoModule>("Sipo");
+	SipoWidget* mw = Test::createWidget<SipoWidget>("Sipo");
+
+	REQUIRE(m != nullptr);
+	REQUIRE(mw != nullptr);
+	REQUIRE(mw->module == nullptr);
+
+	Test::destroyWidget(mw);
+	Test::destroyModule(m);
+}
+
 TEST_CASE("JSON serialization", "[Sipo]") {
 	auto module = Test::createModule<SipoModule>("Sipo");
 
@@ -73,12 +85,4 @@ TEST_CASE("Buffer bounds", "[Sipo]") {
 	}
 
 	Test::destroyModule(module);
-}
-
-TEST_CASE("Widget construction", "[UI][Sipo]") {
-	SipoWidget* w = Test::createWidget<SipoWidget>("Sipo");
-	REQUIRE(w != nullptr);
-	REQUIRE(w->module == NULL);
-	
-	Test::destroyWidget(w);
 }

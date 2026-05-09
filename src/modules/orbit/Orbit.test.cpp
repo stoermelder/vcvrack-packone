@@ -8,6 +8,18 @@ using namespace StoermelderPackOne::Orbit;
 SYNC_MODEL(modelOrbit, "Orbit");
 Test::TestContext<> testContext;
 
+TEST_CASE("Construction and initialization", "[Orbit]") {
+	OrbitModule* m = Test::createModule<OrbitModule>("Orbit");
+	OrbitWidget* mw = Test::createWidget<OrbitWidget>("Orbit");
+
+	REQUIRE(m != nullptr);
+	REQUIRE(mw != nullptr);
+	REQUIRE(mw->module == nullptr);
+
+	Test::destroyWidget(mw);
+	Test::destroyModule(m);
+}
+
 TEST_CASE("Stereo panning basic", "[Orbit]") {
 	auto module = Test::createModule<OrbitModule>("Orbit");
 
@@ -449,12 +461,4 @@ TEST_CASE("JSON serialization", "[JSON][Orbit]") {
 	}
 
 	Test::destroyModule(module);
-}
-
-TEST_CASE("Widget construction", "[UI][Orbit]") {
-	OrbitWidget* w = Test::createWidget<OrbitWidget>("Orbit");
-	REQUIRE(w != nullptr);
-	REQUIRE(w->module == NULL);
-	
-	Test::destroyWidget(w);
 }

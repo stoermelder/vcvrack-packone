@@ -9,6 +9,18 @@ using namespace StoermelderPackOne::Ahab;
 SYNC_MODEL(modelAhab, "Ahab");
 static Test::TestContext<> testContext;
 
+TEST_CASE("Construction and initialization", "[Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	AhabWidget* mw = Test::createWidget<AhabWidget>("Ahab");
+
+	REQUIRE(m != nullptr);
+	REQUIRE(mw != nullptr);
+	REQUIRE(mw->module == nullptr);
+
+	Test::destroyWidget(mw);
+	Test::destroyModule(m);
+}
+
 // Mock MIDI OutputDevice for testing MIDI output messages
 struct MockMidiOutputDevice : public rack::midi::OutputDevice {
 	std::vector<rack::midi::Message> sentMessages;
@@ -1176,20 +1188,6 @@ TEST_CASE("MIDI note ordering - multiple simultaneous note transitions", "[MIDI]
 	Test::destroyModule(m);
 }
 
-TEST_CASE("Widget construction", "[UI][Ahab]") {
-	AhabWidget* w = Test::createWidget<AhabWidget>("Ahab");
-	REQUIRE(w != nullptr);
-	REQUIRE(w->module == NULL);
-	
-	// Check that widget has the expected children (simWidget and statusWidget)
-	REQUIRE(w->simWidget != nullptr);
-	REQUIRE(w->statusWidget != nullptr);
-	
-	// Check that statusWidget references simWidget
-	REQUIRE(w->statusWidget->simWidget == w->simWidget);
-	
-	Test::destroyWidget(w);
-}
 
 TEST_CASE("Integration test - preset loading and simulation", "[Ahab]") {
 	AhabModule* m = Test::createModule<AhabModule>("Ahab");

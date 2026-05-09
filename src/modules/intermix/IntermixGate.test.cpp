@@ -38,6 +38,17 @@ struct IntermixModuleMock : Module, IntermixBase<PORTS> {
 	}
 };
 
+TEST_CASE("Construction and initialization", "[IntermixGate]") {
+	IntermixGateModule<8>* m = Test::createModule<IntermixGateModule<8>>("IntermixGate");
+	IntermixGateWidget* mw = Test::createWidget<IntermixGateWidget>("IntermixGate");
+
+	REQUIRE(m != nullptr);
+	REQUIRE(mw != nullptr);
+	REQUIRE(mw->module == nullptr);
+
+	Test::destroyWidget(mw);
+	Test::destroyModule(m);
+}
 
 TEST_CASE("Expander connection", "[IntermixGate]") {
 	auto gateModule = Test::createModule<IntermixGateModule<8>>("IntermixGate");

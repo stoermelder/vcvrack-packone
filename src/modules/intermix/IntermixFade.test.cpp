@@ -46,6 +46,18 @@ struct IntermixModuleMock : Module, IntermixBase<PORTS> {
 };
 
 
+TEST_CASE("Construction and initialization", "[IntermixFade]") {
+	IntermixFadeModule<8>* m = Test::createModule<IntermixFadeModule<8>>("IntermixFade");
+	IntermixFadeWidget* mw = Test::createWidget<IntermixFadeWidget>("IntermixFade");
+
+	REQUIRE(m != nullptr);
+	REQUIRE(mw != nullptr);
+	REQUIRE(mw->module == nullptr);
+
+	Test::destroyWidget(mw);
+	Test::destroyModule(m);
+}
+
 TEST_CASE("Reset behavior", "[IntermixFade]") {
 	auto module = Test::createModule<IntermixFadeModule<8>>("IntermixFade");
 
