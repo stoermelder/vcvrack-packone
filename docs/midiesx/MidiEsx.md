@@ -33,4 +33,4 @@ Please refer to the Expert Sleepers [documentation](https://www.expert-sleepers.
 
 ## Changelog
 
-- v2.3.0 — Initial release
+- v2.4.0 — Initial release
