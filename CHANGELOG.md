@@ -1,5 +1,10 @@
 ## 2.4.0
 
+### New modules
+
+- Module [MIDI-ESX](./docs/midiesx/MidiEsx.md)
+    - MIDI converter for your Expert Sleepers hardware setup (ES-5, ES-8, ES-9 etc.)
+
 ### Changes and Fixes
 
 - Modules [8FACE, 8FACEx2](./docs/eightface/EightFace.md)
