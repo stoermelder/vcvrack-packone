@@ -21,7 +21,7 @@ bool favoriteHighlight = true;
 void modelDbInit() {
 	modelDb = fuzzysearch::Database<plugin::Model*>();
 	modelDb.setWeights({0.9f, 0.75f, 1.0f, 0.8f, 0.9f});
-	modelDb.setThreshold(0.5f);
+	modelDb.setThreshold(pluginSettings.mbSearchThreshold);
 	for (plugin::Plugin* p : rack::plugin::plugins) {
 		for (plugin::Model* model : p->models) {
 			std::string tagStr;
@@ -516,7 +516,12 @@ struct MbWidget : ModuleWidget {
 		));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuLabel("v1 & v2 settings"));
-		menu->addChild(createCheckMenuItem("Search descriptions", "",
+		menu->addChild(Rack::createSlider(
+			[]() { return pluginSettings.mbSearchThreshold; },
+			[](float v) { pluginSettings.mbSearchThreshold = v; modelDb.setThreshold(v); },
+			0.5f, 1.0f, 0.5f, "Search threshold", "%", 100.f, 140.0f
+		));
+		menu->addChild(createCheckMenuItem("Search in descriptions", "",
 			[]() { return searchDescriptions; },
 			[]() { searchDescriptions ^= true; modelDbInit(); }
 		));

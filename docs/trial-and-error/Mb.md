@@ -40,6 +40,8 @@ All three options show a confirmation dialog listing the proposed tag assignment
 
 - For _v1 mod_ and _v2 mod_, by context memu option also the modules' description can be searched (added in v1.9.0).
 
+- **Search threshold** — Controls how fuzzy the fuzzy search matching is. Lower values (default 0.5) show more results with looser matching, while higher values (1.0) require closer matches.
+
 - **Favorite modes** — MB supports three favorite modes (VCVRACK, MB, or BOTH) controlling how favorites are stored and displayed.
 
 ## Changelog
@@ -48,8 +50,9 @@ All three options show a confirmation dialog listing the proposed tag assignment
     - Added custom tags for user-defined module grouping
     - Added auto-tagging including MetaModule
     - Added fuzzy search (similar to the default module browser)
-    - Added option to select "Favorite" handling (Legacy (MB) / Built-in VCV Rack)
-    - Added option to highlight favorites
+    - Added an option to select "Favorite" handling (Legacy (MB) / Built-in VCV Rack)
+    - Added an option to highlight favorites
+    - Added an option to set the fuzzy search threshold
     - Added "v2 mod" variation
     - Changed hotkey to toggle hidden modules to Shift+Space (because of Spotlight on Mac)
     - Fixed broken button of "Favorites" category
