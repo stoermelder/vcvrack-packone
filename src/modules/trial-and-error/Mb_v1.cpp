@@ -396,6 +396,18 @@ struct ModelBox : widget::OpaqueWidget {
 			text += rack::tag::tagAliases[tagId][0];
 			i++;
 		}
+		// Custom tags
+		std::set<std::string> customTags = customTagsForModel(model);
+		if (!customTags.empty()) {
+			text += "\nCustom Tags: ";
+			i = 0;
+			for (const auto& tag : customTags) {
+				if (i > 0)
+					text += ", ";
+				text += tag;
+				i++;
+			}
+		}
 		// Description
 		if (model->description != "") {
 			text += "\n" + model->description;

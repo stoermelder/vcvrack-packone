@@ -256,6 +256,17 @@ struct ModelBox : widget::OpaqueWidget {
 			if (i++ > 0) text += ", ";
 			text += rack::tag::tagAliases[tagId][0];
 		}
+		// Custom tags
+		std::set<std::string> customTags = customTagsForModel(model);
+		if (!customTags.empty()) {
+			text += "\nCustom Tags: ";
+			i = 0;
+			for (const auto& tag : customTags) {
+				if (i > 0) text += ", ";
+				text += tag;
+				i++;
+			}
+		}
 		if (!model->description.empty())
 			text += "\n" + model->description;
 		ui::Tooltip* tt = new ui::Tooltip;
