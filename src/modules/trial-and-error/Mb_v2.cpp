@@ -1,4 +1,5 @@
 #include "Mb_v2.hpp"
+#include "Mb.hpp"
 #include <tag.hpp>
 #include <settings.hpp>
 #include <componentlibrary.hpp>
@@ -146,6 +147,7 @@ struct ModuleWidgetContainer : widget::Widget {
 struct ModelBox : widget::OpaqueWidget {
 	plugin::Model* model = NULL;
 	ui::Tooltip* tooltip = NULL;
+	MagnifierOverlay* magnifier = NULL;
 	widget::Widget* previewWidget = NULL;
 	widget::ZoomWidget* zoomWidget = NULL;
 	widget::FramebufferWidget* fb = NULL;
@@ -236,6 +238,27 @@ struct ModelBox : widget::OpaqueWidget {
 		}
 	}
 
+	void setMagnifier(MagnifierOverlay* mg) {
+		if (magnifier) {
+			magnifier->requestDelete();
+			magnifier = NULL;
+		}
+		if (mg) {
+			APP->scene->addChild(mg);
+			magnifier = mg;
+		}
+	}
+
+	void onHover(const event::Hover& e) override {
+		if (magnifier) {
+			magnifier->mousePos = getAbsoluteOffset(e.pos);
+			magnifier->initialized = true;
+			magnifier->sourceAbsPos = getAbsoluteOffset(Vec(0, 0));
+			magnifier->sourceSize = box.size;
+		}
+		OpaqueWidget::onHover(e);
+	}
+
 	void onButton(const event::Button& e) override {
 		OpaqueWidget::onButton(e);
 
@@ -295,14 +318,26 @@ struct ModelBox : widget::OpaqueWidget {
 		ui::Tooltip* tt = new ui::Tooltip;
 		tt->text = text;
 		setTooltip(tt);
+
+		if (fb) {
+			MagnifierOverlay* mg = new MagnifierOverlay;
+			mg->fb = fb;
+			mg->sourceAbsPos = getAbsoluteOffset(Vec(0, 0));
+			mg->sourceSize = box.size;
+			mg->mousePos = getAbsoluteOffset(box.size.div(2));
+			mg->enabled = pluginSettings.mbMagnifierEnabled;
+			setMagnifier(mg);
+		}
 	}
 
 	void onLeave(const event::Leave& e) override {
 		setTooltip(NULL);
+		setMagnifier(NULL);
 	}
 
 	void onHide(const event::Hide& e) override {
 		setTooltip(NULL);
+		setMagnifier(NULL);
 		OpaqueWidget::onHide(e);
 	}
 

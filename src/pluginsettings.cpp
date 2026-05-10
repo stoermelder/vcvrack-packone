@@ -17,6 +17,7 @@ void Settings::saveToJson() {
 	json_object_set(settingsJ, "mbSortBySearchScore", json_boolean(mbSortBySearchScore));
 	json_object_set(settingsJ, "mbFavoriteHighlight", json_boolean(mbFavoriteHighlight));
 	json_object_set(settingsJ, "mbSearchThreshold", json_real(mbSearchThreshold));
+	json_object_set(settingsJ, "mbMagnifierEnabled", json_boolean(mbMagnifierEnabled));
 
 	json_object_set(settingsJ, "overlayTextColor", json_string(rack::color::toHexString(overlayTextColor).c_str()));
 	json_object_set(settingsJ, "overlayHpos", json_integer(overlayHpos));
@@ -74,14 +75,16 @@ void Settings::readFromJson() {
 	if (mbV1sortJ) mbV1sort = json_integer_value(mbV1sortJ);
 	json_t* mbV1hideBrandsJ = json_object_get(settingsJ, "mbV1hideBrands");
 	if (mbV1hideBrandsJ) mbV1hideBrands = json_boolean_value(mbV1hideBrandsJ);
-    json_t* mbV1searchDescriptionsJ = json_object_get(settingsJ, "mbV1searchDescriptions");
-    if (mbV1searchDescriptionsJ) mbV1searchDescriptions = json_boolean_value(mbV1searchDescriptionsJ);
+	json_t* mbV1searchDescriptionsJ = json_object_get(settingsJ, "mbV1searchDescriptions");
+	if (mbV1searchDescriptionsJ) mbV1searchDescriptions = json_boolean_value(mbV1searchDescriptionsJ);
 	json_t* mbSortBySearchScoreJ = json_object_get(settingsJ, "mbSortBySearchScore");
 	if (mbSortBySearchScoreJ) mbSortBySearchScore = json_boolean_value(mbSortBySearchScoreJ);
 	json_t* mbFavoriteHighlightJ = json_object_get(settingsJ, "mbFavoriteHighlight");
 	if (mbFavoriteHighlightJ) mbFavoriteHighlight = json_boolean_value(mbFavoriteHighlightJ);
 	json_t* mbSearchThresholdJ = json_object_get(settingsJ, "mbSearchThreshold");
 	if (mbSearchThresholdJ) mbSearchThreshold = json_real_value(mbSearchThresholdJ);
+	json_t* mbMagnifierEnabledJ = json_object_get(settingsJ, "mbMagnifierEnabled");
+	if (mbMagnifierEnabledJ) mbMagnifierEnabled = json_boolean_value(mbMagnifierEnabledJ);
 
 	json_t* overlayTextColorJ = json_object_get(settingsJ, "overlayTextColor");
 	if (overlayTextColorJ) overlayTextColor = rack::color::fromHexString(json_string_value(overlayTextColorJ));

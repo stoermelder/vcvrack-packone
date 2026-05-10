@@ -13,6 +13,7 @@ struct Settings {
 	bool mbSortBySearchScore = true;
 	bool mbFavoriteHighlight = true;
 	float mbSearchThreshold = 0.5f;
+	bool mbMagnifierEnabled = true;
 
 	NVGcolor overlayTextColor = bndGetTheme()->menuTheme.textColor;
 	int overlayHpos = 0;

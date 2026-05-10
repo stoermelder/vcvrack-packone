@@ -723,6 +723,10 @@ struct MbWidget : ModuleWidget {
 			*/
 		}));
 		menu->addChild(createBoolPtrMenuItem("Highlight favorites", "", &favoriteHighlight));
+		menu->addChild(createCheckMenuItem("Magnifier overlay", "",
+			[]() { return pluginSettings.mbMagnifierEnabled; },
+			[]() { pluginSettings.mbMagnifierEnabled ^= true; }
+		));
 
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuLabel("Custom tags"));

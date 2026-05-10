@@ -67,6 +67,82 @@ extern bool favoriteHighlight;
 void modelDbInit();
 
 
+// Magnifier overlay for module preview zoom
+
+struct MagnifierOverlay : widget::TransparentWidget {
+	widget::FramebufferWidget* fb = NULL;
+	Vec sourceAbsPos;
+	Vec sourceSize;
+	Vec mousePos;
+	float radius = 120.f;
+	float magnification = 3.f;
+	bool initialized = false;
+	bool enabled = true;
+
+	// Display circle center in scene coords, offset upper-left from the cursor
+	Vec displayCenter() const {
+		float gap = -12.f;
+		return mousePos + Vec(-radius - gap, -radius - gap);
+	}
+
+	void step() override {
+		Vec dc = displayCenter();
+		box.pos = dc - Vec(radius + 4, radius + 4);
+		box.size = Vec((radius + 4) * 2, (radius + 4) * 2);
+		widget::TransparentWidget::step();
+	}
+
+	void draw(const DrawArgs& args) override {
+		if (!enabled || !initialized || !fb) return;
+		NVGLUframebuffer* framebuf = fb->getFramebuffer();
+		if (!framebuf || framebuf->image < 0) return;
+
+		// Circle center in overlay-local coords
+		Vec center = displayCenter() - box.pos;
+
+		// Image pattern: zoom the module texture centered on mousePos,
+		// but place the result at the offset displayCenter.
+		// A scene point p maps to: displayCenter + (p - mousePos) * magnification
+		// so the module top-left (sourceAbsPos) maps to (in local coords):
+		//   center + (sourceAbsPos - mousePos) * magnification
+		float ox = center.x + (sourceAbsPos.x - mousePos.x) * magnification;
+		float oy = center.y + (sourceAbsPos.y - mousePos.y) * magnification;
+		float ex = sourceSize.x * magnification;
+		float ey = sourceSize.y * magnification;
+
+		NVGpaint imgPaint = nvgImagePattern(args.vg, ox, oy, ex, ey, 0.f, framebuf->image, 1.f);
+
+		// Clip the circle fill to the zoomed texture rectangle [ox,oy,ex,ey].
+		// Outside that rect the image pattern would clamp to edge pixels (solid
+		// panel color). The circle rim is drawn after restore so it stays full.
+		nvgSave(args.vg);
+		nvgIntersectScissor(args.vg, ox, oy, ex, ey);
+
+		nvgBeginPath(args.vg);
+		nvgCircle(args.vg, center.x, center.y, radius);
+		nvgFillPaint(args.vg, imgPaint);
+		nvgFill(args.vg);
+
+		// Edge vignette
+		NVGpaint vignette = nvgRadialGradient(args.vg, center.x, center.y, radius * 0.7f, radius,
+			nvgRGBAf(0, 0, 0, 0), nvgRGBAf(0, 0, 0, 0.35f));
+		nvgBeginPath(args.vg);
+		nvgCircle(args.vg, center.x, center.y, radius);
+		nvgFillPaint(args.vg, vignette);
+		nvgFill(args.vg);
+
+		nvgRestore(args.vg);
+
+		// Rim drawn outside the scissor so it's always a full circle
+		nvgBeginPath(args.vg);
+		nvgCircle(args.vg, center.x, center.y, radius);
+		nvgStrokeWidth(args.vg, 2.f);
+		nvgStrokeColor(args.vg, nvgRGBAf(0.2f, 0.2f, 0.2f, 0.8f));
+		nvgStroke(args.vg);
+	}
+};
+
+
 // Browser overlay
 
 enum class MODE {

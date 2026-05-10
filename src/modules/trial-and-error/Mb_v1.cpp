@@ -147,6 +147,7 @@ struct ModelBox : widget::OpaqueWidget {
 	/** Lazily created */
 	widget::FramebufferWidget* previewFb = NULL;
 	widget::ZoomWidget* zoomWidget = NULL;
+	MagnifierOverlay* magnifier = NULL;
 	float modelBoxZoom = -1.f;
 	float modelBoxWidth = -1.f;
 	bool modelHidden = false;
@@ -248,6 +249,17 @@ struct ModelBox : widget::OpaqueWidget {
 		if (tooltip) {
 			APP->scene->addChild(tooltip);
 			this->tooltip = tooltip;
+		}
+	}
+
+	void setMagnifier(MagnifierOverlay* mg) {
+		if (magnifier) {
+			magnifier->requestDelete();
+			magnifier = NULL;
+		}
+		if (mg) {
+			APP->scene->addChild(mg);
+			magnifier = mg;
 		}
 	}
 
@@ -446,15 +458,37 @@ struct ModelBox : widget::OpaqueWidget {
 		ui::Tooltip* tooltip = new ui::Tooltip;
 		tooltip->text = text;
 		setTooltip(tooltip);
+
+		if (previewFb) {
+			MagnifierOverlay* mg = new MagnifierOverlay;
+			mg->fb = previewFb;
+			mg->sourceAbsPos = getAbsoluteOffset(Vec(0, 0));
+			mg->sourceSize = box.size;
+			mg->mousePos = getAbsoluteOffset(box.size.div(2));
+			mg->enabled = pluginSettings.mbMagnifierEnabled;
+			setMagnifier(mg);
+		}
+	}
+
+	void onHover(const event::Hover& e) override {
+		if (magnifier) {
+			magnifier->mousePos = getAbsoluteOffset(e.pos);
+			magnifier->initialized = true;
+			magnifier->sourceAbsPos = getAbsoluteOffset(Vec(0, 0));
+			magnifier->sourceSize = box.size;
+		}
+		OpaqueWidget::onHover(e);
 	}
 
 	void onLeave(const event::Leave& e) override {
 		setTooltip(NULL);
+		setMagnifier(NULL);
 	}
 
 	void onHide(const event::Hide& e) override {
-		// Hide tooltip
+		// Hide tooltip and magnifier
 		setTooltip(NULL);
+		setMagnifier(NULL);
 		OpaqueWidget::onHide(e);
 	}
 };

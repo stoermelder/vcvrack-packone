@@ -14,7 +14,8 @@
     - Added an option to select "Favorite" handling (Legacy (MB) / Built-in VCV Rack)
     - Added an option to highlight favorites
     - Added an option to set the fuzzy search threshold
-    - Added "v2 mod" variation
+    - Added model magnifier loupe option
+    - Added "v2 mod" browser variant
     - Changed hotkey to toggle hidden modules to Shift+Space (because of Spotlight on Mac)
     - Fixed broken button of "Favorites" category
 - Module [ME](./docs/trial-and-error/Me.md)

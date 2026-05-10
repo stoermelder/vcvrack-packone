@@ -48,6 +48,8 @@ MB allows you to add or remove predefined tags (the classic VCV Rack tag aliases
 
 - **Favorite modes** — MB supports three favorite modes (VCVRACK, MB, or BOTH) controlling how favorites are stored and displayed.
 
+- **Magnifier overlay** — When enabled, hovering over a module preview in the browser shows a zoomed magnification loupe following the cursor. 
+
 ## Changelog
 
 - v2.4.0
@@ -58,7 +60,8 @@ MB allows you to add or remove predefined tags (the classic VCV Rack tag aliases
     - Added an option to select "Favorite" handling (Legacy (MB) / Built-in VCV Rack)
     - Added an option to highlight favorites
     - Added an option to set the fuzzy search threshold
-    - Added "v2 mod" variation
+    - Added model magnifier loupe option
+    - Added "v2 mod" browser variant
     - Changed hotkey to toggle hidden modules to Shift+Space (because of Spotlight on Mac)
     - Fixed broken button of "Favorites" category
 - v2.0.0
