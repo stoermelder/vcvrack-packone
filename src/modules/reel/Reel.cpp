@@ -88,6 +88,8 @@ struct ReelModule : Module, StripIdFixModule {
 	bool boxDraw = false;
 	/** [Stored to JSON] */
 	NVGcolor boxColor;
+	/** [Stored to JSON] Opacity of the module outline (0.0 - 1.0), default 0.5 (50%) */
+	float boxOpacity = 0.5f;
 
 	ReelModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
@@ -104,6 +106,7 @@ struct ReelModule : Module, StripIdFixModule {
 		currentSlot = -1;
 		boxDraw = true;
 		boxColor = color::BLUE;
+		boxOpacity = 0.5f;
 		Module::onReset(e);
 	}
 
@@ -423,6 +426,7 @@ struct ReelModule : Module, StripIdFixModule {
 		json_object_set_new(rootJ, "currentSlot", json_integer(currentSlot));
 		json_object_set_new(rootJ, "boxDraw", json_boolean(boxDraw));
 		json_object_set_new(rootJ, "boxColor", json_string(color::toHexString(boxColor).c_str()));
+		json_object_set_new(rootJ, "boxOpacity", json_real(boxOpacity));
 
 		json_t* boundModulesJ = json_array();
 		for (BoundModule* b : boundModules) {
@@ -468,6 +472,8 @@ struct ReelModule : Module, StripIdFixModule {
 		if (boxDrawJ) boxDraw = json_boolean_value(boxDrawJ);
 		json_t* boxColorJ = json_object_get(rootJ, "boxColor");
 		if (boxColorJ) boxColor = color::fromHexString(json_string_value(boxColorJ));
+		json_t* boxOpacityJ = json_object_get(rootJ, "boxOpacity");
+		if (boxOpacityJ) boxOpacity = json_real_value(boxOpacityJ);
 
 		for (BoundModule* b : boundModules) delete b;
 		boundModules.clear();
@@ -572,7 +578,9 @@ struct ReelBoundsDrawer : Widget {
 				nvgTranslate(args.vg, p.x, p.y);
 				nvgBeginPath(args.vg);
 				nvgRect(args.vg, 1.f, 1.f, mw->box.size.x - 2.f, mw->box.size.y - 2.f);
-				nvgStrokeColor(args.vg, module->boxColor);
+				NVGcolor strokeColor = module->boxColor;
+				strokeColor.a = module->boxOpacity;
+				nvgStrokeColor(args.vg, strokeColor);
 				nvgStrokeWidth(args.vg, 2.f);
 				nvgStroke(args.vg);
 				nvgRestore(args.vg);
@@ -1291,9 +1299,12 @@ struct ReelWidget : ThemedModuleWidget<ReelModule> {
 		ReelModule* module = dynamic_cast<ReelModule*>(this->module);
 		assert(module);
 
-		menu->addChild(new MenuSeparator);
-		menu->addChild(createBoolPtrMenuItem("Show module outlines", RACK_MOD_SHIFT_NAME "+B", &module->boxDraw));
-		menu->addChild(Rack::createColorSubmenuItem("Outline color", &module->boxColor));
+		menu->addChild(createSubmenuItem("Modules outline", "", [module](Menu* menu) {
+			menu->addChild(createBoolPtrMenuItem("Show module outlines", RACK_MOD_SHIFT_NAME "+B", &module->boxDraw));
+			menu->addChild(Rack::createPtrSlider(&module->boxOpacity, 0.0f, 1.0f, 0.5f, "Outline opacity", "%", 100));
+			menu->addChild(new MenuSeparator);
+			Rack::appendColorSubmenuItems(menu, &module->boxColor);
+		}));
 
 		menu->addChild(new MenuSeparator);
 		menu->addChild(createMenuItem("Recreate bound modules", "",
