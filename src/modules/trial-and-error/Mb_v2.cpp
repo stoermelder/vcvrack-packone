@@ -54,6 +54,29 @@ static bool isModelHidden(plugin::Model* model) {
 }
 
 
+// Tag toggle menu item for predefined tags
+struct TogglePredefinedTagItem : MenuItem {
+	plugin::Model* model;
+	int tagId;
+	bool hasEffectiveTag = false;
+	void onAction(const event::Action& e) override {
+		if (hasEffectiveTag) {
+			predefinedTagRemove(model, tagId);
+		} else {
+			predefinedTagAdd(model, tagId);
+		}
+		hasEffectiveTag = !hasEffectiveTag;
+		ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
+		if (browser) browser->refresh();
+		e.unconsume();
+	}
+	void step() override {
+		rightText = CHECKMARK(hasEffectiveTag);
+		MenuItem::step();
+	}
+};
+
+
 static void openLayoutMenu(widget::Widget* button, std::vector<widget::Widget*> items) {
 	// Container that draws a menu background and holds the layout
 	struct MenuContainer : widget::OpaqueWidget {
@@ -369,68 +392,24 @@ struct ModelBox : widget::OpaqueWidget {
 		});
 
 		plugin::Model* m = model;
-		auto addTagItems = [m](Menu* menu, const std::vector<std::string>& group) {
-			for (const auto& tag : group) {
-				ToggleCustomTagItem* item = new ToggleCustomTagItem;
-				item->text = tag;
-				item->model = m;
-				item->tagName = tag;
-				menu->addChild(item);
-			}
-		};
-
-		if (tags.size() <= 20) {
-			addTagItems(menu, tags);
-		} 
-		else {
-			const size_t numGroups = (tags.size() + 15) / 16;
-			const size_t GROUP_SIZE = (tags.size() + numGroups - 1) / numGroups;
-			for (size_t i = 0; i < tags.size(); i += GROUP_SIZE) {
-				size_t end = std::min(i + GROUP_SIZE, tags.size());
-				char first = (char)std::toupper((unsigned char)string::lowercase(tags[i])[0]);
-				char last  = (char)std::toupper((unsigned char)string::lowercase(tags[end - 1])[0]);
-				std::string label = first == last
-					? std::string(1, first)
-					: std::string(1, first) + "-" + std::string(1, last);
-				std::vector<std::string> group(tags.begin() + i, tags.begin() + end);
-				menu->addChild(createSubmenuItem(label, "", [addTagItems, group](Menu* menu) {
-					addTagItems(menu, group);
-				}));
-			}
-		}
+		Rack::addGroupedMenuItems<std::string>(menu, tags, [m](const std::string& tag) -> ui::MenuItem* {
+			ToggleCustomTagItem* item = new ToggleCustomTagItem;
+			item->text = tag;
+			item->model = m;
+			item->tagName = tag;
+			return item;
+		}, 20);
 
 		// Add section for modifying predefined tags
 		menu->addChild(new MenuSeparator);
 		menu->addChild(createMenuLabel("Tags"));
 
-		struct TogglePredefinedTagItem : MenuItem {
-			plugin::Model* model;
-			int tagId;
-			bool hasEffectiveTag = false;
-			void onAction(const event::Action& e) override {
-				if (hasEffectiveTag) {
-					// Remove the tag (either original or user-added)
-					predefinedTagRemove(model, tagId);
-				} else {
-					// Add the tag
-					predefinedTagAdd(model, tagId);
-				}
-				hasEffectiveTag = !hasEffectiveTag;
-				ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
-				if (browser) browser->refresh();
-				e.unconsume();
-			}
-			void step() override {
-				rightText = CHECKMARK(hasEffectiveTag);
-				MenuItem::step();
-			}
-		};
-
 		// Get all effective tag IDs for this model
 		std::set<int> effectiveTagIds = getEffectiveTagIds(model);
 		
 		// Build list of all predefined tags with their status
-		std::vector<std::pair<std::string, int>> allTags;
+		using MenuItemType = std::pair<std::string, int>;
+		std::vector<MenuItemType> allTags;
 		for (int id = 0; id < (int)tag::tagAliases.size(); id++) {
 			allTags.push_back({tag::tagAliases[id][0], id});
 		}
@@ -438,36 +417,16 @@ struct ModelBox : widget::OpaqueWidget {
 			return string::lowercase(a.first) < string::lowercase(b.first);
 		});
 
-		auto addPredefinedTagItems = [effectiveTagIds, m](Menu* menu, const std::vector<std::pair<std::string, int>>& group) {
-			for (size_t i = 0; i < group.size(); i++) {
-				TogglePredefinedTagItem* item = new TogglePredefinedTagItem;
-				item->text = group[i].first;
-				item->model = m;
-				item->tagId = group[i].second;
-				item->hasEffectiveTag = effectiveTagIds.find(group[i].second) != effectiveTagIds.end();
-				menu->addChild(item);
+		Rack::addGroupedMenuItems<MenuItemType>(menu, allTags,
+			[effectiveTagIds, m](const MenuItemType& item) {
+				TogglePredefinedTagItem* t = new TogglePredefinedTagItem;
+				t->text = item.first;
+				t->model = m;
+				t->tagId = item.second;
+				t->hasEffectiveTag = effectiveTagIds.find(item.second) != effectiveTagIds.end();
+				return t;
 			}
-		};
-
-		if (allTags.size() <= 24) {
-			addPredefinedTagItems(menu, allTags);
-		}
-		else {
-			const size_t numGroups = (allTags.size() + 15) / 16;
-			const size_t GROUP_SIZE = (allTags.size() + numGroups - 1) / numGroups;
-			for (size_t i = 0; i < allTags.size(); i += GROUP_SIZE) {
-				size_t end = std::min(i + GROUP_SIZE, allTags.size());
-				char first = (char)std::toupper((unsigned char)string::lowercase(allTags[i].first)[0]);
-				char last  = (char)std::toupper((unsigned char)string::lowercase(allTags[end - 1].first)[0]);
-				std::string label = first == last
-					? std::string(1, first)
-					: std::string(1, first) + "-" + std::string(1, last);
-				std::vector<std::pair<std::string, int>> group(allTags.begin() + i, allTags.begin() + end);
-				menu->addChild(createSubmenuItem(label, "", [addPredefinedTagItems, group](Menu* menu) {
-					addPredefinedTagItems(menu, group);
-				}));
-			}
-		}
+		);
 	}
 };
 

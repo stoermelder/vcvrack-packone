@@ -406,5 +406,58 @@ inline ui::TextField* createTextField(const std::string& initial = "", const std
 	return tf;
 }
 
+/** Helper to add menu items from a sorted list with a factory function, 
+ *  grouping them into submenus by first character when exceeding a threshold.
+ *
+ * @param menu The menu to add items to
+ * @param items Sorted vector of items
+ * @param creator Factory function: ui::MenuItem* creator(const TData& item)
+ * @param directThreshold Maximum number of items before grouping (default: 24)
+ * @param groupSize Number of items per submenu when grouping (default: 16)
+ *
+ * Example:
+ *   std::vector<std::pair<std::string, int>> items = {...};
+ *   addGroupedMenuItems(menu, items, [](const auto& item) -> ui::MenuItem* {
+ *       ToggleTagItem* t = new ToggleTagItem;
+ *       t->text = item.first;
+ *       return t;
+ *   });
+ */
+template<typename TData>
+inline void addGroupedMenuItems(
+	ui::Menu* menu,
+	const std::vector<TData>& items,
+	std::function<ui::MenuItem*(const TData&)> creator,
+	size_t directThreshold = 24,
+	size_t groupSize = 16
+) {
+	if (items.empty()) return;
+
+	if (items.size() <= directThreshold) {
+		for (const auto& item : items) {
+			menu->addChild(creator(item));
+		}
+	} else {
+		size_t numGroups = (items.size() + groupSize - 1) / groupSize;
+		size_t actualGroupSize = (items.size() + numGroups - 1) / numGroups;
+
+		for (size_t i = 0; i < items.size(); i += actualGroupSize) {
+			size_t end = std::min(i + actualGroupSize, items.size());
+			char first = (char)std::toupper((unsigned char)string::lowercase(creator(items[i])->text)[0]);
+			char last = (char)std::toupper((unsigned char)string::lowercase(creator(items[end - 1])->text)[0]);
+			std::string label = first == last
+				? std::string(1, first)
+				: std::string(1, first) + "-" + std::string(1, last);
+
+			std::vector<TData> group(items.begin() + i, items.begin() + end);
+			menu->addChild(createSubmenuItem(label, "", [creator, group](ui::Menu* subMenu) {
+				for (const auto& item : group) {
+					subMenu->addChild(creator(item));
+				}
+			}));
+		}
+	}
+}
+
 } // namespace Rack
 } // namespace StoermelderPackOne
