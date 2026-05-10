@@ -398,6 +398,76 @@ struct ModelBox : widget::OpaqueWidget {
 				}));
 			}
 		}
+
+		// Add section for modifying predefined tags
+		menu->addChild(new MenuSeparator);
+		menu->addChild(createMenuLabel("Tags"));
+
+		struct TogglePredefinedTagItem : MenuItem {
+			plugin::Model* model;
+			int tagId;
+			bool hasEffectiveTag = false;
+			void onAction(const event::Action& e) override {
+				if (hasEffectiveTag) {
+					// Remove the tag (either original or user-added)
+					predefinedTagRemove(model, tagId);
+				} else {
+					// Add the tag
+					predefinedTagAdd(model, tagId);
+				}
+				hasEffectiveTag = !hasEffectiveTag;
+				ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
+				if (browser) browser->refresh();
+				e.unconsume();
+			}
+			void step() override {
+				rightText = CHECKMARK(hasEffectiveTag);
+				MenuItem::step();
+			}
+		};
+
+		// Get all effective tag IDs for this model
+		std::set<int> effectiveTagIds = getEffectiveTagIds(model);
+		
+		// Build list of all predefined tags with their status
+		std::vector<std::pair<std::string, int>> allTags;
+		for (int id = 0; id < (int)tag::tagAliases.size(); id++) {
+			allTags.push_back({tag::tagAliases[id][0], id});
+		}
+		std::sort(allTags.begin(), allTags.end(), [](const std::pair<std::string, int>& a, const std::pair<std::string, int>& b) {
+			return string::lowercase(a.first) < string::lowercase(b.first);
+		});
+
+		auto addPredefinedTagItems = [effectiveTagIds, m](Menu* menu, const std::vector<std::pair<std::string, int>>& group) {
+			for (size_t i = 0; i < group.size(); i++) {
+				TogglePredefinedTagItem* item = new TogglePredefinedTagItem;
+				item->text = group[i].first;
+				item->model = m;
+				item->tagId = group[i].second;
+				item->hasEffectiveTag = effectiveTagIds.find(group[i].second) != effectiveTagIds.end();
+				menu->addChild(item);
+			}
+		};
+
+		if (allTags.size() <= 24) {
+			addPredefinedTagItems(menu, allTags);
+		}
+		else {
+			const size_t numGroups = (allTags.size() + 15) / 16;
+			const size_t GROUP_SIZE = (allTags.size() + numGroups - 1) / numGroups;
+			for (size_t i = 0; i < allTags.size(); i += GROUP_SIZE) {
+				size_t end = std::min(i + GROUP_SIZE, allTags.size());
+				char first = (char)std::toupper((unsigned char)string::lowercase(allTags[i].first)[0]);
+				char last  = (char)std::toupper((unsigned char)string::lowercase(allTags[end - 1].first)[0]);
+				std::string label = first == last
+					? std::string(1, first)
+					: std::string(1, first) + "-" + std::string(1, last);
+				std::vector<std::pair<std::string, int>> group(allTags.begin() + i, allTags.begin() + end);
+				menu->addChild(createSubmenuItem(label, "", [addPredefinedTagItems, group](Menu* menu) {
+					addPredefinedTagItems(menu, group);
+				}));
+			}
+		}
 	}
 };
 
@@ -950,8 +1020,10 @@ bool ModuleBrowser::isModelVisible(plugin::Model* model, const std::string& bran
 		return false;
 	if (!brand.empty() && model->plugin->brand != brand)
 		return false;
+	// Use effective tag IDs (with predefined tag modifications applied)
+	std::set<int> effectiveTagIds = getEffectiveTagIds(model);
 	for (int tagId : tagIds) {
-		if (std::find(model->tagIds.begin(), model->tagIds.end(), tagId) == model->tagIds.end())
+		if (effectiveTagIds.find(tagId) == effectiveTagIds.end())
 			return false;
 	}
 	for (const auto& ct : customTagFilter) {

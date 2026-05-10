@@ -26,12 +26,25 @@ extern std::set<Model*> hiddenModels;
 extern std::map<Model*, ModelUsage*> modelUsage;
 extern std::map<std::string, std::set<Model*>> customTagModels;
 
+// Tag modifications: predefined tags that are added/removed per model
+extern std::map<Model*, std::set<int>> predefinedTagsAdded;
+extern std::map<Model*, std::set<int>> predefinedTagsRemoved;
+
 void customTagAdd(Model* model, const std::string& tag);
 void customTagRemove(Model* model, const std::string& tag);
 bool customTagHas(Model* model, const std::string& tag, bool resolveKey = false);
 void customTagDelete(const std::string& tag);
 std::set<std::string> customTagsForModel(Model* model);
 std::set<std::string> customTagsAll();
+
+// Predefined tag modifications
+void predefinedTagAdd(Model* model, int tagId);
+void predefinedTagRemove(Model* model, int tagId);
+bool predefinedTagHasAdded(Model* model, int tagId);
+bool predefinedTagHasRemoved(Model* model, int tagId);
+void predefinedTagDelete(int tagId);
+std::set<int> getEffectiveTagIds(Model* model);
+std::set<std::string> getEffectiveTagNames(Model* model);
 
 // Favorite mode handling
 enum class FavoriteMode {

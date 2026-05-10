@@ -47,6 +47,8 @@ std::set<Model*> favoriteModels;
 std::set<Model*> hiddenModels;
 std::map<Model*, ModelUsage*> modelUsage;
 std::map<std::string, std::set<Model*>> customTagModels;
+std::map<Model*, std::set<int>> predefinedTagsAdded;
+std::map<Model*, std::set<int>> predefinedTagsRemoved;
 
 FavoriteMode favoriteMode = FavoriteMode::VCVRACK;
 
@@ -127,6 +129,93 @@ std::set<std::string> customTagsAll() {
 }
 
 
+// Predefined tag modifications
+
+void predefinedTagAdd(Model* model, int tagId) {
+	predefinedTagsAdded[model].insert(tagId);
+	// Remove from removed list if it was there
+	predefinedTagsRemoved[model].erase(tagId);
+	if (predefinedTagsRemoved[model].empty())
+		predefinedTagsRemoved.erase(model);
+}
+
+void predefinedTagRemove(Model* model, int tagId) {
+	predefinedTagsRemoved[model].insert(tagId);
+	// Remove from added list if it was there
+	predefinedTagsAdded[model].erase(tagId);
+	if (predefinedTagsAdded[model].empty())
+		predefinedTagsAdded.erase(model);
+}
+
+bool predefinedTagHasAdded(Model* model, int tagId) {
+	auto it = predefinedTagsAdded.find(model);
+	if (it == predefinedTagsAdded.end()) return false;
+	return it->second.find(tagId) != it->second.end();
+}
+
+bool predefinedTagHasRemoved(Model* model, int tagId) {
+	auto it = predefinedTagsRemoved.find(model);
+	if (it == predefinedTagsRemoved.end()) return false;
+	return it->second.find(tagId) != it->second.end();
+}
+
+void predefinedTagDelete(int tagId) {
+	// Remove from all models' added lists
+	for (auto& pair : predefinedTagsAdded) {
+		pair.second.erase(tagId);
+	}
+	// Remove from all models' removed lists
+	for (auto& pair : predefinedTagsRemoved) {
+		pair.second.erase(tagId);
+	}
+}
+
+std::set<int> getEffectiveTagIds(Model* model) {
+	std::set<int> result;
+	
+	// Add original tags
+	for (int tagId : model->tagIds) {
+		if (!predefinedTagHasRemoved(model, tagId)) {
+			result.insert(tagId);
+		}
+	}
+	
+	// Add tags that were added
+	auto itAdded = predefinedTagsAdded.find(model);
+	if (itAdded != predefinedTagsAdded.end()) {
+		for (int tagId : itAdded->second) {
+			result.insert(tagId);
+		}
+	}
+	
+	return result;
+}
+
+std::set<std::string> getEffectiveTagNames(Model* model) {
+	std::set<std::string> result;
+	std::set<int> tagIds = getEffectiveTagIds(model);
+	for (int tagId : tagIds) {
+		if (tagId >= 0 && tagId < (int)rack::tag::tagAliases.size()) {
+			result.insert(rack::tag::tagAliases[tagId][0]);
+		}
+	}
+	return result;
+}
+
+// Helper to find tag ID by name (case-insensitive)
+static int findTagIdByName(const std::string& name) {
+	std::string lower = string::lowercase(name);
+	for (int i = 0; i < (int)rack::tag::tagAliases.size(); i++) {
+		for (const auto& alias : rack::tag::tagAliases[i]) {
+			if (string::lowercase(alias) == lower) {
+				return i;
+			}
+		}
+	}
+	return -1;
+}
+
+
 // JSON storage
 
 json_t* moduleBrowserToJson(bool includeUsageData) {
@@ -163,6 +252,47 @@ json_t* moduleBrowserToJson(bool includeUsageData) {
 		json_object_set_new(customTagsJ, pair.first.c_str(), modelsJ);
 	}
 	json_object_set_new(rootJ, "customTags", customTagsJ);
+
+	// Save predefined tag modifications
+	// Merge added and removed tags into a single entry per model
+	json_t* predefinedTagsJ = json_array();
+	// First, collect all models with any modifications
+	std::set<Model*> allModifiedModels;
+	for (auto& pair : predefinedTagsAdded) allModifiedModels.insert(pair.first);
+	for (auto& pair : predefinedTagsRemoved) allModifiedModels.insert(pair.first);
+	
+	for (Model* model : allModifiedModels) {
+		json_t* entryJ = json_object();
+		json_object_set_new(entryJ, "plugin", json_string(model->plugin->slug.c_str()));
+		json_object_set_new(entryJ, "model", json_string(model->slug.c_str()));
+		
+		// Added tags
+		json_t* addedJ = json_array();
+		auto itAdded = predefinedTagsAdded.find(model);
+		if (itAdded != predefinedTagsAdded.end()) {
+			for (int tagId : itAdded->second) {
+				if (tagId >= 0 && tagId < (int)rack::tag::tagAliases.size()) {
+					json_array_append_new(addedJ, json_string(rack::tag::tagAliases[tagId][0].c_str()));
+				}
+			}
+		}
+		json_object_set_new(entryJ, "added", addedJ);
+		
+		// Removed tags
+		json_t* removedJ = json_array();
+		auto itRemoved = predefinedTagsRemoved.find(model);
+		if (itRemoved != predefinedTagsRemoved.end()) {
+			for (int tagId : itRemoved->second) {
+				if (tagId >= 0 && tagId < (int)rack::tag::tagAliases.size()) {
+					json_array_append_new(removedJ, json_string(rack::tag::tagAliases[tagId][0].c_str()));
+				}
+			}
+		}
+		json_object_set_new(entryJ, "removed", removedJ);
+		
+		json_array_append_new(predefinedTagsJ, entryJ);
+	}
+	json_object_set_new(rootJ, "predefinedTags", predefinedTagsJ);
 
 	if (includeUsageData) {
 		json_t* usageJ = json_array();
@@ -243,6 +373,56 @@ void moduleBrowserFromJson(json_t* rootJ) {
 				Model* model = plugin::getModel(pluginSlug, modelSlug);
 				if (!model) continue;
 				customTagModels[tagName].insert(model);
+			}
+		}
+	}
+
+	// Load predefined tag modifications
+	predefinedTagsAdded.clear();
+	predefinedTagsRemoved.clear();
+	
+	// New format: "predefinedTags" with "added" and "removed" arrays
+	json_t* predefinedTagsJ = json_object_get(rootJ, "predefinedTags");
+	if (predefinedTagsJ) {
+		size_t i;
+		json_t* entryJ;
+		json_array_foreach(predefinedTagsJ, i, entryJ) {
+			json_t* pluginJ = json_object_get(entryJ, "plugin");
+			json_t* modelJ = json_object_get(entryJ, "model");
+			if (!pluginJ || !modelJ) continue;
+			std::string pluginSlug = json_string_value(pluginJ);
+			std::string modelSlug = json_string_value(modelJ);
+			Model* model = plugin::getModel(pluginSlug, modelSlug);
+			if (!model) continue;
+			
+			// Added tags
+			json_t* addedJ = json_object_get(entryJ, "added");
+			if (addedJ && json_is_array(addedJ)) {
+				size_t j;
+				json_t* tagNameJ;
+				json_array_foreach(addedJ, j, tagNameJ) {
+					if (json_is_string(tagNameJ)) {
+						int tagId = findTagIdByName(json_string_value(tagNameJ));
+						if (tagId >= 0) {
+							predefinedTagsAdded[model].insert(tagId);
+						}
+					}
+				}
+			}
+			
+			// Removed tags
+			json_t* removedJ = json_object_get(entryJ, "removed");
+			if (removedJ && json_is_array(removedJ)) {
+				size_t j;
+				json_t* tagNameJ;
+				json_array_foreach(removedJ, j, tagNameJ) {
+					if (json_is_string(tagNameJ)) {
+						int tagId = findTagIdByName(json_string_value(tagNameJ));
+						if (tagId >= 0) {
+							predefinedTagsRemoved[model].insert(tagId);
+						}
+					}
+				}
 			}
 		}
 	}

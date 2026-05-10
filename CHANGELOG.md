@@ -7,10 +7,11 @@
     - Added reset input for tick counter (#429)
     - Fixed crash on operator `<` when using whithout maximum value set (#425)
 - Module [MB](./docs/trial-and-error/Mb.md)
-    - Added custom tags for used-defined module grouping
-    - Added auto-tagging, including MetaModule
+    - Added custom tags for user-defined module grouping
+    - Added ability to add/remove predefined tags (only within MB)
+    - Added auto-tagging including MetaModule
     - Added fuzzy search (similar to the default module browser)
-    - Added an option to select "Favorite" handling  (Legacy (MB) / (Built-in) VCV Rack)
+    - Added an option to select "Favorite" handling (Legacy (MB) / Built-in VCV Rack)
     - Added an option to highlight favorites
     - Added an option to set the fuzzy search threshold
     - Added "v2 mod" variation

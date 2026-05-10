@@ -28,6 +28,10 @@ MB can automatically assign custom tags to modules using keyword matching. The c
 
 All three options show a confirmation dialog listing the proposed tag assignments, allowing you to verify or adjust individual assignments before applying.
 
+### Predefined tags
+
+MB allows you to add or remove predefined tags (the classic VCV Rack tag aliases like "Attenuator", "Mixer", "MIDI", etc.) on individual modules. This is useful if a module has incorrect or incomplete tags. Please note, that modification on predefined tags are only visible within the module browsers of the MB module.
+
 ### Tips
 
 - Display of hidden modules can be toggled by hotkey Shift+Space.
@@ -48,6 +52,7 @@ All three options show a confirmation dialog listing the proposed tag assignment
 
 - v2.4.0
     - Added custom tags for user-defined module grouping
+    - Added ability to add/remove predefined tags
     - Added auto-tagging including MetaModule
     - Added fuzzy search (similar to the default module browser)
     - Added an option to select "Favorite" handling (Legacy (MB) / Built-in VCV Rack)
