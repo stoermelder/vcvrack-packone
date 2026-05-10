@@ -20,6 +20,11 @@ struct Settings {
 	float overlayOpacity = 1.f;
 	float overlayScale = 1.f;
 
+	int magnifierKey = -1;
+	int magnifierMods = 0;
+	float magnifierRadius = 120.f;
+	float magnifierZoom = 3.f;
+
 	std::string stripDirVcvss = rack::asset::user("patches");
 	std::string stripDirVcvs = rack::asset::user("selections");
 

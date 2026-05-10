@@ -24,6 +24,11 @@ void Settings::saveToJson() {
 	json_object_set(settingsJ, "overlayOpacity", json_real(overlayOpacity));
 	json_object_set(settingsJ, "overlayScale", json_real(overlayScale));
 
+	json_object_set_new(settingsJ, "magnifierKey", json_integer(magnifierKey));
+	json_object_set_new(settingsJ, "magnifierMods", json_integer(magnifierMods));
+	json_object_set_new(settingsJ, "magnifierRadius", json_real(magnifierRadius));
+	json_object_set_new(settingsJ, "magnifierZoom", json_real(magnifierZoom));
+
 	json_object_set(settingsJ, "stripDirVcvss", json_string(stripDirVcvss.c_str()));
 	json_object_set(settingsJ, "stripDirVcvs", json_string(stripDirVcvs.c_str()));
 
@@ -88,6 +93,15 @@ void Settings::readFromJson() {
 	if (overlayOpacityJ) overlayOpacity = json_real_value(overlayOpacityJ);
 	json_t* overlayScaleJ = json_object_get(settingsJ, "overlayScale");
 	if (overlayScaleJ) overlayScale = json_real_value(overlayScaleJ);
+
+	json_t* magnifierKeyJ = json_object_get(settingsJ, "magnifierKey");
+	if (magnifierKeyJ) magnifierKey = json_integer_value(magnifierKeyJ);
+	json_t* magnifierModsJ = json_object_get(settingsJ, "magnifierMods");
+	if (magnifierModsJ) magnifierMods = json_integer_value(magnifierModsJ);
+	json_t* magnifierRadiusJ = json_object_get(settingsJ, "magnifierRadius");
+	if (magnifierRadiusJ) magnifierRadius = json_real_value(magnifierRadiusJ);
+	json_t* magnifierZoomJ = json_object_get(settingsJ, "magnifierZoom");
+	if (magnifierZoomJ) magnifierZoom = json_real_value(magnifierZoomJ);
 
 	json_t* stripDirVcvssJ = json_object_get(settingsJ, "stripDirVcvss");
 	if (stripDirVcvssJ) stripDirVcvss = json_string_value(stripDirVcvssJ);

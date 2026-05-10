@@ -17,6 +17,8 @@
     - Added "v2 mod" variation
     - Changed hotkey to toggle hidden modules to Shift+Space (because of Spotlight on Mac)
     - Fixed broken button of "Favorites" category
+- Module [ME](./docs/trial-and-error/Me.md)
+    - Added screen magnifier loupe
 
 ## 2.3.1
 
