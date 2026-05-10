@@ -2,6 +2,8 @@
 
 ### Changes and Fixes
 
+- Modules [8FACE, 8FACEx2](./docs/eightface/EightFace.md)
+    - Fixed broken processing in VCV Rack-plugin on closed plugin-window (#424)
 - Module [AHAB](./docs/ahab/Ahab.md)
     - Added gate length as a parameter for operator `>` in note mode (#420)
     - Added reset input for tick counter (#429)
