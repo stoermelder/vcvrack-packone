@@ -113,3 +113,5 @@ With the option _Autoload first preset_ on the context menu you can autoload the
 - v2.2.0
     - Added stability mode setting and _Safe-mode_ and use as new default setting
     - Fixed broken function on some modules (only 8FACEx2)
+- v2.4.0
+    - Fixed broken processing in VCV Rack-plugin on closed plugin-window (#424)

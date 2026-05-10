@@ -2,6 +2,7 @@
 #include "../../plugin.hpp"
 #include "Mb_autotag.hpp"
 #include <ui/ScrollWidget.hpp>
+#include <osdialog.h>
 #include <memory>
 
 namespace StoermelderPackOne {
@@ -259,6 +260,37 @@ struct AutoTagConfirmWidget : widget::OpaqueWidget {
 	void draw(const DrawArgs& args) override {
         bndMenuBackground(args.vg, 0.f, 0.f, box.size.x, box.size.y, 0);
         Widget::draw(args);
+	}
+};
+
+// Helper widget that waits for async result and shows confirmation
+struct AsyncTagResultWidget : widget::OpaqueWidget {
+	std::shared_ptr<AutoTagResult> result;
+	ui::MenuOverlay* loadingOverlay;
+	bool ready = false;
+
+	AsyncTagResultWidget(ui::MenuOverlay* lo) : loadingOverlay(lo) {}
+
+	void step() override {
+		// Check if we received a result from the background thread
+		if (result && !ready) {
+			ready = true;
+			loadingOverlay->requestDelete();
+
+			if (result->total == 0) {
+				osdialog_message(OSDIALOG_INFO, OSDIALOG_OK, "No new tag assignments found.");
+				requestDelete();
+				return;
+			}
+
+			ui::MenuOverlay* overlay = new ui::MenuOverlay;
+			overlay->bgColor = nvgRGBAf(0.f, 0.f, 0.f, 0.5f);
+			AutoTagConfirmWidget* w = new AutoTagConfirmWidget(result);
+			overlay->addChild(w);
+			APP->scene->addChild(overlay);
+			requestDelete();
+		}
+		OpaqueWidget::step();
 	}
 };
 
