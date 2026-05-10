@@ -592,7 +592,7 @@ struct ReelBoundsDrawer : Widget {
 
 
 struct ReelSlotEntry : LedDisplayChoice {
-	static constexpr float LOAD_ZONE_W = 26.f;
+	static constexpr float LOAD_ZONE_W = 18.f;
 
 	ReelModule* module = NULL;
 	bool processEvents = true;
@@ -614,8 +614,8 @@ struct ReelSlotEntry : LedDisplayChoice {
 	static int copySlot;
 
 	ReelSlotEntry() {
-		box.size = mm2px(Vec(0, 8.0));
-		textOffset = Vec(4.f, box.size.y * 0.5f + 3.f);
+		box.size = mm2px(Vec(0, 6.0));
+		textOffset = Vec(LOAD_ZONE_W + 4.f, box.size.y * 0.5f + 3.f);
 		hscrollUpdate = std::chrono::system_clock::now();
 		cursorBlinkTime = std::chrono::system_clock::now();
 	}
@@ -635,7 +635,7 @@ struct ReelSlotEntry : LedDisplayChoice {
 				cursorVisible = !cursorVisible;
 				cursorBlinkTime = now;
 			}
-			textOffset.x = LOAD_ZONE_W + 4.f;
+			textOffset.x = LOAD_ZONE_W + 3.f;
 			bgColor = nvgRGBA(0x20, 0x3a, 0x60, 0x90);
 			color = nvgRGB(0xcc, 0xdd, 0xff);
 			std::string cur = cursorVisible ? "|" : " ";
@@ -643,7 +643,7 @@ struct ReelSlotEntry : LedDisplayChoice {
 			return;
 		}
 
-		textOffset.x = LOAD_ZONE_W + 4.f;
+		textOffset.x = LOAD_ZONE_W + 3.f;
 
 		// ---- Normal display ----
 		if (!module) {
@@ -657,7 +657,7 @@ struct ReelSlotEntry : LedDisplayChoice {
 		bool used = isUsed();
 		bool active = isActive();
 
-		bgColor = active ? nvgRGBA(0xf0, 0xf0, 0xf0, 37) : nvgRGBA(0, 0, 0, 0);
+		bgColor = active ? nvgRGBA(0xf0, 0xf0, 0xf0, 32) : nvgRGBA(0, 0, 0, 0);
 
 		if (trailing || !used) {
 			text = "—";
@@ -689,29 +689,26 @@ struct ReelSlotEntry : LedDisplayChoice {
 	void draw(const DrawArgs& args) override {
 		LedDisplayChoice::draw(args);
 
-		// Thin vertical divider between load zone and label zone
-		nvgBeginPath(args.vg);
-		nvgMoveTo(args.vg, LOAD_ZONE_W, 2.f);
-		nvgLineTo(args.vg, LOAD_ZONE_W, box.size.y - 2.f);
-		nvgStrokeColor(args.vg, editMode ? nvgRGBA(0x60, 0x90, 0xcc, 0x80) : nvgRGBA(0xff, 0xff, 0xff, 0x18));
-		nvgStrokeWidth(args.vg, 0.7f);
-		nvgStroke(args.vg);
-
-		// Load-zone icon: filled triangle (▶) for used slots, hollow for unused
+		// Load-zone icon: square outline for used slots, filled if active
 		if (module && !isTrailing() && isUsed()) {
-			float cx = LOAD_ZONE_W / 2.f;
+			float cx = LOAD_ZONE_W / 2.f + 1.f;
 			float cy = box.size.y / 2.f;
-			float h  = 5.f;
-			float w  = h * 0.866f;
+			float s = 4.f;
+			nvgStrokeWidth(args.vg, 0.8f);
 			nvgBeginPath(args.vg);
-			nvgMoveTo(args.vg, cx - w / 2.f, cy - h / 2.f);
-			nvgLineTo(args.vg, cx + w / 2.f, cy);
-			nvgLineTo(args.vg, cx - w / 2.f, cy + h / 2.f);
-			nvgClosePath(args.vg);
-			nvgFillColor(args.vg, isActive()
-				? nvgRGB(0xf0, 0xf0, 0xf0)
-				: nvgRGBA(0xf0, 0xf0, 0xf0, 0xa5));
-			nvgFill(args.vg);
+			nvgRect(args.vg, cx - s / 2.f, cy - s / 2.f, s, s);
+			if (isActive()) {
+				nvgFillColor(args.vg, nvgRGBA(0xf0, 0xf0, 0xf0, 170));
+				nvgFill(args.vg);
+				s = 7.f;
+				nvgBeginPath(args.vg);
+				nvgRect(args.vg, cx - s / 2.f, cy - s / 2.f, s, s);
+				nvgStroke(args.vg);
+			} 
+			else {
+				nvgStrokeColor(args.vg, nvgRGBA(0xf0, 0xf0, 0xf0, 80));			
+				nvgStroke(args.vg);
+			}
 		}
 	}
 
@@ -862,11 +859,230 @@ struct ReelSlotEntry : LedDisplayChoice {
 int ReelSlotEntry::copySlot = -1;
 
 
+static bool reelSlotMatchesFilter(ReelModule* module, int i, const std::string& filter) {
+	if (filter.empty()) return true;
+	if (!module || i >= (int)module->slots.size() || !module->slots[i].used) return false;
+	const std::string& raw = module->slots[i].label;
+	std::string label = raw.empty() ? "Snapshot" : raw;
+	std::string labelLow = label, filterLow = filter;
+	for (char& c : labelLow)  c = (char)std::tolower((unsigned char)c);
+	for (char& c : filterLow) c = (char)std::tolower((unsigned char)c);
+	return labelLow.find(filterLow) != std::string::npos;
+}
+
+
+struct ReelSearchField : OpaqueWidget {
+	std::string text;
+	int cursor = 0;
+	bool focused = false;
+	std::chrono::time_point<std::chrono::system_clock> cursorBlinkTime;
+	bool cursorVisible = true;
+
+	ReelSearchField() { cursorBlinkTime = std::chrono::system_clock::now(); }
+
+	void step() override {
+		auto now = std::chrono::system_clock::now();
+		if (focused && now - cursorBlinkTime > std::chrono::milliseconds{530}) {
+			cursorVisible = !cursorVisible;
+			cursorBlinkTime = now;
+		}
+		OpaqueWidget::step();
+	}
+
+	void draw(const DrawArgs& args) override {
+		/*
+		// Flat background rect — matches LedDisplayChoice slot edit mode
+		if (focused) {
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+			nvgFillColor(args.vg, nvgRGBA(0x20, 0x3a, 0x60, 0x90));
+			nvgFill(args.vg);
+		}
+		*/
+		OpaqueWidget::draw(args);
+	}
+
+	void drawLayer(const DrawArgs& args, int layer) override {
+		if (layer == 1) {
+			std::shared_ptr<window::Font> font = APP->window->loadFont(
+				asset::system("res/fonts/ShareTechMono-Regular.ttf"));
+			if (font && font->handle >= 0) {
+				nvgFontFaceId(args.vg, font->handle);
+				nvgFontSize(args.vg, 12.f);
+				nvgTextLetterSpacing(args.vg, 0.f);
+				nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+				float ty = box.size.y * 0.5f;
+				if (text.empty() && !focused) {
+					nvgFillColor(args.vg, nvgRGBA(0xf0, 0xf0, 0xf0, 0x28));
+					nvgText(args.vg, 4.f, ty, "Search...", nullptr);
+				} else {
+					std::string display = focused
+						? text.substr(0, cursor) + (cursorVisible ? "|" : " ") + text.substr(cursor)
+						: text;
+					nvgFillColor(args.vg, focused ? nvgRGB(0xcc, 0xdd, 0xff) : nvgRGBA(0xf0, 0xf0, 0xf0, 0x95));
+					nvgText(args.vg, 4.f, ty, display.c_str(), nullptr);
+				}
+			}
+		}
+		OpaqueWidget::drawLayer(args, layer);
+	}
+
+	void onButton(const event::Button& e) override {
+		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
+			e.consume(this);
+			APP->event->setSelectedWidget(this);
+		}
+	}
+
+	void onDoubleClick(const event::DoubleClick& e) override {
+		text.clear();
+		cursor = 0;
+	}
+
+	void onSelect(const event::Select& e) override {
+		focused = true;
+		cursorVisible = true;
+		cursorBlinkTime = std::chrono::system_clock::now();
+	}
+
+	void onDeselect(const event::Deselect& e) override { focused = false; }
+
+	void onSelectText(const event::SelectText& e) override {
+		if (e.codepoint >= 32 && e.codepoint < 0x10000) {
+			char buf[8] = {};
+			if (e.codepoint < 0x80) {
+				buf[0] = (char)e.codepoint;
+			} else if (e.codepoint < 0x800) {
+				buf[0] = 0xC0 | (char)(e.codepoint >> 6);
+				buf[1] = 0x80 | (char)(e.codepoint & 0x3F);
+			} else {
+				buf[0] = 0xE0 | (char)(e.codepoint >> 12);
+				buf[1] = 0x80 | (char)((e.codepoint >> 6) & 0x3F);
+				buf[2] = 0x80 | (char)(e.codepoint & 0x3F);
+			}
+			std::string ch = buf;
+			text.insert(cursor, ch);
+			cursor += (int)ch.length();
+		}
+		e.consume(this);
+	}
+
+	void onSelectKey(const event::SelectKey& e) override {
+		if (e.action != GLFW_PRESS && e.action != GLFW_REPEAT) return;
+		switch (e.key) {
+			case GLFW_KEY_ESCAPE:
+				text.clear(); cursor = 0;
+				APP->event->setSelectedWidget(nullptr);
+				break;
+			case GLFW_KEY_ENTER: case GLFW_KEY_KP_ENTER:
+				APP->event->setSelectedWidget(nullptr);
+				break;
+			case GLFW_KEY_BACKSPACE:
+				if (cursor > 0) { text.erase(cursor - 1, 1); cursor--; }
+				break;
+			case GLFW_KEY_DELETE:
+				if (cursor < (int)text.length()) text.erase(cursor, 1);
+				break;
+			case GLFW_KEY_LEFT:  if (cursor > 0) cursor--; break;
+			case GLFW_KEY_RIGHT: if (cursor < (int)text.length()) cursor++; break;
+			case GLFW_KEY_HOME:  cursor = 0; break;
+			case GLFW_KEY_END:   cursor = (int)text.length(); break;
+			default: return;
+		}
+		e.consume(this);
+	}
+};
+
+
+struct ReelNavButton : OpaqueWidget {
+	ReelModule* module = nullptr;
+	std::string* filterText = nullptr;
+	bool forward = true;
+
+	void draw(const DrawArgs& args) override {
+		float cx = box.size.x * 0.5f, cy = box.size.y * 0.5f;
+		float h = 5.f, w = h * 0.866f;
+		nvgBeginPath(args.vg);
+		if (forward) {
+			nvgMoveTo(args.vg, cx - w / 2.f, cy - h / 2.f);
+			nvgLineTo(args.vg, cx + w / 2.f, cy);
+			nvgLineTo(args.vg, cx - w / 2.f, cy + h / 2.f);
+		} else {
+			nvgMoveTo(args.vg, cx + w / 2.f, cy - h / 2.f);
+			nvgLineTo(args.vg, cx - w / 2.f, cy);
+			nvgLineTo(args.vg, cx + w / 2.f, cy + h / 2.f);
+		}
+		nvgClosePath(args.vg);
+		nvgFillColor(args.vg, nvgRGBA(0xf0, 0xf0, 0xf0, 0x90));
+		nvgFill(args.vg);
+	}
+
+	void onButton(const event::Button& e) override {
+		if (e.action != GLFW_PRESS || e.button != GLFW_MOUSE_BUTTON_LEFT) return;
+		e.consume(this);
+		if (!module) return;
+		std::string ft = filterText ? *filterText : "";
+		int cur = module->currentSlot, n = (int)module->slots.size();
+		if (forward) {
+			for (int i = cur + 1; i < n; i++)
+				if (reelSlotMatchesFilter(module, i, ft)) { module->slotLoad(i); return; }
+		} else {
+			for (int i = cur - 1; i >= 0; i--)
+				if (reelSlotMatchesFilter(module, i, ft)) { module->slotLoad(i); return; }
+		}
+	}
+};
+
+
+struct ReelTopBar : OpaqueWidget {
+	static constexpr float BTN_W = 16.f;
+	ReelSearchField* searchField = nullptr;
+
+	void init(ReelModule* module) {
+		auto* prev = new ReelNavButton;
+		prev->module = module;
+		prev->forward = false;
+		prev->box.pos = Vec(0.f, 0.f);
+		prev->box.size = Vec(BTN_W, box.size.y);
+		addChild(prev);
+
+		searchField = new ReelSearchField;
+		searchField->box.pos = Vec(BTN_W, 0.f);
+		searchField->box.size = Vec(box.size.x - 2.f * BTN_W, box.size.y);
+		addChild(searchField);
+
+		auto* next = new ReelNavButton;
+		next->module = module;
+		next->forward = true;
+		next->filterText = &searchField->text;
+		next->box.pos = Vec(box.size.x - BTN_W, 0.f);
+		next->box.size = Vec(BTN_W, box.size.y);
+		addChild(next);
+
+		prev->filterText = &searchField->text;
+	}
+
+	void draw(const DrawArgs& args) override {
+		// Bottom separator — same weight as LedDisplaySeparator between slot rows
+		nvgBeginPath(args.vg);
+		nvgMoveTo(args.vg, 0.f, box.size.y - 0.5f);
+		nvgLineTo(args.vg, box.size.x, box.size.y - 0.5f);
+		nvgStrokeColor(args.vg, nvgRGBA(0xff, 0xff, 0xff, 0x20));
+		nvgStrokeWidth(args.vg, 0.7f);
+		nvgStroke(args.vg);
+		OpaqueWidget::draw(args);
+	}
+};
+
+
 /** Scrollable list of ReelSlotEntry rows.
  *  Grows dynamically as module->slots expands. */
 struct ReelDisplay : LedDisplay {
+	static constexpr float TOPBAR_H = 18.f;
+
 	ReelModule* module = NULL;
 	ScrollWidget* scroll = NULL;
+	ReelTopBar* topBar = NULL;
 	std::vector<ReelSlotEntry*> entries;
 	std::vector<LedDisplaySeparator*> separators;
 	float nextEntryY = 0.f;
@@ -878,18 +1094,29 @@ struct ReelDisplay : LedDisplay {
 	void setModule(ReelModule* m) {
 		module = m;
 
+		topBar = new ReelTopBar;
+		topBar->box.pos = Vec(1.f, 1.f);
+		topBar->box.size = Vec(box.size.x - 2.f, TOPBAR_H);
+		topBar->init(m);
+		addChild(topBar);
+
 		scroll = new ScrollWidget;
-		scroll->box.pos.y = 2.f;
+		scroll->box.pos = Vec(0.f, TOPBAR_H + 2.f);
 		scroll->box.size.x = box.size.x;
-		scroll->box.size.y = box.size.y - 4.f;
+		scroll->box.size.y = box.size.y - TOPBAR_H - 4.f;
 		addChild(scroll);
 
 		nextEntryY = 0.f;
 	}
 
-	/** Append one new entry to the scroll container. */
+	bool entryMatchesFilter(int i) const {
+		if (!topBar || topBar->searchField->text.empty()) return true;
+		// Hide trailing (new-slot) row when a filter is active
+		if (!module || i >= (int)module->slots.size()) return false;
+		return reelSlotMatchesFilter(module, i, topBar->searchField->text);
+	}
+
 	void addEntry(int id) {
-		// Separator line overlaid at top of every row except the first
 		if (id > 0) {
 			LedDisplaySeparator* sep = createWidget<LedDisplaySeparator>(Vec(0.f, nextEntryY));
 			sep->box.size.x = box.size.x;
@@ -930,7 +1157,30 @@ struct ReelDisplay : LedDisplay {
 				nextEntryY = entries.empty() ? 0.f : entries.back()->box.getBottomLeft().y;
 			}
 		}
+
+		// Reflow visible entries: pack matching slots contiguously, hide non-matching ones
+		float y = 0.f;
+		bool firstVisible = true;
+		for (int i = 0; i < (int)entries.size(); i++) {
+			bool vis = entryMatchesFilter(i);
+			entries[i]->visible = vis;
+			if (separators[i]) separators[i]->visible = false;
+			if (vis) {
+				entries[i]->box.pos.y = y;
+				if (separators[i] && !firstVisible) {
+					separators[i]->box.pos.y = y;
+					separators[i]->visible = true;
+				}
+				y += entries[i]->box.size.y;
+				firstVisible = false;
+			}
+		}
+
 		LedDisplay::step();
+
+		// Override container height after Rack's auto-compute so the scrollbar is correct
+		if (scroll && scroll->container)
+			scroll->container->box.size.y = std::max(y, scroll->box.size.y);
 	}
 };
 
@@ -995,8 +1245,6 @@ struct ReelWidget : ThemedModuleWidget<ReelModule> {
 		moduleSelectProcessor.processDeselect();
 	}
 
-	/** Spawn new instances of every bound module using stored relative positions,
-	 *  rebind, and remap all stored slot IDs to the new modules. */
 	/** Unified module placement handler for both bound modules and selection imports.
 	 *  moduleInfos: pairs of (model, relative position)
 	 *  relativePositions: parallel array of relative positions for each module
