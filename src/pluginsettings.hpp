@@ -29,6 +29,8 @@ struct Settings {
 	std::string stripDirVcvss = rack::asset::user("patches");
 	std::string stripDirVcvs = rack::asset::user("selections");
 
+	bool midiEsxDriverEnabled = false;
+
 	bool ahabInfo = true;
 	bool ahabMidiVirtualEnabled = false;
 

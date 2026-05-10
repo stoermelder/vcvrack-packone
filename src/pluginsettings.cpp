@@ -33,6 +33,8 @@ void Settings::saveToJson() {
 	json_object_set(settingsJ, "stripDirVcvss", json_string(stripDirVcvss.c_str()));
 	json_object_set(settingsJ, "stripDirVcvs", json_string(stripDirVcvs.c_str()));
 
+	json_object_set(settingsJ, "midiEsxDriverEnabled", json_boolean(midiEsxDriverEnabled));
+
 	json_object_set(settingsJ, "ahabInfo", json_boolean(ahabInfo));
 	json_object_set(settingsJ, "ahabMidiVirtualEnabled", json_boolean(ahabMidiVirtualEnabled));
 
@@ -110,6 +112,9 @@ void Settings::readFromJson() {
 	if (stripDirVcvssJ) stripDirVcvss = json_string_value(stripDirVcvssJ);
 	json_t* stripDirVcvsJ = json_object_get(settingsJ, "stripDirVcvs");
 	if (stripDirVcvsJ) stripDirVcvs = json_string_value(stripDirVcvsJ);
+
+	json_t* midiEsxDriverEnabledJ = json_object_get(settingsJ, "midiEsxDriverEnabled");
+	if (midiEsxDriverEnabledJ) midiEsxDriverEnabled = json_boolean_value(midiEsxDriverEnabledJ);
 
 	json_t* ahabInfoJ = json_object_get(settingsJ, "ahabInfo");
 	if (ahabInfoJ) ahabInfo = json_boolean_value(ahabInfoJ);
