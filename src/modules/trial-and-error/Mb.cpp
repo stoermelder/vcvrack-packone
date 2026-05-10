@@ -612,7 +612,7 @@ struct MbModule : Module {
 		onReset(re);
 	}
 
-	MODE mode = MODE::V1;
+	MODE mode = MODE::V2;
 
 	json_t* dataToJson() override {
 		json_t *rootJ = json_object();
@@ -626,8 +626,35 @@ struct MbModule : Module {
 };
 
 
+struct MbMenuButton : ui::Button {
+	ModuleWidget* mw;
+	MbMenuButton() {
+		text = "Browser";
+	}
+	void onAction(const ActionEvent& e) override {
+		ui::Menu* menu = createMenu();
+		menu->cornerFlags = BND_CORNER_TOP;
+		menu->box.pos = getAbsoluteOffset(math::Vec(0, box.size.y));
+		mw->appendContextMenu(menu);
+	}
+	void step() override {
+		box.size.x = bndLabelWidth(APP->window->vg, -1, text.c_str()) + 1.0;
+		Widget::step();
+	}
+	void draw(const DrawArgs& args) override {
+		BNDwidgetState state = BND_DEFAULT;
+		if (APP->event->hoveredWidget == this)
+			state = BND_HOVER;
+		if (APP->event->draggedWidget == this)
+			state = BND_ACTIVE;
+		bndMenuItem(args.vg, 0.0, 0.0, box.size.x, box.size.y, state, -1, text.c_str());
+		Widget::draw(args);
+	}
+};
+
 struct MbWidget : ModuleWidget {
 	BrowserOverlay* browserOverlay;
+	MbMenuButton* menubarButton;
 	bool active = false;
 
 	MbWidget(MbModule* module) {
@@ -645,12 +672,44 @@ struct MbWidget : ModuleWidget {
 				browserOverlay = new BrowserOverlay;
 				browserOverlay->mode = &module->mode;
 				browserOverlay->hide();
+
+				// Add Browser button to menu bar after "View"
+				ui::SequentialLayout* layout = APP->scene->menuBar->getFirstDescendantOfType<ui::SequentialLayout>();
+				if (layout) {
+					menubarButton = new MbMenuButton;
+					menubarButton->mw = this;
+					// Insert after "View" button by finding it in children
+					auto it = layout->children.begin();
+					for (; it != layout->children.end(); ++it) {
+						ui::Button* btn = dynamic_cast<ui::Button*>(*it);
+						if (btn && btn->text == string::translate("MenuBar.view")) {
+							++it;
+							break;
+						}
+					}
+					layout->children.insert(it, menubarButton);
+				}
 			}
 		}
 	}
 
 	~MbWidget() {
 		if (module && active) {
+			// Remove Browser button from menu bar
+			if (menubarButton) {
+				ui::SequentialLayout* layout = APP->scene->menuBar ? APP->scene->menuBar->getFirstDescendantOfType<ui::SequentialLayout>() : nullptr;
+				if (layout) {
+					// Check if button is still in the layout's children
+					for (auto it = layout->children.begin(); it != layout->children.end(); ++it) {
+						if (*it == menubarButton) {
+							layout->children.erase(it);
+							break;
+						}
+					}
+				}
+				delete menubarButton;
+				menubarButton = nullptr;
+			}
 			unregisterSingleton("Mb", this);
 			delete browserOverlay;
 		}
@@ -665,6 +724,7 @@ struct MbWidget : ModuleWidget {
 
 	void appendContextMenu(Menu* menu) override {
 		MbModule* module = dynamic_cast<MbModule*>(this->module);
+		bool isMenuBar = menu->children.size() == 0;
 
 		struct ModeV1Item : MenuItem {
 			MbModule* module;
@@ -684,7 +744,9 @@ struct MbWidget : ModuleWidget {
 			}
 		};
 
-		menu->addChild(new MenuSeparator());
+		if (!isMenuBar) {
+			menu->addChild(new MenuSeparator());
+		}
 		menu->addChild(createCheckMenuItem("v0.6", "",
 			[module]() { return module->mode == MODE::V06; },
 			[module]() { module->mode = MODE::V06; }
@@ -843,7 +905,7 @@ struct MbWidget : ModuleWidget {
 		}
 
 		menu->addChild(new MenuSeparator());
-		menu->addChild(createSubmenuItem("Menu settings", "",
+		menu->addChild(createSubmenuItem("Browser settings", "",
 			[&](Menu* menu) {
 				menu->addChild(createMenuItem("Export", "", [&]() { this->exportSettingsDialog(); }));
 				menu->addChild(createMenuItem("Import", "", [&]() { this->importSettingsDialog(); }));
@@ -851,6 +913,10 @@ struct MbWidget : ModuleWidget {
 				menu->addChild(createMenuItem("Reset usage data", "", []() { modelUsageReset(); }));
 			}
 		));
+
+		if (isMenuBar) {
+			menu->addChild(createMenuLabel("provided by stoermelder MB"));
+		}
 	}
 
 	void exportSettings(std::string filename) {

@@ -20,6 +20,7 @@
     - Added an option to set the fuzzy search threshold
     - Added model magnifier loupe option
     - Added "v2 mod" browser variant
+    - Added integration into Rack's menu bar
     - Changed hotkey to toggle hidden modules to Shift+Space (because of Spotlight on Mac)
     - Fixed broken button of "Favorites" category
 - Module [ME](./docs/trial-and-error/Me.md)

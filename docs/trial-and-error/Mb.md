@@ -52,6 +52,16 @@ MB allows you to add or remove predefined tags (the classic VCV Rack tag aliases
 
 ## Changelog
 
+- v1.8
+    - Initial release
+- v1.9
+    - Added option to hide the "brands" section of the V1-browser (#223)
+    - Added option to search module descriptions (https://github.com/stoermelder/vcvrack-packtau/pull/9)
+- v2.0.0
+    - Fixed usage in multiple plugin-instances
+    - Fixed crash on exiting Rack after adding MB (#352)
+    - Fixed wrong hotkey modifier on Mac (Ctrl instead of Cmd) on Space-key
+    - Added missing template loading after adding a module (#369)
 - v2.4.0
     - Added custom tags for user-defined module grouping
     - Added ability to add/remove predefined tags
@@ -62,15 +72,6 @@ MB allows you to add or remove predefined tags (the classic VCV Rack tag aliases
     - Added an option to set the fuzzy search threshold
     - Added model magnifier loupe option
     - Added "v2 mod" browser variant
+    - Added integration into Rack's menu bar
     - Changed hotkey to toggle hidden modules to Shift+Space (because of Spotlight on Mac)
     - Fixed broken button of "Favorites" category
-- v2.0.0
-    - Fixed usage in multiple plugin-instances
-    - Fixed crash on exiting Rack after adding MB (#352)
-    - Fixed wrong hotkey modifier on Mac (Ctrl instead of Cmd) on Space-key
-    - Added missing template loading after adding a module (#369)
-- v1.9
-    - Added option to hide the "brands" section of the V1-browser (#223)
-    - Added option to search module descriptions (https://github.com/stoermelder/vcvrack-packtau/pull/9)
-- v1.8
-    - Initial release
