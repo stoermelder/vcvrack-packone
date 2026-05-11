@@ -78,62 +78,6 @@ struct TogglePredefinedTagItem : MenuItem {
 };
 
 
-static void openLayoutMenu(widget::Widget* button, std::vector<widget::Widget*> items) {
-	// Container that draws a menu background and holds the layout
-	struct MenuContainer : widget::OpaqueWidget {
-		ui::ScrollWidget* scroll;
-		ui::SequentialLayout* layout;
-
-		MenuContainer() {
-			scroll = new ui::ScrollWidget;
-			addChild(scroll);
-
-			// Create horizontal sequential layout inside container
-			layout = new ui::SequentialLayout;
-			layout->orientation = ui::SequentialLayout::HORIZONTAL_ORIENTATION;
-			//layout->alignment = ui::SequentialLayout::CENTER_ALIGNMENT;
-			layout->margin = Vec(5, 5);
-			layout->spacing = Vec(5, 5);
-			layout->box.size.y = 1.f;
-			scroll->container->addChild(layout);
-		}
-
-		void step() override {
-			box.size.y = std::min(layout->box.size.y, parent->box.size.y - box.pos.y - 20.f);
-			scroll->box.size = box.size;
-			layout->box.size.x = box.size.x;
-			OpaqueWidget::step();
-		}
-
-		void draw(const widget::Widget::DrawArgs& args) override {
-			//nvgFontFaceId(ctx, bnd_font);
-        	nvgFontSize(args.vg, BND_LABEL_FONT_SIZE);		
-			bndMenuBackground(args.vg, 0, 0, box.size.x, box.size.y, 0);
-			OpaqueWidget::draw(args);
-		}
-	};
-
-	auto browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
-	Vec browserPos = browser->getAbsoluteOffset(Vec(0, 0));
-
-	// Create menu container
-	MenuContainer* container = new MenuContainer;
-	float menuX = browserPos.x + browser->box.size.x * 0.15f;
-	float menuY = button->getAbsoluteOffset(Vec(0, button->box.size.y)).y + 2.f;
-	container->box.pos = Vec(menuX, menuY);
-	container->box.size.x = browser->box.size.x * 0.7f;
-
-	// Add items to layout
-	for (widget::Widget* item : items) {
-		container->layout->addChild(item);
-	}
-
-	ui::MenuOverlay* overlay = new ui::MenuOverlay;
-	APP->scene->addChild(overlay);
-	overlay->addChild(container);
-}
-
-
 // Widgets
 
 struct ModuleWidgetContainer : widget::Widget {
@@ -558,46 +502,7 @@ struct BrowserSearchField : ui::TextField {
 };
 
 
-struct FilterItem : ui::Button {
-	ModuleBrowser* browser;
-	bool disabled = false;
-	std::string rawText;
-	bool selected = false;
-
-	void setRawText(std::string s) {
-		rawText = s;
-		text = s;
-
-		NVGcontext* vg = APP->window->vg;
-		nvgFontSize(vg, BND_LABEL_FONT_SIZE);
-		nvgFontFaceId(vg, APP->window->uiFont->handle);
-		float bounds[4];
-		nvgTextBounds(vg, 0.f, 0.f, rawText.c_str(), NULL, bounds);
-		box.size.x = bounds[2] - bounds[0] + 30.f;
-		box.size.y = bounds[3] - bounds[1] + 8.f;
-	}
-
-	void onDragDrop(const DragDropEvent& e) override {
-		if (!disabled) Button::onDragDrop(e);
-	}
-
-	void draw(const DrawArgs& args) override {
-		text = string::f("%s %s", rawText, selected ? CHECKMARK(true) : "");
-
-		BNDwidgetState state = BND_DEFAULT;
-		if (!disabled) {
-			if (APP->event->getHoveredWidget() == this) state = BND_HOVER;
-			if (APP->event->getDraggedWidget() == this) state = BND_ACTIVE;
-		}
-		if (disabled) nvgSave(args.vg);
-		if (disabled) nvgGlobalAlpha(args.vg, 0.35f);
-		bndToolButton(args.vg, 0.0, 0.0, box.size.x, box.size.y, BND_CORNER_NONE, state, -1, text.c_str());
-		if (disabled) nvgRestore(args.vg);
-	}
-};
-
-
-struct BrandItem : FilterItem {
+struct BrandItem : ChoiceFilterItem<ModuleBrowser> {
 	std::string brand;
 	void onAction(const event::Action& e) override {
 		browser->brand = (browser->brand == brand) ? "" : brand;
@@ -606,7 +511,7 @@ struct BrandItem : FilterItem {
 	void step() override {
 		selected = (browser->brand == brand);
 		disabled = !selected && !browser->hasVisibleModel(brand, browser->tagIds, browser->favorite, browser->hidden, browser->customTagFilter);
-		FilterItem::step();
+		ChoiceFilterItem::step();
 	}
 };
 
@@ -628,7 +533,7 @@ struct BrandButton : ui::ChoiceButton {
 			items.push_back(item);
 		}
 
-		openLayoutMenu(this, items);
+		openLayoutMenu<ModuleBrowser>(this, items);
 	}
 
 	void step() override {
@@ -641,7 +546,7 @@ struct BrandButton : ui::ChoiceButton {
 };
 
 
-struct TagItem : FilterItem {
+struct TagItem : ChoiceFilterItem<ModuleBrowser> {
 	int tagId;
 	void onAction(const event::Action& e) override {
 		if (tagId >= 0) {
@@ -666,7 +571,7 @@ struct TagItem : FilterItem {
 		else {
 			disabled = false;
 		}
-		FilterItem::step();
+		ChoiceFilterItem::step();
 	}
 };
 
@@ -684,7 +589,7 @@ struct TagButton : ui::ChoiceButton {
 			items.push_back(item);
 		}
 
-		openLayoutMenu(this, items);
+		openLayoutMenu<ModuleBrowser>(this, items);
 	}
 
 	void step() override {
@@ -704,7 +609,7 @@ struct TagButton : ui::ChoiceButton {
 };
 
 
-struct CustomTagFilterItem : FilterItem {
+struct CustomTagFilterItem : ChoiceFilterItem<ModuleBrowser> {
 	std::string tagName;
 	void onAction(const event::Action& e) override {
 		if (tagName.empty()) {
@@ -729,7 +634,7 @@ struct CustomTagFilterItem : FilterItem {
 		else {
 			disabled = false;
 		}
-		FilterItem::step();
+		ChoiceFilterItem::step();
 	}
 };
 
@@ -752,7 +657,7 @@ struct CustomTagButton : ui::ChoiceButton {
 			items.push_back(item);
 		}
 
-		openLayoutMenu(this, items);
+		openLayoutMenu<ModuleBrowser>(this, items);
 	}
 
 	void step() override {

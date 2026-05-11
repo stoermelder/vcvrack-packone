@@ -1,18 +1,184 @@
 #pragma once
+#include <rack.hpp>
+#include <osdialog.h>
 #include "Mb_selection_source.hpp"
+#include "Mb_selection_source_index.hpp"
 
 namespace StoermelderPackOne {
 namespace Mb {
 namespace selection {
 namespace filesystem {
 
+
 /**
- * Concrete SelectionSource that reads from the local file system.
- * This is a drop-in replacement for the previous inline file-system logic.
+ * Index for a FileSystemSelectionSource, stored as mb-index.json
+ * in the root of the source folder.
+ * This is a read-only index; set methods have no effect.
  */
+struct FileSystemSelectionSourceIndex : SelectionSourceIndex {
+	struct FileIndexEntry {
+		std::string description;
+		std::vector<std::string> tags;
+		std::vector<std::string> customTags;
+		bool favorite = false;
+	};
+
+	std::map<std::string, FileIndexEntry> entries_;
+	bool readOnly_ = false;
+
+	json_t* toJson() const {
+		json_t* j = json_object();
+		for (const auto& pair : entries_) {
+			json_t* entryJ = json_object();
+			json_object_set_new(entryJ, "description", json_string(pair.second.description.c_str()));
+			json_t* tagsJ = json_array();
+			for (const std::string& tag : pair.second.tags) {
+				json_array_append_new(tagsJ, json_string(tag.c_str()));
+			}
+			json_object_set_new(entryJ, "tags", tagsJ);
+			json_t* customJ = json_array();
+			for (const std::string& tag : pair.second.customTags) {
+				json_array_append_new(customJ, json_string(tag.c_str()));
+			}
+			json_object_set_new(entryJ, "customTags", customJ);
+			json_object_set_new(entryJ, "favorite", json_boolean(pair.second.favorite));
+			json_object_set_new(j, pair.first.c_str(), entryJ);
+		}
+		return j;
+	}
+
+	bool fromJson(json_t* indexJ) {
+		if (!indexJ || !json_is_object(indexJ)) return false;
+
+		entries_.clear();
+		const char* fileId;
+		json_t* entryJ;
+		json_object_foreach(indexJ, fileId, entryJ) {
+			if (!json_is_object(entryJ)) continue;
+			FileIndexEntry entry;
+
+			json_t* descJ = json_object_get(entryJ, "description");
+			if (descJ) entry.description = json_string_value(descJ);
+
+			json_t* tagsJ = json_object_get(entryJ, "tags");
+			if (tagsJ && json_is_array(tagsJ)) {
+				size_t i;
+				json_t* val;
+				json_array_foreach(tagsJ, i, val) {
+					if (json_is_string(val)) {
+						entry.tags.push_back(json_string_value(val));
+					}
+				}
+			}
+
+			json_t* customJ = json_object_get(entryJ, "customTags");
+			if (customJ && json_is_array(customJ)) {
+				size_t i;
+				json_t* val;
+				json_array_foreach(customJ, i, val) {
+					if (json_is_string(val)) {
+						entry.customTags.push_back(json_string_value(val));
+					}
+				}
+			}
+
+			json_t* favJ = json_object_get(entryJ, "favorite");
+			if (favJ) entry.favorite = json_boolean_value(favJ);
+
+			entries_[fileId] = entry;
+		}
+		return true;
+	}
+
+	std::string getDescription(const std::string& fileId) const override {
+		auto it = entries_.find(fileId);
+		return it != entries_.end() ? it->second.description : "";
+	}
+	void setDescription(const std::string& fileId, const std::string& description) override {
+		if (!readOnly_) entries_[fileId].description = description;
+	}
+
+	bool hasTag(const std::string& fileId, const std::string& tag) override {
+		auto& tags = entries_[fileId].tags;
+		return std::find(tags.begin(), tags.end(), tag) != tags.end();
+	}
+	std::vector<std::string> getTags(const std::string& fileId) const override {
+		auto it = entries_.find(fileId);
+		return it != entries_.end() ? it->second.tags : std::vector<std::string>();
+	}
+	void addTag(const std::string& fileId, const std::string& tag) override {
+		if (!readOnly_) {
+			auto& tags = entries_[fileId].tags;
+			if (std::find(tags.begin(), tags.end(), tag) == tags.end())
+				tags.push_back(tag);
+		}
+	}
+	void removeTag(const std::string& fileId, const std::string& tag) override {
+		if (!readOnly_) {
+			auto& tags = entries_[fileId].tags;
+			tags.erase(std::remove(tags.begin(), tags.end(), tag), tags.end());
+		}
+	}
+
+	bool hasCustomTag(const std::string& fileId, const std::string& tag) override {
+		auto& tags = entries_[fileId].customTags;
+		return std::find(tags.begin(), tags.end(), tag) != tags.end();
+	}
+	std::vector<std::string> getCustomTags(const std::string& fileId) const override {
+		auto it = entries_.find(fileId);
+		return it != entries_.end() ? it->second.customTags : std::vector<std::string>();
+	}
+	void addCustomTag(const std::string& fileId, const std::string& tag) override {
+		if (!readOnly_) {
+			auto& tags = entries_[fileId].customTags;
+			if (std::find(tags.begin(), tags.end(), tag) == tags.end())
+				tags.push_back(tag);
+		}
+	}
+	void removeCustomTag(const std::string& fileId, const std::string& tag) override {
+		if (!readOnly_) {
+			auto& tags = entries_[fileId].customTags;
+			tags.erase(std::remove(tags.begin(), tags.end(), tag), tags.end());
+		}
+	}
+
+	bool isFavorite(const std::string& fileId) const override {
+		auto it = entries_.find(fileId);
+		return it != entries_.end() && it->second.favorite;
+	}
+	void setFavorite(const std::string& fileId, bool favorite) override {
+		if (!readOnly_) {
+			entries_[fileId].favorite = favorite;
+		}
+	}
+
+	bool isReadOnly() const override { return readOnly_; }
+
+	std::vector<std::string> getTagsAll() const override {
+		std::set<std::string> uniqueTags;
+		for (const auto& pair : entries_) {
+			for (const std::string& tag : pair.second.tags) {
+				uniqueTags.insert(tag);
+			}
+		}
+		return std::vector<std::string>(uniqueTags.begin(), uniqueTags.end());
+	}
+
+	std::vector<std::string> getCustomTagsAll() const override {
+		std::set<std::string> uniqueTags;
+		for (const auto& pair : entries_) {
+			for (const std::string& tag : pair.second.customTags) {
+				uniqueTags.insert(tag);
+			}
+		}
+		return std::vector<std::string>(uniqueTags.begin(), uniqueTags.end());
+	}
+};
+
 struct FileSystemSelectionSource : SelectionSource {
-	std::string rootContainer_;
-	std::string currentContainer_;
+	std::string rootContainer;
+	std::string currentContainer;
+	FileSystemSelectionSourceIndex index;
 
 	static constexpr const char* SLUG = "filesystem";
 
@@ -28,42 +194,116 @@ struct FileSystemSelectionSource : SelectionSource {
 
 	void onAttach() override {
 		// If no root is set, default to the user's selections directory
-		if (rootContainer_.empty()) {
-			rootContainer_ = currentContainer_ = asset::user("selections");
+		if (rootContainer.empty()) {
+			rootContainer = currentContainer = asset::user("selections");
 		}
+		loadIndex();
 	}
 
-	std::string getContainer() const override { return currentContainer_; }
-	void setContainer(const std::string& path) override { currentContainer_ = path; }
-
-	std::string getRootContainer() const override { return rootContainer_; }
-	void setRootContainer(const std::string& path) override { rootContainer_ = path; }
-
-	std::vector<std::string> getEntries(const std::string& folder) override {
-		return system::getEntries(folder);
+	void onDetach() override {
+		saveIndex();
 	}
 
-	bool isDirectory(const std::string& path) override {
-		return system::isDirectory(path);
+	std::string getContainer() const override { 
+		return currentContainer;
+	}
+	void setContainer(const std::string& path) override { 
+		currentContainer = path;
+	}
+
+	const std::string getRootContainer() const override { 
+		return rootContainer;
+	}
+
+	std::vector<std::string> getContainers(const std::string& container) override {
+		auto entries = system::getEntries(container);
+		std::vector<std::string> containers;
+		for (const std::string& entry : entries) {
+			if (system::isDirectory(entry)) {
+				// Strip rootContainer prefix to return relative path
+				std::string relative = entry.substr(rootContainer.empty() ? 0 : rootContainer.size() + 1);
+				containers.push_back(relative);
+			}
+		}
+		std::sort(containers.begin(), containers.end(), [this](const std::string& a, const std::string& b) {
+			return string::lowercase(getFilename(a)) < string::lowercase(getFilename(b));
+		});
+		return containers;
+	}
+
+	std::vector<std::string> getFiles(const std::string& container) override {
+		auto entries = system::getEntries(container);
+		std::vector<std::string> files;
+		for (const std::string& entry : entries) {
+			if (system::isFile(entry) && SelectionSource::endsWith(entry, ".vcvs")) {
+				// Strip rootContainer prefix to return relative path
+				std::string relative = entry.substr(rootContainer.empty() ? 0 : rootContainer.size() + 1);
+				files.push_back(relative);
+			}
+		}
+		std::sort(files.begin(), files.end(), [this](const std::string& a, const std::string& b) {
+			return string::lowercase(getFilename(a)) < string::lowercase(getFilename(b));
+		});
+		return files;
+	}
+
+	bool isContainer(const std::string& path) override {
+		return system::isDirectory(resolve(path));
 	}
 
 	bool isFile(const std::string& path) override {
-		return system::isFile(path);
+		return system::isFile(resolve(path));
 	}
 
 	std::string getParentContainer(const std::string& path) override {
-		return system::getDirectory(path);
+		std::string absolute = resolve(path);
+		return system::getDirectory(absolute);
 	}
 
 	std::string getFilename(const std::string& path) override {
-		return system::getFilename(path);
+		return system::getFilename(resolve(path));
+	}
+
+	/** Convert a relative path to an absolute path using rootContainer. */
+	std::string resolve(const std::string& path) const {
+		if (rootContainer.empty()) return path;
+		if (path.empty()) return rootContainer;
+		return rootContainer + "/" + path;
+	}
+
+	/** Load index from mb-index.json in the root container, if it exists. */
+	void loadIndex() {
+		if (rootContainer.empty()) return;
+		std::string indexPath = rootContainer + "/mb-index.json";
+		FILE* f = fopen(indexPath.c_str(), "rb");
+		if (!f) return;
+		json_error_t error;
+		json_t* indexJ = json_loadf(f, 0, &error);
+		fclose(f);
+		if (!indexJ) return;
+		index.fromJson(indexJ);
+		json_decref(indexJ);
+	}
+
+	/** Save index to mb-index.json in the root container. */
+	void saveIndex() const {
+		if (rootContainer.empty()) return;
+		std::string indexPath = rootContainer + "/mb-index.json";
+		json_t* indexJ = index.toJson();
+		FILE* f = fopen(indexPath.c_str(), "wb");
+		if (!f) {
+			json_decref(indexJ);
+			return;
+		}
+		json_dumpf(indexJ, f, JSON_INDENT(2));
+		fclose(f);
+		json_decref(indexJ);
 	}
 
 	json_t* toJson() const override {
 		json_t* j = json_object();
 		json_object_set_new(j, "type", json_string(SLUG));
-		json_object_set_new(j, "rootContainer", json_string(rootContainer_.c_str()));
-		json_object_set_new(j, "currentContainer", json_string(currentContainer_.c_str()));
+		json_object_set_new(j, "rootContainer", json_string(rootContainer.c_str()));
 		return j;
 	}
 
@@ -73,10 +313,7 @@ struct FileSystemSelectionSource : SelectionSource {
 			return false;
 
 		json_t* rootJ = json_object_get(sourceJ, "rootContainer");
-		if (rootJ) rootContainer_ = json_string_value(rootJ);
-
-		json_t* currentJ = json_object_get(sourceJ, "currentContainer");
-		if (currentJ) currentContainer_ = json_string_value(currentJ);
+		if (rootJ) rootContainer = json_string_value(rootJ);
 
 		return true;
 	}
@@ -86,17 +323,18 @@ struct FileSystemSelectionSource : SelectionSource {
 	}
 
 	std::string getName() const override {
-		if (!rootContainer_.empty()) return string::f("Folder %s", rootContainer_.c_str());
+		if (!rootContainer.empty()) return string::f("Folder %s", rootContainer.c_str());
 		return "(no folder)";
 	}
 
-	SelectionSource* createSource() const override {
-		std::string path = selectFolder();
-		if (path.empty()) return nullptr;
-		FileSystemSelectionSource* src = new FileSystemSelectionSource;
-		src->setRootContainer(path);
-		src->setContainer(path);
-		return src;
+	json_t* getFileJson(const std::string& fileId) const override {
+		std::string fullPath = rootContainer + "/" + fileId;
+		FILE* f = fopen(fullPath.c_str(), "rb");
+		if (!f) return nullptr;
+		json_error_t error;
+		json_t* rootJ = json_loadf(f, 0, &error);
+		fclose(f);
+		return rootJ;
 	}
 
 	void appendMenuItems(ui::Menu* menu) override {
@@ -104,23 +342,47 @@ struct FileSystemSelectionSource : SelectionSource {
 		menu->addChild(createMenuItem("Select root folder...", "", [=]() {
 			std::string path = selectFolder();
 			if (path.empty()) return;
-			setRootContainer(path);
+			rootContainer = path;
 			setContainer(path);
 		}));
-		if (!rootContainer_.empty()) {
+		if (!rootContainer.empty()) {
 			menu->addChild(createMenuItem("Open in file explorer", "", [=]() {
-				system::openDirectory(rootContainer_);
+				system::openDirectory(rootContainer);
 			}));
 		}
 	}
+
+	SelectionSourceIndex* getIndex() const override {
+		return const_cast<FileSystemSelectionSourceIndex*>(&index);
+	}
 };
+
 
 inline extern std::string getSlug() {
     return FileSystemSelectionSource::SLUG;
 }
-inline SelectionSource* getSource() {
+
+/**
+ * Creates a new empty file system data source.
+ */
+inline SelectionSource* initSource() {
     return new FileSystemSelectionSource;
 }
+
+/**
+ * Interactively create a new source of the same type via a UI dialog.
+ * Returns the new source, or nullptr if the user cancelled.
+ * The caller takes ownership.
+ */
+inline SelectionSource* createSource() {
+	std::string path = FileSystemSelectionSource::selectFolder();
+	if (path.empty()) return nullptr;
+	FileSystemSelectionSource* src = new FileSystemSelectionSource;
+	src->rootContainer = path;
+	src->setContainer(path);
+	return src;
+}
+
 
 } // namespace filesystem
 } // namespace selection

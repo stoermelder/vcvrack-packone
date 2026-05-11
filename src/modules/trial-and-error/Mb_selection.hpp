@@ -1,16 +1,19 @@
 #pragma once
 #include "Mb.hpp"
-#include "Mb_selection_preview.hpp"
 #include "Mb_selection_source.hpp"
+#include "Mb_selection_source_index.hpp"
 #include "Mb_selection_source_filesystem.hpp"
+#include <tag.hpp>
 
 namespace StoermelderPackOne {
 namespace Mb {
 namespace selection {
 
+// Forward declaration from Mb_selection_preview.hpp
+struct SelectionPreviewWidget;
 
 struct SelectionBrowserSidebar : widget::Widget {
-	SelectionPreview* preview;
+	SelectionPreviewWidget* preview;
 
 	ui::ScrollWidget* fileScroll;
 	ui::List* fileList;
@@ -26,7 +29,12 @@ struct SelectionBrowserSidebar : widget::Widget {
 	void onShow(const event::Show& e) override;
 };
 
+
 struct SelectionBrowser : widget::OpaqueWidget {
+	struct SelectionChoiceButton : ui::ChoiceButton {
+		SelectionBrowser* browser;
+	};
+
 	struct SourceButton : ui::ChoiceButton {
 		SelectionBrowser* browser;
 		void onAction(const event::Action& e) override;
@@ -40,16 +48,48 @@ struct SelectionBrowser : widget::OpaqueWidget {
 		void step() override;
 	};
 
+	struct FavoriteButton : ui::Button {
+		SelectionBrowser* browser;
+		void onAction(const event::Action& e) override {
+			browser->favoriteFilter ^= true;
+			browser->sidebar->loadContainer();
+		}
+		void step() override {
+			text = browser->favoriteFilter
+				? (std::string("Favorites ") + CHECKMARK(true))
+				: "Favorites";
+			Button::step();
+		}
+	};
+
+	struct ClearButton : ui::Button {
+		SelectionBrowser* browser;
+		void onAction(const event::Action& e) override {
+			browser->clear();
+		}
+	};
+
 	ui::SequentialLayout* headerLayout;
 	SourceButton* sourceButton;
+	SelectionChoiceButton* tagButton;
+	SelectionChoiceButton* customTagButton;
+	FavoriteButton* favoriteButton;
+	ClearButton* clearButton;
 
 	SelectionBrowserSidebar* sidebar;
-	SelectionPreview* preview;
+	SelectionPreviewWidget* preview;
 
 	/** List of all configured data sources. */
 	std::vector<SelectionSource*> sources;
 	/** Index of the currently active source in `sources`, or -1. */
 	int activeSourceIndex = -1;
+
+	/** Currently selected predefined tag names for filtering. */
+	std::set<std::string> tagFilter;
+	/** Currently selected custom tag strings for filtering. */
+	std::set<std::string> customTagFilter;
+	/** Whether to show only favorite files. */
+	bool favoriteFilter = false;
 
 	SelectionBrowser();
 	~SelectionBrowser();
@@ -64,6 +104,11 @@ struct SelectionBrowser : widget::OpaqueWidget {
 	void addSource(SelectionSource* newSource);
 	/** Remove a source by index. Falls back to the first source if the active one is removed. */
 	void removeSource(int index);
+	/** Clear all active tag filters (both predefined and custom). */
+	void clear();
+
+	/** Check if a file passes the current tag filters. */
+	bool isFileTagFiltered(const std::string& fileId) const;
 };
 
 

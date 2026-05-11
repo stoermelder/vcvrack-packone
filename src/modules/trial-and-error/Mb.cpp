@@ -834,7 +834,7 @@ struct MbWidget : ModuleWidget {
 			menu->addChild(createMenuItem("Add filesystem source", "", [=]() {
 				selection::SelectionSource* activeSource = selBrowser->getSource();
 				if (activeSource) {
-					selection::SelectionSource* newSrc = activeSource->createSource();
+					selection::SelectionSource* newSrc = selection::filesystem::createSource();
 					if (newSrc) {
 						selBrowser->addSource(newSrc);
 					}

@@ -2,6 +2,7 @@
 #include "Mb_selection_preview.hpp"
 #include "Mb_selection_source.hpp"
 #include <helpers.hpp>
+#include <tag.hpp>
 
 namespace StoermelderPackOne {
 namespace Mb {
@@ -22,15 +23,22 @@ struct ContainerItem : ui::MenuItem {
 
 struct FileItem : ui::MenuItem {
 	SelectionBrowserSidebar* sidebar;
-	std::string file;
+	std::string fileId;
 	void onAction(const event::Action& e) override {
-		sidebar->currentFile = file;
-		sidebar->preview->clearChildren();
-		sidebar->preview->loadSelectionFile(file);
+		sidebar->currentFile = fileId;
+		SelectionSource* src = sidebar->source;
+		if (src) {
+			json_t* rootJ = src->getFileJson(fileId);
+			if (rootJ) {
+				if (!sidebar->preview->setSelection(fileId, rootJ)) {
+					json_decref(rootJ);
+				}
+			}
+		}
 		e.unconsume();
 	}
 	void draw(const DrawArgs& args) override {
-		if (file == sidebar->currentFile) {
+		if (fileId == sidebar->currentFile) {
 			nvgFillColor(args.vg, nvgRGBA(0xf0, 0xf0, 0xf0, 80));
 			nvgBeginPath(args.vg);
 			nvgRect(args.vg, 0, 0, box.size.x, box.size.y);
@@ -87,31 +95,8 @@ void SelectionBrowserSidebar::loadContainer() {
 		fileList->addChild(upItem);
 	}
 
-	// Add containers first
-	auto entries = source->getEntries(currentContainer);
-	std::vector<std::string> containers;
-	std::vector<std::string> files;
-
-	for (const std::string& entry : entries) {
-		if (source->isDirectory(entry)) {
-			containers.push_back(entry);
-		}
-		else if (source->isFile(entry)) {
-			if (SelectionSource::endsWith(entry, ".vcvs")) {
-				files.push_back(entry);
-			}
-		}
-	}
-
-	// Sort containers and files alphabetically (case-insensitive)
-	std::sort(containers.begin(), containers.end(), [this](const std::string& a, const std::string& b) {
-		return string::lowercase(source->getFilename(a)) < string::lowercase(source->getFilename(b));
-	});
-	std::sort(files.begin(), files.end(), [this](const std::string& a, const std::string& b) {
-		return string::lowercase(source->getFilename(a)) < string::lowercase(source->getFilename(b));
-	});
-
 	// Add container items
+	auto containers = source->getContainers(currentContainer);
 	for (const std::string& folder : containers) {
 		ContainerItem* item = new ContainerItem;
 		item->source = source;
@@ -122,11 +107,19 @@ void SelectionBrowserSidebar::loadContainer() {
 		fileList->addChild(item);
 	}
 
-	// Add file items
+	// Add file items (optionally filtered by tag)
+	auto files = source->getFiles(currentContainer);
+	SelectionBrowser* browser = getAncestorOfType<SelectionBrowser>();
+	if (browser && browser->sidebar->preview)
+		browser->sidebar->preview->browser = browser;
+
 	for (const std::string& file : files) {
+		if (browser && !browser->isFileTagFiltered(file))
+			continue;
+
 		FileItem* item = new FileItem;
 		item->sidebar = this;
-		item->file = file;
+		item->fileId = file;
 		item->text = source->getFilename(file);
 		item->box.size.x = fileList->box.size.x;
 		fileList->addChild(item);
@@ -142,6 +135,162 @@ void SelectionBrowserSidebar::onShow(const event::Show& e) {
 	widget::Widget::onShow(e);
 }
 
+
+// ---- SelectionPreview ----
+
+
+
+// ---- Button implementations ----
+
+struct TagItem : ChoiceFilterItem<SelectionBrowser> {
+	SelectionSourceIndex* index;
+	std::string fileId;
+	std::string tagName;
+	bool hasTag = false;
+	void onAction(const event::Action& e) override {
+		auto it = browser->tagFilter.find(tagName);
+		if (it != browser->tagFilter.end())
+			browser->tagFilter.erase(it);
+		else
+			browser->tagFilter.insert(tagName);
+		browser->sidebar->loadContainer();
+		e.unconsume();
+	}
+	void step() override {
+		selected = hasTag;
+		ChoiceFilterItem<SelectionBrowser>::step();
+	}
+};
+
+struct TagButton : SelectionBrowser::SelectionChoiceButton {
+	void onAction(const event::Action& e) override {
+		SelectionSource* src = browser->getSource();
+		if (!src) return;
+		SelectionSourceIndex* index = src->getIndex();
+		if (!index) return;
+
+		// Compute fileId for the currently active file
+		std::string previewFilePath = browser->preview->fileId;
+		std::string rootDir = src->getRootContainer();
+		std::string activeFileId;
+		if (!previewFilePath.empty() && previewFilePath.size() > rootDir.size()) {
+			activeFileId = previewFilePath.substr(rootDir.size() + 1);
+		}
+
+		// Get currently assigned tags for the active file
+		std::set<std::string> activeFileTags;
+		if (!activeFileId.empty()) {
+			std::vector<std::string> ft = index->getTags(activeFileId);
+			activeFileTags = std::set<std::string>(ft.begin(), ft.end());
+		}
+
+		std::vector<widget::Widget*> items;
+
+		for (int id = 0; id < (int)rack::tag::tagAliases.size(); id++) {
+			TagItem* item = new TagItem;
+			item->setRawText(rack::tag::tagAliases[id][0]);
+			item->tagName = rack::tag::tagAliases[id][0];
+			item->browser = browser;
+			item->index = index;
+			item->fileId = activeFileId;
+			item->hasTag = activeFileTags.count(item->tagName) > 0;
+			items.push_back(item);
+		}
+
+		openLayoutMenu<SelectionBrowser>(this, items);
+	}
+
+	void step() override {
+		SelectionSource* src = browser->getSource();
+		bool hasIndex = src && src->getIndex() != nullptr;
+		if (!hasIndex) {
+			text = "Tag (no index)";
+			ChoiceButton::step();
+			return;
+		}
+		text = "Tag";
+		if (!browser->tagFilter.empty()) {
+			text += ": ";
+			bool first = true;
+			for (const std::string& t : browser->tagFilter) {
+				if (!first) text += ", ";
+				text += t;
+				first = false;
+			}
+		}
+		text = string::ellipsize(text, 20);
+		ChoiceButton::step();
+	}
+};
+
+
+struct CustomTagItem : ChoiceFilterItem<SelectionBrowser> {
+	std::string tagName;
+	void onAction(const event::Action& e) override {
+		auto it = browser->customTagFilter.find(tagName);
+		if (it != browser->customTagFilter.end())
+			browser->customTagFilter.erase(it);
+		else
+			browser->customTagFilter.insert(tagName);
+		browser->sidebar->loadContainer();
+		e.unconsume();
+	}
+	void step() override {
+		selected = browser->customTagFilter.find(tagName) != browser->customTagFilter.end();
+		ChoiceFilterItem<SelectionBrowser>::step();
+	}
+};
+
+struct CustomTagButton : SelectionBrowser::SelectionChoiceButton {
+	void onAction(const event::Action& e) override {
+		SelectionSource* src = browser->getSource();
+		if (!src) return;
+		SelectionSourceIndex* index = src->getIndex();
+		if (!index) return;
+
+		std::vector<widget::Widget*> items;
+
+		auto unsortedTags = customTagsAll();
+		std::vector<std::string> tags(unsortedTags.begin(), unsortedTags.end());
+		std::sort(tags.begin(), tags.end(), [](const std::string& a, const std::string& b) {
+			return string::lowercase(a) < string::lowercase(b);
+		});
+		for (const std::string& tag : tags) {
+			CustomTagItem* item = new CustomTagItem;
+			item->setRawText(tag);
+			item->tagName = tag;
+			item->browser = browser;
+			items.push_back(item);
+		}
+
+		openLayoutMenu<SelectionBrowser>(this, items);
+	}
+
+	void step() override {
+		SelectionSource* src = browser->getSource();
+		bool hasIndex = src && src->getIndex() != nullptr;
+		if (!hasIndex) {
+			text = "Custom Tag (no index)";
+			ChoiceButton::step();
+			return;
+		}
+		text = "Custom Tag";
+		if (!browser->customTagFilter.empty()) {
+			text += ": ";
+			bool first = true;
+			for (const std::string& t : browser->customTagFilter) {
+				if (!first) text += ", ";
+				text += t;
+				first = false;
+			}
+		}
+		text = string::ellipsize(text, 28);
+		ChoiceButton::step();
+	}
+};
+
+
+// ---- SourceButton and SourceItem ----
 
 void SelectionBrowser::SourceButton::onAction(const event::Action& e) {
 	ui::Menu* menu = createMenu();
@@ -165,7 +314,7 @@ void SelectionBrowser::SourceButton::onAction(const event::Action& e) {
 		void onAction(const event::Action& e) override {
 			SelectionSource* active = browser->getSource();
 			if (active) {
-				SelectionSource* newSrc = active->createSource();
+				SelectionSource* newSrc = filesystem::createSource();
 				if (newSrc) {
 					browser->addSource(newSrc);
 				}
@@ -213,16 +362,19 @@ void SelectionBrowser::SourceItem::onAction(const event::Action& e) {
 			break;
 		}
 	}
+	browser->preview->clearSelection();
 	browser->sidebar->source = browser->getSource();
 	browser->sidebar->loadContainer();
 }
 
 void SelectionBrowser::SourceItem::step() {
 	SelectionSource* active = browser->getSource();
-	rightText = (source == active) ? CHECKMARK("") : "";
+	rightText = CHECKMARK(source == active);
 	MenuItem::step();
 }
 
+
+// ---- SelectionBrowser ----
 
 SelectionBrowser::SelectionBrowser() {
 	headerLayout = new ui::SequentialLayout;
@@ -237,10 +389,33 @@ SelectionBrowser::SelectionBrowser() {
 	sourceButton->browser = this;
 	headerLayout->addChild(sourceButton);
 
+	tagButton = new TagButton;
+	tagButton->box.size.x = 150;
+	tagButton->browser = this;
+	headerLayout->addChild(tagButton);
+
+	customTagButton = new CustomTagButton;
+	customTagButton->box.size.x = 200;
+	customTagButton->browser = this;
+	headerLayout->addChild(customTagButton);
+
+	favoriteButton = new FavoriteButton;
+	favoriteButton->box.size.x = 90;
+	favoriteButton->text = "Favorites";
+	favoriteButton->browser = this;
+	headerLayout->addChild(favoriteButton);
+
+	clearButton = new ClearButton;
+	clearButton->box.size.x = 100;
+	clearButton->text = "Reset filters";
+	clearButton->browser = this;
+	headerLayout->addChild(clearButton);
+
 	sidebar = new SelectionBrowserSidebar;
 	addChild(sidebar);
 
-	preview = new SelectionPreview;
+	preview = new SelectionPreviewWidget;
+	preview->browser = this;
 	addChild(preview);
 	sidebar->preview = preview;
 }
@@ -298,6 +473,52 @@ void SelectionBrowser::removeSource(int index) {
 	if (activeSourceIndex >= (int)sources.size())
 		activeSourceIndex = (int)sources.size() - 1;
 	sidebar->source = getSource();
+}
+
+void SelectionBrowser::clear() {
+	tagFilter.clear();
+	customTagFilter.clear();
+	favoriteFilter = false;
+	sidebar->loadContainer();
+}
+
+bool SelectionBrowser::isFileTagFiltered(const std::string& fileId) const {
+	SelectionSource* src = getSource();
+	if (!src) return true;
+	SelectionSourceIndex* index = src->getIndex();
+	if (!index) return true;
+
+	// Check favorite filter
+	if (favoriteFilter && !index->isFavorite(fileId))
+		return false;
+
+	// Check predefined tag filter
+	if (!tagFilter.empty()) {
+		std::vector<std::string> fileTags = index->getTags(fileId);
+		bool hasAllSelectedTags = true;
+		for (const std::string& t : tagFilter) {
+			if (std::find(fileTags.begin(), fileTags.end(), t) == fileTags.end()) {
+				hasAllSelectedTags = false;
+				break;
+			}
+		}
+		if (!hasAllSelectedTags) return false;
+	}
+
+	// Check custom tag filter
+	if (!customTagFilter.empty()) {
+		std::vector<std::string> fileCustomTags = index->getCustomTags(fileId);
+		bool hasAllSelectedCustomTags = true;
+		for (const std::string& t : customTagFilter) {
+			if (std::find(fileCustomTags.begin(), fileCustomTags.end(), t) == fileCustomTags.end()) {
+				hasAllSelectedCustomTags = false;
+				break;
+			}
+		}
+		if (!hasAllSelectedCustomTags) return false;
+	}
+
+	return true;
 }
 
 void SelectionBrowser::step() {

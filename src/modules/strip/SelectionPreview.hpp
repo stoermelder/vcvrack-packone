@@ -192,6 +192,12 @@ struct SelectionPreviewContainer : Widget {
 			action();
 		}
 	}
+
+	void showSelectionPreview(json_t* rootJ, std::function<void()> action) {
+		sp->createPreview(rootJ);
+		callback = action;
+		sp->show();
+	}
 };
 
 
