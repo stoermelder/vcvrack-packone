@@ -26,7 +26,7 @@ struct SelectionSource {
 	// -- navigation ----------------------------------------------------------
 
 	/** Return the current container path. */
-	virtual std::string getContainer() const = 0;
+	virtual const std::string getContainer() const = 0;
 	/** Set the current container path. */
 	virtual void setContainer(const std::string& container) = 0;
 
@@ -36,18 +36,20 @@ struct SelectionSource {
 	// -- queries -------------------------------------------------------------
 
 	/** List all container entries inside `folder`. */
-	virtual std::vector<std::string> getContainers(const std::string& container) = 0;
+	virtual const std::vector<std::string> getContainers(const std::string& container) = 0;
 	/** List all file entries inside `folder`. */
-	virtual std::vector<std::string> getFiles(const std::string& container) = 0;
+	virtual const std::vector<std::string> getFiles(const std::string& container) = 0;
 	/** Return true if `path` is a container. */
 	virtual bool isContainer(const std::string& entry) = 0;
 	/** Return true if `path` is a file. */
 	virtual bool isFile(const std::string& entry) = 0;
 
 	/** Return the parent container of `path`. */
-	virtual std::string getParentContainer(const std::string& entry) = 0;
+	virtual const std::string getParentContainer(const std::string& entry) = 0;
 	/** Return the filename portion of `path`. */
-	virtual std::string getFilename(const std::string& fileId) = 0;
+	virtual const std::string getFilename(const std::string& fileId) = 0;
+	/** Return the absolute file of the path */
+	virtual const std::string getAbsoluteFilePath(const std::string& fileId) = 0;
 
 	/** Return true if `str` ends with `suffix`. */
 	static bool endsWith(const std::string& str, const std::string& suffix) {
@@ -59,13 +61,13 @@ struct SelectionSource {
 	 * Unique identifier for the concrete source type (e.g. "filesystem").
 	 * Used during deserialization to instantiate the correct subclass.
 	 */
-	virtual std::string getSourceType() const = 0;
+	virtual const std::string getSourceType() const = 0;
 
 	/**
 	 * Human-readable name for this source (e.g. the root path or a user-given label).
 	 * Used in the UI to identify the source.
 	 */
-	virtual std::string getName() const = 0;
+	virtual const std::string getSourceName() const = 0;
 
 	/**
 	 * Return the optional index for this source, or nullptr if unsupported.
@@ -80,14 +82,6 @@ struct SelectionSource {
 	 */
 	virtual json_t* getFileJson(const std::string& fileId) const = 0;
 
-	// -- ui ------------------------------------------------------------------
-
-	/**
-	 * Append source-specific menu items to a context menu.
-	 * The menu is owned by the caller; subclasses add items to it.
-	 */
-	virtual void appendMenuItems(ui::Menu* menu) = 0;
-
 	// -- serialization -------------------------------------------------------
 
 	/**
@@ -101,29 +95,44 @@ struct SelectionSource {
 	 * Return true on success, false if the data is invalid or incompatible.
 	 */
 	virtual bool fromJson(json_t* sourceJ) = 0;
+
+	// -- ui ------------------------------------------------------------------
+
+	/**
+	 * Append source-specific menu items to a context menu.
+	 * The menu is owned by the caller; subclasses add items to it.
+	 */
+	virtual void appendMenuItems(ui::Menu* menu) = 0;
 };
 
 
 namespace filesystem {
-	extern std::string getSlug();
-	extern SelectionSource* initSource();
+	namespace vcvs {
+		extern std::string getSlug();
+		extern SelectionSource* initSource();
+	}
+	namespace vcv {
+		extern std::string getSlug();
+		extern SelectionSource* initSource();
+	}
 }
 
 /**
  * Factory function: create the correct SelectionSource subclass
  * from a JSON snapshot. Returns nullptr if the type is unknown.
  */
-inline SelectionSource* createSelectionSourceFromJson(json_t* sourceJ) {
-	static std::map<std::string, std::function<SelectionSource*()>> sourceTypes {
-		{ filesystem::getSlug(), filesystem::initSource }
+inline SelectionSource* createSourceFromJson(json_t* sourceJ) {
+	static std::map<std::string, std::function<SelectionSource*()>> sourceSlugs {
+		{ filesystem::vcvs::getSlug(), filesystem::vcvs::initSource },
+		{ filesystem::vcv::getSlug(), filesystem::vcv::initSource }
 	};
 
-	json_t* typeJ = json_object_get(sourceJ, "type");
-	if (!typeJ) return nullptr;
+	json_t* slugJ = json_object_get(sourceJ, "slug");
+	if (!slugJ) return nullptr;
 
-	std::string type = json_string_value(typeJ);
-	if (sourceTypes.find(type) != sourceTypes.end()) {
-		SelectionSource* src = sourceTypes[type]();
+	std::string slug = json_string_value(slugJ);
+	if (sourceSlugs.find(slug) != sourceSlugs.end()) {
+		SelectionSource* src = sourceSlugs[slug]();
 		if (!src->fromJson(sourceJ)) {
 			delete src;
 			return nullptr;

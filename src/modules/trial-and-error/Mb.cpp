@@ -530,12 +530,12 @@ BrowserOverlay::BrowserOverlay() {
 	// Configure the selection sources from saved settings
 	selection::SelectionBrowser* selBrowser = static_cast<selection::SelectionBrowser*>(mbSelection);
 
-	if (pluginSettings.mbSelectionSourcesJ) {
+	if (pluginSettings.mbDataSourcesJ) {
 		std::vector<selection::SelectionSource*> loadedSources;
 		size_t idx;
 		json_t* sourceJ;
-		json_array_foreach(pluginSettings.mbSelectionSourcesJ, idx, sourceJ) {
-			selection::SelectionSource* loadedSource = selection::createSelectionSourceFromJson(sourceJ);
+		json_array_foreach(pluginSettings.mbDataSourcesJ, idx, sourceJ) {
+			selection::SelectionSource* loadedSource = selection::createSourceFromJson(sourceJ);
 			if (loadedSource) {
 				loadedSources.push_back(loadedSource);
 			}
@@ -571,12 +571,12 @@ BrowserOverlay::~BrowserOverlay() {
 	pluginSettings.mbFavoriteHighlight = favoriteHighlight;
 
 	// Save selection sources to array
-	json_decref(pluginSettings.mbSelectionSourcesJ);
-	pluginSettings.mbSelectionSourcesJ = json_array();
+	json_decref(pluginSettings.mbDataSourcesJ);
+	pluginSettings.mbDataSourcesJ = json_array();
 	selection::SelectionBrowser* selBrowser = static_cast<selection::SelectionBrowser*>(mbSelection);
 	for (selection::SelectionSource* source : selBrowser->sources) {
 		if (source) {
-			json_array_append_new(pluginSettings.mbSelectionSourcesJ, source->toJson());
+			json_array_append_new(pluginSettings.mbDataSourcesJ, source->toJson());
 		}
 	}
 
@@ -826,19 +826,17 @@ struct MbWidget : ModuleWidget {
 			[module]() { return module->mode == MODE::V2; },
 			[module]() { module->mode = MODE::V2; }
 		));
-		menu->addChild(createSubmenuItem("Selection browser", RACK_MOD_CTRL_NAME "+Right click", [=](Menu* menu) {
+		menu->addChild(createSubmenuItem("Patch browser", RACK_MOD_CTRL_NAME "+Right click", [=](Menu* menu) {
 			selection::SelectionBrowser* selBrowser = static_cast<selection::SelectionBrowser*>(browserOverlay->mbSelection);
 			int activeIdx = selBrowser->activeSourceIndex;
 
-			// Add new source
-			menu->addChild(createMenuItem("Add filesystem source", "", [=]() {
-				selection::SelectionSource* activeSource = selBrowser->getSource();
-				if (activeSource) {
-					selection::SelectionSource* newSrc = selection::filesystem::createSource();
-					if (newSrc) {
-						selBrowser->addSource(newSrc);
-					}
-				}
+			menu->addChild(createMenuItem("Add .vcvs folder source...", "", [=]() {
+				selection::SelectionSource* newSrc = selection::filesystem::vcvs::createSource();
+				if (newSrc) { selBrowser->addSource(newSrc); }
+			}));
+			menu->addChild(createMenuItem("Add .vcv folder source...", "", [=]() {
+				selection::SelectionSource* newSrc = selection::filesystem::vcv::createSource();
+				if (newSrc) { selBrowser->addSource(newSrc); }
 			}));
 
 			// Remove current source
@@ -846,16 +844,18 @@ struct MbWidget : ModuleWidget {
 				selBrowser->removeSource(activeIdx);
 			}));
 
-			menu->addChild(new MenuSeparator());
-			// List all sources with activate checkbox
-			for (size_t i = 0; i < selBrowser->sources.size(); i++) {
-				selection::SelectionSource* src = selBrowser->sources[i];
-				if (!src) continue;
-				std::string label = src->getName();
-				menu->addChild(createCheckMenuItem(label, "",
-					[selBrowser, i]() { return selBrowser->activeSourceIndex == (int)i; },
-					[selBrowser, i]() { selBrowser->activeSourceIndex = i; selBrowser->sidebar->source = selBrowser->getSource(); }
-				));
+			if (!selBrowser->sources.empty()) {
+				menu->addChild(new MenuSeparator());
+				// List all sources with activate checkbox
+				for (size_t i = 0; i < selBrowser->sources.size(); i++) {
+					selection::SelectionSource* src = selBrowser->sources[i];
+					if (!src) continue;
+					std::string label = src->getSourceName();
+					menu->addChild(createCheckMenuItem(label, "",
+						[selBrowser, i]() { return selBrowser->activeSourceIndex == (int)i; },
+						[selBrowser, i]() { selBrowser->activeSourceIndex = i; selBrowser->sidebar->source = selBrowser->getSource(); }
+					));
+				}
 			}
 
 			// Source-specific menu items (delegated to the source for pluggability)
@@ -902,7 +902,7 @@ struct MbWidget : ModuleWidget {
 		));
 
 		menu->addChild(new MenuSeparator());
-		menu->addChild(createMenuLabel("Custom tags"));
+		menu->addChild(createMenuLabel("Custom tags for modules"));
 		menu->addChild(createMenuItem("Auto-generate custom tags", "", []() {
 			auto result = std::make_shared<AutoTagResult>(customTagAuto());
 			if (result->total == 0) {
@@ -969,19 +969,22 @@ struct MbWidget : ModuleWidget {
 		}));
 
 		auto unsortedTags = customTagsAll();
-		std::vector<std::string> tags(unsortedTags.begin(), unsortedTags.end());
-		std::sort(tags.begin(), tags.end(), [](const std::string& a, const std::string& b) {
-			return string::lowercase(a) < string::lowercase(b);
-		});
-		if (!tags.empty()) {
-			menu->addChild(createSubmenuItem("Delete custom tag", "",
-				[tags](Menu* menu) {
-					Rack::addGroupedMenuItems<std::string>(menu, tags, [](const std::string& tag) -> ui::MenuItem* {
-						MenuItem* item = createMenuItem(tag, "", [tag]() { customTagDelete(tag); });
-						return item;
-					});
-				}
-			));
+		if (!unsortedTags.empty()) {
+			menu->addChild(new MenuSeparator());
+			std::vector<std::string> tags(unsortedTags.begin(), unsortedTags.end());
+			std::sort(tags.begin(), tags.end(), [](const std::string& a, const std::string& b) {
+				return string::lowercase(a) < string::lowercase(b);
+			});
+			if (!tags.empty()) {
+				menu->addChild(createSubmenuItem("Delete custom tag", "",
+					[tags](Menu* menu) {
+						Rack::addGroupedMenuItems<std::string>(menu, tags, [](const std::string& tag) -> ui::MenuItem* {
+							MenuItem* item = createMenuItem(tag, "", [tag]() { customTagDelete(tag); });
+							return item;
+						});
+					}
+				));
+			}
 		}
 
 		menu->addChild(new MenuSeparator());

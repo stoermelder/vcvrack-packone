@@ -16,7 +16,7 @@ void Settings::saveToJson() {
 	json_object_set(settingsJ, "mbV1searchDescriptions", json_boolean(mbV1searchDescriptions));
 	json_object_set(settingsJ, "mbSortBySearchScore", json_boolean(mbSortBySearchScore));
 	json_object_set(settingsJ, "mbFavoriteHighlight", json_boolean(mbFavoriteHighlight));
-	json_object_set(settingsJ, "mbSelectionSources", pluginSettings.mbSelectionSourcesJ);
+	json_object_set(settingsJ, "mbDataSources", pluginSettings.mbDataSourcesJ);
 	json_object_set(settingsJ, "mbSearchThreshold", json_real(pluginSettings.mbSearchThreshold));
 	json_object_set(settingsJ, "mbMagnifierEnabled", json_boolean(mbMagnifierEnabled));
 
@@ -84,8 +84,8 @@ void Settings::readFromJson() {
 	if (mbSortBySearchScoreJ) mbSortBySearchScore = json_boolean_value(mbSortBySearchScoreJ);
 	json_t* mbFavoriteHighlightJ = json_object_get(settingsJ, "mbFavoriteHighlight");
 	if (mbFavoriteHighlightJ) mbFavoriteHighlight = json_boolean_value(mbFavoriteHighlightJ);
-	json_t* mbSelectionSourcesJ = json_object_get(settingsJ, "mbSelectionSources");
-	if (mbSelectionSourcesJ) pluginSettings.mbSelectionSourcesJ = json_copy(mbSelectionSourcesJ);
+	json_t* mbDataSourcesJ = json_object_get(settingsJ, "mbDataSources");
+	if (mbDataSourcesJ) pluginSettings.mbDataSourcesJ = json_copy(mbDataSourcesJ);
 	json_t* mbSearchThresholdJ = json_object_get(settingsJ, "mbSearchThreshold");
 	if (mbSearchThresholdJ) mbSearchThreshold = json_real_value(mbSearchThresholdJ);
 	json_t* mbMagnifierEnabledJ = json_object_get(settingsJ, "mbMagnifierEnabled");

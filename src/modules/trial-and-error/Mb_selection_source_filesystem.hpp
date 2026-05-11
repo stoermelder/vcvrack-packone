@@ -1,6 +1,8 @@
 #pragma once
 #include <rack.hpp>
 #include <osdialog.h>
+#include <archive.h>
+#include <archive_entry.h>
 #include "Mb_selection_source.hpp"
 #include "Mb_selection_source_index.hpp"
 
@@ -11,11 +13,11 @@ namespace filesystem {
 
 
 /**
- * Index for a FileSystemSelectionSource, stored as mb-index.json
+ * Index for a FileSystemSource, stored as mb-index.json
  * in the root of the source folder.
  * This is a read-only index; set methods have no effect.
  */
-struct FileSystemSelectionSourceIndex : SelectionSourceIndex {
+struct FileSystemSourceIndex : SelectionSourceIndex {
 	struct FileIndexEntry {
 		std::string description;
 		std::vector<std::string> tags;
@@ -175,12 +177,14 @@ struct FileSystemSelectionSourceIndex : SelectionSourceIndex {
 	}
 };
 
-struct FileSystemSelectionSource : SelectionSource {
+struct FileSystemSource : SelectionSource {
 	std::string rootContainer;
 	std::string currentContainer;
-	FileSystemSelectionSourceIndex index;
+	FileSystemSourceIndex index;
 
-	static constexpr const char* SLUG = "filesystem";
+	static constexpr const char* SLUG_VCVS = "filesystem:vcvs";
+	static constexpr const char* SLUG_VCV = "filesystem:vcv";
+	std::string slug;
 
 	/** Show a folder picker dialog, returning the chosen path or empty on cancel. */
 	static std::string selectFolder() {
@@ -204,7 +208,7 @@ struct FileSystemSelectionSource : SelectionSource {
 		saveIndex();
 	}
 
-	std::string getContainer() const override { 
+	const std::string getContainer() const override { 
 		return currentContainer;
 	}
 	void setContainer(const std::string& path) override { 
@@ -215,7 +219,7 @@ struct FileSystemSelectionSource : SelectionSource {
 		return rootContainer;
 	}
 
-	std::vector<std::string> getContainers(const std::string& container) override {
+	const std::vector<std::string> getContainers(const std::string& container) override {
 		auto entries = system::getEntries(container);
 		std::vector<std::string> containers;
 		for (const std::string& entry : entries) {
@@ -231,11 +235,12 @@ struct FileSystemSelectionSource : SelectionSource {
 		return containers;
 	}
 
-	std::vector<std::string> getFiles(const std::string& container) override {
+	const std::vector<std::string> getFiles(const std::string& container) override {
 		auto entries = system::getEntries(container);
 		std::vector<std::string> files;
 		for (const std::string& entry : entries) {
-			if (system::isFile(entry) && SelectionSource::endsWith(entry, ".vcvs")) {
+			std::string ext = slug == SLUG_VCVS ? ".vcvs" : ".vcv";
+			if (system::isFile(entry) && SelectionSource::endsWith(entry, ext)) {
 				// Strip rootContainer prefix to return relative path
 				std::string relative = entry.substr(rootContainer.empty() ? 0 : rootContainer.size() + 1);
 				files.push_back(relative);
@@ -255,17 +260,21 @@ struct FileSystemSelectionSource : SelectionSource {
 		return system::isFile(resolve(path));
 	}
 
-	std::string getParentContainer(const std::string& path) override {
+	const std::string getParentContainer(const std::string& path) override {
 		std::string absolute = resolve(path);
 		return system::getDirectory(absolute);
 	}
 
-	std::string getFilename(const std::string& path) override {
+	const std::string getFilename(const std::string& path) override {
 		return system::getFilename(resolve(path));
 	}
 
+	const std::string getAbsoluteFilePath(const std::string& fileId) override {
+		return rootContainer + "/" + fileId;
+	}
+
 	/** Convert a relative path to an absolute path using rootContainer. */
-	std::string resolve(const std::string& path) const {
+	const std::string resolve(const std::string& path) const {
 		if (rootContainer.empty()) return path;
 		if (path.empty()) return rootContainer;
 		return rootContainer + "/" + path;
@@ -274,7 +283,8 @@ struct FileSystemSelectionSource : SelectionSource {
 	/** Load index from mb-index.json in the root container, if it exists. */
 	void loadIndex() {
 		if (rootContainer.empty()) return;
-		std::string indexPath = rootContainer + "/mb-index.json";
+		std::string ext = slug == SLUG_VCVS ? "vcvs" : "vcv";
+		std::string indexPath = rootContainer + "/mb-index." + ext + ".json";
 		FILE* f = fopen(indexPath.c_str(), "rb");
 		if (!f) return;
 		json_error_t error;
@@ -288,7 +298,8 @@ struct FileSystemSelectionSource : SelectionSource {
 	/** Save index to mb-index.json in the root container. */
 	void saveIndex() const {
 		if (rootContainer.empty()) return;
-		std::string indexPath = rootContainer + "/mb-index.json";
+		std::string ext = slug == SLUG_VCVS ? "vcvs" : "vcv";
+		std::string indexPath = rootContainer + "/mb-index." + ext + ".json";
 		json_t* indexJ = index.toJson();
 		FILE* f = fopen(indexPath.c_str(), "wb");
 		if (!f) {
@@ -300,41 +311,146 @@ struct FileSystemSelectionSource : SelectionSource {
 		json_decref(indexJ);
 	}
 
-	json_t* toJson() const override {
-		json_t* j = json_object();
-		json_object_set_new(j, "type", json_string(SLUG));
-		json_object_set_new(j, "rootContainer", json_string(rootContainer.c_str()));
-		return j;
+	SelectionSourceIndex* getIndex() const override {
+		return const_cast<FileSystemSourceIndex*>(&index);
 	}
 
-	bool fromJson(json_t* sourceJ) override {
-		json_t* typeJ = json_object_get(sourceJ, "type");
-		if (!typeJ || std::string(json_string_value(typeJ)) != SLUG)
-			return false;
-
-		json_t* rootJ = json_object_get(sourceJ, "rootContainer");
-		if (rootJ) rootContainer = json_string_value(rootJ);
-
-		return true;
+	const std::string getSourceType() const override {
+		return slug;
 	}
 
-	std::string getSourceType() const override {
-		return SLUG;
-	}
-
-	std::string getName() const override {
-		if (!rootContainer.empty()) return string::f("Folder %s", rootContainer.c_str());
+	const std::string getSourceName() const override {
+		std::string ext = slug == SLUG_VCVS ? ".vcvs" : ".vcv";
+		if (!rootContainer.empty()) return string::f("%s folder: %s", ext, rootContainer.c_str());
 		return "(no folder)";
 	}
 
 	json_t* getFileJson(const std::string& fileId) const override {
 		std::string fullPath = rootContainer + "/" + fileId;
-		FILE* f = fopen(fullPath.c_str(), "rb");
-		if (!f) return nullptr;
-		json_error_t error;
-		json_t* rootJ = json_loadf(f, 0, &error);
-		fclose(f);
+		
+		if (slug == SLUG_VCV) {
+			// Check if .vcv file is legacy (plain JSON) or v2+ (zstd-compressed tar)
+			if (isVcvLegacyV1(fullPath)) {
+				// Legacy v1 format: plain JSON file
+				FILE* f = fopen(fullPath.c_str(), "rb");
+				if (!f) return nullptr;
+				json_error_t error;
+				json_t* rootJ = json_loadf(f, 0, &error);
+				fclose(f);
+				return rootJ;
+			}
+			else {
+				// v2+ format: zstd-compressed tar archive
+				return getFileJsonFromArchive(fullPath);
+			}
+		}
+		else {
+			// .vcvs files are plain JSON
+			FILE* f = fopen(fullPath.c_str(), "rb");
+			if (!f) return nullptr;
+			json_error_t error;
+			json_t* rootJ = json_loadf(f, 0, &error);
+			fclose(f);
+			return rootJ;
+		}
+	}
+
+	/**
+	 * Checks if a .vcv file is a legacy v1 format (plain JSON) by checking for zstd magic number.
+	 * All Zstandard frames start with the magic bytes \x28\xb5\x2f\xfd.
+	 * If the file doesn't begin with this magic number, it's a legacy v1 patch.
+	 */
+	static bool isVcvLegacyV1(const std::string& path) {
+		FILE* f = std::fopen(path.c_str(), "rb");
+		if (!f) return true; // Assume legacy on open failure
+		DEFER({std::fclose(f);});
+		char zstdMagic[] = "\x28\xb5\x2f\xfd";
+		char buf[4] = {};
+		std::fread(buf, 1, sizeof(buf), f);
+		return std::memcmp(buf, zstdMagic, sizeof(buf)) != 0;
+	}
+
+	/**
+	 * Extracts and parses the JSON file from a .vcv archive.
+	 * Returns the JSON content as a json_t object, or nullptr on failure.
+	 */
+	json_t* getFileJsonFromArchive(const std::string& archivePath) const {
+#if defined ARCH_MAC
+		// libarchive depends on locale so set thread locale
+		locale_t loc = newlocale(LC_CTYPE_MASK, "en_US.UTF-8", NULL);
+		locale_t oldLoc = uselocale(loc);
+		freelocale(loc);
+		auto resetLocale = [&]() { uselocale(oldLoc); };
+#else
+		auto resetLocale = []() {};
+#endif
+
+		int r;
+		
+		// Open archive for reading
+		struct archive* a = archive_read_new();
+		if (!a) {
+			resetLocale();
+			return nullptr;
+		}
+		archive_read_support_filter_zstd(a);
+		archive_read_support_format_tar(a);
+		
+		r = archive_read_open_filename(a, archivePath.c_str(), 102400);
+		if (r < ARCHIVE_OK) {
+			archive_read_free(a);
+			resetLocale();
+			return nullptr;
+		}
+		
+		json_t* rootJ = nullptr;
+		
+		// Read first entry from archive
+		for (;;) {
+			struct archive_entry* entry;
+			r = archive_read_next_header(a, &entry);
+			if (r == ARCHIVE_EOF)
+				break;
+			if (r < ARCHIVE_OK)
+				break;
+			
+			// Only process regular files (skip directories)
+			if (archive_entry_filetype(entry) != AE_IFREG)
+				continue;
+			
+			// Read file content into memory
+			size_t size = archive_entry_size(entry);
+			if (size > 0) {
+				std::vector<uint8_t> buffer(size);
+				ssize_t bytesRead = archive_read_data(a, buffer.data(), size);
+				if (bytesRead > 0) {
+					json_error_t error;
+					rootJ = json_loadb((const char*)buffer.data(), bytesRead, 0, &error);
+				}
+			}
+			break;
+		}
+		
+		archive_read_free(a);
+		resetLocale();
 		return rootJ;
+	}
+
+	json_t* toJson() const override {
+		json_t* j = json_object();
+		json_object_set_new(j, "slug", json_string(slug.c_str()));
+		json_object_set_new(j, "rootContainer", json_string(rootContainer.c_str()));
+		return j;
+	}
+
+	bool fromJson(json_t* sourceJ) override {
+		json_t* slugJ = json_object_get(sourceJ, "slug");
+		slug = std::string(json_string_value(slugJ));
+
+		json_t* rootJ = json_object_get(sourceJ, "rootContainer");
+		if (rootJ) rootContainer = currentContainer = json_string_value(rootJ);
+
+		return true;
 	}
 
 	void appendMenuItems(ui::Menu* menu) override {
@@ -351,37 +467,68 @@ struct FileSystemSelectionSource : SelectionSource {
 			}));
 		}
 	}
-
-	SelectionSourceIndex* getIndex() const override {
-		return const_cast<FileSystemSelectionSourceIndex*>(&index);
-	}
 };
 
 
-inline extern std::string getSlug() {
-    return FileSystemSelectionSource::SLUG;
-}
+namespace vcvs {
+	inline extern std::string getSlug() {
+		return FileSystemSource::SLUG_VCVS;
+	}
 
-/**
- * Creates a new empty file system data source.
- */
-inline SelectionSource* initSource() {
-    return new FileSystemSelectionSource;
-}
+	/**
+	 * Creates a new empty file system data source.
+	 */
+	inline SelectionSource* initSource() {
+		FileSystemSource* src = new FileSystemSource;
+		src->slug = FileSystemSource::SLUG_VCVS;
+		return src;
+	}
 
-/**
- * Interactively create a new source of the same type via a UI dialog.
- * Returns the new source, or nullptr if the user cancelled.
- * The caller takes ownership.
- */
-inline SelectionSource* createSource() {
-	std::string path = FileSystemSelectionSource::selectFolder();
-	if (path.empty()) return nullptr;
-	FileSystemSelectionSource* src = new FileSystemSelectionSource;
-	src->rootContainer = path;
-	src->setContainer(path);
-	return src;
-}
+	/**
+	 * Interactively create a new source of the same type via a UI dialog.
+	 * Returns the new source, or nullptr if the user cancelled.
+	 * The caller takes ownership.
+	 */
+	inline SelectionSource* createSource() {
+		std::string path = FileSystemSource::selectFolder();
+		if (path.empty()) return nullptr;
+		FileSystemSource* src = new FileSystemSource;
+		src->slug = FileSystemSource::SLUG_VCVS;
+		src->rootContainer = path;
+		src->setContainer(path);
+		return src;
+	}
+} // namespace vcvs
+
+namespace vcv {
+	inline extern std::string getSlug() {
+		return FileSystemSource::SLUG_VCV;
+	}
+
+	/**
+	 * Creates a new empty file system data source.
+	 */
+	inline SelectionSource* initSource() {
+		FileSystemSource* src = new FileSystemSource;
+		src->slug = FileSystemSource::SLUG_VCV;
+		return src;
+	}
+
+	/**
+	 * Interactively create a new source of the same type via a UI dialog.
+	 * Returns the new source, or nullptr if the user cancelled.
+	 * The caller takes ownership.
+	 */
+	inline SelectionSource* createSource() {
+		std::string path = FileSystemSource::selectFolder();
+		if (path.empty()) return nullptr;
+		FileSystemSource* src = new FileSystemSource;
+		src->slug = FileSystemSource::SLUG_VCV;
+		src->rootContainer = path;
+		src->setContainer(path);
+		return src;
+	}
+} // namespace vcv
 
 
 } // namespace filesystem

@@ -295,8 +295,6 @@ void SelectionPreviewWidget::createPreview() {
 		json_t* idJ = json_object_get(moduleJ, "id");
 		int64_t moduleId = idJ ? json_integer_value(idJ) : -1;
 
-		INFO("Creating ModelBox for %s/%s", pluginSlug.c_str(), modelSlug.c_str());
-
 		ModelPreviewWidget* modelBox = new ModelPreviewWidget;
 		modelBox->setModel(model);
 		modelBox->modelOpacity = modelOpacity;
@@ -394,6 +392,19 @@ void SelectionPreviewWidget::createContextMenu() {
 	if (!index) return;
 
 	ui::Menu* menu = createMenu();
+
+	if (src->getSourceType() == filesystem::vcv::getSlug()) {
+		menu->addChild(createMenuItem("Replace current patch...", "", [this, src]() {
+			const std::string path = src->getAbsoluteFilePath(fileId);
+			// This is kind of hacky but interacting directly with rack::patch::Manager
+			// is not supported, as we would need to include patch.hpp.
+			const std::vector<std::string>& paths = {path};
+			const Widget::PathDropEvent e(paths);
+			APP->scene->onPathDrop(e);
+		}));
+		menu->addChild(new MenuSeparator);
+	}
+
 	struct FavoriteItem : MenuItem {
 		SelectionSourceIndex* index;
 		std::string fileId;

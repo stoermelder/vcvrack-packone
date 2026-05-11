@@ -136,10 +136,6 @@ void SelectionBrowserSidebar::onShow(const event::Show& e) {
 }
 
 
-// ---- SelectionPreview ----
-
-
-
 // ---- Button implementations ----
 
 struct TagItem : ChoiceFilterItem<SelectionBrowser> {
@@ -300,52 +296,41 @@ void SelectionBrowser::SourceButton::onAction(const event::Action& e) {
 	for (size_t i = 0; i < browser->sources.size(); i++) {
 		SelectionSource* src = browser->sources[i];
 		SourceItem* item = new SourceItem;
-		item->text = src->getName();
+		item->text = src->getSourceName();
 		item->source = src;
 		item->browser = browser;
 		item->disabled = false;
 		menu->addChild(item);
 	}
 
-	menu->addChild(new ui::MenuSeparator);
+	if (!menu->children.empty()) {
+		menu->addChild(new MenuSeparator);
+	}
 
-	struct AddSourceItem : ui::MenuItem {
-		SelectionBrowser* browser;
-		void onAction(const event::Action& e) override {
-			SelectionSource* active = browser->getSource();
-			if (active) {
-				SelectionSource* newSrc = filesystem::createSource();
-				if (newSrc) {
-					browser->addSource(newSrc);
-				}
-			}
+	menu->addChild(createMenuItem("Add .vcvs folder...", "", [this] {
+		SelectionSource* newSrc = filesystem::vcvs::createSource();
+		if (newSrc) {
+			browser->addSource(newSrc);
 		}
-	};
-	AddSourceItem* addItem = new AddSourceItem;
-	addItem->text = "Add source...";
-	addItem->disabled = browser->sources.empty();
-	addItem->browser = browser;
-	menu->addChild(addItem);
-
-	struct RemoveSourceItem : ui::MenuItem {
-		SelectionBrowser* browser;
-		void onAction(const event::Action& e) override {
-			if (browser->activeSourceIndex >= 0 && browser->activeSourceIndex < (int)browser->sources.size()) {
-				browser->removeSource(browser->activeSourceIndex);
-			}
+	}));
+	menu->addChild(createMenuItem("Add .vcv folder...", "", [this] {
+		SelectionSource* newSrc = filesystem::vcv::createSource();
+		if (newSrc) {
+			browser->addSource(newSrc);
 		}
-	};
-	RemoveSourceItem* removeItem = new RemoveSourceItem;
-	removeItem->text = "Remove source";
-	removeItem->disabled = browser->sources.size() <= 1;
-	removeItem->browser = browser;
-	menu->addChild(removeItem);
+	}));
+	menu->addChild(createMenuItem("Remove source", "", [this] {
+		if (browser->activeSourceIndex >= 0 && browser->activeSourceIndex < (int)browser->sources.size()) {
+			browser->removeSource(browser->activeSourceIndex);
+		}
+	}, browser->sources.empty()));
 }
+
 
 void SelectionBrowser::SourceButton::step() {
 	SelectionSource* src = browser->getSource();
 	if (src) {
-		text = src->getName();
+		text = src->getSourceName();
 	}
 	else {
 		text = "No source";
@@ -385,7 +370,7 @@ SelectionBrowser::SelectionBrowser() {
 	addChild(headerLayout);
 
 	sourceButton = new SourceButton;
-	sourceButton->box.size.x = 280;
+	sourceButton->box.size.x = 300;
 	sourceButton->browser = this;
 	headerLayout->addChild(sourceButton);
 
@@ -459,6 +444,7 @@ void SelectionBrowser::addSource(SelectionSource* newSource) {
 	activeSourceIndex = (int)sources.size() - 1;
 	if (newSource) newSource->onAttach();
 	sidebar->source = getSource();
+	sidebar->loadContainer();
 }
 
 void SelectionBrowser::removeSource(int index) {
@@ -473,6 +459,7 @@ void SelectionBrowser::removeSource(int index) {
 	if (activeSourceIndex >= (int)sources.size())
 		activeSourceIndex = (int)sources.size() - 1;
 	sidebar->source = getSource();
+	sidebar->loadContainer();
 }
 
 void SelectionBrowser::clear() {
