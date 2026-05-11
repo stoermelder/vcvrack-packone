@@ -1,8 +1,6 @@
 #pragma once
 #include <rack.hpp>
 #include <osdialog.h>
-#include <archive.h>
-#include <archive_entry.h>
 #include "Mb_selection_source.hpp"
 #include "Mb_selection_source_index.hpp"
 
@@ -372,67 +370,33 @@ struct FileSystemSource : SelectionSource {
 
 	/**
 	 * Extracts and parses the JSON file from a .vcv archive.
-	 * Returns the JSON content as a json_t object, or nullptr on failure.
+	 * Uses system::unarchiveToDirectory to extract to a temp directory,
+	 * then reads patch.json from the extracted contents.
 	 */
 	json_t* getFileJsonFromArchive(const std::string& archivePath) const {
-#if defined ARCH_MAC
-		// libarchive depends on locale so set thread locale
-		locale_t loc = newlocale(LC_CTYPE_MASK, "en_US.UTF-8", NULL);
-		locale_t oldLoc = uselocale(loc);
-		freelocale(loc);
-		auto resetLocale = [&]() { uselocale(oldLoc); };
-#else
-		auto resetLocale = []() {};
-#endif
-
-		int r;
+		// Extract to a temp directory using Rack's system API
+		std::string tempDir = system::join(system::getTempDirectory(), string::f("vcv_extract_%lf", system::getTime()));
+		system::createDirectories(tempDir);
 		
-		// Open archive for reading
-		struct archive* a = archive_read_new();
-		if (!a) {
-			resetLocale();
-			return nullptr;
+		try {
+			system::unarchiveToDirectory(archivePath, tempDir);
 		}
-		archive_read_support_filter_zstd(a);
-		archive_read_support_format_tar(a);
-		
-		r = archive_read_open_filename(a, archivePath.c_str(), 102400);
-		if (r < ARCHIVE_OK) {
-			archive_read_free(a);
-			resetLocale();
+		catch (...) {
+			system::removeRecursively(tempDir);
 			return nullptr;
 		}
 		
-		json_t* rootJ = nullptr;
+		// Read the patch.json file from the extracted directory
+		std::string patchJsonPath = system::join(tempDir, "patch.json");
+		FILE* f = fopen(patchJsonPath.c_str(), "rb");
 		
-		// Read first entry from archive
-		for (;;) {
-			struct archive_entry* entry;
-			r = archive_read_next_header(a, &entry);
-			if (r == ARCHIVE_EOF)
-				break;
-			if (r < ARCHIVE_OK)
-				break;
-			
-			// Only process regular files (skip directories)
-			if (archive_entry_filetype(entry) != AE_IFREG)
-				continue;
-			
-			// Read file content into memory
-			size_t size = archive_entry_size(entry);
-			if (size > 0) {
-				std::vector<uint8_t> buffer(size);
-				ssize_t bytesRead = archive_read_data(a, buffer.data(), size);
-				if (bytesRead > 0) {
-					json_error_t error;
-					rootJ = json_loadb((const char*)buffer.data(), bytesRead, 0, &error);
-				}
-			}
-			break;
-		}
+		// Clean up temp directory
+		system::removeRecursively(tempDir);
 		
-		archive_read_free(a);
-		resetLocale();
+		if (!f) return nullptr;
+		json_error_t error;
+		json_t* rootJ = json_loadf(f, 0, &error);
+		fclose(f);
 		return rootJ;
 	}
 
