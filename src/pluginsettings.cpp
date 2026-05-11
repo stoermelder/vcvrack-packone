@@ -16,8 +16,8 @@ void Settings::saveToJson() {
 	json_object_set(settingsJ, "mbV1searchDescriptions", json_boolean(mbV1searchDescriptions));
 	json_object_set(settingsJ, "mbSortBySearchScore", json_boolean(mbSortBySearchScore));
 	json_object_set(settingsJ, "mbFavoriteHighlight", json_boolean(mbFavoriteHighlight));
-	json_object_set(settingsJ, "mbSelectionRoot", json_string(mbSelectionRoot.c_str()));
-	json_object_set(settingsJ, "mbSearchThreshold", json_real(mbSearchThreshold));
+	json_object_set(settingsJ, "mbSelectionSources", pluginSettings.mbSelectionSourcesJ);
+	json_object_set(settingsJ, "mbSearchThreshold", json_real(pluginSettings.mbSearchThreshold));
 	json_object_set(settingsJ, "mbMagnifierEnabled", json_boolean(mbMagnifierEnabled));
 
 	json_object_set(settingsJ, "overlayTextColor", json_string(rack::color::toHexString(overlayTextColor).c_str()));
@@ -84,8 +84,8 @@ void Settings::readFromJson() {
 	if (mbSortBySearchScoreJ) mbSortBySearchScore = json_boolean_value(mbSortBySearchScoreJ);
 	json_t* mbFavoriteHighlightJ = json_object_get(settingsJ, "mbFavoriteHighlight");
 	if (mbFavoriteHighlightJ) mbFavoriteHighlight = json_boolean_value(mbFavoriteHighlightJ);
-	json_t* mbSelectionRootJ = json_object_get(settingsJ, "mbSelectionRoot");
-	if (mbSelectionRootJ) mbSelectionRoot = json_string_value(mbSelectionRootJ);
+	json_t* mbSelectionSourcesJ = json_object_get(settingsJ, "mbSelectionSources");
+	if (mbSelectionSourcesJ) pluginSettings.mbSelectionSourcesJ = json_copy(mbSelectionSourcesJ);
 	json_t* mbSearchThresholdJ = json_object_get(settingsJ, "mbSearchThreshold");
 	if (mbSearchThresholdJ) mbSearchThreshold = json_real_value(mbSearchThresholdJ);
 	json_t* mbMagnifierEnabledJ = json_object_get(settingsJ, "mbMagnifierEnabled");

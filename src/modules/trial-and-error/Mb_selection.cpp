@@ -1,28 +1,27 @@
 #include "Mb_selection.hpp"
 #include "Mb_selection_preview.hpp"
+#include "Mb_selection_source.hpp"
 #include <helpers.hpp>
 
 namespace StoermelderPackOne {
 namespace Mb {
 namespace selection {
 
-std::string rootFolder;
-std::string currentFolder;
 
-
-struct FolderItem : ui::MenuItem {
-	std::string folderPath;
-	std::string folderName;
+struct ContainerItem : ui::MenuItem {
+	SelectionSource* source;
+	std::string containerPath;
+	std::string containerName;
 
 	void onAction(const event::Action& e) override {
-		currentFolder = folderPath;
+		source->setContainer(containerPath);
 		SelectionBrowserSidebar* sidebar = getAncestorOfType<SelectionBrowserSidebar>();
-		if (sidebar) sidebar->loadFolder();
+		if (sidebar) sidebar->loadContainer();
 	}
 };
 
 struct FileItem : ui::MenuItem {
-    SelectionBrowserSidebar* sidebar;
+	SelectionBrowserSidebar* sidebar;
 	std::string file;
 	void onAction(const event::Action& e) override {
 		sidebar->currentFile = file;
@@ -50,6 +49,14 @@ SelectionBrowserSidebar::SelectionBrowserSidebar() {
 	fileScroll->container->addChild(fileList);
 }
 
+SelectionBrowserSidebar::~SelectionBrowserSidebar() {
+	if (source) {
+		source->onDetach();
+		delete source;
+		source = nullptr;
+	}
+}
+
 void SelectionBrowserSidebar::step() {
 	fileScroll->box.pos.y = 0.f;
 	fileScroll->box.size.y = box.size.y;
@@ -57,59 +64,60 @@ void SelectionBrowserSidebar::step() {
 	widget::Widget::step();
 }
 
-void SelectionBrowserSidebar::loadFolder() {
-	if (currentFolder.empty()) {
+void SelectionBrowserSidebar::loadContainer() {
+	if (!source) return;
+
+	const std::string& currentContainer = source->getContainer();
+	if (currentContainer.empty()) {
 		fileList->clearChildren();
 		return;
 	}
 
-	auto endsWith = [](const std::string& str, const std::string& suffix) {
-		return str.size() >= suffix.size() && 0 == str.compare(str.size() - suffix.size(), suffix.size(), suffix);
-	};
-
 	fileList->clearChildren();
 
 	// Add ".." item to go to parent folder if we're not at root
-	if (currentFolder != rootFolder) {
-		std::string parentFolder = system::getDirectory(currentFolder);
-		FolderItem* upItem = new FolderItem;
-		upItem->folderPath = parentFolder;
-		upItem->folderName = "..";
+	if (currentContainer != source->getRootContainer()) {
+		std::string parentContainer = source->getParentContainer(currentContainer);
+		ContainerItem* upItem = new ContainerItem;
+		upItem->source = source;
+		upItem->containerPath = parentContainer;
+		upItem->containerName = "..";
 		upItem->text = "📁 ..";
 		upItem->box.size.x = fileList->box.size.x;
 		fileList->addChild(upItem);
 	}
 
-	// Add folders first
-	auto entries = system::getEntries(currentFolder);
-	std::vector<std::string> folders;
+	// Add containers first
+	auto entries = source->getEntries(currentContainer);
+	std::vector<std::string> containers;
 	std::vector<std::string> files;
 
 	for (const std::string& entry : entries) {
-		if (system::isDirectory(entry)) {
-			folders.push_back(entry);
-		} 
-		else if (system::isFile(entry)) {
-			if (endsWith(entry, ".vcvs")) {
+		if (source->isDirectory(entry)) {
+			containers.push_back(entry);
+		}
+		else if (source->isFile(entry)) {
+			if (SelectionSource::endsWith(entry, ".vcvs")) {
 				files.push_back(entry);
 			}
 		}
 	}
 
-	// Sort folders and files alphabetically (case-insensitive)
-	std::sort(folders.begin(), folders.end(), [](const std::string& a, const std::string& b) {
-		return string::lowercase(system::getFilename(a)) < string::lowercase(system::getFilename(b));
+	// Sort containers and files alphabetically (case-insensitive)
+	std::sort(containers.begin(), containers.end(), [this](const std::string& a, const std::string& b) {
+		return string::lowercase(source->getFilename(a)) < string::lowercase(source->getFilename(b));
 	});
-	std::sort(files.begin(), files.end(), [](const std::string& a, const std::string& b) {
-		return string::lowercase(system::getFilename(a)) < string::lowercase(system::getFilename(b));
+	std::sort(files.begin(), files.end(), [this](const std::string& a, const std::string& b) {
+		return string::lowercase(source->getFilename(a)) < string::lowercase(source->getFilename(b));
 	});
 
-	// Add folder items
-	for (const std::string& folder : folders) {
-		FolderItem* item = new FolderItem;
-		item->folderPath = folder;
-		item->folderName = system::getFilename(folder);
-		item->text = "📁 " + item->folderName;
+	// Add container items
+	for (const std::string& folder : containers) {
+		ContainerItem* item = new ContainerItem;
+		item->source = source;
+		item->containerPath = folder;
+		item->containerName = source->getFilename(folder);
+		item->text = "📁 " + item->containerName;
 		item->box.size.x = fileList->box.size.x;
 		fileList->addChild(item);
 	}
@@ -117,18 +125,20 @@ void SelectionBrowserSidebar::loadFolder() {
 	// Add file items
 	for (const std::string& file : files) {
 		FileItem* item = new FileItem;
-        item->sidebar = this;
+		item->sidebar = this;
 		item->file = file;
-		item->text = system::getFilename(file);
+		item->text = source->getFilename(file);
 		item->box.size.x = fileList->box.size.x;
 		fileList->addChild(item);
 	}
 }
 
 void SelectionBrowserSidebar::onShow(const event::Show& e) {
-	if (currentFolder.empty() && !rootFolder.empty())
-		currentFolder = rootFolder;
-	loadFolder();
+	if (source) {
+		if (source->getContainer().empty())
+			source->setContainer(source->getRootContainer());
+		loadContainer();
+	}
 	widget::Widget::onShow(e);
 }
 
@@ -140,6 +150,61 @@ SelectionBrowser::SelectionBrowser() {
 	preview = new SelectionPreview;
 	addChild(preview);
 	sidebar->preview = preview;
+}
+
+SelectionBrowser::~SelectionBrowser() {
+	for (SelectionSource* source : sources) {
+		if (source) {
+			source->onDetach();
+			delete source;
+		}
+	}
+	sources.clear();
+	// Sidebar destructor must not delete source since we own it
+	sidebar->source = nullptr;
+}
+
+SelectionSource* SelectionBrowser::getSource() const {
+	if (activeSourceIndex >= 0 && activeSourceIndex < (int)sources.size())
+		return sources[activeSourceIndex];
+	return nullptr;
+}
+
+void SelectionBrowser::setSources(const std::vector<SelectionSource*>& newSources, int activeIndex) {
+	// Detach and delete old sources
+	for (SelectionSource* source : sources) {
+		if (source) {
+			source->onDetach();
+			delete source;
+		}
+	}
+	sources = newSources;
+	activeSourceIndex = math::clamp(activeIndex, 0, (int)sources.size() - 1);
+	for (SelectionSource* source : sources) {
+		if (source) source->onAttach();
+	}
+	sidebar->source = getSource();
+}
+
+void SelectionBrowser::addSource(SelectionSource* newSource) {
+	sources.push_back(newSource);
+	activeSourceIndex = (int)sources.size() - 1;
+	if (newSource) newSource->onAttach();
+	sidebar->source = getSource();
+}
+
+void SelectionBrowser::removeSource(int index) {
+	if (index < 0 || index >= (int)sources.size()) return;
+	SelectionSource* removed = sources[index];
+	if (removed) {
+		removed->onDetach();
+		delete removed;
+	}
+	sources.erase(sources.begin() + index);
+	// Adjust active index
+	if (activeSourceIndex >= (int)sources.size())
+		activeSourceIndex = (int)sources.size() - 1;
+	sidebar->source = getSource();
 }
 
 void SelectionBrowser::step() {

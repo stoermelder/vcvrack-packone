@@ -12,7 +12,7 @@ struct Settings {
 	bool mbV1searchDescriptions = false;
 	bool mbSortBySearchScore = true;
 	bool mbFavoriteHighlight = true;
-	std::string mbSelectionRoot = "";
+	json_t* mbSelectionSourcesJ = NULL;
 	float mbSearchThreshold = 0.5f;
 	bool mbMagnifierEnabled = false;
 

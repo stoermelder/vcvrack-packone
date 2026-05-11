@@ -485,7 +485,6 @@ BrowserOverlay::BrowserOverlay() {
 	searchDescriptions = pluginSettings.mbV1searchDescriptions;
 	sortBySearchScore = pluginSettings.mbSortBySearchScore;
 	favoriteHighlight = pluginSettings.mbFavoriteHighlight;
-	selection::rootFolder = selection::currentFolder = pluginSettings.mbSelectionRoot;
 	moduleBrowserFromJson(pluginSettings.mbModelsJ);
 	modelDbInit();
 
@@ -528,6 +527,29 @@ BrowserOverlay::BrowserOverlay() {
 	mbSelection->hide();
 	addChild(mbSelection);
 
+	// Configure the selection sources from saved settings
+	selection::SelectionBrowser* selBrowser = static_cast<selection::SelectionBrowser*>(mbSelection);
+
+	if (pluginSettings.mbSelectionSourcesJ) {
+		std::vector<selection::SelectionSource*> loadedSources;
+		size_t idx;
+		json_t* sourceJ;
+		json_array_foreach(pluginSettings.mbSelectionSourcesJ, idx, sourceJ) {
+			selection::SelectionSource* loadedSource = selection::createSelectionSourceFromJson(sourceJ);
+			if (loadedSource) {
+				loadedSources.push_back(loadedSource);
+			}
+		}
+		if (!loadedSources.empty()) {
+			selBrowser->setSources(loadedSources, 0);
+		}
+	}
+
+	selection::SelectionSource* selectionSource = selBrowser->getSource();
+	if (selectionSource) {
+		selectionSource->onAttach();
+	}
+
 	APP->scene->browser = this;
 	APP->scene->addChild(this);
 }
@@ -547,7 +569,17 @@ BrowserOverlay::~BrowserOverlay() {
 	pluginSettings.mbV1searchDescriptions = searchDescriptions;
 	pluginSettings.mbSortBySearchScore = sortBySearchScore;
 	pluginSettings.mbFavoriteHighlight = favoriteHighlight;
-	pluginSettings.mbSelectionRoot = selection::rootFolder;
+
+	// Save selection sources to array
+	json_decref(pluginSettings.mbSelectionSourcesJ);
+	pluginSettings.mbSelectionSourcesJ = json_array();
+	selection::SelectionBrowser* selBrowser = static_cast<selection::SelectionBrowser*>(mbSelection);
+	for (selection::SelectionSource* source : selBrowser->sources) {
+		if (source) {
+			json_array_append_new(pluginSettings.mbSelectionSourcesJ, source->toJson());
+		}
+	}
+
 	json_decref(pluginSettings.mbModelsJ);
 	pluginSettings.mbModelsJ = moduleBrowserToJson();
 	
@@ -794,20 +826,44 @@ struct MbWidget : ModuleWidget {
 			[module]() { return module->mode == MODE::V2; },
 			[module]() { module->mode = MODE::V2; }
 		));
-		menu->addChild(createSubmenuItem("Selection browser", RACK_MOD_CTRL_NAME "+Right click", [](Menu* menu) {
-			menu->addChild(createMenuLabel(selection::rootFolder.empty() ? "(no folder selected)" : selection::rootFolder));
-			menu->addChild(createMenuItem("Select root folder...", "", []() {
-				std::string dir = asset::user("selections");
-				char* path = osdialog_file(OSDIALOG_OPEN_DIR, dir.c_str(), NULL, NULL);
-				if (!path) return;
-				selection::rootFolder = path;
-				selection::currentFolder = path;
-				free(path);
+		menu->addChild(createSubmenuItem("Selection browser", RACK_MOD_CTRL_NAME "+Right click", [=](Menu* menu) {
+			selection::SelectionBrowser* selBrowser = static_cast<selection::SelectionBrowser*>(browserOverlay->mbSelection);
+			int activeIdx = selBrowser->activeSourceIndex;
+
+			// Add new source
+			menu->addChild(createMenuItem("Add filesystem source", "", [=]() {
+				selection::SelectionSource* activeSource = selBrowser->getSource();
+				if (activeSource) {
+					selection::SelectionSource* newSrc = activeSource->createSource();
+					if (newSrc) {
+						selBrowser->addSource(newSrc);
+					}
+				}
 			}));
-			if (!selection::rootFolder.empty()) {
-				menu->addChild(createMenuItem("Open in file explorer", "", []() {
-					system::openDirectory(selection::rootFolder);
-				}));
+
+			// Remove current source
+			menu->addChild(createMenuItem("Remove selected source", "", [=]() {
+				selBrowser->removeSource(activeIdx);
+			}));
+
+			menu->addChild(new MenuSeparator());
+			// List all sources with activate checkbox
+			for (size_t i = 0; i < selBrowser->sources.size(); i++) {
+				selection::SelectionSource* src = selBrowser->sources[i];
+				if (!src) continue;
+				std::string label = src->getName();
+				menu->addChild(createCheckMenuItem(label, "",
+					[selBrowser, i]() { return selBrowser->activeSourceIndex == (int)i; },
+					[selBrowser, i]() { selBrowser->activeSourceIndex = i; selBrowser->sidebar->source = selBrowser->getSource(); }
+				));
+			}
+
+			// Source-specific menu items (delegated to the source for pluggability)
+			selection::SelectionSource* activeSource = selBrowser->getSource();
+			if (activeSource) {
+				menu->addChild(new MenuSeparator());
+				menu->addChild(createMenuLabel("Active source"));
+				activeSource->appendMenuItems(menu);
 			}
 		}));
 
