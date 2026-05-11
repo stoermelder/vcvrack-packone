@@ -1,12 +1,12 @@
-#include "catch2/plugin.hpp"
-#include "test_context.hpp"
+#include "../../test/test_plugin.hpp"
+#include "../../test/test_context.hpp"
 #include "../modules/midiesx/MidiEsx.hpp"
 #include "../modules/midiesx/MidiEsx.cpp"
 
 using namespace StoermelderPackOne;
 using namespace StoermelderPackOne::MidiEsx;
 
-// Define the single instance used by tests
+SYNC_MODEL(modelMidiEsx, "MidiEsx");
 static Test::TestContext<> testContext;
 
 // Helper: collect samples from port 0 by repeatedly calling nextBit()
@@ -32,6 +32,19 @@ int countMessageBits(const rack::midi::Message& message) {
 		}
 	}
 	return count;
+}
+
+
+TEST_CASE("Construction and initialization", "[MidiEsx]") {
+	MidiEsxModule* m = Test::createModule<MidiEsxModule>("MidiEsx");
+	MidiEsxWidget* mw = Test::createWidget<MidiEsxWidget>("MidiEsx");
+
+	REQUIRE(m != nullptr);
+	REQUIRE(mw != nullptr);
+	REQUIRE(mw->module == nullptr);
+
+	Test::destroyWidget(mw);
+	Test::destroyModule(m);
 }
 
 
