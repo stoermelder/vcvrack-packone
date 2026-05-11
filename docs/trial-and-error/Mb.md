@@ -28,6 +28,10 @@ MB can automatically assign custom tags to modules using keyword matching. The c
 
 All three options show a confirmation dialog listing the proposed tag assignments, allowing you to verify or adjust individual assignments before applying.
 
+### Predefined tags
+
+MB allows you to add or remove predefined tags (the classic VCV Rack tag aliases like "Attenuator", "Mixer", "MIDI", etc.) on individual modules. This is useful if a module has incorrect or incomplete tags. Please note, that modification on predefined tags are only visible within the module browsers of the MB module.
+
 ### Tips
 
 - Display of hidden modules can be toggled by hotkey Shift+Space.
@@ -40,26 +44,34 @@ All three options show a confirmation dialog listing the proposed tag assignment
 
 - For _v1 mod_ and _v2 mod_, by context memu option also the modules' description can be searched (added in v1.9.0).
 
+- **Search threshold** — Controls how fuzzy the fuzzy search matching is. Lower values (default 0.5) show more results with looser matching, while higher values (1.0) require closer matches.
+
 - **Favorite modes** — MB supports three favorite modes (VCVRACK, MB, or BOTH) controlling how favorites are stored and displayed.
+
+- **Magnifier overlay** — When enabled, hovering over a module preview in the browser shows a zoomed magnification loupe following the cursor. 
 
 ## Changelog
 
-- v2.4.0
-    - Added custom tags for user-defined module grouping
-    - Added auto-tagging including MetaModule
-    - Added fuzzy search (similar to the default module browser)
-    - Added option to select "Favorite" handling (Legacy (MB) / Built-in VCV Rack)
-    - Added option to highlight favorites
-    - Added "v2 mod" variation
-    - Changed hotkey to toggle hidden modules to Shift+Space (because of Spotlight on Mac)
-    - Fixed broken button of "Favorites" category
+- v1.8
+    - Initial release
+- v1.9
+    - Added option to hide the "brands" section of the V1-browser (#223)
+    - Added option to search module descriptions (https://github.com/stoermelder/vcvrack-packtau/pull/9)
 - v2.0.0
     - Fixed usage in multiple plugin-instances
     - Fixed crash on exiting Rack after adding MB (#352)
     - Fixed wrong hotkey modifier on Mac (Ctrl instead of Cmd) on Space-key
     - Added missing template loading after adding a module (#369)
-- v1.9
-    - Added option to hide the "brands" section of the V1-browser (#223)
-    - Added option to search module descriptions (https://github.com/stoermelder/vcvrack-packtau/pull/9)
-- v1.8
-    - Initial release
+- v2.4.0
+    - Added custom tags for user-defined module grouping
+    - Added ability to add/remove predefined tags
+    - Added auto-tagging including MetaModule
+    - Added fuzzy search (similar to the default module browser)
+    - Added an option to select "Favorite" handling (Legacy (MB) / Built-in VCV Rack)
+    - Added an option to highlight favorites
+    - Added an option to set the fuzzy search threshold
+    - Added model magnifier loupe option
+    - Added "v2 mod" browser variant
+    - Added integration into Rack's menu bar
+    - Changed hotkey to toggle hidden modules to Shift+Space (because of Spotlight on Mac)
+    - Fixed broken button of "Favorites" category

@@ -1,20 +1,35 @@
 ## 2.4.0
 
+### New modules
+
+- Module [MIDI-ESX](./docs/midiesx/MidiEsx.md)
+    - MIDI converter for your Expert Sleepers hardware setup (ES-5, ES-8, ES-9 etc.)
+
 ### Changes and Fixes
 
+- Modules [8FACE, 8FACEx2](./docs/eightface/EightFace.md)
+    - Fixed broken processing in VCV Rack-plugin on closed plugin-window (#424)
+- Module [8FACE mk2](./docs/eightface/EightFaceMk2.md)
+    - Fixed broken processing in VCV Rack-plugin on closed plugin-window (#424)
 - Module [AHAB](./docs/ahab/Ahab.md)
     - Added gate length as a parameter for operator `>` in note mode (#420)
     - Added reset input for tick counter (#429)
     - Fixed crash on operator `<` when using whithout maximum value set (#425)
 - Module [MB](./docs/trial-and-error/Mb.md)
-    - Added custom tags for used-defined module grouping
-    - Added auto-tagging, including MetaModule
+    - Added custom tags for user-defined module grouping
+    - Added ability to add/remove predefined tags (only within MB)
+    - Added auto-tagging including MetaModule
     - Added fuzzy search (similar to the default module browser)
-    - Added option to select "Favorite" handling  (Legacy (MB) / (Built-in) VCV Rack)
-    - Added option to highlight favorites
-    - Added "v2 mod" variation
+    - Added an option to select "Favorite" handling (Legacy (MB) / Built-in VCV Rack)
+    - Added an option to highlight favorites
+    - Added an option to set the fuzzy search threshold
+    - Added model magnifier loupe option
+    - Added "v2 mod" browser variant
+    - Added integration into Rack's menu bar
     - Changed hotkey to toggle hidden modules to Shift+Space (because of Spotlight on Mac)
     - Fixed broken button of "Favorites" category
+- Module [ME](./docs/trial-and-error/Me.md)
+    - Added screen magnifier loupe
 
 ## 2.3.1
 

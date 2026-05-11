@@ -30,9 +30,9 @@ $(ORCA_GENERATED_HEADER): src/modules/ahab/orca_examples.py $(shell find orca-c/
 
 include $(RACK_DIR)/arch.mk
 
-# Link Winsock for Windows
+# Link libraries for Windows
 ifdef ARCH_WIN
-	LDFLAGS += -lws2_32
+	LDFLAGS += -lws2_32 -lopengl32
 endif
 
 # Ensure headers from the orca-c tree (and its thirdparty) are found

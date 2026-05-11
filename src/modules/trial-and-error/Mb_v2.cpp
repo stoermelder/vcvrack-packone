@@ -1,4 +1,5 @@
 #include "Mb_v2.hpp"
+#include "Mb.hpp"
 #include <tag.hpp>
 #include <settings.hpp>
 #include <componentlibrary.hpp>
@@ -52,6 +53,29 @@ static void toggleModelHidden(plugin::Model* model) {
 static bool isModelHidden(plugin::Model* model) {
 	return hiddenModels.find(model) != hiddenModels.end();
 }
+
+
+// Tag toggle menu item for predefined tags
+struct TogglePredefinedTagItem : MenuItem {
+	plugin::Model* model;
+	int tagId;
+	bool hasEffectiveTag = false;
+	void onAction(const event::Action& e) override {
+		if (hasEffectiveTag) {
+			predefinedTagRemove(model, tagId);
+		} else {
+			predefinedTagAdd(model, tagId);
+		}
+		hasEffectiveTag = !hasEffectiveTag;
+		ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
+		if (browser) browser->refresh();
+		e.unconsume();
+	}
+	void step() override {
+		rightText = CHECKMARK(hasEffectiveTag);
+		MenuItem::step();
+	}
+};
 
 
 static void openLayoutMenu(widget::Widget* button, std::vector<widget::Widget*> items) {
@@ -123,6 +147,7 @@ struct ModuleWidgetContainer : widget::Widget {
 struct ModelBox : widget::OpaqueWidget {
 	plugin::Model* model = NULL;
 	ui::Tooltip* tooltip = NULL;
+	MagnifierOverlay* magnifier = NULL;
 	widget::Widget* previewWidget = NULL;
 	widget::ZoomWidget* zoomWidget = NULL;
 	widget::FramebufferWidget* fb = NULL;
@@ -213,6 +238,27 @@ struct ModelBox : widget::OpaqueWidget {
 		}
 	}
 
+	void setMagnifier(MagnifierOverlay* mg) {
+		if (magnifier) {
+			magnifier->requestDelete();
+			magnifier = NULL;
+		}
+		if (mg) {
+			APP->scene->addChild(mg);
+			magnifier = mg;
+		}
+	}
+
+	void onHover(const event::Hover& e) override {
+		if (magnifier) {
+			magnifier->mousePos = getAbsoluteOffset(e.pos);
+			magnifier->initialized = true;
+			magnifier->sourceAbsPos = getAbsoluteOffset(Vec(0, 0));
+			magnifier->sourceSize = box.size;
+		}
+		OpaqueWidget::onHover(e);
+	}
+
 	void onButton(const event::Button& e) override {
 		OpaqueWidget::onButton(e);
 
@@ -256,19 +302,42 @@ struct ModelBox : widget::OpaqueWidget {
 			if (i++ > 0) text += ", ";
 			text += rack::tag::tagAliases[tagId][0];
 		}
+		// Custom tags
+		std::set<std::string> customTags = customTagsForModel(model);
+		if (!customTags.empty()) {
+			text += "\nCustom Tags: ";
+			i = 0;
+			for (const auto& tag : customTags) {
+				if (i > 0) text += ", ";
+				text += tag;
+				i++;
+			}
+		}
 		if (!model->description.empty())
 			text += "\n" + model->description;
 		ui::Tooltip* tt = new ui::Tooltip;
 		tt->text = text;
 		setTooltip(tt);
+
+		if (fb) {
+			MagnifierOverlay* mg = new MagnifierOverlay;
+			mg->fb = fb;
+			mg->sourceAbsPos = getAbsoluteOffset(Vec(0, 0));
+			mg->sourceSize = box.size;
+			mg->mousePos = getAbsoluteOffset(box.size.div(2));
+			mg->enabled = pluginSettings.mbMagnifierEnabled;
+			setMagnifier(mg);
+		}
 	}
 
 	void onLeave(const event::Leave& e) override {
 		setTooltip(NULL);
+		setMagnifier(NULL);
 	}
 
 	void onHide(const event::Hide& e) override {
 		setTooltip(NULL);
+		setMagnifier(NULL);
 		OpaqueWidget::onHide(e);
 	}
 
@@ -358,35 +427,41 @@ struct ModelBox : widget::OpaqueWidget {
 		});
 
 		plugin::Model* m = model;
-		auto addTagItems = [m](Menu* menu, const std::vector<std::string>& group) {
-			for (const auto& tag : group) {
-				ToggleCustomTagItem* item = new ToggleCustomTagItem;
-				item->text = tag;
-				item->model = m;
-				item->tagName = tag;
-				menu->addChild(item);
-			}
-		};
+		Rack::addGroupedMenuItems<std::string>(menu, tags, [m](const std::string& tag) -> ui::MenuItem* {
+			ToggleCustomTagItem* item = new ToggleCustomTagItem;
+			item->text = tag;
+			item->model = m;
+			item->tagName = tag;
+			return item;
+		}, 20);
 
-		if (tags.size() <= 20) {
-			addTagItems(menu, tags);
-		} 
-		else {
-			const size_t numGroups = (tags.size() + 15) / 16;
-			const size_t GROUP_SIZE = (tags.size() + numGroups - 1) / numGroups;
-			for (size_t i = 0; i < tags.size(); i += GROUP_SIZE) {
-				size_t end = std::min(i + GROUP_SIZE, tags.size());
-				char first = (char)std::toupper((unsigned char)string::lowercase(tags[i])[0]);
-				char last  = (char)std::toupper((unsigned char)string::lowercase(tags[end - 1])[0]);
-				std::string label = first == last
-					? std::string(1, first)
-					: std::string(1, first) + "-" + std::string(1, last);
-				std::vector<std::string> group(tags.begin() + i, tags.begin() + end);
-				menu->addChild(createSubmenuItem(label, "", [addTagItems, group](Menu* menu) {
-					addTagItems(menu, group);
-				}));
-			}
+		// Add section for modifying predefined tags
+		menu->addChild(new MenuSeparator);
+		menu->addChild(createMenuLabel("Tags"));
+
+		// Get all effective tag IDs for this model
+		std::set<int> effectiveTagIds = getEffectiveTagIds(model);
+		
+		// Build list of all predefined tags with their status
+		using MenuItemType = std::pair<std::string, int>;
+		std::vector<MenuItemType> allTags;
+		for (int id = 0; id < (int)tag::tagAliases.size(); id++) {
+			allTags.push_back({tag::tagAliases[id][0], id});
 		}
+		std::sort(allTags.begin(), allTags.end(), [](const std::pair<std::string, int>& a, const std::pair<std::string, int>& b) {
+			return string::lowercase(a.first) < string::lowercase(b.first);
+		});
+
+		Rack::addGroupedMenuItems<MenuItemType>(menu, allTags,
+			[effectiveTagIds, m](const MenuItemType& item) {
+				TogglePredefinedTagItem* t = new TogglePredefinedTagItem;
+				t->text = item.first;
+				t->model = m;
+				t->tagId = item.second;
+				t->hasEffectiveTag = effectiveTagIds.find(item.second) != effectiveTagIds.end();
+				return t;
+			}
+		);
 	}
 };
 
@@ -939,8 +1014,10 @@ bool ModuleBrowser::isModelVisible(plugin::Model* model, const std::string& bran
 		return false;
 	if (!brand.empty() && model->plugin->brand != brand)
 		return false;
+	// Use effective tag IDs (with predefined tag modifications applied)
+	std::set<int> effectiveTagIds = getEffectiveTagIds(model);
 	for (int tagId : tagIds) {
-		if (std::find(model->tagIds.begin(), model->tagIds.end(), tagId) == model->tagIds.end())
+		if (effectiveTagIds.find(tagId) == effectiveTagIds.end())
 			return false;
 	}
 	for (const auto& ct : customTagFilter) {
