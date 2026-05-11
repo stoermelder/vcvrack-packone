@@ -143,7 +143,100 @@ void SelectionBrowserSidebar::onShow(const event::Show& e) {
 }
 
 
+void SelectionBrowser::SourceButton::onAction(const event::Action& e) {
+	ui::Menu* menu = createMenu();
+	menu->box.pos = getAbsoluteOffset(math::Vec(0, box.size.y));
+	menu->box.size.x = box.size.x;
+
+	for (size_t i = 0; i < browser->sources.size(); i++) {
+		SelectionSource* src = browser->sources[i];
+		SourceItem* item = new SourceItem;
+		item->text = src->getName();
+		item->source = src;
+		item->browser = browser;
+		item->disabled = false;
+		menu->addChild(item);
+	}
+
+	menu->addChild(new ui::MenuSeparator);
+
+	struct AddSourceItem : ui::MenuItem {
+		SelectionBrowser* browser;
+		void onAction(const event::Action& e) override {
+			SelectionSource* active = browser->getSource();
+			if (active) {
+				SelectionSource* newSrc = active->createSource();
+				if (newSrc) {
+					browser->addSource(newSrc);
+				}
+			}
+		}
+	};
+	AddSourceItem* addItem = new AddSourceItem;
+	addItem->text = "Add source...";
+	addItem->disabled = browser->sources.empty();
+	addItem->browser = browser;
+	menu->addChild(addItem);
+
+	struct RemoveSourceItem : ui::MenuItem {
+		SelectionBrowser* browser;
+		void onAction(const event::Action& e) override {
+			if (browser->activeSourceIndex >= 0 && browser->activeSourceIndex < (int)browser->sources.size()) {
+				browser->removeSource(browser->activeSourceIndex);
+			}
+		}
+	};
+	RemoveSourceItem* removeItem = new RemoveSourceItem;
+	removeItem->text = "Remove source";
+	removeItem->disabled = browser->sources.size() <= 1;
+	removeItem->browser = browser;
+	menu->addChild(removeItem);
+}
+
+void SelectionBrowser::SourceButton::step() {
+	SelectionSource* src = browser->getSource();
+	if (src) {
+		text = src->getName();
+	}
+	else {
+		text = "No source";
+	}
+	text = string::ellipsize(text, 40);
+	ChoiceButton::step();
+}
+
+void SelectionBrowser::SourceItem::onAction(const event::Action& e) {
+	browser->activeSourceIndex = -1;
+	for (size_t i = 0; i < browser->sources.size(); i++) {
+		if (browser->sources[i] == source) {
+			browser->activeSourceIndex = (int)i;
+			break;
+		}
+	}
+	browser->sidebar->source = browser->getSource();
+	browser->sidebar->loadContainer();
+}
+
+void SelectionBrowser::SourceItem::step() {
+	SelectionSource* active = browser->getSource();
+	rightText = (source == active) ? CHECKMARK("") : "";
+	MenuItem::step();
+}
+
+
 SelectionBrowser::SelectionBrowser() {
+	headerLayout = new ui::SequentialLayout;
+	headerLayout->box.pos = math::Vec(0, 0);
+	headerLayout->box.size.y = 0;
+	headerLayout->margin = math::Vec(10, 10);
+	headerLayout->spacing = math::Vec(10, 10);
+	addChild(headerLayout);
+
+	sourceButton = new SourceButton;
+	sourceButton->box.size.x = 280;
+	sourceButton->browser = this;
+	headerLayout->addChild(sourceButton);
+
 	sidebar = new SelectionBrowserSidebar;
 	addChild(sidebar);
 
@@ -213,11 +306,13 @@ void SelectionBrowser::step() {
 
 	const float margin = 20.f;
 
-	sidebar->box.pos = Vec(margin, margin);
-	sidebar->box.size.x = 270.f;
-	sidebar->box.size.y = box.size.y - 2 * margin;
+	headerLayout->box.size.x = box.size.x;
 
-	preview->box.pos = Vec(sidebar->box.size.x + 2 * margin, margin);
+	sidebar->box.pos = Vec(margin, headerLayout->box.getBottom() + margin);
+	sidebar->box.size.x = 270.f;
+	sidebar->box.size.y = box.size.y - headerLayout->box.getBottom() - 2 * margin;
+
+	preview->box.pos = Vec(sidebar->box.size.x + 2 * margin, headerLayout->box.getBottom() + margin);
 	preview->box.size.x = box.size.x - sidebar->box.size.x - 3 * margin;
 	preview->box.size.y = sidebar->box.size.y;
 

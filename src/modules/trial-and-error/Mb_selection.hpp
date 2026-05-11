@@ -27,6 +27,22 @@ struct SelectionBrowserSidebar : widget::Widget {
 };
 
 struct SelectionBrowser : widget::OpaqueWidget {
+	struct SourceButton : ui::ChoiceButton {
+		SelectionBrowser* browser;
+		void onAction(const event::Action& e) override;
+		void step() override;
+	};
+
+	struct SourceItem : ui::MenuItem {
+		SelectionBrowser* browser;
+		SelectionSource* source;
+		void onAction(const event::Action& e) override;
+		void step() override;
+	};
+
+	ui::SequentialLayout* headerLayout;
+	SourceButton* sourceButton;
+
 	SelectionBrowserSidebar* sidebar;
 	SelectionPreview* preview;
 
