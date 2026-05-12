@@ -232,6 +232,7 @@ void SelectionPreviewWidget::fitPreviewToBox() {
 	contentWidth = contentMaxX - contentMinX;
 	contentHeight = contentMaxY - contentMinY;
 	contentCached = true;
+	fitted = true;
 
 	float scaleX = box.size.x / contentWidth;
 	float scaleY = box.size.y / contentHeight;
@@ -261,8 +262,8 @@ void SelectionPreviewWidget::fitPreviewToBox() {
 }
 
 void SelectionPreviewWidget::refreshPreview() {
-	// Reset lastBoxSize so next step() will fit with current box size
 	lastBoxSize = math::Vec(-1, -1);
+	fitted = false;
 }
 
 void SelectionPreviewWidget::createPreview() {
@@ -388,6 +389,7 @@ void SelectionPreviewWidget::draw(const DrawArgs& args) {
 	nvgRect(args.vg, RECT_ARGS(s));
 	nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 50));
 	nvgFill(args.vg);
+	if (!fitted) return;
 	nvgScissor(args.vg, RECT_ARGS(s));
 	OpaqueWidget::draw(args);
 	nvgResetScissor(args.vg);

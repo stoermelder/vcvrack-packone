@@ -9,6 +9,58 @@ namespace Mb {
 namespace selection {
 
 
+struct AsyncContainerLoadResult {
+	int generation;
+	std::string container;
+	std::vector<std::string> containers;
+	std::vector<std::string> files;
+};
+
+struct AsyncContainerLoadWidget : widget::OpaqueWidget {
+	std::shared_ptr<AsyncContainerLoadResult> result;
+	SelectionBrowserSidebar* sidebar;
+
+	AsyncContainerLoadWidget(SelectionBrowserSidebar* sb) : sidebar(sb) {}
+
+	void step() override {
+		if (result) {
+			if (sidebar && sidebar->loadGeneration_ == result->generation)
+				sidebar->populateFileList(result.get());
+			requestDelete();
+		}
+		OpaqueWidget::step();
+	}
+};
+
+struct AsyncFileJsonResult {
+	std::string fileId;
+	json_t* json = nullptr;
+};
+
+struct AsyncFileJsonWidget : widget::OpaqueWidget {
+	std::shared_ptr<AsyncFileJsonResult> result;
+	SelectionBrowserSidebar* sidebar;
+
+	AsyncFileJsonWidget(SelectionBrowserSidebar* sb) : sidebar(sb) {}
+
+	void step() override {
+		if (result) {
+			if (sidebar && result->json) {
+				if (sidebar->currentFile == result->fileId) {
+					if (!sidebar->preview->setSelection(result->fileId, result->json))
+						json_decref(result->json);
+				} else {
+					json_decref(result->json);
+				}
+				result->json = nullptr;
+			}
+			requestDelete();
+		}
+		OpaqueWidget::step();
+	}
+};
+
+
 struct ContainerItem : ui::MenuItem {
 	SelectionSource* source;
 	std::string containerPath;
@@ -28,15 +80,19 @@ struct FileItem : ui::MenuItem {
 		sidebar->currentFile = fileId;
 		SelectionSource* src = sidebar->source;
 		if (src) {
-			json_t* rootJ = src->getFileJson(fileId);
-			if (rootJ) {
-				if (!sidebar->preview->setSelection(fileId, rootJ)) {
-					json_decref(rootJ);
-				}
-			}
+			AsyncFileJsonWidget* asyncWidget = new AsyncFileJsonWidget(sidebar);
+			APP->scene->addChild(asyncWidget);
+			std::string fid = fileId;
+			sidebar->taskWorker.work([asyncWidget, src, fid]() {
+				auto res = std::make_shared<AsyncFileJsonResult>();
+				res->fileId = fid;
+				res->json = src->getFileJson(fid);
+				asyncWidget->result = res;
+			});
 		}
 		e.unconsume();
 	}
+
 	void draw(const DrawArgs& args) override {
 		if (fileId == sidebar->currentFile) {
 			nvgFillColor(args.vg, nvgRGBA(0xf0, 0xf0, 0xf0, 80));
@@ -75,17 +131,20 @@ void SelectionBrowserSidebar::step() {
 void SelectionBrowserSidebar::loadContainer() {
 	if (!source) return;
 
-	const std::string& currentContainer = source->getContainer();
-	if (currentContainer.empty()) {
+	if (source->getContainer().empty())
+		source->setContainer(source->getRootContainer());
+
+	std::string container = source->getContainer();
+	if (container.empty()) {
 		fileList->clearChildren();
 		return;
 	}
 
 	fileList->clearChildren();
 
-	// Add ".." item to go to parent folder if we're not at root
-	if (currentContainer != source->getRootContainer()) {
-		std::string parentContainer = source->getParentContainer(currentContainer);
+	// Add ".." item synchronously (no I/O needed)
+	if (container != source->getRootContainer()) {
+		std::string parentContainer = source->getParentContainer(container);
 		ContainerItem* upItem = new ContainerItem;
 		upItem->source = source;
 		upItem->containerPath = parentContainer;
@@ -95,9 +154,26 @@ void SelectionBrowserSidebar::loadContainer() {
 		fileList->addChild(upItem);
 	}
 
-	// Add container items
-	auto containers = source->getContainers(currentContainer);
-	for (const std::string& folder : containers) {
+	int gen = ++loadGeneration_;
+	AsyncContainerLoadWidget* asyncWidget = new AsyncContainerLoadWidget(this);
+	APP->scene->addChild(asyncWidget);
+	SelectionSource* src = source;
+	taskWorker.work([asyncWidget, src, container, gen]() {
+		auto res = std::make_shared<AsyncContainerLoadResult>();
+		res->generation = gen;
+		res->container = container;
+		res->containers = src->getContainers(container);
+		res->files = src->getFiles(container);
+		asyncWidget->result = res;
+	});
+}
+
+void SelectionBrowserSidebar::populateFileList(const AsyncContainerLoadResult* res) {
+	SelectionBrowser* browser = getAncestorOfType<SelectionBrowser>();
+	if (browser && preview)
+		preview->browser = browser;
+
+	for (const std::string& folder : res->containers) {
 		ContainerItem* item = new ContainerItem;
 		item->source = source;
 		item->containerPath = folder;
@@ -107,16 +183,9 @@ void SelectionBrowserSidebar::loadContainer() {
 		fileList->addChild(item);
 	}
 
-	// Add file items (optionally filtered by tag)
-	auto files = source->getFiles(currentContainer);
-	SelectionBrowser* browser = getAncestorOfType<SelectionBrowser>();
-	if (browser && browser->sidebar->preview)
-		browser->sidebar->preview->browser = browser;
-
-	for (const std::string& file : files) {
+	for (const std::string& file : res->files) {
 		if (browser && !browser->isFileTagFiltered(file))
 			continue;
-
 		FileItem* item = new FileItem;
 		item->sidebar = this;
 		item->fileId = file;

@@ -22,6 +22,9 @@ struct SelectionPreviewWidget : OpaqueWidget {
 	float contentHeight = 0.f;
 	bool contentCached = false;
 
+	/** True once fitPreviewToBox() has completed for the current selection. */
+	bool fitted = false;
+
 	// Center offset for scaled content
 	float scaledContentOffsetX = 0.f;
 	float scaledContentOffsetY = 0.f;

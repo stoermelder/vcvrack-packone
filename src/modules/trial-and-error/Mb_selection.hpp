@@ -3,6 +3,7 @@
 #include "Mb_selection_source.hpp"
 #include "Mb_selection_source_index.hpp"
 #include "Mb_selection_source_filesystem.hpp"
+#include "../../utils/TaskWorker.hpp"
 #include <tag.hpp>
 
 namespace StoermelderPackOne {
@@ -11,6 +12,7 @@ namespace selection {
 
 // Forward declaration from Mb_selection_preview.hpp
 struct SelectionPreviewWidget;
+struct AsyncContainerLoadResult;
 
 struct SelectionBrowserSidebar : widget::Widget {
 	SelectionPreviewWidget* preview;
@@ -22,11 +24,18 @@ struct SelectionBrowserSidebar : widget::Widget {
 	/** The data source used by this sidebar. */
 	SelectionSource* source = nullptr;
 
+	/** Incremented on each loadContainer() call; used to discard stale async results. */
+	int loadGeneration_ = 0;
+
+	/** Persistent worker thread shared by container loads and file-json loads. */
+	TaskWorker taskWorker;
+
 	SelectionBrowserSidebar();
 	~SelectionBrowserSidebar();
 	void step() override;
 	void loadContainer();
 	void onShow(const event::Show& e) override;
+	void populateFileList(const AsyncContainerLoadResult* res);
 };
 
 
