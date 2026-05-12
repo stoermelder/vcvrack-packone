@@ -64,6 +64,11 @@ struct SelectionSource {
 	virtual const std::string getSourceType() const = 0;
 
 	/**
+	 * Returns true if the source provides vcv files (in contrast to vcvs)
+	 */
+	virtual bool isPatchSource() const = 0;
+
+	/**
 	 * Human-readable name for this source (e.g. the root path or a user-given label).
 	 * Used in the UI to identify the source.
 	 */

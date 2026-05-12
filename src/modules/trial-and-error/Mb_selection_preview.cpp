@@ -402,7 +402,7 @@ void SelectionPreviewWidget::createContextMenu() {
 
 	ui::Menu* menu = createMenu();
 
-	if (src->getSourceType() == filesystem::vcv::getSlug()) {
+	if (src->isPatchSource()) {
 		menu->addChild(createMenuItem("Replace current patch...", "", [this, src]() {
 			const std::string path = src->getAbsoluteFilePath(fileId);
 			// This is kind of hacky but interacting directly with rack::patch::Manager

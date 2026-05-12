@@ -389,6 +389,10 @@ struct FileSystemSource : SelectionSource {
 		return slug;
 	}
 
+	bool isPatchSource() const override {
+		return slug == SLUG_VCV;
+	}
+
 	const std::string getSourceName() const override {
 		std::string ext = slug == SLUG_VCVS ? ".vcvs" : ".vcv";
 		if (!rootContainer.empty()) return string::f("%s folder: %s", ext, rootContainer.c_str());
