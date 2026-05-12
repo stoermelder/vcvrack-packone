@@ -1,6 +1,7 @@
 #pragma once
 #include <rack.hpp>
 #include <osdialog.h>
+#include <ghc/filesystem.hpp>
 #include "Mb_selection_source.hpp"
 #include "Mb_selection_source_index.hpp"
 
@@ -180,6 +181,76 @@ struct FileSystemSource : SelectionSource {
 	std::string currentContainer;
 	FileSystemSourceIndex index;
 
+	struct CacheEntry {
+		std::string cachePath;
+		std::chrono::system_clock::time_point lastWriteTime;
+	};
+	mutable std::map<std::string, CacheEntry> cache_;
+	mutable std::string cacheDir_;
+
+	/** Generate a random cache folder name. */
+	std::string generateCacheName() const {
+		static std::random_device rd;
+		static std::mt19937 gen(rd());
+		static std::uniform_int_distribution<> dis(0, 15);
+		std::string name = "vcv_cache_";
+		for (int i = 0; i < 16; ++i) {
+			int v = dis(gen);
+			name += (v < 10) ? char('0' + v) : char('a' + v - 10);
+		}
+		return name;
+	}
+
+	/** Get or create the cache directory. */
+	const std::string& getCacheDir() const {
+		if (cacheDir_.empty()) {
+			cacheDir_ = system::join(system::getTempDirectory(), "vcv_cache");
+			system::createDirectories(cacheDir_);
+		}
+		return cacheDir_;
+	}
+
+	/**
+	 * Extract a .vcv archive to a cached folder.
+	 * Returns the path to the cached extraction, or empty on failure.
+	 */
+	std::string extractToCache(const std::string& archivePath) const {
+		std::string cacheName = generateCacheName();
+		std::string extractDir = system::join(getCacheDir(), cacheName);
+		system::createDirectories(extractDir);
+
+		try {
+			system::unarchiveToDirectory(archivePath, extractDir);
+		}
+		catch (...) {
+			system::removeRecursively(extractDir);
+			return "";
+		}
+		return extractDir;
+	}
+
+	/** Clear all cached extractions. */
+	void clearCache() const {
+		if (!cacheDir_.empty() && system::exists(cacheDir_)) {
+			system::removeRecursively(cacheDir_);
+			cacheDir_.clear();
+		}
+		cache_.clear();
+	}
+
+	/** Invalidate a single cache entry if the file has changed. */
+	void invalidateCacheEntry(const std::string& fileId) const {
+		auto it = cache_.find(fileId);
+		if (it != cache_.end()) {
+			std::string fullPath = rootContainer + "/" + fileId;
+			auto fileTime = ghc::filesystem::last_write_time(fullPath);
+			if (fileTime != it->second.lastWriteTime) {
+				system::removeRecursively(it->second.cachePath);
+				cache_.erase(it);
+			}
+		}
+	}
+
 	static constexpr const char* SLUG_VCVS = "filesystem:vcvs";
 	static constexpr const char* SLUG_VCV = "filesystem:vcv";
 	std::string slug;
@@ -204,6 +275,7 @@ struct FileSystemSource : SelectionSource {
 
 	void onDetach() override {
 		saveIndex();
+		clearCache();
 	}
 
 	const std::string getContainer() const override { 
@@ -374,29 +446,45 @@ struct FileSystemSource : SelectionSource {
 	 * then reads patch.json from the extracted contents.
 	 */
 	json_t* getFileJsonFromArchive(const std::string& archivePath) const {
-		// Extract to a temp directory using Rack's system API
-		std::string tempDir = system::join(system::getTempDirectory(), string::f("vcv_extract_%lf", system::getTime()));
-		system::createDirectories(tempDir);
-		
-		try {
-			system::unarchiveToDirectory(archivePath, tempDir);
+		// Check if we have a valid cache entry and the source file hasn't changed
+		auto it = cache_.find(archivePath);
+		if (it != cache_.end()) {
+			auto fileTime = ghc::filesystem::last_write_time(archivePath);
+			if (fileTime == it->second.lastWriteTime) {
+				std::string patchJsonPath = system::join(it->second.cachePath, "patch.json");
+				if (system::exists(patchJsonPath)) {
+					FILE* f = fopen(patchJsonPath.c_str(), "rb");
+					if (f) {
+						json_error_t error;
+						json_t* rootJ = json_loadf(f, 0, &error);
+						fclose(f);
+						return rootJ;
+					}
+				}
+			}
+			else {
+				// File has changed, invalidate cache entry
+				system::removeRecursively(it->second.cachePath);
+				cache_.erase(it);
+			}
 		}
-		catch (...) {
-			system::removeRecursively(tempDir);
-			return nullptr;
-		}
-		
+
+		// Extract to cache
+		std::string extractDir = extractToCache(archivePath);
+		if (extractDir.empty()) return nullptr;
+
 		// Read the patch.json file from the extracted directory
-		std::string patchJsonPath = system::join(tempDir, "patch.json");
+		std::string patchJsonPath = system::join(extractDir, "patch.json");
 		FILE* f = fopen(patchJsonPath.c_str(), "rb");
-		
-		// Clean up temp directory
-		system::removeRecursively(tempDir);
-		
 		if (!f) return nullptr;
 		json_error_t error;
 		json_t* rootJ = json_loadf(f, 0, &error);
 		fclose(f);
+
+		// Store in cache
+		auto fileTime = ghc::filesystem::last_write_time(archivePath);
+		cache_[archivePath] = { extractDir, fileTime };
+
 		return rootJ;
 	}
 
