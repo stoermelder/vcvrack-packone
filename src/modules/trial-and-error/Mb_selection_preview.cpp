@@ -363,7 +363,7 @@ void SelectionPreviewWidget::onButton(const ButtonEvent& e) {
 			APP->scene->rack->getFirstDescendantOfType<SppPreview::SelectionPreviewContainer<Mb::BrowserOverlay>>();
 		if (selectionContainer) {
 			selectionContainer->showSelectionPreview(rootJ, [&]() {
-				vcvsFromJson(rootJ);
+				vcvsFromJson(rootJ, "stoermelder MB selection load");
 				json_decref(rootJ);
 				fileId = "";
 			});

@@ -334,7 +334,7 @@ static std::vector<history::Action*>* vcvsFromJson_cables(json_t* rootJ, std::ma
  * @param rootJ JSON representation of the vcvs file
  * @return Warning log string for any issues encountered
  */
-static const std::string vcvsFromJson(json_t* rootJ) {
+static const std::string vcvsFromJson(json_t* rootJ, std::string undoActionName = "") {
     std::string warningLog = "";
 
     // Maps old moduleId to the newly created modules (with new id)
@@ -355,7 +355,7 @@ static const std::string vcvsFromJson(json_t* rootJ) {
     }
 
     history::ComplexAction* complexAction = new history::ComplexAction;
-    complexAction->name = "stoermelder STRIP selection load";
+    complexAction->name = undoActionName.empty() ? "Load selection" : undoActionName;
     for (history::Action* h : *h2) complexAction->push(h);
     delete h2;
     for (history::Action* h : *h3) complexAction->push(h);
@@ -373,7 +373,7 @@ static const std::string vcvsFromJson(json_t* rootJ) {
  * Validates JSON, checks for unavailable modules, and loads the selection.
  * @param path Full path to the .vcvs file
  */
-static void vcvsLoadFile(std::string path) {
+static void vcvsLoadFile(std::string path, std::string undoActionName = "") {
     FILE* file = std::fopen(path.c_str(), "r");
     if (!file) return;
     DEFER({std::fclose(file);});
@@ -387,7 +387,7 @@ static void vcvsLoadFile(std::string path) {
     DEFER({json_decref(rootJ);});
 
     vcvsCheckUnavailable(rootJ);
-    vcvsFromJson(rootJ);
+    vcvsFromJson(rootJ, undoActionName);
 }
 
 
@@ -396,7 +396,7 @@ static void vcvsLoadFile(std::string path) {
  * Deselects all modules, parses clipboard JSON, and loads the selection.
  * Shows an error dialog if clipboard access or JSON parsing fails.
  */
-static void vcvsPasteClipboard() {
+static void vcvsPasteClipboard(std::string undoActionName = "") {
     APP->scene->rack->deselectAll();
 
     const char* moduleJson = glfwGetClipboardString(APP->window->win);
@@ -416,7 +416,7 @@ static void vcvsPasteClipboard() {
         json_decref(rootJ);
     });
 
-    vcvsFromJson(rootJ);
+    vcvsFromJson(rootJ, undoActionName);
 }
 
 
@@ -425,7 +425,7 @@ static void vcvsPasteClipboard() {
  * @param load If true, actually loads the file; if false, just returns the selected path
  * @return The selected file path, or empty string if cancelled
  */
-static std::string vcvsLoadFileDialog(bool load) {
+static std::string vcvsLoadFileDialog(bool load, std::string undoActionName = "") {
     osdialog_filters* filters = osdialog_filters_parse(SELECTION_FILTERS);
     DEFER({osdialog_filters_free(filters);});
 
@@ -441,7 +441,7 @@ static std::string vcvsLoadFileDialog(bool load) {
     });
 
     try {
-        if (load) vcvsLoadFile(pathC);
+        if (load) vcvsLoadFile(pathC, undoActionName);
     }
     catch (Exception& e) {
         osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, e.what());
