@@ -118,6 +118,7 @@ struct CablesPreviewWidget : widget::Widget {
 	ModelPreviewWidget* inputBox = nullptr;
 	int outputId = 0;
 	int inputId = 0;
+	float modelBoxZoom = 1.f;
 	NVGcolor cableColor = nvgRGB(200, 200, 200);
 
 	void draw(const DrawArgs& args) override {
@@ -128,8 +129,8 @@ struct CablesPreviewWidget : widget::Widget {
 		math::Vec outputPos = outputBox->getPortPos(true, outputId);
 		math::Vec inputPos = inputBox->getPortPos(false, inputId);
 
-		float thickness = 2.0f;
-		math::Vec slump = getSlumpPos(outputPos, inputPos);
+		float thickness = 2.0f * modelBoxZoom;
+		math::Vec slump = getSlumpPos(outputPos, inputPos, modelBoxZoom);
 
 		// Draw cable
 		nvgBeginPath(args.vg);
@@ -139,33 +140,36 @@ struct CablesPreviewWidget : widget::Widget {
 		nvgStrokeWidth(args.vg, thickness);
 		nvgStroke(args.vg);
 
+		float plugOuter = 6.0f * modelBoxZoom;
+		float plugInner = 4.0f * modelBoxZoom;
+
 		// Draw output plug centered at cable endpoint
 		nvgBeginPath(args.vg);
-		nvgCircle(args.vg, VEC_ARGS(outputPos), 6.0f);
+		nvgCircle(args.vg, VEC_ARGS(outputPos), plugOuter);
 		nvgFillColor(args.vg, cableColor);
 		nvgFill(args.vg);
 
 		nvgBeginPath(args.vg);
-		nvgCircle(args.vg, VEC_ARGS(outputPos), 4.0f);
+		nvgCircle(args.vg, VEC_ARGS(outputPos), plugInner);
 		nvgFillColor(args.vg, nvgRGB(40, 40, 40));
 		nvgFill(args.vg);
 
 		// Draw input plug centered at cable endpoint
 		nvgBeginPath(args.vg);
-		nvgCircle(args.vg, VEC_ARGS(inputPos), 6.0f);
+		nvgCircle(args.vg, VEC_ARGS(inputPos), plugOuter);
 		nvgFillColor(args.vg, cableColor);
 		nvgFill(args.vg);
 
 		nvgBeginPath(args.vg);
-		nvgCircle(args.vg, VEC_ARGS(inputPos), 4.0f);
+		nvgCircle(args.vg, VEC_ARGS(inputPos), plugInner);
 		nvgFillColor(args.vg, nvgRGB(40, 40, 40));
 		nvgFill(args.vg);
 	}
 
-	static math::Vec getSlumpPos(math::Vec pos1, math::Vec pos2) {
+	static math::Vec getSlumpPos(math::Vec pos1, math::Vec pos2, float zoom = 1.f) {
 		float dist = pos1.minus(pos2).norm();
 		math::Vec avg = pos1.plus(pos2).div(2);
-		avg.y += 0.5f * (150.0f + dist);
+		avg.y += 0.5f * (150.0f + dist) * zoom;
 		return avg;
 	}
 };
@@ -247,6 +251,11 @@ void SelectionPreviewWidget::fitPreviewToBox() {
 			modelBox->sizePreview();
 			// Apply centering offset in screen coordinates
 			modelBox->box.pos = modelBox->box.pos.plus(math::Vec(scaledContentOffsetX, scaledContentOffsetY));
+		}
+		CablesPreviewWidget* cableBox = dynamic_cast<CablesPreviewWidget*>(child);
+		if (cableBox) {
+			cableBox->box.size = box.size;
+			cableBox->modelBoxZoom = scale;
 		}
 	}
 }
