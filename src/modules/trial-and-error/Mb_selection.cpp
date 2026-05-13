@@ -16,7 +16,7 @@ struct AsyncContainerLoadResult {
 	std::vector<std::string> files;
 };
 
-struct AsyncContainerLoadWidget : widget::OpaqueWidget {
+struct AsyncContainerLoadWidget : widget::Widget {
 	std::shared_ptr<AsyncContainerLoadResult> result;
 	SelectionBrowserSidebar* sidebar;
 
@@ -28,7 +28,7 @@ struct AsyncContainerLoadWidget : widget::OpaqueWidget {
 				sidebar->populateFileList(result.get());
 			requestDelete();
 		}
-		OpaqueWidget::step();
+		Widget::step();
 	}
 };
 
@@ -37,7 +37,7 @@ struct AsyncFileJsonResult {
 	json_t* json = nullptr;
 };
 
-struct AsyncFileJsonWidget : widget::OpaqueWidget {
+struct AsyncFileJsonWidget : widget::Widget {
 	std::shared_ptr<AsyncFileJsonResult> result;
 	SelectionBrowserSidebar* sidebar;
 
@@ -56,7 +56,7 @@ struct AsyncFileJsonWidget : widget::OpaqueWidget {
 			}
 			requestDelete();
 		}
-		OpaqueWidget::step();
+		Widget::step();
 	}
 };
 
@@ -83,14 +83,15 @@ struct FileItem : ui::MenuItem {
 			AsyncFileJsonWidget* asyncWidget = new AsyncFileJsonWidget(sidebar);
 			APP->scene->addChild(asyncWidget);
 			std::string fid = fileId;
-			sidebar->taskWorker.work([asyncWidget, src, fid]() {
+			auto task = [asyncWidget, src, fid]() {
 				auto res = std::make_shared<AsyncFileJsonResult>();
-				res->fileId = fid;
 				res->json = src->getFileJson(fid);
+				res->fileId = fid;
 				asyncWidget->result = res;
-			});
+			};
+			sidebar->taskWorker.work(std::move(task));
 		}
-		e.unconsume();
+		e.consume(this);
 	}
 
 	void draw(const DrawArgs& args) override {
