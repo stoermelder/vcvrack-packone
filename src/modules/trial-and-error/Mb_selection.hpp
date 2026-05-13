@@ -101,6 +101,11 @@ struct SelectionBrowser : widget::OpaqueWidget {
 	/** Whether to show only favorite files. */
 	bool favoriteFilter = false;
 
+	/** Timestamp when the status text should be cleared (0 = no status). */
+	float statusDisplayUntil = 0.f;
+	/** The last shown status text. */
+	std::string lastStatus;
+
 	SelectionBrowser();
 	~SelectionBrowser();
 	void step() override;

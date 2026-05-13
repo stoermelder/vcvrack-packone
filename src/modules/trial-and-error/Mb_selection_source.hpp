@@ -114,6 +114,11 @@ struct SelectionSource {
 	 * The menu is owned by the caller; subclasses add items to it.
 	 */
 	virtual void appendMenuItems(ui::Menu* menu) = 0;
+
+	/**
+	 * Returns the current task status of the data source.
+	 */
+	virtual std::string& getStatus() = 0;
 };
 
 

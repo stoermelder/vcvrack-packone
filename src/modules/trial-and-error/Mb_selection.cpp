@@ -614,6 +614,49 @@ void SelectionBrowser::step() {
 void SelectionBrowser::draw(const DrawArgs& args) {
 	bndMenuBackground(args.vg, 0.0, 0.0, box.size.x, box.size.y, 0);
 	widget::OpaqueWidget::draw(args);
+
+	// Update status display time when source status changes
+	// Status format: "0:message" shows indefinitely, "2:message" shows for 2 seconds then clears
+	SelectionSource* src = getSource();
+	if (src) {
+		std::string currentStatus = src->getStatus();
+		if (currentStatus != lastStatus) {
+			if (!currentStatus.empty()) {
+				// Parse timeout from prefix (e.g., "0:" or "2:")
+				float timeout = 2.0f;
+				if (currentStatus.substr(0, 2) == "0:") {
+					timeout = 0.0f;  // 0 means indefinite
+					currentStatus = currentStatus.substr(2);
+				} else if (currentStatus.substr(0, 2) == "2:") {
+					currentStatus = currentStatus.substr(2);
+				}
+				lastStatus = currentStatus;
+				statusDisplayUntil = timeout > 0.0f ? glfwGetTime() + timeout : 0.0f;
+			} else {
+				// Empty string means clear the status
+				lastStatus = "";
+				statusDisplayUntil = 0.0f;
+			}
+		}
+	}
+
+	// Show status text (lastStatus already has prefix stripped)
+	float now = glfwGetTime();
+	std::string statusText;
+	if (!lastStatus.empty()) {
+		statusText = lastStatus;
+	} else if (statusDisplayUntil > 0.0f && now < statusDisplayUntil) {
+		// Show until timeout
+	} else {
+		statusText = "";
+	}
+	if (!statusText.empty()) {
+		float x = preview->box.pos.x + 10.f;
+		float y = preview->box.pos.y + preview->box.size.y - 24.f;
+		bndIconLabelValue(args.vg, x, y, preview->box.size.y, 20.f, -1,
+			bndGetTheme()->menuTheme.textColor, BND_LEFT,
+			BND_LABEL_FONT_SIZE, statusText.c_str(), NULL);
+	}
 }
 
 

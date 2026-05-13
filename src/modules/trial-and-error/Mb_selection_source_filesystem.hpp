@@ -24,13 +24,12 @@ struct FileSystemSourceIndex : SelectionSourceIndex {
 		std::vector<std::string> customTags;
 		bool favorite = false;
 	};
-
-	std::map<std::string, FileIndexEntry> entries_;
-	bool readOnly_ = false;
+	std::map<std::string, FileIndexEntry> entries;
+	bool readOnly = false;
 
 	json_t* toJson() const {
 		json_t* j = json_object();
-		for (const auto& pair : entries_) {
+		for (const auto& pair : entries) {
 			json_t* entryJ = json_object();
 			json_object_set_new(entryJ, "description", json_string(pair.second.description.c_str()));
 			json_t* tagsJ = json_array();
@@ -52,7 +51,7 @@ struct FileSystemSourceIndex : SelectionSourceIndex {
 	bool fromJson(json_t* indexJ) {
 		if (!indexJ || !json_is_object(indexJ)) return false;
 
-		entries_.clear();
+		entries.clear();
 		const char* fileId;
 		json_t* entryJ;
 		json_object_foreach(indexJ, fileId, entryJ) {
@@ -87,78 +86,78 @@ struct FileSystemSourceIndex : SelectionSourceIndex {
 			json_t* favJ = json_object_get(entryJ, "favorite");
 			if (favJ) entry.favorite = json_boolean_value(favJ);
 
-			entries_[fileId] = entry;
+			entries[fileId] = entry;
 		}
 		return true;
 	}
 
 	std::string getDescription(const std::string& fileId) const override {
-		auto it = entries_.find(fileId);
-		return it != entries_.end() ? it->second.description : "";
+		auto it = entries.find(fileId);
+		return it != entries.end() ? it->second.description : "";
 	}
 	void setDescription(const std::string& fileId, const std::string& description) override {
-		if (!readOnly_) entries_[fileId].description = description;
+		if (!readOnly) entries[fileId].description = description;
 	}
 
 	bool hasTag(const std::string& fileId, const std::string& tag) override {
-		auto& tags = entries_[fileId].tags;
+		auto& tags = entries[fileId].tags;
 		return std::find(tags.begin(), tags.end(), tag) != tags.end();
 	}
 	std::vector<std::string> getTags(const std::string& fileId) const override {
-		auto it = entries_.find(fileId);
-		return it != entries_.end() ? it->second.tags : std::vector<std::string>();
+		auto it = entries.find(fileId);
+		return it != entries.end() ? it->second.tags : std::vector<std::string>();
 	}
 	void addTag(const std::string& fileId, const std::string& tag) override {
-		if (!readOnly_) {
-			auto& tags = entries_[fileId].tags;
+		if (!readOnly) {
+			auto& tags = entries[fileId].tags;
 			if (std::find(tags.begin(), tags.end(), tag) == tags.end())
 				tags.push_back(tag);
 		}
 	}
 	void removeTag(const std::string& fileId, const std::string& tag) override {
-		if (!readOnly_) {
-			auto& tags = entries_[fileId].tags;
+		if (!readOnly) {
+			auto& tags = entries[fileId].tags;
 			tags.erase(std::remove(tags.begin(), tags.end(), tag), tags.end());
 		}
 	}
 
 	bool hasCustomTag(const std::string& fileId, const std::string& tag) override {
-		auto& tags = entries_[fileId].customTags;
+		auto& tags = entries[fileId].customTags;
 		return std::find(tags.begin(), tags.end(), tag) != tags.end();
 	}
 	std::vector<std::string> getCustomTags(const std::string& fileId) const override {
-		auto it = entries_.find(fileId);
-		return it != entries_.end() ? it->second.customTags : std::vector<std::string>();
+		auto it = entries.find(fileId);
+		return it != entries.end() ? it->second.customTags : std::vector<std::string>();
 	}
 	void addCustomTag(const std::string& fileId, const std::string& tag) override {
-		if (!readOnly_) {
-			auto& tags = entries_[fileId].customTags;
+		if (!readOnly) {
+			auto& tags = entries[fileId].customTags;
 			if (std::find(tags.begin(), tags.end(), tag) == tags.end())
 				tags.push_back(tag);
 		}
 	}
 	void removeCustomTag(const std::string& fileId, const std::string& tag) override {
-		if (!readOnly_) {
-			auto& tags = entries_[fileId].customTags;
+		if (!readOnly) {
+			auto& tags = entries[fileId].customTags;
 			tags.erase(std::remove(tags.begin(), tags.end(), tag), tags.end());
 		}
 	}
 
 	bool isFavorite(const std::string& fileId) const override {
-		auto it = entries_.find(fileId);
-		return it != entries_.end() && it->second.favorite;
+		auto it = entries.find(fileId);
+		return it != entries.end() && it->second.favorite;
 	}
 	void setFavorite(const std::string& fileId, bool favorite) override {
-		if (!readOnly_) {
-			entries_[fileId].favorite = favorite;
+		if (!readOnly) {
+			entries[fileId].favorite = favorite;
 		}
 	}
 
-	bool isReadOnly() const override { return readOnly_; }
+	bool isReadOnly() const override { return readOnly; }
 
 	std::vector<std::string> getTagsAll() const override {
 		std::set<std::string> uniqueTags;
-		for (const auto& pair : entries_) {
+		for (const auto& pair : entries) {
 			for (const std::string& tag : pair.second.tags) {
 				uniqueTags.insert(tag);
 			}
@@ -168,7 +167,7 @@ struct FileSystemSourceIndex : SelectionSourceIndex {
 
 	std::vector<std::string> getCustomTagsAll() const override {
 		std::set<std::string> uniqueTags;
-		for (const auto& pair : entries_) {
+		for (const auto& pair : entries) {
 			for (const std::string& tag : pair.second.customTags) {
 				uniqueTags.insert(tag);
 			}
@@ -181,6 +180,7 @@ struct FileSystemSource : SelectionSource {
 	std::string rootContainer;
 	std::string currentContainer;
 	SelectionBrowserHelper* helper;
+	mutable std::string status = "";
 
 	/** Shared archive cache - stores extraction paths for .vcv archives. 
 	 * Shared via global cache to allow reuse across sources with same rootContainer.
@@ -266,6 +266,7 @@ struct FileSystemSource : SelectionSource {
 		}
 		catch (...) {
 			system::removeRecursively(extractDir);
+			status = "2:Failed to extract archive";
 			return "";
 		}
 		return extractDir;
@@ -552,6 +553,10 @@ struct FileSystemSource : SelectionSource {
 				system::openDirectory(rootContainer);
 			}));
 		}
+	}
+
+	std::string& getStatus() override {
+		return status;
 	}
 };
 
