@@ -133,6 +133,12 @@ namespace filesystem {
 	}
 }
 
+namespace patchstorage {
+	extern std::string getSlug();
+	extern bool canCreate();
+	extern SelectionSource* initSource();
+}
+
 /**
  * Factory function: create the correct SelectionSource subclass
  * from a JSON snapshot. Returns nullptr if the type is unknown.
@@ -140,7 +146,8 @@ namespace filesystem {
 inline SelectionSource* createSourceFromJson(json_t* sourceJ) {
 	static std::map<std::string, std::function<SelectionSource*()>> sourceSlugs {
 		{ filesystem::vcvs::getSlug(), filesystem::vcvs::initSource },
-		{ filesystem::vcv::getSlug(), filesystem::vcv::initSource }
+		{ filesystem::vcv::getSlug(), filesystem::vcv::initSource },
+		{ patchstorage::getSlug(), patchstorage::initSource }
 	};
 
 	json_t* slugJ = json_object_get(sourceJ, "slug");

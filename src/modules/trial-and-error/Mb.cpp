@@ -838,6 +838,10 @@ struct MbWidget : ModuleWidget {
 				selection::SelectionSource* newSrc = selection::filesystem::vcv::createSource();
 				if (newSrc) { selBrowser->addSource(newSrc); }
 			}));
+			menu->addChild(createMenuItem("Add PatchStorage source", "", [=]() {
+				selection::SelectionSource* newSrc = selection::patchstorage::initSource();
+				if (newSrc) { selBrowser->addSource(newSrc); }
+			}, !selection::patchstorage::canCreate()));
 
 			// Remove current source
 			menu->addChild(createMenuItem("Remove selected source", "", [=]() {

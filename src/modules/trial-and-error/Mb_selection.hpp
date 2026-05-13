@@ -3,6 +3,7 @@
 #include "Mb_selection_source.hpp"
 #include "Mb_selection_source_index.hpp"
 #include "Mb_selection_source_filesystem.hpp"
+#include "Mb_selection_source_patchstorage.hpp"
 #include "Mb_selection_helper.hpp"
 #include "../../utils/TaskWorker.hpp"
 #include <tag.hpp>

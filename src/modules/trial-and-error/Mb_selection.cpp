@@ -390,6 +390,12 @@ void SelectionBrowser::SourceButton::onAction(const event::Action& e) {
 			browser->addSource(newSrc);
 		}
 	}));
+	menu->addChild(createMenuItem("Add PatchStorage source", "", [this] {
+		SelectionSource* newSrc = patchstorage::initSource();
+		if (newSrc) {
+			browser->addSource(newSrc);
+		}
+	}, !patchstorage::canCreate()));
 	menu->addChild(createMenuItem("Remove source", "", [this] {
 		if (browser->activeSourceIndex >= 0 && browser->activeSourceIndex < (int)browser->sources.size()) {
 			browser->removeSource(browser->activeSourceIndex);
