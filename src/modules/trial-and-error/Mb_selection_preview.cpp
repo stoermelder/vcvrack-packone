@@ -407,11 +407,10 @@ void SelectionPreviewWidget::createContextMenu() {
 	if (src->isPatchSource()) {
 		menu->addChild(createMenuItem("Replace current patch...", "", [this, src]() {
 			const std::string path = src->getAbsoluteFilePath(fileId);
-			// This is kind of hacky but interacting directly with rack::patch::Manager
-			// is not supported, as we would need to include patch.hpp.
-			const std::vector<std::string>& paths = {path};
-			const Widget::PathDropEvent e(paths);
-			APP->scene->onPathDrop(e);
+			auto helper = SelectionBrowserHelper::getInstance();
+			if (helper) {
+				helper->setPendingPatchPath(path);
+			}
 		}));
 		menu->addChild(new MenuSeparator);
 	}

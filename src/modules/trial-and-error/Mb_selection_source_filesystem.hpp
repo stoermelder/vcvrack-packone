@@ -4,6 +4,7 @@
 #include <ghc/filesystem.hpp>
 #include "Mb_selection_source.hpp"
 #include "Mb_selection_source_index.hpp"
+#include "Mb_selection_helper.hpp"
 
 namespace StoermelderPackOne {
 namespace Mb {
@@ -179,14 +180,63 @@ struct FileSystemSourceIndex : SelectionSourceIndex {
 struct FileSystemSource : SelectionSource {
 	std::string rootContainer;
 	std::string currentContainer;
-	FileSystemSourceIndex index;
+	SelectionBrowserHelper* helper;
 
-	struct CacheEntry {
+	/** Shared archive cache - stores extraction paths for .vcv archives. 
+	 * Shared via global cache to allow reuse across sources with same rootContainer.
+	 * Key is archive path, value is extraction path + file modification time.
+	 */
+	struct ArchiveCacheEntry {
 		std::string cachePath;
 		std::chrono::system_clock::time_point lastWriteTime;
 	};
-	mutable std::map<std::string, CacheEntry> cache_;
-	mutable std::string cacheDir_;
+	std::shared_ptr<std::map<std::string, ArchiveCacheEntry>> archiveCache;
+	std::shared_ptr<FileSystemSourceIndex> index;
+
+	SelectionSourceIndex* getIndex() const override {
+		return index.get();
+	}
+
+	void onAttach() override {
+		// If no root is set, default to the user's selections directory
+		if (rootContainer.empty()) {
+			rootContainer = currentContainer = asset::user("selections");
+		}
+
+		// Register our index in the global cache for sharing with other sources
+		// that have the same rootContainer
+		std::string cacheKey = slug + ":index:" + rootContainer;
+		auto existingIndex = helper->getGlobalCache<FileSystemSourceIndex>(cacheKey);
+		if (existingIndex) {
+			// Another source already created an index for this root - reuse it
+			index = existingIndex;
+		} 
+		else {
+			// Create and store our index
+			index = std::make_shared<FileSystemSourceIndex>();
+			helper->setGlobalCache(cacheKey, index, nullptr);
+		}
+
+		// Register our archive cache in the global cache for sharing
+		std::string archiveCacheKey = slug + ":archiveCache:" + rootContainer;
+		auto existingArchiveCache = helper->getGlobalCache<std::map<std::string, ArchiveCacheEntry>>(archiveCacheKey);
+		if (existingArchiveCache) {
+			// Another source already created an archive cache for this root - reuse it
+			archiveCache = existingArchiveCache;
+		} 
+		else {
+			// Create and store our archive cache
+			archiveCache = std::make_shared<std::map<std::string, ArchiveCacheEntry>>();
+			helper->setGlobalCache(archiveCacheKey, archiveCache, nullptr);
+		}
+
+		loadIndex();
+	}
+
+	void onDetach() override {
+		saveIndex();
+	}
+
 
 	/** Generate a random cache folder name. */
 	std::string generateCacheName() const {
@@ -201,14 +251,6 @@ struct FileSystemSource : SelectionSource {
 		return name;
 	}
 
-	/** Get or create the cache directory. */
-	const std::string& getCacheDir() const {
-		if (cacheDir_.empty()) {
-			cacheDir_ = system::join(system::getTempDirectory(), "vcv_cache");
-			system::createDirectories(cacheDir_);
-		}
-		return cacheDir_;
-	}
 
 	/**
 	 * Extract a .vcv archive to a cached folder.
@@ -229,24 +271,25 @@ struct FileSystemSource : SelectionSource {
 		return extractDir;
 	}
 
+	/** Get the cache directory from the helper. */
+	const std::string& getCacheDir() const {
+		return helper->cacheDir;
+	}
+
 	/** Clear all cached extractions. */
 	void clearCache() const {
-		if (!cacheDir_.empty() && system::exists(cacheDir_)) {
-			system::removeRecursively(cacheDir_);
-			cacheDir_.clear();
-		}
-		cache_.clear();
+		archiveCache->clear();
 	}
 
 	/** Invalidate a single cache entry if the file has changed. */
 	void invalidateCacheEntry(const std::string& fileId) const {
-		auto it = cache_.find(fileId);
-		if (it != cache_.end()) {
+		auto it = archiveCache->find(fileId);
+		if (it != archiveCache->end()) {
 			std::string fullPath = rootContainer + "/" + fileId;
 			auto fileTime = ghc::filesystem::last_write_time(fullPath);
 			if (fileTime != it->second.lastWriteTime) {
 				system::removeRecursively(it->second.cachePath);
-				cache_.erase(it);
+				archiveCache->erase(it);
 			}
 		}
 	}
@@ -265,17 +308,8 @@ struct FileSystemSource : SelectionSource {
 		return result;
 	}
 
-	void onAttach() override {
-		// If no root is set, default to the user's selections directory
-		if (rootContainer.empty()) {
-			rootContainer = currentContainer = asset::user("selections");
-		}
-		loadIndex();
-	}
-
-	void onDetach() override {
-		saveIndex();
-		clearCache();
+	void setHelper(SelectionBrowserHelper* h) override {
+		helper = h;
 	}
 
 	const std::string getContainer() const override { 
@@ -352,7 +386,7 @@ struct FileSystemSource : SelectionSource {
 
 	/** Load index from mb-index.json in the root container, if it exists. */
 	void loadIndex() {
-		if (rootContainer.empty()) return;
+		if (rootContainer.empty() || !index) return;
 		std::string ext = slug == SLUG_VCVS ? "vcvs" : "vcv";
 		std::string indexPath = rootContainer + "/mb-index." + ext + ".json";
 		FILE* f = fopen(indexPath.c_str(), "rb");
@@ -361,16 +395,16 @@ struct FileSystemSource : SelectionSource {
 		json_t* indexJ = json_loadf(f, 0, &error);
 		fclose(f);
 		if (!indexJ) return;
-		index.fromJson(indexJ);
+		index->fromJson(indexJ);
 		json_decref(indexJ);
 	}
 
 	/** Save index to mb-index.json in the root container. */
 	void saveIndex() const {
-		if (rootContainer.empty()) return;
+		if (rootContainer.empty() || !index) return;
 		std::string ext = slug == SLUG_VCVS ? "vcvs" : "vcv";
 		std::string indexPath = rootContainer + "/mb-index." + ext + ".json";
-		json_t* indexJ = index.toJson();
+		json_t* indexJ = index->toJson();
 		FILE* f = fopen(indexPath.c_str(), "wb");
 		if (!f) {
 			json_decref(indexJ);
@@ -379,10 +413,6 @@ struct FileSystemSource : SelectionSource {
 		json_dumpf(indexJ, f, JSON_INDENT(2));
 		fclose(f);
 		json_decref(indexJ);
-	}
-
-	SelectionSourceIndex* getIndex() const override {
-		return const_cast<FileSystemSourceIndex*>(&index);
 	}
 
 	const std::string getSourceType() const override {
@@ -450,9 +480,9 @@ struct FileSystemSource : SelectionSource {
 	 * then reads patch.json from the extracted contents.
 	 */
 	json_t* getFileJsonFromArchive(const std::string& archivePath) const {
-		// Check if we have a valid cache entry and the source file hasn't changed
-		auto it = cache_.find(archivePath);
-		if (it != cache_.end()) {
+		// Check if we have a valid cache entry and the source file hasn't changed();
+		auto it = archiveCache->find(archivePath);
+		if (it != archiveCache->end()) {
 			auto fileTime = ghc::filesystem::last_write_time(archivePath);
 			if (fileTime == it->second.lastWriteTime) {
 				std::string patchJsonPath = system::join(it->second.cachePath, "patch.json");
@@ -469,7 +499,7 @@ struct FileSystemSource : SelectionSource {
 			else {
 				// File has changed, invalidate cache entry
 				system::removeRecursively(it->second.cachePath);
-				cache_.erase(it);
+				archiveCache->erase(it);
 			}
 		}
 
@@ -487,7 +517,7 @@ struct FileSystemSource : SelectionSource {
 
 		// Store in cache
 		auto fileTime = ghc::filesystem::last_write_time(archivePath);
-		cache_[archivePath] = { extractDir, fileTime };
+		(*archiveCache)[archivePath] = { extractDir, fileTime };
 
 		return rootJ;
 	}

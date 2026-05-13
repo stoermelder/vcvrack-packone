@@ -2,6 +2,7 @@
 #include <string>
 #include <vector>
 #include <rack.hpp>
+#include "Mb_selection_helper.hpp"
 #include "Mb_selection_source_index.hpp"
 
 namespace StoermelderPackOne {
@@ -22,6 +23,11 @@ struct SelectionSource {
 	virtual void onAttach() {}
 	/** Called when the source is detached from a sidebar. */
 	virtual void onDetach() {}
+
+	/** Set the cache directory used for temporary downloads/extractions. */
+	virtual void setCacheDir(const std::string& dir) {}
+	/** Set the helper instance for cache access. */
+	virtual void setHelper(SelectionBrowserHelper* helper) {}
 
 	// -- navigation ----------------------------------------------------------
 
@@ -142,6 +148,7 @@ inline SelectionSource* createSourceFromJson(json_t* sourceJ) {
 			delete src;
 			return nullptr;
 		}
+		src->setHelper(SelectionBrowserHelper::getInstance());
 		return src;
 	}
 	return nullptr;

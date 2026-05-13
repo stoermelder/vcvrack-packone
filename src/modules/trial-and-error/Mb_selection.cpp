@@ -32,6 +32,7 @@ struct AsyncContainerLoadWidget : widget::Widget {
 	}
 };
 
+
 struct AsyncFileJsonResult {
 	std::string fileId;
 	json_t* json = nullptr;
@@ -473,6 +474,13 @@ SelectionBrowser::SelectionBrowser() {
 	preview->browser = this;
 	addChild(preview);
 	sidebar->preview = preview;
+
+	// Handles cache clearing on application exit
+	auto helper = SelectionBrowserHelper::getInstance();
+	if (!helper) {
+		helper = new SelectionBrowserHelper;
+		APP->scene->menuBar->addChild(helper);
+	}
 }
 
 SelectionBrowser::~SelectionBrowser() {
@@ -510,9 +518,15 @@ void SelectionBrowser::setSources(const std::vector<SelectionSource*>& newSource
 }
 
 void SelectionBrowser::addSource(SelectionSource* newSource) {
+	if (!newSource) return;
+	
 	sources.push_back(newSource);
 	activeSourceIndex = (int)sources.size() - 1;
-	if (newSource) newSource->onAttach();
+	SelectionBrowserHelper* helper = SelectionBrowserHelper::getInstance();
+	newSource->setHelper(helper);
+	newSource->setCacheDir(helper->cacheDir);
+	newSource->onAttach();
+
 	sidebar->source = getSource();
 	sidebar->loadContainer();
 }
