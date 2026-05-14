@@ -122,13 +122,6 @@ std::set<std::string> customTagsForModel(Model* model) {
 	return result;
 }
 
-std::set<std::string> customTagsAll() {
-	std::set<std::string> result;
-	for (auto& pair : customTagModels)
-		result.insert(pair.first);
-	return result;
-}
-
 
 // Predefined tag modifications
 
@@ -523,12 +516,12 @@ BrowserOverlay::BrowserOverlay() {
 	mbV2->hide();
 	addChild(mbV2);
 
-	mbSelection = new selection::SelectionBrowser;
+	mbSelection = new selection::Browser;
 	mbSelection->hide();
 	addChild(mbSelection);
 
 	// Configure the selection sources from saved settings
-	selection::SelectionBrowser* selBrowser = static_cast<selection::SelectionBrowser*>(mbSelection);
+	selection::Browser* selBrowser = static_cast<selection::Browser*>(mbSelection);
 
 	if (pluginSettings.mbDataSourcesJ) {
 		std::vector<selection::SelectionSource*> loadedSources;
@@ -573,7 +566,7 @@ BrowserOverlay::~BrowserOverlay() {
 	// Save selection sources to array
 	json_decref(pluginSettings.mbDataSourcesJ);
 	pluginSettings.mbDataSourcesJ = json_array();
-	selection::SelectionBrowser* selBrowser = static_cast<selection::SelectionBrowser*>(mbSelection);
+	selection::Browser* selBrowser = static_cast<selection::Browser*>(mbSelection);
 	for (selection::SelectionSource* source : selBrowser->sources) {
 		if (source) {
 			json_array_append_new(pluginSettings.mbDataSourcesJ, source->toJson());
@@ -827,7 +820,7 @@ struct MbWidget : ModuleWidget {
 			[module]() { module->mode = MODE::V2; }
 		));
 		menu->addChild(createSubmenuItem("Patch browser", RACK_MOD_CTRL_NAME "+Right click", [=](Menu* menu) {
-			selection::SelectionBrowser* selBrowser = static_cast<selection::SelectionBrowser*>(browserOverlay->mbSelection);
+			selection::Browser* selBrowser = static_cast<selection::Browser*>(browserOverlay->mbSelection);
 			int activeIdx = selBrowser->activeSourceIndex;
 
 			menu->addChild(createMenuItem("Add .vcvs folder source...", "", [=]() {

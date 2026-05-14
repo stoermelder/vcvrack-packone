@@ -175,7 +175,7 @@ struct CablesPreviewWidget : widget::Widget {
 };
 
 
-bool SelectionPreviewWidget::setSelection(std::string fileId, json_t* rootJ) {
+bool PreviewWidget::setSelection(std::string fileId, json_t* rootJ) {
 	if (this->fileId == fileId) {
 		return true;
 	}
@@ -191,7 +191,7 @@ bool SelectionPreviewWidget::setSelection(std::string fileId, json_t* rootJ) {
 	return true;
 }
 
-void SelectionPreviewWidget::clearSelection() {
+void PreviewWidget::clearSelection() {
 	if (this->rootJ) {
 		json_decref(this->rootJ);
 		this->rootJ = nullptr;
@@ -200,7 +200,7 @@ void SelectionPreviewWidget::clearSelection() {
 	clearChildren();
 }
 
-void SelectionPreviewWidget::fitPreviewToBox() {
+void PreviewWidget::fitPreviewToBox() {
 	if (children.empty()) return;
 	if (box.size.x <= 0 || box.size.y <= 0) return;
 
@@ -261,12 +261,12 @@ void SelectionPreviewWidget::fitPreviewToBox() {
 	}
 }
 
-void SelectionPreviewWidget::refreshPreview() {
+void PreviewWidget::refreshPreview() {
 	lastBoxSize = math::Vec(-1, -1);
 	fitted = false;
 }
 
-void SelectionPreviewWidget::createPreview() {
+void PreviewWidget::createPreview() {
 	json_t* modulesJ = json_object_get(rootJ, "modules");
 	if (!modulesJ) return;
 
@@ -352,7 +352,7 @@ void SelectionPreviewWidget::createPreview() {
 	}
 }
 
-void SelectionPreviewWidget::onButton(const ButtonEvent& e) {
+void PreviewWidget::onButton(const ButtonEvent& e) {
 	if (e.button == GLFW_MOUSE_BUTTON_RIGHT && e.action == GLFW_PRESS) {
 		createContextMenu();
 		e.consume(this);
@@ -373,7 +373,7 @@ void SelectionPreviewWidget::onButton(const ButtonEvent& e) {
 	}
 }
 
-void SelectionPreviewWidget::step() {
+void PreviewWidget::step() {
 	OpaqueWidget::step();
 	// Recalculate when our box size changes OR when file path changes
 	if (box.size != lastBoxSize || lastFileId != fileId) {
@@ -383,7 +383,7 @@ void SelectionPreviewWidget::step() {
 	}
 }
 
-void SelectionPreviewWidget::draw(const DrawArgs& args) {
+void PreviewWidget::draw(const DrawArgs& args) {
 	Rect s = box.zeroPos().grow(10.f);
 	nvgBeginPath(args.vg);
 	nvgRect(args.vg, RECT_ARGS(s));
@@ -395,7 +395,7 @@ void SelectionPreviewWidget::draw(const DrawArgs& args) {
 	nvgResetScissor(args.vg);
 }
 
-void SelectionPreviewWidget::createContextMenu() {
+void PreviewWidget::createContextMenu() {
 	if (!browser) return;
 	SelectionSource* src = browser->getSource();
 	if (!src) return;
@@ -427,8 +427,9 @@ void SelectionPreviewWidget::createContextMenu() {
 		void onAction(const event::Action& e) override {
 			index->setFavorite(fileId, !isFavorite);
 			isFavorite = !isFavorite;
-			SelectionBrowser* browser = APP->scene->getFirstDescendantOfType<SelectionBrowser>();
-			if (browser) browser->sidebar->loadContainer();
+			Browser* browser = APP->scene->getFirstDescendantOfType<Browser>();
+			browser->sidebar->refreshFileList();
+			browser->sidebar->refreshDescriptionAndTags();
 			e.unconsume();
 		}
 		void step() override {
@@ -446,7 +447,6 @@ void SelectionPreviewWidget::createContextMenu() {
 	menu->addChild(favItem);
 
 	menu->addChild(new MenuSeparator);
-
 	menu->addChild(createMenuLabel("Custom Tags"));
 
 	struct NewCustomTagField : ui::TextField {
@@ -457,7 +457,7 @@ void SelectionPreviewWidget::createContextMenu() {
 				std::string tag = string::trim(text);
 				if (!tag.empty()) {
 					index->addCustomTag(fileId, tag);
-					SelectionBrowser* browser = APP->scene->getFirstDescendantOfType<SelectionBrowser>();
+					Browser* browser = APP->scene->getFirstDescendantOfType<Browser>();
 					if (browser) browser->sidebar->loadContainer();
 				}
 				ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
@@ -482,8 +482,9 @@ void SelectionPreviewWidget::createContextMenu() {
 			else
 				index->addCustomTag(fileId, tagName);
 			hasTag = !hasTag;
-			SelectionBrowser* browser = APP->scene->getFirstDescendantOfType<SelectionBrowser>();
-			if (browser) browser->sidebar->loadContainer();
+			Browser* browser = APP->scene->getFirstDescendantOfType<Browser>();
+			browser->sidebar->refreshFileList();
+			browser->sidebar->refreshDescriptionAndTags();
 			e.unconsume();
 		}
 		void step() override {
@@ -531,6 +532,9 @@ void SelectionPreviewWidget::createContextMenu() {
 			else
 				index->addTag(fileId, tagName);
 			hasTag = !hasTag;
+			Browser* browser = APP->scene->getFirstDescendantOfType<Browser>();
+			browser->sidebar->refreshFileList();
+			browser->sidebar->refreshDescriptionAndTags();
 			e.unconsume();
 		}
 		void step() override {

@@ -13,22 +13,35 @@ namespace patchstorage {
 
 static constexpr const char* SLUG = "patchstorage";
 
+
+// Cache for patch metadata
+struct PatchInfo {
+	int id;
+	int fileId;
+	std::string title;
+	std::string slug;
+	std::string description;
+	int categoryId;
+	std::string categorySlug;
+	std::string downloadUrl;
+	std::string filename;
+	int filesize;
+	std::vector<std::string> tags;
+};
+
 /**
  * PatchStorageSourceIndex - minimal index for remote patches.
  * Since patches are downloaded on-demand, we store only basic metadata.
  */
 struct PatchStorageSourceIndex : SelectionSourceIndex {
-	struct FileIndexEntry {
-		std::string description;
-		std::vector<std::string> tags;
-		std::vector<std::string> customTags;
-		bool favorite = false;
-	};
+	std::shared_ptr<std::map<std::string, PatchInfo>> patchInfo;
 
-	std::map<std::string, FileIndexEntry> entries;
+	// Shared pointer to all tags (loaded from API via source)
+	std::shared_ptr<std::set<std::string>> allTags;
 
 	json_t* toJson() const {
 		json_t* j = json_object();
+		/*
 		for (const auto& pair : entries) {
 			json_t* entryJ = json_object();
 			json_object_set_new(entryJ, "description", json_string(pair.second.description.c_str()));
@@ -45,13 +58,16 @@ struct PatchStorageSourceIndex : SelectionSourceIndex {
 			json_object_set_new(entryJ, "favorite", json_boolean(pair.second.favorite));
 			json_object_set_new(j, pair.first.c_str(), entryJ);
 		}
+		*/
 		return j;
 	}
 
 	bool fromJson(json_t* indexJ) {
+		return true;
+		/*
 		if (!indexJ || !json_is_object(indexJ)) return false;
 
-		entries.clear();
+		patchInfo.clear();
 		const char* fileId;
 		json_t* entryJ;
 		json_object_foreach(indexJ, fileId, entryJ) {
@@ -88,84 +104,86 @@ struct PatchStorageSourceIndex : SelectionSourceIndex {
 
 			entries[fileId] = entry;
 		}
+		*/
 		return true;
 	}
 
-	std::string getDescription(const std::string& fileId) const override {
-		auto it = entries.find(fileId);
-		return it != entries.end() ? it->second.description : "";
+	const std::string getDescription(const std::string& fileId) const override {
+		auto it = patchInfo->find(fileId);
+		return it != patchInfo->end() ? it->second.description : "";
 	}
 	void setDescription(const std::string& fileId, const std::string& description) override {
-		entries[fileId].description = description;
+		// Readonly
 	}
 
 	bool hasTag(const std::string& fileId, const std::string& tag) override {
-		auto& tags = entries[fileId].tags;
+		auto& tags = (*patchInfo)[fileId].tags;
 		return std::find(tags.begin(), tags.end(), tag) != tags.end();
 	}
 	std::vector<std::string> getTags(const std::string& fileId) const override {
-		auto it = entries.find(fileId);
-		return it != entries.end() ? it->second.tags : std::vector<std::string>();
+		auto it = patchInfo->find(fileId);
+		return it != patchInfo->end() ? it->second.tags : std::vector<std::string>();
 	}
 	void addTag(const std::string& fileId, const std::string& tag) override {
-		auto& tags = entries[fileId].tags;
-		if (std::find(tags.begin(), tags.end(), tag) == tags.end())
-			tags.push_back(tag);
+		//auto& tags = (*patchInfo)[fileId].tags;
+		//if (std::find(tags.begin(), tags.end(), tag) == tags.end())
+		//	tags.push_back(tag);
 	}
 	void removeTag(const std::string& fileId, const std::string& tag) override {
-		auto& tags = entries[fileId].tags;
-		tags.erase(std::remove(tags.begin(), tags.end(), tag), tags.end());
+		//auto& tags = (*patchInfo)[fileId].tags;
+		//tags.erase(std::remove(tags.begin(), tags.end(), tag), tags.end());
 	}
 
 	bool hasCustomTag(const std::string& fileId, const std::string& tag) override {
-		auto& tags = entries[fileId].customTags;
-		return std::find(tags.begin(), tags.end(), tag) != tags.end();
+		return false;
+		//auto& tags = (*patchInfo)[fileId].customTags;
+		//return std::find(tags.begin(), tags.end(), tag) != tags.end();
 	}
 
 	std::vector<std::string> getCustomTags(const std::string& fileId) const override {
-		auto it = entries.find(fileId);
-		return it != entries.end() ? it->second.customTags : std::vector<std::string>();
+		return {};
+		//auto it = patchInfo->find(fileId);
+		//return it != patchInfo->end() ? it->second.customTags : std::vector<std::string>();
 	}
 
 	void addCustomTag(const std::string& fileId, const std::string& tag) override {
-		auto& tags = entries[fileId].customTags;
-		if (std::find(tags.begin(), tags.end(), tag) == tags.end())
-			tags.push_back(tag);
+		return;
+		//auto& tags = (*patchInfo)[fileId].customTags;
+		//if (std::find(tags.begin(), tags.end(), tag) == tags.end())
+		//	tags.push_back(tag);
 	}
 
 	void removeCustomTag(const std::string& fileId, const std::string& tag) override {
-		auto& tags = entries[fileId].customTags;
-		tags.erase(std::remove(tags.begin(), tags.end(), tag), tags.end());
+		return;
+		//auto& tags = (*patchInfo)[fileId].customTags;
+		//tags.erase(std::remove(tags.begin(), tags.end(), tag), tags.end());
 	}
 
 	bool isFavorite(const std::string& fileId) const override {
-		auto it = entries.find(fileId);
-		return it != entries.end() && it->second.favorite;
+		return false;
+		//auto it = patchInfo->find(fileId);
+		//return it != patchInfo->end() && it->second.favorite;
 	}
 	void setFavorite(const std::string& fileId, bool favorite) override {
-		entries[fileId].favorite = favorite;
+		//(*patchInfo)[fileId].favorite = favorite;
 	}
 
-	bool isReadOnly() const override { return false; }
-
-	std::vector<std::string> getTagsAll() const override {
-		std::set<std::string> uniqueTags;
-		for (const auto& pair : entries) {
-			for (const std::string& tag : pair.second.tags) {
-				uniqueTags.insert(tag);
-			}
-		}
-		return std::vector<std::string>(uniqueTags.begin(), uniqueTags.end());
+	bool isReadOnly() const override { 
+		return true;
 	}
 
-	std::vector<std::string> getCustomTagsAll() const override {
-		std::set<std::string> uniqueTags;
-		for (const auto& pair : entries) {
-			for (const std::string& tag : pair.second.customTags) {
-				uniqueTags.insert(tag);
-			}
+	std::set<std::string> getTagsAll() const override {
+		if (allTags) {
+			return *allTags;
 		}
-		return std::vector<std::string>(uniqueTags.begin(), uniqueTags.end());
+		return {};
+	}
+
+	std::set<std::string> getCustomTagsAll() const override {
+		if (allTags) {
+			return *allTags;
+		}
+		return {};
 	}
 };
 
@@ -198,22 +216,13 @@ struct PatchStorageSource : SelectionSource {
 	// Cache for patches per category
 	std::shared_ptr<std::map<std::string, std::vector<std::string>>> categoryPatches;
 
-	// Cache for patch metadata
-	struct PatchInfo {
-		int id;
-		int fileId;
-		std::string title;
-		std::string slug;
-		std::string excerpt;
-		int categoryId;
-		std::string categorySlug;
-		std::string downloadUrl;
-		std::string filename;
-	};
 	std::shared_ptr<std::map<std::string, PatchInfo>> patchInfo;
 
 	// Download cache
 	std::shared_ptr<std::map<std::string, std::string>> patches;
+
+	// Cache for all tags (loaded lazily from API)
+	std::shared_ptr<std::set<std::string>> allTags;
 
 	/** Generate a random cache folder name. */
 	std::string generateCacheName() const {
@@ -334,14 +343,53 @@ struct PatchStorageSource : SelectionSource {
 			return string::lowercase(a.name) < string::lowercase(b.name);
 		});
 
+		// Also load tags when loading categories (tags are fetched from API)
+		//loadTags();
+
+		// Async operation complete, clear status
+		status = "";
+		return true;
+	}
+
+	/** Load all tags from the API. */
+	bool loadTags() {
+		if (allTags->size() > 0) {
+			return true;
+		}
+
+		status = "0:Loading tags...";
+		json_t* tagsJ = fetchJson(string::f("%s/tags?per_page=100", API_BASE));
+		if (!tagsJ) {
+			DEBUG("PatchStorageSource: Failed to fetch tags");
+			status = "2:Failed to fetch tags";
+			return false;
+		}
+		DEFER({ json_decref(tagsJ); });
+
+		if (!json_is_array(tagsJ)) {
+			status = "";
+			return false;
+		}
+
+		size_t i;
+		json_t* val;
+		json_array_foreach(tagsJ, i, val) {
+			if (!json_is_object(val)) continue;
+			json_t* nameJ = json_object_get(val, "name");
+			if (nameJ) {
+				const char* tagName = json_string_value(nameJ);
+				if (tagName) allTags->insert(tagName);
+			}
+		}
+
 		// Async operation complete, clear status
 		status = "";
 		return true;
 	}
 
 	/** Fetch patches for a specific category. */
-	std::vector<PatchStorageSource::PatchInfo> fetchPatchesForCategory(const std::string& categorySlug) {
-		std::vector<PatchStorageSource::PatchInfo> patches;
+	std::vector<PatchInfo> fetchPatchesForCategory(const std::string& categorySlug) {
+		std::vector<PatchInfo> patches;
 
 		status = string::f("0:Loading %s...", categorySlug.c_str());
 
@@ -392,7 +440,7 @@ struct PatchStorageSource : SelectionSource {
 		json_array_foreach(patchesJ, i, val) {
 			if (!json_is_object(val)) continue;
 
-			PatchStorageSource::PatchInfo info;
+			PatchInfo info;
 			info.categorySlug = categorySlug;
 
 			json_t* idJ = json_object_get(val, "id");
@@ -405,7 +453,20 @@ struct PatchStorageSource : SelectionSource {
 			if (slugJ) info.slug = json_string_value(slugJ);
 
 			json_t* excerptJ = json_object_get(val, "excerpt");
-			if (excerptJ) info.excerpt = json_string_value(excerptJ);
+			if (excerptJ) info.description = json_string_value(excerptJ);
+
+			// Parse tags from the patch
+			json_t* tagsJ = json_object_get(val, "tags");
+			if (tagsJ && json_is_array(tagsJ)) {
+				size_t ti;
+				json_t* tagVal;
+				json_array_foreach(tagsJ, ti, tagVal) {
+					if (json_is_object(tagVal)) {
+						json_t* nameJ = json_object_get(tagVal, "name");
+						if (nameJ) info.tags.push_back(json_string_value(nameJ));
+					}
+				}
+			}
 
 			// Get first file's ID and download URL
 			json_t* filesJ = json_object_get(val, "files");
@@ -470,9 +531,11 @@ struct PatchStorageSource : SelectionSource {
 		auto _patchInfo = helper->getGlobalCache<std::map<std::string, PatchInfo>>(patchInfoCacheKey);
 		if (_patchInfo) {
 			patchInfo = _patchInfo;
+			index.patchInfo = patchInfo;
 		} 
 		else {
 			patchInfo = std::make_shared<std::map<std::string, PatchInfo>>();
+			index.patchInfo = patchInfo;
 			helper->setGlobalCache(patchInfoCacheKey, patchInfo, nullptr);
 		}
 
@@ -484,6 +547,18 @@ struct PatchStorageSource : SelectionSource {
 		else {
 			patches = std::make_shared<std::map<std::string, std::string>>();
 			helper->setGlobalCache(downloadCacheKey, patches, nullptr);
+		}
+
+		std::string tagsCacheKey = "patchstorage:allTags";
+		auto _allTags = helper->getGlobalCache<std::set<std::string>>(tagsCacheKey);
+		if (_allTags) {
+			allTags = _allTags;
+			index.allTags = allTags;
+		}
+		else {
+			allTags = std::make_shared<std::set<std::string>>();
+			index.allTags = allTags;
+			helper->setGlobalCache(tagsCacheKey, allTags, nullptr);
 		}
 	}
 
@@ -613,14 +688,14 @@ struct PatchStorageSource : SelectionSource {
 			return "";
 		}
 
-		PatchStorageSource::PatchInfo& patch = pit->second;
-		DEBUG("PatchStorageSource: getAbsoluteFilePath(%s) found patch id=%d fileId=%d downloadUrl='%s'", path.c_str(), patch.id, patch.fileId, patch.downloadUrl.c_str());
+		PatchInfo& patchInfo = pit->second;
+		DEBUG("PatchStorageSource: getAbsoluteFilePath(%s) found patch id=%d fileId=%d downloadUrl='%s'", path.c_str(), patchInfo.id, patchInfo.fileId, patchInfo.downloadUrl.c_str());
 		
 		// If no download URL, fetch individual patch details
-		if (patch.downloadUrl.empty() && patch.id > 0) {
-			DEBUG("PatchStorageSource: no downloadUrl, fetching patch details for id=%d", patch.id);
+		if (patchInfo.downloadUrl.empty() && patchInfo.id > 0) {
+			DEBUG("PatchStorageSource: no downloadUrl, fetching patch details for id=%d", patchInfo.id);
 			status = "0:Loading patch info...";
-			std::string detailUrl = string::f("%s/patches/%d", API_BASE, patch.id);
+			std::string detailUrl = string::f("%s/patches/%d", API_BASE, patchInfo.id);
 			json_t* patchJ = fetchJson(detailUrl);
 			if (patchJ) {
 				// Get files array
@@ -629,45 +704,51 @@ struct PatchStorageSource : SelectionSource {
 					json_t* firstFile = json_array_get(filesJ, 0);
 					if (firstFile && json_is_object(firstFile)) {
 						json_t* fileIdJ = json_object_get(firstFile, "id");
-						if (fileIdJ) patch.fileId = json_integer_value(fileIdJ);
+						if (fileIdJ) patchInfo.fileId = json_integer_value(fileIdJ);
 						
 						json_t* fileUrlJ = json_object_get(firstFile, "url");
-						if (fileUrlJ) patch.downloadUrl = json_string_value(fileUrlJ);
+						if (fileUrlJ) patchInfo.downloadUrl = json_string_value(fileUrlJ);
 
 						json_t* filenameJ = json_object_get(firstFile, "filename");
-						if (filenameJ) patch.filename = json_string_value(filenameJ);
+						if (filenameJ) patchInfo.filename = json_string_value(filenameJ);
 						
+						json_t* filesizeJ = json_object_get(firstFile, "filesize");
+						if (filesizeJ) patchInfo.filesize = json_integer_value(filesizeJ);
+
 						DEBUG("PatchStorageSource: fetched details: fileId=%d url='%s' filename='%s'", 
-							patch.fileId, patch.downloadUrl.c_str(), patch.filename.c_str());
+							patchInfo.fileId, patchInfo.downloadUrl.c_str(), patchInfo.filename.c_str());
 					}
 				}
+
+				json_t* contentJ = json_object_get(patchJ, "content");
+				if (contentJ) patchInfo.description = json_string_value(contentJ);
+
 				json_decref(patchJ);
 			}
-
 			// Successfully fetched patch details
 			status = "";
 		}
 
-		if (patch.downloadUrl.empty()) {
+		if (patchInfo.downloadUrl.empty()) {
 			DEBUG("PatchStorageSource: getAbsoluteFilePath(%s) - empty downloadUrl", path.c_str());
 			status = "2:Download URL not found";
 			return "";
 		}
 
-		status = string::f("0:Downloading: %s...", patch.title.c_str());
-		DEBUG("PatchStorageSource: getAbsoluteFilePath(%s) - downloading from %s", path.c_str(), patch.downloadUrl.c_str());
+		status = string::f("0:Downloading: %s... (%ikb)", patchInfo.title.c_str(), patchInfo.filesize / 1024);
+		DEBUG("PatchStorageSource: getAbsoluteFilePath(%s) - downloading from %s", path.c_str(), patchInfo.downloadUrl.c_str());
 		
 		// Generate cache path
 		std::string cacheName = generateCacheName();
 		std::string cachePath = system::join(getCacheDir(), cacheName);
 		system::createDirectories(cachePath);
-		std::string archivePath = system::join(cachePath, patch.filename.empty() ? "patch.vcv" : patch.filename);
+		std::string archivePath = system::join(cachePath, patchInfo.filename.empty() ? "patch.vcv" : patchInfo.filename);
 
 		DEBUG("PatchStorageSource: archivePath=%s", archivePath.c_str());
 
 		// Download the file
-		if (!rack::network::requestDownload(patch.downloadUrl, archivePath)) {
-			DEBUG("PatchStorageSource: download FAILED for %s", patch.downloadUrl.c_str());
+		if (!rack::network::requestDownload(patchInfo.downloadUrl, archivePath)) {
+			DEBUG("PatchStorageSource: download FAILED for %s", patchInfo.downloadUrl.c_str());
 			system::removeRecursively(cachePath);
 			status = "2:Download failed";
 			return "";
@@ -697,7 +778,8 @@ struct PatchStorageSource : SelectionSource {
 			json_t* rootJ = json_loadf(f, 0, &error);
 			fclose(f);
 			return rootJ;
-		} else {
+		} 
+		else {
 			// v2+ format: extract from archive
 			return extractPatchJson(archivePath);
 		}
@@ -772,7 +854,7 @@ struct PatchStorageSource : SelectionSource {
 		return std::string(json_string_value(slugJ)) == SLUG;
 	}
 
-	std::string& getStatusText() override {
+	const std::string& getStatusText() override {
 		return status;
 	}
 

@@ -1,7 +1,9 @@
 #pragma once
 #include <rack.hpp>
 #include <osdialog.h>
+#include <tag.hpp>
 #include <ghc/filesystem.hpp>
+#include "Mb.hpp"
 #include "Mb_selection_source.hpp"
 #include "Mb_selection_source_index.hpp"
 #include "Mb_selection_helper.hpp"
@@ -91,7 +93,7 @@ struct FileSystemSourceIndex : SelectionSourceIndex {
 		return true;
 	}
 
-	std::string getDescription(const std::string& fileId) const override {
+	const std::string getDescription(const std::string& fileId) const override {
 		auto it = entries.find(fileId);
 		return it != entries.end() ? it->second.description : "";
 	}
@@ -155,24 +157,17 @@ struct FileSystemSourceIndex : SelectionSourceIndex {
 
 	bool isReadOnly() const override { return readOnly; }
 
-	std::vector<std::string> getTagsAll() const override {
-		std::set<std::string> uniqueTags;
-		for (const auto& pair : entries) {
-			for (const std::string& tag : pair.second.tags) {
-				uniqueTags.insert(tag);
-			}
+	std::set<std::string> getTagsAll() const override {
+		std::set<std::string> items;
+		for (int id = 0; id < (int)tag::tagAliases.size(); id++) {
+			items.insert(rack::tag::tagAliases[id][0]);
 		}
-		return std::vector<std::string>(uniqueTags.begin(), uniqueTags.end());
+		return items;
 	}
 
-	std::vector<std::string> getCustomTagsAll() const override {
-		std::set<std::string> uniqueTags;
-		for (const auto& pair : entries) {
-			for (const std::string& tag : pair.second.customTags) {
-				uniqueTags.insert(tag);
-			}
-		}
-		return std::vector<std::string>(uniqueTags.begin(), uniqueTags.end());
+	std::set<std::string> getCustomTagsAll() const override {
+		// Use the default custom tags
+		return customTagsAll();
 	}
 };
 
@@ -540,7 +535,7 @@ struct FileSystemSource : SelectionSource {
 		return true;
 	}
 
-	std::string& getStatusText() override {
+	const std::string& getStatusText() override {
 		return status;
 	}
 

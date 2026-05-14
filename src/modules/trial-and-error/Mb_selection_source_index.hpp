@@ -22,7 +22,7 @@ struct SelectionSourceIndex {
 	// -- description ---------------------------------------------------------
 
 	/** Return the description text for the given file, or empty if not set. */
-	virtual std::string getDescription(const std::string& fileId) const = 0;
+	virtual const std::string getDescription(const std::string& fileId) const = 0;
 	/** Set the description text for the given file. No effect if the index is read-only. */
 	virtual void setDescription(const std::string& fileId, const std::string& description) = 0;
 
@@ -61,9 +61,9 @@ struct SelectionSourceIndex {
 	// -- tag queries ----------------------------------------------------------
 
 	/** Return all unique predefined tag names used across indexed files. */
-	virtual std::vector<std::string> getTagsAll() const = 0;
+	virtual std::set<std::string> getTagsAll() const = 0;
 	/** Return all unique custom tag strings used across indexed files. */
-	virtual std::vector<std::string> getCustomTagsAll() const = 0;
+	virtual std::set<std::string> getCustomTagsAll() const = 0;
 };
 
 

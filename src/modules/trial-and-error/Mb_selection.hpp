@@ -13,17 +13,24 @@ namespace Mb {
 namespace selection {
 
 // Forward declarations
+struct DescriptionTextField;
 struct AsyncContainerLoadResult;
-struct SelectionBrowser;
-struct SelectionPreviewWidget;
-struct SelectionStatusBarWidget;
+struct Browser;
+struct SourceButton;
+struct PreviewWidget;
+struct StatusBarWidget;
 
-struct SelectionBrowserSidebar : widget::Widget {
-	SelectionPreviewWidget* preview;
+struct BrowserSidebar : widget::Widget {
+	PreviewWidget* preview;
 
 	ui::ScrollWidget* fileScroll;
 	ui::List* fileList;
-	std::string currentFile;
+	std::string currentFileId;
+
+	// Footer widgets for description and tags
+	widget::OpaqueWidget* footerContainer;
+	DescriptionTextField* descriptionField;
+	ui::SequentialLayout* tagsLayout;
 
 	/** The data source used by this sidebar. */
 	SelectionSource* source = nullptr;
@@ -34,38 +41,28 @@ struct SelectionBrowserSidebar : widget::Widget {
 	/** Persistent worker thread shared by container loads and file-json loads. */
 	TaskWorker taskWorker;
 
-	SelectionBrowserSidebar();
-	~SelectionBrowserSidebar();
+	BrowserSidebar();
+	~BrowserSidebar();
+	void setText(const std::string& newText);
 	void step() override;
 	void loadContainer();
 	void onShow(const event::Show& e) override;
-	void populateFileList(const AsyncContainerLoadResult* res);
+	void refreshDescriptionAndTags();
+	void populateList(const AsyncContainerLoadResult* res);
+	void refreshFileList();
 };
 
 
-struct SelectionBrowser : widget::OpaqueWidget {
+struct Browser : widget::OpaqueWidget {
 	struct SelectionChoiceButton : ui::ChoiceButton {
-		SelectionBrowser* browser;
-	};
-
-	struct SourceButton : ui::ChoiceButton {
-		SelectionBrowser* browser;
-		void onAction(const event::Action& e) override;
-		void step() override;
-	};
-
-	struct SourceItem : ui::MenuItem {
-		SelectionBrowser* browser;
-		SelectionSource* source;
-		void onAction(const event::Action& e) override;
-		void step() override;
+		Browser* browser;
 	};
 
 	struct FavoriteButton : ui::Button {
-		SelectionBrowser* browser;
+		Browser* browser;
 		void onAction(const event::Action& e) override {
 			browser->favoriteFilter ^= true;
-			browser->sidebar->loadContainer();
+			browser->sidebar->refreshFileList();
 		}
 		void step() override {
 			text = browser->favoriteFilter
@@ -76,7 +73,7 @@ struct SelectionBrowser : widget::OpaqueWidget {
 	};
 
 	struct ClearButton : ui::Button {
-		SelectionBrowser* browser;
+		Browser* browser;
 		void onAction(const event::Action& e) override {
 			browser->clear();
 		}
@@ -89,8 +86,8 @@ struct SelectionBrowser : widget::OpaqueWidget {
 	FavoriteButton* favoriteButton;
 	ClearButton* clearButton;
 
-	SelectionBrowserSidebar* sidebar;
-	SelectionPreviewWidget* preview;
+	BrowserSidebar* sidebar;
+	PreviewWidget* preview;
 
 	/** List of all configured data sources. */
 	std::vector<SelectionSource*> sources;
@@ -104,10 +101,10 @@ struct SelectionBrowser : widget::OpaqueWidget {
 	/** Whether to show only favorite files. */
 	bool favoriteFilter = false;
 
-	SelectionStatusBarWidget* statusBar;
+	StatusBarWidget* statusBar;
 
-	SelectionBrowser();
-	~SelectionBrowser();
+	Browser();
+	~Browser();
 	void step() override;
 	void draw(const DrawArgs& args) override;
 

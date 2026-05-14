@@ -8,8 +8,8 @@ namespace Mb {
 namespace selection {
 
 	
-struct SelectionPreviewWidget : OpaqueWidget {
-	SelectionBrowser* browser = nullptr;
+struct PreviewWidget : OpaqueWidget {
+	Browser* browser = nullptr;
 	std::string fileId;
 	std::string lastFileId;
 	json_t* rootJ = nullptr;

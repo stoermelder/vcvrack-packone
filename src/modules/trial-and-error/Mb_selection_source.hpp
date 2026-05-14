@@ -11,7 +11,7 @@ namespace selection {
 
 /**
  * Abstract interface for a selection data source.
- * Decouples the SelectionBrowser from the file system, enabling
+ * Decouples the Browser from the file system, enabling
  * alternative data sources (e.g. remote HTTP) to be plugged in later.
  */
 struct SelectionSource {
@@ -112,7 +112,7 @@ struct SelectionSource {
 	/**
 	 * Returns the current task status of the data source.
 	 */
-	virtual std::string& getStatusText() = 0;
+	virtual const std::string& getStatusText() = 0;
 
 	/**
 	 * Append source-specific menu items to a context menu.

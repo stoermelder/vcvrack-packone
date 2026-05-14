@@ -28,6 +28,13 @@ extern std::set<Model*> hiddenModels;
 extern std::map<Model*, ModelUsage*> modelUsage;
 extern std::map<std::string, std::set<Model*>> customTagModels;
 
+inline std::set<std::string> customTagsAll() {
+	std::set<std::string> result;
+	for (auto& pair : customTagModels)
+		result.insert(pair.first);
+	return result;
+}
+
 // Tag modifications: predefined tags that are added/removed per model
 extern std::map<Model*, std::set<int>> predefinedTagsAdded;
 extern std::map<Model*, std::set<int>> predefinedTagsRemoved;

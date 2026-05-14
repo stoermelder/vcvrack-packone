@@ -9,207 +9,9 @@ namespace Mb {
 namespace selection {
 
 
-struct AsyncContainerLoadResult {
-	int generation;
-	std::string container;
-	std::vector<std::string> containers;
-	std::vector<std::string> files;
-};
+// ---- Filter / Topbar ----
 
-struct AsyncContainerLoadWidget : widget::Widget {
-	std::shared_ptr<AsyncContainerLoadResult> result;
-	SelectionBrowserSidebar* sidebar;
-
-	AsyncContainerLoadWidget(SelectionBrowserSidebar* sb) : sidebar(sb) {}
-
-	void step() override {
-		if (result) {
-			if (sidebar && sidebar->loadGeneration_ == result->generation)
-				sidebar->populateFileList(result.get());
-			requestDelete();
-		}
-		Widget::step();
-	}
-};
-
-
-struct AsyncFileJsonResult {
-	std::string fileId;
-	json_t* json = nullptr;
-};
-
-struct AsyncFileJsonWidget : widget::Widget {
-	std::shared_ptr<AsyncFileJsonResult> result;
-	SelectionBrowserSidebar* sidebar;
-
-	AsyncFileJsonWidget(SelectionBrowserSidebar* sb) : sidebar(sb) {}
-
-	void step() override {
-		if (result) {
-			if (sidebar && result->json) {
-				if (sidebar->currentFile == result->fileId) {
-					if (!sidebar->preview->setSelection(result->fileId, result->json))
-						json_decref(result->json);
-				} else {
-					json_decref(result->json);
-				}
-				result->json = nullptr;
-			}
-			requestDelete();
-		}
-		Widget::step();
-	}
-};
-
-
-struct ContainerItem : ui::MenuItem {
-	SelectionSource* source;
-	std::string containerPath;
-	std::string containerName;
-
-	void onAction(const event::Action& e) override {
-		source->setContainer(containerPath);
-		SelectionBrowserSidebar* sidebar = getAncestorOfType<SelectionBrowserSidebar>();
-		if (sidebar) sidebar->loadContainer();
-	}
-};
-
-struct FileItem : ui::MenuItem {
-	SelectionBrowserSidebar* sidebar;
-	std::string fileId;
-	void onAction(const event::Action& e) override {
-		sidebar->currentFile = fileId;
-		SelectionSource* src = sidebar->source;
-		if (src) {
-			AsyncFileJsonWidget* asyncWidget = new AsyncFileJsonWidget(sidebar);
-			APP->scene->addChild(asyncWidget);
-			std::string fid = fileId;
-			auto task = [asyncWidget, src, fid]() {
-				auto res = std::make_shared<AsyncFileJsonResult>();
-				res->json = src->getFileJson(fid);
-				res->fileId = fid;
-				asyncWidget->result = res;
-			};
-			sidebar->taskWorker.work(std::move(task));
-		}
-		e.consume(this);
-	}
-
-	void draw(const DrawArgs& args) override {
-		if (fileId == sidebar->currentFile) {
-			nvgFillColor(args.vg, nvgRGBA(0xf0, 0xf0, 0xf0, 80));
-			nvgBeginPath(args.vg);
-			nvgRect(args.vg, 0, 0, box.size.x, box.size.y);
-			nvgFill(args.vg);
-		}
-		MenuItem::draw(args);
-	}
-};
-
-
-SelectionBrowserSidebar::SelectionBrowserSidebar() {
-	fileScroll = new ui::ScrollWidget;
-	addChild(fileScroll);
-
-	fileList = new ui::List;
-	fileScroll->container->addChild(fileList);
-}
-
-SelectionBrowserSidebar::~SelectionBrowserSidebar() {
-	if (source) {
-		source->onDetach();
-		delete source;
-		source = nullptr;
-	}
-}
-
-void SelectionBrowserSidebar::step() {
-	fileScroll->box.pos.y = 0.f;
-	fileScroll->box.size.y = box.size.y;
-	fileList->box.size.x = fileScroll->box.size.x = box.size.x;
-	widget::Widget::step();
-}
-
-void SelectionBrowserSidebar::loadContainer() {
-	if (!source) return;
-
-	if (source->getContainer().empty())
-		source->setContainer(source->getRootContainer());
-
-	std::string container = source->getContainer();
-	if (container.empty()) {
-		fileList->clearChildren();
-		return;
-	}
-
-	fileList->clearChildren();
-
-	// Add ".." item synchronously (no I/O needed)
-	if (container != source->getRootContainer()) {
-		std::string parentContainer = source->getParentContainer(container);
-		ContainerItem* upItem = new ContainerItem;
-		upItem->source = source;
-		upItem->containerPath = parentContainer;
-		upItem->containerName = "..";
-		upItem->text = "📁 ..";
-		upItem->box.size.x = fileList->box.size.x;
-		fileList->addChild(upItem);
-	}
-
-	int gen = ++loadGeneration_;
-	AsyncContainerLoadWidget* asyncWidget = new AsyncContainerLoadWidget(this);
-	APP->scene->addChild(asyncWidget);
-	SelectionSource* src = source;
-	taskWorker.work([asyncWidget, src, container, gen]() {
-		auto res = std::make_shared<AsyncContainerLoadResult>();
-		res->generation = gen;
-		res->container = container;
-		res->containers = src->getContainers(container);
-		res->files = src->getFiles(container);
-		asyncWidget->result = res;
-	});
-}
-
-void SelectionBrowserSidebar::populateFileList(const AsyncContainerLoadResult* res) {
-	SelectionBrowser* browser = getAncestorOfType<SelectionBrowser>();
-	if (browser && preview)
-		preview->browser = browser;
-
-	for (const std::string& folder : res->containers) {
-		ContainerItem* item = new ContainerItem;
-		item->source = source;
-		item->containerPath = folder;
-		item->containerName = source->getFilename(folder);
-		item->text = "📁 " + item->containerName;
-		item->box.size.x = fileList->box.size.x;
-		fileList->addChild(item);
-	}
-
-	for (const std::string& file : res->files) {
-		if (browser && !browser->isFileTagFiltered(file))
-			continue;
-		FileItem* item = new FileItem;
-		item->sidebar = this;
-		item->fileId = file;
-		item->text = source->getFilename(file);
-		item->box.size.x = fileList->box.size.x;
-		fileList->addChild(item);
-	}
-}
-
-void SelectionBrowserSidebar::onShow(const event::Show& e) {
-	if (source) {
-		if (source->getContainer().empty())
-			source->setContainer(source->getRootContainer());
-		loadContainer();
-	}
-	widget::Widget::onShow(e);
-}
-
-
-// ---- Button implementations ----
-
-struct TagItem : ChoiceFilterItem<SelectionBrowser> {
+struct TagItem : ChoiceFilterItem<Browser> {
 	SelectionSourceIndex* index;
 	std::string fileId;
 	std::string tagName;
@@ -220,16 +22,16 @@ struct TagItem : ChoiceFilterItem<SelectionBrowser> {
 			browser->tagFilter.erase(it);
 		else
 			browser->tagFilter.insert(tagName);
-		browser->sidebar->loadContainer();
+		browser->sidebar->refreshFileList();
 		e.unconsume();
 	}
 	void step() override {
-		selected = hasTag;
-		ChoiceFilterItem<SelectionBrowser>::step();
+		selected = browser->tagFilter.find(tagName) != browser->tagFilter.end();
+		ChoiceFilterItem<Browser>::step();
 	}
 };
 
-struct TagButton : SelectionBrowser::SelectionChoiceButton {
+struct TagButton : Browser::SelectionChoiceButton {
 	void onAction(const event::Action& e) override {
 		SelectionSource* src = browser->getSource();
 		if (!src) return;
@@ -251,12 +53,17 @@ struct TagButton : SelectionBrowser::SelectionChoiceButton {
 			activeFileTags = std::set<std::string>(ft.begin(), ft.end());
 		}
 
-		std::vector<widget::Widget*> items;
+		std::vector<Widget*> items;
 
-		for (int id = 0; id < (int)rack::tag::tagAliases.size(); id++) {
+		auto unsortedTags = index->getTagsAll();
+		std::vector<std::string> tags(unsortedTags.begin(), unsortedTags.end());
+		std::sort(tags.begin(), tags.end(), [](const std::string& a, const std::string& b) {
+			return string::lowercase(a) < string::lowercase(b);
+		});
+		for (std::string tag : tags) {
 			TagItem* item = new TagItem;
-			item->setRawText(rack::tag::tagAliases[id][0]);
-			item->tagName = rack::tag::tagAliases[id][0];
+			item->setRawText(tag);
+			item->tagName = tag;
 			item->browser = browser;
 			item->index = index;
 			item->fileId = activeFileId;
@@ -264,7 +71,9 @@ struct TagButton : SelectionBrowser::SelectionChoiceButton {
 			items.push_back(item);
 		}
 
-		openLayoutMenu<SelectionBrowser>(this, items);
+		//std::sort(items.begin(), items.end(), []()
+
+		openLayoutMenu<Browser>(this, items);
 	}
 
 	void step() override {
@@ -291,7 +100,7 @@ struct TagButton : SelectionBrowser::SelectionChoiceButton {
 };
 
 
-struct CustomTagItem : ChoiceFilterItem<SelectionBrowser> {
+struct CustomTagItem : ChoiceFilterItem<Browser> {
 	std::string tagName;
 	void onAction(const event::Action& e) override {
 		auto it = browser->customTagFilter.find(tagName);
@@ -299,16 +108,16 @@ struct CustomTagItem : ChoiceFilterItem<SelectionBrowser> {
 			browser->customTagFilter.erase(it);
 		else
 			browser->customTagFilter.insert(tagName);
-		browser->sidebar->loadContainer();
+		browser->sidebar->refreshFileList();
 		e.unconsume();
 	}
 	void step() override {
 		selected = browser->customTagFilter.find(tagName) != browser->customTagFilter.end();
-		ChoiceFilterItem<SelectionBrowser>::step();
+		ChoiceFilterItem<Browser>::step();
 	}
 };
 
-struct CustomTagButton : SelectionBrowser::SelectionChoiceButton {
+struct CustomTagButton : Browser::SelectionChoiceButton {
 	void onAction(const event::Action& e) override {
 		SelectionSource* src = browser->getSource();
 		if (!src) return;
@@ -317,7 +126,7 @@ struct CustomTagButton : SelectionBrowser::SelectionChoiceButton {
 
 		std::vector<widget::Widget*> items;
 
-		auto unsortedTags = customTagsAll();
+		auto unsortedTags = index->getCustomTagsAll();
 		std::vector<std::string> tags(unsortedTags.begin(), unsortedTags.end());
 		std::sort(tags.begin(), tags.end(), [](const std::string& a, const std::string& b) {
 			return string::lowercase(a) < string::lowercase(b);
@@ -330,7 +139,7 @@ struct CustomTagButton : SelectionBrowser::SelectionChoiceButton {
 			items.push_back(item);
 		}
 
-		openLayoutMenu<SelectionBrowser>(this, items);
+		openLayoutMenu<Browser>(this, items);
 	}
 
 	void step() override {
@@ -357,94 +166,516 @@ struct CustomTagButton : SelectionBrowser::SelectionChoiceButton {
 };
 
 
-// ---- SourceButton and SourceItem ----
+struct SourceItem : ui::MenuItem {
+	Browser* browser;
+	SelectionSource* source;
 
-void SelectionBrowser::SourceButton::onAction(const event::Action& e) {
-	ui::Menu* menu = createMenu();
-	menu->box.pos = getAbsoluteOffset(math::Vec(0, box.size.y));
-	menu->box.size.x = box.size.x;
-
-	for (size_t i = 0; i < browser->sources.size(); i++) {
-		SelectionSource* src = browser->sources[i];
-		SourceItem* item = new SourceItem;
-		item->text = src->getSourceName();
-		item->source = src;
-		item->browser = browser;
-		item->disabled = false;
-		menu->addChild(item);
+	void onAction(const event::Action& e) override {
+		browser->activeSourceIndex = -1;
+		for (size_t i = 0; i < browser->sources.size(); i++) {
+			if (browser->sources[i] == source) {
+				browser->activeSourceIndex = (int)i;
+				break;
+			}
+		}
+		browser->preview->clearSelection();
+		browser->sidebar->source = browser->getSource();
+		browser->sidebar->loadContainer();
 	}
 
-	if (!menu->children.empty()) {
-		menu->addChild(new MenuSeparator);
+	void step() override {
+		SelectionSource* active = browser->getSource();
+		rightText = CHECKMARK(source == active);
+		MenuItem::step();
+	}
+};
+
+struct SourceButton : ui::ChoiceButton {
+	Browser* browser;
+
+	void onAction(const event::Action& e) override {
+		ui::Menu* menu = createMenu();
+		menu->box.pos = getAbsoluteOffset(math::Vec(0, box.size.y));
+		menu->box.size.x = box.size.x;
+
+		for (size_t i = 0; i < browser->sources.size(); i++) {
+			SelectionSource* src = browser->sources[i];
+			SourceItem* item = new SourceItem;
+			item->text = src->getSourceName();
+			item->source = src;
+			item->browser = browser;
+			item->disabled = false;
+			menu->addChild(item);
+		}
+
+		if (!menu->children.empty()) {
+			menu->addChild(new MenuSeparator);
+		}
+
+		menu->addChild(createMenuItem("Add .vcvs folder...", "", [this] {
+			SelectionSource* newSrc = filesystem::vcvs::createSource();
+			if (newSrc) {
+				browser->addSource(newSrc);
+			}
+		}));
+		menu->addChild(createMenuItem("Add .vcv folder...", "", [this] {
+			SelectionSource* newSrc = filesystem::vcv::createSource();
+			if (newSrc) {
+				browser->addSource(newSrc);
+			}
+		}));
+		menu->addChild(createMenuItem("Add PatchStorage source", "", [this] {
+			SelectionSource* newSrc = patchstorage::initSource();
+			if (newSrc) {
+				browser->addSource(newSrc);
+			}
+		}, !patchstorage::canCreate()));
+		menu->addChild(createMenuItem("Remove source", "", [this] {
+			if (browser->activeSourceIndex >= 0 && browser->activeSourceIndex < (int)browser->sources.size()) {
+				browser->removeSource(browser->activeSourceIndex);
+			}
+		}, browser->sources.empty()));
 	}
 
-	menu->addChild(createMenuItem("Add .vcvs folder...", "", [this] {
-		SelectionSource* newSrc = filesystem::vcvs::createSource();
-		if (newSrc) {
-			browser->addSource(newSrc);
+	void step() override {
+		SelectionSource* src = browser->getSource();
+		if (src) {
+			text = src->getSourceName();
 		}
-	}));
-	menu->addChild(createMenuItem("Add .vcv folder...", "", [this] {
-		SelectionSource* newSrc = filesystem::vcv::createSource();
-		if (newSrc) {
-			browser->addSource(newSrc);
+		else {
+			text = "No source";
 		}
-	}));
-	menu->addChild(createMenuItem("Add PatchStorage source", "", [this] {
-		SelectionSource* newSrc = patchstorage::initSource();
-		if (newSrc) {
-			browser->addSource(newSrc);
+		text = string::ellipsize(text, 40);
+		ChoiceButton::step();
+	}
+};
+
+
+// ---- Async Helper ----
+
+struct AsyncContainerLoadResult {
+	int generation;
+	std::string container;
+	std::vector<std::string> containers;
+	std::vector<std::string> files;
+};
+
+struct AsyncContainerLoadWidget : widget::Widget {
+	std::shared_ptr<AsyncContainerLoadResult> result;
+	BrowserSidebar* sidebar;
+	void step() override {
+		if (result) {
+			if (sidebar && sidebar->loadGeneration_ == result->generation)
+				sidebar->populateList(result.get());
+			requestDelete();
 		}
-	}, !patchstorage::canCreate()));
-	menu->addChild(createMenuItem("Remove source", "", [this] {
-		if (browser->activeSourceIndex >= 0 && browser->activeSourceIndex < (int)browser->sources.size()) {
-			browser->removeSource(browser->activeSourceIndex);
+		Widget::step();
+	}
+};
+
+
+struct AsyncFileJsonResult {
+	std::string fileId;
+	json_t* json = nullptr;
+};
+
+struct AsyncFileJsonWidget : widget::Widget {
+	std::shared_ptr<AsyncFileJsonResult> result;
+	BrowserSidebar* sidebar;
+
+	AsyncFileJsonWidget(BrowserSidebar* sb) : sidebar(sb) {}
+
+	void step() override {
+		if (result) {
+			if (sidebar && result->json) {
+				if (sidebar->currentFileId == result->fileId) {
+					if (!sidebar->preview->setSelection(result->fileId, result->json))
+						json_decref(result->json);
+				} else {
+					json_decref(result->json);
+				}
+				result->json = nullptr;
+			}
+			requestDelete();
 		}
-	}, browser->sources.empty()));
+		Widget::step();
+	}
+};
+
+
+// ---- Sidebar Items ----
+
+struct ContainerListItem : ui::MenuItem {
+	SelectionSource* source;
+	std::string containerPath;
+	std::string containerName;
+
+	void onAction(const event::Action& e) override {
+		source->setContainer(containerPath);
+		BrowserSidebar* sidebar = getAncestorOfType<BrowserSidebar>();
+		if (sidebar) sidebar->loadContainer();
+	}
+};
+
+struct FileListItem : ui::MenuItem {
+	BrowserSidebar* sidebar;
+	std::string fileId;
+
+	void onAction(const event::Action& e) override {
+		sidebar->currentFileId = fileId;
+		SelectionSource* src = sidebar->source;
+		if (src) {
+			AsyncFileJsonWidget* asyncWidget = new AsyncFileJsonWidget(sidebar);
+			APP->scene->addChild(asyncWidget);
+			std::string fid = fileId;
+			auto task = [asyncWidget, src, fid]() {
+				auto res = std::make_shared<AsyncFileJsonResult>();
+				res->json = src->getFileJson(fid);
+				res->fileId = fid;
+				asyncWidget->result = res;
+			};
+			sidebar->taskWorker.work(std::move(task));
+		}
+		sidebar->refreshDescriptionAndTags();
+		e.consume(this);
+	}
+
+	void draw(const DrawArgs& args) override {
+		if (fileId == sidebar->currentFileId) {
+			nvgStrokeColor(args.vg, nvgRGBA(0xff, 0xff, 0xff, 80));
+			nvgBeginPath(args.vg);
+			Rect r = Rect(0, 0, box.size.x, box.size.y).shrink(1.f);
+			nvgRect(args.vg, RECT_ARGS(r));
+			nvgStrokeWidth(args.vg, 2.f);
+			nvgStroke(args.vg);
+		}
+		MenuItem::draw(args);
+	}
+};
+
+
+struct DescriptionTextField : ui::TextField {
+	BrowserSidebar* sidebar = nullptr;
+	bool editMode = false;
+	std::string rawText;
+
+	DescriptionTextField() {
+		multiline = true;
+	}
+
+	void setText(const std::string& newText) {
+		rawText = newText;
+		text = string::ellipsize(newText, 200);
+	}
+
+	void onShow(const event::Show& e) override {
+		selectAll();
+		TextField::onShow(e);
+	}
+
+	void onDoubleClick(const DoubleClickEvent& e) override {
+		if (sidebar && sidebar->source) {
+			SelectionSourceIndex* idx = sidebar->source->getIndex();
+			if (idx && !idx->isReadOnly()) {
+				text = rawText;
+				editMode = true;
+			}
+		}
+	}
+
+	void onDeselect(const DeselectEvent& e) override {
+		text = string::trim(text);
+		SelectionSourceIndex* idx = sidebar->source->getIndex();
+		if (idx && !sidebar->currentFileId.empty()) {
+			idx->setDescription(sidebar->currentFileId, text);	
+		}
+		
+		rawText = text;
+		text = string::ellipsize(text, 200);
+		editMode = false;
+	}
+
+	void draw(const DrawArgs& args) override {
+		if (editMode) {
+			TextField::draw(args);
+		}
+		else {
+			if (!text.empty()) {
+				bndIconLabelValue(args.vg, 0.f, 0.f, box.size.x, box.size.y, -1,
+					bndGetTheme()->menuTheme.textColor, BND_LEFT,
+					BND_LABEL_FONT_SIZE, text.c_str(), NULL);
+			}
+			else {
+				bndIconLabelValue(args.vg, 0.f, 0.f, box.size.x, box.size.y, -1,
+					color::alpha(bndGetTheme()->menuTheme.textColor, 0.5), BND_LEFT,
+					BND_LABEL_FONT_SIZE, "No description", NULL);
+			}
+		}
+	}
+};
+
+struct FileTagItem : ChoiceFilterItem<Browser> {
+	std::string tagName;
+	bool isPredefined = true;
+
+	void draw(const DrawArgs& args) override {
+		BNDwidgetState state = BND_DEFAULT;
+		if (APP->event->getHoveredWidget() == this) state = BND_HOVER;
+		if (APP->event->getDraggedWidget() == this) state = BND_ACTIVE;
+		bndToolButton(args.vg, 0.0, 0.0, box.size.x, box.size.y, BND_CORNER_NONE, state, -1, rawText.c_str());
+	}
+
+	void onButton(const ButtonEvent& e) override {
+		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
+			createContextMenu();
+			e.consume(this);
+		}
+		ChoiceFilterItem<Browser>::onButton(e);
+	}
+
+	void createContextMenu() {
+		ui::Menu* menu = createMenu();
+		menu->addChild(createMenuLabel(string::f("%s \"%s\"", isPredefined ? "Tag" : "Custom Tag", tagName)));
+		menu->addChild(createMenuItem("Add to filter", "", [this]() {
+			Browser* browser = APP->scene->getFirstDescendantOfType<Browser>();
+			if (isPredefined) {
+				if (browser->tagFilter.find(tagName) == browser->tagFilter.end()) {
+					browser->tagFilter.insert(tagName);
+					browser->sidebar->refreshFileList();
+				}
+			}
+			else {
+				if (browser->customTagFilter.find(tagName) == browser->customTagFilter.end()) {
+					browser->customTagFilter.insert(tagName);
+					browser->sidebar->refreshFileList();
+				}
+			}
+		}));
+
+		SelectionSourceIndex* idx = browser->sidebar->source->getIndex();
+		menu->addChild(createMenuItem("Remove tag", "", [this]() {
+			Browser* browser = APP->scene->getFirstDescendantOfType<Browser>();
+			SelectionSourceIndex* idx = browser->sidebar->source->getIndex();
+			if (isPredefined) {
+				idx->removeTag(browser->sidebar->currentFileId, tagName);
+			}
+			else {
+				idx->removeCustomTag(browser->sidebar->currentFileId, tagName);
+			}
+			browser->sidebar->refreshFileList();
+			hide();
+		}, !idx || idx->isReadOnly()));
+	}
+};
+
+
+// ---- Sidebar ----
+
+BrowserSidebar::BrowserSidebar() {
+	fileScroll = new ui::ScrollWidget;
+	addChild(fileScroll);
+
+	fileList = new ui::List;
+	fileScroll->container->addChild(fileList);
+
+	// Footer container for description and tags
+	footerContainer = new widget::OpaqueWidget;
+	footerContainer->box.size = Vec(270.f, 350.f);
+	addChild(footerContainer);
+
+	Widget* sp1 = new MenuSeparator;
+	sp1->box.pos = Vec(0.f, 0.f);
+	sp1->box.size = Vec(270.f, 6.f);
+	footerContainer->addChild(sp1);
+
+	descriptionField = new DescriptionTextField;
+	descriptionField->box.pos = Vec(0.f, 10.f);
+	descriptionField->box.size = Vec(270.f, 170.f);
+	descriptionField->sidebar = this;
+	footerContainer->addChild(descriptionField);
+
+	Widget* sp2 = new MenuSeparator;
+	sp2->box.pos = Vec(0.f, 180.f);
+	sp2->box.size = Vec(270.f, 6.f);
+	footerContainer->addChild(sp2);
+
+	ScrollWidget* tagsScroll = new ScrollWidget;
+	tagsScroll->box.pos = Vec(0, 190.f);
+	tagsScroll->box.size = Vec(270.f, 160.f);
+	footerContainer->addChild(tagsScroll);
+
+	tagsLayout = new ui::SequentialLayout;
+	tagsLayout->box.size.x = 270.f;
+	tagsLayout->orientation = ui::SequentialLayout::HORIZONTAL_ORIENTATION;
+	tagsLayout->alignment = ui::SequentialLayout::LEFT_ALIGNMENT;
+	tagsLayout->spacing = Vec(4, 4);
+	tagsLayout->margin = Vec(0, 0);
+	tagsScroll->container->addChild(tagsLayout);
+}
+
+BrowserSidebar::~BrowserSidebar() {
+	if (source) {
+		source->onDetach();
+		delete source;
+		source = nullptr;
+	}
+}
+
+void BrowserSidebar::step() {
+	fileScroll->box.size.y = box.size.y - footerContainer->box.size.y - 6.f;
+	fileList->box.size.x = fileScroll->box.size.x = box.size.x;
+
+	footerContainer->box.pos = Vec(0, box.size.y - footerContainer->box.size.y);
+
+	widget::Widget::step();
+}
+
+void BrowserSidebar::loadContainer() {
+	if (!source) return;
+
+	if (source->getContainer().empty())
+		source->setContainer(source->getRootContainer());
+
+	std::string container = source->getContainer();
+	if (container.empty()) {
+		fileList->clearChildren();
+		return;
+	}
+
+	fileList->clearChildren();
+
+	// Add ".." item synchronously (no I/O needed)
+	if (container != source->getRootContainer()) {
+		std::string parentContainer = source->getParentContainer(container);
+		ContainerListItem* upItem = new ContainerListItem;
+		upItem->source = source;
+		upItem->containerPath = parentContainer;
+		upItem->containerName = "..";
+		upItem->text = "📁 ..";
+		upItem->box.size.x = fileList->box.size.x;
+		fileList->addChild(upItem);
+	}
+
+	int gen = ++loadGeneration_;
+	AsyncContainerLoadWidget* asyncWidget = new AsyncContainerLoadWidget;
+	asyncWidget->sidebar = this;
+	APP->scene->addChild(asyncWidget);
+	SelectionSource* src = source;
+	taskWorker.work([asyncWidget, src, container, gen]() {
+		auto res = std::make_shared<AsyncContainerLoadResult>();
+		res->generation = gen;
+		res->container = container;
+		res->containers = src->getContainers(container);
+		res->files = src->getFiles(container);
+		asyncWidget->result = res;
+	});
+}
+
+void BrowserSidebar::populateList(const AsyncContainerLoadResult* res) {
+	Browser* browser = getAncestorOfType<Browser>();
+	if (browser && preview) {
+		preview->browser = browser;
+	}
+
+	for (const std::string& folder : res->containers) {
+		ContainerListItem* item = new ContainerListItem;
+		item->source = source;
+		item->containerPath = folder;
+		item->containerName = source->getFilename(folder);
+		item->text = "📁 " + string::ellipsize(item->containerName, 40);
+		item->box.size.x = fileList->box.size.x;
+		fileList->addChild(item);
+	}
+
+	for (const std::string& file : res->files) {
+		FileListItem* item = new FileListItem;
+		item->sidebar = this;
+		item->fileId = file;
+		item->text = string::ellipsize(source->getFilename(file), 40);
+		item->box.size.x = fileList->box.size.x;
+		fileList->addChild(item);
+	}
+
+	refreshFileList();
+	refreshDescriptionAndTags();
+}
+
+void BrowserSidebar::refreshFileList() {
+	Browser* browser = getAncestorOfType<Browser>();
+	for (Widget* w : fileList->children) {
+		FileListItem* item = dynamic_cast<FileListItem*>(w);
+		if (!item) continue;
+		if (browser->isFileTagFiltered(item->fileId))
+			item->show();
+		else
+			item->hide();
+	}
 }
 
 
-void SelectionBrowser::SourceButton::step() {
-	SelectionSource* src = browser->getSource();
-	if (src) {
-		text = src->getSourceName();
+void BrowserSidebar::onShow(const event::Show& e) {
+	if (source) {
+		if (source->getContainer().empty())
+			source->setContainer(source->getRootContainer());
+		loadContainer();
+	}
+	widget::Widget::onShow(e);
+}
+
+void BrowserSidebar::refreshDescriptionAndTags() {
+	tagsLayout->clearChildren();
+	if (!source) {
+		descriptionField->setText("");
+		return;
+	}
+
+	SelectionSourceIndex* idx = source->getIndex();
+	if (idx && !currentFileId.empty()) {
+		descriptionField->setText(idx->getDescription(currentFileId));
+	
+		// Get predefined tags
+		std::vector<std::string> fileTags = idx->getTags(currentFileId);
+		std::vector<std::string> fileCustomTags = idx->getCustomTags(currentFileId);
+		std::vector<FileTagItem*> items;
+
+		// Add predefined tags
+		for (const std::string& tag : fileTags) {
+			FileTagItem* item = new FileTagItem;
+			item->setRawText(tag);
+			item->tagName = tag;
+			item->isPredefined = true;
+			item->browser = getAncestorOfType<Browser>();
+			items.push_back(item);
+		}
+
+		// Add custom tags
+		for (const std::string& tag : fileCustomTags) {
+			FileTagItem* item = new FileTagItem;
+			item->setRawText(tag);
+			item->tagName = tag;
+			item->isPredefined = false;
+			item->browser = getAncestorOfType<Browser>();
+			items.push_back(item);
+		}
+
+		std::sort(items.begin(), items.end(), [](FileTagItem* i1, FileTagItem* i2) { return i1->tagName < i2->tagName; });
+		for (FileTagItem* item : items) tagsLayout->addChild(item);
 	}
 	else {
-		text = "No source";
+		descriptionField->setText("");
 	}
-	text = string::ellipsize(text, 40);
-	ChoiceButton::step();
-}
-
-void SelectionBrowser::SourceItem::onAction(const event::Action& e) {
-	browser->activeSourceIndex = -1;
-	for (size_t i = 0; i < browser->sources.size(); i++) {
-		if (browser->sources[i] == source) {
-			browser->activeSourceIndex = (int)i;
-			break;
-		}
-	}
-	browser->preview->clearSelection();
-	browser->sidebar->source = browser->getSource();
-	browser->sidebar->loadContainer();
-}
-
-void SelectionBrowser::SourceItem::step() {
-	SelectionSource* active = browser->getSource();
-	rightText = CHECKMARK(source == active);
-	MenuItem::step();
 }
 
 
-// ---- SelectionStatusBarWidget ----
+// ---- Status Bar ----
 
 /**
  * A status bar widget that shows messages from the current SelectionSource.
  * Messages with "0:" prefix show indefinitely, "2:" prefix show for 2 seconds.
  * A semi-transparent background spans the full width while text is shown.
  */
-struct SelectionStatusBarWidget : widget::Widget {
-	SelectionBrowser* browser;
+struct StatusBarWidget : widget::Widget {
+	Browser* browser;
 
 	/** Timestamp when the status text should be cleared (0 = no status). */
 	float statusDisplayUntil = 0.f;
@@ -513,9 +744,9 @@ struct SelectionStatusBarWidget : widget::Widget {
 };
 
 
-// ---- SelectionBrowser ----
+// ---- Browser ----
 
-SelectionBrowser::SelectionBrowser() {
+Browser::Browser() {
 	headerLayout = new ui::SequentialLayout;
 	headerLayout->box.pos = math::Vec(0, 0);
 	headerLayout->box.size.y = 0;
@@ -550,15 +781,15 @@ SelectionBrowser::SelectionBrowser() {
 	clearButton->browser = this;
 	headerLayout->addChild(clearButton);
 
-	sidebar = new SelectionBrowserSidebar;
+	sidebar = new BrowserSidebar;
 	addChild(sidebar);
 
-	preview = new SelectionPreviewWidget;
+	preview = new PreviewWidget;
 	preview->browser = this;
 	addChild(preview);
 	sidebar->preview = preview;
 
-	statusBar = new SelectionStatusBarWidget;
+	statusBar = new StatusBarWidget;
 	statusBar->browser = this;
 	addChild(statusBar);
 
@@ -570,7 +801,7 @@ SelectionBrowser::SelectionBrowser() {
 	}
 }
 
-SelectionBrowser::~SelectionBrowser() {
+Browser::~Browser() {
 	for (SelectionSource* source : sources) {
 		if (source) {
 			source->onDetach();
@@ -582,13 +813,13 @@ SelectionBrowser::~SelectionBrowser() {
 	sidebar->source = nullptr;
 }
 
-SelectionSource* SelectionBrowser::getSource() const {
+SelectionSource* Browser::getSource() const {
 	if (activeSourceIndex >= 0 && activeSourceIndex < (int)sources.size())
 		return sources[activeSourceIndex];
 	return nullptr;
 }
 
-void SelectionBrowser::setSources(const std::vector<SelectionSource*>& newSources, int activeIndex) {
+void Browser::setSources(const std::vector<SelectionSource*>& newSources, int activeIndex) {
 	// Detach and delete old sources
 	for (SelectionSource* source : sources) {
 		if (source) {
@@ -604,10 +835,13 @@ void SelectionBrowser::setSources(const std::vector<SelectionSource*>& newSource
 	sidebar->source = getSource();
 }
 
-void SelectionBrowser::addSource(SelectionSource* newSource) {
+void Browser::addSource(SelectionSource* newSource) {
 	if (!newSource) return;
 	
 	sources.push_back(newSource);
+	std::sort(sources.begin(), sources.end(), 
+		[](SelectionSource* s1, SelectionSource* s2) { return s1->getSourceName() < s2->getSourceName(); }
+	);
 	activeSourceIndex = (int)sources.size() - 1;
 	SelectionBrowserHelper* helper = SelectionBrowserHelper::getInstance();
 	newSource->setHelper(helper);
@@ -618,7 +852,7 @@ void SelectionBrowser::addSource(SelectionSource* newSource) {
 	sidebar->loadContainer();
 }
 
-void SelectionBrowser::removeSource(int index) {
+void Browser::removeSource(int index) {
 	if (index < 0 || index >= (int)sources.size()) return;
 	SelectionSource* removed = sources[index];
 	if (removed) {
@@ -633,14 +867,14 @@ void SelectionBrowser::removeSource(int index) {
 	sidebar->loadContainer();
 }
 
-void SelectionBrowser::clear() {
+void Browser::clear() {
 	tagFilter.clear();
 	customTagFilter.clear();
 	favoriteFilter = false;
 	sidebar->loadContainer();
 }
 
-bool SelectionBrowser::isFileTagFiltered(const std::string& fileId) const {
+bool Browser::isFileTagFiltered(const std::string& fileId) const {
 	SelectionSource* src = getSource();
 	if (!src) return true;
 	SelectionSourceIndex* index = src->getIndex();
@@ -679,7 +913,7 @@ bool SelectionBrowser::isFileTagFiltered(const std::string& fileId) const {
 	return true;
 }
 
-void SelectionBrowser::step() {
+void Browser::step() {
 	if (!visible) return;
 	box = parent->box.zeroPos().grow(math::Vec(-40, -40));
 
@@ -702,7 +936,7 @@ void SelectionBrowser::step() {
 	widget::OpaqueWidget::step();
 }
 
-void SelectionBrowser::draw(const DrawArgs& args) {
+void Browser::draw(const DrawArgs& args) {
 	bndMenuBackground(args.vg, 0.0, 0.0, box.size.x, box.size.y, 0);
 	widget::OpaqueWidget::draw(args);
 }
