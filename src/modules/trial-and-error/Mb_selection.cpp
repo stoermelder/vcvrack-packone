@@ -212,6 +212,19 @@ struct SourceButton : ui::ChoiceButton {
 			menu->addChild(new MenuSeparator);
 		}
 
+		menu->addChild(createMenuItem("Set as favorite", CHECKMARK(pluginSettings.mbDataSourceFavoriteIndex == browser->activeSourceIndex), 
+		[this] {
+			if (browser->activeSourceIndex >= 0 && browser->activeSourceIndex < (int)browser->sources.size()) {
+				pluginSettings.mbDataSourceFavoriteIndex = browser->activeSourceIndex;
+			}
+		}, browser->sources.empty() || pluginSettings.mbDataSourceFavoriteIndex == browser->activeSourceIndex));
+		menu->addChild(createMenuItem("Remove source", "", [this] {
+			if (browser->activeSourceIndex >= 0 && browser->activeSourceIndex < (int)browser->sources.size()) {
+				browser->removeSource(browser->activeSourceIndex);
+			}
+		}, browser->sources.empty()));
+
+		menu->addChild(new MenuSeparator);
 		menu->addChild(createMenuItem("Add .vcvs folder...", "", [this] {
 			SelectionSource* newSrc = filesystem::vcvs::createSource();
 			if (newSrc) {
@@ -230,11 +243,6 @@ struct SourceButton : ui::ChoiceButton {
 				browser->addSource(newSrc);
 			}
 		}, !patchstorage::canCreate()));
-		menu->addChild(createMenuItem("Remove source", "", [this] {
-			if (browser->activeSourceIndex >= 0 && browser->activeSourceIndex < (int)browser->sources.size()) {
-				browser->removeSource(browser->activeSourceIndex);
-			}
-		}, browser->sources.empty()));
 	}
 
 	void step() override {
@@ -612,7 +620,6 @@ void BrowserSidebar::refreshFileList() {
 	}
 }
 
-
 void BrowserSidebar::onShow(const event::Show& e) {
 	if (source) {
 		if (source->getContainer().empty())
@@ -698,7 +705,8 @@ struct StatusBarWidget : widget::Widget {
 					}
 					lastStatus = currentStatus;
 					statusDisplayUntil = timeout > 0.0f ? glfwGetTime() + timeout : 0.0f;
-				} else {
+				} 
+				else {
 					// Empty string means clear the status
 					lastStatus = "";
 					statusDisplayUntil = 0.0f;
@@ -863,6 +871,11 @@ void Browser::removeSource(int index) {
 	// Adjust active index
 	if (activeSourceIndex >= (int)sources.size())
 		activeSourceIndex = (int)sources.size() - 1;
+	// Adjust favorite index - clear if favorite source was removed
+	if (pluginSettings.mbDataSourceFavoriteIndex == index)
+		pluginSettings.mbDataSourceFavoriteIndex = -1;
+	else if (pluginSettings.mbDataSourceFavoriteIndex > index)
+		pluginSettings.mbDataSourceFavoriteIndex--;
 	sidebar->source = getSource();
 	sidebar->loadContainer();
 }

@@ -534,7 +534,10 @@ BrowserOverlay::BrowserOverlay() {
 			}
 		}
 		if (!loadedSources.empty()) {
-			selBrowser->setSources(loadedSources, 0);
+			int activeIdx = pluginSettings.mbDataSourceFavoriteIndex >= 0 
+				? pluginSettings.mbDataSourceFavoriteIndex 
+				: 0;
+			selBrowser->setSources(loadedSources, activeIdx);
 		}
 	}
 
