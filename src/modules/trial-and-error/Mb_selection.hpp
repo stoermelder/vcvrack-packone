@@ -12,9 +12,11 @@ namespace StoermelderPackOne {
 namespace Mb {
 namespace selection {
 
-// Forward declaration from Mb_selection_preview.hpp
-struct SelectionPreviewWidget;
+// Forward declarations
 struct AsyncContainerLoadResult;
+struct SelectionBrowser;
+struct SelectionPreviewWidget;
+struct SelectionStatusBarWidget;
 
 struct SelectionBrowserSidebar : widget::Widget {
 	SelectionPreviewWidget* preview;
@@ -102,10 +104,7 @@ struct SelectionBrowser : widget::OpaqueWidget {
 	/** Whether to show only favorite files. */
 	bool favoriteFilter = false;
 
-	/** Timestamp when the status text should be cleared (0 = no status). */
-	float statusDisplayUntil = 0.f;
-	/** The last shown status text. */
-	std::string lastStatus;
+	SelectionStatusBarWidget* statusBar;
 
 	SelectionBrowser();
 	~SelectionBrowser();

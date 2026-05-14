@@ -110,15 +110,17 @@ struct SelectionSource {
 	// -- ui ------------------------------------------------------------------
 
 	/**
+	 * Returns the current task status of the data source.
+	 */
+	virtual std::string& getStatusText() = 0;
+
+	/**
 	 * Append source-specific menu items to a context menu.
 	 * The menu is owned by the caller; subclasses add items to it.
 	 */
-	virtual void appendMenuItems(ui::Menu* menu) = 0;
+	virtual void appendSourceMenuItems(ui::Menu* menu) = 0;
 
-	/**
-	 * Returns the current task status of the data source.
-	 */
-	virtual std::string& getStatus() = 0;
+	virtual void appendPreviewMenuItems(ui::Menu* menu, std::string fileId) = 0;
 };
 
 

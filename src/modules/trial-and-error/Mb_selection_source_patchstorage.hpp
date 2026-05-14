@@ -772,12 +772,25 @@ struct PatchStorageSource : SelectionSource {
 		return std::string(json_string_value(slugJ)) == SLUG;
 	}
 
-	void appendMenuItems(ui::Menu* menu) override {
+	std::string& getStatusText() override {
+		return status;
+	}
+
+	void appendSourceMenuItems(ui::Menu* menu) override {
 		menu->addChild(createMenuLabel("PatchStorage.com - VCV Rack"));
 	}
 
-	std::string& getStatus() override {
-		return status;
+	void appendPreviewMenuItems(ui::Menu* menu, std::string fileId) override {
+		auto it = patchInfo->find(fileId);
+		if (it == patchInfo->end()) return;
+
+		const PatchInfo& patchInfo = it->second;
+
+		menu->addChild(createMenuLabel(patchInfo.title));
+		menu->addChild(createMenuItem("Open in web browser", "", [patchInfo]() {
+			std::string url = string::f("https://patchstorage.com/patch/%s", patchInfo.slug.c_str());
+			system::openBrowser(url);
+		}));
 	}
 };
 

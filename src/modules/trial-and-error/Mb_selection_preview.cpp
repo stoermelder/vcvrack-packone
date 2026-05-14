@@ -404,6 +404,11 @@ void SelectionPreviewWidget::createContextMenu() {
 
 	ui::Menu* menu = createMenu();
 
+	src->appendPreviewMenuItems(menu, fileId);
+	if (menu->children.size() > 0) {
+		menu->addChild(new MenuSeparator);
+	}
+
 	if (src->isPatchSource()) {
 		menu->addChild(createMenuItem("Replace current patch...", "", [this, src]() {
 			const std::string path = src->getAbsoluteFilePath(fileId);

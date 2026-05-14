@@ -540,7 +540,11 @@ struct FileSystemSource : SelectionSource {
 		return true;
 	}
 
-	void appendMenuItems(ui::Menu* menu) override {
+	std::string& getStatusText() override {
+		return status;
+	}
+
+	void appendSourceMenuItems(ui::Menu* menu) override {
 		menu->addChild(createMenuLabel(getRootContainer().empty() ? "(no folder selected)" : string::f("Root %s", getRootContainer().c_str())));
 		menu->addChild(createMenuItem("Select root folder...", "", [=]() {
 			std::string path = selectFolder();
@@ -555,8 +559,12 @@ struct FileSystemSource : SelectionSource {
 		}
 	}
 
-	std::string& getStatus() override {
-		return status;
+	void appendPreviewMenuItems(ui::Menu* menu, std::string fileId) override {
+		menu->addChild(createMenuItem("Open containing folder", "", [this, fileId]() {
+			std::string path = getAbsoluteFilePath(fileId);
+			std::string dir = system::getDirectory(path);
+			system::openDirectory(dir);
+		}));
 	}
 };
 

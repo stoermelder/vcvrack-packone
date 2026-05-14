@@ -867,7 +867,7 @@ struct MbWidget : ModuleWidget {
 			if (activeSource) {
 				menu->addChild(new MenuSeparator());
 				menu->addChild(createMenuLabel("Active source"));
-				activeSource->appendMenuItems(menu);
+				activeSource->appendSourceMenuItems(menu);
 			}
 		}));
 
