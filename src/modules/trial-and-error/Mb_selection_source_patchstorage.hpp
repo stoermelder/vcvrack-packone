@@ -800,7 +800,7 @@ struct PatchStorageSource : SelectionSource {
 		json_t* excerptJ = json_object_get(val, "excerpt");
 		if (excerptJ) info.description = json_string_value(excerptJ);
 
-		// Parse tags from the patch
+		// Parse tags from the patch and collect into allTags
 		json_t* tagsJ = json_object_get(val, "tags");
 		if (tagsJ && json_is_array(tagsJ)) {
 			size_t ti;
@@ -808,7 +808,14 @@ struct PatchStorageSource : SelectionSource {
 			json_array_foreach(tagsJ, ti, tagVal) {
 				if (json_is_object(tagVal)) {
 					json_t* nameJ = json_object_get(tagVal, "name");
-					if (nameJ) info.tags.push_back(json_string_value(nameJ));
+					if (nameJ) {
+						const char* tagName = json_string_value(nameJ);
+						if (tagName) {
+							info.tags.push_back(tagName);
+							// Collect tag into allTags
+							if (allTags) allTags->insert(tagName);
+						}
+					}
 				}
 			}
 		}
