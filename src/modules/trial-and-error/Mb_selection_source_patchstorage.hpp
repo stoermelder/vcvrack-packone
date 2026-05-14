@@ -819,6 +819,10 @@ struct PatchStorageSource : SelectionSource {
 		return rootJ;
 	}
 
+	std::vector<ContainerEntry> search(const std::string& query) override {
+		return {};
+	}
+
 	// Clear only runtime caches (downloaded files), not the persistent API caches
 	void clearCache() {
 		if (!helper->cacheDir.empty() && system::exists(helper->cacheDir)) {

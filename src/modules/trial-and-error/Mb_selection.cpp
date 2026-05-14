@@ -9,6 +9,56 @@ namespace Mb {
 namespace selection {
 
 
+// ---- Search Field ----
+
+struct BrowserSearchField : ui::TextField {
+	Browser* browser;
+
+	void step() override {
+		widget::Widget* selected = APP->event->getSelectedWidget();
+		if (!selected || !dynamic_cast<ui::TextField*>(selected)) {
+			APP->event->setSelectedWidget(this);
+		}
+		TextField::step();
+	}
+
+	void onSelectKey(const event::SelectKey& e) override {
+		bool propagate = !e.getTarget();
+
+		switch (e.key) {
+			case GLFW_KEY_ESCAPE: {
+				if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
+					text = "";
+					browser->searchQuery = "";
+					browser->sidebar->loadContainer();
+				}
+				e.consume(this);
+				return;
+			}
+			case GLFW_KEY_BACKSPACE: {
+				if (text == "") {
+					if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
+						browser->searchQuery = "";
+						browser->sidebar->loadContainer();
+					}
+					e.consume(this);
+				}
+				break;
+			}
+		}
+
+		if (propagate) {
+			ui::TextField::onSelectKey(e);
+		}
+	}
+
+	void onChange(const event::Change& e) override {
+		browser->searchQuery = string::trim(text);
+		browser->sidebar->loadContainer();
+	}
+};
+
+
 // ---- Filter / Topbar ----
 
 struct TagItem : ChoiceFilterItem<Browser> {
@@ -547,6 +597,13 @@ void BrowserSidebar::step() {
 void BrowserSidebar::loadContainer() {
 	if (!source) return;
 
+	// If there's a search query, perform search instead of loading containers
+	Browser* browser = getAncestorOfType<Browser>();
+	if (browser && !browser->searchQuery.empty()) {
+		loadSearchResults(browser->searchQuery);
+		return;
+	}
+
 	if (source->getContainer().empty())
 		source->setContainer(source->getRootContainer());
 
@@ -581,6 +638,27 @@ void BrowserSidebar::loadContainer() {
 		res->container = std::move(container);
 		res->containers = std::move(src->getContainers(container));
 		res->files = std::move(src->getFiles(container));
+		asyncWidget->result = std::move(res);
+	});
+}
+
+void BrowserSidebar::loadSearchResults(const std::string& query) {
+	if (!source) return;
+
+	fileList->clearChildren();
+	// No ".." item when searching
+
+	int gen = ++loadGeneration_;
+	AsyncContainerLoadWidget* asyncWidget = new AsyncContainerLoadWidget;
+	asyncWidget->sidebar = this;
+	APP->scene->addChild(asyncWidget);
+	SelectionSource* src = source;
+	taskWorker.work([asyncWidget, src, query, gen]() {
+		auto res = std::make_shared<AsyncContainerLoadResult>();
+		res->generation = gen;
+		res->container = "";
+		res->containers = {}; // No containers when searching
+		res->files = src->search(query);
 		asyncWidget->result = std::move(res);
 	});
 }
@@ -773,6 +851,11 @@ Browser::Browser() {
 	sourceButton->browser = this;
 	headerLayout->addChild(sourceButton);
 
+	searchField = new BrowserSearchField;
+	searchField->box.size.x = 150;
+	searchField->browser = this;
+	headerLayout->addChild(searchField);
+
 	tagButton = new TagButton;
 	tagButton->box.size.x = 150;
 	tagButton->browser = this;
@@ -890,6 +973,8 @@ void Browser::clear() {
 	tagFilter.clear();
 	customTagFilter.clear();
 	favoriteFilter = false;
+	searchQuery = "";
+	if (searchField) searchField->setText("");
 	sidebar->loadContainer();
 }
 

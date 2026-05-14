@@ -27,7 +27,42 @@ struct FileSystemSourceIndex : SelectionSourceIndex {
 		bool favorite = false;
 	};
 	std::map<std::string, FileIndexEntry> entries;
-	bool readOnly = false;
+
+	/** Cached fuzzy search database for file search - rebuilt when index changes. */
+	mutable fuzzysearch::Database<std::string> searchDb;
+	mutable bool searchDbValid = false;
+
+	/** Rebuild the search database from current index entries.
+	 * Note: fileId is already a relative path, so we extract filename manually. */
+	void rebuildSearchDb() const {
+		searchDb = fuzzysearch::Database<std::string>();
+		searchDb.setWeights({1.0f, 0.9f}); // filename weighted higher than description
+		for (const auto& pair : entries) {
+			const std::string& fileId = pair.first;
+			const auto& entry = pair.second;
+			// Extract filename from relative path without filesystem access
+			std::string filename = fileId.substr(fileId.find_last_of('/') + 1);
+			std::vector<std::string> fields = {
+				filename,
+				entry.description
+			};
+			searchDb.addEntry(fileId, fields);
+		}
+		searchDbValid = true;
+	}
+
+	/** Search the cached database, returning file IDs sorted by relevance. */
+	std::vector<std::string> search(const std::string& query) const {
+		if (!searchDbValid) {
+			rebuildSearchDb();
+		}
+		auto results = searchDb.search(query);
+		std::vector<std::string> fileIds;
+		for (const auto& r : results) {
+			fileIds.push_back(r.key);
+		}
+		return fileIds;
+	}
 
 	json_t* toJson() const {
 		json_t* j = json_object();
@@ -90,6 +125,8 @@ struct FileSystemSourceIndex : SelectionSourceIndex {
 
 			entries[fileId] = entry;
 		}
+		// Rebuild search DB lazily on first search
+		searchDbValid = false;
 		return true;
 	}
 
@@ -98,7 +135,8 @@ struct FileSystemSourceIndex : SelectionSourceIndex {
 		return it != entries.end() ? it->second.description : "";
 	}
 	void setDescription(const std::string& fileId, const std::string& description) override {
-		if (!readOnly) entries[fileId].description = description;
+		searchDbValid = false;
+		entries[fileId].description = description;
 	}
 
 	bool hasTag(const std::string& fileId, const std::string& tag) override {
@@ -110,17 +148,13 @@ struct FileSystemSourceIndex : SelectionSourceIndex {
 		return it != entries.end() ? it->second.tags : std::vector<std::string>();
 	}
 	void addTag(const std::string& fileId, const std::string& tag) override {
-		if (!readOnly) {
-			auto& tags = entries[fileId].tags;
-			if (std::find(tags.begin(), tags.end(), tag) == tags.end())
-				tags.push_back(tag);
-		}
+		auto& tags = entries[fileId].tags;
+		if (std::find(tags.begin(), tags.end(), tag) == tags.end())
+			tags.push_back(tag);
 	}
 	void removeTag(const std::string& fileId, const std::string& tag) override {
-		if (!readOnly) {
-			auto& tags = entries[fileId].tags;
-			tags.erase(std::remove(tags.begin(), tags.end(), tag), tags.end());
-		}
+		auto& tags = entries[fileId].tags;
+		tags.erase(std::remove(tags.begin(), tags.end(), tag), tags.end());
 	}
 
 	bool hasCustomTag(const std::string& fileId, const std::string& tag) override {
@@ -132,17 +166,13 @@ struct FileSystemSourceIndex : SelectionSourceIndex {
 		return it != entries.end() ? it->second.customTags : std::vector<std::string>();
 	}
 	void addCustomTag(const std::string& fileId, const std::string& tag) override {
-		if (!readOnly) {
-			auto& tags = entries[fileId].customTags;
-			if (std::find(tags.begin(), tags.end(), tag) == tags.end())
-				tags.push_back(tag);
-		}
+		auto& tags = entries[fileId].customTags;
+		if (std::find(tags.begin(), tags.end(), tag) == tags.end())
+			tags.push_back(tag);
 	}
 	void removeCustomTag(const std::string& fileId, const std::string& tag) override {
-		if (!readOnly) {
-			auto& tags = entries[fileId].customTags;
-			tags.erase(std::remove(tags.begin(), tags.end(), tag), tags.end());
-		}
+		auto& tags = entries[fileId].customTags;
+		tags.erase(std::remove(tags.begin(), tags.end(), tag), tags.end());
 	}
 
 	bool isFavorite(const std::string& fileId) const override {
@@ -150,12 +180,10 @@ struct FileSystemSourceIndex : SelectionSourceIndex {
 		return it != entries.end() && it->second.favorite;
 	}
 	void setFavorite(const std::string& fileId, bool favorite) override {
-		if (!readOnly) {
-			entries[fileId].favorite = favorite;
-		}
+		entries[fileId].favorite = favorite;
 	}
 
-	bool isReadOnly() const override { return readOnly; }
+	bool isReadOnly() const override { return false; }
 
 	std::set<std::string> getTagsAll() const override {
 		std::set<std::string> items;
@@ -177,8 +205,6 @@ struct FileSystemSourceIndex : SelectionSourceIndex {
 	 * - Moved files are detected by filename matching; metadata is preserved but fileId is updated.
 	 */
 	void updateIndex(const std::string& rootContainer, const std::string& ext) {
-		if (readOnly) return;
-
 		// Step 1: Collect all files currently on disk (relative paths)
 		std::set<std::string> currentFiles;
 		collectFilesRecursive(rootContainer, "", currentFiles, ext);
@@ -224,10 +250,10 @@ struct FileSystemSourceIndex : SelectionSourceIndex {
 				entries[fileId] = FileIndexEntry();
 			}
 		}
+		rebuildSearchDb();
 	}
 
-private:
-	/** Recursively collect file paths with the given extension under `dir`.
+	/** Recursively collect file paths with the given extension under `dir.
 	 * @param baseDir  Absolute path of the directory to scan
 	 * @param prefix   Relative path from rootContainer to baseDir (without trailing slash)
 	 * @param files    Output set of relative file paths from rootContainer
@@ -432,6 +458,23 @@ struct FileSystemSource : SelectionSource {
 			return string::lowercase(a.displayName) < string::lowercase(b.displayName);
 		});
 		return files;
+	}
+
+	/**
+	 * Search files by fuzzy matching against displayName and description.
+	 * Uses cached FuzzySearchDatabase for consistent search quality with module browser.
+	 * Returns all matching entries sorted by relevance score.
+	 */
+	std::vector<ContainerEntry> search(const std::string& query) override {
+		std::vector<std::string> fileIds = index->search(query);
+
+		std::vector<ContainerEntry> result;
+		for (const std::string& fileId : fileIds) {
+			// Extract filename from relative path without filesystem access
+			std::string filename = fileId.substr(fileId.find_last_of('/') + 1);
+			result.push_back({fileId, filename});
+		}
+		return result;
 	}
 
 	bool isContainer(const std::string& path) override {

@@ -16,6 +16,7 @@ namespace selection {
 struct DescriptionTextField;
 struct AsyncContainerLoadResult;
 struct Browser;
+struct BrowserSearchField;
 struct SourceButton;
 struct PreviewWidget;
 struct StatusBarWidget;
@@ -46,6 +47,7 @@ struct BrowserSidebar : widget::Widget {
 	void setText(const std::string& newText);
 	void step() override;
 	void loadContainer();
+	void loadSearchResults(const std::string& query);
 	void onShow(const event::Show& e) override;
 	void refreshDescriptionAndTags();
 	void populateList(const AsyncContainerLoadResult* res);
@@ -80,6 +82,7 @@ struct Browser : widget::OpaqueWidget {
 	};
 
 	ui::SequentialLayout* headerLayout;
+	BrowserSearchField* searchField;
 	SourceButton* sourceButton;
 	SelectionChoiceButton* tagButton;
 	SelectionChoiceButton* customTagButton;
@@ -100,6 +103,8 @@ struct Browser : widget::OpaqueWidget {
 	std::set<std::string> customTagFilter;
 	/** Whether to show only favorite files. */
 	bool favoriteFilter = false;
+	/** Current search query string. */
+	std::string searchQuery;
 
 	StatusBarWidget* statusBar;
 

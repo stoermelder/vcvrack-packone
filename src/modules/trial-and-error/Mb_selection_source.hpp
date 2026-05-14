@@ -54,6 +54,13 @@ struct SelectionSource {
 	virtual const std::vector<ContainerEntry>& getContainers(const std::string& container) = 0;
 	/** List all file entries inside `folder`. */
 	virtual const std::vector<ContainerEntry>& getFiles(const std::string& container) = 0;
+	/**
+	 * Search files by fuzzy matching against displayName and description.
+	 * Returns all matching entries sorted by relevance score.
+	 * When search is active, no containers should be shown.
+	 * Default implementation returns empty (PatchStorage doesn't support search yet).
+	 */
+	virtual std::vector<ContainerEntry> search(const std::string& query) = 0;
 	/** Return true if `path` is a container. */
 	virtual bool isContainer(const std::string& entry) = 0;
 	/** Return true if `path` is a file. */
