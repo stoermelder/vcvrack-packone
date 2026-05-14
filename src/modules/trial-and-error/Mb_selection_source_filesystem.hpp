@@ -169,6 +169,83 @@ struct FileSystemSourceIndex : SelectionSourceIndex {
 		// Use the default custom tags
 		return customTagsAll();
 	}
+
+	/**
+	 * Update the index by scanning the filesystem and syncing with stored entries.
+	 * - New files are added to the index.
+	 * - Files that no longer exist are removed.
+	 * - Moved files are detected by filename matching; metadata is preserved but fileId is updated.
+	 */
+	void updateIndex(const std::string& rootContainer, const std::string& ext) {
+		if (readOnly) return;
+
+		// Step 1: Collect all files currently on disk (relative paths)
+		std::set<std::string> currentFiles;
+		collectFilesRecursive(rootContainer, "", currentFiles, ext);
+
+		// Step 2: Build a map of filename -> fileId for moved file detection
+		// (filename without path, so we can detect relocations)
+		std::map<std::string, std::string> filenameToFileId;
+		for (const std::string& fileId : currentFiles) {
+			std::string filename = system::getFilename(fileId);
+			filenameToFileId[filename] = fileId;
+		}
+
+		// Step 3: Update existing index entries — handle moved files and removed files
+		std::set<std::string> existingFileIds;
+		for (const auto& pair : entries) {
+			existingFileIds.insert(pair.first);
+		}
+
+		for (const std::string& existingId : existingFileIds) {
+			if (currentFiles.find(existingId) != currentFiles.end()) {
+				// File still exists at the same path — no action needed
+				continue;
+			}
+
+			// File is gone from its known location — check if it was moved
+			std::string existingFilename = system::getFilename(existingId);
+			auto it = filenameToFileId.find(existingFilename);
+			if (it != filenameToFileId.end()) {
+				// File was moved — transfer metadata to the new fileId
+				FileIndexEntry entry = entries[existingId];
+				entries.erase(existingId);
+				entries[it->second] = entry;
+				currentFiles.erase(it->second);
+			} else {
+				// File no longer exists at all — remove from index
+				entries.erase(existingId);
+			}
+		}
+
+		// Step 4: Add brand-new files not yet in the index
+		for (const std::string& fileId : currentFiles) {
+			if (entries.find(fileId) == entries.end()) {
+				entries[fileId] = FileIndexEntry();
+			}
+		}
+	}
+
+private:
+	/** Recursively collect file paths with the given extension under `dir`.
+	 * @param baseDir  Absolute path of the directory to scan
+	 * @param prefix   Relative path from rootContainer to baseDir (without trailing slash)
+	 * @param files    Output set of relative file paths from rootContainer
+	 */
+	void collectFilesRecursive(const std::string& baseDir, const std::string& prefix, std::set<std::string>& files, const std::string& ext) const {
+		auto entries = system::getEntries(baseDir);
+		for (const auto& entry : entries) {
+			if (system::isDirectory(entry)) {
+				std::string subdirName = system::getFilename(entry);
+				std::string subdirPrefix = prefix.empty() ? subdirName : prefix + "/" + subdirName;
+				collectFilesRecursive(entry, subdirPrefix, files, ext);
+			} else if (system::isFile(entry) && SelectionSource::endsWith(entry, ext)) {
+				std::string filename = system::getFilename(entry);
+				std::string relative = prefix.empty() ? filename : prefix + "/" + filename;
+				files.insert(relative);
+			}
+		}
+	}
 };
 
 struct FileSystemSource : SelectionSource {
@@ -336,7 +413,8 @@ struct FileSystemSource : SelectionSource {
 	}
 
 	const std::vector<std::string> getFiles(const std::string& container) override {
-		auto entries = system::getEntries(container);
+		std::string folder = container == rootContainer ? rootContainer : string::f("%s/%s", rootContainer, container);
+		auto entries = system::getEntries(folder);
 		std::vector<std::string> files;
 		for (const std::string& entry : entries) {
 			std::string ext = slug == SLUG_VCVS ? ".vcvs" : ".vcv";
@@ -550,6 +628,11 @@ struct FileSystemSource : SelectionSource {
 		if (!rootContainer.empty()) {
 			menu->addChild(createMenuItem("Open in file explorer", "", [=]() {
 				system::openDirectory(rootContainer);
+			}));
+			menu->addChild(createMenuItem("Update index", "", [this]() {
+				std::string ext = slug == SLUG_VCVS ? ".vcvs" : ".vcv";
+				index->updateIndex(rootContainer, ext);
+				saveIndex();
 			}));
 		}
 	}

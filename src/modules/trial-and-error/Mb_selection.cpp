@@ -208,8 +208,14 @@ struct SourceButton : ui::ChoiceButton {
 			menu->addChild(item);
 		}
 
-		if (!menu->children.empty()) {
-			menu->addChild(new MenuSeparator);
+		menu->addChild(new MenuSeparator);
+		SelectionSource* src = browser->getSource();
+		if (src) {
+			size_t i = menu->children.size();
+			src->appendSourceMenuItems(menu);
+			if (i != menu->children.empty()) {
+				menu->addChild(new MenuSeparator);
+			}
 		}
 
 		menu->addChild(createMenuItem("Set as favorite", CHECKMARK(pluginSettings.mbDataSourceFavoriteIndex == browser->activeSourceIndex), 
