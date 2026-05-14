@@ -441,57 +441,7 @@ struct PatchStorageSource : SelectionSource {
 			if (!json_is_object(val)) continue;
 
 			PatchInfo info;
-			info.categorySlug = categorySlug;
-
-			json_t* idJ = json_object_get(val, "id");
-			if (idJ) info.id = json_integer_value(idJ);
-
-			json_t* titleJ = json_object_get(val, "title");
-			if (titleJ) info.title = json_string_value(titleJ);
-
-			json_t* slugJ = json_object_get(val, "slug");
-			if (slugJ) info.slug = json_string_value(slugJ);
-
-			json_t* excerptJ = json_object_get(val, "excerpt");
-			if (excerptJ) info.description = json_string_value(excerptJ);
-
-			// Parse tags from the patch
-			json_t* tagsJ = json_object_get(val, "tags");
-			if (tagsJ && json_is_array(tagsJ)) {
-				size_t ti;
-				json_t* tagVal;
-				json_array_foreach(tagsJ, ti, tagVal) {
-					if (json_is_object(tagVal)) {
-						json_t* nameJ = json_object_get(tagVal, "name");
-						if (nameJ) info.tags.push_back(json_string_value(nameJ));
-					}
-				}
-			}
-
-			// Get first file's ID and download URL
-			json_t* filesJ = json_object_get(val, "files");
-			DEBUG("PatchStorageSource: patch %d '%s' has files=%s", info.id, info.title.c_str(), filesJ ? "yes" : "no");
-			if (filesJ && json_is_array(filesJ) && json_array_size(filesJ) > 0) {
-				json_t* firstFile = json_array_get(filesJ, 0);
-				if (firstFile && json_is_object(firstFile)) {
-					json_t* fileIdJ = json_object_get(firstFile, "id");
-					if (fileIdJ) info.fileId = json_integer_value(fileIdJ);
-					
-					json_t* fileUrlJ = json_object_get(firstFile, "url");
-					if (fileUrlJ) info.downloadUrl = json_string_value(fileUrlJ);
-
-					json_t* filenameJ = json_object_get(firstFile, "filename");
-					if (filenameJ) info.filename = json_string_value(filenameJ);
-				}
-			} else {
-				// Try download_url field if present
-				json_t* dlUrlJ = json_object_get(val, "download_url");
-				if (dlUrlJ) {
-					info.downloadUrl = json_string_value(dlUrlJ);
-					DEBUG("PatchStorageSource: patch %d found download_url='%s'", info.id, info.downloadUrl.c_str());
-				}
-				// NOTE: Do NOT use 'url' field as fallback - it's the web page URL, not a download URL!
-			}
+			parsePatchFromJson(val, info, categorySlug);
 
 			DEBUG("PatchStorageSource: patch id=%d downloadUrl='%s'", info.id, info.downloadUrl.c_str());
 			if (info.id > 0) {
@@ -819,8 +769,129 @@ struct PatchStorageSource : SelectionSource {
 		return rootJ;
 	}
 
+	/** Simple URL encoding for search query - encode spaces and special chars. */
+	std::string urlEncode(const std::string& s) {
+		std::string result;
+		for (char c : s) {
+			if (c == ' ') {
+				result += "%20";
+			} else if (c == '&' || c == '=' || c == '%' || c == '+') {
+				char buf[4];
+				snprintf(buf, sizeof(buf), "%%%02X", (unsigned char)c);
+				result += buf;
+			} else {
+				result += c;
+			}
+		}
+		return result;
+	}
+
+	/** Parse a patch object from JSON into a PatchInfo struct. */
+	void parsePatchFromJson(json_t* val, PatchInfo& info, const std::string& categoryOverride = "") {
+		json_t* idJ = json_object_get(val, "id");
+		if (idJ) info.id = json_integer_value(idJ);
+
+		json_t* titleJ = json_object_get(val, "title");
+		if (titleJ) info.title = json_string_value(titleJ);
+
+		json_t* slugJ = json_object_get(val, "slug");
+		if (slugJ) info.slug = json_string_value(slugJ);
+
+		json_t* excerptJ = json_object_get(val, "excerpt");
+		if (excerptJ) info.description = json_string_value(excerptJ);
+
+		// Parse tags from the patch
+		json_t* tagsJ = json_object_get(val, "tags");
+		if (tagsJ && json_is_array(tagsJ)) {
+			size_t ti;
+			json_t* tagVal;
+			json_array_foreach(tagsJ, ti, tagVal) {
+				if (json_is_object(tagVal)) {
+					json_t* nameJ = json_object_get(tagVal, "name");
+					if (nameJ) info.tags.push_back(json_string_value(nameJ));
+				}
+			}
+		}
+
+		// Get first file's ID and download URL
+		json_t* filesJ = json_object_get(val, "files");
+		DEBUG("PatchStorageSource: patch %d '%s' has files=%s", info.id, info.title.c_str(), filesJ ? "yes" : "no");
+		if (filesJ && json_is_array(filesJ) && json_array_size(filesJ) > 0) {
+			json_t* firstFile = json_array_get(filesJ, 0);
+			if (firstFile && json_is_object(firstFile)) {
+				json_t* fileIdJ = json_object_get(firstFile, "id");
+				if (fileIdJ) info.fileId = json_integer_value(fileIdJ);
+
+				json_t* fileUrlJ = json_object_get(firstFile, "url");
+				if (fileUrlJ) info.downloadUrl = json_string_value(fileUrlJ);
+
+				json_t* filenameJ = json_object_get(firstFile, "filename");
+				if (filenameJ) info.filename = json_string_value(filenameJ);
+			}
+		}
+
+
+		// Get category info - use override if provided, otherwise parse from JSON
+		if (!categoryOverride.empty()) {
+			info.categorySlug = categoryOverride;
+		} 
+		else {
+			json_t* categoriesJ = json_object_get(val, "categories");
+			if (categoriesJ && json_is_array(categoriesJ) && json_array_size(categoriesJ) > 0) {
+				json_t* firstCat = json_array_get(categoriesJ, 0);
+				if (firstCat && json_is_object(firstCat)) {
+					json_t* catSlugJ = json_object_get(firstCat, "slug");
+					if (catSlugJ) info.categorySlug = json_string_value(catSlugJ);
+				}
+			}
+		}
+	}
+
 	std::vector<ContainerEntry> search(const std::string& query) override {
-		return {};
+		std::vector<ContainerEntry> results;
+
+		status = string::f("0:Searching: %s...", query.c_str());
+
+		int platformId = getVcvRackPlatformId();
+		if (platformId < 0) {
+			status = "2:Could not find VCV Rack platform";
+			return results;
+		}
+
+		// Search patches using the API
+		std::string url = string::f("%s/patches?platforms=%d&search=%s&per_page=100&order=desc&orderby=relevance",
+			API_BASE, platformId, urlEncode(query).c_str());
+		DEBUG("PatchStorageSource: search(%s) URL: %s", query.c_str(), url.c_str());
+
+		json_t* patchesJ = fetchJson(url);
+		if (!patchesJ) {
+			status = "2:Search failed";
+			return results;
+		}
+		DEFER({ json_decref(patchesJ); });
+
+		if (!json_is_array(patchesJ)) {
+			status = "";
+			return results;
+		}
+
+		size_t i;
+		json_t* val;
+		json_array_foreach(patchesJ, i, val) {
+			if (!json_is_object(val)) continue;
+
+			PatchInfo info;
+			parsePatchFromJson(val, info);
+
+			if (info.id > 0) {
+				std::string patchIdStr = string::f("%d", info.id);
+				(*patchInfo)[patchIdStr] = info;
+				results.push_back({ patchIdStr, info.title });
+			}
+		}
+
+		status = "";
+		return results;
 	}
 
 	// Clear only runtime caches (downloaded files), not the persistent API caches

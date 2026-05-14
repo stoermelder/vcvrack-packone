@@ -13,6 +13,10 @@ namespace selection {
 
 struct BrowserSearchField : ui::TextField {
 	Browser* browser;
+	/** Timer for debouncing search requests to remote APIs */
+	float searchTimer = 0.f;
+	/** Debounce delay in seconds - adjust for desired responsiveness vs API load */
+	static constexpr float searchDebounceDelay = 0.5f;
 
 	void step() override {
 		widget::Widget* selected = APP->event->getSelectedWidget();
@@ -20,6 +24,16 @@ struct BrowserSearchField : ui::TextField {
 			APP->event->setSelectedWidget(this);
 		}
 		TextField::step();
+
+		// Process debounced search timer
+		if (searchTimer > 0.f) {
+			searchTimer -= APP->window->getLastFrameDuration();
+			if (searchTimer <= 0.f) {
+				searchTimer = 0.f;
+				browser->searchQuery = string::trim(text);
+				browser->sidebar->loadContainer();
+			}
+		}
 	}
 
 	void onSelectKey(const event::SelectKey& e) override {
@@ -29,6 +43,7 @@ struct BrowserSearchField : ui::TextField {
 			case GLFW_KEY_ESCAPE: {
 				if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
 					text = "";
+					searchTimer = 0.f;
 					browser->searchQuery = "";
 					browser->sidebar->loadContainer();
 				}
@@ -38,6 +53,7 @@ struct BrowserSearchField : ui::TextField {
 			case GLFW_KEY_BACKSPACE: {
 				if (text == "") {
 					if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
+						searchTimer = 0.f;
 						browser->searchQuery = "";
 						browser->sidebar->loadContainer();
 					}
@@ -53,8 +69,8 @@ struct BrowserSearchField : ui::TextField {
 	}
 
 	void onChange(const event::Change& e) override {
-		browser->searchQuery = string::trim(text);
-		browser->sidebar->loadContainer();
+		// Reset debounce timer - search will trigger after delay when typing stops
+		searchTimer = searchDebounceDelay;
 	}
 };
 
