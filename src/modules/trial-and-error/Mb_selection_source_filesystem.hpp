@@ -396,36 +396,40 @@ struct FileSystemSource : SelectionSource {
 		return rootContainer;
 	}
 
-	const std::vector<std::string> getContainers(const std::string& container) override {
+	const std::vector<ContainerEntry>& getContainers(const std::string& container) override {
+		static std::vector<ContainerEntry> containers;
+		containers.clear();
 		auto entries = system::getEntries(container);
-		std::vector<std::string> containers;
 		for (const std::string& entry : entries) {
 			if (system::isDirectory(entry)) {
 				// Strip rootContainer prefix to return relative path
 				std::string relative = entry.substr(rootContainer.empty() ? 0 : rootContainer.size() + 1);
-				containers.push_back(relative);
+				std::string name = system::getFilename(entry);
+				containers.push_back({ relative, name });
 			}
 		}
-		std::sort(containers.begin(), containers.end(), [this](const std::string& a, const std::string& b) {
-			return string::lowercase(getFilename(a)) < string::lowercase(getFilename(b));
+		std::sort(containers.begin(), containers.end(), [](const ContainerEntry& a, const ContainerEntry& b) {
+			return string::lowercase(a.displayName) < string::lowercase(b.displayName);
 		});
 		return containers;
 	}
 
-	const std::vector<std::string> getFiles(const std::string& container) override {
+	const std::vector<ContainerEntry>& getFiles(const std::string& container) override {
+		static std::vector<ContainerEntry> files;
+		files.clear();
 		std::string folder = container == rootContainer ? rootContainer : string::f("%s/%s", rootContainer, container);
 		auto entries = system::getEntries(folder);
-		std::vector<std::string> files;
 		for (const std::string& entry : entries) {
 			std::string ext = slug == SLUG_VCVS ? ".vcvs" : ".vcv";
 			if (system::isFile(entry) && SelectionSource::endsWith(entry, ext)) {
 				// Strip rootContainer prefix to return relative path
 				std::string relative = entry.substr(rootContainer.empty() ? 0 : rootContainer.size() + 1);
-				files.push_back(relative);
+				std::string name = system::getFilename(entry);
+				files.push_back({ relative, name });
 			}
 		}
-		std::sort(files.begin(), files.end(), [this](const std::string& a, const std::string& b) {
-			return string::lowercase(getFilename(a)) < string::lowercase(getFilename(b));
+		std::sort(files.begin(), files.end(), [](const ContainerEntry& a, const ContainerEntry& b) {
+			return string::lowercase(a.displayName) < string::lowercase(b.displayName);
 		});
 		return files;
 	}

@@ -10,6 +10,15 @@ namespace Mb {
 namespace selection {
 
 /**
+ * A container or file entry returned by getContainers() / getFiles(),
+ * pairing a unique id with a human-readable display name.
+ */
+struct ContainerEntry {
+	std::string id;
+	std::string displayName;
+};
+
+/**
  * Abstract interface for a selection data source.
  * Decouples the Browser from the file system, enabling
  * alternative data sources (e.g. remote HTTP) to be plugged in later.
@@ -42,9 +51,9 @@ struct SelectionSource {
 	// -- queries -------------------------------------------------------------
 
 	/** List all container entries inside `folder`. */
-	virtual const std::vector<std::string> getContainers(const std::string& container) = 0;
+	virtual const std::vector<ContainerEntry>& getContainers(const std::string& container) = 0;
 	/** List all file entries inside `folder`. */
-	virtual const std::vector<std::string> getFiles(const std::string& container) = 0;
+	virtual const std::vector<ContainerEntry>& getFiles(const std::string& container) = 0;
 	/** Return true if `path` is a container. */
 	virtual bool isContainer(const std::string& entry) = 0;
 	/** Return true if `path` is a file. */

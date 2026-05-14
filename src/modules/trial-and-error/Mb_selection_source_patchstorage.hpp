@@ -582,25 +582,26 @@ struct PatchStorageSource : SelectionSource {
 		return "PatchStorage";
 	}
 
-	const std::vector<std::string> getContainers(const std::string& container) override {
+	const std::vector<ContainerEntry>& getContainers(const std::string& container) override {
 		// Lazy load categories on first access
 		loadCategories();
-		
+		static std::vector<ContainerEntry> result;
+		result.clear();
+
 		// PatchStorage has a flat category structure - no sub-containers
 		// Return categories when at root (empty container or "PatchStorage")
 		if (container.empty() || container == "PatchStorage") {
-			std::vector<std::string> result;
 			DEBUG("PatchStorageSource: getContainers() for root, %d categories loaded", (int)categories->size());
 			for (const auto& cat : *categories) {
-				result.push_back(cat.slug);
+				result.push_back({ cat.slug, cat.name });
 			}
-			return result;
 		}
-		return {};
+		return result;
 	}
 
-	const std::vector<std::string> getFiles(const std::string& container) override {
-		std::vector<std::string> result;
+	const std::vector<ContainerEntry>& getFiles(const std::string& container) override {
+		static std::vector<ContainerEntry> result;
+		result.clear();
 
 		// At root level (empty or "PatchStorage"), return no files - only categories
 		if (container.empty() || container == "PatchStorage") {
@@ -612,7 +613,8 @@ struct PatchStorageSource : SelectionSource {
 		if (it != categoryPatches->end()) {
 			DEBUG("PatchStorageSource: getFiles() cache hit for %s with %d patches", container.c_str(), (int)it->second.size());
 			for (const auto& patchId : it->second) {
-				result.push_back(patchId);
+				const auto& patch = (*patchInfo)[patchId];
+				result.push_back({ patchId, patch.title });
 			}
 			return result;
 		}
@@ -628,11 +630,11 @@ struct PatchStorageSource : SelectionSource {
 			std::string patchIdStr = string::f("%d", patch.id);
 			patchIds.push_back(patchIdStr);
 			(*patchInfo)[patchIdStr] = patch;
+			result.push_back({ patchIdStr, patch.title });
 		}
 
 		(*categoryPatches)[container] = patchIds;
-
-		return patchIds;
+		return result;
 	}
 
 	bool isContainer(const std::string& path) override {

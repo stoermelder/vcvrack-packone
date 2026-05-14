@@ -270,8 +270,8 @@ struct SourceButton : ui::ChoiceButton {
 struct AsyncContainerLoadResult {
 	int generation;
 	std::string container;
-	std::vector<std::string> containers;
-	std::vector<std::string> files;
+	std::vector<ContainerEntry> containers;
+	std::vector<ContainerEntry> files;
 };
 
 struct AsyncContainerLoadWidget : widget::Widget {
@@ -578,10 +578,10 @@ void BrowserSidebar::loadContainer() {
 	taskWorker.work([asyncWidget, src, container, gen]() {
 		auto res = std::make_shared<AsyncContainerLoadResult>();
 		res->generation = gen;
-		res->container = container;
-		res->containers = src->getContainers(container);
-		res->files = src->getFiles(container);
-		asyncWidget->result = res;
+		res->container = std::move(container);
+		res->containers = std::move(src->getContainers(container));
+		res->files = std::move(src->getFiles(container));
+		asyncWidget->result = std::move(res);
 	});
 }
 
@@ -591,21 +591,21 @@ void BrowserSidebar::populateList(const AsyncContainerLoadResult* res) {
 		preview->browser = browser;
 	}
 
-	for (const std::string& folder : res->containers) {
+	for (const ContainerEntry& folder : res->containers) {
 		ContainerListItem* item = new ContainerListItem;
 		item->source = source;
-		item->containerPath = folder;
-		item->containerName = source->getFilename(folder);
+		item->containerPath = folder.id;
+		item->containerName = folder.displayName;
 		item->text = "📁 " + string::ellipsize(item->containerName, 40);
 		item->box.size.x = fileList->box.size.x;
 		fileList->addChild(item);
 	}
 
-	for (const std::string& file : res->files) {
+	for (const ContainerEntry& file : res->files) {
 		FileListItem* item = new FileListItem;
 		item->sidebar = this;
-		item->fileId = file;
-		item->text = string::ellipsize(source->getFilename(file), 40);
+		item->fileId = file.id;
+		item->text = string::ellipsize(file.displayName, 40);
 		item->box.size.x = fileList->box.size.x;
 		fileList->addChild(item);
 	}
