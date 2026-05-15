@@ -549,6 +549,21 @@ struct FileTagItem : ChoiceFilterItem<Browser> {
 };
 
 
+struct TagList : ScrollWidget {
+	void onButton(const ButtonEvent& e) override {
+		ScrollWidget::onButton(e);
+		if (!e.isConsumed() && e.button == GLFW_MOUSE_BUTTON_RIGHT && e.action == GLFW_PRESS) {
+			Browser* browser = APP->scene->getFirstDescendantOfType<Browser>();
+			if (!browser->preview->fileId.empty()) {
+				browser->preview->createContextMenu();
+				e.consume(this);
+				return;
+			}
+		}
+	}
+};
+
+
 // ---- Sidebar ----
 
 BrowserSidebar::BrowserSidebar() {
@@ -579,7 +594,7 @@ BrowserSidebar::BrowserSidebar() {
 	sp2->box.size = Vec(270.f, 6.f);
 	footerContainer->addChild(sp2);
 
-	ScrollWidget* tagsScroll = new ScrollWidget;
+	ScrollWidget* tagsScroll = new TagList;
 	tagsScroll->box.pos = Vec(0, 190.f);
 	tagsScroll->box.size = Vec(270.f, 160.f);
 	footerContainer->addChild(tagsScroll);

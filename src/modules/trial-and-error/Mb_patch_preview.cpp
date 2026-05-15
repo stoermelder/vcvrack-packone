@@ -352,27 +352,6 @@ void PreviewWidget::createPreview() {
 	}
 }
 
-void PreviewWidget::onButton(const ButtonEvent& e) {
-	if (e.button == GLFW_MOUSE_BUTTON_RIGHT && e.action == GLFW_PRESS) {
-		createContextMenu();
-		e.consume(this);
-		return;
-	}
-	if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS) {
-		APP->scene->browser->hide();
-		auto c =
-			APP->scene->rack->getFirstDescendantOfType<SppPreview::PatchPreviewContainer<Mb::BrowserOverlay>>();
-		if (c) {
-			c->showPatchPreview(rootJ, [&]() {
-				vcvsFromJson(rootJ, "stoermelder MB patch load");
-				json_decref(rootJ);
-				fileId = "";
-			});
-		}
-		e.consume(this);
-	}
-}
-
 void PreviewWidget::step() {
 	OpaqueWidget::step();
 	// Recalculate when our box size changes OR when file path changes
@@ -393,6 +372,27 @@ void PreviewWidget::draw(const DrawArgs& args) {
 	nvgScissor(args.vg, RECT_ARGS(s));
 	OpaqueWidget::draw(args);
 	nvgResetScissor(args.vg);
+}
+
+void PreviewWidget::onButton(const ButtonEvent& e) {
+	if (e.button == GLFW_MOUSE_BUTTON_RIGHT && e.action == GLFW_PRESS) {
+		createContextMenu();
+		e.consume(this);
+		return;
+	}
+	if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS) {
+		APP->scene->browser->hide();
+		auto c =
+			APP->scene->rack->getFirstDescendantOfType<SppPreview::PatchPreviewContainer<Mb::BrowserOverlay>>();
+		if (c) {
+			c->showPatchPreview(rootJ, [&]() {
+				vcvsFromJson(rootJ, "stoermelder MB patch load");
+				json_decref(rootJ);
+				fileId = "";
+			});
+		}
+		e.consume(this);
+	}
 }
 
 void PreviewWidget::createContextMenu() {
