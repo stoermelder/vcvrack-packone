@@ -1121,6 +1121,36 @@ struct PatchStorageSource : PatchSource {
 			std::string url = string::f("https://patchstorage.com/patch/%s", patchInfo.slug.c_str());
 			system::openBrowser(url);
 		}));
+		menu->addChild(createMenuItem("Save to disk...", "", [this, patchInfo, fileId]() {
+			// Ensure file is downloaded first
+			std::string archivePath = getAbsoluteFilePath(fileId);
+			if (archivePath.empty()) return;
+
+			// Show save dialog using osdialog_file
+			char* path = osdialog_file(OSDIALOG_SAVE, "", patchInfo.filename.empty() ? (patchInfo.slug + ".vcv").c_str() : patchInfo.filename.c_str(), NULL);
+			if (!path) return;
+
+			// Copy file to destination
+			FILE* srcFile = fopen(archivePath.c_str(), "rb");
+			if (!srcFile) {
+				free(path);
+				return;
+			}
+			FILE* dstFile = fopen(path, "wb");
+			if (!dstFile) {
+				fclose(srcFile);
+				free(path);
+				return;
+			}
+			char buf[8192];
+			size_t n;
+			while ((n = fread(buf, 1, sizeof(buf), srcFile)) > 0) {
+				fwrite(buf, 1, n, dstFile);
+			}
+			fclose(srcFile);
+			fclose(dstFile);
+			free(path);
+		}));
 	}
 };
 
