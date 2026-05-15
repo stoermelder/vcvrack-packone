@@ -6,6 +6,10 @@
 #include "Mb_patch_source.hpp"
 #include "Mb_patch_sourceindex.hpp"
 
+// Include curl for header access
+#define CURL_STATICLIB
+#include <curl/curl.h>
+
 namespace StoermelderPackOne {
 namespace Mb {
 namespace patch {
@@ -255,6 +259,79 @@ struct PatchStorageSource : PatchSource {
 		return result;
 	}
 
+	/** Result of a JSON fetch with header info. */
+	struct JsonFetchResult {
+		json_t* json = nullptr;
+		int totalPages = 1;
+		std::string error;
+	};
+
+	/** Fetch JSON from a URL with access to response headers (for X-WP-TotalPages). */
+	JsonFetchResult fetchJsonWithHeaders(const std::string& url) const {
+		JsonFetchResult result;
+
+		CURL* curl = curl_easy_init();
+		if (!curl) {
+			result.error = "Failed to init curl";
+			return result;
+		}
+
+		curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+		curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, true);
+		curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 30L);
+		curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+
+		// Set headers
+		struct curl_slist* headers = NULL;
+		headers = curl_slist_append(headers, "Accept: application/json");
+		curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+
+		// Capture response headers
+		std::string headerData;
+		curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, +[](char* ptr, size_t size, size_t nmemb, void* userdata) -> size_t {
+			std::string* s = (std::string*)userdata;
+			s->append(ptr, size * nmemb);
+			return size * nmemb;
+		});
+		curl_easy_setopt(curl, CURLOPT_HEADERDATA, &headerData);
+
+		// Capture response body
+		std::string bodyData;
+		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, +[](char* ptr, size_t size, size_t nmemb, void* userdata) -> size_t {
+			std::string* s = (std::string*)userdata;
+			s->append(ptr, size * nmemb);
+			return size * nmemb;
+		});
+		curl_easy_setopt(curl, CURLOPT_WRITEDATA, &bodyData);
+
+		CURLcode res = curl_easy_perform(curl);
+		curl_slist_free_all(headers);
+
+		if (res != CURLE_OK) {
+			result.error = curl_easy_strerror(res);
+			curl_easy_cleanup(curl);
+			return result;
+		}
+
+		// Parse X-WP-TotalPages header
+		size_t pos = headerData.find("X-WP-TotalPages:");
+		if (pos != std::string::npos) {
+			size_t start = pos + 17;
+			size_t end = headerData.find("\r\n", start);
+			std::string numStr = headerData.substr(start, end - start);
+			result.totalPages = std::stoi(numStr);
+		} else {
+			result.totalPages = 1;
+		}
+
+		// Parse JSON
+		json_error_t error;
+		result.json = json_loads(bodyData.c_str(), 0, &error);
+
+		curl_easy_cleanup(curl);
+		return result;
+	}
+
 	/** Get platform ID for VCV Rack, fetching lazily on first use. Returns -1 if not found. */
 	int getVcvRackPlatformId() {
 		if (platformId >= 0) return platformId;
@@ -421,40 +498,29 @@ struct PatchStorageSource : PatchSource {
 			API_BASE, platformId, categoryId, page);
 		DEBUG("PatchStorageSource: fetching URL: %s", url.c_str());
 		status = string::f("0:Fetching %s page %d...", categorySlug.c_str(), page);
-		json_t* patchesJ = fetchJson(url);
-		DEBUG("PatchStorageSource: patchesJ=%s", patchesJ ? "valid" : "NULL");
-		if (!patchesJ) {
+		auto fetchResult = fetchJsonWithHeaders(url);
+		if (fetchResult.json) {
+			if (json_is_array(fetchResult.json)) {
+				DEBUG("PatchStorageSource: patchesJ array size=%zu", json_array_size(fetchResult.json));
+				size_t i;
+				json_t* val;
+				json_array_foreach(fetchResult.json, i, val) {
+					if (!json_is_object(val)) continue;
+					PatchInfo info;
+					parsePatchFromJson(val, info, categorySlug);
+					if (info.id > 0) {
+						patches.push_back(info);
+					}
+				}
+				if (totalPagesOut) {
+					*totalPagesOut = fetchResult.totalPages;
+				}
+			}
+			json_decref(fetchResult.json);
+		} else {
+			DEBUG("PatchStorageSource: fetchJsonWithHeaders failed: %s", fetchResult.error.c_str());
 			status = "2:Failed to fetch patches";
 			return patches;
-		}
-		DEFER({ json_decref(patchesJ); });
-
-		if (!json_is_array(patchesJ)) {
-			DEBUG("PatchStorageSource: patchesJ is not an array");
-			status = "";
-			return patches;
-		}
-		
-		DEBUG("PatchStorageSource: patchesJ array size=%zu", json_array_size(patchesJ));
-
-		size_t i;
-		json_t* val;
-		json_array_foreach(patchesJ, i, val) {
-			if (!json_is_object(val)) continue;
-
-			PatchInfo info;
-			parsePatchFromJson(val, info, categorySlug);
-
-			DEBUG("PatchStorageSource: patch id=%d downloadUrl='%s'", info.id, info.downloadUrl.c_str());
-			if (info.id > 0) {
-				patches.push_back(info);
-				DEBUG("PatchStorageSource: added patch id=%d title='%s'", info.id, info.title.c_str());
-			}
-		}
-
-		// Try to get total pages from response headers
-		if (totalPagesOut) {
-			*totalPagesOut = 1; // Default to 1 page
 		}
 
 		// Async operation complete, clear status
@@ -559,19 +625,21 @@ struct PatchStorageSource : PatchSource {
 			// Level 1: Check if this is a category, then show page containers
 			for (const auto& cat : *categories) {
 				if (cat.slug == container) {
-					// Determine how many pages to show based on cached data
-					// Always show at least page 1
-					// If a page has >= 100 items, assume there's a next page
-					int numPages = 1;
-					for (int i = 1; i < 20; i++) { // Cap at 20 pages to avoid infinite loop
-						std::string cacheKey = string::f("%s:%d", cat.slug.c_str(), i);
-						auto it = categoryPagePatches->find(cacheKey);
-						if (it != categoryPagePatches->end() && (int)it->second.size() >= 100) {
-							numPages = i + 1; // This page is full, so there may be a next page
+					// Use totalPages from category if available (set during fetchPatchesForCategory)
+					// Otherwise fall back to fetching page 1 to get totalPages
+					int numPages = cat.totalPages;
+					if (numPages == 0) {
+						// Call getFiles for page 1 to cache results and get totalPages
+						std::string page1Id = string::f("%s/page1", cat.slug.c_str());
+						auto page1Files = getFiles(page1Id);
+						// getFiles updates cat.totalPages if successful, so read it again
+						for (const auto& c : *categories) {
+							if (c.slug == cat.slug) {
+								numPages = c.totalPages;
+								break;
+							}
 						}
-						else {
-							break;
-						}
+						if (numPages == 0) numPages = 1;
 					}
 					for (int i = 1; i <= numPages; i++) {
 						std::string pageId = string::f("%s/page%d", cat.slug.c_str(), i);
