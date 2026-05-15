@@ -1,16 +1,16 @@
 #pragma once
 #include "Mb.hpp"
-#include "Mb_selection_source.hpp"
-#include "Mb_selection_source_index.hpp"
-#include "Mb_selection_source_filesystem.hpp"
-#include "Mb_selection_source_patchstorage.hpp"
-#include "Mb_selection_helper.hpp"
+#include "Mb_patch_source.hpp"
+#include "Mb_patch_sourceindex.hpp"
+#include "Mb_patch_source_filesystem.hpp"
+#include "Mb_patch_source_patchstorage.hpp"
+#include "Mb_patch_helper.hpp"
 #include "../../utils/TaskWorker.hpp"
 #include <tag.hpp>
 
 namespace StoermelderPackOne {
 namespace Mb {
-namespace selection {
+namespace patch {
 
 // Forward declarations
 struct DescriptionTextField;
@@ -20,6 +20,7 @@ struct BrowserSearchField;
 struct SourceButton;
 struct PreviewWidget;
 struct StatusBarWidget;
+
 
 struct BrowserSidebar : widget::Widget {
 	PreviewWidget* preview;
@@ -34,7 +35,7 @@ struct BrowserSidebar : widget::Widget {
 	ui::SequentialLayout* tagsLayout;
 
 	/** The data source used by this sidebar. */
-	SelectionSource* source = nullptr;
+	PatchSource* source = nullptr;
 
 	/** Incremented on each loadContainer() call; used to discard stale async results. */
 	int loadGeneration_ = 0;
@@ -54,9 +55,8 @@ struct BrowserSidebar : widget::Widget {
 	void refreshFileList();
 };
 
-
 struct Browser : widget::OpaqueWidget {
-	struct SelectionChoiceButton : ui::ChoiceButton {
+	struct PatchChoiceButton : ui::ChoiceButton {
 		Browser* browser;
 	};
 
@@ -84,8 +84,8 @@ struct Browser : widget::OpaqueWidget {
 	ui::SequentialLayout* headerLayout;
 	BrowserSearchField* searchField;
 	SourceButton* sourceButton;
-	SelectionChoiceButton* tagButton;
-	SelectionChoiceButton* customTagButton;
+	PatchChoiceButton* tagButton;
+	PatchChoiceButton* customTagButton;
 	FavoriteButton* favoriteButton;
 	ClearButton* clearButton;
 
@@ -93,7 +93,7 @@ struct Browser : widget::OpaqueWidget {
 	PreviewWidget* preview;
 
 	/** List of all configured data sources. */
-	std::vector<SelectionSource*> sources;
+	std::vector<PatchSource*> sources;
 	/** Index of the currently active source in `sources`, or -1. */
 	int activeSourceIndex = -1;
 
@@ -113,12 +113,12 @@ struct Browser : widget::OpaqueWidget {
 	void step() override;
 	void draw(const DrawArgs& args) override;
 
-	/** Get the currently active selection source, or nullptr. */
-	SelectionSource* getSource() const;
+	/** Get the currently active patch source, or nullptr. */
+	PatchSource* getSource() const;
 	/** Replace all sources and activate the given one. */
-	void setSources(const std::vector<SelectionSource*>& newSources, int activeIndex = 0);
+	void setSources(const std::vector<PatchSource*>& newSources, int activeIndex = 0);
 	/** Add a new source and make it active. */
-	void addSource(SelectionSource* newSource);
+	void addSource(PatchSource* newSource);
 	/** Remove a source by index. Falls back to the first source if the active one is removed. */
 	void removeSource(int index);
 	/** Clear all active tag filters (both predefined and custom). */
@@ -129,6 +129,6 @@ struct Browser : widget::OpaqueWidget {
 };
 
 
-} // namespace selection
+} // namespace patch
 } // namespace Mb
 } // namespace StoermelderPackOne

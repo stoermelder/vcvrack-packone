@@ -5,7 +5,7 @@
 #include "Mb_v06.hpp"
 #include "Mb_autotag.hpp"
 #include "Mb_autotag_widgets.hpp"
-#include "Mb_selection.hpp"
+#include "Mb_patch.hpp"
 #include <osdialog.h>
 #include <tag.hpp>
 #include <chrono>
@@ -516,19 +516,19 @@ BrowserOverlay::BrowserOverlay() {
 	mbV2->hide();
 	addChild(mbV2);
 
-	mbSelection = new selection::Browser;
-	mbSelection->hide();
-	addChild(mbSelection);
+	mbPatch = new patch::Browser;
+	mbPatch->hide();
+	addChild(mbPatch);
 
-	// Configure the selection sources from saved settings
-	selection::Browser* selBrowser = static_cast<selection::Browser*>(mbSelection);
+	// Configure the patch sources from saved settings
+	patch::Browser* selBrowser = static_cast<patch::Browser*>(mbPatch);
 
 	if (pluginSettings.mbDataSourcesJ) {
-		std::vector<selection::SelectionSource*> loadedSources;
+		std::vector<patch::PatchSource*> loadedSources;
 		size_t idx;
 		json_t* sourceJ;
 		json_array_foreach(pluginSettings.mbDataSourcesJ, idx, sourceJ) {
-			selection::SelectionSource* loadedSource = selection::createSourceFromJson(sourceJ);
+			patch::PatchSource* loadedSource = patch::createSourceFromJson(sourceJ);
 			if (loadedSource) {
 				loadedSources.push_back(loadedSource);
 			}
@@ -541,9 +541,9 @@ BrowserOverlay::BrowserOverlay() {
 		}
 	}
 
-	selection::SelectionSource* selectionSource = selBrowser->getSource();
-	if (selectionSource) {
-		selectionSource->onAttach();
+	patch::PatchSource* source = selBrowser->getSource();
+	if (source) {
+		source->onAttach();
 	}
 
 	APP->scene->browser = this;
@@ -566,11 +566,11 @@ BrowserOverlay::~BrowserOverlay() {
 	pluginSettings.mbSortBySearchScore = sortBySearchScore;
 	pluginSettings.mbFavoriteHighlight = favoriteHighlight;
 
-	// Save selection sources to array
+	// Save patch sources to array
 	json_decref(pluginSettings.mbDataSourcesJ);
 	pluginSettings.mbDataSourcesJ = json_array();
-	selection::Browser* selBrowser = static_cast<selection::Browser*>(mbSelection);
-	for (selection::SelectionSource* source : selBrowser->sources) {
+	patch::Browser* selBrowser = static_cast<patch::Browser*>(mbPatch);
+	for (patch::PatchSource* source : selBrowser->sources) {
 		if (source) {
 			json_array_append_new(pluginSettings.mbDataSourcesJ, source->toJson());
 		}
@@ -599,8 +599,8 @@ void BrowserOverlay::step() {
 	// Show selection browser on held Ctrl key
 	if (doActivate && (APP->window->getMods() & RACK_MOD_CTRL) == RACK_MOD_CTRL) {
 		if (mbActive) mbActive->hide();
-		mbSelection->show();
-		mbActive = mbSelection;
+		mbPatch->show();
+		mbActive = mbPatch;
 		doActivate = false;
 	}
 	// Show one of the other browsers
@@ -712,7 +712,7 @@ struct MbMenuButton : ui::Button {
 };
 
 struct MbWidget : ModuleWidget {
-	SppPreview::SelectionPreviewContainer<Mb::BrowserOverlay>* sppPreviewContainer;
+	SppPreview::PatchPreviewContainer<Mb::BrowserOverlay>* sppPreviewContainer;
 	BrowserOverlay* browserOverlay;
 	MbMenuButton* menubarButton;
 	bool active = false;
@@ -729,7 +729,7 @@ struct MbWidget : ModuleWidget {
 		if (module) {
 			active = registerSingleton("Mb", this);
 			if (active) {
-				sppPreviewContainer = new SppPreview::SelectionPreviewContainer<Mb::BrowserOverlay>;
+				sppPreviewContainer = new SppPreview::PatchPreviewContainer<Mb::BrowserOverlay>;
 				APP->scene->rack->addChild(sppPreviewContainer);
 
 				browserOverlay = new BrowserOverlay;
@@ -823,21 +823,21 @@ struct MbWidget : ModuleWidget {
 			[module]() { module->mode = MODE::V2; }
 		));
 		menu->addChild(createSubmenuItem("Patch browser", RACK_MOD_CTRL_NAME "+Right click", [=](Menu* menu) {
-			selection::Browser* selBrowser = static_cast<selection::Browser*>(browserOverlay->mbSelection);
+			patch::Browser* selBrowser = static_cast<patch::Browser*>(browserOverlay->mbPatch);
 			int activeIdx = selBrowser->activeSourceIndex;
 
 			menu->addChild(createMenuItem("Add .vcvs folder source...", "", [=]() {
-				selection::SelectionSource* newSrc = selection::filesystem::vcvs::createSource();
+				patch::PatchSource* newSrc = patch::filesystem::vcvs::createSource();
 				if (newSrc) { selBrowser->addSource(newSrc); }
 			}));
 			menu->addChild(createMenuItem("Add .vcv folder source...", "", [=]() {
-				selection::SelectionSource* newSrc = selection::filesystem::vcv::createSource();
+				patch::PatchSource* newSrc = patch::filesystem::vcv::createSource();
 				if (newSrc) { selBrowser->addSource(newSrc); }
 			}));
 			menu->addChild(createMenuItem("Add PatchStorage source", "", [=]() {
-				selection::SelectionSource* newSrc = selection::patchstorage::initSource();
+				patch::PatchSource* newSrc = patch::patchstorage::initSource();
 				if (newSrc) { selBrowser->addSource(newSrc); }
-			}, !selection::patchstorage::canCreate()));
+			}, !patch::patchstorage::canCreate()));
 
 			// Remove current source
 			menu->addChild(createMenuItem("Remove selected source", "", [=]() {
@@ -848,7 +848,7 @@ struct MbWidget : ModuleWidget {
 				menu->addChild(new MenuSeparator());
 				// List all sources with activate checkbox
 				for (size_t i = 0; i < selBrowser->sources.size(); i++) {
-					selection::SelectionSource* src = selBrowser->sources[i];
+					patch::PatchSource* src = selBrowser->sources[i];
 					if (!src) continue;
 					std::string label = src->getSourceName();
 					menu->addChild(createCheckMenuItem(label, "",
@@ -859,7 +859,7 @@ struct MbWidget : ModuleWidget {
 			}
 
 			// Source-specific menu items (delegated to the source for pluggability)
-			selection::SelectionSource* activeSource = selBrowser->getSource();
+			patch::PatchSource* activeSource = selBrowser->getSource();
 			if (activeSource) {
 				menu->addChild(new MenuSeparator());
 				menu->addChild(createMenuLabel("Active source"));

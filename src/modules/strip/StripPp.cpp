@@ -1,6 +1,6 @@
 #include "../../plugin.hpp"
 #include "Strip.hpp"
-#include "SelectionPreview.hpp"
+#include "PatchPreview.hpp"
 #include "../../components/MenuLabelEx.hpp"
 
 namespace StoermelderPackOne {
@@ -61,7 +61,7 @@ struct StripPpModule : Module {
 
 
 struct StripPpWidget : StripWidgetBase<StripPpModule> {
-	struct StripPpContainer : SppPreview::SelectionPreviewContainer<StripPpWidget> {
+	struct StripPpContainer : SppPreview::PatchPreviewContainer<StripPpWidget> {
 		StripPpWidget* mw;
 
 		void onHoverKey(const event::HoverKey& e) override {
@@ -131,7 +131,7 @@ struct StripPpWidget : StripWidgetBase<StripPpModule> {
 				path = vcvsLoadFileDialog(false, "stoermelder STRIP selection load");
 			}
 			if (!path.empty()) {
-				stripPpContainer->showSelectionPreview(path, [=]() {
+				stripPpContainer->showPatchPreview(path, [=]() {
 					vcvsLoadFile(path, "stoermelder STRIP selection load");
 					addRecentFile(path);
 				});

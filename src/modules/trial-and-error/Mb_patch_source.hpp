@@ -2,12 +2,12 @@
 #include <string>
 #include <vector>
 #include <rack.hpp>
-#include "Mb_selection_helper.hpp"
-#include "Mb_selection_source_index.hpp"
+#include "Mb_patch_helper.hpp"
+#include "Mb_patch_sourceindex.hpp"
 
 namespace StoermelderPackOne {
 namespace Mb {
-namespace selection {
+namespace patch {
 
 /**
  * A container or file entry returned by getContainers() / getFiles(),
@@ -19,12 +19,12 @@ struct ContainerEntry {
 };
 
 /**
- * Abstract interface for a selection data source.
+ * Abstract interface for a patch data source.
  * Decouples the Browser from the file system, enabling
  * alternative data sources (e.g. remote HTTP) to be plugged in later.
  */
-struct SelectionSource {
-	virtual ~SelectionSource() = default;
+struct PatchSource {
+	virtual ~PatchSource() = default;
 
 	// -- lifetime -----------------------------------------------------------
 
@@ -36,7 +36,7 @@ struct SelectionSource {
 	/** Set the cache directory used for temporary downloads/extractions. */
 	virtual void setCacheDir(const std::string& dir) {}
 	/** Set the helper instance for cache access. */
-	virtual void setHelper(SelectionBrowserHelper* helper) {}
+	virtual void setHelper(PatchHelperWidget* helper) {}
 
 	// -- navigation ----------------------------------------------------------
 
@@ -100,7 +100,7 @@ struct SelectionSource {
 	 * Return the optional index for this source, or nullptr if unsupported.
 	 * The caller does not take ownership; the index is owned by the source.
 	 */
-	virtual SelectionSourceIndex* getIndex() const { return nullptr; }
+	virtual PatchSourceIndex* getIndex() const { return nullptr; }
 
 	/**
 	 * Load and return the JSON content of a file identified by `fileId`.
@@ -143,26 +143,26 @@ struct SelectionSource {
 namespace filesystem {
 	namespace vcvs {
 		extern std::string getSlug();
-		extern SelectionSource* initSource();
+		extern PatchSource* initSource();
 	}
 	namespace vcv {
 		extern std::string getSlug();
-		extern SelectionSource* initSource();
+		extern PatchSource* initSource();
 	}
 }
 
 namespace patchstorage {
 	extern std::string getSlug();
 	extern bool canCreate();
-	extern SelectionSource* initSource();
+	extern PatchSource* initSource();
 }
 
 /**
- * Factory function: create the correct SelectionSource subclass
+ * Factory function: create the correct PatchSource subclass
  * from a JSON snapshot. Returns nullptr if the type is unknown.
  */
-inline SelectionSource* createSourceFromJson(json_t* sourceJ) {
-	static std::map<std::string, std::function<SelectionSource*()>> sourceSlugs {
+inline PatchSource* createSourceFromJson(json_t* sourceJ) {
+	static std::map<std::string, std::function<PatchSource*()>> sourceSlugs {
 		{ filesystem::vcvs::getSlug(), filesystem::vcvs::initSource },
 		{ filesystem::vcv::getSlug(), filesystem::vcv::initSource },
 		{ patchstorage::getSlug(), patchstorage::initSource }
@@ -173,17 +173,17 @@ inline SelectionSource* createSourceFromJson(json_t* sourceJ) {
 
 	std::string slug = json_string_value(slugJ);
 	if (sourceSlugs.find(slug) != sourceSlugs.end()) {
-		SelectionSource* src = sourceSlugs[slug]();
+		PatchSource* src = sourceSlugs[slug]();
 		if (!src->fromJson(sourceJ)) {
 			delete src;
 			return nullptr;
 		}
-		src->setHelper(SelectionBrowserHelper::getInstance());
+		src->setHelper(PatchHelperWidget::getInstance());
 		return src;
 	}
 	return nullptr;
 }
 
-} // namespace selection
+} // namespace patch
 } // namespace Mb
 } // namespace StoermelderPackOne

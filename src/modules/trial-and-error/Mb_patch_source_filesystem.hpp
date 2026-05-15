@@ -4,13 +4,13 @@
 #include <tag.hpp>
 #include <ghc/filesystem.hpp>
 #include "Mb.hpp"
-#include "Mb_selection_source.hpp"
-#include "Mb_selection_source_index.hpp"
-#include "Mb_selection_helper.hpp"
+#include "Mb_patch_source.hpp"
+#include "Mb_patch_sourceindex.hpp"
+#include "Mb_patch_helper.hpp"
 
 namespace StoermelderPackOne {
 namespace Mb {
-namespace selection {
+namespace patch {
 namespace filesystem {
 
 
@@ -19,7 +19,7 @@ namespace filesystem {
  * in the root of the source folder.
  * This is a read-only index; set methods have no effect.
  */
-struct FileSystemSourceIndex : SelectionSourceIndex {
+struct FileSystemPatchSourceIndex : PatchSourceIndex {
 	struct FileIndexEntry {
 		std::string description;
 		std::vector<std::string> tags;
@@ -265,7 +265,7 @@ struct FileSystemSourceIndex : SelectionSourceIndex {
 				std::string subdirName = system::getFilename(entry);
 				std::string subdirPrefix = prefix.empty() ? subdirName : prefix + "/" + subdirName;
 				collectFilesRecursive(entry, subdirPrefix, files, ext);
-			} else if (system::isFile(entry) && SelectionSource::endsWith(entry, ext)) {
+			} else if (system::isFile(entry) && PatchSource::endsWith(entry, ext)) {
 				std::string filename = system::getFilename(entry);
 				std::string relative = prefix.empty() ? filename : prefix + "/" + filename;
 				files.insert(relative);
@@ -274,11 +274,15 @@ struct FileSystemSourceIndex : SelectionSourceIndex {
 	}
 };
 
-struct FileSystemSource : SelectionSource {
+struct FileSystemSource : PatchSource {
 	std::string rootContainer;
 	std::string currentContainer;
-	SelectionBrowserHelper* helper;
+	PatchHelperWidget* helper;
 	mutable std::string status = "";
+
+	static constexpr const char* SLUG_VCVS = "filesystem:vcvs";
+	static constexpr const char* SLUG_VCV = "filesystem:vcv";
+	std::string slug;
 
 	/** Shared archive cache - stores extraction paths for .vcv archives. 
 	 * Shared via global cache to allow reuse across sources with same rootContainer.
@@ -289,9 +293,9 @@ struct FileSystemSource : SelectionSource {
 		std::chrono::system_clock::time_point lastWriteTime;
 	};
 	std::shared_ptr<std::map<std::string, ArchiveCacheEntry>> archiveCache;
-	std::shared_ptr<FileSystemSourceIndex> index;
+	std::shared_ptr<FileSystemPatchSourceIndex> index;
 
-	SelectionSourceIndex* getIndex() const override {
+	PatchSourceIndex* getIndex() const override {
 		return index.get();
 	}
 
@@ -304,14 +308,14 @@ struct FileSystemSource : SelectionSource {
 		// Register our index in the global cache for sharing with other sources
 		// that have the same rootContainer
 		std::string cacheKey = slug + ":index:" + rootContainer;
-		auto existingIndex = helper->getGlobalCache<FileSystemSourceIndex>(cacheKey);
+		auto existingIndex = helper->getGlobalCache<FileSystemPatchSourceIndex>(cacheKey);
 		if (existingIndex) {
 			// Another source already created an index for this root - reuse it
 			index = existingIndex;
 		} 
 		else {
 			// Create and store our index
-			index = std::make_shared<FileSystemSourceIndex>();
+			index = std::make_shared<FileSystemPatchSourceIndex>();
 			helper->setGlobalCache(cacheKey, index, nullptr);
 		}
 
@@ -335,7 +339,6 @@ struct FileSystemSource : SelectionSource {
 		saveIndex();
 	}
 
-
 	/** Generate a random cache folder name. */
 	std::string generateCacheName() const {
 		static std::random_device rd;
@@ -348,7 +351,6 @@ struct FileSystemSource : SelectionSource {
 		}
 		return name;
 	}
-
 
 	/**
 	 * Extract a .vcv archive to a cached folder.
@@ -393,9 +395,7 @@ struct FileSystemSource : SelectionSource {
 		}
 	}
 
-	static constexpr const char* SLUG_VCVS = "filesystem:vcvs";
-	static constexpr const char* SLUG_VCV = "filesystem:vcv";
-	std::string slug;
+
 
 	/** Show a folder picker dialog, returning the chosen path or empty on cancel. */
 	static std::string selectFolder() {
@@ -407,7 +407,7 @@ struct FileSystemSource : SelectionSource {
 		return result;
 	}
 
-	void setHelper(SelectionBrowserHelper* h) override {
+	void setHelper(PatchHelperWidget* h) override {
 		helper = h;
 	}
 
@@ -447,7 +447,7 @@ struct FileSystemSource : SelectionSource {
 		auto entries = system::getEntries(folder);
 		for (const std::string& entry : entries) {
 			std::string ext = slug == SLUG_VCVS ? ".vcvs" : ".vcv";
-			if (system::isFile(entry) && SelectionSource::endsWith(entry, ext)) {
+			if (system::isFile(entry) && PatchSource::endsWith(entry, ext)) {
 				// Strip rootContainer prefix to return relative path
 				std::string relative = entry.substr(rootContainer.empty() ? 0 : rootContainer.size() + 1);
 				std::string name = system::getFilename(entry);
@@ -695,67 +695,71 @@ struct FileSystemSource : SelectionSource {
 
 
 namespace vcvs {
-	inline extern std::string getSlug() {
-		return FileSystemSource::SLUG_VCVS;
-	}
 
-	/**
-	 * Creates a new empty file system data source.
-	 */
-	inline SelectionSource* initSource() {
-		FileSystemSource* src = new FileSystemSource;
-		src->slug = FileSystemSource::SLUG_VCVS;
-		return src;
-	}
+inline extern std::string getSlug() {
+	return FileSystemSource::SLUG_VCVS;
+}
 
-	/**
-	 * Interactively create a new source of the same type via a UI dialog.
-	 * Returns the new source, or nullptr if the user cancelled.
-	 * The caller takes ownership.
-	 */
-	inline SelectionSource* createSource() {
-		std::string path = FileSystemSource::selectFolder();
-		if (path.empty()) return nullptr;
-		FileSystemSource* src = new FileSystemSource;
-		src->slug = FileSystemSource::SLUG_VCVS;
-		src->rootContainer = path;
-		src->setContainer(path);
-		return src;
-	}
+/**
+ * Creates a new empty file system data source.
+ */
+inline PatchSource* initSource() {
+	FileSystemSource* src = new FileSystemSource;
+	src->slug = FileSystemSource::SLUG_VCVS;
+	return src;
+}
+
+/**
+ * Interactively create a new source of the same type via a UI dialog.
+ * Returns the new source, or nullptr if the user cancelled.
+ * The caller takes ownership.
+ */
+inline PatchSource* createSource() {
+	std::string path = FileSystemSource::selectFolder();
+	if (path.empty()) return nullptr;
+	FileSystemSource* src = new FileSystemSource;
+	src->slug = FileSystemSource::SLUG_VCVS;
+	src->rootContainer = path;
+	src->setContainer(path);
+	return src;
+}
+
 } // namespace vcvs
 
 namespace vcv {
-	inline extern std::string getSlug() {
-		return FileSystemSource::SLUG_VCV;
-	}
 
-	/**
-	 * Creates a new empty file system data source.
-	 */
-	inline SelectionSource* initSource() {
-		FileSystemSource* src = new FileSystemSource;
-		src->slug = FileSystemSource::SLUG_VCV;
-		return src;
-	}
+inline extern std::string getSlug() {
+	return FileSystemSource::SLUG_VCV;
+}
 
-	/**
-	 * Interactively create a new source of the same type via a UI dialog.
-	 * Returns the new source, or nullptr if the user cancelled.
-	 * The caller takes ownership.
-	 */
-	inline SelectionSource* createSource() {
-		std::string path = FileSystemSource::selectFolder();
-		if (path.empty()) return nullptr;
-		FileSystemSource* src = new FileSystemSource;
-		src->slug = FileSystemSource::SLUG_VCV;
-		src->rootContainer = path;
-		src->setContainer(path);
-		return src;
-	}
+/**
+ * Creates a new empty file system data source.
+ */
+inline PatchSource* initSource() {
+	FileSystemSource* src = new FileSystemSource;
+	src->slug = FileSystemSource::SLUG_VCV;
+	return src;
+}
+
+/**
+ * Interactively create a new source of the same type via a UI dialog.
+ * Returns the new source, or nullptr if the user cancelled.
+ * The caller takes ownership.
+ */
+inline PatchSource* createSource() {
+	std::string path = FileSystemSource::selectFolder();
+	if (path.empty()) return nullptr;
+	FileSystemSource* src = new FileSystemSource;
+	src->slug = FileSystemSource::SLUG_VCV;
+	src->rootContainer = path;
+	src->setContainer(path);
+	return src;
+}
+
 } // namespace vcv
 
 
 } // namespace filesystem
-} // namespace selection
+} // namespace patch
 } // namespace Mb
 } // namespace StoermelderPackOne

@@ -1,11 +1,11 @@
 #pragma once
 #include "../../plugin.hpp"
 #include "../strip/vcvs_helpers.hpp"
-#include "Mb_selection.hpp"
+#include "Mb_patch.hpp"
 
 namespace StoermelderPackOne {
 namespace Mb {
-namespace selection {
+namespace patch {
 
 	
 struct PreviewWidget : OpaqueWidget {
@@ -22,7 +22,7 @@ struct PreviewWidget : OpaqueWidget {
 	float contentHeight = 0.f;
 	bool contentCached = false;
 
-	/** True once fitPreviewToBox() has completed for the current selection. */
+	/** True once fitPreviewToBox() has completed for the current patch. */
 	bool fitted = false;
 
 	// Center offset for scaled content
@@ -30,14 +30,14 @@ struct PreviewWidget : OpaqueWidget {
 	float scaledContentOffsetY = 0.f;
 
 	/**
-	 * Loads a selection and takes ownership of rootJ
+	 * Loads a patch and takes ownership of rootJ
 	 */
-	bool setSelection(std::string fileId, json_t* rootJ);
+	bool setPatch(std::string fileId, json_t* rootJ);
 
 	/**
-	 * Clears the current selection and deletes the preview, clears fileId and deconstructs rootJ.
+	 * Clears the current patch and deletes the preview, clears fileId and deconstructs rootJ.
 	 */
-	void clearSelection();
+	void clearPatch();
 
 	/**
 	 * Internal function. Fits the preview to the current box size by calculating a uniform
@@ -64,6 +64,6 @@ struct PreviewWidget : OpaqueWidget {
 };
 
 
-} // namespace selection
+} // namespace patch
 } // namespace Mb
 } // namespace StoermelderPackOne

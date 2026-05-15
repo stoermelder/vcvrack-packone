@@ -1,8 +1,8 @@
-#include "Mb_selection_preview.hpp"
+#include "Mb_patch_preview.hpp"
 
 namespace StoermelderPackOne {
 namespace Mb {
-namespace selection {
+namespace patch {
 
 
 struct ModelPreviewWidget : widget::OpaqueWidget {
@@ -18,7 +18,7 @@ struct ModelPreviewWidget : widget::OpaqueWidget {
 	math::Vec originalPos; // Original position in RACK_GRID_SIZE units
 	int64_t moduleId = -1;
 
-	/** Get the position of a port center in the parent (SelectionPreview) coordinate space */
+	/** Get the position of a port center in the parent (PatchPreview) coordinate space */
 	math::Vec getPortPos(bool isOutput, int portIndex) {
 		if (!previewFb || previewFb->children.empty()) return math::Vec(0, 0);
 		ModuleWidget* mw = dynamic_cast<ModuleWidget*>(*previewFb->children.begin());
@@ -175,7 +175,7 @@ struct CablesPreviewWidget : widget::Widget {
 };
 
 
-bool PreviewWidget::setSelection(std::string fileId, json_t* rootJ) {
+bool PreviewWidget::setPatch(std::string fileId, json_t* rootJ) {
 	if (this->fileId == fileId) {
 		return true;
 	}
@@ -191,7 +191,7 @@ bool PreviewWidget::setSelection(std::string fileId, json_t* rootJ) {
 	return true;
 }
 
-void PreviewWidget::clearSelection() {
+void PreviewWidget::clearPatch() {
 	if (this->rootJ) {
 		json_decref(this->rootJ);
 		this->rootJ = nullptr;
@@ -360,11 +360,11 @@ void PreviewWidget::onButton(const ButtonEvent& e) {
 	}
 	if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS) {
 		APP->scene->browser->hide();
-		auto selectionContainer =
-			APP->scene->rack->getFirstDescendantOfType<SppPreview::SelectionPreviewContainer<Mb::BrowserOverlay>>();
-		if (selectionContainer) {
-			selectionContainer->showSelectionPreview(rootJ, [&]() {
-				vcvsFromJson(rootJ, "stoermelder MB selection load");
+		auto c =
+			APP->scene->rack->getFirstDescendantOfType<SppPreview::PatchPreviewContainer<Mb::BrowserOverlay>>();
+		if (c) {
+			c->showPatchPreview(rootJ, [&]() {
+				vcvsFromJson(rootJ, "stoermelder MB patch load");
 				json_decref(rootJ);
 				fileId = "";
 			});
@@ -397,9 +397,9 @@ void PreviewWidget::draw(const DrawArgs& args) {
 
 void PreviewWidget::createContextMenu() {
 	if (!browser) return;
-	SelectionSource* src = browser->getSource();
+	PatchSource* src = browser->getSource();
 	if (!src) return;
-	SelectionSourceIndex* index = src->getIndex();
+	PatchSourceIndex* index = src->getIndex();
 	if (!index) return;
 
 	ui::Menu* menu = createMenu();
@@ -412,7 +412,7 @@ void PreviewWidget::createContextMenu() {
 	if (src->isPatchSource()) {
 		menu->addChild(createMenuItem("Replace current patch...", "", [this, src]() {
 			const std::string path = src->getAbsoluteFilePath(fileId);
-			auto helper = SelectionBrowserHelper::getInstance();
+			auto helper = PatchHelperWidget::getInstance();
 			if (helper) {
 				helper->setPendingPatchPath(path);
 			}
@@ -421,7 +421,7 @@ void PreviewWidget::createContextMenu() {
 	}
 
 	struct FavoriteItem : MenuItem {
-		SelectionSourceIndex* index;
+		PatchSourceIndex* index;
 		std::string fileId;
 		bool isFavorite = false;
 		void onAction(const event::Action& e) override {
@@ -450,7 +450,7 @@ void PreviewWidget::createContextMenu() {
 	menu->addChild(createMenuLabel("Custom Tags"));
 
 	struct NewCustomTagField : ui::TextField {
-		SelectionSourceIndex* index;
+		PatchSourceIndex* index;
 		std::string fileId;
 		void onSelectKey(const event::SelectKey& e) override {
 			if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
@@ -472,7 +472,7 @@ void PreviewWidget::createContextMenu() {
 	};
 
 	struct CustomTagItem : MenuItem {
-		SelectionSourceIndex* index;
+		PatchSourceIndex* index;
 		std::string fileId;
 		std::string tagName;
 		bool hasTag = false;
@@ -523,7 +523,7 @@ void PreviewWidget::createContextMenu() {
 	);
 
 	struct TagItem : ui::MenuItem {
-		SelectionSourceIndex* index;
+		PatchSourceIndex* index;
 		std::string fileId;
 		bool hasTag = false;
 		void onAction(const event::Action& e) override {
@@ -570,6 +570,6 @@ void PreviewWidget::createContextMenu() {
 }
 
 
-} // namespace selection
+} // namespace patch
 } // namespace Mb
 } // namespace StoermelderPackOne

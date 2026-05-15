@@ -5,7 +5,7 @@
 
 namespace StoermelderPackOne {
 namespace Mb {
-namespace selection {
+namespace patch {
 
 
 /**
@@ -16,8 +16,8 @@ namespace selection {
  * The `fileId` identifies a file within the source. For a filesystem source it is the
  * relative path from the source root.
  */
-struct SelectionSourceIndex {
-	virtual ~SelectionSourceIndex() = default;
+struct PatchSourceIndex {
+	virtual ~PatchSourceIndex() = default;
 
 	// -- description ---------------------------------------------------------
 
@@ -67,6 +67,6 @@ struct SelectionSourceIndex {
 };
 
 
-} // namespace selection
+} // namespace patch
 } // namespace Mb
 } // namespace StoermelderPackOne

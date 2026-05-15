@@ -1,6 +1,6 @@
 #pragma once
 #include "../../plugin.hpp"
-#include "../strip/SelectionPreview.hpp"
+#include "../strip/PatchPreview.hpp"
 #include <plugin.hpp>
 #include <FuzzySearchDatabase.hpp>
 #include <helpers.hpp>
@@ -169,7 +169,7 @@ struct BrowserOverlay : widget::OpaqueWidget {
 	Widget* mbV06;
 	Widget* mbV1;
 	Widget* mbV2;
-	Widget* mbSelection;
+	Widget* mbPatch;
 
 	MODE* mode;
 

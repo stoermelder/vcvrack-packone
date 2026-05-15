@@ -8,9 +8,9 @@
 
 namespace StoermelderPackOne {
 namespace Mb {
-namespace selection {
+namespace patch {
 
-struct SelectionBrowserHelper : widget::Widget {
+struct PatchHelperWidget : widget::Widget {
 	std::string cacheDir;
 	std::string pendingPatchPath;
 	bool pendingMbModuleCheck = false;
@@ -19,7 +19,7 @@ struct SelectionBrowserHelper : widget::Widget {
 	 * Key is datasource identifier (e.g., root path for filesystem, "patchstorage" for API).
 	 * Value is shared_ptr<void> holding any cached object (json_t, string, etc.).
 	 * Custom deleters ensure proper cleanup (e.g., json_decref for json_t).
-	 * SelectionBrowserHelper clears this on application exit.
+	 * PatchHelperWidget clears this on application exit.
 	 */
 	typedef void(*CacheDeleter)(void*);
 	struct CacheEntry {
@@ -32,8 +32,8 @@ struct SelectionBrowserHelper : widget::Widget {
 		return cache;
 	}
 
-	static SelectionBrowserHelper* getInstance() {
-		return APP->scene->menuBar->getFirstDescendantOfType<SelectionBrowserHelper>();
+	static PatchHelperWidget* getInstance() {
+		return APP->scene->menuBar->getFirstDescendantOfType<PatchHelperWidget>();
 	}
 
 	/** Register a shared cache entry for a datasource key.
@@ -63,12 +63,12 @@ struct SelectionBrowserHelper : widget::Widget {
 		return std::shared_ptr<T>();
 	}
 
-	SelectionBrowserHelper() {
-		cacheDir = system::join(system::getTempDirectory(), "mb_selection_cache");
+	PatchHelperWidget() {
+		cacheDir = system::join(system::getTempDirectory(), "mb_patch_cache");
 		system::createDirectories(cacheDir);
 	}
 
-	~SelectionBrowserHelper() {
+	~PatchHelperWidget() {
 		// Clear all datasource caches on application exit.
 		// The shared_ptr<void> will call its stored deleter on reset/destruction.
 		auto& cacheMap = getGlobalCacheMap();
@@ -142,6 +142,6 @@ struct SelectionBrowserHelper : widget::Widget {
 	}
 };
 
-} // namespace selection
+} // namespace patch
 } // namespace Mb
 } // namespace StoermelderPackOne

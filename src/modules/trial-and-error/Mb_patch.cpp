@@ -1,12 +1,12 @@
-#include "Mb_selection.hpp"
-#include "Mb_selection_preview.hpp"
-#include "Mb_selection_source.hpp"
+#include "Mb_patch.hpp"
+#include "Mb_patch_preview.hpp"
+#include "Mb_patch_source.hpp"
 #include <helpers.hpp>
 #include <tag.hpp>
 
 namespace StoermelderPackOne {
 namespace Mb {
-namespace selection {
+namespace patch {
 
 
 // ---- Search Field ----
@@ -78,7 +78,7 @@ struct BrowserSearchField : ui::TextField {
 // ---- Filter / Topbar ----
 
 struct TagItem : ChoiceFilterItem<Browser> {
-	SelectionSourceIndex* index;
+	PatchSourceIndex* index;
 	std::string fileId;
 	std::string tagName;
 	bool hasTag = false;
@@ -97,11 +97,11 @@ struct TagItem : ChoiceFilterItem<Browser> {
 	}
 };
 
-struct TagButton : Browser::SelectionChoiceButton {
+struct TagButton : Browser::PatchChoiceButton {
 	void onAction(const event::Action& e) override {
-		SelectionSource* src = browser->getSource();
+		PatchSource* src = browser->getSource();
 		if (!src) return;
-		SelectionSourceIndex* index = src->getIndex();
+		PatchSourceIndex* index = src->getIndex();
 		if (!index) return;
 
 		// Compute fileId for the currently active file
@@ -143,7 +143,7 @@ struct TagButton : Browser::SelectionChoiceButton {
 	}
 
 	void step() override {
-		SelectionSource* src = browser->getSource();
+		PatchSource* src = browser->getSource();
 		bool hasIndex = src && src->getIndex() != nullptr;
 		if (!hasIndex) {
 			text = "Tag (no index)";
@@ -183,11 +183,11 @@ struct CustomTagItem : ChoiceFilterItem<Browser> {
 	}
 };
 
-struct CustomTagButton : Browser::SelectionChoiceButton {
+struct CustomTagButton : Browser::PatchChoiceButton {
 	void onAction(const event::Action& e) override {
-		SelectionSource* src = browser->getSource();
+		PatchSource* src = browser->getSource();
 		if (!src) return;
-		SelectionSourceIndex* index = src->getIndex();
+		PatchSourceIndex* index = src->getIndex();
 		if (!index) return;
 
 		std::vector<widget::Widget*> items;
@@ -209,7 +209,7 @@ struct CustomTagButton : Browser::SelectionChoiceButton {
 	}
 
 	void step() override {
-		SelectionSource* src = browser->getSource();
+		PatchSource* src = browser->getSource();
 		bool hasIndex = src && src->getIndex() != nullptr;
 		if (!hasIndex) {
 			text = "Custom Tag (no index)";
@@ -234,7 +234,7 @@ struct CustomTagButton : Browser::SelectionChoiceButton {
 
 struct SourceItem : ui::MenuItem {
 	Browser* browser;
-	SelectionSource* source;
+	PatchSource* source;
 
 	void onAction(const event::Action& e) override {
 		browser->activeSourceIndex = -1;
@@ -244,13 +244,13 @@ struct SourceItem : ui::MenuItem {
 				break;
 			}
 		}
-		browser->preview->clearSelection();
+		browser->preview->clearPatch();
 		browser->sidebar->source = browser->getSource();
 		browser->sidebar->loadContainer();
 	}
 
 	void step() override {
-		SelectionSource* active = browser->getSource();
+		PatchSource* active = browser->getSource();
 		rightText = CHECKMARK(source == active);
 		MenuItem::step();
 	}
@@ -265,7 +265,7 @@ struct SourceButton : ui::ChoiceButton {
 		menu->box.size.x = box.size.x;
 
 		for (size_t i = 0; i < browser->sources.size(); i++) {
-			SelectionSource* src = browser->sources[i];
+			PatchSource* src = browser->sources[i];
 			SourceItem* item = new SourceItem;
 			item->text = src->getSourceName();
 			item->source = src;
@@ -275,7 +275,7 @@ struct SourceButton : ui::ChoiceButton {
 		}
 
 		menu->addChild(new MenuSeparator);
-		SelectionSource* src = browser->getSource();
+		PatchSource* src = browser->getSource();
 		if (src) {
 			size_t i = menu->children.size();
 			src->appendSourceMenuItems(menu);
@@ -298,19 +298,19 @@ struct SourceButton : ui::ChoiceButton {
 
 		menu->addChild(new MenuSeparator);
 		menu->addChild(createMenuItem("Add .vcvs folder...", "", [this] {
-			SelectionSource* newSrc = filesystem::vcvs::createSource();
+			PatchSource* newSrc = filesystem::vcvs::createSource();
 			if (newSrc) {
 				browser->addSource(newSrc);
 			}
 		}));
 		menu->addChild(createMenuItem("Add .vcv folder...", "", [this] {
-			SelectionSource* newSrc = filesystem::vcv::createSource();
+			PatchSource* newSrc = filesystem::vcv::createSource();
 			if (newSrc) {
 				browser->addSource(newSrc);
 			}
 		}));
 		menu->addChild(createMenuItem("Add PatchStorage source", "", [this] {
-			SelectionSource* newSrc = patchstorage::initSource();
+			PatchSource* newSrc = patchstorage::initSource();
 			if (newSrc) {
 				browser->addSource(newSrc);
 			}
@@ -318,7 +318,7 @@ struct SourceButton : ui::ChoiceButton {
 	}
 
 	void step() override {
-		SelectionSource* src = browser->getSource();
+		PatchSource* src = browser->getSource();
 		if (src) {
 			text = src->getSourceName();
 		}
@@ -369,7 +369,7 @@ struct AsyncFileJsonWidget : widget::Widget {
 		if (result) {
 			if (sidebar && result->json) {
 				if (sidebar->currentFileId == result->fileId) {
-					if (!sidebar->preview->setSelection(result->fileId, result->json))
+					if (!sidebar->preview->setPatch(result->fileId, result->json))
 						json_decref(result->json);
 				} else {
 					json_decref(result->json);
@@ -386,7 +386,7 @@ struct AsyncFileJsonWidget : widget::Widget {
 // ---- Sidebar Items ----
 
 struct ContainerListItem : ui::MenuItem {
-	SelectionSource* source;
+	PatchSource* source;
 	std::string containerPath;
 	std::string containerName;
 
@@ -403,7 +403,7 @@ struct FileListItem : ui::MenuItem {
 
 	void onAction(const event::Action& e) override {
 		sidebar->currentFileId = fileId;
-		SelectionSource* src = sidebar->source;
+		PatchSource* src = sidebar->source;
 		if (src) {
 			AsyncFileJsonWidget* asyncWidget = new AsyncFileJsonWidget(sidebar);
 			APP->scene->addChild(asyncWidget);
@@ -455,7 +455,7 @@ struct DescriptionTextField : ui::TextField {
 
 	void onDoubleClick(const DoubleClickEvent& e) override {
 		if (sidebar && sidebar->source) {
-			SelectionSourceIndex* idx = sidebar->source->getIndex();
+			PatchSourceIndex* idx = sidebar->source->getIndex();
 			if (idx && !idx->isReadOnly()) {
 				text = rawText;
 				editMode = true;
@@ -465,7 +465,7 @@ struct DescriptionTextField : ui::TextField {
 
 	void onDeselect(const DeselectEvent& e) override {
 		text = string::trim(text);
-		SelectionSourceIndex* idx = sidebar->source->getIndex();
+		PatchSourceIndex* idx = sidebar->source->getIndex();
 		if (idx && !sidebar->currentFileId.empty()) {
 			idx->setDescription(sidebar->currentFileId, text);	
 		}
@@ -532,10 +532,10 @@ struct FileTagItem : ChoiceFilterItem<Browser> {
 			}
 		}));
 
-		SelectionSourceIndex* idx = browser->sidebar->source->getIndex();
+		PatchSourceIndex* idx = browser->sidebar->source->getIndex();
 		menu->addChild(createMenuItem("Remove tag", "", [this]() {
 			Browser* browser = APP->scene->getFirstDescendantOfType<Browser>();
-			SelectionSourceIndex* idx = browser->sidebar->source->getIndex();
+			PatchSourceIndex* idx = browser->sidebar->source->getIndex();
 			if (isPredefined) {
 				idx->removeTag(browser->sidebar->currentFileId, tagName);
 			}
@@ -647,7 +647,7 @@ void BrowserSidebar::loadContainer() {
 	AsyncContainerLoadWidget* asyncWidget = new AsyncContainerLoadWidget;
 	asyncWidget->sidebar = this;
 	APP->scene->addChild(asyncWidget);
-	SelectionSource* src = source;
+	PatchSource* src = source;
 	taskWorker.work([asyncWidget, src, container, gen]() {
 		auto res = std::make_shared<AsyncContainerLoadResult>();
 		res->generation = gen;
@@ -668,7 +668,7 @@ void BrowserSidebar::loadSearchResults(const std::string& query) {
 	AsyncContainerLoadWidget* asyncWidget = new AsyncContainerLoadWidget;
 	asyncWidget->sidebar = this;
 	APP->scene->addChild(asyncWidget);
-	SelectionSource* src = source;
+	PatchSource* src = source;
 	taskWorker.work([asyncWidget, src, query, gen]() {
 		auto res = std::make_shared<AsyncContainerLoadResult>();
 		res->generation = gen;
@@ -736,7 +736,7 @@ void BrowserSidebar::refreshDescriptionAndTags() {
 		return;
 	}
 
-	SelectionSourceIndex* idx = source->getIndex();
+	PatchSourceIndex* idx = source->getIndex();
 	if (idx && !currentFileId.empty()) {
 		descriptionField->setText(idx->getDescription(currentFileId));
 	
@@ -777,7 +777,7 @@ void BrowserSidebar::refreshDescriptionAndTags() {
 // ---- Status Bar ----
 
 /**
- * A status bar widget that shows messages from the current SelectionSource.
+ * A status bar widget that shows messages from the current PatchSource.
  * Messages with "0:" prefix show indefinitely, "2:" prefix show for 2 seconds.
  * A semi-transparent background spans the full width while text is shown.
  */
@@ -790,7 +790,7 @@ struct StatusBarWidget : widget::Widget {
 	std::string lastStatus;
 
 	void step() override {
-		SelectionSource* src = browser->getSource();
+		PatchSource* src = browser->getSource();
 		if (src) {
 			std::string currentStatus = src->getStatusText();
 			if (currentStatus != lastStatus) {
@@ -907,15 +907,15 @@ Browser::Browser() {
 	addChild(statusBar);
 
 	// Handles cache clearing on application exit
-	auto helper = SelectionBrowserHelper::getInstance();
+	auto helper = PatchHelperWidget::getInstance();
 	if (!helper) {
-		helper = new SelectionBrowserHelper;
+		helper = new PatchHelperWidget;
 		APP->scene->menuBar->addChild(helper);
 	}
 }
 
 Browser::~Browser() {
-	for (SelectionSource* source : sources) {
+	for (PatchSource* source : sources) {
 		if (source) {
 			source->onDetach();
 			delete source;
@@ -926,15 +926,15 @@ Browser::~Browser() {
 	sidebar->source = nullptr;
 }
 
-SelectionSource* Browser::getSource() const {
+PatchSource* Browser::getSource() const {
 	if (activeSourceIndex >= 0 && activeSourceIndex < (int)sources.size())
 		return sources[activeSourceIndex];
 	return nullptr;
 }
 
-void Browser::setSources(const std::vector<SelectionSource*>& newSources, int activeIndex) {
+void Browser::setSources(const std::vector<PatchSource*>& newSources, int activeIndex) {
 	// Detach and delete old sources
-	for (SelectionSource* source : sources) {
+	for (PatchSource* source : sources) {
 		if (source) {
 			source->onDetach();
 			delete source;
@@ -942,21 +942,21 @@ void Browser::setSources(const std::vector<SelectionSource*>& newSources, int ac
 	}
 	sources = newSources;
 	activeSourceIndex = math::clamp(activeIndex, 0, (int)sources.size() - 1);
-	for (SelectionSource* source : sources) {
+	for (PatchSource* source : sources) {
 		if (source) source->onAttach();
 	}
 	sidebar->source = getSource();
 }
 
-void Browser::addSource(SelectionSource* newSource) {
+void Browser::addSource(PatchSource* newSource) {
 	if (!newSource) return;
 	
 	sources.push_back(newSource);
 	std::sort(sources.begin(), sources.end(), 
-		[](SelectionSource* s1, SelectionSource* s2) { return s1->getSourceName() < s2->getSourceName(); }
+		[](PatchSource* s1, PatchSource* s2) { return s1->getSourceName() < s2->getSourceName(); }
 	);
 	activeSourceIndex = (int)sources.size() - 1;
-	SelectionBrowserHelper* helper = SelectionBrowserHelper::getInstance();
+	PatchHelperWidget* helper = PatchHelperWidget::getInstance();
 	newSource->setHelper(helper);
 	newSource->setCacheDir(helper->cacheDir);
 	newSource->onAttach();
@@ -967,7 +967,7 @@ void Browser::addSource(SelectionSource* newSource) {
 
 void Browser::removeSource(int index) {
 	if (index < 0 || index >= (int)sources.size()) return;
-	SelectionSource* removed = sources[index];
+	PatchSource* removed = sources[index];
 	if (removed) {
 		removed->onDetach();
 		delete removed;
@@ -995,9 +995,9 @@ void Browser::clear() {
 }
 
 bool Browser::isFileTagFiltered(const std::string& fileId) const {
-	SelectionSource* src = getSource();
+	PatchSource* src = getSource();
 	if (!src) return true;
-	SelectionSourceIndex* index = src->getIndex();
+	PatchSourceIndex* index = src->getIndex();
 	if (!index) return true;
 
 	// Check favorite filter
@@ -1061,6 +1061,6 @@ void Browser::draw(const DrawArgs& args) {
 	widget::OpaqueWidget::draw(args);
 }
 
-} // namespace selection
+} // namespace patch
 } // namespace Mb
 } // namespace StoermelderPackOne

@@ -152,12 +152,12 @@ struct SelectionPreview : OpaqueWidget {
 };
 
 template<typename T>
-struct SelectionPreviewContainer : Widget {
+struct PatchPreviewContainer : Widget {
 	math::Vec dragPos;
 	StoermelderPackOne::SppPreview::SelectionPreview* sp;
 	std::function<void()> callback;
 
-	SelectionPreviewContainer() {
+	PatchPreviewContainer() {
 		sp = new StoermelderPackOne::SppPreview::SelectionPreview;
 		sp->hide();
 		addChild(sp);
@@ -183,7 +183,7 @@ struct SelectionPreviewContainer : Widget {
 		Widget::onButton(e);
 	}
 
-	void showSelectionPreview(std::string path, std::function<void()> action) {
+	void showPatchPreview(std::string path, std::function<void()> action) {
 		if (sp->loadSelectionFile(path)) {
 			callback = action;
 			sp->show();
@@ -193,7 +193,7 @@ struct SelectionPreviewContainer : Widget {
 		}
 	}
 
-	void showSelectionPreview(json_t* rootJ, std::function<void()> action) {
+	void showPatchPreview(json_t* rootJ, std::function<void()> action) {
 		sp->createPreview(rootJ);
 		callback = action;
 		sp->show();

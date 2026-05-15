@@ -3,12 +3,12 @@
 #include <vector>
 #include <map>
 #include <rack.hpp>
-#include "Mb_selection_source.hpp"
-#include "Mb_selection_source_index.hpp"
+#include "Mb_patch_source.hpp"
+#include "Mb_patch_sourceindex.hpp"
 
 namespace StoermelderPackOne {
 namespace Mb {
-namespace selection {
+namespace patch {
 namespace patchstorage {
 
 static constexpr const char* SLUG = "patchstorage";
@@ -33,7 +33,7 @@ struct PatchInfo {
  * PatchStorageSourceIndex - minimal index for remote patches.
  * Since patches are downloaded on-demand, we store only basic metadata.
  */
-struct PatchStorageSourceIndex : SelectionSourceIndex {
+struct PatchStoragePatchSourceIndex : PatchSourceIndex {
 	std::shared_ptr<std::map<std::string, PatchInfo>> patchInfo;
 
 	// Shared pointer to all tags (loaded from API via source)
@@ -188,16 +188,16 @@ struct PatchStorageSourceIndex : SelectionSourceIndex {
 };
 
 /**
- * PatchStorageSource - SelectionSource implementation for patchstorage.com API.
+ * PatchStorageSource - PatchSource implementation for patchstorage.com API.
  * Uses categories as containers, lists patches filtered by VCV Rack platform.
  */
-struct PatchStorageSource : SelectionSource {
+struct PatchStorageSource : PatchSource {
 	static constexpr const char* API_BASE = "https://patchstorage.com/api/beta";
 	static constexpr const char* PLATFORM_SLUG = "vcv-rack";
 
 	std::string currentContainer;
-	PatchStorageSourceIndex index;
-	SelectionBrowserHelper* helper;
+	PatchStoragePatchSourceIndex index;
+	PatchHelperWidget* helper;
 
 	int platformId = -1; // Lazily fetched
 
@@ -516,7 +516,7 @@ struct PatchStorageSource : SelectionSource {
 		// Nothing to do there - caches persist across sessions
 	}
 
-	void setHelper(SelectionBrowserHelper* h) override {
+	void setHelper(PatchHelperWidget* h) override {
 		helper = h;
 	}
 
@@ -922,8 +922,8 @@ struct PatchStorageSource : SelectionSource {
 		return true;
 	}
 
-	SelectionSourceIndex* getIndex() const override {
-		return const_cast<PatchStorageSourceIndex*>(&index);
+	PatchSourceIndex* getIndex() const override {
+		return const_cast<PatchStoragePatchSourceIndex*>(&index);
 	}
 
 	json_t* toJson() const override {
@@ -970,13 +970,13 @@ inline bool canCreate() {
 	return !patchstorageCreated_;
 }
 
-inline SelectionSource* initSource() {
+inline PatchSource* initSource() {
 	patchstorageCreated_ = true;
 	PatchStorageSource* src = new PatchStorageSource;
 	return src;
 }
 
 } // namespace patchstorage
-} // namespace selection
+} // namespace patch
 } // namespace Mb
 } // namespace StoermelderPackOne
