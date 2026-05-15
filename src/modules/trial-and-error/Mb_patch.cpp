@@ -453,6 +453,15 @@ struct DescriptionTextField : ui::TextField {
 		TextField::onShow(e);
 	}
 
+	void onButton(const ButtonEvent& e) override {
+		if (editMode) {
+			TextField::onButton(e);
+		}
+		else {
+			e.consume(this);
+		}
+	}
+
 	void onDoubleClick(const DoubleClickEvent& e) override {
 		if (sidebar && sidebar->source) {
 			PatchSourceIndex* idx = sidebar->source->getIndex();
