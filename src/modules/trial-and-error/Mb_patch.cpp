@@ -628,20 +628,8 @@ void BrowserSidebar::loadContainer() {
 		fileList->clearChildren();
 		return;
 	}
+	fileList->hide();
 
-	fileList->clearChildren();
-
-	// Add ".." item synchronously (no I/O needed)
-	if (container != source->getRootContainer()) {
-		std::string parentContainer = source->getParentContainer(container);
-		ContainerListItem* upItem = new ContainerListItem;
-		upItem->source = source;
-		upItem->containerPath = parentContainer;
-		upItem->containerName = "..";
-		upItem->text = "📁 ..";
-		upItem->box.size.x = fileList->box.size.x;
-		fileList->addChild(upItem);
-	}
 
 	int gen = ++loadGeneration_;
 	AsyncContainerLoadWidget* asyncWidget = new AsyncContainerLoadWidget;
@@ -662,7 +650,7 @@ void BrowserSidebar::loadSearchResults(const std::string& query) {
 	if (!source) return;
 
 	fileList->clearChildren();
-	// No ".." item when searching
+	fileList->hide();
 
 	int gen = ++loadGeneration_;
 	AsyncContainerLoadWidget* asyncWidget = new AsyncContainerLoadWidget;
@@ -680,6 +668,21 @@ void BrowserSidebar::loadSearchResults(const std::string& query) {
 }
 
 void BrowserSidebar::populateList(const AsyncContainerLoadResult* res) {
+	// Clear existing items
+	fileList->clearChildren();
+
+	// Add ".." item if not at root
+	if (!res->container.empty() && !source->getContainer().empty() && source->getContainer() != source->getRootContainer()) {
+		std::string parentContainer = source->getParentContainer(source->getContainer());
+		ContainerListItem* upItem = new ContainerListItem;
+		upItem->source = source;
+		upItem->containerPath = parentContainer;
+		upItem->containerName = "..";
+		upItem->text = "📁 ..";
+		upItem->box.size.x = fileList->box.size.x;
+		fileList->addChild(upItem);
+	}
+
 	Browser* browser = getAncestorOfType<Browser>();
 	if (browser && preview) {
 		preview->browser = browser;
@@ -706,6 +709,8 @@ void BrowserSidebar::populateList(const AsyncContainerLoadResult* res) {
 
 	refreshFileList();
 	refreshDescriptionAndTags();
+	fileList->show();
+	fileScroll->scrollTo(Rect());
 }
 
 void BrowserSidebar::refreshFileList() {
@@ -800,7 +805,8 @@ struct StatusBarWidget : widget::Widget {
 					if (currentStatus.substr(0, 2) == "0:") {
 						timeout = 0.0f;  // 0 means indefinite
 						currentStatus = currentStatus.substr(2);
-					} else if (currentStatus.substr(0, 2) == "2:") {
+					} 
+					else if (currentStatus.substr(0, 2) == "2:") {
 						currentStatus = currentStatus.substr(2);
 					}
 					lastStatus = currentStatus;
