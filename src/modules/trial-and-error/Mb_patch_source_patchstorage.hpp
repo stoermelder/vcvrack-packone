@@ -209,12 +209,14 @@ struct PatchStorageSource : PatchSource {
 		int id;
 		std::string name;
 		std::string slug;
+		int totalPages = 0; // Total pages for this category's patches
 	};
 	// Shared category cache (loaded from API)
 	std::shared_ptr<std::vector<CategoryInfo>> categories;
 
-	// Cache for patches per category
-	std::shared_ptr<std::map<std::string, std::vector<std::string>>> categoryPatches;
+	// Cache for patches per category, per page
+	// Key: "categorySlug:pageNum" -> vector of patch IDs
+	std::shared_ptr<std::map<std::string, std::vector<std::string>>> categoryPagePatches;
 
 	std::shared_ptr<std::map<std::string, PatchInfo>> patchInfo;
 
@@ -387,14 +389,14 @@ struct PatchStorageSource : PatchSource {
 		return true;
 	}
 
-	/** Fetch patches for a specific category. */
-	std::vector<PatchInfo> fetchPatchesForCategory(const std::string& categorySlug) {
+	/** Fetch patches for a specific category and page. Returns total pages in status if successful. */
+	std::vector<PatchInfo> fetchPatchesForCategory(const std::string& categorySlug, int page = 1, int* totalPagesOut = nullptr) {
 		std::vector<PatchInfo> patches;
 
-		status = string::f("0:Loading %s...", categorySlug.c_str());
+		status = string::f("0:Loading %s page %d...", categorySlug.c_str(), page);
 
 		int platformId = getVcvRackPlatformId();
-		DEBUG("PatchStorageSource: fetchPatchesForCategory(%s) platformId=%d", categorySlug.c_str(), platformId);
+		DEBUG("PatchStorageSource: fetchPatchesForCategory(%s, page=%d) platformId=%d", categorySlug.c_str(), page, platformId);
 		if (platformId < 0) {
 			status = "2:Could not find VCV Rack platform";
 			return patches;
@@ -414,11 +416,11 @@ struct PatchStorageSource : PatchSource {
 			return patches;
 		}
 
-		// Fetch patches for this category
-		std::string url = string::f("%s/patches?platforms=%d&categories=%d&per_page=100&order=desc&orderby=date",
-			API_BASE, platformId, categoryId);
+		// Fetch patches for this category with page parameter
+		std::string url = string::f("%s/patches?platforms=%d&categories=%d&per_page=100&page=%d&order=desc&orderby=date",
+			API_BASE, platformId, categoryId, page);
 		DEBUG("PatchStorageSource: fetching URL: %s", url.c_str());
-		status = string::f("0:Fetching %s patches...", categorySlug.c_str());
+		status = string::f("0:Fetching %s page %d...", categorySlug.c_str(), page);
 		json_t* patchesJ = fetchJson(url);
 		DEBUG("PatchStorageSource: patchesJ=%s", patchesJ ? "valid" : "NULL");
 		if (!patchesJ) {
@@ -450,6 +452,11 @@ struct PatchStorageSource : PatchSource {
 			}
 		}
 
+		// Try to get total pages from response headers
+		if (totalPagesOut) {
+			*totalPagesOut = 1; // Default to 1 page
+		}
+
 		// Async operation complete, clear status
 		status = "";
 		return patches;
@@ -467,14 +474,14 @@ struct PatchStorageSource : PatchSource {
 			helper->setGlobalCache(categoriesCacheKey, categories, nullptr);
 		}
 
-		std::string categoryPatchesCacheKey = "patchstorage:categoryPatches";
-		auto _categoryPatches = helper->getGlobalCache<std::map<std::string, std::vector<std::string>>>(categoryPatchesCacheKey);
-		if (_categoryPatches) {
-			categoryPatches = _categoryPatches;
+		std::string categoryPagePatchesCacheKey = "patchstorage:categoryPagePatches";
+		auto _categoryPagePatches = helper->getGlobalCache<std::map<std::string, std::vector<std::string>>>(categoryPagePatchesCacheKey);
+		if (_categoryPagePatches) {
+			categoryPagePatches = _categoryPagePatches;
 		} 
 		else {
-			categoryPatches = std::make_shared<std::map<std::string, std::vector<std::string>>>();
-			helper->setGlobalCache(categoryPatchesCacheKey, categoryPatches, nullptr);
+			categoryPagePatches = std::make_shared<std::map<std::string, std::vector<std::string>>>();
+			helper->setGlobalCache(categoryPagePatchesCacheKey, categoryPagePatches, nullptr);
 		}
 
 		std::string patchInfoCacheKey = "patchstorage:patchInfo";
@@ -538,12 +545,40 @@ struct PatchStorageSource : PatchSource {
 		static std::vector<ContainerEntry> result;
 		result.clear();
 
-		// PatchStorage has a flat category structure - no sub-containers
-		// Return categories when at root (empty container or "PatchStorage")
+		// PatchStorage has two levels:
+		// Level 0: Root ("PatchStorage") -> categories as containers
+		// Level 1: Category -> page containers (page1, page2, ...)
 		if (container.empty() || container == "PatchStorage") {
+			// Level 0: Return categories
 			DEBUG("PatchStorageSource: getContainers() for root, %d categories loaded", (int)categories->size());
 			for (const auto& cat : *categories) {
 				result.push_back({ cat.slug, cat.name });
+			}
+		}
+		else {
+			// Level 1: Check if this is a category, then show page containers
+			for (const auto& cat : *categories) {
+				if (cat.slug == container) {
+					// Determine how many pages to show based on cached data
+					// Always show at least page 1
+					// If a page has >= 100 items, assume there's a next page
+					int numPages = 1;
+					for (int i = 1; i < 20; i++) { // Cap at 20 pages to avoid infinite loop
+						std::string cacheKey = string::f("%s:%d", cat.slug.c_str(), i);
+						auto it = categoryPagePatches->find(cacheKey);
+						if (it != categoryPagePatches->end() && (int)it->second.size() >= 100) {
+							numPages = i + 1; // This page is full, so there may be a next page
+						}
+						else {
+							break;
+						}
+					}
+					for (int i = 1; i <= numPages; i++) {
+						std::string pageId = string::f("%s/page%d", cat.slug.c_str(), i);
+						result.push_back({ pageId, string::f("Page %d", i) });
+					}
+					break;
+				}
 			}
 		}
 		return result;
@@ -558,10 +593,33 @@ struct PatchStorageSource : PatchSource {
 			return result;
 		}
 
-		// Check cache first
-		auto it = categoryPatches->find(container);
-		if (it != categoryPatches->end()) {
-			DEBUG("PatchStorageSource: getFiles() cache hit for %s with %d patches", container.c_str(), (int)it->second.size());
+		// Parse container path: "categorySlug/pageN" -> category slug and page number
+		std::string categorySlug;
+		int page = 1;
+
+		size_t slashPos = container.find('/');
+		if (slashPos != std::string::npos) {
+			categorySlug = container.substr(0, slashPos);
+			std::string pageStr = container.substr(slashPos + 1);
+			if (pageStr.substr(0, 4) == "page") {
+				page = std::atoi(pageStr.c_str() + 4);
+			}
+			else {
+				// Path like "effect/something" that's not a page - not valid for files
+				return result;
+			}
+		}
+		else {
+			// No slash - this is just a category (like "effect"), not a page container
+			// Categories don't have files directly, only page containers do
+			return result;
+		}
+
+		// Check cache first: key is "categorySlug:pageNum"
+		std::string cacheKey = string::f("%s:%d", categorySlug.c_str(), page);
+		auto it = categoryPagePatches->find(cacheKey);
+		if (it != categoryPagePatches->end()) {
+			DEBUG("PatchStorageSource: getFiles() cache hit for %s with %d patches", cacheKey.c_str(), (int)it->second.size());
 			for (const auto& patchId : it->second) {
 				const auto& patch = (*patchInfo)[patchId];
 				result.push_back({ patchId, patch.title });
@@ -569,10 +627,24 @@ struct PatchStorageSource : PatchSource {
 			return result;
 		}
 
-		DEBUG("PatchStorageSource: getFiles() cache miss for %s, fetching...", container.c_str());
-		// Fetch patches for this category
-		auto patches = fetchPatchesForCategory(container);
-		DEBUG("PatchStorageSource: fetchPatchesForCategory(%s) returned %d patches", container.c_str(), (int)patches.size());
+		DEBUG("PatchStorageSource: getFiles() cache miss for %s, fetching...", cacheKey.c_str());
+
+		// Fetch patches for this category and page
+		int totalPages = 0;
+		auto patches = fetchPatchesForCategory(categorySlug, page, &totalPages);
+
+		// Update totalPages in category info if we got a response
+		if (totalPages > 0) {
+			for (auto& cat : *categories) {
+				if (cat.slug == categorySlug) {
+					cat.totalPages = totalPages;
+					break;
+				}
+			}
+		}
+
+		DEBUG("PatchStorageSource: fetchPatchesForCategory(%s, page=%d) returned %d patches, totalPages=%d",
+			categorySlug.c_str(), page, (int)patches.size(), totalPages);
 
 		std::vector<std::string> patchIds;
 
@@ -583,32 +655,56 @@ struct PatchStorageSource : PatchSource {
 			result.push_back({ patchIdStr, patch.title });
 		}
 
-		(*categoryPatches)[container] = patchIds;
+		(*categoryPagePatches)[cacheKey] = patchIds;
 		return result;
 	}
 
 	bool isContainer(const std::string& path) override {
-		DEBUG("PatchStorageSource: isContainer(%s) checking %d categories", path.c_str(), (int)categories->size());
-		for (const auto& cat : *categories) {
-			if (cat.slug == path) return true;
+		// Level 0: categories at root (no slash in path)
+		if (path.find('/') == std::string::npos) {
+			for (const auto& cat : *categories) {
+				if (cat.slug == path) return true;
+			}
+		}
+		// Level 1: page containers (category/pageN pattern)
+		size_t slashPos = path.find('/');
+		if (slashPos != std::string::npos) {
+			std::string categorySlug = path.substr(0, slashPos);
+			std::string pageStr = path.substr(slashPos + 1);
+			if (pageStr.substr(0, 4) == "page") {
+				// Verify category exists
+				for (const auto& cat : *categories) {
+					if (cat.slug == categorySlug) return true;
+				}
+			}
 		}
 		return false;
 	}
 
 	bool isFile(const std::string& path) override {
-		bool isFile = patchInfo->find(path) != patchInfo->end();
+		// A file is a patch ID (no slashes in path)
+		bool isFile = path.find('/') == std::string::npos && patchInfo->find(path) != patchInfo->end();
 		DEBUG("PatchStorageSource: isFile(%s) = %s", path.c_str(), isFile ? "true" : "false");
 		return isFile;
 	}
 
 	const std::string getParentContainer(const std::string& path) override {
-		// First check if this is a category (container)
+		// Check if this is a page container (category/pageN pattern)
+		size_t slashPos = path.find('/');
+		if (slashPos != std::string::npos) {
+			std::string pageStr = path.substr(slashPos + 1);
+			if (pageStr.substr(0, 4) == "page") {
+				// It's a page container, parent is the category
+				return path.substr(0, slashPos);
+			}
+		}
+		// Check if it's a category (container)
 		for (const auto& cat : *categories) {
 			if (cat.slug == path) {
 				return "PatchStorage";
 			}
 		}
-		// Otherwise check if it's a patch ID
+		// Otherwise it's a patch ID, parent is its category
 		auto it = patchInfo->find(path);
 		if (it != patchInfo->end()) {
 			return it->second.categorySlug;
