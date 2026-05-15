@@ -570,37 +570,39 @@ BrowserSidebar::BrowserSidebar() {
 	fileScroll = new ui::ScrollWidget;
 	addChild(fileScroll);
 
+	const float width = 286.f;
+
 	fileList = new ui::List;
 	fileScroll->container->addChild(fileList);
 
 	// Footer container for description and tags
 	footerContainer = new widget::OpaqueWidget;
-	footerContainer->box.size = Vec(270.f, 350.f);
+	footerContainer->box.size = Vec(width, 350.f);
 	addChild(footerContainer);
 
 	Widget* sp1 = new MenuSeparator;
 	sp1->box.pos = Vec(0.f, 0.f);
-	sp1->box.size = Vec(270.f, 6.f);
+	sp1->box.size = Vec(width, 6.f);
 	footerContainer->addChild(sp1);
 
 	descriptionField = new DescriptionTextField;
 	descriptionField->box.pos = Vec(0.f, 10.f);
-	descriptionField->box.size = Vec(270.f, 170.f);
+	descriptionField->box.size = Vec(width, 170.f);
 	descriptionField->sidebar = this;
 	footerContainer->addChild(descriptionField);
 
 	Widget* sp2 = new MenuSeparator;
 	sp2->box.pos = Vec(0.f, 180.f);
-	sp2->box.size = Vec(270.f, 6.f);
+	sp2->box.size = Vec(width, 6.f);
 	footerContainer->addChild(sp2);
 
 	ScrollWidget* tagsScroll = new TagList;
 	tagsScroll->box.pos = Vec(0, 190.f);
-	tagsScroll->box.size = Vec(270.f, 160.f);
+	tagsScroll->box.size = Vec(width, 160.f);
 	footerContainer->addChild(tagsScroll);
 
 	tagsLayout = new ui::SequentialLayout;
-	tagsLayout->box.size.x = 270.f;
+	tagsLayout->box.size.x = width;
 	tagsLayout->orientation = ui::SequentialLayout::HORIZONTAL_ORIENTATION;
 	tagsLayout->alignment = ui::SequentialLayout::LEFT_ALIGNMENT;
 	tagsLayout->spacing = Vec(4, 4);
@@ -708,7 +710,7 @@ void BrowserSidebar::populateList(const AsyncContainerLoadResult* res) {
 		item->source = source;
 		item->containerPath = folder.id;
 		item->containerName = folder.displayName;
-		item->text = "📁 " + string::ellipsize(item->containerName, 40);
+		item->text = "📁 " + string::ellipsize(item->containerName, 42);
 		item->box.size.x = fileList->box.size.x;
 		fileList->addChild(item);
 	}
@@ -719,6 +721,7 @@ void BrowserSidebar::populateList(const AsyncContainerLoadResult* res) {
 		item->fileId = file.id;
 		item->text = string::ellipsize(file.displayName, 40);
 		item->box.size.x = fileList->box.size.x;
+		item->rightText = source->getIndex()->isFavorite(file.id) ? "★" : "";
 		fileList->addChild(item);
 	}
 
@@ -1062,8 +1065,8 @@ void Browser::step() {
 
 	headerLayout->box.size.x = box.size.x;
 
-	sidebar->box.pos = Vec(margin, headerLayout->box.getBottom() + margin);
-	sidebar->box.size.x = 270.f;
+	sidebar->box.pos = Vec(12.f, headerLayout->box.getBottom() + margin);
+	sidebar->box.size.x = 286.f;
 	sidebar->box.size.y = box.size.y - headerLayout->box.getBottom() - 2 * margin;
 
 	preview->box.pos = Vec(sidebar->box.size.x + 2 * margin, headerLayout->box.getBottom() + margin);
