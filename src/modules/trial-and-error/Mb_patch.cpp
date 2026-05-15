@@ -397,7 +397,7 @@ struct ContainerListItem : ui::MenuItem {
 	}
 };
 
-struct FileListItem : ui::MenuItem {
+struct PatchListItem : ui::MenuItem {
 	BrowserSidebar* sidebar;
 	std::string fileId;
 
@@ -418,6 +418,15 @@ struct FileListItem : ui::MenuItem {
 		}
 		sidebar->refreshDescriptionAndTags();
 		e.consume(this);
+	}
+
+	void onButton(const ButtonEvent& e) override {
+		if (e.button == GLFW_MOUSE_BUTTON_RIGHT && e.action == GLFW_PRESS) {
+			sidebar->preview->createContextMenu(fileId);
+			e.consume(this);
+			return;
+		}
+		MenuItem::onButton(e);
 	}
 
 	void draw(const DrawArgs& args) override {
@@ -564,7 +573,7 @@ struct TagList : ScrollWidget {
 		if (!e.isConsumed() && e.button == GLFW_MOUSE_BUTTON_RIGHT && e.action == GLFW_PRESS) {
 			Browser* browser = APP->scene->getFirstDescendantOfType<Browser>();
 			if (!browser->preview->fileId.empty()) {
-				browser->preview->createContextMenu();
+				browser->preview->createContextMenu(browser->preview->fileId);
 				e.consume(this);
 				return;
 			}
@@ -582,6 +591,7 @@ BrowserSidebar::BrowserSidebar() {
 	const float width = 286.f;
 
 	fileList = new ui::List;
+	fileList->hide();
 	fileScroll->container->addChild(fileList);
 
 	// Footer container for description and tags
@@ -725,7 +735,7 @@ void BrowserSidebar::populateList(const AsyncContainerLoadResult* res) {
 	}
 
 	for (const ContainerEntry& file : res->files) {
-		FileListItem* item = new FileListItem;
+		PatchListItem* item = new PatchListItem;
 		item->sidebar = this;
 		item->fileId = file.id;
 		item->text = string::ellipsize(file.displayName, 40);
@@ -743,7 +753,7 @@ void BrowserSidebar::populateList(const AsyncContainerLoadResult* res) {
 void BrowserSidebar::refreshFileList() {
 	Browser* browser = getAncestorOfType<Browser>();
 	for (Widget* w : fileList->children) {
-		FileListItem* item = dynamic_cast<FileListItem*>(w);
+		PatchListItem* item = dynamic_cast<PatchListItem*>(w);
 		if (!item) continue;
 		if (browser->isFileTagFiltered(item->fileId))
 			item->show();
@@ -754,9 +764,12 @@ void BrowserSidebar::refreshFileList() {
 
 void BrowserSidebar::onShow(const event::Show& e) {
 	if (source) {
-		if (source->getContainer().empty())
+		if (source->getContainer().empty()) {
 			source->setContainer(source->getRootContainer());
-		loadContainer();
+		}
+		if (!fileList->isVisible()) {
+			loadContainer();
+		}
 	}
 	widget::Widget::onShow(e);
 }

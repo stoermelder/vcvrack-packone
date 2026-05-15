@@ -60,7 +60,7 @@ struct PreviewWidget : OpaqueWidget {
 	void onButton(const event::Button& e) override;
 	void step() override;
 	void draw(const DrawArgs& args) override;
-	void createContextMenu();
+	void createContextMenu(std::string fileId);
 };
 
 

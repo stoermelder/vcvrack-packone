@@ -1121,7 +1121,7 @@ struct PatchStorageSource : PatchSource {
 			std::string url = string::f("https://patchstorage.com/patch/%s", patchInfo.slug.c_str());
 			system::openBrowser(url);
 		}));
-		menu->addChild(createMenuItem("Save to disk...", "", [this, patchInfo, fileId]() {
+		menu->addChild(createMenuItem("Save to disk", "", [this, patchInfo, fileId]() {
 			// Ensure file is downloaded first
 			std::string archivePath = getAbsoluteFilePath(fileId);
 			if (archivePath.empty()) return;

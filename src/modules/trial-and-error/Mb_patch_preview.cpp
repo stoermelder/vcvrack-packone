@@ -376,7 +376,7 @@ void PreviewWidget::draw(const DrawArgs& args) {
 
 void PreviewWidget::onButton(const ButtonEvent& e) {
 	if (e.button == GLFW_MOUSE_BUTTON_RIGHT && e.action == GLFW_PRESS) {
-		createContextMenu();
+		createContextMenu(fileId);
 		e.consume(this);
 		return;
 	}
@@ -395,7 +395,7 @@ void PreviewWidget::onButton(const ButtonEvent& e) {
 	}
 }
 
-void PreviewWidget::createContextMenu() {
+void PreviewWidget::createContextMenu(std::string fileId) {
 	if (!browser) return;
 	PatchSource* src = browser->getSource();
 	if (!src) return;
@@ -405,21 +405,23 @@ void PreviewWidget::createContextMenu() {
 	ui::Menu* menu = createMenu();
 
 	src->appendPreviewMenuItems(menu, fileId);
-	if (menu->children.size() > 0) {
-		menu->addChild(new MenuSeparator);
-	}
 
 	if (src->isPatchSource()) {
-		menu->addChild(createMenuItem("Replace current patch...", "", [this, src]() {
+		if (menu->children.size() > 0) {
+			menu->addChild(new MenuSeparator);
+		}
+		menu->addChild(createMenuItem("Replace current patch", "", [fileId, src]() {
 			const std::string path = src->getAbsoluteFilePath(fileId);
 			auto helper = PatchHelperWidget::getInstance();
 			if (helper) {
 				helper->setPendingPatchPath(path);
 			}
 		}));
-		menu->addChild(new MenuSeparator);
 	}
 
+	if (index->isReadOnly()) return;
+
+	menu->addChild(new MenuSeparator);
 	struct FavoriteItem : MenuItem {
 		PatchSourceIndex* index;
 		std::string fileId;
@@ -510,14 +512,13 @@ void PreviewWidget::createContextMenu() {
 	});
 
 	Rack::addGroupedMenuItems<std::string>(menu, customTags, 
-		[index, this](const std::string& tagName) {
+		[fileId, index](const std::string& tagName) {
 			CustomTagItem* t = new CustomTagItem;
 			t->index = index;
 			t->text = tagName;
 			t->fileId = fileId;
 			t->tagName = tagName;
 			t->hasTag = index->hasCustomTag(fileId, tagName);
-			t->disabled = index->isReadOnly();
 			return t;
 		}, 20
 	);
@@ -557,13 +558,12 @@ void PreviewWidget::createContextMenu() {
 	});
 
 	Rack::addGroupedMenuItems<std::string>(menu, tags,
-		[this, index](const std::string& tag) {
+		[fileId, index](const std::string& tag) {
 			TagItem* t = new TagItem;
 			t->text = t->tagName = tag;
 			t->index = index;
 			t->fileId = fileId;
 			t->hasTag = index->hasTag(fileId, tag);
-			t->disabled = index->isReadOnly();
 			return t;
 		}
 	);
