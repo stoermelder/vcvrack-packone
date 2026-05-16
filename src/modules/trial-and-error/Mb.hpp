@@ -168,6 +168,185 @@ struct BrowserOverlay : widget::OpaqueWidget {
 };
 
 
+struct DropdownChoiceContainer : widget::OpaqueWidget {
+	ui::ScrollWidget* scroll;
+	ui::SequentialLayout* layout;
+	std::string filterText;
+	std::string filterTextActive;
+	std::map<widget::Widget*, std::string> itemTexts;
+	widget::Widget* selectedItem = nullptr;
+
+	DropdownChoiceContainer() {
+		scroll = new ui::ScrollWidget;
+		addChild(scroll);
+
+		layout = new ui::SequentialLayout;
+		layout->orientation = ui::SequentialLayout::HORIZONTAL_ORIENTATION;
+		layout->margin = Vec(5, 5);
+		layout->spacing = Vec(5, 5);
+		layout->box.size.y = 1.f;
+		scroll->container->addChild(layout);
+	}
+
+	void step() override {
+		box.size.y = std::min(layout->box.size.y, parent->box.size.y - box.pos.y - 20.f);
+		scroll->box.size = box.size;
+		layout->box.size.x = box.size.x;
+		widget::OpaqueWidget::step();
+	}
+
+	void draw(const widget::Widget::DrawArgs& args) override {
+		nvgFontSize(args.vg, BND_LABEL_FONT_SIZE);
+		bndMenuBackground(args.vg, 0, 0, box.size.x, box.size.y, 0);
+		OpaqueWidget::draw(args);
+	}
+
+	void navigateSelection(int key) {
+		std::vector<widget::Widget*> visible;
+		for (widget::Widget* w : layout->children) {
+			if (w->visible) visible.push_back(w);
+		}
+		if (visible.empty()) return;
+
+		// Starting point: selected item > hovered item > first visible
+		widget::Widget* current = nullptr;
+		if (selectedItem) {
+			for (widget::Widget* w : visible) {
+				if (w == selectedItem) { current = w; break; }
+			}
+		}
+		if (!current) {
+			widget::Widget* hovered = APP->event->getHoveredWidget();
+			while (hovered && !current) {
+				for (widget::Widget* w : visible) {
+					if (w == hovered) { current = hovered; break; }
+				}
+				hovered = hovered->parent;
+			}
+		}
+		if (!current) current = visible[0];
+
+		widget::Widget* next = current;
+
+		switch (key) {
+			case GLFW_KEY_RIGHT: {
+				bool found = false;
+				for (widget::Widget* w : visible) {
+					if (found) { next = w; break; }
+					if (w == current) found = true;
+				}
+				break;
+			}
+			case GLFW_KEY_LEFT: {
+				widget::Widget* prev = nullptr;
+				for (widget::Widget* w : visible) {
+					if (w == current) { if (prev) next = prev; break; }
+					prev = w;
+				}
+				break;
+			}
+			case GLFW_KEY_DOWN: {
+				float currentCenterY = current->box.getCenter().y;
+				float currentCenterX = current->box.getCenter().x;
+				float nextRowY = std::numeric_limits<float>::max();
+				for (widget::Widget* w : visible) {
+					if (w->box.pos.y > currentCenterY && w->box.pos.y < nextRowY)
+						nextRowY = w->box.pos.y;
+				}
+				if (nextRowY < std::numeric_limits<float>::max()) {
+					float minDist = std::numeric_limits<float>::max();
+					for (widget::Widget* w : visible) {
+						if (std::abs(w->box.pos.y - nextRowY) < 2.f) {
+							float dist = std::abs(w->box.getCenter().x - currentCenterX);
+							if (dist < minDist) { minDist = dist; next = w; }
+						}
+					}
+				}
+				break;
+			}
+			case GLFW_KEY_UP: {
+				float currentCenterX = current->box.getCenter().x;
+				float prevRowY = -std::numeric_limits<float>::max();
+				for (widget::Widget* w : visible) {
+					if (w->box.pos.y < current->box.pos.y && w->box.pos.y > prevRowY)
+						prevRowY = w->box.pos.y;
+				}
+				if (prevRowY > -std::numeric_limits<float>::max()) {
+					float minDist = std::numeric_limits<float>::max();
+					for (widget::Widget* w : visible) {
+						if (std::abs(w->box.pos.y - prevRowY) < 2.f) {
+							float dist = std::abs(w->box.getCenter().x - currentCenterX);
+							if (dist < minDist) { minDist = dist; next = w; }
+						}
+					}
+				}
+				break;
+			}
+		}
+
+		selectedItem = next;
+		Rect r = next->box;
+		r.pos = r.pos.plus(layout->box.pos);
+		scroll->scrollTo(r);
+	}
+
+	void onSelectKey(const SelectKeyEvent& e) override {
+		if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
+			switch (e.key) {
+				case GLFW_KEY_DOWN:
+				case GLFW_KEY_UP:
+				case GLFW_KEY_LEFT:
+				case GLFW_KEY_RIGHT:
+					navigateSelection(e.key);
+					e.consume(this);
+					return;
+				case GLFW_KEY_BACKSPACE:
+					filterText.clear();
+					updateList();
+					e.consume(this);
+					return;
+				default:
+					break;
+			}
+		}
+		if (e.action == GLFW_PRESS && e.isKeyCommand(GLFW_KEY_ENTER)) {
+			widget::Widget* target = selectedItem;
+			if (!target) {
+				for (widget::Widget* w : layout->children) {
+					if (w->isVisible()) { target = w; break; }
+				}
+			}
+			if (target) {
+				Button* b = dynamic_cast<Button*>(target);
+				if (b) {
+					ActionEvent _e;
+					b->onAction(_e);
+					e.consume(this);
+				}
+			}
+		}
+	}
+
+	void onSelectText(const SelectTextEvent& e) override {
+		std::u32string s32(1, char32_t(e.codepoint));
+		std::string s8 = string::UTF32toUTF8(s32);
+		filterText += s8;
+		updateList();
+		e.consume(this);
+	}
+
+	void updateList() {
+		selectedItem = nullptr;
+		std::string lowerFilter = string::lowercase(filterText);
+		for (auto& pair : itemTexts) {
+			widget::Widget* child = pair.first;
+			std::string& itemText = pair.second;
+			std::string lowerItem = string::lowercase(itemText);
+			child->visible = string::startsWith(lowerItem, lowerFilter);
+		}
+	}
+};
+
 template <typename T>
 struct DropdownChoiceItem : ui::Button {
 	T* browser;
@@ -204,81 +383,14 @@ struct DropdownChoiceItem : ui::Button {
 		if (disabled) nvgGlobalAlpha(args.vg, 0.35f);
 		bndToolButton(args.vg, 0.0, 0.0, box.size.x, box.size.y, BND_CORNER_NONE, state, -1, text.c_str());
 		if (disabled) nvgRestore(args.vg);
-	}
-};
 
-struct DropdownChoiceContainer : widget::OpaqueWidget {
-	ui::ScrollWidget* scroll;
-	ui::SequentialLayout* layout;
-	std::string filterText;
-	std::string filterTextActive;
-	std::map<widget::Widget*, std::string> itemTexts;
-
-	DropdownChoiceContainer() {
-		scroll = new ui::ScrollWidget;
-		addChild(scroll);
-
-		// Create horizontal sequential layout inside container
-		layout = new ui::SequentialLayout;
-		layout->orientation = ui::SequentialLayout::HORIZONTAL_ORIENTATION;
-		layout->margin = Vec(5, 5);
-		layout->spacing = Vec(5, 5);
-		layout->box.size.y = 1.f;
-		scroll->container->addChild(layout);
-	}
-
-	void step() override {
-		box.size.y = std::min(layout->box.size.y, parent->box.size.y - box.pos.y - 20.f);
-		scroll->box.size = box.size;
-		layout->box.size.x = box.size.x;
-		widget::OpaqueWidget::step();
-	}
-
-	void draw(const widget::Widget::DrawArgs& args) override {
-		nvgFontSize(args.vg, BND_LABEL_FONT_SIZE);
-		bndMenuBackground(args.vg, 0, 0, box.size.x, box.size.y, 0);
-		OpaqueWidget::draw(args);
-	}
-
-	void onSelectKey(const SelectKeyEvent& e) override {
-		// Accumulate key characters into filterText
-		if (e.action == GLFW_PRESS) {
-			if (e.key == GLFW_KEY_BACKSPACE) {
-				filterText.clear();
-				updateList();
-				e.consume(this);
-			}
-			if (e.isKeyCommand(GLFW_KEY_ENTER)) {
-				for (Widget* w : layout->children) {
-					if (w->isVisible()) {
-						Button* b = dynamic_cast<Button*>(w);
-						if (b) {
-							ActionEvent _e;
-							b->onAction(_e);
-							e.consume(this);
-						}
-						break;
-					}
-				}
-			}
-		}
-	}
-
-	void onSelectText(const SelectTextEvent& e) override {
-		std::u32string s32(1, char32_t(e.codepoint));
-		std::string s8 = string::UTF32toUTF8(s32);
-		filterText += s8;
-		updateList();
-		e.consume(this);
-	}
-
-	void updateList() {
-		std::string lowerFilter = string::lowercase(filterText);
-		for (auto& pair : itemTexts) {
-			widget::Widget* child = pair.first;
-			std::string& itemText = pair.second;
-			std::string lowerItem = string::lowercase(itemText);
-			child->visible = string::startsWith(lowerItem, lowerFilter);
+		DropdownChoiceContainer* container = getAncestorOfType<DropdownChoiceContainer>();
+		if (container && container->selectedItem == this) {
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, -2.f, -2.f, box.size.x + 4.f, box.size.y + 4.f);
+			nvgStrokeWidth(args.vg, 1.5f);
+			nvgStrokeColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.9f));
+			nvgStroke(args.vg);
 		}
 	}
 };
@@ -310,7 +422,6 @@ static void openLayoutMenu(widget::Widget* button, std::vector<widget::Widget*> 
 	APP->scene->addChild(overlay);
 	overlay->addChild(container);
 }
-
 
 
 } // namespace Mb
