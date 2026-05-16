@@ -58,13 +58,13 @@ struct BrowserSearchField : ui::TextField {
 				return;
 			}
 			case GLFW_KEY_BACKSPACE: {
-				if (text == "") {
-					if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
+				if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
+					if (text == "") {
 						searchTimer = 0.f;
-						browser->searchQuery = "";
-						browser->sidebar->loadContainer();
+						browser->clear();
+						e.consume(this);
+						return;
 					}
-					e.consume(this);
 				}
 				break;
 			}
