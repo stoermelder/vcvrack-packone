@@ -71,7 +71,7 @@ struct PatchSource {
 	/** Return the filename portion of `path`. */
 	virtual const std::string getFilename(const std::string& fileId) = 0;
 	/** Return the absolute file of the path */
-	virtual const std::string getAbsoluteFilePath(const std::string& fileId) = 0;
+	virtual const std::string getTempFilePath(const std::string& fileId) = 0;
 
 	/** Return true if `str` ends with `suffix`. */
 	static bool endsWith(const std::string& str, const std::string& suffix) {

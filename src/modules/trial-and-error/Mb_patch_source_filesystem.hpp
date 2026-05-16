@@ -238,7 +238,8 @@ struct FileSystemPatchSourceIndex : PatchSourceIndex {
 				entries.erase(existingId);
 				entries[it->second] = entry;
 				currentFiles.erase(it->second);
-			} else {
+			} 
+			else {
 				// File no longer exists at all — remove from index
 				entries.erase(existingId);
 			}
@@ -253,22 +254,20 @@ struct FileSystemPatchSourceIndex : PatchSourceIndex {
 		rebuildSearchDb();
 	}
 
-	/** Recursively collect file paths with the given extension under `dir.
+	/** Recursively collect file paths with the given extension under baseDir.
 	 * @param baseDir  Absolute path of the directory to scan
-	 * @param prefix   Relative path from rootContainer to baseDir (without trailing slash)
-	 * @param files    Output set of relative file paths from rootContainer
+	 * @param prefix   Root-relative path to baseDir, starting with "/" (empty string for the root itself)
+	 * @param files    Output set of root-relative file paths, each starting with "/"
 	 */
 	void collectFilesRecursive(const std::string& baseDir, const std::string& prefix, std::set<std::string>& files, const std::string& ext) const {
 		auto entries = system::getEntries(baseDir);
 		for (const auto& entry : entries) {
 			if (system::isDirectory(entry)) {
-				std::string subdirName = system::getFilename(entry);
-				std::string subdirPrefix = prefix.empty() ? subdirName : prefix + "/" + subdirName;
+				std::string subdirPrefix = prefix + "/" + system::getFilename(entry);
 				collectFilesRecursive(entry, subdirPrefix, files, ext);
-			} else if (system::isFile(entry) && PatchSource::endsWith(entry, ext)) {
-				std::string filename = system::getFilename(entry);
-				std::string relative = prefix.empty() ? filename : prefix + "/" + filename;
-				files.insert(relative);
+			} 
+			else if (system::isFile(entry) && PatchSource::endsWith(entry, ext)) {
+				files.insert(prefix + "/" + system::getFilename(entry));
 			}
 		}
 	}
@@ -302,7 +301,8 @@ struct FileSystemSource : PatchSource {
 	void onAttach() override {
 		// If no root is set, default to the user's selections directory
 		if (rootContainer.empty()) {
-			rootContainer = currentContainer = asset::user("selections");
+			rootContainer = asset::user("selections");
+			currentContainer = "/";
 		}
 
 		// Register our index in the global cache for sharing with other sources
@@ -384,9 +384,9 @@ struct FileSystemSource : PatchSource {
 
 	/** Invalidate a single cache entry if the file has changed. */
 	void invalidateCacheEntry(const std::string& fileId) const {
-		auto it = archiveCache->find(fileId);
+		std::string fullPath = resolve(fileId);
+		auto it = archiveCache->find(fullPath);
 		if (it != archiveCache->end()) {
-			std::string fullPath = rootContainer + "/" + fileId;
 			auto fileTime = ghc::filesystem::last_write_time(fullPath);
 			if (fileTime != it->second.lastWriteTime) {
 				system::removeRecursively(it->second.cachePath);
@@ -419,19 +419,21 @@ struct FileSystemSource : PatchSource {
 	}
 
 	const std::string getRootContainer() const override { 
-		return rootContainer;
+		return "/";
 	}
 
 	const std::vector<ContainerEntry>& getContainers(const std::string& container) override {
 		static std::vector<ContainerEntry> containers;
 		containers.clear();
-		auto entries = system::getEntries(container);
+		// Resolve container path to file system path (container is absolute-style like "/subfolder" or "/")
+		std::string folder = resolve(container);
+		auto entries = system::getEntries(folder);
 		for (const std::string& entry : entries) {
 			if (system::isDirectory(entry)) {
-				// Strip rootContainer prefix to return relative path
-				std::string relative = entry.substr(rootContainer.empty() ? 0 : rootContainer.size() + 1);
+				// Build relative path starting with "/"
 				std::string name = system::getFilename(entry);
-				containers.push_back({ relative, name });
+				std::string relPath = container == "/" ? "/" + name : container + "/" + name;
+				containers.push_back({ relPath, name });
 			}
 		}
 		std::sort(containers.begin(), containers.end(), [](const ContainerEntry& a, const ContainerEntry& b) {
@@ -443,15 +445,16 @@ struct FileSystemSource : PatchSource {
 	const std::vector<ContainerEntry>& getFiles(const std::string& container) override {
 		static std::vector<ContainerEntry> files;
 		files.clear();
-		std::string folder = container == rootContainer ? rootContainer : string::f("%s/%s", rootContainer, container);
+		// Resolve container path to file system path (container is absolute-style like "/subfolder" or "/")
+		std::string folder = resolve(container);
 		auto entries = system::getEntries(folder);
 		for (const std::string& entry : entries) {
 			std::string ext = slug == SLUG_VCVS ? ".vcvs" : ".vcv";
 			if (system::isFile(entry) && PatchSource::endsWith(entry, ext)) {
-				// Strip rootContainer prefix to return relative path
-				std::string relative = entry.substr(rootContainer.empty() ? 0 : rootContainer.size() + 1);
+				// Build relative path starting with "/"
 				std::string name = system::getFilename(entry);
-				files.push_back({ relative, name });
+				std::string relPath = container == "/" ? "/" + name : container + "/" + name;
+				files.push_back({ relPath, name });
 			}
 		}
 		std::sort(files.begin(), files.end(), [](const ContainerEntry& a, const ContainerEntry& b) {
@@ -486,23 +489,30 @@ struct FileSystemSource : PatchSource {
 	}
 
 	const std::string getParentContainer(const std::string& path) override {
-		std::string absolute = resolve(path);
-		return system::getDirectory(absolute);
+		// path is relative starting with "/" like "/subfolder" - find parent
+		if (path.empty() || path == "/") return "/";
+		std::string::size_type lastSlash = path.find_last_of('/');
+		if (lastSlash == 0) return "/";
+		if (lastSlash == std::string::npos) return "/";
+		return path.substr(0, lastSlash);
 	}
 
 	const std::string getFilename(const std::string& path) override {
 		return system::getFilename(resolve(path));
 	}
 
-	const std::string getAbsoluteFilePath(const std::string& fileId) override {
-		return rootContainer + "/" + fileId;
+	const std::string getTempFilePath(const std::string& fileId) override {
+		// fileId is like "/Folder/file.vcv" - strip leading "/" and join with rootContainer
+		std::string relPath = fileId.substr(1);
+		return rootContainer + "/" + relPath;
 	}
 
-	/** Convert a relative path to an absolute path using rootContainer. */
+	/** Convert an absolute-style path (like "/subfolder") to file system path using rootContainer. */
 	const std::string resolve(const std::string& path) const {
-		if (rootContainer.empty()) return path;
-		if (path.empty()) return rootContainer;
-		return rootContainer + "/" + path;
+		if (path.empty() || path == "/") return rootContainer;
+		// path is like "/subfolder" - strip leading "/" and join with rootContainer
+		std::string relPath = path.substr(1);
+		return rootContainer + "/" + relPath;
 	}
 
 	/** Load index from mb-index.json in the root container, if it exists. */
@@ -551,7 +561,7 @@ struct FileSystemSource : PatchSource {
 	}
 
 	json_t* getFileJson(const std::string& fileId) const override {
-		std::string fullPath = rootContainer + "/" + fileId;
+		std::string fullPath = resolve(fileId);
 		
 		if (slug == SLUG_VCV) {
 			// Check if .vcv file is legacy (plain JSON) or v2+ (zstd-compressed tar)
@@ -655,7 +665,10 @@ struct FileSystemSource : PatchSource {
 		slug = std::string(json_string_value(slugJ));
 
 		json_t* rootJ = json_object_get(sourceJ, "rootContainer");
-		if (rootJ) rootContainer = currentContainer = json_string_value(rootJ);
+		if (rootJ) {
+			rootContainer = json_string_value(rootJ);
+			currentContainer = "/";
+		}
 
 		return true;
 	}
@@ -665,12 +678,12 @@ struct FileSystemSource : PatchSource {
 	}
 
 	void appendSourceMenuItems(ui::Menu* menu) override {
-		menu->addChild(createMenuLabel(getRootContainer().empty() ? "(no folder selected)" : string::f("Root %s", getRootContainer().c_str())));
+		menu->addChild(createMenuLabel(rootContainer.empty() ? "(no folder selected)" : string::f("Root %s", rootContainer.c_str())));
 		menu->addChild(createMenuItem("Select root folder...", "", [=]() {
 			std::string path = selectFolder();
 			if (path.empty()) return;
 			rootContainer = path;
-			setContainer(path);
+			setContainer("/");
 		}));
 		if (!rootContainer.empty()) {
 			menu->addChild(createMenuItem("Open in file explorer", "", [=]() {
@@ -686,7 +699,7 @@ struct FileSystemSource : PatchSource {
 
 	void appendPreviewMenuItems(ui::Menu* menu, std::string fileId) override {
 		menu->addChild(createMenuItem("Open containing folder", "", [this, fileId]() {
-			std::string path = getAbsoluteFilePath(fileId);
+			std::string path = getTempFilePath(fileId);
 			std::string dir = system::getDirectory(path);
 			system::openDirectory(dir);
 		}));
@@ -720,7 +733,7 @@ inline PatchSource* createSource() {
 	FileSystemSource* src = new FileSystemSource;
 	src->slug = FileSystemSource::SLUG_VCVS;
 	src->rootContainer = path;
-	src->setContainer(path);
+	src->setContainer("/");
 	return src;
 }
 
@@ -752,7 +765,7 @@ inline PatchSource* createSource() {
 	FileSystemSource* src = new FileSystemSource;
 	src->slug = FileSystemSource::SLUG_VCV;
 	src->rootContainer = path;
-	src->setContainer(path);
+	src->setContainer("/");
 	return src;
 }
 

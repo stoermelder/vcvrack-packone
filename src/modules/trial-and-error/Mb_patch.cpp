@@ -46,27 +46,30 @@ struct BrowserSearchField : ui::TextField {
 			return;
 		}
 
-		switch (e.key) {
-			case GLFW_KEY_ESCAPE: {
-				if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
+		// Handle navigation keys - delegate to browser
+		if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
+			switch (e.key) {
+				case GLFW_KEY_DOWN:
+				case GLFW_KEY_UP:
+				case GLFW_KEY_RIGHT:
+				case GLFW_KEY_LEFT:
+					browser->onSelectKey(e);
+					return;
+				case GLFW_KEY_ESCAPE:
 					text = "";
 					searchTimer = 0.f;
 					browser->searchQuery = "";
 					browser->sidebar->loadContainer();
-				}
-				e.consume(this);
-				return;
-			}
-			case GLFW_KEY_BACKSPACE: {
-				if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
+					e.consume(this);
+					return;
+				case GLFW_KEY_BACKSPACE:
 					if (text == "") {
 						searchTimer = 0.f;
 						browser->clear();
 						e.consume(this);
 						return;
 					}
-				}
-				break;
+					break;
 			}
 		}
 
@@ -388,7 +391,7 @@ struct MissingModulesWidget : widget::OpaqueWidget {
 		scroll->container->addChild(itemLayout);
 	}
 
-	void setMissingModules(const std::map<std::string, std::string>& modules) {
+	void setMissingModules(const std::map<std::string, std::string>& modules = {}) {
 		// Clear existing items
 		while (!itemLayout->children.empty()) {
 			itemLayout->removeChild(*itemLayout->children.begin());
@@ -484,20 +487,55 @@ struct AsyncFileJsonWidget : widget::Widget {
 
 // ---- Sidebar Items ----
 
-struct ContainerListItem : ui::MenuItem {
-	PatchSource* source;
+struct SidebarItem : ui::MenuItem {
+	BrowserSidebar* sidebar = nullptr;
+	int listIndex = -1;
+
+	void onButton(const ButtonEvent& e) override {
+		if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS) {
+			sidebar->selectedIndex = listIndex;
+			sidebar->updateSelection();
+		}
+		MenuItem::onButton(e);
+	}
+
+	void draw(const DrawArgs& args) override {
+		if (listIndex == sidebar->selectedIndex) {
+			nvgStrokeColor(args.vg, nvgRGBA(0xff, 0xff, 0xff, 80));
+			nvgBeginPath(args.vg);
+			Rect r = Rect(0, 0, box.size.x, box.size.y).shrink(1.f);
+			nvgRect(args.vg, RECT_ARGS(r));
+			nvgStrokeWidth(args.vg, 2.f);
+			nvgStroke(args.vg);
+		}
+		MenuItem::draw(args);
+	}
+};
+
+struct ContainerSidebarItem : SidebarItem {
 	std::string containerPath;
 	std::string containerName;
 
 	void onAction(const event::Action& e) override {
-		source->setContainer(containerPath);
-		BrowserSidebar* sidebar = getAncestorOfType<BrowserSidebar>();
-		if (sidebar) sidebar->loadContainer();
+		BrowserSidebar* sb = getAncestorOfType<BrowserSidebar>();
+		if (containerName != "..") {
+			// Save current container as parent before navigating into subdirectory
+			sidebar->parentContainerPath = sidebar->source->getContainer();
+			sidebar->previousContainerPath = sidebar->parentContainerPath;
+			sidebar->source->setContainer(containerPath);
+		}
+		else {
+			std::string target = sb->source->getParentContainer(sb->source->getContainer());
+			sidebar->parentContainerPath = sb->source->getParentContainer(target);
+			sidebar->previousContainerPath = sb->source->getContainer();
+			sidebar->source->setContainer(target);
+		}
+
+		if (sb) sb->loadContainer();
 	}
 };
 
-struct PatchListItem : ui::MenuItem {
-	BrowserSidebar* sidebar;
+struct PatchSidebarItem : SidebarItem {
 	std::string fileId;
 
 	void onAction(const event::Action& e) override {
@@ -525,19 +563,7 @@ struct PatchListItem : ui::MenuItem {
 			e.consume(this);
 			return;
 		}
-		MenuItem::onButton(e);
-	}
-
-	void draw(const DrawArgs& args) override {
-		if (fileId == sidebar->currentFileId) {
-			nvgStrokeColor(args.vg, nvgRGBA(0xff, 0xff, 0xff, 80));
-			nvgBeginPath(args.vg);
-			Rect r = Rect(0, 0, box.size.x, box.size.y).shrink(1.f);
-			nvgRect(args.vg, RECT_ARGS(r));
-			nvgStrokeWidth(args.vg, 2.f);
-			nvgStroke(args.vg);
-		}
-		MenuItem::draw(args);
+		SidebarItem::onButton(e);
 	}
 };
 
@@ -748,6 +774,8 @@ void BrowserSidebar::step() {
 void BrowserSidebar::loadContainer() {
 	if (!source) return;
 
+	clearSelection();
+
 	// If there's a search query, perform search instead of loading containers
 	Browser* browser = getAncestorOfType<Browser>();
 	if (browser && !browser->searchQuery.empty()) {
@@ -806,16 +834,23 @@ void BrowserSidebar::populateList(const AsyncContainerLoadResult* res) {
 	// Clear existing items
 	fileList->clearChildren();
 
+	int index = 0;
+	int selectIndex = -1;
+
 	// Add ".." item if not at root
 	if (!res->container.empty() && !source->getContainer().empty() && source->getContainer() != source->getRootContainer()) {
 		std::string parentContainer = source->getParentContainer(source->getContainer());
-		ContainerListItem* upItem = new ContainerListItem;
-		upItem->source = source;
-		upItem->containerPath = parentContainer;
-		upItem->containerName = "..";
-		upItem->text = "📁 ..";
-		upItem->box.size.x = fileList->box.size.x;
-		fileList->addChild(upItem);
+		ContainerSidebarItem* item = new ContainerSidebarItem;
+		item->sidebar = this;
+		item->containerPath = parentContainer;
+		item->containerName = "..";
+		item->text = "📁 ..";
+		item->box.size.x = fileList->box.size.x;
+		item->listIndex = index++;
+		if (previousContainerPath == parentContainer) {
+			selectIndex = item->listIndex;
+		}
+		fileList->addChild(item);
 	}
 
 	Browser* browser = getAncestorOfType<Browser>();
@@ -824,24 +859,36 @@ void BrowserSidebar::populateList(const AsyncContainerLoadResult* res) {
 	}
 
 	for (const ContainerEntry& folder : res->containers) {
-		ContainerListItem* item = new ContainerListItem;
-		item->source = source;
+		ContainerSidebarItem* item = new ContainerSidebarItem;
+		item->sidebar = this;
 		item->containerPath = folder.id;
 		item->containerName = folder.displayName;
 		item->text = "📁 " + string::ellipsize(item->containerName, 42);
 		item->box.size.x = fileList->box.size.x;
+		item->listIndex = index++;
+		if (previousContainerPath == folder.id) {
+			selectIndex = item->listIndex;
+		}
 		fileList->addChild(item);
 	}
 
 	for (const ContainerEntry& file : res->files) {
-		PatchListItem* item = new PatchListItem;
+		PatchSidebarItem* item = new PatchSidebarItem;
 		item->sidebar = this;
 		item->fileId = file.id;
 		item->text = string::ellipsize(file.displayName, 40);
 		item->box.size.x = fileList->box.size.x;
 		item->rightText = source->getIndex()->isFavorite(file.id) ? "★" : "";
+		item->listIndex = index++;
 		fileList->addChild(item);
 	}
+
+	// Select pending item if any
+	if (selectIndex >= 0) {
+		selectedIndex = selectIndex;
+		updateSelection();
+	}
+	previousContainerPath.clear();
 
 	refreshFileList();
 	refreshDescriptionAndTags();
@@ -852,12 +899,107 @@ void BrowserSidebar::populateList(const AsyncContainerLoadResult* res) {
 void BrowserSidebar::refreshFileList() {
 	Browser* browser = getAncestorOfType<Browser>();
 	for (Widget* w : fileList->children) {
-		PatchListItem* item = dynamic_cast<PatchListItem*>(w);
+		PatchSidebarItem* item = dynamic_cast<PatchSidebarItem*>(w);
 		if (!item) continue;
 		if (browser->isFileTagFiltered(item->fileId))
 			item->show();
 		else
 			item->hide();
+	}
+}
+
+void BrowserSidebar::clearSelection() {
+	selectedIndex = -1;
+}
+
+void BrowserSidebar::navigateDown() {
+	if (fileList->children.empty()) return;
+
+	// Find next visible item after current index
+	auto it = fileList->children.begin();
+	std::advance(it, selectedIndex + 1);
+	for (; it != fileList->children.end(); ++it) {
+		if ((*it)->isVisible()) {
+			selectedIndex = std::distance(fileList->children.begin(), it);
+			updateSelection();
+			return;
+		}
+	}
+}
+
+void BrowserSidebar::navigateUp() {
+	if (fileList->children.empty() || selectedIndex <= 0) return;
+
+	// Find previous visible item before current index
+	auto it = fileList->children.begin();
+	std::advance(it, selectedIndex - 1);
+	for (; it != fileList->children.begin(); --it) {
+		if ((*it)->isVisible()) {
+			selectedIndex = std::distance(fileList->children.begin(), it);
+			updateSelection();
+			return;
+		}
+	}
+	// Check first item
+	if (fileList->children.front()->isVisible()) {
+		selectedIndex = 0;
+		updateSelection();
+	}
+}
+
+void BrowserSidebar::navigateLeft() {
+	auto it = fileList->children.begin();
+	Widget* item = *it;
+	if (ContainerSidebarItem* i = dynamic_cast<ContainerSidebarItem*>(item)) {
+		if (i->containerName == "..") {
+			event::Action a;
+			i->onAction(a);
+		}
+	}
+}
+
+void BrowserSidebar::navigateRight() {
+	if (selectedIndex < 0) return;
+
+	auto it = fileList->children.begin();
+	std::advance(it, selectedIndex);
+	Widget* item = *it;
+	if (!item || !item->isVisible()) return;
+
+	if (ContainerSidebarItem* i = dynamic_cast<ContainerSidebarItem*>(item)) {
+		if (i->containerName != "..") {
+			event::Action a;
+			i->onAction(a);
+		}
+	}
+}
+
+void BrowserSidebar::updateSelection() {
+	if (selectedIndex < 0) return;
+
+	auto it = fileList->children.begin();
+	std::advance(it, selectedIndex);
+	if (it == fileList->children.end()) return;
+
+	Widget* item = *it;
+	if (!item || !item->isVisible()) return;
+
+	// Scroll to make the selected item visible
+	Rect r = item->box;
+	fileScroll->scrollTo(r);
+
+	// Update currentFileId based on selection
+	if (PatchSidebarItem* patchItem = dynamic_cast<PatchSidebarItem*>(item)) {
+		event::Action a;
+		patchItem->onAction(a);
+	}
+	else {
+		currentFileId.clear();
+		preview->clearPatch();
+
+		refreshDescriptionAndTags();
+		Browser* browser = getAncestorOfType<Browser>();
+		browser->missingModulesWidget->setMissingModules();
 	}
 }
 
@@ -1078,6 +1220,30 @@ Browser::~Browser() {
 	sources.clear();
 	// Sidebar destructor must not delete source since we own it
 	sidebar->source = nullptr;
+}
+
+void Browser::onSelectKey(const event::SelectKey& e) {
+	if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
+		switch (e.key) {
+			case GLFW_KEY_DOWN:
+				sidebar->navigateDown();
+				e.consume(this);
+				return;
+			case GLFW_KEY_UP:
+				sidebar->navigateUp();
+				e.consume(this);
+				return;
+			case GLFW_KEY_RIGHT:
+				sidebar->navigateRight();
+				e.consume(this);
+				return;
+			case GLFW_KEY_LEFT:
+				sidebar->navigateLeft();
+				e.consume(this);
+				return;
+		}
+	}
+	widget::OpaqueWidget::onSelectKey(e);
 }
 
 PatchSource* Browser::getSource() const {

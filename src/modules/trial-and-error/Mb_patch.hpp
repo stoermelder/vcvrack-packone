@@ -44,6 +44,15 @@ struct BrowserSidebar : widget::Widget {
 	/** Persistent worker thread shared by container loads and file-json loads. */
 	TaskWorker taskWorker;
 
+	/** Currently selected index in the file list for keyboard navigation. */
+	int selectedIndex = -1;
+
+	/** The container path of the parent directory (used when navigating up from index 0). */
+	std::string parentContainerPath;
+
+	/** The path of the container we just left (to select when navigating back). */
+	std::string previousContainerPath;
+
 	BrowserSidebar();
 	~BrowserSidebar();
 	void setText(const std::string& newText);
@@ -54,6 +63,19 @@ struct BrowserSidebar : widget::Widget {
 	void refreshDescriptionAndTags();
 	void populateList(const AsyncContainerLoadResult* res);
 	void refreshFileList();
+
+	/** Navigate to the next item in the file list. */
+	void navigateDown();
+	/** Navigate to the previous item in the file list. */
+	void navigateUp();
+	/** Open the currently selected container or file. */
+	void navigateRight();
+	/** Go up one level if not at root. */
+	void navigateLeft();
+	/** Clear the selection. */
+	void clearSelection();
+	/** Update selection visual and scroll to selected item. */
+	void updateSelection();
 };
 
 struct Browser : widget::OpaqueWidget {
@@ -113,6 +135,7 @@ struct Browser : widget::OpaqueWidget {
 	~Browser();
 	void step() override;
 	void draw(const DrawArgs& args) override;
+	void onSelectKey(const event::SelectKey& e) override;
 
 	/** Get the currently active patch source, or nullptr. */
 	PatchSource* getSource() const;

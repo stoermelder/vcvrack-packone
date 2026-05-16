@@ -433,7 +433,7 @@ void PreviewWidget::createContextMenu(std::string fileId) {
 			menu->addChild(new MenuSeparator);
 		}
 		menu->addChild(createMenuItem("Replace current patch", "", [fileId, src]() {
-			const std::string path = src->getAbsoluteFilePath(fileId);
+			const std::string path = src->getTempFilePath(fileId);
 			auto helper = PatchHelperWidget::getInstance();
 			if (helper) {
 				helper->setPendingPatchPath(path);

@@ -789,23 +789,23 @@ struct PatchStorageSource : PatchSource {
 		return path;
 	}
 
-	const std::string getAbsoluteFilePath(const std::string& path) override {
+	const std::string getTempFilePath(const std::string& path) override {
 		// For PatchStorage, we need to download the file first
 		auto it = patches->find(path);
 		if (it != patches->end()) {
-			DEBUG("PatchStorageSource: getAbsoluteFilePath(%s) - cached at %s", path.c_str(), it->second.c_str());
+			DEBUG("PatchStorageSource: getTempFilePath(%s) - cached at %s", path.c_str(), it->second.c_str());
 			return it->second;
 		}
 
 		auto pit = patchInfo->find(path);
 		if (pit == patchInfo->end()) {
-			DEBUG("PatchStorageSource: getAbsoluteFilePath(%s) - not in patchInfo", path.c_str());
+			DEBUG("PatchStorageSource: getTempFilePath(%s) - not in patchInfo", path.c_str());
 			status = "2:Unknown patch";
 			return "";
 		}
 
 		PatchInfo& patchInfo = pit->second;
-		DEBUG("PatchStorageSource: getAbsoluteFilePath(%s) found patch id=%d fileId=%d downloadUrl='%s'", path.c_str(), patchInfo.id, patchInfo.fileId, patchInfo.downloadUrl.c_str());
+		DEBUG("PatchStorageSource: getTempFilePath(%s) found patch id=%d fileId=%d downloadUrl='%s'", path.c_str(), patchInfo.id, patchInfo.fileId, patchInfo.downloadUrl.c_str());
 		
 		// If no download URL, fetch individual patch details
 		if (patchInfo.downloadUrl.empty() && patchInfo.id > 0) {
@@ -846,13 +846,13 @@ struct PatchStorageSource : PatchSource {
 		}
 
 		if (patchInfo.downloadUrl.empty()) {
-			DEBUG("PatchStorageSource: getAbsoluteFilePath(%s) - empty downloadUrl", path.c_str());
+			DEBUG("PatchStorageSource: getTempFilePath(%s) - empty downloadUrl", path.c_str());
 			status = "2:Download URL not found";
 			return "";
 		}
 
 		status = string::f("0:Downloading: %s... (%ikb)", patchInfo.title.c_str(), patchInfo.filesize / 1024);
-		DEBUG("PatchStorageSource: getAbsoluteFilePath(%s) - downloading from %s", path.c_str(), patchInfo.downloadUrl.c_str());
+		DEBUG("PatchStorageSource: getTempFilePath(%s) - downloading from %s", path.c_str(), patchInfo.downloadUrl.c_str());
 		
 		// Generate cache path
 		std::string cacheName = generateCacheName();
@@ -879,7 +879,7 @@ struct PatchStorageSource : PatchSource {
 	json_t* getFileJson(const std::string& path) const override {
 		// Download and extract if not cached
 		DEBUG("PatchStorageSource: getFileJson(%s) called", path.c_str());
-		std::string archivePath = const_cast<PatchStorageSource*>(this)->getAbsoluteFilePath(path);
+		std::string archivePath = const_cast<PatchStorageSource*>(this)->getTempFilePath(path);
 		DEBUG("PatchStorageSource: getFileJson archivePath=%s", archivePath.c_str());
 		if (archivePath.empty()) return nullptr;
 
@@ -1123,7 +1123,7 @@ struct PatchStorageSource : PatchSource {
 		}));
 		menu->addChild(createMenuItem("Save to disk", "", [this, patchInfo, fileId]() {
 			// Ensure file is downloaded first
-			std::string archivePath = getAbsoluteFilePath(fileId);
+			std::string archivePath = getTempFilePath(fileId);
 			if (archivePath.empty()) return;
 
 			// Show save dialog using osdialog_file
