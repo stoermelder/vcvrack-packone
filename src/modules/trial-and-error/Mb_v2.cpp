@@ -169,6 +169,15 @@ struct ModelBox : widget::OpaqueWidget {
 			nvgStrokeColor(args.vg, componentlibrary::SCHEME_YELLOW);
 			nvgStroke(args.vg);
 		}
+
+		ModuleBrowser* browser = getAncestorOfType<ModuleBrowser>();
+		if (browser && browser->selectedModel == model) {
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, -5.f, -5.f, box.size.x + 10.f, box.size.y + 10.f);
+			nvgStrokeWidth(args.vg, 2.5f);
+			nvgStrokeColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.7f));
+			nvgStroke(args.vg);
+		}
 	}
 
 	void setTooltip(ui::Tooltip* tt) {
@@ -431,6 +440,16 @@ struct BrowserSearchField : ui::TextField {
 		}
 
 		switch (e.key) {
+			case GLFW_KEY_DOWN:
+			case GLFW_KEY_UP:
+			case GLFW_KEY_LEFT:
+			case GLFW_KEY_RIGHT: {
+				if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
+					browser->navigateSelection(e.key);
+				}
+				e.consume(this);
+				return;
+			}
 			case GLFW_KEY_ESCAPE: {
 				if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
 					Mb::BrowserOverlay* overlay = getAncestorOfType<Mb::BrowserOverlay>();
@@ -489,6 +508,10 @@ struct BrowserSearchField : ui::TextField {
 	}
 
 	void onAction(const event::Action& e) override {
+		if (browser->selectedModel) {
+			chooseModel(browser->selectedModel);
+			return;
+		}
 		ModelBox* mb = NULL;
 		for (Widget* w : browser->modelContainer->children) {
 			if (w->visible) {
@@ -1053,6 +1076,106 @@ void ModuleBrowser::refresh() {
 		if (w->visible) count++;
 	}
 	countLabel->text = string::f("Modules (%d)", count);
+}
+
+void ModuleBrowser::navigateSelection(int key) {
+	// Collect visible ModelBoxes in layout order
+	std::vector<ModelBox*> visible;
+	for (Widget* w : modelContainer->children) {
+		ModelBox* mb = reinterpret_cast<ModelBox*>(w);
+		if (mb->visible) visible.push_back(mb);
+	}
+	if (visible.empty()) return;
+
+	// Determine starting box: keyboard selection > hovered widget > first visible
+	ModelBox* current = nullptr;
+	if (selectedModel) {
+		for (ModelBox* mb : visible) {
+			if (mb->model == selectedModel) { current = mb; break; }
+		}
+	}
+	if (!current) {
+		// Walk up from hovered widget to find a ModelBox
+		Widget* w = APP->event->getHoveredWidget();
+		while (w && !current) {
+			current = dynamic_cast<ModelBox*>(w);
+			w = w->parent;
+		}
+		// Only use it if it's in the visible list
+		if (current) {
+			bool found = false;
+			for (ModelBox* mb : visible) { if (mb == current) { found = true; break; } }
+			if (!found) current = nullptr;
+		}
+	}
+	if (!current) current = visible[0];
+
+	ModelBox* next = current;
+
+	switch (key) {
+		case GLFW_KEY_RIGHT: {
+			bool found = false;
+			for (ModelBox* mb : visible) {
+				if (found) { next = mb; break; }
+				if (mb == current) found = true;
+			}
+			break;
+		}
+		case GLFW_KEY_LEFT: {
+			ModelBox* prev = nullptr;
+			for (ModelBox* mb : visible) {
+				if (mb == current) { if (prev) next = prev; break; }
+				prev = mb;
+			}
+			break;
+		}
+		case GLFW_KEY_DOWN: {
+			float currentCenterY = current->box.getCenter().y;
+			float currentCenterX = current->box.getCenter().x;
+			// Find the top of the next row (smallest pos.y strictly below center)
+			float nextRowY = std::numeric_limits<float>::max();
+			for (ModelBox* mb : visible) {
+				if (mb->box.pos.y > currentCenterY && mb->box.pos.y < nextRowY)
+					nextRowY = mb->box.pos.y;
+			}
+			if (nextRowY < std::numeric_limits<float>::max()) {
+				float minDist = std::numeric_limits<float>::max();
+				for (ModelBox* mb : visible) {
+					if (std::abs(mb->box.pos.y - nextRowY) < 2.f) {
+						float dist = std::abs(mb->box.getCenter().x - currentCenterX);
+						if (dist < minDist) { minDist = dist; next = mb; }
+					}
+				}
+			}
+			break;
+		}
+		case GLFW_KEY_UP: {
+			float currentCenterX = current->box.getCenter().x;
+			// Find the top of the previous row (largest pos.y strictly above current row)
+			float prevRowY = -std::numeric_limits<float>::max();
+			for (ModelBox* mb : visible) {
+				if (mb->box.pos.y < current->box.pos.y && mb->box.pos.y > prevRowY)
+					prevRowY = mb->box.pos.y;
+			}
+			if (prevRowY > -std::numeric_limits<float>::max()) {
+				float minDist = std::numeric_limits<float>::max();
+				for (ModelBox* mb : visible) {
+					if (std::abs(mb->box.pos.y - prevRowY) < 2.f) {
+						float dist = std::abs(mb->box.getCenter().x - currentCenterX);
+						if (dist < minDist) { minDist = dist; next = mb; }
+					}
+				}
+			}
+			break;
+		}
+	}
+
+	selectedModel = next->model;
+
+	// Scroll the selected box into view (convert to modelScroll->container space)
+	Rect r = next->box;
+	r.pos = r.pos.plus(modelContainer->box.pos).plus(modelMargin->box.pos);
+	modelScroll->scrollTo(r);
 }
 
 void ModuleBrowser::clear() {
