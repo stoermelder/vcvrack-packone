@@ -359,6 +359,7 @@ struct MissingModulesWidget : widget::OpaqueWidget {
 	Browser* browser;
 	ui::ScrollWidget* scroll;
 	ui::SequentialLayout* itemLayout;
+	const float overlayWidth = 280.f;
 
 	struct ModuleLabel : ui::MenuItem {
 		std::string fullSlug;
@@ -408,8 +409,6 @@ struct MissingModulesWidget : widget::OpaqueWidget {
 		setVisible(!modules.empty());
 	}
 
-	const float overlayWidth = 280.f;
-
 	void step() override {
 		if (browser && browser->preview && browser->preview->visible) {
 			// Position on the right side of the preview
@@ -442,6 +441,33 @@ struct MissingModulesWidget : widget::OpaqueWidget {
 		nvgText(args.vg, 15.f, 15.f, "Missing modules", NULL);
 
 		widget::OpaqueWidget::draw(args);
+	}
+
+	void onButton(const ButtonEvent& e) override {
+		// Recurse event manually
+		for (auto it = children.rbegin(); it != children.rend(); it++) {
+			Widget* child = *it;
+			// Filter child by visibility and position
+			if (!child->visible)
+				continue;
+			if (!child->box.contains(e.pos))
+				continue;
+
+			// Clone event and adjust its position
+			ButtonEvent e2 = e;
+			e2.pos = e.pos.minus(child->box.pos);
+			// Call child event handler
+			child->onButton(e2);
+			if (e2.isConsumed()) {
+				e.consume(this);
+				return;
+			}
+		}
+
+		if (e.action == GLFW_PRESS && !e.isConsumed()) {
+			hide();
+			e.consume(this);
+		}
 	}
 };
 
@@ -490,14 +516,6 @@ struct AsyncFileJsonWidget : widget::Widget {
 struct SidebarItem : ui::MenuItem {
 	BrowserSidebar* sidebar = nullptr;
 	int listIndex = -1;
-
-	void onButton(const ButtonEvent& e) override {
-		if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS) {
-			sidebar->selectedIndex = listIndex;
-			sidebar->updateSelection();
-		}
-		MenuItem::onButton(e);
-	}
 
 	void draw(const DrawArgs& args) override {
 		if (listIndex == sidebar->selectedIndex) {
@@ -566,7 +584,6 @@ struct PatchSidebarItem : SidebarItem {
 		if (e.button == GLFW_MOUSE_BUTTON_RIGHT && e.action == GLFW_PRESS) {
 			sidebar->preview->createContextMenu(fileId);
 			e.consume(this);
-			return;
 		}
 		SidebarItem::onButton(e);
 	}
