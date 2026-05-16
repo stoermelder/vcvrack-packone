@@ -79,9 +79,7 @@ struct BrowserSearchField : ui::TextField {
 
 struct TagItem : ChoiceFilterItem<Browser> {
 	PatchSourceIndex* index;
-	std::string fileId;
 	std::string tagName;
-	bool hasTag = false;
 	void onAction(const event::Action& e) override {
 		auto it = browser->tagFilter.find(tagName);
 		if (it != browser->tagFilter.end())
@@ -104,21 +102,6 @@ struct TagButton : Browser::PatchChoiceButton {
 		PatchSourceIndex* index = src->getIndex();
 		if (!index) return;
 
-		// Compute fileId for the currently active file
-		std::string previewFilePath = browser->preview->fileId;
-		std::string rootDir = src->getRootContainer();
-		std::string activeFileId;
-		if (!previewFilePath.empty() && previewFilePath.size() > rootDir.size()) {
-			activeFileId = previewFilePath.substr(rootDir.size() + 1);
-		}
-
-		// Get currently assigned tags for the active file
-		std::set<std::string> activeFileTags;
-		if (!activeFileId.empty()) {
-			std::vector<std::string> ft = index->getTags(activeFileId);
-			activeFileTags = std::set<std::string>(ft.begin(), ft.end());
-		}
-
 		std::vector<Widget*> items;
 
 		auto unsortedTags = index->getTagsAll();
@@ -126,18 +109,14 @@ struct TagButton : Browser::PatchChoiceButton {
 		std::sort(tags.begin(), tags.end(), [](const std::string& a, const std::string& b) {
 			return string::lowercase(a) < string::lowercase(b);
 		});
-		for (std::string tag : tags) {
+		for (const std::string& tag : tags) {
 			TagItem* item = new TagItem;
 			item->setRawText(tag);
 			item->tagName = tag;
 			item->browser = browser;
 			item->index = index;
-			item->fileId = activeFileId;
-			item->hasTag = activeFileTags.count(item->tagName) > 0;
 			items.push_back(item);
 		}
-
-		//std::sort(items.begin(), items.end(), []()
 
 		openLayoutMenu<Browser>(this, items);
 	}
@@ -782,40 +761,44 @@ void BrowserSidebar::refreshDescriptionAndTags() {
 	}
 
 	PatchSourceIndex* idx = source->getIndex();
-	if (idx && !currentFileId.empty()) {
-		descriptionField->setText(idx->getDescription(currentFileId));
-	
-		// Get predefined tags
-		std::vector<std::string> fileTags = idx->getTags(currentFileId);
-		std::vector<std::string> fileCustomTags = idx->getCustomTags(currentFileId);
-		std::vector<FileTagItem*> items;
-
-		// Add predefined tags
-		for (const std::string& tag : fileTags) {
-			FileTagItem* item = new FileTagItem;
-			item->setRawText(tag);
-			item->tagName = tag;
-			item->isPredefined = true;
-			item->browser = getAncestorOfType<Browser>();
-			items.push_back(item);
-		}
-
-		// Add custom tags
-		for (const std::string& tag : fileCustomTags) {
-			FileTagItem* item = new FileTagItem;
-			item->setRawText(tag);
-			item->tagName = tag;
-			item->isPredefined = false;
-			item->browser = getAncestorOfType<Browser>();
-			items.push_back(item);
-		}
-
-		std::sort(items.begin(), items.end(), [](FileTagItem* i1, FileTagItem* i2) { return i1->tagName < i2->tagName; });
-		for (FileTagItem* item : items) tagsLayout->addChild(item);
-	}
-	else {
+	if (!idx) {
 		descriptionField->setText("");
+		return;
 	}
+	if (currentFileId.empty()) {
+		descriptionField->setText("");
+		return;
+	}
+
+	descriptionField->setText(idx->getDescription(currentFileId));
+
+	// Get predefined tags
+	std::vector<std::string> fileTags = idx->getTags(currentFileId);
+	std::vector<std::string> fileCustomTags = idx->getCustomTags(currentFileId);
+	std::vector<FileTagItem*> items;
+
+	// Add predefined tags
+	for (const std::string& tag : fileTags) {
+		FileTagItem* item = new FileTagItem;
+		item->setRawText(tag);
+		item->tagName = tag;
+		item->isPredefined = true;
+		item->browser = getAncestorOfType<Browser>();
+		items.push_back(item);
+	}
+
+	// Add custom tags
+	for (const std::string& tag : fileCustomTags) {
+		FileTagItem* item = new FileTagItem;
+		item->setRawText(tag);
+		item->tagName = tag;
+		item->isPredefined = false;
+		item->browser = getAncestorOfType<Browser>();
+		items.push_back(item);
+	}
+
+	std::sort(items.begin(), items.end(), [](FileTagItem* i1, FileTagItem* i2) { return i1->tagName < i2->tagName; });
+	for (FileTagItem* item : items) tagsLayout->addChild(item);
 }
 
 
