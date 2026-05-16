@@ -13,6 +13,8 @@ namespace patch {
 
 struct BrowserSearchField : ui::TextField {
 	Browser* browser;
+	DropdownChoiceContainer* dropDown = nullptr;
+
 	/** Timer for debouncing search requests to remote APIs */
 	float searchTimer = 0.f;
 	/** Debounce delay in seconds - adjust for desired responsiveness vs API load */
@@ -37,7 +39,12 @@ struct BrowserSearchField : ui::TextField {
 	}
 
 	void onSelectKey(const event::SelectKey& e) override {
-		bool propagate = !e.getTarget();
+		// Handle special key events
+		dropDown = APP->scene->getFirstDescendantOfType<DropdownChoiceContainer>();
+		if (dropDown) {
+			dropDown->onSelectKey(e);
+			return;
+		}
 
 		switch (e.key) {
 			case GLFW_KEY_ESCAPE: {
@@ -63,9 +70,16 @@ struct BrowserSearchField : ui::TextField {
 			}
 		}
 
-		if (propagate) {
-			ui::TextField::onSelectKey(e);
+		ui::TextField::onSelectKey(e);
+	}
+
+	void onSelectText(const SelectTextEvent& e) override {
+		// Handle text input
+		if (dropDown) {
+			dropDown->onSelectText(e);
+			return;
 		}
+		TextField::onSelectText(e);
 	}
 
 	void onChange(const event::Change& e) override {
