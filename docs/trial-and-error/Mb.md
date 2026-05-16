@@ -64,14 +64,17 @@ MB allows you to add or remove predefined tags (the classic VCV Rack tag aliases
     - Added missing template loading after adding a module (#369)
 - v2.4.0
     - Added custom tags for user-defined module grouping
-    - Added ability to add/remove predefined tags
-    - Added auto-tagging including MetaModule
+        - with auto-tagging using a curated list of tags
+        - with auto-tagging for available modules on MetaModule
+    - Added "v2 mod" browser variant
+        - with improved drop-down menus, also with keyboard-filtering
+        - with keyboard-navigation using cursor-keys
+    - Added ability to add/remove predefined tags (only within MB)
     - Added fuzzy search (similar to the default module browser)
+        - with setting for the fuzzy search threshold
     - Added an option to select "Favorite" handling (Legacy (MB) / Built-in VCV Rack)
     - Added an option to highlight favorites
-    - Added an option to set the fuzzy search threshold
     - Added model magnifier loupe option
-    - Added "v2 mod" browser variant
     - Added integration into Rack's menu bar
     - Changed hotkey to toggle hidden modules to Shift+Space (because of Spotlight on Mac)
     - Fixed broken button of "Favorites" category
