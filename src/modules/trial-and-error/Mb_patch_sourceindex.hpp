@@ -28,7 +28,7 @@ struct PatchSourceIndex {
 
 	// -- predefined tags -----------------------------------------------------
 
-    virtual bool hasTag(const std::string& fileId, const std::string& tag) = 0;
+    virtual bool hasTag(const std::string& fileId, const std::string& tag) const = 0;
 	/** Return the list of predefined tag names assigned to the given file. */
 	virtual std::vector<std::string> getTags(const std::string& fileId) const = 0;
 	/** Add a single predefined tag to the given file. No effect if the index is read-only or tag already assigned. */
@@ -38,7 +38,7 @@ struct PatchSourceIndex {
 
 	// -- custom tags ----------------------------------------------------------
 
-    virtual bool hasCustomTag(const std::string& fileId, const std::string& tag) = 0;
+    virtual bool hasCustomTag(const std::string& fileId, const std::string& tag) const = 0;
 	/** Return the list of custom tag strings assigned to the given file. */
 	virtual std::vector<std::string> getCustomTags(const std::string& fileId) const = 0;
 	/** Add a single custom tag to the given file. No effect if the index is read-only or tag already assigned. */

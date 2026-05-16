@@ -139,8 +139,10 @@ struct FileSystemPatchSourceIndex : PatchSourceIndex {
 		entries[fileId].description = description;
 	}
 
-	bool hasTag(const std::string& fileId, const std::string& tag) override {
-		auto& tags = entries[fileId].tags;
+	bool hasTag(const std::string& fileId, const std::string& tag) const override {
+		auto it = entries.find(fileId);
+		if (it == entries.end()) return false;
+		auto& tags = it->second.tags;
 		return std::find(tags.begin(), tags.end(), tag) != tags.end();
 	}
 	std::vector<std::string> getTags(const std::string& fileId) const override {
@@ -157,8 +159,10 @@ struct FileSystemPatchSourceIndex : PatchSourceIndex {
 		tags.erase(std::remove(tags.begin(), tags.end(), tag), tags.end());
 	}
 
-	bool hasCustomTag(const std::string& fileId, const std::string& tag) override {
-		auto& tags = entries[fileId].customTags;
+	bool hasCustomTag(const std::string& fileId, const std::string& tag) const override {
+		auto it = entries.find(fileId);
+		if (it == entries.end()) return false;
+		auto& tags = it->second.customTags;
 		return std::find(tags.begin(), tags.end(), tag) != tags.end();
 	}
 	std::vector<std::string> getCustomTags(const std::string& fileId) const override {
@@ -276,9 +280,6 @@ struct FileSystemPatchSourceIndex : PatchSourceIndex {
 struct FileSystemSource : PatchSource {
 	std::string rootContainer;
 	std::string currentContainer;
-	PatchHelperWidget* helper;
-	mutable std::string status = "";
-
 	static constexpr const char* SLUG_VCVS = "filesystem:vcvs";
 	static constexpr const char* SLUG_VCV = "filesystem:vcv";
 	std::string slug;
@@ -339,19 +340,6 @@ struct FileSystemSource : PatchSource {
 		saveIndex();
 	}
 
-	/** Generate a random cache folder name. */
-	std::string generateCacheName() const {
-		static std::random_device rd;
-		static std::mt19937 gen(rd());
-		static std::uniform_int_distribution<> dis(0, 15);
-		std::string name = "vcv_cache_";
-		for (int i = 0; i < 16; ++i) {
-			int v = dis(gen);
-			name += (v < 10) ? char('0' + v) : char('a' + v - 10);
-		}
-		return name;
-	}
-
 	/**
 	 * Extract a .vcv archive to a cached folder.
 	 * Returns the path to the cached extraction, or empty on failure.
@@ -366,15 +354,10 @@ struct FileSystemSource : PatchSource {
 		}
 		catch (...) {
 			system::removeRecursively(extractDir);
-			status = "2:Failed to extract archive";
+			setStatus("Failed to extract archive", 3);
 			return "";
 		}
 		return extractDir;
-	}
-
-	/** Get the cache directory from the helper. */
-	const std::string& getCacheDir() const {
-		return helper->cacheDir;
 	}
 
 	/** Clear all cached extractions. */
@@ -407,9 +390,6 @@ struct FileSystemSource : PatchSource {
 		return result;
 	}
 
-	void setHelper(PatchHelperWidget* h) override {
-		helper = h;
-	}
 
 	const std::string getContainer() const override { 
 		return currentContainer;
@@ -425,6 +405,8 @@ struct FileSystemSource : PatchSource {
 	const std::vector<ContainerEntry>& getContainers(const std::string& container) override {
 		static std::vector<ContainerEntry> containers;
 		containers.clear();
+
+		setStatus("Loading folders...");
 		// Resolve container path to file system path (container is absolute-style like "/subfolder" or "/")
 		std::string folder = resolve(container);
 		auto entries = system::getEntries(folder);
@@ -439,12 +421,16 @@ struct FileSystemSource : PatchSource {
 		std::sort(containers.begin(), containers.end(), [](const ContainerEntry& a, const ContainerEntry& b) {
 			return string::lowercase(a.displayName) < string::lowercase(b.displayName);
 		});
+
+		setStatus();
 		return containers;
 	}
 
 	const std::vector<ContainerEntry>& getFiles(const std::string& container) override {
 		static std::vector<ContainerEntry> files;
 		files.clear();
+
+		setStatus("Loading files...");
 		// Resolve container path to file system path (container is absolute-style like "/subfolder" or "/")
 		std::string folder = resolve(container);
 		auto entries = system::getEntries(folder);
@@ -460,6 +446,8 @@ struct FileSystemSource : PatchSource {
 		std::sort(files.begin(), files.end(), [](const ContainerEntry& a, const ContainerEntry& b) {
 			return string::lowercase(a.displayName) < string::lowercase(b.displayName);
 		});
+
+		setStatus();
 		return files;
 	}
 
@@ -469,6 +457,7 @@ struct FileSystemSource : PatchSource {
 	 * Returns all matching entries sorted by relevance score.
 	 */
 	std::vector<ContainerEntry> search(const std::string& query) override {
+		setStatus(string::f("Searching: %s...", query.c_str()));
 		std::vector<std::string> fileIds = index->search(query);
 
 		std::vector<ContainerEntry> result;
@@ -477,18 +466,20 @@ struct FileSystemSource : PatchSource {
 			std::string filename = fileId.substr(fileId.find_last_of('/') + 1);
 			result.push_back({fileId, filename});
 		}
+
+		setStatus();
 		return result;
 	}
 
-	bool isContainer(const std::string& path) override {
+	bool isContainer(const std::string& path) const override {
 		return system::isDirectory(resolve(path));
 	}
 
-	bool isFile(const std::string& path) override {
+	bool isFile(const std::string& path) const override {
 		return system::isFile(resolve(path));
 	}
 
-	const std::string getParentContainer(const std::string& path) override {
+	const std::string getParentContainer(const std::string& path) const override {
 		// path is relative starting with "/" like "/subfolder" - find parent
 		if (path.empty() || path == "/") return "/";
 		std::string::size_type lastSlash = path.find_last_of('/');
@@ -497,14 +488,12 @@ struct FileSystemSource : PatchSource {
 		return path.substr(0, lastSlash);
 	}
 
-	const std::string getFilename(const std::string& path) override {
+	const std::string getFilename(const std::string& path) const override {
 		return system::getFilename(resolve(path));
 	}
 
-	const std::string getTempFilePath(const std::string& fileId) override {
-		// fileId is like "/Folder/file.vcv" - strip leading "/" and join with rootContainer
-		std::string relPath = fileId.substr(1);
-		return rootContainer + "/" + relPath;
+	const std::string getTempFilePath(const std::string& fileId) const override {
+		return resolve(fileId);
 	}
 
 	/** Convert an absolute-style path (like "/subfolder") to file system path using rootContainer. */
@@ -525,7 +514,10 @@ struct FileSystemSource : PatchSource {
 		json_error_t error;
 		json_t* indexJ = json_loadf(f, 0, &error);
 		fclose(f);
-		if (!indexJ) return;
+		if (!indexJ) {
+			setStatus("Failed to load index file", 3);
+			return;
+		}
 		index->fromJson(indexJ);
 		json_decref(indexJ);
 	}
@@ -539,6 +531,7 @@ struct FileSystemSource : PatchSource {
 		FILE* f = fopen(indexPath.c_str(), "wb");
 		if (!f) {
 			json_decref(indexJ);
+			setStatus("Failed to save the index file", 3);
 			return;
 		}
 		json_dumpf(indexJ, f, JSON_INDENT(2));
@@ -591,21 +584,6 @@ struct FileSystemSource : PatchSource {
 	}
 
 	/**
-	 * Checks if a .vcv file is a legacy v1 format (plain JSON) by checking for zstd magic number.
-	 * All Zstandard frames start with the magic bytes \x28\xb5\x2f\xfd.
-	 * If the file doesn't begin with this magic number, it's a legacy v1 patch.
-	 */
-	static bool isVcvLegacyV1(const std::string& path) {
-		FILE* f = std::fopen(path.c_str(), "rb");
-		if (!f) return true; // Assume legacy on open failure
-		DEFER({std::fclose(f);});
-		char zstdMagic[] = "\x28\xb5\x2f\xfd";
-		char buf[4] = {};
-		std::fread(buf, 1, sizeof(buf), f);
-		return std::memcmp(buf, zstdMagic, sizeof(buf)) != 0;
-	}
-
-	/**
 	 * Extracts and parses the JSON file from a .vcv archive.
 	 * Uses system::unarchiveToDirectory to extract to a temp directory,
 	 * then reads patch.json from the extracted contents.
@@ -635,21 +613,34 @@ struct FileSystemSource : PatchSource {
 		}
 
 		// Extract to cache
+		setStatus("Extracting archive...");
 		std::string extractDir = extractToCache(archivePath);
 		if (extractDir.empty()) return nullptr;
 
 		// Read the patch.json file from the extracted directory
+		setStatus("Loading patch...");
 		std::string patchJsonPath = system::join(extractDir, "patch.json");
 		FILE* f = fopen(patchJsonPath.c_str(), "rb");
-		if (!f) return nullptr;
+		if (!f) {
+			system::removeRecursively(extractDir);
+			setStatus("Failed to read patch file", 3);
+			return nullptr;
+		}
 		json_error_t error;
 		json_t* rootJ = json_loadf(f, 0, &error);
 		fclose(f);
+
+		if (!rootJ) {
+			system::removeRecursively(extractDir);
+			setStatus("Failed to parse patch JSON", 3);
+			return nullptr;
+		}
 
 		// Store in cache
 		auto fileTime = ghc::filesystem::last_write_time(archivePath);
 		(*archiveCache)[archivePath] = { extractDir, fileTime };
 
+		setStatus();
 		return rootJ;
 	}
 
@@ -673,16 +664,13 @@ struct FileSystemSource : PatchSource {
 		return true;
 	}
 
-	const std::string& getStatusText() override {
-		return status;
-	}
-
 	void appendSourceMenuItems(ui::Menu* menu) override {
 		menu->addChild(createMenuLabel(rootContainer.empty() ? "(no folder selected)" : string::f("Root %s", rootContainer.c_str())));
 		menu->addChild(createMenuItem("Select root folder...", "", [=]() {
 			std::string path = selectFolder();
 			if (path.empty()) return;
 			rootContainer = path;
+			index->searchDbValid = false;
 			setContainer("/");
 		}));
 		if (!rootContainer.empty()) {
@@ -698,6 +686,7 @@ struct FileSystemSource : PatchSource {
 	}
 
 	void appendPreviewMenuItems(ui::Menu* menu, std::string fileId) override {
+		menu->addChild(createMenuLabel(getTempFilePath(fileId)));
 		menu->addChild(createMenuItem("Open containing folder", "", [this, fileId]() {
 			std::string path = getTempFilePath(fileId);
 			std::string dir = system::getDirectory(path);

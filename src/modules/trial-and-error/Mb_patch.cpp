@@ -280,7 +280,7 @@ struct SourceButton : ui::ChoiceButton {
 			}
 		}
 
-		menu->addChild(createMenuItem("Set as favorite", CHECKMARK(pluginSettings.mbDataSourceFavoriteIndex == browser->activeSourceIndex), 
+		menu->addChild(createMenuItem("Set as favorite source", CHECKMARK(pluginSettings.mbDataSourceFavoriteIndex == browser->activeSourceIndex), 
 		[this] {
 			if (browser->activeSourceIndex >= 0 && browser->activeSourceIndex < (int)browser->sources.size()) {
 				pluginSettings.mbDataSourceFavoriteIndex = browser->activeSourceIndex;
@@ -538,6 +538,11 @@ struct ContainerSidebarItem : SidebarItem {
 struct PatchSidebarItem : SidebarItem {
 	std::string fileId;
 
+	void step() override {
+		rightText = sidebar->source->getIndex()->isFavorite(fileId) ? "★" : "";
+		SidebarItem::step();
+	}
+
 	void onAction(const event::Action& e) override {
 		sidebar->currentFileId = fileId;
 		PatchSource* src = sidebar->source;
@@ -579,7 +584,7 @@ struct DescriptionTextField : ui::TextField {
 
 	void setText(const std::string& newText) {
 		rawText = newText;
-		text = string::ellipsize(newText, 200);
+		TextField::setText(string::ellipsize(newText, 200));
 	}
 
 	void onShow(const event::Show& e) override {
@@ -597,10 +602,11 @@ struct DescriptionTextField : ui::TextField {
 	}
 
 	void onDoubleClick(const DoubleClickEvent& e) override {
+		if (editMode) return;
 		if (sidebar && sidebar->source) {
 			PatchSourceIndex* idx = sidebar->source->getIndex();
 			if (idx && !idx->isReadOnly()) {
-				text = rawText;
+				TextField::setText(rawText);
 				editMode = true;
 			}
 		}
@@ -878,7 +884,6 @@ void BrowserSidebar::populateList(const AsyncContainerLoadResult* res) {
 		item->fileId = file.id;
 		item->text = string::ellipsize(file.displayName, 40);
 		item->box.size.x = fileList->box.size.x;
-		item->rightText = source->getIndex()->isFavorite(file.id) ? "★" : "";
 		item->listIndex = index++;
 		fileList->addChild(item);
 	}
@@ -1076,37 +1081,49 @@ struct StatusBarWidget : widget::Widget {
 
 	/** Timestamp when the status text should be cleared (0 = no status). */
 	float statusDisplayUntil = 0.f;
-	/** The last shown status text. */
+	/** The currently displayed (parsed) status text. */
 	std::string lastStatus;
 
+	/** Raw status string from the source, waiting for the 200 ms guard. */
+	std::string pendingStatus;
+	/** Time when pendingStatus was first observed. */
+	float pendingFrom = 0.f;
+	/** The raw status string that was last promoted to lastStatus. */
+	std::string pendingDisplayed;
+
 	void step() override {
+		float now = glfwGetTime();
+
 		PatchSource* src = browser->getSource();
-		if (src) {
-			std::string currentStatus = src->getStatusText();
-			if (currentStatus != lastStatus) {
-				if (!currentStatus.empty()) {
-					// Parse timeout from prefix (e.g., "0:" or "2:")
-					float timeout = 2.0f;
-					if (currentStatus.substr(0, 2) == "0:") {
-						timeout = 0.0f;  // 0 means indefinite
-						currentStatus = currentStatus.substr(2);
-					} 
-					else if (currentStatus.substr(0, 2) == "2:") {
-						currentStatus = currentStatus.substr(2);
-					}
-					lastStatus = currentStatus;
-					statusDisplayUntil = timeout > 0.0f ? glfwGetTime() + timeout : 0.0f;
-				} 
-				else {
-					// Empty string means clear the status
-					lastStatus = "";
-					statusDisplayUntil = 0.0f;
+		std::string currentStatus = src ? src->getStatusText() : "";
+
+		// Record when the raw status changes.
+		if (currentStatus != pendingStatus) {
+			pendingStatus = currentStatus;
+			pendingFrom = now;
+		}
+
+		// Promote to displayed only after the 200 ms guard has elapsed.
+		if ((now - pendingFrom) >= 0.15f && pendingStatus != pendingDisplayed) {
+			pendingDisplayed = pendingStatus;
+			if (!pendingStatus.empty()) {
+				std::string s = pendingStatus;
+				float timeout = 2.0f;
+				if (s.size() >= 2 && std::isdigit((unsigned char)s[0]) && s[1] == ':') {
+					timeout = static_cast<float>(s[0] - '0');
+					s = s.substr(2);
 				}
+				lastStatus = s;
+				statusDisplayUntil = timeout > 0.0f ? now + timeout : 0.0f;
+			} 
+			else {
+				lastStatus = "";
+				statusDisplayUntil = 0.0f;
 			}
 		}
 
-		float now = glfwGetTime();
-		if (lastStatus.empty() && statusDisplayUntil > 0.0f && now >= statusDisplayUntil) {
+		// Expire timed messages.
+		if (statusDisplayUntil > 0.0f && now >= statusDisplayUntil) {
 			lastStatus = "";
 			statusDisplayUntil = 0.0f;
 		}

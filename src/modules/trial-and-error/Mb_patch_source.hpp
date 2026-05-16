@@ -26,6 +26,9 @@ struct ContainerEntry {
 struct PatchSource {
 	virtual ~PatchSource() = default;
 
+	PatchHelperWidget* helper = nullptr;
+	mutable std::string status;
+
 	// -- lifetime -----------------------------------------------------------
 
 	/** Called when the source is attached to a sidebar. */
@@ -36,7 +39,43 @@ struct PatchSource {
 	/** Set the cache directory used for temporary downloads/extractions. */
 	virtual void setCacheDir(const std::string& dir) {}
 	/** Set the helper instance for cache access. */
-	virtual void setHelper(PatchHelperWidget* helper) {}
+	void setHelper(PatchHelperWidget* h) { helper = h; }
+
+	// -- status --------------------------------------------------------------
+
+	/** Set status message with duration prefix — 0 for indefinite, N for N seconds. */
+	void setStatus(const std::string& msg = "", int duration = 0) const {
+		status = string::f("%d:%s", duration, msg.c_str());
+	}
+
+	const std::string& getStatusText() const { return status; }
+
+	// -- cache ---------------------------------------------------------------
+
+	const std::string& getCacheDir() const { return helper->cacheDir; }
+
+	std::string generateCacheName() const {
+		static std::random_device rd;
+		static std::mt19937 gen(rd());
+		static std::uniform_int_distribution<> dis(0, 15);
+		std::string name = "mb_cache_";
+		for (int i = 0; i < 16; ++i) {
+			int v = dis(gen);
+			name += (v < 10) ? char('0' + v) : char('a' + v - 10);
+		}
+		return name;
+	}
+
+	/** Returns true if `path` is a legacy v1 .vcv patch (plain JSON, not zstd-compressed). */
+	static bool isVcvLegacyV1(const std::string& path) {
+		FILE* f = std::fopen(path.c_str(), "rb");
+		if (!f) return false;
+		DEFER({std::fclose(f);});
+		char zstdMagic[] = "\x28\xb5\x2f\xfd";
+		char buf[4] = {};
+		std::fread(buf, 1, sizeof(buf), f);
+		return std::memcmp(buf, zstdMagic, sizeof(buf)) != 0;
+	}
 
 	// -- navigation ----------------------------------------------------------
 
@@ -62,16 +101,16 @@ struct PatchSource {
 	 */
 	virtual std::vector<ContainerEntry> search(const std::string& query) = 0;
 	/** Return true if `path` is a container. */
-	virtual bool isContainer(const std::string& entry) = 0;
+	virtual bool isContainer(const std::string& entry) const = 0;
 	/** Return true if `path` is a file. */
-	virtual bool isFile(const std::string& entry) = 0;
+	virtual bool isFile(const std::string& entry) const = 0;
 
 	/** Return the parent container of `path`. */
-	virtual const std::string getParentContainer(const std::string& entry) = 0;
+	virtual const std::string getParentContainer(const std::string& entry) const = 0;
 	/** Return the filename portion of `path`. */
-	virtual const std::string getFilename(const std::string& fileId) = 0;
+	virtual const std::string getFilename(const std::string& fileId) const = 0;
 	/** Return the absolute file of the path */
-	virtual const std::string getTempFilePath(const std::string& fileId) = 0;
+	virtual const std::string getTempFilePath(const std::string& fileId) const = 0;
 
 	/** Return true if `str` ends with `suffix`. */
 	static bool endsWith(const std::string& str, const std::string& suffix) {
@@ -124,11 +163,6 @@ struct PatchSource {
 	virtual bool fromJson(json_t* sourceJ) = 0;
 
 	// -- ui ------------------------------------------------------------------
-
-	/**
-	 * Returns the current task status of the data source.
-	 */
-	virtual const std::string& getStatusText() = 0;
 
 	/**
 	 * Append source-specific menu items to a context menu.
