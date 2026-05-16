@@ -517,6 +517,13 @@ struct SidebarItem : ui::MenuItem {
 	BrowserSidebar* sidebar = nullptr;
 	int listIndex = -1;
 
+	void onButton(const ButtonEvent& e) override {
+		if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS) {
+			sidebar->selectedIndex = listIndex;
+		}
+		MenuItem::onButton(e);
+	}
+
 	void draw(const DrawArgs& args) override {
 		if (listIndex == sidebar->selectedIndex) {
 			nvgStrokeColor(args.vg, nvgRGBA(0xff, 0xff, 0xff, 80));
