@@ -20,6 +20,7 @@ struct BrowserSearchField;
 struct SourceButton;
 struct PreviewWidget;
 struct StatusBarWidget;
+struct MissingModulesWidget;
 
 
 struct BrowserSidebar : widget::Widget {
@@ -91,8 +92,8 @@ struct Browser : widget::OpaqueWidget {
 
 	BrowserSidebar* sidebar;
 	PreviewWidget* preview;
-
-	/** List of all configured data sources. */
+	/** Overlay widget showing missing modules when previewing a patch with unavailable plugins. */
+	MissingModulesWidget* missingModulesWidget = nullptr;
 	std::vector<PatchSource*> sources;
 	/** Index of the currently active source in `sources`, or -1. */
 	int activeSourceIndex = -1;

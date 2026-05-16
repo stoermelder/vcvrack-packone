@@ -333,6 +333,102 @@ struct AsyncContainerLoadWidget : widget::Widget {
 };
 
 
+/**
+ * An overlay widget displayed on the right side (overlaying the preview) when a
+ * patch has missing/unavailable modules. Shows a list of missing modules with
+ * clickable links to the VCV Library.
+ */
+struct MissingModulesWidget : widget::OpaqueWidget {
+	Browser* browser;
+	ui::ScrollWidget* scroll;
+	ui::SequentialLayout* itemLayout;
+
+	struct ModuleLabel : ui::MenuItem {
+		std::string fullSlug;
+		void onButton(const event::Button& e) override {
+			if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
+				std::string url = "https://library.vcvrack.com/?modules=" + fullSlug;
+				system::openBrowser(url);
+				e.consume(this);
+			}
+		}
+		void step() override {
+			MenuItem::step();
+			box.size.x -= 10.f;
+		}
+	};
+
+	MissingModulesWidget() {
+		scroll = new ui::ScrollWidget;
+		scroll->box.pos = math::Vec(0.f, 30.f);
+		scroll->horizontalScrollbar->hide();
+		scroll->verticalScrollbar->show();
+		addChild(scroll);
+
+		itemLayout = new ui::SequentialLayout;
+		itemLayout->box.pos = math::Vec(0.f, 0.f);
+		itemLayout->box.size.x = box.size.x - 20.f;
+		itemLayout->orientation = ui::SequentialLayout::HORIZONTAL_ORIENTATION;
+		itemLayout->spacing = math::Vec(-.5f, -.5f);
+		itemLayout->margin = Vec(8.f, 8.f);
+		scroll->container->addChild(itemLayout);
+	}
+
+	void setMissingModules(const std::map<std::string, std::string>& modules) {
+		// Clear existing items
+		while (!itemLayout->children.empty()) {
+			itemLayout->removeChild(*itemLayout->children.begin());
+		}
+
+		// std::map provides sorted, deduplicated content by display name
+		for (const auto& pair : modules) {
+			ModuleLabel* label = new ModuleLabel;
+			label->text = pair.first;  // Display name
+			label->fullSlug = pair.second;  // Full slug for URL
+			itemLayout->addChild(label);
+		}
+
+		setVisible(!modules.empty());
+	}
+
+	const float overlayWidth = 280.f;
+
+	void step() override {
+		if (browser && browser->preview && browser->preview->visible) {
+			// Position on the right side of the preview
+			box.pos = browser->preview->box.pos;
+			box.pos.x += browser->preview->box.size.x - overlayWidth;
+			box.size.x = overlayWidth;
+			box.size.y = browser->preview->box.size.y;
+			scroll->box.size.x = box.size.x;
+			scroll->box.size.y = box.size.y - scroll->box.pos.y;
+			itemLayout->box.size.x = scroll->box.size.x - 20.f;
+			itemLayout->step();
+		}
+		widget::Widget::step();
+	}
+
+	void draw(const DrawArgs& args) override {
+		if (!visible || itemLayout->children.empty()) return;
+
+		// Draw semi-transparent dark background with border
+		nvgBeginPath(args.vg);
+		nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
+		nvgFillColor(args.vg, nvgRGBA(0, 0, 0, 120));
+		nvgFill(args.vg);
+
+		// Draw header
+		nvgFillColor(args.vg, bndGetTheme()->menuTheme.textColor);
+		nvgFontSize(args.vg, 14.f);
+		nvgFontFaceId(args.vg, APP->window->uiFont->handle);
+		nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
+		nvgText(args.vg, 15.f, 15.f, "Missing modules", NULL);
+
+		widget::OpaqueWidget::draw(args);
+	}
+};
+
+
 struct AsyncFileJsonResult {
 	std::string fileId;
 	json_t* json = nullptr;
@@ -348,9 +444,19 @@ struct AsyncFileJsonWidget : widget::Widget {
 		if (result) {
 			if (sidebar && result->json) {
 				if (sidebar->currentFileId == result->fileId) {
-					if (!sidebar->preview->setPatch(result->fileId, result->json))
+					if (!sidebar->preview->setPatch(result->fileId, result->json)) {
 						json_decref(result->json);
-				} else {
+					}
+					else {
+						// Update missing modules overlay
+						Browser* browser = sidebar->getAncestorOfType<Browser>();
+						if (browser && browser->missingModulesWidget) {
+							std::map<std::string, std::string> missing = sidebar->preview->getMissingModules();
+							browser->missingModulesWidget->setMissingModules(missing);
+						}
+					}
+				} 
+				else {
 					json_decref(result->json);
 				}
 				result->json = nullptr;
@@ -934,6 +1040,11 @@ Browser::Browser() {
 	statusBar = new StatusBarWidget;
 	statusBar->browser = this;
 	addChild(statusBar);
+
+	missingModulesWidget = new MissingModulesWidget;
+	missingModulesWidget->browser = this;
+	missingModulesWidget->hide();
+	addChild(missingModulesWidget);
 
 	// Handles cache clearing on application exit
 	auto helper = PatchHelperWidget::getInstance();

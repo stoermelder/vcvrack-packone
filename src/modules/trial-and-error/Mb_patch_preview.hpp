@@ -29,6 +29,9 @@ struct PreviewWidget : OpaqueWidget {
 	float scaledContentOffsetX = 0.f;
 	float scaledContentOffsetY = 0.f;
 
+	/** Map of missing modules: display name -> full slug (plugin/model). Captured during createPreview(). Uses map for automatic deduplication by display name. */
+	std::map<std::string, std::string> missingModules;
+
 	/**
 	 * Loads a patch and takes ownership of rootJ
 	 */
@@ -56,6 +59,12 @@ struct PreviewWidget : OpaqueWidget {
 	 * replacing any existing preview widgets.
 	 */
 	void createPreview();
+
+	/**
+	 * Returns a map of missing module display names to full slugs (plugin/model format).
+	 * Only meaningful after setPatch() has been called.
+	 */
+	const std::map<std::string, std::string>& getMissingModules();
 	
 	void onButton(const event::Button& e) override;
 	void step() override;
