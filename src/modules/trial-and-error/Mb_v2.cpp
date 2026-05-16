@@ -412,6 +412,7 @@ struct ModelBox : widget::OpaqueWidget {
 
 struct BrowserSearchField : ui::TextField {
 	ModuleBrowser* browser;
+	DropdownChoiceContainer* dropDown = nullptr;
 
 	void step() override {
 		widget::Widget* selected = APP->event->getSelectedWidget();
@@ -422,7 +423,12 @@ struct BrowserSearchField : ui::TextField {
 	}
 
 	void onSelectKey(const event::SelectKey& e) override {
-		bool propagate = !e.getTarget();
+		// Handle special key events
+		dropDown = APP->scene->getFirstDescendantOfType<DropdownChoiceContainer>();
+		if (dropDown) {
+			dropDown->onSelectKey(e);
+			return;
+		}
 
 		switch (e.key) {
 			case GLFW_KEY_ESCAPE: {
@@ -449,8 +455,8 @@ struct BrowserSearchField : ui::TextField {
 						browser->refresh();
 					}
 					setText("");
-					propagate = false;
 					e.consume(this);
+					return;
 				}
 				if ((e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL || (e.mods & RACK_MOD_MASK) == RACK_MOD_SHIFT) {
 					if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
@@ -458,19 +464,23 @@ struct BrowserSearchField : ui::TextField {
 						browser->refresh();
 					}
 					setText(string::trim(text));
-					propagate = false;
 					e.consume(this);
+					return;
 				}
 				break;
 			}
 		}
+	
+  		ui::TextField::onSelectKey(e);
+	}
 
-		propagate = propagate && !((e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && e.key == GLFW_KEY_F);
-		propagate = propagate && !((e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && e.key == GLFW_KEY_H);
-
-		if (propagate) {
-  			ui::TextField::onSelectKey(e);
+	void onSelectText(const SelectTextEvent& e) override {
+		// Handle text input
+		if (dropDown) {
+			dropDown->onSelectText(e);
+			return;
 		}
+		TextField::onSelectText(e);
 	}
 
 	void onChange(const event::Change& e) override {
@@ -502,7 +512,7 @@ struct BrowserSearchField : ui::TextField {
 };
 
 
-struct BrandItem : ChoiceFilterItem<ModuleBrowser> {
+struct BrandItem : DropdownChoiceItem<ModuleBrowser> {
 	std::string brand;
 	void onAction(const event::Action& e) override {
 		browser->brand = (browser->brand == brand) ? "" : brand;
@@ -511,7 +521,7 @@ struct BrandItem : ChoiceFilterItem<ModuleBrowser> {
 	void step() override {
 		selected = (browser->brand == brand);
 		disabled = !selected && !browser->hasVisibleModel(brand, browser->tagIds, browser->favorite, browser->hidden, browser->customTagFilter);
-		ChoiceFilterItem::step();
+		DropdownChoiceItem::step();
 	}
 };
 
@@ -546,7 +556,7 @@ struct BrandButton : ui::ChoiceButton {
 };
 
 
-struct TagItem : ChoiceFilterItem<ModuleBrowser> {
+struct TagItem : DropdownChoiceItem<ModuleBrowser> {
 	int tagId;
 	void onAction(const event::Action& e) override {
 		if (tagId >= 0) {
@@ -571,7 +581,7 @@ struct TagItem : ChoiceFilterItem<ModuleBrowser> {
 		else {
 			disabled = false;
 		}
-		ChoiceFilterItem::step();
+		DropdownChoiceItem::step();
 	}
 };
 
@@ -609,7 +619,7 @@ struct TagButton : ui::ChoiceButton {
 };
 
 
-struct CustomTagFilterItem : ChoiceFilterItem<ModuleBrowser> {
+struct CustomTagFilterItem : DropdownChoiceItem<ModuleBrowser> {
 	std::string tagName;
 	void onAction(const event::Action& e) override {
 		if (tagName.empty()) {
@@ -634,7 +644,7 @@ struct CustomTagFilterItem : ChoiceFilterItem<ModuleBrowser> {
 		else {
 			disabled = false;
 		}
-		ChoiceFilterItem::step();
+		DropdownChoiceItem::step();
 	}
 };
 

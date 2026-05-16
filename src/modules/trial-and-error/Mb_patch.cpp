@@ -77,7 +77,7 @@ struct BrowserSearchField : ui::TextField {
 
 // ---- Filter / Topbar ----
 
-struct TagItem : ChoiceFilterItem<Browser> {
+struct TagItem : DropdownChoiceItem<Browser> {
 	PatchSourceIndex* index;
 	std::string tagName;
 	void onAction(const event::Action& e) override {
@@ -91,7 +91,7 @@ struct TagItem : ChoiceFilterItem<Browser> {
 	}
 	void step() override {
 		selected = browser->tagFilter.find(tagName) != browser->tagFilter.end();
-		ChoiceFilterItem<Browser>::step();
+		DropdownChoiceItem<Browser>::step();
 	}
 };
 
@@ -145,7 +145,7 @@ struct TagButton : Browser::PatchChoiceButton {
 };
 
 
-struct CustomTagItem : ChoiceFilterItem<Browser> {
+struct CustomTagItem : DropdownChoiceItem<Browser> {
 	std::string tagName;
 	void onAction(const event::Action& e) override {
 		auto it = browser->customTagFilter.find(tagName);
@@ -158,7 +158,7 @@ struct CustomTagItem : ChoiceFilterItem<Browser> {
 	}
 	void step() override {
 		selected = browser->customTagFilter.find(tagName) != browser->customTagFilter.end();
-		ChoiceFilterItem<Browser>::step();
+		DropdownChoiceItem<Browser>::step();
 	}
 };
 
@@ -597,7 +597,7 @@ struct DescriptionTextField : ui::TextField {
 	}
 };
 
-struct FileTagItem : ChoiceFilterItem<Browser> {
+struct FileTagItem : DropdownChoiceItem<Browser> {
 	std::string tagName;
 	bool isPredefined = true;
 
@@ -613,7 +613,7 @@ struct FileTagItem : ChoiceFilterItem<Browser> {
 			createContextMenu();
 			e.consume(this);
 		}
-		ChoiceFilterItem<Browser>::onButton(e);
+		DropdownChoiceItem<Browser>::onButton(e);
 	}
 
 	void createContextMenu() {

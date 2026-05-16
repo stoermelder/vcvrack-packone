@@ -183,63 +183,7 @@ struct BrowserOverlay : widget::OpaqueWidget {
 
 
 template <typename T>
-static void openLayoutMenu(widget::Widget* button, std::vector<widget::Widget*> items) {
-	// Container that draws a menu background and holds the layout
-	struct MenuContainer : widget::OpaqueWidget {
-		ui::ScrollWidget* scroll;
-		ui::SequentialLayout* layout;
-
-		MenuContainer() {
-			scroll = new ui::ScrollWidget;
-			addChild(scroll);
-
-			// Create horizontal sequential layout inside container
-			layout = new ui::SequentialLayout;
-			layout->orientation = ui::SequentialLayout::HORIZONTAL_ORIENTATION;
-			//layout->alignment = ui::SequentialLayout::CENTER_ALIGNMENT;
-			layout->margin = Vec(5, 5);
-			layout->spacing = Vec(5, 5);
-			layout->box.size.y = 1.f;
-			scroll->container->addChild(layout);
-		}
-
-		void step() override {
-			box.size.y = std::min(layout->box.size.y, parent->box.size.y - box.pos.y - 20.f);
-			scroll->box.size = box.size;
-			layout->box.size.x = box.size.x;
-			OpaqueWidget::step();
-		}
-
-		void draw(const widget::Widget::DrawArgs& args) override {
-			//nvgFontFaceId(ctx, bnd_font);
-        	nvgFontSize(args.vg, BND_LABEL_FONT_SIZE);
-			bndMenuBackground(args.vg, 0, 0, box.size.x, box.size.y, 0);
-			OpaqueWidget::draw(args);
-		}
-	};
-
-	auto browser = APP->scene->getFirstDescendantOfType<T>();
-	Vec browserPos = browser->getAbsoluteOffset(Vec(0, 0));
-
-	// Create menu container
-	MenuContainer* container = new MenuContainer;
-	float menuX = browserPos.x + browser->box.size.x * 0.15f;
-	float menuY = button->getAbsoluteOffset(Vec(0, button->box.size.y)).y + 2.f;
-	container->box.pos = Vec(menuX, menuY);
-	container->box.size.x = browser->box.size.x * 0.7f;
-
-	// Add items to layout
-	for (widget::Widget* item : items) {
-		container->layout->addChild(item);
-	}
-
-	ui::MenuOverlay* overlay = new ui::MenuOverlay;
-	APP->scene->addChild(overlay);
-	overlay->addChild(container);
-}
-
-template <typename T>
-struct ChoiceFilterItem : ui::Button {
+struct DropdownChoiceItem : ui::Button {
 	T* browser;
 	bool disabled = false;
 	std::string rawText;
@@ -276,6 +220,111 @@ struct ChoiceFilterItem : ui::Button {
 		if (disabled) nvgRestore(args.vg);
 	}
 };
+
+struct DropdownChoiceContainer : widget::OpaqueWidget {
+	ui::ScrollWidget* scroll;
+	ui::SequentialLayout* layout;
+	std::string filterText;
+	std::string filterTextActive;
+	std::map<widget::Widget*, std::string> itemTexts;
+
+	DropdownChoiceContainer() {
+		scroll = new ui::ScrollWidget;
+		addChild(scroll);
+
+		// Create horizontal sequential layout inside container
+		layout = new ui::SequentialLayout;
+		layout->orientation = ui::SequentialLayout::HORIZONTAL_ORIENTATION;
+		layout->margin = Vec(5, 5);
+		layout->spacing = Vec(5, 5);
+		layout->box.size.y = 1.f;
+		scroll->container->addChild(layout);
+	}
+
+	void step() override {
+		box.size.y = std::min(layout->box.size.y, parent->box.size.y - box.pos.y - 20.f);
+		scroll->box.size = box.size;
+		layout->box.size.x = box.size.x;
+		widget::OpaqueWidget::step();
+	}
+
+	void draw(const widget::Widget::DrawArgs& args) override {
+		nvgFontSize(args.vg, BND_LABEL_FONT_SIZE);
+		bndMenuBackground(args.vg, 0, 0, box.size.x, box.size.y, 0);
+		OpaqueWidget::draw(args);
+	}
+
+	void onSelectKey(const SelectKeyEvent& e) override {
+		// Accumulate key characters into filterText
+		if (e.action == GLFW_PRESS) {
+			if (e.key == GLFW_KEY_BACKSPACE) {
+				filterText.clear();
+				updateList();
+				e.consume(this);
+			}
+			if (e.isKeyCommand(GLFW_KEY_ENTER)) {
+				for (Widget* w : layout->children) {
+					if (w->isVisible()) {
+						Button* b = dynamic_cast<Button*>(w);
+						if (b) {
+							ActionEvent _e;
+							b->onAction(_e);
+							e.consume(this);
+						}
+						break;
+					}
+				}
+			}
+		}
+	}
+
+	void onSelectText(const SelectTextEvent& e) override {
+		std::u32string s32(1, char32_t(e.codepoint));
+		std::string s8 = string::UTF32toUTF8(s32);
+		filterText += s8;
+		updateList();
+		e.consume(this);
+	}
+
+	void updateList() {
+		std::string lowerFilter = string::lowercase(filterText);
+		for (auto& pair : itemTexts) {
+			widget::Widget* child = pair.first;
+			std::string& itemText = pair.second;
+			std::string lowerItem = string::lowercase(itemText);
+			child->visible = string::startsWith(lowerItem, lowerFilter);
+		}
+	}
+};
+
+template <typename T>
+static void openLayoutMenu(widget::Widget* button, std::vector<widget::Widget*> items) {
+	static_assert(std::is_base_of<widget::Widget, T>::value, "T must be a widget type");
+
+	auto browser = APP->scene->getFirstDescendantOfType<T>();
+	Vec browserPos = browser->getAbsoluteOffset(Vec(0, 0));
+
+	// Create menu container
+	DropdownChoiceContainer* container = new DropdownChoiceContainer;
+	float menuX = browserPos.x + browser->box.size.x * 0.15f;
+	float menuY = button->getAbsoluteOffset(Vec(0, button->box.size.y)).y + 2.f;
+	container->box.pos = Vec(menuX, menuY);
+	container->box.size.x = browser->box.size.x * 0.7f;
+
+	// Add items to layout
+	for (widget::Widget* item : items) {
+		container->layout->addChild(item);
+		// Cache text for filtering
+		if (auto* choiceItem = dynamic_cast<DropdownChoiceItem<T>*>(item)) {
+			container->itemTexts[item] = choiceItem->rawText;
+		}
+	}
+
+	ui::MenuOverlay* overlay = new ui::MenuOverlay;
+	APP->scene->addChild(overlay);
+	overlay->addChild(container);
+}
+
 
 
 } // namespace Mb
