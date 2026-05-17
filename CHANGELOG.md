@@ -22,6 +22,8 @@
     - Added "v2 mod" browser variant
         - with improved drop-down menus, also with keyboard-filtering
         - with keyboard-navigation using cursor-keys
+        - with hotkeys Ctrl/Cmd+1/2/3 for Brand/Tags/Custom Tag drop-down menus
+        - with keyboard-navigation and filtering within the drop-down men
     - Added ability to add/remove predefined tags (only within MB)
     - Added fuzzy search (similar to the default module browser)
         - with setting for the fuzzy search threshold

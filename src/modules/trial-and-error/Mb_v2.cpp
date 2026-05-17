@@ -439,54 +439,71 @@ struct BrowserSearchField : ui::TextField {
 			return;
 		}
 
-		switch (e.key) {
-			case GLFW_KEY_DOWN:
-			case GLFW_KEY_UP:
-			case GLFW_KEY_LEFT:
-			case GLFW_KEY_RIGHT: {
-				if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
+		if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
+			switch (e.key) {
+				case GLFW_KEY_DOWN:
+				case GLFW_KEY_UP:
+				case GLFW_KEY_LEFT:
+				case GLFW_KEY_RIGHT: {
 					browser->navigateSelection(e.key);
+					e.consume(this);
+					return;
 				}
-				e.consume(this);
-				return;
-			}
-			case GLFW_KEY_ESCAPE: {
-				if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
+				case GLFW_KEY_ESCAPE: {
 					Mb::BrowserOverlay* overlay = getAncestorOfType<Mb::BrowserOverlay>();
 					overlay->hide();
-				}
-				e.consume(this);
-				return;
-			}
-			case GLFW_KEY_BACKSPACE: {
-				if (text == "") {
-					if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
-						browser->clear();
-					}
 					e.consume(this);
+					return;
 				}
-				break;
-			}
-			case GLFW_KEY_SPACE: {
-				if (string::trim(text) == "" && (e.mods & RACK_MOD_MASK) == 0) {
-					if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
+				case GLFW_KEY_BACKSPACE: {
+					if (text == "") {
+						browser->clear();
+						e.consume(this);
+						return;
+					}
+					break;
+				}
+				case GLFW_KEY_SPACE: {
+					if (string::trim(text) == "" && (e.mods & RACK_MOD_MASK) == 0) {
 						browser->favorite ^= true;
 						browser->refresh();
+						setText("");
+						e.consume(this);
+						return;
 					}
-					setText("");
-					e.consume(this);
-					return;
-				}
-				if ((e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL || (e.mods & RACK_MOD_MASK) == RACK_MOD_SHIFT) {
-					if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
+					if ((e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL || (e.mods & RACK_MOD_MASK) == RACK_MOD_SHIFT) {
 						browser->hidden ^= true;
 						browser->refresh();
+						setText(string::trim(text));
+						e.consume(this);
+						return;
 					}
-					setText(string::trim(text));
-					e.consume(this);
-					return;
+					break;
 				}
-				break;
+				case GLFW_KEY_1:
+					if ((e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL) {
+						event::Action a;
+						browser->brandButton->onAction(a);
+						e.consume(this);
+						return;
+					}
+					break;
+				case GLFW_KEY_2:
+					if ((e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL) {
+						event::Action a;
+						browser->tagButton->onAction(a);
+						e.consume(this);
+						return;
+					}
+					break;
+				case GLFW_KEY_3:
+					if ((e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL) {
+						event::Action a;
+						browser->customTagButton->onAction(a);
+						e.consume(this);
+						return;
+					}
+					break;
 			}
 		}
 	

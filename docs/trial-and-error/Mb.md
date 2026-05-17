@@ -8,7 +8,7 @@ MB is a module for experimental replacement for Rack's module browser, formerly 
 
 <a href="https://www.youtube.com/embed/7DSTPIHWOVg?start=1640" target="_blank"><img src="https://img.youtube.com/vi/7DSTPIHWOVg/0.jpg" style="width:100%" /></a>
 
-### Custom tags
+## Custom tags
 
 MB maintains its own custom tag system separate from Rack's built-in tags. Custom tags are stored in your local Rack directory and can be exported/shared like favorites and hidden module settings.
 
@@ -28,17 +28,50 @@ MB can automatically assign custom tags to modules using keyword matching. The c
 
 All three options show a confirmation dialog listing the proposed tag assignments, allowing you to verify or adjust individual assignments before applying.
 
-### Predefined tags
+## Predefined tags
 
 MB allows you to add or remove predefined tags (the classic VCV Rack tag aliases like "Attenuator", "Mixer", "MIDI", etc.) on individual modules. This is useful if a module has incorrect or incomplete tags. Please note, that modification on predefined tags are only visible within the module browsers of the MB module.
 
-### Patch browser
+## *v2_mod* keyboard shortcuts
 
-In addition to the v0.6, v1, and v2 module browsers, MB includes a **Patch browser** for browsing saved patches and plugin sources. Unlike the other browsers which display modules, the Patch browser shows patch files and external sources.
+The *v2-mod* browser variant supports keyboard navigation and shortcuts:
 
-**Accessing the Patch browser** — Hold `Ctrl` (or `Cmd` on Mac) and right-click anywhere on the MB module to open the Patch browser. Release `Ctrl` to return to the module browser.
+**Navigation** (when search field is focused or in the module grid):
+| Key | Action |
+|-----|--------|
+| **↓** | Move down in the module grid |
+| **↑** | Move up in the module grid |
+| **→** | Move to the next module in the row |
+| **←** | Move to the previous module in the row |
+| **Enter** | Add the selected module to the rack |
+| **Escape** | Close the browser |
+| **Backspace** | Clear search and filters (when search is empty) |
+| **Space** | Toggle Favorites filter (when search is empty) |
+| **Ctrl/Cmd+Space** | Toggle listing of hidden modules
+| **Ctrl/Cmd+1** | Open Brand filter dropdown |
+| **Ctrl/Cmd+2** | Open Tag filter dropdown |
+| **Ctrl/Cmd+3** | Open Custom Tag filter dropdown |
 
-**Loading patches** — Single-click a patch file to preview its metadata in the sidebar. Double-click to load it directly into Rack.
+**Module hover shortcuts** (hover over a module):
+| Key | Action |
+|-----|--------|
+| **Ctrl/Cmd+F** | Toggle favorite status of the hovered module |
+| **Ctrl/Cmd+H** | Toggle hidden status of the hovered module |
+
+**Dropdown menus** (Brand, Tag, Custom Tag filters):
+| Key | Action |
+|-----|--------|
+| **↓/↑** | Navigate up/down through items |
+| **←/→** | Navigate to previous/next row |
+| *Any key* | Filter items by typing (incremental filter) |
+| **Backspace** | Clear filter text (show all items) |
+| **Enter** | Toggle selection of the highlighted item |
+
+## Patch browser for .vcv/.vcvs
+
+In addition to the browsers *v0.6*, *v1_mod*, and *v2_mod* module browsers, MB includes a **Patch browser** for browsing saved patches and selections.
+
+**Accessing the Patch browser** — Hold `Ctrl` (or `Cmd` on Mac) and right-click anywhere on the MB module to open the Patch browser.
 
 **Adding sources** — The Patch browser supports multiple source types:
 - **.vcvs folder** — Add a folder containing saved `.vcvs` patches as a source
@@ -54,30 +87,7 @@ In addition to the v0.6, v1, and v2 module browsers, MB includes a **Patch brows
 
 **Persistence** — All configured sources and the selected favorite source are saved automatically and restored when Rack restarts. Sources can be exported and shared via MB's import/export function on the context menu.
 
-#### Keyboard shortcuts
-
-The Patch browser supports keyboard navigation and shortcuts:
-
-**Navigation** (when search field is focused or in the file list):
-- **↓** — Move down in the file list
-- **↑** — Move up in the file list
-- **→** — Enter/open a folder or load a patch
-- **←** — Go back to parent folder
-
-**Search field shortcuts**:
-- **Backspace** — If text search is empty, clears all filters (same as Escape)
-- **Ctrl+2** — Open Tag filter dropdown
-- **Ctrl+3** — Open Custom Tag filter dropdown
-- **Ctrl+F** — Toggle favorites filter
-
-**Dropdown menus** (Tag filter, Custom Tag filter, etc.):
-- **↓/↑** — Navigate up/down through items
-- **←/→** — Navigate to previous/next row
-- **Backspace** — Clear filter text (show all items)
-- **Enter** — Select the highlighted item
-- **Type** — Filter items by typing (incremental filter)
-
-#### Filesystem source indexing
+### Filesystem source indexing
 
 The filesystem sources (`.vcvs` and `.vcv` folders) maintain a persistent **index file** (`mb-index.json`) in the root of the source folder. This index stores metadata for each patch file:
 
@@ -94,7 +104,7 @@ The filesystem sources (`.vcvs` and `.vcv` folders) maintain a persistent **inde
 
 **Fuzzy search** — The index builds a cached fuzzy search database on first use. Search matches against both filename and description, with filename weighted higher for relevance. The database rebuilds lazily when the index changes.
 
-#### PatchStorage.com source
+### PatchStorage.com source
 
 The **PatchStorage** source connects to [patchstorage.com](https://patchstorage.com) to browse and download shared patches. Categories from the site (e.g., "Synthesizers", "Effects", "Utilities") are used as containers, with patches organized by the VCV Rack platform filter.
 
@@ -119,7 +129,32 @@ All data retrieved from PatchStorage is cached until the next restart of Rack.
 
 **API endpoint** — Uses `https://patchstorage.com/api/beta`.
 
-### Tips
+### Keyboard shortcuts
+
+The Patch browser supports keyboard navigation and shortcuts:
+
+**Navigation** (when search field is focused or in the file list):
+| Key | Action |
+|-----|--------|
+| **↓** | Move down in the file list |
+| **↑** | Move up in the file list |
+| **→** | Enter/open a folder or load a patch |
+| **←** | Go back to parent folder |
+| **Backspace** | If text search is empty, clears all filters (same as Escape) |
+| **Ctrl/Cmd+2** | Open Tag filter dropdown |
+| **Ctrl/Cmd+3** | Open Custom Tag filter dropdown |
+| **Ctrl/Cmd+F** | Toggle favorites filter |
+
+**Dropdown menus** (Tag, Custom Tag):
+| Key | Action |
+|-----|--------|
+| **↓/↑** | Navigate up/down through items |
+| **←/→** | Navigate to previous/next row |
+| *Any key* | Filter items by typing (incremental filter) |
+| **Backspace** | Clear filter text (show all items) |
+| **Enter** | Toggle selection of the highlighted item |
+
+## Tips
 
 - Display of hidden modules can be toggled by hotkey Shift+Space.
 
@@ -156,6 +191,8 @@ All data retrieved from PatchStorage is cached until the next restart of Rack.
     - Added "v2 mod" browser variant
         - with improved drop-down menus, also with keyboard-filtering
         - with keyboard-navigation using cursor-keys
+        - with hotkeys Ctrl/Cmd+1/2/3 for Brand/Tags/Custom Tag drop-down menus
+        - with keyboard-navigation and filtering within the drop-down menus
     - Added ability to add/remove predefined tags (only within MB)
     - Added fuzzy search (similar to the default module browser)
         - with setting for the fuzzy search threshold
