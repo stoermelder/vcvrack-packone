@@ -8,7 +8,7 @@ MB is a module for experimental replacement for Rack's module browser, formerly 
 
 <a href="https://www.youtube.com/embed/7DSTPIHWOVg?start=1640" target="_blank"><img src="https://img.youtube.com/vi/7DSTPIHWOVg/0.jpg" style="width:100%" /></a>
 
-### Custom tags
+## Custom tags
 
 MB maintains its own custom tag system separate from Rack's built-in tags. Custom tags are stored in your local Rack directory and can be exported/shared like favorites and hidden module settings.
 
@@ -28,11 +28,46 @@ MB can automatically assign custom tags to modules using keyword matching. The c
 
 All three options show a confirmation dialog listing the proposed tag assignments, allowing you to verify or adjust individual assignments before applying.
 
-### Predefined tags
+## Predefined tags
 
 MB allows you to add or remove predefined tags (the classic VCV Rack tag aliases like "Attenuator", "Mixer", "MIDI", etc.) on individual modules. This is useful if a module has incorrect or incomplete tags. Please note, that modification on predefined tags are only visible within the module browsers of the MB module.
 
-### Tips
+## *v2_mod* keyboard shortcuts
+
+The *v2-mod* browser variant supports keyboard navigation and shortcuts:
+
+**Navigation** (when search field is focused or in the module grid):
+| Key | Action |
+|-----|--------|
+| **↓** | Move down in the module grid |
+| **↑** | Move up in the module grid |
+| **→** | Move to the next module in the row |
+| **←** | Move to the previous module in the row |
+| **Enter** | Add the selected module to the rack |
+| **Escape** | Close the browser |
+| **Backspace** | Clear search and filters (when search is empty) |
+| **Space** | Toggle Favorites filter (when search is empty) |
+| **Ctrl/Cmd+Space** | Toggle listing of hidden modules
+| **Ctrl/Cmd+1** | Open Brand filter dropdown |
+| **Ctrl/Cmd+2** | Open Tag filter dropdown |
+| **Ctrl/Cmd+3** | Open Custom Tag filter dropdown |
+
+**Module hover shortcuts** (hover over a module):
+| Key | Action |
+|-----|--------|
+| **Ctrl/Cmd+F** | Toggle favorite status of the hovered module |
+| **Ctrl/Cmd+H** | Toggle hidden status of the hovered module |
+
+**Dropdown menus** (Brand, Tag, Custom Tag filters):
+| Key | Action |
+|-----|--------|
+| **↓/↑** | Navigate up/down through items |
+| **←/→** | Navigate to previous/next row |
+| *Any key* | Filter items by typing (incremental filter) |
+| **Backspace** | Clear filter text (show all items) |
+| **Enter** | Toggle selection of the highlighted item |
+
+## Tips
 
 - Display of hidden modules can be toggled by hotkey Shift+Space.
 
@@ -69,6 +104,8 @@ MB allows you to add or remove predefined tags (the classic VCV Rack tag aliases
     - Added "v2 mod" browser variant
         - with improved drop-down menus, also with keyboard-filtering
         - with keyboard-navigation using cursor-keys
+        - with hotkeys Ctrl/Cmd+1/2/3 for Brand/Tags/Custom Tag drop-down menus
+        - with keyboard-navigation and filtering within the drop-down menus
     - Added ability to add/remove predefined tags (only within MB)
     - Added fuzzy search (similar to the default module browser)
         - with setting for the fuzzy search threshold
