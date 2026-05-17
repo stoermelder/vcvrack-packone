@@ -70,6 +70,30 @@ struct BrowserSearchField : ui::TextField {
 						return;
 					}
 					break;
+				case GLFW_KEY_2:
+					if ((e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL) {
+						event::Action a;
+						browser->tagButton->onAction(a);
+						e.consume(this);
+						return;
+					}
+					break;
+				case GLFW_KEY_3:
+					if ((e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL) {
+						event::Action a;
+						browser->customTagButton->onAction(a);
+						e.consume(this);
+						return;
+					}
+					break;
+				case GLFW_KEY_F:
+					if ((e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL) {
+						browser->favoriteFilter ^= true;
+						browser->sidebar->refreshFileList();
+						e.consume(this);
+						return;
+					}
+					break;
 			}
 		}
 
@@ -638,9 +662,11 @@ struct DescriptionTextField : ui::TextField {
 
 	void onDeselect(const DeselectEvent& e) override {
 		text = string::trim(text);
-		PatchSourceIndex* idx = sidebar->source->getIndex();
-		if (idx && !sidebar->currentFileId.empty()) {
-			idx->setDescription(sidebar->currentFileId, text);	
+		if (sidebar && sidebar->source) {
+			PatchSourceIndex* idx = sidebar->source->getIndex();
+			if (idx && !sidebar->currentFileId.empty()) {
+				idx->setDescription(sidebar->currentFileId, text);	
+			}
 		}
 		
 		rawText = text;
@@ -1202,6 +1228,7 @@ Browser::Browser() {
 	searchField = new BrowserSearchField;
 	searchField->box.size.x = 150;
 	searchField->browser = this;
+	searchField->placeholder = "Search patches...";
 	headerLayout->addChild(searchField);
 
 	tagButton = new TagButton;
