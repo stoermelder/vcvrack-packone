@@ -11,7 +11,7 @@ namespace StoermelderPackOne {
 namespace Mb {
 namespace v2 {
 
-static ModuleWidget* chooseModel(plugin::Model* model) {
+static ModuleWidget* chooseModel(plugin::Model* model, bool hideBrowser = true) {
 	engine::Module* addedModule = model->createModule();
 	APP->engine->addModule(addedModule);
 
@@ -26,7 +26,7 @@ static ModuleWidget* chooseModel(plugin::Model* model) {
 	h->setModule(moduleWidget);
 	APP->history->push(h);
 
-	APP->scene->browser->hide();
+	if (hideBrowser) APP->scene->browser->hide();
 	modelUsageTouch(model);
 	return moduleWidget;
 }
@@ -218,6 +218,10 @@ struct ModelBox : widget::OpaqueWidget {
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT && (e.mods & RACK_MOD_MASK) == 0) {
 			ModuleWidget* mw = chooseModel(model);
 			e.consume(mw);
+		}
+		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT && (e.mods & RACK_MOD_MASK) == RACK_MOD_SHIFT) {
+			chooseModel(model, false);
+			e.consume(this);
 		}
 
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL) {

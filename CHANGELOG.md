@@ -31,6 +31,7 @@
     - Added an option to highlight favorites
     - Added model magnifier loupe option
     - Added integration into Rack's menu bar
+    - Added Shift+Click to add a module without closing the browser
     - Changed hotkey to toggle hidden modules to Shift+Space (because of Spotlight on Mac)
     - Fixed broken button of "Favorites" category
 - Module [ME](./docs/trial-and-error/Me.md)
