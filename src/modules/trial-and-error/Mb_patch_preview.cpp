@@ -186,7 +186,7 @@ bool PreviewWidget::setPatch(std::string fileId, json_t* rootJ) {
 	}
 	this->fileId = fileId;
 	this->rootJ = rootJ;
-	missingModules.clear();
+	missingModels.clear();
 	createPreview();
 	refreshPreview();
 	return true;
@@ -198,7 +198,7 @@ void PreviewWidget::clearPatch() {
 		this->rootJ = nullptr;
 	}
 	fileId = "";
-	missingModules.clear();
+	missingModels.clear();
 	clearChildren();
 }
 
@@ -319,7 +319,7 @@ void PreviewWidget::createPreview() {
 				displayName = pluginSlug + " " + modelSlug;
 			}
 			// Store with displayName as key (dedup) and full slug as value (for URL)
-			missingModules[displayName] = pluginSlug + "/" + modelSlug;
+			missingModels[displayName] = pluginSlug + "/" + modelSlug;
 			continue;
 		}
 
@@ -592,8 +592,8 @@ void PreviewWidget::createContextMenu(std::string fileId) {
 }
 
 
-const std::map<std::string, std::string>& PreviewWidget::getMissingModules() {
-	return missingModules;
+const std::map<std::string, std::string>& PreviewWidget::getMissingModels() {
+	return missingModels;
 }
 
 

@@ -379,13 +379,13 @@ struct AsyncContainerLoadWidget : widget::Widget {
  * patch has missing/unavailable modules. Shows a list of missing modules with
  * clickable links to the VCV Library.
  */
-struct MissingModulesWidget : widget::OpaqueWidget {
+struct MissingModelsWidget : widget::OpaqueWidget {
 	Browser* browser;
 	ui::ScrollWidget* scroll;
 	ui::SequentialLayout* itemLayout;
 	const float overlayWidth = 280.f;
 
-	struct ModuleLabel : ui::MenuItem {
+	struct ModelLabel : ui::MenuItem {
 		std::string fullSlug;
 		void onButton(const event::Button& e) override {
 			if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
@@ -400,7 +400,7 @@ struct MissingModulesWidget : widget::OpaqueWidget {
 		}
 	};
 
-	MissingModulesWidget() {
+	MissingModelsWidget() {
 		scroll = new ui::ScrollWidget;
 		scroll->box.pos = math::Vec(0.f, 30.f);
 		scroll->horizontalScrollbar->hide();
@@ -416,7 +416,7 @@ struct MissingModulesWidget : widget::OpaqueWidget {
 		scroll->container->addChild(itemLayout);
 	}
 
-	void setMissingModules(const std::map<std::string, std::string>& modules = {}) {
+	void setMissingModels(const std::map<std::string, std::string>& modules = {}) {
 		// Clear existing items
 		while (!itemLayout->children.empty()) {
 			itemLayout->removeChild(*itemLayout->children.begin());
@@ -424,7 +424,7 @@ struct MissingModulesWidget : widget::OpaqueWidget {
 
 		// std::map provides sorted, deduplicated content by display name
 		for (const auto& pair : modules) {
-			ModuleLabel* label = new ModuleLabel;
+			ModelLabel* label = new ModelLabel;
 			label->text = pair.first;  // Display name
 			label->fullSlug = pair.second;  // Full slug for URL
 			itemLayout->addChild(label);
@@ -517,9 +517,9 @@ struct AsyncFileJsonWidget : widget::Widget {
 					else {
 						// Update missing modules overlay
 						Browser* browser = sidebar->getAncestorOfType<Browser>();
-						if (browser && browser->missingModulesWidget) {
-							std::map<std::string, std::string> missing = sidebar->preview->getMissingModules();
-							browser->missingModulesWidget->setMissingModules(missing);
+						if (browser && browser->missingModelsWidget) {
+							std::map<std::string, std::string> missing = sidebar->preview->getMissingModels();
+							browser->missingModelsWidget->setMissingModels(missing);
 						}
 					}
 				} 
@@ -1054,7 +1054,7 @@ void BrowserSidebar::updateSelection() {
 
 		refreshDescriptionAndTags();
 		Browser* browser = getAncestorOfType<Browser>();
-		browser->missingModulesWidget->setMissingModules();
+		browser->missingModelsWidget->setMissingModels();
 	}
 }
 
@@ -1265,10 +1265,10 @@ Browser::Browser() {
 	statusBar->browser = this;
 	addChild(statusBar);
 
-	missingModulesWidget = new MissingModulesWidget;
-	missingModulesWidget->browser = this;
-	missingModulesWidget->hide();
-	addChild(missingModulesWidget);
+	missingModelsWidget = new MissingModelsWidget;
+	missingModelsWidget->browser = this;
+	missingModelsWidget->hide();
+	addChild(missingModelsWidget);
 
 	// Handles cache clearing on application exit
 	auto helper = PatchHelperWidget::getInstance();
