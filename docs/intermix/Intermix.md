@@ -90,12 +90,22 @@ The behavior of scenes can be customized via context menu:
 
 - **Include attenuverters in scenes** - When enabled, each scene stores its own output attenuverter settings. When disabled, all scenes share the same attenuverter values.
 
-- **Port _SCENE_-mode** - Select how the _SCENE_ input port behaves:
-  - **Off** - Port is disabled
-  - **Trigger** - Trigger input advances to the next scene (default)
-  - **0..10V** - Voltage 0-1.25V selects scene 1, 1.25-2.5V selects scene 2, etc.
-  - **C4-G4** - V/Oct standard: C4 selects scene 1, C#4 selects scene 2, etc.
-  - **Arm** - Buffered trigger mode: arm a scene with a trigger, load it on next clock
+**Port _SCENE_-mode** - Select how the _SCENE_ input port behaves. The _RESET_ input resets scene selection based on the mode:
+
+| Mode | Description | Reset behavior |
+|------|-------------|----------------|
+| **Off** | Port is disabled | No effect |
+| **Trigger forward** | Trigger input advances to the next scene in forward direction | Resets to first scene |
+| **Trigger reverse** | Trigger input advances to the next scene in reverse direction | Resets to last scene |
+| **Trigger ping-pong** | Trigger input advances scenes, bouncing at boundaries | Resets to first scene, direction to forward |
+| **Trigger alternate** | Trigger input alternates between first and last scene, advancing only the secondary scene | Resets to first scene, resets direction and alternate counter |
+| **Trigger random** | Trigger input selects a random scene | Resets to first scene |
+| **Trigger random (no repeat)** | Trigger input selects a random scene, never repeating the last selected | Resets to first scene |
+| **Trigger random walk** | Trigger input advances by ±1 scene randomly | Resets to first scene |
+| **Trigger shuffle** | Trigger input cycles through all scenes in shuffled order | Re-initializes the shuffle order |
+| **0..10V** | Voltage 0-1.25V selects scene 1, 1.25-2.5V selects scene 2, etc. | No effect |
+| **C4-G4** | V/Oct standard: C4 selects scene 1, C#4 selects scene 2, etc. | No effect |
+| **Arm** | Buffered trigger mode: arm a scene with a trigger, load it on next clock | Clears the armed scene queue |
 
 INTERMIX can smoothly crossfade between scenes using the two fade trimpots:
 
@@ -178,3 +188,5 @@ The maximum fade time can be set in the context menu (4s, 15s, or 60s). The defa
     - Added expander INTERMIX-GATE
 - v2.4.0
     - Added fade length setting (4s, 15s, 60s) (#432)
+    - Added reset input for resetting scene selection (#433)
+    - Added extended scene CV modes: Ping-pong, Alternate, Random, Random (no repeat), Random walk, Shuffle

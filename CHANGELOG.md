@@ -17,6 +17,8 @@
     - Fixed crash on operator `<` when using whithout maximum value set (#425)
 - Modules [INTERMIX](./docs/intermix/Intermix.md), [INTERMIX-FADE](./docs/intermix/Intermix.md#intermix-fade-expander)
     - Added fade length setting (4s, 15s, 60s) (#432)
+    - Added reset input for resetting scene selection and direction (#433)
+    - Added extended scene CV modes: Ping-pong, Alternate, Random, Random (no repeat), Random walk, Shuffle
 - Module [MB](./docs/trial-and-error/Mb.md)
     - Added custom tags for user-defined module grouping
         - with auto-tagging using a curated list of tags

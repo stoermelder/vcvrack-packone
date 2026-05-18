@@ -261,24 +261,29 @@ TEST_CASE("Input modes", "[Intermix]") {
 	Test::destroyModule(module);
 }
 
-TEST_CASE("Scene CV modes", "[Intermix]") {
+TEST_CASE("Scene CV modes basic", "[Intermix]") {
 	auto module = Test::createModule<IntermixModule<8>>("Intermix");
 
 	SECTION("Trigger forward mode") {
 		module->sceneMode = SCENE_CV_MODE::TRIG_FWD;
 		module->sceneCount = 8;
 		module->sceneSet(0);
-		
+
 		// Connect the input
 		module->inputs[IntermixModule<8>::INPUT_SCENE].channels = 1;
-		
+
+		// Accumulate resetTimer cooldown (>1ms at 44100Hz)
+		for (int i = 0; i < 100; i++) {
+			module->process(Test::makeProcessArgs(i + 10));
+		}
+
 		// Send trigger (low to high)
 		module->inputs[IntermixModule<8>::INPUT_SCENE].setVoltage(0.f);
-		module->process(Test::makeProcessArgs(1));
-		
+		module->process(Test::makeProcessArgs(200));
+
 		module->inputs[IntermixModule<8>::INPUT_SCENE].setVoltage(10.f);
-		module->process(Test::makeProcessArgs(1));
-		
+		module->process(Test::makeProcessArgs(201));
+
 		// After one trigger, should advance from 0 to 1
 		REQUIRE(module->sceneSelected == 1);
 	}
@@ -575,6 +580,330 @@ TEST_CASE("Polyphonic processing", "[Intermix]") {
 		REQUIRE(module->outputs[IntermixModule<8>::OUTPUT + 0].getVoltage(1) == Catch::Approx(2.f).margin(0.01f));
 		REQUIRE(module->outputs[IntermixModule<8>::OUTPUT + 0].getVoltage(2) == Catch::Approx(3.f).margin(0.01f));
 		REQUIRE(module->outputs[IntermixModule<8>::OUTPUT + 0].getVoltage(3) == Catch::Approx(4.f).margin(0.01f));
+	}
+
+	Test::destroyModule(module);
+}
+
+
+TEST_CASE("Scene CV modes with reset", "[Intermix]") {
+	auto module = Test::createModule<IntermixModule<8>>("Intermix");
+
+	// Initialize inputs and accumulate resetTimer > 1ms (similar to Transit pattern)
+	auto initializeInputs = [&]() {
+		module->inputs[IntermixModule<8>::INPUT_RESET].channels = 1;
+		module->inputs[IntermixModule<8>::INPUT_RESET].setVoltage(0.0f);
+		module->inputs[IntermixModule<8>::INPUT_SCENE].channels = 1;
+		module->inputs[IntermixModule<8>::INPUT_SCENE].setVoltage(0.0f);
+		for (int i = 0; i < 100; i++) {
+			module->process(Test::makeProcessArgs(i + 10));
+		}
+	};
+
+	auto triggerCv = [&](int frame) {
+		module->inputs[IntermixModule<8>::INPUT_SCENE].setVoltage(10.0f);
+		module->process(Test::makeProcessArgs(frame));
+		module->inputs[IntermixModule<8>::INPUT_SCENE].setVoltage(0.0f);
+		module->process(Test::makeProcessArgs(frame + 1));
+	};
+
+	auto triggerReset = [&](int frame) {
+		module->inputs[IntermixModule<8>::INPUT_RESET].setVoltage(10.0f);
+		module->process(Test::makeProcessArgs(frame));
+		module->inputs[IntermixModule<8>::INPUT_RESET].setVoltage(0.0f);
+		module->process(Test::makeProcessArgs(frame + 1));
+	};
+
+	SECTION("TRIG_FWD reset goes to scene 0") {
+		module->sceneMode = SCENE_CV_MODE::TRIG_FWD;
+		module->sceneCount = 4;
+		module->sceneSet(3);
+		initializeInputs();
+		triggerReset(200);
+		REQUIRE(module->sceneSelected == 0);
+	}
+
+	SECTION("TRIG_FWD trigger advances within boundaries") {
+		module->sceneMode = SCENE_CV_MODE::TRIG_FWD;
+		module->sceneCount = 4;
+		initializeInputs();
+		module->sceneSet(0);
+		triggerCv(200);
+		REQUIRE(module->sceneSelected == 1);
+		triggerCv(300);
+		REQUIRE(module->sceneSelected == 2);
+	}
+
+	SECTION("TRIG_FWD trigger wraps from last to first") {
+		module->sceneMode = SCENE_CV_MODE::TRIG_FWD;
+		module->sceneCount = 4;
+		initializeInputs();
+		module->sceneSet(3); // At last
+		triggerCv(200);
+		REQUIRE(module->sceneSelected == 0); // Wrapped to first
+	}
+
+	SECTION("TRIG_REV reset goes to last scene") {
+		module->sceneMode = SCENE_CV_MODE::TRIG_REV;
+		module->sceneCount = 4;
+		module->sceneSet(1);
+		initializeInputs();
+		triggerReset(200);
+		REQUIRE(module->sceneSelected == 3); // Last scene
+	}
+
+	SECTION("TRIG_REV trigger reverses within boundaries") {
+		module->sceneMode = SCENE_CV_MODE::TRIG_REV;
+		module->sceneCount = 4;
+		initializeInputs();
+		module->sceneSet(3); // At last
+		triggerCv(200);
+		REQUIRE(module->sceneSelected == 2);
+		triggerCv(300);
+		REQUIRE(module->sceneSelected == 1);
+	}
+
+	SECTION("TRIG_REV trigger wraps from first to last") {
+		module->sceneMode = SCENE_CV_MODE::TRIG_REV;
+		module->sceneCount = 4;
+		initializeInputs();
+		module->sceneSet(0); // At first
+		triggerCv(200);
+		REQUIRE(module->sceneSelected == 3); // Wrapped to last
+	}
+
+	SECTION("TRIG_PINGPONG reset resets direction") {
+		module->sceneMode = SCENE_CV_MODE::TRIG_PINGPONG;
+		module->sceneCount = 4;
+		module->sceneCvModeDir = -1;
+		module->sceneSet(2);
+		initializeInputs();
+		triggerReset(200);
+		REQUIRE(module->sceneSelected == 0);
+		REQUIRE(module->sceneCvModeDir == 1); // Direction reset
+	}
+
+	SECTION("TRIG_PINGPONG advances forward from first") {
+		module->sceneMode = SCENE_CV_MODE::TRIG_PINGPONG;
+		module->sceneCount = 4;
+		module->sceneCvModeDir = 1;
+		module->sceneSet(0);
+		initializeInputs();
+		triggerCv(200);
+		REQUIRE(module->sceneSelected == 1);
+		triggerCv(300);
+		REQUIRE(module->sceneSelected == 2);
+	}
+
+	SECTION("TRIG_PINGPONG bounces at last and reverses direction") {
+		module->sceneMode = SCENE_CV_MODE::TRIG_PINGPONG;
+		module->sceneCount = 4;
+		module->sceneCvModeDir = 1;
+		module->sceneSet(3); // At last
+		initializeInputs();
+		triggerCv(200);
+		REQUIRE(module->sceneSelected == 3);
+		REQUIRE(module->sceneCvModeDir == -1); // Direction reversed
+		triggerCv(300);
+		REQUIRE(module->sceneSelected == 2);
+	}
+
+	SECTION("TRIG_ALT reset goes to scene 0 and resets direction and alt") {
+		module->sceneMode = SCENE_CV_MODE::TRIG_ALT;
+		module->sceneCount = 4;
+		module->sceneCvModeDir = -1;
+		module->sceneCvModeAlt = 2;
+		module->sceneSet(3);
+		initializeInputs();
+		triggerReset(200);
+		REQUIRE(module->sceneSelected == 0);
+		REQUIRE(module->sceneCvModeDir == 1);
+		REQUIRE(module->sceneCvModeAlt == 0);
+	}
+
+	SECTION("TRIG_ALT alternates between first and advancing secondary") {
+		module->sceneMode = SCENE_CV_MODE::TRIG_ALT;
+		module->sceneCount = 4;
+		module->sceneCvModeDir = 1;
+		module->sceneCvModeAlt = 2; // secondary at first
+		module->sceneSet(0); // Start at first
+		initializeInputs();
+
+		// First trigger: at first (0), advance secondary.
+		// alt=2, dir=1 → s = 2+1 = 3. Since 3 >= sceneCount-1=3, dir flips to -1. alt→3.
+		triggerCv(200);
+		int secondary = module->sceneSelected;
+		REQUIRE(secondary == 3);
+		REQUIRE(module->sceneCvModeDir == -1);
+		REQUIRE(module->sceneCvModeAlt == 3);
+
+		// Second trigger: not at first, return to first
+		triggerCv(300);
+		REQUIRE(module->sceneSelected == 0);
+	}
+
+	SECTION("TRIG_RANDOM reset goes to scene 0") {
+		module->sceneMode = SCENE_CV_MODE::TRIG_RANDOM;
+		module->sceneCount = 4;
+		module->sceneSet(3);
+		initializeInputs();
+		triggerReset(200);
+		REQUIRE(module->sceneSelected == 0);
+	}
+
+	SECTION("TRIG_RANDOM selection stays within boundaries") {
+		module->sceneMode = SCENE_CV_MODE::TRIG_RANDOM;
+		module->sceneCount = 4;
+		module->sceneSet(0);
+		initializeInputs();
+
+		for (int i = 0; i < 50; i++) {
+			triggerCv(200 + i * 100);
+			REQUIRE(module->sceneSelected >= 0);
+			REQUIRE(module->sceneSelected < 4);
+		}
+	}
+
+	SECTION("TRIG_RANDOM_WO_REPEAT reset goes to scene 0") {
+		module->sceneMode = SCENE_CV_MODE::TRIG_RANDOM_WO_REPEAT;
+		module->sceneCount = 4;
+		module->sceneSet(3);
+		initializeInputs();
+		triggerReset(200);
+		REQUIRE(module->sceneSelected == 0);
+	}
+
+	SECTION("TRIG_RANDOM_WO_REPEAT never selects same scene twice") {
+		module->sceneMode = SCENE_CV_MODE::TRIG_RANDOM_WO_REPEAT;
+		module->sceneCount = 4;
+		module->sceneSet(2);
+		initializeInputs();
+
+		int prevScene = module->sceneSelected;
+		for (int i = 0; i < 60; i++) {
+			triggerCv(200 + i * 100);
+			REQUIRE((module->sceneSelected != prevScene || module->sceneCount <= 1));
+			REQUIRE(module->sceneSelected >= 0);
+			REQUIRE(module->sceneSelected < 4);
+			prevScene = module->sceneSelected;
+		}
+	}
+
+	SECTION("TRIG_RANDOM_WALK reset goes to scene 0") {
+		module->sceneMode = SCENE_CV_MODE::TRIG_RANDOM_WALK;
+		module->sceneCount = 4;
+		module->sceneSet(3);
+		initializeInputs();
+		triggerReset(200);
+		REQUIRE(module->sceneSelected == 0);
+	}
+
+	SECTION("TRIG_RANDOM_WALK steps up or down by 1") {
+		module->sceneMode = SCENE_CV_MODE::TRIG_RANDOM_WALK;
+		module->sceneCount = 4;
+		module->sceneSet(1);
+		initializeInputs();
+		triggerCv(200);
+		// Should step up or down by 1
+		REQUIRE((module->sceneSelected == 0 || module->sceneSelected == 2));
+	}
+
+	SECTION("TRIG_SHUFFLE reset reshuffles and selects within range") {
+		module->sceneMode = SCENE_CV_MODE::TRIG_SHUFFLE;
+		module->sceneCount = 4;
+		initializeInputs();
+
+		// Reset initializes the shuffle
+		triggerReset(5);
+		REQUIRE(module->sceneSelected >= 0);
+		REQUIRE(module->sceneSelected < 4);
+
+		// Second reset re-shuffles
+		triggerReset(100);
+		REQUIRE(module->sceneSelected >= 0);
+		REQUIRE(module->sceneSelected < 4);
+	}
+
+	SECTION("TRIG_SHUFFLE visits all scenes before repeating") {
+		module->sceneMode = SCENE_CV_MODE::TRIG_SHUFFLE;
+		module->sceneCount = 4;
+		initializeInputs();
+
+		// Reset to initialize shuffle
+		triggerReset(5);
+
+		std::set<int> visited;
+		visited.insert(module->sceneSelected);
+
+		// Trigger remaining 3 times to complete a full cycle of 4 scenes
+		for (int i = 0; i < 3; i++) {
+			triggerCv(100 + i * 50);
+			visited.insert(module->sceneSelected);
+		}
+
+		// All 4 scenes in range must have been visited
+		REQUIRE(visited.size() == 4);
+		for (int s : visited) {
+			REQUIRE(s >= 0);
+			REQUIRE(s < 4);
+		}
+	}
+
+	SECTION("ARM mode loads queued scene on trigger") {
+		module->sceneMode = SCENE_CV_MODE::ARM;
+		module->sceneCount = 4;
+		module->inputs[IntermixModule<8>::INPUT_RESET].channels = 1;
+		module->inputs[IntermixModule<8>::INPUT_SCENE].channels = 1;
+		module->sceneSet(0);
+
+		// Queue scene 2
+		module->sceneNext = 2;
+		initializeInputs();
+
+		// Trigger should load the queued scene
+		triggerCv(200);
+		REQUIRE(module->sceneSelected == 2);
+	}
+
+	Test::destroyModule(module);
+}
+
+TEST_CASE("Scene CV modes voltage-based", "[Intermix]") {
+	auto module = Test::createModule<IntermixModule<8>>("Intermix");
+
+	SECTION("VOLT mode maps voltage to scene") {
+		module->sceneMode = SCENE_CV_MODE::VOLT;
+		module->sceneCount = 8;
+
+		module->inputs[IntermixModule<8>::INPUT_SCENE].channels = 1;
+
+		module->inputs[IntermixModule<8>::INPUT_SCENE].setVoltage(0.f);
+		module->process(Test::makeProcessArgs(1));
+		REQUIRE(module->sceneSelected == 0);
+
+		module->inputs[IntermixModule<8>::INPUT_SCENE].setVoltage(5.f);
+		module->process(Test::makeProcessArgs(2));
+		// 5V (50% of 10V) maps to floor(rescale(5, 0, 10, 0, 7.999)) = floor(3.999) = 3
+		REQUIRE(module->sceneSelected == 3);
+
+		module->inputs[IntermixModule<8>::INPUT_SCENE].setVoltage(10.f);
+		module->process(Test::makeProcessArgs(3));
+		REQUIRE(module->sceneSelected == 7);
+	}
+
+	SECTION("C4 mode maps CV to scene") {
+		module->sceneMode = SCENE_CV_MODE::C4;
+		module->sceneCount = 8;
+
+		module->inputs[IntermixModule<8>::INPUT_SCENE].channels = 1;
+
+		module->inputs[IntermixModule<8>::INPUT_SCENE].setVoltage(0.f); // C4 = 0V
+		module->process(Test::makeProcessArgs(1));
+		REQUIRE(module->sceneSelected == 0);
+
+		module->inputs[IntermixModule<8>::INPUT_SCENE].setVoltage(1.f); // 1V * 12 = 12, clamped to 7
+		module->process(Test::makeProcessArgs(2));
+		REQUIRE(module->sceneSelected == 7);
 	}
 
 	Test::destroyModule(module);
