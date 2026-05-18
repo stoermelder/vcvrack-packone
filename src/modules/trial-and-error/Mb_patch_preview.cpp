@@ -403,18 +403,20 @@ void PreviewWidget::onButton(const ButtonEvent& e) {
 		return;
 	}
 	if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS) {
-		APP->scene->browser->hide();
-		auto c =
-			APP->scene->rack->getFirstDescendantOfType<SppPreview::PatchPreviewContainer<Mb::BrowserOverlay>>();
-		if (c) {
-			c->showPatchPreview(rootJ, [&]() {
-				vcvsFromJson(rootJ, "stoermelder MB patch load");
-				json_decref(rootJ);
-				fileId = "";
-			});
-		}
+		invokePatchAdding();
 		e.consume(this);
 	}
+}
+
+void PreviewWidget::invokePatchAdding() {
+	APP->scene->browser->hide();
+	auto c = APP->scene->rack->getFirstDescendantOfType<SppPreview::PatchPreviewContainer<Mb::BrowserOverlay>>();
+	if (!c) return;
+	c->showPatchPreview(rootJ, [&]() {
+		vcvsFromJson(rootJ, "stoermelder MB patch load");
+		json_decref(rootJ);
+		fileId = "";
+	});
 }
 
 void PreviewWidget::createContextMenu(std::string fileId) {

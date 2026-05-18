@@ -61,6 +61,11 @@ struct PreviewWidget : OpaqueWidget {
 	void createPreview();
 
 	/**
+	 * Starts adding the patch by displaying the placement preview.
+	 */
+	void invokePatchAdding();
+
+	/**
 	 * Returns a map of missing module display names to full slugs (plugin/model format).
 	 * Only meaningful after setPatch() has been called.
 	 */

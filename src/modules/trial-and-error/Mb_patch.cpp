@@ -618,6 +618,11 @@ struct PatchSidebarItem : SidebarItem {
 		}
 		SidebarItem::onButton(e);
 	}
+
+	void onDoubleClick(const DoubleClickEvent& e) override {
+		sidebar->preview->invokePatchAdding();
+		e.consume(this);
+	}
 };
 
 
