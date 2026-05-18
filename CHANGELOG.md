@@ -15,6 +15,10 @@
     - Added gate length as a parameter for operator `>` in note mode (#420)
     - Added reset input for tick counter (#429)
     - Fixed crash on operator `<` when using whithout maximum value set (#425)
+- Modules [INTERMIX](./docs/intermix/Intermix.md), [INTERMIX-FADE](./docs/intermix/Intermix.md#intermix-fade-expander)
+    - Added fade length setting (4s, 15s, 60s) (#432)
+    - Added reset input for resetting scene selection and direction (#433)
+    - Added extended scene CV modes: Ping-pong, Alternate, Random, Random (no repeat), Random walk, Shuffle
 - Module [MB](./docs/trial-and-error/Mb.md)
     - Added custom tags for user-defined module grouping
         - with auto-tagging using a curated list of tags
@@ -31,10 +35,13 @@
     - Added an option to highlight favorites
     - Added model magnifier loupe option
     - Added integration into Rack's menu bar
+    - Added Shift+Click to add a module without closing the browser
     - Changed hotkey to toggle hidden modules to Shift+Space (because of Spotlight on Mac)
     - Fixed broken button of "Favorites" category
 - Module [ME](./docs/trial-and-error/Me.md)
     - Added screen magnifier loupe
+- Module [POLY-PILE](./docs/pile/Pile.md)
+    - Added support for polyphonic reset triggers (#431)
 
 ## 2.3.1
 

@@ -43,7 +43,7 @@ struct PilePolyModule : Module {
 
 	dsp::TSchmittTrigger<simd::float_4> incTrigger[4];
 	dsp::TSchmittTrigger<simd::float_4> decTrigger[4];
-	dsp::SchmittTrigger resetTrigger;
+	dsp::TSchmittTrigger<simd::float_4> resetTrigger[4];
 	dsp::TExponentialSlewLimiter<simd::float_4> slewLimiter[4];
 
 	PilePolyModule() {
@@ -97,12 +97,13 @@ struct PilePolyModule : Module {
 		}
 
 
-		simd::float_4 reset = resetTrigger.process(inputs[INPUT_RESET].getVoltage()) ? simd::float_4::mask() : 0.f;
 		simd::float_4 step = params[PARAM_STEP].getValue();
 
 		for (int i = 0; i < c; i += 4) {
-			// RESET-input
+			// RESET-input (polyphonic: each channel can be reset independently)
 			simd::float_4 resetVoltage = inputs[INPUT_RESET_VOLT].getPolyVoltageSimd<simd::float_4>(i);
+			// Get reset voltage for this group of 4 channels, falling back to channel 0 if monophonic
+			simd::float_4 reset = resetTrigger[i / 4].process(inputs[INPUT_RESET].getPolyVoltageSimd<simd::float_4>(i));
 			currentVoltage[i / 4] = simd::ifelse(reset, resetVoltage, currentVoltage[i / 4]);
 
 			// INC-input
