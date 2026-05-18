@@ -91,6 +91,8 @@ struct ReelModule : Module, StripIdFixModule {
 	/** [Stored to JSON] Opacity of the module outline (0.0 - 1.0), default 0.5 (50%) */
 	float boxOpacity = 0.5f;
 
+	int copySlot = -1;
+
 	ReelModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		boxColor = color::BLUE;
@@ -420,6 +422,17 @@ struct ReelModule : Module, StripIdFixModule {
 		return boxDraw && !Module::isBypassed();
 	}
 
+	bool slotMatchesFilter(int i, const std::string& filter) {
+		if (filter.empty()) return true;
+		if (i >= (int)slots.size() || !slots[i].used) return false;
+		const std::string& raw = slots[i].label;
+		std::string label = raw.empty() ? "Snapshot" : raw;
+		std::string labelLow = label, filterLow = filter;
+		for (char& c : labelLow)  c = (char)std::tolower((unsigned char)c);
+		for (char& c : filterLow) c = (char)std::tolower((unsigned char)c);
+		return labelLow.find(filterLow) != std::string::npos;
+	}
+
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
@@ -599,8 +612,10 @@ struct ReelSlotEntry : LedDisplayChoice {
 	int id = 0;
 
 	// Display scrolling
+	/*
 	std::chrono::time_point<std::chrono::system_clock> hscrollUpdate;
 	int hscrollCharOffset = 0;
+	*/
 
 	// Inline label editing state
 	bool editMode = false;
@@ -610,13 +625,12 @@ struct ReelSlotEntry : LedDisplayChoice {
 	std::chrono::time_point<std::chrono::system_clock> cursorBlinkTime;
 	bool cursorVisible = true;
 
-	// Copy/paste slot index shared between all instances
-	static int copySlot;
-
 	ReelSlotEntry() {
 		box.size = mm2px(Vec(0, 6.0));
-		textOffset = Vec(LOAD_ZONE_W + 4.f, box.size.y * 0.5f + 3.f);
+		textOffset = Vec(LOAD_ZONE_W + 4.f, box.size.y * 0.5f + 3.5f);
+		/*
 		hscrollUpdate = std::chrono::system_clock::now();
+		*/
 		cursorBlinkTime = std::chrono::system_clock::now();
 	}
 
@@ -660,7 +674,7 @@ struct ReelSlotEntry : LedDisplayChoice {
 		bgColor = active ? nvgRGBA(0xf0, 0xf0, 0xf0, 32) : nvgRGBA(0, 0, 0, 0);
 
 		if (trailing || !used) {
-			text = "—";
+			text = "<empty>";
 			color = nvgRGBA(0xf0, 0xf0, 0xf0, 0x28);
 		} 
 		else {
@@ -668,6 +682,7 @@ struct ReelSlotEntry : LedDisplayChoice {
 			std::string label = rawLabel.empty() ? "Snapshot" : rawLabel;
 
 			// Scroll long labels horizontally
+			/*
 			size_t maxLen = (size_t)std::ceil((box.size.x - LOAD_ZONE_W - 4.f) / 6.5f);
 			if (!rawLabel.empty() && rawLabel.length() > maxLen) {
 				if (now - hscrollUpdate > std::chrono::milliseconds{100}) {
@@ -679,8 +694,11 @@ struct ReelSlotEntry : LedDisplayChoice {
 			} 
 			else {
 				hscrollCharOffset = 0;
+			*/
 				text = label;
+			/*
 			}
+			*/
 
 			color = active ? nvgRGB(0xf0, 0xf0, 0xf0) : nvgRGBA(0xf0, 0xf0, 0xf0, 0x95);
 		}
@@ -766,10 +784,12 @@ struct ReelSlotEntry : LedDisplayChoice {
 			char buf[8] = {};
 			if (e.codepoint < 0x80) {
 				buf[0] = (char)e.codepoint;
-			} else if (e.codepoint < 0x800) {
+			} 
+			else if (e.codepoint < 0x800) {
 				buf[0] = 0xC0 | (char)(e.codepoint >> 6);
 				buf[1] = 0x80 | (char)(e.codepoint & 0x3F);
-			} else {
+			} 
+			else {
 				buf[0] = 0xE0 | (char)(e.codepoint >> 12);
 				buf[1] = 0x80 | (char)((e.codepoint >> 6) & 0x3F);
 				buf[2] = 0x80 | (char)(e.codepoint & 0x3F);
@@ -848,27 +868,25 @@ struct ReelSlotEntry : LedDisplayChoice {
 
 		menu->addChild(new MenuSeparator);
 		menu->addChild(createMenuItem("Copy", "", [=]() {
-			copySlot = id;
+			module->copySlot = id;
 		}, !used));
 		menu->addChild(createMenuItem("Paste", "", [=]() {
-			if (copySlot >= 0 && module) module->slotCopyPaste(copySlot, id);
-		}, copySlot < 0));
+			if (module->copySlot >= 0 && module) module->slotCopyPaste(module->copySlot, id);
+		}, module->copySlot < 0));
+
+		menu->addChild(new MenuSeparator);
+		bool noBound = !module || module->boundModules.empty();
+		menu->addChild(createMenuItem("Randomize modules and cables", "", [=]() {
+			module->slotRandomize(true, true);
+		}, noBound));
+		menu->addChild(createMenuItem("Randomize modules", "", [=]() {
+			module->slotRandomize(true, false);
+		}, noBound));
+		menu->addChild(createMenuItem("Randomize cables", "", [=]() {
+			module->slotRandomize(false, true);
+		}, noBound));
 	}
 };
-
-int ReelSlotEntry::copySlot = -1;
-
-
-static bool reelSlotMatchesFilter(ReelModule* module, int i, const std::string& filter) {
-	if (filter.empty()) return true;
-	if (!module || i >= (int)module->slots.size() || !module->slots[i].used) return false;
-	const std::string& raw = module->slots[i].label;
-	std::string label = raw.empty() ? "Snapshot" : raw;
-	std::string labelLow = label, filterLow = filter;
-	for (char& c : labelLow)  c = (char)std::tolower((unsigned char)c);
-	for (char& c : filterLow) c = (char)std::tolower((unsigned char)c);
-	return labelLow.find(filterLow) != std::string::npos;
-}
 
 
 struct ReelSearchField : OpaqueWidget {
@@ -993,7 +1011,6 @@ struct ReelSearchField : OpaqueWidget {
 	}
 };
 
-
 struct ReelNavButton : OpaqueWidget {
 	ReelModule* module = nullptr;
 	std::string* filterText = nullptr;
@@ -1007,7 +1024,8 @@ struct ReelNavButton : OpaqueWidget {
 			nvgMoveTo(args.vg, cx - w / 2.f, cy - h / 2.f);
 			nvgLineTo(args.vg, cx + w / 2.f, cy);
 			nvgLineTo(args.vg, cx - w / 2.f, cy + h / 2.f);
-		} else {
+		} 
+		else {
 			nvgMoveTo(args.vg, cx + w / 2.f, cy - h / 2.f);
 			nvgLineTo(args.vg, cx - w / 2.f, cy);
 			nvgLineTo(args.vg, cx + w / 2.f, cy + h / 2.f);
@@ -1025,14 +1043,14 @@ struct ReelNavButton : OpaqueWidget {
 		int cur = module->currentSlot, n = (int)module->slots.size();
 		if (forward) {
 			for (int i = cur + 1; i < n; i++)
-				if (reelSlotMatchesFilter(module, i, ft)) { module->slotLoad(i); return; }
-		} else {
+				if (module->slotMatchesFilter(i, ft)) { module->slotLoad(i); return; }
+		} 
+		else {
 			for (int i = cur - 1; i >= 0; i--)
-				if (reelSlotMatchesFilter(module, i, ft)) { module->slotLoad(i); return; }
+				if (module->slotMatchesFilter(i, ft)) { module->slotLoad(i); return; }
 		}
 	}
 };
-
 
 struct ReelTopBar : OpaqueWidget {
 	static constexpr float BTN_W = 16.f;
@@ -1113,7 +1131,7 @@ struct ReelDisplay : LedDisplay {
 		if (!topBar || topBar->searchField->text.empty()) return true;
 		// Hide trailing (new-slot) row when a filter is active
 		if (!module || i >= (int)module->slots.size()) return false;
-		return reelSlotMatchesFilter(module, i, topBar->searchField->text);
+		return module->slotMatchesFilter(i, topBar->searchField->text);
 	}
 
 	void addEntry(int id) {
@@ -1122,7 +1140,8 @@ struct ReelDisplay : LedDisplay {
 			sep->box.size.x = box.size.x;
 			scroll->container->addChild(sep);
 			separators.push_back(sep);
-		} else {
+		} 
+		else {
 			separators.push_back(nullptr);
 		}
 
@@ -1562,18 +1581,6 @@ struct ReelWidget : ThemedModuleWidget<ReelModule> {
 		menu->addChild(createMenuItem("Bind from selection (.vcvs)", "", [=]() {
 			importSelectionBind();
 		}));
-
-		menu->addChild(new MenuSeparator);
-		bool noBound = !module || module->boundModules.empty();
-		menu->addChild(createMenuItem("Randomize modules and cables", "", [=]() {
-			module->slotRandomize(true, true);
-		}, noBound));
-		menu->addChild(createMenuItem("Randomize modules", "", [=]() {
-			module->slotRandomize(true, false);
-		}, noBound));
-		menu->addChild(createMenuItem("Randomize cables", "", [=]() {
-			module->slotRandomize(false, true);
-		}, noBound));
 
 		menu->addChild(new MenuSeparator);
 		menu->addChild(createMenuItem("Bind module (left expander)", "", [=]() {
