@@ -7,6 +7,7 @@
 #include "Mb_patch_source.hpp"
 #include "Mb_patch_sourceindex.hpp"
 #include "Mb_patch_helper.hpp"
+#include "../strip/vcvs_helpers.hpp"
 
 namespace StoermelderPackOne {
 namespace Mb {
@@ -435,12 +436,23 @@ struct FileSystemSource : PatchSource {
 		std::string folder = resolve(container);
 		auto entries = system::getEntries(folder);
 		for (const std::string& entry : entries) {
-			std::string ext = slug == SLUG_VCVS ? ".vcvs" : ".vcv";
-			if (system::isFile(entry) && PatchSource::endsWith(entry, ext)) {
-				// Build relative path starting with "/"
-				std::string name = system::getFilename(entry);
-				std::string relPath = container == "/" ? "/" + name : container + "/" + name;
-				files.push_back({ relPath, name });
+			// In vcvs mode, include both .vcvs and .vcvss files (vcvss is converted to vcvs)
+			if (slug == SLUG_VCVS) {
+				if (system::isFile(entry) && (PatchSource::endsWith(entry, ".vcvs") || PatchSource::endsWith(entry, ".vcvss"))) {
+					// Build relative path starting with "/"
+					std::string name = system::getFilename(entry);
+					std::string relPath = container == "/" ? "/" + name : container + "/" + name;
+					files.push_back({ relPath, name });
+				}
+			}
+			else {
+				// vcv mode: only .vcv files
+				if (system::isFile(entry) && PatchSource::endsWith(entry, ".vcv")) {
+					// Build relative path starting with "/"
+					std::string name = system::getFilename(entry);
+					std::string relPath = container == "/" ? "/" + name : container + "/" + name;
+					files.push_back({ relPath, name });
+				}
 			}
 		}
 		std::sort(files.begin(), files.end(), [](const ContainerEntry& a, const ContainerEntry& b) {
@@ -557,7 +569,7 @@ struct FileSystemSource : PatchSource {
 		std::string fullPath = resolve(fileId);
 		
 		if (slug == SLUG_VCV) {
-			// Check if .vcv file is legacy (plain JSON) or v2+ (zstd-compressed tar)
+			// .vcv files: legacy (plain JSON) or v2+ (zstd-compressed tar)
 			if (isVcvLegacyV1(fullPath)) {
 				// Legacy v1 format: plain JSON file
 				FILE* f = fopen(fullPath.c_str(), "rb");
@@ -573,6 +585,22 @@ struct FileSystemSource : PatchSource {
 			}
 		}
 		else {
+			// .vcvs mode: also supports .vcvss (STRIP) files which are converted to vcvs format
+			if (PatchSource::endsWith(fullPath, ".vcvss")) {
+				// Load vcvss file and convert to vcvs format
+				FILE* f = fopen(fullPath.c_str(), "rb");
+				if (!f) return nullptr;
+				json_error_t error;
+				json_t* vcvssJ = json_loadf(f, 0, &error);
+				fclose(f);
+				if (!vcvssJ) return nullptr;
+				
+				// Convert to vcvs format using the function from vcvs_helpers.hpp
+				json_t* vcvsJ = StoermelderPackOne::convertVcvssToVcvs(vcvssJ);
+				json_decref(vcvssJ);
+				return vcvsJ;
+			}
+			
 			// .vcvs files are plain JSON
 			FILE* f = fopen(fullPath.c_str(), "rb");
 			if (!f) return nullptr;
@@ -692,6 +720,54 @@ struct FileSystemSource : PatchSource {
 			std::string dir = system::getDirectory(path);
 			system::openDirectory(dir);
 		}));
+
+		// Only show "Convert to .vcvs" for .vcvss files
+		if (PatchSource::endsWith(fileId, ".vcvss")) {	
+			menu->addChild(createMenuItem("Convert to .vcvs", "", [this, fileId]() {
+				std::string fullPath = resolve(fileId);
+				std::string dir = system::getDirectory(fullPath);
+				
+				osdialog_filters* filters = osdialog_filters_parse(SELECTION_FILTERS);
+				char* newPath = osdialog_file(OSDIALOG_SAVE, dir.c_str(), NULL, filters);
+				if (!newPath) return;
+				DEFER({ free(newPath); });
+
+				setStatus("Converting to .vcvs...");
+				// Load vcvss file
+				FILE* f = fopen(fullPath.c_str(), "rb");
+				if (!f) {
+					setStatus("Failed to open file", 3);
+					return;
+				}
+				json_error_t error;
+				json_t* vcvssJ = json_loadf(f, 0, &error);
+				fclose(f);
+				if (!vcvssJ) {
+					setStatus("Failed to parse file", 3);
+					return;
+				}
+				
+				// Convert to vcvs format
+				json_t* vcvsJ = StoermelderPackOne::convertVcvssToVcvs(vcvssJ);
+				json_decref(vcvssJ);
+				if (!vcvsJ) {
+					setStatus("Failed to convert", 3);
+					return;
+				}
+				
+				// Save to new file
+				FILE* outF = fopen(newPath, "wb");
+				if (!outF) {
+					json_decref(vcvsJ);
+					setStatus("Failed to create file", 3);
+					return;
+				}
+				json_dumpf(vcvsJ, outF, JSON_INDENT(2));
+				fclose(outF);
+				json_decref(vcvsJ);
+				setStatus("Converted successfully");
+			}));
+		}
 	}
 };
 

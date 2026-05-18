@@ -451,4 +451,134 @@ static std::string vcvsLoadFileDialog(bool load, std::string undoActionName = ""
 }
 
 
+
+/**
+ * Gets the width of a module from its model by looking up the plugin/model slugs.
+ * @param moduleJ JSON representation of the module
+ * @return Module width in pixels, or 0 if model not found
+ */
+static float getModuleWidth(json_t* moduleJ) {
+    json_t* pluginSlugJ = json_object_get(moduleJ, "plugin");
+    if (!pluginSlugJ) return 0.f;
+    json_t* modelSlugJ = json_object_get(moduleJ, "model");
+    if (!modelSlugJ) return 0.f;
+    
+    std::string pluginSlug = json_string_value(pluginSlugJ);
+    std::string modelSlug = json_string_value(modelSlugJ);
+    
+    plugin::Model* model = plugin::getModel(pluginSlug, modelSlug);
+    if (!model) return 0.f;
+    
+    // Get the module widget to determine width
+    ModuleWidget* mw = model->createModuleWidget(nullptr);
+    if (!mw) return 0.f;
+    float width = mw->box.size.x;
+    delete mw; // Clean up temporary widget
+    return width;
+}
+
+
+/**
+ * Converts a vcvss (STRIP) JSON to vcvs format by combining rightModules and leftModules
+ * into a single modules array with proper positions calculated from model widths.
+ * 
+ * The vcvss format does not store absolute positions - modules are positioned relative
+ * to each other based on their widths. This function calculates positions using the
+ * model dimensions.
+ * 
+ * @param vcvssJ JSON representation of the vcvss file
+ * @return JSON object with vcvs format (modules array with positions, cables array),
+ *         or nullptr if conversion fails. Caller must call json_decref on result.
+ */
+static json_t* convertVcvssToVcvs(json_t* vcvssJ) {
+    if (!vcvssJ || !json_is_object(vcvssJ)) return nullptr;
+    
+    json_t* vcvsJ = json_object();
+    if (!vcvsJ) return nullptr;
+    
+    json_t* modulesJ = json_array();
+    if (!modulesJ) {
+        json_decref(vcvsJ);
+        return nullptr;
+    }
+    
+    // Process left modules first - they appear on the left in the strip
+    // Note: leftModules are stored right-to-left (first element = rightmost module)
+    // So we need to reverse the order for proper left-to-right positioning
+    float currentX = 0.f;
+    json_t* leftModulesJ = json_object_get(vcvssJ, "leftModules");
+    if (leftModulesJ && json_is_array(leftModulesJ)) {
+        size_t leftCount = json_array_size(leftModulesJ);
+        
+        // First pass: collect widths and calculate total left width
+        std::vector<float> leftWidths;
+        leftWidths.reserve(leftCount);
+        for (size_t i = 0; i < leftCount; i++) {
+            json_t* moduleJ = json_array_get(leftModulesJ, i);
+            leftWidths.push_back(getModuleWidth(moduleJ) / RACK_GRID_SIZE.x);
+        }
+        
+        // Start left modules at position 0 (leftmost will be at x=0)
+        currentX = 0.f;
+        
+        // Add left modules in reverse order (last element = leftmost = first in array)
+        for (size_t i = leftCount; i > 0; i--) {
+            size_t idx = i - 1;
+            json_t* moduleJ = json_array_get(leftModulesJ, idx);
+            json_t* clonedModule = json_deep_copy(moduleJ);
+            if (!clonedModule) continue;
+            
+            // Set position in RACK_GRID_SIZE units
+            json_object_del(clonedModule, "pos");
+            json_t* posJ = json_array();
+            json_array_append_new(posJ, json_real(currentX));
+            json_array_append_new(posJ, json_real(0.0));
+            json_object_set_new(clonedModule, "pos", posJ);
+            
+            json_array_append_new(modulesJ, clonedModule);
+            currentX += leftWidths[idx];
+        }
+    }
+    
+    // Process right modules - they appear on the right in the strip
+    // Continue after left modules (if any)
+    json_t* rightModulesJ = json_object_get(vcvssJ, "rightModules");
+    if (rightModulesJ && json_is_array(rightModulesJ)) {
+        json_t* moduleJ;
+        size_t idx;
+        json_array_foreach(rightModulesJ, idx, moduleJ) {
+            json_t* clonedModule = json_deep_copy(moduleJ);
+            if (!clonedModule) continue;
+            
+            // Convert pixel width to RACK_GRID_SIZE units
+            float width = getModuleWidth(moduleJ) / RACK_GRID_SIZE.x;
+            
+            // Set position in RACK_GRID_SIZE units
+            json_object_del(clonedModule, "pos");
+            json_t* posJ = json_array();
+            json_array_append_new(posJ, json_real(currentX));
+            json_array_append_new(posJ, json_real(0.0));
+            json_object_set_new(clonedModule, "pos", posJ);
+            
+            json_array_append_new(modulesJ, clonedModule);
+            currentX += width;
+        }
+    }
+    
+    json_object_set_new(vcvsJ, "modules", modulesJ);
+    
+    // Copy cables (adjust module IDs if needed - for now, keep as-is)
+    json_t* cablesJ = json_object_get(vcvssJ, "cables");
+    if (cablesJ) {
+        json_object_set(vcvsJ, "cables", cablesJ);
+        json_incref(cablesJ);
+    }
+    else {
+        json_object_set_new(vcvsJ, "cables", json_array());
+    }
+    
+    return vcvsJ;
+}
+
+
 } // namespace StoermelderPackOne
