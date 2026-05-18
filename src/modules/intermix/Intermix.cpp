@@ -121,6 +121,9 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 	/** [Stored to JSON] */
 	int channelCount = 1;
 
+	/** [Stored to JSON] */
+	FADE_LENGTH fadeLengthMode = FADE_LENGTH_4S;
+
 	LinearFade fader[PORTS][PORTS][PORT_MAX_CHANNELS];
 	uint32_t fadeInTs[PORTS];
 	uint32_t fadeOutTs[PORTS];
@@ -151,8 +154,10 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 			configSwitch(PARAM_X_MAP + i, 0.f, 1.f, 0.f, string::f("Matrix col %i", i + 1));
 			configSwitch(PARAM_Y_MAP + i, 0.f, 1.f, 0.f, string::f("Matrix row %i", i + 1));
 		}
-		configParam(PARAM_FADEIN, 0.f, 4.f, 0.f, "Fade in", "s");
-		configParam(PARAM_FADEOUT, 0.f, 4.f, 0.f, "Fade out", "s");
+		auto pqFadeIn = configParam<FadeLengthParamQuantity<IntermixModule<PORTS>>>(PARAM_FADEIN, 0.f, 4.f, 0.f, "Fade in", "s");
+		pqFadeIn->module = this;
+		auto pqFadeOut = configParam<FadeLengthParamQuantity<IntermixModule<PORTS>>>(PARAM_FADEOUT, 0.f, 4.f, 0.f, "Fade out", "s");
+		pqFadeOut->module = this;
 		sceneDivider.setDivision(64);
 
 		ResetEvent re;
@@ -552,6 +557,7 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 		json_object_set_new(rootJ, "sceneAtMode", json_boolean(sceneAtMode));
 		json_object_set_new(rootJ, "sceneCount", json_integer(sceneCount));
 		json_object_set_new(rootJ, "sceneLock", json_boolean(sceneLock));
+		json_object_set_new(rootJ, "fadeLengthMode", json_integer(fadeLengthMode));
 		return rootJ;
 	}
 
@@ -603,6 +609,9 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 		if (sceneCountJ) sceneCount = json_integer_value(sceneCountJ);
 		json_t* sceneLockJ = json_object_get(rootJ, "sceneLock");
 		if (sceneLockJ) sceneLock = json_boolean_value(sceneLockJ);
+
+		json_t* fadeLengthModeJ = json_object_get(rootJ, "fadeLengthMode");
+		if (fadeLengthModeJ) fadeLengthMode = (FADE_LENGTH)json_integer_value(fadeLengthModeJ);
 
 		for (int i = 0; i < PORTS; i++) {
 			for (int j = 0; j < PORTS; j++) {
@@ -874,6 +883,16 @@ struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 		menu->addChild(createBoolPtrMenuItem("Include input-mode in scenes", "", &module->sceneInputMode));
 		menu->addChild(createBoolPtrMenuItem("Include attenuverters in scenes", "", &module->sceneAtMode));
 		menu->addChild(createBoolPtrMenuItem("Limit output to -10..10V", "", &module->outputClamp));
+		menu->addChild(new MenuSeparator());
+		menu->addChild(StoermelderPackOne::Rack::createMapSubmenuItem<FADE_LENGTH>("Fade length",
+			{
+				{ FADE_LENGTH::FADE_LENGTH_4S, "4s" },
+				{ FADE_LENGTH::FADE_LENGTH_15S, "15s" },
+				{ FADE_LENGTH::FADE_LENGTH_60S, "60s" }
+			},
+			[=]() { return module->fadeLengthMode; },
+			[=](FADE_LENGTH m) { module->fadeLengthMode = m; }
+		));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(new BrightnessSlider(module));
 		menu->addChild(createBoolPtrMenuItem("Visualize input on pads", "", &module->inputVisualize));

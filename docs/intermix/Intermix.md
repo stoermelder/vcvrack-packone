@@ -99,10 +99,10 @@ The behavior of scenes can be customized via context menu:
 
 INTERMIX can smoothly crossfade between scenes using the two fade trimpots:
 
-- **Fade in** (left trimpot) - Time in seconds for the new scene to fade in (0-4 seconds)
-- **Fade out** (right trimpot) - Time in seconds for the previous scene to fade out (0-4 seconds)
+- **Fade in** (left trimpot) - Time in seconds for the new scene to fade in
+- **Fade out** (right trimpot) - Time in seconds for the previous scene to fade out
 
-These settings apply to all scene changes and can be included in scenes if "Include input-mode in scenes" is enabled. For more advanced fade control per pad, use the INTERMIX-FADE expander.
+The maximum fade time can be set in the context menu (4s, 15s, or 60s). These settings apply to all scene changes and can be included in scenes if "Include input-mode in scenes" is enabled. For more advanced fade control per pad, use the INTERMIX-FADE expander.
 
 ### Fade Input Port
 
@@ -136,6 +136,8 @@ The INTERMIX-FADE expander provides individual fade-in and fade-out control for 
 1. Select which input column the expander should control (shown on the expander display)
 2. For each pad in that column, set custom fade-in and fade-out times
 3. Supports fade-in only, fade-out only, or simultaneous fade-in and fade-out
+
+The maximum fade time can be set in the context menu (4s, 15s, or 60s). The default is 15s.
 
 **Note:** When the INTERMIX-FADE expander is detached or reconfigured for a different input column, all fade settings return to the default values from the main module.
 
@@ -174,3 +176,5 @@ The INTERMIX-FADE expander provides individual fade-in and fade-out control for 
     - Added expander INTERMIX-FADE
     - Added expander INTERMIX-ENV
     - Added expander INTERMIX-GATE
+- v2.4.0
+    - Added fade length setting (4s, 15s, 60s) (#432)

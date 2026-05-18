@@ -15,6 +15,8 @@
     - Added gate length as a parameter for operator `>` in note mode (#420)
     - Added reset input for tick counter (#429)
     - Fixed crash on operator `<` when using whithout maximum value set (#425)
+- Modules [INTERMIX](./docs/intermix/Intermix.md), [INTERMIX-FADE](./docs/intermix/Intermix.md#intermix-fade-expander)
+    - Added fade length setting (4s, 15s, 60s) (#432)
 - Module [MB](./docs/trial-and-error/Mb.md)
     - Added custom tags for user-defined module grouping
         - with auto-tagging using a curated list of tags
