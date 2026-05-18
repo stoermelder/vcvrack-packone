@@ -84,8 +84,8 @@ struct ReelModule : Module, StripIdFixModule {
 	std::vector<ReelSlot> slots;
 	/** [Stored to JSON] Index of the last loaded slot, or -1 */
 	int currentSlot = -1;
-	/** [Stored to JSON] */
-	bool boxDraw = false;
+	/** [Stored to JSON] Box draw mode: 0=never, 1=always, 2=when selected */
+	int boxDraw = 2;
 	/** [Stored to JSON] */
 	NVGcolor boxColor;
 	/** [Stored to JSON] Opacity of the module outline (0.0 - 1.0), default 0.5 (50%) */
@@ -106,7 +106,7 @@ struct ReelModule : Module, StripIdFixModule {
 		slots.clear();
 		clearBoundModules();
 		currentSlot = -1;
-		boxDraw = true;
+		boxDraw = 2;
 		boxColor = color::BLUE;
 		boxOpacity = 0.5f;
 		Module::onReset(e);
@@ -418,9 +418,6 @@ struct ReelModule : Module, StripIdFixModule {
 		dstSlot.used = true;
 	}
 
-	bool isBoxActive() {
-		return boxDraw && !Module::isBypassed();
-	}
 
 	bool slotMatchesFilter(int i, const std::string& filter) {
 		if (filter.empty()) return true;
@@ -437,7 +434,7 @@ struct ReelModule : Module, StripIdFixModule {
 		json_t* rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 		json_object_set_new(rootJ, "currentSlot", json_integer(currentSlot));
-		json_object_set_new(rootJ, "boxDraw", json_boolean(boxDraw));
+		json_object_set_new(rootJ, "boxDraw", json_integer(boxDraw));
 		json_object_set_new(rootJ, "boxColor", json_string(color::toHexString(boxColor).c_str()));
 		json_object_set_new(rootJ, "boxOpacity", json_real(boxOpacity));
 
@@ -482,7 +479,7 @@ struct ReelModule : Module, StripIdFixModule {
 		if (currentSlotJ) currentSlot = json_integer_value(currentSlotJ);
 
 		json_t* boxDrawJ = json_object_get(rootJ, "boxDraw");
-		if (boxDrawJ) boxDraw = json_boolean_value(boxDrawJ);
+		if (boxDrawJ) boxDraw = json_integer_value(boxDrawJ);
 		json_t* boxColorJ = json_object_get(rootJ, "boxColor");
 		if (boxColorJ) boxColor = color::fromHexString(json_string_value(boxColorJ));
 		json_t* boxOpacityJ = json_object_get(rootJ, "boxOpacity");
@@ -575,7 +572,22 @@ struct ReelBoundsDrawer : Widget {
 	MODULE* module = NULL;
 
 	void draw(const DrawArgs& args) override {
-		if (!module || !module->isBoxActive()) return;
+		if (!module) return;
+
+		switch (module->boxDraw) {
+			case 0:
+				return;
+			case 1:
+				break;
+			case 2:
+				Widget* w = APP->event->getSelectedWidget();
+				if (!w) return;
+				ModuleWidget* mw = dynamic_cast<ModuleWidget*>(w);
+				if (mw && mw->module == module) break;
+				mw = w->getAncestorOfType<ModuleWidget>();
+				if (mw && mw->module == module) break;
+				return;
+		}
 
 		Rect viewPort = getViewport(box);
 		for (typename MODULE::BoundModule* b : module->boundModules) {
@@ -1567,7 +1579,10 @@ struct ReelWidget : ThemedModuleWidget<ReelModule> {
 		assert(module);
 
 		menu->addChild(createSubmenuItem("Modules outline", "", [module](Menu* menu) {
-			menu->addChild(createBoolPtrMenuItem("Show module outlines", RACK_MOD_SHIFT_NAME "+B", &module->boxDraw));
+			menu->addChild(createCheckMenuItem("When selected", RACK_MOD_SHIFT_NAME "+B", [module]() { return module->boxDraw == 2; }, [module]() { module->boxDraw = 2; }));
+			menu->addChild(createCheckMenuItem("Never", "", [module]() { return module->boxDraw == 0; }, [module]() { module->boxDraw = 0; }));
+			menu->addChild(createCheckMenuItem("Always", "", [module]() { return module->boxDraw == 1; }, [module]() { module->boxDraw = 1; }));
+			menu->addChild(new MenuSeparator);
 			menu->addChild(Rack::createPtrSlider(&module->boxOpacity, 0.0f, 1.0f, 0.5f, "Outline opacity", "%", 100));
 			menu->addChild(new MenuSeparator);
 			Rack::appendColorSubmenuItems(menu, &module->boxColor);
@@ -1648,7 +1663,7 @@ struct ReelWidget : ThemedModuleWidget<ReelModule> {
 	void onHoverKey(const event::HoverKey& e) override {
 		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == GLFW_MOD_SHIFT) {
 			if (e.key == GLFW_KEY_B && module) {
-				module->boxDraw ^= true;
+				module->boxDraw = (module->boxDraw + 1) % 3;
 				e.consume(this);
 			}
 		}
