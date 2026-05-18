@@ -68,6 +68,7 @@ extern Model* modelMidiPlug;
 extern Model* modelDirt;
 extern Model* modelMidiKey;
 extern Model* modelPanicRoom;
+extern Model* modelMidiEsx;
 extern Model* modelAhab;
 extern Model* modelAudioInterface64;
 extern Model* modelMb;

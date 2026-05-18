@@ -104,13 +104,21 @@ MockMidiVirtualInput* setupMockVirtualMidiInput(int portId) {
 	MockMidiVirtualInput* mockInput = new MockMidiVirtualInput();
 	mockInput->setDriverId(0x4CCC434C); // Ahab virtual MIDI driver ID
 	mockInput->setDeviceId(portId);
+	// Subscribe to the Ahab MIDI driver so messages are actually delivered
+	if (auto* driver = rack::midi::getDriver(0x4CCC434C)) {
+		driver->subscribeInput(portId, mockInput);
+	}
 	return mockInput;
 }
 
 // Helper to cleanup mock virtual MIDI input
 void cleanupMockVirtualMidiInput(MockMidiVirtualInput* mockInput) {
 	if (mockInput) {
-		delete mockInput;  // Destructor will handle MIDI driver unsubscription
+		// Unsubscribe from the driver before deleting
+		if (auto* driver = rack::midi::getDriver(0x4CCC434C)) {
+			driver->unsubscribeInput(mockInput->getDeviceId(), mockInput);
+		}
+		delete mockInput;
 	}
 }
 

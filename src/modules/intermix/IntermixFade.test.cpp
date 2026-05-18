@@ -9,6 +9,49 @@ SYNC_MODEL(modelIntermix, "Intermix");
 SYNC_MODEL(modelIntermixFade, "IntermixFade");
 Test::TestContext<> testContext;
 
+// Mock that captures the actual float values passed to expSetFade.
+// Used to verify that the expander sends seconds directly, not seconds * maxFade.
+template<int PORTS>
+struct CapturingIntermixMock : Module, IntermixBase<PORTS> {
+	alignas(16) float currentMatrix[PORTS][PORTS];
+	int channelCount = 1;
+	uint32_t fadeInTs[PORTS] = {};
+	uint32_t fadeOutTs[PORTS] = {};
+
+	float lastFadeIn[PORTS] = {};
+	float lastFadeOut[PORTS] = {};
+	bool fadeInReceived = false;
+	bool fadeOutReceived = false;
+
+	CapturingIntermixMock() {
+		config(0, 0, 0, 0);
+		model = modelIntermix;
+		for (int i = 0; i < PORTS; i++)
+			for (int j = 0; j < PORTS; j++)
+				currentMatrix[i][j] = 0.f;
+	}
+
+	typename IntermixBase<PORTS>::IntermixMatrix expGetCurrentMatrix() override { return currentMatrix; }
+	int expGetChannelCount() override { return channelCount; }
+
+	void expSetFade(int i, float* fadeIn, float* fadeOut) override {
+		if (fadeIn) {
+			fadeInReceived = true;
+			for (int j = 0; j < PORTS; j++) lastFadeIn[j] = fadeIn[j];
+		}
+		if (fadeOut) {
+			fadeOutReceived = true;
+			for (int j = 0; j < PORTS; j++) lastFadeOut[j] = fadeOut[j];
+		}
+	}
+
+	void process(const ProcessArgs& args) override {
+		rightExpander.producerMessage = (IntermixBase<PORTS>*)this;
+		rightExpander.messageFlipRequested = true;
+	}
+};
+
+
 // Forward declare Intermix module type for expander tests
 template<int PORTS>
 struct IntermixModuleMock : Module, IntermixBase<PORTS> {
@@ -338,4 +381,112 @@ TEST_CASE("Expander chain", "[IntermixFade]") {
 	Test::destroyModule(fadeModule2);
 	Test::destroyModule(fadeModule1);
 	delete intermixModule;
+}
+
+
+TEST_CASE("FadeParamQuantity max value follows fadeLengthMode", "[IntermixFade][fade-time]") {
+	auto module = Test::createModule<IntermixFadeModule<8>>("IntermixFade");
+
+	SECTION("FADE_LENGTH_4S gives max 4s") {
+		module->fadeLengthMode = FADE_LENGTH_4S;
+		auto* pq = module->paramQuantities[IntermixFadeModule<8>::PARAM_FADE + 0];
+		REQUIRE(pq->getMaxValue() == Catch::Approx(4.0f).margin(0.001f));
+	}
+
+	SECTION("FADE_LENGTH_15S gives max 15s") {
+		module->fadeLengthMode = FADE_LENGTH_15S;
+		auto* pq = module->paramQuantities[IntermixFadeModule<8>::PARAM_FADE + 0];
+		REQUIRE(pq->getMaxValue() == Catch::Approx(15.0f).margin(0.001f));
+	}
+
+	SECTION("FADE_LENGTH_60S gives max 60s") {
+		module->fadeLengthMode = FADE_LENGTH_60S;
+		auto* pq = module->paramQuantities[IntermixFadeModule<8>::PARAM_FADE + 0];
+		REQUIRE(pq->getMaxValue() == Catch::Approx(60.0f).margin(0.001f));
+	}
+
+	Test::destroyModule(module);
+}
+
+
+TEST_CASE("Expander fade time: param value sent to expSetFade as seconds", "[IntermixFade][fade-time]") {
+	// FadeParamQuantity::getMaxValue() dynamically scales the knob to [0, maxFade],
+	// so getValue() already returns seconds. The expander must NOT multiply by maxFade
+	// again: v[i] = getValue() * maxFade would make a 5s knob send 75s in 15s mode.
+
+	SECTION("15s mode (default): 5s knob position sends 5s") {
+		auto* mock = new CapturingIntermixMock<8>();
+		auto* fade = Test::createModule<IntermixFadeModule<8>>("IntermixFade");
+
+		mock->rightExpander.module = fade;
+		fade->leftExpander.module = mock;
+
+		fade->fadeLengthMode = FADE_LENGTH_15S;
+		fade->fade = FADE::IN;
+		fade->input = 0;
+		for (int j = 0; j < 8; j++)
+			fade->params[IntermixFadeModule<8>::PARAM_FADE + j].setValue(5.0f);
+
+		// The expander's sceneDivider fires every 64 calls; 100 steps guarantees it.
+		Test::SimpleEngine engine;
+		engine.registerModules(mock, fade);
+		for (int i = 0; i < 100; i++) engine.step();
+
+		REQUIRE(mock->fadeInReceived);
+		// Bug: receives 5.0 * 15 = 75.0. Correct: receives 5.0.
+		REQUIRE(mock->lastFadeIn[0] == Catch::Approx(5.0f).margin(0.001f));
+
+		Test::destroyModule(fade);
+		delete mock;
+	}
+
+	SECTION("4s mode: 2s knob position sends 2s") {
+		auto* mock = new CapturingIntermixMock<8>();
+		auto* fade = Test::createModule<IntermixFadeModule<8>>("IntermixFade");
+
+		mock->rightExpander.module = fade;
+		fade->leftExpander.module = mock;
+
+		fade->fadeLengthMode = FADE_LENGTH_4S;
+		fade->fade = FADE::IN;
+		fade->input = 0;
+		for (int j = 0; j < 8; j++)
+			fade->params[IntermixFadeModule<8>::PARAM_FADE + j].setValue(2.0f);
+
+		Test::SimpleEngine engine;
+		engine.registerModules(mock, fade);
+		for (int i = 0; i < 100; i++) engine.step();
+
+		REQUIRE(mock->fadeInReceived);
+		// Bug: receives 2.0 * 4 = 8.0. Correct: receives 2.0.
+		REQUIRE(mock->lastFadeIn[0] == Catch::Approx(2.0f).margin(0.001f));
+
+		Test::destroyModule(fade);
+		delete mock;
+	}
+
+	SECTION("60s mode: 10s knob position sends 10s") {
+		auto* mock = new CapturingIntermixMock<8>();
+		auto* fade = Test::createModule<IntermixFadeModule<8>>("IntermixFade");
+
+		mock->rightExpander.module = fade;
+		fade->leftExpander.module = mock;
+
+		fade->fadeLengthMode = FADE_LENGTH_60S;
+		fade->fade = FADE::OUT;
+		fade->input = 0;
+		for (int j = 0; j < 8; j++)
+			fade->params[IntermixFadeModule<8>::PARAM_FADE + j].setValue(10.0f);
+
+		Test::SimpleEngine engine;
+		engine.registerModules(mock, fade);
+		for (int i = 0; i < 100; i++) engine.step();
+
+		REQUIRE(mock->fadeOutReceived);
+		// Bug: receives 10.0 * 60 = 600.0. Correct: receives 10.0.
+		REQUIRE(mock->lastFadeOut[0] == Catch::Approx(10.0f).margin(0.001f));
+
+		Test::destroyModule(fade);
+		delete mock;
+	}
 }

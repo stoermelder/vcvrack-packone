@@ -1,20 +1,47 @@
 ## 2.4.0
 
+### New modules
+
+- Module [MIDI-ESX](./docs/midiesx/MidiEsx.md)
+    - MIDI converter for your Expert Sleepers hardware setup (ES-5, ES-8, ES-9 etc.)
+
 ### Changes and Fixes
 
+- Modules [8FACE, 8FACEx2](./docs/eightface/EightFace.md)
+    - Fixed broken processing in VCV Rack-plugin on closed plugin-window (#424)
+- Module [8FACE mk2](./docs/eightface/EightFaceMk2.md)
+    - Fixed broken processing in VCV Rack-plugin on closed plugin-window (#424)
 - Module [AHAB](./docs/ahab/Ahab.md)
     - Added gate length as a parameter for operator `>` in note mode (#420)
     - Added reset input for tick counter (#429)
     - Fixed crash on operator `<` when using whithout maximum value set (#425)
+- Modules [INTERMIX](./docs/intermix/Intermix.md), [INTERMIX-FADE](./docs/intermix/Intermix.md#intermix-fade-expander)
+    - Added fade length setting (4s, 15s, 60s) (#432)
+    - Added reset input for resetting scene selection and direction (#433)
+    - Added extended scene CV modes: Ping-pong, Alternate, Random, Random (no repeat), Random walk, Shuffle
 - Module [MB](./docs/trial-and-error/Mb.md)
-    - Added custom tags for used-defined module grouping
-    - Added auto-tagging, including MetaModule
+    - Added custom tags for user-defined module grouping
+        - with auto-tagging using a curated list of tags
+        - with auto-tagging for available modules on MetaModule
+    - Added "v2 mod" browser variant
+        - with improved drop-down menus, also with keyboard-filtering
+        - with keyboard-navigation using cursor-keys
+        - with hotkeys Ctrl/Cmd+1/2/3 for Brand/Tags/Custom Tag drop-down menus
+        - with keyboard-navigation and filtering within the drop-down men
+    - Added ability to add/remove predefined tags (only within MB)
     - Added fuzzy search (similar to the default module browser)
-    - Added option to select "Favorite" handling  (Legacy (MB) / (Built-in) VCV Rack)
-    - Added option to highlight favorites
-    - Added "v2 mod" variation
+        - with setting for the fuzzy search threshold
+    - Added an option to select "Favorite" handling (Legacy (MB) / Built-in VCV Rack)
+    - Added an option to highlight favorites
+    - Added model magnifier loupe option
+    - Added integration into Rack's menu bar
+    - Added Shift+Click to add a module without closing the browser
     - Changed hotkey to toggle hidden modules to Shift+Space (because of Spotlight on Mac)
     - Fixed broken button of "Favorites" category
+- Module [ME](./docs/trial-and-error/Me.md)
+    - Added screen magnifier loupe
+- Module [POLY-PILE](./docs/pile/Pile.md)
+    - Added support for polyphonic reset triggers (#431)
 
 ## 2.3.1
 

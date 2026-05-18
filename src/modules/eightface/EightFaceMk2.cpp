@@ -554,9 +554,16 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 					json_decref((*slotPrev->preset)[i]);
 					(*slotPrev->preset)[i] = mw->toJson();
 				}
-				if (b->needsGuiThread || guiSafeMode != GUISAFEMODE::WORKER) {
+				// There is no stepping of the UI if the plugin window is closed,
+				// in this case we must use the worker thread
+				if (settings::isPlugin && !APP->window) {
+					mw->fromJson(vJ);
+				}
+				// Hand it off to the UI thread
+				else if (b->needsGuiThread || guiSafeMode != GUISAFEMODE::WORKER) {
 					workerGuiQueue.push(std::make_tuple(mw, vJ));
 				}
+				// Explicitly configured to use the worker thread
 				else {
 					mw->fromJson(vJ);
 				}
