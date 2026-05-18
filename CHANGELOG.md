@@ -7,36 +7,35 @@
 
 ### Changes and Fixes
 
-- Modules [8FACE, 8FACEx2](./docs/eightface/EightFace.md)
-    - Fixed broken processing in VCV Rack-plugin on closed plugin-window (#424)
-- Module [8FACE mk2](./docs/eightface/EightFaceMk2.md)
+- Modules [8FACE, 8FACEx2](./docs/eightface/EightFace.md), [8FACE mk2](./docs/eightface/EightFaceMk2.md)
     - Fixed broken processing in VCV Rack-plugin on closed plugin-window (#424)
 - Module [AHAB](./docs/ahab/Ahab.md)
     - Added gate length as a parameter for operator `>` in note mode (#420)
     - Added reset input for tick counter (#429)
     - Fixed crash on operator `<` when using whithout maximum value set (#425)
-- Modules [INTERMIX](./docs/intermix/Intermix.md), [INTERMIX-FADE](./docs/intermix/Intermix.md#intermix-fade-expander)
-    - Added fade length setting (4s, 15s, 60s) (#432)
+- Modules [INTERMIX](./docs/intermix/Intermix.md)
     - Added reset input for resetting scene selection and direction (#433)
     - Added extended scene CV modes: Ping-pong, Alternate, Random, Random (no repeat), Random walk, Shuffle
+- Modules [INTERMIX](./docs/intermix/Intermix.md), [INTERMIX-FADE](./docs/intermix/Intermix.md#intermix-fade-expander)
+    - Added fade length setting (4s, 15s, 60s) (#432)
 - Module [MB](./docs/trial-and-error/Mb.md)
     - Added custom tags for user-defined module grouping
-        - with auto-tagging using a curated list of tags
+        - with not-so-smart auto-tagging using a curated list of tags
         - with auto-tagging for available modules on MetaModule
-    - Added "v2 mod" browser variant
+    - Added *v2 mod* browser variant
         - with improved drop-down menus, also with keyboard-filtering
         - with keyboard-navigation using cursor-keys
-        - with hotkeys Ctrl/Cmd+1/2/3 for Brand/Tags/Custom Tag drop-down menus
-        - with keyboard-navigation and filtering within the drop-down men
+        - with hotkeys `Ctrl/Cmd`+`1`/`2`/`3` for Brand/Tags/Custom Tag drop-down menus
+        - with keyboard-navigation and filtering within the drop-down menus
     - Added ability to add/remove predefined tags (only within MB)
     - Added fuzzy search (similar to the default module browser)
         - with setting for the fuzzy search threshold
-    - Added an option to select "Favorite" handling (Legacy (MB) / Built-in VCV Rack)
+    - Added an option to select "Favorite" handling (Legacy MB / Built-in VCV Rack)
     - Added an option to highlight favorites
     - Added model magnifier loupe option
     - Added integration into Rack's menu bar
-    - Added Shift+Click to add a module without closing the browser
-    - Changed hotkey to toggle hidden modules to Shift+Space (because of Spotlight on Mac)
+    - Added `Shift`+*Click* to add a module without closing the browser
+    - Changed hotkey to toggle hidden modules to `Shift`+`Space` (because of Spotlight on Mac)
     - Fixed broken button of "Favorites" category
 - Module [ME](./docs/trial-and-error/Me.md)
     - Added screen magnifier loupe
