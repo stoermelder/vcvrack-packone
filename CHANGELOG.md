@@ -14,6 +14,7 @@
 - Module [AHAB](./docs/ahab/Ahab.md)
     - Added gate length as a parameter for operator `>` in note mode (#420)
     - Added reset input for tick counter (#429)
+    - Added "pending bang" operator `+` (#427)
     - Fixed crash on operator `<` when using whithout maximum value set (#425)
 - Modules [INTERMIX](./docs/intermix/Intermix.md)
     - Added reset input for resetting scene selection and direction (#433)
