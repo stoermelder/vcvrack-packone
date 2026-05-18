@@ -31,3 +31,5 @@ PILE and POLY-PILE pair well with the MIDI-STEP module, which outputs increment 
 - v1.6.0
     - Introduced POLY-PILE (polyphonic version of PILE)
     - Removed slew-limiting after preset-load
+- v2.4.0
+    - POLY-PILE: Added support for polyphonic reset triggers (#431)

@@ -36,6 +36,8 @@
     - Fixed broken button of "Favorites" category
 - Module [ME](./docs/trial-and-error/Me.md)
     - Added screen magnifier loupe
+- Module [POLY-PILE](./docs/pile/Pile.md)
+    - Added support for polyphonic reset triggers (#431)
 
 ## 2.3.1
 
