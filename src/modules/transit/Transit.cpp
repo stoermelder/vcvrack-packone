@@ -44,7 +44,7 @@ struct ParamHandleEx : ParamHandleIndicator {
 
 
 template <int NUM_PRESETS>
-struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
+struct TransitModule : TransitBase<NUM_PRESETS>, TransitCtrlSender, ExpanderChangeListener {
 	typedef TransitBase<NUM_PRESETS> BASE;
 	typedef typename TransitBase<NUM_PRESETS>::Slot SLOT;
 
@@ -148,6 +148,9 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 	TaskProcessor<256> taskProcessorDsp;
 	TaskProcessor<256> taskProcessorUi;
 
+	dsp::RingBuffer<CtrlChange, 16> ctrlChangeQueue;
+	TransitCtrlReceiver* ctrlReceiver = nullptr;
+
 	TransitModule() {
 		BASE::panelTheme = pluginSettings.panelThemeDefault;
 		registerExpanderListener("Transit", this);
@@ -245,6 +248,13 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 	void process(const Module::ProcessArgs& args) override {
 		sampleRate = args.sampleRate;
 
+		// Apply any parameter changes enqueued by TransitCtrl
+		while (!ctrlChangeQueue.empty()) {
+			CtrlChange change = ctrlChangeQueue.shift();
+			ParamQuantity* pq = getCtrlParamQuantity(change.index);
+			if (pq) pq->getParam()->setValue(change.value);
+		}
+
 		CTRLMODE ctrlMode = (CTRLMODE)Module::params[PARAM_CTRLMODE].getValue();
 
 		if (expandersChanged || ctrlMode != BASE::ctrlMode) {
@@ -253,6 +263,19 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 			TransitBase<NUM_PRESETS>* t = this;
 			t->ctrlMode = ctrlMode;
 			int c = 0;
+
+			// Right side: TransitCtrl must be the immediate right neighbor, before any TransitEx.
+			// Transit pushes its TransitCtrlSender pointer into TransitCtrl so proxy PQs activate.
+			ctrlReceiver = nullptr;
+			{
+				Module* firstRight = m->rightExpander.module;
+				if (firstRight && firstRight->model == modelTransitCtrl) {
+					ctrlReceiver = dynamic_cast<TransitCtrlReceiver*>(firstRight);
+					if (ctrlReceiver) ctrlReceiver->setTransitCtrl(this);
+					m = firstRight; // advance past TransitCtrl so TransitEx walk starts after it
+				}
+			}
+
 			while (true) {
 				N[c] = t;
 				c++;
@@ -561,9 +584,25 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 		return paramQuantity;
 	}
 
+	ParamQuantity* getCtrlParamQuantity(int index) override {
+		auto snap = &sourceHandles;
+		if (index < 0 || index >= (int)snap->size()) return nullptr;
+		return getParamQuantity((*snap)[index]);
+	}
+
+	int getCtrlParamCount() override {
+		auto snap = &sourceHandles;
+		return (int)snap->size();
+	}
+
+	void pushCtrlChange(int index, float value) override {
+		if (!ctrlChangeQueue.full())
+			ctrlChangeQueue.push({index, value});
+	}
+
 	/** Bind all parameters of a module to be controlled by this Transit.
 	 *  Called from the UI-thread.
-	 */	 
+	 */
 	void bindAddModuleRequest(Module* m) {
 		if (!m) return;
 		for (size_t i = 0; i < m->params.size(); i++) {
@@ -701,18 +740,20 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 				if (presetNew.size() <= i) return;
 				float newValue = presetNew[i];
 
+				float v;
 				if (sourceHandles[i]->isSwitch) {
-					float v = s10 < 0.5f ? oldValue : newValue;
+					v = s10 < 0.5f ? oldValue : newValue;
 					pq->getParam()->setValue(v);
 				}
 				else {
-					float v = crossfade(oldValue, newValue, s10);
+					v = crossfade(oldValue, newValue, s10);
 					if (s10 > (1.f - 5e-3f) && std::abs(std::round(v) - v) < 5e-3f) v = std::round(v);
 					if (settings::isPlugin && parameterChangesDirect)
 						pq->setValue(v);
 					else
 						pq->getParam()->setValue(v);
 				}
+				if (ctrlReceiver) ctrlReceiver->setCtrlParamValue((int)i, v);
 			}
 
 			if (s == 10.f) {
@@ -769,6 +810,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 						pq->setValue(v);
 					else
 						pq->getParam()->setValue(v);
+					if (ctrlReceiver) ctrlReceiver->setCtrlParamValue((int)i, v);
 				}
 			}
 			else {
@@ -776,11 +818,11 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 					ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
 					if (!pq) continue;
 					float v = (*slot1->getPreset())[i];
-
 					if (settings::isPlugin && parameterChangesDirect)
 						pq->setValue(v);
 					else
 						pq->getParam()->setValue(v);
+					if (ctrlReceiver) ctrlReceiver->setCtrlParamValue((int)i, v);
 				}
 			}
 

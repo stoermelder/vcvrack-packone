@@ -196,7 +196,11 @@ struct SimpleEngine {
 			std::swap(module->rightExpander.producerMessage, module->rightExpander.consumerMessage);
 		}
 		frame++;
- 	}
+	}
+
+	void stepBlock(int n) {
+		for (int i = 0; i < n; i++) step();
+	}
 
 	void registerModule(Module* m) {
 		modules.push_back(m);
@@ -214,6 +218,13 @@ struct SimpleEngine {
 	void registerModules(T*... _m) {
 		Module* arr[] = {_m...};
 		for (Module* m : arr) {
+			auto it = std::find(this->modules.begin(), this->modules.end(), m);
+			assert(it == this->modules.end());
+			// Set ID if unset or collides with an existing ID
+			if (m->id < 0) {
+				// Randomly generate ID
+				m->id = random::u64() % (1ull << 53);
+			}
 			this->modules.push_back(m);
 		}
 	}

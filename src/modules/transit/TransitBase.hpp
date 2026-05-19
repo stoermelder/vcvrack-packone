@@ -410,5 +410,33 @@ struct TransitLedButton : VCVButton {
 	}
 };
 
+
+struct CtrlChange {
+	int index;
+	float value;
+};
+
+/** Non-template interface exposed by TransitModule so TransitCtrl can access mapped parameters
+ *  without knowing the NUM_PRESETS template argument. */
+struct TransitCtrlSender {
+	virtual ~TransitCtrlSender() = default;
+	virtual ParamQuantity* getCtrlParamQuantity(int index) = 0;
+	virtual int getCtrlParamCount() = 0;
+	virtual void pushCtrlChange(int index, float value) = 0;
+};
+
+/** Non-template interface implemented by TransitCtrlModule. Transit pushes its own
+ *  TransitCtrlSender pointer into TransitCtrl via this interface when it finds TransitCtrl
+ *  as the immediate right neighbor. */
+struct TransitCtrlReceiver {
+	virtual ~TransitCtrlReceiver() = default;
+	virtual void setTransitCtrl(TransitCtrlSender* ctrl) = 0;
+	/** Mirror a Transit-originated param write into the TransitCtrl knob.
+	 *  Updates both the raw param value and the last-known value so that the
+	 *  change detector in process() sees no delta and does not re-queue it. */
+	virtual void setCtrlParamValue(int index, float value) = 0;
+};
+
+
 } // namespace Transit
 } // namespace StoermelderPackOne

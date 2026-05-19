@@ -56,6 +56,7 @@ extern Model* modelStroke;
 extern Model* modelSpin;
 extern Model* modelTransit;
 extern Model* modelTransitEx;
+extern Model* modelTransitCtrl;
 extern Model* modelX4;
 extern Model* modelMacro;
 extern Model* modelRaw;
