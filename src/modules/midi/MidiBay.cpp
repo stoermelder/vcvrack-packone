@@ -2,6 +2,7 @@
 #include "../../components/MatrixButton.hpp"
 #include "../../components/MidiWidget.hpp"
 #include "../../ui/ModuleSelectProcessor.hpp"
+#include "../../ui/OverlayMessageWidget.hpp"
 #include "MidiTrackingProcessor.hpp"
 #include "MidiBay_controllers.hpp"
 
@@ -80,7 +81,7 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 	dsp::BooleanTrigger buttonTriggers[MATRIX_COUNT];
 	dsp::BooleanTrigger sceneTriggers[MATRIX_SIZE];
 	dsp::RingBuffer<std::function<void()>, 16> guiQueue;
-	dsp::ClockDivider lightDivider;
+	ClockDividerEx processDivider;
 	// Written by GUI thread (step), read by DSP thread (process) — accepted race for LEDs
 	bool portHasCable[MATRIX_COUNT] = {};
 	float blinkPhase = 0.f;
@@ -96,6 +97,11 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 	// -1 forces a send on the first light-divider tick after load.
 	int cellLedState[MATRIX_COUNT];
 
+	/** [Stored to Json] */
+	bool overlayEnabled;
+	int overlayMessageId = -1;
+	OverlayMessageProvider::Message overlayMessage;
+
 	MidiBayModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -110,34 +116,35 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		trackingProcessor.handler = this;
 		trackingProcessor.enableCc();
 		trackingProcessor.enableNotes();
-		lightDivider.setDivision(512);
+		processDivider.setDivision(256);
 	}
 
 	void onReset() override {
 		disableLearn();
 		disablePortLearn();
 		pendingCellId = -1;
-		queueReset();
+		requestReset();
 	}
 
 	void process(const ProcessArgs& args) override {
 		trackingProcessor.process(args.frame);
 
-		for (int i = 0; i < MATRIX_COUNT; i++) {
-			if (buttonTriggers[i].process(params[PARAM_MATRIX + i].getValue() > 0.5f)) {
-				triggerCell(i);
+		if (processDivider.process()) {
+			for (int i = 0; i < MATRIX_COUNT; i++) {
+				if (buttonTriggers[i].process(params[PARAM_MATRIX + i].getValue() > 0.5f)) {
+					triggerCell(i);
+					blinkPhase = 0.f;
+				}
 			}
-		}
-		for (int i = 0; i < MATRIX_SIZE; i++) {
-			if (sceneTriggers[i].process(params[PARAM_SCENE + i].getValue() > 0.5f)) {
-					queueSceneChange(i);
+			for (int i = 0; i < MATRIX_SIZE; i++) {
+				if (sceneTriggers[i].process(params[PARAM_SCENE + i].getValue() > 0.5f)) {
+					requestSceneChange(i);
+				}
 			}
-		}
 
-		blinkPhase += args.sampleTime * 4.f;
-		if (blinkPhase >= 1.f) blinkPhase -= 1.f;
+			blinkPhase += args.sampleTime * 4.f * processDivider.division;
+			if (blinkPhase >= 1.f) blinkPhase -= 1.f;
 
-		if (lightDivider.process()) {
 			bool blinkOn = blinkPhase < 0.5f;
 			for (int i = 0; i < MATRIX_COUNT; i++) {
 				bool assigned = portAssignments[i].isValid();
@@ -148,13 +155,16 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 				if (pendingCellId == i) {
 					col = blinkOn ? LED_PENDING : LED_OFF;
 					stateId = LED_STATE_PENDING;
-				} else if (portLearningId == i) {
+				} 
+				else if (portLearningId == i) {
 					col = blinkOn ? LED_PORT_LEARN : LED_OFF;
 					stateId = LED_STATE_PORT_LEARN;
-				} else if (learningId == i) {
+				} 
+				else if (learningId == i) {
 					col = blinkOn ? LED_MIDI_LEARN : LED_OFF;
 					stateId = LED_STATE_MIDI_LEARN;
-				} else if (assigned) {
+				} 
+				else if (assigned) {
 					if (isOutput) {
 						if (hasCable) { col = LED_OUTPUT;     stateId = LED_STATE_OUT;     }
 						else          { col = LED_OUTPUT_DIM; stateId = LED_STATE_OUT_DIM; }
@@ -279,7 +289,7 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 	}
 
 	void sendFeedback(int cellId, int stateId) {
-		auto& presets = getPresets();
+		static auto& presets = getPresets();
 		if (feedbackPreset <= 0 || feedbackPreset >= (int)presets.size()) return;
 		const MidiOutPreset& preset = presets[feedbackPreset];
 		const MidiOutSpec& spec = preset.specs[stateId];
@@ -416,6 +426,7 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 			}
 		}
 	}
+
 	// --- Cable manipulation (GUI thread only) ---
 
 	static CableWidget* findCable(int64_t outputModuleId, int outputPortId, int64_t inputModuleId, int inputPortId) {
@@ -456,6 +467,7 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		APP->engine->addCable(c);
 
 		CableWidget* cw = new CableWidget;
+		cw->color = APP->scene->rack->getNextCableColor();
 		cw->setCable(c);
 		APP->scene->rack->addCable(cw);
 		history::CableAdd* h = new history::CableAdd;
@@ -472,9 +484,11 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		int outCell, inCell;
 		if (a.type == engine::Port::OUTPUT && b.type == engine::Port::INPUT) {
 			outPd = &a; inPd = &b; outCell = cellIdA; inCell = cellIdB;
-		} else if (a.type == engine::Port::INPUT && b.type == engine::Port::OUTPUT) {
+		} 
+		else if (a.type == engine::Port::INPUT && b.type == engine::Port::OUTPUT) {
 			outPd = &b; inPd = &a; outCell = cellIdB; inCell = cellIdA;
-		} else {
+		} 
+		else {
 			return;
 		}
 
@@ -482,9 +496,19 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 			setConnection(currentScene, outCell, inCell, false);
 			CableWidget* cw = findCable(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId);
 			if (cw) removeCable(cw);
-		} else {
+
+			overlayMessage.title = "Removed cable";
+			overlayMessageId = 0;
+			overlayMessage.subtitle[0] = portLabel(*outPd);
+			overlayMessage.subtitle[1] = portLabel(*inPd);
+		} 
+		else {
 			setConnection(currentScene, outCell, inCell, true);
 			addCableToPort(outPd, inPd);
+			overlayMessage.title = "Added cable";
+			overlayMessageId = 0;
+			overlayMessage.subtitle[0] = portLabel(*outPd);
+			overlayMessage.subtitle[1] = portLabel(*inPd);
 		}
 	}
 
@@ -516,15 +540,18 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 				const PortAssignment* inPd  = nullptr;
 				if (a.type == engine::Port::OUTPUT && b.type == engine::Port::INPUT) {
 					outPd = &a; inPd = &b;
-				} else if (a.type == engine::Port::INPUT && b.type == engine::Port::OUTPUT) {
+				} 
+				else if (a.type == engine::Port::INPUT && b.type == engine::Port::OUTPUT) {
 					outPd = &b; inPd = &a;
-				} else {
+				} 
+				else {
 					continue;
 				}
 				if (was) {
 					CableWidget* cw = findCable(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId);
 					if (cw) removeCable(cw);
-				} else {
+				} 
+				else {
 					addCableToPort(outPd, inPd);
 				}
 			}
@@ -558,9 +585,11 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		if (!portAssignments[id].isValid()) return;
 		if (pendingCellId < 0) {
 			pendingCellId = id;
-		} else if (pendingCellId == id) {
+		} 
+		else if (pendingCellId == id) {
 			pendingCellId = -1;
-		} else {
+		} 
+		else {
 			int a = pendingCellId, b = id;
 			if (!guiQueue.full())
 				guiQueue.push([this, a, b]() { toggleConnection(a, b); });
@@ -568,13 +597,14 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		}
 	}
 
-	void queueSceneChange(int i) {
-		if (!guiQueue.full())
+	void requestSceneChange(int i) {
+		if (!guiQueue.full()) {
 			guiQueue.push([this, i]() { switchScene(i); });
+		}
 	}
 
-	void queueReset() {
-		if (!guiQueue.full())
+	void requestReset() {
+		if (!guiQueue.full()) {
 			guiQueue.push([this]() {
 				static const uint64_t empty[MATRIX_COUNT] = {};
 				captureScene(currentScene);
@@ -587,6 +617,7 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 				std::fill(cellLedState, cellLedState + MATRIX_COUNT, -1);
 				std::fill(portHasCable, portHasCable  + MATRIX_COUNT, false);
 			});
+		}
 	}
 };
 
@@ -645,7 +676,7 @@ struct MidiBayCellButton : app::SvgSwitch {
 };
 
 
-struct MidiBayWidget : ThemedModuleWidget<MidiBayModule> {
+struct MidiBayWidget : ThemedModuleWidget<MidiBayModule>, OverlayMessageProvider {
 	MidiBayWidget(MidiBayModule* module) : ThemedModuleWidget(module, "MidiBay") {
 		setModule(module);
 
@@ -671,6 +702,25 @@ struct MidiBayWidget : ThemedModuleWidget<MidiBayModule> {
 			addParam(sb);
 			addChild(createLightCentered<MatrixButtonLight<WhiteLight, MidiBayModule>>(Vec(x, 320.6f), module, MidiBayModule::LIGHT_SCENE + i));
 		}
+
+		OverlayMessageWidget::registerProvider(this);
+	}
+
+	~MidiBayWidget() {
+		OverlayMessageWidget::unregisterProvider(this);
+	}
+
+	int nextOverlayMessageId() override {
+		if (module->overlayMessageId == 0) {
+			module->overlayMessageId = -1;
+			return 0;
+		}
+		return -1;
+	}
+
+	void getOverlayMessage(int id, Message& m) override {
+		if (id != 0) return;
+		m = module->overlayMessage;
 	}
 
 	static uint64_t sceneClipboard[MATRIX_COUNT];
@@ -686,8 +736,9 @@ struct MidiBayWidget : ThemedModuleWidget<MidiBayModule> {
 		if (!module) return;
 
 		// Execute actions queued from the engine thread
-		while (module->guiQueue.size() > 0)
+		while (module->guiQueue.size() > 0) {
 			module->guiQueue.shift()();
+		}
 
 		// Update cable presence for each assigned cell (read by process() for light colors)
 		for (int i = 0; i < MATRIX_COUNT; i++) {
