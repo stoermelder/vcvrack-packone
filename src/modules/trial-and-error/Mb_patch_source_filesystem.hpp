@@ -698,7 +698,27 @@ struct FileSystemSource : PatchSource {
 			std::string path = selectFolder();
 			if (path.empty()) return;
 			rootContainer = path;
-			index->searchDbValid = false;
+			// Get or create a fresh index for the new root to avoid overwriting its existing index file
+			std::string cacheKey = slug + ":index:" + rootContainer;
+			auto existingIndex = helper->getGlobalCache<FileSystemPatchSourceIndex>(cacheKey);
+			if (existingIndex) {
+				index = existingIndex;
+			} 
+			else {
+				index = std::make_shared<FileSystemPatchSourceIndex>();
+				helper->setGlobalCache(cacheKey, index, nullptr);
+				loadIndex();
+			}
+			// Also swap in the archive cache for the new root
+			std::string archiveCacheKey = slug + ":archiveCache:" + rootContainer;
+			auto existingArchiveCache = helper->getGlobalCache<std::map<std::string, ArchiveCacheEntry>>(archiveCacheKey);
+			if (existingArchiveCache) {
+				archiveCache = existingArchiveCache;
+			} 
+			else {
+				archiveCache = std::make_shared<std::map<std::string, ArchiveCacheEntry>>();
+				helper->setGlobalCache(archiveCacheKey, archiveCache, nullptr);
+			}
 			setContainer("/");
 		}));
 		if (!rootContainer.empty()) {
