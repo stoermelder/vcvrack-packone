@@ -478,10 +478,10 @@ void modelUsageReset() {
 // Browser overlay
 
 BrowserOverlay::BrowserOverlay() {
-	v1::modelBoxZoom = pluginSettings.mbV1zoom;
-	v1::modelBoxSort = pluginSettings.mbV1sort;
-	v1::hideBrands = pluginSettings.mbV1hideBrands;
-	searchDescriptions = pluginSettings.mbV1searchDescriptions;
+	v1::modelBoxZoom = pluginSettings.mbZoom;
+	v1::modelBoxSort = pluginSettings.mbSort;
+	v1::hideBrands = pluginSettings.mbHideBrands;
+	searchDescriptions = pluginSettings.mbSearchDescriptions;
 	sortBySearchScore = pluginSettings.mbSortBySearchScore;
 	favoriteHighlight = pluginSettings.mbFavoriteHighlight;
 	moduleBrowserFromJson(pluginSettings.mbModelsJ);
@@ -532,10 +532,10 @@ BrowserOverlay::~BrowserOverlay() {
 		APP->scene->removeChild(this);
 	}
 
-	pluginSettings.mbV1zoom = v1::modelBoxZoom;
-	pluginSettings.mbV1sort = v1::modelBoxSort;
-	pluginSettings.mbV1hideBrands = v1::hideBrands;
-	pluginSettings.mbV1searchDescriptions = searchDescriptions;
+	pluginSettings.mbZoom = v1::modelBoxZoom;
+	pluginSettings.mbSort = v1::modelBoxSort;
+	pluginSettings.mbHideBrands = v1::hideBrands;
+	pluginSettings.mbSearchDescriptions = searchDescriptions;
 	pluginSettings.mbSortBySearchScore = sortBySearchScore;
 	pluginSettings.mbFavoriteHighlight = favoriteHighlight;
 	json_decref(pluginSettings.mbModelsJ);
