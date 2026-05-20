@@ -50,6 +50,10 @@ This writes to output 1 and scales the value 5 to a range of 0-6, which is mappe
 
 This writes to output 1 (addressed as `a`) a V/Oct pitch voltage of D3 (third octave D).
 
+### "pending bang" operator `+`
+
+AHAB has a third custom operator `+`, which can be placed to create a manual *bang*. For technical reasons ORCA-C has no support for the *bang* operator `*`, and so does AHAB.
+
 ### Feature Comparison
 
 AHAB has some features not found in the original ORCA/ORCA-C:
@@ -68,7 +72,7 @@ Features missing in AHAB compared to ORCA:
 
 - The operator `$` (commander) is not available, as it is not in ORCA-C.
 
-- Hotkey Ctrl/Cmd+`P` to trigger the operator at the cursor is not available, as ORCA-C does not support this feature.
+- Hotkey Ctrl/Cmd+`P` to trigger the operator at the cursor is not available, as ORCA-C does not support this feature. AHAB has a special "pending bang" operator `+`, which will give you a similar result, when placing next to an operator.
 
 ### Keyboard Shortcuts
 
@@ -104,4 +108,5 @@ Features missing in AHAB compared to ORCA:
 - v2.4.0
     - Added gate length as a parameter for operator `>` in note mode (#420)
     - Added reset input for tick counter (#429)
+    - Added "pending bang" operator `+` (#427)
     - Fixed crash on operator `<` when using whithout maximum value set (#425)

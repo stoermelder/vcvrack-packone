@@ -31,51 +31,31 @@ struct AutoTagConfirmWidget : widget::OpaqueWidget {
 		}
 	};
 
-	struct ModelLabel : ui::Label {
+	struct ModelLabel : MenuItem {
 		plugin::Model* model;
 		NVGcolor lineColor = bndGetTheme()->regularTheme.textColor;
 
 		ModelLabel(plugin::Model* m) : model(m) {
 			text = model->plugin->brand + " " + model->name;
-			lineHeight = 0.9f;
-			lineColor.a = 0.4f;
-			float bounds[4];
-			nvgTextLineHeight(APP->window->vg, lineHeight);
-			nvgFontSize(APP->window->vg, fontSize);
-			nvgFontFaceId(APP->window->vg, APP->window->uiFont->handle);
-			nvgTextBounds(APP->window->vg, 0.f, 0.f, text.c_str(), NULL, bounds);
-			float tw = bounds[2] - bounds[0] + BND_PAD_LEFT + BND_PAD_RIGHT + 2.f;
-			box.size.x = tw;
-		}
-
-		void draw(const DrawArgs& args) override {
-			// Draw underline
-			nvgBeginPath(args.vg);
-			nvgMoveTo(args.vg, BND_PAD_LEFT, box.size.y - 3.f);
-			nvgLineTo(args.vg, box.size.x - BND_PAD_RIGHT - 2.f, box.size.y - 3.f);
-			nvgStrokeColor(args.vg, lineColor);
-			nvgStrokeWidth(args.vg, 1.f);
-			nvgStroke(args.vg);
-			Label::draw(args);
 		}
 
 		void onButton(const event::Button& e) override {
-			if (e.action == GLFW_PRESS) {
+			if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
 				ui::Menu* menu = createMenu();
 				model->appendContextMenu(menu, true);
 				e.consume(this);
 			}
-			else {
-				ui::Label::onButton(e);
+			if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
+				std::string fullSlug = model->plugin->slug + "/" + model->slug;
+				std::string url = "https://library.vcvrack.com/?modules=" + fullSlug;
+				system::openBrowser(url);
+				e.consume(this);
 			}
 		}
 
-		void onHover(const event::Hover& e) override {
-			e.consume(this);
-			lineColor.a = 0.8f;
-		}
-		void onLeave(const event::Leave& e) override {
-			lineColor.a = 0.4f;
+		void step() override {
+			MenuItem::step();
+			box.size.x -= 8.f;
 		}
 	};
 
@@ -147,16 +127,16 @@ struct AutoTagConfirmWidget : widget::OpaqueWidget {
 			row->box.size.x = box.size.x - 2.f * margin - 40.f;
 
 			TagButton* cb = new TagButton(pair.first, this);
-			cb->box.pos = math::Vec(0.f, 0.f);
+			cb->box.pos = math::Vec(6.f, 0.f);
 			cb->box.size.x = 180.f;
 			row->addChild(cb);
 
 			// SequentialLayout for individual model labels
 			ui::SequentialLayout* modelLayout = new ui::SequentialLayout;
-			modelLayout->box.pos = math::Vec(cb->box.size.x + 10.f, 0.f);
+			modelLayout->box.pos = math::Vec(cb->box.pos.x + cb->box.size.x + 10.f, 0.f);
 			modelLayout->box.size.x = box.size.x - cb->box.size.x - 30.f;
 			modelLayout->orientation = ui::SequentialLayout::HORIZONTAL_ORIENTATION;
-			modelLayout->spacing = math::Vec(-BND_PAD_LEFT, -2.f);
+			modelLayout->spacing = math::Vec(-.5f, -.5f);
 			row->addChild(modelLayout);
 
 			// Add individual model labels sorted alphabetically
