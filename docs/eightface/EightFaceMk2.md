@@ -145,4 +145,5 @@ Once placed next to 8FACE mk2 the expander works and behaves the same way 8FACE 
     - Added performance warning for large module presets (#396)
     - Fixed broken unbinding of modules (memory leak) (#396)
 - v2.4.0
+    - Added an option to draw module outlines only when selected, which is the new default
     - Fixed broken processing in VCV Rack-plugin on closed plugin-window (#424)

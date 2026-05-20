@@ -765,7 +765,7 @@ struct AhabSimWidget : OpaqueWidget {
 			}
 
 			// General printable characters (letters, numbers, punctuation)
-			if ((c >= 48 && c <= 90) || (c >= 97 && c <= 122) || c == 33 || (c >= 35 && c <= 38) || c == 42 || c == 46) {
+			if ((c >= 48 && c <= 90) || (c >= 97 && c <= 122) || c == 33 || (c >= 35 && c <= 38) || c == 42 || c == 43 || c == 46) {
 				Glyph g = (Glyph)c;
 				Usz cy, cx; renderer.getCursor(cy, cx);
 				module->sim->setGlyphRequest(cy, cx, g);
