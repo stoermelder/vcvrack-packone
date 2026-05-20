@@ -1130,7 +1130,7 @@ struct MidiBayWidget : ThemedModuleWidget<MidiBayModule>, OverlayMessageProvider
 	}
 
 	int nextOverlayMessageId() override {
-		if (module->overlayMessageId == 0) {
+		if (module && module->overlayMessageId == 0) {
 			module->overlayMessageId = -1;
 			return 0;
 		}
