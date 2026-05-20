@@ -5,6 +5,7 @@
 #include "../../ui/OverlayMessageWidget.hpp"
 #include "MidiTrackingProcessor.hpp"
 #include "MidiBay_controllers.hpp"
+#include <osdialog.h>
 
 namespace StoermelderPackOne {
 namespace MidiBay {
@@ -107,7 +108,8 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 	// GUI thread — midi::Output subclass that invalidates cached LED states on device change
 	// so that all cells are re-sent when a new output device is connected.
 	struct MidiBayOutput : midi::Output {
-		int* ledState = nullptr;
+		int* ledState      = nullptr;
+		int* sceneLedState = nullptr;
 
 		// Prepends a "none / disconnected" entry (-1) to the device channel list.
 		std::vector<int> getChannels() override {
@@ -120,7 +122,8 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		// states to -1, which makes the next process() tick re-send every cell.
 		void setDeviceId(int deviceId) override {
 			midi::Output::setDeviceId(deviceId);
-			if (ledState) std::fill(ledState, ledState + MATRIX_COUNT, -1);
+			if (ledState)      std::fill(ledState,      ledState      + MATRIX_COUNT, -1);
+			if (sceneLedState) std::fill(sceneLedState, sceneLedState + MATRIX_SIZE,  -1);
 		}
 	};
 
@@ -163,8 +166,13 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 
 	/** [Stored to JSON] */
 	int feedbackPreset = 0;
+	/** [Stored to JSON] — raw JSON string for the user-loaded custom preset (non-empty when feedbackPreset == PRESET_IDX_CUSTOM) */
+	std::string customPresetJson;
+	MidiOutPreset customPreset;
+
 	// -1 forces a send on the first light-divider tick after load.
 	int cellLedState[MATRIX_COUNT];
+	int sceneLedState[MATRIX_SIZE];
 
 	/** [Stored to Json] */
 	bool overlayEnabled;
@@ -175,7 +183,7 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 	MidiBayModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		std::fill(cellLedState, cellLedState + MATRIX_COUNT, -1);
+		invalidateLedStates();
 		for (int i = 0; i < MATRIX_COUNT; i++) {
 			configParam<MidiBayCellQuantity>(PARAM_MATRIX + i, 0.f, 1.f, 0.f);
 		}
@@ -186,7 +194,8 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		trackingProcessor.handler = this;
 		trackingProcessor.enableCc();
 		trackingProcessor.enableNotes();
-		midiOutput.ledState = cellLedState;
+		midiOutput.ledState      = cellLedState;
+		midiOutput.sceneLedState = sceneLedState;
 		processDivider.setDivision(256);
 	}
 
@@ -278,18 +287,26 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 			}
 			for (int s = 0; s < MATRIX_SIZE; s++) {
 				float bright;
+				int sceneState;
 				if (learningId == MATRIX_COUNT + s) {
 					bright = blinkOn ? LED_BRIGHT : 0.f;
+					sceneState = LED_STATE_MIDI_LEARN;
 				}
 				else if (s == currentScene) {
 					bright = LED_BRIGHT;
+					sceneState = LED_STATE_SCENE_ACTIVE;
 				}
 				else {
 					bool hasConn = false;
 					for (int i = 0; i < MATRIX_COUNT; i++) {
 						if (sceneConnections[s][i]) { hasConn = true; break; }
 					}
-					bright = hasConn ? LED_SCENE_DIM : 0.f;
+					bright      = hasConn ? LED_SCENE_DIM : 0.f;
+					sceneState  = hasConn ? LED_STATE_SCENE_DIM : LED_STATE_OFF;
+				}
+				if (sceneState != sceneLedState[s]) {
+					sceneLedState[s] = sceneState;
+					sendFeedback(MATRIX_COUNT + s, sceneState);
 				}
 				lights[LIGHT_SCENE + s].setBrightness(bright);
 			}
@@ -347,6 +364,22 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		}
 	}
 
+	// Returns a pointer to the currently active preset, or nullptr when feedback is off.
+	const MidiOutPreset* getActivePreset() const {
+		static auto& presets = getPresets();
+		if (feedbackPreset == PRESET_IDX_CUSTOM) return &customPreset;
+		if (feedbackPreset > 0 && feedbackPreset < CONTROLLER_PRESET_COUNT)
+			return &presets[feedbackPreset];
+		return nullptr;
+	}
+
+	// Any thread — forces a full MIDI LED refresh on the next process() tick by resetting
+	// all cached LED states to -1, causing every cell and scene button to be re-sent.
+	void invalidateLedStates() {
+		std::fill(cellLedState,  cellLedState  + MATRIX_COUNT, -1);
+		std::fill(sceneLedState, sceneLedState + MATRIX_SIZE,  -1);
+	}
+
 	// GUI thread — starts MIDI learn for a single cell (id < MATRIX_COUNT) or scene button
 	// (id >= MATRIX_COUNT). Cancels any previously active learn first.
 	void enableLearn(int id) {
@@ -401,12 +434,12 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 	}
 
 	// Engine thread — sends a single MIDI message to the output device to update the
-	// controller LED for cellId to the given stateId. Called only when the state changes.
+	// controller LED for mapId to the given stateId. Called only when the state changes.
+	// mapId 0–63: matrix cells; mapId 64–71: scene buttons (MATRIX_COUNT + sceneId).
 	void sendFeedback(int cellId, int stateId) {
-		static auto& presets = getPresets();
-		if (feedbackPreset <= 0 || feedbackPreset >= (int)presets.size()) return;
-		const MidiOutPreset& preset = presets[feedbackPreset];
-		const MidiOutSpec& spec = preset.specs[stateId];
+		const MidiOutPreset* preset = getActivePreset();
+		if (!preset) return;
+		const MidiOutSpec& spec = preset->specs[stateId];
 		if (spec.type == MIDI_OUT_NONE) return;
 		int noteNum;
 		switch (spec.noteMode) {
@@ -438,22 +471,20 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 	// GUI thread — replaces all MIDI input mappings with those defined by the currently
 	// selected feedback preset's slot layout. No-op if the preset has no layout.
 	void applyPresetLayout() {
-		static auto& presets = getPresets();
-		if (feedbackPreset <= 0 || feedbackPreset >= (int)presets.size()) return;
-		const MidiOutPreset& preset = presets[feedbackPreset];
-		if (!preset.hasLayout()) return;
+		const MidiOutPreset* preset = getActivePreset();
+		if (!preset || !preset->hasLayout()) return;
 		trackingProcessor.clearMaps();
 		for (int i = 0; i < MATRIX_COUNT; i++) {
-			const auto& s = preset.cells[i];
+			const auto& s = preset->cells[i];
 			if (s.type != MidiTrackingType::NONE && s.number > 0)
 				trackingProcessor.setMap(s.type, i, s.number);
 		}
 		for (int i = 0; i < MATRIX_SIZE; i++) {
-			const auto& s = preset.scenes[i];
+			const auto& s = preset->scenes[i];
 			if (s.type != MidiTrackingType::NONE && s.number > 0)
 				trackingProcessor.setMap(s.type, MATRIX_COUNT + i, s.number);
 		}
-		std::fill(cellLedState, cellLedState + MATRIX_COUNT, -1);
+		invalidateLedStates();
 	}
 
 	// GUI thread — serializes all persistent state to JSON (called on patch save / undo snapshot).
@@ -501,6 +532,8 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		}
 		json_object_set_new(rootJ, "scenes", scenesJ);
 		json_object_set_new(rootJ, "feedbackPreset", json_integer(feedbackPreset));
+		if (feedbackPreset == PRESET_IDX_CUSTOM && !customPresetJson.empty())
+			json_object_set_new(rootJ, "customPreset", json_string(customPresetJson.c_str()));
 		json_object_set_new(rootJ, "midiInput",  trackingProcessor.getInput().toJson());
 		json_object_set_new(rootJ, "midiOutput", midiOutput.toJson());
 		return rootJ;
@@ -541,8 +574,22 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		}
 
 		feedbackPreset = json_integer_value(json_object_get(rootJ, "feedbackPreset"));
-		feedbackPreset = clamp(feedbackPreset, 0, (int)getPresets().size() - 1);
-		std::fill(cellLedState, cellLedState + MATRIX_COUNT, -1);
+		if (feedbackPreset != PRESET_IDX_CUSTOM)
+			feedbackPreset = clamp(feedbackPreset, 0, CONTROLLER_PRESET_COUNT - 1);
+		if (feedbackPreset == PRESET_IDX_CUSTOM) {
+			json_t* cpJ = json_object_get(rootJ, "customPreset");
+			if (cpJ) {
+				customPresetJson = json_string_value(cpJ);
+				json_error_t err;
+				json_t* root = json_loads(customPresetJson.c_str(), 0, &err);
+				if (root) { customPreset.fromJson(root); json_decref(root); }
+				else feedbackPreset = 0;
+			} 
+			else {
+				feedbackPreset = 0;
+			}
+		}
+		invalidateLedStates();
 
 		json_t* midiInputJ = json_object_get(rootJ, "midiInput");
 		if (midiInputJ) trackingProcessor.getInput().fromJson(midiInputJ);
@@ -802,7 +849,7 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 				for (int i = 0; i < MATRIX_COUNT; i++) trackingProcessor.clearMap(i);
 				currentScene   = 0;
 				feedbackPreset = 0;
-				std::fill(cellLedState, cellLedState + MATRIX_COUNT, -1);
+				invalidateLedStates();
 				std::fill(portHasCable, portHasCable  + MATRIX_COUNT, false);
 			});
 		}
@@ -1173,7 +1220,7 @@ struct MidiBayWidget : ThemedModuleWidget<MidiBayModule>, OverlayMessageProvider
 		menu->addChild(new MenuSeparator);
 		menu->addChild(createSubmenuItem("MIDI Input", "", [=](Menu* menu) { appendMidiMenu(menu, &module->trackingProcessor.getInput()); }));
 		menu->addChild(createSubmenuItem("MIDI Output", "", [=](Menu* menu) { appendMidiMenu(menu, &module->midiOutput); }));
-		menu->addChild(createSubmenuItem("MIDI Feedback", "", [=](Menu* menu) {
+		menu->addChild(createSubmenuItem("MIDI Preset", "", [=](Menu* menu) {
 			auto& presets = getPresets();
 			for (int i = 0; i < (int)presets.size(); i++) {
 				int preset = i;
@@ -1182,17 +1229,66 @@ struct MidiBayWidget : ThemedModuleWidget<MidiBayModule>, OverlayMessageProvider
 					[=]() { return module->feedbackPreset == preset; },
 					[=]() {
 						module->feedbackPreset = preset;
-						std::fill(module->cellLedState, module->cellLedState + MATRIX_COUNT, -1);
+						module->invalidateLedStates();
 					}
 				));
 			}
+			if (module->feedbackPreset == PRESET_IDX_CUSTOM) {
+				std::string name = module->customPreset.name.empty() ? "Custom preset" : module->customPreset.name;
+				menu->addChild(createCheckMenuItem(name, "",
+					[=]() { return true; },
+					[=]() {}
+				));
+			}
 			menu->addChild(new MenuSeparator);
-			bool hasLayout = module->feedbackPreset > 0 &&
-			                 module->feedbackPreset < (int)presets.size() &&
-			                 presets[module->feedbackPreset].hasLayout();
+			const MidiOutPreset* activeP = module->getActivePreset();
+			bool hasLayout = activeP && activeP->hasLayout();
 			menu->addChild(createMenuItem("Apply note layout as MIDI input mappings", "",
 				[=]() { module->applyPresetLayout(); },
 				!hasLayout
+			));
+			menu->addChild(new MenuSeparator);
+			menu->addChild(createMenuItem("Load preset from file...", "", [=]() {
+				osdialog_filters* filters = osdialog_filters_parse("JSON:json");
+				char* pathC = osdialog_file(OSDIALOG_OPEN, NULL, NULL, filters);
+				osdialog_filters_free(filters);
+				if (!pathC) return;
+				std::string path = pathC;
+				free(pathC);
+				std::vector<uint8_t> bytes = system::readFile(path);
+				if (bytes.empty()) return;
+				std::string text(bytes.begin(), bytes.end());
+				json_error_t err;
+				json_t* root = json_loads(text.c_str(), 0, &err);
+				if (!root) return;
+				MidiOutPreset p;
+				p.fromJson(root);
+				json_decref(root);
+				module->customPreset     = p;
+				module->customPresetJson = text;
+				module->feedbackPreset   = PRESET_IDX_CUSTOM;
+				module->invalidateLedStates();
+			}));
+			bool canSave = module->feedbackPreset > 0;
+			menu->addChild(createMenuItem("Save preset to file...", "",
+				[=]() {
+					osdialog_filters* filters = osdialog_filters_parse("JSON:json");
+					std::string defName = (module->feedbackPreset == PRESET_IDX_CUSTOM)
+						? module->customPreset.name
+						: getPresets()[module->feedbackPreset].name;
+					if (!defName.empty()) defName += ".json";
+					char* pathC = osdialog_file(OSDIALOG_SAVE, NULL,
+						defName.empty() ? "preset.json" : defName.c_str(), filters);
+					osdialog_filters_free(filters);
+					if (!pathC) return;
+					std::string path = pathC;
+					free(pathC);
+					std::string text = (module->feedbackPreset == PRESET_IDX_CUSTOM)
+						? module->customPresetJson
+						: CONTROLLER_PRESET_JSON[module->feedbackPreset];
+					system::writeFile(path, std::vector<uint8_t>(text.begin(), text.end()));
+				},
+				!canSave
 			));
 		}));
 		menu->addChild(createCheckMenuItem("Sequential MIDI learn", "",
