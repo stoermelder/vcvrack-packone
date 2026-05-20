@@ -441,12 +441,14 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		if (!preset) return;
 		const MidiOutSpec& spec = preset->specs[stateId];
 		if (spec.type == MIDI_OUT_NONE) return;
+		MidiTrackingType slotType = MidiTrackingType::NONE;
 		int noteNum;
 		switch (spec.noteMode) {
 			case MIDI_OUT_FROM_SLOT: {
 				auto m = trackingProcessor.getMap(cellId);
 				if (m.type == MidiTrackingType::NONE) return;
-				noteNum = m.param;
+				noteNum  = m.param;
+				slotType = m.type;
 				break;
 			}
 			case MIDI_OUT_FIXED:
@@ -456,9 +458,14 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		}
 		uint8_t status;
 		switch (spec.type) {
-			case MIDI_OUT_NOTE_ON:  status = 0x90; break;
-			case MIDI_OUT_NOTE_OFF: status = 0x80; break;
-			case MIDI_OUT_CC:       status = 0xB0; break;
+			case MIDI_OUT_NOTE_ON:        status = 0x90; break;
+			case MIDI_OUT_NOTE_OFF:       status = 0x80; break;
+			case MIDI_OUT_CC:             status = 0xB0; break;
+			case MIDI_OUT_FROM_SLOT_TYPE:
+				if      (slotType == MidiTrackingType::NOTE) status = 0x90;
+				else if (slotType == MidiTrackingType::CC)   status = 0xB0;
+				else return;
+				break;
 			default: return;
 		}
 		midi::Message msg;

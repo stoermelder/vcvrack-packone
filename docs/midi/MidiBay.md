@@ -93,6 +93,7 @@ Open the **MIDI Feedback** submenu to select a preset:
 | **Launchpad MK2 (Session mode)** | Novation Launchpad MK2 / S in Session mode. Grid cells use Note On; top-row scene buttons use CC 104–111. Uses hardware flash (channel 2) for pending state and hardware pulse (channel 3) for learn states, synced to MIDI clock. |
 | **APC Mini** | Akai APC Mini (original). LED colors via Note On velocity. |
 | **APC Mini MK2** | Akai APC Mini MK2. RGB LED palette via Note On velocity; MIDI channel encodes behavior (solid/pulse/blink). Grid cells use notes 0–63 (top-left to bottom-right); Scene Launch buttons 1–8 use notes 112–119. |
+| **Ableton Push 2** | Ableton Push 2 in User mode. 8×8 pad grid uses Note On (notes 36–99, bottom-left to top-right); the eight buttons below the display (CC 20–27) serve as scene selectors. MIDI channel encodes animation: 0=static, 6=pulse, 11=blink. Color palette indices: 0=off, 126=green, 127=red, 125=blue, 122=white, 123=light gray. |
 | **Generic (Note On)** | Any controller that accepts Note On for LED control. Velocity values 0–6 map to off through the various states. |
 
 Each preset defines the MIDI message type, channel, and value sent for every LED state (off, output-dim, output, input-dim, input, pending, port-learn, MIDI-learn, scene-active, scene-dim).
@@ -131,7 +132,7 @@ Each **`<spec>`** object describes the MIDI message sent to the controller for o
 
 | Field | Values | Default | Meaning |
 |---|---|---|---|
-| `type` | 0 = none, 1 = Note On, 2 = Note Off, 3 = CC | 0 | Message type; 0 disables feedback for this state |
+| `type` | 0 = none, 1 = Note On, 2 = Note Off, 3 = CC, 4 = from-slot | 0 | Message type; 0 disables feedback for this state. `from-slot` sends Note On for note-mapped buttons and CC for CC-mapped buttons — useful for controllers like the Push 2 that mix both message types |
 | `channel` | 0–15 | 0 | MIDI channel (0 = channel 1) |
 | `noteMode` | 0 = from-slot, 1 = fixed | 0 | `from-slot`: use the button's own MIDI mapping number; `fixed`: use the `note` field |
 | `note` | 0–127 | 0 | Note/CC number; only used when `noteMode` is `fixed` |

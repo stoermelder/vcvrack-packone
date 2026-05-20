@@ -26,7 +26,9 @@ enum {
 };
 
 // MIDI output message type.
-enum MidiOutMsgType { MIDI_OUT_NONE = 0, MIDI_OUT_NOTE_ON, MIDI_OUT_NOTE_OFF, MIDI_OUT_CC };
+// MIDI_OUT_FROM_SLOT_TYPE: derive status byte from the slot's own type (Note→NoteOn, CC→CC).
+// Requires noteMode=from-slot; the slot type must be NOTE or CC.
+enum MidiOutMsgType { MIDI_OUT_NONE = 0, MIDI_OUT_NOTE_ON, MIDI_OUT_NOTE_OFF, MIDI_OUT_CC, MIDI_OUT_FROM_SLOT_TYPE };
 
 // How the note/CC number is resolved when sending MIDI output for an LED state.
 //   FROM_SLOT — use the button's current MIDI input mapping number (the note/CC
@@ -373,6 +375,50 @@ R"json({
         "midiLearn":   {"type":1,"channel": 7,"noteMode":0,"value":21},
         "sceneActive": {"type":1,"channel": 6,"noteMode":0,"value":21},
         "sceneDim":    {"type":1,"channel": 1,"noteMode":0,"value":21}
+    }
+})json",
+
+// ---- Ableton Push 2 --------------------------------------------------------
+// Grid cells: Note On, row r (0=top) col c (0=left) → note = (9−r)×8 + c + 28
+//   top row = 92–99, bottom row = 36–43.
+// Scene buttons (below the display, left to right): CC 20–27.
+//   These use CC for both button press input and LED feedback.
+// LED colour palette (index 0–127):
+//   0=off  122=white  123=light-gray  125=blue  126=green  127=red
+// Animation channels: 0=static  6–10=pulse  11–15=blink
+// spec type 4 (from-slot-type): sends Note On for pad cells, CC for scene buttons.
+// Push 2 must be in User mode (not Live mode) for direct MIDI control.
+// https://github.com/Ableton/push-interface/blob/main/doc/AbletonPush2MIDIDisplayInterface.asc#22-midi-messages
+R"json({
+    "name": "Ableton Push 2",
+    "cells": {
+        "type": 1,
+        "numbers": [
+            92,93,94,95,96,97,98,99,
+            84,85,86,87,88,89,90,91,
+            76,77,78,79,80,81,82,83,
+            68,69,70,71,72,73,74,75,
+            60,61,62,63,64,65,66,67,
+            52,53,54,55,56,57,58,59,
+            44,45,46,47,48,49,50,51,
+            36,37,38,39,40,41,42,43
+        ]
+    },
+    "scenes": {
+        "type": 2,
+        "numbers": [20,21,22,23,24,25,26,27]
+    },
+    "specs": {
+        "off":         {"type":4,"channel": 0,"noteMode":0,"value":  0},
+        "outDim":      {"type":4,"channel": 6,"noteMode":0,"value":127},
+        "out":         {"type":4,"channel": 0,"noteMode":0,"value":127},
+        "inDim":       {"type":4,"channel": 6,"noteMode":0,"value":126},
+        "in":          {"type":4,"channel": 0,"noteMode":0,"value":126},
+        "pending":     {"type":4,"channel":11,"noteMode":0,"value":122},
+        "portLearn":   {"type":4,"channel":11,"noteMode":0,"value":125},
+        "midiLearn":   {"type":4,"channel":11,"noteMode":0,"value":126},
+        "sceneActive": {"type":4,"channel": 0,"noteMode":0,"value":122},
+        "sceneDim":    {"type":4,"channel": 0,"noteMode":0,"value":123}
     }
 })json",
 
