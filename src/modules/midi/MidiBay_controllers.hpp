@@ -20,8 +20,10 @@ enum {
 	LED_STATE_PENDING,
 	LED_STATE_PORT_LEARN,
 	LED_STATE_MIDI_LEARN,
-	LED_STATE_SCENE_ACTIVE,   // scene button: currently selected scene
-	LED_STATE_SCENE_DIM,      // scene button: inactive but has stored connections
+	LED_STATE_SCENE_ACTIVE,      // scene button: currently selected scene
+	LED_STATE_SCENE_DIM,         // scene button: inactive but has stored connections
+	LED_STATE_CONNECTED_OUT,     // output cell connected to the pending cell
+	LED_STATE_CONNECTED_IN,      // input  cell connected to the pending cell
 	LED_STATE_COUNT
 };
 
@@ -102,7 +104,7 @@ struct MidiOutPreset {
 
 		static const char* const STATE_KEYS[LED_STATE_COUNT] = {
 			"off", "outDim", "out", "inDim", "in", "pending", "portLearn", "midiLearn",
-			"sceneActive", "sceneDim"
+			"sceneActive", "sceneDim", "connectedOut", "connectedIn"
 		};
 		json_t* specsJ = json_object_get(rootJ, "specs");
 		if (specsJ) {
@@ -160,16 +162,18 @@ static const char* const CONTROLLER_PRESET_JSON[] = {
 R"json({
     "name": "Off",
     "specs": {
-        "off":         {"type":0},
-        "outDim":      {"type":0},
-        "out":         {"type":0},
-        "inDim":       {"type":0},
-        "in":          {"type":0},
-        "pending":     {"type":0},
-        "portLearn":   {"type":0},
-        "midiLearn":   {"type":0},
-        "sceneActive": {"type":0},
-        "sceneDim":    {"type":0}
+        "off":            {"type":0},
+        "outDim":         {"type":0},
+        "out":            {"type":0},
+        "inDim":          {"type":0},
+        "in":             {"type":0},
+        "pending":        {"type":0},
+        "portLearn":      {"type":0},
+        "midiLearn":      {"type":0},
+        "sceneActive":    {"type":0},
+        "sceneDim":       {"type":0},
+        "connectedOut":   {"type":0},
+        "connectedIn":    {"type":0}
     }
 })json",
 
@@ -201,16 +205,18 @@ R"json({
         "numbers": [8,24,40,56,72,88,104,120]
     },
     "specs": {
-        "off":         {"type":1,"channel":0,"noteMode":0,"value":12},
-        "outDim":      {"type":1,"channel":0,"noteMode":0,"value":13},
-        "out":         {"type":1,"channel":0,"noteMode":0,"value":15},
-        "inDim":       {"type":1,"channel":0,"noteMode":0,"value":28},
-        "in":          {"type":1,"channel":0,"noteMode":0,"value":60},
-        "pending":     {"type":1,"channel":0,"noteMode":0,"value":63},
-        "portLearn":   {"type":1,"channel":0,"noteMode":0,"value":62},
-        "midiLearn":   {"type":1,"channel":0,"noteMode":0,"value":29},
-        "sceneActive": {"type":1,"channel":0,"noteMode":0,"value":60},
-        "sceneDim":    {"type":1,"channel":0,"noteMode":0,"value":28}
+        "off":          {"type":1,"channel":0,"noteMode":0,"value":12},
+        "outDim":       {"type":1,"channel":0,"noteMode":0,"value":13},
+        "out":          {"type":1,"channel":0,"noteMode":0,"value":15},
+        "inDim":        {"type":1,"channel":0,"noteMode":0,"value":28},
+        "in":           {"type":1,"channel":0,"noteMode":0,"value":60},
+        "pending":      {"type":1,"channel":0,"noteMode":0,"value":63},
+        "portLearn":    {"type":1,"channel":0,"noteMode":0,"value":62},
+        "midiLearn":    {"type":1,"channel":0,"noteMode":0,"value":29},
+        "sceneActive":  {"type":1,"channel":0,"noteMode":0,"value":60},
+        "sceneDim":     {"type":1,"channel":0,"noteMode":0,"value":28},
+        "connectedOut": {"type":1,"channel":0,"noteMode":0,"value":15},
+        "connectedIn":  {"type":1,"channel":0,"noteMode":0,"value":60}
     }
 })json",
 
@@ -218,8 +224,8 @@ R"json({
 // Grid cells: Note On, row r (0=top) col c (0=left) → note = (7−r)×10 + c + 11
 // Top-row round buttons (scene): CC 104–111 (fixed regardless of layout, p.7/8).
 // channel 0 — static colour (MIDI ch 1)
-// channel 1 — flash: alternates between this colour and current static colour (MIDI ch 2)
-// channel 2 — pulse: breathes dark→full (MIDI ch 3)
+// channel 1 — flash: alternates between this colour and current static colour, one beat (MIDI ch 2)
+// channel 2 — pulse: breathes dark→full, two beats (MIDI ch 3)
 // https://downloads.novationmusic.com/novation/launchpad-mk2/launchpad-mini-mk2
 R"json({
     "name": "Launchpad MK2 (Session mode)",
@@ -241,16 +247,18 @@ R"json({
         "numbers": [104,105,106,107,108,109,110,111]
     },
     "specs": {
-        "off":         {"type":1,"channel":0,"noteMode":0,"value": 0},
-        "outDim":      {"type":1,"channel":0,"noteMode":0,"value": 5},
-        "out":         {"type":1,"channel":0,"noteMode":0,"value": 7},
-        "inDim":       {"type":1,"channel":0,"noteMode":0,"value":41},
-        "in":          {"type":1,"channel":0,"noteMode":0,"value":45},
-        "pending":     {"type":1,"channel":1,"noteMode":0,"value":63},
-        "portLearn":   {"type":1,"channel":2,"noteMode":0,"value":45},
-        "midiLearn":   {"type":1,"channel":2,"noteMode":0,"value":21},
-        "sceneActive": {"type":1,"channel":0,"noteMode":0,"value":63},
-        "sceneDim":    {"type":1,"channel":0,"noteMode":0,"value": 2}
+        "off":          {"type":1,"channel":0,"noteMode":0,"value": 0},
+        "outDim":       {"type":1,"channel":0,"noteMode":0,"value": 7},
+        "out":          {"type":1,"channel":0,"noteMode":0,"value": 5},
+        "inDim":        {"type":1,"channel":0,"noteMode":0,"value":41},
+        "in":           {"type":1,"channel":0,"noteMode":0,"value":45},
+        "pending":      {"type":1,"channel":1,"noteMode":0,"value": 1},
+        "portLearn":    {"type":1,"channel":2,"noteMode":0,"value":45},
+        "midiLearn":    {"type":1,"channel":2,"noteMode":0,"value":21},
+        "sceneActive":  {"type":1,"channel":0,"noteMode":0,"value":63},
+        "sceneDim":     {"type":1,"channel":0,"noteMode":0,"value": 2},
+        "connectedOut": {"type":1,"channel":2,"noteMode":0,"value": 5},
+        "connectedIn":  {"type":1,"channel":2,"noteMode":0,"value":45}
     }
 })json",
 
@@ -258,8 +266,9 @@ R"json({
 // ---- Novation Launchpad X / Mini MK3 — Programmer mode --------------------
 // Grid cells: Note On, row r (0=top) col c (0=left) → note = (8−r)×10 + c + 1
 // Scene buttons (top row of round buttons): CC 91–98
-// Static colour on channel 0; pending = channel 1 (hardware flash, one beat);
-// learn states = channel 2 (hardware pulse, two beats).
+// channel 0 — static colour (MIDI ch 1)
+// channel 1 — flash: alternates between this colour and current static colour, one beat (MIDI ch 2)
+// channel 2 — pulse: breathes dark→full, two beats (MIDI ch 3)
 // https://downloads.novationmusic.com/novation/launchpad-mk3/launchpad-mini-mk3-0
 R"json({
     "name": "Launchpad X / MK3 (Programmer mode)",
@@ -281,16 +290,18 @@ R"json({
         "numbers": [91,92,93,94,95,96,97,98]
     },
     "specs": {
-        "off":         {"type":1,"channel":0,"noteMode":0,"value": 0},
-        "outDim":      {"type":1,"channel":0,"noteMode":0,"value": 5},
-        "out":         {"type":1,"channel":0,"noteMode":0,"value": 7},
-        "inDim":       {"type":1,"channel":0,"noteMode":0,"value":41},
-        "in":          {"type":1,"channel":0,"noteMode":0,"value":45},
-        "pending":     {"type":1,"channel":1,"noteMode":0,"value":63},
-        "portLearn":   {"type":1,"channel":2,"noteMode":0,"value":45},
-        "midiLearn":   {"type":1,"channel":2,"noteMode":0,"value":21},
-        "sceneActive": {"type":1,"channel":0,"noteMode":0,"value":63},
-        "sceneDim":    {"type":1,"channel":0,"noteMode":0,"value": 2}
+        "off":          {"type":1,"channel":0,"noteMode":0,"value": 0},
+        "outDim":       {"type":1,"channel":0,"noteMode":0,"value": 7},
+        "out":          {"type":1,"channel":0,"noteMode":0,"value": 5},
+        "inDim":        {"type":1,"channel":0,"noteMode":0,"value":41},
+        "in":           {"type":1,"channel":0,"noteMode":0,"value":45},
+        "pending":      {"type":1,"channel":1,"noteMode":0,"value": 1},
+        "portLearn":    {"type":1,"channel":2,"noteMode":0,"value":45},
+        "midiLearn":    {"type":1,"channel":2,"noteMode":0,"value":21},
+        "sceneActive":  {"type":1,"channel":0,"noteMode":0,"value":63},
+        "sceneDim":     {"type":1,"channel":0,"noteMode":0,"value": 2},
+        "connectedOut": {"type":1,"channel":2,"noteMode":0,"value": 5},
+        "connectedIn":  {"type":1,"channel":2,"noteMode":0,"value":45}
     }
 })json",
 
@@ -321,16 +332,18 @@ R"json({
         "numbers": [82,83,84,85,86,87,88,89]
     },
     "specs": {
-        "off":         {"type":1,"noteMode":0,"value":0},
-        "outDim":      {"type":1,"noteMode":0,"value":5},
-        "out":         {"type":1,"noteMode":0,"value":3},
-        "inDim":       {"type":1,"noteMode":0,"value":5},
-        "in":          {"type":1,"noteMode":0,"value":1},
-        "pending":     {"type":1,"noteMode":0,"value":6},
-        "portLearn":   {"type":1,"noteMode":0,"value":2},
-        "midiLearn":   {"type":1,"noteMode":0,"value":4},
-        "sceneActive": {"type":1,"noteMode":0,"value":1},
-        "sceneDim":    {"type":1,"noteMode":0,"value":5}
+        "off":          {"type":1,"noteMode":0,"value":0},
+        "outDim":       {"type":1,"noteMode":0,"value":5},
+        "out":          {"type":1,"noteMode":0,"value":3},
+        "inDim":        {"type":1,"noteMode":0,"value":5},
+        "in":           {"type":1,"noteMode":0,"value":1},
+        "pending":      {"type":1,"noteMode":0,"value":6},
+        "portLearn":    {"type":1,"noteMode":0,"value":2},
+        "midiLearn":    {"type":1,"noteMode":0,"value":4},
+        "sceneActive":  {"type":1,"noteMode":0,"value":1},
+        "sceneDim":     {"type":1,"noteMode":0,"value":5},
+        "connectedOut": {"type":1,"noteMode":0,"value":4},
+        "connectedIn":  {"type":1,"noteMode":0,"value":2}
     }
 })json",
 
@@ -365,16 +378,18 @@ R"json({
         "numbers": [112,113,114,115,116,117,118,119]
     },
     "specs": {
-        "off":         {"type":1,"channel": 6,"noteMode":0,"value": 0},
-        "outDim":      {"type":1,"channel": 1,"noteMode":0,"value": 5},
-        "out":         {"type":1,"channel": 6,"noteMode":0,"value": 5},
-        "inDim":       {"type":1,"channel": 1,"noteMode":0,"value":45},
-        "in":          {"type":1,"channel": 6,"noteMode":0,"value":45},
-        "pending":     {"type":1,"channel":11,"noteMode":0,"value": 3},
-        "portLearn":   {"type":1,"channel": 7,"noteMode":0,"value":45},
-        "midiLearn":   {"type":1,"channel": 7,"noteMode":0,"value":21},
-        "sceneActive": {"type":1,"channel": 6,"noteMode":0,"value":21},
-        "sceneDim":    {"type":1,"channel": 1,"noteMode":0,"value":21}
+        "off":          {"type":1,"channel": 6,"noteMode":0,"value": 0},
+        "outDim":       {"type":1,"channel": 1,"noteMode":0,"value": 5},
+        "out":          {"type":1,"channel": 6,"noteMode":0,"value": 5},
+        "inDim":        {"type":1,"channel": 1,"noteMode":0,"value":45},
+        "in":           {"type":1,"channel": 6,"noteMode":0,"value":45},
+        "pending":      {"type":1,"channel":11,"noteMode":0,"value": 3},
+        "portLearn":    {"type":1,"channel": 7,"noteMode":0,"value":45},
+        "midiLearn":    {"type":1,"channel": 7,"noteMode":0,"value":21},
+        "sceneActive":  {"type":1,"channel": 6,"noteMode":0,"value":21},
+        "sceneDim":     {"type":1,"channel": 1,"noteMode":0,"value":21},
+        "connectedOut": {"type":1,"channel":11,"noteMode":0,"value": 5},
+        "connectedIn":  {"type":1,"channel":11,"noteMode":0,"value":45}
     }
 })json",
 
@@ -409,16 +424,18 @@ R"json({
         "numbers": [20,21,22,23,24,25,26,27]
     },
     "specs": {
-        "off":         {"type":4,"channel": 0,"noteMode":0,"value":  0},
-        "outDim":      {"type":4,"channel": 6,"noteMode":0,"value":127},
-        "out":         {"type":4,"channel": 0,"noteMode":0,"value":127},
-        "inDim":       {"type":4,"channel": 6,"noteMode":0,"value":126},
-        "in":          {"type":4,"channel": 0,"noteMode":0,"value":126},
-        "pending":     {"type":4,"channel":11,"noteMode":0,"value":122},
-        "portLearn":   {"type":4,"channel":11,"noteMode":0,"value":125},
-        "midiLearn":   {"type":4,"channel":11,"noteMode":0,"value":126},
-        "sceneActive": {"type":4,"channel": 0,"noteMode":0,"value":122},
-        "sceneDim":    {"type":4,"channel": 0,"noteMode":0,"value":123}
+        "off":          {"type":4,"channel": 0,"noteMode":0,"value":  0},
+        "outDim":       {"type":4,"channel": 6,"noteMode":0,"value":127},
+        "out":          {"type":4,"channel": 0,"noteMode":0,"value":127},
+        "inDim":        {"type":4,"channel": 6,"noteMode":0,"value":126},
+        "in":           {"type":4,"channel": 0,"noteMode":0,"value":126},
+        "pending":      {"type":4,"channel":11,"noteMode":0,"value":122},
+        "portLearn":    {"type":4,"channel":11,"noteMode":0,"value":125},
+        "midiLearn":    {"type":4,"channel":11,"noteMode":0,"value":126},
+        "sceneActive":  {"type":4,"channel": 0,"noteMode":0,"value":122},
+        "sceneDim":     {"type":4,"channel": 0,"noteMode":0,"value":123},
+        "connectedOut": {"type":4,"channel":11,"noteMode":0,"value":127},
+        "connectedIn":  {"type":4,"channel":11,"noteMode":0,"value":126}
     }
 })json",
 
@@ -428,16 +445,18 @@ R"json({
 R"json({
     "name": "Generic (Note On)",
     "specs": {
-        "off":         {"type":1,"noteMode":0,"value":0},
-        "outDim":      {"type":1,"noteMode":0,"value":1},
-        "out":         {"type":1,"noteMode":0,"value":2},
-        "inDim":       {"type":1,"noteMode":0,"value":3},
-        "in":          {"type":1,"noteMode":0,"value":4},
-        "pending":     {"type":1,"noteMode":0,"value":5},
-        "portLearn":   {"type":1,"noteMode":0,"value":3},
-        "midiLearn":   {"type":1,"noteMode":0,"value":6},
-        "sceneActive": {"type":1,"noteMode":0,"value":2},
-        "sceneDim":    {"type":1,"noteMode":0,"value":1}
+        "off":          {"type":1,"noteMode":0,"value":0},
+        "outDim":       {"type":1,"noteMode":0,"value":1},
+        "out":          {"type":1,"noteMode":0,"value":2},
+        "inDim":        {"type":1,"noteMode":0,"value":3},
+        "in":           {"type":1,"noteMode":0,"value":4},
+        "pending":      {"type":1,"noteMode":0,"value":5},
+        "portLearn":    {"type":1,"noteMode":0,"value":3},
+        "midiLearn":    {"type":1,"noteMode":0,"value":6},
+        "sceneActive":  {"type":1,"noteMode":0,"value":2},
+        "sceneDim":     {"type":1,"noteMode":0,"value":1},
+        "connectedOut": {"type":1,"noteMode":0,"value":7},
+        "connectedIn":  {"type":1,"noteMode":0,"value":8}
     }
 })json",
 

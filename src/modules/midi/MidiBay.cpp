@@ -111,7 +111,11 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		int* ledState      = nullptr;
 		int* sceneLedState = nullptr;
 
-		// Prepends a "none / disconnected" entry (-1) to the device channel list.
+		MidiBayOutput() {
+			channel = -1;
+		}
+
+		// Prepends a "All channels" entry (-1) to the device channel list.
 		std::vector<int> getChannels() override {
 			std::vector<int> channels = midi::Output::getChannels();
 			channels.emplace(channels.begin(), -1);
@@ -156,7 +160,8 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 	ClockDividerEx processDivider;
 	// Written by GUI thread (step), read by DSP thread (process) — accepted race for LEDs
 	bool portHasCable[MATRIX_COUNT] = {};
-	float blinkPhase = 0.f;
+	float blinkPhase     = 0.f;
+	float slowBlinkPhase = 0.f;
 
 	enum ButtonMode { BUTTON_TOGGLE, BUTTON_MOMENTARY };
 	/** [Stored to JSON] */
@@ -250,20 +255,29 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 				}
 			}
 
-			blinkPhase += args.sampleTime * 4.f * processDivider.division;
-			if (blinkPhase >= 1.f) blinkPhase -= 1.f;
+			blinkPhase     += args.sampleTime * 4.f * processDivider.division;
+			if (blinkPhase     >= 1.f) blinkPhase     -= 1.f;
+			slowBlinkPhase += args.sampleTime * 2.f * processDivider.division;
+			if (slowBlinkPhase >= 1.f) slowBlinkPhase -= 1.f;
 
-			bool blinkOn = blinkPhase < 0.5f;
+			bool blinkOn     = blinkPhase     < 0.5f;
+			bool slowBlinkOn = slowBlinkPhase < 0.5f;
 			for (int i = 0; i < MATRIX_COUNT; i++) {
 				bool assigned = portAssignments[i].isValid();
 				bool isOutput = portAssignments[i].type == engine::Port::OUTPUT;
 				bool hasCable = portHasCable[i];
+				bool connectedToPending = pendingCellId >= 0 && i != pendingCellId
+				                      && isConnected(currentScene, pendingCellId, i);
 				LedColor col;
 				int stateId;
 				if (pendingCellId == i) {
 					col = blinkOn ? LED_PENDING : LED_OFF;
 					stateId = LED_STATE_PENDING;
-				} 
+				}
+				else if (connectedToPending) {
+					col = slowBlinkOn ? (isOutput ? LED_OUTPUT : LED_INPUT) : LED_OFF;
+					stateId = isOutput ? LED_STATE_CONNECTED_OUT : LED_STATE_CONNECTED_IN;
+				}
 				else if (portLearningId == i) {
 					col = blinkOn ? LED_PORT_LEARN : LED_OFF;
 					stateId = LED_STATE_PORT_LEARN;
