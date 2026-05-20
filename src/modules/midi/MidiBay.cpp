@@ -723,6 +723,105 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 };
 
 
+// Overlay widget added directly to APP->scene->rack — drawn in rack coordinates.
+// Activated by the space key; hides cables and draws cell→port assignment splines.
+struct MidiBayVizOverlay : TransparentWidget {
+	MidiBayModule* module = nullptr;
+	// Non-owning pointer to the host widget (for position and portAssignments).
+	Widget* hostWidget = nullptr;
+
+	void step() override {
+		// Track parent size so NVG scissor doesn't clip our drawings.
+		if (parent) { box.pos = Vec(0.f, 0.f); box.size = parent->box.size; }
+		TransparentWidget::step();
+	}
+
+	static Vec cellCenter(int cellId) {
+		int r = cellId / MATRIX_SIZE;
+		int c = cellId % MATRIX_SIZE;
+		return Vec(24.3f + c * (245.7f - 24.3f) / 7.f,
+		           54.5f + r * (277.4f - 54.5f) / 7.f);
+	}
+
+	// Deterministic value in [-1, +1] for a given cell — golden-ratio sequence
+	// gives an even spread with no visible repetition pattern.
+	static float cellJitter(int cellId) {
+		return std::fmod(cellId * 0.618033988f, 1.f) * 2.f - 1.f;
+	}
+
+	void drawSpline(NVGcontext* vg, Vec a, Vec b, NVGcolor col, float jitter) {
+		float dx   = b.x - a.x;
+		float dist = a.minus(b).norm();
+		float bulge = dist * 0.18f * jitter;   // scales with length, ±~18 % of distance
+		Vec cp1 = a.plus(Vec(dx * 0.5f,  bulge));
+		Vec cp2 = b.plus(Vec(-dx * 0.5f, bulge));
+
+		nvgBeginPath(vg);
+		nvgMoveTo(vg, a.x, a.y);
+		nvgBezierTo(vg, cp1.x, cp1.y, cp2.x, cp2.y, b.x, b.y);
+		// Glow pass
+		nvgStrokeColor(vg, nvgRGBAf(col.r, col.g, col.b, 0.25f));
+		nvgStrokeWidth(vg, 6.f);
+		nvgLineCap(vg, NVG_ROUND);
+		nvgStroke(vg);
+		// Core pass
+		nvgStrokeColor(vg, nvgRGBAf(col.r, col.g, col.b, 0.90f));
+		nvgStrokeWidth(vg, 1.5f);
+		nvgStroke(vg);
+	}
+
+	void drawLayer(const DrawArgs& args, int layer) override {
+		if (layer != 1 || !visible || !module || !hostWidget) return;
+		NVGcontext* vg = args.vg;
+
+		Vec origin = hostWidget->box.pos;
+
+		for (int i = 0; i < MATRIX_COUNT; i++) {
+			const PortAssignment& pa = module->portAssignments[i];
+			if (!pa.isValid()) continue;
+
+			ModuleWidget* portMw = APP->scene->rack->getModule(pa.moduleId);
+			if (!portMw) continue;
+
+			auto portList = (pa.type == engine::Port::OUTPUT) ? portMw->getOutputs() : portMw->getInputs();
+			PortWidget* portPw = nullptr;
+			for (PortWidget* pw : portList) {
+				if (pw->portId == pa.portId) { portPw = pw; break; }
+			}
+			if (!portPw) continue;
+
+			// Blink the connector when this cell is the pending first-press
+			if (module->pendingCellId == i && module->blinkPhase >= 0.5f) continue;
+
+			Vec cellPos = origin.plus(cellCenter(i));
+			Vec portPos = portMw->box.pos.plus(portPw->box.getCenter());
+
+			bool isOut = (pa.type == engine::Port::OUTPUT);
+			NVGcolor col = isOut
+				? nvgRGBf(0.93f, 0.18f, 0.11f)   // red-orange — output
+				: nvgRGBf(0.17f, 0.71f, 0.94f);   // sky-blue   — input
+
+			drawSpline(vg, cellPos, portPos, col, cellJitter(i));
+
+			// Cell-side dot (white)
+			nvgBeginPath(vg);
+			nvgCircle(vg, cellPos.x, cellPos.y, 2.5f);
+			nvgFillColor(vg, nvgRGBAf(1.f, 1.f, 1.f, 0.9f));
+			nvgFill(vg);
+
+			// Port-side dot (colored)
+			nvgBeginPath(vg);
+			nvgCircle(vg, portPos.x, portPos.y, 3.5f);
+			nvgFillColor(vg, nvgRGBAf(col.r, col.g, col.b, 0.9f));
+			nvgFill(vg);
+			nvgStrokeColor(vg, nvgRGBAf(1.f, 1.f, 1.f, 0.6f));
+			nvgStrokeWidth(vg, 0.8f);
+			nvgStroke(vg);
+		}
+	}
+};
+
+
 struct MidiBayWidget;
 
 struct MidiBaySceneButton : app::SvgSwitch {
@@ -778,6 +877,9 @@ struct MidiBayCellButton : app::SvgSwitch {
 
 
 struct MidiBayWidget : ThemedModuleWidget<MidiBayModule>, OverlayMessageProvider {
+	MidiBayVizOverlay* vizOverlay = nullptr;
+	bool vizMode = false;
+
 	MidiBayWidget(MidiBayModule* module) : ThemedModuleWidget(module, "MidiBay") {
 		setModule(module);
 
@@ -805,9 +907,21 @@ struct MidiBayWidget : ThemedModuleWidget<MidiBayModule>, OverlayMessageProvider
 		}
 
 		OverlayMessageWidget::registerProvider(this);
+
+		vizOverlay = new MidiBayVizOverlay;
+		vizOverlay->module = module;
+		vizOverlay->hostWidget = this;
+		vizOverlay->visible = false;
+		APP->scene->rack->addChild(vizOverlay);
 	}
 
 	~MidiBayWidget() {
+		if (vizOverlay) {
+			APP->scene->rack->removeChild(vizOverlay);
+			delete vizOverlay;
+			vizOverlay = nullptr;
+		}
+		APP->scene->rack->getCableContainer()->visible = true;
 		OverlayMessageWidget::unregisterProvider(this);
 	}
 
@@ -830,6 +944,21 @@ struct MidiBayWidget : ThemedModuleWidget<MidiBayModule>, OverlayMessageProvider
 	void onDeselect(const event::Deselect& e) override {
 		ThemedModuleWidget<MidiBayModule>::onDeselect(e);
 		if (module) module->portSelectProcessor.processDeselect();
+	}
+
+	void setVizMode(bool active) {
+		vizMode = active;
+		if (vizOverlay) vizOverlay->visible = active;
+		APP->scene->rack->getCableContainer()->visible = !active;
+	}
+
+	void onHoverKey(const event::HoverKey& e) override {
+		if (e.key == GLFW_KEY_SPACE && e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == 0) {
+			setVizMode(!vizMode);
+			e.consume(this);
+			return;
+		}
+		ThemedModuleWidget<MidiBayModule>::onHoverKey(e);
 	}
 
 	void step() override {
