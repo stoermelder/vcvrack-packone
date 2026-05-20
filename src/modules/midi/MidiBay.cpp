@@ -168,7 +168,14 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 	ButtonMode buttonMode = BUTTON_TOGGLE;
 
 	// -1 = no pending; >=0 = first button pressed, awaiting second press
-	int pendingCellId = -1;
+	int  pendingCellId         = -1;
+	bool pendingCellIsPhysical = false; // true = set by physical button, false = set by MIDI
+
+	// Resets the pending-cell selection (called on cancel, completion, mode switch, and reset).
+	void clearPending() {
+		pendingCellId         = -1;
+		pendingCellIsPhysical = false;
+	}
 
 	int portLearningId = -1;
 	StoermelderPackOne::PortSelectProcessor portSelectProcessor;
@@ -214,7 +221,7 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 	void onReset() override {
 		disableLearn();
 		disablePortLearn();
-		pendingCellId = -1;
+		clearPending();
 		requestReset();
 	}
 
@@ -226,22 +233,24 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 
 		if (processDivider.process()) {
 			for (int i = 0; i < MATRIX_COUNT; i++) {
-				if (buttonTriggers[i].process(params[PARAM_MATRIX + i].getValue() > 0.5f)) {
+				bool high = params[PARAM_MATRIX + i].getValue() > 0.5f;
+				if (buttonTriggers[i].process(high)) {
 					if (learningId == i) {
 						disableLearn();
-					} 
+					}
 					else if (portLearningId == i) {
 						disablePortLearn();
-					} 
+					}
 					else {
 						triggerCell(i);
+						pendingCellIsPhysical = true;
 					}
 					blinkPhase = 0.f;
 				}
-			}
-			if (buttonMode == BUTTON_MOMENTARY && pendingCellId >= 0) {
-				if (params[PARAM_MATRIX + pendingCellId].getValue() <= 0.5f)
-					pendingCellId = -1;
+				else if (buttonMode == BUTTON_MOMENTARY && pendingCellIsPhysical
+				      && pendingCellId == i && !high) {
+					clearPending();
+				}
 			}
 
 			for (int i = 0; i < MATRIX_SIZE; i++) {
@@ -357,11 +366,15 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 	// Engine thread — MidiTrackingProcessorHandler callback, fired for every mapped
 	// MIDI message. Routes matrix cell triggers and scene changes into guiQueue.
 	void processMapUpdate(StoermelderPackOne::MidiTrackingType type, uint16_t mapId, uint16_t value) override {
-		if (value == 0) return;
 		if (mapId < (uint16_t)MATRIX_COUNT) {
-			triggerCell(mapId);
-		} 
-		else if (mapId < (uint16_t)TOTAL_MAPS) {
+			if (value > 0) {
+				pendingCellIsPhysical = false;
+				triggerCell(mapId);
+			} else if (buttonMode == BUTTON_MOMENTARY && (int)mapId == pendingCellId) {
+				clearPending();
+			}
+		}
+		else if (mapId < (uint16_t)TOTAL_MAPS && value > 0) {
 			requestSceneChange(mapId - MATRIX_COUNT);
 		}
 	}
@@ -853,14 +866,14 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 			}
 		}
 		else if (pendingCellId == id) {
-			pendingCellId = -1;
-		} 
+			clearPending();
+		}
 		else {
 			int a = pendingCellId, b = id;
 			if (!guiQueue.full()) {
 				guiQueue.push([this, a, b]() { toggleConnection(a, b); });
 			}
-			pendingCellId = -1;
+			clearPending();
 		}
 	}
 
@@ -1357,11 +1370,11 @@ struct MidiBayWidget : ThemedModuleWidget<MidiBayModule>, OverlayMessageProvider
 		menu->addChild(createSubmenuItem("Button mode", "", [=](Menu* menu) {
 			menu->addChild(createCheckMenuItem("Toggle", "",
 				[=]() { return module->buttonMode == MidiBayModule::BUTTON_TOGGLE; },
-				[=]() { module->buttonMode = MidiBayModule::BUTTON_TOGGLE; module->pendingCellId = -1; }
+				[=]() { module->buttonMode = MidiBayModule::BUTTON_TOGGLE; module->clearPending(); }
 			));
 			menu->addChild(createCheckMenuItem("Momentary", "",
 				[=]() { return module->buttonMode == MidiBayModule::BUTTON_MOMENTARY; },
-				[=]() { module->buttonMode = MidiBayModule::BUTTON_MOMENTARY; module->pendingCellId = -1; }
+				[=]() { module->buttonMode = MidiBayModule::BUTTON_MOMENTARY; module->clearPending(); }
 			));
 		}));
 	}
