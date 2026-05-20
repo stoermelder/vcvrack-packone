@@ -40,7 +40,9 @@ struct PortAssignment {
 static const int TOTAL_MAPS = MATRIX_COUNT + MATRIX_SIZE;  // 64 cells + 8 scenes
 
 struct MidiBayModule : Module, MidiTrackingProcessorHandler {
+	// GUI thread — called by Rack whenever the tooltip for a matrix cell is displayed.
 	struct MidiBayCellQuantity : ParamQuantity {
+		// Returns the assigned port label, or "Cell N" if unassigned.
 		std::string getLabel() override {
 			if (!module) return ParamQuantity::getLabel();
 			auto* m = static_cast<MidiBayModule*>(module);
@@ -49,7 +51,9 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 			if (pa.isValid()) return portLabel(pa);
 			return string::f("Cell %d", cellId + 1);
 		}
+		// Suppressed — the numeric button value (0/1) is not meaningful to the user.
 		std::string getDisplayValueString() override { return ""; }
+		// Returns the current MIDI mapping (CC N / Note N / unmapped) as the tooltip subtitle.
 		std::string getDescription() override {
 			if (!module) return "";
 			auto* m = static_cast<MidiBayModule*>(module);
@@ -61,13 +65,17 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		}
 	};
 
+	// GUI thread — called by Rack whenever the tooltip for a scene button is displayed.
 	struct MidiBaySceneQuantity : ParamQuantity {
+		// Returns "Scene N".
 		std::string getLabel() override {
 			if (!module) return ParamQuantity::getLabel();
 			int sceneId = paramId - PARAM_SCENE;
 			return string::f("Scene %d", sceneId + 1);
 		}
+		// Suppressed — the numeric button value (0/1) is not meaningful to the user.
 		std::string getDisplayValueString() override { return ""; }
+		// Returns the scene button's MIDI mapping as the tooltip subtitle.
 		std::string getDescription() override {
 			if (!module) return "";
 			auto* m = static_cast<MidiBayModule*>(module);
@@ -96,15 +104,20 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		NUM_LIGHTS
 	};
 
+	// GUI thread — midi::Output subclass that invalidates cached LED states on device change
+	// so that all cells are re-sent when a new output device is connected.
 	struct MidiBayOutput : midi::Output {
 		int* ledState = nullptr;
 
+		// Prepends a "none / disconnected" entry (-1) to the device channel list.
 		std::vector<int> getChannels() override {
 			std::vector<int> channels = midi::Output::getChannels();
 			channels.emplace(channels.begin(), -1);
 			return channels;
 		}
 
+		// Forces a full LED refresh after the device changes by setting all cached
+		// states to -1, which makes the next process() tick re-send every cell.
 		void setDeviceId(int deviceId) override {
 			midi::Output::setDeviceId(deviceId);
 			if (ledState) std::fill(ledState, ledState + MATRIX_COUNT, -1);
@@ -158,6 +171,7 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 	int overlayMessageId = -1;
 	OverlayMessageProvider::Message overlayMessage;
 
+	// GUI thread — called once by Rack when the module is instantiated.
 	MidiBayModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -176,6 +190,9 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		processDivider.setDivision(256);
 	}
 
+	// Engine thread — called by Rack when the user resets the module.
+	// Synchronous bookkeeping (disabling learns, clearing pending state) is done
+	// immediately; cable teardown is deferred to the GUI thread via guiQueue.
 	void onReset() override {
 		disableLearn();
 		disablePortLearn();
@@ -183,6 +200,9 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		requestReset();
 	}
 
+	// Engine thread — hot path, called every audio sample.
+	// Reads MIDI input, polls button params (every 256 samples via processDivider),
+	// updates LED brightness/state, and enqueues cable operations for the GUI thread.
 	void process(const ProcessArgs& args) override {
 		trackingProcessor.process(args.frame);
 
@@ -276,10 +296,12 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		}
 	}
 
+	// Any thread — pure bitmask read; no side effects.
 	bool isConnected(int scene, int a, int b) {
 		return (sceneConnections[scene][a] >> b) & 1;
 	}
 
+	// Any thread — updates both symmetric bitmask entries for the (a, b) pair.
 	void setConnection(int scene, int a, int b, bool value) {
 		if (value) {
 			sceneConnections[scene][a] |= (1ULL << b);
@@ -291,7 +313,8 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		}
 	}
 
-	// MidiTrackingProcessorHandler
+	// Engine thread — MidiTrackingProcessorHandler callback, fired for every mapped
+	// MIDI message. Routes matrix cell triggers and scene changes into guiQueue.
 	void processMapUpdate(StoermelderPackOne::MidiTrackingType type, uint16_t mapId, uint16_t value) override {
 		if (value == 0) return;
 		if (mapId < (uint16_t)MATRIX_COUNT) {
@@ -302,7 +325,10 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		}
 	}
 
-	// MidiTrackingProcessorHandler
+	// Engine thread — MidiTrackingProcessorHandler callback, fired when a MIDI learn
+	// completes. Advances the cursor in sequential learn mode, or clears it for single learn.
+	// NOTE: writes learningId and midiLearnMode which are also read/written by the GUI thread
+	// (context menus). The race is accepted — both sides only write simple scalars.
 	void processMapLearn(StoermelderPackOne::MidiTrackingType type, uint16_t mapId) override {
 		if (midiLearnMode) {
 			// Sequential: advance to next cell
@@ -321,7 +347,8 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		}
 	}
 
-	// Learn MIDI for a single cell or scene button (id >= MATRIX_COUNT). Cancels any active learn first.
+	// GUI thread — starts MIDI learn for a single cell (id < MATRIX_COUNT) or scene button
+	// (id >= MATRIX_COUNT). Cancels any previously active learn first.
 	void enableLearn(int id) {
 		disableLearn();
 		if (id < 0 || id >= TOTAL_MAPS) return;
@@ -329,7 +356,8 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		trackingProcessor.enableMapLearn(id);
 	}
 
-	// Start sequential global learn: assigns cells 0..MATRIX_COUNT-1 in order.
+	// GUI thread — starts sequential MIDI learn across all 64 matrix cells in order.
+	// Scene buttons are excluded; assign them individually or via applyPresetLayout().
 	void startGlobalLearn() {
 		disableLearn();
 		midiLearnMode = true;
@@ -337,12 +365,17 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		trackingProcessor.enableMapLearn(0);
 	}
 
+	// Engine or GUI thread — cancels any active MIDI learn.
+	// Called from process() (engine thread) when the user presses the blinking cell,
+	// and from GUI thread via context menus and onReset(). The race on learningId is accepted.
 	void disableLearn() {
 		trackingProcessor.disableMapLearn();
 		learningId = -1;
 		midiLearnMode = false;
 	}
 
+	// GUI thread — starts port-assignment learn for the given cell. The portSelectProcessor
+	// intercepts the next port-widget click and writes portAssignments[id].
 	void enablePortLearn(int id, Widget* owner) {
 		if (id < 0 || id >= MATRIX_COUNT) return;
 		portLearningId = id;
@@ -356,15 +389,19 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		});
 	}
 
+	// GUI thread — cancels an active port-assignment learn.
 	void disablePortLearn() {
 		portSelectProcessor.disableLearn();
 		portLearningId = -1;
 	}
 
+	// GUI thread — returns true if the given cell is currently in port-learn mode.
 	bool isPortLearning(int id) {
 		return portLearningId == id && portSelectProcessor.isLearning();
 	}
 
+	// Engine thread — sends a single MIDI message to the output device to update the
+	// controller LED for cellId to the given stateId. Called only when the state changes.
 	void sendFeedback(int cellId, int stateId) {
 		static auto& presets = getPresets();
 		if (feedbackPreset <= 0 || feedbackPreset >= (int)presets.size()) return;
@@ -398,6 +435,8 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		midiOutput.sendMessage(msg);
 	}
 
+	// GUI thread — replaces all MIDI input mappings with those defined by the currently
+	// selected feedback preset's slot layout. No-op if the preset has no layout.
 	void applyPresetLayout() {
 		static auto& presets = getPresets();
 		if (feedbackPreset <= 0 || feedbackPreset >= (int)presets.size()) return;
@@ -417,6 +456,7 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		std::fill(cellLedState, cellLedState + MATRIX_COUNT, -1);
 	}
 
+	// GUI thread — serializes all persistent state to JSON (called on patch save / undo snapshot).
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
@@ -466,6 +506,9 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		return rootJ;
 	}
 
+	// GUI thread — restores all persistent state from JSON (called on patch load / undo).
+	// clearMaps() is called before restoring maps to prevent duplicate vector entries
+	// that would occur if setMap() is called multiple times for the same slot (undo/redo).
 	void dataFromJson(json_t* rootJ) override {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 		currentScene = json_integer_value(json_object_get(rootJ, "currentScene"));
@@ -530,6 +573,8 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 
 	// --- Cable manipulation (GUI thread only) ---
 
+	// GUI thread — searches for an existing cable between the named output and input ports.
+	// Returns nullptr if not found. Must not be called from the engine thread.
 	static CableWidget* findCable(int64_t outputModuleId, int outputPortId, int64_t inputModuleId, int inputPortId) {
 		ModuleWidget* outputMw = APP->scene->rack->getModule(outputModuleId);
 		if (!outputMw) return nullptr;
@@ -547,6 +592,7 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		return nullptr;
 	}
 
+	// GUI thread — removes a cable from the rack and records it in undo history.
 	static void removeCable(CableWidget* cw) {
 		history::CableRemove* h = new history::CableRemove;
 		h->setCable(cw);
@@ -555,6 +601,8 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		delete cw;
 	}
 
+	// GUI thread — creates a cable between the given output and input port assignments,
+	// adds it to the rack, and pushes a CableAdd undo action.
 	void addCableToPort(const PortAssignment* outPd, const PortAssignment* inPd) {
 		ModuleWidget* outputMw = APP->scene->rack->getModule(outPd->moduleId);
 		ModuleWidget* inputMw  = APP->scene->rack->getModule(inPd->moduleId);
@@ -576,6 +624,9 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		APP->history->push(h);
 	}
 
+	// GUI thread — creates or removes the cable between cellIdA and cellIdB in the current
+	// scene, then updates overlayMessage so the overlay bar shows what changed.
+	// One cell must be an output and the other an input; same-direction pairs are ignored.
 	void toggleConnection(int cellIdA, int cellIdB) {
 		const PortAssignment& a = portAssignments[cellIdA];
 		const PortAssignment& b = portAssignments[cellIdB];
@@ -613,6 +664,9 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		}
 	}
 
+	// GUI thread — rewrites sceneConnections[scene] to match the actual cables currently
+	// present in the patch for the assigned ports. Used before switching scenes so that
+	// any manual cable changes the user made are not lost.
 	void captureScene(int scene) {
 		memset(sceneConnections[scene], 0, sizeof(sceneConnections[scene]));
 		for (int i = 0; i < MATRIX_COUNT; i++) {
@@ -628,6 +682,9 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		}
 	}
 
+	// GUI thread — reconciles the patch so it matches newConns, starting from oldConns.
+	// For each pair (i,j): if a connection was present in old but not new the cable is removed;
+	// if it is present in new but not old a cable is added. Pairs that haven't changed are skipped.
 	void applyConnectionDiff(const uint64_t* oldConns, const uint64_t* newConns) {
 		for (int i = 0; i < MATRIX_COUNT; i++) {
 			for (int j = i + 1; j < MATRIX_COUNT; j++) {
@@ -659,6 +716,10 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		}
 	}
 
+	// GUI thread — applies a new connection topology to an arbitrary scene.
+	// If the target scene is the currently active one, the patch cables are updated live
+	// (capture current state first, then diff against newConns). Always persists newConns
+	// into sceneConnections[scene].
 	void reconcileScene(int scene, const uint64_t* newConns) {
 		if (scene == currentScene) {
 			captureScene(scene);
@@ -667,6 +728,8 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		memcpy(sceneConnections[scene], newConns, MATRIX_COUNT * sizeof(uint64_t));
 	}
 
+	// GUI thread — switches to newScene: captures the outgoing scene's current cable state,
+	// diffs it against the incoming scene's stored topology, and updates patch cables accordingly.
 	void switchScene(int newScene) {
 		if (newScene == currentScene) return;
 		captureScene(currentScene);
@@ -674,6 +737,8 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		currentScene = newScene;
 	}
 
+	// GUI thread — returns a human-readable label for a port assignment, e.g. "VCO · Out 1".
+	// Falls back to a placeholder string if the module widget is no longer in the rack.
 	static std::string portLabel(const PortAssignment& pa) {
 		if (!pa.isValid()) return "";
 		ModuleWidget* mw = APP->scene->rack->getModule(pa.moduleId);
@@ -682,6 +747,9 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		return string::f("%s \xc2\xb7 %s %d", mw->model->name.c_str(), dir.c_str(), pa.portId + 1);
 	}
 
+	// Engine thread — handles a single cell activation (button press or MIDI trigger).
+	// First press sets the pending selection; second press on a different cell enqueues
+	// a toggleConnection call to the GUI thread. Pressing the same cell again cancels.
 	void triggerCell(int id) {
 		if (!portAssignments[id].isValid()) return;
 		if (pendingCellId < 0) {
@@ -698,12 +766,16 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		}
 	}
 
+	// Engine thread — enqueues a switchScene call on the GUI thread via guiQueue.
 	void requestSceneChange(int i) {
 		if (!guiQueue.full()) {
 			guiQueue.push([this, i]() { switchScene(i); });
 		}
 	}
 
+	// Engine thread — enqueues a full module reset on the GUI thread via guiQueue.
+	// Removes all current-scene cables, clears all stored scenes and port assignments,
+	// resets scene and preset selection, and clears LED state.
 	void requestReset() {
 		if (!guiQueue.full()) {
 			guiQueue.push([this]() {
