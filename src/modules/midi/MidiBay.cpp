@@ -183,8 +183,8 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 	int cellLedState[MATRIX_COUNT];
 	int sceneLedState[MATRIX_SIZE];
 
-	/** [Stored to Json] */
-	bool overlayEnabled;
+	/** [Stored to JSON] */
+	bool overlayEnabled = true;
 	int overlayMessageId = -1;
 	OverlayMessageProvider::Message overlayMessage;
 
@@ -304,9 +304,10 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 					cellLedState[i] = stateId;
 					sendFeedback(i, stateId);
 				}
-				lights[LIGHT_MATRIX + i * 3 + 0].setBrightness(col.r);
-				lights[LIGHT_MATRIX + i * 3 + 1].setBrightness(col.g);
-				lights[LIGHT_MATRIX + i * 3 + 2].setBrightness(col.b);
+				float f = args.sampleTime * processDivider.division;
+				lights[LIGHT_MATRIX + i * 3 + 0].setBrightnessSmooth(col.r, f);
+				lights[LIGHT_MATRIX + i * 3 + 1].setBrightnessSmooth(col.g, f);
+				lights[LIGHT_MATRIX + i * 3 + 2].setBrightnessSmooth(col.b, f);
 			}
 			for (int s = 0; s < MATRIX_SIZE; s++) {
 				float bright;
@@ -562,7 +563,8 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		}
 		json_object_set_new(rootJ, "scenes", scenesJ);
 		json_object_set_new(rootJ, "feedbackPreset", json_integer(feedbackPreset));
-		json_object_set_new(rootJ, "buttonMode", json_integer((int)buttonMode));
+		json_object_set_new(rootJ, "buttonMode",    json_integer((int)buttonMode));
+		json_object_set_new(rootJ, "overlayEnabled", json_boolean(overlayEnabled));
 		if (feedbackPreset == PRESET_IDX_CUSTOM && !customPresetJson.empty())
 			json_object_set_new(rootJ, "customPreset", json_string(customPresetJson.c_str()));
 		json_object_set_new(rootJ, "midiInput",  trackingProcessor.getInput().toJson());
@@ -578,6 +580,8 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		currentScene = json_integer_value(json_object_get(rootJ, "currentScene"));
 		json_t* buttonModeJ = json_object_get(rootJ, "buttonMode");
 		if (buttonModeJ) buttonMode = (ButtonMode)json_integer_value(buttonModeJ);
+		json_t* overlayEnabledJ = json_object_get(rootJ, "overlayEnabled");
+		if (overlayEnabledJ) overlayEnabled = json_boolean_value(overlayEnabledJ);
 
 		trackingProcessor.clearMaps();
 		json_t* mapsJ = json_object_get(rootJ, "maps");
@@ -826,9 +830,10 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		return string::f("%s \xc2\xb7 %s %d", mw->model->name.c_str(), dir.c_str(), pa.portId + 1);
 	}
 
-	// GUI thread — posts a two-line overlay message.
+	// GUI thread — posts a two-line overlay message (no-op when overlay is disabled).
 	void setOverlayMessage(const std::string& title, const std::string& sub0, const std::string& sub1 = "") {
-		overlayMessage.title    = title;
+		if (!overlayEnabled) return;
+		overlayMessage.title       = title;
 		overlayMessage.subtitle[0] = sub0;
 		overlayMessage.subtitle[1] = sub1;
 		overlayMessageId = 0;
@@ -1337,6 +1342,18 @@ struct MidiBayWidget : ThemedModuleWidget<MidiBayModule>, OverlayMessageProvider
 			));
 		}));
 		menu->addChild(new MenuSeparator);
+		menu->addChild(createCheckMenuItem("Sequential MIDI learn", "",
+			[=]() { return module->midiLearnMode; },
+			[=]() {
+				if (module->midiLearnMode) module->disableLearn();
+				else module->startGlobalLearn();
+			}
+		));
+		menu->addChild(new MenuSeparator);
+		menu->addChild(createCheckMenuItem("Show overlay messages", "",
+			[=]() { return module->overlayEnabled; },
+			[=]() { module->overlayEnabled = !module->overlayEnabled; }
+		));
 		menu->addChild(createSubmenuItem("Button mode", "", [=](Menu* menu) {
 			menu->addChild(createCheckMenuItem("Toggle", "",
 				[=]() { return module->buttonMode == MidiBayModule::BUTTON_TOGGLE; },
@@ -1347,13 +1364,6 @@ struct MidiBayWidget : ThemedModuleWidget<MidiBayModule>, OverlayMessageProvider
 				[=]() { module->buttonMode = MidiBayModule::BUTTON_MOMENTARY; module->pendingCellId = -1; }
 			));
 		}));
-		menu->addChild(createCheckMenuItem("Sequential MIDI learn", "",
-			[=]() { return module->midiLearnMode; },
-			[=]() {
-				if (module->midiLearnMode) module->disableLearn();
-				else module->startGlobalLearn();
-			}
-		));
 	}
 };
 
