@@ -96,13 +96,26 @@ struct OverlayMagnifierWidget : widget::Widget {
 		int winW = (int)(APP->scene->box.size.x * pixelRatio);
 		int winH = (int)(APP->scene->box.size.y * pixelRatio);
 
-		// The display circle is offset from the cursor so it never overlaps the
-		// capture area. Distance needed: > radius + captureR. Place it diagonally
-		// upper-left at exactly that distance plus a small gap.
+		// Place the display circle diagonally offset from the cursor so it never
+		// overlaps the capture area. Prefer upper-left; flip each axis independently
+		// when more than ~1/3 of the circle would go outside the window.
 		float gap = 8.f;
 		float offsetDist = radius + captureR + gap;
-		// Diagonal upper-left unit vector: (-1/√2, -1/√2)
-		Vec displayCenter = mousePos + Vec(-offsetDist * 0.7071f, -offsetDist * 0.7071f);
+		float diag = offsetDist * 0.7071f;
+		float maxOvhg = radius * 0.7f;
+		Vec sceneSize = APP->scene->box.size;
+
+		float dcx = mousePos.x - diag;
+		if (dcx < radius - maxOvhg)
+			dcx = mousePos.x + diag;
+		dcx = math::clamp(dcx, radius - maxOvhg, sceneSize.x - radius + maxOvhg);
+
+		float dcy = mousePos.y - diag;
+		if (dcy < radius - maxOvhg)
+			dcy = mousePos.y + diag;
+		dcy = math::clamp(dcy, radius - maxOvhg, sceneSize.y - radius + maxOvhg);
+
+		Vec displayCenter = Vec(dcx, dcy);
 
 		// Capture area in framebuffer pixels, centered on the cursor
 		int iCapW = std::max(1, (int)(captureR * 2.f * pixelRatio));
@@ -170,7 +183,7 @@ struct OverlayMagnifierWidget : widget::Widget {
 		nvgBeginPath(args.vg);
 		nvgCircle(args.vg, displayCenter.x, displayCenter.y, radius);
 		nvgStrokeWidth(args.vg, 3.f);
-		nvgStrokeColor(args.vg, nvgRGBAf(0.8f, 0.8f, 0.8f, 0.9f));
+		nvgStrokeColor(args.vg, nvgRGBAf(0.2f, 0.2f, 0.2f, 0.8f));
 		nvgStroke(args.vg);
 
 		/*

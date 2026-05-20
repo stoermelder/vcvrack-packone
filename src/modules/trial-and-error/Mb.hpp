@@ -79,10 +79,28 @@ struct MagnifierOverlay : widget::TransparentWidget {
 	bool initialized = false;
 	bool enabled = true;
 
-	// Display circle center in scene coords, offset upper-left from the cursor
+	// Display circle center in scene coords, offset from the cursor.
+	// Prefers upper-left; flips to the opposite side when more than 1/4 of the
+	// circle would go outside the window. Up to 1/4 overhang is allowed.
 	Vec displayCenter() const {
-		float gap = -12.f;
-		return mousePos + Vec(-radius - gap, -radius - gap);
+		float overlap = 12.f;          // cursor sits this many px inside the circle edge
+		float maxOvhg = radius * 0.7f; // ca. 1/3 of diameter may go outside
+		Vec sceneSize = APP->scene->box.size;
+
+		// cx / cy are the circle center positions.
+		// Left edge of circle = cx - radius; we allow it down to -maxOvhg.
+		// Flip threshold: cx < radius - maxOvhg (i.e., more than maxOvhg clips left)
+		float cx = mousePos.x - radius + overlap;
+		if (cx < radius - maxOvhg)
+			cx = mousePos.x + radius - overlap;
+		cx = math::clamp(cx, radius - maxOvhg, sceneSize.x - radius + maxOvhg);
+
+		float cy = mousePos.y - radius + overlap;
+		if (cy < radius - maxOvhg)
+			cy = mousePos.y + radius - overlap;
+		cy = math::clamp(cy, radius - maxOvhg, sceneSize.y - radius + maxOvhg);
+
+		return Vec(cx, cy);
 	}
 
 	void step() override {
