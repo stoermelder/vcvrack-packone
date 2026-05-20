@@ -158,6 +158,10 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 	bool portHasCable[MATRIX_COUNT] = {};
 	float blinkPhase = 0.f;
 
+	enum ButtonMode { BUTTON_TOGGLE, BUTTON_MOMENTARY };
+	/** [Stored to JSON] */
+	ButtonMode buttonMode = BUTTON_TOGGLE;
+
 	// -1 = no pending; >=0 = first button pressed, awaiting second press
 	int pendingCellId = -1;
 
@@ -230,6 +234,11 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 					blinkPhase = 0.f;
 				}
 			}
+			if (buttonMode == BUTTON_MOMENTARY && pendingCellId >= 0) {
+				if (params[PARAM_MATRIX + pendingCellId].getValue() <= 0.5f)
+					pendingCellId = -1;
+			}
+
 			for (int i = 0; i < MATRIX_SIZE; i++) {
 				if (sceneTriggers[i].process(params[PARAM_SCENE + i].getValue() > 0.5f)) {
 					if (learningId == MATRIX_COUNT + i) {
@@ -539,6 +548,7 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		}
 		json_object_set_new(rootJ, "scenes", scenesJ);
 		json_object_set_new(rootJ, "feedbackPreset", json_integer(feedbackPreset));
+		json_object_set_new(rootJ, "buttonMode", json_integer((int)buttonMode));
 		if (feedbackPreset == PRESET_IDX_CUSTOM && !customPresetJson.empty())
 			json_object_set_new(rootJ, "customPreset", json_string(customPresetJson.c_str()));
 		json_object_set_new(rootJ, "midiInput",  trackingProcessor.getInput().toJson());
@@ -552,6 +562,8 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 	void dataFromJson(json_t* rootJ) override {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 		currentScene = json_integer_value(json_object_get(rootJ, "currentScene"));
+		json_t* buttonModeJ = json_object_get(rootJ, "buttonMode");
+		if (buttonModeJ) buttonMode = (ButtonMode)json_integer_value(buttonModeJ);
 
 		trackingProcessor.clearMaps();
 		json_t* mapsJ = json_object_get(rootJ, "maps");
@@ -717,18 +729,12 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 			setConnection(currentScene, outCell, inCell, false);
 			removeCableBetween(outCell, inCell);
 
-			overlayMessage.title = "Removed cable";
-			overlayMessageId = 0;
-			overlayMessage.subtitle[0] = portLabel(*outPd);
-			overlayMessage.subtitle[1] = portLabel(*inPd);
+			setOverlayMessage("Removed cable", portLabel(*outPd), portLabel(*inPd));
 		} 
 		else {
 			setConnection(currentScene, outCell, inCell, true);
 			addCableToPort(outPd, inPd);
-			overlayMessage.title = "Added cable";
-			overlayMessageId = 0;
-			overlayMessage.subtitle[0] = portLabel(*outPd);
-			overlayMessage.subtitle[1] = portLabel(*inPd);
+			setOverlayMessage("Added cable", portLabel(*outPd), portLabel(*inPd));
 		}
 	}
 
@@ -806,6 +812,14 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		return string::f("%s \xc2\xb7 %s %d", mw->model->name.c_str(), dir.c_str(), pa.portId + 1);
 	}
 
+	// GUI thread — posts a two-line overlay message.
+	void setOverlayMessage(const std::string& title, const std::string& sub0, const std::string& sub1 = "") {
+		overlayMessage.title    = title;
+		overlayMessage.subtitle[0] = sub0;
+		overlayMessage.subtitle[1] = sub1;
+		overlayMessageId = 0;
+	}
+
 	// Engine thread — handles a single cell activation (button press or MIDI trigger).
 	// First press sets the pending selection; second press on a different cell enqueues
 	// a toggleConnection call to the GUI thread. Pressing the same cell again cancels.
@@ -813,14 +827,20 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		if (!portAssignments[id].isValid()) return;
 		if (pendingCellId < 0) {
 			pendingCellId = id;
-		} 
+			if (!guiQueue.full()) {
+				guiQueue.push([this, id]() {
+					setOverlayMessage("Port selected", portLabel(portAssignments[id]));
+				});
+			}
+		}
 		else if (pendingCellId == id) {
 			pendingCellId = -1;
 		} 
 		else {
 			int a = pendingCellId, b = id;
-			if (!guiQueue.full())
+			if (!guiQueue.full()) {
 				guiQueue.push([this, a, b]() { toggleConnection(a, b); });
+			}
 			pendingCellId = -1;
 		}
 	}
@@ -1117,13 +1137,15 @@ struct MidiBayWidget : ThemedModuleWidget<MidiBayModule>, OverlayMessageProvider
 			addChild(createLightCentered<MatrixButtonLight<WhiteLight, MidiBayModule>>(Vec(x, 320.6f), module, MidiBayModule::LIGHT_SCENE + i));
 		}
 
-		OverlayMessageWidget::registerProvider(this);
+		if (module) {
+			OverlayMessageWidget::registerProvider(this);
 
-		vizOverlay = new MidiBayVizOverlay;
-		vizOverlay->module = module;
-		vizOverlay->hostWidget = this;
-		vizOverlay->visible = false;
-		APP->scene->rack->addChild(vizOverlay);
+			vizOverlay = new MidiBayVizOverlay;
+			vizOverlay->module = module;
+			vizOverlay->hostWidget = this;
+			vizOverlay->visible = false;
+			APP->scene->rack->addChild(vizOverlay);
+		}
 	}
 
 	~MidiBayWidget() {
@@ -1132,8 +1154,10 @@ struct MidiBayWidget : ThemedModuleWidget<MidiBayModule>, OverlayMessageProvider
 			delete vizOverlay;
 			vizOverlay = nullptr;
 		}
-		APP->scene->rack->getCableContainer()->visible = true;
-		OverlayMessageWidget::unregisterProvider(this);
+		if (module) {
+			APP->scene->rack->getCableContainer()->visible = true;
+			OverlayMessageWidget::unregisterProvider(this);
+		}
 	}
 
 	int nextOverlayMessageId() override {
@@ -1296,6 +1320,17 @@ struct MidiBayWidget : ThemedModuleWidget<MidiBayModule>, OverlayMessageProvider
 					system::writeFile(path, std::vector<uint8_t>(text.begin(), text.end()));
 				},
 				!canSave
+			));
+		}));
+		menu->addChild(new MenuSeparator);
+		menu->addChild(createSubmenuItem("Button mode", "", [=](Menu* menu) {
+			menu->addChild(createCheckMenuItem("Toggle", "",
+				[=]() { return module->buttonMode == MidiBayModule::BUTTON_TOGGLE; },
+				[=]() { module->buttonMode = MidiBayModule::BUTTON_TOGGLE; module->pendingCellId = -1; }
+			));
+			menu->addChild(createCheckMenuItem("Momentary", "",
+				[=]() { return module->buttonMode == MidiBayModule::BUTTON_MOMENTARY; },
+				[=]() { module->buttonMode = MidiBayModule::BUTTON_MOMENTARY; module->pendingCellId = -1; }
 			));
 		}));
 		menu->addChild(createCheckMenuItem("Sequential MIDI learn", "",
