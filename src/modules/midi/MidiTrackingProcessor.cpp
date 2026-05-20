@@ -201,4 +201,4 @@ void MidiTrackingProcessor<MAPCOUNT>::dataFromJson(json_t* rootJ) {
 
 // Explicit template instantiation for 19 maps
 template struct StoermelderPackOne::MidiTrackingProcessor<19>;
-template struct StoermelderPackOne::MidiTrackingProcessor<64>;
+template struct StoermelderPackOne::MidiTrackingProcessor<72>;

@@ -37,7 +37,48 @@ struct PortAssignment {
 	void clear() { moduleId = -1; portId = -1; }
 };
 
+static const int TOTAL_MAPS = MATRIX_COUNT + MATRIX_SIZE;  // 64 cells + 8 scenes
+
 struct MidiBayModule : Module, MidiTrackingProcessorHandler {
+	struct MidiBayCellQuantity : ParamQuantity {
+		std::string getLabel() override {
+			if (!module) return ParamQuantity::getLabel();
+			auto* m = static_cast<MidiBayModule*>(module);
+			int cellId = paramId - PARAM_MATRIX;
+			const PortAssignment& pa = m->portAssignments[cellId];
+			if (pa.isValid()) return portLabel(pa);
+			return string::f("Cell %d", cellId + 1);
+		}
+		std::string getDisplayValueString() override { return ""; }
+		std::string getDescription() override {
+			if (!module) return "";
+			auto* m = static_cast<MidiBayModule*>(module);
+			int cellId = paramId - PARAM_MATRIX;
+			auto& mm = m->trackingProcessor.getMap(cellId);
+			if (mm.type == MidiTrackingType::CC)   return string::f("MIDI: CC %d",   mm.param);
+			if (mm.type == MidiTrackingType::NOTE)  return string::f("MIDI: Note %d", mm.param);
+			return "MIDI: (unmapped)";
+		}
+	};
+
+	struct MidiBaySceneQuantity : ParamQuantity {
+		std::string getLabel() override {
+			if (!module) return ParamQuantity::getLabel();
+			int sceneId = paramId - PARAM_SCENE;
+			return string::f("Scene %d", sceneId + 1);
+		}
+		std::string getDisplayValueString() override { return ""; }
+		std::string getDescription() override {
+			if (!module) return "";
+			auto* m = static_cast<MidiBayModule*>(module);
+			int sceneId = paramId - PARAM_SCENE;
+			auto& mm = m->trackingProcessor.getMap(MATRIX_COUNT + sceneId);
+			if (mm.type == MidiTrackingType::CC)   return string::f("MIDI: CC %d",   mm.param);
+			if (mm.type == MidiTrackingType::NOTE)  return string::f("MIDI: Note %d", mm.param);
+			return "MIDI: (unmapped)";
+		}
+	};
+
 	enum ParamIds {
 		ENUMS(PARAM_MATRIX, MATRIX_COUNT),
 		ENUMS(PARAM_SCENE, MATRIX_SIZE),
@@ -55,6 +96,21 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		NUM_LIGHTS
 	};
 
+	struct MidiBayOutput : midi::Output {
+		int* ledState = nullptr;
+
+		std::vector<int> getChannels() override {
+			std::vector<int> channels = midi::Output::getChannels();
+			channels.emplace(channels.begin(), -1);
+			return channels;
+		}
+
+		void setDeviceId(int deviceId) override {
+			midi::Output::setDeviceId(deviceId);
+			if (ledState) std::fill(ledState, ledState + MATRIX_COUNT, -1);
+		}
+	};
+
 	/** [Stored to JSON] */
 	int panelTheme = 0;
 
@@ -65,10 +121,10 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 	int currentScene = 0;
 
 	/** [Stored to JSON] */
-	StoermelderPackOne::MidiTrackingProcessor<MATRIX_COUNT> trackingProcessor;
+	StoermelderPackOne::MidiTrackingProcessor<TOTAL_MAPS> trackingProcessor;
 
 	/** [Stored to JSON] */
-	midi::Output midiOutput;
+	MidiBayOutput midiOutput;
 
 	/** [Stored to JSON] */
 	PortAssignment portAssignments[MATRIX_COUNT];
@@ -107,15 +163,16 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		std::fill(cellLedState, cellLedState + MATRIX_COUNT, -1);
 		for (int i = 0; i < MATRIX_COUNT; i++) {
-			configButton(PARAM_MATRIX + i, string::f("Matrix %i", i + 1));
+			configParam<MidiBayCellQuantity>(PARAM_MATRIX + i, 0.f, 1.f, 0.f);
 		}
 		for (int i = 0; i < MATRIX_SIZE; i++) {
-			configButton(PARAM_SCENE + i, string::f("Scene %i", i + 1));
+			configParam<MidiBaySceneQuantity>(PARAM_SCENE + i, 0.f, 1.f, 0.f);
 		}
 
 		trackingProcessor.handler = this;
 		trackingProcessor.enableCc();
 		trackingProcessor.enableNotes();
+		midiOutput.ledState = cellLedState;
 		processDivider.setDivision(256);
 	}
 
@@ -132,13 +189,26 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		if (processDivider.process()) {
 			for (int i = 0; i < MATRIX_COUNT; i++) {
 				if (buttonTriggers[i].process(params[PARAM_MATRIX + i].getValue() > 0.5f)) {
-					triggerCell(i);
+					if (learningId == i) {
+						disableLearn();
+					} 
+					else if (portLearningId == i) {
+						disablePortLearn();
+					} 
+					else {
+						triggerCell(i);
+					}
 					blinkPhase = 0.f;
 				}
 			}
 			for (int i = 0; i < MATRIX_SIZE; i++) {
 				if (sceneTriggers[i].process(params[PARAM_SCENE + i].getValue() > 0.5f)) {
-					requestSceneChange(i);
+					if (learningId == MATRIX_COUNT + i) {
+						disableLearn();
+					} 
+					else {
+						requestSceneChange(i);
+					}
 				}
 			}
 
@@ -188,9 +258,12 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 			}
 			for (int s = 0; s < MATRIX_SIZE; s++) {
 				float bright;
-				if (s == currentScene) {
+				if (learningId == MATRIX_COUNT + s) {
+					bright = blinkOn ? LED_BRIGHT : 0.f;
+				}
+				else if (s == currentScene) {
 					bright = LED_BRIGHT;
-				} 
+				}
 				else {
 					bool hasConn = false;
 					for (int i = 0; i < MATRIX_COUNT; i++) {
@@ -220,8 +293,12 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 
 	// MidiTrackingProcessorHandler
 	void processMapUpdate(StoermelderPackOne::MidiTrackingType type, uint16_t mapId, uint16_t value) override {
-		if (value > 0 && mapId < (uint16_t)MATRIX_COUNT) {
+		if (value == 0) return;
+		if (mapId < (uint16_t)MATRIX_COUNT) {
 			triggerCell(mapId);
+		} 
+		else if (mapId < (uint16_t)TOTAL_MAPS) {
+			requestSceneChange(mapId - MATRIX_COUNT);
 		}
 	}
 
@@ -244,10 +321,10 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		}
 	}
 
-	// Learn MIDI for a single cell. Cancels any active learn first.
+	// Learn MIDI for a single cell or scene button (id >= MATRIX_COUNT). Cancels any active learn first.
 	void enableLearn(int id) {
 		disableLearn();
-		if (id < 0 || id >= MATRIX_COUNT) return;
+		if (id < 0 || id >= TOTAL_MAPS) return;
 		learningId = id;
 		trackingProcessor.enableMapLearn(id);
 	}
@@ -296,7 +373,7 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		if (spec.type == MIDI_OUT_NONE) return;
 		int noteNum;
 		switch (spec.noteMode) {
-			case MIDI_OUT_FROM_MAP: {
+			case MIDI_OUT_FROM_SLOT: {
 				auto m = trackingProcessor.getMap(cellId);
 				if (m.type == MidiTrackingType::NONE) return;
 				noteNum = m.param;
@@ -304,9 +381,6 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 			}
 			case MIDI_OUT_FIXED:
 				noteNum = spec.note;
-				break;
-			case MIDI_OUT_FROM_LAYOUT:
-				noteNum = preset.noteLayout[cellId];
 				break;
 			default: return;
 		}
@@ -324,13 +398,32 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		midiOutput.sendMessage(msg);
 	}
 
+	void applyPresetLayout() {
+		static auto& presets = getPresets();
+		if (feedbackPreset <= 0 || feedbackPreset >= (int)presets.size()) return;
+		const MidiOutPreset& preset = presets[feedbackPreset];
+		if (!preset.hasLayout()) return;
+		trackingProcessor.clearMaps();
+		for (int i = 0; i < MATRIX_COUNT; i++) {
+			const auto& s = preset.cells[i];
+			if (s.type != MidiTrackingType::NONE && s.number > 0)
+				trackingProcessor.setMap(s.type, i, s.number);
+		}
+		for (int i = 0; i < MATRIX_SIZE; i++) {
+			const auto& s = preset.scenes[i];
+			if (s.type != MidiTrackingType::NONE && s.number > 0)
+				trackingProcessor.setMap(s.type, MATRIX_COUNT + i, s.number);
+		}
+		std::fill(cellLedState, cellLedState + MATRIX_COUNT, -1);
+	}
+
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 		json_object_set_new(rootJ, "currentScene", json_integer(currentScene));
 
 		json_t* mapsJ = json_array();
-		for (int i = 0; i < MATRIX_COUNT; i++) {
+		for (int i = 0; i < TOTAL_MAPS; i++) {
 			auto m = trackingProcessor.getMap(i);
 			json_t* mapJ = json_object();
 			json_object_set_new(mapJ, "type", json_integer((int)m.type));
@@ -368,6 +461,8 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		}
 		json_object_set_new(rootJ, "scenes", scenesJ);
 		json_object_set_new(rootJ, "feedbackPreset", json_integer(feedbackPreset));
+		json_object_set_new(rootJ, "midiInput",  trackingProcessor.getInput().toJson());
+		json_object_set_new(rootJ, "midiOutput", midiOutput.toJson());
 		return rootJ;
 	}
 
@@ -375,12 +470,13 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 		currentScene = json_integer_value(json_object_get(rootJ, "currentScene"));
 
+		trackingProcessor.clearMaps();
 		json_t* mapsJ = json_object_get(rootJ, "maps");
 		if (mapsJ) {
 			size_t i;
 			json_t* mapJ;
 			json_array_foreach(mapsJ, i, mapJ) {
-				if (i >= MATRIX_COUNT) break;
+				if (i >= (size_t)TOTAL_MAPS) break;
 				auto type = (StoermelderPackOne::MidiTrackingType)json_integer_value(json_object_get(mapJ, "type"));
 				auto param = (uint16_t)json_integer_value(json_object_get(mapJ, "param"));
 				if (type != MidiTrackingType::NONE) {
@@ -404,6 +500,11 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		feedbackPreset = json_integer_value(json_object_get(rootJ, "feedbackPreset"));
 		feedbackPreset = clamp(feedbackPreset, 0, (int)getPresets().size() - 1);
 		std::fill(cellLedState, cellLedState + MATRIX_COUNT, -1);
+
+		json_t* midiInputJ = json_object_get(rootJ, "midiInput");
+		if (midiInputJ) trackingProcessor.getInput().fromJson(midiInputJ);
+		json_t* midiOutputJ = json_object_get(rootJ, "midiOutput");
+		if (midiOutputJ) midiOutput.fromJson(midiOutputJ);
 
 		memset(sceneConnections, 0, sizeof(sceneConnections));
 		json_t* scenesJ = json_object_get(rootJ, "scenes");
@@ -783,6 +884,14 @@ struct MidiBayWidget : ThemedModuleWidget<MidiBayModule>, OverlayMessageProvider
 					}
 				));
 			}
+			menu->addChild(new MenuSeparator);
+			bool hasLayout = module->feedbackPreset > 0 &&
+			                 module->feedbackPreset < (int)presets.size() &&
+			                 presets[module->feedbackPreset].hasLayout();
+			menu->addChild(createMenuItem("Apply note layout as MIDI input mappings", "",
+				[=]() { module->applyPresetLayout(); },
+				!hasLayout
+			));
 		}));
 		menu->addChild(createCheckMenuItem("Sequential MIDI learn", "",
 			[=]() { return module->midiLearnMode; },
@@ -817,6 +926,28 @@ void MidiBaySceneButton::createSceneMenu() {
 		if (!MidiBayWidget::sceneClipboardValid) return;
 		module->reconcileScene(sceneId, MidiBayWidget::sceneClipboard);
 	}, !MidiBayWidget::sceneClipboardValid));
+
+	menu->addChild(new MenuSeparator);
+
+	int mapId = MATRIX_COUNT + sceneId;
+	auto& midiMap = module->trackingProcessor.getMap(mapId);
+	std::string midiLabel;
+	if (midiMap.type == MidiTrackingType::CC)   midiLabel = string::f("CC %d",   midiMap.param);
+	if (midiMap.type == MidiTrackingType::NOTE)  midiLabel = string::f("Note %d", midiMap.param);
+
+	std::string learnLabel = midiLabel.empty() ? "Learn MIDI" : string::f("Learn MIDI (%s)", midiLabel.c_str());
+	menu->addChild(createCheckMenuItem(learnLabel, "",
+		[=]() { return module->learningId == MATRIX_COUNT + sceneId; },
+		[=]() {
+			if (module->learningId == MATRIX_COUNT + sceneId) module->disableLearn();
+			else module->enableLearn(MATRIX_COUNT + sceneId);
+		}
+	));
+	if (!midiLabel.empty()) {
+		menu->addChild(createMenuItem("Clear MIDI", "", [=]() {
+			module->trackingProcessor.clearMap(MATRIX_COUNT + sceneId);
+		}));
+	}
 }
 
 
