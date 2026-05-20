@@ -624,6 +624,21 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		APP->history->push(h);
 	}
 
+	// GUI thread — resolves port directions for the two cells and removes the cable between
+	// them. No-op if both ports are the same direction or either assignment is invalid.
+	void removeCableBetween(int cellIdA, int cellIdB) {
+		const PortAssignment& a = portAssignments[cellIdA];
+		const PortAssignment& b = portAssignments[cellIdB];
+		if (!a.isValid() || !b.isValid()) return;
+		const PortAssignment* outPd = nullptr;
+		const PortAssignment* inPd  = nullptr;
+		if      (a.type == engine::Port::OUTPUT && b.type == engine::Port::INPUT) { outPd = &a; inPd = &b; }
+		else if (a.type == engine::Port::INPUT  && b.type == engine::Port::OUTPUT) { outPd = &b; inPd = &a; }
+		else return;
+		CableWidget* cw = findCable(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId);
+		if (cw) removeCable(cw);
+	}
+
 	// GUI thread — creates or removes the cable between cellIdA and cellIdB in the current
 	// scene, then updates overlayMessage so the overlay bar shows what changed.
 	// One cell must be an output and the other an input; same-direction pairs are ignored.
@@ -646,8 +661,7 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 
 		if (isConnected(currentScene, outCell, inCell)) {
 			setConnection(currentScene, outCell, inCell, false);
-			CableWidget* cw = findCable(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId);
-			if (cw) removeCable(cw);
+			removeCableBetween(outCell, inCell);
 
 			overlayMessage.title = "Removed cable";
 			overlayMessageId = 0;
@@ -694,22 +708,13 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 				const PortAssignment& a = portAssignments[i];
 				const PortAssignment& b = portAssignments[j];
 				if (!a.isValid() || !b.isValid()) continue;
-				const PortAssignment* outPd = nullptr;
-				const PortAssignment* inPd  = nullptr;
-				if (a.type == engine::Port::OUTPUT && b.type == engine::Port::INPUT) {
-					outPd = &a; inPd = &b;
-				} 
-				else if (a.type == engine::Port::INPUT && b.type == engine::Port::OUTPUT) {
-					outPd = &b; inPd = &a;
-				} 
+				if (was) removeCableBetween(i, j);
 				else {
-					continue;
-				}
-				if (was) {
-					CableWidget* cw = findCable(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId);
-					if (cw) removeCable(cw);
-				} 
-				else {
+					const PortAssignment* outPd = nullptr;
+					const PortAssignment* inPd  = nullptr;
+					if      (a.type == engine::Port::OUTPUT && b.type == engine::Port::INPUT) { outPd = &a; inPd = &b; }
+					else if (a.type == engine::Port::INPUT  && b.type == engine::Port::OUTPUT) { outPd = &b; inPd = &a; }
+					else continue;
 					addCableToPort(outPd, inPd);
 				}
 			}
@@ -766,6 +771,16 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		}
 	}
 
+	// GUI thread — removes all cables connected to cellId in the current scene.
+	void removeCellConnections(int cellId) {
+		uint64_t mask = sceneConnections[currentScene][cellId];
+		for (int j = 0; j < MATRIX_COUNT; j++) {
+			if (!((mask >> j) & 1)) continue;
+			setConnection(currentScene, cellId, j, false);
+			removeCableBetween(cellId, j);
+		}
+	}
+
 	// Engine thread — enqueues a switchScene call on the GUI thread via guiQueue.
 	void requestSceneChange(int i) {
 		if (!guiQueue.full()) {
@@ -799,8 +814,9 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 // Activated by the space key; hides cables and draws cell→port assignment splines.
 struct MidiBayVizOverlay : TransparentWidget {
 	MidiBayModule* module = nullptr;
-	// Non-owning pointer to the host widget (for position and portAssignments).
+	// Non-owning pointer to the host widget (for position).
 	Widget* hostWidget = nullptr;
+	int hoveredCellId = -1;
 
 	void step() override {
 		// Track parent size so NVG scissor doesn't clip our drawings.
@@ -821,24 +837,45 @@ struct MidiBayVizOverlay : TransparentWidget {
 		return std::fmod(cellId * 0.618033988f, 1.f) * 2.f - 1.f;
 	}
 
-	void drawSpline(NVGcontext* vg, Vec a, Vec b, NVGcolor col, float jitter) {
+	void drawSpline(NVGcontext* vg, Vec a, Vec b, NVGcolor col, float jitter, bool highlighted = false) {
 		float dx   = b.x - a.x;
 		float dist = a.minus(b).norm();
-		float bulge = dist * 0.18f * jitter;   // scales with length, ±~18 % of distance
+		float bulge = dist * 0.18f * jitter;
 		Vec cp1 = a.plus(Vec(dx * 0.5f,  bulge));
 		Vec cp2 = b.plus(Vec(-dx * 0.5f, bulge));
 
 		nvgBeginPath(vg);
 		nvgMoveTo(vg, a.x, a.y);
 		nvgBezierTo(vg, cp1.x, cp1.y, cp2.x, cp2.y, b.x, b.y);
-		// Glow pass
-		nvgStrokeColor(vg, nvgRGBAf(col.r, col.g, col.b, 0.25f));
-		nvgStrokeWidth(vg, 6.f);
 		nvgLineCap(vg, NVG_ROUND);
+		// Glow pass
+		nvgStrokeColor(vg, nvgRGBAf(col.r, col.g, col.b, highlighted ? 0.45f : 0.25f));
+		nvgStrokeWidth(vg, highlighted ? 12.f : 6.f);
 		nvgStroke(vg);
 		// Core pass
-		nvgStrokeColor(vg, nvgRGBAf(col.r, col.g, col.b, 0.90f));
-		nvgStrokeWidth(vg, 1.5f);
+		nvgStrokeColor(vg, nvgRGBAf(col.r, col.g, col.b, 1.f));
+		nvgStrokeWidth(vg, highlighted ? 3.f : 1.5f);
+		nvgStroke(vg);
+	}
+
+	// Draws a short arc between two cell-button centers on the module face.
+	// Used to show which cells are wired together in the active scene.
+	void drawCellArc(NVGcontext* vg, Vec a, Vec b) {
+		Vec diff   = b.minus(a);
+		Vec perp   = Vec(-diff.y, diff.x).mult(0.12f);  // ~12% of distance, perpendicular
+		Vec cp     = a.plus(diff.mult(0.5f)).plus(perp);
+
+		nvgBeginPath(vg);
+		nvgMoveTo(vg, a.x, a.y);
+		nvgQuadTo(vg, cp.x, cp.y, b.x, b.y);
+		nvgLineCap(vg, NVG_ROUND);
+		// Glow
+		nvgStrokeColor(vg, nvgRGBAf(1.f, 0.9f, 0.4f, 0.25f));
+		nvgStrokeWidth(vg, 6.f);
+		nvgStroke(vg);
+		// Core
+		nvgStrokeColor(vg, nvgRGBAf(1.f, 0.95f, 0.5f, 0.9f));
+		nvgStrokeWidth(vg, 1.2f);
 		nvgStroke(vg);
 	}
 
@@ -847,48 +884,93 @@ struct MidiBayVizOverlay : TransparentWidget {
 		NVGcontext* vg = args.vg;
 
 		Vec origin = hostWidget->box.pos;
+		int hoveredCell = hoveredCellId;
+		bool anyHover = (hoveredCell >= 0 && module->portAssignments[hoveredCell].isValid());
 
-		for (int i = 0; i < MATRIX_COUNT; i++) {
+		// Build bitmask of cells connected to the hovered cell in the current scene.
+		uint64_t connectedMask = anyHover
+			? module->sceneConnections[module->currentScene][hoveredCell]
+			: 0;
+
+		// Helper: resolve a cell's port widget, or return nullptr.
+		auto getPortWidget = [&](int i) -> PortWidget* {
 			const PortAssignment& pa = module->portAssignments[i];
-			if (!pa.isValid()) continue;
+			if (!pa.isValid()) return nullptr;
+			ModuleWidget* mw = APP->scene->rack->getModule(pa.moduleId);
+			if (!mw) return nullptr;
+			auto list = (pa.type == engine::Port::OUTPUT) ? mw->getOutputs() : mw->getInputs();
+			for (PortWidget* pw : list)
+				if (pw->portId == pa.portId) return pw;
+			return nullptr;
+		};
 
-			ModuleWidget* portMw = APP->scene->rack->getModule(pa.moduleId);
-			if (!portMw) continue;
+		// Helper: draw the spline + endpoint dots for cell i.
+		auto drawCell = [&](int i, bool highlighted) {
+			PortWidget* portPw = getPortWidget(i);
+			if (!portPw) return;
+			if (module->pendingCellId == i && module->blinkPhase >= 0.5f) return;
 
-			auto portList = (pa.type == engine::Port::OUTPUT) ? portMw->getOutputs() : portMw->getInputs();
-			PortWidget* portPw = nullptr;
-			for (PortWidget* pw : portList) {
-				if (pw->portId == pa.portId) { portPw = pw; break; }
-			}
-			if (!portPw) continue;
-
-			// Blink the connector when this cell is the pending first-press
-			if (module->pendingCellId == i && module->blinkPhase >= 0.5f) continue;
+			ModuleWidget* portMw = APP->scene->rack->getModule(module->portAssignments[i].moduleId);
+			if (!portMw) return;
 
 			Vec cellPos = origin.plus(cellCenter(i));
 			Vec portPos = portMw->box.pos.plus(portPw->box.getCenter());
 
-			bool isOut = (pa.type == engine::Port::OUTPUT);
+			bool isOut = (module->portAssignments[i].type == engine::Port::OUTPUT);
 			NVGcolor col = isOut
-				? nvgRGBf(0.93f, 0.18f, 0.11f)   // red-orange — output
-				: nvgRGBf(0.17f, 0.71f, 0.94f);   // sky-blue   — input
+				? nvgRGBf(0.93f, 0.18f, 0.11f)
+				: nvgRGBf(0.17f, 0.71f, 0.94f);
 
-			drawSpline(vg, cellPos, portPos, col, cellJitter(i));
+			drawSpline(vg, cellPos, portPos, col, cellJitter(i), highlighted);
+
+			float cellR = highlighted ? 4.f  : 2.5f;
+			float portR = highlighted ? 5.5f : 3.5f;
 
 			// Cell-side dot (white)
 			nvgBeginPath(vg);
-			nvgCircle(vg, cellPos.x, cellPos.y, 2.5f);
+			nvgCircle(vg, cellPos.x, cellPos.y, cellR);
 			nvgFillColor(vg, nvgRGBAf(1.f, 1.f, 1.f, 0.9f));
 			nvgFill(vg);
 
-			// Port-side dot (colored)
+			// Port-side dot (colored with white ring)
 			nvgBeginPath(vg);
-			nvgCircle(vg, portPos.x, portPos.y, 3.5f);
+			nvgCircle(vg, portPos.x, portPos.y, portR);
 			nvgFillColor(vg, nvgRGBAf(col.r, col.g, col.b, 0.9f));
 			nvgFill(vg);
 			nvgStrokeColor(vg, nvgRGBAf(1.f, 1.f, 1.f, 0.6f));
-			nvgStrokeWidth(vg, 0.8f);
+			nvgStrokeWidth(vg, highlighted ? 1.4f : 0.8f);
 			nvgStroke(vg);
+		};
+
+		if (anyHover) {
+			// Pass 1: draw unrelated cells dimmed.
+			nvgGlobalAlpha(vg, 0.18f);
+			for (int i = 0; i < MATRIX_COUNT; i++) {
+				if (i == hoveredCell || ((connectedMask >> i) & 1)) continue;
+				drawCell(i, false);
+			}
+			nvgGlobalAlpha(vg, 1.f);
+
+			// Pass 2: draw connected cells at full opacity (not bold).
+			for (int i = 0; i < MATRIX_COUNT; i++) {
+				if (i == hoveredCell || !((connectedMask >> i) & 1)) continue;
+				drawCell(i, false);
+			}
+
+			// Pass 3: draw hovered cell highlighted on top.
+			drawCell(hoveredCell, true);
+
+			// Pass 4: draw cell-to-cell arcs for each active connection.
+			Vec hovPos = origin.plus(cellCenter(hoveredCell));
+			for (int i = 0; i < MATRIX_COUNT; i++) {
+				if (!((connectedMask >> i) & 1)) continue;
+				drawCellArc(vg, hovPos, origin.plus(cellCenter(i)));
+			}
+		}
+		else {
+			// No hover — draw everything at normal opacity.
+			for (int i = 0; i < MATRIX_COUNT; i++)
+				drawCell(i, false);
 		}
 	}
 };
@@ -934,6 +1016,9 @@ struct MidiBayCellButton : app::SvgSwitch {
 		fb->removeChild(shadow);
 		delete shadow;
 	}
+
+	void onEnter(const event::Enter& e) override;
+	void onLeave(const event::Leave& e) override;
 
 	void onButton(const event::Button& e) override {
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT && module) {
@@ -1018,10 +1103,26 @@ struct MidiBayWidget : ThemedModuleWidget<MidiBayModule>, OverlayMessageProvider
 		if (module) module->portSelectProcessor.processDeselect();
 	}
 
+	MidiBayCellButton* findCellButton(int cellId) {
+		for (Widget* w : children) {
+			auto* btn = dynamic_cast<MidiBayCellButton*>(w);
+			if (btn && btn->cellId == cellId) return btn;
+		}
+		return nullptr;
+	}
+
 	void setVizMode(bool active) {
+		int hovered = vizOverlay ? vizOverlay->hoveredCellId : -1;
 		vizMode = active;
 		if (vizOverlay) vizOverlay->visible = active;
 		APP->scene->rack->getCableContainer()->visible = !active;
+		if (hovered >= 0 && hovered < MATRIX_COUNT) {
+			MidiBayCellButton* btn = findCellButton(hovered);
+			if (btn) {
+				if (active) btn->destroyTooltip();
+				else        btn->createTooltip();
+			}
+		}
 	}
 
 	void onHoverKey(const event::HoverKey& e) override {
@@ -1108,6 +1209,17 @@ struct MidiBayWidget : ThemedModuleWidget<MidiBayModule>, OverlayMessageProvider
 uint64_t MidiBayWidget::sceneClipboard[MATRIX_COUNT] = {};
 bool MidiBayWidget::sceneClipboardValid = false;
 
+void MidiBayCellButton::onEnter(const event::Enter& e) {
+	if (mw && mw->vizOverlay) mw->vizOverlay->hoveredCellId = cellId;
+	SvgSwitch::onEnter(e);
+	if (mw && mw->vizMode) destroyTooltip();
+}
+
+void MidiBayCellButton::onLeave(const event::Leave& e) {
+	if (mw && mw->vizOverlay && mw->vizOverlay->hoveredCellId == cellId) mw->vizOverlay->hoveredCellId = -1;
+	SvgSwitch::onLeave(e);
+}
+
 
 void MidiBaySceneButton::createSceneMenu() {
 	ui::Menu* menu = createMenu();
@@ -1166,38 +1278,52 @@ void MidiBayCellButton::createCellMenu() {
 
 	ui::Menu* menu = createMenu();
 	menu->addChild(createMenuLabel(label.empty() ? string::f("Cell %d (unassigned)", cellId + 1) : label));
-	menu->addChild(new MenuSeparator);
-
-	menu->addChild(createMenuItem("Learn port", "", [=]() {
-		module->enablePortLearn(cellId, mw);
-	}));
-
-	if (pa.isValid()) {
-		int cid = cellId;
-		MidiBayModule* mod = module;
-		menu->addChild(createMenuItem("Clear port", "", [=]() {
-			mod->portAssignments[cid].clear();
-		}));
-	}
 
 	menu->addChild(new MenuSeparator);
-
-	std::string learnMidiLabel = midiLabel.empty() ? "Learn MIDI" : string::f("Learn MIDI (%s)", midiLabel.c_str());
-	int cid = cellId;
-	MidiBayModule* mod = module;
-	menu->addChild(createCheckMenuItem(learnMidiLabel, "",
-		[=]() { return mod->learningId == cid; },
-		[=]() {
-			if (mod->learningId == cid) mod->disableLearn();
-			else mod->enableLearn(cid);
-		}
+	bool hasConns = module->sceneConnections[module->currentScene][cellId] != 0;
+	menu->addChild(createSubmenuItem("Remove cable", "",
+		[=](Menu* menu) {
+			uint64_t mask = module->sceneConnections[module->currentScene][cellId];
+			for (int j = 0; j < MATRIX_COUNT; j++) {
+				if (!((mask >> j) & 1)) continue;
+				std::string connLabel = MidiBayModule::portLabel(module->portAssignments[j]);
+				int cid = cellId, jid = j;
+				MidiBayModule* mod = module;
+				menu->addChild(createMenuItem(connLabel, "", [=]() {
+					mod->setConnection(mod->currentScene, cid, jid, false);
+					mod->removeCableBetween(cid, jid);
+				}));
+			}
+		},
+		!hasConns
+	));
+	menu->addChild(createMenuItem("Remove all cables", "",
+		[=]() { module->removeCellConnections(cellId); },
+		!hasConns
 	));
 
-	if (!midiLabel.empty()) {
-		menu->addChild(createMenuItem("Clear MIDI", "", [=]() {
-			mod->trackingProcessor.clearMap(cid);
-		}));
-	}
+	menu->addChild(new MenuSeparator);
+	menu->addChild(createMenuLabel("Module port"));
+	menu->addChild(createMenuItem("Learn", "", [=]() {
+		module->enablePortLearn(cellId, mw);
+	}));
+	menu->addChild(createMenuItem("Clear", "", [=]() {
+		module->portAssignments[cellId].clear();
+	}, pa.isValid()));
+
+	menu->addChild(new MenuSeparator);
+	menu->addChild(createMenuLabel("MIDI"));
+	std::string learnMidiLabel = midiLabel.empty() ? "Learn" : string::f("Learn MIDI (%s)", midiLabel.c_str());
+	menu->addChild(createCheckMenuItem(learnMidiLabel, "",
+		[=]() { return module->learningId == cellId; },
+		[=]() {
+			if (module->learningId == cellId) module->disableLearn();
+			else module->enableLearn(cellId);
+		}
+	));
+	menu->addChild(createMenuItem("Clear", "", [=]() {
+		module->trackingProcessor.clearMap(cellId);
+	}, midiLabel.empty()));
 }
 
 
