@@ -1281,8 +1281,8 @@ struct MidiBayWidget : ThemedModuleWidget<MidiBayModule>, OverlayMessageProvider
 		if (!module) return;
 
 		menu->addChild(new MenuSeparator);
-		menu->addChild(createSubmenuItem("MIDI Input", "", [=](Menu* menu) { appendMidiMenu(menu, &module->trackingProcessor.getInput()); }));
-		menu->addChild(createSubmenuItem("MIDI Output", "", [=](Menu* menu) { appendMidiMenu(menu, &module->midiOutput); }));
+		menu->addChild(StoermelderPackOne::Rack::createStickyMidiMenuItem("MIDI Input",  &module->trackingProcessor.getInput()));
+		menu->addChild(StoermelderPackOne::Rack::createStickyMidiMenuItem("MIDI Output", &module->midiOutput));
 		menu->addChild(createSubmenuItem("MIDI Preset", "", [=](Menu* menu) {
 			auto& presets = getPresets();
 			for (int i = 0; i < (int)presets.size(); i++) {
