@@ -29,6 +29,23 @@ struct ReelModule : Module, StripIdFixModule {
 		std::vector<json_t*> moduleStates;
 		json_t* cablesJ = nullptr;
 
+		// Non-copyable — json_t* ownership is manual.
+		// Custom move ops are required: the defaulted move would copy cablesJ as a
+		// raw pointer without nulling the source, so the source's destructor would
+		// json_decref the shared pointer and free it from under us. This caused
+		// slot.cablesJ to dangle after std::vector reallocation on emplace_back.
+		ReelSlot() = default;
+		ReelSlot(const ReelSlot&) = delete;
+
+		ReelSlot(ReelSlot&& other) noexcept
+			: used(other.used)
+			, label(std::move(other.label))
+			, moduleStates(std::move(other.moduleStates))
+			, cablesJ(other.cablesJ) {
+			other.cablesJ = nullptr;
+			other.used = false;
+		}
+
 		~ReelSlot() { clear(); }
 
 		void clear() {
@@ -42,24 +59,6 @@ struct ReelModule : Module, StripIdFixModule {
 			}
 			used = false;
 			label = "";
-		}
-
-		// Non-copyable — json_t* ownership is manual.
-		// Custom move ops are required: the defaulted move would copy cablesJ as a
-		// raw pointer without nulling the source, so the source's destructor would
-		// json_decref the shared pointer and free it from under us. This caused
-		// slot.cablesJ to dangle after std::vector reallocation on emplace_back.
-		ReelSlot() = default;
-		ReelSlot(const ReelSlot&) = delete;
-		ReelSlot& operator=(const ReelSlot&) = delete;
-
-		ReelSlot(ReelSlot&& other) noexcept
-			: used(other.used)
-			, label(std::move(other.label))
-			, moduleStates(std::move(other.moduleStates))
-			, cablesJ(other.cablesJ) {
-			other.cablesJ = nullptr;
-			other.used = false;
 		}
 
 		ReelSlot& operator=(ReelSlot&& other) noexcept {
@@ -932,7 +931,9 @@ struct ReelSearchField : OpaqueWidget {
 	std::chrono::time_point<std::chrono::system_clock> cursorBlinkTime;
 	bool cursorVisible = true;
 
-	ReelSearchField() { cursorBlinkTime = std::chrono::system_clock::now(); }
+	ReelSearchField() {
+		cursorBlinkTime = std::chrono::system_clock::now();
+	}
 
 	void step() override {
 		auto now = std::chrono::system_clock::now();
@@ -969,7 +970,8 @@ struct ReelSearchField : OpaqueWidget {
 				if (text.empty() && !focused) {
 					nvgFillColor(args.vg, nvgRGBA(0xf0, 0xf0, 0xf0, 0x28));
 					nvgText(args.vg, 4.f, ty, "Search...", nullptr);
-				} else {
+				}
+				else {
 					std::string display = focused
 						? text.substr(0, cursor) + (cursorVisible ? "|" : " ") + text.substr(cursor)
 						: text;
@@ -999,17 +1001,21 @@ struct ReelSearchField : OpaqueWidget {
 		cursorBlinkTime = std::chrono::system_clock::now();
 	}
 
-	void onDeselect(const event::Deselect& e) override { focused = false; }
+	void onDeselect(const event::Deselect& e) override {
+		focused = false;
+	}
 
 	void onSelectText(const event::SelectText& e) override {
 		if (e.codepoint >= 32 && e.codepoint < 0x10000) {
 			char buf[8] = {};
 			if (e.codepoint < 0x80) {
 				buf[0] = (char)e.codepoint;
-			} else if (e.codepoint < 0x800) {
+			}
+			else if (e.codepoint < 0x800) {
 				buf[0] = 0xC0 | (char)(e.codepoint >> 6);
 				buf[1] = 0x80 | (char)(e.codepoint & 0x3F);
-			} else {
+			}
+			else {
 				buf[0] = 0xE0 | (char)(e.codepoint >> 12);
 				buf[1] = 0x80 | (char)((e.codepoint >> 6) & 0x3F);
 				buf[2] = 0x80 | (char)(e.codepoint & 0x3F);
@@ -1344,7 +1350,8 @@ struct ReelWidget : ThemedModuleWidget<ReelModule> {
 			// Track widget - use oldId if available, otherwise use index
 			if (oldId >= 0) {
 				modules[oldId] = mw;
-			} else {
+			}
+			else {
 				modules[addedModule->id] = mw;
 			}
 
