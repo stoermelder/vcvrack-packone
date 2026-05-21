@@ -59,6 +59,15 @@
 			]
 		},
 		{
+			"slug": "MidiBay",
+			"name": "MIDI-BAY",
+			"description": "MIDI patch-bay for connecting cables",
+			"tags": [
+				"MIDI"
+			],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/midi/MidiBay.md"
+		},
+		{
 			"slug": "MidiEsx",
 			"name": "MIDI-ESX",
 			"description": "MIDI converter for your Expert Sleepers hardware setup (ES-5, ES-8, ES-9 etc.)",

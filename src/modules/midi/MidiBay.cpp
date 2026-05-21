@@ -1,0 +1,1508 @@
+#include "../../plugin.hpp"
+#include "../../components/MatrixButton.hpp"
+#include "../../components/MidiWidget.hpp"
+#include "../../ui/ModuleSelectProcessor.hpp"
+#include "../../ui/OverlayMessageWidget.hpp"
+#include "MidiTrackingProcessor.hpp"
+#include "MidiBay_controllers.hpp"
+#include <osdialog.h>
+
+namespace StoermelderPackOne {
+namespace MidiBay {
+
+// Each LED uses a single SCHEME channel in isolation. Mixing channels is avoided
+// because SCHEME_BLUE (#29b2ef) already contains G=178/255, which saturates the
+// green channel and produces teal/white when combined with the green channel.
+struct LedColor { float r, g, b; };
+
+static const float LED_BRIGHT      = 1.f;
+static const float LED_DIM         = 0.25f;  // assigned port, no cable attached
+static const float LED_SCENE_DIM   = 0.25f;  // inactive scene that has stored connections
+
+// R=red-orange (SCHEME_RED), G=yellow-green (SCHEME_GREEN), B=sky-blue (SCHEME_BLUE)
+static const LedColor LED_OFF         = {0.f,        0.f,        0.f       };
+static const LedColor LED_OUTPUT      = {LED_BRIGHT, 0.f,        0.f       };
+static const LedColor LED_OUTPUT_DIM  = {LED_DIM,    0.f,        0.f       };
+static const LedColor LED_INPUT       = {0.f,        0.f,        LED_BRIGHT};
+static const LedColor LED_INPUT_DIM   = {0.f,        0.f,        LED_DIM   };
+static const LedColor LED_PENDING     = {LED_BRIGHT, LED_BRIGHT, LED_BRIGHT};
+static const LedColor LED_PORT_LEARN  = {0.f,        0.f,        LED_BRIGHT};
+static const LedColor LED_MIDI_LEARN  = {0.f,        LED_BRIGHT, 0.f       };
+
+struct PortAssignment {
+	int64_t moduleId = -1;
+	engine::Port::Type type = engine::Port::INPUT;
+	int portId = -1;
+
+	bool isValid() const { return moduleId >= 0 && portId >= 0; }
+	void clear() { moduleId = -1; portId = -1; }
+};
+
+static const int TOTAL_MAPS = MATRIX_COUNT + MATRIX_SIZE;  // 64 cells + 8 scenes
+
+struct MidiBayModule : Module, MidiTrackingProcessorHandler {
+	// GUI thread — called by Rack whenever the tooltip for a matrix cell is displayed.
+	struct MidiBayCellQuantity : ParamQuantity {
+		// Returns the assigned port label, or "Cell N" if unassigned.
+		std::string getLabel() override {
+			if (!module) return ParamQuantity::getLabel();
+			auto* m = static_cast<MidiBayModule*>(module);
+			int cellId = paramId - PARAM_MATRIX;
+			const PortAssignment& pa = m->portAssignments[cellId];
+			if (pa.isValid()) return portLabel(pa);
+			return string::f("Cell %d", cellId + 1);
+		}
+		// Suppressed — the numeric button value (0/1) is not meaningful to the user.
+		std::string getDisplayValueString() override { return ""; }
+		// Returns the current MIDI mapping (CC N / Note N / unmapped) as the tooltip subtitle.
+		std::string getDescription() override {
+			if (!module) return "";
+			auto* m = static_cast<MidiBayModule*>(module);
+			int cellId = paramId - PARAM_MATRIX;
+			auto& mm = m->trackingProcessor.getMap(cellId);
+			if (mm.type == MidiTrackingType::CC)   return string::f("MIDI: CC %d",   mm.param);
+			if (mm.type == MidiTrackingType::NOTE)  return string::f("MIDI: Note %d", mm.param);
+			return "MIDI: (unmapped)";
+		}
+	};
+
+	// GUI thread — called by Rack whenever the tooltip for a scene button is displayed.
+	struct MidiBaySceneQuantity : ParamQuantity {
+		// Returns "Scene N".
+		std::string getLabel() override {
+			if (!module) return ParamQuantity::getLabel();
+			int sceneId = paramId - PARAM_SCENE;
+			return string::f("Scene %d", sceneId + 1);
+		}
+		// Suppressed — the numeric button value (0/1) is not meaningful to the user.
+		std::string getDisplayValueString() override { return ""; }
+		// Returns the scene button's MIDI mapping as the tooltip subtitle.
+		std::string getDescription() override {
+			if (!module) return "";
+			auto* m = static_cast<MidiBayModule*>(module);
+			int sceneId = paramId - PARAM_SCENE;
+			auto& mm = m->trackingProcessor.getMap(MATRIX_COUNT + sceneId);
+			if (mm.type == MidiTrackingType::CC)   return string::f("MIDI: CC %d",   mm.param);
+			if (mm.type == MidiTrackingType::NOTE)  return string::f("MIDI: Note %d", mm.param);
+			return "MIDI: (unmapped)";
+		}
+	};
+
+	enum ParamIds {
+		ENUMS(PARAM_MATRIX, MATRIX_COUNT),
+		ENUMS(PARAM_SCENE, MATRIX_SIZE),
+		NUM_PARAMS
+	};
+	enum InputIds {
+		NUM_INPUTS
+	};
+	enum OutputIds {
+		NUM_OUTPUTS
+	};
+	enum LightIds {
+		ENUMS(LIGHT_MATRIX, MATRIX_COUNT * 3),
+		ENUMS(LIGHT_SCENE, MATRIX_SIZE),
+		NUM_LIGHTS
+	};
+
+	// GUI thread — midi::Output subclass that invalidates cached LED states on device change
+	// so that all cells are re-sent when a new output device is connected.
+	struct MidiBayOutput : midi::Output {
+		int* ledState      = nullptr;
+		int* sceneLedState = nullptr;
+
+		MidiBayOutput() {
+			channel = -1;
+		}
+
+		// Prepends a "All channels" entry (-1) to the device channel list.
+		std::vector<int> getChannels() override {
+			std::vector<int> channels = midi::Output::getChannels();
+			channels.emplace(channels.begin(), -1);
+			return channels;
+		}
+
+		// Forces a full LED refresh after the device changes by setting all cached
+		// states to -1, which makes the next process() tick re-send every cell.
+		void setDeviceId(int deviceId) override {
+			midi::Output::setDeviceId(deviceId);
+			if (ledState)      std::fill(ledState,      ledState      + MATRIX_COUNT, -1);
+			if (sceneLedState) std::fill(sceneLedState, sceneLedState + MATRIX_SIZE,  -1);
+		}
+	};
+
+	/** [Stored to JSON] */
+	int panelTheme = 0;
+
+	bool midiLearnMode = false;
+	int learningId = -1;
+
+	/** [Stored to JSON] */
+	int currentScene = 0;
+
+	/** [Stored to JSON] */
+	StoermelderPackOne::MidiTrackingProcessor<TOTAL_MAPS> trackingProcessor;
+
+	/** [Stored to JSON] */
+	MidiBayOutput midiOutput;
+
+	/** [Stored to JSON] */
+	PortAssignment portAssignments[MATRIX_COUNT];
+
+	// Per-scene connection bitmasks. sceneConnections[scene][cellA] has bit cellB set
+	// when cellA and cellB are connected in that scene.
+	/** [Stored to JSON] */
+	uint64_t sceneConnections[MATRIX_SIZE][MATRIX_COUNT] = {};
+
+	dsp::BooleanTrigger buttonTriggers[MATRIX_COUNT];
+	dsp::BooleanTrigger sceneTriggers[MATRIX_SIZE];
+	dsp::RingBuffer<std::function<void()>, 16> guiQueue;
+	ClockDividerEx processDivider;
+	// Written by GUI thread (step), read by DSP thread (process) — accepted race for LEDs
+	bool portHasCable[MATRIX_COUNT] = {};
+	float blinkPhase     = 0.f;
+	float slowBlinkPhase = 0.f;
+
+	enum ButtonMode { BUTTON_TOGGLE, BUTTON_MOMENTARY };
+	/** [Stored to JSON] */
+	ButtonMode buttonMode = BUTTON_TOGGLE;
+
+	// -1 = no pending; >=0 = first button pressed, awaiting second press
+	int  pendingCellId         = -1;
+	bool pendingCellIsPhysical = false; // true = set by physical button, false = set by MIDI
+
+	// Resets the pending-cell selection (called on cancel, completion, mode switch, and reset).
+	void clearPending() {
+		pendingCellId         = -1;
+		pendingCellIsPhysical = false;
+	}
+
+	int portLearningId = -1;
+	StoermelderPackOne::PortSelectProcessor portSelectProcessor;
+
+	/** [Stored to JSON] */
+	int feedbackPreset = 0;
+	/** [Stored to JSON] — raw JSON string for the user-loaded custom preset (non-empty when feedbackPreset == PRESET_IDX_CUSTOM) */
+	std::string customPresetJson;
+	MidiOutPreset customPreset;
+
+	// -1 forces a send on the first light-divider tick after load.
+	int cellLedState[MATRIX_COUNT];
+	int sceneLedState[MATRIX_SIZE];
+
+	/** [Stored to JSON] */
+	bool overlayEnabled = true;
+	int overlayMessageId = -1;
+	OverlayMessageProvider::Message overlayMessage;
+
+	// GUI thread — called once by Rack when the module is instantiated.
+	MidiBayModule() {
+		panelTheme = pluginSettings.panelThemeDefault;
+		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+		invalidateLedStates();
+		for (int i = 0; i < MATRIX_COUNT; i++) {
+			configParam<MidiBayCellQuantity>(PARAM_MATRIX + i, 0.f, 1.f, 0.f);
+		}
+		for (int i = 0; i < MATRIX_SIZE; i++) {
+			configParam<MidiBaySceneQuantity>(PARAM_SCENE + i, 0.f, 1.f, 0.f);
+		}
+
+		trackingProcessor.handler = this;
+		trackingProcessor.enableCc();
+		trackingProcessor.enableNotes();
+		midiOutput.ledState      = cellLedState;
+		midiOutput.sceneLedState = sceneLedState;
+		processDivider.setDivision(256);
+	}
+
+	// Engine thread — called by Rack when the user resets the module.
+	// Synchronous bookkeeping (disabling learns, clearing pending state) is done
+	// immediately; cable teardown is deferred to the GUI thread via guiQueue.
+	void onReset() override {
+		disableLearn();
+		disablePortLearn();
+		clearPending();
+		requestReset();
+	}
+
+	// Engine thread — hot path, called every audio sample.
+	// Reads MIDI input, polls button params (every 256 samples via processDivider),
+	// updates LED brightness/state, and enqueues cable operations for the GUI thread.
+	void process(const ProcessArgs& args) override {
+		trackingProcessor.process(args.frame);
+
+		if (processDivider.process()) {
+			for (int i = 0; i < MATRIX_COUNT; i++) {
+				bool high = params[PARAM_MATRIX + i].getValue() > 0.5f;
+				if (buttonTriggers[i].process(high)) {
+					if (learningId == i) {
+						disableLearn();
+					}
+					else if (portLearningId == i) {
+						disablePortLearn();
+					}
+					else {
+						triggerCell(i);
+						pendingCellIsPhysical = true;
+					}
+					blinkPhase = 0.f;
+				}
+				else if (buttonMode == BUTTON_MOMENTARY && pendingCellIsPhysical
+				      && pendingCellId == i && !high) {
+					clearPending();
+				}
+			}
+
+			for (int i = 0; i < MATRIX_SIZE; i++) {
+				if (sceneTriggers[i].process(params[PARAM_SCENE + i].getValue() > 0.5f)) {
+					if (learningId == MATRIX_COUNT + i) {
+						disableLearn();
+					} 
+					else {
+						requestSceneChange(i);
+					}
+				}
+			}
+
+			blinkPhase     += args.sampleTime * 4.f * processDivider.division;
+			if (blinkPhase     >= 1.f) blinkPhase     -= 1.f;
+			slowBlinkPhase += args.sampleTime * 2.f * processDivider.division;
+			if (slowBlinkPhase >= 1.f) slowBlinkPhase -= 1.f;
+
+			bool blinkOn     = blinkPhase     < 0.5f;
+			bool slowBlinkOn = slowBlinkPhase < 0.5f;
+			for (int i = 0; i < MATRIX_COUNT; i++) {
+				bool assigned = portAssignments[i].isValid();
+				bool isOutput = portAssignments[i].type == engine::Port::OUTPUT;
+				bool hasCable = portHasCable[i];
+				bool connectedToPending = pendingCellId >= 0 && i != pendingCellId
+				                      && isConnected(currentScene, pendingCellId, i);
+				LedColor col;
+				int stateId;
+				if (pendingCellId == i) {
+					col = blinkOn ? LED_PENDING : LED_OFF;
+					stateId = LED_STATE_PENDING;
+				}
+				else if (connectedToPending) {
+					col = slowBlinkOn ? (isOutput ? LED_OUTPUT : LED_INPUT) : LED_OFF;
+					stateId = isOutput ? LED_STATE_CONNECTED_OUT : LED_STATE_CONNECTED_IN;
+				}
+				else if (portLearningId == i) {
+					col = blinkOn ? LED_PORT_LEARN : LED_OFF;
+					stateId = LED_STATE_PORT_LEARN;
+				} 
+				else if (learningId == i) {
+					col = blinkOn ? LED_MIDI_LEARN : LED_OFF;
+					stateId = LED_STATE_MIDI_LEARN;
+				} 
+				else if (assigned) {
+					if (isOutput) {
+						if (hasCable) { col = LED_OUTPUT;     stateId = LED_STATE_OUT;     }
+						else          { col = LED_OUTPUT_DIM; stateId = LED_STATE_OUT_DIM; }
+					} 
+					else {
+						if (hasCable) { col = LED_INPUT;     stateId = LED_STATE_IN;     }
+						else          { col = LED_INPUT_DIM; stateId = LED_STATE_IN_DIM; }
+					}
+				} 
+				else {
+					col = LED_OFF;
+					stateId = LED_STATE_OFF;
+				}
+				if (stateId != cellLedState[i]) {
+					cellLedState[i] = stateId;
+					sendFeedback(i, stateId);
+				}
+				float f = args.sampleTime * processDivider.division;
+				lights[LIGHT_MATRIX + i * 3 + 0].setBrightnessSmooth(col.r, f);
+				lights[LIGHT_MATRIX + i * 3 + 1].setBrightnessSmooth(col.g, f);
+				lights[LIGHT_MATRIX + i * 3 + 2].setBrightnessSmooth(col.b, f);
+			}
+			for (int s = 0; s < MATRIX_SIZE; s++) {
+				float bright;
+				int sceneState;
+				if (learningId == MATRIX_COUNT + s) {
+					bright = blinkOn ? LED_BRIGHT : 0.f;
+					sceneState = LED_STATE_MIDI_LEARN;
+				}
+				else if (s == currentScene) {
+					bright = LED_BRIGHT;
+					sceneState = LED_STATE_SCENE_ACTIVE;
+				}
+				else {
+					bool hasConn = false;
+					for (int i = 0; i < MATRIX_COUNT; i++) {
+						if (sceneConnections[s][i]) { hasConn = true; break; }
+					}
+					bright      = hasConn ? LED_SCENE_DIM : 0.f;
+					sceneState  = hasConn ? LED_STATE_SCENE_DIM : LED_STATE_OFF;
+				}
+				if (sceneState != sceneLedState[s]) {
+					sceneLedState[s] = sceneState;
+					sendFeedback(MATRIX_COUNT + s, sceneState);
+				}
+				lights[LIGHT_SCENE + s].setBrightness(bright);
+			}
+		}
+	}
+
+	// Any thread — pure bitmask read; no side effects.
+	bool isConnected(int scene, int a, int b) {
+		return (sceneConnections[scene][a] >> b) & 1;
+	}
+
+	// Any thread — updates both symmetric bitmask entries for the (a, b) pair.
+	void setConnection(int scene, int a, int b, bool value) {
+		if (value) {
+			sceneConnections[scene][a] |= (1ULL << b);
+			sceneConnections[scene][b] |= (1ULL << a);
+		} 
+		else {
+			sceneConnections[scene][a] &= ~(1ULL << b);
+			sceneConnections[scene][b] &= ~(1ULL << a);
+		}
+	}
+
+	// Engine thread — MidiTrackingProcessorHandler callback, fired for every mapped
+	// MIDI message. Routes matrix cell triggers and scene changes into guiQueue.
+	void processMapUpdate(StoermelderPackOne::MidiTrackingType type, uint16_t mapId, uint16_t value) override {
+		if (mapId < (uint16_t)MATRIX_COUNT) {
+			if (value > 0) {
+				pendingCellIsPhysical = false;
+				triggerCell(mapId);
+			} else if (buttonMode == BUTTON_MOMENTARY && (int)mapId == pendingCellId) {
+				clearPending();
+			}
+		}
+		else if (mapId < (uint16_t)TOTAL_MAPS && value > 0) {
+			requestSceneChange(mapId - MATRIX_COUNT);
+		}
+	}
+
+	// Engine thread — MidiTrackingProcessorHandler callback, fired when a MIDI learn
+	// completes. Advances the cursor in sequential learn mode, or clears it for single learn.
+	// NOTE: writes learningId and midiLearnMode which are also read/written by the GUI thread
+	// (context menus). The race is accepted — both sides only write simple scalars.
+	void processMapLearn(StoermelderPackOne::MidiTrackingType type, uint16_t mapId) override {
+		if (midiLearnMode) {
+			// Sequential: advance to next cell
+			int nextId = learningId + 1;
+			learningId = -1;
+			if (nextId < MATRIX_COUNT) {
+				learningId = nextId;
+				trackingProcessor.enableMapLearn(nextId);
+			} 
+			else {
+				midiLearnMode = false; // All cells learned
+			}
+		} 
+		else {
+			learningId = -1;
+		}
+	}
+
+	// Returns a pointer to the currently active preset, or nullptr when feedback is off.
+	const MidiOutPreset* getActivePreset() const {
+		static auto& presets = getPresets();
+		if (feedbackPreset == PRESET_IDX_CUSTOM) return &customPreset;
+		if (feedbackPreset > 0 && feedbackPreset < CONTROLLER_PRESET_COUNT)
+			return &presets[feedbackPreset];
+		return nullptr;
+	}
+
+	// Any thread — forces a full MIDI LED refresh on the next process() tick by resetting
+	// all cached LED states to -1, causing every cell and scene button to be re-sent.
+	void invalidateLedStates() {
+		std::fill(cellLedState,  cellLedState  + MATRIX_COUNT, -1);
+		std::fill(sceneLedState, sceneLedState + MATRIX_SIZE,  -1);
+	}
+
+	// GUI thread — starts MIDI learn for a single cell (id < MATRIX_COUNT) or scene button
+	// (id >= MATRIX_COUNT). Cancels any previously active learn first.
+	void enableLearn(int id) {
+		disableLearn();
+		if (id < 0 || id >= TOTAL_MAPS) return;
+		learningId = id;
+		trackingProcessor.enableMapLearn(id);
+	}
+
+	// GUI thread — starts sequential MIDI learn across all 64 matrix cells in order.
+	// Scene buttons are excluded; assign them individually or via applyPresetLayout().
+	void startGlobalLearn() {
+		disableLearn();
+		midiLearnMode = true;
+		learningId = 0;
+		trackingProcessor.enableMapLearn(0);
+	}
+
+	// Engine or GUI thread — cancels any active MIDI learn.
+	// Called from process() (engine thread) when the user presses the blinking cell,
+	// and from GUI thread via context menus and onReset(). The race on learningId is accepted.
+	void disableLearn() {
+		trackingProcessor.disableMapLearn();
+		learningId = -1;
+		midiLearnMode = false;
+	}
+
+	// GUI thread — starts port-assignment learn for the given cell. The portSelectProcessor
+	// intercepts the next port-widget click and writes portAssignments[id].
+	void enablePortLearn(int id, Widget* owner) {
+		if (id < 0 || id >= MATRIX_COUNT) return;
+		portLearningId = id;
+		portSelectProcessor.setOwner(owner);
+		portSelectProcessor.startLearn([=](PortWidget* pw, Vec) {
+			if (!pw->module) return;
+			portAssignments[portLearningId].moduleId = pw->module->getId();
+			portAssignments[portLearningId].type = pw->type;
+			portAssignments[portLearningId].portId = pw->portId;
+			portLearningId = -1;
+		});
+	}
+
+	// GUI thread — cancels an active port-assignment learn.
+	void disablePortLearn() {
+		portSelectProcessor.disableLearn();
+		portLearningId = -1;
+	}
+
+	// GUI thread — returns true if the given cell is currently in port-learn mode.
+	bool isPortLearning(int id) {
+		return portLearningId == id && portSelectProcessor.isLearning();
+	}
+
+	// Engine thread — sends a single MIDI message to the output device to update the
+	// controller LED for mapId to the given stateId. Called only when the state changes.
+	// mapId 0–63: matrix cells; mapId 64–71: scene buttons (MATRIX_COUNT + sceneId).
+	void sendFeedback(int cellId, int stateId) {
+		const MidiOutPreset* preset = getActivePreset();
+		if (!preset) return;
+		const MidiOutSpec& spec = preset->specs[stateId];
+		if (spec.type == MIDI_OUT_NONE) return;
+		MidiTrackingType slotType = MidiTrackingType::NONE;
+		int noteNum;
+		switch (spec.noteMode) {
+			case MIDI_OUT_FROM_SLOT: {
+				auto m = trackingProcessor.getMap(cellId);
+				if (m.type == MidiTrackingType::NONE) return;
+				noteNum  = m.param;
+				slotType = m.type;
+				break;
+			}
+			case MIDI_OUT_FIXED:
+				noteNum = spec.note;
+				break;
+			default: return;
+		}
+		uint8_t status;
+		switch (spec.type) {
+			case MIDI_OUT_NOTE_ON:        status = 0x90; break;
+			case MIDI_OUT_NOTE_OFF:       status = 0x80; break;
+			case MIDI_OUT_CC:             status = 0xB0; break;
+			case MIDI_OUT_FROM_SLOT_TYPE:
+				if      (slotType == MidiTrackingType::NOTE) status = 0x90;
+				else if (slotType == MidiTrackingType::CC)   status = 0xB0;
+				else return;
+				break;
+			default: return;
+		}
+		midi::Message msg;
+		msg.bytes[0] = status | (uint8_t)(spec.channel & 0x0F);
+		msg.bytes[1] = (uint8_t)(noteNum  & 0x7F);
+		msg.bytes[2] = (uint8_t)(spec.value & 0x7F);
+		midiOutput.sendMessage(msg);
+	}
+
+	// GUI thread — replaces all MIDI input mappings with those defined by the currently
+	// selected feedback preset's slot layout. No-op if the preset has no layout.
+	void applyPresetLayout() {
+		const MidiOutPreset* preset = getActivePreset();
+		if (!preset || !preset->hasLayout()) return;
+		trackingProcessor.clearMaps();
+		for (int i = 0; i < MATRIX_COUNT; i++) {
+			const auto& s = preset->cells[i];
+			if (s.type != MidiTrackingType::NONE && s.number > 0)
+				trackingProcessor.setMap(s.type, i, s.number);
+		}
+		for (int i = 0; i < MATRIX_SIZE; i++) {
+			const auto& s = preset->scenes[i];
+			if (s.type != MidiTrackingType::NONE && s.number > 0)
+				trackingProcessor.setMap(s.type, MATRIX_COUNT + i, s.number);
+		}
+		invalidateLedStates();
+	}
+
+	// GUI thread — serializes all persistent state to JSON (called on patch save / undo snapshot).
+	json_t* dataToJson() override {
+		json_t* rootJ = json_object();
+		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
+		json_object_set_new(rootJ, "currentScene", json_integer(currentScene));
+
+		json_t* mapsJ = json_array();
+		for (int i = 0; i < TOTAL_MAPS; i++) {
+			auto m = trackingProcessor.getMap(i);
+			json_t* mapJ = json_object();
+			json_object_set_new(mapJ, "type", json_integer((int)m.type));
+			json_object_set_new(mapJ, "param", json_integer(m.param));
+			json_array_append_new(mapsJ, mapJ);
+		}
+		json_object_set_new(rootJ, "maps", mapsJ);
+
+		json_t* portsJ = json_array();
+		for (int i = 0; i < MATRIX_COUNT; i++) {
+			json_t* portJ = json_object();
+			json_object_set_new(portJ, "moduleId", json_integer(portAssignments[i].moduleId));
+			json_object_set_new(portJ, "type", json_integer((int)portAssignments[i].type));
+			json_object_set_new(portJ, "portId", json_integer(portAssignments[i].portId));
+			json_array_append_new(portsJ, portJ);
+		}
+		json_object_set_new(rootJ, "ports", portsJ);
+
+		json_t* scenesJ = json_array();
+		for (int s = 0; s < MATRIX_SIZE; s++) {
+			json_t* connJ = json_array();
+			for (int a = 0; a < MATRIX_COUNT; a++) {
+				for (int b = a + 1; b < MATRIX_COUNT; b++) {
+					if (isConnected(s, a, b)) {
+						json_t* pairJ = json_array();
+						json_array_append_new(pairJ, json_integer(a));
+						json_array_append_new(pairJ, json_integer(b));
+						json_array_append_new(connJ, pairJ);
+					}
+				}
+			}
+			json_t* sceneJ = json_object();
+			json_object_set_new(sceneJ, "connections", connJ);
+			json_array_append_new(scenesJ, sceneJ);
+		}
+		json_object_set_new(rootJ, "scenes", scenesJ);
+		json_object_set_new(rootJ, "feedbackPreset", json_integer(feedbackPreset));
+		json_object_set_new(rootJ, "buttonMode",    json_integer((int)buttonMode));
+		json_object_set_new(rootJ, "overlayEnabled", json_boolean(overlayEnabled));
+		if (feedbackPreset == PRESET_IDX_CUSTOM && !customPresetJson.empty())
+			json_object_set_new(rootJ, "customPreset", json_string(customPresetJson.c_str()));
+		json_object_set_new(rootJ, "midiInput",  trackingProcessor.getInput().toJson());
+		json_object_set_new(rootJ, "midiOutput", midiOutput.toJson());
+		return rootJ;
+	}
+
+	// GUI thread — restores all persistent state from JSON (called on patch load / undo).
+	// clearMaps() is called before restoring maps to prevent duplicate vector entries
+	// that would occur if setMap() is called multiple times for the same slot (undo/redo).
+	void dataFromJson(json_t* rootJ) override {
+		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		currentScene = json_integer_value(json_object_get(rootJ, "currentScene"));
+		json_t* buttonModeJ = json_object_get(rootJ, "buttonMode");
+		if (buttonModeJ) buttonMode = (ButtonMode)json_integer_value(buttonModeJ);
+		json_t* overlayEnabledJ = json_object_get(rootJ, "overlayEnabled");
+		if (overlayEnabledJ) overlayEnabled = json_boolean_value(overlayEnabledJ);
+
+		trackingProcessor.clearMaps();
+		json_t* mapsJ = json_object_get(rootJ, "maps");
+		if (mapsJ) {
+			size_t i;
+			json_t* mapJ;
+			json_array_foreach(mapsJ, i, mapJ) {
+				if (i >= (size_t)TOTAL_MAPS) break;
+				auto type = (StoermelderPackOne::MidiTrackingType)json_integer_value(json_object_get(mapJ, "type"));
+				auto param = (uint16_t)json_integer_value(json_object_get(mapJ, "param"));
+				if (type != MidiTrackingType::NONE) {
+					trackingProcessor.setMap(type, i, param);
+				}
+			}
+		}
+
+		json_t* portsJ = json_object_get(rootJ, "ports");
+		if (portsJ) {
+			size_t i;
+			json_t* portJ;
+			json_array_foreach(portsJ, i, portJ) {
+				if (i >= MATRIX_COUNT) break;
+				portAssignments[i].moduleId = json_integer_value(json_object_get(portJ, "moduleId"));
+				portAssignments[i].type = (engine::Port::Type)json_integer_value(json_object_get(portJ, "type"));
+				portAssignments[i].portId = json_integer_value(json_object_get(portJ, "portId"));
+			}
+		}
+
+		feedbackPreset = json_integer_value(json_object_get(rootJ, "feedbackPreset"));
+		if (feedbackPreset != PRESET_IDX_CUSTOM)
+			feedbackPreset = clamp(feedbackPreset, 0, CONTROLLER_PRESET_COUNT - 1);
+		if (feedbackPreset == PRESET_IDX_CUSTOM) {
+			json_t* cpJ = json_object_get(rootJ, "customPreset");
+			if (cpJ) {
+				customPresetJson = json_string_value(cpJ);
+				json_error_t err;
+				json_t* root = json_loads(customPresetJson.c_str(), 0, &err);
+				if (root) { customPreset.fromJson(root); json_decref(root); }
+				else feedbackPreset = 0;
+			} 
+			else {
+				feedbackPreset = 0;
+			}
+		}
+		invalidateLedStates();
+
+		json_t* midiInputJ = json_object_get(rootJ, "midiInput");
+		if (midiInputJ) trackingProcessor.getInput().fromJson(midiInputJ);
+		json_t* midiOutputJ = json_object_get(rootJ, "midiOutput");
+		if (midiOutputJ) midiOutput.fromJson(midiOutputJ);
+
+		memset(sceneConnections, 0, sizeof(sceneConnections));
+		json_t* scenesJ = json_object_get(rootJ, "scenes");
+		if (scenesJ) {
+			size_t s;
+			json_t* sceneJ;
+			json_array_foreach(scenesJ, s, sceneJ) {
+				if (s >= MATRIX_SIZE) break;
+				json_t* connJ = json_object_get(sceneJ, "connections");
+				if (!connJ) continue;
+				size_t k;
+				json_t* pairJ;
+				json_array_foreach(connJ, k, pairJ) {
+					int a = json_integer_value(json_array_get(pairJ, 0));
+					int b = json_integer_value(json_array_get(pairJ, 1));
+					if (a >= 0 && a < MATRIX_COUNT && b >= 0 && b < MATRIX_COUNT) {
+						setConnection(s, a, b, true);
+					}
+				}
+			}
+		}
+	}
+
+	// --- Cable manipulation (GUI thread only) ---
+
+	// GUI thread — searches for an existing cable between the named output and input ports.
+	// Returns nullptr if not found. Must not be called from the engine thread.
+	static CableWidget* findCable(int64_t outputModuleId, int outputPortId, int64_t inputModuleId, int inputPortId) {
+		ModuleWidget* outputMw = APP->scene->rack->getModule(outputModuleId);
+		if (!outputMw) return nullptr;
+		for (PortWidget* outPort : outputMw->getOutputs()) {
+			if (outPort->portId != outputPortId) continue;
+			for (CableWidget* cw : APP->scene->rack->getCablesOnPort(outPort)) {
+				if (cw->inputPort && cw->inputPort->module &&
+					cw->inputPort->module->getId() == inputModuleId &&
+					cw->inputPort->portId == inputPortId) {
+					return cw;
+				}
+			}
+			break;
+		}
+		return nullptr;
+	}
+
+	// GUI thread — removes a cable from the rack and records it in undo history.
+	static void removeCable(CableWidget* cw) {
+		history::CableRemove* h = new history::CableRemove;
+		h->setCable(cw);
+		APP->history->push(h);
+		APP->scene->rack->removeCable(cw);
+		delete cw;
+	}
+
+	// GUI thread — creates a cable between the given output and input port assignments,
+	// adds it to the rack, and pushes a CableAdd undo action.
+	void addCableToPort(const PortAssignment* outPd, const PortAssignment* inPd) {
+		ModuleWidget* outputMw = APP->scene->rack->getModule(outPd->moduleId);
+		ModuleWidget* inputMw  = APP->scene->rack->getModule(inPd->moduleId);
+		if (!outputMw || !inputMw) return;
+
+		engine::Cable* c = new engine::Cable;
+		c->outputId     = outPd->portId;
+		c->outputModule = outputMw->module;
+		c->inputId      = inPd->portId;
+		c->inputModule  = inputMw->module;
+		APP->engine->addCable(c);
+
+		CableWidget* cw = new CableWidget;
+		cw->color = APP->scene->rack->getNextCableColor();
+		cw->setCable(c);
+		APP->scene->rack->addCable(cw);
+		history::CableAdd* h = new history::CableAdd;
+		h->setCable(cw);
+		APP->history->push(h);
+	}
+
+	// GUI thread — resolves port directions for the two cells and removes the cable between
+	// them. No-op if both ports are the same direction or either assignment is invalid.
+	void removeCableBetween(int cellIdA, int cellIdB) {
+		const PortAssignment& a = portAssignments[cellIdA];
+		const PortAssignment& b = portAssignments[cellIdB];
+		if (!a.isValid() || !b.isValid()) return;
+		const PortAssignment* outPd = nullptr;
+		const PortAssignment* inPd  = nullptr;
+		if      (a.type == engine::Port::OUTPUT && b.type == engine::Port::INPUT) { outPd = &a; inPd = &b; }
+		else if (a.type == engine::Port::INPUT  && b.type == engine::Port::OUTPUT) { outPd = &b; inPd = &a; }
+		else return;
+		CableWidget* cw = findCable(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId);
+		if (cw) removeCable(cw);
+	}
+
+	// GUI thread — creates or removes the cable between cellIdA and cellIdB in the current
+	// scene, then updates overlayMessage so the overlay bar shows what changed.
+	// One cell must be an output and the other an input; same-direction pairs are ignored.
+	void toggleConnection(int cellIdA, int cellIdB) {
+		const PortAssignment& a = portAssignments[cellIdA];
+		const PortAssignment& b = portAssignments[cellIdB];
+
+		const PortAssignment* outPd = nullptr;
+		const PortAssignment* inPd  = nullptr;
+		int outCell, inCell;
+		if (a.type == engine::Port::OUTPUT && b.type == engine::Port::INPUT) {
+			outPd = &a; inPd = &b; outCell = cellIdA; inCell = cellIdB;
+		} 
+		else if (a.type == engine::Port::INPUT && b.type == engine::Port::OUTPUT) {
+			outPd = &b; inPd = &a; outCell = cellIdB; inCell = cellIdA;
+		} 
+		else {
+			return;
+		}
+
+		if (isConnected(currentScene, outCell, inCell)) {
+			setConnection(currentScene, outCell, inCell, false);
+			removeCableBetween(outCell, inCell);
+
+			setOverlayMessage("Removed cable", portLabel(*outPd), portLabel(*inPd));
+		} 
+		else {
+			setConnection(currentScene, outCell, inCell, true);
+			addCableToPort(outPd, inPd);
+			setOverlayMessage("Added cable", portLabel(*outPd), portLabel(*inPd));
+		}
+	}
+
+	// GUI thread — rewrites sceneConnections[scene] to match the actual cables currently
+	// present in the patch for the assigned ports. Used before switching scenes so that
+	// any manual cable changes the user made are not lost.
+	void captureScene(int scene) {
+		memset(sceneConnections[scene], 0, sizeof(sceneConnections[scene]));
+		for (int i = 0; i < MATRIX_COUNT; i++) {
+			const PortAssignment& a = portAssignments[i];
+			if (!a.isValid() || a.type != engine::Port::OUTPUT) continue;
+			for (int j = 0; j < MATRIX_COUNT; j++) {
+				if (j == i) continue;
+				const PortAssignment& b = portAssignments[j];
+				if (!b.isValid() || b.type != engine::Port::INPUT) continue;
+				if (findCable(a.moduleId, a.portId, b.moduleId, b.portId))
+					setConnection(scene, i, j, true);
+			}
+		}
+	}
+
+	// GUI thread — reconciles the patch so it matches newConns, starting from oldConns.
+	// For each pair (i,j): if a connection was present in old but not new the cable is removed;
+	// if it is present in new but not old a cable is added. Pairs that haven't changed are skipped.
+	void applyConnectionDiff(const uint64_t* oldConns, const uint64_t* newConns) {
+		for (int i = 0; i < MATRIX_COUNT; i++) {
+			for (int j = i + 1; j < MATRIX_COUNT; j++) {
+				bool was  = (oldConns[i] >> j) & 1;
+				bool will = (newConns[i] >> j) & 1;
+				if (was == will) continue;
+				const PortAssignment& a = portAssignments[i];
+				const PortAssignment& b = portAssignments[j];
+				if (!a.isValid() || !b.isValid()) continue;
+				if (was) removeCableBetween(i, j);
+				else {
+					const PortAssignment* outPd = nullptr;
+					const PortAssignment* inPd  = nullptr;
+					if      (a.type == engine::Port::OUTPUT && b.type == engine::Port::INPUT) { outPd = &a; inPd = &b; }
+					else if (a.type == engine::Port::INPUT  && b.type == engine::Port::OUTPUT) { outPd = &b; inPd = &a; }
+					else continue;
+					addCableToPort(outPd, inPd);
+				}
+			}
+		}
+	}
+
+	// GUI thread — applies a new connection topology to an arbitrary scene.
+	// If the target scene is the currently active one, the patch cables are updated live
+	// (capture current state first, then diff against newConns). Always persists newConns
+	// into sceneConnections[scene].
+	void reconcileScene(int scene, const uint64_t* newConns) {
+		if (scene == currentScene) {
+			captureScene(scene);
+			applyConnectionDiff(sceneConnections[scene], newConns);
+		}
+		memcpy(sceneConnections[scene], newConns, MATRIX_COUNT * sizeof(uint64_t));
+	}
+
+	// GUI thread — switches to newScene: captures the outgoing scene's current cable state,
+	// diffs it against the incoming scene's stored topology, and updates patch cables accordingly.
+	void switchScene(int newScene) {
+		if (newScene == currentScene) return;
+		captureScene(currentScene);
+		applyConnectionDiff(sceneConnections[currentScene], sceneConnections[newScene]);
+		currentScene = newScene;
+	}
+
+	// GUI thread — returns a human-readable label for a port assignment, e.g. "VCO · Out 1".
+	// Falls back to a placeholder string if the module widget is no longer in the rack.
+	static std::string portLabel(const PortAssignment& pa) {
+		if (!pa.isValid()) return "";
+		ModuleWidget* mw = APP->scene->rack->getModule(pa.moduleId);
+		if (!mw) return string::f("(missing module, port %d)", pa.portId + 1);
+		std::string dir = (pa.type == engine::Port::OUTPUT) ? "Out" : "In";
+		return string::f("%s \xc2\xb7 %s %d", mw->model->name.c_str(), dir.c_str(), pa.portId + 1);
+	}
+
+	// GUI thread — posts a two-line overlay message (no-op when overlay is disabled).
+	void setOverlayMessage(const std::string& title, const std::string& sub0, const std::string& sub1 = "") {
+		if (!overlayEnabled) return;
+		overlayMessage.title       = title;
+		overlayMessage.subtitle[0] = sub0;
+		overlayMessage.subtitle[1] = sub1;
+		overlayMessageId = 0;
+	}
+
+	// Engine thread — handles a single cell activation (button press or MIDI trigger).
+	// First press sets the pending selection; second press on a different cell enqueues
+	// a toggleConnection call to the GUI thread. Pressing the same cell again cancels.
+	void triggerCell(int id) {
+		if (!portAssignments[id].isValid()) return;
+		if (pendingCellId < 0) {
+			pendingCellId = id;
+			if (!guiQueue.full()) {
+				guiQueue.push([this, id]() {
+					setOverlayMessage("Port selected", portLabel(portAssignments[id]));
+				});
+			}
+		}
+		else if (pendingCellId == id) {
+			clearPending();
+		}
+		else {
+			int a = pendingCellId, b = id;
+			if (!guiQueue.full()) {
+				guiQueue.push([this, a, b]() { toggleConnection(a, b); });
+			}
+			clearPending();
+		}
+	}
+
+	// GUI thread — removes all cables connected to cellId in the current scene.
+	void removeCellConnections(int cellId) {
+		uint64_t mask = sceneConnections[currentScene][cellId];
+		for (int j = 0; j < MATRIX_COUNT; j++) {
+			if (!((mask >> j) & 1)) continue;
+			setConnection(currentScene, cellId, j, false);
+			removeCableBetween(cellId, j);
+		}
+	}
+
+	// Engine thread — enqueues a switchScene call on the GUI thread via guiQueue.
+	void requestSceneChange(int i) {
+		if (!guiQueue.full()) {
+			guiQueue.push([this, i]() { switchScene(i); });
+		}
+	}
+
+	// Engine thread — enqueues a full module reset on the GUI thread via guiQueue.
+	// Removes all current-scene cables, clears all stored scenes and port assignments,
+	// resets scene and preset selection, and clears LED state.
+	void requestReset() {
+		if (!guiQueue.full()) {
+			guiQueue.push([this]() {
+				static const uint64_t empty[MATRIX_COUNT] = {};
+				captureScene(currentScene);
+				applyConnectionDiff(sceneConnections[currentScene], empty);
+				memset(sceneConnections, 0, sizeof(sceneConnections));
+				for (int i = 0; i < MATRIX_COUNT; i++) portAssignments[i].clear();
+				for (int i = 0; i < MATRIX_COUNT; i++) trackingProcessor.clearMap(i);
+				currentScene   = 0;
+				feedbackPreset = 0;
+				invalidateLedStates();
+				std::fill(portHasCable, portHasCable  + MATRIX_COUNT, false);
+			});
+		}
+	}
+};
+
+
+// Overlay widget added directly to APP->scene->rack — drawn in rack coordinates.
+// Activated by the space key; hides cables and draws cell→port assignment splines.
+struct MidiBayVizOverlay : TransparentWidget {
+	MidiBayModule* module = nullptr;
+	// Non-owning pointer to the host widget (for position).
+	Widget* hostWidget = nullptr;
+	int hoveredCellId = -1;
+
+	void step() override {
+		// Track parent size so NVG scissor doesn't clip our drawings.
+		if (parent) { box.pos = Vec(0.f, 0.f); box.size = parent->box.size; }
+		TransparentWidget::step();
+	}
+
+	static Vec cellCenter(int cellId) {
+		int r = cellId / MATRIX_SIZE;
+		int c = cellId % MATRIX_SIZE;
+		return Vec(24.3f + c * (245.7f - 24.3f) / 7.f,
+		           54.5f + r * (277.4f - 54.5f) / 7.f);
+	}
+
+	// Deterministic value in [-1, +1] for a given cell — golden-ratio sequence
+	// gives an even spread with no visible repetition pattern.
+	static float cellJitter(int cellId) {
+		return std::fmod(cellId * 0.618033988f, 1.f) * 2.f - 1.f;
+	}
+
+	void drawSpline(NVGcontext* vg, Vec a, Vec b, NVGcolor col, float jitter, bool highlighted = false) {
+		float dx   = b.x - a.x;
+		float dist = a.minus(b).norm();
+		float bulge = dist * 0.18f * jitter;
+		Vec cp1 = a.plus(Vec(dx * 0.5f,  bulge));
+		Vec cp2 = b.plus(Vec(-dx * 0.5f, bulge));
+
+		nvgBeginPath(vg);
+		nvgMoveTo(vg, a.x, a.y);
+		nvgBezierTo(vg, cp1.x, cp1.y, cp2.x, cp2.y, b.x, b.y);
+		nvgLineCap(vg, NVG_ROUND);
+		// Glow pass
+		nvgStrokeColor(vg, nvgRGBAf(col.r, col.g, col.b, highlighted ? 0.45f : 0.25f));
+		nvgStrokeWidth(vg, highlighted ? 12.f : 6.f);
+		nvgStroke(vg);
+		// Core pass
+		nvgStrokeColor(vg, nvgRGBAf(col.r, col.g, col.b, 1.f));
+		nvgStrokeWidth(vg, highlighted ? 3.f : 1.5f);
+		nvgStroke(vg);
+	}
+
+	// Draws a short arc between two cell-button centers on the module face.
+	// Used to show which cells are wired together in the active scene.
+	void drawCellArc(NVGcontext* vg, Vec a, Vec b) {
+		Vec diff   = b.minus(a);
+		Vec perp   = Vec(-diff.y, diff.x).mult(0.12f);  // ~12% of distance, perpendicular
+		Vec cp     = a.plus(diff.mult(0.5f)).plus(perp);
+
+		nvgBeginPath(vg);
+		nvgMoveTo(vg, a.x, a.y);
+		nvgQuadTo(vg, cp.x, cp.y, b.x, b.y);
+		nvgLineCap(vg, NVG_ROUND);
+		// Glow
+		nvgStrokeColor(vg, nvgRGBAf(1.f, 0.9f, 0.4f, 0.25f));
+		nvgStrokeWidth(vg, 6.f);
+		nvgStroke(vg);
+		// Core
+		nvgStrokeColor(vg, nvgRGBAf(1.f, 0.95f, 0.5f, 0.9f));
+		nvgStrokeWidth(vg, 1.2f);
+		nvgStroke(vg);
+	}
+
+	void drawLayer(const DrawArgs& args, int layer) override {
+		if (layer != 1 || !visible || !module || !hostWidget) return;
+		NVGcontext* vg = args.vg;
+
+		Vec origin = hostWidget->box.pos;
+		int hoveredCell = hoveredCellId;
+		bool anyHover = (hoveredCell >= 0 && module->portAssignments[hoveredCell].isValid());
+
+		// Build bitmask of cells connected to the hovered cell in the current scene.
+		uint64_t connectedMask = anyHover
+			? module->sceneConnections[module->currentScene][hoveredCell]
+			: 0;
+
+		// Helper: resolve a cell's port widget, or return nullptr.
+		auto getPortWidget = [&](int i) -> PortWidget* {
+			const PortAssignment& pa = module->portAssignments[i];
+			if (!pa.isValid()) return nullptr;
+			ModuleWidget* mw = APP->scene->rack->getModule(pa.moduleId);
+			if (!mw) return nullptr;
+			auto list = (pa.type == engine::Port::OUTPUT) ? mw->getOutputs() : mw->getInputs();
+			for (PortWidget* pw : list)
+				if (pw->portId == pa.portId) return pw;
+			return nullptr;
+		};
+
+		// Helper: draw the spline + endpoint dots for cell i.
+		auto drawCell = [&](int i, bool highlighted) {
+			PortWidget* portPw = getPortWidget(i);
+			if (!portPw) return;
+			if (module->pendingCellId == i && module->blinkPhase >= 0.5f) return;
+
+			ModuleWidget* portMw = APP->scene->rack->getModule(module->portAssignments[i].moduleId);
+			if (!portMw) return;
+
+			Vec cellPos = origin.plus(cellCenter(i));
+			Vec portPos = portMw->box.pos.plus(portPw->box.getCenter());
+
+			bool isOut = (module->portAssignments[i].type == engine::Port::OUTPUT);
+			NVGcolor col = isOut
+				? nvgRGBf(0.93f, 0.18f, 0.11f)
+				: nvgRGBf(0.17f, 0.71f, 0.94f);
+
+			drawSpline(vg, cellPos, portPos, col, cellJitter(i), highlighted);
+
+			float cellR = highlighted ? 4.f  : 2.5f;
+			float portR = highlighted ? 5.5f : 3.5f;
+
+			// Cell-side dot (white)
+			nvgBeginPath(vg);
+			nvgCircle(vg, cellPos.x, cellPos.y, cellR);
+			nvgFillColor(vg, nvgRGBAf(1.f, 1.f, 1.f, 0.9f));
+			nvgFill(vg);
+
+			// Port-side dot (colored with white ring)
+			nvgBeginPath(vg);
+			nvgCircle(vg, portPos.x, portPos.y, portR);
+			nvgFillColor(vg, nvgRGBAf(col.r, col.g, col.b, 0.9f));
+			nvgFill(vg);
+			nvgStrokeColor(vg, nvgRGBAf(1.f, 1.f, 1.f, 0.6f));
+			nvgStrokeWidth(vg, highlighted ? 1.4f : 0.8f);
+			nvgStroke(vg);
+		};
+
+		if (anyHover) {
+			// Pass 1: draw unrelated cells dimmed.
+			nvgGlobalAlpha(vg, 0.18f);
+			for (int i = 0; i < MATRIX_COUNT; i++) {
+				if (i == hoveredCell || ((connectedMask >> i) & 1)) continue;
+				drawCell(i, false);
+			}
+			nvgGlobalAlpha(vg, 1.f);
+
+			// Pass 2: draw connected cells at full opacity (not bold).
+			for (int i = 0; i < MATRIX_COUNT; i++) {
+				if (i == hoveredCell || !((connectedMask >> i) & 1)) continue;
+				drawCell(i, false);
+			}
+
+			// Pass 3: draw hovered cell highlighted on top.
+			drawCell(hoveredCell, true);
+
+			// Pass 4: draw cell-to-cell arcs for each active connection.
+			Vec hovPos = origin.plus(cellCenter(hoveredCell));
+			for (int i = 0; i < MATRIX_COUNT; i++) {
+				if (!((connectedMask >> i) & 1)) continue;
+				drawCellArc(vg, hovPos, origin.plus(cellCenter(i)));
+			}
+		}
+		else {
+			// No hover — draw everything at normal opacity.
+			for (int i = 0; i < MATRIX_COUNT; i++)
+				drawCell(i, false);
+		}
+	}
+};
+
+
+struct MidiBayWidget;
+
+struct MidiBaySceneButton : app::SvgSwitch {
+	MidiBayModule* module = nullptr;
+	MidiBayWidget* mw = nullptr;
+	int sceneId = -1;
+
+	MidiBaySceneButton() {
+		momentary = true;
+		addFrame(Svg::load(asset::plugin(pluginInstance, "res/components/MatrixButton.svg")));
+		addFrame(Svg::load(asset::plugin(pluginInstance, "res/components/MatrixButton1.svg")));
+		fb->removeChild(shadow);
+		delete shadow;
+	}
+
+	void onButton(const event::Button& e) override {
+		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT && module) {
+			e.consume(this);
+			createSceneMenu();
+			return;
+		}
+		SvgSwitch::onButton(e);
+	}
+
+	void createSceneMenu();
+};
+
+// Matrix cell button with right-click context menu for port assignment.
+struct MidiBayCellButton : app::SvgSwitch {
+	MidiBayModule* module = nullptr;
+	MidiBayWidget* mw = nullptr;
+	int cellId = -1;
+
+	MidiBayCellButton() {
+		momentary = true;
+		addFrame(Svg::load(asset::plugin(pluginInstance, "res/components/MatrixButton.svg")));
+		addFrame(Svg::load(asset::plugin(pluginInstance, "res/components/MatrixButton1.svg")));
+		fb->removeChild(shadow);
+		delete shadow;
+	}
+
+	void onEnter(const event::Enter& e) override;
+	void onLeave(const event::Leave& e) override;
+
+	void onButton(const event::Button& e) override {
+		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT && module) {
+			e.consume(this);
+			createCellMenu();
+			return;
+		}
+		SvgSwitch::onButton(e);
+	}
+
+	void createCellMenu();
+};
+
+
+struct MidiBayWidget : ThemedModuleWidget<MidiBayModule>, OverlayMessageProvider {
+	MidiBayVizOverlay* vizOverlay = nullptr;
+	bool vizMode = false;
+
+	MidiBayWidget(MidiBayModule* module) : ThemedModuleWidget(module, "MidiBay") {
+		setModule(module);
+
+		for (int r = 0; r < MATRIX_SIZE; r++) {
+			for (int c = 0; c < MATRIX_SIZE; c++) {
+				float x = 24.3f + c * (245.7f - 24.3f) / 7.f;
+				float y = 54.5f + r * (277.4f - 54.5f) / 7.f;
+				int cellId = r * MATRIX_SIZE + c;
+				auto* btn = createParam<MidiBayCellButton>(Vec(x - 13.25f, y - 13.25f), module, MidiBayModule::PARAM_MATRIX + cellId);
+				btn->module = module;
+				btn->mw = this;
+				btn->cellId = cellId;
+				addParam(btn);
+				addChild(createLightCentered<MatrixButtonLight<RedGreenBlueLight, MidiBayModule>>(Vec(x, y), module, MidiBayModule::LIGHT_MATRIX + cellId * 3));
+			}
+		}
+		for (int i = 0; i < MATRIX_SIZE; i++) {
+			float x = 24.3f + i * (245.7f - 24.3f) / 7.f;
+			auto* sb = createParam<MidiBaySceneButton>(Vec(x - 13.25f, 320.6f - 13.25f), module, MidiBayModule::PARAM_SCENE + i);
+			sb->module = module;
+			sb->mw = this;
+			sb->sceneId = i;
+			addParam(sb);
+			addChild(createLightCentered<MatrixButtonLight<WhiteLight, MidiBayModule>>(Vec(x, 320.6f), module, MidiBayModule::LIGHT_SCENE + i));
+		}
+
+		if (module) {
+			OverlayMessageWidget::registerProvider(this);
+
+			vizOverlay = new MidiBayVizOverlay;
+			vizOverlay->module = module;
+			vizOverlay->hostWidget = this;
+			vizOverlay->visible = false;
+			APP->scene->rack->addChild(vizOverlay);
+		}
+	}
+
+	~MidiBayWidget() {
+		if (vizOverlay) {
+			APP->scene->rack->removeChild(vizOverlay);
+			delete vizOverlay;
+			vizOverlay = nullptr;
+		}
+		if (module) {
+			APP->scene->rack->getCableContainer()->visible = true;
+			OverlayMessageWidget::unregisterProvider(this);
+		}
+	}
+
+	int nextOverlayMessageId() override {
+		if (module && module->overlayMessageId == 0) {
+			module->overlayMessageId = -1;
+			return 0;
+		}
+		return -1;
+	}
+
+	void getOverlayMessage(int id, Message& m) override {
+		if (id != 0) return;
+		m = module->overlayMessage;
+	}
+
+	static uint64_t sceneClipboard[MATRIX_COUNT];
+	static bool sceneClipboardValid;
+
+	void onDeselect(const event::Deselect& e) override {
+		ThemedModuleWidget<MidiBayModule>::onDeselect(e);
+		if (module) module->portSelectProcessor.processDeselect();
+	}
+
+	MidiBayCellButton* findCellButton(int cellId) {
+		for (Widget* w : children) {
+			auto* btn = dynamic_cast<MidiBayCellButton*>(w);
+			if (btn && btn->cellId == cellId) return btn;
+		}
+		return nullptr;
+	}
+
+	void setVizMode(bool active) {
+		int hovered = vizOverlay ? vizOverlay->hoveredCellId : -1;
+		vizMode = active;
+		if (vizOverlay) vizOverlay->visible = active;
+		APP->scene->rack->getCableContainer()->visible = !active;
+		if (hovered >= 0 && hovered < MATRIX_COUNT) {
+			MidiBayCellButton* btn = findCellButton(hovered);
+			if (btn) {
+				if (active) btn->destroyTooltip();
+				else        btn->createTooltip();
+			}
+		}
+	}
+
+	void onHoverKey(const event::HoverKey& e) override {
+		if (e.key == GLFW_KEY_SPACE && e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == 0) {
+			setVizMode(!vizMode);
+			e.consume(this);
+			return;
+		}
+		ThemedModuleWidget<MidiBayModule>::onHoverKey(e);
+	}
+
+	void step() override {
+		ThemedModuleWidget<MidiBayModule>::step();
+		if (!module) return;
+
+		// Execute actions queued from the engine thread
+		while (module->guiQueue.size() > 0) {
+			module->guiQueue.shift()();
+		}
+
+		// Update cable presence for each assigned cell (read by process() for light colors)
+		for (int i = 0; i < MATRIX_COUNT; i++) {
+			const PortAssignment& pa = module->portAssignments[i];
+			if (!pa.isValid()) {
+				module->portHasCable[i] = false;
+				continue;
+			}
+			ModuleWidget* mw = APP->scene->rack->getModule(pa.moduleId);
+			if (!mw) {
+				module->portHasCable[i] = false;
+				continue;
+			}
+			auto ports = (pa.type == engine::Port::OUTPUT) ? mw->getOutputs() : mw->getInputs();
+			module->portHasCable[i] = false;
+			for (PortWidget* pw : ports) {
+				if (pw->portId == pa.portId) {
+					module->portHasCable[i] = !APP->scene->rack->getCablesOnPort(pw).empty();
+					break;
+				}
+			}
+		}
+	}
+
+	void appendContextMenu(Menu* menu) override {
+		MidiBayModule* module = this->module;
+		if (!module) return;
+
+		menu->addChild(new MenuSeparator);
+		menu->addChild(createSubmenuItem("MIDI Input", "", [=](Menu* menu) { appendMidiMenu(menu, &module->trackingProcessor.getInput()); }));
+		menu->addChild(createSubmenuItem("MIDI Output", "", [=](Menu* menu) { appendMidiMenu(menu, &module->midiOutput); }));
+		menu->addChild(createSubmenuItem("MIDI Preset", "", [=](Menu* menu) {
+			auto& presets = getPresets();
+			for (int i = 0; i < (int)presets.size(); i++) {
+				int preset = i;
+				std::string name = presets[i].name;
+				menu->addChild(createCheckMenuItem(name, "",
+					[=]() { return module->feedbackPreset == preset; },
+					[=]() {
+						module->feedbackPreset = preset;
+						module->invalidateLedStates();
+					}
+				));
+			}
+			if (module->feedbackPreset == PRESET_IDX_CUSTOM) {
+				std::string name = module->customPreset.name.empty() ? "Custom preset" : module->customPreset.name;
+				menu->addChild(createCheckMenuItem(name, "",
+					[=]() { return true; },
+					[=]() {}
+				));
+			}
+			menu->addChild(new MenuSeparator);
+			const MidiOutPreset* activeP = module->getActivePreset();
+			bool hasLayout = activeP && activeP->hasLayout();
+			menu->addChild(createMenuItem("Apply note layout as MIDI input mappings", "",
+				[=]() { module->applyPresetLayout(); },
+				!hasLayout
+			));
+			menu->addChild(new MenuSeparator);
+			menu->addChild(createMenuItem("Load preset from file...", "", [=]() {
+				osdialog_filters* filters = osdialog_filters_parse("JSON:json");
+				char* pathC = osdialog_file(OSDIALOG_OPEN, NULL, NULL, filters);
+				osdialog_filters_free(filters);
+				if (!pathC) return;
+				std::string path = pathC;
+				free(pathC);
+				std::vector<uint8_t> bytes = system::readFile(path);
+				if (bytes.empty()) return;
+				std::string text(bytes.begin(), bytes.end());
+				json_error_t err;
+				json_t* root = json_loads(text.c_str(), 0, &err);
+				if (!root) return;
+				MidiOutPreset p;
+				p.fromJson(root);
+				json_decref(root);
+				module->customPreset     = p;
+				module->customPresetJson = text;
+				module->feedbackPreset   = PRESET_IDX_CUSTOM;
+				module->invalidateLedStates();
+			}));
+			bool canSave = module->feedbackPreset > 0;
+			menu->addChild(createMenuItem("Save preset to file...", "",
+				[=]() {
+					osdialog_filters* filters = osdialog_filters_parse("JSON:json");
+					std::string defName = (module->feedbackPreset == PRESET_IDX_CUSTOM)
+						? module->customPreset.name
+						: getPresets()[module->feedbackPreset].name;
+					if (!defName.empty()) defName += ".json";
+					char* pathC = osdialog_file(OSDIALOG_SAVE, NULL,
+						defName.empty() ? "preset.json" : defName.c_str(), filters);
+					osdialog_filters_free(filters);
+					if (!pathC) return;
+					std::string path = pathC;
+					free(pathC);
+					std::string text = (module->feedbackPreset == PRESET_IDX_CUSTOM)
+						? module->customPresetJson
+						: CONTROLLER_PRESET_JSON[module->feedbackPreset];
+					system::writeFile(path, std::vector<uint8_t>(text.begin(), text.end()));
+				},
+				!canSave
+			));
+		}));
+		menu->addChild(new MenuSeparator);
+		menu->addChild(createCheckMenuItem("Sequential MIDI learn", "",
+			[=]() { return module->midiLearnMode; },
+			[=]() {
+				if (module->midiLearnMode) module->disableLearn();
+				else module->startGlobalLearn();
+			}
+		));
+		menu->addChild(new MenuSeparator);
+		menu->addChild(createCheckMenuItem("Show overlay messages", "",
+			[=]() { return module->overlayEnabled; },
+			[=]() { module->overlayEnabled = !module->overlayEnabled; }
+		));
+		menu->addChild(createSubmenuItem("Button mode", "", [=](Menu* menu) {
+			menu->addChild(createCheckMenuItem("Toggle", "",
+				[=]() { return module->buttonMode == MidiBayModule::BUTTON_TOGGLE; },
+				[=]() { module->buttonMode = MidiBayModule::BUTTON_TOGGLE; module->clearPending(); }
+			));
+			menu->addChild(createCheckMenuItem("Momentary", "",
+				[=]() { return module->buttonMode == MidiBayModule::BUTTON_MOMENTARY; },
+				[=]() { module->buttonMode = MidiBayModule::BUTTON_MOMENTARY; module->clearPending(); }
+			));
+		}));
+	}
+};
+
+
+uint64_t MidiBayWidget::sceneClipboard[MATRIX_COUNT] = {};
+bool MidiBayWidget::sceneClipboardValid = false;
+
+void MidiBayCellButton::onEnter(const event::Enter& e) {
+	if (mw && mw->vizOverlay) mw->vizOverlay->hoveredCellId = cellId;
+	SvgSwitch::onEnter(e);
+	if (mw && mw->vizMode) destroyTooltip();
+}
+
+void MidiBayCellButton::onLeave(const event::Leave& e) {
+	if (mw && mw->vizOverlay && mw->vizOverlay->hoveredCellId == cellId) mw->vizOverlay->hoveredCellId = -1;
+	SvgSwitch::onLeave(e);
+}
+
+
+void MidiBaySceneButton::createSceneMenu() {
+	ui::Menu* menu = createMenu();
+	menu->addChild(createMenuLabel(string::f("Scene %d", sceneId + 1)));
+	menu->addChild(new MenuSeparator);
+
+	menu->addChild(createMenuItem("Clear", "", [=]() {
+		uint64_t empty[MATRIX_COUNT] = {};
+		module->reconcileScene(sceneId, empty);
+	}));
+	menu->addChild(createMenuItem("Copy", "", [=]() {
+		if (sceneId == module->currentScene) module->captureScene(sceneId);
+		memcpy(MidiBayWidget::sceneClipboard, module->sceneConnections[sceneId], MATRIX_COUNT * sizeof(uint64_t));
+		MidiBayWidget::sceneClipboardValid = true;
+	}));
+	menu->addChild(createMenuItem("Paste", "", [=]() {
+		if (!MidiBayWidget::sceneClipboardValid) return;
+		module->reconcileScene(sceneId, MidiBayWidget::sceneClipboard);
+	}, !MidiBayWidget::sceneClipboardValid));
+
+	menu->addChild(new MenuSeparator);
+
+	int mapId = MATRIX_COUNT + sceneId;
+	auto& midiMap = module->trackingProcessor.getMap(mapId);
+	std::string midiLabel;
+	if (midiMap.type == MidiTrackingType::CC)   midiLabel = string::f("CC %d",   midiMap.param);
+	if (midiMap.type == MidiTrackingType::NOTE)  midiLabel = string::f("Note %d", midiMap.param);
+
+	std::string learnLabel = midiLabel.empty() ? "Learn MIDI" : string::f("Learn MIDI (%s)", midiLabel.c_str());
+	menu->addChild(createCheckMenuItem(learnLabel, "",
+		[=]() { return module->learningId == MATRIX_COUNT + sceneId; },
+		[=]() {
+			if (module->learningId == MATRIX_COUNT + sceneId) module->disableLearn();
+			else module->enableLearn(MATRIX_COUNT + sceneId);
+		}
+	));
+	if (!midiLabel.empty()) {
+		menu->addChild(createMenuItem("Clear MIDI", "", [=]() {
+			module->trackingProcessor.clearMap(MATRIX_COUNT + sceneId);
+		}));
+	}
+}
+
+
+void MidiBayCellButton::createCellMenu() {
+	auto& pa = module->portAssignments[cellId];
+	std::string label = MidiBayModule::portLabel(pa);
+
+	auto& midiMap = module->trackingProcessor.getMap(cellId);
+	std::string midiLabel;
+	if (midiMap.type == MidiTrackingType::CC) {
+		midiLabel = string::f("CC %d", midiMap.param);
+	} else if (midiMap.type == MidiTrackingType::NOTE) {
+		midiLabel = string::f("Note %d", midiMap.param);
+	}
+
+	ui::Menu* menu = createMenu();
+	menu->addChild(createMenuLabel(label.empty() ? string::f("Cell %d (unassigned)", cellId + 1) : label));
+
+	menu->addChild(new MenuSeparator);
+	bool hasConns = module->sceneConnections[module->currentScene][cellId] != 0;
+	menu->addChild(createSubmenuItem("Remove cable", "",
+		[=](Menu* menu) {
+			uint64_t mask = module->sceneConnections[module->currentScene][cellId];
+			for (int j = 0; j < MATRIX_COUNT; j++) {
+				if (!((mask >> j) & 1)) continue;
+				std::string connLabel = MidiBayModule::portLabel(module->portAssignments[j]);
+				int cid = cellId, jid = j;
+				MidiBayModule* mod = module;
+				menu->addChild(createMenuItem(connLabel, "", [=]() {
+					mod->setConnection(mod->currentScene, cid, jid, false);
+					mod->removeCableBetween(cid, jid);
+				}));
+			}
+		},
+		!hasConns
+	));
+	menu->addChild(createMenuItem("Remove all cables", "",
+		[=]() { module->removeCellConnections(cellId); },
+		!hasConns
+	));
+
+	menu->addChild(new MenuSeparator);
+	menu->addChild(createMenuLabel("Module port"));
+	menu->addChild(createMenuItem("Learn", "", [=]() {
+		module->enablePortLearn(cellId, mw);
+	}));
+	menu->addChild(createMenuItem("Clear", "", [=]() {
+		module->portAssignments[cellId].clear();
+	}, pa.isValid()));
+
+	menu->addChild(new MenuSeparator);
+	menu->addChild(createMenuLabel("MIDI"));
+	std::string learnMidiLabel = midiLabel.empty() ? "Learn" : string::f("Learn MIDI (%s)", midiLabel.c_str());
+	menu->addChild(createCheckMenuItem(learnMidiLabel, "",
+		[=]() { return module->learningId == cellId; },
+		[=]() {
+			if (module->learningId == cellId) module->disableLearn();
+			else module->enableLearn(cellId);
+		}
+	));
+	menu->addChild(createMenuItem("Clear", "", [=]() {
+		module->trackingProcessor.clearMap(cellId);
+	}, midiLabel.empty()));
+}
+
+
+} // namespace MidiBay
+} // namespace StoermelderPackOne
+
+Model* modelMidiBay = createModel<StoermelderPackOne::MidiBay::MidiBayModule, StoermelderPackOne::MidiBay::MidiBayWidget>("MidiBay");
