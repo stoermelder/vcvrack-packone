@@ -5,25 +5,33 @@
 #include <vector>
 
 namespace StoermelderPackOne {
-namespace MidiBay {
+namespace SpliceKit {
 
 static const int MATRIX_SIZE  = 8;
 static const int MATRIX_COUNT = MATRIX_SIZE * MATRIX_SIZE;
 
-// LED state identifiers — order must match the light-loop state assignment in MidiBay.cpp.
+// LED state identifiers — order must match the light-loop state assignment in SpliceKit.cpp.
+// Color sets 0–3: dim then bright for each set, then connected per set.
+//   default: set 0 = red (output), set 1 = blue (input), set 2 = orange, set 3 = yellow
 enum {
 	LED_STATE_OFF = 0,
-	LED_STATE_OUT_DIM,
-	LED_STATE_OUT,
-	LED_STATE_IN_DIM,
-	LED_STATE_IN,
+	LED_STATE_COLOR0_DIM,    // color set 0, no cable
+	LED_STATE_COLOR0,        // color set 0, cable present
+	LED_STATE_COLOR1_DIM,    // color set 1, no cable
+	LED_STATE_COLOR1,        // color set 1, cable present
+	LED_STATE_COLOR2_DIM,    // color set 2, no cable
+	LED_STATE_COLOR2,        // color set 2, cable present
+	LED_STATE_COLOR3_DIM,    // color set 3, no cable
+	LED_STATE_COLOR3,        // color set 3, cable present
 	LED_STATE_PENDING,
 	LED_STATE_PORT_LEARN,
 	LED_STATE_MIDI_LEARN,
-	LED_STATE_SCENE_ACTIVE,      // scene button: currently selected scene
-	LED_STATE_SCENE_DIM,         // scene button: inactive but has stored connections
-	LED_STATE_CONNECTED_OUT,     // output cell connected to the pending cell
-	LED_STATE_CONNECTED_IN,      // input  cell connected to the pending cell
+	LED_STATE_SCENE_ACTIVE,  // scene button: currently selected scene
+	LED_STATE_SCENE_DIM,     // scene button: inactive but has stored connections
+	LED_STATE_CONNECTED0,    // cell connected to the pending cell, color set 0
+	LED_STATE_CONNECTED1,    // cell connected to the pending cell, color set 1
+	LED_STATE_CONNECTED2,    // cell connected to the pending cell, color set 2
+	LED_STATE_CONNECTED3,    // cell connected to the pending cell, color set 3
 	LED_STATE_COUNT
 };
 
@@ -103,8 +111,12 @@ struct MidiOutPreset {
 		parseSlotsBlock(json_object_get(rootJ, "scenes"), scenes, MATRIX_SIZE);
 
 		static const char* const STATE_KEYS[LED_STATE_COUNT] = {
-			"off", "outDim", "out", "inDim", "in", "pending", "portLearn", "midiLearn",
-			"sceneActive", "sceneDim", "connectedOut", "connectedIn"
+			"off",
+			"color0dim", "color0", "color1dim", "color1",
+			"color2dim", "color2", "color3dim", "color3",
+			"pending", "portLearn", "midiLearn",
+			"sceneActive", "sceneDim",
+			"connected0", "connected1", "connected2", "connected3"
 		};
 		json_t* specsJ = json_object_get(rootJ, "specs");
 		if (specsJ) {
@@ -127,8 +139,12 @@ struct MidiOutPreset {
 //               { "type": <1|2>, "numbers": [ 8 values ] }
 //
 //   specs   — object with one LED-output spec per state:
-//               "off", "outDim", "out", "inDim", "in",
-//               "pending", "portLearn", "midiLearn"
+//               "off",
+//               "color0dim", "color0", "color1dim", "color1",
+//               "color2dim", "color2", "color3dim", "color3",
+//               "pending", "portLearn", "midiLearn",
+//               "sceneActive", "sceneDim",
+//               "connected0", "connected1", "connected2", "connected3"
 //
 // spec object fields:
 //   type     — 0=none  1=note-on  2=note-off  3=cc      (default 0)
@@ -139,8 +155,11 @@ struct MidiOutPreset {
 //   note     — note/CC number; only used with noteMode 1  (default 0)
 //   value    — velocity or CC value                       (default 0)
 //
+// Colour set defaults: 0=red  1=blue  2=green  3=yellow
+//
 // Colour palette references (Novation Launchpad X / MK3 / MK2):
-//   0=off  5=red(dim)  7=red  21=green  41=blue(dim)  45=blue  63=white
+//   0=off  5=red(dim)  7=red  17=green(dim)  21=green  9=yellow(dim)  13=yellow
+//   41=blue(dim)  45=blue  63=white
 //
 // Novation Launchpad (original) bi-colour velocity formula (channel 0 only):
 //   velocity = 16×Green + Red + 12   (Green/Red each 0–3)
@@ -162,18 +181,24 @@ static const char* const CONTROLLER_PRESET_JSON[] = {
 R"json({
     "name": "Off",
     "specs": {
-        "off":            {"type":0},
-        "outDim":         {"type":0},
-        "out":            {"type":0},
-        "inDim":          {"type":0},
-        "in":             {"type":0},
-        "pending":        {"type":0},
-        "portLearn":      {"type":0},
-        "midiLearn":      {"type":0},
-        "sceneActive":    {"type":0},
-        "sceneDim":       {"type":0},
-        "connectedOut":   {"type":0},
-        "connectedIn":    {"type":0}
+        "off":          {"type":0},
+        "color0dim":    {"type":0},
+        "color0":       {"type":0},
+        "color1dim":    {"type":0},
+        "color1":       {"type":0},
+        "color2dim":    {"type":0},
+        "color2":       {"type":0},
+        "color3dim":    {"type":0},
+        "color3":       {"type":0},
+        "pending":      {"type":0},
+        "portLearn":    {"type":0},
+        "midiLearn":    {"type":0},
+        "sceneActive":  {"type":0},
+        "sceneDim":     {"type":0},
+        "connected0":   {"type":0},
+        "connected1":   {"type":0},
+        "connected2":   {"type":0},
+        "connected3":   {"type":0}
     }
 })json",
 
@@ -206,17 +231,23 @@ R"json({
     },
     "specs": {
         "off":          {"type":1,"channel":0,"noteMode":0,"value":12},
-        "outDim":       {"type":1,"channel":0,"noteMode":0,"value":13},
-        "out":          {"type":1,"channel":0,"noteMode":0,"value":15},
-        "inDim":        {"type":1,"channel":0,"noteMode":0,"value":28},
-        "in":           {"type":1,"channel":0,"noteMode":0,"value":60},
+        "color0dim":    {"type":1,"channel":0,"noteMode":0,"value":13},
+        "color0":       {"type":1,"channel":0,"noteMode":0,"value":15},
+        "color1dim":    {"type":1,"channel":0,"noteMode":0,"value":28},
+        "color1":       {"type":1,"channel":0,"noteMode":0,"value":60},
+        "color2dim":    {"type":1,"channel":0,"noteMode":0,"value":28},
+        "color2":       {"type":1,"channel":0,"noteMode":0,"value":60},
+        "color3dim":    {"type":1,"channel":0,"noteMode":0,"value":29},
+        "color3":       {"type":1,"channel":0,"noteMode":0,"value":62},
         "pending":      {"type":1,"channel":0,"noteMode":0,"value":63},
         "portLearn":    {"type":1,"channel":0,"noteMode":0,"value":62},
         "midiLearn":    {"type":1,"channel":0,"noteMode":0,"value":29},
         "sceneActive":  {"type":1,"channel":0,"noteMode":0,"value":60},
         "sceneDim":     {"type":1,"channel":0,"noteMode":0,"value":28},
-        "connectedOut": {"type":1,"channel":0,"noteMode":0,"value":15},
-        "connectedIn":  {"type":1,"channel":0,"noteMode":0,"value":60}
+        "connected0":   {"type":1,"channel":0,"noteMode":0,"value":15},
+        "connected1":   {"type":1,"channel":0,"noteMode":0,"value":60},
+        "connected2":   {"type":1,"channel":0,"noteMode":0,"value":60},
+        "connected3":   {"type":1,"channel":0,"noteMode":0,"value":62}
     }
 })json",
 
@@ -248,17 +279,23 @@ R"json({
     },
     "specs": {
         "off":          {"type":1,"channel":0,"noteMode":0,"value": 0},
-        "outDim":       {"type":1,"channel":0,"noteMode":0,"value": 7},
-        "out":          {"type":1,"channel":0,"noteMode":0,"value": 5},
-        "inDim":        {"type":1,"channel":0,"noteMode":0,"value":41},
-        "in":           {"type":1,"channel":0,"noteMode":0,"value":45},
-        "pending":      {"type":1,"channel":1,"noteMode":0,"value": 1},
+        "color0dim":    {"type":1,"channel":0,"noteMode":0,"value": 7},
+        "color0":       {"type":1,"channel":0,"noteMode":0,"value": 5},
+        "color1dim":    {"type":1,"channel":0,"noteMode":0,"value":47},
+        "color1":       {"type":1,"channel":0,"noteMode":0,"value":44},
+        "color2dim":    {"type":1,"channel":0,"noteMode":0,"value":10},
+        "color2":       {"type":1,"channel":0,"noteMode":0,"value":96},
+        "color3dim":    {"type":1,"channel":0,"noteMode":0,"value":27},
+        "color3":       {"type":1,"channel":0,"noteMode":0,"value":25},
+        "pending":      {"type":1,"channel":1,"noteMode":0,"value": 3},
         "portLearn":    {"type":1,"channel":2,"noteMode":0,"value":45},
-        "midiLearn":    {"type":1,"channel":2,"noteMode":0,"value":21},
+        "midiLearn":    {"type":1,"channel":2,"noteMode":0,"value": 1},
         "sceneActive":  {"type":1,"channel":0,"noteMode":0,"value":63},
         "sceneDim":     {"type":1,"channel":0,"noteMode":0,"value": 2},
-        "connectedOut": {"type":1,"channel":2,"noteMode":0,"value": 5},
-        "connectedIn":  {"type":1,"channel":2,"noteMode":0,"value":45}
+        "connected0":   {"type":1,"channel":2,"noteMode":0,"value": 5},
+        "connected1":   {"type":1,"channel":2,"noteMode":0,"value":44},
+        "connected2":   {"type":1,"channel":2,"noteMode":0,"value":96},
+        "connected3":   {"type":1,"channel":2,"noteMode":0,"value":25}
     }
 })json",
 
@@ -291,17 +328,23 @@ R"json({
     },
     "specs": {
         "off":          {"type":1,"channel":0,"noteMode":0,"value": 0},
-        "outDim":       {"type":1,"channel":0,"noteMode":0,"value": 7},
-        "out":          {"type":1,"channel":0,"noteMode":0,"value": 5},
-        "inDim":        {"type":1,"channel":0,"noteMode":0,"value":41},
-        "in":           {"type":1,"channel":0,"noteMode":0,"value":45},
-        "pending":      {"type":1,"channel":1,"noteMode":0,"value": 1},
+        "color0dim":    {"type":1,"channel":0,"noteMode":0,"value": 7},
+        "color0":       {"type":1,"channel":0,"noteMode":0,"value": 5},
+        "color1dim":    {"type":1,"channel":0,"noteMode":0,"value":47},
+        "color1":       {"type":1,"channel":0,"noteMode":0,"value":44},
+        "color2dim":    {"type":1,"channel":0,"noteMode":0,"value":10},
+        "color2":       {"type":1,"channel":0,"noteMode":0,"value":96},
+        "color3dim":    {"type":1,"channel":0,"noteMode":0,"value":27},
+        "color3":       {"type":1,"channel":0,"noteMode":0,"value":25},
+        "pending":      {"type":1,"channel":1,"noteMode":0,"value": 3},
         "portLearn":    {"type":1,"channel":2,"noteMode":0,"value":45},
-        "midiLearn":    {"type":1,"channel":2,"noteMode":0,"value":21},
+        "midiLearn":    {"type":1,"channel":2,"noteMode":0,"value": 1},
         "sceneActive":  {"type":1,"channel":0,"noteMode":0,"value":63},
         "sceneDim":     {"type":1,"channel":0,"noteMode":0,"value": 2},
-        "connectedOut": {"type":1,"channel":2,"noteMode":0,"value": 5},
-        "connectedIn":  {"type":1,"channel":2,"noteMode":0,"value":45}
+        "connected0":   {"type":1,"channel":2,"noteMode":0,"value": 5},
+        "connected1":   {"type":1,"channel":2,"noteMode":0,"value":44},
+        "connected2":   {"type":1,"channel":2,"noteMode":0,"value":96},
+        "connected3":   {"type":1,"channel":2,"noteMode":0,"value":25}
     }
 })json",
 
@@ -310,8 +353,7 @@ R"json({
 //   top row = 56–63, bottom row = 0–7.
 // Scene Launch 1–8 (right-side buttons): notes 82–89, top to bottom.
 // Velocity: 0=off  1=green  2=green blink  3=red  4=red blink  5=yellow  6=yellow blink
-// Colour semantics used here: yellow = assigned/unconnected, red = output+cable,
-//   green = input+cable; blink used for learn states.
+// Only 3 colors available; color2 maps to green, color3 to yellow.
 R"json({
     "name": "APC Mini",
     "cells": {
@@ -333,17 +375,23 @@ R"json({
     },
     "specs": {
         "off":          {"type":1,"noteMode":0,"value":0},
-        "outDim":       {"type":1,"noteMode":0,"value":5},
-        "out":          {"type":1,"noteMode":0,"value":3},
-        "inDim":        {"type":1,"noteMode":0,"value":5},
-        "in":           {"type":1,"noteMode":0,"value":1},
+        "color0dim":    {"type":1,"noteMode":0,"value":5},
+        "color0":       {"type":1,"noteMode":0,"value":3},
+        "color1dim":    {"type":1,"noteMode":0,"value":5},
+        "color1":       {"type":1,"noteMode":0,"value":1},
+        "color2dim":    {"type":1,"noteMode":0,"value":5},
+        "color2":       {"type":1,"noteMode":0,"value":1},
+        "color3dim":    {"type":1,"noteMode":0,"value":5},
+        "color3":       {"type":1,"noteMode":0,"value":5},
         "pending":      {"type":1,"noteMode":0,"value":6},
         "portLearn":    {"type":1,"noteMode":0,"value":2},
         "midiLearn":    {"type":1,"noteMode":0,"value":4},
         "sceneActive":  {"type":1,"noteMode":0,"value":1},
         "sceneDim":     {"type":1,"noteMode":0,"value":5},
-        "connectedOut": {"type":1,"noteMode":0,"value":4},
-        "connectedIn":  {"type":1,"noteMode":0,"value":2}
+        "connected0":   {"type":1,"noteMode":0,"value":4},
+        "connected1":   {"type":1,"noteMode":0,"value":2},
+        "connected2":   {"type":1,"noteMode":0,"value":2},
+        "connected3":   {"type":1,"noteMode":0,"value":6}
     }
 })json",
 
@@ -355,8 +403,8 @@ R"json({
 // MIDI channel determines LED behaviour (p.3):
 //   ch 0–6  = solid at 10–100% brightness;  ch 6 used here for 100%
 //   ch 7–10 = pulsing at 1/16–1/2 note;     ch 7 (1/16) used for learn
-//   ch 11–15= blinking at 1/24–1/2 note;    ch 11 (1/24) used for pending
-// Colour palette (p.4–5): 0=off  3=white  5=red  21=green  45=blue
+//   ch 11–15= blinking at 1/24–1/2 note;    ch 11 (1/24) used for pending/connected
+// Colour palette (p.4–5): 0=off  3=white  5=red  9=amber  21=green  45=blue
 // https://cdn.inmusicbrands.com/akai/attachments/APC%20mini%20mk2%20-%20Communication%20Protocol%20-%20v1.0.pdf
 R"json({
     "name": "APC Mini MK2",
@@ -379,17 +427,23 @@ R"json({
     },
     "specs": {
         "off":          {"type":1,"channel": 6,"noteMode":0,"value": 0},
-        "outDim":       {"type":1,"channel": 1,"noteMode":0,"value": 5},
-        "out":          {"type":1,"channel": 6,"noteMode":0,"value": 5},
-        "inDim":        {"type":1,"channel": 1,"noteMode":0,"value":45},
-        "in":           {"type":1,"channel": 6,"noteMode":0,"value":45},
+        "color0dim":    {"type":1,"channel": 1,"noteMode":0,"value": 5},
+        "color0":       {"type":1,"channel": 6,"noteMode":0,"value": 5},
+        "color1dim":    {"type":1,"channel": 1,"noteMode":0,"value":45},
+        "color1":       {"type":1,"channel": 6,"noteMode":0,"value":45},
+        "color2dim":    {"type":1,"channel": 1,"noteMode":0,"value":21},
+        "color2":       {"type":1,"channel": 6,"noteMode":0,"value":21},
+        "color3dim":    {"type":1,"channel": 1,"noteMode":0,"value": 9},
+        "color3":       {"type":1,"channel": 6,"noteMode":0,"value": 9},
         "pending":      {"type":1,"channel":11,"noteMode":0,"value": 3},
         "portLearn":    {"type":1,"channel": 7,"noteMode":0,"value":45},
         "midiLearn":    {"type":1,"channel": 7,"noteMode":0,"value":21},
         "sceneActive":  {"type":1,"channel": 6,"noteMode":0,"value":21},
         "sceneDim":     {"type":1,"channel": 1,"noteMode":0,"value":21},
-        "connectedOut": {"type":1,"channel":11,"noteMode":0,"value": 5},
-        "connectedIn":  {"type":1,"channel":11,"noteMode":0,"value":45}
+        "connected0":   {"type":1,"channel":11,"noteMode":0,"value": 5},
+        "connected1":   {"type":1,"channel":11,"noteMode":0,"value":45},
+        "connected2":   {"type":1,"channel":11,"noteMode":0,"value":21},
+        "connected3":   {"type":1,"channel":11,"noteMode":0,"value": 9}
     }
 })json",
 
@@ -398,12 +452,17 @@ R"json({
 //   top row = 92–99, bottom row = 36–43.
 // Scene buttons (below the display, left to right): CC 20–27.
 //   These use CC for both button press input and LED feedback.
-// LED colour palette (index 0–127):
-//   0=off  122=white  123=light-gray  125=blue  126=green  127=red
-// Animation channels: 0=static  6–10=pulse  11–15=blink
+// LED colour palette (index 0–127, documented subset):
+//   0=off  122=white(204,204,204)  123=light-gray(64,64,64)
+//   124=dark-gray(20,20,20)  125=blue  126=green  127=red
+// Animation channels: 0=static
+//   6=pulse(1/24)…10=pulse(1/2)   11=blink(1/24)…15=blink(1/2)
+//   ch10 (slowest pulse, ~0.5 s at 120 BPM) used for idle/dim states.
+//   ch6  (fastest pulse) used for connected highlights.
+//   ch11 (fastest blink) used for pending/learn states.
 // spec type 4 (from-slot-type): sends Note On for pad cells, CC for scene buttons.
 // Push 2 must be in User mode (not Live mode) for direct MIDI control.
-// https://github.com/Ableton/push-interface/blob/main/doc/AbletonPush2MIDIDisplayInterface.asc#22-midi-messages
+// https://github.com/Ableton/push-interface/blob/main/doc/AbletonPush2MIDIDisplayInterface.asc
 R"json({
     "name": "Ableton Push 2",
     "cells": {
@@ -425,17 +484,23 @@ R"json({
     },
     "specs": {
         "off":          {"type":4,"channel": 0,"noteMode":0,"value":  0},
-        "outDim":       {"type":4,"channel": 6,"noteMode":0,"value":127},
-        "out":          {"type":4,"channel": 0,"noteMode":0,"value":127},
-        "inDim":        {"type":4,"channel": 6,"noteMode":0,"value":126},
-        "in":           {"type":4,"channel": 0,"noteMode":0,"value":126},
+        "color0dim":    {"type":4,"channel":10,"noteMode":0,"value":127},
+        "color0":       {"type":4,"channel": 0,"noteMode":0,"value":127},
+        "color1dim":    {"type":4,"channel":10,"noteMode":0,"value":125},
+        "color1":       {"type":4,"channel": 0,"noteMode":0,"value":125},
+        "color2dim":    {"type":4,"channel":10,"noteMode":0,"value":126},
+        "color2":       {"type":4,"channel": 0,"noteMode":0,"value":126},
+        "color3dim":    {"type":4,"channel":10,"noteMode":0,"value":122},
+        "color3":       {"type":4,"channel": 0,"noteMode":0,"value":122},
         "pending":      {"type":4,"channel":11,"noteMode":0,"value":122},
         "portLearn":    {"type":4,"channel":11,"noteMode":0,"value":125},
         "midiLearn":    {"type":4,"channel":11,"noteMode":0,"value":126},
         "sceneActive":  {"type":4,"channel": 0,"noteMode":0,"value":122},
-        "sceneDim":     {"type":4,"channel": 0,"noteMode":0,"value":123},
-        "connectedOut": {"type":4,"channel":11,"noteMode":0,"value":127},
-        "connectedIn":  {"type":4,"channel":11,"noteMode":0,"value":126}
+        "sceneDim":     {"type":4,"channel": 0,"noteMode":0,"value":124},
+        "connected0":   {"type":4,"channel": 6,"noteMode":0,"value":127},
+        "connected1":   {"type":4,"channel": 6,"noteMode":0,"value":125},
+        "connected2":   {"type":4,"channel": 6,"noteMode":0,"value":126},
+        "connected3":   {"type":4,"channel": 6,"noteMode":0,"value":122}
     }
 })json",
 
@@ -445,18 +510,24 @@ R"json({
 R"json({
     "name": "Generic (Note On)",
     "specs": {
-        "off":          {"type":1,"noteMode":0,"value":0},
-        "outDim":       {"type":1,"noteMode":0,"value":1},
-        "out":          {"type":1,"noteMode":0,"value":2},
-        "inDim":        {"type":1,"noteMode":0,"value":3},
-        "in":           {"type":1,"noteMode":0,"value":4},
-        "pending":      {"type":1,"noteMode":0,"value":5},
-        "portLearn":    {"type":1,"noteMode":0,"value":3},
-        "midiLearn":    {"type":1,"noteMode":0,"value":6},
-        "sceneActive":  {"type":1,"noteMode":0,"value":2},
-        "sceneDim":     {"type":1,"noteMode":0,"value":1},
-        "connectedOut": {"type":1,"noteMode":0,"value":7},
-        "connectedIn":  {"type":1,"noteMode":0,"value":8}
+        "off":          {"type":1,"noteMode":0,"value": 0},
+        "color0dim":    {"type":1,"noteMode":0,"value": 1},
+        "color0":       {"type":1,"noteMode":0,"value": 2},
+        "color1dim":    {"type":1,"noteMode":0,"value": 3},
+        "color1":       {"type":1,"noteMode":0,"value": 4},
+        "color2dim":    {"type":1,"noteMode":0,"value": 5},
+        "color2":       {"type":1,"noteMode":0,"value": 6},
+        "color3dim":    {"type":1,"noteMode":0,"value": 7},
+        "color3":       {"type":1,"noteMode":0,"value": 8},
+        "pending":      {"type":1,"noteMode":0,"value": 9},
+        "portLearn":    {"type":1,"noteMode":0,"value":10},
+        "midiLearn":    {"type":1,"noteMode":0,"value":11},
+        "sceneActive":  {"type":1,"noteMode":0,"value":12},
+        "sceneDim":     {"type":1,"noteMode":0,"value":13},
+        "connected0":   {"type":1,"noteMode":0,"value":14},
+        "connected1":   {"type":1,"noteMode":0,"value":15},
+        "connected2":   {"type":1,"noteMode":0,"value":16},
+        "connected3":   {"type":1,"noteMode":0,"value":17}
     }
 })json",
 
@@ -488,5 +559,5 @@ static std::vector<MidiOutPreset>& getPresets() {
 	return presets;
 }
 
-} // namespace MidiBay
+} // namespace SpliceKit
 } // namespace StoermelderPackOne

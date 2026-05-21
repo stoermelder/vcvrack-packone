@@ -2,13 +2,13 @@ RACK_DIR ?= ../..
 
 # Orca-c dependency
 ORCA_SOURCES = \
-	orca-c/field.c \
-	orca-c/gbuffer.c \
-	orca-c/osc_out.c \
-	orca-c/sim.c \
-	orca-c/sysmisc.c \
-	orca-c/vmio.c \
-	orca-c/thirdparty/oso.c
+	dep/orca-c/field.c \
+	dep/orca-c/gbuffer.c \
+	dep/orca-c/osc_out.c \
+	dep/orca-c/sim.c \
+	dep/orca-c/sysmisc.c \
+	dep/orca-c/vmio.c \
+	dep/orca-c/thirdparty/oso.c
 
 ORCA_GENERATED_HEADER := src/modules/ahab/orca_examples.hpp
 
@@ -26,8 +26,8 @@ SOURCES += $(ORCA_SOURCES)
 # file changes.
 orca-examples: $(ORCA_GENERATED_HEADER)
 
-$(ORCA_GENERATED_HEADER): src/modules/ahab/orca_examples.py $(shell find orca-c/examples -type f -name '*.orca')
-	python3 src/modules/ahab/orca_examples.py orca-c/examples > $@
+$(ORCA_GENERATED_HEADER): src/modules/ahab/orca_examples.py $(shell find dep/orca-c/examples -type f -name '*.orca')
+	python3 src/modules/ahab/orca_examples.py dep/orca-c/examples > $@
 
 include $(RACK_DIR)/arch.mk
 
@@ -37,7 +37,7 @@ ifdef ARCH_WIN
 endif
 
 # Ensure headers from the orca-c tree (and its thirdparty) are found
-INCLUDES += -Iorca-c -Iorca-c/thirdparty
+FLAGS += -Idep
 
 
 # Add files to the ZIP package when running `make dist`
@@ -46,8 +46,8 @@ DISTRIBUTABLES += res
 DISTRIBUTABLES += $(wildcard LICENSE*)
 DISTRIBUTABLES += $(wildcard presets)
 
-# Dependencies
-#DEP_LOCAL := dep
+# Redirecting into an ignored folder to suppress folder creation
+DEP_LOCAL := build/.dep
 
 
 include $(RACK_DIR)/plugin.mk

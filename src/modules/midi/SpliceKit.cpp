@@ -4,11 +4,11 @@
 #include "../../ui/ModuleSelectProcessor.hpp"
 #include "../../ui/OverlayMessageWidget.hpp"
 #include "MidiTrackingProcessor.hpp"
-#include "MidiBay_controllers.hpp"
+#include "SpliceKit_controllers.hpp"
 #include <osdialog.h>
 
 namespace StoermelderPackOne {
-namespace MidiBay {
+namespace SpliceKit {
 
 // Each LED uses a single SCHEME channel in isolation. Mixing channels is avoided
 // because SCHEME_BLUE (#29b2ef) already contains G=178/255, which saturates the
@@ -16,18 +16,28 @@ namespace MidiBay {
 struct LedColor { float r, g, b; };
 
 static const float LED_BRIGHT      = 1.f;
-static const float LED_DIM         = 0.25f;  // assigned port, no cable attached
-static const float LED_SCENE_DIM   = 0.25f;  // inactive scene that has stored connections
+static const float LED_DIM         = 0.65f;  // assigned port, no cable attached
+static const float LED_SCENE_DIM   = 0.3f;   // inactive scene that has stored connections
 
-// R=red-orange (SCHEME_RED), G=yellow-green (SCHEME_GREEN), B=sky-blue (SCHEME_BLUE)
-static const LedColor LED_OFF         = {0.f,        0.f,        0.f       };
-static const LedColor LED_OUTPUT      = {LED_BRIGHT, 0.f,        0.f       };
-static const LedColor LED_OUTPUT_DIM  = {LED_DIM,    0.f,        0.f       };
-static const LedColor LED_INPUT       = {0.f,        0.f,        LED_BRIGHT};
-static const LedColor LED_INPUT_DIM   = {0.f,        0.f,        LED_DIM   };
-static const LedColor LED_PENDING     = {LED_BRIGHT, LED_BRIGHT, LED_BRIGHT};
-static const LedColor LED_PORT_LEARN  = {0.f,        0.f,        LED_BRIGHT};
-static const LedColor LED_MIDI_LEARN  = {0.f,        LED_BRIGHT, 0.f       };
+static const LedColor LED_OFF        = {0.f,        0.f,        0.f       };
+static const LedColor LED_PENDING    = {LED_BRIGHT, LED_BRIGHT, LED_BRIGHT};
+static const LedColor LED_PORT_LEARN = {0.7f,       0.7f,       0.7f      };
+static const LedColor LED_MIDI_LEARN = {0.7f,       0.7f,       1.f       };
+
+// Four assignable color sets using Rack's standard scheme palette.
+//   set 0: red    (default for OUTPUT ports)
+//   set 1: blue   (default for INPUT ports)
+//   set 2: orange
+//   set 3: green
+static const int COLOR_SET_COUNT = 4;
+struct ColorSet { NVGcolor color; const char* name; };
+static const ColorSet COLOR_SETS[COLOR_SET_COUNT] = {
+	{SCHEME_RED,               "Red"   },
+	{nvgRGB(0x10, 0x60, 0xff), "Blue"  },
+	{SCHEME_ORANGE,            "Orange"},
+	{SCHEME_GREEN,             "Green" },
+};
+
 
 struct PortAssignment {
 	int64_t moduleId = -1;
@@ -40,14 +50,15 @@ struct PortAssignment {
 
 static const int TOTAL_MAPS = MATRIX_COUNT + MATRIX_SIZE;  // 64 cells + 8 scenes
 
-struct MidiBayModule : Module, MidiTrackingProcessorHandler {
+struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 	// GUI thread — called by Rack whenever the tooltip for a matrix cell is displayed.
-	struct MidiBayCellQuantity : ParamQuantity {
+	struct SpliceKitCellQuantity : ParamQuantity {
 		// Returns the assigned port label, or "Cell N" if unassigned.
 		std::string getLabel() override {
 			if (!module) return ParamQuantity::getLabel();
-			auto* m = static_cast<MidiBayModule*>(module);
+			auto* m = static_cast<SpliceKitModule*>(module);
 			int cellId = paramId - PARAM_MATRIX;
+			if (!m->cellLabels[cellId].empty()) return m->cellLabels[cellId];
 			const PortAssignment& pa = m->portAssignments[cellId];
 			if (pa.isValid()) return portLabel(pa);
 			return string::f("Cell %d", cellId + 1);
@@ -57,7 +68,7 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		// Returns the current MIDI mapping (CC N / Note N / unmapped) as the tooltip subtitle.
 		std::string getDescription() override {
 			if (!module) return "";
-			auto* m = static_cast<MidiBayModule*>(module);
+			auto* m = static_cast<SpliceKitModule*>(module);
 			int cellId = paramId - PARAM_MATRIX;
 			auto& mm = m->trackingProcessor.getMap(cellId);
 			if (mm.type == MidiTrackingType::CC)   return string::f("MIDI: CC %d",   mm.param);
@@ -67,7 +78,7 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 	};
 
 	// GUI thread — called by Rack whenever the tooltip for a scene button is displayed.
-	struct MidiBaySceneQuantity : ParamQuantity {
+	struct SpliceKitSceneQuantity : ParamQuantity {
 		// Returns "Scene N".
 		std::string getLabel() override {
 			if (!module) return ParamQuantity::getLabel();
@@ -79,7 +90,7 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		// Returns the scene button's MIDI mapping as the tooltip subtitle.
 		std::string getDescription() override {
 			if (!module) return "";
-			auto* m = static_cast<MidiBayModule*>(module);
+			auto* m = static_cast<SpliceKitModule*>(module);
 			int sceneId = paramId - PARAM_SCENE;
 			auto& mm = m->trackingProcessor.getMap(MATRIX_COUNT + sceneId);
 			if (mm.type == MidiTrackingType::CC)   return string::f("MIDI: CC %d",   mm.param);
@@ -107,11 +118,11 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 
 	// GUI thread — midi::Output subclass that invalidates cached LED states on device change
 	// so that all cells are re-sent when a new output device is connected.
-	struct MidiBayOutput : midi::Output {
+	struct SpliceKitOutput : midi::Output {
 		int* ledState      = nullptr;
 		int* sceneLedState = nullptr;
 
-		MidiBayOutput() {
+		SpliceKitOutput() {
 			channel = -1;
 		}
 
@@ -136,6 +147,8 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 
 	bool midiLearnMode = false;
 	int learningId = -1;
+	bool portLearnMode = false;
+	int lastClickedCell = 0;
 
 	/** [Stored to JSON] */
 	int currentScene = 0;
@@ -144,7 +157,7 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 	StoermelderPackOne::MidiTrackingProcessor<TOTAL_MAPS> trackingProcessor;
 
 	/** [Stored to JSON] */
-	MidiBayOutput midiOutput;
+	SpliceKitOutput midiOutput;
 
 	/** [Stored to JSON] */
 	PortAssignment portAssignments[MATRIX_COUNT];
@@ -190,21 +203,30 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 	int cellLedState[MATRIX_COUNT];
 	int sceneLedState[MATRIX_SIZE];
 
+	/** [Stored to JSON — only non-empty entries are written] */
+	std::string cellLabels[MATRIX_COUNT];
+
+	/** [Stored to JSON — only non-default (-1) entries are written]
+	 *  -1 = auto (OUTPUT → set 0 / red, INPUT → set 1 / blue)
+	 *   0–3 = explicit color set override */
+	int8_t cellColorSet[MATRIX_COUNT];
+
 	/** [Stored to JSON] */
 	bool overlayEnabled = true;
 	int overlayMessageId = -1;
 	OverlayMessageProvider::Message overlayMessage;
 
 	// GUI thread — called once by Rack when the module is instantiated.
-	MidiBayModule() {
+	SpliceKitModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+		memset(cellColorSet, -1, sizeof(cellColorSet));
 		invalidateLedStates();
 		for (int i = 0; i < MATRIX_COUNT; i++) {
-			configParam<MidiBayCellQuantity>(PARAM_MATRIX + i, 0.f, 1.f, 0.f);
+			configParam<SpliceKitCellQuantity>(PARAM_MATRIX + i, 0.f, 1.f, 0.f);
 		}
 		for (int i = 0; i < MATRIX_SIZE; i++) {
-			configParam<MidiBaySceneQuantity>(PARAM_SCENE + i, 0.f, 1.f, 0.f);
+			configParam<SpliceKitSceneQuantity>(PARAM_SCENE + i, 0.f, 1.f, 0.f);
 		}
 
 		trackingProcessor.handler = this;
@@ -222,6 +244,8 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		disableLearn();
 		disablePortLearn();
 		clearPending();
+		memset(cellLabels, 0, sizeof(cellLabels));
+		memset(cellColorSet, -1, sizeof(cellColorSet));
 		requestReset();
 	}
 
@@ -273,10 +297,10 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 			bool slowBlinkOn = slowBlinkPhase < 0.5f;
 			for (int i = 0; i < MATRIX_COUNT; i++) {
 				bool assigned = portAssignments[i].isValid();
-				bool isOutput = portAssignments[i].type == engine::Port::OUTPUT;
 				bool hasCable = portHasCable[i];
 				bool connectedToPending = pendingCellId >= 0 && i != pendingCellId
 				                      && isConnected(currentScene, pendingCellId, i);
+				int cs = getCellColorSet(i);  // 0–3
 				LedColor col;
 				int stateId;
 				if (pendingCellId == i) {
@@ -284,27 +308,23 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 					stateId = LED_STATE_PENDING;
 				}
 				else if (connectedToPending) {
-					col = slowBlinkOn ? (isOutput ? LED_OUTPUT : LED_INPUT) : LED_OFF;
-					stateId = isOutput ? LED_STATE_CONNECTED_OUT : LED_STATE_CONNECTED_IN;
+					NVGcolor nc = slowBlinkOn ? COLOR_SETS[cs].color : nvgRGBf(0.f, 0.f, 0.f);
+					col = {nc.r, nc.g, nc.b};
+					stateId = LED_STATE_CONNECTED0 + cs;
 				}
 				else if (portLearningId == i) {
 					col = blinkOn ? LED_PORT_LEARN : LED_OFF;
 					stateId = LED_STATE_PORT_LEARN;
-				} 
+				}
 				else if (learningId == i) {
 					col = blinkOn ? LED_MIDI_LEARN : LED_OFF;
 					stateId = LED_STATE_MIDI_LEARN;
-				} 
+				}
 				else if (assigned) {
-					if (isOutput) {
-						if (hasCable) { col = LED_OUTPUT;     stateId = LED_STATE_OUT;     }
-						else          { col = LED_OUTPUT_DIM; stateId = LED_STATE_OUT_DIM; }
-					} 
-					else {
-						if (hasCable) { col = LED_INPUT;     stateId = LED_STATE_IN;     }
-						else          { col = LED_INPUT_DIM; stateId = LED_STATE_IN_DIM; }
-					}
-				} 
+					NVGcolor nc = color::mult(COLOR_SETS[cs].color, hasCable ? LED_BRIGHT : LED_DIM);
+					col = {nc.r, nc.g, nc.b};
+					stateId = hasCable ? LED_STATE_COLOR0 + cs * 2 : LED_STATE_COLOR0_DIM + cs * 2;
+				}
 				else {
 					col = LED_OFF;
 					stateId = LED_STATE_OFF;
@@ -361,6 +381,12 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 			sceneConnections[scene][a] &= ~(1ULL << b);
 			sceneConnections[scene][b] &= ~(1ULL << a);
 		}
+	}
+
+	// Returns the resolved color-set index for cell i (0–3). Auto mode maps by port direction.
+	int getCellColorSet(int i) const {
+		if (cellColorSet[i] >= 0) return cellColorSet[i];
+		return (portAssignments[i].type == engine::Port::OUTPUT) ? 0 : 1;
 	}
 
 	// Engine thread — MidiTrackingProcessorHandler callback, fired for every mapped
@@ -421,18 +447,48 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 	// (id >= MATRIX_COUNT). Cancels any previously active learn first.
 	void enableLearn(int id) {
 		disableLearn();
+		disablePortLearn();
 		if (id < 0 || id >= TOTAL_MAPS) return;
 		learningId = id;
 		trackingProcessor.enableMapLearn(id);
 	}
 
-	// GUI thread — starts sequential MIDI learn across all 64 matrix cells in order.
+	// GUI thread — starts sequential MIDI learn from lastClickedCell through cell 63.
 	// Scene buttons are excluded; assign them individually or via applyPresetLayout().
 	void startGlobalLearn() {
 		disableLearn();
+		disablePortLearn();
 		midiLearnMode = true;
-		learningId = 0;
-		trackingProcessor.enableMapLearn(0);
+		learningId = lastClickedCell;
+		trackingProcessor.enableMapLearn(lastClickedCell);
+	}
+
+	// GUI thread — starts sequential port-assignment learn from lastClickedCell through cell 63.
+	// Uses LEARN_MODE::MULTI so the owner widget stays focused across clicks (step() keeps
+	// re-asserting selection). A single persistent callback advances portLearningId in place.
+	void startGlobalPortLearn(Widget* owner) {
+		disableLearn();
+		disablePortLearn();
+		portLearnMode = true;
+		portLearningId = lastClickedCell;
+		portSelectProcessor.setOwner(owner);
+		portSelectProcessor.startLearn([=](PortWidget* pw, Vec) {
+			if (!pw->module) return;
+			portAssignments[portLearningId].moduleId = pw->module->getId();
+			portAssignments[portLearningId].type = pw->type;
+			portAssignments[portLearningId].portId = pw->portId;
+			if (portLearningId + 1 < MATRIX_COUNT) {
+				portLearningId++;
+			} 
+			else {
+				portLearnMode = false;
+				portLearningId = -1;
+				portSelectProcessor.disableLearn();
+			}
+		}, PortSelectProcessor::LEARN_MODE::MULTI, [=]() {
+			portLearnMode = false;
+			portLearningId = -1;
+		});
 	}
 
 	// Engine or GUI thread — cancels any active MIDI learn.
@@ -444,10 +500,12 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		midiLearnMode = false;
 	}
 
-	// GUI thread — starts port-assignment learn for the given cell. The portSelectProcessor
+	// GUI thread — starts port-assignment learn for a single cell. The portSelectProcessor
 	// intercepts the next port-widget click and writes portAssignments[id].
 	void enablePortLearn(int id, Widget* owner) {
 		if (id < 0 || id >= MATRIX_COUNT) return;
+		disableLearn();
+		disablePortLearn();
 		portLearningId = id;
 		portSelectProcessor.setOwner(owner);
 		portSelectProcessor.startLearn([=](PortWidget* pw, Vec) {
@@ -463,6 +521,7 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 	void disablePortLearn() {
 		portSelectProcessor.disableLearn();
 		portLearningId = -1;
+		portLearnMode = false;
 	}
 
 	// GUI thread — returns true if the given cell is currently in port-learn mode.
@@ -537,27 +596,29 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 		json_object_set_new(rootJ, "currentScene", json_integer(currentScene));
 
-		json_t* mapsJ = json_array();
+		json_t* mapsJ = json_object();
 		for (int i = 0; i < TOTAL_MAPS; i++) {
 			auto m = trackingProcessor.getMap(i);
+			if (m.type == MidiTrackingType::NONE) continue;
 			json_t* mapJ = json_object();
 			json_object_set_new(mapJ, "type", json_integer((int)m.type));
 			json_object_set_new(mapJ, "param", json_integer(m.param));
-			json_array_append_new(mapsJ, mapJ);
+			json_object_set_new(mapsJ, std::to_string(i).c_str(), mapJ);
 		}
 		json_object_set_new(rootJ, "maps", mapsJ);
 
-		json_t* portsJ = json_array();
+		json_t* portsJ = json_object();
 		for (int i = 0; i < MATRIX_COUNT; i++) {
+			if (!portAssignments[i].isValid()) continue;
 			json_t* portJ = json_object();
 			json_object_set_new(portJ, "moduleId", json_integer(portAssignments[i].moduleId));
 			json_object_set_new(portJ, "type", json_integer((int)portAssignments[i].type));
 			json_object_set_new(portJ, "portId", json_integer(portAssignments[i].portId));
-			json_array_append_new(portsJ, portJ);
+			json_object_set_new(portsJ, std::to_string(i).c_str(), portJ);
 		}
 		json_object_set_new(rootJ, "ports", portsJ);
 
-		json_t* scenesJ = json_array();
+		json_t* scenesJ = json_object();
 		for (int s = 0; s < MATRIX_SIZE; s++) {
 			json_t* connJ = json_array();
 			for (int a = 0; a < MATRIX_COUNT; a++) {
@@ -570,9 +631,14 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 					}
 				}
 			}
-			json_t* sceneJ = json_object();
-			json_object_set_new(sceneJ, "connections", connJ);
-			json_array_append_new(scenesJ, sceneJ);
+			if (json_array_size(connJ) > 0) {
+				json_t* sceneJ = json_object();
+				json_object_set_new(sceneJ, "connections", connJ);
+				json_object_set_new(scenesJ, std::to_string(s).c_str(), sceneJ);
+			}
+			else {
+				json_decref(connJ);
+			}
 		}
 		json_object_set_new(rootJ, "scenes", scenesJ);
 		json_object_set_new(rootJ, "feedbackPreset", json_integer(feedbackPreset));
@@ -580,6 +646,24 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		json_object_set_new(rootJ, "overlayEnabled", json_boolean(overlayEnabled));
 		if (feedbackPreset == PRESET_IDX_CUSTOM && !customPresetJson.empty())
 			json_object_set_new(rootJ, "customPreset", json_string(customPresetJson.c_str()));
+		json_t* labelsJ = json_object();
+		for (int i = 0; i < MATRIX_COUNT; i++) {
+			if (!cellLabels[i].empty())
+				json_object_set_new(labelsJ, std::to_string(i).c_str(), json_string(cellLabels[i].c_str()));
+		}
+		if (json_object_size(labelsJ) > 0)
+			json_object_set_new(rootJ, "cellLabels", labelsJ);
+		else
+			json_decref(labelsJ);
+		json_t* colorSetsJ = json_object();
+		for (int i = 0; i < MATRIX_COUNT; i++) {
+			if (cellColorSet[i] >= 0)
+				json_object_set_new(colorSetsJ, std::to_string(i).c_str(), json_integer(cellColorSet[i]));
+		}
+		if (json_object_size(colorSetsJ) > 0)
+			json_object_set_new(rootJ, "cellColorSets", colorSetsJ);
+		else
+			json_decref(colorSetsJ);
 		json_object_set_new(rootJ, "midiInput",  trackingProcessor.getInput().toJson());
 		json_object_set_new(rootJ, "midiOutput", midiOutput.toJson());
 		return rootJ;
@@ -599,24 +683,25 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		trackingProcessor.clearMaps();
 		json_t* mapsJ = json_object_get(rootJ, "maps");
 		if (mapsJ) {
-			size_t i;
+			const char* key;
 			json_t* mapJ;
-			json_array_foreach(mapsJ, i, mapJ) {
-				if (i >= (size_t)TOTAL_MAPS) break;
+			json_object_foreach(mapsJ, key, mapJ) {
+				int i = std::atoi(key);
+				if (i < 0 || i >= TOTAL_MAPS) continue;
 				auto type = (StoermelderPackOne::MidiTrackingType)json_integer_value(json_object_get(mapJ, "type"));
 				auto param = (uint16_t)json_integer_value(json_object_get(mapJ, "param"));
-				if (type != MidiTrackingType::NONE) {
+				if (type != MidiTrackingType::NONE)
 					trackingProcessor.setMap(type, i, param);
-				}
 			}
 		}
 
 		json_t* portsJ = json_object_get(rootJ, "ports");
 		if (portsJ) {
-			size_t i;
+			const char* key;
 			json_t* portJ;
-			json_array_foreach(portsJ, i, portJ) {
-				if (i >= MATRIX_COUNT) break;
+			json_object_foreach(portsJ, key, portJ) {
+				int i = std::atoi(key);
+				if (i < 0 || i >= MATRIX_COUNT) continue;
 				portAssignments[i].moduleId = json_integer_value(json_object_get(portJ, "moduleId"));
 				portAssignments[i].type = (engine::Port::Type)json_integer_value(json_object_get(portJ, "type"));
 				portAssignments[i].portId = json_integer_value(json_object_get(portJ, "portId"));
@@ -641,6 +726,30 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		}
 		invalidateLedStates();
 
+		memset(cellLabels, 0, sizeof(cellLabels));
+		json_t* labelsJ = json_object_get(rootJ, "cellLabels");
+		if (labelsJ) {
+			const char* key;
+			json_t* val;
+			json_object_foreach(labelsJ, key, val) {
+				int i = std::atoi(key);
+				if (i >= 0 && i < MATRIX_COUNT)
+					cellLabels[i] = json_string_value(val);
+			}
+		}
+		memset(cellColorSet, -1, sizeof(cellColorSet));
+		json_t* colorSetsJ = json_object_get(rootJ, "cellColorSets");
+		if (colorSetsJ) {
+			const char* key;
+			json_t* val;
+			json_object_foreach(colorSetsJ, key, val) {
+				int i = std::atoi(key);
+				if (i >= 0 && i < MATRIX_COUNT) {
+					int cs = (int)json_integer_value(val);
+					cellColorSet[i] = (int8_t)clamp(cs, 0, COLOR_SET_COUNT - 1);
+				}
+			}
+		}
 		json_t* midiInputJ = json_object_get(rootJ, "midiInput");
 		if (midiInputJ) trackingProcessor.getInput().fromJson(midiInputJ);
 		json_t* midiOutputJ = json_object_get(rootJ, "midiOutput");
@@ -649,10 +758,11 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		memset(sceneConnections, 0, sizeof(sceneConnections));
 		json_t* scenesJ = json_object_get(rootJ, "scenes");
 		if (scenesJ) {
-			size_t s;
+			const char* key;
 			json_t* sceneJ;
-			json_array_foreach(scenesJ, s, sceneJ) {
-				if (s >= MATRIX_SIZE) break;
+			json_object_foreach(scenesJ, key, sceneJ) {
+				int s = std::atoi(key);
+				if (s < 0 || s >= MATRIX_SIZE) continue;
 				json_t* connJ = json_object_get(sceneJ, "connections");
 				if (!connJ) continue;
 				size_t k;
@@ -660,9 +770,8 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 				json_array_foreach(connJ, k, pairJ) {
 					int a = json_integer_value(json_array_get(pairJ, 0));
 					int b = json_integer_value(json_array_get(pairJ, 1));
-					if (a >= 0 && a < MATRIX_COUNT && b >= 0 && b < MATRIX_COUNT) {
+					if (a >= 0 && a < MATRIX_COUNT && b >= 0 && b < MATRIX_COUNT)
 						setConnection(s, a, b, true);
-					}
 				}
 			}
 		}
@@ -861,7 +970,11 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 			pendingCellId = id;
 			if (!guiQueue.full()) {
 				guiQueue.push([this, id]() {
-					setOverlayMessage("Port selected", portLabel(portAssignments[id]));
+					const std::string& lbl = cellLabels[id];
+					if (!lbl.empty())
+						setOverlayMessage(lbl, portLabel(portAssignments[id]));
+					else
+						setOverlayMessage("Port selected", portLabel(portAssignments[id]));
 				});
 			}
 		}
@@ -918,8 +1031,8 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 
 // Overlay widget added directly to APP->scene->rack — drawn in rack coordinates.
 // Activated by the space key; hides cables and draws cell→port assignment splines.
-struct MidiBayVizOverlay : TransparentWidget {
-	MidiBayModule* module = nullptr;
+struct SpliceKitVizOverlay : TransparentWidget {
+	SpliceKitModule* module = nullptr;
 	// Non-owning pointer to the host widget (for position).
 	Widget* hostWidget = nullptr;
 	int hoveredCellId = -1;
@@ -1022,10 +1135,8 @@ struct MidiBayVizOverlay : TransparentWidget {
 			Vec cellPos = origin.plus(cellCenter(i));
 			Vec portPos = portMw->box.pos.plus(portPw->box.getCenter());
 
-			bool isOut = (module->portAssignments[i].type == engine::Port::OUTPUT);
-			NVGcolor col = isOut
-				? nvgRGBf(0.93f, 0.18f, 0.11f)
-				: nvgRGBf(0.17f, 0.71f, 0.94f);
+			int cs = module->getCellColorSet(i);
+			NVGcolor col = COLOR_SETS[cs].color;
 
 			drawSpline(vg, cellPos, portPos, col, cellJitter(i), highlighted);
 
@@ -1082,14 +1193,14 @@ struct MidiBayVizOverlay : TransparentWidget {
 };
 
 
-struct MidiBayWidget;
+struct SpliceKitWidget;
 
-struct MidiBaySceneButton : app::SvgSwitch {
-	MidiBayModule* module = nullptr;
-	MidiBayWidget* mw = nullptr;
+struct SpliceKitSceneButton : app::SvgSwitch {
+	SpliceKitModule* module = nullptr;
+	SpliceKitWidget* mw = nullptr;
 	int sceneId = -1;
 
-	MidiBaySceneButton() {
+	SpliceKitSceneButton() {
 		momentary = true;
 		addFrame(Svg::load(asset::plugin(pluginInstance, "res/components/MatrixButton.svg")));
 		addFrame(Svg::load(asset::plugin(pluginInstance, "res/components/MatrixButton1.svg")));
@@ -1110,12 +1221,12 @@ struct MidiBaySceneButton : app::SvgSwitch {
 };
 
 // Matrix cell button with right-click context menu for port assignment.
-struct MidiBayCellButton : app::SvgSwitch {
-	MidiBayModule* module = nullptr;
-	MidiBayWidget* mw = nullptr;
+struct SpliceKitCellButton : app::SvgSwitch {
+	SpliceKitModule* module = nullptr;
+	SpliceKitWidget* mw = nullptr;
 	int cellId = -1;
 
-	MidiBayCellButton() {
+	SpliceKitCellButton() {
 		momentary = true;
 		addFrame(Svg::load(asset::plugin(pluginInstance, "res/components/MatrixButton.svg")));
 		addFrame(Svg::load(asset::plugin(pluginInstance, "res/components/MatrixButton1.svg")));
@@ -1139,11 +1250,11 @@ struct MidiBayCellButton : app::SvgSwitch {
 };
 
 
-struct MidiBayWidget : ThemedModuleWidget<MidiBayModule>, OverlayMessageProvider {
-	MidiBayVizOverlay* vizOverlay = nullptr;
+struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProvider {
+	SpliceKitVizOverlay* vizOverlay = nullptr;
 	bool vizMode = false;
 
-	MidiBayWidget(MidiBayModule* module) : ThemedModuleWidget(module, "MidiBay") {
+	SpliceKitWidget(SpliceKitModule* module) : ThemedModuleWidget(module, "SpliceKit") {
 		setModule(module);
 
 		for (int r = 0; r < MATRIX_SIZE; r++) {
@@ -1151,28 +1262,28 @@ struct MidiBayWidget : ThemedModuleWidget<MidiBayModule>, OverlayMessageProvider
 				float x = 24.3f + c * (245.7f - 24.3f) / 7.f;
 				float y = 54.5f + r * (277.4f - 54.5f) / 7.f;
 				int cellId = r * MATRIX_SIZE + c;
-				auto* btn = createParam<MidiBayCellButton>(Vec(x - 13.25f, y - 13.25f), module, MidiBayModule::PARAM_MATRIX + cellId);
+				auto* btn = createParam<SpliceKitCellButton>(Vec(x - 13.25f, y - 13.25f), module, SpliceKitModule::PARAM_MATRIX + cellId);
 				btn->module = module;
 				btn->mw = this;
 				btn->cellId = cellId;
 				addParam(btn);
-				addChild(createLightCentered<MatrixButtonLight<RedGreenBlueLight, MidiBayModule>>(Vec(x, y), module, MidiBayModule::LIGHT_MATRIX + cellId * 3));
+				addChild(createLightCentered<SaturatedMatrixButtonLight<SpliceKitModule>>(Vec(x, y), module, SpliceKitModule::LIGHT_MATRIX + cellId * 3));
 			}
 		}
 		for (int i = 0; i < MATRIX_SIZE; i++) {
 			float x = 24.3f + i * (245.7f - 24.3f) / 7.f;
-			auto* sb = createParam<MidiBaySceneButton>(Vec(x - 13.25f, 320.6f - 13.25f), module, MidiBayModule::PARAM_SCENE + i);
+			auto* sb = createParamCentered<SpliceKitSceneButton>(Vec(x, 324.3f), module, SpliceKitModule::PARAM_SCENE + i);
 			sb->module = module;
 			sb->mw = this;
 			sb->sceneId = i;
 			addParam(sb);
-			addChild(createLightCentered<MatrixButtonLight<WhiteLight, MidiBayModule>>(Vec(x, 320.6f), module, MidiBayModule::LIGHT_SCENE + i));
+			addChild(createLightCentered<MatrixButtonLight<WhiteLight, SpliceKitModule>>(Vec(x, 324.3f), module, SpliceKitModule::LIGHT_SCENE + i));
 		}
 
 		if (module) {
 			OverlayMessageWidget::registerProvider(this);
 
-			vizOverlay = new MidiBayVizOverlay;
+			vizOverlay = new SpliceKitVizOverlay;
 			vizOverlay->module = module;
 			vizOverlay->hostWidget = this;
 			vizOverlay->visible = false;
@@ -1180,7 +1291,7 @@ struct MidiBayWidget : ThemedModuleWidget<MidiBayModule>, OverlayMessageProvider
 		}
 	}
 
-	~MidiBayWidget() {
+	~SpliceKitWidget() {
 		if (vizOverlay) {
 			APP->scene->rack->removeChild(vizOverlay);
 			delete vizOverlay;
@@ -1209,13 +1320,13 @@ struct MidiBayWidget : ThemedModuleWidget<MidiBayModule>, OverlayMessageProvider
 	static bool sceneClipboardValid;
 
 	void onDeselect(const event::Deselect& e) override {
-		ThemedModuleWidget<MidiBayModule>::onDeselect(e);
+		ThemedModuleWidget<SpliceKitModule>::onDeselect(e);
 		if (module) module->portSelectProcessor.processDeselect();
 	}
 
-	MidiBayCellButton* findCellButton(int cellId) {
+	SpliceKitCellButton* findCellButton(int cellId) {
 		for (Widget* w : children) {
-			auto* btn = dynamic_cast<MidiBayCellButton*>(w);
+			auto* btn = dynamic_cast<SpliceKitCellButton*>(w);
 			if (btn && btn->cellId == cellId) return btn;
 		}
 		return nullptr;
@@ -1227,7 +1338,7 @@ struct MidiBayWidget : ThemedModuleWidget<MidiBayModule>, OverlayMessageProvider
 		if (vizOverlay) vizOverlay->visible = active;
 		APP->scene->rack->getCableContainer()->visible = !active;
 		if (hovered >= 0 && hovered < MATRIX_COUNT) {
-			MidiBayCellButton* btn = findCellButton(hovered);
+			SpliceKitCellButton* btn = findCellButton(hovered);
 			if (btn) {
 				if (active) btn->destroyTooltip();
 				else        btn->createTooltip();
@@ -1241,12 +1352,14 @@ struct MidiBayWidget : ThemedModuleWidget<MidiBayModule>, OverlayMessageProvider
 			e.consume(this);
 			return;
 		}
-		ThemedModuleWidget<MidiBayModule>::onHoverKey(e);
+		ThemedModuleWidget<SpliceKitModule>::onHoverKey(e);
 	}
 
 	void step() override {
-		ThemedModuleWidget<MidiBayModule>::step();
+		ThemedModuleWidget<SpliceKitModule>::step();
 		if (!module) return;
+
+		module->portSelectProcessor.step();
 
 		// Execute actions queued from the engine thread
 		while (module->guiQueue.size() > 0) {
@@ -1277,12 +1390,12 @@ struct MidiBayWidget : ThemedModuleWidget<MidiBayModule>, OverlayMessageProvider
 	}
 
 	void appendContextMenu(Menu* menu) override {
-		MidiBayModule* module = this->module;
+		SpliceKitModule* module = this->module;
 		if (!module) return;
 
 		menu->addChild(new MenuSeparator);
-		menu->addChild(createSubmenuItem("MIDI Input", "", [=](Menu* menu) { appendMidiMenu(menu, &module->trackingProcessor.getInput()); }));
-		menu->addChild(createSubmenuItem("MIDI Output", "", [=](Menu* menu) { appendMidiMenu(menu, &module->midiOutput); }));
+		menu->addChild(StoermelderPackOne::Rack::createStickyMidiMenuItem("MIDI Input",  &module->trackingProcessor.getInput()));
+		menu->addChild(StoermelderPackOne::Rack::createStickyMidiMenuItem("MIDI Output", &module->midiOutput));
 		menu->addChild(createSubmenuItem("MIDI Preset", "", [=](Menu* menu) {
 			auto& presets = getPresets();
 			for (int i = 0; i < (int)presets.size(); i++) {
@@ -1362,6 +1475,13 @@ struct MidiBayWidget : ThemedModuleWidget<MidiBayModule>, OverlayMessageProvider
 				else module->startGlobalLearn();
 			}
 		));
+		menu->addChild(createCheckMenuItem("Sequential port learn", "",
+			[=]() { return module->portLearnMode; },
+			[=]() {
+				if (module->portLearnMode) module->disablePortLearn();
+				else module->startGlobalPortLearn(this);
+			}
+		));
 		menu->addChild(new MenuSeparator);
 		menu->addChild(createCheckMenuItem("Show overlay messages", "",
 			[=]() { return module->overlayEnabled; },
@@ -1369,34 +1489,34 @@ struct MidiBayWidget : ThemedModuleWidget<MidiBayModule>, OverlayMessageProvider
 		));
 		menu->addChild(createSubmenuItem("Button mode", "", [=](Menu* menu) {
 			menu->addChild(createCheckMenuItem("Toggle", "",
-				[=]() { return module->buttonMode == MidiBayModule::BUTTON_TOGGLE; },
-				[=]() { module->buttonMode = MidiBayModule::BUTTON_TOGGLE; module->clearPending(); }
+				[=]() { return module->buttonMode == SpliceKitModule::BUTTON_TOGGLE; },
+				[=]() { module->buttonMode = SpliceKitModule::BUTTON_TOGGLE; module->clearPending(); }
 			));
 			menu->addChild(createCheckMenuItem("Momentary", "",
-				[=]() { return module->buttonMode == MidiBayModule::BUTTON_MOMENTARY; },
-				[=]() { module->buttonMode = MidiBayModule::BUTTON_MOMENTARY; module->clearPending(); }
+				[=]() { return module->buttonMode == SpliceKitModule::BUTTON_MOMENTARY; },
+				[=]() { module->buttonMode = SpliceKitModule::BUTTON_MOMENTARY; module->clearPending(); }
 			));
 		}));
 	}
 };
 
 
-uint64_t MidiBayWidget::sceneClipboard[MATRIX_COUNT] = {};
-bool MidiBayWidget::sceneClipboardValid = false;
+uint64_t SpliceKitWidget::sceneClipboard[MATRIX_COUNT] = {};
+bool SpliceKitWidget::sceneClipboardValid = false;
 
-void MidiBayCellButton::onEnter(const event::Enter& e) {
+void SpliceKitCellButton::onEnter(const event::Enter& e) {
 	if (mw && mw->vizOverlay) mw->vizOverlay->hoveredCellId = cellId;
 	SvgSwitch::onEnter(e);
 	if (mw && mw->vizMode) destroyTooltip();
 }
 
-void MidiBayCellButton::onLeave(const event::Leave& e) {
+void SpliceKitCellButton::onLeave(const event::Leave& e) {
 	if (mw && mw->vizOverlay && mw->vizOverlay->hoveredCellId == cellId) mw->vizOverlay->hoveredCellId = -1;
 	SvgSwitch::onLeave(e);
 }
 
 
-void MidiBaySceneButton::createSceneMenu() {
+void SpliceKitSceneButton::createSceneMenu() {
 	ui::Menu* menu = createMenu();
 	menu->addChild(createMenuLabel(string::f("Scene %d", sceneId + 1)));
 	menu->addChild(new MenuSeparator);
@@ -1407,13 +1527,13 @@ void MidiBaySceneButton::createSceneMenu() {
 	}));
 	menu->addChild(createMenuItem("Copy", "", [=]() {
 		if (sceneId == module->currentScene) module->captureScene(sceneId);
-		memcpy(MidiBayWidget::sceneClipboard, module->sceneConnections[sceneId], MATRIX_COUNT * sizeof(uint64_t));
-		MidiBayWidget::sceneClipboardValid = true;
+		memcpy(SpliceKitWidget::sceneClipboard, module->sceneConnections[sceneId], MATRIX_COUNT * sizeof(uint64_t));
+		SpliceKitWidget::sceneClipboardValid = true;
 	}));
 	menu->addChild(createMenuItem("Paste", "", [=]() {
-		if (!MidiBayWidget::sceneClipboardValid) return;
-		module->reconcileScene(sceneId, MidiBayWidget::sceneClipboard);
-	}, !MidiBayWidget::sceneClipboardValid));
+		if (!SpliceKitWidget::sceneClipboardValid) return;
+		module->reconcileScene(sceneId, SpliceKitWidget::sceneClipboard);
+	}, !SpliceKitWidget::sceneClipboardValid));
 
 	menu->addChild(new MenuSeparator);
 
@@ -1439,9 +1559,31 @@ void MidiBaySceneButton::createSceneMenu() {
 }
 
 
-void MidiBayCellButton::createCellMenu() {
+struct LabelField : ui::TextField {
+	SpliceKitModule* module;
+	int id;
+	void onSelectKey(const event::SelectKey& e) override {
+		if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
+			module->cellLabels[id] = text;
+			ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
+			overlay->requestDelete();
+			e.consume(this);
+		}
+		if (!e.getTarget()) {
+			ui::TextField::onSelectKey(e);
+		}
+	}
+	void step() override {
+		APP->event->setSelectedWidget(this);
+		TextField::step();
+	}
+};
+
+
+void SpliceKitCellButton::createCellMenu() {
+	module->lastClickedCell = cellId;
 	auto& pa = module->portAssignments[cellId];
-	std::string label = MidiBayModule::portLabel(pa);
+	std::string label = SpliceKitModule::portLabel(pa);
 
 	auto& midiMap = module->trackingProcessor.getMap(cellId);
 	std::string midiLabel;
@@ -1455,15 +1597,42 @@ void MidiBayCellButton::createCellMenu() {
 	menu->addChild(createMenuLabel(label.empty() ? string::f("Cell %d (unassigned)", cellId + 1) : label));
 
 	menu->addChild(new MenuSeparator);
+	auto* lf = new LabelField;
+	lf->module = module;
+	lf->id = cellId;
+	lf->text = module->cellLabels[cellId];
+	lf->placeholder = "Custom label...";
+	lf->box.size.x = 100;
+	menu->addChild(lf);
+
+	menu->addChild(createSubmenuItem("Color", "", [=](Menu* menu) {
+		int id = cellId;
+		SpliceKitModule* mod = module;
+		menu->addChild(createCheckMenuItem("Auto", "",
+			[=]() { return mod->cellColorSet[id] < 0; },
+			[=]() { mod->cellColorSet[id] = -1; }
+		));
+		menu->addChild(new MenuSeparator);
+		for (int cs = 0; cs < COLOR_SET_COUNT; cs++) {
+			auto* item = createCheckMenuItem<ui::ColorDotMenuItem>(COLOR_SETS[cs].name, "",
+				[=]() { return mod->cellColorSet[id] == cs; },
+				[=]() { mod->cellColorSet[id] = (int8_t)cs; }
+			);
+			item->color = COLOR_SETS[cs].color;
+			menu->addChild(item);
+		}
+	}));
+
+	menu->addChild(new MenuSeparator);
 	bool hasConns = module->sceneConnections[module->currentScene][cellId] != 0;
 	menu->addChild(createSubmenuItem("Remove cable", "",
 		[=](Menu* menu) {
 			uint64_t mask = module->sceneConnections[module->currentScene][cellId];
 			for (int j = 0; j < MATRIX_COUNT; j++) {
 				if (!((mask >> j) & 1)) continue;
-				std::string connLabel = MidiBayModule::portLabel(module->portAssignments[j]);
+				std::string connLabel = SpliceKitModule::portLabel(module->portAssignments[j]);
 				int cid = cellId, jid = j;
-				MidiBayModule* mod = module;
+				SpliceKitModule* mod = module;
 				menu->addChild(createMenuItem(connLabel, "", [=]() {
 					mod->setConnection(mod->currentScene, cid, jid, false);
 					mod->removeCableBetween(cid, jid);
@@ -1482,6 +1651,9 @@ void MidiBayCellButton::createCellMenu() {
 	menu->addChild(createMenuItem("Learn", "", [=]() {
 		module->enablePortLearn(cellId, mw);
 	}));
+	menu->addChild(createMenuItem("Start sequential learn...", "", [=]() {
+		module->startGlobalPortLearn(mw);
+	}));
 	menu->addChild(createMenuItem("Clear", "", [=]() {
 		module->portAssignments[cellId].clear();
 	}, pa.isValid()));
@@ -1496,13 +1668,16 @@ void MidiBayCellButton::createCellMenu() {
 			else module->enableLearn(cellId);
 		}
 	));
+	menu->addChild(createMenuItem("Start sequential learn...", "", [=]() {
+		module->startGlobalLearn();
+	}));
 	menu->addChild(createMenuItem("Clear", "", [=]() {
 		module->trackingProcessor.clearMap(cellId);
 	}, midiLabel.empty()));
 }
 
 
-} // namespace MidiBay
+} // namespace SpliceKit
 } // namespace StoermelderPackOne
 
-Model* modelMidiBay = createModel<StoermelderPackOne::MidiBay::MidiBayModule, StoermelderPackOne::MidiBay::MidiBayWidget>("MidiBay");
+Model* modelSpliceKit = createModel<StoermelderPackOne::SpliceKit::SpliceKitModule, StoermelderPackOne::SpliceKit::SpliceKitWidget>("SpliceKit");

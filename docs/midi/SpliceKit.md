@@ -1,6 +1,6 @@
-# stoermelder MIDI-BAY
+# stoermelder SPLICE-KIT
 
-MIDI-BAY is an 8×8 matrix patch bay. Each of the 64 buttons represents a single port anywhere in the current patch. Pressing two buttons creates or removes a cable between the corresponding ports. Eight independent scenes allow storing and recalling different cable configurations. All buttons — matrix cells and scene selectors — can be triggered from a MIDI controller, and MIDI-BAY can send LED feedback back to the controller.
+SPLICE-KIT is an 8×8 matrix patch bay. Each of the 64 buttons represents a single port anywhere in the current patch. Pressing two buttons creates or removes a cable between the corresponding ports. Eight independent scenes allow storing and recalling different cable configurations. All buttons — matrix cells and scene selectors — can be triggered from a MIDI controller, and SPLICE-KIT can send LED feedback back to the controller.
 
 ### Port assignment
 
@@ -15,7 +15,7 @@ Hovering over a button shows a tooltip with the assigned port label and its curr
 Once two buttons have ports assigned, pressing them in sequence creates or removes a cable between those ports:
 
 1. Press the first button — it starts blinking white to indicate it is selected and waiting for a second press.
-2. Press a second button with a compatible port — MIDI-BAY creates a cable if none exists, or removes the existing cable if one is already present.
+2. Press a second button with a compatible port — SPLICE-KIT creates a cable if none exists, or removes the existing cable if one is already present.
 3. Pressing the same button again cancels the selection.
 
 Only an output port and an input port can be connected. Two ports of the same direction cannot be connected and the second press is ignored.
@@ -65,7 +65,7 @@ Press `Space` again to return to the normal patch view with cables restored.
 
 ### MIDI triggering
 
-MIDI-BAY accepts MIDI input to trigger both matrix buttons and scene buttons. Any assigned CC or note event with a non-zero value triggers the corresponding button, equivalent to pressing it with the mouse. Configure the MIDI input device in the **MIDI Input** submenu of the module context menu.
+SPLICE-KIT accepts MIDI input to trigger both matrix buttons and scene buttons. Any assigned CC or note event with a non-zero value triggers the corresponding button, equivalent to pressing it with the mouse. Configure the MIDI input device in the **MIDI Input** submenu of the module context menu.
 
 ### MIDI learn
 
@@ -75,11 +75,11 @@ Each matrix button and each scene button can be mapped to a MIDI CC or note indi
 
 Select **Clear MIDI** from the context menu to remove the mapping.
 
-**Sequential learn** maps all 64 matrix buttons in order with a single workflow. Open the module context menu and enable **Sequential MIDI learn**. MIDI-BAY starts learning button 1; after each received message it automatically advances to the next button until all 64 are mapped or the option is disabled again. Scene buttons are not included in sequential learn — assign them individually or use a controller preset.
+**Sequential learn** maps all 64 matrix buttons in order with a single workflow. Open the module context menu and enable **Sequential MIDI learn**. SPLICE-KIT starts learning button 1; after each received message it automatically advances to the next button until all 64 are mapped or the option is disabled again. Scene buttons are not included in sequential learn — assign them individually or use a controller preset.
 
 ### MIDI feedback and controller presets
 
-MIDI-BAY can send MIDI messages back to a controller to illuminate its LEDs in sync with the module's button states. Configure the output device in the **MIDI Output** submenu of the module context menu. When the output device changes, all LED states are refreshed automatically.
+SPLICE-KIT can send MIDI messages back to a controller to illuminate its LEDs in sync with the module's button states. Configure the output device in the **MIDI Output** submenu of the module context menu. When the output device changes, all LED states are refreshed automatically.
 
 #### Controller presets
 
@@ -161,4 +161,4 @@ Presets that define a fixed button layout (Launchpad / S, Launchpad MK3, and Lau
 ## Changelog
 
 - v2.5.0
-    - Initial release of MIDI-BAY
+    - Initial release of SPLICE-KIT

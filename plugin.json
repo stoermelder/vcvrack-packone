@@ -59,13 +59,13 @@
 			]
 		},
 		{
-			"slug": "MidiBay",
-			"name": "MIDI-BAY",
+			"slug": "SpliceKit",
+			"name": "SPLICE-KIT",
 			"description": "MIDI patch-bay for connecting cables",
 			"tags": [
-				"MIDI"
+				"MIDI", "Controller", "Utility"
 			],
-			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/midi/MidiBay.md"
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/midi/SpliceKit.md"
 		},
 		{
 			"slug": "MidiEsx",
