@@ -48,6 +48,7 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 			if (!module) return ParamQuantity::getLabel();
 			auto* m = static_cast<MidiBayModule*>(module);
 			int cellId = paramId - PARAM_MATRIX;
+			if (!m->cellLabels[cellId].empty()) return m->cellLabels[cellId];
 			const PortAssignment& pa = m->portAssignments[cellId];
 			if (pa.isValid()) return portLabel(pa);
 			return string::f("Cell %d", cellId + 1);
@@ -190,6 +191,9 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 	int cellLedState[MATRIX_COUNT];
 	int sceneLedState[MATRIX_SIZE];
 
+	/** [Stored to JSON — only non-empty entries are written] */
+	std::string cellLabels[MATRIX_COUNT];
+
 	/** [Stored to JSON] */
 	bool overlayEnabled = true;
 	int overlayMessageId = -1;
@@ -222,6 +226,7 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		disableLearn();
 		disablePortLearn();
 		clearPending();
+		memset(cellLabels, 0, sizeof(cellLabels));
 		requestReset();
 	}
 
@@ -580,6 +585,15 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		json_object_set_new(rootJ, "overlayEnabled", json_boolean(overlayEnabled));
 		if (feedbackPreset == PRESET_IDX_CUSTOM && !customPresetJson.empty())
 			json_object_set_new(rootJ, "customPreset", json_string(customPresetJson.c_str()));
+		json_t* labelsJ = json_object();
+		for (int i = 0; i < MATRIX_COUNT; i++) {
+			if (!cellLabels[i].empty())
+				json_object_set_new(labelsJ, std::to_string(i).c_str(), json_string(cellLabels[i].c_str()));
+		}
+		if (json_object_size(labelsJ) > 0)
+			json_object_set_new(rootJ, "cellLabels", labelsJ);
+		else
+			json_decref(labelsJ);
 		json_object_set_new(rootJ, "midiInput",  trackingProcessor.getInput().toJson());
 		json_object_set_new(rootJ, "midiOutput", midiOutput.toJson());
 		return rootJ;
@@ -641,6 +655,17 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		}
 		invalidateLedStates();
 
+		memset(cellLabels, 0, sizeof(cellLabels));
+		json_t* labelsJ = json_object_get(rootJ, "cellLabels");
+		if (labelsJ) {
+			const char* key;
+			json_t* val;
+			json_object_foreach(labelsJ, key, val) {
+				int i = std::atoi(key);
+				if (i >= 0 && i < MATRIX_COUNT)
+					cellLabels[i] = json_string_value(val);
+			}
+		}
 		json_t* midiInputJ = json_object_get(rootJ, "midiInput");
 		if (midiInputJ) trackingProcessor.getInput().fromJson(midiInputJ);
 		json_t* midiOutputJ = json_object_get(rootJ, "midiOutput");
@@ -861,7 +886,11 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 			pendingCellId = id;
 			if (!guiQueue.full()) {
 				guiQueue.push([this, id]() {
-					setOverlayMessage("Port selected", portLabel(portAssignments[id]));
+					const std::string& lbl = cellLabels[id];
+					if (!lbl.empty())
+						setOverlayMessage(lbl, portLabel(portAssignments[id]));
+					else
+						setOverlayMessage("Port selected", portLabel(portAssignments[id]));
 				});
 			}
 		}
@@ -1439,6 +1468,27 @@ void MidiBaySceneButton::createSceneMenu() {
 }
 
 
+struct LabelField : ui::TextField {
+	MidiBayModule* module;
+	int id;
+	void onSelectKey(const event::SelectKey& e) override {
+		if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
+			module->cellLabels[id] = text;
+			ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
+			overlay->requestDelete();
+			e.consume(this);
+		}
+		if (!e.getTarget()) {
+			ui::TextField::onSelectKey(e);
+		}
+	}
+	void step() override {
+		APP->event->setSelectedWidget(this);
+		TextField::step();
+	}
+};
+
+
 void MidiBayCellButton::createCellMenu() {
 	auto& pa = module->portAssignments[cellId];
 	std::string label = MidiBayModule::portLabel(pa);
@@ -1453,6 +1503,16 @@ void MidiBayCellButton::createCellMenu() {
 
 	ui::Menu* menu = createMenu();
 	menu->addChild(createMenuLabel(label.empty() ? string::f("Cell %d (unassigned)", cellId + 1) : label));
+
+	menu->addChild(new MenuSeparator);
+	menu->addChild(createMenuLabel("Label"));
+	auto* lf = new LabelField;
+	lf->module = module;
+	lf->id = cellId;
+	lf->text = module->cellLabels[cellId];
+	lf->placeholder = "Custom label...";
+	lf->box.size.x = 100;
+	menu->addChild(lf);
 
 	menu->addChild(new MenuSeparator);
 	bool hasConns = module->sceneConnections[module->currentScene][cellId] != 0;
