@@ -452,12 +452,17 @@ R"json({
 //   top row = 92–99, bottom row = 36–43.
 // Scene buttons (below the display, left to right): CC 20–27.
 //   These use CC for both button press input and LED feedback.
-// LED colour palette (index 0–127):
-//   0=off  13=yellow  122=white  123=light-gray  125=blue  126=green  127=red
-// Animation channels: 0=static  6–10=pulse  11–15=blink
+// LED colour palette (index 0–127, documented subset):
+//   0=off  122=white(204,204,204)  123=light-gray(64,64,64)
+//   124=dark-gray(20,20,20)  125=blue  126=green  127=red
+// Animation channels: 0=static
+//   6=pulse(1/24)…10=pulse(1/2)   11=blink(1/24)…15=blink(1/2)
+//   ch10 (slowest pulse, ~0.5 s at 120 BPM) used for idle/dim states.
+//   ch6  (fastest pulse) used for connected highlights.
+//   ch11 (fastest blink) used for pending/learn states.
 // spec type 4 (from-slot-type): sends Note On for pad cells, CC for scene buttons.
 // Push 2 must be in User mode (not Live mode) for direct MIDI control.
-// https://github.com/Ableton/push-interface/blob/main/doc/AbletonPush2MIDIDisplayInterface.asc#22-midi-messages
+// https://github.com/Ableton/push-interface/blob/main/doc/AbletonPush2MIDIDisplayInterface.asc
 R"json({
     "name": "Ableton Push 2",
     "cells": {
@@ -479,23 +484,23 @@ R"json({
     },
     "specs": {
         "off":          {"type":4,"channel": 0,"noteMode":0,"value":  0},
-        "color0dim":    {"type":4,"channel": 6,"noteMode":0,"value":127},
+        "color0dim":    {"type":4,"channel":10,"noteMode":0,"value":127},
         "color0":       {"type":4,"channel": 0,"noteMode":0,"value":127},
-        "color1dim":    {"type":4,"channel": 6,"noteMode":0,"value":125},
+        "color1dim":    {"type":4,"channel":10,"noteMode":0,"value":125},
         "color1":       {"type":4,"channel": 0,"noteMode":0,"value":125},
-        "color2dim":    {"type":4,"channel": 6,"noteMode":0,"value":126},
+        "color2dim":    {"type":4,"channel":10,"noteMode":0,"value":126},
         "color2":       {"type":4,"channel": 0,"noteMode":0,"value":126},
-        "color3dim":    {"type":4,"channel": 6,"noteMode":0,"value": 13},
-        "color3":       {"type":4,"channel": 0,"noteMode":0,"value": 13},
+        "color3dim":    {"type":4,"channel":10,"noteMode":0,"value":122},
+        "color3":       {"type":4,"channel": 0,"noteMode":0,"value":122},
         "pending":      {"type":4,"channel":11,"noteMode":0,"value":122},
         "portLearn":    {"type":4,"channel":11,"noteMode":0,"value":125},
         "midiLearn":    {"type":4,"channel":11,"noteMode":0,"value":126},
         "sceneActive":  {"type":4,"channel": 0,"noteMode":0,"value":122},
-        "sceneDim":     {"type":4,"channel": 0,"noteMode":0,"value":123},
-        "connected0":   {"type":4,"channel":11,"noteMode":0,"value":127},
-        "connected1":   {"type":4,"channel":11,"noteMode":0,"value":125},
-        "connected2":   {"type":4,"channel":11,"noteMode":0,"value":126},
-        "connected3":   {"type":4,"channel":11,"noteMode":0,"value": 13}
+        "sceneDim":     {"type":4,"channel": 0,"noteMode":0,"value":124},
+        "connected0":   {"type":4,"channel": 6,"noteMode":0,"value":127},
+        "connected1":   {"type":4,"channel": 6,"noteMode":0,"value":125},
+        "connected2":   {"type":4,"channel": 6,"noteMode":0,"value":126},
+        "connected3":   {"type":4,"channel": 6,"noteMode":0,"value":122}
     }
 })json",
 
