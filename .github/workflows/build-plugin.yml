@@ -159,3 +159,36 @@ jobs:
             As such it is the latest version of the code and may be unstable, unusable, unsuitable for human consumption, and so on.
           files: |
             _artifacts/**/*.vcvplugin
+
+  publish-experimental:
+    name: Publish Experimental
+    # only create a release if a tag was created that is called e.g. v1.2.3
+    # see also https://vcvrack.com/manual/Manifest#version
+    if: ${{ github.ref == 'refs/heads/v2-experimental' && github.repository_owner == 'stoermelder' }}
+    runs-on: ubuntu-latest
+    needs: [build, build-mac]
+    steps:
+      - uses: actions/checkout@v6
+      - name: Delete Experimental release
+        run: |
+          gh release delete Experimental --cleanup-tag --yes
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - uses: actions/download-artifact@v8
+        with:
+          path: _artifacts
+      - name: Create Experimental release
+        uses: softprops/action-gh-release@v3
+        with:
+          name: Experimental
+          tag_name: Experimental
+          target_commitish: v2-experimental
+          draft: false
+          prerelease: true
+          body: |
+            ## Automatically generated build with experimental features
+            This build is based on development branching, including experimental features or modules from other branches.
+            As such it is the latest version of the code and may be unstable, unusable, unsuitable for human consumption, and so on.
+            Experimental modules may be removed at any time or never released.
+          files: |
+            _artifacts/**/*.vcvplugin
