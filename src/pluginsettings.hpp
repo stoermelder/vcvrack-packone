@@ -12,6 +12,8 @@ struct Settings {
 	bool mbSearchDescriptions = false;
 	bool mbSortBySearchScore = true;
 	bool mbFavoriteHighlight = true;
+	json_t* mbDataSourcesJ = NULL;
+	int mbDataSourceFavoriteIndex = -1;
 	float mbSearchThreshold = 0.5f;
 	bool mbMagnifierEnabled = false;
 

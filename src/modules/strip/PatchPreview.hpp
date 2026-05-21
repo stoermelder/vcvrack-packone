@@ -1,3 +1,4 @@
+#pragma once
 #include "../../plugin.hpp"
 
 namespace StoermelderPackOne {
@@ -147,6 +148,55 @@ struct SelectionPreview : OpaqueWidget {
 	void onHide(const HideEvent& e) override {
 		OpaqueWidget::onHide(e);
 		clearChildren();
+	}
+};
+
+template<typename T>
+struct PatchPreviewContainer : Widget {
+	math::Vec dragPos;
+	StoermelderPackOne::SppPreview::SelectionPreview* sp;
+	std::function<void()> callback;
+
+	PatchPreviewContainer() {
+		sp = new StoermelderPackOne::SppPreview::SelectionPreview;
+		sp->hide();
+		addChild(sp);
+	}
+
+	void draw(const DrawArgs& args) override {
+		sp->box.pos = APP->scene->rack->getMousePos();
+		Widget::draw(args);
+	}
+
+	void onButton(const ButtonEvent& e) override {
+		if (e.action == GLFW_PRESS && sp->isVisible()) {
+			if (e.button == GLFW_MOUSE_BUTTON_LEFT) {
+				callback();
+				sp->hide();
+				e.consume(this);
+			}
+			if (e.button == GLFW_MOUSE_BUTTON_RIGHT) {
+				sp->hide();
+				e.consume(this);
+			}
+		}
+		Widget::onButton(e);
+	}
+
+	void showPatchPreview(std::string path, std::function<void()> action) {
+		if (sp->loadSelectionFile(path)) {
+			callback = action;
+			sp->show();
+		}
+		else {
+			action();
+		}
+	}
+
+	void showPatchPreview(json_t* rootJ, std::function<void()> action) {
+		sp->createPreview(rootJ);
+		callback = action;
+		sp->show();
 	}
 };
 

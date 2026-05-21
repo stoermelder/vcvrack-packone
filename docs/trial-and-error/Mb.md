@@ -69,6 +69,93 @@ The *v2-mod* browser variant supports keyboard navigation and shortcuts:
 | `Backspace` | Clear filter text (show all items) |
 | `Enter` | Toggle selection of the highlighted item |
 
+## Patch browser for .vcv/.vcvs
+
+In addition to the browsers *v0.6*, *v1_mod*, and *v2_mod* module browsers, MB includes a **Patch browser** for browsing saved patches and selections.
+
+**Accessing the Patch browser** — Hold `Ctrl` (or `Cmd` on Mac) and right-click anywhere on the MB module to open the Patch browser.
+
+**Adding sources** — The Patch browser supports multiple source types:
+- **.vcvs folder** — Add a folder containing saved `.vcvs` patches as a source
+- **.vcv folder** — Add a folder containing patches in the legacy `.vcv` format
+- **PatchStorage** — Connect to the PatchStorage online service to browse and download shared patches
+
+**Managing sources** — From the context menu you can:
+- Add new sources using the dedicated menu items
+- Remove the currently selected source
+- Switch between active sources — each source appears as a checkbox item; checked sources are active
+
+**Per-source options** — When a source is active, its specific menu items appear below a separator. These options vary by source type (e.g., filesystem sources offer cache clearing, PatchStorage may offer additional filtering).
+
+**Persistence** — All configured sources and the selected favorite source are saved automatically and restored when Rack restarts. Sources can be exported and shared via MB's import/export function on the context menu.
+
+### Filesystem source indexing
+
+The filesystem sources (`.vcvs` and `.vcv` folders) maintain a persistent **index file** (`mb-index.json`) in the root of the source folder. This index stores metadata for each patch file:
+
+- **Description** — User-editable text description of the patch
+- **Tags** — Predefined VCV Rack tags (Attenuator, Mixer, MIDI, etc.)
+- **Custom tags** — User-defined tags for organizing patches
+- **Favorite** — Whether the patch is marked as favorite
+
+**How indexing works** — On source attach, MB scans the folder recursively for patch files and syncs with the stored index:
+- New files are added to the index automatically
+- Deleted files are removed from the index
+- **Moved files are detected** by filename matching — metadata is preserved and transferred to the new location
+- Changes take effect immediately without manual intervention
+
+**Fuzzy search** — The index builds a cached fuzzy search database on first use. Search matches against both filename and description, with filename weighted higher for relevance. The database rebuilds lazily when the index changes.
+
+### PatchStorage.com source
+
+The **PatchStorage** source connects to [patchstorage.com](https://patchstorage.com) to browse and download shared patches. Categories from the site (e.g., "Synthesizers", "Effects", "Utilities") are used as containers, with patches organized by the VCV Rack platform filter.
+
+**How it works** — On first attach, MB fetches:
+1. Platform ID for VCV Rack from the API
+2. All categories from PatchStorage
+3. Patch metadata on demand
+
+All data retrieved from PatchStorage is cached until the next restart of Rack.
+
+**Containers** — Categories are sorted alphabetically and used as the folder hierarchy.
+
+**Pages** — Each category contains multiple pages of patches (e.g., "Page 1", "Page 2", ...). Pages are dynamically created based on the total number of patches in that category, with typically 100 patches per page. Open a category to see its available pages in the file list.
+
+**Patch metadata** — Patches display their name, author, description, download count, and tags from PatchStorage.
+
+**Downloading patches** — Click a patch to download it from PatchStorage and load it into Rack. Downloads are cached locally to avoid repeated network requests.
+
+**Read-only** — Unlike filesystem sources, PatchStorage is read-only. You cannot edit descriptions, tags, or favorites directly in MB.
+
+**Lazy loading** — Categories, patches, and tags are loaded on demand to minimize API calls. Status messages update in real-time during fetches.
+
+**API endpoint** — Uses `https://patchstorage.com/api/beta`.
+
+### Keyboard shortcuts
+
+The Patch browser supports keyboard navigation and shortcuts:
+
+**Navigation** (when search field is focused or in the file list):
+| Key | Action |
+|-----|--------|
+| **↓** | Move down in the file list |
+| **↑** | Move up in the file list |
+| **→** | Enter/open a folder or load a patch |
+| **←** | Go back to parent folder |
+| **Backspace** | If text search is empty, clears all filters (same as Escape) |
+| **Ctrl/Cmd+2** | Open Tag filter dropdown |
+| **Ctrl/Cmd+3** | Open Custom Tag filter dropdown |
+| **Ctrl/Cmd+F** | Toggle favorites filter |
+
+**Dropdown menus** (Tag, Custom Tag):
+| Key | Action |
+|-----|--------|
+| **↓/↑** | Navigate up/down through items |
+| **←/→** | Navigate to previous/next row |
+| *Any key* | Filter items by typing (incremental filter) |
+| **Backspace** | Clear filter text (show all items) |
+| **Enter** | Toggle selection of the highlighted item |
+
 ## Tips
 
 - Display of hidden modules can be toggled by hotkey `Shift`+`Space`.

@@ -5,6 +5,7 @@
 #include "Mb_v06.hpp"
 #include "Mb_autotag.hpp"
 #include "Mb_autotag_widgets.hpp"
+#include "Mb_patch.hpp"
 #include <osdialog.h>
 #include <tag.hpp>
 #include <chrono>
@@ -118,13 +119,6 @@ std::set<std::string> customTagsForModel(Model* model) {
 		if (pair.second.find(model) != pair.second.end())
 			result.insert(pair.first);
 	}
-	return result;
-}
-
-std::set<std::string> customTagsAll() {
-	std::set<std::string> result;
-	for (auto& pair : customTagModels)
-		result.insert(pair.first);
 	return result;
 }
 
@@ -511,13 +505,46 @@ BrowserOverlay::BrowserOverlay() {
 
 
 	mbV06 = new v06::ModuleBrowser;
+	mbV06->hide();
 	addChild(mbV06);
 
 	mbV1 = new v1::ModuleBrowser;
+	mbV1->hide();
 	addChild(mbV1);
 
 	mbV2 = new v2::ModuleBrowser;
+	mbV2->hide();
 	addChild(mbV2);
+
+	mbPatch = new patch::Browser;
+	mbPatch->hide();
+	addChild(mbPatch);
+
+	// Configure the patch sources from saved settings
+	patch::Browser* selBrowser = static_cast<patch::Browser*>(mbPatch);
+
+	if (pluginSettings.mbDataSourcesJ) {
+		std::vector<patch::PatchSource*> loadedSources;
+		size_t idx;
+		json_t* sourceJ;
+		json_array_foreach(pluginSettings.mbDataSourcesJ, idx, sourceJ) {
+			patch::PatchSource* loadedSource = patch::createSourceFromJson(sourceJ);
+			if (loadedSource) {
+				loadedSources.push_back(loadedSource);
+			}
+		}
+		if (!loadedSources.empty()) {
+			int activeIdx = pluginSettings.mbDataSourceFavoriteIndex >= 0 
+				? pluginSettings.mbDataSourceFavoriteIndex 
+				: 0;
+			selBrowser->setSources(loadedSources, activeIdx);
+		}
+	}
+
+	patch::PatchSource* source = selBrowser->getSource();
+	if (source) {
+		source->onAttach();
+	}
 
 	APP->scene->browser = this;
 	APP->scene->addChild(this);
@@ -538,6 +565,17 @@ BrowserOverlay::~BrowserOverlay() {
 	pluginSettings.mbSearchDescriptions = searchDescriptions;
 	pluginSettings.mbSortBySearchScore = sortBySearchScore;
 	pluginSettings.mbFavoriteHighlight = favoriteHighlight;
+
+	// Save patch sources to array
+	json_decref(pluginSettings.mbDataSourcesJ);
+	pluginSettings.mbDataSourcesJ = json_array();
+	patch::Browser* selBrowser = static_cast<patch::Browser*>(mbPatch);
+	for (patch::PatchSource* source : selBrowser->sources) {
+		if (source) {
+			json_array_append_new(pluginSettings.mbDataSourcesJ, source->toJson());
+		}
+	}
+
 	json_decref(pluginSettings.mbModelsJ);
 	pluginSettings.mbModelsJ = moduleBrowserToJson();
 	
@@ -545,26 +583,47 @@ BrowserOverlay::~BrowserOverlay() {
 }
 
 void BrowserOverlay::step() {
-	switch (*mode) {
-		case MODE::V06:
-			if (visible) mbV06->show(); else mbV06->hide();
-			mbV1->hide();
-			mbV2->hide();
-			break;
-		case MODE::V1:
-			mbV06->hide();
-			if (visible) mbV1->show(); else mbV1->hide();
-			mbV2->hide();
-			break;
-		case MODE::V2:
-			mbV06->hide();
-			mbV1->hide();
-			if (visible) mbV2->show(); else mbV2->hide();
-			break;
+	bool doActivate = false;
+	// Hide active browser
+	if (visibleBefore && !visible) {
+		if (mbActive) mbActive->hide();
+		visibleBefore = visible;
+		return;
+	}
+	// Show a browser
+	if (!visibleBefore && visible) {
+		if (mbActive) mbActive->hide();
+		visibleBefore = visible;
+		doActivate = true;
+	}
+	// Show selection browser on held Ctrl key
+	if (doActivate && (APP->window->getMods() & RACK_MOD_CTRL) == RACK_MOD_CTRL) {
+		if (mbActive) mbActive->hide();
+		mbPatch->show();
+		mbActive = mbPatch;
+		doActivate = false;
+	}
+	// Show one of the other browsers
+	if (doActivate) {
+		switch (*mode) {
+			case MODE::V06:
+				mbV06->show();
+				mbActive = mbV06;
+				break;
+			case MODE::V1:
+				mbV1->show();
+				mbActive = mbV1;
+				break;
+			case MODE::V2:
+				if (visible) mbV2->show();
+				mbActive = mbV2;
+				break;
+		}
 	}
 
 	box = parent->box.zeroPos();
-	// Only step if visible, since there are potentially thousands of descendants that don't need to be stepped.
+	// Only step if visible, since there are potentially thousands of descendants that 
+	// don't need to be stepped.
 	if (visible) OpaqueWidget::step();
 }
 
@@ -653,6 +712,7 @@ struct MbMenuButton : ui::Button {
 };
 
 struct MbWidget : ModuleWidget {
+	SppPreview::PatchPreviewContainer<Mb::BrowserOverlay>* sppPreviewContainer;
 	BrowserOverlay* browserOverlay;
 	MbMenuButton* menubarButton;
 	bool active = false;
@@ -669,6 +729,9 @@ struct MbWidget : ModuleWidget {
 		if (module) {
 			active = registerSingleton("Mb", this);
 			if (active) {
+				sppPreviewContainer = new SppPreview::PatchPreviewContainer<Mb::BrowserOverlay>;
+				APP->scene->rack->addChild(sppPreviewContainer);
+
 				browserOverlay = new BrowserOverlay;
 				browserOverlay->mode = &module->mode;
 				browserOverlay->hide();
@@ -712,6 +775,9 @@ struct MbWidget : ModuleWidget {
 			}
 			unregisterSingleton("Mb", this);
 			delete browserOverlay;
+
+			APP->scene->rack->removeChild(sppPreviewContainer);
+			delete sppPreviewContainer;
 		}
 	}
 
@@ -756,6 +822,51 @@ struct MbWidget : ModuleWidget {
 			[module]() { return module->mode == MODE::V2; },
 			[module]() { module->mode = MODE::V2; }
 		));
+		menu->addChild(createSubmenuItem("Patch browser", RACK_MOD_CTRL_NAME "+Right click", [=](Menu* menu) {
+			patch::Browser* selBrowser = static_cast<patch::Browser*>(browserOverlay->mbPatch);
+			int activeIdx = selBrowser->activeSourceIndex;
+
+			menu->addChild(createMenuItem("Add .vcvs folder source...", "", [=]() {
+				patch::PatchSource* newSrc = patch::filesystem::vcvs::createSource();
+				if (newSrc) { selBrowser->addSource(newSrc); }
+			}));
+			menu->addChild(createMenuItem("Add .vcv folder source...", "", [=]() {
+				patch::PatchSource* newSrc = patch::filesystem::vcv::createSource();
+				if (newSrc) { selBrowser->addSource(newSrc); }
+			}));
+			menu->addChild(createMenuItem("Add PatchStorage source", "", [=]() {
+				patch::PatchSource* newSrc = patch::patchstorage::initSource();
+				if (newSrc) { selBrowser->addSource(newSrc); }
+			}, !patch::patchstorage::canCreate()));
+
+			// Remove current source
+			menu->addChild(createMenuItem("Remove selected source", "", [=]() {
+				selBrowser->removeSource(activeIdx);
+			}));
+
+			if (!selBrowser->sources.empty()) {
+				menu->addChild(new MenuSeparator());
+				// List all sources with activate checkbox
+				for (size_t i = 0; i < selBrowser->sources.size(); i++) {
+					patch::PatchSource* src = selBrowser->sources[i];
+					if (!src) continue;
+					std::string label = src->getSourceName();
+					menu->addChild(createCheckMenuItem(label, "",
+						[selBrowser, i]() { return selBrowser->activeSourceIndex == (int)i; },
+						[selBrowser, i]() { selBrowser->activeSourceIndex = i; selBrowser->sidebar->source = selBrowser->getSource(); }
+					));
+				}
+			}
+
+			// Source-specific menu items (delegated to the source for pluggability)
+			patch::PatchSource* activeSource = selBrowser->getSource();
+			if (activeSource) {
+				menu->addChild(new MenuSeparator());
+				menu->addChild(createMenuLabel("Active source"));
+				activeSource->appendSourceMenuItems(menu);
+			}
+		}));
+
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuLabel("v1 & v2 settings"));
 		menu->addChild(Rack::createSlider(
@@ -791,7 +902,7 @@ struct MbWidget : ModuleWidget {
 		));
 
 		menu->addChild(new MenuSeparator());
-		menu->addChild(createMenuLabel("Custom tags"));
+		menu->addChild(createMenuLabel("Custom tags for modules"));
 		menu->addChild(createMenuItem("Auto-generate custom tags", "", []() {
 			auto result = std::make_shared<AutoTagResult>(customTagAuto());
 			if (result->total == 0) {
@@ -858,19 +969,22 @@ struct MbWidget : ModuleWidget {
 		}));
 
 		auto unsortedTags = customTagsAll();
-		std::vector<std::string> tags(unsortedTags.begin(), unsortedTags.end());
-		std::sort(tags.begin(), tags.end(), [](const std::string& a, const std::string& b) {
-			return string::lowercase(a) < string::lowercase(b);
-		});
-		if (!tags.empty()) {
-			menu->addChild(createSubmenuItem("Delete custom tag", "",
-				[tags](Menu* menu) {
-					Rack::addGroupedMenuItems<std::string>(menu, tags, [](const std::string& tag) -> ui::MenuItem* {
-						MenuItem* item = createMenuItem(tag, "", [tag]() { customTagDelete(tag); });
-						return item;
-					});
-				}
-			));
+		if (!unsortedTags.empty()) {
+			menu->addChild(new MenuSeparator());
+			std::vector<std::string> tags(unsortedTags.begin(), unsortedTags.end());
+			std::sort(tags.begin(), tags.end(), [](const std::string& a, const std::string& b) {
+				return string::lowercase(a) < string::lowercase(b);
+			});
+			if (!tags.empty()) {
+				menu->addChild(createSubmenuItem("Delete custom tag", "",
+					[tags](Menu* menu) {
+						Rack::addGroupedMenuItems<std::string>(menu, tags, [](const std::string& tag) -> ui::MenuItem* {
+							MenuItem* item = createMenuItem(tag, "", [tag]() { customTagDelete(tag); });
+							return item;
+						});
+					}
+				));
+			}
 		}
 
 		menu->addChild(new MenuSeparator());

@@ -17,6 +17,10 @@ static std::string pluginFilePath() {
 	return settingsDirPath() + "/plugin.json";
 }
 
+static std::string mbDataSourcesFilePath() {
+	return settingsDirPath() + "/mb-datasources.json";
+}
+
 static std::string legacyFilePath() {
 	return rack::asset::user("Stoermelder-P1.json");
 }
@@ -50,6 +54,22 @@ static void parseMbJson(json_t* j, Settings& s) {
 	if (!j) return;
 	json_t* v = json_object_get(j, "models");
 	if (v) s.mbModelsJ = json_copy(v);
+}
+
+// ── mb-datasources.json ───────────────────────────────────────────────────────
+
+static json_t* buildMbDataSourcesJson(const Settings& s) {
+	json_t* j = json_object();
+	json_object_set(j, "dataSources", s.mbDataSourcesJ);
+	json_object_set_new(j, "favoriteIndex", json_integer(s.mbDataSourceFavoriteIndex));
+	return j;
+}
+
+static void parseMbDataSourcesJson(json_t* j, Settings& s) {
+	if (!j) return;
+	json_t* v;
+	v = json_object_get(j, "dataSources");   if (v) s.mbDataSourcesJ = json_copy(v);
+	v = json_object_get(j, "favoriteIndex"); if (v) s.mbDataSourceFavoriteIndex = json_integer_value(v);
 }
 
 // ── plugin.json ───────────────────────────────────────────────────────────────
@@ -200,6 +220,10 @@ void Settings::saveToJson() {
 	saveJsonFile(mbFilePath(), mbJ);
 	json_decref(mbJ);
 
+	json_t* mbDsJ = buildMbDataSourcesJson(*this);
+	saveJsonFile(mbDataSourcesFilePath(), mbDsJ);
+	json_decref(mbDsJ);
+
 	json_t* plugJ = buildPluginJson(*this);
 	saveJsonFile(pluginFilePath(), plugJ);
 	json_decref(plugJ);
@@ -229,6 +253,12 @@ void Settings::readFromJson() {
 	if (mbJ) {
 		parseMbJson(mbJ, *this);
 		json_decref(mbJ);
+	}
+
+	json_t* mbDsJ = loadJsonFile(mbDataSourcesFilePath());
+	if (mbDsJ) {
+		parseMbDataSourcesJson(mbDsJ, *this);
+		json_decref(mbDsJ);
 	}
 
 	json_t* plugJ = loadJsonFile(pluginFilePath());

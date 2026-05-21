@@ -1,6 +1,6 @@
 #include "../../plugin.hpp"
 #include "Strip.hpp"
-#include "SelectionPreview.cpp"
+#include "PatchPreview.hpp"
 #include "../../components/MenuLabelEx.hpp"
 
 namespace StoermelderPackOne {
@@ -61,28 +61,14 @@ struct StripPpModule : Module {
 
 
 struct StripPpWidget : StripWidgetBase<StripPpModule> {
-	struct StripPpContainer : Widget {
+	struct StripPpContainer : SppPreview::PatchPreviewContainer<StripPpWidget> {
 		StripPpWidget* mw;
-		math::Vec dragPos;
-		StoermelderPackOne::SppPreview::SelectionPreview* sp;
-		std::function<void()> callback;
-
-		StripPpContainer() {
-			sp = new StoermelderPackOne::SppPreview::SelectionPreview;
-			sp->hide();
-			addChild(sp);
-		}
-
-		void draw(const DrawArgs& args) override {
-			sp->box.pos = APP->scene->rack->getMousePos();
-			Widget::draw(args);
-		}
 
 		void onHoverKey(const event::HoverKey& e) override {
 			if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == (GLFW_MOD_SHIFT | RACK_MOD_CTRL)) {
 				switch (e.key) {
 					case GLFW_KEY_V:
-						mw->groupSelectionPasteClipboard();
+						vcvsPasteClipboard("stoermelder STRIP selection load");
 						e.consume(this);
 						break;
 					case GLFW_KEY_B:
@@ -96,31 +82,6 @@ struct StripPpWidget : StripWidgetBase<StripPpModule> {
 				e.consume(this);
 			}
 			Widget::onHoverKey(e);
-		}
-
-		void onButton(const ButtonEvent& e) override {
-			if (e.action == GLFW_PRESS && sp->isVisible()) {
-				if (e.button == GLFW_MOUSE_BUTTON_LEFT) {
-					callback();
-					sp->hide();
-					e.consume(this);
-				}
-				if (e.button == GLFW_MOUSE_BUTTON_RIGHT) {
-					sp->hide();
-					e.consume(this);
-				}
-			}
-			Widget::onButton(e);
-		}
-
-		void showSelectionPreview(std::string path, std::function<void()> action) {
-			if (sp->loadSelectionFile(path)) {
-				callback = action;
-				sp->show();
-			}
-			else {
-				action();
-			}
 		}
 	};
 
@@ -167,21 +128,21 @@ struct StripPpWidget : StripWidgetBase<StripPpModule> {
 	void groupSelectionLoad(std::string path = "") {
 		if (module->showPreview) {
 			if (path.empty()) {
-				path = groupSelectionLoadFileDialog(false);
+				path = vcvsLoadFileDialog(false, "stoermelder STRIP selection load");
 			}
 			if (!path.empty()) {
-				stripPpContainer->showSelectionPreview(path, [=]() {
-					groupSelectionLoadFile(path);
+				stripPpContainer->showPatchPreview(path, [=]() {
+					vcvsLoadFile(path, "stoermelder STRIP selection load");
 					addRecentFile(path);
 				});
 			}
 		}
 		else {
 			if (path.empty()) {
-				path = groupSelectionLoadFileDialog(true);
+				path = vcvsLoadFileDialog(true, "stoermelder STRIP selection load");
 			}
 			else {
-				groupSelectionLoadFile(path);
+				vcvsLoadFile(path, "stoermelder STRIP selection load");
 			}
 			if (!path.empty()) {
 				addRecentFile(path);
@@ -196,7 +157,7 @@ struct StripPpWidget : StripWidgetBase<StripPpModule> {
 		menu->addChild(createBoolPtrMenuItem("Show preview", "", &module->showPreview));
 		menu->addChild(new MenuSeparator);
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Selection"));
-		menu->addChild(createMenuItem("Paste", RACK_MOD_CTRL_NAME "+" RACK_MOD_SHIFT_NAME "+V", [=]() { groupSelectionPasteClipboard(); }));
+		menu->addChild(createMenuItem("Paste", RACK_MOD_CTRL_NAME "+" RACK_MOD_SHIFT_NAME "+V", [=]() { vcvsPasteClipboard("stoermelder STRIP selection load"); }));
 		menu->addChild(createMenuItem("Import", RACK_MOD_CTRL_NAME "+" RACK_MOD_SHIFT_NAME "+B", [=]() { groupSelectionLoad(); }));
 
 		if (module->showPreview) {

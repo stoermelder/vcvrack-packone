@@ -1,0 +1,1100 @@
+#pragma once
+#include <string>
+#include <vector>
+#include <map>
+#include <rack.hpp>
+#include "Mb_patch_source.hpp"
+#include "Mb_patch_sourceindex.hpp"
+
+// Include curl for header access
+#define CURL_STATICLIB
+#include <curl/curl.h>
+
+namespace StoermelderPackOne {
+namespace Mb {
+namespace patch {
+namespace patchstorage {
+
+static constexpr const char* SLUG = "patchstorage";
+
+
+// Cache for patch metadata
+struct PatchInfo {
+	int id;
+	int fileId;
+	std::string title;
+	std::string slug;
+	std::string description;
+	int categoryId;
+	std::string categorySlug;
+	std::string downloadUrl;
+	std::string filename;
+	int filesize;
+	std::vector<std::string> tags;
+};
+
+/**
+ * PatchStorageSourceIndex - minimal index for remote patches.
+ * Since patches are downloaded on-demand, we store only basic metadata.
+ */
+struct PatchStoragePatchSourceIndex : PatchSourceIndex {
+	std::shared_ptr<std::map<std::string, PatchInfo>> patchInfo;
+
+	// Shared pointer to all tags (loaded from API via source)
+	std::shared_ptr<std::set<std::string>> allTags;
+
+	json_t* toJson() const {
+		json_t* j = json_object();
+		return j;
+	}
+
+	bool fromJson(json_t* indexJ) {
+		return true;
+	}
+
+	const std::string getDescription(const std::string& fileId) const override {
+		auto it = patchInfo->find(fileId);
+		return it != patchInfo->end() ? it->second.description : "";
+	}
+	void setDescription(const std::string& fileId, const std::string& description) override {
+		// Readonly
+	}
+
+	bool hasTag(const std::string& fileId, const std::string& tag) const override {
+		auto& tags = (*patchInfo)[fileId].tags;
+		return std::find(tags.begin(), tags.end(), tag) != tags.end();
+	}
+	std::vector<std::string> getTags(const std::string& fileId) const override {
+		auto it = patchInfo->find(fileId);
+		return it != patchInfo->end() ? it->second.tags : std::vector<std::string>();
+	}
+	void addTag(const std::string& fileId, const std::string& tag) override {
+		//auto& tags = (*patchInfo)[fileId].tags;
+		//if (std::find(tags.begin(), tags.end(), tag) == tags.end())
+		//	tags.push_back(tag);
+	}
+	void removeTag(const std::string& fileId, const std::string& tag) override {
+		//auto& tags = (*patchInfo)[fileId].tags;
+		//tags.erase(std::remove(tags.begin(), tags.end(), tag), tags.end());
+	}
+
+	bool hasCustomTag(const std::string& fileId, const std::string& tag) const override {
+		return false;
+		//auto& tags = (*patchInfo)[fileId].customTags;
+		//return std::find(tags.begin(), tags.end(), tag) != tags.end();
+	}
+
+	std::vector<std::string> getCustomTags(const std::string& fileId) const override {
+		return {};
+		//auto it = patchInfo->find(fileId);
+		//return it != patchInfo->end() ? it->second.customTags : std::vector<std::string>();
+	}
+
+	void addCustomTag(const std::string& fileId, const std::string& tag) override {
+		return;
+		//auto& tags = (*patchInfo)[fileId].customTags;
+		//if (std::find(tags.begin(), tags.end(), tag) == tags.end())
+		//	tags.push_back(tag);
+	}
+
+	void removeCustomTag(const std::string& fileId, const std::string& tag) override {
+		return;
+		//auto& tags = (*patchInfo)[fileId].customTags;
+		//tags.erase(std::remove(tags.begin(), tags.end(), tag), tags.end());
+	}
+
+	bool isFavorite(const std::string& fileId) const override {
+		return false;
+		//auto it = patchInfo->find(fileId);
+		//return it != patchInfo->end() && it->second.favorite;
+	}
+	void setFavorite(const std::string& fileId, bool favorite) override {
+		//(*patchInfo)[fileId].favorite = favorite;
+	}
+
+	bool isReadOnly() const override { 
+		return true;
+	}
+
+	std::set<std::string> getTagsAll() const override {
+		if (allTags) {
+			return *allTags;
+		}
+		return {};
+	}
+
+	std::set<std::string> getCustomTagsAll() const override {
+		if (allTags) {
+			return *allTags;
+		}
+		return {};
+	}
+};
+
+/**
+ * PatchStorageSource - PatchSource implementation for patchstorage.com API.
+ * Uses categories as containers, lists patches filtered by VCV Rack platform.
+ */
+struct PatchStorageSource : PatchSource {
+	static constexpr const char* API_BASE = "https://patchstorage.com/api/beta";
+	static constexpr const char* PLATFORM_SLUG = "vcv-rack";
+
+	std::string currentContainer;
+	PatchStoragePatchSourceIndex index;
+	mutable int platformId = -1; // Lazily fetched
+
+	// Cache for categories (category slugs mapped to category info)
+	struct CategoryInfo {
+		int id;
+		std::string name;
+		std::string slug;
+		int totalPages = 0; // Total pages for this category's patches
+	};
+	// Shared category cache (loaded from API)
+	std::shared_ptr<std::vector<CategoryInfo>> categories;
+
+	// Cache for patches per category, per page
+	// Key: "categorySlug:pageNum" -> vector of patch IDs
+	std::shared_ptr<std::map<std::string, std::vector<std::string>>> categoryPagePatches;
+
+	std::shared_ptr<std::map<std::string, PatchInfo>> patchInfo;
+
+	// Download cache
+	std::shared_ptr<std::map<std::string, std::string>> patches;
+
+	// Cache for all tags (loaded lazily from API)
+	std::shared_ptr<std::set<std::string>> allTags;
+
+	void setCacheDir(const std::string& dir) override {
+		helper->cacheDir = dir;
+		system::createDirectories(helper->cacheDir);
+	}
+
+	/** Fetch JSON from a URL using the Rack network API. */
+	json_t* fetchJson(const std::string& url) const {
+		json_t* result = rack::network::requestJson(rack::network::METHOD_GET, url);
+		return result;
+	}
+
+	/** Result of a JSON fetch with header info. */
+	struct JsonFetchResult {
+		json_t* json = nullptr;
+		int totalPages = 1;
+		std::string error;
+	};
+
+	/** Fetch JSON from a URL with access to response headers (for X-WP-TotalPages). */
+	JsonFetchResult fetchJsonWithHeaders(const std::string& url) const {
+		JsonFetchResult result;
+
+		CURL* curl = curl_easy_init();
+		if (!curl) {
+			result.error = "Failed to init curl";
+			return result;
+		}
+
+		curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+		curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, true);
+		curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 30L);
+		curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+
+		// Set headers
+		struct curl_slist* headers = NULL;
+		headers = curl_slist_append(headers, "Accept: application/json");
+		curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+
+		// Capture response headers
+		std::string headerData;
+		curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, +[](char* ptr, size_t size, size_t nmemb, void* userdata) -> size_t {
+			std::string* s = (std::string*)userdata;
+			s->append(ptr, size * nmemb);
+			return size * nmemb;
+		});
+		curl_easy_setopt(curl, CURLOPT_HEADERDATA, &headerData);
+
+		// Capture response body
+		std::string bodyData;
+		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, +[](char* ptr, size_t size, size_t nmemb, void* userdata) -> size_t {
+			std::string* s = (std::string*)userdata;
+			s->append(ptr, size * nmemb);
+			return size * nmemb;
+		});
+		curl_easy_setopt(curl, CURLOPT_WRITEDATA, &bodyData);
+
+		CURLcode res = curl_easy_perform(curl);
+		curl_slist_free_all(headers);
+
+		if (res != CURLE_OK) {
+			result.error = curl_easy_strerror(res);
+			curl_easy_cleanup(curl);
+			return result;
+		}
+
+		// Parse X-WP-TotalPages header
+		size_t pos = headerData.find("X-WP-TotalPages:");
+		if (pos != std::string::npos) {
+			size_t start = pos + 17;
+			size_t end = headerData.find("\r\n", start);
+			std::string numStr = headerData.substr(start, end != std::string::npos ? end - start : std::string::npos);
+			try {
+				result.totalPages = std::stoi(numStr);
+			} catch (...) {
+				result.totalPages = 1;
+			}
+		} else {
+			result.totalPages = 1;
+		}
+
+		// Parse JSON
+		json_error_t error;
+		result.json = json_loads(bodyData.c_str(), 0, &error);
+
+		curl_easy_cleanup(curl);
+		return result;
+	}
+
+	/** Get platform ID for VCV Rack, fetching lazily on first use. Returns -1 if not found. */
+	int getVcvRackPlatformId() const {
+		if (platformId >= 0) return platformId;
+		
+		setStatus("Fetching platform info...");
+		json_t* platformsJ = fetchJson(string::f("%s/platforms?per_page=100", API_BASE));
+		if (!platformsJ) {
+			setStatus("Failed to fetch platforms", 3);
+			return -1;
+		}
+		DEFER({ json_decref(platformsJ); });
+
+		if (!json_is_array(platformsJ)) {
+			setStatus();
+			return -1;
+		}
+
+		size_t i;
+		json_t* val;
+		json_array_foreach(platformsJ, i, val) {
+			if (!json_is_object(val)) continue;
+			json_t* slugJ = json_object_get(val, "slug");
+			if (!slugJ) continue;
+			std::string slug = json_string_value(slugJ);
+			if (slug == PLATFORM_SLUG) {
+				json_t* idJ = json_object_get(val, "id");
+				if (idJ) platformId = json_integer_value(idJ);
+				break;
+			}
+		}
+
+		// Async operation complete, clear status
+		setStatus();
+		return platformId;
+	}
+
+	/** Load all categories from patchstorage. Lazily fetched on first access. */
+	bool loadCategories() {
+		if (categories->size() > 0) {
+			return true;
+		}
+
+		setStatus("Loading categories...");
+		int pid = getVcvRackPlatformId();
+		if (pid < 0) {
+			DEBUG("PatchStorageSource: Could not find VCV Rack platform");
+			setStatus("Could not find VCV Rack platform", 3);
+			return false;
+		}
+
+		// Fetch categories
+		setStatus("Fetching categories...");
+		json_t* categoriesJ = fetchJson(string::f("%s/categories?per_page=100&hide_empty=true", API_BASE));
+		if (!categoriesJ) {
+			DEBUG("PatchStorageSource: Failed to fetch categories");
+			setStatus("Failed to fetch categories", 3);
+			return false;
+		}
+		DEFER({ json_decref(categoriesJ); });
+
+		if (!json_is_array(categoriesJ)) {
+			setStatus();
+			return false;
+		}
+
+		// Load all categories
+		size_t i;
+		json_t* val;
+		json_array_foreach(categoriesJ, i, val) {
+			if (!json_is_object(val)) continue;
+			
+			CategoryInfo info;
+			json_t* idJ = json_object_get(val, "id");
+			if (!idJ) continue;
+			info.id = json_integer_value(idJ);
+
+			json_t* nameJ = json_object_get(val, "name");
+			if (nameJ) info.name = json_string_value(nameJ);
+
+			json_t* slugJ = json_object_get(val, "slug");
+			if (slugJ) info.slug = json_string_value(slugJ);
+
+			categories->push_back(info);
+		}
+
+		// Sort categories by name
+		std::sort(categories->begin(), categories->end(), [](const CategoryInfo& a, const CategoryInfo& b) {
+			return string::lowercase(a.name) < string::lowercase(b.name);
+		});
+
+		// Also load tags when loading categories (tags are fetched from API)
+		//loadTags();
+
+		// Async operation complete, clear status
+		setStatus();
+		return true;
+	}
+
+	/** Load all tags from the API. */
+	bool loadTags() {
+		if (allTags->size() > 0) {
+			return true;
+		}
+
+		setStatus("Loading tags...");
+		json_t* tagsJ = fetchJson(string::f("%s/tags?per_page=100", API_BASE));
+		if (!tagsJ) {
+			DEBUG("PatchStorageSource: Failed to fetch tags");
+			setStatus("Failed to fetch tags", 3);
+			return false;
+		}
+		DEFER({ json_decref(tagsJ); });
+
+		if (!json_is_array(tagsJ)) {
+			setStatus();
+			return false;
+		}
+
+		size_t i;
+		json_t* val;
+		json_array_foreach(tagsJ, i, val) {
+			if (!json_is_object(val)) continue;
+			json_t* nameJ = json_object_get(val, "name");
+			if (nameJ) {
+				const char* tagName = json_string_value(nameJ);
+				if (tagName) allTags->insert(tagName);
+			}
+		}
+
+		// Async operation complete, clear status
+		setStatus();
+		return true;
+	}
+
+	/** Fetch patches for a specific category and page. Returns total pages in status if successful. */
+	std::vector<PatchInfo> fetchPatchesForCategory(const std::string& categorySlug, int page = 1, int* totalPagesOut = nullptr) {
+		std::vector<PatchInfo> patches;
+
+		setStatus(string::f("Loading %s page %d...", categorySlug.c_str(), page));
+
+		int platformId = getVcvRackPlatformId();
+		DEBUG("PatchStorageSource: fetchPatchesForCategory(%s, page=%d) platformId=%d", categorySlug.c_str(), page, platformId);
+		if (platformId < 0) {
+			setStatus("Could not find VCV Rack platform", 3);
+			return patches;
+		}
+
+		// Find category ID from slug
+		int categoryId = -1;
+		for (const auto& cat : *categories) {
+			if (cat.slug == categorySlug) {
+				categoryId = cat.id;
+				break;
+			}
+		}
+		DEBUG("PatchStorageSource: categoryId=%d for slug=%s", categoryId, categorySlug.c_str());
+		if (categoryId < 0) {
+			setStatus("Category not found", 3);
+			return patches;
+		}
+
+		// Fetch patches for this category with page parameter
+		std::string url = string::f("%s/patches?platforms=%d&categories=%d&per_page=100&page=%d&order=desc&orderby=date",
+			API_BASE, platformId, categoryId, page);
+		DEBUG("PatchStorageSource: fetching URL: %s", url.c_str());
+		setStatus(string::f("Fetching %s page %d...", categorySlug.c_str(), page));
+		auto fetchResult = fetchJsonWithHeaders(url);
+		if (fetchResult.json) {
+			if (json_is_array(fetchResult.json)) {
+				DEBUG("PatchStorageSource: patchesJ array size=%zu", json_array_size(fetchResult.json));
+				size_t i;
+				json_t* val;
+				json_array_foreach(fetchResult.json, i, val) {
+					if (!json_is_object(val)) continue;
+					PatchInfo info;
+					parsePatchFromJson(val, info, categorySlug);
+					if (info.id > 0) {
+						patches.push_back(info);
+					}
+				}
+				if (totalPagesOut) {
+					*totalPagesOut = fetchResult.totalPages;
+				}
+			}
+			json_decref(fetchResult.json);
+		} else {
+			DEBUG("PatchStorageSource: fetchJsonWithHeaders failed: %s", fetchResult.error.c_str());
+			setStatus("Failed to fetch patches", 3);
+			return patches;
+		}
+
+		// Async operation complete, clear status
+		setStatus();
+		return patches;
+	}
+
+	void onAttach() override {
+		// Initialize shared caches from global cache
+		std::string categoriesCacheKey = "patchstorage:categories";
+		auto _categories = helper->getGlobalCache<std::vector<CategoryInfo>>(categoriesCacheKey);
+		if (_categories) {
+			categories = _categories;
+		}
+		else {
+			categories = std::make_shared<std::vector<CategoryInfo>>();
+			helper->setGlobalCache(categoriesCacheKey, categories, nullptr);
+		}
+
+		std::string categoryPagePatchesCacheKey = "patchstorage:categoryPagePatches";
+		auto _categoryPagePatches = helper->getGlobalCache<std::map<std::string, std::vector<std::string>>>(categoryPagePatchesCacheKey);
+		if (_categoryPagePatches) {
+			categoryPagePatches = _categoryPagePatches;
+		} 
+		else {
+			categoryPagePatches = std::make_shared<std::map<std::string, std::vector<std::string>>>();
+			helper->setGlobalCache(categoryPagePatchesCacheKey, categoryPagePatches, nullptr);
+		}
+
+		std::string patchInfoCacheKey = "patchstorage:patchInfo";
+		auto _patchInfo = helper->getGlobalCache<std::map<std::string, PatchInfo>>(patchInfoCacheKey);
+		if (_patchInfo) {
+			patchInfo = _patchInfo;
+			index.patchInfo = patchInfo;
+		} 
+		else {
+			patchInfo = std::make_shared<std::map<std::string, PatchInfo>>();
+			index.patchInfo = patchInfo;
+			helper->setGlobalCache(patchInfoCacheKey, patchInfo, nullptr);
+		}
+
+		std::string downloadCacheKey = "patchstorage:patches";
+		auto _patches = helper->getGlobalCache<std::map<std::string, std::string>>(downloadCacheKey);
+		if (_patches) {
+			patches = _patches;
+		} 
+		else {
+			patches = std::make_shared<std::map<std::string, std::string>>();
+			helper->setGlobalCache(downloadCacheKey, patches, nullptr);
+		}
+
+		std::string tagsCacheKey = "patchstorage:allTags";
+		auto _allTags = helper->getGlobalCache<std::set<std::string>>(tagsCacheKey);
+		if (_allTags) {
+			allTags = _allTags;
+			index.allTags = allTags;
+		}
+		else {
+			allTags = std::make_shared<std::set<std::string>>();
+			index.allTags = allTags;
+			helper->setGlobalCache(tagsCacheKey, allTags, nullptr);
+		}
+	}
+
+	void onDetach() override {
+		// Nothing to do there - caches persist across sessions
+	}
+
+	const std::string getContainer() const override {
+		return currentContainer;
+	}
+
+	void setContainer(const std::string& container) override {
+		currentContainer = container;
+	}
+
+	const std::string getRootContainer() const override {
+		return "PatchStorage";
+	}
+
+	const std::vector<ContainerEntry>& getContainers(const std::string& container) override {
+		// Lazy load categories on first access
+		loadCategories();
+		static std::vector<ContainerEntry> result;
+		result.clear();
+
+		// PatchStorage has two levels:
+		// Level 0: Root ("PatchStorage") -> categories as containers
+		// Level 1: Category -> page containers (page1, page2, ...)
+		if (container.empty() || container == "PatchStorage") {
+			// Level 0: Return categories
+			DEBUG("PatchStorageSource: getContainers() for root, %d categories loaded", (int)categories->size());
+			for (const auto& cat : *categories) {
+				result.push_back({ cat.slug, cat.name });
+			}
+		}
+		else {
+			// Level 1: Check if this is a category, then show page containers
+			for (const auto& cat : *categories) {
+				if (cat.slug == container) {
+					// Use totalPages from category if available (set during fetchPatchesForCategory)
+					// Otherwise fall back to fetching page 1 to get totalPages
+					int numPages = cat.totalPages;
+					if (numPages == 0) {
+						// Call getFiles for page 1 to cache results and get totalPages
+						std::string page1Id = string::f("%s/page1", cat.slug.c_str());
+						getFiles(page1Id);
+						// getFiles updates cat.totalPages if successful, so read it again
+						for (const auto& c : *categories) {
+							if (c.slug == cat.slug) {
+								numPages = c.totalPages;
+								break;
+							}
+						}
+						if (numPages == 0) numPages = 1;
+					}
+					for (int i = 1; i <= numPages; i++) {
+						std::string pageId = string::f("%s/page%d", cat.slug.c_str(), i);
+						result.push_back({ pageId, string::f("Page %d", i) });
+					}
+					break;
+				}
+			}
+		}
+		return result;
+	}
+
+	const std::vector<ContainerEntry>& getFiles(const std::string& container) override {
+		static std::vector<ContainerEntry> result;
+		result.clear();
+
+		// At root level (empty or "PatchStorage"), return no files - only categories
+		if (container.empty() || container == "PatchStorage") {
+			return result;
+		}
+
+		// Parse container path: "categorySlug/pageN" -> category slug and page number
+		std::string categorySlug;
+		int page = 1;
+
+		size_t slashPos = container.find('/');
+		if (slashPos != std::string::npos) {
+			categorySlug = container.substr(0, slashPos);
+			std::string pageStr = container.substr(slashPos + 1);
+			if (pageStr.substr(0, 4) == "page") {
+				page = std::atoi(pageStr.c_str() + 4);
+			}
+			else {
+				// Path like "effect/something" that's not a page - not valid for files
+				return result;
+			}
+		}
+		else {
+			// No slash - this is just a category (like "effect"), not a page container
+			// Categories don't have files directly, only page containers do
+			return result;
+		}
+
+		// Check cache first: key is "categorySlug:pageNum"
+		std::string cacheKey = string::f("%s:%d", categorySlug.c_str(), page);
+		auto it = categoryPagePatches->find(cacheKey);
+		if (it != categoryPagePatches->end()) {
+			DEBUG("PatchStorageSource: getFiles() cache hit for %s with %d patches", cacheKey.c_str(), (int)it->second.size());
+			for (const auto& patchId : it->second) {
+				const auto& patch = (*patchInfo)[patchId];
+				result.push_back({ patchId, patch.title });
+			}
+			return result;
+		}
+
+		DEBUG("PatchStorageSource: getFiles() cache miss for %s, fetching...", cacheKey.c_str());
+
+		// Fetch patches for this category and page
+		int totalPages = 0;
+		auto patches = fetchPatchesForCategory(categorySlug, page, &totalPages);
+
+		// Update totalPages in category info if we got a response
+		if (totalPages > 0) {
+			for (auto& cat : *categories) {
+				if (cat.slug == categorySlug) {
+					cat.totalPages = totalPages;
+					break;
+				}
+			}
+		}
+
+		DEBUG("PatchStorageSource: fetchPatchesForCategory(%s, page=%d) returned %d patches, totalPages=%d",
+			categorySlug.c_str(), page, (int)patches.size(), totalPages);
+
+		std::vector<std::string> patchIds;
+
+		for (const auto& patch : patches) {
+			std::string patchIdStr = string::f("%d", patch.id);
+			patchIds.push_back(patchIdStr);
+			(*patchInfo)[patchIdStr] = patch;
+			result.push_back({ patchIdStr, patch.title });
+		}
+
+		(*categoryPagePatches)[cacheKey] = patchIds;
+		return result;
+	}
+
+	bool isContainer(const std::string& path) const override {
+		// Level 0: categories at root (no slash in path)
+		if (path.find('/') == std::string::npos) {
+			for (const auto& cat : *categories) {
+				if (cat.slug == path) return true;
+			}
+		}
+		// Level 1: page containers (category/pageN pattern)
+		size_t slashPos = path.find('/');
+		if (slashPos != std::string::npos) {
+			std::string categorySlug = path.substr(0, slashPos);
+			std::string pageStr = path.substr(slashPos + 1);
+			if (pageStr.substr(0, 4) == "page") {
+				// Verify category exists
+				for (const auto& cat : *categories) {
+					if (cat.slug == categorySlug) return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	bool isFile(const std::string& path) const override {
+		// A file is a patch ID (no slashes in path)
+		bool result = path.find('/') == std::string::npos && patchInfo->find(path) != patchInfo->end();
+		DEBUG("PatchStorageSource: isFile(%s) = %s", path.c_str(), result ? "true" : "false");
+		return result;
+	}
+
+	const std::string getParentContainer(const std::string& path) const override {
+		// Check if this is a page container (category/pageN pattern)
+		size_t slashPos = path.find('/');
+		if (slashPos != std::string::npos) {
+			std::string pageStr = path.substr(slashPos + 1);
+			if (pageStr.substr(0, 4) == "page") {
+				// It's a page container, parent is the category
+				return path.substr(0, slashPos);
+			}
+		}
+		// Check if it's a category (container)
+		for (const auto& cat : *categories) {
+			if (cat.slug == path) {
+				return "PatchStorage";
+			}
+		}
+		// Otherwise it's a patch ID, parent is its category
+		auto it = patchInfo->find(path);
+		if (it != patchInfo->end()) {
+			return it->second.categorySlug;
+		}
+		return "PatchStorage";
+	}
+
+	const std::string getFilename(const std::string& path) const override {
+		auto it = patchInfo->find(path);
+		if (it != patchInfo->end()) {
+			if (!it->second.filename.empty()) return it->second.filename;
+			return it->second.slug + ".vcv";
+		}
+		return path;
+	}
+
+	const std::string getTempFilePath(const std::string& path) const override {
+		// For PatchStorage, we need to download the file first
+		auto it = patches->find(path);
+		if (it != patches->end()) {
+			DEBUG("PatchStorageSource: getTempFilePath(%s) - cached at %s", path.c_str(), it->second.c_str());
+			return it->second;
+		}
+
+		auto pit = patchInfo->find(path);
+		if (pit == patchInfo->end()) {
+			DEBUG("PatchStorageSource: getTempFilePath(%s) - not in patchInfo", path.c_str());
+			setStatus("Unknown patch", 3);
+			return "";
+		}
+
+		PatchInfo& info = pit->second;
+		DEBUG("PatchStorageSource: getTempFilePath(%s) found patch id=%d fileId=%d downloadUrl='%s'", path.c_str(), info.id, info.fileId, info.downloadUrl.c_str());
+
+		// If no download URL, fetch individual patch details
+		if (info.downloadUrl.empty() && info.id > 0) {
+			DEBUG("PatchStorageSource: no downloadUrl, fetching patch details for id=%d", info.id);
+			setStatus("Loading patch info...");
+			std::string detailUrl = string::f("%s/patches/%d", API_BASE, info.id);
+			json_t* patchJ = fetchJson(detailUrl);
+			if (patchJ) {
+				// Get files array
+				json_t* filesJ = json_object_get(patchJ, "files");
+				if (filesJ && json_is_array(filesJ) && json_array_size(filesJ) > 0) {
+					json_t* firstFile = json_array_get(filesJ, 0);
+					if (firstFile && json_is_object(firstFile)) {
+						json_t* fileIdJ = json_object_get(firstFile, "id");
+						if (fileIdJ) info.fileId = json_integer_value(fileIdJ);
+
+						json_t* fileUrlJ = json_object_get(firstFile, "url");
+						if (fileUrlJ) info.downloadUrl = json_string_value(fileUrlJ);
+
+						json_t* filenameJ = json_object_get(firstFile, "filename");
+						if (filenameJ) info.filename = json_string_value(filenameJ);
+
+						json_t* filesizeJ = json_object_get(firstFile, "filesize");
+						if (filesizeJ) info.filesize = json_integer_value(filesizeJ);
+
+						DEBUG("PatchStorageSource: fetched details: fileId=%d url='%s' filename='%s'",
+							info.fileId, info.downloadUrl.c_str(), info.filename.c_str());
+					}
+				}
+
+				json_t* contentJ = json_object_get(patchJ, "content");
+				if (contentJ) info.description = json_string_value(contentJ);
+
+				json_decref(patchJ);
+			}
+			// Successfully fetched patch details
+			setStatus();
+		}
+
+		if (info.downloadUrl.empty()) {
+			DEBUG("PatchStorageSource: getTempFilePath(%s) - empty downloadUrl", path.c_str());
+			setStatus("Download URL not found", 3);
+			return "";
+		}
+
+		setStatus(string::f("Downloading: %s... (%ikb)", info.title.c_str(), info.filesize / 1024));
+		DEBUG("PatchStorageSource: getTempFilePath(%s) - downloading from %s", path.c_str(), info.downloadUrl.c_str());
+
+		// Generate cache path
+		std::string cacheName = generateCacheName();
+		std::string cachePath = system::join(getCacheDir(), cacheName);
+		system::createDirectories(cachePath);
+		std::string archivePath = system::join(cachePath, info.filename.empty() ? "patch.vcv" : info.filename);
+
+		DEBUG("PatchStorageSource: archivePath=%s", archivePath.c_str());
+
+		// Download the file
+		if (!rack::network::requestDownload(info.downloadUrl, archivePath)) {
+			DEBUG("PatchStorageSource: download FAILED for %s", info.downloadUrl.c_str());
+			system::removeRecursively(cachePath);
+			setStatus("Download failed", 3);
+			return "";
+		}
+
+		DEBUG("PatchStorageSource: download SUCCESS, archive at %s", archivePath.c_str());
+		(*patches)[path] = archivePath;
+		setStatus();
+		return archivePath;
+	}
+
+	json_t* getFileJson(const std::string& path) const override {
+		// Download and extract if not cached
+		DEBUG("PatchStorageSource: getFileJson(%s) called", path.c_str());
+		std::string archivePath = const_cast<PatchStorageSource*>(this)->getTempFilePath(path);
+		DEBUG("PatchStorageSource: getFileJson archivePath=%s", archivePath.c_str());
+		if (archivePath.empty()) return nullptr;
+
+		// Check if it's a legacy v1 .vcv (plain JSON) or v2+ (zstd compressed tar)
+		// Use the zstd magic number, not the file extension — downloaded patches
+		// always have a .vcv extension regardless of format version.
+		DEBUG("PatchStorageSource: getFileJson isLegacyV1 check for %s", archivePath.c_str());
+		if (isVcvLegacyV1(archivePath)) {
+			// Legacy v1 format: plain JSON file
+			FILE* f = fopen(archivePath.c_str(), "rb");
+			if (!f) return nullptr;
+			json_error_t error;
+			json_t* rootJ = json_loadf(f, 0, &error);
+			fclose(f);
+			return rootJ;
+		}
+		else {
+			// v2+ format: extract from archive
+			return extractPatchJson(archivePath);
+		}
+	}
+
+	/**
+	 * Extract and parse patch.json from a .vcv archive.
+	 */
+	json_t* extractPatchJson(const std::string& archivePath) const {
+		// Extract to temp directory
+		std::string cacheName = generateCacheName();
+		std::string extractDir = system::join(getCacheDir(), cacheName + "_extract");
+		system::createDirectories(extractDir);
+
+		try {
+			system::unarchiveToDirectory(archivePath, extractDir);
+		}
+		catch (...) {
+			system::removeRecursively(extractDir);
+			setStatus("Failed to extract archive", 3);
+			return nullptr;
+		}
+
+		setStatus("Loading patch...");
+		std::string patchJsonPath = system::join(extractDir, "patch.json");
+		FILE* f = fopen(patchJsonPath.c_str(), "rb");
+		if (!f) {
+			system::removeRecursively(extractDir);
+			setStatus("Failed to read patch file", 3);
+			return nullptr;
+		}
+
+		json_error_t error;
+		json_t* rootJ = json_loadf(f, 0, &error);
+		fclose(f);
+		system::removeRecursively(extractDir);
+
+		if (!rootJ) {
+			setStatus("Failed to parse patch JSON", 3);
+			return nullptr;
+		}
+
+		setStatus();
+		return rootJ;
+	}
+
+	/** Simple URL encoding for search query - encode spaces and special chars. */
+	std::string urlEncode(const std::string& s) {
+		std::string result;
+		for (char c : s) {
+			if (c == ' ') {
+				result += "%20";
+			} else if (c == '&' || c == '=' || c == '%' || c == '+') {
+				char buf[4];
+				snprintf(buf, sizeof(buf), "%%%02X", (unsigned char)c);
+				result += buf;
+			} else {
+				result += c;
+			}
+		}
+		return result;
+	}
+
+	/** Parse a patch object from JSON into a PatchInfo struct. */
+	void parsePatchFromJson(json_t* val, PatchInfo& info, const std::string& categoryOverride = "") {
+		json_t* idJ = json_object_get(val, "id");
+		if (idJ) info.id = json_integer_value(idJ);
+
+		json_t* titleJ = json_object_get(val, "title");
+		if (titleJ) info.title = json_string_value(titleJ);
+
+		json_t* slugJ = json_object_get(val, "slug");
+		if (slugJ) info.slug = json_string_value(slugJ);
+
+		json_t* excerptJ = json_object_get(val, "excerpt");
+		if (excerptJ) info.description = json_string_value(excerptJ);
+
+		// Parse tags from the patch and collect into allTags
+		json_t* tagsJ = json_object_get(val, "tags");
+		if (tagsJ && json_is_array(tagsJ)) {
+			size_t ti;
+			json_t* tagVal;
+			json_array_foreach(tagsJ, ti, tagVal) {
+				if (json_is_object(tagVal)) {
+					json_t* nameJ = json_object_get(tagVal, "name");
+					if (nameJ) {
+						const char* tagName = json_string_value(nameJ);
+						if (tagName) {
+							info.tags.push_back(tagName);
+							// Collect tag into allTags
+							if (allTags) allTags->insert(tagName);
+						}
+					}
+				}
+			}
+		}
+
+		// Get first file's ID and download URL
+		json_t* filesJ = json_object_get(val, "files");
+		DEBUG("PatchStorageSource: patch %d '%s' has files=%s", info.id, info.title.c_str(), filesJ ? "yes" : "no");
+		if (filesJ && json_is_array(filesJ) && json_array_size(filesJ) > 0) {
+			json_t* firstFile = json_array_get(filesJ, 0);
+			if (firstFile && json_is_object(firstFile)) {
+				json_t* fileIdJ = json_object_get(firstFile, "id");
+				if (fileIdJ) info.fileId = json_integer_value(fileIdJ);
+
+				json_t* fileUrlJ = json_object_get(firstFile, "url");
+				if (fileUrlJ) info.downloadUrl = json_string_value(fileUrlJ);
+
+				json_t* filenameJ = json_object_get(firstFile, "filename");
+				if (filenameJ) info.filename = json_string_value(filenameJ);
+			}
+		}
+
+
+		// Get category info - use override if provided, otherwise parse from JSON
+		if (!categoryOverride.empty()) {
+			info.categorySlug = categoryOverride;
+		} 
+		else {
+			json_t* categoriesJ = json_object_get(val, "categories");
+			if (categoriesJ && json_is_array(categoriesJ) && json_array_size(categoriesJ) > 0) {
+				json_t* firstCat = json_array_get(categoriesJ, 0);
+				if (firstCat && json_is_object(firstCat)) {
+					json_t* catSlugJ = json_object_get(firstCat, "slug");
+					if (catSlugJ) info.categorySlug = json_string_value(catSlugJ);
+				}
+			}
+		}
+	}
+
+	std::vector<ContainerEntry> search(const std::string& query) override {
+		std::vector<ContainerEntry> results;
+
+		setStatus(string::f("Searching: %s...", query.c_str()));
+
+		int platformId = getVcvRackPlatformId();
+		if (platformId < 0) {
+			setStatus("Could not find VCV Rack platform", 3);
+			return results;
+		}
+
+		// Search patches using the API
+		std::string url = string::f("%s/patches?platforms=%d&search=%s&per_page=100&order=desc&orderby=relevance",
+			API_BASE, platformId, urlEncode(query).c_str());
+		DEBUG("PatchStorageSource: search(%s) URL: %s", query.c_str(), url.c_str());
+
+		json_t* patchesJ = fetchJson(url);
+		if (!patchesJ) {
+			setStatus("Search failed", 3);
+			return results;
+		}
+		DEFER({ json_decref(patchesJ); });
+
+		if (!json_is_array(patchesJ)) {
+			setStatus();
+			return results;
+		}
+
+		size_t i;
+		json_t* val;
+		json_array_foreach(patchesJ, i, val) {
+			if (!json_is_object(val)) continue;
+
+			PatchInfo info;
+			parsePatchFromJson(val, info);
+
+			if (info.id > 0) {
+				std::string patchIdStr = string::f("%d", info.id);
+				(*patchInfo)[patchIdStr] = info;
+				results.push_back({ patchIdStr, info.title });
+			}
+		}
+
+		setStatus();
+		return results;
+	}
+
+	// Clear only runtime caches (downloaded files), not the persistent API caches
+	void clearCache() {
+		if (!helper->cacheDir.empty() && system::exists(helper->cacheDir)) {
+			system::removeRecursively(helper->cacheDir);
+		}
+		patches->clear();
+	}
+
+	const std::string getSourceType() const override {
+		return SLUG;
+	}
+
+	const std::string getSourceName() const override {
+		return "PatchStorage.com";
+	}
+
+	bool isPatchSource() const override {
+		return true;
+	}
+
+	PatchSourceIndex* getIndex() const override {
+		return const_cast<PatchStoragePatchSourceIndex*>(&index);
+	}
+
+	json_t* toJson() const override {
+		json_t* j = json_object();
+		json_object_set_new(j, "slug", json_string(SLUG));
+		return j;
+	}
+
+	bool fromJson(json_t* sourceJ) override {
+		json_t* slugJ = json_object_get(sourceJ, "slug");
+		if (!slugJ) return false;
+		return std::string(json_string_value(slugJ)) == SLUG;
+	}
+
+	void appendSourceMenuItems(ui::Menu* menu) override {
+		menu->addChild(createMenuLabel("PatchStorage.com - VCV Rack"));
+	}
+
+	void appendPreviewMenuItems(ui::Menu* menu, std::string fileId) override {
+		auto it = patchInfo->find(fileId);
+		if (it == patchInfo->end()) return;
+
+		const PatchInfo& info = it->second;
+
+		menu->addChild(createMenuLabel(info.title));
+		menu->addChild(createMenuItem("Open in web browser", "", [info]() {
+			std::string url = string::f("https://patchstorage.com/patch/%s", info.slug.c_str());
+			system::openBrowser(url);
+		}));
+		menu->addChild(createMenuItem("Save to disk", "", [this, info, fileId]() {
+			// Ensure file is downloaded first
+			std::string archivePath = getTempFilePath(fileId);
+			if (archivePath.empty()) return;
+
+			// Show save dialog using osdialog_file
+			char* path = osdialog_file(OSDIALOG_SAVE, "", info.filename.empty() ? (info.slug + ".vcv").c_str() : info.filename.c_str(), NULL);
+			if (!path) return;
+
+			// Copy file to destination
+			FILE* srcFile = fopen(archivePath.c_str(), "rb");
+			if (!srcFile) {
+				free(path);
+				return;
+			}
+			FILE* dstFile = fopen(path, "wb");
+			if (!dstFile) {
+				fclose(srcFile);
+				free(path);
+				return;
+			}
+			char buf[8192];
+			size_t n;
+			bool writeOk = true;
+			while (writeOk && (n = fread(buf, 1, sizeof(buf), srcFile)) > 0) {
+				writeOk = fwrite(buf, 1, n, dstFile) == n;
+			}
+			fclose(srcFile);
+			fclose(dstFile);
+			if (!writeOk) system::remove(path);
+			free(path);
+		}));
+	}
+};
+
+static bool patchstorageCreated_ = false;
+
+inline std::string getSlug() {
+	return SLUG;
+}
+
+inline bool canCreate() {
+	return !patchstorageCreated_;
+}
+
+inline PatchSource* initSource() {
+	patchstorageCreated_ = true;
+	PatchStorageSource* src = new PatchStorageSource;
+	return src;
+}
+
+} // namespace patchstorage
+} // namespace patch
+} // namespace Mb
+} // namespace StoermelderPackOne

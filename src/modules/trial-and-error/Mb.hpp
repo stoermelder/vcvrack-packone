@@ -1,7 +1,9 @@
 #pragma once
 #include "../../plugin.hpp"
+#include "../strip/PatchPreview.hpp"
 #include <plugin.hpp>
 #include <FuzzySearchDatabase.hpp>
+#include <helpers.hpp>
 
 namespace StoermelderPackOne {
 namespace Mb {
@@ -25,6 +27,13 @@ extern std::set<Model*> favoriteModels;
 extern std::set<Model*> hiddenModels;
 extern std::map<Model*, ModelUsage*> modelUsage;
 extern std::map<std::string, std::set<Model*>> customTagModels;
+
+inline std::set<std::string> customTagsAll() {
+	std::set<std::string> result;
+	for (auto& pair : customTagModels)
+		result.insert(pair.first);
+	return result;
+}
 
 // Tag modifications: predefined tags that are added/removed per model
 extern std::map<Model*, std::set<int>> predefinedTagsAdded;
@@ -171,9 +180,14 @@ enum class MODE {
 
 struct BrowserOverlay : widget::OpaqueWidget {
 	Widget* mbWidgetBackup;
+
+	bool visibleBefore = false;
+	Widget* mbActive;
+
 	Widget* mbV06;
 	Widget* mbV1;
 	Widget* mbV2;
+	Widget* mbPatch;
 
 	MODE* mode;
 
