@@ -16,18 +16,28 @@ namespace MidiBay {
 struct LedColor { float r, g, b; };
 
 static const float LED_BRIGHT      = 1.f;
-static const float LED_DIM         = 0.25f;  // assigned port, no cable attached
-static const float LED_SCENE_DIM   = 0.25f;  // inactive scene that has stored connections
+static const float LED_DIM         = 0.65f;  // assigned port, no cable attached
+static const float LED_SCENE_DIM   = 0.3f;   // inactive scene that has stored connections
 
-// R=red-orange (SCHEME_RED), G=yellow-green (SCHEME_GREEN), B=sky-blue (SCHEME_BLUE)
-static const LedColor LED_OFF         = {0.f,        0.f,        0.f       };
-static const LedColor LED_OUTPUT      = {LED_BRIGHT, 0.f,        0.f       };
-static const LedColor LED_OUTPUT_DIM  = {LED_DIM,    0.f,        0.f       };
-static const LedColor LED_INPUT       = {0.f,        0.f,        LED_BRIGHT};
-static const LedColor LED_INPUT_DIM   = {0.f,        0.f,        LED_DIM   };
-static const LedColor LED_PENDING     = {LED_BRIGHT, LED_BRIGHT, LED_BRIGHT};
-static const LedColor LED_PORT_LEARN  = {0.f,        0.f,        LED_BRIGHT};
-static const LedColor LED_MIDI_LEARN  = {0.f,        LED_BRIGHT, 0.f       };
+static const LedColor LED_OFF        = {0.f,        0.f,        0.f       };
+static const LedColor LED_PENDING    = {LED_BRIGHT, LED_BRIGHT, LED_BRIGHT};
+static const LedColor LED_PORT_LEARN = {0.7f,       0.7f,       0.7f      };
+static const LedColor LED_MIDI_LEARN = {0.7f,       0.7f,       1.f       };
+
+// Four assignable color sets using Rack's standard scheme palette.
+//   set 0: red    (default for OUTPUT ports)
+//   set 1: blue   (default for INPUT ports)
+//   set 2: orange
+//   set 3: green
+static const int COLOR_SET_COUNT = 4;
+struct ColorSet { NVGcolor color; const char* name; };
+static const ColorSet COLOR_SETS[COLOR_SET_COUNT] = {
+	{SCHEME_RED,               "Red"   },
+	{nvgRGB(0x10, 0x60, 0xff), "Blue"  },
+	{SCHEME_ORANGE,            "Orange"},
+	{SCHEME_GREEN,             "Green" },
+};
+
 
 struct PortAssignment {
 	int64_t moduleId = -1;
@@ -196,6 +206,11 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 	/** [Stored to JSON — only non-empty entries are written] */
 	std::string cellLabels[MATRIX_COUNT];
 
+	/** [Stored to JSON — only non-default (-1) entries are written]
+	 *  -1 = auto (OUTPUT → set 0 / red, INPUT → set 1 / blue)
+	 *   0–3 = explicit color set override */
+	int8_t cellColorSet[MATRIX_COUNT];
+
 	/** [Stored to JSON] */
 	bool overlayEnabled = true;
 	int overlayMessageId = -1;
@@ -205,6 +220,7 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 	MidiBayModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+		memset(cellColorSet, -1, sizeof(cellColorSet));
 		invalidateLedStates();
 		for (int i = 0; i < MATRIX_COUNT; i++) {
 			configParam<MidiBayCellQuantity>(PARAM_MATRIX + i, 0.f, 1.f, 0.f);
@@ -229,6 +245,7 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		disablePortLearn();
 		clearPending();
 		memset(cellLabels, 0, sizeof(cellLabels));
+		memset(cellColorSet, -1, sizeof(cellColorSet));
 		requestReset();
 	}
 
@@ -280,10 +297,10 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 			bool slowBlinkOn = slowBlinkPhase < 0.5f;
 			for (int i = 0; i < MATRIX_COUNT; i++) {
 				bool assigned = portAssignments[i].isValid();
-				bool isOutput = portAssignments[i].type == engine::Port::OUTPUT;
 				bool hasCable = portHasCable[i];
 				bool connectedToPending = pendingCellId >= 0 && i != pendingCellId
 				                      && isConnected(currentScene, pendingCellId, i);
+				int cs = getCellColorSet(i);  // 0–3
 				LedColor col;
 				int stateId;
 				if (pendingCellId == i) {
@@ -291,27 +308,23 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 					stateId = LED_STATE_PENDING;
 				}
 				else if (connectedToPending) {
-					col = slowBlinkOn ? (isOutput ? LED_OUTPUT : LED_INPUT) : LED_OFF;
-					stateId = isOutput ? LED_STATE_CONNECTED_OUT : LED_STATE_CONNECTED_IN;
+					NVGcolor nc = slowBlinkOn ? COLOR_SETS[cs].color : nvgRGBf(0.f, 0.f, 0.f);
+					col = {nc.r, nc.g, nc.b};
+					stateId = LED_STATE_CONNECTED0 + cs;
 				}
 				else if (portLearningId == i) {
 					col = blinkOn ? LED_PORT_LEARN : LED_OFF;
 					stateId = LED_STATE_PORT_LEARN;
-				} 
+				}
 				else if (learningId == i) {
 					col = blinkOn ? LED_MIDI_LEARN : LED_OFF;
 					stateId = LED_STATE_MIDI_LEARN;
-				} 
+				}
 				else if (assigned) {
-					if (isOutput) {
-						if (hasCable) { col = LED_OUTPUT;     stateId = LED_STATE_OUT;     }
-						else          { col = LED_OUTPUT_DIM; stateId = LED_STATE_OUT_DIM; }
-					} 
-					else {
-						if (hasCable) { col = LED_INPUT;     stateId = LED_STATE_IN;     }
-						else          { col = LED_INPUT_DIM; stateId = LED_STATE_IN_DIM; }
-					}
-				} 
+					NVGcolor nc = color::mult(COLOR_SETS[cs].color, hasCable ? LED_BRIGHT : LED_DIM);
+					col = {nc.r, nc.g, nc.b};
+					stateId = hasCable ? LED_STATE_COLOR0 + cs * 2 : LED_STATE_COLOR0_DIM + cs * 2;
+				}
 				else {
 					col = LED_OFF;
 					stateId = LED_STATE_OFF;
@@ -368,6 +381,12 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 			sceneConnections[scene][a] &= ~(1ULL << b);
 			sceneConnections[scene][b] &= ~(1ULL << a);
 		}
+	}
+
+	// Returns the resolved color-set index for cell i (0–3). Auto mode maps by port direction.
+	int getCellColorSet(int i) const {
+		if (cellColorSet[i] >= 0) return cellColorSet[i];
+		return (portAssignments[i].type == engine::Port::OUTPUT) ? 0 : 1;
 	}
 
 	// Engine thread — MidiTrackingProcessorHandler callback, fired for every mapped
@@ -636,6 +655,15 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 			json_object_set_new(rootJ, "cellLabels", labelsJ);
 		else
 			json_decref(labelsJ);
+		json_t* colorSetsJ = json_object();
+		for (int i = 0; i < MATRIX_COUNT; i++) {
+			if (cellColorSet[i] >= 0)
+				json_object_set_new(colorSetsJ, std::to_string(i).c_str(), json_integer(cellColorSet[i]));
+		}
+		if (json_object_size(colorSetsJ) > 0)
+			json_object_set_new(rootJ, "cellColorSets", colorSetsJ);
+		else
+			json_decref(colorSetsJ);
 		json_object_set_new(rootJ, "midiInput",  trackingProcessor.getInput().toJson());
 		json_object_set_new(rootJ, "midiOutput", midiOutput.toJson());
 		return rootJ;
@@ -707,6 +735,19 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 				int i = std::atoi(key);
 				if (i >= 0 && i < MATRIX_COUNT)
 					cellLabels[i] = json_string_value(val);
+			}
+		}
+		memset(cellColorSet, -1, sizeof(cellColorSet));
+		json_t* colorSetsJ = json_object_get(rootJ, "cellColorSets");
+		if (colorSetsJ) {
+			const char* key;
+			json_t* val;
+			json_object_foreach(colorSetsJ, key, val) {
+				int i = std::atoi(key);
+				if (i >= 0 && i < MATRIX_COUNT) {
+					int cs = (int)json_integer_value(val);
+					cellColorSet[i] = (int8_t)clamp(cs, 0, COLOR_SET_COUNT - 1);
+				}
 			}
 		}
 		json_t* midiInputJ = json_object_get(rootJ, "midiInput");
@@ -1094,10 +1135,8 @@ struct MidiBayVizOverlay : TransparentWidget {
 			Vec cellPos = origin.plus(cellCenter(i));
 			Vec portPos = portMw->box.pos.plus(portPw->box.getCenter());
 
-			bool isOut = (module->portAssignments[i].type == engine::Port::OUTPUT);
-			NVGcolor col = isOut
-				? nvgRGBf(0.93f, 0.18f, 0.11f)
-				: nvgRGBf(0.17f, 0.71f, 0.94f);
+			int cs = module->getCellColorSet(i);
+			NVGcolor col = COLOR_SETS[cs].color;
 
 			drawSpline(vg, cellPos, portPos, col, cellJitter(i), highlighted);
 
@@ -1228,7 +1267,7 @@ struct MidiBayWidget : ThemedModuleWidget<MidiBayModule>, OverlayMessageProvider
 				btn->mw = this;
 				btn->cellId = cellId;
 				addParam(btn);
-				addChild(createLightCentered<MatrixButtonLight<RedGreenBlueLight, MidiBayModule>>(Vec(x, y), module, MidiBayModule::LIGHT_MATRIX + cellId * 3));
+				addChild(createLightCentered<SaturatedMatrixButtonLight<MidiBayModule>>(Vec(x, y), module, MidiBayModule::LIGHT_MATRIX + cellId * 3));
 			}
 		}
 		for (int i = 0; i < MATRIX_SIZE; i++) {
@@ -1558,7 +1597,6 @@ void MidiBayCellButton::createCellMenu() {
 	menu->addChild(createMenuLabel(label.empty() ? string::f("Cell %d (unassigned)", cellId + 1) : label));
 
 	menu->addChild(new MenuSeparator);
-	menu->addChild(createMenuLabel("Label"));
 	auto* lf = new LabelField;
 	lf->module = module;
 	lf->id = cellId;
@@ -1566,6 +1604,24 @@ void MidiBayCellButton::createCellMenu() {
 	lf->placeholder = "Custom label...";
 	lf->box.size.x = 100;
 	menu->addChild(lf);
+
+	menu->addChild(createSubmenuItem("Color", "", [=](Menu* menu) {
+		int id = cellId;
+		MidiBayModule* mod = module;
+		menu->addChild(createCheckMenuItem("Auto", "",
+			[=]() { return mod->cellColorSet[id] < 0; },
+			[=]() { mod->cellColorSet[id] = -1; }
+		));
+		menu->addChild(new MenuSeparator);
+		for (int cs = 0; cs < COLOR_SET_COUNT; cs++) {
+			auto* item = createCheckMenuItem<ui::ColorDotMenuItem>(COLOR_SETS[cs].name, "",
+				[=]() { return mod->cellColorSet[id] == cs; },
+				[=]() { mod->cellColorSet[id] = (int8_t)cs; }
+			);
+			item->color = COLOR_SETS[cs].color;
+			menu->addChild(item);
+		}
+	}));
 
 	menu->addChild(new MenuSeparator);
 	bool hasConns = module->sceneConnections[module->currentScene][cellId] != 0;
