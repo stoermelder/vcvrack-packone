@@ -137,6 +137,8 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 
 	bool midiLearnMode = false;
 	int learningId = -1;
+	bool portLearnMode = false;
+	int lastClickedCell = 0;
 
 	/** [Stored to JSON] */
 	int currentScene = 0;
@@ -426,18 +428,48 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 	// (id >= MATRIX_COUNT). Cancels any previously active learn first.
 	void enableLearn(int id) {
 		disableLearn();
+		disablePortLearn();
 		if (id < 0 || id >= TOTAL_MAPS) return;
 		learningId = id;
 		trackingProcessor.enableMapLearn(id);
 	}
 
-	// GUI thread — starts sequential MIDI learn across all 64 matrix cells in order.
+	// GUI thread — starts sequential MIDI learn from lastClickedCell through cell 63.
 	// Scene buttons are excluded; assign them individually or via applyPresetLayout().
 	void startGlobalLearn() {
 		disableLearn();
+		disablePortLearn();
 		midiLearnMode = true;
-		learningId = 0;
-		trackingProcessor.enableMapLearn(0);
+		learningId = lastClickedCell;
+		trackingProcessor.enableMapLearn(lastClickedCell);
+	}
+
+	// GUI thread — starts sequential port-assignment learn from lastClickedCell through cell 63.
+	// Uses LEARN_MODE::MULTI so the owner widget stays focused across clicks (step() keeps
+	// re-asserting selection). A single persistent callback advances portLearningId in place.
+	void startGlobalPortLearn(Widget* owner) {
+		disableLearn();
+		disablePortLearn();
+		portLearnMode = true;
+		portLearningId = lastClickedCell;
+		portSelectProcessor.setOwner(owner);
+		portSelectProcessor.startLearn([=](PortWidget* pw, Vec) {
+			if (!pw->module) return;
+			portAssignments[portLearningId].moduleId = pw->module->getId();
+			portAssignments[portLearningId].type = pw->type;
+			portAssignments[portLearningId].portId = pw->portId;
+			if (portLearningId + 1 < MATRIX_COUNT) {
+				portLearningId++;
+			} 
+			else {
+				portLearnMode = false;
+				portLearningId = -1;
+				portSelectProcessor.disableLearn();
+			}
+		}, PortSelectProcessor::LEARN_MODE::MULTI, [=]() {
+			portLearnMode = false;
+			portLearningId = -1;
+		});
 	}
 
 	// Engine or GUI thread — cancels any active MIDI learn.
@@ -449,10 +481,12 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		midiLearnMode = false;
 	}
 
-	// GUI thread — starts port-assignment learn for the given cell. The portSelectProcessor
+	// GUI thread — starts port-assignment learn for a single cell. The portSelectProcessor
 	// intercepts the next port-widget click and writes portAssignments[id].
 	void enablePortLearn(int id, Widget* owner) {
 		if (id < 0 || id >= MATRIX_COUNT) return;
+		disableLearn();
+		disablePortLearn();
 		portLearningId = id;
 		portSelectProcessor.setOwner(owner);
 		portSelectProcessor.startLearn([=](PortWidget* pw, Vec) {
@@ -468,6 +502,7 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 	void disablePortLearn() {
 		portSelectProcessor.disableLearn();
 		portLearningId = -1;
+		portLearnMode = false;
 	}
 
 	// GUI thread — returns true if the given cell is currently in port-learn mode.
@@ -1285,6 +1320,8 @@ struct MidiBayWidget : ThemedModuleWidget<MidiBayModule>, OverlayMessageProvider
 		ThemedModuleWidget<MidiBayModule>::step();
 		if (!module) return;
 
+		module->portSelectProcessor.step();
+
 		// Execute actions queued from the engine thread
 		while (module->guiQueue.size() > 0) {
 			module->guiQueue.shift()();
@@ -1399,6 +1436,13 @@ struct MidiBayWidget : ThemedModuleWidget<MidiBayModule>, OverlayMessageProvider
 				else module->startGlobalLearn();
 			}
 		));
+		menu->addChild(createCheckMenuItem("Sequential port learn", "",
+			[=]() { return module->portLearnMode; },
+			[=]() {
+				if (module->portLearnMode) module->disablePortLearn();
+				else module->startGlobalPortLearn(this);
+			}
+		));
 		menu->addChild(new MenuSeparator);
 		menu->addChild(createCheckMenuItem("Show overlay messages", "",
 			[=]() { return module->overlayEnabled; },
@@ -1498,6 +1542,7 @@ struct LabelField : ui::TextField {
 
 
 void MidiBayCellButton::createCellMenu() {
+	module->lastClickedCell = cellId;
 	auto& pa = module->portAssignments[cellId];
 	std::string label = MidiBayModule::portLabel(pa);
 
@@ -1550,6 +1595,9 @@ void MidiBayCellButton::createCellMenu() {
 	menu->addChild(createMenuItem("Learn", "", [=]() {
 		module->enablePortLearn(cellId, mw);
 	}));
+	menu->addChild(createMenuItem("Start sequential learn...", "", [=]() {
+		module->startGlobalPortLearn(mw);
+	}));
 	menu->addChild(createMenuItem("Clear", "", [=]() {
 		module->portAssignments[cellId].clear();
 	}, pa.isValid()));
@@ -1564,6 +1612,9 @@ void MidiBayCellButton::createCellMenu() {
 			else module->enableLearn(cellId);
 		}
 	));
+	menu->addChild(createMenuItem("Start sequential learn...", "", [=]() {
+		module->startGlobalLearn();
+	}));
 	menu->addChild(createMenuItem("Clear", "", [=]() {
 		module->trackingProcessor.clearMap(cellId);
 	}, midiLabel.empty()));
