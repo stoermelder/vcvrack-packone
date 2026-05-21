@@ -58,19 +58,19 @@ There are different modes for _SLOT_-port available, configured by context menu 
 
 ![8FACE sequencing](./EightFace-trig.gif)
 
-| Mode | Description |
-|------|-------------|
-| **Trigger forward** | A trigger on _SLOT_ advances 8FACE to the next slot. Empty slots are part of the sequence but won't have any effect on the controlled module. |
-| **Trigger reverse** (added in v1.1.0) | Same as **Trigger forward** but in reverse direction. |
-| **Trigger pingpong** (added in v1.1.0) | Same as **Trigger forward** but loops first forward then reverse. |
-| **Trigger alternating** (added in v1.8.0) | Same as **Trigger forward** but progresses in the following manner (for 6 active slots): 1, 2, 1, 3, 1, 4, 1, 5, 1, 6, 1, 5, 1, 4, 1, 3, 1, 2, ... |
-| **Trigger random** (added in v1.1.0) | Same as **Trigger forward**, but chooses the next preset randomly. |
-| **Trigger pseudo-random** (added in v1.8.0) | Same as **Trigger random** but never chooses a slot multiple times in a row (which happens on "random"). |
-| **Trigger random walk** (added in v1.8.0) | Same as **Trigger forward** but chooses the next slot randomly from those adjacent to the currently active slot. |
-| **Trigger shuffle** (added in v1.8.0) | Same as **Trigger forward** but works on a random permutation of the active slots: Every slot will be enabled once before the next permutation is randomly generated. |
-| **0..10V** | You can select a specific slot by voltage. A voltage of 0-1.25V selects slot 1, 1.25-2.5V selects slot 2, and so on if all eight slots are active. Keep in mind that adjusting the length of the sequence also adjusts the voltage range for selecting individual slots: A sequence with length 2 will select slot 1 on voltage 0-5V, etc. |
-| **C4** | This mode follows the V/Oct-standard. C4 selects slot 1, C#4 selects slot 2 and so on. Channel 2 on the _SLOT_-input responds to triggers to re-trigger the currently selected snapshot. |
-| **Arm** (renamed from "Clock" in v1.1.0) | This mode is a kind of buffered trigger: First apply a clock signal on _SLOT_. Then you "arm" any slot manually or by MIDI-mapping its button (resulting in a yellow LED) which will be activated on the next clock trigger (blue LED). This mode allows manual preset changes synchronized to a clock. |
+| Mode | Description | Reset behavior |
+|------|-------------|------|
+| **Trigger forward** | A trigger on _SLOT_ advances 8FACE to the next slot. Empty slots are part of the sequence but won't have any effect on the controlled module. | Resets to first slot |
+| **Trigger reverse** (added in v1.1.0) | Same as **Trigger forward** but in reverse direction. | Resets to first slot |
+| **Trigger pingpong** (added in v1.1.0) | Same as **Trigger forward** but loops first forward then reverse. | Resets to first slot, direction to forward |
+| **Trigger alternating** (added in v1.8.0) | Same as **Trigger forward** but progresses in the following manner (for 6 active slots): 1, 2, 1, 3, 1, 4, 1, 5, 1, 6, 1, 5, 1, 4, 1, 3, 1, 2, ... | Resets to first slot |
+| **Trigger random** (added in v1.1.0) | Same as **Trigger forward**, but chooses the next preset randomly. | Resets to first slot |
+| **Trigger pseudo-random** (added in v1.8.0) | Same as **Trigger random** but never chooses a slot multiple times in a row (which happens on "random"). | Resets to first slot |
+| **Trigger random walk** (added in v1.8.0) | Same as **Trigger forward** but chooses the next slot randomly from those adjacent to the currently active slot. | Resets to first slot |
+| **Trigger shuffle** (added in v1.8.0) | Same as **Trigger forward** but works on a random permutation of the active slots: Every slot will be enabled once before the next permutation is randomly generated. | Re-initializes the shuffle order |
+| **0..10V** | You can select a specific slot by voltage. A voltage of 0-1.25V selects slot 1, 1.25-2.5V selects slot 2, and so on if all eight slots are active. Keep in mind that adjusting the length of the sequence also adjusts the voltage range for selecting individual slots: A sequence with length 2 will select slot 1 on voltage 0-5V, etc. | No effect |
+| **C4** | This mode follows the V/Oct-standard. C4 selects slot 1, C#4 selects slot 2 and so on. Channel 2 on the _SLOT_-input responds to triggers to re-trigger the currently selected snapshot. | No effect |
+| **Arm** (renamed from "Clock" in v1.1.0) | This mode is a kind of buffered trigger: First apply a clock signal on _SLOT_. Then you "arm" any slot manually or by MIDI-mapping its button (resulting in a yellow LED) which will be activated on the next clock trigger (blue LED). This mode allows manual preset changes synchronized to a clock. | Clears the armed slot |
 
 ![8FACE arm mode](./EightFace-clock.gif)
 
@@ -113,3 +113,5 @@ With the option _Autoload first preset_ on the context menu you can autoload the
 - v2.2.0
     - Added stability mode setting and _Safe-mode_ and use as new default setting
     - Fixed broken function on some modules (only 8FACEx2)
+- v2.4.0
+    - Fixed broken processing in VCV Rack-plugin on closed plugin-window (#424)

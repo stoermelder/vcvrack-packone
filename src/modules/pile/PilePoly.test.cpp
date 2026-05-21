@@ -267,6 +267,96 @@ TEST_CASE("Polyphonic reset", "[PilePoly]") {
 		}
 	}
 
+	SECTION("Polyphonic reset resets channels independently") {
+		int channels = 4;
+		module->params[PilePolyModule::PARAM_SLEW].setValue(0.0f);
+		
+		// Set different voltages per channel
+		for (int c = 0; c < channels; c++) {
+			module->currentVoltage[0][c] = 5.0f + c;
+		}
+		// Initialize slew limiters
+		for (int i = 0; i < 4; i++) {
+			module->slewLimiter[i].out = module->currentVoltage[i];
+		}
+		
+		module->inputs[PilePolyModule::INPUT_INC].channels = channels;
+		module->inputs[PilePolyModule::INPUT_DEC].channels = channels;
+		module->inputs[PilePolyModule::INPUT_RESET_VOLT].channels = channels;
+		module->inputs[PilePolyModule::INPUT_RESET].channels = channels;
+		
+		for (int c = 0; c < channels; c++) {
+			module->inputs[PilePolyModule::INPUT_INC].setVoltage(0.0f, c);
+			module->inputs[PilePolyModule::INPUT_DEC].setVoltage(0.0f, c);
+			module->inputs[PilePolyModule::INPUT_RESET_VOLT].setVoltage((float)c, c);
+			module->inputs[PilePolyModule::INPUT_RESET].setVoltage(0.0f, c);
+		}
+		
+		for (int i = 0; i < 10; i++) {
+			module->process(Test::makeProcessArgs(1));
+		}
+		
+		// Only trigger reset on channels 0 and 2
+		module->inputs[PilePolyModule::INPUT_RESET].setVoltage(10.0f, 0);
+		module->inputs[PilePolyModule::INPUT_RESET].setVoltage(0.0f, 1);
+		module->inputs[PilePolyModule::INPUT_RESET].setVoltage(10.0f, 2);
+		module->inputs[PilePolyModule::INPUT_RESET].setVoltage(0.0f, 3);
+		
+		for (int i = 0; i < 50; i++) {
+			module->process(Test::makeProcessArgs(1));
+		}
+		
+		// Channels 0 and 2 should be reset, 1 and 3 should retain their values
+		REQUIRE(module->currentVoltage[0][0] == Catch::Approx(0.0f).margin(0.01f));
+		REQUIRE(module->currentVoltage[0][1] == Catch::Approx(6.0f).margin(0.01f));
+		REQUIRE(module->currentVoltage[0][2] == Catch::Approx(2.0f).margin(0.01f));
+		REQUIRE(module->currentVoltage[0][3] == Catch::Approx(8.0f).margin(0.01f));
+	}
+
+	SECTION("Polyphonic reset with monophonic fallback") {
+		int channels = 4;
+		module->params[PilePolyModule::PARAM_SLEW].setValue(0.0f);
+		
+		// Set different voltages per channel
+		for (int c = 0; c < channels; c++) {
+			module->currentVoltage[0][c] = 5.0f + c;
+		}
+		// Initialize slew limiters
+		for (int i = 0; i < 4; i++) {
+			module->slewLimiter[i].out = module->currentVoltage[i];
+		}
+		
+		module->inputs[PilePolyModule::INPUT_INC].channels = channels;
+		module->inputs[PilePolyModule::INPUT_DEC].channels = channels;
+		module->inputs[PilePolyModule::INPUT_RESET_VOLT].channels = channels;
+		// Monophonic reset input (1 channel)
+		module->inputs[PilePolyModule::INPUT_RESET].channels = 1;
+		
+		for (int c = 0; c < channels; c++) {
+			module->inputs[PilePolyModule::INPUT_INC].setVoltage(0.0f, c);
+			module->inputs[PilePolyModule::INPUT_DEC].setVoltage(0.0f, c);
+			module->inputs[PilePolyModule::INPUT_RESET_VOLT].setVoltage((float)(c * 2), c);
+		}
+		module->inputs[PilePolyModule::INPUT_RESET].setVoltage(0.0f);
+		
+		for (int i = 0; i < 10; i++) {
+			module->process(Test::makeProcessArgs(1));
+		}
+		
+		// Trigger monophonic reset - should affect all channels
+		module->inputs[PilePolyModule::INPUT_RESET].setVoltage(10.0f);
+		
+		for (int i = 0; i < 50; i++) {
+			module->process(Test::makeProcessArgs(1));
+		}
+		
+		// All channels should be reset to their respective reset voltages (fallback to channel 0)
+		// When reset is monophonic, it uses channel 0's voltage for all channels
+		for (int c = 0; c < channels; c++) {
+			REQUIRE(module->currentVoltage[0][c] == Catch::Approx((float)(c * 2)).margin(0.01f));
+		}
+	}
+
 	Test::destroyModule(module);
 }
 
