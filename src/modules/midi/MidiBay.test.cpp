@@ -1,6 +1,5 @@
 #include "../../test/test_plugin.hpp"
 #include "../../test/test_context.hpp"
-#include "MidiTrackingProcessor.cpp"
 #include "MidiBay.cpp"
 
 using namespace StoermelderPackOne;
