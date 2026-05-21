@@ -1,6 +1,5 @@
 #include "../../test/test_plugin.hpp"
 #include "MidiTrackingProcessor.hpp"
-#include "MidiTrackingProcessor.cpp"  // Include implementation for templates
 
 using namespace StoermelderPackOne;
 
