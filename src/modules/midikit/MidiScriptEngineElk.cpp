@@ -398,11 +398,11 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 	static jsval_t js_number_toString(struct js* js, jsval_t* args, int nargs) {
 		if (!js_chkargs(args, nargs, "d")) return js_mkerr(js, "number.toString: bad args");
 		float f = js_getnum(args[0]);
-		char str[8];
+		char str[32];
 		if (ceilf(f) == f)
-			snprintf(str, 8, "%i", (int)f);
+			snprintf(str, sizeof(str), "%i", (int)f);
 		else
-			snprintf(str, 8, "%f", f);
+			snprintf(str, sizeof(str), "%f", f);
 		return js_mkstr(js, str, 6);
 	}
 
@@ -871,7 +871,8 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 
 	inline static jsval_t js_midiOut(struct js* js, jsval_t* args, int nargs, const char* chkargs, const char* n, std::function<jsval_t(jsval_t*, MessageEx&)> f) {
 		if (nargs == (int)strlen(chkargs) + 1) {
-			const char* chkargs1 = string::f("d%s", chkargs).c_str();
+			std::string chkargs1s = string::f("d%s", chkargs);
+			const char* chkargs1 = chkargs1s.c_str();
 			if (!js_chkargs(args, nargs, chkargs1)) return js_mkerr(js, string::f("midiOut.%s: bad args", n).c_str());
 			size_t idx = js_getnum(args[0]);
 			if (idx > jsMap[js]->msgCount - 1) return js_mkerr(js, string::f("midiOut.%s: invalid msg", n).c_str());
@@ -879,7 +880,8 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 			return f(&args[1], jsMap[js]->msgStore[idx]);
 		}
 		if (nargs == (int)strlen(chkargs) + 2) {
-			const char* chkargs1 = string::f("dd%s", chkargs).c_str();
+			std::string chkargs1s = string::f("dd%s", chkargs);
+			const char* chkargs1 = chkargs1s.c_str();
 			if (!js_chkargs(args, nargs, chkargs1)) return js_mkerr(js, string::f("midiOut.%s: bad args", n).c_str());
 			int midiPort = js_getnum(args[0]);
 			if (midiPort < 1 || midiPort > jsMap[js]->midiOutputCount) return js_mkerr(js, string::f("midiOut.%s: invalid output index", n).c_str());
