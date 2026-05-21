@@ -250,6 +250,15 @@
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/transit/Transit.md"
 		},
 		{
+			"slug": "TransitCtrl",
+			"name": "Transit-Ctrl",
+			"description": "Expander for TRANSIT",
+			"tags": [
+				"Utility"
+			],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/transit/Transit.md"
+		},
+		{
 			"slug": "Spin",
 			"name": "SPIN",
 			"description": "Utility for converting mouse-wheel movement into triggers, also handles middle-click of mouse, useful for SAIL",
