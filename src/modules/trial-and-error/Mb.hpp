@@ -182,7 +182,7 @@ struct BrowserOverlay : widget::OpaqueWidget {
 	Widget* mbWidgetBackup;
 
 	bool visibleBefore = false;
-	Widget* mbActive;
+	Widget* mbActive = nullptr;
 
 	Widget* mbV06;
 	Widget* mbV1;
