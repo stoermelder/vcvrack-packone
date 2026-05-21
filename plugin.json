@@ -23,6 +23,33 @@
 			"manualUrl": ""
 		},
 		{
+			"slug": "FlowerSeq",
+			"name": "FLOWER",
+			"description": "",
+			"tags": [
+				"Sequencer"
+			],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/flower/FlowerSeq.md"
+		},
+		{
+			"slug": "FlowerSeqEx",
+			"name": "OFFSPRING",
+			"description": "",
+			"tags": [
+				"Sequencer"
+			],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/flower/FlowerSeq.md"
+		},
+		{
+			"slug": "FlowerSeqTrig",
+			"name": "SEEDS",
+			"description": "",
+			"tags": [
+				"Sequencer"
+			],
+			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/flower/FlowerSeq.md"
+		},
+		{
 			"slug": "MidiEsx",
 			"name": "MIDI-ESX",
 			"description": "MIDI converter for your Expert Sleepers hardware setup (ES-5, ES-8, ES-9 etc.)",
