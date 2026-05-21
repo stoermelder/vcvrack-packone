@@ -542,27 +542,29 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 		json_object_set_new(rootJ, "currentScene", json_integer(currentScene));
 
-		json_t* mapsJ = json_array();
+		json_t* mapsJ = json_object();
 		for (int i = 0; i < TOTAL_MAPS; i++) {
 			auto m = trackingProcessor.getMap(i);
+			if (m.type == MidiTrackingType::NONE) continue;
 			json_t* mapJ = json_object();
 			json_object_set_new(mapJ, "type", json_integer((int)m.type));
 			json_object_set_new(mapJ, "param", json_integer(m.param));
-			json_array_append_new(mapsJ, mapJ);
+			json_object_set_new(mapsJ, std::to_string(i).c_str(), mapJ);
 		}
 		json_object_set_new(rootJ, "maps", mapsJ);
 
-		json_t* portsJ = json_array();
+		json_t* portsJ = json_object();
 		for (int i = 0; i < MATRIX_COUNT; i++) {
+			if (!portAssignments[i].isValid()) continue;
 			json_t* portJ = json_object();
 			json_object_set_new(portJ, "moduleId", json_integer(portAssignments[i].moduleId));
 			json_object_set_new(portJ, "type", json_integer((int)portAssignments[i].type));
 			json_object_set_new(portJ, "portId", json_integer(portAssignments[i].portId));
-			json_array_append_new(portsJ, portJ);
+			json_object_set_new(portsJ, std::to_string(i).c_str(), portJ);
 		}
 		json_object_set_new(rootJ, "ports", portsJ);
 
-		json_t* scenesJ = json_array();
+		json_t* scenesJ = json_object();
 		for (int s = 0; s < MATRIX_SIZE; s++) {
 			json_t* connJ = json_array();
 			for (int a = 0; a < MATRIX_COUNT; a++) {
@@ -575,9 +577,14 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 					}
 				}
 			}
-			json_t* sceneJ = json_object();
-			json_object_set_new(sceneJ, "connections", connJ);
-			json_array_append_new(scenesJ, sceneJ);
+			if (json_array_size(connJ) > 0) {
+				json_t* sceneJ = json_object();
+				json_object_set_new(sceneJ, "connections", connJ);
+				json_object_set_new(scenesJ, std::to_string(s).c_str(), sceneJ);
+			}
+			else {
+				json_decref(connJ);
+			}
 		}
 		json_object_set_new(rootJ, "scenes", scenesJ);
 		json_object_set_new(rootJ, "feedbackPreset", json_integer(feedbackPreset));
@@ -613,24 +620,25 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		trackingProcessor.clearMaps();
 		json_t* mapsJ = json_object_get(rootJ, "maps");
 		if (mapsJ) {
-			size_t i;
+			const char* key;
 			json_t* mapJ;
-			json_array_foreach(mapsJ, i, mapJ) {
-				if (i >= (size_t)TOTAL_MAPS) break;
+			json_object_foreach(mapsJ, key, mapJ) {
+				int i = std::atoi(key);
+				if (i < 0 || i >= TOTAL_MAPS) continue;
 				auto type = (StoermelderPackOne::MidiTrackingType)json_integer_value(json_object_get(mapJ, "type"));
 				auto param = (uint16_t)json_integer_value(json_object_get(mapJ, "param"));
-				if (type != MidiTrackingType::NONE) {
+				if (type != MidiTrackingType::NONE)
 					trackingProcessor.setMap(type, i, param);
-				}
 			}
 		}
 
 		json_t* portsJ = json_object_get(rootJ, "ports");
 		if (portsJ) {
-			size_t i;
+			const char* key;
 			json_t* portJ;
-			json_array_foreach(portsJ, i, portJ) {
-				if (i >= MATRIX_COUNT) break;
+			json_object_foreach(portsJ, key, portJ) {
+				int i = std::atoi(key);
+				if (i < 0 || i >= MATRIX_COUNT) continue;
 				portAssignments[i].moduleId = json_integer_value(json_object_get(portJ, "moduleId"));
 				portAssignments[i].type = (engine::Port::Type)json_integer_value(json_object_get(portJ, "type"));
 				portAssignments[i].portId = json_integer_value(json_object_get(portJ, "portId"));
@@ -674,10 +682,11 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		memset(sceneConnections, 0, sizeof(sceneConnections));
 		json_t* scenesJ = json_object_get(rootJ, "scenes");
 		if (scenesJ) {
-			size_t s;
+			const char* key;
 			json_t* sceneJ;
-			json_array_foreach(scenesJ, s, sceneJ) {
-				if (s >= MATRIX_SIZE) break;
+			json_object_foreach(scenesJ, key, sceneJ) {
+				int s = std::atoi(key);
+				if (s < 0 || s >= MATRIX_SIZE) continue;
 				json_t* connJ = json_object_get(sceneJ, "connections");
 				if (!connJ) continue;
 				size_t k;
@@ -685,9 +694,8 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 				json_array_foreach(connJ, k, pairJ) {
 					int a = json_integer_value(json_array_get(pairJ, 0));
 					int b = json_integer_value(json_array_get(pairJ, 1));
-					if (a >= 0 && a < MATRIX_COUNT && b >= 0 && b < MATRIX_COUNT) {
+					if (a >= 0 && a < MATRIX_COUNT && b >= 0 && b < MATRIX_COUNT)
 						setConnection(s, a, b, true);
-					}
 				}
 			}
 		}
