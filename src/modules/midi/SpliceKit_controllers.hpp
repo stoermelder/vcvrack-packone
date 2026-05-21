@@ -5,12 +5,12 @@
 #include <vector>
 
 namespace StoermelderPackOne {
-namespace MidiBay {
+namespace SpliceKit {
 
 static const int MATRIX_SIZE  = 8;
 static const int MATRIX_COUNT = MATRIX_SIZE * MATRIX_SIZE;
 
-// LED state identifiers — order must match the light-loop state assignment in MidiBay.cpp.
+// LED state identifiers — order must match the light-loop state assignment in SpliceKit.cpp.
 // Color sets 0–3: dim then bright for each set, then connected per set.
 //   default: set 0 = red (output), set 1 = blue (input), set 2 = orange, set 3 = yellow
 enum {
@@ -559,5 +559,5 @@ static std::vector<MidiOutPreset>& getPresets() {
 	return presets;
 }
 
-} // namespace MidiBay
+} // namespace SpliceKit
 } // namespace StoermelderPackOne

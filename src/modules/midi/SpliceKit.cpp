@@ -4,11 +4,11 @@
 #include "../../ui/ModuleSelectProcessor.hpp"
 #include "../../ui/OverlayMessageWidget.hpp"
 #include "MidiTrackingProcessor.hpp"
-#include "MidiBay_controllers.hpp"
+#include "SpliceKit_controllers.hpp"
 #include <osdialog.h>
 
 namespace StoermelderPackOne {
-namespace MidiBay {
+namespace SpliceKit {
 
 // Each LED uses a single SCHEME channel in isolation. Mixing channels is avoided
 // because SCHEME_BLUE (#29b2ef) already contains G=178/255, which saturates the
@@ -50,13 +50,13 @@ struct PortAssignment {
 
 static const int TOTAL_MAPS = MATRIX_COUNT + MATRIX_SIZE;  // 64 cells + 8 scenes
 
-struct MidiBayModule : Module, MidiTrackingProcessorHandler {
+struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 	// GUI thread — called by Rack whenever the tooltip for a matrix cell is displayed.
-	struct MidiBayCellQuantity : ParamQuantity {
+	struct SpliceKitCellQuantity : ParamQuantity {
 		// Returns the assigned port label, or "Cell N" if unassigned.
 		std::string getLabel() override {
 			if (!module) return ParamQuantity::getLabel();
-			auto* m = static_cast<MidiBayModule*>(module);
+			auto* m = static_cast<SpliceKitModule*>(module);
 			int cellId = paramId - PARAM_MATRIX;
 			if (!m->cellLabels[cellId].empty()) return m->cellLabels[cellId];
 			const PortAssignment& pa = m->portAssignments[cellId];
@@ -68,7 +68,7 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		// Returns the current MIDI mapping (CC N / Note N / unmapped) as the tooltip subtitle.
 		std::string getDescription() override {
 			if (!module) return "";
-			auto* m = static_cast<MidiBayModule*>(module);
+			auto* m = static_cast<SpliceKitModule*>(module);
 			int cellId = paramId - PARAM_MATRIX;
 			auto& mm = m->trackingProcessor.getMap(cellId);
 			if (mm.type == MidiTrackingType::CC)   return string::f("MIDI: CC %d",   mm.param);
@@ -78,7 +78,7 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 	};
 
 	// GUI thread — called by Rack whenever the tooltip for a scene button is displayed.
-	struct MidiBaySceneQuantity : ParamQuantity {
+	struct SpliceKitSceneQuantity : ParamQuantity {
 		// Returns "Scene N".
 		std::string getLabel() override {
 			if (!module) return ParamQuantity::getLabel();
@@ -90,7 +90,7 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 		// Returns the scene button's MIDI mapping as the tooltip subtitle.
 		std::string getDescription() override {
 			if (!module) return "";
-			auto* m = static_cast<MidiBayModule*>(module);
+			auto* m = static_cast<SpliceKitModule*>(module);
 			int sceneId = paramId - PARAM_SCENE;
 			auto& mm = m->trackingProcessor.getMap(MATRIX_COUNT + sceneId);
 			if (mm.type == MidiTrackingType::CC)   return string::f("MIDI: CC %d",   mm.param);
@@ -118,11 +118,11 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 
 	// GUI thread — midi::Output subclass that invalidates cached LED states on device change
 	// so that all cells are re-sent when a new output device is connected.
-	struct MidiBayOutput : midi::Output {
+	struct SpliceKitOutput : midi::Output {
 		int* ledState      = nullptr;
 		int* sceneLedState = nullptr;
 
-		MidiBayOutput() {
+		SpliceKitOutput() {
 			channel = -1;
 		}
 
@@ -157,7 +157,7 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 	StoermelderPackOne::MidiTrackingProcessor<TOTAL_MAPS> trackingProcessor;
 
 	/** [Stored to JSON] */
-	MidiBayOutput midiOutput;
+	SpliceKitOutput midiOutput;
 
 	/** [Stored to JSON] */
 	PortAssignment portAssignments[MATRIX_COUNT];
@@ -217,16 +217,16 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 	OverlayMessageProvider::Message overlayMessage;
 
 	// GUI thread — called once by Rack when the module is instantiated.
-	MidiBayModule() {
+	SpliceKitModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		memset(cellColorSet, -1, sizeof(cellColorSet));
 		invalidateLedStates();
 		for (int i = 0; i < MATRIX_COUNT; i++) {
-			configParam<MidiBayCellQuantity>(PARAM_MATRIX + i, 0.f, 1.f, 0.f);
+			configParam<SpliceKitCellQuantity>(PARAM_MATRIX + i, 0.f, 1.f, 0.f);
 		}
 		for (int i = 0; i < MATRIX_SIZE; i++) {
-			configParam<MidiBaySceneQuantity>(PARAM_SCENE + i, 0.f, 1.f, 0.f);
+			configParam<SpliceKitSceneQuantity>(PARAM_SCENE + i, 0.f, 1.f, 0.f);
 		}
 
 		trackingProcessor.handler = this;
@@ -1031,8 +1031,8 @@ struct MidiBayModule : Module, MidiTrackingProcessorHandler {
 
 // Overlay widget added directly to APP->scene->rack — drawn in rack coordinates.
 // Activated by the space key; hides cables and draws cell→port assignment splines.
-struct MidiBayVizOverlay : TransparentWidget {
-	MidiBayModule* module = nullptr;
+struct SpliceKitVizOverlay : TransparentWidget {
+	SpliceKitModule* module = nullptr;
 	// Non-owning pointer to the host widget (for position).
 	Widget* hostWidget = nullptr;
 	int hoveredCellId = -1;
@@ -1193,14 +1193,14 @@ struct MidiBayVizOverlay : TransparentWidget {
 };
 
 
-struct MidiBayWidget;
+struct SpliceKitWidget;
 
-struct MidiBaySceneButton : app::SvgSwitch {
-	MidiBayModule* module = nullptr;
-	MidiBayWidget* mw = nullptr;
+struct SpliceKitSceneButton : app::SvgSwitch {
+	SpliceKitModule* module = nullptr;
+	SpliceKitWidget* mw = nullptr;
 	int sceneId = -1;
 
-	MidiBaySceneButton() {
+	SpliceKitSceneButton() {
 		momentary = true;
 		addFrame(Svg::load(asset::plugin(pluginInstance, "res/components/MatrixButton.svg")));
 		addFrame(Svg::load(asset::plugin(pluginInstance, "res/components/MatrixButton1.svg")));
@@ -1221,12 +1221,12 @@ struct MidiBaySceneButton : app::SvgSwitch {
 };
 
 // Matrix cell button with right-click context menu for port assignment.
-struct MidiBayCellButton : app::SvgSwitch {
-	MidiBayModule* module = nullptr;
-	MidiBayWidget* mw = nullptr;
+struct SpliceKitCellButton : app::SvgSwitch {
+	SpliceKitModule* module = nullptr;
+	SpliceKitWidget* mw = nullptr;
 	int cellId = -1;
 
-	MidiBayCellButton() {
+	SpliceKitCellButton() {
 		momentary = true;
 		addFrame(Svg::load(asset::plugin(pluginInstance, "res/components/MatrixButton.svg")));
 		addFrame(Svg::load(asset::plugin(pluginInstance, "res/components/MatrixButton1.svg")));
@@ -1250,11 +1250,11 @@ struct MidiBayCellButton : app::SvgSwitch {
 };
 
 
-struct MidiBayWidget : ThemedModuleWidget<MidiBayModule>, OverlayMessageProvider {
-	MidiBayVizOverlay* vizOverlay = nullptr;
+struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProvider {
+	SpliceKitVizOverlay* vizOverlay = nullptr;
 	bool vizMode = false;
 
-	MidiBayWidget(MidiBayModule* module) : ThemedModuleWidget(module, "MidiBay") {
+	SpliceKitWidget(SpliceKitModule* module) : ThemedModuleWidget(module, "SpliceKit") {
 		setModule(module);
 
 		for (int r = 0; r < MATRIX_SIZE; r++) {
@@ -1262,28 +1262,28 @@ struct MidiBayWidget : ThemedModuleWidget<MidiBayModule>, OverlayMessageProvider
 				float x = 24.3f + c * (245.7f - 24.3f) / 7.f;
 				float y = 54.5f + r * (277.4f - 54.5f) / 7.f;
 				int cellId = r * MATRIX_SIZE + c;
-				auto* btn = createParam<MidiBayCellButton>(Vec(x - 13.25f, y - 13.25f), module, MidiBayModule::PARAM_MATRIX + cellId);
+				auto* btn = createParam<SpliceKitCellButton>(Vec(x - 13.25f, y - 13.25f), module, SpliceKitModule::PARAM_MATRIX + cellId);
 				btn->module = module;
 				btn->mw = this;
 				btn->cellId = cellId;
 				addParam(btn);
-				addChild(createLightCentered<SaturatedMatrixButtonLight<MidiBayModule>>(Vec(x, y), module, MidiBayModule::LIGHT_MATRIX + cellId * 3));
+				addChild(createLightCentered<SaturatedMatrixButtonLight<SpliceKitModule>>(Vec(x, y), module, SpliceKitModule::LIGHT_MATRIX + cellId * 3));
 			}
 		}
 		for (int i = 0; i < MATRIX_SIZE; i++) {
 			float x = 24.3f + i * (245.7f - 24.3f) / 7.f;
-			auto* sb = createParamCentered<MidiBaySceneButton>(Vec(x, 324.3f), module, MidiBayModule::PARAM_SCENE + i);
+			auto* sb = createParamCentered<SpliceKitSceneButton>(Vec(x, 324.3f), module, SpliceKitModule::PARAM_SCENE + i);
 			sb->module = module;
 			sb->mw = this;
 			sb->sceneId = i;
 			addParam(sb);
-			addChild(createLightCentered<MatrixButtonLight<WhiteLight, MidiBayModule>>(Vec(x, 324.3f), module, MidiBayModule::LIGHT_SCENE + i));
+			addChild(createLightCentered<MatrixButtonLight<WhiteLight, SpliceKitModule>>(Vec(x, 324.3f), module, SpliceKitModule::LIGHT_SCENE + i));
 		}
 
 		if (module) {
 			OverlayMessageWidget::registerProvider(this);
 
-			vizOverlay = new MidiBayVizOverlay;
+			vizOverlay = new SpliceKitVizOverlay;
 			vizOverlay->module = module;
 			vizOverlay->hostWidget = this;
 			vizOverlay->visible = false;
@@ -1291,7 +1291,7 @@ struct MidiBayWidget : ThemedModuleWidget<MidiBayModule>, OverlayMessageProvider
 		}
 	}
 
-	~MidiBayWidget() {
+	~SpliceKitWidget() {
 		if (vizOverlay) {
 			APP->scene->rack->removeChild(vizOverlay);
 			delete vizOverlay;
@@ -1320,13 +1320,13 @@ struct MidiBayWidget : ThemedModuleWidget<MidiBayModule>, OverlayMessageProvider
 	static bool sceneClipboardValid;
 
 	void onDeselect(const event::Deselect& e) override {
-		ThemedModuleWidget<MidiBayModule>::onDeselect(e);
+		ThemedModuleWidget<SpliceKitModule>::onDeselect(e);
 		if (module) module->portSelectProcessor.processDeselect();
 	}
 
-	MidiBayCellButton* findCellButton(int cellId) {
+	SpliceKitCellButton* findCellButton(int cellId) {
 		for (Widget* w : children) {
-			auto* btn = dynamic_cast<MidiBayCellButton*>(w);
+			auto* btn = dynamic_cast<SpliceKitCellButton*>(w);
 			if (btn && btn->cellId == cellId) return btn;
 		}
 		return nullptr;
@@ -1338,7 +1338,7 @@ struct MidiBayWidget : ThemedModuleWidget<MidiBayModule>, OverlayMessageProvider
 		if (vizOverlay) vizOverlay->visible = active;
 		APP->scene->rack->getCableContainer()->visible = !active;
 		if (hovered >= 0 && hovered < MATRIX_COUNT) {
-			MidiBayCellButton* btn = findCellButton(hovered);
+			SpliceKitCellButton* btn = findCellButton(hovered);
 			if (btn) {
 				if (active) btn->destroyTooltip();
 				else        btn->createTooltip();
@@ -1352,11 +1352,11 @@ struct MidiBayWidget : ThemedModuleWidget<MidiBayModule>, OverlayMessageProvider
 			e.consume(this);
 			return;
 		}
-		ThemedModuleWidget<MidiBayModule>::onHoverKey(e);
+		ThemedModuleWidget<SpliceKitModule>::onHoverKey(e);
 	}
 
 	void step() override {
-		ThemedModuleWidget<MidiBayModule>::step();
+		ThemedModuleWidget<SpliceKitModule>::step();
 		if (!module) return;
 
 		module->portSelectProcessor.step();
@@ -1390,7 +1390,7 @@ struct MidiBayWidget : ThemedModuleWidget<MidiBayModule>, OverlayMessageProvider
 	}
 
 	void appendContextMenu(Menu* menu) override {
-		MidiBayModule* module = this->module;
+		SpliceKitModule* module = this->module;
 		if (!module) return;
 
 		menu->addChild(new MenuSeparator);
@@ -1489,34 +1489,34 @@ struct MidiBayWidget : ThemedModuleWidget<MidiBayModule>, OverlayMessageProvider
 		));
 		menu->addChild(createSubmenuItem("Button mode", "", [=](Menu* menu) {
 			menu->addChild(createCheckMenuItem("Toggle", "",
-				[=]() { return module->buttonMode == MidiBayModule::BUTTON_TOGGLE; },
-				[=]() { module->buttonMode = MidiBayModule::BUTTON_TOGGLE; module->clearPending(); }
+				[=]() { return module->buttonMode == SpliceKitModule::BUTTON_TOGGLE; },
+				[=]() { module->buttonMode = SpliceKitModule::BUTTON_TOGGLE; module->clearPending(); }
 			));
 			menu->addChild(createCheckMenuItem("Momentary", "",
-				[=]() { return module->buttonMode == MidiBayModule::BUTTON_MOMENTARY; },
-				[=]() { module->buttonMode = MidiBayModule::BUTTON_MOMENTARY; module->clearPending(); }
+				[=]() { return module->buttonMode == SpliceKitModule::BUTTON_MOMENTARY; },
+				[=]() { module->buttonMode = SpliceKitModule::BUTTON_MOMENTARY; module->clearPending(); }
 			));
 		}));
 	}
 };
 
 
-uint64_t MidiBayWidget::sceneClipboard[MATRIX_COUNT] = {};
-bool MidiBayWidget::sceneClipboardValid = false;
+uint64_t SpliceKitWidget::sceneClipboard[MATRIX_COUNT] = {};
+bool SpliceKitWidget::sceneClipboardValid = false;
 
-void MidiBayCellButton::onEnter(const event::Enter& e) {
+void SpliceKitCellButton::onEnter(const event::Enter& e) {
 	if (mw && mw->vizOverlay) mw->vizOverlay->hoveredCellId = cellId;
 	SvgSwitch::onEnter(e);
 	if (mw && mw->vizMode) destroyTooltip();
 }
 
-void MidiBayCellButton::onLeave(const event::Leave& e) {
+void SpliceKitCellButton::onLeave(const event::Leave& e) {
 	if (mw && mw->vizOverlay && mw->vizOverlay->hoveredCellId == cellId) mw->vizOverlay->hoveredCellId = -1;
 	SvgSwitch::onLeave(e);
 }
 
 
-void MidiBaySceneButton::createSceneMenu() {
+void SpliceKitSceneButton::createSceneMenu() {
 	ui::Menu* menu = createMenu();
 	menu->addChild(createMenuLabel(string::f("Scene %d", sceneId + 1)));
 	menu->addChild(new MenuSeparator);
@@ -1527,13 +1527,13 @@ void MidiBaySceneButton::createSceneMenu() {
 	}));
 	menu->addChild(createMenuItem("Copy", "", [=]() {
 		if (sceneId == module->currentScene) module->captureScene(sceneId);
-		memcpy(MidiBayWidget::sceneClipboard, module->sceneConnections[sceneId], MATRIX_COUNT * sizeof(uint64_t));
-		MidiBayWidget::sceneClipboardValid = true;
+		memcpy(SpliceKitWidget::sceneClipboard, module->sceneConnections[sceneId], MATRIX_COUNT * sizeof(uint64_t));
+		SpliceKitWidget::sceneClipboardValid = true;
 	}));
 	menu->addChild(createMenuItem("Paste", "", [=]() {
-		if (!MidiBayWidget::sceneClipboardValid) return;
-		module->reconcileScene(sceneId, MidiBayWidget::sceneClipboard);
-	}, !MidiBayWidget::sceneClipboardValid));
+		if (!SpliceKitWidget::sceneClipboardValid) return;
+		module->reconcileScene(sceneId, SpliceKitWidget::sceneClipboard);
+	}, !SpliceKitWidget::sceneClipboardValid));
 
 	menu->addChild(new MenuSeparator);
 
@@ -1560,7 +1560,7 @@ void MidiBaySceneButton::createSceneMenu() {
 
 
 struct LabelField : ui::TextField {
-	MidiBayModule* module;
+	SpliceKitModule* module;
 	int id;
 	void onSelectKey(const event::SelectKey& e) override {
 		if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
@@ -1580,10 +1580,10 @@ struct LabelField : ui::TextField {
 };
 
 
-void MidiBayCellButton::createCellMenu() {
+void SpliceKitCellButton::createCellMenu() {
 	module->lastClickedCell = cellId;
 	auto& pa = module->portAssignments[cellId];
-	std::string label = MidiBayModule::portLabel(pa);
+	std::string label = SpliceKitModule::portLabel(pa);
 
 	auto& midiMap = module->trackingProcessor.getMap(cellId);
 	std::string midiLabel;
@@ -1607,7 +1607,7 @@ void MidiBayCellButton::createCellMenu() {
 
 	menu->addChild(createSubmenuItem("Color", "", [=](Menu* menu) {
 		int id = cellId;
-		MidiBayModule* mod = module;
+		SpliceKitModule* mod = module;
 		menu->addChild(createCheckMenuItem("Auto", "",
 			[=]() { return mod->cellColorSet[id] < 0; },
 			[=]() { mod->cellColorSet[id] = -1; }
@@ -1630,9 +1630,9 @@ void MidiBayCellButton::createCellMenu() {
 			uint64_t mask = module->sceneConnections[module->currentScene][cellId];
 			for (int j = 0; j < MATRIX_COUNT; j++) {
 				if (!((mask >> j) & 1)) continue;
-				std::string connLabel = MidiBayModule::portLabel(module->portAssignments[j]);
+				std::string connLabel = SpliceKitModule::portLabel(module->portAssignments[j]);
 				int cid = cellId, jid = j;
-				MidiBayModule* mod = module;
+				SpliceKitModule* mod = module;
 				menu->addChild(createMenuItem(connLabel, "", [=]() {
 					mod->setConnection(mod->currentScene, cid, jid, false);
 					mod->removeCableBetween(cid, jid);
@@ -1677,7 +1677,7 @@ void MidiBayCellButton::createCellMenu() {
 }
 
 
-} // namespace MidiBay
+} // namespace SpliceKit
 } // namespace StoermelderPackOne
 
-Model* modelMidiBay = createModel<StoermelderPackOne::MidiBay::MidiBayModule, StoermelderPackOne::MidiBay::MidiBayWidget>("MidiBay");
+Model* modelSpliceKit = createModel<StoermelderPackOne::SpliceKit::SpliceKitModule, StoermelderPackOne::SpliceKit::SpliceKitWidget>("SpliceKit");

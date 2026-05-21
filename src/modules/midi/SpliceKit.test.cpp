@@ -1,24 +1,24 @@
 #include "../../test/test_plugin.hpp"
 #include "../../test/test_context.hpp"
-#include "MidiBay.cpp"
+#include "SpliceKit.cpp"
 
 using namespace StoermelderPackOne;
-using namespace StoermelderPackOne::MidiBay;
+using namespace StoermelderPackOne::SpliceKit;
 
-SYNC_MODEL(modelMidiBay, "MidiBay");
+SYNC_MODEL(modelSpliceKit, "SpliceKit");
 Test::TestContext<> testContext;
 
 
-TEST_CASE("Construction and initialization", "[MidiBay]") {
-	MidiBayModule* m = Test::createModule<MidiBayModule>("MidiBay");
-	MidiBayWidget* mw = Test::createWidget<MidiBayWidget>("MidiBay");
+TEST_CASE("Construction and initialization", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	SpliceKitWidget* mw = Test::createWidget<SpliceKitWidget>("SpliceKit");
 
 	REQUIRE(m != nullptr);
 	REQUIRE(mw != nullptr);
 	REQUIRE(mw->module == nullptr);
 	REQUIRE(m->currentScene == 0);
 	REQUIRE(m->pendingCellId == -1);
-	REQUIRE(m->buttonMode == MidiBayModule::BUTTON_TOGGLE);
+	REQUIRE(m->buttonMode == SpliceKitModule::BUTTON_TOGGLE);
 	REQUIRE(m->overlayEnabled == true);
 
 	Test::destroyWidget(mw);
@@ -26,8 +26,8 @@ TEST_CASE("Construction and initialization", "[MidiBay]") {
 }
 
 
-TEST_CASE("isConnected and setConnection bitmask", "[MidiBay]") {
-	MidiBayModule* m = Test::createModule<MidiBayModule>("MidiBay");
+TEST_CASE("isConnected and setConnection bitmask", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
 
 	REQUIRE(m->isConnected(0, 0, 1) == false);
 
@@ -46,8 +46,8 @@ TEST_CASE("isConnected and setConnection bitmask", "[MidiBay]") {
 }
 
 
-TEST_CASE("clearPending resets pendingCellId and pendingCellIsPhysical", "[MidiBay]") {
-	MidiBayModule* m = Test::createModule<MidiBayModule>("MidiBay");
+TEST_CASE("clearPending resets pendingCellId and pendingCellIsPhysical", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
 
 	m->pendingCellId = 5;
 	m->pendingCellIsPhysical = true;
@@ -60,8 +60,8 @@ TEST_CASE("clearPending resets pendingCellId and pendingCellIsPhysical", "[MidiB
 }
 
 
-TEST_CASE("triggerCell - first press sets pending", "[MidiBay]") {
-	MidiBayModule* m = Test::createModule<MidiBayModule>("MidiBay");
+TEST_CASE("triggerCell - first press sets pending", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
 
 	// Assign cell 3 a port so triggerCell doesn't bail early
 	m->portAssignments[3].moduleId = 42;
@@ -76,8 +76,8 @@ TEST_CASE("triggerCell - first press sets pending", "[MidiBay]") {
 }
 
 
-TEST_CASE("triggerCell - pressing same cell cancels pending", "[MidiBay]") {
-	MidiBayModule* m = Test::createModule<MidiBayModule>("MidiBay");
+TEST_CASE("triggerCell - pressing same cell cancels pending", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
 
 	m->portAssignments[2].moduleId = 42;
 	m->portAssignments[2].portId   = 0;
@@ -93,8 +93,8 @@ TEST_CASE("triggerCell - pressing same cell cancels pending", "[MidiBay]") {
 }
 
 
-TEST_CASE("triggerCell - unassigned cell is ignored", "[MidiBay]") {
-	MidiBayModule* m = Test::createModule<MidiBayModule>("MidiBay");
+TEST_CASE("triggerCell - unassigned cell is ignored", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
 
 	// Cell 10 has no port assignment
 	m->triggerCell(10);
@@ -104,8 +104,8 @@ TEST_CASE("triggerCell - unassigned cell is ignored", "[MidiBay]") {
 }
 
 
-TEST_CASE("processMapUpdate - MIDI note-on sets pending", "[MidiBay]") {
-	MidiBayModule* m = Test::createModule<MidiBayModule>("MidiBay");
+TEST_CASE("processMapUpdate - MIDI note-on sets pending", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
 
 	m->portAssignments[5].moduleId = 1;
 	m->portAssignments[5].portId   = 0;
@@ -119,10 +119,10 @@ TEST_CASE("processMapUpdate - MIDI note-on sets pending", "[MidiBay]") {
 }
 
 
-TEST_CASE("processMapUpdate - momentary MIDI note-off clears pending", "[MidiBay]") {
-	MidiBayModule* m = Test::createModule<MidiBayModule>("MidiBay");
+TEST_CASE("processMapUpdate - momentary MIDI note-off clears pending", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
 
-	m->buttonMode = MidiBayModule::BUTTON_MOMENTARY;
+	m->buttonMode = SpliceKitModule::BUTTON_MOMENTARY;
 	m->portAssignments[7].moduleId = 1;
 	m->portAssignments[7].portId   = 0;
 	m->portAssignments[7].type     = engine::Port::OUTPUT;
@@ -139,10 +139,10 @@ TEST_CASE("processMapUpdate - momentary MIDI note-off clears pending", "[MidiBay
 }
 
 
-TEST_CASE("processMapUpdate - toggle mode ignores note-off", "[MidiBay]") {
-	MidiBayModule* m = Test::createModule<MidiBayModule>("MidiBay");
+TEST_CASE("processMapUpdate - toggle mode ignores note-off", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
 
-	m->buttonMode = MidiBayModule::BUTTON_TOGGLE;
+	m->buttonMode = SpliceKitModule::BUTTON_TOGGLE;
 	m->portAssignments[4].moduleId = 1;
 	m->portAssignments[4].portId   = 0;
 	m->portAssignments[4].type     = engine::Port::OUTPUT;
@@ -158,22 +158,22 @@ TEST_CASE("processMapUpdate - toggle mode ignores note-off", "[MidiBay]") {
 }
 
 
-TEST_CASE("JSON roundtrip preserves scene and button mode", "[MidiBay]") {
-	MidiBayModule* m = Test::createModule<MidiBayModule>("MidiBay");
+TEST_CASE("JSON roundtrip preserves scene and button mode", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
 
 	m->currentScene    = 3;
-	m->buttonMode      = MidiBayModule::BUTTON_MOMENTARY;
+	m->buttonMode      = SpliceKitModule::BUTTON_MOMENTARY;
 	m->overlayEnabled  = false;
 	m->setConnection(3, 1, 5, true);
 
 	json_t* j = m->dataToJson();
 
-	MidiBayModule* m2 = Test::createModule<MidiBayModule>("MidiBay");
+	SpliceKitModule* m2 = Test::createModule<SpliceKitModule>("SpliceKit");
 	m2->dataFromJson(j);
 	json_decref(j);
 
 	REQUIRE(m2->currentScene   == 3);
-	REQUIRE(m2->buttonMode     == MidiBayModule::BUTTON_MOMENTARY);
+	REQUIRE(m2->buttonMode     == SpliceKitModule::BUTTON_MOMENTARY);
 	REQUIRE(m2->overlayEnabled == false);
 	REQUIRE(m2->isConnected(3, 1, 5) == true);
 	REQUIRE(m2->isConnected(3, 5, 1) == true);  // symmetric
@@ -184,15 +184,15 @@ TEST_CASE("JSON roundtrip preserves scene and button mode", "[MidiBay]") {
 }
 
 
-TEST_CASE("JSON roundtrip preserves MIDI maps", "[MidiBay]") {
-	MidiBayModule* m = Test::createModule<MidiBayModule>("MidiBay");
+TEST_CASE("JSON roundtrip preserves MIDI maps", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
 
 	m->trackingProcessor.setMap(MidiTrackingType::NOTE, 0, 36);
 	m->trackingProcessor.setMap(MidiTrackingType::CC,   1, 74);
 
 	json_t* j = m->dataToJson();
 
-	MidiBayModule* m2 = Test::createModule<MidiBayModule>("MidiBay");
+	SpliceKitModule* m2 = Test::createModule<SpliceKitModule>("SpliceKit");
 	m2->dataFromJson(j);
 	json_decref(j);
 
@@ -209,8 +209,8 @@ TEST_CASE("JSON roundtrip preserves MIDI maps", "[MidiBay]") {
 }
 
 
-TEST_CASE("overlayEnabled gates setOverlayMessage", "[MidiBay]") {
-	MidiBayModule* m = Test::createModule<MidiBayModule>("MidiBay");
+TEST_CASE("overlayEnabled gates setOverlayMessage", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
 
 	m->overlayEnabled  = false;
 	m->overlayMessageId = -1;
@@ -225,8 +225,8 @@ TEST_CASE("overlayEnabled gates setOverlayMessage", "[MidiBay]") {
 }
 
 
-TEST_CASE("enableLearn and disableLearn", "[MidiBay]") {
-	MidiBayModule* m = Test::createModule<MidiBayModule>("MidiBay");
+TEST_CASE("enableLearn and disableLearn", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
 
 	REQUIRE(m->learningId == -1);
 
@@ -242,8 +242,8 @@ TEST_CASE("enableLearn and disableLearn", "[MidiBay]") {
 }
 
 
-TEST_CASE("startGlobalLearn advances through cells via processMapLearn", "[MidiBay]") {
-	MidiBayModule* m = Test::createModule<MidiBayModule>("MidiBay");
+TEST_CASE("startGlobalLearn advances through cells via processMapLearn", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
 
 	m->startGlobalLearn();
 	REQUIRE(m->midiLearnMode == true);
@@ -262,8 +262,8 @@ TEST_CASE("startGlobalLearn advances through cells via processMapLearn", "[MidiB
 }
 
 
-TEST_CASE("portAssignment isValid and clear", "[MidiBay]") {
-	MidiBayModule* m = Test::createModule<MidiBayModule>("MidiBay");
+TEST_CASE("portAssignment isValid and clear", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
 
 	REQUIRE(m->portAssignments[0].isValid() == false);
 
