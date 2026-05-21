@@ -1,4 +1,5 @@
 #include "plugin.hpp"
+#include "modules/midiesx/MidiEsx.hpp"
 #include "modules/ahab/AhabMidiDriver.hpp"
 
 Plugin* pluginInstance;
@@ -62,6 +63,7 @@ void init(rack::Plugin* p) {
 	p->addModel(modelMidiKey);
 	p->addModel(modelPanicRoom);
 	p->addModel(modelMidiKit);
+	p->addModel(modelMidiEsx);
 	p->addModel(modelAhab);
 	p->addModel(modelAudioInterface64);
 	p->addModel(modelMb);
@@ -79,6 +81,12 @@ void init(rack::Plugin* p) {
 	p->addModel(modelPile);
 	p->addModel(modelRaw);
 #endif
+
+	StoermelderPackOne::pluginSettings.readFromJson();
+
+	if (StoermelderPackOne::pluginSettings.midiEsxDriverEnabled) {
+		StoermelderPackOne::MidiEsx::init();
+	}
 }
 
 

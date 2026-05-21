@@ -1,4 +1,5 @@
 #include "Mb_v2.hpp"
+#include "Mb.hpp"
 #include <tag.hpp>
 #include <settings.hpp>
 #include <componentlibrary.hpp>
@@ -10,7 +11,7 @@ namespace StoermelderPackOne {
 namespace Mb {
 namespace v2 {
 
-static ModuleWidget* chooseModel(plugin::Model* model) {
+static ModuleWidget* chooseModel(plugin::Model* model, bool hideBrowser = true) {
 	engine::Module* addedModule = model->createModule();
 	APP->engine->addModule(addedModule);
 
@@ -25,7 +26,7 @@ static ModuleWidget* chooseModel(plugin::Model* model) {
 	h->setModule(moduleWidget);
 	APP->history->push(h);
 
-	APP->scene->browser->hide();
+	if (hideBrowser) APP->scene->browser->hide();
 	modelUsageTouch(model);
 	return moduleWidget;
 }
@@ -54,60 +55,27 @@ static bool isModelHidden(plugin::Model* model) {
 }
 
 
-static void openLayoutMenu(widget::Widget* button, std::vector<widget::Widget*> items) {
-	// Container that draws a menu background and holds the layout
-	struct MenuContainer : widget::OpaqueWidget {
-		ui::ScrollWidget* scroll;
-		ui::SequentialLayout* layout;
-
-		MenuContainer() {
-			scroll = new ui::ScrollWidget;
-			addChild(scroll);
-
-			// Create horizontal sequential layout inside container
-			layout = new ui::SequentialLayout;
-			layout->orientation = ui::SequentialLayout::HORIZONTAL_ORIENTATION;
-			//layout->alignment = ui::SequentialLayout::CENTER_ALIGNMENT;
-			layout->margin = Vec(5, 5);
-			layout->spacing = Vec(5, 5);
-			layout->box.size.y = 1.f;
-			scroll->container->addChild(layout);
+// Tag toggle menu item for predefined tags
+struct TogglePredefinedTagItem : MenuItem {
+	plugin::Model* model;
+	int tagId;
+	bool hasEffectiveTag = false;
+	void onAction(const event::Action& e) override {
+		if (hasEffectiveTag) {
+			predefinedTagRemove(model, tagId);
+		} else {
+			predefinedTagAdd(model, tagId);
 		}
-
-		void step() override {
-			box.size.y = std::min(layout->box.size.y, parent->box.size.y - box.pos.y - 20.f);
-			scroll->box.size = box.size;
-			layout->box.size.x = box.size.x;
-			OpaqueWidget::step();
-		}
-
-		void draw(const widget::Widget::DrawArgs& args) override {
-			//nvgFontFaceId(ctx, bnd_font);
-        	nvgFontSize(args.vg, BND_LABEL_FONT_SIZE);		
-			bndMenuBackground(args.vg, 0, 0, box.size.x, box.size.y, 0);
-			OpaqueWidget::draw(args);
-		}
-	};
-
-	auto browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
-	Vec browserPos = browser->getAbsoluteOffset(Vec(0, 0));
-
-	// Create menu container
-	MenuContainer* container = new MenuContainer;
-	float menuX = browserPos.x + browser->box.size.x * 0.15f;
-	float menuY = button->getAbsoluteOffset(Vec(0, button->box.size.y)).y + 2.f;
-	container->box.pos = Vec(menuX, menuY);
-	container->box.size.x = browser->box.size.x * 0.7f;
-
-	// Add items to layout
-	for (widget::Widget* item : items) {
-		container->layout->addChild(item);
+		hasEffectiveTag = !hasEffectiveTag;
+		ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
+		if (browser) browser->refresh();
+		e.unconsume();
 	}
-
-	ui::MenuOverlay* overlay = new ui::MenuOverlay;
-	APP->scene->addChild(overlay);
-	overlay->addChild(container);
-}
+	void step() override {
+		rightText = CHECKMARK(hasEffectiveTag);
+		MenuItem::step();
+	}
+};
 
 
 // Widgets
@@ -123,6 +91,7 @@ struct ModuleWidgetContainer : widget::Widget {
 struct ModelBox : widget::OpaqueWidget {
 	plugin::Model* model = NULL;
 	ui::Tooltip* tooltip = NULL;
+	MagnifierOverlay* magnifier = NULL;
 	widget::Widget* previewWidget = NULL;
 	widget::ZoomWidget* zoomWidget = NULL;
 	widget::FramebufferWidget* fb = NULL;
@@ -200,6 +169,15 @@ struct ModelBox : widget::OpaqueWidget {
 			nvgStrokeColor(args.vg, componentlibrary::SCHEME_YELLOW);
 			nvgStroke(args.vg);
 		}
+
+		ModuleBrowser* browser = getAncestorOfType<ModuleBrowser>();
+		if (browser && browser->selectedModel == model) {
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, -5.f, -5.f, box.size.x + 10.f, box.size.y + 10.f);
+			nvgStrokeWidth(args.vg, 2.5f);
+			nvgStrokeColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.7f));
+			nvgStroke(args.vg);
+		}
 	}
 
 	void setTooltip(ui::Tooltip* tt) {
@@ -213,12 +191,37 @@ struct ModelBox : widget::OpaqueWidget {
 		}
 	}
 
+	void setMagnifier(MagnifierOverlay* mg) {
+		if (magnifier) {
+			magnifier->requestDelete();
+			magnifier = NULL;
+		}
+		if (mg) {
+			APP->scene->addChild(mg);
+			magnifier = mg;
+		}
+	}
+
+	void onHover(const event::Hover& e) override {
+		if (magnifier) {
+			magnifier->mousePos = getAbsoluteOffset(e.pos);
+			magnifier->initialized = true;
+			magnifier->sourceAbsPos = getAbsoluteOffset(Vec(0, 0));
+			magnifier->sourceSize = box.size;
+		}
+		OpaqueWidget::onHover(e);
+	}
+
 	void onButton(const event::Button& e) override {
 		OpaqueWidget::onButton(e);
 
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT && (e.mods & RACK_MOD_MASK) == 0) {
 			ModuleWidget* mw = chooseModel(model);
 			e.consume(mw);
+		}
+		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT && (e.mods & RACK_MOD_MASK) == RACK_MOD_SHIFT) {
+			chooseModel(model, false);
+			e.consume(this);
 		}
 
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL) {
@@ -256,19 +259,42 @@ struct ModelBox : widget::OpaqueWidget {
 			if (i++ > 0) text += ", ";
 			text += rack::tag::tagAliases[tagId][0];
 		}
+		// Custom tags
+		std::set<std::string> customTags = customTagsForModel(model);
+		if (!customTags.empty()) {
+			text += "\nCustom Tags: ";
+			i = 0;
+			for (const auto& tag : customTags) {
+				if (i > 0) text += ", ";
+				text += tag;
+				i++;
+			}
+		}
 		if (!model->description.empty())
 			text += "\n" + model->description;
 		ui::Tooltip* tt = new ui::Tooltip;
 		tt->text = text;
 		setTooltip(tt);
+
+		if (fb) {
+			MagnifierOverlay* mg = new MagnifierOverlay;
+			mg->fb = fb;
+			mg->sourceAbsPos = getAbsoluteOffset(Vec(0, 0));
+			mg->sourceSize = box.size;
+			mg->mousePos = getAbsoluteOffset(box.size.div(2));
+			mg->enabled = pluginSettings.mbMagnifierEnabled;
+			setMagnifier(mg);
+		}
 	}
 
 	void onLeave(const event::Leave& e) override {
 		setTooltip(NULL);
+		setMagnifier(NULL);
 	}
 
 	void onHide(const event::Hide& e) override {
 		setTooltip(NULL);
+		setMagnifier(NULL);
 		OpaqueWidget::onHide(e);
 	}
 
@@ -358,41 +384,48 @@ struct ModelBox : widget::OpaqueWidget {
 		});
 
 		plugin::Model* m = model;
-		auto addTagItems = [m](Menu* menu, const std::vector<std::string>& group) {
-			for (const auto& tag : group) {
-				ToggleCustomTagItem* item = new ToggleCustomTagItem;
-				item->text = tag;
-				item->model = m;
-				item->tagName = tag;
-				menu->addChild(item);
-			}
-		};
+		Rack::addGroupedMenuItems<std::string>(menu, tags, [m](const std::string& tag) -> ui::MenuItem* {
+			ToggleCustomTagItem* item = new ToggleCustomTagItem;
+			item->text = tag;
+			item->model = m;
+			item->tagName = tag;
+			return item;
+		}, 20);
 
-		if (tags.size() <= 20) {
-			addTagItems(menu, tags);
-		} 
-		else {
-			const size_t numGroups = (tags.size() + 15) / 16;
-			const size_t GROUP_SIZE = (tags.size() + numGroups - 1) / numGroups;
-			for (size_t i = 0; i < tags.size(); i += GROUP_SIZE) {
-				size_t end = std::min(i + GROUP_SIZE, tags.size());
-				char first = (char)std::toupper((unsigned char)string::lowercase(tags[i])[0]);
-				char last  = (char)std::toupper((unsigned char)string::lowercase(tags[end - 1])[0]);
-				std::string label = first == last
-					? std::string(1, first)
-					: std::string(1, first) + "-" + std::string(1, last);
-				std::vector<std::string> group(tags.begin() + i, tags.begin() + end);
-				menu->addChild(createSubmenuItem(label, "", [addTagItems, group](Menu* menu) {
-					addTagItems(menu, group);
-				}));
-			}
+		// Add section for modifying predefined tags
+		menu->addChild(new MenuSeparator);
+		menu->addChild(createMenuLabel("Tags"));
+
+		// Get all effective tag IDs for this model
+		std::set<int> effectiveTagIds = getEffectiveTagIds(model);
+		
+		// Build list of all predefined tags with their status
+		using MenuItemType = std::pair<std::string, int>;
+		std::vector<MenuItemType> allTags;
+		for (int id = 0; id < (int)tag::tagAliases.size(); id++) {
+			allTags.push_back({tag::tagAliases[id][0], id});
 		}
+		std::sort(allTags.begin(), allTags.end(), [](const std::pair<std::string, int>& a, const std::pair<std::string, int>& b) {
+			return string::lowercase(a.first) < string::lowercase(b.first);
+		});
+
+		Rack::addGroupedMenuItems<MenuItemType>(menu, allTags,
+			[effectiveTagIds, m](const MenuItemType& item) {
+				TogglePredefinedTagItem* t = new TogglePredefinedTagItem;
+				t->text = item.first;
+				t->model = m;
+				t->tagId = item.second;
+				t->hasEffectiveTag = effectiveTagIds.find(item.second) != effectiveTagIds.end();
+				return t;
+			}
+		);
 	}
 };
 
 
 struct BrowserSearchField : ui::TextField {
 	ModuleBrowser* browser;
+	DropdownChoiceContainer* dropDown = nullptr;
 
 	void step() override {
 		widget::Widget* selected = APP->event->getSelectedWidget();
@@ -403,55 +436,91 @@ struct BrowserSearchField : ui::TextField {
 	}
 
 	void onSelectKey(const event::SelectKey& e) override {
-		bool propagate = !e.getTarget();
+		// Handle special key events
+		dropDown = APP->scene->getFirstDescendantOfType<DropdownChoiceContainer>();
+		if (dropDown) {
+			dropDown->onSelectKey(e);
+			return;
+		}
 
-		switch (e.key) {
-			case GLFW_KEY_ESCAPE: {
-				if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
+		if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
+			switch (e.key) {
+				case GLFW_KEY_DOWN:
+				case GLFW_KEY_UP:
+				case GLFW_KEY_LEFT:
+				case GLFW_KEY_RIGHT: {
+					browser->navigateSelection(e.key);
+					e.consume(this);
+					return;
+				}
+				case GLFW_KEY_ESCAPE: {
 					Mb::BrowserOverlay* overlay = getAncestorOfType<Mb::BrowserOverlay>();
 					overlay->hide();
-				}
-				e.consume(this);
-				return;
-			}
-			case GLFW_KEY_BACKSPACE: {
-				if (text == "") {
-					if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
-						browser->clear();
-					}
 					e.consume(this);
+					return;
 				}
-				break;
-			}
-			case GLFW_KEY_SPACE: {
-				if (string::trim(text) == "" && (e.mods & RACK_MOD_MASK) == 0) {
-					if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
+				case GLFW_KEY_BACKSPACE: {
+					if (text == "") {
+						browser->clear();
+						e.consume(this);
+						return;
+					}
+					break;
+				}
+				case GLFW_KEY_SPACE: {
+					if (string::trim(text) == "" && (e.mods & RACK_MOD_MASK) == 0) {
 						browser->favorite ^= true;
 						browser->refresh();
+						setText("");
+						e.consume(this);
+						return;
 					}
-					setText("");
-					propagate = false;
-					e.consume(this);
-				}
-				if ((e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL || (e.mods & RACK_MOD_MASK) == RACK_MOD_SHIFT) {
-					if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
+					if ((e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL || (e.mods & RACK_MOD_MASK) == RACK_MOD_SHIFT) {
 						browser->hidden ^= true;
 						browser->refresh();
+						setText(string::trim(text));
+						e.consume(this);
+						return;
 					}
-					setText(string::trim(text));
-					propagate = false;
-					e.consume(this);
+					break;
 				}
-				break;
+				case GLFW_KEY_1:
+					if ((e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL) {
+						event::Action a;
+						browser->brandButton->onAction(a);
+						e.consume(this);
+						return;
+					}
+					break;
+				case GLFW_KEY_2:
+					if ((e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL) {
+						event::Action a;
+						browser->tagButton->onAction(a);
+						e.consume(this);
+						return;
+					}
+					break;
+				case GLFW_KEY_3:
+					if ((e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL) {
+						event::Action a;
+						browser->customTagButton->onAction(a);
+						e.consume(this);
+						return;
+					}
+					break;
 			}
 		}
+	
+  		ui::TextField::onSelectKey(e);
+	}
 
-		propagate = propagate && !((e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && e.key == GLFW_KEY_F);
-		propagate = propagate && !((e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL && e.key == GLFW_KEY_H);
-
-		if (propagate) {
-  			ui::TextField::onSelectKey(e);
+	void onSelectText(const SelectTextEvent& e) override {
+		// Handle text input
+		if (dropDown) {
+			dropDown->onSelectText(e);
+			return;
 		}
+		TextField::onSelectText(e);
 	}
 
 	void onChange(const event::Change& e) override {
@@ -460,6 +529,10 @@ struct BrowserSearchField : ui::TextField {
 	}
 
 	void onAction(const event::Action& e) override {
+		if (browser->selectedModel) {
+			chooseModel(browser->selectedModel);
+			return;
+		}
 		ModelBox* mb = NULL;
 		for (Widget* w : browser->modelContainer->children) {
 			if (w->visible) {
@@ -483,46 +556,7 @@ struct BrowserSearchField : ui::TextField {
 };
 
 
-struct FilterItem : ui::Button {
-	ModuleBrowser* browser;
-	bool disabled = false;
-	std::string rawText;
-	bool selected = false;
-
-	void setRawText(std::string s) {
-		rawText = s;
-		text = s;
-
-		NVGcontext* vg = APP->window->vg;
-		nvgFontSize(vg, BND_LABEL_FONT_SIZE);
-		nvgFontFaceId(vg, APP->window->uiFont->handle);
-		float bounds[4];
-		nvgTextBounds(vg, 0.f, 0.f, rawText.c_str(), NULL, bounds);
-		box.size.x = bounds[2] - bounds[0] + 30.f;
-		box.size.y = bounds[3] - bounds[1] + 8.f;
-	}
-
-	void onDragDrop(const DragDropEvent& e) override {
-		if (!disabled) Button::onDragDrop(e);
-	}
-
-	void draw(const DrawArgs& args) override {
-		text = string::f("%s %s", rawText, selected ? CHECKMARK(true) : "");
-
-		BNDwidgetState state = BND_DEFAULT;
-		if (!disabled) {
-			if (APP->event->getHoveredWidget() == this) state = BND_HOVER;
-			if (APP->event->getDraggedWidget() == this) state = BND_ACTIVE;
-		}
-		if (disabled) nvgSave(args.vg);
-		if (disabled) nvgGlobalAlpha(args.vg, 0.35f);
-		bndToolButton(args.vg, 0.0, 0.0, box.size.x, box.size.y, BND_CORNER_NONE, state, -1, text.c_str());
-		if (disabled) nvgRestore(args.vg);
-	}
-};
-
-
-struct BrandItem : FilterItem {
+struct BrandItem : DropdownChoiceItem<ModuleBrowser> {
 	std::string brand;
 	void onAction(const event::Action& e) override {
 		browser->brand = (browser->brand == brand) ? "" : brand;
@@ -531,7 +565,7 @@ struct BrandItem : FilterItem {
 	void step() override {
 		selected = (browser->brand == brand);
 		disabled = !selected && !browser->hasVisibleModel(brand, browser->tagIds, browser->favorite, browser->hidden, browser->customTagFilter);
-		FilterItem::step();
+		DropdownChoiceItem::step();
 	}
 };
 
@@ -553,7 +587,7 @@ struct BrandButton : ui::ChoiceButton {
 			items.push_back(item);
 		}
 
-		openLayoutMenu(this, items);
+		openLayoutMenu<ModuleBrowser>(this, items);
 	}
 
 	void step() override {
@@ -566,7 +600,7 @@ struct BrandButton : ui::ChoiceButton {
 };
 
 
-struct TagItem : FilterItem {
+struct TagItem : DropdownChoiceItem<ModuleBrowser> {
 	int tagId;
 	void onAction(const event::Action& e) override {
 		if (tagId >= 0) {
@@ -591,7 +625,7 @@ struct TagItem : FilterItem {
 		else {
 			disabled = false;
 		}
-		FilterItem::step();
+		DropdownChoiceItem::step();
 	}
 };
 
@@ -609,7 +643,7 @@ struct TagButton : ui::ChoiceButton {
 			items.push_back(item);
 		}
 
-		openLayoutMenu(this, items);
+		openLayoutMenu<ModuleBrowser>(this, items);
 	}
 
 	void step() override {
@@ -629,7 +663,7 @@ struct TagButton : ui::ChoiceButton {
 };
 
 
-struct CustomTagFilterItem : FilterItem {
+struct CustomTagFilterItem : DropdownChoiceItem<ModuleBrowser> {
 	std::string tagName;
 	void onAction(const event::Action& e) override {
 		if (tagName.empty()) {
@@ -654,7 +688,7 @@ struct CustomTagFilterItem : FilterItem {
 		else {
 			disabled = false;
 		}
-		FilterItem::step();
+		DropdownChoiceItem::step();
 	}
 };
 
@@ -677,7 +711,7 @@ struct CustomTagButton : ui::ChoiceButton {
 			items.push_back(item);
 		}
 
-		openLayoutMenu(this, items);
+		openLayoutMenu<ModuleBrowser>(this, items);
 	}
 
 	void step() override {
@@ -939,8 +973,10 @@ bool ModuleBrowser::isModelVisible(plugin::Model* model, const std::string& bran
 		return false;
 	if (!brand.empty() && model->plugin->brand != brand)
 		return false;
+	// Use effective tag IDs (with predefined tag modifications applied)
+	std::set<int> effectiveTagIds = getEffectiveTagIds(model);
 	for (int tagId : tagIds) {
-		if (std::find(model->tagIds.begin(), model->tagIds.end(), tagId) == model->tagIds.end())
+		if (effectiveTagIds.find(tagId) == effectiveTagIds.end())
 			return false;
 	}
 	for (const auto& ct : customTagFilter) {
@@ -1061,6 +1097,106 @@ void ModuleBrowser::refresh() {
 		if (w->visible) count++;
 	}
 	countLabel->text = string::f("Modules (%d)", count);
+}
+
+void ModuleBrowser::navigateSelection(int key) {
+	// Collect visible ModelBoxes in layout order
+	std::vector<ModelBox*> visible;
+	for (Widget* w : modelContainer->children) {
+		ModelBox* mb = reinterpret_cast<ModelBox*>(w);
+		if (mb->visible) visible.push_back(mb);
+	}
+	if (visible.empty()) return;
+
+	// Determine starting box: keyboard selection > hovered widget > first visible
+	ModelBox* current = nullptr;
+	if (selectedModel) {
+		for (ModelBox* mb : visible) {
+			if (mb->model == selectedModel) { current = mb; break; }
+		}
+	}
+	if (!current) {
+		// Walk up from hovered widget to find a ModelBox
+		Widget* w = APP->event->getHoveredWidget();
+		while (w && !current) {
+			current = dynamic_cast<ModelBox*>(w);
+			w = w->parent;
+		}
+		// Only use it if it's in the visible list
+		if (current) {
+			bool found = false;
+			for (ModelBox* mb : visible) { if (mb == current) { found = true; break; } }
+			if (!found) current = nullptr;
+		}
+	}
+	if (!current) current = visible[0];
+
+	ModelBox* next = current;
+
+	switch (key) {
+		case GLFW_KEY_RIGHT: {
+			bool found = false;
+			for (ModelBox* mb : visible) {
+				if (found) { next = mb; break; }
+				if (mb == current) found = true;
+			}
+			break;
+		}
+		case GLFW_KEY_LEFT: {
+			ModelBox* prev = nullptr;
+			for (ModelBox* mb : visible) {
+				if (mb == current) { if (prev) next = prev; break; }
+				prev = mb;
+			}
+			break;
+		}
+		case GLFW_KEY_DOWN: {
+			float currentCenterY = current->box.getCenter().y;
+			float currentCenterX = current->box.getCenter().x;
+			// Find the top of the next row (smallest pos.y strictly below center)
+			float nextRowY = std::numeric_limits<float>::max();
+			for (ModelBox* mb : visible) {
+				if (mb->box.pos.y > currentCenterY && mb->box.pos.y < nextRowY)
+					nextRowY = mb->box.pos.y;
+			}
+			if (nextRowY < std::numeric_limits<float>::max()) {
+				float minDist = std::numeric_limits<float>::max();
+				for (ModelBox* mb : visible) {
+					if (std::abs(mb->box.pos.y - nextRowY) < 2.f) {
+						float dist = std::abs(mb->box.getCenter().x - currentCenterX);
+						if (dist < minDist) { minDist = dist; next = mb; }
+					}
+				}
+			}
+			break;
+		}
+		case GLFW_KEY_UP: {
+			float currentCenterX = current->box.getCenter().x;
+			// Find the top of the previous row (largest pos.y strictly above current row)
+			float prevRowY = -std::numeric_limits<float>::max();
+			for (ModelBox* mb : visible) {
+				if (mb->box.pos.y < current->box.pos.y && mb->box.pos.y > prevRowY)
+					prevRowY = mb->box.pos.y;
+			}
+			if (prevRowY > -std::numeric_limits<float>::max()) {
+				float minDist = std::numeric_limits<float>::max();
+				for (ModelBox* mb : visible) {
+					if (std::abs(mb->box.pos.y - prevRowY) < 2.f) {
+						float dist = std::abs(mb->box.getCenter().x - currentCenterX);
+						if (dist < minDist) { minDist = dist; next = mb; }
+					}
+				}
+			}
+			break;
+		}
+	}
+
+	selectedModel = next->model;
+
+	// Scroll the selected box into view (convert to modelScroll->container space)
+	Rect r = next->box;
+	r.pos = r.pos.plus(modelContainer->box.pos).plus(modelMargin->box.pos);
+	modelScroll->scrollTo(r);
 }
 
 void ModuleBrowser::clear() {

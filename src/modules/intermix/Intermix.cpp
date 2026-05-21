@@ -12,6 +12,13 @@ const int SCENE_MAX = 8;
 enum SCENE_CV_MODE {
 	OFF = -1,
 	TRIG_FWD = 0,
+	TRIG_REV = 1,
+	TRIG_PINGPONG = 2,
+	TRIG_ALT = 3,
+	TRIG_RANDOM = 4,
+	TRIG_RANDOM_WO_REPEAT = 5,
+	TRIG_RANDOM_WALK = 6,
+	TRIG_SHUFFLE = 10,
 	VOLT = 8,
 	C4 = 9,
 	ARM = 7
@@ -68,6 +75,7 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 	enum InputIds {
 		ENUMS(INPUT, PORTS),
 		INPUT_SCENE,
+		INPUT_RESET,
 		NUM_INPUTS
 	};
 	enum OutputIds {
@@ -112,14 +120,20 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 	/** [Stored to JSON] */
 	bool sceneAtMode;
 	/** [Stored to JSON] */
-	int sceneCount;
+	int sceneCount = SCENE_MAX;
 	/** [Stored to JSON] */
 	bool sceneLock;
 
 	int sceneNext = -1;
+	int sceneCvModeDir = 1;
+	int sceneCvModeAlt = 0;
+	std::vector<int> sceneCvModeShuffle;
 
 	/** [Stored to JSON] */
 	int channelCount = 1;
+
+	/** [Stored to JSON] */
+	FADE_LENGTH fadeLengthMode = FADE_LENGTH_4S;
 
 	LinearFade fader[PORTS][PORTS][PORT_MAX_CHANNELS];
 	uint32_t fadeInTs[PORTS];
@@ -130,6 +144,8 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 
 	dsp::SchmittTrigger sceneTrigger;
 	dsp::SchmittTrigger mapTrigger[PORTS];
+	dsp::SchmittTrigger resetTrigger;
+	dsp::Timer resetTimer;
 	ClockDividerEx sceneDivider;
 	ClockDividerEx lightDivider;
 
@@ -137,6 +153,7 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configInput(INPUT_SCENE, "Scene selection");
+		configInput(INPUT_RESET, "Scene reset");
 		for (int i = 0; i < SCENE_MAX; i++) {
 			configSwitch(PARAM_SCENE + i, 0.f, 1.f, 0.f, string::f("Scene %i", i + 1));
 		}
@@ -151,8 +168,10 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 			configSwitch(PARAM_X_MAP + i, 0.f, 1.f, 0.f, string::f("Matrix col %i", i + 1));
 			configSwitch(PARAM_Y_MAP + i, 0.f, 1.f, 0.f, string::f("Matrix row %i", i + 1));
 		}
-		configParam(PARAM_FADEIN, 0.f, 4.f, 0.f, "Fade in", "s");
-		configParam(PARAM_FADEOUT, 0.f, 4.f, 0.f, "Fade out", "s");
+		auto pqFadeIn = configParam<FadeLengthParamQuantity<IntermixModule<PORTS>>>(PARAM_FADEIN, 0.f, 4.f, 0.f, "Fade in", "s");
+		pqFadeIn->module = this;
+		auto pqFadeOut = configParam<FadeLengthParamQuantity<IntermixModule<PORTS>>>(PARAM_FADEOUT, 0.f, 4.f, 0.f, "Fade out", "s");
+		pqFadeOut->module = this;
 		sceneDivider.setDivision(64);
 
 		ResetEvent re;
@@ -204,6 +223,55 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 	void process(const ProcessArgs& args) override {
 		ts++;
 
+		// Reset input with cooldown
+		if (inputs[INPUT_RESET].isConnected()) {
+			if (resetTrigger.process(inputs[INPUT_RESET].getVoltage())) {
+				resetTimer.reset();
+				switch (sceneMode) {
+					case SCENE_CV_MODE::TRIG_FWD:
+					case SCENE_CV_MODE::TRIG_RANDOM:
+					case SCENE_CV_MODE::TRIG_RANDOM_WALK:
+					case SCENE_CV_MODE::TRIG_RANDOM_WO_REPEAT: {
+						sceneSet(0);
+						break;
+					}
+					case SCENE_CV_MODE::TRIG_REV: {
+						sceneSet(sceneCount - 1);
+						break;
+					}
+					case SCENE_CV_MODE::TRIG_PINGPONG: {
+						sceneCvModeDir = 1;
+						sceneSet(0);
+						break;
+					}
+					case SCENE_CV_MODE::TRIG_ALT: {
+						sceneCvModeDir = 1;
+						sceneCvModeAlt = 0;
+						sceneSet(0);
+						break;
+					}
+					case SCENE_CV_MODE::TRIG_SHUFFLE: {
+						sceneCvModeShuffle.clear();
+						for (int i = 0; i < sceneCount; i++) {
+							sceneCvModeShuffle.push_back(i);
+						}
+						std::random_shuffle(std::begin(sceneCvModeShuffle), std::end(sceneCvModeShuffle));
+						int s = std::min(std::max(0, sceneCvModeShuffle.back()), sceneCount - 1);
+						sceneCvModeShuffle.pop_back();
+						sceneSet(s);
+						break;
+					}
+					default: {
+						break;
+					}
+				}
+			}
+			else {
+				resetTimer.process(args.sampleTime);
+			}
+		}
+
+		// Scene CV input
 		if (inputs[INPUT_SCENE].isConnected()) {
 			switch (sceneMode) {
 				case SCENE_CV_MODE::OFF: {
@@ -211,7 +279,84 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 				}
 				case SCENE_CV_MODE::TRIG_FWD: {
 					if (sceneTrigger.process(inputs[INPUT_SCENE].getVoltage())) {
-						int s = (sceneSelected + 1) % sceneCount;
+						if (!inputs[INPUT_RESET].isConnected() || resetTimer.getTime() >= 1e-3f) {
+							int s = (sceneSelected + 1) % sceneCount;
+							sceneSet(s);
+						}
+					}
+					break;
+				}
+				case SCENE_CV_MODE::TRIG_REV: {
+					if (sceneTrigger.process(inputs[INPUT_SCENE].getVoltage())) {
+						if (!inputs[INPUT_RESET].isConnected() || resetTimer.getTime() >= 1e-3f) {
+							int s = (sceneSelected - 1 + sceneCount) % sceneCount;
+							sceneSet(s);
+						}
+					}
+					break;
+				}
+				case SCENE_CV_MODE::TRIG_PINGPONG: {
+					if (sceneTrigger.process(inputs[INPUT_SCENE].getVoltage())) {
+						if (!inputs[INPUT_RESET].isConnected() || resetTimer.getTime() >= 1e-3f) {
+							int s = sceneSelected + sceneCvModeDir;
+							if (s >= sceneCount - 1)
+								sceneCvModeDir = -1;
+							if (s <= 0)
+								sceneCvModeDir = 1;
+							sceneSet(s);
+						}
+					}
+					break;
+				}
+				case SCENE_CV_MODE::TRIG_ALT: {
+					if (sceneTrigger.process(inputs[INPUT_SCENE].getVoltage())) {
+						if (!inputs[INPUT_RESET].isConnected() || resetTimer.getTime() >= 1e-3f) {
+							int s = 0;
+							if (sceneSelected == 0) {
+								s = sceneCvModeAlt + sceneCvModeDir;
+								if (s >= sceneCount - 1)
+									sceneCvModeDir = -1;
+								if (s <= 0)
+									sceneCvModeDir = 1;
+								sceneCvModeAlt = std::max(0, std::min(s, sceneCount - 1));
+							}
+							sceneSet(s);
+						}
+					}
+					break;
+				}
+				case SCENE_CV_MODE::TRIG_RANDOM: {
+					if (sceneTrigger.process(inputs[INPUT_SCENE].getVoltage())) {
+						int s = random::u32() % sceneCount;
+						sceneSet(s);
+					}
+					break;
+				}
+				case SCENE_CV_MODE::TRIG_RANDOM_WO_REPEAT: {
+					if (sceneTrigger.process(inputs[INPUT_SCENE].getVoltage())) {
+						int s = random::u32() % sceneCount;
+						if (s == sceneSelected) s = (s + 1) % sceneCount;
+						sceneSet(s);
+					}
+					break;
+				}
+				case SCENE_CV_MODE::TRIG_RANDOM_WALK: {
+					if (sceneTrigger.process(inputs[INPUT_SCENE].getVoltage())) {
+						int s = std::min(std::max(0, sceneSelected + (random::u32() % 2 == 0 ? -1 : 1)), sceneCount - 1);
+						sceneSet(s);
+					}
+					break;
+				}
+				case SCENE_CV_MODE::TRIG_SHUFFLE: {
+					if (sceneTrigger.process(inputs[INPUT_SCENE].getVoltage())) {
+						if (sceneCvModeShuffle.size() == 0) {
+							for (int i = 0; i < sceneCount; i++) {
+								sceneCvModeShuffle.push_back(i);
+							}
+							std::random_shuffle(std::begin(sceneCvModeShuffle), std::end(sceneCvModeShuffle));
+						}
+						int s = std::min(std::max(0, sceneCvModeShuffle.back()), sceneCount - 1);
+						sceneCvModeShuffle.pop_back();
 						sceneSet(s);
 					}
 					break;
@@ -228,7 +373,9 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 				}
 				case SCENE_CV_MODE::ARM: {
 					if (sceneTrigger.process(inputs[INPUT_SCENE].getVoltage())) {
-						sceneSet(sceneNext);
+						if (!inputs[INPUT_RESET].isConnected() || resetTimer.getTime() >= 1e-3f) {
+							sceneSet(sceneNext);
+						}
 					}
 					break;
 				}
@@ -552,6 +699,7 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 		json_object_set_new(rootJ, "sceneAtMode", json_boolean(sceneAtMode));
 		json_object_set_new(rootJ, "sceneCount", json_integer(sceneCount));
 		json_object_set_new(rootJ, "sceneLock", json_boolean(sceneLock));
+		json_object_set_new(rootJ, "fadeLengthMode", json_integer(fadeLengthMode));
 		return rootJ;
 	}
 
@@ -603,6 +751,9 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 		if (sceneCountJ) sceneCount = json_integer_value(sceneCountJ);
 		json_t* sceneLockJ = json_object_get(rootJ, "sceneLock");
 		if (sceneLockJ) sceneLock = json_boolean_value(sceneLockJ);
+
+		json_t* fadeLengthModeJ = json_object_get(rootJ, "fadeLengthMode");
+		if (fadeLengthModeJ) fadeLengthMode = (FADE_LENGTH)json_integer_value(fadeLengthModeJ);
 
 		for (int i = 0; i < PORTS; i++) {
 			for (int j = 0; j < PORTS; j++) {
@@ -791,6 +942,7 @@ struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 
 		addParam(createParamCentered<StoermelderTrimpot>(Vec(311.7f, 300.8f), module, IntermixModule<PORTS>::PARAM_FADEIN));
 		addParam(createParamCentered<StoermelderTrimpot>(Vec(311.7f, 330.1f), module, IntermixModule<PORTS>::PARAM_FADEOUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(381.9f, 326.7f), module, IntermixModule<PORTS>::INPUT_RESET));
 
 		// Lights
 		for (int i = 0; i < SCENE_MAX; i++) {
@@ -865,6 +1017,13 @@ struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 			{
 				{ SCENE_CV_MODE::OFF, "Off" },
 				{ SCENE_CV_MODE::TRIG_FWD, "Trigger" },
+				{ SCENE_CV_MODE::TRIG_REV, "Trigger reverse" },
+				{ SCENE_CV_MODE::TRIG_PINGPONG, "Ping-pong" },
+				{ SCENE_CV_MODE::TRIG_ALT, "Alternate" },
+				{ SCENE_CV_MODE::TRIG_RANDOM, "Random" },
+				{ SCENE_CV_MODE::TRIG_RANDOM_WO_REPEAT, "Random no repeat" },
+				{ SCENE_CV_MODE::TRIG_RANDOM_WALK, "Random walk" },
+				{ SCENE_CV_MODE::TRIG_SHUFFLE, "Shuffle" },
 				{ SCENE_CV_MODE::VOLT, "0..10V" },
 				{ SCENE_CV_MODE::C4, "C4-G4" },
 				{ SCENE_CV_MODE::ARM, "Arm" }
@@ -874,6 +1033,16 @@ struct IntermixWidget : ThemedModuleWidget<IntermixModule<8>> {
 		menu->addChild(createBoolPtrMenuItem("Include input-mode in scenes", "", &module->sceneInputMode));
 		menu->addChild(createBoolPtrMenuItem("Include attenuverters in scenes", "", &module->sceneAtMode));
 		menu->addChild(createBoolPtrMenuItem("Limit output to -10..10V", "", &module->outputClamp));
+		menu->addChild(new MenuSeparator());
+		menu->addChild(StoermelderPackOne::Rack::createMapSubmenuItem<FADE_LENGTH>("Fade length",
+			{
+				{ FADE_LENGTH::FADE_LENGTH_4S, "4s" },
+				{ FADE_LENGTH::FADE_LENGTH_15S, "15s" },
+				{ FADE_LENGTH::FADE_LENGTH_60S, "60s" }
+			},
+			[=]() { return module->fadeLengthMode; },
+			[=](FADE_LENGTH m) { module->fadeLengthMode = m; }
+		));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(new BrightnessSlider(module));
 		menu->addChild(createBoolPtrMenuItem("Visualize input on pads", "", &module->inputVisualize));

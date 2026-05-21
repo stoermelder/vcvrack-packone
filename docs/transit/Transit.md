@@ -80,22 +80,22 @@ The fun begins when you use the port labelled _SEL_ for selecting snapshots by C
 
 You can change the range of usable snapshots by right‑clicking any snapshot button and choosing _Set as first_ or _Set as last_. The first usable snapshot becomes the new 'Snapshot 1' for sequencing, CV selection and Phase mode; the last usable snapshot sets the end of the sequence.
 
-Modes for _SEL_ on the contextual menu:
+Modes for _SEL_ on the contextual menu. The _RESET_ input restarts the sequence based on the mode:
 
-| Mode | Description |
-|------|-------------|
-| **Trigger forward** | A trigger advances TRANSIT to the next snapshot. Empty slots are part of the sequence but won't have any effect on the parameters. A trigger on _RESET_ restarts the sequence on the first usable snapshot (see _Set as first_ above). |
-| **Trigger reverse** | Same as **Trigger forward** but reverse direction. |
-| **Trigger pingpong** | Same as **Trigger forward** but loops first forward then reverse. |
-| **Trigger alternating** (added in v1.8.0) | Same as **Trigger forward** but progresses in the following manner (for 6 active snapshots): 1, 2, 1, 3, 1, 4, 1, 5, 1, 6, 1, 5, 1, 4, 1, 3, 1, 2, ... |
-| **Trigger random** | Same as **Trigger forward** but chooses the next snapshot randomly. |
-| **Trigger pseudo-random** (added in v1.8.0) | Same as **Trigger random** but never chooses a snapshot multiple times in a row (which happens on "random"). |
-| **Trigger random walk** (added in v1.8.0) | Same as **Trigger forward** but chooses the next snapshot randomly from those adjacent to the currently active snapshot. |
-| **Trigger shuffle** (added in v1.8.0) | Same as **Trigger forward** but works on a random permutation of the active snapshots: Every snapshot will be enabled once before the next permutation is randomly generated. |
-| **0..10V** | You can select a specific snapshot by voltage. A voltage of 0–0.833V selects the first usable slot, 0.833–1.666V selects the next one, and so on, if all 12 snapshot-slots are active. Keep in mind that adjusting the length of the sequence or the configured first/last slots also adjusts the voltage ranges: e.g. a sequence with length 2 will select the first usable slot on voltage 0–5V. |
-| **C4** | This mode follows the V/Oct standard. C4 selects the first usable snapshot, C#4 selects the next one and so on. Channel 2 on the CV-input responds to triggers to re-trigger the currently selected snapshot. |
-| **Arm** | This mode is a kind of "buffered trigger": First apply a clock signal on _SEL_. Then you "arm" any snapshot manually or by MIDI-mapping its button (resulting in a yellow LED) which will be activated on the next clock trigger (white LED). This mode allows manual snapshot activation synchronized to a clock. |
-| **Phase** (added in v1.9.0) | This mode behaves differently than the other modes: An input voltage of 0–10V scans continuously through the stored snapshots. A voltage of 0V sets the parameters to the first usable snapshot, and 10V sets the parameters to the last active snapshot (as set via “Set as last”); in between the parameters are interpolated according to the used snapshots. Slew-limiting can be applied additionally using the _Fade_-slider. |
+| Mode | Description | Reset behavior |
+|------|-------------|------|
+| **Trigger forward** | A trigger advances TRANSIT to the next snapshot. Empty slots are part of the sequence but won't have any effect on the parameters. | Resets to first usable snapshot |
+| **Trigger reverse** | Same as **Trigger forward** but reverse direction. | Resets to first usable snapshot |
+| **Trigger pingpong** | Same as **Trigger forward** but loops first forward then reverse. | Resets to first usable snapshot, direction to forward |
+| **Trigger alternating** (added in v1.8.0) | Same as **Trigger forward** but progresses in the following manner (for 6 active snapshots): 1, 2, 1, 3, 1, 4, 1, 5, 1, 6, 1, 5, 1, 4, 1, 3, 1, 2, ... | Resets to first usable snapshot |
+| **Trigger random** | Same as **Trigger forward** but chooses the next snapshot randomly. | Resets to first usable snapshot |
+| **Trigger pseudo-random** (added in v1.8.0) | Same as **Trigger random** but never chooses a snapshot multiple times in a row (which happens on "random"). | Resets to first usable snapshot |
+| **Trigger random walk** (added in v1.8.0) | Same as **Trigger forward** but chooses the next snapshot randomly from those adjacent to the currently active snapshot. | Resets to first usable snapshot |
+| **Trigger shuffle** (added in v1.8.0) | Same as **Trigger forward** but works on a random permutation of the active snapshots: Every snapshot will be enabled once before the next permutation is randomly generated. | Re-initializes the shuffle order |
+| **0..10V** | You can select a specific snapshot by voltage. A voltage of 0–0.833V selects the first usable slot, 0.833–1.666V selects the next one, and so on, if all 12 snapshot-slots are active. Keep in mind that adjusting the length of the sequence or the configured first/last slots also adjusts the voltage ranges: e.g. a sequence with length 2 will select the first usable slot on voltage 0–5V. | No effect |
+| **C4** | This mode follows the V/Oct standard. C4 selects the first usable snapshot, C#4 selects the next one and so on. Channel 2 on the CV-input responds to triggers to re-trigger the currently selected snapshot. | No effect |
+| **Arm** | This mode is a kind of "buffered trigger": First apply a clock signal on _SEL_. Then you "arm" any snapshot manually or by MIDI-mapping its button (resulting in a yellow LED) which will be activated on the next clock trigger (white LED). This mode allows manual snapshot activation synchronized to a clock. | Clears the armed snapshot |
+| **Phase** (added in v1.9.0) | This mode behaves differently than the other modes: An input voltage of 0–10V scans continuously through the stored snapshots. A voltage of 0V sets the parameters to the first usable snapshot, and 10V sets the parameters to the last active snapshot (as set via "Set as last"); in between the parameters are interpolated according to the used snapshots. Slew-limiting can be applied additionally using the _Fade_-slider. | No effect |
 
 ![TRANSIT SEL-port](./Transit-sel.gif)
 

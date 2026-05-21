@@ -46,6 +46,7 @@ If you like my modules consider donating to https://paypal.me/stoermelder, but d
 - [MIDI-CAT FINE](./docs/midicat/MidiCat.md#fine-expander): expander for MIDI-CAT, allows fine-tuning of MIDI CC parameter-mappings
 - [MIDI-CAT MEM](./docs/midicat/MidiCat.md#mem-expander): storage-expander for MIDI mapping-presets with MIDI-CAT
 - [MIDI-CAT XL](./docs/midicat/MidiCat.md): a wider panel version of MIDI-CAT with identical features and driver selection moved to the context menu
+- [MIDI-ESX](./docs/midiesx/MidiEsx.md): MIDI converter for your Expert Sleepers hardware setup (ES-5, ES-8, ES-9 etc.)
 - [MIDI-KEY](./docs/midi/MidiKey.md): utility for generating keyboard events from MIDI CC or Note messages
 - [MIDI-MON](./docs/midi/MidiMon.md): input-monitor for MIDI messages
 - [MIDI-PLUG](./docs/midi/MidiPlug.md): a virtual MIDI merger and splitter

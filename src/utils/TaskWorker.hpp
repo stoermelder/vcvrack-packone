@@ -16,12 +16,16 @@ struct TaskWorker {
 	bool workerDoProcess = false;
 	std::string name;
 
-	dsp::RingBuffer<std::tuple<std::function<void()>, Context*>, 32> workQueue;
+	struct WorkItem {
+		std::function<void()> task;
+		Context* context;
+	};
+	dsp::RingBuffer<std::shared_ptr<WorkItem>, 32> workQueue;
 
 	TaskWorker(std::string name = "") {
 		workerContext = contextGet();
 		worker = new std::thread(&TaskWorker::processWorker, this);
-		this->name = name;
+		this->name = std::move(name);
 	}
 
 	~TaskWorker() {
@@ -51,22 +55,20 @@ struct TaskWorker {
 			workerCondVar.wait(lock, std::bind(&TaskWorker::workerDoProcess, this));
 			if (!workerIsRunning) return;
 			while (!workQueue.empty()) {
-				auto t = workQueue.shift();
-				std::function<void()> task = std::get<0>(t);
-				Context* context = std::get<1>(t);
-				contextSet(context);
-				task();
+				auto item = workQueue.shift();
+				contextSet(item->context);
+				item->task();
 			}
 			workerDoProcess = false;
 		}
 	}
 
 	void work(std::function<void()> task) {
-		work(task, workerContext);
+		work(std::move(task), workerContext);
 	}
 
 	void work(std::function<void()> task, Context* context) {
-		workQueue.push(std::make_tuple(task, context));
+		workQueue.push(std::make_shared<WorkItem>(WorkItem{std::move(task), context}));
 		workerDoProcess = true;
 		workerCondVar.notify_one();
 	}

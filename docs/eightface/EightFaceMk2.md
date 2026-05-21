@@ -87,21 +87,21 @@ The fun begins when you use the port labelled _CV_ for selecting snapshots by CV
 
 ![8FACE mk2 CV-port](./EightFaceMk2-sel.gif)
 
-Modes for _CV_ on the contextual menu:
+Modes for _CV_ on the contextual menu. The **RESET** input restarts the sequence based on the mode:
 
-| Mode | Description |
-|------|-------------|
-| **Trigger forward** | A trigger advances 8FACE mk2 to the next snapshot. Empty slots are part of the sequence but won’t have any effect on the bound modules. A trigger on **RESET** restarts the sequence on snapshot 1. |
-| **Trigger reverse** | Same as **Trigger forward** but reverse direction. |
-| **Trigger pingpong** | Same as **Trigger forward** but loops first forward then reverse. |
-| **Trigger alternating** | Same as **Trigger forward** but progresses in the following manner (for 6 active snapshots): 1, 2, 1, 3, 1, 4, 1, 5, 1, 6, 1, 5, 1, 4, 1, 3, 1, 2, … |
-| **Trigger random** | Same as **Trigger forward** but chooses the next snapshot randomly. |
-| **Trigger pseudo‑random** | Same as **Trigger random** but never chooses a snapshot multiple times in a row (which happens on “random”). |
-| **Trigger random walk** | Same as **Trigger forward** but chooses the next snapshot randomly from those adjacent to the currently active snapshot. |
-| **Trigger shuffle** | Same as **Trigger forward** but works on a random permutation of the active snapshots: every snapshot will be enabled once before the next permutation is randomly generated. |
-| **0..10 V** | You can select a specific snapshot by voltage. A voltage of 0–1.25 V selects slot 1, 1.25–2.5 V selects slot 2, and so on, if all 8 snapshot‑slots are active. Keep in mind that adjusting the length of the sequence also adjusts the voltage range for selecting individual slots: a sequence with length 2 will select slot 1 on voltage 0–5 V, etc. |
-| **C4** | This mode follows the V/Oct‑standard. C4 selects snapshot 1, C♯4 selects snapshot 2 and so on. Channel 2 on the **CV**‑input responds to triggers to re‑trigger the currently selected snapshot. |
-| **Arm** | This mode is a kind of “buffered trigger”: first apply a clock signal on **CV**. Then you “arm” any snapshot manually or by MIDI‑mapping its button (resulting in a yellow LED) which will be activated on the next clock trigger (white LED). This mode allows manual snapshot activation synchronized to a clock. |
+| Mode | Description | Reset behavior |
+|------|-------------|------|
+| **Trigger forward** | A trigger advances 8FACE mk2 to the next snapshot. Empty slots are part of the sequence but won't have any effect on the bound modules. | Resets to first slot |
+| **Trigger reverse** | Same as **Trigger forward** but reverse direction. | Resets to first slot |
+| **Trigger pingpong** | Same as **Trigger forward** but loops first forward then reverse. | Resets to first slot, direction to forward |
+| **Trigger alternating** | Same as **Trigger forward** but progresses in the following manner (for 6 active snapshots): 1, 2, 1, 3, 1, 4, 1, 5, 1, 6, 1, 5, 1, 4, 1, 3, 1, 2, … | Resets to first slot |
+| **Trigger random** | Same as **Trigger forward** but chooses the next snapshot randomly. | Resets to first slot |
+| **Trigger pseudo-random** | Same as **Trigger random** but never chooses a snapshot multiple times in a row (which happens on "random"). | Resets to first slot |
+| **Trigger random walk** | Same as **Trigger forward** but chooses the next snapshot randomly from those adjacent to the currently active snapshot. | Resets to first slot |
+| **Trigger shuffle** | Same as **Trigger forward** but works on a random permutation of the active snapshots: every snapshot will be enabled once before the next permutation is randomly generated. | Re-initializes the shuffle order |
+| **0..10V** | You can select a specific snapshot by voltage. A voltage of 0-1.25V selects slot 1, 1.25-2.5V selects slot 2, and so on, if all 8 snapshot-slots are active. Keep in mind that adjusting the length of the sequence also adjusts the voltage range for selecting individual slots: a sequence with length 2 will select slot 1 on voltage 0-5V, etc. | No effect |
+| **C4** | This mode follows the V/Oct-standard. C4 selects snapshot 1, C#4 selects snapshot 2 and so on. Channel 2 on the **CV**-input responds to triggers to re-trigger the currently selected snapshot. | No effect |
+| **Arm** | This mode is a kind of "buffered trigger": first apply a clock signal on **CV**. Then you "arm" any snapshot manually or by MIDI-mapping its button (resulting in a yellow LED) which will be activated on the next clock trigger (white LED). This mode allows manual snapshot activation synchronized to a clock. | Clears the armed slot |
 
 ### +8 expander
 
@@ -144,3 +144,6 @@ Once placed next to 8FACE mk2 the expander works and behaves the same way 8FACE 
 - v2.3.0
     - Added performance warning for large module presets (#396)
     - Fixed broken unbinding of modules (memory leak) (#396)
+- v2.4.0
+    - Added an option to draw module outlines only when selected, which is the new default
+    - Fixed broken processing in VCV Rack-plugin on closed plugin-window (#424)

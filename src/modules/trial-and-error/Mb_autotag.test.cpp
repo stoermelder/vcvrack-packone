@@ -41,9 +41,9 @@ TEST_CASE("customTagAuto", "[Mb]") {
 
     // Create mock rules
     std::vector<AutoTagRule> rules = {
-        {"Matrix Mixer", {"matrix mixer", "matrix routing"}},
-        {"Wavefolder", {"wavefold"}},
-        {"Formant", {"formant oscillator", "formant filter"}, {"format"}}
+        {"Matrix Mixer", "", {"matrix mixer", "matrix routing"}},
+        {"Wavefolder", "", {"wavefold"}},
+        {"Formant", "", {"formant oscillator", "formant filter"}, {"format"}}
     };
 
     auto result = customTagAuto(rules, plugins);
@@ -97,7 +97,7 @@ TEST_CASE("customTagAuto blockword handling", "[Mb]") {
 
 		// Using Feedback rule with blockword "visual"
 		std::vector<AutoTagRule> rules = {
-			{"Feedback", {"feedback"}, {"visual"}}
+			{"Feedback", "", {"feedback"}, {"visual"}}
 		};
 
 		auto result = customTagAuto(rules, plugins);
@@ -136,7 +136,7 @@ TEST_CASE("customTagAuto blockword handling", "[Mb]") {
 
 		// Looper rule with blockword "jooper"
 		std::vector<AutoTagRule> rules = {
-			{"Looper", {"looper"}, {"jooper"}}
+			{"Looper", "", {"looper"}, {"jooper"}}
 		};
 
 		auto result = customTagAuto(rules, plugins);
@@ -165,7 +165,7 @@ TEST_CASE("customTagAuto blockword handling", "[Mb]") {
 		std::vector<plugin::Plugin*> plugins = {&testPlugin};
 
 		std::vector<AutoTagRule> rules = {
-			{"Feedback", {"feedback"}, {"visual"}}
+			{"Feedback", "", {"feedback"}, {"visual"}}
 		};
 
 		auto result = customTagAuto(rules, plugins);
@@ -195,7 +195,7 @@ TEST_CASE("customTagAuto blockword handling", "[Mb]") {
 		customTagAdd(&modelToSkip, "Feedback");
 
 		std::vector<AutoTagRule> rules = {
-			{"Feedback", {"feedback"}, {"visual"}}
+			{"Feedback", "", {"feedback"}, {"visual"}}
 		};
 
 		auto result = customTagAuto(rules, plugins);
