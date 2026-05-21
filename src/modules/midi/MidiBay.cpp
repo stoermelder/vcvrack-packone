@@ -1272,12 +1272,12 @@ struct MidiBayWidget : ThemedModuleWidget<MidiBayModule>, OverlayMessageProvider
 		}
 		for (int i = 0; i < MATRIX_SIZE; i++) {
 			float x = 24.3f + i * (245.7f - 24.3f) / 7.f;
-			auto* sb = createParam<MidiBaySceneButton>(Vec(x - 13.25f, 320.6f - 13.25f), module, MidiBayModule::PARAM_SCENE + i);
+			auto* sb = createParamCentered<MidiBaySceneButton>(Vec(x, 324.3f), module, MidiBayModule::PARAM_SCENE + i);
 			sb->module = module;
 			sb->mw = this;
 			sb->sceneId = i;
 			addParam(sb);
-			addChild(createLightCentered<MatrixButtonLight<WhiteLight, MidiBayModule>>(Vec(x, 320.6f), module, MidiBayModule::LIGHT_SCENE + i));
+			addChild(createLightCentered<MatrixButtonLight<WhiteLight, MidiBayModule>>(Vec(x, 324.3f), module, MidiBayModule::LIGHT_SCENE + i));
 		}
 
 		if (module) {
