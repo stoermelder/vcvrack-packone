@@ -183,6 +183,26 @@ struct TransitBase : Module, StripIdFixModule {
 	}
 };
 
+struct TransitPadMaster {
+	virtual int getSelectedSlot() { return -1; }
+	virtual std::string getSlotLabel(int i) { return ""; }
+};
+
+struct TransitPadInterface {
+	TransitPadMaster* masterModule = nullptr;
+	struct TransitPadSource {
+		float weight;
+		/** [Stored to JSON] */
+		int id;
+	};
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wreturn-stack-address"
+	virtual const std::vector<TransitPadSource>& getPadFactors() { return {}; }
+#pragma GCC diagnostic pop
+};
+
+
 template <int NUM_PRESETS>
 struct TransitParamQuantity : SwitchQuantity {
 	TransitBase<NUM_PRESETS>* module;

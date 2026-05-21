@@ -138,6 +138,10 @@ struct XyScreenModule {
 		radius[id] = a;
 	}
 
+	inline float scGetRadiusRaw(uint8_t id, float sampleTime) {
+		return radiusUi[id];
+	}
+
 	inline float scGetRadiusFiltered(uint8_t id, float sampleTime) {
 		return radiusFilter[id].process(sampleTime, radiusUi[id]);
 	}
@@ -202,7 +206,13 @@ struct XyScreenModule {
 		selectedId = -1;
 	}
 
-	virtual inline float scGetDistance(uint8_t typeSource, uint8_t idSoruce, uint8_t typeDest, uint8_t idDest) { return 0.f; }
+	virtual inline float scGetDistance(uint8_t typeSource, uint8_t idSoruce, uint8_t typeDest, uint8_t idDest) { 
+		return 0.f; 
+	}
+
+	virtual inline NVGcolor scGetColor(uint8_t type, uint8_t id) {
+		return type == 0 ? color::WHITE : color::YELLOW;
+	}
 
 	void dataToJson(json_t* dataJ, size_t type, size_t id) {
 		if (type == 0) {
@@ -506,7 +516,6 @@ struct XyScreenDragWidget : OpaqueWidget {
 	const float fontsize = 13.0f;
 
 	MODULE* module;
-	NVGcolor color = nvgRGB(0x66, 0x66, 0x0);
 	NVGcolor textColor = nvgRGB(0x66, 0x66, 0x0);
 	uint8_t id;
 	uint8_t type;
@@ -531,12 +540,12 @@ struct XyScreenDragWidget : OpaqueWidget {
 	}
 
 	void drawLayer(const Widget::DrawArgs& args, int layer) override {
-		if (!module)
-			return;
+		if (!module) return;
 
 		if (layer == 1) {
-			if (!module->scIsActive(type, id))
-				return;
+			if (!module->scIsActive(type, id)) return;
+
+			NVGcolor cc = module->scGetColor(type, id);
 
 			if (type == 0) {
 				// Radius is only used for default type
@@ -551,10 +560,10 @@ struct XyScreenDragWidget : OpaqueWidget {
 					nvgBeginPath(args.vg);
 					nvgEllipse(args.vg, c.x, c.y, sizeX, sizeY);
 					nvgGlobalCompositeOperation(args.vg, NVG_LIGHTER);
-					nvgStrokeColor(args.vg, color::mult(color, 0.7f));
+					nvgStrokeColor(args.vg, color::mult(cc, 0.7f));
 					nvgStrokeWidth(args.vg, 0.6f);
 					nvgStroke(args.vg);
-					nvgFillColor(args.vg, color::mult(color, 0.1f));
+					nvgFillColor(args.vg, color::mult(cc, 0.1f));
 					nvgFill(args.vg);
 					nvgResetScissor(args.vg);
 					nvgRestore(args.vg);
@@ -562,7 +571,7 @@ struct XyScreenDragWidget : OpaqueWidget {
 					textColor = nvgRGBA(0, 16, 90, 200);
 				}
 				else {
-					textColor = color;
+					textColor = cc;
 				}
 			}
 
@@ -597,7 +606,7 @@ struct XyScreenDragWidget : OpaqueWidget {
 				// Draw selection halo
 				float oradius = 1.8f * radius;
 				NVGpaint paint;
-				NVGcolor icol = color::mult(color, 0.25f);
+				NVGcolor icol = color::mult(cc, 0.25f);
 				NVGcolor ocol = nvgRGB(0, 0, 0);
 
 				Rect b = Rect(box.pos.mult(-1), parent->box.size);
@@ -611,25 +620,27 @@ struct XyScreenDragWidget : OpaqueWidget {
 				nvgResetScissor(args.vg);
 				nvgRestore(args.vg);
 
-				textColor = nvgRGBA(0, 16, 90, 200);
+				textColor = type == 0 ? nvgRGBA(0, 16, 90, 200) : cc;
 			}
 			else {
-				textColor = color;
+				textColor = cc;
 			}
 
 			// Draw inner circle
-			nvgBeginPath(args.vg);
-			nvgCircle(args.vg, c.x, c.y, radius - 2.f);
-			nvgStrokeColor(args.vg, color);
-			nvgStrokeWidth(args.vg, 1.0f);
-			nvgStroke(args.vg);
-			nvgFillColor(args.vg, color::mult(color, 0.5f));
-			nvgFill(args.vg);
+			if (type == 0) {
+				nvgBeginPath(args.vg);
+				nvgCircle(args.vg, c.x, c.y, radius - 2.f);
+				nvgStrokeColor(args.vg, cc);
+				nvgStrokeWidth(args.vg, 1.0f);
+				nvgStroke(args.vg);
+				nvgFillColor(args.vg, color::mult(cc, 0.5f));
+				nvgFill(args.vg);
+			}
 
 			// Draw amount circle
 			nvgBeginPath(args.vg);
 			nvgCircle(args.vg, c.x, c.y, radius);
-			nvgStrokeColor(args.vg, color::mult(color, circleA));
+			nvgStrokeColor(args.vg, color::mult(cc, circleA));
 			nvgStrokeWidth(args.vg, 0.8f);
 			nvgStroke(args.vg);
 
@@ -715,6 +726,8 @@ struct XyScreenDragWidget : OpaqueWidget {
 	void createContextMenu() {
 		ui::Menu* menu = createMenu();
 		menu->addChild(createMenuLabel(getItemName()));
+		prependContextMenu(menu);
+
 		if (type == 0) {
 			menu->addChild(new XyScreenAmountSlider<MODULE>(module, id));
 			menu->addChild(new XyScreenRadiusSlider<MODULE>(module, id));
@@ -730,6 +743,7 @@ struct XyScreenDragWidget : OpaqueWidget {
 		return '1' + id;
 	}
 
+	virtual void prependContextMenu(Menu* menu) {}
 	virtual void appendContextMenu(Menu* menu) {}
 };
 
@@ -750,7 +764,7 @@ struct XyScreenWidget : OpaqueWidget {
 	}
 
 	template <typename WIDGET>
-	void createDragWidgets(MODULE* module, uint8_t type, uint8_t count, NVGcolor color) {
+	void createDragWidgets(MODULE* module, uint8_t type, uint8_t count) {
 		// This is some over-complicated code for drawing something on the display in the module browser.
 		// We "inject" some nodes using a dummy module, satisfying the nodes methods for the display.
 		if (!module && !dummyModule) {
@@ -766,7 +780,6 @@ struct XyScreenWidget : OpaqueWidget {
 				w->module = module;
 				w->id = i;
 				w->type = type;
-				w->color = color;
 				addChild(w);
 			}
 			else {
@@ -774,7 +787,6 @@ struct XyScreenWidget : OpaqueWidget {
 				w->module = dummyModule;
 				w->id = i;
 				w->type = type;
-				w->color = color;
 				addChild(w);
 			}
 		}
@@ -784,24 +796,21 @@ struct XyScreenWidget : OpaqueWidget {
 		if (layer == 1) {
 			// Dim the display but don't darken it completely
 			float b = std::max(0.2f, settings::rackBrightness);
+			float b_inv = 1.f + std::max(b - settings::rackBrightness, 0.f) * 8.f;
 			nvgGlobalAlpha(args.vg, b);
 
 			float sizeX = box.size.x / 8.f;
 			float sizeY = box.size.y / 8.f;
 
-			// Draw background
-			nvgBeginPath(args.vg);
-			nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
-			nvgFillColor(args.vg, nvgRGB(0, 16, 90));
-			nvgFill(args.vg);
+			math::Rect r = box.zeroPos().grow(Vec(3.f, 3.f));
 
-			// Draw gradient
-			math::Rect r = box.zeroPos();
+			// Black background
 			nvgBeginPath(args.vg);
 			nvgRect(args.vg, RECT_ARGS(r));
-			NVGcolor topColor = nvgRGBA(200, 200, 200, 40);
-			NVGcolor bottomColor = nvgRGBA(200, 200, 200, 0);
-			nvgFillPaint(args.vg, nvgLinearGradient(args.vg, 0.f, 0.f, 0.f, 80.f, topColor, bottomColor));
+			NVGcolor topColor = color::mult(nvgRGB(0x22, 0x22, 0x22), b_inv);
+			NVGcolor bottomColor = color::mult(nvgRGB(0x12, 0x12, 0x12), b_inv);
+			nvgFillPaint(args.vg, nvgLinearGradient(args.vg, 0.0, 0.0, 0.0, 25.0, topColor, bottomColor));
+			// nvgFillColor(args.vg, bottomColor);
 			nvgFill(args.vg);
 
 			// Draw grid
@@ -824,11 +833,37 @@ struct XyScreenWidget : OpaqueWidget {
 				nvgStroke(args.vg);
 			}
 
-			// Draw outer rectangle
+			nvgGlobalCompositeOperation(args.vg, NVG_SOURCE_OVER);
+
+			// Outer strokes
 			nvgBeginPath(args.vg);
-			nvgRect(args.vg, 0.f, 0.f, box.size.x, box.size.y);
-			nvgStrokeWidth(args.vg, 0.7f);
-			nvgStrokeColor(args.vg, color::mult(color::WHITE, 0.25f));
+			nvgMoveTo(args.vg, r.pos.x, r.pos.y - 0.5);
+			nvgLineTo(args.vg, r.size.x + r.pos.x, r.pos.y - 0.5);
+			nvgStrokeColor(args.vg, nvgRGBAf(0, 0, 0, 0.24));
+			nvgStrokeWidth(args.vg, 1.0);
+			nvgStroke(args.vg);
+
+			nvgBeginPath(args.vg);
+			nvgMoveTo(args.vg, r.pos.x, r.size.y + 2 * r.pos.y + 0.5);
+			nvgLineTo(args.vg, r.size.x + r.pos.x, r.size.y + 2 * r.pos.y + 0.5);
+			nvgStrokeColor(args.vg, nvgRGBAf(1, 1, 1, 0.25));
+			nvgStrokeWidth(args.vg, 1.0);
+			nvgStroke(args.vg);
+
+			// Inner strokes
+			nvgBeginPath(args.vg);
+			nvgMoveTo(args.vg, r.pos.x, r.pos.y + 2.5);
+			nvgLineTo(args.vg, r.size.x + r.pos.x, r.pos.y + 2.5);
+			nvgStrokeColor(args.vg, nvgRGBAf(1, 1, 1, 0.20));
+			nvgStrokeWidth(args.vg, 1.0);
+			nvgStroke(args.vg);
+
+			// Black border
+			math::Rect rBorder = r.shrink(math::Vec(1, 1));
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, RECT_ARGS(rBorder));
+			nvgStrokeColor(args.vg, bottomColor);
+			nvgStrokeWidth(args.vg, 2.0);
 			nvgStroke(args.vg);
 		}
 
@@ -853,6 +888,8 @@ struct XyScreenWidget : OpaqueWidget {
 	void createContextMenu() {
 		ui::Menu* menu = createMenu();
 		menu->addChild(createMenuLabel(module->model->name));
+		prependContextMenu(menu);
+
 		menu->addChild(createMenuItem("Initialize", "", [=] {
 			history::ModuleChange* h = new history::ModuleChange;
 			h->name = module->model->plugin->brand + " " + module->model->name + " initialize";
@@ -966,6 +1003,7 @@ struct XyScreenWidget : OpaqueWidget {
 		appendContextMenu(menu);
 	}
 
+	virtual void prependContextMenu(Menu* menu) {}
 	virtual void appendContextMenu(Menu* menu) {}
 };
 
