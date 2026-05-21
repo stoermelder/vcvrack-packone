@@ -4,6 +4,8 @@
 
 - Module [MIDI-ESX](./docs/midiesx/MidiEsx.md)
     - MIDI converter for your Expert Sleepers hardware setup (ES-5, ES-8, ES-9 etc.)
+- Module [REEL](./docs/reel/Reel.md)
+    - Patch-memory for a group of modules
 
 ### Changes and Fixes
 

@@ -50,6 +50,15 @@
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/flower/FlowerSeq.md"
 		},
 		{
+			"slug": "Reel",
+			"name": "REEL",
+			"description": "Patch memory for a group of modules \u2014 captures module parameters and internal cables across named snapshot slots",
+			"tags": [
+				"Utility",
+				"Controller"
+			]
+		},
+		{
 			"slug": "MidiEsx",
 			"name": "MIDI-ESX",
 			"description": "MIDI converter for your Expert Sleepers hardware setup (ES-5, ES-8, ES-9 etc.)",
