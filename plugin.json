@@ -14,6 +14,15 @@
 	"donateUrl": "https://paypal.me/stoermelder",
 	"modules": [
 		{
+			"slug": "MidiKit",
+			"name": "MIDI-KIT",
+			"description": "",
+			"tags": [
+				"MIDI", "Utility"
+			],
+			"manualUrl": ""
+		},
+		{
 			"slug": "MidiEsx",
 			"name": "MIDI-ESX",
 			"description": "MIDI converter for your Expert Sleepers hardware setup (ES-5, ES-8, ES-9 etc.)",

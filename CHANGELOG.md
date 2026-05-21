@@ -90,9 +90,9 @@ The old behavior can be restored using _Unsafe fast_-mode, which will load prese
 
 ### New modules
 
-- Module [MIDI-CAT FINE](./docs/midicat/MidiCat.md#fine-expander)
+- Module [MIDI-CAT FINE](./docs/MidiCat.md#fine-expander)
     - New expander for MIDI-CAT, allows fine-tuning of MIDI CC parameter-mappings
-- Module [PANIC ROOM](./docs/panicroom/PanicRoom.md)
+- Module [PANIC ROOM](./docs/PanicRoom.md)
     - Restricts your modular space within Rack, making it impossible to patch outside of a defined area
 
 ### Changes and Fixes
@@ -109,9 +109,9 @@ The old behavior can be restored using _Unsafe fast_-mode, which will load prese
 - Modules [CV-MAP](./docs/cvmap/CVMap.md)
     - Added mapping functions _Map module (left)_ and _Map module (select)_
     - Added color setting for mapping indicators
-- Modules [CV-MAP](./docs/cvmap/CVMap.md), [MACRO](./docs/cvmap/Macro.md), [µMAP](./docs/cvmap/CVMapMicro.md), [MIDI-CAT](./docs/midicat/MidiCat.md), [MIRROR](./docs/cvmap/Mirror.md), [ReMOVE Lite](./docs/cvmap/ReMove.md), [X4](./docs/cvmap/X4.md)
+- Modules [CV-MAP](./docs/CVMap.md), [MACRO](./docs/Macro.md), [µMAP](./docs/CVMapMicro.md), [MIDI-CAT](./docs/MidiCat.md), [MIRROR](./docs/Mirror.md), [ReMOVE Lite](./docs/ReMove.md), [X4](./docs/X4.md)
     - Added context menu option to report parameter updates to plugin-host (only in plugin-version of Rack)
-- Module [DIRT](./docs/dirt/Dirt.md)
+- Module [DIRT](./docs/Dirt.md)
     - Added new defects _Pitch_, _Crush_ and _Dropout_
 - Module [GOTO](./docs/goto/Goto.md)
      - Jump-points can be multiple modules/a selection instead of a single module
@@ -126,80 +126,80 @@ The old behavior can be restored using _Unsafe fast_-mode, which will load prese
 - Module [MIDI-CAT MEM](./docs/midicat/MidiCat.md#mem-expander)
     - Added module restriction list
     - Fixed broken MIDI feedback when loading stored mappings
-- Module [STRIP](./docs/strip/Strip.md)
+- Module [STRIP](./docs/Strip.md)
     - Remember and recall file-dialog folder locations for vcvss and vcvs files
-- Module [STROKE](./docs/stroke/Stroke.md)
+- Module [STROKE](./docs/Stroke.md)
     - Fixed cables' _Toggle visibility_ command (cable plugs still visible)
-- Module [TRANSIT](./docs/transit/Transit.md)
+- Module [TRANSIT](./docs/Transit.md)
     - Improved robustness for expander +T (e.g. crashes when using module-presets) (#412)
 
 ## 2.1.0
 
 ### Changes and Fixes
 
-- Modules [CV-MAP](./docs/cvmap/CVMap.md), [µMAP](./docs/cvmap/CVMapMicro.md), [MIDI-CAT](./docs/midicat/MidiCat.md), [ReMOVE Lite](./docs/cvmap/ReMove.md), [X4](./docs/cvmap/X4.md)
+- Modules [CV-MAP](./docs/CVMap.md), [µMAP](./docs/CVMapMicro.md), [MIDI-CAT](./docs/MidiCat.md), [ReMOVE Lite](./docs/ReMove.md), [X4](./docs/X4.md)
     - Improved mapping logic to allow more parameters to be mapped (e.g. SurgeXTRack) (#410)
-- Module [MIDI-KEY](./docs/midi/MidiKey.md)
+- Module [MIDI-KEY](./docs/MidiKey.md)
     - Fixed crash on mapped special keys like ENTER
-- Module [TRANSIT](./docs/transit/Transit.md)
+- Module [TRANSIT](./docs/Transit.md)
     - Added context menu option to report parameter updates to plugin-host (only in plugin-version of Rack) 
 
 ## 2.0.0
 
 [Selected modules](./MetaModule.md) are available on the [4ms MetaModule](https://4mscompany.com/p.php?p=990).
 
-Modules [8FACE, 8FACEx2](./docs/eightface/EightFace.md) and [8FACE mk2](./docs/eightface/EightFaceMk2.md) are now considered experimental, because loading of presets into any module cannot be considered stable and issue-free in every case.
+Modules [8FACE, 8FACEx2](./docs/EightFace.md) and [8FACE mk2](./docs/EightFaceMk2.md) are now considered experimental, because loading of presets into any module cannot be considered stable and issue-free in every case.
 
 ### New modules
 
-- Module [MIDI-CAT XL](./docs/midicat/MidiCat.md)
+- Module [MIDI-CAT XL](./docs/MidiCat.md)
     - A wider panel version of MIDI-CAT with identical features and driver selection moved to the context menu
 
 ### Changes and Fixes
 
-- Module [8FACE mk2](./docs/eightface/EightFaceMk2.md)
-    - Added "Auto"-mode besides "Read" and "Write" ([manual](./docs/eightface/EightFaceMk2.md#auto-mode)) (#276)
+- Module [8FACE mk2](./docs/EightFaceMk2.md)
+    - Added "Auto"-mode besides "Read" and "Write" ([manual](./docs/EightFaceMk2.md#auto-mode)) (#276)
     - Added option to bind currently selected modules
-- Module [AFFIX](./docs/affix/Affix.md), [µAFFIX](./docs/affix/Affix.md)
+- Module [AFFIX](./docs/Affix.md), [µAFFIX](./docs/Affix.md)
     - Fixed knob reset on double-click in Semitone/Octave-mode (#387)
     - Fixed wrong output voltage in Semitone/Octave-mode after loading (#403)
     - Don't use Rack's parameter smoothing in Semitone/Octave-mode (broken since Rack 2.3.0)
-- Module [ARENA](./docs/arena/Arena.md)
+- Module [ARENA](./docs/Arena.md)
     - Fixed behavior of attenuvertors for X/Y/MOD-inputs (#394)
     - Fixed coarse parameter updates on screen interaction because of display refresh rate (#210)
-- Module [GOTO](./docs/goto/Goto.md)
+- Module [GOTO](./docs/Goto.md)
     - Implemented smooth transition for "top left" jump destination (#388)
-- Module [MB](./docs/trial-and-error/Mb.md)
+- Module [MB](./docs/Mb.md)
     - Fixed usage in multiple plugin-instances
-- Module [ME](./docs/trial-and-error/Me.md)
+- Module [ME](./docs/Me.md)
     - Fixed usage in multiple plugin-instances
-- Module [MIDI-CAT](./docs/midicat/MidiCat.md)
+- Module [MIDI-CAT](./docs/MidiCat.md)
     - Implemented response curves (logarithmic/exponential) (#258)
     - Fixed MIDI-feedback for snapped parameters (#374)
     - Implemented experimental LED binding for proper MIDI feedback on push-buttons (e.g. on VCV SEQ3 or Impromptu GATE-SEQ-64) (#401)
     - Implemented alternative parameter binding by selection box
-- Module [MIDI-CAT CTX](./docs/midicat/MidiCat.md#ctx-expander)
+- Module [MIDI-CAT CTX](./docs/MidiCat.md#ctx-expander)
     - Fixed broken button-handling when triggered by Parameter-mapping
-- Module [MIDI-CAT MEM](./docs/midicat/MidiCat.md#mem-expander)
+- Module [MIDI-CAT MEM](./docs/MidiCat.md#mem-expander)
     - Fixed broken button-handling when triggered by Parameter-mapping (#356)
     - Added trigger-inputs for Prev and Next
-- Module [MIDI-MON](./docs/midi/MidiMon.md)
+- Module [MIDI-MON](./docs/MidiMon.md)
     - Added support for CC 14-bit/RPN/NRPN messages
     - Reduced CPU usage
-- Module [MIDI-STEP](./docs/midi/MidiStep.md)
+- Module [MIDI-STEP](./docs/MidiStep.md)
     - Added option for Hercules DJControl Starlight (#361)
-- Module [STRIP](./docs/strip/Strip.md)
+- Module [STRIP](./docs/Strip.md)
     - Ask to view unavailable modules on the VCV Library when loading a strip (#18)
     - Fixed missing module-id mapping when adding using STRIP or STRIP++ (#402)
     - Added option to remove items from included/excluded parameters list
-- Module [STRIP++](./docs/strip/StripPp.md)
+- Module [STRIP++](./docs/StripPp.md)
     - Ask to view unavailable modules on the VCV Library when loading a selection
     - Fixed usage in multiple plugin-instances
-- Module [STRIP-BAY](./docs/strip/Strip.md#stoermelder-strip-bay)
+- Module [STRIP-BAY](./docs/Strip.md#stoermelder-strip-bay)
     - Fixed crash on stackable input-cables (#405)
-- Module [STROKE](./docs/stroke/Stroke.md)
+- Module [STROKE](./docs/Stroke.md)
     - Added command "Minimize window"
-- Module [TRANSIT](./docs/transit/Transit.md)
+- Module [TRANSIT](./docs/Transit.md)
     - Added fade setting per slot
     - Improved handling on mapped switches (skipping all immediate values)
     - Added context menu option to clean invalid parameters (#383)
@@ -209,42 +209,42 @@ Modules [8FACE, 8FACEx2](./docs/eightface/EightFace.md) and [8FACE mk2](./docs/e
 ### Fixes and Changes
 
 - Added panel option to follow Rack's dark panel setting
-- Modules [8FACE, 8FACEx2](./docs/eightface/EightFace.md)
+- Modules [8FACE, 8FACEx2](./docs/EightFace.md)
     - Allow disabling of "long-press" for changing the number of active slots (#354)
-- Module [8FACE mk2](./docs/eightface/EightFaceMk2.md)
+- Module [8FACE mk2](./docs/EightFaceMk2.md)
     - Allow disabling of "long-press" for changing the number of active slots (#354)
     - Added HSL color picker for bound modules' box
     - Fixed broken module-id mapping when adding using STRIP or STRIP++
     - Fixed crash while exceding 0..10V in Volt-mode (#377)
     - Increased maximum number of expanders to 15
     - Added missing reset-handling for "Trigger random", "Trigger pseudo-random" and "Trigger random walk"
-- Module [GLUE](./docs/glue/Glue.md)
+- Module [GLUE](./docs/Glue.md)
     - Added HSL color picker
-- Module [GRIP](./docs/cvmap/Grip.md)
+- Module [GRIP](./docs/Grip.md)
     - Fixed broken parameter locking (#360)
-- Module [GOTO](./docs/goto/Goto.md)
+- Module [GOTO](./docs/Goto.md)
     - Fixed broken zoom behavior when jumping by buttons on the panel
     - Improved smooth transition speed on long distances (#376)
-- Module [MB](./docs/trial-and-error/Mb.md)
+- Module [MB](./docs/Mb.md)
     - Fixed crash on exiting Rack's after adding MB (#352)
     - Fixed wrong hotkey modifier on Mac (Ctrl instead of Cmd) on Space-key
     - Added missing template loading after adding a module (#369)
-- Module [ROTOR mod A](./docs/rotor/RotorA.md)
+- Module [ROTOR mod A](./docs/RotorA.md)
     - Fixed occasional crashes (#365)
-- Module [SAIL](./docs/sail/Sail.md)
+- Module [SAIL](./docs/Sail.md)
     - Fixed occasional crash (#358)
-- Module [STRIP](./docs/strip/Strip.md)
+- Module [STRIP](./docs/Strip.md)
     - Fixed crash in rare cases (Surge-modules) (#366)
     - Fixed wrong hotkey modifier on Mac (Ctrl instead of Cmd) on Cmd+Shift+L
-- Module [STRIP++](./docs/strip/StripPp.md)
+- Module [STRIP++](./docs/StripPp.md)
     - Fixed wrong hotkey modifier on Mac (Ctrl instead of Cmd)
-- Module [STROKE](./docs/stroke/Stroke.md)
+- Module [STROKE](./docs/Stroke.md)
     - Added commands "Zoom to specific module" and "Zoom to specific module (smooth)" (#357)
     - Fixed wrong hotkey modifier on Mac (Ctrl instead of Cmd)
     - Fixed broken "Zoom to module" and "Zoom toggle" commands (#382)
-- Module [SPIN](./docs/spin/Spin.md)
+- Module [SPIN](./docs/Spin.md)
     - Fixed middle mouse button handling in Rack v2 (#372)
-- Module [TRANSIT](./docs/transit/Transit.md)
+- Module [TRANSIT](./docs/Transit.md)
     - Allow disabling of "long-press" for changing the number of active snapshots (#354)
     - Increased maximum number of expanders to 15 (#381)
     - Added missing reset-handling for "Trigger random", "Trigger pseudo-random" and "Trigger random walk"
@@ -253,47 +253,47 @@ Modules [8FACE, 8FACEx2](./docs/eightface/EightFace.md) and [8FACE mk2](./docs/e
 
 ### New modules
 
-- Module [MIDI-CAT CLK](./docs/midicat/MidiCat.md#clk-expander)
+- Module [MIDI-CAT CLK](./docs/MidiCat.md#clk-expander)
     - New expander for MIDI-CAT, allows trigger-quantization for mapped parameters (#299)
 
 ### Fixes and Changes
 
-- Modules [8FACE, 8FACEx2](./docs/eightface/EightFace.md)
+- Modules [8FACE, 8FACEx2](./docs/EightFace.md)
     - Fixed broken reset-behavior for "Trigger forward", "Trigger reverse" and "Trigger pingpong" (#347)
     - Added missing reset-handling for "Trigger alternating" and "Trigger shuffle"
-- Module [8FACE mk2](./docs/eightface/EightFaceMk2.md)
+- Module [8FACE mk2](./docs/EightFaceMk2.md)
     - Added "Bind module (select multiple)" option (#291)
     - Fixed broken reset-behavior for "Trigger forward", "Trigger reverse" and "Trigger pingpong" (#347)
     - Added missing reset-handling for "Trigger alternating" and "Trigger shuffle"
-- Module [DIRT](./docs/dirt/Dirt.md)
+- Module [DIRT](./docs/Dirt.md)
     - Added crackle for polyphonic cables
     - Added switches for noise-types on front panel
-- Module [GLUE](./docs/glue/Glue.md)
+- Module [GLUE](./docs/Glue.md)
     - Changed "Add label" hotkey to Ctrl+G (#305)
     - Added hotkey Ctrl+Shift+G for "Lock"
-- Module [HIVE](./docs/maze/Hive.md)
+- Module [HIVE](./docs/Hive.md)
     - Fixed broken reset-behavior
-- Module [MAZE](./docs/maze/Maze.md)
+- Module [MAZE](./docs/Maze.md)
     - Fixed broken reset-behavior
-- Module [MIDI-CAT](./docs/midicat/MidiCat.md)
+- Module [MIDI-CAT](./docs/MidiCat.md)
     - Fixed pickup of parameters with snapping (#308)
-- Module [MIDI-KEY](./docs/midi/MidiKey.md)
+- Module [MIDI-KEY](./docs/MidiKey.md)
     - Added options for slot-specific key modifiers (#344)
     - Added options for sending hotkeys to a specific module
-- Module [MIDI-MON](./docs/midi/MidiMon.md)
+- Module [MIDI-MON](./docs/MidiMon.md)
     - Added support for SysEx messages
-- Module [ORBIT](./docs/orbit/Orbit.md)
+- Module [ORBIT](./docs/Orbit.md)
     - Added output level control (#286)
-- Module [STRIP++](./docs/strip/StripPp.md)
+- Module [STRIP++](./docs/StripPp.md)
     - Added selection perview before actual inserting modules
     - Added "Recent selection" context menu option
-- Module [STRIP](./docs/strip/Strip.md)
+- Module [STRIP](./docs/Strip.md)
     - Remember last used folder for strips and selections on dialogs (#307)
     - "randomizeEnabled" of parameters is respected when randomizing (#349)
     - Fixed high CPU usage in High/Low-mode for bypass
-- Module [STROKE](./docs/stroke/Stroke.md)
+- Module [STROKE](./docs/Stroke.md)
     - Added commands "Add random module", "Save module preset" and "Save module default preset" (#345)
-- Module [TRANSIT](./docs/transit/Transit.md)
+- Module [TRANSIT](./docs/Transit.md)
     - Fixed broken Auto/Write-modes if CV-port is set to "Phase" (#282)
     - Fixed broken reset-behavior for "Trigger forward", "Trigger reverse" and "Trigger pingpong" (#347)
     - Added missing reset-handling for "Trigger alternating" and "Trigger shuffle"
@@ -302,20 +302,20 @@ Modules [8FACE, 8FACEx2](./docs/eightface/EightFace.md) and [8FACE mk2](./docs/e
 
 ### New modules
 
-- Module [DIRT](./docs/dirt/Dirt.md)
+- Module [DIRT](./docs/Dirt.md)
     - New module, crosstalk and noise for polyphonic cables
-- Module [MIDI-KEY](./docs/midi/MidiKey.md)
+- Module [MIDI-KEY](./docs/MidiKey.md)
     - New module, utility for generating keyboard events from MIDI CC or note messages (#245)
-- Module [STRIP++](./docs/strip/StripPp.md)
-    - New module, utility for pasting and importing Rack selections while preserving parameter mappings and [GLUE](./docs/glue/Glue.md) labels
+- Module [STRIP++](./docs/StripPp.md)
+    - New module, utility for pasting and importing Rack selections while preserving parameter mappings and [GLUE](./docs/Glue.md) labels
 
 ### Fixes and Changes
 
-- Module [GOTO](./docs/goto/Goto.md)
+- Module [GOTO](./docs/Goto.md)
     - Fixed crash on patch-loading inside Rack VST (and probably other plugin formats) (#342)
-- Module [MIDI-PLUG](./docs/midi/MidiPlug.md)
+- Module [MIDI-PLUG](./docs/MidiPlug.md)
     - Removed MIDI "Loopback" driver as a loopback driver is available officially since Rack 2.2.0
-- Module [STRIP](./docs/strip/Strip.md)
+- Module [STRIP](./docs/Strip.md)
     - Fixed crash on disabling a group of modules (#341)
 
 ## 2.0.beta1
@@ -324,18 +324,18 @@ Modules [8FACE, 8FACEx2](./docs/eightface/EightFace.md) and [8FACE mk2](./docs/e
 
 ### Fixes and Changes
 
-- Modules [8FACE, 8FACEx2](./docs/eightface/EightFace.md)
+- Modules [8FACE, 8FACEx2](./docs/EightFace.md)
     - Added retrigger-function for CV-input channel 2 in C4 mode (#330)
     - Fixed unconnected modules after patch reload (#338)
-- Module [8FACE mk2](./docs/eightface/EightFaceMk2.md)
+- Module [8FACE mk2](./docs/EightFaceMk2.md)
     - Added retrigger-function for CV-input channel 2 in C4 mode (#330)
-- Module [ARENA](./docs/arena/Arena.md)
+- Module [ARENA](./docs/Arena.md)
     - Fixed broken behavior of "Radius" sliders of "In"-ports
     - Fixed broken patch-restore of "Radius" sliders (#331)
-- Module [GOTO](./docs/goto/Goto.md)
+- Module [GOTO](./docs/Goto.md)
     - Added "top left" as a modules reference point for jump destination
     - Removed setting "Center module" as the disabled state did not work correctly
-- Module [TRANSIT](./docs/transit/Transit.md)
+- Module [TRANSIT](./docs/Transit.md)
     - Added retrigger-function for CV-input channel 2 in C4 mode (#330)
     - Fixed premature end of processing and not reaching stored snapshot state (#329)
 

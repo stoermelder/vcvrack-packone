@@ -1,0 +1,26 @@
+{
+  "plugin": "Stoermelder-P1",
+  "model": "MidiKit",
+  "version": "2.0.0",
+  "params": [
+    {
+      "value": 0.0,
+      "id": 0
+    },
+    {
+      "value": 0.0,
+      "id": 1
+    },
+    {
+      "value": 0.0,
+      "id": 2
+    },
+    {
+      "value": 0.0,
+      "id": 3
+    }
+  ],
+  "data": {
+    "script": "/**\n * @target stoermelder MIDI-KIT\n * @engine Elk\n * @author stoermelder\n * @description Delays every Note-On message on channel 1 for 1500ms\n */\n\nlet processMidi = function(midiInput, msg) {\n    if (midi.isNoteOn(msg) && midi.getChannel(msg) === 1) {\n        midiOut.sendAfterMs(msg, 1500);\n    }\n};"
+  }
+}

@@ -14,6 +14,7 @@ ORCA_GENERATED_HEADER := src/modules/ahab/orca_examples.hpp
 
 # Add .cpp files to the build
 SOURCES += $(wildcard src/*.cpp src/**/**/*.cpp)
+SOURCES += src/modules/midikit/elk.c
 # Exclude test files from the main build
 SOURCES := $(filter-out src/test/%.cpp,$(SOURCES))
 SOURCES := $(filter-out %.test.cpp,$(SOURCES))
