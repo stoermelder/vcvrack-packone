@@ -187,8 +187,8 @@ jobs:
           prerelease: true
           body: |
             ## Automatically generated build with experimental features
-            This build is based on development branching, including experimental features or modules from other branches.
+            This build is based on the development branch, but includes also experimental features or modules from other branches.
             As such it is the latest version of the code and may be unstable, unusable, unsuitable for human consumption, and so on.
-            Experimental modules may be removed at any time or never released.
+            Experimental features or modules may be removed at any time or never released to the VCV Library.
           files: |
             _artifacts/**/*.vcvplugin
