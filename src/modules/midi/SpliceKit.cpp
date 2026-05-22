@@ -1402,6 +1402,11 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 	SpliceKitWidget(SpliceKitModule* module) : ThemedModuleWidget(module, "SpliceKit") {
 		setModule(module);
 
+		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
+		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
+		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+
 		for (int r = 0; r < MATRIX_SIZE; r++) {
 			for (int c = 0; c < MATRIX_SIZE; c++) {
 				float x = 24.3f + c * (245.7f - 24.3f) / 7.f;
