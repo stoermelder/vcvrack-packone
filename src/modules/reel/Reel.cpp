@@ -1118,7 +1118,7 @@ struct ReelSearchField : OpaqueWidget {
 	}
 };
 
-struct ReelNavButton : ParamWidget {
+struct ReelNavButton : Switch {
 	std::string* filterText = nullptr;
 	bool forward = true;
 	float prevValue = 0.f;
@@ -1141,11 +1141,11 @@ struct ReelNavButton : ParamWidget {
 		nvgFillColor(args.vg, nvgRGBA(0xf0, 0xf0, 0xf0, 0x90));
 		nvgFill(args.vg);
 		
-		ParamWidget::draw(args);
+		Switch::draw(args);
 	}
 
 	void step() override {
-		ParamWidget::step();
+		Switch::step();
 		engine::ParamQuantity* pq = getParamQuantity();
 		if (!pq) return;
 		float v = pq->getValue();
