@@ -1,4 +1,5 @@
 #include "../../plugin.hpp"
+#include "../../utils/vcv_cables.hpp"
 #include <queue>
 
 namespace StoermelderPackOne {
@@ -30,6 +31,11 @@ struct PanicRoomModule : Module {
     /** [Stored to JSON] */
     float outsideAlpha = 0.5f;
 
+    /** [Stored to JSON] */
+    bool cableLimitEnabled = false;
+    /** [Stored to JSON] */
+    int cableLimit = 50;
+
     PanicRoomModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
         config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -43,6 +49,8 @@ struct PanicRoomModule : Module {
         restrictionBox = math::Rect();
         outsideColor = nvgRGBAf(0.f, 0.f, 0.f, 1.f);
         outsideAlpha = 0.5f;
+        cableLimitEnabled = false;
+        cableLimit = 50;
         Module::onReset(e);
     }
 
@@ -64,6 +72,10 @@ struct PanicRoomModule : Module {
         json_object_set_new(rootJ, "outsideColor", json_string(color::toHexString(outsideColor).c_str()));
         // outsideAlpha
         json_object_set_new(rootJ, "outsideAlpha", json_real(outsideAlpha));
+        // cableLimitEnabled
+        json_object_set_new(rootJ, "cableLimitEnabled", json_boolean(cableLimitEnabled));
+        // cableLimit
+        json_object_set_new(rootJ, "cableLimit", json_integer(cableLimit));
         return rootJ;
     }
 
@@ -94,6 +106,16 @@ struct PanicRoomModule : Module {
         json_t* outsideAlphaJ = json_object_get(rootJ, "outsideAlpha");
         if (outsideAlphaJ) {
             outsideAlpha = json_number_value(outsideAlphaJ);
+        }
+        // cableLimitEnabled
+        json_t* cableLimitEnabledJ = json_object_get(rootJ, "cableLimitEnabled");
+        if (cableLimitEnabledJ) {
+            cableLimitEnabled = json_boolean_value(cableLimitEnabledJ);
+        }
+        // cableLimit
+        json_t* cableLimitJ = json_object_get(rootJ, "cableLimit");
+        if (cableLimitJ) {
+            cableLimit = json_integer_value(cableLimitJ);
         }
     }
 
@@ -210,6 +232,20 @@ struct PanicRoomRestrictionWidget : Widget {
 }; // struct PanicRoomRestrictionWidget
 
 
+struct CableLimitField : ui::TextField {
+    PanicRoomModule* module;
+    void onSelectKey(const SelectKeyEvent& e) override {
+        if (e.action == GLFW_PRESS && (e.isKeyCommand(GLFW_KEY_ENTER) || e.isKeyCommand(GLFW_KEY_KP_ENTER))) {
+            int v = atoi(text.c_str());
+            if (v > 0) module->cableLimit = v;
+            ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
+            overlay->requestDelete();
+            e.consume(this);
+        }
+        TextField::onSelectKey(e);
+    }
+};
+
 struct SizeWidthField : ui::TextField {
     PanicRoomModule* module;
     void onSelectKey(const SelectKeyEvent& e) override {
@@ -243,6 +279,9 @@ struct PanicRoomWidget : ThemedModuleWidget<PanicRoomModule> {
     PanicRoomRestrictionWidget* selectionWidget;
     std::set<ModuleWidget*> bypassedModules;
 
+    size_t cableNumberWhenAdded;
+    bool cableLimitReached;
+
     PanicRoomWidget(PanicRoomModule* module) : ThemedModuleWidget<PanicRoomModule>(module, "PanicRoom") {
         setModule(module);
         this->module = dynamic_cast<PanicRoomModule*>(module);
@@ -254,6 +293,9 @@ struct PanicRoomWidget : ThemedModuleWidget<PanicRoomModule> {
             selectionWidget = new PanicRoomRestrictionWidget;
             selectionWidget->module = module;
             APP->scene->rack->addChild(selectionWidget);
+
+            cableNumberWhenAdded = APP->scene->rack->getCompleteCables().size();
+            cableLimitReached = false;
         }
     }
 
@@ -292,6 +334,27 @@ struct PanicRoomWidget : ThemedModuleWidget<PanicRoomModule> {
                 }
             }
         }
+
+        if (module && module->cableLimitEnabled) {
+            std::vector<CableWidget*> cables = APP->scene->rack->getCompleteCables();
+
+            // If the module has been added, wait until we drop below the number of allowed
+            // cables. This ensures, we are not deleting cables randomly, but only the most
+            // recently added.
+            if (!cableLimitReached && static_cast<int>(cables.size()) <= module->cableLimit) {
+                cableLimitReached = true;
+            }
+
+            if (cableLimitReached) {
+                while ((int)cables.size() > module->cableLimit) {
+                    // Remove the cable with the highest id (most recently added)
+                    CableWidget* newest = cables.back();
+                    // Cable might not been added completely, wait until it has a parent
+                    if (!newest->parent) break;
+                    vcv::removeCable(newest);
+                }
+            }
+        }
         ThemedModuleWidget<PanicRoomModule>::step();
     }
 
@@ -299,6 +362,7 @@ struct PanicRoomWidget : ThemedModuleWidget<PanicRoomModule> {
         ThemedModuleWidget<PanicRoomModule>::appendContextMenu(menu);
      
         menu->addChild(new MenuSeparator());
+        menu->addChild(createMenuLabel("Patching area"));
         menu->addChild(createMenuItem("Learn", "", [=]() { selectionWidget->enableLearn(); }));
         menu->addChild(createSubmenuItem("Size", "", 
             [=](Menu* menu) {
@@ -361,10 +425,24 @@ struct PanicRoomWidget : ThemedModuleWidget<PanicRoomModule> {
                 addPreset("Arturia RackBrute 3U (88 HP × 1 row)", 88, 1);
             }
         ));
-        menu->addChild(createMenuItem("Clear", "", [=]() { module->restrictionEnabled = false; }));
+        menu->addChild(createMenuItem("Reset", "", [=]() { module->restrictionEnabled = false; }));
         menu->addChild(new MenuSeparator());
         menu->addChild(Rack::createColorSubmenuItem("Outside color", &module->outsideColor, { { nvgRGBAf(0.f, 0.f, 0.f, 1.f), "Default (black)" } }));
         menu->addChild(Rack::createPtrSlider(&module->outsideAlpha, 0.f, 1.f, 0.5f, "Opacity", "%", 100.f, 200.0f));
+
+        menu->addChild(new MenuSeparator());
+        int cableCount = (int)APP->scene->rack->getCompleteCables().size();
+        menu->addChild(createSubmenuItem("Cable limit", string::f("%d cables", cableCount),
+            [=](Menu* menu) {
+                menu->addChild(createBoolMenuItem("Enabled", "", [=]() { return module->cableLimitEnabled; }, [=](bool v) { module->cableLimitEnabled = v; }));
+                menu->addChild(createMenuLabel("Max cables"));
+                CableLimitField* maxCablesField = new CableLimitField;
+                maxCablesField->box.size.x = 100;
+                maxCablesField->module = module;
+                maxCablesField->text = std::to_string(module->cableLimit);
+                menu->addChild(maxCablesField);
+            }
+        ));
     }
 };
 
