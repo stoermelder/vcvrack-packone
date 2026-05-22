@@ -53,7 +53,7 @@ struct CtrlTestModule : rack::Module {
 // sets expandersChanged on Transit, then step once for discovery/cleanup.
 // ---------------------------------------------------------------------------
 template<typename T>
-static void connectCtrl(T& engine, TransitModule<12>* transit, TransitCtrlModule* ctrl) {
+static void connectCtrl(T& engine, TransitModule<12>* transit, TransitCtrlModule<16>* ctrl) {
 	transit->rightExpander.module = ctrl;
 	transit->rightExpander.moduleId = ctrl->getId();
 	ctrl->leftExpander.module = transit;
@@ -65,7 +65,7 @@ static void connectCtrl(T& engine, TransitModule<12>* transit, TransitCtrlModule
 }
 
 template<typename T>
-static void disconnectCtrl(T& engine, TransitModule<12>* transit, TransitCtrlModule* ctrl) {
+static void disconnectCtrl(T& engine, TransitModule<12>* transit, TransitCtrlModule<16>* ctrl) {
 	transit->rightExpander.module = nullptr;
 	transit->rightExpander.moduleId = -1;
 	if (ctrl) {
@@ -84,7 +84,7 @@ static void disconnectCtrl(T& engine, TransitModule<12>* transit, TransitCtrlMod
 // ===========================================================================
 
 TEST_CASE("Construction and initialization", "[TransitCtrl]") {
-	TransitCtrlModule* ctrl = Test::createModule<TransitCtrlModule>("TransitCtrl");
+	TransitCtrlModule<16>* ctrl = Test::createModule<TransitCtrlModule<16>>("TransitCtrl");
 	REQUIRE(ctrl != nullptr);
 
 	SECTION("All mappings are -1 (unmapped) after construction") {
@@ -116,7 +116,7 @@ TEST_CASE("Construction and initialization", "[TransitCtrl]") {
 // ===========================================================================
 
 TEST_CASE("setMapping updates mapping, reverseMap, and handleIndex", "[TransitCtrl]") {
-	TransitCtrlModule* ctrl = Test::createModule<TransitCtrlModule>("TransitCtrl");
+	TransitCtrlModule<16>* ctrl = Test::createModule<TransitCtrlModule<16>>("TransitCtrl");
 	MockSenderModule* sender = new MockSenderModule();
 	ctrl->setTransitCtrl(sender);
 
@@ -146,7 +146,7 @@ TEST_CASE("setMapping updates mapping, reverseMap, and handleIndex", "[TransitCt
 	SECTION("setMapping syncs knob param value and baseline from target") {
 		sender->params[7].setValue(0.3f);
 		ctrl->setMapping(3, 7);
-		REQUIRE(ctrl->params[TransitCtrlModule::PARAM + 3].getValue() == Catch::Approx(0.3f));
+		REQUIRE(ctrl->params[TransitCtrlModule<16>::PARAM + 3].getValue() == Catch::Approx(0.3f));
 		REQUIRE(ctrl->lastParamValues[3] == Catch::Approx(0.3f));
 	}
 
@@ -168,28 +168,28 @@ TEST_CASE("setMapping updates mapping, reverseMap, and handleIndex", "[TransitCt
 // ===========================================================================
 
 TEST_CASE("setCtrlParamValue uses reverseMap for O(1) lookup", "[TransitCtrl]") {
-	TransitCtrlModule* ctrl = Test::createModule<TransitCtrlModule>("TransitCtrl");
+	TransitCtrlModule<16>* ctrl = Test::createModule<TransitCtrlModule<16>>("TransitCtrl");
 	MockSenderModule* sender = new MockSenderModule();
 	ctrl->setTransitCtrl(sender);
 	ctrl->setMapping(3, 7);
 
 	SECTION("Transit index 7 updates knob 3 param value and baseline") {
 		ctrl->setCtrlParamValue(7, 0.8f);
-		REQUIRE(ctrl->params[TransitCtrlModule::PARAM + 3].getValue() == Catch::Approx(0.8f));
+		REQUIRE(ctrl->params[TransitCtrlModule<16>::PARAM + 3].getValue() == Catch::Approx(0.8f));
 		REQUIRE(ctrl->lastParamValues[3] == Catch::Approx(0.8f));
 	}
 
 	SECTION("Unmapped Transit index leaves all knobs unchanged") {
-		float before = ctrl->params[TransitCtrlModule::PARAM + 0].getValue();
+		float before = ctrl->params[TransitCtrlModule<16>::PARAM + 0].getValue();
 		ctrl->setCtrlParamValue(0, 0.99f);  // reverseMap[0] == -1
-		REQUIRE(ctrl->params[TransitCtrlModule::PARAM + 0].getValue() == Catch::Approx(before));
+		REQUIRE(ctrl->params[TransitCtrlModule<16>::PARAM + 0].getValue() == Catch::Approx(before));
 	}
 
 	SECTION("Out-of-range Transit index is ignored") {
-		float before = ctrl->params[TransitCtrlModule::PARAM + 0].getValue();
+		float before = ctrl->params[TransitCtrlModule<16>::PARAM + 0].getValue();
 		ctrl->setCtrlParamValue(-1, 0.5f);
 		ctrl->setCtrlParamValue(NUM_CTRL, 0.5f);
-		REQUIRE(ctrl->params[TransitCtrlModule::PARAM + 0].getValue() == Catch::Approx(before));
+		REQUIRE(ctrl->params[TransitCtrlModule<16>::PARAM + 0].getValue() == Catch::Approx(before));
 	}
 
 	ctrl->setTransitCtrl(nullptr);
@@ -203,14 +203,14 @@ TEST_CASE("setCtrlParamValue uses reverseMap for O(1) lookup", "[TransitCtrl]") 
 // ===========================================================================
 
 TEST_CASE("process() forwards knob changes to Transit using handleIndex", "[TransitCtrl]") {
-	TransitCtrlModule* ctrl = Test::createModule<TransitCtrlModule>("TransitCtrl");
+	TransitCtrlModule<16>* ctrl = Test::createModule<TransitCtrlModule<16>>("TransitCtrl");
 	MockSenderModule* sender = new MockSenderModule();
 	ctrl->setTransitCtrl(sender);
 	// After setMapping(3, 7): lastParamValues[3] = 0.5f (synced from sender's param 7)
 	ctrl->setMapping(3, 7);
 
 	SECTION("Changing knob 3 pushes Transit-side index 7") {
-		ctrl->params[TransitCtrlModule::PARAM + 3].setValue(0.9f);
+		ctrl->params[TransitCtrlModule<16>::PARAM + 3].setValue(0.9f);
 		for (int i = 0; i < 500; i++) {
 			ctrl->process(Test::makeProcessArgs(i));
 		}
@@ -226,7 +226,7 @@ TEST_CASE("process() forwards knob changes to Transit using handleIndex", "[Tran
 
 	SECTION("Unmapped knob does not push even when changed") {
 		// knob 0: mapping[0] == -1, handleIndex == -1
-		ctrl->params[TransitCtrlModule::PARAM + 0].setValue(0.9f);
+		ctrl->params[TransitCtrlModule<16>::PARAM + 0].setValue(0.9f);
 		ctrl->process(Test::makeProcessArgs(3));
 		REQUIRE(sender->changes.empty());
 	}
@@ -242,7 +242,7 @@ TEST_CASE("process() forwards knob changes to Transit using handleIndex", "[Tran
 // ===========================================================================
 
 TEST_CASE("No oscillation: Transit write does not trigger re-push", "[TransitCtrl]") {
-	TransitCtrlModule* ctrl = Test::createModule<TransitCtrlModule>("TransitCtrl");
+	TransitCtrlModule<16>* ctrl = Test::createModule<TransitCtrlModule<16>>("TransitCtrl");
 	MockSenderModule* sender = new MockSenderModule();
 	ctrl->setTransitCtrl(sender);
 	ctrl->setMapping(3, 7);
@@ -265,7 +265,7 @@ TEST_CASE("No oscillation: Transit write does not trigger re-push", "[TransitCtr
 // ===========================================================================
 
 TEST_CASE("Target sync polling detects external target changes", "[TransitCtrl]") {
-	TransitCtrlModule* ctrl = Test::createModule<TransitCtrlModule>("TransitCtrl");
+	TransitCtrlModule<16>* ctrl = Test::createModule<TransitCtrlModule<16>>("TransitCtrl");
 	MockSenderModule* sender = new MockSenderModule();
 	ctrl->setTransitCtrl(sender);
 	ctrl->setMapping(3, 7);
@@ -279,7 +279,7 @@ TEST_CASE("Target sync polling detects external target changes", "[TransitCtrl]"
 	ctrl->process(Test::makeProcessArgs(1));
 
 	SECTION("Knob value is synced to the new target value") {
-		REQUIRE(ctrl->params[TransitCtrlModule::PARAM + 3].getValue() == Catch::Approx(0.2f));
+		REQUIRE(ctrl->params[TransitCtrlModule<16>::PARAM + 3].getValue() == Catch::Approx(0.2f));
 	}
 
 	SECTION("Baseline is updated to match") {
@@ -296,7 +296,7 @@ TEST_CASE("Target sync polling detects external target changes", "[TransitCtrl]"
 }
 
 TEST_CASE("Target sync polling is silent when target has not changed", "[TransitCtrl]") {
-	TransitCtrlModule* ctrl = Test::createModule<TransitCtrlModule>("TransitCtrl");
+	TransitCtrlModule<16>* ctrl = Test::createModule<TransitCtrlModule<16>>("TransitCtrl");
 	MockSenderModule* sender = new MockSenderModule();
 	ctrl->setTransitCtrl(sender);
 	ctrl->setMapping(3, 7);
@@ -306,7 +306,7 @@ TEST_CASE("Target sync polling is silent when target has not changed", "[Transit
 	ctrl->process(Test::makeProcessArgs(1));
 
 	REQUIRE(sender->changes.empty());
-	REQUIRE(ctrl->params[TransitCtrlModule::PARAM + 3].getValue() == Catch::Approx(0.5f));
+	REQUIRE(ctrl->params[TransitCtrlModule<16>::PARAM + 3].getValue() == Catch::Approx(0.5f));
 
 	ctrl->setTransitCtrl(nullptr);
 	delete sender;
@@ -319,7 +319,7 @@ TEST_CASE("Target sync polling is silent when target has not changed", "[Transit
 // ===========================================================================
 
 TEST_CASE("setTransitCtrl wires ppqs and syncs initial values", "[TransitCtrl]") {
-	TransitCtrlModule* ctrl = Test::createModule<TransitCtrlModule>("TransitCtrl");
+	TransitCtrlModule<16>* ctrl = Test::createModule<TransitCtrlModule<16>>("TransitCtrl");
 
 	SECTION("Before any connection, all ppqs have null transitCtrl") {
 		for (int i = 0; i < NUM_CTRL; i++)
@@ -340,7 +340,7 @@ TEST_CASE("setTransitCtrl wires ppqs and syncs initial values", "[TransitCtrl]")
 		ctrl->setMapping(5, 2);  // knob 5 → Transit param 2
 		sender->params[2].setValue(0.7f);
 		ctrl->setTransitCtrl(sender);
-		REQUIRE(ctrl->params[TransitCtrlModule::PARAM + 5].getValue() == Catch::Approx(0.7f));
+		REQUIRE(ctrl->params[TransitCtrlModule<16>::PARAM + 5].getValue() == Catch::Approx(0.7f));
 		REQUIRE(ctrl->lastParamValues[5] == Catch::Approx(0.7f));
 		ctrl->setTransitCtrl(nullptr);
 		delete sender;
@@ -364,7 +364,7 @@ TEST_CASE("setTransitCtrl wires ppqs and syncs initial values", "[TransitCtrl]")
 // ===========================================================================
 
 TEST_CASE("JSON serialization round-trip preserves mapping", "[TransitCtrl][JSON]") {
-	TransitCtrlModule* ctrl1 = Test::createModule<TransitCtrlModule>("TransitCtrl");
+	TransitCtrlModule<16>* ctrl1 = Test::createModule<TransitCtrlModule<16>>("TransitCtrl");
 	MockSenderModule* sender = new MockSenderModule();
 	ctrl1->setTransitCtrl(sender);
 	ctrl1->setMapping(0, 15);
@@ -376,7 +376,7 @@ TEST_CASE("JSON serialization round-trip preserves mapping", "[TransitCtrl][JSON
 	json_t* rootJ = ctrl1->dataToJson();
 	REQUIRE(rootJ != nullptr);
 
-	TransitCtrlModule* ctrl2 = Test::createModule<TransitCtrlModule>("TransitCtrl");
+	TransitCtrlModule<16>* ctrl2 = Test::createModule<TransitCtrlModule<16>>("TransitCtrl");
 	ctrl2->dataFromJson(rootJ);
 
 	SECTION("Forward mappings are preserved") {
@@ -417,7 +417,7 @@ TEST_CASE("JSON serialization round-trip preserves mapping", "[TransitCtrl][JSON
 TEST_CASE("Integration - Transit discovers TransitCtrl as immediate right expander", "[TransitCtrl]") {
 	Test::SimpleEngine engine;
 	TransitModule<12>* transit = Test::createModule<TransitModule<12>>("Transit");
-	TransitCtrlModule* ctrl = Test::createModule<TransitCtrlModule>("TransitCtrl");
+	TransitCtrlModule<16>* ctrl = Test::createModule<TransitCtrlModule<16>>("TransitCtrl");
 	engine.registerModules(transit, ctrl);
 
 	SECTION("Before connection, ctrl has no transitCtrl") {
@@ -443,7 +443,7 @@ TEST_CASE("Integration - Transit discovers TransitCtrl as immediate right expand
 TEST_CASE("Integration - knob change propagates to mapped target parameter", "[TransitCtrl]") {
 	Test::SimpleEngine engine;
 	TransitModule<12>* transit = Test::createModule<TransitModule<12>>("Transit");
-	TransitCtrlModule* ctrl = Test::createModule<TransitCtrlModule>("TransitCtrl");
+	TransitCtrlModule<16>* ctrl = Test::createModule<TransitCtrlModule<16>>("TransitCtrl");
 	CtrlTestModule* testMod = new CtrlTestModule();
 	Test::registerModule(testMod);
 	Test::registerModule(transit);
@@ -460,7 +460,7 @@ TEST_CASE("Integration - knob change propagates to mapped target parameter", "[T
 	APP->engine->stepBlock(512);
 
 	// Move knob 0 to 0.8
-	ctrl->params[TransitCtrlModule::PARAM + 0].setValue(0.8f);
+	ctrl->params[TransitCtrlModule<16>::PARAM + 0].setValue(0.8f);
 	APP->engine->stepBlock(512);	  // ctrl pushes change; transit drains queue and applies to target
 
 	REQUIRE(testMod->params[CtrlTestModule::PARAM_A].getValue() == Catch::Approx(0.8f).margin(0.01f));
@@ -477,7 +477,7 @@ TEST_CASE("Integration - knob change propagates to mapped target parameter", "[T
 TEST_CASE("Integration - Transit fade mirrors value into TransitCtrl knob", "[TransitCtrl]") {
 	Test::SimpleEngine engine;
 	TransitModule<12>* transit = Test::createModule<TransitModule<12>>("Transit");
-	TransitCtrlModule* ctrl = Test::createModule<TransitCtrlModule>("TransitCtrl");
+	TransitCtrlModule<16>* ctrl = Test::createModule<TransitCtrlModule<16>>("TransitCtrl");
 	CtrlTestModule* testMod = new CtrlTestModule();
 	Test::registerModule(testMod);
 	Test::registerModule(transit);
@@ -506,7 +506,7 @@ TEST_CASE("Integration - Transit fade mirrors value into TransitCtrl knob", "[Tr
 	APP->engine->stepBlock(APP->engine->getSampleRate());
 
 	// Transit writes the fade result to PARAM_A and mirrors it to ctrl via setCtrlParamValue
-	REQUIRE(ctrl->params[TransitCtrlModule::PARAM + 0].getValue() == Catch::Approx(1.0f).margin(0.01f));
+	REQUIRE(ctrl->params[TransitCtrlModule<16>::PARAM + 0].getValue() == Catch::Approx(1.0f).margin(0.01f));
 
 	// The mirror write must not have re-queued a change back to Transit
 	REQUIRE(transit->ctrlChangeQueue.empty());
