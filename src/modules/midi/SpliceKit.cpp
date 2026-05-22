@@ -890,18 +890,21 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 			outPd = &b; inPd = &a; outCell = cellIdB; inCell = cellIdA;
 		} 
 		else {
+			bool bothOut = (a.type == engine::Port::OUTPUT && b.type == engine::Port::OUTPUT);
+			setOverlayMessage(bothOut ? "Both ports are outputs" : "Both ports are inputs",
+			                  portLabel(a), portLabel(b));
 			return;
 		}
 
 		if (isConnected(currentScene, outCell, inCell)) {
 			setConnection(currentScene, outCell, inCell, false);
 			removeCableBetween(outCell, inCell);
-			setOverlayMessage("Removed cable", portLabel(*outPd), portLabel(*inPd));
+			setOverlayMessage("Cable removed", portLabel(*outPd), portLabel(*inPd));
 		} 
 		else {
 			setConnection(currentScene, outCell, inCell, true);
 			addCableToPort(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId);
-			setOverlayMessage("Added cable", portLabel(*outPd), portLabel(*inPd));
+			setOverlayMessage("Cable created", portLabel(*outPd), portLabel(*inPd));
 		}
 	}
 
