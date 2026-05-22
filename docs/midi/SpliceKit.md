@@ -20,6 +20,15 @@ Once two buttons have ports assigned, pressing them in sequence creates or remov
 
 Only an output port and an input port can be connected. Two ports of the same direction cannot be connected and the second press is ignored.
 
+### Drag gestures
+
+As a faster alternative to the two-press workflow, connections can be created or removed by dragging directly from one cell to another:
+
+- **Left-drag** cell A → cell B — toggle the connection between those two ports (same effect as pressing A then B in sequence).
+- **Shift + left-drag** cell A → cell B — move cell A's assignment to cell B: port, label, color, and all scene connections are transferred. Any previous assignment on cell B is discarded. MIDI mappings are **not** moved — each cell keeps its own mapping because it corresponds to a fixed physical button on the controller.
+
+While dragging, the source cell shows a faint border so it remains identifiable.
+
 ### Scenes
 
 The row of eight buttons at the bottom of the module selects the active scene. Each scene maintains its own independent cable state. Switching scenes reconciles the patch: cables that belong to the previous scene are removed and cables stored in the new scene are created.

@@ -1039,6 +1039,63 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 		}
 	}
 
+	// GUI thread — moves the port assignment, label, color, and all scene
+	// connections from fromId to toId. Any existing assignment on toId is
+	// discarded. MIDI mappings stay on their original cells (they are tied to
+	// physical button positions, not to ports). fromId's physical cables are NOT
+	// touched: they connect fromId's port (which toId inherits) and remain valid.
+	// Only toId's existing cables are removed because its old port is discarded.
+	void moveCell(int fromId, int toId) {
+		if (fromId == toId) return;
+
+		// Turn off both LEDs now, while each cell still has its own MIDI mapping.
+		// sendFeedbackOff uses the mapping to address the right note/CC; clearing
+		// the mappings first would cause the off-message to be lost.
+		sendFeedbackOff(fromId, cellLedState[fromId]);
+		sendFeedbackOff(toId,   cellLedState[toId]);
+
+		// Remove only toId's existing cables — fromId's cables stay, because toId
+		// will inherit fromId's port and those cables are already in the right place.
+		removeCellConnections(toId);
+
+		// Rewrite sceneConnections for every scene:
+		//   Step A — tear out toId's existing connections from its neighbours.
+		//   Step B — redirect fromId's connections to toId.
+		for (int s = 0; s < MATRIX_SIZE; s++) {
+			uint64_t oldToMask = sceneConnections[s][toId];
+			for (int j = 0; j < MATRIX_COUNT; j++) {
+				if ((oldToMask >> j) & 1)
+					sceneConnections[s][j] &= ~(1ULL << toId);
+			}
+			sceneConnections[s][toId] = 0;
+
+			uint64_t fromMask = sceneConnections[s][fromId];
+			for (int j = 0; j < MATRIX_COUNT; j++) {
+				if (!((fromMask >> j) & 1)) continue;
+				sceneConnections[s][j] &= ~(1ULL << fromId);
+				if (j != toId)
+					sceneConnections[s][j] |= (1ULL << toId);
+			}
+			// fromId's connections become toId's, minus any self-connection bit.
+			sceneConnections[s][toId]   = fromMask & ~(1ULL << toId);
+			sceneConnections[s][fromId] = 0;
+		}
+
+		// Move port assignment, label, and color. MIDI mapping is intentionally
+		// kept on each cell: it is tied to the physical button position on the
+		// controller and must not follow the port when it is relocated.
+		portAssignments[toId] = portAssignments[fromId];
+		portAssignments[fromId].clear();
+
+		cellLabels[toId]     = std::move(cellLabels[fromId]);
+		cellLabels[fromId]   = "";
+		cellColorSet[toId]   = cellColorSet[fromId];
+		cellColorSet[fromId] = -1;
+
+		invalidateLedStates();
+		setOverlayMessage("Moved cell", portLabel(portAssignments[toId]));
+	}
+
 	// Engine thread — enqueues a full module reset on the GUI thread via guiQueue.
 	// Removes all current-scene cables, clears all stored scenes and port assignments,
 	// resets scene and preset selection, and clears LED state.
@@ -1254,11 +1311,17 @@ struct SpliceKitSceneButton : app::SvgSwitch {
 	void createSceneMenu();
 };
 
-// Matrix cell button with right-click context menu for port assignment.
+// Matrix cell button with right-click context menu and drag-and-drop support.
+//   Left-drag        A → B : toggle connection between A and B.
+//   Shift+left-drag  A → B : move A's port, MIDI mapping, label, color, and
+//                            scene connections onto B (B's assignment is discarded).
+//   Right-click            : open the per-cell context menu.
 struct SpliceKitCellButton : app::SvgSwitch {
 	SpliceKitModule* module = nullptr;
 	SpliceKitWidget* mw = nullptr;
 	int cellId = -1;
+	bool shiftDrag = false;
+	bool dragging  = false;
 
 	SpliceKitCellButton() {
 		momentary = true;
@@ -1272,12 +1335,60 @@ struct SpliceKitCellButton : app::SvgSwitch {
 	void onLeave(const event::Leave& e) override;
 
 	void onButton(const event::Button& e) override {
-		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT && module) {
-			e.consume(this);
-			createCellMenu();
+		if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS)
+			shiftDrag = (e.mods & RACK_MOD_SHIFT) != 0;
+		if (e.button == GLFW_MOUSE_BUTTON_RIGHT) {
+			if (e.action == GLFW_PRESS && module) {
+				createCellMenu();
+				e.consume(this);
+			}
 			return;
 		}
 		SvgSwitch::onButton(e);
+	}
+
+	// Shift+left-drag: suppress cell activation so the drag gesture is a pure move.
+	void onDragStart(const event::DragStart& e) override {
+		if (e.button == GLFW_MOUSE_BUTTON_LEFT) {
+			dragging = true;
+			if (shiftDrag) return;
+		}
+		SvgSwitch::onDragStart(e);
+	}
+
+	void onDragEnd(const event::DragEnd& e) override {
+		dragging = false;
+		SvgSwitch::onDragEnd(e);
+	}
+
+	void drawLayer(const DrawArgs& args, int layer) override {
+		SvgSwitch::drawLayer(args, layer);
+		if (layer == 1 && dragging) {
+			nvgBeginPath(args.vg);
+			nvgRoundedRect(args.vg, RECT_ARGS(box.zeroPos().grow(2.f)), 3.8f);
+			nvgStrokeColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.4f));
+			nvgStrokeWidth(args.vg, 1.5f);
+			nvgStroke(args.vg);
+		}
+	}
+
+	// Left-drag → toggle connection; shift+left-drag → move cell assignment.
+	void onDragDrop(const event::DragDrop& e) override {
+		SvgSwitch::onDragDrop(e);
+		if (!module) return;
+		auto* src = dynamic_cast<SpliceKitCellButton*>(e.origin);
+		if (!src || src->module != module || src->cellId == cellId) return;
+		int a = src->cellId, b = cellId;
+		if (e.button == GLFW_MOUSE_BUTTON_LEFT) {
+			if (src->shiftDrag) {
+				if (!module->guiQueue.full())
+					module->guiQueue.push([=]() { module->moveCell(a, b); });
+			} else {
+				module->clearPending();
+				if (!module->guiQueue.full())
+					module->guiQueue.push([=]() { module->toggleConnection(a, b); });
+			}
+		}
 	}
 
 	void createCellMenu();

@@ -498,6 +498,221 @@ TEST_CASE("process - scene cellLedState transitions to SCENE_ACTIVE for currentS
 	Test::destroyModule(m);
 }
 
+// ---------------------------------------------------------------------------
+// moveCell
+// ---------------------------------------------------------------------------
+
+TEST_CASE("moveCell - no-op when source equals target", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+
+	m->portAssignments[4].moduleId = 42;
+	m->portAssignments[4].portId   = 0;
+	m->portAssignments[4].type     = engine::Port::OUTPUT;
+	m->cellLabels[4]               = "keep";
+	m->cellColorSet[4]             = 1;
+	m->trackingProcessor.setMap(MidiTrackingType::NOTE, 4, 36);
+
+	m->moveCell(4, 4);
+
+	REQUIRE(m->portAssignments[4].moduleId == 42);
+	REQUIRE(m->cellLabels[4]              == "keep");
+	REQUIRE(m->cellColorSet[4]            == 1);
+	auto map = m->trackingProcessor.getMap(4);
+	REQUIRE(map.type  == MidiTrackingType::NOTE);
+	REQUIRE(map.param == 36);
+
+	Test::destroyModule(m);
+}
+
+
+TEST_CASE("moveCell - port assignment is transferred and source is cleared", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+
+	m->portAssignments[3].moduleId = 42;
+	m->portAssignments[3].portId   = 1;
+	m->portAssignments[3].type     = engine::Port::OUTPUT;
+	// toId has an existing (discarded) assignment
+	m->portAssignments[7].moduleId = 99;
+	m->portAssignments[7].portId   = 0;
+	m->portAssignments[7].type     = engine::Port::INPUT;
+
+	m->moveCell(3, 7);
+
+	REQUIRE(m->portAssignments[7].moduleId == 42);
+	REQUIRE(m->portAssignments[7].portId   == 1);
+	REQUIRE(m->portAssignments[7].type     == engine::Port::OUTPUT);
+	REQUIRE(m->portAssignments[3].isValid() == false);
+
+	Test::destroyModule(m);
+}
+
+
+TEST_CASE("moveCell - MIDI mappings stay on their original cells", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+
+	m->portAssignments[5].moduleId = 1;
+	m->portAssignments[5].portId   = 0;
+	m->portAssignments[5].type     = engine::Port::OUTPUT;
+	m->trackingProcessor.setMap(MidiTrackingType::NOTE, 5, 60);
+	m->trackingProcessor.setMap(MidiTrackingType::CC,   9, 74);
+
+	m->moveCell(5, 9);
+
+	// fromId keeps its mapping (physical button position unchanged).
+	auto src = m->trackingProcessor.getMap(5);
+	REQUIRE(src.type  == MidiTrackingType::NOTE);
+	REQUIRE(src.param == 60);
+
+	// toId keeps its own mapping (not overwritten by fromId's).
+	auto dst = m->trackingProcessor.getMap(9);
+	REQUIRE(dst.type  == MidiTrackingType::CC);
+	REQUIRE(dst.param == 74);
+
+	Test::destroyModule(m);
+}
+
+
+TEST_CASE("moveCell - label and color are transferred and source is reset", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+
+	m->portAssignments[2].moduleId = 1;
+	m->portAssignments[2].portId   = 0;
+	m->portAssignments[2].type     = engine::Port::OUTPUT;
+	m->cellLabels[2]               = "VCO Out";
+	m->cellColorSet[2]             = 2;  // orange
+
+	m->moveCell(2, 9);
+
+	REQUIRE(m->cellLabels[9]   == "VCO Out");
+	REQUIRE(m->cellColorSet[9] == 2);
+	REQUIRE(m->cellLabels[2].empty());
+	REQUIRE(m->cellColorSet[2] == -1);
+
+	Test::destroyModule(m);
+}
+
+
+TEST_CASE("moveCell - scene connections are redirected in current scene", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+
+	m->setConnection(0, 0, 2, true);
+	m->setConnection(0, 0, 4, true);
+
+	m->portAssignments[0].moduleId = 1;
+	m->portAssignments[0].portId   = 0;
+	m->portAssignments[0].type     = engine::Port::OUTPUT;
+
+	m->moveCell(0, 5);
+
+	// toId inherits fromId's connections.
+	REQUIRE(m->isConnected(0, 5, 2) == true);
+	REQUIRE(m->isConnected(0, 5, 4) == true);
+	// fromId is cleared.
+	REQUIRE(m->isConnected(0, 0, 2) == false);
+	REQUIRE(m->isConnected(0, 0, 4) == false);
+	// Neighbours now point at toId, not fromId.
+	REQUIRE(m->isConnected(0, 2, 5) == true);
+	REQUIRE(m->isConnected(0, 2, 0) == false);
+	REQUIRE(m->isConnected(0, 4, 5) == true);
+	REQUIRE(m->isConnected(0, 4, 0) == false);
+
+	// fromId's bitmask was never zeroed — its connections survived as toId's.
+	// In production this means the physical cables remain in the patch untouched.
+	REQUIRE(m->isConnected(0, 5, 2) == true);
+	REQUIRE(m->isConnected(0, 5, 4) == true);
+
+	Test::destroyModule(m);
+}
+
+
+TEST_CASE("moveCell - toId's existing connections are discarded", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+
+	m->setConnection(0, 3, 7, true);  // fromId=3 → cell 7
+	m->setConnection(0, 5, 8, true);  // toId=5 existing connections — discarded
+	m->setConnection(0, 5, 9, true);
+
+	m->portAssignments[3].moduleId = 1;
+	m->portAssignments[3].portId   = 0;
+	m->portAssignments[3].type     = engine::Port::OUTPUT;
+
+	m->moveCell(3, 5);
+
+	// toId has fromId's connection only.
+	REQUIRE(m->isConnected(0, 5, 7) == true);
+	REQUIRE(m->isConnected(0, 5, 8) == false);
+	REQUIRE(m->isConnected(0, 5, 9) == false);
+	// Discarded neighbours no longer reference toId.
+	REQUIRE(m->isConnected(0, 8, 5) == false);
+	REQUIRE(m->isConnected(0, 9, 5) == false);
+
+	Test::destroyModule(m);
+}
+
+
+TEST_CASE("moveCell - fromId-toId connection is dropped and not a self-connection", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+
+	m->setConnection(0, 0, 3, true);  // fromId↔toId: will not become self-connection
+	m->setConnection(0, 0, 7, true);  // other connection — should transfer
+
+	m->portAssignments[0].moduleId = 1;
+	m->portAssignments[0].portId   = 0;
+	m->portAssignments[0].type     = engine::Port::OUTPUT;
+
+	m->moveCell(0, 3);
+
+	REQUIRE(m->isConnected(0, 3, 3) == false);  // no self-connection
+	REQUIRE(m->isConnected(0, 3, 7) == true);   // other connection transferred
+	REQUIRE(m->isConnected(0, 0, 7) == false);  // fromId cleared
+	REQUIRE(m->isConnected(0, 0, 3) == false);
+
+	Test::destroyModule(m);
+}
+
+
+TEST_CASE("moveCell - connections transferred across all scenes independently", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+
+	// Different connection topology in scenes 1, 2, 3.
+	m->setConnection(1, 10, 20, true);
+	m->setConnection(2, 10, 30, true);
+	m->setConnection(3, 10, 40, true);
+
+	m->portAssignments[10].moduleId = 1;
+	m->portAssignments[10].portId   = 0;
+	m->portAssignments[10].type     = engine::Port::OUTPUT;
+
+	m->moveCell(10, 50);
+
+	REQUIRE(m->isConnected(1, 50, 20) == true);
+	REQUIRE(m->isConnected(2, 50, 30) == true);
+	REQUIRE(m->isConnected(3, 50, 40) == true);
+	REQUIRE(m->isConnected(1, 10, 20) == false);
+	REQUIRE(m->isConnected(2, 10, 30) == false);
+	REQUIRE(m->isConnected(3, 10, 40) == false);
+
+	Test::destroyModule(m);
+}
+
+
+TEST_CASE("moveCell - overlay message is posted", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+
+	m->portAssignments[1].moduleId = 1;
+	m->portAssignments[1].portId   = 0;
+	m->portAssignments[1].type     = engine::Port::OUTPUT;
+	m->overlayEnabled   = true;
+	m->overlayMessageId = -1;
+
+	m->moveCell(1, 6);
+
+	REQUIRE(m->overlayMessageId == 0);
+
+	Test::destroyModule(m);
+}
+
+
 TEST_CASE("process - scene state transitions from active to dim after scene switch", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
 	m->customPreset   = makeNoteOnPreset();
