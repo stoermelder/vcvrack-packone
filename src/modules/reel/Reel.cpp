@@ -1359,6 +1359,7 @@ struct ReelWidget : ThemedModuleWidget<ReelModule> {
 
 	void step() override {
 		BASE::step();
+		moduleSelectProcessor.step();
 		if (boxDrawer) boxDrawer->bindingActive = moduleSelectProcessor.isLearning();
 	}
 
