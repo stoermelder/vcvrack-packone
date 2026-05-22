@@ -619,23 +619,26 @@ struct ReelModule : Module, StripIdFixModule {
 template <class MODULE>
 struct ReelBoundsDrawer : Widget {
 	MODULE* module = NULL;
+	bool bindingActive = false;
 
 	void draw(const DrawArgs& args) override {
 		if (!module) return;
 
-		switch (module->boxDraw) {
-			case 0:
-				return;
-			case 1:
-				break;
-			case 2:
-				Widget* w = APP->event->getSelectedWidget();
-				if (!w) return;
-				ModuleWidget* mw = dynamic_cast<ModuleWidget*>(w);
-				if (mw && mw->module == module) break;
-				mw = w->getAncestorOfType<ModuleWidget>();
-				if (mw && mw->module == module) break;
-				return;
+		if (!bindingActive) {
+			switch (module->boxDraw) {
+				case 0:
+					return;
+				case 1:
+					break;
+				case 2:
+					Widget* w = APP->event->getSelectedWidget();
+					if (!w) return;
+					ModuleWidget* mw = dynamic_cast<ModuleWidget*>(w);
+					if (mw && mw->module == module) break;
+					mw = w->getAncestorOfType<ModuleWidget>();
+					if (mw && mw->module == module) break;
+					return;
+			}
 		}
 
 		Rect viewPort = getViewport(box);
@@ -1352,6 +1355,11 @@ struct ReelWidget : ThemedModuleWidget<ReelModule> {
 			APP->scene->rack->removeChild(boxDrawer);
 			delete boxDrawer;
 		}
+	}
+
+	void step() override {
+		BASE::step();
+		if (boxDrawer) boxDrawer->bindingActive = moduleSelectProcessor.isLearning();
 	}
 
 	void onDeselect(const event::Deselect& e) override {
