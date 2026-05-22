@@ -145,8 +145,7 @@ struct ProxyParamQuantity : ParamQuantity {
 };
 
 
-const int NUM_CTRL = 16;
-
+template <int NUM_CTRL>
 struct TransitCtrlModule : Module, TransitCtrlReceiver {
 	enum ParamIds {
 		ENUMS(PARAM, NUM_CTRL),
@@ -292,8 +291,9 @@ struct TransitCtrlModule : Module, TransitCtrlReceiver {
 };
 
 
+template <int NUM_CTRL>
 struct TransitCtrlKnob : StoermelderSmallKnob {
-	TransitCtrlModule* module;
+	TransitCtrlModule<NUM_CTRL>* module;
 	int knobIndex;
 
 	void appendContextMenu(ui::Menu* menu) override {
@@ -301,7 +301,7 @@ struct TransitCtrlKnob : StoermelderSmallKnob {
 		if (!module) return;
 
 		struct MappingItem : MenuItem {
-			TransitCtrlModule* module;
+			TransitCtrlModule<NUM_CTRL>* module;
 			int knobIndex;
 			int targetIndex;
 			void onAction(const event::Action& e) override {
@@ -337,42 +337,42 @@ struct TransitCtrlKnob : StoermelderSmallKnob {
 	}
 };
 
-struct TransitCtrlWidget : ThemedModuleWidget<TransitCtrlModule> {
-	TransitCtrlWidget(TransitCtrlModule* module)
-		: ThemedModuleWidget<TransitCtrlModule>(module, "TransitCtrl") {
-		setModule(module);
+struct TransitCtrlWidget : ThemedModuleWidget<TransitCtrlModule<16>> {
+	TransitCtrlWidget(TransitCtrlModule<16>* module)
+		: ThemedModuleWidget<TransitCtrlModule<16>>(module, "TransitCtrl") {
+		this->setModule(module);
 
-		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
-		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+		this->addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
+		this->addChild(createWidget<StoermelderBlackScrew>(Vec(this->box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
 		auto addCtrlKnob = [&](Vec pos, int paramId, int knobIndex) {
-			TransitCtrlKnob* knob = createParamCentered<TransitCtrlKnob>(pos, module, paramId);
+			TransitCtrlKnob<16>* knob = createParamCentered<TransitCtrlKnob<16>>(pos, module, paramId);
 			knob->module = module;
 			knob->knobIndex = knobIndex;
-			addParam(knob);
+			this->addParam(knob);
 		};
 
 		// 8 rows x 2 columns, left column = knobs 0-7, right column = knobs 8-15
-		addCtrlKnob(Vec(20.2f,  48.8f), TransitCtrlModule::PARAM + 0,  0);
-		addCtrlKnob(Vec(54.8f,  48.8f), TransitCtrlModule::PARAM + 8,  8);
-		addCtrlKnob(Vec(20.2f,  85.1f), TransitCtrlModule::PARAM + 1,  1);
-		addCtrlKnob(Vec(54.8f,  85.1f), TransitCtrlModule::PARAM + 9,  9);
-		addCtrlKnob(Vec(20.2f, 121.5f), TransitCtrlModule::PARAM + 2,  2);
-		addCtrlKnob(Vec(54.8f, 121.5f), TransitCtrlModule::PARAM + 10, 10);
-		addCtrlKnob(Vec(20.2f, 157.8f), TransitCtrlModule::PARAM + 3,  3);
-		addCtrlKnob(Vec(54.8f, 157.8f), TransitCtrlModule::PARAM + 11, 11);
-		addCtrlKnob(Vec(20.2f, 194.1f), TransitCtrlModule::PARAM + 4,  4);
-		addCtrlKnob(Vec(54.8f, 194.1f), TransitCtrlModule::PARAM + 12, 12);
-		addCtrlKnob(Vec(20.2f, 230.5f), TransitCtrlModule::PARAM + 5,  5);
-		addCtrlKnob(Vec(54.8f, 230.5f), TransitCtrlModule::PARAM + 13, 13);
-		addCtrlKnob(Vec(20.2f, 266.8f), TransitCtrlModule::PARAM + 6,  6);
-		addCtrlKnob(Vec(54.8f, 266.8f), TransitCtrlModule::PARAM + 14, 14);
-		addCtrlKnob(Vec(20.2f, 303.1f), TransitCtrlModule::PARAM + 7,  7);
-		addCtrlKnob(Vec(54.8f, 303.1f), TransitCtrlModule::PARAM + 15, 15);
+		addCtrlKnob(Vec(20.2f,  48.8f), TransitCtrlModule<16>::PARAM + 0,  0);
+		addCtrlKnob(Vec(54.8f,  48.8f), TransitCtrlModule<16>::PARAM + 8,  8);
+		addCtrlKnob(Vec(20.2f,  85.1f), TransitCtrlModule<16>::PARAM + 1,  1);
+		addCtrlKnob(Vec(54.8f,  85.1f), TransitCtrlModule<16>::PARAM + 9,  9);
+		addCtrlKnob(Vec(20.2f, 121.5f), TransitCtrlModule<16>::PARAM + 2,  2);
+		addCtrlKnob(Vec(54.8f, 121.5f), TransitCtrlModule<16>::PARAM + 10, 10);
+		addCtrlKnob(Vec(20.2f, 157.8f), TransitCtrlModule<16>::PARAM + 3,  3);
+		addCtrlKnob(Vec(54.8f, 157.8f), TransitCtrlModule<16>::PARAM + 11, 11);
+		addCtrlKnob(Vec(20.2f, 194.1f), TransitCtrlModule<16>::PARAM + 4,  4);
+		addCtrlKnob(Vec(54.8f, 194.1f), TransitCtrlModule<16>::PARAM + 12, 12);
+		addCtrlKnob(Vec(20.2f, 230.5f), TransitCtrlModule<16>::PARAM + 5,  5);
+		addCtrlKnob(Vec(54.8f, 230.5f), TransitCtrlModule<16>::PARAM + 13, 13);
+		addCtrlKnob(Vec(20.2f, 266.8f), TransitCtrlModule<16>::PARAM + 6,  6);
+		addCtrlKnob(Vec(54.8f, 266.8f), TransitCtrlModule<16>::PARAM + 14, 14);
+		addCtrlKnob(Vec(20.2f, 303.1f), TransitCtrlModule<16>::PARAM + 7,  7);
+		addCtrlKnob(Vec(54.8f, 303.1f), TransitCtrlModule<16>::PARAM + 15, 15);
 	}
 };
 
 } // namespace Transit
 } // namespace StoermelderPackOne
 
-Model* modelTransitCtrl = createModel<StoermelderPackOne::Transit::TransitCtrlModule, StoermelderPackOne::Transit::TransitCtrlWidget>("TransitCtrl");
+Model* modelTransitCtrl = createModel<StoermelderPackOne::Transit::TransitCtrlModule<16>, StoermelderPackOne::Transit::TransitCtrlWidget>("TransitCtrl");
