@@ -818,9 +818,9 @@ struct ReelSlotEntry : LedDisplayChoice {
 				nvgBeginPath(args.vg);
 				nvgRect(args.vg, cx - s / 2.f, cy - s / 2.f, s, s);
 				nvgStroke(args.vg);
-			} 
+			}
 			else {
-				nvgStrokeColor(args.vg, nvgRGBA(0xf0, 0xf0, 0xf0, 80));			
+				nvgStrokeColor(args.vg, nvgRGBA(0xf0, 0xf0, 0xf0, 80));
 				nvgStroke(args.vg);
 			}
 		}
@@ -931,8 +931,6 @@ struct ReelSlotEntry : LedDisplayChoice {
 			case GLFW_KEY_END:
 				editCursor = (int)editText.length();
 				break;
-			default:
-				return; // don't consume unknown keys
 		}
 		e.consume(this);
 	}
@@ -1112,7 +1110,6 @@ struct ReelSearchField : OpaqueWidget {
 			case GLFW_KEY_RIGHT: if (cursor < (int)text.length()) cursor++; break;
 			case GLFW_KEY_HOME:  cursor = 0; break;
 			case GLFW_KEY_END:   cursor = (int)text.length(); break;
-			default: return;
 		}
 		e.consume(this);
 	}
