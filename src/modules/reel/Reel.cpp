@@ -418,6 +418,56 @@ struct ReelModule : Module, StripIdFixModule {
 	}
 
 
+	void slotExport(int i) {
+		if (i < 0 || i >= (int)slots.size() || !slots[i].used) return;
+		ReelSlot& slot = slots[i];
+
+		osdialog_filters* filters = osdialog_filters_parse(SELECTION_FILTERS);
+		DEFER({osdialog_filters_free(filters);});
+
+		std::string defaultName = slot.label.empty() ? string::f("slot-%d", i + 1) : slot.label;
+		char* path = osdialog_file(OSDIALOG_SAVE, NULL, defaultName.c_str(), filters);
+		if (!path) return;
+		DEFER({std::free(path);});
+
+		std::string pathStr = path;
+		if (pathStr.size() < 5 || pathStr.substr(pathStr.size() - 5) != ".vcvs")
+			pathStr += ".vcvs";
+
+		json_t* rootJ = json_object();
+		DEFER({json_decref(rootJ);});
+
+		json_t* modulesJ = json_array();
+		for (size_t mi = 0; mi < slot.moduleStates.size(); mi++) {
+			json_t* vJ = slot.moduleStates[mi];
+			if (!vJ) continue;
+			json_t* moduleJ = json_deep_copy(vJ);
+			if (mi < boundModules.size()) {
+				BoundModule* b = boundModules[mi];
+				json_object_set_new(moduleJ, "pos", json_pack("[f, f]", b->pos.x, b->pos.y));
+			}
+			json_array_append_new(modulesJ, moduleJ);
+		}
+		json_object_set_new(rootJ, "modules", modulesJ);
+
+		if (slot.cablesJ) {
+			json_object_set(rootJ, "cables", slot.cablesJ);
+		} 
+		else {
+			json_object_set_new(rootJ, "cables", json_array());
+		}
+
+		FILE* file = std::fopen(pathStr.c_str(), "w");
+		if (!file) {
+			osdialog_message(OSDIALOG_ERROR, OSDIALOG_OK, "Could not open file for writing.");
+			return;
+		}
+		DEFER({std::fclose(file);});
+
+		json_dumpf(rootJ, file, JSON_INDENT(2));
+	}
+
+
 	bool slotMatchesFilter(int i, const std::string& filter) {
 		if (filter.empty()) return true;
 		if (i >= (int)slots.size() || !slots[i].used) return false;
@@ -908,6 +958,9 @@ struct ReelSlotEntry : LedDisplayChoice {
 		menu->addChild(createMenuItem("Paste", "", [=]() {
 			if (module->copySlot >= 0 && module) module->slotCopyPaste(module->copySlot, id);
 		}, module->copySlot < 0));
+		menu->addChild(createMenuItem("Export as .vcvs…", "", [=]() {
+			module->slotExport(id);
+		}, !used));
 
 		menu->addChild(new MenuSeparator);
 		bool noBound = !module || module->boundModules.empty();

@@ -97,5 +97,5 @@ All bound modules are decorated with a colored bounding box on the rack. This ma
 
 ## Changelog
 
-- v2.4.0
+- v2.5.0
     - Initial release of REEL
