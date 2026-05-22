@@ -36,6 +36,11 @@ struct PanicRoomModule : Module {
     /** [Stored to JSON] */
     int cableLimit = 50;
 
+    /** [Stored to JSON] */
+    bool moduleLimitEnabled = false;
+    /** [Stored to JSON] */
+    int moduleLimit = 100;
+
     PanicRoomModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
         config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -51,6 +56,8 @@ struct PanicRoomModule : Module {
         outsideAlpha = 0.5f;
         cableLimitEnabled = false;
         cableLimit = 50;
+        moduleLimitEnabled = false;
+        moduleLimit = 100;
         Module::onReset(e);
     }
 
@@ -76,6 +83,10 @@ struct PanicRoomModule : Module {
         json_object_set_new(rootJ, "cableLimitEnabled", json_boolean(cableLimitEnabled));
         // cableLimit
         json_object_set_new(rootJ, "cableLimit", json_integer(cableLimit));
+        // moduleLimitEnabled
+        json_object_set_new(rootJ, "moduleLimitEnabled", json_boolean(moduleLimitEnabled));
+        // moduleLimit
+        json_object_set_new(rootJ, "moduleLimit", json_integer(moduleLimit));
         return rootJ;
     }
 
@@ -116,6 +127,16 @@ struct PanicRoomModule : Module {
         json_t* cableLimitJ = json_object_get(rootJ, "cableLimit");
         if (cableLimitJ) {
             cableLimit = json_integer_value(cableLimitJ);
+        }
+        // moduleLimitEnabled
+        json_t* moduleLimitEnabledJ = json_object_get(rootJ, "moduleLimitEnabled");
+        if (moduleLimitEnabledJ) {
+            moduleLimitEnabled = json_boolean_value(moduleLimitEnabledJ);
+        }
+        // moduleLimit
+        json_t* moduleLimitJ = json_object_get(rootJ, "moduleLimit");
+        if (moduleLimitJ) {
+            moduleLimit = json_integer_value(moduleLimitJ);
         }
     }
 
@@ -246,6 +267,20 @@ struct CableLimitField : ui::TextField {
     }
 };
 
+struct ModuleLimitField : ui::TextField {
+    PanicRoomModule* module;
+    void onSelectKey(const SelectKeyEvent& e) override {
+        if (e.action == GLFW_PRESS && (e.isKeyCommand(GLFW_KEY_ENTER) || e.isKeyCommand(GLFW_KEY_KP_ENTER))) {
+            int v = atoi(text.c_str());
+            if (v > 0) module->moduleLimit = v;
+            ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
+            overlay->requestDelete();
+            e.consume(this);
+        }
+        TextField::onSelectKey(e);
+    }
+};
+
 struct SizeWidthField : ui::TextField {
     PanicRoomModule* module;
     void onSelectKey(const SelectKeyEvent& e) override {
@@ -281,6 +316,8 @@ struct PanicRoomWidget : ThemedModuleWidget<PanicRoomModule> {
 
     size_t cableNumberWhenAdded;
     bool cableLimitReached;
+    size_t moduleNumberWhenAdded;
+    bool moduleLimitReached;
 
     PanicRoomWidget(PanicRoomModule* module) : ThemedModuleWidget<PanicRoomModule>(module, "PanicRoom") {
         setModule(module);
@@ -296,6 +333,8 @@ struct PanicRoomWidget : ThemedModuleWidget<PanicRoomModule> {
 
             cableNumberWhenAdded = APP->scene->rack->getCompleteCables().size();
             cableLimitReached = false;
+            moduleNumberWhenAdded = APP->scene->rack->getModules().size();
+            moduleLimitReached = false;
         }
     }
 
@@ -352,6 +391,28 @@ struct PanicRoomWidget : ThemedModuleWidget<PanicRoomModule> {
                     // Cable might not been added completely, wait until it has a parent
                     if (!newest->parent) break;
                     vcv::removeCable(newest);
+                }
+            }
+        }
+
+        if (module && module->moduleLimitEnabled) {
+            std::vector<ModuleWidget*> modules = APP->scene->rack->getModules();
+
+            // If the module has been added, wait until we drop below the number of allowed
+            // modules. This ensures, we are not deleting modules randomly, but only the most
+            // recently added.
+            if (!moduleLimitReached && static_cast<int>(modules.size()) <= module->moduleLimit) {
+                moduleLimitReached = true;
+            }
+
+            if (moduleLimitReached) {
+                while ((int)modules.size() > module->moduleLimit) {
+                    // Remove the module with the highest id (most recently added)
+                    ModuleWidget* newest = modules.back();
+                    // Module might not been added completely, wait until it has a parent
+                    if (!newest->parent) break;
+                    APP->scene->rack->removeModule(newest);
+                    delete newest;
                 }
             }
         }
@@ -441,6 +502,19 @@ struct PanicRoomWidget : ThemedModuleWidget<PanicRoomModule> {
                 maxCablesField->module = module;
                 maxCablesField->text = std::to_string(module->cableLimit);
                 menu->addChild(maxCablesField);
+            }
+        ));
+
+        int moduleCount = (int)APP->scene->rack->getModules().size();
+        menu->addChild(createSubmenuItem("Module limit", string::f("%d modules", moduleCount),
+            [=](Menu* menu) {
+                menu->addChild(createBoolMenuItem("Enabled", "", [=]() { return module->moduleLimitEnabled; }, [=](bool v) { module->moduleLimitEnabled = v; }));
+                menu->addChild(createMenuLabel("Max modules"));
+                ModuleLimitField* maxModulesField = new ModuleLimitField;
+                maxModulesField->box.size.x = 100;
+                maxModulesField->module = module;
+                maxModulesField->text = std::to_string(module->moduleLimit);
+                menu->addChild(maxModulesField);
             }
         ));
     }

@@ -3,7 +3,7 @@
 ### Changes and Fixes
 
 - Module [PANIC ROOM](./docs/panicroom/PanicRoom.md)
-    - Added option to limit the number of allowed cables
+    - Added option to limit the number of allowed modules and cables
 
 ## 2.4.0
 
