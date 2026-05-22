@@ -408,6 +408,28 @@ struct ReelModule : Module, StripIdFixModule {
 		else if (currentSlot > i) currentSlot--;
 	}
 
+	void slotMove(int from, int to) {
+		// `to` is insert-before index in the original array
+		if (from < 0 || from >= (int)slots.size()) return;
+		if (to < 0) return;
+		if (to > (int)slots.size()) to = (int)slots.size();
+		if (from == to || from == to - 1) return;
+
+		if (from < to) {
+			// Rotate [from, to) left by 1: element at from moves to to-1
+			std::rotate(slots.begin() + from, slots.begin() + from + 1, slots.begin() + to);
+			int insertAt = to - 1;
+			if (currentSlot == from) currentSlot = insertAt;
+			else if (from < currentSlot && currentSlot < to) currentSlot--;
+		} 
+		else {
+			// Rotate [to, from+1) right by 1: element at from moves to to
+			std::rotate(slots.begin() + to, slots.begin() + from, slots.begin() + from + 1);
+			if (currentSlot == from) currentSlot = to;
+			else if (to <= currentSlot && currentSlot < from) currentSlot++;
+		}
+	}
+
 	void slotCopyPaste(int src, int dst) {
 		if (src < 0 || src >= (int)slots.size() || !slots[src].used) return;
 		if (dst < 0) return;
