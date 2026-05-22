@@ -1,4 +1,5 @@
 #include "../../plugin.hpp"
+#include "../../utils/vcv_cables.hpp"
 #include <queue>
 
 namespace StoermelderPackOne {
@@ -350,8 +351,7 @@ struct PanicRoomWidget : ThemedModuleWidget<PanicRoomModule> {
                     CableWidget* newest = cables.back();
                     // Cable might not been added completely, wait until it has a parent
                     if (!newest->parent) break;
-                    APP->scene->rack->removeCable(newest);
-                    delete newest;
+                    vcv::removeCable(newest);
                 }
             }
         }
