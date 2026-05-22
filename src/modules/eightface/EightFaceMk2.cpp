@@ -863,22 +863,25 @@ template <int NUM_PRESETS>
 struct ModuleOuterBoundsDrawerWidget : Widget {
 	typedef EightFaceMk2Module<NUM_PRESETS> MODULE;
 	MODULE* module = NULL;
+	bool bindingActive = false;
 
 	void draw(const DrawArgs& args) override {
 		if (!module) return;
 		
-		switch (module->boxDraw) {
-			case 0:
-				return;
-			case 1:
-				break;
-			case 2:
-				Widget* w = APP->event->getSelectedWidget();
-				if (!w) return;
-				ModuleWidget* mw = dynamic_cast<ModuleWidget*>(w);
-				if (mw && mw->module == module) break;
-				if (mw && module->expandersConnected.find(mw->module->getId()) != module->expandersConnected.end()) break;
-				return;
+		if (!bindingActive) {
+			switch (module->boxDraw) {
+				case 0:
+					return;
+				case 1:
+					break;
+				case 2:
+					Widget* w = APP->event->getSelectedWidget();
+					if (!w) return;
+					ModuleWidget* mw = dynamic_cast<ModuleWidget*>(w);
+					if (mw && mw->module == module) break;
+					if (mw && module->expandersConnected.find(mw->module->getId()) != module->expandersConnected.end()) break;
+					return;
+			}
 		}
 
 		Rect viewPort = getViewport(box);
@@ -896,13 +899,36 @@ struct ModuleOuterBoundsDrawerWidget : Widget {
 				nvgSave(args.vg);
 				nvgResetScissor(args.vg);
 				nvgTranslate(args.vg, p.x, p.y);
+
+				float r = 3.f;
+				float x = 1.f, y = 1.f, w = mw->box.size.x - 2.f, h = mw->box.size.y - 2.f;
+
+				// Subtle tinted fill
 				nvgBeginPath(args.vg);
-				nvgRect(args.vg, 1.f, 1.f, mw->box.size.x - 2.f, mw->box.size.y - 2.f);
+				nvgRoundedRect(args.vg, x, y, w, h, r);
+				NVGcolor fillColor = module->boxColor;
+				fillColor.a = module->boxOpacity * 0.08f;
+				nvgFillColor(args.vg, fillColor);
+				nvgFill(args.vg);
+
+				// Soft glow halo
+				nvgBeginPath(args.vg);
+				nvgRoundedRect(args.vg, x, y, w, h, r);
+				NVGcolor glowColor = module->boxColor;
+				glowColor.a = module->boxOpacity * 0.25f;
+				nvgStrokeColor(args.vg, glowColor);
+				nvgStrokeWidth(args.vg, 5.f);
+				nvgStroke(args.vg);
+
+				// Crisp outline
+				nvgBeginPath(args.vg);
+				nvgRoundedRect(args.vg, x, y, w, h, r);
 				NVGcolor strokeColor = module->boxColor;
 				strokeColor.a = module->boxOpacity;
 				nvgStrokeColor(args.vg, strokeColor);
-				nvgStrokeWidth(args.vg, 2.f);
+				nvgStrokeWidth(args.vg, 1.5f);
 				nvgStroke(args.vg);
+
 				nvgRestore(args.vg);
 			}
 		}
@@ -1002,6 +1028,7 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 		if (BASE::module) {
 			moduleSelectProcessor.step();
 			BASE::module->lights[MODULE::LIGHT_LEARN].setBrightness(moduleSelectProcessor.isLearning());
+			if (boxDrawer) boxDrawer->bindingActive = moduleSelectProcessor.isLearning();
 			module->processGui();
 		}
 		BASE::step();
