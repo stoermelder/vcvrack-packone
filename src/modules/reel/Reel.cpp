@@ -13,6 +13,12 @@ static const char SELECTION_FILTERS[] = "VCV Rack module selection (.vcvs):vcvs"
 
 
 struct ReelModule : Module, StripIdFixModule {
+	enum ParamIds {
+		PREV_PARAM,
+		NEXT_PARAM,
+		NUM_PARAMS
+	};
+
 	struct BoundModule {
 		int64_t moduleId;
 		std::string pluginSlug;
@@ -29,6 +35,23 @@ struct ReelModule : Module, StripIdFixModule {
 		std::vector<json_t*> moduleStates;
 		json_t* cablesJ = nullptr;
 
+		// Non-copyable — json_t* ownership is manual.
+		// Custom move ops are required: the defaulted move would copy cablesJ as a
+		// raw pointer without nulling the source, so the source's destructor would
+		// json_decref the shared pointer and free it from under us. This caused
+		// slot.cablesJ to dangle after std::vector reallocation on emplace_back.
+		ReelSlot() = default;
+		ReelSlot(const ReelSlot&) = delete;
+
+		ReelSlot(ReelSlot&& other) noexcept
+			: used(other.used)
+			, label(std::move(other.label))
+			, moduleStates(std::move(other.moduleStates))
+			, cablesJ(other.cablesJ) {
+			other.cablesJ = nullptr;
+			other.used = false;
+		}
+
 		~ReelSlot() { clear(); }
 
 		void clear() {
@@ -42,24 +65,6 @@ struct ReelModule : Module, StripIdFixModule {
 			}
 			used = false;
 			label = "";
-		}
-
-		// Non-copyable — json_t* ownership is manual.
-		// Custom move ops are required: the defaulted move would copy cablesJ as a
-		// raw pointer without nulling the source, so the source's destructor would
-		// json_decref the shared pointer and free it from under us. This caused
-		// slot.cablesJ to dangle after std::vector reallocation on emplace_back.
-		ReelSlot() = default;
-		ReelSlot(const ReelSlot&) = delete;
-		ReelSlot& operator=(const ReelSlot&) = delete;
-
-		ReelSlot(ReelSlot&& other) noexcept
-			: used(other.used)
-			, label(std::move(other.label))
-			, moduleStates(std::move(other.moduleStates))
-			, cablesJ(other.cablesJ) {
-			other.cablesJ = nullptr;
-			other.used = false;
 		}
 
 		ReelSlot& operator=(ReelSlot&& other) noexcept {
@@ -94,6 +99,9 @@ struct ReelModule : Module, StripIdFixModule {
 	int copySlot = -1;
 
 	ReelModule() {
+		config(NUM_PARAMS, 0, 0, 0);
+		configButton(PREV_PARAM, "Previous snapshot");
+		configButton(NEXT_PARAM, "Next snapshot");
 		panelTheme = pluginSettings.panelThemeDefault;
 		boxColor = color::BLUE;
 	}
@@ -400,6 +408,28 @@ struct ReelModule : Module, StripIdFixModule {
 		else if (currentSlot > i) currentSlot--;
 	}
 
+	void slotMove(int from, int to) {
+		// `to` is insert-before index in the original array
+		if (from < 0 || from >= (int)slots.size()) return;
+		if (to < 0) return;
+		if (to > (int)slots.size()) to = (int)slots.size();
+		if (from == to || from == to - 1) return;
+
+		if (from < to) {
+			// Rotate [from, to) left by 1: element at from moves to to-1
+			std::rotate(slots.begin() + from, slots.begin() + from + 1, slots.begin() + to);
+			int insertAt = to - 1;
+			if (currentSlot == from) currentSlot = insertAt;
+			else if (from < currentSlot && currentSlot < to) currentSlot--;
+		} 
+		else {
+			// Rotate [to, from+1) right by 1: element at from moves to to
+			std::rotate(slots.begin() + to, slots.begin() + from, slots.begin() + from + 1);
+			if (currentSlot == from) currentSlot = to;
+			else if (to <= currentSlot && currentSlot < from) currentSlot++;
+		}
+	}
+
 	void slotCopyPaste(int src, int dst) {
 		if (src < 0 || src >= (int)slots.size() || !slots[src].used) return;
 		if (dst < 0) return;
@@ -416,6 +446,56 @@ struct ReelModule : Module, StripIdFixModule {
 		if (srcSlot.cablesJ) dstSlot.cablesJ = json_deep_copy(srcSlot.cablesJ);
 		dstSlot.label = srcSlot.label;
 		dstSlot.used = true;
+	}
+
+
+	void slotExport(int i) {
+		if (i < 0 || i >= (int)slots.size() || !slots[i].used) return;
+		ReelSlot& slot = slots[i];
+
+		osdialog_filters* filters = osdialog_filters_parse(SELECTION_FILTERS);
+		DEFER({osdialog_filters_free(filters);});
+
+		std::string defaultName = slot.label.empty() ? string::f("slot-%d", i + 1) : slot.label;
+		char* path = osdialog_file(OSDIALOG_SAVE, NULL, defaultName.c_str(), filters);
+		if (!path) return;
+		DEFER({std::free(path);});
+
+		std::string pathStr = path;
+		if (pathStr.size() < 5 || pathStr.substr(pathStr.size() - 5) != ".vcvs")
+			pathStr += ".vcvs";
+
+		json_t* rootJ = json_object();
+		DEFER({json_decref(rootJ);});
+
+		json_t* modulesJ = json_array();
+		for (size_t mi = 0; mi < slot.moduleStates.size(); mi++) {
+			json_t* vJ = slot.moduleStates[mi];
+			if (!vJ) continue;
+			json_t* moduleJ = json_deep_copy(vJ);
+			if (mi < boundModules.size()) {
+				BoundModule* b = boundModules[mi];
+				json_object_set_new(moduleJ, "pos", json_pack("[f, f]", b->pos.x, b->pos.y));
+			}
+			json_array_append_new(modulesJ, moduleJ);
+		}
+		json_object_set_new(rootJ, "modules", modulesJ);
+
+		if (slot.cablesJ) {
+			json_object_set(rootJ, "cables", slot.cablesJ);
+		} 
+		else {
+			json_object_set_new(rootJ, "cables", json_array());
+		}
+
+		FILE* file = std::fopen(pathStr.c_str(), "w");
+		if (!file) {
+			osdialog_message(OSDIALOG_ERROR, OSDIALOG_OK, "Could not open file for writing.");
+			return;
+		}
+		DEFER({std::fclose(file);});
+
+		json_dumpf(rootJ, file, JSON_INDENT(2));
 	}
 
 
@@ -570,23 +650,26 @@ struct ReelModule : Module, StripIdFixModule {
 template <class MODULE>
 struct ReelBoundsDrawer : Widget {
 	MODULE* module = NULL;
+	bool bindingActive = false;
 
 	void draw(const DrawArgs& args) override {
 		if (!module) return;
 
-		switch (module->boxDraw) {
-			case 0:
-				return;
-			case 1:
-				break;
-			case 2:
-				Widget* w = APP->event->getSelectedWidget();
-				if (!w) return;
-				ModuleWidget* mw = dynamic_cast<ModuleWidget*>(w);
-				if (mw && mw->module == module) break;
-				mw = w->getAncestorOfType<ModuleWidget>();
-				if (mw && mw->module == module) break;
-				return;
+		if (!bindingActive) {
+			switch (module->boxDraw) {
+				case 0:
+					return;
+				case 1:
+					break;
+				case 2:
+					Widget* w = APP->event->getSelectedWidget();
+					if (!w) return;
+					ModuleWidget* mw = dynamic_cast<ModuleWidget*>(w);
+					if (mw && mw->module == module) break;
+					mw = w->getAncestorOfType<ModuleWidget>();
+					if (mw && mw->module == module) break;
+					return;
+			}
 		}
 
 		Rect viewPort = getViewport(box);
@@ -601,13 +684,36 @@ struct ReelBoundsDrawer : Widget {
 				nvgSave(args.vg);
 				nvgResetScissor(args.vg);
 				nvgTranslate(args.vg, p.x, p.y);
+
+				float r = 3.f;
+				float x = 1.f, y = 1.f, w = mw->box.size.x - 2.f, h = mw->box.size.y - 2.f;
+
+				// Subtle tinted fill
 				nvgBeginPath(args.vg);
-				nvgRect(args.vg, 1.f, 1.f, mw->box.size.x - 2.f, mw->box.size.y - 2.f);
+				nvgRoundedRect(args.vg, x, y, w, h, r);
+				NVGcolor fillColor = module->boxColor;
+				fillColor.a = module->boxOpacity * 0.08f;
+				nvgFillColor(args.vg, fillColor);
+				nvgFill(args.vg);
+
+				// Soft glow halo
+				nvgBeginPath(args.vg);
+				nvgRoundedRect(args.vg, x, y, w, h, r);
+				NVGcolor glowColor = module->boxColor;
+				glowColor.a = module->boxOpacity * 0.25f;
+				nvgStrokeColor(args.vg, glowColor);
+				nvgStrokeWidth(args.vg, 5.f);
+				nvgStroke(args.vg);
+
+				// Crisp outline
+				nvgBeginPath(args.vg);
+				nvgRoundedRect(args.vg, x, y, w, h, r);
 				NVGcolor strokeColor = module->boxColor;
 				strokeColor.a = module->boxOpacity;
 				nvgStrokeColor(args.vg, strokeColor);
-				nvgStrokeWidth(args.vg, 2.f);
+				nvgStrokeWidth(args.vg, 1.5f);
 				nvgStroke(args.vg);
+
 				nvgRestore(args.vg);
 			}
 		}
@@ -734,9 +840,9 @@ struct ReelSlotEntry : LedDisplayChoice {
 				nvgBeginPath(args.vg);
 				nvgRect(args.vg, cx - s / 2.f, cy - s / 2.f, s, s);
 				nvgStroke(args.vg);
-			} 
+			}
 			else {
-				nvgStrokeColor(args.vg, nvgRGBA(0xf0, 0xf0, 0xf0, 80));			
+				nvgStrokeColor(args.vg, nvgRGBA(0xf0, 0xf0, 0xf0, 80));
 				nvgStroke(args.vg);
 			}
 		}
@@ -756,7 +862,8 @@ struct ReelSlotEntry : LedDisplayChoice {
 			if (e.pos.x <= LOAD_ZONE_W) {
 				// Load zone: load the slot
 				if (!isTrailing() && isUsed()) module->slotLoad(id);
-			} else {
+			}
+			else {
 				// Label zone: enter inline label edit
 				APP->event->setSelectedWidget(this);
 			}
@@ -846,8 +953,6 @@ struct ReelSlotEntry : LedDisplayChoice {
 			case GLFW_KEY_END:
 				editCursor = (int)editText.length();
 				break;
-			default:
-				return; // don't consume unknown keys
 		}
 		e.consume(this);
 	}
@@ -885,6 +990,9 @@ struct ReelSlotEntry : LedDisplayChoice {
 		menu->addChild(createMenuItem("Paste", "", [=]() {
 			if (module->copySlot >= 0 && module) module->slotCopyPaste(module->copySlot, id);
 		}, module->copySlot < 0));
+		menu->addChild(createMenuItem("Export as .vcvs…", "", [=]() {
+			module->slotExport(id);
+		}, !used));
 
 		menu->addChild(new MenuSeparator);
 		bool noBound = !module || module->boundModules.empty();
@@ -908,7 +1016,9 @@ struct ReelSearchField : OpaqueWidget {
 	std::chrono::time_point<std::chrono::system_clock> cursorBlinkTime;
 	bool cursorVisible = true;
 
-	ReelSearchField() { cursorBlinkTime = std::chrono::system_clock::now(); }
+	ReelSearchField() {
+		cursorBlinkTime = std::chrono::system_clock::now();
+	}
 
 	void step() override {
 		auto now = std::chrono::system_clock::now();
@@ -945,7 +1055,8 @@ struct ReelSearchField : OpaqueWidget {
 				if (text.empty() && !focused) {
 					nvgFillColor(args.vg, nvgRGBA(0xf0, 0xf0, 0xf0, 0x28));
 					nvgText(args.vg, 4.f, ty, "Search...", nullptr);
-				} else {
+				}
+				else {
 					std::string display = focused
 						? text.substr(0, cursor) + (cursorVisible ? "|" : " ") + text.substr(cursor)
 						: text;
@@ -975,17 +1086,21 @@ struct ReelSearchField : OpaqueWidget {
 		cursorBlinkTime = std::chrono::system_clock::now();
 	}
 
-	void onDeselect(const event::Deselect& e) override { focused = false; }
+	void onDeselect(const event::Deselect& e) override {
+		focused = false;
+	}
 
 	void onSelectText(const event::SelectText& e) override {
 		if (e.codepoint >= 32 && e.codepoint < 0x10000) {
 			char buf[8] = {};
 			if (e.codepoint < 0x80) {
 				buf[0] = (char)e.codepoint;
-			} else if (e.codepoint < 0x800) {
+			}
+			else if (e.codepoint < 0x800) {
 				buf[0] = 0xC0 | (char)(e.codepoint >> 6);
 				buf[1] = 0x80 | (char)(e.codepoint & 0x3F);
-			} else {
+			}
+			else {
 				buf[0] = 0xE0 | (char)(e.codepoint >> 12);
 				buf[1] = 0x80 | (char)((e.codepoint >> 6) & 0x3F);
 				buf[2] = 0x80 | (char)(e.codepoint & 0x3F);
@@ -1017,16 +1132,15 @@ struct ReelSearchField : OpaqueWidget {
 			case GLFW_KEY_RIGHT: if (cursor < (int)text.length()) cursor++; break;
 			case GLFW_KEY_HOME:  cursor = 0; break;
 			case GLFW_KEY_END:   cursor = (int)text.length(); break;
-			default: return;
 		}
 		e.consume(this);
 	}
 };
 
-struct ReelNavButton : OpaqueWidget {
-	ReelModule* module = nullptr;
+struct ReelNavButton : Switch {
 	std::string* filterText = nullptr;
 	bool forward = true;
+	float prevValue = 0.f;
 
 	void draw(const DrawArgs& args) override {
 		float cx = box.size.x * 0.5f, cy = box.size.y * 0.5f;
@@ -1036,7 +1150,7 @@ struct ReelNavButton : OpaqueWidget {
 			nvgMoveTo(args.vg, cx - w / 2.f, cy - h / 2.f);
 			nvgLineTo(args.vg, cx + w / 2.f, cy);
 			nvgLineTo(args.vg, cx - w / 2.f, cy + h / 2.f);
-		} 
+		}
 		else {
 			nvgMoveTo(args.vg, cx + w / 2.f, cy - h / 2.f);
 			nvgLineTo(args.vg, cx - w / 2.f, cy);
@@ -1045,22 +1159,31 @@ struct ReelNavButton : OpaqueWidget {
 		nvgClosePath(args.vg);
 		nvgFillColor(args.vg, nvgRGBA(0xf0, 0xf0, 0xf0, 0x90));
 		nvgFill(args.vg);
+		
+		Switch::draw(args);
 	}
 
-	void onButton(const event::Button& e) override {
-		if (e.action != GLFW_PRESS || e.button != GLFW_MOUSE_BUTTON_LEFT) return;
-		e.consume(this);
-		if (!module) return;
-		std::string ft = filterText ? *filterText : "";
-		int cur = module->currentSlot, n = (int)module->slots.size();
-		if (forward) {
-			for (int i = cur + 1; i < n; i++)
-				if (module->slotMatchesFilter(i, ft)) { module->slotLoad(i); return; }
-		} 
-		else {
-			for (int i = cur - 1; i >= 0; i--)
-				if (module->slotMatchesFilter(i, ft)) { module->slotLoad(i); return; }
+	void step() override {
+		Switch::step();
+		engine::ParamQuantity* pq = getParamQuantity();
+		if (!pq) return;
+		float v = pq->getValue();
+		if (v >= 1.f && prevValue < 1.f) {
+			ReelModule* module = dynamic_cast<ReelModule*>(pq->module);
+			if (module) {
+				std::string ft = filterText ? *filterText : "";
+				int cur = module->currentSlot, n = (int)module->slots.size();
+				if (forward) {
+					for (int i = cur + 1; i < n; i++)
+						if (module->slotMatchesFilter(i, ft)) { module->slotLoad(i); break; }
+				}
+				else {
+					for (int i = cur - 1; i >= 0; i--)
+						if (module->slotMatchesFilter(i, ft)) { module->slotLoad(i); break; }
+				}
+			}
 		}
+		prevValue = v;
 	}
 };
 
@@ -1069,10 +1192,8 @@ struct ReelTopBar : OpaqueWidget {
 	ReelSearchField* searchField = nullptr;
 
 	void init(ReelModule* module) {
-		auto* prev = new ReelNavButton;
-		prev->module = module;
+		auto* prev = createParam<ReelNavButton>(Vec(0.f, 0.f), module, ReelModule::PREV_PARAM);
 		prev->forward = false;
-		prev->box.pos = Vec(0.f, 0.f);
 		prev->box.size = Vec(BTN_W, box.size.y);
 		addChild(prev);
 
@@ -1081,15 +1202,13 @@ struct ReelTopBar : OpaqueWidget {
 		searchField->box.size = Vec(box.size.x - 2.f * BTN_W, box.size.y);
 		addChild(searchField);
 
-		auto* next = new ReelNavButton;
-		next->module = module;
+		auto* next = createParam<ReelNavButton>(Vec(box.size.x - BTN_W, 0.f), module, ReelModule::NEXT_PARAM);
 		next->forward = true;
-		next->filterText = &searchField->text;
-		next->box.pos = Vec(box.size.x - BTN_W, 0.f);
 		next->box.size = Vec(BTN_W, box.size.y);
 		addChild(next);
 
 		prev->filterText = &searchField->text;
+		next->filterText = &searchField->text;
 	}
 
 	void draw(const DrawArgs& args) override {
@@ -1271,6 +1390,12 @@ struct ReelWidget : ThemedModuleWidget<ReelModule> {
 		}
 	}
 
+	void step() override {
+		BASE::step();
+		moduleSelectProcessor.step();
+		if (boxDrawer) boxDrawer->bindingActive = moduleSelectProcessor.isLearning();
+	}
+
 	void onDeselect(const event::Deselect& e) override {
 		BASE::onDeselect(e);
 		moduleSelectProcessor.processDeselect();
@@ -1320,7 +1445,8 @@ struct ReelWidget : ThemedModuleWidget<ReelModule> {
 			// Track widget - use oldId if available, otherwise use index
 			if (oldId >= 0) {
 				modules[oldId] = mw;
-			} else {
+			}
+			else {
 				modules[addedModule->id] = mw;
 			}
 

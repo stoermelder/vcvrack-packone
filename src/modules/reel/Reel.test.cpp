@@ -27,7 +27,7 @@ TEST_CASE("Initial state", "[Reel]") {
 		REQUIRE(module->currentSlot == -1);
 		REQUIRE(module->slots.empty());
 		REQUIRE(module->boundModules.empty());
-		REQUIRE(module->boxDraw == false);
+		REQUIRE(module->boxDraw == 2);
 		REQUIRE(module->panelTheme == -1);
 	}
 
@@ -66,6 +66,60 @@ TEST_CASE("Slot operations", "[Reel]") {
 
 		REQUIRE(module->slots.size() == 1);
 		REQUIRE(module->currentSlot == 0);
+	}
+
+	SECTION("slotMove moves slot forward and updates current slot") {
+		module->slots.emplace_back(); module->slots[0].used = true; module->slots[0].label = "A";
+		module->slots.emplace_back(); module->slots[1].used = true; module->slots[1].label = "B";
+		module->slots.emplace_back(); module->slots[2].used = true; module->slots[2].label = "C";
+		module->currentSlot = 0;
+
+		module->slotMove(0, 3);
+
+		REQUIRE(module->slots.size() == 3);
+		REQUIRE(module->slots[0].label == "B");
+		REQUIRE(module->slots[1].label == "C");
+		REQUIRE(module->slots[2].label == "A");
+		REQUIRE(module->currentSlot == 2);
+	}
+
+	SECTION("slotMove moves slot backward and updates current slot") {
+		module->slots.emplace_back(); module->slots[0].used = true; module->slots[0].label = "A";
+		module->slots.emplace_back(); module->slots[1].used = true; module->slots[1].label = "B";
+		module->slots.emplace_back(); module->slots[2].used = true; module->slots[2].label = "C";
+		module->currentSlot = 2;
+
+		module->slotMove(2, 0);
+
+		REQUIRE(module->slots.size() == 3);
+		REQUIRE(module->slots[0].label == "C");
+		REQUIRE(module->slots[1].label == "A");
+		REQUIRE(module->slots[2].label == "B");
+		REQUIRE(module->currentSlot == 0);
+	}
+
+	SECTION("slotMove to end supports trailing-row drop target") {
+		module->slots.emplace_back(); module->slots[0].used = true; module->slots[0].label = "A";
+		module->slots.emplace_back(); module->slots[1].used = true; module->slots[1].label = "B";
+		module->slots.emplace_back(); module->slots[2].used = true; module->slots[2].label = "C";
+		module->currentSlot = 1;
+
+		module->slotMove(1, 3);
+
+		REQUIRE(module->slots[0].label == "A");
+		REQUIRE(module->slots[1].label == "C");
+		REQUIRE(module->slots[2].label == "B");
+		REQUIRE(module->currentSlot == 2);
+	}
+
+	SECTION("slotMove with invalid destination clamps or ignores safely") {
+		module->slots.emplace_back(); module->slots[0].used = true; module->slots[0].label = "A";
+		module->slots.emplace_back(); module->slots[1].used = true; module->slots[1].label = "B";
+
+		module->slotMove(0, 100);
+
+		REQUIRE(module->slots[0].label == "B");
+		REQUIRE(module->slots[1].label == "A");
 	}
 
 	Test::destroyModule(module);
@@ -305,7 +359,7 @@ TEST_CASE("JSON serialization", "[Reel]") {
 	SECTION("dataFromJson restores state") {
 		json_t* rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(2));
-		json_object_set_new(rootJ, "boxDraw", json_boolean(true));
+		json_object_set_new(rootJ, "boxDraw", json_integer(2));
 		json_object_set_new(rootJ, "boxColor", json_string("#0000FF"));
 		json_object_set_new(rootJ, "currentSlot", json_integer(-1));
 
@@ -318,7 +372,7 @@ TEST_CASE("JSON serialization", "[Reel]") {
 		module->dataFromJson(rootJ);
 
 		REQUIRE(module->panelTheme == 2);
-		REQUIRE(module->boxDraw == true);
+		REQUIRE(module->boxDraw == 2);
 		REQUIRE(module->currentSlot == -1);
 		REQUIRE(module->boundModules.empty());
 		REQUIRE(module->slots.empty());
@@ -333,7 +387,7 @@ TEST_CASE("JSON serialization", "[Reel]") {
 
 		REQUIRE(module->panelTheme == 0);
 		REQUIRE(module->currentSlot == -1);
-		REQUIRE(module->boxDraw == false);
+		REQUIRE(module->boxDraw == 2);
 		REQUIRE(module->boundModules.empty());
 
 		json_decref(rootJ);
