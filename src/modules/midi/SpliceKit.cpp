@@ -1447,7 +1447,15 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 			module->guiQueue.shift()();
 		}
 
-		// Update cable presence for each assigned cell (read by process() for light colors)
+		// Update cable presence for each assigned cell (read by process() for light colors).
+		// Build a set of all assigned (moduleId, portId*2+type) pairs once so each cable-end
+		// lookup is O(log n) instead of an O(n) scan over all assignments.
+		std::set<std::pair<int64_t, int>> assignedPorts;
+		for (int j = 0; j < MATRIX_COUNT; j++) {
+			const PortAssignment& pb = module->portAssignments[j];
+			if (pb.isValid())
+				assignedPorts.insert({pb.moduleId, pb.portId * 2 + (int)pb.type});
+		}
 		for (int i = 0; i < MATRIX_COUNT; i++) {
 			const PortAssignment& pa = module->portAssignments[i];
 			if (!pa.isValid()) {
@@ -1462,10 +1470,16 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 			auto ports = (pa.type == engine::Port::OUTPUT) ? mw->getOutputs() : mw->getInputs();
 			module->portHasCable[i] = false;
 			for (PortWidget* pw : ports) {
-				if (pw->portId == pa.portId) {
-					module->portHasCable[i] = !APP->scene->rack->getCablesOnPort(pw).empty();
-					break;
+				if (pw->portId != pa.portId) continue;
+				for (CableWidget* cw : APP->scene->rack->getCablesOnPort(pw)) {
+					PortWidget* other = (pa.type == engine::Port::OUTPUT) ? cw->inputPort : cw->outputPort;
+					if (!other || !other->module) continue;
+					if (assignedPorts.count({other->module->getId(), other->portId * 2 + (int)other->type})) {
+						module->portHasCable[i] = true;
+						break;
+					}
 				}
+				break;
 			}
 		}
 	}
@@ -1740,7 +1754,7 @@ void SpliceKitCellButton::createCellMenu() {
 	}));
 	menu->addChild(createMenuItem("Clear", "", [=]() {
 		module->portAssignments[cellId].clear();
-	}, pa.isValid()));
+	}, !pa.isValid()));
 
 	menu->addChild(new MenuSeparator);
 	menu->addChild(createMenuLabel("MIDI"));
