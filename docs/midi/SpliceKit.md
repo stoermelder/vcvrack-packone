@@ -20,6 +20,15 @@ Once two buttons have ports assigned, pressing them in sequence creates or remov
 
 Only an output port and an input port can be connected. Two ports of the same direction cannot be connected and the second press is ignored.
 
+### Drag gestures
+
+As a faster alternative to the two-press workflow, connections can be created or removed by dragging directly from one cell to another:
+
+- **Left-drag** cell A → cell B — toggle the connection between those two ports (same effect as pressing A then B in sequence).
+- **Shift + left-drag** cell A → cell B — move cell A's assignment to cell B: port, label, color, and all scene connections are transferred. Any previous assignment on cell B is discarded. MIDI mappings are **not** moved — each cell keeps its own mapping because it corresponds to a fixed physical button on the controller.
+
+While dragging, the source cell shows a faint border so it remains identifiable.
+
 ### Scenes
 
 The row of eight buttons at the bottom of the module selects the active scene. Each scene maintains its own independent cable state. Switching scenes reconciles the patch: cables that belong to the previous scene are removed and cables stored in the new scene are created.
@@ -93,10 +102,10 @@ Open the **MIDI Feedback** submenu to select a preset:
 | **Launchpad MK2 (Session mode)** | Novation Launchpad MK2 / S in Session mode. Grid cells use Note On; top-row scene buttons use CC 104–111. Uses hardware flash (channel 2) for pending state and hardware pulse (channel 3) for learn states, synced to MIDI clock. |
 | **APC Mini** | Akai APC Mini (original). LED colors via Note On velocity. |
 | **APC Mini MK2** | Akai APC Mini MK2. RGB LED palette via Note On velocity; MIDI channel encodes behavior (solid/pulse/blink). Grid cells use notes 0–63 (top-left to bottom-right); Scene Launch buttons 1–8 use notes 112–119. |
-| **Ableton Push 2** | Ableton Push 2 in User mode. 8×8 pad grid uses Note On (notes 36–99, bottom-left to top-right); the eight buttons below the display (CC 20–27) serve as scene selectors. MIDI channel encodes animation: 0=static, 6=pulse, 11=blink. Color palette indices: 0=off, 126=green, 127=red, 125=blue, 122=white, 123=light gray. |
+| **Ableton Push 2** | Ableton Push 2 in User mode. 8×8 pad grid uses Note On (notes 36–99, bottom-left to top-right); the eight buttons below the display (CC 20–27) serve as scene selectors. MIDI channel encodes animation: 0=static, 6–10=pulse, 11–15=blink. Color palette indices: 0=off, 127=red, 125=blue, 126=green, 122=white, 124=dark gray. |
 | **Generic (Note On)** | Any controller that accepts Note On for LED control. Velocity values 0–6 map to off through the various states. |
 
-Each preset defines the MIDI message type, channel, and value sent for every LED state (off, output-dim, output, input-dim, input, pending, port-learn, MIDI-learn, scene-active, scene-dim).
+Each preset defines the MIDI message type, channel, and value sent for every LED state (off, four color sets each with dim/active/connected variants, pending, port-learn, MIDI-learn, scene-active, scene-dim).
 
 #### Loading and saving presets
 
@@ -112,16 +121,24 @@ A preset file is a UTF-8 JSON object with three top-level keys:
     "cells":  { "type": <1|2>, "numbers": [ <64 values> ] },
     "scenes": { "type": <1|2>, "numbers": [ <8 values>  ] },
     "specs": {
-        "off":         <spec>,
-        "outDim":      <spec>,
-        "out":         <spec>,
-        "inDim":       <spec>,
-        "in":          <spec>,
-        "pending":     <spec>,
-        "portLearn":   <spec>,
-        "midiLearn":   <spec>,
-        "sceneActive": <spec>,
-        "sceneDim":    <spec>
+        "off":          <spec>,
+        "color0dim":    <spec>,
+        "color0":       <spec>,
+        "color1dim":    <spec>,
+        "color1":       <spec>,
+        "color2dim":    <spec>,
+        "color2":       <spec>,
+        "color3dim":    <spec>,
+        "color3":       <spec>,
+        "pending":      <spec>,
+        "portLearn":    <spec>,
+        "midiLearn":    <spec>,
+        "sceneActive":  <spec>,
+        "sceneDim":     <spec>,
+        "connected0":   <spec>,
+        "connected1":   <spec>,
+        "connected2":   <spec>,
+        "connected3":   <spec>
     }
 }
 ```
@@ -140,22 +157,32 @@ Each **`<spec>`** object describes the MIDI message sent to the controller for o
 
 **LED states:**
 
+SPLICE-KIT uses four color sets (0–3). The defaults are: set 0 = red (output ports), set 1 = blue (input ports), set 2 = green, set 3 = white/neutral. Each set has a dim state (port assigned, no cable), an active state (cable connected), and a connected state (port is linked to the currently pending button).
+
 | Key | Meaning |
 |---|---|
 | `off` | No port assigned |
-| `outDim` | Output port assigned, no cable |
-| `out` | Output port assigned, cable connected |
-| `inDim` | Input port assigned, no cable |
-| `in` | Input port assigned, cable connected |
+| `color0dim` | Color-set 0, port assigned, no cable |
+| `color0` | Color-set 0, port assigned, cable connected |
+| `color1dim` | Color-set 1, port assigned, no cable |
+| `color1` | Color-set 1, port assigned, cable connected |
+| `color2dim` | Color-set 2, port assigned, no cable |
+| `color2` | Color-set 2, port assigned, cable connected |
+| `color3dim` | Color-set 3, port assigned, no cable |
+| `color3` | Color-set 3, port assigned, cable connected |
 | `pending` | First button pressed, waiting for second press |
 | `portLearn` | Port-learn active for this button |
 | `midiLearn` | MIDI-learn active for this button |
 | `sceneActive` | Currently selected scene |
 | `sceneDim` | Inactive scene that has stored connections |
+| `connected0` | Port already connected to the pending button, color-set 0 |
+| `connected1` | Port already connected to the pending button, color-set 1 |
+| `connected2` | Port already connected to the pending button, color-set 2 |
+| `connected3` | Port already connected to the pending button, color-set 3 |
 
 #### Applying a preset's note layout
 
-Presets that define a fixed button layout (Launchpad / S, Launchpad MK3, and Launchpad MK2) can automatically configure the MIDI input mappings to match: select **Apply note layout as MIDI input mappings**. This clears any existing MIDI input assignments and maps each cell and scene button to its corresponding note or CC number from the preset.
+Presets that define a fixed button layout (Launchpad / S, Launchpad MK3, Launchpad MK2, APC Mini, APC Mini MK2, and Ableton Push 2) can automatically configure the MIDI input mappings to match: select **Apply note layout as MIDI input mappings**. This clears any existing MIDI input assignments and maps each cell and scene button to its corresponding note or CC number from the preset.
 
 
 ## Changelog
