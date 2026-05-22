@@ -13,6 +13,12 @@ static const char SELECTION_FILTERS[] = "VCV Rack module selection (.vcvs):vcvs"
 
 
 struct ReelModule : Module, StripIdFixModule {
+	enum ParamIds {
+		PREV_PARAM,
+		NEXT_PARAM,
+		NUM_PARAMS
+	};
+
 	struct BoundModule {
 		int64_t moduleId;
 		std::string pluginSlug;
@@ -93,6 +99,9 @@ struct ReelModule : Module, StripIdFixModule {
 	int copySlot = -1;
 
 	ReelModule() {
+		config(NUM_PARAMS, 0, 0, 0);
+		configButton(PREV_PARAM, "Previous snapshot");
+		configButton(NEXT_PARAM, "Next snapshot");
 		panelTheme = pluginSettings.panelThemeDefault;
 		boxColor = color::BLUE;
 	}
@@ -1109,10 +1118,10 @@ struct ReelSearchField : OpaqueWidget {
 	}
 };
 
-struct ReelNavButton : OpaqueWidget {
-	ReelModule* module = nullptr;
+struct ReelNavButton : ParamWidget {
 	std::string* filterText = nullptr;
 	bool forward = true;
+	float prevValue = 0.f;
 
 	void draw(const DrawArgs& args) override {
 		float cx = box.size.x * 0.5f, cy = box.size.y * 0.5f;
@@ -1122,7 +1131,7 @@ struct ReelNavButton : OpaqueWidget {
 			nvgMoveTo(args.vg, cx - w / 2.f, cy - h / 2.f);
 			nvgLineTo(args.vg, cx + w / 2.f, cy);
 			nvgLineTo(args.vg, cx - w / 2.f, cy + h / 2.f);
-		} 
+		}
 		else {
 			nvgMoveTo(args.vg, cx + w / 2.f, cy - h / 2.f);
 			nvgLineTo(args.vg, cx - w / 2.f, cy);
@@ -1131,22 +1140,31 @@ struct ReelNavButton : OpaqueWidget {
 		nvgClosePath(args.vg);
 		nvgFillColor(args.vg, nvgRGBA(0xf0, 0xf0, 0xf0, 0x90));
 		nvgFill(args.vg);
+		
+		ParamWidget::draw(args);
 	}
 
-	void onButton(const event::Button& e) override {
-		if (e.action != GLFW_PRESS || e.button != GLFW_MOUSE_BUTTON_LEFT) return;
-		e.consume(this);
-		if (!module) return;
-		std::string ft = filterText ? *filterText : "";
-		int cur = module->currentSlot, n = (int)module->slots.size();
-		if (forward) {
-			for (int i = cur + 1; i < n; i++)
-				if (module->slotMatchesFilter(i, ft)) { module->slotLoad(i); return; }
-		} 
-		else {
-			for (int i = cur - 1; i >= 0; i--)
-				if (module->slotMatchesFilter(i, ft)) { module->slotLoad(i); return; }
+	void step() override {
+		ParamWidget::step();
+		engine::ParamQuantity* pq = getParamQuantity();
+		if (!pq) return;
+		float v = pq->getValue();
+		if (v >= 1.f && prevValue < 1.f) {
+			ReelModule* module = dynamic_cast<ReelModule*>(pq->module);
+			if (module) {
+				std::string ft = filterText ? *filterText : "";
+				int cur = module->currentSlot, n = (int)module->slots.size();
+				if (forward) {
+					for (int i = cur + 1; i < n; i++)
+						if (module->slotMatchesFilter(i, ft)) { module->slotLoad(i); break; }
+				}
+				else {
+					for (int i = cur - 1; i >= 0; i--)
+						if (module->slotMatchesFilter(i, ft)) { module->slotLoad(i); break; }
+				}
+			}
 		}
+		prevValue = v;
 	}
 };
 
@@ -1155,10 +1173,8 @@ struct ReelTopBar : OpaqueWidget {
 	ReelSearchField* searchField = nullptr;
 
 	void init(ReelModule* module) {
-		auto* prev = new ReelNavButton;
-		prev->module = module;
+		auto* prev = createParam<ReelNavButton>(Vec(0.f, 0.f), module, ReelModule::PREV_PARAM);
 		prev->forward = false;
-		prev->box.pos = Vec(0.f, 0.f);
 		prev->box.size = Vec(BTN_W, box.size.y);
 		addChild(prev);
 
@@ -1167,15 +1183,13 @@ struct ReelTopBar : OpaqueWidget {
 		searchField->box.size = Vec(box.size.x - 2.f * BTN_W, box.size.y);
 		addChild(searchField);
 
-		auto* next = new ReelNavButton;
-		next->module = module;
+		auto* next = createParam<ReelNavButton>(Vec(box.size.x - BTN_W, 0.f), module, ReelModule::NEXT_PARAM);
 		next->forward = true;
-		next->filterText = &searchField->text;
-		next->box.pos = Vec(box.size.x - BTN_W, 0.f);
 		next->box.size = Vec(BTN_W, box.size.y);
 		addChild(next);
 
 		prev->filterText = &searchField->text;
+		next->filterText = &searchField->text;
 	}
 
 	void draw(const DrawArgs& args) override {
