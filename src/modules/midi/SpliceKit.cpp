@@ -3,9 +3,9 @@
 #include "../../components/MidiWidget.hpp"
 #include "../../ui/ModuleSelectProcessor.hpp"
 #include "../../ui/OverlayMessageWidget.hpp"
+#include "../../utils/vcv_cables.hpp"
 #include "MidiTrackingProcessor.hpp"
 #include "SpliceKit_controllers.hpp"
-#include "SpliceKit_cable.hpp"
 #include <osdialog.h>
 
 namespace StoermelderPackOne {
@@ -869,8 +869,8 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 		if      (a.type == engine::Port::OUTPUT && b.type == engine::Port::INPUT) { outPd = &a; inPd = &b; }
 		else if (a.type == engine::Port::INPUT  && b.type == engine::Port::OUTPUT) { outPd = &b; inPd = &a; }
 		else return;
-		CableWidget* cw = findCable(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId);
-		if (cw) removeCable(cw, false);
+		CableWidget* cw = vcv::findCable(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId);
+		if (cw) vcv::removeCable(cw, false);
 	}
 
 	// GUI thread — creates or removes the cable between cellIdA and cellIdB in the current
@@ -903,7 +903,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 		} 
 		else {
 			setConnection(currentScene, outCell, inCell, true);
-			addCableToPort(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId, false);
+			vcv::addCableToPort(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId, false);
 			setOverlayMessage("Cable created", portLabel(*outPd), portLabel(*inPd));
 		}
 	}
@@ -920,7 +920,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 				if (j == i) continue;
 				const PortAssignment& b = portAssignments[j];
 				if (!b.isValid() || b.type != engine::Port::INPUT) continue;
-				if (findCable(a.moduleId, a.portId, b.moduleId, b.portId)) {
+				if (vcv::findCable(a.moduleId, a.portId, b.moduleId, b.portId)) {
 					setConnection(scene, i, j, true);
 				}
 			}
@@ -948,7 +948,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 					if      (a.type == engine::Port::OUTPUT && b.type == engine::Port::INPUT) { outPd = &a; inPd = &b; }
 					else if (a.type == engine::Port::INPUT  && b.type == engine::Port::OUTPUT) { outPd = &b; inPd = &a; }
 					else continue;
-					addCableToPort(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId, false);
+					vcv::addCableToPort(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId, false);
 				}
 			}
 		}
