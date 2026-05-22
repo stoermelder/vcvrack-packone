@@ -5,6 +5,7 @@
 #include "../../ui/OverlayMessageWidget.hpp"
 #include "MidiTrackingProcessor.hpp"
 #include "SpliceKit_controllers.hpp"
+#include "SpliceKit_cable.hpp"
 #include <osdialog.h>
 
 namespace StoermelderPackOne {
@@ -855,57 +856,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 	}
 
 	// --- Cable manipulation (GUI thread only) ---
-
-	// GUI thread — searches for an existing cable between the named output and input ports.
-	// Returns nullptr if not found. Must not be called from the engine thread.
-	static CableWidget* findCable(int64_t outputModuleId, int outputPortId, int64_t inputModuleId, int inputPortId) {
-		ModuleWidget* outputMw = APP->scene->rack->getModule(outputModuleId);
-		if (!outputMw) return nullptr;
-		for (PortWidget* outPort : outputMw->getOutputs()) {
-			if (outPort->portId != outputPortId) continue;
-			for (CableWidget* cw : APP->scene->rack->getCablesOnPort(outPort)) {
-				if (cw->inputPort && cw->inputPort->module &&
-					cw->inputPort->module->getId() == inputModuleId &&
-					cw->inputPort->portId == inputPortId) {
-					return cw;
-				}
-			}
-			break;
-		}
-		return nullptr;
-	}
-
-	// GUI thread — removes a cable from the rack and records it in undo history.
-	static void removeCable(CableWidget* cw) {
-		history::CableRemove* h = new history::CableRemove;
-		h->setCable(cw);
-		APP->history->push(h);
-		APP->scene->rack->removeCable(cw);
-		delete cw;
-	}
-
-	// GUI thread — creates a cable between the given output and input port assignments,
-	// adds it to the rack, and pushes a CableAdd undo action.
-	void addCableToPort(const PortAssignment* outPd, const PortAssignment* inPd) {
-		ModuleWidget* outputMw = APP->scene->rack->getModule(outPd->moduleId);
-		ModuleWidget* inputMw  = APP->scene->rack->getModule(inPd->moduleId);
-		if (!outputMw || !inputMw) return;
-
-		engine::Cable* c = new engine::Cable;
-		c->outputId     = outPd->portId;
-		c->outputModule = outputMw->module;
-		c->inputId      = inPd->portId;
-		c->inputModule  = inputMw->module;
-		APP->engine->addCable(c);
-
-		CableWidget* cw = new CableWidget;
-		cw->color = APP->scene->rack->getNextCableColor();
-		cw->setCable(c);
-		APP->scene->rack->addCable(cw);
-		history::CableAdd* h = new history::CableAdd;
-		h->setCable(cw);
-		APP->history->push(h);
-	}
+	// Low-level helpers (findCable, removeCable, addCableToPort) live in SpliceKit_cable.hpp.
 
 	// GUI thread — resolves port directions for the two cells and removes the cable between
 	// them. No-op if both ports are the same direction or either assignment is invalid.
@@ -949,7 +900,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 		} 
 		else {
 			setConnection(currentScene, outCell, inCell, true);
-			addCableToPort(outPd, inPd);
+			addCableToPort(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId);
 			setOverlayMessage("Added cable", portLabel(*outPd), portLabel(*inPd));
 		}
 	}
@@ -994,7 +945,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 					if      (a.type == engine::Port::OUTPUT && b.type == engine::Port::INPUT) { outPd = &a; inPd = &b; }
 					else if (a.type == engine::Port::INPUT  && b.type == engine::Port::OUTPUT) { outPd = &b; inPd = &a; }
 					else continue;
-					addCableToPort(outPd, inPd);
+					addCableToPort(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId);
 				}
 			}
 		}
