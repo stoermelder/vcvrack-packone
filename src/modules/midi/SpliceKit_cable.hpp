@@ -23,18 +23,21 @@ static CableWidget* findCable(int64_t outputModuleId, int outputPortId, int64_t 
 	return nullptr;
 }
 
-// GUI thread — removes a cable from the rack and records it in undo history.
-static void removeCable(CableWidget* cw) {
+// GUI thread — removes a cable from the rack. Pass addToHistory=false to skip
+// the undo entry (e.g. when the caller manages its own composite undo action).
+static void removeCable(CableWidget* cw, bool addToHistory = true) {
 	history::CableRemove* h = new history::CableRemove;
 	h->setCable(cw);
-	APP->history->push(h);
+	if (addToHistory) APP->history->push(h);
+	else delete h;
 	APP->scene->rack->removeCable(cw);
 	delete cw;
 }
 
-// GUI thread — creates a cable between the given output and input ports,
-// adds it to the rack, and pushes a CableAdd undo action.
-static void addCableToPort(int64_t outModuleId, int outPortId, int64_t inModuleId, int inPortId) {
+// GUI thread — creates a cable between the given output and input ports and adds
+// it to the rack. Pass addToHistory=false to skip the undo entry (e.g. when the
+// caller manages its own composite undo action).
+static void addCableToPort(int64_t outModuleId, int outPortId, int64_t inModuleId, int inPortId, bool addToHistory = true) {
 	ModuleWidget* outputMw = APP->scene->rack->getModule(outModuleId);
 	ModuleWidget* inputMw  = APP->scene->rack->getModule(inModuleId);
 	if (!outputMw || !inputMw) return;
@@ -52,7 +55,8 @@ static void addCableToPort(int64_t outModuleId, int outPortId, int64_t inModuleI
 	APP->scene->rack->addCable(cw);
 	history::CableAdd* h = new history::CableAdd;
 	h->setCable(cw);
-	APP->history->push(h);
+	if (addToHistory) APP->history->push(h);
+	else delete h;
 }
 
 } // namespace SpliceKit

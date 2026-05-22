@@ -870,7 +870,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 		else if (a.type == engine::Port::INPUT  && b.type == engine::Port::OUTPUT) { outPd = &b; inPd = &a; }
 		else return;
 		CableWidget* cw = findCable(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId);
-		if (cw) removeCable(cw);
+		if (cw) removeCable(cw, false);
 	}
 
 	// GUI thread — creates or removes the cable between cellIdA and cellIdB in the current
@@ -903,7 +903,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 		} 
 		else {
 			setConnection(currentScene, outCell, inCell, true);
-			addCableToPort(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId);
+			addCableToPort(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId, false);
 			setOverlayMessage("Cable created", portLabel(*outPd), portLabel(*inPd));
 		}
 	}
@@ -948,7 +948,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 					if      (a.type == engine::Port::OUTPUT && b.type == engine::Port::INPUT) { outPd = &a; inPd = &b; }
 					else if (a.type == engine::Port::INPUT  && b.type == engine::Port::OUTPUT) { outPd = &b; inPd = &a; }
 					else continue;
-					addCableToPort(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId);
+					addCableToPort(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId, false);
 				}
 			}
 		}
