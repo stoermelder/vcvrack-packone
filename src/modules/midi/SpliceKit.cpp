@@ -132,8 +132,17 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 		int* ledState      = nullptr;
 		int* sceneLedState = nullptr;
 
+		midi::Message lastSentMsg;
+		int           sentCount = 0;
+
 		SpliceKitOutput() {
 			channel = -1;
+		}
+
+		void sendMessage(const midi::Message& msg) {
+			lastSentMsg = msg;
+			sentCount++;
+			midi::Output::sendMessage(msg);
 		}
 
 		// Prepends a "All channels" entry (-1) to the device channel list.
@@ -340,6 +349,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 					stateId = LED_STATE_OFF;
 				}
 				if (stateId != cellLedState[i]) {
+					sendFeedbackOff(i, cellLedState[i]);
 					cellLedState[i] = stateId;
 					sendFeedback(i, stateId);
 				}
@@ -368,6 +378,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 					sceneState  = hasConn ? LED_STATE_SCENE_DIM : LED_STATE_OFF;
 				}
 				if (sceneState != sceneLedState[s]) {
+					sendFeedbackOff(MATRIX_COUNT + s, sceneLedState[s]);
 					sceneLedState[s] = sceneState;
 					sendFeedback(MATRIX_COUNT + s, sceneState);
 				}
@@ -545,6 +556,39 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 	// GUI thread — returns true if the given cell is currently in port-learn mode.
 	bool isPortLearning(int id) {
 		return portLearningId == id && portSelectProcessor.isLearning();
+	}
+
+	// Engine thread — sends a MIDI note-off for the previous LED state before a transition,
+	// clearing the controller LED that was lit by a NOTE_ON-based spec. No-op for CC specs,
+	// off states, or when no preset is active.
+	void sendFeedbackOff(int cellId, int oldStateId) {
+		if (oldStateId < 0) return;
+		const MidiOutPreset* preset = getActivePreset();
+		if (!preset) return;
+		const MidiOutSpec& spec = preset->specs[oldStateId];
+		if (spec.type == MIDI_OUT_NONE) return;
+		if (spec.type != MIDI_OUT_NOTE_ON && spec.type != MIDI_OUT_FROM_SLOT_TYPE) return;
+		MidiTrackingType slotType = MidiTrackingType::NONE;
+		int noteNum;
+		switch (spec.noteMode) {
+			case MIDI_OUT_FROM_SLOT: {
+				auto m = trackingProcessor.getMap(cellId);
+				if (m.type == MidiTrackingType::NONE) return;
+				noteNum  = m.param;
+				slotType = m.type;
+				break;
+			}
+			case MIDI_OUT_FIXED:
+				noteNum = spec.note;
+				break;
+			default: return;
+		}
+		if (spec.type == MIDI_OUT_FROM_SLOT_TYPE && slotType != MidiTrackingType::NOTE) return;
+		midi::Message msg;
+		msg.bytes[0] = 0x80 | (uint8_t)(spec.channel & 0x0F);
+		msg.bytes[1] = (uint8_t)(noteNum & 0x7F);
+		msg.bytes[2] = 0x00;
+		midiOutput.sendMessage(msg);
 	}
 
 	// Engine thread — sends a single MIDI message to the output device to update the
