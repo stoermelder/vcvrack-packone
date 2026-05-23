@@ -147,7 +147,9 @@ struct MidiOutPreset {
 //               "connected0", "connected1", "connected2", "connected3"
 //
 // spec object fields:
-//   type     — 0=none  1=note-on  2=note-off  3=cc      (default 0)
+//   type     — 0=none  1=note-on  2=note-off  3=cc  4=from-slot-type  (default 0)
+//              from-slot-type: derive status byte from the slot's type (Note→NoteOn, CC→CC);
+//              noteMode must be from-slot; output only occurs when the slot is mapped.
 //   channel  — MIDI channel 0–15                         (default 0)
 //   noteMode — 0=from-slot  1=fixed                      (default 0)
 //              from-slot: uses the button's current MIDI mapping number
@@ -484,23 +486,23 @@ R"json({
     },
     "specs": {
         "off":          {"type":4,"channel": 0,"noteMode":0,"value":  0},
-        "color0dim":    {"type":4,"channel": 0,"noteMode":0,"value":127},
-        "color0":       {"type":4,"channel": 0,"noteMode":0,"value":  4},
-        "color1dim":    {"type":4,"channel": 0,"noteMode":0,"value":125},
-        "color1":       {"type":4,"channel": 0,"noteMode":0,"value":  5},
-        "color2dim":    {"type":4,"channel": 0,"noteMode":0,"value":126},
-        "color2":       {"type":4,"channel": 0,"noteMode":0,"value":  9},
-        "color3dim":    {"type":4,"channel": 0,"noteMode":0,"value": 13},
-        "color3":       {"type":4,"channel": 0,"noteMode":0,"value":  7},
-        "pending":      {"type":4,"channel":11,"noteMode":0,"value":122},
-        "portLearn":    {"type":4,"channel":11,"noteMode":0,"value": 24},
-        "midiLearn":    {"type":4,"channel":11,"noteMode":0,"value": 22},
+        "color0dim":    {"type":1,"channel": 0,"noteMode":0,"value":127},
+        "color0":       {"type":1,"channel": 0,"noteMode":0,"value": 68},
+        "color1dim":    {"type":1,"channel": 0,"noteMode":0,"value":125},
+        "color1":       {"type":1,"channel": 0,"noteMode":0,"value": 99},
+        "color2dim":    {"type":1,"channel": 0,"noteMode":0,"value": 69},
+        "color2":       {"type":1,"channel": 0,"noteMode":0,"value": 39},
+        "color3dim":    {"type":1,"channel": 0,"noteMode":0,"value":126},
+        "color3":       {"type":1,"channel": 0,"noteMode":0,"value": 89},
+        "pending":      {"type":1,"channel":10,"noteMode":0,"value":122},
+        "portLearn":    {"type":1,"channel":11,"noteMode":0,"value": 24},
+        "midiLearn":    {"type":1,"channel":11,"noteMode":0,"value": 22},
         "sceneActive":  {"type":4,"channel": 0,"noteMode":0,"value":122},
         "sceneDim":     {"type":4,"channel": 0,"noteMode":0,"value":123},
-        "connected0":   {"type":4,"channel":11,"noteMode":0,"value":127},
-        "connected1":   {"type":4,"channel":11,"noteMode":0,"value":125},
-        "connected2":   {"type":4,"channel":11,"noteMode":0,"value":126},
-        "connected3":   {"type":4,"channel":11,"noteMode":0,"value": 13}
+        "connected0":   {"type":1,"channel":11,"noteMode":0,"value":127},
+        "connected1":   {"type":1,"channel":11,"noteMode":0,"value":120},
+        "connected2":   {"type":1,"channel":11,"noteMode":0,"value": 69},
+        "connected3":   {"type":1,"channel":11,"noteMode":0,"value":126}
     }
 })json",
 
