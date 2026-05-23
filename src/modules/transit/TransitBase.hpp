@@ -196,10 +196,10 @@ struct TransitPadInterface {
 		int id;
 	};
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wreturn-stack-address"
-	virtual const std::vector<TransitPadSource>& getPadFactors() { return {}; }
-#pragma GCC diagnostic pop
+	virtual const std::vector<TransitPadSource>& getPadFactors() {
+		static const std::vector<TransitPadSource> empty;
+		return empty;
+	}
 };
 
 
