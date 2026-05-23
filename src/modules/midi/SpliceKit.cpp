@@ -267,7 +267,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 		disableLearn();
 		disablePortLearn();
 		clearPending();
-		memset(cellLabels, 0, sizeof(cellLabels));
+		for (auto& l : cellLabels) l.clear();
 		memset(cellColorSet, -1, sizeof(cellColorSet));
 		requestReset();
 	}
@@ -802,7 +802,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 		}
 		invalidateLedStates();
 
-		memset(cellLabels, 0, sizeof(cellLabels));
+		for (auto& l : cellLabels) l.clear();
 		json_t* labelsJ = json_object_get(rootJ, "cellLabels");
 		if (labelsJ) {
 			const char* key;
