@@ -413,7 +413,7 @@ void PreviewWidget::invokePatchAdding() {
 	auto c = APP->scene->rack->getFirstDescendantOfType<SppPreview::PatchPreviewContainer<Mb::BrowserOverlay>>();
 	if (!c) return;
 	c->showPatchPreview(rootJ, [&]() {
-		vcvsFromJson(rootJ, "stoermelder MB patch load");
+		vcv::vcvsFromJson(rootJ, "stoermelder MB patch load");
 		json_decref(rootJ);
 		fileId = "";
 	});

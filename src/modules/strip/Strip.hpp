@@ -1,7 +1,7 @@
 #pragma once
-#include "vcvs_helpers.hpp"
 #include "../../plugin.hpp"
 #include "../../utils/StripIdFixModule.hpp"
+#include "../../utils/vcv_files.hpp"
 #include <osdialog.h>
 #include <plugin.hpp>
 
@@ -400,7 +400,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 				json_array_foreach(rightModulesJ, moduleIndex, moduleJ) {
 					int64_t oldId = -1;
 					box.pos = box.pos.plus(Vec(box.size.x, 0));
-					ModuleWidget* mw = moduleToRack(moduleJ, moduleToRackPos::RIGHT, box, oldId);
+					ModuleWidget* mw = vcv::moduleToRack(moduleJ, vcv::moduleToRackPos::RIGHT, box, oldId);
 					// mw could be NULL, just move on
 					modules[oldId] = mw;
 
@@ -422,7 +422,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 				size_t moduleIndex;
 				json_array_foreach(leftModulesJ, moduleIndex, moduleJ) {
 					int64_t oldId = -1;
-					ModuleWidget* mw = moduleToRack(moduleJ, moduleToRackPos::LEFT, box, oldId);
+					ModuleWidget* mw = moduleToRack(moduleJ, vcv::moduleToRackPos::LEFT, box, oldId);
 					modules[oldId] = mw;
 
 					if (mw) {
@@ -454,7 +454,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 			size_t moduleIndex;
 			json_array_foreach(rightModulesJ, moduleIndex, moduleJ) {
 				if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::RIGHT) {
-					vcvsFromJson_presets_fixMapping(moduleJ, modules);
+					vcv::vcvsFromJson_presets_fixMapping(moduleJ, modules);
 					int64_t oldId = json_integer_value(json_object_get(moduleJ, "id"));
 					ModuleWidget* mw = modules[oldId];
 					if (mw != NULL) {
@@ -481,7 +481,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 			size_t moduleIndex;
 			json_array_foreach(leftModulesJ, moduleIndex, moduleJ) {
 				if (module->mode == MODE::LEFTRIGHT || module->mode == MODE::LEFT) {
-					vcvsFromJson_presets_fixMapping(moduleJ, modules);
+					vcv::vcvsFromJson_presets_fixMapping(moduleJ, modules);
 					int64_t oldId = json_integer_value(json_object_get(moduleJ, "id"));
 					ModuleWidget* mw = modules[oldId];
 					if (mw != NULL) {
@@ -673,7 +673,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		std::vector<history::Action*>* h3 = groupFromJson_presets(rootJ, modules);
 
 		// Add cables
-		std::vector<history::Action*>* h4 = vcvsFromJson_cables(rootJ, modules);
+		std::vector<history::Action*>* h4 = vcv::vcvsFromJson_cables(rootJ, modules);
 
 		// Does nothing, but fixes https://github.com/VCVRack/Rack/issues/1444 for Rack <= 1.1.1
 		APP->scene->rack->requestModulePos(this, this->box.pos);
@@ -717,7 +717,7 @@ struct StripWidgetBase : ThemedModuleWidget<MODULE> {
 		std::vector<history::Action*>* h3 = groupFromJson_presets(rootJ, modules);
 
 		// Add cables
-		std::vector<history::Action*>* h4 = vcvsFromJson_cables(rootJ, modules);
+		std::vector<history::Action*>* h4 = vcv::vcvsFromJson_cables(rootJ, modules);
 
 		// Does nothing, but fixes https://github.com/VCVRack/Rack/issues/1444 for Rack <= 1.1.1
 		APP->scene->rack->requestModulePos(this, this->box.pos);

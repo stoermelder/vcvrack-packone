@@ -7,7 +7,7 @@
 #include "Mb_patch_source.hpp"
 #include "Mb_patch_sourceindex.hpp"
 #include "Mb_patch_helper.hpp"
-#include "../strip/vcvs_helpers.hpp"
+#include "../../utils/vcv_files.hpp"
 
 namespace StoermelderPackOne {
 namespace Mb {
@@ -596,7 +596,7 @@ struct FileSystemSource : PatchSource {
 				if (!vcvssJ) return nullptr;
 				
 				// Convert to vcvs format using the function from vcvs_helpers.hpp
-				json_t* vcvsJ = StoermelderPackOne::convertVcvssToVcvs(vcvssJ);
+				json_t* vcvsJ = StoermelderPackOne::vcv::convertVcvssToVcvs(vcvssJ);
 				json_decref(vcvssJ);
 				return vcvsJ;
 			}
@@ -747,7 +747,7 @@ struct FileSystemSource : PatchSource {
 				std::string fullPath = resolve(fileId);
 				std::string dir = system::getDirectory(fullPath);
 				
-				osdialog_filters* filters = osdialog_filters_parse(SELECTION_FILTERS);
+				osdialog_filters* filters = osdialog_filters_parse(StoermelderPackOne::vcv::SELECTION_FILTERS);
 				char* newPath = osdialog_file(OSDIALOG_SAVE, dir.c_str(), NULL, filters);
 				if (!newPath) return;
 				DEFER({ free(newPath); });
@@ -768,7 +768,7 @@ struct FileSystemSource : PatchSource {
 				}
 				
 				// Convert to vcvs format
-				json_t* vcvsJ = StoermelderPackOne::convertVcvssToVcvs(vcvssJ);
+				json_t* vcvsJ = StoermelderPackOne::vcv::convertVcvssToVcvs(vcvssJ);
 				json_decref(vcvssJ);
 				if (!vcvsJ) {
 					setStatus("Failed to convert", 3);
