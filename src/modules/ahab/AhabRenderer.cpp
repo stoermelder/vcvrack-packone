@@ -41,7 +41,7 @@ static AhabRenderer::GlyphClass glyph_class_of(char glyph) {
 }
 
 // Helper to map simple terminal colors (approximate)
-static NVGcolor color_from_name(int name, float alpha = 1.0f) {
+static NVGcolor __attribute__((unused)) color_from_name(int name, float alpha = 1.0f) {
 	switch (name) {
 	case 0: // natural
 		return nvgRGBAf(1, 1, 1, alpha);
