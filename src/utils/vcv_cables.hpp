@@ -6,7 +6,7 @@ namespace vcv {
 
 // Searches for an existing cable between the named output and input ports.
 // Returns nullptr if not found. Must not be called from the engine thread.
-static CableWidget* findCable(int64_t outputModuleId, int outputPortId, int64_t inputModuleId, int inputPortId) {
+static __attribute__((unused)) CableWidget* findCable(int64_t outputModuleId, int outputPortId, int64_t inputModuleId, int inputPortId) {
 	ModuleWidget* outputMw = APP->scene->rack->getModule(outputModuleId);
 	if (!outputMw) return nullptr;
 	for (PortWidget* outPort : outputMw->getOutputs()) {
@@ -25,7 +25,7 @@ static CableWidget* findCable(int64_t outputModuleId, int outputPortId, int64_t 
 
 // Removes a cable from the rack. Pass addToHistory=false to skip
 // the undo entry (e.g. when the caller manages its own composite undo action).
-static void removeCable(CableWidget* cw, bool addToHistory = true) {
+static __attribute__((unused)) void removeCable(CableWidget* cw, bool addToHistory = true) {
 	history::CableRemove* h = new history::CableRemove;
 	h->setCable(cw);
 	if (addToHistory) APP->history->push(h);
@@ -37,7 +37,7 @@ static void removeCable(CableWidget* cw, bool addToHistory = true) {
 // Creates a cable between the given output and input ports and adds
 // it to the rack. Pass addToHistory=false to skip the undo entry (e.g. when the
 // caller manages its own composite undo action).
-static void addCableToPort(int64_t outModuleId, int outPortId, int64_t inModuleId, int inPortId, bool addToHistory = true) {
+static __attribute__((unused)) void addCableToPort(int64_t outModuleId, int outPortId, int64_t inModuleId, int inPortId, bool addToHistory = true) {
 	ModuleWidget* outputMw = APP->scene->rack->getModule(outModuleId);
 	ModuleWidget* inputMw  = APP->scene->rack->getModule(inModuleId);
 	if (!outputMw || !inputMw) return;
