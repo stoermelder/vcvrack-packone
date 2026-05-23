@@ -220,6 +220,11 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 	int  pendingCellId         = -1;
 	bool pendingCellIsPhysical = false; // true = set by physical button, false = set by MIDI
 
+	// Tracks the last MIDI-activated scene that has not yet received a note-off / CC=0.
+	// When a second scene activation arrives while this is set (no release in between),
+	// the pair is interpreted as a copy from pendingMidiSceneId → new sceneId.
+	int pendingMidiSceneId = -1;
+
 	// Resets the pending-cell selection (called on cancel, completion, mode switch, and reset).
 	// Also clears the global cross-instance pending if this module was the initiator.
 	void clearPending() {
@@ -446,8 +451,24 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 				clearPending();
 			}
 		}
-		else if (mapId < (uint16_t)TOTAL_MAPS && value > 0) {
-			requestSceneChange(mapId - MATRIX_COUNT);
+		else if (mapId < (uint16_t)TOTAL_MAPS) {
+			int sceneId = (int)(mapId - MATRIX_COUNT);
+			if (value > 0) {
+				if (pendingMidiSceneId >= 0 && pendingMidiSceneId != sceneId) {
+					// Two consecutive activations without a release: treat as scene copy.
+					int src = pendingMidiSceneId;
+					pendingMidiSceneId = -1;
+					requestCopyScene(src, sceneId);
+				}
+				else {
+					// Normal scene selection.
+					requestSceneChange(sceneId);
+					pendingMidiSceneId = sceneId;
+				}
+			}
+			else {
+				if (pendingMidiSceneId == sceneId) pendingMidiSceneId = -1;
+			}
 		}
 	}
 
@@ -1098,6 +1119,22 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 		}
 	}
 
+	// GUI thread — copies scene src's connection topology to scene dst.
+	// If dst is the active scene, cables are updated live via reconcileScene.
+	void copyScene(int src, int dst) {
+		if (src == dst) return;
+		if (src == currentScene) captureScene(src);
+		reconcileScene(dst, sceneConnections[src]);
+		setOverlayMessage("Scene copied", string::f("%d \xe2\x86\x92 %d", src + 1, dst + 1));
+	}
+
+	// Engine thread — enqueues a copyScene call on the GUI thread via guiQueue.
+	void requestCopyScene(int src, int dst) {
+		if (!guiQueue.full()) {
+			guiQueue.push([this, src, dst]() { copyScene(src, dst); });
+		}
+	}
+
 	// GUI thread — moves the port assignment, label, color, and all scene
 	// connections from fromId to toId. Any existing assignment on toId is
 	// discarded. MIDI mappings stay on their original cells (they are tied to
@@ -1345,10 +1382,14 @@ struct SpliceKitVizOverlay : TransparentWidget {
 
 struct SpliceKitWidget;
 
+// Scene button with right-click context menu and drag-and-drop support.
+//   Left-drag  A → B : copy scene A's connections to scene B.
+//   Right-click      : open the per-scene context menu.
 struct SpliceKitSceneButton : app::SvgSwitch {
 	SpliceKitModule* module = nullptr;
 	SpliceKitWidget* mw = nullptr;
 	int sceneId = -1;
+	bool dragging = false;
 
 	SpliceKitSceneButton() {
 		momentary = true;
@@ -1365,6 +1406,38 @@ struct SpliceKitSceneButton : app::SvgSwitch {
 			return;
 		}
 		SvgSwitch::onButton(e);
+	}
+
+	void onDragStart(const event::DragStart& e) override {
+		if (e.button == GLFW_MOUSE_BUTTON_LEFT) dragging = true;
+		SvgSwitch::onDragStart(e);
+	}
+
+	void onDragEnd(const event::DragEnd& e) override {
+		dragging = false;
+		SvgSwitch::onDragEnd(e);
+	}
+
+	void drawLayer(const DrawArgs& args, int layer) override {
+		SvgSwitch::drawLayer(args, layer);
+		if (layer == 1 && dragging) {
+			nvgBeginPath(args.vg);
+			nvgRoundedRect(args.vg, RECT_ARGS(box.zeroPos().grow(2.f)), 3.8f);
+			nvgStrokeColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.4f));
+			nvgStrokeWidth(args.vg, 1.5f);
+			nvgStroke(args.vg);
+		}
+	}
+
+	// Left-drag A → B copies scene A's connections to scene B.
+	void onDragDrop(const event::DragDrop& e) override {
+		SvgSwitch::onDragDrop(e);
+		if (!module) return;
+		auto* src = dynamic_cast<SpliceKitSceneButton*>(e.origin);
+		if (!src || src->module != module || src->sceneId == sceneId) return;
+		if (e.button == GLFW_MOUSE_BUTTON_LEFT) {
+			module->copyScene(src->sceneId, sceneId);
+		}
 	}
 
 	void createSceneMenu();

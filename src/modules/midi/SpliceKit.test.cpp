@@ -730,3 +730,170 @@ TEST_CASE("process - scene state transitions from active to dim after scene swit
 	REQUIRE(m->sceneLedState[1] == LED_STATE_SCENE_DIM);
 	Test::destroyModule(m);
 }
+
+
+// ---------------------------------------------------------------------------
+// copyScene
+// ---------------------------------------------------------------------------
+
+TEST_CASE("copyScene - no-op when src equals dst", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->setConnection(2, 0, 1, true);
+	m->copyScene(2, 2);
+	REQUIRE(m->isConnected(2, 0, 1) == true);  // unchanged
+	Test::destroyModule(m);
+}
+
+TEST_CASE("copyScene - copies connections from src to dst", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->currentScene = 7;  // keep src and dst both inactive
+	m->setConnection(1, 0, 5, true);
+	m->setConnection(1, 3, 7, true);
+	m->copyScene(1, 4);
+	REQUIRE(m->isConnected(4, 0, 5) == true);
+	REQUIRE(m->isConnected(4, 3, 7) == true);
+	REQUIRE(m->isConnected(4, 5, 0) == true);  // symmetric
+	Test::destroyModule(m);
+}
+
+TEST_CASE("copyScene - overwrites existing connections in dst", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->currentScene = 7;
+	m->setConnection(0, 1, 2, true);  // src has 1↔2
+	m->setConnection(3, 4, 5, true);  // dst has 4↔5 (will be overwritten)
+	m->copyScene(0, 3);
+	REQUIRE(m->isConnected(3, 1, 2) == true);
+	REQUIRE(m->isConnected(3, 4, 5) == false);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("copyScene - src scene remains unchanged", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->currentScene = 7;
+	m->setConnection(2, 0, 3, true);
+	m->copyScene(2, 5);
+	REQUIRE(m->isConnected(2, 0, 3) == true);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("copyScene - unrelated scenes are not affected", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->currentScene = 7;
+	m->setConnection(1, 0, 5, true);
+	m->setConnection(6, 10, 20, true);
+	m->copyScene(1, 4);
+	REQUIRE(m->isConnected(6, 10, 20) == true);
+	REQUIRE(m->isConnected(4, 10, 20) == false);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("copyScene - can copy to current scene (bitmask transfer, no cables in test)", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	// src=1 is inactive, dst=4 is current. reconcileScene always memcpy's newConns.
+	m->currentScene = 4;
+	m->setConnection(1, 0, 3, true);
+	m->copyScene(1, 4);
+	REQUIRE(m->isConnected(4, 0, 3) == true);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("copyScene - posts overlay message", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->overlayEnabled   = true;
+	m->overlayMessageId = -1;
+	m->copyScene(1, 3);
+	REQUIRE(m->overlayMessageId == 0);
+	Test::destroyModule(m);
+}
+
+
+// ---------------------------------------------------------------------------
+// requestCopyScene
+// ---------------------------------------------------------------------------
+
+TEST_CASE("requestCopyScene - enqueues a guiQueue item that performs the copy", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->currentScene = 7;
+	m->setConnection(2, 0, 1, true);
+	REQUIRE(m->guiQueue.size() == 0);
+	m->requestCopyScene(2, 5);
+	REQUIRE(m->guiQueue.size() == 1);
+	m->guiQueue.shift()();
+	REQUIRE(m->isConnected(5, 0, 1) == true);
+	Test::destroyModule(m);
+}
+
+
+// ---------------------------------------------------------------------------
+// MIDI scene copy detection (processMapUpdate)
+// ---------------------------------------------------------------------------
+
+TEST_CASE("processMapUpdate - single scene activation sets pendingMidiSceneId and queues scene change", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	REQUIRE(m->pendingMidiSceneId == -1);
+	m->processMapUpdate(MidiTrackingType::NOTE, MATRIX_COUNT + 2, 100);
+	REQUIRE(m->pendingMidiSceneId == 2);
+	REQUIRE(m->guiQueue.size() == 1);  // switchScene enqueued
+	Test::destroyModule(m);
+}
+
+TEST_CASE("processMapUpdate - note-off clears pendingMidiSceneId", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->processMapUpdate(MidiTrackingType::NOTE, MATRIX_COUNT + 3, 100);
+	REQUIRE(m->pendingMidiSceneId == 3);
+	m->processMapUpdate(MidiTrackingType::NOTE, MATRIX_COUNT + 3, 0);
+	REQUIRE(m->pendingMidiSceneId == -1);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("processMapUpdate - note-off for a different scene is a no-op", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->pendingMidiSceneId = 4;
+	m->processMapUpdate(MidiTrackingType::NOTE, MATRIX_COUNT + 7, 0);  // different scene
+	REQUIRE(m->pendingMidiSceneId == 4);  // unchanged
+	Test::destroyModule(m);
+}
+
+TEST_CASE("processMapUpdate - two activations without release queues scene copy", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+
+	// First activation: normal scene change, pending set.
+	m->processMapUpdate(MidiTrackingType::NOTE, MATRIX_COUNT + 1, 100);
+	REQUIRE(m->pendingMidiSceneId == 1);
+	REQUIRE(m->guiQueue.size() == 1);
+
+	// Second activation (different scene, no release): copy queued, pending cleared.
+	m->processMapUpdate(MidiTrackingType::NOTE, MATRIX_COUNT + 5, 100);
+	REQUIRE(m->pendingMidiSceneId == -1);
+	REQUIRE(m->guiQueue.size() == 2);  // switchScene(1) + copyScene(1, 5)
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("processMapUpdate - same scene activated twice without release is not a copy", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+	m->processMapUpdate(MidiTrackingType::NOTE, MATRIX_COUNT + 4, 100);
+	REQUIRE(m->pendingMidiSceneId == 4);
+	size_t queueSize = m->guiQueue.size();
+
+	m->processMapUpdate(MidiTrackingType::NOTE, MATRIX_COUNT + 4, 100);  // same scene again
+	REQUIRE(m->pendingMidiSceneId == 4);         // pending still set to same scene
+	REQUIRE(m->guiQueue.size() == queueSize + 1);  // another switchScene, not copyScene
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("processMapUpdate - after a copy, the next activation is treated normally", "[SpliceKit]") {
+	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
+
+	// Trigger a copy: press scene 1, then scene 2 (no release).
+	m->processMapUpdate(MidiTrackingType::NOTE, MATRIX_COUNT + 1, 100);
+	m->processMapUpdate(MidiTrackingType::NOTE, MATRIX_COUNT + 2, 100);
+	REQUIRE(m->pendingMidiSceneId == -1);  // consumed by copy
+
+	// Next activation should behave as a normal scene change.
+	m->processMapUpdate(MidiTrackingType::NOTE, MATRIX_COUNT + 6, 100);
+	REQUIRE(m->pendingMidiSceneId == 6);
+
+	Test::destroyModule(m);
+}
