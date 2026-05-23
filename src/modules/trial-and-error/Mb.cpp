@@ -62,6 +62,7 @@ bool isModelFavorite(Model* model) {
 		case FavoriteMode::BOTH:
 			return model->isFavorite() || favoriteModels.find(model) != favoriteModels.end();
 	}
+	return false;
 }
 
 void setModelFavorite(Model* model, bool favorite) {
