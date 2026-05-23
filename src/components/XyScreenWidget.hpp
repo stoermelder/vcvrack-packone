@@ -83,6 +83,7 @@ struct XyScreenModule {
 	virtual inline void scSetItemFiltered(uint8_t type, uint8_t id, float x, float y) {}
 
 	inline void scSetXyImmediate(uint8_t type, uint8_t id, float x, float y) {
+		if (id >= INPUTS) return;
 		if (type == 0) {
 			scGetPqX(type, id)->getParam()->setValue(x);
 			inputXfilter[id].out = inputUiX[id] = x;
@@ -147,6 +148,7 @@ struct XyScreenModule {
 	}
 
 	inline void scSetRadiusImmediate(uint8_t id, float r) {
+		if (id >= INPUTS) return;
 		radiusFilter[id].out = radiusUi[id] = r;
 	}
 
@@ -173,6 +175,7 @@ struct XyScreenModule {
 	}
 
 	inline void scSetAmountImmediate(uint8_t id, float a) {
+		if (id >= INPUTS) return;
 		amountUi[id] = a;
 	}
 
