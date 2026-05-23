@@ -79,7 +79,19 @@ struct SipoModule : Module {
 	}
 
 	void process(const ProcessArgs &args) override {
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds"
+#elif defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warray-bounds"
+#endif
 		outputs[POLY_OUTPUT].setChannels(PORT_MAX_CHANNELS);
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#elif defined(__clang__)
+#pragma clang diagnostic pop
+#endif
 
 		if (clockTrigger.process(inputs[TRIG_INPUT].getVoltage())) {
 			dataPtr = (dataPtr + 1) % MAX_DATA;
