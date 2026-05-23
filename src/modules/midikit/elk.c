@@ -1523,10 +1523,14 @@ jsval_t js_eval(struct js *js, const char *buf, size_t len) {
   js->code = buf;
   js->clen = (jsoff_t) len;
   js->pos = 0;
+#if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdangling-pointer"
+#endif
   js->cstk = &res;
+#if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC diagnostic pop
+#endif
   while (next(js) != TOK_EOF && !is_err(res)) {
     res = js_stmt(js);
   }
