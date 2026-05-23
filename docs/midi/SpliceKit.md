@@ -20,6 +20,15 @@ Once two buttons have ports assigned, pressing them in sequence creates or remov
 
 Only an output port and an input port can be connected. Two ports of the same direction cannot be connected and the second press is ignored.
 
+### Cross-instance patching
+
+When multiple SPLICE-KIT modules are present in the same patch, buttons from different instances can be connected to each other. The workflow is the same two-press sequence:
+
+1. Press a button on any SPLICE-KIT instance — it starts blinking white as the initiator.
+2. Press a button on a **different** SPLICE-KIT instance — the initiating module creates a cable between the two ports.
+
+Cross-instance cables are **not part of the scene system**. They exist as ordinary patch cables and are not stored in or affected by scene changes on either module. The feature can be disabled per-instance via **Cross-instance patching** in the module context menu.
+
 ### Drag gestures
 
 As a faster alternative to the two-press workflow, connections can be created or removed by dragging directly from one cell to another:

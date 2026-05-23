@@ -50,6 +50,19 @@ struct PortAssignment {
 static const int TOTAL_MAPS = MATRIX_COUNT + MATRIX_SIZE;  // 64 cells + 8 scenes
 
 struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
+	// Cross-instance pending state: the initiator module + its pending cell, shared across all
+	// SpliceKit instances in the same Rack context. Cleared by the responder or when the
+	// initiator cancels/completes its local pending.
+	struct CrossPendingState {
+		SpliceKitModule* initiator = nullptr;
+		int cellId = -1;
+		PortAssignment port;
+
+		bool isValid() const { return initiator != nullptr && cellId >= 0; }
+		void clear() { initiator = nullptr; cellId = -1; port.clear(); }
+	};
+	static std::map<Context*, CrossPendingState> crossPending;
+
 	struct SpliceKitCellQuantity : ParamQuantity {
 		// Returns the assigned port label, or "Cell N" if unassigned.
 		std::string getLabel() override {
@@ -208,9 +221,12 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 	bool pendingCellIsPhysical = false; // true = set by physical button, false = set by MIDI
 
 	// Resets the pending-cell selection (called on cancel, completion, mode switch, and reset).
+	// Also clears the global cross-instance pending if this module was the initiator.
 	void clearPending() {
 		pendingCellId         = -1;
 		pendingCellIsPhysical = false;
+		auto& cp = crossPending[APP];
+		if (cp.initiator == this) cp.clear();
 	}
 
 	int portLearningId = -1;
@@ -236,6 +252,8 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 
 	/** [Stored to JSON] */
 	bool overlayEnabled = true;
+	/** [Stored to JSON] */
+	bool crossInstanceEnabled = true;
 	int overlayMessageId = -1;
 	OverlayMessageProvider::Message overlayMessage;
 
@@ -258,6 +276,11 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 		midiOutput.ledState      = cellLedState;
 		midiOutput.sceneLedState = sceneLedState;
 		processDivider.setDivision(256);
+	}
+
+	void onRemove() override {
+		auto& cp = crossPending[APP];
+		if (cp.initiator == this) cp.clear();
 	}
 
 	// Engine thread — called by Rack when the user resets the module.
@@ -711,6 +734,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 		json_object_set_new(rootJ, "feedbackPreset", json_integer(feedbackPreset));
 		json_object_set_new(rootJ, "buttonMode", json_integer((int)buttonMode));
 		json_object_set_new(rootJ, "overlayEnabled", json_boolean(overlayEnabled));
+		json_object_set_new(rootJ, "crossInstanceEnabled", json_boolean(crossInstanceEnabled));
 		if (feedbackPreset == PRESET_IDX_CUSTOM && !customPresetJson.empty()) {
 			json_object_set_new(rootJ, "customPreset", json_string(customPresetJson.c_str()));
 		}
@@ -753,6 +777,8 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 		if (buttonModeJ) buttonMode = (ButtonMode)json_integer_value(buttonModeJ);
 		json_t* overlayEnabledJ = json_object_get(rootJ, "overlayEnabled");
 		if (overlayEnabledJ) overlayEnabled = json_boolean_value(overlayEnabledJ);
+		json_t* crossInstanceEnabledJ = json_object_get(rootJ, "crossInstanceEnabled");
+		if (crossInstanceEnabledJ) crossInstanceEnabled = json_boolean_value(crossInstanceEnabledJ);
 
 		trackingProcessor.clearMaps();
 		json_t* mapsJ = json_object_get(rootJ, "maps");
@@ -995,20 +1021,50 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 	}
 
 	// Engine thread — handles a single cell activation (button press or MIDI trigger).
-	// First press sets the pending selection; second press on a different cell enqueues
-	// a toggleConnection call to the GUI thread. Pressing the same cell again cancels.
+	// First press sets pendingCellId and defers all cross-instance logic to the GUI thread
+	// via guiQueue, so that crossPending is only ever touched from one thread. Second press
+	// on a different cell (same instance) enqueues toggleConnection. Same cell cancels.
 	void triggerCell(int id) {
 		if (!portAssignments[id].isValid()) return;
+
 		if (pendingCellId < 0) {
 			pendingCellId = id;
 			if (!guiQueue.full()) {
 				guiQueue.push([this, id]() {
-					const std::string& lbl = cellLabels[id];
-					if (!lbl.empty()) {
-						setOverlayMessage(lbl, portLabel(portAssignments[id]));
+					// GUI thread — sole owner of crossPending. Re-check cp validity here
+					// because another instance's lambda may have already consumed it.
+					auto& cp = crossPending[APP];
+					if (crossInstanceEnabled && cp.isValid() && cp.initiator != this) {
+						// Responder path: create the cable directly (we are on the GUI thread).
+						SpliceKitModule* initiator = cp.initiator;
+						PortAssignment iPort = cp.port;
+						PortAssignment rPort = portAssignments[id];
+						cp.clear();
+						initiator->clearPending();
+						clearPending();  // reset our own tentative pendingCellId
+						const PortAssignment* outPd = nullptr;
+						const PortAssignment* inPd  = nullptr;
+						if (iPort.type == engine::Port::OUTPUT && rPort.type == engine::Port::INPUT) {
+							outPd = &iPort; inPd = &rPort;
+						}
+						else if (iPort.type == engine::Port::INPUT && rPort.type == engine::Port::OUTPUT) {
+							outPd = &rPort; inPd = &iPort;
+						}
+						if (outPd) {
+							vcv::addCableToPort(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId, false);
+							initiator->setOverlayMessage("Cable created", portLabel(*outPd), portLabel(*inPd));
+						}
 					}
 					else {
-						setOverlayMessage("Port selected", portLabel(portAssignments[id]));
+						// Initiator path (cp was already consumed, or no cross-pending).
+						if (crossInstanceEnabled) {
+							cp.initiator = this;
+							cp.cellId    = id;
+							cp.port      = portAssignments[id];
+						}
+						const std::string& lbl = cellLabels[id];
+						if (!lbl.empty()) setOverlayMessage(lbl, portLabel(portAssignments[id]));
+						else setOverlayMessage("Port selected", portLabel(portAssignments[id]));
 					}
 				});
 			}
@@ -1656,6 +1712,13 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 			[=]() { return module->overlayEnabled; },
 			[=]() { module->overlayEnabled = !module->overlayEnabled; }
 		));
+		menu->addChild(createCheckMenuItem("Cross-instance patching", "",
+			[=]() { return module->crossInstanceEnabled; },
+			[=]() {
+				module->crossInstanceEnabled = !module->crossInstanceEnabled;
+				if (!module->crossInstanceEnabled) module->clearPending();
+			}
+		));
 		menu->addChild(createSubmenuItem("Button mode", "", [=](Menu* menu) {
 			menu->addChild(createCheckMenuItem("Toggle", "",
 				[=]() { return module->buttonMode == SpliceKitModule::BUTTON_TOGGLE; },
@@ -1726,6 +1789,9 @@ void SpliceKitSceneButton::createSceneMenu() {
 		}));
 	}
 }
+
+// Static field to communicate a pending state accross instances
+std::map<Context*, SpliceKitModule::CrossPendingState> SpliceKitModule::crossPending;
 
 
 struct LabelField : ui::TextField {
