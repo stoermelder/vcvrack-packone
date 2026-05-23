@@ -422,7 +422,7 @@ struct PatchStorageSource : PatchSource {
 		auto fetchResult = fetchJsonWithHeaders(url);
 		if (fetchResult.json) {
 			if (json_is_array(fetchResult.json)) {
-				DEBUG("PatchStorageSource: patchesJ array size=%zu", json_array_size(fetchResult.json));
+				DEBUG("PatchStorageSource: patchesJ array size=%llu", (unsigned long long)json_array_size(fetchResult.json));
 				size_t i;
 				json_t* val;
 				json_array_foreach(fetchResult.json, i, val) {
