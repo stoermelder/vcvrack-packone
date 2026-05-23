@@ -6,7 +6,7 @@
 #include <random>
 
 extern "C" {
-	#include "../../../orca-c/field.h"
+	#include <orca-c/field.h>
 }
 
 namespace StoermelderPackOne {

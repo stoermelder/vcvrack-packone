@@ -30,6 +30,7 @@ struct FadeLengthParamQuantity : ParamQuantity {
 			case FADE_LENGTH_15S: return 15.f;
 			case FADE_LENGTH_60S: return 60.f;
 		}
+		return 0.f;
 	}
 
 	std::string getUnit() override {
@@ -38,6 +39,7 @@ struct FadeLengthParamQuantity : ParamQuantity {
 			case FADE_LENGTH_15S: return "s (15s max)";
 			case FADE_LENGTH_60S: return "s (60s max)";
 		}
+		return "";
 	}
 };
 
