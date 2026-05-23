@@ -1,6 +1,6 @@
 #pragma once
 #include "../../plugin.hpp"
-#include "../strip/vcvs_helpers.hpp"
+#include "../../utils/vcv_files.hpp"
 #include "Mb_patch.hpp"
 
 namespace StoermelderPackOne {

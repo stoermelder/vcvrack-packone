@@ -68,7 +68,7 @@ struct StripPpWidget : StripWidgetBase<StripPpModule> {
 			if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == (GLFW_MOD_SHIFT | RACK_MOD_CTRL)) {
 				switch (e.key) {
 					case GLFW_KEY_V:
-						vcvsPasteClipboard("stoermelder STRIP selection load");
+						vcv::vcvsPasteClipboard("stoermelder STRIP selection load");
 						e.consume(this);
 						break;
 					case GLFW_KEY_B:
@@ -128,21 +128,21 @@ struct StripPpWidget : StripWidgetBase<StripPpModule> {
 	void groupSelectionLoad(std::string path = "") {
 		if (module->showPreview) {
 			if (path.empty()) {
-				path = vcvsLoadFileDialog(false, "stoermelder STRIP selection load");
+				path = vcv::vcvsLoadFileDialog(false, "stoermelder STRIP selection load");
 			}
 			if (!path.empty()) {
 				stripPpContainer->showPatchPreview(path, [=]() {
-					vcvsLoadFile(path, "stoermelder STRIP selection load");
+					vcv::vcvsLoadFile(path, "stoermelder STRIP selection load");
 					addRecentFile(path);
 				});
 			}
 		}
 		else {
 			if (path.empty()) {
-				path = vcvsLoadFileDialog(true, "stoermelder STRIP selection load");
+				path = vcv::vcvsLoadFileDialog(true, "stoermelder STRIP selection load");
 			}
 			else {
-				vcvsLoadFile(path, "stoermelder STRIP selection load");
+				vcv::vcvsLoadFile(path, "stoermelder STRIP selection load");
 			}
 			if (!path.empty()) {
 				addRecentFile(path);
@@ -157,7 +157,7 @@ struct StripPpWidget : StripWidgetBase<StripPpModule> {
 		menu->addChild(createBoolPtrMenuItem("Show preview", "", &module->showPreview));
 		menu->addChild(new MenuSeparator);
 		menu->addChild(construct<MenuLabel>(&MenuLabel::text, "Selection"));
-		menu->addChild(createMenuItem("Paste", RACK_MOD_CTRL_NAME "+" RACK_MOD_SHIFT_NAME "+V", [=]() { vcvsPasteClipboard("stoermelder STRIP selection load"); }));
+		menu->addChild(createMenuItem("Paste", RACK_MOD_CTRL_NAME "+" RACK_MOD_SHIFT_NAME "+V", [=]() { vcv::vcvsPasteClipboard("stoermelder STRIP selection load"); }));
 		menu->addChild(createMenuItem("Import", RACK_MOD_CTRL_NAME "+" RACK_MOD_SHIFT_NAME "+B", [=]() { groupSelectionLoad(); }));
 
 		if (module->showPreview) {
