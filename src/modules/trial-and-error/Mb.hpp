@@ -51,6 +51,7 @@ static void toggleModelFavorite(plugin::Model* model) {
 extern std::set<Model*> hiddenModels;
 void toggleModelHidden(Model* model);
 bool isModelHidden(plugin::Model* model);
+void hiddenModelsReset();
 
 
 // Custom Tags
@@ -65,6 +66,7 @@ void customTagAdd(Model* model, const std::string& tag);
 void customTagRemove(Model* model, const std::string& tag);
 bool customTagHas(Model* model, const std::string& tag, bool resolveKey = false);
 void customTagDelete(const std::string& tag);
+void customTagReset();
 std::set<std::string> customTagsForModel(Model* model);
 std::set<std::string> customTagsAll();
 
@@ -76,6 +78,7 @@ void predefinedTagRemove(Model* model, int tagId);
 bool predefinedTagHasAdded(Model* model, int tagId);
 bool predefinedTagHasRemoved(Model* model, int tagId);
 void predefinedTagDelete(int tagId);
+void predefinedTagsReset();
 std::set<int> getEffectiveTagIds(Model* model);
 std::set<std::string> getEffectiveTagNames(Model* model);
 

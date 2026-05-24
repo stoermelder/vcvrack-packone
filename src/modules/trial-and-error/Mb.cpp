@@ -120,6 +120,10 @@ void toggleModelHidden(Model* model) {
 		hiddenModels.insert(model);
 }
 
+void hiddenModelsReset() {
+	hiddenModels.clear();
+}
+
 bool isModelHidden(plugin::Model* model) {
 	return hiddenModels.find(model) != hiddenModels.end();
 }
@@ -160,6 +164,10 @@ bool customTagHas(Model* model, const std::string& tag, bool resolveKey) {
 
 void customTagDelete(const std::string& tag) {
 	customTagModels.erase(customTagResolveKey(tag));
+}
+
+void customTagReset() {
+	customTagModels.clear();
 }
 
 std::set<std::string> customTagsForModel(Model* model) {
@@ -221,6 +229,11 @@ void predefinedTagDelete(int tagId) {
 	for (auto& pair : predefinedTagsRemoved) {
 		pair.second.erase(tagId);
 	}
+}
+
+void predefinedTagsReset() {
+	predefinedTagsAdded.clear();
+	predefinedTagsRemoved.clear();
 }
 
 std::set<int> getEffectiveTagIds(Model* model) {
@@ -934,6 +947,9 @@ struct MbWidget : ModuleWidget {
 				menu->addChild(createMenuItem("Import", "", [&]() { this->importSettingsDialog(); }));
 				menu->addChild(new MenuSeparator());
 				menu->addChild(createMenuItem("Reset usage data", "", []() { modelUsageReset(); }));
+				menu->addChild(createMenuItem("Reset hidden modules", "", []() { hiddenModelsReset(); }));
+				menu->addChild(createMenuItem("Reset custom tags", "", []() { customTagReset(); }));
+				menu->addChild(createMenuItem("Reset predefined tags", "", []() { predefinedTagsReset(); }));
 			}
 		));
 
