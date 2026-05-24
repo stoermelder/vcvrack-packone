@@ -6,24 +6,56 @@
 namespace StoermelderPackOne {
 namespace Mb {
 
-// Usage data
+// Model DB
+
+// Shared fuzzy search database — initialized once by BrowserOverlay, re-initialized when searchDescriptions changes
+extern fuzzysearch::Database<plugin::Model*> modelDb;
+extern bool searchDescriptions;
+extern bool sortBySearchScore;
+
+void modelDbInit();
+ModuleWidget* chooseModel(plugin::Model* model, bool hideBrowser = true);
+
+// Model Usage
 
 struct ModelUsage {
 	int usedCount = 0;
 	int64_t usedTimestamp = -std::numeric_limits<int64_t>::infinity();
 };
+extern std::map<Model*, ModelUsage*> modelUsage;
 
 void modelUsageTouch(Model* model);
 void modelUsageReset();
 
-// Globals
 
-json_t* moduleBrowserToJson(bool includeUsageData = true);
-void moduleBrowserFromJson(json_t* rootJ);
+// Favorite
+
+enum class FavoriteMode {
+	VCVRACK = 0,
+	MB = 1,
+	BOTH = 2
+};
+extern FavoriteMode favoriteMode;
+extern bool favoriteHighlight;
 
 extern std::set<Model*> favoriteModels;
+bool isModelFavorite(Model* model);
+void setModelFavorite(Model* model, bool favorite);
+static void toggleModelFavorite(plugin::Model* model) {
+	setModelFavorite(model, !isModelFavorite(model));
+}
+
+
+// Hidden
+
 extern std::set<Model*> hiddenModels;
-extern std::map<Model*, ModelUsage*> modelUsage;
+void toggleModelHidden(Model* model);
+bool isModelHidden(plugin::Model* model);
+void hiddenModelsReset();
+
+
+// Custom Tags
+
 extern std::map<std::string, std::set<Model*>> customTagModels;
 
 // Tag modifications: predefined tags that are added/removed per model
@@ -34,37 +66,21 @@ void customTagAdd(Model* model, const std::string& tag);
 void customTagRemove(Model* model, const std::string& tag);
 bool customTagHas(Model* model, const std::string& tag, bool resolveKey = false);
 void customTagDelete(const std::string& tag);
+void customTagReset();
 std::set<std::string> customTagsForModel(Model* model);
 std::set<std::string> customTagsAll();
 
-// Predefined tag modifications
+
+// Predefined Tags
+
 void predefinedTagAdd(Model* model, int tagId);
 void predefinedTagRemove(Model* model, int tagId);
 bool predefinedTagHasAdded(Model* model, int tagId);
 bool predefinedTagHasRemoved(Model* model, int tagId);
 void predefinedTagDelete(int tagId);
+void predefinedTagsReset();
 std::set<int> getEffectiveTagIds(Model* model);
 std::set<std::string> getEffectiveTagNames(Model* model);
-
-// Favorite mode handling
-enum class FavoriteMode {
-	VCVRACK = 0,
-	MB = 1,
-	BOTH = 2
-};
-
-extern FavoriteMode favoriteMode;
-
-bool isModelFavorite(Model* model);
-void setModelFavorite(Model* model, bool favorite);
-
-
-// Shared fuzzy search database — initialized once by BrowserOverlay, re-initialized when searchDescriptions changes
-extern fuzzysearch::Database<plugin::Model*> modelDb;
-extern bool searchDescriptions;
-extern bool sortBySearchScore;
-extern bool favoriteHighlight;
-void modelDbInit();
 
 
 // Magnifier overlay for module preview zoom
@@ -184,7 +200,6 @@ struct BrowserOverlay : widget::OpaqueWidget {
 	void draw(const DrawArgs& args) override;
 	void onButton(const event::Button& e) override;
 };
-
 
 struct DropdownChoiceContainer : widget::OpaqueWidget {
 	ui::ScrollWidget* scroll;
@@ -413,15 +428,15 @@ struct DropdownChoiceItem : ui::Button {
 	}
 };
 
-template <typename T>
+template <typename TBrowser, typename TContainer = DropdownChoiceContainer>
 static void openLayoutMenu(widget::Widget* button, std::vector<widget::Widget*> items) {
-	static_assert(std::is_base_of<widget::Widget, T>::value, "T must be a widget type");
+	static_assert(std::is_base_of<widget::Widget, TBrowser>::value, "TBrowser must be a widget type");
 
-	auto browser = APP->scene->getFirstDescendantOfType<T>();
+	auto browser = APP->scene->getFirstDescendantOfType<TBrowser>();
 	Vec browserPos = browser->getAbsoluteOffset(Vec(0, 0));
 
 	// Create menu container
-	DropdownChoiceContainer* container = new DropdownChoiceContainer;
+	TContainer* container = new TContainer;
 	float menuX = browserPos.x + browser->box.size.x * 0.15f;
 	float menuY = button->getAbsoluteOffset(Vec(0, button->box.size.y)).y + 2.f;
 	container->box.pos = Vec(menuX, menuY);
@@ -431,7 +446,7 @@ static void openLayoutMenu(widget::Widget* button, std::vector<widget::Widget*> 
 	for (widget::Widget* item : items) {
 		container->layout->addChild(item);
 		// Cache text for filtering
-		if (auto* choiceItem = dynamic_cast<DropdownChoiceItem<T>*>(item)) {
+		if (auto* choiceItem = dynamic_cast<DropdownChoiceItem<TBrowser>*>(item)) {
 			container->itemTexts[item] = choiceItem->rawText;
 		}
 	}
@@ -440,6 +455,10 @@ static void openLayoutMenu(widget::Widget* button, std::vector<widget::Widget*> 
 	APP->scene->addChild(overlay);
 	overlay->addChild(container);
 }
+
+
+json_t* moduleBrowserToJson(bool includeUsageData = true);
+void moduleBrowserFromJson(json_t* rootJ);
 
 
 } // namespace Mb

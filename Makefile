@@ -91,22 +91,12 @@ build/test/%: %.cpp $(CURDIR)/src/test/test_context.hpp
 		-o $@ $(TEST_ADD_SOURCES) $(CURDIR)/$(TARGET) $<
 
 # Build all test binaries
-# Also copy the Rack shared library to build/test/ to avoid runtime linking issues
 test: $(TEST_BINARIES) $(TARGET)
-	@mkdir -p build/test
-	@for f in ../../libRack.*; do \
-		if [ -e "$$f" ]; then \
-			if [ ! -e "build/test/$$(basename $$f)" ]; then \
-				cp "$$f" build/test/ && echo "Copied $$(basename $$f) to build/test"; \
-			fi; \
-		fi; \
-	done
-	@cp "$(CURDIR)/$(TARGET)" build/test/ && echo "Copied $(TARGET) to build/test";
 
 # Run all test binaries (exit non-zero on first failure)
 testrun: test
 	echo "Running tests..."
 	@set -e; for t in $(TEST_BINARIES); do \
 		echo "Running $$t..."; \
-		DYLD_LIBRARY_PATH=$(RACK_DIR) ./$$t $(TEST_SUCCESS_FLAG); \
+		TESTING=1 ./$$t $(TEST_SUCCESS_FLAG); \
 	done

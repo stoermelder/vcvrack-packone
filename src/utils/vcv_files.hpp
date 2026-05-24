@@ -15,6 +15,9 @@ static const char SELECTION_FILTERS[] = "VCV Rack module selection (.vcvs):vcvs"
  * @param oldId Output parameter for the previous module id
  * @return ModuleWidget pointer if successful, NULL otherwise
  */
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((unused))
+#endif
 static ModuleWidget* moduleFromJson(json_t* moduleJ, int64_t& oldId) {
     // Get slugs
     json_t* pluginSlugJ = json_object_get(moduleJ, "plugin");
@@ -58,6 +61,9 @@ enum class moduleToRackPos {
  * @param oldId Output parameter for the previous module id
  * @return ModuleWidget pointer if successful, NULL otherwise
  */
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((unused))
+#endif
 static ModuleWidget* moduleToRack(json_t* moduleJ, moduleToRackPos modPos, Rect& box, int64_t& oldId) {
     ModuleWidget* moduleWidget = moduleFromJson(moduleJ, oldId);
     if (moduleWidget) {
@@ -96,6 +102,9 @@ static ModuleWidget* moduleToRack(json_t* moduleJ, moduleToRackPos modPos, Rect&
  * Checks for unavailable modules in the selection and prompts user to view them on VCV Library.
  * @param rootJ JSON representation of the vcvs file
  */
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((unused))
+#endif
 static void vcvsCheckUnavailable(json_t* rootJ) {
     std::set<std::string> pluginModuleSlugs;
 
@@ -142,6 +151,9 @@ static void vcvsCheckUnavailable(json_t* rootJ) {
  * @param modules Map to store old module id -> new ModuleWidget mappings
  * @return Vector of history actions for undo support
  */
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((unused))
+#endif
 static std::vector<history::Action*>* vcvsFromJson_modules(json_t* rootJ, std::map<int64_t, ModuleWidget*>& modules) {
     std::vector<history::Action*>* undoActions = new std::vector<history::Action*>;
 
@@ -202,6 +214,9 @@ static std::vector<history::Action*>* vcvsFromJson_modules(json_t* rootJ, std::m
  * @param moduleJ JSON representation of the module
  * @param modules Maps old module ids to new ModuleWidgets
  */
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((unused))
+#endif
 static void vcvsFromJson_presets_fixMapping(json_t* moduleJ, std::map<int64_t, ModuleWidget*>& modules) {
     std::string pluginSlug = json_string_value(json_object_get(moduleJ, "plugin"));
     std::string modelSlug = json_string_value(json_object_get(moduleJ, "model"));
@@ -244,6 +259,9 @@ static void vcvsFromJson_presets_fixMapping(json_t* moduleJ, std::map<int64_t, M
  * @param modules Map of old module id -> new ModuleWidget
  * @return Vector of history actions for undo support
  */
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((unused))
+#endif
 static std::vector<history::Action*>* vcvsFromJson_presets(json_t* rootJ, std::map<int64_t, ModuleWidget*>& modules) {
     std::vector<history::Action*>* undoActions = new std::vector<history::Action*>;
 
@@ -282,6 +300,9 @@ static std::vector<history::Action*>* vcvsFromJson_presets(json_t* rootJ, std::m
  * @param modules Map of old module id -> new ModuleWidget
  * @return Vector of history actions for undo support
  */
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((unused))
+#endif
 static std::vector<history::Action*>* vcvsFromJson_cables(json_t* rootJ, std::map<int64_t, ModuleWidget*>& modules) {
     std::vector<history::Action*>* undoActions = new std::vector<history::Action*>;
 
@@ -335,6 +356,9 @@ static std::vector<history::Action*>* vcvsFromJson_cables(json_t* rootJ, std::ma
  * @param rootJ JSON representation of the vcvs file
  * @return Warning log string for any issues encountered
  */
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((unused))
+#endif
 static const std::string vcvsFromJson(json_t* rootJ, std::string undoActionName = "") {
     std::string warningLog = "";
 
@@ -374,6 +398,9 @@ static const std::string vcvsFromJson(json_t* rootJ, std::string undoActionName 
  * Validates JSON, checks for unavailable modules, and loads the selection.
  * @param path Full path to the .vcvs file
  */
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((unused))
+#endif
 static void vcvsLoadFile(std::string path, std::string undoActionName = "") {
     FILE* file = std::fopen(path.c_str(), "r");
     if (!file) return;
@@ -397,6 +424,9 @@ static void vcvsLoadFile(std::string path, std::string undoActionName = "") {
  * Deselects all modules, parses clipboard JSON, and loads the selection.
  * Shows an error dialog if clipboard access or JSON parsing fails.
  */
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((unused))
+#endif
 static void vcvsPasteClipboard(std::string undoActionName = "") {
     APP->scene->rack->deselectAll();
 
@@ -426,6 +456,9 @@ static void vcvsPasteClipboard(std::string undoActionName = "") {
  * @param load If true, actually loads the file; if false, just returns the selected path
  * @return The selected file path, or empty string if cancelled
  */
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((unused))
+#endif
 static std::string vcvsLoadFileDialog(bool load, std::string undoActionName = "") {
     osdialog_filters* filters = osdialog_filters_parse(SELECTION_FILTERS);
     DEFER({osdialog_filters_free(filters);});
@@ -458,6 +491,9 @@ static std::string vcvsLoadFileDialog(bool load, std::string undoActionName = ""
  * @param moduleJ JSON representation of the module
  * @return Module width in pixels, or 0 if model not found
  */
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((unused))
+#endif
 static float getModuleWidth(json_t* moduleJ) {
     json_t* pluginSlugJ = json_object_get(moduleJ, "plugin");
     if (!pluginSlugJ) return 0.f;
@@ -491,6 +527,9 @@ static float getModuleWidth(json_t* moduleJ) {
  * @return JSON object with vcvs format (modules array with positions, cables array),
  *         or nullptr if conversion fails. Caller must call json_decref on result.
  */
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((unused))
+#endif
 static json_t* convertVcvssToVcvs(json_t* vcvssJ) {
     if (!vcvssJ || !json_is_object(vcvssJ)) return nullptr;
     
@@ -543,6 +582,7 @@ static json_t* convertVcvssToVcvs(json_t* vcvssJ) {
     
     // Process right modules - they appear on the right in the strip
     // Continue after left modules (if any)
+    
     json_t* rightModulesJ = json_object_get(vcvssJ, "rightModules");
     if (rightModulesJ && json_is_array(rightModulesJ)) {
         json_t* moduleJ;
