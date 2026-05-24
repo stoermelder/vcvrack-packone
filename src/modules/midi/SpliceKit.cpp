@@ -1072,8 +1072,15 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 							outPd = &rPort; inPd = &iPort;
 						}
 						if (outPd) {
-							vcv::addCableToPort(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId, false);
-							initiator->setOverlayMessage("Cable created", portLabel(*outPd), portLabel(*inPd));
+							CableWidget* cw = vcv::findCable(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId);
+							if (!cw) {
+								vcv::addCableToPort(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId, false);
+								setOverlayMessage("Cable created", portLabel(*outPd), portLabel(*inPd));
+							}
+							else {
+								vcv::removeCable(cw, false);
+								setOverlayMessage("Cable removed", portLabel(*outPd), portLabel(*inPd));
+							}
 						}
 					}
 					else {
