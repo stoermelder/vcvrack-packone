@@ -428,15 +428,15 @@ struct DropdownChoiceItem : ui::Button {
 	}
 };
 
-template <typename T>
+template <typename TBrowser, typename TContainer = DropdownChoiceContainer>
 static void openLayoutMenu(widget::Widget* button, std::vector<widget::Widget*> items) {
-	static_assert(std::is_base_of<widget::Widget, T>::value, "T must be a widget type");
+	static_assert(std::is_base_of<widget::Widget, TBrowser>::value, "TBrowser must be a widget type");
 
-	auto browser = APP->scene->getFirstDescendantOfType<T>();
+	auto browser = APP->scene->getFirstDescendantOfType<TBrowser>();
 	Vec browserPos = browser->getAbsoluteOffset(Vec(0, 0));
 
 	// Create menu container
-	DropdownChoiceContainer* container = new DropdownChoiceContainer;
+	TContainer* container = new TContainer;
 	float menuX = browserPos.x + browser->box.size.x * 0.15f;
 	float menuY = button->getAbsoluteOffset(Vec(0, button->box.size.y)).y + 2.f;
 	container->box.pos = Vec(menuX, menuY);
@@ -446,7 +446,7 @@ static void openLayoutMenu(widget::Widget* button, std::vector<widget::Widget*> 
 	for (widget::Widget* item : items) {
 		container->layout->addChild(item);
 		// Cache text for filtering
-		if (auto* choiceItem = dynamic_cast<DropdownChoiceItem<T>*>(item)) {
+		if (auto* choiceItem = dynamic_cast<DropdownChoiceItem<TBrowser>*>(item)) {
 			container->itemTexts[item] = choiceItem->rawText;
 		}
 	}
