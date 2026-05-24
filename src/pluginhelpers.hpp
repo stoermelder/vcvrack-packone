@@ -12,11 +12,11 @@ namespace Rack {
 using namespace rack;
 
 /**
- * @brief Creates a MenuItem that when hovered, opens a submenu with several MenuItems identified by a map.
+ * @brief Creates a MenuItem that when hovered, opens a submenu with several MenuItems identified by a vector (preserves insertion order).
  *
  * @param text The label text for the menu item
- * @param labels Map of enum values to label strings for standard mode
- * @param labelsPlugin Map of enum values to label strings for plugin mode
+ * @param labels Vector of enum values to label strings for standard mode (insertion order preserved)
+ * @param labelsPlugin Vector of enum values to label strings for plugin mode
  * @param getter Function returning the current selected enum value
  * @param setter Function called when an item is selected with the new enum value
  * @param showRightText Whether to show the current selection on the parent item (default: true)
@@ -40,7 +40,7 @@ using namespace rack;
  *   ));
  */
 template <typename TEnum, class TMenuItem = ui::MenuItem>
-ui::MenuItem* createMapSubmenuItem(std::string text, std::map<TEnum, std::string> labels, std::map<TEnum, std::string> labelsPlugin, std::function<TEnum()> getter, std::function<void(TEnum val)> setter, bool showRightText = true, bool disabled = false, bool alwaysConsume = false) {
+ui::MenuItem* createMapSubmenuItem(std::string text, std::vector<std::pair<TEnum, std::string>> labels, std::vector<std::pair<TEnum, std::string>> labelsPlugin, std::function<TEnum()> getter, std::function<void(TEnum val)> setter, bool showRightText = true, bool disabled = false, bool alwaysConsume = false) {
 	struct IndexItem : ui::MenuItem {
 		std::function<TEnum()> getter;
 		std::function<void(TEnum)> setter;
@@ -62,7 +62,7 @@ ui::MenuItem* createMapSubmenuItem(std::string text, std::map<TEnum, std::string
 	struct Item : TMenuItem {
 		std::function<TEnum()> getter;
 		std::function<void(TEnum)> setter;
-		std::map<TEnum, std::string> labels;
+		std::vector<std::pair<TEnum, std::string>> labels;
 		TEnum currIndex;
 		bool currIndexInitialized = false;
 		bool showRightText;
@@ -72,7 +72,13 @@ ui::MenuItem* createMapSubmenuItem(std::string text, std::map<TEnum, std::string
 			TEnum currIndex = getter();
 			if (showRightText) {
 				if (this->currIndex != currIndex || !this->currIndexInitialized) {
-					std::string label = labels[currIndex];
+					std::string label;
+					for (const auto& l : labels) {
+						if (l.first == currIndex) {
+							label = l.second;
+							break;
+						}
+					}
 					this->rightText = label + "  " + RIGHT_ARROW;
 					this->currIndex = currIndex;
 					this->currIndexInitialized = true;
@@ -111,7 +117,7 @@ ui::MenuItem* createMapSubmenuItem(std::string text, std::map<TEnum, std::string
  * @brief Easy wrapper that controls a mapped label using getter/setter functions.
  *
  * @param text The label text for the menu item
- * @param labels Map of enum values to label strings
+ * @param labels Vector of enum values to label strings (insertion order preserved)
  * @param getter Function returning the current selected enum value
  * @param setter Function called when an item is selected with the new enum value
  * @param showRightText Whether to show the current selection on the parent item (default: true)
@@ -131,16 +137,16 @@ ui::MenuItem* createMapSubmenuItem(std::string text, std::map<TEnum, std::string
  *   ));
  */
 template <typename TEnum, class TMenuItem = ui::MenuItem>
-ui::MenuItem* createMapSubmenuItem(std::string text, std::map<TEnum, std::string> labels, std::function<TEnum()> getter, std::function<void(TEnum val)> setter, bool showRightText = true, bool disabled = false, bool alwaysConsume = false) {
+ui::MenuItem* createMapSubmenuItem(std::string text, std::vector<std::pair<TEnum, std::string>> labels, std::function<TEnum()> getter, std::function<void(TEnum val)> setter, bool showRightText = true, bool disabled = false, bool alwaysConsume = false) {
 	return createMapSubmenuItem(text, labels, labels, getter, setter, showRightText, disabled, alwaysConsume);
 }
 
 
 /**
- * @brief Easy wrapper for createMapPtrSubmenuItem() that controls a mapped label at a pointer address.
+ * @brief Easy wrapper for createMapSubmenuItem() that controls a mapped label at a pointer address.
  *
  * @param text The label text for the menu item
- * @param labels Map of enum values to label strings
+ * @param labels Vector of enum values to label strings (insertion order preserved)
  * @param ptr Pointer to the enum value to control
  * @param showRightText Whether to show the current selection on the parent item (default: true)
  * @return ui::MenuItem* The created menu item
@@ -156,7 +162,7 @@ ui::MenuItem* createMapSubmenuItem(std::string text, std::map<TEnum, std::string
  *   ));
  */
 template <typename TEnum>
-ui::MenuItem* createMapPtrSubmenuItem(std::string text, std::map<TEnum, std::string> labels, TEnum* ptr, bool showRightText = true) {
+ui::MenuItem* createMapPtrSubmenuItem(std::string text, const std::vector<std::pair<TEnum, std::string>>& labels, TEnum* ptr, bool showRightText = true) {
 	return createMapSubmenuItem<TEnum>(text, labels,
 		[=]() { return *ptr; },
 		[=](TEnum index) { *ptr = TEnum(index); },

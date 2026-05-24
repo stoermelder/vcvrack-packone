@@ -228,10 +228,7 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 			if (resetTrigger.process(inputs[INPUT_RESET].getVoltage())) {
 				resetTimer.reset();
 				switch (sceneMode) {
-					case SCENE_CV_MODE::TRIG_FWD:
-					case SCENE_CV_MODE::TRIG_RANDOM:
-					case SCENE_CV_MODE::TRIG_RANDOM_WALK:
-					case SCENE_CV_MODE::TRIG_RANDOM_WO_REPEAT: {
+					case SCENE_CV_MODE::TRIG_FWD: {
 						sceneSet(0);
 						break;
 					}
@@ -261,6 +258,9 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 						sceneSet(s);
 						break;
 					}
+					case SCENE_CV_MODE::TRIG_RANDOM:
+					case SCENE_CV_MODE::TRIG_RANDOM_WALK:
+					case SCENE_CV_MODE::TRIG_RANDOM_WO_REPEAT:
 					default: {
 						break;
 					}
