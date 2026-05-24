@@ -6,6 +6,7 @@
 #include <thread>
 #include <algorithm>
 #include <numeric>
+#include <random>
 
 namespace StoermelderPackOne {
 namespace Mb {
@@ -1028,7 +1029,9 @@ void ModuleBrowser::refresh() {
 		}
 		else if (settings::browserSort == settings::BROWSER_SORT_RANDOM) {
 			std::vector<std::reference_wrapper<Widget*>> vec(modelContainer->children.begin(), modelContainer->children.end());
-			std::random_shuffle(vec.begin(), vec.end());
+			std::random_device rd;
+			std::mt19937 g(rd());
+			std::shuffle(vec.begin(), vec.end(), g);
 			std::list<Widget*> s(vec.begin(), vec.end());
 			modelContainer->children.swap(s);
 		}
