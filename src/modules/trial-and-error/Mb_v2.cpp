@@ -403,7 +403,7 @@ bool handleLayoutMenuKeyEvent(const Widget::SelectKeyEvent& e, Widget* currentCo
 	if (!e.isConsumed() && e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL) {
 		switch (e.key) {
 			case GLFW_KEY_1: {
-				if (currentContainer) currentContainer->requestDelete();
+				if (currentContainer) currentContainer->parent->requestDelete();
 				event::Action a;
 				auto browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
 				browser->brandButton->onAction(a);
@@ -411,7 +411,7 @@ bool handleLayoutMenuKeyEvent(const Widget::SelectKeyEvent& e, Widget* currentCo
 				return true;
 			}
 			case GLFW_KEY_2: {
-				if (currentContainer) currentContainer->requestDelete();
+				if (currentContainer) currentContainer->parent->requestDelete();
 				event::Action a;
 				auto browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
 				browser->tagButton->onAction(a);
@@ -419,7 +419,7 @@ bool handleLayoutMenuKeyEvent(const Widget::SelectKeyEvent& e, Widget* currentCo
 				return true;
 			}
 			case GLFW_KEY_3: {
-				if (currentContainer) currentContainer->requestDelete();
+				if (currentContainer) currentContainer->parent->requestDelete();
 				event::Action a;
 				auto browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
 				browser->customTagButton->onAction(a);
