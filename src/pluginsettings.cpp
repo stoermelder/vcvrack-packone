@@ -42,6 +42,10 @@ static bool saveJsonFile(const std::string& path, json_t* j) {
 	return true;
 }
 
+static bool isTesting() {
+	return getenv("TESTING") != nullptr;
+}
+
 // ── mb.json (models only) ─────────────────────────────────────────────────────
 
 static json_t* buildMbJson(const Settings& s) {
@@ -213,7 +217,8 @@ static void parseLegacyJson(json_t* j, Settings& s) {
 // ── public API ────────────────────────────────────────────────────────────────
 
 void Settings::saveToJson() {
-#ifndef TESTING
+	if (isTesting()) return;
+
 	rack::system::createDirectory(settingsDirPath());
 
 	json_t* mbJ = buildMbJson(*this);
@@ -227,11 +232,10 @@ void Settings::saveToJson() {
 	json_t* plugJ = buildPluginJson(*this);
 	saveJsonFile(pluginFilePath(), plugJ);
 	json_decref(plugJ);
-#endif
 }
 
 void Settings::readFromJson() {
-#ifndef TESTING
+	if (isTesting()) return;
 	// Migrate from legacy single-file format if it exists.
 	std::string legacy = legacyFilePath();
 	FILE* legacyFile = fopen(legacy.c_str(), "r");
@@ -247,7 +251,6 @@ void Settings::readFromJson() {
 		std::remove(legacy.c_str());
 		return;
 	}
-#endif
 
 	json_t* mbJ = loadJsonFile(mbFilePath());
 	if (mbJ) {
