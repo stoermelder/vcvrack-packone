@@ -198,6 +198,7 @@ void predefinedTagAdd(Model* model, int tagId) {
 	predefinedTagsRemoved[model].erase(tagId);
 	if (predefinedTagsRemoved[model].empty())
 		predefinedTagsRemoved.erase(model);
+	effectiveTagIdsCacheInvalidate(model);
 }
 
 void predefinedTagRemove(Model* model, int tagId) {
@@ -206,6 +207,7 @@ void predefinedTagRemove(Model* model, int tagId) {
 	predefinedTagsAdded[model].erase(tagId);
 	if (predefinedTagsAdded[model].empty())
 		predefinedTagsAdded.erase(model);
+	effectiveTagIdsCacheInvalidate(model);
 }
 
 bool predefinedTagHasAdded(Model* model, int tagId) {
@@ -229,14 +231,36 @@ void predefinedTagDelete(int tagId) {
 	for (auto& pair : predefinedTagsRemoved) {
 		pair.second.erase(tagId);
 	}
+	// Invalidate cache for all models since any could be affected
+	effectiveTagIdsCacheInvalidateAll();
 }
 
 void predefinedTagsReset() {
 	predefinedTagsAdded.clear();
 	predefinedTagsRemoved.clear();
+	effectiveTagIdsCacheInvalidateAll();
+}
+
+// Cache for effective tag IDs
+std::map<Model*, TagIdCache> effectiveTagIdsCache;
+uint64_t effectiveTagIdsVersion = 0;
+
+void effectiveTagIdsCacheInvalidate(Model* model) {
+	effectiveTagIdsCache.erase(model);
+}
+
+void effectiveTagIdsCacheInvalidateAll() {
+	effectiveTagIdsCache.clear();
+	effectiveTagIdsVersion++;
 }
 
 std::set<int> getEffectiveTagIds(Model* model) {
+	// Check cache first
+	auto itCached = effectiveTagIdsCache.find(model);
+	if (itCached != effectiveTagIdsCache.end() && itCached->second.version == effectiveTagIdsVersion) {
+		return itCached->second.tagIds;
+	}
+
 	std::set<int> result;
 	
 	// Add original tags
@@ -253,6 +277,12 @@ std::set<int> getEffectiveTagIds(Model* model) {
 			result.insert(tagId);
 		}
 	}
+	
+	// Store in cache
+	TagIdCache cache;
+	cache.tagIds = result;
+	cache.version = effectiveTagIdsVersion;
+	effectiveTagIdsCache[model] = cache;
 	
 	return result;
 }
