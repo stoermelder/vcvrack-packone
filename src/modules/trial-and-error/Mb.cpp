@@ -493,12 +493,14 @@ void moduleBrowserFromJson(json_t* rootJ) {
 		}
 	}
 
+	// Cleanup existing modelUsage entries before loading new data
+	for (auto t : modelUsage) {
+		delete t.second;
+	}
+	modelUsage.clear();
+
 	json_t* usageJ = json_object_get(rootJ, "usage");
 	if (usageJ) {
-		for (auto t : modelUsage) {
-			delete t.second;
-		}
-		modelUsage.clear();
 		size_t i;
 		json_t* slugJ;
 		json_array_foreach(usageJ, i, slugJ) {
