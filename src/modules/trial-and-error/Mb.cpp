@@ -932,10 +932,10 @@ struct MbWidget : ModuleWidget {
 		if (!tags.empty()) {
 			menu->addChild(createSubmenuItem("Delete custom tag", "",
 				[tags](Menu* menu) {
-					Rack::addGroupedMenuItems<std::string>(menu, tags, [](const std::string& tag) -> ui::MenuItem* {
+					Rack::addGroupedMenuItems<std::string>(menu, tags, [](const std::string& tag) {
 						MenuItem* item = createMenuItem(tag, "", [tag]() { customTagDelete(tag); });
 						return item;
-					});
+					}, 20);
 				}
 			));
 		}
