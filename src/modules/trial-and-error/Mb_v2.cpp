@@ -271,10 +271,12 @@ struct ModelBox : widget::OpaqueWidget {
 		menu->addChild(createMenuLabel(model->name.c_str()));
 		menu->addChild(createSubmenuItem("Details", "", [this](Menu* menu) {
 			model->appendContextMenu(menu, true);
-			// Remove "Favorite" menu item
-			auto f = menu->children.back();
-			menu->removeChild(f);
-			delete f;
+			// Remove "Favorite" menu item - but only if items were added
+			if (!menu->children.empty()) {
+				auto f = menu->children.back();
+				menu->removeChild(f);
+				delete f;
+			}
 		}));
 		menu->addChild(createMenuItem(string::f("Filter by \"%s\"", model->plugin->brand.c_str()), "", [&]() {
 			ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
