@@ -237,12 +237,20 @@ bool predefinedTagHasRemoved(Model* model, int tagId) {
 
 void predefinedTagDelete(int tagId) {
 	// Remove from all models' added lists
-	for (auto& pair : predefinedTagsAdded) {
-		pair.second.erase(tagId);
+	for (auto it = predefinedTagsAdded.begin(); it != predefinedTagsAdded.end(); ) {
+		it->second.erase(tagId);
+		if (it->second.empty())
+			it = predefinedTagsAdded.erase(it);
+		else
+			++it;
 	}
 	// Remove from all models' removed lists
-	for (auto& pair : predefinedTagsRemoved) {
-		pair.second.erase(tagId);
+	for (auto it = predefinedTagsRemoved.begin(); it != predefinedTagsRemoved.end(); ) {
+		it->second.erase(tagId);
+		if (it->second.empty())
+			it = predefinedTagsRemoved.erase(it);
+		else
+			++it;
 	}
 	// Invalidate cache for all models since any could be affected
 	effectiveTagIdsCacheInvalidateAll();
@@ -1021,8 +1029,9 @@ struct MbWidget : ModuleWidget {
 
 		FILE* file = fopen(filename.c_str(), "w");
 		if (!file) {
-			std::string message = string::f("Could not write to patch file %s", filename.c_str());
+			std::string message = string::f("Could not write to file %s", filename.c_str());
 			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, message.c_str());
+			return;
 		}
 		DEFER({
 			fclose(file);

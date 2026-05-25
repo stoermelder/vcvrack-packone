@@ -222,7 +222,8 @@ struct ModelBox : widget::OpaqueWidget {
 		std::string text = model->plugin->brand + " " + model->name;
 		text += "\nTags: ";
 		int i = 0;
-		for (int tagId : model->tagIds) {
+		std::set<int> effectiveTagIds = getEffectiveTagIds(model);
+		for (int tagId : effectiveTagIds) {
 			if (i++ > 0) text += ", ";
 			text += rack::tag::tagAliases[tagId][0];
 		}
@@ -881,7 +882,9 @@ struct ZoomButton : ui::ChoiceButton {
 template <typename F>
 static void sortModelContainer(ui::SequentialLayout* container, F f) {
 	container->children.sort([&](Widget* w1, Widget* w2) {
+		assert(dynamic_cast<ModelBox*>(w1));
 		ModelBox* m1 = reinterpret_cast<ModelBox*>(w1);
+		assert(dynamic_cast<ModelBox*>(w2));
 		ModelBox* m2 = reinterpret_cast<ModelBox*>(w2);
 		return f(m1) < f(m2);
 	});
