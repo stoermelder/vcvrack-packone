@@ -35,6 +35,8 @@ struct IntermixFadeModule : Module {
 	int input;
 	/** [Stored to JSON] */
 	FADE fade;
+	/** [Stored to JSON] */
+	FADE_LENGTH fadeLengthMode = FADE_LENGTH_15S;
 
 	ClockDividerEx sceneDivider;
 	ClockDividerEx lightDivider;
@@ -43,7 +45,8 @@ struct IntermixFadeModule : Module {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		for (int i = 0; i < PORTS; i++) {
-			configParam(PARAM_FADE + i, 0.f, 15.f, 1.f, "Fade", "s");
+			auto pq = configParam<FadeLengthParamQuantity<IntermixFadeModule<PORTS>>>(PARAM_FADE + i, 0.f, 15.f, 1.f, "Fade", "s");
+			pq->module = this;
 		}
 
 		ResetEvent re;
@@ -91,6 +94,7 @@ struct IntermixFadeModule : Module {
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 		json_object_set_new(rootJ, "input", json_integer(input));
 		json_object_set_new(rootJ, "fade", json_integer((int)fade));
+		json_object_set_new(rootJ, "fadeLengthMode", json_integer(fadeLengthMode));
 		return rootJ;
 	}
 
@@ -98,6 +102,10 @@ struct IntermixFadeModule : Module {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 		input = json_integer_value(json_object_get(rootJ, "input"));
 		fade = (FADE)json_integer_value(json_object_get(rootJ, "fade"));
+		json_t* fadeLengthModeJ = json_object_get(rootJ, "fadeLengthMode");
+		if (fadeLengthModeJ) {
+			fadeLengthMode = (FADE_LENGTH)json_integer_value(fadeLengthModeJ);
+		}
 	}
 };
 
@@ -169,6 +177,16 @@ struct IntermixFadeWidget : ThemedModuleWidget<IntermixFadeModule<8>> {
 		menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem("In & Out", &module->fade, FADE::INOUT));
 		menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem("In", &module->fade, FADE::IN));
 		menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem("Out", &module->fade, FADE::OUT));
+		menu->addChild(new MenuSeparator);
+		menu->addChild(StoermelderPackOne::Rack::createMapSubmenuItem<FADE_LENGTH>("Fade length",
+			{
+				{ FADE_LENGTH::FADE_LENGTH_4S, "4s" },
+				{ FADE_LENGTH::FADE_LENGTH_15S, "15s" },
+				{ FADE_LENGTH::FADE_LENGTH_60S, "60s" }
+			},
+			[=]() { return module->fadeLengthMode; },
+			[=](FADE_LENGTH m) { module->fadeLengthMode = m; }
+		));
 	};
 };
 

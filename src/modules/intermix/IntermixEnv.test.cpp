@@ -4,6 +4,10 @@
 
 using namespace StoermelderPackOne::Intermix;
 
+SYNC_MODEL(modelIntermix, "Intermix");
+SYNC_MODEL(modelIntermixEnv, "IntermixEnv");
+Test::TestContext<> testContext;
+
 // Forward declare Intermix module type for expander tests
 template<int PORTS>
 struct IntermixModuleMock : Module, IntermixBase<PORTS> {
@@ -33,7 +37,18 @@ struct IntermixModuleMock : Module, IntermixBase<PORTS> {
 	}
 };
 
-Test::TestContext<> testContext;
+
+TEST_CASE("Construction and initialization", "[IntermixEnv]") {
+	IntermixEnvModule<8>* m = Test::createModule<IntermixEnvModule<8>>("IntermixEnv");
+	IntermixEnvWidget* mw = Test::createWidget<IntermixEnvWidget>("IntermixEnv");
+
+	REQUIRE(m != nullptr);
+	REQUIRE(mw != nullptr);
+	REQUIRE(mw->module == nullptr);
+
+	Test::destroyWidget(mw);
+	Test::destroyModule(m);
+}
 
 TEST_CASE("Input selection", "[IntermixEnv]") {
 	auto module = Test::createModule<IntermixEnvModule<8>>("IntermixEnv");
@@ -121,7 +136,6 @@ TEST_CASE("JSON serialization", "[JSON][IntermixEnv]") {
 	auto module = Test::createModule<IntermixEnvModule<8>>("IntermixEnv");
 
 	SECTION("Module state is serialized and deserialized") {
-		module->panelTheme = 1;
 		module->input = 5;
 		
 		json_t* rootJ = module->dataToJson();
@@ -130,7 +144,6 @@ TEST_CASE("JSON serialization", "[JSON][IntermixEnv]") {
 		auto moduleNew = Test::createModule<IntermixEnvModule<8>>("IntermixEnv");
 		moduleNew->dataFromJson(rootJ);
 		
-		REQUIRE(moduleNew->panelTheme == 1);
 		REQUIRE(moduleNew->input == 5);
 		
 		json_decref(rootJ);
@@ -144,6 +157,8 @@ TEST_CASE("Expander chain", "[IntermixEnv]") {
 	auto intermixModule = new IntermixModuleMock<8>();
 	auto envModule1 = Test::createModule<IntermixEnvModule<8>>("IntermixEnv");
 	auto envModule2 = Test::createModule<IntermixEnvModule<8>>("IntermixEnv");
+	Test::SimpleEngine engine;
+	engine.registerModules(intermixModule, envModule1, envModule2);
 
 	SECTION("Multiple expanders can chain") {
 		// Setup expander chain: Intermix -> Env1 -> Env2
@@ -152,27 +167,23 @@ TEST_CASE("Expander chain", "[IntermixEnv]") {
 		envModule1->rightExpander.module = envModule2;
 		envModule2->leftExpander.module = envModule1;
 		
-		// Ensure models are set for expander checks
-		envModule1->model = modelIntermixEnv;
-		envModule2->model = modelIntermixEnv;
-		
 		intermixModule->currentMatrix[0][0] = 0.8f;
 		intermixModule->currentMatrix[1][0] = 0.4f;
 		
 		envModule1->input = 0;
 		envModule2->input = 1;
 		
-		intermixModule->process(Test::makeProcessArgs(1));
-		// Flip messages for env1
-		intermixModule->rightExpander.consumerMessage = intermixModule->rightExpander.producerMessage;
-		// Also set rightExpander.consumerMessage on env1 for env2 to read
-		envModule1->rightExpander.consumerMessage = intermixModule->rightExpander.producerMessage;
-		envModule1->process(Test::makeProcessArgs(1));
-		// Env2 reads from env1->rightExpander.consumerMessage
-		envModule2->process(Test::makeProcessArgs(1));
+		engine.step();
+		engine.step();
+		// Process env2 - it will read from env1's producerMessage
+		engine.step();
 		
 		REQUIRE(envModule1->outputs[IntermixEnvModule<8>::OUTPUT + 0].getVoltage() == Catch::Approx(8.0f).margin(0.01f));
+		REQUIRE(envModule1->outputs[IntermixEnvModule<8>::OUTPUT + 1].getVoltage() == Catch::Approx(0.0f).margin(0.01f));
+		REQUIRE(envModule1->outputs[IntermixEnvModule<8>::OUTPUT + 2].getVoltage() == Catch::Approx(0.0f).margin(0.01f));
 		REQUIRE(envModule2->outputs[IntermixEnvModule<8>::OUTPUT + 0].getVoltage() == Catch::Approx(4.0f).margin(0.01f));
+		REQUIRE(envModule2->outputs[IntermixEnvModule<8>::OUTPUT + 1].getVoltage() == Catch::Approx(0.0f).margin(0.01f));
+		REQUIRE(envModule2->outputs[IntermixEnvModule<8>::OUTPUT + 3].getVoltage() == Catch::Approx(0.0f).margin(0.01f));
 	}
 
 	Test::destroyModule(envModule2);

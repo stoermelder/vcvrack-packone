@@ -9,7 +9,7 @@
 #include <algorithm>
 
 extern "C" {
-	#include "../../../orca-c/osc_out.h"
+	#include <orca-c/osc_out.h>
 }
 
 namespace StoermelderPackOne {
@@ -1001,22 +1001,22 @@ extern "C" void custom_vcvout(void* ptr, Usz port_index, Usz a, Usz b, Usz value
 		if (b > a) {
 			voltage = float(s - a) / float(b - a) * 10.0f;
 		}
-		sim->writeDspOutput(port_index - 1, voltage);
+		sim->writeDspOutput(port_index - 1, voltage, 0);
 		return;
 	}
 
 	// Letter ports 'a'..'d' => interpret value as semitone and convert to V/oct (1V per octave = 12 semitones)
-	// a = octave, b = ignored
+	// a = octave, b = gate length
 	if (port_index >= 10 && port_index <= 13) {
 		float voltage = float(value + a * 12) / 12.0f;
-		sim->writeDspOutput(port_index - 10, voltage);
+		sim->writeDspOutput(port_index - 10, voltage, b);
 		return;
 	}
 }
 
-void AhabSim::writeDspOutput(size_t port_num, float value) {
+void AhabSim::writeDspOutput(size_t port_num, float value, int gateTicks) {
 	auto cb = std::atomic_load(&dsp_output_writer_ptr_);
-	if (cb && *cb) (*cb)(port_num, value);
+	if (cb && *cb) (*cb)(port_num, value, gateTicks);
 }
 
 } // namespace Ahab

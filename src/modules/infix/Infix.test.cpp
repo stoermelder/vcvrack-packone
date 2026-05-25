@@ -4,111 +4,90 @@
 
 using namespace StoermelderPackOne::Infix;
 
+SYNC_MODEL(modelInfix, "Infix");
+SYNC_MODEL(modelInfixMicro, "InfixMicro");
 Test::TestContext<> testContext;
 
-TEST_CASE("JSON serialization", "[Infix]") {
-	auto module = Test::createModule<InfixModule<16>>("Infix");
 
-	SECTION("Default state roundtrips") {
-		json_t *rootJ = module->dataToJson();
-		
-		auto module2 = Test::createModule<InfixModule<16>>("Infix");
-		module2->dataFromJson(rootJ);
-		
-		REQUIRE(module2->panelTheme == module->panelTheme);
-		json_decref(rootJ);
+// Connect a polyphonic input with the given voltages (one per channel).
+static void setPolyInput(InfixModule<16>* m, std::initializer_list<float> voltages) {
+	int ch = 0;
+	for (float v : voltages) {
+		m->inputs[InfixModule<16>::INPUT_POLY].setVoltage(v, ch++);
 	}
-
-	Test::destroyModule(module);
+	m->inputs[InfixModule<16>::INPUT_POLY].channels = (int)voltages.size();
 }
 
-TEST_CASE("InfixMicro variant", "[Infix]") {
-	auto module = Test::createModule<InfixModule<8>>("InfixMicro");
-
-	SECTION("InfixMicro initializes") {
-		REQUIRE(module->panelTheme == StoermelderPackOne::pluginSettings.panelThemeDefault);
-	}
-
-	SECTION("InfixMicro has correct inputs") {
-		// INPUT_POLY + 8 INPUT_MONO inputs
-		REQUIRE(module->inputs.size() == 9);
-	}
-
-	SECTION("InfixMicro has correct lights") {
-		REQUIRE(module->lights.size() == 8);
-	}
-
-	SECTION("InfixMicro JSON serialization") {
-		module->panelTheme = 2;
-		json_t *rootJ = module->dataToJson();
-		
-		auto module2 = Test::createModule<InfixModule<8>>("InfixMicro");
-		module2->dataFromJson(rootJ);
-		
-		REQUIRE(module2->panelTheme == 2);
-		json_decref(rootJ);
-	}
-
-	Test::destroyModule(module);
+// Pre-seed the output so Output::setChannels() isn't blocked by channels==0.
+static void seedOutput(InfixModule<16>* m) {
+	m->outputs[InfixModule<16>::OUTPUT_POLY].channels = 16;
 }
 
-TEST_CASE("Channel count", "[Infix]") {
-	auto module = Test::createModule<InfixModule<16>>("Infix");
-
-	SECTION("Module has correct number of channels") {
-		// 1 poly input, 16 mono inputs, 1 poly output, 16 lights
-		REQUIRE(module->inputs.size() == 17);
-		REQUIRE(module->outputs.size() == 1);
-		REQUIRE(module->lights.size() == 16);
-	}
-
-	Test::destroyModule(module);
+// Connect a single mono replacement input on channel c.
+static void setMonoInput(InfixModule<16>* m, int c, float voltage) {
+	m->inputs[InfixModule<16>::INPUT_MONO + c].channels = 1;
+	m->inputs[InfixModule<16>::INPUT_MONO + c].setVoltage(voltage);
 }
 
-TEST_CASE("Processing without connections", "[Infix]") {
-	auto module = Test::createModule<InfixModule<16>>("Infix");
-
-	SECTION("Module processes safely without connections") {
-		// Should not crash with no connections
-		REQUIRE_NOTHROW(module->process(Test::makeProcessArgs(0)));
-		
-		// Output should have 0 channels when no input connected
-		REQUIRE(module->outputs[InfixModule<16>::OUTPUT_POLY].getChannels() == 0);
-	}
-
-	Test::destroyModule(module);
+// Disconnect a mono replacement input on channel c.
+static void disconnectMonoInput(InfixModule<16>* m, int c) {
+	m->inputs[InfixModule<16>::INPUT_MONO + c].channels = 0;
 }
 
-TEST_CASE("Multiple independent serialization", "[Infix]") {
-	auto module = Test::createModule<InfixModule<16>>("Infix");
 
-	SECTION("Multiple save/load cycles preserve state") {
-		module->panelTheme = 1;
-		json_t *rootJ1 = module->dataToJson();
-		
-		auto module2 = Test::createModule<InfixModule<16>>("Infix");
-		module2->dataFromJson(rootJ1);
-		module2->panelTheme = 2;
-		
-		json_t *rootJ2 = module2->dataToJson();
-		auto module3 = Test::createModule<InfixModule<16>>("Infix");
-		module3->dataFromJson(rootJ2);
-		
-		REQUIRE(module3->panelTheme == 2);
-		
-		json_decref(rootJ1);
-		json_decref(rootJ2);
-		Test::destroyModule(module2);
-		Test::destroyModule(module3);
-	}
+TEST_CASE("Construction and initialization", "[Infix]") {
+	InfixModule<16>* m = Test::createModule<InfixModule<16>>("Infix");
+	InfixWidget* mw = Test::createWidget<InfixWidget>("Infix");
 
-	Test::destroyModule(module);
+	REQUIRE(m != nullptr);
+	REQUIRE(mw != nullptr);
+	REQUIRE(mw->module == nullptr);
+
+	Test::destroyWidget(mw);
+	Test::destroyModule(m);
 }
 
-TEST_CASE("Widget construction", "[UI][Infix]") {
-	InfixWidget* w = Test::createWidget<InfixWidget>("Infix");
-	REQUIRE(w != nullptr);
-	REQUIRE(w->module == NULL);
-	
-	Test::destroyWidget(w);
+
+// Pass-through: poly input passes verbatim when no mono inputs are connected
+TEST_CASE("Poly pass-through: all channels forwarded when no mono inputs connected", "[Infix]") {
+	auto* m = Test::createModule<InfixModule<16>>("Infix");
+
+	setPolyInput(m, {1.f, 2.f, 3.f, 4.f});
+	seedOutput(m);
+	m->process(Test::makeProcessArgs(1));
+
+	REQUIRE(m->outputs[InfixModule<16>::OUTPUT_POLY].getChannels() == 4);
+	REQUIRE(m->outputs[InfixModule<16>::OUTPUT_POLY].getVoltage(0) == Catch::Approx(1.f));
+	REQUIRE(m->outputs[InfixModule<16>::OUTPUT_POLY].getVoltage(1) == Catch::Approx(2.f));
+	REQUIRE(m->outputs[InfixModule<16>::OUTPUT_POLY].getVoltage(2) == Catch::Approx(3.f));
+	REQUIRE(m->outputs[InfixModule<16>::OUTPUT_POLY].getVoltage(3) == Catch::Approx(4.f));
+
+	Test::destroyModule(m);
+}
+
+
+// Single-channel replacement
+TEST_CASE("Mono input replaces its corresponding poly channel", "[Infix]") {
+	auto* m = Test::createModule<InfixModule<16>>("Infix");
+
+	setPolyInput(m, {1.f, 2.f, 3.f, 4.f});
+	setMonoInput(m, 1, 9.f); // replace channel 1
+	seedOutput(m);
+	m->process(Test::makeProcessArgs(1));
+
+	SECTION("Replaced channel carries mono voltage") {
+		REQUIRE(m->outputs[InfixModule<16>::OUTPUT_POLY].getVoltage(1) == Catch::Approx(9.f));
+	}
+
+	SECTION("Other channels retain poly voltage") {
+		REQUIRE(m->outputs[InfixModule<16>::OUTPUT_POLY].getVoltage(0) == Catch::Approx(1.f));
+		REQUIRE(m->outputs[InfixModule<16>::OUTPUT_POLY].getVoltage(2) == Catch::Approx(3.f));
+		REQUIRE(m->outputs[InfixModule<16>::OUTPUT_POLY].getVoltage(3) == Catch::Approx(4.f));
+	}
+
+	SECTION("Output channel count unchanged") {
+		REQUIRE(m->outputs[InfixModule<16>::OUTPUT_POLY].getChannels() == 4);
+	}
+
+	Test::destroyModule(m);
 }

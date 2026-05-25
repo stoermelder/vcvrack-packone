@@ -50,53 +50,102 @@ TEST_CASE("Op vcvin ports A-D map to semitone mod12", "[AhabSim]") {
 	REQUIRE(custom_vcvin(ptr, 13, 0, 0) == 0);
 }
 
+TEST_CASE("Op vcvin with missing max defaults to 35 #425", "[AhabSim]") {
+	AhabSim sim;
+
+	// Set port 1 to full-scale 10V to exercise 0-35 mapping.
+	sim.setDspInputReader([](size_t p){ return 10.0f; });
+
+	Usz out_h, out_w;
+	REQUIRE(sim.loadRectFromOrcaRequest(".<.1..\n.*....", 0, 0, out_h, out_w, true) == true);
+	REQUIRE(out_h == 2);
+	REQUIRE(out_w == 6);
+	// Apply the loaded field
+	sim.process();
+
+	// Execute one simulation tick (requires step request/process cycle)
+	sim.stepRequest();
+	sim.process();
+
+	// The operator should interpret missing max as 35, giving output value 35 -> 'z'
+	Usz h, w;
+	sim.getDisplayBuffer(h, w);
+	REQUIRE(h == 2);
+	REQUIRE(w == 6);
+	Glyph const* buffer = sim.getFieldBuffer();
+	REQUIRE(buffer[1 * w + 1] == 'z');
+}
+
 TEST_CASE("Op vcvout ports 1-4 write scaled voltages", "[AhabSim]") {
 	AhabSim sim;
-	size_t out_port = 99; float out_voltage = 0.0f;
+	size_t out_port = 99; float out_voltage = 0.0f; int out_gate_ticks = -1;
 	void* ptr = (void*)sim.getEvents();
-	sim.setDspOutputWriter([&](size_t p, float v){ out_port = p; out_voltage = v;});
+	sim.setDspOutputWriter([&](size_t p, float v, int g){ out_port = p; out_voltage = v; out_gate_ticks = g; });
 
 	// Clamp value=35 in range [0,35] -> voltage should be 10.0f
 	custom_vcvout(ptr, 1, 0, 35, 35);
 	REQUIRE(out_port == 0);
-	REQUIRE(out_voltage == Approx(10.0f));
+	REQUIRE(out_voltage == Catch::Approx(10.0f));
+	REQUIRE(out_gate_ticks == 0);
 
 	// Test mid value: value=20 in range [10,30] -> voltage should be 5v
 	custom_vcvout(ptr, 2, 10, 30, 20);
 	REQUIRE(out_port == 1);
-	REQUIRE(out_voltage == Approx(5.0f));
+	REQUIRE(out_voltage == Catch::Approx(5.0f));
+	REQUIRE(out_gate_ticks == 0);
 
 	// Test lower bound: value=0 in range [5,25] -> voltage should be 0v
 	custom_vcvout(ptr, 3, 5, 25, 0);
 	REQUIRE(out_port == 2);
-	REQUIRE(out_voltage == Approx(0.0f));
+	REQUIRE(out_voltage == Catch::Approx(0.0f));
+	REQUIRE(out_gate_ticks == 0);
 
 	// Test upper bound: value=20 in range [5,15] -> voltage should be 10v
 	custom_vcvout(ptr, 4, 5, 15, 20);
 	REQUIRE(out_port == 3);
-	REQUIRE(out_voltage == Approx(10.0f));
+	REQUIRE(out_voltage == Catch::Approx(10.0f));
+	REQUIRE(out_gate_ticks == 0);
 }
 
 TEST_CASE("Op vcvout ports A-D write v/oct conversion", "[AhabSim]") {
 	AhabSim sim;
-	size_t out_port = 99; float out_voltage = 0.0f;
+	size_t out_port = 99; float out_voltage = 0.0f; int out_gate_ticks = -1;
 	void* ptr = (void*)sim.getEvents();
-	sim.setDspOutputWriter([&](size_t p, float v){ out_port = p; out_voltage = v; });
+	sim.setDspOutputWriter([&](size_t p, float v, int g){ out_port = p; out_voltage = v; out_gate_ticks = g; });
 	
 	// Letter port A (10) -> port 0. For a=1, value=3 -> (3 + 1*12)/12 = 1.25
-	custom_vcvout(ptr, 10, 1, 0, 3);
+	custom_vcvout(ptr, 10, 1, 4, 3);
 	REQUIRE(out_port == 0);
-	REQUIRE(out_voltage == Approx(1.f + 3 * 1.f / 12.f));
+	REQUIRE(out_voltage == Catch::Approx(1.f + 3 * 1.f / 12.f));
+	REQUIRE(out_gate_ticks == 4);
 
 	// Letter port B (11) -> port 1. For a=0, value=0 -> (0 + 0*12)/12 = 0.0
-	custom_vcvout(ptr, 11, 0, 0, 0);
+	custom_vcvout(ptr, 11, 0, 7, 0);
 	REQUIRE(out_port == 1);
-	REQUIRE(out_voltage == Approx(0.0f));
+	REQUIRE(out_voltage == Catch::Approx(0.0f));
+	REQUIRE(out_gate_ticks == 7);
 
 	// Letter port C (12) -> port 2. For a=2, value=6 -> (6 + 2*12)/12 = 2.5
-	custom_vcvout(ptr, 12, 2, 0, 12);
+	custom_vcvout(ptr, 12, 2, 9, 12);
 	REQUIRE(out_port == 2);
-	REQUIRE(out_voltage == Approx(3.f));
+	REQUIRE(out_voltage == Catch::Approx(3.f));
+	REQUIRE(out_gate_ticks == 9);
+}
+
+TEST_CASE("Op vcvout letter-port gate length uses b parameter", "[AhabSim]") {
+	AhabSim sim;
+	size_t out_port = 99;
+	float out_voltage = 0.0f;
+	int out_gate_ticks = -1;
+	void* ptr = (void*)sim.getEvents();
+	sim.setDspOutputWriter([&](size_t p, float v, int g){ out_port = p; out_voltage = v; out_gate_ticks = g; });
+
+	// Letter port D (13) -> output port index 3.
+	// a = octave, b = gate ticks.
+	custom_vcvout(ptr, 13, 3, 11, 6);
+	REQUIRE(out_port == 3);
+	REQUIRE(out_voltage == Catch::Approx((6.f + 36.f) / 12.f));
+	REQUIRE(out_gate_ticks == 11);
 }
 
 
@@ -608,4 +657,62 @@ TEST_CASE("Clipping behavior for paste outside bounds", "[AhabSim]") {
 	REQUIRE(buffer[3 * w + 4] == 'B');
 	REQUIRE(buffer[4 * w + 3] == 'F');
 	REQUIRE(buffer[4 * w + 4] == 'G');
+}
+
+
+TEST_CASE("Successive E bang separation #426", "[AhabSim]") {
+	AhabSim sim;
+	
+	// Use a wide row to allow E operators to propagate.
+	sim.setFieldSizeRequest(1, 10, false);
+	sim.process();
+	Usz h, w;
+	sim.getDisplayBuffer(h, w);
+	REQUIRE(h == 1);
+	REQUIRE(w == 10);
+	Glyph const* buffer = sim.getFieldBuffer();
+
+	// First E injection at the left edge
+	sim.setGlyphRequest(0, 9, '#', Mark_flag_input, false);
+	sim.setGlyphRequest(0, 0, 'E', Mark_flag_input, false);
+	sim.process();
+	REQUIRE(buffer[0] == 'E');
+	REQUIRE(buffer[9] == '#');
+
+	// Advance two ticks so this E moves to x=2
+	for (int i = 0; i < 2; ++i) {
+		sim.stepRequest();
+		sim.process();
+	}
+	REQUIRE(buffer[2] == 'E');
+	REQUIRE(buffer[0] == '.'); // Original position should be cleared
+	REQUIRE(buffer[9] == '#'); // Should still be there
+
+	// Insert a second E at the origin and watch both move with separation.
+	sim.setGlyphRequest(0, 0, 'E', Mark_flag_input, false);
+	sim.process();
+	REQUIRE(buffer[0] == 'E');
+
+	// Step enough ticks to get the two E's at positions 6 and 8.
+	for (int i = 0; i < 6; ++i) {
+		sim.stepRequest();
+		sim.process();
+	}
+	REQUIRE(buffer[6] == 'E');
+	REQUIRE(buffer[8] == 'E');
+
+	// Next step should move them forward.
+	sim.stepRequest();
+	sim.process();
+	REQUIRE(buffer[6] == '.'); // Previous positions should be cleared
+	REQUIRE(buffer[7] == 'E'); // First E should have moved to 7
+	REQUIRE(buffer[8] == '*'); // Verify bang appears at expected location
+
+	sim.stepRequest();
+	sim.process();
+	// The bang of the first E triggers the bang of the second E. This behavior
+	// seems not to be consistent across different implementations of ORCA. For 
+	// now, we are testing how it behaves in ORCA-C and ORCA (JS).
+	REQUIRE(buffer[7] == '*');
+	REQUIRE(buffer[8] == '.');
 }

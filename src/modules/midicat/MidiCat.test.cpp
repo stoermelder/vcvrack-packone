@@ -2,11 +2,11 @@
 #include "../../test/test_context.hpp"
 #include "MidiCat.hpp"
 #include "MidiCat.cpp"
-#include "../midi/MidiTrackingProcessor.cpp"  // Include implementation for templates
+#include "../midi/MidiTrackingProcessor.hpp"
 
 using namespace StoermelderPackOne::MidiCat;
 
-// Define the single instance used by tests
+SYNC_MODEL(modelMidiCat, "MidiCat");
 Test::TestContext<> testContext;
 
 // Helper class to provide a test module with parameters

@@ -8,27 +8,12 @@
 #include "../../ui/ViewportHelper.hpp"
 #include "EightFace.hpp"
 #include "EightFaceMk2Base.hpp"
+#include "../../utils/string.hpp"
 #include <random>
 #include <osdialog.h>
 
 namespace StoermelderPackOne {
 namespace EightFaceMk2 {
-
-const std::string WHITESPACE = " \n\r\t\f\v";
-
-std::string ltrim(const std::string& s) {
-	size_t start = s.find_first_not_of(WHITESPACE);
-	return (start == std::string::npos) ? "" : s.substr(start);
-}
-
-std::string rtrim(const std::string& s) {
-	size_t end = s.find_last_not_of(WHITESPACE);
-	return (end == std::string::npos) ? "" : s.substr(0, end + 1);
-}
-
-std::string trim(const std::string& s) {
-	return rtrim(ltrim(s));
-}
 
 const int MAX_EXPANDERS = 15;
 
@@ -91,6 +76,8 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 	int presetNext;
 	int presetCopy = -1;
 
+	std::set<int64_t> expandersConnected;
+
 	/** [Stored to JSON] mode for SEQ CV input */
 	SLOTCVMODE slotCvMode = SLOTCVMODE::TRIG_FWD;
 	SLOTCVMODE slotCvModeBak = SLOTCVMODE::OFF;
@@ -130,10 +117,12 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 	/** [Stored to JSON] */
 	EightFace::AUTOLOAD autoload = EightFace::AUTOLOAD::OFF;
 
-	/** [Stored to JSON] */
-	bool boxDraw;
+	/** [Stored to JSON] Box draw mode: 0=never, 1=always, 2=when selected */
+	int boxDraw = 2;
 	/** [Stored to JSON] */
 	NVGcolor boxColor;
+	/** [Stored to JSON] Opacity of the module outline (0.0 - 1.0), default 0.5 (50%) */
+	float boxOpacity = 0.5f;
 
 	dsp::RingBuffer<std::tuple<ModuleWidget*, json_t*>, 32> workerGuiQueue;
 	TaskWorker taskWorker;
@@ -208,14 +197,15 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 		inChange = false;
 		guiSafeMode = GUISAFEMODE::GUI_WITH_LOCK;
 
-		BASE::ctrlUniqueId = rack::random::uniform() * INT64_MAX;
+		BASE::ctrlUniqueId = (int64_t)(rack::random::uniform() * (float)INT64_MAX);
 		preset = -1;
 		presetCount = NUM_PRESETS;
 		presetNext = -1;
 
 		autoload = EightFace::AUTOLOAD::OFF;
-		boxDraw = true;
+		boxDraw = 2;
 		boxColor = color::BLUE;
+		boxOpacity = 0.5f;
 
 		Module::onReset(e);
 	}
@@ -246,6 +236,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 		CTRLMODE ctrlMode = (CTRLMODE)Module::params[PARAM_RW].getValue();
 
 		if (expandersChanged || ctrlMode != BASE::ctrlMode) {
+			expandersConnected.clear();
 			presetTotal = NUM_PRESETS;
 			Module* m = this;
 			EightFaceMk2Base<NUM_PRESETS>* t = this;
@@ -262,6 +253,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 				m = exp;
 				t = dynamic_cast<EightFaceMk2Base<NUM_PRESETS>*>(exp);
 				if (t->ctrlUniqueId != BASE::ctrlUniqueId) expanderCleanUp(t);
+				expandersConnected.insert(m->getId());
 				t->panelTheme = BASE::panelTheme;
 				t->ctrlModuleId = Module::id;
 				t->ctrlOffset = c;
@@ -387,7 +379,8 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 								for (int i = 0; i < presetCount; i++) {
 									slotCvModeShuffle.push_back(i);
 								}
-								std::random_shuffle(std::begin(slotCvModeShuffle), std::end(slotCvModeShuffle));
+								std::mt19937 rng(random::u32());
+								std::shuffle(std::begin(slotCvModeShuffle), std::end(slotCvModeShuffle), rng);
 							}
 							int p = std::min(std::max(0, slotCvModeShuffle.back()), presetCount - 1);
 							slotCvModeShuffle.pop_back();
@@ -554,9 +547,16 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 					json_decref((*slotPrev->preset)[i]);
 					(*slotPrev->preset)[i] = mw->toJson();
 				}
-				if (b->needsGuiThread || guiSafeMode != GUISAFEMODE::WORKER) {
+				// There is no stepping of the UI if the plugin window is closed,
+				// in this case we must use the worker thread
+				if (settings::isPlugin && !APP->window) {
+					mw->fromJson(vJ);
+				}
+				// Hand it off to the UI thread
+				else if (b->needsGuiThread || guiSafeMode != GUISAFEMODE::WORKER) {
 					workerGuiQueue.push(std::make_tuple(mw, vJ));
 				}
+				// Explicitly configured to use the worker thread
 				else {
 					mw->fromJson(vJ);
 				}
@@ -578,6 +578,7 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 			} else {
 				mw->fromJson(vJ);
 			}
+			json_decref(vJ);
 		}
 	}
 
@@ -744,10 +745,6 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 		}
 	}
 
-	bool isBoxActive() {
-		return boxDraw && !BASE::isBypassed();
-	}
-
 	json_t* dataToJson() override {
 		json_t* rootJ = BASE::dataToJson();
 
@@ -756,8 +753,9 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 		json_object_set_new(rootJ, "presetCount", json_integer(presetCount));
 		json_object_set_new(rootJ, "presetCountLongPress", json_boolean(presetCountLongPress));
 
-		json_object_set_new(rootJ, "boxDraw", json_boolean(boxDraw));
+		json_object_set_new(rootJ, "boxDraw", json_integer(boxDraw));
 		json_object_set_new(rootJ, "boxColor", json_string(color::toHexString(boxColor).c_str()));
+		json_object_set_new(rootJ, "boxOpacity", json_real(boxOpacity));
 
 		json_object_set_new(rootJ, "guiSafeMode", json_integer((int)guiSafeMode));
 
@@ -784,9 +782,11 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 		json_t* presetCountLongPressJ = json_object_get(rootJ, "presetCountLongPress");
 		if (presetCountLongPressJ) presetCountLongPress = json_boolean_value(presetCountLongPressJ);
 
-		boxDraw = json_boolean_value(json_object_get(rootJ, "boxDraw"));
+		boxDraw = json_integer_value(json_object_get(rootJ, "boxDraw"));
 		json_t* boxColorJ = json_object_get(rootJ, "boxColor");
 		if (boxColorJ) boxColor = color::fromHexString(json_string_value(boxColorJ));
+		json_t* boxOpacityJ = json_object_get(rootJ, "boxOpacity");
+		if (boxOpacityJ) boxOpacity = json_real_value(boxOpacityJ);
 
 		json_t* guiSafeModeJ = json_object_get(rootJ, "guiSafeMode");
 		guiSafeMode = guiSafeModeJ ? (GUISAFEMODE)json_integer_value(guiSafeModeJ) : GUISAFEMODE::WORKER;
@@ -846,12 +846,30 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 };
 
 
-template <class MODULE>
+template <int NUM_PRESETS>
 struct ModuleOuterBoundsDrawerWidget : Widget {
+	typedef EightFaceMk2Module<NUM_PRESETS> MODULE;
 	MODULE* module = NULL;
+	bool bindingActive = false;
 
 	void draw(const DrawArgs& args) override {
-		if (!module || !module->isBoxActive()) return;
+		if (!module) return;
+		
+		if (!bindingActive) {
+			switch (module->boxDraw) {
+				case 0:
+					return;
+				case 1:
+					break;
+				case 2:
+					Widget* w = APP->event->getSelectedWidget();
+					if (!w) return;
+					ModuleWidget* mw = dynamic_cast<ModuleWidget*>(w);
+					if (mw && mw->module == module) break;
+					if (mw && module->expandersConnected.find(mw->module->getId()) != module->expandersConnected.end()) break;
+					return;
+			}
+		}
 
 		Rect viewPort = getViewport(box);
 		for (typename MODULE::BoundModule* b : module->boundModules) {
@@ -868,11 +886,36 @@ struct ModuleOuterBoundsDrawerWidget : Widget {
 				nvgSave(args.vg);
 				nvgResetScissor(args.vg);
 				nvgTranslate(args.vg, p.x, p.y);
+
+				float r = 3.f;
+				float x = 1.f, y = 1.f, w = mw->box.size.x - 2.f, h = mw->box.size.y - 2.f;
+
+				// Subtle tinted fill
 				nvgBeginPath(args.vg);
-				nvgRect(args.vg, 1.f, 1.f, mw->box.size.x - 2.f, mw->box.size.y - 2.f);
-				nvgStrokeColor(args.vg, module->boxColor);
-				nvgStrokeWidth(args.vg, 2.f);
+				nvgRoundedRect(args.vg, x, y, w, h, r);
+				NVGcolor fillColor = module->boxColor;
+				fillColor.a = module->boxOpacity * 0.08f;
+				nvgFillColor(args.vg, fillColor);
+				nvgFill(args.vg);
+
+				// Soft glow halo
+				nvgBeginPath(args.vg);
+				nvgRoundedRect(args.vg, x, y, w, h, r);
+				NVGcolor glowColor = module->boxColor;
+				glowColor.a = module->boxOpacity * 0.25f;
+				nvgStrokeColor(args.vg, glowColor);
+				nvgStrokeWidth(args.vg, 5.f);
 				nvgStroke(args.vg);
+
+				// Crisp outline
+				nvgBeginPath(args.vg);
+				nvgRoundedRect(args.vg, x, y, w, h, r);
+				NVGcolor strokeColor = module->boxColor;
+				strokeColor.a = module->boxOpacity;
+				nvgStrokeColor(args.vg, strokeColor);
+				nvgStrokeWidth(args.vg, 1.5f);
+				nvgStroke(args.vg);
+
 				nvgRestore(args.vg);
 			}
 		}
@@ -887,10 +930,12 @@ struct ModuleColorWidget : Widget {
 		box.size = Vec(13.0f, 4.5f);
 	}
 	void draw(const DrawArgs& args) override {
-		if (!module || !module->isBoxActive()) return;
+		if (!module || module->boxDraw == 0) return;
 		nvgBeginPath(args.vg);
 		nvgRoundedRect(args.vg, 0.f, 0.f, box.size.x, box.size.y, 2.2f);
-		nvgFillColor(args.vg, module->boxColor);
+		NVGcolor fillColor = module->boxColor;
+		fillColor.a = module->boxOpacity;
+		nvgFillColor(args.vg, fillColor);
 		nvgFill(args.vg);
 		Widget::draw(args);
 	}
@@ -903,7 +948,7 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 	typedef EightFaceMk2Module<NUM_PRESETS> MODULE;
 	MODULE* module;
 
-	ModuleOuterBoundsDrawerWidget<MODULE>* boxDrawer = NULL;
+	ModuleOuterBoundsDrawerWidget<NUM_PRESETS>* boxDrawer = NULL;
 	ModuleSelectProcessor moduleSelectProcessor;
 	std::string moduleSelectProcessorStr;
 
@@ -914,7 +959,7 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 		this->disableDuplicateAction = true;
 
 		if (module) {
-			boxDrawer = new ModuleOuterBoundsDrawerWidget<MODULE>;
+			boxDrawer = new ModuleOuterBoundsDrawerWidget<NUM_PRESETS>;
 			boxDrawer->module = module;
 			// This is where the magic happens: add a new widget on top-level to Rack
 			APP->scene->rack->addChild(boxDrawer);
@@ -970,6 +1015,7 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 		if (BASE::module) {
 			moduleSelectProcessor.step();
 			BASE::module->lights[MODULE::LIGHT_LEARN].setBrightness(moduleSelectProcessor.isLearning());
+			if (boxDrawer) boxDrawer->bindingActive = moduleSelectProcessor.isLearning();
 			module->processGui();
 		}
 		BASE::step();
@@ -1116,9 +1162,16 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 			}
 		));
 		*/
-		menu->addChild(new MenuSeparator());
-		menu->addChild(createBoolPtrMenuItem("Box visible", RACK_MOD_SHIFT_NAME "+B", &module->boxDraw));
-        menu->addChild(Rack::createColorSubmenuItem("Box color", &module->boxColor));
+		menu->addChild(createSubmenuItem("Modules outline", "", [module](Menu* menu) {
+			menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem("When selected", &module->boxDraw, 2));
+			menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem("Never", &module->boxDraw, 0));
+			menu->addChild(StoermelderPackOne::Rack::createValuePtrMenuItem("Always", &module->boxDraw, 1));
+			menu->addChild(new MenuSeparator());
+			menu->addChild(Rack::createPtrSlider(&module->boxOpacity, 0.0f, 1.0f, 0.5f, "Outline opacity", "%", 100));
+			menu->addChild(new MenuSeparator());
+        	Rack::appendColorSubmenuItems(menu, &module->boxColor);
+		}));
+
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuItem("Bind module (left)", "", [=]() {
 			moduleSelectProcessor.disableLearn();
@@ -1187,7 +1240,7 @@ struct EightFaceMk2Widget : ThemedModuleWidget<EightFaceMk2Module<NUM_PRESETS>> 
 		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == GLFW_MOD_SHIFT) {
 			switch (e.key) {
 				case GLFW_KEY_B:
-					module->boxDraw ^= true;
+					module->boxDraw = (module->boxDraw + 1) % 3;
 					e.consume(this);
 					break;
 				case GLFW_KEY_Q:

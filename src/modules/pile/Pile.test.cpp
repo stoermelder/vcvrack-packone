@@ -5,7 +5,20 @@
 
 using namespace StoermelderPackOne::Pile;
 
+SYNC_MODEL(modelPile, "Pile");
 Test::TestContext<> testContext;
+
+TEST_CASE("Construction and initialization", "[Pile]") {
+	PileModule* m = Test::createModule<PileModule>("Pile");
+	PileWidget* mw = Test::createWidget<PileWidget>("Pile");
+
+	REQUIRE(m != nullptr);
+	REQUIRE(mw != nullptr);
+	REQUIRE(mw->module == nullptr);
+
+	Test::destroyWidget(mw);
+	Test::destroyModule(m);
+}
 
 TEST_CASE("Increment and decrement", "[Pile]") {
 	auto module = Test::createModule<PileModule>("Pile");
@@ -431,10 +444,49 @@ TEST_CASE("JSON serialization", "[JSON][Pile]") {
 	Test::destroyModule(module);
 }
 
-TEST_CASE("Widget construction", "[UI][Pile]") {
-	PileWidget* w = Test::createWidget<PileWidget>("Pile");
-	REQUIRE(w != nullptr);
-	REQUIRE(w->module == NULL);
-	
-	Test::destroyWidget(w);
+// Regression test:
+// "Removed slew-limiting after preset-load"
+//
+// Before the fix, dataFromJson() restored currentVoltage but left
+// slewLimiter.out at its default value (0 V).  On the very first
+// process() call after a patch load, the slew limiter would therefore
+// start fading from 0 V toward the restored voltage instead of
+// immediately outputting the correct voltage.  The fix adds:
+//   slewLimiter.out = currentVoltage;
+// inside dataFromJson() so that the slew limiter starts from the
+// correct value.
+TEST_CASE("No slew applied to output immediately after loading from preset", "[JSON][Pile]") {
+	const float TARGET_VOLTAGE = 7.5f;
+
+	auto module = Test::createModule<PileModule>("Pile");
+
+	SECTION("Output equals restored voltage on first process after load, even with max slew") {
+		// Save state with a known voltage.
+		module->currentVoltage = TARGET_VOLTAGE;
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+
+		// Create a new module and set the slew knob to maximum so that
+		// any slew limiter offset would be very visible.
+		auto moduleNew = Test::createModule<PileModule>("Pile");
+		moduleNew->params[PileModule::PARAM_SLEW].setValue(5.0f); // maximum slew
+
+		// Load the preset.  Before the fix, slewLimiter.out would stay at 0
+		// so the first output sample would be near 0, not TARGET_VOLTAGE.
+		moduleNew->dataFromJson(rootJ);
+		json_decref(rootJ);
+
+		// Process a single sample with slew divider reset so the slew rate
+		// is applied from the very first step.
+		moduleNew->process(Test::makeProcessArgs(1));
+
+		// The output must immediately equal the restored voltage because
+		// slewLimiter.out was initialised to currentVoltage in dataFromJson.
+		float output = moduleNew->outputs[PileModule::OUTPUT].getVoltage();
+		REQUIRE(output == Catch::Approx(TARGET_VOLTAGE).margin(0.01f));
+
+		Test::destroyModule(moduleNew);
+	}
+
+	Test::destroyModule(module);
 }

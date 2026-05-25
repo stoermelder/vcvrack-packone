@@ -11,24 +11,36 @@ namespace Rack {
 
 using namespace rack;
 
-/** Creates a MenuItem that when hovered, opens a submenu with several MenuItems identified by a map.
-Example:
-	menu->addChild(createMapSubmenuItem<QUALITY>("Mode",
-		{
-			{ QUALITY::HIFI, "Hi-fi" },
-			{ QUALITY::MIDFI, "Mid-fi" },
-			{ QUALITY::LOFI, "Lo-fi" }
-		},
-		[=]() {
-			return module->getMode();
-		},
-		[=](QUALITY mode) {
-			module->setMode(mode);
-		}
-	));
-*/
+/**
+ * @brief Creates a MenuItem that when hovered, opens a submenu with several MenuItems identified by a vector (preserves insertion order).
+ *
+ * @param text The label text for the menu item
+ * @param labels Vector of enum values to label strings for standard mode (insertion order preserved)
+ * @param labelsPlugin Vector of enum values to label strings for plugin mode
+ * @param getter Function returning the current selected enum value
+ * @param setter Function called when an item is selected with the new enum value
+ * @param showRightText Whether to show the current selection on the parent item (default: true)
+ * @param disabled Whether the menu item is disabled (default: false)
+ * @param alwaysConsume Whether to always consume the action event (default: false)
+ * @return ui::MenuItem* The created menu item
+ *
+ * Example:
+ *   menu->addChild(createMapSubmenuItem<QUALITY>("Mode",
+ *       {
+ *           { QUALITY::HIFI, "Hi-fi" },
+ *           { QUALITY::MIDFI, "Mid-fi" },
+ *           { QUALITY::LOFI, "Lo-fi" }
+ *       },
+ *       [=]() {
+ *           return module->getMode();
+ *       },
+ *       [=](QUALITY mode) {
+ *           module->setMode(mode);
+ *       }
+ *   ));
+ */
 template <typename TEnum, class TMenuItem = ui::MenuItem>
-ui::MenuItem* createMapSubmenuItem(std::string text, std::map<TEnum, std::string> labels, std::map<TEnum, std::string> labelsPlugin, std::function<TEnum()> getter, std::function<void(TEnum val)> setter, bool showRightText = true, bool disabled = false, bool alwaysConsume = false) {
+ui::MenuItem* createMapSubmenuItem(std::string text, std::vector<std::pair<TEnum, std::string>> labels, std::vector<std::pair<TEnum, std::string>> labelsPlugin, std::function<TEnum()> getter, std::function<void(TEnum val)> setter, bool showRightText = true, bool disabled = false, bool alwaysConsume = false) {
 	struct IndexItem : ui::MenuItem {
 		std::function<TEnum()> getter;
 		std::function<void(TEnum)> setter;
@@ -50,7 +62,7 @@ ui::MenuItem* createMapSubmenuItem(std::string text, std::map<TEnum, std::string
 	struct Item : TMenuItem {
 		std::function<TEnum()> getter;
 		std::function<void(TEnum)> setter;
-		std::map<TEnum, std::string> labels;
+		std::vector<std::pair<TEnum, std::string>> labels;
 		TEnum currIndex;
 		bool currIndexInitialized = false;
 		bool showRightText;
@@ -60,7 +72,13 @@ ui::MenuItem* createMapSubmenuItem(std::string text, std::map<TEnum, std::string
 			TEnum currIndex = getter();
 			if (showRightText) {
 				if (this->currIndex != currIndex || !this->currIndexInitialized) {
-					std::string label = labels[currIndex];
+					std::string label;
+					for (const auto& l : labels) {
+						if (l.first == currIndex) {
+							label = l.second;
+							break;
+						}
+					}
 					this->rightText = label + "  " + RIGHT_ARROW;
 					this->currIndex = currIndex;
 					this->currIndexInitialized = true;
@@ -95,37 +113,56 @@ ui::MenuItem* createMapSubmenuItem(std::string text, std::map<TEnum, std::string
 	return item;
 }
 
-/** Easy wrapper that controls a mapped label at a pointer address.
-Example:
-	menu->addChild(createMapSubmenuItem("Mode",
-		{
-			{ QUALITY::HIFI, "Hi-fi" },
-			{ QUALITY::MIDFI, "Mid-fi" },
-			{ QUALITY::LOFI, "Lo-fi" }
-		},
-		[]() {  return module->mode; },
-		[=](QUALITY mode) {  module->mode = mode; },
-	));
-*/
+/**
+ * @brief Easy wrapper that controls a mapped label using getter/setter functions.
+ *
+ * @param text The label text for the menu item
+ * @param labels Vector of enum values to label strings (insertion order preserved)
+ * @param getter Function returning the current selected enum value
+ * @param setter Function called when an item is selected with the new enum value
+ * @param showRightText Whether to show the current selection on the parent item (default: true)
+ * @param disabled Whether the menu item is disabled (default: false)
+ * @param alwaysConsume Whether to always consume the action event (default: false)
+ * @return ui::MenuItem* The created menu item
+ *
+ * Example:
+ *   menu->addChild(createMapSubmenuItem("Mode",
+ *       {
+ *           { QUALITY::HIFI, "Hi-fi" },
+ *           { QUALITY::MIDFI, "Mid-fi" },
+ *           { QUALITY::LOFI, "Lo-fi" }
+ *       },
+ *       []() {  return module->mode; },
+ *       [=](QUALITY mode) {  module->mode = mode; },
+ *   ));
+ */
 template <typename TEnum, class TMenuItem = ui::MenuItem>
-ui::MenuItem* createMapSubmenuItem(std::string text, std::map<TEnum, std::string> labels, std::function<TEnum()> getter, std::function<void(TEnum val)> setter, bool showRightText = true, bool disabled = false, bool alwaysConsume = false) {
+ui::MenuItem* createMapSubmenuItem(std::string text, std::vector<std::pair<TEnum, std::string>> labels, std::function<TEnum()> getter, std::function<void(TEnum val)> setter, bool showRightText = true, bool disabled = false, bool alwaysConsume = false) {
 	return createMapSubmenuItem(text, labels, labels, getter, setter, showRightText, disabled, alwaysConsume);
 }
 
 
-/** Easy wrapper for createMapPtrSubmenuItem() that controls a mapped label at a pointer address.
-Example:
-	menu->addChild(createMapPtrSubmenuItem("Mode",
-		{
-			{ QUALITY::HIFI, "Hi-fi" },
-			{ QUALITY::MIDFI, "Mid-fi" },
-			{ QUALITY::LOFI, "Lo-fi" }
-		},
-		&module->mode
-	));
-*/
+/**
+ * @brief Easy wrapper for createMapSubmenuItem() that controls a mapped label at a pointer address.
+ *
+ * @param text The label text for the menu item
+ * @param labels Vector of enum values to label strings (insertion order preserved)
+ * @param ptr Pointer to the enum value to control
+ * @param showRightText Whether to show the current selection on the parent item (default: true)
+ * @return ui::MenuItem* The created menu item
+ *
+ * Example:
+ *   menu->addChild(createMapPtrSubmenuItem("Mode",
+ *       {
+ *           { QUALITY::HIFI, "Hi-fi" },
+ *           { QUALITY::MIDFI, "Mid-fi" },
+ *           { QUALITY::LOFI, "Lo-fi" }
+ *       },
+ *       &module->mode
+ *   ));
+ */
 template <typename TEnum>
-ui::MenuItem* createMapPtrSubmenuItem(std::string text, std::map<TEnum, std::string> labels, TEnum* ptr, bool showRightText = true) {
+ui::MenuItem* createMapPtrSubmenuItem(std::string text, const std::vector<std::pair<TEnum, std::string>>& labels, TEnum* ptr, bool showRightText = true) {
 	return createMapSubmenuItem<TEnum>(text, labels,
 		[=]() { return *ptr; },
 		[=](TEnum index) { *ptr = TEnum(index); },
@@ -133,37 +170,57 @@ ui::MenuItem* createMapPtrSubmenuItem(std::string text, std::map<TEnum, std::str
 	);
 }
 
-/** Easy wrapper for createMenuItem() to modify a property with a specific value.
-Example:
-	menu->addChild(createValuePtrMenuItem("Loop", &module->mode, MODE::LOOP));
-*/
+/**
+ * @brief Easy wrapper for createMenuItem() to modify a property with a specific value.
+ *
+ * @param text The label text for the menu item
+ * @param ptr Pointer to the value to modify
+ * @param val The value to set when the menu item is clicked
+ * @return ui::MenuItem* The created menu item
+ *
+ * Example:
+ *   menu->addChild(createValuePtrMenuItem("Loop", &module->mode, MODE::LOOP));
+ */
 template <typename T>
 ui::MenuItem* createValuePtrMenuItem(std::string text, T* ptr, T val) {
 	return createMenuItem(text, CHECKMARK(*ptr == val), [=]() { *ptr = val; });
 }
 
-/** Easy wrapper for createMenuItem() to modify a property with a specific value.
-Example:
-	menu->addChild(createValuePtrMenuItem("Loop", RACK_MOD_SHIFT_NAME "+L", &module->mode, MODE::LOOP));
-*/
+/**
+ * @brief Easy wrapper for createMenuItem() to modify a property with a specific value and custom right text.
+ *
+ * @param text The label text for the menu item
+ * @param rightText The text to display on the right side of the menu item
+ * @param ptr Pointer to the value to modify
+ * @param val The value to set when the menu item is clicked
+ * @return ui::MenuItem* The created menu item
+ *
+ * Example:
+ *   menu->addChild(createValuePtrMenuItem("Loop", RACK_MOD_SHIFT_NAME "+L", &module->mode, MODE::LOOP));
+ */
 template <typename T>
 ui::MenuItem* createValuePtrMenuItem(std::string text, std::string rightText, T* ptr, T val) {
 	return createMenuItem(text, string::f("%s %s", rightText, CHECKMARK(*ptr == val)), [=]() { *ptr = val; });
 }
 
 
-/** Append color controls (label, optional picker, presets and hex field) to an existing menu.
- *  This allows callers to insert the color controls directly into an existing Menu rather than creating a submenu.
+/**
+ * @brief Append color controls directly to an existing menu.
  *
- *  Example:
- *    // Append the color controls directly into an existing menu (no extra submenu)
- *    std::vector<std::pair<NVGcolor, std::string>> presets = {
- *      { LABEL_COLOR_YELLOW, "Yellow" },
- *      { LABEL_COLOR_RED, "Red" },
- *      { LABEL_COLOR_CYAN, "Cyan" }
- *    };
- *    // Insert a color picker, presets and a hex field into 'menu' for 'module->slotColor[id]'
- *    Rack::appendColorSubmenuItems(menu, &module->slotColor[id], presets, true, true);
+ * @param menu The menu to append controls to
+ * @param colorPtr Pointer to the color value to control
+ * @param presets Vector of color presets (default: empty)
+ * @param includePicker Whether to include a color picker (default: true)
+ * @param includeField Whether to include a hex field (default: false)
+ * @param textSelected Optional pointer to track text field selection state (default: nullptr)
+ *
+ * Example:
+ *   std::vector<std::pair<NVGcolor, std::string>> presets = {
+ *       { LABEL_COLOR_YELLOW, "Yellow" },
+ *       { LABEL_COLOR_RED, "Red" },
+ *       { LABEL_COLOR_CYAN, "Cyan" }
+ *   };
+ *   Rack::appendColorSubmenuItems(menu, &module->slotColor[id], presets, true, true);
  */
 inline void appendColorSubmenuItems(ui::Menu* menu, NVGcolor* colorPtr, const std::vector<std::pair<NVGcolor, std::string>>& presets = {}, bool includePicker = true, bool includeField = false, bool* textSelected = nullptr) {
 	struct AppendColorItem : ui::MenuItem {
@@ -195,14 +252,24 @@ inline void appendColorSubmenuItems(ui::Menu* menu, NVGcolor* colorPtr, const st
 	}
 }
 
-/** Create a color submenu for a color pointer with presets, a picker and a hex field.
-Example:
-	menu->addChild(createColorSubmenuItem("Color", &module->defaultColor, {
-		{ LABEL_COLOR_YELLOW, "Yellow" },
-		{ LABEL_COLOR_RED, "Red" },
-		{ LABEL_COLOR_CYAN, "Cyan" }
-	}));
-*/
+/**
+ * @brief Create a color submenu item with presets, a picker and a hex field.
+ *
+ * @param text The label text for the menu item
+ * @param colorPtr Pointer to the color value to control
+ * @param presets Vector of color presets (default: empty)
+ * @param includePicker Whether to include a color picker (default: true)
+ * @param includeField Whether to include a hex field (default: false)
+ * @param textSelected Optional pointer to track text field selection state (default: nullptr)
+ * @return ui::MenuItem* The created menu item
+ *
+ * Example:
+ *   menu->addChild(createColorSubmenuItem("Color", &module->defaultColor, {
+ *       { LABEL_COLOR_YELLOW, "Yellow" },
+ *       { LABEL_COLOR_RED, "Red" },
+ *       { LABEL_COLOR_CYAN, "Cyan" }
+ *   }));
+ */
 inline ui::MenuItem* createColorSubmenuItem(std::string text, NVGcolor* colorPtr, std::vector<std::pair<NVGcolor, std::string>> presets = {}, bool includePicker = true, bool includeField = false, bool* textSelected = nullptr) {
 	struct Item : ui::MenuItem {
 		NVGcolor* colorPtr;
@@ -228,14 +295,27 @@ inline ui::MenuItem* createColorSubmenuItem(std::string text, NVGcolor* colorPtr
 }
 
 
-/** Easy wrapper for creating a slider that controls a float value via getter/setter functions.
-Example:
-	menu->addChild(createSlider(
-		[]() { return module->outsideAlpha; },
-		[=](float v) { module->outsideAlpha = v; },
-		0.f, 1.f, 0.5f, "Opacity", "%", 100.f
-	));
-*/
+/**
+ * @brief Easy wrapper for creating a slider with custom getter/setter functions.
+ *
+ * @param getter Function returning the current float value
+ * @param setter Function called when the slider value changes
+ * @param minValue Minimum slider value (default: 0.0)
+ * @param maxValue Maximum slider value (default: 1.0)
+ * @param defaultValue Default slider value (default: 0.5)
+ * @param label Label text for the slider (default: "Value")
+ * @param unit Unit string displayed after the value (default: "")
+ * @param displayMultiplier Multiplier for display values (default: 1.0)
+ * @param width Slider width in pixels (default: 200.0)
+ * @return ui::Slider* The created slider widget
+ *
+ * Example:
+ *   menu->addChild(createSlider(
+ *       []() { return module->outsideAlpha; },
+ *       [=](float v) { module->outsideAlpha = v; },
+ *       0.f, 1.f, 0.5f, "Opacity", "%", 100.f
+ *   ));
+ */
 template<typename BASE = ui::Slider>
 inline BASE* createSliderT(std::function<float()> getter, std::function<void(float)> setter, float minValue = 0.f, float maxValue = 1.f, float defaultValue = 0.5f, std::string label = "Value", std::string unit = "", float displayMultiplier = 1.f, float width = 200.0f) {
 	struct SliderQuantity : Quantity {
@@ -291,15 +371,41 @@ inline BASE* createSliderT(std::function<float()> getter, std::function<void(flo
 	return new SliderWithQuantity(getter, setter, minValue, maxValue, defaultValue, label, unit, displayMultiplier, width);
 }
 
+/**
+ * @brief Easy wrapper for creating a slider with custom getter/setter functions.
+ *
+ * @param getter Function returning the current float value
+ * @param setter Function called when the slider value changes
+ * @param minValue Minimum slider value (default: 0.0)
+ * @param maxValue Maximum slider value (default: 1.0)
+ * @param defaultValue Default slider value (default: 0.5)
+ * @param label Label text for the slider (default: "Value")
+ * @param unit Unit string displayed after the value (default: "")
+ * @param displayMultiplier Multiplier for display values (default: 1.0)
+ * @param width Slider width in pixels (default: 200.0)
+ * @return ui::Slider* The created slider widget
+ */
 inline ui::Slider* createSlider(std::function<float()> getter, std::function<void(float)> setter, float minValue = 0.f, float maxValue = 1.f, float defaultValue = 0.5f, std::string label = "Value", std::string unit = "", float displayMultiplier = 1.f, float width = 200.0f) {
 	return createSliderT<>(getter, setter, minValue, maxValue, defaultValue, label, unit, displayMultiplier, width);
 }
 
 
-/** Easy wrapper for creating a float slider that controls a float pointer.
-Example:
-	menu->addChild(createPtrSlider(&module->value, 0.f, 1.f, 0.5f, "Opacity", "%", 100.f));
-*/
+/**
+ * @brief Easy wrapper for creating a slider that controls a float pointer.
+ *
+ * @param valuePtr Pointer to the float value to control
+ * @param minValue Minimum slider value (default: 0.0)
+ * @param maxValue Maximum slider value (default: 1.0)
+ * @param defaultValue Default slider value (default: 0.5)
+ * @param label Label text for the slider (default: "Value")
+ * @param unit Unit string displayed after the value (default: "")
+ * @param displayMultiplier Multiplier for display values (default: 1.0)
+ * @param width Slider width in pixels (default: 200.0)
+ * @return ui::Slider* The created slider widget
+ *
+ * Example:
+ *   menu->addChild(createPtrSlider(&module->value, 0.f, 1.f, 0.5f, "Opacity", "%", 100.f));
+ */
 template<typename BASE = ui::Slider>
 inline BASE* createPtrSliderT(float* valuePtr, float minValue = 0.f, float maxValue = 1.f, float defaultValue = 0.5f, std::string label = "Value", std::string unit = "", float displayMultiplier = 1.f, float width = 200.0f) {
 	return createSliderT<BASE>(
@@ -309,21 +415,47 @@ inline BASE* createPtrSliderT(float* valuePtr, float minValue = 0.f, float maxVa
 	);
 }
 
+/**
+ * @brief Easy wrapper for creating a slider that controls a float pointer.
+ *
+ * @param valuePtr Pointer to the float value to control
+ * @param minValue Minimum slider value (default: 0.0)
+ * @param maxValue Maximum slider value (default: 1.0)
+ * @param defaultValue Default slider value (default: 0.5)
+ * @param label Label text for the slider (default: "Value")
+ * @param unit Unit string displayed after the value (default: "")
+ * @param displayMultiplier Multiplier for display values (default: 1.0)
+ * @param width Slider width in pixels (default: 200.0)
+ * @return ui::Slider* The created slider widget
+ */
 inline ui::Slider* createPtrSlider(float* valuePtr, float minValue = 0.f, float maxValue = 1.f, float defaultValue = 0.5f, std::string label = "Value", std::string unit = "", float displayMultiplier = 1.f, float width = 200.0f) {
 	return createPtrSliderT<>(valuePtr, minValue, maxValue, defaultValue, label, unit, displayMultiplier, width);
 }
 
 
-/** Easy wrapper for creating a slider that controls a float value via getter/setter functions.
-Example:
-	menu->addChild(createSteppedSlider<uint8_t>(
-		[=]() { return module->cc; },
-		[=](uint8_t v) { module->cc = v; },
-		0, 127, 0, 
-		"CC", "", [=](float v) { return string::f("CC %d", std::round(v)); },
-		140.f
-	));
-*/
+/**
+ * @brief Easy wrapper for creating a stepped slider with integer values.
+ *
+ * @param getter Function returning the current value
+ * @param setter Function called when the slider value changes
+ * @param minValue Minimum slider value (default: 0.0)
+ * @param maxValue Maximum slider value (default: 1.0)
+ * @param defaultValue Default slider value (default: 0.5)
+ * @param label Label text for the slider (default: "Value")
+ * @param unit Unit string displayed after the value (default: "")
+ * @param str Optional function to convert value to display string (default: nullptr)
+ * @param width Slider width in pixels (default: 140.0)
+ * @return ui::Slider* The created slider widget
+ *
+ * Example:
+ *   menu->addChild(createSteppedSlider<uint8_t>(
+ *       [=]() { return module->cc; },
+ *       [=](uint8_t v) { module->cc = v; },
+ *       0, 127, 0,
+ *       "CC", "", [=](float v) { return string::f("CC %d", std::round(v)); },
+ *       140.f
+ *   ));
+ */
 template<typename T>
 inline ui::Slider* createSteppedSlider(std::function<T()> getter, std::function<void(T)> setter, 
 		float minValue = 0.f, float maxValue = 1.f, float defaultValue = 0.5f, 
@@ -391,19 +523,237 @@ inline ui::Slider* createSteppedSlider(std::function<T()> getter, std::function<
 }
 
 
-/** Helper to create a pre-configured TextField for menus or overlays.
-Example:
-	// inside a menu lambda
-	auto* tf = createTextField(module->sim->udpAddress(), 200.0f);
-	m->addChild(tf);
-	// retrieve value later via tf->text
-*/
+/**
+ * @brief Helper to create a pre-configured TextField for menus or overlays.
+ *
+ * @param initial Initial text value (default: empty)
+ * @param placeHolder Placeholder text shown when empty (default: empty)
+ * @param width TextField width in pixels (default: 120.0)
+ * @return ui::TextField* The created text field widget
+ *
+ * Example:
+ *   // inside a menu lambda
+ *   auto* tf = createTextField(module->sim->udpAddress(), 200.0f);
+ *   m->addChild(tf);
+ *   // retrieve value later via tf->text
+ */
 inline ui::TextField* createTextField(const std::string& initial = "", const std::string& placeHolder = "", float width = 120.0f) {
 	ui::TextField* tf = new ui::TextField();
 	tf->box.size.x = width;
 	tf->text = initial;
 	tf->placeholder = placeHolder;
 	return tf;
+}
+
+/**
+ * @brief Helper to add menu items from a sorted list with a factory function, grouping them into submenus when exceeding a threshold.
+ *
+ * @param menu The menu to add items to
+ * @param items Sorted vector of items (any type TData)
+ * @param creator Factory function: ui::MenuItem* creator(const TData& item)
+ * @param directThreshold Maximum number of items before grouping into submenus (default: 24)
+ * @param groupSize Number of items per submenu when grouping (default: 16)
+ *
+ * Example:
+ *   std::vector<std::pair<std::string, int>> items = {...};
+ *   Rack::addGroupedMenuItems<decltype(items)::value_type>(menu, items, [](const auto& item) -> ui::MenuItem* {
+ *       ToggleTagItem* t = new ToggleTagItem;
+ *       t->text = item.first;
+ *       return t;
+ *   });
+ */
+template<typename TData>
+inline void addGroupedMenuItems(
+	ui::Menu* menu,
+	const std::vector<TData>& items,
+	std::function<ui::MenuItem*(const TData&)> creator,
+	size_t directThreshold = 24,
+	size_t groupSize = 16
+) {
+	if (items.empty()) return;
+
+	if (items.size() <= directThreshold) {
+		for (const auto& item : items) {
+			menu->addChild(creator(item));
+		}
+	} else {
+		size_t numGroups = (items.size() + groupSize - 1) / groupSize;
+		size_t actualGroupSize = (items.size() + numGroups - 1) / numGroups;
+
+		for (size_t i = 0; i < items.size(); i += actualGroupSize) {
+			size_t end = std::min(i + actualGroupSize, items.size());
+			char first = (char)std::toupper((unsigned char)string::lowercase(creator(items[i])->text)[0]);
+			char last = (char)std::toupper((unsigned char)string::lowercase(creator(items[end - 1])->text)[0]);
+			std::string label = first == last
+				? std::string(1, first)
+				: std::string(1, first) + "-" + std::string(1, last);
+
+			std::vector<TData> group(items.begin() + i, items.begin() + end);
+			menu->addChild(createSubmenuItem(label, "", [creator, group](ui::Menu* subMenu) {
+				for (const auto& item : group) {
+					subMenu->addChild(creator(item));
+				}
+			}));
+		}
+	}
+}
+
+
+/**
+ * @brief Menu subclass that stays open after any item action.
+ *
+ * Overrides onAction to call e.unconsume(), which prevents the event from
+ * reaching MenuOverlay and thus keeps the menu visible after each click.
+ */
+struct StickyMenu : ui::Menu {
+	void onAction(const event::Action& e) override { e.unconsume(); }
+};
+
+/**
+ * @brief Like createSubmenuItem but the child menu stays open on every click.
+ *
+ * @param text         Label text for the parent menu item
+ * @param rightText    Right-side annotation (e.g. RIGHT_ARROW)
+ * @param createMenuFn Callback that populates the child menu
+ * @return ui::MenuItem* The created menu item
+ *
+ * Example:
+ *   menu->addChild(createStickySubmenuItem("Options", RIGHT_ARROW, [=](ui::Menu* m) {
+ *       m->addChild(createCheckMenuItem(...));
+ *   }));
+ */
+inline ui::MenuItem* createStickySubmenuItem(const std::string& text, const std::string& rightText, std::function<void(ui::Menu*)> createMenuFn) {
+	struct Item : ui::MenuItem {
+		std::function<void(ui::Menu*)> createMenuFn;
+		ui::Menu* createChildMenu() override {
+			ui::Menu* menu = new StickyMenu;
+			createMenuFn(menu);
+			return menu;
+		}
+	};
+	Item* item = new Item;
+	item->text        = text;
+	item->rightText   = rightText;
+	item->createMenuFn = createMenuFn;
+	return item;
+}
+
+/**
+ * @brief Self-refreshing sticky MIDI menu for a midi::Port.
+ *
+ * Populates driver, device, and channel sections from the port on construction.
+ * Calls e.unconsume() on every action so the menu stays open after each click.
+ * Detects driver changes in step() and rebuilds the device list automatically.
+ *
+ * Use createStickyMidiMenuItem() rather than instantiating this directly.
+ */
+struct StickyMidiMenu : ui::Menu {
+	midi::Port* port     = nullptr;
+	int lastDriverId     = INT_MIN;
+
+	void onAction(const event::Action& e) override { e.unconsume(); }
+
+	void populate() {
+		clearChildren();
+		if (!port) return;
+		lastDriverId = port->getDriverId();
+
+		struct DriverItem : ui::MenuItem {
+			midi::Port* port; int driverId;
+			void step() override { rightText = CHECKMARK(driverId == port->getDriverId()); MenuItem::step(); }
+			void onAction(const event::Action& e) override { port->setDriverId(driverId); e.unconsume(); }
+		};
+		struct DeviceItem : ui::MenuItem {
+			midi::Port* port; int deviceId;
+			void step() override { rightText = CHECKMARK(deviceId == port->getDeviceId()); MenuItem::step(); }
+			void onAction(const event::Action& e) override { port->setDeviceId(deviceId); e.unconsume(); }
+		};
+		struct ChannelItem : ui::MenuItem {
+			midi::Port* port; int channel;
+			void step() override { rightText = CHECKMARK(channel == port->getChannel()); MenuItem::step(); }
+			void onAction(const event::Action& e) override { port->setChannel(channel); e.unconsume(); }
+		};
+		struct ChannelSubmenuItem : ui::MenuItem {
+			midi::Port* port;
+			ui::Menu* createChildMenu() override {
+				ui::Menu* menu = new StickyMenu;
+				for (int ch : port->getChannels()) {
+					ChannelItem* item = new ChannelItem;
+					item->port = port; item->channel = ch;
+					item->text = port->getChannelName(ch);
+					menu->addChild(item);
+				}
+				return menu;
+			}
+		};
+
+		addChild(createMenuLabel(string::translate("MidiDisplay.driver")));
+		for (int driverId : midi::getDriverIds()) {
+			DriverItem* item = new DriverItem;
+			item->port = port; item->driverId = driverId;
+			item->text = midi::getDriver(driverId)->getName();
+			addChild(item);
+		}
+
+		addChild(new ui::MenuSeparator);
+		addChild(createMenuLabel(string::translate("MidiDisplay.device")));
+		{
+			DeviceItem* item = new DeviceItem;
+			item->port = port; item->deviceId = -1;
+			item->text = "(" + string::translate("MidiDisplay.noDevice") + ")";
+			addChild(item);
+		}
+		for (int deviceId : port->getDeviceIds()) {
+			DeviceItem* item = new DeviceItem;
+			item->port = port; item->deviceId = deviceId;
+			item->text = port->getDeviceName(deviceId);
+			addChild(item);
+		}
+
+		addChild(new ui::MenuSeparator);
+		ChannelSubmenuItem* channelItem = new ChannelSubmenuItem;
+		channelItem->text = string::translate("MidiDisplay.channel");
+		channelItem->rightText = RIGHT_ARROW;
+		channelItem->port = port;
+		addChild(channelItem);
+	}
+
+	void step() override {
+		if (port && port->getDriverId() != lastDriverId)
+			populate();
+		ui::Menu::step();
+	}
+};
+
+/**
+ * @brief Creates a submenu item for a midi::Port that stays open on every click.
+ *
+ * Opens a StickyMidiMenu showing driver, device, and channel selection.
+ * The device list refreshes automatically when the selected driver changes.
+ *
+ * @param text Label text for the menu item
+ * @param port The midi::Port to configure
+ * @return ui::MenuItem* The created menu item
+ *
+ * Example:
+ *   menu->addChild(createStickyMidiMenuItem("MIDI Input",  &module->midiInput));
+ *   menu->addChild(createStickyMidiMenuItem("MIDI Output", &module->midiOutput));
+ */
+inline ui::MenuItem* createStickyMidiMenuItem(const std::string& text, midi::Port* port) {
+	struct Item : ui::MenuItem {
+		midi::Port* port;
+		ui::Menu* createChildMenu() override {
+			StickyMidiMenu* menu = new StickyMidiMenu;
+			menu->port = port;
+			menu->populate();
+			return menu;
+		}
+	};
+	Item* item = new Item;
+	item->text      = text;
+	item->rightText = RIGHT_ARROW;
+	item->port      = port;
+	return item;
 }
 
 } // namespace Rack

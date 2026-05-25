@@ -2,6 +2,7 @@
 #include "../../test/test_context.hpp"
 #include "TransitBase.hpp"
 #include "Transit.cpp"
+#include "TransitEx.cpp"
 // NOTE: TransitEx.cpp is NOT included here to avoid duplicate definition of
 // modelTransitEx (it is already exported from the plugin dylib and linked in).
 // TransitExModule instances are created via the model factory and accessed
@@ -9,7 +10,21 @@
 
 using namespace StoermelderPackOne::Transit;
 
+SYNC_MODEL(modelTransit, "Transit");
+SYNC_MODEL(modelTransitEx, "TransitEx");
 Test::TestContext<> testContext;
+
+TEST_CASE("Construction and initialization", "[TransitEx]") {
+	TransitExModule<12>* m = Test::createModule<TransitExModule<12>>("TransitEx");
+	TransitExWidget<12>* mw = Test::createWidget<TransitExWidget<12>>("TransitEx");
+
+	REQUIRE(m != nullptr);
+	REQUIRE(mw != nullptr);
+	REQUIRE(mw->module == nullptr);
+
+	Test::destroyWidget(mw);
+	Test::destroyModule(m);
+}
 
 // Helper module with test parameters
 struct TestModule : rack::Module {

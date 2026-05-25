@@ -322,7 +322,8 @@ struct EightFaceModule : Module {
 										for (int i = 0; i < presetCount; i++) {
 											slotCvModeShuffle.push_back(i);
 										}
-										std::random_shuffle(std::begin(slotCvModeShuffle), std::end(slotCvModeShuffle));
+										std::mt19937 rng(random::u32());
+										std::shuffle(std::begin(slotCvModeShuffle), std::end(slotCvModeShuffle), rng);
 									}
 									int p = std::min(std::max(0, slotCvModeShuffle.back()), presetCount - 1);
 									slotCvModeShuffle.pop_back();
@@ -426,6 +427,7 @@ struct EightFaceModule : Module {
 				json_decref(presetSlot[presetPrev]);
 				presetSlot[presetPrev] = workerModuleWidget->toJson();
 			}
+			// This locks the engine
 			workerModuleWidget->fromJson(presetSlot[workerPreset]);
 			workerDoProcess = false;
 		}
@@ -463,9 +465,18 @@ struct EightFaceModule : Module {
 				ModuleWidget* mw = APP->scene->rack->getModule(m->id);
 				if (mw) {
 					workerPreset = p;
-					if (workerGui || guiSafeMode != GUISAFEMODE::WORKER) {
+					// There is no stepping of the UI if the plugin window is closed,
+					// in this case we must use the worker thread
+					if (settings::isPlugin && !APP->window) {
+						workerModuleWidget = mw;
+						workerDoProcess = true;
+						workerCondVar.notify_one();
+					}
+					// Hand it off to the UI thread
+					else if (workerGui || guiSafeMode != GUISAFEMODE::WORKER) {
 						workerGuiModuleWidget.store(mw);
 					}
+					// Explicitly configured to use the worker thread
 					else {
 						workerModuleWidget = mw;
 						workerDoProcess = true;

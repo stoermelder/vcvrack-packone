@@ -5,14 +5,19 @@
 
 using namespace StoermelderPackOne::Goto;
 
+SYNC_MODEL(modelGoto, "Goto");
 Test::TestContext<> testContext;
 
 TEST_CASE("Construction and initialization", "[Goto]") {
-	GotoModule<10>* module = Test::createModule<GotoModule<10>>("Goto");
-	GotoWidget* mw = Test::createWidget<GotoWidget>(module);
+	GotoModule<10>* m = Test::createModule<GotoModule<10>>("Goto");
+	GotoWidget* mw = Test::createWidget<GotoWidget>("Goto");
+
+	REQUIRE(m != nullptr);
+	REQUIRE(mw != nullptr);
+	REQUIRE(mw->module == nullptr);
 
 	Test::destroyWidget(mw);
-	Test::destroyModule(module);
+	Test::destroyModule(m);
 }
 
 TEST_CASE("POLYTRIGGER mode sets jumpTrigger on rising edge", "[Goto]") {
@@ -198,7 +203,7 @@ TEST_CASE("JSON round-trip preserves all settings", "[Goto]") {
 	}
 
 	SECTION("Jump point 0 zoom preserved") {
-		REQUIRE(module2->jumpPoints[0].zoom == Approx(0.5f));
+		REQUIRE(module2->jumpPoints[0].zoom == Catch::Approx(0.5f));
 	}
 
 	SECTION("Jump point 5 module IDs preserved") {

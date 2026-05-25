@@ -5,7 +5,20 @@
 
 using namespace StoermelderPackOne::Transit;
 
+SYNC_MODEL(modelTransit, "Transit");
 Test::TestContext<> testContext;
+
+TEST_CASE("Construction and initialization", "[Transit]") {
+	TransitModule<12>* m = Test::createModule<TransitModule<12>>("Transit");
+	TransitWidget<12>* mw = Test::createWidget<TransitWidget<12>>("Transit");
+
+	REQUIRE(m != nullptr);
+	REQUIRE(mw != nullptr);
+	REQUIRE(mw->module == nullptr);
+
+	Test::destroyWidget(mw);
+	Test::destroyModule(m);
+}
 
 // Helper module with test parameters
 struct TestModule : rack::Module {

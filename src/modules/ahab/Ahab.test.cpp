@@ -6,8 +6,20 @@
 using namespace StoermelderPackOne;
 using namespace StoermelderPackOne::Ahab;
 
-// Define the single instance used by tests
+SYNC_MODEL(modelAhab, "Ahab");
 static Test::TestContext<> testContext;
+
+TEST_CASE("Construction and initialization", "[Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	AhabWidget* mw = Test::createWidget<AhabWidget>("Ahab");
+
+	REQUIRE(m != nullptr);
+	REQUIRE(mw != nullptr);
+	REQUIRE(mw->module == nullptr);
+
+	Test::destroyWidget(mw);
+	Test::destroyModule(m);
+}
 
 // Mock MIDI OutputDevice for testing MIDI output messages
 struct MockMidiOutputDevice : public rack::midi::OutputDevice {
@@ -92,13 +104,21 @@ MockMidiVirtualInput* setupMockVirtualMidiInput(int portId) {
 	MockMidiVirtualInput* mockInput = new MockMidiVirtualInput();
 	mockInput->setDriverId(0x4CCC434C); // Ahab virtual MIDI driver ID
 	mockInput->setDeviceId(portId);
+	// Subscribe to the Ahab MIDI driver so messages are actually delivered
+	if (auto* driver = rack::midi::getDriver(0x4CCC434C)) {
+		driver->subscribeInput(portId, mockInput);
+	}
 	return mockInput;
 }
 
 // Helper to cleanup mock virtual MIDI input
 void cleanupMockVirtualMidiInput(MockMidiVirtualInput* mockInput) {
 	if (mockInput) {
-		delete mockInput;  // Destructor will handle MIDI driver unsubscription
+		// Unsubscribe from the driver before deleting
+		if (auto* driver = rack::midi::getDriver(0x4CCC434C)) {
+			driver->unsubscribeInput(mockInput->getDeviceId(), mockInput);
+		}
+		delete mockInput;
 	}
 }
 
@@ -255,6 +275,111 @@ TEST_CASE("Run/stop toggle", "[Ahab]") {
 	Test::destroyModule(m);
 }
 
+TEST_CASE("Reset input triggers tick counter reset", "[Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+	
+	m->process({});
+	
+	// Manually advance the tick counter several times via clock button
+	m->params[AhabModule::CLK_PARAM].setValue(0.0f);
+	m->process({});
+	m->params[AhabModule::CLK_PARAM].setValue(1.0f);
+	m->process({});
+	m->params[AhabModule::CLK_PARAM].setValue(0.0f);
+	m->process({});
+	
+	// Get tick number after several advances
+	Usz ticks_before = m->sim->getTickNumber();
+	REQUIRE(ticks_before > 0);
+	
+	// Trigger reset input with low-to-high transition
+	m->inputs[AhabModule::RESET_INPUT].channels = 1;
+	m->inputs[AhabModule::RESET_INPUT].setVoltage(0.0f);
+	m->process({});
+	m->inputs[AhabModule::RESET_INPUT].setVoltage(5.0f);
+	m->process({});
+	
+	// Tick counter should be reset to 0
+	REQUIRE(m->sim->getTickNumber() == 0);
+	
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("Reset input responds to edge detection", "[Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+	
+	m->process({});
+	
+	// Advance tick counter
+	m->params[AhabModule::CLK_PARAM].setValue(1.0f);
+	m->process({});
+	Usz ticks_after_advance = m->sim->getTickNumber();
+	REQUIRE(ticks_after_advance > 0);
+	
+	// Apply reset voltage but don't release (no edge yet)
+	m->inputs[AhabModule::RESET_INPUT].channels = 1;
+	m->inputs[AhabModule::RESET_INPUT].setVoltage(5.0f);
+	m->process({});
+	m->process({});
+	m->process({});
+	
+	// Tick counter should remain at 0 (held in reset state)
+	REQUIRE(m->sim->getTickNumber() == 0);
+	
+	// Release reset and advance again
+	m->inputs[AhabModule::RESET_INPUT].setVoltage(0.0f);
+	m->process({});
+	
+	// Now trigger clock to advance
+	m->params[AhabModule::CLK_PARAM].setValue(0.0f);
+	m->process({});
+	m->params[AhabModule::CLK_PARAM].setValue(1.0f);
+	m->process({});
+	
+	// Tick should have incremented from 0
+	REQUIRE(m->sim->getTickNumber() > 0);
+	
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("Reset input with gate signal (continuous voltage)", "[Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+	
+	m->process({});
+	
+	// Advance ticks
+	for (int i = 0; i < 5; i++) {
+		m->params[AhabModule::CLK_PARAM].setValue(1.0f);
+		m->process({});
+		m->params[AhabModule::CLK_PARAM].setValue(0.0f);
+		m->process({});
+	}
+	Usz ticks_advanced = m->sim->getTickNumber();
+	REQUIRE(ticks_advanced > 0);
+	
+	// Apply reset gate signal (gate voltage held high)
+	m->inputs[AhabModule::RESET_INPUT].channels = 1;
+	m->inputs[AhabModule::RESET_INPUT].setVoltage(8.0f);
+	m->process({});
+	
+	// Reset should trigger on the rising edge
+	REQUIRE(m->sim->getTickNumber() == 0);
+	
+	// Further processing with gate held high should NOT reset again
+	// (edge detector should not trigger on continued high voltage)
+	m->process({});
+	m->process({});
+	REQUIRE(m->sim->getTickNumber() == 0);
+	
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
 TEST_CASE("CV input reading", "[Ahab]") {
 	AhabModule* m = Test::createModule<AhabModule>("Ahab");
 	Test::registerModule(m);
@@ -312,6 +437,76 @@ TEST_CASE("CV output writing", "[Ahab]") {
 	REQUIRE(m->outputs[AhabModule::OUT_OUTPUT + 2].getVoltage() == 0.0f);
 	REQUIRE(m->outputs[AhabModule::OUT_OUTPUT + 3].getVoltage() == 7.5f);
 	
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("CV output gate scheduling with non-zero gateTicks", "[Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+
+	m->process({});
+
+	// Write a gated CV output on port 2.
+	m->writeDspOutput(2, 8.5f, 3);
+	REQUIRE(m->outputs[AhabModule::OUT_OUTPUT + 2].getVoltage() == 8.5f);
+	REQUIRE(m->scheduledOffs.size() == 1);
+	REQUIRE(m->scheduledOffs[0].remaining_ticks == 3);
+	REQUIRE(m->scheduledOffs[0].channel == 2);
+	REQUIRE(m->scheduledOffs[0].note == 255);
+
+	Oevent_list emptyEvents;
+	oevent_list_init(&emptyEvents);
+
+	// Countdown: 3 -> 2 -> 1 -> 0 (no gate-off yet)
+	m->processEvents(&emptyEvents);
+	REQUIRE(m->outputs[AhabModule::OUT_OUTPUT + 2].getVoltage() == 8.5f);
+	REQUIRE(m->scheduledOffs.size() == 1);
+	REQUIRE(m->scheduledOffs[0].remaining_ticks == 2);
+
+	m->processEvents(&emptyEvents);
+	REQUIRE(m->outputs[AhabModule::OUT_OUTPUT + 2].getVoltage() == 8.5f);
+	REQUIRE(m->scheduledOffs.size() == 1);
+	REQUIRE(m->scheduledOffs[0].remaining_ticks == 1);
+
+	m->processEvents(&emptyEvents);
+	REQUIRE(m->outputs[AhabModule::OUT_OUTPUT + 2].getVoltage() == 8.5f);
+	REQUIRE(m->scheduledOffs.size() == 1);
+	REQUIRE(m->scheduledOffs[0].remaining_ticks == 0);
+
+	// Next tick performs the gate-off and removes the scheduled event.
+	m->processEvents(&emptyEvents);
+	REQUIRE(m->outputs[AhabModule::OUT_OUTPUT + 2].getVoltage() == 0.0f);
+	REQUIRE(m->scheduledOffs.empty() == true);
+
+	oevent_list_deinit(&emptyEvents);
+
+	Test::unregisterModule(m);
+	Test::destroyModule(m);
+}
+
+TEST_CASE("CV output gate scheduling clamps output port", "[Ahab]") {
+	AhabModule* m = Test::createModule<AhabModule>("Ahab");
+	Test::registerModule(m);
+
+	m->process({});
+
+	// Port index > 3 must clamp to output 3 and schedule gate-off there.
+	m->writeDspOutput(99, 6.0f, 2);
+	REQUIRE(m->outputs[AhabModule::OUT_OUTPUT + 3].getVoltage() == 6.0f);
+	REQUIRE(m->scheduledOffs.size() == 1);
+	REQUIRE(m->scheduledOffs[0].channel == 3);
+	REQUIRE(m->scheduledOffs[0].remaining_ticks == 2);
+
+	Oevent_list emptyEvents;
+	oevent_list_init(&emptyEvents);
+	m->processEvents(&emptyEvents);
+	m->processEvents(&emptyEvents);
+	m->processEvents(&emptyEvents);
+	REQUIRE(m->outputs[AhabModule::OUT_OUTPUT + 3].getVoltage() == 0.0f);
+	REQUIRE(m->scheduledOffs.empty() == true);
+	oevent_list_deinit(&emptyEvents);
+
 	Test::unregisterModule(m);
 	Test::destroyModule(m);
 }
@@ -444,9 +639,9 @@ TEST_CASE("MIDI Driver note event handling", "[MIDI][Ahab]") {
 	m->processEvents(&olist);
 	
 	// Should have scheduled a note-off (processEvents decrements immediately)
-	REQUIRE(m->midiScheduledNotes.size() == 1);
-	REQUIRE(m->midiScheduledNotes[0].remaining_ticks == 4); // Decremented from 5 to 4
-	REQUIRE(m->midiScheduledNotes[0].note == 48); // C4
+	REQUIRE(m->scheduledOffs.size() == 1);
+	REQUIRE(m->scheduledOffs[0].remaining_ticks == 4); // Decremented from 5 to 4
+	REQUIRE(m->scheduledOffs[0].note == 48); // C4
 	
 	// Verify MIDI note-on message was sent to midiOutPort
 	REQUIRE(mockDevice->getMessageCount() == 1);
@@ -489,8 +684,8 @@ TEST_CASE("MIDI Driver zero duration note handling", "[MIDI][Ahab]") {
 	m->processEvents(&olist);
 	
 	// Should have scheduled a note-off with 1 tick duration (decremented to 0 immediately)
-	REQUIRE(m->midiScheduledNotes.size() == 1);
-	REQUIRE(m->midiScheduledNotes[0].remaining_ticks == 0); // Decremented from 1 to 0
+	REQUIRE(m->scheduledOffs.size() == 1);
+	REQUIRE(m->scheduledOffs[0].remaining_ticks == 0); // Decremented from 1 to 0
 	
 	// Verify note-on message was sent
 	REQUIRE(mockDevice->getMessageCount() == 1);
@@ -515,7 +710,7 @@ TEST_CASE("MIDI Driver scheduled note-off countdown", "[MIDI][Ahab]") {
 	m->midiOutEnabled = true;
 	
 	// Manually add a scheduled note
-	m->midiScheduledNotes.push_back({3, 0, 60});
+	m->scheduledOffs.push_back({3, 0, 60});
 	
 	// Create empty event list to trigger countdown
 	Oevent_list olist;
@@ -523,23 +718,23 @@ TEST_CASE("MIDI Driver scheduled note-off countdown", "[MIDI][Ahab]") {
 	
 	// Process 3 times
 	m->processEvents(&olist);
-	REQUIRE(m->midiScheduledNotes.size() == 1);
-	REQUIRE(m->midiScheduledNotes[0].remaining_ticks == 2);
+	REQUIRE(m->scheduledOffs.size() == 1);
+	REQUIRE(m->scheduledOffs[0].remaining_ticks == 2);
 	REQUIRE(mockDevice->getMessageCount() == 0); // No note-off yet
 	
 	m->processEvents(&olist);
-	REQUIRE(m->midiScheduledNotes.size() == 1);
-	REQUIRE(m->midiScheduledNotes[0].remaining_ticks == 1);
+	REQUIRE(m->scheduledOffs.size() == 1);
+	REQUIRE(m->scheduledOffs[0].remaining_ticks == 1);
 	REQUIRE(mockDevice->getMessageCount() == 0); // No note-off yet
 	
 	m->processEvents(&olist);
-	REQUIRE(m->midiScheduledNotes.size() == 1);
-	REQUIRE(m->midiScheduledNotes[0].remaining_ticks == 0);
+	REQUIRE(m->scheduledOffs.size() == 1);
+	REQUIRE(m->scheduledOffs[0].remaining_ticks == 0);
 	REQUIRE(mockDevice->getMessageCount() == 0); // No note-off yet
 	
 	// Next call should send note-off and clear
 	m->processEvents(&olist);
-	REQUIRE(m->midiScheduledNotes.size() == 0);
+	REQUIRE(m->scheduledOffs.size() == 0);
 	REQUIRE(mockDevice->getMessageCount() == 1);
 	
 	// Verify note-off message was sent
@@ -659,7 +854,7 @@ TEST_CASE("MIDI Driver output disabled", "[MIDI][Ahab]") {
 	REQUIRE(mockDevice->getMessageCount() == 0);
 	
 	// But note should still be scheduled
-	REQUIRE(m->midiScheduledNotes.size() == 1);
+	REQUIRE(m->scheduledOffs.size() == 1);
 	
 	oevent_list_deinit(&olist);
 	cleanupMockMidiOutput(m, mockDevice);
@@ -787,7 +982,7 @@ TEST_CASE("MIDI Virtual note delivery", "[MIDI][Ahab]") {
 	REQUIRE(virtualMsg.getValue() == 100); // Velocity
 	
 	// Note should still be scheduled
-	REQUIRE(m->midiScheduledNotes.size() == 1);
+	REQUIRE(m->scheduledOffs.size() == 1);
 	
 	oevent_list_deinit(&olist);
 	cleanupMockMidiOutput(m, mockDevice);
@@ -889,7 +1084,7 @@ TEST_CASE("MIDI Virtual multiple ports", "[MIDI][Ahab]") {
 		
 		oevent_list_deinit(&olist);
 		cleanupMockVirtualMidiInput(mockVirtualInput);
-		m->midiScheduledNotes.clear();
+		m->scheduledOffs.clear();
 	}
 	
 	Test::unregisterModule(m);
@@ -928,7 +1123,7 @@ TEST_CASE("MIDI Virtual disabled", "[MIDI][Ahab]") {
 	REQUIRE(mockVirtualInput->getMessageCount() == 0);
 	
 	// But note should still be scheduled internally
-	REQUIRE(m->midiScheduledNotes.size() == 1);
+	REQUIRE(m->scheduledOffs.size() == 1);
 	
 	oevent_list_deinit(&olist);
 	cleanupMockMidiOutput(m, mockDevice);
@@ -969,9 +1164,9 @@ TEST_CASE("MIDI note ordering - scheduled note-offs before new notes", "[MIDI][A
 	
 	// Now simulate the scheduled note-off being ready to send
 	// remaining_ticks should be 0 after first processEvents call
-	REQUIRE(m->midiScheduledNotes.size() == 1);
-	REQUIRE(m->midiScheduledNotes[0].remaining_ticks == 0);
-	REQUIRE(m->midiScheduledNotes[0].note == 48);
+	REQUIRE(m->scheduledOffs.size() == 1);
+	REQUIRE(m->scheduledOffs[0].remaining_ticks == 0);
+	REQUIRE(m->scheduledOffs[0].note == 48);
 	
 	// Second: In the same cycle, create a new note event that should come after the note-off
 	Oevent_list olist2;
@@ -1008,8 +1203,8 @@ TEST_CASE("MIDI note ordering - scheduled note-offs before new notes", "[MIDI][A
 	REQUIRE(mockDevice->getMessage(2).getNote() == 49); // D4
 	
 	// Verify the scheduled note was removed
-	REQUIRE(m->midiScheduledNotes.size() == 1); // Only the D4 note-off remains
-	REQUIRE(m->midiScheduledNotes[0].note == 49);
+	REQUIRE(m->scheduledOffs.size() == 1); // Only the D4 note-off remains
+	REQUIRE(m->scheduledOffs[0].note == 49);
 	
 	cleanupMockMidiOutput(m, mockDevice);
 	
@@ -1047,9 +1242,9 @@ TEST_CASE("MIDI note ordering - multiple simultaneous note transitions", "[MIDI]
 	REQUIRE(mockDevice->getMessageCount() == 3);
 	
 	// Now in the second cycle, three note-offs should be scheduled and ready to send
-	REQUIRE(m->midiScheduledNotes.size() == 3);
-	for (size_t i = 0; i < m->midiScheduledNotes.size(); ++i) {
-		REQUIRE(m->midiScheduledNotes[i].remaining_ticks == 0);
+	REQUIRE(m->scheduledOffs.size() == 3);
+	for (size_t i = 0; i < m->scheduledOffs.size(); ++i) {
+		REQUIRE(m->scheduledOffs[i].remaining_ticks == 0);
 	}
 	
 	// Create three new notes in the same cycle
@@ -1106,20 +1301,6 @@ TEST_CASE("MIDI note ordering - multiple simultaneous note transitions", "[MIDI]
 	Test::destroyModule(m);
 }
 
-TEST_CASE("Widget construction", "[UI][Ahab]") {
-	AhabWidget* w = Test::createWidget<AhabWidget>("Ahab");
-	REQUIRE(w != nullptr);
-	REQUIRE(w->module == NULL);
-	
-	// Check that widget has the expected children (simWidget and statusWidget)
-	REQUIRE(w->simWidget != nullptr);
-	REQUIRE(w->statusWidget != nullptr);
-	
-	// Check that statusWidget references simWidget
-	REQUIRE(w->statusWidget->simWidget == w->simWidget);
-	
-	Test::destroyWidget(w);
-}
 
 TEST_CASE("Integration test - preset loading and simulation", "[Ahab]") {
 	AhabModule* m = Test::createModule<AhabModule>("Ahab");

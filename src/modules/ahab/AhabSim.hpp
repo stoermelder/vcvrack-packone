@@ -10,11 +10,11 @@
 #include <dsp/ringbuffer.hpp>
 
 extern "C" {
-	#include "../../../orca-c/field.h"
-	#include "../../../orca-c/gbuffer.h"
-	#include "../../../orca-c/vmio.h"
-	#include "../../../orca-c/sim.h"
-	#include "../../../orca-c/osc_out.h"
+	#include <orca-c/field.h>
+	#include <orca-c/gbuffer.h>
+	#include <orca-c/vmio.h>
+	#include <orca-c/sim.h>
+	#include <orca-c/osc_out.h>
 }
 
 namespace StoermelderPackOne {
@@ -49,7 +49,7 @@ public:
 	// Input reader callback: used to query the module inputs (e.g. for vcvin)
 	using DspInputReader = std::function<float(size_t port_num)>;
 	// Output writer callback: used to set module outputs (e.g. for vcvout)
-	using DspOutputWriter = std::function<void(size_t port_num, float value)>;
+	using DspOutputWriter = std::function<void(size_t port_num, float value, int gateTicks)>;
 
 	// Load a grid from file (wrapper around field_load_file). Returns true on
 	// success.
@@ -119,7 +119,7 @@ public:
 	}
 
 	// Write output via the registered DspOutputWriter (safe to call from C callbacks)
-	void writeDspOutput(size_t port_num, float value);
+	void writeDspOutput(size_t port_num, float value, int gateTicks);
 
 	// Read input via the registered DspInputReader (safe to call from C callbacks)
 	float readDspInput(size_t port_num) const;

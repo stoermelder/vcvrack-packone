@@ -5,6 +5,10 @@
 
 using namespace StoermelderPackOne::Intermix;
 
+SYNC_MODEL(modelIntermix, "Intermix");
+SYNC_MODEL(modelIntermixGate, "IntermixGate");
+Test::TestContext<> testContext;
+
 // Forward declare Intermix module type for expander tests
 template<int PORTS>
 struct IntermixModuleMock : Module, IntermixBase<PORTS> {
@@ -34,7 +38,17 @@ struct IntermixModuleMock : Module, IntermixBase<PORTS> {
 	}
 };
 
-Test::TestContext<> testContext;
+TEST_CASE("Construction and initialization", "[IntermixGate]") {
+	IntermixGateModule<8>* m = Test::createModule<IntermixGateModule<8>>("IntermixGate");
+	IntermixGateWidget* mw = Test::createWidget<IntermixGateWidget>("IntermixGate");
+
+	REQUIRE(m != nullptr);
+	REQUIRE(mw != nullptr);
+	REQUIRE(mw->module == nullptr);
+
+	Test::destroyWidget(mw);
+	Test::destroyModule(m);
+}
 
 TEST_CASE("Expander connection", "[IntermixGate]") {
 	auto gateModule = Test::createModule<IntermixGateModule<8>>("IntermixGate");
@@ -208,6 +222,8 @@ TEST_CASE("Expander chain with gate module", "[IntermixGate]") {
 	auto intermixModule = new IntermixModuleMock<8>();
 	auto gateModule1 = Test::createModule<IntermixGateModule<8>>("IntermixGate");
 	auto gateModule2 = Test::createModule<IntermixGateModule<8>>("IntermixGate");
+	Test::SimpleEngine engine;
+	engine.registerModules(intermixModule, gateModule1, gateModule2);
 
 	SECTION("Multiple gate expanders can chain") {
 		// Setup expander chain: Intermix -> Gate1 -> Gate2
@@ -216,25 +232,20 @@ TEST_CASE("Expander chain with gate module", "[IntermixGate]") {
 		gateModule1->rightExpander.module = gateModule2;
 		gateModule2->leftExpander.module = gateModule1;
 		
-		// Ensure models are set for expander checks
-		gateModule1->model = modelIntermixGate;
-		gateModule2->model = modelIntermixGate;
-		
 		intermixModule->currentMatrix[0][0] = 0.5f;
 		intermixModule->currentMatrix[1][1] = 0.5f;
-		
-		// Initial process to set up producer message
-		intermixModule->process(Test::makeProcessArgs(1));
-		intermixModule->rightExpander.consumerMessage = intermixModule->rightExpander.producerMessage;
-		gateModule1->process(Test::makeProcessArgs(1));
-		gateModule1->rightExpander.consumerMessage = gateModule1->rightExpander.producerMessage;
-		gateModule2->process(Test::makeProcessArgs(1));
+	
+		engine.step();
+		engine.step();
+		engine.step();
 		
 		// Both should detect active connections
 		REQUIRE(gateModule1->outputs[IntermixGateModule<8>::OUTPUT + 0].getVoltage() == 10.f);
 		REQUIRE(gateModule2->outputs[IntermixGateModule<8>::OUTPUT + 0].getVoltage() == 10.f);
 		REQUIRE(gateModule1->outputs[IntermixGateModule<8>::OUTPUT + 1].getVoltage() == 10.f);
 		REQUIRE(gateModule2->outputs[IntermixGateModule<8>::OUTPUT + 1].getVoltage() == 10.f);
+		REQUIRE(gateModule1->outputs[IntermixGateModule<8>::OUTPUT + 2].getVoltage() == 0.f);
+		REQUIRE(gateModule2->outputs[IntermixGateModule<8>::OUTPUT + 2].getVoltage() == 0.f);
 	}
 
 	Test::destroyModule(gateModule2);

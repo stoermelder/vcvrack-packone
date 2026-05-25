@@ -13,6 +13,7 @@ struct SceneEx : rack::app::Scene {
 	}
 };
 
+SYNC_MODEL(modelMidiKey, "MidiKey");
 Test::TestContext<SceneEx> testContext;
 
 

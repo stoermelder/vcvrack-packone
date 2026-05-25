@@ -1,7 +1,7 @@
 # stoermelder PackOne
 
 <!-- Version and License Badges -->
-![Version](https://img.shields.io/badge/Version-2.3.1-green.svg?style=flat-square)
+![Version](https://img.shields.io/badge/Version-2.4.0-green.svg?style=flat-square)
 ![Rack](https://img.shields.io/badge/VCV_Rack-v2-red.svg?style=flat-square)
 ![MetaModule](https://img.shields.io/badge/MetaModule-v2-orange.svg?style=flat-square)
 ![License](https://img.shields.io/badge/License-GPLv3+-blue.svg?style=flat-square)
@@ -10,6 +10,8 @@
 **The PackOne plugin gives you some modules for [VCV Rack](https://www.vcvrack.com). Stable versions are released in the [VCV Library](https://library.vcvrack.com/?brand=stoermelder). [Selected modules](./MetaModule.md) are also available on the [4ms MetaModule](https://4mscompany.com/p.php?p=990)!**
 
 A [Development build](https://github.com/stoermelder/vcvrack-packone/releases/tag/Nightly) of the latest commit is also available for all platforms. Please review the [changelog](./CHANGELOG.md) for this plugin.
+
+There is also an [Experimental build](https://github.com/stoermelder/vcvrack-packone/releases/tag/Experimental), which is based on the development build, but also includes new modules and features from other branches in this repository. Please be aware, that this build is experimental and modules or features may have breaking changes or be removed without notice.
 
 If you like my modules consider donating to https://paypal.me/stoermelder, but don't feel obligated to do so. Thank you for your support!
 
@@ -46,6 +48,7 @@ If you like my modules consider donating to https://paypal.me/stoermelder, but d
 - [MIDI-CAT FINE](./docs/midicat/MidiCat.md#fine-expander): expander for MIDI-CAT, allows fine-tuning of MIDI CC parameter-mappings
 - [MIDI-CAT MEM](./docs/midicat/MidiCat.md#mem-expander): storage-expander for MIDI mapping-presets with MIDI-CAT
 - [MIDI-CAT XL](./docs/midicat/MidiCat.md): a wider panel version of MIDI-CAT with identical features and driver selection moved to the context menu
+- [MIDI-ESX](./docs/midiesx/MidiEsx.md): MIDI converter for your Expert Sleepers hardware setup (ES-5, ES-8, ES-9 etc.)
 - [MIDI-KEY](./docs/midi/MidiKey.md): utility for generating keyboard events from MIDI CC or Note messages
 - [MIDI-MON](./docs/midi/MidiMon.md): input-monitor for MIDI messages
 - [MIDI-PLUG](./docs/midi/MidiPlug.md): a virtual MIDI merger and splitter

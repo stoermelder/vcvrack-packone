@@ -61,17 +61,6 @@ struct FocusMode {
 		deactivate();
 	}
 
-	// Helper to get absolute position of a widget in scene coordinates
-	static math::Vec getAbsolutePos(widget::Widget* w) {
-		math::Vec pos = Vec(0.f, 0.f);
-		widget::Widget* widget = w;
-		while (widget && widget != APP->scene) {
-			pos = pos.plus(widget->box.pos);
-			widget = widget->parent;
-		}
-		return pos;
-	}
-
 	void activate(widget::Widget* widget) {
 		if (active) return;
 		focusedWidget = widget;
