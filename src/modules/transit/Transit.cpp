@@ -951,10 +951,10 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 		SLOT* targetSlot = getSlot(target);
 		if (!sourceSlot->isUsed()) return;
 		targetSlot->setUsed(true);
-		auto sourcePreset = sourceSlot->getPreset();
-		auto targetPreset = targetSlot->getPreset();
+		std::vector<float>* sourcePreset = sourceSlot->getPreset();
+		std::vector<float>* targetPreset = targetSlot->getPreset();
 		targetPreset->clear();
-		for (auto v : *sourcePreset) {
+		for (float v : *sourcePreset) {
 			targetPreset->push_back(v);
 		}
 		if (preset == target) preset = -1;
@@ -1208,7 +1208,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 		});
 		// Creating new ParamHandles will cause a deadlock as the engine's mutex could already been locked
 		taskProcessorUi.enqueue([=]() {
-			for (auto s : handleToDo) {
+			for (auto& s : handleToDo) {
 				int64_t moduleId = std::get<0>(s);
 				int paramId = std::get<1>(s);
 				bindAddParameterRequest(moduleId, paramId, true);
