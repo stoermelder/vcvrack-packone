@@ -167,6 +167,7 @@ struct ModelBox : widget::OpaqueWidget {
 			magnifier->initialized = true;
 			magnifier->sourceAbsPos = getAbsoluteOffset(Vec(0, 0));
 			magnifier->sourceSize = box.size;
+			magnifier->magnification = 3.f / zoomWidget->getZoom();
 		}
 		OpaqueWidget::onHover(e);
 	}
