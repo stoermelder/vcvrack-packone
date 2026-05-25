@@ -394,7 +394,8 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 								for (int i = 0; i < presetCount; i++) {
 									slotCvModeShuffle.push_back(i);
 								}
-								std::random_shuffle(std::begin(slotCvModeShuffle), std::end(slotCvModeShuffle));
+								std::mt19937 rng(random::u32());
+								std::shuffle(std::begin(slotCvModeShuffle), std::end(slotCvModeShuffle), rng);
 							}
 							int p = std::min(std::max(0, slotCvModeShuffle.back()), presetCount - 1);
 							slotCvModeShuffle.pop_back();

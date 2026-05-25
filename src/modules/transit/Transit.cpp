@@ -317,7 +317,8 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 						for (int i = presetFirst; i < presetLast; i++) {
 							slotCvModeShuffle.push_back(i);
 						}
-						std::random_shuffle(std::begin(slotCvModeShuffle), std::end(slotCvModeShuffle));
+						std::mt19937 rng(random::u32());
+						std::shuffle(std::begin(slotCvModeShuffle), std::end(slotCvModeShuffle), rng);
 						int p = std::min(std::max(presetFirst, slotCvModeShuffle.back()), presetLast - 1);
 						slotCvModeShuffle.pop_back();
 						presetLoad(p);
@@ -422,7 +423,8 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 								for (int i = presetFirst; i < presetLast; i++) {
 									slotCvModeShuffle.push_back(i);
 								}
-								std::random_shuffle(std::begin(slotCvModeShuffle), std::end(slotCvModeShuffle));
+								std::mt19937 rng(random::u32());
+								std::shuffle(std::begin(slotCvModeShuffle), std::end(slotCvModeShuffle), rng);
 							}
 							int p = std::min(std::max(presetFirst, slotCvModeShuffle.back()), presetLast - 1);
 							slotCvModeShuffle.pop_back();

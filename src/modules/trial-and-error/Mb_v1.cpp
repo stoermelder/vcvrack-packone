@@ -991,7 +991,8 @@ void ModuleBrowser::refresh(bool resetScroll) {
 				break;
 			case ModuleBrowserSort::RANDOM:
 				std::vector<std::reference_wrapper<Widget*>> vec(modelContainer->children.begin(), modelContainer->children.end());
-				std::random_shuffle(vec.begin(), vec.end());
+				std::mt19937 rng(random::u32());
+				std::shuffle(vec.begin(), vec.end(), rng);
 				std::list<Widget*> s(vec.begin(), vec.end());
 				modelContainer->children.swap(s);
 				break;
