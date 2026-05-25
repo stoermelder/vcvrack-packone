@@ -330,6 +330,8 @@ static int findTagIdByName(const std::string& name) {
 json_t* moduleBrowserToJson(bool includeUsageData) {
 	json_t* rootJ = json_object();
 
+	json_object_set_new(rootJ, "version", json_integer(1));
+
 	json_t* favoritesJ = json_array();
 	for (Model* model : favoriteModels) {
 		json_t* slugJ = json_object();
@@ -489,6 +491,11 @@ void moduleBrowserFromJson(json_t* rootJ) {
 	// Load predefined tag modifications
 	predefinedTagsAdded.clear();
 	predefinedTagsRemoved.clear();
+	
+	// Version check for migration
+	json_t* versionJ = json_object_get(rootJ, "version");
+	int version = versionJ ? json_integer_value(versionJ) : 0;
+	(void)version; // Reserved for future migrations
 	
 	// New format: "predefinedTags" with "added" and "removed" arrays
 	json_t* predefinedTagsJ = json_object_get(rootJ, "predefinedTags");
