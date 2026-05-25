@@ -144,6 +144,8 @@ std::string customTagResolveKey(const std::string& tag) {
 }
 
 void customTagAdd(Model* model, const std::string& tag) {
+	if (!isValidCustomTag(tag))
+		return;
 	customTagModels[customTagResolveKey(tag)].insert(model);
 }
 
@@ -153,6 +155,17 @@ void customTagRemove(Model* model, const std::string& tag) {
 	it->second.erase(model);
 	if (it->second.empty())
 		customTagModels.erase(it);
+}
+
+bool isValidCustomTag(const std::string& tag) {
+	std::string trimmed = rack::string::trim(tag);
+	// Check for empty or whitespace-only tags
+	if (trimmed.empty())
+		return false;
+	// Maximum tag length to prevent UI overflow and JSON issues
+	if (trimmed.length() > 64)
+		return false;
+	return true;
 }
 
 bool customTagHas(Model* model, const std::string& tag, bool resolveKey) {

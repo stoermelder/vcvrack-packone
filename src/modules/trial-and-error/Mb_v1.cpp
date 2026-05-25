@@ -278,7 +278,7 @@ struct ModelBox : widget::OpaqueWidget {
 			void onSelectKey(const event::SelectKey& e) override {
 				if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
 					std::string tag = string::trim(text);
-					if (!tag.empty()) {
+					if (isValidCustomTag(tag)) {
 						customTagAdd(model, tag);
 						ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
 						if (browser) {
