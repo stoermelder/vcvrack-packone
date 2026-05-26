@@ -30,6 +30,13 @@ static bool isModelVisible(plugin::Model* model, const bool& favourite, const st
 		}
 	}
 
+	// Filter deprecated modules
+	if (!pluginSettings.mbShowDeprecated) {
+		if (model->hidden) {
+			return false;
+		}
+	}
+
 	// Filter favorite
 	if (favourite) {
 		if (!isModelFavorite(model))

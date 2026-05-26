@@ -120,3 +120,4 @@ The *v2-mod* browser variant supports keyboard navigation and shortcuts:
     - Fixed broken button of "Favorites" category
 - v2.x.x
     - Added option to apply VCV Library whitelisting
+    - Added option to show deprecated module models (now hidden by default) (#440)

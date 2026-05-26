@@ -1011,6 +1011,13 @@ bool ModuleBrowser::isModelVisible(plugin::Model* model, const std::string& bran
 		}
 	}
 
+	// Filter deprecated modules
+	if (!pluginSettings.mbShowDeprecated) {
+		if (model->hidden) {
+			return false;
+		}
+	}
+
 	// Filter favorite
 	if (favorite && !isModelFavorite(model)) {
 		return false;
