@@ -5,6 +5,8 @@
 - Module [MB](./docs/trial-and-error/Mb.md)
     - Added option to apply VCV Library whitelisting
     - Added option to show deprecated module models (now hidden by default) (#440)
+- Module [MIDI-MON](./docs/midi/MidiMon.md)
+    - Added option to display engine frame instead of timestamp
 
 ## 2.4.0
 
