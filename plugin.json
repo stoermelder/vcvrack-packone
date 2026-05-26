@@ -594,6 +594,14 @@
 				"Utility"
 			],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/trial-and-error/Mb.md"
+		},
+		{
+			"slug": "Siren",
+			"name": "SIREN",
+			"description": "Sample browser — browse, preview and drag WAV/FLAC/MP3 samples to other modules",
+			"tags": [
+				"Utility"
+			]
 		}
 	]
 }

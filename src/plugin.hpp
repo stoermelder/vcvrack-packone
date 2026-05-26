@@ -72,6 +72,7 @@ extern Model* modelAhab;
 extern Model* modelAudioInterface64;
 extern Model* modelMb;
 extern Model* modelMe;
+extern Model* modelSiren;
 #else
 extern Model* modelBolt;
 extern Model* modelFourRounds;

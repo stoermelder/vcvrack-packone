@@ -67,6 +67,7 @@ void init(rack::Plugin* p) {
 	p->addModel(modelAudioInterface64);
 	p->addModel(modelMb);
 	p->addModel(modelMe);
+	p->addModel(modelSiren);
 
 	StoermelderPackOne::pluginSettings.readFromJson();
 	StoermelderPackOne::Ahab::Midi::init();
