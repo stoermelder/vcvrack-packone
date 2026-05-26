@@ -118,3 +118,5 @@ The *v2-mod* browser variant supports keyboard navigation and shortcuts:
     - Added Shift+Click to add a module without closing the browser
     - Changed hotkey to toggle hidden modules to Shift+Space (because of Spotlight on Mac)
     - Fixed broken button of "Favorites" category
+- v2.x.x
+    - Added option to apply VCV Library whitelisting

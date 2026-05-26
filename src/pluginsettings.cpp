@@ -71,6 +71,7 @@ static json_t* buildPluginJson(const Settings& s) {
 	json_object_set_new(mbJ, "favoriteHighlight", json_boolean(s.mbFavoriteHighlight));
 	json_object_set_new(mbJ, "searchThreshold", json_real(s.mbSearchThreshold));
 	json_object_set_new(mbJ, "magnifierEnabled", json_boolean(s.mbMagnifierEnabled));
+	json_object_set_new(mbJ, "applyLibraryWhitelist", json_boolean(s.mbApplyLibraryWhitelist));
 	json_object_set_new(j, "mb", mbJ);
 
 	json_t* overlayJ = json_object();
@@ -120,6 +121,7 @@ static void parsePluginJson(json_t* j, Settings& s) {
 		v = json_object_get(mbJ, "favoriteHighlight");   if (v) s.mbFavoriteHighlight = json_boolean_value(v);
 		v = json_object_get(mbJ, "searchThreshold");     if (v) s.mbSearchThreshold = json_real_value(v);
 		v = json_object_get(mbJ, "magnifierEnabled");    if (v) s.mbMagnifierEnabled = json_boolean_value(v);
+		v = json_object_get(mbJ, "applyLibraryWhitelist"); if (v) s.mbApplyLibraryWhitelist = json_boolean_value(v);
 	}
 
 	json_t* overlayJ = json_object_get(j, "overlay");

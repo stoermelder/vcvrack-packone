@@ -1,3 +1,10 @@
+## 2.x.x
+
+### Changes and Fixes
+
+- Module [MB](./docs/trial-and-error/Mb.md)
+    - Added option to apply VCV Library Whitelisting
+
 ## 2.4.0
 
 ### New modules

@@ -1004,22 +1004,41 @@ void ModuleBrowser::draw(const DrawArgs& args) {
 }
 
 bool ModuleBrowser::isModelVisible(plugin::Model* model, const std::string& brand, const std::set<int>& tagIds, bool favorite, bool hidden, const std::set<std::string>& customTagFilter) {
-	if (favorite && !isModelFavorite(model))
+	// Filter if not whitelisted by library
+	if (pluginSettings.mbApplyLibraryWhitelist) {
+		if (!settings::isModuleWhitelisted(model->plugin->slug, model->slug)) {
+			return false;
+		}
+	}
+
+	// Filter favorite
+	if (favorite && !isModelFavorite(model)) {
 		return false;
-	if (!brand.empty() && model->plugin->brand != brand)
+	}
+
+	// Filter brand
+	if (!brand.empty() && model->plugin->brand != brand) {
 		return false;
+	}
+
 	// Use effective tag IDs (with predefined tag modifications applied)
 	std::set<int> effectiveTagIds = getEffectiveTagIds(model);
 	for (int tagId : tagIds) {
 		if (effectiveTagIds.find(tagId) == effectiveTagIds.end())
 			return false;
 	}
+
+	// Filter custom tags
 	for (const auto& ct : customTagFilter) {
 		if (!customTagHas(model, ct))
 			return false;
 	}
-	if (!hidden && hiddenModels.find(model) != hiddenModels.end())
+
+	// Filter hidden modules (does not use the Rack's "hidden" property)
+	if (!hidden && hiddenModels.find(model) != hiddenModels.end()) {
 		return false;
+	}
+
 	return true;
 }
 
