@@ -2,7 +2,9 @@
 #include <string>
 #include <vector>
 #include <functional>
+#include <rack.hpp>
 #include "../../utils/TaskWorker.hpp"
+#include "SirenMetadata.hpp"
 
 namespace StoermelderPackOne {
 namespace Siren {
@@ -34,6 +36,15 @@ struct DataSource {
 
 	// Sync version for testing
 	virtual std::vector<DataSourceNode> loadChildrenSync(const std::string& path) = 0;
+
+	// Per-file metadata (tags, favorites). Returns nullptr if unsupported.
+	virtual RootMetadata* getMetadata() { return nullptr; }
+
+	// Persist metadata to disk. Called automatically on destruction.
+	virtual void saveMetadata() {}
+
+	// Append source-specific context menu items for a tree node.
+	virtual void appendNodeMenuItems(ui::Menu* menu, const DataSourceNode& node) {}
 };
 
 } // namespace Siren

@@ -28,6 +28,9 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	SirenDragState* dragState = nullptr;
 	TaskWorker*    worker    = nullptr;
 
+	// Called after any metadata change so the browser pane can refresh
+	std::function<void()> onMetadataChanged;
+
 	// Audio playback state (audio thread ↔ UI thread via atomics)
 	std::atomic<bool>    playing{false};
 	std::atomic<int64_t> playFramePos{0};
@@ -408,7 +411,104 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		}
 	}
 
+	void createContextMenu() {
+		if (currentPath.empty() || !metadata) return;
+
+		ghc::filesystem::path absPath(currentPath);
+		std::string rel = "/" + absPath.lexically_relative(
+			ghc::filesystem::path(metadata->rootPath)).generic_string();
+
+		ui::Menu* menu = createMenu();
+
+		// File label + open folder
+		menu->addChild(createMenuLabel(rack::system::getFilename(currentPath)));
+		menu->addChild(new ui::MenuSeparator);
+
+		// Favorite toggle
+		menu->addChild(createCheckMenuItem("Favorite", "",
+			[this, rel]() { return metadata->isFavorite(rel); },
+			[this, rel]() {
+				metadata->setFavorite(rel, !metadata->isFavorite(rel));
+				if (onMetadataChanged) onMetadataChanged();
+			}
+		));
+
+		menu->addChild(new ui::MenuSeparator);
+		menu->addChild(createMenuLabel("Tags"));
+
+		// Text field for adding a new tag
+		struct NewTagField : ui::TextField {
+			RootMetadata* metadata;
+			std::string rel;
+			std::function<void()> onChanged;
+			void onSelectKey(const event::SelectKey& e) override {
+				if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
+					std::string tag = rack::string::trim(text);
+					if (!tag.empty()) {
+						// Store lowercase for consistency
+						std::string lower = tag;
+						std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+						metadata->addTag(rel, lower);
+						if (onChanged) onChanged();
+					}
+					ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
+					if (overlay) overlay->requestDelete();
+					e.consume(this);
+					return;
+				}
+				if (!e.getTarget()) ui::TextField::onSelectKey(e);
+			}
+		};
+		NewTagField* ntf = new NewTagField;
+		ntf->box.size.x = 150.f;
+		ntf->placeholder = "New tag...";
+		ntf->metadata = metadata;
+		ntf->rel = rel;
+		ntf->onChanged = onMetadataChanged;
+		menu->addChild(ntf);
+		APP->event->setSelectedWidget(ntf);
+
+		// All known tags with checkmarks
+		struct TagItem : ui::MenuItem {
+			RootMetadata* metadata;
+			std::string rel;
+			std::string tag;
+			std::function<void()> onChanged;
+			void onAction(const event::Action& e) override {
+				auto current = metadata->getTags(rel);
+				bool has = std::find(current.begin(), current.end(), tag) != current.end();
+				if (has) metadata->removeTag(rel, tag);
+				else     metadata->addTag(rel, tag);
+				if (onChanged) onChanged();
+				e.unconsume();
+			}
+			void step() override {
+				auto current = metadata->getTags(rel);
+				rightText = CHECKMARK(std::find(current.begin(), current.end(), tag) != current.end());
+				MenuItem::step();
+			}
+		};
+
+		auto allTags = metadata->allTags();
+		std::vector<std::string> sorted(allTags.begin(), allTags.end());
+		std::sort(sorted.begin(), sorted.end());
+		for (const std::string& tag : sorted) {
+			TagItem* item = new TagItem;
+			item->text     = toTitleCase(tag);
+			item->metadata = metadata;
+			item->rel      = rel;
+			item->tag      = tag;
+			item->onChanged = onMetadataChanged;
+			menu->addChild(item);
+		}
+	}
+
 	void onButton(const event::Button& e) override {
+		if (e.button == GLFW_MOUSE_BUTTON_RIGHT && e.action == GLFW_PRESS) {
+			createContextMenu();
+			e.consume(this);
+			return;
+		}
 		if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS) {
 			// Waveform area: place playhead and begin drag
 			if (!currentPath.empty() && inWaveformArea(e.pos)) {

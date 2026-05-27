@@ -18,8 +18,28 @@ inline bool isSupportedAudioFile(const std::string& path) {
 
 struct FileSystemDataSource : DataSource {
 	std::string root;
+	RootMetadata metadata_;
 
-	explicit FileSystemDataSource(const std::string& rootPath) : root(rootPath) {}
+	explicit FileSystemDataSource(const std::string& rootPath) : root(rootPath) {
+		metadata_.rootPath = root;
+		metadata_.load(metadataFilePath());
+	}
+
+	~FileSystemDataSource() override {
+		saveMetadata();
+	}
+
+	std::string metadataFilePath() const {
+		std::string dir = rack::asset::user("Stoermelder-P1");
+		return dir + "/siren-" + hashPath(root) + ".json";
+	}
+
+	RootMetadata* getMetadata() override { return &metadata_; }
+
+	void saveMetadata() override {
+		rack::system::createDirectories(rack::asset::user("Stoermelder-P1"));
+		metadata_.save(metadataFilePath());
+	}
 
 	std::string rootPath() const override { return root; }
 
@@ -60,6 +80,14 @@ struct FileSystemDataSource : DataSource {
 		};
 		scan(dirPath.empty() ? root : dirPath);
 		return result;
+	}
+
+	void appendNodeMenuItems(ui::Menu* menu, const DataSourceNode& node) override {
+		if (node.isDirectory) return;
+		std::string dir = ghc::filesystem::path(node.fullPath).parent_path().string();
+		menu->addChild(createMenuItem("Open containing folder", "", [dir]() {
+			rack::system::openDirectory(dir);
+		}));
 	}
 
 	void loadChildrenAsync(

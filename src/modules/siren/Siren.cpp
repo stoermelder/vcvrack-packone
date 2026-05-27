@@ -1,36 +1,11 @@
-// dr_libs — single-file implementations (included once here)
-#define DR_WAV_IMPLEMENTATION
-#define DR_FLAC_IMPLEMENTATION
-#define DR_MP3_IMPLEMENTATION
-// Suppress warnings from dr_libs
-#ifdef __clang__
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wunused-function"
-#pragma clang diagnostic ignored "-Wunused-variable"
-#endif
-#ifdef __GNUC__
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-function"
-#pragma GCC diagnostic ignored "-Wunused-variable"
-#endif
-#include "../../../dep/drlibs/dr_wav.h"
-#include "../../../dep/drlibs/dr_flac.h"
-#include "../../../dep/drlibs/dr_mp3.h"
-#ifdef __clang__
-#pragma clang diagnostic pop
-#endif
-#ifdef __GNUC__
-#pragma GCC diagnostic pop
-#endif
-
 #include "../../plugin.hpp"
 #include "../../pluginsettings.hpp"
-#include "SirenMetadata.hpp"
 #include "SirenDataSource.hpp"
 #include "SirenFileSystem.hpp"
 #include "SirenAudio.hpp"
 #include "SirenBrowserPane.hpp"
 #include "SirenPreviewPane.hpp"
+#include <widget/ZoomWidget.hpp>
 
 #include <osdialog.h>
 #include <ghc/filesystem.hpp>
@@ -50,10 +25,6 @@ static std::string sirenFilePath() {
 
 static std::string sirenCacheDirPath() {
 	return settingsDirPath() + "/siren-cache";
-}
-
-static std::string rootMetaFilePath(const std::string& rootPath) {
-	return settingsDirPath() + "/siren-" + hashPath(rootPath) + ".json";
 }
 
 // ─── global siren settings ───────────────────────────────────────────────────
@@ -170,9 +141,6 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 	SirenBrowserPane* browserPane = nullptr;
 	SirenPreviewPane* previewPane = nullptr;
 
-	// Per-root metadata cache (loaded lazily)
-	std::map<std::string, RootMetadata> metadataCache;
-
 	explicit SirenWidget(SirenModule* module)
 		: ThemedModuleWidget<SirenModule>(module, "Siren")
 	{
@@ -183,31 +151,67 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		// Browser pane (left)
-		browserPane = new SirenBrowserPane;
-		browserPane->box.pos = Vec(20.f, 17.9f);
-		browserPane->box.size = Vec(202.3, 338.6f);
-		browserPane->dragState = &dragState;
-		browserPane->worker = &taskWorker;
-		browserPane->init(&taskWorker);
-		browserPane->onFileSelected = [this](const std::string& path) {
-			onFileSelected(path);
-		};
-		browserPane->getMetadata = [this](const std::string& root) -> RootMetadata* {
-			return getOrLoadMetadata(root);
-		};
-		addChild(browserPane);
+		// Browser pane (left) inside a ZoomWidget for reduced visual scale
+		{
+			const float zoom = 0.60f;
+			const Vec displaySize = Vec(172.3f, 338.6f);
+			const Vec logicalSize = displaySize.div(zoom);
+
+			widget::ZoomWidget* zw = new widget::ZoomWidget;
+			zw->box.pos  = Vec(20.f, 17.9f);
+			zw->box.size = displaySize;
+			zw->setZoom(zoom);
+
+			browserPane = new SirenBrowserPane;
+			browserPane->box.pos = Vec(0.f, 0.f);
+			browserPane->dragState = &dragState;
+			browserPane->worker = &taskWorker;
+			browserPane->init(&taskWorker);
+			browserPane->setSize(logicalSize);
+			browserPane->onFileSelected = [this](const std::string& path) {
+				onFileSelected(path);
+			};
+			browserPane->onAddRoot = [this]() {
+				char* path = osdialog_file(OSDIALOG_OPEN_DIR, nullptr, nullptr, nullptr);
+				if (!path) return;
+				std::string p(path);
+				free(path);
+				if (std::find(sirenSettings.rootFolders.begin(), sirenSettings.rootFolders.end(), p)
+				    == sirenSettings.rootFolders.end()) {
+					sirenSettings.rootFolders.push_back(p);
+					sirenSettings.activeRootIdx = (int)sirenSettings.rootFolders.size() - 1;
+					browserPane->setRoots(sirenSettings.rootFolders, sirenSettings.activeRootIdx);
+				}
+			};
+			browserPane->onRemoveRoot = [this](int idx) {
+				if (idx < 0 || idx >= (int)sirenSettings.rootFolders.size()) return;
+				sirenSettings.rootFolders.erase(sirenSettings.rootFolders.begin() + idx);
+				sirenSettings.activeRootIdx = sirenSettings.rootFolders.empty() ? -1 : 0;
+				browserPane->setRoots(sirenSettings.rootFolders, sirenSettings.activeRootIdx);
+			};
+			browserPane->onSelectRoot = [this](int idx) {
+				sirenSettings.activeRootIdx = idx;
+				browserPane->setRoots(sirenSettings.rootFolders, idx);
+			};
+			zw->addChild(browserPane);
+			addChild(zw);
+		}
 
 		// Preview pane (right)
 		previewPane = new SirenPreviewPane;
-		previewPane->box.pos = Vec(202.3f, 17.9f);
-		previewPane->box.size = Vec(297.8f, 338.6f);
+		previewPane->box.pos = Vec(192.3f, 17.9f);
+		previewPane->box.size = Vec(307.8f, 338.6f);
 		previewPane->init(&taskWorker, &dragState);
 		previewPane->cacheDir = sirenCacheDirPath();
 		addChild(previewPane);
 
 		// Wire preview pane to audio engine
 		if (module) module->previewPane = previewPane;
+
+		// Refresh browser when preview pane modifies metadata
+		previewPane->onMetadataChanged = [this]() {
+			browserPane->rebuildRowWidgets();
+		};
 
 		// Load global settings and restore state
 		sirenSettings.load();
@@ -221,8 +225,8 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 		std::string restoreFile = module ? module->lastFilePath : sirenSettings.lastFile;
 		float restorePos = module ? module->lastPlayheadPos : sirenSettings.lastPlayheadPos;
 		if (!restoreFile.empty()) {
-			std::string root = activeRoot();
-			previewPane->loadFile(restoreFile, getOrLoadMetadata(root));
+			DataSource* src = browserPane->activeDataSource;
+			previewPane->loadFile(restoreFile, src ? src->getMetadata() : nullptr);
 			previewPane->playheadPos = restorePos;
 		}
 
@@ -242,11 +246,7 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 			}
 		}
 		sirenSettings.save();
-
-		// Save all dirty metadata
-		for (auto& pair : metadataCache) {
-			pair.second.save(rootMetaFilePath(pair.first));
-		}
+		// Metadata is saved by FileSystemDataSource destructor via ~SirenBrowserPane
 	}
 
 	std::string activeRoot() const {
@@ -256,22 +256,10 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 		return "";
 	}
 
-	RootMetadata* getOrLoadMetadata(const std::string& root) {
-		if (root.empty()) return nullptr;
-		auto it = metadataCache.find(root);
-		if (it == metadataCache.end()) {
-			RootMetadata& meta = metadataCache[root];
-			meta.rootPath = root;
-			meta.load(rootMetaFilePath(root));
-			return &meta;
-		}
-		return &it->second;
-	}
-
 	void onFileSelected(const std::string& path) {
 		sirenSettings.lastFile = path;
-		std::string root = activeRoot();
-		previewPane->loadFile(path, getOrLoadMetadata(root));
+		DataSource* src = browserPane->activeDataSource;
+		previewPane->loadFile(path, src ? src->getMetadata() : nullptr);
 	}
 
 	void appendContextMenu(ui::Menu* menu) override {
