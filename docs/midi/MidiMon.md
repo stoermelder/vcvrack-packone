@@ -19,5 +19,5 @@ Each log entry is prefixed with a timing indicator in square brackets. By defaul
     - Added support for SysEx messages
     - Added support for CC 14-bit/RPN/NRPN messages
     - Reduced CPU usage
-- v2.x.x
+- v2.4.0
     - Added option to display engine frame instead of timestamp
