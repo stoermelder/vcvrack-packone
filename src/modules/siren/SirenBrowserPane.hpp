@@ -28,7 +28,7 @@ struct SirenDragState {
 
 // ─── layout constants ─────────────────────────────────────────────────────────
 
-static constexpr float BROWSER_TAG_H = 72.f;
+static constexpr float BROWSER_TAG_H = 96.f;
 
 static std::string toTitleCase(const std::string& s) {
 	std::string r = s;
@@ -418,7 +418,7 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 				float tw = measureChip(label);
 				if (x + tw > box.size.x - 4.f) {
 					curRow++;
-					if (curRow > 1) break;
+					if (curRow > 2) break;
 					x = 6.f;
 				}
 				float chipY = startY + curRow * rowStride;

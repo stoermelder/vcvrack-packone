@@ -110,34 +110,180 @@ struct SirenModule : Module {
 	float lastPlayheadPos = 0.f;
 	int activeRootIdx = -1;
 
-	// Shared audio state — written by UI thread, read by audio thread
-	// Pointer is safe: owned by SirenWidget, never deleted while module is alive
-	SirenPreviewPane* previewPane = nullptr;
+	// ── audio streaming ────────────────────────────────────────────────────────
+	// The module owns all audio state; the widget only drives the UI.
 
-	// VU meter levels (dBFS, -100 = silence). Written by audio thread, read by UI thread.
-	std::atomic<float> levelL{-100.f};
+	// ── lock-free command channel (UI → fill thread) ──────────────────────────
+	// UI sets; fill thread exchange()s to nullptr/-1/false to consume.
+	// No mutex on any audio path — only atomics and ring buffers.
+	std::atomic<AudioStream*> pendingStream{nullptr};  // raw ptr: UI releases ownership, fill thread adopts
+	std::atomic<int64_t>      pendingSeekFrame{-1};    // ≥0 means seek to this frame and start playing
+	std::atomic<bool>         pendingStop{false};      // true means stop and drain ring
+
+	// Audio ring buffers — single-producer (fill thread) / single-consumer (process())
+	static constexpr size_t RB_SIZE = 1 << 13;         // 8192 frames ≈ 186 ms at 44.1 kHz
+	dsp::RingBuffer<float, RB_SIZE> rbL, rbR;
+
+	// Fill thread management
+	std::thread             fillThread;
+	std::condition_variable fillCv;      // woken by UI commands or when ring needs data
+	std::mutex              fillCvMutex; // guards the condition variable only
+	std::atomic<bool>       fillThreadStop{false};
+
+	// Playback state
+	std::atomic<bool>  playing{false};       // DSP reads; fill thread and UI write
+	std::atomic<bool>  eofReached{false};    // fill thread sets at decoder EOF; DSP drains ring before stopping
+	std::atomic<float> playheadPos{0.f};     // DSP writes; UI reads for display
+
+	// Position counters — written before playing=true (release), read after playing (acquire)
+	int64_t              seekBaseFrame     = 0;  // file frame at which this play session began
+	int64_t              streamTotalFrames = 0;  // total frames in the open item; set in openStream()
+	std::atomic<int64_t> outputFrameCount{0};    // frames output since last seek; DSP increments
+
+	// VU meter — written by DSP thread, read by UI thread
+	std::atomic<float> levelL{-100.f};  // dBFS; -100 = silence
 	std::atomic<float> levelR{-100.f};
-
-	// Peak-hold state (audio thread only)
-	float peakL = -100.f;
+	float peakL = -100.f;  // peak-hold state, DSP thread only
 	float peakR = -100.f;
+
+	void fillThreadFunc() {
+		AudioStream* stream = nullptr;  // owned by this thread
+
+		while (!fillThreadStop.load(std::memory_order_relaxed)) {
+			// ── process pending commands ──────────────────────────────────
+			if (pendingStop.exchange(false, std::memory_order_acq_rel)) {
+				playing.store(false, std::memory_order_release);
+				eofReached.store(false, std::memory_order_relaxed);
+				rbL.clear(); rbR.clear();
+			}
+
+			AudioStream* ns = pendingStream.exchange(nullptr, std::memory_order_acq_rel);
+			if (ns) {
+				delete stream;
+				stream = ns;
+				eofReached.store(false, std::memory_order_relaxed);
+				rbL.clear(); rbR.clear();
+			}
+
+			int64_t sf = pendingSeekFrame.exchange(-1, std::memory_order_acq_rel);
+			if (sf >= 0 && stream) {
+				stream->seekTo(sf);
+				outputFrameCount.store(0, std::memory_order_relaxed);
+				eofReached.store(false, std::memory_order_relaxed);
+				rbL.clear(); rbR.clear();
+				playing.store(true, std::memory_order_release);
+			}
+
+			// ── fill ring buffer if playing ───────────────────────────────
+			if (playing.load(std::memory_order_relaxed) && stream && !eofReached.load(std::memory_order_relaxed)) {
+				size_t space = rbL.capacity();
+				if (space > 0) {
+					static constexpr size_t CHUNK = 1024;
+					float tmp[CHUNK * 2];
+					size_t toRead = std::min(space, CHUNK);
+					int     ch    = stream->channels();
+					int64_t nRead = stream->readF32(tmp, (int64_t)toRead);
+					for (int64_t f = 0; f < nRead; f++) {
+						rbL.push(tmp[f * ch]);
+						rbR.push(ch >= 2 ? tmp[f * ch + 1] : tmp[f * ch]);
+					}
+					// Signal EOF without stopping — DSP drains the ring before stopping
+					if (nRead == 0) eofReached.store(true, std::memory_order_release);
+				}
+			}
+
+			// ── sleep when idle ───────────────────────────────────────────
+			{
+				std::unique_lock<std::mutex> cvLock(fillCvMutex);
+				fillCv.wait_for(cvLock, std::chrono::milliseconds(5), [this] {
+					return fillThreadStop.load()
+					    || pendingStop.load()
+					    || pendingStream.load() != nullptr
+					    || pendingSeekFrame.load() >= 0
+					    || (playing.load() && rbL.capacity() > 256);
+				});
+			}
+		}
+
+		delete stream;  // clean up on thread exit
+	}
 
 	SirenModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configParam(PARAM_VOLUME, 0.f, 2.f, 1.f, "Volume", " dB", -10.f, 20.f);
 		configOutput(OUTPUT_L, "Left audio out");
 		configOutput(OUTPUT_R, "Right audio out");
+
+		// Dedicated fill thread — no mutexes, only atomics and ring buffer
+		fillThread = std::thread(&SirenModule::fillThreadFunc, this);
+	}
+
+	~SirenModule() override {
+		fillThreadStop = true;
+		fillCv.notify_all();
+		if (fillThread.joinable()) fillThread.join();
+		// Delete any pending stream the fill thread never consumed
+		delete pendingStream.exchange(nullptr, std::memory_order_acq_rel);
+	}
+
+	// Open a streaming decoder for the given item (called from UI thread).
+	// Transfers ownership of the new AudioStream to the fill thread via atomic.
+	void openStream(const std::string& id, DataSource* src) {
+		AudioStream* ns = (src && !id.empty()) ? src->openAudioStream(id).release() : nullptr;
+		// Delete any previous pending stream that the fill thread hasn't consumed yet
+		delete pendingStream.exchange(ns, std::memory_order_acq_rel);
+
+		streamTotalFrames = 0;
+		if (src && !id.empty()) {
+			AudioInfo inf;
+			src->loadAudioInfo(id, inf);
+			streamTotalFrames = inf.frameCount;
+		}
+		fillCv.notify_one();
+	}
+
+	// Seek to pos [0,1] and start playback (called from UI thread).
+	void startPlayback(float pos) {
+		int64_t total = streamTotalFrames;
+		seekBaseFrame = (total > 0) ? (int64_t)(pos * (float)total) : 0;
+		outputFrameCount.store(0, std::memory_order_relaxed);
+		playheadPos.store(pos, std::memory_order_relaxed);
+		// Send seek command to fill thread (release: seekBaseFrame visible after acquire)
+		pendingSeekFrame.store(seekBaseFrame, std::memory_order_release);
+		fillCv.notify_one();
+	}
+
+	void stopPlayback() {
+		pendingStop.store(true, std::memory_order_release);
+		fillCv.notify_one();
 	}
 
 	void process(const ProcessArgs& args) override {
-		if (!previewPane) return;
-
 		float l = 0.f, r = 0.f;
-		previewPane->fillAudio(&l, &r, 1, args.sampleRate);
+
+		// DSP reads ring buffer — no mutex, no file I/O
+		if (playing.load(std::memory_order_acquire)) {
+			if (!rbL.empty()) {
+				l = rbL.shift();
+				r = rbR.shift();
+
+				int64_t count = outputFrameCount.fetch_add(1, std::memory_order_relaxed) + 1;
+				int64_t total = streamTotalFrames;
+				if (total > 0) {
+					float ph = (float)(seekBaseFrame + count) / (float)total;
+					playheadPos.store(ph, std::memory_order_relaxed);
+					if (seekBaseFrame + count >= total)
+						playing.store(false, std::memory_order_release);
+				}
+			} else if (eofReached.load(std::memory_order_acquire)) {
+				// Ring drained and fill thread hit EOF — end of file
+				playing.store(false, std::memory_order_release);
+			}
+		}
 
 		float vol = params[PARAM_VOLUME].getValue();
-		l *= vol;
-		r *= vol;
+		l *= vol * 5.f;
+		r *= vol * 5.f;
 
 		outputs[OUTPUT_L].setVoltage(l);
 		outputs[OUTPUT_R].setVoltage(r);
@@ -317,28 +463,34 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 			browserPane->onFileSelected = [this](const std::string& path) {
 				onFileSelected(path);
 			};
-			browserPane->onAddRoot = [this]() {
-				char* path = osdialog_file(OSDIALOG_OPEN_DIR, nullptr, nullptr, nullptr);
-				if (!path) return;
-				std::string p(path);
-				free(path);
-				if (std::find(sirenSettings.rootFolders.begin(), sirenSettings.rootFolders.end(), p)
-				    == sirenSettings.rootFolders.end()) {
-					sirenSettings.rootFolders.push_back(p);
-					sirenSettings.activeRootIdx = (int)sirenSettings.rootFolders.size() - 1;
+			{
+				SirenModule* m = module;  // capture for lambdas (template base not visible by plain name)
+				browserPane->onAddRoot = [this, m]() {
+					char* path = osdialog_file(OSDIALOG_OPEN_DIR, nullptr, nullptr, nullptr);
+					if (!path) return;
+					std::string p(path);
+					free(path);
+					if (std::find(sirenSettings.rootFolders.begin(), sirenSettings.rootFolders.end(), p)
+					    == sirenSettings.rootFolders.end()) {
+						sirenSettings.rootFolders.push_back(p);
+						sirenSettings.activeRootIdx = (int)sirenSettings.rootFolders.size() - 1;
+						if (m) m->activeRootIdx = sirenSettings.activeRootIdx;
+						browserPane->setRoots(sirenSettings.rootFolders, sirenSettings.activeRootIdx);
+					}
+				};
+				browserPane->onRemoveRoot = [this, m](int idx) {
+					if (idx < 0 || idx >= (int)sirenSettings.rootFolders.size()) return;
+					sirenSettings.rootFolders.erase(sirenSettings.rootFolders.begin() + idx);
+					sirenSettings.activeRootIdx = sirenSettings.rootFolders.empty() ? -1 : 0;
+					if (m) m->activeRootIdx = sirenSettings.activeRootIdx;
 					browserPane->setRoots(sirenSettings.rootFolders, sirenSettings.activeRootIdx);
-				}
-			};
-			browserPane->onRemoveRoot = [this](int idx) {
-				if (idx < 0 || idx >= (int)sirenSettings.rootFolders.size()) return;
-				sirenSettings.rootFolders.erase(sirenSettings.rootFolders.begin() + idx);
-				sirenSettings.activeRootIdx = sirenSettings.rootFolders.empty() ? -1 : 0;
-				browserPane->setRoots(sirenSettings.rootFolders, sirenSettings.activeRootIdx);
-			};
-			browserPane->onSelectRoot = [this](int idx) {
-				sirenSettings.activeRootIdx = idx;
-				browserPane->setRoots(sirenSettings.rootFolders, idx);
-			};
+				};
+				browserPane->onSelectRoot = [this, m](int idx) {
+					sirenSettings.activeRootIdx = idx;
+					if (m) m->activeRootIdx = idx;
+					browserPane->setRoots(sirenSettings.rootFolders, idx);
+				};
+			}
 			zw->addChild(browserPane);
 			display->addChild(zw);
 		}
@@ -384,8 +536,22 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 		previewPane->cacheDir = sirenCacheDirPath();
 		display->addChild(previewPane);
 
-		// Wire preview pane to audio engine
-		if (module) module->previewPane = previewPane;
+		// Wire audio callbacks: pane → module
+		if (module) {
+			SirenModule* m = module;
+			previewPane->openStreamCallback    = [m](const std::string& id, DataSource* src) {
+				m->openStream(id, src);
+			};
+			previewPane->startPlaybackCallback = [m](float pos) {
+				m->startPlayback(pos);
+			};
+			previewPane->stopPlaybackCallback  = [m]() {
+				m->stopPlayback();
+			};
+			// Atomic pointers for low-overhead display reads
+			previewPane->modulePlayheadPos = &module->playheadPos;
+			previewPane->modulePlaying     = &module->playing;
+		}
 
 		// Refresh browser when preview pane modifies metadata
 		previewPane->onMetadataChanged = [this]() {
@@ -405,8 +571,8 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 		float restorePos = module ? module->lastPlayheadPos : sirenSettings.lastPlayheadPos;
 		if (!restoreFile.empty()) {
 			DataSource* src = browserPane->activeDataSource;
-			previewPane->loadFile(restoreFile, src ? src->getMetadata() : nullptr);
-			previewPane->playheadPos = restorePos;
+			previewPane->loadItem(restoreFile, src, src ? src->getMetadata() : nullptr);
+			if (module) module->playheadPos.store(restorePos, std::memory_order_relaxed);
 		}
 
 
@@ -424,11 +590,11 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 	~SirenWidget() override {
 		// Sync preview state back into module fields (for patch save) and global settings
 		if (previewPane) {
-			sirenSettings.lastFile = previewPane->currentPath;
-			sirenSettings.lastPlayheadPos = previewPane->playheadPos;
+			sirenSettings.lastFile = previewPane->currentId;
+			sirenSettings.lastPlayheadPos = module ? module->playheadPos.load() : 0.f;
 			if (module) {
-				module->lastFilePath = previewPane->currentPath;
-				module->lastPlayheadPos = previewPane->playheadPos;
+				module->lastFilePath = previewPane->currentId;
+				module->lastPlayheadPos = module->playheadPos.load();
 				module->activeRootIdx = sirenSettings.activeRootIdx;
 			}
 		}
@@ -445,8 +611,9 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 
 	void onFileSelected(const std::string& path) {
 		sirenSettings.lastFile = path;
+		if (module) module->lastFilePath = path;  // keep dataToJson() in sync
 		DataSource* src = browserPane->activeDataSource;
-		previewPane->loadFile(path, src ? src->getMetadata() : nullptr, true);
+		previewPane->loadItem(path, src, src ? src->getMetadata() : nullptr, true);
 	}
 
 	void appendContextMenu(ui::Menu* menu) override {

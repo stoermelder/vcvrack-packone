@@ -115,8 +115,11 @@ struct RootMetadata {
 	void addTag(const std::string& rel, const std::string& tag) {
 		auto& meta = samples[rel];
 		meta.relativePath = rel;
-		if (std::find(meta.tags.begin(), meta.tags.end(), tag) == meta.tags.end())
-			meta.tags.push_back(tag);
+		// Case-insensitive duplicate check; preserve exact spelling of first occurrence
+		std::string tagLow = rack::string::lowercase(tag);
+		for (const std::string& t : meta.tags)
+			if (rack::string::lowercase(t) == tagLow) return;
+		meta.tags.push_back(tag);
 	}
 
 	void removeTag(const std::string& rel, const std::string& tag) {

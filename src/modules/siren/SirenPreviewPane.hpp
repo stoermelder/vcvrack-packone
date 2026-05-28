@@ -1,5 +1,9 @@
 #pragma once
 #include <rack.hpp>
+#include <mutex>
+#include <memory>
+#include <thread>
+#include <condition_variable>
 #include "SirenAudio.hpp"
 #include "SirenMetadata.hpp"
 #include "SirenBrowserPane.hpp"  // for SirenDragState
@@ -15,13 +19,15 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	static constexpr float WAVE_X     = 8.f;   // left margin (for L/R labels)
 
 	// ── state ────────────────────────────────────────────────────────────────
-	std::string currentPath;
-	AudioInfo   info;
+	std::string  currentId;          // opaque item identifier (supplied by the data source)
+	DataSource*  source = nullptr;   // used only during loadItem; must not be stored for deferred use
+	std::string  displayName;        // cached from source->getDisplayName() at load time
+	std::string  relPath;            // cached from source->getRelativePath() at load time
+	AudioInfo    info;
 	WaveformCache cache;
 	std::atomic<bool> cacheReady{false};
 	std::atomic<bool> cacheBuilding{false};
 
-	float playheadPos      = 0.f;
 	float inPoint          = 0.f;   // stored start position (set on click/drag)
 	float scrubPos         = 0.f;   // drag-only position; never touched by audio thread
 	float dragStartRackX   = 0.f;   // rack-space X when drag began
@@ -35,22 +41,21 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	// Called after any metadata change so the browser pane can refresh
 	std::function<void()> onMetadataChanged;
 
-	// Audio playback state (audio thread ↔ UI thread via atomics)
-	std::atomic<bool>    playing{false};
-	std::atomic<int64_t> playFramePos{0};
-	std::vector<float>   audioBuffer;
-	int audioChannels   = 0;
-	int audioSampleRate = 0;
+	// ── module interface (audio state lives in SirenModule) ──────────────────
+	// Callbacks set by SirenWidget after both module and pane are constructed.
+	std::function<void(const std::string& id, DataSource* src)> openStreamCallback;
+	std::function<void(float pos)> startPlaybackCallback;
+	std::function<void()>          stopPlaybackCallback;
+
+	// Direct atomic pointers into the module for low-overhead display reads.
+	std::atomic<float>* modulePlayheadPos = nullptr;
+	std::atomic<bool>*  modulePlaying     = nullptr;
 
 	// Pending waveform cache from worker
 	std::atomic<int> cacheGeneration{0};
 	struct PendingCache { WaveformCache cache; int gen = -1; bool valid = false; };
 	PendingCache      pendingCache;
 	std::atomic<bool> pendingCacheReady{false};
-
-	// Auto-play: set true by loadFile(startPlay=true), cleared once buffer is ready
-	bool              autoPlay{false};
-	std::atomic<bool> audioBufferReady{false};
 
 	// Cache dir path (set by module widget)
 	std::string cacheDir;
@@ -60,35 +65,36 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		dragState = ds;
 	}
 
-	void loadFile(const std::string& path, RootMetadata* meta, bool startPlay = false, bool forceRebuild = false) {
-		currentPath = path;
-		metadata    = meta;
-		cacheReady  = false;
+	void loadItem(const std::string& id, DataSource* src, RootMetadata* meta,
+	              bool startPlay = false, bool forceRebuild = false) {
+		// Delegate audio open to the module via callback
+		if (stopPlaybackCallback)  stopPlaybackCallback();
+		if (openStreamCallback)    openStreamCallback(id, src);
+
+		currentId     = id;
+		source        = src;
+		metadata      = meta;
+		displayName   = (src && !id.empty()) ? src->getDisplayName(id)  : "";
+		relPath       = (src && !id.empty()) ? src->getRelativePath(id) : "";
+		cacheReady    = false;
 		cacheBuilding = false;
 		pendingCacheReady.store(false, std::memory_order_relaxed);
 		int gen = ++cacheGeneration;
-		playing      = false;
-		playFramePos = 0;
-		playheadPos  = 0.f;
 		inPoint      = 0.f;
 		scrubPos     = 0.f;
-		audioBuffer.clear();
-		audioChannels   = 0;
-		audioSampleRate = 0;
-		audioBufferReady.store(false, std::memory_order_relaxed);
-		autoPlay = startPlay;
 
-		if (path.empty()) return;
+		if (id.empty() || !src) return;
 
-		loadAudioInfo(path, info);
+		src->loadAudioInfo(id, info);
 
-		std::string cacheFile = cachePathFor(path);
+		int64_t ts        = src->getTimestamp(id);
+		std::string cacheFile = cachePathFor(id);
 		if (!forceRebuild) {
 			WaveformCache loaded;
-			if (loadWaveformCacheFile(cacheFile, path, loaded)) {
+			if (loadWaveformCacheFile(cacheFile, ts, loaded)) {
 				cache      = std::move(loaded);
 				cacheReady = true;
-				loadAudioBuffer(path);
+				if (startPlay) { inPoint = 0.f; scrubPos = 0.f; startPlaybackFrom(0.f); }
 				return;
 			}
 		}
@@ -98,12 +104,17 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		int pw = (int)box.size.x - (int)WAVE_X - 8;
 		if (pw < 64) pw = 512;
 
-		std::string pathCopy     = path;
 		std::string cacheCopy    = cacheFile;
 		std::string cacheDirCopy = cacheDir;
-		worker->work([this, pathCopy, cacheCopy, cacheDirCopy, pw, gen]() {
+		worker->work([this, id, ts, src, cacheCopy, cacheDirCopy, pw, gen]() {
+			std::vector<float> samples;
+			int ch = 0, sr = 0;
+			bool ok = src->decodeAudioF32(id, samples, ch, sr);
 			WaveformCache built;
-			bool ok = buildWaveformCache(pathCopy, pw, built);
+			if (ok) {
+				int64_t frames = (int64_t)(samples.size() / (size_t)ch);
+				ok = buildWaveformCache(ts, samples, frames, ch, pw, built);
+			}
 
 			if (ok && !cacheDirCopy.empty()) {
 				rack::system::createDirectories(cacheDirCopy);
@@ -115,78 +126,8 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			pendingCache.valid = ok;
 			pendingCacheReady.store(true, std::memory_order_release);
 		});
-	}
 
-	void loadAudioBuffer(const std::string& path) {
-		if (!worker || path.empty()) return;
-		std::string pathCopy = path;
-		worker->work([this, pathCopy]() {
-			std::string ext = rack::system::getExtension(rack::system::getFilename(pathCopy));
-			for (char& c : ext) c = (char)tolower(c);
-
-			std::vector<float> buf;
-			int ch = 0, sr = 0;
-			int64_t frames = 0;
-
-			if (ext == ".wav") {
-				drwav wav;
-				if (drwav_init_file(&wav, pathCopy.c_str(), nullptr)) {
-					ch = (int)wav.channels; sr = (int)wav.sampleRate;
-					frames = (int64_t)wav.totalPCMFrameCount;
-					buf.resize((size_t)(frames * ch));
-					drwav_read_pcm_frames_f32(&wav, (drwav_uint64)frames, buf.data());
-					drwav_uninit(&wav);
-				}
-			}
-			else if (ext == ".flac") {
-				unsigned int flacCh = 0, flacSr = 0;
-				drflac_uint64 flacFrames = 0;
-				float* flacBuf = drflac_open_file_and_read_pcm_frames_f32(pathCopy.c_str(), &flacCh, &flacSr, &flacFrames, nullptr);
-				if (flacBuf) {
-					ch = (int)flacCh; sr = (int)flacSr;
-					frames = (int64_t)flacFrames;
-					buf.assign(flacBuf, flacBuf + flacFrames * flacCh);
-					drflac_free(flacBuf, nullptr);
-				}
-			}
-			else if (ext == ".mp3") {
-				drmp3 mp3;
-				if (drmp3_init_file(&mp3, pathCopy.c_str(), nullptr)) {
-					ch = (int)mp3.channels; sr = (int)mp3.sampleRate;
-					frames = (int64_t)drmp3_get_pcm_frame_count(&mp3);
-					buf.resize((size_t)(frames * ch));
-					drmp3_read_pcm_frames_f32(&mp3, (drmp3_uint64)frames, buf.data());
-					drmp3_uninit(&mp3);
-				}
-			}
-
-			audioBuffer     = std::move(buf);
-			audioChannels   = ch;
-			audioSampleRate = sr;
-			audioBufferReady.store(true, std::memory_order_release);
-		});
-	}
-
-	// Called from audio thread
-	bool fillAudio(float* outL, float* outR, int frames, float /*sampleRate*/) {
-		if (!playing || audioBuffer.empty() || audioChannels == 0)
-			return false;
-		int64_t pos   = playFramePos.load();
-		int64_t total = (int64_t)(audioBuffer.size() / (size_t)audioChannels);
-
-		for (int f = 0; f < frames; f++) {
-			if (pos >= total) { playing = false; break; }
-			float l = audioBuffer[(size_t)(pos * audioChannels)];
-			float r = (audioChannels >= 2) ? audioBuffer[(size_t)(pos * audioChannels + 1)] : l;
-			outL[f] = l * 5.f;
-			outR[f] = r * 5.f;
-			pos++;
-			if ((f & 0xFF) == 0 && total > 0)
-				playheadPos = (float)pos / (float)total;
-		}
-		playFramePos = pos;
-		if (pos >= total) playing = false;
-		return true;
+		if (startPlay) { inPoint = 0.f; scrubPos = 0.f; startPlaybackFrom(0.f); }
 	}
 
 	void step() override {
@@ -197,16 +138,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 				cache         = std::move(pendingCache.cache);
 				cacheReady    = true;
 				cacheBuilding = false;
-				loadAudioBuffer(currentPath);
 			}
-		}
-
-		// Auto-play once the audio buffer is ready
-		if (autoPlay && audioBufferReady.load(std::memory_order_acquire)) {
-			autoPlay = false;
-			inPoint  = 0.f;
-			scrubPos = 0.f;
-			startPlaybackFrom(0.f);
 		}
 
 		widget::OpaqueWidget::step();
@@ -222,10 +154,10 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		float waveH = h - waveY - READOUT_H - 4.f;
 		if (waveH < 20.f) waveH = 20.f;
 
-		bool isPlaying = playing.load();
+		bool isPlaying = modulePlaying ? modulePlaying->load() : false;
 
 		// ── top bar ───────────────────────────────────────────────────────────
-		if (!currentPath.empty()) {
+		if (!currentId.empty()) {
 			// Play/stop button
 			nvgFontSize(args.vg, 14.f);
 			nvgFillColor(args.vg, isPlaying
@@ -234,7 +166,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			nvgText(args.vg, 8.f, 12.f, isPlaying ? "■" : "▶", nullptr);
 
 			// Filename — gold when playing, light when idle
-			std::string fname = rack::system::getFilename(currentPath);
+			std::string fname = displayName.empty() ? currentId : displayName;
 			nvgFontSize(args.vg, 12.f);
 			nvgFillColor(args.vg, isPlaying
 				? nvgRGBf(1.f, 0.85f, 0.1f)
@@ -341,7 +273,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		}
 
 		// InPoint marker — thin gold line with downward triangle, drawn first
-		if (!currentPath.empty()) {
+		if (!currentId.empty()) {
 			float ipX = WAVE_X + inPoint * waveW;
 
 			nvgBeginPath(args.vg);
@@ -362,8 +294,8 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		}
 
 		// Playhead line + triangle pointer
-		if (!currentPath.empty()) {
-			float phX = WAVE_X + playheadPos * waveW;
+		if (!currentId.empty()) {
+			float ph = modulePlayheadPos ? modulePlayheadPos->load(std::memory_order_relaxed) : 0.f; float phX = WAVE_X + ph * waveW;
 
 			nvgBeginPath(args.vg);
 			nvgMoveTo(args.vg, phX, waveY);
@@ -390,7 +322,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			return rack::string::f("%02d:%05.2f", mm, ss);
 		};
 
-		float pos = playheadPos * info.durationSeconds;
+		float pos = (modulePlayheadPos ? modulePlayheadPos->load(std::memory_order_relaxed) : 0.f) * info.durationSeconds;
 		float col = waveW / 4.f;
 		nvgFontSize(args.vg, 10.f);
 
@@ -419,7 +351,11 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		nvgFill(args.vg);
 		nvgFontSize(args.vg, 10.f);
 		nvgFillColor(args.vg, nvgRGBf(1.f, 0.85f, 0.1f));
-		std::string lbl = rack::system::getFilename(dragState->dragPath);
+		// Use cached displayName when dragging the currently loaded item, otherwise
+		// extract a name from the raw path (avoids calling through potentially-stale source ptr)
+		std::string lbl = (dragState->dragPath == currentId && !displayName.empty())
+		                ? displayName
+		                : rack::system::getFilename(dragState->dragPath);
 		nvgText(args.vg, lp.x + 14.f, lp.y + 12.f, lbl.c_str(), nullptr);
 	}
 
@@ -443,25 +379,18 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	}
 
 	void startPlaybackFrom(float pos) {
-		playheadPos = pos;
-		if (!audioBuffer.empty() && audioChannels > 0) {
-			int64_t total = (int64_t)(audioBuffer.size() / (size_t)audioChannels);
-			playFramePos  = (int64_t)(pos * (float)total);
-			playing       = true;
-		}
+		if (startPlaybackCallback) startPlaybackCallback(pos);
 	}
 
 	void createContextMenu() {
-		if (currentPath.empty() || !metadata) return;
+		if (currentId.empty() || !source || !metadata) return;
 
-		ghc::filesystem::path absPath(currentPath);
-		std::string rel = "/" + absPath.lexically_relative(
-			ghc::filesystem::path(metadata->rootPath)).generic_string();
+		std::string rel = relPath;
 
 		ui::Menu* menu = createMenu();
 
-		// File label + open folder
-		menu->addChild(createMenuLabel(rack::system::getFilename(currentPath)));
+		// File label
+		menu->addChild(createMenuLabel(displayName.empty() ? currentId : displayName));
 		menu->addChild(new ui::MenuSeparator);
 
 		// Favorite toggle
@@ -485,10 +414,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 				if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
 					std::string tag = rack::string::trim(text);
 					if (!tag.empty()) {
-						// Store lowercase for consistency
-						std::string lower = tag;
-						std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
-						metadata->addTag(rel, lower);
+						metadata->addTag(rel, tag);
 						if (onChanged) onChanged();
 					}
 					ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
@@ -551,7 +477,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		}
 		if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS) {
 			// Waveform area: set inPoint and start playback from there
-			if (!currentPath.empty() && inWaveformArea(e.pos)) {
+			if (!currentId.empty() && inWaveformArea(e.pos)) {
 				scrubPos       = posToPlayhead(e.pos);
 				inPoint        = scrubPos;
 				dragStartRackX = APP->scene->rack->getMousePos().x;
@@ -562,8 +488,8 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			}
 			// Play/stop button — always starts from the stored inPoint
 			if (e.pos.x < 26.f && e.pos.y < TB_H) {
-				if (isPlaying()) playing = false;
-				else if (!currentPath.empty()) startPlaybackFrom(inPoint);
+				if (modulePlaying && modulePlaying->load()) stopPlaybackCallback();
+				else if (!currentId.empty()) startPlaybackFrom(inPoint);
 				e.consume(this);
 				return;
 			}
@@ -572,14 +498,14 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	}
 
 	void onDragStart(const event::DragStart& e) override {
-		if (!currentPath.empty() && !draggingPlayhead && dragState) {
+		if (!currentId.empty() && !draggingPlayhead && dragState) {
 			dragState->active   = true;
-			dragState->dragPath = currentPath;
+			dragState->dragPath = currentId;
 		}
 	}
 
 	void onDragMove(const event::DragMove& e) override {
-		if (draggingPlayhead && !currentPath.empty()) {
+		if (draggingPlayhead && !currentId.empty()) {
 			Rect r = waveformRect();
 			if (r.size.x > 0.f) {
 				float dx = APP->scene->rack->getMousePos().x - dragStartRackX;
@@ -610,7 +536,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	}
 
 private:
-	bool isPlaying() const { return playing.load(); }
+	bool isPlaying() const { return modulePlaying && modulePlaying->load(); }
 };
 
 } // namespace Siren

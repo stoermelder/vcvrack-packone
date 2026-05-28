@@ -2,9 +2,11 @@
 #include <string>
 #include <vector>
 #include <functional>
+#include <memory>
 #include <rack.hpp>
 #include "../../utils/TaskWorker.hpp"
 #include "SirenMetadata.hpp"
+#include "SirenAudio.hpp"
 
 namespace StoermelderPackOne {
 namespace Siren {
@@ -20,6 +22,25 @@ struct DataSourceNode {
 };
 
 enum class LoadState { IDLE, LOADING, READY };
+
+// ─── AudioStream ─────────────────────────────────────────────────────────────
+// Streaming decoder kept open by the data source — no full-file buffering needed.
+
+struct AudioStream {
+	virtual ~AudioStream() = default;
+	virtual int     channels()    const = 0;
+	virtual int     sampleRate()  const = 0;
+	virtual int64_t totalFrames() const = 0;  // 0 if unknown (e.g. live stream)
+
+	// Read up to frameCount interleaved PCM frames normalised to [-1, 1].
+	// Returns the number of frames actually read (< frameCount at EOF).
+	virtual int64_t readF32(float* buffer, int64_t frameCount) = 0;
+
+	// Seek to an absolute frame index. Returns true on success.
+	virtual bool seekTo(int64_t frameIndex) = 0;
+};
+
+// ─── DataSource ──────────────────────────────────────────────────────────────
 
 struct DataSource {
 	virtual ~DataSource() = default;
@@ -45,6 +66,32 @@ struct DataSource {
 
 	// Append source-specific context menu items for a tree node.
 	virtual void appendNodeMenuItems(ui::Menu* menu, const DataSourceNode& node) {}
+
+	// ── audio provision (abstracts format / transport) ────────────────────────
+
+	// Human-readable display name for an item id (e.g. filename without directory).
+	virtual std::string getDisplayName(const std::string& id) const { return id; }
+
+	// Relative path within this source (used for metadata key lookup).
+	virtual std::string getRelativePath(const std::string& id) const { return id; }
+
+	// Modification timestamp for cache invalidation. 0 = caching disabled.
+	virtual int64_t getTimestamp(const std::string& id) const { return 0; }
+
+	// Load audio header metadata only (fast, no PCM decode).
+	virtual bool loadAudioInfo(const std::string& id, AudioInfo& out) const { return false; }
+
+	// Decode full PCM audio to interleaved float samples normalised to [-1, 1].
+	// Used for waveform cache building; prefer openAudioStream for playback.
+	virtual bool decodeAudioF32(const std::string& id,
+	                            std::vector<float>& samples,
+	                            int& channels, int& sampleRate) const { return false; }
+
+	// Open a streaming decoder for the given item id.
+	// Returns nullptr if streaming is unsupported or the item cannot be opened.
+	virtual std::unique_ptr<AudioStream> openAudioStream(const std::string& id) const {
+		return nullptr;
+	}
 };
 
 } // namespace Siren
