@@ -22,6 +22,10 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	std::atomic<bool> cacheBuilding{false};
 
 	float playheadPos      = 0.f;
+	float inPoint          = 0.f;   // stored start position (set on click/drag)
+	float scrubPos         = 0.f;   // drag-only position; never touched by audio thread
+	float dragStartRackX   = 0.f;   // rack-space X when drag began
+	float dragStartScrub   = 0.f;   // scrubPos when drag began
 	bool  draggingPlayhead = false;
 
 	RootMetadata*  metadata  = nullptr;
@@ -44,6 +48,10 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	PendingCache      pendingCache;
 	std::atomic<bool> pendingCacheReady{false};
 
+	// Auto-play: set true by loadFile(startPlay=true), cleared once buffer is ready
+	bool              autoPlay{false};
+	std::atomic<bool> audioBufferReady{false};
+
 	// Cache dir path (set by module widget)
 	std::string cacheDir;
 
@@ -52,7 +60,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		dragState = ds;
 	}
 
-	void loadFile(const std::string& path, RootMetadata* meta, bool forceRebuild = false) {
+	void loadFile(const std::string& path, RootMetadata* meta, bool startPlay = false, bool forceRebuild = false) {
 		currentPath = path;
 		metadata    = meta;
 		cacheReady  = false;
@@ -62,9 +70,13 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		playing      = false;
 		playFramePos = 0;
 		playheadPos  = 0.f;
+		inPoint      = 0.f;
+		scrubPos     = 0.f;
 		audioBuffer.clear();
 		audioChannels   = 0;
 		audioSampleRate = 0;
+		audioBufferReady.store(false, std::memory_order_relaxed);
+		autoPlay = startPlay;
 
 		if (path.empty()) return;
 
@@ -127,13 +139,14 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 				}
 			}
 			else if (ext == ".flac") {
-				drflac* flac = drflac_open_file(pathCopy.c_str(), nullptr);
-				if (flac) {
-					ch = (int)flac->channels; sr = (int)flac->sampleRate;
-					frames = (int64_t)flac->totalPCMFrameCount;
-					buf.resize((size_t)(frames * ch));
-					drflac_read_pcm_frames_f32(flac, (drflac_uint64)frames, buf.data());
-					drflac_close(flac);
+				unsigned int flacCh = 0, flacSr = 0;
+				drflac_uint64 flacFrames = 0;
+				float* flacBuf = drflac_open_file_and_read_pcm_frames_f32(pathCopy.c_str(), &flacCh, &flacSr, &flacFrames, nullptr);
+				if (flacBuf) {
+					ch = (int)flacCh; sr = (int)flacSr;
+					frames = (int64_t)flacFrames;
+					buf.assign(flacBuf, flacBuf + flacFrames * flacCh);
+					drflac_free(flacBuf, nullptr);
 				}
 			}
 			else if (ext == ".mp3") {
@@ -150,6 +163,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			audioBuffer     = std::move(buf);
 			audioChannels   = ch;
 			audioSampleRate = sr;
+			audioBufferReady.store(true, std::memory_order_release);
 		});
 	}
 
@@ -187,12 +201,18 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			}
 		}
 
+		// Auto-play once the audio buffer is ready
+		if (autoPlay && audioBufferReady.load(std::memory_order_acquire)) {
+			autoPlay = false;
+			inPoint  = 0.f;
+			scrubPos = 0.f;
+			startPlaybackFrom(0.f);
+		}
+
 		widget::OpaqueWidget::step();
 	}
 
-	void drawLayer(const DrawArgs& args, int layer) override {
-		if (layer != 1) return;
-
+	void draw(const DrawArgs& args) override {
 		float w = box.size.x;
 		float h = box.size.y;
 
@@ -211,7 +231,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			nvgFillColor(args.vg, isPlaying
 				? nvgRGBf(1.f, 0.85f, 0.1f)
 				: nvgRGBf(0.55f, 0.55f, 0.55f));
-			nvgText(args.vg, 8.f, 22.f, isPlaying ? "■" : "▶", nullptr);
+			nvgText(args.vg, 8.f, 12.f, isPlaying ? "■" : "▶", nullptr);
 
 			// Filename — gold when playing, light when idle
 			std::string fname = rack::system::getFilename(currentPath);
@@ -221,12 +241,12 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 				: nvgRGBf(0.92f, 0.92f, 0.88f));
 			float maxFnW = w - 100.f;
 			nvgScissor(args.vg, 28.f, 0.f, maxFnW, TB_H);
-			nvgText(args.vg, 28.f, 22.f, fname.c_str(), nullptr);
+			nvgText(args.vg, 28.f, 12.f, fname.c_str(), nullptr);
 			nvgResetScissor(args.vg);
 
 			// Badges (right-aligned in top bar)
 			float bx = w - 6.f;
-			nvgFontSize(args.vg, 9.f);
+			nvgFontSize(args.vg, 10.f);
 			nvgFillColor(args.vg, nvgRGBf(0.50f, 0.50f, 0.50f));
 
 			if (info.durationSeconds > 0.f) {
@@ -235,7 +255,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 				std::string dur = rack::string::f("%02d:%05.2f", mm, ss);
 				// Right-justify duration
 				float dw = dur.size() * 6.2f;
-				nvgText(args.vg, bx - dw, 28.f, dur.c_str(), nullptr);
+				nvgText(args.vg, bx - dw, 26.f, dur.c_str(), nullptr);
 				bx -= dw + 4.f;
 			}
 
@@ -245,8 +265,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			if (info.sampleRate > 0) badges = rack::string::f("%dk", info.sampleRate / 1000) + (badges.empty() ? "" : " · ") + badges;
 			if (info.channels > 0)   badges = std::string(info.channels == 1 ? "MONO" : "STEREO") + (badges.empty() ? "" : " · ") + badges;
 			if (!badges.empty()) {
-				float bw2 = badges.size() * 5.4f;
-				nvgText(args.vg, bx - bw2, 17.f, badges.c_str(), nullptr);
+				nvgText(args.vg, WAVE_X, 26.f, badges.c_str(), nullptr);
 			}
 		}
 
@@ -321,6 +340,27 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			}
 		}
 
+		// InPoint marker — thin gold line with downward triangle, drawn first
+		if (!currentPath.empty()) {
+			float ipX = WAVE_X + inPoint * waveW;
+
+			nvgBeginPath(args.vg);
+			nvgMoveTo(args.vg, ipX, waveY);
+			nvgLineTo(args.vg, ipX, waveY + waveH);
+			nvgStrokeColor(args.vg, nvgRGBAf(1.f, 0.85f, 0.1f, 0.7f));
+			nvgStrokeWidth(args.vg, 1.f);
+			nvgStroke(args.vg);
+
+			const float ts = 4.f;
+			nvgBeginPath(args.vg);
+			nvgMoveTo(args.vg, ipX - ts, waveY);
+			nvgLineTo(args.vg, ipX + ts, waveY);
+			nvgLineTo(args.vg, ipX, waveY + ts * 1.4f);
+			nvgClosePath(args.vg);
+			nvgFillColor(args.vg, nvgRGBAf(1.f, 0.85f, 0.1f, 0.85f));
+			nvgFill(args.vg);
+		}
+
 		// Playhead line + triangle pointer
 		if (!currentPath.empty()) {
 			float phX = WAVE_X + playheadPos * waveW;
@@ -343,8 +383,6 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		}
 
 		// ── bottom readout ────────────────────────────────────────────────────
-		float bbY = waveY + waveH + 4.f;
-
 		auto formatTime = [](float s) -> std::string {
 			if (s < 0.f) s = 0.f;
 			int mm = (int)(s / 60.f);
@@ -358,9 +396,9 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 
 		auto drawReadout = [&](float x, const char* lbl, float val) {
 			nvgFillColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.38f));
-			nvgText(args.vg, x, bbY + 16.f, lbl, nullptr);
+			nvgText(args.vg, x, box.size.y, lbl, nullptr);
 			nvgFillColor(args.vg, nvgRGBf(0.88f, 0.88f, 0.83f));
-			nvgText(args.vg, x + 20.f, bbY + 16.f, formatTime(val).c_str(), nullptr);
+			nvgText(args.vg, x + 20.f, box.size.y, formatTime(val).c_str(), nullptr);
 		};
 
 		drawReadout(WAVE_X,           "IN",  0.f);
@@ -368,19 +406,21 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		drawReadout(WAVE_X + col * 2, "LEN", info.durationSeconds);
 		drawReadout(WAVE_X + col * 3, "POS", pos);
 
-		// Drag label
-		if (dragState && dragState->active) {
-			Vec mp = APP->scene->mousePos;
-			Vec lp = getRelativeOffset(mp, APP->scene);
-			nvgBeginPath(args.vg);
-			nvgRoundedRect(args.vg, lp.x + 10.f, lp.y, 150.f, 18.f, 3.f);
-			nvgFillColor(args.vg, nvgRGBAf(0.f, 0.f, 0.f, 0.7f));
-			nvgFill(args.vg);
-			nvgFontSize(args.vg, 10.f);
-			nvgFillColor(args.vg, nvgRGBf(1.f, 0.85f, 0.1f));
-			std::string lbl = rack::system::getFilename(dragState->dragPath);
-			nvgText(args.vg, lp.x + 14.f, lp.y + 12.f, lbl.c_str(), nullptr);
-		}
+	}
+
+	void drawLayer(const DrawArgs& args, int layer) override {
+		if (layer != 1 || !dragState || !dragState->active) return;
+		Vec lp = APP->scene->mousePos
+		         .minus(getRelativeOffset(Vec(0, 0), APP->scene))
+		         .div(getRelativeZoom(APP->scene));
+		nvgBeginPath(args.vg);
+		nvgRoundedRect(args.vg, lp.x + 10.f, lp.y, 150.f, 18.f, 3.f);
+		nvgFillColor(args.vg, nvgRGBAf(0.f, 0.f, 0.f, 0.7f));
+		nvgFill(args.vg);
+		nvgFontSize(args.vg, 10.f);
+		nvgFillColor(args.vg, nvgRGBf(1.f, 0.85f, 0.1f));
+		std::string lbl = rack::system::getFilename(dragState->dragPath);
+		nvgText(args.vg, lp.x + 14.f, lp.y + 12.f, lbl.c_str(), nullptr);
 	}
 
 	// ── waveform interaction ──────────────────────────────────────────────────
@@ -510,17 +550,20 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			return;
 		}
 		if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS) {
-			// Waveform area: place playhead and begin drag
+			// Waveform area: set inPoint and start playback from there
 			if (!currentPath.empty() && inWaveformArea(e.pos)) {
-				startPlaybackFrom(posToPlayhead(e.pos));
+				scrubPos       = posToPlayhead(e.pos);
+				inPoint        = scrubPos;
+				dragStartRackX = APP->scene->rack->getMousePos().x;
+				dragStartScrub = scrubPos;
 				draggingPlayhead = true;
 				e.consume(this);
 				return;
 			}
-			// Play/stop button (left side of top bar)
+			// Play/stop button — always starts from the stored inPoint
 			if (e.pos.x < 26.f && e.pos.y < TB_H) {
 				if (isPlaying()) playing = false;
-				else if (!currentPath.empty()) startPlaybackFrom(playheadPos);
+				else if (!currentPath.empty()) startPlaybackFrom(inPoint);
 				e.consume(this);
 				return;
 			}
@@ -538,25 +581,27 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	void onDragMove(const event::DragMove& e) override {
 		if (draggingPlayhead && !currentPath.empty()) {
 			Rect r = waveformRect();
-			if (r.size.x > 0.f)
-				playheadPos = rack::math::clamp(playheadPos + e.mouseDelta.x / r.size.x, 0.f, 1.f);
+			if (r.size.x > 0.f) {
+				float dx = APP->scene->rack->getMousePos().x - dragStartRackX;
+				scrubPos = rack::math::clamp(dragStartScrub + dx / r.size.x, 0.f, 1.f);
+				inPoint  = scrubPos;
+			}
 		}
 	}
 
 	void onDragEnd(const event::DragEnd& e) override {
 		if (draggingPlayhead) {
 			draggingPlayhead = false;
-			startPlaybackFrom(playheadPos);
+			inPoint = scrubPos;  // scrubPos tracks only mouse movement, never audio thread
+			startPlaybackFrom(inPoint);
 			return;
 		}
 		if (dragState && dragState->active && !dragState->dragPath.empty()) {
 			Vec pos = APP->scene->mousePos;
 			std::string path = dragState->dragPath;
+			APP->event->handleDrop(pos, std::vector<std::string>{path});
 			dragState->active = false;
 			dragState->dragPath.clear();
-			Widget::PathDropEvent pd(std::vector<std::string>{path});
-			pd.pos = pos;
-			APP->scene->onPathDrop(pd);
 		}
 	}
 

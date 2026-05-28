@@ -82,19 +82,8 @@ struct FileSystemDataSource : DataSource {
 		return result;
 	}
 
-	void appendNodeMenuItems(ui::Menu* menu, const DataSourceNode& node) override {
-		if (node.isDirectory) return;
-		std::string dir = ghc::filesystem::path(node.fullPath).parent_path().string();
-		menu->addChild(createMenuItem("Open containing folder", "", [dir]() {
-			rack::system::openDirectory(dir);
-		}));
-	}
-
-	void loadChildrenAsync(
-		const std::string& path,
-		TaskWorker& worker,
-		std::function<void(std::vector<DataSourceNode>)> onDone) override
-	{
+	void loadChildrenAsync(const std::string& path, TaskWorker& worker,
+			std::function<void(std::vector<DataSourceNode>)> onDone) override {
 		std::string scanPath = path.empty() ? root : path;
 		std::string rootCopy = root;
 		worker.work([scanPath, rootCopy, onDone]() {
@@ -125,6 +114,14 @@ struct FileSystemDataSource : DataSource {
 			});
 			onDone(std::move(result));
 		});
+	}
+
+	void appendNodeMenuItems(ui::Menu* menu, const DataSourceNode& node) override {
+		if (node.isDirectory) return;
+		std::string dir = ghc::filesystem::path(node.fullPath).parent_path().string();
+		menu->addChild(createMenuItem("Open containing folder", "", [dir]() {
+			rack::system::openDirectory(dir);
+		}));
 	}
 };
 

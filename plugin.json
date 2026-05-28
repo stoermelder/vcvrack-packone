@@ -14,6 +14,14 @@
 	"donateUrl": "https://paypal.me/stoermelder",
 	"modules": [
 		{
+			"slug": "Siren",
+			"name": "SIREN",
+			"description": "Sample browser — browse, preview and drag WAV/FLAC/MP3 samples to other modules",
+			"tags": [
+				"Utility"
+			]
+		},
+		{
 			"slug": "MidiEsx",
 			"name": "MIDI-ESX",
 			"description": "MIDI converter for your Expert Sleepers hardware setup (ES-5, ES-8, ES-9 etc.)",
@@ -594,14 +602,6 @@
 				"Utility"
 			],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/trial-and-error/Mb.md"
-		},
-		{
-			"slug": "Siren",
-			"name": "SIREN",
-			"description": "Sample browser — browse, preview and drag WAV/FLAC/MP3 samples to other modules",
-			"tags": [
-				"Utility"
-			]
 		}
 	]
 }

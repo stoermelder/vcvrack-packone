@@ -1,10 +1,12 @@
 #include "../../plugin.hpp"
 #include "../../pluginsettings.hpp"
+#include "../../components/Knobs.hpp"
 #include "SirenDataSource.hpp"
 #include "SirenFileSystem.hpp"
 #include "SirenAudio.hpp"
 #include "SirenBrowserPane.hpp"
 #include "SirenPreviewPane.hpp"
+#include "SirenVuMeter.hpp"
 #include <widget/ZoomWidget.hpp>
 
 #include <osdialog.h>
@@ -85,10 +87,21 @@ struct SirenSettings {
 // ─── module ───────────────────────────────────────────────────────────────────
 
 struct SirenModule : Module {
-	enum OutputIds { OUTPUT_L, OUTPUT_R, NUM_OUTPUTS };
-	enum ParamIds  { NUM_PARAMS };
-	enum InputIds  { NUM_INPUTS };
-	enum LightIds  { NUM_LIGHTS };
+	enum OutputIds { 
+		OUTPUT_L,
+		OUTPUT_R,
+		NUM_OUTPUTS
+	};
+	enum ParamIds {
+		PARAM_VOLUME,
+		NUM_PARAMS
+	};
+	enum InputIds {
+		NUM_INPUTS
+	};
+	enum LightIds {
+		NUM_LIGHTS
+	};
 
 	int panelTheme = -1;  // required by ThemedModuleWidget
 
@@ -101,8 +114,17 @@ struct SirenModule : Module {
 	// Pointer is safe: owned by SirenWidget, never deleted while module is alive
 	SirenPreviewPane* previewPane = nullptr;
 
+	// VU meter levels (dBFS, -100 = silence). Written by audio thread, read by UI thread.
+	std::atomic<float> levelL{-100.f};
+	std::atomic<float> levelR{-100.f};
+
+	// Peak-hold state (audio thread only)
+	float peakL = -100.f;
+	float peakR = -100.f;
+
 	SirenModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+		configParam(PARAM_VOLUME, 0.f, 2.f, 1.f, "Volume", " dB", -10.f, 20.f);
 		configOutput(OUTPUT_L, "Left audio out");
 		configOutput(OUTPUT_R, "Right audio out");
 	}
@@ -112,8 +134,24 @@ struct SirenModule : Module {
 
 		float l = 0.f, r = 0.f;
 		previewPane->fillAudio(&l, &r, 1, args.sampleRate);
+
+		float vol = params[PARAM_VOLUME].getValue();
+		l *= vol;
+		r *= vol;
+
 		outputs[OUTPUT_L].setVoltage(l);
 		outputs[OUTPUT_R].setVoltage(r);
+
+		// Peak-hold with 30 dB/s decay
+		auto trackPeak = [&](float& peak, std::atomic<float>& out, float sig) {
+			float db = (fabsf(sig) > 1e-6f) ? 20.f * log10f(fabsf(sig) / 5.f) : -100.f;
+			if (db > peak) peak = db;
+			peak -= 30.f * args.sampleTime;
+			if (peak < -100.f) peak = -100.f;
+			out.store(peak, std::memory_order_relaxed);
+		};
+		trackPeak(peakL, levelL, l);
+		trackPeak(peakR, levelR, r);
 	}
 
 	json_t* dataToJson() override {
@@ -132,6 +170,92 @@ struct SirenModule : Module {
 	}
 };
 
+// ─── top-bar search field ─────────────────────────────────────────────────────
+
+struct SirenSearchField : ui::TextField {
+	SirenBrowserPane* pane = nullptr;
+	SirenSearchField() { placeholder = "Search..."; }
+	void onChange(const event::Change& e) override {
+		if (pane) {
+			pane->searchQuery = rack::string::trim(text);
+			pane->rebuildRowWidgets();
+		}
+		ui::TextField::onChange(e);
+	}
+	void onSelectKey(const event::SelectKey& e) override {
+		if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ESCAPE) {
+			setText("");
+			if (pane) { pane->searchQuery.clear(); pane->rebuildRowWidgets(); }
+			e.consume(this);
+			return;
+		}
+		ui::TextField::onSelectKey(e);
+	}
+};
+
+// ─── display widget ───────────────────────────────────────────────────────────
+
+struct SirenDisplayWidget : OpaqueWidget {
+	void draw(const DrawArgs& args) override {
+		float b     = std::max(0.2f, settings::rackBrightness);
+		float b_inv = 1.f + std::max(b - settings::rackBrightness, 0.f) * 8.f;
+		nvgGlobalAlpha(args.vg, b);
+
+		math::Rect r = box.zeroPos();
+
+		// Dark gradient background
+		nvgBeginPath(args.vg);
+		nvgRect(args.vg, RECT_ARGS(r));
+		NVGcolor topColor    = color::mult(nvgRGB(0x22, 0x22, 0x22), b_inv);
+		NVGcolor bottomColor = color::mult(nvgRGB(0x12, 0x12, 0x12), b_inv);
+		nvgFillPaint(args.vg, nvgLinearGradient(args.vg, 0.f, 0.f, 0.f, 25.f, topColor, bottomColor));
+		nvgFill(args.vg);
+
+		// Children (browser, preview, topbar) drawn inside the dimmed context
+		OpaqueWidget::draw(args);
+
+		// Outer top stroke (shadow)
+		nvgBeginPath(args.vg);
+		nvgMoveTo(args.vg, 0.f, -0.5f);
+		nvgLineTo(args.vg, box.size.x, -0.5f);
+		nvgStrokeColor(args.vg, nvgRGBAf(0.f, 0.f, 0.f, 0.24f));
+		nvgStrokeWidth(args.vg, 1.f);
+		nvgStroke(args.vg);
+
+		// Outer bottom stroke (highlight)
+		nvgBeginPath(args.vg);
+		nvgMoveTo(args.vg, 0.f, box.size.y + 0.5f);
+		nvgLineTo(args.vg, box.size.x, box.size.y + 0.5f);
+		nvgStrokeColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.25f));
+		nvgStrokeWidth(args.vg, 1.f);
+		nvgStroke(args.vg);
+
+		// Inner top stroke
+		nvgBeginPath(args.vg);
+		nvgMoveTo(args.vg, 0.f, 2.5f);
+		nvgLineTo(args.vg, box.size.x, 2.5f);
+		nvgStrokeColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.20f));
+		nvgStrokeWidth(args.vg, 1.f);
+		nvgStroke(args.vg);
+
+		// Inner bottom stroke
+		nvgBeginPath(args.vg);
+		nvgMoveTo(args.vg, 0.f, box.size.y - 2.5f);
+		nvgLineTo(args.vg, box.size.x, box.size.y - 2.5f);
+		nvgStrokeColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.20f));
+		nvgStrokeWidth(args.vg, 1.f);
+		nvgStroke(args.vg);
+
+		// Black border (1 px inner shrink)
+		math::Rect rBorder = r.shrink(math::Vec(1.f, 1.f));
+		nvgBeginPath(args.vg);
+		nvgRect(args.vg, RECT_ARGS(rBorder));
+		nvgStrokeColor(args.vg, bottomColor);
+		nvgStrokeWidth(args.vg, 2.f);
+		nvgStroke(args.vg);
+	}
+};
+
 // ─── module widget ────────────────────────────────────────────────────────────
 
 struct SirenWidget : ThemedModuleWidget<SirenModule> {
@@ -141,24 +265,46 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 	SirenBrowserPane* browserPane = nullptr;
 	SirenPreviewPane* previewPane = nullptr;
 
-	explicit SirenWidget(SirenModule* module)
-		: ThemedModuleWidget<SirenModule>(module, "Siren")
-	{
+	SirenWidget(SirenModule* module)
+		: ThemedModuleWidget<SirenModule>(module, "Siren") {
 		setModule(module);
 
-		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
+		//addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		// Browser pane (left) inside a ZoomWidget for reduced visual scale
+		addChild(createParamCentered<StoermelderSmallKnob>(math::Vec(532.5f, 138.4f), module, SirenModule::PARAM_VOLUME));
+		
+		addOutput(createOutputCentered<StoermelderPort>(Vec(532.5f, 63.4f), module, SirenModule::OUTPUT_L));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(532.5f, 92.5f), module, SirenModule::OUTPUT_R));
+
+
+		// ── Layout constants ──────────────────────────────────────────────────
+		const float zoom     = 0.60f;
+		const float contentX = 8.f;
+		const float contentY = 8.f;
+		const float browserW = 172.3f;
+		const float previewW = 307.8f - 10.f;
+		const float totalW   = browserW + previewW;
+		const float topBarH  = 30.f * zoom;
+		const float contentH = 338.6f;
+		const float paneH    = contentH - topBarH;
+		const float gapW     = 10.f;   // gap between browser and preview
+
+		// ── Display widget (single container for browser + topbar + preview) ──
+		SirenDisplayWidget* display = new SirenDisplayWidget;
+		display->box.pos  = Vec(8.3f, 10.2f);
+		display->box.size = Vec(501.7f, 354.0f);
+		addChild(display);
+
+		// ── Browser pane (inside display, local coords) ───────────────────────
 		{
-			const float zoom = 0.60f;
-			const Vec displaySize = Vec(172.3f, 338.6f);
+			const Vec displaySize = Vec(browserW, paneH);
 			const Vec logicalSize = displaySize.div(zoom);
 
 			widget::ZoomWidget* zw = new widget::ZoomWidget;
-			zw->box.pos  = Vec(20.f, 17.9f);
+			zw->box.pos  = Vec(contentX, contentY + topBarH);   // relative to display
 			zw->box.size = displaySize;
 			zw->setZoom(zoom);
 
@@ -194,16 +340,49 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 				browserPane->setRoots(sirenSettings.rootFolders, idx);
 			};
 			zw->addChild(browserPane);
-			addChild(zw);
+			display->addChild(zw);
 		}
 
-		// Preview pane (right)
+		// ── Top bar (inside display, local coords) ────────────────────────────
+		{
+			const float logW  = totalW / zoom;
+			const float logH  = topBarH / zoom;
+			const float btnH  = 22.f;
+			const float btnW  = 150.f / zoom;
+			const float mrgX  = 5.f;
+			const float mrgY  = (logH - btnH) * 0.5f;
+
+			SirenSourceButton* srcBtn = new SirenSourceButton;
+			srcBtn->box.size = Vec(btnW, btnH);
+			srcBtn->pane = browserPane;
+
+			SirenSearchField* searchField = new SirenSearchField;
+			searchField->box.size = Vec(logW - btnW - mrgX * 3.f, btnH);
+			searchField->pane = browserPane;
+
+			ui::SequentialLayout* layout = new ui::SequentialLayout;
+			layout->box.pos  = Vec(0.f, 0.f);
+			layout->box.size = Vec(logW, logH);
+			layout->margin   = Vec(mrgX, mrgY);
+			layout->spacing  = Vec(mrgX, 0.f);
+			layout->addChild(srcBtn);
+			layout->addChild(searchField);
+
+			widget::ZoomWidget* topBarZw = new widget::ZoomWidget;
+			topBarZw->box.pos  = Vec(contentX, contentY);   // relative to display
+			topBarZw->box.size = Vec(totalW, topBarH);
+			topBarZw->setZoom(zoom);
+			topBarZw->addChild(layout);
+			display->addChild(topBarZw);
+		}
+
+		// ── Preview pane (inside display, local coords) ───────────────────────
 		previewPane = new SirenPreviewPane;
-		previewPane->box.pos = Vec(192.3f, 17.9f);
-		previewPane->box.size = Vec(307.8f, 338.6f);
+		previewPane->box.pos  = Vec(contentX + browserW + gapW, contentY + topBarH);  // relative to display
+		previewPane->box.size = Vec(previewW, paneH);
 		previewPane->init(&taskWorker, &dragState);
 		previewPane->cacheDir = sirenCacheDirPath();
-		addChild(previewPane);
+		display->addChild(previewPane);
 
 		// Wire preview pane to audio engine
 		if (module) module->previewPane = previewPane;
@@ -230,8 +409,16 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 			previewPane->playheadPos = restorePos;
 		}
 
-		addOutput(createOutputCentered<StoermelderPort>(Vec(532.5f, 284.3f), module, SirenModule::OUTPUT_L));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(532.5f, 326.2f), module, SirenModule::OUTPUT_R));
+
+		// VU meter: two vertical LED bars in the right margin, same top as the panes
+		static constexpr float vuW = 2.f * SirenVuMeter::BAR_W + SirenVuMeter::BAR_GAP + 4.f;
+		static constexpr float vuH = SirenVuMeter::NUM_SEGS * (SirenVuMeter::SEG_H + SirenVuMeter::SEG_GAP);
+		SirenVuMeter* vu = new SirenVuMeter;
+		vu->levelL   = module ? &module->levelL : nullptr;
+		vu->levelR   = module ? &module->levelR : nullptr;
+		vu->box.pos  = Vec(522.5f, 235.3f);
+		vu->box.size = Vec(vuW, vuH);
+		addChild(vu);
 	}
 
 	~SirenWidget() override {
@@ -259,7 +446,7 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 	void onFileSelected(const std::string& path) {
 		sirenSettings.lastFile = path;
 		DataSource* src = browserPane->activeDataSource;
-		previewPane->loadFile(path, src ? src->getMetadata() : nullptr);
+		previewPane->loadFile(path, src ? src->getMetadata() : nullptr, true);
 	}
 
 	void appendContextMenu(ui::Menu* menu) override {
@@ -306,5 +493,4 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 } // namespace Siren
 } // namespace StoermelderPackOne
 
-Model* modelSiren = createModel<StoermelderPackOne::Siren::SirenModule,
-                                StoermelderPackOne::Siren::SirenWidget>("Siren");
+Model* modelSiren = createModel<StoermelderPackOne::Siren::SirenModule, StoermelderPackOne::Siren::SirenWidget>("Siren");

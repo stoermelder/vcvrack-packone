@@ -133,15 +133,13 @@ struct RootMetadata {
 		return it->second.tags;
 	}
 
-	// All tags assigned to any sample in this root, plus starter tags if none exist yet
+	// All tags: starter tags always shown, plus any user-assigned tags
 	std::set<std::string> allTags() const {
 		std::set<std::string> result;
+		for (const std::string& t : STARTER_TAGS) result.insert(t);
 		for (const auto& pair : samples) {
 			for (const std::string& tag : pair.second.tags)
 				result.insert(tag);
-		}
-		if (result.empty()) {
-			for (const std::string& t : STARTER_TAGS) result.insert(t);
 		}
 		return result;
 	}
