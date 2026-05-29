@@ -41,6 +41,8 @@ struct AudioStream {
 };
 
 // Build a peak waveform by streaming from an open AudioStream — no full-file buffer needed.
+// Single sequential pass: large reads amortize decoder overhead; bucket boundaries are tracked
+// with a running counter so there is no division or seek in the inner loop.
 inline bool buildWaveformCache(int64_t timestamp, AudioStream& stream,
                                int pixelWidth, WaveformCache& out) {
 	int     channels = stream.channels();
@@ -51,43 +53,33 @@ inline bool buildWaveformCache(int64_t timestamp, AudioStream& stream,
 	out.peaks.assign(channels, std::vector<std::pair<float,float>>(pixelWidth, {0.f, 0.f}));
 	out.fileTimestamp = timestamp;
 
-	const int64_t BUF_FRAMES = 4096;
+	const int64_t BUF_FRAMES = 65536;
 	std::vector<float> buf((size_t)(BUF_FRAMES * channels));
-	std::vector<float> mn(channels), mx(channels);
 	double  framesPerBucket = (double)total / (double)pixelWidth;
-	int64_t framePos = 0;
+	int64_t framePos    = 0;
+	int     curBucket   = 0;
+	int64_t nextBoundary = (pixelWidth > 1) ? (int64_t)(framesPerBucket) : total;
 
-	for (int b = 0; b < pixelWidth; b++) {
-		int64_t bucketStart = (int64_t)(b * framesPerBucket);
-		int64_t bucketEnd   = (int64_t)((b + 1) * framesPerBucket);
-		if (bucketEnd > total) bucketEnd = total;
-		int64_t bucketLen = bucketEnd - bucketStart;
-		if (bucketLen <= 0) continue;
+	while (framePos < total) {
+		int64_t toRead = std::min(BUF_FRAMES, total - framePos);
+		int64_t got = stream.readF32(buf.data(), toRead);
+		if (got <= 0) break;
 
-		if (framePos != bucketStart) {
-			stream.seekTo(bucketStart);
-			framePos = bucketStart;
-		}
-
-		std::fill(mn.begin(), mn.end(), 0.f);
-		std::fill(mx.begin(), mx.end(), 0.f);
-		int64_t remaining = bucketLen;
-		while (remaining > 0) {
-			int64_t toRead = std::min(remaining, BUF_FRAMES);
-			int64_t got = stream.readF32(buf.data(), toRead);
-			if (got <= 0) break;
-			for (int64_t f = 0; f < got; f++) {
-				for (int ch = 0; ch < channels; ch++) {
-					float s = buf[(size_t)(f * channels + ch)];
-					if (s < mn[ch]) mn[ch] = s;
-					if (s > mx[ch]) mx[ch] = s;
-				}
+		for (int64_t f = 0; f < got; f++) {
+			// Advance bucket when the running frame position crosses the next boundary.
+			while (framePos + f >= nextBoundary && curBucket < pixelWidth - 1) {
+				curBucket++;
+				nextBoundary = (curBucket + 1 < pixelWidth)
+				             ? (int64_t)((curBucket + 1) * framesPerBucket) : total;
 			}
-			framePos  += got;
-			remaining -= got;
+				for (int ch = 0; ch < channels; ch++) {
+				float s = buf[(size_t)(f * channels + ch)];
+				auto& p = out.peaks[ch][curBucket];
+				if (s < p.first)  p.first  = s;
+				if (s > p.second) p.second = s;
+			}
 		}
-		for (int ch = 0; ch < channels; ch++)
-			out.peaks[ch][b] = {mn[ch], mx[ch]};
+		framePos += got;
 	}
 	return true;
 }
