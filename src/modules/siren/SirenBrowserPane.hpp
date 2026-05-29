@@ -152,7 +152,7 @@ struct SirenTreeRow : widget::OpaqueWidget {
 
 struct SirenBrowserPane : widget::OpaqueWidget {
 	// Callbacks set by the parent widget
-	std::function<void(const std::string&)> onFileSelected;
+	std::function<void(const std::string&, bool /*startPlay*/)> onFileSelected;
 	std::function<void()>    onAddRoot;
 	std::function<void(int)> onRemoveRoot;
 	std::function<void(int)> onSelectRoot;
@@ -534,7 +534,6 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 			bndToolButton(args.vg, rect.pos.x, rect.pos.y, rect.size.x, rect.size.y,
 			              BND_CORNER_NONE, chipState, -1, label.c_str());
 		}
-
 	}
 };
 
@@ -547,9 +546,10 @@ inline void SirenTreeRow::onButton(const event::Button& e) {
 			if (treeIdx >= 0) pane->expandRow(treeIdx);
 		}
 		else {
+			bool shift = (e.mods & GLFW_MOD_SHIFT) != 0;
 			pane->selectedPath = node.fullPath;
 			pane->rebuildRowWidgets();
-			if (pane->onFileSelected) pane->onFileSelected(node.fullPath);
+			if (pane->onFileSelected) pane->onFileSelected(node.fullPath, shift);
 		}
 		e.consume(this);
 	}

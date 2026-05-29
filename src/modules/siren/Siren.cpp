@@ -151,6 +151,8 @@ struct SirenModule : Module {
 	float peakL = -100.f;  // peak-hold state, DSP thread only
 	float peakR = -100.f;
 
+	ClockDividerEx lightDivider;
+
 	void fillThreadFunc() {
 		AudioStream* stream = nullptr;  // owned by this thread
 
@@ -219,6 +221,8 @@ struct SirenModule : Module {
 		configOutput(OUTPUT_L, "Left audio out");
 		configOutput(OUTPUT_R, "Right audio out");
 
+		lightDivider.setDivision(512);
+
 		// Dedicated fill thread — no mutexes, only atomics and ring buffer
 		fillThread = std::thread(&SirenModule::fillThreadFunc, this);
 	}
@@ -286,12 +290,14 @@ struct SirenModule : Module {
 							outputFrameCount.store(0, std::memory_order_relaxed);
 							pendingSeekFrame.store(loopStart, std::memory_order_release);
 							fillCv.notify_one();
-						} else {
+						}
+						else {
 							playing.store(false, std::memory_order_release);
 						}
 					}
 				}
-			} else if (eofReached.load(std::memory_order_acquire)) {
+			}
+			else if (eofReached.load(std::memory_order_acquire)) {
 				// Ring drained and fill thread hit EOF
 				if (looping.load(std::memory_order_relaxed)
 				        && pendingSeekFrame.load(std::memory_order_relaxed) < 0) {
@@ -301,7 +307,8 @@ struct SirenModule : Module {
 					outputFrameCount.store(0, std::memory_order_relaxed);
 					pendingSeekFrame.store(loopStart, std::memory_order_release);
 					fillCv.notify_one();
-				} else {
+				}
+				else {
 					playing.store(false, std::memory_order_release);
 				}
 			}
@@ -314,16 +321,18 @@ struct SirenModule : Module {
 		outputs[OUTPUT_L].setVoltage(l);
 		outputs[OUTPUT_R].setVoltage(r);
 
-		// Peak-hold with 30 dB/s decay
-		auto trackPeak = [&](float& peak, std::atomic<float>& out, float sig) {
-			float db = (fabsf(sig) > 1e-6f) ? 20.f * log10f(fabsf(sig) / 5.f) : -100.f;
-			if (db > peak) peak = db;
-			peak -= 30.f * args.sampleTime;
-			if (peak < -100.f) peak = -100.f;
-			out.store(peak, std::memory_order_relaxed);
-		};
-		trackPeak(peakL, levelL, l);
-		trackPeak(peakR, levelR, r);
+		if (lightDivider.process()) {
+			// Peak-hold with 30 dB/s decay
+			auto trackPeak = [&](float& peak, std::atomic<float>& out, float sig) {
+				float db = (fabsf(sig) > 1e-6f) ? 20.f * log10f(fabsf(sig) / 5.f) : -100.f;
+				if (db > peak) peak = db;
+				peak -= 30.f * args.sampleTime * lightDivider.division;
+				if (peak < -100.f) peak = -100.f;
+				out.store(peak, std::memory_order_relaxed);
+			};
+			trackPeak(peakL, levelL, l);
+			trackPeak(peakR, levelR, r);
+		}
 	}
 
 	json_t* dataToJson() override {
@@ -428,11 +437,24 @@ struct SirenDisplayWidget : OpaqueWidget {
 	}
 };
 
-// ─── module widget ────────────────────────────────────────────────────────────
+
+struct SirenOcWidget : TransparentWidget {
+	SirenOcWidget() {
+		box.size = Vec(26.f, 26.f);
+	}
+	void onButton(const ButtonEvent& e) override {
+		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
+			system::openBrowser("https://omricohen-music.com/");
+			e.consume(this);
+			return;
+		}
+		TransparentWidget::onButton(e);
+	}
+};
 
 struct SirenWidget : ThemedModuleWidget<SirenModule> {
-	TaskWorker        taskWorker{"Siren"};
-	SirenDropHandler  dropHandler;
+	TaskWorker taskWorker{"Siren"};
+	SirenDropHandler dropHandler;
 
 	SirenBrowserPane* browserPane = nullptr;
 	SirenPreviewPane* previewPane = nullptr;
@@ -457,17 +479,17 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 		const float contentX = 8.f;
 		const float contentY = 8.f;
 		const float browserW = 172.3f;
-		const float previewW = 307.8f - 10.f;
+		const float previewW = 307.8f;
 		const float totalW   = browserW + previewW;
 		const float topBarH  = 30.f * zoom;
 		const float contentH = 338.6f;
 		const float paneH    = contentH - topBarH;
-		const float gapW     = 10.f;   // gap between browser and preview
+		const float gapW     = 8.f;   // gap between browser and preview
 
 		// ── Display widget (single container for browser + topbar + preview) ──
 		SirenDisplayWidget* display = new SirenDisplayWidget;
 		display->box.pos  = Vec(8.3f, 10.2f);
-		display->box.size = Vec(501.7f, 354.0f);
+		display->box.size = Vec(501.7f, 364.0f);
 		addChild(display);
 
 		// ── Browser pane (inside display, local coords) ───────────────────────
@@ -486,8 +508,8 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 			browserPane->worker = &taskWorker;
 			browserPane->init(&taskWorker);
 			browserPane->setSize(logicalSize);
-			browserPane->onFileSelected = [this](const std::string& path) {
-				onFileSelected(path);
+			browserPane->onFileSelected = [this](const std::string& path, bool startPlay) {
+				onFileSelected(path, startPlay);
 			};
 			{
 				SirenModule* m = module;  // capture for lambdas (template base not visible by plain name)
@@ -535,7 +557,7 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 			srcBtn->pane = browserPane;
 
 			SirenSearchField* searchField = new SirenSearchField;
-			searchField->box.size = Vec(logW - btnW - mrgX * 3.f, btnH);
+			searchField->box.size = Vec(300.f, btnH);
 			searchField->pane = browserPane;
 
 			ui::SequentialLayout* layout = new ui::SequentialLayout;
@@ -623,6 +645,8 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 		vu->box.pos  = Vec(522.5f, 235.3f);
 		vu->box.size = Vec(vuW, vuH);
 		addChild(vu);
+
+		addChild(createWidgetCentered<SirenOcWidget>(Vec(532.5f, 329.f)));
 	}
 
 	~SirenWidget() override {
@@ -636,6 +660,7 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 				module->activeRootIdx = sirenSettings.activeRootIdx;
 			}
 		}
+
 		sirenSettings.save();
 		// Metadata is saved by FileSystemDataSource destructor via ~SirenBrowserPane
 	}
@@ -647,11 +672,11 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 		return "";
 	}
 
-	void onFileSelected(const std::string& path) {
+	void onFileSelected(const std::string& path, bool startPlay) {
 		sirenSettings.lastFile = path;
 		if (module) module->lastFilePath = path;  // keep dataToJson() in sync
 		DataSource* src = browserPane->activeDataSource;
-		previewPane->loadItem(path, src, src ? src->getMetadata() : nullptr, true);
+		previewPane->loadItem(path, src, src ? src->getMetadata() : nullptr, startPlay);
 	}
 
 	void appendContextMenu(ui::Menu* menu) override {

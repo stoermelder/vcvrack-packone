@@ -198,7 +198,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			nvgResetScissor(args.vg);
 
 			// Badges (right-aligned in top bar)
-			float bx = w - 6.f;
+			float bx = w + 6.f;
 			nvgFontSize(args.vg, 10.f);
 			nvgFillColor(args.vg, nvgRGBf(0.50f, 0.50f, 0.50f));
 
@@ -382,14 +382,14 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		float pos = (draggingPlayhead ? scrubPos
 		           : (modulePlayheadPos ? modulePlayheadPos->load(std::memory_order_relaxed) : 0.f))
 		           * info.durationSeconds;
-		float col = waveW / 4.f;
+		float col = waveW / 4.f + 4.f;
 		nvgFontSize(args.vg, 10.f);
 
 		auto drawReadout = [&](float x, const char* lbl, float val) {
 			nvgFillColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.38f));
 			nvgText(args.vg, x, box.size.y, lbl, nullptr);
 			nvgFillColor(args.vg, nvgRGBf(0.88f, 0.88f, 0.83f));
-			nvgText(args.vg, x + 20.f, box.size.y, formatTime(val).c_str(), nullptr);
+			nvgText(args.vg, x + 21.f, box.size.y, formatTime(val).c_str(), nullptr);
 		};
 
 		drawReadout(WAVE_X,           "IN",  inPoint  * info.durationSeconds);
@@ -580,13 +580,15 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 						trimmingIn     = true;
 						dragStartScrub = inPoint;
 						syncInPoint();
-					} else {
+					} 
+					else {
 						outPoint       = rack::math::clamp(pos, inPoint, 1.f);
 						trimmingOut    = true;
 						dragStartScrub = outPoint;
 						syncOutPoint();
 					}
-				} else {
+				} 
+				else {
 					// Playhead scrubbing — moves only the playhead, not the trim handles
 					scrubPos       = posToPlayhead(e.pos);
 					dragStartRackX = APP->scene->rack->getMousePos().x;
@@ -594,6 +596,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 					draggingPlayhead = true;
 					startPlaybackFrom(scrubPos);
 				}
+
 				e.consume(this);
 				return;
 			}
@@ -653,7 +656,6 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		return cacheDir + "/" + hashPath(audioPath) + ".json";
 	}
 
-private:
 	bool isPlaying() const { return modulePlaying && modulePlaying->load(); }
 };
 

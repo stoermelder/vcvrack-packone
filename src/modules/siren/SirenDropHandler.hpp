@@ -88,8 +88,7 @@ struct SirenDropHandler {
 
 	// Draw a floating filename label at the cursor. Call from drawLayer (layer 1).
 	// Suppressed while the cursor is over the Siren module itself.
-	void drawLabel(const Widget::DrawArgs& args, widget::Widget* self,
-	               const std::string& label) const {
+	void drawLabel(const Widget::DrawArgs& args, widget::Widget* self, const std::string& label) const {
 		if (!active || mouseIsInsideModule()) return;
 		Vec lp = APP->scene->mousePos
 		         .minus(self->getRelativeOffset(Vec(0, 0), APP->scene))

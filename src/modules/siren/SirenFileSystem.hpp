@@ -306,14 +306,16 @@ struct FileSystemDataSource : DataSource {
 			s->ch  = (int)s->wav.channels;
 			s->sr  = (int)s->wav.sampleRate;
 			s->total = (int64_t)s->wav.totalPCMFrameCount;
-		} else if (ext == ".flac") {
+		}
+		else if (ext == ".flac") {
 			s->flac = drflac_open_file(id.c_str(), nullptr);
 			if (!s->flac) return nullptr;
 			s->fmt = FileSystemAudioStream::Fmt::FLAC;
 			s->ch  = (int)s->flac->channels;
 			s->sr  = (int)s->flac->sampleRate;
 			s->total = (int64_t)s->flac->totalPCMFrameCount;
-		} else if (ext == ".mp3") {
+		}
+		else if (ext == ".mp3") {
 			if (!drmp3_init_file(&s->mp3, id.c_str(), nullptr)) return nullptr;
 			s->fmt = FileSystemAudioStream::Fmt::MP3;
 			s->ch  = (int)s->mp3.channels;
@@ -325,11 +327,12 @@ struct FileSystemDataSource : DataSource {
 		return s;
 	}
 
-	void appendNodeMenuItems(ui::Menu* menu, const DataSourceNode& node,
-	                         std::function<void()> onChanged) override {
+	void appendNodeMenuItems(ui::Menu* menu, const DataSourceNode& node, std::function<void()> onChanged) override {
 		if (node.isContainer) {
 			std::string dirPath = node.fullPath;
-			menu->addChild(createMenuItem("Show container", "", [dirPath]() {
+
+			menu->addChild(createMenuLabel(dirPath));
+			menu->addChild(createMenuItem("Show folder", "", [dirPath]() {
 				rack::system::openDirectory(dirPath);
 			}));
 
@@ -337,7 +340,7 @@ struct FileSystemDataSource : DataSource {
 
 			// Sticky submenu: scan container, then show all tags; clicking adds/removes
 			// the tag for every direct audio file in the container.
-			menu->addChild(Rack::createStickySubmenuItem("Tag all files", "", [this, dirPath, onChanged](ui::Menu* tagMenu) {
+			menu->addChild(Rack::createStickySubmenuItem("Tag all files", RIGHT_ARROW, [this, dirPath, onChanged](ui::Menu* tagMenu) {
 				// Scan for direct audio children (runs on UI thread; acceptable for a menu action)
 				auto children = loadChildrenSync(dirPath);
 				std::vector<std::string> audioRels;
@@ -346,7 +349,7 @@ struct FileSystemDataSource : DataSource {
 						audioRels.push_back(child.relativePath);
 
 				if (audioRels.empty()) {
-					tagMenu->addChild(createMenuLabel("No audio files in container"));
+					tagMenu->addChild(createMenuLabel("No audio files in folder"));
 					return;
 				}
 
@@ -394,9 +397,9 @@ struct FileSystemDataSource : DataSource {
 			}));
 		}
 		else {
-			// File: open the containing container
+			menu->addChild(createMenuLabel(node.name));
 			std::string dir = ghc::filesystem::path(node.fullPath).parent_path().string();
-			menu->addChild(createMenuItem("Open containing container", "", [dir]() {
+			menu->addChild(createMenuItem("Open containing folder", "", [dir]() {
 				rack::system::openDirectory(dir);
 			}));
 
@@ -520,7 +523,6 @@ struct FileSystemDataSource : DataSource {
 		};
 	}
 
-private:
 	static bool convertToWav(const std::string& srcPath, const std::string& dstPath) {
 		std::vector<float> samples;
 		int channels = 0, sampleRate = 0;
