@@ -10,16 +10,23 @@ Siren is a new wide-panel VCV Rack module that provides a file-system sample bro
 
 ```
 SirenModule (rack::Module)
-  └─ audio output ports, dataToJson/dataFromJson (patch state)
+  ├─ fill thread — AudioStream → ring buffers (rbL, rbR)
+  ├─ process()   — ring buffers → OUT L / OUT R
+  └─ dataToJson / dataFromJson (patch state)
 
 SirenWidget (ThemedModuleWidget<SirenModule>)
   ├─ SirenBrowserPane  (left ~35%)  — tree browser
-  └─ SirenPreviewPane  (right ~65%) — waveform + metadata bar
+  ├─ SirenPreviewPane  (right ~65%) — waveform + metadata bar
+  └─ SirenVuMeter                   — two-channel LED bar
 ```
 
-Global state (root folders, UI prefs) lives in `pluginSettings` and persists to separate files. Per-root metadata (tags, favorites) lives in root-scoped JSON files.
+**Settings split:**
+- `SirenSettings` (self-contained struct in `Siren.cpp`) — global: root containers, active root index, last file, last playhead. Persisted to `~/.../Stoermelder-P1/siren.json`.
+- `dataToJson`/`dataFromJson` — patch-local: last file, playhead, active root. Takes priority over global settings on restore.
+- Per-root metadata (`RootMetadata`) — tags and favorites, persisted to `siren-<8-char-hash>.json` alongside `siren.json`.
 
-> **Actual:** `SirenSettings` is a self-contained struct in `Siren.cpp` (not extending `pluginsettings`). Patch-local state (last file, playhead, active root index) is also persisted in `dataToJson`/`dataFromJson` and takes priority over global settings on restore.
+**Audio ownership chain:**  
+UI calls `SirenModule::openStream()` → transfers `AudioStream*` to the fill thread via `pendingStream` atomic. UI calls `startPlayback(pos)` → posts `pendingSeekFrame`. Fill thread populates `rbL`/`rbR`; `process()` drains them on the DSP thread. No mutex on the audio path — only atomics and ring buffers.
 
 ---
 
@@ -27,19 +34,21 @@ Global state (root folders, UI prefs) lives in `pluginSettings` and persists to 
 
 ```
 src/modules/siren/
-  Siren.cpp              — module + widget, entry point
-  SirenDataSource.hpp    — abstract DataSource interface
-  SirenFileSystem.hpp    — filesystem DataSource implementation
-  SirenMetadata.hpp      — SampleEntry, tag/favorite model, JSON I/O
-  SirenAudio.hpp         — dr_libs wrappers, WaveformCache
-  SirenBrowserPane.hpp   — left tree-browser widget
+  Siren.cpp              — SirenModule (fill thread, DSP, JSON) + SirenWidget
+  SirenDataSource.hpp    — DataSource + AudioStream abstract interfaces
+  SirenFileSystem.hpp    — FileSystemDataSource: dr_libs decode + async dir scan
+  SirenMetadata.hpp      — RootMetadata, SampleEntry, tag/favorite model, JSON I/O
+  SirenAudio.hpp         — AudioInfo, WaveformCache, build/load/save helpers
+  SirenBrowserPane.hpp   — left tree-browser widget + SirenDragState
   SirenPreviewPane.hpp   — right waveform preview widget
+  SirenVuMeter.hpp       — two-channel vertical LED bar widget
   Siren.test.cpp         — Catch2 unit tests (co-located, follows project pattern)
 
 dep/drlibs/
   dr_wav.h
   dr_flac.h
-  dr_mp3.h               — header-only; #define DR_*_IMPLEMENTATION in Siren.cpp
+  dr_mp3.h               — header-only; DR_*_IMPLEMENTATION defined in SirenFileSystem.hpp
+dep/hidapi/              — (unrelated to Siren)
 ```
 
 ---
@@ -49,7 +58,7 @@ dep/drlibs/
 ### File paths (follow pluginsettings.cpp pattern)
 ```cpp
 // In pluginsettings.cpp / pluginsettings.hpp additions:
-std::vector<std::string> sirenRootFolders;
+std::vector<std::string> sirenRootContainers;
 int    sirenSortMode  = 0;
 bool   sirenShowExts  = true;
 
@@ -57,7 +66,7 @@ static std::string sirenFilePath()  { return settingsDirPath() + "/siren.json"; 
 // per-root: settingsDirPath() + "/siren-" + hashPath(root) + ".json"
 ```
 
-`siren.json` stores: root folder paths, UI state (last selected file, scroll positions, sort mode).
+`siren.json` stores: root container paths, UI state (last selected file, scroll positions, sort mode).
 
 `siren-<xxxx>.json` (one per root, name = 8-char hex hash of root path) stores:
 ```json
@@ -72,7 +81,7 @@ static std::string sirenFilePath()  { return settingsDirPath() + "/siren.json"; 
 
 `saveToJson()` / `readFromJson()` on `Settings` extended to call `buildSirenJson()` / `parseSirenJson()` following existing `buildMbJson` pattern in [pluginsettings.cpp](src/pluginsettings.cpp).
 
-> **Actual:** Implemented as a self-contained `SirenSettings` struct in `Siren.cpp` rather than extending `pluginsettings`. File paths and JSON format match the plan.
+> **Actual:** Implemented as a self-contained `SirenSettings` struct in `Siren.cpp` rather than extending `pluginsettings`. File paths and JSON format match the plan. The JSON key for root paths is `"rootContainers"`.
 
 ---
 
@@ -83,26 +92,41 @@ static std::string sirenFilePath()  { return settingsDirPath() + "/siren.json"; 
 struct DataSourceNode {
     std::string name;
     std::string fullPath;
-    bool isDirectory;
-    bool isExpanded = false;
-    std::vector<DataSourceNode> children;  // populated on expand
+    std::string relativePath;   // relative to root, '/' separated
+    bool isContainer = false;
+    bool childrenLoaded = false;
+    float durationSeconds = 0.f;
+    std::vector<DataSourceNode> children;
+};
+
+struct AudioStream {
+    virtual int     channels()    const = 0;
+    virtual int     sampleRate()  const = 0;
+    virtual int64_t totalFrames() const = 0;
+    virtual int64_t readF32(float* buffer, int64_t frameCount) = 0;
+    virtual bool    seekTo(int64_t frameIndex) = 0;
 };
 
 struct DataSource {
     virtual std::string rootPath() const = 0;
-    virtual std::vector<DataSourceNode> children(const std::string& path) = 0;
     virtual bool isSupportedFile(const std::string& path) const = 0;
+    virtual void loadChildrenAsync(const std::string& path, TaskWorker&,
+                                   std::function<void(std::vector<DataSourceNode>)> onDone) = 0;
+    virtual std::vector<DataSourceNode> loadChildrenSync(const std::string& path) = 0;
+    virtual RootMetadata* getMetadata()  { return nullptr; }
+    virtual bool loadAudioInfo(const std::string& id, AudioInfo& out) const { return false; }
+    virtual bool decodeAudioF32(const std::string& id, std::vector<float>& samples,
+                                int& channels, int& sampleRate) const { return false; }
+    virtual std::unique_ptr<AudioStream> openAudioStream(const std::string& id) const { return nullptr; }
+    // ... display name, relative path, timestamp helpers
 };
 ```
 
-`FileSystemDataSource : DataSource` — reads the OS filesystem. Returns nodes for `.wav`, `.flac`, `.mp3` files and directories. Children are populated lazily on expand.
+`FileSystemDataSource : DataSource` — reads the OS filesystem. Returns nodes for `.wav`, `.flac`, `.mp3` files and containers (directories). Children are populated lazily on expand via `TaskWorker`. `durationSeconds` is populated during async scan via `loadAudioInfo`.
 
-**Async population (reference mb-selection-browser branch for the proven pattern):**  
-Directory listing is dispatched through `TaskWorker` (see `src/utils/TaskWorker.hpp`). The DataSource holds a `std::atomic<LoadState>` (IDLE → LOADING → READY). `SirenBrowserPane` polls this state in `step()` and inserts child rows only when state transitions to READY. A spinner indicator is shown while loading. This prevents UI freezes on large folder trees.
+Thread sync: **generation counter** + single-slot `PendingResult` + `std::atomic<bool> pendingReady` — no mutex, no `LoadState` enum.
 
-This interface is designed so a future data source (e.g. cloud, Rack library) can be added without changing the browser widget.
-
-> **Actual:** `DataSourceNode` also carries `relativePath`, `childrenLoaded`, and `durationSeconds`. Thread sync uses a **generation counter** (`std::atomic<int> treeGeneration`) + single-slot `PendingResult` + `std::atomic<bool> pendingReady` instead of `LoadState` enum — no mutex. `FileSystemDataSource` populates `durationSeconds` during async scan via `loadAudioInfo`.
+This interface is designed so a future data source (e.g. cloud, Rack library) can be added without changing the browser or preview widgets.
 
 ---
 
@@ -138,51 +162,38 @@ A **pre-defined starter tag list** is shipped with the module (e.g. `drone`, `pe
 
 ## Phase 4 — Audio Decoding & Waveform Cache ✅ DONE
 
+`SirenAudio.hpp` contains **format-agnostic** helpers only. All format-specific decode (dr_libs) is encapsulated in `FileSystemDataSource`.
+
 ```cpp
 // SirenAudio.hpp
-struct AudioInfo {
-    int    sampleRate;
-    int    channels;
-    int    bitDepth;
-    int64_t frameCount;
-    float  durationSeconds;
-};
+struct AudioInfo { int sampleRate, channels, bitDepth; int64_t frameCount; float durationSeconds; };
 
 struct WaveformCache {
-    // Downsampled peak pairs (min/max) per channel, one per display pixel bucket
-    std::vector<std::vector<std::pair<float,float>>> peaks;  // [channel][bucket]
-    int bucketCount;
-    int64_t fileTimestamp;   // mtime at build time, for cache invalidation
+    std::vector<std::vector<std::pair<float,float>>> peaks;  // [channel][bucket] = {min, max}
+    int     bucketCount    = 0;
+    int64_t fileTimestamp  = 0;  // mtime at build time; used for cache invalidation
+    bool empty() const { return peaks.empty() || bucketCount == 0; }
 };
 
-// Decodes header only (fast path for metadata)
-bool loadAudioInfo(const std::string& path, AudioInfo& out);
+// Build peak waveform from pre-decoded interleaved float samples.
+bool buildWaveformCache(int64_t timestamp, const std::vector<float>& samples,
+                        int64_t frameCount, int channels, int pixelWidth, WaveformCache& out);
 
-// Decodes full file and builds waveform peaks for display
-bool buildWaveformCache(const std::string& path, int pixelWidth, WaveformCache& out);
+// JSON cache file I/O (timestamp validation: pass 0 to skip).
+bool loadWaveformCacheFile(const std::string& path, int64_t expectedTimestamp, WaveformCache& out);
+void saveWaveformCacheFile(const std::string& path, const WaveformCache& cache);
 ```
 
 **dr_libs integration:**  
-- `#define DR_WAV_IMPLEMENTATION`, `#define DR_FLAC_IMPLEMENTATION`, `#define DR_MP3_IMPLEMENTATION` once in `Siren.cpp`.  
-- `dep/drlibs/` contains the three single-header files.  
-- `Makefile` already picks up `dep/` includes; just add the headers.
+`#define DR_WAV_IMPLEMENTATION` etc. once in `SirenFileSystem.hpp` (implementation TU). `dep/drlibs/` contains the three single-header files.
 
-Waveform building is dispatched through `TaskWorker` (same instance owned by the module/widget). The widget polls a `std::atomic<bool> cacheReady` flag each draw frame.
+**Waveform build flow (async via TaskWorker):**  
+1. `loadItem()` checks cache file: if `timestamp` matches → use immediately, no decode.  
+2. Otherwise dispatch to `TaskWorker`: `DataSource::decodeAudioF32` → `buildWaveformCache` → `saveWaveformCacheFile`. Result handed back via `pendingCache` + `pendingCacheReady` atomic.
 
-**File timestamps via `ghc::filesystem`:**  
-Use `#include <ghc/filesystem.hpp>` (available at `Rack/dep/include/ghc/filesystem.hpp`, already on the include path). File modification time:
-```cpp
-auto mtime = ghc::filesystem::last_write_time(path);
-int64_t timestamp = mtime.time_since_epoch().count();
-```
+**File timestamps:** `ghc::filesystem::last_write_time` → `time_since_epoch().count()`. `hashPath()` produces an 8-char hex string (CRC32 of the path) used as the cache filename.
 
-**Waveform cache persistence:**  
-Serialized peak data is stored as JSON alongside the settings files:
-```
-~/.../Stoermelder-P1/siren-cache/
-  <8-char-hash-of-full-path>.json   — { "path", "timestamp", "peaks": [...] }
-```
-On load, cache file is read first; if `timestamp` matches the file's current `mtime` via `ghc::filesystem::last_write_time`, the peaks are used directly — no decode needed. If `timestamp` differs or cache is absent, `TaskWorker` decodes and overwrites the cache file. Reference mb-selection-browser for the async decode + cache-check pattern.
+**Cache storage:** `~/.../Stoermelder-P1/siren-cache/<hash>.json` → `{ "timestamp", "bucketCount", "channels": [[min,max], ...] }`.
 
 ---
 
@@ -193,7 +204,7 @@ On load, cache file is read first; if `timestamp` matches the file's current `mt
 ```cpp
 // SirenBrowserPane.hpp
 struct SirenBrowserPane : widget::OpaqueWidget {
-    // Header: root-folder selector (dropdown of pluginSettings.sirenRootFolders)
+    // Header: root-container selector (dropdown of pluginSettings.sirenRootContainers)
     //         + "+" button to add new root via osdialog_file(OSDIALOG_OPEN_DIR)
     //         + "★" toggle to filter favorites only
     //         + tag filter chips (multi-select, same style as MB custom tag dropdown)
@@ -211,7 +222,7 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 
 struct SirenTreeRow : widget::OpaqueWidget {
     // Indent level indicator (16px per level)
-    // Folder: expand/collapse triangle + folder name; expand dispatches TaskWorker child load
+    // Container: expand/collapse triangle + container name; expand dispatches TaskWorker child load
     // File: filename + duration text + ★ favorite button
     // Selected state: highlight background
     // Single-click on file: loads preview in SirenPreviewPane
@@ -225,7 +236,7 @@ struct SirenTreeRow : widget::OpaqueWidget {
 
 Row height: 18px. Supports keyboard navigation (↑↓ arrows, Enter to load, Space to toggle favorite) when the pane has focus.
 
-> **Actual:** Thread sync uses generation counter + atomic bool (no `LoadState`). `ScrollWidget::container->box.size` must be set explicitly after `rebuildRowWidgets()` for the scrollbar to appear. `SirenTreeRow` shows file duration right-aligned and a `StarButton` for favorites. Tag chips are drawn directly in `SirenBrowserPane::draw()` in a fixed strip at the bottom. Header shows root folder name, dropdown arrow, and favorites star toggle. `onFileSelected` and `getMetadata` are callbacks to `SirenWidget`.
+> **Actual:** Thread sync uses generation counter + atomic bool (no `LoadState`). `ScrollWidget::container->box.size` must be set explicitly after `rebuildRowWidgets()` for the scrollbar to appear. `SirenTreeRow` shows file duration right-aligned and a `StarButton` for favorites. Tag chips are drawn directly in `SirenBrowserPane::draw()` in a fixed strip at the bottom. Header shows root container name, dropdown arrow, and favorites star toggle. `onFileSelected` and `getMetadata` are callbacks to `SirenWidget`.
 
 ---
 
@@ -234,81 +245,57 @@ Row height: 18px. Supports keyboard navigation (↑↓ arrows, Enter to load, Sp
 ```cpp
 // SirenPreviewPane.hpp
 struct SirenPreviewPane : widget::OpaqueWidget {
-    std::string currentPath;
-    AudioInfo   info;
+    std::string  currentId;      // opaque item id from data source
+    DataSource*  source;         // cached for context-menu use; never stored past loadItem
+    std::string  displayName;    // human-readable name, cached at loadItem time
+    std::string  relPath;        // root-relative path for metadata keying
+    AudioInfo    info;
     WaveformCache cache;
     std::atomic<bool> cacheReady{false};
-    float playheadPos = 0.f;       // normalized 0.0–1.0 across waveform width
+    std::atomic<bool> cacheBuilding{false};
+
+    float inPoint          = 0.f;  // stored start position (set on click/drag)
+    float scrubPos         = 0.f;  // drag-only position; never written by audio thread
     bool  draggingPlayhead = false;
 
-    void loadFile(const std::string& path, RootMetadata* meta);
-    void drawLayer(const DrawArgs& args, int layer) override;
+    // Audio state lives entirely in SirenModule. The pane drives it via callbacks
+    // and reads display-only atomics via raw pointers.
+    std::function<void(const std::string& id, DataSource* src)> openStreamCallback;
+    std::function<void(float pos)> startPlaybackCallback;
+    std::function<void()>          stopPlaybackCallback;
+    std::atomic<float>* modulePlayheadPos = nullptr;  // written by DSP thread
+    std::atomic<bool>*  modulePlaying     = nullptr;  // written by fill thread
+
+    void loadItem(const std::string& id, DataSource* src, RootMetadata* meta,
+                  bool startPlay = false, bool forceRebuild = false);
 };
 ```
 
-**Layout zones (top to bottom, matching screenshot):**
+**Layout zones (top to bottom):**
 
 ```
-┌─────────────────────────────────────────────────────────────────┬──────┐
-│ ▶ Harbour_Drone.wav   STEREO  48k · 24bit  00:32.18    SIREN    │      │
-├─────────────────────────────────────────────────────────────────┤      │
-│                                                                 │  L   │
-│  L ──── waveform channel 1 (peaks) ──────────────────────────   │  ●   │
-│                                                                 │      │
-│  R ──── waveform channel 2 (peaks) ──────────────────────────   │  R   │
-│                                                                 │  ●   │
-├─────────────────────────────────────────────────────────────────┤      │
-│  IN  7.080s   OUT  20.595s   LEN  13.516s   POS  12.293s        │      │
-└─────────────────────────────────────────────────────────────────┴──────┘
+┌─────────────────────────────────────────────────────────────────┐
+│ ▶ Harbour_Drone.wav   STEREO · 48k · 24bit   00:32.18           │  top bar (TB_H = 34px)
+├─────────────────────────────────────────────────────────────────┤
+│  L ──── waveform channel 1 (filled contour) ──────────────────  │
+│                                                                 │  waveform area
+│  R ──── waveform channel 2 (filled contour) ──────────────────  │
+├─────────────────────────────────────────────────────────────────┤
+│  IN  0.00s   OUT  32.18s   LEN  32.18s   POS  12.29s            │  readout (READOUT_H = 26px)
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-**Top bar** (single row, drawn or widget-based):
-- Play/stop button (triangle icon)
-- Filename (bold)
-- STEREO / MONO badge
-- Sample rate (`48k`), bit depth (`24bit`)
-- Total duration (`00:32.18`)
-- Module name label `SIREN` (right-aligned, decorative)
+**Top bar:** play/stop button (▶/■, gold when playing) · filename · STEREO/MONO badge · `48k` · `24bit` · duration.
 
-**Waveform area** (NanoVG, `drawLayer` layer 1):
-- Dark background `#1a1a12`
-- Per-channel waveform drawn as filled peak rectangles (min/max per pixel bucket), light grey `#c8c8b4`
-- `L` / `R` channel labels on left edge
-- If stereo, the two channels share the vertical space equally with a small gap
-- Selection region (future trim hook): dashed gold border rect + two `||` drag handles, rendered as non-interactive placeholders from the start
-- Playhead: thin vertical gold/white line at `playheadPos`
+**Waveform area:** filled closed NanoVG contour (top-peaks forward + bottom-peaks reversed), light grey. `L`/`R` channel labels on left edge. Tick marks along waveform bottom (auto-scaled interval: 0.5 s → 5 min). Playhead: white vertical line + downward triangle pointer. InPoint: gold vertical line + downward gold triangle.
 
-**Playhead interaction:**
-- Any click inside the waveform area immediately places the playhead at that X position AND starts playback from `playheadPos * durationSeconds` (no separate play button needed — clicking the waveform IS the play action).
-- Dragging moves the playhead continuously; playback seeks and restarts on `onDragEnd`.
-- Scrubbing (audio during drag) is a future feature.
-- A right-click context menu on the waveform offers "Drag to module" to initiate a path-drop.
+**Playhead interaction:** left-click in waveform → sets `inPoint` + `scrubPos`, starts drag. `onDragMove` → calls `startPlaybackFrom(scrubPos)` on every position change (scrubbing: fill thread seeks and refills from each new position). `onDragEnd` → `startPlaybackFrom(inPoint)` for a clean restart from the final position. Top-left play/stop button area → toggle play/stop from stored `inPoint`.
 
-**Bottom readout bar** (fixed-width monospace labels):
-- `IN` — start of selection (0.000s until trim is implemented)
-- `OUT` — end of selection (= duration until trim is implemented)
-- `LEN` — selection length
-- `POS` — current playhead position in seconds, updates live during drag
+**Right-click context menu:** favorite toggle + tag list with checkmarks + inline `TextField` for new tags.
 
-**Right-side level circles:**
-- One circle per channel (L, R), labeled
-- Fill color derived from RMS of the peak data (static, not live metering)
-- Serve as a quick visual loudness indicator
+**Bottom readout:** `IN` / `OUT` / `LEN` / `POS` in `mm:ss.ff` format.
 
-**Tag editor (below waveform area):**
-- Row of tag chip buttons for tags assigned to the current sample
-- `+` button opens an inline `TextField` for typing a new tag (created immediately on Enter, same pattern as MB v2 custom tag creation)
-
-> **Actual deviations:**
-> - Waveform rendered as a **filled closed contour** (top peaks forward + bottom peaks reverse = closed NanoVG path), not rectangular bars.
-> - **Level circles removed** at user request.
-> - **Background rects (top bar, waveform area) removed** at user request — SVG provides all backgrounds.
-> - Layout constants: `TB_H = 34.f`, `READOUT_H = 26.f`, `WAVE_X = 8.f`. No `LEVEL_W`.
-> - Playhead: white vertical line + downward triangle pointer at top edge.
-> - Tick marks added along waveform bottom edge (auto-scaled interval).
-> - Playhead drag uses `e.mouseDelta.x` (widget-space, handles rack zoom correctly).
-> - Bug fixed: successive selects of same file restart playback (state reset in `loadFile`).
-> - Thread sync: generation counter + atomic bool, same pattern as browser pane.
+**Waveform cache:** built asynchronously via `TaskWorker`. Generation counter + `pendingCacheReady` atomic bool for lock-free handoff. Serialised to `siren-cache/<8-char-hash>.json`; timestamp validation on load.
 
 ---
 
@@ -351,19 +338,44 @@ While dragging, both panes draw a small floating label with the filename followi
 
 ---
 
-## Phase 8 — Module I/O Ports & Audio Engine ✅ DONE
+## Phase 8 — Module I/O Ports & Streaming Audio Engine ✅ DONE
 
-The module exposes **outputs only**:
-- **OUT L** — left channel audio output
-- **OUT R** — right channel audio output
+The module exposes **outputs only** plus one knob:
+- **OUT L** / **OUT R** — stereo audio output. Mono files are duplicated to both channels.
+- **PARAM_VOLUME** — output gain knob (0–2×, default 1×, displayed in dB). DSP applies `vol * 5.f` to normalize the [-1, 1] PCM range to Rack's [-5, 5] V convention.
 
-No inputs in the initial release. Preview playback is UI-driven (play button in the preview pane). The audio thread reads from a decoded sample buffer (populated by the same worker thread that builds the waveform cache). Mono files are summed to both outputs.
+### Streaming architecture
 
-`dataToJson()` persists: last loaded file path, IN/OUT markers (zeroed initially), active root path.
+Audio I/O is fully streaming — no full-file decode before playback. Ownership is:
+
+```
+UI thread                 fill thread               DSP thread (process())
+─────────                 ───────────               ──────────────────────
+openStream()  ──atomic──▶ AudioStream* stream       rbL / rbR  ──▶  outputs
+startPlayback() ──seek──▶ seekTo() + ring fill
+stopPlayback()  ──flag──▶ drain + playing=false
+```
+
+**Lock-free command channel (UI → fill thread):**
+- `std::atomic<AudioStream*> pendingStream` — UI transfers ownership; fill thread `exchange(nullptr)` to adopt.
+- `std::atomic<int64_t> pendingSeekFrame` — ≥0 triggers a seek and resumes `playing`.
+- `std::atomic<bool> pendingStop` — fill thread drains ring and clears `playing`.
+
+**Ring buffers:** `dsp::RingBuffer<float, 8192>` for L and R (8192 frames ≈ 186 ms at 44.1 kHz). Single-producer (fill thread) / single-consumer (`process()`). No mutex on any audio path.
+
+**Fill thread** (`std::thread fillThread`): wakes via `std::condition_variable` (5 ms timeout fallback). Reads `AudioStream::readF32` in 1024-frame chunks into the ring. Sets `eofReached` when the decoder returns 0 frames; `process()` drains the ring before stopping playback.
+
+**Playhead tracking** (DSP thread):
+- `seekBaseFrame` + `outputFrameCount` (atomic) → normalized `playheadPos` (atomic float) read by UI.
+- When `seekBaseFrame + outputFrameCount >= streamTotalFrames`, `playing` is set false.
+
+**VU meter:** `peakL` / `peakR` (DSP-only floats) decay at 30 dB/s; exported to UI as `std::atomic<float> levelL / levelR` (dBFS, −100 = silence). `SirenVuMeter` widget reads these each draw frame.
+
+**`dataToJson()` persists:** last file path, last playhead position, active root index. Restored by `SirenWidget` constructor using the module's persisted values (patch priority) or global `sirenSettings` as fallback.
 
 ---
 
-## Phase 9 — Tests ⚠️ PARTIAL
+## Phase 9 — Tests ✅ DONE
 
 Tests are co-located with source and follow the project pattern (`*.test.cpp` using Catch2 + `Test::TestContext` + `SYNC_MODEL`). Test file:
 
@@ -371,24 +383,53 @@ Tests are co-located with source and follow the project pattern (`*.test.cpp` us
 src/modules/siren/Siren.test.cpp
 ```
 
-**Test cases to write from the start:**
+**35 test cases, 122 assertions — all passing.**
 
-| Test case | Status | What it checks |
-|-----------|--------|---------------|
-| `Construction and initialization` | ❌ TODO | `SirenModule` and `SirenWidget` construct without crash; outputs default to 0 channels |
-| `JSON serialization` | ✅ DONE | `dataToJson` / `dataFromJson` round-trips: active root path, last loaded file, playhead pos |
-| `RootMetadata: favorites` | ❌ TODO | `setFavorite(rel, true)` adds to favorites; `setFavorite(rel, false)` removes; `load`/`save` round-trip preserves state |
-| `RootMetadata: tags` | ❌ TODO | `addTag` / `removeTag` work; `allTags()` returns union; inline creation works |
-| `RootMetadata: JSON file I/O` | ❌ TODO | writes `siren-<hash>.json` and reads it back correctly |
-| `WaveformCache: timestamp invalidation` | ❌ TODO | if stored timestamp != current `mtime`, cache is rebuilt; if equal, peaks are reused |
-| `FileSystemDataSource: supported file filter` | ❌ TODO | `.wav`, `.flac`, `.mp3` accepted; `.txt`, `.aif` rejected |
-| `FileSystemDataSource: async load state` | ❌ TODO | state transitions IDLE → LOADING → READY after `TaskWorker` completes |
-| `SirenDragHelper: path drop` | ❌ TODO | on `endDrag`, `onPathDrop` is called on the widget at cursor position |
-| `Audio output: stereo` | ❌ TODO | decoded stereo file writes non-zero values to both OUTPUT_L and OUTPUT_R |
-| `Audio output: mono to stereo` | ❌ TODO | decoded mono file writes same value to both channels |
-| `Playhead: drag clamps to [0,1]` | ❌ TODO | dragging playhead beyond edges stays within valid range |
+| Test case | Area | What it checks |
+|-----------|------|----------------|
+| `Construction and initialization` | Module | Construct without crash; OUTPUT_L/R default to 0 V |
+| `JSON serialization` | Module | `dataToJson`/`dataFromJson` round-trip: `lastFile`, `lastPlayheadPos`, `activeRootIdx` |
+| `RootMetadata: favorites` (3 sections) | Metadata | set/clear favorite; entry removed when no tags remain; entry kept when tags remain |
+| `RootMetadata: tags` (7 sections) | Metadata | add/remove; no exact duplicates; case-insensitive dedup; first spelling wins; `allTags` union |
+| `addTag: custom tag spelling is stored verbatim` | Metadata | Verbatim storage of mixed-case and hyphenated tags |
+| `addTag: case-insensitive duplicate prevention` | Metadata | Three variants of same word → only first stored; different tag still accepted |
+| `addTag: case-insensitive check does not affect allTags display` | Metadata | `allTags` contains exact stored spelling, not lowercase variant |
+| `RootMetadata: JSON round-trip` | Metadata | `toJson` / `fromJson` preserves rootPath, favorites, tags |
+| `FileSystemDataSource: supported file filter` | FileSystem | `.wav`/`.WAV`/`.flac`/`.mp3` accepted; `.txt`/`.aif`/`.png`/`.json` rejected |
+| `WaveformCache: timestamp validation` (3 sections) | Audio | `fileTimestamp` field; `empty()` on default and non-empty cache |
+| `hashPath produces 8-char hex string` | Utility | Output is 8 lowercase hex chars |
+| `hashPath is deterministic` | Utility | Same input → same output; different inputs → different outputs |
+| `Audio output: silence without loaded file` | Audio/DSP | `process()` without a stream outputs 0 V on both channels |
+| `Playhead clamps to [0, 1]` (3 sections) | Preview | Below-0 clamps; above-1 clamps; `posToPlayhead` returns value in [0, 1] |
+| `SirenDragState initial state` | DragDrop | `active == false`, `dragPath` empty at construction |
+| `allTags: starter tags present even when samples have tags` | Metadata | Regression: custom tag + all `STARTER_TAGS` present simultaneously |
+| `allTags: user tags merge with starter tags without duplicates` | Metadata | Starter tag `"drone"` added by user → count stays 1 |
+| `PARAM_VOLUME: default value and range` | Module | Default = 1.0; extremes 0.0 and 2.0 accepted |
+| `PARAM_VOLUME: zero volume produces silence` | Module/DSP | Vol=0 + process() → 0 V, no crash |
+| `loadItem resets inPoint and scrubPos` | Preview | `loadItem("")` resets both to 0.f |
+| `loadItem: no item loaded for empty id or null source` | Preview | `currentId` stays empty; no stream opened |
+| `loadItem: playing stays false when no stream can be opened` | Preview | `startPlay=true` + empty id → `modulePlaying` stays false |
+| `FileSystemDataSource: getMetadata returns valid pointer` | FileSystem | Non-null pointer; `rootPath` matches constructor arg |
+| `FileSystemDataSource: metadata is mutable through pointer` | FileSystem | Tag added via pointer visible on second call; pointer stable |
+| `toTitleCase: basic cases` | Utility | Lowercase, multi-word, hyphen, underscore, all-caps, empty string |
+| `process: reads samples from ring buffer and scales by volume` | Audio/DSP | 0.5 in ring → 2.5 V out (vol=1, ×5 scale) |
+| `process: stops playing when ring drained after EOF` | Audio/DSP | `eofReached=true` + empty ring → `playing` goes false, output 0 V |
+| `process: ring samples consumed before EOF stop` | Audio/DSP | One frame + eofReached: first call outputs, second call stops |
+| `process: VU meter updated by non-silent signal` | Audio/DSP | `levelL`/`levelR` > −100 dBFS after non-silent process() |
+| `process: volume knob at zero produces silence even with ring data` | Audio/DSP | Vol=0 mutes ring output |
+| `startPlayback: seekBaseFrame computed from position and total frames` | Audio | pos=0.5, total=1000 → `seekBaseFrame == 500` |
+| `startPlayback: position 0 seeks to frame 0` | Audio | pos=0.0 → `seekBaseFrame == 0` |
+| `startPlayback: rapid successive calls — last position wins` | Audio/Scrub | Three calls → `seekBaseFrame` and `pendingSeekFrame` reflect the last position |
+| `startPlayback: outputFrameCount reset on each call` | Audio/Scrub | Counter reset to 0 on every seek so playhead is relative to the new base |
+| `openStream: null source leaves pendingStream nullptr` | Audio | `openStream("", nullptr)` → `pendingStream` remains null |
 
-Test infrastructure used:
+**Not (unit) tested — require integration / real audio files:**
+- Fill thread ring population (async; needs a mock `AudioStream` + sleep/sync)
+- Actual stereo vs. mono path through a decoded file
+- Waveform cache build from real PCM (covered indirectly by `buildWaveformCache` which is format-agnostic)
+- `FileSystemDataSource` async directory scan (TaskWorker completion)
+
+Test infrastructure:
 - `#include "../../test/test_plugin.hpp"` and `test_context.hpp`
 - `SYNC_MODEL(modelSiren, "Siren")`
 - `Test::TestContext<> testContext` (file-scope)
@@ -415,9 +456,8 @@ Test infrastructure used:
 - IN and OUT handle widgets in `SirenPreviewPane` are already rendered (as non-interactive placeholders).
 - When implemented: mouse-drag handles set `inPoint` / `outPoint` in samples; "Export Trim" context menu writes a new WAV via `dr_wav` to a user-chosen path.
 
-### Playhead Scrubbing
-- Currently: playhead snaps to drag position and triggers playback on mouse release.
-- Future: continuous audio output during drag (scrubbing). Requires low-latency seek in the decoded buffer; architecture is compatible since the buffer is already decoded by the time the user can interact with it.
+### ~~Playhead Scrubbing~~ ✅ DONE
+`onDragMove` calls `startPlaybackFrom(scrubPos)` on every position change. `pendingSeekFrame` (a single atomic) is overwritten by rapid calls — the fill thread always picks up the latest position, seeks `AudioStream`, clears the ring buffers, and starts refilling. DSP output follows within ≤5 ms. Implementation: one `if (newPos != scrubPos)` guard + one `startPlaybackFrom` call in `onDragMove`.
 
 ### Volume Curve
 - NanoVG overlay in `SirenPreviewPane` drawing a Bezier/spline envelope.
@@ -433,14 +473,14 @@ Test infrastructure used:
 
 **Manual smoke test after build:**
 1. `make` — zero errors, Siren appears in the plugin browser.
-2. Add a root folder → tree populates with `.wav`/`.flac`/`.mp3` files, directories expand asynchronously without UI freeze.
+2. Add a root container → tree populates with `.wav`/`.flac`/`.mp3` files, containers expand asynchronously without UI freeze.
 3. Click a file → waveform renders in preview pane; filename, STEREO/MONO badge, sample rate, bit depth, and duration are correct.
 4. Click in waveform → playhead moves to that position and audio begins playing through OUT L/R immediately.
 5. Star a file → `siren-<hash>.json` appears in `~/.../Stoermelder-P1/` with `favorites` entry.
 6. Add a tag → chip appears; reopen Rack → tag persists.
 7. Second load of same file → waveform loads instantly from cache (no re-decode), confirmed by `siren-cache/` file present with matching timestamp.
 8. Drag a file from browser or preview onto a sampler module that handles `onPathDrop` → that module loads the file.
-9. Close and reopen Rack → root folders, last selected file, and playhead position are restored.
+9. Close and reopen Rack → root containers, last selected file, and playhead position are restored.
 
 ---
 
@@ -448,19 +488,21 @@ Test infrastructure used:
 
 | File | Role |
 |------|------|
-| [src/modules/siren/Siren.cpp](src/modules/siren/Siren.cpp) | Module + widget + build definitions |
-| [src/pluginsettings.hpp](src/pluginsettings.hpp) | Add `sirenRootFolders` + UI state fields |
-| [src/pluginsettings.cpp](src/pluginsettings.cpp) | Add `buildSirenJson` / `parseSirenJson` |
-| [src/plugin.hpp](src/plugin.hpp) | Add `extern Model* modelSiren` |
-| [src/plugin.cpp](src/plugin.cpp) | Register model |
+| [src/modules/siren/Siren.cpp](src/modules/siren/Siren.cpp) | `SirenModule` (fill thread, DSP, JSON) + `SirenWidget` |
+| [src/modules/siren/SirenDataSource.hpp](src/modules/siren/SirenDataSource.hpp) | `DataSource` + `AudioStream` abstract interfaces |
+| [src/modules/siren/SirenFileSystem.hpp](src/modules/siren/SirenFileSystem.hpp) | `FileSystemDataSource`: dr_libs decode + async dir scan |
+| [src/modules/siren/SirenAudio.hpp](src/modules/siren/SirenAudio.hpp) | Format-agnostic `WaveformCache` helpers |
+| [src/modules/siren/SirenPreviewPane.hpp](src/modules/siren/SirenPreviewPane.hpp) | Waveform preview, callback wiring to module |
+| [src/modules/siren/SirenBrowserPane.hpp](src/modules/siren/SirenBrowserPane.hpp) | File tree browser + `SirenDragState` |
+| [src/modules/siren/SirenVuMeter.hpp](src/modules/siren/SirenVuMeter.hpp) | Two-channel LED bar, reads `levelL`/`levelR` atomics |
+| [src/modules/siren/SirenMetadata.hpp](src/modules/siren/SirenMetadata.hpp) | `RootMetadata`: tags, favorites, JSON I/O |
+| [src/plugin.hpp](src/plugin.hpp) | `extern Model* modelSiren` |
+| [src/plugin.cpp](src/plugin.cpp) | `p->addModel(modelSiren)` |
 | [plugin.json](plugin.json) | Module manifest entry |
-| [dep/drlibs/dr_wav.h](dep/drlibs/dr_wav.h) | WAV decode (add file) |
-| [dep/drlibs/dr_flac.h](dep/drlibs/dr_flac.h) | FLAC decode (add file) |
-| [dep/drlibs/dr_mp3.h](dep/drlibs/dr_mp3.h) | MP3 decode (add file) |
+| [dep/drlibs/](dep/drlibs/) | dr_wav.h / dr_flac.h / dr_mp3.h |
 
 ### Key Reuse from Existing Code
-- `pluginsettings.cpp:loadJsonFile` / `saveJsonFile` — reuse directly for siren-\*.json
 - `ThemedModuleWidget` — base class for `SirenWidget`
-- MB v2 tag creation inline text-field pattern — replicate for Siren tag editor
-- MB v2 dropdown with search filter — replicate for tag filter chip row
+- MB v2 tag creation inline text-field pattern — `NewTagField` in `SirenPreviewPane`
 - `osdialog_file(OSDIALOG_OPEN_DIR)` — folder picker for adding roots
+- `TaskWorker` — async dir scan and waveform cache build
