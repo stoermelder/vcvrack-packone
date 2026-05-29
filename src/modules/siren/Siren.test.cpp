@@ -88,10 +88,31 @@ TEST_CASE("RootMetadata: tags", "[Siren][Metadata]") {
 		REQUIRE(tags[0] == "ambient");
 	}
 
-	SECTION("No duplicate tags") {
+	SECTION("No duplicate tags — exact match") {
 		meta.addTag("field/rain.wav", "ambient");
 		meta.addTag("field/rain.wav", "ambient");
 		REQUIRE(meta.getTags("field/rain.wav").size() == 1);
+	}
+
+	SECTION("No duplicate tags — case-insensitive match") {
+		meta.addTag("field/rain.wav", "Ambient");
+		meta.addTag("field/rain.wav", "ambient");
+		meta.addTag("field/rain.wav", "AMBIENT");
+		REQUIRE(meta.getTags("field/rain.wav").size() == 1);
+	}
+
+	SECTION("Exact spelling of first occurrence is preserved") {
+		meta.addTag("field/rain.wav", "Dark Ambient");
+		meta.addTag("field/rain.wav", "dark ambient");  // rejected — same tag, different case
+		auto tags = meta.getTags("field/rain.wav");
+		REQUIRE(tags.size() == 1);
+		REQUIRE(tags[0] == "Dark Ambient");
+	}
+
+	SECTION("Tags with different text are all stored") {
+		meta.addTag("field/rain.wav", "Bass");
+		meta.addTag("field/rain.wav", "Drums");
+		REQUIRE(meta.getTags("field/rain.wav").size() == 2);
 	}
 
 	SECTION("Remove tag") {
@@ -117,6 +138,48 @@ TEST_CASE("RootMetadata: tags", "[Siren][Metadata]") {
 		REQUIRE(!all.empty());
 		REQUIRE(all.count("drone") == 1);
 	}
+}
+
+// ─── addTag: spelling and case rules ─────────────────────────────────────────
+
+TEST_CASE("addTag: custom tag spelling is stored verbatim", "[Siren][Metadata]") {
+	RootMetadata meta;
+
+	meta.addTag("kick.wav", "Dark Ambient");
+	REQUIRE(meta.getTags("kick.wav")[0] == "Dark Ambient");
+
+	meta.addTag("snare.wav", "FX");
+	REQUIRE(meta.getTags("snare.wav")[0] == "FX");
+
+	meta.addTag("hat.wav", "one-shot");
+	REQUIRE(meta.getTags("hat.wav")[0] == "one-shot");
+}
+
+TEST_CASE("addTag: case-insensitive duplicate prevention", "[Siren][Metadata]") {
+	RootMetadata meta;
+
+	// Three case-variants of the same word → only the first is stored
+	meta.addTag("a.wav", "Percussion");
+	meta.addTag("a.wav", "percussion");
+	meta.addTag("a.wav", "PERCUSSION");
+	auto tags = meta.getTags("a.wav");
+	REQUIRE(tags.size() == 1);
+	REQUIRE(tags[0] == "Percussion");   // first spelling wins
+
+	// Adding a genuinely different tag still works
+	meta.addTag("a.wav", "Loop");
+	REQUIRE(meta.getTags("a.wav").size() == 2);
+}
+
+TEST_CASE("addTag: case-insensitive check does not affect allTags display", "[Siren][Metadata]") {
+	RootMetadata meta;
+	// Store a capitalised custom tag
+	meta.addTag("a.wav", "Heavy Bass");
+	auto all = meta.allTags();
+	// The exact stored spelling appears in allTags
+	REQUIRE(all.count("Heavy Bass") == 1);
+	// The lowercase version does not appear separately
+	REQUIRE(all.count("heavy bass") == 0);
 }
 
 // ─── RootMetadata: JSON I/O ───────────────────────────────────────────────────
@@ -249,4 +312,256 @@ TEST_CASE("SirenDragState initial state", "[Siren][DragDrop]") {
 	SirenDragState ds;
 	REQUIRE(ds.active == false);
 	REQUIRE(ds.dragPath.empty());
+}
+
+// ─── allTags: starter tags always present ─────────────────────────────────────
+
+TEST_CASE("allTags: starter tags present even when samples have tags", "[Siren][Metadata]") {
+	RootMetadata meta;
+	meta.rootPath = "/test/root";
+
+	// Assign a custom tag — starter tags must still appear (regression for the
+	// bug where the "if (result.empty())" guard dropped them once any tag existed)
+	meta.addTag("kick.wav", "percussion");
+	auto all = meta.allTags();
+
+	REQUIRE(all.count("percussion") == 1);
+	for (const std::string& starter : STARTER_TAGS)
+		REQUIRE(all.count(starter) == 1);
+}
+
+TEST_CASE("allTags: user tags merge with starter tags without duplicates", "[Siren][Metadata]") {
+	RootMetadata meta;
+	meta.rootPath = "/test/root";
+
+	// "drone" is already a starter tag; adding it again must not duplicate it
+	meta.addTag("a.wav", "drone");
+	auto all = meta.allTags();
+	REQUIRE(all.count("drone") == 1);
+}
+
+// ─── Volume parameter ─────────────────────────────────────────────────────────
+
+TEST_CASE("PARAM_VOLUME: default value and range", "[Siren][Module]") {
+	auto* m = Test::createModule<SirenModule>("Siren");
+	REQUIRE(m != nullptr);
+
+	// Default is unity gain (1.0)
+	REQUIRE(m->params[SirenModule::PARAM_VOLUME].getValue() == Catch::Approx(1.f));
+
+	// Range extremes are accepted
+	m->params[SirenModule::PARAM_VOLUME].setValue(0.f);
+	REQUIRE(m->params[SirenModule::PARAM_VOLUME].getValue() == Catch::Approx(0.f));
+	m->params[SirenModule::PARAM_VOLUME].setValue(2.f);
+	REQUIRE(m->params[SirenModule::PARAM_VOLUME].getValue() == Catch::Approx(2.f));
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("PARAM_VOLUME: zero volume produces silence", "[Siren][Module]") {
+	auto* m = Test::createModule<SirenModule>("Siren");
+	m->params[SirenModule::PARAM_VOLUME].setValue(0.f);
+	// previewPane is null so process() exits early but must not crash
+	m->process(Test::makeProcessArgs(1));
+	REQUIRE(m->outputs[SirenModule::OUTPUT_L].getVoltage() == 0.f);
+	REQUIRE(m->outputs[SirenModule::OUTPUT_R].getVoltage() == 0.f);
+	Test::destroyModule(m);
+}
+
+// ─── SirenPreviewPane: inPoint / scrubPos / stream state ─────────────────────
+
+// After the streaming refactor, playheadPos lives in SirenModule (atomic).
+// SirenPreviewPane only reads it via the modulePlayheadPos pointer.
+TEST_CASE("loadItem resets inPoint and scrubPos", "[Siren][Preview]") {
+	SirenPreviewPane pane;
+	pane.box.size = Vec(600.f, 380.f);
+
+	pane.inPoint  = 0.7f;
+	pane.scrubPos = 0.7f;
+
+	pane.loadItem("", nullptr, nullptr);
+
+	REQUIRE(pane.inPoint  == 0.f);
+	REQUIRE(pane.scrubPos == 0.f);
+}
+
+TEST_CASE("loadItem: no item loaded for empty id or null source", "[Siren][Preview]") {
+	SirenPreviewPane pane;
+	pane.box.size = Vec(600.f, 380.f);
+
+	pane.loadItem("", nullptr, nullptr);
+	// Stream ownership moved to SirenModule's fill thread; verify by checking
+	// that the pane did not record any valid item.
+	REQUIRE(pane.currentId.empty());
+}
+
+TEST_CASE("loadItem: playing stays false when no stream can be opened", "[Siren][Preview]") {
+	SirenPreviewPane pane;
+	pane.box.size = Vec(600.f, 380.f);
+
+	// Wire a local playing flag so the pane's modulePlaying read has a target.
+	std::atomic<bool> playing{false};
+	pane.modulePlaying = &playing;
+
+	// startPlay=true with empty id → early return before startPlaybackFrom()
+	pane.loadItem("", nullptr, nullptr, /*startPlay=*/true);
+	REQUIRE(playing.load() == false);
+}
+
+// ─── FileSystemDataSource: metadata ownership ────────────────────────────────
+
+TEST_CASE("FileSystemDataSource: getMetadata returns valid pointer", "[Siren][FileSystem]") {
+	FileSystemDataSource src("/tmp/siren_test_nonexistent");
+
+	RootMetadata* meta = src.getMetadata();
+	REQUIRE(meta != nullptr);
+	REQUIRE(meta->rootPath == "/tmp/siren_test_nonexistent");
+	// samples may be non-empty if a metadata file was previously persisted for this path
+}
+
+TEST_CASE("FileSystemDataSource: metadata is mutable through pointer", "[Siren][FileSystem]") {
+	FileSystemDataSource src("/tmp/siren_test_nonexistent");
+
+	RootMetadata* meta = src.getMetadata();
+	meta->addTag("kick.wav", "percussion");
+	REQUIRE(meta->getTags("kick.wav").size() == 1);
+	// Pointer remains stable: same address on second call
+	REQUIRE(src.getMetadata() == meta);
+}
+
+// ─── toTitleCase ─────────────────────────────────────────────────────────────
+
+TEST_CASE("toTitleCase: basic cases", "[Siren][Utility]") {
+	REQUIRE(toTitleCase("drone")          == "Drone");
+	REQUIRE(toTitleCase("dark ambient")   == "Dark Ambient");
+	REQUIRE(toTitleCase("one-shot")       == "One Shot");
+	REQUIRE(toTitleCase("field_recording")== "Field Recording");
+	REQUIRE(toTitleCase("FX")             == "Fx");
+	REQUIRE(toTitleCase("")               == "");
+}
+
+// ─── Audio streaming: ring buffer / DSP ──────────────────────────────────────
+
+// Helper: push a stereo frame directly into the module's ring buffers.
+static void pushFrame(SirenModule* m, float l, float r) {
+	m->rbL.push(l);
+	m->rbR.push(r);
+}
+
+TEST_CASE("process: reads samples from ring buffer and scales by volume", "[Siren][Audio]") {
+	auto* m = Test::createModule<SirenModule>("Siren");
+
+	// Default volume = 1.0; DSP multiplies by vol * 5.f
+	pushFrame(m, 0.5f, -0.5f);
+	m->streamTotalFrames = 100;
+	m->playing.store(true, std::memory_order_release);
+
+	m->process(Test::makeProcessArgs(1));
+
+	REQUIRE(m->outputs[SirenModule::OUTPUT_L].getVoltage() == Catch::Approx(2.5f));
+	REQUIRE(m->outputs[SirenModule::OUTPUT_R].getVoltage() == Catch::Approx(-2.5f));
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("process: stops playing when ring drained after EOF", "[Siren][Audio]") {
+	auto* m = Test::createModule<SirenModule>("Siren");
+
+	// Fill thread signals EOF; ring is empty → process() must stop
+	m->streamTotalFrames = 100;
+	m->playing.store(true, std::memory_order_release);
+	m->eofReached.store(true, std::memory_order_release);
+
+	m->process(Test::makeProcessArgs(1));
+
+	REQUIRE(m->playing.load() == false);
+	REQUIRE(m->outputs[SirenModule::OUTPUT_L].getVoltage() == 0.f);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("process: ring samples consumed before EOF stop", "[Siren][Audio]") {
+	auto* m = Test::createModule<SirenModule>("Siren");
+
+	// One frame in ring + eofReached=true: first process() drains the frame;
+	// second process() sees empty ring + eofReached and stops.
+	pushFrame(m, 1.f, 1.f);
+	m->streamTotalFrames = 2;
+	m->playing.store(true, std::memory_order_release);
+	m->eofReached.store(true, std::memory_order_release);
+
+	m->process(Test::makeProcessArgs(1));
+	REQUIRE(m->playing.load() == true);   // still playing — ring had data
+
+	m->process(Test::makeProcessArgs(1));
+	REQUIRE(m->playing.load() == false);  // drained now
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("process: VU meter updated by non-silent signal", "[Siren][Audio]") {
+	auto* m = Test::createModule<SirenModule>("Siren");
+
+	pushFrame(m, 1.f, 1.f);
+	m->streamTotalFrames = 100;
+	m->playing.store(true, std::memory_order_release);
+
+	m->process(Test::makeProcessArgs(1));
+
+	// Signal is 5V (vol*5); dBFS relative to 5V → 0 dBFS. Peak-hold starts there.
+	REQUIRE(m->levelL.load() > -100.f);
+	REQUIRE(m->levelR.load() > -100.f);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("process: volume knob at zero produces silence even with ring data", "[Siren][Audio]") {
+	auto* m = Test::createModule<SirenModule>("Siren");
+	m->params[SirenModule::PARAM_VOLUME].setValue(0.f);
+
+	pushFrame(m, 1.f, 1.f);
+	m->streamTotalFrames = 100;
+	m->playing.store(true, std::memory_order_release);
+
+	m->process(Test::makeProcessArgs(1));
+
+	REQUIRE(m->outputs[SirenModule::OUTPUT_L].getVoltage() == 0.f);
+	REQUIRE(m->outputs[SirenModule::OUTPUT_R].getVoltage() == 0.f);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("startPlayback: seekBaseFrame computed from position and total frames", "[Siren][Audio]") {
+	auto* m = Test::createModule<SirenModule>("Siren");
+	m->streamTotalFrames = 1000;
+
+	m->startPlayback(0.5f);
+
+	REQUIRE(m->seekBaseFrame == 500);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("startPlayback: position 0 seeks to frame 0", "[Siren][Audio]") {
+	auto* m = Test::createModule<SirenModule>("Siren");
+	m->streamTotalFrames = 1000;
+
+	m->startPlayback(0.f);
+
+	REQUIRE(m->seekBaseFrame == 0);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("openStream: null source leaves pendingStream nullptr", "[Siren][Audio]") {
+	auto* m = Test::createModule<SirenModule>("Siren");
+
+	m->openStream("", nullptr);
+
+	// pendingStream is consumed by the fill thread; after exchange it should be nullptr
+	// (fill thread might race, but since stream is null either way it is safe to check)
+	AudioStream* ps = m->pendingStream.exchange(nullptr, std::memory_order_acq_rel);
+	REQUIRE(ps == nullptr);
+
+	Test::destroyModule(m);
 }
