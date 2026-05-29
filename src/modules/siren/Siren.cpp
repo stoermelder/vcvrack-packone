@@ -1,6 +1,7 @@
 #include "../../plugin.hpp"
 #include "../../pluginsettings.hpp"
 #include "../../components/Knobs.hpp"
+#include "Siren.hpp"
 #include "SirenDataSource.hpp"
 #include "SirenFileSystem.hpp"
 #include "SirenAudio.hpp"
@@ -14,79 +15,6 @@
 
 namespace StoermelderPackOne {
 namespace Siren {
-
-// ─── helper: settings file paths ─────────────────────────────────────────────
-
-static std::string settingsDirPath() {
-	return rack::asset::user("Stoermelder-P1");
-}
-
-static std::string sirenFilePath() {
-	return settingsDirPath() + "/siren.json";
-}
-
-static std::string sirenCacheDirPath() {
-	return settingsDirPath() + "/siren-cache";
-}
-
-// ─── global siren settings ───────────────────────────────────────────────────
-
-struct SirenSettings {
-	std::vector<std::string> rootContainers;
-	int activeRootIdx = -1;
-	std::string lastFile;
-	float lastPlayheadPos = 0.f;
-
-	void save() const {
-		if (isTesting()) return;
-		json_t* j = toJson();
-		rack::system::createDirectories(settingsDirPath());
-		FILE* f = fopen(sirenFilePath().c_str(), "w");
-		if (f) { json_dumpf(j, f, JSON_INDENT(2) | JSON_REAL_PRECISION(9)); fclose(f); }
-		json_decref(j);
-	}
-
-	void load() {
-		if (isTesting()) return;
-		FILE* f = fopen(sirenFilePath().c_str(), "r");
-		if (!f) return;
-		json_error_t err;
-		json_t* j = json_loadf(f, 0, &err);
-		fclose(f);
-		if (!j) return;
-		fromJson(j);
-		json_decref(j);
-	}
-
-	json_t* toJson() const {
-		json_t* j = json_object();
-		json_t* rootsJ = json_array();
-		for (const std::string& r : rootContainers)
-			json_array_append_new(rootsJ, json_string(r.c_str()));
-		json_object_set_new(j, "rootContainers", rootsJ);
-		json_object_set_new(j, "activeRootIdx", json_integer(activeRootIdx));
-		json_object_set_new(j, "lastFile", json_string(lastFile.c_str()));
-		json_object_set_new(j, "lastPlayheadPos", json_real(lastPlayheadPos));
-		return j;
-	}
-
-	void fromJson(json_t* j) {
-		rootContainers.clear();
-		json_t* rootsJ = json_object_get(j, "rootContainers");
-		if (rootsJ && json_is_array(rootsJ)) {
-			size_t i; json_t* v;
-			json_array_foreach(rootsJ, i, v) {
-				if (json_is_string(v)) rootContainers.push_back(json_string_value(v));
-			}
-		}
-		json_t* v;
-		v = json_object_get(j, "activeRootIdx"); if (v) activeRootIdx = (int)json_integer_value(v);
-		v = json_object_get(j, "lastFile");      if (v) lastFile = json_string_value(v);
-		v = json_object_get(j, "lastPlayheadPos"); if (v) lastPlayheadPos = (float)json_real_value(v);
-	}
-} sirenSettings;
-
-// ─── module ───────────────────────────────────────────────────────────────────
 
 struct SirenModule : Module {
 	enum OutputIds { 
@@ -145,6 +73,10 @@ struct SirenModule : Module {
 	int64_t              streamTotalFrames = 0;  // total frames in the open item; set in openStream()
 	std::atomic<int64_t> outputFrameCount{0};    // frames output since last seek; DSP increments
 
+	// Resampling — fill thread reads, process() writes engineSampleRate
+	int engineSampleRate;   // set in process(), read by fill thread
+	std::atomic<float> sampleRateRatio{1.f};      // outRate/inRate; set by fill thread, read in process()
+
 	// VU meter — written by DSP thread, read by UI thread
 	std::atomic<float> levelL{-100.f};  // dBFS; -100 = silence
 	std::atomic<float> levelR{-100.f};
@@ -156,14 +88,43 @@ struct SirenModule : Module {
 	void fillThreadFunc() {
 		AudioStream* stream = nullptr;  // owned by this thread
 
+		// Per-stream playback config — computed once per seek, reused every fill cycle.
+		dsp::SampleRateConverter<2> src;
+		int   fillCh       = 1;
+		bool  fillResample = false;
+		float fillRatio    = 1.f;  // outRate / inRate
+
+		static constexpr size_t CHUNK   = 1024;
+		static constexpr size_t OUT_MAX = CHUNK * 8;  // headroom for up to 8× upsampling
+		float outBuf[OUT_MAX * 2];  // resampler output — allocated once for the thread lifetime
+
+		// Push n frames from buf into the ring, resampling if active.
+		auto pushFrames = [&](const float* buf, int n) {
+			if (fillResample) {
+				int inF = n, outF = (int)OUT_MAX;
+				src.process(buf, fillCh, &inF, outBuf, fillCh, &outF);
+				for (int f = 0; f < outF; f++) {
+					rbL.push(outBuf[f * fillCh]);
+					rbR.push(fillCh >= 2 ? outBuf[f * fillCh + 1] : outBuf[f * fillCh]);
+				}
+			}
+			else {
+				for (int f = 0; f < n; f++) {
+					rbL.push(buf[f * fillCh]);
+					rbR.push(fillCh >= 2 ? buf[f * fillCh + 1] : buf[f * fillCh]);
+				}
+			}
+		};
+
 		while (!fillThreadStop.load(std::memory_order_relaxed)) {
-			// ── process pending commands ──────────────────────────────────
+			// ── stop: halt playback and drain ring ────────────────────────
 			if (pendingStop.exchange(false, std::memory_order_acq_rel)) {
 				playing.store(false, std::memory_order_release);
 				eofReached.store(false, std::memory_order_relaxed);
 				rbL.clear(); rbR.clear();
 			}
 
+			// ── stream swap: adopt new decoder from UI thread ─────────────
 			AudioStream* ns = pendingStream.exchange(nullptr, std::memory_order_acq_rel);
 			if (ns) {
 				delete stream;
@@ -172,6 +133,7 @@ struct SirenModule : Module {
 				rbL.clear(); rbR.clear();
 			}
 
+			// ── seek: reposition, configure resampler, prime ring ─────────
 			int64_t sf = pendingSeekFrame.exchange(-1, std::memory_order_acq_rel);
 			if (sf >= 0 && stream) {
 				stream->seekTo(sf);
@@ -179,49 +141,68 @@ struct SirenModule : Module {
 				eofReached.store(false, std::memory_order_relaxed);
 				rbL.clear(); rbR.clear();
 
-				// Read a short lookahead and find the first zero crossing to avoid
-				// a click at the seek point. Frames before the crossing are discarded.
-				static constexpr int64_t ZC_WINDOW = 2048;
-				static constexpr int     ZC_CH_MAX = 2;
-				float zcBuf[ZC_WINDOW * ZC_CH_MAX];
-				int ch = stream->channels();
-				if (ch < 1) ch = 1;
-				if (ch > ZC_CH_MAX) ch = ZC_CH_MAX;
+				// Channel count — clamped to the stereo SRC limit.
+				fillCh = stream->channels();
+				if (fillCh < 1) fillCh = 1;
+				if (fillCh > 2) fillCh = 2;
+
+				// Resampler setup — only when file and engine rates differ.
+				int inRate  = stream->sampleRate();
+				int outRate = engineSampleRate;
+				fillResample = sirenSettings.resampleOnPlayback && inRate > 0 && outRate > 0 && inRate != outRate;
+				if (fillResample) {
+					fillRatio = (float)outRate / (float)inRate;
+					src.setChannels(fillCh);
+					src.setRates(inRate, outRate);
+					sampleRateRatio.store(fillRatio, std::memory_order_relaxed);
+				}
+				else {
+					fillRatio = 1.f;
+					sampleRateRatio.store(1.f, std::memory_order_relaxed);
+				}
+
+				// ZC lookahead — scan ahead for the first zero crossing so playback
+				// starts near silence, avoiding a click. Frames before the crossing
+				// are discarded; the rest are pushed into the ring to prime it.
+				static constexpr size_t ZC_WINDOW = 2048;
+				float zcBuf[ZC_WINDOW * 2];
 				int64_t zcRead = stream->readF32(zcBuf, ZC_WINDOW);
 				int64_t zcOffset = 0;
 				if (zcRead > 1) {
 					float prev = zcBuf[0];
 					for (int64_t i = 1; i < zcRead; i++) {
-						float cur = zcBuf[i * ch];
+						float cur = zcBuf[i * fillCh];
 						if (prev * cur <= 0.f) { zcOffset = i; break; }
 						prev = cur;
 					}
 				}
-				for (int64_t f = zcOffset; f < zcRead; f++) {
-					rbL.push(zcBuf[f * ch]);
-					rbR.push(ch >= 2 ? zcBuf[f * ch + 1] : zcBuf[f * ch]);
+				const float* ptr = zcBuf + zcOffset * fillCh;
+				int64_t remaining = zcRead - zcOffset;
+				while (remaining > 0) {
+					int n = (int)std::min(remaining, (int64_t)CHUNK);
+					pushFrames(ptr, n);
+					ptr += n * fillCh;
+					remaining -= n;
 				}
-				// Adjust seekBaseFrame so the displayed playhead reflects the actual
-				// start position (safe: written before playing.store release fence).
-				seekBaseFrame += zcOffset;
 
+				// Shift seekBaseFrame forward so the displayed playhead matches
+				// the actual audio start (written before playing release-fence).
+				seekBaseFrame += zcOffset;
 				playing.store(true, std::memory_order_release);
 			}
 
-			// ── fill ring buffer if playing ───────────────────────────────
+			// ── fill: keep ring topped up while playing ───────────────────
 			if (playing.load(std::memory_order_relaxed) && stream && !eofReached.load(std::memory_order_relaxed)) {
 				size_t space = rbL.capacity();
 				if (space > 0) {
-					static constexpr size_t CHUNK = 1024;
 					float tmp[CHUNK * 2];
-					size_t toRead = std::min(space, CHUNK);
-					int     ch    = stream->channels();
+					// Limit input so the resampled output fits in the available ring space.
+					size_t toRead = fillResample
+					    ? std::min(CHUNK, (size_t)std::max(1.0, (double)space / fillRatio))
+					    : std::min(CHUNK, space);
+
 					int64_t nRead = stream->readF32(tmp, (int64_t)toRead);
-					for (int64_t f = 0; f < nRead; f++) {
-						rbL.push(tmp[f * ch]);
-						rbR.push(ch >= 2 ? tmp[f * ch + 1] : tmp[f * ch]);
-					}
-					// Signal EOF without stopping — DSP drains the ring before stopping
+					pushFrames(tmp, (int)nRead);
 					if (nRead == 0) eofReached.store(true, std::memory_order_release);
 				}
 			}
@@ -294,6 +275,10 @@ struct SirenModule : Module {
 		fillCv.notify_one();
 	}
 
+	void onSampleRateChange(const SampleRateChangeEvent& e) override {
+		engineSampleRate = e.sampleRate;
+	}
+	
 	void process(const ProcessArgs& args) override {
 		float l = 0.f, r = 0.f;
 
@@ -306,10 +291,17 @@ struct SirenModule : Module {
 				int64_t count = outputFrameCount.fetch_add(1, std::memory_order_relaxed) + 1;
 				int64_t total = streamTotalFrames;
 				if (total > 0) {
-					float ph = (float)(seekBaseFrame + count) / (float)total;
+					// sampleRateRatio = engineRate/fileRate; convert output frame count to
+					// file-frame units so playhead and trimOut stay in file-frame space.
+					float ratio = sampleRateRatio.load(std::memory_order_relaxed);
+					float inputCount = (float)count / ratio;
+					float ph = ((float)seekBaseFrame + inputCount) / (float)total;
 					playheadPos.store(ph, std::memory_order_relaxed);
+
 					int64_t stopAt = (int64_t)(trimOut.load(std::memory_order_relaxed) * (float)total);
-					if (seekBaseFrame + count >= stopAt
+					// Convert stopAt (file frames) to output-frame count from the seek base
+					int64_t stopAtOut = (int64_t)(((float)stopAt - (float)seekBaseFrame) * ratio);
+					if (count >= stopAtOut
 					        && pendingSeekFrame.load(std::memory_order_relaxed) < 0) {
 						if (looping.load(std::memory_order_relaxed)) {
 							int64_t loopStart = (int64_t)(trimIn.load(std::memory_order_relaxed) * (float)total);
@@ -641,8 +633,12 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 		// Obtain the conversion task from the active source; dispatched by the drop handler.
 		dropHandler.prepareForDropCallback = [this](const std::string& id) -> std::function<std::string()> {
 			DataSource* src = browserPane->activeDataSource;
-			if (src) return src->prepareForDrop(id);
-			return [id]() { return id; };
+			if (!src) return [id]() { return id; };
+
+			int targetRate = sirenSettings.resampleOnDrop ? this->module->engineSampleRate : 0;
+			float trimIn  = previewPane->inPoint;
+			float trimOut = previewPane->outPoint;
+			return src->prepareForDrop(id, sirenSettings.convertToWavOnDrop, targetRate, trimIn, trimOut);
 		};
 
 		// Load global settings and restore state
@@ -661,7 +657,6 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 			previewPane->loadItem(restoreFile, src, src ? src->getMetadata() : nullptr);
 			if (module) module->playheadPos.store(restorePos, std::memory_order_relaxed);
 		}
-
 
 		// VU meter: two vertical LED bars in the right margin, same top as the panes
 		static constexpr float vuW = 2.f * SirenVuMeter::BAR_W + SirenVuMeter::BAR_GAP + 4.f;
@@ -725,7 +720,6 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 		menu->addChild(new ui::MenuSeparator);
 
 		// Root container management
-		menu->addChild(createMenuLabel("Sample Roots"));
 		for (int i = 0; i < (int)sirenSettings.rootContainers.size(); i++) {
 			const std::string& root = sirenSettings.rootContainers[i];
 			std::string label = root;
@@ -758,6 +752,11 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 				browserPane->setRoots(sirenSettings.rootContainers, sirenSettings.activeRootIdx);
 			}));
 		}
+
+		menu->addChild(new ui::MenuSeparator);
+		menu->addChild(createBoolPtrMenuItem("Resample on playback", "", &sirenSettings.resampleOnPlayback));
+		menu->addChild(createBoolPtrMenuItem("Resample on drop", "", &sirenSettings.resampleOnDrop));
+		menu->addChild(createBoolPtrMenuItem("Convert to WAV on drop", "", &sirenSettings.convertToWavOnDrop));
 	}
 };
 

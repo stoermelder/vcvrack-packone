@@ -126,14 +126,8 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		std::string cacheCopy    = cacheFile;
 		std::string cacheDirCopy = cacheDir;
 		worker->work([this, id, ts, src, cacheCopy, cacheDirCopy, pw, gen]() {
-			std::vector<float> samples;
-			int ch = 0, sr = 0;
-			bool ok = src->decodeAudioF32(id, samples, ch, sr);
 			WaveformCache built;
-			if (ok) {
-				int64_t frames = (int64_t)(samples.size() / (size_t)ch);
-				ok = buildWaveformCache(ts, samples, frames, ch, pw, built);
-			}
+			bool ok = src->buildWaveformCache(id, ts, pw, built);
 
 			if (ok && !cacheDirCopy.empty()) {
 				rack::system::createDirectories(cacheDirCopy);
@@ -594,7 +588,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 					dragStartRackX = APP->scene->rack->getMousePos().x;
 					dragStartScrub = scrubPos;
 					draggingPlayhead = true;
-					startPlaybackFrom(scrubPos);
+					//startPlaybackFrom(scrubPos);
 				}
 
 				e.consume(this);

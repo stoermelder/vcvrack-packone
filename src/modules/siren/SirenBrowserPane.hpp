@@ -1,5 +1,6 @@
 #pragma once
 #include <rack.hpp>
+#include "Siren.hpp"
 #include "SirenDataSource.hpp"
 #include "SirenFileSystem.hpp"
 #include "SirenMetadata.hpp"
@@ -19,8 +20,6 @@ struct SirenSourceButton : ui::ChoiceButton {
 	void step() override;
 	void onAction(const event::Action& e) override;
 };
-
-// ─── layout constants ─────────────────────────────────────────────────────────
 
 static constexpr float BROWSER_TAG_H = 96.f;
 
@@ -147,8 +146,6 @@ struct SirenTreeRow : widget::OpaqueWidget {
 	void onDragMove(const event::DragMove& e) override;
 	void onDragEnd(const event::DragEnd& e) override;
 };
-
-// ─── browser pane ─────────────────────────────────────────────────────────────
 
 struct SirenBrowserPane : widget::OpaqueWidget {
 	// Callbacks set by the parent widget
@@ -537,8 +534,6 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 	}
 };
 
-// ─── SirenTreeRow method bodies (need full SirenBrowserPane) ─────────────────
-
 inline void SirenTreeRow::onButton(const event::Button& e) {
 	if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS) {
 		if (node.isContainer) {
@@ -612,18 +607,24 @@ inline void SirenSourceButton::onAction(const event::Action& e) {
 		));
 	}
 
-	if (pane->activeDataSource) {
-		menu->addChild(new ui::MenuSeparator);
-		pane->activeDataSource->appendSourceMenuItems(menu);
-	}
-
 	menu->addChild(new ui::MenuSeparator);
+	size_t i = menu->children.size();
+	if (pane->activeDataSource) {
+		pane->activeDataSource->appendSourceMenuItems(menu);
+		if (i != menu->children.size()) menu->addChild(new ui::MenuSeparator);
+	}
+	
 	menu->addChild(createMenuItem("Add root...", "", [this]() {
 		if (pane->onAddRoot) pane->onAddRoot();
 	}));
 	menu->addChild(createMenuItem("Remove root", "", [this]() {
 		if (pane->onRemoveRoot) pane->onRemoveRoot(pane->activeRootIdx);
 	}, pane->rootContainers.empty()));
+
+	menu->addChild(new MenuSeparator);
+	menu->addChild(createBoolPtrMenuItem("Resample on playback", "", &sirenSettings.resampleOnPlayback));
+	menu->addChild(createBoolPtrMenuItem("Resample on drop", "", &sirenSettings.resampleOnDrop));
+	menu->addChild(createBoolPtrMenuItem("Convert to WAV on drop", "", &sirenSettings.convertToWavOnDrop));
 }
 
 } // namespace Siren

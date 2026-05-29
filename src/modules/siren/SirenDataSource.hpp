@@ -40,6 +40,58 @@ struct AudioStream {
 	virtual bool seekTo(int64_t frameIndex) = 0;
 };
 
+// Build a peak waveform by streaming from an open AudioStream — no full-file buffer needed.
+inline bool buildWaveformCache(int64_t timestamp, AudioStream& stream,
+                               int pixelWidth, WaveformCache& out) {
+	int     channels = stream.channels();
+	int64_t total    = stream.totalFrames();
+	if (pixelWidth <= 0 || total <= 0 || channels <= 0) return false;
+
+	out.bucketCount = pixelWidth;
+	out.peaks.assign(channels, std::vector<std::pair<float,float>>(pixelWidth, {0.f, 0.f}));
+	out.fileTimestamp = timestamp;
+
+	const int64_t BUF_FRAMES = 4096;
+	std::vector<float> buf((size_t)(BUF_FRAMES * channels));
+	std::vector<float> mn(channels), mx(channels);
+	double  framesPerBucket = (double)total / (double)pixelWidth;
+	int64_t framePos = 0;
+
+	for (int b = 0; b < pixelWidth; b++) {
+		int64_t bucketStart = (int64_t)(b * framesPerBucket);
+		int64_t bucketEnd   = (int64_t)((b + 1) * framesPerBucket);
+		if (bucketEnd > total) bucketEnd = total;
+		int64_t bucketLen = bucketEnd - bucketStart;
+		if (bucketLen <= 0) continue;
+
+		if (framePos != bucketStart) {
+			stream.seekTo(bucketStart);
+			framePos = bucketStart;
+		}
+
+		std::fill(mn.begin(), mn.end(), 0.f);
+		std::fill(mx.begin(), mx.end(), 0.f);
+		int64_t remaining = bucketLen;
+		while (remaining > 0) {
+			int64_t toRead = std::min(remaining, BUF_FRAMES);
+			int64_t got = stream.readF32(buf.data(), toRead);
+			if (got <= 0) break;
+			for (int64_t f = 0; f < got; f++) {
+				for (int ch = 0; ch < channels; ch++) {
+					float s = buf[(size_t)(f * channels + ch)];
+					if (s < mn[ch]) mn[ch] = s;
+					if (s > mx[ch]) mx[ch] = s;
+				}
+			}
+			framePos  += got;
+			remaining -= got;
+		}
+		for (int ch = 0; ch < channels; ch++)
+			out.peaks[ch][b] = {mn[ch], mx[ch]};
+	}
+	return true;
+}
+
 // ─── DataSource ──────────────────────────────────────────────────────────────
 
 struct DataSource {
@@ -50,9 +102,7 @@ struct DataSource {
 
 	// Load the top-level children of a path asynchronously via TaskWorker.
 	// Calls onDone on the main thread (caller polls loadState).
-	virtual void loadChildrenAsync(
-		const std::string& path,
-		TaskWorker& worker,
+	virtual void loadChildrenAsync(const std::string& path, TaskWorker& worker,
 		std::function<void(std::vector<DataSourceNode>)> onDone) = 0;
 
 	// Sync version for testing
@@ -76,7 +126,10 @@ struct DataSource {
 	// Trivial cases return a lightweight lambda; heavy work (e.g. audio transcoding)
 	// is deferred inside the returned lambda so the caller can dispatch it to a worker.
 	// The lambda is always called on the worker thread by SirenDropHandler.
-	virtual std::function<std::string()> prepareForDrop(const std::string& id) {
+	//   targetSampleRate — resample to this rate if > 0 and it differs from the file rate
+	//   trimIn / trimOut — normalised [0, 1] region to keep; defaults retain the full file
+	virtual std::function<std::string()> prepareForDrop(const std::string& id, bool convertToWav,
+			int targetSampleRate = 0, float trimIn = 0.f, float trimOut = 1.f) {
 		return [id]() { return id; };
 	}
 
@@ -94,16 +147,18 @@ struct DataSource {
 	// Load audio header metadata only (fast, no PCM decode).
 	virtual bool loadAudioInfo(const std::string& id, AudioInfo& out) const { return false; }
 
-	// Decode full PCM audio to interleaved float samples normalised to [-1, 1].
-	// Used for waveform cache building; prefer openAudioStream for playback.
-	virtual bool decodeAudioF32(const std::string& id,
-	                            std::vector<float>& samples,
-	                            int& channels, int& sampleRate) const { return false; }
-
 	// Open a streaming decoder for the given item id.
 	// Returns nullptr if streaming is unsupported or the item cannot be opened.
 	virtual std::unique_ptr<AudioStream> openAudioStream(const std::string& id) const {
 		return nullptr;
+	}
+
+	// Build a waveform cache by streaming audio frames — avoids full decode into memory.
+	virtual bool buildWaveformCache(const std::string& id, int64_t timestamp,
+			int pixelWidth, WaveformCache& out) const {
+		auto stream = openAudioStream(id);
+		if (!stream) return false;
+		return ::StoermelderPackOne::Siren::buildWaveformCache(timestamp, *stream, pixelWidth, out);
 	}
 };
 

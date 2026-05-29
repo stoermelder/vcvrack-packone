@@ -24,7 +24,6 @@ struct SampleMetadata {
 
 struct RootMetadata {
 	std::string rootPath;
-	bool convertToWavOnDrop = false;
 	std::map<std::string, SampleMetadata> samples;  // key = relativePath
 
 	void load(const std::string& jsonPath) {
@@ -52,7 +51,6 @@ struct RootMetadata {
 	json_t* toJson() const {
 		json_t* rootJ = json_object();
 		json_object_set_new(rootJ, "rootPath", json_string(rootPath.c_str()));
-		json_object_set_new(rootJ, "convertToWavOnDrop", json_boolean(convertToWavOnDrop));
 
 		json_t* favsJ = json_array();
 		json_t* tagsJ = json_object();
@@ -78,8 +76,6 @@ struct RootMetadata {
 		samples.clear();
 		json_t* rootPathJ = json_object_get(rootJ, "rootPath");
 		if (rootPathJ) rootPath = json_string_value(rootPathJ);
-		json_t* convJ = json_object_get(rootJ, "convertToWavOnDrop");
-		if (convJ) convertToWavOnDrop = json_boolean_value(convJ);
 
 		json_t* favsJ = json_object_get(rootJ, "favorites");
 		if (favsJ && json_is_array(favsJ)) {
