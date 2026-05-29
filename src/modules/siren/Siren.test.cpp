@@ -372,6 +372,38 @@ TEST_CASE("PARAM_VOLUME: zero volume produces silence", "[Siren][Module]") {
 
 // After the streaming refactor, playheadPos lives in SirenModule (atomic).
 // SirenPreviewPane only reads it via the modulePlayheadPos pointer.
+// ─── Playhead visual source during drag ───────────────────────────────────────
+
+TEST_CASE("posToPlayhead: scrubPos is display source while draggingPlayhead", "[Siren][Preview]") {
+	// The draw() function reads scrubPos directly when draggingPlayhead == true,
+	// ignoring modulePlayheadPos.  This prevents the DSP thread from overwriting
+	// the visual position while the fill thread is still processing the seek.
+	SirenPreviewPane pane;
+	pane.box.size = Vec(600.f, 380.f);
+
+	// Simulate a playing module whose playhead is at 0.1
+	std::atomic<float> fakePlayhead{0.1f};
+	pane.modulePlayheadPos = &fakePlayhead;
+
+	// User starts dragging to 0.7
+	pane.scrubPos         = 0.7f;
+	pane.inPoint          = 0.7f;
+	pane.draggingPlayhead = true;
+
+	// The visual playhead should track scrubPos, not modulePlayheadPos
+	float displayedPh = pane.draggingPlayhead
+	    ? pane.scrubPos
+	    : (pane.modulePlayheadPos ? pane.modulePlayheadPos->load() : 0.f);
+	REQUIRE(displayedPh == Catch::Approx(0.7f));
+
+	// After drag ends, display switches back to modulePlayheadPos
+	pane.draggingPlayhead = false;
+	displayedPh = pane.draggingPlayhead
+	    ? pane.scrubPos
+	    : (pane.modulePlayheadPos ? pane.modulePlayheadPos->load() : 0.f);
+	REQUIRE(displayedPh == Catch::Approx(0.1f));
+}
+
 TEST_CASE("loadItem resets inPoint and scrubPos", "[Siren][Preview]") {
 	SirenPreviewPane pane;
 	pane.box.size = Vec(600.f, 380.f);
@@ -549,6 +581,40 @@ TEST_CASE("startPlayback: position 0 seeks to frame 0", "[Siren][Audio]") {
 	m->startPlayback(0.f);
 
 	REQUIRE(m->seekBaseFrame == 0);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("startPlayback: rapid successive calls — last position wins", "[Siren][Audio]") {
+	// Simulates the full press+scrub sequence: onButton fires startPlayback at the
+	// click position, then onDragMove fires it again for each moved position.
+	// pendingSeekFrame is a single atomic; rapid overwrites are safe — the fill
+	// thread always picks up the latest position.
+	auto* m = Test::createModule<SirenModule>("Siren");
+	m->streamTotalFrames = 1000;
+
+	m->startPlayback(0.1f);   // press
+	m->startPlayback(0.4f);   // drag step 1
+	m->startPlayback(0.7f);   // drag step 2
+
+	REQUIRE(m->seekBaseFrame == 700);
+	REQUIRE(m->pendingSeekFrame.load() == 700);
+
+	Test::destroyModule(m);
+}
+
+TEST_CASE("startPlayback: outputFrameCount reset on each call", "[Siren][Audio]") {
+	// Each scrub seek resets the output counter so the playhead position
+	// is computed relative to the new seek base, not the previous one.
+	auto* m = Test::createModule<SirenModule>("Siren");
+	m->streamTotalFrames = 1000;
+
+	// Simulate some frames having been output
+	m->outputFrameCount.store(200, std::memory_order_relaxed);
+
+	m->startPlayback(0.5f);
+
+	REQUIRE(m->outputFrameCount.load() == 0);
 
 	Test::destroyModule(m);
 }

@@ -294,8 +294,13 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		}
 
 		// Playhead line + triangle pointer
+		// During a drag we read scrubPos directly — the DSP thread continuously
+		// overwrites modulePlayheadPos via process(), so it lags behind and would
+		// not reflect the drag position until the fill thread finishes seeking.
 		if (!currentId.empty()) {
-			float ph = modulePlayheadPos ? modulePlayheadPos->load(std::memory_order_relaxed) : 0.f; float phX = WAVE_X + ph * waveW;
+			float ph = draggingPlayhead ? scrubPos
+			         : (modulePlayheadPos ? modulePlayheadPos->load(std::memory_order_relaxed) : 0.f);
+			float phX = WAVE_X + ph * waveW;
 
 			nvgBeginPath(args.vg);
 			nvgMoveTo(args.vg, phX, waveY);
@@ -322,7 +327,9 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			return rack::string::f("%02d:%05.2f", mm, ss);
 		};
 
-		float pos = (modulePlayheadPos ? modulePlayheadPos->load(std::memory_order_relaxed) : 0.f) * info.durationSeconds;
+		float pos = (draggingPlayhead ? scrubPos
+		           : (modulePlayheadPos ? modulePlayheadPos->load(std::memory_order_relaxed) : 0.f))
+		           * info.durationSeconds;
 		float col = waveW / 4.f;
 		nvgFontSize(args.vg, 10.f);
 
@@ -483,6 +490,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 				dragStartRackX = APP->scene->rack->getMousePos().x;
 				dragStartScrub = scrubPos;
 				draggingPlayhead = true;
+				startPlaybackFrom(scrubPos);  // play immediately on press; drag continues scrubbing
 				e.consume(this);
 				return;
 			}
@@ -509,8 +517,12 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			Rect r = waveformRect();
 			if (r.size.x > 0.f) {
 				float dx = APP->scene->rack->getMousePos().x - dragStartRackX;
-				scrubPos = rack::math::clamp(dragStartScrub + dx / r.size.x, 0.f, 1.f);
-				inPoint  = scrubPos;
+				float newPos = rack::math::clamp(dragStartScrub + dx / r.size.x, 0.f, 1.f);
+				if (newPos != scrubPos) {
+					scrubPos = newPos;
+					inPoint  = scrubPos;
+					startPlaybackFrom(scrubPos);  // scrub: seek and play from new position immediately
+				}
 			}
 		}
 	}
