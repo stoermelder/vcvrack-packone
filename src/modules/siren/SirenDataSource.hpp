@@ -69,6 +69,17 @@ struct DataSource {
 	virtual void appendNodeMenuItems(ui::Menu* menu, const DataSourceNode& node,
 	                                 std::function<void()> onChanged = {}) {}
 
+	// Append source-level settings to the source button dropdown (e.g. conversion options).
+	virtual void appendSourceMenuItems(ui::Menu* menu) {}
+
+	// Returns a callable that produces the path to drop when invoked.
+	// Trivial cases return a lightweight lambda; heavy work (e.g. audio transcoding)
+	// is deferred inside the returned lambda so the caller can dispatch it to a worker.
+	// The lambda is always called on the worker thread by SirenDropHandler.
+	virtual std::function<std::string()> prepareForDrop(const std::string& id) {
+		return [id]() { return id; };
+	}
+
 	// ── audio provision (abstracts format / transport) ────────────────────────
 
 	// Human-readable display name for an item id (e.g. filename without directory).

@@ -1,4 +1,5 @@
 #pragma once
+#include "../../pluginsettings.hpp"
 #include <rack.hpp>
 #include <ghc/filesystem.hpp>
 #include <string>
@@ -74,6 +75,7 @@ inline bool buildWaveformCache(int64_t timestamp,
 
 // expectedTimestamp == 0 disables cache validation (always load if file exists).
 inline bool loadWaveformCacheFile(const std::string& cacheJsonPath, int64_t expectedTimestamp, WaveformCache& out) {
+	if (isTesting()) return false;
 	FILE* file = fopen(cacheJsonPath.c_str(), "r");
 	if (!file) return false;
 	json_error_t error;
@@ -114,6 +116,7 @@ inline bool loadWaveformCacheFile(const std::string& cacheJsonPath, int64_t expe
 }
 
 inline void saveWaveformCacheFile(const std::string& cacheJsonPath, const WaveformCache& cache) {
+	if (isTesting()) return;
 	json_t* rootJ = json_object();
 	json_object_set_new(rootJ, "timestamp",   json_integer(cache.fileTimestamp));
 	json_object_set_new(rootJ, "bucketCount", json_integer(cache.bucketCount));

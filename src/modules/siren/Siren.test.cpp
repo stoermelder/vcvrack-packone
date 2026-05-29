@@ -306,12 +306,13 @@ TEST_CASE("Playhead clamps to [0, 1]", "[Siren][Preview]") {
 	}
 }
 
-// ─── SirenDragState ───────────────────────────────────────────────────────────
+// ─── SirenDropHandler ─────────────────────────────────────────────────────────
 
-TEST_CASE("SirenDragState initial state", "[Siren][DragDrop]") {
-	SirenDragState ds;
-	REQUIRE(ds.active == false);
-	REQUIRE(ds.dragPath.empty());
+TEST_CASE("SirenDropHandler initial state", "[Siren][DragDrop]") {
+	SirenDropHandler dh;
+	REQUIRE(dh.active == false);
+	REQUIRE(dh.dragPath.empty());
+	REQUIRE(dh.converting.load() == false);
 }
 
 // ─── allTags: starter tags always present ─────────────────────────────────────

@@ -6,7 +6,7 @@
 #include <condition_variable>
 #include "SirenAudio.hpp"
 #include "SirenMetadata.hpp"
-#include "SirenBrowserPane.hpp"  // for SirenDragState
+#include "SirenDropHandler.hpp"
 #include "../../utils/TaskWorker.hpp"
 
 namespace StoermelderPackOne {
@@ -34,9 +34,9 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	float dragStartScrub   = 0.f;   // scrubPos when drag began
 	bool  draggingPlayhead = false;
 
-	RootMetadata*  metadata  = nullptr;
-	SirenDragState* dragState = nullptr;
-	TaskWorker*    worker    = nullptr;
+	RootMetadata*     metadata    = nullptr;
+	SirenDropHandler* dropHandler = nullptr;
+	TaskWorker*       worker      = nullptr;
 
 	// Called after any metadata change so the browser pane can refresh
 	std::function<void()> onMetadataChanged;
@@ -60,9 +60,9 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	// Cache dir path (set by module widget)
 	std::string cacheDir;
 
-	void init(TaskWorker* tw, SirenDragState* ds) {
-		worker    = tw;
-		dragState = ds;
+	void init(TaskWorker* tw, SirenDropHandler* dh) {
+		worker      = tw;
+		dropHandler = dh;
 	}
 
 	void loadItem(const std::string& id, DataSource* src, RootMetadata* meta,
@@ -140,6 +140,8 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 				cacheBuilding = false;
 			}
 		}
+
+		if (dropHandler) dropHandler->step();
 
 		widget::OpaqueWidget::step();
 	}
@@ -345,25 +347,30 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		drawReadout(WAVE_X + col * 2, "LEN", info.durationSeconds);
 		drawReadout(WAVE_X + col * 3, "POS", pos);
 
+		// ── "Converting..." overlay ───────────────────────────────────────────
+		if (dropHandler && dropHandler->converting.load(std::memory_order_relaxed)) {
+			float oy = waveY + waveH * 0.5f - 9.f;
+			nvgBeginPath(args.vg);
+			nvgRoundedRect(args.vg, WAVE_X, oy, waveW, 18.f, 3.f);
+			nvgFillColor(args.vg, nvgRGBAf(0.f, 0.f, 0.f, 0.65f));
+			nvgFill(args.vg);
+			nvgFontFaceId(args.vg, APP->window->uiFont->handle);
+			nvgFontSize(args.vg, BND_LABEL_FONT_SIZE);
+			nvgFillColor(args.vg, nvgRGBf(1.f, 0.85f, 0.1f));
+			nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+			nvgText(args.vg, WAVE_X + waveW * 0.5f, oy + 9.f, "Converting...", nullptr);
+			nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_BASELINE);
+		}
 	}
 
 	void drawLayer(const DrawArgs& args, int layer) override {
-		if (layer != 1 || !dragState || !dragState->active) return;
-		Vec lp = APP->scene->mousePos
-		         .minus(getRelativeOffset(Vec(0, 0), APP->scene))
-		         .div(getRelativeZoom(APP->scene));
-		nvgBeginPath(args.vg);
-		nvgRoundedRect(args.vg, lp.x + 10.f, lp.y, 150.f, 18.f, 3.f);
-		nvgFillColor(args.vg, nvgRGBAf(0.f, 0.f, 0.f, 0.7f));
-		nvgFill(args.vg);
-		nvgFontSize(args.vg, 10.f);
-		nvgFillColor(args.vg, nvgRGBf(1.f, 0.85f, 0.1f));
+		if (layer != 1 || !dropHandler) return;
 		// Use cached displayName when dragging the currently loaded item, otherwise
 		// extract a name from the raw path (avoids calling through potentially-stale source ptr)
-		std::string lbl = (dragState->dragPath == currentId && !displayName.empty())
+		std::string lbl = (dropHandler->dragPath == currentId && !displayName.empty())
 		                ? displayName
-		                : rack::system::getFilename(dragState->dragPath);
-		nvgText(args.vg, lp.x + 14.f, lp.y + 12.f, lbl.c_str(), nullptr);
+		                : rack::system::getFilename(dropHandler->dragPath);
+		dropHandler->drawLabel(args, this, lbl);
 	}
 
 	// ── waveform interaction ──────────────────────────────────────────────────
@@ -506,10 +513,8 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	}
 
 	void onDragStart(const event::DragStart& e) override {
-		if (!currentId.empty() && !draggingPlayhead && dragState) {
-			dragState->active   = true;
-			dragState->dragPath = currentId;
-		}
+		if (!currentId.empty() && !draggingPlayhead && dropHandler)
+			dropHandler->startDrag(currentId);
 	}
 
 	void onDragMove(const event::DragMove& e) override {
@@ -534,13 +539,8 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			startPlaybackFrom(inPoint);
 			return;
 		}
-		if (dragState && dragState->active && !dragState->dragPath.empty()) {
-			Vec pos = APP->scene->mousePos;
-			std::string path = dragState->dragPath;
-			APP->event->handleDrop(pos, std::vector<std::string>{path});
-			dragState->active = false;
-			dragState->dragPath.clear();
-		}
+		if (dropHandler && dropHandler->active)
+			dropHandler->endDrag(APP->scene->mousePos, worker);
 	}
 
 	std::string cachePathFor(const std::string& audioPath) const {

@@ -38,6 +38,7 @@ struct SirenSettings {
 	float lastPlayheadPos = 0.f;
 
 	void save() const {
+		if (isTesting()) return;
 		json_t* j = toJson();
 		rack::system::createDirectories(settingsDirPath());
 		FILE* f = fopen(sirenFilePath().c_str(), "w");
@@ -46,6 +47,7 @@ struct SirenSettings {
 	}
 
 	void load() {
+		if (isTesting()) return;
 		FILE* f = fopen(sirenFilePath().c_str(), "r");
 		if (!f) return;
 		json_error_t err;
@@ -405,8 +407,8 @@ struct SirenDisplayWidget : OpaqueWidget {
 // ─── module widget ────────────────────────────────────────────────────────────
 
 struct SirenWidget : ThemedModuleWidget<SirenModule> {
-	TaskWorker taskWorker{"Siren"};
-	SirenDragState dragState;
+	TaskWorker        taskWorker{"Siren"};
+	SirenDropHandler  dropHandler;
 
 	SirenBrowserPane* browserPane = nullptr;
 	SirenPreviewPane* previewPane = nullptr;
@@ -456,7 +458,7 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 
 			browserPane = new SirenBrowserPane;
 			browserPane->box.pos = Vec(0.f, 0.f);
-			browserPane->dragState = &dragState;
+			browserPane->dropHandler = &dropHandler;
 			browserPane->worker = &taskWorker;
 			browserPane->init(&taskWorker);
 			browserPane->setSize(logicalSize);
@@ -532,7 +534,7 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 		previewPane = new SirenPreviewPane;
 		previewPane->box.pos  = Vec(contentX + browserW + gapW, contentY + topBarH);  // relative to display
 		previewPane->box.size = Vec(previewW, paneH);
-		previewPane->init(&taskWorker, &dragState);
+		previewPane->init(&taskWorker, &dropHandler);
 		previewPane->cacheDir = sirenCacheDirPath();
 		display->addChild(previewPane);
 
@@ -556,6 +558,15 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 		// Refresh browser when preview pane modifies metadata
 		previewPane->onMetadataChanged = [this]() {
 			browserPane->rebuildRowWidgets();
+		};
+
+		dropHandler.moduleWidget = this;
+
+		// Obtain the conversion task from the active source; dispatched by the drop handler.
+		dropHandler.prepareForDropCallback = [this](const std::string& id) -> std::function<std::string()> {
+			DataSource* src = browserPane->activeDataSource;
+			if (src) return src->prepareForDrop(id);
+			return [id]() { return id; };
 		};
 
 		// Load global settings and restore state

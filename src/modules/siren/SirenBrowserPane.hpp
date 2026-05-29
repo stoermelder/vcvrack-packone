@@ -3,6 +3,7 @@
 #include "SirenDataSource.hpp"
 #include "SirenFileSystem.hpp"
 #include "SirenMetadata.hpp"
+#include "SirenDropHandler.hpp"
 #include "../../utils/TaskWorker.hpp"
 
 namespace StoermelderPackOne {
@@ -17,13 +18,6 @@ struct SirenSourceButton : ui::ChoiceButton {
 	SirenBrowserPane* pane = nullptr;
 	void step() override;
 	void onAction(const event::Action& e) override;
-};
-
-// ─── drag state shared between browser and preview panes ─────────────────────
-
-struct SirenDragState {
-	bool active = false;
-	std::string dragPath;
 };
 
 // ─── layout constants ─────────────────────────────────────────────────────────
@@ -163,9 +157,8 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 	std::function<void(int)> onRemoveRoot;
 	std::function<void(int)> onSelectRoot;
 
-	// Drag state (shared with preview pane via pointer in parent)
-	SirenDragState* dragState = nullptr;
-	std::string dragLabel;
+	// Drop handler (shared with preview pane via pointer in parent)
+	SirenDropHandler* dropHandler = nullptr;
 
 	TaskWorker* worker = nullptr;
 
@@ -280,6 +273,7 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 				rebuildRowWidgets();
 			}
 		}
+		if (dropHandler) dropHandler->step();
 		OpaqueWidget::step();
 	}
 
@@ -573,11 +567,8 @@ inline void SirenTreeRow::onButton(const event::Button& e) {
 
 inline void SirenTreeRow::onDragStart(const event::DragStart& e) {
 	if (node.isContainer) return;
-	if (pane && pane->dragState) {
-		pane->dragState->active  = true;
-		pane->dragState->dragPath = node.fullPath;
-		pane->dragLabel = node.name;
-	}
+	if (pane && pane->dropHandler)
+		pane->dropHandler->startDrag(node.fullPath);
 }
 
 inline void SirenTreeRow::onDragMove(const event::DragMove& e) {
@@ -585,13 +576,8 @@ inline void SirenTreeRow::onDragMove(const event::DragMove& e) {
 }
 
 inline void SirenTreeRow::onDragEnd(const event::DragEnd& e) {
-	if (!pane || !pane->dragState || !pane->dragState->active) return;
-	pane->dragState->active = false;
-	pane->dragLabel.clear();
-
-	Vec pos = APP->scene->mousePos;
-	APP->event->handleDrop(pos, std::vector<std::string>{pane->dragState->dragPath});
-	pane->dragState->dragPath.clear();
+	if (!pane || !pane->dropHandler || !pane->dropHandler->active) return;
+	pane->dropHandler->endDrag(APP->scene->mousePos, pane->worker);
 }
 
 // ─── SirenSourceButton method bodies ─────────────────────────────────────────
@@ -624,6 +610,11 @@ inline void SirenSourceButton::onAction(const event::Action& e) {
 			[this, i]() { return i == pane->activeRootIdx; },
 			[this, i]() { if (pane->onSelectRoot) pane->onSelectRoot(i); }
 		));
+	}
+
+	if (pane->activeDataSource) {
+		menu->addChild(new ui::MenuSeparator);
+		pane->activeDataSource->appendSourceMenuItems(menu);
 	}
 
 	menu->addChild(new ui::MenuSeparator);

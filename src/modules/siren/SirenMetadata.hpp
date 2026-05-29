@@ -1,4 +1,5 @@
 #pragma once
+#include "../../pluginsettings.hpp"
 #include <rack.hpp>
 #include <string>
 #include <map>
@@ -23,9 +24,11 @@ struct SampleMetadata {
 
 struct RootMetadata {
 	std::string rootPath;
+	bool convertToWavOnDrop = false;
 	std::map<std::string, SampleMetadata> samples;  // key = relativePath
 
 	void load(const std::string& jsonPath) {
+		if (isTesting()) return;
 		FILE* file = fopen(jsonPath.c_str(), "r");
 		if (!file) return;
 		json_error_t error;
@@ -37,6 +40,7 @@ struct RootMetadata {
 	}
 
 	void save(const std::string& jsonPath) const {
+		if (isTesting()) return;
 		json_t* rootJ = toJson();
 		FILE* file = fopen(jsonPath.c_str(), "w");
 		if (!file) { json_decref(rootJ); return; }
@@ -48,6 +52,7 @@ struct RootMetadata {
 	json_t* toJson() const {
 		json_t* rootJ = json_object();
 		json_object_set_new(rootJ, "rootPath", json_string(rootPath.c_str()));
+		json_object_set_new(rootJ, "convertToWavOnDrop", json_boolean(convertToWavOnDrop));
 
 		json_t* favsJ = json_array();
 		json_t* tagsJ = json_object();
@@ -73,6 +78,8 @@ struct RootMetadata {
 		samples.clear();
 		json_t* rootPathJ = json_object_get(rootJ, "rootPath");
 		if (rootPathJ) rootPath = json_string_value(rootPathJ);
+		json_t* convJ = json_object_get(rootJ, "convertToWavOnDrop");
+		if (convJ) convertToWavOnDrop = json_boolean_value(convJ);
 
 		json_t* favsJ = json_object_get(rootJ, "favorites");
 		if (favsJ && json_is_array(favsJ)) {

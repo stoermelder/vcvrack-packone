@@ -118,6 +118,10 @@ struct DataSource {
     virtual bool decodeAudioF32(const std::string& id, std::vector<float>& samples,
                                 int& channels, int& sampleRate) const { return false; }
     virtual std::unique_ptr<AudioStream> openAudioStream(const std::string& id) const { return nullptr; }
+    // Append source-level options to the source button dropdown (e.g. "Convert to WAV on drop").
+    virtual void appendSourceMenuItems(ui::Menu* menu) {}
+    // Called before firing a PathDrop; may return a different path (e.g. a converted WAV).
+    virtual std::string prepareForDrop(const std::string& id) { return id; }
     // ... display name, relative path, timestamp helpers
 };
 ```
@@ -338,6 +342,50 @@ While dragging, both panes draw a small floating label with the filename followi
 
 ---
 
+## Phase 7b — Source-Specific Options & WAV Conversion on Drop ✅ DONE
+
+### Source options in the dropdown
+
+`DataSource` exposes two new virtual methods:
+- `appendSourceMenuItems(ui::Menu*)` — called by `SirenSourceButton::onAction` after the source list and before the Add/Remove root items. Each source appends its own settings here.
+- `prepareForDrop(const std::string& id) → std::string` — called before firing a `PathDrop` event from either pane. The default returns `id` unchanged.
+
+`SirenSourceButton::onAction` structure:
+```
+[source list entries]
+── separator ──
+[source->appendSourceMenuItems()]   ← source-specific options
+── separator ──
+Add root...
+Remove root
+```
+
+### FileSystemDataSource — "Convert to WAV on drop"
+
+`FileSystemDataSource::appendSourceMenuItems` adds a single checkmark item:
+
+```
+✓  Convert to WAV on drop
+```
+
+The setting is stored as `convertToWavOnDrop` in `RootMetadata` (persisted in `siren-<hash>.json`) so it is per-root and survives restarts.
+
+**Conversion flow (`prepareForDrop`):**
+1. If `convertToWavOnDrop` is false **or** the file is already `.wav` → return `id` unchanged.
+2. Compute output path: `<same dir>/<stem>.converted.wav`.
+3. If the output file already exists, skip decoding and return it immediately (idempotent).
+4. Otherwise: `decodeAudioF32` → `drwav_init_file_write` (32-bit IEEE float, same channel count and sample rate) → return output path.
+5. On any decode or write failure → return original `id` as fallback.
+
+**`.converted.wav` filtering:**
+Files whose name ends with `.converted.wav` are silently skipped in both `loadChildrenSync` and `loadChildrenAsync`. They are conversion artifacts and must not appear in the browser tree.
+
+**Wiring:**
+- `SirenTreeRow::onDragEnd` calls `pane->activeDataSource->prepareForDrop(path)` before `handleDrop`.
+- `SirenPreviewPane::onDragEnd` calls `prepareForDropCallback(path)` before `handleDrop`, where the callback is set by `SirenWidget` to call the active source's `prepareForDrop`.
+
+---
+
 ## Phase 8 — Module I/O Ports & Streaming Audio Engine ✅ DONE
 
 The module exposes **outputs only** plus one knob:
@@ -377,13 +425,16 @@ stopPlayback()  ──flag──▶ drain + playing=false
 
 ## Phase 9 — Tests ✅ DONE
 
-Tests are co-located with source and follow the project pattern (`*.test.cpp` using Catch2 + `Test::TestContext` + `SYNC_MODEL`). Test file:
+Tests are co-located with source and follow the project pattern (`*.test.cpp` using Catch2 + `Test::TestContext`). Two test files:
 
 ```
-src/modules/siren/Siren.test.cpp
+src/modules/siren/Siren.test.cpp            — module, DSP, metadata, preview pane
+src/modules/siren/SirenFileSystem.test.cpp  — FileSystemDataSource, filtering, prepareForDrop
 ```
 
-**35 test cases, 122 assertions — all passing.**
+Each is compiled into its own binary by the wildcard rule in the Makefile (`src/**/*.test.cpp`). `SirenFileSystem.test.cpp` does not use `SYNC_MODEL` because it never instantiates `SirenModule`.
+
+**Siren.test.cpp — 35 test cases, 122 assertions.**
 
 | Test case | Area | What it checks |
 |-----------|------|----------------|
@@ -423,17 +474,39 @@ src/modules/siren/Siren.test.cpp
 | `startPlayback: outputFrameCount reset on each call` | Audio/Scrub | Counter reset to 0 on every seek so playhead is relative to the new base |
 | `openStream: null source leaves pendingStream nullptr` | Audio | `openStream("", nullptr)` → `pendingStream` remains null |
 
+**SirenFileSystem.test.cpp — 17 test cases.**
+
+| Test case | Area | What it checks |
+|-----------|------|----------------|
+| `CONVERTED_WAV_SUFFIX_LEN matches suffix length` | Utility | `CONVERTED_WAV_SUFFIX_LEN` constant matches `strlen(CONVERTED_WAV_SUFFIX)` |
+| `isConvertedWavFile: recognises converted-artifact suffix` (3 sections) | FileSystem | True for `*.converted.wav`; false for regular audio and edge cases |
+| `RootMetadata: convertToWavOnDrop defaults to false` | Metadata | Default value |
+| `RootMetadata: convertToWavOnDrop round-trips through JSON` (3 sections) | Metadata | Persists true, false, and alongside favorites/tags |
+| `FileSystemDataSource: convertToWavOnDrop is false by default` | FileSystem | Default via data source |
+| `FileSystemDataSource: convertToWavOnDrop can be set via metadata pointer` | FileSystem | Mutability through `getMetadata()` |
+| `loadChildrenSync: excludes .converted.wav files from results` | FileSystem | Artifact filtered; regular `.wav` and `.flac` still visible |
+| `loadChildrenSync: correct count when multiple .converted.wav files are present` | FileSystem | Two sources + two artifacts → 2 nodes, none with converted suffix |
+| `loadChildrenSync: container (directory) alongside .converted.wav is unaffected` | FileSystem | Directory node passes through; artifact filtered |
+| `loadChildrenSync: node isContainer flag is correct` | FileSystem | File → `isContainer=false`; directory → `isContainer=true` |
+| `prepareForDrop: returns id unchanged when convertToWavOnDrop is false` | Drop | No-op when flag is off |
+| `prepareForDrop: returns id unchanged for .wav files even when flag is true` | Drop | `.wav` extension skips conversion |
+| `prepareForDrop: .WAV extension (uppercase) also treated as wav` | Drop | Case-insensitive extension check |
+| `prepareForDrop: returns existing .converted.wav without decoding (idempotent)` | Drop | Pre-existing output returned; decode not re-run |
+| `prepareForDrop: falls back to original id when source cannot be decoded` | Drop | Non-existent `.flac` → decode fails → original id returned |
+| `prepareForDrop: non-existent .mp3 with flag true also falls back` | Drop | Same fallback for `.mp3` |
+| `prepareForDrop: output path uses stem + .converted.wav suffix` | Drop | Verifies output filename construction |
+
 **Not (unit) tested — require integration / real audio files:**
 - Fill thread ring population (async; needs a mock `AudioStream` + sleep/sync)
 - Actual stereo vs. mono path through a decoded file
 - Waveform cache build from real PCM (covered indirectly by `buildWaveformCache` which is format-agnostic)
 - `FileSystemDataSource` async directory scan (TaskWorker completion)
+- End-to-end FLAC/MP3 → WAV conversion (requires valid encoded audio input)
 
 Test infrastructure:
-- `#include "../../test/test_plugin.hpp"` and `test_context.hpp`
-- `SYNC_MODEL(modelSiren, "Siren")`
-- `Test::TestContext<> testContext` (file-scope)
-- `Test::createModule<SirenModule>("Siren")` / `Test::destroyModule(m)`
+- `Siren.test.cpp`: `SYNC_MODEL(modelSiren, "Siren")` + `Test::createModule` / `Test::destroyModule`
+- `SirenFileSystem.test.cpp`: no `SYNC_MODEL`; uses `TempDir` RAII for filesystem tests
+- Both: `#include "../../test/test_plugin.hpp"` + `test_context.hpp` + `Test::TestContext<> testContext` (file-scope)
 
 ---
 

@@ -13,12 +13,22 @@ namespace StoermelderPackOne {
 namespace Siren {
 
 static const std::vector<std::string> SUPPORTED_EXTENSIONS = { ".wav", ".WAV", ".flac", ".FLAC", ".mp3", ".MP3" };
+static constexpr const char* CONVERTED_WAV_SUFFIX = ".converted.wav";
+static constexpr size_t      CONVERTED_WAV_SUFFIX_LEN = 14; // strlen(".converted.wav")
 
 inline bool isSupportedAudioFile(const std::string& path) {
 	std::string ext = rack::system::getExtension(rack::system::getFilename(path));
 	for (const std::string& e : SUPPORTED_EXTENSIONS)
 		if (ext == e) return true;
 	return false;
+}
+
+// Returns true for files created by the "Convert to WAV on drop" feature.
+// These are invisible in the browser but are valid audio files.
+inline bool isConvertedWavFile(const std::string& filename) {
+	return filename.size() >= CONVERTED_WAV_SUFFIX_LEN &&
+	       filename.compare(filename.size() - CONVERTED_WAV_SUFFIX_LEN,
+	                        CONVERTED_WAV_SUFFIX_LEN, CONVERTED_WAV_SUFFIX) == 0;
 }
 
 // ─── format-specific audio I/O (only place dr_libs are used directly) ────────
@@ -179,6 +189,7 @@ struct FileSystemDataSource : DataSource {
 	RootMetadata* getMetadata() override { return &metadata_; }
 
 	void saveMetadata() override {
+		if (isTesting()) return;
 		rack::system::createDirectories(rack::asset::user("Stoermelder-P1"));
 		metadata_.save(metadataFilePath());
 	}
@@ -205,6 +216,7 @@ struct FileSystemDataSource : DataSource {
 					node.relativePath = "/" + rel.generic_string();
 					if (node.isContainer || isSupportedAudioFile(node.fullPath)) {
 						if (!node.isContainer) {
+							if (isConvertedWavFile(node.name)) continue;
 							AudioInfo ai;
 							if (::StoermelderPackOne::Siren::loadAudioInfo(node.fullPath, ai))
 								node.durationSeconds = ai.durationSeconds;
@@ -241,6 +253,7 @@ struct FileSystemDataSource : DataSource {
 					node.relativePath = "/" + rel.generic_string();
 					if (node.isContainer || isSupportedAudioFile(node.fullPath)) {
 						if (!node.isContainer) {
+							if (isConvertedWavFile(node.name)) continue;
 							AudioInfo ai;
 							if (::StoermelderPackOne::Siren::loadAudioInfo(node.fullPath, ai))
 								node.durationSeconds = ai.durationSeconds;
@@ -473,6 +486,61 @@ struct FileSystemDataSource : DataSource {
 				menu->addChild(item);
 			}
 		}
+	}
+
+	void appendSourceMenuItems(ui::Menu* menu) override {
+		menu->addChild(createCheckMenuItem("Convert to WAV on drop", "",
+			[this]() { return metadata_.convertToWavOnDrop; },
+			[this]() {
+				metadata_.convertToWavOnDrop = !metadata_.convertToWavOnDrop;
+				saveMetadata();
+			}
+		));
+	}
+
+	std::function<std::string()> prepareForDrop(const std::string& id) override {
+		if (!metadata_.convertToWavOnDrop) return [id]() { return id; };
+
+		std::string ext = rack::system::getExtension(rack::system::getFilename(id));
+		for (char& c : ext) c = (char)tolower(c);
+		if (ext != ".flac" && ext != ".mp3") return [id]() { return id; };
+
+		std::string dir   = ghc::filesystem::path(id).parent_path().string();
+		std::string fname = rack::system::getFilename(id);
+		size_t dot        = fname.rfind('.');
+		std::string stem  = (dot != std::string::npos) ? fname.substr(0, dot) : fname;
+		std::string outPath = dir + "/" + stem + CONVERTED_WAV_SUFFIX;
+
+		if (ghc::filesystem::exists(ghc::filesystem::path(outPath)))
+			return [outPath]() { return outPath; };
+
+		return [id, outPath]() -> std::string {
+			if (convertToWav(id, outPath)) return outPath;
+			return id;
+		};
+	}
+
+private:
+	static bool convertToWav(const std::string& srcPath, const std::string& dstPath) {
+		std::vector<float> samples;
+		int channels = 0, sampleRate = 0;
+		if (!::StoermelderPackOne::Siren::decodeAudioF32(srcPath, samples, channels, sampleRate))
+			return false;
+		if (channels <= 0 || sampleRate <= 0 || samples.empty()) return false;
+
+		drwav_data_format fmt = {};
+		fmt.container     = drwav_container_riff;
+		fmt.format        = DR_WAVE_FORMAT_IEEE_FLOAT;
+		fmt.channels      = (drwav_uint32)channels;
+		fmt.sampleRate    = (drwav_uint32)sampleRate;
+		fmt.bitsPerSample = 32;
+
+		drwav wav;
+		if (!drwav_init_file_write(&wav, dstPath.c_str(), &fmt, nullptr)) return false;
+		drwav_uint64 frames = (drwav_uint64)(samples.size() / (size_t)channels);
+		drwav_write_pcm_frames(&wav, frames, samples.data());
+		drwav_uninit(&wav);
+		return true;
 	}
 };
 

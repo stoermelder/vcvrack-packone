@@ -86,7 +86,7 @@ build/test/%: %.cpp $(CURDIR)/src/test/test_context.hpp
 	@mkdir -p $(dir $@)
 	@echo "Building $@..."
 	@$(CXX) -std=c++14 \
-		-I$(CURDIR)/src/test -I$(CURDIR)/src/test $(FLAGS) -O0 \
+		-I$(CURDIR)/src/test -I$(CURDIR)/src/test $(FLAGS) -O0 -UNDEBUG \
 		-L$(RACK_DIR) -lRack \
 		-o $@ $(TEST_ADD_SOURCES) $(CURDIR)/$(TARGET) $<
 

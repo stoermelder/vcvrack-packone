@@ -38,10 +38,6 @@ static bool saveJsonFile(const std::string& path, json_t* j) {
 	return true;
 }
 
-static bool isTesting() {
-	return getenv("TESTING") != nullptr;
-}
-
 // ── mb.json (models only) ─────────────────────────────────────────────────────
 
 static json_t* buildMbJson(const Settings& s) {
