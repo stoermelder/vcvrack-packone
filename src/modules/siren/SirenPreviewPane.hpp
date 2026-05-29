@@ -28,11 +28,14 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	std::atomic<bool> cacheReady{false};
 	std::atomic<bool> cacheBuilding{false};
 
-	float inPoint          = 0.f;   // stored start position (set on click/drag)
+	float inPoint          = 0.f;   // trim IN handle position [0, 1]
+	float outPoint         = 1.f;   // trim OUT handle position [0, 1]
 	float scrubPos         = 0.f;   // drag-only position; never touched by audio thread
 	float dragStartRackX   = 0.f;   // rack-space X when drag began
-	float dragStartScrub   = 0.f;   // scrubPos when drag began
+	float dragStartScrub   = 0.f;   // scrubPos / handle pos when drag began
 	bool  draggingPlayhead = false;
+	bool  trimmingIn       = false;  // Shift+drag on IN handle
+	bool  trimmingOut      = false;  // Shift+drag on OUT handle
 
 	RootMetadata*     metadata    = nullptr;
 	SirenDropHandler* dropHandler = nullptr;
@@ -47,9 +50,12 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	std::function<void(float pos)> startPlaybackCallback;
 	std::function<void()>          stopPlaybackCallback;
 
-	// Direct atomic pointers into the module for low-overhead display reads.
+	// Direct atomic pointers into the module for low-overhead display reads/writes.
 	std::atomic<float>* modulePlayheadPos = nullptr;
 	std::atomic<bool>*  modulePlaying     = nullptr;
+	std::atomic<float>* moduleInPoint     = nullptr;  // UI writes, DSP reads for loop start
+	std::atomic<float>* moduleOutPoint    = nullptr;  // UI writes, DSP reads for stop frame
+	std::atomic<bool>*  moduleLooping     = nullptr;  // UI writes, DSP reads for loop toggle
 
 	// Pending waveform cache from worker
 	std::atomic<int> cacheGeneration{0};
@@ -63,6 +69,16 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	void init(TaskWorker* tw, SirenDropHandler* dh) {
 		worker      = tw;
 		dropHandler = dh;
+	}
+
+	void syncInPoint() {
+		if (moduleInPoint)
+			moduleInPoint->store(inPoint, std::memory_order_relaxed);
+	}
+
+	void syncOutPoint() {
+		if (moduleOutPoint)
+			moduleOutPoint->store(outPoint, std::memory_order_relaxed);
 	}
 
 	void loadItem(const std::string& id, DataSource* src, RootMetadata* meta,
@@ -81,7 +97,10 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		pendingCacheReady.store(false, std::memory_order_relaxed);
 		int gen = ++cacheGeneration;
 		inPoint      = 0.f;
+		outPoint     = 1.f;
 		scrubPos     = 0.f;
+		syncInPoint();
+		syncOutPoint();
 
 		if (id.empty() || !src) return;
 
@@ -274,8 +293,39 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			}
 		}
 
-		// InPoint marker — thin gold line with downward triangle, drawn first
-		if (!currentId.empty()) {
+		// Trim region — only shown when at least one handle has been moved from its default
+		if (!currentId.empty() && (inPoint > 0.f || outPoint < 1.f) && outPoint > inPoint) {
+			float x1 = WAVE_X + inPoint  * waveW;
+			float x2 = WAVE_X + outPoint * waveW;
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, x1, waveY, x2 - x1, waveH);
+			nvgFillColor(args.vg, nvgRGBAf(1.f, 0.85f, 0.1f, 0.07f));
+			nvgFill(args.vg);
+		}
+
+		// OUT handle — only shown when moved from its default (1.0)
+		if (!currentId.empty() && outPoint < 1.f) {
+			float opX = WAVE_X + outPoint * waveW;
+
+			nvgBeginPath(args.vg);
+			nvgMoveTo(args.vg, opX, waveY);
+			nvgLineTo(args.vg, opX, waveY + waveH);
+			nvgStrokeColor(args.vg, nvgRGBAf(1.f, 0.85f, 0.1f, 0.7f));
+			nvgStrokeWidth(args.vg, 1.f);
+			nvgStroke(args.vg);
+
+			const float ts = 4.f;
+			nvgBeginPath(args.vg);
+			nvgMoveTo(args.vg, opX - ts, waveY + waveH);
+			nvgLineTo(args.vg, opX + ts, waveY + waveH);
+			nvgLineTo(args.vg, opX,      waveY + waveH - ts * 1.4f);
+			nvgClosePath(args.vg);
+			nvgFillColor(args.vg, nvgRGBAf(1.f, 0.85f, 0.1f, 0.85f));
+			nvgFill(args.vg);
+		}
+
+		// IN handle — only shown when moved from its default (0.0)
+		if (!currentId.empty() && inPoint > 0.f) {
 			float ipX = WAVE_X + inPoint * waveW;
 
 			nvgBeginPath(args.vg);
@@ -342,9 +392,9 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			nvgText(args.vg, x + 20.f, box.size.y, formatTime(val).c_str(), nullptr);
 		};
 
-		drawReadout(WAVE_X,           "IN",  0.f);
-		drawReadout(WAVE_X + col,     "OUT", info.durationSeconds);
-		drawReadout(WAVE_X + col * 2, "LEN", info.durationSeconds);
+		drawReadout(WAVE_X,           "IN",  inPoint  * info.durationSeconds);
+		drawReadout(WAVE_X + col,     "OUT", outPoint * info.durationSeconds);
+		drawReadout(WAVE_X + col * 2, "LEN", (outPoint - inPoint) * info.durationSeconds);
 		drawReadout(WAVE_X + col * 3, "POS", pos);
 
 		// ── "Converting..." overlay ───────────────────────────────────────────
@@ -405,6 +455,28 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 
 		// File label
 		menu->addChild(createMenuLabel(displayName.empty() ? currentId : displayName));
+
+		// Reset trim handles
+		menu->addChild(createMenuItem("Reset trim", "",
+			[this]() {
+				inPoint  = 0.f;
+				outPoint = 1.f;
+				syncInPoint();
+				syncOutPoint();
+			},
+			inPoint == 0.f && outPoint == 1.f
+		));
+
+		// Loop playback toggle
+		menu->addChild(createCheckMenuItem("Loop playback", "",
+			[this]() { return moduleLooping && moduleLooping->load(std::memory_order_relaxed); },
+			[this]() {
+				if (moduleLooping)
+					moduleLooping->store(!moduleLooping->load(std::memory_order_relaxed),
+					                     std::memory_order_relaxed);
+			}
+		));
+		
 		menu->addChild(new ui::MenuSeparator);
 
 		// Favorite toggle
@@ -490,14 +562,38 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			return;
 		}
 		if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS) {
-			// Waveform area: set inPoint and start playback from there
 			if (!currentId.empty() && inWaveformArea(e.pos)) {
-				scrubPos       = posToPlayhead(e.pos);
-				inPoint        = scrubPos;
-				dragStartRackX = APP->scene->rack->getMousePos().x;
-				dragStartScrub = scrubPos;
-				draggingPlayhead = true;
-				startPlaybackFrom(scrubPos);  // play immediately on press; drag continues scrubbing
+				bool shift = (e.mods & GLFW_MOD_SHIFT) != 0;
+				if (shift) {
+					Rect r = waveformRect();
+					float pos = posToPlayhead(e.pos);
+					dragStartRackX = APP->scene->rack->getMousePos().x;
+
+					// At defaults: left half → IN, right half → OUT.
+					// Otherwise: drag whichever handle is nearest to the click.
+					bool pickIn = (inPoint == 0.f && outPoint == 1.f)
+					    ? (e.pos.x < r.pos.x + r.size.x * 0.5f)
+					    : (std::abs(pos - inPoint) <= std::abs(pos - outPoint));
+
+					if (pickIn) {
+						inPoint        = rack::math::clamp(pos, 0.f, outPoint);
+						trimmingIn     = true;
+						dragStartScrub = inPoint;
+						syncInPoint();
+					} else {
+						outPoint       = rack::math::clamp(pos, inPoint, 1.f);
+						trimmingOut    = true;
+						dragStartScrub = outPoint;
+						syncOutPoint();
+					}
+				} else {
+					// Playhead scrubbing — moves only the playhead, not the trim handles
+					scrubPos       = posToPlayhead(e.pos);
+					dragStartRackX = APP->scene->rack->getMousePos().x;
+					dragStartScrub = scrubPos;
+					draggingPlayhead = true;
+					startPlaybackFrom(scrubPos);
+				}
 				e.consume(this);
 				return;
 			}
@@ -513,21 +609,27 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	}
 
 	void onDragStart(const event::DragStart& e) override {
-		if (!currentId.empty() && !draggingPlayhead && dropHandler)
+		if (!currentId.empty() && !draggingPlayhead && !trimmingIn && !trimmingOut && dropHandler)
 			dropHandler->startDrag(currentId);
 	}
 
 	void onDragMove(const event::DragMove& e) override {
-		if (draggingPlayhead && !currentId.empty()) {
-			Rect r = waveformRect();
-			if (r.size.x > 0.f) {
-				float dx = APP->scene->rack->getMousePos().x - dragStartRackX;
-				float newPos = rack::math::clamp(dragStartScrub + dx / r.size.x, 0.f, 1.f);
-				if (newPos != scrubPos) {
-					scrubPos = newPos;
-					inPoint  = scrubPos;
-					startPlaybackFrom(scrubPos);  // scrub: seek and play from new position immediately
-				}
+		Rect r = waveformRect();
+		if (r.size.x <= 0.f) return;
+		float dx = APP->scene->rack->getMousePos().x - dragStartRackX;
+		float pos = dragStartScrub + dx / r.size.x;
+
+		if (trimmingIn) {
+			inPoint = rack::math::clamp(pos, 0.f, outPoint);
+			syncInPoint();
+		} else if (trimmingOut) {
+			outPoint = rack::math::clamp(pos, inPoint, 1.f);
+			syncOutPoint();
+		} else if (draggingPlayhead && !currentId.empty()) {
+			float newPos = rack::math::clamp(pos, 0.f, 1.f);
+			if (newPos != scrubPos) {
+				scrubPos = newPos;
+				startPlaybackFrom(scrubPos);
 			}
 		}
 	}
@@ -535,8 +637,12 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	void onDragEnd(const event::DragEnd& e) override {
 		if (draggingPlayhead) {
 			draggingPlayhead = false;
-			inPoint = scrubPos;  // scrubPos tracks only mouse movement, never audio thread
-			startPlaybackFrom(inPoint);
+			startPlaybackFrom(scrubPos);
+			return;
+		}
+		if (trimmingIn || trimmingOut) {
+			trimmingIn  = false;
+			trimmingOut = false;
 			return;
 		}
 		if (dropHandler && dropHandler->active)

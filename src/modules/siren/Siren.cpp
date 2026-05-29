@@ -136,6 +136,9 @@ struct SirenModule : Module {
 	std::atomic<bool>  playing{false};       // DSP reads; fill thread and UI write
 	std::atomic<bool>  eofReached{false};    // fill thread sets at decoder EOF; DSP drains ring before stopping
 	std::atomic<float> playheadPos{0.f};     // DSP writes; UI reads for display
+	std::atomic<float> trimIn{0.f};          // UI writes; DSP reads for loop restart position
+	std::atomic<float> trimOut{1.f};         // UI writes; DSP reads to compute stop frame
+	std::atomic<bool>  looping{false};       // UI writes; DSP reads to decide loop vs stop
 
 	// Position counters — written before playing=true (release), read after playing (acquire)
 	int64_t              seekBaseFrame     = 0;  // file frame at which this play session began
@@ -274,12 +277,33 @@ struct SirenModule : Module {
 				if (total > 0) {
 					float ph = (float)(seekBaseFrame + count) / (float)total;
 					playheadPos.store(ph, std::memory_order_relaxed);
-					if (seekBaseFrame + count >= total)
-						playing.store(false, std::memory_order_release);
+					int64_t stopAt = (int64_t)(trimOut.load(std::memory_order_relaxed) * (float)total);
+					if (seekBaseFrame + count >= stopAt
+					        && pendingSeekFrame.load(std::memory_order_relaxed) < 0) {
+						if (looping.load(std::memory_order_relaxed)) {
+							int64_t loopStart = (int64_t)(trimIn.load(std::memory_order_relaxed) * (float)total);
+							seekBaseFrame = loopStart;
+							outputFrameCount.store(0, std::memory_order_relaxed);
+							pendingSeekFrame.store(loopStart, std::memory_order_release);
+							fillCv.notify_one();
+						} else {
+							playing.store(false, std::memory_order_release);
+						}
+					}
 				}
 			} else if (eofReached.load(std::memory_order_acquire)) {
-				// Ring drained and fill thread hit EOF — end of file
-				playing.store(false, std::memory_order_release);
+				// Ring drained and fill thread hit EOF
+				if (looping.load(std::memory_order_relaxed)
+				        && pendingSeekFrame.load(std::memory_order_relaxed) < 0) {
+					int64_t total = streamTotalFrames;
+					int64_t loopStart = (int64_t)(trimIn.load(std::memory_order_relaxed) * (float)total);
+					seekBaseFrame = loopStart;
+					outputFrameCount.store(0, std::memory_order_relaxed);
+					pendingSeekFrame.store(loopStart, std::memory_order_release);
+					fillCv.notify_one();
+				} else {
+					playing.store(false, std::memory_order_release);
+				}
 			}
 		}
 
@@ -553,6 +577,9 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 			// Atomic pointers for low-overhead display reads
 			previewPane->modulePlayheadPos = &module->playheadPos;
 			previewPane->modulePlaying     = &module->playing;
+			previewPane->moduleInPoint     = &module->trimIn;
+			previewPane->moduleOutPoint    = &module->trimOut;
+			previewPane->moduleLooping     = &module->looping;
 		}
 
 		// Refresh browser when preview pane modifies metadata
