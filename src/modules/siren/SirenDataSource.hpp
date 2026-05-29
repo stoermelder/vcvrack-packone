@@ -15,7 +15,7 @@ struct DataSourceNode {
 	std::string name;
 	std::string fullPath;
 	std::string relativePath;  // relative to root, '/' separated
-	bool isDirectory = false;
+	bool isContainer = false;
 	bool childrenLoaded = false;
 	float durationSeconds = 0.f;
 	std::vector<DataSourceNode> children;

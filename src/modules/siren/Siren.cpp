@@ -32,7 +32,7 @@ static std::string sirenCacheDirPath() {
 // ─── global siren settings ───────────────────────────────────────────────────
 
 struct SirenSettings {
-	std::vector<std::string> rootFolders;
+	std::vector<std::string> rootContainers;
 	int activeRootIdx = -1;
 	std::string lastFile;
 	float lastPlayheadPos = 0.f;
@@ -59,9 +59,9 @@ struct SirenSettings {
 	json_t* toJson() const {
 		json_t* j = json_object();
 		json_t* rootsJ = json_array();
-		for (const std::string& r : rootFolders)
+		for (const std::string& r : rootContainers)
 			json_array_append_new(rootsJ, json_string(r.c_str()));
-		json_object_set_new(j, "rootFolders", rootsJ);
+		json_object_set_new(j, "rootContainers", rootsJ);
 		json_object_set_new(j, "activeRootIdx", json_integer(activeRootIdx));
 		json_object_set_new(j, "lastFile", json_string(lastFile.c_str()));
 		json_object_set_new(j, "lastPlayheadPos", json_real(lastPlayheadPos));
@@ -69,12 +69,12 @@ struct SirenSettings {
 	}
 
 	void fromJson(json_t* j) {
-		rootFolders.clear();
-		json_t* rootsJ = json_object_get(j, "rootFolders");
+		rootContainers.clear();
+		json_t* rootsJ = json_object_get(j, "rootContainers");
 		if (rootsJ && json_is_array(rootsJ)) {
 			size_t i; json_t* v;
 			json_array_foreach(rootsJ, i, v) {
-				if (json_is_string(v)) rootFolders.push_back(json_string_value(v));
+				if (json_is_string(v)) rootContainers.push_back(json_string_value(v));
 			}
 		}
 		json_t* v;
@@ -470,25 +470,25 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 					if (!path) return;
 					std::string p(path);
 					free(path);
-					if (std::find(sirenSettings.rootFolders.begin(), sirenSettings.rootFolders.end(), p)
-					    == sirenSettings.rootFolders.end()) {
-						sirenSettings.rootFolders.push_back(p);
-						sirenSettings.activeRootIdx = (int)sirenSettings.rootFolders.size() - 1;
+					if (std::find(sirenSettings.rootContainers.begin(), sirenSettings.rootContainers.end(), p)
+					    == sirenSettings.rootContainers.end()) {
+						sirenSettings.rootContainers.push_back(p);
+						sirenSettings.activeRootIdx = (int)sirenSettings.rootContainers.size() - 1;
 						if (m) m->activeRootIdx = sirenSettings.activeRootIdx;
-						browserPane->setRoots(sirenSettings.rootFolders, sirenSettings.activeRootIdx);
+						browserPane->setRoots(sirenSettings.rootContainers, sirenSettings.activeRootIdx);
 					}
 				};
 				browserPane->onRemoveRoot = [this, m](int idx) {
-					if (idx < 0 || idx >= (int)sirenSettings.rootFolders.size()) return;
-					sirenSettings.rootFolders.erase(sirenSettings.rootFolders.begin() + idx);
-					sirenSettings.activeRootIdx = sirenSettings.rootFolders.empty() ? -1 : 0;
+					if (idx < 0 || idx >= (int)sirenSettings.rootContainers.size()) return;
+					sirenSettings.rootContainers.erase(sirenSettings.rootContainers.begin() + idx);
+					sirenSettings.activeRootIdx = sirenSettings.rootContainers.empty() ? -1 : 0;
 					if (m) m->activeRootIdx = sirenSettings.activeRootIdx;
-					browserPane->setRoots(sirenSettings.rootFolders, sirenSettings.activeRootIdx);
+					browserPane->setRoots(sirenSettings.rootContainers, sirenSettings.activeRootIdx);
 				};
 				browserPane->onSelectRoot = [this, m](int idx) {
 					sirenSettings.activeRootIdx = idx;
 					if (m) m->activeRootIdx = idx;
-					browserPane->setRoots(sirenSettings.rootFolders, idx);
+					browserPane->setRoots(sirenSettings.rootContainers, idx);
 				};
 			}
 			zw->addChild(browserPane);
@@ -566,7 +566,7 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 				sirenSettings.activeRootIdx = module->activeRootIdx;
 			}
 		}
-		browserPane->setRoots(sirenSettings.rootFolders, sirenSettings.activeRootIdx);
+		browserPane->setRoots(sirenSettings.rootContainers, sirenSettings.activeRootIdx);
 		std::string restoreFile = module ? module->lastFilePath : sirenSettings.lastFile;
 		float restorePos = module ? module->lastPlayheadPos : sirenSettings.lastPlayheadPos;
 		if (!restoreFile.empty()) {
@@ -604,8 +604,8 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 
 	std::string activeRoot() const {
 		int idx = sirenSettings.activeRootIdx;
-		if (idx >= 0 && idx < (int)sirenSettings.rootFolders.size())
-			return sirenSettings.rootFolders[idx];
+		if (idx >= 0 && idx < (int)sirenSettings.rootContainers.size())
+			return sirenSettings.rootContainers[idx];
 		return "";
 	}
 
@@ -620,38 +620,38 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 		ThemedModuleWidget<SirenModule>::appendContextMenu(menu);
 		menu->addChild(new ui::MenuSeparator);
 
-		// Root folder management
+		// Root container management
 		menu->addChild(createMenuLabel("Sample Roots"));
-		for (int i = 0; i < (int)sirenSettings.rootFolders.size(); i++) {
-			const std::string& root = sirenSettings.rootFolders[i];
+		for (int i = 0; i < (int)sirenSettings.rootContainers.size(); i++) {
+			const std::string& root = sirenSettings.rootContainers[i];
 			std::string label = root;
 			bool active = (i == sirenSettings.activeRootIdx);
 			menu->addChild(createCheckMenuItem(label, "", [=]() { return active; }, [this, i]() {
 				sirenSettings.activeRootIdx = i;
-				browserPane->setRoots(sirenSettings.rootFolders, i);
+				browserPane->setRoots(sirenSettings.rootContainers, i);
 			}));
 		}
 
-		menu->addChild(createMenuItem("Add root folder...", "", [this]() {
+		menu->addChild(createMenuItem("Add root...", "", [this]() {
 			char* path = osdialog_file(OSDIALOG_OPEN_DIR, nullptr, nullptr, nullptr);
 			if (!path) return;
 			std::string p(path);
 			free(path);
-			if (std::find(sirenSettings.rootFolders.begin(), sirenSettings.rootFolders.end(), p)
-			    == sirenSettings.rootFolders.end()) {
-				sirenSettings.rootFolders.push_back(p);
-				sirenSettings.activeRootIdx = (int)sirenSettings.rootFolders.size() - 1;
-				browserPane->setRoots(sirenSettings.rootFolders, sirenSettings.activeRootIdx);
+			if (std::find(sirenSettings.rootContainers.begin(), sirenSettings.rootContainers.end(), p)
+			    == sirenSettings.rootContainers.end()) {
+				sirenSettings.rootContainers.push_back(p);
+				sirenSettings.activeRootIdx = (int)sirenSettings.rootContainers.size() - 1;
+				browserPane->setRoots(sirenSettings.rootContainers, sirenSettings.activeRootIdx);
 			}
 		}));
 
-		if (!sirenSettings.rootFolders.empty()) {
-			menu->addChild(createMenuItem("Remove active root folder", "", [this]() {
+		if (!sirenSettings.rootContainers.empty()) {
+			menu->addChild(createMenuItem("Remove root", "", [this]() {
 				int idx = sirenSettings.activeRootIdx;
-				if (idx < 0 || idx >= (int)sirenSettings.rootFolders.size()) return;
-				sirenSettings.rootFolders.erase(sirenSettings.rootFolders.begin() + idx);
-				sirenSettings.activeRootIdx = sirenSettings.rootFolders.empty() ? -1 : 0;
-				browserPane->setRoots(sirenSettings.rootFolders, sirenSettings.activeRootIdx);
+				if (idx < 0 || idx >= (int)sirenSettings.rootContainers.size()) return;
+				sirenSettings.rootContainers.erase(sirenSettings.rootContainers.begin() + idx);
+				sirenSettings.activeRootIdx = sirenSettings.rootContainers.empty() ? -1 : 0;
+				browserPane->setRoots(sirenSettings.rootContainers, sirenSettings.activeRootIdx);
 			}));
 		}
 	}

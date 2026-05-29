@@ -74,7 +74,7 @@ struct SirenTreeRow : widget::OpaqueWidget {
 		pane = p;
 		box.size = Vec(0.f, ROW_H);
 
-		if (!node.isDirectory) {
+		if (!node.isContainer) {
 			starBtn = new StarButton;
 			starBtn->row = this;
 			starBtn->box.pos = Vec(0.f, 2.f);
@@ -108,13 +108,13 @@ struct SirenTreeRow : widget::OpaqueWidget {
 
 		nvgFontFaceId(args.vg, APP->window->uiFont->handle);
 
-		if (node.isDirectory) {
+		if (node.isContainer) {
 			// Expand/collapse triangle
 			nvgFontSize(args.vg, 9.f);
 			nvgFillColor(args.vg, nvgRGBAf(textColor.r, textColor.g, textColor.b, 0.55f));
 			nvgText(args.vg, textX, 13.f, node.childrenLoaded ? "▼" : "▶", nullptr);
 			textX += 14.f;
-			// Folder name
+			// Container name
 			nvgFontSize(args.vg, BND_LABEL_FONT_SIZE);
 			nvgFillColor(args.vg, textColor);
 			nvgScissor(args.vg, textX, 0.f, w - textX - 4.f, h);
@@ -169,8 +169,8 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 
 	TaskWorker* worker = nullptr;
 
-	// Root folders from settings
-	std::vector<std::string> rootFolders;
+	// Root containers from settings
+	std::vector<std::string> rootContainers;
 	int activeRootIdx = -1;
 	std::string selectedPath;
 	bool favoritesOnly = false;
@@ -232,10 +232,10 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 	}
 
 	void setRoots(const std::vector<std::string>& roots, int activeIdx) {
-		rootFolders   = roots;
+		rootContainers   = roots;
 		activeRootIdx = activeIdx;
-		if (activeRootIdx >= 0 && activeRootIdx < (int)rootFolders.size())
-			loadRoot(rootFolders[activeRootIdx]);
+		if (activeRootIdx >= 0 && activeRootIdx < (int)rootContainers.size())
+			loadRoot(rootContainers[activeRootIdx]);
 	}
 
 	void loadRoot(const std::string& root) {
@@ -294,15 +294,15 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 			const TreeEntry& entry = rows[i];
 			const DataSourceNode& n = entry.node;
 
-			// When searching, hide directories and filter by name
+			// When searching, hide containers and filter by name
 			if (!searchQuery.empty()) {
-				if (n.isDirectory) continue;
+				if (n.isContainer) continue;
 				if (rack::string::lowercase(n.name).find(rack::string::lowercase(searchQuery)) == std::string::npos)
 					continue;
 			}
 
-			if (n.isDirectory) {
-				if ((favoritesOnly || !tagFilter.empty()) && !directoryHasMatchingDescendant(i, meta))
+			if (n.isContainer) {
+				if ((favoritesOnly || !tagFilter.empty()) && !containerHasMatchingDescendant(i, meta))
 					continue;
 			}
 			else {
@@ -333,7 +333,7 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 	void expandRow(int rowIdx) {
 		if (rowIdx < 0 || rowIdx >= (int)rows.size()) return;
 		TreeEntry& entry = rows[rowIdx];
-		if (!entry.node.isDirectory) return;
+		if (!entry.node.isContainer) return;
 
 		if (entry.expanded) {
 			int childIndent = entry.indent + 1;
@@ -370,13 +370,13 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		return -1;
 	}
 
-	// Returns true if the directory at rows[rowIdx] has at least one descendant
+	// Returns true if the container at rows[rowIdx] has at least one descendant
 	// file that passes the current favoritesOnly / tagFilter.
 	//
 	// Only files with metadata entries (tags or favorites) can ever match either
 	// filter, so scanning meta->samples is both necessary and sufficient — no
 	// filesystem scan or row-tree walk needed.
-	bool directoryHasMatchingDescendant(int rowIdx, RootMetadata* meta) const {
+	bool containerHasMatchingDescendant(int rowIdx, RootMetadata* meta) const {
 		if (!meta) return false;
 		const std::string dirPrefix = rows[rowIdx].node.relativePath + "/";
 
@@ -548,7 +548,7 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 
 inline void SirenTreeRow::onButton(const event::Button& e) {
 	if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS) {
-		if (node.isDirectory) {
+		if (node.isContainer) {
 			int treeIdx = pane->findTreeIdx(node.fullPath);
 			if (treeIdx >= 0) pane->expandRow(treeIdx);
 		}
@@ -572,7 +572,7 @@ inline void SirenTreeRow::onButton(const event::Button& e) {
 }
 
 inline void SirenTreeRow::onDragStart(const event::DragStart& e) {
-	if (node.isDirectory) return;
+	if (node.isContainer) return;
 	if (pane && pane->dragState) {
 		pane->dragState->active  = true;
 		pane->dragState->dragPath = node.fullPath;
@@ -597,9 +597,9 @@ inline void SirenTreeRow::onDragEnd(const event::DragEnd& e) {
 // ─── SirenSourceButton method bodies ─────────────────────────────────────────
 
 inline void SirenSourceButton::step() {
-	if (!pane->rootFolders.empty() && pane->activeRootIdx >= 0 &&
-	    pane->activeRootIdx < (int)pane->rootFolders.size()) {
-		ghc::filesystem::path p(pane->rootFolders[pane->activeRootIdx]);
+	if (!pane->rootContainers.empty() && pane->activeRootIdx >= 0 &&
+	    pane->activeRootIdx < (int)pane->rootContainers.size()) {
+		ghc::filesystem::path p(pane->rootContainers[pane->activeRootIdx]);
 		text = p.filename().string();
 		if (text.empty()) text = p.string();
 	}
@@ -616,8 +616,8 @@ inline void SirenSourceButton::onAction(const event::Action& e) {
 	menu->box.size.x = box.size.x;
 
 	// List of existing sources
-	for (int i = 0; i < (int)pane->rootFolders.size(); i++) {
-		ghc::filesystem::path p(pane->rootFolders[i]);
+	for (int i = 0; i < (int)pane->rootContainers.size(); i++) {
+		ghc::filesystem::path p(pane->rootContainers[i]);
 		std::string name = p.filename().string();
 		if (name.empty()) name = p.string();
 		menu->addChild(createCheckMenuItem(name, "",
@@ -627,12 +627,12 @@ inline void SirenSourceButton::onAction(const event::Action& e) {
 	}
 
 	menu->addChild(new ui::MenuSeparator);
-	menu->addChild(createMenuItem("Add folder...", "", [this]() {
+	menu->addChild(createMenuItem("Add root...", "", [this]() {
 		if (pane->onAddRoot) pane->onAddRoot();
 	}));
-	menu->addChild(createMenuItem("Remove source", "", [this]() {
+	menu->addChild(createMenuItem("Remove root", "", [this]() {
 		if (pane->onRemoveRoot) pane->onRemoveRoot(pane->activeRootIdx);
-	}, pane->rootFolders.empty()));
+	}, pane->rootContainers.empty()));
 }
 
 } // namespace Siren

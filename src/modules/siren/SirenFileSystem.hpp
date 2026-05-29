@@ -199,12 +199,12 @@ struct FileSystemDataSource : DataSource {
 					DataSourceNode node;
 					node.fullPath = entry.path().string();
 					node.name = entry.path().filename().string();
-					node.isDirectory = entry.is_directory();
+					node.isContainer = entry.is_directory();
 					// Relative path from root, starting with '/'
 					auto rel = entry.path().lexically_relative(base);
 					node.relativePath = "/" + rel.generic_string();
-					if (node.isDirectory || isSupportedAudioFile(node.fullPath)) {
-						if (!node.isDirectory) {
+					if (node.isContainer || isSupportedAudioFile(node.fullPath)) {
+						if (!node.isContainer) {
 							AudioInfo ai;
 							if (::StoermelderPackOne::Siren::loadAudioInfo(node.fullPath, ai))
 								node.durationSeconds = ai.durationSeconds;
@@ -215,8 +215,8 @@ struct FileSystemDataSource : DataSource {
 			}
 			catch (...) {}
 			std::sort(result.begin(), result.end(), [](const DataSourceNode& a, const DataSourceNode& b) {
-				// Directories first, then files; both alphabetical
-				if (a.isDirectory != b.isDirectory) return a.isDirectory > b.isDirectory;
+				// Containers first, then files; both alphabetical
+				if (a.isContainer != b.isContainer) return a.isContainer > b.isContainer;
 				return rack::string::lowercase(a.name) < rack::string::lowercase(b.name);
 			});
 		};
@@ -236,11 +236,11 @@ struct FileSystemDataSource : DataSource {
 					DataSourceNode node;
 					node.fullPath = entry.path().string();
 					node.name = entry.path().filename().string();
-					node.isDirectory = entry.is_directory();
+					node.isContainer = entry.is_directory();
 					auto rel = entry.path().lexically_relative(base);
 					node.relativePath = "/" + rel.generic_string();
-					if (node.isDirectory || isSupportedAudioFile(node.fullPath)) {
-						if (!node.isDirectory) {
+					if (node.isContainer || isSupportedAudioFile(node.fullPath)) {
+						if (!node.isContainer) {
 							AudioInfo ai;
 							if (::StoermelderPackOne::Siren::loadAudioInfo(node.fullPath, ai))
 								node.durationSeconds = ai.durationSeconds;
@@ -251,7 +251,7 @@ struct FileSystemDataSource : DataSource {
 			}
 			catch (...) {}
 			std::sort(result.begin(), result.end(), [](const DataSourceNode& a, const DataSourceNode& b) {
-				if (a.isDirectory != b.isDirectory) return a.isDirectory > b.isDirectory;
+				if (a.isContainer != b.isContainer) return a.isContainer > b.isContainer;
 				return rack::string::lowercase(a.name) < rack::string::lowercase(b.name);
 			});
 			onDone(std::move(result));
@@ -314,26 +314,26 @@ struct FileSystemDataSource : DataSource {
 
 	void appendNodeMenuItems(ui::Menu* menu, const DataSourceNode& node,
 	                         std::function<void()> onChanged) override {
-		if (node.isDirectory) {
+		if (node.isContainer) {
 			std::string dirPath = node.fullPath;
-			menu->addChild(createMenuItem("Show folder", "", [dirPath]() {
+			menu->addChild(createMenuItem("Show container", "", [dirPath]() {
 				rack::system::openDirectory(dirPath);
 			}));
 
 			menu->addChild(new ui::MenuSeparator);
 
-			// Sticky submenu: scan directory, then show all tags; clicking adds/removes
-			// the tag for every direct audio file in the folder.
-			menu->addChild(Rack::createStickySubmenuItem("Tag all samples", "", [this, dirPath, onChanged](ui::Menu* tagMenu) {
+			// Sticky submenu: scan container, then show all tags; clicking adds/removes
+			// the tag for every direct audio file in the container.
+			menu->addChild(Rack::createStickySubmenuItem("Tag all files", "", [this, dirPath, onChanged](ui::Menu* tagMenu) {
 				// Scan for direct audio children (runs on UI thread; acceptable for a menu action)
 				auto children = loadChildrenSync(dirPath);
 				std::vector<std::string> audioRels;
 				for (const auto& child : children)
-					if (!child.isDirectory)
+					if (!child.isContainer)
 						audioRels.push_back(child.relativePath);
 
 				if (audioRels.empty()) {
-					tagMenu->addChild(createMenuLabel("No audio files in folder"));
+					tagMenu->addChild(createMenuLabel("No audio files in container"));
 					return;
 				}
 
@@ -352,7 +352,7 @@ struct FileSystemDataSource : DataSource {
 						}
 					}
 
-					struct FolderTagItem : ui::MenuItem {
+					struct ContainerTagItem : ui::MenuItem {
 						FileSystemDataSource* src;
 						std::vector<std::string> rels;
 						std::string tag;
@@ -368,7 +368,7 @@ struct FileSystemDataSource : DataSource {
 						}
 					};
 
-					FolderTagItem* item   = new FolderTagItem;
+					ContainerTagItem* item   = new ContainerTagItem;
 					item->text            = toTitleCase(tag);
 					item->rightText       = CHECKMARK(allHave);
 					item->src             = this;
@@ -381,9 +381,9 @@ struct FileSystemDataSource : DataSource {
 			}));
 		}
 		else {
-			// File: open the folder it lives in
+			// File: open the containing container
 			std::string dir = ghc::filesystem::path(node.fullPath).parent_path().string();
-			menu->addChild(createMenuItem("Open containing folder", "", [dir]() {
+			menu->addChild(createMenuItem("Open containing container", "", [dir]() {
 				rack::system::openDirectory(dir);
 			}));
 
