@@ -399,10 +399,10 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 	// Keys are the original tag strings; display labels are title-cased separately.
 	std::vector<std::pair<std::string, Rect>> tagChips() {
 		std::vector<std::pair<std::string, Rect>> chips;
-		const float chipH    = 18.f;
-		const float rowStride = chipH + 6.f;
+		const float chipH    = 20.f;
+		const float rowStride = chipH + 2.f;
 		const float startY   = box.size.y - BROWSER_TAG_H + 8.f;
-		float x = 6.f;
+		float x = 4.f;
 		int   curRow = 0;
 
 		RootMetadata* meta = activeDataSource ? activeDataSource->getMetadata() : nullptr;
@@ -419,7 +419,7 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		};
 
 		// "Fav" chip is always first
-		float favW = measureChip("Fav");
+		float favW = measureChip("Favorite");
 		chips.push_back({"fav", Rect(Vec(x, startY), Vec(favW, chipH))});
 		x += favW + 4.f;
 
@@ -432,8 +432,8 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 				float tw = measureChip(label);
 				if (x + tw > box.size.x - 4.f) {
 					curRow++;
-					if (curRow > 2) break;
-					x = 6.f;
+					if (curRow > 3) break;
+					x = 4.f;
 				}
 				float chipY = startY + curRow * rowStride;
 				chips.push_back({tag, Rect(Vec(x, chipY), Vec(tw, chipH))});
@@ -526,7 +526,7 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 			if (active) chipState = BND_ACTIVE;
 			else if (hoveredTag == tag) chipState = BND_HOVER;
 
-			std::string label = (tag == "fav") ? "Fav" : toTitleCase(tag);
+			std::string label = (tag == "fav") ? "Favorite" : toTitleCase(tag);
 
 			bndToolButton(args.vg, rect.pos.x, rect.pos.y, rect.size.x, rect.size.y,
 			              BND_CORNER_NONE, chipState, -1, label.c_str());

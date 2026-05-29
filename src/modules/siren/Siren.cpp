@@ -501,14 +501,14 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 		const float previewW = 307.8f;
 		const float totalW   = browserW + previewW;
 		const float topBarH  = 30.f * zoom;
-		const float contentH = 338.6f;
+		const float contentH = 336.6f;
 		const float paneH    = contentH - topBarH;
 		const float gapW     = 8.f;   // gap between browser and preview
 
 		// ── Display widget (single container for browser + topbar + preview) ──
 		SirenDisplayWidget* display = new SirenDisplayWidget;
 		display->box.pos  = Vec(8.3f, 10.2f);
-		display->box.size = Vec(501.7f, 364.0f);
+		display->box.size = Vec(501.7f, 354.0f);
 		addChild(display);
 
 		// ── Browser pane (inside display, local coords) ───────────────────────
@@ -530,6 +530,7 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 			browserPane->onFileSelected = [this](const std::string& path, bool startPlay) {
 				onFileSelected(path, startPlay);
 			};
+			
 			{
 				SirenModule* m = module;  // capture for lambdas (template base not visible by plain name)
 				browserPane->onAddRoot = [this, m]() {
