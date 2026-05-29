@@ -178,6 +178,33 @@ struct SirenModule : Module {
 				outputFrameCount.store(0, std::memory_order_relaxed);
 				eofReached.store(false, std::memory_order_relaxed);
 				rbL.clear(); rbR.clear();
+
+				// Read a short lookahead and find the first zero crossing to avoid
+				// a click at the seek point. Frames before the crossing are discarded.
+				static constexpr int64_t ZC_WINDOW = 2048;
+				static constexpr int     ZC_CH_MAX = 2;
+				float zcBuf[ZC_WINDOW * ZC_CH_MAX];
+				int ch = stream->channels();
+				if (ch < 1) ch = 1;
+				if (ch > ZC_CH_MAX) ch = ZC_CH_MAX;
+				int64_t zcRead = stream->readF32(zcBuf, ZC_WINDOW);
+				int64_t zcOffset = 0;
+				if (zcRead > 1) {
+					float prev = zcBuf[0];
+					for (int64_t i = 1; i < zcRead; i++) {
+						float cur = zcBuf[i * ch];
+						if (prev * cur <= 0.f) { zcOffset = i; break; }
+						prev = cur;
+					}
+				}
+				for (int64_t f = zcOffset; f < zcRead; f++) {
+					rbL.push(zcBuf[f * ch]);
+					rbR.push(ch >= 2 ? zcBuf[f * ch + 1] : zcBuf[f * ch]);
+				}
+				// Adjust seekBaseFrame so the displayed playhead reflects the actual
+				// start position (safe: written before playing.store release fence).
+				seekBaseFrame += zcOffset;
+
 				playing.store(true, std::memory_order_release);
 			}
 
