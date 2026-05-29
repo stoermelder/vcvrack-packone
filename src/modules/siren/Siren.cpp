@@ -706,6 +706,20 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 		previewPane->loadItem(path, src, src ? src->getMetadata() : nullptr, startPlay);
 	}
 
+	void onHoverKey(const event::HoverKey& e) override {
+		if (e.action == GLFW_PRESS && e.key == GLFW_KEY_SPACE) {
+			if (previewPane && !previewPane->currentId.empty()) {
+				if (module && module->playing.load(std::memory_order_relaxed))
+					previewPane->stopPlaybackCallback();
+				else
+					previewPane->startPlaybackFrom(previewPane->inPoint);
+				e.consume(this);
+				return;
+			}
+		}
+		ThemedModuleWidget<SirenModule>::onHoverKey(e);
+	}
+
 	void appendContextMenu(ui::Menu* menu) override {
 		ThemedModuleWidget<SirenModule>::appendContextMenu(menu);
 		menu->addChild(new ui::MenuSeparator);
