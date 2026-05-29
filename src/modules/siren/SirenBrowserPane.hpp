@@ -30,17 +30,6 @@ struct SirenDragState {
 
 static constexpr float BROWSER_TAG_H = 96.f;
 
-static std::string toTitleCase(const std::string& s) {
-	std::string r = s;
-	bool cap = true;
-	for (char& c : r) {
-		if (c == ' ' || c == '_' || c == '-') { cap = true; c = ' '; }
-		else if (cap) { c = (char)::toupper(c); cap = false; }
-		else c = (char)::tolower(c);
-	}
-	return r;
-}
-
 // ─── single row in the tree ───────────────────────────────────────────────────
 
 struct SirenTreeRow : widget::OpaqueWidget {
@@ -312,15 +301,21 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 					continue;
 			}
 
-			if (favoritesOnly && !n.isDirectory && meta && !meta->isFavorite(n.relativePath))
-				continue;
+			if (n.isDirectory) {
+				if ((favoritesOnly || !tagFilter.empty()) && !directoryHasMatchingDescendant(i, meta))
+					continue;
+			}
+			else {
+				if (favoritesOnly && meta && !meta->isFavorite(n.relativePath))
+					continue;
 
-			if (!tagFilter.empty() && !n.isDirectory && meta) {
-				auto tags = meta->getTags(n.relativePath);
-				bool hasAll = true;
-				for (const std::string& t : tagFilter)
-					if (std::find(tags.begin(), tags.end(), t) == tags.end()) { hasAll = false; break; }
-				if (!hasAll) continue;
+				if (!tagFilter.empty() && meta) {
+					auto tags = meta->getTags(n.relativePath);
+					bool hasAll = true;
+					for (const std::string& t : tagFilter)
+						if (std::find(tags.begin(), tags.end(), t) == tags.end()) { hasAll = false; break; }
+					if (!hasAll) continue;
+				}
 			}
 
 			SirenTreeRow* row = new SirenTreeRow;
@@ -373,6 +368,34 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 			idx++;
 		}
 		return -1;
+	}
+
+	// Returns true if the directory at rows[rowIdx] has at least one descendant
+	// file that passes the current favoritesOnly / tagFilter.
+	//
+	// Only files with metadata entries (tags or favorites) can ever match either
+	// filter, so scanning meta->samples is both necessary and sufficient — no
+	// filesystem scan or row-tree walk needed.
+	bool directoryHasMatchingDescendant(int rowIdx, RootMetadata* meta) const {
+		if (!meta) return false;
+		const std::string dirPrefix = rows[rowIdx].node.relativePath + "/";
+
+		for (const auto& pair : meta->samples) {
+			if (pair.first.compare(0, dirPrefix.size(), dirPrefix) != 0) continue;
+			const SampleMetadata& sm = pair.second;
+
+			if (favoritesOnly && !sm.favorite) continue;
+
+			if (!tagFilter.empty()) {
+				bool hasAll = true;
+				for (const std::string& t : tagFilter)
+					if (std::find(sm.tags.begin(), sm.tags.end(), t) == sm.tags.end()) { hasAll = false; break; }
+				if (!hasAll) continue;
+			}
+
+			return true;
+		}
+		return false;
 	}
 
 	int findTreeIdx(const std::string& fullPath) {
@@ -539,7 +562,10 @@ inline void SirenTreeRow::onButton(const event::Button& e) {
 	if (e.button == GLFW_MOUSE_BUTTON_RIGHT && e.action == GLFW_PRESS) {
 		if (pane->activeDataSource) {
 			ui::Menu* menu = createMenu();
-			pane->activeDataSource->appendNodeMenuItems(menu, node);
+			SirenBrowserPane* p = pane;
+			pane->activeDataSource->appendNodeMenuItems(menu, node, [p]() {
+				p->rebuildRowWidgets();
+			});
 			e.consume(this);
 		}
 	}

@@ -312,12 +312,167 @@ struct FileSystemDataSource : DataSource {
 		return s;
 	}
 
-	void appendNodeMenuItems(ui::Menu* menu, const DataSourceNode& node) override {
-		if (node.isDirectory) return;
-		std::string dir = ghc::filesystem::path(node.fullPath).parent_path().string();
-		menu->addChild(createMenuItem("Open containing folder", "", [dir]() {
-			rack::system::openDirectory(dir);
-		}));
+	void appendNodeMenuItems(ui::Menu* menu, const DataSourceNode& node,
+	                         std::function<void()> onChanged) override {
+		if (node.isDirectory) {
+			std::string dirPath = node.fullPath;
+			menu->addChild(createMenuItem("Show folder", "", [dirPath]() {
+				rack::system::openDirectory(dirPath);
+			}));
+
+			menu->addChild(new ui::MenuSeparator);
+
+			// Sticky submenu: scan directory, then show all tags; clicking adds/removes
+			// the tag for every direct audio file in the folder.
+			menu->addChild(Rack::createStickySubmenuItem("Tag all samples", "", [this, dirPath, onChanged](ui::Menu* tagMenu) {
+				// Scan for direct audio children (runs on UI thread; acceptable for a menu action)
+				auto children = loadChildrenSync(dirPath);
+				std::vector<std::string> audioRels;
+				for (const auto& child : children)
+					if (!child.isDirectory)
+						audioRels.push_back(child.relativePath);
+
+				if (audioRels.empty()) {
+					tagMenu->addChild(createMenuLabel("No audio files in folder"));
+					return;
+				}
+
+				auto allTagsSet = metadata_.allTags();
+				std::vector<std::string> sorted(allTagsSet.begin(), allTagsSet.end());
+				std::sort(sorted.begin(), sorted.end());
+
+				for (const std::string& tag : sorted) {
+					// Check whether ALL files already carry this tag
+					bool allHave = true;
+					for (const auto& rel : audioRels) {
+						auto fileTags = metadata_.getTags(rel);
+						if (std::find(fileTags.begin(), fileTags.end(), tag) == fileTags.end()) {
+							allHave = false;
+							break;
+						}
+					}
+
+					struct FolderTagItem : ui::MenuItem {
+						FileSystemDataSource* src;
+						std::vector<std::string> rels;
+						std::string tag;
+						bool wasAllHave;
+						std::function<void()> onChanged;
+						void onAction(const event::Action& e) override {
+							if (wasAllHave)
+								for (const auto& rel : rels) src->metadata_.removeTag(rel, tag);
+							else
+								for (const auto& rel : rels) src->metadata_.addTag(rel, tag);
+							src->saveMetadata();
+							if (onChanged) onChanged();
+						}
+					};
+
+					FolderTagItem* item   = new FolderTagItem;
+					item->text            = toTitleCase(tag);
+					item->rightText       = CHECKMARK(allHave);
+					item->src             = this;
+					item->rels            = audioRels;
+					item->tag             = tag;
+					item->wasAllHave      = allHave;
+					item->onChanged       = onChanged;
+					tagMenu->addChild(item);
+				}
+			}));
+		}
+		else {
+			// File: open the folder it lives in
+			std::string dir = ghc::filesystem::path(node.fullPath).parent_path().string();
+			menu->addChild(createMenuItem("Open containing folder", "", [dir]() {
+				rack::system::openDirectory(dir);
+			}));
+
+			std::string rel = node.relativePath;
+
+			menu->addChild(new ui::MenuSeparator);
+
+			// Favorite toggle
+			menu->addChild(createCheckMenuItem("Favorite", "",
+				[this, rel]() { return metadata_.isFavorite(rel); },
+				[this, rel, onChanged]() {
+					metadata_.setFavorite(rel, !metadata_.isFavorite(rel));
+					saveMetadata();
+					if (onChanged) onChanged();
+				}
+			));
+
+			menu->addChild(new ui::MenuSeparator);
+			menu->addChild(createMenuLabel("Tags"));
+
+			// Text field for adding a new tag
+			struct FileNewTagField : ui::TextField {
+				RootMetadata* metadata;
+				std::string rel;
+				FileSystemDataSource* src;
+				std::function<void()> onChanged;
+				void onSelectKey(const event::SelectKey& e) override {
+					if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
+						std::string tag = rack::string::trim(text);
+						if (!tag.empty()) {
+							metadata->addTag(rel, tag);
+							src->saveMetadata();
+							if (onChanged) onChanged();
+						}
+						ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
+						if (overlay) overlay->requestDelete();
+						e.consume(this);
+						return;
+					}
+					if (!e.getTarget()) ui::TextField::onSelectKey(e);
+				}
+			};
+			FileNewTagField* ntf = new FileNewTagField;
+			ntf->box.size.x  = 150.f;
+			ntf->placeholder = "New tag...";
+			ntf->metadata    = &metadata_;
+			ntf->rel         = rel;
+			ntf->src         = this;
+			ntf->onChanged   = onChanged;
+			menu->addChild(ntf);
+			APP->event->setSelectedWidget(ntf);
+
+			// All known tags with checkmarks — live toggle per item
+			struct FileTagItem : ui::MenuItem {
+				RootMetadata* metadata;
+				std::string rel;
+				std::string tag;
+				FileSystemDataSource* src;
+				std::function<void()> onChanged;
+				void onAction(const event::Action& e) override {
+					auto current = metadata->getTags(rel);
+					bool has = std::find(current.begin(), current.end(), tag) != current.end();
+					if (has) metadata->removeTag(rel, tag);
+					else     metadata->addTag(rel, tag);
+					src->saveMetadata();
+					if (onChanged) onChanged();
+					e.unconsume();
+				}
+				void step() override {
+					auto current = metadata->getTags(rel);
+					rightText = CHECKMARK(std::find(current.begin(), current.end(), tag) != current.end());
+					MenuItem::step();
+				}
+			};
+
+			auto allTagsSet = metadata_.allTags();
+			std::vector<std::string> sorted(allTagsSet.begin(), allTagsSet.end());
+			std::sort(sorted.begin(), sorted.end());
+			for (const std::string& tag : sorted) {
+				FileTagItem* item = new FileTagItem;
+				item->text      = toTitleCase(tag);
+				item->metadata  = &metadata_;
+				item->rel       = rel;
+				item->tag       = tag;
+				item->src       = this;
+				item->onChanged = onChanged;
+				menu->addChild(item);
+			}
+		}
 	}
 };
 

@@ -65,7 +65,9 @@ struct DataSource {
 	virtual void saveMetadata() {}
 
 	// Append source-specific context menu items for a tree node.
-	virtual void appendNodeMenuItems(ui::Menu* menu, const DataSourceNode& node) {}
+	// onChanged is called after any metadata modification so the browser can refresh.
+	virtual void appendNodeMenuItems(ui::Menu* menu, const DataSourceNode& node,
+	                                 std::function<void()> onChanged = {}) {}
 
 	// ── audio provision (abstracts format / transport) ────────────────────────
 

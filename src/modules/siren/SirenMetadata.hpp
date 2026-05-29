@@ -148,6 +148,18 @@ struct RootMetadata {
 	}
 };
 
+// Title-case a tag string: spaces, underscores, and hyphens become word breaks.
+inline std::string toTitleCase(const std::string& s) {
+	std::string r = s;
+	bool cap = true;
+	for (char& c : r) {
+		if (c == ' ' || c == '_' || c == '-') { cap = true; c = ' '; }
+		else if (cap) { c = (char)::toupper(c); cap = false; }
+		else c = (char)::tolower(c);
+	}
+	return r;
+}
+
 // Compute 8-char hex hash of a string (for JSON filename derivation)
 inline std::string hashPath(const std::string& path) {
 	uint32_t h = 2166136261u;
