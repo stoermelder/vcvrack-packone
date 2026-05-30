@@ -92,6 +92,11 @@ struct SirenModule : Module {
 		bool  fillResample = false;
 		float fillRatio    = 1.f;  // outRate / inRate
 
+		// Tracks the file-frame position of the next frame to be pushed into the ring.
+		// The fill thread uses this to wrap seamlessly at trimOut → trimIn during looping
+		// without clearing the ring, so the DSP never hears a gap.
+		int64_t fillFilePos = 0;
+
 		static constexpr size_t CHUNK   = 1024;
 		static constexpr size_t OUT_MAX = CHUNK * 8;  // headroom for up to 8× upsampling
 		float outBuf[OUT_MAX * 2];  // resampler output — allocated once for the thread lifetime
@@ -129,11 +134,17 @@ struct SirenModule : Module {
 				stream = ns;
 				eofReached.store(false, std::memory_order_relaxed);
 				rbL.clear(); rbR.clear();
+				fillFilePos = 0;
 			}
 
 			// ── seek: reposition, configure resampler, prime ring ─────────
 			int64_t sf = pendingSeekFrame.exchange(-1, std::memory_order_acq_rel);
 			if (sf >= 0 && stream) {
+				// SeekTo first so old audio stays in the ring during seek I/O — MP3 seek
+				// can take ~100ms and an empty ring causes audible silence. The spurious
+				// path-2 trigger that previously required pre-clearing no longer applies:
+				// the autonomous fill loop never sets eofReached, so the danger state
+				// (pendingSeekFrame=-1 + eofReached=true + empty ring) cannot occur.
 				stream->seekTo(sf);
 				outputFrameCount.store(0, std::memory_order_relaxed);
 				eofReached.store(false, std::memory_order_relaxed);
@@ -186,11 +197,30 @@ struct SirenModule : Module {
 				// Shift seekBaseFrame forward so the displayed playhead matches
 				// the actual audio start (written before playing release-fence).
 				seekBaseFrame += zcOffset;
+				fillFilePos = sf + zcOffset;
 				playing.store(true, std::memory_order_release);
 			}
 
 			// ── fill: keep ring topped up while playing ───────────────────
 			if (playing.load(std::memory_order_relaxed) && stream && !eofReached.load(std::memory_order_relaxed)) {
+				bool   isLooping    = looping.load(std::memory_order_relaxed);
+				int64_t totalFrames = streamTotalFrames;
+
+				// Seamless autonomous loop: when the fill position reaches trimOut, seek the
+				// stream back to trimIn WITHOUT clearing the ring. The ring then contains a
+				// continuous, gapless stream that wraps the range; the DSP only needs to reset
+				// its display counters when it crosses the boundary — no seek gap, no silence.
+				if (isLooping && totalFrames > 0) {
+					int64_t trimOutFrame = (int64_t)(trimOut.load(std::memory_order_relaxed) * totalFrames);
+					if (fillFilePos >= trimOutFrame) {
+						int64_t trimInFrame = (int64_t)(trimIn.load(std::memory_order_relaxed) * totalFrames);
+						if (trimInFrame < trimOutFrame) {
+							stream->seekTo(trimInFrame);
+							fillFilePos = trimInFrame;
+						}
+					}
+				}
+
 				size_t space = rbL.capacity();
 				if (space > 0) {
 					float tmp[CHUNK * 2];
@@ -199,9 +229,27 @@ struct SirenModule : Module {
 					    ? std::min(CHUNK, (size_t)std::max(1.0, (double)space / fillRatio))
 					    : std::min(CHUNK, space);
 
-					int64_t nRead = stream->readF32(tmp, (int64_t)toRead);
-					pushFrames(tmp, (int)nRead);
-					if (nRead == 0) eofReached.store(true, std::memory_order_release);
+					// Cap at trimOut so the ring never contains frames from beyond the range.
+					if (isLooping && totalFrames > 0) {
+						int64_t trimOutFrame = (int64_t)(trimOut.load(std::memory_order_relaxed) * totalFrames);
+						int64_t framesLeft   = trimOutFrame - fillFilePos;
+						if (framesLeft <= 0) {
+							toRead = 0;  // loop-seek will fire at top of next iteration
+						} 
+						else if (fillResample) {
+							toRead = std::min(toRead, (size_t)std::max(1.0, (double)framesLeft / fillRatio));
+						} 
+						else {
+							toRead = std::min(toRead, (size_t)framesLeft);
+						}
+					}
+
+					if (toRead > 0) {
+						int64_t nRead = stream->readF32(tmp, (int64_t)toRead);
+						pushFrames(tmp, (int)nRead);
+						fillFilePos += nRead;
+						if (nRead == 0) eofReached.store(true, std::memory_order_release);
+					}
 				}
 			}
 
@@ -302,11 +350,12 @@ struct SirenModule : Module {
 					if (count >= stopAtOut
 					        && pendingSeekFrame.load(std::memory_order_relaxed) < 0) {
 						if (looping.load(std::memory_order_relaxed)) {
+							// The fill thread has already wrapped at trimOut → trimIn seamlessly,
+							// so the ring already contains the next iteration's audio.
+							// Only the display counters need resetting — no seek, no ring clear.
 							int64_t loopStart = (int64_t)(trimIn.load(std::memory_order_relaxed) * (float)total);
 							seekBaseFrame = loopStart;
 							outputFrameCount.store(0, std::memory_order_relaxed);
-							pendingSeekFrame.store(loopStart, std::memory_order_release);
-							fillCv.notify_one();
 						}
 						else {
 							playing.store(false, std::memory_order_release);
