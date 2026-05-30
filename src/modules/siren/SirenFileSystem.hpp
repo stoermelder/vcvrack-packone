@@ -105,6 +105,11 @@ struct FileSystemAudioStream : AudioStream {
 	int     ch = 0, sr = 0;
 	int64_t total = 0;
 
+	// Seek table for MP3 — calculated once at open time so every subsequent seek is a
+	// binary search + decode of a handful of MP3 frames rather than a full linear scan.
+	// Memory is owned here; drmp3 holds a raw pointer via drmp3_bind_seek_table.
+	std::vector<drmp3_seek_point> mp3SeekTable;
+
 	~FileSystemAudioStream() override {
 		if (fmt == Fmt::WAV)               drwav_uninit(&wav);
 		else if (fmt == Fmt::FLAC && flac) drflac_close(flac);
@@ -281,11 +286,25 @@ struct FileSystemDataSource : DataSource {
 		}
 		else if (ext == ".mp3") {
 			if (!drmp3_init_file(&s->mp3, id.c_str(), nullptr)) return nullptr;
-			s->fmt = FileSystemAudioStream::Fmt::MP3;
-			s->ch  = (int)s->mp3.channels;
-			s->sr  = (int)s->mp3.sampleRate;
+			s->fmt   = FileSystemAudioStream::Fmt::MP3;
+			s->ch    = (int)s->mp3.channels;
+			s->sr    = (int)s->mp3.sampleRate;
 			s->total = (int64_t)drmp3_get_pcm_frame_count(&s->mp3);
-		} else {
+
+			// Build a seek table so random-access seeking is O(log N) rather than O(N).
+			// 1024 points covers a 60-minute file with ~3.5-second granularity; worst-case
+			// decode after a seek is then a handful of MP3 frames instead of thousands.
+			drmp3_uint32 nPoints = 1024;
+			s->mp3SeekTable.resize(nPoints);
+			if (drmp3_calculate_seek_points(&s->mp3, &nPoints, s->mp3SeekTable.data())) {
+				s->mp3SeekTable.resize(nPoints);
+				drmp3_bind_seek_table(&s->mp3, nPoints, s->mp3SeekTable.data());
+			} 
+			else {
+				s->mp3SeekTable.clear();
+			}
+		} 
+		else {
 			return nullptr;
 		}
 		return s;
