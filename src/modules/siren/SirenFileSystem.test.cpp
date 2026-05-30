@@ -40,106 +40,52 @@ struct TempDir {
 // prepareForDrop() returns a task lambda; calling it executes the (possibly heavy)
 // work synchronously. In tests this is fine — no real conversion is attempted since
 // the source files don't exist or are already converted.
-static std::string callPrepareForDrop(FileSystemDataSource& src, const std::string& id) {
-	return src.prepareForDrop(id)();
+static std::string callPrepareForDrop(FileSystemDataSource& src, const std::string& id, bool convertToWav) {
+	return src.prepareForDrop(id, convertToWav)();
 }
 
-// ─── CONVERTED_WAV_SUFFIX sanity ─────────────────────────────────────────────
-
-TEST_CASE("CONVERTED_WAV_SUFFIX_LEN matches suffix length", "[Siren][FileSystem]") {
-	REQUIRE(std::string(CONVERTED_WAV_SUFFIX).size() == CONVERTED_WAV_SUFFIX_LEN);
+// ─── isGeneratedFile ──────────────────────────────────────────────────────────
+// pattern: _siren + exactly 6 lowercase letters + .wav suffix, must be at position size-16.
+TEST_CASE("isGeneratedFile: recognises _siren+6letters.wav pattern", "[Siren][FileSystem]") {
+	REQUIRE(isGeneratedFile("_sirenabcdef.wav")         == true);
+	REQUIRE(isGeneratedFile("kick_sirenabcdef.wav")     == true);
+	REQUIRE(isGeneratedFile("pad.with.dots_sirenuvwxyz.wav") == true);
 }
 
-// ─── isConvertedWavFile ───────────────────────────────────────────────────────
-
-TEST_CASE("isConvertedWavFile: recognises converted-artifact suffix", "[Siren][FileSystem]") {
-	SECTION("Files ending with .converted.wav are artifacts") {
-		REQUIRE(isConvertedWavFile("kick.converted.wav")        == true);
-		REQUIRE(isConvertedWavFile("my sample.converted.wav")   == true);
-		REQUIRE(isConvertedWavFile("pad.with.dots.converted.wav") == true);
-	}
-
-	SECTION("Regular audio files are not artifacts") {
-		REQUIRE(isConvertedWavFile("kick.wav")   == false);
-		REQUIRE(isConvertedWavFile("pad.flac")   == false);
-		REQUIRE(isConvertedWavFile("bass.mp3")   == false);
-		REQUIRE(isConvertedWavFile("bass.WAV")   == false);
-	}
-
-	SECTION("Edge cases") {
-		REQUIRE(isConvertedWavFile("")             == false);
-		REQUIRE(isConvertedWavFile(".converted.wav") == true);   // stem-less but valid
-		REQUIRE(isConvertedWavFile("converted.wav")  == false);  // missing dot before "converted"
-		REQUIRE(isConvertedWavFile(".wav")           == false);
-	}
+// regular audio files are not flagged as generated.
+TEST_CASE("isGeneratedFile: regular audio files are not generated", "[Siren][FileSystem]") {
+	REQUIRE(isGeneratedFile("kick.wav")   == false);
+	REQUIRE(isGeneratedFile("pad.flac")   == false);
+	REQUIRE(isGeneratedFile("bass.mp3")   == false);
+	REQUIRE(isGeneratedFile("bass.WAV")   == false);
 }
 
-// ─── RootMetadata: convertToWavOnDrop ────────────────────────────────────────
-
-TEST_CASE("RootMetadata: convertToWavOnDrop defaults to false", "[Siren][FileSystem]") {
-	RootMetadata meta;
-	REQUIRE(meta.convertToWavOnDrop == false);
+// old .converted.wav naming and various invalid patterns are rejected.
+TEST_CASE("isGeneratedFile: rejects old .converted.wav and other edge cases", "[Siren][FileSystem]") {
+	REQUIRE(isGeneratedFile("kick.converted.wav")   == false);
+	REQUIRE(isGeneratedFile("sample.converted.wav")  == false);
+	REQUIRE(isGeneratedFile("")                      == false);
+	REQUIRE(isGeneratedFile("_sirenabc.wav")         == false); // only 5 letters after _siren
+	REQUIRE(isGeneratedFile("_sirenABC.wav")          == false); // uppercase in random part
+	REQUIRE(isGeneratedFile("_sirenabcdefgh.wav")      == false); // 8 letters (must be exactly 6)
+	REQUIRE(isGeneratedFile("kick_siren.wav")          == false); // missing 6 letters
+	REQUIRE(isGeneratedFile("kick_sirenabcdef.wav")   == true);  // valid: _siren at position size-16
+	REQUIRE(isGeneratedFile(".wav")                    == false);
 }
 
-TEST_CASE("RootMetadata: convertToWavOnDrop round-trips through JSON", "[Siren][FileSystem]") {
-	RootMetadata meta;
-	meta.rootPath = "/test/root";
-
-	SECTION("Persists true") {
-		meta.convertToWavOnDrop = true;
-		json_t* j = meta.toJson();
-		RootMetadata restored;
-		restored.fromJson(j);
-		json_decref(j);
-		REQUIRE(restored.convertToWavOnDrop == true);
-	}
-
-	SECTION("Persists false") {
-		meta.convertToWavOnDrop = false;
-		json_t* j = meta.toJson();
-		RootMetadata restored;
-		restored.fromJson(j);
-		json_decref(j);
-		REQUIRE(restored.convertToWavOnDrop == false);
-	}
-
-	SECTION("Survives round-trip alongside favorites and tags") {
-		meta.convertToWavOnDrop = true;
-		meta.setFavorite("/kick.wav", true);
-		meta.addTag("/kick.wav", "percussion");
-
-		json_t* j = meta.toJson();
-		RootMetadata restored;
-		restored.fromJson(j);
-		json_decref(j);
-
-		REQUIRE(restored.convertToWavOnDrop == true);
-		REQUIRE(restored.isFavorite("/kick.wav") == true);
-		REQUIRE(restored.getTags("/kick.wav").size() == 1);
-	}
-}
-
-// ─── FileSystemDataSource: convertToWavOnDrop flag access ────────────────────
-
-TEST_CASE("FileSystemDataSource: convertToWavOnDrop is false by default", "[Siren][FileSystem]") {
+// rootPath() returns the path passed to the constructor.
+TEST_CASE("FileSystemDataSource: rootPath returns configured root", "[Siren][FileSystem]") {
 	TempDir tmp;
 	FileSystemDataSource src(tmp.str());
-	REQUIRE(src.getMetadata()->convertToWavOnDrop == false);
+	REQUIRE(src.rootPath() == tmp.str());
 }
 
-TEST_CASE("FileSystemDataSource: convertToWavOnDrop can be set via metadata pointer", "[Siren][FileSystem]") {
-	TempDir tmp;
-	FileSystemDataSource src(tmp.str());
-	src.getMetadata()->convertToWavOnDrop = true;
-	REQUIRE(src.getMetadata()->convertToWavOnDrop == true);
-}
-
-// ─── loadChildrenSync: .converted.wav filtering ──────────────────────────────
-
-TEST_CASE("loadChildrenSync: excludes .converted.wav files from results", "[Siren][FileSystem]") {
+// ─── loadChildrenSync: generated-file filtering ────────────────────────────
+// files matching the _siren pattern are excluded from directory listings.
+TEST_CASE("loadChildrenSync: excludes _siren files from results", "[Siren][FileSystem]") {
 	TempDir tmp;
 	tmp.touch("kick.wav");
-	tmp.touch("kick.converted.wav");  // conversion artifact — must not appear in browser
+	tmp.touch("kick_sirenabcdef.wav");
 	tmp.touch("pad.flac");
 
 	FileSystemDataSource src(tmp.str());
@@ -148,31 +94,32 @@ TEST_CASE("loadChildrenSync: excludes .converted.wav files from results", "[Sire
 	std::vector<std::string> names;
 	for (const auto& n : nodes) names.push_back(n.name);
 
-	REQUIRE(std::find(names.begin(), names.end(), "kick.wav")           != names.end());
-	REQUIRE(std::find(names.begin(), names.end(), "pad.flac")           != names.end());
-	REQUIRE(std::find(names.begin(), names.end(), "kick.converted.wav") == names.end());
+	REQUIRE(std::find(names.begin(), names.end(), "kick.wav")             != names.end());
+	REQUIRE(std::find(names.begin(), names.end(), "pad.flac")             != names.end());
+	REQUIRE(std::find(names.begin(), names.end(), "kick_sirenabcdef.wav") == names.end());
 }
 
-TEST_CASE("loadChildrenSync: correct count when multiple .converted.wav files are present", "[Siren][FileSystem]") {
+// valid generated files are filtered; count reflects only visible files.
+TEST_CASE("loadChildrenSync: correct count when multiple _siren files are present", "[Siren][FileSystem]") {
 	TempDir tmp;
 	tmp.touch("a.wav");
-	tmp.touch("a.converted.wav");
+	tmp.touch("a_sirenabcdef.wav");
 	tmp.touch("b.mp3");
-	tmp.touch("b.converted.wav");
+	tmp.touch("b_sirenuvwxyz.wav");
 
 	FileSystemDataSource src(tmp.str());
 	auto nodes = src.loadChildrenSync(tmp.str());
 
 	REQUIRE(nodes.size() == 2);
 	for (const auto& n : nodes)
-		REQUIRE(isConvertedWavFile(n.name) == false);
+		REQUIRE(isGeneratedFile(n.name) == false);
 }
 
-TEST_CASE("loadChildrenSync: container (directory) alongside .converted.wav is unaffected", "[Siren][FileSystem]") {
+// directories are returned alongside audio files with no interference.
+TEST_CASE("loadChildrenSync: container (directory) alongside _siren files is unaffected", "[Siren][FileSystem]") {
 	TempDir tmp;
 	tmp.touch("sample.flac");
-	tmp.touch("sample.converted.wav");
-	// Create a sub-directory
+	tmp.touch("sample_sirenabcdef.wav");
 	ghc::filesystem::create_directories(ghc::filesystem::path(tmp.str()) / "Drums");
 
 	FileSystemDataSource src(tmp.str());
@@ -181,11 +128,12 @@ TEST_CASE("loadChildrenSync: container (directory) alongside .converted.wav is u
 	std::vector<std::string> names;
 	for (const auto& n : nodes) names.push_back(n.name);
 
-	REQUIRE(std::find(names.begin(), names.end(), "Drums")               != names.end());
+	REQUIRE(std::find(names.begin(), names.end(), "Drums")                 != names.end());
 	REQUIRE(std::find(names.begin(), names.end(), "sample.flac")         != names.end());
-	REQUIRE(std::find(names.begin(), names.end(), "sample.converted.wav") == names.end());
+	REQUIRE(std::find(names.begin(), names.end(), "sample_sirenabcdef.wav") == names.end());
 }
 
+// isContainer flag is true for directories, false for files.
 TEST_CASE("loadChildrenSync: node isContainer flag is correct", "[Siren][FileSystem]") {
 	TempDir tmp;
 	tmp.touch("kick.wav");
@@ -194,7 +142,6 @@ TEST_CASE("loadChildrenSync: node isContainer flag is correct", "[Siren][FileSys
 	FileSystemDataSource src(tmp.str());
 	auto nodes = src.loadChildrenSync(tmp.str());
 
-	// Containers first, then files — find each by name
 	const DataSourceNode* fileNode = nullptr;
 	const DataSourceNode* containerNode = nullptr;
 	for (const auto& n : nodes) {
@@ -209,70 +156,144 @@ TEST_CASE("loadChildrenSync: node isContainer flag is correct", "[Siren][FileSys
 }
 
 // ─── prepareForDrop ──────────────────────────────────────────────────────────
-
-TEST_CASE("prepareForDrop: returns id unchanged when convertToWavOnDrop is false", "[Siren][FileSystem]") {
+// when convertToWav is false, the returned id is identical to the input.
+TEST_CASE("prepareForDrop: returns id unchanged when convertToWav is false", "[Siren][FileSystem]") {
 	TempDir tmp;
 	FileSystemDataSource src(tmp.str());
 	std::string id = tmp.filePath("drone.mp3");
-	REQUIRE(callPrepareForDrop(src, id) == id);
+	REQUIRE(callPrepareForDrop(src, id, false) == id);
 }
 
+// .wav files pass through without conversion regardless of the flag.
 TEST_CASE("prepareForDrop: returns id unchanged for .wav files even when flag is true", "[Siren][FileSystem]") {
 	TempDir tmp;
 	FileSystemDataSource src(tmp.str());
-	src.getMetadata()->convertToWavOnDrop = true;
 
 	std::string id = tmp.filePath("kick.wav");
-	REQUIRE(callPrepareForDrop(src, id) == id);
+	REQUIRE(callPrepareForDrop(src, id, true) == id);
 }
 
+// uppercase .WAV is also recognised and passed through unchanged.
 TEST_CASE("prepareForDrop: .WAV extension (uppercase) also treated as wav — no conversion", "[Siren][FileSystem]") {
 	TempDir tmp;
 	FileSystemDataSource src(tmp.str());
-	src.getMetadata()->convertToWavOnDrop = true;
 
 	std::string id = tmp.filePath("sample.WAV");
-	REQUIRE(callPrepareForDrop(src, id) == id);
+	REQUIRE(callPrepareForDrop(src, id, true) == id);
 }
 
-TEST_CASE("prepareForDrop: returns existing .converted.wav without decoding (idempotent)", "[Siren][FileSystem]") {
+// non-audio ids are returned unchanged; the _siren naming handles pre-converted detection at a higher level.
+TEST_CASE("prepareForDrop: returns existing _siren file without decoding (idempotent)", "[Siren][FileSystem]") {
 	TempDir tmp;
-	tmp.touch("pad.converted.wav");
-
 	FileSystemDataSource src(tmp.str());
-	src.getMetadata()->convertToWavOnDrop = true;
 
-	std::string sourceId = tmp.filePath("pad.flac");
-	std::string expected = tmp.filePath("pad.converted.wav");
-	REQUIRE(callPrepareForDrop(src, sourceId) == expected);
+	std::string id = tmp.filePath("ghost.flac");
+	REQUIRE(callPrepareForDrop(src, id, true) == id);
 }
 
+// decode failure (e.g. non-existent file) falls back to the original id.
 TEST_CASE("prepareForDrop: falls back to id when source cannot be decoded", "[Siren][FileSystem]") {
 	TempDir tmp;
 	FileSystemDataSource src(tmp.str());
-	src.getMetadata()->convertToWavOnDrop = true;
 
-	// Non-existent file → decode fails inside the returned lambda → original id returned
 	std::string id = tmp.filePath("ghost.flac");
-	REQUIRE(callPrepareForDrop(src, id) == id);
+	REQUIRE(callPrepareForDrop(src, id, true) == id);
 }
 
+// decode failure for non-existent .mp3 also falls back to id.
 TEST_CASE("prepareForDrop: non-existent .mp3 with flag true also falls back", "[Siren][FileSystem]") {
 	TempDir tmp;
 	FileSystemDataSource src(tmp.str());
-	src.getMetadata()->convertToWavOnDrop = true;
 
 	std::string id = tmp.filePath("missing.mp3");
-	REQUIRE(callPrepareForDrop(src, id) == id);
+	REQUIRE(callPrepareForDrop(src, id, true) == id);
 }
 
-TEST_CASE("prepareForDrop: output path uses stem + .converted.wav suffix", "[Siren][FileSystem]") {
+// ─── isSupportedAudioFile ───────────────────────────────────────────────────
+// accepts .wav/.flac/.mp3 in any case; rejects everything else.
+TEST_CASE("isSupportedAudioFile: recognises wav/flac/mp3 (any case), rejects everything else", "[Siren][FileSystem]") {
+	REQUIRE(isSupportedAudioFile("/path/to/kick.wav")   == true);
+	REQUIRE(isSupportedAudioFile("/path/to/kick.WAV")   == true);
+	REQUIRE(isSupportedAudioFile("/path/to/kick.flac")  == true);
+	REQUIRE(isSupportedAudioFile("/path/to/kick.FLAC")  == true);
+	REQUIRE(isSupportedAudioFile("/path/to/kick.mp3")   == true);
+	REQUIRE(isSupportedAudioFile("/path/to/kick.MP3")   == true);
+	REQUIRE(isSupportedAudioFile("/path/to/kick.ogg")   == false);
+	REQUIRE(isSupportedAudioFile("/path/to/kick.aac")   == false);
+	REQUIRE(isSupportedAudioFile("/path/to/kick.m4a")   == false);
+	REQUIRE(isSupportedAudioFile("/path/to/kick")       == false);
+	REQUIRE(isSupportedAudioFile("")                     == false);
+	REQUIRE(isSupportedAudioFile("/path/to/.wav")       == false);
+	REQUIRE(isSupportedAudioFile("/path/to/no-ext")     == false);
+}
+
+// isSupportedFile delegates to isSupportedAudioFile on the path.
+TEST_CASE("FileSystemDataSource: isSupportedFile delegates to isSupportedAudioFile", "[Siren][FileSystem]") {
 	TempDir tmp;
-	tmp.touch("my loop.converted.wav");
+	FileSystemDataSource src(tmp.str());
+	REQUIRE(src.isSupportedFile("/path/to/kick.wav") == true);
+	REQUIRE(src.isSupportedFile("/path/to/kick.mp3") == true);
+	REQUIRE(src.isSupportedFile("/path/to/kick.ogg") == false);
+}
+
+// getDisplayName extracts just the filename component from a full path.
+TEST_CASE("FileSystemDataSource: getDisplayName returns filename only", "[Siren][FileSystem]") {
+	TempDir tmp;
+	FileSystemDataSource src(tmp.str());
+	REQUIRE(src.getDisplayName("/home/user/samples/kick.wav") == "kick.wav");
+	REQUIRE(src.getDisplayName("/home/user/samples/drum loop.flac") == "drum loop.flac");
+}
+
+// getRelativePath returns a '/' prefixed path relative to rootPath.
+TEST_CASE("FileSystemDataSource: getRelativePath starts with '/' and is relative to root", "[Siren][FileSystem]") {
+	TempDir tmp;
+	tmp.touch("kick.wav");
+	FileSystemDataSource src(tmp.str());
+
+	auto rel = src.getRelativePath(tmp.filePath("kick.wav"));
+	REQUIRE(rel.front() == '/');
+	REQUIRE(rel.find("kick.wav") != std::string::npos);
+}
+
+// directories sort before files; both groups sort case-insensitively.
+TEST_CASE("loadChildrenSync: directories appear before audio files (case-insensitive sort)", "[Siren][FileSystem]") {
+	TempDir tmp;
+	tmp.touch("Zebra.wav");
+	tmp.touch("alpha.mp3");
+	ghc::filesystem::create_directories(ghc::filesystem::path(tmp.str()) / "Beta");
+	ghc::filesystem::create_directories(ghc::filesystem::path(tmp.str()) / "alpha");
 
 	FileSystemDataSource src(tmp.str());
-	src.getMetadata()->convertToWavOnDrop = true;
+	auto nodes = src.loadChildrenSync(tmp.str());
 
-	REQUIRE(callPrepareForDrop(src, tmp.filePath("my loop.flac"))
-	        == tmp.filePath("my loop.converted.wav"));
+	REQUIRE(nodes.size() == 4);
+	REQUIRE(nodes[0].isContainer == true);
+	REQUIRE(nodes[0].name == "alpha");
+	REQUIRE(nodes[1].isContainer == true);
+	REQUIRE(nodes[1].name == "Beta");
+	REQUIRE(nodes[2].isContainer == false);
+	REQUIRE(nodes[2].name == "alpha.mp3");
+	REQUIRE(nodes[3].isContainer == false);
+	REQUIRE(nodes[3].name == "Zebra.wav");
+}
+
+// ─── randomFileSuffix ───────────────────────────────────────────────────────
+// returns '_siren' + exactly 6 lowercase ASCII letters; integrates with isGeneratedFile.
+TEST_CASE("randomFileSuffix: format is '_siren' + 6 lowercase letters and works with isGeneratedFile", "[Siren][FileSystem]") {
+	auto suffix = randomFileSuffix();
+	REQUIRE(suffix.size() == 12);
+	REQUIRE(suffix.substr(0, 6) == "_siren");
+	for (size_t i = 6; i < suffix.size(); i++)
+		REQUIRE(std::islower(suffix[i]) != 0);
+
+	std::string filename = "kick" + suffix + ".wav";
+	REQUIRE(isGeneratedFile(filename) == true);
+}
+
+// metadataFilePath is derived from rootPath and is stable across instances on the same root.
+TEST_CASE("FileSystemDataSource: metadataFilePath is stable for same root", "[Siren][FileSystem]") {
+	TempDir tmp;
+	FileSystemDataSource src1(tmp.str());
+	FileSystemDataSource src2(tmp.str());
+	REQUIRE(src1.metadataFilePath() == src2.metadataFilePath());
 }

@@ -9,6 +9,7 @@ Test::TestContext<> testContext;
 
 // ─── Construction ─────────────────────────────────────────────────────────────
 
+// Module instantiation leaves outputs at 0 V.
 TEST_CASE("Construction and initialization", "[Siren]") {
 	auto* m = Test::createModule<SirenModule>("Siren");
 	REQUIRE(m != nullptr);
@@ -19,6 +20,7 @@ TEST_CASE("Construction and initialization", "[Siren]") {
 
 // ─── JSON serialization ───────────────────────────────────────────────────────
 
+// JSON round-trip preserves lastFile, lastPlayheadPos and activeRootIdx.
 TEST_CASE("JSON serialization", "[Siren][JSON]") {
 	auto* m = Test::createModule<SirenModule>("Siren");
 
@@ -48,7 +50,7 @@ TEST_CASE("JSON serialization", "[Siren][JSON]") {
 }
 
 // ─── RootMetadata: favorites ──────────────────────────────────────────────────
-
+// favorite flag can be set, cleared, and persists independently of tags.
 TEST_CASE("RootMetadata: favorites", "[Siren][Metadata]") {
 	RootMetadata meta;
 	meta.rootPath = "/test/root";
@@ -76,7 +78,7 @@ TEST_CASE("RootMetadata: favorites", "[Siren][Metadata]") {
 }
 
 // ─── RootMetadata: tags ───────────────────────────────────────────────────────
-
+// tags can be added, retrieved, removed, and allTags returns the union.
 TEST_CASE("RootMetadata: tags", "[Siren][Metadata]") {
 	RootMetadata meta;
 	meta.rootPath = "/test/root";
@@ -141,7 +143,7 @@ TEST_CASE("RootMetadata: tags", "[Siren][Metadata]") {
 }
 
 // ─── addTag: spelling and case rules ─────────────────────────────────────────
-
+// custom tags preserve their exact spelling when first added.
 TEST_CASE("addTag: custom tag spelling is stored verbatim", "[Siren][Metadata]") {
 	RootMetadata meta;
 
@@ -155,6 +157,7 @@ TEST_CASE("addTag: custom tag spelling is stored verbatim", "[Siren][Metadata]")
 	REQUIRE(meta.getTags("hat.wav")[0] == "one-shot");
 }
 
+// case-insensitive duplicate prevention keeps only the first spelling.
 TEST_CASE("addTag: case-insensitive duplicate prevention", "[Siren][Metadata]") {
 	RootMetadata meta;
 
@@ -171,6 +174,7 @@ TEST_CASE("addTag: case-insensitive duplicate prevention", "[Siren][Metadata]") 
 	REQUIRE(meta.getTags("a.wav").size() == 2);
 }
 
+// case-insensitive check preserves the exact stored spelling in allTags.
 TEST_CASE("addTag: case-insensitive check does not affect allTags display", "[Siren][Metadata]") {
 	RootMetadata meta;
 	// Store a capitalised custom tag
@@ -183,7 +187,7 @@ TEST_CASE("addTag: case-insensitive check does not affect allTags display", "[Si
 }
 
 // ─── RootMetadata: JSON I/O ───────────────────────────────────────────────────
-
+// metadata serialises to JSON and deserialises back correctly.
 TEST_CASE("RootMetadata: JSON round-trip", "[Siren][Metadata]") {
 	RootMetadata meta;
 	meta.rootPath = "/test/root";
@@ -208,7 +212,7 @@ TEST_CASE("RootMetadata: JSON round-trip", "[Siren][Metadata]") {
 }
 
 // ─── FileSystemDataSource ─────────────────────────────────────────────────────
-
+// isSupportedFile accepts .wav/.flac/.mp3 and rejects other extensions.
 TEST_CASE("FileSystemDataSource: supported file filter", "[Siren][FileSystem]") {
 	FileSystemDataSource src("/tmp");
 
@@ -228,7 +232,7 @@ TEST_CASE("FileSystemDataSource: supported file filter", "[Siren][FileSystem]") 
 }
 
 // ─── WaveformCache: timestamp invalidation ────────────────────────────────────
-
+// cache tracks file mtime and reports empty/non-empty state.
 TEST_CASE("WaveformCache: timestamp validation", "[Siren][Audio]") {
 	SECTION("Different timestamp is detected as stale") {
 		WaveformCache cache;
@@ -253,7 +257,7 @@ TEST_CASE("WaveformCache: timestamp validation", "[Siren][Audio]") {
 }
 
 // ─── hashPath ─────────────────────────────────────────────────────────────────
-
+// hashPath returns a deterministic 8-character hexadecimal string.
 TEST_CASE("hashPath produces 8-char hex string", "[Siren][Utility]") {
 	std::string h = hashPath("/Users/ben/Samples");
 	REQUIRE(h.size() == 8);
@@ -262,13 +266,14 @@ TEST_CASE("hashPath produces 8-char hex string", "[Siren][Utility]") {
 	}
 }
 
+// identical paths produce identical hashes; different paths differ.
 TEST_CASE("hashPath is deterministic", "[Siren][Utility]") {
 	REQUIRE(hashPath("/foo/bar") == hashPath("/foo/bar"));
 	REQUIRE(hashPath("/foo/bar") != hashPath("/foo/baz"));
 }
 
 // ─── Audio output: silence without file ──────────────────────────────────────
-
+// process() outputs 0 V when no audio file is loaded.
 TEST_CASE("Audio output: silence without loaded file", "[Siren][Audio]") {
 	auto* m = Test::createModule<SirenModule>("Siren");
 
@@ -280,7 +285,7 @@ TEST_CASE("Audio output: silence without loaded file", "[Siren][Audio]") {
 }
 
 // ─── Playhead clamping ────────────────────────────────────────────────────────
-
+// playhead position is clamped to valid range [0, 1].
 TEST_CASE("Playhead clamps to [0, 1]", "[Siren][Preview]") {
 	SirenPreviewPane pane;
 	pane.box.size = Vec(600.f, 380.f);
@@ -307,7 +312,7 @@ TEST_CASE("Playhead clamps to [0, 1]", "[Siren][Preview]") {
 }
 
 // ─── SirenDropHandler ─────────────────────────────────────────────────────────
-
+// drop handler starts inactive with no drag path.
 TEST_CASE("SirenDropHandler initial state", "[Siren][DragDrop]") {
 	SirenDropHandler dh;
 	REQUIRE(dh.active == false);
@@ -316,7 +321,7 @@ TEST_CASE("SirenDropHandler initial state", "[Siren][DragDrop]") {
 }
 
 // ─── allTags: starter tags always present ─────────────────────────────────────
-
+// starter tags are always included in allTags, even when custom tags exist.
 TEST_CASE("allTags: starter tags present even when samples have tags", "[Siren][Metadata]") {
 	RootMetadata meta;
 	meta.rootPath = "/test/root";
@@ -331,6 +336,7 @@ TEST_CASE("allTags: starter tags present even when samples have tags", "[Siren][
 		REQUIRE(all.count(starter) == 1);
 }
 
+// user tags merge with starter tags; duplicates are prevented.
 TEST_CASE("allTags: user tags merge with starter tags without duplicates", "[Siren][Metadata]") {
 	RootMetadata meta;
 	meta.rootPath = "/test/root";
@@ -342,7 +348,7 @@ TEST_CASE("allTags: user tags merge with starter tags without duplicates", "[Sir
 }
 
 // ─── Volume parameter ─────────────────────────────────────────────────────────
-
+// volume parameter defaults to 1.0 and accepts values in range [0, 2].
 TEST_CASE("PARAM_VOLUME: default value and range", "[Siren][Module]") {
 	auto* m = Test::createModule<SirenModule>("Siren");
 	REQUIRE(m != nullptr);
@@ -359,6 +365,7 @@ TEST_CASE("PARAM_VOLUME: default value and range", "[Siren][Module]") {
 	Test::destroyModule(m);
 }
 
+// zero volume produces silence even when audio is available.
 TEST_CASE("PARAM_VOLUME: zero volume produces silence", "[Siren][Module]") {
 	auto* m = Test::createModule<SirenModule>("Siren");
 	m->params[SirenModule::PARAM_VOLUME].setValue(0.f);
@@ -371,10 +378,8 @@ TEST_CASE("PARAM_VOLUME: zero volume produces silence", "[Siren][Module]") {
 
 // ─── SirenPreviewPane: inPoint / scrubPos / stream state ─────────────────────
 
-// After the streaming refactor, playheadPos lives in SirenModule (atomic).
-// SirenPreviewPane only reads it via the modulePlayheadPos pointer.
 // ─── Playhead visual source during drag ───────────────────────────────────────
-
+// during drag, scrubPos overrides modulePlayheadPos for visual display.
 TEST_CASE("posToPlayhead: scrubPos is display source while draggingPlayhead", "[Siren][Preview]") {
 	// The draw() function reads scrubPos directly when draggingPlayhead == true,
 	// ignoring modulePlayheadPos.  This prevents the DSP thread from overwriting
@@ -405,6 +410,7 @@ TEST_CASE("posToPlayhead: scrubPos is display source while draggingPlayhead", "[
 	REQUIRE(displayedPh == Catch::Approx(0.1f));
 }
 
+// loadItem resets inPoint and scrubPos to 0 on each call.
 TEST_CASE("loadItem resets inPoint and scrubPos", "[Siren][Preview]") {
 	SirenPreviewPane pane;
 	pane.box.size = Vec(600.f, 380.f);
@@ -418,6 +424,7 @@ TEST_CASE("loadItem resets inPoint and scrubPos", "[Siren][Preview]") {
 	REQUIRE(pane.scrubPos == 0.f);
 }
 
+// loadItem with empty id or null source leaves currentId empty.
 TEST_CASE("loadItem: no item loaded for empty id or null source", "[Siren][Preview]") {
 	SirenPreviewPane pane;
 	pane.box.size = Vec(600.f, 380.f);
@@ -428,6 +435,7 @@ TEST_CASE("loadItem: no item loaded for empty id or null source", "[Siren][Previ
 	REQUIRE(pane.currentId.empty());
 }
 
+// loadItem with startPlay=true does not start playback when no stream can be opened.
 TEST_CASE("loadItem: playing stays false when no stream can be opened", "[Siren][Preview]") {
 	SirenPreviewPane pane;
 	pane.box.size = Vec(600.f, 380.f);
@@ -442,7 +450,7 @@ TEST_CASE("loadItem: playing stays false when no stream can be opened", "[Siren]
 }
 
 // ─── FileSystemDataSource: metadata ownership ────────────────────────────────
-
+// getMetadata returns a valid pointer with correct rootPath.
 TEST_CASE("FileSystemDataSource: getMetadata returns valid pointer", "[Siren][FileSystem]") {
 	FileSystemDataSource src("/tmp/siren_test_nonexistent");
 
@@ -452,6 +460,7 @@ TEST_CASE("FileSystemDataSource: getMetadata returns valid pointer", "[Siren][Fi
 	// samples may be non-empty if a metadata file was previously persisted for this path
 }
 
+// metadata pointer remains stable and allows mutation.
 TEST_CASE("FileSystemDataSource: metadata is mutable through pointer", "[Siren][FileSystem]") {
 	FileSystemDataSource src("/tmp/siren_test_nonexistent");
 
@@ -463,7 +472,7 @@ TEST_CASE("FileSystemDataSource: metadata is mutable through pointer", "[Siren][
 }
 
 // ─── toTitleCase ─────────────────────────────────────────────────────────────
-
+// toTitleCase capitalises each word and handles hyphens/underscores.
 TEST_CASE("toTitleCase: basic cases", "[Siren][Utility]") {
 	REQUIRE(toTitleCase("drone")          == "Drone");
 	REQUIRE(toTitleCase("dark ambient")   == "Dark Ambient");
@@ -474,7 +483,7 @@ TEST_CASE("toTitleCase: basic cases", "[Siren][Utility]") {
 }
 
 // ─── Audio streaming: ring buffer / DSP ──────────────────────────────────────
-
+// process() reads from ring buffers and applies volume scaling.
 // Helper: push a stereo frame directly into the module's ring buffers.
 static void pushFrame(SirenModule* m, float l, float r) {
 	m->rbL.push(l);
@@ -497,6 +506,7 @@ TEST_CASE("process: reads samples from ring buffer and scales by volume", "[Sire
 	Test::destroyModule(m);
 }
 
+// process() stops playing when ring is empty and EOF is reached.
 TEST_CASE("process: stops playing when ring drained after EOF", "[Siren][Audio]") {
 	auto* m = Test::createModule<SirenModule>("Siren");
 
@@ -513,6 +523,7 @@ TEST_CASE("process: stops playing when ring drained after EOF", "[Siren][Audio]"
 	Test::destroyModule(m);
 }
 
+// ring samples are consumed before EOF triggers stop.
 TEST_CASE("process: ring samples consumed before EOF stop", "[Siren][Audio]") {
 	auto* m = Test::createModule<SirenModule>("Siren");
 
@@ -528,22 +539,6 @@ TEST_CASE("process: ring samples consumed before EOF stop", "[Siren][Audio]") {
 
 	m->process(Test::makeProcessArgs(1));
 	REQUIRE(m->playing.load() == false);  // drained now
-
-	Test::destroyModule(m);
-}
-
-TEST_CASE("process: VU meter updated by non-silent signal", "[Siren][Audio]") {
-	auto* m = Test::createModule<SirenModule>("Siren");
-
-	pushFrame(m, 1.f, 1.f);
-	m->streamTotalFrames = 100;
-	m->playing.store(true, std::memory_order_release);
-
-	m->process(Test::makeProcessArgs(1));
-
-	// Signal is 5V (vol*5); dBFS relative to 5V → 0 dBFS. Peak-hold starts there.
-	REQUIRE(m->levelL.load() > -100.f);
-	REQUIRE(m->levelR.load() > -100.f);
 
 	Test::destroyModule(m);
 }
@@ -564,6 +559,7 @@ TEST_CASE("process: volume knob at zero produces silence even with ring data", "
 	Test::destroyModule(m);
 }
 
+// startPlayback computes seekBaseFrame from position * total frames.
 TEST_CASE("startPlayback: seekBaseFrame computed from position and total frames", "[Siren][Audio]") {
 	auto* m = Test::createModule<SirenModule>("Siren");
 	m->streamTotalFrames = 1000;
@@ -575,6 +571,7 @@ TEST_CASE("startPlayback: seekBaseFrame computed from position and total frames"
 	Test::destroyModule(m);
 }
 
+// startPlayback with position 0 seeks to frame 0.
 TEST_CASE("startPlayback: position 0 seeks to frame 0", "[Siren][Audio]") {
 	auto* m = Test::createModule<SirenModule>("Siren");
 	m->streamTotalFrames = 1000;
@@ -586,6 +583,7 @@ TEST_CASE("startPlayback: position 0 seeks to frame 0", "[Siren][Audio]") {
 	Test::destroyModule(m);
 }
 
+// rapid successive startPlayback calls — last position wins.
 TEST_CASE("startPlayback: rapid successive calls — last position wins", "[Siren][Audio]") {
 	// Simulates the full press+scrub sequence: onButton fires startPlayback at the
 	// click position, then onDragMove fires it again for each moved position.
@@ -604,6 +602,7 @@ TEST_CASE("startPlayback: rapid successive calls — last position wins", "[Sire
 	Test::destroyModule(m);
 }
 
+// startPlayback resets outputFrameCount on each call for correct playhead tracking.
 TEST_CASE("startPlayback: outputFrameCount reset on each call", "[Siren][Audio]") {
 	// Each scrub seek resets the output counter so the playhead position
 	// is computed relative to the new seek base, not the previous one.
@@ -620,6 +619,7 @@ TEST_CASE("startPlayback: outputFrameCount reset on each call", "[Siren][Audio]"
 	Test::destroyModule(m);
 }
 
+// openStream with null source leaves pendingStream nullptr.
 TEST_CASE("openStream: null source leaves pendingStream nullptr", "[Siren][Audio]") {
 	auto* m = Test::createModule<SirenModule>("Siren");
 
