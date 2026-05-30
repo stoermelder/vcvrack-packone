@@ -18,12 +18,12 @@ struct AudioInfo {
 };
 
 struct WaveformCache {
-	// peaks[channel][bucket] = {min, max} normalized to [-1, 1]
-	std::vector<std::vector<std::pair<float, float>>> peaks;
-	int bucketCount = 0;
+	// samples[channel][i] = sample value [-1, 1], decimated for display
+	std::vector<std::vector<float>> samples;
+	int sampleCount = 0;
 	int64_t fileTimestamp = 0;
 
-	bool empty() const { return peaks.empty() || bucketCount == 0; }
+	bool empty() const { return samples.empty() || sampleCount == 0; }
 };
 
 // ─── file timestamp ───────────────────────────────────────────────────────────
@@ -36,47 +36,67 @@ inline int64_t getFileTimestamp(const std::string& path) {
 	catch (...) { return 0; }
 }
 
-// ─── waveform cache building (format-agnostic) ───────────────────────────────
+// ─── base64 helpers ───────────────────────────────────────────────────────────
 
-// Build a peak waveform from pre-decoded interleaved float samples.
-// timestamp is supplied by the caller (from the data source) for cache validation.
-inline bool buildWaveformCache(int64_t timestamp, const std::vector<float>& samples,
-		int64_t frameCount, int channels, int pixelWidth, WaveformCache& out) {
+static const char B64_ENC[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
-	if (pixelWidth <= 0 || frameCount == 0 || channels == 0) return false;
+inline std::string b64Encode(const uint8_t* data, size_t len) {
+	std::string out;
+	out.reserve((len + 2) / 3 * 4);
+	for (size_t i = 0; i < len; i += 3) {
+		uint32_t n = (uint32_t)data[i] << 16;
+		if (i + 1 < len) n |= (uint32_t)data[i + 1] << 8;
+		if (i + 2 < len) n |= (uint32_t)data[i + 2];
+		out += B64_ENC[(n >> 18) & 63];
+		out += B64_ENC[(n >> 12) & 63];
+		out += (i + 1 < len) ? B64_ENC[(n >> 6) & 63] : '=';
+		out += (i + 2 < len) ? B64_ENC[n        & 63] : '=';
+	}
+	return out;
+}
 
-	out.bucketCount = pixelWidth;
-	out.peaks.assign(channels, std::vector<std::pair<float, float>>(pixelWidth, {0.f, 0.f}));
-	out.fileTimestamp = timestamp;
+inline std::vector<uint8_t> b64Decode(const std::string& s) {
+	// Build decode table on first call
+	static int8_t lut[256] = {};
+	static bool lutReady = false;
+	if (!lutReady) {
+		memset(lut, -1, sizeof(lut));
+		for (int i = 0; i < 64; i++) lut[(uint8_t)B64_ENC[i]] = (int8_t)i;
+		lutReady = true;
+	}
 
-	double framesPerBucket = (double)frameCount / (double)pixelWidth;
-	for (int ch = 0; ch < channels; ch++) {
-		for (int b = 0; b < pixelWidth; b++) {
-			int64_t start = (int64_t)(b * framesPerBucket);
-			int64_t end   = (int64_t)((b + 1) * framesPerBucket);
-			if (end > frameCount) end = frameCount;
-			float mn = 0.f, mx = 0.f;
-			for (int64_t f = start; f < end; f++) {
-				float s = samples[(size_t)(f * channels + ch)];
-				if (s < mn) mn = s;
-				if (s > mx) mx = s;
-			}
-			out.peaks[ch][b] = {mn, mx};
+	std::vector<uint8_t> out;
+	out.reserve(s.size() / 4 * 3);
+	uint32_t acc = 0;
+	int bits = 0;
+	for (char c : s) {
+		if (c == '=') break;
+		int8_t v = lut[(uint8_t)c];
+		if (v < 0) continue;
+		acc = (acc << 6) | (uint32_t)v;
+		bits += 6;
+		if (bits >= 8) {
+			bits -= 8;
+			out.push_back((uint8_t)(acc >> bits));
 		}
 	}
-	return true;
+	return out;
 }
 
 // ─── waveform cache file I/O ─────────────────────────────────────────────────
+//
+// JSON file with metadata fields + per-channel base64-encoded int16 sample data.
+// Each channel's samples are scaled to [-32767, 32767], packed as little-endian
+// int16, then base64-encoded into a JSON string.
 
 // expectedTimestamp == 0 disables cache validation (always load if file exists).
-inline bool loadWaveformCacheFile(const std::string& cacheJsonPath, int64_t expectedTimestamp, WaveformCache& out) {
+inline bool loadWaveformCacheFile(const std::string& cachePath, int64_t expectedTimestamp, WaveformCache& out) {
 	if (isTesting()) return false;
-	FILE* file = fopen(cacheJsonPath.c_str(), "r");
-	if (!file) return false;
+	FILE* f = fopen(cachePath.c_str(), "r");
+	if (!f) return false;
 	json_error_t error;
-	json_t* rootJ = json_loadf(file, 0, &error);
-	fclose(file);
+	json_t* rootJ = json_loadf(f, 0, &error);
+	fclose(f);
 	if (!rootJ) return false;
 	DEFER({ json_decref(rootJ); });
 
@@ -85,55 +105,59 @@ inline bool loadWaveformCacheFile(const std::string& cacheJsonPath, int64_t expe
 	int64_t storedTs = (int64_t)json_integer_value(tsJ);
 	if (expectedTimestamp != 0 && storedTs != expectedTimestamp) return false;
 
-	json_t* bucketsJ = json_object_get(rootJ, "bucketCount");
-	if (!bucketsJ) return false;
-	out.bucketCount = (int)json_integer_value(bucketsJ);
-	out.fileTimestamp = storedTs;
-	out.peaks.clear();
+	json_t* scJ = json_object_get(rootJ, "sampleCount");
+	if (!scJ) return false;
+	int sampleCount = (int)json_integer_value(scJ);
+	if (sampleCount <= 0) return false;
 
 	json_t* channelsJ = json_object_get(rootJ, "channels");
 	if (!channelsJ || !json_is_array(channelsJ)) return false;
+
+	out.fileTimestamp = storedTs;
+	out.sampleCount   = sampleCount;
+	out.samples.clear();
+
 	size_t ch; json_t* chJ;
 	json_array_foreach(channelsJ, ch, chJ) {
-		std::vector<std::pair<float, float>> chPeaks;
-		if (!json_is_array(chJ)) continue;
-		size_t b; json_t* bucketJ;
-		json_array_foreach(chJ, b, bucketJ) {
-			if (!json_is_array(bucketJ) || json_array_size(bucketJ) < 2) {
-				chPeaks.push_back({0.f, 0.f}); continue;
-			}
-			float mn = (float)json_real_value(json_array_get(bucketJ, 0));
-			float mx = (float)json_real_value(json_array_get(bucketJ, 1));
-			chPeaks.push_back({mn, mx});
+		if (!json_is_string(chJ)) return false;
+		auto bytes = b64Decode(json_string_value(chJ));
+		if ((int)bytes.size() < sampleCount * 2) return false;
+
+		std::vector<float> chSamples(sampleCount);
+		for (int i = 0; i < sampleCount; i++) {
+			int16_t v;
+			memcpy(&v, bytes.data() + i * 2, 2);
+			chSamples[i] = v / 32767.f;
 		}
-		out.peaks.push_back(std::move(chPeaks));
+		out.samples.push_back(std::move(chSamples));
 	}
-	return !out.peaks.empty();
+	return !out.samples.empty();
 }
 
-inline void saveWaveformCacheFile(const std::string& cacheJsonPath, const WaveformCache& cache) {
+inline void saveWaveformCacheFile(const std::string& cachePath, const WaveformCache& cache) {
 	if (isTesting()) return;
+	if (cache.samples.empty() || cache.sampleCount == 0) return;
+
 	json_t* rootJ = json_object();
 	json_object_set_new(rootJ, "timestamp",   json_integer(cache.fileTimestamp));
-	json_object_set_new(rootJ, "bucketCount", json_integer(cache.bucketCount));
+	json_object_set_new(rootJ, "sampleCount", json_integer(cache.sampleCount));
 
 	json_t* channelsJ = json_array();
-	for (const auto& chPeaks : cache.peaks) {
-		json_t* chJ = json_array();
-		for (const auto& p : chPeaks) {
-			json_t* bucketJ = json_array();
-			json_array_append_new(bucketJ, json_real(p.first));
-			json_array_append_new(bucketJ, json_real(p.second));
-			json_array_append_new(chJ, bucketJ);
+	std::vector<uint8_t> bytes((size_t)cache.sampleCount * 2);
+	for (const auto& chSamples : cache.samples) {
+		for (int i = 0; i < cache.sampleCount; i++) {
+			int16_t v = (int16_t)(chSamples[i] * 32767.f);
+			memcpy(bytes.data() + i * 2, &v, 2);
 		}
-		json_array_append_new(channelsJ, chJ);
+		std::string encoded = b64Encode(bytes.data(), bytes.size());
+		json_array_append_new(channelsJ, json_string(encoded.c_str()));
 	}
 	json_object_set_new(rootJ, "channels", channelsJ);
 
-	FILE* file = fopen(cacheJsonPath.c_str(), "w");
-	if (file) {
-		json_dumpf(rootJ, file, JSON_INDENT(2) | JSON_REAL_PRECISION(9));
-		fclose(file);
+	FILE* f = fopen(cachePath.c_str(), "w");
+	if (f) {
+		json_dumpf(rootJ, f, 0);
+		fclose(f);
 	}
 	json_decref(rootJ);
 }

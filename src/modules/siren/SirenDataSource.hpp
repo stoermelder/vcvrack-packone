@@ -45,16 +45,18 @@ inline bool buildWaveformCache(int64_t timestamp, AudioStream& stream, int pixel
 	int64_t total = stream.totalFrames();
 	if (pixelWidth <= 0 || total <= 0 || channels <= 0) return false;
 
-	out.bucketCount = pixelWidth;
-	out.peaks.assign(channels, std::vector<std::pair<float,float>>(pixelWidth, {0.f, 0.f}));
+	int sampleRes = std::min(pixelWidth * 8, 8192);
+	out.sampleCount   = sampleRes;
 	out.fileTimestamp = timestamp;
+	out.samples.assign(channels, std::vector<float>(sampleRes, 0.f));
 
 	const int64_t BUF_FRAMES = 65536;
 	std::vector<float> buf((size_t)(BUF_FRAMES * channels));
-	double framesPerBucket = (double)total / (double)pixelWidth;
+	double framesPerSample = (double)total / (double)sampleRes;
 	int64_t framePos = 0;
-	int curBucket = 0;
-	int64_t nextBoundary = (pixelWidth > 1) ? (int64_t)(framesPerBucket) : total;
+	int curSample    = 0;
+	bool sampleTaken = false;
+	int64_t nextSampleBoundary = (sampleRes > 1) ? (int64_t)(framesPerSample) : total;
 
 	while (framePos < total) {
 		int64_t toRead = std::min(BUF_FRAMES, total - framePos);
@@ -62,17 +64,16 @@ inline bool buildWaveformCache(int64_t timestamp, AudioStream& stream, int pixel
 		if (got <= 0) break;
 
 		for (int64_t f = 0; f < got; f++) {
-			// Advance bucket when the running frame position crosses the next boundary.
-			while (framePos + f >= nextBoundary && curBucket < pixelWidth - 1) {
-				curBucket++;
-				nextBoundary = (curBucket + 1 < pixelWidth)
-				             ? (int64_t)((curBucket + 1) * framesPerBucket) : total;
+			while (framePos + f >= nextSampleBoundary && curSample < sampleRes - 1) {
+				curSample++;
+				sampleTaken = false;
+				nextSampleBoundary = (curSample + 1 < sampleRes)
+				                   ? (int64_t)((curSample + 1) * framesPerSample) : total;
 			}
-			for (int ch = 0; ch < channels; ch++) {
-				float s = buf[(size_t)(f * channels + ch)];
-				auto& p = out.peaks[ch][curBucket];
-				if (s < p.first)  p.first  = s;
-				if (s > p.second) p.second = s;
+			if (!sampleTaken) {
+				for (int ch = 0; ch < channels; ch++)
+					out.samples[ch][curSample] = buf[(size_t)(f * channels + ch)];
+				sampleTaken = true;
 			}
 		}
 		framePos += got;
