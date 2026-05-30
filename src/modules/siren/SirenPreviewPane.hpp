@@ -299,9 +299,17 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			}
 		}
 		else if (cacheBuilding) {
-			nvgFontSize(args.vg, 10.f);
-			nvgFillColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.28f));
-			nvgText(args.vg, WAVE_X + 4.f, waveY + waveH * 0.5f + 4.f, "Building waveform…", nullptr);
+			float oy = waveY + waveH * 0.5f - 9.f;
+			nvgBeginPath(args.vg);
+			nvgRoundedRect(args.vg, WAVE_X, oy, waveW, 18.f, 3.f);
+			nvgFillColor(args.vg, nvgRGBAf(0.f, 0.f, 0.f, 0.65f));
+			nvgFill(args.vg);
+			nvgFontFaceId(args.vg, APP->window->uiFont->handle);
+			nvgFontSize(args.vg, BND_LABEL_FONT_SIZE);
+			nvgFillColor(args.vg, nvgRGBf(1.f, 0.85f, 0.1f));
+			nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+			nvgText(args.vg, WAVE_X + waveW * 0.5f, oy + 9.f, "Building waveform…", nullptr);
+			nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_BASELINE);
 		}
 
 		// Tick marks along waveform bottom
