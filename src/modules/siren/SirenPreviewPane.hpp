@@ -61,7 +61,6 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	std::atomic<bool>*  modulePlaying     = nullptr;
 	std::atomic<float>* moduleInPoint     = nullptr;  // UI writes, DSP reads for loop start
 	std::atomic<float>* moduleOutPoint    = nullptr;  // UI writes, DSP reads for stop frame
-	std::atomic<bool>*  moduleLooping     = nullptr;  // UI writes, DSP reads for loop toggle
 
 	// Pending waveform cache from worker
 	std::atomic<int> cacheGeneration{0};
@@ -529,14 +528,10 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			inPoint == 0.f && outPoint == 1.f
 		));
 
-		// Loop playback toggle
+		// Loop playback toggle — persisted globally via onLoopingChanged callback
 		menu->addChild(createCheckMenuItem("Loop playback", "",
-			[this]() { return moduleLooping && moduleLooping->load(std::memory_order_relaxed); },
-			[this]() {
-				if (moduleLooping)
-					moduleLooping->store(!moduleLooping->load(std::memory_order_relaxed),
-					                     std::memory_order_relaxed);
-			}
+			[]() { return sirenSettings.loopPlayback; },
+			[]() { sirenSettings.loopPlayback = !sirenSettings.loopPlayback; }
 		));
 		
 		menu->addChild(new ui::MenuSeparator);

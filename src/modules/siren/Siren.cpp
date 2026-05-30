@@ -64,7 +64,6 @@ struct SirenModule : Module {
 	std::atomic<float> playheadPos{0.f};     // DSP writes; UI reads for display
 	std::atomic<float> trimIn{0.f};          // UI writes; DSP reads for loop restart position
 	std::atomic<float> trimOut{1.f};         // UI writes; DSP reads to compute stop frame
-	std::atomic<bool>  looping{false};       // UI writes; DSP reads to decide loop vs stop
 
 	// Position counters — written before playing=true (release), read after playing (acquire)
 	int64_t              seekBaseFrame     = 0;  // file frame at which this play session began
@@ -203,7 +202,7 @@ struct SirenModule : Module {
 
 			// ── fill: keep ring topped up while playing ───────────────────
 			if (playing.load(std::memory_order_relaxed) && stream && !eofReached.load(std::memory_order_relaxed)) {
-				bool   isLooping    = looping.load(std::memory_order_relaxed);
+				bool   isLooping    = sirenSettings.loopPlayback;
 				int64_t totalFrames = streamTotalFrames;
 
 				// Seamless autonomous loop: when the fill position reaches trimOut, seek the
@@ -349,7 +348,7 @@ struct SirenModule : Module {
 					int64_t stopAtOut = (int64_t)(((float)stopAt - (float)seekBaseFrame) * ratio);
 					if (count >= stopAtOut
 					        && pendingSeekFrame.load(std::memory_order_relaxed) < 0) {
-						if (looping.load(std::memory_order_relaxed)) {
+						if (sirenSettings.loopPlayback) {
 							// The fill thread has already wrapped at trimOut → trimIn seamlessly,
 							// so the ring already contains the next iteration's audio.
 							// Only the display counters need resetting — no seek, no ring clear.
@@ -365,7 +364,7 @@ struct SirenModule : Module {
 			}
 			else if (eofReached.load(std::memory_order_acquire)) {
 				// Ring drained and fill thread hit EOF
-				if (looping.load(std::memory_order_relaxed)
+				if (sirenSettings.loopPlayback
 				        && pendingSeekFrame.load(std::memory_order_relaxed) < 0) {
 					int64_t total = streamTotalFrames;
 					int64_t loopStart = (int64_t)(trimIn.load(std::memory_order_relaxed) * (float)total);
@@ -699,7 +698,6 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 			previewPane->modulePlaying     = &module->playing;
 			previewPane->moduleInPoint     = &module->trimIn;
 			previewPane->moduleOutPoint    = &module->trimOut;
-			previewPane->moduleLooping     = &module->looping;
 		}
 
 		// Refresh browser when preview pane modifies metadata

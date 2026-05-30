@@ -27,6 +27,7 @@ struct SirenSettings {
 	int activeRootIdx = -1;
 	std::string lastFile;
 	float lastPlayheadPos = 0.f;
+	bool loopPlayback       = false;
 	bool resampleOnPlayback = true;
 	bool resampleOnDrop     = true;
 	bool convertToWavOnDrop = false;
@@ -61,6 +62,7 @@ struct SirenSettings {
 		json_object_set_new(j, "activeRootIdx", json_integer(activeRootIdx));
 		json_object_set_new(j, "lastFile", json_string(lastFile.c_str()));
 		json_object_set_new(j, "lastPlayheadPos", json_real(lastPlayheadPos));
+		json_object_set_new(j, "loopPlayback",        json_boolean(loopPlayback));
 		json_object_set_new(j, "resampleOnPlayback", json_boolean(resampleOnPlayback));
 		json_object_set_new(j, "resampleOnDrop",     json_boolean(resampleOnDrop));
 		json_object_set_new(j, "convertToWavOnDrop", json_boolean(convertToWavOnDrop));
@@ -80,6 +82,7 @@ struct SirenSettings {
 		v = json_object_get(j, "activeRootIdx");      if (v) activeRootIdx = (int)json_integer_value(v);
 		v = json_object_get(j, "lastFile");            if (v) lastFile = json_string_value(v);
 		v = json_object_get(j, "lastPlayheadPos");     if (v) lastPlayheadPos = (float)json_real_value(v);
+		v = json_object_get(j, "loopPlayback");         if (v) loopPlayback = json_boolean_value(v);
 		v = json_object_get(j, "resampleOnPlayback");  if (v) resampleOnPlayback = json_boolean_value(v);
 		v = json_object_get(j, "resampleOnDrop");      if (v) resampleOnDrop = json_boolean_value(v);
 		v = json_object_get(j, "convertToWavOnDrop");  if (v) convertToWavOnDrop = json_boolean_value(v);
