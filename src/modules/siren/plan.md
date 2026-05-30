@@ -1,8 +1,12 @@
-# Siren: VCV Rack Sample Browser Module — Implementation Plan
+# Siren: VCV Rack Sample Browser Module — Implementation Status
+
+**Last Updated:** May 30, 2026
 
 ## Context
 
-Siren is a new wide-panel VCV Rack module that provides a file-system sample browser with waveform preview, drag-to-other-modules support, user tagging/favorites, and groundwork for future trim/volume-curve editing. It follows the same settings-persistence and UI patterns already established in this plugin (MB, MidiCat).
+Siren is a wide-panel VCV Rack module that provides a file-system sample browser with waveform preview, drag-to-other-modules support, user tagging/favorites, trim/loop editing, resampling, and streaming playback. It follows the same settings-persistence and UI patterns established in this plugin (MB, MidiCat).
+
+**Overall Status:** ✅ **FEATURE-COMPLETE** — All core functionality is implemented and tested. The module is ready for polishing, optimization, and edge-case handling.
 
 ---
 
@@ -21,12 +25,19 @@ SirenWidget (ThemedModuleWidget<SirenModule>)
 ```
 
 **Settings split:**
-- `SirenSettings` (self-contained struct in `Siren.cpp`) — global: root containers, active root index, last file, last playhead. Persisted to `~/.../Stoermelder-P1/siren.json`.
-- `dataToJson`/`dataFromJson` — patch-local: last file, playhead, active root. Takes priority over global settings on restore.
-- Per-root metadata (`RootMetadata`) — tags and favorites, persisted to `siren-<8-char-hash>.json` alongside `siren.json`.
+- `SirenSettings` (self-contained struct in `Siren.hpp`) — global: root containers, active root index, last file, last playhead, resampling/conversion toggles. Persisted to `~/.../Stoermelder-P1/siren.json`.
+  - `rootContainers: std::vector<std::string>` — list of sample library root directories
+  - `activeRootIdx: int` — which root is currently active (-1 = none)
+  - `lastFile: std::string` — relative path to the file last loaded
+  - `lastPlayheadPos: float` — playhead position [0, 1] in the last file
+  - `resampleOnPlayback: bool` (default true) — enable SRC when file sample rate ≠ engine sample rate
+  - `resampleOnDrop: bool` (default true) — enable SRC for drag-dropped files that need conversion
+  - `convertToWavOnDrop: bool` (default false) — global default; per-root setting overrides this (see Phase 7b)
+- `dataToJson`/`dataFromJson` — patch-local: last file, playhead, active root (takes priority on restore)
+- Per-root metadata (`RootMetadata`) — tags and favorites, persisted to `siren-<8-char-hash>.json` alongside `siren.json`. Also stores per-root `convertToWavOnDrop` setting.
 
 **Audio ownership chain:**  
-UI calls `SirenModule::openStream()` → transfers `AudioStream*` to the fill thread via `pendingStream` atomic. UI calls `startPlayback(pos)` → posts `pendingSeekFrame`. Fill thread populates `rbL`/`rbR`; `process()` drains them on the DSP thread. No mutex on the audio path — only atomics and ring buffers.
+UI calls `SirenModule::openStream()` → transfers `AudioStream*` to the fill thread via `pendingStream` atomic. UI calls `startPlayback(pos)` → posts `pendingSeekFrame`. Fill thread populates `rbL`/`rbR` with resampling if enabled; `process()` drains them on the DSP thread. Zero-crossing lookahead applied before playback start to avoid clicks. No mutex on the audio path — only atomics and ring buffers.
 
 ---
 
@@ -53,7 +64,9 @@ dep/hidapi/              — (unrelated to Siren)
 
 ---
 
-## Phase 1 — Settings & Persistence ✅ DONE
+## Implementation Phases
+
+### Phase 1 — Settings & Persistence ✅ DONE
 
 ### File paths (follow pluginsettings.cpp pattern)
 ```cpp
@@ -421,9 +434,7 @@ stopPlayback()  ──flag──▶ drain + playing=false
 
 **`dataToJson()` persists:** last file path, last playhead position, active root index. Restored by `SirenWidget` constructor using the module's persisted values (patch priority) or global `sirenSettings` as fallback.
 
----
-
-## Phase 9 — Tests ✅ DONE
+### Phase 9 — Tests ✅ DONE
 
 Tests are co-located with source and follow the project pattern (`*.test.cpp` using Catch2 + `Test::TestContext`). Two test files:
 
@@ -537,6 +548,85 @@ Test infrastructure:
 - Control points stored per-sample in `RootMetadata`.
 - Applied at export time by multiplying samples by the envelope.
 - Architecture: `VolumeEnvelope` struct with `std::vector<Vec> controlPoints`, serialized in `siren-<root>.json`.
+
+---
+
+## Beyond the Original Plan: Features Added During Implementation ✅
+
+The following features were implemented beyond the initial plan to enhance the module's capabilities:
+
+### 10. Playback Looping & Trim Region Export
+- **Trim handles (IN/OUT points):** Full interactive editing in the waveform preview pane. Both handles display as gold vertical lines with downward triangles; IN/OUT regions highlighted in the waveform. Drag handles horizontally to adjust trim boundaries. Trim state persists per-file (stored in `inPoint`/`outPoint` float).
+- **Loop mode:** `looping` atomic boolean switches between one-shot and loop-until-stop. Loop respects trim boundaries — playback loops from `trimIn` to `trimOut` position, then restarts. DSP thread monitors trim point crossings via `seekBaseFrame + outputFrameCount`.
+- **Playhead readout:** Bottom bar displays `IN`/`OUT`/`LEN`/`POS` times in `mm:ss.ff` format, updating live during scrubbing and playback.
+- **Trim export (deferred):** Placeholder UI exists for exporting trimmed region to a named file. Currently not implemented; framework in place for future expansion.
+
+### 11. Resampling & Sample Rate Conversion
+- **On-playback resampling:** `resampleOnPlayback` (global setting, default true) enables SRC when file sample rate ≠ engine sample rate. Uses Rack's `dsp::SampleRateConverter<2>` with high-quality polyphase filtering.
+- **On-drop resampling:** `resampleOnDrop` (global setting, default true) enables SRC for drag-dropped files that need conversion before being handed off to target modules.
+- **Zero-crossing lookahead:** Before each seek, the fill thread scans ahead up to 2048 frames to find the first zero crossing of the left channel. Playback begins just after the crossing, eliminating clicks at the start of playback.
+- **Fill thread SRC setup:** Resampler configured once per seek with `src.setChannels(fillCh)` and `src.setRates(inRate, outRate)`. Resampler state persists across the entire playback session for computational efficiency.
+
+### 12. Advanced File Search & Filtering
+- **Live search field:** Text input in the top bar filters the tree by filename (case-insensitive, substring match). Search hides containers and shows only matching files below them. Cleared on ESC.
+- **Favorites-only view:** `favoritesOnly` toggle (accessible via tag chip hover or menu) shows only starred files and parent containers.
+- **Multi-tag filtering:** `tagFilter` set in browser. Clicking a tag chip toggles it; displaying files that have **all selected tags** (AND logic). Containers shown if they have descendant files matching all selected tags.
+- **Efficient filtering:** Container visibility computed via `containerHasMatchingDescendant()` by scanning `RootMetadata::samples` keys (no expensive recursive tree walk).
+
+### 13. Generated/Converted File Filtering
+- **Naming pattern:** Files matching `_siren` + 6 lowercase random hex digits + `.wav` (exact format: `*_siren[a-z0-9]{6}.wav`) are recognized as Siren-generated and automatically hidden from all directory listings.
+  - Pattern position checked: must appear at `filename.size() - 16` to avoid false matches.
+- **WAV conversion artifacts:** When `convertToWavOnDrop` is enabled for a source, drag-dropped FLAC/MP3 files are converted to WAV using dr_libs and saved as `<original>_siren<random>.wav`. Converted files are skipped in browser listings.
+- **Conversion idempotence:** If the converted file already exists (detected by filename), conversion is skipped and the existing file is dropped instead.
+
+### 14. Search Breadcrumb & Auto-Expand
+- **Selected file path display:** When a file is selected, its relative path is shown in the preview pane top bar and updated on each file change.
+- **Implicit expand:** Selecting a deeply nested file in search results shows the path leading to it in the browser tree, with parent containers expanded (partial implementation; full breadcrumb UI pending).
+
+### 15. VU Meter & Real-Time Level Display
+- **Dual-channel peak-hold meter:** `SirenVuMeter` widget displays `levelL` and `levelR` (in dBFS, range −100 to 0) as dual LED bars above the output ports.
+- **DSP integration:** On every `lightDivider` cycle (default 256 samples), peak-hold logic in `process()` captures the maximum signal level across the cycle, applies 30 dB/s decay, and exports to atomic floats.
+- **Display colors:** LED bars use standard Rack colormap (green → yellow → red as level increases).
+
+### 16. File Metadata Persistence & Per-Root Settings
+- **RootMetadata JSON:** One file per root (`siren-<8-char-hash>.json`) stores:
+  - `rootPath: string` — the original root directory for validation
+  - `favorites: [ relative paths... ]` — list of starred samples
+  - `samples: { "path/to/file": { tags: [...], favorite: bool } }` — detailed per-file metadata
+  - `convertToWavOnDrop: bool` — per-root override (takes precedence over global setting)
+- **File timestamp validation:** Waveform cache loads only if file's `last_write_time()` matches the stored timestamp in the cache file. Mismatch triggers rebuild.
+- **Hash-based naming:** Cache files are named `siren-<8-char-hash>.json` (CRC32 of path) stored in `~/.../Stoermelder-P1/siren-cache/`, allowing multiple roots with human-readable names to coexist without collision.
+
+### 17. Drag-Drop Floating Label
+- **Visual feedback during drag:** While dragging from browser or preview pane, a floating label showing the filename follows the cursor.
+- **Source-specific display:** Uses cached `displayName` when dragging the currently loaded item; otherwise extracts a name from the raw file path.
+
+### 18. Context Menu & Right-Click Interactions
+- **Right-click in preview pane:** Opens context menu with:
+  - File path and size info
+  - Favorite toggle (star icon)
+  - Tag list with checkmarks (already-assigned tags show ✓)
+  - "Add new tag" text field
+- **Tag chip right-click:** In the browser pane tag bar, right-click on a tag chip removes it (if user owns it).
+
+### 19. Module Output Ports & Volume Control
+- **OUT L / OUT R:** Stereo audio output. Mono files duplicated to both channels.
+- **PARAM_VOLUME knob:** Output gain (0–2×, default 1×, displayed in dB). DSP scales output by `vol * 5.f` to convert PCM range [−1, 1] to Rack's [−5, 5] V convention.
+- **Volume automation:** Parameter is fully CV-automatable via the standard Rack modulation framework.
+
+### 20. Improved Playhead Tracking During Scrubbing
+- **Live scrub visualization:** During drag, the displayed playhead tracks `scrubPos` directly (not `modulePlayheadPos`), providing immediate visual feedback while the fill thread is processing the seek.
+- **Immediate playback start:** On drag end, playback starts from the final scrub position with zero-crossing lookahead, ensuring clean audio transition.
+
+---
+
+## Known Limitations & Future Enhancements
+
+1. **Trim export:** Infrastructure in place (`volumeEnvelope` envelope in metadata, UI placeholders) but export logic not yet implemented.
+2. **Rack library integration:** `DataSource` interface designed to allow cloud/Rack library sources, but not yet implemented.
+3. **Volume envelope editing:** Visual envelope curve editor deferred (metadata structure ready).
+4. **Advanced search:** No regex or nested boolean search; simple substring match only.
+5. **Undo/redo:** Metadata changes (tags, favorites) are not currently undoable (each save is immediate).
 
 ---
 

@@ -1,6 +1,5 @@
 #pragma once
 #include <rack.hpp>
-#include <ghc/filesystem.hpp>
 #include "SirenDataSource.hpp"
 #include "SirenAudio.hpp"
 

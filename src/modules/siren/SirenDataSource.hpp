@@ -1,12 +1,9 @@
 #pragma once
-#include <string>
-#include <vector>
-#include <functional>
-#include <memory>
 #include <rack.hpp>
 #include "../../utils/TaskWorker.hpp"
 #include "SirenMetadata.hpp"
 #include "SirenAudio.hpp"
+
 
 namespace StoermelderPackOne {
 namespace Siren {
@@ -43,10 +40,9 @@ struct AudioStream {
 // Build a peak waveform by streaming from an open AudioStream — no full-file buffer needed.
 // Single sequential pass: large reads amortize decoder overhead; bucket boundaries are tracked
 // with a running counter so there is no division or seek in the inner loop.
-inline bool buildWaveformCache(int64_t timestamp, AudioStream& stream,
-                               int pixelWidth, WaveformCache& out) {
-	int     channels = stream.channels();
-	int64_t total    = stream.totalFrames();
+inline bool buildWaveformCache(int64_t timestamp, AudioStream& stream, int pixelWidth, WaveformCache& out) {
+	int channels = stream.channels();
+	int64_t total = stream.totalFrames();
 	if (pixelWidth <= 0 || total <= 0 || channels <= 0) return false;
 
 	out.bucketCount = pixelWidth;
@@ -55,9 +51,9 @@ inline bool buildWaveformCache(int64_t timestamp, AudioStream& stream,
 
 	const int64_t BUF_FRAMES = 65536;
 	std::vector<float> buf((size_t)(BUF_FRAMES * channels));
-	double  framesPerBucket = (double)total / (double)pixelWidth;
-	int64_t framePos    = 0;
-	int     curBucket   = 0;
+	double framesPerBucket = (double)total / (double)pixelWidth;
+	int64_t framePos = 0;
+	int curBucket = 0;
 	int64_t nextBoundary = (pixelWidth > 1) ? (int64_t)(framesPerBucket) : total;
 
 	while (framePos < total) {
@@ -72,7 +68,7 @@ inline bool buildWaveformCache(int64_t timestamp, AudioStream& stream,
 				nextBoundary = (curBucket + 1 < pixelWidth)
 				             ? (int64_t)((curBucket + 1) * framesPerBucket) : total;
 			}
-				for (int ch = 0; ch < channels; ch++) {
+			for (int ch = 0; ch < channels; ch++) {
 				float s = buf[(size_t)(f * channels + ch)];
 				auto& p = out.peaks[ch][curBucket];
 				if (s < p.first)  p.first  = s;

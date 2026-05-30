@@ -8,10 +8,8 @@
 #include "SirenBrowserPane.hpp"
 #include "SirenPreviewPane.hpp"
 #include "SirenVuMeter.hpp"
-#include <widget/ZoomWidget.hpp>
-
 #include <osdialog.h>
-#include <ghc/filesystem.hpp>
+
 
 namespace StoermelderPackOne {
 namespace Siren {
@@ -674,14 +672,12 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 
 	~SirenWidget() override {
 		// Sync preview state back into module fields (for patch save) and global settings
-		if (previewPane) {
-			sirenSettings.lastFile = previewPane->currentId;
-			sirenSettings.lastPlayheadPos = module ? module->playheadPos.load() : 0.f;
-			if (module) {
-				module->lastFilePath = previewPane->currentId;
-				module->lastPlayheadPos = module->playheadPos.load();
-				module->activeRootIdx = sirenSettings.activeRootIdx;
-			}
+		sirenSettings.lastFile = previewPane->currentId;
+		sirenSettings.lastPlayheadPos = module ? module->playheadPos.load() : 0.f;
+		if (module) {
+			module->lastFilePath = previewPane->currentId;
+			module->lastPlayheadPos = module->playheadPos.load();
+			module->activeRootIdx = sirenSettings.activeRootIdx;
 		}
 
 		sirenSettings.save();

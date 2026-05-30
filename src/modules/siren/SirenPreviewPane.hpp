@@ -1,13 +1,10 @@
 #pragma once
 #include <rack.hpp>
-#include <mutex>
-#include <memory>
-#include <thread>
-#include <condition_variable>
 #include "SirenAudio.hpp"
 #include "SirenMetadata.hpp"
 #include "SirenDropHandler.hpp"
 #include "../../utils/TaskWorker.hpp"
+
 
 namespace StoermelderPackOne {
 namespace Siren {

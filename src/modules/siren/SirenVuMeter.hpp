@@ -1,13 +1,10 @@
 #pragma once
 #include <rack.hpp>
-#include <settings.hpp>
-#include <color.hpp>
-#include <atomic>
+
 
 namespace StoermelderPackOne {
 namespace Siren {
 
-	
 struct SirenVuMeter : TransparentWidget {
 	// Pointers to module-owned atomics; null-safe (draws all dim when nullptr)
 	std::atomic<float>* levelL = nullptr;
@@ -24,10 +21,12 @@ struct SirenVuMeter : TransparentWidget {
 		if (seg >= NUM_SEGS - 2) {
 			core = nvgRGBf(1.f, 0.10f, 0.10f);
 			dim  = nvgRGBAf(0.20f, 0.02f, 0.02f, 1.f);
-		} else if (seg >= NUM_SEGS - 5) {
+		}
+		else if (seg >= NUM_SEGS - 5) {
 			core = nvgRGBf(1.f, 0.82f, 0.f);
 			dim  = nvgRGBAf(0.20f, 0.16f, 0.f, 1.f);
-		} else {
+		}
+		else {
 			core = nvgRGBf(0.10f, 1.f, 0.25f);
 			dim  = nvgRGBAf(0.02f, 0.16f, 0.04f, 1.f);
 		}

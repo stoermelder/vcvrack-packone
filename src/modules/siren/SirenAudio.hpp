@@ -2,10 +2,7 @@
 #include "../../pluginsettings.hpp"
 #include <rack.hpp>
 #include <ghc/filesystem.hpp>
-#include <string>
-#include <vector>
-#include <cstdint>
-#include <cstring>
+
 
 namespace StoermelderPackOne {
 namespace Siren {
@@ -43,10 +40,9 @@ inline int64_t getFileTimestamp(const std::string& path) {
 
 // Build a peak waveform from pre-decoded interleaved float samples.
 // timestamp is supplied by the caller (from the data source) for cache validation.
-inline bool buildWaveformCache(int64_t timestamp,
-                               const std::vector<float>& samples,
-                               int64_t frameCount, int channels,
-                               int pixelWidth, WaveformCache& out) {
+inline bool buildWaveformCache(int64_t timestamp, const std::vector<float>& samples,
+		int64_t frameCount, int channels, int pixelWidth, WaveformCache& out) {
+
 	if (pixelWidth <= 0 || frameCount == 0 || channels == 0) return false;
 
 	out.bucketCount = pixelWidth;

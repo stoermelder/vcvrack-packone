@@ -7,6 +7,7 @@
 #include "SirenDropHandler.hpp"
 #include "../../utils/TaskWorker.hpp"
 
+
 namespace StoermelderPackOne {
 namespace Siren {
 
@@ -143,7 +144,6 @@ struct SirenTreeRow : widget::OpaqueWidget {
 
 	// Path-drop drag
 	void onDragStart(const event::DragStart& e) override;
-	void onDragMove(const event::DragMove& e) override;
 	void onDragEnd(const event::DragEnd& e) override;
 };
 
@@ -564,10 +564,6 @@ inline void SirenTreeRow::onDragStart(const event::DragStart& e) {
 	if (node.isContainer) return;
 	if (pane && pane->dropHandler)
 		pane->dropHandler->startDrag(node.fullPath);
-}
-
-inline void SirenTreeRow::onDragMove(const event::DragMove& e) {
-	(void)e;
 }
 
 inline void SirenTreeRow::onDragEnd(const event::DragEnd& e) {

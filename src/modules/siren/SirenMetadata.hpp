@@ -1,10 +1,7 @@
 #pragma once
-#include "../../pluginsettings.hpp"
 #include <rack.hpp>
-#include <string>
-#include <map>
-#include <vector>
-#include <set>
+#include "../../pluginsettings.hpp"
+
 
 namespace StoermelderPackOne {
 namespace Siren {
