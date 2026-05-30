@@ -455,6 +455,36 @@ struct SirenDisplayWidget : OpaqueWidget {
 };
 
 
+// Top-level overlay drawn above all rack elements — used for the drag label so it
+// is never occluded by cables, modules, or other widgets.
+struct SirenDragOverlay : widget::TransparentWidget {
+	SirenDropHandler* dropHandler = nullptr;
+	SirenPreviewPane* previewPane = nullptr;
+
+	void drawLayer(const DrawArgs& args, int layer) override {
+		if (layer != 1) return;
+		if (!dropHandler || !dropHandler->active) return;
+		if (dropHandler->mouseIsInsideModule()) return;
+
+		std::string lbl = (previewPane
+		                && dropHandler->dragPath == previewPane->currentId
+		                && !previewPane->displayName.empty())
+		                ? previewPane->displayName
+		                : rack::system::getFilename(dropHandler->dragPath);
+
+		Vec mp = APP->scene->rack->getMousePos();
+
+		nvgBeginPath(args.vg);
+		nvgRoundedRect(args.vg, mp.x + 10.f, mp.y, 150.f, 18.f, 3.f);
+		nvgFillColor(args.vg, nvgRGBAf(0.f, 0.f, 0.f, 0.7f));
+		nvgFill(args.vg);
+		nvgFontSize(args.vg, 10.f);
+		nvgFillColor(args.vg, nvgRGBf(1.f, 0.85f, 0.1f));
+		nvgText(args.vg, mp.x + 14.f, mp.y + 12.f, lbl.c_str(), nullptr);
+	}
+};
+
+
 struct SirenOcWidget : TransparentWidget {
 	SirenOcWidget() {
 		box.size = Vec(26.f, 26.f);
@@ -473,8 +503,9 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 	TaskWorker taskWorker{"Siren"};
 	SirenDropHandler dropHandler;
 
-	SirenBrowserPane* browserPane = nullptr;
-	SirenPreviewPane* previewPane = nullptr;
+	SirenBrowserPane*  browserPane  = nullptr;
+	SirenPreviewPane*  previewPane  = nullptr;
+	SirenDragOverlay*  dragOverlay  = nullptr;
 
 	SirenWidget(SirenModule* module)
 		: ThemedModuleWidget<SirenModule>(module, "Siren") {
@@ -629,6 +660,14 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 
 		dropHandler.moduleWidget = this;
 
+		// Top-level drag label overlay — drawn above all other rack elements
+		dragOverlay = new SirenDragOverlay;
+		dragOverlay->box.pos  = Vec(0.f, 0.f);
+		dragOverlay->box.size = Vec(1e6f, 1e6f);
+		dragOverlay->dropHandler = &dropHandler;
+		dragOverlay->previewPane = previewPane;
+		APP->scene->rack->addChild(dragOverlay);
+
 		// Obtain the conversion task from the active source; dispatched by the drop handler.
 		dropHandler.prepareForDropCallback = [this](const std::string& id) -> std::function<std::string()> {
 			DataSource* src = browserPane->activeDataSource;
@@ -671,6 +710,12 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 	}
 
 	~SirenWidget() override {
+		if (dragOverlay) {
+			APP->scene->rack->removeChild(dragOverlay);
+			delete dragOverlay;
+			dragOverlay = nullptr;
+		}
+
 		// Sync preview state back into module fields (for patch save) and global settings
 		sirenSettings.lastFile = previewPane->currentId;
 		sirenSettings.lastPlayheadPos = module ? module->playheadPos.load() : 0.f;

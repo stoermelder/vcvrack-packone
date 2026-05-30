@@ -465,10 +465,12 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		Rect sr = scrollbarRect();
 		if (sr.size.x > 0.f) {
 			// Scrollbar background
+			/*
 			nvgBeginPath(args.vg);
 			nvgRect(args.vg, sr.pos.x, sr.pos.y, sr.size.x, sr.size.y);
 			nvgFillColor(args.vg, nvgRGBAf(0.f, 0.f, 0.f, 0.3f));
 			nvgFill(args.vg);
+			*/
 
 			// Scrollbar thumb
 			if (zoomLevel > 1.0f) {
@@ -481,16 +483,6 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			}
 		}
 
-	}
-
-	void drawLayer(const DrawArgs& args, int layer) override {
-		if (layer != 1 || !dropHandler) return;
-		// Use cached displayName when dragging the currently loaded item, otherwise
-		// extract a name from the raw path (avoids calling through potentially-stale source ptr)
-		std::string lbl = (dropHandler->dragPath == currentId && !displayName.empty())
-		                ? displayName
-		                : rack::system::getFilename(dropHandler->dragPath);
-		dropHandler->drawLabel(args, this, lbl);
 	}
 
 	// ── waveform interaction ──────────────────────────────────────────────────
@@ -634,7 +626,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 
 		// Scrollbar click/drag
 		Rect sr = scrollbarRect();
-		if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS && sr.contains(e.pos)) {
+		if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS && sr.contains(e.pos) && zoomLevel != 1.f) {
 			float thumbW = getScrollbarThumbWidth();
 			float thumbX = getScrollbarThumbX();
 			if (e.pos.x >= thumbX && e.pos.x < thumbX + thumbW) {
@@ -658,7 +650,8 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 
 		if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS) {
 			if (!currentId.empty() && inWaveformArea(e.pos)) {
-				bool shift = (e.mods & GLFW_MOD_SHIFT) != 0;
+				bool shift = (e.mods & RACK_MOD_SHIFT) != 0;
+				bool ctrl  = (e.mods & RACK_MOD_CTRL) != 0;
 				if (shift) {
 					Rect r = waveformRect();
 					float pos = posToPlayhead(e.pos);
@@ -690,14 +683,14 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 						syncOutPoint();
 					}
 				} 
-				else {
+				else if (!ctrl) {
 					// Playhead scrubbing — moves only the playhead, not the trim handles
 					scrubPos       = posToPlayhead(e.pos);
 					dragStartRackX = APP->scene->rack->getMousePos().x;
 					dragStartScrub = scrubPos;
 					draggingPlayhead = true;
-					//startPlaybackFrom(scrubPos);
 				}
+				// Ctrl held: no drag mode set → onDragStart initiates a file drag
 
 				e.consume(this);
 				return;

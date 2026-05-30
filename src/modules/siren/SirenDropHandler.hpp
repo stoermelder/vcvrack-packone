@@ -9,7 +9,7 @@ namespace Siren {
 // Encapsulates all drag-drop state and logic shared between SirenBrowserPane and
 // SirenPreviewPane. Owned by SirenWidget; both panes hold a raw pointer to it.
 //
-// Thread safety: startDrag / endDrag / step / drawLabel all run on the UI thread.
+// Thread safety: startDrag / endDrag / step all run on the UI thread.
 // The task lambda returned by prepareForDropCallback runs on the worker thread —
 // it writes pendingDropPath then signals dropPending (release), and step() reads
 // dropPending (acquire) before reading pendingDropPath.
@@ -43,22 +43,30 @@ struct SirenDropHandler {
 		return moduleWidget->box.contains(APP->scene->rack->getMousePos());
 	}
 
+	// Returns true when the cursor is over any module widget other than our own.
+	bool mouseIsOverOtherModule() const {
+		Vec mp = APP->scene->rack->getMousePos();
+		for (ModuleWidget* mw : APP->scene->rack->getModules()) {
+			if (mw->box.contains(mp)) return true;
+		}
+		return false;
+	}
+
 	// Called on the UI thread when a drag begins.
 	void startDrag(const std::string& path) {
 		active   = true;
 		dragPath = path;
 	}
 
-	// Called on the UI thread when a drag ends. If the cursor is still over the
-	// Siren module, the drag is cancelled silently. Otherwise a task lambda is
-	// obtained from prepareForDropCallback and dispatched to the worker; the
-	// PathDrop fires from step() once the task returns.
+	// Called on the UI thread when a drag ends. The drop is only fired when the
+	// cursor is over another module widget — empty rack space is ignored.
 	void endDrag(Vec dropPos, TaskWorker* worker) {
 		if (!active) return;
 		active = false;
 		std::string path = std::move(dragPath);
 		dragPath.clear();
 
+		if (!mouseIsOverOtherModule()) return;
 		if (mouseIsInsideModule()) return;
 
 		auto task = prepareForDropCallback
@@ -84,21 +92,6 @@ struct SirenDropHandler {
 		}
 	}
 
-	// Draw a floating filename label at the cursor. Call from drawLayer (layer 1).
-	// Suppressed while the cursor is over the Siren module itself.
-	void drawLabel(const Widget::DrawArgs& args, widget::Widget* self, const std::string& label) const {
-		if (!active || mouseIsInsideModule()) return;
-		Vec lp = APP->scene->mousePos
-		         .minus(self->getRelativeOffset(Vec(0, 0), APP->scene))
-		         .div(self->getRelativeZoom(APP->scene));
-		nvgBeginPath(args.vg);
-		nvgRoundedRect(args.vg, lp.x + 10.f, lp.y, 150.f, 18.f, 3.f);
-		nvgFillColor(args.vg, nvgRGBAf(0.f, 0.f, 0.f, 0.7f));
-		nvgFill(args.vg);
-		nvgFontSize(args.vg, 10.f);
-		nvgFillColor(args.vg, nvgRGBf(1.f, 0.85f, 0.1f));
-		nvgText(args.vg, lp.x + 14.f, lp.y + 12.f, label.c_str(), nullptr);
-	}
 };
 
 } // namespace Siren
