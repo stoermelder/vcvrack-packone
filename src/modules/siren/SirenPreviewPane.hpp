@@ -34,6 +34,8 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	bool  draggingPlayhead = false;
 	bool  trimmingIn       = false;  // Shift+drag on IN handle
 	bool  trimmingOut      = false;  // Shift+drag on OUT handle
+	bool  trimmingRange    = false;  // Shift+drag to define a new range from scratch
+	float rangeAnchor      = 0.f;   // normalized start position for trimmingRange
 
 	// ── zoom and scroll state ─────────────────────────────────────────────────
 	float zoomLevel  = 1.0f;  // 1.0 = fit to width; up to ~10.0 max
@@ -382,9 +384,9 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 
 				const float ts = 4.f;
 				nvgBeginPath(args.vg);
-				nvgMoveTo(args.vg, ipX - ts, waveY);
-				nvgLineTo(args.vg, ipX + ts, waveY);
-				nvgLineTo(args.vg, ipX, waveY + ts * 1.4f);
+				nvgMoveTo(args.vg, ipX - ts, waveY + waveH);
+				nvgLineTo(args.vg, ipX + ts, waveY + waveH);
+				nvgLineTo(args.vg, ipX,      waveY + waveH - ts * 1.4f);
 				nvgClosePath(args.vg);
 				nvgFillColor(args.vg, nvgRGBAf(1.f, 0.85f, 0.1f, 0.85f));
 				nvgFill(args.vg);
@@ -519,7 +521,6 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		if (currentId.empty() || !source || !metadata) return;
 
 		std::string rel = relPath;
-
 		ui::Menu* menu = createMenu();
 
 		// File label
@@ -640,7 +641,8 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 				// Clicked on thumb — start drag (store in rack coords to match onDragMove)
 				draggingScrollbar = true;
 				dragStartScrollbarX = APP->scene->rack->getMousePos().x;
-			} else if (zoomLevel > 1.0f) {
+			}
+			else if (zoomLevel > 1.0f) {
 				// Clicked in track outside thumb — jump scroll so thumb centers on click
 				float newThumbX = e.pos.x - thumbW * 0.5f;
 				float maxThumbX = sr.pos.x + sr.size.x - thumbW;
@@ -661,23 +663,30 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 					Rect r = waveformRect();
 					float pos = posToPlayhead(e.pos);
 					dragStartRackX = APP->scene->rack->getMousePos().x;
+					dragStartScrub = pos;
 
-					// At defaults: left half → IN, right half → OUT.
-					// Otherwise: drag whichever handle is nearest to the click.
-					bool pickIn = (inPoint == 0.f && outPoint == 1.f)
-					    ? (e.pos.x < r.pos.x + r.size.x * 0.5f)
-					    : (std::abs(pos - inPoint) <= std::abs(pos - outPoint));
+					bool hasRange = (inPoint > 0.f || outPoint < 1.f);
+					float inScreenX  = r.pos.x + (inPoint  - scrollPos) * zoomLevel * r.size.x;
+					float outScreenX = r.pos.x + (outPoint - scrollPos) * zoomLevel * r.size.x;
+					const float handleThresh = 8.f;
+					bool nearIn  = hasRange && std::abs(e.pos.x - inScreenX)  < handleThresh;
+					bool nearOut = hasRange && std::abs(e.pos.x - outScreenX) < handleThresh;
 
-					if (pickIn) {
-						inPoint        = rack::math::clamp(pos, 0.f, outPoint);
+					if (nearIn) {
 						trimmingIn     = true;
 						dragStartScrub = inPoint;
-						syncInPoint();
-					} 
-					else {
-						outPoint       = rack::math::clamp(pos, inPoint, 1.f);
+					}
+					else if (nearOut) {
 						trimmingOut    = true;
 						dragStartScrub = outPoint;
+					}
+					else {
+						// Not near a handle — Shift+drag always defines a new range from scratch
+						rangeAnchor   = pos;
+						inPoint       = pos;
+						outPoint      = pos;
+						trimmingRange = true;
+						syncInPoint();
 						syncOutPoint();
 					}
 				} 
@@ -705,8 +714,9 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	}
 
 	void onDragStart(const event::DragStart& e) override {
-		if (!currentId.empty() && !draggingPlayhead && !trimmingIn && !trimmingOut && !draggingScrollbar && dropHandler)
+		if (!currentId.empty() && !draggingPlayhead && !trimmingIn && !trimmingOut && !trimmingRange && !draggingScrollbar && dropHandler) {
 			dropHandler->startDrag(currentId);
+		}
 	}
 
 	void onDragMove(const event::DragMove& e) override {
@@ -733,10 +743,19 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		if (trimmingIn) {
 			inPoint = rack::math::clamp(pos, 0.f, outPoint);
 			syncInPoint();
-		} else if (trimmingOut) {
+		}
+		else if (trimmingOut) {
 			outPoint = rack::math::clamp(pos, inPoint, 1.f);
 			syncOutPoint();
-		} else if (draggingPlayhead && !currentId.empty()) {
+		}
+		else if (trimmingRange) {
+			float currentPos = rack::math::clamp(pos, 0.f, 1.f);
+			inPoint  = std::min(rangeAnchor, currentPos);
+			outPoint = std::max(rangeAnchor, currentPos);
+			syncInPoint();
+			syncOutPoint();
+		}
+		else if (draggingPlayhead && !currentId.empty()) {
 			float newPos = rack::math::clamp(pos, 0.f, 1.f);
 			if (newPos != scrubPos) {
 				scrubPos = newPos;
@@ -755,13 +774,15 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			startPlaybackFrom(scrubPos);
 			return;
 		}
-		if (trimmingIn || trimmingOut) {
-			trimmingIn  = false;
-			trimmingOut = false;
+		if (trimmingIn || trimmingOut || trimmingRange) {
+			trimmingIn    = false;
+			trimmingOut   = false;
+			trimmingRange = false;
 			return;
 		}
-		if (dropHandler && dropHandler->active)
+		if (dropHandler && dropHandler->active) {
 			dropHandler->endDrag(APP->scene->mousePos, worker);
+		}
 	}
 
 	void onSelectKey(const event::SelectKey& e) override {
@@ -802,8 +823,9 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		zoomLevel = rack::math::clamp(zoomLevel * factor, 1.0f, 10.0f);
 
 		// Reposition scroll so the point under the cursor stays fixed
-		if (r.size.x > 0.f)
+		if (r.size.x > 0.f) {
 			scrollPos = cursorNorm - (e.pos.x - r.pos.x) / (r.size.x * zoomLevel);
+		}
 		clampScrollPos();
 		e.consume(this);
 	}
@@ -812,7 +834,9 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		return cacheDir + "/" + hashPath(audioPath) + ".json";
 	}
 
-	bool isPlaying() const { return modulePlaying && modulePlaying->load(); }
+	bool isPlaying() const {
+		return modulePlaying && modulePlaying->load();
+	}
 };
 
 } // namespace Siren
