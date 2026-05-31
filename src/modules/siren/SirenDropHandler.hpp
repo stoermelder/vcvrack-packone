@@ -58,6 +58,11 @@ struct SirenDropHandler {
 		dragPath = path;
 	}
 
+	void cancelDrag() {
+		active = false;
+		dragPath.clear();
+	}
+
 	// Called on the UI thread when a drag ends. The drop is only fired when the
 	// cursor is over another module widget — empty rack space is ignored.
 	void endDrag(Vec dropPos, TaskWorker* worker) {
@@ -91,7 +96,6 @@ struct SirenDropHandler {
 			APP->event->handleDrop(pendingDropPos, {pendingDropPath});
 		}
 	}
-
 };
 
 } // namespace Siren

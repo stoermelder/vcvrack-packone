@@ -508,6 +508,7 @@ struct SirenDisplayWidget : OpaqueWidget {
 struct SirenDragOverlay : widget::TransparentWidget {
 	SirenDropHandler* dropHandler = nullptr;
 	SirenPreviewPane* previewPane = nullptr;
+	bool initiated = false;
 
 	void drawLayer(const DrawArgs& args, int layer) override {
 		if (layer != 1) return;
@@ -529,6 +530,20 @@ struct SirenDragOverlay : widget::TransparentWidget {
 		nvgFontSize(args.vg, 10.f);
 		nvgFillColor(args.vg, nvgRGBf(1.f, 0.85f, 0.1f));
 		nvgText(args.vg, mp.x + 14.f, mp.y + 12.f, lbl.c_str(), nullptr);
+	}
+
+	void onButton(const ButtonEvent& e) override {
+		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT && (e.mods & RACK_MOD_MASK) == (RACK_MOD_CTRL | RACK_MOD_SHIFT)) {
+			dropHandler->startDrag(previewPane->currentId);
+			initiated = true;
+			e.consume(this);
+		}
+		if (e.action == GLFW_RELEASE && e.button == GLFW_MOUSE_BUTTON_LEFT && initiated) {
+			dropHandler->cancelDrag();
+			initiated = false;
+			e.consume(this);
+		}
+		TransparentWidget::onButton(e);
 	}
 };
 
