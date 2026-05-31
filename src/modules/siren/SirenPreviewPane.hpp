@@ -3,6 +3,7 @@
 #include "SirenAudio.hpp"
 #include "SirenMetadata.hpp"
 #include "SirenDropHandler.hpp"
+#include "SirenBpmDetector.hpp"
 #include "../../utils/TaskWorker.hpp"
 
 
@@ -71,6 +72,10 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	// Cache dir path (set by module widget)
 	std::string cacheDir;
 
+	// ── BPM detection state ────────────────────────────────────────────────────
+	// -1 = running, 0 = not detected, >0 = result in BPM
+	std::atomic<float> bpm{0.f};
+
 	// ── Scrollbar and zoom helpers ────────────────────────────────────────────
 	Rect scrollbarRect() const {
 		float w = box.size.x;
@@ -118,7 +123,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	}
 
 	void loadItem(const std::string& id, DataSource* src, RootMetadata* meta,
-	              bool startPlay = false, bool forceRebuild = false) {
+	        bool startPlay = false, bool forceRebuild = false) {
 		// Delegate audio open to the module via callback
 		if (stopPlaybackCallback)  stopPlaybackCallback();
 		if (openStreamCallback)    openStreamCallback(id, src);
@@ -137,6 +142,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		scrubPos     = 0.f;
 		zoomLevel    = 1.0f;
 		scrollPos    = 0.0f;
+		bpm.store(0.f);
 		syncInPoint();
 		syncOutPoint();
 
@@ -151,6 +157,12 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			if (loadWaveformCacheFile(cacheFile, ts, loaded) && loaded.sampleCount > 0) {
 				cache      = std::move(loaded);
 				cacheReady = true;
+				// Restore BPM from metadata
+				if (metadata && !relPath.empty()) {
+					auto it = metadata->samples.find(relPath);
+					if (it != metadata->samples.end() && it->second.bpm > 0.f)
+						bpm.store(it->second.bpm);
+				}
 				if (startPlay) { inPoint = 0.f; scrubPos = 0.f; startPlaybackFrom(0.f); }
 				return;
 			}
@@ -179,6 +191,49 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		});
 
 		if (startPlay) { inPoint = 0.f; scrubPos = 0.f; startPlaybackFrom(0.f); }
+	}
+
+	// ── BPM detection ─────────────────────────────────────────────────────────
+
+	void startBpmDetection() {
+		if (!source || currentId.empty()) return;
+		float curBpm = bpm.load();
+		if (curBpm < 0.f) return; // Already running
+
+		// Fast path: check the path first (UI thread safe, no worker needed)
+		float fromPath = BpmDetector::extractFromPath(currentId);
+		if (fromPath > 0.f) {
+			bpm.store(fromPath);
+			// Save BPM to metadata
+			if (metadata && !relPath.empty()) {
+				metadata->setBpm(relPath, fromPath, 1.f); // confidence = 1.0 for path-derived
+				if (source) source->saveMetadata();
+			}
+			return;
+		}
+
+		// Slow path: spectral analysis on worker thread
+		if (!worker) return;
+		bpm.store(-1.f); // Mark as running
+
+		std::string idCopy       = currentId;
+		std::string relPathCopy  = relPath;
+		DataSource* ds           = source;
+		RootMetadata* meta       = metadata;
+	
+		worker->work([this, idCopy, relPathCopy, ds, meta]() {
+			auto stream = ds->openAudioStream(idCopy);
+			float result = 0.f, confidence = 0.f;
+			if (stream) result = BpmDetector::detect(*stream, confidence);
+
+			// Save BPM to metadata
+			if (meta && result > 0.f && !relPathCopy.empty()) {
+				meta->setBpm(relPathCopy, result, confidence);
+				if (ds) ds->saveMetadata();
+			}
+
+			bpm.store(result);
+		});
 	}
 
 	void step() override {
@@ -245,6 +300,24 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			if (info.channels > 0)   badges = std::string(info.channels == 1 ? "MONO" : "STEREO") + (badges.empty() ? "" : " · ") + badges;
 			if (!badges.empty()) {
 				nvgText(args.vg, WAVE_X, 26.f, badges.c_str(), nullptr);
+			}
+
+			// BPM display (right side, after zoom level)
+			float bpmVal = bpm.load();
+			if (bpmVal > 0.f) {
+				std::string bpmText = rack::string::f("%.1f BPM", bpmVal);
+				nvgFontSize(args.vg, 10.f);
+				nvgFillColor(args.vg, nvgRGBf(0.50f, 0.50f, 0.50f));
+				nvgTextAlign(args.vg, NVG_ALIGN_RIGHT | NVG_ALIGN_BASELINE);
+				nvgText(args.vg, w - 50.f, 26.f, bpmText.c_str(), nullptr);
+				nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_BASELINE);
+			} 
+			else if (bpmVal < 0.f) {
+				nvgFontSize(args.vg, 10.f);
+				nvgFillColor(args.vg, nvgRGBf(0.50f, 0.50f, 0.50f));
+				nvgTextAlign(args.vg, NVG_ALIGN_RIGHT | NVG_ALIGN_BASELINE);
+				nvgText(args.vg, w - 50.f, 26.f, "… BPM", nullptr);
+				nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_BASELINE);
 			}
 		}
 
@@ -542,6 +615,22 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			[]() { sirenSettings.loopPlayback = !sirenSettings.loopPlayback; }
 		));
 		
+		// BPM detection
+		/*
+		float bpmVal = bpm.load();
+		if (bpmVal == 0.f) {
+			menu->addChild(createMenuItem("Detect BPM", "", [this]() { startBpmDetection(); }));
+		}
+		else if (bpmVal > 0.f) {
+			float conf = metadata ? metadata->getBpmConfidence(relPath) : 0.f;
+			menu->addChild(createMenuItem("Clear BPM", rack::string::f("Confidence %.2f%%", conf * 100.f), [this]() {
+				bpm.store(0.f);
+				if (metadata && !relPath.empty())
+					metadata->samples[relPath].bpm = 0.f;
+			}));
+		}
+		*/
+
 		menu->addChild(new ui::MenuSeparator);
 
 		// Favorite toggle

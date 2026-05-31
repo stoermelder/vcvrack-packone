@@ -17,6 +17,8 @@ struct SampleMetadata {
 	std::string relativePath;  // relative to root, using '/' separator
 	bool favorite = false;
 	std::vector<std::string> tags;
+	float bpm = 0.f;           // detected BPM, 0 if not detected
+	float bpmConfidence = 0.f; // confidence of BPM detection
 };
 
 struct RootMetadata {
@@ -49,23 +51,26 @@ struct RootMetadata {
 		json_t* rootJ = json_object();
 		json_object_set_new(rootJ, "rootPath", json_string(rootPath.c_str()));
 
-		json_t* favsJ = json_array();
-		json_t* tagsJ = json_object();
+		json_t* filesJ = json_array();
 		for (const auto& pair : samples) {
 			const SampleMetadata& meta = pair.second;
-			if (meta.favorite) {
-				json_array_append_new(favsJ, json_string(meta.relativePath.c_str()));
-			}
+			json_t* fileJ = json_object();
+			json_object_set_new(fileJ, "path", json_string(meta.relativePath.c_str()));
+			if (meta.favorite)
+				json_object_set_new(fileJ, "fav", json_true());
 			if (!meta.tags.empty()) {
-				json_t* sampleTagsJ = json_array();
-				for (const std::string& tag : meta.tags) {
-					json_array_append_new(sampleTagsJ, json_string(tag.c_str()));
-				}
-				json_object_set_new(tagsJ, meta.relativePath.c_str(), sampleTagsJ);
+				json_t* tagsJ = json_array();
+				for (const std::string& tag : meta.tags)
+					json_array_append_new(tagsJ, json_string(tag.c_str()));
+				json_object_set_new(fileJ, "tags", tagsJ);
 			}
+			if (meta.bpm > 0.f) {
+				json_object_set_new(fileJ, "bpm", json_real(meta.bpm));
+				json_object_set_new(fileJ, "bpmConfidence", json_real(meta.bpmConfidence));
+			}
+			json_array_append_new(filesJ, fileJ);
 		}
-		json_object_set_new(rootJ, "favorites", favsJ);
-		json_object_set_new(rootJ, "tags", tagsJ);
+		json_object_set_new(rootJ, "files", filesJ);
 		return rootJ;
 	}
 
@@ -74,29 +79,35 @@ struct RootMetadata {
 		json_t* rootPathJ = json_object_get(rootJ, "rootPath");
 		if (rootPathJ) rootPath = json_string_value(rootPathJ);
 
-		json_t* favsJ = json_object_get(rootJ, "favorites");
-		if (favsJ && json_is_array(favsJ)) {
-			size_t i; json_t* val;
-			json_array_foreach(favsJ, i, val) {
-				if (!json_is_string(val)) continue;
-				std::string rel = json_string_value(val);
-				samples[rel].relativePath = rel;
-				samples[rel].favorite = true;
-			}
-		}
+		json_t* filesJ = json_object_get(rootJ, "files");
+		if (filesJ && json_is_array(filesJ)) {
+			size_t i; json_t* fileJ;
+			json_array_foreach(filesJ, i, fileJ) {
+				if (!json_is_object(fileJ)) continue;
+				json_t* pathJ = json_object_get(fileJ, "path");
+				if (!pathJ || !json_is_string(pathJ)) continue;
+				std::string rel = json_string_value(pathJ);
+				SampleMetadata& meta = samples[rel];
+				meta.relativePath = rel;
 
-		json_t* tagsJ = json_object_get(rootJ, "tags");
-		if (tagsJ && json_is_object(tagsJ)) {
-			const char* rel;
-			json_t* sampleTagsJ;
-			json_object_foreach(tagsJ, rel, sampleTagsJ) {
-				if (!json_is_array(sampleTagsJ)) continue;
-				samples[rel].relativePath = rel;
-				size_t i; json_t* val;
-				json_array_foreach(sampleTagsJ, i, val) {
-					if (json_is_string(val))
-						samples[rel].tags.push_back(json_string_value(val));
+				json_t* favJ = json_object_get(fileJ, "fav");
+				if (favJ && json_is_true(favJ)) meta.favorite = true;
+
+				json_t* tagsJ = json_object_get(fileJ, "tags");
+				if (tagsJ && json_is_array(tagsJ)) {
+					size_t j; json_t* tagJ;
+					json_array_foreach(tagsJ, j, tagJ) {
+						if (json_is_string(tagJ))
+							meta.tags.push_back(json_string_value(tagJ));
+					}
 				}
+
+				json_t* bpmJ = json_object_get(fileJ, "bpm");
+				json_t* confJ = json_object_get(fileJ, "bpmConfidence");
+				if (bpmJ && json_is_number(bpmJ))
+					meta.bpm = (float)json_number_value(bpmJ);
+				if (confJ && json_is_number(confJ))
+					meta.bpmConfidence = (float)json_number_value(confJ);
 			}
 		}
 	}
@@ -145,6 +156,27 @@ struct RootMetadata {
 				result.insert(tag);
 		}
 		return result;
+	}
+
+	// Get BPM for a relative path (returns 0 if not set)
+	float getBpm(const std::string& rel) const {
+		auto it = samples.find(rel);
+		if (it != samples.end()) return it->second.bpm;
+		return 0.f;
+	}
+
+	float getBpmConfidence(const std::string& rel) const {
+		auto it = samples.find(rel);
+		if (it != samples.end()) return it->second.bpmConfidence;
+		return 0.f;
+	}
+
+	// Set BPM for a relative path
+	void setBpm(const std::string& rel, float bpmValue, float confidence = 0.f) {
+		auto& meta = samples[rel];
+		meta.relativePath = rel;
+		meta.bpm = bpmValue;
+		meta.bpmConfidence = confidence;
 	}
 };
 
