@@ -7,6 +7,7 @@
 #include "SirenAudio.hpp"
 #include "SirenBrowserPane.hpp"
 #include "SirenPreviewPane.hpp"
+#include "SirenTopBar.hpp"
 #include "SirenVuMeter.hpp"
 #include <osdialog.h>
 
@@ -413,34 +414,6 @@ struct SirenModule : Module {
 		v = json_object_get(rootJ, "lastFile");        if (v) lastFilePath = json_string_value(v);
 		v = json_object_get(rootJ, "lastPlayheadPos"); if (v) lastPlayheadPos = (float)json_real_value(v);
 		v = json_object_get(rootJ, "activeRootIdx");   if (v) activeRootIdx = (int)json_integer_value(v);
-	}
-};
-
-// ─── top-bar search field ─────────────────────────────────────────────────────
-
-struct SirenSearchField : ui::TextField {
-	SirenBrowserPane* pane = nullptr;
-	SirenSearchField() {
-		placeholder = "Search...";
-	}
-	void onChange(const event::Change& e) override {
-		if (pane) {
-			pane->searchQuery = rack::string::trim(text);
-			pane->requestRebuild();
-		}
-		ui::TextField::onChange(e);
-	}
-	void onSelectKey(const event::SelectKey& e) override {
-		if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ESCAPE) {
-			setText("");
-			if (pane) {
-				pane->searchQuery.clear();
-				pane->requestRebuild();
-			}
-			e.consume(this);
-			return;
-		}
-		ui::TextField::onSelectKey(e);
 	}
 };
 

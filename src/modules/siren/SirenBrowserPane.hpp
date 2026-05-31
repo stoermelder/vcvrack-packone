@@ -14,14 +14,6 @@ namespace Siren {
 // Forward declarations
 struct SirenBrowserPane;
 
-// ─── source-selection choice button (method bodies defined after SirenBrowserPane) ──
-
-struct SirenSourceButton : ui::ChoiceButton {
-	SirenBrowserPane* pane = nullptr;
-	void step() override;
-	void onAction(const event::Action& e) override;
-};
-
 static constexpr float BROWSER_TAG_H = 96.f;
 
 // ─── single row in the tree ───────────────────────────────────────────────────
@@ -750,58 +742,6 @@ inline void SirenTreeRow::onDragStart(const event::DragStart& e) {
 inline void SirenTreeRow::onDragEnd(const event::DragEnd& e) {
 	if (!pane || !pane->dropHandler || !pane->dropHandler->active) return;
 	pane->dropHandler->endDrag(APP->scene->mousePos, pane->worker);
-}
-
-// ─── SirenSourceButton method bodies ─────────────────────────────────────────
-
-inline void SirenSourceButton::step() {
-	if (!pane->rootContainers.empty() && pane->activeRootIdx >= 0 &&
-	    pane->activeRootIdx < (int)pane->rootContainers.size()) {
-		ghc::filesystem::path p(pane->rootContainers[pane->activeRootIdx]);
-		text = p.filename().string();
-		if (text.empty()) text = p.string();
-	}
-	else {
-		text = "No source";
-	}
-	text = string::ellipsize(text, 40);
-	ChoiceButton::step();
-}
-
-inline void SirenSourceButton::onAction(const event::Action& e) {
-	ui::Menu* menu = createMenu();
-	menu->box.pos   = getAbsoluteOffset(math::Vec(0, box.size.y));
-	menu->box.size.x = box.size.x;
-
-	// List of existing sources
-	for (int i = 0; i < (int)pane->rootContainers.size(); i++) {
-		ghc::filesystem::path p(pane->rootContainers[i]);
-		std::string name = p.filename().string();
-		if (name.empty()) name = p.string();
-		menu->addChild(createCheckMenuItem(name, "",
-			[this, i]() { return i == pane->activeRootIdx; },
-			[this, i]() { if (pane->onSelectRoot) pane->onSelectRoot(i); }
-		));
-	}
-
-	menu->addChild(new ui::MenuSeparator);
-	size_t i = menu->children.size();
-	if (pane->activeDataSource) {
-		pane->activeDataSource->appendSourceMenuItems(menu);
-		if (i != menu->children.size()) menu->addChild(new ui::MenuSeparator);
-	}
-	
-	menu->addChild(createMenuItem("Add root...", "", [this]() {
-		if (pane->onAddRoot) pane->onAddRoot();
-	}));
-	menu->addChild(createMenuItem("Remove root", "", [this]() {
-		if (pane->onRemoveRoot) pane->onRemoveRoot(pane->activeRootIdx);
-	}, pane->rootContainers.empty()));
-
-	menu->addChild(new MenuSeparator);
-	menu->addChild(createBoolPtrMenuItem("Resample on playback", "", &sirenSettings.resampleOnPlayback));
-	menu->addChild(createBoolPtrMenuItem("Resample on drop", "", &sirenSettings.resampleOnDrop));
-	menu->addChild(createBoolPtrMenuItem("Convert to WAV on drop", "", &sirenSettings.convertToWavOnDrop));
 }
 
 } // namespace Siren
