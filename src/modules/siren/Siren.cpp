@@ -707,13 +707,15 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 
 		dropHandler.moduleWidget = this;
 
-		// Top-level drag label overlay — drawn above all other rack elements
-		dragOverlay = new SirenDragOverlay;
-		dragOverlay->box.pos  = Vec(0.f, 0.f);
-		dragOverlay->box.size = Vec(1e6f, 1e6f);
-		dragOverlay->dropHandler = &dropHandler;
-		dragOverlay->previewPane = previewPane;
-		APP->scene->rack->addChild(dragOverlay);
+		if (module) {
+			// Top-level drag label overlay — drawn above all other rack elements
+			dragOverlay = new SirenDragOverlay;
+			dragOverlay->box.pos  = Vec(0.f, 0.f);
+			dragOverlay->box.size = Vec(1e6f, 1e6f);
+			dragOverlay->dropHandler = &dropHandler;
+			dragOverlay->previewPane = previewPane;
+			APP->scene->rack->addChild(dragOverlay);
+		}
 
 		// Obtain the conversion task from the active source; dispatched by the drop handler.
 		dropHandler.prepareForDropCallback = [this](const std::string& id) -> std::function<std::string()> {
