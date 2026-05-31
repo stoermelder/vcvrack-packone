@@ -203,5 +203,7 @@ The Patch browser supports keyboard navigation and shortcuts:
     - Added model magnifier loupe option
     - Added integration into Rack's menu bar
     - Added Shift+Click to add a module without closing the browser
+    - Added option to apply VCV Library whitelisting
+    - Added option to show deprecated module models (now hidden by default) (#440)
     - Changed hotkey to toggle hidden modules to Shift+Space (because of Spotlight on Mac)
     - Fixed broken button of "Favorites" category

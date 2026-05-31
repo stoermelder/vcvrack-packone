@@ -145,6 +145,8 @@ std::string customTagResolveKey(const std::string& tag) {
 }
 
 void customTagAdd(Model* model, const std::string& tag) {
+	if (!isValidCustomTag(tag))
+		return;
 	customTagModels[customTagResolveKey(tag)].insert(model);
 }
 
@@ -154,6 +156,17 @@ void customTagRemove(Model* model, const std::string& tag) {
 	it->second.erase(model);
 	if (it->second.empty())
 		customTagModels.erase(it);
+}
+
+bool isValidCustomTag(const std::string& tag) {
+	std::string trimmed = rack::string::trim(tag);
+	// Check for empty or whitespace-only tags
+	if (trimmed.empty())
+		return false;
+	// Maximum tag length to prevent UI overflow and JSON issues
+	if (trimmed.length() > 64)
+		return false;
+	return true;
 }
 
 bool customTagHas(Model* model, const std::string& tag, bool resolveKey) {
@@ -192,6 +205,7 @@ void predefinedTagAdd(Model* model, int tagId) {
 	predefinedTagsRemoved[model].erase(tagId);
 	if (predefinedTagsRemoved[model].empty())
 		predefinedTagsRemoved.erase(model);
+	effectiveTagIdsCacheInvalidate(model);
 }
 
 void predefinedTagRemove(Model* model, int tagId) {
@@ -200,6 +214,7 @@ void predefinedTagRemove(Model* model, int tagId) {
 	predefinedTagsAdded[model].erase(tagId);
 	if (predefinedTagsAdded[model].empty())
 		predefinedTagsAdded.erase(model);
+	effectiveTagIdsCacheInvalidate(model);
 }
 
 bool predefinedTagHasAdded(Model* model, int tagId) {
@@ -216,21 +231,51 @@ bool predefinedTagHasRemoved(Model* model, int tagId) {
 
 void predefinedTagDelete(int tagId) {
 	// Remove from all models' added lists
-	for (auto& pair : predefinedTagsAdded) {
-		pair.second.erase(tagId);
+	for (auto it = predefinedTagsAdded.begin(); it != predefinedTagsAdded.end(); ) {
+		it->second.erase(tagId);
+		if (it->second.empty())
+			it = predefinedTagsAdded.erase(it);
+		else
+			++it;
 	}
 	// Remove from all models' removed lists
-	for (auto& pair : predefinedTagsRemoved) {
-		pair.second.erase(tagId);
+	for (auto it = predefinedTagsRemoved.begin(); it != predefinedTagsRemoved.end(); ) {
+		it->second.erase(tagId);
+		if (it->second.empty())
+			it = predefinedTagsRemoved.erase(it);
+		else
+			++it;
 	}
+	// Invalidate cache for all models since any could be affected
+	effectiveTagIdsCacheInvalidateAll();
 }
 
 void predefinedTagsReset() {
 	predefinedTagsAdded.clear();
 	predefinedTagsRemoved.clear();
+	effectiveTagIdsCacheInvalidateAll();
+}
+
+// Cache for effective tag IDs
+std::map<Model*, TagIdCache> effectiveTagIdsCache;
+uint64_t effectiveTagIdsVersion = 0;
+
+void effectiveTagIdsCacheInvalidate(Model* model) {
+	effectiveTagIdsCache.erase(model);
+}
+
+void effectiveTagIdsCacheInvalidateAll() {
+	effectiveTagIdsCache.clear();
+	effectiveTagIdsVersion++;
 }
 
 std::set<int> getEffectiveTagIds(Model* model) {
+	// Check cache first
+	auto itCached = effectiveTagIdsCache.find(model);
+	if (itCached != effectiveTagIdsCache.end() && itCached->second.version == effectiveTagIdsVersion) {
+		return itCached->second.tagIds;
+	}
+
 	std::set<int> result;
 	
 	// Add original tags
@@ -247,6 +292,12 @@ std::set<int> getEffectiveTagIds(Model* model) {
 			result.insert(tagId);
 		}
 	}
+	
+	// Store in cache
+	TagIdCache cache;
+	cache.tagIds = result;
+	cache.version = effectiveTagIdsVersion;
+	effectiveTagIdsCache[model] = cache;
 	
 	return result;
 }
@@ -280,6 +331,8 @@ static int findTagIdByName(const std::string& name) {
 
 json_t* moduleBrowserToJson(bool includeUsageData) {
 	json_t* rootJ = json_object();
+
+	json_object_set_new(rootJ, "version", json_integer(1));
 
 	json_t* favoritesJ = json_array();
 	for (Model* model : favoriteModels) {
@@ -441,6 +494,11 @@ void moduleBrowserFromJson(json_t* rootJ) {
 	predefinedTagsAdded.clear();
 	predefinedTagsRemoved.clear();
 	
+	// Version check for migration
+	json_t* versionJ = json_object_get(rootJ, "version");
+	int version = versionJ ? json_integer_value(versionJ) : 0;
+	(void)version; // Reserved for future migrations
+	
 	// New format: "predefinedTags" with "added" and "removed" arrays
 	json_t* predefinedTagsJ = json_object_get(rootJ, "predefinedTags");
 	if (predefinedTagsJ) {
@@ -487,12 +545,14 @@ void moduleBrowserFromJson(json_t* rootJ) {
 		}
 	}
 
+	// Cleanup existing modelUsage entries before loading new data
+	for (auto t : modelUsage) {
+		delete t.second;
+	}
+	modelUsage.clear();
+
 	json_t* usageJ = json_object_get(rootJ, "usage");
 	if (usageJ) {
-		for (auto t : modelUsage) {
-			delete t.second;
-		}
-		modelUsage.clear();
 		size_t i;
 		json_t* slugJ;
 		json_array_foreach(usageJ, i, slugJ) {
@@ -967,6 +1027,8 @@ struct MbWidget : ModuleWidget {
 			[]() { return pluginSettings.mbMagnifierEnabled; },
 			[]() { pluginSettings.mbMagnifierEnabled ^= true; }
 		));
+		menu->addChild(createBoolPtrMenuItem("Apply VCV Libray Whitelist", "", &pluginSettings.mbApplyLibraryWhitelist));
+		menu->addChild(createBoolPtrMenuItem("Show deprecated models", "", &pluginSettings.mbShowDeprecated));
 
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuLabel("Custom tags for modules"));
@@ -1080,8 +1142,9 @@ struct MbWidget : ModuleWidget {
 
 		FILE* file = fopen(filename.c_str(), "w");
 		if (!file) {
-			std::string message = string::f("Could not write to patch file %s", filename.c_str());
+			std::string message = string::f("Could not write to file %s", filename.c_str());
 			osdialog_message(OSDIALOG_WARNING, OSDIALOG_OK, message.c_str());
+			return;
 		}
 		DEFER({
 			fclose(file);

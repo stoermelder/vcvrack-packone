@@ -23,6 +23,20 @@ bool hideBrands = false;
 // Static functions
 
 static bool isModelVisible(plugin::Model* model, const bool& favourite, const std::string& brand, const std::set<int>& tagId, const std::set<std::string>& customTagFilter, const bool& hidden) {
+	// Filter if not whitelisted by library
+	if (pluginSettings.mbApplyLibraryWhitelist) {
+		if (!settings::isModuleWhitelisted(model->plugin->slug, model->slug)) {
+			return false;
+		}
+	}
+
+	// Filter deprecated modules
+	if (!pluginSettings.mbShowDeprecated) {
+		if (model->hidden) {
+			return false;
+		}
+	}
+
 	// Filter favorite
 	if (favourite) {
 		if (!isModelFavorite(model))
@@ -278,7 +292,7 @@ struct ModelBox : widget::OpaqueWidget {
 			void onSelectKey(const event::SelectKey& e) override {
 				if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
 					std::string tag = string::trim(text);
-					if (!tag.empty()) {
+					if (isValidCustomTag(tag)) {
 						customTagAdd(model, tag);
 						ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
 						if (browser) {
@@ -991,7 +1005,8 @@ void ModuleBrowser::refresh(bool resetScroll) {
 				break;
 			case ModuleBrowserSort::RANDOM:
 				std::vector<std::reference_wrapper<Widget*>> vec(modelContainer->children.begin(), modelContainer->children.end());
-				std::random_shuffle(vec.begin(), vec.end());
+				std::mt19937 rng(random::u32());
+				std::shuffle(vec.begin(), vec.end(), rng);
 				std::list<Widget*> s(vec.begin(), vec.end());
 				modelContainer->children.swap(s);
 				break;

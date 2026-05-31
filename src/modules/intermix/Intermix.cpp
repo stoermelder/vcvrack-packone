@@ -252,7 +252,8 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 						for (int i = 0; i < sceneCount; i++) {
 							sceneCvModeShuffle.push_back(i);
 						}
-						std::random_shuffle(std::begin(sceneCvModeShuffle), std::end(sceneCvModeShuffle));
+						std::mt19937 rng(random::u32());
+						std::shuffle(std::begin(sceneCvModeShuffle), std::end(sceneCvModeShuffle), rng);
 						int s = std::min(std::max(0, sceneCvModeShuffle.back()), sceneCount - 1);
 						sceneCvModeShuffle.pop_back();
 						sceneSet(s);
@@ -353,7 +354,8 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 							for (int i = 0; i < sceneCount; i++) {
 								sceneCvModeShuffle.push_back(i);
 							}
-							std::random_shuffle(std::begin(sceneCvModeShuffle), std::end(sceneCvModeShuffle));
+							std::mt19937 rng(random::u32());
+							std::shuffle(std::begin(sceneCvModeShuffle), std::end(sceneCvModeShuffle), rng);
 						}
 						int s = std::min(std::max(0, sceneCvModeShuffle.back()), sceneCount - 1);
 						sceneCvModeShuffle.pop_back();
