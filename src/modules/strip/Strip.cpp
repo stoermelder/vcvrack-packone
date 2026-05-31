@@ -2,8 +2,8 @@
 #include "../../utils/digital.hpp"
 #include "../../utils/TaskWorker.hpp"
 #include "../../utils/TaskProcessor.hpp"
+#include "../../utils/SpscLatestValue.hpp"
 #include <atomic>
-#include <memory>
 
 namespace StoermelderPackOne {
 namespace Strip {
@@ -55,12 +55,12 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 	std::atomic<bool> lastBypassState{false};
 
 	/** [Stored to JSON] */
-	/*	This is owned be the engine thread */
+	/*	This is owned by the engine thread */
 	std::set<std::tuple<int64_t, int>> excludedParams;
-	/*  Snapshot published for UI thread: shared_ptr to immutable set. Use std::atomic_load/store for atomic access. */
-	std::shared_ptr<const std::set<std::tuple<int64_t, int>>> excludedParamsPtr;
-	/* 	Snapshot published by UI Thread, only used for loading presets */
-	std::shared_ptr<const std::set<std::tuple<int64_t, int>>> excludedParamsPtrUi;
+	/*  Snapshot published for UI thread (engine writes, UI reads). */
+	SpscLatestValue<std::set<std::tuple<int64_t, int>>> excludedParamsPtr;
+	/*  Snapshot published by UI thread for engine to consume once (UI writes, engine reads). */
+	SpscLatestValue<std::set<std::tuple<int64_t, int>>> excludedParamsPtrUi;
 
 	/*  Indicates that learn mode is ready - only used for LED */
 	std::atomic<bool> excludeLearn{false};
@@ -108,7 +108,8 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 		presetLoadReplace = false;
 		// Initialize snapshot to empty set so UI can read safely immediately
 		excludedParams.clear();
-		std::atomic_store(&excludedParamsPtr, std::make_shared<const std::set<std::tuple<int64_t, int>>>());
+		excludedParamsPtr.store({});
+		excludedParamsPtrUi.store({});
 		Module::onReset(e);
 	}
 
@@ -414,7 +415,7 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 				excludedParams.erase(it);
 			}
 			// Publish updated snapshot for UI readers
-			std::atomic_store(&excludedParamsPtr, std::make_shared<const std::set<std::tuple<int64_t, int>>>(excludedParams));
+			excludedParamsPtr.store(excludedParams);
 		}
 	}
 
@@ -432,7 +433,7 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 	 */
 	void groupExcludeClear() {
 		excludedParams.clear();
-		std::atomic_store(&excludedParamsPtr, std::make_shared<const std::set<std::tuple<int64_t, int>>>());
+		excludedParamsPtr.store({});
 	}
 
 	/** 
@@ -458,7 +459,7 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 				if (mNext->getId() == moduleId) {
 					excludedParams.insert(std::make_tuple(moduleId, paramId));
 					// Publish updated snapshot for UI readers
-					std::atomic_store(&excludedParamsPtr, std::make_shared<const std::set<std::tuple<int64_t, int>>>(excludedParams));
+					excludedParamsPtr.store(excludedParams);
 					return;
 				}
 				m = mNext;
@@ -475,7 +476,7 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 				if (mNext->getId() == moduleId) {
 					excludedParams.insert(std::make_tuple(moduleId, paramId));
 					// Publish updated snapshot for UI readers
-					std::atomic_store(&excludedParamsPtr, std::make_shared<const std::set<std::tuple<int64_t, int>>>(excludedParams));
+					excludedParamsPtr.store(excludedParams);
 					return;
 				}
 				m = mNext;
@@ -497,7 +498,7 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 	 */
 	void groupExcludeRemove(int64_t moduleId, int paramId) {
 		excludedParams.erase(std::make_tuple(moduleId, paramId));
-		std::atomic_store(&excludedParamsPtr, std::make_shared<const std::set<std::tuple<int64_t, int>>>(excludedParams));
+		excludedParamsPtr.store(excludedParams);
 	}
 
 	/** 
@@ -513,12 +514,9 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 	 * To be called from engine-thread only.
 	 */
 	void groupExcludeLoad() {
-		auto snapUi = std::atomic_load(&excludedParamsPtrUi);
-		if (snapUi) {
-			excludedParams = *snapUi;
-			// Publish updated snapshot for UI readers
-			std::atomic_store(&excludedParamsPtr, std::make_shared<const std::set<std::tuple<int64_t, int>>>(excludedParams));
-			std::atomic_store(&excludedParamsPtrUi, std::shared_ptr<const std::set<std::tuple<int64_t, int>>>{});
+		if (excludedParamsPtrUi.load_if_new(excludedParams)) {
+			// Publish updated snapshot for UI reader
+			excludedParamsPtr.store(excludedParams);
 		}
 	}
 
@@ -532,16 +530,13 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 
 		json_object_set_new(rootJ, "onMode", json_integer((int)onMode));
 
-		// Use atomic snapshot published by the engine thread
-		auto snap = std::atomic_load(&excludedParamsPtr);
+		// Use snapshot published by the engine thread
 		json_t* excludedParamsJ = json_array();
-		if (snap) {
-			for (auto t : *snap) {
-				json_t* excludedParamJ = json_object();
-				json_object_set_new(excludedParamJ, "moduleId", json_integer(std::get<0>(t)));
-				json_object_set_new(excludedParamJ, "paramId", json_integer(std::get<1>(t)));
-				json_array_append_new(excludedParamsJ, excludedParamJ);
-			}
+		for (auto t : excludedParamsPtr.peek()) {
+			json_t* excludedParamJ = json_object();
+			json_object_set_new(excludedParamJ, "moduleId", json_integer(std::get<0>(t)));
+			json_object_set_new(excludedParamJ, "paramId", json_integer(std::get<1>(t)));
+			json_array_append_new(excludedParamsJ, excludedParamJ);
 		}
 		json_object_set_new(rootJ, "excludedParams", excludedParamsJ);
 
@@ -578,7 +573,7 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 				snap.insert(std::make_tuple(moduleId, paramId));
 			}
 			// Publish snapshot for engine thread
-			std::atomic_store(&excludedParamsPtrUi, std::make_shared<const std::set<std::tuple<int64_t, int>>>(snap));
+			excludedParamsPtrUi.store(snap);
 			groupExcludeLoadRequest();
 		}
 	
@@ -690,14 +685,13 @@ struct ExcludeButton : TL1105 {
 			module->groupExcludeClearRequest();
 		}));
 
-		// Use atomic snapshot published by the engine thread to avoid racing with engine mutations
-		auto snap = std::atomic_load(&module->excludedParamsPtr);
+		const auto& snap = module->excludedParamsPtr.peek();
 
-		if (!snap || snap->size() == 0)
+		if (snap.empty())
 			return;
 
 		menu->addChild(new MenuSeparator());
-		for (auto it : *snap) {
+		for (auto it : snap) {
 			int64_t moduleId = std::get<0>(it);
 			int paramId = std::get<1>(it);
 			
