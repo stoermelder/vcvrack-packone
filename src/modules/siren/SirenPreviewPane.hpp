@@ -893,6 +893,12 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 				e.consume(this);
 				return;
 			}
+			// Redirect cursor keys to the module widget for browser navigation
+			if (e.key == GLFW_KEY_SPACE || e.key == GLFW_KEY_UP || e.key == GLFW_KEY_DOWN || e.key == GLFW_KEY_LEFT || e.key == GLFW_KEY_RIGHT) {
+				ModuleWidget* mw = getAncestorOfType<ModuleWidget>();
+				mw->onSelectKey(e);
+				return;
+			}
 		}
 		widget::OpaqueWidget::onSelectKey(e);
 	}

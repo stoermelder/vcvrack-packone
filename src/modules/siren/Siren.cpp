@@ -420,18 +420,23 @@ struct SirenModule : Module {
 
 struct SirenSearchField : ui::TextField {
 	SirenBrowserPane* pane = nullptr;
-	SirenSearchField() { placeholder = "Search..."; }
+	SirenSearchField() {
+		placeholder = "Search...";
+	}
 	void onChange(const event::Change& e) override {
 		if (pane) {
 			pane->searchQuery = rack::string::trim(text);
-			pane->rebuildRowWidgets();
+			pane->requestRebuild();
 		}
 		ui::TextField::onChange(e);
 	}
 	void onSelectKey(const event::SelectKey& e) override {
 		if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ESCAPE) {
 			setText("");
-			if (pane) { pane->searchQuery.clear(); pane->rebuildRowWidgets(); }
+			if (pane) {
+				pane->searchQuery.clear();
+				pane->requestRebuild();
+			}
 			e.consume(this);
 			return;
 		}
@@ -717,7 +722,7 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 
 		// Refresh browser when preview pane modifies metadata
 		previewPane->onMetadataChanged = [this]() {
-			browserPane->rebuildRowWidgets();
+			browserPane->requestRebuild();
 		};
 
 		dropHandler.moduleWidget = this;
@@ -807,18 +812,26 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 		previewPane->loadItem(path, src, src ? src->getMetadata() : nullptr, startPlay);
 	}
 
-	void onHoverKey(const event::HoverKey& e) override {
-		if (e.action == GLFW_PRESS && e.key == GLFW_KEY_SPACE) {
-			if (previewPane && !previewPane->currentId.empty()) {
-				if (module && module->playing.load(std::memory_order_relaxed))
-					previewPane->stopPlaybackCallback();
-				else
-					previewPane->startPlaybackFrom(previewPane->inPoint);
-				e.consume(this);
-				return;
+	void onSelectKey(const SelectKeyEvent& e) override {
+		if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
+			if (e.key == GLFW_KEY_SPACE) {
+				if (!previewPane->currentId.empty()) {
+					if (module->playing.load(std::memory_order_relaxed))
+						previewPane->stopPlaybackCallback();
+					else
+						previewPane->startPlaybackFrom(previewPane->inPoint);
+					e.consume(this);
+					return;
+				}
+			}
+			if (e.key == GLFW_KEY_UP || e.key == GLFW_KEY_DOWN || e.key == GLFW_KEY_LEFT || e.key == GLFW_KEY_RIGHT) {
+				if (browserPane->navigateKey(e.key)) {
+					e.consume(this);
+					return;
+				}
 			}
 		}
-		ThemedModuleWidget<SirenModule>::onHoverKey(e);
+		ThemedModuleWidget<SirenModule>::onSelectKey(e);
 	}
 
 	void appendContextMenu(ui::Menu* menu) override {

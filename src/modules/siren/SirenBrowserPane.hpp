@@ -30,12 +30,6 @@ struct SirenTreeRow : widget::OpaqueWidget {
 	static constexpr float ROW_H   = 20.f;
 	static constexpr float INDENT  = 14.f;
 
-	DataSourceNode node;
-	int indentLevel = 0;
-	RootMetadata* metadata = nullptr;
-	SirenBrowserPane* pane = nullptr;
-	bool selected = false;
-
 	// Favorite star button (file rows only)
 	struct StarButton : widget::OpaqueWidget {
 		SirenTreeRow* row = nullptr;
@@ -59,6 +53,12 @@ struct SirenTreeRow : widget::OpaqueWidget {
 		}
 	};
 
+	DataSourceNode node;
+	int indentLevel = 0;
+	RootMetadata* metadata = nullptr;
+	SirenBrowserPane* pane = nullptr;
+	bool selected = false;
+
 	StarButton* starBtn = nullptr;
 
 	void init(const DataSourceNode& n, int indent, RootMetadata* meta, SirenBrowserPane* p) {
@@ -79,8 +79,9 @@ struct SirenTreeRow : widget::OpaqueWidget {
 
 	void step() override {
 		// Keep star button flush against the right edge
-		if (starBtn)
+		if (starBtn) {
 			starBtn->box.pos.x = box.size.x - 16.f;
+		}
 		widget::OpaqueWidget::step();
 	}
 
@@ -138,6 +139,7 @@ struct SirenTreeRow : widget::OpaqueWidget {
 			}
 			// Star drawn by StarButton child widget
 		}
+		OpaqueWidget::draw(args);
 	}
 
 	void onButton(const event::Button& e) override;
@@ -182,6 +184,14 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 	std::vector<TreeEntry> rows;
 	std::atomic<bool> loadPending{false};
 
+	// When non-empty: after the next async load completes, select the first child of this path
+	std::string pendingSelectFirstOfPath;
+
+	// Deferred rebuild — set from event handlers; consumed by step() to avoid
+	// deleting widgets while handleButton/handleKey is still on the call stack.
+	bool rebuildDirty = false;
+	bool scrollAfterRebuild = false;
+
 	// Pending async result
 	struct PendingResult {
 		std::string parentPath;
@@ -224,8 +234,9 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 	void setRoots(const std::vector<std::string>& roots, int activeIdx) {
 		rootContainers   = roots;
 		activeRootIdx = activeIdx;
-		if (activeRootIdx >= 0 && activeRootIdx < (int)rootContainers.size())
+		if (activeRootIdx >= 0 && activeRootIdx < (int)rootContainers.size()) {
 			loadRoot(rootContainers[activeRootIdx]);
+		}
 	}
 
 	void loadRoot(const std::string& root) {
@@ -268,16 +279,41 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 					rows.insert(rows.begin() + idx, newRows.begin(), newRows.end());
 				}
 				rebuildRowWidgets();
+
+				// Auto-select first child when navigating right into a folder
+				if (!pendingSelectFirstOfPath.empty()) {
+					std::string parentPath = pendingSelectFirstOfPath;
+					pendingSelectFirstOfPath.clear();
+					auto vr = visibleRowWidgets();
+					for (int i = 0; i < (int)vr.size() - 1; i++) {
+						if (vr[i]->node.fullPath == parentPath) {
+							selectPath(vr[i + 1]->node.fullPath, vr[i + 1]->node.isContainer);
+							break;
+						}
+					}
+				}
 			}
 		}
 		if (dropHandler) dropHandler->step();
+
+		// Flush deferred rebuilds requested by event handlers
+		if (rebuildDirty) {
+			rebuildDirty = false;
+			bool doScroll = scrollAfterRebuild;
+			scrollAfterRebuild = false;
+			rebuildRowWidgets();
+			if (doScroll) scrollToSelected();
+		}
+
 		OpaqueWidget::step();
 	}
 
-	void rebuildRowWidgets() {
-		while (!rowContainer->children.empty())
-			rowContainer->removeChild(rowContainer->children.front());
+	void requestRebuild() {
+		rebuildDirty = true;
+	}
 
+	void rebuildRowWidgets() {
+		rowContainer->clearChildren();
 		RootMetadata* meta = activeDataSource ? activeDataSource->getMetadata() : nullptr;
 
 		float y = 0.f;
@@ -313,7 +349,7 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 			row->init(n, entry.indent, meta, this);
 			row->selected     = (n.fullPath == selectedPath);
 			row->box.pos      = Vec(0.f, y);
-			row->box.size     = Vec(box.size.x, SirenTreeRow::ROW_H);
+			row->box.size     = Vec(box.size.x - 12.f, SirenTreeRow::ROW_H);
 			rowContainer->addChild(row);
 			y += SirenTreeRow::ROW_H;
 		}
@@ -332,13 +368,13 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 			while (end < (int)rows.size() && rows[end].indent >= childIndent) end++;
 			rows.erase(rows.begin() + rowIdx + 1, rows.begin() + end);
 			entry.expanded = false;
-			rebuildRowWidgets();
+			requestRebuild();
 			return;
 		}
 
 		entry.expanded = true;
 		entry.node.childrenLoaded = false;
-		rebuildRowWidgets();
+		requestRebuild();
 
 		std::string path = entry.node.fullPath;
 		int insertIdx    = rowIdx + 1;
@@ -393,6 +429,121 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		for (int i = 0; i < (int)rows.size(); i++)
 			if (rows[i].node.fullPath == fullPath) return i;
 		return -1;
+	}
+
+	// ── Keyboard navigation ───────────────────────────────────────────────────
+
+	std::vector<SirenTreeRow*> visibleRowWidgets() {
+		std::vector<SirenTreeRow*> result;
+		for (Widget* w : rowContainer->children)
+			if (auto* r = dynamic_cast<SirenTreeRow*>(w))
+				result.push_back(r);
+		return result;
+	}
+
+	void scrollToSelected() {
+		for (Widget* w : rowContainer->children) {
+			auto* r = dynamic_cast<SirenTreeRow*>(w);
+			if (!r || !r->selected) continue;
+			float rowTop = r->box.pos.y;
+			float rowBot = rowTop + r->box.size.y;
+			float viewH  = scrollWidget->box.size.y;
+			if (rowTop < scrollWidget->offset.y)
+				scrollWidget->offset.y = rowTop;
+			else if (rowBot > scrollWidget->offset.y + viewH)
+				scrollWidget->offset.y = rowBot - viewH;
+			break;
+		}
+	}
+
+	// Select a row by path, schedule rebuild+scroll, and fire onFileSelected for files.
+	void selectPath(const std::string& path, bool isContainer) {
+		selectedPath = path;
+		requestRebuild();
+		scrollAfterRebuild = true;
+		if (!isContainer && onFileSelected) {
+			onFileSelected(path, false);
+		}
+	}
+
+	// Returns true if the key was handled.
+	bool navigateKey(int key) {
+		auto vr = visibleRowWidgets();
+		if (vr.empty()) return false;
+
+		// Find index of currently selected row in the visible list
+		int selIdx = -1;
+		for (int i = 0; i < (int)vr.size(); i++) {
+			if (vr[i]->selected) { selIdx = i; break; }
+		}
+
+		if (key == GLFW_KEY_UP) {
+			int target = (selIdx <= 0) ? 0 : selIdx - 1;
+			selectPath(vr[target]->node.fullPath, vr[target]->node.isContainer);
+			return true;
+		}
+
+		if (key == GLFW_KEY_DOWN) {
+			int target = (selIdx < 0) ? 0 : std::min(selIdx + 1, (int)vr.size() - 1);
+			selectPath(vr[target]->node.fullPath, vr[target]->node.isContainer);
+			return true;
+		}
+
+		if (key == GLFW_KEY_RIGHT) {
+			if (selIdx < 0) return true;
+			SirenTreeRow* row = vr[selIdx];
+			if (!row->node.isContainer) return true;
+
+			int treeIdx = findTreeIdx(row->node.fullPath);
+			if (treeIdx < 0) return true;
+
+			if (!rows[treeIdx].expanded) {
+				// Expand and schedule auto-select of first child once loaded
+				pendingSelectFirstOfPath = row->node.fullPath;
+				expandRow(treeIdx);
+			}
+			else {
+				// Already expanded — move into first visible child
+				if (selIdx + 1 < (int)vr.size()) {
+					selectPath(vr[selIdx + 1]->node.fullPath, vr[selIdx + 1]->node.isContainer);
+				}
+			}
+			return true;
+		}
+
+		if (key == GLFW_KEY_LEFT) {
+			if (selIdx < 0) return true;
+			SirenTreeRow* row = vr[selIdx];
+
+			// If this is an expanded container, collapse it
+			if (row->node.isContainer) {
+				int treeIdx = findTreeIdx(row->node.fullPath);
+				if (treeIdx >= 0 && rows[treeIdx].expanded) {
+					expandRow(treeIdx);  // toggles — collapses it
+					return true;
+				}
+			}
+
+			// Move to parent container: find nearest ancestor in rows
+			int treeIdx = findTreeIdx(row->node.fullPath);
+			if (treeIdx < 0) return true;
+			int parentIndent = rows[treeIdx].indent - 1;
+			if (parentIndent < 0) return true;  // already at root level
+
+			for (int i = treeIdx - 1; i >= 0; i--) {
+				if (rows[i].indent == parentIndent && rows[i].node.isContainer) {
+					// Collapse parent and select it
+					expandRow(i);
+					selectedPath = rows[i].node.fullPath;
+					requestRebuild();
+					scrollAfterRebuild = true;
+					return true;
+				}
+			}
+			return true;
+		}
+
+		return false;
 	}
 
 	// Compute tag chip rects (shared by draw and hit-testing).
@@ -472,7 +623,7 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 							if (tagFilter.count(tag)) tagFilter.erase(tag);
 							else tagFilter.insert(tag);
 						}
-						rebuildRowWidgets();
+						requestRebuild();
 						e.consume(this);
 						return;
 					}
@@ -480,6 +631,23 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 			}
 		}
 		OpaqueWidget::onButton(e);
+	}
+
+	void onSelectKey(const SelectKeyEvent& e) override {
+		if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
+			if (e.key == GLFW_KEY_SPACE) {
+				ModuleWidget* mw = getAncestorOfType<ModuleWidget>();
+				mw->onSelectKey(e);
+				return;
+			}
+			if (e.key == GLFW_KEY_UP || e.key == GLFW_KEY_DOWN || e.key == GLFW_KEY_LEFT || e.key == GLFW_KEY_RIGHT) {
+				if (navigateKey(e.key)) {
+					e.consume(this);
+					return;
+				}
+			}
+		}
+		OpaqueWidget::onSelectKey(e);
 	}
 
 	void draw(const DrawArgs& args) override {
@@ -535,16 +703,29 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 };
 
 inline void SirenTreeRow::onButton(const event::Button& e) {
-	if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS) {
-		if (node.isContainer) {
-			int treeIdx = pane->findTreeIdx(node.fullPath);
-			if (treeIdx >= 0) pane->expandRow(treeIdx);
+	// Manually handle star button, because of OpaqueWidget
+	if (starBtn && starBtn->box.contains(e.pos)) {
+		starBtn->onButton(e);
+		return;
+	}
+
+	if (e.button == GLFW_MOUSE_BUTTON_LEFT) {
+		if (e.action == GLFW_PRESS) {
+			if (node.isContainer) {
+				int treeIdx = pane->findTreeIdx(node.fullPath);
+				if (treeIdx >= 0) pane->expandRow(treeIdx);
+			}
+			else {
+				bool shift = (e.mods & GLFW_MOD_SHIFT) != 0;
+				pane->selectedPath = node.fullPath;
+				pane->requestRebuild();
+				if (pane->onFileSelected) pane->onFileSelected(node.fullPath, shift);
+			}
 		}
-		else {
-			bool shift = (e.mods & GLFW_MOD_SHIFT) != 0;
-			pane->selectedPath = node.fullPath;
-			pane->rebuildRowWidgets();
-			if (pane->onFileSelected) pane->onFileSelected(node.fullPath, shift);
+		if (e.action == GLFW_RELEASE) {
+			// Set the selected widget for key events
+			Widget* w = getAncestorOfType<ModuleWidget>();
+			APP->event->setSelectedWidget(w);
 		}
 		e.consume(this);
 	}
