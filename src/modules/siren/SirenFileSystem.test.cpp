@@ -209,6 +209,24 @@ TEST_CASE("prepareForDrop: non-existent .mp3 with flag true also falls back", "[
 	REQUIRE(callPrepareForDrop(src, id, true) == id);
 }
 
+// The new resampleQuality parameter must be accepted and not break the early-return
+// path. When targetSampleRate is 0, prepareForDrop short-circuits with the original id
+// regardless of quality, and the returned lambda must still be a valid (non-null) call.
+TEST_CASE("prepareForDrop: resampleQuality parameter is accepted (no-op when no resample requested)", "[Siren][FileSystem]") {
+	TempDir tmp;
+	tmp.touch("kick.wav");
+	FileSystemDataSource src(tmp.str());
+
+	std::string id = tmp.filePath("kick.wav");
+	for (int q : { 0, 1, 4, 7, 10 }) {
+		// targetSampleRate=0 → no resample, no convert, no trim → identity lambda.
+		auto task = src.prepareForDrop(id, /*convertToWav=*/false, /*targetSampleRate=*/0,
+		                               /*trimIn=*/0.f, /*trimOut=*/1.f, q);
+		REQUIRE(task != nullptr);
+		REQUIRE(task() == id);
+	}
+}
+
 // ─── isSupportedAudioFile ───────────────────────────────────────────────────
 // accepts .wav/.flac/.mp3 in any case; rejects everything else.
 TEST_CASE("isSupportedAudioFile: recognises wav/flac/mp3 (any case), rejects everything else", "[Siren][FileSystem]") {

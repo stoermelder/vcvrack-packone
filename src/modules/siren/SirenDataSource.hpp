@@ -117,8 +117,9 @@ struct DataSource {
 	// The lambda is always called on the worker thread by SirenDropHandler.
 	//   targetSampleRate — resample to this rate if > 0 and it differs from the file rate
 	//   trimIn / trimOut — normalised [0, 1] region to keep; defaults retain the full file
+	//   resampleQuality  — speex resampler quality (0..10) used when targetSampleRate > 0
 	virtual std::function<std::string()> prepareForDrop(const std::string& id, bool convertToWav,
-			int targetSampleRate = 0, float trimIn = 0.f, float trimOut = 1.f) {
+			int targetSampleRate = 0, float trimIn = 0.f, float trimOut = 1.f, int resampleQuality = 6) {
 		return [id]() { return id; };
 	}
 

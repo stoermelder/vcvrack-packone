@@ -311,7 +311,8 @@ struct FileSystemDataSource : DataSource {
 	}
 
 	std::function<std::string()> prepareForDrop(const std::string& id, bool convertToWav,
-			int targetSampleRate = 0, float trimIn  = 0.f, float trimOut = 1.f) override {
+			int targetSampleRate = 0, float trimIn  = 0.f, float trimOut = 1.f,
+			int resampleQuality = 6) override {
 
 		std::string ext = rack::system::getExtension(rack::system::getFilename(id));
 		for (char& c : ext) c = (char)tolower(c);
@@ -328,15 +329,16 @@ struct FileSystemDataSource : DataSource {
 		std::string stem  = (dot != std::string::npos) ? fname.substr(0, dot) : fname;
 		std::string outPath = dir + "/" + stem + randomFileSuffix() + ".wav";
 
-		return [id, outPath, targetSampleRate, trimIn, trimOut]() -> std::string {
-			return processAudioForDrop(id, outPath, targetSampleRate, trimIn, trimOut);
+		return [id, outPath, targetSampleRate, trimIn, trimOut, resampleQuality]() -> std::string {
+			return processAudioForDrop(id, outPath, targetSampleRate, trimIn, trimOut, resampleQuality);
 		};
 	}
 
 	// Trim, decode, and/or resample src into a new WAV file at dstPath.
 	// targetSampleRate == 0 keeps the original rate; trimIn/trimOut are normalised [0,1].
+	// resampleQuality is the speex quality (0..10) used when resampling is performed.
 	static std::string processAudioForDrop(const std::string& srcPath, const std::string& dstPath,
-			int targetSampleRate, float trimIn, float trimOut) {
+			int targetSampleRate, float trimIn, float trimOut, int resampleQuality = 6) {
 
 		// Read header only to determine trim region without decoding full PCM.
 		AudioInfo info;
@@ -402,6 +404,12 @@ struct FileSystemDataSource : DataSource {
 			dsp::SampleRateConverter<2> src;
 			src.setChannels(std::min(channels, 2));
 			src.setRates(srcRate, outRate);
+			// Clamp to speex's documented range; out-of-range values would assert / destroy
+			// the resampler state silently in refreshState().
+			int q = resampleQuality;
+			if (q < 0)  q = 0;
+			if (q > 10) q = 10;
+			src.setQuality(q);
 			int inF  = (int)std::min(framesRead,   (int64_t)INT_MAX);
 			int outF = (int)std::min(outCapacity,  (int64_t)INT_MAX);
 			src.process(outPtr, channels, &inF, resampled.data(), channels, &outF);

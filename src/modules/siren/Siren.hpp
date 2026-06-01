@@ -30,6 +30,10 @@ struct SirenSettings {
 	bool loopPlayback       = false;
 	bool resampleOnPlayback = true;
 	bool resampleOnDrop     = true;
+	// Speex resampler quality used during "resample on drop" (SPEEX_RESAMPLER_QUALITY_*).
+	// Three discrete options surfaced in the context menu; values 1, 6 and 10 map to
+	// linear / default / best in the speex preset table.
+	int  resampleQuality    = 6;
 	bool convertToWavOnDrop = false;
 
 	void save() const {
@@ -65,6 +69,7 @@ struct SirenSettings {
 		json_object_set_new(j, "loopPlayback",        json_boolean(loopPlayback));
 		json_object_set_new(j, "resampleOnPlayback", json_boolean(resampleOnPlayback));
 		json_object_set_new(j, "resampleOnDrop",     json_boolean(resampleOnDrop));
+		json_object_set_new(j, "resampleQuality",    json_integer(resampleQuality));
 		json_object_set_new(j, "convertToWavOnDrop", json_boolean(convertToWavOnDrop));
 		return j;
 	}
@@ -85,6 +90,7 @@ struct SirenSettings {
 		v = json_object_get(j, "loopPlayback");         if (v) loopPlayback = json_boolean_value(v);
 		v = json_object_get(j, "resampleOnPlayback");  if (v) resampleOnPlayback = json_boolean_value(v);
 		v = json_object_get(j, "resampleOnDrop");      if (v) resampleOnDrop = json_boolean_value(v);
+		v = json_object_get(j, "resampleQuality");     if (v) resampleQuality = (int)json_integer_value(v);
 		v = json_object_get(j, "convertToWavOnDrop");  if (v) convertToWavOnDrop = json_boolean_value(v);
 	}
 } sirenSettings;

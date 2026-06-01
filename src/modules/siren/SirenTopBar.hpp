@@ -63,6 +63,21 @@ struct SirenSourceButton : ui::ChoiceButton {
 		menu->addChild(new MenuSeparator);
 		menu->addChild(createBoolPtrMenuItem("Resample on playback", "", &sirenSettings.resampleOnPlayback));
 		menu->addChild(createBoolPtrMenuItem("Resample on drop", "", &sirenSettings.resampleOnDrop));
+		// Speex resampler quality used during "resample on drop".
+		menu->addChild(createSubmenuItem("Resample quality", "", [](ui::Menu* qMenu) {
+			struct QPreset { int value; std::string label; std::string desc; };
+			QPreset presets[] = {
+				{ 1,  "Fast",    "Lowest CPU" },
+				{ 6,  "Default", "Balanced quality and CPU"      },
+				{ 10, "Best",    "Highest CPU"  },
+			};
+			for (const QPreset& p : presets) {
+				qMenu->addChild(createCheckMenuItem(p.label, p.desc,
+					[=]() { return sirenSettings.resampleQuality == p.value; },
+					[=]() { sirenSettings.resampleQuality = p.value; }
+				));
+			}
+		}));
 		menu->addChild(createBoolPtrMenuItem("Convert to WAV on drop", "", &sirenSettings.convertToWavOnDrop));
 	}
 };

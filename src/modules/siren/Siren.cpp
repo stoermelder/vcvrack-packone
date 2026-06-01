@@ -718,7 +718,8 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 			int targetRate = sirenSettings.resampleOnDrop ? this->module->engineSampleRate : 0;
 			float trimIn  = previewPane->inPoint;
 			float trimOut = previewPane->outPoint;
-			return src->prepareForDrop(id, sirenSettings.convertToWavOnDrop, targetRate, trimIn, trimOut);
+			return src->prepareForDrop(id, sirenSettings.convertToWavOnDrop,
+			                           targetRate, trimIn, trimOut, sirenSettings.resampleQuality);
 		};
 
 		// Load global settings and restore state
@@ -848,6 +849,22 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 		menu->addChild(new ui::MenuSeparator);
 		menu->addChild(createBoolPtrMenuItem("Resample on playback", "", &sirenSettings.resampleOnPlayback));
 		menu->addChild(createBoolPtrMenuItem("Resample on drop", "", &sirenSettings.resampleOnDrop));
+		// Speex resampler quality used during "resample on drop".
+		// Three presets cover the practical range: fast (1), default (6), best (10).
+		menu->addChild(createSubmenuItem("Resample quality", "", [=](ui::Menu* qMenu) {
+			struct QPreset { int value; std::string label; std::string desc; };
+			QPreset presets[] = {
+				{ 1,  "Fast",    "Lowest CPU" },
+				{ 6,  "Default", "Balanced quality and CPU"      },
+				{ 10, "Best",    "Highest CPU"  },
+			};
+			for (const QPreset& p : presets) {
+				qMenu->addChild(createCheckMenuItem(p.label, p.desc,
+					[=]() { return sirenSettings.resampleQuality == p.value; },
+					[=]() { sirenSettings.resampleQuality = p.value; }
+				));
+			}
+		}));
 		menu->addChild(createBoolPtrMenuItem("Convert to WAV on drop", "", &sirenSettings.convertToWavOnDrop));
 	}
 };
