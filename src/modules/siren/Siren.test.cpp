@@ -347,6 +347,22 @@ TEST_CASE("allTags: user tags merge with starter tags without duplicates", "[Sir
 	REQUIRE(all.count("drone") == 1);
 }
 
+// starter tags are loaded from TagManifest.json at runtime; in tests we use
+// the hard-coded fallback (mirrors the JSON contents).
+TEST_CASE("starterTags: returns 15-tag canonical list in tests", "[Siren][Metadata][Manifest]") {
+	auto tags = starterTags();
+	REQUIRE(tags.size() == 15);
+	// Spot-check a few representative tags from the new vocabulary
+	REQUIRE(std::find(tags.begin(), tags.end(), "drone")    != tags.end());
+	REQUIRE(std::find(tags.begin(), tags.end(), "pad")      != tags.end());
+	REQUIRE(std::find(tags.begin(), tags.end(), "lead")     != tags.end());
+	REQUIRE(std::find(tags.begin(), tags.end(), "stab")     != tags.end());
+	REQUIRE(std::find(tags.begin(), tags.end(), "noise")    != tags.end());
+	// Removed from the old list
+	REQUIRE(std::find(tags.begin(), tags.end(), "fx")       == tags.end());
+	REQUIRE(std::find(tags.begin(), tags.end(), "ambient")  == tags.end());
+}
+
 // ─── Volume parameter ─────────────────────────────────────────────────────────
 // volume parameter defaults to 1.0 and accepts values in range [0, 2].
 TEST_CASE("PARAM_VOLUME: default value and range", "[Siren][Module]") {
