@@ -250,8 +250,8 @@ TEST_CASE("WaveformCache: timestamp validation", "[Siren][Audio]") {
 
 	SECTION("Non-empty cache reports not empty") {
 		WaveformCache cache;
-		cache.bucketCount = 100;
-		cache.peaks.push_back(std::vector<std::pair<float,float>>(100, {-0.5f, 0.5f}));
+		cache.sampleCount = 100;
+		cache.samples.push_back(std::vector<float>(100, 0.f));
 		REQUIRE(cache.empty() == false);
 	}
 }
