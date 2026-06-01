@@ -25,7 +25,7 @@ namespace Siren {
 
 // Number of features extractFeatures() computes. Owned by this header;
 // the generated model asserts that it was trained with the same count.
-static const int SIREN_TAG_NUM_FEATURES = 12;
+static const int SIREN_TAG_NUM_FEATURES = 32;
 
 struct SuggestedTag {
 	std::string name;
@@ -46,6 +46,12 @@ static constexpr float  LOW_BAND_HZ        = 250.f;    // low_band_ratio cutoff 
 static constexpr float  HIGH_BAND_HZ       = 2000.f;   // high_band_ratio cutoff (Hz)
 static constexpr float  MEAN_FLUX_NORM     = 50.f;     // log-flux units/hop → [0, 1]
 static constexpr float  RMS_FULL_SCALE     = 0.7071067811865475f; // 1/√2
+
+// MFCC parameters
+static constexpr int    N_MELS        = 26;    // mel filterbank bands
+static constexpr int    N_MFCC        = 13;    // cepstral coefficients kept
+static constexpr float  MFCC_NORM_0   = 200.f; // normalization for C[0] (energy-like, wide range)
+static constexpr float  MFCC_NORM_N   = 30.f;  // normalization for C[1..12] (shape)
 
 // ── Helpers (RAII, window, magnitudes, flux, smoothing, peak-pick) ────────
 
@@ -304,24 +310,30 @@ struct TagClassifier {
 			out[10] = std::min(1.f, std::log(1.f + crest) / std::log(31.f));
 		}
 
-		// ── Harmonic ratio (normalised autocorrelation peak) ──────────
-		// Pitch range 49–1100 Hz → lags 8–180 samples at TARGET_SR.
-		// Uses first ~0.46 s (4096 samples); periodic → near 1, noise → near 0.
+		// ── Harmonic ratio + pitch ────────────────────────────────────
+		// Autocorrelation over pitch range 49–1100 Hz (lags 8–180 at outSR).
+		// harmonic_ratio: normalised peak → periodic=1, noise=0.
+		// pitch: lag of that peak → Hz, normalised by max detectable pitch.
 		{
 			int n = std::min((int)mono.size(), 4096);
 			float r0 = 0.f;
 			for (int i = 0; i < n; ++i) r0 += mono[i] * mono[i];
-			float maxAC = 0.f;
+			float maxAC  = 0.f;
+			int   bestLag = 0;
 			if (r0 > 1e-12f) {
 				for (int lag = 8; lag <= std::min(180, n - 1); ++lag) {
 					float r = 0.f;
 					int   cnt = n - lag;
 					for (int i = 0; i < cnt; ++i) r += mono[i] * mono[i + lag];
 					float rn = r / r0;
-					if (rn > maxAC) maxAC = rn;
+					if (rn > maxAC) { maxAC = rn; bestLag = lag; }
 				}
 			}
 			out[11] = maxAC;
+			// Pitch: only meaningful when there's a clear periodicity.
+			out[18] = (bestLag > 0 && maxAC > 0.05f)
+			        ? std::min(1.f, float(outSR) / (float(bestLag) * (float(outSR) / 8.f)))
+			        : 0.f;
 		}
 
 		// ── STFT (Hann, 4× overlap) ──────────────────────────────────
@@ -348,6 +360,20 @@ struct TagClassifier {
 		double bwAcc          = 0.0;  // spectral_bandwidth
 		double flatnessAcc    = 0.0;  // spectral_flatness
 
+		// New per-hop accumulators for additional features.
+		double crestAcc     = 0.0;  // spectral_crest: max(mag)/mean(mag)/N
+		double entropyAcc   = 0.0;  // spectral_entropy: Shannon entropy of PSD
+		double slopeAcc     = 0.0;  // spectral_slope: Pearson r(bin, mag)
+		double decreaseAcc  = 0.0;  // spectral_decrease
+		double skewnessAcc  = 0.0;  // spectral_skewness: 3rd standardised moment
+		double kurtosisAcc  = 0.0;  // spectral_kurtosis: excess 4th moment
+		std::vector<double> melAcc(N_MELS, 0.0); // mel filterbank energy per band
+
+		// Precomputed slope constants (function of HALF_N only).
+		const double sum_k  = double(HALF_N) * (HALF_N - 1) / 2.0;
+		const double sum_k2 = double(HALF_N) * (HALF_N - 1) * (2 * HALF_N - 1) / 6.0;
+		const double var_k  = double(HALF_N) * sum_k2 - sum_k * sum_k;
+
 		PffftSetupGuard fft(FFT_SIZE, PFFFT_REAL);
 		if (!fft.p) return;
 
@@ -355,6 +381,21 @@ struct TagClassifier {
 		const float binHz    = float(outSR) / float(FFT_SIZE);
 		const int   lowBinMax  = std::max(1, int(std::floor(LOW_BAND_HZ  / binHz)));
 		const int   highBinMin = std::min(HALF_N - 1, int(std::ceil(HIGH_BAND_HZ / binHz)));
+
+		// Mel filterbank: N_MELS triangular filters from 0 Hz to Nyquist.
+		// mel(f) = 2595·log10(1 + f/700);  bin = round(mel_hz * FFT_SIZE / outSR)
+		int mel_bins[N_MELS + 2];
+		{
+			auto hz_to_mel = [](double hz) { return 2595.0 * std::log10(1.0 + hz / 700.0); };
+			auto mel_to_hz = [](double m)  { return 700.0 * (std::pow(10.0, m / 2595.0) - 1.0); };
+			double mel_lo = hz_to_mel(0.0);
+			double mel_hi = hz_to_mel(double(outSR) / 2.0);
+			for (int m = 0; m < N_MELS + 2; ++m) {
+				double mel = mel_lo + (mel_hi - mel_lo) * m / (N_MELS + 1);
+				int    bin = int(mel_to_hz(mel) * FFT_SIZE / outSR);
+				mel_bins[m] = std::max(0, std::min(HALF_N - 1, bin));
+			}
+		}
 
 		// Prime magPrev from the very first window so hop 0 has a valid
 		// predecessor.
@@ -373,40 +414,102 @@ struct TagClassifier {
 
 			onsetSignal[h] = computeSpectralFlux(magCur.data(), magPrev.data(), HALF_N);
 
-			double framePower = 0.0;
-			double centroid   = 0.0;
+			double framePower  = 0.0;
+			double centroid    = 0.0;
+			double frameMagSum = 0.0;  // Σ mag[b]
+			double frameKXSum  = 0.0;  // Σ b·mag[b]  (for spectral slope)
+			double frameMaxMag = 0.0;  // max(mag[b]) (for spectral crest)
 			for (int b = 0; b < HALF_N; ++b) {
-				double p = double(magCur[b]) * double(magCur[b]);
+				double m = double(magCur[b]);
+				double p = m * m;
 				framePower += p;
 				centroid   += double(b) * p;
 				if (b < lowBinMax)   powerLow  += p;
 				if (b >= highBinMin) powerHigh += p;
+				frameMagSum += m;
+				frameKXSum  += double(b) * m;
+				if (m > frameMaxMag) frameMaxMag = m;
 			}
 			powerSum       += framePower;
 			centroidBinSum += centroid;
 
+			// Spectral crest: max(mag) / mean(mag), normalised by HALF_N.
+			if (frameMagSum > 1e-12) {
+				double meanMag = frameMagSum / double(HALF_N);
+				crestAcc += (frameMaxMag / meanMag) / double(HALF_N);
+			}
+
+			// Spectral slope: Pearson r between bin index and magnitude.
+			{
+				double cov   = double(HALF_N) * frameKXSum  - sum_k * frameMagSum;
+				double var_x = double(HALF_N) * framePower  - frameMagSum * frameMagSum;
+				double denom = std::sqrt(var_k * std::max(0.0, var_x));
+				slopeAcc += (denom > 1e-12) ? cov / denom : 0.0;
+			}
+
 			// Per-frame centroid bin — needed for bandwidth.
 			double centroidBinFrame = (framePower > 1e-12) ? centroid / framePower : 0.0;
 
-			// Second pass: spectral_bandwidth + spectral_flatness.
+			// Second pass: bandwidth, flatness, skewness, kurtosis, decrease, entropy.
 			double bwSq = 0.0, logMagSum = 0.0, linMagSum = 0.0;
+			double sk3 = 0.0, sk4 = 0.0;
+			double decNum = 0.0, decDen = 0.0;
+			double entropy = 0.0;
+			double x0 = double(magCur[0]);
 			for (int b = 0; b < HALF_N; ++b) {
-				double m  = double(magCur[b]);
-				double p  = m * m;
-				double df = double(b) - centroidBinFrame;
-				bwSq      += df * df * p;
+				double m   = double(magCur[b]);
+				double p   = m * m;
+				double df  = double(b) - centroidBinFrame;
+				double df2 = df * df;
+				bwSq      += df2 * p;
 				logMagSum  += std::log(m + 1e-12);
 				linMagSum  += m;
+				sk3 += df * df2 * p;
+				sk4 += df2 * df2 * p;
+				if (b > 0) { decNum += (m - x0) / double(b); decDen += m; }
+				if (framePower > 1e-12) {
+					double pn = p / framePower;
+					if (pn > 1e-12) entropy -= pn * std::log(pn);
+				}
 			}
-			// bandwidth: normalised by (HALF_N-1) so it's in [0, ~0.5]
+			// bandwidth
 			bwAcc += (framePower > 1e-12)
 			       ? std::sqrt(bwSq / framePower) / double(HALF_N - 1)
 			       : 0.0;
-			// flatness: geometric / arithmetic mean of magnitude, in [0, 1] by AM-GM
+			// flatness
 			double arithMean = linMagSum / double(HALF_N);
 			flatnessAcc += (arithMean > 1e-12)
 			             ? std::exp(logMagSum / double(HALF_N)) / arithMean
 			             : 0.0;
+			// skewness + kurtosis (use bw computed above)
+			if (framePower > 1e-12) {
+				double bw = std::sqrt(bwSq / framePower);
+				if (bw > 1e-12) {
+					skewnessAcc += (sk3 / framePower) / (bw * bw * bw);
+					kurtosisAcc += (sk4 / framePower) / (bw * bw * bw * bw);
+				}
+			}
+			// decrease
+			decreaseAcc += (decDen > 1e-12) ? decNum / decDen : 0.0;
+			// entropy (normalised by log(N) for [0,1] range)
+			entropyAcc += entropy / std::log(double(HALF_N));
+
+			// Mel filterbank: accumulate per-filter power energy for this hop.
+			for (int mf = 0; mf < N_MELS; ++mf) {
+				int lo  = mel_bins[mf];
+				int ctr = mel_bins[mf + 1];
+				int hi  = mel_bins[mf + 2];
+				double e = 0.0;
+				if (ctr > lo) {
+					for (int b = lo; b < ctr; ++b)
+						e += double(magCur[b]) * double(magCur[b]) * double(b - lo) / double(ctr - lo);
+				}
+				if (hi > ctr) {
+					for (int b = ctr; b <= hi; ++b)
+						e += double(magCur[b]) * double(magCur[b]) * double(hi - b) / double(hi - ctr);
+				}
+				melAcc[mf] += e;
+			}
 
 			// 85 % rolloff. Smallest bin where cumulative mag² ≥ 0.85·frame.
 			const double rolloffTarget = 0.85 * framePower;
@@ -466,6 +569,45 @@ struct TagClassifier {
 		float fluxSum = 0.f;
 		for (int h = 0; h < numHops; ++h) fluxSum += onsetSignal[h];
 		out[9] = (fluxSum / float(numHops)) / MEAN_FLUX_NORM;
+
+		// ── New features (12–17) ──────────────────────────────────────────────
+
+		// Spectral crest: normalised max/mean ratio (0=flat, 1=single tone).
+		out[12] = float(crestAcc / double(numHops));
+
+		// Spectral entropy: normalised Shannon entropy (0=pure tone, 1=white noise).
+		out[13] = float(entropyAcc / double(numHops));
+
+		// Spectral slope: Pearson r(bin, mag), mapped [-1,1] → [0,1].
+		out[14] = float(slopeAcc / double(numHops)) * 0.5f + 0.5f;
+
+		// Spectral decrease: weighted low-freq bias, mapped to [0,1].
+		out[15] = std::max(0.f, std::min(1.f, float(decreaseAcc / numHops) + 0.5f));
+
+		// Spectral skewness: 3rd standardised moment, mapped [-3,3] → [0,1].
+		out[16] = std::max(0.f, std::min(1.f, float(skewnessAcc / numHops) / 6.f + 0.5f));
+
+		// Spectral kurtosis: excess 4th moment, mapped [-3,7] → [0,1].
+		out[17] = std::max(0.f, std::min(1.f, (float(kurtosisAcc / numHops) - 3.f + 3.f) / 10.f));
+
+		// out[18] = pitch, computed earlier alongside harmonic_ratio.
+
+		// ── MFCCs (19–31) ─────────────────────────────────────────────────────
+		{
+			// Average mel energies over hops, take log.
+			float log_mel[N_MELS];
+			for (int m = 0; m < N_MELS; ++m)
+				log_mel[m] = std::log(float(std::max(1e-10, melAcc[m] / double(numHops))));
+
+			// DCT-II: C[n] = Σ_m log_mel[m] · cos(π·n·(m+0.5)/N_MELS)
+			for (int n = 0; n < N_MFCC; ++n) {
+				float c = 0.f;
+				for (int m = 0; m < N_MELS; ++m)
+					c += log_mel[m] * std::cos(float(M_PI) * n * (m + 0.5f) / float(N_MELS));
+				float norm = (n == 0) ? MFCC_NORM_0 : MFCC_NORM_N;
+				out[19 + n] = std::max(0.f, std::min(1.f, c / norm + 0.5f));
+			}
+		}
 
 		// Final clamp to [0, 1].
 		for (int i = 0; i < SIREN_TAG_NUM_FEATURES; ++i) {

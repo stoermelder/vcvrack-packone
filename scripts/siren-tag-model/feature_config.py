@@ -30,8 +30,28 @@ FEATURE_NAMES: list[str] = [
     "mean_spectral_flux",   # mean log-domain half-rectified flux per hop, normalised
     "crest_factor",         # peak / RMS (log-normalised): transients → high, sustained → low
     "harmonic_ratio",       # normalised autocorrelation peak: pitched → high, noise → low
+    "spectral_crest",       # max(mag)/mean(mag)/N: single-tone → 1, flat noise → ~0
+    "spectral_entropy",     # Shannon entropy of PSD normalised by log(N): noise → 1, tone → 0
+    "spectral_slope",       # Pearson r(bin, mag) mapped [−1,1]→[0,1]: falling=0, rising=1
+    "spectral_decrease",    # spectral decrease (low-freq bias) mapped to [0,1]
+    "spectral_skewness",    # 3rd standardised moment of spectrum mapped [−3,3]→[0,1]
+    "spectral_kurtosis",    # excess 4th moment (peakedness) mapped to [0,1]
+    "pitch",                # fundamental frequency / max pitch: pitched→high, noise→0
+    "mfcc_0",               # mel-frequency cepstral coefficient 0 (log energy)
+    "mfcc_1",
+    "mfcc_2",
+    "mfcc_3",
+    "mfcc_4",
+    "mfcc_5",
+    "mfcc_6",
+    "mfcc_7",
+    "mfcc_8",
+    "mfcc_9",
+    "mfcc_10",
+    "mfcc_11",
+    "mfcc_12",
 ]
 
-assert len(FEATURE_NAMES) == 12, "The Siren runtime expects exactly 12 features"
+assert len(FEATURE_NAMES) == 32, "The Siren runtime expects exactly 32 features"
 
 NUM_FEATURES: int = len(FEATURE_NAMES)  # 10
