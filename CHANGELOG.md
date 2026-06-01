@@ -1,3 +1,8 @@
+## 2.4.1
+
+- [8FACE mk2](./docs/eightface/EightFaceMk2.md)
+    - Fixed crash patch autosave and on preset-loading 
+
 ## 2.4.0
 
 ### New modules

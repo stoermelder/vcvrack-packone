@@ -2,6 +2,7 @@
 #include "../../utils/digital.hpp"
 #include "../../utils/ShapedSlewLimiter.hpp"
 #include "../../utils/TaskProcessor.hpp"
+#include "../../utils/SpscLatestValue.hpp"
 #include "../../components/Knobs.hpp"
 #include "../../components/ParamHandleIndicator.hpp"
 #include "TransitBase.hpp"
@@ -122,8 +123,8 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 	/** [Stored to JSON] */
 	/*	This is owned by the engine thread */
 	std::vector<ParamHandleEx*> sourceHandles;
-	/*  Snapshot published for UI thread: shared_ptr to immutable. Use std::atomic_load/store for atomic access. */
-	std::shared_ptr<const std::vector<ParamHandleEx*>> sourceHandlesPtr;
+	/*  Snapshot published for UI thread (engine writes, UI reads). */
+	SpscLatestValue<std::vector<ParamHandleEx*>> sourceHandlesPtr;
 
 	/** [Stored to JSON] */
 	bool parameterChangesDirect = false;
@@ -151,7 +152,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 	TransitModule() {
 		BASE::panelTheme = pluginSettings.panelThemeDefault;
 		registerExpanderListener("Transit", this);
-		std::atomic_store(&sourceHandlesPtr, std::make_shared<const std::vector<ParamHandleEx*>>());
+		sourceHandlesPtr.store({});
 
 		Module::config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		Module::configSwitch(PARAM_CTRLMODE, 0.f, 2.f, 0.f, "Operating mode", {"Read", "Auto", "Write"});
@@ -587,9 +588,8 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 	 *  Called from the UI-thread.
 	 */	 
 	void bindAddParameterRequest(int64_t moduleId, int paramId, bool presetLoading = false) {
-		// Use atomic load to get the current snapshot
-		auto snap = std::atomic_load(&sourceHandlesPtr);
-		for (ParamHandle* handle : *snap) {
+		const auto& snap = sourceHandlesPtr.peek();
+		for (ParamHandle* handle : snap) {
 			if (handle->moduleId == moduleId && handle->paramId == paramId) {
 				// Parameter already bound
 				return;
@@ -621,7 +621,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 			}
 
 			// Publish new sourceHandles snapshot for the dsp thread
-			std::atomic_store(&sourceHandlesPtr, std::make_shared<const std::vector<ParamHandleEx*>>(sourceHandles));
+			sourceHandlesPtr.store(sourceHandles);
 		});
 	}
 
@@ -629,17 +629,17 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 	 *  Called from the UI-thread.
 	 */
 	void bindClearParameterRequest() {
-		// Use atomic load to get the current snapshot
-		auto snap = std::atomic_load(&sourceHandlesPtr);
-		for (ParamHandle* sourceHandle : *snap) {
+		// Load to get the current snapshot
+		const auto& snap = sourceHandlesPtr.peek();
+		for (ParamHandle* sourceHandle : snap) {
 			APP->engine->removeParamHandle(sourceHandle);
 			delete sourceHandle;
 		}
 		
-		if (snap->size() > 0) {
+		if (snap.size() > 0) {
 			taskProcessorDsp.enqueue([=]() {		
 				sourceHandles.clear();	
-				std::atomic_store(&sourceHandlesPtr, std::make_shared<const std::vector<ParamHandleEx*>>(sourceHandles));
+				sourceHandlesPtr.store(sourceHandles);
 			});
 		}
 	}
@@ -1046,7 +1046,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 		}
 
 		// Publish new sourceHandles snapshot for the UI thread
-		std::atomic_store(&sourceHandlesPtr, std::make_shared<const std::vector<ParamHandleEx*>>(sourceHandles));
+		sourceHandlesPtr.store(sourceHandles);
 	}
 
 	/** Cleans up an expander's presets if they are invalid.
@@ -1148,12 +1148,12 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 		json_object_set_new(rootJ, "clampFadeCv", json_boolean(clampFadeCv));
 		json_object_set_new(rootJ, "parameterChangesDirect", json_boolean(parameterChangesDirect));
 
-		auto snap = std::atomic_load(&sourceHandlesPtr);
+		const auto& snap = sourceHandlesPtr.peek();
 		json_t* sourceMapsJ = json_array();
-		for (size_t i = 0; i < snap->size(); i++) {
+		for (size_t i = 0; i < snap.size(); i++) {
 			json_t* sourceMapJ = json_object();
-			json_object_set_new(sourceMapJ, "moduleId", json_integer(snap->at(i)->moduleId));
-			json_object_set_new(sourceMapJ, "paramId", json_integer(snap->at(i)->paramId));
+			json_object_set_new(sourceMapJ, "moduleId", json_integer(snap.at(i)->moduleId));
+			json_object_set_new(sourceMapJ, "paramId", json_integer(snap.at(i)->paramId));
 			json_array_append_new(sourceMapsJ, sourceMapJ);
 		}
 		json_object_set_new(rootJ, "sourceMaps", sourceMapsJ);
@@ -1213,8 +1213,6 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 				int paramId = std::get<1>(s);
 				bindAddParameterRequest(moduleId, paramId, true);
 			}
-			// Publish new sourceHandles snapshot for the UI thread
-			std::atomic_store(&sourceHandlesPtr, std::make_shared<const std::vector<ParamHandleEx*>>(sourceHandles));
 		});
 
 		BASE::dataFromJson(rootJ);
@@ -1604,14 +1602,13 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 		menu->addChild(construct<BindParameterItem>(&MenuItem::text, "Bind multiple parameters", &BindParameterItem::rightText, RACK_MOD_SHIFT_NAME "+A", &BindParameterItem::widget, this, &BindParameterItem::mode, 3));
 		menu->addChild(createMenuItem("Bind parameters by selection", "", [=]() { selectionWidget->enableLearn(); }));
 
-		// Use atomic snapshot published by the engine thread to avoid racing with engine mutations
-		auto snap = std::atomic_load(&module->sourceHandlesPtr);
-		if (snap->size() > 0) {
+		const auto& snap = module->sourceHandlesPtr.peek();
+		if (snap.size() > 0) {
 			menu->addChild(new MenuSeparator());
 
 			std::set<int64_t> moduleIds;
-			for (size_t i = 0; i < snap->size(); i++) {
-				ParamHandle* handle = snap->at(i);
+			for (size_t i = 0; i < snap.size(); i++) {
+				ParamHandle* handle = snap.at(i);
 				if (moduleIds.find(handle->moduleId) == moduleIds.end()) {
 					moduleIds.insert(handle->moduleId);
 				}
@@ -1622,8 +1619,8 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 					if (!moduleWidget) continue;
 					std::string text = string::f("Unbind \"%s %s\"", moduleWidget->model->plugin->name.c_str(), moduleWidget->model->name.c_str());
 					menu->addChild(createMenuItem(text, "", [=]() {
-						for (size_t i = 0; i < snap->size(); i++) {
-							ParamHandle* handle = snap->at(i);
+						for (size_t i = 0; i < snap.size(); i++) {
+							ParamHandle* handle = snap.at(i);
 							if (handle->moduleId != moduleId) continue;
 							APP->engine->updateParamHandle(handle, -1, 0, true);
 						}
@@ -1631,9 +1628,9 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 				}
 			}));
 
-			menu->addChild(createSubmenuItem(string::f("Bound parameters: %lli", snap->size()), "", [=](Menu* menu) {
-				for (size_t i = 0; i < snap->size(); i++) {
-					ParamHandleEx* handle = (*snap)[i];
+			menu->addChild(createSubmenuItem(string::f("Bound parameters: %lli", snap.size()), "", [=](Menu* menu) {
+				for (size_t i = 0; i < snap.size(); i++) {
+					ParamHandleEx* handle = snap[i];
 					ModuleWidget* moduleWidget = APP->scene->rack->getModule(handle->moduleId);
 					if (!moduleWidget) continue;
 

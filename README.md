@@ -1,7 +1,7 @@
 # stoermelder PackOne
 
 <!-- Version and License Badges -->
-![Version](https://img.shields.io/badge/Version-2.4.0-green.svg?style=flat-square)
+![Version](https://img.shields.io/badge/Version-2.4.1-green.svg?style=flat-square)
 ![Rack](https://img.shields.io/badge/VCV_Rack-v2-red.svg?style=flat-square)
 ![MetaModule](https://img.shields.io/badge/MetaModule-v2-orange.svg?style=flat-square)
 ![License](https://img.shields.io/badge/License-GPLv3+-blue.svg?style=flat-square)
