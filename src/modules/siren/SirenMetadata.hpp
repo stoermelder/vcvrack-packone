@@ -1,17 +1,91 @@
 #pragma once
+#include "../../plugin.hpp"
 #include <rack.hpp>
-#include "../../pluginsettings.hpp"
 
 
 namespace StoermelderPackOne {
 namespace Siren {
 
-// Suggested starter tags shown in the tag list before the user has assigned any.
-// These are never stored unless explicitly assigned to a sample.
-static const std::vector<std::string> STARTER_TAGS = {
-	"drone", "percussion", "loop", "one-shot", "vocal",
-	"field", "texture", "bass", "fx", "ambient"
-};
+// ─── Starter tag list ────────────────────────────────────────────────────────
+//
+// The list of "starter" tags is the single source of truth in
+// `src/modules/Siren/TagManifest.json`. We read it once per module load
+// and expose it as a `std::vector<std::string>` via `starterTags()`.
+//
+// Order in the returned vector matches the order in the JSON. The Python
+// training pipeline reads the same JSON file in the same order, so the
+// index of a tag in this list == the index of that class in the trained
+// model's output vector.
+//
+// Why a function and not a constant: we want the list to be editable
+// without recompiling the plugin, and the file is small (a few KB) so the
+// per-load cost is negligible. `isTesting()` short-circuits the disk read
+// in the test harness.
+
+inline std::string tagManifestPath() {
+	return rack::asset::plugin(pluginInstance, "data/SirenTags.json");
+}
+
+// Hard-coded 15-tag fallback used in tests and when the manifest cannot be
+// read. Keep this list in sync with src/modules/Siren/TagManifest.json.
+static const std::vector<std::string>& fallbackTags() {
+	static const std::vector<std::string> v = {
+		"bass", "bright", "dark", "drone", "field", "lead", "loop",
+		"noise", "one-shot", "pad", "percussion", "stab", "texture",
+		"tonal", "vocal",
+	};
+	return v;
+}
+
+inline const std::vector<std::string>& starterTags() {
+	static std::vector<std::string> cache;
+	static bool loaded = false;
+	if (loaded) return cache;
+	loaded = true;  // set first so a JSON parse failure doesn't retry every call
+
+	if (isTesting()) {
+		// In tests we can't reach `rack::asset::plugin` without a full
+		// plugin instance. Use the fallback.
+		cache = fallbackTags();
+		return cache;
+	}
+
+	std::string path = tagManifestPath();
+	FILE* f = std::fopen(path.c_str(), "r");
+	if (!f) {
+		WARN("Siren: failed to read SirenTags.json at %s; using built-in fallback.", path.c_str());
+		cache = fallbackTags();
+		return cache;
+	}
+	json_error_t err;
+	json_t* rootJ = json_loadf(f, 0, &err);
+	std::fclose(f);
+	if (!rootJ) {
+		WARN("Siren: failed to parse SirenTags.json: %s; using built-in fallback.", err.text);
+		cache = fallbackTags();
+		return cache;
+	}
+	DEFER({ json_decref(rootJ); });
+
+	json_t* tagsJ = json_object_get(rootJ, "tags");
+	if (!tagsJ || !json_is_array(tagsJ)) {
+		WARN("Siren: SirenTags.json missing 'tags' array; using built-in fallback.");
+		cache = fallbackTags();
+		return cache;
+	}
+	size_t i;
+	json_t* entryJ;
+	json_array_foreach(tagsJ, i, entryJ) {
+		json_t* nameJ = json_object_get(entryJ, "name");
+		if (nameJ && json_is_string(nameJ)) {
+			cache.emplace_back(json_string_value(nameJ));
+		}
+	}
+	if (cache.empty()) {
+		cache = fallbackTags();
+	}
+	return cache;
+}
 
 struct SampleMetadata {
 	std::string relativePath;  // relative to root, using '/' separator
@@ -150,7 +224,7 @@ struct RootMetadata {
 	// All tags: starter tags always shown, plus any user-assigned tags
 	std::set<std::string> allTags() const {
 		std::set<std::string> result;
-		for (const std::string& t : STARTER_TAGS) result.insert(t);
+		for (const std::string& t : starterTags()) result.insert(t);
 		for (const auto& pair : samples) {
 			for (const std::string& tag : pair.second.tags)
 				result.insert(tag);

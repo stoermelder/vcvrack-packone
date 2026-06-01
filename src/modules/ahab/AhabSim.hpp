@@ -84,38 +84,23 @@ public:
 	Usz getRandomSeed() const { return random_seed_; }
 
 	void setUiTickCallback(UiTickCallback cb) {
-		if (cb)
-			std::atomic_store(&ui_tick_callback_ptr_, std::make_shared<UiTickCallback>(std::move(cb)));
-		else
-			std::atomic_store(&ui_tick_callback_ptr_, std::shared_ptr<UiTickCallback>());
+		ui_tick_callback_ptr = cb ? std::move(cb) : 0;
 	}
 
 	void setDspTickCallback(TickDspCallback cb) {
-		if (cb)
-			std::atomic_store(&dsp_tick_callback_ptr_, std::make_shared<TickDspCallback>(std::move(cb)));
-		else
-			std::atomic_store(&dsp_tick_callback_ptr_, std::shared_ptr<TickDspCallback>());
+		dsp_tick_callback_ptr = cb ? std::move(cb) : 0;
 	}
 
 	void setDspInputReader(DspInputReader cb) {
-		if (cb)
-			std::atomic_store(&dsp_input_reader_ptr_, std::make_shared<DspInputReader>(std::move(cb)));
-		else
-			std::atomic_store(&dsp_input_reader_ptr_, std::shared_ptr<DspInputReader>());
+		dsp_input_reader_ptr = cb ? std::move(cb) : 0;
 	}
 
 	void setDspOutputWriter(DspOutputWriter cb) {
-		if (cb)
-			std::atomic_store(&dsp_output_writer_ptr_, std::make_shared<DspOutputWriter>(std::move(cb)));
-		else
-			std::atomic_store(&dsp_output_writer_ptr_, std::shared_ptr<DspOutputWriter>());
+		dsp_output_writer_ptr = cb ? std::move(cb) : 0;
 	}
 
 	void setUiResetCallback(UiResetCallback cb) {
-		if (cb)
-			std::atomic_store(&ui_reset_callback_ptr_, std::make_shared<UiResetCallback>(std::move(cb)));
-		else
-			std::atomic_store(&ui_reset_callback_ptr_, std::shared_ptr<UiResetCallback>());
+		ui_reset_callback_ptr = cb ? std::move(cb) : 0;
 	}
 
 	// Write output via the registered DspOutputWriter (safe to call from C callbacks)
@@ -210,15 +195,15 @@ private:
 	// Tick callback stored as a shared_ptr. We use the free functions
 	// std::atomic_load / std::atomic_store for atomic access without needing
 	// an std::atomic wrapper (these overloads are provided for shared_ptr).
-	std::shared_ptr<UiTickCallback> ui_tick_callback_ptr_;
+	UiTickCallback ui_tick_callback_ptr;
 	// Reset callback (stored atomically as shared_ptr)
-	std::shared_ptr<UiResetCallback> ui_reset_callback_ptr_;
+	UiResetCallback ui_reset_callback_ptr;
 	// Callback for into DSP class
-	std::shared_ptr<TickDspCallback> dsp_tick_callback_ptr_;
+	TickDspCallback dsp_tick_callback_ptr;
 	// Input reader callback (stored atomically as shared_ptr)
-	std::shared_ptr<DspInputReader> dsp_input_reader_ptr_;
+	DspInputReader dsp_input_reader_ptr;
 	// Output writer callback (stored atomically as shared_ptr)
-	std::shared_ptr<DspOutputWriter> dsp_output_writer_ptr_;
+	DspOutputWriter dsp_output_writer_ptr;
 
 	// Undo / Redo history
 	struct UndoNode { Field f; Usz tick; };
