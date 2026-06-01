@@ -332,7 +332,7 @@ TEST_CASE("allTags: starter tags present even when samples have tags", "[Siren][
 	auto all = meta.allTags();
 
 	REQUIRE(all.count("percussion") == 1);
-	for (const std::string& starter : STARTER_TAGS)
+	for (const std::string& starter : starterTags())
 		REQUIRE(all.count(starter) == 1);
 }
 
