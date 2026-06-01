@@ -347,7 +347,7 @@ TEST_CASE("allTags: user tags merge with starter tags without duplicates", "[Sir
 	REQUIRE(all.count("drone") == 1);
 }
 
-// starter tags are loaded from TagManifest.json at runtime; in tests we use
+// starter tags are loaded from SirenTags.json at runtime; in tests we use
 // the hard-coded fallback (mirrors the JSON contents).
 TEST_CASE("starterTags: returns 15-tag canonical list in tests", "[Siren][Metadata][Manifest]") {
 	auto tags = starterTags();

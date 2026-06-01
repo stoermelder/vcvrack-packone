@@ -9,7 +9,7 @@ namespace Siren {
 // ─── Starter tag list ────────────────────────────────────────────────────────
 //
 // The list of "starter" tags is the single source of truth in
-// `src/modules/Siren/TagManifest.json`. We read it once per module load
+// `data/SirenTags.json`. We read it once per module load
 // and expose it as a `std::vector<std::string>` via `starterTags()`.
 //
 // Order in the returned vector matches the order in the JSON. The Python
@@ -27,7 +27,7 @@ inline std::string tagManifestPath() {
 }
 
 // Hard-coded 15-tag fallback used in tests and when the manifest cannot be
-// read. Keep this list in sync with src/modules/Siren/TagManifest.json.
+// read. Keep this list in sync with data/SirenTags.json.
 static const std::vector<std::string>& fallbackTags() {
 	static const std::vector<std::string> v = {
 		"bass", "bright", "dark", "drone", "field", "lead", "loop",

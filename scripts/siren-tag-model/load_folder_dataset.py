@@ -1,7 +1,7 @@
 """Load a folder-based labeled dataset and write a CSV the trainer can read.
 
 The convention is: one subfolder per tag, named exactly after a tag in
-`src/modules/Siren/TagManifest.json` (e.g. `drone/`, `percussion/`, `pad/`).
+`data/SirenTags.json` (e.g. `drone/`, `percussion/`, `pad/`).
 Inside each subfolder, any `.wav` / `.flac` / `.mp3` / `.ogg` / `.aif*` file
 is treated as a training example for that tag. Features are extracted with
 the same `features.extract_features()` used during inference, so the CSV
@@ -15,7 +15,7 @@ Folder-name → tag mapping
 -------------------------
 
 The folder name MUST match a tag's `name` field in
-`src/modules/Siren/TagManifest.json`, exactly (case-insensitive
+`data/SirenTags.json`, exactly (case-insensitive
 matching is applied to be friendly, but case is preserved in the CSV).
 Anything that doesn't match a known tag is skipped with a warning.
 
@@ -158,7 +158,7 @@ def load_folder_dataset(
         canonical = _find_matching_tag(sub.name)
         if canonical is None:
             print(
-                f"  skip folder {sub.name!r}: doesn't match any tag in TagManifest.json "
+                f"  skip folder {sub.name!r}: doesn't match any tag in SirenTags.json "
                 f"(known tags: {', '.join(t.name for t in TAGS)})",
                 file=sys.stderr,
             )

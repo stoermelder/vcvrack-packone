@@ -1,13 +1,13 @@
 """Reads the Siren tag manifest JSON and provides both Python and C++ access.
 
-The C++ plugin treats `src/modules/Siren/TagManifest.json` as the single
+The C++ plugin treats `data/SirenTags.json` as the single
 source of truth at runtime — it reads it once at module startup with
 `rack::asset::plugin(...)` and rebuilds `STARTER_TAGS` from it. The Python
 training pipeline reads the same JSON here and exposes the same list as
 `CLASS_NAMES` so `features.py`, `train_model.py`, `classify_wav.py`, and
 `emit_cpp.py` all agree.
 
-When you edit `TagManifest.json`, both worlds pick it up automatically —
+When you edit `SirenTags.json`, both worlds pick it up automatically —
 C++ on next module load, Python on next import of this file (or on the
 next `bash run.sh`).
 """
@@ -21,7 +21,7 @@ from pathlib import Path
 # so the script can be run from anywhere.
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent.parent
-MANIFEST_PATH = REPO_ROOT / "src" / "modules" / "Siren" / "TagManifest.json"
+MANIFEST_PATH = REPO_ROOT / "data" / "SirenTags.json"
 
 
 @dataclass(frozen=True)
@@ -84,7 +84,7 @@ def refresh() -> None:
 if __name__ == "__main__":
     # Quick CLI: print the current state of the manifest.
     refresh()
-    print(f"── TagManifest.json (version {MANIFEST_VERSION}, {NUM_CLASSES} tags) ──")
+    print(f"── SirenTags.json (version {MANIFEST_VERSION}, {NUM_CLASSES} tags) ──")
     for i, t in enumerate(TAGS):
         flag = "✓" if t.classifier_can_suggest else "·"
         print(f"  [{i:2d}] {flag} {t.name:12s}  ({t.category:7s})  {t.description}")

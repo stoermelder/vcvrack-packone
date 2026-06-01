@@ -11,7 +11,7 @@ The plan this implements is in [`docs/siren/Classifier.md`](../../../docs/siren/
 ## The 15-tag vocabulary
 
 The single source of truth for the tag list is
-[`src/modules/Siren/TagManifest.json`](../../src/modules/Siren/TagManifest.json).
+[`data/SirenTags.json`](../../data/SirenTags.json).
 It is read by:
 
 - the **C++ plugin** at module load time, via
@@ -20,7 +20,7 @@ It is read by:
 - the **Python pipeline** at import time, via
   `tag_manifest.py`.
 
-To add, remove, or rename a tag: edit `TagManifest.json`, then re-run
+To add, remove, or rename a tag: edit `SirenTags.json`, then re-run
 `bash run.sh`. The Python pipeline picks it up on next import; the C++
 plugin picks it up on next module load (no recompile needed if the count
 stays the same).
@@ -163,7 +163,7 @@ how to plug the result into `bash run.sh`.
 ```bash
 # 1. Organize your clips into a folder, one subdirectory per tag:
 my_samples/
-    drone/         # folder name MUST match a tag in TagManifest.json
+    drone/         # folder name MUST match a tag in SirenTags.json
         A3_drone.wav
         sub_pad.wav
         ...
@@ -192,7 +192,7 @@ just pass `--csv` to point at your own.
 
 `load_folder_dataset.py` walks a directory and treats each **subdirectory
 name** as a tag. The name must match one of the 15 entries in
-`src/modules/Siren/TagManifest.json` (case-insensitive, but the canonical
+`data/SirenTags.json` (case-insensitive, but the canonical
 spelling is what gets written to the CSV). Anything that doesn't match
 is skipped with a warning, not an error — so you can have extra folders
 without breaking the run.
@@ -371,14 +371,14 @@ A few practical starting points, in order of how well they map to the
    The new model will use the weights you just trained.
 
 The tag *vocabulary* doesn't change — it always comes from
-`TagManifest.json`, which is what the dialog UI filters by. Only the
+`SirenTags.json`, which is what the dialog UI filters by. Only the
 classifier weights change when you retrain.
 
 ## Files in this folder
 
 | File | Purpose |
 |------|---------|
-| `tag_manifest.py` | Reads `src/modules/Siren/TagManifest.json` and exposes `CLASS_NAMES`, `TAGS`, `NUM_CLASSES`. **Python-side source of truth** (the JSON itself is the actual source of truth). |
+| `tag_manifest.py` | Reads `data/SirenTags.json` and exposes `CLASS_NAMES`, `TAGS`, `NUM_CLASSES`. **Python-side source of truth** (the JSON itself is the actual source of truth). |
 | `feature_config.py` | The 6-feature contract + re-exports from `tag_manifest`. |
 | `features.py` | Python twin of the C++ feature extractor. Must match the C++ output. |
 | `generate_synthetic_dataset.py` | Synthesizes 15 types of audio (one per class) and writes a CSV. |
@@ -391,7 +391,7 @@ classifier weights change when you retrain.
 | `build/` | Output directory. `SirenTagClassifier.generated.hpp` lands here. |
 | `.venv/`, `__pycache__/` | Cached, gitignored. |
 
-The corresponding C++ side: `src/modules/Siren/TagManifest.json` is the
+The corresponding C++ side: `data/SirenTags.json` is the
 JSON; `src/modules/Siren/SirenMetadata.hpp` reads it at module load time
 into `Siren::starterTags()`. The dylib bundles the JSON via
 `DISTRIBUTABLES += res` in the plugin Makefile.
