@@ -171,6 +171,9 @@ struct FileSystemDataSource : DataSource {
 
 	std::string rootPath() const override { return root; }
 
+	std::string resolveAbsPath(const std::string& id) const { return root + id; }
+
+
 	bool isSupportedFile(const std::string& path) const override {
 		return isSupportedAudioFile(path);
 	}
@@ -251,33 +254,32 @@ struct FileSystemDataSource : DataSource {
 	}
 
 	std::string getRelativePath(const std::string& id) const override {
-		ghc::filesystem::path rel = ghc::filesystem::path(id)
-		                            .lexically_relative(ghc::filesystem::path(root));
-		return "/" + rel.generic_string();
+		return id;
 	}
 
 	int64_t getTimestamp(const std::string& id) const override {
-		return getFileTimestamp(id);
+		return getFileTimestamp(resolveAbsPath(id));
 	}
 
 	bool loadAudioInfo(const std::string& id, AudioInfo& out) const override {
-		return ::StoermelderPackOne::Siren::loadAudioInfo(id, out);
+		return ::StoermelderPackOne::Siren::loadAudioInfo(resolveAbsPath(id), out);
 	}
 
 	std::unique_ptr<AudioStream> openAudioStream(const std::string& id) const override {
-		std::string ext = rack::system::getExtension(rack::system::getFilename(id));
+		std::string absPath = resolveAbsPath(id);
+		std::string ext = rack::system::getExtension(rack::system::getFilename(absPath));
 		for (char& c : ext) c = (char)tolower(c);
 
 		auto s = std::unique_ptr<FileSystemAudioStream>(new FileSystemAudioStream());
 		if (ext == ".wav") {
-			if (!drwav_init_file(&s->wav, id.c_str(), nullptr)) return nullptr;
+			if (!drwav_init_file(&s->wav, absPath.c_str(), nullptr)) return nullptr;
 			s->fmt = FileSystemAudioStream::Fmt::WAV;
 			s->ch  = (int)s->wav.channels;
 			s->sr  = (int)s->wav.sampleRate;
 			s->total = (int64_t)s->wav.totalPCMFrameCount;
 		}
 		else if (ext == ".flac") {
-			s->flac = drflac_open_file(id.c_str(), nullptr);
+			s->flac = drflac_open_file(absPath.c_str(), nullptr);
 			if (!s->flac) return nullptr;
 			s->fmt = FileSystemAudioStream::Fmt::FLAC;
 			s->ch  = (int)s->flac->channels;
@@ -285,7 +287,7 @@ struct FileSystemDataSource : DataSource {
 			s->total = (int64_t)s->flac->totalPCMFrameCount;
 		}
 		else if (ext == ".mp3") {
-			if (!drmp3_init_file(&s->mp3, id.c_str(), nullptr)) return nullptr;
+			if (!drmp3_init_file(&s->mp3, absPath.c_str(), nullptr)) return nullptr;
 			s->fmt   = FileSystemAudioStream::Fmt::MP3;
 			s->ch    = (int)s->mp3.channels;
 			s->sr    = (int)s->mp3.sampleRate;
@@ -314,23 +316,24 @@ struct FileSystemDataSource : DataSource {
 			int targetSampleRate = 0, float trimIn  = 0.f, float trimOut = 1.f,
 			int resampleQuality = 6) override {
 
-		std::string ext = rack::system::getExtension(rack::system::getFilename(id));
+		std::string absPath = resolveAbsPath(id);
+		std::string ext = rack::system::getExtension(rack::system::getFilename(absPath));
 		for (char& c : ext) c = (char)tolower(c);
 
 		bool needConvert  = convertToWav && (ext == ".flac" || ext == ".mp3");
 		bool needResample = targetSampleRate > 0;  // caller passes 0 when resample is off
 		bool needTrim     = trimIn > 0.f || trimOut < 1.f;
 
-		if (!needConvert && !needResample && !needTrim) return [id]() { return id; };
+		if (!needConvert && !needResample && !needTrim) return [absPath]() { return absPath; };
 
-		std::string dir   = ghc::filesystem::path(id).parent_path().string();
-		std::string fname = rack::system::getFilename(id);
+		std::string dir   = ghc::filesystem::path(absPath).parent_path().string();
+		std::string fname = rack::system::getFilename(absPath);
 		size_t dot        = fname.rfind('.');
 		std::string stem  = (dot != std::string::npos) ? fname.substr(0, dot) : fname;
 		std::string outPath = dir + "/" + stem + randomFileSuffix() + ".wav";
 
-		return [id, outPath, targetSampleRate, trimIn, trimOut, resampleQuality]() -> std::string {
-			return processAudioForDrop(id, outPath, targetSampleRate, trimIn, trimOut, resampleQuality);
+		return [absPath, outPath, targetSampleRate, trimIn, trimOut, resampleQuality]() -> std::string {
+			return processAudioForDrop(absPath, outPath, targetSampleRate, trimIn, trimOut, resampleQuality);
 		};
 	}
 
