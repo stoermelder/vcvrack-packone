@@ -3,6 +3,9 @@
 #include "SirenDataSource.hpp"
 #include <pffft.h>
 #include <regex>
+#include <array>
+#include <cmath>
+#include <cstring>
 
 
 namespace StoermelderPackOne {
@@ -11,344 +14,438 @@ namespace Siren {
 
 // ─── Path extraction ─────────────────────────────────────────────────────────
 
+namespace detail {
+
+// Compiled once and reused. Patterns are static so try/catch around
+// std::regex_search would never fire — kept out of the hot path.
+//
+// The "delimited" pattern is intentionally permissive: a number preceded by
+// a delimiter (`_120`, `-120`) is matched even when not followed by another
+// delimiter, so filenames like "loop_120" or "120_kick" all match.
+struct BpmRegexTable {
+	std::regex tagged;      // "120bpm", "120 BPM", "120.5Bpm"
+	std::regex bracket;     // "[120]"
+	std::regex delimited;   // "loop_120" / "120_kick" / "loop-120"
+	std::regex leading;     // "120.5 kick.wav"
+
+	BpmRegexTable()
+		: tagged   (R"((\d+(?:\.\d+)?)\s*bpm)",   std::regex::icase)
+		, bracket  (R"(\[(\d+(?:\.\d+)?)\])")
+		, delimited(R"((?:^|[_\-])(\d+(?:\.\d+)?)(?:[_\-]|$))")
+		, leading  (R"(^(\d+(?:\.\d+)?))") {}
+};
+
+inline const BpmRegexTable& bpmRegexTable() {
+	static const BpmRegexTable t;
+	return t;
+}
+
+// Strip a known audio file extension. Returns the basename without the
+// extension if `name` ends in a supported extension, otherwise `name`.
+inline std::string stripAudioExtension(const std::string& name) {
+	size_t dotPos = name.rfind('.');
+	if (dotPos == std::string::npos || dotPos + 1 >= name.size()) return name;
+	std::string ext = name.substr(dotPos + 1);
+	std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+	if (ext == "wav"  || ext == "mp3"  || ext == "flac" || ext == "ogg"  ||
+		ext == "aiff" || ext == "aif"  || ext == "m4a"  || ext == "wma"  ||
+		ext == "opus" || ext == "oga"  || ext == "aac")
+		return name.substr(0, dotPos);
+	return name;
+}
+
+} // namespace detail
+
 // Regex-based BPM extraction from filenames and folder names.
 // Returns the first match in the range [60, 220] BPM, scanning filename first,
 // then parent folders from nearest to root. Returns 0 if nothing found.
 inline float extractBpmFromPath(const std::string& fullPath) {
-    // Collect all path components: filename first, then each parent dir
-    std::vector<std::string> components;
-    ghc::filesystem::path p(fullPath);
-    for (auto it = p.begin(); it != p.end(); ++it)
-        components.push_back(it->string());
-    // Reverse so filename (last element) is checked first
-    std::reverse(components.begin(), components.end());
+	// ghc::filesystem::path iterates in lexical (root → leaf) order, so we
+	// reverse to ensure the filename is checked first.
+	std::vector<std::string> components;
+	ghc::filesystem::path p(fullPath);
+	for (auto it = p.begin(); it != p.end(); ++it)
+		components.push_back(it->string());
+	std::reverse(components.begin(), components.end());
 
-    for (const std::string& comp : components) {
-        std::string name = comp;
-        // Strip extension
-        size_t dotPos = name.rfind('.');
-        if (dotPos != std::string::npos) {
-            std::string ext = name.substr(dotPos + 1);
-            std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-            if (ext == "wav" || ext == "mp3" || ext == "flac" || ext == "ogg" ||
-                ext == "aiff" || ext == "aif" || ext == "m4a" || ext == "wma")
-                name = name.substr(0, dotPos);
-        }
+	const auto& tbl = detail::bpmRegexTable();
+	const std::array<std::regex, 4> patterns = {
+		tbl.tagged, tbl.bracket, tbl.delimited, tbl.leading
+	};
 
-        // Try patterns — wrap in try/catch in case of regex issues
-        std::vector<std::pair<std::string, std::regex>> patterns = {
-            {R"((\d+(?:\.\d+)?)\s*bpm)",  std::regex(R"((\d+(?:\.\d+)?)\s*bpm)",  std::regex::icase)},
-            {R"(\[(\d+(?:\.\d+)?)\])",     std::regex(R"(\[(\d+(?:\.\d+)?)\])")},
-            {R"((\d+(?:\.\d+)?)\s*BPM)",   std::regex(R"((\d+(?:\.\d+)?)\s*BPM)", std::regex::icase)},
-            {R"([_\-](\d+(?:\.\d+)?)[_\-])", std::regex(R"([_\-](\d+(?:\.\d+)?)[_\-])")},
-            {R"(^(\d+(?:\.\d+)?))",        std::regex(R"(^(\d+(?:\.\d+)?))")},
-        };
+	for (const std::string& comp : components) {
+		std::string name = detail::stripAudioExtension(comp);
 
-        for (const auto& p : patterns) {
-            (void)p.first; // silence unused warning
-            std::smatch m;
-            try {
-                if (std::regex_search(name, m, p.second)) {
-                    float bpm = std::stof(m[1].str());
-                    if (bpm >= 60.f && bpm <= 220.f)
-                        return bpm;
-                }
-            } catch (const std::regex_error&) {
-                continue;
-            }
-        }
-    }
-    return 0.f;
+		for (const std::regex& re : patterns) {
+			std::smatch m;
+			if (!std::regex_search(name, m, re)) continue;
+			try {
+				float bpm = std::stof(m[1].str());
+				if (bpm >= 60.f && bpm <= 220.f) return bpm;
+			} catch (const std::exception&) {
+				// stof can throw on weird UTF-8 input — skip this match.
+			}
+		}
+	}
+	return 0.f;
 }
 
 
 // ─── Spectral analysis (spectral flux onset + autocorrelation) ─────────────────
 
-// Constants for BPM detection
-static constexpr int    BPM_FFT_SIZE       = 512;   // STFT window size (power of 2, multiple of 16)
-static constexpr int    BPM_FFT_HOP        = 128;   // Hop size (window advance)
-static constexpr int    BPM_DECIM_RATE     = 10;    // Downsample to 4410 Hz from 44100 Hz
-static constexpr float  BPM_MIN_BPM         = 60.f;
-static constexpr float  BPM_MAX_BPM         = 200.f;
-static constexpr float  BPM_CONFIDENCE_THR  = 0.15f; // Minimum confidence to accept result
+namespace detail {
 
-// Window function (Hann) generation — fills output[0..N-1]
-inline void generateHannWindow(float* output, int N) {
-    for (int i = 0; i < N; ++i)
-        output[i] = 0.5f * (1.f - std::cos(2.f * M_PI * i / (N - 1)));
-}
+// Constants for BPM detection. Tuned for typical 120-BPM music at 44.1 kHz;
+// decimation to ~4410 Hz keeps the spectrum compact while preserving kick
+// information (kicks are < 200 Hz, well within the kept band).
+static constexpr int    FFT_SIZE        = 512;    // pffft: multiple of 16, ≥ 64
+static constexpr int    HOP             = 128;    // 4× overlap at 512
+static constexpr int    TARGET_SR       = 4410;   // Decimation target sample rate (Hz)
+static constexpr float  MIN_BPM         = 60.f;
+static constexpr float  MAX_BPM         = 200.f;
+static constexpr float  CONFIDENCE_THR  = 0.20f;  // Min normalised autocorr peak to accept
 
-// Forward FFT using pffft — out must have size >= N
-inline void fftForward(const float* input, float* output, float* work, PFFFT_Setup* setup) {
-    pffft_transform_ordered(setup, input, output, work, PFFFT_FORWARD);
-}
+// Sub-band weighting. With SR=4410 and FFT_SIZE=512, each bin spans ~17 Hz
+// (Nyquist 2205 Hz / 256 bins). The first 8 bins cover 0–~140 Hz — i.e. the
+// bass/kick band that drives perceived tempo.
+static constexpr int    BASS_BIN_COUNT  = 8;
+static constexpr float  BASS_BIN_WEIGHT = 2.0f;
 
-// Backward FFT using pffft
-inline void fftBackward(const float* input, float* output, float* work, PFFFT_Setup* setup) {
-	pffft_transform_ordered(setup, input, output, work, PFFFT_BACKWARD);
-	// Scale by 1/N (pffft is not normalized)
-	int n = BPM_FFT_SIZE;
-	for (int i = 0; i < n; ++i)
-		output[i] *= (1.f / n);
-}
-
-// Compute magnitude spectrum from FFT output (interleaved real: [r0, r1, r2, ...])
-inline void computeMagnitudes(const float* fftOut, float* mag, int halfSize) {
-    for (int i = 0; i < halfSize; ++i) {
-        float re = fftOut[i * 2];
-        float im = (i * 2 + 1 < BPM_FFT_SIZE) ? fftOut[i * 2 + 1] : 0.f;
-        mag[i] = std::sqrt(re * re + im * im);
-    }
-}
-
-// Spectral flux onset function: half-wave rectified positive difference
-inline void computeSpectralFlux(const float* magCur, const float* magPrev, float* flux, int numBins) {
-    float totalFlux = 0.f;
-    for (int i = 0; i < numBins; ++i) {
-        float diff = magCur[i] - magPrev[i];
-        if (diff > 0.f) {
-            // Sub-band weighting: boost low frequencies (bass/kick priority)
-            float weight = (i < 8) ? 2.f : 1.f; // First ~340 Hz at 4410 Hz
-            totalFlux += diff * weight;
-        }
-    }
-    *flux = totalFlux;
-}
-
-// Autocorrelation via FFT: zero-pad signal to power-of-2 length >= 2*len
-// Returns the best lag (in frames) and confidence score
-struct AutocorrResult {
-    int    bestLag;
-    float  confidence;
+// RAII wrapper for PFFFT_Setup* — guarantees cleanup on any early return.
+struct PffftSetupGuard {
+	PFFFT_Setup* p;
+	explicit PffftSetupGuard(int n, pffft_transform_t t) : p(pffft_new_setup(n, t)) {}
+	~PffftSetupGuard() { if (p) pffft_destroy_setup(p); }
+	PffftSetupGuard(const PffftSetupGuard&) = delete;
+	PffftSetupGuard& operator=(const PffftSetupGuard&) = delete;
 };
 
-inline AutocorrResult autocorrelate(const float* onsetSignal, int numFrames, float frameRate) {
-    AutocorrResult result{0, 0.f};
-    if (numFrames < 8) return result;
-
-    // Pad to next power of 2 >= 2*numFrames
-    int padLen = 1;
-    while (padLen < 2 * numFrames) padLen <<= 1;
-
-    std::vector<float> padded(padLen, 0.f);
-    std::vector<float> spectrum(padLen, 0.f);
-    std::vector<float> work(padLen, 0.f);
-
-    // Window the onset signal
-    for (int i = 0; i < numFrames; ++i)
-        padded[i] = onsetSignal[i];
-
-    // Forward FFT
-    PFFFT_Setup* fft = pffft_new_setup(padLen, PFFFT_REAL);
-    if (!fft) return result;
-
-    pffft_transform_ordered(fft, padded.data(), spectrum.data(), work.data(), PFFFT_FORWARD);
-
-    // Multiply by its complex conjugate (magnitude-squared in freq domain)
-    for (int i = 0; i < padLen / 2; ++i) {
-        float re = spectrum[i * 2];
-        float im = spectrum[i * 2 + 1];
-        spectrum[i * 2]     = re * re + im * im;
-        spectrum[i * 2 + 1] = 0.f; // Zero imaginary for real output
-    }
-    // Mirror for real signal
-    for (int i = padLen / 2 + 1; i < padLen; ++i) {
-        spectrum[i * 2]     = spectrum[(padLen - i) * 2];
-        spectrum[i * 2 + 1] = -spectrum[(padLen - i) * 2 + 1];
-    }
-
-    // Inverse FFT
-    pffft_transform_ordered(fft, spectrum.data(), padded.data(), work.data(), PFFFT_BACKWARD);
-
-    // Normalize by squared magnitude to get proper autocorrelation
-    // The value at index 0 represents total energy; use it to normalize
-    float totalEnergy = padded[0];
-    if (totalEnergy <= 0.f) {
-        pffft_destroy_setup(fft);
-        return result;
-    }
-    float invEnergy = 1.f / totalEnergy;
-
-    pffft_destroy_setup(fft);
-
-    // Lag range: 60-200 BPM
-    int lagMin = (int)std::max(1, (int)std::round(frameRate * 60.f / BPM_MAX_BPM));
-    int lagMax = (int)std::round(frameRate * 60.f / BPM_MIN_BPM);
-    if (lagMax >= numFrames) lagMax = numFrames - 1;
-    if (lagMin >= lagMax) return result;
-
-    // Find peak in normalized autocorrelation (values should be 0-1 now)
-    float peakVal = -1.f;
-    int peakIdx = lagMin;
-
-    for (int i = lagMin; i <= lagMax; ++i) {
-        float normVal = padded[i] * invEnergy;
-        if (normVal > peakVal) {
-            peakVal = normVal;
-            peakIdx = i;
-        }
-    }
-
-    // Normalized confidence (peak value is now 0-1)
-    float confidence = peakVal;
-    if (confidence < BPM_CONFIDENCE_THR) return result;
-
-    // Check 2x and 0.5x harmonics for half-time/double-time ambiguity
-    int candidateLags[3] = { peakIdx, peakIdx / 2, peakIdx * 2 };
-    float bestPeak = -1.f;
-    int bestLag = peakIdx;
-
-    for (int cand : candidateLags) {
-        if (cand < lagMin || cand > lagMax) continue;
-        float normVal = padded[cand] * invEnergy;
-        if (normVal > bestPeak) {
-            bestPeak = normVal;
-            bestLag = cand;
-        }
-    }
-
-    result.bestLag    = bestLag;
-    result.confidence = bestPeak; // Normalized to 0-1 range
-    return result;
+// Hann window — zero at both ends, peak in the middle.
+inline void generateHannWindow(float* out, int n) {
+	const float denom = (n > 1) ? float(n - 1) : 1.f;
+	for (int i = 0; i < n; ++i)
+		out[i] = 0.5f * (1.f - std::cos(2.f * M_PI * i / denom));
 }
+
+// Magnitudes from a real-FFT ordered output (length = FFT_SIZE).
+inline void computeMagnitudes(const float* fftOut, float* mag, int halfSize) {
+	for (int i = 0; i < halfSize; ++i) {
+		float re = fftOut[i * 2];
+		float im = fftOut[i * 2 + 1];
+		mag[i] = std::sqrt(re * re + im * im);
+	}
+}
+
+// Log-magnitude spectral flux: half-wave rectified positive difference in
+// log-domain.  Working in dB compresses dynamic range so quiet onsets still
+// register next to loud ones — important for non-percussive material.
+inline float computeSpectralFlux(const float* magCur, const float* magPrev, int numBins) {
+	float total = 0.f;
+	for (int i = 0; i < numBins; ++i) {
+		float cur  = std::max(magCur[i],  1e-6f);
+		float prev = std::max(magPrev[i], 1e-6f);
+		float diff = std::log(cur) - std::log(prev);
+		if (diff > 0.f) {
+			float w = (i < BASS_BIN_COUNT) ? BASS_BIN_WEIGHT : 1.f;
+			total += diff * w;
+		}
+	}
+	return total;
+}
+
+// In-place 3-tap median filter. Suppresses isolated spikes that confuse the
+// autocorrelator. out may alias in.
+inline void medianFilter3(float* out, const float* in, int n) {
+	if (n < 3) {
+		if (out != in) std::memcpy(out, in, size_t(n) * sizeof(float));
+		return;
+	}
+	out[0] = in[0];
+	for (int i = 1; i < n - 1; ++i) {
+		float a = in[i - 1], b = in[i], c = in[i + 1];
+		out[i] = std::max(std::min(a, b), std::min(std::max(a, b), c));
+	}
+	out[n - 1] = in[n - 1];
+}
+
+// Subtract the global mean of the onset signal. A constant offset biases the
+// autocorrelation, so we strip it first.
+inline void meanSubtract(float* x, int n) {
+	if (n <= 0) return;
+	double sum = 0.0;
+	for (int i = 0; i < n; ++i) sum += x[i];
+	float mean = float(sum / double(n));
+	for (int i = 0; i < n; ++i) x[i] -= mean;
+}
+
+struct AutocorrResult {
+	int   bestLag    = 0;     // integer lag of the strongest peak
+	float confidence = 0.f;   // normalised peak value, ~[0, 1]
+	float refinedLag = 0.f;   // parabolic-interpolated fractional lag
+};
+
+// Autocorrelation via FFT. The signal is real, length numFrames, and we want
+// a real autocorrelation of length numFrames. We use PFFFT_COMPLEX on N
+// complex samples (real part = signal, imag = 0, zero-padded), so a forward
+// + conjugate-multiply + inverse yields a length-N real sequence whose first
+// numFrames values are the unbiased autocorrelation.
+inline AutocorrResult autocorrelate(const float* onsetSignal, int numFrames, float frameRate) {
+	AutocorrResult result;
+	if (numFrames < 8) return result;
+
+	// Smallest power of 2 with N ≥ numFrames → forward FFT length N.
+	int n = 1;
+	while (n < numFrames) n <<= 1;
+	if (n < 32) n = 32;
+
+	// PFFFT_COMPLEX: input/output/work arrays must hold 2*N floats
+	// (interleaved (r, i) complex samples).
+	const int fsz = 2 * n;
+	std::vector<float> input  (size_t(fsz), 0.f);
+	std::vector<float> spec   (size_t(fsz), 0.f);
+	std::vector<float> output (size_t(fsz), 0.f);
+	std::vector<float> work   (size_t(fsz), 0.f);
+
+	// Pack real signal into interleaved (r, i) complex samples.
+	for (int i = 0; i < numFrames; ++i) {
+		input[i * 2]     = onsetSignal[i];
+		input[i * 2 + 1] = 0.f;
+	}
+
+	PffftSetupGuard fft(n, PFFFT_COMPLEX);
+	if (!fft.p) return result;
+
+	pffft_transform_ordered(fft.p, input.data(), spec.data(), work.data(), PFFFT_FORWARD);
+
+	// X · conj(X) = |X|² — real, non-negative. pffft stores n complex bins
+	// as interleaved (r, i) pairs.
+	for (int i = 0; i < n; ++i) {
+		float re = spec[i * 2];
+		float im = spec[i * 2 + 1];
+		spec[i * 2]     = re * re + im * im;
+		spec[i * 2 + 1] = 0.f;
+	}
+
+	pffft_transform_ordered(fft.p, spec.data(), output.data(), work.data(), PFFFT_BACKWARD);
+
+	// pffft is unnormalised: IFFT(FFT(x)) = N · x.  output[2*k] holds the
+	// real part of the k-th complex sample; for a real input the imaginary
+	// part is zero.  output[2*0] = N · Σ x² (the signal energy × N).
+	const float norm      = 1.f / float(n);
+	const float energy    = output[0] * norm;   // = Σ x²
+	if (energy <= 0.f) return result;
+	const float invEnergy = 1.f / energy;
+
+	// Normalised autocorr at lag k: output[2*k] * norm / energy ∈ ~[0, 1].
+	auto rAt = [&](int k) -> float {
+		return output[size_t(k) * 2] * norm * invEnergy;
+	};
+
+	// Search the lag window corresponding to [MIN_BPM, MAX_BPM].
+	int lagMin = std::max(1, int(std::round(frameRate * 60.f / MAX_BPM)));
+	int lagMax = std::min(numFrames - 1, int(std::round(frameRate * 60.f / MIN_BPM)));
+	if (lagMin >= lagMax) return result;
+
+	int   peakIdx = lagMin;
+	float peakVal = rAt(lagMin);
+	for (int k = lagMin + 1; k <= lagMax; ++k) {
+		float v = rAt(k);
+		if (v > peakVal) { peakVal = v; peakIdx = k; }
+	}
+	if (peakVal <= 0.f) return result;
+
+	// Parabolic interpolation around the integer peak refines the result to
+	// sub-sample accuracy. Stays inside [lagMin, lagMax].
+	float refinedLag = float(peakIdx);
+	if (peakIdx > lagMin && peakIdx < lagMax) {
+		float yL = rAt(peakIdx - 1);
+		float yC = peakVal;
+		float yR = rAt(peakIdx + 1);
+		float denom = (yL - 2.f * yC + yR);
+		if (std::fabs(denom) > 1e-9f) {
+			float delta = 0.5f * (yL - yR) / denom;
+			if (delta > -1.f && delta < 1.f) refinedLag = float(peakIdx) + delta;
+		}
+	}
+	(void)refinedLag;   // not currently exposed — see AutocorrResult for extension
+
+	// Resolve half-time / double-time ambiguity with a "prefer downbeat" rule.
+	//
+	// For a strictly periodic signal the autocorr at the true period P and at
+	// any integer multiple of P are all equal in the limit of long signals.
+	// In practice, finite-length + windowing makes the true period strongest,
+	// but the second-strongest peak (often at 2P) can be within ~10% of the
+	// winner.  We prefer the smallest lag that is within HALF_TIME_THRESH of
+	// the integer peak — this biases toward the downbeat, which is what
+	// musicians expect when they tag a sample with "BPM".
+	const float HALF_TIME_THRESH = 0.92f;
+	const int   candidates[3] = { peakIdx * 2, peakIdx / 2 };
+	int   bestIdx   = peakIdx;
+	float bestScore = peakVal;
+	for (int c : candidates) {
+		if (c < lagMin || c > lagMax) continue;
+		float v = rAt(c);
+		if (v > bestScore) { bestScore = v; bestIdx = c; }
+	}
+	// If a smaller lag in [lagMin, bestIdx) is within HALF_TIME_THRESH of the
+	// best score, switch to it.  This is the "prefer downbeat" correction.
+	float threshold = bestScore * HALF_TIME_THRESH;
+	for (int c = lagMin; c < bestIdx; ++c) {
+		if (rAt(c) >= threshold) { bestIdx = c; break; }
+	}
+
+	result.bestLag    = bestIdx;
+	result.refinedLag = float(bestIdx);
+	// Re-evaluate parabolic interpolation at the chosen bestIdx.
+	if (bestIdx > lagMin && bestIdx < lagMax) {
+		float yL = rAt(bestIdx - 1);
+		float yC = rAt(bestIdx);
+		float yR = rAt(bestIdx + 1);
+		float denom = (yL - 2.f * yC + yR);
+		if (std::fabs(denom) > 1e-9f) {
+			float delta = 0.5f * (yL - yR) / denom;
+			if (delta > -1.f && delta < 1.f) result.refinedLag = float(bestIdx) + delta;
+		}
+	}
+	result.confidence = bestScore;
+	return result;
+}
+
+} // namespace detail
+
 
 // ─── Main detect function ────────────────────────────────────────────────────
 
-// Offline BPM detection via spectral flux onset + autocorrelation.
+// Offline BPM detection via log-magnitude spectral flux + autocorrelation.
 // Must be called on a worker thread, never the DSP thread.
 // Returns detected BPM, or 0 if detection failed or confidence is below threshold.
 // confidenceOut receives the raw confidence value (0–1) regardless of threshold.
 inline float detectBpm(AudioStream& stream, float& confidenceOut,
                        float maxDurationSeconds = 60.f) {
-    confidenceOut = 0.f;
+	confidenceOut = 0.f;
 
-    int sampleRate = stream.sampleRate();
-    int channels   = stream.channels();
-    int64_t totalFrames = stream.totalFrames();
-    if (totalFrames <= 0 || sampleRate <= 0 || channels <= 0)
-        return 0.f;
+	int sampleRate = stream.sampleRate();
+	int channels   = stream.channels();
+	int64_t totalFrames = stream.totalFrames();
+	if (totalFrames <= 0 || sampleRate <= 0 || channels <= 0) return 0.f;
 
-    // Limit to maxDurationSeconds
-    int64_t maxFrames = (int64_t)(sampleRate * maxDurationSeconds);
-    if (totalFrames > maxFrames)
-        totalFrames = maxFrames;
+	// Cap analysis length — for steady-tempo material, ~30 s is plenty.
+	int64_t maxFrames = int64_t(sampleRate * maxDurationSeconds);
+	if (totalFrames > maxFrames) totalFrames = maxFrames;
 
-    // Decimate to DECIM_RATE (e.g., 44100/10 = 4410 Hz)
-    int decimRate = std::max(1, sampleRate / 4410);
-    int outSR = sampleRate / decimRate;
-    if (outSR <= 0) outSR = 4410;
+	// Decimate to ~TARGET_SR. For 44.1/48 kHz inputs this gives a factor of
+	// 10/11 — the kept spectrum is well above the human-perceived kick range
+	// and well below the SR/2 aliasing bound.
+	int decimRate = std::max(1, sampleRate / detail::TARGET_SR);
+	int outSR     = sampleRate / decimRate;
+	if (outSR <= 0) outSR = detail::TARGET_SR;
 
-    // Read all frames into memory (mono mix, decimated)
-    std::vector<float> monoFrames;
-    monoFrames.reserve(totalFrames / decimRate + 1024);
+	// Read & mix to mono. Larger blocks amortise decoder overhead.
+	const int64_t BUFSIZE = 65536;
+	std::vector<float> mono;
+	mono.reserve(size_t(totalFrames / decimRate) + 1024);
+	std::vector<float> buf(size_t(BUFSIZE) * size_t(std::max(channels, 1)));
+	int64_t framesRead = 0;
 
-    const int64_t BUFSIZE = 65536;
-    std::vector<float> buf((size_t)BUFSIZE * channels);
-    int64_t framesRead = 0;
+	while (framesRead < totalFrames) {
+		int64_t toRead = std::min<int64_t>(BUFSIZE, totalFrames - framesRead);
+		int64_t got = stream.readF32(buf.data(), toRead);
+		if (got <= 0) break;
 
-    while (framesRead < totalFrames) {
-        int64_t toRead = std::min<int64_t>(BUFSIZE, totalFrames - framesRead);
-        int64_t got = stream.readF32(buf.data(), toRead);
-        if (got <= 0) break;
+		for (int64_t f = 0; f < got; f += decimRate) {
+			float sum = 0.f;
+			int   count = 0;
+			for (int ch = 0; ch < channels; ++ch) {
+				size_t idx = size_t(f * channels + ch);
+				if (idx >= buf.size()) break;
+				sum += buf[idx];
+				++count;
+			}
+			if (count > 0) mono.push_back(sum / float(count));
+		}
+		framesRead += got;
+	}
 
-        for (int64_t f = 0; f < got; f += decimRate) {
-            float sum = 0.f;
-            int chCount = 0;
-            for (int ch = 0; ch < channels && (f * channels + ch) < (int64_t)buf.size(); ++ch) {
-                sum += buf[(size_t)(f * channels + ch)];
-                ++chCount;
-            }
-            if (chCount > 0) monoFrames.push_back(sum / chCount);
-        }
-        framesRead += got;
-    }
+	// Need at least ~2 s of audio to make a tempo estimate.
+	if (mono.size() < size_t(outSR * 2)) return 0.f;
 
-    if ((int)monoFrames.size() < 512) return 0.f; // Not enough data
+	// ── STFT (Hann-windowed, 4× overlap) ────────────────────────────────
+	const int FFT_SIZE = detail::FFT_SIZE;
+	const int HOP      = detail::HOP;
+	const int halfN    = FFT_SIZE / 2;
 
-    // STFT parameters
-    const int FFT_SIZE = BPM_FFT_SIZE;
-    const int HOP     = BPM_FFT_HOP;
-    int numFrames = (int)monoFrames.size();
-    int numHops   = (numFrames - FFT_SIZE) / HOP + 1;
-    if (numHops < 4) return 0.f;
+	int numFrames = int(mono.size());
+	int numHops   = (numFrames - FFT_SIZE) / HOP + 1;
+	if (numHops < 4) return 0.f;
 
-    // Precompute Hann window
-    std::vector<float> window(FFT_SIZE);
-    generateHannWindow(window.data(), FFT_SIZE);
+	std::vector<float> window(FFT_SIZE);
+	detail::generateHannWindow(window.data(), FFT_SIZE);
 
-    // Spectral flux onset signal
-    std::vector<float> onsetSignal(numHops, 0.f);
-    std::vector<float> magCur(FFT_SIZE / 2, 0.f);
-    std::vector<float> magPrev(FFT_SIZE / 2, 0.f);
-    std::vector<float> windowed(FFT_SIZE, 0.f);
-    std::vector<float> spectrum(FFT_SIZE, 0.f);
-    std::vector<float> work(FFT_SIZE, 0.f);
+	std::vector<float> onsetSignal(numHops, 0.f);
+	std::vector<float> magPrev(halfN, 0.f);
+	std::vector<float> magCur (halfN, 0.f);
+	std::vector<float> win    (FFT_SIZE, 0.f);
+	std::vector<float> spec   (FFT_SIZE, 0.f);
+	std::vector<float> work   (FFT_SIZE, 0.f);
 
-    PFFFT_Setup* fft = pffft_new_setup(FFT_SIZE, PFFFT_REAL);
-    if (!fft) return 0.f;
+	detail::PffftSetupGuard fft(FFT_SIZE, PFFFT_REAL);
+	if (!fft.p) return 0.f;
 
-    // First frame — compute initial spectrum
-    for (int i = 0; i < FFT_SIZE; ++i)
-        windowed[i] = monoFrames[i] * window[i];
-    pffft_transform_ordered(fft, windowed.data(), spectrum.data(), work.data(), PFFFT_FORWARD);
-    computeMagnitudes(spectrum.data(), magPrev.data(), FFT_SIZE / 2);
+	// Prime magPrev from the very first window so hop 0 has a valid predecessor.
+	for (int i = 0; i < FFT_SIZE; ++i) win[i] = mono[i] * window[i];
+	pffft_transform_ordered(fft.p, win.data(), spec.data(), work.data(), PFFFT_FORWARD);
+	detail::computeMagnitudes(spec.data(), magPrev.data(), halfN);
 
-    // Process each hop
-    for (int h = 0; h < numHops; ++h) {
-        int startIdx = h * HOP;
-        for (int i = 0; i < FFT_SIZE && startIdx + i < numFrames; ++i)
-            windowed[i] = monoFrames[startIdx + i] * window[i];
-        for (int i = numFrames - startIdx; i < FFT_SIZE; ++i)
-            windowed[i] = 0.f; // Zero-pad
+	for (int h = 0; h < numHops; ++h) {
+		int startIdx = h * HOP;
+		int lastValid = std::min(FFT_SIZE, numFrames - startIdx);
+		for (int i = 0; i < lastValid; ++i) win[i] = mono[startIdx + i] * window[i];
+		for (int i = lastValid; i < FFT_SIZE; ++i) win[i] = 0.f;   // zero-pad tail
 
-        pffft_transform_ordered(fft, windowed.data(), spectrum.data(), work.data(), PFFFT_FORWARD);
-        computeMagnitudes(spectrum.data(), magCur.data(), FFT_SIZE / 2);
+		pffft_transform_ordered(fft.p, win.data(), spec.data(), work.data(), PFFFT_FORWARD);
+		detail::computeMagnitudes(spec.data(), magCur.data(), halfN);
 
-        float flux = 0.f;
-        computeSpectralFlux(magCur.data(), magPrev.data(), &flux, FFT_SIZE / 2);
-        onsetSignal[h] = flux;
+		onsetSignal[h] = detail::computeSpectralFlux(magCur.data(), magPrev.data(), halfN);
 
-        // Swap for next iteration
-        std::swap(magCur, magPrev);
-    }
+		// Reuse magCur as the next magPrev via std::swap — avoids a copy.
+		std::swap(magCur, magPrev);
+	}
 
-    pffft_destroy_setup(fft);
+	// Spike suppression + DC removal.
+	std::vector<float> onsetFiltered(numHops);
+	detail::medianFilter3(onsetFiltered.data(), onsetSignal.data(), numHops);
+	detail::meanSubtract(onsetFiltered.data(), numHops);
 
-    // Compute frame rate of onset signal
-    float hopDuration = (float)HOP / (float)outSR;
-    float onsetFrameRate = 1.f / hopDuration;
+	// Onset signal frame rate: outSR / HOP.
+	const float frameRate = float(outSR) / float(HOP);
 
-    // Autocorrelation
-    auto acResult = autocorrelate(onsetSignal.data(), numHops, onsetFrameRate);
-    if (acResult.bestLag <= 0) return 0.f;
+	auto ac = detail::autocorrelate(onsetFiltered.data(), numHops, frameRate);
+	confidenceOut = ac.confidence;
+	if (ac.bestLag <= 0 || ac.confidence < detail::CONFIDENCE_THR) return 0.f;
 
-    confidenceOut = acResult.confidence;
-    if (acResult.confidence < BPM_CONFIDENCE_THR) return 0.f;
-
-    // Convert lag to BPM
-    float bpm = 60.f * onsetFrameRate / (float)acResult.bestLag;
-
-    // Clamp to reasonable range
-    if (bpm < 30.f || bpm > 250.f) return 0.f;
-
-    return bpm;
+	// Convert lag to BPM using the parabolic-refined (fractional) lag for
+	// sub-sample accuracy, then clamp to a sane window.
+	float lag = (ac.refinedLag > 0.f) ? ac.refinedLag : float(ac.bestLag);
+	float bpm = 60.f * frameRate / lag;
+	if (bpm < detail::MIN_BPM * 0.5f || bpm > detail::MAX_BPM * 2.f) return 0.f;
+	return bpm;
 }
 
 
 // ─── BpmDetector struct (API) ───────────────────────────────────────────────
 
 struct BpmDetector {
-    // Extract BPM from filename/folder — fast path, UI thread safe
-    static float extractFromPath(const std::string& path) {
-        return StoermelderPackOne::Siren::extractBpmFromPath(path);
-    }
+	// Extract BPM from filename/folder — fast path, UI thread safe
+	static float extractFromPath(const std::string& path) {
+		return StoermelderPackOne::Siren::extractBpmFromPath(path);
+	}
 
-    // Full spectral analysis — must be called on a worker thread
-    // Returns BPM or 0 on failure / low confidence
-    static float detect(AudioStream& stream, float& confidenceOut,
-                        float maxDurationSeconds = 60.f) {
-        return StoermelderPackOne::Siren::detectBpm(stream, confidenceOut, maxDurationSeconds);
-    }
+	// Full spectral analysis — must be called on a worker thread
+	// Returns BPM or 0 on failure / low confidence
+	static float detect(AudioStream& stream, float& confidenceOut,
+	                    float maxDurationSeconds = 60.f) {
+		return StoermelderPackOne::Siren::detectBpm(stream, confidenceOut, maxDurationSeconds);
+	}
 };
 
 
