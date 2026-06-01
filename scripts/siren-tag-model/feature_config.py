@@ -5,7 +5,7 @@ This file is the **Python-side** contract. The C++-side contract is the
 `src/modules/Siren/SirenTagClassifier.hpp`. They MUST stay in sync.
 
 The class names are NOT defined here any more — they come from
-`data/SirenTags.json` via `tag_manifest.py`, which is the
+`res/data/SirenTags.json` via `tag_manifest.py`, which is the
 single source of truth for both the C++ plugin and the Python pipeline.
 """
 from __future__ import annotations

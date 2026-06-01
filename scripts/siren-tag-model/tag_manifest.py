@@ -1,6 +1,6 @@
 """Reads the Siren tag manifest JSON and provides both Python and C++ access.
 
-The C++ plugin treats `data/SirenTags.json` as the single
+The C++ plugin treats `res/data/SirenTags.json` as the single
 source of truth at runtime — it reads it once at module startup with
 `rack::asset::plugin(...)` and rebuilds `STARTER_TAGS` from it. The Python
 training pipeline reads the same JSON here and exposes the same list as
@@ -21,7 +21,7 @@ from pathlib import Path
 # so the script can be run from anywhere.
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent.parent
-MANIFEST_PATH = REPO_ROOT / "data" / "SirenTags.json"
+MANIFEST_PATH = REPO_ROOT / "res" / "data" / "SirenTags.json"
 
 
 @dataclass(frozen=True)

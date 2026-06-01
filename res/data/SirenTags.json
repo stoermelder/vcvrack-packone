@@ -1,0 +1,114 @@
+{
+  "version": 1,
+  "description": "Single source of truth for the Siren starter tag list. Read at runtime by both the C++ plugin (via rack::asset::plugin) and the Python training pipeline (via scripts/siren-tag-model/export_tag_manifest.py). Edit THIS file when adding/removing/renaming tags. Keep the entries sorted by 'name'.",
+  "tags": [
+    {
+      "name": "Acoustic",
+      "category": "timbre",
+      "description": "Acoustic instrument character: natural harmonics with exponential decay. Guitar, piano, marimba.",
+      "classifier_can_suggest": true
+    },
+    {
+      "name": "Atmospheric",
+      "category": "timbre",
+      "description": "Slowly evolving ambient texture. Pads, washes, drones with movement and space.",
+      "classifier_can_suggest": true
+    },
+    {
+      "name": "Bass",
+      "category": "role",
+      "description": "Fills the low end of a patch. Sub- or bass-register sustained or rhythmic material.",
+      "classifier_can_suggest": true
+    },
+    {
+      "name": "Clap",
+      "category": "source",
+      "description": "Clap sound: layered noise bursts with mid-frequency character.",
+      "classifier_can_suggest": true
+    },
+    {
+      "name": "Cymbal",
+      "category": "source",
+      "description": "Cymbal or crash: high-frequency metallic noise with longer decay.",
+      "classifier_can_suggest": true
+    },
+    {
+      "name": "Drone",
+      "category": "source",
+      "description": "Sustained, slowly evolving pitch. A held note or pad-like bed.",
+      "classifier_can_suggest": true
+    },
+    {
+      "name": "Drums",
+      "category": "source",
+      "description": "Full drum pattern or kit loop: combination of kick, snare, and hi-hat.",
+      "classifier_can_suggest": true
+    },
+    {
+      "name": "FX",
+      "category": "role",
+      "description": "Special effect: sweeps, risers, impacts, designed sounds.",
+      "classifier_can_suggest": true
+    },
+    {
+      "name": "Glitch",
+      "category": "timbre",
+      "description": "Glitchy, stuttering, or fragmented audio: random bursts, artifacts, stutter edits.",
+      "classifier_can_suggest": true
+    },
+    {
+      "name": "HiHat",
+      "category": "source",
+      "description": "Hi-hat: short metallic noise burst, high-frequency transient.",
+      "classifier_can_suggest": true
+    },
+    {
+      "name": "Kick",
+      "category": "source",
+      "description": "Kick drum: low-frequency transient with punchy bass content.",
+      "classifier_can_suggest": true
+    },
+    {
+      "name": "Lead",
+      "category": "role",
+      "description": "Carries the melody. Sits on top of the mix, mid/high register, often rhythmic.",
+      "classifier_can_suggest": true
+    },
+    {
+      "name": "Loop",
+      "category": "time",
+      "description": "Cyclical material that loops cleanly — drum loop, melodic phrase, arp.",
+      "classifier_can_suggest": true
+    },
+    {
+      "name": "Nature",
+      "category": "source",
+      "description": "Environmental or nature recording: room tone, wind, rain, outdoor ambience.",
+      "classifier_can_suggest": true
+    },
+    {
+      "name": "Noise",
+      "category": "source",
+      "description": "Broadband noise without a clear tonal component. Wind, hiss, static.",
+      "classifier_can_suggest": true
+    },
+    {
+      "name": "One-Shot",
+      "category": "time",
+      "description": "Single transient event with a defined start and end. Snare hit, stab, pluck.",
+      "classifier_can_suggest": true
+    },
+    {
+      "name": "Snare",
+      "category": "source",
+      "description": "Snare drum: mid-frequency transient with noise component and sharp attack.",
+      "classifier_can_suggest": true
+    },
+    {
+      "name": "Vocal",
+      "category": "source",
+      "description": "Vocal or vocal-like material: sung voice, formant tones, vowel-like resonances.",
+      "classifier_can_suggest": true
+    }
+  ]
+}

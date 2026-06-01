@@ -11,7 +11,7 @@ The plan this implements is in [`docs/siren/Classifier.md`](../../../docs/siren/
 ## The 15-tag vocabulary
 
 The single source of truth for the tag list is
-[`data/SirenTags.json`](../../data/SirenTags.json).
+[`res/data/SirenTags.json`](../../res/data/SirenTags.json).
 It is read by:
 
 - the **C++ plugin** at module load time, via
@@ -209,7 +209,7 @@ bash run.sh --csv build/my_samples.csv
 ### The folder-name → tag convention
 
 Each subdirectory name must match one of the 15 entries in
-`data/SirenTags.json` (case-insensitive). Anything that doesn't match is
+`res/data/SirenTags.json` (case-insensitive). Anything that doesn't match is
 skipped with a warning. To see the accepted names:
 
 ```bash
@@ -270,7 +270,7 @@ version, but it also needs slightly more data to avoid overfitting.
 |------|---------|
 | `siren_extract_features.cpp` | **C++ feature extractor CLI.** Takes audio file paths as args, outputs `path,f0..f9` CSV to stdout. Calls the same `TagClassifier::extractFeatures()` as the plugin — this is the authoritative feature extraction. |
 | `Makefile` | Builds `siren_extract_features` from the above source. `make` / `make clean`. |
-| `tag_manifest.py` | Reads `data/SirenTags.json`; exposes `CLASS_NAMES`, `TAGS`, `NUM_CLASSES`. Python-side source of truth for the tag vocabulary. |
+| `tag_manifest.py` | Reads `res/data/SirenTags.json`; exposes `CLASS_NAMES`, `TAGS`, `NUM_CLASSES`. Python-side source of truth for the tag vocabulary. |
 | `feature_config.py` | The 10-feature contract (`FEATURE_NAMES`) + re-exports from `tag_manifest`. |
 | `features.py` | Python feature extractor (fallback when the C++ binary is not built) + `find_cpp_extractor()` / `extract_features_batch()` helpers used by the dataset scripts. |
 | `generate_synthetic_dataset.py` | Synthesizes 15 types of audio and writes a CSV. Uses the C++ extractor if available, Python fallback otherwise. |

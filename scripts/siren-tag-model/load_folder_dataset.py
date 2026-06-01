@@ -1,7 +1,7 @@
 """Load a folder-based labeled dataset and write a CSV the trainer can read.
 
 The convention is: one subfolder per tag, named exactly after a tag in
-`data/SirenTags.json` (e.g. `drone/`, `percussion/`, `pad/`).
+`res/data/SirenTags.json` (e.g. `drone/`, `percussion/`, `pad/`).
 Inside each subfolder, any `.wav` / `.flac` / `.mp3` / `.ogg` / `.aif*` file
 is treated as a training example for that tag. Features are extracted with
 the same `features.extract_features()` used during inference, so the CSV
@@ -15,7 +15,7 @@ Folder-name → tag mapping
 -------------------------
 
 The folder name MUST match a tag's `name` field in
-`data/SirenTags.json`, exactly (case-insensitive
+`res/data/SirenTags.json`, exactly (case-insensitive
 matching is applied to be friendly, but case is preserved in the CSV).
 Anything that doesn't match a known tag is skipped with a warning.
 

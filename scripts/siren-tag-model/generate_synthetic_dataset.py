@@ -77,117 +77,156 @@ def _click_train(sr: int, bpm: float, dur: float, rng: np.random.Generator) -> n
     return out
 
 
-def _tonal(sr: int, dur: float, freq: float, rng: np.random.Generator) -> np.ndarray:
-    """Sustained pitched tone with a slow LFO on amplitude."""
-    t = np.arange(int(sr * dur)) / sr
-    base = 0.5 * np.sin(2 * np.pi * freq * t)
-    # Add a couple of harmonics for "tonal" character
-    base += 0.2 * np.sin(2 * np.pi * freq * 2 * t)
-    base += 0.1 * np.sin(2 * np.pi * freq * 3 * t)
-    lfo = 0.5 + 0.5 * np.sin(2 * np.pi * 0.5 * t)
-    return (base * lfo).astype(np.float32)
+# ── Generators — one per CLASS_NAME in SirenTags.json ─────────────────────
+
+def gen_acoustic(rng):
+    # Acoustic instrument: natural harmonics with exponential decay (guitar/piano-like)
+    n = int(SR * DURATION)
+    t = np.arange(n) / SR
+    freq = rng.uniform(200, 600)
+    sig = np.zeros(n, dtype=np.float64)
+    for k, amp in enumerate([0.5, 0.3, 0.15, 0.08, 0.04], 1):
+        sig += amp * np.exp(-3.0 * k * t) * np.sin(2 * np.pi * freq * k * t)
+    attack = int(0.01 * SR)
+    sig[:attack] += 0.2 * _noise(attack, rng, "white")
+    return np.clip(sig * 0.8, -1, 1).astype(np.float32)
 
 
-def _bright_texture(sr: int, dur: float, rng: np.random.Generator) -> np.ndarray:
-    """High-pass-filtered white noise — bright / texture / fx."""
-    n = int(sr * dur)
-    raw = _noise(n, rng, "white")
-    # crude high-pass: subtract a low-pass
+def gen_atmospheric(rng):
+    # Slowly evolving pad: detuned sines with dual LFOs and slight noise
+    t = np.arange(int(SR * DURATION)) / SR
+    root = rng.uniform(100, 300)
+    sig = np.zeros_like(t)
+    for ratio, phase_offset in zip([1.0, 1.5, 2.0, 3.0], [0.0, 1.1, 2.3, 0.7]):
+        sig += (0.2 / ratio) * np.sin(2 * np.pi * root * ratio * t + phase_offset)
+    sig *= (0.5 + 0.5 * np.sin(2 * np.pi * 0.2 * t)) * (0.5 + 0.5 * np.sin(2 * np.pi * 0.07 * t))
+    sig += 0.03 * _noise(len(t), rng, "pink")
+    return (sig * 0.7).astype(np.float32)
+
+
+def gen_bass(rng):
+    return _sine(rng.uniform(30, 80), DURATION, SR, amp=0.8)
+
+
+def gen_clap(rng):
+    # Layered noise bursts with mid-frequency character
     from numpy.fft import rfft, irfft
+    n = int(SR * DURATION)
+    t = np.arange(n) / SR
+    raw = _noise(n, rng, "white")
     spec = rfft(raw)
-    freqs = np.linspace(0, sr / 2, spec.size)
-    spec[freqs < 2000] *= 0.1
-    spec[freqs > 8000] *= 1.5
-    return irfft(spec, n=n).astype(np.float32) * 0.6
+    freqs = np.linspace(0, SR / 2, spec.size)
+    spec[freqs < 800] *= 0.05
+    sig = irfft(spec, n=n).astype(np.float32)
+    env = np.zeros(n, dtype=np.float32)
+    for delay in [0.0, 0.006, 0.012]:
+        mask = t >= delay
+        env[mask] += np.exp(-60.0 * (t[mask] - delay))
+    return np.clip(sig * env * 0.8, -1, 1).astype(np.float32)
 
 
-# ── The 13 generators, one per CLASS_NAME in feature_config.py ────────────
+def gen_cymbal(rng):
+    # High-frequency metallic noise with longer decay
+    from numpy.fft import rfft, irfft
+    n = int(SR * DURATION)
+    raw = _noise(n, rng, "white")
+    spec = rfft(raw)
+    freqs = np.linspace(0, SR / 2, spec.size)
+    spec[freqs < 5000] *= 0.02
+    sig = irfft(spec, n=n).astype(np.float32)
+    t = np.arange(n) / SR
+    return np.clip(sig * np.exp(-4.0 * t) * 0.8, -1, 1).astype(np.float32)
+
 
 def gen_drone(rng):
     return _sine(rng.uniform(60, 220), DURATION, SR)
 
 
-def gen_percussion(rng):
-    return _click_train(SR, rng.uniform(80, 160), DURATION, rng)
-
-
-def gen_loop(rng):
-    # 4-bar 120 BPM click train = 8 seconds, truncate to 2
-    return _click_train(SR, 120.0, DURATION, rng)
-
-
-def gen_one_shot(rng):
-    # A single transient + short noise tail
-    out = np.zeros(int(SR * DURATION), dtype=np.float32)
-    start = int(0.1 * SR)
-    pulse_len = int(0.05 * SR)
-    for i in range(pulse_len):
-        env = (1.0 - i / pulse_len) * 0.5 * (1.0 - np.cos(2 * np.pi * i / pulse_len))
-        out[start + i] = 0.9 * env * np.cos(2 * np.pi * 60.0 * (start + i) / SR)
-    out[start + pulse_len:] += 0.02 * _noise(out.size - start - pulse_len, rng, "white")
-    return out
-
-
-def gen_vocal(rng):
-    # Formant-ish: fundamental + two formants, slow vibrato
-    t = np.arange(int(SR * DURATION)) / SR
-    f0 = rng.uniform(150, 300)
-    formant = (
-        0.5 * np.sin(2 * np.pi * f0 * t)
-        + 0.3 * np.sin(2 * np.pi * 800 * t)
-        + 0.2 * np.sin(2 * np.pi * 1200 * t)
-    )
-    vibrato = 0.5 + 0.5 * np.sin(2 * np.pi * 5 * t)
-    return (formant * vibrato * 0.5).astype(np.float32)
-
-
-def gen_field(rng):
-    # Pink noise, low-passed
+def gen_drums(rng):
+    # Full drum pattern: kick on 1&3, snare on 2&4, hihat every 8th note
     n = int(SR * DURATION)
-    raw = _noise(n, rng, "pink")
+    out = np.zeros(n, dtype=np.float32)
+    bpm = rng.uniform(100, 140)
+    step = int(60.0 / bpm / 2 * SR)  # 8th note
+    for i in range(int(n / step) + 1):
+        t0 = i * step
+        if t0 >= n:
+            break
+        # Kick on beats 1 and 3 (steps 0 and 4)
+        if i % 8 in (0, 4):
+            k = gen_kick(rng)
+            end = min(t0 + len(k), n)
+            out[t0:end] += k[:end - t0] * 0.8
+        # Snare on beats 2 and 4 (steps 2 and 6)
+        if i % 8 in (2, 6):
+            s = gen_snare(rng)
+            end = min(t0 + len(s), n)
+            out[t0:end] += s[:end - t0] * 0.7
+        # HiHat on every 8th note
+        h = gen_hihat(rng)
+        end = min(t0 + len(h), n)
+        out[t0:end] += h[:end - t0] * 0.4
+    return np.clip(out, -1, 1).astype(np.float32)
+
+
+def gen_fx(rng):
+    # Sweep, riser or impact with LFO amplitude shaping
+    n = int(SR * DURATION)
+    t = np.arange(n) / SR
+    sweep_type = int(rng.integers(0, 3))
+    if sweep_type == 0:
+        freq = np.exp(np.linspace(np.log(80), np.log(4000), n))
+    elif sweep_type == 1:
+        freq = np.exp(np.linspace(np.log(4000), np.log(80), n))
+    else:
+        freq = 500 + 400 * np.sin(2 * np.pi * 0.5 * t)
+    phase = np.cumsum(2 * np.pi * freq / SR)
+    sig = 0.5 * np.sin(phase) + 0.2 * _noise(n, rng, "white")
+    sig *= 0.5 + 0.5 * np.sin(2 * np.pi * 0.3 * t)
+    return np.clip(sig * 0.8, -1, 1).astype(np.float32)
+
+
+def gen_glitch(rng):
+    # Stuttering random noise bursts with silence between them
+    n = int(SR * DURATION)
+    out = np.zeros(n, dtype=np.float32)
+    for _ in range(int(rng.integers(6, 20))):
+        pos = int(rng.integers(0, n - 1000))
+        length = int(rng.integers(50, 3000))
+        burst = _noise(length, rng, "white") * float(rng.uniform(0.3, 0.9))
+        end = min(pos + length, n)
+        out[pos:end] += burst[:end - pos].astype(np.float32)
+    return np.clip(out, -1, 1).astype(np.float32)
+
+
+def gen_hihat(rng):
+    # Short metallic high-frequency noise burst
     from numpy.fft import rfft, irfft
+    n = int(SR * DURATION)
+    raw = _noise(n, rng, "white")
     spec = rfft(raw)
     freqs = np.linspace(0, SR / 2, spec.size)
-    spec[freqs > 2000] *= 0.2
-    return irfft(spec, n=n).astype(np.float32) * 0.7
-
-
-def gen_texture(rng):
-    # Slow modulating filtered noise — texture-y
-    n = int(SR * DURATION)
-    raw = _noise(n, rng, "pink")
+    spec[freqs < 3000] *= 0.03
+    sig = irfft(spec, n=n).astype(np.float32)
     t = np.arange(n) / SR
-    lfo = 0.5 + 0.5 * np.sin(2 * np.pi * 0.3 * t)
-    return (raw * lfo * 0.6).astype(np.float32)
+    return np.clip(sig * np.exp(-80.0 * t) * 0.8, -1, 1).astype(np.float32)
 
 
-def gen_bass(rng):
-    # Sub-bass sine, 30–80 Hz
-    return _sine(rng.uniform(30, 80), DURATION, SR, amp=0.8)
-
-
-def gen_noise(rng):
-    # Broadband noise without a tonal component — wind, hiss, static.
+def gen_kick(rng):
+    # Low-frequency transient: exponential sine sweep from ~150 Hz to ~40 Hz
     n = int(SR * DURATION)
-    color = rng.choice(["white", "pink"])
-    return _noise(n, rng, color) * 0.5
-
-
-def gen_pad(rng):
-    # Slow sustained chord: 3 detuned sines + soft noise. LFO on amplitude.
-    t = np.arange(int(SR * DURATION)) / SR
-    root = rng.uniform(110, 220)  # A2 to A3
-    intervals = [1.0, 1.005, 1.498, 1.5, 2.0]  # octave pair + fifth
-    sig = np.zeros_like(t)
-    for ratio in intervals:
-        sig += (1.0 / len(intervals)) * np.sin(2 * np.pi * root * ratio * t)
-    sig += 0.05 * _noise(sig.size, rng, "pink")
-    lfo = 0.7 + 0.3 * np.sin(2 * np.pi * 0.3 * t)
-    return (sig * lfo * 0.6).astype(np.float32)
+    t = np.arange(n) / SR
+    freq = 150.0 * np.exp(-25.0 * t) + 40.0
+    phase = np.cumsum(2 * np.pi * freq / SR)
+    env = np.exp(-18.0 * t)
+    sig = env * np.sin(phase)
+    click = int(0.004 * SR)
+    sig[:click] += np.linspace(0.4, 0.0, click)
+    return np.clip(sig * 0.9, -1, 1).astype(np.float32)
 
 
 def gen_lead(rng):
-    # Bright mid/high-register melody: a short sequence of square-like tones
+    # Bright mid/high-register melody: sequence of square-like tones
     t = np.arange(int(SR * DURATION)) / SR
     notes = [rng.uniform(400, 1200) for _ in range(4)]
     note_dur = DURATION / len(notes)
@@ -201,60 +240,89 @@ def gen_lead(rng):
     return out.astype(np.float32)
 
 
-def gen_stab(rng):
-    # Short pitched chord hit, ~150 ms attack + decay
-    n = int(SR * DURATION)
-    out = np.zeros(n, dtype=np.float32)
-    t = np.arange(n) / SR
-    # 3–4 chord notes
-    root = rng.uniform(220, 440)
-    chord = [root * r for r in (1.0, 1.26, 1.5, 2.0)[:rng.integers(3, 5)]]
-    for f in chord:
-        out += 0.15 * np.sin(2 * np.pi * f * t)
-    env = np.exp(-15 * t)
-    out *= env
-    return out.astype(np.float32)
+def gen_loop(rng):
+    return _click_train(SR, rng.uniform(100, 140), DURATION, rng)
 
 
-def gen_bright(rng):
-    # High-pitched bright sine + sparkly noise
-    t = np.arange(int(SR * DURATION)) / SR
-    base = 0.3 * np.sin(2 * np.pi * rng.uniform(2000, 5000) * t)
-    base += 0.1 * _noise(base.size, rng, "white")
-    return base.astype(np.float32)
-
-
-def gen_dark(rng):
-    # Low-passed noise, no high content
+def gen_nature(rng):
+    # Environmental recording: pink noise, low-passed, slow amplitude variation
+    from numpy.fft import rfft, irfft
     n = int(SR * DURATION)
     raw = _noise(n, rng, "pink")
-    from numpy.fft import rfft, irfft
     spec = rfft(raw)
     freqs = np.linspace(0, SR / 2, spec.size)
-    spec[freqs > 800] *= 0.05
-    return irfft(spec, n=n).astype(np.float32) * 0.6
+    spec[freqs > 2000] *= 0.15
+    sig = irfft(spec, n=n).astype(np.float32)
+    t = np.arange(n) / SR
+    sig *= 0.7 + 0.3 * np.sin(2 * np.pi * 0.4 * t)
+    return (sig * 0.7).astype(np.float32)
 
 
-def gen_tonal(rng):
-    return _tonal(SR, DURATION, rng.uniform(200, 800), rng)
+def gen_noise(rng):
+    n = int(SR * DURATION)
+    color = rng.choice(["white", "pink"])
+    return _noise(n, rng, color) * 0.5
+
+
+def gen_one_shot(rng):
+    # Single transient + quiet tail
+    out = np.zeros(int(SR * DURATION), dtype=np.float32)
+    start = int(0.05 * SR)
+    pulse_len = int(0.05 * SR)
+    for i in range(pulse_len):
+        env = (1.0 - i / pulse_len) * 0.5 * (1.0 - np.cos(2 * np.pi * i / pulse_len))
+        out[start + i] = 0.9 * env * np.cos(2 * np.pi * 60.0 * (start + i) / SR)
+    out[start + pulse_len:] += 0.01 * _noise(out.size - start - pulse_len, rng, "white")
+    return out
+
+
+def gen_snare(rng):
+    # Mid-frequency transient with noise component
+    from numpy.fft import rfft, irfft
+    n = int(SR * DURATION)
+    t = np.arange(n) / SR
+    body = 0.5 * np.exp(-30.0 * t) * np.sin(2 * np.pi * 200 * t)
+    raw = _noise(n, rng, "white")
+    spec = rfft(raw)
+    freqs = np.linspace(0, SR / 2, spec.size)
+    spec[freqs < 500] *= 0.1
+    noise_hp = irfft(spec, n=n).astype(np.float32)
+    sig = body + 0.6 * noise_hp * np.exp(-25.0 * t)
+    return np.clip(sig * 0.8, -1, 1).astype(np.float32)
+
+
+def gen_vocal(rng):
+    # Formant-ish: fundamental + two formants, slow vibrato
+    t = np.arange(int(SR * DURATION)) / SR
+    f0 = rng.uniform(150, 300)
+    sig = (
+        0.5 * np.sin(2 * np.pi * f0 * t)
+        + 0.3 * np.sin(2 * np.pi * 800 * t)
+        + 0.2 * np.sin(2 * np.pi * 1200 * t)
+    )
+    sig *= 0.5 + 0.5 * np.sin(2 * np.pi * 5 * t)
+    return (sig * 0.5).astype(np.float32)
 
 
 GENERATORS: dict[str, Callable[[np.random.Generator], np.ndarray]] = {
-    "Bass":       gen_bass,
-    "Bright":     gen_bright,
-    "Dark":       gen_dark,
-    "Drone":      gen_drone,
-    "Field":      gen_field,
-    "Lead":       gen_lead,
-    "Loop":       gen_loop,
-    "Noise":      gen_noise,
-    "One-Shot":   gen_one_shot,
-    "Pad":        gen_pad,
-    "Percussion": gen_percussion,
-    "Stab":       gen_stab,
-    "Texture":    gen_texture,
-    "Tonal":      gen_tonal,
-    "Vocal":      gen_vocal,
+    "Acoustic":    gen_acoustic,
+    "Atmospheric": gen_atmospheric,
+    "Bass":        gen_bass,
+    "Clap":        gen_clap,
+    "Cymbal":      gen_cymbal,
+    "Drone":       gen_drone,
+    "Drums":       gen_drums,
+    "FX":          gen_fx,
+    "Glitch":      gen_glitch,
+    "HiHat":       gen_hihat,
+    "Kick":        gen_kick,
+    "Lead":        gen_lead,
+    "Loop":        gen_loop,
+    "Nature":      gen_nature,
+    "Noise":       gen_noise,
+    "One-Shot":    gen_one_shot,
+    "Snare":       gen_snare,
+    "Vocal":       gen_vocal,
 }
 
 

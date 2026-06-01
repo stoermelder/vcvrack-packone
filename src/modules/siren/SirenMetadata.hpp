@@ -9,7 +9,7 @@ namespace Siren {
 // ─── Starter tag list ────────────────────────────────────────────────────────
 //
 // The list of "starter" tags is the single source of truth in
-// `data/SirenTags.json`. We read it once per module load
+// `res/data/SirenTags.json`. We read it once per module load
 // and expose it as a `std::vector<std::string>` via `starterTags()`.
 //
 // Order in the returned vector matches the order in the JSON. The Python
@@ -23,16 +23,16 @@ namespace Siren {
 // in the test harness.
 
 inline std::string tagManifestPath() {
-	return rack::asset::plugin(pluginInstance, "data/SirenTags.json");
+	return rack::asset::plugin(pluginInstance, "res/data/SirenTags.json");
 }
 
 // Hard-coded 15-tag fallback used in tests and when the manifest cannot be
-// read. Keep this list in sync with data/SirenTags.json.
+// read. Keep this list in sync with res/data/SirenTags.json.
 static const std::vector<std::string>& fallbackTags() {
 	static const std::vector<std::string> v = {
-		"Bass", "Bright", "Dark", "Drone", "Field", "Lead", "Loop",
-		"Noise", "One-Shot", "Pad", "Percussion", "Stab", "Texture",
-		"Tonal", "Vocal",
+		"Acoustic", "Atmospheric", "Bass", "Clap", "Cymbal", "Drone",
+		"Drums", "FX", "Glitch", "HiHat", "Kick", "Lead", "Loop",
+		"Nature", "Noise", "One-Shot", "Snare", "Vocal",
 	};
 	return v;
 }
