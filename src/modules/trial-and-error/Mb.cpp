@@ -923,15 +923,7 @@ struct MbWidget : ModuleWidget {
 		menu->addChild(createMenuLabel("Custom tags"));
 		menu->addChild(createMenuItem("Auto-generate custom tags", "", []() {
 			auto result = std::make_shared<AutoTagResult>(customTagAuto());
-			if (result->total == 0) {
-				osdialog_message(OSDIALOG_INFO, OSDIALOG_OK, "No new tag assignments found.");
-				return;
-			}
-			ui::MenuOverlay* overlay = new ui::MenuOverlay;
-			overlay->bgColor = nvgRGBAf(0.f, 0.f, 0.f, 0.5f);
-			AutoTagConfirmWidget* w = new AutoTagConfirmWidget(result);
-			overlay->addChild(w);
-			APP->scene->addChild(overlay);
+			openAutoTagConfirmDialog(result);
 		}));
 		menu->addChild(createMenuItem("Auto-generate 'MetaModule' tag", "", []() {
 			if (!osdialog_message(OSDIALOG_INFO, OSDIALOG_OK_CANCEL, "This will connect to https://metamodule.info and download the module list. Continue?"))
@@ -942,13 +934,13 @@ struct MbWidget : ModuleWidget {
 			loadingOverlay->bgColor = nvgRGBAf(0.f, 0.f, 0.f, 0.5f);
 			APP->scene->addChild(loadingOverlay);
 
-			AsyncTagResultWidget* asyncWidget = new AsyncTagResultWidget(loadingOverlay);
+			AsyncTagResultWidget* asyncWidget = makeAsyncAutoTagWidget(loadingOverlay);
 			APP->scene->addChild(asyncWidget);
 
 			// Run on background thread to avoid blocking UI
 			std::thread([asyncWidget]() {
 				auto result = std::make_shared<AutoTagResult>(customTagMetamodule());
-				asyncWidget->result = result;
+				setAutoTagResult(asyncWidget, result);
 			}).detach();
 		}));
 
@@ -964,12 +956,7 @@ struct MbWidget : ModuleWidget {
 								string::f("No untagged modules found for \"%s\"", query.c_str()).c_str());
 						}
 						else {
-							auto resultWrap = std::make_shared<AutoTagResult>(preview);
-							ui::MenuOverlay* overlay = new ui::MenuOverlay;
-							overlay->bgColor = nvgRGBAf(0.f, 0.f, 0.f, 0.5f);
-							AutoTagConfirmWidget* w = new AutoTagConfirmWidget(resultWrap);
-							overlay->addChild(w);
-							APP->scene->addChild(overlay);
+							openAutoTagConfirmDialog(std::make_shared<AutoTagResult>(preview));
 						}
 					}
 					e.consume(this);

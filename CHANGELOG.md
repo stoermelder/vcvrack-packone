@@ -1,11 +1,3 @@
-## 2.x.x
-
-### Changes and Fixes
-
-- Module [MB](./docs/trial-and-error/Mb.md)
-    - Added option to apply VCV Library whitelisting
-    - Added option to show deprecated module models (now hidden by default) (#440)
-
 ## 2.4.0
 
 ### New modules
@@ -46,10 +38,14 @@
     - Added model magnifier loupe option
     - Added integration into Rack's menu bar
     - Added `Shift`+*Click* to add a module without closing the browser
+    - Added option to apply VCV Library whitelisting
+    - Added option to show deprecated module models (now hidden by default) (#440)
     - Changed hotkey to toggle hidden modules to `Shift`+`Space` (because of Spotlight on Mac)
     - Fixed broken button of "Favorites" category
 - Module [ME](./docs/trial-and-error/Me.md)
     - Added screen magnifier loupe
+- Module [MIDI-MON](./docs/midi/MidiMon.md)
+    - Added option to display engine frame instead of timestamp
 - Module [POLY-PILE](./docs/pile/Pile.md)
     - Added support for polyphonic reset triggers (#431)
 
