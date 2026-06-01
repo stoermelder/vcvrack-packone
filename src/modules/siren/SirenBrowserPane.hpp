@@ -281,7 +281,7 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 					auto vr = visibleRowWidgets();
 					for (int i = 0; i < (int)vr.size() - 1; i++) {
 						if (vr[i]->node.fullPath == parentPath) {
-							selectPath(vr[i + 1]->node.fullPath, vr[i + 1]->node.isContainer);
+							selectPath(vr[i + 1]->node);
 							break;
 						}
 					}
@@ -450,13 +450,14 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		}
 	}
 
-	// Select a row by path, schedule rebuild+scroll, and fire onFileSelected for files.
-	void selectPath(const std::string& path, bool isContainer) {
-		selectedPath = path;
+	// Select a row by node, schedule rebuild+scroll, and fire onFileSelected for files.
+	// Uses node.fullPath for internal tree state, node.relativePath for the external callback.
+	void selectPath(const DataSourceNode& node, bool startPlay = false) {
+		selectedPath = node.fullPath;
 		requestRebuild();
 		scrollAfterRebuild = true;
-		if (!isContainer && onFileSelected) {
-			onFileSelected(path, false);
+		if (!node.isContainer && onFileSelected) {
+			onFileSelected(node.relativePath, startPlay);
 		}
 	}
 
@@ -473,13 +474,13 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 
 		if (key == GLFW_KEY_UP) {
 			int target = (selIdx <= 0) ? 0 : selIdx - 1;
-			selectPath(vr[target]->node.fullPath, vr[target]->node.isContainer);
+			selectPath(vr[target]->node);
 			return true;
 		}
 
 		if (key == GLFW_KEY_DOWN) {
 			int target = (selIdx < 0) ? 0 : std::min(selIdx + 1, (int)vr.size() - 1);
-			selectPath(vr[target]->node.fullPath, vr[target]->node.isContainer);
+			selectPath(vr[target]->node);
 			return true;
 		}
 
@@ -499,7 +500,7 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 			else {
 				// Already expanded — move into first visible child
 				if (selIdx + 1 < (int)vr.size()) {
-					selectPath(vr[selIdx + 1]->node.fullPath, vr[selIdx + 1]->node.isContainer);
+					selectPath(vr[selIdx + 1]->node);
 				}
 			}
 			return true;
@@ -835,9 +836,7 @@ inline void SirenTreeRow::onButton(const event::Button& e) {
 			}
 			else {
 				bool shift = (e.mods & GLFW_MOD_SHIFT) != 0;
-				pane->selectedPath = node.fullPath;
-				pane->requestRebuild();
-				if (pane->onFileSelected) pane->onFileSelected(node.fullPath, shift);
+				pane->selectPath(node, shift);
 			}
 		}
 		if (e.action == GLFW_RELEASE) {
@@ -869,7 +868,7 @@ inline void SirenTreeRow::onButton(const event::Button& e) {
 inline void SirenTreeRow::onDragStart(const event::DragStart& e) {
 	if (node.isContainer) return;
 	if (pane && pane->dropHandler)
-		pane->dropHandler->startDrag(node.fullPath);
+		pane->dropHandler->startDrag(node.relativePath);
 }
 
 inline void SirenTreeRow::onDragEnd(const event::DragEnd& e) {

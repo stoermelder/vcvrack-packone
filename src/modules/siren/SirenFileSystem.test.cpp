@@ -156,74 +156,64 @@ TEST_CASE("loadChildrenSync: node isContainer flag is correct", "[Siren][FileSys
 }
 
 // ─── prepareForDrop ──────────────────────────────────────────────────────────
-// when convertToWav is false, the returned id is identical to the input.
-TEST_CASE("prepareForDrop: returns id unchanged when convertToWav is false", "[Siren][FileSystem]") {
+// IDs are relative paths; the returned absolute path is what the rack uses for drop.
+
+// when convertToWav is false, the returned path is the resolved absolute path.
+TEST_CASE("prepareForDrop: returns absolute path when convertToWav is false", "[Siren][FileSystem]") {
 	TempDir tmp;
 	FileSystemDataSource src(tmp.str());
-	std::string id = tmp.filePath("drone.mp3");
-	REQUIRE(callPrepareForDrop(src, id, false) == id);
+	REQUIRE(callPrepareForDrop(src, "/drone.mp3", false) == tmp.filePath("drone.mp3"));
 }
 
 // .wav files pass through without conversion regardless of the flag.
-TEST_CASE("prepareForDrop: returns id unchanged for .wav files even when flag is true", "[Siren][FileSystem]") {
+TEST_CASE("prepareForDrop: returns absolute path for .wav files even when flag is true", "[Siren][FileSystem]") {
 	TempDir tmp;
 	FileSystemDataSource src(tmp.str());
-
-	std::string id = tmp.filePath("kick.wav");
-	REQUIRE(callPrepareForDrop(src, id, true) == id);
+	REQUIRE(callPrepareForDrop(src, "/kick.wav", true) == tmp.filePath("kick.wav"));
 }
 
 // uppercase .WAV is also recognised and passed through unchanged.
 TEST_CASE("prepareForDrop: .WAV extension (uppercase) also treated as wav — no conversion", "[Siren][FileSystem]") {
 	TempDir tmp;
 	FileSystemDataSource src(tmp.str());
-
-	std::string id = tmp.filePath("sample.WAV");
-	REQUIRE(callPrepareForDrop(src, id, true) == id);
+	REQUIRE(callPrepareForDrop(src, "/sample.WAV", true) == tmp.filePath("sample.WAV"));
 }
 
-// non-audio ids are returned unchanged; the _siren naming handles pre-converted detection at a higher level.
+// non-audio ids that can't be decoded fall back to the resolved absolute path.
 TEST_CASE("prepareForDrop: returns existing _siren file without decoding (idempotent)", "[Siren][FileSystem]") {
 	TempDir tmp;
 	FileSystemDataSource src(tmp.str());
-
-	std::string id = tmp.filePath("ghost.flac");
-	REQUIRE(callPrepareForDrop(src, id, true) == id);
+	REQUIRE(callPrepareForDrop(src, "/ghost.flac", true) == tmp.filePath("ghost.flac"));
 }
 
-// decode failure (e.g. non-existent file) falls back to the original id.
-TEST_CASE("prepareForDrop: falls back to id when source cannot be decoded", "[Siren][FileSystem]") {
+// decode failure (e.g. non-existent file) falls back to the resolved absolute path.
+TEST_CASE("prepareForDrop: falls back to absolute path when source cannot be decoded", "[Siren][FileSystem]") {
 	TempDir tmp;
 	FileSystemDataSource src(tmp.str());
-
-	std::string id = tmp.filePath("ghost.flac");
-	REQUIRE(callPrepareForDrop(src, id, true) == id);
+	REQUIRE(callPrepareForDrop(src, "/ghost.flac", true) == tmp.filePath("ghost.flac"));
 }
 
-// decode failure for non-existent .mp3 also falls back to id.
+// decode failure for non-existent .mp3 also falls back to absolute path.
 TEST_CASE("prepareForDrop: non-existent .mp3 with flag true also falls back", "[Siren][FileSystem]") {
 	TempDir tmp;
 	FileSystemDataSource src(tmp.str());
-
-	std::string id = tmp.filePath("missing.mp3");
-	REQUIRE(callPrepareForDrop(src, id, true) == id);
+	REQUIRE(callPrepareForDrop(src, "/missing.mp3", true) == tmp.filePath("missing.mp3"));
 }
 
 // The new resampleQuality parameter must be accepted and not break the early-return
-// path. When targetSampleRate is 0, prepareForDrop short-circuits with the original id
+// path. When targetSampleRate is 0, prepareForDrop short-circuits with the absolute path
 // regardless of quality, and the returned lambda must still be a valid (non-null) call.
 TEST_CASE("prepareForDrop: resampleQuality parameter is accepted (no-op when no resample requested)", "[Siren][FileSystem]") {
 	TempDir tmp;
 	tmp.touch("kick.wav");
 	FileSystemDataSource src(tmp.str());
 
-	std::string id = tmp.filePath("kick.wav");
 	for (int q : { 0, 1, 4, 7, 10 }) {
-		// targetSampleRate=0 → no resample, no convert, no trim → identity lambda.
-		auto task = src.prepareForDrop(id, /*convertToWav=*/false, /*targetSampleRate=*/0,
+		// targetSampleRate=0 → no resample, no convert, no trim → identity lambda returning abs path.
+		auto task = src.prepareForDrop("/kick.wav", /*convertToWav=*/false, /*targetSampleRate=*/0,
 		                               /*trimIn=*/0.f, /*trimOut=*/1.f, q);
 		REQUIRE(task != nullptr);
-		REQUIRE(task() == id);
+		REQUIRE(task() == tmp.filePath("kick.wav"));
 	}
 }
 
@@ -254,23 +244,20 @@ TEST_CASE("FileSystemDataSource: isSupportedFile delegates to isSupportedAudioFi
 	REQUIRE(src.isSupportedFile("/path/to/kick.ogg") == false);
 }
 
-// getDisplayName extracts just the filename component from a full path.
+// getDisplayName extracts just the filename component from a relative id.
 TEST_CASE("FileSystemDataSource: getDisplayName returns filename only", "[Siren][FileSystem]") {
 	TempDir tmp;
 	FileSystemDataSource src(tmp.str());
-	REQUIRE(src.getDisplayName("/home/user/samples/kick.wav") == "kick.wav");
-	REQUIRE(src.getDisplayName("/home/user/samples/drum loop.flac") == "drum loop.flac");
+	REQUIRE(src.getDisplayName("/samples/kick.wav") == "kick.wav");
+	REQUIRE(src.getDisplayName("/samples/drum loop.flac") == "drum loop.flac");
 }
 
-// getRelativePath returns a '/' prefixed path relative to rootPath.
-TEST_CASE("FileSystemDataSource: getRelativePath starts with '/' and is relative to root", "[Siren][FileSystem]") {
+// getRelativePath is identity: ids are already relative paths.
+TEST_CASE("FileSystemDataSource: getRelativePath is identity for relative ids", "[Siren][FileSystem]") {
 	TempDir tmp;
-	tmp.touch("kick.wav");
 	FileSystemDataSource src(tmp.str());
-
-	auto rel = src.getRelativePath(tmp.filePath("kick.wav"));
-	REQUIRE(rel.front() == '/');
-	REQUIRE(rel.find("kick.wav") != std::string::npos);
+	REQUIRE(src.getRelativePath("/kick.wav") == "/kick.wav");
+	REQUIRE(src.getRelativePath("/sub/loop.flac") == "/sub/loop.flac");
 }
 
 // directories sort before files; both groups sort case-insensitively.
