@@ -128,11 +128,13 @@ def emit_cpp(model, out_path: Path) -> None:
     # Build the dispatcher body. Each bridge has a uniform signature
     # `double siren_tag_score_class_c(double *input)`, so the dispatcher
     # is identical for every class.
+    # Use literals (not SIREN_TAG_NUM_FEATURES) so the model body compiles
+    # standalone without including SirenTagClassifierAPI.hpp.
     body_lines: list[str] = []
     body_lines.append("        // Per-class scores from the trained sklearn model.")
     body_lines.append("        // m2cgen-generated; do not edit by hand -- re-run scripts/siren-tag-model/run.sh to refresh.")
-    body_lines.append("        double _x[SIREN_TAG_NUM_FEATURES];")
-    body_lines.append("        for (int _i = 0; _i < SIREN_TAG_NUM_FEATURES; ++_i) _x[_i] = (double)features_in[_i];")
+    body_lines.append(f"        double _x[{NUM_FEATURES}];")
+    body_lines.append(f"        for (int _i = 0; _i < {NUM_FEATURES}; ++_i) _x[_i] = (double)features_in[_i];")
     body_lines.append("        (void)_x;")
     body_lines.append("")
 
@@ -153,11 +155,15 @@ def emit_cpp(model, out_path: Path) -> None:
     parts.append("")
     parts.append("#pragma once")
     parts.append("")
+    parts.append('#include "SirenTagClassifierApi.hpp"  // defines TagClassifier, SIREN_TAG_NUM_FEATURES')
     parts.append("#include <cstddef>")
     parts.append("#include <cstring>  // for memcpy in m2cgen-emitted bodies")
     parts.append("")
-    parts.append(f"static const int SIREN_TAG_NUM_FEATURES = {NUM_FEATURES};")
-    parts.append(f"static const int SIREN_TAG_NUM_CLASSES  = {NUM_CLASSES};")
+    # SIREN_TAG_NUM_FEATURES is defined in SirenTagClassifierAPI.hpp (not here).
+    # This assert fires if the model was trained with a different feature count.
+    parts.append(f"static_assert(::StoermelderPackOne::Siren::SIREN_TAG_NUM_FEATURES == {NUM_FEATURES},")
+    parts.append(f'    "Model was trained with {NUM_FEATURES} features; re-run scripts/siren-tag-model/run.sh");')
+    parts.append(f"static const int SIREN_TAG_NUM_CLASSES   = {NUM_CLASSES};")
     parts.append(f"static const int SIREN_TAG_MODEL_VERSION = {MODEL_VERSION};")
     parts.append("")
     parts.append("static const char* const SIREN_TAG_CLASS_NAMES[SIREN_TAG_NUM_CLASSES] = {")
@@ -197,11 +203,22 @@ def emit_cpp(model, out_path: Path) -> None:
         parts.append(bridge.rstrip())
         parts.append("")
 
-    # Finally the wrapper function the runtime calls.
+    # Dispatcher: plain pointer types so the model compiles standalone.
     parts.append("// Compute per-class scores. Output is in [0, 1] (positive-class probability per binary classifier).")
-    parts.append("static void siren_tag_score(const float features_in[SIREN_TAG_NUM_FEATURES],")
-    parts.append("                           float scores_out[SIREN_TAG_NUM_CLASSES]) {")
+    parts.append("// Registered with TagClassifier via the anonymous namespace below.")
+    parts.append("static void siren_tag_score(const float* features_in, float* scores_out) {")
     parts.extend(body_lines)
+    parts.append("}")
+    parts.append("")
+    parts.append("// Register a deferred loader so the model is wired up on first scoring use,")
+    parts.append("// not at static-init time. Cost at dylib load: one pointer store.")
+    parts.append("static void _siren_load_model() {")
+    parts.append("    ::StoermelderPackOne::Siren::TagClassifier::registerModel(")
+    parts.append("        siren_tag_score, SIREN_TAG_NUM_CLASSES, SIREN_TAG_CLASS_NAMES);")
+    parts.append("}")
+    parts.append("namespace {")
+    parts.append("    static const bool _siren_loader_set =")
+    parts.append("        (::StoermelderPackOne::Siren::TagClassifier::_setLoader(_siren_load_model), true);")
     parts.append("}")
 
     out_path.write_text("\n".join(parts) + "\n")

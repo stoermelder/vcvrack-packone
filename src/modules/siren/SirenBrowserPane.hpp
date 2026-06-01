@@ -378,7 +378,7 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 			for (const auto& f : files) {
 				auto stream = ds->openAudioStream(f.first);
 				if (!stream) continue;
-				auto suggestions = TagClassifier::classify(*stream, SIREN_TAG_NUM_CLASSES);
+				auto suggestions = TagClassifier::classify(*stream, 5);
 				for (const auto& s : suggestions)
 					if (s.score >= 0.5f)
 						tagToRels[s.name].insert(f.second);

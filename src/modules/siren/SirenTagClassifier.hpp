@@ -6,11 +6,13 @@
 
 #pragma once
 
+#include "SirenTagClassifierApi.hpp"  // defines TagClassifier, SIREN_TAG_NUM_FEATURES
 #include <cstddef>
 #include <cstring>  // for memcpy in m2cgen-emitted bodies
 
-static const int SIREN_TAG_NUM_FEATURES = 12;
-static const int SIREN_TAG_NUM_CLASSES  = 15;
+static_assert(::StoermelderPackOne::Siren::SIREN_TAG_NUM_FEATURES == 12,
+    "Model was trained with 12 features; re-run scripts/siren-tag-model/run.sh");
+static const int SIREN_TAG_NUM_CLASSES   = 15;
 static const int SIREN_TAG_MODEL_VERSION = 1;
 
 static const char* const SIREN_TAG_CLASS_NAMES[SIREN_TAG_NUM_CLASSES] = {
@@ -31064,12 +31066,12 @@ static double siren_tag_score_class_14(double * input) {
 }
 
 // Compute per-class scores. Output is in [0, 1] (positive-class probability per binary classifier).
-static void siren_tag_score(const float features_in[SIREN_TAG_NUM_FEATURES],
-                           float scores_out[SIREN_TAG_NUM_CLASSES]) {
+// Registered with TagClassifier via the anonymous namespace below.
+static void siren_tag_score(const float* features_in, float* scores_out) {
         // Per-class scores from the trained sklearn model.
         // m2cgen-generated; do not edit by hand -- re-run scripts/siren-tag-model/run.sh to refresh.
-        double _x[SIREN_TAG_NUM_FEATURES];
-        for (int _i = 0; _i < SIREN_TAG_NUM_FEATURES; ++_i) _x[_i] = (double)features_in[_i];
+        double _x[12];
+        for (int _i = 0; _i < 12; ++_i) _x[_i] = (double)features_in[_i];
         (void)_x;
 
         { // class 0 = 'Bass'
@@ -31147,4 +31149,15 @@ static void siren_tag_score(const float features_in[SIREN_TAG_NUM_FEATURES],
             scores_out[14] = (float)_s;
         }
 
+}
+
+// Register a deferred loader so the model is wired up on first scoring use,
+// not at static-init time. Cost at dylib load: one pointer store.
+static void _siren_load_model() {
+    ::StoermelderPackOne::Siren::TagClassifier::registerModel(
+        siren_tag_score, SIREN_TAG_NUM_CLASSES, SIREN_TAG_CLASS_NAMES);
+}
+namespace {
+    static const bool _siren_loader_set =
+        (::StoermelderPackOne::Siren::TagClassifier::_setLoader(_siren_load_model), true);
 }
