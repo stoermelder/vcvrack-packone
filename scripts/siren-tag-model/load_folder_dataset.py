@@ -67,10 +67,9 @@ import sys
 from pathlib import Path
 
 import numpy as np
-import soundfile as sf
 
 from feature_config import NUM_FEATURES
-from features import extract_features
+from features import extract_features_batch, find_cpp_extractor  # raises if not built
 from tag_manifest import CLASS_NAMES, TAGS
 
 # Audio file extensions we recognize. soundfile / libsndfile handles these.
@@ -101,23 +100,6 @@ def _list_audio_files(folder: Path) -> list[Path]:
     )
 
 
-def _load_and_extract(path: Path) -> np.ndarray | None:
-    """Load an audio file as mono float32 and extract the 6 features.
-
-    Returns None if the file can't be decoded. The caller is expected to
-    log the failure and continue with the rest of the dataset.
-    """
-    try:
-        data, sr = sf.read(str(path), always_2d=False, dtype="float32")
-    except Exception as e:
-        print(f"  skip: cannot decode {path.name}: {e}", file=sys.stderr)
-        return None
-    if data.ndim == 2:
-        data = data.mean(axis=1).astype(np.float32)
-    if data.size == 0:
-        print(f"  skip: empty file {path.name}", file=sys.stderr)
-        return None
-    return extract_features(data, sr)
 
 
 def _write_csv(rows: list[list], out_path: Path, append: bool) -> int:
@@ -148,8 +130,9 @@ def load_folder_dataset(
 
     rng = np.random.default_rng(seed)
     counts: dict[str, int] = {}
-    rows: list[list] = []
 
+    # Phase 1: collect (file_path, label) pairs across all subfolders.
+    pending: list[tuple[Path, str]] = []
     subdirs = sorted(p for p in root.iterdir() if p.is_dir())
     if not subdirs:
         print(f"warning: no subdirectories found in {root}", file=sys.stderr)
@@ -170,25 +153,32 @@ def load_folder_dataset(
             counts[canonical] = 0
             continue
 
-        # Optional down-sampling to balance classes
         if max_per_class is not None and len(files) > max_per_class:
             idxs = rng.choice(len(files), size=max_per_class, replace=False)
             files = [files[i] for i in sorted(idxs)]
 
         for f in files:
-            features = _load_and_extract(f)
-            if features is None:
-                continue
-            # Write a relative path so the CSV is portable
-            try:
-                rel = f.relative_to(root.parent)
-            except ValueError:
-                rel = f
-            row = [str(rel), canonical, *features.tolist()]
-            rows.append(row)
-
+            pending.append((f, canonical))
         counts[canonical] = len(files)
         print(f"  {canonical:12s}  {len(files):4d} clips from {sub}")
+
+    # Phase 2: batch-extract features via C++ binary.
+    binary = find_cpp_extractor()
+    print(f"  Using C++ extractor: {binary}")
+    features_by_path = extract_features_batch([str(f) for f, _ in pending], binary)
+
+    # Phase 3: build rows.
+    rows: list[list] = []
+    for f, canonical in pending:
+        features = features_by_path.get(str(f))
+        if features is None:
+            print(f"  skip: extraction failed for {f.name}", file=sys.stderr)
+            continue
+        try:
+            rel = f.relative_to(root.parent)
+        except ValueError:
+            rel = f
+        rows.append([str(rel), canonical, *features.tolist()])
 
     if not rows:
         raise RuntimeError(

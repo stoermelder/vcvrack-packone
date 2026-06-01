@@ -490,7 +490,7 @@ struct FileSystemDataSource : DataSource {
 					};
 
 					ContainerTagItem* item   = new ContainerTagItem;
-					item->text            = toTitleCase(tag);
+					item->text            = tag;
 					item->rightText       = CHECKMARK(allHave);
 					item->src             = this;
 					item->rels            = audioRels;
@@ -585,7 +585,7 @@ struct FileSystemDataSource : DataSource {
 			std::sort(sorted.begin(), sorted.end());
 			for (const std::string& tag : sorted) {
 				FileTagItem* item = new FileTagItem;
-				item->text      = toTitleCase(tag);
+				item->text      = tag;
 				item->metadata  = &metadata_;
 				item->rel       = rel;
 				item->tag       = tag;

@@ -18,14 +18,18 @@ MODEL_VERSION = 1
 
 # Order matters: this is the array layout the C++ runtime passes to score().
 FEATURE_NAMES: list[str] = [
-    "spectral_centroid",  # brightness, mean freq weighted by magnitude, in [0, 1] of Nyquist
-    "spectral_rolloff85", # freq below which 85% of energy lies, in [0, 1] of Nyquist
-    "zero_crossing_rate", # fraction of sign changes per frame, averaged, in [0, 1]
-    "rms",                # root-mean-square, normalized to peak ~= 1
-    "onset_density",      # spectral-flux peaks per second, normalized to 30/sec == 1
-    "low_band_ratio",     # energy below 250 Hz / total energy, in [0, 1]
+    "spectral_centroid",    # brightness — mean freq weighted by power, in [0, 1] of Nyquist
+    "spectral_rolloff85",   # freq below which 85 % of energy lies, in [0, 1] of Nyquist
+    "zero_crossing_rate",   # fraction of sign changes per frame, averaged, in [0, 1]
+    "rms",                  # root-mean-square, normalised to peak ~= 1
+    "onset_density",        # spectral-flux peaks per second, normalised to 30/sec == 1
+    "low_band_ratio",       # energy below 250 Hz / total energy, in [0, 1]
+    "spectral_flatness",    # geometric / arithmetic mean of magnitude per frame, in [0, 1]
+    "spectral_bandwidth",   # power-weighted std dev of freq around centroid, / Nyquist
+    "high_band_ratio",      # energy above 2000 Hz / total energy, in [0, 1]
+    "mean_spectral_flux",   # mean log-domain half-rectified flux per hop, normalised
 ]
 
-assert len(FEATURE_NAMES) == 6, "The Siren runtime expects exactly 6 features"
+assert len(FEATURE_NAMES) == 10, "The Siren runtime expects exactly 10 features"
 
-NUM_FEATURES = len(FEATURE_NAMES)
+NUM_FEATURES: int = len(FEATURE_NAMES)  # 10

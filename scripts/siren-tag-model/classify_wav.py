@@ -1,15 +1,15 @@
-"""Classify a single WAV (or any soundfile-supported) audio file.
+"""Classify a single audio file using the C++ feature extractor.
 
-Runs the same feature extractor used during training and prints the
-top-K predicted classes with their raw model scores. Use this as a quick
-sanity check after retraining: does the model still recognize obvious
+Runs the same C++ extractFeatures() as the plugin and prints the top-K
+predicted classes with their raw model scores. Use this as a quick sanity
+check after retraining: does the model still recognize obvious
 "percussion" or "drone" or "vocal" inputs?
 
 Usage:
     python classify_wav.py path/to/some.wav
     python classify_wav.py path/to/some.wav --top-k 5
     python classify_wav.py path/to/some.wav --csv build/synthetic_dataset.csv
-    python classify_wav.py path/to/some.wav --no-model   # just dump the 6 features
+    python classify_wav.py path/to/some.wav --no-model   # just dump the 10 features
 
 If the trained model is not available (e.g. you ran this before
 `train_model.py`), the script falls back to a uniform-random score per
@@ -25,24 +25,10 @@ import sys
 from pathlib import Path
 
 import numpy as np
-import soundfile as sf
 
 from feature_config import CLASS_NAMES, MODEL_VERSION, NUM_CLASSES, NUM_FEATURES
-from features import extract_features
+from features import extract_features_batch, find_cpp_extractor
 
-
-def _load_mono(path: Path) -> tuple[np.ndarray, int]:
-    """Load an audio file as mono float32 in [-1, 1].
-
-    soundfile handles wav / flac / ogg / mp3 etc. via libsndfile.
-    Multi-channel input is averaged to mono.
-    """
-    data, sr = sf.read(str(path), always_2d=False, dtype="float32")
-    if data.ndim == 2:
-        data = data.mean(axis=1).astype(np.float32)
-    if data.size == 0:
-        raise ValueError(f"file is empty: {path}")
-    return data, int(sr)
 
 
 def _format_features(features: np.ndarray) -> str:
@@ -106,9 +92,7 @@ def main() -> int:
                    help="Path to the labeled CSV. If present, the script also trains a RandomForest and scores with it. "
                         "Pass an empty string to skip training entirely.")
     p.add_argument("--no-model", action="store_true",
-                   help="Skip training. Only print the 6 features. Equivalent to --csv ''.")
-    p.add_argument("--max-seconds", type=float, default=30.0,
-                   help="Trim input audio to at most this many seconds (default: 30). 0 = no trim.")
+                   help="Skip training. Only print the 10 features. Equivalent to --csv ''.")
     args = p.parse_args()
 
     if not args.wav.exists():
@@ -122,21 +106,12 @@ def main() -> int:
     print(f"  model ver   : {MODEL_VERSION}")
     print(f"  top-k       : {args.top_k}")
 
-    try:
-        audio, sr = _load_mono(args.wav)
-    except Exception as e:
-        print(f"error: failed to decode audio ({e})", file=sys.stderr)
+    result = extract_features_batch([str(args.wav)], find_cpp_extractor())
+    features = result.get(str(args.wav))
+    if features is None:
+        print(f"error: C++ extractor could not decode {args.wav}", file=sys.stderr)
         return 2
 
-    if args.max_seconds and args.max_seconds > 0:
-        max_samples = int(args.max_seconds * sr)
-        if audio.size > max_samples:
-            audio = audio[:max_samples]
-
-    duration_s = audio.size / float(sr) if sr else 0.0
-    print(f"  decoded     : {audio.size} samples @ {sr} Hz  ({duration_s:.2f} s, mono)")
-
-    features = extract_features(audio, sr)
     print(f"  features    : {_format_features(features)}")
 
     if csv_arg is None:

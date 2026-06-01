@@ -700,7 +700,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		std::sort(sorted.begin(), sorted.end());
 		for (const std::string& tag : sorted) {
 			TagItem* item = new TagItem;
-			item->text     = toTitleCase(tag);
+			item->text     = tag;
 			item->metadata = metadata;
 			item->rel      = rel;
 			item->tag      = tag;

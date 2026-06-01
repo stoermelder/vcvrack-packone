@@ -29,7 +29,11 @@ echo "▶ Installing requirements (this may take a minute the first time) ..."
 pip install --quiet --upgrade pip
 pip install --quiet -r "$SCRIPT_DIR/requirements.txt"
 
-# 2. Parse --csv if provided, else generate synthetic dataset.
+# 2. Build the C++ feature extractor.
+echo "▶ Building C++ feature extractor ..."
+make -C "$SCRIPT_DIR" ${RACK_DIR:+RACK_DIR="$RACK_DIR"}
+
+# 3. Parse --csv if provided, else generate synthetic dataset.
 CSV_FLAG=()
 N_PER_CLASS=80
 for arg in "$@"; do
@@ -48,7 +52,7 @@ if [[ ${#CSV_FLAG[@]} -eq 0 ]]; then
   CSV_FLAG=(--csv build/synthetic_dataset.csv)
 fi
 
-# 3. Train + emit C++ header fragment.
+# 4. Train + emit C++ header fragment.
 echo "▶ Training model and emitting C++ header ..."
 python3 train_model.py "${CSV_FLAG[@]}" "$@"
 

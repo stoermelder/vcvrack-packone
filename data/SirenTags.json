@@ -3,91 +3,91 @@
   "description": "Single source of truth for the Siren starter tag list. Read at runtime by both the C++ plugin (via rack::asset::plugin) and the Python training pipeline (via scripts/siren-tag-model/export_tag_manifest.py). Edit THIS file when adding/removing/renaming tags. Keep the entries sorted by 'name'.",
   "tags": [
     {
-      "name": "bass",
+      "name": "Bass",
       "category": "role",
       "description": "Fills the low end of a patch. Sub- or bass-register sustained or rhythmic material.",
       "classifier_can_suggest": true
     },
     {
-      "name": "bright",
+      "name": "Bright",
       "category": "timbre",
       "description": "High spectral centroid, lots of energy above ~3 kHz. Sits forward in a mix.",
       "classifier_can_suggest": true
     },
     {
-      "name": "dark",
+      "name": "Dark",
       "category": "timbre",
       "description": "Low spectral centroid, little energy above ~1 kHz. Recedes in a mix.",
       "classifier_can_suggest": true
     },
     {
-      "name": "drone",
+      "name": "Drone",
       "category": "source",
       "description": "Sustained, slowly evolving pitch. A held note or pad-like bed.",
       "classifier_can_suggest": true
     },
     {
-      "name": "field",
+      "name": "Field",
       "category": "source",
       "description": "Field recording: environmental capture, room tone, outdoor ambience.",
       "classifier_can_suggest": true
     },
     {
-      "name": "lead",
+      "name": "Lead",
       "category": "role",
       "description": "Carries the melody. Sits on top of the mix, mid/high register, often rhythmic.",
       "classifier_can_suggest": true
     },
     {
-      "name": "loop",
+      "name": "Loop",
       "category": "time",
       "description": "Cyclical material that loops cleanly — drum loop, melodic phrase, arp.",
       "classifier_can_suggest": true
     },
     {
-      "name": "noise",
+      "name": "Noise",
       "category": "source",
       "description": "Broadband noise without a clear tonal component. Wind, hiss, static.",
       "classifier_can_suggest": true
     },
     {
-      "name": "one-shot",
+      "name": "One-Shot",
       "category": "time",
       "description": "Single transient event with a defined start and end. Snare hit, stab, pluck.",
       "classifier_can_suggest": true
     },
     {
-      "name": "pad",
+      "name": "Pad",
       "category": "role",
       "description": "Sustained chord or wash, fills the harmonic background of a patch.",
       "classifier_can_suggest": true
     },
     {
-      "name": "percussion",
+      "name": "Percussion",
       "category": "source",
       "description": "Percussive source material with clear onsets: drum, cymbal, claps, shaker.",
       "classifier_can_suggest": true
     },
     {
-      "name": "stab",
+      "name": "Stab",
       "category": "role",
       "description": "Short pitched chord or hit, often used for accents or chord stabs.",
       "classifier_can_suggest": true
     },
     {
-      "name": "texture",
+      "name": "Texture",
       "category": "source",
       "description": "Non-pitched evolving material — granular beds, sweeping noise, risers.",
       "classifier_can_suggest": true
     },
     {
-      "name": "tonal",
+      "name": "Tonal",
       "category": "timbre",
       "description": "Has a clear sense of pitch. Useful when you want to highlight pitch presence.",
       "classifier_can_suggest": true
     },
     {
-      "name": "vocal",
+      "name": "Vocal",
       "category": "source",
       "description": "Vocal or vocal-like material: sung voice, formant tones, vowel-like resonances.",
       "classifier_can_suggest": true

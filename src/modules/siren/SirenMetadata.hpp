@@ -30,9 +30,9 @@ inline std::string tagManifestPath() {
 // read. Keep this list in sync with data/SirenTags.json.
 static const std::vector<std::string>& fallbackTags() {
 	static const std::vector<std::string> v = {
-		"bass", "bright", "dark", "drone", "field", "lead", "loop",
-		"noise", "one-shot", "pad", "percussion", "stab", "texture",
-		"tonal", "vocal",
+		"Bass", "Bright", "Dark", "Drone", "Field", "Lead", "Loop",
+		"Noise", "One-Shot", "Pad", "Percussion", "Stab", "Texture",
+		"Tonal", "Vocal",
 	};
 	return v;
 }
@@ -253,18 +253,6 @@ struct RootMetadata {
 		meta.bpmConfidence = confidence;
 	}
 };
-
-// Title-case a tag string: spaces, underscores, and hyphens become word breaks.
-inline std::string toTitleCase(const std::string& s) {
-	std::string r = s;
-	bool cap = true;
-	for (char& c : r) {
-		if (c == ' ' || c == '_' || c == '-') { cap = true; c = ' '; }
-		else if (cap) { c = (char)::toupper(c); cap = false; }
-		else c = (char)::tolower(c);
-	}
-	return r;
-}
 
 // Compute 8-char hex hash of a string (for JSON filename derivation)
 inline std::string hashPath(const std::string& path) {

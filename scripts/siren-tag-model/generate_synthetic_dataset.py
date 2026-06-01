@@ -24,9 +24,9 @@ from typing import Callable, Iterable
 
 import numpy as np
 
-from features import extract_features
+from features import extract_features_batch, find_cpp_extractor  # raises if not built
 
-SR = 22050  # input sample rate; will be decimated by extract_features
+SR = 22050  # input sample rate for generated audio
 DURATION = 2.0  # seconds per clip
 
 
@@ -240,56 +240,71 @@ def gen_tonal(rng):
 
 
 GENERATORS: dict[str, Callable[[np.random.Generator], np.ndarray]] = {
-    "bass":       gen_bass,
-    "bright":     gen_bright,
-    "dark":       gen_dark,
-    "drone":      gen_drone,
-    "field":      gen_field,
-    "lead":       gen_lead,
-    "loop":       gen_loop,
-    "noise":      gen_noise,
-    "one-shot":   gen_one_shot,
-    "pad":        gen_pad,
-    "percussion": gen_percussion,
-    "stab":       gen_stab,
-    "texture":    gen_texture,
-    "tonal":      gen_tonal,
-    "vocal":      gen_vocal,
+    "Bass":       gen_bass,
+    "Bright":     gen_bright,
+    "Dark":       gen_dark,
+    "Drone":      gen_drone,
+    "Field":      gen_field,
+    "Lead":       gen_lead,
+    "Loop":       gen_loop,
+    "Noise":      gen_noise,
+    "One-Shot":   gen_one_shot,
+    "Pad":        gen_pad,
+    "Percussion": gen_percussion,
+    "Stab":       gen_stab,
+    "Texture":    gen_texture,
+    "Tonal":      gen_tonal,
+    "Vocal":      gen_vocal,
 }
 
 
 def generate(out_dir: Path, n_per_class: int, seed: int = 42) -> Path:
     """Generate `n_per_class` clips per generator. Returns path to the CSV."""
     from feature_config import CLASS_NAMES, NUM_FEATURES
+    import soundfile as sf
 
     audio_dir = out_dir / "synthetic_audio"
     audio_dir.mkdir(parents=True, exist_ok=True)
     csv_path = out_dir / "synthetic_dataset.csv"
 
     rng = np.random.default_rng(seed)
-    rows: list[list] = []
+
+    # Phase 1: generate audio and write WAV files.
+    # WAVs are written before feature extraction so the C++ extractor can read them.
+    pending: list[tuple[Path, str]] = []  # (wav_path, label)
     for label in CLASS_NAMES:
         if label not in GENERATORS:
             print(f"  skip: no generator for class {label!r}", file=sys.stderr)
             continue
-        gen = GENERATORS[label]
+        gen_fn = GENERATORS[label]
         for i in range(n_per_class):
-            audio = gen(rng)
-            features = extract_features(audio, SR)
+            audio = gen_fn(rng)
             wav_path = audio_dir / f"{label}_{i:04d}.wav"
-            # Lazy import soundfile only here so the trainer can run without it
-            import soundfile as sf
             sf.write(wav_path, audio, SR)
-            row = [str(wav_path.relative_to(out_dir)), label, *features.tolist()]
-            rows.append(row)
-            print(f"  {label:12s} #{i:03d}  features={features.round(3).tolist()}")
+            pending.append((wav_path, label))
+
+    print(f"  Wrote {len(pending)} audio clips to {audio_dir}")
+
+    # Phase 2: extract features via C++ binary.
+    binary = find_cpp_extractor()
+    print(f"  Using C++ extractor: {binary}")
+    features_by_path = extract_features_batch([str(p) for p, _ in pending], binary)
+
+    # Phase 3: assemble CSV rows.
+    rows: list[list] = []
+    for wav_path, label in pending:
+        features = features_by_path.get(str(wav_path))
+        if features is None:
+            print(f"  skip: extraction failed for {wav_path.name}", file=sys.stderr)
+            continue
+        rows.append([str(wav_path.relative_to(out_dir)), label, *features.tolist()])
 
     with open(csv_path, "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["path", "label", *[f"f{i}" for i in range(NUM_FEATURES)]])
         w.writerows(rows)
 
-    print(f"\nWrote {len(rows)} clips to {csv_path}")
+    print(f"\nWrote {len(rows)} rows to {csv_path}")
     return csv_path
 
 
