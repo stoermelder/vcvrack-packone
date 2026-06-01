@@ -306,100 +306,6 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		rebuildDirty = true;
 	}
 
-	void startTagClassification(const DataSourceNode& node) {
-		if (!worker || !activeDataSource) return;
-		DataSource*   ds    = activeDataSource;
-		RootMetadata* meta  = ds->getMetadata();
-		std::string   fp    = node.fullPath;
-		std::string   rel   = node.relativePath;
-		bool          isDir = node.isContainer;
-		std::string   name  = node.name;
-
-		ui::MenuOverlay* loadingOverlay = new ui::MenuOverlay;
-		loadingOverlay->bgColor = nvgRGBAf(0.f, 0.f, 0.f, 0.5f);
-		APP->scene->addChild(loadingOverlay);
-
-		auto buildLabel = [this, ds](const std::string& relPath) -> widget::Widget* {
-			struct SampleLabel : ui::MenuItem {
-				SirenBrowserPane* pane;
-				std::string filePath;
-				void onAction(const event::Action& e) override {
-					if (pane && pane->onFileSelected)
-						pane->onFileSelected(filePath, true);
-					e.unconsume();  // keep dialog open
-				}
-			};
-			auto pos = relPath.rfind('/');
-			SampleLabel* item = new SampleLabel;
-			item->text     = (pos != std::string::npos) ? relPath.substr(pos + 1) : relPath;
-			item->pane     = this;
-			item->filePath = ds->rootPath() + relPath;
-			return item;
-		};
-
-		auto applyFn = [this, meta, ds](const std::map<std::string, std::set<std::string>>& filtered) {
-			for (const auto& pair : filtered)
-				for (const std::string& r : pair.second)
-					meta->addTag(r, pair.first);
-			if (ds) ds->saveMetadata();
-			requestRebuild();
-		};
-
-		auto summaryFn = [isDir, name](int sel, int items) -> std::string {
-			if (isDir)
-				return rack::string::f("%d tag%s across %d file%s",
-					sel, sel == 1 ? "" : "s", items, items == 1 ? "" : "s");
-			return rack::string::f("%d tag%s for %s",
-				sel, sel == 1 ? "" : "s", name.c_str());
-		};
-
-		std::string header = isDir ? "Suggest tags — " + name : "Suggest tags";
-		using AsyncDlg = StoermelderPackOne::ui::AsyncTagConfirmDialog<std::string>;
-		AsyncDlg* asyncWidget = new AsyncDlg(
-			loadingOverlay, buildLabel, applyFn, header, summaryFn);
-		APP->scene->addChild(asyncWidget);
-
-		worker->work([asyncWidget, fp, rel, isDir, ds]() {
-			std::vector<std::pair<std::string, std::string>> files;
-			if (isDir) {
-				std::function<void(const std::string&)> collect = [&](const std::string& path) {
-					for (const auto& child : ds->loadChildrenSync(path)) {
-						if (child.isContainer) collect(child.fullPath);
-						else files.emplace_back(child.fullPath, child.relativePath);
-					}
-				};
-				collect(fp);
-			}
-			else {
-				files = {{fp, rel}};
-			}
-
-			std::map<std::string, std::set<std::string>> tagToRels;
-			for (const auto& f : files) {
-				auto stream = ds->openAudioStream(f.first);
-				if (!stream) continue;
-				auto suggestions = TagClassifier::classify(*stream, 5);
-				for (const auto& s : suggestions)
-					if (s.score >= 0.5f)
-						tagToRels[s.name].insert(f.second);
-			}
-			// Single-file fallback: if nothing scores ≥ 0.5, take top 3
-			if (!isDir && tagToRels.empty()) {
-				auto stream = ds->openAudioStream(fp);
-				if (stream) {
-					auto suggestions = TagClassifier::classify(*stream, 3);
-					for (const auto& s : suggestions)
-						tagToRels[s.name].insert(rel);
-				}
-			}
-			using GroupVec = std::vector<StoermelderPackOne::ui::TagGroup<std::string>>;
-			auto groups = std::make_shared<GroupVec>();
-			for (auto& pair : tagToRels)
-				groups->push_back({pair.first, pair.second});
-			asyncWidget->result = groups;
-		});
-	}
-
 	void rebuildRowWidgets() {
 		rowContainer->clearChildren();
 		RootMetadata* meta = activeDataSource ? activeDataSource->getMetadata() : nullptr;
@@ -787,6 +693,130 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 			bndToolButton(args.vg, rect.pos.x, rect.pos.y, rect.size.x, rect.size.y,
 			              BND_CORNER_NONE, chipState, -1, label.c_str());
 		}
+	}
+
+	void startTagClassification(const DataSourceNode& node) {
+		if (!worker || !activeDataSource) return;
+		DataSource*   ds    = activeDataSource;
+		RootMetadata* meta  = ds->getMetadata();
+		std::string   fp    = node.fullPath;
+		std::string   rel   = node.relativePath;
+		bool          isDir = node.isContainer;
+		std::string   name  = node.name;
+
+		ui::MenuOverlay* loadingOverlay = new ui::MenuOverlay;
+		loadingOverlay->bgColor = nvgRGBAf(0.f, 0.f, 0.f, 0.5f);
+		APP->scene->addChild(loadingOverlay);
+
+		// Payload type carried by the per-tag sample labels inside the "Suggest tags"
+		// dialog. Held at namespace scope so the worker thread, the label builder, and
+		// the apply callback can all spell the type identically.
+		using DataSourceNodeId = std::string;
+
+		auto buildLabel = [this, ds](const std::string& tag, const DataSourceNodeId& fileId) -> widget::Widget* {
+			struct SampleLabel : ui::MenuItem {
+				DataSource* ds;
+				SirenBrowserPane* pane;
+				DataSourceNodeId fileId;
+				std::string groupTag;
+				void onAction(const event::Action& e) override {
+					pane->onFileSelected(ds->rootPath() + "/" + fileId, true);
+					e.unconsume();  // keep dialog open
+				}
+				void onButton(const ButtonEvent& e) override {
+					if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
+						Menu* menu = createMenu();
+						menu->addChild(createMenuLabel(ds->getDisplayName(fileId)));
+						// Find the owning dialog so we can mutate its groups vector
+						auto* dlg = getAncestorOfType<ui::TagConfirmDialog<DataSourceNodeId>>();
+						SampleLabel* self = this;
+						menu->addChild(createMenuItem("Remove from group", "", [self, dlg]() {
+							if (!dlg) { self->requestDelete(); return; }
+							for (auto& g : dlg->groups) {
+								if (g.tag == self->groupTag) {
+									g.payloads.erase(self->fileId);
+									break;
+								}
+							}
+							dlg->updateSummary();
+							self->requestDelete();
+						}));
+						e.consume(this);
+						return;
+					}
+					MenuItem::onButton(e);
+				}
+			};
+
+			SampleLabel* item = new SampleLabel;
+			item->text     = ds->getDisplayName(fileId);
+			item->ds	   = ds;
+			item->pane     = this;
+			item->fileId   = fileId;
+			item->groupTag = tag;
+			return item;
+		};
+
+		auto applyFn = [this, meta, ds](const std::map<std::string, std::set<DataSourceNodeId>>& filtered) {
+			for (const auto& pair : filtered)
+				for (const std::string& r : pair.second)
+					meta->addTag(r, pair.first);
+			if (ds) ds->saveMetadata();
+			requestRebuild();
+		};
+
+		auto summaryFn = [isDir, name](int sel, int items) -> std::string {
+			if (isDir)
+				return rack::string::f("%d tag%s across %d file%s",
+					sel, sel == 1 ? "" : "s", items, items == 1 ? "" : "s");
+			return rack::string::f("%d tag%s for %s",
+				sel, sel == 1 ? "" : "s", name.c_str());
+		};
+
+		std::string header = isDir ? "Suggest tags — " + name : "Suggest tags";
+		using AsyncDlg = StoermelderPackOne::ui::AsyncTagConfirmDialog<DataSourceNodeId>;
+		AsyncDlg* asyncWidget = new AsyncDlg(loadingOverlay, buildLabel, applyFn, header, summaryFn);
+		APP->scene->addChild(asyncWidget);
+
+		worker->work([asyncWidget, fp, rel, isDir, ds]() {
+			std::vector<std::pair<std::string, DataSourceNodeId>> files;
+			if (isDir) {
+				std::function<void(const std::string&)> collect = [&](const std::string& path) {
+					for (const auto& child : ds->loadChildrenSync(path)) {
+						if (child.isContainer) collect(child.fullPath);
+						else files.emplace_back(child.fullPath, child.relativePath);
+					}
+				};
+				collect(fp);
+			}
+			else {
+				files = {{fp, rel}};
+			}
+
+			std::map<std::string, std::set<DataSourceNodeId>> tagToRels;
+			for (const auto& f : files) {
+				auto stream = ds->openAudioStream(f.first);
+				if (!stream) continue;
+				auto suggestions = TagClassifier::classify(*stream, 5);
+				for (const auto& s : suggestions)
+					if (s.score >= 0.5f)
+						tagToRels[s.name].insert(f.second);
+			}
+			// Single-file fallback: if nothing scores ≥ 0.5, take top 3
+			if (!isDir && tagToRels.empty()) {
+				auto stream = ds->openAudioStream(fp);
+				if (stream) {
+					auto suggestions = TagClassifier::classify(*stream, 3);
+					for (const auto& s : suggestions)
+						tagToRels[s.name].insert(rel);
+				}
+			}
+			using GroupVec = std::vector<StoermelderPackOne::ui::TagGroup<DataSourceNodeId>>;
+			auto groups = std::make_shared<GroupVec>();
+			for (auto& pair : tagToRels)
+				groups->push_back({pair.first, pair.second});
+			asyncWidget->result = groups;
+		});
 	}
 };
 

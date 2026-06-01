@@ -44,7 +44,9 @@ template <typename TPayload>
 struct TagConfirmDialog : widget::OpaqueWidget {
 
 	using GroupVector = std::vector<TagGroup<TPayload>>;
-	using BuildLabelCallback = std::function<widget::Widget*(TPayload)>;
+	// The label callback receives both the tag this payload belongs to and the
+	// payload itself, so labels can offer a "remove from this group" action.
+	using BuildLabelCallback = std::function<widget::Widget*(const std::string& /*tag*/, TPayload)>;
 	using ApplyCallback = std::function<void(const std::map<std::string, std::set<TPayload>>&)>;
 
 	// ── inner widgets ─────────────────────────────────────────────────────
@@ -103,15 +105,13 @@ struct TagConfirmDialog : widget::OpaqueWidget {
 
 	std::map<std::string, bool> selectedTags;
 	GroupVector groups;
-	BuildLabelCallback buildLabelFn;
-	ApplyCallback applyFn;
+	BuildLabelCallback buildLabelCallback;
+	ApplyCallback applyCallback;
 
 	// ── ctor ──────────────────────────────────────────────────────────────
 
 	TagConfirmDialog(std::string headerText, GroupVector groups, BuildLabelCallback buildLabel, ApplyCallback apply)
-		: groups(std::move(groups))
-		, buildLabelFn(std::move(buildLabel))
-		, applyFn(std::move(apply)) {
+		: groups(std::move(groups)), buildLabelCallback(std::move(buildLabel)), applyCallback(std::move(apply)) {
 
 		box.size = math::Vec(800.f, 500.f);
 
@@ -166,9 +166,9 @@ struct TagConfirmDialog : widget::OpaqueWidget {
 			labelLayout->spacing = math::Vec(-.5f, -.5f);
 			row->addChild(labelLayout);
 
-			if (buildLabelFn) {
+			if (buildLabelCallback) {
 				for (const TPayload& p : g.payloads) {
-					widget::Widget* labelWidget = buildLabelFn(p);
+					widget::Widget* labelWidget = buildLabelCallback(g.tag, p);
 					if (labelWidget) {
 						labelLayout->addChild(labelWidget);
 					}
@@ -236,14 +236,14 @@ struct TagConfirmDialog : widget::OpaqueWidget {
 	}
 
 	void applySelected() {
-		if (!applyFn) return;
+		if (!applyCallback) return;
 		std::map<std::string, std::set<TPayload>> filtered;
 		for (const auto& g : groups) {
 			if (selectedTags[g.tag]) {
 				filtered[g.tag] = g.payloads;
 			}
 		}
-		applyFn(filtered);
+		applyCallback(filtered);
 	}
 
 	void step() override {
