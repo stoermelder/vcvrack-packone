@@ -721,7 +721,7 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 				DataSourceNodeId fileId;
 				std::string groupTag;
 				void onAction(const event::Action& e) override {
-					pane->onFileSelected(ds->rootPath() + "/" + fileId, true);
+					pane->onFileSelected(fileId, true);
 					e.unconsume();  // keep dialog open
 				}
 				void onButton(const ButtonEvent& e) override {
@@ -780,32 +780,32 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		APP->scene->addChild(asyncWidget);
 
 		worker->work([asyncWidget, fp, rel, isDir, ds]() {
-			std::vector<std::pair<std::string, DataSourceNodeId>> files;
+			std::vector<DataSourceNodeId> files;
 			if (isDir) {
 				std::function<void(const std::string&)> collect = [&](const std::string& path) {
 					for (const auto& child : ds->loadChildrenSync(path)) {
 						if (child.isContainer) collect(child.fullPath);
-						else files.emplace_back(child.fullPath, child.relativePath);
+						else files.push_back(child.relativePath);
 					}
 				};
 				collect(fp);
 			}
 			else {
-				files = {{fp, rel}};
+				files = {rel};
 			}
 
 			std::map<std::string, std::set<DataSourceNodeId>> tagToRels;
 			for (const auto& f : files) {
-				auto stream = ds->openAudioStream(f.first);
+				auto stream = ds->openAudioStream(f);
 				if (!stream) continue;
 				auto suggestions = TagClassifier::classify(*stream, 5);
 				for (const auto& s : suggestions)
 					if (s.score >= 0.5f)
-						tagToRels[s.name].insert(f.second);
+						tagToRels[s.name].insert(f);
 			}
 			// Single-file fallback: if nothing scores ≥ 0.5, take top 3
 			if (!isDir && tagToRels.empty()) {
-				auto stream = ds->openAudioStream(fp);
+				auto stream = ds->openAudioStream(rel);
 				if (stream) {
 					auto suggestions = TagClassifier::classify(*stream, 3);
 					for (const auto& s : suggestions)

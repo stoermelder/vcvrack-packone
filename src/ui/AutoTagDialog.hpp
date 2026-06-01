@@ -317,6 +317,7 @@ struct AsyncTagConfirmDialog : widget::OpaqueWidget {
             };
 
 			TagConfirmDialog<TPayload>* dlg = new Dialog(*result, buildLabelCallback, applyCallback, headerText, summaryCallback);
+			dlg->updateSummary();  // re-run after vtable is set so the override fires
 			overlay->addChild(dlg);
 			APP->scene->addChild(overlay);
 			requestDelete();
