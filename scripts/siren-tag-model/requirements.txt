@@ -1,0 +1,13 @@
+# Pins chosen to work on Python 3.10 -> 3.13 on macOS/Linux/WSL arm64+x86_64.
+# We use loose lower bounds + tight upper bounds to keep wheels available:
+# - numpy 2.x has prebuilt wheels for every supported Python (1.26.x does
+#   not have a Python 3.13 wheel, which makes pip fall back to a source
+#   build that fails on Apple Silicon).
+# - scikit-learn 1.5.x supports numpy 2.x and has prebuilt wheels.
+# - m2cgen 0.10.0 is the last release; pure Python, no native code.
+# - soundfile is a thin CFFI wrapper over libsndfile; recent versions
+#   ship wheels for every supported Python on every common platform.
+numpy>=2.0,<2.2
+scikit-learn>=1.5,<1.7
+m2cgen==0.10.0
+soundfile>=0.12
