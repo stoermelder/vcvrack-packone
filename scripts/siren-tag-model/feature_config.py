@@ -28,8 +28,10 @@ FEATURE_NAMES: list[str] = [
     "spectral_bandwidth",   # power-weighted std dev of freq around centroid, / Nyquist
     "high_band_ratio",      # energy above 2000 Hz / total energy, in [0, 1]
     "mean_spectral_flux",   # mean log-domain half-rectified flux per hop, normalised
+    "crest_factor",         # peak / RMS (log-normalised): transients → high, sustained → low
+    "harmonic_ratio",       # normalised autocorrelation peak: pitched → high, noise → low
 ]
 
-assert len(FEATURE_NAMES) == 10, "The Siren runtime expects exactly 10 features"
+assert len(FEATURE_NAMES) == 12, "The Siren runtime expects exactly 12 features"
 
 NUM_FEATURES: int = len(FEATURE_NAMES)  # 10

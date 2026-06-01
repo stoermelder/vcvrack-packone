@@ -132,12 +132,12 @@ inline int countPeaks(const float* x, int n, float threshold) {
 // ─── Public API ───────────────────────────────────────────────────────────
 
 struct TagClassifier {
-	// Score a 6-element feature vector. Clamps the input features to [0, 1]
+	// Score a feature vector. Clamps the input features to [0, 1]
 	// before scoring (the model was trained on clamped features). Writes
 	// SIREN_TAG_NUM_CLASSES scores to `out`, also clamped to [0, 1].
-	static void score(const float features[6], float out[SIREN_TAG_NUM_CLASSES]) {
-		float clamped[6];
-		for (int i = 0; i < 6; ++i) {
+	static void score(const float features[SIREN_TAG_NUM_FEATURES], float out[SIREN_TAG_NUM_CLASSES]) {
+		float clamped[SIREN_TAG_NUM_FEATURES];
+		for (int i = 0; i < SIREN_TAG_NUM_FEATURES; ++i) {
 			float v = features[i];
 			if (v < 0.f) v = 0.f;
 			else if (v > 1.f) v = 1.f;
@@ -174,8 +174,8 @@ struct TagClassifier {
 		return result;
 	}
 
-	// Top-k SuggestedTags from a 10-element feature vector.
-	static std::vector<SuggestedTag> classify(const float features[10], int k = 3) {
+	// Top-k SuggestedTags from a feature vector.
+	static std::vector<SuggestedTag> classify(const float features[SIREN_TAG_NUM_FEATURES], int k = 3) {
 		float scores[SIREN_TAG_NUM_CLASSES];
 		score(features, scores);
 		return topK(scores, k);
@@ -185,7 +185,7 @@ struct TagClassifier {
 	// once (sequentially). Caps analysis at maxDurationSeconds for speed.
 	static std::vector<SuggestedTag> classify(AudioStream& stream, int k = 3,
 	                                          float maxDurationSeconds = 30.f) {
-		float features[10] = {};
+		float features[SIREN_TAG_NUM_FEATURES] = {};
 		extractFeatures(stream, features, maxDurationSeconds);
 		return classify(features, k);
 	}
@@ -195,11 +195,11 @@ struct TagClassifier {
 	// in `scripts/siren-tag-model/feature_config.py` — they are the
 	// contract between the C++ runtime and the Python training script.
 	// Output is always clamped to [0, 1].
-	static void extractFeatures(AudioStream& stream, float out[10],
+	static void extractFeatures(AudioStream& stream, float out[SIREN_TAG_NUM_FEATURES],
 	                            float maxDurationSeconds = 30.f) {
 		using namespace TagClassifierDetail;
 
-		for (int i = 0; i < 10; ++i) out[i] = 0.f;
+		for (int i = 0; i < SIREN_TAG_NUM_FEATURES; ++i) out[i] = 0.f;
 
 		int sampleRate = stream.sampleRate();
 		int channels   = stream.channels();
@@ -262,11 +262,43 @@ struct TagClassifier {
 		float zcrMean = (zcrCount > 0) ? (zcrSum / float(zcrCount)) : 0.f;
 		out[2] = zcrMean;
 
-		// ── RMS over the full signal ─────────────────────────────────
-		double sumSq = 0.0;
-		for (float s : mono) sumSq += double(s) * double(s);
+		// ── RMS + peak over the full signal ─────────────────────────────
+		double sumSq  = 0.0;
+		float  peakAbs = 0.f;
+		for (float s : mono) {
+			sumSq += double(s) * double(s);
+			float a = s < 0.f ? -s : s;
+			if (a > peakAbs) peakAbs = a;
+		}
 		float rms = float(std::sqrt(sumSq / double(mono.size())));
 		out[3] = rms / RMS_FULL_SCALE;
+
+		// ── Crest factor (peak / RMS, log-normalised) ─────────────────
+		// log(1 + crest) / log(31): sustained sine ~0.2, percussion ~0.7, silence 0.
+		{
+			float crest = (rms > 1e-6f) ? peakAbs / rms : 0.f;
+			out[10] = std::min(1.f, std::log(1.f + crest) / std::log(31.f));
+		}
+
+		// ── Harmonic ratio (normalised autocorrelation peak) ──────────
+		// Pitch range 49–1100 Hz → lags 8–180 samples at TARGET_SR.
+		// Uses first ~0.46 s (4096 samples); periodic → near 1, noise → near 0.
+		{
+			int n = std::min((int)mono.size(), 4096);
+			float r0 = 0.f;
+			for (int i = 0; i < n; ++i) r0 += mono[i] * mono[i];
+			float maxAC = 0.f;
+			if (r0 > 1e-12f) {
+				for (int lag = 8; lag <= std::min(180, n - 1); ++lag) {
+					float r = 0.f;
+					int   cnt = n - lag;
+					for (int i = 0; i < cnt; ++i) r += mono[i] * mono[i + lag];
+					float rn = r / r0;
+					if (rn > maxAC) maxAC = rn;
+				}
+			}
+			out[11] = maxAC;
+		}
 
 		// ── STFT (Hann, 4× overlap) ──────────────────────────────────
 		int numFrames = int(mono.size());
@@ -412,7 +444,7 @@ struct TagClassifier {
 		out[9] = (fluxSum / float(numHops)) / MEAN_FLUX_NORM;
 
 		// Final clamp to [0, 1].
-		for (int i = 0; i < 10; ++i) {
+		for (int i = 0; i < SIREN_TAG_NUM_FEATURES; ++i) {
 			if (out[i] < 0.f) out[i] = 0.f;
 			else if (out[i] > 1.f) out[i] = 1.f;
 		}
