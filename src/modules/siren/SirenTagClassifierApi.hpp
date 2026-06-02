@@ -220,10 +220,10 @@ struct TagClassifier {
 		return classify(features, k);
 	}
 
-	// Compute the 10 normalized features from an audio stream. The 10
-	// features and their order MUST match `feature_config.FEATURE_NAMES`
-	// in `scripts/siren-tag-model/feature_config.py` — they are the
-	// contract between the C++ runtime and the Python training script.
+	// Compute the 32 normalized features from an audio stream. Feature order
+	// MUST match `feature_config.FEATURE_NAMES` in the training pipeline —
+	// it is the contract between the C++ runtime and Python.
+	// Returns all-zero if the stream has no frames or too few STFT hops (<4).
 	// Output is always clamped to [0, 1].
 	static void extractFeatures(AudioStream& stream, float out[SIREN_TAG_NUM_FEATURES],
 	                            float maxDurationSeconds = 30.f) {
@@ -270,8 +270,6 @@ struct TagClassifier {
 			}
 			framesRead += got;
 		}
-		if (mono.size() < size_t(outSR / 2)) return;  // need at least ~0.5 s
-
 		// ── ZCR per frame, then averaged ─────────────────────────────
 		const int zcrFrame = std::max(64, outSR / 33);
 		const int zcrNumFrames = int(mono.size()) / zcrFrame;

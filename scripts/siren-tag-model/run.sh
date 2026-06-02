@@ -36,12 +36,14 @@ make -C "$SCRIPT_DIR" ${RACK_DIR:+RACK_DIR="$RACK_DIR"}
 # 3. Parse --csv if provided, else generate synthetic dataset.
 CSV_FLAG=()
 N_PER_CLASS=80
-for arg in "$@"; do
-  case $arg in
-    --csv=*) CSV_FLAG=(--csv "${arg#*=}") ;;
-    --csv)   shift; CSV_FLAG=(--csv "$1") ;;
-    --n-per-class=*) N_PER_CLASS="${arg#*=}" ;;
-    --n-per-class)   shift; N_PER_CLASS="$1" ;;
+EXTRA_ARGS=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --csv=*)        CSV_FLAG=(--csv "${1#*=}"); shift ;;
+    --csv)          CSV_FLAG=(--csv "$2");      shift 2 ;;
+    --n-per-class=*) N_PER_CLASS="${1#*=}";    shift ;;
+    --n-per-class)  N_PER_CLASS="$2";          shift 2 ;;
+    *)              EXTRA_ARGS+=("$1");         shift ;;
   esac
 done
 
@@ -54,7 +56,7 @@ fi
 
 # 4. Train + emit C++ header fragment.
 echo "▶ Training model and emitting C++ header ..."
-python3 train_model.py "${CSV_FLAG[@]}" "$@"
+python3 train_model.py "${CSV_FLAG[@]}" ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}
 
 echo
 echo "── Done ────────────────────────────────────────────────────────"

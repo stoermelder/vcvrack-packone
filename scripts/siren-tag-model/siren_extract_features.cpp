@@ -156,6 +156,18 @@ int main(int argc, char** argv) {
 		float features[SIREN_TAG_NUM_FEATURES] = {};
 		TagClassifier::extractFeatures(stream, features);
 
+		// All-zero result means no frames were decoded (e.g. unsupported WAV
+		// encoding like ADPCM or mu-law that drwav can open but not read).
+		bool all_zero = true;
+		for (int j = 0; j < SIREN_TAG_NUM_FEATURES; ++j)
+			if (features[j] != 0.0f) { all_zero = false; break; }
+		if (all_zero) {
+			std::fprintf(stderr, "skip: extraction yielded all-zero features for %s "
+				"(unsupported encoding or silent file?)\n", path);
+			++failed;
+			continue;
+		}
+
 		std::printf("%s", path);
 		for (int j = 0; j < SIREN_TAG_NUM_FEATURES; ++j)
 			std::printf(",%.8g", (double)features[j]);

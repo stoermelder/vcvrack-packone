@@ -93,9 +93,9 @@
       "classifier_can_suggest": true
     },
     {
-      "name": "One-Shot",
-      "category": "time",
-      "description": "Single transient event with a defined start and end. Snare hit, stab, pluck.",
+      "name": "Pad",
+      "category": "role",
+      "description": "Sustained harmonic bed. Chords or textures that fill space beneath a melody.",
       "classifier_can_suggest": true
     },
     {

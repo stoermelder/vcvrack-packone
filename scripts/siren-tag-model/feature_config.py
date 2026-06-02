@@ -54,4 +54,4 @@ FEATURE_NAMES: list[str] = [
 
 assert len(FEATURE_NAMES) == 32, "The Siren runtime expects exactly 32 features"
 
-NUM_FEATURES: int = len(FEATURE_NAMES)  # 10
+NUM_FEATURES: int = len(FEATURE_NAMES)  # 32

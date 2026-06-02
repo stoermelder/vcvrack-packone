@@ -4,11 +4,11 @@ This folder generates the tiny C function that Siren's "Suggest tags…" action
 calls to score audio. It is **not** shipped to users — it runs once on the
 developer's machine and the output is pasted into the plugin's source.
 
-The plan this implements is in [`docs/siren/Classifier.md`](../../../docs/siren/Classifier.md). TL;DR: a small `scikit-learn` `RandomForest` is trained on a labeled dataset of 10 audio features, then transpiled to a plain C function with [`m2cgen`](https://github.com/BayesWitnesses/m2cgen). The function is checked into `src/modules/Siren/SirenTagClassifier.hpp`, so the plugin ships with **zero model file, zero JSON loader, and zero new runtime dependency**.
+The plan this implements is in [`docs/siren/Classifier.md`](../../../docs/siren/Classifier.md). TL;DR: a small `scikit-learn` `RandomForest` is trained on a labeled dataset of 32 audio features, then transpiled to a plain C function with [`m2cgen`](https://github.com/BayesWitnesses/m2cgen). The function is checked into `src/modules/Siren/SirenTagClassifier.hpp`, so the plugin ships with **zero model file, zero JSON loader, and zero new runtime dependency**.
 
 ---
 
-## The 15-tag vocabulary
+## The 18-tag vocabulary
 
 The single source of truth for the tag list is
 [`res/data/SirenTags.json`](../../res/data/SirenTags.json).
@@ -27,51 +27,76 @@ stays the same).
 
 Current vocabulary (alphabetical), 4 categories:
 
-| Tag        | Category | Notes |
-|------------|----------|-------|
-| bass       | role     | Sub-bass / low-register |
-| bright     | timbre   | High spectral centroid |
-| dark       | timbre   | Low spectral centroid |
-| drone      | source   | Sustained, slowly evolving |
-| field      | source   | Environmental recording |
-| lead       | role     | Melodic, mid/high register |
-| loop       | time     | Cleanly cyclical |
-| noise      | source   | Broadband, non-tonal |
-| one-shot   | time     | Single transient event |
-| pad        | role     | Sustained harmonic bed |
-| percussion | source   | Clear onsets (drum, cymbal) |
-| stab       | role     | Short pitched chord hit |
-| texture    | source   | Non-pitched evolving material |
-| tonal      | timbre   | Clear sense of pitch |
-| vocal      | source   | Voice / formant tones |
+| Tag          | Category | Notes |
+|--------------|----------|-------|
+| Acoustic     | timbre   | Acoustic instrument character: natural harmonics, exponential decay |
+| Atmospheric  | timbre   | Slowly evolving ambient texture: pads, washes, drones |
+| Bass         | role     | Sub- or bass-register sustained or rhythmic material |
+| Clap         | source   | Layered noise bursts with mid-frequency character |
+| Cymbal       | source   | High-frequency metallic noise with longer decay |
+| Drone        | source   | Sustained, slowly evolving pitch |
+| Drums        | source   | Full drum pattern or kit loop |
+| FX           | role     | Sweeps, risers, impacts, designed sounds |
+| Glitch       | timbre   | Stuttering or fragmented audio: artifacts, stutter edits |
+| HiHat        | source   | Short metallic noise burst, high-frequency transient |
+| Kick         | source   | Low-frequency transient with punchy bass content |
+| Lead         | role     | Melodic, mid/high register, often rhythmic |
+| Loop         | time     | Cyclical material that loops cleanly |
+| Nature       | source   | Environmental recording: wind, rain, outdoor ambience |
+| Noise        | source   | Broadband noise without a clear tonal component |
+| Pad          | role     | Sustained harmonic bed: chords or textures beneath a melody |
+| Snare        | source   | Mid-frequency transient with noise component and sharp attack |
+| Vocal        | source   | Voice or vocal-like material: sung voice, formant tones |
 
 ---
 
-## The 10 features
+## The 32 features
 
 All features are extracted from the first 30 seconds of audio, decimated to
 ~8820 Hz before analysis (STFT: `FFT_SIZE=512`, `HOP=128`, Hann window, 4×
 overlap). All values are clamped to `[0, 1]`. Order is the contract between
 the C++ runtime and the Python training script — both must agree exactly.
 
-| # | Name | What it captures |
-|---|------|-----------------|
-| 0 | `spectral_centroid`  | Brightness — power-weighted mean frequency / Nyquist |
-| 1 | `spectral_rolloff85` | Upper spectral extent — freq below which 85 % of energy lies / Nyquist |
-| 2 | `zero_crossing_rate` | Noisiness — fraction of sign changes per frame, averaged |
-| 3 | `rms`                | Loudness / density |
-| 4 | `onset_density`      | Rhythmic activity — spectral-flux peaks per second, / 30 |
-| 5 | `low_band_ratio`     | Bass content — energy below 250 Hz / total |
-| 6 | `spectral_flatness`  | Tonality — geometric / arithmetic mean of magnitude per frame |
-| 7 | `spectral_bandwidth` | Frequency spread — power-weighted std dev / Nyquist |
-| 8 | `high_band_ratio`    | Brightness detail — energy above 2000 Hz / total |
-| 9 | `mean_spectral_flux` | Overall spectral change rate — mean log-domain half-rectified flux |
+| #  | Name | What it captures |
+|----|------|-----------------|
+| 0  | `spectral_centroid`  | Brightness — power-weighted mean frequency / Nyquist |
+| 1  | `spectral_rolloff85` | Upper spectral extent — freq below which 85 % of energy lies / Nyquist |
+| 2  | `zero_crossing_rate` | Noisiness — fraction of sign changes per frame, averaged |
+| 3  | `rms`                | Loudness / density |
+| 4  | `onset_density`      | Rhythmic activity — spectral-flux peaks per second, / 30 |
+| 5  | `low_band_ratio`     | Bass content — energy below 250 Hz / total |
+| 6  | `spectral_flatness`  | Tonality — geometric / arithmetic mean of magnitude per frame |
+| 7  | `spectral_bandwidth` | Frequency spread — power-weighted std dev / Nyquist |
+| 8  | `high_band_ratio`    | Brightness detail — energy above 2000 Hz / total |
+| 9  | `mean_spectral_flux` | Overall spectral change rate — mean log-domain half-rectified flux |
+| 10 | `crest_factor`       | Peak / RMS (log-normalised): transients → high, sustained → low |
+| 11 | `harmonic_ratio`     | Normalised autocorrelation peak: pitched → high, noise → low |
+| 12 | `spectral_crest`     | max(mag)/mean(mag)/N: single-tone → 1, flat noise → ~0 |
+| 13 | `spectral_entropy`   | Shannon entropy of PSD / log(N): noise → 1, tone → 0 |
+| 14 | `spectral_slope`     | Pearson r(bin, mag) mapped [−1,1]→[0,1]: falling = 0, rising = 1 |
+| 15 | `spectral_decrease`  | Spectral decrease (low-freq bias) mapped to [0, 1] |
+| 16 | `spectral_skewness`  | 3rd standardised moment of spectrum mapped [−3,3]→[0,1] |
+| 17 | `spectral_kurtosis`  | Excess 4th moment (peakedness) mapped to [0, 1] |
+| 18 | `pitch`              | Fundamental frequency / max pitch: pitched → high, noise → 0 |
+| 19 | `mfcc_0`             | Mel-frequency cepstral coefficient 0 (log energy) |
+| 20 | `mfcc_1`             | MFCC 1 |
+| 21 | `mfcc_2`             | MFCC 2 |
+| 22 | `mfcc_3`             | MFCC 3 |
+| 23 | `mfcc_4`             | MFCC 4 |
+| 24 | `mfcc_5`             | MFCC 5 |
+| 25 | `mfcc_6`             | MFCC 6 |
+| 26 | `mfcc_7`             | MFCC 7 |
+| 27 | `mfcc_8`             | MFCC 8 |
+| 28 | `mfcc_9`             | MFCC 9 |
+| 29 | `mfcc_10`            | MFCC 10 |
+| 30 | `mfcc_11`            | MFCC 11 |
+| 31 | `mfcc_12`            | MFCC 12 |
 
 The feature contract is defined in `feature_config.py` (`FEATURE_NAMES`) and
 implemented in `src/modules/Siren/SirenTagClassifierAPI.hpp`
 (`TagClassifier::extractFeatures()`). **The C++ implementation is the
-authoritative source**; `features.py` is the fallback used when the C++
-extractor binary is not available.
+authoritative source**. `features.py` wraps the C++ binary via subprocess and
+also handles a transcoding fallback (see below).
 
 ---
 
@@ -89,7 +114,7 @@ This will:
 
 1. Create `.venv/` and install `numpy`, `scikit-learn`, `m2cgen`, `soundfile`.
 2. Build the C++ feature extractor (`build/siren_extract_features`).
-3. Generate a synthetic labeled dataset (15 classes × 80 clips by default).
+3. Generate a synthetic labeled dataset (18 classes × 80 clips by default).
 4. Train a small Random Forest.
 5. Print test-set metrics + a smoke test.
 6. Write `build/SirenTagClassifier.generated.hpp`.
@@ -224,13 +249,13 @@ Recognized audio extensions: `.wav`, `.flac`, `.mp3`, `.ogg`, `.aif`,
 Both `load_folder_dataset.py` and `generate_synthetic_dataset.py` write:
 
 ```
-path,label,f0,f1,f2,f3,f4,f5,f6,f7,f8,f9
-my_samples/bass/sub001.wav,bass,0.031,0.035,0.031,1.0,0.0,1.0,0.12,0.18,0.05,0.22
+path,label,f0,f1,...,f31
+my_samples/Bass/sub001.wav,Bass,0.031,0.035,0.031,1.0,0.0,1.0,0.12,0.18,0.05,0.22,...
 ```
 
 - `path` — relative path to the audio file.
 - `label` — one tag name per row, exactly as in the manifest.
-- `f0` … `f9` — the 10 features in contract order (see table above).
+- `f0` … `f31` — the 32 features in contract order (see table above).
   Each is in `[0, 1]`.
 
 ### Class balancing
@@ -242,7 +267,7 @@ python3 load_folder_dataset.py my_samples --max-per-class 200 --out build/my.csv
 
 ### How many clips do I need?
 
-Empirical guide for the current 10-feature Random Forest on 15 classes:
+Empirical guide for the current 32-feature Random Forest on 18 classes:
 
 | Clips per class | Top-1 F1 (real audio) | Notes |
 |-----------------|----------------------|-------|
@@ -250,8 +275,9 @@ Empirical guide for the current 10-feature Random Forest on 15 classes:
 | 50–200          | ~65–80%              | Practical "good enough" range for a synth sample browser. |
 | 200–1000        | ~80–90%              | Diminishing returns past ~500. |
 
-With 10 features the model can separate classes better than the old 6-feature
-version, but it also needs slightly more data to avoid overfitting.
+With 32 features (including MFCCs) the model can separate timbral classes much
+better than earlier versions, but it also needs slightly more data to avoid
+overfitting — aim for the 100–200 clips/class range.
 
 ### Where to source real audio
 
@@ -272,7 +298,7 @@ version, but it also needs slightly more data to avoid overfitting.
 | `Makefile` | Builds `siren_extract_features` from the above source. `make` / `make clean`. |
 | `tag_manifest.py` | Reads `res/data/SirenTags.json`; exposes `CLASS_NAMES`, `TAGS`, `NUM_CLASSES`. Python-side source of truth for the tag vocabulary. |
 | `feature_config.py` | The 10-feature contract (`FEATURE_NAMES`) + re-exports from `tag_manifest`. |
-| `features.py` | Python feature extractor (fallback when the C++ binary is not built) + `find_cpp_extractor()` / `extract_features_batch()` helpers used by the dataset scripts. |
+| `features.py` | Subprocess wrapper around the C++ extractor. Provides `find_cpp_extractor()` and `extract_features_batch()`. Includes an automatic transcoding fallback: files that the C++ extractor cannot decode (e.g. compressed WAV encodings) are re-encoded to temporary PCM WAV via `soundfile` and retried transparently. |
 | `generate_synthetic_dataset.py` | Synthesizes 15 types of audio and writes a CSV. Uses the C++ extractor if available, Python fallback otherwise. |
 | `load_folder_dataset.py` | Walks a folder of tag-named subdirectories, extracts features, writes a CSV. Bridge to real data. |
 | `train_model.py` | Fits a Random Forest, prints metrics, calls `emit_cpp.py`. |
@@ -303,7 +329,7 @@ on `PATH`, or `RACK_DIR` pointing at the wrong location. Fix with
 
 **Smoke-test predictions look random** — the Python and C++ extractors
 disagree. Both must use the same STFT parameters (`FFT_SIZE=512`,
-`HOP=128`, `TARGET_SR=8820`) and the same 10 features in the same order.
+`HOP=128`, `TARGET_SR=8820`) and the same 32 features in the same order.
 Run `build/siren_extract_features <file>` and
 `python3 classify_wav.py <file> --no-model` on the same file; the feature
 values should match.
@@ -311,10 +337,21 @@ values should match.
 **The plugin's predictions differ from the Python smoke test** — same root
 cause as above. Rebuild the C++ extractor with `make` and re-run
 `bash run.sh` to regenerate the model using the C++ feature values.
+Check that both sides produce exactly 32 values per file.
 
 **Trainer reports F1 = 0 on classes you know are present** — the CSV has
-fewer than 15 labels or a folder name doesn't match the manifest. Check
+fewer than 18 labels or a folder name doesn't match the manifest. Check
 folder names against `python3 load_folder_dataset.py --list-known-tags`.
+
+**"skip: extraction still failed after transcoding"** — the file could not be
+decoded even by the `soundfile` fallback. It is either genuinely silent, badly
+corrupt, or uses an encoding that libsndfile also doesn't support. Re-encode
+manually: `ffmpeg -i bad.wav -ar 44100 -sample_fmt s16 fixed.wav`
+
+Note: most compressed WAV files (ADPCM, mu-law, IMA, etc.) are handled
+**automatically** by the transcoding fallback and do not require manual
+intervention. You will only see the message above for files that both drwav
+and libsndfile cannot open.
 
 **"skip: cannot decode foo.mp3"** — the file is corrupt or uses an
 unsupported codec. Re-encode with `ffmpeg -i foo.mp3 -ar 22050 foo.wav`.
