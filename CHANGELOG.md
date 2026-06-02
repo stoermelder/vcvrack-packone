@@ -1,3 +1,8 @@
+## 2.x.x
+
+- Module [TRANSIT](./docs/transit/Transit.md)
+    - Added Output-mode "Tipsy" for sending the snapshot text label (for modules with Tipsy-support like [TTY](https://library.vcvrack.com/StochasticTelegraph/TTY))
+
 ## 2.4.1
 
 - [8FACE mk2](./docs/eightface/EightFaceMk2.md)

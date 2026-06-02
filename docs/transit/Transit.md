@@ -179,3 +179,5 @@ Once placed next to TRANSIT the expander works and behaves the same way TRANSIT 
     - Added custom color LED setting per slot
     - Added option to set the first usable snapshot (instead of starting at 1) (#265)
     - Added option to disable fade CV input clamping, allowing for more extreme fade times
+- v2.x.x
+    - Added Output-mode "Tipsy" for sending the snapshot text label (for modules with Tipsy-support like [TTY](https://library.vcvrack.com/StochasticTelegraph/TTY))

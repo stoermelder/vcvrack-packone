@@ -6,6 +6,7 @@
 #include "../../components/Knobs.hpp"
 #include "../../components/ParamHandleIndicator.hpp"
 #include "TransitBase.hpp"
+#include "tipsy-encoder/include/tipsy/tipsy.h"
 #include <random>
 
 namespace StoermelderPackOne {
@@ -36,7 +37,8 @@ enum class OUTMODE {
 	TRIG_SNAPSHOT = 4,
 	TRIG_SOC = 3,
 	TRIG_EOC = 2,
-	PHASE = 5
+	PHASE = 5,
+	TIPSY = 6
 };
 
 struct ParamHandleEx : ParamHandleIndicator {
@@ -110,6 +112,9 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 	dsp::PulseGenerator outSlotPulseGenerator;
 	dsp::PulseGenerator outSocPulseGenerator;
 	dsp::PulseGenerator outEocPulseGenerator;
+
+	tipsy::ProtocolEncoder tipsyEncoder;
+	std::string tipsyCurrentLabel;
 
 	/** [Stored to JSON] */
 	bool mappingIndicatorHidden = false;
@@ -721,6 +726,15 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 				processing = false;
 			}
 		}
+
+		if (outMode == OUTMODE::TIPSY) {
+			float f = 0.f;
+			if (!tipsyEncoder.isDormant()) {
+				tipsyEncoder.getNextMessageFloat(f);
+			}
+			BASE::outputs[OUTPUT].setVoltage(f);
+			BASE::outputs[OUTPUT].setChannels(1);
+		}
 	}
 
 	void presetProcessPhase(float sampleTime) {
@@ -860,6 +874,17 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 		else {
 			if (!slot->isUsed()) return;
 			presetNext = p;
+		}
+
+		if (outMode == OUTMODE::TIPSY) {
+			if (!tipsyEncoder.isDormant()) tipsyEncoder.terminateCurrentMessage();
+			tipsyCurrentLabel = slot->isUsed() ? slot->getLabel() : "";
+			if (tipsyCurrentLabel.empty()) tipsyCurrentLabel = string::f("Snapshot #%i", slot->index + 1);
+			tipsyEncoder.initiateMessage(
+				"text/plain",
+				(uint32_t)tipsyCurrentLabel.length() + 1,
+				(const unsigned char*)tipsyCurrentLabel.c_str()
+			);
 		}
 	}
 
@@ -1592,6 +1617,8 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 			menu->addChild(construct<OutModeItem>(&MenuItem::text, "Polyphonic", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::POLY, &OutModeItem::disabled, phaseMode));
 			menu->addChild(new MenuSeparator);
 			menu->addChild(construct<OutModeItem>(&MenuItem::text, "Phase", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::PHASE, &OutModeItem::disabled, !phaseMode));
+			menu->addChild(new MenuSeparator);
+			menu->addChild(construct<OutModeItem>(&MenuItem::text, "Tipsy", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::TIPSY, &OutModeItem::disabled, phaseMode));
 		}));
 		menu->addChild(createBoolPtrMenuItem("Clamp Fade CV input", "", &module->clampFadeCv));
 

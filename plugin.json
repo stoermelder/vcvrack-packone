@@ -170,7 +170,7 @@
 		{
 			"slug": "Transit",
 			"name": "TRANSIT",
-			"description": "Parameter-morpher and sequencer for up to 96 snapshots",
+			"description": "Parameter-morpher and sequencer for up to 96 snapshots. Can send Tipsy messages.",
 			"tags": [
 				"Utility",
 				"Sequencer"
