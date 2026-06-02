@@ -4,7 +4,7 @@ This folder generates the tiny C function that Siren's "Suggest tags…" action
 calls to score audio. It is **not** shipped to users — it runs once on the
 developer's machine and the output is pasted into the plugin's source.
 
-The plan this implements is in [`docs/siren/Classifier.md`](../../../docs/siren/Classifier.md). TL;DR: a small `scikit-learn` `RandomForest` is trained on a labeled dataset of 32 audio features, then transpiled to a plain C function with [`m2cgen`](https://github.com/BayesWitnesses/m2cgen). The function is checked into `src/modules/Siren/SirenTagClassifier.hpp`, so the plugin ships with **zero model file, zero JSON loader, and zero new runtime dependency**.
+The plan this implements is in [`docs/siren/Classifier.md`](../../../docs/siren/Classifier.md). TL;DR: a small `scikit-learn` `RandomForest` is trained on a labeled dataset of 40 audio features, then transpiled to a plain C function with [`m2cgen`](https://github.com/BayesWitnesses/m2cgen). The function is checked into `src/modules/Siren/SirenTagClassifier.hpp`, so the plugin ships with **zero model file, zero JSON loader, and zero new runtime dependency**.
 
 ---
 
@@ -50,7 +50,7 @@ Current vocabulary (alphabetical), 4 categories:
 
 ---
 
-## The 32 features
+## The 40 features
 
 All features are extracted from the first 30 seconds of audio, decimated to
 ~8820 Hz before analysis (STFT: `FFT_SIZE=512`, `HOP=128`, Hann window, 4×
@@ -77,20 +77,28 @@ the C++ runtime and the Python training script — both must agree exactly.
 | 15 | `spectral_decrease`  | Spectral decrease (low-freq bias) mapped to [0, 1] |
 | 16 | `spectral_skewness`  | 3rd standardised moment of spectrum mapped [−3,3]→[0,1] |
 | 17 | `spectral_kurtosis`  | Excess 4th moment (peakedness) mapped to [0, 1] |
-| 18 | `pitch`              | Fundamental frequency / max pitch: pitched → high, noise → 0 |
-| 19 | `mfcc_0`             | Mel-frequency cepstral coefficient 0 (log energy) |
-| 20 | `mfcc_1`             | MFCC 1 |
-| 21 | `mfcc_2`             | MFCC 2 |
-| 22 | `mfcc_3`             | MFCC 3 |
-| 23 | `mfcc_4`             | MFCC 4 |
-| 24 | `mfcc_5`             | MFCC 5 |
-| 25 | `mfcc_6`             | MFCC 6 |
-| 26 | `mfcc_7`             | MFCC 7 |
-| 27 | `mfcc_8`             | MFCC 8 |
-| 28 | `mfcc_9`             | MFCC 9 |
-| 29 | `mfcc_10`            | MFCC 10 |
-| 30 | `mfcc_11`            | MFCC 11 |
-| 31 | `mfcc_12`            | MFCC 12 |
+| 18 | `mfcc_0`             | Mel-frequency cepstral coefficient 0 (log energy) |
+| 19 | `mfcc_1`             | MFCC 1 |
+| 20 | `mfcc_2`             | MFCC 2 |
+| 21 | `mfcc_3`             | MFCC 3 |
+| 22 | `mfcc_4`             | MFCC 4 |
+| 23 | `mfcc_5`             | MFCC 5 |
+| 24 | `mfcc_6`             | MFCC 6 |
+| 25 | `mfcc_7`             | MFCC 7 |
+| 26 | `mfcc_8`             | MFCC 8 |
+| 27 | `mfcc_9`             | MFCC 9 |
+| 28 | `mfcc_10`            | MFCC 10 |
+| 29 | `mfcc_11`            | MFCC 11 |
+| 30 | `mfcc_12`            | MFCC 12 |
+| 31 | `temporal_centroid`  | Time-weighted centre of mass of RMS envelope: one-shot → 0 (front-loaded), loop/pad → 0.5 |
+| 32 | `tail_head_ratio`    | RMS(last 20%) / (RMS(first 20%) + RMS(last 20%)): one-shot → 0, loop → 0.5, fade-in → 1 |
+| 33 | `env_ac_peak`        | Peak normalised autocorrelation of the RMS envelope at 0.25–4 s lags: rhythmic loop → 1, one-shot → 0 |
+| 34 | `attack_time`        | Block of peak-RMS position / (N_BLOCKS−1): percussive (kick, snare) → 0, pad/drone → high |
+| 35 | `env_rms_variance`   | Normalised std dev of RMS envelope blocks (σ×2): sustained/flat → 0, rhythmic/one-shot → high |
+| 36 | `temporal_entropy`   | Shannon entropy of normalised RMS envelope: one-shot → 0 (concentrated), drone/noise → 1 (uniform) |
+| 37 | `sub_bass_ratio`     | Energy below 80 Hz / total: kick → high, bass → moderate, everything else → low |
+| 38 | `mid_band_ratio`     | Energy 250–2000 Hz / total: snare/clap/vocal → high, kick/sub-bass → low |
+| 39 | `flux_variance`      | Std dev of per-hop spectral flux / norm: glitch/drums → high, drone/pad → low |
 
 The feature contract is defined in `feature_config.py` (`FEATURE_NAMES`) and
 implemented in `src/modules/Siren/SirenTagClassifierAPI.hpp`
@@ -267,7 +275,7 @@ python3 load_folder_dataset.py my_samples --max-per-class 200 --out build/my.csv
 
 ### How many clips do I need?
 
-Empirical guide for the current 32-feature Random Forest on 18 classes:
+Empirical guide for the current 40-feature Random Forest on 18 classes:
 
 | Clips per class | Top-1 F1 (real audio) | Notes |
 |-----------------|----------------------|-------|
@@ -275,7 +283,7 @@ Empirical guide for the current 32-feature Random Forest on 18 classes:
 | 50–200          | ~65–80%              | Practical "good enough" range for a synth sample browser. |
 | 200–1000        | ~80–90%              | Diminishing returns past ~500. |
 
-With 32 features (including MFCCs) the model can separate timbral classes much
+With 37 features (including MFCCs, temporal envelope, and repetitiveness features) the model can separate timbral classes much
 better than earlier versions, but it also needs slightly more data to avoid
 overfitting — aim for the 100–200 clips/class range.
 
@@ -329,7 +337,7 @@ on `PATH`, or `RACK_DIR` pointing at the wrong location. Fix with
 
 **Smoke-test predictions look random** — the Python and C++ extractors
 disagree. Both must use the same STFT parameters (`FFT_SIZE=512`,
-`HOP=128`, `TARGET_SR=8820`) and the same 32 features in the same order.
+`HOP=128`, `TARGET_SR=8820`) and the same 40 features in the same order.
 Run `build/siren_extract_features <file>` and
 `python3 classify_wav.py <file> --no-model` on the same file; the feature
 values should match.

@@ -25,7 +25,7 @@ namespace Siren {
 
 // Number of features extractFeatures() computes. Owned by this header;
 // the generated model asserts that it was trained with the same count.
-static const int SIREN_TAG_NUM_FEATURES = 32;
+static const int SIREN_TAG_NUM_FEATURES = 40;
 
 struct SuggestedTag {
 	std::string name;
@@ -42,6 +42,7 @@ static constexpr int    TARGET_SR          = 8820;  // doubled for better high-f
 
 // Normalisation constants — match features.py.
 static constexpr float  ONSET_DENSITY_NORM = 30.f;     // peaks/sec → [0, 1]
+static constexpr float  SUB_BASS_HZ        = 80.f;     // sub_bass_ratio cutoff (Hz)
 static constexpr float  LOW_BAND_HZ        = 250.f;    // low_band_ratio cutoff (Hz)
 static constexpr float  HIGH_BAND_HZ       = 2000.f;   // high_band_ratio cutoff (Hz)
 static constexpr float  MEAN_FLUX_NORM     = 50.f;     // log-flux units/hop → [0, 1]
@@ -308,30 +309,129 @@ struct TagClassifier {
 			out[10] = std::min(1.f, std::log(1.f + crest) / std::log(31.f));
 		}
 
-		// ── Harmonic ratio + pitch ────────────────────────────────────
+		// ── Temporal envelope features (all share the 32-block RMS envelope) ──
+		// temporal_centroid [31]: time-weighted centre of mass — one-shot→0, loop/pad→0.5
+		// tail_head_ratio   [32]: rms(last 20%)/(rms(first+last 20%)) — one-shot→0, loop→0.5
+		// attack_time       [34]: block of peak RMS / (N_BLOCKS-1) — percussive→0, pad→high
+		// env_rms_variance  [35]: normalised std dev of envelope — sustained→0, rhythmic→high
+		// temporal_entropy  [36]: Shannon entropy of envelope — one-shot→0, drone→1
+		{
+			const int N_BLOCKS = 32;
+			const int n = int(mono.size());
+			float blockRms[N_BLOCKS] = {};
+			for (int b = 0; b < N_BLOCKS; ++b) {
+				int lo = (int64_t(b)     * n) / N_BLOCKS;
+				int hi = (int64_t(b + 1) * n) / N_BLOCKS;
+				double ss = 0.0;
+				for (int i = lo; i < hi; ++i) ss += double(mono[i]) * double(mono[i]);
+				blockRms[b] = (hi > lo) ? float(std::sqrt(ss / double(hi - lo))) : 0.f;
+			}
+
+			// Temporal centroid.
+			double wSum = 0.0, eSum = 0.0;
+			for (int b = 0; b < N_BLOCKS; ++b) {
+				double e = double(blockRms[b]);
+				wSum += double(b) * e;
+				eSum += e;
+			}
+			out[31] = (eSum > 1e-12) ? float(wSum / (eSum * (N_BLOCKS - 1))) : 0.5f;
+
+			// Tail/head ratio: average the outer 20% blocks on each side.
+			const int EDGE = std::max(1, N_BLOCKS / 5);  // 20 % → 6 blocks
+			double headE = 0.0, tailE = 0.0;
+			for (int b = 0; b < EDGE; ++b)                    headE += double(blockRms[b]);
+			for (int b = N_BLOCKS - EDGE; b < N_BLOCKS; ++b)  tailE += double(blockRms[b]);
+			out[32] = float(tailE / (headE + tailE + 1e-12));
+
+			// Attack time: position of the peak-RMS block, normalised to [0, 1].
+			int peakBlock = 0;
+			for (int b = 1; b < N_BLOCKS; ++b)
+				if (blockRms[b] > blockRms[peakBlock]) peakBlock = b;
+			out[34] = float(peakBlock) / float(N_BLOCKS - 1);
+
+			// Envelope RMS variance: std dev of blockRms, normalised.
+			// σ_max ≈ 0.5 (half blocks at 0, half at 1), so σ * 2 maps to [0, 1].
+			double mean = 0.0;
+			for (int b = 0; b < N_BLOCKS; ++b) mean += double(blockRms[b]);
+			mean /= N_BLOCKS;
+			double var = 0.0;
+			for (int b = 0; b < N_BLOCKS; ++b) {
+				double d = double(blockRms[b]) - mean;
+				var += d * d;
+			}
+			out[35] = std::min(1.f, float(std::sqrt(var / N_BLOCKS)) * 2.f);
+
+			// Temporal entropy: Shannon entropy of the normalised RMS envelope.
+			// H = -Σ p_i·log(p_i) / log(N_BLOCKS), p_i = blockRms[i] / Σ blockRms.
+			// One-shot→0 (energy in one block), drone/noise→1 (uniform).
+			{
+				double eSum = 0.0;
+				for (int b = 0; b < N_BLOCKS; ++b) eSum += double(blockRms[b]);
+				double H = 0.0;
+				if (eSum > 1e-12) {
+					for (int b = 0; b < N_BLOCKS; ++b) {
+						double p = double(blockRms[b]) / eSum;
+						if (p > 1e-12) H -= p * std::log(p);
+					}
+					H /= std::log(double(N_BLOCKS));
+				}
+				out[36] = float(H);
+			}
+		}
+
+		// ── Envelope autocorrelation (macro-level repetitiveness) ─────
+		// RMS envelope at ~100 ms resolution, autocorrelated over 0.25–4 s lags.
+		// Peak normalised AC → 1 for rhythmic loops, ~0 for one-shots / irregular material.
+		// Drones also score high (flat envelope → high AC at all lags); the
+		// temporal_centroid and tail_head_ratio features distinguish those from loops.
+		{
+			const int ENV_BLOCK = std::max(1, outSR / 10);  // ~100 ms per block
+			const int nBlocks   = int(mono.size()) / ENV_BLOCK;
+			if (nBlocks >= 6) {
+				std::vector<float> env(size_t(nBlocks), 0.f);
+				for (int b = 0; b < nBlocks; ++b) {
+					double ss = 0.0;
+					const int lo = b * ENV_BLOCK;
+					const int hi = lo + ENV_BLOCK;
+					for (int i = lo; i < hi; ++i) ss += double(mono[i]) * double(mono[i]);
+					env[b] = float(std::sqrt(ss / double(ENV_BLOCK)));
+				}
+				double r0 = 0.0;
+				for (int b = 0; b < nBlocks; ++b) r0 += double(env[b]) * double(env[b]);
+				float maxAC = 0.f;
+				if (r0 > 1e-12) {
+					const int lagMin = std::max(1, int(0.25f * float(outSR) / float(ENV_BLOCK)));
+					const int lagMax = std::min(nBlocks - 1, int(4.0f * float(outSR) / float(ENV_BLOCK)));
+					for (int lag = lagMin; lag <= lagMax; ++lag) {
+						double r = 0.0;
+						const int cnt = nBlocks - lag;
+						for (int b = 0; b < cnt; ++b) r += double(env[b]) * double(env[b + lag]);
+						float rn = float(r / r0);
+						if (rn > maxAC) maxAC = rn;
+					}
+				}
+				out[33] = maxAC;
+			}
+		}
+
+		// ── Harmonic ratio ───────────────────────────────────────────
 		// Autocorrelation over pitch range 49–1100 Hz (lags 8–180 at outSR).
-		// harmonic_ratio: normalised peak → periodic=1, noise=0.
-		// pitch: lag of that peak → Hz, normalised by max detectable pitch.
+		// Normalised peak → periodic=1 (tonal), noise=0.
 		{
 			int n = std::min((int)mono.size(), 4096);
 			float r0 = 0.f;
 			for (int i = 0; i < n; ++i) r0 += mono[i] * mono[i];
-			float maxAC  = 0.f;
-			int   bestLag = 0;
+			float maxAC = 0.f;
 			if (r0 > 1e-12f) {
 				for (int lag = 8; lag <= std::min(180, n - 1); ++lag) {
 					float r = 0.f;
 					int   cnt = n - lag;
 					for (int i = 0; i < cnt; ++i) r += mono[i] * mono[i + lag];
 					float rn = r / r0;
-					if (rn > maxAC) { maxAC = rn; bestLag = lag; }
+					if (rn > maxAC) maxAC = rn;
 				}
 			}
 			out[11] = maxAC;
-			// Pitch: only meaningful when there's a clear periodicity.
-			out[18] = (bestLag > 0 && maxAC > 0.05f)
-			        ? std::min(1.f, float(outSR) / (float(bestLag) * (float(outSR) / 8.f)))
-			        : 0.f;
 		}
 
 		// ── STFT (Hann, 4× overlap) ──────────────────────────────────
@@ -352,6 +452,7 @@ struct TagClassifier {
 		// Per-frame accumulators (squared-magnitude units).
 		double centroidBinSum = 0.0;
 		double powerSum       = 0.0;
+		double powerSubBass   = 0.0;
 		double powerLow       = 0.0;
 		double powerHigh      = 0.0;
 		double rolloff85Acc   = 0.0;
@@ -376,9 +477,10 @@ struct TagClassifier {
 		if (!fft.p) return;
 
 		// Cutoff bins for band-ratio features at the decimated sample rate.
-		const float binHz    = float(outSR) / float(FFT_SIZE);
-		const int   lowBinMax  = std::max(1, int(std::floor(LOW_BAND_HZ  / binHz)));
-		const int   highBinMin = std::min(HALF_N - 1, int(std::ceil(HIGH_BAND_HZ / binHz)));
+		const float binHz       = float(outSR) / float(FFT_SIZE);
+		const int   subBassBinMax = std::max(1, int(std::floor(SUB_BASS_HZ  / binHz)));
+		const int   lowBinMax     = std::max(1, int(std::floor(LOW_BAND_HZ  / binHz)));
+		const int   highBinMin    = std::min(HALF_N - 1, int(std::ceil(HIGH_BAND_HZ / binHz)));
 
 		// Mel filterbank: N_MELS triangular filters from 0 Hz to Nyquist.
 		// mel(f) = 2595·log10(1 + f/700);  bin = round(mel_hz * FFT_SIZE / outSR)
@@ -422,8 +524,9 @@ struct TagClassifier {
 				double p = m * m;
 				framePower += p;
 				centroid   += double(b) * p;
-				if (b < lowBinMax)   powerLow  += p;
-				if (b >= highBinMin) powerHigh += p;
+				if (b < subBassBinMax) powerSubBass += p;
+				if (b < lowBinMax)     powerLow     += p;
+				if (b >= highBinMin)   powerHigh    += p;
 				frameMagSum += m;
 				frameKXSum  += double(b) * m;
 				if (m > frameMaxMag) frameMaxMag = m;
@@ -568,6 +671,27 @@ struct TagClassifier {
 		for (int h = 0; h < numHops; ++h) fluxSum += onsetSignal[h];
 		out[9] = (fluxSum / float(numHops)) / MEAN_FLUX_NORM;
 
+		// Sub-bass ratio: energy below SUB_BASS_HZ (80 Hz) / total power. Kick→high, else low.
+		if (powerSum > 0.0)
+			out[37] = float(powerSubBass / powerSum);
+
+		// Mid-band ratio: energy in [LOW_BAND_HZ, HIGH_BAND_HZ] / total. Snare/Clap/Vocal→high.
+		if (powerSum > 0.0)
+			out[38] = float((powerSum - powerLow - powerHigh) / powerSum);
+
+		// Spectral flux variance: std dev of per-hop flux, normalised by MEAN_FLUX_NORM.
+		// Glitch/Drums→high (spiky changes), Drone/Pad→low (steady flux).
+		{
+			float fluxMean = (numHops > 0) ? fluxSum / float(numHops) : 0.f;
+			double fluxVar = 0.0;
+			for (int h = 0; h < numHops; ++h) {
+				double d = double(onsetSignal[h]) - double(fluxMean);
+				fluxVar += d * d;
+			}
+			float fluxStd = (numHops > 0) ? float(std::sqrt(fluxVar / double(numHops))) : 0.f;
+			out[39] = std::min(1.f, fluxStd / MEAN_FLUX_NORM);
+		}
+
 		// ── New features (12–17) ──────────────────────────────────────────────
 
 		// Spectral crest: normalised max/mean ratio (0=flat, 1=single tone).
@@ -588,9 +712,7 @@ struct TagClassifier {
 		// Spectral kurtosis: excess 4th moment, mapped [-3,7] → [0,1].
 		out[17] = std::max(0.f, std::min(1.f, (float(kurtosisAcc / numHops) - 3.f + 3.f) / 10.f));
 
-		// out[18] = pitch, computed earlier alongside harmonic_ratio.
-
-		// ── MFCCs (19–31) ─────────────────────────────────────────────────────
+		// ── MFCCs (18–30) ─────────────────────────────────────────────────────
 		{
 			// Average mel energies over hops, take log.
 			float log_mel[N_MELS];
@@ -603,7 +725,7 @@ struct TagClassifier {
 				for (int m = 0; m < N_MELS; ++m)
 					c += log_mel[m] * std::cos(float(M_PI) * n * (m + 0.5f) / float(N_MELS));
 				float norm = (n == 0) ? MFCC_NORM_0 : MFCC_NORM_N;
-				out[19 + n] = std::max(0.f, std::min(1.f, c / norm + 0.5f));
+				out[18 + n] = std::max(0.f, std::min(1.f, c / norm + 0.5f));
 			}
 		}
 

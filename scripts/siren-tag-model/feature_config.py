@@ -36,7 +36,6 @@ FEATURE_NAMES: list[str] = [
     "spectral_decrease",    # spectral decrease (low-freq bias) mapped to [0,1]
     "spectral_skewness",    # 3rd standardised moment of spectrum mapped [−3,3]→[0,1]
     "spectral_kurtosis",    # excess 4th moment (peakedness) mapped to [0,1]
-    "pitch",                # fundamental frequency / max pitch: pitched→high, noise→0
     "mfcc_0",               # mel-frequency cepstral coefficient 0 (log energy)
     "mfcc_1",
     "mfcc_2",
@@ -50,8 +49,17 @@ FEATURE_NAMES: list[str] = [
     "mfcc_10",
     "mfcc_11",
     "mfcc_12",
+    "temporal_centroid",  # time-weighted centre of mass of RMS envelope [0=front, 1=back]
+    "tail_head_ratio",    # rms(last 20%) / (rms(first 20%) + rms(last 20%)): one-shot→0, loop→0.5
+    "env_ac_peak",        # peak normalised autocorrelation of RMS envelope at 0.25–4 s lags: loop/drone→1, one-shot→0
+    "attack_time",        # block of peak RMS / (N_BLOCKS-1): percussive→0, pad/drone→high
+    "env_rms_variance",   # normalised std dev of RMS envelope blocks: sustained→0, rhythmic/one-shot→high
+    "temporal_entropy",   # Shannon entropy of normalised RMS envelope: one-shot→0, drone/noise→1
+    "sub_bass_ratio",     # energy below 80 Hz / total: kick→high, most else→low
+    "mid_band_ratio",     # energy 250–2000 Hz / total: snare/clap/vocal→high, kick/bass→low
+    "flux_variance",      # std dev of per-hop spectral flux / MEAN_FLUX_NORM: glitch/drums→high, drone→low
 ]
 
-assert len(FEATURE_NAMES) == 32, "The Siren runtime expects exactly 32 features"
+assert len(FEATURE_NAMES) == 40, "The Siren runtime expects exactly 40 features"
 
-NUM_FEATURES: int = len(FEATURE_NAMES)  # 32
+NUM_FEATURES: int = len(FEATURE_NAMES)  # 40

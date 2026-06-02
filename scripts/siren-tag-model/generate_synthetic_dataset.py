@@ -264,16 +264,30 @@ def gen_noise(rng):
     return _noise(n, rng, color) * 0.5
 
 
-def gen_one_shot(rng):
-    # Single transient + quiet tail
-    out = np.zeros(int(SR * DURATION), dtype=np.float32)
-    start = int(0.05 * SR)
-    pulse_len = int(0.05 * SR)
-    for i in range(pulse_len):
-        env = (1.0 - i / pulse_len) * 0.5 * (1.0 - np.cos(2 * np.pi * i / pulse_len))
-        out[start + i] = 0.9 * env * np.cos(2 * np.pi * 60.0 * (start + i) / SR)
-    out[start + pulse_len:] += 0.01 * _noise(out.size - start - pulse_len, rng, "white")
-    return out
+def gen_pad(rng):
+    # Sustained harmonic bed: stacked chord tones (root + third + fifth) with
+    # slight detune, slow attack, and a gentle LFO for warmth.
+    # Distinguishing profile: high harmonic_ratio, low crest_factor,
+    # temporal_centroid ~0.5+, low env_rms_variance, high temporal_entropy.
+    t = np.arange(int(SR * DURATION)) / SR
+    root = rng.uniform(80, 300)
+    chord = [root, root * 1.26, root * 1.5, root * 2.0]  # root, M3, P5, octave
+    sig = np.zeros(len(t), dtype=np.float64)
+    for f in chord:
+        detune = rng.uniform(-0.8, 0.8)
+        amp = rng.uniform(0.18, 0.32)
+        sig += amp       * np.sin(2 * np.pi * (f + detune) * t)
+        sig += amp * 0.4 * np.sin(2 * np.pi * 2 * (f + detune) * t)
+        sig += amp * 0.15 * np.sin(2 * np.pi * 3 * (f + detune) * t)
+    # Slow attack — 0 → 1 over the first ~40 % of the clip.
+    attack_n = int(0.4 * len(t))
+    env = np.ones(len(t))
+    env[:attack_n] = np.linspace(0.0, 1.0, attack_n)
+    sig *= env
+    # Gentle chorus LFO.
+    lfo = rng.uniform(0.2, 1.2)
+    sig *= 0.88 + 0.12 * np.sin(2 * np.pi * lfo * t)
+    return np.clip(sig * 0.38, -1.0, 1.0).astype(np.float32)
 
 
 def gen_snare(rng):
@@ -320,7 +334,7 @@ GENERATORS: dict[str, Callable[[np.random.Generator], np.ndarray]] = {
     "Loop":        gen_loop,
     "Nature":      gen_nature,
     "Noise":       gen_noise,
-    "One-Shot":    gen_one_shot,
+    "Pad":         gen_pad,
     "Snare":       gen_snare,
     "Vocal":       gen_vocal,
 }
