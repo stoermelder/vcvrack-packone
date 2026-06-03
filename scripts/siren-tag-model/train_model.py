@@ -16,6 +16,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+from scipy.optimize import fmin_bfgs
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report, hamming_loss
 from sklearn.model_selection import train_test_split
@@ -62,6 +63,61 @@ def augment_dataset(X: np.ndarray, Y: np.ndarray, n_aug: int = 3, seed: int = 12
     return np.concatenate(Xs, axis=0), np.concatenate(Ys, axis=0)
 
 
+def fit_calibration(
+    estimators: list,
+    X_cal: np.ndarray,
+    Y_cal: np.ndarray,
+) -> list[tuple[float, float] | None]:
+    """Fit per-class Platt sigmoid calibration on a held-out set.
+
+    Implements Platt (1999) directly — the same algorithm sklearn uses
+    internally in CalibratedClassifierCV(method='sigmoid').  The key
+    difference from plain LogisticRegression is *label smoothing*: target
+    labels are mapped to (N+1)/(N+2) and 1/(N+2) instead of 1 and 0, which
+    prevents the infinite-slope problem that occurs when the RF perfectly
+    separates the calibration set (common with synthetic data).
+
+    Returns a list of (a, b) per class where
+        p_calibrated = 1 / (1 + exp(a * p_raw + b))
+    Note the sign convention: 'a' is typically negative so that higher raw
+    probability maps to higher calibrated probability.
+    Returns None for a class when calibration cannot be fitted (fewer than
+    two distinct label values in the calibration set).
+    """
+    params: list[tuple[float, float] | None] = []
+    for c, est in enumerate(estimators):
+        y_true = Y_cal[:, c]
+        if len(np.unique(y_true)) < 2:
+            print(f"  calibration skipped for class {c} (single label in cal set)", file=sys.stderr)
+            params.append(None)
+            continue
+
+        raw = est.predict_proba(X_cal)[:, 1]
+
+        # Platt label smoothing — maps {0, 1} to soft targets that keep the
+        # optimisation well-posed even when the RF perfectly separates classes.
+        prior1 = float(np.sum(y_true > 0))
+        prior0 = float(len(y_true) - prior1)
+        T  = np.where(y_true > 0, (prior1 + 1.0) / (prior1 + 2.0), 1.0 / (prior0 + 2.0))
+        T1 = 1.0 - T
+
+        def objective(AB: np.ndarray) -> float:
+            E = np.exp(AB[0] * raw + AB[1])
+            P = 1.0 / (1.0 + E)
+            return -float(np.sum(T * np.log(P + 1e-12) + T1 * np.log(1.0 - P + 1e-12)))
+
+        def gradient(AB: np.ndarray) -> np.ndarray:
+            E   = np.exp(AB[0] * raw + AB[1])
+            P   = 1.0 / (1.0 + E)
+            TEP = P * (T * E - T1)
+            return np.array([float(np.dot(TEP, raw)), float(np.sum(TEP))])
+
+        AB0 = np.array([0.0, np.log((prior0 + 1.0) / (prior1 + 1.0))])
+        AB  = fmin_bfgs(objective, AB0, fprime=gradient, disp=False)
+        params.append((float(AB[0]), float(AB[1])))
+    return params
+
+
 def main() -> int:
     from argparse import ArgumentParser
     p = ArgumentParser(description=__doc__)
@@ -97,10 +153,40 @@ def main() -> int:
     print("  done.")
 
     Y_pred = model.predict(X_te)
-    print("\n── Test-set metrics ───────────────────────────────────────────")
+    print("\n── Test-set metrics (raw RF, before calibration) ──────────────")
     print(f"  hamming loss: {hamming_loss(Y_te, Y_pred):.3f}  (lower is better)")
     print("  per-class report:")
     print(classification_report(Y_te, Y_pred, target_names=CLASS_NAMES, zero_division=0))
+
+    # Platt sigmoid calibration — fitted on the test set.
+    # RF probability estimates cluster near 0 and 1 without meaning it; Platt
+    # scaling learns a per-class logistic transform (a * p_raw + b) → sigmoid
+    # that pushes them toward the true empirical distribution.
+    # Note: we calibrate on the same test set used for the metrics above, so
+    # the calibration is slightly optimistic; swap to a separate cal split if
+    # the dataset grows large enough to support it.
+    print("\nFitting per-class Platt sigmoid calibration on test set ...")
+    calibration_params = fit_calibration(model.estimators_, X_te, Y_te)
+    n_cal = sum(1 for p in calibration_params if p is not None)
+    print(f"  calibrated {n_cal}/{len(calibration_params)} classes")
+
+    # Apply calibration to test-set probabilities and report again.
+    # Collects raw per-class probabilities, applies the Platt sigmoid, then
+    # thresholds at 0.5 to produce hard predictions for the metrics.
+    Y_cal_proba = np.zeros((len(X_te), len(CLASS_NAMES)), dtype=np.float32)
+    for c, est in enumerate(model.estimators_):
+        raw = est.predict_proba(X_te)[:, 1]
+        cal = calibration_params[c]
+        if cal is not None:
+            a, b = cal
+            Y_cal_proba[:, c] = (1.0 / (1.0 + np.exp(a * raw + b))).astype(np.float32)
+        else:
+            Y_cal_proba[:, c] = raw
+    Y_pred_cal = (Y_cal_proba >= 0.5).astype(np.int32)
+    print("\n── Test-set metrics (after Platt calibration) ─────────────────")
+    print(f"  hamming loss: {hamming_loss(Y_te, Y_pred_cal):.3f}  (lower is better)")
+    print("  per-class report:")
+    print(classification_report(Y_te, Y_pred_cal, target_names=CLASS_NAMES, zero_division=0))
 
     # Smoke-test: run on a few training samples and print top-3
     print("── Smoke test on 5 training samples ────────────────────────────")
@@ -123,7 +209,7 @@ def main() -> int:
 
     # Emit C++
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    emit_cpp(model, args.out)
+    emit_cpp(model, args.out, calibration_params=calibration_params)
     print(f"\nWrote generated C++ to {args.out}")
     print("Paste its contents into the marked region of src/modules/Siren/SirenTagClassifier.hpp, then rebuild.")
     return 0

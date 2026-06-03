@@ -23,7 +23,7 @@ FEATURE_NAMES: list[str] = [
     "zero_crossing_rate",   # fraction of sign changes per frame, averaged, in [0, 1]
     "rms",                  # root-mean-square, normalised to peak ~= 1
     "onset_density",        # spectral-flux peaks per second, normalised to 30/sec == 1
-    "low_band_ratio",       # energy below 250 Hz / total energy, in [0, 1]
+    "low_mid_ratio",        # energy in [80, 250) Hz / total energy, in [0, 1]
     "spectral_flatness",    # geometric / arithmetic mean of magnitude per frame, in [0, 1]
     "spectral_bandwidth",   # power-weighted std dev of freq around centroid, / Nyquist
     "high_band_ratio",      # energy above 2000 Hz / total energy, in [0, 1]
@@ -55,11 +55,26 @@ FEATURE_NAMES: list[str] = [
     "attack_time",        # block of peak RMS / (N_BLOCKS-1): percussive→0, pad/drone→high
     "env_rms_variance",   # normalised std dev of RMS envelope blocks: sustained→0, rhythmic/one-shot→high
     "temporal_entropy",   # Shannon entropy of normalised RMS envelope: one-shot→0, drone/noise→1
-    "sub_bass_ratio",     # energy below 80 Hz / total: kick→high, most else→low
-    "mid_band_ratio",     # energy 250–2000 Hz / total: snare/clap/vocal→high, kick/bass→low
+    "sub_bass_ratio",     # energy in [0, 80) Hz / total: kick→high, most else→low
+    "mid_band_ratio",     # energy in [250, 2000) Hz / total: snare/clap/vocal→high, kick/bass→low
     "flux_variance",      # std dev of per-hop spectral flux / MEAN_FLUX_NORM: glitch/drums→high, drone→low
+    # MFCC deltas (40–52): mean absolute frame-to-frame difference per coefficient.
+    # Static sounds (drone, pad) → near 0; melodic/rhythmic material → higher.
+    "mfcc_delta_0",
+    "mfcc_delta_1",
+    "mfcc_delta_2",
+    "mfcc_delta_3",
+    "mfcc_delta_4",
+    "mfcc_delta_5",
+    "mfcc_delta_6",
+    "mfcc_delta_7",
+    "mfcc_delta_8",
+    "mfcc_delta_9",
+    "mfcc_delta_10",
+    "mfcc_delta_11",
+    "mfcc_delta_12",
 ]
 
-assert len(FEATURE_NAMES) == 40, "The Siren runtime expects exactly 40 features"
+assert len(FEATURE_NAMES) == 53, "The Siren runtime expects exactly 53 features"
 
 NUM_FEATURES: int = len(FEATURE_NAMES)  # 40

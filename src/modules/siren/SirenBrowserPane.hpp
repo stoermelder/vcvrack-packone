@@ -803,15 +803,7 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 					if (s.score >= 0.5f)
 						tagToRels[s.name].insert(f);
 			}
-			// Single-file fallback: if nothing scores ≥ 0.5, take top 3
-			if (!isDir && tagToRels.empty()) {
-				auto stream = ds->openAudioStream(rel);
-				if (stream) {
-					auto suggestions = TagClassifier::classify(*stream, 3);
-					for (const auto& s : suggestions)
-						tagToRels[s.name].insert(rel);
-				}
-			}
+
 			using GroupVec = std::vector<StoermelderPackOne::ui::TagGroup<DataSourceNodeId>>;
 			auto groups = std::make_shared<GroupVec>();
 			for (auto& pair : tagToRels)

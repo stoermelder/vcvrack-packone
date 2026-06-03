@@ -94,7 +94,11 @@ def _emit_bridge(c: int, shape: str, impl_name: str) -> str:
     )
 
 
-def emit_cpp(model, out_path: Path) -> None:
+def emit_cpp(
+    model,
+    out_path: Path,
+    calibration_params: list[tuple[float, float] | None] | None = None,
+) -> None:
     """Write the generated header fragment to ``out_path``.
 
     The header is consumed by ``src/modules/Siren/SirenTagClassifier.hpp``
@@ -139,8 +143,18 @@ def emit_cpp(model, out_path: Path) -> None:
     body_lines.append("")
 
     for c in range(NUM_CLASSES):
-        body_lines.append(f"        {{ // class {c} = {CLASS_NAMES[c]!r}")
-        body_lines.append(f"            double _s = siren_tag_score_class_{c}(_x);")
+        cal = calibration_params[c] if calibration_params else None
+        if cal is not None:
+            a, b = cal
+            # Platt convention: p = 1 / (1 + exp(a*raw + b)), a is typically negative
+            score_expr = f"1.0 / (1.0 + exp({a:.8f} * _raw + {b:.8f}))"
+            cal_comment = f"Platt: 1/(1+exp({a:.4f}*raw+{b:.4f}))"
+        else:
+            score_expr = "_raw"
+            cal_comment = "no calibration (single label in cal set)"
+        body_lines.append(f"        {{ // class {c} = {CLASS_NAMES[c]!r}  [{cal_comment}]")
+        body_lines.append(f"            double _raw = siren_tag_score_class_{c}(_x);")
+        body_lines.append(f"            double _s   = {score_expr};")
         body_lines.append(f"            scores_out[{c}] = (float)_s;")
         body_lines.append("        }")
         body_lines.append("")
@@ -156,6 +170,7 @@ def emit_cpp(model, out_path: Path) -> None:
     parts.append("#pragma once")
     parts.append("")
     parts.append('#include "SirenTagClassifierApi.hpp"  // defines TagClassifier, SIREN_TAG_NUM_FEATURES')
+    parts.append("#include <cmath>    // for exp() in Platt sigmoid calibration")
     parts.append("#include <cstddef>")
     parts.append("#include <cstring>  // for memcpy in m2cgen-emitted bodies")
     parts.append("")
