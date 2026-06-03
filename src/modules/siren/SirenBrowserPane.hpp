@@ -705,10 +705,6 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		bool          isDir = node.isContainer;
 		std::string   name  = node.name;
 
-		ui::MenuOverlay* loadingOverlay = new ui::MenuOverlay;
-		loadingOverlay->bgColor = nvgRGBAf(0.f, 0.f, 0.f, 0.5f);
-		APP->scene->addChild(loadingOverlay);
-
 		// Payload type carried by the per-tag sample labels inside the "Suggest tags"
 		// dialog. Held at namespace scope so the worker thread, the label builder, and
 		// the apply callback can all spell the type identically.
@@ -774,12 +770,20 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 				sel, sel == 1 ? "" : "s", name.c_str());
 		};
 
+		// Show the dialog immediately (empty, "Analysing..." header). The worker
+		// pushes results into progress; step() drains them on the UI thread.
 		std::string header = isDir ? "Suggest tags — " + name : "Suggest tags";
-		using AsyncDlg = StoermelderPackOne::ui::AsyncTagConfirmDialog<DataSourceNodeId>;
-		AsyncDlg* asyncWidget = new AsyncDlg(loadingOverlay, buildLabel, applyFn, header, summaryFn);
-		APP->scene->addChild(asyncWidget);
+		using StreamDlg = StoermelderPackOne::ui::StreamingTagDialog<DataSourceNodeId>;
 
-		worker->work([asyncWidget, fp, rel, isDir, ds]() {
+		ui::MenuOverlay* overlay = new ui::MenuOverlay;
+		overlay->bgColor = nvgRGBAf(0.f, 0.f, 0.f, 0.5f);
+		StreamDlg* dlg = new StreamDlg(buildLabel, applyFn, header, summaryFn);
+		overlay->addChild(dlg);
+		APP->scene->addChild(overlay);
+
+		auto progress = dlg->progress;
+
+		worker->work([progress, fp, rel, isDir, ds]() {
 			std::vector<DataSourceNodeId> files;
 			if (isDir) {
 				std::function<void(const std::string&)> collect = [&](const std::string& path) {
@@ -794,21 +798,23 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 				files = {rel};
 			}
 
-			std::map<std::string, std::set<DataSourceNodeId>> tagToRels;
+			progress->total = (int)files.size();
+
 			for (const auto& f : files) {
 				auto stream = ds->openAudioStream(f);
-				if (!stream) continue;
-				auto suggestions = TagClassifier::classify(*stream, 5);
-				for (const auto& s : suggestions)
-					if (s.score >= 0.5f)
-						tagToRels[s.name].insert(f);
+				if (stream) {
+					auto suggestions = TagClassifier::classify(*stream, 5);
+					for (const auto& s : suggestions)
+						if (s.score >= 0.5f) {
+							progress->events.push({s.name, f});
+						}
+				}
+				progress->processed++;
 			}
 
-			using GroupVec = std::vector<StoermelderPackOne::ui::TagGroup<DataSourceNodeId>>;
-			auto groups = std::make_shared<GroupVec>();
-			for (auto& pair : tagToRels)
-				groups->push_back({pair.first, pair.second});
-			asyncWidget->result = groups;
+			// Release store: ensures all ring buffer pushes above are visible
+			// to the UI thread before it observes done = true.
+			progress->done.store(true, std::memory_order_release);
 		});
 	}
 };
