@@ -23,6 +23,20 @@ bool hideBrands = false;
 // Static functions
 
 static bool isModelVisible(plugin::Model* model, const bool& favourite, const std::string& brand, const std::set<int>& tagId, const std::set<std::string>& customTagFilter, const bool& hidden) {
+	// Filter if not whitelisted by library
+	if (pluginSettings.mbApplyLibraryWhitelist) {
+		if (!settings::isModuleWhitelisted(model->plugin->slug, model->slug)) {
+			return false;
+		}
+	}
+
+	// Filter deprecated modules
+	if (!pluginSettings.mbShowDeprecated) {
+		if (model->hidden) {
+			return false;
+		}
+	}
+
 	// Filter favorite
 	if (favourite) {
 		if (!isModelFavorite(model))
@@ -57,58 +71,6 @@ static bool isModelVisible(plugin::Model* model, const bool& favourite, const st
 	}
 
 	return true;
-}
-
-static void toggleModelFavorite(Model* model) {
-	setModelFavorite(model, !isModelFavorite(model));
-
-	ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
-	if (browser->favorites) {
-		browser->refresh(false);
-	} 
-}
-
-static void toggleModelHidden(Model* model) {
-	auto it = hiddenModels.find(model);
-	if (it != hiddenModels.end()) 
-		hiddenModels.erase(model);
-	else 
-		hiddenModels.insert(model);
-
-	ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
-	browser->refresh(false);
-}
-
-static bool isModelHidden(plugin::Model* model) {
-	return hiddenModels.find(model) != hiddenModels.end();
-}
-
-static ModuleWidget* chooseModel(plugin::Model* model, bool hideBrowser = true) {
-	// Create Module
-	engine::Module* addedModule = model->createModule();
-	APP->engine->addModule(addedModule);
-
-	// Create ModuleWidget
-	ModuleWidget* moduleWidget = model->createModuleWidget(addedModule);
-	assert(moduleWidget);
-	APP->scene->rack->addModuleAtMouse(moduleWidget);
-
-	// Load template preset
-	moduleWidget->loadTemplate();
-
-	// Push ModuleAdd history action
-	history::ModuleAdd* h = new history::ModuleAdd;
-	h->name = "create module";
-	h->setModule(moduleWidget);
-	APP->history->push(h);
-
-	// Hide Module Browser
-	if (hideBrowser) APP->scene->browser->hide();
-
-	// Update usage data
-	modelUsageTouch(model);
-
-	return moduleWidget;
 }
 
 
@@ -306,11 +268,19 @@ struct ModelBox : widget::OpaqueWidget {
 		menu->addChild(new MenuSeparator);
 		menu->addChild(createCheckMenuItem("Favorite", RACK_MOD_CTRL_NAME "+F",
 			[&]() { return isModelFavorite(model); },
-			[&]() { toggleModelFavorite(model); }
+			[&]() { 
+				toggleModelFavorite(model);
+				ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
+				if (browser->favorites) browser->refresh(false);
+			}
 		));
 		menu->addChild(createCheckMenuItem("Hidden", RACK_MOD_CTRL_NAME "+H",
 			[&]() { return modelHidden; },
-			[&]() { toggleModelHidden(model); }
+			[&]() { 
+				toggleModelHidden(model);
+				ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
+				browser->refresh(false);
+			}
 		));
 
 		menu->addChild(new MenuSeparator);
@@ -322,7 +292,7 @@ struct ModelBox : widget::OpaqueWidget {
 			void onSelectKey(const event::SelectKey& e) override {
 				if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
 					std::string tag = string::trim(text);
-					if (!tag.empty()) {
+					if (isValidCustomTag(tag)) {
 						customTagAdd(model, tag);
 						ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
 						if (browser) {
@@ -417,14 +387,20 @@ struct ModelBox : widget::OpaqueWidget {
 	void onHoverKey(const event::HoverKey& e) override {
 		if (e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == RACK_MOD_CTRL) {
 			switch (e.key) {
-				case GLFW_KEY_F:
-					toggleModelFavorite(model);
+				case GLFW_KEY_F: {
+					toggleModelFavorite(model); 
+					ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
+					if (browser->favorites) browser->refresh(false);
 					e.consume(this);
 					break;
-				case GLFW_KEY_H:
+				}
+				case GLFW_KEY_H: {
 					toggleModelHidden(model);
+					ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
+					browser->refresh(false);
 					e.consume(this);
 					break;
+				}
 			}
 		}
 		OpaqueWidget::onHoverKey(e);
@@ -1029,7 +1005,8 @@ void ModuleBrowser::refresh(bool resetScroll) {
 				break;
 			case ModuleBrowserSort::RANDOM:
 				std::vector<std::reference_wrapper<Widget*>> vec(modelContainer->children.begin(), modelContainer->children.end());
-				std::random_shuffle(vec.begin(), vec.end());
+				std::mt19937 rng(random::u32());
+				std::shuffle(vec.begin(), vec.end(), rng);
 				std::list<Widget*> s(vec.begin(), vec.end());
 				modelContainer->children.swap(s);
 				break;

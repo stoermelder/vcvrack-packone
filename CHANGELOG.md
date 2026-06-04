@@ -1,3 +1,8 @@
+## 2.4.1
+
+- [8FACE mk2](./docs/eightface/EightFaceMk2.md)
+    - Fixed crash patch autosave and on preset-loading 
+
 ## 2.4.0
 
 ### New modules
@@ -18,7 +23,7 @@
     - Fixed crash on operator `<` when using whithout maximum value set (#425)
 - Modules [INTERMIX](./docs/intermix/Intermix.md)
     - Added reset input for resetting scene selection and direction (#433)
-    - Added extended scene CV modes: Ping-pong, Alternate, Random, Random (no repeat), Random walk, Shuffle
+    - Added scene CV modes: Ping-pong, Alternate, Random, Random (no repeat), Random walk, Shuffle
 - Modules [INTERMIX](./docs/intermix/Intermix.md), [INTERMIX-FADE](./docs/intermix/Intermix.md#intermix-fade-expander)
     - Added fade length setting (4s, 15s, 60s) (#432)
 - Module [MB](./docs/trial-and-error/Mb.md)
@@ -38,10 +43,14 @@
     - Added model magnifier loupe option
     - Added integration into Rack's menu bar
     - Added `Shift`+*Click* to add a module without closing the browser
+    - Added option to apply VCV Library whitelisting
+    - Added option to show deprecated module models (now hidden by default) (#440)
     - Changed hotkey to toggle hidden modules to `Shift`+`Space` (because of Spotlight on Mac)
     - Fixed broken button of "Favorites" category
 - Module [ME](./docs/trial-and-error/Me.md)
     - Added screen magnifier loupe
+- Module [MIDI-MON](./docs/midi/MidiMon.md)
+    - Added option to display engine frame instead of timestamp
 - Module [POLY-PILE](./docs/pile/Pile.md)
     - Added support for polyphonic reset triggers (#431)
 
