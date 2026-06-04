@@ -260,6 +260,13 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 	void init(TaskWorker* tw);
 	void setSize(Vec size);
 
+	std::string getRootDisplayName(int idx) const {
+		if (idx < 0 || idx >= (int)rootContainers.size()) return "";
+		if (idx == activeRootIdx && activeDataSource)
+			return activeDataSource->getRootDisplayName();
+		return FileSystemDataSource::rootDisplayName(rootContainers[idx]);
+	}
+
 	void setRoots(const std::vector<std::string>& roots, int activeIdx) {
 		rootContainers = roots;
 		activeRootIdx  = activeIdx;

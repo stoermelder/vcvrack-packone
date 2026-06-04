@@ -30,9 +30,9 @@ inline std::string tagManifestPath() {
 // read. Keep this list in sync with res/data/SirenTags.json.
 static const std::vector<std::string>& fallbackTags() {
 	static const std::vector<std::string> v = {
-		"Acoustic", "Atmospheric", "Bass", "Clap", "Cymbal", "Drone",
-		"Drums", "FX", "Glitch", "HiHat", "Kick", "Lead", "Loop",
-		"Nature", "Noise", "One-Shot", "Snare", "Vocal",
+		"Bass", "Clap", "Cymbal", "Drone", "Drums",
+		"HiHat", "Kick", "Lead", "Loop", "Noise",
+		"One-Shot", "Pad", "Snare", "Stab", "Vocal",
 	};
 	return v;
 }

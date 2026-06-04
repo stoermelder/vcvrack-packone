@@ -93,95 +93,97 @@ struct MockAudioStream : AudioStream {
 	}
 };
 
+// ─── Test data source ────────────────────────────────────────────────────────
+// Returns nullptr for all audio streams so BpmDetector::detect falls through
+// to name-based extraction only (no spectral analysis).
+struct NameOnlyDataSource : DataSource {
+	std::string rootPath() const override { return ""; }
+	bool isSupportedFile(const std::string&) const override { return true; }
+	void loadChildrenAsync(const std::string&, StoermelderPackOne::TaskWorker&,
+		std::function<void(std::vector<DataSourceNode>)>) override {}
+	std::vector<DataSourceNode> loadChildrenSync(const std::string&) override { return {}; }
+};
+
+static float bpmFromId(const std::string& id) {
+	NameOnlyDataSource ds;
+	float confidence = 0.f;
+	return BpmDetector::detect(ds, id, confidence);
+}
+
 // ─── Path extraction ─────────────────────────────────────────────────────────
 
-TEST_CASE("extractBpmFromPath: filename with bpm suffix", "[Siren][BPM][Path]") {
-	REQUIRE(extractBpmFromPath("/samples/kick_120bpm.wav")     == 120.f);
-	REQUIRE(extractBpmFromPath("/samples/kick_120BPM.wav")     == 120.f);
-	REQUIRE(extractBpmFromPath("/samples/kick_120 Bpm.wav")    == 120.f);
-	REQUIRE(extractBpmFromPath("/samples/kick_120.5bpm.wav")   == Catch::Approx(120.5f));
-	REQUIRE(extractBpmFromPath("/samples/kick_120.5BPM.wav")   == Catch::Approx(120.5f));
+TEST_CASE("BpmDetector: filename with bpm suffix", "[Siren][BPM][Path]") {
+	REQUIRE(bpmFromId("/samples/kick_120bpm.wav")     == 120.f);
+	REQUIRE(bpmFromId("/samples/kick_120BPM.wav")     == 120.f);
+	REQUIRE(bpmFromId("/samples/kick_120 Bpm.wav")    == 120.f);
+	REQUIRE(bpmFromId("/samples/kick_120.5bpm.wav")   == Catch::Approx(120.5f));
+	REQUIRE(bpmFromId("/samples/kick_120.5BPM.wav")   == Catch::Approx(120.5f));
 }
 
-TEST_CASE("extractBpmFromPath: filename with bracket notation", "[Siren][BPM][Path]") {
-	REQUIRE(extractBpmFromPath("/samples/loop[128].wav")     == 128.f);
-	REQUIRE(extractBpmFromPath("/samples/loop [128].wav")    == 128.f);
-	REQUIRE(extractBpmFromPath("/samples/loop[140.5].wav")   == Catch::Approx(140.5f));
+TEST_CASE("BpmDetector: filename with bracket notation", "[Siren][BPM][Path]") {
+	REQUIRE(bpmFromId("/samples/loop[128].wav")     == 128.f);
+	REQUIRE(bpmFromId("/samples/loop [128].wav")    == 128.f);
+	REQUIRE(bpmFromId("/samples/loop[140.5].wav")   == Catch::Approx(140.5f));
 }
 
-TEST_CASE("extractBpmFromPath: filename with delimiter-padded number", "[Siren][BPM][Path]") {
-	// "kick_120_808.wav" → 120; the first delimited match wins.
-	REQUIRE(extractBpmFromPath("/samples/kick_120_808.wav")  == 120.f);
-	REQUIRE(extractBpmFromPath("/samples/loop-140-pad.wav")  == 140.f);
+TEST_CASE("BpmDetector: filename with delimiter-padded number", "[Siren][BPM][Path]") {
+	REQUIRE(bpmFromId("/samples/kick_120_808.wav")  == 120.f);
+	REQUIRE(bpmFromId("/samples/loop-140-pad.wav")  == 140.f);
 }
 
-TEST_CASE("extractBpmFromPath: leading number in filename", "[Siren][BPM][Path]") {
-	// The leading-number pattern picks up "120_kick.wav"
-	REQUIRE(extractBpmFromPath("/samples/120_kick.wav")      == 120.f);
-	REQUIRE(extractBpmFromPath("/samples/90_ride.flac")      == 90.f);
+TEST_CASE("BpmDetector: leading number in filename", "[Siren][BPM][Path]") {
+	REQUIRE(bpmFromId("/samples/120_kick.wav")      == 120.f);
+	REQUIRE(bpmFromId("/samples/90_ride.flac")      == 90.f);
 }
 
-TEST_CASE("extractBpmFromPath: audio extension is stripped before matching", "[Siren][BPM][Path]") {
-	REQUIRE(extractBpmFromPath("/samples/loop_128.wav")  == 128.f);
-	REQUIRE(extractBpmFromPath("/samples/loop_128.WAV")  == 128.f);
-	REQUIRE(extractBpmFromPath("/samples/loop_128.mp3")  == 128.f);
-	REQUIRE(extractBpmFromPath("/samples/loop_128.flac") == 128.f);
-	REQUIRE(extractBpmFromPath("/samples/loop_128.aif")  == 128.f);
-	REQUIRE(extractBpmFromPath("/samples/loop_128.aiff") == 128.f);
-	REQUIRE(extractBpmFromPath("/samples/loop_128.ogg")  == 128.f);
-	REQUIRE(extractBpmFromPath("/samples/loop_128.m4a")  == 128.f);
-	REQUIRE(extractBpmFromPath("/samples/loop_128.opus") == 128.f);
+TEST_CASE("BpmDetector: audio extension is stripped before matching", "[Siren][BPM][Path]") {
+	REQUIRE(bpmFromId("/samples/loop_128.wav")  == 128.f);
+	REQUIRE(bpmFromId("/samples/loop_128.WAV")  == 128.f);
+	REQUIRE(bpmFromId("/samples/loop_128.mp3")  == 128.f);
+	REQUIRE(bpmFromId("/samples/loop_128.flac") == 128.f);
+	REQUIRE(bpmFromId("/samples/loop_128.aif")  == 128.f);
+	REQUIRE(bpmFromId("/samples/loop_128.aiff") == 128.f);
+	REQUIRE(bpmFromId("/samples/loop_128.ogg")  == 128.f);
+	REQUIRE(bpmFromId("/samples/loop_128.m4a")  == 128.f);
+	REQUIRE(bpmFromId("/samples/loop_128.opus") == 128.f);
 }
 
-TEST_CASE("extractBpmFromPath: BPM extracted from parent folder name", "[Siren][BPM][Path]") {
-	// No bpm in filename, but "Drum_Loops_120bpm" folder contains the file.
-	REQUIRE(extractBpmFromPath("/samples/Drum_Loops_120bpm/kick.wav")   == 120.f);
-	// Closer (more specific) folder wins if it is also in range.
-	REQUIRE(extractBpmFromPath("/samples/Drum_Loops_120bpm/140bpm/kick.wav") == 140.f);
+TEST_CASE("BpmDetector: BPM extracted from parent folder name", "[Siren][BPM][Path]") {
+	REQUIRE(bpmFromId("/samples/Drum_Loops_120bpm/kick.wav")        == 120.f);
+	REQUIRE(bpmFromId("/samples/Drum_Loops_120bpm/140bpm/kick.wav") == 140.f);
 }
 
-TEST_CASE("extractBpmFromPath: filename is preferred over parent folder", "[Siren][BPM][Path]") {
-	// Filename says 128, parent says 120 — filename wins.
-	REQUIRE(extractBpmFromPath("/samples/Drum_Loops_120bpm/loop_128.wav") == 128.f);
+TEST_CASE("BpmDetector: filename is preferred over parent folder", "[Siren][BPM][Path]") {
+	REQUIRE(bpmFromId("/samples/Drum_Loops_120bpm/loop_128.wav") == 128.f);
 }
 
-TEST_CASE("extractBpmFromPath: out-of-range numbers are ignored", "[Siren][BPM][Path]") {
-	// 50 is below the 60 floor and 300 is above the 220 ceiling.
-	REQUIRE(extractBpmFromPath("/samples/loop_50bpm.wav")    == 0.f);
-	REQUIRE(extractBpmFromPath("/samples/loop_300bpm.wav")   == 0.f);
-	REQUIRE(extractBpmFromPath("/samples/loop_220bpm.wav")   == 220.f);  // boundary OK
-	REQUIRE(extractBpmFromPath("/samples/loop_60bpm.wav")    == 60.f);   // boundary OK
+TEST_CASE("BpmDetector: out-of-range numbers are ignored", "[Siren][BPM][Path]") {
+	REQUIRE(bpmFromId("/samples/loop_50bpm.wav")   == 0.f);
+	REQUIRE(bpmFromId("/samples/loop_300bpm.wav")  == 0.f);
+	REQUIRE(bpmFromId("/samples/loop_220bpm.wav")  == 220.f);
+	REQUIRE(bpmFromId("/samples/loop_60bpm.wav")   == 60.f);
 }
 
-TEST_CASE("extractBpmFromPath: no BPM in path returns 0", "[Siren][BPM][Path]") {
-	REQUIRE(extractBpmFromPath("/samples/kick.wav")           == 0.f);
-	REQUIRE(extractBpmFromPath("/samples/synth pad.flac")     == 0.f);
-	REQUIRE(extractBpmFromPath("")                            == 0.f);
+TEST_CASE("BpmDetector: no BPM in path returns 0", "[Siren][BPM][Path]") {
+	REQUIRE(bpmFromId("/samples/kick.wav")       == 0.f);
+	REQUIRE(bpmFromId("/samples/synth pad.flac") == 0.f);
+	REQUIRE(bpmFromId("")                        == 0.f);
 }
 
-TEST_CASE("extractBpmFromPath: filenames with spaces", "[Siren][BPM][Path]") {
-	REQUIRE(extractBpmFromPath("/samples/Drone 110bpm.wav") == 110.f);
-	REQUIRE(extractBpmFromPath("/samples/Drum Kit [120].wav") == 120.f);
+TEST_CASE("BpmDetector: filenames with spaces", "[Siren][BPM][Path]") {
+	REQUIRE(bpmFromId("/samples/Drone 110bpm.wav")    == 110.f);
+	REQUIRE(bpmFromId("/samples/Drum Kit [120].wav")  == 120.f);
 }
 
-TEST_CASE("extractBpmFromPath: case-insensitive BPM tag", "[Siren][BPM][Path]") {
-	REQUIRE(extractBpmFromPath("/samples/kick_100Bpm.wav") == 100.f);
-	REQUIRE(extractBpmFromPath("/samples/kick_100bPm.wav") == 100.f);
-	REQUIRE(extractBpmFromPath("/samples/kick_100BPM.wav") == 100.f);
+TEST_CASE("BpmDetector: case-insensitive BPM tag", "[Siren][BPM][Path]") {
+	REQUIRE(bpmFromId("/samples/kick_100Bpm.wav") == 100.f);
+	REQUIRE(bpmFromId("/samples/kick_100bPm.wav") == 100.f);
+	REQUIRE(bpmFromId("/samples/kick_100BPM.wav") == 100.f);
 }
 
-TEST_CASE("extractBpmFromPath: filename without extension still matches", "[Siren][BPM][Path]") {
-	// Leading-number pattern matches a bare number or a number followed by a
-	// delimiter; "120_loop" matches the leading pattern.
-	REQUIRE(extractBpmFromPath("/samples/120_loop")     == 120.f);
-	REQUIRE(extractBpmFromPath("/samples/Loop [128]")   == 128.f);
-}
-
-// ─── BpmDetector (path) ──────────────────────────────────────────────────────
-
-TEST_CASE("BpmDetector::extractFromPath: forwards to free function", "[Siren][BPM][Path]") {
-	REQUIRE(BpmDetector::extractFromPath("/samples/kick_120bpm.wav") == 120.f);
-	REQUIRE(BpmDetector::extractFromPath("/samples/no_bpm.wav")      == 0.f);
+TEST_CASE("BpmDetector: filename without extension still matches", "[Siren][BPM][Path]") {
+	REQUIRE(bpmFromId("/samples/120_loop")   == 120.f);
+	REQUIRE(bpmFromId("/samples/Loop [128]") == 128.f);
 }
 
 // ─── Synthetic spectral detection ────────────────────────────────────────────
@@ -338,17 +340,31 @@ TEST_CASE("detectBpm: empty stream returns 0", "[Siren][BPM][Spectral]") {
 	REQUIRE(confidence == 0.f);
 }
 
-// BpmDetector::detect forwards to the free function.
-TEST_CASE("BpmDetector::detect: forwards to free function", "[Siren][BPM][Spectral]") {
+// BpmDetector::detect routes through DataSource::openAudioStream for spectral analysis.
+TEST_CASE("BpmDetector::detect: spectral path via DataSource", "[Siren][BPM][Spectral]") {
 	const int sr       = 44100;
 	const int ch       = 1;
 	const double bpm   = 120.0;
 	const double secs  = 12.0;
-	auto samples = MockAudioStream::clickTrain(sr, bpm, secs, ch);
-	MockAudioStream stream(std::move(samples), sr, ch);
 
+	struct ClickTrainDataSource : DataSource {
+		std::vector<float> samples;
+		int sr, ch;
+		ClickTrainDataSource(std::vector<float> s, int sr, int ch)
+			: samples(std::move(s)), sr(sr), ch(ch) {}
+		std::string rootPath() const override { return ""; }
+		bool isSupportedFile(const std::string&) const override { return true; }
+		void loadChildrenAsync(const std::string&, StoermelderPackOne::TaskWorker&,
+			std::function<void(std::vector<DataSourceNode>)>) override {}
+		std::vector<DataSourceNode> loadChildrenSync(const std::string&) override { return {}; }
+		std::unique_ptr<AudioStream> openAudioStream(const std::string&) const override {
+			return std::unique_ptr<AudioStream>(new MockAudioStream(samples, sr, ch));
+		}
+	};
+
+	ClickTrainDataSource ds(MockAudioStream::clickTrain(sr, bpm, secs, ch), sr, ch);
 	float confidence = 0.f;
-	float detected   = BpmDetector::detect(stream, confidence, 30.f);
+	float detected   = BpmDetector::detect(ds, "/no_bpm_in_name.wav", confidence, 30.f);
 	REQUIRE(detected > 0.f);
 	REQUIRE(detected == Catch::Approx(120.f).margin(12.f));
 }

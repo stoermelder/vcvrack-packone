@@ -71,6 +71,7 @@ struct DataSource {
 	virtual ~DataSource() = default;
 
 	virtual std::string rootPath() const = 0;
+	virtual std::string getRootDisplayName() const { return rootPath(); }
 	virtual bool isSupportedFile(const std::string& path) const = 0;
 
 	// Load the top-level children of a path asynchronously via TaskWorker.

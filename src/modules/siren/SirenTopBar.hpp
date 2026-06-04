@@ -1,7 +1,6 @@
 #pragma once
 #include <rack.hpp>
 #include "SirenBrowserPane.hpp"
-#include "SirenFileSystem.hpp"
 
 namespace StoermelderPackOne {
 namespace Siren {
@@ -32,9 +31,7 @@ struct SirenSourceButton : ui::ChoiceButton {
 	void step() override {
 		if (!pane->rootContainers.empty() && pane->activeRootIdx >= 0 &&
 			pane->activeRootIdx < (int)pane->rootContainers.size()) {
-			ghc::filesystem::path p(pane->rootContainers[pane->activeRootIdx]);
-			text = p.filename().string();
-			if (text.empty()) text = p.string();
+			text = pane->getRootDisplayName(pane->activeRootIdx);
 		}
 		else {
 			text = "No source";
@@ -50,9 +47,7 @@ struct SirenSourceButton : ui::ChoiceButton {
 
 		// List of existing sources
 		for (int i = 0; i < (int)pane->rootContainers.size(); i++) {
-			ghc::filesystem::path p(pane->rootContainers[i]);
-			std::string name = p.filename().string();
-			if (name.empty()) name = p.string();
+			std::string name = pane->getRootDisplayName(i);
 			menu->addChild(createCheckMenuItem(name, "",
 				[this, i]() { return i == pane->activeRootIdx; },
 				[this, i]() { if (pane->onSelectRoot) pane->onSelectRoot(i); }
@@ -116,10 +111,15 @@ struct SirenSearchField : ui::TextField {
 		else state = BND_DEFAULT;
 		int begin = std::min(cursor, selection);
 		int end   = std::max(cursor, selection);
+		bool showPlaceholder = text.empty() && state != BND_ACTIVE;
+		const char* displayText = showPlaceholder ? placeholder.c_str() : text.c_str();
+		int b = showPlaceholder ? 0 : begin;
+		int e = showPlaceholder ? 0 : end;
 		nvgSave(args.vg);
+		if (showPlaceholder) nvgGlobalAlpha(args.vg, 0.4f);
 		nvgScale(args.vg, TOPBAR_SCALE, TOPBAR_SCALE);
 		bndTextField(args.vg, 0, 0, box.size.x / TOPBAR_SCALE, box.size.y / TOPBAR_SCALE,
-		             BND_CORNER_NONE, state, -1, text.c_str(), begin, end);
+		             BND_CORNER_NONE, state, -1, displayText, b, e);
 		nvgRestore(args.vg);
 	}
 

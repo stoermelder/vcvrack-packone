@@ -16,7 +16,7 @@
 		{
 			"slug": "Siren",
 			"name": "SIREN",
-			"description": "Sample browser — browse, preview and drag WAV/FLAC/MP3 samples to other modules",
+			"description": "Sample browser collaboration with Omri Cohen — browse, preview and drag WAV/FLAC/MP3 samples to other modules. Streams audio directly from disk with no full-file loading, making it practical for large sample libraries and long recordings.",
 			"tags": [
 				"Utility"
 			]

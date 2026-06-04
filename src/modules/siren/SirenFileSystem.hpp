@@ -171,6 +171,16 @@ struct FileSystemDataSource : DataSource {
 
 	std::string rootPath() const override { return root; }
 
+	std::string getRootDisplayName() const override {
+		return rootDisplayName(root);
+	}
+
+	static std::string rootDisplayName(const std::string& rootPath) {
+		ghc::filesystem::path p(rootPath);
+		std::string name = p.filename().string();
+		return name.empty() ? p.string() : name;
+	}
+
 	std::string resolveAbsPath(const std::string& id) const { return root + id; }
 
 	DataSourceNode resolveNode(const std::string& relativePath) const override {

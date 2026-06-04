@@ -127,12 +127,12 @@ TEST_CASE("RootMetadata: tags", "[Siren][Metadata]") {
 	}
 
 	SECTION("allTags returns union across samples") {
-		meta.addTag("a.wav", "drone");
-		meta.addTag("b.wav", "loop");
-		meta.addTag("b.wav", "drone");
+		meta.addTag("a.wav", "Drone");
+		meta.addTag("b.wav", "Loop");
+		meta.addTag("b.wav", "Drone");
 		auto all = meta.allTags();
-		REQUIRE(all.count("drone") == 1);
-		REQUIRE(all.count("loop") == 1);
+		REQUIRE(all.count("Drone") == 1);
+		REQUIRE(all.count("Loop") == 1);
 	}
 
 	SECTION("allTags returns starter tags when empty") {
@@ -341,10 +341,10 @@ TEST_CASE("allTags: user tags merge with starter tags without duplicates", "[Sir
 	RootMetadata meta;
 	meta.rootPath = "/test/root";
 
-	// "drone" is already a starter tag; adding it again must not duplicate it
-	meta.addTag("a.wav", "drone");
+	// "Drone" is already a starter tag; adding it again must not duplicate it
+	meta.addTag("a.wav", "Drone");
 	auto all = meta.allTags();
-	REQUIRE(all.count("drone") == 1);
+	REQUIRE(all.count("Drone") == 1);
 }
 
 // starter tags are loaded from SirenTags.json at runtime; in tests we use
@@ -434,21 +434,19 @@ TEST_CASE("loadItem resets inPoint and scrubPos", "[Siren][Preview]") {
 	pane.inPoint  = 0.7f;
 	pane.scrubPos = 0.7f;
 
-	pane.loadItem("", nullptr, nullptr);
+	pane.loadItem(DataSourceNode{}, nullptr, nullptr);
 
 	REQUIRE(pane.inPoint  == 0.f);
 	REQUIRE(pane.scrubPos == 0.f);
 }
 
-// loadItem with empty id or null source leaves currentId empty.
+// loadItem with empty id or null source leaves currentNode.relativePath empty.
 TEST_CASE("loadItem: no item loaded for empty id or null source", "[Siren][Preview]") {
 	SirenPreviewPane pane;
 	pane.box.size = Vec(600.f, 380.f);
 
-	pane.loadItem("", nullptr, nullptr);
-	// Stream ownership moved to SirenModule's fill thread; verify by checking
-	// that the pane did not record any valid item.
-	REQUIRE(pane.currentId.empty());
+	pane.loadItem(DataSourceNode{}, nullptr, nullptr);
+	REQUIRE(pane.currentNode.relativePath.empty());
 }
 
 // loadItem with startPlay=true does not start playback when no stream can be opened.
@@ -461,7 +459,7 @@ TEST_CASE("loadItem: playing stays false when no stream can be opened", "[Siren]
 	pane.modulePlaying = &playing;
 
 	// startPlay=true with empty id → early return before startPlaybackFrom()
-	pane.loadItem("", nullptr, nullptr, /*startPlay=*/true);
+	pane.loadItem(DataSourceNode{}, nullptr, nullptr, /*startPlay=*/true);
 	REQUIRE(playing.load() == false);
 }
 

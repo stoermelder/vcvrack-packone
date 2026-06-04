@@ -200,33 +200,18 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		float curBpm = bpm.load();
 		if (curBpm < 0.f) return; // Already running
 
-		// Fast path: check the path first (UI thread safe, no worker needed)
-		float fromPath = BpmDetector::extractFromPath(currentNode.relativePath);
-		if (fromPath > 0.f) {
-			bpm.store(fromPath);
-			// Save BPM to metadata
-			if (metadata && !relPath.empty()) {
-				metadata->setBpm(relPath, fromPath, 1.f); // confidence = 1.0 for path-derived
-				if (source) source->saveMetadata();
-			}
-			return;
-		}
-
-		// Slow path: spectral analysis on worker thread
 		if (!worker) return;
 		bpm.store(-1.f); // Mark as running
 
-		std::string idCopy       = currentNode.relativePath;
-		std::string relPathCopy  = relPath;
-		DataSource* ds           = source;
-		RootMetadata* meta       = metadata;
-	
-		worker->work([this, idCopy, relPathCopy, ds, meta]() {
-			auto stream = ds->openAudioStream(idCopy);
-			float result = 0.f, confidence = 0.f;
-			if (stream) result = BpmDetector::detect(*stream, confidence);
+		std::string idCopy      = currentNode.relativePath;
+		std::string relPathCopy = relPath;
+		DataSource* ds          = source;
+		RootMetadata* meta      = metadata;
 
-			// Save BPM to metadata
+		worker->work([this, idCopy, relPathCopy, ds, meta]() {
+			float confidence = 0.f;
+			float result = BpmDetector::detect(*ds, idCopy, confidence);
+
 			if (meta && result > 0.f && !relPathCopy.empty()) {
 				meta->setBpm(relPathCopy, result, confidence);
 				if (ds) ds->saveMetadata();

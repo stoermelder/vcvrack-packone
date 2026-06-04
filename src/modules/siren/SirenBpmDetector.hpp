@@ -1,5 +1,5 @@
 #pragma once
-#include "SirenAudio.hpp"
+#include "SirenAudioStream.hpp"
 #include "SirenDataSource.hpp"
 #include <pffft.h>
 #include <regex>
@@ -56,39 +56,7 @@ inline std::string stripAudioExtension(const std::string& name) {
 
 } // namespace detail
 
-// Regex-based BPM extraction from filenames and folder names.
-// Returns the first match in the range [60, 220] BPM, scanning filename first,
-// then parent folders from nearest to root. Returns 0 if nothing found.
-inline float extractBpmFromPath(const std::string& fullPath) {
-	// ghc::filesystem::path iterates in lexical (root → leaf) order, so we
-	// reverse to ensure the filename is checked first.
-	std::vector<std::string> components;
-	ghc::filesystem::path p(fullPath);
-	for (auto it = p.begin(); it != p.end(); ++it)
-		components.push_back(it->string());
-	std::reverse(components.begin(), components.end());
 
-	const auto& tbl = detail::bpmRegexTable();
-	const std::array<std::regex, 4> patterns = {
-		tbl.tagged, tbl.bracket, tbl.delimited, tbl.leading
-	};
-
-	for (const std::string& comp : components) {
-		std::string name = detail::stripAudioExtension(comp);
-
-		for (const std::regex& re : patterns) {
-			std::smatch m;
-			if (!std::regex_search(name, m, re)) continue;
-			try {
-				float bpm = std::stof(m[1].str());
-				if (bpm >= 60.f && bpm <= 220.f) return bpm;
-			} catch (const std::exception&) {
-				// stof can throw on weird UTF-8 input — skip this match.
-			}
-		}
-	}
-	return 0.f;
-}
 
 
 // ─── Spectral analysis (spectral flux onset + autocorrelation) ─────────────────
@@ -435,16 +403,38 @@ inline float detectBpm(AudioStream& stream, float& confidenceOut,
 // ─── BpmDetector struct (API) ───────────────────────────────────────────────
 
 struct BpmDetector {
-	// Extract BPM from filename/folder — fast path, UI thread safe
-	static float extractFromPath(const std::string& path) {
-		return StoermelderPackOne::Siren::extractBpmFromPath(path);
-	}
-
-	// Full spectral analysis — must be called on a worker thread
-	// Returns BPM or 0 on failure / low confidence
-	static float detect(AudioStream& stream, float& confidenceOut,
+	// Detect BPM for an item from a data source — must be called on a worker thread.
+	// Tries name-based extraction first; falls back to spectral analysis if needed.
+	// Returns BPM or 0 on failure / low confidence.
+	static float detect(DataSource& source, const std::string& id, float& confidenceOut,
 	                    float maxDurationSeconds = 60.f) {
-		return StoermelderPackOne::Siren::detectBpm(stream, confidenceOut, maxDurationSeconds);
+		confidenceOut = 0.f;
+
+		// Fast path: scan filename and parent folder names for an encoded BPM.
+		const auto& tbl = detail::bpmRegexTable();
+		const std::array<std::regex, 4> patterns = { tbl.tagged, tbl.bracket, tbl.delimited, tbl.leading };
+		std::vector<std::string> components;
+		size_t start = 0, end;
+		while ((end = id.find('/', start)) != std::string::npos) {
+			if (end > start) components.push_back(id.substr(start, end - start));
+			start = end + 1;
+		}
+		if (start < id.size()) components.push_back(id.substr(start));
+		std::reverse(components.begin(), components.end());
+		for (const std::string& comp : components) {
+			std::string name = detail::stripAudioExtension(comp);
+			for (const std::regex& re : patterns) {
+				std::smatch m;
+				if (!std::regex_search(name, m, re)) continue;
+				try {
+					float bpm = std::stof(m[1].str());
+					if (bpm >= 60.f && bpm <= 220.f) { confidenceOut = 1.f; return bpm; }
+				} catch (const std::exception&) {}
+			}
+		}
+		auto stream = source.openAudioStream(id);
+		if (!stream) return 0.f;
+		return StoermelderPackOne::Siren::detectBpm(*stream, confidenceOut, maxDurationSeconds);
 	}
 };
 
