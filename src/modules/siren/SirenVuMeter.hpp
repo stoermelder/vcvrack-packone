@@ -68,7 +68,7 @@ struct SirenVuMeter : TransparentWidget {
 		nvgGlobalCompositeBlendFunc(args.vg, NVG_ONE_MINUS_DST_COLOR, NVG_ONE);
 
 		for (int seg = 0; seg < NUM_SEGS; seg++) {
-			float segDb = -60.f + seg * (60.f / NUM_SEGS);
+			float segDb = -60.f + seg * (60.f / (NUM_SEGS - 1));
 			float y     = box.size.y - (seg + 1) * (SEG_H + SEG_GAP);
 
 			NVGcolor core, dim;

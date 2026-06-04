@@ -134,14 +134,18 @@ struct SirenSearchField : ui::TextField {
 	void onSelectKey(const event::SelectKey& e) override {
 		if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ESCAPE) {
 			setText("");
-			if (pane) {
-				pane->searchQuery.clear();
-				pane->requestRebuild();
-			}
+			pane->searchQuery.clear();
+			pane->requestRebuild();
 			e.consume(this);
 			return;
 		}
 		ui::TextField::onSelectKey(e);
+	}
+
+	void onDoubleClick(const DoubleClickEvent& e) override {
+		setText("");
+		pane->searchQuery.clear();
+		pane->requestRebuild();
 	}
 };
 

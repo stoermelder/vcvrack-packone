@@ -51,8 +51,48 @@ struct SirenTreeRow : widget::OpaqueWidget {
 	RootMetadata* metadata = nullptr;
 	SirenBrowserPane* pane = nullptr;
 	bool selected = false;
+	bool expanded = false;
 
 	StarButton* starBtn = nullptr;
+	ui::Tooltip* tooltip = nullptr;
+
+	~SirenTreeRow() override {
+		setTooltip(nullptr);
+	}
+
+	void setTooltip(ui::Tooltip* t) {
+		if (tooltip) { tooltip->requestDelete(); tooltip = nullptr; }
+		if (t) { APP->scene->addChild(t); tooltip = t; }
+	}
+
+	void onEnter(const event::Enter& e) override {
+		if (!node.isContainer) {
+			std::string text = node.name;
+			if (node.durationSeconds > 0.f) {
+				int mins = (int)(node.durationSeconds / 60.f);
+				float secs = node.durationSeconds - mins * 60.f;
+				text += rack::string::f("\n%02d:%05.2f", mins, secs);
+			}
+			if (metadata) {
+				auto tags = metadata->getTags(node.relativePath);
+				if (!tags.empty()) {
+					text += "\n";
+					for (const std::string& tag : tags) {
+						text += "  " + toTitleCase(tag);
+					}
+				}
+			}
+			ui::Tooltip* t = new ui::Tooltip;
+			t->text = std::move(text);
+			setTooltip(t);
+		}
+		OpaqueWidget::onEnter(e);
+	}
+
+	void onLeave(const event::Leave& e) override {
+		setTooltip(nullptr);
+		OpaqueWidget::onLeave(e);
+	}
 
 	void init(const DataSourceNode& n, int indent, RootMetadata* meta, SirenBrowserPane* p) {
 		node = n;
@@ -85,6 +125,20 @@ struct SirenTreeRow : widget::OpaqueWidget {
 		if (selected) state = BND_ACTIVE;
 		else if (APP->event->getHoveredWidget() == this) state = BND_HOVER;
 
+		if (state != BND_DEFAULT) {
+			nvgBeginPath(args.vg);
+			nvgRect(args.vg, 0, 0, w, h);
+			if (state == BND_ACTIVE) {
+				nvgFillColor(args.vg, bndGetTheme()->toolTheme.innerSelectedColor);
+			}
+			else {
+				NVGcolor c = bndGetTheme()->toolTheme.innerColor;
+				c.a *= 0.5f;
+				nvgFillColor(args.vg, c);
+			}
+			nvgFill(args.vg);
+		}
+
 		float textX = 6.f + indentLevel * INDENT;
 		NVGcolor textColor = bndGetTheme()->toolTheme.textColor;
 		if (state == BND_ACTIVE) textColor = bndGetTheme()->toolTheme.textSelectedColor;
@@ -94,7 +148,7 @@ struct SirenTreeRow : widget::OpaqueWidget {
 		if (node.isContainer) {
 			nvgFontSize(args.vg, 5.f);
 			nvgFillColor(args.vg, nvgRGBAf(textColor.r, textColor.g, textColor.b, 0.55f));
-			nvgText(args.vg, textX, 8.f, node.childrenLoaded ? "▼" : "▶", nullptr);
+			nvgText(args.vg, textX, 8.f, expanded ? "▼" : "▶", nullptr);
 			textX += 8.f;
 			nvgFontSize(args.vg, 8.f);
 			nvgFillColor(args.vg, textColor);
@@ -119,8 +173,10 @@ struct SirenTreeRow : widget::OpaqueWidget {
 				int mins = (int)(node.durationSeconds / 60.f);
 				float secs = node.durationSeconds - mins * 60.f;
 				std::string dur = rack::string::f("%02d:%05.2f", mins, secs);
-				nvgFontSize(args.vg, 5.f);
-				nvgFillColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.32f));
+				std::shared_ptr<Font> font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
+				nvgFontFaceId(args.vg, font->handle);
+				nvgFontSize(args.vg, 6.f);
+				nvgFillColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.42f));
 				nvgText(args.vg, w - starW - durW - 1.f, 8.f, dur.c_str(), nullptr);
 			}
 		}
@@ -295,7 +351,6 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		}
 
 		entry.expanded = true;
-		entry.node.childrenLoaded = false;
 		requestRebuild();
 
 		std::string path = entry.node.fullPath;
@@ -546,7 +601,11 @@ struct SirenTagContainer : widget::OpaqueWidget {
 			}
 		}
 		if (e.button == GLFW_MOUSE_BUTTON_RIGHT && e.action == GLFW_PRESS) {
-			// TODO
+			Menu* menu = createMenu();
+			menu->addChild(createMenuItem("Clear tag filter", "", [this]() {
+				pane->tagFilter.clear();
+				pane->requestRebuild();
+			}));
 			e.consume(this);
 			return;
 		}
@@ -678,15 +737,14 @@ inline void SirenBrowserPane::rebuildRowWidgets() {
 	rowContainer->clearChildren();
 	RootMetadata* meta = activeDataSource ? activeDataSource->getMetadata() : nullptr;
 
+	std::string lq = rack::string::lowercase(searchQuery);
 	float y = 0.f;
 	for (int i = 0; i < (int)rows.size(); i++) {
 		const TreeEntry& entry = rows[i];
 		const DataSourceNode& n = entry.node;
 
-		if (!searchQuery.empty()) {
-			if (n.isContainer) continue;
-			if (rack::string::lowercase(n.name).find(rack::string::lowercase(searchQuery)) == std::string::npos)
-				continue;
+		if (!lq.empty() && activeDataSource) {
+			if (!activeDataSource->matchesSearch(n.relativePath, n.isContainer, lq)) continue;
 		}
 
 		if (n.isContainer) {
@@ -708,6 +766,7 @@ inline void SirenBrowserPane::rebuildRowWidgets() {
 		SirenTreeRow* row = new SirenTreeRow;
 		row->init(n, entry.indent, meta, this);
 		row->selected     = (n.fullPath == selectedPath);
+		row->expanded     = entry.expanded;
 		row->box.pos      = Vec(0.f, y);
 		row->box.size     = Vec(box.size.x - SirenScrollWidget::SCROLLBAR_W, SirenTreeRow::ROW_H);
 		rowContainer->addChild(row);

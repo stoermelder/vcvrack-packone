@@ -13,7 +13,6 @@ struct DataSourceNode {
 	std::string fullPath;
 	std::string relativePath;  // relative to root, '/' separated
 	bool isContainer = false;
-	bool childrenLoaded = false;
 	float durationSeconds = 0.f;
 	std::vector<DataSourceNode> children;
 };
@@ -99,6 +98,46 @@ struct DataSource {
 
 	// Per-file metadata (tags, favorites). Returns nullptr if unsupported.
 	virtual RootMetadata* getMetadata() { return nullptr; }
+
+	// Returns true if a node matches the search query.
+	// - Own name always checked.
+	// - Containers: also checks all known descendant filenames via metadata.
+	// - Files: also checks every ancestor directory name encoded in relativePath.
+	virtual bool matchesSearch(const std::string& relativePath, bool isContainer, const std::string& lowerQuery) {
+		if (lowerQuery.empty()) return true;
+
+		// Own name
+		size_t lastSlash = relativePath.rfind('/');
+		std::string ownName = (lastSlash != std::string::npos) ? relativePath.substr(lastSlash + 1) : relativePath;
+		if (rack::string::lowercase(ownName).find(lowerQuery) != std::string::npos)
+			return true;
+
+		if (isContainer) {
+			// Known descendant filenames via metadata
+			RootMetadata* meta = getMetadata();
+			if (!meta) return false;
+			const std::string dirPrefix = relativePath + "/";
+			for (const auto& pair : meta->samples) {
+				if (pair.first.compare(0, dirPrefix.size(), dirPrefix) != 0) continue;
+				size_t s = pair.first.rfind('/');
+				std::string name = (s != std::string::npos) ? pair.first.substr(s + 1) : pair.first;
+				if (rack::string::lowercase(name).find(lowerQuery) != std::string::npos)
+					return true;
+			}
+		}
+		else {
+			// Ancestor directory names are encoded in the relative path
+			std::string p = relativePath;
+			size_t pos;
+			while ((pos = p.find('/')) != std::string::npos) {
+				std::string component = p.substr(0, pos);
+				if (rack::string::lowercase(component).find(lowerQuery) != std::string::npos)
+					return true;
+				p = p.substr(pos + 1);
+			}
+		}
+		return false;
+	}
 
 	// Persist metadata to disk. Called automatically on destruction.
 	virtual void saveMetadata() {}
