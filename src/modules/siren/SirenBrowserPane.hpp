@@ -5,7 +5,9 @@
 #include "SirenFileSystem.hpp"
 #include "SirenMetadata.hpp"
 #include "SirenDropHandler.hpp"
+#include "SirenTagClassifierApi.hpp"
 #include "../../utils/TaskWorker.hpp"
+#include "../../ui/AutoTagDialog.hpp"
 
 
 namespace StoermelderPackOne {
@@ -78,7 +80,7 @@ struct SirenTreeRow : widget::OpaqueWidget {
 				if (!tags.empty()) {
 					text += "\n";
 					for (const std::string& tag : tags) {
-						text += "  " + toTitleCase(tag);
+						text += "  " + tag;
 					}
 				}
 			}
@@ -429,6 +431,115 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 			onFileSelected(node, startPlay);
 	}
 
+	void startTagClassification(const DataSourceNode& node) {
+		if (!worker || !activeDataSource) return;
+		DataSource*   ds    = activeDataSource;
+		RootMetadata* meta  = ds->getMetadata();
+		std::string   fp    = node.fullPath;
+		std::string   rel   = node.relativePath;
+		bool          isDir = node.isContainer;
+		std::string   name  = node.name;
+
+		using DataSourceNodeId = std::string;
+
+		auto buildLabel = [this, ds](const std::string& tag, const DataSourceNodeId& fileId) -> widget::Widget* {
+			struct SampleLabel : ui::MenuItem {
+				DataSource*       ds;
+				SirenBrowserPane* pane;
+				DataSourceNodeId  fileId;
+				std::string       groupTag;
+				void onAction(const event::Action& e) override {
+					pane->selectPath(ds->resolveNode(fileId), true);
+					e.unconsume();
+				}
+				void onButton(const ButtonEvent& e) override {
+					if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
+						Menu* menu = createMenu();
+						menu->addChild(createMenuLabel(ds->getDisplayName(fileId)));
+						auto* dlg = getAncestorOfType<ui::TagConfirmDialog<DataSourceNodeId>>();
+						SampleLabel* self = this;
+						menu->addChild(createMenuItem("Remove from group", "", [self, dlg]() {
+							if (!dlg) { self->requestDelete(); return; }
+							for (auto& g : dlg->groups) {
+								if (g.tag == self->groupTag) {
+									g.payloads.erase(self->fileId);
+									break;
+								}
+							}
+							dlg->updateSummary();
+							self->requestDelete();
+						}));
+						e.consume(this);
+						return;
+					}
+					MenuItem::onButton(e);
+				}
+			};
+			SampleLabel* item = new SampleLabel;
+			item->text     = ds->getDisplayName(fileId);
+			item->ds       = ds;
+			item->pane     = this;
+			item->fileId   = fileId;
+			item->groupTag = tag;
+			return item;
+		};
+
+		auto applyFn = [this, meta, ds](const std::map<std::string, std::set<DataSourceNodeId>>& filtered) {
+			for (const auto& pair : filtered)
+				for (const std::string& r : pair.second)
+					meta->addTag(r, pair.first);
+			if (ds) ds->saveMetadata();
+			requestRebuild();
+		};
+
+		auto summaryFn = [isDir, name](int sel, int items) -> std::string {
+			if (isDir)
+				return rack::string::f("%d tag%s across %d file%s",
+					sel, sel == 1 ? "" : "s", items, items == 1 ? "" : "s");
+			return rack::string::f("%d tag%s for %s",
+				sel, sel == 1 ? "" : "s", name.c_str());
+		};
+
+		std::string header = isDir ? "Suggest tags — " + name : "Suggest tags";
+		using StreamDlg = StoermelderPackOne::ui::StreamingTagDialog<DataSourceNodeId>;
+
+		ui::MenuOverlay* overlay = new ui::MenuOverlay;
+		overlay->bgColor = nvgRGBAf(0.f, 0.f, 0.f, 0.5f);
+		StreamDlg* dlg = new StreamDlg(buildLabel, applyFn, header, summaryFn);
+		overlay->addChild(dlg);
+		APP->scene->addChild(overlay);
+
+		auto progress = dlg->progress;
+		worker->work([progress, fp, rel, isDir, ds]() {
+			std::vector<DataSourceNodeId> files;
+			if (isDir) {
+				std::function<void(const std::string&)> collect = [&](const std::string& path) {
+					for (const auto& child : ds->loadChildrenSync(path)) {
+						if (child.isContainer) collect(child.fullPath);
+						else files.push_back(child.relativePath);
+					}
+				};
+				collect(fp);
+			}
+			else {
+				files = {rel};
+			}
+
+			progress->total = (int)files.size();
+			for (const auto& f : files) {
+				auto stream = ds->openAudioStream(f);
+				if (stream) {
+					auto suggestions = TagClassifier::classify(*stream, 5);
+					for (const auto& s : suggestions)
+						if (s.score >= 0.5f)
+							progress->events.push({s.name, f});
+				}
+				progress->processed++;
+			}
+			progress->done.store(true, std::memory_order_release);
+		});
+	}
+
 	bool navigateKey(int key) {
 		auto vr = visibleRowWidgets();
 		if (vr.empty()) return false;
@@ -648,6 +759,7 @@ struct SirenTagContainer : widget::OpaqueWidget {
 		}
 		OpaqueWidget::onButton(e);
 	}
+
 };
 
 
@@ -702,6 +814,7 @@ struct SirenTagBar : widget::OpaqueWidget {
 
 		OpaqueWidget::draw(args);
 	}
+
 };
 
 
@@ -810,6 +923,12 @@ inline void SirenTreeRow::onButton(const event::Button& e) {
 			pane->activeDataSource->appendNodeMenuItems(menu, node, [this]() {
 				pane->rebuildRowWidgets();
 			});
+
+			menu->addChild(new ui::MenuSeparator);
+			menu->addChild(createMenuItem("Suggest tags", "", [this]() {
+				pane->startTagClassification(node);
+			}));
+
 			e.consume(this);
 		}
 	}

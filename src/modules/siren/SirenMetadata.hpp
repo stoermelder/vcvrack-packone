@@ -9,7 +9,7 @@ namespace Siren {
 // ─── Starter tag list ────────────────────────────────────────────────────────
 //
 // The list of "starter" tags is the single source of truth in
-// `src/modules/Siren/TagManifest.json`. We read it once per module load
+// `res/data/SirenTags.json`. We read it once per module load
 // and expose it as a `std::vector<std::string>` via `starterTags()`.
 //
 // Order in the returned vector matches the order in the JSON. The Python
@@ -23,16 +23,16 @@ namespace Siren {
 // in the test harness.
 
 inline std::string tagManifestPath() {
-	return rack::asset::plugin(pluginInstance, "data/SirenTags.json");
+	return rack::asset::plugin(pluginInstance, "res/data/SirenTags.json");
 }
 
 // Hard-coded 15-tag fallback used in tests and when the manifest cannot be
-// read. Keep this list in sync with src/modules/Siren/TagManifest.json.
+// read. Keep this list in sync with res/data/SirenTags.json.
 static const std::vector<std::string>& fallbackTags() {
 	static const std::vector<std::string> v = {
-		"bass", "bright", "dark", "drone", "field", "lead", "loop",
-		"noise", "one-shot", "pad", "percussion", "stab", "texture",
-		"tonal", "vocal",
+		"Acoustic", "Atmospheric", "Bass", "Clap", "Cymbal", "Drone",
+		"Drums", "FX", "Glitch", "HiHat", "Kick", "Lead", "Loop",
+		"Nature", "Noise", "One-Shot", "Snare", "Vocal",
 	};
 	return v;
 }
@@ -171,8 +171,10 @@ struct RootMetadata {
 				if (tagsJ && json_is_array(tagsJ)) {
 					size_t j; json_t* tagJ;
 					json_array_foreach(tagsJ, j, tagJ) {
-						if (json_is_string(tagJ))
-							meta.tags.push_back(json_string_value(tagJ));
+						if (json_is_string(tagJ)) {
+							std::string t = rack::string::trim(json_string_value(tagJ));
+							if (!t.empty()) meta.tags.push_back(t);
+						}
 					}
 				}
 
@@ -198,20 +200,24 @@ struct RootMetadata {
 	}
 
 	void addTag(const std::string& rel, const std::string& tag) {
+		std::string trimmed = rack::string::trim(tag);
+		if (trimmed.empty()) return;
 		auto& meta = samples[rel];
 		meta.relativePath = rel;
-		// Case-insensitive duplicate check; preserve exact spelling of first occurrence
-		std::string tagLow = rack::string::lowercase(tag);
+		std::string tagLow = rack::string::lowercase(trimmed);
 		for (const std::string& t : meta.tags)
-			if (rack::string::lowercase(t) == tagLow) return;
-		meta.tags.push_back(tag);
+			if (rack::string::lowercase(rack::string::trim(t)) == tagLow) return;
+		meta.tags.push_back(trimmed);
 	}
 
 	void removeTag(const std::string& rel, const std::string& tag) {
 		auto it = samples.find(rel);
 		if (it == samples.end()) return;
 		auto& tags = it->second.tags;
-		tags.erase(std::remove(tags.begin(), tags.end(), tag), tags.end());
+		std::string tagLow = rack::string::lowercase(rack::string::trim(tag));
+		tags.erase(std::remove_if(tags.begin(), tags.end(), [&](const std::string& t) {
+			return rack::string::lowercase(rack::string::trim(t)) == tagLow;
+		}), tags.end());
 		if (!it->second.favorite && tags.empty()) samples.erase(it);
 	}
 
@@ -221,14 +227,18 @@ struct RootMetadata {
 		return it->second.tags;
 	}
 
-	// All tags: starter tags always shown, plus any user-assigned tags
+	// All tags: starter tags always shown, plus any user-assigned tags.
+	// Deduplicates case-insensitively: first occurrence (starter order, then file order) wins.
 	std::set<std::string> allTags() const {
+		std::set<std::string> seen;   // lowercase keys for dedup
 		std::set<std::string> result;
-		for (const std::string& t : starterTags()) result.insert(t);
-		for (const auto& pair : samples) {
-			for (const std::string& tag : pair.second.tags)
-				result.insert(tag);
-		}
+		auto insert = [&](const std::string& t) {
+			std::string low = rack::string::lowercase(t);
+			if (seen.insert(low).second) result.insert(t);
+		};
+		for (const std::string& t : starterTags()) insert(t);
+		for (const auto& pair : samples)
+			for (const std::string& tag : pair.second.tags) insert(tag);
 		return result;
 	}
 
@@ -253,18 +263,6 @@ struct RootMetadata {
 		meta.bpmConfidence = confidence;
 	}
 };
-
-// Title-case a tag string: spaces, underscores, and hyphens become word breaks.
-inline std::string toTitleCase(const std::string& s) {
-	std::string r = s;
-	bool cap = true;
-	for (char& c : r) {
-		if (c == ' ' || c == '_' || c == '-') { cap = true; c = ' '; }
-		else if (cap) { c = (char)::toupper(c); cap = false; }
-		else c = (char)::tolower(c);
-	}
-	return r;
-}
 
 // Compute 8-char hex hash of a string (for JSON filename derivation)
 inline std::string hashPath(const std::string& path) {

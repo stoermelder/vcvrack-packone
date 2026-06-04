@@ -504,7 +504,7 @@ struct FileSystemDataSource : DataSource {
 					};
 
 					ContainerTagItem* item   = new ContainerTagItem;
-					item->text            = toTitleCase(tag);
+					item->text            = tag;
 					item->rightText       = CHECKMARK(allHave);
 					item->src             = this;
 					item->rels            = audioRels;
@@ -579,7 +579,10 @@ struct FileSystemDataSource : DataSource {
 				std::function<void()> onChanged;
 				void onAction(const event::Action& e) override {
 					auto current = metadata->getTags(rel);
-					bool has = std::find(current.begin(), current.end(), tag) != current.end();
+					std::string tagLow = rack::string::lowercase(tag);
+					bool has = std::any_of(current.begin(), current.end(), [&](const std::string& t) {
+						return rack::string::lowercase(t) == tagLow;
+					});
 					if (has) metadata->removeTag(rel, tag);
 					else     metadata->addTag(rel, tag);
 					src->saveMetadata();
@@ -588,7 +591,11 @@ struct FileSystemDataSource : DataSource {
 				}
 				void step() override {
 					auto current = metadata->getTags(rel);
-					rightText = CHECKMARK(std::find(current.begin(), current.end(), tag) != current.end());
+					std::string tagLow = rack::string::lowercase(tag);
+					bool has = std::any_of(current.begin(), current.end(), [&](const std::string& t) {
+						return rack::string::lowercase(t) == tagLow;
+					});
+					rightText = CHECKMARK(has);
 					MenuItem::step();
 				}
 			};
@@ -598,7 +605,7 @@ struct FileSystemDataSource : DataSource {
 			std::sort(sorted.begin(), sorted.end());
 			for (const std::string& tag : sorted) {
 				FileTagItem* item = new FileTagItem;
-				item->text      = toTitleCase(tag);
+				item->text      = tag;
 				item->metadata  = &metadata_;
 				item->rel       = rel;
 				item->tag       = tag;

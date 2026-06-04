@@ -138,7 +138,7 @@ TEST_CASE("RootMetadata: tags", "[Siren][Metadata]") {
 	SECTION("allTags returns starter tags when empty") {
 		auto all = meta.allTags();
 		REQUIRE(!all.empty());
-		REQUIRE(all.count("drone") == 1);
+		REQUIRE(all.count("Drone") == 1);
 	}
 }
 
@@ -347,20 +347,20 @@ TEST_CASE("allTags: user tags merge with starter tags without duplicates", "[Sir
 	REQUIRE(all.count("drone") == 1);
 }
 
-// starter tags are loaded from TagManifest.json at runtime; in tests we use
+// starter tags are loaded from SirenTags.json at runtime; in tests we use
 // the hard-coded fallback (mirrors the JSON contents).
 TEST_CASE("starterTags: returns 15-tag canonical list in tests", "[Siren][Metadata][Manifest]") {
 	auto tags = starterTags();
 	REQUIRE(tags.size() == 15);
 	// Spot-check a few representative tags from the new vocabulary
-	REQUIRE(std::find(tags.begin(), tags.end(), "drone")    != tags.end());
-	REQUIRE(std::find(tags.begin(), tags.end(), "pad")      != tags.end());
-	REQUIRE(std::find(tags.begin(), tags.end(), "lead")     != tags.end());
-	REQUIRE(std::find(tags.begin(), tags.end(), "stab")     != tags.end());
-	REQUIRE(std::find(tags.begin(), tags.end(), "noise")    != tags.end());
+	REQUIRE(std::find(tags.begin(), tags.end(), "Drone")    != tags.end());
+	REQUIRE(std::find(tags.begin(), tags.end(), "Pad")      != tags.end());
+	REQUIRE(std::find(tags.begin(), tags.end(), "Lead")     != tags.end());
+	REQUIRE(std::find(tags.begin(), tags.end(), "Stab")     != tags.end());
+	REQUIRE(std::find(tags.begin(), tags.end(), "Noise")    != tags.end());
 	// Removed from the old list
-	REQUIRE(std::find(tags.begin(), tags.end(), "fx")       == tags.end());
-	REQUIRE(std::find(tags.begin(), tags.end(), "ambient")  == tags.end());
+	REQUIRE(std::find(tags.begin(), tags.end(), "Fx")       == tags.end());
+	REQUIRE(std::find(tags.begin(), tags.end(), "Ambient")  == tags.end());
 }
 
 // ─── Volume parameter ─────────────────────────────────────────────────────────
@@ -487,16 +487,6 @@ TEST_CASE("FileSystemDataSource: metadata is mutable through pointer", "[Siren][
 	REQUIRE(src.getMetadata() == meta);
 }
 
-// ─── toTitleCase ─────────────────────────────────────────────────────────────
-// toTitleCase capitalises each word and handles hyphens/underscores.
-TEST_CASE("toTitleCase: basic cases", "[Siren][Utility]") {
-	REQUIRE(toTitleCase("drone")          == "Drone");
-	REQUIRE(toTitleCase("dark ambient")   == "Dark Ambient");
-	REQUIRE(toTitleCase("one-shot")       == "One Shot");
-	REQUIRE(toTitleCase("field_recording")== "Field Recording");
-	REQUIRE(toTitleCase("FX")             == "Fx");
-	REQUIRE(toTitleCase("")               == "");
-}
 
 // ─── Audio streaming: ring buffer / DSP ──────────────────────────────────────
 // process() reads from ring buffers and applies volume scaling.
