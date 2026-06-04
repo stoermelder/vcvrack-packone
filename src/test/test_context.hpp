@@ -51,6 +51,16 @@ struct TestContext {
 		if (testContextCount.fetch_add(1, std::memory_order_acq_rel) == 0) {
 			pluginInstance = new Plugin();
 			init(pluginInstance);
+			{
+				json_error_t err;
+				json_t* pJ = json_load_file("plugin.json", 0, &err);
+				if (pJ) {
+					json_t* slugJ = json_object_get(pJ, "slug");
+					if (slugJ) pluginInstance->slug = json_string_value(slugJ);
+					json_decref(pJ);
+				}
+			}
+			rack::plugin::plugins.push_back(pluginInstance);
 
 			for (auto& entry : modelSyncRegistry()) {
 				if (auto* m = pluginInstance->getModel(entry.first)) *entry.second = m;
@@ -75,6 +85,8 @@ struct TestContext {
 	~TestContext() {
 		// If this is the last TestContext, delete the pluginInstance
 		if (testContextCount.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+			auto it = std::find(rack::plugin::plugins.begin(), rack::plugin::plugins.end(), pluginInstance);
+			rack::plugin::plugins.erase(it);
 			delete pluginInstance;
 			pluginInstance = nullptr;
 

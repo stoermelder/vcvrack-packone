@@ -578,7 +578,6 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 			} else {
 				mw->fromJson(vJ);
 			}
-			json_decref(vJ);
 		}
 	}
 

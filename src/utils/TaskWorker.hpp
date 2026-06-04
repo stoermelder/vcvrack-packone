@@ -17,7 +17,7 @@ struct TaskWorker {
 	std::string name;
 
 	struct WorkItem {
-		std::function<void()> task;
+		std::shared_ptr<std::function<void()>> task;
 		Context* context;
 	};
 	dsp::RingBuffer<WorkItem, 32> workQueue;
@@ -57,7 +57,7 @@ struct TaskWorker {
 			while (!workQueue.empty()) {
 				auto item = workQueue.shift();
 				contextSet(item.context);
-				item.task();
+				(*item.task)();
 			}
 			workerDoProcess = false;
 		}
@@ -68,7 +68,7 @@ struct TaskWorker {
 	}
 
 	void work(std::function<void()> task, Context* context) {
-		workQueue.push(WorkItem{std::move(task), context});
+		workQueue.push(WorkItem{std::make_shared<std::function<void()>>(std::move(task)), context});
 		workerDoProcess = true;
 		workerCondVar.notify_one();
 	}
