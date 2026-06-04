@@ -1,9 +1,13 @@
 .vscode
+.github/instructions/*.md
+.clinerules
 .DS_Store
 build
 dist
 metamodule/build
 metamodule/metamodule-plugins
+var
 plugin.dll
 plugin.dylib
 plugin.so
+AGENTS.md

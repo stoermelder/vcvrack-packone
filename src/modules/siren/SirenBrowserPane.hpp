@@ -523,20 +523,16 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 };
 
 
-// ─── Tag chip container (scrollable content inside SirenTagBar) ───────────────
+// ─── Single tag chip widget ───────────────────────────────────────────────────
 
-struct SirenTagContainer : widget::OpaqueWidget {
-	SirenBrowserPane* pane     = nullptr;
-	std::string       hoveredTag;
+struct SirenTagChip : widget::OpaqueWidget {
+	static constexpr float CHIP_H = 10.f;
 
-	static constexpr float CHIP_H     = 12.f;
-	static constexpr float ROW_STRIDE = CHIP_H + 2.f;
-	static constexpr float PAD_X      = 4.f;
-	static constexpr float PAD_Y      = 4.f;
+	SirenBrowserPane* pane = nullptr;
+	std::string tag;
 
-	static float measureChip(const std::string& label) {
-		if (!APP || !APP->window) return label.size() * 5.f + 10.f;
-		NVGcontext* vg = APP->window->vg;
+	// Must be called from within a draw context so devicePxRatio is valid.
+	static float measure(NVGcontext* vg, const std::string& label) {
 		nvgFontSize(vg, 8.f);
 		nvgFontFaceId(vg, APP->window->uiFont->handle);
 		float bounds[4];
@@ -544,62 +540,103 @@ struct SirenTagContainer : widget::OpaqueWidget {
 		return bounds[2] - bounds[0] + 10.f;
 	}
 
-	std::vector<std::pair<std::string, Rect>> tagChips() const {
-		std::vector<std::pair<std::string, Rect>> chips;
-		if (!pane || !pane->activeDataSource) return chips;
-		RootMetadata* meta = pane->activeDataSource->getMetadata();
-		if (!meta) return chips;
+	void draw(const DrawArgs& args) override {
+		bool active  = pane && pane->tagFilter.count(tag) > 0;
+		bool hovered = APP->event->getHoveredWidget() == this;
 
-		float x = PAD_X, y = PAD_Y;
-		auto all = meta->allTags();
-		std::vector<std::string> sorted(all.begin(), all.end());
-		std::sort(sorted.begin(), sorted.end());
-		for (const std::string& tag : sorted) {
-			std::string label = toTitleCase(tag);
-			float tw = measureChip(label);
-			if (x + tw > box.size.x - PAD_X) {
-				y += ROW_STRIDE;
-				x  = PAD_X;
-			}
-			chips.push_back({tag, Rect(Vec(x, y), Vec(tw, CHIP_H))});
-			x += tw + 4.f;
+		NVGcolor bgColor, fgColor;
+		if (active) {
+			bgColor = bndGetTheme()->toolTheme.innerSelectedColor;
+			fgColor = bndGetTheme()->toolTheme.textSelectedColor;
 		}
-		return chips;
-	}
+		else if (hovered) {
+			bgColor = bndGetTheme()->toolTheme.itemColor;
+			bgColor.a *= 0.7f;
+			fgColor = bndGetTheme()->toolTheme.innerColor;
+		}
+		else {
+			bgColor = bndGetTheme()->toolTheme.innerColor;
+			bgColor.a *= 0.4f;
+			fgColor = bndGetTheme()->toolTheme.textColor;
+		}
 
-	// Resize the container to fit all chips; call after width or tag data changes.
-	void layout() {
-		float maxY = PAD_Y;
-		for (auto& c : tagChips())
-			maxY = std::max(maxY, c.second.pos.y + c.second.size.y);
-		box.size.y = maxY + PAD_Y;
-	}
+		nvgBeginPath(args.vg);
+		nvgRoundedRect(args.vg, 0, 0, box.size.x, box.size.y, 2.f);
+		nvgFillColor(args.vg, bgColor);
+		nvgFill(args.vg);
 
-	void onHover(const event::Hover& e) override {
-		hoveredTag.clear();
-		for (auto& chip : tagChips())
-			if (chip.second.contains(e.pos)) { hoveredTag = chip.first; break; }
-		OpaqueWidget::onHover(e);
-	}
-
-	void onLeave(const event::Leave& e) override {
-		hoveredTag.clear();
-		OpaqueWidget::onLeave(e);
+		nvgFontSize(args.vg, 8.f);
+		nvgFontFaceId(args.vg, APP->window->uiFont->handle);
+		nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+		nvgFillColor(args.vg, fgColor);
+		nvgText(args.vg, box.size.x * 0.5f, box.size.y * 0.5f, tag.c_str(), nullptr);
+		nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_BASELINE);
 	}
 
 	void onButton(const event::Button& e) override {
 		if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS) {
-			for (auto& chip : tagChips()) {
-				if (chip.second.contains(e.pos)) {
-					const std::string& tag = chip.first;
-					if (pane->tagFilter.count(tag)) pane->tagFilter.erase(tag);
-					else pane->tagFilter.insert(tag);
-					pane->requestRebuild();
-					e.consume(this);
-					return;
-				}
-			}
+			if (pane->tagFilter.count(tag)) pane->tagFilter.erase(tag);
+			else pane->tagFilter.insert(tag);
+			pane->requestRebuild();
+			e.consume(this);
 		}
+		OpaqueWidget::onButton(e);
+	}
+};
+
+
+// ─── Tag chip container (scrollable content inside SirenTagBar) ───────────────
+
+struct SirenTagContainer : widget::OpaqueWidget {
+	SirenBrowserPane* pane            = nullptr;
+	widget::Widget*   scrollContainer = nullptr;  // scrollWidget->container; updated after layout
+	bool              layoutDirty     = true;
+
+	static constexpr float CHIP_H     = SirenTagChip::CHIP_H;
+	static constexpr float ROW_STRIDE = CHIP_H + 2.f;
+	static constexpr float PAD_X      = 4.f;
+	static constexpr float PAD_Y      = 4.f;
+
+	// Mark for rebuild; actual chip creation is deferred to draw() so NVG is ready.
+	void layout() { layoutDirty = true; }
+
+	void draw(const DrawArgs& args) override {
+		if (layoutDirty) {
+			layoutDirty = false;
+			rebuildChips(args.vg);
+		}
+		OpaqueWidget::draw(args);
+	}
+
+	void rebuildChips(NVGcontext* vg) {
+		clearChildren();
+		if (!pane || !pane->activeDataSource) { box.size.y = PAD_Y * 2.f; return; }
+		RootMetadata* meta = pane->activeDataSource->getMetadata();
+		if (!meta) { box.size.y = PAD_Y * 2.f; return; }
+
+		auto all = meta->allTags();
+		std::vector<std::string> sorted(all.begin(), all.end());
+		std::sort(sorted.begin(), sorted.end());
+
+		float x = PAD_X, y = PAD_Y;
+		for (const std::string& t : sorted) {
+			float tw = SirenTagChip::measure(vg, t);
+			if (x + tw > box.size.x - PAD_X) { y += ROW_STRIDE; x = PAD_X; }
+
+			SirenTagChip* chip = new SirenTagChip;
+			chip->pane     = pane;
+			chip->tag      = t;
+			chip->box.pos  = Vec(x, y);
+			chip->box.size = Vec(tw, CHIP_H);
+			addChild(chip);
+
+			x += tw + 4.f;
+		}
+		box.size.y = y + CHIP_H + PAD_Y;
+		if (scrollContainer) scrollContainer->box.size = box.size;
+	}
+
+	void onButton(const event::Button& e) override {
 		if (e.button == GLFW_MOUSE_BUTTON_RIGHT && e.action == GLFW_PRESS) {
 			Menu* menu = createMenu();
 			menu->addChild(createMenuItem("Clear tag filter", "", [this]() {
@@ -610,45 +647,6 @@ struct SirenTagContainer : widget::OpaqueWidget {
 			return;
 		}
 		OpaqueWidget::onButton(e);
-	}
-
-	void draw(const DrawArgs& args) override {
-		nvgFontSize(args.vg, 8.f);
-		nvgFontFaceId(args.vg, APP->window->uiFont->handle);
-		nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-
-		for (auto& chip : tagChips()) {
-			const std::string& tag  = chip.first;
-			const Rect&        rect = chip.second;
-			bool active = pane && pane->tagFilter.count(tag) > 0;
-
-			NVGcolor bgColor, fgColor;
-			if (active) {
-				bgColor = bndGetTheme()->toolTheme.innerSelectedColor;
-				fgColor = bndGetTheme()->toolTheme.textSelectedColor;
-			}
-			else if (hoveredTag == tag) {
-				bgColor = bndGetTheme()->toolTheme.itemColor;
-				bgColor.a *= 0.7f;
-				fgColor = bndGetTheme()->toolTheme.innerColor;
-			}
-			else {
-				bgColor = bndGetTheme()->toolTheme.innerColor;
-				bgColor.a *= 0.4f;
-				fgColor = bndGetTheme()->toolTheme.textColor;
-			}
-
-			nvgBeginPath(args.vg);
-			nvgRoundedRect(args.vg, rect.pos.x, rect.pos.y, rect.size.x, rect.size.y, 2.f);
-			nvgFillColor(args.vg, bgColor);
-			nvgFill(args.vg);
-
-			std::string label = toTitleCase(tag);
-			nvgFillColor(args.vg, fgColor);
-			nvgText(args.vg, rect.pos.x + rect.size.x * 0.5f, rect.pos.y + rect.size.y * 0.5f,
-			        label.c_str(), nullptr);
-		}
-		nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_BASELINE);
 	}
 };
 
@@ -666,7 +664,8 @@ struct SirenTagBar : widget::OpaqueWidget {
 		addChild(scrollWidget);
 
 		tagContainer = new SirenTagContainer;
-		tagContainer->pane = pane;
+		tagContainer->pane            = pane;
+		tagContainer->scrollContainer = scrollWidget->container;
 		tagContainer->box.pos  = Vec(0.f, 0.f);
 		tagContainer->box.size = Vec(box.size.x - SirenScrollWidget::SCROLLBAR_W, 0.f);
 		scrollWidget->container->addChild(tagContainer);
@@ -674,12 +673,13 @@ struct SirenTagBar : widget::OpaqueWidget {
 		layout();
 	}
 
-	// Recompute chip layout and sync scroll container size.
+	// Mark chip layout dirty; actual rebuild happens in draw() once NVG is ready.
 	void layout() {
 		if (!tagContainer) return;
 		tagContainer->box.size.x = box.size.x - SirenScrollWidget::SCROLLBAR_W;
+		if (tagContainer->box.size.y <= 0.f)
+			tagContainer->box.size.y = SirenTagContainer::CHIP_H + SirenTagContainer::PAD_Y * 2.f;
 		tagContainer->layout();
-		scrollWidget->container->box.size = tagContainer->box.size;
 	}
 
 	void draw(const DrawArgs& args) override {
