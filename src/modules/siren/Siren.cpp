@@ -273,8 +273,8 @@ struct SirenModule : Module {
 	SirenModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configParam(PARAM_VOLUME, 0.f, 2.f, 1.f, "Volume", " dB", -10.f, 20.f);
-		configOutput(OUTPUT_L, "Left audio out");
-		configOutput(OUTPUT_R, "Right audio out");
+		configOutput(OUTPUT_L, "Left audio");
+		configOutput(OUTPUT_R, "Right audio");
 
 		lightDivider.setDivision(512);
 
@@ -348,7 +348,8 @@ struct SirenModule : Module {
 					int64_t stopAt = (int64_t)(trimOut.load(std::memory_order_relaxed) * (float)total);
 					// Convert stopAt (file frames) to output-frame count from the seek base
 					int64_t stopAtOut = (int64_t)(((float)stopAt - (float)seekBaseFrame) * ratio);
-					if (count >= stopAtOut
+					if (stopAtOut > 0
+					        && count >= stopAtOut
 					        && pendingSeekFrame.load(std::memory_order_relaxed) < 0) {
 						if (sirenSettings.loopPlayback) {
 							// The fill thread has already wrapped at trimOut → trimIn seamlessly,
@@ -495,7 +496,7 @@ struct SirenDragOverlay : widget::TransparentWidget {
 		if (dropHandler->mouseIsInsideModule()) return;
 
 		std::string lbl = (previewPane
-		                && dropHandler->dragPath == previewPane->currentId
+		                && dropHandler->dragPath == previewPane->currentNode.relativePath
 		                && !previewPane->displayName.empty())
 		                ? previewPane->displayName
 		                : rack::system::getFilename(dropHandler->dragPath);
@@ -513,7 +514,7 @@ struct SirenDragOverlay : widget::TransparentWidget {
 
 	void onButton(const ButtonEvent& e) override {
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT && (e.mods & RACK_MOD_MASK) == (RACK_MOD_CTRL | RACK_MOD_SHIFT)) {
-			dropHandler->startDrag(previewPane->currentId);
+			dropHandler->startDrag(previewPane->currentNode.relativePath);
 			initiated = true;
 			e.consume(this);
 		}
@@ -527,17 +528,42 @@ struct SirenDragOverlay : widget::TransparentWidget {
 };
 
 
-struct SirenOcWidget : TransparentWidget {
+struct SirenOcWidget : OpaqueWidget {
+	ui::Tooltip* tooltip = nullptr;
+
 	SirenOcWidget() {
 		box.size = Vec(26.f, 26.f);
 	}
+
 	void onButton(const ButtonEvent& e) override {
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
 			system::openBrowser("https://omricohen-music.com/");
 			e.consume(this);
 			return;
 		}
-		TransparentWidget::onButton(e);
+		OpaqueWidget::onButton(e);
+	}
+
+	void onEnter(const EnterEvent& e) override {
+		ui::Tooltip* tooltip = new ui::Tooltip;
+		tooltip->text = "Omri Cohen";
+		setTooltip(tooltip);
+	}
+
+	void onLeave(const LeaveEvent& e) override {
+		setTooltip(nullptr);
+	}
+
+	void setTooltip(ui::Tooltip* tooltip) {
+		if (this->tooltip) {
+			this->tooltip->requestDelete();
+			this->tooltip = nullptr;
+		}
+
+		if (tooltip) {
+			APP->scene->addChild(tooltip);
+			this->tooltip = tooltip;
+		}
 	}
 };
 
@@ -545,63 +571,67 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 	TaskWorker taskWorker{"Siren"};
 	SirenDropHandler dropHandler;
 
-	SirenBrowserPane*  browserPane  = nullptr;
-	SirenPreviewPane*  previewPane  = nullptr;
-	SirenDragOverlay*  dragOverlay  = nullptr;
+	SirenBrowserPane* browserPane = nullptr;
+	SirenPreviewPane* previewPane = nullptr;
+	SirenDragOverlay* dragOverlay = nullptr;
 
 	SirenWidget(SirenModule* module)
 		: ThemedModuleWidget<SirenModule>(module, "Siren") {
 		setModule(module);
 
-		//addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
-		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
+		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, 0)));
+		//addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addChild(createParamCentered<StoermelderSmallKnob>(math::Vec(532.5f, 138.4f), module, SirenModule::PARAM_VOLUME));
+		addChild(createParamCentered<StoermelderSmallKnob>(math::Vec(22.9f, 138.4f), module, SirenModule::PARAM_VOLUME));
 		
-		addOutput(createOutputCentered<StoermelderPort>(Vec(532.5f, 63.4f), module, SirenModule::OUTPUT_L));
-		addOutput(createOutputCentered<StoermelderPort>(Vec(532.5f, 92.5f), module, SirenModule::OUTPUT_R));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(22.9f, 63.4f), module, SirenModule::OUTPUT_L));
+		addOutput(createOutputCentered<StoermelderPort>(Vec(22.9f, 92.5f), module, SirenModule::OUTPUT_R));
 
+		// VU meter: two vertical LED bars in the right margin, same top as the panes
+		static constexpr float vuW = 2.f * SirenVuMeter::BAR_W + SirenVuMeter::BAR_GAP + 4.f;
+		static constexpr float vuH = SirenVuMeter::NUM_SEGS * (SirenVuMeter::SEG_H + SirenVuMeter::SEG_GAP);
+		SirenVuMeter* vu = new SirenVuMeter;
+		vu->levelL   = module ? &module->levelL : nullptr;
+		vu->levelR   = module ? &module->levelR : nullptr;
+		vu->box.pos  = Vec(12.9f, 235.3f);
+		vu->box.size = Vec(vuW, vuH);
+		addChild(vu);
+
+		addChild(createWidgetCentered<SirenOcWidget>(Vec(22.9f, 329.f)));
 
 		// ── Layout constants ──────────────────────────────────────────────────
-		const float zoom     = 0.60f;
 		const float contentX = 8.f;
 		const float contentY = 8.f;
-		const float browserW = 172.3f;
+		const float browserW = 178.0f;
 		const float previewW = 307.8f;
 		const float totalW   = browserW + previewW;
-		const float topBarH  = 30.f * zoom;
+		const float topBarH  = 18.f;
 		const float contentH = 336.6f;
 		const float paneH    = contentH - topBarH;
-		const float gapW     = 8.f;   // gap between browser and preview
+		const float gapW     = 4.f;   // gap between browser and preview
 
 		// ── Display widget (single container for browser + topbar + preview) ──
 		SirenDisplayWidget* display = new SirenDisplayWidget;
-		display->box.pos  = Vec(8.3f, 10.2f);
+		display->box.pos = Vec(45.5f, 10.2f);
 		display->box.size = Vec(501.7f, 354.0f);
 		addChild(display);
 
 		// ── Browser pane (inside display, local coords) ───────────────────────
 		{
 			const Vec displaySize = Vec(browserW, paneH);
-			const Vec logicalSize = displaySize.div(zoom);
-
-			widget::ZoomWidget* zw = new widget::ZoomWidget;
-			zw->box.pos  = Vec(contentX, contentY + topBarH);   // relative to display
-			zw->box.size = displaySize;
-			zw->setZoom(zoom);
 
 			browserPane = new SirenBrowserPane;
-			browserPane->box.pos = Vec(0.f, 0.f);
+			browserPane->box.pos = Vec(contentX, contentY + topBarH);   // relative to display
 			browserPane->dropHandler = &dropHandler;
 			browserPane->worker = &taskWorker;
 			browserPane->init(&taskWorker);
-			browserPane->setSize(logicalSize);
-			browserPane->onFileSelected = [this](const std::string& path, bool startPlay) {
-				onFileSelected(path, startPlay);
+			browserPane->setSize(displaySize);
+			browserPane->onFileSelected = [this](const DataSourceNode& node, bool startPlay) {
+				onFileSelected(node, startPlay);
 			};
-			
+
 			{
 				SirenModule* m = module;  // capture for lambdas (template base not visible by plain name)
 				browserPane->onAddRoot = [this, m]() {
@@ -630,42 +660,17 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 					browserPane->setRoots(sirenSettings.rootContainers, idx);
 				};
 			}
-			zw->addChild(browserPane);
-			display->addChild(zw);
+
+			display->addChild(browserPane);
 		}
 
 		// ── Top bar (inside display, local coords) ────────────────────────────
-		{
-			const float logW  = totalW / zoom;
-			const float logH  = topBarH / zoom;
-			const float btnH  = 22.f;
-			const float btnW  = 150.f / zoom;
-			const float mrgX  = 5.f;
-			const float mrgY  = (logH - btnH) * 0.5f;
-
-			SirenSourceButton* srcBtn = new SirenSourceButton;
-			srcBtn->box.size = Vec(btnW, btnH);
-			srcBtn->pane = browserPane;
-
-			SirenSearchField* searchField = new SirenSearchField;
-			searchField->box.size = Vec(300.f, btnH);
-			searchField->pane = browserPane;
-
-			ui::SequentialLayout* layout = new ui::SequentialLayout;
-			layout->box.pos  = Vec(0.f, 0.f);
-			layout->box.size = Vec(logW, logH);
-			layout->margin   = Vec(mrgX, mrgY);
-			layout->spacing  = Vec(mrgX, 0.f);
-			layout->addChild(srcBtn);
-			layout->addChild(searchField);
-
-			widget::ZoomWidget* topBarZw = new widget::ZoomWidget;
-			topBarZw->box.pos  = Vec(contentX, contentY);   // relative to display
-			topBarZw->box.size = Vec(totalW, topBarH);
-			topBarZw->setZoom(zoom);
-			topBarZw->addChild(layout);
-			display->addChild(topBarZw);
-		}
+		SirenTopBar* topBar = new SirenTopBar;
+		topBar->box.pos  = Vec(contentX, contentY);   // relative to display
+		topBar->box.size = Vec(totalW, topBarH);
+		topBar->pane = browserPane;
+		topBar->init();
+		display->addChild(topBar);
 
 		// ── Preview pane (inside display, local coords) ───────────────────────
 		previewPane = new SirenPreviewPane;
@@ -675,40 +680,39 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 		previewPane->cacheDir = sirenCacheDirPath();
 		display->addChild(previewPane);
 
-		// Wire audio callbacks: pane → module
-		if (module) {
-			SirenModule* m = module;
-			previewPane->openStreamCallback    = [m](const std::string& id, DataSource* src) {
-				m->openStream(id, src);
-			};
-			previewPane->startPlaybackCallback = [m](float pos) {
-				m->startPlayback(pos);
-			};
-			previewPane->stopPlaybackCallback  = [m]() {
-				m->stopPlayback();
-			};
-			// Atomic pointers for low-overhead display reads
-			previewPane->modulePlayheadPos = &module->playheadPos;
-			previewPane->modulePlaying     = &module->playing;
-			previewPane->moduleInPoint     = &module->trimIn;
-			previewPane->moduleOutPoint    = &module->trimOut;
-		}
+		if (!module) return;
 
-		// Refresh browser when preview pane modifies metadata
+		// Wire audio callbacks: pane → module
+		previewPane->openStreamCallback    = [module](const std::string& id, DataSource* src) {
+			module->openStream(id, src);
+		};
+		previewPane->startPlaybackCallback = [module](float pos) {
+			module->startPlayback(pos);
+		};
+		previewPane->stopPlaybackCallback  = [module]() {
+			module->stopPlayback();
+		};
 		previewPane->onMetadataChanged = [this]() {
 			browserPane->requestRebuild();
 		};
+		previewPane->modulePlayheadPos = &module->playheadPos;
+		previewPane->modulePlaying     = &module->playing;
+		previewPane->moduleInPoint     = &module->trimIn;
+		previewPane->moduleOutPoint    = &module->trimOut;
 
-		dropHandler.moduleWidget = this;
+		// Top-level drag label overlay — drawn above all other rack elements
+		dragOverlay = new SirenDragOverlay;
+		dragOverlay->box.pos  = Vec(0.f, 0.f);
+		dragOverlay->box.size = Vec(1e6f, 1e6f);
+		dragOverlay->dropHandler = &dropHandler;
+		dragOverlay->previewPane = previewPane;
+		APP->scene->rack->addChild(dragOverlay);
 
-		if (module) {
-			// Top-level drag label overlay — drawn above all other rack elements
-			dragOverlay = new SirenDragOverlay;
-			dragOverlay->box.pos  = Vec(0.f, 0.f);
-			dragOverlay->box.size = Vec(1e6f, 1e6f);
-			dragOverlay->dropHandler = &dropHandler;
-			dragOverlay->previewPane = previewPane;
-			APP->scene->rack->addChild(dragOverlay);
+		// Load global settings and restore state
+		sirenSettings.load();
+		// Patch state takes priority over global settings if the patch was saved
+		if (!module->lastFilePath.empty()) {
+			sirenSettings.activeRootIdx = module->activeRootIdx;
 		}
 
 		// Obtain the conversion task from the active source; dispatched by the drop handler.
@@ -720,37 +724,19 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 			float trimIn  = previewPane->inPoint;
 			float trimOut = previewPane->outPoint;
 			return src->prepareForDrop(id, sirenSettings.convertToWavOnDrop,
-			                           targetRate, trimIn, trimOut, sirenSettings.resampleQuality);
+									targetRate, trimIn, trimOut, sirenSettings.resampleQuality);
 		};
+		dropHandler.moduleWidget = this;
 
-		// Load global settings and restore state
-		sirenSettings.load();
-		if (module) {
-			// Patch state takes priority over global settings if the patch was saved
-			if (!module->lastFilePath.empty()) {
-				sirenSettings.activeRootIdx = module->activeRootIdx;
-			}
-		}
 		browserPane->setRoots(sirenSettings.rootContainers, sirenSettings.activeRootIdx);
 		std::string restoreFile = module ? module->lastFilePath : sirenSettings.lastFile;
 		float restorePos = module ? module->lastPlayheadPos : sirenSettings.lastPlayheadPos;
 		if (!restoreFile.empty()) {
 			DataSource* src = browserPane->activeDataSource;
-			previewPane->loadItem(restoreFile, src, src ? src->getMetadata() : nullptr);
-			if (module) module->playheadPos.store(restorePos, std::memory_order_relaxed);
+			DataSourceNode restoreNode = src ? src->resolveNode(restoreFile) : DataSourceNode{};
+			previewPane->loadItem(restoreNode, src, src ? src->getMetadata() : nullptr);
+			module->playheadPos.store(restorePos, std::memory_order_relaxed);
 		}
-
-		// VU meter: two vertical LED bars in the right margin, same top as the panes
-		static constexpr float vuW = 2.f * SirenVuMeter::BAR_W + SirenVuMeter::BAR_GAP + 4.f;
-		static constexpr float vuH = SirenVuMeter::NUM_SEGS * (SirenVuMeter::SEG_H + SirenVuMeter::SEG_GAP);
-		SirenVuMeter* vu = new SirenVuMeter;
-		vu->levelL   = module ? &module->levelL : nullptr;
-		vu->levelR   = module ? &module->levelR : nullptr;
-		vu->box.pos  = Vec(522.5f, 235.3f);
-		vu->box.size = Vec(vuW, vuH);
-		addChild(vu);
-
-		addChild(createWidgetCentered<SirenOcWidget>(Vec(532.5f, 329.f)));
 	}
 
 	~SirenWidget() override {
@@ -761,10 +747,10 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 		}
 
 		// Sync preview state back into module fields (for patch save) and global settings
-		sirenSettings.lastFile = previewPane->currentId;
+		sirenSettings.lastFile = previewPane->currentNode.relativePath;
 		sirenSettings.lastPlayheadPos = module ? module->playheadPos.load() : 0.f;
 		if (module) {
-			module->lastFilePath = previewPane->currentId;
+			module->lastFilePath = previewPane->currentNode.relativePath;
 			module->lastPlayheadPos = module->playheadPos.load();
 			module->activeRootIdx = sirenSettings.activeRootIdx;
 		}
@@ -780,21 +766,23 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 		return "";
 	}
 
-	void onFileSelected(const std::string& path, bool startPlay) {
-		sirenSettings.lastFile = path;
-		if (module) module->lastFilePath = path;  // keep dataToJson() in sync
+	void onFileSelected(const DataSourceNode& node, bool startPlay) {
+		sirenSettings.lastFile = node.relativePath;
+		if (module) module->lastFilePath = node.relativePath;
 		DataSource* src = browserPane->activeDataSource;
-		previewPane->loadItem(path, src, src ? src->getMetadata() : nullptr, startPlay);
+		previewPane->loadItem(node, src, src ? src->getMetadata() : nullptr, startPlay);
 	}
 
 	void onSelectKey(const SelectKeyEvent& e) override {
 		if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
 			if (e.key == GLFW_KEY_SPACE) {
-				if (!previewPane->currentId.empty()) {
-					if (module->playing.load(std::memory_order_relaxed))
+				if (!previewPane->currentNode.relativePath.empty()) {
+					if (module->playing.load(std::memory_order_relaxed)) {
 						previewPane->stopPlaybackCallback();
-					else
-						previewPane->startPlaybackFrom(previewPane->inPoint);
+					}
+					else {
+						previewPane->startPlaybackFrom(module->playheadPos.load(std::memory_order_relaxed));
+					}
 					e.consume(this);
 					return;
 				}

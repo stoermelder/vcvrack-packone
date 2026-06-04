@@ -15,14 +15,15 @@ namespace Siren {
 
 // Forward declarations
 struct SirenBrowserPane;
+struct SirenTagBar;
 
-static constexpr float BROWSER_TAG_H = 96.f;
+static constexpr float BROWSER_TAG_H = 58.f;
 
 // ─── single row in the tree ───────────────────────────────────────────────────
 
 struct SirenTreeRow : widget::OpaqueWidget {
-	static constexpr float ROW_H   = 20.f;
-	static constexpr float INDENT  = 14.f;
+	static constexpr float ROW_H   = 12.f;
+	static constexpr float INDENT  = 8.f;
 
 	// Favorite star button (file rows only)
 	struct StarButton : widget::OpaqueWidget {
@@ -30,11 +31,11 @@ struct SirenTreeRow : widget::OpaqueWidget {
 		void draw(const DrawArgs& args) override {
 			if (!row || !row->metadata) return;
 			bool fav = row->metadata->isFavorite(row->node.relativePath);
-			nvgFontSize(args.vg, 12.f);
+			nvgFontSize(args.vg, 7.f);
 			nvgFillColor(args.vg, fav
 				? nvgRGBf(1.f, 0.85f, 0.1f)
 				: nvgRGBAf(1.f, 1.f, 1.f, 0.22f));
-			nvgText(args.vg, 0.f, 12.f, fav ? "★" : "☆", nullptr);
+			nvgText(args.vg, 0.f, 7.f, fav ? "★" : "☆", nullptr);
 		}
 		void onButton(const event::Button& e) override {
 			if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS) {
@@ -65,16 +66,15 @@ struct SirenTreeRow : widget::OpaqueWidget {
 		if (!node.isContainer) {
 			starBtn = new StarButton;
 			starBtn->row = this;
-			starBtn->box.pos = Vec(0.f, 2.f);
-			starBtn->box.size = Vec(14.f, 16.f);
+			starBtn->box.pos = Vec(0.f, 1.f);
+			starBtn->box.size = Vec(8.f, 10.f);
 			addChild(starBtn);
 		}
 	}
 
 	void step() override {
-		// Keep star button flush against the right edge
 		if (starBtn) {
-			starBtn->box.pos.x = box.size.x - 16.f;
+			starBtn->box.pos.x = box.size.x - 10.f;
 		}
 		widget::OpaqueWidget::step();
 	}
@@ -83,13 +83,9 @@ struct SirenTreeRow : widget::OpaqueWidget {
 		float w = box.size.x;
 		float h = ROW_H;
 
-		// Blendish widget state
 		BNDwidgetState state = BND_DEFAULT;
 		if (selected) state = BND_ACTIVE;
 		else if (APP->event->getHoveredWidget() == this) state = BND_HOVER;
-
-		// Background using blendish tool button styling (label drawn manually for indentation)
-		bndToolButton(args.vg, 0, 0, w, h, BND_CORNER_NONE, state, -1, nullptr);
 
 		float textX = 6.f + indentLevel * INDENT;
 		NVGcolor textColor = bndGetTheme()->toolTheme.textColor;
@@ -98,78 +94,80 @@ struct SirenTreeRow : widget::OpaqueWidget {
 		nvgFontFaceId(args.vg, APP->window->uiFont->handle);
 
 		if (node.isContainer) {
-			// Expand/collapse triangle
-			nvgFontSize(args.vg, 9.f);
+			nvgFontSize(args.vg, 5.f);
 			nvgFillColor(args.vg, nvgRGBAf(textColor.r, textColor.g, textColor.b, 0.55f));
-			nvgText(args.vg, textX, 13.f, node.childrenLoaded ? "▼" : "▶", nullptr);
-			textX += 14.f;
-			// Container name
-			nvgFontSize(args.vg, BND_LABEL_FONT_SIZE);
+			nvgText(args.vg, textX, 8.f, node.childrenLoaded ? "▼" : "▶", nullptr);
+			textX += 8.f;
+			nvgFontSize(args.vg, 8.f);
 			nvgFillColor(args.vg, textColor);
-			nvgScissor(args.vg, textX, 0.f, w - textX - 4.f, h);
-			nvgText(args.vg, textX, 13.f, node.name.c_str(), nullptr);
-			nvgResetScissor(args.vg);
+			nvgSave(args.vg);
+			nvgIntersectScissor(args.vg, textX, 0.f, w - textX - 4.f, h);
+			nvgText(args.vg, textX, 8.f, node.name.c_str(), nullptr);
+			nvgRestore(args.vg);
 		}
 		else {
-			const float starW   = 16.f;
-			const float durW    = 44.f;
+			const float starW   = 10.f;
+			const float durW    = 26.f;
 			float maxNameW = w - textX - durW - starW - 4.f;
 
-			// File name
-			nvgFontSize(args.vg, BND_LABEL_FONT_SIZE);
+			nvgFontSize(args.vg, 8.f);
 			nvgFillColor(args.vg, textColor);
-			nvgScissor(args.vg, textX, 0.f, maxNameW, h);
-			nvgText(args.vg, textX, 13.f, node.name.c_str(), nullptr);
-			nvgResetScissor(args.vg);
+			nvgSave(args.vg);
+			nvgIntersectScissor(args.vg, textX, 0.f, maxNameW, h);
+			nvgText(args.vg, textX, 8.f, node.name.c_str(), nullptr);
+			nvgRestore(args.vg);
 
-			// Duration (right-aligned before star)
 			if (node.durationSeconds > 0.f) {
 				int mins = (int)(node.durationSeconds / 60.f);
 				float secs = node.durationSeconds - mins * 60.f;
 				std::string dur = rack::string::f("%02d:%05.2f", mins, secs);
-				nvgFontSize(args.vg, 9.f);
+				nvgFontSize(args.vg, 5.f);
 				nvgFillColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.32f));
-				nvgText(args.vg, w - starW - durW - 1.f, 13.f, dur.c_str(), nullptr);
+				nvgText(args.vg, w - starW - durW - 1.f, 8.f, dur.c_str(), nullptr);
 			}
-			// Star drawn by StarButton child widget
 		}
 		OpaqueWidget::draw(args);
 	}
 
 	void onButton(const event::Button& e) override;
-
-	// Path-drop drag
 	void onDragStart(const event::DragStart& e) override;
 	void onDragEnd(const event::DragEnd& e) override;
 };
 
+// ─── ScrollWidget with a narrower vertical scrollbar ─────────────────────────
+
+struct SirenScrollWidget : ui::ScrollWidget {
+	static constexpr float SCROLLBAR_W = 6.f;
+	void step() override {
+		ui::ScrollWidget::step();
+		if (verticalScrollbar) {
+			verticalScrollbar->box.size.x = SCROLLBAR_W;
+			verticalScrollbar->box.pos.x  = box.size.x - SCROLLBAR_W;
+		}
+	}
+};
+
+// ─── SirenBrowserPane (tag bar added after SirenTagBar is defined) ────────────
+
 struct SirenBrowserPane : widget::OpaqueWidget {
-	// Callbacks set by the parent widget
-	std::function<void(const std::string&, bool /*startPlay*/)> onFileSelected;
+	std::function<void(const DataSourceNode&, bool)> onFileSelected;
 	std::function<void()>    onAddRoot;
 	std::function<void(int)> onRemoveRoot;
 	std::function<void(int)> onSelectRoot;
 
-	// Drop handler (shared with preview pane via pointer in parent)
 	SirenDropHandler* dropHandler = nullptr;
-
 	TaskWorker* worker = nullptr;
 
-	// Root containers from settings
 	std::vector<std::string> rootContainers;
 	int activeRootIdx = -1;
 	std::string selectedPath;
 	bool favoritesOnly = false;
 	std::set<std::string> tagFilter;
 
-	// Hover tracking for tag chips
-	std::string hoveredTag;
 	std::string searchQuery;
 
-	// Active data source (owned; replaced on root change)
 	DataSource* activeDataSource = nullptr;
 
-	// Expanded tree state
 	struct TreeEntry {
 		DataSourceNode node;
 		int indent    = 0;
@@ -178,15 +176,11 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 	std::vector<TreeEntry> rows;
 	std::atomic<bool> loadPending{false};
 
-	// When non-empty: after the next async load completes, select the first child of this path
 	std::string pendingSelectFirstOfPath;
 
-	// Deferred rebuild — set from event handlers; consumed by step() to avoid
-	// deleting widgets while handleButton/handleKey is still on the call stack.
 	bool rebuildDirty = false;
 	bool scrollAfterRebuild = false;
 
-	// Pending async result
 	struct PendingResult {
 		std::string parentPath;
 		int insertIdx = -1;
@@ -200,43 +194,26 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 	PendingResult     pendingResult;
 	std::atomic<bool> pendingReady{false};
 
-	// Sub-widgets
-	ui::ScrollWidget* scrollWidget  = nullptr;
-	widget::Widget*   rowContainer  = nullptr;
+	SirenScrollWidget* scrollWidget = nullptr;
+	widget::Widget*    rowContainer = nullptr;
+	SirenTagBar*       tagBar       = nullptr;
 
-	~SirenBrowserPane() override {
-		delete activeDataSource;
-	}
+	~SirenBrowserPane() override { delete activeDataSource; }
 
-	void init(TaskWorker* tw) {
-		worker = tw;
-
-		scrollWidget = new ui::ScrollWidget;
-		scrollWidget->box.pos = Vec(0.f, 0.f);
-		addChild(scrollWidget);
-
-		rowContainer = new widget::Widget;
-		scrollWidget->container->addChild(rowContainer);
-	}
-
-	void setSize(Vec size) {
-		box.size = size;
-		scrollWidget->box.size = Vec(size.x, size.y - BROWSER_TAG_H);
-		rowContainer->box.size.x = size.x;
-	}
+	// Defined after SirenTagBar
+	void init(TaskWorker* tw);
+	void setSize(Vec size);
 
 	void setRoots(const std::vector<std::string>& roots, int activeIdx) {
-		rootContainers   = roots;
-		activeRootIdx = activeIdx;
-		if (activeRootIdx >= 0 && activeRootIdx < (int)rootContainers.size()) {
+		rootContainers = roots;
+		activeRootIdx  = activeIdx;
+		if (activeRootIdx >= 0 && activeRootIdx < (int)rootContainers.size())
 			loadRoot(rootContainers[activeRootIdx]);
-		}
 	}
 
 	void loadRoot(const std::string& root) {
 		delete activeDataSource;
 		activeDataSource = new FileSystemDataSource(root);
-
 		rows.clear();
 		rebuildRowWidgets();
 		pendingReady.store(false, std::memory_order_relaxed);
@@ -274,7 +251,6 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 				}
 				rebuildRowWidgets();
 
-				// Auto-select first child when navigating right into a folder
 				if (!pendingSelectFirstOfPath.empty()) {
 					std::string parentPath = pendingSelectFirstOfPath;
 					pendingSelectFirstOfPath.clear();
@@ -290,7 +266,6 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		}
 		if (dropHandler) dropHandler->step();
 
-		// Flush deferred rebuilds requested by event handlers
 		if (rebuildDirty) {
 			rebuildDirty = false;
 			bool doScroll = scrollAfterRebuild;
@@ -302,54 +277,9 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		OpaqueWidget::step();
 	}
 
-	void requestRebuild() {
-		rebuildDirty = true;
-	}
+	void requestRebuild() { rebuildDirty = true; }
 
-	void rebuildRowWidgets() {
-		rowContainer->clearChildren();
-		RootMetadata* meta = activeDataSource ? activeDataSource->getMetadata() : nullptr;
-
-		float y = 0.f;
-		for (int i = 0; i < (int)rows.size(); i++) {
-			const TreeEntry& entry = rows[i];
-			const DataSourceNode& n = entry.node;
-
-			// When searching, hide containers and filter by name
-			if (!searchQuery.empty()) {
-				if (n.isContainer) continue;
-				if (rack::string::lowercase(n.name).find(rack::string::lowercase(searchQuery)) == std::string::npos)
-					continue;
-			}
-
-			if (n.isContainer) {
-				if ((favoritesOnly || !tagFilter.empty()) && !containerHasMatchingDescendant(i, meta))
-					continue;
-			}
-			else {
-				if (favoritesOnly && meta && !meta->isFavorite(n.relativePath))
-					continue;
-
-				if (!tagFilter.empty() && meta) {
-					auto tags = meta->getTags(n.relativePath);
-					bool hasAll = true;
-					for (const std::string& t : tagFilter)
-						if (std::find(tags.begin(), tags.end(), t) == tags.end()) { hasAll = false; break; }
-					if (!hasAll) continue;
-				}
-			}
-
-			SirenTreeRow* row = new SirenTreeRow;
-			row->init(n, entry.indent, meta, this);
-			row->selected     = (n.fullPath == selectedPath);
-			row->box.pos      = Vec(0.f, y);
-			row->box.size     = Vec(box.size.x - 12.f, SirenTreeRow::ROW_H);
-			rowContainer->addChild(row);
-			y += SirenTreeRow::ROW_H;
-		}
-		rowContainer->box.size.y = y;
-		scrollWidget->container->box.size = rowContainer->box.size;
-	}
+	void rebuildRowWidgets();  // Defined after SirenTagBar
 
 	void expandRow(int rowIdx) {
 		if (rowIdx < 0 || rowIdx >= (int)rows.size()) return;
@@ -391,29 +321,19 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		return -1;
 	}
 
-	// Returns true if the container at rows[rowIdx] has at least one descendant
-	// file that passes the current favoritesOnly / tagFilter.
-	//
-	// Only files with metadata entries (tags or favorites) can ever match either
-	// filter, so scanning meta->samples is both necessary and sufficient — no
-	// filesystem scan or row-tree walk needed.
 	bool containerHasMatchingDescendant(int rowIdx, RootMetadata* meta) const {
 		if (!meta) return false;
 		const std::string dirPrefix = rows[rowIdx].node.relativePath + "/";
-
 		for (const auto& pair : meta->samples) {
 			if (pair.first.compare(0, dirPrefix.size(), dirPrefix) != 0) continue;
 			const SampleMetadata& sm = pair.second;
-
 			if (favoritesOnly && !sm.favorite) continue;
-
 			if (!tagFilter.empty()) {
 				bool hasAll = true;
 				for (const std::string& t : tagFilter)
 					if (std::find(sm.tags.begin(), sm.tags.end(), t) == sm.tags.end()) { hasAll = false; break; }
 				if (!hasAll) continue;
 			}
-
 			return true;
 		}
 		return false;
@@ -424,8 +344,6 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 			if (rows[i].node.fullPath == fullPath) return i;
 		return -1;
 	}
-
-	// ── Keyboard navigation ───────────────────────────────────────────────────
 
 	std::vector<SirenTreeRow*> visibleRowWidgets() {
 		std::vector<SirenTreeRow*> result;
@@ -450,250 +368,12 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		}
 	}
 
-	// Select a row by node, schedule rebuild+scroll, and fire onFileSelected for files.
-	// Uses node.fullPath for internal tree state, node.relativePath for the external callback.
 	void selectPath(const DataSourceNode& node, bool startPlay = false) {
 		selectedPath = node.fullPath;
 		requestRebuild();
 		scrollAfterRebuild = true;
-		if (!node.isContainer && onFileSelected) {
-			onFileSelected(node.relativePath, startPlay);
-		}
-	}
-
-	// Returns true if the key was handled.
-	bool navigateKey(int key) {
-		auto vr = visibleRowWidgets();
-		if (vr.empty()) return false;
-
-		// Find index of currently selected row in the visible list
-		int selIdx = -1;
-		for (int i = 0; i < (int)vr.size(); i++) {
-			if (vr[i]->selected) { selIdx = i; break; }
-		}
-
-		if (key == GLFW_KEY_UP) {
-			int target = (selIdx <= 0) ? 0 : selIdx - 1;
-			selectPath(vr[target]->node);
-			return true;
-		}
-
-		if (key == GLFW_KEY_DOWN) {
-			int target = (selIdx < 0) ? 0 : std::min(selIdx + 1, (int)vr.size() - 1);
-			selectPath(vr[target]->node);
-			return true;
-		}
-
-		if (key == GLFW_KEY_RIGHT) {
-			if (selIdx < 0) return true;
-			SirenTreeRow* row = vr[selIdx];
-			if (!row->node.isContainer) return true;
-
-			int treeIdx = findTreeIdx(row->node.fullPath);
-			if (treeIdx < 0) return true;
-
-			if (!rows[treeIdx].expanded) {
-				// Expand and schedule auto-select of first child once loaded
-				pendingSelectFirstOfPath = row->node.fullPath;
-				expandRow(treeIdx);
-			}
-			else {
-				// Already expanded — move into first visible child
-				if (selIdx + 1 < (int)vr.size()) {
-					selectPath(vr[selIdx + 1]->node);
-				}
-			}
-			return true;
-		}
-
-		if (key == GLFW_KEY_LEFT) {
-			if (selIdx < 0) return true;
-			SirenTreeRow* row = vr[selIdx];
-
-			// If this is an expanded container, collapse it
-			if (row->node.isContainer) {
-				int treeIdx = findTreeIdx(row->node.fullPath);
-				if (treeIdx >= 0 && rows[treeIdx].expanded) {
-					expandRow(treeIdx);  // toggles — collapses it
-					return true;
-				}
-			}
-
-			// Move to parent container: find nearest ancestor in rows
-			int treeIdx = findTreeIdx(row->node.fullPath);
-			if (treeIdx < 0) return true;
-			int parentIndent = rows[treeIdx].indent - 1;
-			if (parentIndent < 0) return true;  // already at root level
-
-			for (int i = treeIdx - 1; i >= 0; i--) {
-				if (rows[i].indent == parentIndent && rows[i].node.isContainer) {
-					// Collapse parent and select it
-					expandRow(i);
-					selectedPath = rows[i].node.fullPath;
-					requestRebuild();
-					scrollAfterRebuild = true;
-					return true;
-				}
-			}
-			return true;
-		}
-
-		return false;
-	}
-
-	// Compute tag chip rects (shared by draw and hit-testing).
-	// Keys are the original tag strings; display labels are title-cased separately.
-	std::vector<std::pair<std::string, Rect>> tagChips() {
-		std::vector<std::pair<std::string, Rect>> chips;
-		const float chipH    = 20.f;
-		const float rowStride = chipH + 2.f;
-		const float startY   = box.size.y - BROWSER_TAG_H + 8.f;
-		float x = 4.f;
-		int   curRow = 0;
-
-		RootMetadata* meta = activeDataSource ? activeDataSource->getMetadata() : nullptr;
-
-		// Measure a label string using the blendish font/size
-		auto measureChip = [](const std::string& label) -> float {
-			if (!APP || !APP->window) return label.size() * 8.f + 20.f;
-			NVGcontext* vg = APP->window->vg;
-			nvgFontSize(vg, BND_LABEL_FONT_SIZE);
-			nvgFontFaceId(vg, APP->window->uiFont->handle);
-			float bounds[4];
-			nvgTextBounds(vg, 0.f, 0.f, label.c_str(), nullptr, bounds);
-			return bounds[2] - bounds[0] + 20.f;
-		};
-
-		// "Fav" chip is always first
-		float favW = measureChip("Favorite");
-		chips.push_back({"fav", Rect(Vec(x, startY), Vec(favW, chipH))});
-		x += favW + 4.f;
-
-		if (meta) {
-			auto all = meta->allTags();
-			std::vector<std::string> sorted(all.begin(), all.end());
-			std::sort(sorted.begin(), sorted.end());
-			for (const std::string& tag : sorted) {
-				const std::string& label = tag;
-				float tw = measureChip(label);
-				if (x + tw > box.size.x - 4.f) {
-					curRow++;
-					if (curRow > 3) break;
-					x = 4.f;
-				}
-				float chipY = startY + curRow * rowStride;
-				chips.push_back({tag, Rect(Vec(x, chipY), Vec(tw, chipH))});
-				x += tw + 4.f;
-			}
-		}
-		return chips;
-	}
-
-	void onHover(const event::Hover& e) override {
-		hoveredTag.clear();
-		if (e.pos.y >= box.size.y - BROWSER_TAG_H) {
-			for (auto& chip : tagChips()) {
-				if (chip.second.contains(e.pos)) { hoveredTag = chip.first; break; }
-			}
-		}
-		OpaqueWidget::onHover(e);
-	}
-
-	void onLeave(const event::Leave& e) override {
-		hoveredTag.clear();
-		OpaqueWidget::onLeave(e);
-	}
-
-	void onButton(const event::Button& e) override {
-		if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS) {
-			// Tag chips
-			if (e.pos.y >= box.size.y - BROWSER_TAG_H) {
-				for (auto& chip : tagChips()) {
-					const std::string& tag = chip.first;
-					const Rect& rect       = chip.second;
-					if (rect.contains(e.pos)) {
-						if (tag == "fav") {
-							favoritesOnly = !favoritesOnly;
-						} else {
-							if (tagFilter.count(tag)) tagFilter.erase(tag);
-							else tagFilter.insert(tag);
-						}
-						requestRebuild();
-						e.consume(this);
-						return;
-					}
-				}
-			}
-		}
-		OpaqueWidget::onButton(e);
-	}
-
-	void onSelectKey(const SelectKeyEvent& e) override {
-		if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
-			if (e.key == GLFW_KEY_SPACE) {
-				ModuleWidget* mw = getAncestorOfType<ModuleWidget>();
-				mw->onSelectKey(e);
-				return;
-			}
-			if (e.key == GLFW_KEY_UP || e.key == GLFW_KEY_DOWN || e.key == GLFW_KEY_LEFT || e.key == GLFW_KEY_RIGHT) {
-				if (navigateKey(e.key)) {
-					e.consume(this);
-					return;
-				}
-			}
-		}
-		OpaqueWidget::onSelectKey(e);
-	}
-
-	void draw(const DrawArgs& args) override {
-		float w = box.size.x;
-		float h = box.size.y;
-
-		// Pane background
-		nvgBeginPath(args.vg);
-		nvgRect(args.vg, 0, 0, w, h);
-		nvgFillColor(args.vg, nvgRGBf(0.12f, 0.12f, 0.09f));
-		nvgFill(args.vg);
-
-		// ── Loading indicator ─────────────────────────────────────────────────
-		if (loadPending) {
-			nvgFontSize(args.vg, 9.f);
-			nvgFillColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.30f));
-			nvgText(args.vg, 8.f, 14.f, "Loading...", nullptr);
-		}
-
-		OpaqueWidget::draw(args);
-
-		// ── Tag chips (drawn over scroll content) ─────────────────────────────
-		const float tagAreaY = h - BROWSER_TAG_H;
-
-		nvgBeginPath(args.vg);
-		nvgRect(args.vg, 0, tagAreaY, w, BROWSER_TAG_H);
-		nvgFillColor(args.vg, nvgRGBf(0.09f, 0.09f, 0.07f));
-		nvgFill(args.vg);
-
-		nvgBeginPath(args.vg);
-		nvgMoveTo(args.vg, 0, tagAreaY + 0.5f);
-		nvgLineTo(args.vg, w, tagAreaY + 0.5f);
-		nvgStrokeColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.09f));
-		nvgStrokeWidth(args.vg, 0.5f);
-		nvgStroke(args.vg);
-
-		// Tag chips: blendish tool buttons with title-case labels
-		for (auto& chip : tagChips()) {
-			const std::string& tag = chip.first;
-			const Rect& rect       = chip.second;
-			bool active = (tag == "fav") ? favoritesOnly : (tagFilter.count(tag) > 0);
-
-			BNDwidgetState chipState = BND_DEFAULT;
-			if (active) chipState = BND_ACTIVE;
-			else if (hoveredTag == tag) chipState = BND_HOVER;
-
-			std::string label = (tag == "fav") ? "Favorite" : tag;
-
-			bndToolButton(args.vg, rect.pos.x, rect.pos.y, rect.size.x, rect.size.y,
-			              BND_CORNER_NONE, chipState, -1, label.c_str());
-		}
+		if (!node.isContainer && onFileSelected)
+			onFileSelected(node, startPlay);
 	}
 
 	void startTagClassification(const DataSourceNode& node) {
@@ -705,26 +385,22 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		bool          isDir = node.isContainer;
 		std::string   name  = node.name;
 
-		// Payload type carried by the per-tag sample labels inside the "Suggest tags"
-		// dialog. Held at namespace scope so the worker thread, the label builder, and
-		// the apply callback can all spell the type identically.
 		using DataSourceNodeId = std::string;
 
 		auto buildLabel = [this, ds](const std::string& tag, const DataSourceNodeId& fileId) -> widget::Widget* {
 			struct SampleLabel : ui::MenuItem {
-				DataSource* ds;
+				DataSource*       ds;
 				SirenBrowserPane* pane;
-				DataSourceNodeId fileId;
-				std::string groupTag;
+				DataSourceNodeId  fileId;
+				std::string       groupTag;
 				void onAction(const event::Action& e) override {
-					pane->onFileSelected(fileId, true);
-					e.unconsume();  // keep dialog open
+					pane->selectPath(ds->resolveNode(fileId), true);
+					e.unconsume();
 				}
 				void onButton(const ButtonEvent& e) override {
 					if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
 						Menu* menu = createMenu();
 						menu->addChild(createMenuLabel(ds->getDisplayName(fileId)));
-						// Find the owning dialog so we can mutate its groups vector
 						auto* dlg = getAncestorOfType<ui::TagConfirmDialog<DataSourceNodeId>>();
 						SampleLabel* self = this;
 						menu->addChild(createMenuItem("Remove from group", "", [self, dlg]() {
@@ -744,10 +420,9 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 					MenuItem::onButton(e);
 				}
 			};
-
 			SampleLabel* item = new SampleLabel;
 			item->text     = ds->getDisplayName(fileId);
-			item->ds	   = ds;
+			item->ds       = ds;
 			item->pane     = this;
 			item->fileId   = fileId;
 			item->groupTag = tag;
@@ -770,8 +445,6 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 				sel, sel == 1 ? "" : "s", name.c_str());
 		};
 
-		// Show the dialog immediately (empty, "Analysing..." header). The worker
-		// pushes results into progress; step() drains them on the UI thread.
 		std::string header = isDir ? "Suggest tags — " + name : "Suggest tags";
 		using StreamDlg = StoermelderPackOne::ui::StreamingTagDialog<DataSourceNodeId>;
 
@@ -782,7 +455,6 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		APP->scene->addChild(overlay);
 
 		auto progress = dlg->progress;
-
 		worker->work([progress, fp, rel, isDir, ds]() {
 			std::vector<DataSourceNodeId> files;
 			if (isDir) {
@@ -799,33 +471,372 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 			}
 
 			progress->total = (int)files.size();
-
 			for (const auto& f : files) {
 				auto stream = ds->openAudioStream(f);
 				if (stream) {
 					auto suggestions = TagClassifier::classify(*stream, 5);
 					for (const auto& s : suggestions)
-						if (s.score >= 0.5f) {
+						if (s.score >= 0.5f)
 							progress->events.push({s.name, f});
-						}
 				}
 				progress->processed++;
 			}
-
-			// Release store: ensures all ring buffer pushes above are visible
-			// to the UI thread before it observes done = true.
 			progress->done.store(true, std::memory_order_release);
 		});
 	}
+
+	bool navigateKey(int key) {
+		auto vr = visibleRowWidgets();
+		if (vr.empty()) return false;
+
+		int selIdx = -1;
+		for (int i = 0; i < (int)vr.size(); i++)
+			if (vr[i]->selected) { selIdx = i; break; }
+
+		if (key == GLFW_KEY_UP) {
+			selectPath(vr[(selIdx <= 0) ? 0 : selIdx - 1]->node);
+			return true;
+		}
+		if (key == GLFW_KEY_DOWN) {
+			selectPath(vr[(selIdx < 0) ? 0 : std::min(selIdx + 1, (int)vr.size() - 1)]->node);
+			return true;
+		}
+		if (key == GLFW_KEY_RIGHT) {
+			if (selIdx < 0) return true;
+			SirenTreeRow* row = vr[selIdx];
+			if (!row->node.isContainer) return true;
+			int treeIdx = findTreeIdx(row->node.fullPath);
+			if (treeIdx < 0) return true;
+			if (!rows[treeIdx].expanded) {
+				pendingSelectFirstOfPath = row->node.fullPath;
+				expandRow(treeIdx);
+			}
+			else if (selIdx + 1 < (int)vr.size()) {
+				selectPath(vr[selIdx + 1]->node);
+			}
+			return true;
+		}
+		if (key == GLFW_KEY_LEFT) {
+			if (selIdx < 0) return true;
+			SirenTreeRow* row = vr[selIdx];
+			if (row->node.isContainer) {
+				int treeIdx = findTreeIdx(row->node.fullPath);
+				if (treeIdx >= 0 && rows[treeIdx].expanded) {
+					expandRow(treeIdx);
+					return true;
+				}
+			}
+			int treeIdx = findTreeIdx(row->node.fullPath);
+			if (treeIdx < 0) return true;
+			int parentIndent = rows[treeIdx].indent - 1;
+			if (parentIndent < 0) return true;
+			for (int i = treeIdx - 1; i >= 0; i--) {
+				if (rows[i].indent == parentIndent && rows[i].node.isContainer) {
+					expandRow(i);
+					selectedPath = rows[i].node.fullPath;
+					requestRebuild();
+					scrollAfterRebuild = true;
+					return true;
+				}
+			}
+			return true;
+		}
+		return false;
+	}
+
+	void onSelectKey(const SelectKeyEvent& e) override {
+		if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
+			if (e.key == GLFW_KEY_SPACE) {
+				ModuleWidget* mw = getAncestorOfType<ModuleWidget>();
+				mw->onSelectKey(e);
+				return;
+			}
+			if (e.key == GLFW_KEY_UP || e.key == GLFW_KEY_DOWN ||
+			    e.key == GLFW_KEY_LEFT || e.key == GLFW_KEY_RIGHT) {
+				if (navigateKey(e.key)) { e.consume(this); return; }
+			}
+		}
+		OpaqueWidget::onSelectKey(e);
+	}
+
+	void draw(const DrawArgs& args) override {
+		float w = box.size.x;
+		float h = box.size.y;
+
+		nvgBeginPath(args.vg);
+		nvgRect(args.vg, 0, 0, w, h);
+		nvgFillColor(args.vg, nvgRGBf(0.12f, 0.12f, 0.09f));
+		nvgFill(args.vg);
+
+		if (loadPending) {
+			nvgFontSize(args.vg, 6.f);
+			nvgFillColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.30f));
+			nvgText(args.vg, 8.f, 8.f, "Loading...", nullptr);
+		}
+
+		OpaqueWidget::draw(args);
+	}
 };
 
+
+// ─── Tag chip container (scrollable content inside SirenTagBar) ───────────────
+
+struct SirenTagContainer : widget::OpaqueWidget {
+	SirenBrowserPane* pane     = nullptr;
+	std::string       hoveredTag;
+
+	static constexpr float CHIP_H     = 12.f;
+	static constexpr float ROW_STRIDE = CHIP_H + 2.f;
+	static constexpr float PAD_X      = 4.f;
+	static constexpr float PAD_Y      = 4.f;
+
+	static float measureChip(const std::string& label) {
+		if (!APP || !APP->window) return label.size() * 5.f + 10.f;
+		NVGcontext* vg = APP->window->vg;
+		nvgFontSize(vg, 8.f);
+		nvgFontFaceId(vg, APP->window->uiFont->handle);
+		float bounds[4];
+		nvgTextBounds(vg, 0.f, 0.f, label.c_str(), nullptr, bounds);
+		return bounds[2] - bounds[0] + 10.f;
+	}
+
+	std::vector<std::pair<std::string, Rect>> tagChips() const {
+		std::vector<std::pair<std::string, Rect>> chips;
+		if (!pane || !pane->activeDataSource) return chips;
+		RootMetadata* meta = pane->activeDataSource->getMetadata();
+		if (!meta) return chips;
+
+		float x = PAD_X, y = PAD_Y;
+		auto all = meta->allTags();
+		std::vector<std::string> sorted(all.begin(), all.end());
+		std::sort(sorted.begin(), sorted.end());
+		for (const std::string& tag : sorted) {
+			float tw = measureChip(tag);
+			if (x + tw > box.size.x - PAD_X) {
+				y += ROW_STRIDE;
+				x  = PAD_X;
+			}
+			chips.push_back({tag, Rect(Vec(x, y), Vec(tw, CHIP_H))});
+			x += tw + 4.f;
+		}
+		return chips;
+	}
+
+	// Resize the container to fit all chips; call after width or tag data changes.
+	void layout() {
+		float maxY = PAD_Y;
+		for (auto& c : tagChips())
+			maxY = std::max(maxY, c.second.pos.y + c.second.size.y);
+		box.size.y = maxY + PAD_Y;
+	}
+
+	void onHover(const event::Hover& e) override {
+		hoveredTag.clear();
+		for (auto& chip : tagChips())
+			if (chip.second.contains(e.pos)) { hoveredTag = chip.first; break; }
+		OpaqueWidget::onHover(e);
+	}
+
+	void onLeave(const event::Leave& e) override {
+		hoveredTag.clear();
+		OpaqueWidget::onLeave(e);
+	}
+
+	void onButton(const event::Button& e) override {
+		if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS) {
+			for (auto& chip : tagChips()) {
+				if (chip.second.contains(e.pos)) {
+					const std::string& tag = chip.first;
+					if (pane->tagFilter.count(tag)) pane->tagFilter.erase(tag);
+					else pane->tagFilter.insert(tag);
+					pane->requestRebuild();
+					e.consume(this);
+					return;
+				}
+			}
+		}
+		if (e.button == GLFW_MOUSE_BUTTON_RIGHT && e.action == GLFW_PRESS) {
+			// TODO
+			e.consume(this);
+			return;
+		}
+		OpaqueWidget::onButton(e);
+	}
+
+	void draw(const DrawArgs& args) override {
+		nvgFontSize(args.vg, 8.f);
+		nvgFontFaceId(args.vg, APP->window->uiFont->handle);
+		nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+
+		for (auto& chip : tagChips()) {
+			const std::string& tag  = chip.first;
+			const Rect&        rect = chip.second;
+			bool active = pane && pane->tagFilter.count(tag) > 0;
+
+			NVGcolor bgColor, fgColor;
+			if (active) {
+				bgColor = bndGetTheme()->toolTheme.innerSelectedColor;
+				fgColor = bndGetTheme()->toolTheme.textSelectedColor;
+			}
+			else if (hoveredTag == tag) {
+				bgColor = bndGetTheme()->toolTheme.itemColor;
+				bgColor.a *= 0.7f;
+				fgColor = bndGetTheme()->toolTheme.innerColor;
+			}
+			else {
+				bgColor = bndGetTheme()->toolTheme.innerColor;
+				bgColor.a *= 0.4f;
+				fgColor = bndGetTheme()->toolTheme.textColor;
+			}
+
+			nvgBeginPath(args.vg);
+			nvgRoundedRect(args.vg, rect.pos.x, rect.pos.y, rect.size.x, rect.size.y, 2.f);
+			nvgFillColor(args.vg, bgColor);
+			nvgFill(args.vg);
+
+			nvgFillColor(args.vg, fgColor);
+			nvgText(args.vg, rect.pos.x + rect.size.x * 0.5f, rect.pos.y + rect.size.y * 0.5f,
+			        tag.c_str(), nullptr);
+		}
+		nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_BASELINE);
+	}
+};
+
+
+// ─── Tag bar: separator + scrollable tag chip area ────────────────────────────
+
+struct SirenTagBar : widget::OpaqueWidget {
+	SirenScrollWidget* scrollWidget  = nullptr;
+	SirenTagContainer* tagContainer  = nullptr;
+
+	void init(SirenBrowserPane* pane) {
+		scrollWidget = new SirenScrollWidget;
+		scrollWidget->box.pos  = Vec(0.f, 1.f);  // 1 px below separator
+		scrollWidget->box.size = Vec(box.size.x, box.size.y - 1.f);
+		addChild(scrollWidget);
+
+		tagContainer = new SirenTagContainer;
+		tagContainer->pane = pane;
+		tagContainer->box.pos  = Vec(0.f, 0.f);
+		tagContainer->box.size = Vec(box.size.x - SirenScrollWidget::SCROLLBAR_W, 0.f);
+		scrollWidget->container->addChild(tagContainer);
+
+		layout();
+	}
+
+	// Recompute chip layout and sync scroll container size.
+	void layout() {
+		if (!tagContainer) return;
+		tagContainer->box.size.x = box.size.x - SirenScrollWidget::SCROLLBAR_W;
+		tagContainer->layout();
+		scrollWidget->container->box.size = tagContainer->box.size;
+	}
+
+	void draw(const DrawArgs& args) override {
+		float w = box.size.x;
+		float h = box.size.y;
+
+		// Background
+		nvgBeginPath(args.vg);
+		nvgRect(args.vg, 0, 0, w, h);
+		nvgFillColor(args.vg, nvgRGBf(0.09f, 0.09f, 0.07f));
+		nvgFill(args.vg);
+
+		// Separator line at top
+		nvgBeginPath(args.vg);
+		nvgMoveTo(args.vg, 0, 0.5f);
+		nvgLineTo(args.vg, w, 0.5f);
+		nvgStrokeColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.09f));
+		nvgStrokeWidth(args.vg, 0.5f);
+		nvgStroke(args.vg);
+
+		OpaqueWidget::draw(args);
+	}
+
+};
+
+
+// ─── SirenBrowserPane deferred method implementations ────────────────────────
+
+inline void SirenBrowserPane::init(TaskWorker* tw) {
+	worker = tw;
+
+	scrollWidget = new SirenScrollWidget;
+	scrollWidget->box.pos = Vec(0.f, 0.f);
+	addChild(scrollWidget);
+
+	rowContainer = new widget::Widget;
+	scrollWidget->container->addChild(rowContainer);
+
+	tagBar = new SirenTagBar;
+	tagBar->init(this);
+	addChild(tagBar);
+}
+
+inline void SirenBrowserPane::setSize(Vec size) {
+	box.size = size;
+	scrollWidget->box.size = Vec(size.x, size.y - BROWSER_TAG_H);
+	rowContainer->box.size.x = size.x;
+
+	tagBar->box.pos  = Vec(0.f, size.y - BROWSER_TAG_H);
+	tagBar->box.size = Vec(size.x, BROWSER_TAG_H);
+	tagBar->scrollWidget->box.size = Vec(size.x, BROWSER_TAG_H - 1.f);
+	tagBar->layout();
+}
+
+inline void SirenBrowserPane::rebuildRowWidgets() {
+	rowContainer->clearChildren();
+	RootMetadata* meta = activeDataSource ? activeDataSource->getMetadata() : nullptr;
+
+	float y = 0.f;
+	for (int i = 0; i < (int)rows.size(); i++) {
+		const TreeEntry& entry = rows[i];
+		const DataSourceNode& n = entry.node;
+
+		if (!searchQuery.empty()) {
+			if (n.isContainer) continue;
+			if (rack::string::lowercase(n.name).find(rack::string::lowercase(searchQuery)) == std::string::npos)
+				continue;
+		}
+
+		if (n.isContainer) {
+			if ((favoritesOnly || !tagFilter.empty()) && !containerHasMatchingDescendant(i, meta))
+				continue;
+		}
+		else {
+			if (favoritesOnly && meta && !meta->isFavorite(n.relativePath))
+				continue;
+			if (!tagFilter.empty() && meta) {
+				auto tags = meta->getTags(n.relativePath);
+				bool hasAll = true;
+				for (const std::string& t : tagFilter)
+					if (std::find(tags.begin(), tags.end(), t) == tags.end()) { hasAll = false; break; }
+				if (!hasAll) continue;
+			}
+		}
+
+		SirenTreeRow* row = new SirenTreeRow;
+		row->init(n, entry.indent, meta, this);
+		row->selected     = (n.fullPath == selectedPath);
+		row->box.pos      = Vec(0.f, y);
+		row->box.size     = Vec(box.size.x - SirenScrollWidget::SCROLLBAR_W, SirenTreeRow::ROW_H);
+		rowContainer->addChild(row);
+		y += SirenTreeRow::ROW_H;
+	}
+	rowContainer->box.size.y = y;
+	scrollWidget->container->box.size = rowContainer->box.size;
+
+	if (tagBar) tagBar->layout();
+}
+
+
+// ─── SirenTreeRow out-of-line method implementations ─────────────────────────
+
 inline void SirenTreeRow::onButton(const event::Button& e) {
-	// Manually handle star button, because of OpaqueWidget
 	if (starBtn && starBtn->box.contains(e.pos)) {
 		starBtn->onButton(e);
 		return;
 	}
-
 	if (e.button == GLFW_MOUSE_BUTTON_LEFT) {
 		if (e.action == GLFW_PRESS) {
 			if (node.isContainer) {
@@ -838,7 +849,6 @@ inline void SirenTreeRow::onButton(const event::Button& e) {
 			}
 		}
 		if (e.action == GLFW_RELEASE) {
-			// Set the selected widget for key events
 			Widget* w = getAncestorOfType<ModuleWidget>();
 			APP->event->setSelectedWidget(w);
 		}
@@ -847,15 +857,14 @@ inline void SirenTreeRow::onButton(const event::Button& e) {
 	if (e.button == GLFW_MOUSE_BUTTON_RIGHT && e.action == GLFW_PRESS) {
 		if (pane->activeDataSource) {
 			ui::Menu* menu = createMenu();
-			SirenBrowserPane* p = pane;
-			pane->activeDataSource->appendNodeMenuItems(menu, node, [p]() {
-				p->rebuildRowWidgets();
+			menu->addChild(createMenuLabel(pane->activeDataSource->getDisplayName(node.relativePath)));
+			pane->activeDataSource->appendNodeMenuItems(menu, node, [this]() {
+				pane->rebuildRowWidgets();
 			});
 
-			DataSourceNode nodeCopy = node;
 			menu->addChild(new ui::MenuSeparator);
-			menu->addChild(createMenuItem("Suggest tags", "", [p, nodeCopy]() {
-				p->startTagClassification(nodeCopy);
+			menu->addChild(createMenuItem("Suggest tags", "", [this]() {
+				pane->startTagClassification(node);
 			}));
 
 			e.consume(this);
