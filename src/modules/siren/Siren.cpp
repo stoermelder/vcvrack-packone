@@ -24,12 +24,14 @@ struct SirenModule : Module {
 	};
 	enum ParamIds {
 		PARAM_VOLUME,
+		PARAM_AUTOPLAY,
 		NUM_PARAMS
 	};
 	enum InputIds {
 		NUM_INPUTS
 	};
 	enum LightIds {
+		LIGHT_AUTOPLAY,
 		NUM_LIGHTS
 	};
 
@@ -273,6 +275,7 @@ struct SirenModule : Module {
 	SirenModule() {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configParam(PARAM_VOLUME, 0.f, 2.f, 1.f, "Volume", " dB", -10.f, 20.f);
+		configSwitch(PARAM_AUTOPLAY, 0.f, 1.f, 0.f, "Autoplay", {"Off", "On"});
 		configOutput(OUTPUT_L, "Left audio");
 		configOutput(OUTPUT_R, "Right audio");
 
@@ -390,6 +393,7 @@ struct SirenModule : Module {
 		outputs[OUTPUT_R].setVoltage(r);
 
 		if (lightDivider.process()) {
+			lights[LIGHT_AUTOPLAY].setBrightness(params[PARAM_AUTOPLAY].getValue() > 0.5f ? 1.f : 0.f);
 			// Peak-hold with 30 dB/s decay
 			auto trackPeak = [&](float& peak, std::atomic<float>& out, float sig) {
 				float db = (fabsf(sig) > 1e-6f) ? 20.f * log10f(fabsf(sig) / 5.f) : -100.f;
@@ -429,6 +433,19 @@ struct SirenDisplayWidget : OpaqueWidget {
 
 		math::Rect r = box.zeroPos();
 
+		// Outer glow — screen light bleeding onto the panel surface
+		float spread = 22.f;
+		NVGpaint glow = nvgBoxGradient(args.vg,
+			r.pos.x, r.pos.y, r.size.x, r.size.y,
+			3.f, spread,
+			nvgRGBAf(0.45f, 0.70f, 1.0f, 0.12f * b),
+			nvgRGBAf(0.0f,  0.0f,  0.0f, 0.0f));
+		nvgBeginPath(args.vg);
+		nvgRect(args.vg, r.pos.x - spread, r.pos.y - spread,
+			r.size.x + 2.f * spread, r.size.y + 2.f * spread);
+		nvgFillPaint(args.vg, glow);
+		nvgFill(args.vg);
+
 		// Dark gradient background
 		nvgBeginPath(args.vg);
 		nvgRect(args.vg, RECT_ARGS(r));
@@ -439,6 +456,17 @@ struct SirenDisplayWidget : OpaqueWidget {
 
 		// Children (browser, preview, topbar) drawn inside the dimmed context
 		OpaqueWidget::draw(args);
+
+		// Corner vignette — subtle darkening toward edges for screen depth
+		NVGpaint vignette = nvgRadialGradient(args.vg,
+			r.size.x * 0.5f, r.size.y * 0.5f,
+			r.size.x * 0.35f, r.size.x * 0.75f,
+			nvgRGBAf(0.f, 0.f, 0.f, 0.0f),
+			nvgRGBAf(0.f, 0.f, 0.f, 0.50f));
+		nvgBeginPath(args.vg);
+		nvgRect(args.vg, RECT_ARGS(r));
+		nvgFillPaint(args.vg, vignette);
+		nvgFill(args.vg);
 
 		// Outer top stroke (shadow)
 		nvgBeginPath(args.vg);
@@ -585,6 +613,7 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
 		addChild(createParamCentered<StoermelderSmallKnob>(math::Vec(22.9f, 138.4f), module, SirenModule::PARAM_VOLUME));
+		addParam(createLightParamCentered<VCVLightLatch<MediumSimpleLight<WhiteLight>>>(math::Vec(22.9f, 184.3f), module, SirenModule::PARAM_AUTOPLAY, SirenModule::LIGHT_AUTOPLAY));
 		
 		addOutput(createOutputCentered<StoermelderPort>(Vec(22.9f, 63.4f), module, SirenModule::OUTPUT_L));
 		addOutput(createOutputCentered<StoermelderPort>(Vec(22.9f, 92.5f), module, SirenModule::OUTPUT_R));
@@ -770,7 +799,8 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 		sirenSettings.lastFile = node.relativePath;
 		if (module) module->lastFilePath = node.relativePath;
 		DataSource* src = browserPane->activeDataSource;
-		previewPane->loadItem(node, src, src ? src->getMetadata() : nullptr, startPlay);
+		bool autoplay = module && module->params[SirenModule::PARAM_AUTOPLAY].getValue() > 0.5f;
+		previewPane->loadItem(node, src, src ? src->getMetadata() : nullptr, startPlay || autoplay);
 	}
 
 	void onSelectKey(const SelectKeyEvent& e) override {
