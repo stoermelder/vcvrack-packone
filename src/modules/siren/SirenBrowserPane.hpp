@@ -80,7 +80,7 @@ struct SirenTreeRow : widget::OpaqueWidget {
 				if (!tags.empty()) {
 					text += "\n";
 					for (const std::string& tag : tags) {
-						text += "  " + toTitleCase(tag);
+						text += "  " + tag;
 					}
 				}
 			}
