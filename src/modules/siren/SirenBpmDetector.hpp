@@ -1,5 +1,5 @@
 #pragma once
-#include "SirenAudioStream.hpp"
+#include "SirenTagClassifierApi.hpp"
 #include "SirenDataSource.hpp"
 #include <pffft.h>
 #include <regex>
@@ -63,50 +63,30 @@ inline std::string stripAudioExtension(const std::string& name) {
 
 namespace detail {
 
-// Constants for BPM detection. Tuned for typical 120-BPM music at 44.1 kHz;
-// decimation to ~4410 Hz keeps the spectrum compact while preserving kick
-// information (kicks are < 200 Hz, well within the kept band).
-static constexpr int    FFT_SIZE        = 512;    // pffft: multiple of 16, ≥ 64
-static constexpr int    HOP             = 128;    // 4× overlap at 512
-static constexpr int    TARGET_SR       = 4410;   // Decimation target sample rate (Hz)
+// Reuse STFT constants from the tag classifier (FFT_SIZE=512, HOP=128,
+// TARGET_SR=8820). 8820 Hz captures all kick frequencies (< 200 Hz) and
+// gives twice the autocorrelation lag resolution compared to 4410 Hz.
+using TagClassifierDetail::FFT_SIZE;
+using TagClassifierDetail::HOP;
+using TagClassifierDetail::TARGET_SR;
+using TagClassifierDetail::PffftSetupGuard;
+using TagClassifierDetail::generateHannWindow;
+using TagClassifierDetail::computeMagnitudes;
+using TagClassifierDetail::medianFilter3;
+using TagClassifierDetail::meanSubtract;
+
 static constexpr float  MIN_BPM         = 60.f;
 static constexpr float  MAX_BPM         = 200.f;
 static constexpr float  CONFIDENCE_THR  = 0.20f;  // Min normalised autocorr peak to accept
 
-// Sub-band weighting. With SR=4410 and FFT_SIZE=512, each bin spans ~17 Hz
-// (Nyquist 2205 Hz / 256 bins). The first 8 bins cover 0–~140 Hz — i.e. the
+// Sub-band weighting. With SR=8820 and FFT_SIZE=512, each bin spans ~17 Hz
+// (Nyquist 4410 Hz / 256 bins). The first 8 bins cover 0–~140 Hz — i.e. the
 // bass/kick band that drives perceived tempo.
 static constexpr int    BASS_BIN_COUNT  = 8;
 static constexpr float  BASS_BIN_WEIGHT = 2.0f;
 
-// RAII wrapper for PFFFT_Setup* — guarantees cleanup on any early return.
-struct PffftSetupGuard {
-	PFFFT_Setup* p;
-	explicit PffftSetupGuard(int n, pffft_transform_t t) : p(pffft_new_setup(n, t)) {}
-	~PffftSetupGuard() { if (p) pffft_destroy_setup(p); }
-	PffftSetupGuard(const PffftSetupGuard&) = delete;
-	PffftSetupGuard& operator=(const PffftSetupGuard&) = delete;
-};
-
-// Hann window — zero at both ends, peak in the middle.
-inline void generateHannWindow(float* out, int n) {
-	const float denom = (n > 1) ? float(n - 1) : 1.f;
-	for (int i = 0; i < n; ++i)
-		out[i] = 0.5f * (1.f - std::cos(2.f * M_PI * i / denom));
-}
-
-// Magnitudes from a real-FFT ordered output (length = FFT_SIZE).
-inline void computeMagnitudes(const float* fftOut, float* mag, int halfSize) {
-	for (int i = 0; i < halfSize; ++i) {
-		float re = fftOut[i * 2];
-		float im = fftOut[i * 2 + 1];
-		mag[i] = std::sqrt(re * re + im * im);
-	}
-}
-
-// Log-magnitude spectral flux: half-wave rectified positive difference in
-// log-domain.  Working in dB compresses dynamic range so quiet onsets still
-// register next to loud ones — important for non-percussive material.
+// Log-magnitude spectral flux with bass-bin weighting. Differs from the
+// classifier's unweighted version — kept here to emphasise kick energy.
 inline float computeSpectralFlux(const float* magCur, const float* magPrev, int numBins) {
 	float total = 0.f;
 	for (int i = 0; i < numBins; ++i) {
@@ -119,31 +99,6 @@ inline float computeSpectralFlux(const float* magCur, const float* magPrev, int 
 		}
 	}
 	return total;
-}
-
-// In-place 3-tap median filter. Suppresses isolated spikes that confuse the
-// autocorrelator. out may alias in.
-inline void medianFilter3(float* out, const float* in, int n) {
-	if (n < 3) {
-		if (out != in) std::memcpy(out, in, size_t(n) * sizeof(float));
-		return;
-	}
-	out[0] = in[0];
-	for (int i = 1; i < n - 1; ++i) {
-		float a = in[i - 1], b = in[i], c = in[i + 1];
-		out[i] = std::max(std::min(a, b), std::min(std::max(a, b), c));
-	}
-	out[n - 1] = in[n - 1];
-}
-
-// Subtract the global mean of the onset signal. A constant offset biases the
-// autocorrelation, so we strip it first.
-inline void meanSubtract(float* x, int n) {
-	if (n <= 0) return;
-	double sum = 0.0;
-	for (int i = 0; i < n; ++i) sum += x[i];
-	float mean = float(sum / double(n));
-	for (int i = 0; i < n; ++i) x[i] -= mean;
 }
 
 struct AutocorrResult {
@@ -292,47 +247,9 @@ inline float detectBpm(AudioStream& stream, float& confidenceOut,
                        float maxDurationSeconds = 60.f) {
 	confidenceOut = 0.f;
 
-	int sampleRate = stream.sampleRate();
-	int channels   = stream.channels();
-	int64_t totalFrames = stream.totalFrames();
-	if (totalFrames <= 0 || sampleRate <= 0 || channels <= 0) return 0.f;
-
-	// Cap analysis length — for steady-tempo material, ~30 s is plenty.
-	int64_t maxFrames = int64_t(sampleRate * maxDurationSeconds);
-	if (totalFrames > maxFrames) totalFrames = maxFrames;
-
-	// Decimate to ~TARGET_SR. For 44.1/48 kHz inputs this gives a factor of
-	// 10/11 — the kept spectrum is well above the human-perceived kick range
-	// and well below the SR/2 aliasing bound.
-	int decimRate = std::max(1, sampleRate / detail::TARGET_SR);
-	int outSR     = sampleRate / decimRate;
-	if (outSR <= 0) outSR = detail::TARGET_SR;
-
-	// Read & mix to mono. Larger blocks amortise decoder overhead.
-	const int64_t BUFSIZE = 65536;
 	std::vector<float> mono;
-	mono.reserve(size_t(totalFrames / decimRate) + 1024);
-	std::vector<float> buf(size_t(BUFSIZE) * size_t(std::max(channels, 1)));
-	int64_t framesRead = 0;
-
-	while (framesRead < totalFrames) {
-		int64_t toRead = std::min<int64_t>(BUFSIZE, totalFrames - framesRead);
-		int64_t got = stream.readF32(buf.data(), toRead);
-		if (got <= 0) break;
-
-		for (int64_t f = 0; f < got; f += decimRate) {
-			float sum = 0.f;
-			int   count = 0;
-			for (int ch = 0; ch < channels; ++ch) {
-				size_t idx = size_t(f * channels + ch);
-				if (idx >= buf.size()) break;
-				sum += buf[idx];
-				++count;
-			}
-			if (count > 0) mono.push_back(sum / float(count));
-		}
-		framesRead += got;
-	}
+	int outSR = 0;
+	if (!TagClassifier::prepareMono(stream, maxDurationSeconds, mono, outSR)) return 0.f;
 
 	// Need at least ~2 s of audio to make a tempo estimate.
 	if (mono.size() < size_t(outSR * 2)) return 0.f;

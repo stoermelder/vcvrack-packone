@@ -282,7 +282,6 @@ struct TagClassifier {
 		}
 	}
 
-private:
 	// ── Phase 1: Audio ingestion ───────────────────────────────────────────
 	// Read the stream, decimate to ~TARGET_SR, mix to mono.
 	// Returns false if the stream is invalid or yields no samples.
