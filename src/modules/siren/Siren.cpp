@@ -426,7 +426,9 @@ struct SirenModule : Module {
 // ─── display widget ───────────────────────────────────────────────────────────
 
 struct SirenDisplayWidget : OpaqueWidget {
-	void draw(const DrawArgs& args) override {
+	void draw(const DrawArgs& args) override {}
+	void drawLayer(const DrawArgs& args, int layer) override {
+		if (layer != 1) return;
 		float b     = std::max(0.2f, settings::rackBrightness);
 		float b_inv = 1.f + std::max(b - settings::rackBrightness, 0.f) * 8.f;
 		nvgGlobalAlpha(args.vg, b);
@@ -462,7 +464,7 @@ struct SirenDisplayWidget : OpaqueWidget {
 			r.size.x * 0.5f, r.size.y * 0.5f,
 			r.size.x * 0.35f, r.size.x * 0.75f,
 			nvgRGBAf(0.f, 0.f, 0.f, 0.0f),
-			nvgRGBAf(0.f, 0.f, 0.f, 0.50f));
+			nvgRGBAf(0.f, 0.f, 0.f, 0.45f));
 		nvgBeginPath(args.vg);
 		nvgRect(args.vg, RECT_ARGS(r));
 		nvgFillPaint(args.vg, vignette);
