@@ -187,10 +187,9 @@ struct FileSystemDataSource : DataSource {
 		DataSourceNode node;
 		node.relativePath    = relativePath;
 		node.name            = ghc::filesystem::path(relativePath).filename().string();
-		node.fullPath        = root + relativePath;
 		node.isContainer     = false;
 		AudioInfo ai;
-		if (::StoermelderPackOne::Siren::loadAudioInfo(node.fullPath, ai))
+		if (::StoermelderPackOne::Siren::loadAudioInfo(resolveAbsPath(relativePath), ai))
 			node.durationSeconds = ai.durationSeconds;
 		return node;
 	}
@@ -200,45 +199,39 @@ struct FileSystemDataSource : DataSource {
 		return isSupportedAudioFile(path);
 	}
 
-	std::vector<DataSourceNode> loadChildrenSync(const std::string& dirPath) override {
+	std::vector<DataSourceNode> loadChildrenSync(const std::string& id) override {
 		std::vector<DataSourceNode> result;
+		std::string scanPath = root + id;
 		ghc::filesystem::path base(root);
-
-		auto scan = [&](const std::string& path) {
-			try {
-				for (const auto& entry : ghc::filesystem::directory_iterator(path)) {
-					DataSourceNode node;
-					node.fullPath = entry.path().string();
-					node.name = entry.path().filename().string();
-					node.isContainer = entry.is_directory();
-					// Relative path from root, starting with '/'
-					auto rel = entry.path().lexically_relative(base);
-					node.relativePath = "/" + rel.generic_string();
-					if (node.isContainer || isSupportedAudioFile(node.fullPath)) {
-						if (!node.isContainer) {
-							if (isGeneratedFile(node.name)) continue;
-							AudioInfo ai;
-							if (::StoermelderPackOne::Siren::loadAudioInfo(node.fullPath, ai))
-								node.durationSeconds = ai.durationSeconds;
-						}
-						result.push_back(std::move(node));
+		try {
+			for (const auto& entry : ghc::filesystem::directory_iterator(scanPath)) {
+				DataSourceNode node;
+				node.name        = entry.path().filename().string();
+				node.isContainer = entry.is_directory();
+				auto rel = entry.path().lexically_relative(base);
+				node.relativePath = "/" + rel.generic_string();
+				if (node.isContainer || isSupportedAudioFile(node.name)) {
+					if (!node.isContainer) {
+						if (isGeneratedFile(node.name)) continue;
+						AudioInfo ai;
+						if (::StoermelderPackOne::Siren::loadAudioInfo(resolveAbsPath(node.relativePath), ai))
+							node.durationSeconds = ai.durationSeconds;
 					}
+					result.push_back(std::move(node));
 				}
 			}
-			catch (...) {}
-			std::sort(result.begin(), result.end(), [](const DataSourceNode& a, const DataSourceNode& b) {
-				// Containers first, then files; both alphabetical
-				if (a.isContainer != b.isContainer) return a.isContainer > b.isContainer;
-				return rack::string::lowercase(a.name) < rack::string::lowercase(b.name);
-			});
-		};
-		scan(dirPath.empty() ? root : dirPath);
+		}
+		catch (...) {}
+		std::sort(result.begin(), result.end(), [](const DataSourceNode& a, const DataSourceNode& b) {
+			if (a.isContainer != b.isContainer) return a.isContainer > b.isContainer;
+			return rack::string::lowercase(a.name) < rack::string::lowercase(b.name);
+		});
 		return result;
 	}
 
-	void loadChildrenAsync(const std::string& path, TaskWorker& worker,
+	void loadChildrenAsync(const std::string& id, TaskWorker& worker,
 			std::function<void(std::vector<DataSourceNode>)> onDone) override {
-		std::string scanPath = path.empty() ? root : path;
+		std::string scanPath = root + id;
 		std::string rootCopy = root;
 		worker.work([scanPath, rootCopy, onDone]() {
 			std::vector<DataSourceNode> result;
@@ -246,16 +239,16 @@ struct FileSystemDataSource : DataSource {
 			try {
 				for (const auto& entry : ghc::filesystem::directory_iterator(scanPath)) {
 					DataSourceNode node;
-					node.fullPath = entry.path().string();
-					node.name = entry.path().filename().string();
+					node.name        = entry.path().filename().string();
 					node.isContainer = entry.is_directory();
 					auto rel = entry.path().lexically_relative(base);
 					node.relativePath = "/" + rel.generic_string();
-					if (node.isContainer || isSupportedAudioFile(node.fullPath)) {
+					if (node.isContainer || isSupportedAudioFile(node.name)) {
 						if (!node.isContainer) {
 							if (isGeneratedFile(node.name)) continue;
 							AudioInfo ai;
-							if (::StoermelderPackOne::Siren::loadAudioInfo(node.fullPath, ai))
+							std::string absPath = rootCopy + node.relativePath;
+							if (::StoermelderPackOne::Siren::loadAudioInfo(absPath, ai))
 								node.durationSeconds = ai.durationSeconds;
 						}
 						result.push_back(std::move(node));
@@ -459,19 +452,20 @@ struct FileSystemDataSource : DataSource {
 
 	void appendNodeMenuItems(ui::Menu* menu, const DataSourceNode& node, std::function<void()> onChanged) override {
 		if (node.isContainer) {
-			std::string dirPath = node.fullPath;
+			std::string absPath = resolveAbsPath(node.relativePath);
 
-			menu->addChild(createMenuItem("Show folder", "", [dirPath]() {
-				rack::system::openDirectory(dirPath);
+			menu->addChild(createMenuItem("Show folder", "", [absPath]() {
+				rack::system::openDirectory(absPath);
 			}));
 
 			menu->addChild(new ui::MenuSeparator);
 
 			// Sticky submenu: scan container, then show all tags; clicking adds/removes
 			// the tag for every direct audio file in the container.
-			menu->addChild(Rack::createStickySubmenuItem("Tag all files", RIGHT_ARROW, [this, dirPath, onChanged](ui::Menu* tagMenu) {
+			std::string id = node.relativePath;
+			menu->addChild(Rack::createStickySubmenuItem("Tag all files", RIGHT_ARROW, [this, id, onChanged](ui::Menu* tagMenu) {
 				// Scan for direct audio children (runs on UI thread; acceptable for a menu action)
-				auto children = loadChildrenSync(dirPath);
+				auto children = loadChildrenSync(id);
 				std::vector<std::string> audioRels;
 				for (const auto& child : children)
 					if (!child.isContainer)
@@ -526,7 +520,7 @@ struct FileSystemDataSource : DataSource {
 			}));
 		}
 		else {
-			std::string dir = ghc::filesystem::path(node.fullPath).parent_path().string();
+			std::string dir = ghc::filesystem::path(resolveAbsPath(node.relativePath)).parent_path().string();
 			menu->addChild(createMenuItem("Open containing folder", "", [dir]() {
 				rack::system::openDirectory(dir);
 			}));

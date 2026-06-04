@@ -15,8 +15,9 @@ namespace Siren {
 // dropPending (acquire) before reading pendingDropPath.
 struct SirenDropHandler {
 	// ── drag in progress ──────────────────────────────────────────────────────
-	bool        active   = false;
+	bool        active          = false;
 	std::string dragPath;
+	std::string dragDisplayName;
 
 	// ── async conversion state ────────────────────────────────────────────────
 	std::atomic<bool> converting{false};
@@ -53,14 +54,16 @@ struct SirenDropHandler {
 	}
 
 	// Called on the UI thread when a drag begins.
-	void startDrag(const std::string& path) {
-		active   = true;
-		dragPath = path;
+	void startDrag(const std::string& path, const std::string& displayName) {
+		active          = true;
+		dragPath        = path;
+		dragDisplayName = displayName;
 	}
 
 	void cancelDrag() {
 		active = false;
 		dragPath.clear();
+		dragDisplayName.clear();
 	}
 
 	// Called on the UI thread when a drag ends. The drop is only fired when the

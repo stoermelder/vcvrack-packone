@@ -525,11 +525,9 @@ struct SirenDragOverlay : widget::TransparentWidget {
 		if (!dropHandler || !dropHandler->active) return;
 		if (dropHandler->mouseIsInsideModule()) return;
 
-		std::string lbl = (previewPane
-		                && dropHandler->dragPath == previewPane->currentNode.relativePath
-		                && !previewPane->displayName.empty())
-		                ? previewPane->displayName
-		                : rack::system::getFilename(dropHandler->dragPath);
+		std::string lbl = !dropHandler->dragDisplayName.empty()
+		                ? dropHandler->dragDisplayName
+		                : dropHandler->dragPath;
 
 		Vec mp = APP->scene->rack->getMousePos();
 
@@ -544,7 +542,7 @@ struct SirenDragOverlay : widget::TransparentWidget {
 
 	void onButton(const ButtonEvent& e) override {
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT && (e.mods & RACK_MOD_MASK) == (RACK_MOD_CTRL | RACK_MOD_SHIFT)) {
-			dropHandler->startDrag(previewPane->currentNode.relativePath);
+			dropHandler->startDrag(previewPane->currentNode.relativePath, previewPane->displayName);
 			initiated = true;
 			e.consume(this);
 		}

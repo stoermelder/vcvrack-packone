@@ -712,7 +712,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 
 	void onDragStart(const event::DragStart& e) override {
 		if (!currentNode.relativePath.empty() && !draggingPlayhead && !trimmingIn && !trimmingOut && !trimmingRange && !draggingScrollbar && dropHandler) {
-			dropHandler->startDrag(currentNode.relativePath);
+			dropHandler->startDrag(currentNode.relativePath, displayName);
 		}
 	}
 

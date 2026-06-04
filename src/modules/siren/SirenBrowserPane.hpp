@@ -283,8 +283,8 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		int gen = ++treeGeneration;
 		if (!worker) return;
 		loadPending = true;
-		activeDataSource->loadChildrenAsync(root, *worker, [this, root, gen](std::vector<DataSourceNode> nodes) {
-			pendingResult = PendingResult(root, 0, std::move(nodes), gen);
+		activeDataSource->loadChildrenAsync(activeDataSource->rootId(), *worker, [this, gen](std::vector<DataSourceNode> nodes) {
+			pendingResult = PendingResult("", 0, std::move(nodes), gen);
 			pendingReady.store(true, std::memory_order_release);
 		});
 	}
@@ -315,11 +315,11 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 				rebuildRowWidgets();
 
 				if (!pendingSelectFirstOfPath.empty()) {
-					std::string parentPath = pendingSelectFirstOfPath;
+					std::string parentId = pendingSelectFirstOfPath;
 					pendingSelectFirstOfPath.clear();
 					auto vr = visibleRowWidgets();
 					for (int i = 0; i < (int)vr.size() - 1; i++) {
-						if (vr[i]->node.fullPath == parentPath) {
+						if (vr[i]->node.relativePath == parentId) {
 							selectPath(vr[i + 1]->node);
 							break;
 						}
@@ -362,12 +362,12 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		entry.expanded = true;
 		requestRebuild();
 
-		std::string path = entry.node.fullPath;
-		int insertIdx    = rowIdx + 1;
+		std::string id    = entry.node.relativePath;
+		int insertIdx     = rowIdx + 1;
 
 		if (worker && activeDataSource) {
 			int gen = treeGeneration.load(std::memory_order_relaxed);
-			activeDataSource->loadChildrenAsync(path, *worker, [this, insertIdx, gen](std::vector<DataSourceNode> nodes) {
+			activeDataSource->loadChildrenAsync(id, *worker, [this, insertIdx, gen](std::vector<DataSourceNode> nodes) {
 				pendingResult = PendingResult("", insertIdx, std::move(nodes), gen);
 				pendingReady.store(true, std::memory_order_release);
 			});
@@ -401,9 +401,9 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		return false;
 	}
 
-	int findTreeIdx(const std::string& fullPath) {
+	int findTreeIdx(const std::string& id) {
 		for (int i = 0; i < (int)rows.size(); i++)
-			if (rows[i].node.fullPath == fullPath) return i;
+			if (rows[i].node.relativePath == id) return i;
 		return -1;
 	}
 
@@ -431,7 +431,7 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 	}
 
 	void selectPath(const DataSourceNode& node, bool startPlay = false) {
-		selectedPath = node.fullPath;
+		selectedPath = node.relativePath;
 		requestRebuild();
 		scrollAfterRebuild = true;
 		if (!node.isContainer && onFileSelected)
@@ -442,7 +442,6 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		if (!worker || !activeDataSource) return;
 		DataSource*   ds    = activeDataSource;
 		RootMetadata* meta  = ds->getMetadata();
-		std::string   fp    = node.fullPath;
 		std::string   rel   = node.relativePath;
 		bool          isDir = node.isContainer;
 		std::string   name  = node.name;
@@ -517,16 +516,16 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		APP->scene->addChild(overlay);
 
 		auto progress = dlg->progress;
-		worker->work([progress, fp, rel, isDir, ds]() {
+		worker->work([progress, rel, isDir, ds]() {
 			std::vector<DataSourceNodeId> files;
 			if (isDir) {
-				std::function<void(const std::string&)> collect = [&](const std::string& path) {
-					for (const auto& child : ds->loadChildrenSync(path)) {
-						if (child.isContainer) collect(child.fullPath);
+				std::function<void(const std::string&)> collect = [&](const std::string& id) {
+					for (const auto& child : ds->loadChildrenSync(id)) {
+						if (child.isContainer) collect(child.relativePath);
 						else files.push_back(child.relativePath);
 					}
 				};
-				collect(fp);
+				collect(rel);
 			}
 			else {
 				files = {rel};
@@ -567,10 +566,10 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 			if (selIdx < 0) return true;
 			SirenTreeRow* row = vr[selIdx];
 			if (!row->node.isContainer) return true;
-			int treeIdx = findTreeIdx(row->node.fullPath);
+			int treeIdx = findTreeIdx(row->node.relativePath);
 			if (treeIdx < 0) return true;
 			if (!rows[treeIdx].expanded) {
-				pendingSelectFirstOfPath = row->node.fullPath;
+				pendingSelectFirstOfPath = row->node.relativePath;
 				expandRow(treeIdx);
 			}
 			else if (selIdx + 1 < (int)vr.size()) {
@@ -582,20 +581,20 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 			if (selIdx < 0) return true;
 			SirenTreeRow* row = vr[selIdx];
 			if (row->node.isContainer) {
-				int treeIdx = findTreeIdx(row->node.fullPath);
+				int treeIdx = findTreeIdx(row->node.relativePath);
 				if (treeIdx >= 0 && rows[treeIdx].expanded) {
 					expandRow(treeIdx);
 					return true;
 				}
 			}
-			int treeIdx = findTreeIdx(row->node.fullPath);
+			int treeIdx = findTreeIdx(row->node.relativePath);
 			if (treeIdx < 0) return true;
 			int parentIndent = rows[treeIdx].indent - 1;
 			if (parentIndent < 0) return true;
 			for (int i = treeIdx - 1; i >= 0; i--) {
 				if (rows[i].indent == parentIndent && rows[i].node.isContainer) {
 					expandRow(i);
-					selectedPath = rows[i].node.fullPath;
+					selectedPath = rows[i].node.relativePath;
 					requestRebuild();
 					scrollAfterRebuild = true;
 					return true;
@@ -885,7 +884,7 @@ inline void SirenBrowserPane::rebuildRowWidgets() {
 
 		SirenTreeRow* row = new SirenTreeRow;
 		row->init(n, entry.indent, meta, this);
-		row->selected     = (n.fullPath == selectedPath);
+		row->selected     = (n.relativePath == selectedPath);
 		row->expanded     = entry.expanded;
 		row->box.pos      = Vec(0.f, y);
 		row->box.size     = Vec(box.size.x - SirenScrollWidget::SCROLLBAR_W, SirenTreeRow::ROW_H);
@@ -909,7 +908,7 @@ inline void SirenTreeRow::onButton(const event::Button& e) {
 	if (e.button == GLFW_MOUSE_BUTTON_LEFT) {
 		if (e.action == GLFW_PRESS) {
 			if (node.isContainer) {
-				int treeIdx = pane->findTreeIdx(node.fullPath);
+				int treeIdx = pane->findTreeIdx(node.relativePath);
 				if (treeIdx >= 0) pane->expandRow(treeIdx);
 			}
 			else {
@@ -944,7 +943,7 @@ inline void SirenTreeRow::onButton(const event::Button& e) {
 inline void SirenTreeRow::onDragStart(const event::DragStart& e) {
 	if (node.isContainer) return;
 	if (pane && pane->dropHandler)
-		pane->dropHandler->startDrag(node.relativePath);
+		pane->dropHandler->startDrag(node.relativePath, node.name);
 }
 
 inline void SirenTreeRow::onDragEnd(const event::DragEnd& e) {

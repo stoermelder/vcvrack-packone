@@ -11,8 +11,7 @@ namespace Siren {
 
 struct DataSourceNode {
 	std::string name;
-	std::string fullPath;
-	std::string relativePath;  // relative to root, '/' separated
+	std::string relativePath;  // relative to root, '/' separated; used as id
 	bool isContainer = false;
 	float durationSeconds = 0.f;
 	std::vector<DataSourceNode> children;
@@ -72,15 +71,16 @@ struct DataSource {
 
 	virtual std::string rootPath() const = 0;
 	virtual std::string getRootDisplayName() const { return rootPath(); }
+	virtual std::string rootId() const { return ""; }
 	virtual bool isSupportedFile(const std::string& path) const = 0;
 
-	// Load the top-level children of a path asynchronously via TaskWorker.
-	// Calls onDone on the main thread (caller polls loadState).
-	virtual void loadChildrenAsync(const std::string& path, TaskWorker& worker,
+	// Load the top-level children of an item id asynchronously via TaskWorker.
+	// Use rootId() to load the root level. Calls onDone on the main thread.
+	virtual void loadChildrenAsync(const std::string& id, TaskWorker& worker,
 		std::function<void(std::vector<DataSourceNode>)> onDone) = 0;
 
 	// Sync version for testing
-	virtual std::vector<DataSourceNode> loadChildrenSync(const std::string& path) = 0;
+	virtual std::vector<DataSourceNode> loadChildrenSync(const std::string& id) = 0;
 
 	// Per-file metadata (tags, favorites). Returns nullptr if unsupported.
 	virtual RootMetadata* getMetadata() { return nullptr; }
