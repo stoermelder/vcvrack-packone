@@ -329,7 +329,7 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		}
 		if (dropHandler) dropHandler->step();
 
-		if (rebuildDirty) {
+		if (rebuildDirty && !(dropHandler && dropHandler->active)) {
 			rebuildDirty = false;
 			bool doScroll = scrollAfterRebuild;
 			scrollAfterRebuild = false;
@@ -944,6 +944,7 @@ inline void SirenTreeRow::onDragStart(const event::DragStart& e) {
 	if (node.isContainer) return;
 	if (pane && pane->dropHandler)
 		pane->dropHandler->startDrag(node.relativePath, node.name);
+	e.consume(this);
 }
 
 inline void SirenTreeRow::onDragEnd(const event::DragEnd& e) {

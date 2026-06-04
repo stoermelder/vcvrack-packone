@@ -531,13 +531,20 @@ struct SirenDragOverlay : widget::TransparentWidget {
 
 		Vec mp = APP->scene->rack->getMousePos();
 
+		nvgFontSize(args.vg, 10.f);
+		nvgFontFaceId(args.vg, APP->window->uiFont->handle);
+		float bounds[4];
+		nvgTextBounds(args.vg, 0.f, 0.f, lbl.c_str(), nullptr, bounds);
+		const float pad = 4.f;
+		const float w   = bounds[2] - bounds[0] + pad * 2.f;
+		const float h   = 18.f;
+
 		nvgBeginPath(args.vg);
-		nvgRoundedRect(args.vg, mp.x + 10.f, mp.y, 150.f, 18.f, 3.f);
+		nvgRoundedRect(args.vg, mp.x + 10.f, mp.y, w, h, 3.f);
 		nvgFillColor(args.vg, nvgRGBAf(0.f, 0.f, 0.f, 0.7f));
 		nvgFill(args.vg);
-		nvgFontSize(args.vg, 10.f);
 		nvgFillColor(args.vg, nvgRGBf(1.f, 0.85f, 0.1f));
-		nvgText(args.vg, mp.x + 14.f, mp.y + 12.f, lbl.c_str(), nullptr);
+		nvgText(args.vg, mp.x + 10.f + pad, mp.y + 12.f, lbl.c_str(), nullptr);
 	}
 
 	void onButton(const ButtonEvent& e) override {
