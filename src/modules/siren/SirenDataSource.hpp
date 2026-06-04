@@ -125,6 +125,9 @@ struct DataSource {
 
 	// ── audio provision (abstracts format / transport) ────────────────────────
 
+	// Reconstruct a DataSourceNode from a stored relative path (e.g. for patch restore).
+	virtual DataSourceNode resolveNode(const std::string& relativePath) const { return DataSourceNode{}; }
+
 	// Human-readable display name for an item id (e.g. filename without directory).
 	virtual std::string getDisplayName(const std::string& id) const { return id; }
 

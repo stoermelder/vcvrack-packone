@@ -173,6 +173,18 @@ struct FileSystemDataSource : DataSource {
 
 	std::string resolveAbsPath(const std::string& id) const { return root + id; }
 
+	DataSourceNode resolveNode(const std::string& relativePath) const override {
+		DataSourceNode node;
+		node.relativePath    = relativePath;
+		node.name            = ghc::filesystem::path(relativePath).filename().string();
+		node.fullPath        = root + relativePath;
+		node.isContainer     = false;
+		AudioInfo ai;
+		if (::StoermelderPackOne::Siren::loadAudioInfo(node.fullPath, ai))
+			node.durationSeconds = ai.durationSeconds;
+		return node;
+	}
+
 
 	bool isSupportedFile(const std::string& path) const override {
 		return isSupportedAudioFile(path);
@@ -439,7 +451,6 @@ struct FileSystemDataSource : DataSource {
 		if (node.isContainer) {
 			std::string dirPath = node.fullPath;
 
-			menu->addChild(createMenuLabel(dirPath));
 			menu->addChild(createMenuItem("Show folder", "", [dirPath]() {
 				rack::system::openDirectory(dirPath);
 			}));
@@ -505,7 +516,6 @@ struct FileSystemDataSource : DataSource {
 			}));
 		}
 		else {
-			menu->addChild(createMenuLabel(node.name));
 			std::string dir = ghc::filesystem::path(node.fullPath).parent_path().string();
 			menu->addChild(createMenuItem("Open containing folder", "", [dir]() {
 				rack::system::openDirectory(dir);

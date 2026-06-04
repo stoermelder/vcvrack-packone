@@ -18,10 +18,10 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	static constexpr float WAVE_X     = 8.f;   // left margin (for L/R labels)
 
 	// ── state ────────────────────────────────────────────────────────────────
-	std::string  currentId;          // opaque item identifier (supplied by the data source)
-	DataSource*  source = nullptr;   // used only during loadItem; must not be stored for deferred use
-	std::string  displayName;        // cached from source->getDisplayName() at load time
-	std::string  relPath;            // cached from source->getRelativePath() at load time
+	DataSourceNode currentNode;       // the node currently loaded into the preview pane
+	DataSource*  source = nullptr;
+	std::string  displayName;        // cached display name
+	std::string  relPath;            // currentNode.relativePath — kept as alias for readability
 	AudioInfo    info;
 	WaveformCache cache;
 	std::atomic<bool> cacheReady{false};
@@ -122,17 +122,18 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			moduleOutPoint->store(outPoint, std::memory_order_relaxed);
 	}
 
-	void loadItem(const std::string& id, DataSource* src, RootMetadata* meta,
+	void loadItem(const DataSourceNode& node, DataSource* src, RootMetadata* meta,
 	        bool startPlay = false, bool forceRebuild = false) {
-		// Delegate audio open to the module via callback
+		const std::string& id = node.relativePath;
+
 		if (stopPlaybackCallback)  stopPlaybackCallback();
 		if (openStreamCallback)    openStreamCallback(id, src);
 
-		currentId     = id;
+		currentNode   = node;
 		source        = src;
 		metadata      = meta;
-		displayName   = (src && !id.empty()) ? src->getDisplayName(id)  : "";
-		relPath       = (src && !id.empty()) ? src->getRelativePath(id) : "";
+		displayName   = !node.name.empty() ? node.name : (src && !id.empty() ? src->getDisplayName(id) : "");
+		relPath       = id;
 		cacheReady    = false;
 		cacheBuilding = false;
 		pendingCacheReady.store(false, std::memory_order_relaxed);
@@ -157,7 +158,6 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			if (loadWaveformCacheFile(cacheFile, ts, loaded) && loaded.sampleCount > 0) {
 				cache      = std::move(loaded);
 				cacheReady = true;
-				// Restore BPM from metadata
 				if (metadata && !relPath.empty()) {
 					auto it = metadata->samples.find(relPath);
 					if (it != metadata->samples.end() && it->second.bpm > 0.f)
@@ -196,12 +196,12 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	// ── BPM detection ─────────────────────────────────────────────────────────
 
 	void startBpmDetection() {
-		if (!source || currentId.empty()) return;
+		if (!source || currentNode.relativePath.empty()) return;
 		float curBpm = bpm.load();
 		if (curBpm < 0.f) return; // Already running
 
 		// Fast path: check the path first (UI thread safe, no worker needed)
-		float fromPath = BpmDetector::extractFromPath(currentId);
+		float fromPath = BpmDetector::extractFromPath(currentNode.relativePath);
 		if (fromPath > 0.f) {
 			bpm.store(fromPath);
 			// Save BPM to metadata
@@ -216,7 +216,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		if (!worker) return;
 		bpm.store(-1.f); // Mark as running
 
-		std::string idCopy       = currentId;
+		std::string idCopy       = currentNode.relativePath;
 		std::string relPathCopy  = relPath;
 		DataSource* ds           = source;
 		RootMetadata* meta       = metadata;
@@ -264,8 +264,11 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 
 		bool isPlaying = modulePlaying ? modulePlaying->load() : false;
 
+		std::shared_ptr<Font> font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
+		nvgFontFaceId(args.vg, font->handle);
+
 		// ── top bar ───────────────────────────────────────────────────────────
-		if (!currentId.empty()) {
+		if (!currentNode.relativePath.empty()) {
 			// Play/stop button
 			nvgFontSize(args.vg, 14.f);
 			nvgFillColor(args.vg, isPlaying
@@ -274,14 +277,14 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			nvgText(args.vg, 8.f, 12.f, isPlaying ? "■" : "▶", nullptr);
 
 			// Filename — gold when playing, light when idle
-			std::string fname = displayName.empty() ? currentId : displayName;
+			std::string fname = displayName.empty() ? currentNode.relativePath : displayName;
 			nvgFontSize(args.vg, 12.f);
 			nvgFillColor(args.vg, isPlaying
 				? nvgRGBf(1.f, 0.85f, 0.1f)
 				: nvgRGBf(0.92f, 0.92f, 0.88f));
-			float maxFnW = w - 100.f;
-			nvgScissor(args.vg, 28.f, 0.f, maxFnW, TB_H);
-			nvgText(args.vg, 28.f, 12.f, fname.c_str(), nullptr);
+			float maxFnW = w - 30.f;
+			nvgScissor(args.vg, 22.f, 0.f, maxFnW, TB_H);
+			nvgText(args.vg, 22.f, 12.f, fname.c_str(), nullptr);
 			nvgResetScissor(args.vg);
 
 			nvgFontSize(args.vg, 10.f);
@@ -377,7 +380,6 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			nvgRoundedRect(args.vg, WAVE_X, oy, waveW, 18.f, 3.f);
 			nvgFillColor(args.vg, nvgRGBAf(0.f, 0.f, 0.f, 0.65f));
 			nvgFill(args.vg);
-			nvgFontFaceId(args.vg, APP->window->uiFont->handle);
 			nvgFontSize(args.vg, BND_LABEL_FONT_SIZE);
 			nvgFillColor(args.vg, nvgRGBf(1.f, 0.85f, 0.1f));
 			nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
@@ -416,7 +418,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		}
 
 		// Trim region — only shown when at least one handle has been moved from its default
-		if (!currentId.empty() && (inPoint > 0.f || outPoint < 1.f) && outPoint > inPoint) {
+		if (!currentNode.relativePath.empty() && (inPoint > 0.f || outPoint < 1.f) && outPoint > inPoint) {
 			float x1 = WAVE_X + (inPoint - scrollPos) * zoomLevel * waveW;
 			float x2 = WAVE_X + (outPoint - scrollPos) * zoomLevel * waveW;
 			x1 = rack::math::clamp(x1, WAVE_X, WAVE_X + waveW);
@@ -430,7 +432,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		}
 
 		// OUT handle — only shown when moved from its default (1.0)
-		if (!currentId.empty() && outPoint < 1.f) {
+		if (!currentNode.relativePath.empty() && outPoint < 1.f) {
 			float opX = WAVE_X + (outPoint - scrollPos) * zoomLevel * waveW;
 			if (opX >= WAVE_X && opX <= WAVE_X + waveW) {
 				nvgBeginPath(args.vg);
@@ -452,7 +454,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		}
 
 		// IN handle — only shown when moved from its default (0.0)
-		if (!currentId.empty() && inPoint > 0.f) {
+		if (!currentNode.relativePath.empty() && inPoint > 0.f) {
 			float ipX = WAVE_X + (inPoint - scrollPos) * zoomLevel * waveW;
 			if (ipX >= WAVE_X && ipX <= WAVE_X + waveW) {
 				nvgBeginPath(args.vg);
@@ -477,7 +479,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		// During a drag we read scrubPos directly — the DSP thread continuously
 		// overwrites modulePlayheadPos via process(), so it lags behind and would
 		// not reflect the drag position until the fill thread finishes seeking.
-		if (!currentId.empty()) {
+		if (!currentNode.relativePath.empty()) {
 			float ph = draggingPlayhead ? scrubPos
 			         : (modulePlayheadPos ? modulePlayheadPos->load(std::memory_order_relaxed) : 0.f);
 			float phX = WAVE_X + (ph - scrollPos) * zoomLevel * waveW;
@@ -485,7 +487,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 				nvgBeginPath(args.vg);
 				nvgMoveTo(args.vg, phX, waveY);
 				nvgLineTo(args.vg, phX, waveY + waveH);
-				nvgStrokeColor(args.vg, nvgRGBf(1.f, 1.f, 1.f));
+				nvgStrokeColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.7f));
 				nvgStrokeWidth(args.vg, 1.f);
 				nvgStroke(args.vg);
 
@@ -590,14 +592,12 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	}
 
 	void createContextMenu() {
-		if (currentId.empty() || !source || !metadata) return;
+		if (currentNode.relativePath.empty() || !source || !metadata) return;
 
 		std::string rel = relPath;
 		ui::Menu* menu = createMenu();
-
-		// File label
-		menu->addChild(createMenuLabel(displayName.empty() ? currentId : displayName));
-
+		menu->addChild(createMenuLabel(source->getDisplayName(currentNode.relativePath)));
+		
 		// Reset trim handles
 		menu->addChild(createMenuItem("Reset trim", "",
 			[this]() {
@@ -608,13 +608,12 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			},
 			inPoint == 0.f && outPoint == 1.f
 		));
-
 		// Loop playback toggle — persisted globally via onLoopingChanged callback
 		menu->addChild(createCheckMenuItem("Loop playback", "",
 			[]() { return sirenSettings.loopPlayback; },
 			[]() { sirenSettings.loopPlayback = !sirenSettings.loopPlayback; }
 		));
-		
+
 		// BPM detection
 		/*
 		float bpmVal = bpm.load();
@@ -632,81 +631,9 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		*/
 
 		menu->addChild(new ui::MenuSeparator);
-
-		// Favorite toggle
-		menu->addChild(createCheckMenuItem("Favorite", "",
-			[this, rel]() { return metadata->isFavorite(rel); },
-			[this, rel]() {
-				metadata->setFavorite(rel, !metadata->isFavorite(rel));
-				if (onMetadataChanged) onMetadataChanged();
-			}
-		));
-
-		menu->addChild(new ui::MenuSeparator);
-		menu->addChild(createMenuLabel("Tags"));
-
-		// Text field for adding a new tag
-		struct NewTagField : ui::TextField {
-			RootMetadata* metadata;
-			std::string rel;
-			std::function<void()> onChanged;
-			void onSelectKey(const event::SelectKey& e) override {
-				if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
-					std::string tag = rack::string::trim(text);
-					if (!tag.empty()) {
-						metadata->addTag(rel, tag);
-						if (onChanged) onChanged();
-					}
-					ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
-					if (overlay) overlay->requestDelete();
-					e.consume(this);
-					return;
-				}
-				if (!e.getTarget()) ui::TextField::onSelectKey(e);
-			}
-		};
-		NewTagField* ntf = new NewTagField;
-		ntf->box.size.x = 150.f;
-		ntf->placeholder = "New tag...";
-		ntf->metadata = metadata;
-		ntf->rel = rel;
-		ntf->onChanged = onMetadataChanged;
-		menu->addChild(ntf);
-		APP->event->setSelectedWidget(ntf);
-
-		// All known tags with checkmarks
-		struct TagItem : ui::MenuItem {
-			RootMetadata* metadata;
-			std::string rel;
-			std::string tag;
-			std::function<void()> onChanged;
-			void onAction(const event::Action& e) override {
-				auto current = metadata->getTags(rel);
-				bool has = std::find(current.begin(), current.end(), tag) != current.end();
-				if (has) metadata->removeTag(rel, tag);
-				else     metadata->addTag(rel, tag);
-				if (onChanged) onChanged();
-				e.unconsume();
-			}
-			void step() override {
-				auto current = metadata->getTags(rel);
-				rightText = CHECKMARK(std::find(current.begin(), current.end(), tag) != current.end());
-				MenuItem::step();
-			}
-		};
-
-		auto allTags = metadata->allTags();
-		std::vector<std::string> sorted(allTags.begin(), allTags.end());
-		std::sort(sorted.begin(), sorted.end());
-		for (const std::string& tag : sorted) {
-			TagItem* item = new TagItem;
-			item->text     = toTitleCase(tag);
-			item->metadata = metadata;
-			item->rel      = rel;
-			item->tag      = tag;
-			item->onChanged = onMetadataChanged;
-			menu->addChild(item);
-		}
+		source->appendNodeMenuItems(menu, currentNode, [this]() {
+			if (onMetadataChanged) onMetadataChanged();
+		});
 	}
 
 	void onButton(const event::Button& e) override {
@@ -741,7 +668,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		}
 
 		if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS) {
-			if (!currentId.empty() && inWaveformArea(e.pos)) {
+			if (!currentNode.relativePath.empty() && inWaveformArea(e.pos)) {
 				bool shift = (e.mods & RACK_MOD_SHIFT) != 0;
 				bool ctrl  = (e.mods & RACK_MOD_CTRL) != 0;
 				if (shift) {
@@ -790,7 +717,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			// Play/stop button — always starts from the stored inPoint
 			if (e.pos.x < 26.f && e.pos.y < TB_H) {
 				if (modulePlaying && modulePlaying->load()) stopPlaybackCallback();
-				else if (!currentId.empty()) startPlaybackFrom(inPoint);
+				else if (!currentNode.relativePath.empty()) startPlaybackFrom(inPoint);
 				e.consume(this);
 				return;
 			}
@@ -799,8 +726,8 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	}
 
 	void onDragStart(const event::DragStart& e) override {
-		if (!currentId.empty() && !draggingPlayhead && !trimmingIn && !trimmingOut && !trimmingRange && !draggingScrollbar && dropHandler) {
-			dropHandler->startDrag(currentId);
+		if (!currentNode.relativePath.empty() && !draggingPlayhead && !trimmingIn && !trimmingOut && !trimmingRange && !draggingScrollbar && dropHandler) {
+			dropHandler->startDrag(currentNode.relativePath);
 		}
 	}
 
@@ -840,7 +767,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			syncInPoint();
 			syncOutPoint();
 		}
-		else if (draggingPlayhead && !currentId.empty()) {
+		else if (draggingPlayhead && !currentNode.relativePath.empty()) {
 			float newPos = rack::math::clamp(pos, 0.f, 1.f);
 			if (newPos != scrubPos) {
 				scrubPos = newPos;

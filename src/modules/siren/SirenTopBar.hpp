@@ -13,10 +13,23 @@ namespace Siren {
  * Provides a dropdown button for selecting the active root container
  * and accessing source management options.
  */
+static constexpr float TOPBAR_SCALE = 0.6f;
+
 struct SirenSourceButton : ui::ChoiceButton {
 	SirenBrowserPane* pane = nullptr;
 
-	void step() {
+	void draw(const DrawArgs& args) override {
+		BNDwidgetState state = BND_DEFAULT;
+		if (APP->event->getHoveredWidget() == this) state = BND_HOVER;
+		if (APP->event->getSelectedWidget() == this) state = BND_ACTIVE;
+		nvgSave(args.vg);
+		nvgScale(args.vg, TOPBAR_SCALE, TOPBAR_SCALE);
+		bndChoiceButton(args.vg, 0, 0, box.size.x / TOPBAR_SCALE, box.size.y / TOPBAR_SCALE,
+		                BND_CORNER_NONE, state, -1, text.c_str());
+		nvgRestore(args.vg);
+	}
+
+	void step() override {
 		if (!pane->rootContainers.empty() && pane->activeRootIdx >= 0 &&
 			pane->activeRootIdx < (int)pane->rootContainers.size()) {
 			ghc::filesystem::path p(pane->rootContainers[pane->activeRootIdx]);
@@ -30,7 +43,7 @@ struct SirenSourceButton : ui::ChoiceButton {
 		ChoiceButton::step();
 	}
 
-	void onAction(const event::Action& e) {
+	void onAction(const event::Action& e) override {
 		ui::Menu* menu = createMenu();
 		menu->box.pos   = getAbsoluteOffset(math::Vec(0, box.size.y));
 		menu->box.size.x = box.size.x;
@@ -96,6 +109,20 @@ struct SirenSearchField : ui::TextField {
 		placeholder = "Search...";
 	}
 
+	void draw(const DrawArgs& args) override {
+		BNDwidgetState state;
+		if (APP->event->getSelectedWidget() == this) state = BND_ACTIVE;
+		else if (APP->event->getHoveredWidget() == this) state = BND_HOVER;
+		else state = BND_DEFAULT;
+		int begin = std::min(cursor, selection);
+		int end   = std::max(cursor, selection);
+		nvgSave(args.vg);
+		nvgScale(args.vg, TOPBAR_SCALE, TOPBAR_SCALE);
+		bndTextField(args.vg, 0, 0, box.size.x / TOPBAR_SCALE, box.size.y / TOPBAR_SCALE,
+		             BND_CORNER_NONE, state, -1, text.c_str(), begin, end);
+		nvgRestore(args.vg);
+	}
+
 	void onChange(const event::Change& e) override {
 		if (pane) {
 			pane->searchQuery = rack::string::trim(text);
@@ -119,53 +146,70 @@ struct SirenSearchField : ui::TextField {
 };
 
 
-struct SirenTopBar : widget::OpaqueWidget {
+struct SirenFavButton : widget::OpaqueWidget {
 	SirenBrowserPane* pane = nullptr;
-	float zoom = 0.6f;
-	float contentX = 8.f;
-	float contentY = 8.f;
-	float totalW = 480.1f; // browserW + previewW at zoom 0.6f
-	float topBarH = 18.f;   // 30.f * zoom
 
-	SirenTopBar() {
-		// Size is set based on zoom-scaled logical dimensions
-		box.size = rack::math::Vec(totalW, topBarH);
+	void draw(const DrawArgs& args) override {
+		if (!pane) return;
+		bool active = pane->favoritesOnly;
+		BNDwidgetState state = active ? BND_ACTIVE
+		                     : (APP->event->getHoveredWidget() == this ? BND_HOVER : BND_DEFAULT);
+		nvgSave(args.vg);
+		nvgScale(args.vg, TOPBAR_SCALE, TOPBAR_SCALE);
+		float lw = box.size.x / TOPBAR_SCALE;
+		float lh = box.size.y / TOPBAR_SCALE;
+		bndToolButton(args.vg, 0, 0, lw, lh, BND_CORNER_NONE, state, -1, nullptr);
+		nvgFontSize(args.vg, 14.f);
+		nvgFontFaceId(args.vg, APP->window->uiFont->handle);
+		nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+		nvgFillColor(args.vg, active
+			? nvgRGBf(1.f, 0.85f, 0.1f)
+			: nvgRGBAf(1.f, 1.f, 1.f, 0.55f));
+		nvgText(args.vg, lw * 0.5f, lh * 0.5f, active ? "★" : "☆", nullptr);
+		nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_BASELINE);
+		nvgRestore(args.vg);
 	}
 
+	void onButton(const event::Button& e) override {
+		if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS) {
+			if (pane) {
+				pane->favoritesOnly = !pane->favoritesOnly;
+				pane->requestRebuild();
+			}
+			e.consume(this);
+		}
+	}
+};
+
+
+struct SirenTopBar : widget::OpaqueWidget {
+	SirenBrowserPane* pane = nullptr;
+
 	void init() {
-		clearChildren();
+		const float browserW = 178.0f;
+		const float gapW     = 10.f;
+		const float btnH     = 22.f * TOPBAR_SCALE;        // physical button height
+		const float btnY     = (box.size.y - btnH) * 0.5f; // centred in top bar
+		const float starW    = btnH;                        // square star button
+		const float srcW     = browserW - starW - 2.f;     // source button leaves room for star
 
-		// Calculate logical dimensions (before zoom)
-		// These must match the original SirenWidget constructor values
-		const float logW  = totalW / zoom;  // 800 logical pixels
-		const float logH  = topBarH / zoom; // 30 logical pixels
-		const float btnH  = 22.f;
-		const float btnW  = 150.f / zoom;   // 250 logical pixels
-		const float mrgX  = 5.f;
-		const float mrgY  = (logH - btnH) * 0.5f;
+		SirenSourceButton* sourceButton = new SirenSourceButton;
+		sourceButton->box.pos  = Vec(0.f, btnY);
+		sourceButton->box.size = Vec(srcW, btnH);
+		sourceButton->pane = pane;
+		addChild(sourceButton);
 
-		SirenSourceButton* srcBtn = new SirenSourceButton;
-		srcBtn->box.size = rack::math::Vec(btnW, btnH);
-		srcBtn->pane = pane;
+		SirenFavButton* favButton = new SirenFavButton;
+		favButton->box.pos  = Vec(srcW + 2.f, btnY);
+		favButton->box.size = Vec(starW, btnH);
+		favButton->pane = pane;
+		addChild(favButton);
 
 		SirenSearchField* searchField = new SirenSearchField;
-		searchField->box.size = rack::math::Vec(300.f, btnH);  // 300 logical (not scaled)
+		searchField->box.pos  = Vec(browserW + gapW, btnY);
+		searchField->box.size = Vec(box.size.x - browserW - gapW, btnH);
 		searchField->pane = pane;
-
-		ui::SequentialLayout* layout = new ui::SequentialLayout;
-		layout->box.pos  = rack::math::Vec(0.f, 0.f);
-		layout->box.size = rack::math::Vec(logW, logH);
-		layout->margin   = rack::math::Vec(mrgX, mrgY);
-		layout->spacing  = rack::math::Vec(mrgX, 0.f);
-		layout->addChild(srcBtn);
-		layout->addChild(searchField);
-
-		widget::ZoomWidget* topBarZw = new widget::ZoomWidget;
-		topBarZw->box.pos  = rack::math::Vec(contentX, contentY);   // relative to parent
-		topBarZw->box.size = rack::math::Vec(totalW, topBarH);      // display size (scaled)
-		topBarZw->setZoom(zoom);
-		topBarZw->addChild(layout);
-		addChild(topBarZw);
+		addChild(searchField);
 	}
 };
 
