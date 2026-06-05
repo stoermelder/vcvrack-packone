@@ -502,8 +502,7 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 			if (isDir)
 				return rack::string::f("%d tag%s across %d file%s",
 					sel, sel == 1 ? "" : "s", items, items == 1 ? "" : "s");
-			return rack::string::f("%d tag%s for %s",
-				sel, sel == 1 ? "" : "s", name.c_str());
+			return rack::string::f("%d tag%s %s", sel, sel == 1 ? "" : "s");
 		};
 
 		std::string header = isDir ? "Suggest tags — " + name : "Suggest tags";

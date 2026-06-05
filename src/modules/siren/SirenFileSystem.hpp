@@ -476,47 +476,48 @@ struct FileSystemDataSource : DataSource {
 					return;
 				}
 
+				auto allHave = [this, audioRels](std::string tag) {
+					for (const auto& rel : audioRels) {
+						auto fileTags = metadata_.getTags(rel);
+						if (std::find(fileTags.begin(), fileTags.end(), tag) == fileTags.end()) {
+							return false;
+							break;
+						}
+					}
+					return true;
+				};
+
+				struct ContainerTagItem : ui::MenuItem {
+					FileSystemDataSource* src;
+					std::vector<std::string> rels;
+					std::string tag;
+					bool wasAllHave;
+					std::function<void()> onChanged;
+					void onAction(const event::Action& e) override {
+						if (wasAllHave)
+							for (const auto& rel : rels) src->metadata_.removeTag(rel, tag);
+						else
+							for (const auto& rel : rels) src->metadata_.addTag(rel, tag);
+						src->saveMetadata();
+						if (onChanged) onChanged();
+					}
+				};
+
 				auto allTagsSet = metadata_.allTags();
 				std::vector<std::string> sorted(allTagsSet.begin(), allTagsSet.end());
 				std::sort(sorted.begin(), sorted.end());
 
-				for (const std::string& tag : sorted) {
-					// Check whether ALL files already carry this tag
-					bool allHave = true;
-					for (const auto& rel : audioRels) {
-						auto fileTags = metadata_.getTags(rel);
-						if (std::find(fileTags.begin(), fileTags.end(), tag) == fileTags.end()) {
-							allHave = false;
-							break;
-						}
-					}
-
-					struct ContainerTagItem : ui::MenuItem {
-						FileSystemDataSource* src;
-						std::vector<std::string> rels;
-						std::string tag;
-						bool wasAllHave;
-						std::function<void()> onChanged;
-						void onAction(const event::Action& e) override {
-							if (wasAllHave)
-								for (const auto& rel : rels) src->metadata_.removeTag(rel, tag);
-							else
-								for (const auto& rel : rels) src->metadata_.addTag(rel, tag);
-							src->saveMetadata();
-							if (onChanged) onChanged();
-						}
-					};
-
+				Rack::addGroupedMenuItems<std::string>(tagMenu, sorted, [this, audioRels, allHave, onChanged](const std::string& tag) -> ui::MenuItem* {
 					ContainerTagItem* item   = new ContainerTagItem;
 					item->text            = tag;
-					item->rightText       = CHECKMARK(allHave);
+					item->rightText       = CHECKMARK(allHave(tag));
 					item->src             = this;
 					item->rels            = audioRels;
 					item->tag             = tag;
-					item->wasAllHave      = allHave;
+					item->wasAllHave      = allHave(tag);
 					item->onChanged       = onChanged;
-					tagMenu->addChild(item);
-				}
+					return item;
+				}, 16);
 			}));
 		}
 		else {
@@ -607,7 +608,8 @@ struct FileSystemDataSource : DataSource {
 			auto allTagsSet = metadata_.allTags();
 			std::vector<std::string> sorted(allTagsSet.begin(), allTagsSet.end());
 			std::sort(sorted.begin(), sorted.end());
-			for (const std::string& tag : sorted) {
+
+			Rack::addGroupedMenuItems<std::string>(menu, sorted, [this, rel, onChanged](const std::string& tag) -> ui::MenuItem* {
 				FileTagItem* item = new FileTagItem;
 				item->text      = tag;
 				item->metadata  = &metadata_;
@@ -615,8 +617,8 @@ struct FileSystemDataSource : DataSource {
 				item->tag       = tag;
 				item->src       = this;
 				item->onChanged = onChanged;
-				menu->addChild(item);
-			}
+				return item;
+			}, 16);
 		}
 	}
 };
