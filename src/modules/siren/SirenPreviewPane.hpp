@@ -12,10 +12,10 @@ namespace Siren {
 
 struct SirenPreviewPane : widget::OpaqueWidget {
 	// ── layout ───────────────────────────────────────────────────────────────
-	static constexpr float TB_H       = 34.f;  // top bar
-	static constexpr float READOUT_H  = 26.f;  // bottom readout bar
-	static constexpr float SCROLLBAR_H = 12.f; // scrollbar height
-	static constexpr float WAVE_X     = 8.f;   // left margin (for L/R labels)
+	static constexpr float TB_H        = 50.f;  // top bar (includes tag chip row)
+	static constexpr float READOUT_H   = 12.f;  // bottom readout bar
+	static constexpr float SCROLLBAR_H = 12.f;  // scrollbar height
+	static constexpr float WAVE_X      = 8.f;   // left margin (for L/R labels)
 
 	// ── state ────────────────────────────────────────────────────────────────
 	DataSourceNode currentNode;       // the node currently loaded into the preview pane
@@ -80,7 +80,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	Rect scrollbarRect() const {
 		float w = box.size.x;
 		float h = box.size.y;
-		float scrollbarY = h - SCROLLBAR_H - READOUT_H;  // Position above the readout
+		float scrollbarY = h - SCROLLBAR_H - READOUT_H;
 		return Rect(Vec(WAVE_X, scrollbarY), Vec(w - WAVE_X - 4.f, SCROLLBAR_H));
 	}
 
@@ -306,6 +306,41 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 				nvgTextAlign(args.vg, NVG_ALIGN_RIGHT | NVG_ALIGN_BASELINE);
 				nvgText(args.vg, w - 50.f, 26.f, "… BPM", nullptr);
 				nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_BASELINE);
+			}
+
+			// ── tag chips (third row of top bar) ─────────────────────────────────
+			if (metadata) {
+				auto tags = metadata->getTags(relPath);
+				if (!tags.empty()) {
+					static constexpr float CHIP_H = 10.f;
+					static constexpr float CHIP_Y = 34.f;  // row starts below info row
+					float x    = WAVE_X;
+					float maxX = w - 4.f;
+
+					nvgFontFaceId(args.vg, APP->window->uiFont->handle);
+					nvgFontSize(args.vg, 8.f);
+
+					for (const std::string& tag : tags) {
+						float bounds[4];
+						nvgTextBounds(args.vg, 0.f, 0.f, tag.c_str(), nullptr, bounds);
+						float chipW = bounds[2] - bounds[0] + 10.f;
+						if (x + chipW > maxX) break;
+
+						NVGcolor bgColor = bndGetTheme()->toolTheme.innerColor;
+						bgColor.a *= 0.4f;
+						nvgBeginPath(args.vg);
+						nvgRoundedRect(args.vg, x, CHIP_Y, chipW, CHIP_H, 2.f);
+						nvgFillColor(args.vg, bgColor);
+						nvgFill(args.vg);
+
+						nvgFillColor(args.vg, bndGetTheme()->toolTheme.textColor);
+						nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+						nvgText(args.vg, x + chipW * 0.5f, CHIP_Y + CHIP_H * 0.5f, tag.c_str(), nullptr);
+						nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_BASELINE);
+
+						x += chipW + 4.f;
+					}
+				}
 			}
 		}
 
