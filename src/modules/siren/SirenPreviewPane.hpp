@@ -354,6 +354,8 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			}
 		}
 
+		nvgFontFaceId(args.vg, font->handle);
+
 		int numCh = cacheReady ? (int)cache.samples.size() : info.channels;
 		if (numCh < 1) numCh = 1;
 
