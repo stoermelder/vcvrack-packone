@@ -313,8 +313,8 @@ struct MidiKitModule : Module {
 		seLua.loadScript("");
 	}
 
-	void onSampleRateChange() override {
-		sampleRate = APP->engine->getSampleRate();
+	void onSampleRateChange(const Module::SampleRateChangeEvent& e) override {
+		sampleRate = e.sampleRate;
 	}
 
 	void process(const ProcessArgs& args) override {
