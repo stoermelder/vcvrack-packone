@@ -98,5 +98,5 @@ testrun: test
 	echo "Running tests..."
 	@set -e; for t in $(TEST_BINARIES); do \
 		echo "Running $$t..."; \
-		TESTING=1 ./$$t $(TEST_SUCCESS_FLAG); \
+		TESTING=1 DYLD_LIBRARY_PATH=$(RACK_DIR) ./$$t $(TEST_SUCCESS_FLAG); \
 	done
