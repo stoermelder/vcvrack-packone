@@ -124,7 +124,7 @@ Note: These modes are unavailable if _SEL_-port operates in Phase-mode.
 
 The fade duration follows an exponential curve: `t = 0.01 × 2^(f × 10)` seconds, where `f` is the sum of the knob (or per-slot) value and the CV contribution (`CV voltage / 10`). By default this sum is clamped to 0–1, giving a maximum of ~10.2 s. Enabling _Disable CV clamping_ on the context menu removes this ceiling and allows the CV to push the combined value above 1.0, resulting in much longer fades:
 
-| Knob / slot | Duration (0V CV) | +10V CV, clamping on | +10V CV, clamping off |
+| Fader / Slot setting | Duration (0V CV) | +10V CV, clamping on | +10V CV, clamping off |
 |-------------|------------------|------------------------|-------------------------|
 | 0.0 | ~10 ms | ~10.2 s | ~10.2 s |
 | 0.1 | ~20 ms | ~10.2 s | ~20.5 s |
