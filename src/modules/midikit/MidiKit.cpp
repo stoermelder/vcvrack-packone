@@ -96,6 +96,19 @@ struct MidiOutput : midi::Output {
 };
 
 
+// Returns the one shared async worker for all MidiKit modules.
+// The weak_ptr lets it be destroyed when the last module is removed.
+static std::shared_ptr<ITaskWorker> defaultWorker() {
+	static std::weak_ptr<ITaskWorker> shared;
+	if (shared.expired()) {
+		auto adapter = std::make_shared<TaskWorkerAdapter>(
+			std::make_shared<TaskWorker>("MidiKit worker"));
+		shared = adapter;
+		return adapter;
+	}
+	return shared.lock();
+}
+
 struct MidiKitModule : Module {
 	enum ParamIds {
 		ENUMS(PARAM, 4),
@@ -278,7 +291,8 @@ struct MidiKitModule : Module {
 	MidiKitScriptEngineLua seLua;
 	MidiScript::MidiScriptEngine* activeEngine = &se;
 
-	MidiKitModule() {
+	MidiKitModule() : MidiKitModule(defaultWorker()) {}
+	explicit MidiKitModule(std::shared_ptr<ITaskWorker> worker) {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configInput(INPUT_TRIG, "Trigger");
@@ -291,6 +305,8 @@ struct MidiKitModule : Module {
 		processDivider.setDivision(8);
 		se.module = this;
 		seLua.module = this;
+		se.setWorker(worker);
+		seLua.setWorker(worker);
 		onReset();
 	}
 

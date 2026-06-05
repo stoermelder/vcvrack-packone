@@ -18,14 +18,11 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 	};
 
 	static std::map<struct js*, MidiScriptEngineElk*> jsMap;
-	// Weak reference for a shared worker thread for all engines. Will be initialized on first module instance.
-	static std::weak_ptr<TaskWorker> taskWorkerWeakPtr;
 
 	char jsMem[64 * 1024];
 	struct js* js = NULL;
 
-	// One worker is shared with all engines.
-	std::shared_ptr<TaskWorker> taskWorker;
+	std::shared_ptr<ITaskWorker> taskWorker;
 	dsp::RingBuffer<std::tuple<int, Message>, 128> midiInQueue;
 	dsp::RingBuffer<std::tuple<int, Message, uint64_t>, 128> midiOutQueue;
 
@@ -33,15 +30,7 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 	MessageEx msgStore[msgStoreSize];
 	size_t msgCount;
 
-	MidiScriptEngineElk() {
-		if (taskWorkerWeakPtr.expired()) {
-			taskWorker = std::make_shared<TaskWorker>("MidiScriptEngineElk worker");
-			taskWorkerWeakPtr = taskWorker;
-		}
-		else {
-			taskWorker = taskWorkerWeakPtr.lock();
-		}
-	}
+	void setWorker(std::shared_ptr<ITaskWorker> w) { taskWorker = std::move(w); }
 
 	void runAsync(std::function<void()> task) override {
 		taskWorker->work(task, APP);
@@ -943,9 +932,6 @@ struct MidiScriptEngineElk : MidiScriptEngine {
 // which needs all Rack's engine-threads to synchronize anyway. Access to each js* is not "const" but
 // only done from one thread for each js* - thread-safety should no problem here.
 std::map<struct js*, MidiScriptEngineElk*> MidiScriptEngineElk::jsMap;
-
-// Weak reference for a shared worker thread for all engines
-std::weak_ptr<TaskWorker> MidiScriptEngineElk::taskWorkerWeakPtr;
 
 } // namespace Elk
 } // namespace MidiScript

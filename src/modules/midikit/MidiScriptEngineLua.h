@@ -34,23 +34,12 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 
 	lua_State* L = nullptr;
 
-	static std::weak_ptr<TaskWorker> taskWorkerWeakPtr;
-	std::shared_ptr<TaskWorker> taskWorker;
+	std::shared_ptr<ITaskWorker> taskWorker;
 
 	dsp::RingBuffer<std::tuple<int, Message>, 128> midiInQueue;
 	dsp::RingBuffer<std::tuple<int, Message, uint64_t>, 128> midiOutQueue;
 
 	// ─── Construction / destruction ───────────────────────────────────────────
-
-	MidiScriptEngineLua() {
-		if (taskWorkerWeakPtr.expired()) {
-			taskWorker = std::make_shared<TaskWorker>("MidiScriptEngineLua worker");
-			taskWorkerWeakPtr = taskWorker;
-		}
-		else {
-			taskWorker = taskWorkerWeakPtr.lock();
-		}
-	}
 
 	~MidiScriptEngineLua() {
 		closeState();
@@ -64,6 +53,8 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 	}
 
 	// ─── MidiScriptEngine interface ───────────────────────────────────────────
+
+	void setWorker(std::shared_ptr<ITaskWorker> w) { taskWorker = std::move(w); }
 
 	void runAsync(std::function<void()> task) override {
 		taskWorker->work(task, APP);
@@ -1075,10 +1066,6 @@ struct MidiScriptEngineLua : MidiScriptEngine {
 		return 0;
 	}
 };
-
-// ─── Static member definitions ────────────────────────────────────────────────
-
-std::weak_ptr<TaskWorker> MidiScriptEngineLua::taskWorkerWeakPtr;
 
 } // namespace Lua
 } // namespace MidiScript
