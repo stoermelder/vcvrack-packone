@@ -181,3 +181,4 @@ Once placed next to TRANSIT the expander works and behaves the same way TRANSIT 
     - Added option to disable fade CV input clamping, allowing for more extreme fade times
 - v2.5.0
     - Fade CV input is now additive to per-slot fade time (previously CV was only additive to the global _FADE_ knob)
+    - Added Output-mode "Tipsy" for sending the snapshot text label (for modules with Tipsy-support like [TTY](https://library.vcvrack.com/StochasticTelegraph/TTY))
