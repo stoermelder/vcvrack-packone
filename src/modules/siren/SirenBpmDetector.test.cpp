@@ -94,20 +94,13 @@ struct MockAudioStream : AudioStream {
 };
 
 // ─── Test data source ────────────────────────────────────────────────────────
-// Returns nullptr for all audio streams so BpmDetector::detect falls through
-// to name-based extraction only (no spectral analysis).
-struct NameOnlyDataSource : DataSource {
-	std::string rootPath() const override { return ""; }
-	bool isSupportedFile(const std::string&) const override { return true; }
-	void loadChildrenAsync(const std::string&, StoermelderPackOne::TaskWorker&,
-		std::function<void(std::vector<DataSourceNode>)>) override {}
-	std::vector<DataSourceNode> loadChildrenSync(const std::string&) override { return {}; }
-};
+// Path-extraction tests use BpmDetector::detectFromName directly and do not
+// need a DataSource.  Spectral-analysis tests below define their own data
+// sources that return real mock audio streams.
 
 static float bpmFromId(const std::string& id) {
-	NameOnlyDataSource ds;
 	float confidence = 0.f;
-	return BpmDetector::detect(ds, id, confidence);
+	return BpmDetector::detectFromName(id, confidence);
 }
 
 // ─── Path extraction ─────────────────────────────────────────────────────────
@@ -162,6 +155,27 @@ TEST_CASE("BpmDetector: out-of-range numbers are ignored", "[Siren][BPM][Path]")
 	REQUIRE(bpmFromId("/samples/loop_300bpm.wav")  == 0.f);
 	REQUIRE(bpmFromId("/samples/loop_220bpm.wav")  == 220.f);
 	REQUIRE(bpmFromId("/samples/loop_60bpm.wav")   == 60.f);
+}
+
+// Real-world LHD-style filenames: an out-of-range loop index ("04", "20",
+// "06") appears before the actual BPM, separated by the same `_` delimiter.
+// The detector must skip the index and return the trailing BPM.
+TEST_CASE("BpmDetector: trailing BPM after an out-of-range delimited index", "[Siren][BPM][Path]") {
+	REQUIRE(bpmFromId("/samples/LHD_Drum_Loop_04_76.5.wav") == Catch::Approx(76.5f));
+	REQUIRE(bpmFromId("/samples/LHD_Drum_Loop_20_90.wav")   == 90.f);
+	REQUIRE(bpmFromId("/samples/LHD_Bass_Loop_06_88_B.wav") == 88.f);
+	REQUIRE(bpmFromId("/samples/LHD_Loop_04_20_76.5.wav")   == Catch::Approx(76.5f));
+	REQUIRE(bpmFromId("/samples/LHD_Kick_07_170.wav")       == 170.f);
+}
+
+// "Leading underscore" filenames: the path component begins with `_` (e.g.
+// when a sample ID was generated as "_170").  After extension stripping the
+// remaining string is "_170" — the number is delimited on the left and at
+// the end of the string.
+TEST_CASE("BpmDetector: leading-underscore filename", "[Siren][BPM][Path]") {
+	REQUIRE(bpmFromId("/samples/_170.wav")   == 170.f);
+	REQUIRE(bpmFromId("/samples/_170")       == 170.f);
+	REQUIRE(bpmFromId("/samples/_120.5.wav") == Catch::Approx(120.5f));
 }
 
 TEST_CASE("BpmDetector: no BPM in path returns 0", "[Siren][BPM][Path]") {
@@ -340,8 +354,8 @@ TEST_CASE("detectBpm: empty stream returns 0", "[Siren][BPM][Spectral]") {
 	REQUIRE(confidence == 0.f);
 }
 
-// BpmDetector::detect routes through DataSource::openAudioStream for spectral analysis.
-TEST_CASE("BpmDetector::detect: spectral path via DataSource", "[Siren][BPM][Spectral]") {
+// BpmDetector::detectFromDsp routes through DataSource::openAudioStream for spectral analysis.
+TEST_CASE("BpmDetector::detectFromDsp: spectral path via DataSource", "[Siren][BPM][Spectral]") {
 	const int sr       = 44100;
 	const int ch       = 1;
 	const double bpm   = 120.0;
@@ -364,7 +378,7 @@ TEST_CASE("BpmDetector::detect: spectral path via DataSource", "[Siren][BPM][Spe
 
 	ClickTrainDataSource ds(MockAudioStream::clickTrain(sr, bpm, secs, ch), sr, ch);
 	float confidence = 0.f;
-	float detected   = BpmDetector::detect(ds, "/no_bpm_in_name.wav", confidence, 30.f);
+	float detected   = BpmDetector::detectFromDsp(ds, "/no_bpm_in_name.wav", confidence, 30.f);
 	REQUIRE(detected > 0.f);
 	REQUIRE(detected == Catch::Approx(120.f).margin(12.f));
 }

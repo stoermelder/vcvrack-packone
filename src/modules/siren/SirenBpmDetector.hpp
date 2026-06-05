@@ -54,6 +54,37 @@ inline std::string stripAudioExtension(const std::string& name) {
 	return name;
 }
 
+// Enumerate every numeric run in `name` that is bounded by a delimiter
+// (`_` / `-`) or a string boundary on at least one side. Returns the
+// substrings in left-to-right order.
+//
+// The existing `delimited` regex uses `regex_search`, which only reports the
+// first match.  In filenames like "LHD_Loop_04_76.5" the first delimited
+// number is the loop index "04" (out of range), and the trailing BPM "76.5"
+// is skipped because its leading `_` is consumed by the previous match.  To
+// resolve this we walk the string ourselves and collect every bounded
+// number, then let the caller pick the first one that lies in the valid
+// BPM range.
+inline std::vector<std::string> collectBoundedNumbers(const std::string& name) {
+	std::vector<std::string> out;
+	auto isDelim = [](char c) { return c == '_' || c == '-'; };
+	size_t i = 0;
+	while (i < name.size()) {
+		if (!std::isdigit(static_cast<unsigned char>(name[i]))) { ++i; continue; }
+		size_t start = i;
+		while (i < name.size() &&
+		       (std::isdigit(static_cast<unsigned char>(name[i])) || name[i] == '.')) {
+			++i;
+		}
+		bool leftBounded  = (start == 0) || isDelim(name[start - 1]);
+		bool rightBounded = (i == name.size()) || isDelim(name[i]);
+		if (leftBounded || rightBounded) {
+			out.push_back(name.substr(start, i - start));
+		}
+	}
+	return out;
+}
+
 } // namespace detail
 
 
@@ -177,45 +208,50 @@ inline AutocorrResult autocorrelate(const float* onsetSignal, int numFrames, flo
 	}
 	if (peakVal <= 0.f) return result;
 
-	// Parabolic interpolation around the integer peak refines the result to
-	// sub-sample accuracy. Stays inside [lagMin, lagMax].
-	float refinedLag = float(peakIdx);
-	if (peakIdx > lagMin && peakIdx < lagMax) {
-		float yL = rAt(peakIdx - 1);
-		float yC = peakVal;
-		float yR = rAt(peakIdx + 1);
-		float denom = (yL - 2.f * yC + yR);
-		if (std::fabs(denom) > 1e-9f) {
-			float delta = 0.5f * (yL - yR) / denom;
-			if (delta > -1.f && delta < 1.f) refinedLag = float(peakIdx) + delta;
-		}
-	}
-	(void)refinedLag;   // not currently exposed — see AutocorrResult for extension
-
-	// Resolve half-time / double-time ambiguity with a "prefer downbeat" rule.
+	// Resolve half-time / double-time ambiguity with a weighted harmonic sum.
 	//
 	// For a strictly periodic signal the autocorr at the true period P and at
-	// any integer multiple of P are all equal in the limit of long signals.
-	// In practice, finite-length + windowing makes the true period strongest,
-	// but the second-strongest peak (often at 2P) can be within ~10% of the
-	// winner.  We prefer the smallest lag that is within HALF_TIME_THRESH of
-	// the integer peak — this biases toward the downbeat, which is what
-	// musicians expect when they tag a sample with "BPM".
-	const float HALF_TIME_THRESH = 0.92f;
-	const int   candidates[3] = { peakIdx * 2, peakIdx / 2 };
+	// any integer multiple of P (2P, 3P, …) are all equal in the limit of
+	// long signals.  In practice, finite-length + windowing + a non-integer
+	// HOP/SR ratio can make the 2P peak happen to be *stronger* than the 1P
+	// peak — e.g. a synthetic 120 BPM click train at 44.1 kSR / HOP=128 has a
+	// frame period of 34.45, so lags 34 and 35 straddle the true period and
+	// partially cancel, while lag 69 (≈ 2×34.45) happens to align with a
+	// near-integer number of samples and dominates the autocorr.
+	//
+	// We score every candidate period P ∈ [lagMin, lagMax] by
+	//   score(P) = rAt(P) + W · Σ rAt(P·h) for h ≥ 2 (clipped to lagMax)
+	// with W < 1, so the fundamental dominates the score.  This recovers the
+	// true period when:
+	//   • The fundamental's autocorr is strong AND has a strong 2× harmonic
+	//     in range (e.g. 120 BPM → lag 34 with strong 2× at lag 68).
+	//   • A spurious "octave" candidate (e.g. lag 23 for a 90 BPM track)
+	//     can only borrow score from its 2× harmonic — since W < 1, the
+	//     smaller raw rAt(23) cannot outvote the larger rAt(46).
 	int   bestIdx   = peakIdx;
-	float bestScore = peakVal;
-	for (int c : candidates) {
-		if (c < lagMin || c > lagMax) continue;
-		float v = rAt(c);
-		if (v > bestScore) { bestScore = v; bestIdx = c; }
+	float bestScore = -1.f;
+	constexpr float HARMONIC_W = 0.5f;
+	// For each candidate p, look at the maximum autocorr in a small window
+	// [k-1, k+1] around each harmonic k = p·h.  This is robust to sub-frame
+	// drift: a true 2× harmonic might land at lag 2p±1 (because the true
+	// period is rarely an integer number of hops), and we still want to
+	// count it as support for p.
+	auto rAtMaxAround = [&](int k) -> float {
+		float best = rAt(k);
+		if (k - 1 >= 0) best = std::max(best, rAt(k - 1));
+		if (k + 1 <= lagMax) best = std::max(best, rAt(k + 1));
+		return best;
+	};
+	for (int p = lagMin; p <= lagMax; ++p) {
+		float sum = rAt(p);
+		for (int h = 2; p * h <= lagMax; ++h) sum += HARMONIC_W * rAtMaxAround(p * h);
+		// Smallest-lag tiebreak: subtract a tiny bias that increases with
+		// lag, so that within ~0.001 of score the smaller lag wins.
+		float biased = sum - 1e-3f * float(lagMax - p) / float(lagMax);
+		if (biased > bestScore) { bestScore = biased; bestIdx = p; }
 	}
-	// If a smaller lag in [lagMin, bestIdx) is within HALF_TIME_THRESH of the
-	// best score, switch to it.  This is the "prefer downbeat" correction.
-	float threshold = bestScore * HALF_TIME_THRESH;
-	for (int c = lagMin; c < bestIdx; ++c) {
-		if (rAt(c) >= threshold) { bestIdx = c; break; }
-	}
+	(void)peakVal;
+	(void)peakIdx;
 
 	result.bestLag    = bestIdx;
 	result.refinedLag = float(bestIdx);
@@ -230,7 +266,10 @@ inline AutocorrResult autocorrelate(const float* onsetSignal, int numFrames, flo
 			if (delta > -1.f && delta < 1.f) result.refinedLag = float(bestIdx) + delta;
 		}
 	}
-	result.confidence = bestScore;
+	// Confidence: the autocorr value at the chosen best lag (in [-1, 1] but
+	// clipped to [0, 1] for thresholding).  We don't use the harmonic-summed
+	// score because it can exceed 1 when many harmonics line up.
+	result.confidence = std::max(0.f, std::min(1.f, rAt(bestIdx)));
 	return result;
 }
 
@@ -326,7 +365,9 @@ struct BpmDetector {
 	static float detectFromName(const std::string& id, float& confidenceOut) {
 		confidenceOut = 0.f;
 		const auto& tbl = detail::bpmRegexTable();
-		const std::array<std::regex, 4> patterns = { tbl.tagged, tbl.bracket, tbl.delimited, tbl.leading };
+		// Strong patterns first: "120bpm", "[120]", and leading numbers are
+		// unambiguous and use regex_search.
+		const std::array<std::regex, 3> strongPatterns = { tbl.tagged, tbl.bracket, tbl.leading };
 		std::vector<std::string> components;
 		size_t start = 0, end;
 		while ((end = id.find('/', start)) != std::string::npos) {
@@ -337,11 +378,21 @@ struct BpmDetector {
 		std::reverse(components.begin(), components.end());
 		for (const std::string& comp : components) {
 			std::string name = detail::stripAudioExtension(comp);
-			for (const std::regex& re : patterns) {
+			for (const std::regex& re : strongPatterns) {
 				std::smatch m;
 				if (!std::regex_search(name, m, re)) continue;
 				try {
 					float bpm = std::stof(m[1].str());
+					if (bpm >= 60.f && bpm <= 220.f) { confidenceOut = 1.f; return bpm; }
+				} catch (const std::exception&) {}
+			}
+			// Delimited numbers: enumerate every bounded number and accept
+			// the first one in the valid BPM range.  This handles filenames
+			// like "LHD_Drum_Loop_04_76.5" where an out-of-range index ("04")
+			// appears before the actual BPM ("76.5").
+			for (const std::string& numStr : detail::collectBoundedNumbers(name)) {
+				try {
+					float bpm = std::stof(numStr);
 					if (bpm >= 60.f && bpm <= 220.f) { confidenceOut = 1.f; return bpm; }
 				} catch (const std::exception&) {}
 			}
