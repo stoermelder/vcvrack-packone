@@ -6,6 +6,7 @@
 - [Auto-mode](#auto-mode)
 - [Sequencing and selecting snapshots](#sequencing-and-selecting-snapshots)
 - [OUT-port](#out-port)
+- [Fade time](#fade-time)
 - [+T expander](#t-expander)
 - [Tips](#tips)
 - [Changelog](#changelog)
@@ -68,7 +69,7 @@ Read-mode is the default operational mode of TRANSIT and is used to "load" or "a
 
 ![TRANSIT morph](./Transit-morph.gif)
 
-TRANSIT provides three precision-settings on the contextual menu which influence the CPU usage when morphing snapshots: Audio rate, lower CPU (1/8 audio rate, default) and lowest CPU (1/64 audio rate).
+TRANSIT provides several precision-settings on the contextual menu which influence the CPU usage when morphing snapshots: Audio rate, Lower CPU (1/8), Lowest CPU (1/64, default in standalone Rack), Even lower CPU (1/256, default in plugin mode) and Crazy low CPU (1/1024).
 
 ### Auto-mode
 
@@ -118,6 +119,26 @@ TRANSIT brings an _OUT_-port for different purposes:
 Note: These modes are unavailable if _SEL_-port operates in Phase-mode.
 
 ![TRANSIT OUT-port](./Transit-out.gif)
+
+### Fade time
+
+The fade duration follows an exponential curve: `t = 0.01 × 2^(f × 10)` seconds, where `f` is the sum of the knob (or per-slot) value and the CV contribution (`CV voltage / 10`). By default this sum is clamped to 0–1, giving a maximum of ~10.2 s. Enabling _Disable CV clamping_ on the context menu removes this ceiling and allows the CV to push the combined value above 1.0, resulting in much longer fades:
+
+| Knob / slot | Duration (0V CV) | +10V CV, clamping on | +10V CV, clamping off |
+|-------------|------------------|------------------------|-------------------------|
+| 0.0 | ~10 ms | ~10.2 s | ~10.2 s |
+| 0.1 | ~20 ms | ~10.2 s | ~20.5 s |
+| 0.2 | ~40 ms | ~10.2 s | ~41 s |
+| 0.3 | ~80 ms | ~10.2 s | ~82 s |
+| 0.4 | ~160 ms | ~10.2 s | ~164 s (~2.7 min) |
+| 0.5 | ~320 ms | ~10.2 s | ~328 s (~5.5 min) |
+| 0.6 | ~640 ms | ~10.2 s | ~655 s (~10.9 min) |
+| 0.7 | ~1.3 s | ~10.2 s | ~1311 s (~21.8 min) |
+| 0.8 | ~2.6 s | ~10.2 s | ~2621 s (~43.7 min) |
+| 0.9 | ~5.1 s | ~10.2 s | ~5243 s (~87.4 min) |
+| 1.0 | ~10.2 s | ~10.2 s | ~10486 s (~2.9 h) |
+
+These durations are **independent of sample rate** — the fade engine integrates against real time in seconds. The _Precision_ setting on the context menu only affects CPU usage and integration coarseness for very short fades at low precision; it does not change the absolute duration.
 
 ### +T expander
 
