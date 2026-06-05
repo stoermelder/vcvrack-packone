@@ -650,7 +650,9 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 			float deltaTime = sampleTime * presetProcessDivision;
 
 			slewLimiter.clamp = clampFadeCv;
-			float fade = presetFadeTime < 0.f ? (BASE::inputs[INPUT_FADE].getVoltage() / 10.f + BASE::params[PARAM_FADE].getValue()) : presetFadeTime;
+			float cv = BASE::inputs[INPUT_FADE].getVoltage() / 10.f;
+			float base = presetFadeTime < 0.f ? BASE::params[PARAM_FADE].getValue() : presetFadeTime;
+			float fade = base + cv;
 			slewLimiter.setRise(fade);
 			float shape = BASE::params[PARAM_SHAPE].getValue();
 			slewLimiter.setShape(shape);

@@ -64,7 +64,7 @@ In write-mode any input on the _SEL_-port is ignored and sequencing is disabled.
 
 ### Read-mode: morphing between snapshots
 
-Read-mode is the default operational mode of TRANSIT and is used to "load" or "apply" previously saved snapshots to the parameters. The interesting part of TRANSIT is its ability to "morph" the parameter values into the target snapshot: _FADE_ sets the amount of time it takes to reach the parameters' positions stored in the snapshot; this duration can also be controlled by CV (0–10 V). There is also a trimpot for setting the shape of the transition; in the middle position, the parameters are morphed linearly.
+Read-mode is the default operational mode of TRANSIT and is used to "load" or "apply" previously saved snapshots to the parameters. The interesting part of TRANSIT is its ability to "morph" the parameter values into the target snapshot: _FADE_ sets the amount of time it takes to reach the parameters' positions stored in the snapshot; this duration can also be controlled by CV (0–10 V). The CV input is always additive — it adds to the global _FADE_ knob when a slot uses the default fade time, and it adds to the per-slot fade time when a slot has its own fade setting. There is also a trimpot for setting the shape of the transition; in the middle position, the parameters are morphed linearly.
 
 ![TRANSIT morph](./Transit-morph.gif)
 
@@ -179,3 +179,5 @@ Once placed next to TRANSIT the expander works and behaves the same way TRANSIT 
     - Added custom color LED setting per slot
     - Added option to set the first usable snapshot (instead of starting at 1) (#265)
     - Added option to disable fade CV input clamping, allowing for more extreme fade times
+- v2.5.0
+    - Fade CV input is now additive to per-slot fade time (previously CV was only additive to the global _FADE_ knob)

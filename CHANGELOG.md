@@ -1,3 +1,10 @@
+## 2.5.0
+
+### Changes and Fixes
+
+- Module [TRANSIT](./docs/transit/Transit.md)
+    - Fade CV input is now additive to per-slot fade time (previously CV was only additive to the global _FADE_ knob)
+
 ## 2.4.1
 
 ### Changes and Fixes
