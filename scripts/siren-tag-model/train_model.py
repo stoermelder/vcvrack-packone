@@ -123,7 +123,7 @@ def main() -> int:
     p = ArgumentParser(description=__doc__)
     p.add_argument("--csv", type=Path, required=True, help="Path to a CSV produced by generate_synthetic_dataset.py or your own loader.")
     p.add_argument("--out", type=Path, default=Path(__file__).parent / "build" / "SirenTagClassifier.generated.cpp",
-                   help="Where to write the generated C++ header fragment.")
+                   help="Where to write the generated C++ source file. The whole file is the model — copy it over src/modules/siren/SirenTagClassifier.cpp.")
     p.add_argument("--n-estimators", type=int, default=24)
     p.add_argument("--max-depth", type=int, default=8)
     p.add_argument("--augment", type=int, default=3, help="Number of augmented copies per sample (0 = no augmentation).")
@@ -195,7 +195,7 @@ def main() -> int:
     for i in range(len(sample_X)):
         # Each per-label classifier returns (n_samples, 2) probas for [class 0, class 1].
         # If a class was missing from the training set entirely (e.g. you supplied
-        # only 6 of the 15 classes), MultiOutputClassifier returns a 1-column
+        # only 6 of the 18 classes), MultiOutputClassifier returns a 1-column
         # array for that class — guard against the IndexError that would otherwise
         # kill the smoke test.
         probs = np.array([

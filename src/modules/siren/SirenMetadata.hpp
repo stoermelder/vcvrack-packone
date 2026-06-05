@@ -1,6 +1,8 @@
 #pragma once
 #include "../../plugin.hpp"
 #include <rack.hpp>
+#include <map>
+#include <vector>
 
 
 namespace StoermelderPackOne {
@@ -83,6 +85,48 @@ inline const std::vector<std::string>& starterTags() {
 	}
 	if (cache.empty()) {
 		cache = fallbackTags();
+	}
+	return cache;
+}
+
+// Returns a map from tag name to its filename keywords, loaded from the same
+// SirenTags.json. Empty map on parse failure (filename boosting is just skipped).
+inline const std::map<std::string, std::vector<std::string>>& starterTagKeywords() {
+	static std::map<std::string, std::vector<std::string>> cache;
+	static bool loaded = false;
+	if (loaded) return cache;
+	loaded = true;
+
+	if (isTesting()) return cache;
+
+	std::string path = tagManifestPath();
+	FILE* f = std::fopen(path.c_str(), "r");
+	if (!f) return cache;
+	json_error_t err;
+	json_t* rootJ = json_loadf(f, 0, &err);
+	std::fclose(f);
+	if (!rootJ) return cache;
+	DEFER({ json_decref(rootJ); });
+
+	json_t* tagsJ = json_object_get(rootJ, "tags");
+	if (!tagsJ || !json_is_array(tagsJ)) return cache;
+	size_t i;
+	json_t* entryJ;
+	json_array_foreach(tagsJ, i, entryJ) {
+		json_t* nameJ = json_object_get(entryJ, "name");
+		json_t* kwJ   = json_object_get(entryJ, "keywords");
+		if (!nameJ || !json_is_string(nameJ)) continue;
+		if (!kwJ || !json_is_array(kwJ)) continue;
+		std::string name = json_string_value(nameJ);
+		std::vector<std::string> kws;
+		size_t j;
+		json_t* kwEntry;
+		json_array_foreach(kwJ, j, kwEntry) {
+			if (json_is_string(kwEntry))
+				kws.emplace_back(json_string_value(kwEntry));
+		}
+		if (!kws.empty())
+			cache[name] = std::move(kws);
 	}
 	return cache;
 }

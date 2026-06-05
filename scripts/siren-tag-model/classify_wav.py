@@ -9,7 +9,7 @@ Usage:
     python classify_wav.py path/to/some.wav
     python classify_wav.py path/to/some.wav --top-k 5
     python classify_wav.py path/to/some.wav --csv build/synthetic_dataset.csv
-    python classify_wav.py path/to/some.wav --no-model   # just dump the 10 features
+    python classify_wav.py path/to/some.wav --no-model   # just dump the 53 features
 
 If the trained model is not available (e.g. you ran this before
 `train_model.py`), the script falls back to a uniform-random score per
@@ -26,8 +26,34 @@ from pathlib import Path
 
 import numpy as np
 
+import re
+
 from feature_config import CLASS_NAMES, MODEL_VERSION, NUM_CLASSES, NUM_FEATURES
 from features import extract_features_batch, find_cpp_extractor
+from tag_manifest import TAGS
+
+# Keywords per tag — loaded from SirenTags.json via tag_manifest.
+# Single source of truth shared with C++ (SirenTagClassifierApi.hpp).
+_FILENAME_KEYWORDS: dict[str, list[str]] = {t.name: list(t.keywords) for t in TAGS}
+
+
+def _word_contains(stem: str, kw: str) -> bool:
+    """True if `kw` appears in `stem` at a word boundary (same logic as C++)."""
+    return bool(re.search(r'(?<![a-z0-9])' + re.escape(kw) + r'(?![a-z0-9])', stem))
+
+
+def apply_filename_boosts(path: str, scores: "np.ndarray", class_names: list[str],
+                          boost: float = 0.9) -> "np.ndarray":
+    """Boost scores for classes whose keywords appear in the filename stem."""
+    stem = Path(path).stem.lower()
+    result = scores.copy()
+    for i, name in enumerate(class_names):
+        for kw in _FILENAME_KEYWORDS.get(name, []):
+            if _word_contains(stem, kw):
+                if result[i] < boost:
+                    result[i] = boost
+                break
+    return result
 
 
 
@@ -92,7 +118,7 @@ def main() -> int:
                    help="Path to the labeled CSV. If present, the script also trains a RandomForest and scores with it. "
                         "Pass an empty string to skip training entirely.")
     p.add_argument("--no-model", action="store_true",
-                   help="Skip training. Only print the 10 features. Equivalent to --csv ''.")
+                   help="Skip training. Only print the 53 features. Equivalent to --csv ''.")
     args = p.parse_args()
 
     if not args.wav.exists():
@@ -128,6 +154,8 @@ def main() -> int:
         scores = _score_with_model(model, features)
     else:
         scores = np.full(NUM_CLASSES, 1.0 / NUM_CLASSES, dtype=np.float32)
+
+    scores = apply_filename_boosts(str(args.wav), scores, CLASS_NAMES)
 
     order = scores.argsort()[::-1]
     print()

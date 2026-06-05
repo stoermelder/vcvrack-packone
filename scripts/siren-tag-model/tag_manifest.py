@@ -30,6 +30,7 @@ class TagInfo:
     category: str  # one of: "source", "role", "time", "timbre"
     description: str
     classifier_can_suggest: bool
+    keywords: tuple[str, ...]  # filename keyword hints for post-hoc score boosting
 
 
 def load_manifest(path: Path = MANIFEST_PATH) -> tuple[int, list[TagInfo]]:
@@ -49,6 +50,7 @@ def load_manifest(path: Path = MANIFEST_PATH) -> tuple[int, list[TagInfo]]:
                 category=entry.get("category", "source"),
                 description=entry.get("description", ""),
                 classifier_can_suggest=bool(entry.get("classifier_can_suggest", True)),
+                keywords=tuple(entry.get("keywords", [])),
             )
         )
     return version, tags

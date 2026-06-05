@@ -2,20 +2,27 @@
 // Feature extraction API and model registration interface.
 //
 // This header is self-contained — it does NOT include SirenTagClassifier.cpp
-// (the auto-generated model). The model registers itself at include time by
-// calling TagClassifier::registerModel(). Consumers that only need feature
-// extraction (e.g. the CLI tool) include this header alone. Consumers that
-// need classification include SirenTagClassifier.cpp first (or anywhere in
-// the same TU before the first classify() call).
+// (the auto-generated model). The model is compiled into the plugin via the
+// root Makefile's `wildcard src/**/**/*.cpp` glob and registers itself at
+// static-init time by calling TagClassifier::_setLoader(). The actual
+// registerModel() fires on the first score()/classify() call — feature
+// extraction alone never touches the model.
+//
+// Consumers that only need feature extraction (e.g. the CLI tool
+// siren_extract_features) include this header alone. Consumers that need
+// classification must link the generated SirenTagClassifier.cpp into the
+// binary; in the plugin this happens automatically.
 //
 // SIREN_TAG_NUM_FEATURES is owned here (not by the generated model).
-// The model header contains a static_assert that verifies the counts match.
+// The generated source contains a static_assert that verifies the counts
+// match (53 at the time of writing).
 
 #include "SirenAudioStream.hpp"     // AudioStream interface — no Rack dependency
 #include <pffft.h>
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -40,10 +47,10 @@ static constexpr int    HOP                = 128;
 static constexpr int    HALF_N             = FFT_SIZE / 2;
 static constexpr int    TARGET_SR          = 8820;  // doubled for better high-freq coverage
 
-// ── Normalisation constants — match features.py ───────────────────────────
+// ── Normalisation constants — must match feature_config.FEATURE_NAMES ─────
 static constexpr float  ONSET_DENSITY_NORM = 30.f;     // peaks/sec → [0, 1]
 static constexpr float  SUB_BASS_HZ        = 80.f;     // sub_bass_ratio cutoff (Hz)
-static constexpr float  LOW_BAND_HZ        = 250.f;    // low_band_ratio cutoff (Hz)
+static constexpr float  LOW_BAND_HZ        = 250.f;    // low_mid_ratio cutoff (Hz)
 static constexpr float  HIGH_BAND_HZ       = 2000.f;   // high_band_ratio cutoff (Hz)
 static constexpr float  MEAN_FLUX_NORM     = 50.f;     // log-flux units/hop → [0, 1]
 static constexpr float  RMS_FULL_SCALE     = 0.7071067811865475f; // 1/√2
@@ -169,6 +176,7 @@ struct TagClassifier {
 		int                numClasses         = 0;
 		const char* const* classNames         = nullptr;
 		void (*lazyInit)()                    = nullptr;  // called once on first scoring use
+		std::map<std::string, std::vector<std::string>> keywords;  // tag name → filename keywords
 	};
 
 	// Access the singleton. On first call after setLoader(), calls the loader
@@ -194,6 +202,12 @@ struct TagClassifier {
 		m.numClasses = numClasses;
 		m.classNames = classNames;
 		return true;
+	}
+
+	// Register filename keywords loaded from SirenTags.json.
+	// Call this on the main thread before first use (e.g. from SirenBrowserPane).
+	static void registerKeywords(const std::map<std::string, std::vector<std::string>>& kw) {
+		_model().keywords = kw;
 	}
 
 	// Number of classes in the loaded model (0 if no model registered yet).
@@ -254,7 +268,65 @@ struct TagClassifier {
 		return classify(features, k);
 	}
 
-	// Compute the 40 normalized features from an audio stream. Feature order
+	// Top-k SuggestedTags from an audio stream, boosted by filename hints.
+	// `filePath` may be a full path or just the filename — only the stem is used.
+	static std::vector<SuggestedTag> classify(AudioStream& stream, const std::string& filePath,
+	                                          int k = 3, float maxDurationSeconds = 30.f) {
+		int n = _model().numClasses;
+		if (n <= 0) return {};
+		float features[SIREN_TAG_NUM_FEATURES] = {};
+		extractFeatures(stream, features, maxDurationSeconds);
+		std::vector<float> scores(n, 0.f);
+		score(features, scores.data());
+		applyFilenameBoosts(filenameStem(filePath), scores.data(), n, _model().classNames);
+		return topK(scores.data(), k);
+	}
+
+	// Extract the lowercase stem (no directory, no extension) from a path.
+	static std::string filenameStem(const std::string& path) {
+		size_t sep = path.find_last_of("/\\");
+		std::string name = (sep == std::string::npos) ? path : path.substr(sep + 1);
+		size_t dot = name.rfind('.');
+		if (dot != std::string::npos) name = name.substr(0, dot);
+		for (char& c : name) c = (char)std::tolower((unsigned char)c);
+		return name;
+	}
+
+	// True if `kw` appears in `stem` surrounded by word boundaries
+	// (non-alphanumeric character or start/end of string).
+	static bool wordContains(const std::string& stem, const char* kw) {
+		size_t kwLen = std::strlen(kw);
+		if (kwLen == 0) return false;
+		size_t pos = 0;
+		while ((pos = stem.find(kw, pos)) != std::string::npos) {
+			bool leftOk  = (pos == 0) || !std::isalnum((unsigned char)stem[pos - 1]);
+			bool rightOk = (pos + kwLen >= stem.size()) || !std::isalnum((unsigned char)stem[pos + kwLen]);
+			if (leftOk && rightOk) return true;
+			++pos;
+		}
+		return false;
+	}
+
+	// Boost scores for classes whose keywords appear in the filename stem.
+	// Uses max(score, boost) so audio evidence is never reduced.
+	// Keywords are read from the registered map (loaded from SirenTags.json).
+	static void applyFilenameBoosts(const std::string& stem, float* scores, int n,
+	                                const char* const* classNames, float boost = 0.9f) {
+		const auto& kw = _model().keywords;
+		if (kw.empty()) return;
+		for (int c = 0; c < n; ++c) {
+			auto it = kw.find(classNames[c]);
+			if (it == kw.end()) continue;
+			for (const std::string& word : it->second) {
+				if (wordContains(stem, word.c_str())) {
+					if (scores[c] < boost) scores[c] = boost;
+					break;
+				}
+			}
+		}
+	}
+
+	// Compute the 53 normalized features from an audio stream. Feature order
 	// MUST match `feature_config.FEATURE_NAMES` in the training pipeline —
 	// it is the contract between the C++ runtime and Python.
 	// Returns all-zero if the stream has no frames or too few STFT hops (<4).
@@ -298,8 +370,9 @@ struct TagClassifier {
 		if (totalFrames > maxFrames) totalFrames = maxFrames;
 
 		// Decimate to ~TARGET_SR. For 44.1/48 kHz inputs this gives a
-		// factor of 10/11 — the kept spectrum is well above the kick
-		// band (≤ 250 Hz) and well below the SR/2 aliasing bound.
+		// factor of 5 (≈ 8.82 kHz output) — the kept spectrum is well above
+		// the sub-bass / kick band (≤ 250 Hz) and well below the SR/2
+		// aliasing bound.
 		int decimRate = std::max(1, sampleRate / TARGET_SR);
 		outSR = sampleRate / decimRate;
 		if (outSR <= 0) outSR = TARGET_SR;
@@ -707,7 +780,10 @@ struct TagClassifier {
 	}
 
 	// ── Phase 4: Normalize accumulators → output feature vector ───────────
-	// Writes: out[0,1,4-9,12-17,18-30,37-39]  (spectral + MFCC features)
+	// Writes the 30 spectral / MFCC / band-ratio / flux features and the
+	// 13 MFCC deltas:
+	//   out[0,1,4-9,12-17,18-30,37-39]  spectral + MFCCs + extra band ratios
+	//   out[40-52]                       MFCC deltas
 	static void finalizeSpectralFeatures(const TagClassifierDetail::SpectralAccum& acc,
 	                                     int outSR, float out[SIREN_TAG_NUM_FEATURES]) {
 		using namespace TagClassifierDetail;

@@ -2,7 +2,7 @@
 
 This file is the **Python-side** contract. The C++-side contract is the
 `TagClassifier::extractFeatures()` function in
-`src/modules/Siren/SirenTagClassifier.cpp`. They MUST stay in sync.
+`src/modules/siren/SirenTagClassifierApi.hpp`. They MUST stay in sync.
 
 The class names are NOT defined here any more — they come from
 `res/data/SirenTags.json` via `tag_manifest.py`, which is the
@@ -77,4 +77,4 @@ FEATURE_NAMES: list[str] = [
 
 assert len(FEATURE_NAMES) == 53, "The Siren runtime expects exactly 53 features"
 
-NUM_FEATURES: int = len(FEATURE_NAMES)  # 40
+NUM_FEATURES: int = len(FEATURE_NAMES)  # 53

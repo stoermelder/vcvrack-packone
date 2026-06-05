@@ -440,6 +440,7 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 
 	void startTagClassification(const DataSourceNode& node) {
 		if (!worker || !activeDataSource) return;
+		TagClassifier::registerKeywords(starterTagKeywords());
 		DataSource*   ds    = activeDataSource;
 		RootMetadata* meta  = ds->getMetadata();
 		std::string   rel   = node.relativePath;
@@ -534,7 +535,7 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 			for (const auto& f : files) {
 				auto stream = ds->openAudioStream(f);
 				if (stream) {
-					auto suggestions = TagClassifier::classify(*stream, 5);
+					auto suggestions = TagClassifier::classify(*stream, f, 5);
 					for (const auto& s : suggestions)
 						if (s.score >= 0.5f)
 							progress->events.push({s.name, f});
