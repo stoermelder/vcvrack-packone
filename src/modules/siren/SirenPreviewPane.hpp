@@ -151,6 +151,22 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 
 		src->loadAudioInfo(id, info);
 
+		// BPM: load from metadata if already stored, otherwise extract from filename.
+		if (metadata && !relPath.empty()) {
+			auto it = metadata->samples.find(relPath);
+			if (it != metadata->samples.end() && it->second.bpm > 0.f) {
+				bpm.store(it->second.bpm);
+			}
+			else {
+				float conf = 0.f;
+				float nameBpm = BpmDetector::detectFromName(id, conf);
+				if (nameBpm > 0.f) {
+					bpm.store(nameBpm);
+					metadata->setBpm(relPath, nameBpm, conf);
+				}
+			}
+		}
+
 		int64_t ts        = src->getTimestamp(id);
 		std::string cacheFile = cachePathFor(id);
 		if (!forceRebuild) {
@@ -158,11 +174,6 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			if (loadWaveformCacheFile(cacheFile, ts, loaded) && loaded.sampleCount > 0) {
 				cache      = std::move(loaded);
 				cacheReady = true;
-				if (metadata && !relPath.empty()) {
-					auto it = metadata->samples.find(relPath);
-					if (it != metadata->samples.end() && it->second.bpm > 0.f)
-						bpm.store(it->second.bpm);
-				}
 				if (startPlay) { inPoint = 0.f; scrubPos = 0.f; startPlaybackFrom(0.f); }
 				return;
 			}
@@ -197,8 +208,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 
 	void startBpmDetection() {
 		if (!source || currentNode.relativePath.empty()) return;
-		float curBpm = bpm.load();
-		if (curBpm < 0.f) return; // Already running
+		if (bpm.load() < 0.f) return; // Already running
 
 		if (!worker) return;
 		bpm.store(-1.f); // Mark as running
@@ -210,7 +220,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 
 		worker->work([this, idCopy, relPathCopy, ds, meta]() {
 			float confidence = 0.f;
-			float result = BpmDetector::detect(*ds, idCopy, confidence);
+			float result = BpmDetector::detectFromDsp(*ds, idCopy, confidence);
 
 			if (meta && result > 0.f && !relPathCopy.empty()) {
 				meta->setBpm(relPathCopy, result, confidence);
@@ -634,18 +644,23 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			[]() { sirenSettings.loopPlayback = !sirenSettings.loopPlayback; }
 		));
 
-		// BPM detection
+		// BPM detection (filename detection is automatic; DSP detection is optional)
 		/*
 		float bpmVal = bpm.load();
-		if (bpmVal == 0.f) {
-			menu->addChild(createMenuItem("Detect BPM", "", [this]() { startBpmDetection(); }));
+		if (bpmVal == 0.f || bpmVal > 0.f) {
+			// "Detect BPM" now runs DSP-only analysis (filename was already tried on load)
+			menu->addChild(createMenuItem("Detect BPM (DSP)", "", [this]() { startBpmDetection(); },
+				bpmVal < 0.f  // disabled while running
+			));
 		}
-		else if (bpmVal > 0.f) {
+		if (bpmVal > 0.f) {
 			float conf = metadata ? metadata->getBpmConfidence(relPath) : 0.f;
 			menu->addChild(createMenuItem("Clear BPM", rack::string::f("Confidence %.2f%%", conf * 100.f), [this]() {
 				bpm.store(0.f);
-				if (metadata && !relPath.empty())
+				if (metadata && !relPath.empty()) {
 					metadata->samples[relPath].bpm = 0.f;
+					if (source) source->saveMetadata();
+				}
 			}));
 		}
 		*/

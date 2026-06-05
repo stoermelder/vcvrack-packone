@@ -320,14 +320,11 @@ inline float detectBpm(AudioStream& stream, float& confidenceOut,
 // ─── BpmDetector struct (API) ───────────────────────────────────────────────
 
 struct BpmDetector {
-	// Detect BPM for an item from a data source — must be called on a worker thread.
-	// Tries name-based extraction first; falls back to spectral analysis if needed.
-	// Returns BPM or 0 on failure / low confidence.
-	static float detect(DataSource& source, const std::string& id, float& confidenceOut,
-	                    float maxDurationSeconds = 60.f) {
+	// Scan filename and parent folder path components for an encoded BPM.
+	// Fast and synchronous — safe to call on the main thread.
+	// Returns BPM or 0 if not found in the name.
+	static float detectFromName(const std::string& id, float& confidenceOut) {
 		confidenceOut = 0.f;
-
-		// Fast path: scan filename and parent folder names for an encoded BPM.
 		const auto& tbl = detail::bpmRegexTable();
 		const std::array<std::regex, 4> patterns = { tbl.tagged, tbl.bracket, tbl.delimited, tbl.leading };
 		std::vector<std::string> components;
@@ -349,6 +346,14 @@ struct BpmDetector {
 				} catch (const std::exception&) {}
 			}
 		}
+		return 0.f;
+	}
+
+	// Spectral analysis BPM detection — must be called on a worker thread.
+	// Returns BPM or 0 if detection failed or confidence is below threshold.
+	static float detectFromDsp(DataSource& source, const std::string& id, float& confidenceOut,
+	                           float maxDurationSeconds = 60.f) {
+		confidenceOut = 0.f;
 		auto stream = source.openAudioStream(id);
 		if (!stream) return 0.f;
 		return StoermelderPackOne::Siren::detectBpm(*stream, confidenceOut, maxDurationSeconds);
