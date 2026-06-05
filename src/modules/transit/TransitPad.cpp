@@ -18,6 +18,13 @@ static const std::vector<std::pair<NVGcolor, std::string>> colors = {
 };
 
 
+enum class SETCVMODE {
+	OFF = -1,
+	TRIG_FWD = 0,
+	VOLT = 1,
+	C4 = 2
+};
+
 template <uint8_t SNAPSHOTS = 8, uint8_t SETS = 8>
 struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>, XySeqModule<1> {
 	enum ParamIds {
@@ -33,6 +40,7 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		OUT_Y_INPUT,
 		OUT_SEQ_INPUT,
 		OUT_SEQ_PH_INPUT,
+		SET_CV_INPUT,
 		NUM_INPUTS
 	};
 	enum OutputIds {
@@ -63,6 +71,9 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 	dsp::ExponentialFilter outYfilter;
 
 	int currentSet = 0;
+	/** [Stored to JSON] */
+	SETCVMODE setCvMode = SETCVMODE::TRIG_FWD;
+	dsp::SchmittTrigger setCvTrigger;
 	std::vector<TransitPadSource> snapshots[SETS];
 	NVGcolor setColor[SETS];
 
@@ -98,6 +109,7 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		configInput(OUT_Y_INPUT, "Mix y-pos");
 		configInput(OUT_SEQ_INPUT, "Mix sequence select");
 		configInput(OUT_SEQ_PH_INPUT, "Mix sequence phase");
+		configInput(SET_CV_INPUT, "Snapshot-set select CV");
 		configParam<XyScreenParamQuantity>(OUT_X_POS, 0.0f, 1.0f, 0.5f, "Mix x-pos");
 		configParam<XyScreenParamQuantity>(OUT_Y_POS, 0.0f, 1.0f, 0.5f, "Mix y-pos");
 
@@ -148,6 +160,26 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 	}
 
 	void process(const ProcessArgs& args) override {
+		if (inputs[SET_CV_INPUT].isConnected()) {
+			switch (setCvMode) {
+				case SETCVMODE::OFF:
+					break;
+				case SETCVMODE::TRIG_FWD:
+					if (setCvTrigger.process(inputs[SET_CV_INPUT].getVoltage())) {
+						currentSet = (currentSet + 1) % SETS;
+					}
+					break;
+				case SETCVMODE::VOLT: {
+					float v = clamp(inputs[SET_CV_INPUT].getVoltage(), 0.f, 10.f);
+					int s = int(v / 10.f * SETS);
+					currentSet = std::min(s, (int)SETS - 1);
+					break;
+				}
+				case SETCVMODE::C4:
+					currentSet = clamp((int)std::round(inputs[SET_CV_INPUT].getVoltage() * 12.f), 0, (int)SETS - 1);
+					break;
+			}
+		}
 		if (buttonDivider.process()) {
 			for (uint8_t s = 0; s < SETS; s++) {
 				if (params[SET_PARAM + s].getValue() > 0.5f && currentSet != s) {
@@ -155,7 +187,7 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 					break;
 				}
 			}
-		}	
+		}
 
 		for (uint8_t j = 0; j < snapshotsUsed; j++) {
 			inputInX[j] = Sc::scGetXFiltered(j, args.sampleTime);
@@ -334,6 +366,7 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		json_t* rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 		json_object_set_new(rootJ, "snapshotsUsed", json_integer(snapshotsUsed));
+		json_object_set_new(rootJ, "setCvMode", json_integer((int)setCvMode));
 
 		json_t* setsJ = json_array();
 		for (uint8_t s = 0; s < SETS; s++) {
@@ -361,7 +394,10 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 
 	void dataFromJson(json_t* rootJ) override {
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
-	
+
+		json_t* setCvModeJ = json_object_get(rootJ, "setCvMode");
+		if (setCvModeJ) setCvMode = (SETCVMODE)json_integer_value(setCvModeJ);
+
 		int su = json_integer_value(json_object_get(rootJ, "snapshotsUsed"));
 		snapshotsUsed = std::max(0, std::min(su, (int)SNAPSHOTS));
 
@@ -468,6 +504,15 @@ struct TransitPadXyScreenWidget : XyScreenWidget<MODULE> {
 				}
 			}
 		));
+		menu->addChild(createSubmenuItem("Snapshot-set CV mode", "",
+			[=](Menu* menu) {
+				menu->addChild(createValuePtrMenuItem("Off", &this->module->setCvMode, SETCVMODE::OFF));
+				menu->addChild(new MenuSeparator);
+				menu->addChild(createValuePtrMenuItem("Trigger forward", &this->module->setCvMode, SETCVMODE::TRIG_FWD));
+				menu->addChild(createValuePtrMenuItem("0..10V", &this->module->setCvMode, SETCVMODE::VOLT));
+				menu->addChild(createValuePtrMenuItem("C4", &this->module->setCvMode, SETCVMODE::C4));
+			}
+		));
 	}
 };
 
@@ -514,12 +559,13 @@ struct TransitPadWidget : ThemedModuleWidget<TransitPadModule<>> {
 		addChild(createWidget<StoermelderBlackScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
 		addInput(createInputCentered<StoermelderPort>(Vec(21.0f, 327.0f), module, MODULE::OUT_SEQ_INPUT));
-		addInput(createInputCentered<StoermelderPort>(Vec(57.5f, 327.0f), module, MODULE::OUT_SEQ_PH_INPUT));
-		addInput(createInputCentered<StoermelderPort>(Vec(167.7f, 327.0f), module, MODULE::OUT_X_INPUT));
-		addInput(createInputCentered<StoermelderPort>(Vec(204.3f, 327.0f), module, MODULE::OUT_Y_INPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(112.5f, 327.0f), module, MODULE::OUT_SEQ_PH_INPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(84.5f, 327.0f), module, MODULE::OUT_X_INPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(140.5f, 327.0f), module, MODULE::OUT_Y_INPUT));
+		addInput(createInputCentered<StoermelderPort>(Vec(204.3f, 327.0f), module, MODULE::SET_CV_INPUT));
 
-		addParam(createParamCentered<XyScreenDummyMapButton>(Vec(175.0f, 309.4f), module, MODULE::OUT_X_POS));
-		addParam(createParamCentered<XyScreenDummyMapButton>(Vec(197.0f, 309.4f), module, MODULE::OUT_Y_POS));
+		addParam(createParamCentered<XyScreenDummyMapButton>(Vec(77.6f, 309.8f), module, MODULE::OUT_X_POS));
+		addParam(createParamCentered<XyScreenDummyMapButton>(Vec(147.4f, 309.8f), module, MODULE::OUT_Y_POS));
 
 		TransitPadXyScreenWidget<MODULE>* screenWidget = new TransitPadXyScreenWidget<MODULE>(module, MODULE::SNAPSHOT_X_POS, MODULE::SNAPSHOT_Y_POS, MODULE::OUT_X_POS, MODULE::OUT_Y_POS);
 		screenWidget->box.pos = Vec(3.f, 63.3f + 3.f);
@@ -531,8 +577,8 @@ struct TransitPadWidget : ThemedModuleWidget<TransitPadModule<>> {
 		seqEditWidget->box.size = screenWidget->box.size;
 		addChild(seqEditWidget);
 
-		TransitPadXySeqLedDisplay<MODULE>* seqDisplay1 = createWidget<TransitPadXySeqLedDisplay<MODULE>>(Vec(77.9f, 329.8f));
-		seqDisplay1->box.size = Vec(24.6f, 13.2f);
+		TransitPadXySeqLedDisplay<MODULE>* seqDisplay1 = createWidget<TransitPadXySeqLedDisplay<MODULE>>(Vec(41.5f, 329.8f));
+		seqDisplay1->box.size = Vec(20.4f, 13.2f);
 		seqDisplay1->module = module;
 		seqDisplay1->id = 0;
 		addChild(seqDisplay1);
