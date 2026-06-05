@@ -218,7 +218,6 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 	int activeRootIdx = -1;
 	std::string selectedPath;
 	bool favoritesOnly = false;
-	std::set<std::string> tagFilter;
 
 	std::string searchQuery;
 
@@ -231,6 +230,11 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 	};
 	std::vector<TreeEntry> rows;
 	std::atomic<bool> loadPending{false};
+
+	// Tag filter: include set requires the tag to be present, exclude set
+	// requires the tag to be absent. Both can be active simultaneously.
+	std::set<std::string> tagFilter;
+	std::set<std::string> tagExcludeFilter;
 
 	std::string pendingSelectFirstOfPath;
 
@@ -395,6 +399,12 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 				for (const std::string& t : tagFilter)
 					if (std::find(sm.tags.begin(), sm.tags.end(), t) == sm.tags.end()) { hasAll = false; break; }
 				if (!hasAll) continue;
+			}
+			if (!tagExcludeFilter.empty()) {
+				bool hasAny = false;
+				for (const std::string& t : tagExcludeFilter)
+					if (std::find(sm.tags.begin(), sm.tags.end(), t) != sm.tags.end()) { hasAny = true; break; }
+				if (hasAny) continue;
 			}
 			return true;
 		}
@@ -658,13 +668,19 @@ struct SirenTagChip : widget::OpaqueWidget {
 	}
 
 	void draw(const DrawArgs& args) override {
-		bool active  = pane && pane->tagFilter.count(tag) > 0;
-		bool hovered = APP->event->getHoveredWidget() == this;
+		bool included = pane && pane->tagFilter.count(tag) > 0;
+		bool excluded = pane && pane->tagExcludeFilter.count(tag) > 0;
+		bool hovered  = APP->event->getHoveredWidget() == this;
 
 		NVGcolor bgColor, fgColor;
-		if (active) {
+		if (included) {
 			bgColor = bndGetTheme()->toolTheme.innerSelectedColor;
 			fgColor = bndGetTheme()->toolTheme.textSelectedColor;
+		}
+		else if (excluded) {
+			// Visual cue: red-tinted, dimmer — clearly distinct from "included".
+			bgColor = nvgRGBAf(0.55f, 0.18f, 0.18f, 0.55f);
+			fgColor = nvgRGBAf(1.f, 0.85f, 0.85f, 0.95f);
 		}
 		else if (hovered) {
 			bgColor = bndGetTheme()->toolTheme.itemColor;
@@ -682,6 +698,16 @@ struct SirenTagChip : widget::OpaqueWidget {
 		nvgFillColor(args.vg, bgColor);
 		nvgFill(args.vg);
 
+		// Strike-through for excluded chips to make the state unambiguous.
+		if (excluded) {
+			nvgBeginPath(args.vg);
+			nvgMoveTo(args.vg, 2.f, box.size.y * 0.5f);
+			nvgLineTo(args.vg, box.size.x - 2.f, box.size.y * 0.5f);
+			nvgStrokeColor(args.vg, fgColor);
+			nvgStrokeWidth(args.vg, 0.9f);
+			nvgStroke(args.vg);
+		}
+
 		nvgFontSize(args.vg, 8.f);
 		nvgFontFaceId(args.vg, APP->window->uiFont->handle);
 		nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
@@ -692,10 +718,20 @@ struct SirenTagChip : widget::OpaqueWidget {
 
 	void onButton(const event::Button& e) override {
 		if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS) {
-			if (pane->tagFilter.count(tag)) pane->tagFilter.erase(tag);
-			else pane->tagFilter.insert(tag);
+			// Click cycles: clear → include → exclude → clear
+			if (pane->tagFilter.count(tag)) {
+				pane->tagFilter.erase(tag);
+				pane->tagExcludeFilter.insert(tag);
+			}
+			else if (pane->tagExcludeFilter.count(tag)) {
+				pane->tagExcludeFilter.erase(tag);
+			}
+			else {
+				pane->tagFilter.insert(tag);
+			}
 			pane->requestRebuild();
 			e.consume(this);
+			return;
 		}
 		OpaqueWidget::onButton(e);
 	}
@@ -756,10 +792,21 @@ struct SirenTagContainer : widget::OpaqueWidget {
 	void onButton(const event::Button& e) override {
 		if (e.button == GLFW_MOUSE_BUTTON_RIGHT && e.action == GLFW_PRESS) {
 			Menu* menu = createMenu();
-			menu->addChild(createMenuItem("Clear tag filter", "", [this]() {
+			menu->addChild(createMenuItem("Clear tag filters", "", [this]() {
+				pane->tagFilter.clear();
+				pane->tagExcludeFilter.clear();
+				pane->requestRebuild();
+			}));
+			menu->addChild(new MenuSeparator);
+			menu->addChild(createMenuItem("Clear included tag filter", "", [this]() {
 				pane->tagFilter.clear();
 				pane->requestRebuild();
 			}));
+			menu->addChild(createMenuItem("Clear excluded tag filter", "", [this]() {
+				pane->tagExcludeFilter.clear();
+				pane->requestRebuild();
+			}));
+
 			e.consume(this);
 			return;
 		}
@@ -867,18 +914,26 @@ inline void SirenBrowserPane::rebuildRowWidgets() {
 		}
 
 		if (n.isContainer) {
-			if ((favoritesOnly || !tagFilter.empty()) && !containerHasMatchingDescendant(i, meta))
+			if ((favoritesOnly || !tagFilter.empty() || !tagExcludeFilter.empty()) && !containerHasMatchingDescendant(i, meta))
 				continue;
 		}
 		else {
 			if (favoritesOnly && meta && !meta->isFavorite(n.relativePath))
 				continue;
-			if (!tagFilter.empty() && meta) {
+			if ((!tagFilter.empty() || !tagExcludeFilter.empty()) && meta) {
 				auto tags = meta->getTags(n.relativePath);
-				bool hasAll = true;
-				for (const std::string& t : tagFilter)
-					if (std::find(tags.begin(), tags.end(), t) == tags.end()) { hasAll = false; break; }
-				if (!hasAll) continue;
+				if (!tagFilter.empty()) {
+					bool hasAll = true;
+					for (const std::string& t : tagFilter)
+						if (std::find(tags.begin(), tags.end(), t) == tags.end()) { hasAll = false; break; }
+					if (!hasAll) continue;
+				}
+				if (!tagExcludeFilter.empty()) {
+					bool hasAny = false;
+					for (const std::string& t : tagExcludeFilter)
+						if (std::find(tags.begin(), tags.end(), t) != tags.end()) { hasAny = true; break; }
+					if (hasAny) continue;
+				}
 			}
 		}
 
