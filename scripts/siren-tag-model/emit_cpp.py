@@ -101,7 +101,7 @@ def emit_cpp(
 ) -> None:
     """Write the generated header fragment to ``out_path``.
 
-    The header is consumed by ``src/modules/Siren/SirenTagClassifier.hpp``
+    The header is consumed by ``src/modules/Siren/SirenTagClassifier.cpp``
     (header-only, pasted by the developer after running ``run.sh``).
     """
     if not hasattr(model, "estimators_"):
@@ -166,8 +166,6 @@ def emit_cpp(
     parts.append(f"// Model version: {MODEL_VERSION}")
     parts.append(f"// Classes ({NUM_CLASSES}): {', '.join(CLASS_NAMES)}")
     parts.append(f"// Features ({NUM_FEATURES}): see feature_config.FEATURE_NAMES")
-    parts.append("")
-    parts.append("#pragma once")
     parts.append("")
     parts.append('#include "SirenTagClassifierApi.hpp"  // defines TagClassifier, SIREN_TAG_NUM_FEATURES')
     parts.append("#include <cmath>    // for exp() in Platt sigmoid calibration")

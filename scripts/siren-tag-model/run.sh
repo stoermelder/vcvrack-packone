@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Generate a synthetic dataset, train a tiny model, and emit a C++ header
-# fragment you paste into src/modules/Siren/SirenTagClassifier.hpp.
+# fragment you paste into src/modules/Siren/SirenTagClassifier.cpp.
 #
 # Usage:
 #   bash scripts/siren-tag-model/run.sh
@@ -8,7 +8,7 @@
 #   bash scripts/siren-tag-model/run.sh --csv my_real_dataset.csv
 #
 # After it finishes, the generated body is in:
-#   scripts/siren-tag-model/build/SirenTagClassifier.generated.hpp
+#   scripts/siren-tag-model/build/SirenTagClassifier.generated.cpp
 # Copy it into the marked region of the C++ header and rebuild.
 
 set -euo pipefail
@@ -61,12 +61,12 @@ python3 train_model.py "${CSV_FLAG[@]}" ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}
 echo
 echo "── Done ────────────────────────────────────────────────────────"
 echo "Generated header fragment is at:"
-echo "    $SCRIPT_DIR/build/SirenTagClassifier.generated.hpp"
+echo "    $SCRIPT_DIR/build/SirenTagClassifier.generated.cpp"
 echo
 echo "Next steps:"
 echo "  1. Open the generated file above."
 echo "  2. Copy its contents into the marked region of"
-echo "        src/modules/Siren/SirenTagClassifier.hpp"
+echo "        src/modules/Siren/SirenTagClassifier.cpp"
 echo "  3. Bump SIREN_TAG_MODEL_VERSION in feature_config.py if the"
 echo "     shape (number of features / classes) changed."
 echo "  4. Rebuild the plugin:  cd .. && make"

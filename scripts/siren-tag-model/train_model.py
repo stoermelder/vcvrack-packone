@@ -122,7 +122,7 @@ def main() -> int:
     from argparse import ArgumentParser
     p = ArgumentParser(description=__doc__)
     p.add_argument("--csv", type=Path, required=True, help="Path to a CSV produced by generate_synthetic_dataset.py or your own loader.")
-    p.add_argument("--out", type=Path, default=Path(__file__).parent / "build" / "SirenTagClassifier.generated.hpp",
+    p.add_argument("--out", type=Path, default=Path(__file__).parent / "build" / "SirenTagClassifier.generated.cpp",
                    help="Where to write the generated C++ header fragment.")
     p.add_argument("--n-estimators", type=int, default=24)
     p.add_argument("--max-depth", type=int, default=8)
@@ -211,7 +211,7 @@ def main() -> int:
     args.out.parent.mkdir(parents=True, exist_ok=True)
     emit_cpp(model, args.out, calibration_params=calibration_params)
     print(f"\nWrote generated C++ to {args.out}")
-    print("Paste its contents into the marked region of src/modules/Siren/SirenTagClassifier.hpp, then rebuild.")
+    print("Paste its contents into the marked region of src/modules/Siren/SirenTagClassifier.cpp, then rebuild.")
     return 0
 
 

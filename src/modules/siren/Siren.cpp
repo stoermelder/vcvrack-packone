@@ -9,7 +9,6 @@
 #include "SirenPreviewPane.hpp"
 #include "SirenTopBar.hpp"
 #include "SirenVuMeter.hpp"
-#include "SirenTagClassifier.hpp"  // loads model into TagClassifier
 #include <osdialog.h>
 
 

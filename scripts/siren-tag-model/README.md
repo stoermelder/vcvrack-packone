@@ -4,7 +4,7 @@ This folder generates the tiny C function that Siren's "Suggest tags…" action
 calls to score audio. It is **not** shipped to users — it runs once on the
 developer's machine and the output is pasted into the plugin's source.
 
-The plan this implements is in [`docs/siren/Classifier.md`](../../../docs/siren/Classifier.md). TL;DR: a small `scikit-learn` `RandomForest` is trained on a labeled dataset of 40 audio features, then transpiled to a plain C function with [`m2cgen`](https://github.com/BayesWitnesses/m2cgen). The function is checked into `src/modules/Siren/SirenTagClassifier.hpp`, so the plugin ships with **zero model file, zero JSON loader, and zero new runtime dependency**.
+The plan this implements is in [`docs/siren/Classifier.md`](../../../docs/siren/Classifier.md). TL;DR: a small `scikit-learn` `RandomForest` is trained on a labeled dataset of 40 audio features, then transpiled to a plain C function with [`m2cgen`](https://github.com/BayesWitnesses/m2cgen). The function is checked into `src/modules/Siren/SirenTagClassifier.cpp`, so the plugin ships with **zero model file, zero JSON loader, and zero new runtime dependency**.
 
 ---
 
@@ -125,7 +125,7 @@ This will:
 3. Generate a synthetic labeled dataset (18 classes × 80 clips by default).
 4. Train a small Random Forest.
 5. Print test-set metrics + a smoke test.
-6. Write `build/SirenTagClassifier.generated.hpp`.
+6. Write `build/SirenTagClassifier.generated.cpp`.
 
 The whole thing takes ~3 minutes the first time and ~15 seconds on re-runs.
 
@@ -154,12 +154,12 @@ Rack runtime.
 ## Paste the result into the plugin
 
 Open the generated file and copy the whole thing. In
-`src/modules/Siren/SirenTagClassifier.hpp` there is a marked region:
+`src/modules/Siren/SirenTagClassifier.cpp` there is a marked region:
 
 ```cpp
 // ─── BEGIN GENERATED MODEL (do not edit by hand) ────────────────────────
 //   1. bash scripts/siren-tag-model/run.sh
-//   2. paste the contents of scripts/siren-tag-model/build/SirenTagClassifier.generated.hpp here
+//   2. paste the contents of scripts/siren-tag-model/build/SirenTagClassifier.generated.cpp here
 //   3. rebuild with `make`
 // ─── END GENERATED MODEL ────────────────────────────────────────────────
 ```

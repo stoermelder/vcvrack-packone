@@ -1,6 +1,6 @@
 @echo off
 rem Generate a synthetic dataset, train a tiny model, and emit a C++ header
-rem fragment you paste into src/modules/Siren/SirenTagClassifier.hpp.
+rem fragment you paste into src/modules/Siren/SirenTagClassifier.cpp.
 rem
 rem Usage:
 rem   scripts\siren-tag-model\run.bat
@@ -8,7 +8,7 @@ rem   scripts\siren-tag-model\run.bat --n-per-class 200
 rem   scripts\siren-tag-model\run.bat --csv my_real_dataset.csv
 rem
 rem After it finishes, the generated body is in:
-rem   scripts\siren-tag-model\build\SirenTagClassifier.generated.hpp
+rem   scripts\siren-tag-model\build\SirenTagClassifier.generated.cpp
 rem Copy it into the marked region of the C++ header and rebuild.
 
 setlocal enabledelayedexpansion
@@ -90,12 +90,12 @@ python train_model.py --csv "%CSV_FILE%"%EXTRA_ARGS%
 echo.
 echo -- Done ---------------------------------------------------------------
 echo Generated header fragment is at:
-echo     %SCRIPT_DIR%\build\SirenTagClassifier.generated.hpp
+echo     %SCRIPT_DIR%\build\SirenTagClassifier.generated.cpp
 echo.
 echo Next steps:
 echo   1. Open the generated file above.
 echo   2. Copy its contents into the marked region of
-echo          src\modules\Siren\SirenTagClassifier.hpp
+echo          src\modules\Siren\SirenTagClassifier.cpp
 echo   3. Bump SIREN_TAG_MODEL_VERSION in feature_config.py if the
 echo      shape (number of features / classes) changed.
 echo   4. Rebuild the plugin:  cd .. ^&^& make

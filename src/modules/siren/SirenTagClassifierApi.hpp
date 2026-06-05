@@ -1,11 +1,11 @@
 #pragma once
 // Feature extraction API and model registration interface.
 //
-// This header is self-contained — it does NOT include SirenTagClassifier.hpp
+// This header is self-contained — it does NOT include SirenTagClassifier.cpp
 // (the auto-generated model). The model registers itself at include time by
 // calling TagClassifier::registerModel(). Consumers that only need feature
 // extraction (e.g. the CLI tool) include this header alone. Consumers that
-// need classification include SirenTagClassifier.hpp first (or anywhere in
+// need classification include SirenTagClassifier.cpp first (or anywhere in
 // the same TU before the first classify() call).
 //
 // SIREN_TAG_NUM_FEATURES is owned here (not by the generated model).
@@ -159,7 +159,7 @@ struct SpectralAccum {
 
 struct TagClassifier {
 	// ── Model registration ─────────────────────────────────────────────────
-	// SirenTagClassifier.hpp calls registerModel() from its anonymous
+	// SirenTagClassifier.cpp calls registerModel() from its anonymous
 	// namespace so the model is available as soon as its header is included
 	// in a TU. Feature extraction works without registration; classification
 	// requires it (returns empty if no model is loaded).
@@ -183,7 +183,7 @@ struct TagClassifier {
 		return info;
 	}
 
-	// Called by SirenTagClassifier.hpp at static-init time to register a
+	// Called by SirenTagClassifier.cpp at static-init time to register a
 	// deferred loader. The loader itself runs on the first scoring call.
 	static void _setLoader(void (*fn)()) { _model().lazyInit = fn; }
 
