@@ -113,14 +113,6 @@ The highlighted region between them is the active playback range.
 
 Click the **Loop** context menu option to repeat playback between the IN and OUT points. When loop is off, playback stops at the OUT point.
 
-### Zoom and Scroll
-
-- **Scroll wheel** — zoom in and out.
-- **Shift + scroll wheel** — scroll horizontally.
-- **Drag the scrollbar** — scroll horizontally.
-- Press **0** to reset zoom to fit the full file.
-- Press **+** / **]** or **−** / **[** to zoom in or out.
-
 ## Organizing Files
 
 ### Favorites
