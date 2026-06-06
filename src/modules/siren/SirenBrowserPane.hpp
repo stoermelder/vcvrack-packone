@@ -148,11 +148,11 @@ struct SirenTreeRow : widget::OpaqueWidget {
 		nvgFontFaceId(args.vg, APP->window->uiFont->handle);
 
 		if (node.isContainer) {
-			nvgFontSize(args.vg, 5.f);
+			nvgFontSize(args.vg, 6.f);
 			nvgFillColor(args.vg, nvgRGBAf(textColor.r, textColor.g, textColor.b, 0.55f));
 			nvgText(args.vg, textX, 8.f, expanded ? "▼" : "▶", nullptr);
 			textX += 8.f;
-			nvgFontSize(args.vg, 8.f);
+			nvgFontSize(args.vg, 7.7f);
 			nvgFillColor(args.vg, textColor);
 			nvgSave(args.vg);
 			nvgIntersectScissor(args.vg, textX, 0.f, w - textX - 4.f, h);
@@ -164,7 +164,7 @@ struct SirenTreeRow : widget::OpaqueWidget {
 			const float durW    = 26.f;
 			float maxNameW = w - textX - durW - starW - 4.f;
 
-			nvgFontSize(args.vg, 8.f);
+			nvgFontSize(args.vg, 7.7f);
 			nvgFillColor(args.vg, textColor);
 			nvgSave(args.vg);
 			nvgIntersectScissor(args.vg, textX, 0.f, maxNameW, h);
