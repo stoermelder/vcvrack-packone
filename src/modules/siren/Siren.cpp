@@ -275,6 +275,7 @@ struct SirenModule : Module {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configParam(PARAM_VOLUME, 0.f, 2.f, 1.f, "Volume", " dB", -10.f, 20.f);
 		configSwitch(PARAM_AUTOPLAY, 0.f, 1.f, 0.f, "Autoplay", {"Off", "On"});
+		paramQuantities[PARAM_AUTOPLAY]->description = "When On, the player starts automatically as soon as a new sample is loaded.";
 		configOutput(OUTPUT_L, "Left audio");
 		configOutput(OUTPUT_R, "Right audio");
 
