@@ -186,6 +186,11 @@ struct TransitBase : Module, StripIdFixModule {
 struct TransitPadMaster {
 	virtual int getSelectedSlot() { return -1; }
 	virtual std::string getSlotLabel(int i) { return ""; }
+	/** Returns the Module* that owns the given global slot index (0 .. presetTotal-1).
+	 *  For a host TRANSIT with chained +T expanders the index spans all of them,
+	 *  so this lets the pad look up which expander module hosts a particular slot.
+	 */
+	virtual rack::Module* getSlotOwner(int slotIndex) { return nullptr; }
 };
 
 struct TransitPadInterface {

@@ -258,12 +258,17 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChang
 	}
 
 	// TransitPadMaster
-	int getSelectedSlot() override { 
-		return preset; 
+	int getSelectedSlot() override {
+		return preset;
 	}
 
-	std::string getSlotLabel(int i) override { 
+	std::string getSlotLabel(int i) override {
 		return getSlot(i)->getLabel();
+	}
+
+	Module* getSlotOwner(int slotIndex) override {
+		if (slotIndex < 0 || slotIndex >= presetTotal) return nullptr;
+		return N[slotIndex / NUM_PRESETS];
 	}
 
 	void process(const Module::ProcessArgs& args) override {

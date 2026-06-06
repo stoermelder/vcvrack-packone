@@ -534,13 +534,128 @@ struct TransitPadSetButton : VCVButton {
 		menu->addChild(Rack::createColorSubmenuItem("Color", &module->setColor[setIndex], colors));
 		menu->addChild(new MenuSeparator());
 		for (size_t i = 0; i < module->scGetItemCountActive(0); i++) {
-			menu->addChild(createMenuLabel(module->getItemLabel(setIndex, i))); 
+			menu->addChild(createMenuLabel(module->getItemLabel(setIndex, i)));
 		}
 	}
 };
 
+
+// Overlay widget added directly to APP->scene->rack — drawn in rack coordinates.
+// Activated by the space key; draws a spline from each pad point to the snapshot
+// button on the host TRANSIT (or +T expander) it is bound to.
+struct TransitPadVizOverlay : TransparentWidget {
+	TransitPadModule<>* module = nullptr;
+	// Non-owning pointer to the host widget (for absolute position).
+	Widget* hostWidget = nullptr;
+
+	void step() override {
+		// Track parent size so NVG scissor doesn't clip our drawings.
+		if (parent) { box.pos = Vec(0.f, 0.f); box.size = parent->box.size; }
+		TransparentWidget::step();
+	}
+
+	// Resolves the absolute rack-space center of a TRANSIT/-T snapshot button.
+	// Returns Vec() if the slot's owner module or its button widget cannot be found.
+	Vec getButtonPos(int slotIndex) {
+		if (!module || !module->masterModule) return Vec();
+		TransitPadMaster* master = dynamic_cast<TransitPadMaster*>(module->masterModule);
+		if (!master) return Vec();
+		Module* ownerModule = master->getSlotOwner(slotIndex);
+		if (!ownerModule) return Vec();
+		ModuleWidget* ownerMw = APP->scene->rack->getModule(ownerModule->id);
+		if (!ownerMw) return Vec();
+		int localIndex = slotIndex % 12;
+		// TransitLedButton<12> is used by both TRANSIT and +T to render the per-slot
+		// LED button. Walk the owner's param widgets, find the one whose
+		// TransitLedButton carries the matching local id, and use its center.
+		for (ParamWidget* pw : ownerMw->getParams()) {
+			auto* btn = dynamic_cast<TransitLedButton<12>*>(pw);
+			if (btn && btn->id == localIndex) {
+				return ownerMw->box.pos.plus(pw->box.getCenter());
+			}
+		}
+		return Vec();
+	}
+
+	// Draws a Bezier curve between two points with a glow + core pass.
+	void drawSpline(NVGcontext* vg, Vec a, Vec b, NVGcolor col, bool highlighted = false, Vec aDir = Vec(0.f, 0.f)) {
+		float dist = a.minus(b).norm();
+		Vec dir  = b.minus(a).normalize();
+		Vec perp = Vec(-dir.y, dir.x);  // 90° CCW — always lateral to the connection
+		float tang  = dist * 0.35f;
+		float bulge = dist * 0.45f;
+		Vec cp1 = (aDir.norm() > 0.001f)
+			? a.plus(aDir.normalize().mult(tang))
+			: a.plus(dir.mult(tang)).plus(perp.mult(bulge));
+		Vec cp2 = b.minus(dir.mult(tang)).plus(perp.mult(bulge));
+
+		nvgBeginPath(vg);
+		nvgMoveTo(vg, a.x, a.y);
+		nvgBezierTo(vg, cp1.x, cp1.y, cp2.x, cp2.y, b.x, b.y);
+		nvgLineCap(vg, NVG_ROUND);
+		// Glow pass
+		nvgStrokeColor(vg, nvgRGBAf(col.r, col.g, col.b, highlighted ? 0.45f : 0.25f));
+		nvgStrokeWidth(vg, highlighted ? 12.f : 6.f);
+		nvgStroke(vg);
+		// Core pass
+		nvgStrokeColor(vg, nvgRGBAf(col.r, col.g, col.b, 1.f));
+		nvgStrokeWidth(vg, highlighted ? 3.f : 1.5f);
+		nvgStroke(vg);
+	}
+
+	void drawLayer(const DrawArgs& args, int layer) override {
+		if (layer != 1 || !visible || !module || !hostWidget) return;
+		NVGcontext* vg = args.vg;
+
+		Vec origin = hostWidget->box.pos;
+		uint8_t currentSet = module->currentSet;
+
+		// The screen widget is at (3, 66.3) with size 219x219 inside the host widget.
+		// Each pad point is a 20x20 square centered in that area.
+		const float screenX = 3.f;
+		const float screenY = 66.3f;
+		const float screenSize = 225.f - 6.f;
+		const float pointSize = 20.f;
+
+		for (uint8_t i = 0; i < module->snapshotsUsed; i++) {
+			const auto& src = module->snapshots[currentSet][i];
+			if (src.id < 0) continue;
+
+			Vec buttonPos = getButtonPos(src.id);
+			if (buttonPos == Vec()) continue;
+
+			// Pad-point center in module-local coords.
+			float x = module->params[TransitPadModule<>::SNAPSHOT_X_POS + i].getValue();
+			float y = module->params[TransitPadModule<>::SNAPSHOT_Y_POS + i].getValue();
+			Vec padPos = origin.plus(Vec(
+				screenX + x * (screenSize - pointSize) + pointSize * 0.5f,
+				screenY + y * (screenSize - pointSize) + pointSize * 0.5f
+			));
+
+			NVGcolor col = module->setColor[currentSet];
+			// Start the spline at the edge of the XY drag circle (radius 10px), not its center.
+			Vec dir = buttonPos.minus(padPos).normalize();
+			Vec padEdge = padPos.plus(dir.mult(10.f));
+			drawSpline(vg, padEdge, buttonPos, col, false, dir);
+
+			// End-point dot at the button.
+			nvgBeginPath(vg);
+			nvgCircle(vg, buttonPos.x, buttonPos.y, 3.5f);
+			nvgFillColor(vg, nvgRGBAf(col.r, col.g, col.b, 0.9f));
+			nvgFill(vg);
+			nvgStrokeColor(vg, nvgRGBAf(1.f, 1.f, 1.f, 0.6f));
+			nvgStrokeWidth(vg, 0.8f);
+			nvgStroke(vg);
+		}
+	}
+};
+
+
 struct TransitPadWidget : ThemedModuleWidget<TransitPadModule<>> {
 	typedef TransitPadModule<> MODULE;
+
+	TransitPadVizOverlay* vizOverlay = nullptr;
+	bool vizMode = false;
 
 	TransitPadWidget(MODULE* module) : ThemedModuleWidget<MODULE>(module, "TransitPad") {
 		setModule(module);
@@ -582,6 +697,36 @@ struct TransitPadWidget : ThemedModuleWidget<TransitPadModule<>> {
 		seqDisplay1->module = module;
 		seqDisplay1->id = 0;
 		addChild(seqDisplay1);
+
+		if (module) {
+			vizOverlay = new TransitPadVizOverlay;
+			vizOverlay->module = module;
+			vizOverlay->hostWidget = this;
+			vizOverlay->visible = false;
+			APP->scene->rack->addChild(vizOverlay);
+		}
+	}
+
+	~TransitPadWidget() {
+		if (vizOverlay) {
+			APP->scene->rack->removeChild(vizOverlay);
+			delete vizOverlay;
+			vizOverlay = nullptr;
+		}
+	}
+
+	void setVizMode(bool active) {
+		vizMode = active;
+		if (vizOverlay) vizOverlay->visible = active;
+	}
+
+	void onHoverKey(const event::HoverKey& e) override {
+		if (e.key == GLFW_KEY_SPACE && e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == 0) {
+			setVizMode(!vizMode);
+			e.consume(this);
+			return;
+		}
+		ThemedModuleWidget<MODULE>::onHoverKey(e);
 	}
 };
 
