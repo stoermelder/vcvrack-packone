@@ -526,7 +526,7 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		APP->scene->addChild(overlay);
 
 		auto progress = dlg->progress;
-		worker->work([progress, rel, isDir, ds]() {
+		worker->work([progress, rel, isDir, ds, meta]() {
 			std::vector<DataSourceNodeId> files;
 			if (isDir) {
 				std::function<void(const std::string&)> collect = [&](const std::string& id) {
@@ -543,12 +543,24 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 
 			progress->total = (int)files.size();
 			for (const auto& f : files) {
+				// Skip suggestion emission for tags already applied to this sample.
+				// Matching is case-insensitive on the trimmed name, mirroring addTag().
+				std::set<std::string> existing;
+				if (meta) {
+					for (const std::string& t : meta->getTags(f)) {
+						existing.insert(rack::string::lowercase(rack::string::trim(t)));
+					}
+				}
+
 				auto stream = ds->openAudioStream(f);
 				if (stream) {
 					auto suggestions = TagClassifier::classify(*stream, f, 5);
-					for (const auto& s : suggestions)
-						if (s.score >= 0.5f)
-							progress->events.push({s.name, f});
+					for (const auto& s : suggestions) {
+						if (s.score < 0.5f) continue;
+						std::string nameLow = rack::string::lowercase(rack::string::trim(s.name));
+						if (existing.count(nameLow)) continue;
+						progress->events.push({s.name, f});
+					}
 				}
 				progress->processed++;
 			}
