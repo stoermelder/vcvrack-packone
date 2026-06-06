@@ -8,27 +8,12 @@
 #include "../../ui/ViewportHelper.hpp"
 #include "EightFace.hpp"
 #include "EightFaceMk2Base.hpp"
+#include "../../utils/string.hpp"
 #include <random>
 #include <osdialog.h>
 
 namespace StoermelderPackOne {
 namespace EightFaceMk2 {
-
-const std::string WHITESPACE = " \n\r\t\f\v";
-
-std::string ltrim(const std::string& s) {
-	size_t start = s.find_first_not_of(WHITESPACE);
-	return (start == std::string::npos) ? "" : s.substr(start);
-}
-
-std::string rtrim(const std::string& s) {
-	size_t end = s.find_last_not_of(WHITESPACE);
-	return (end == std::string::npos) ? "" : s.substr(0, end + 1);
-}
-
-std::string trim(const std::string& s) {
-	return rtrim(ltrim(s));
-}
 
 const int MAX_EXPANDERS = 15;
 
@@ -149,9 +134,11 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 		registerExpanderListener("8FaceMk2", this);
 		Module::config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		Module::configSwitch(PARAM_RW, 0.f, 2.f, 0.f, "Operating mode", {"Read", "Auto", "Write"});
+		Module::paramQuantities[PARAM_RW]->description = "Read: load a slot manually.\nAuto: auto-save on snapshot-change.\nWrite: snapshot the currently mapped parameters into a slot.";
 		Module::configInput(INPUT_CV, "Slot-selection");
-		Module::inputInfos[INPUT_CV]->description = "Channel 2 can retrigger the current slot in C4 mode";
+		Module::inputInfos[INPUT_CV]->description = "Trigger/gate that selects the next slot, depending on the slot-CV mode selected on the context menu.\nChannel 2 can retrigger the current slot in C4 mode.";
 		Module::configInput(INPUT_RESET, "Sequencer-mode reset");
+		Module::inputInfos[INPUT_RESET]->description = "Resets the slot sequence to the first slot (depending on the selected CV mode).";
 
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			EightFaceMk2ParamQuantity<NUM_PRESETS>* pq = Module::configParam<EightFaceMk2ParamQuantity<NUM_PRESETS>>(PARAM_PRESET + i, 0, 1, 0);
@@ -394,7 +381,8 @@ struct EightFaceMk2Module : EightFaceMk2Base<NUM_PRESETS>, ExpanderChangeListene
 								for (int i = 0; i < presetCount; i++) {
 									slotCvModeShuffle.push_back(i);
 								}
-								std::random_shuffle(std::begin(slotCvModeShuffle), std::end(slotCvModeShuffle));
+								std::mt19937 rng(random::u32());
+								std::shuffle(std::begin(slotCvModeShuffle), std::end(slotCvModeShuffle), rng);
 							}
 							int p = std::min(std::max(0, slotCvModeShuffle.back()), presetCount - 1);
 							slotCvModeShuffle.pop_back();

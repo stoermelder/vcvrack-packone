@@ -58,12 +58,10 @@ void hiddenModelsReset();
 
 extern std::map<std::string, std::set<Model*>> customTagModels;
 
-// Tag modifications: predefined tags that are added/removed per model
-extern std::map<Model*, std::set<int>> predefinedTagsAdded;
-extern std::map<Model*, std::set<int>> predefinedTagsRemoved;
 
 void customTagAdd(Model* model, const std::string& tag);
 void customTagRemove(Model* model, const std::string& tag);
+bool isValidCustomTag(const std::string& tag);
 bool customTagHas(Model* model, const std::string& tag, bool resolveKey = false);
 void customTagDelete(const std::string& tag);
 void customTagReset();
@@ -72,6 +70,21 @@ std::set<std::string> customTagsAll();
 
 
 // Predefined Tags
+
+// Tag modifications: predefined tags that are added/removed per model
+extern std::map<Model*, std::set<int>> predefinedTagsAdded;
+extern std::map<Model*, std::set<int>> predefinedTagsRemoved;
+
+// Cache for effective tag IDs to avoid O(n*m) lookup during refresh
+struct TagIdCache {
+	std::set<int> tagIds;
+	uint64_t version = 0;
+};
+extern std::map<Model*, TagIdCache> effectiveTagIdsCache;
+extern uint64_t effectiveTagIdsVersion;
+
+void effectiveTagIdsCacheInvalidate(Model* model);
+void effectiveTagIdsCacheInvalidateAll();
 
 void predefinedTagAdd(Model* model, int tagId);
 void predefinedTagRemove(Model* model, int tagId);

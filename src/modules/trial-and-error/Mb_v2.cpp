@@ -167,6 +167,7 @@ struct ModelBox : widget::OpaqueWidget {
 			magnifier->initialized = true;
 			magnifier->sourceAbsPos = getAbsoluteOffset(Vec(0, 0));
 			magnifier->sourceSize = box.size;
+			magnifier->magnification = 3.f / zoomWidget->getZoom();
 		}
 		OpaqueWidget::onHover(e);
 	}
@@ -222,7 +223,8 @@ struct ModelBox : widget::OpaqueWidget {
 		std::string text = model->plugin->brand + " " + model->name;
 		text += "\nTags: ";
 		int i = 0;
-		for (int tagId : model->tagIds) {
+		std::set<int> effectiveTagIds = getEffectiveTagIds(model);
+		for (int tagId : effectiveTagIds) {
 			if (i++ > 0) text += ", ";
 			text += rack::tag::tagAliases[tagId][0];
 		}
@@ -271,10 +273,12 @@ struct ModelBox : widget::OpaqueWidget {
 		menu->addChild(createMenuLabel(model->name.c_str()));
 		menu->addChild(createSubmenuItem("Details", "", [this](Menu* menu) {
 			model->appendContextMenu(menu, true);
-			// Remove "Favorite" menu item
-			auto f = menu->children.back();
-			menu->removeChild(f);
-			delete f;
+			// Remove "Favorite" menu item - but only if items were added
+			if (!menu->children.empty()) {
+				auto f = menu->children.back();
+				menu->removeChild(f);
+				delete f;
+			}
 		}));
 		menu->addChild(createMenuItem(string::f("Filter by \"%s\"", model->plugin->brand.c_str()), "", [&]() {
 			ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
@@ -310,8 +314,8 @@ struct ModelBox : widget::OpaqueWidget {
 
 			void onSelectKey(const event::SelectKey& e) override {
 				if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
-					std::string tag = string::trim(text);
-					if (!tag.empty()) {
+					std::string tag = rack::string::trim(text);
+					if (isValidCustomTag(tag)) {
 						customTagAdd(model, tag);
 						ModuleBrowser* browser = APP->scene->getFirstDescendantOfType<ModuleBrowser>();
 						if (browser) browser->refresh();
@@ -879,7 +883,9 @@ struct ZoomButton : ui::ChoiceButton {
 template <typename F>
 static void sortModelContainer(ui::SequentialLayout* container, F f) {
 	container->children.sort([&](Widget* w1, Widget* w2) {
+		assert(dynamic_cast<ModelBox*>(w1));
 		ModelBox* m1 = reinterpret_cast<ModelBox*>(w1);
+		assert(dynamic_cast<ModelBox*>(w2));
 		ModelBox* m2 = reinterpret_cast<ModelBox*>(w2);
 		return f(m1) < f(m2);
 	});
@@ -998,22 +1004,48 @@ void ModuleBrowser::draw(const DrawArgs& args) {
 }
 
 bool ModuleBrowser::isModelVisible(plugin::Model* model, const std::string& brand, const std::set<int>& tagIds, bool favorite, bool hidden, const std::set<std::string>& customTagFilter) {
-	if (favorite && !isModelFavorite(model))
+	// Filter if not whitelisted by library
+	if (pluginSettings.mbApplyLibraryWhitelist) {
+		if (!settings::isModuleWhitelisted(model->plugin->slug, model->slug)) {
+			return false;
+		}
+	}
+
+	// Filter deprecated modules
+	if (!pluginSettings.mbShowDeprecated) {
+		if (model->hidden) {
+			return false;
+		}
+	}
+
+	// Filter favorite
+	if (favorite && !isModelFavorite(model)) {
 		return false;
-	if (!brand.empty() && model->plugin->brand != brand)
+	}
+
+	// Filter brand
+	if (!brand.empty() && model->plugin->brand != brand) {
 		return false;
+	}
+
 	// Use effective tag IDs (with predefined tag modifications applied)
 	std::set<int> effectiveTagIds = getEffectiveTagIds(model);
 	for (int tagId : tagIds) {
 		if (effectiveTagIds.find(tagId) == effectiveTagIds.end())
 			return false;
 	}
+
+	// Filter custom tags
 	for (const auto& ct : customTagFilter) {
 		if (!customTagHas(model, ct))
 			return false;
 	}
-	if (!hidden && hiddenModels.find(model) != hiddenModels.end())
+
+	// Filter hidden modules (does not use the Rack's "hidden" property)
+	if (!hidden && hiddenModels.find(model) != hiddenModels.end()) {
 		return false;
+	}
+
 	return true;
 }
 

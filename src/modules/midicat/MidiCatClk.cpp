@@ -28,6 +28,7 @@ struct MidiCatClkModule : Module {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		for (int i = 0; i < 4; i++) {
 			configInput(INPUT_CLOCK + i, string::f("Clock %i", i + 1));
+			inputInfos[INPUT_CLOCK + i]->description = "External clock/trigger forwarded to the connected MIDI-CAT module (right expander).";
 		}
 
 		ResetEvent re;

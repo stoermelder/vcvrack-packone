@@ -30,6 +30,7 @@ struct IntermixEnvModule : Module {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		for (int i = 0; i < PORTS; i++) {
 			configOutput(OUTPUT + i, string::f("Envelope %i", i + 1));
+			outputInfos[OUTPUT + i]->description = "Scaled 0..10V envelope of the selected input row's mix levels into the matching output column.";
 		}
 
 		ResetEvent re;

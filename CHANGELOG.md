@@ -1,3 +1,18 @@
+## 2.5.0
+
+### Changes and Fixes
+
+- Module [TRANSIT](./docs/transit/Transit.md)
+    - Fade CV input is now additive to per-slot fade time (previously CV was only additive to the global _FADE_ knob)
+    - Added Output-mode "Tipsy" for sending the snapshot text label (for modules with Tipsy-support like [TTY](https://library.vcvrack.com/StochasticTelegraph/TTY))
+
+## 2.4.1
+
+### Changes and Fixes
+
+- [8FACE mk2](./docs/eightface/EightFaceMk2.md)
+    - Fixed crash on patch autosave and on preset-loading 
+
 ## 2.4.0
 
 ### New modules
@@ -38,10 +53,14 @@
     - Added model magnifier loupe option
     - Added integration into Rack's menu bar
     - Added `Shift`+*Click* to add a module without closing the browser
+    - Added option to apply VCV Library whitelisting
+    - Added option to show deprecated module models (now hidden by default) (#440)
     - Changed hotkey to toggle hidden modules to `Shift`+`Space` (because of Spotlight on Mac)
     - Fixed broken button of "Favorites" category
 - Module [ME](./docs/trial-and-error/Me.md)
     - Added screen magnifier loupe
+- Module [MIDI-MON](./docs/midi/MidiMon.md)
+    - Added option to display engine frame instead of timestamp
 - Module [POLY-PILE](./docs/pile/Pile.md)
     - Added support for polyphonic reset triggers (#431)
 
