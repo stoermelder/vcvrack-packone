@@ -6,6 +6,7 @@
 #include "../../components/Knobs.hpp"
 #include "../../components/ParamHandleIndicator.hpp"
 #include "TransitBase.hpp"
+#include "tipsy-encoder/include/tipsy/tipsy.h"
 #include <random>
 
 namespace StoermelderPackOne {
@@ -36,7 +37,8 @@ enum class OUTMODE {
 	TRIG_SNAPSHOT = 4,
 	TRIG_SOC = 3,
 	TRIG_EOC = 2,
-	PHASE = 5
+	PHASE = 5,
+	TIPSY = 6
 };
 
 struct ParamHandleEx : ParamHandleIndicator {
@@ -111,6 +113,9 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 	dsp::PulseGenerator outSocPulseGenerator;
 	dsp::PulseGenerator outEocPulseGenerator;
 
+	tipsy::ProtocolEncoder tipsyEncoder;
+	std::string tipsyCurrentLabel;
+
 	/** [Stored to JSON] */
 	bool mappingIndicatorHidden = false;
 	/** [Stored to JSON] */
@@ -156,6 +161,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 
 		Module::config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		Module::configSwitch(PARAM_CTRLMODE, 0.f, 2.f, 0.f, "Operating mode", {"Read", "Auto", "Write"});
+		Module::paramQuantities[PARAM_CTRLMODE]->description = "Read: morph through presets with the CV input.\nAuto: auto-save snapshots on preset-change.\nWrite: snapshot the currently mapped parameters as a preset.";
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			TransitParamQuantity<NUM_PRESETS>* pq = Module::configParam<TransitParamQuantity<NUM_PRESETS>>(PARAM_PRESET + i, 0, 1, 0);
 			pq->module = this;
@@ -168,11 +174,17 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 			BASE::slot[i].indexLight = LIGHT_PRESET + i * 3;
 		}
 		Module::configParam(PARAM_FADE, 0.f, 1.f, 0.5f, "Fade");
+		Module::paramQuantities[PARAM_FADE]->description = "Crossfade amount between presets.";
 		Module::configParam(PARAM_SHAPE, -1.f, 1.f, 0.f, "Shape");
+		Module::paramQuantities[PARAM_SHAPE]->description = "Shape of the crossfade: linear (0), ease-in (<0), or ease-out (>0).";
 		Module::configInput(INPUT_CV, "CV");
+		Module::inputInfos[INPUT_CV]->description = "Trigger/gate or CV that drives the transition between presets (operating mode selected on the context menu).";
 		Module::configInput(INPUT_RESET, "Reset trigger");
+		Module::inputInfos[INPUT_RESET]->description = "Resets the current position in the preset chain.";
 		Module::configInput(INPUT_FADE, "Fade CV");
+		Module::inputInfos[INPUT_FADE]->description = "Optional CV for the fade amount, summed with the FADE knob.";
 		Module::configOutput(OUTPUT, "Envelope/trigger");
+		Module::outputInfos[OUTPUT]->description = "Outputs a transition envelope, trigger, or gate depending on the input and operating mode.";
 
 		handleDivider.setDivision(4096);
 		buttonDivider.setDivision(128);
@@ -650,7 +662,9 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 			float deltaTime = sampleTime * presetProcessDivision;
 
 			slewLimiter.clamp = clampFadeCv;
-			float fade = presetFadeTime < 0.f ? (BASE::inputs[INPUT_FADE].getVoltage() / 10.f + BASE::params[PARAM_FADE].getValue()) : presetFadeTime;
+			float cv = BASE::inputs[INPUT_FADE].getVoltage() / 10.f;
+			float base = presetFadeTime < 0.f ? BASE::params[PARAM_FADE].getValue() : presetFadeTime;
+			float fade = base + cv;
 			slewLimiter.setRise(fade);
 			float shape = BASE::params[PARAM_SHAPE].getValue();
 			slewLimiter.setShape(shape);
@@ -720,6 +734,15 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 			if (s == 10.f) {
 				processing = false;
 			}
+		}
+
+		if (outMode == OUTMODE::TIPSY) {
+			float f = 0.f;
+			if (!tipsyEncoder.isDormant()) {
+				tipsyEncoder.getNextMessageFloat(f);
+			}
+			BASE::outputs[OUTPUT].setVoltage(f);
+			BASE::outputs[OUTPUT].setChannels(1);
 		}
 	}
 
@@ -860,6 +883,17 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 		else {
 			if (!slot->isUsed()) return;
 			presetNext = p;
+		}
+
+		if (outMode == OUTMODE::TIPSY) {
+			if (!tipsyEncoder.isDormant()) tipsyEncoder.terminateCurrentMessage();
+			tipsyCurrentLabel = slot->isUsed() ? slot->getLabel() : "";
+			if (tipsyCurrentLabel.empty()) tipsyCurrentLabel = string::f("Snapshot #%i", slot->index + 1);
+			tipsyEncoder.initiateMessage(
+				"text/plain",
+				(uint32_t)tipsyCurrentLabel.length() + 1,
+				(const unsigned char*)tipsyCurrentLabel.c_str()
+			);
 		}
 	}
 
@@ -1592,6 +1626,8 @@ struct TransitWidget : ThemedModuleWidget<TransitModule<NUM_PRESETS>> {
 			menu->addChild(construct<OutModeItem>(&MenuItem::text, "Polyphonic", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::POLY, &OutModeItem::disabled, phaseMode));
 			menu->addChild(new MenuSeparator);
 			menu->addChild(construct<OutModeItem>(&MenuItem::text, "Phase", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::PHASE, &OutModeItem::disabled, !phaseMode));
+			menu->addChild(new MenuSeparator);
+			menu->addChild(construct<OutModeItem>(&MenuItem::text, "Tipsy", &OutModeItem::module, module, &OutModeItem::outMode, OUTMODE::TIPSY, &OutModeItem::disabled, phaseMode));
 		}));
 		menu->addChild(createBoolPtrMenuItem("Clamp Fade CV input", "", &module->clampFadeCv));
 

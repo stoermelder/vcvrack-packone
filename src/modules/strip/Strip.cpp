@@ -87,13 +87,18 @@ struct StripModule : StripModuleBase, StripIdFixModule {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configSwitch(MODE_PARAM, 0.f, 1.f, 0.f, "Toggle left/right mode");
+		paramQuantities[MODE_PARAM]->description = "Cycles through left/right/selected-strip modes for the strip buttons.";
 		configInput(ON_INPUT, "Strip on/toggle trigger");
+		inputInfos[ON_INPUT]->description = "Behavior depends on the ON-mode selected on the context menu (default/trigger/toggle/gate).";
 		configSwitch(ON_PARAM, 0.f, 1.f, 0.f, "Switch/toggle strip on");
 		configInput(OFF_INPUT, "Strip off trigger");
+		inputInfos[OFF_INPUT]->description = "Triggers a hard-off of the strip bypass.";
 		configSwitch(OFF_PARAM, 0.f, 1.f, 0.f, "Switch strip off");
 		configInput(RAND_INPUT, "Strip randomization trigger");
+		inputInfos[RAND_INPUT]->description = "Randomizes the strip's parameters according to the include/exclude list.";
 		configSwitch(RAND_PARAM, 0.f, 1.f, 0.f, "Randomize strip");
 		configSwitch(EXCLUDE_PARAM, 0.f, 1.f, 0.f, "Parameter randomization include/exclude");
+		paramQuantities[EXCLUDE_PARAM]->description = "Hold to enter parameter learn mode; clicked parameters are then either included in or excluded from randomization.";
 
 		ResetEvent re;
 		onReset(re);
