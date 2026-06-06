@@ -683,13 +683,6 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 						browserPane->setRoots(sirenSettings.rootContainers, sirenSettings.activeRootIdx);
 					}
 				};
-				browserPane->onRemoveRoot = [this, m](int idx) {
-					if (idx < 0 || idx >= (int)sirenSettings.rootContainers.size()) return;
-					sirenSettings.rootContainers.erase(sirenSettings.rootContainers.begin() + idx);
-					sirenSettings.activeRootIdx = sirenSettings.rootContainers.empty() ? -1 : 0;
-					if (m) m->activeRootIdx = sirenSettings.activeRootIdx;
-					browserPane->setRoots(sirenSettings.rootContainers, sirenSettings.activeRootIdx);
-				};
 				browserPane->onSelectRoot = [this, m](int idx) {
 					sirenSettings.activeRootIdx = idx;
 					if (m) m->activeRootIdx = idx;
@@ -864,10 +857,7 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 
 		if (!sirenSettings.rootContainers.empty()) {
 			menu->addChild(createMenuItem("Remove root", "", [this]() {
-				int idx = sirenSettings.activeRootIdx;
-				if (idx < 0 || idx >= (int)sirenSettings.rootContainers.size()) return;
-				sirenSettings.rootContainers.erase(sirenSettings.rootContainers.begin() + idx);
-				sirenSettings.activeRootIdx = sirenSettings.rootContainers.empty() ? -1 : 0;
+				if (!sirenSettings.removeActiveRoot(browserPane->activeDataSource)) return;
 				browserPane->setRoots(sirenSettings.rootContainers, sirenSettings.activeRootIdx);
 			}));
 		}

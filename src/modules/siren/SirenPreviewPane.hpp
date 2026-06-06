@@ -165,6 +165,10 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 					metadata->setBpm(relPath, nameBpm, conf);
 				}
 			}
+			// Record that the user has opened this sample so cleanup() can
+			// later find and remove the matching waveform cache file, even
+			// when the user never tags/favorites/BPM-detects the file.
+			metadata->markSeen(relPath);
 		}
 
 		int64_t ts        = src->getTimestamp(id);

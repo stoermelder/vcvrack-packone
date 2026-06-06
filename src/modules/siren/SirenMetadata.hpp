@@ -235,7 +235,15 @@ struct RootMetadata {
 	void setFavorite(const std::string& rel, bool fav) {
 		samples[rel].relativePath = rel;
 		samples[rel].favorite = fav;
-		if (!fav && samples[rel].tags.empty()) samples.erase(rel);
+	}
+
+	// Ensure a metadata entry exists for `rel`. Called when a sample is opened
+	// in the browser so cleanup() can later find and remove the matching
+	// waveform cache file, even when the user never tags/favorites/BPM-detects
+	// the sample. Presence in `samples` itself is the "seen" marker — the map
+	// only ever grows, so once a sample is in here it stays in here.
+	void markSeen(const std::string& rel) {
+		samples[rel].relativePath = rel;
 	}
 
 	bool isFavorite(const std::string& rel) const {
@@ -262,7 +270,6 @@ struct RootMetadata {
 		tags.erase(std::remove_if(tags.begin(), tags.end(), [&](const std::string& t) {
 			return rack::string::lowercase(rack::string::trim(t)) == tagLow;
 		}), tags.end());
-		if (!it->second.favorite && tags.empty()) samples.erase(it);
 	}
 
 	std::vector<std::string> getTags(const std::string& rel) const {

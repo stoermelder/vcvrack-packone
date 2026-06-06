@@ -128,6 +128,12 @@ struct DataSource {
 	// Persist metadata to disk. Called automatically on destruction.
 	virtual void saveMetadata() {}
 
+	// Remove any cached state owned by this data source that is safe to discard
+	// when the source is being detached (e.g. waveform cache files). The data
+	// source's persistent metadata MUST NOT be removed here — the caller is
+	// expected to preserve it across detach/reattach of the same root.
+	virtual void cleanup() {}
+
 	// Append source-specific context menu items for a tree node.
 	// onChanged is called after any metadata modification so the browser can refresh.
 	virtual void appendNodeMenuItems(ui::Menu* menu, const DataSourceNode& node,

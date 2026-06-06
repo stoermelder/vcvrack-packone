@@ -65,7 +65,8 @@ struct SirenSourceButton : ui::ChoiceButton {
 			if (pane->onAddRoot) pane->onAddRoot();
 		}));
 		menu->addChild(createMenuItem("Remove root", "", [this]() {
-			if (pane->onRemoveRoot) pane->onRemoveRoot(pane->activeRootIdx);
+			if (!sirenSettings.removeActiveRoot(pane->activeDataSource)) return;
+			pane->setRoots(sirenSettings.rootContainers, sirenSettings.activeRootIdx);
 		}, pane->rootContainers.empty()));
 
 		menu->addChild(new MenuSeparator);

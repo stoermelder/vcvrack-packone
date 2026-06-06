@@ -208,7 +208,6 @@ struct SirenScrollWidget : ui::ScrollWidget {
 struct SirenBrowserPane : widget::OpaqueWidget {
 	std::function<void(const DataSourceNode&, bool)> onFileSelected;
 	std::function<void()>    onAddRoot;
-	std::function<void(int)> onRemoveRoot;
 	std::function<void(int)> onSelectRoot;
 
 	SirenDropHandler* dropHandler = nullptr;
@@ -274,8 +273,19 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 	void setRoots(const std::vector<std::string>& roots, int activeIdx) {
 		rootContainers = roots;
 		activeRootIdx  = activeIdx;
-		if (activeRootIdx >= 0 && activeRootIdx < (int)rootContainers.size())
+		if (activeRootIdx >= 0 && activeRootIdx < (int)rootContainers.size()) {
 			loadRoot(rootContainers[activeRootIdx]);
+		}
+		else {
+			delete activeDataSource;
+			activeDataSource = nullptr;
+			selectedPath.clear();
+			rows.clear();
+			loadPending = false;
+			pendingReady.store(false, std::memory_order_relaxed);
+			++treeGeneration;
+			rebuildRowWidgets();
+		}
 	}
 
 	void loadRoot(const std::string& root) {

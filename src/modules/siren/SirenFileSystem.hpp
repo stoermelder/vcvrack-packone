@@ -169,6 +169,21 @@ struct FileSystemDataSource : DataSource {
 		metadata_.save(metadataFilePath());
 	}
 
+	// Remove every waveform cache file keyed by a relative path in this root's
+	// metadata. The metadata itself is intentionally left untouched on disk so
+	// re-adding the same root later preserves tags/favorites/BPM.
+	void cleanup() override {
+		if (isTesting()) return;
+		if (metadata_.samples.empty()) return;
+
+		std::string cacheDir = ::StoermelderPackOne::Siren::sirenCacheDirPath();
+		for (const auto& pair : metadata_.samples) {
+			std::string cacheFile = cacheDir + "/" + hashPath(pair.first) + ".json";
+			std::error_code ec;
+			ghc::filesystem::remove(ghc::filesystem::path(cacheFile), ec);
+		}
+	}
+
 	std::string rootPath() const override { return root; }
 
 	std::string getRootDisplayName() const override {
