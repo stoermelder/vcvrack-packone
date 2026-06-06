@@ -529,6 +529,31 @@ TEST_CASE("Per-slot fade time overrides global fade parameter", "[Transit]") {
 		REQUIRE(testModule->params[TestModule::TEST_PARAM_1].getValue() == Catch::Approx(1.0f).margin(0.02f));
 	}
 
+	SECTION("Slot with custom fade time overrides global PARAM_FADE") {
+		// Global fade = 0 (fast: rise ≈ 10ms — would complete in ~450 frames).
+		// Slot 1 fade = 1.0 (slow: rise ≈ 10.24s — won't complete in 1000 frames).
+		// After 1000 frames the transition must still be in progress, proving the
+		// slot-level override was used rather than the fast global value.
+		module->params[TransitModule<12>::PARAM_FADE].setValue(0.0f);
+
+		// Settle fully at preset 0 (value 0.0) with the fast global fade
+		module->presetLoad(0);
+		for (int i = 0; i < 1000; i++) {
+			module->process(Test::makeProcessArgs(i + 100));
+		}
+		REQUIRE(testModule->params[TestModule::TEST_PARAM_1].getValue() == Catch::Approx(0.0f).margin(0.01f));
+
+		// Override slot 1 to use the slow fade (1.0), then load it
+		module->getSlot(1)->setFadeTime(1.0f);
+		module->presetLoad(1);
+		for (int i = 0; i < 1000; i++) {
+			module->process(Test::makeProcessArgs(i + 1200));
+		}
+		// If global (fast) fade had been used the value would already be 1.0;
+		// the slow slot fade keeps it well below that.
+		REQUIRE(testModule->params[TestModule::TEST_PARAM_1].getValue() < 0.9f);
+	}
+
 	SECTION("Slot with default fade time (-1) uses global PARAM_FADE") {
 		// Slot 1 uses default fade time (-1 means use parameter)
 		REQUIRE(module->getSlot(1)->getFadeTime() == Catch::Approx(-1.0f));
@@ -550,6 +575,68 @@ TEST_CASE("Per-slot fade time overrides global fade parameter", "[Transit]") {
 			module->process(Test::makeProcessArgs(i + 1200));
 		}
 		// Param value should still be well below 1.0 (transition partway through)
+		REQUIRE(testModule->params[TestModule::TEST_PARAM_1].getValue() < 0.9f);
+	}
+
+	Test::unregisterModule(testModule);
+	delete testModule;
+	Test::unregisterModule(module);
+	Test::destroyModule(module);
+}
+
+
+TEST_CASE("Fade CV input is additive to PARAM_FADE and ignored by per-slot override", "[Transit]") {
+	TransitModule<12>* module = Test::createModule<TransitModule<12>>("Transit");
+	Test::registerModule(module);
+	TestModule* testModule = new TestModule();
+	Test::registerModule(testModule);
+
+	module->bindAddParameterRequest(testModule->id, TestModule::TEST_PARAM_1);
+	module->taskProcessorDsp.process();
+	module->process(Test::makeProcessArgs(1));
+
+	testModule->params[TestModule::TEST_PARAM_1].setValue(0.0f);
+	module->presetSave(0);
+	testModule->params[TestModule::TEST_PARAM_1].setValue(1.0f);
+	module->presetSave(1);
+
+	// Settle fully at preset 0 (value 0.0) before each section
+	auto settleAtZero = [&]() {
+		module->params[TransitModule<12>::PARAM_FADE].setValue(0.0f);
+		module->inputs[TransitModule<12>::INPUT_FADE].channels = 1;
+		module->inputs[TransitModule<12>::INPUT_FADE].setVoltage(0.0f);
+		module->presetLoad(0);
+		for (int i = 0; i < 1000; i++) {
+			module->process(Test::makeProcessArgs(i + 10));
+		}
+		REQUIRE(testModule->params[TestModule::TEST_PARAM_1].getValue() == Catch::Approx(0.0f).margin(0.01f));
+	};
+
+	SECTION("Fade CV adds to PARAM_FADE on a default slot") {
+		// PARAM_FADE = 0 (fast) but CV = 10V → combined fade = 0 + 10/10 = 1.0 (slow, ~10s).
+		// After 1000 frames the transition must still be in progress.
+		settleAtZero();
+		module->params[TransitModule<12>::PARAM_FADE].setValue(0.0f);
+		module->inputs[TransitModule<12>::INPUT_FADE].setVoltage(10.0f);
+		module->presetLoad(1);
+		for (int i = 0; i < 1000; i++) {
+			module->process(Test::makeProcessArgs(i + 1100));
+		}
+		REQUIRE(testModule->params[TestModule::TEST_PARAM_1].getValue() < 0.9f);
+	}
+
+	SECTION("Fade CV is additive to a per-slot fade time") {
+		// Slot 1 override = 0 (would be instant on its own).
+		// CV = 10V adds 1.0, making combined fade = 1.0 (slow, ~10s).
+		// After 1000 frames the transition must still be in progress.
+		settleAtZero();
+		module->getSlot(1)->setFadeTime(0.0f);
+		module->params[TransitModule<12>::PARAM_FADE].setValue(0.0f);
+		module->inputs[TransitModule<12>::INPUT_FADE].setVoltage(10.0f);
+		module->presetLoad(1);
+		for (int i = 0; i < 1000; i++) {
+			module->process(Test::makeProcessArgs(i + 1100));
+		}
 		REQUIRE(testModule->params[TestModule::TEST_PARAM_1].getValue() < 0.9f);
 	}
 

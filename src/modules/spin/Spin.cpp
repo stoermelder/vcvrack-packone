@@ -47,9 +47,13 @@ struct SpinModule : Module {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configOutput(OUTPUT_DEC, "Mouse wheel down trigger");
+		outputInfos[OUTPUT_DEC]->description = "Trigger sent when the mouse wheel is scrolled down over a parameter.";
 		configOutput(OUTPUT_INC, "Mouse wheel up trigger");
+		outputInfos[OUTPUT_INC]->description = "Trigger sent when the mouse wheel is scrolled up over a parameter.";
 		configOutput(OUTPUT_CLICK, "Middle mouse button trigger");
+		outputInfos[OUTPUT_CLICK]->description = "Trigger or gate sent on middle-mouse click; behavior depends on the click mode on the context menu.";
 		configSwitch(PARAM_ONLY, 0.f, 1.f, 1.f, "Only active while parameter-hovering");
+		paramQuantities[PARAM_ONLY]->description = "When on, mouse-wheel/click events are only captured while hovering a parameter.";
 
 		Module::ResetEvent re;
 		onReset(re);

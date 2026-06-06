@@ -153,13 +153,16 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configInput(INPUT_SCENE, "Scene selection");
+		inputInfos[INPUT_SCENE]->description = "Triggers scenes depending on the operating mode selected on the context menu.";
 		configInput(INPUT_RESET, "Scene reset");
+		inputInfos[INPUT_RESET]->description = "Resets the current scene according to the selected scene-mode.";
 		for (int i = 0; i < SCENE_MAX; i++) {
 			configSwitch(PARAM_SCENE + i, 0.f, 1.f, 0.f, string::f("Scene %i", i + 1));
 		}
 		for (int i = 0; i < PORTS; i++) {
 			configInput(INPUT + i, string::f("Signal %i", i + 1));
 			configOutput(OUTPUT + i, string::f("Mix %i", i + 1));
+			outputInfos[OUTPUT + i]->description = "Polyphonic mix bus.";
 			for (int j = 0; j < PORTS; j++) {
 				configParam<MatrixButtonParamQuantity>(PARAM_MATRIX + i * PORTS + j, 0.f, 1.f, 0.f, string::f("Input %i to Output %i", j + 1, i + 1));
 			}
@@ -170,8 +173,10 @@ struct IntermixModule : Module, IntermixBase<PORTS> {
 		}
 		auto pqFadeIn = configParam<FadeLengthParamQuantity<IntermixModule<PORTS>>>(PARAM_FADEIN, 0.f, 4.f, 0.f, "Fade in", "s");
 		pqFadeIn->module = this;
+		pqFadeIn->description = "Fade-in time applied to a signal when a matrix button is engaged.";
 		auto pqFadeOut = configParam<FadeLengthParamQuantity<IntermixModule<PORTS>>>(PARAM_FADEOUT, 0.f, 4.f, 0.f, "Fade out", "s");
 		pqFadeOut->module = this;
+		pqFadeOut->description = "Fade-out time applied to a signal when a matrix button is disengaged.";
 		sceneDivider.setDivision(64);
 
 		ResetEvent re;

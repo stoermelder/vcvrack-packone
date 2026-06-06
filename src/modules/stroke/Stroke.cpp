@@ -101,6 +101,7 @@ struct StrokeModule : Module {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		for (int i = 0; i < PORTS; i++) {
 			configOutput(OUTPUT + i, string::f("Hotkey %i trigger/gate", i + 1));
+			outputInfos[OUTPUT + i]->description = "Fires a short trigger, or stays high as a gate, when the corresponding hotkey is pressed.";
 		}
 
 		ResetEvent re;
