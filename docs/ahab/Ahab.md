@@ -48,7 +48,7 @@ This writes to output 1 and scales the value 5 to a range of 0-6, which is mappe
 
 ![AHAB CV I/O](out-2.png)
 
-This writes to output 1 (addressed as `a`) a V/Oct pitch voltage of D3 (third octave D).
+This writes to output 1 (addressed as `a`) a V/Oct pitch voltage of D3 (third octave D). The fourth  parameter (unused in the example) sets the length of the output signal - if this parameter is omitted, the voltage is held indefinitely. Otherwise the signal will go back to 0V after the number of ticks have been elapsed - this works similarly to the [MIDI operator `:`](https://metasyn.srht.site/learn-orca/#the-midi-operator).
 
 ### "pending bang" operator `+`
 
@@ -59,6 +59,8 @@ AHAB has a third custom operator `+`, which can be placed to create a manual *ba
 AHAB has some features not found in the original ORCA/ORCA-C:
 
 - The simulation can be triggered by an external clock signal, using the _Clock In_ port. This allows you to drive the simulation even by non-evenly spaced clock sources.
+
+- A _Reset_ input allows you to reset the frame counter to zero, providing control over the simulation's timing from external sources.
 
 - The copy/paste clipboard is shared across all AHAB instances in your Rack. You can copy/cut from one AHAB module and paste into another. You can save the content of the clipboard to a text file and save it as an ORCA file.
 
