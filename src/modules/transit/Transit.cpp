@@ -161,6 +161,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 
 		Module::config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		Module::configSwitch(PARAM_CTRLMODE, 0.f, 2.f, 0.f, "Operating mode", {"Read", "Auto", "Write"});
+		Module::paramQuantities[PARAM_CTRLMODE]->description = "Read: morph through presets with the CV input.\nAuto: auto-save snapshots on preset-change.\nWrite: snapshot the currently mapped parameters as a preset.";
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			TransitParamQuantity<NUM_PRESETS>* pq = Module::configParam<TransitParamQuantity<NUM_PRESETS>>(PARAM_PRESET + i, 0, 1, 0);
 			pq->module = this;
@@ -173,11 +174,17 @@ struct TransitModule : TransitBase<NUM_PRESETS>, ExpanderChangeListener {
 			BASE::slot[i].indexLight = LIGHT_PRESET + i * 3;
 		}
 		Module::configParam(PARAM_FADE, 0.f, 1.f, 0.5f, "Fade");
+		Module::paramQuantities[PARAM_FADE]->description = "Crossfade amount between presets.";
 		Module::configParam(PARAM_SHAPE, -1.f, 1.f, 0.f, "Shape");
+		Module::paramQuantities[PARAM_SHAPE]->description = "Shape of the crossfade: linear (0), ease-in (<0), or ease-out (>0).";
 		Module::configInput(INPUT_CV, "CV");
+		Module::inputInfos[INPUT_CV]->description = "Trigger/gate or CV that drives the transition between presets (operating mode selected on the context menu).";
 		Module::configInput(INPUT_RESET, "Reset trigger");
+		Module::inputInfos[INPUT_RESET]->description = "Resets the current position in the preset chain.";
 		Module::configInput(INPUT_FADE, "Fade CV");
+		Module::inputInfos[INPUT_FADE]->description = "Optional CV for the fade amount, summed with the FADE knob.";
 		Module::configOutput(OUTPUT, "Envelope/trigger");
+		Module::outputInfos[OUTPUT]->description = "Outputs a transition envelope, trigger, or gate depending on the input and operating mode.";
 
 		handleDivider.setDivision(4096);
 		buttonDivider.setDivision(128);
