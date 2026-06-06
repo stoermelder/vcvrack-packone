@@ -228,16 +228,19 @@ struct HexGrid {
 	
 	CELL getCell(int q, int r) {
 		RoundAxialVec index = axialToIndex(q, r);
+		if (index.q < 0 || index.q >= arraySize || index.r < 0 || index.r >= arraySize) return CELL();
 		return cellMap[index.q][index.r];
 	}
 
 	CELL getCell(RoundAxialVec hex) {
 		hex = axialToIndex(hex);
+		if (hex.q < 0 || hex.q >= arraySize || hex.r < 0 || hex.r >= arraySize) return CELL();
 		return cellMap[hex.q][hex.r];
 	}
 
 	void setCell(CELL c) {
 		RoundAxialVec index = axialToIndex(c.pos);
+		if (index.q < 0 || index.q >= arraySize || index.r < 0 || index.r >= arraySize) return;
 		cellMap[index.q][index.r] = c;
 	}
 

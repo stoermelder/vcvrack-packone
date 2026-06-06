@@ -69,17 +69,27 @@ struct RawModule : Module {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configParam(PARAM_GAIN_IN, -20.f, 20.f, 15.f, "Input gain", "dB");
+		paramQuantities[PARAM_GAIN_IN]->description = "Pre-filter gain driving the resonator. Higher values produce more saturation and self-oscillation.";
 		configParam(PARAM_FN, 20.f, 2000.f, 1000.f, "Resonance frequency", "Hz");
+		paramQuantities[PARAM_FN]->description = "Center frequency of the resonator.";
 		configParam(PARAM_C, -6.f, -3.f, -4.f, "Damping coefficient");
+		paramQuantities[PARAM_C]->description = "Damping of the resonator. More negative values give a longer, more ringing decay.";
 		configParam(PARAM_K, 0.1f, 1.f, 0.5f, "Nonlinearity parameter");
+		paramQuantities[PARAM_K]->description = "Amount of nonlinear (tanh-like) distortion in the resonator feedback path.";
 		configParam(PARAM_KMULT, -1.f, 1.f, 0.f, "Nonlinearity asymmetry", "", 5.f);
+		paramQuantities[PARAM_KMULT]->description = "Asymmetry of the nonlinearity, biased toward compression (-) or expansion (+).";
 		configParam(PARAM_GAIN_OUT, -20.f, 20.f, -5.f, "Output gain", "dB");
+		paramQuantities[PARAM_GAIN_OUT]->description = "Post-filter output level.";
 #ifndef METAMODULE
 		configInput(INPUT, "Polyphonic audio");
+		inputInfos[INPUT]->description = "Audio signal to be processed by the resonator.";
 		configOutput(OUTPUT, "Polyphonic audio");
+		outputInfos[OUTPUT]->description = "Resonator output, same number of channels as the input.";
 #else
 		configInput(INPUT, "Audio");
+		inputInfos[INPUT]->description = "Audio signal to be processed by the resonator.";
 		configOutput(OUTPUT, "Audio");
+		outputInfos[OUTPUT]->description = "Resonator output signal.";
 #endif
 		paramDivider.setDivision(64);
 

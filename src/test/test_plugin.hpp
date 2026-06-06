@@ -3,7 +3,6 @@
 #define CATCH_CONFIG_FAST_COMPILE
 #include "catch_amalgamated.hpp"
 
-#define TESTING
 
 // Avoid redefinition issues: replace Catch2's function-like DEPRECATED with an object-like one
 #ifdef DEPRECATED

@@ -1,6 +1,6 @@
 {
 	"slug": "Stoermelder-P1",
-	"version": "2.3.1",
+	"version": "2.4.1",
 	"license": "GPL-3.0-or-later",
 	"author": "Benjamin Dill",
 	"name": "PackOne",
@@ -43,7 +43,7 @@
 		{
 			"slug": "MidiEsx",
 			"name": "MIDI-ESX",
-			"description": "MIDI converter for your Expert Sleepers hardware setup (ES-5, ES-8, ES-9 etc.)",
+			"description": "MIDI converter for your Expert Sleepers hardware setup (ES-5, ES-8, ES-9 etc.). Routes MIDI messages from any VCV Rack MIDI module to your audio interface, sharing the same sample-accurate latency for tight sync with your modular gear.",
 			"tags": [
 				"MIDI"
 			],
@@ -52,9 +52,9 @@
 		{
 			"slug": "Ahab",
 			"name": "AHAB",
-			"description": "A live programming environment for ORCA, an esoteric programming language designed to quickly create procedural sequencers",
+			"description": "A live programming environment for ORCA, an esoteric programming language designed to quickly create procedural sequencers. Type operators into the grid to build MIDI and CV sequences in real time, with embedded examples to get you started.",
 			"tags": [
-				"Sequencer", 
+				"Sequencer",
 				"MIDI"
 			],
 			"manualUrl": "https://github.com/stoermelder/vcvrack-packone/blob/v2/docs/ahab/Ahab.md"
@@ -62,7 +62,7 @@
 		{
 			"slug": "PanicRoom",
 			"name": "PANIC ROOM",
-			"description": "Restricts your modular space within Rack, making it impossible to patch outside of a defined area",
+			"description": "Restricts your modular space within Rack, making it impossible to patch outside of a defined area. Modules moved outside the learned boundary are automatically disabled and re-enabled when brought back inside.",
 			"tags": [
 				"Utility"
 			],
@@ -71,7 +71,7 @@
 		{
 			"slug": "EightFaceMk2",
 			"name": "8FACE mk2",
-			"description": "Universal expander for sequencing up to eight presets of multiple modules",
+			"description": "Universal expander for sequencing up to eight presets of multiple modules. Bind any module, save and recall snapshots, morph between them and sequence presets with clock and trigger inputs.",
 			"tags": [
 				"Utility",
 				"Sequencer"
@@ -81,7 +81,7 @@
 		{
 			"slug": "EightFaceMk2Ex",
 			"name": "+8",
-			"description": "Expander for 8FACE mk2",
+			"description": "Expander for 8FACE mk2 that adds 8 additional snapshot slots. Up to fifteen +8 expanders can be chained for a total of 128 snapshots per 8FACE mk2 instance.",
 			"tags": [
 				"Expander"
 			],
@@ -90,7 +90,7 @@
 		{
 			"slug": "EightFace",
 			"name": "8FACE",
-			"description": "Universal expander for sequencing up to eight presets of any module",
+			"description": "Universal expander for sequencing up to eight presets of any module. The classic 8FACE stores, recalls and sequences snapshots of a single bound module via clock and trigger inputs.",
 			"tags": [
 				"Utility",
 				"Sequencer"
@@ -100,7 +100,7 @@
 		{
 			"slug": "EightFaceX2",
 			"name": "8FACEx2",
-			"description": "Universal expander for sequencing up to sixteen presets of any module",
+			"description": "Universal expander for sequencing up to sixteen presets of any module. Larger version of the classic 8FACE module with a 16-slot sequencer for longer preset chains.",
 			"tags": [
 				"Utility",
 				"Sequencer"
@@ -110,7 +110,7 @@
 		{
 			"slug": "AudioInterface64",
 			"name": "AUDIO-64",
-			"description": "Sends CV and audio to/from an audio device",
+			"description": "Sends CV and audio to/from an audio device. Provides 64 channels of audio for your hardware sound card.",
 			"tags": [
 				"External"
 			],
@@ -119,7 +119,7 @@
 		{
 			"slug": "MidiKey",
 			"name": "MIDI-KEY",
-			"description": "Converts MIDI CC or note messages into keyboard events (preview)",
+			"description": "Converts MIDI CC or note messages into keyboard events. Map any MIDI control to a hotkey, with modifier support and saved presets for triggering Rack actions from your controller.",
 			"tags": [
 				"MIDI",
 				"Utility"
@@ -129,7 +129,7 @@
 		{
 			"slug": "Dirt",
 			"name": "DIRT",
-			"description": "Crosstalk and noise for polyphonic cables",
+			"description": "Crosstalk and noise for polyphonic cables. Adds per-channel noise, crosstalk and analog-style defects like crackle, pitch shifting, bit crushing and volume dropouts.",
 			"tags": [
 				"Polyphonic"
 			],
@@ -138,7 +138,7 @@
 		{
 			"slug": "MidiPlug",
 			"name": "MIDI-PLUG",
-			"description": "Virtual MIDI merger and splitter",
+			"description": "Virtual MIDI merger and splitter. Two configurable outputs can pass MIDI messages through, filter by channel, merge multiple sources or duplicate to two destinations.",
 			"tags": [
 				"MIDI",
 				"Utility"
@@ -148,7 +148,7 @@
 		{
 			"slug": "Orbit",
 			"name": "ORBIT",
-			"description": "Polyphonic stereo field spreader",
+			"description": "Polyphonic stereo field spreader. Randomly positions each polyphonic channel within a configurable spread, with optional drift to gradually move voices toward or away from the centre.",
 			"tags": [
 				"Panning",
 				"Effect",
@@ -159,7 +159,7 @@
 		{
 			"slug": "MidiMon",
 			"name": "MIDI-MON",
-			"description": "Monitor for MIDI messages",
+			"description": "Monitor for MIDI messages. Logs incoming messages with timing information, and can export the log as a text file for later analysis.",
 			"tags": [
 				"MIDI",
 				"Utility"
@@ -169,7 +169,7 @@
 		{
 			"slug": "Raw",
 			"name": "RAW",
-			"description": "Digital effect based on the dynamics of bistable systems",
+			"description": "Digital effect based on the dynamics of bistable systems. Models the behaviour of a bistable mechanical resonator for a unique distortion character with adjustable asymmetry and damping.",
 			"tags": [
 				"Distortion",
 				"Digital"
@@ -179,7 +179,7 @@
 		{
 			"slug": "Macro",
 			"name": "MACRO",
-			"description": "Macro-knob for controlling multiple parameters, with attenuverts and slew-limiting",
+			"description": "Macro-knob for controlling multiple parameters, with attenuverts and slew-limiting. Maps up to four parameters to a single knob, each with independent scaling, range and exponential smoothing.",
 			"tags": [
 				"Utility"
 			],
@@ -188,7 +188,7 @@
 		{
 			"slug": "X4",
 			"name": "X4",
-			"description": "Dual multiple for parameter-mapping",
+			"description": "Dual multiple for parameter-mapping. Maps four separate knobs to a single parameter, useful for driving the same target from MIDI-CAT and CV-MAP simultaneously or for multi-controller setups.",
 			"tags": [
 				"Utility"
 			],
@@ -197,7 +197,7 @@
 		{
 			"slug": "Transit",
 			"name": "TRANSIT",
-			"description": "Parameter-morpher and sequencer for up to 96 snapshots",
+			"description": "Parameter-morpher and sequencer for up to 96 snapshots. Binds to any module, captures parameter snapshots, morphs smoothly between them and steps through them with clock and trigger inputs.",
 			"tags": [
 				"Utility",
 				"Sequencer"
@@ -207,7 +207,7 @@
 		{
 			"slug": "TransitEx",
 			"name": "+T",
-			"description": "Expander for TRANSIT",
+			"description": "Expander for TRANSIT that adds 12 additional snapshot slots. Up to seven +T expanders can be chained for a total of 96 snapshots per TRANSIT instance.",
 			"tags": [
 				"Utility"
 			],
@@ -216,7 +216,7 @@
 		{
 			"slug": "Spin",
 			"name": "SPIN",
-			"description": "Utility for converting mouse-wheel movement into triggers, also handles middle-click of mouse, useful for SAIL",
+			"description": "Utility for converting mouse-wheel movement into triggers, also handles middle-click of mouse, useful for SAIL. Outputs increment and decrement triggers from scrolling and gates from the middle button, with configurable keyboard modifiers.",
 			"tags": [
 				"Utility"
 			],
@@ -225,7 +225,7 @@
 		{
 			"slug": "Stroke",
 			"name": "STROKE",
-			"description": "Utility for converting hotkeys to triggers, gates and some other special commands",
+			"description": "Utility for converting hotkeys to triggers, gates and some other special commands. Maps up to ten hotkeys or mouse buttons to polyphonic triggers and gates, with optional modifiers and special commands not available elsewhere in Rack.",
 			"tags": [
 				"Utility",
 				"Polyphonic"
@@ -235,7 +235,7 @@
 		{
 			"slug": "Goto",
 			"name": "GOTO",
-			"description": "Utility for jumping directly to 10 locations in your patch by hotkey or using MIDI",
+			"description": "Utility for jumping directly to 10 locations in your patch by hotkey or using MIDI. Each jump point is bound to a module or selection and also recalls the saved zoom level, so you can return to the exact view you left.",
 			"tags": [
 				"Utility"
 			],
@@ -244,7 +244,7 @@
 		{
 			"slug": "Glue",
 			"name": "GLUE",
-			"description": "Label maker for your modules!",
+			"description": "Label maker for your modules! Add small text annotations to any module or cable in your patch, with per-label customisation for more fun on your patching journey!",
 			"tags": [
 				"Utility"
 			],
@@ -253,7 +253,7 @@
 		{
 			"slug": "Grip",
 			"name": "GRIP",
-			"description": "Lock for module parameters",
+			"description": "Lock for module parameters. Holds up to 32 knobs, faders, switches or buttons at a fixed value, protecting them from accidental mouse changes and from context-menu randomisation.",
 			"tags": [
 				"Utility"
 			],
@@ -262,7 +262,7 @@
 		{
 			"slug": "AffixMicro",
 			"name": "µAFFIX",
-			"description": "Insert for polyphonic cables for adding offsets in Volt, semitones or octaves (8 channels)",
+			"description": "Insert for polyphonic cables for adding offsets in Volt, semitones or octaves (8 channels).",
 			"tags": [
 				"Polyphonic",
 				"Utility",
@@ -273,7 +273,7 @@
 		{
 			"slug": "Affix",
 			"name": "AFFIX",
-			"description": "Insert for polyphonic cables for adding offsets in Volt, semitones or octaves (16 channels)",
+			"description": "Insert for polyphonic cables for adding offsets in Volt, semitones or octaves (16 channels). Larger 16-channel sibling of µAFFIX, ideal for full-keyboard polyphonic transposition and tuning.",
 			"tags": [
 				"Polyphonic",
 				"Utility",
@@ -284,7 +284,7 @@
 		{
 			"slug": "Mirror",
 			"name": "MIRROR",
-			"description": "Utility for synchronizing module parameters",
+			"description": "Utility for synchronizing module parameters. Keeps multiple instances of the same module in lock-step, with eight assignable CV ports to drive any parameter of the bound modules.",
 			"tags": [
 				"Utility"
 			],
@@ -293,7 +293,7 @@
 		{
 			"slug": "MidiStep",
 			"name": "MIDI-STEP",
-			"description": "Module for relative modes of endless knobs on your MIDI controller, such as Arturia Beatstep, Native Instruments Komplete Keyboards or Behringer X-TOUCH",
+			"description": "Module for relative modes of endless knobs on your MIDI controller, such as Arturia Beatstep, Native Instruments Komplete Keyboards or Behringer X-TOUCH. Converts the relative-encoder output into increment and decrement triggers for use with PILE, SAIL and others.",
 			"tags": [
 				"Utility",
 				"MIDI",
@@ -304,7 +304,7 @@
 		{
 			"slug": "Pile",
 			"name": "PILE",
-			"description": "Translate increment triggers or decrement triggers in an absolute voltage, especially useful with MIDI-STEP, with slew support",
+			"description": "Translate increment triggers or decrement triggers in an absolute voltage, especially useful with MIDI-STEP, with slew support. Monophonic version with configurable unipolar/bipolar ranges, step size and exponential slew.",
 			"tags": [
 				"Utility"
 			],
@@ -313,7 +313,7 @@
 		{
 			"slug": "PilePoly",
 			"name": "POLY-PILE",
-			"description": "Translate increment triggers or decrement triggers in an absolute voltage, especially useful with MIDI-STEP, with slew support",
+			"description": "Translate increment triggers or decrement triggers in an absolute voltage, especially useful with MIDI-STEP, with slew support. Polyphonic version of PILE handling up to 16 channels independently.",
 			"tags": [
 				"Utility",
 				"Polyphonic"
@@ -323,7 +323,7 @@
 		{
 			"slug": "Sail",
 			"name": "SAIL",
-			"description": "Control any parameter currently hovered by mouse with CV, especially useful with MIDI-CC or MIDI-STEP",
+			"description": "Control any parameter currently hovered by mouse with CV, especially useful with MIDI-CC or MIDI-STEP. Offers differential and absolute input modes, increment/decrement triggers, and a fine-control modifier for precise edits.",
 			"tags": [
 				"Utility"
 			],
@@ -332,7 +332,7 @@
 		{
 			"slug": "Intermix",
 			"name": "INTERMIX",
-			"description": "Precision adder 8x8 switch matrix with scene-support",
+			"description": "Precision adder 8x8 switch matrix with scene-support. Route and mix any combination of eight inputs to eight outputs with per-output attenuverters, eight recallable scenes and smooth crossfading.",
 			"tags": [
 				"Mixer",
 				"Polyphonic"
@@ -342,7 +342,7 @@
 		{
 			"slug": "IntermixFade",
 			"name": "INTERMIX-FADE",
-			"description": "Expander for INTERMIX for setting individual fade values",
+			"description": "Expander for INTERMIX for setting individual fade values. Assigns independent fade-in and fade-out times per input column so scenes crossfade gracefully on a per-source basis.",
 			"tags": [
 				"Expander"
 			],
@@ -351,7 +351,7 @@
 		{
 			"slug": "IntermixEnv",
 			"name": "INTERMIX-ENV",
-			"description": "Expander for INTERMIX outputting envelopes for a selected input-column",
+			"description": "Expander for INTERMIX outputting envelopes for a selected input-column. Generates attack-decay envelope signals from the audio activity of any chosen column for ducking, gating and dynamics patches.",
 			"tags": [
 				"Expander"
 			],
@@ -360,7 +360,7 @@
 		{
 			"slug": "IntermixGate",
 			"name": "INTERMIX-GATE",
-			"description": "Expander for INTERMIX outputting a gate-signal for each active row",
+			"description": "Expander for INTERMIX outputting a gate-signal for each active row. Lights up a dedicated gate output as soon as a row has at least one active connection, perfect for visualising or sequencing your matrix.",
 			"tags": [
 				"Expander"
 			],
@@ -369,7 +369,7 @@
 		{
 			"slug": "Hive",
 			"name": "HIVE",
-			"description": "4 channel sequencer running on a 2-dimensional hexagonal grid",
+			"description": "4 channel sequencer running on a 2-dimensional hexagonal grid. Up to four playheads wander a hexagonal map of cells, emitting triggers and ratchets as they enter active cells for generative, game-board-inspired sequences.",
 			"tags": [
 				"Sequencer",
 				"Random"
@@ -379,7 +379,7 @@
 		{
 			"slug": "Maze",
 			"name": "MAZE",
-			"description": "4 channel sequencer running on a 2-dimensional grid",
+			"description": "4 channel sequencer running on a 2-dimensional grid. Playheads move across a square grid, raising triggers on filled cells and ratcheting randomly on half cells — every run is a unique generative pattern.",
 			"tags": [
 				"Sequencer",
 				"Random"
@@ -389,7 +389,7 @@
 		{
 			"slug": "Arena",
 			"name": "ARENA",
-			"description": "2-dimensional XY-Mixer for 8 sources with various modulation targets and fun graphical interface",
+			"description": "2-dimensional XY-Mixer for 8 sources with various modulation targets and fun graphical interface. Place sources and outputs in 2D space, mix them visually and modulate four mixed outputs with 16 motion sequences each.",
 			"tags": [
 				"Utility",
 				"Controller",
@@ -400,7 +400,7 @@
 		{
 			"slug": "FourRounds",
 			"name": "4ROUNDS",
-			"description": "Randomizer for up to 16 input signals to create 15 output signals",
+			"description": "Randomizer for up to 16 input signals to create 15 output signals. Runs a four-round knockout tournament between inputs on each trigger, randomly picking a winner and routing it to the next round's output.",
 			"tags": [
 				"Utility",
 				"Sample and hold",
@@ -412,7 +412,7 @@
 		{
 			"slug": "Sipo",
 			"name": "SIPO",
-			"description": "Serial-in parallel-out shift register with polyphonic output and CV controls for skipping and incrementing on sampled values",
+			"description": "Serial-in parallel-out shift register with polyphonic output and CV controls for skipping and incrementing on sampled values. Sample an input, then shift and step through stored voltages across polyphonic channels with CV-modulated skip and step size.",
 			"tags": [
 				"Utility",
 				"Sample and hold",
@@ -424,7 +424,7 @@
 		{
 			"slug": "MidiCatXl",
 			"name": "MIDI-CAT XL",
-			"description": "Mapping module for MIDI CCs and notes to parameters of any module, similar to VCV MIDI-MAP",
+			"description": "Mapping module for MIDI CCs and notes to parameters of any module, similar to VCV MIDI-MAP. The XL variant offers a larger mapping table, pickup/soft-takeover modes, 14-bit CC, note mapping, slew-limiting and MIDI feedback to supported controllers.",
 			"tags": [
 				"Utility",
 				"MIDI"
@@ -434,7 +434,7 @@
 		{
 			"slug": "MidiCat",
 			"name": "MIDI-CAT",
-			"description": "Mapping module for MIDI CCs and notes to parameters of any module, similar to VCV MIDI-MAP",
+			"description": "Mapping module for MIDI CCs and notes to parameters of any module, similar to VCV MIDI-MAP. The compact version offers pickup/soft-takeover modes, note mapping, slew-limiting, MIDI feedback and a locate-and-indicate mode for retracing mappings.",
 			"tags": [
 				"Utility",
 				"MIDI"
@@ -444,7 +444,7 @@
 		{
 			"slug": "MidiCatFine",
 			"name": "FINE for MIDI-CAT",
-			"description": "Expander for precision mode of MIDI-CAT",
+			"description": "Expander for precision mode of MIDI-CAT. Enables high-resolution parameter tweaking with sub-step adjustments, useful for fine-tuning sensitive parameters like filter cutoffs or mix levels.",
 			"tags": [
 				"Utility",
 				"MIDI"
@@ -454,7 +454,7 @@
 		{
 			"slug": "MidiCatClk",
 			"name": "CLK for MIDI-CAT",
-			"description": "Expander for clock-synchronization of MIDI-CAT",
+			"description": "Expander for clock-synchronization of MIDI-CAT. Sends your mapped parameters along clock-quantised timelines so parameter automation follows your musical tempo.",
 			"tags": [
 				"Utility",
 				"MIDI"
@@ -464,7 +464,7 @@
 		{
 			"slug": "MidiCatCtx",
 			"name": "CTX for MIDI-CAT",
-			"description": "Expander for context menu mapping using MIDI-CAT",
+			"description": "Expander for context menu mapping using MIDI-CAT. Adds mapping options for your MIDI controllers as context-menu actions.",
 			"tags": [
 				"Utility",
 				"MIDI"
@@ -474,7 +474,7 @@
 		{
 			"slug": "MidiCatEx",
 			"name": "MEM for MIDI-CAT",
-			"description": "Memory-expander for MIDI-CAT",
+			"description": "Memory-expander for MIDI-CAT. Extends the mapping memory so you can store and recall multiple MIDI-CAT configurations or quickly switch between banks of mappings.",
 			"tags": [
 				"Utility",
 				"MIDI"
@@ -484,7 +484,7 @@
 		{
 			"slug": "StripPp",
 			"name": "STRIP++",
-			"description": "Adds hotkeys for pasting and importing selections while preserving parameter mappings",
+			"description": "Adds hotkeys for pasting and importing selections while preserving parameter mappings. Previews the selection on the cursor, then commits it with a click — perfect for reusing patches with MIDI-CAT, CV-MAP and GLUE intact.",
 			"tags": [
 				"Utility"
 			],
@@ -493,7 +493,7 @@
 		{
 			"slug": "StripBay4",
 			"name": "STRIP-BAY",
-			"description": "Utility module for STRIP keeping inputs/outputs connected",
+			"description": "Utility module for STRIP keeping inputs/outputs connected. Provides patchable sockets that stay connected across patches, so loading new strips into STRIP does not break your cabling.",
 			"tags": [
 				"Utility"
 			],
@@ -502,7 +502,7 @@
 		{
 			"slug": "Strip",
 			"name": "STRIP",
-			"description": "Manage a group of modules by using the expander-mechanism, providing load, save, copy, paste, disable, enable and randomize",
+			"description": "Manage a group of modules by using the expander-mechanism, providing load, save, copy, paste, disable, enable and randomize. Operate on the whole row of modules to the left or right of STRIP, with optional per-parameter randomisation lists.",
 			"tags": [
 				"Utility",
 				"Controller",
@@ -513,7 +513,7 @@
 		{
 			"slug": "InfixMicro",
 			"name": "µINFIX",
-			"description": "Insert for polyphonic cables",
+			"description": "Insert for polyphonic cables. 8-channel variant of INFIX for inserting or replacing individual channels within a polyphonic signal using monophonic cables.",
 			"tags": [
 				"Utility",
 				"Polyphonic"
@@ -523,7 +523,7 @@
 		{
 			"slug": "Infix",
 			"name": "INFIX",
-			"description": "Insert for polyphonic cables",
+			"description": "Insert for polyphonic cables. Passes the POLY input through to the POLY output, but lets you replace or add specific channels with monophonic cables — ideal for remixing individual voices of a polyphonic signal.",
 			"tags": [
 				"Utility",
 				"Polyphonic"
@@ -533,7 +533,7 @@
 		{
 			"slug": "Bolt",
 			"name": "BOLT",
-			"description": "Polyphonic logic boolean functions with modulation and sample & hold",
+			"description": "Polyphonic logic boolean functions with modulation and sample & hold. Selectable AND, OR, XOR, NAND, NOR and more across up to 16 polyphonic channels, with CV-controlled function selection and a trigger input for sample & hold behaviour.",
 			"tags": [
 				"Utility",
 				"Logic",
@@ -545,7 +545,7 @@
 		{
 			"slug": "ReMoveLite",
 			"name": "ReMOVE Lite",
-			"description": "Recorder for parameter automation",
+			"description": "Recorder for parameter automation. Captures movements of any module parameter into up to eight monophonic sequences with touch, replace, overwrite and latch modes, plus CV-controlled playback phase.",
 			"tags": [
 				"Utility",
 				"Recording",
@@ -556,7 +556,7 @@
 		{
 			"slug": "RotorA",
 			"name": "ROTOR Model A",
-			"description": "Rotates a signal across polyphonic channels",
+			"description": "Rotates a signal across polyphonic channels. A monophonic carrier is spread over a configurable number of output channels, with a CV-driven modulator determining how it pans between them.",
 			"tags": [
 				"Utility",
 				"Polyphonic"
@@ -566,7 +566,7 @@
 		{
 			"slug": "CVPam",
 			"name": "CV-PAM",
-			"description": "Generate CV from any parameter change of any module",
+			"description": "Generate CV from any parameter change of any module. Attaches to up to 32 parameters and outputs a CV signal whenever they change, perfect for mirroring knob motion to other modules or to MIDI-CAT.",
 			"tags": [
 				"Utility",
 				"Polyphonic",
@@ -577,7 +577,7 @@
 		{
 			"slug": "CVMapMicro",
 			"name": "µMAP",
-			"description": "Add CV automation to one parameter of any module",
+			"description": "Add CV automation to one parameter of any module. A focused single-slot version of CV-MAP for adding one CV input where the module has none, with optional polyphonic input support.",
 			"tags": [
 				"Utility",
 				"Controller"
@@ -587,7 +587,7 @@
 		{
 			"slug": "CVMap",
 			"name": "CV-MAP",
-			"description": "Add CV automation to 32 parameters of any module",
+			"description": "Add CV automation to 32 parameters of any module. Maps polyphonic CV inputs to any module parameter, with slew-limiting, input scaling, optional audio-rate updates and locate-and-indicate for retracing mappings.",
 			"tags": [
 				"Utility",
 				"Polyphonic",
@@ -598,7 +598,7 @@
 		{
 			"slug": "CVMapCtx",
 			"name": "CTX for CV-MAP",
-			"description": "Expander for context menu mapping using CV-MAP",
+			"description": "Expander for context menu mapping using CV-MAP. Adds mapping options as context-menu actions.",
 			"tags": [
 				"Utility"
 			],
@@ -607,7 +607,7 @@
 		{
 			"slug": "Me",
 			"name": "ME",
-			"description": "Mouse enhancements",
+			"description": "Mouse enhancements. Provides a screen overlay and circular magnifier loupe for fine parameter tweaks, and globalises overlay settings used by other stoermelder modules like MIDI-CAT and SAIL.",
 			"tags": [
 				"Utility"
 			],
@@ -616,7 +616,7 @@
 		{
 			"slug": "Mb",
 			"name": "MB",
-			"description": "Experimental replacement module browsers for Rack. Brings back the browser from Rack v0.6x and has a modified browser from Rack v1.x with adjustable preview size, favorites, extended filtering options and more.",
+			"description": "Experimental replacement module browsers for Rack. Brings back the browser from Rack v0.6x and has a modified browser from Rack v1.x with adjustable preview size, favorites, extended filtering options and more. Supports custom tags and a v2.x-flavoured browser with similar enhancements.",
 			"tags": [
 				"Utility"
 			],

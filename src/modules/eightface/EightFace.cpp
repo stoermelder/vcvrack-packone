@@ -141,7 +141,9 @@ struct EightFaceModule : Module {
 		configInput(SLOT_INPUT, "Slot selection");
 		inputInfos[SLOT_INPUT]->description = "Operating mode is set on the context menu.";
 		configInput(RESET_INPUT, "Reset");
+		inputInfos[RESET_INPUT]->description = "Resets the sequencer to the first slot (depending on the selected CV mode).";
 		configSwitch(CTRLMODE_PARAM, 0.f, 2.f, 0.f, "Operating mode", {"Read", "Auto", "Write"});
+		paramQuantities[CTRLMODE_PARAM]->description = "Read: load a slot manually.\nAuto: auto-save on snapshot-change.\nWrite: snapshot the currently mapped parameters into a slot.";
 		for (int i = 0; i < NUM_PRESETS; i++) {
 			configSwitch(PRESET_PARAM + i, 0.f, 1.f, 0.f, string::f("Preset slot %d", i + 1));
 			typeButtons[i].param = &params[PRESET_PARAM + i];
@@ -322,7 +324,8 @@ struct EightFaceModule : Module {
 										for (int i = 0; i < presetCount; i++) {
 											slotCvModeShuffle.push_back(i);
 										}
-										std::random_shuffle(std::begin(slotCvModeShuffle), std::end(slotCvModeShuffle));
+										std::mt19937 rng(random::u32());
+										std::shuffle(std::begin(slotCvModeShuffle), std::end(slotCvModeShuffle), rng);
 									}
 									int p = std::min(std::max(0, slotCvModeShuffle.back()), presetCount - 1);
 									slotCvModeShuffle.pop_back();

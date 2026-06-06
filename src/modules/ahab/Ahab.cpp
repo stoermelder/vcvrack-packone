@@ -11,7 +11,7 @@
 #include <osdialog.h>
 
 extern "C" {
-	#include "../../../orca-c/osc_out.h"
+	#include <orca-c/osc_out.h>
 }
 
 namespace StoermelderPackOne {

@@ -9,7 +9,7 @@
 #include <algorithm>
 
 extern "C" {
-	#include "../../../orca-c/osc_out.h"
+	#include <orca-c/osc_out.h>
 }
 
 namespace StoermelderPackOne {
@@ -684,8 +684,7 @@ void AhabSim::reset() {
 	oevent_list_clear(&oevent_list_);
 	tick_number_.store(0);
 
-	auto cb1 = std::atomic_load(&ui_reset_callback_ptr_);
-	if (cb1 && *cb1) (*cb1)();
+	if (ui_reset_callback_ptr) ui_reset_callback_ptr();
 }
 
 // UI thread operation - enqueue an setGlyph command
@@ -802,14 +801,8 @@ void AhabSim::step() {
 	}
 
 	// Call the callback without holding any locks
-	auto cb1 = std::atomic_load(&ui_tick_callback_ptr_);
-	if (cb1 && *cb1) {
-		(*cb1)(&field_);
-	}
-	auto cb2 = std::atomic_load(&dsp_tick_callback_ptr_);
-	if (cb2 && *cb2) {
-		(*cb2)(&oevent_list_);
-	}
+	if (ui_tick_callback_ptr) ui_tick_callback_ptr(&field_);
+	if (dsp_tick_callback_ptr) dsp_tick_callback_ptr(&oevent_list_);
 }
 
 // Process pending UI requests. Must be called from DSP thread.
@@ -877,10 +870,7 @@ void AhabSim::process() {
 		delete cmd;
 	}
 
-	auto cb1 = std::atomic_load(&ui_tick_callback_ptr_);
-	if (cb1 && *cb1) {
-		(*cb1)(&field_);
-	}
+	if (ui_tick_callback_ptr) ui_tick_callback_ptr(&field_);
 }
 
 // UDP helper: ensure device, send, destroy
@@ -981,8 +971,7 @@ extern "C" Usz custom_vcvin(void* ptr, Usz port_num, Usz a, Usz b) {
 }
 
 float AhabSim::readDspInput(size_t port_num) const {
-	auto cb = std::atomic_load(&dsp_input_reader_ptr_);
-	if (cb && *cb) return (*cb)(port_num);
+	if (dsp_input_reader_ptr) return dsp_input_reader_ptr(port_num);
 	return 0;
 }
 
@@ -1015,8 +1004,7 @@ extern "C" void custom_vcvout(void* ptr, Usz port_index, Usz a, Usz b, Usz value
 }
 
 void AhabSim::writeDspOutput(size_t port_num, float value, int gateTicks) {
-	auto cb = std::atomic_load(&dsp_output_writer_ptr_);
-	if (cb && *cb) (*cb)(port_num, value, gateTicks);
+	if (dsp_output_writer_ptr) dsp_output_writer_ptr(port_num, value, gateTicks);
 }
 
 } // namespace Ahab

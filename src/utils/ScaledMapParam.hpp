@@ -11,7 +11,7 @@ struct ScaledMapParam {
 	T limitMinT;
 	float limitMax;
 	T limitMaxT;
-	T uninit;
+	T uninit = T();
 	float min = 0.f;
 	float max = 1.f;
 
