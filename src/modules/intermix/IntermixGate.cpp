@@ -28,6 +28,7 @@ struct IntermixGateModule : Module {
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		for (int i = 0; i < PORTS; i++) {
 			configOutput(OUTPUT + i, string::f("Row %i active gate", i + 1));
+			outputInfos[OUTPUT + i]->description = string::f("High when any signal is currently routed into output %i.", i + 1);
 		}
 
 		ResetEvent re;

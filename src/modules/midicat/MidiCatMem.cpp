@@ -43,10 +43,15 @@ struct MidiCatMemModule : MidiCatMemBase, StripIdFixModule {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 		configSwitch<BufferedSwitchQuantity>(PARAM_PREV, 0.f, 1.f, 0.f, "Scan for previous module mapping");
+		paramQuantities[PARAM_PREV]->description = "Scans the connected modules for the previous MIDI-to-parameter mapping preset.";
 		configSwitch<BufferedSwitchQuantity>(PARAM_NEXT, 0.f, 1.f, 0.f, "Scan for next module mapping");
+		paramQuantities[PARAM_NEXT]->description = "Scans the connected modules for the next MIDI-to-parameter mapping preset.";
 		configSwitch<BufferedSwitchQuantity>(PARAM_APPLY, 0.f, 1.f, 0.f, "Apply mapping");
+		paramQuantities[PARAM_APPLY]->description = "Applies the currently selected mapping preset to the connected target module.";
 		configInput(INPUT_PREV, "Previous preset trigger");
+		inputInfos[INPUT_PREV]->description = "Triggers a scan for the previous module mapping preset.";
 		configInput(INPUT_NEXT, "Next preset trigger");
+		inputInfos[INPUT_NEXT]->description = "Triggers a scan for the next module mapping preset.";
 		processDivider.setDivision(48);
 
 		ResetEvent re;

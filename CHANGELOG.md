@@ -1,7 +1,17 @@
+## 2.5.0
+
+### Changes and Fixes
+
+- Module [TRANSIT](./docs/transit/Transit.md)
+    - Fade CV input is now additive to per-slot fade time (previously CV was only additive to the global _FADE_ knob)
+    - Added Output-mode "Tipsy" for sending the snapshot text label (for modules with Tipsy-support like [TTY](https://library.vcvrack.com/StochasticTelegraph/TTY))
+
 ## 2.4.1
 
+### Changes and Fixes
+
 - [8FACE mk2](./docs/eightface/EightFaceMk2.md)
-    - Fixed crash patch autosave and on preset-loading 
+    - Fixed crash on patch autosave and on preset-loading 
 
 ## 2.4.0
 
