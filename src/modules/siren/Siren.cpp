@@ -639,8 +639,8 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 		// ── Layout constants ──────────────────────────────────────────────────
 		const float contentX = 8.f;
 		const float contentY = 8.f;
-		const float browserW = 178.0f;
-		const float previewW = 307.8f;
+		const float browserW = 188.0f;
+		const float previewW = 297.8f;
 		const float totalW   = browserW + previewW;
 		const float topBarH  = 18.f;
 		const float contentH = 336.6f;

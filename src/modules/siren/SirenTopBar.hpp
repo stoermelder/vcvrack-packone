@@ -190,7 +190,7 @@ struct SirenTopBar : widget::OpaqueWidget {
 	SirenBrowserPane* pane = nullptr;
 
 	void init() {
-		const float browserW = 178.0f;
+		const float browserW = 188.0f;
 		const float gapW     = 10.f;
 		const float btnH     = 22.f * TOPBAR_SCALE;        // physical button height
 		const float btnY     = (box.size.y - btnH) * 0.5f; // centred in top bar
