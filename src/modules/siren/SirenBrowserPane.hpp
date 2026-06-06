@@ -1002,6 +1002,34 @@ inline void SirenTreeRow::onButton(const event::Button& e) {
 				pane->startTagClassification(node);
 			}));
 
+			menu->addChild(createMenuItem("Clear tags", "", [this]() {
+				DataSource* ds = pane->activeDataSource;
+				if (!ds) return;
+				RootMetadata* meta = ds->getMetadata();
+				if (!meta) return;
+				std::vector<std::string> targets;
+				if (node.isContainer) {
+					const std::string prefix = node.relativePath + "/";
+					for (const auto& pair : meta->samples) {
+						if (pair.first.compare(0, prefix.size(), prefix) == 0)
+							targets.push_back(pair.first);
+					}
+				}
+				else {
+					auto it = meta->samples.find(node.relativePath);
+					if (it != meta->samples.end() && !it->second.tags.empty())
+						targets.push_back(node.relativePath);
+				}
+				for (const std::string& rel : targets) {
+					auto smIt = meta->samples.find(rel);
+					if (smIt == meta->samples.end()) continue;
+					for (const std::string& t : std::vector<std::string>(smIt->second.tags))
+						meta->removeTag(rel, t);
+				}
+				if (!targets.empty()) ds->saveMetadata();
+				pane->requestRebuild();
+			}));
+
 			e.consume(this);
 		}
 	}
