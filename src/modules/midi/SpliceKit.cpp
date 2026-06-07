@@ -1788,6 +1788,10 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 			}
 		));
 		menu->addChild(new MenuSeparator);
+		menu->addChild(createCheckMenuItem("Visualize", "Space",
+			[=]() { return vizMode; },
+			[=]() { setVizMode(!vizMode); }
+		));
 		menu->addChild(createCheckMenuItem("Show overlay messages", "",
 			[=]() { return module->overlayEnabled; },
 			[=]() { module->overlayEnabled = !module->overlayEnabled; }
