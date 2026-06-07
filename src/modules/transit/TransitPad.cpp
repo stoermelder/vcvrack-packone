@@ -27,6 +27,18 @@ enum class SETCVMODE {
 
 template <uint8_t SNAPSHOTS = 8, uint8_t SETS = 8>
 struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>, XySeqModule<1> {
+	struct TransitPadSetParamQuantity : SwitchQuantity {
+		TransitPadModule<SNAPSHOTS, SETS>* tpModule = NULL;
+		int id = -1;
+
+		std::string getLabel() override {
+			if (tpModule && id >= 0 && !tpModule->setLabel[id].empty()) {
+				return tpModule->setLabel[id];
+			}
+			return name;
+		}
+	};
+
 	enum ParamIds {
 		ENUMS(SNAPSHOT_X_POS, SNAPSHOTS),
 		ENUMS(SNAPSHOT_Y_POS, SNAPSHOTS),
@@ -77,6 +89,8 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 	dsp::SchmittTrigger setCvTrigger;
 	std::vector<TransitPadSource> snapshots[SETS];
 	NVGcolor setColor[SETS];
+	/** [Stored to JSON] per-set custom label; empty string means "use default" */
+	std::string setLabel[SETS];
 
 	ClockDividerEx buttonDivider;
 	ClockDividerEx lightDivider;
@@ -91,7 +105,9 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 
 		for (uint8_t s = 0; s < SETS; s++) {
-			configSwitch(SET_PARAM + s, 0.0f, 1.0f, 0.0f, string::f("Snapshot-set #%i", s + 1));
+			TransitPadSetParamQuantity* q = configSwitch<TransitPadSetParamQuantity>(SET_PARAM + s, 0.0f, 1.0f, 0.0f, string::f("Snapshot-set #%i", s + 1));
+			q->tpModule = this;
+			q->id = s;
 		}
 
 		configParam<XyScreenParamQuantity>(SNAPSHOT_X_POS + 0, 0.0f, 1.0f, 0.1f, "Snapshot A x-pos");
@@ -140,6 +156,10 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		init();
 		snapshotsUsed = 4;
 		currentSet = 0;
+
+		for (uint8_t s = 0; s < SETS; s++) {
+			setLabel[s] = "";
+		}
 
 		Sc::scReset();
 		Seq::seqReset();
@@ -300,6 +320,7 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 				snapshots[s][i].weight = 0.f;
 			}
 			setColor[s] = colors[s % colors.size()].first;
+			setLabel[s] = "";
 		}
 	}
 
@@ -353,6 +374,11 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		return type == 0 ? setColor[currentSet] : color::WHITE;
 	}
 
+	std::string getSetLabel(uint8_t s) {
+		if (setLabel[s].empty()) return string::f("Set #%i", s + 1);
+		return setLabel[s];
+	}
+
 	std::string getItemLabel(uint8_t s, uint8_t id) {
 		if (masterModule == nullptr)
 			return "<No TRANSIT module>";
@@ -387,6 +413,9 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 			}
 			json_object_set_new(setJ, "snapshots", snapshotsJ);
 			json_object_set_new(setJ, "color", json_string(color::toHexString(setColor[s]).c_str()));
+			if (!setLabel[s].empty()) {
+				json_object_set_new(setJ, "label", json_string(setLabel[s].c_str()));
+			}
 			json_array_append_new(setsJ, setJ);
 		}
 		json_object_set_new(rootJ, "sets", setsJ);
@@ -425,6 +454,8 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 				}
 			}
 			setColor[s] = color::fromHexString(json_string_value(json_object_get(setJ, "color")));
+			json_t* labelJ = json_object_get(setJ, "label");
+			if (labelJ) setLabel[s] = json_string_value(labelJ);
 		}
 
 		json_t* outputJ = json_object_get(rootJ, "output");
@@ -611,7 +642,7 @@ struct TransitPadXyScreenWidget : XyScreenWidget<MODULE> {
 
 
 template <typename MODULE>
-struct TransitPadXySeqLedDisplay : XySeqLedDisplay<MODULE> {	
+struct TransitPadXySeqLedDisplay : XySeqLedDisplay<MODULE> {
 	std::string getPortName() override {
 		return "Mix";
 	}
@@ -622,9 +653,77 @@ template <typename MODULE>
 struct TransitPadSetButton : VCVButton {
 	MODULE* module;
 	size_t setIndex;
+
+	struct LabelMenuItem : MenuItem {
+		MODULE* module;
+		size_t setIndex;
+
+		LabelMenuItem() {
+			rightText = RIGHT_ARROW;
+		}
+
+		struct LabelField : ui::TextField {
+			MODULE* module;
+			size_t setIndex;
+			void onSelectKey(const event::SelectKey& e) override {
+				if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
+					module->setLabel[setIndex] = text;
+
+					ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
+					overlay->requestDelete();
+					e.consume(this);
+				}
+
+				if (!e.getTarget()) {
+					ui::TextField::onSelectKey(e);
+				}
+			}
+
+			void step() override {
+				// Keep selected
+				APP->event->setSelectedWidget(this);
+				TextField::step();
+			}
+		};
+
+		struct ResetItem : ui::MenuItem {
+			MODULE* module;
+			size_t setIndex;
+			void onAction(const event::Action& e) override {
+				module->setLabel[setIndex] = "";
+			}
+		};
+
+		Menu* createChildMenu() override {
+			Menu* menu = new Menu;
+
+			LabelField* labelField = new LabelField;
+			labelField->placeholder = "Set label";
+			labelField->text = module->setLabel[setIndex];
+			labelField->box.size.x = 180;
+			labelField->module = module;
+			labelField->setIndex = setIndex;
+			menu->addChild(labelField);
+
+			ResetItem* resetItem = new ResetItem;
+			resetItem->text = "Reset";
+			resetItem->module = module;
+			resetItem->setIndex = setIndex;
+			menu->addChild(resetItem);
+
+			return menu;
+		}
+	}; // struct LabelMenuItem
+
 	virtual void appendContextMenu(ui::Menu* menu) override {
+		if (!module) return;
 		menu->addChild(new MenuSeparator());
 		menu->addChild(Rack::createColorSubmenuItem("Color", &module->setColor[setIndex], colors));
+		LabelMenuItem* labelItem = new LabelMenuItem;
+		labelItem->text = "Label";
+		labelItem->module = module;
+		labelItem->setIndex = setIndex;
+		menu->addChild(labelItem);
 		menu->addChild(new MenuSeparator());
 		for (size_t i = 0; i < module->scGetItemCountActive(0); i++) {
 			menu->addChild(createMenuLabel(module->getItemLabel(setIndex, i)));

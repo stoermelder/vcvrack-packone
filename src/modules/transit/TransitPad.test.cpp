@@ -355,6 +355,90 @@ TEST_CASE("JSON round-trip preserves currentSet", "[TransitPad]") {
 }
 
 
+TEST_CASE("JSON round-trip preserves setLabel", "[TransitPad]") {
+	SECTION("Non-empty label survives save/load") {
+		TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+		m->setLabel[2] = "Verse";
+		json_t* j = m->dataToJson();
+		m->setLabel[2] = "";
+		m->dataFromJson(j);
+		json_decref(j);
+		REQUIRE(m->setLabel[2] == "Verse");
+		Test::destroyModule(m);
+	}
+
+	SECTION("Empty label is not written; missing key on load leaves label unchanged") {
+		TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+		m->setLabel[0] = "Intro";
+		// setLabel[1] is left as default ("")
+		json_t* j = m->dataToJson();
+		// Simulate a fresh module loading an old patch: clear labels
+		m->setLabel[0] = "";
+		m->setLabel[1] = "garbage";
+		m->dataFromJson(j);
+		json_decref(j);
+		// Set 0 had a label, so it was persisted and restored
+		REQUIRE(m->setLabel[0] == "Intro");
+		// Set 1 had no label, so the key was absent in JSON — existing value is preserved
+		REQUIRE(m->setLabel[1] == "garbage");
+		Test::destroyModule(m);
+	}
+
+	SECTION("getSetLabel returns custom label when set") {
+		TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+		m->setLabel[3] = "Chorus";
+		REQUIRE(m->getSetLabel(3) == "Chorus");
+		Test::destroyModule(m);
+	}
+
+	SECTION("getSetLabel falls back to 'Set #N' when empty") {
+		TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+		REQUIRE(m->getSetLabel(0) == "Set #1");
+		REQUIRE(m->getSetLabel(4) == "Set #5");
+		Test::destroyModule(m);
+	}
+
+	SECTION("'label' key is omitted from JSON when no label is set") {
+		TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+		// Default state: no labels
+		json_t* j = m->dataToJson();
+		json_t* setsJ = json_object_get(j, "sets");
+		REQUIRE(setsJ != NULL);
+		json_t* set0J = json_array_get(setsJ, 0);
+		REQUIRE(json_object_get(set0J, "label") == NULL);
+		json_decref(j);
+		Test::destroyModule(m);
+	}
+
+	SECTION("'label' key is present in JSON only for sets that have one") {
+		TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+		m->setLabel[2] = "Verse";
+		json_t* j = m->dataToJson();
+		json_t* setsJ = json_object_get(j, "sets");
+		REQUIRE(json_object_get(json_array_get(setsJ, 0), "label") == NULL);
+		REQUIRE(json_object_get(json_array_get(setsJ, 1), "label") == NULL);
+		json_t* set2J = json_array_get(setsJ, 2);
+		json_t* labelJ = json_object_get(set2J, "label");
+		REQUIRE(labelJ != NULL);
+		REQUIRE(std::string(json_string_value(labelJ)) == "Verse");
+		json_decref(j);
+		Test::destroyModule(m);
+	}
+}
+
+
+TEST_CASE("onReset clears setLabel", "[TransitPad]") {
+	TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+	m->setLabel[0] = "Intro";
+	m->setLabel[3] = "Bridge";
+	m->onReset();
+	REQUIRE(m->setLabel[0] == "");
+	REQUIRE(m->setLabel[3] == "");
+	REQUIRE(m->getSetLabel(0) == "Set #1");
+	Test::destroyModule(m);
+}
+
+
 TEST_CASE("onReset restores defaults", "[TransitPad]") {
 	TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
 
