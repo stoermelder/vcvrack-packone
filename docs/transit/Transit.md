@@ -194,6 +194,8 @@ TRANSIT-PAD provides 8 snapshot-sets, each containing its own positions and weig
 
 The 8 buttons at the top of the module select the active set. The active set is indicated by a white LED above the button. Every set is assigned a fixed default color (cycling through green, magenta, blue, yellow, cyan, white, red, grey) and all snapshot points of the current set are rendered in that color. The color of a single set can be changed via the context menu of the set-button or via the context menu of any snapshot point on the pad (sub-menu _Color_ under _Current set_).
 
+Each snapshot-set can be given a custom text label (e.g. _Drums_, _Bass_, _Pad_) to make the 8 buttons easier to tell apart at a glance. Right-click a set-button and choose _Label_ to enter a label.
+
 A snapshot-set can also be selected by CV through the _Snapshot-set select CV_-input on the bottom-right of the module. The CV-mode is configured through the context menu of the display:
 
 | Mode | Description |
@@ -265,6 +267,7 @@ Right-clicking on the empty area of the XY-display opens the following menu:
 - **Randomize radius** — randomize the _Radius_ slider of each snapshot point.
 - **Number of snapshots** — select 1..8 active snapshot points.
 - **Snapshot-set CV mode** — select _Off_, _Trigger forward_, _0..10V_ or _C4_ for the snapshot-set CV input.
+- **Lock pad** — toggle a lock that prevents accidental edits: while locked, snapshot points and the _Mix_ point cannot be dragged to a new position, and snapshot buttons dragged from TRANSIT (or a +T expander) onto the pad no longer rebind. Dropping is still allowed to highlight a target (so the user can see where a drop would have landed), but the binding is rejected. The right-click _Bind snapshot_ and _Unbind snapshot_ entries on snapshot points are also disabled.
 
 
 ### Tips

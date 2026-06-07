@@ -448,8 +448,58 @@ TEST_CASE("onReset restores defaults", "[TransitPad]") {
 
 	REQUIRE(m->currentSet == 0);
 	REQUIRE(m->snapshotsUsed == 4);
+	REQUIRE(m->isLocked() == false);
 
 	Test::destroyModule(m);
+}
+
+
+TEST_CASE("Locked state", "[TransitPad]") {
+	SECTION("Default state is unlocked") {
+		TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+		REQUIRE(m->isLocked() == false);
+		Test::destroyModule(m);
+	}
+
+	SECTION("onReset clears lock") {
+		TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+		m->locked = true;
+		m->onReset();
+		REQUIRE(m->isLocked() == false);
+		Test::destroyModule(m);
+	}
+
+	SECTION("Lock survives save/load") {
+		TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+		m->locked = true;
+		json_t* j = m->dataToJson();
+		m->locked = false;
+		m->dataFromJson(j);
+		json_decref(j);
+		REQUIRE(m->isLocked() == true);
+		Test::destroyModule(m);
+	}
+
+	SECTION("Unlock survives save/load") {
+		TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+		m->locked = false;
+		json_t* j = m->dataToJson();
+		m->locked = true;
+		m->dataFromJson(j);
+		json_decref(j);
+		REQUIRE(m->isLocked() == false);
+		Test::destroyModule(m);
+	}
+
+	SECTION("Missing 'locked' key on load leaves lock state unchanged (back-compat)") {
+		TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+		m->locked = true;
+		json_t* j = json_object();
+		m->dataFromJson(j);
+		json_decref(j);
+		REQUIRE(m->isLocked() == true);
+		Test::destroyModule(m);
+	}
 }
 
 

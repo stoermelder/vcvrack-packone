@@ -92,6 +92,9 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 	/** [Stored to JSON] per-set custom label; empty string means "use default" */
 	std::string setLabel[SETS];
 
+	/** [Stored to JSON] when true, pad drag and drop-binding are disabled */
+	bool locked = false;
+
 	ClockDividerEx buttonDivider;
 	ClockDividerEx lightDivider;
 
@@ -156,6 +159,7 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		init();
 		snapshotsUsed = 4;
 		currentSet = 0;
+		locked = false;
 
 		for (uint8_t s = 0; s < SETS; s++) {
 			setLabel[s] = "";
@@ -379,6 +383,10 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		return setLabel[s];
 	}
 
+	bool isLocked() const {
+		return locked;
+	}
+
 	std::string getItemLabel(uint8_t s, uint8_t id) {
 		if (masterModule == nullptr)
 			return "<No TRANSIT module>";
@@ -400,6 +408,7 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		json_object_set_new(rootJ, "snapshotsUsed", json_integer(snapshotsUsed));
 		json_object_set_new(rootJ, "setCvMode", json_integer((int)setCvMode));
 		json_object_set_new(rootJ, "currentSet", json_integer(currentSet));
+		json_object_set_new(rootJ, "locked", json_boolean(locked));
 
 		json_t* setsJ = json_array();
 		for (uint8_t s = 0; s < SETS; s++) {
@@ -436,6 +445,9 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 
 		json_t* currentSetJ = json_object_get(rootJ, "currentSet");
 		if (currentSetJ) currentSet = std::max(0, std::min((int)json_integer_value(currentSetJ), (int)SETS - 1));
+
+		json_t* lockedJ = json_object_get(rootJ, "locked");
+		if (lockedJ) locked = json_is_true(lockedJ);
 
 		int su = json_integer_value(json_object_get(rootJ, "snapshotsUsed"));
 		snapshotsUsed = std::max(0, std::min(su, (int)SNAPSHOTS));
@@ -491,10 +503,10 @@ struct TransitPadSnapshotDragWidget : XyScreenDragWidget<MODULE> {
 	void prependContextMenu(Menu* menu) override {
 		menu->addChild(createMenuItem("Bind snapshot", "", [=]() {
 			AW::module->snapshots[AW::module->currentSet][AW::id].id = AW::module->masterModule->getSelectedSlot();
-		}, AW::module->masterModule == nullptr));
+		}, AW::module->isLocked()));
 		menu->addChild(createMenuItem("Unbind snapshot", "", [=]() {
 			AW::module->snapshots[AW::module->currentSet][AW::id].id = -1;
-		}));
+		}, AW::module->isLocked()));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuLabel("Current set"));
 		menu->addChild(Rack::createColorSubmenuItem("Color", &AW::module->setColor[AW::module->currentSet], colors));
@@ -617,6 +629,37 @@ struct TransitPadXyScreenWidget : XyScreenWidget<MODULE> {
 		XyScreenWidget<MODULE>::step();
 	}
 
+	void onButton(const event::Button& e) override {
+		if (this->module->isLocked() && e.button == GLFW_MOUSE_BUTTON_LEFT) {
+			e.consume(this);
+			return;
+		}
+		XyScreenWidget<MODULE>::onButton(e);
+	}
+
+	void drawLayer(const Widget::DrawArgs& args, int layer) override {
+		XyScreenWidget<MODULE>::drawLayer(args, layer);
+		if (layer != 1 || !this->module || !this->module->isLocked()) return;
+		// Small padlock badge in the top-right corner of the screen so the
+		// user can see at a glance that dragging/binding is disabled.
+		NVGcontext* vg = args.vg;
+		float cx = this->box.size.x - 9.f;
+		float cy = 9.f;
+
+		// Shackle (arc on top of the body)
+		nvgBeginPath(vg);
+		nvgStrokeColor(vg, nvgRGBAf(1.f, 1.f, 1.f, 0.85f));
+		nvgStrokeWidth(vg, 1.4f);
+		nvgArc(vg, cx, cy - 1.5f, 2.5f, M_PI * 0.85f, M_PI * 0.15f, NVG_CW);
+		nvgStroke(vg);
+
+		// Body (rounded rect)
+		nvgBeginPath(vg);
+		nvgFillColor(vg, nvgRGBAf(1.f, 1.f, 1.f, 0.85f));
+		nvgRoundedRect(vg, cx - 3.5f, cy - 0.5f, 7.f, 6.f, 1.f);
+		nvgFill(vg);
+	}
+
 	void appendContextMenu(Menu* menu) override {
 		using StoermelderPackOne::Rack::createValuePtrMenuItem;
 		menu->addChild(new MenuSeparator());
@@ -637,6 +680,8 @@ struct TransitPadXyScreenWidget : XyScreenWidget<MODULE> {
 				menu->addChild(createValuePtrMenuItem("C4", &this->module->setCvMode, SETCVMODE::C4));
 			}
 		));
+		menu->addChild(new MenuSeparator());
+		menu->addChild(createBoolPtrMenuItem("Lock pad", "", &this->module->locked));
 	}
 };
 
