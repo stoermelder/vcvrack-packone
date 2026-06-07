@@ -114,28 +114,48 @@ struct ArenaModule : Module, XyScreenModule<IN_PORTS>, XySeqModule<MIX_PORTS> {
 		// in-ports
 		for (int i = 0; i < IN_PORTS; i++) {
 			configInput(IN + i, string::f("Channel IN-%i", i + 1));
+			inputInfos[IN + i]->description = "Monophonic audio source for this channel.";
 			configInput(IN_X_INPUT + i, string::f("Channel IN-%i x-pos CV", i + 1));
+			inputInfos[IN_X_INPUT + i]->description = "CV modulation of the channel's x-position on the XY grid (summed with the knob).";
 			configInput(IN_Y_INPUT + i, string::f("Channel IN-%i y-pos CV", i + 1));
+			inputInfos[IN_Y_INPUT + i]->description = "CV modulation of the channel's y-position on the XY grid (summed with the knob).";
 			configInput(MOD_INPUT + i, string::f("Channel IN-%i modulation", i + 1));
+			inputInfos[MOD_INPUT + i]->description = "Modulation signal for the channel; behavior depends on the Mod Mode selected on the context menu.";
 			configOutput(OUT_OUTPUT + i, string::f("Channel IN-%i direct", i + 1));
+			outputInfos[OUT_OUTPUT + i]->description = "Direct output of the channel's input audio.";
 			configParam<XyScreenParamQuantity>(IN_X_POS + i, 0.0f, 1.0f, 0.1f + float(i) * (0.8f / (IN_PORTS - 1)), string::f("Channel IN-%i x-pos", i + 1));
+			paramQuantities[IN_X_POS + i]->description = "Position of this channel on the XY field's x-axis.";
 			configParam<XyScreenParamQuantity>(IN_Y_POS + i, 0.0f, 1.0f, 0.1f, string::f("Channel IN-%i y-pos", i + 1));
+			paramQuantities[IN_Y_POS + i]->description = "Position of this channel on the XY field's y-axis.";
 			configParam(IN_X_PARAM + i, -1.f, 1.f, 0.f, string::f("Channel IN-%i x-pos attenuverter", i + 1), "x");
+			paramQuantities[IN_X_PARAM + i]->description = "Attenuverter for the x-pos CV input (-1 inverts, 0 mutes, 1 passes through).";
 			configParam(IN_Y_PARAM + i, -1.f, 1.f, 0.f, string::f("Channel IN-%i y-pos attenuverter", i + 1), "x");
+			paramQuantities[IN_Y_PARAM + i]->description = "Attenuverter for the y-pos CV input (-1 inverts, 0 mutes, 1 passes through).";
 			configParam(MOD_PARAM + i, -1.f, 1.f, 0.f, string::f("Channel IN-%i Mod attenuverter", i + 1), "x");
+			paramQuantities[MOD_PARAM + i]->description = "Attenuverter for the modulation CV input (-1 inverts, 0 mutes, 1 passes through).";
 		}
 		// mix-ports
 		for (int i = 0; i < MIX_PORTS; i++) {
 			configInput(MIX_X_INPUT + i, string::f("Channel MIX-%i x-pos", i + 1));
+			inputInfos[MIX_X_INPUT + i]->description = "CV modulation of this mix channel's x-position on the XY grid.";
 			configInput(MIX_Y_INPUT + i, string::f("Channel MIX-%i y-pos", i + 1));
+			inputInfos[MIX_Y_INPUT + i]->description = "CV modulation of this mix channel's y-position on the XY grid.";
 			configInput(SEQ_INPUT + i, string::f("Channel MIX-%i sequence select", i + 1));
+			inputInfos[SEQ_INPUT + i]->description = "Selects the active sequence step for this mix channel.";
 			configInput(SEQ_PH_INPUT + i, string::f("Channel MIX-%i sequence phase", i + 1));
+			inputInfos[SEQ_PH_INPUT + i]->description = "Phases the sequence of this mix channel by the input voltage.";
 			configOutput(MIX_OUTPUT + i, string::f("Channel MIX-%i", i + 1));
+			outputInfos[MIX_OUTPUT + i]->description = "Mix of all IN channels routed into this output's XY position on the field.";
 			configParam(MIX_VOL_PARAM + i, 0.0f, 2.0f, 1.0f, string::f("Channel MIX-%i volume", i + 1));
+			paramQuantities[MIX_VOL_PARAM + i]->description = "Output gain of this mix channel (0..2, default 1).";
 			configParam<XyScreenParamQuantity>(MIX_X_POS + i, 0.0f, 1.0f, 0.1f + float(i) * (0.8f / (MIX_PORTS - 1)), string::f("Channel MIX-%i x-pos", i + 1));
+			paramQuantities[MIX_X_POS + i]->description = "Position of this output on the XY field's x-axis.";
 			configParam<XyScreenParamQuantity>(MIX_Y_POS + i, 0.0f, 1.0f, 0.9f, string::f("Channel MIX-%i y-pos", i + 1));
+			paramQuantities[MIX_Y_POS + i]->description = "Position of this output on the XY field's y-axis.";
 			configParam(MIX_X_PARAM + i, -1.f, 1.f, 0.f, string::f("Channel MIX-%i x-pos attenuverter", i + 1), "x");
+			paramQuantities[MIX_X_PARAM + i]->description = "Attenuverter for the x-pos CV input (-1 inverts, 0 mutes, 1 passes through).";
 			configParam(MIX_Y_PARAM + i, -1.f, 1.f, 0.f, string::f("Channel MIX-%i y-pos attenuverter", i + 1), "x");
+			paramQuantities[MIX_Y_PARAM + i]->description = "Attenuverter for the y-pos CV input (-1 inverts, 0 mutes, 1 passes through).";
 		}
 
 		ResetEvent re;

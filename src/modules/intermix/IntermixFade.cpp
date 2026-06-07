@@ -47,6 +47,7 @@ struct IntermixFadeModule : Module {
 		for (int i = 0; i < PORTS; i++) {
 			auto pq = configParam<FadeLengthParamQuantity<IntermixFadeModule<PORTS>>>(PARAM_FADE + i, 0.f, 15.f, 1.f, "Fade", "s");
 			pq->module = this;
+			pq->description = string::f("Crossfade time applied to the signal on output %i when scenes change.", i + 1);
 		}
 
 		ResetEvent re;
