@@ -887,6 +887,7 @@ struct XySeqEditWidget : OpaqueWidget {
 
 		int seqId = module->seqEdit;
 		int seqSelected = module->seqSelected[module->seqEdit];
+		visible = seqId >= 0;
 
 		if (module->seqEdit >= 0) {
 			if (lastSeqId != seqId || lastSeqSelected != seqSelected)
