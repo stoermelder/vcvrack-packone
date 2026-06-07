@@ -13,12 +13,12 @@ Test::TestContext<> testContext;
 static const int NUM_CTRL = 16;
 
 // ---------------------------------------------------------------------------
-// MockSenderModule — a minimal Module that also implements TransitCtrlSender.
+// MockSenderModule — a minimal Module that also implements TransitCtrlMaster.
 // Using a real Module gives ParamQuantity::getParam() a valid module+paramId
 // pair, which is required by the polling code in TransitCtrlModule::process().
 // No engine registration is needed: we pass the pointer directly.
 // ---------------------------------------------------------------------------
-struct MockSenderModule : rack::Module, TransitCtrlSender {
+struct MockSenderModule : rack::Module, TransitCtrlMaster {
 	struct Change { int index; float value; };
 	std::vector<Change> changes;
 

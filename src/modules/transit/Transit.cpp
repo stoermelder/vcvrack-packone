@@ -47,7 +47,7 @@ struct ParamHandleEx : ParamHandleIndicator {
 
 
 template <int NUM_PRESETS>
-struct TransitModule : TransitBase<NUM_PRESETS>, TransitCtrlSender, ExpanderChangeListener {
+struct TransitModule : TransitBase<NUM_PRESETS>, TransitCtrlMaster, ExpanderChangeListener {
 	typedef TransitBase<NUM_PRESETS> BASE;
 	typedef typename TransitBase<NUM_PRESETS>::Slot SLOT;
 
@@ -278,7 +278,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitCtrlSender, ExpanderChan
 			int c = 0;
 
 			// Right side: TransitCtrl must be the immediate right neighbor, before any TransitEx.
-			// Transit pushes its TransitCtrlSender pointer into TransitCtrl so proxy PQs activate.
+			// Transit pushes its TransitCtrlMaster pointer into TransitCtrl so proxy PQs activate.
 			ctrlReceiver = nullptr;
 			{
 				Module* firstRight = m->rightExpander.module;
