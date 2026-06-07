@@ -13,8 +13,10 @@ namespace Transit {
  *
  * Placement
  * ---------
- * TransitCtrl must be placed immediately to the right of Transit, before any
- * TransitEx expanders:  [Transit] [TransitCtrl] [TransitEx] ...
+ * TransitCtrl must be placed at the end of the Transit chain, after all
+ * TransitEx expanders:  [Transit] [TransitEx] ... [TransitEx] [TransitCtrl]
+ * (It can also be placed immediately to the right of Transit if no TransitEx
+ * is present:  [Transit] [TransitCtrl].)
  * Transit detects this in its process() loop (when expandersChanged) and pushes
  * its own TransitCtrlMaster pointer into TransitCtrl via TransitCtrlReceiver::setTransitCtrl().
  * When the modules are separated, TransitCtrl::onExpanderChange() clears all proxy

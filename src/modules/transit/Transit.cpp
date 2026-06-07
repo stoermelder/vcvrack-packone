@@ -277,18 +277,6 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitCtrlMaster, ExpanderChan
 			t->ctrlMode = ctrlMode;
 			int c = 0;
 
-			// Right side: TransitCtrl must be the immediate right neighbor, before any TransitEx.
-			// Transit pushes its TransitCtrlMaster pointer into TransitCtrl so proxy PQs activate.
-			ctrlReceiver = nullptr;
-			{
-				Module* firstRight = m->rightExpander.module;
-				if (firstRight && firstRight->model == modelTransitCtrl) {
-					ctrlReceiver = dynamic_cast<TransitCtrlReceiver*>(firstRight);
-					if (ctrlReceiver) ctrlReceiver->setTransitCtrl(this);
-					m = firstRight; // advance past TransitCtrl so TransitEx walk starts after it
-				}
-			}
-
 			while (true) {
 				N[c] = t;
 				c++;
@@ -305,6 +293,19 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitCtrlMaster, ExpanderChan
 				t->ctrlOffset = c;
 				t->ctrlMode = BASE::ctrlMode;
 				presetTotal += NUM_PRESETS;
+			}
+
+			// Right side: TransitCtrl may sit at the end of the chain, after all TransitEx
+			// expanders. Transit pushes its TransitCtrlMaster pointer into TransitCtrl so
+			// proxy PQs activate. The walk is anchored at `m`, which is the last expander
+			// reached by the TransitEx scan above (or `this` if no TransitEx is present).
+			ctrlReceiver = nullptr;
+			{
+				Module* afterEx = m->rightExpander.module;
+				if (afterEx && afterEx->model == modelTransitCtrl) {
+					ctrlReceiver = dynamic_cast<TransitCtrlReceiver*>(afterEx);
+					if (ctrlReceiver) ctrlReceiver->setTransitCtrl(this);
+				}
 			}
 			expandersChanged = false;
 		}
