@@ -10,6 +10,8 @@ SYNC_MODEL(modelTransit, "Transit");
 SYNC_MODEL(modelTransitCtrl, "TransitCtrl");
 Test::TestContext<> testContext;
 
+static const int NUM_CTRL = 16;
+
 // ---------------------------------------------------------------------------
 // MockSenderModule — a minimal Module that also implements TransitCtrlSender.
 // Using a real Module gives ParamQuantity::getParam() a valid module+paramId
