@@ -433,6 +433,9 @@ template <typename MODULE>
 struct TransitPadSnapshotDragWidget : XyScreenDragWidget<MODULE> {
 	typedef XyScreenDragWidget<MODULE> AW;
 	ui::Tooltip* tooltip = NULL;
+	// True while a drag from a TransitLedButton is hovering over this node,
+	// so the draw code can highlight it as a valid drop target.
+	bool dropArmed = false;
 
 	~TransitPadSnapshotDragWidget() {
 		if (tooltip) {
@@ -464,6 +467,7 @@ struct TransitPadSnapshotDragWidget : XyScreenDragWidget<MODULE> {
 	}
 
 	void onEnter(const event::Enter& e) override {
+		if (!AW::module->scIsActive(AW::type, AW::id)) return;
 		this->module->vizHoveredId = this->id;
 		if (settings::tooltips && !tooltip) {
 			tooltip = new ui::Tooltip;
@@ -474,6 +478,7 @@ struct TransitPadSnapshotDragWidget : XyScreenDragWidget<MODULE> {
 	}
 
 	void onLeave(const event::Leave& e) override {
+		if (!AW::module->scIsActive(AW::type, AW::id)) return;
 		if (this->module->vizHoveredId == this->id) {
 			this->module->vizHoveredId = -1;
 		}
@@ -483,6 +488,53 @@ struct TransitPadSnapshotDragWidget : XyScreenDragWidget<MODULE> {
 			tooltip = NULL;
 		}
 		AW::onLeave(e);
+	}
+
+	void onDragEnter(const event::DragEnter& e) override {
+		// Highlight as a valid drop target when a TransitLedButton is being dragged.
+		if (dynamic_cast<TransitSnapshotButton*>(e.origin) != nullptr) {
+			dropArmed = true;
+			e.consume(this);
+		}
+		AW::onDragEnter(e);
+	}
+
+	void onDragLeave(const event::DragLeave& e) override {
+		dropArmed = false;
+		AW::onDragLeave(e);
+	}
+
+	void onDragDrop(const event::DragDrop& e) override {
+		if (!AW::module->scIsActive(AW::type, AW::id)) return;
+		// Bind the pad point to the slot of the dropped TransitLedButton.
+		TransitSnapshotButton* src = dynamic_cast<TransitSnapshotButton*>(e.origin);
+		if (src && e.button == GLFW_MOUSE_BUTTON_LEFT) {
+			int slot = src->getSlotIndex();
+			if (slot >= 0) {
+				this->module->snapshots[this->module->currentSet][this->id].id = slot;
+			}
+			dropArmed = false;
+			e.consume(this);
+		}
+		AW::onDragDrop(e);
+	}
+
+	void drawLayer(const Widget::DrawArgs& args, int layer) override {
+		AW::drawLayer(args, layer);
+		if (!AW::module->scIsActive(AW::type, AW::id)) return;
+		if (layer != 1 || !dropArmed) return;
+
+		// Bright halo around the node while a snapshot button is being dragged over it,
+		// so the user can see at a glance that this is a valid drop target.
+		Vec c = Vec(this->box.size.x / 2.f, this->box.size.y / 2.f);
+		float r = this->box.size.x / 2.f;
+
+		// Bright outer ring.
+		nvgBeginPath(args.vg);
+		nvgCircle(args.vg, c.x, c.y, r + 1.5f);
+		nvgStrokeColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.95f));
+		nvgStrokeWidth(args.vg, 1.5f);
+		nvgStroke(args.vg);
 	}
 };
 
@@ -594,18 +646,16 @@ struct TransitPadVizOverlay : TransparentWidget {
 	// Returns Vec() if the slot's owner module or its button widget cannot be found.
 	Vec getButtonPos(int slotIndex) {
 		if (!module || !module->masterModule) return Vec();
-		TransitPadMaster* master = dynamic_cast<TransitPadMaster*>(module->masterModule);
-		if (!master) return Vec();
-		Module* ownerModule = master->getSlotOwner(slotIndex);
-		if (!ownerModule) return Vec();
+		Module* ownerModule;
+		int localIndex;
+		if (!module->masterModule->getSlotOwner(slotIndex, ownerModule, localIndex)) return Vec();
 		ModuleWidget* ownerMw = APP->scene->rack->getModule(ownerModule->id);
 		if (!ownerMw) return Vec();
-		int localIndex = slotIndex % 12;
-		// TransitLedButton<12> is used by both TRANSIT and +T to render the per-slot
+		// TransitSnapshotButton is used by both TRANSIT and +T to render the per-slot
 		// LED button. Walk the owner's param widgets, find the one whose
 		// TransitLedButton carries the matching local id, and use its center.
 		for (ParamWidget* pw : ownerMw->getParams()) {
-			auto* btn = dynamic_cast<TransitLedButton<12>*>(pw);
+			auto* btn = dynamic_cast<TransitSnapshotButton*>(pw);
 			if (btn && btn->id == localIndex) {
 				return ownerMw->box.pos.plus(pw->box.getCenter());
 			}

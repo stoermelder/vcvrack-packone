@@ -18,7 +18,8 @@ enum class SLOT_CMD {
 	SHIFT_BACK,
 	SHIFT_FRONT,
 	SET_FIRST,
-	SET_LAST
+	SET_LAST,
+	INDEX
 };
 
 enum class CTRLMODE {
@@ -115,7 +116,7 @@ struct TransitBase : Module, StripIdFixModule {
 
 	Slot slot[NUM_PRESETS];
 
-	virtual int sendSlotCmd(SLOT_CMD cmd, int i) { return -1; }
+	virtual int sendSlotCmd(SLOT_CMD cmd, int i) = 0;
 
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
@@ -184,13 +185,14 @@ struct TransitBase : Module, StripIdFixModule {
 };
 
 struct TransitPadMaster {
-	virtual int getSelectedSlot() { return -1; }
-	virtual std::string getSlotLabel(int i) { return ""; }
-	/** Returns the Module* that owns the given global slot index (0 .. presetTotal-1).
+	virtual int getSelectedSlot() = 0;
+	virtual std::string getSlotLabel(int i) = 0;
+	/** Returns the Module* that owns the given global slot index (0 .. presetTotal-1)
+	 *  and the localIndex in respect of the owner, without knowing the preset count.
 	 *  For a host TRANSIT with chained +T expanders the index spans all of them,
 	 *  so this lets the pad look up which expander module hosts a particular slot.
 	 */
-	virtual rack::Module* getSlotOwner(int slotIndex) { return nullptr; }
+	virtual bool getSlotOwner(int slotIndex, Module*& module, int& localIndex) = 0;
 };
 
 struct TransitPadInterface {
@@ -201,10 +203,7 @@ struct TransitPadInterface {
 		int id;
 	};
 
-	virtual const std::vector<TransitPadSource>& getPadFactors() {
-		static const std::vector<TransitPadSource> empty;
-		return empty;
-	}
+	virtual const std::vector<TransitPadSource>& getPadFactors() = 0;
 };
 
 
@@ -221,11 +220,21 @@ struct TransitParamQuantity : SwitchQuantity {
 	}
 };
 
-template <int NUM_PRESETS>
-struct TransitLedButton : VCVButton {
-	TransitBase<NUM_PRESETS>* module;
+
+struct TransitSnapshotButton {
 	int id;
+	// Returns the absolute index of the snapshot
+	virtual int getSlotIndex() = 0;
+};
+
+template <int NUM_PRESETS>
+struct TransitLedButton : TransitSnapshotButton, VCVButton {
+	TransitBase<NUM_PRESETS>* module;
 	bool eventConsumed = true;
+
+	int getSlotIndex() override {
+		return module->sendSlotCmd(SLOT_CMD::INDEX, id);
+	}
 
 	void onButton(const event::Button& e) override {
 		if (e.action == GLFW_PRESS) {
@@ -235,7 +244,7 @@ struct TransitLedButton : VCVButton {
 				eventConsumed = true;
 			}
 			else {
-				LEDButton::onButton(e);
+				VCVButton::onButton(e);
 				eventConsumed = false;
 			}
 		}
@@ -246,7 +255,7 @@ struct TransitLedButton : VCVButton {
 			eventConsumed = false;
 			return;
 		}
-		LEDButton::onDragStart(e);
+		VCVButton::onDragStart(e);
 	}
 
 	void appendContextMenu(Menu* menu) override {

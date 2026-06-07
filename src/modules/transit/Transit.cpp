@@ -266,9 +266,11 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChang
 		return getSlot(i)->getLabel();
 	}
 
-	Module* getSlotOwner(int slotIndex) override {
-		if (slotIndex < 0 || slotIndex >= presetTotal) return nullptr;
-		return N[slotIndex / NUM_PRESETS];
+	bool getSlotOwner(int slotIndex, Module*& module, int& localIndex) override {
+		if (slotIndex < 0 || slotIndex >= presetTotal) return false;
+		localIndex = slotIndex % NUM_PRESETS;
+		module = N[slotIndex / NUM_PRESETS];
+		return true;
 	}
 
 	void process(const Module::ProcessArgs& args) override {
@@ -787,7 +789,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChang
 			for (auto snapshot : snapshots) {
 				if (snapshot.id < 0) continue;
 				SLOT* slot1 = getSlot(snapshot.id);
-				if (!slot1->isUsed()) continue;
+				if (!slot1 || !slot1->isUsed()) continue;
 				weight += snapshot.weight;
 
 				for (size_t i = 0; i < sourceHandles.size(); i++) {
@@ -802,7 +804,7 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChang
 				for (auto snapshot : snapshots) {
 					if (snapshot.id < 0) continue;
 					SLOT* slot1 = getSlot(snapshot.id);
-					if (!slot1->isUsed()) continue;
+					if (!slot1 || !slot1->isUsed()) continue;
 
 					for (size_t i = 0; i < sourceHandles.size(); i++) {
 						ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
@@ -1239,6 +1241,8 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChang
 			case SLOT_CMD::SET_LAST:
 				presetSetLast(i + 1);
 				return -1;
+			case SLOT_CMD::INDEX:
+				return i;
 			default:
 				return -1;
 		}

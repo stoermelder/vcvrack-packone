@@ -247,6 +247,8 @@ The point is now linked to the chosen snapshot. The point only contributes to th
 
 To unbind, right-click a point and choose _Unbind snapshot_ — the point returns to its _No snapshot_ state and does not contribute to the output. The same menu also has an _Unbind snapshot_ entry, and the snapshot's own TRANSIT-slot is not affected.
 
+In addition to the context-menu binding, a snapshot can be assigned to a pad point by **dragging the LED button** of the snapshot on TRANSIT (or on a +T expander) and **dropping it onto the pad**. This works on any of the snapshot buttons in the chain.
+
 #### Visualize mode
 
 A "visualize" mode is available to make the pad's snapshot bindings easier to understand. While the mode is active, a colored spline is drawn from the outer ring of every snapshot point on the pad to the corresponding LED button on the host TRANSIT (or the +T expander hosting the snapshot). The splines use the color of the current snapshot-set, and the line for each snapshot ends in a small dot on the destination button.
