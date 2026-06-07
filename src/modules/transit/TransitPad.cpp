@@ -80,6 +80,11 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 	ClockDividerEx buttonDivider;
 	ClockDividerEx lightDivider;
 
+	// Index of the pad point the user is currently hovering over, or -1.
+	// Set by TransitPadSnapshotDragWidget::onEnter / onLeave.
+	int vizHoveredId = -1;
+	bool vizMode = false;
+
 	TransitPadModule() {
 		panelTheme = pluginSettings.panelThemeDefault;
 		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -427,6 +432,14 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 template <typename MODULE>
 struct TransitPadSnapshotDragWidget : XyScreenDragWidget<MODULE> {
 	typedef XyScreenDragWidget<MODULE> AW;
+	ui::Tooltip* tooltip = NULL;
+
+	~TransitPadSnapshotDragWidget() {
+		if (tooltip) {
+			APP->scene->removeChild(tooltip);
+			delete tooltip;
+		}
+	}
 
 	char getItemChar() override {
 		return 'A' + AW::id;
@@ -448,6 +461,28 @@ struct TransitPadSnapshotDragWidget : XyScreenDragWidget<MODULE> {
 		menu->addChild(Rack::createColorSubmenuItem("Color", &AW::module->setColor[AW::module->currentSet], colors));
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuLabel("All sets"));
+	}
+
+	void onEnter(const event::Enter& e) override {
+		this->module->vizHoveredId = this->id;
+		if (settings::tooltips && !tooltip) {
+			tooltip = new ui::Tooltip;
+			tooltip->text = getItemName();
+			APP->scene->addChild(tooltip);
+		}
+		AW::onEnter(e);
+	}
+
+	void onLeave(const event::Leave& e) override {
+		if (this->module->vizHoveredId == this->id) {
+			this->module->vizHoveredId = -1;
+		}
+		if (tooltip) {
+			APP->scene->removeChild(tooltip);
+			delete tooltip;
+			tooltip = NULL;
+		}
+		AW::onLeave(e);
 	}
 };
 
@@ -497,6 +532,7 @@ struct TransitPadXyScreenWidget : XyScreenWidget<MODULE> {
 	void appendContextMenu(Menu* menu) override {
 		using StoermelderPackOne::Rack::createValuePtrMenuItem;
 		menu->addChild(new MenuSeparator());
+		menu->addChild(createBoolPtrMenuItem("Visualize", "Space", &this->module->vizMode));
 		menu->addChild(createSubmenuItem("Number of snapshots", string::f("%i", this->module->snapshotsUsed),
 			[=](Menu* menu) {
 				for (int i = 0; i < this->module->scGetItemCount(0); i++) {
@@ -609,6 +645,7 @@ struct TransitPadVizOverlay : TransparentWidget {
 
 		Vec origin = hostWidget->box.pos;
 		uint8_t currentSet = module->currentSet;
+		bool anyHover = (module->vizHoveredId >= 0);
 
 		// The screen widget is at (3, 66.3) with size 219x219 inside the host widget.
 		// Each pad point is a 20x20 square centered in that area.
@@ -617,12 +654,14 @@ struct TransitPadVizOverlay : TransparentWidget {
 		const float screenSize = 225.f - 6.f;
 		const float pointSize = 20.f;
 
-		for (uint8_t i = 0; i < module->snapshotsUsed; i++) {
+		// Two passes when hovering: dim unrelated connectors first, then draw the
+		// hovered connector at full opacity on top.
+		auto drawConnection = [&](uint8_t i, bool highlighted, bool dimmed) {
 			const auto& src = module->snapshots[currentSet][i];
-			if (src.id < 0) continue;
+			if (src.id < 0) return;
 
 			Vec buttonPos = getButtonPos(src.id);
-			if (buttonPos == Vec()) continue;
+			if (buttonPos == Vec()) return;
 
 			// Pad-point center in module-local coords.
 			float x = module->params[TransitPadModule<>::SNAPSHOT_X_POS + i].getValue();
@@ -636,16 +675,46 @@ struct TransitPadVizOverlay : TransparentWidget {
 			// Start the spline at the edge of the XY drag circle (radius 10px), not its center.
 			Vec dir = buttonPos.minus(padPos).normalize();
 			Vec padEdge = padPos.plus(dir.mult(10.f));
-			drawSpline(vg, padEdge, buttonPos, col, false, dir);
 
-			// End-point dot at the button.
-			nvgBeginPath(vg);
-			nvgCircle(vg, buttonPos.x, buttonPos.y, 3.5f);
-			nvgFillColor(vg, nvgRGBAf(col.r, col.g, col.b, 0.9f));
-			nvgFill(vg);
-			nvgStrokeColor(vg, nvgRGBAf(1.f, 1.f, 1.f, 0.6f));
-			nvgStrokeWidth(vg, 0.8f);
-			nvgStroke(vg);
+			if (dimmed) {
+				// Cheap dim: lower alpha on the same glow + core passes.
+				nvgSave(vg);
+				nvgGlobalAlpha(vg, 0.18f);
+				drawSpline(vg, padEdge, buttonPos, col, false, dir);
+				nvgRestore(vg);
+				nvgBeginPath(vg);
+				nvgCircle(vg, buttonPos.x, buttonPos.y, 2.5f);
+				nvgFillColor(vg, nvgRGBAf(col.r, col.g, col.b, 0.4f));
+				nvgFill(vg);
+			}
+			else {
+				drawSpline(vg, padEdge, buttonPos, col, highlighted, dir);
+
+				// End-point dot at the button.
+				nvgBeginPath(vg);
+				nvgCircle(vg, buttonPos.x, buttonPos.y, highlighted ? 4.5f : 3.5f);
+				nvgFillColor(vg, nvgRGBAf(col.r, col.g, col.b, highlighted ? 1.f : 0.9f));
+				nvgFill(vg);
+				nvgStrokeColor(vg, nvgRGBAf(1.f, 1.f, 1.f, highlighted ? 0.9f : 0.6f));
+				nvgStrokeWidth(vg, highlighted ? 1.2f : 0.8f);
+				nvgStroke(vg);
+			}
+		};
+
+		if (anyHover) {
+			// Pass 1: draw all non-hovered connectors dimmed.
+			for (uint8_t i = 0; i < module->snapshotsUsed; i++) {
+				if (i == (uint8_t)module->vizHoveredId) continue;
+				drawConnection(i, false, true);
+			}
+			// Pass 2: draw the hovered connector highlighted.
+			drawConnection((uint8_t)module->vizHoveredId, true, false);
+		}
+		else {
+			// No hover — draw every connector at normal opacity.
+			for (uint8_t i = 0; i < module->snapshotsUsed; i++) {
+				drawConnection(i, false, false);
+			}
 		}
 	}
 };
@@ -653,9 +722,7 @@ struct TransitPadVizOverlay : TransparentWidget {
 
 struct TransitPadWidget : ThemedModuleWidget<TransitPadModule<>> {
 	typedef TransitPadModule<> MODULE;
-
 	TransitPadVizOverlay* vizOverlay = nullptr;
-	bool vizMode = false;
 
 	TransitPadWidget(MODULE* module) : ThemedModuleWidget<MODULE>(module, "TransitPad") {
 		setModule(module);
@@ -715,14 +782,14 @@ struct TransitPadWidget : ThemedModuleWidget<TransitPadModule<>> {
 		}
 	}
 
-	void setVizMode(bool active) {
-		vizMode = active;
-		if (vizOverlay) vizOverlay->visible = active;
+	void step() override {
+		if (vizOverlay) vizOverlay->visible = module->vizMode;
+		ThemedModuleWidget<TransitPadModule<>>::step();
 	}
 
 	void onHoverKey(const event::HoverKey& e) override {
 		if (e.key == GLFW_KEY_SPACE && e.action == GLFW_PRESS && (e.mods & RACK_MOD_MASK) == 0) {
-			setVizMode(!vizMode);
+			module->vizMode = !module->vizMode;
 			e.consume(this);
 			return;
 		}
