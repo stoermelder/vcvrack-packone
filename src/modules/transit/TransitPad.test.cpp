@@ -310,6 +310,51 @@ TEST_CASE("JSON round-trip preserves snapshotsUsed", "[TransitPad]") {
 }
 
 
+TEST_CASE("JSON round-trip preserves currentSet", "[TransitPad]") {
+	SECTION("Non-zero currentSet survives save/load") {
+		TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+		m->currentSet = 5;
+		json_t* j = m->dataToJson();
+		m->currentSet = 0;
+		m->dataFromJson(j);
+		json_decref(j);
+		REQUIRE(m->currentSet == 5);
+		Test::destroyModule(m);
+	}
+
+	SECTION("Out-of-range currentSet is clamped to valid range on load") {
+		TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+		m->currentSet = 0;
+		// Hand-craft a JSON document with a bogus currentSet value to exercise the clamp
+		json_t* j = json_pack("{s:i}", "currentSet", 999);
+		m->dataFromJson(j);
+		json_decref(j);
+		REQUIRE(m->currentSet == (int)m->getSetCount() - 1);
+		Test::destroyModule(m);
+	}
+
+	SECTION("Negative currentSet is clamped to 0 on load") {
+		TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+		m->currentSet = 4;
+		json_t* j = json_pack("{s:i}", "currentSet", -1);
+		m->dataFromJson(j);
+		json_decref(j);
+		REQUIRE(m->currentSet == 0);
+		Test::destroyModule(m);
+	}
+
+	SECTION("Missing currentSet key leaves currentSet unchanged (back-compat with old patches)") {
+		TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
+		m->currentSet = 3;
+		json_t* j = json_object();
+		m->dataFromJson(j);
+		json_decref(j);
+		REQUIRE(m->currentSet == 3);
+		Test::destroyModule(m);
+	}
+}
+
+
 TEST_CASE("onReset restores defaults", "[TransitPad]") {
 	TransitPadModule<>* m = Test::createModule<TransitPadModule<>>("TransitPad");
 

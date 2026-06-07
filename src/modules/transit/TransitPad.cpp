@@ -70,6 +70,7 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 	float outUiY, outInY;
 	dsp::ExponentialFilter outYfilter;
 
+	/** [Stored to JSON] */
 	int currentSet = 0;
 	/** [Stored to JSON] */
 	SETCVMODE setCvMode = SETCVMODE::TRIG_FWD;
@@ -372,6 +373,7 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 		json_object_set_new(rootJ, "snapshotsUsed", json_integer(snapshotsUsed));
 		json_object_set_new(rootJ, "setCvMode", json_integer((int)setCvMode));
+		json_object_set_new(rootJ, "currentSet", json_integer(currentSet));
 
 		json_t* setsJ = json_array();
 		for (uint8_t s = 0; s < SETS; s++) {
@@ -402,6 +404,9 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 
 		json_t* setCvModeJ = json_object_get(rootJ, "setCvMode");
 		if (setCvModeJ) setCvMode = (SETCVMODE)json_integer_value(setCvModeJ);
+
+		json_t* currentSetJ = json_object_get(rootJ, "currentSet");
+		if (currentSetJ) currentSet = std::max(0, std::min((int)json_integer_value(currentSetJ), (int)SETS - 1));
 
 		int su = json_integer_value(json_object_get(rootJ, "snapshotsUsed"));
 		snapshotsUsed = std::max(0, std::min(su, (int)SNAPSHOTS));
