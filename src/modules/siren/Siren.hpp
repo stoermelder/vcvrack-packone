@@ -36,6 +36,9 @@ struct SirenSettings {
 	// linear / default / best in the speex preset table.
 	int  resampleQuality    = 6;
 	bool convertToWavOnDrop = false;
+	// When non-empty, converted/trimmed files are written here instead of
+	// alongside the source file.
+	std::string customConvertDir;
 
 	void save() const {
 		if (isTesting()) return;
@@ -86,6 +89,7 @@ struct SirenSettings {
 		json_object_set_new(j, "resampleOnDrop",     json_boolean(resampleOnDrop));
 		json_object_set_new(j, "resampleQuality",    json_integer(resampleQuality));
 		json_object_set_new(j, "convertToWavOnDrop", json_boolean(convertToWavOnDrop));
+		json_object_set_new(j, "customConvertDir", json_string(customConvertDir.c_str()));
 		return j;
 	}
 
@@ -107,6 +111,7 @@ struct SirenSettings {
 		v = json_object_get(j, "resampleOnDrop");      if (v) resampleOnDrop = json_boolean_value(v);
 		v = json_object_get(j, "resampleQuality");     if (v) resampleQuality = (int)json_integer_value(v);
 		v = json_object_get(j, "convertToWavOnDrop");  if (v) convertToWavOnDrop = json_boolean_value(v);
+		v = json_object_get(j, "customConvertDir");    if (v) customConvertDir = json_string_value(v);
 	}
 } sirenSettings;
 

@@ -1,5 +1,6 @@
 #pragma once
 #include <rack.hpp>
+#include "Siren.hpp"
 #include "SirenDataSource.hpp"
 #include "SirenAudio.hpp"
 
@@ -344,7 +345,7 @@ struct FileSystemDataSource : DataSource {
 
 	std::function<std::string()> prepareForDrop(const std::string& id, bool convertToWav,
 			int targetSampleRate = 0, float trimIn  = 0.f, float trimOut = 1.f,
-			int resampleQuality = 6) override {
+			int resampleQuality = 6, const std::string& outputDir = "") override {
 
 		std::string absPath = resolveAbsPath(id);
 		std::string ext = rack::system::getExtension(rack::system::getFilename(absPath));
@@ -356,7 +357,7 @@ struct FileSystemDataSource : DataSource {
 
 		if (!needConvert && !needResample && !needTrim) return [absPath]() { return absPath; };
 
-		std::string dir   = ghc::filesystem::path(absPath).parent_path().string();
+		std::string dir   = !outputDir.empty() ? outputDir : ghc::filesystem::path(absPath).parent_path().string();
 		std::string fname = rack::system::getFilename(absPath);
 		size_t dot        = fname.rfind('.');
 		std::string stem  = (dot != std::string::npos) ? fname.substr(0, dot) : fname;

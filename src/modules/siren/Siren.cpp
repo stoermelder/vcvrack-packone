@@ -753,7 +753,7 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 			float trimIn  = previewPane->inPoint;
 			float trimOut = previewPane->outPoint;
 			return src->prepareForDrop(id, sirenSettings.convertToWavOnDrop,
-									targetRate, trimIn, trimOut, sirenSettings.resampleQuality);
+									targetRate, trimIn, trimOut, sirenSettings.resampleQuality, sirenSettings.customConvertDir);
 		};
 		dropHandler.moduleWidget = this;
 
@@ -883,6 +883,22 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 			}
 		}));
 		menu->addChild(createBoolPtrMenuItem("Convert to WAV on drop", "", &sirenSettings.convertToWavOnDrop));
+		menu->addChild(createSubmenuItem("Folder for converted/trimmed files", "", [=](ui::Menu* subMenu) {
+			subMenu->addChild(createCheckMenuItem("Same folder as source file", "",
+				[=]() { return sirenSettings.customConvertDir.empty(); },
+				[=]() { sirenSettings.customConvertDir = ""; }
+			));
+			subMenu->addChild(createCheckMenuItem(
+				sirenSettings.customConvertDir.empty() ? "Custom folder..." : sirenSettings.customConvertDir, "",
+				[=]() { return !sirenSettings.customConvertDir.empty(); },
+				[]() {
+					char* path = osdialog_file(OSDIALOG_OPEN_DIR, nullptr, nullptr, nullptr);
+					if (!path) return;
+					sirenSettings.customConvertDir = path;
+					free(path);
+				}
+			));
+		}));
 	}
 };
 

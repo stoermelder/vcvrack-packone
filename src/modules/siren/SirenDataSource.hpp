@@ -149,8 +149,11 @@ struct DataSource {
 	//   targetSampleRate — resample to this rate if > 0 and it differs from the file rate
 	//   trimIn / trimOut — normalised [0, 1] region to keep; defaults retain the full file
 	//   resampleQuality  — speex resampler quality (0..10) used when targetSampleRate > 0
+	//   outputDir        — when non-empty, write the generated file here instead of
+	//                      alongside the source file
 	virtual std::function<std::string()> prepareForDrop(const std::string& id, bool convertToWav,
-			int targetSampleRate = 0, float trimIn = 0.f, float trimOut = 1.f, int resampleQuality = 6) {
+			int targetSampleRate = 0, float trimIn = 0.f, float trimOut = 1.f, int resampleQuality = 6,
+			const std::string& outputDir = "") {
 		return [id]() { return id; };
 	}
 
