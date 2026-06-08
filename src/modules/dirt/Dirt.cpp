@@ -146,15 +146,19 @@ struct DirtModule : Module {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 
 		json_t* channelsJ = json_object_get(rootJ, "presets");
 		json_t* channelJ;
 		size_t i;
 		json_array_foreach(channelsJ, i, channelJ) {
-			noise[i].ratio = json_real_value(json_object_get(channelJ, "noiseRatio"));
-			crosstalk.ratio[i] = json_real_value(json_object_get(channelJ, "crosstalkRatio"));
-			crackle.ratio[i] = json_real_value(json_object_get(channelJ, "crackleRatio"));
+			json_t* noiseRatioJ = json_object_get(channelJ, "noiseRatio");
+			if (noiseRatioJ) noise[i].ratio = json_real_value(noiseRatioJ);
+			json_t* crosstalkRatioJ = json_object_get(channelJ, "crosstalkRatio");
+			if (crosstalkRatioJ) crosstalk.ratio[i] = json_real_value(crosstalkRatioJ);
+			json_t* crackleRatioJ = json_object_get(channelJ, "crackleRatio");
+			if (crackleRatioJ) crackle.ratio[i] = json_real_value(crackleRatioJ);
 		}
 
 		json_t* pitchDefectJ = json_object_get(rootJ, "pitchDefect");

@@ -6,6 +6,7 @@
 #include <vector>
 #include <string>
 #include <utility>
+#include <functional>
 
 namespace Test {
 
@@ -80,7 +81,7 @@ struct TestContext {
 			ctx = rack::contextGet();
 			scene = dynamic_cast<TScene*>(ctx->scene);
 		}
-	} 
+	}
 
 	~TestContext() {
 		// If this is the last TestContext, delete the pluginInstance
@@ -191,7 +192,7 @@ static const rack::midi::Message makeMidiMessage(uint8_t statusNibble, uint8_t c
 //
 // Usage:
 // Test::SimpleEngine testEngine;
-// testEngine.registerModules(moduleA, moduleB); 
+// testEngine.registerModules(moduleA, moduleB);
 // A -> B chain
 //
 // testEngine.step();  // Process both modules with message flipping
@@ -230,6 +231,112 @@ struct SimpleEngine {
 		}
 	}
 };
+
+
+
+// Verifies that every property (at any nesting depth) in a preset JSON
+// is properly null-guarded in the module's dataFromJson() implementation.
+//
+// For every path in the JSON object tree:
+//   1. A deep copy of the JSON is created.
+//   2. The value at that path is replaced with `json_null()`.
+//   3. The copy is loaded via the module's dataFromJson().
+//
+// The helper also verifies that an empty JSON object (no keys) can be
+// loaded without crashing.
+//
+// If dataFromJson() does not properly null-guard a property, this test
+// will crash (e.g. on `json_array_foreach(json_null(), ...)`) or throw.
+// Common bugs caught by this helper include:
+//   - Dereferencing a value without checking that the key exists:
+//         json_t* fooJ = json_object_get(rootJ, "foo");
+//         foo = json_integer_value(fooJ);  // UB if "foo" is missing/null
+//   - Iterating over a value that is not an array:
+//         json_t* dataJ = json_object_get(rootJ, "data");
+//         if (dataJ) {  // true even if dataJ is json_null
+//             json_array_foreach(dataJ, ...)  // UB
+//         }
+//   - Reading a nested object property without checking the parent:
+//         json_t* settingsJ = json_object_get(rootJ, "settings");
+//         json_t* colorJ = json_object_get(settingsJ, "color");
+//         color = json_string_value(colorJ);  // CRASH if settingsJ is null
+//
+// Usage:
+//   auto module = Test::createModule<MyModule>("MySlug");
+//   json_t* rootJ = module->dataToJson();
+//   REQUIRE(rootJ != nullptr);
+//   Test::testPresetNullGuards(module, rootJ);
+//   json_decref(rootJ);
+//   Test::destroyModule(module);
+template <typename T>
+static void testPresetNullGuards(T* module, json_t* rootJ) {
+	REQUIRE(module != nullptr);
+	REQUIRE(rootJ != nullptr);
+	REQUIRE(json_is_object(rootJ));
+
+	// Recursive path collector. std::function is required because the
+	// lambda captures itself for recursion (C++11 has no generic
+	// lambdas with `auto` parameters). Arrays are not descended into -
+	// we only test the array as a whole.
+	std::vector<std::vector<std::string>> paths;
+	std::vector<std::string> currentPath;
+	std::function<void(json_t*)> collectPaths = [&](json_t* node) {
+		if (!json_is_object(node)) return;
+		const char* key;
+		json_t* value;
+		json_object_foreach(node, key, value) {
+			currentPath.push_back(key);
+			paths.push_back(currentPath);
+			collectPaths(value);
+			currentPath.pop_back();
+		}
+	};
+	collectPaths(rootJ);
+
+	// Render a path as a dotted string for the CATCH_INFO annotation
+	// (e.g. {"a", "b", "c"} -> "a.b.c").
+	auto formatPath = [](const std::vector<std::string>& path) -> std::string {
+		std::string s;
+		for (size_t i = 0; i < path.size(); i++) {
+			if (i > 0) s += ".";
+			s += path[i];
+		}
+		return s;
+	};
+
+	// Walk the path in a (deep-copied) JSON object and replace the
+	// leaf value with json_null(). Intermediate objects that are not
+	// themselves objects (e.g. null due to a previous iteration) are
+	// left untouched - this is a no-op rather than an error, because
+	// the helper should not change behaviour between iterations.
+	auto setPathToNull = [](json_t* obj, const std::vector<std::string>& path) {
+		json_t* current = obj;
+		for (size_t i = 0; i + 1 < path.size(); i++) {
+			json_t* next = json_object_get(current, path[i].c_str());
+			if (!json_is_object(next)) return;
+			current = next;
+		}
+		json_object_set_new(current, path.back().c_str(), json_null());
+	};
+
+	// For each path, set the value to null and test the loader.
+	for (const auto& path : paths) {
+		CATCH_INFO("Property '" << formatPath(path) << "' should be null-guarded in dataFromJson()");
+
+		json_t* copyJ = json_deep_copy(rootJ);
+		REQUIRE(copyJ != nullptr);
+		setPathToNull(copyJ, path);
+
+		REQUIRE_NOTHROW(module->dataFromJson(copyJ));
+		json_decref(copyJ);
+	}
+
+	// An empty JSON object should also be safe to load.
+	CATCH_INFO("Empty JSON object should load without crashing");
+	json_t* emptyJ = json_object();
+	REQUIRE_NOTHROW(module->dataFromJson(emptyJ));
+	json_decref(emptyJ);
+}
 
 
 } // namespace Test

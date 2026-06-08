@@ -20,6 +20,19 @@ TEST_CASE("Construction and initialization", "[Orbit]") {
 	Test::destroyModule(m);
 }
 
+TEST_CASE("Preset JSON null-guards", "[Orbit][JSON]") {
+	auto module = Test::createModule<OrbitModule>("Orbit");
+
+	SECTION("All top-level properties are null-guarded in dataFromJson()") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetNullGuards(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	Test::destroyModule(module);
+}
+
 TEST_CASE("Stereo panning basic", "[Orbit]") {
 	auto module = Test::createModule<OrbitModule>("Orbit");
 
