@@ -559,7 +559,6 @@ struct FileSystemDataSource : DataSource {
 
 			// Text field for adding a new tag
 			struct FileNewTagField : ui::TextField {
-				MetadataStore* metadata;
 				std::string rel;
 				FileSystemDataSource* src;
 				std::function<void()> onChanged;
@@ -567,7 +566,7 @@ struct FileSystemDataSource : DataSource {
 					if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
 						std::string tag = rack::string::trim(text);
 						if (!tag.empty()) {
-							metadata->addTag(rel, tag);
+							src->getMetadata()->addTag(rel, tag);
 							src->saveMetadata();
 							if (onChanged) onChanged();
 						}
@@ -582,7 +581,6 @@ struct FileSystemDataSource : DataSource {
 			FileNewTagField* ntf = new FileNewTagField;
 			ntf->box.size.x  = 150.f;
 			ntf->placeholder = "New tag...";
-			ntf->metadata    = metadata_.get();
 			ntf->rel         = rel;
 			ntf->src         = this;
 			ntf->onChanged   = onChanged;
@@ -591,12 +589,12 @@ struct FileSystemDataSource : DataSource {
 
 			// All known tags with checkmarks — live toggle per item
 			struct FileTagItem : ui::MenuItem {
-				MetadataStore* metadata;
 				std::string rel;
 				std::string tag;
 				FileSystemDataSource* src;
 				std::function<void()> onChanged;
 				void onAction(const event::Action& e) override {
+					MetadataStore* metadata = src->getMetadata();
 					auto current = metadata->getTags(rel);
 					std::string tagLow = rack::string::lowercase(tag);
 					bool has = std::any_of(current.begin(), current.end(), [&](const std::string& t) {
@@ -609,7 +607,7 @@ struct FileSystemDataSource : DataSource {
 					e.unconsume();
 				}
 				void step() override {
-					auto current = metadata->getTags(rel);
+					auto current = src->getMetadata()->getTags(rel);
 					std::string tagLow = rack::string::lowercase(tag);
 					bool has = std::any_of(current.begin(), current.end(), [&](const std::string& t) {
 						return rack::string::lowercase(t) == tagLow;
@@ -626,7 +624,6 @@ struct FileSystemDataSource : DataSource {
 			Rack::addGroupedMenuItems<std::string>(menu, sorted, [this, rel, onChanged](const std::string& tag) -> ui::MenuItem* {
 				FileTagItem* item = new FileTagItem;
 				item->text      = tag;
-				item->metadata  = metadata_.get();
 				item->rel       = rel;
 				item->tag       = tag;
 				item->src       = this;

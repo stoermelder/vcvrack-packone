@@ -29,8 +29,9 @@ struct SirenTreeRow : widget::OpaqueWidget {
 	struct StarButton : widget::OpaqueWidget {
 		SirenTreeRow* row = nullptr;
 		void draw(const DrawArgs& args) override {
-			if (!row || !row->metadata) return;
-			bool fav = row->metadata->isFavorite(row->node.relativePath);
+			MetadataStore* meta = row ? row->metadata() : nullptr;
+			if (!meta) return;
+			bool fav = meta->isFavorite(row->node.relativePath);
 			nvgFontSize(args.vg, 7.f);
 			nvgFillColor(args.vg, fav
 				? nvgRGBf(1.f, 0.85f, 0.1f)
@@ -39,9 +40,9 @@ struct SirenTreeRow : widget::OpaqueWidget {
 		}
 		void onButton(const event::Button& e) override {
 			if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS) {
-				if (row && row->metadata) {
-					bool fav = row->metadata->isFavorite(row->node.relativePath);
-					row->metadata->setFavorite(row->node.relativePath, !fav);
+				if (MetadataStore* meta = row ? row->metadata() : nullptr) {
+					bool fav = meta->isFavorite(row->node.relativePath);
+					meta->setFavorite(row->node.relativePath, !fav);
 				}
 				e.consume(this);
 			}
@@ -50,7 +51,6 @@ struct SirenTreeRow : widget::OpaqueWidget {
 
 	DataSourceNode node;
 	int indentLevel = 0;
-	MetadataStore* metadata = nullptr;
 	SirenBrowserPane* pane = nullptr;
 	bool selected = false;
 	bool expanded = false;
@@ -67,6 +67,11 @@ struct SirenTreeRow : widget::OpaqueWidget {
 		if (t) { APP->scene->addChild(t); tooltip = t; }
 	}
 
+	// Metadata is owned by the active DataSource — derive it through `pane`
+	// rather than caching a copy that could fall out of sync when the source changes.
+	// Defined out-of-line below since SirenBrowserPane is only forward-declared here.
+	MetadataStore* metadata() const;
+
 	void onEnter(const event::Enter& e) override {
 		if (!node.isContainer) {
 			std::string text = node.name;
@@ -75,8 +80,8 @@ struct SirenTreeRow : widget::OpaqueWidget {
 				float secs = node.durationSeconds - mins * 60.f;
 				text += rack::string::f("\n%02d:%05.2f", mins, secs);
 			}
-			if (metadata) {
-				auto tags = metadata->getTags(node.relativePath);
+			if (MetadataStore* meta = metadata()) {
+				auto tags = meta->getTags(node.relativePath);
 				if (!tags.empty()) {
 					text += "\n";
 					for (const std::string& tag : tags) {
@@ -96,10 +101,9 @@ struct SirenTreeRow : widget::OpaqueWidget {
 		OpaqueWidget::onLeave(e);
 	}
 
-	void init(const DataSourceNode& n, int indent, MetadataStore* meta, SirenBrowserPane* p) {
+	void init(const DataSourceNode& n, int indent, SirenBrowserPane* p) {
 		node = n;
 		indentLevel = indent;
-		metadata = meta;
 		pane = p;
 		box.size = Vec(0.f, ROW_H);
 
@@ -210,6 +214,11 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 	std::function<void()>    onAddRoot;
 	std::function<void(int)> onSelectRoot;
 
+	// Fired right before the active DataSource is destroyed (root switch/removal),
+	// so owners holding raw DataSource*/MetadataStore* derived from it (e.g. the
+	// preview pane) can drop those references before they dangle.
+	std::function<void()> onActiveSourceChanging;
+
 	SirenDropHandler* dropHandler = nullptr;
 	TaskWorker* worker = nullptr;
 
@@ -278,6 +287,7 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 			loadRoot(rootContainers[activeRootIdx]);
 		}
 		else {
+			if (onActiveSourceChanging) onActiveSourceChanging();
 			delete activeDataSource;
 			activeDataSource = nullptr;
 			selectedPath.clear();
@@ -290,6 +300,7 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 	}
 
 	void loadRoot(const std::string& root) {
+		if (onActiveSourceChanging) onActiveSourceChanging();
 		delete activeDataSource;
 		activeDataSource = new FileSystemDataSource(root);
 		rows.clear();
@@ -973,6 +984,10 @@ inline void SirenBrowserPane::setSize(Vec size) {
 	tagBar->layout();
 }
 
+inline MetadataStore* SirenTreeRow::metadata() const {
+	return (pane && pane->activeDataSource) ? pane->activeDataSource->getMetadata() : nullptr;
+}
+
 inline void SirenBrowserPane::rebuildRowWidgets() {
 	rowContainer->clearChildren();
 	MetadataStore* meta = activeDataSource ? activeDataSource->getMetadata() : nullptr;
@@ -1012,7 +1027,7 @@ inline void SirenBrowserPane::rebuildRowWidgets() {
 		}
 
 		SirenTreeRow* row = new SirenTreeRow;
-		row->init(n, entry.indent, meta, this);
+		row->init(n, entry.indent, this);
 		row->selected     = (n.relativePath == selectedPath);
 		row->expanded     = entry.expanded;
 		row->box.pos      = Vec(0.f, y);

@@ -44,9 +44,13 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	bool  draggingScrollbar = false;
 	float dragStartScrollbarX = 0.f;
 
-	MetadataStore*     metadata    = nullptr;
 	SirenDropHandler* dropHandler = nullptr;
 	TaskWorker*       worker      = nullptr;
+
+	// Metadata is owned by the DataSource, not cached here — deriving it on
+	// demand keeps `source` the single source of truth and avoids a second
+	// pointer that could fall out of sync (or dangle) independently of it.
+	MetadataStore* metadata() const { return source ? source->getMetadata() : nullptr; }
 
 	// Called after any metadata change so the browser pane can refresh
 	std::function<void()> onMetadataChanged;
@@ -122,7 +126,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			moduleOutPoint->store(outPoint, std::memory_order_relaxed);
 	}
 
-	void loadItem(const DataSourceNode& node, DataSource* src, MetadataStore* meta,
+	void loadItem(const DataSourceNode& node, DataSource* src,
 	        bool startPlay = false, bool forceRebuild = false) {
 		const std::string& id = node.relativePath;
 
@@ -131,7 +135,6 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 
 		currentNode   = node;
 		source        = src;
-		metadata      = meta;
 		displayName   = !node.name.empty() ? node.name : (src && !id.empty() ? src->getDisplayName(id) : "");
 		relPath       = id;
 		cacheReady    = false;
@@ -152,23 +155,25 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		src->loadAudioInfo(id, info);
 
 		// BPM: load from metadata if already stored, otherwise extract from filename.
-		if (metadata && !relPath.empty()) {
-			auto it = metadata->samples.find(relPath);
-			if (it != metadata->samples.end() && it->second.bpm > 0.f) {
-				bpm.store(it->second.bpm);
-			}
-			else {
-				float conf = 0.f;
-				float nameBpm = BpmDetector::detectFromName(id, conf);
-				if (nameBpm > 0.f) {
-					bpm.store(nameBpm);
-					metadata->setBpm(relPath, nameBpm, conf);
+		if (MetadataStore* meta = metadata()) {
+			if (!relPath.empty()) {
+				auto it = meta->samples.find(relPath);
+				if (it != meta->samples.end() && it->second.bpm > 0.f) {
+					bpm.store(it->second.bpm);
 				}
+				else {
+					float conf = 0.f;
+					float nameBpm = BpmDetector::detectFromName(id, conf);
+					if (nameBpm > 0.f) {
+						bpm.store(nameBpm);
+						meta->setBpm(relPath, nameBpm, conf);
+					}
+				}
+				// Record that the user has opened this sample so cleanup() can
+				// later find and remove the matching waveform cache file, even
+				// when the user never tags/favorites/BPM-detects the file.
+				meta->markSeen(relPath);
 			}
-			// Record that the user has opened this sample so cleanup() can
-			// later find and remove the matching waveform cache file, even
-			// when the user never tags/favorites/BPM-detects the file.
-			metadata->markSeen(relPath);
 		}
 
 		int64_t ts        = src->getTimestamp(id);
@@ -220,12 +225,12 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		std::string idCopy      = currentNode.relativePath;
 		std::string relPathCopy = relPath;
 		DataSource* ds          = source;
-		MetadataStore* meta      = metadata;
 
-		worker->work([this, idCopy, relPathCopy, ds, meta]() {
+		worker->work([this, idCopy, relPathCopy, ds]() {
 			float confidence = 0.f;
 			float result = BpmDetector::detectFromDsp(*ds, idCopy, confidence);
 
+			MetadataStore* meta = ds ? ds->getMetadata() : nullptr;
 			if (meta && result > 0.f && !relPathCopy.empty()) {
 				meta->setBpm(relPathCopy, result, confidence);
 				if (ds) ds->saveMetadata();
@@ -323,8 +328,8 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			}
 
 			// ── tag chips (third row of top bar) ─────────────────────────────────
-			if (metadata) {
-				auto tags = metadata->getTags(relPath);
+			if (MetadataStore* meta = metadata()) {
+				auto tags = meta->getTags(relPath);
 				if (!tags.empty()) {
 					static constexpr float CHIP_H = 10.f;
 					static constexpr float CHIP_Y = 34.f;  // row starts below info row
@@ -628,7 +633,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	}
 
 	void createContextMenu() {
-		if (currentNode.relativePath.empty() || !source || !metadata) return;
+		if (currentNode.relativePath.empty() || !source || !metadata()) return;
 
 		std::string rel = relPath;
 		ui::Menu* menu = createMenu();
@@ -660,12 +665,14 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			));
 		}
 		if (bpmVal > 0.f) {
-			float conf = metadata ? metadata->getBpmConfidence(relPath) : 0.f;
+			float conf = metadata() ? metadata()->getBpmConfidence(relPath) : 0.f;
 			menu->addChild(createMenuItem("Clear BPM", rack::string::f("Confidence %.2f%%", conf * 100.f), [this]() {
 				bpm.store(0.f);
-				if (metadata && !relPath.empty()) {
-					metadata->samples[relPath].bpm = 0.f;
-					if (source) source->saveMetadata();
+				if (MetadataStore* meta = metadata()) {
+					if (!relPath.empty()) {
+						meta->samples[relPath].bpm = 0.f;
+						if (source) source->saveMetadata();
+					}
 				}
 			}));
 		}

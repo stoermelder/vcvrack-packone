@@ -511,7 +511,7 @@ TEST_CASE("loadItem resets inPoint and scrubPos", "[Siren][Preview]") {
 	pane.inPoint  = 0.7f;
 	pane.scrubPos = 0.7f;
 
-	pane.loadItem(DataSourceNode{}, nullptr, nullptr);
+	pane.loadItem(DataSourceNode{}, nullptr);
 
 	REQUIRE(pane.inPoint  == 0.f);
 	REQUIRE(pane.scrubPos == 0.f);
@@ -522,7 +522,7 @@ TEST_CASE("loadItem: no item loaded for empty id or null source", "[Siren][Previ
 	SirenPreviewPane pane;
 	pane.box.size = Vec(600.f, 380.f);
 
-	pane.loadItem(DataSourceNode{}, nullptr, nullptr);
+	pane.loadItem(DataSourceNode{}, nullptr);
 	REQUIRE(pane.currentNode.relativePath.empty());
 }
 
@@ -536,7 +536,7 @@ TEST_CASE("loadItem: playing stays false when no stream can be opened", "[Siren]
 	pane.modulePlaying = &playing;
 
 	// startPlay=true with empty id → early return before startPlaybackFrom()
-	pane.loadItem(DataSourceNode{}, nullptr, nullptr, /*startPlay=*/true);
+	pane.loadItem(DataSourceNode{}, nullptr, /*startPlay=*/true);
 	REQUIRE(playing.load() == false);
 }
 

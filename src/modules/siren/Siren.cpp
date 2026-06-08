@@ -709,6 +709,12 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 		previewPane->cacheDir = sirenCacheDirPath();
 		display->addChild(previewPane);
 
+		// The active DataSource (and its MetadataStore) is about to be destroyed —
+		// drop the preview pane's references to it before they dangle.
+		browserPane->onActiveSourceChanging = [this]() {
+			previewPane->loadItem(DataSourceNode{}, nullptr);
+		};
+
 		if (!module) return;
 
 		// Wire audio callbacks: pane → module
@@ -763,7 +769,7 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 		if (!restoreFile.empty()) {
 			DataSource* src = browserPane->activeDataSource;
 			DataSourceNode restoreNode = src ? src->resolveNode(restoreFile) : DataSourceNode{};
-			previewPane->loadItem(restoreNode, src, src ? src->getMetadata() : nullptr);
+			previewPane->loadItem(restoreNode, src);
 			module->playheadPos.store(restorePos, std::memory_order_relaxed);
 			browserPane->revealPath(restoreFile);
 		}
@@ -801,7 +807,7 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 		if (module) module->lastFilePath = node.relativePath;
 		DataSource* src = browserPane->activeDataSource;
 		bool autoplay = module && module->params[SirenModule::PARAM_AUTOPLAY].getValue() > 0.5f;
-		previewPane->loadItem(node, src, src ? src->getMetadata() : nullptr, startPlay || autoplay);
+		previewPane->loadItem(node, src, startPlay || autoplay);
 	}
 
 	void onSelectKey(const SelectKeyEvent& e) override {
