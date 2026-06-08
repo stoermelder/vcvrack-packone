@@ -44,6 +44,23 @@ static std::string callPrepareForDrop(FileSystemDataSource& src, const std::stri
 	return src.prepareForDrop(id, convertToWav)();
 }
 
+// Writes a short but decodable silent stereo WAV file — needed to exercise the
+// trim/convert path in prepareForDrop(), which falls back to the source path
+// whenever loadAudioInfo() can't decode a header (e.g. the empty files from touch()).
+static void writeTestWav(const std::string& path, int frames = 4410, int sampleRate = 44100, int channels = 2) {
+	drwav_data_format fmt = {};
+	fmt.container     = drwav_container_riff;
+	fmt.format        = DR_WAVE_FORMAT_IEEE_FLOAT;
+	fmt.channels      = (drwav_uint32)channels;
+	fmt.sampleRate    = (drwav_uint32)sampleRate;
+	fmt.bitsPerSample = 32;
+	drwav wav;
+	drwav_init_file_write(&wav, path.c_str(), &fmt, nullptr);
+	std::vector<float> samples((size_t)frames * channels, 0.f);
+	drwav_write_pcm_frames(&wav, (drwav_uint64)frames, samples.data());
+	drwav_uninit(&wav);
+}
+
 // ─── isGeneratedFile ──────────────────────────────────────────────────────────
 // pattern: _siren + exactly 6 lowercase letters + .wav suffix, must be at position size-16.
 TEST_CASE("isGeneratedFile: recognises _siren+6letters.wav pattern", "[Siren][FileSystem]") {
@@ -215,6 +232,57 @@ TEST_CASE("prepareForDrop: resampleQuality parameter is accepted (no-op when no 
 		REQUIRE(task != nullptr);
 		REQUIRE(task() == tmp.filePath("kick.wav"));
 	}
+}
+
+// ─── prepareForDrop: outputDir ───────────────────────────────────────────────
+// When trim/convert/resample produces a new file, outputDir (when non-empty)
+// overrides the destination folder; otherwise the file lands beside the source.
+
+// trimOut < 1 forces the conversion path even though convertToWav is false and
+// no resampling is requested — exercising outPath construction without needing
+// a real format conversion.
+TEST_CASE("prepareForDrop: writes trimmed file into custom outputDir when set", "[Siren][FileSystem]") {
+	TempDir tmp;
+	TempDir outDir;
+	writeTestWav(tmp.filePath("loop.wav"));
+
+	FileSystemDataSource src(tmp.str());
+	auto task = src.prepareForDrop("/loop.wav", /*convertToWav=*/false, /*targetSampleRate=*/0,
+	                               /*trimIn=*/0.f, /*trimOut=*/0.5f, /*resampleQuality=*/6, outDir.str());
+	std::string result = task();
+
+	REQUIRE(result != tmp.filePath("loop.wav"));
+	REQUIRE(ghc::filesystem::path(result).parent_path().string() == outDir.str());
+	REQUIRE(ghc::filesystem::exists(result));
+}
+
+// With outputDir empty (default), the generated file is written beside the source —
+// preserving the pre-existing behaviour.
+TEST_CASE("prepareForDrop: writes trimmed file beside source when outputDir is empty", "[Siren][FileSystem]") {
+	TempDir tmp;
+	writeTestWav(tmp.filePath("loop.wav"));
+
+	FileSystemDataSource src(tmp.str());
+	auto task = src.prepareForDrop("/loop.wav", /*convertToWav=*/false, /*targetSampleRate=*/0,
+	                               /*trimIn=*/0.f, /*trimOut=*/0.5f, /*resampleQuality=*/6, "");
+	std::string result = task();
+
+	REQUIRE(result != tmp.filePath("loop.wav"));
+	REQUIRE(ghc::filesystem::path(result).parent_path().string() == tmp.str());
+	REQUIRE(ghc::filesystem::exists(result));
+}
+
+// outputDir must be ignored on the early-return (no-op) path — the resolved
+// absolute source path is returned unchanged regardless of the destination hint.
+TEST_CASE("prepareForDrop: outputDir is ignored when no conversion/trim/resample is needed", "[Siren][FileSystem]") {
+	TempDir tmp;
+	TempDir outDir;
+	tmp.touch("kick.wav");
+
+	FileSystemDataSource src(tmp.str());
+	auto task = src.prepareForDrop("/kick.wav", /*convertToWav=*/false, /*targetSampleRate=*/0,
+	                               /*trimIn=*/0.f, /*trimOut=*/1.f, /*resampleQuality=*/6, outDir.str());
+	REQUIRE(task() == tmp.filePath("kick.wav"));
 }
 
 // ─── isSupportedAudioFile ───────────────────────────────────────────────────
