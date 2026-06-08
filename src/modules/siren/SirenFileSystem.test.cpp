@@ -1,6 +1,7 @@
 #include "../../test/test_plugin.hpp"
 #include "../../test/test_context.hpp"
 #include "SirenFileSystem.hpp"
+#include "SirenTest.hpp"
 #include <fstream>
 #include <algorithm>
 
@@ -93,7 +94,7 @@ TEST_CASE("isGeneratedFile: rejects old .converted.wav and other edge cases", "[
 // rootPath() returns the path passed to the constructor.
 TEST_CASE("FileSystemDataSource: rootPath returns configured root", "[Siren][FileSystem]") {
 	TempDir tmp;
-	FileSystemDataSource src(tmp.str());
+	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
 	REQUIRE(src.rootPath() == tmp.str());
 }
 
@@ -105,7 +106,7 @@ TEST_CASE("loadChildrenSync: excludes _siren_ files from results", "[Siren][File
 	tmp.touch("kick_siren_abcdef.wav");
 	tmp.touch("pad.flac");
 
-	FileSystemDataSource src(tmp.str());
+	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
 	auto nodes = src.loadChildrenSync("");
 
 	std::vector<std::string> names;
@@ -124,7 +125,7 @@ TEST_CASE("loadChildrenSync: correct count when multiple _siren_ files are prese
 	tmp.touch("b.mp3");
 	tmp.touch("b_siren_uvwxyz.wav");
 
-	FileSystemDataSource src(tmp.str());
+	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
 	auto nodes = src.loadChildrenSync("");
 
 	REQUIRE(nodes.size() == 2);
@@ -139,7 +140,7 @@ TEST_CASE("loadChildrenSync: container (directory) alongside _siren_ files is un
 	tmp.touch("sample_siren_abcdef.wav");
 	ghc::filesystem::create_directories(ghc::filesystem::path(tmp.str()) / "Drums");
 
-	FileSystemDataSource src(tmp.str());
+	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
 	auto nodes = src.loadChildrenSync("");
 
 	std::vector<std::string> names;
@@ -156,7 +157,7 @@ TEST_CASE("loadChildrenSync: node isContainer flag is correct", "[Siren][FileSys
 	tmp.touch("kick.wav");
 	ghc::filesystem::create_directories(ghc::filesystem::path(tmp.str()) / "Loops");
 
-	FileSystemDataSource src(tmp.str());
+	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
 	auto nodes = src.loadChildrenSync("");
 
 	const DataSourceNode* fileNode = nullptr;
@@ -178,42 +179,42 @@ TEST_CASE("loadChildrenSync: node isContainer flag is correct", "[Siren][FileSys
 // when convertToWav is false, the returned path is the resolved absolute path.
 TEST_CASE("prepareForDrop: returns absolute path when convertToWav is false", "[Siren][FileSystem]") {
 	TempDir tmp;
-	FileSystemDataSource src(tmp.str());
+	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
 	REQUIRE(callPrepareForDrop(src, "/drone.mp3", false) == tmp.filePath("drone.mp3"));
 }
 
 // .wav files pass through without conversion regardless of the flag.
 TEST_CASE("prepareForDrop: returns absolute path for .wav files even when flag is true", "[Siren][FileSystem]") {
 	TempDir tmp;
-	FileSystemDataSource src(tmp.str());
+	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
 	REQUIRE(callPrepareForDrop(src, "/kick.wav", true) == tmp.filePath("kick.wav"));
 }
 
 // uppercase .WAV is also recognised and passed through unchanged.
 TEST_CASE("prepareForDrop: .WAV extension (uppercase) also treated as wav — no conversion", "[Siren][FileSystem]") {
 	TempDir tmp;
-	FileSystemDataSource src(tmp.str());
+	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
 	REQUIRE(callPrepareForDrop(src, "/sample.WAV", true) == tmp.filePath("sample.WAV"));
 }
 
 // non-audio ids that can't be decoded fall back to the resolved absolute path.
 TEST_CASE("prepareForDrop: returns existing _siren_ file without decoding (idempotent)", "[Siren][FileSystem]") {
 	TempDir tmp;
-	FileSystemDataSource src(tmp.str());
+	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
 	REQUIRE(callPrepareForDrop(src, "/ghost.flac", true) == tmp.filePath("ghost.flac"));
 }
 
 // decode failure (e.g. non-existent file) falls back to the resolved absolute path.
 TEST_CASE("prepareForDrop: falls back to absolute path when source cannot be decoded", "[Siren][FileSystem]") {
 	TempDir tmp;
-	FileSystemDataSource src(tmp.str());
+	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
 	REQUIRE(callPrepareForDrop(src, "/ghost.flac", true) == tmp.filePath("ghost.flac"));
 }
 
 // decode failure for non-existent .mp3 also falls back to absolute path.
 TEST_CASE("prepareForDrop: non-existent .mp3 with flag true also falls back", "[Siren][FileSystem]") {
 	TempDir tmp;
-	FileSystemDataSource src(tmp.str());
+	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
 	REQUIRE(callPrepareForDrop(src, "/missing.mp3", true) == tmp.filePath("missing.mp3"));
 }
 
@@ -223,7 +224,7 @@ TEST_CASE("prepareForDrop: non-existent .mp3 with flag true also falls back", "[
 TEST_CASE("prepareForDrop: resampleQuality parameter is accepted (no-op when no resample requested)", "[Siren][FileSystem]") {
 	TempDir tmp;
 	tmp.touch("kick.wav");
-	FileSystemDataSource src(tmp.str());
+	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
 
 	for (int q : { 0, 1, 4, 7, 10 }) {
 		// targetSampleRate=0 → no resample, no convert, no trim → identity lambda returning abs path.
@@ -246,7 +247,7 @@ TEST_CASE("prepareForDrop: writes trimmed file into custom outputDir when set", 
 	TempDir outDir;
 	writeTestWav(tmp.filePath("loop.wav"));
 
-	FileSystemDataSource src(tmp.str());
+	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
 	auto task = src.prepareForDrop("/loop.wav", /*convertToWav=*/false, /*targetSampleRate=*/0,
 	                               /*trimIn=*/0.f, /*trimOut=*/0.5f, /*resampleQuality=*/6, outDir.str());
 	std::string result = task();
@@ -262,7 +263,7 @@ TEST_CASE("prepareForDrop: writes trimmed file beside source when outputDir is e
 	TempDir tmp;
 	writeTestWav(tmp.filePath("loop.wav"));
 
-	FileSystemDataSource src(tmp.str());
+	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
 	auto task = src.prepareForDrop("/loop.wav", /*convertToWav=*/false, /*targetSampleRate=*/0,
 	                               /*trimIn=*/0.f, /*trimOut=*/0.5f, /*resampleQuality=*/6, "");
 	std::string result = task();
@@ -279,7 +280,7 @@ TEST_CASE("prepareForDrop: outputDir is ignored when no conversion/trim/resample
 	TempDir outDir;
 	tmp.touch("kick.wav");
 
-	FileSystemDataSource src(tmp.str());
+	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
 	auto task = src.prepareForDrop("/kick.wav", /*convertToWav=*/false, /*targetSampleRate=*/0,
 	                               /*trimIn=*/0.f, /*trimOut=*/1.f, /*resampleQuality=*/6, outDir.str());
 	REQUIRE(task() == tmp.filePath("kick.wav"));
@@ -306,7 +307,7 @@ TEST_CASE("isSupportedAudioFile: recognises wav/flac/mp3 (any case), rejects eve
 // isSupportedFile delegates to isSupportedAudioFile on the path.
 TEST_CASE("FileSystemDataSource: isSupportedFile delegates to isSupportedAudioFile", "[Siren][FileSystem]") {
 	TempDir tmp;
-	FileSystemDataSource src(tmp.str());
+	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
 	REQUIRE(src.isSupportedFile("/path/to/kick.wav") == true);
 	REQUIRE(src.isSupportedFile("/path/to/kick.mp3") == true);
 	REQUIRE(src.isSupportedFile("/path/to/kick.ogg") == false);
@@ -315,7 +316,7 @@ TEST_CASE("FileSystemDataSource: isSupportedFile delegates to isSupportedAudioFi
 // getDisplayName extracts just the filename component from a relative id.
 TEST_CASE("FileSystemDataSource: getDisplayName returns filename only", "[Siren][FileSystem]") {
 	TempDir tmp;
-	FileSystemDataSource src(tmp.str());
+	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
 	REQUIRE(src.getDisplayName("/samples/kick.wav") == "kick.wav");
 	REQUIRE(src.getDisplayName("/samples/drum loop.flac") == "drum loop.flac");
 }
@@ -323,7 +324,7 @@ TEST_CASE("FileSystemDataSource: getDisplayName returns filename only", "[Siren]
 // getRelativePath is identity: ids are already relative paths.
 TEST_CASE("FileSystemDataSource: getRelativePath is identity for relative ids", "[Siren][FileSystem]") {
 	TempDir tmp;
-	FileSystemDataSource src(tmp.str());
+	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
 	REQUIRE(src.getRelativePath("/kick.wav") == "/kick.wav");
 	REQUIRE(src.getRelativePath("/sub/loop.flac") == "/sub/loop.flac");
 }
@@ -336,7 +337,7 @@ TEST_CASE("loadChildrenSync: directories appear before audio files (case-insensi
 	ghc::filesystem::create_directories(ghc::filesystem::path(tmp.str()) / "Beta");
 	ghc::filesystem::create_directories(ghc::filesystem::path(tmp.str()) / "alpha");
 
-	FileSystemDataSource src(tmp.str());
+	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
 	auto nodes = src.loadChildrenSync("");
 
 	REQUIRE(nodes.size() == 4);
@@ -366,7 +367,7 @@ TEST_CASE("randomFileSuffix: format is '_siren_' + 6 lowercase letters and works
 // MetadataStore::filePath is derived from rootPath and is stable across instances on the same root.
 TEST_CASE("FileSystemDataSource: metadata file path is stable for same root", "[Siren][FileSystem]") {
 	TempDir tmp;
-	FileSystemDataSource src1(tmp.str());
-	FileSystemDataSource src2(tmp.str());
+	FileSystemDataSource src1(tmp.str(), scratchMetadataStore());
+	FileSystemDataSource src2(tmp.str(), scratchMetadataStore());
 	REQUIRE(src1.getMetadata()->filePath() == src2.getMetadata()->filePath());
 }

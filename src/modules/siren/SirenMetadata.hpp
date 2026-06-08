@@ -156,14 +156,17 @@ struct MetadataStore {
 	std::string rootPath;
 	std::map<std::string, SampleMetadata> samples;  // key = relativePath
 
+	virtual ~MetadataStore() = default;
+
 	// Single source of truth for where this root's metadata lives on disk.
 	// Callers (data sources) must not derive or guess this path themselves.
-	std::string filePath() const {
+	// Virtual so subclasses (e.g. in tests) can redirect persistence elsewhere,
+	// such as a scratch folder, without touching the user's real settings folder.
+	virtual std::string filePath() const {
 		return rack::asset::user("Stoermelder-P1") + "/siren-" + hashPath(rootPath) + ".json";
 	}
 
 	void load() {
-		if (isTesting()) return;
 		FILE* file = fopen(filePath().c_str(), "r");
 		if (!file) return;
 		json_error_t error;
@@ -179,10 +182,9 @@ struct MetadataStore {
 	// the new file is written and parsed back to confirm it's valid JSON, and
 	// only then is the backup removed. On verification failure the backup is restored.
 	void save() const {
-		if (isTesting()) return;
-		rack::system::createDirectories(rack::asset::user("Stoermelder-P1"));
-
 		std::string jsonPath = filePath();
+		rack::system::createDirectories(ghc::filesystem::path(jsonPath).parent_path().string());
+
 		json_t* rootJ = toJson();
 		DEFER({ json_decref(rootJ); });
 

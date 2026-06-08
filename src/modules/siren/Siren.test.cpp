@@ -1,6 +1,7 @@
 #include "../../test/test_plugin.hpp"
 #include "../../test/test_context.hpp"
 #include "Siren.cpp"
+#include "SirenTest.hpp"
 
 using namespace StoermelderPackOne::Siren;
 
@@ -213,24 +214,98 @@ TEST_CASE("MetadataStore: JSON round-trip", "[Siren][Metadata]") {
 	REQUIRE(std::find(tags2.begin(), tags2.end(), "loop") != tags2.end());
 }
 
-// ─── FileSystemDataSource ─────────────────────────────────────────────────────
-// isSupportedFile accepts .wav/.flac/.mp3 and rejects other extensions.
-TEST_CASE("FileSystemDataSource: supported file filter", "[Siren][FileSystem]") {
-	FileSystemDataSource src("/tmp");
+// ─── MetadataStore: 3-step save process (rename → write → verify → delete) ────
+// save() persists via a real file and is readable back through load(); ScratchMetadataStore
+// redirects both to a scratch folder so the rename/verify/cleanup sequence runs for real.
 
-	SECTION("Supported extensions accepted") {
-		REQUIRE(src.isSupportedFile("kick.wav") == true);
-		REQUIRE(src.isSupportedFile("kick.WAV") == true);
-		REQUIRE(src.isSupportedFile("pad.flac") == true);
-		REQUIRE(src.isSupportedFile("bass.mp3") == true);
-	}
+// save() then load() round-trips favorites, tags and BPM through real file I/O.
+TEST_CASE("MetadataStore::save: round-trips through real file I/O", "[Siren][Metadata][Persistence]") {
+	ScratchMetadataStore store;
+	store.rootPath = "/test/save-roundtrip";
+	DEFER({ ghc::filesystem::remove(store.filePath()); });
 
-	SECTION("Unsupported extensions rejected") {
-		REQUIRE(src.isSupportedFile("patch.txt") == false);
-		REQUIRE(src.isSupportedFile("song.aif") == false);
-		REQUIRE(src.isSupportedFile("image.png") == false);
-		REQUIRE(src.isSupportedFile("notes.json") == false);
-	}
+	store.setFavorite("a.wav", true);
+	store.addTag("a.wav", "drone");
+	store.setBpm("b.wav", 120.f, 0.9f);
+	store.save();
+
+	REQUIRE(ghc::filesystem::exists(store.filePath()));
+
+	ScratchMetadataStore loaded;
+	loaded.rootPath = store.rootPath;
+	loaded.load();
+
+	REQUIRE(loaded.isFavorite("a.wav") == true);
+	REQUIRE(loaded.getTags("a.wav") == std::vector<std::string>{"drone"});
+	REQUIRE(loaded.getBpm("b.wav") == Catch::Approx(120.f));
+}
+
+// A successful save leaves no ".bak" file behind — the backup is removed once
+// the freshly written file has been verified to parse as valid JSON.
+TEST_CASE("MetadataStore::save: leaves no stray .bak file on success", "[Siren][Metadata][Persistence]") {
+	ScratchMetadataStore store;
+	store.rootPath = "/test/save-no-bak";
+	DEFER({
+		ghc::filesystem::remove(store.filePath());
+		ghc::filesystem::remove(store.filePath() + ".bak");
+	});
+
+	store.addTag("a.wav", "loop");
+	store.save();
+	REQUIRE(ghc::filesystem::exists(store.filePath()));
+	REQUIRE_FALSE(ghc::filesystem::exists(store.filePath() + ".bak"));
+
+	// Saving again over an existing file also cleans up its own backup.
+	store.addTag("a.wav", "drone");
+	store.save();
+	REQUIRE_FALSE(ghc::filesystem::exists(store.filePath() + ".bak"));
+}
+
+// save() overwrites a previously-existing file, even one with stale or corrupted
+// content — the new file is what verification checks, not the old one.
+TEST_CASE("MetadataStore::save: overwrites a corrupted prior file", "[Siren][Metadata][Persistence]") {
+	ScratchMetadataStore store;
+	store.rootPath = "/test/save-overwrites-corrupt";
+	DEFER({
+		ghc::filesystem::remove(store.filePath());
+		ghc::filesystem::remove(store.filePath() + ".bak");
+	});
+
+	rack::system::createDirectories(ghc::filesystem::path(store.filePath()).parent_path().string());
+	FILE* f = fopen(store.filePath().c_str(), "w");
+	REQUIRE(f != nullptr);
+	fputs("{ this is not valid json", f);
+	fclose(f);
+
+	store.addTag("a.wav", "percussion");
+	store.save();
+
+	REQUIRE_FALSE(ghc::filesystem::exists(store.filePath() + ".bak"));
+
+	ScratchMetadataStore loaded;
+	loaded.rootPath = store.rootPath;
+	loaded.load();
+	REQUIRE(loaded.getTags("a.wav") == std::vector<std::string>{"percussion"});
+}
+
+// load() against a corrupt/unparsable file is a no-op: it neither crashes nor
+// mutates the store's existing in-memory state.
+TEST_CASE("MetadataStore::load: ignores a corrupt file without crashing", "[Siren][Metadata][Persistence]") {
+	ScratchMetadataStore store;
+	store.rootPath = "/test/load-ignores-corrupt";
+	DEFER({ ghc::filesystem::remove(store.filePath()); });
+
+	rack::system::createDirectories(ghc::filesystem::path(store.filePath()).parent_path().string());
+	FILE* f = fopen(store.filePath().c_str(), "w");
+	REQUIRE(f != nullptr);
+	fputs("not json at all", f);
+	fclose(f);
+
+	store.addTag("a.wav", "kept");
+	store.load();
+
+	// fromJson() is never reached, so the pre-existing in-memory state survives.
+	REQUIRE(store.getTags("a.wav") == std::vector<std::string>{"kept"});
 }
 
 // ─── WaveformCache: timestamp invalidation ────────────────────────────────────
@@ -465,20 +540,23 @@ TEST_CASE("loadItem: playing stays false when no stream can be opened", "[Siren]
 	REQUIRE(playing.load() == false);
 }
 
-// ─── FileSystemDataSource: metadata ownership ────────────────────────────────
+// ─── DataSource: metadata ownership ──────────────────────────────────────────
+// These exercise the DataSource/MetadataStore contract itself — any DataSource
+// must return a stable, mutable MetadataStore* — so a minimal in-memory
+// TestDataSource is used rather than the filesystem-backed FileSystemDataSource.
+
 // getMetadata returns a valid pointer with correct rootPath.
-TEST_CASE("FileSystemDataSource: getMetadata returns valid pointer", "[Siren][FileSystem]") {
-	FileSystemDataSource src("/tmp/siren_test_nonexistent");
+TEST_CASE("DataSource: getMetadata returns valid pointer", "[Siren][Metadata]") {
+	TestDataSource src("/test/root");
 
 	MetadataStore* meta = src.getMetadata();
 	REQUIRE(meta != nullptr);
-	REQUIRE(meta->rootPath == "/tmp/siren_test_nonexistent");
-	// samples may be non-empty if a metadata file was previously persisted for this path
+	REQUIRE(meta->rootPath == "/test/root");
 }
 
 // metadata pointer remains stable and allows mutation.
-TEST_CASE("FileSystemDataSource: metadata is mutable through pointer", "[Siren][FileSystem]") {
-	FileSystemDataSource src("/tmp/siren_test_nonexistent");
+TEST_CASE("DataSource: metadata is mutable through pointer", "[Siren][Metadata]") {
+	TestDataSource src("/test/root");
 
 	MetadataStore* meta = src.getMetadata();
 	meta->addTag("kick.wav", "percussion");
