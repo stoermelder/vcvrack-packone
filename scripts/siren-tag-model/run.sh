@@ -7,6 +7,13 @@
 #   bash scripts/siren-tag-model/run.sh --n-per-class 200
 #   bash scripts/siren-tag-model/run.sh --csv my_real_dataset.csv
 #
+# Folder convention (load_folder_dataset.py):
+#   my_dataset/
+#       Kick/            positive examples for the Kick head
+#       Non-Kick/        hard-negative examples (mis-classified real samples)
+#       Pad/             positive examples for the Pad head
+#       Non-Pad/         hard-negative examples
+#
 # After it finishes, the generated body is in:
 #   scripts/siren-tag-model/build/SirenTagClassifier.generated.cpp
 # Copy it into the marked region of the C++ header and rebuild.
@@ -67,7 +74,7 @@ echo "Next steps:"
 echo "  1. Open the generated file above."
 echo "  2. Copy its contents into the marked region of"
 echo "        src/modules/Siren/SirenTagClassifier.cpp"
-echo "  3. Bump SIREN_TAG_MODEL_VERSION in feature_config.py if the"
+echo "  3. Bump MODEL_VERSION in feature_config.py if the"
 echo "     shape (number of features / classes) changed."
 echo "  4. Rebuild the plugin:  cd .. && make"
 echo

@@ -1,11 +1,19 @@
 @echo off
 rem Generate a synthetic dataset, train a tiny model, and emit a C++ header
-rem fragment you paste into src/modules/Siren/SirenTagClassifier.cpp.
+rem fragment you paste into src/modules/siren/SirenTagClassifier.cpp.
 rem
 rem Usage:
 rem   scripts\siren-tag-model\run.bat
 rem   scripts\siren-tag-model\run.bat --n-per-class 200
 rem   scripts\siren-tag-model\run.bat --csv my_real_dataset.csv
+rem   scripts\siren-tag-model\run.bat --csv my_samples.csv --negative-weight 5.0
+rem
+rem Folder convention (load_folder_dataset.py):
+rem   my_dataset\
+rem       Kick\             positive examples for the Kick head
+rem       Non-Kick\         hard-negative examples (mis-classified real samples)
+rem       Pad\              positive examples for the Pad head
+rem       Non-Pad\          hard-negative examples
 rem
 rem After it finishes, the generated body is in:
 rem   scripts\siren-tag-model\build\SirenTagClassifier.generated.cpp
@@ -84,6 +92,13 @@ if "%CSV_FILE%"=="" (
 )
 
 rem 4. Train + emit C++ header fragment.
+rem EXTRA_ARGS is a single string built by the :parse_args loop above.
+rem Each unknown arg is appended with a leading space, so e.g.
+rem `--negative-weight 5.0` ends up as ` --negative-weight 5.0`. We
+rem use %EXTRA_ARGS% (not !EXTRA_ARGS!) for the expansion so paths
+rem containing `!` are not mangled by delayed-expansion tokenising.
+rem The `--csv "%CSV_FILE%"` half is already quoted, so paths with
+rem spaces in CSV_FILE survive.
 echo ^> Training model and emitting C++ header ...
 python train_model.py --csv "%CSV_FILE%"%EXTRA_ARGS%
 
@@ -95,8 +110,8 @@ echo.
 echo Next steps:
 echo   1. Open the generated file above.
 echo   2. Copy its contents into the marked region of
-echo          src\modules\Siren\SirenTagClassifier.cpp
-echo   3. Bump SIREN_TAG_MODEL_VERSION in feature_config.py if the
+echo          src\modules\siren\SirenTagClassifier.cpp
+echo   3. Bump MODEL_VERSION in feature_config.py if the
 echo      shape (number of features / classes) changed.
 echo   4. Rebuild the plugin:  cd .. ^&^& make
 echo.

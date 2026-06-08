@@ -30,6 +30,37 @@ Anything that doesn't match a known tag is skipped with a warning.
         lead/         <- a folder can be empty (just produces zero rows)
             ...
 
+Hard-negative folders (`Non-<Tag>`)
+-----------------------------------
+
+A folder whose name starts with `Non-` (case-insensitive) is treated as
+a **hard-negative** bucket for the named tag. Every audio file in such
+a folder is written as a CSV row with empty `label` and a populated
+`negatives` column listing the target tag. The trainer applies a
+configurable per-row weight (default 3.0) so the model is pushed
+strongly away from the named tag for these feature vectors.
+
+The point is to collect real-world mis-classified samples — drop a
+noisy recording that keeps getting mis-tagged as "Kick" into
+`Non-Kick/` and the Kick binary head will be penalised for predicting
+"Kick" on its feature vector.
+
+    my_dataset/
+        Kick/
+            kick_001.wav
+        Non-Kick/                    <- hard negatives for the Kick head
+            snare_loop_001.wav
+            bass_sub_001.wav
+        Pad/
+            pad_001.wav
+        Non-Pad/
+            kick_002.wav
+            clap_001.wav
+
+Multiple `Non-<Tag>` folders may be supplied (one per tag you want to
+push back on). Folders named exactly `Non-` (no tag suffix) or
+`Non-<unknown>` are skipped with a warning.
+
 Single-label vs multi-label
 ---------------------------
 
@@ -75,6 +106,10 @@ from tag_manifest import CLASS_NAMES, TAGS
 # Audio file extensions we recognize. soundfile / libsndfile handles these.
 AUDIO_EXTENSIONS = {".wav", ".flac", ".mp3", ".ogg", ".aif", ".aiff", ".aifc"}
 
+# Hard-negative folder prefix. Folders whose name is `Non-<Tag>` (or any
+# case variant thereof) are hard-negative buckets for the named tag.
+NEGATIVE_FOLDER_PREFIX = "Non-"
+
 
 def _normalize_tag(name: str) -> str:
     """Lowercase for matching; preserve original spelling when writing CSV."""
@@ -93,6 +128,22 @@ def _find_matching_tag(folder_name: str) -> str | None:
     return None
 
 
+def _parse_negative_folder(folder_name: str) -> str | None:
+    """Return the canonical tag name targeted by a `Non-<Tag>` folder.
+
+    Returns the canonical tag (preserving its case from the manifest) if
+    `folder_name` starts with `Non-` and the suffix matches a known tag.
+    Returns None otherwise — including the bare prefix `Non-` (no tag
+    suffix) and `Non-<unknown>`.
+    """
+    if not folder_name.lower().startswith(NEGATIVE_FOLDER_PREFIX.lower()):
+        return None
+    suffix = folder_name[len(NEGATIVE_FOLDER_PREFIX):].strip()
+    if not suffix:
+        return None
+    return _find_matching_tag(suffix)
+
+
 def _list_audio_files(folder: Path) -> list[Path]:
     return sorted(
         p for p in folder.iterdir()
@@ -109,7 +160,7 @@ def _write_csv(rows: list[list], out_path: Path, append: bool) -> int:
     with open(out_path, mode, newline="") as f:
         w = csv.writer(f)
         if new_file:
-            w.writerow(["path", "label", *[f"f{i}" for i in range(NUM_FEATURES)]])
+            w.writerow(["path", "label", "negatives", *[f"f{i}" for i in range(NUM_FEATURES)]])
         w.writerows(rows)
     return len(rows)
 
@@ -130,27 +181,36 @@ def load_folder_dataset(
 
     rng = np.random.default_rng(seed)
     counts: dict[str, int] = {}
+    neg_counts: dict[str, int] = {}
 
-    # Phase 1: collect (file_path, label) pairs across all subfolders.
-    pending: list[tuple[Path, str]] = []
+    # Phase 1: collect (file_path, label, negatives) tuples across all subfolders.
+    # `label` and `negatives` are mutually exclusive: a positive folder sets
+    # label and leaves negatives empty; a `Non-<Tag>` folder does the opposite.
+    pending: list[tuple[Path, str, str]] = []
     subdirs = sorted(p for p in root.iterdir() if p.is_dir())
     if not subdirs:
         print(f"warning: no subdirectories found in {root}", file=sys.stderr)
 
     for sub in subdirs:
         canonical = _find_matching_tag(sub.name)
-        if canonical is None:
-            print(
-                f"  skip folder {sub.name!r}: doesn't match any tag in SirenTags.json "
-                f"(known tags: {', '.join(t.name for t in TAGS)})",
-                file=sys.stderr,
-            )
-            continue
+        is_negative = canonical is None
+        negative_target: str | None = None
+        if is_negative:
+            negative_target = _parse_negative_folder(sub.name)
+            if negative_target is None:
+                print(
+                    f"  skip folder {sub.name!r}: doesn't match any tag in SirenTags.json "
+                    f"and isn't a valid Non-<Tag> folder "
+                    f"(known tags: {', '.join(t.name for t in TAGS)})",
+                    file=sys.stderr,
+                )
+                continue
 
         files = _list_audio_files(sub)
         if not files:
-            print(f"  warn: {canonical!r} folder is empty ({sub})", file=sys.stderr)
-            counts[canonical] = 0
+            folder_kind = negative_target or canonical
+            print(f"  warn: {folder_kind!r} folder is empty ({sub})", file=sys.stderr)
+            (neg_counts if is_negative else counts)[folder_kind] = 0
             continue
 
         if max_per_class is not None and len(files) > max_per_class:
@@ -158,18 +218,27 @@ def load_folder_dataset(
             files = [files[i] for i in sorted(idxs)]
 
         for f in files:
-            pending.append((f, canonical))
-        counts[canonical] = len(files)
-        print(f"  {canonical:12s}  {len(files):4d} clips from {sub}")
+            if is_negative:
+                # Empty label, populated `negatives` column.
+                pending.append((f, "", negative_target or ""))
+            else:
+                # Empty `negatives`, populated label.
+                pending.append((f, canonical or "", ""))
+        if is_negative:
+            neg_counts[negative_target or ""] = len(files)
+            print(f"  Non-{negative_target:<10s}  {len(files):4d} clips from {sub}")
+        else:
+            counts[canonical or ""] = len(files)
+            print(f"  {canonical:12s}  {len(files):4d} clips from {sub}")
 
     # Phase 2: batch-extract features via C++ binary.
     binary = find_cpp_extractor()
     print(f"  Using C++ extractor: {binary}")
-    features_by_path = extract_features_batch([str(f) for f, _ in pending], binary)
+    features_by_path = extract_features_batch([str(f) for f, _, _ in pending], binary)
 
     # Phase 3: build rows.
     rows: list[list] = []
-    for f, canonical in pending:
+    for f, label, negatives in pending:
         features = features_by_path.get(str(f))
         if features is None:
             print(f"  skip: extraction failed for {f.name}", file=sys.stderr)
@@ -178,7 +247,7 @@ def load_folder_dataset(
             rel = f.relative_to(root.parent)
         except ValueError:
             rel = f
-        rows.append([str(rel), canonical, *features.tolist()])
+        rows.append([str(rel), label, negatives, *features.tolist()])
 
     if not rows:
         raise RuntimeError(
@@ -189,7 +258,8 @@ def load_folder_dataset(
     n_written = _write_csv(rows, out_csv, append=append)
     print()
     print(f"Wrote {n_written} rows to {out_csv}")
-    print(f"Per-class counts: {counts}")
+    print(f"Per-class positive counts: {counts}")
+    print(f"Per-tag  hard-negative counts: {neg_counts}")
     return counts
 
 
@@ -205,7 +275,12 @@ def main() -> int:
                    help="Append to the CSV instead of overwriting (preserves the header if the file is new).")
     p.add_argument("--list-known-tags", action="store_true",
                    help="Print the list of accepted tag names and exit.")
+    p.add_argument("--self-test", action="store_true",
+                   help="Run the folder-name parser self-test and exit. Useful in CI.")
     args = p.parse_args()
+
+    if args.self_test:
+        return _self_test()
 
     if args.list_known_tags:
         print("Accepted folder names (must match one of these exactly, case-insensitive):")
@@ -224,6 +299,39 @@ def main() -> int:
         print(f"error: {e}", file=sys.stderr)
         return 1
     return 0
+
+
+# The following block runs the loader's own self-test in isolation. Use:
+#     python load_folder_dataset.py --self-test
+# to verify the positive + negative folder parsers agree with the manifest.
+def _self_test() -> int:
+    """Exercise the folder-name parsers on synthetic inputs."""
+    cases = [
+        ("Kick",            "Kick",     None),
+        ("non-kick",        None,       "Kick"),
+        ("Non-Pad",         None,       "Pad"),
+        ("NON-VOCAL",       None,       "Vocal"),
+        ("Non-",            None,       None),  # bare prefix -- invalid
+        ("Non-Unknown",     None,       None),  # unknown tag -- invalid
+        ("Unknown",         None,       None),  # unknown positive -- invalid
+        ("drone",           "Drone",    None),
+    ]
+    ok = True
+    for folder, want_pos, want_neg in cases:
+        got_pos = _find_matching_tag(folder)
+        got_neg = _parse_negative_folder(folder)
+        # Disallow matching BOTH a positive tag and a negative target.
+        if got_pos is not None and got_neg is not None:
+            print(f"  FAIL  {folder!r}: ambiguous match (pos={got_pos!r}, neg={got_neg!r})")
+            ok = False
+            continue
+        if got_pos != want_pos or got_neg != want_neg:
+            print(f"  FAIL  {folder!r}: expected pos={want_pos!r} neg={want_neg!r}, "
+                  f"got pos={got_pos!r} neg={got_neg!r}")
+            ok = False
+            continue
+        print(f"  ok    {folder!r}  -> pos={got_pos!r}  neg={got_neg!r}")
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":
