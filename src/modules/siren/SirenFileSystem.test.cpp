@@ -89,7 +89,7 @@ TEST_CASE("loadChildrenSync: excludes _siren files from results", "[Siren][FileS
 	tmp.touch("pad.flac");
 
 	FileSystemDataSource src(tmp.str());
-	auto nodes = src.loadChildrenSync(tmp.str());
+	auto nodes = src.loadChildrenSync("");
 
 	std::vector<std::string> names;
 	for (const auto& n : nodes) names.push_back(n.name);
@@ -108,7 +108,7 @@ TEST_CASE("loadChildrenSync: correct count when multiple _siren files are presen
 	tmp.touch("b_sirenuvwxyz.wav");
 
 	FileSystemDataSource src(tmp.str());
-	auto nodes = src.loadChildrenSync(tmp.str());
+	auto nodes = src.loadChildrenSync("");
 
 	REQUIRE(nodes.size() == 2);
 	for (const auto& n : nodes)
@@ -123,7 +123,7 @@ TEST_CASE("loadChildrenSync: container (directory) alongside _siren files is una
 	ghc::filesystem::create_directories(ghc::filesystem::path(tmp.str()) / "Drums");
 
 	FileSystemDataSource src(tmp.str());
-	auto nodes = src.loadChildrenSync(tmp.str());
+	auto nodes = src.loadChildrenSync("");
 
 	std::vector<std::string> names;
 	for (const auto& n : nodes) names.push_back(n.name);
@@ -140,7 +140,7 @@ TEST_CASE("loadChildrenSync: node isContainer flag is correct", "[Siren][FileSys
 	ghc::filesystem::create_directories(ghc::filesystem::path(tmp.str()) / "Loops");
 
 	FileSystemDataSource src(tmp.str());
-	auto nodes = src.loadChildrenSync(tmp.str());
+	auto nodes = src.loadChildrenSync("");
 
 	const DataSourceNode* fileNode = nullptr;
 	const DataSourceNode* containerNode = nullptr;
@@ -269,7 +269,7 @@ TEST_CASE("loadChildrenSync: directories appear before audio files (case-insensi
 	ghc::filesystem::create_directories(ghc::filesystem::path(tmp.str()) / "alpha");
 
 	FileSystemDataSource src(tmp.str());
-	auto nodes = src.loadChildrenSync(tmp.str());
+	auto nodes = src.loadChildrenSync("");
 
 	REQUIRE(nodes.size() == 4);
 	REQUIRE(nodes[0].isContainer == true);

@@ -61,11 +61,13 @@ TEST_CASE("RootMetadata: favorites", "[Siren][Metadata]") {
 		REQUIRE(meta.isFavorite("drums/snare.wav") == false);
 	}
 
-	SECTION("Clear favorite removes entry when no tags") {
+	SECTION("Clear favorite keeps entry as a seen-marker even with no tags") {
+		// The samples map only ever grows (see RootMetadata::markSeen) so that
+		// cleanup() can later locate and remove matching waveform cache files.
 		meta.setFavorite("drums/kick.wav", true);
 		meta.setFavorite("drums/kick.wav", false);
 		REQUIRE(meta.isFavorite("drums/kick.wav") == false);
-		REQUIRE(meta.samples.find("drums/kick.wav") == meta.samples.end());
+		REQUIRE(meta.samples.find("drums/kick.wav") != meta.samples.end());
 	}
 
 	SECTION("Clearing favorite keeps entry when tags remain") {
