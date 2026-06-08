@@ -236,6 +236,7 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 	std::set<std::string> tagExcludeFilter;
 
 	std::string pendingSelectFirstOfPath;
+	std::string pendingRevealPath;
 
 	bool rebuildDirty = false;
 	bool scrollAfterRebuild = false;
@@ -338,6 +339,9 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 							break;
 						}
 					}
+				}
+				if (!pendingRevealPath.empty()) {
+					advanceRevealPath();
 				}
 			}
 		}
@@ -456,6 +460,54 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		scrollAfterRebuild = true;
 		if (!node.isContainer && onFileSelected)
 			onFileSelected(node, startPlay);
+	}
+
+	// Marks `node` as the selected row without invoking onFileSelected, used when
+	// the file is already loaded elsewhere (e.g. restoring selection on patch load).
+	void markSelected(const DataSourceNode& node) {
+		selectedPath = node.relativePath;
+		requestRebuild();
+		scrollAfterRebuild = true;
+	}
+
+	// Expands the tree along `relativePath` (loading folders asynchronously as
+	// needed) and marks the target file as selected once its row becomes visible.
+	void revealPath(const std::string& relativePath) {
+		pendingRevealPath = relativePath;
+		advanceRevealPath();
+	}
+
+	void advanceRevealPath() {
+		if (pendingRevealPath.empty()) return;
+
+		int targetIdx = findTreeIdx(pendingRevealPath);
+		if (targetIdx >= 0) {
+			pendingRevealPath.clear();
+			markSelected(rows[targetIdx].node);
+			return;
+		}
+
+		// Find the deepest already-loaded ancestor directory of the target path.
+		int bestIdx = -1;
+		size_t bestLen = 0;
+		for (int i = 0; i < (int)rows.size(); i++) {
+			const std::string& rp = rows[i].node.relativePath;
+			if (rp.size() > bestLen && rp.size() < pendingRevealPath.size()
+			    && pendingRevealPath.compare(0, rp.size(), rp) == 0
+			    && pendingRevealPath[rp.size()] == '/') {
+				bestIdx = i;
+				bestLen = rp.size();
+			}
+		}
+
+		if (bestIdx < 0) {
+			// Nothing to expand yet: only give up once async loading has settled.
+			if (!loadPending) pendingRevealPath.clear();
+			return;
+		}
+		if (!rows[bestIdx].expanded) {
+			expandRow(bestIdx);
+		}
 	}
 
 	void startTagClassification(const DataSourceNode& node) {

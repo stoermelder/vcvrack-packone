@@ -765,6 +765,7 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 			DataSourceNode restoreNode = src ? src->resolveNode(restoreFile) : DataSourceNode{};
 			previewPane->loadItem(restoreNode, src, src ? src->getMetadata() : nullptr);
 			module->playheadPos.store(restorePos, std::memory_order_relaxed);
+			browserPane->revealPath(restoreFile);
 		}
 	}
 
