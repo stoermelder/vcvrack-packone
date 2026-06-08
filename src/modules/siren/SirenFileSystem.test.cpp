@@ -62,11 +62,11 @@ static void writeTestWav(const std::string& path, int frames = 4410, int sampleR
 }
 
 // ─── isGeneratedFile ──────────────────────────────────────────────────────────
-// pattern: _siren + exactly 6 lowercase letters + .wav suffix, must be at position size-16.
-TEST_CASE("isGeneratedFile: recognises _siren+6letters.wav pattern", "[Siren][FileSystem]") {
-	REQUIRE(isGeneratedFile("_sirenabcdef.wav")         == true);
-	REQUIRE(isGeneratedFile("kick_sirenabcdef.wav")     == true);
-	REQUIRE(isGeneratedFile("pad.with.dots_sirenuvwxyz.wav") == true);
+// pattern: _siren_ + exactly 6 lowercase letters + .wav suffix, must be at position size-17.
+TEST_CASE("isGeneratedFile: recognises _siren_+6letters.wav pattern", "[Siren][FileSystem]") {
+	REQUIRE(isGeneratedFile("_siren_abcdef.wav")         == true);
+	REQUIRE(isGeneratedFile("kick_siren_abcdef.wav")     == true);
+	REQUIRE(isGeneratedFile("pad.with.dots_siren_uvwxyz.wav") == true);
 }
 
 // regular audio files are not flagged as generated.
@@ -82,11 +82,11 @@ TEST_CASE("isGeneratedFile: rejects old .converted.wav and other edge cases", "[
 	REQUIRE(isGeneratedFile("kick.converted.wav")   == false);
 	REQUIRE(isGeneratedFile("sample.converted.wav")  == false);
 	REQUIRE(isGeneratedFile("")                      == false);
-	REQUIRE(isGeneratedFile("_sirenabc.wav")         == false); // only 5 letters after _siren
-	REQUIRE(isGeneratedFile("_sirenABC.wav")          == false); // uppercase in random part
-	REQUIRE(isGeneratedFile("_sirenabcdefgh.wav")      == false); // 8 letters (must be exactly 6)
-	REQUIRE(isGeneratedFile("kick_siren.wav")          == false); // missing 6 letters
-	REQUIRE(isGeneratedFile("kick_sirenabcdef.wav")   == true);  // valid: _siren at position size-16
+	REQUIRE(isGeneratedFile("_siren_abc.wav")         == false); // only 5 letters after _siren_
+	REQUIRE(isGeneratedFile("_siren_ABC.wav")          == false); // uppercase in random part
+	REQUIRE(isGeneratedFile("_siren_abcdefgh.wav")      == false); // 8 letters (must be exactly 6)
+	REQUIRE(isGeneratedFile("kick_siren_.wav")          == false); // missing 6 letters
+	REQUIRE(isGeneratedFile("kick_siren_abcdef.wav")   == true);  // valid: _siren_ at position size-17
 	REQUIRE(isGeneratedFile(".wav")                    == false);
 }
 
@@ -98,11 +98,11 @@ TEST_CASE("FileSystemDataSource: rootPath returns configured root", "[Siren][Fil
 }
 
 // ─── loadChildrenSync: generated-file filtering ────────────────────────────
-// files matching the _siren pattern are excluded from directory listings.
-TEST_CASE("loadChildrenSync: excludes _siren files from results", "[Siren][FileSystem]") {
+// files matching the _siren_ pattern are excluded from directory listings.
+TEST_CASE("loadChildrenSync: excludes _siren_ files from results", "[Siren][FileSystem]") {
 	TempDir tmp;
 	tmp.touch("kick.wav");
-	tmp.touch("kick_sirenabcdef.wav");
+	tmp.touch("kick_siren_abcdef.wav");
 	tmp.touch("pad.flac");
 
 	FileSystemDataSource src(tmp.str());
@@ -113,16 +113,16 @@ TEST_CASE("loadChildrenSync: excludes _siren files from results", "[Siren][FileS
 
 	REQUIRE(std::find(names.begin(), names.end(), "kick.wav")             != names.end());
 	REQUIRE(std::find(names.begin(), names.end(), "pad.flac")             != names.end());
-	REQUIRE(std::find(names.begin(), names.end(), "kick_sirenabcdef.wav") == names.end());
+	REQUIRE(std::find(names.begin(), names.end(), "kick_siren_abcdef.wav") == names.end());
 }
 
 // valid generated files are filtered; count reflects only visible files.
-TEST_CASE("loadChildrenSync: correct count when multiple _siren files are present", "[Siren][FileSystem]") {
+TEST_CASE("loadChildrenSync: correct count when multiple _siren_ files are present", "[Siren][FileSystem]") {
 	TempDir tmp;
 	tmp.touch("a.wav");
-	tmp.touch("a_sirenabcdef.wav");
+	tmp.touch("a_siren_abcdef.wav");
 	tmp.touch("b.mp3");
-	tmp.touch("b_sirenuvwxyz.wav");
+	tmp.touch("b_siren_uvwxyz.wav");
 
 	FileSystemDataSource src(tmp.str());
 	auto nodes = src.loadChildrenSync("");
@@ -133,10 +133,10 @@ TEST_CASE("loadChildrenSync: correct count when multiple _siren files are presen
 }
 
 // directories are returned alongside audio files with no interference.
-TEST_CASE("loadChildrenSync: container (directory) alongside _siren files is unaffected", "[Siren][FileSystem]") {
+TEST_CASE("loadChildrenSync: container (directory) alongside _siren_ files is unaffected", "[Siren][FileSystem]") {
 	TempDir tmp;
 	tmp.touch("sample.flac");
-	tmp.touch("sample_sirenabcdef.wav");
+	tmp.touch("sample_siren_abcdef.wav");
 	ghc::filesystem::create_directories(ghc::filesystem::path(tmp.str()) / "Drums");
 
 	FileSystemDataSource src(tmp.str());
@@ -147,7 +147,7 @@ TEST_CASE("loadChildrenSync: container (directory) alongside _siren files is una
 
 	REQUIRE(std::find(names.begin(), names.end(), "Drums")                 != names.end());
 	REQUIRE(std::find(names.begin(), names.end(), "sample.flac")         != names.end());
-	REQUIRE(std::find(names.begin(), names.end(), "sample_sirenabcdef.wav") == names.end());
+	REQUIRE(std::find(names.begin(), names.end(), "sample_siren_abcdef.wav") == names.end());
 }
 
 // isContainer flag is true for directories, false for files.
@@ -197,7 +197,7 @@ TEST_CASE("prepareForDrop: .WAV extension (uppercase) also treated as wav — no
 }
 
 // non-audio ids that can't be decoded fall back to the resolved absolute path.
-TEST_CASE("prepareForDrop: returns existing _siren file without decoding (idempotent)", "[Siren][FileSystem]") {
+TEST_CASE("prepareForDrop: returns existing _siren_ file without decoding (idempotent)", "[Siren][FileSystem]") {
 	TempDir tmp;
 	FileSystemDataSource src(tmp.str());
 	REQUIRE(callPrepareForDrop(src, "/ghost.flac", true) == tmp.filePath("ghost.flac"));
@@ -351,12 +351,12 @@ TEST_CASE("loadChildrenSync: directories appear before audio files (case-insensi
 }
 
 // ─── randomFileSuffix ───────────────────────────────────────────────────────
-// returns '_siren' + exactly 6 lowercase ASCII letters; integrates with isGeneratedFile.
-TEST_CASE("randomFileSuffix: format is '_siren' + 6 lowercase letters and works with isGeneratedFile", "[Siren][FileSystem]") {
+// returns '_siren_' + exactly 6 lowercase ASCII letters; integrates with isGeneratedFile.
+TEST_CASE("randomFileSuffix: format is '_siren_' + 6 lowercase letters and works with isGeneratedFile", "[Siren][FileSystem]") {
 	auto suffix = randomFileSuffix();
-	REQUIRE(suffix.size() == 12);
-	REQUIRE(suffix.substr(0, 6) == "_siren");
-	for (size_t i = 6; i < suffix.size(); i++)
+	REQUIRE(suffix.size() == 13);
+	REQUIRE(suffix.substr(0, 7) == "_siren_");
+	for (size_t i = 7; i < suffix.size(); i++)
 		REQUIRE(std::islower(suffix[i]) != 0);
 
 	std::string filename = "kick" + suffix + ".wav";
