@@ -263,7 +263,9 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChang
 	}
 
 	std::string getSlotLabel(int i) override {
-		return getSlot(i)->getLabel();
+		SLOT* slot = getSlot(i);
+		if (!slot) return "";
+		return slot->getLabel();
 	}
 
 	bool getSlotOwner(int slotIndex, Module*& module, int& localIndex) override {
@@ -801,19 +803,13 @@ struct TransitModule : TransitBase<NUM_PRESETS>, TransitPadMaster, ExpanderChang
 			}
 
 			if (weight > 0.f) {
-				for (auto snapshot : snapshots) {
-					if (snapshot.id < 0) continue;
-					SLOT* slot1 = getSlot(snapshot.id);
-					if (!slot1 || !slot1->isUsed()) continue;
-
-					for (size_t i = 0; i < sourceHandles.size(); i++) {
-						ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
-						if (!pq) continue;
-						if (settings::isPlugin && parameterChangesDirect)
-							pq->setValue(v[i] / weight);
-						else
-							pq->getParam()->setValue(v[i] / weight);
-					}
+				for (size_t i = 0; i < sourceHandles.size(); i++) {
+					ParamQuantity* pq = getParamQuantity(sourceHandles[i]);
+					if (!pq) continue;
+					if (settings::isPlugin && parameterChangesDirect)
+						pq->setValue(v[i] / weight);
+					else
+						pq->getParam()->setValue(v[i] / weight);
 				}
 			}
 

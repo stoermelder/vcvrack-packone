@@ -1,3 +1,4 @@
+#include <atomic>
 #include "../../plugin.hpp"
 #include "../../components/XyScreenWidget.hpp"
 #include "../../components/XySeqWidget.hpp"
@@ -63,14 +64,21 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		NUM_LIGHTS
 	};
 
+	static uint8_t getSetCount() {
+		return SETS;
+	}
+
 	typedef XyScreenModule<SNAPSHOTS> Sc;
 	typedef XySeqModule<1> Seq;
 
 	/** [Stored to JSON] */
 	int panelTheme = 0;
 
-	/** [Stored to JSON] */
-	int snapshotsUsed = SNAPSHOTS;
+	/** [Stored to JSON]
+	 *  Written from the UI thread (context menu via createValuePtrMenuItem, dataFromJson)
+	 *  and read from the engine thread (process())
+	 */
+	std::atomic<int> snapshotsUsed{SNAPSHOTS};
 
 	float dist[SNAPSHOTS];
 
@@ -84,8 +92,11 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 
 	/** [Stored to JSON] */
 	int currentSet = 0;
-	/** [Stored to JSON] */
-	SETCVMODE setCvMode = SETCVMODE::TRIG_FWD;
+	/** [Stored to JSON]
+	 *  Written from the UI thread (context menu via createValuePtrMenuItem, dataFromJson)
+	 *  and read from the engine thread (process()).
+	 */
+	std::atomic<SETCVMODE> setCvMode{SETCVMODE::TRIG_FWD};
 	dsp::SchmittTrigger setCvTrigger;
 	std::vector<TransitPadSource> snapshots[SETS];
 	NVGcolor setColor[SETS];
@@ -113,14 +124,14 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 			q->id = s;
 		}
 
-		configParam<XyScreenParamQuantity>(SNAPSHOT_X_POS + 0, 0.0f, 1.0f, 0.1f, "Snapshot A x-pos");
-		configParam<XyScreenParamQuantity>(SNAPSHOT_Y_POS + 0, 0.0f, 1.0f, 0.1f, "Snapshot A y-pos");
-		configParam<XyScreenParamQuantity>(SNAPSHOT_X_POS + 1, 0.0f, 1.0f, 0.9f, "Snapshot B x-pos");
-		configParam<XyScreenParamQuantity>(SNAPSHOT_Y_POS + 1, 0.0f, 1.0f, 0.1f, "Snapshot B y-pos");	
-		configParam<XyScreenParamQuantity>(SNAPSHOT_X_POS + 2, 0.0f, 1.0f, 0.9f, "Snapshot C x-pos");
-		configParam<XyScreenParamQuantity>(SNAPSHOT_Y_POS + 2, 0.0f, 1.0f, 0.9f, "Snapshot C y-pos");
-		configParam<XyScreenParamQuantity>(SNAPSHOT_X_POS + 3, 0.0f, 1.0f, 0.1f, "Snapshot D x-pos");
-		configParam<XyScreenParamQuantity>(SNAPSHOT_Y_POS + 3, 0.0f, 1.0f, 0.9f, "Snapshot D y-pos");
+		configParam<XyScreenParamQuantity>(SNAPSHOT_X_POS + 0, 0.0f, 1.0f, 0.0f, "Snapshot A x-pos");
+		configParam<XyScreenParamQuantity>(SNAPSHOT_Y_POS + 0, 0.0f, 1.0f, 0.0f, "Snapshot A y-pos");
+		configParam<XyScreenParamQuantity>(SNAPSHOT_X_POS + 1, 0.0f, 1.0f, 1.0f, "Snapshot B x-pos");
+		configParam<XyScreenParamQuantity>(SNAPSHOT_Y_POS + 1, 0.0f, 1.0f, 0.0f, "Snapshot B y-pos");	
+		configParam<XyScreenParamQuantity>(SNAPSHOT_X_POS + 2, 0.0f, 1.0f, 1.0f, "Snapshot C x-pos");
+		configParam<XyScreenParamQuantity>(SNAPSHOT_Y_POS + 2, 0.0f, 1.0f, 1.0f, "Snapshot C y-pos");
+		configParam<XyScreenParamQuantity>(SNAPSHOT_X_POS + 3, 0.0f, 1.0f, 0.0f, "Snapshot D x-pos");
+		configParam<XyScreenParamQuantity>(SNAPSHOT_Y_POS + 3, 0.0f, 1.0f, 1.0f, "Snapshot D y-pos");
 		configParam<XyScreenParamQuantity>(SNAPSHOT_X_POS + 4, 0.0f, 1.0f, 0.3f, "Snapshot E x-pos");
 		configParam<XyScreenParamQuantity>(SNAPSHOT_Y_POS + 4, 0.0f, 1.0f, 0.3f, "Snapshot E y-pos");
 		configParam<XyScreenParamQuantity>(SNAPSHOT_X_POS + 5, 0.0f, 1.0f, 0.7f, "Snapshot F x-pos");
@@ -190,8 +201,15 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 	}
 
 	void process(const ProcessArgs& args) override {
+		// Snapshot the UI-thread-written snapshotsUsed count and the set-CV-mode
+		// selector once at the top of process() so the entire audio block sees a
+		// coherent value. The loads are relaxed: we only need atomicity + a single
+		// value for this process() tick, not synchronisation with other shared state.
+		const int n = snapshotsUsed.load(std::memory_order_relaxed);
+		const SETCVMODE mode = setCvMode.load(std::memory_order_relaxed);
+
 		if (inputs[SET_CV_INPUT].isConnected()) {
-			switch (setCvMode) {
+			switch (mode) {
 				case SETCVMODE::OFF:
 					break;
 				case SETCVMODE::TRIG_FWD:
@@ -219,7 +237,7 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 			}
 		}
 
-		for (uint8_t j = 0; j < snapshotsUsed; j++) {
+		for (uint8_t j = 0; j < n; j++) {
 			inputInX[j] = Sc::scGetXFiltered(j, args.sampleTime);
 			inputInY[j] = Sc::scGetYFiltered(j, args.sampleTime);
 
@@ -282,7 +300,7 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		float outY = params[OUT_Y_POS].getValue();
 		Vec outVec = Vec(outX, outY);
 
-		for (int j = 0; j < snapshotsUsed; j++) {
+		for (int j = 0; j < n; j++) {
 			float inX = params[SNAPSHOT_X_POS + j].getValue();
 			float inY = params[SNAPSHOT_Y_POS + j].getValue();
 
@@ -291,7 +309,8 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 
 			float r = Sc::scGetRadiusFinal(j);
 			if (dist[j] < r) {
-				snapshots[currentSet][j].weight = std::min(1.0f, (r - dist[j]) / r * 1.1f);
+				float f = (r - dist[j]) / r * Sc::scGetAmountFinal(j);
+				snapshots[currentSet][j].weight = std::min(1.0f, f * 1.1f);
 			}
 			else {
 				snapshots[currentSet][j].weight = 0.f;
@@ -305,12 +324,8 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		}
 	}
 
-	size_t getSetCount() {
-		return SETS;
-	}
-
 	bool seqPortUsed(int port) override {
-		return port + 1 > 1;
+		return port != 0;
 	}
 
 	void scInitItems() override {		
@@ -333,7 +348,7 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 	}
 
 	inline uint8_t scGetItemCountActive(uint8_t type) override {
-		return type == 0 ? snapshotsUsed : 1;
+		return type == 0 ? (uint8_t)snapshotsUsed.load(std::memory_order_relaxed) : 1;
 	}
 
 	engine::ParamQuantity* scGetPqX(uint8_t type, uint8_t id) override {
@@ -387,6 +402,12 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		return locked;
 	}
 
+	// Bind the pad point at the given snapshot index within the current set
+	// to a Transit snapshot slot. Pass -1 to unbind.
+	void bindSnapshot(int snapshotId, int slotId) {
+		snapshots[currentSet][snapshotId].id = slotId;
+	}
+
 	std::string getItemLabel(uint8_t s, uint8_t id) {
 		if (masterModule == nullptr)
 			return "<No TRANSIT module>";
@@ -406,7 +427,7 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		json_t* rootJ = json_object();
 		json_object_set_new(rootJ, "panelTheme", json_integer(panelTheme));
 		json_object_set_new(rootJ, "snapshotsUsed", json_integer(snapshotsUsed));
-		json_object_set_new(rootJ, "setCvMode", json_integer((int)setCvMode));
+		json_object_set_new(rootJ, "setCvMode", json_integer((int)setCvMode.load(std::memory_order_relaxed)));
 		json_object_set_new(rootJ, "currentSet", json_integer(currentSet));
 		json_object_set_new(rootJ, "locked", json_boolean(locked));
 
@@ -441,7 +462,7 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
 
 		json_t* setCvModeJ = json_object_get(rootJ, "setCvMode");
-		if (setCvModeJ) setCvMode = (SETCVMODE)json_integer_value(setCvModeJ);
+		if (setCvModeJ) setCvMode.store((SETCVMODE)json_integer_value(setCvModeJ), std::memory_order_relaxed);
 
 		json_t* currentSetJ = json_object_get(rootJ, "currentSet");
 		if (currentSetJ) currentSet = std::max(0, std::min((int)json_integer_value(currentSetJ), (int)SETS - 1));
@@ -465,7 +486,8 @@ struct TransitPadModule : Module, TransitPadInterface, XyScreenModule<SNAPSHOTS>
 					Sc::dataFromJson(snapshotJ, 0, i);
 				}
 			}
-			setColor[s] = color::fromHexString(json_string_value(json_object_get(setJ, "color")));
+			json_t* colorJ = json_object_get(setJ, "color");
+			if (colorJ) setColor[s] = color::fromHexString(json_string_value(colorJ));
 			json_t* labelJ = json_object_get(setJ, "label");
 			if (labelJ) setLabel[s] = json_string_value(labelJ);
 		}
@@ -502,14 +524,20 @@ struct TransitPadSnapshotDragWidget : XyScreenDragWidget<MODULE> {
 
 	void prependContextMenu(Menu* menu) override {
 		menu->addChild(createMenuItem("Bind snapshot", "", [=]() {
-			AW::module->snapshots[AW::module->currentSet][AW::id].id = AW::module->masterModule->getSelectedSlot();
-		}, AW::module->isLocked()));
+			// Re-check masterModule inside the lambda; Transit may have been
+			// disconnected between menu construction and click.
+			if (AW::module->masterModule) {
+				AW::module->bindSnapshot(AW::id, AW::module->masterModule->getSelectedSlot());
+			}
+		}, AW::module->isLocked() || AW::module->masterModule == nullptr || AW::module->masterModule->getSelectedSlot() == -1));
 		menu->addChild(createMenuItem("Unbind snapshot", "", [=]() {
-			AW::module->snapshots[AW::module->currentSet][AW::id].id = -1;
+			AW::module->bindSnapshot(AW::id, -1);
 		}, AW::module->isLocked()));
+
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuLabel("Current set"));
 		menu->addChild(Rack::createColorSubmenuItem("Color", &AW::module->setColor[AW::module->currentSet], colors));
+
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createMenuLabel("All sets"));
 	}
@@ -559,7 +587,7 @@ struct TransitPadSnapshotDragWidget : XyScreenDragWidget<MODULE> {
 		if (src && e.button == GLFW_MOUSE_BUTTON_LEFT) {
 			int slot = src->getSlotIndex();
 			if (slot >= 0) {
-				this->module->snapshots[this->module->currentSet][this->id].id = slot;
+				this->module->bindSnapshot(this->id, slot);
 			}
 			dropArmed = false;
 			e.consume(this);
@@ -661,23 +689,24 @@ struct TransitPadXyScreenWidget : XyScreenWidget<MODULE> {
 	}
 
 	void appendContextMenu(Menu* menu) override {
-		using StoermelderPackOne::Rack::createValuePtrMenuItem;
+		using StoermelderPackOne::Rack::createAtomicValuePtrMenuItem;
 		menu->addChild(new MenuSeparator());
 		menu->addChild(createBoolPtrMenuItem("Visualize", "Space", &this->module->vizMode));
-		menu->addChild(createSubmenuItem("Number of snapshots", string::f("%i", this->module->snapshotsUsed),
+		menu->addChild(createSubmenuItem("Number of snapshots", string::f("%i", this->module->snapshotsUsed.load(std::memory_order_relaxed)),
 			[=](Menu* menu) {
 				for (int i = 0; i < this->module->scGetItemCount(0); i++) {
-					menu->addChild(createValuePtrMenuItem(string::f("%i", i + 1), &this->module->snapshotsUsed, i + 1));
+					const int target = i + 1;
+					menu->addChild(createAtomicValuePtrMenuItem(string::f("%i", target), &this->module->snapshotsUsed, target));
 				}
 			}
 		));
 		menu->addChild(createSubmenuItem("Snapshot-set CV mode", "",
 			[=](Menu* menu) {
-				menu->addChild(createValuePtrMenuItem("Off", &this->module->setCvMode, SETCVMODE::OFF));
+				menu->addChild(createAtomicValuePtrMenuItem("Off", &this->module->setCvMode, SETCVMODE::OFF));
 				menu->addChild(new MenuSeparator);
-				menu->addChild(createValuePtrMenuItem("Trigger forward", &this->module->setCvMode, SETCVMODE::TRIG_FWD));
-				menu->addChild(createValuePtrMenuItem("0..10V", &this->module->setCvMode, SETCVMODE::VOLT));
-				menu->addChild(createValuePtrMenuItem("C4", &this->module->setCvMode, SETCVMODE::C4));
+				menu->addChild(createAtomicValuePtrMenuItem("Trigger forward", &this->module->setCvMode, SETCVMODE::TRIG_FWD));
+				menu->addChild(createAtomicValuePtrMenuItem("0..10V", &this->module->setCvMode, SETCVMODE::VOLT));
+				menu->addChild(createAtomicValuePtrMenuItem("C4", &this->module->setCvMode, SETCVMODE::C4));
 			}
 		));
 		menu->addChild(new MenuSeparator());
@@ -900,9 +929,10 @@ struct TransitPadVizOverlay : TransparentWidget {
 			}
 		};
 
+		const int snapshotsUsed = module->snapshotsUsed.load(std::memory_order_relaxed);
 		if (anyHover) {
 			// Pass 1: draw all non-hovered connectors dimmed.
-			for (uint8_t i = 0; i < module->snapshotsUsed; i++) {
+			for (uint8_t i = 0; i < snapshotsUsed; i++) {
 				if (i == (uint8_t)module->vizHoveredId) continue;
 				drawConnection(i, false, true);
 			}
@@ -911,7 +941,7 @@ struct TransitPadVizOverlay : TransparentWidget {
 		}
 		else {
 			// No hover — draw every connector at normal opacity.
-			for (uint8_t i = 0; i < module->snapshotsUsed; i++) {
+			for (uint8_t i = 0; i < snapshotsUsed; i++) {
 				drawConnection(i, false, false);
 			}
 		}
@@ -926,7 +956,7 @@ struct TransitPadWidget : ThemedModuleWidget<TransitPadModule<>> {
 	TransitPadWidget(MODULE* module) : ThemedModuleWidget<MODULE>(module, "TransitPad") {
 		setModule(module);
 
-		for (size_t s = 0; s < module->getSetCount(); s++) {
+		for (size_t s = 0; s < MODULE::getSetCount(); s++) {
 			TransitPadSetButton<MODULE>* button = createParamCentered<TransitPadSetButton<MODULE>>(Vec(17.6f + s * 27.1f, 46.4f), module, MODULE::SET_PARAM + s);
 			button->module = module;
 			button->setIndex = s;
@@ -982,7 +1012,7 @@ struct TransitPadWidget : ThemedModuleWidget<TransitPadModule<>> {
 	}
 
 	void step() override {
-		if (vizOverlay) vizOverlay->visible = module->vizMode;
+		if (vizOverlay && module) vizOverlay->visible = module->vizMode;
 		ThemedModuleWidget<TransitPadModule<>>::step();
 	}
 
