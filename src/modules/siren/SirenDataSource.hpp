@@ -83,7 +83,7 @@ struct DataSource {
 	virtual std::vector<DataSourceNode> loadChildrenSync(const std::string& id) = 0;
 
 	// Per-file metadata (tags, favorites). Returns nullptr if unsupported.
-	virtual RootMetadata* getMetadata() { return nullptr; }
+	virtual MetadataStore* getMetadata() { return nullptr; }
 
 	// Returns true if a node matches the search query.
 	// - Own name always checked.
@@ -100,7 +100,7 @@ struct DataSource {
 
 		if (isContainer) {
 			// Known descendant filenames via metadata
-			RootMetadata* meta = getMetadata();
+			MetadataStore* meta = getMetadata();
 			if (!meta) return false;
 			const std::string dirPrefix = relativePath + "/";
 			for (const auto& pair : meta->samples) {

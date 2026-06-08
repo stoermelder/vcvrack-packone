@@ -1,6 +1,7 @@
 #pragma once
 #include "../../plugin.hpp"
 #include <rack.hpp>
+#include <ghc/filesystem.hpp>
 #include <map>
 #include <vector>
 
@@ -139,13 +140,31 @@ struct SampleMetadata {
 	float bpmConfidence = 0.f; // confidence of BPM detection
 };
 
-struct RootMetadata {
+// Compute 8-char hex hash of a string (for JSON filename derivation)
+inline std::string hashPath(const std::string& path) {
+	uint32_t h = 2166136261u;
+	for (unsigned char c : path) {
+		h ^= c;
+		h *= 16777619u;
+	}
+	char buf[9];
+	snprintf(buf, sizeof(buf), "%08x", h);
+	return std::string(buf);
+}
+
+struct MetadataStore {
 	std::string rootPath;
 	std::map<std::string, SampleMetadata> samples;  // key = relativePath
 
-	void load(const std::string& jsonPath) {
+	// Single source of truth for where this root's metadata lives on disk.
+	// Callers (data sources) must not derive or guess this path themselves.
+	std::string filePath() const {
+		return rack::asset::user("Stoermelder-P1") + "/siren-" + hashPath(rootPath) + ".json";
+	}
+
+	void load() {
 		if (isTesting()) return;
-		FILE* file = fopen(jsonPath.c_str(), "r");
+		FILE* file = fopen(filePath().c_str(), "r");
 		if (!file) return;
 		json_error_t error;
 		json_t* rootJ = json_loadf(file, 0, &error);
@@ -155,14 +174,52 @@ struct RootMetadata {
 		fromJson(rootJ);
 	}
 
-	void save(const std::string& jsonPath) const {
+	// Saves via rename-write-verify-delete so a crash mid-write can never destroy
+	// the previous metadata: the existing file is first moved aside to ".bak",
+	// the new file is written and parsed back to confirm it's valid JSON, and
+	// only then is the backup removed. On verification failure the backup is restored.
+	void save() const {
 		if (isTesting()) return;
+		rack::system::createDirectories(rack::asset::user("Stoermelder-P1"));
+
+		std::string jsonPath = filePath();
 		json_t* rootJ = toJson();
+		DEFER({ json_decref(rootJ); });
+
+		std::string bakPath = jsonPath + ".bak";
+		std::error_code ec;
+		bool hadExisting = ghc::filesystem::exists(jsonPath, ec);
+		if (hadExisting) {
+			ghc::filesystem::rename(jsonPath, bakPath, ec);
+		}
+
 		FILE* file = fopen(jsonPath.c_str(), "w");
-		if (!file) { json_decref(rootJ); return; }
-		json_dumpf(rootJ, file, JSON_INDENT(2) | JSON_REAL_PRECISION(9));
-		fclose(file);
-		json_decref(rootJ);
+		if (file) {
+			json_dumpf(rootJ, file, JSON_INDENT(2) | JSON_REAL_PRECISION(9));
+			fclose(file);
+		}
+
+		bool verified = false;
+		FILE* check = fopen(jsonPath.c_str(), "r");
+		if (check) {
+			json_error_t error;
+			json_t* verifyJ = json_loadf(check, 0, &error);
+			fclose(check);
+			if (verifyJ) {
+				verified = true;
+				json_decref(verifyJ);
+			}
+		}
+
+		if (hadExisting) {
+			if (verified) {
+				ghc::filesystem::remove(bakPath, ec);
+			}
+			else {
+				ghc::filesystem::remove(jsonPath, ec);
+				ghc::filesystem::rename(bakPath, jsonPath, ec);
+			}
+		}
 	}
 
 	json_t* toJson() const {
@@ -314,18 +371,6 @@ struct RootMetadata {
 		meta.bpmConfidence = confidence;
 	}
 };
-
-// Compute 8-char hex hash of a string (for JSON filename derivation)
-inline std::string hashPath(const std::string& path) {
-	uint32_t h = 2166136261u;
-	for (unsigned char c : path) {
-		h ^= c;
-		h *= 16777619u;
-	}
-	char buf[9];
-	snprintf(buf, sizeof(buf), "%08x", h);
-	return std::string(buf);
-}
 
 } // namespace Siren
 } // namespace StoermelderPackOne

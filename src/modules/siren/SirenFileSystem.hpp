@@ -146,28 +146,21 @@ struct FileSystemAudioStream : AudioStream {
 
 struct FileSystemDataSource : DataSource {
 	std::string root;
-	RootMetadata metadata_;
+	MetadataStore metadata_;
 
 	explicit FileSystemDataSource(const std::string& rootPath) : root(rootPath) {
 		metadata_.rootPath = root;
-		metadata_.load(metadataFilePath());
+		metadata_.load();
 	}
 
 	~FileSystemDataSource() override {
 		saveMetadata();
 	}
 
-	std::string metadataFilePath() const {
-		std::string dir = rack::asset::user("Stoermelder-P1");
-		return dir + "/siren-" + hashPath(root) + ".json";
-	}
-
-	RootMetadata* getMetadata() override { return &metadata_; }
+	MetadataStore* getMetadata() override { return &metadata_; }
 
 	void saveMetadata() override {
-		if (isTesting()) return;
-		rack::system::createDirectories(rack::asset::user("Stoermelder-P1"));
-		metadata_.save(metadataFilePath());
+		metadata_.save();
 	}
 
 	// Remove every waveform cache file keyed by a relative path in this root's
@@ -561,7 +554,7 @@ struct FileSystemDataSource : DataSource {
 
 			// Text field for adding a new tag
 			struct FileNewTagField : ui::TextField {
-				RootMetadata* metadata;
+				MetadataStore* metadata;
 				std::string rel;
 				FileSystemDataSource* src;
 				std::function<void()> onChanged;
@@ -593,7 +586,7 @@ struct FileSystemDataSource : DataSource {
 
 			// All known tags with checkmarks — live toggle per item
 			struct FileTagItem : ui::MenuItem {
-				RootMetadata* metadata;
+				MetadataStore* metadata;
 				std::string rel;
 				std::string tag;
 				FileSystemDataSource* src;

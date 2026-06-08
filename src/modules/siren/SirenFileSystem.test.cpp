@@ -363,10 +363,10 @@ TEST_CASE("randomFileSuffix: format is '_siren_' + 6 lowercase letters and works
 	REQUIRE(isGeneratedFile(filename) == true);
 }
 
-// metadataFilePath is derived from rootPath and is stable across instances on the same root.
-TEST_CASE("FileSystemDataSource: metadataFilePath is stable for same root", "[Siren][FileSystem]") {
+// MetadataStore::filePath is derived from rootPath and is stable across instances on the same root.
+TEST_CASE("FileSystemDataSource: metadata file path is stable for same root", "[Siren][FileSystem]") {
 	TempDir tmp;
 	FileSystemDataSource src1(tmp.str());
 	FileSystemDataSource src2(tmp.str());
-	REQUIRE(src1.metadataFilePath() == src2.metadataFilePath());
+	REQUIRE(src1.getMetadata()->filePath() == src2.getMetadata()->filePath());
 }

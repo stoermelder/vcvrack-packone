@@ -44,7 +44,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	bool  draggingScrollbar = false;
 	float dragStartScrollbarX = 0.f;
 
-	RootMetadata*     metadata    = nullptr;
+	MetadataStore*     metadata    = nullptr;
 	SirenDropHandler* dropHandler = nullptr;
 	TaskWorker*       worker      = nullptr;
 
@@ -122,7 +122,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			moduleOutPoint->store(outPoint, std::memory_order_relaxed);
 	}
 
-	void loadItem(const DataSourceNode& node, DataSource* src, RootMetadata* meta,
+	void loadItem(const DataSourceNode& node, DataSource* src, MetadataStore* meta,
 	        bool startPlay = false, bool forceRebuild = false) {
 		const std::string& id = node.relativePath;
 
@@ -220,7 +220,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		std::string idCopy      = currentNode.relativePath;
 		std::string relPathCopy = relPath;
 		DataSource* ds          = source;
-		RootMetadata* meta      = metadata;
+		MetadataStore* meta      = metadata;
 
 		worker->work([this, idCopy, relPathCopy, ds, meta]() {
 			float confidence = 0.f;

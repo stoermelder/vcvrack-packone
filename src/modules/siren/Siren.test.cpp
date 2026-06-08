@@ -49,10 +49,10 @@ TEST_CASE("JSON serialization", "[Siren][JSON]") {
 	Test::destroyModule(m);
 }
 
-// ─── RootMetadata: favorites ──────────────────────────────────────────────────
+// ─── MetadataStore: favorites ──────────────────────────────────────────────────
 // favorite flag can be set, cleared, and persists independently of tags.
-TEST_CASE("RootMetadata: favorites", "[Siren][Metadata]") {
-	RootMetadata meta;
+TEST_CASE("MetadataStore: favorites", "[Siren][Metadata]") {
+	MetadataStore meta;
 	meta.rootPath = "/test/root";
 
 	SECTION("Set and get favorite") {
@@ -62,7 +62,7 @@ TEST_CASE("RootMetadata: favorites", "[Siren][Metadata]") {
 	}
 
 	SECTION("Clear favorite keeps entry as a seen-marker even with no tags") {
-		// The samples map only ever grows (see RootMetadata::markSeen) so that
+		// The samples map only ever grows (see MetadataStore::markSeen) so that
 		// cleanup() can later locate and remove matching waveform cache files.
 		meta.setFavorite("drums/kick.wav", true);
 		meta.setFavorite("drums/kick.wav", false);
@@ -79,10 +79,10 @@ TEST_CASE("RootMetadata: favorites", "[Siren][Metadata]") {
 	}
 }
 
-// ─── RootMetadata: tags ───────────────────────────────────────────────────────
+// ─── MetadataStore: tags ───────────────────────────────────────────────────────
 // tags can be added, retrieved, removed, and allTags returns the union.
-TEST_CASE("RootMetadata: tags", "[Siren][Metadata]") {
-	RootMetadata meta;
+TEST_CASE("MetadataStore: tags", "[Siren][Metadata]") {
+	MetadataStore meta;
 	meta.rootPath = "/test/root";
 
 	SECTION("Add and retrieve tag") {
@@ -147,7 +147,7 @@ TEST_CASE("RootMetadata: tags", "[Siren][Metadata]") {
 // ─── addTag: spelling and case rules ─────────────────────────────────────────
 // custom tags preserve their exact spelling when first added.
 TEST_CASE("addTag: custom tag spelling is stored verbatim", "[Siren][Metadata]") {
-	RootMetadata meta;
+	MetadataStore meta;
 
 	meta.addTag("kick.wav", "Dark Ambient");
 	REQUIRE(meta.getTags("kick.wav")[0] == "Dark Ambient");
@@ -161,7 +161,7 @@ TEST_CASE("addTag: custom tag spelling is stored verbatim", "[Siren][Metadata]")
 
 // case-insensitive duplicate prevention keeps only the first spelling.
 TEST_CASE("addTag: case-insensitive duplicate prevention", "[Siren][Metadata]") {
-	RootMetadata meta;
+	MetadataStore meta;
 
 	// Three case-variants of the same word → only the first is stored
 	meta.addTag("a.wav", "Percussion");
@@ -178,7 +178,7 @@ TEST_CASE("addTag: case-insensitive duplicate prevention", "[Siren][Metadata]") 
 
 // case-insensitive check preserves the exact stored spelling in allTags.
 TEST_CASE("addTag: case-insensitive check does not affect allTags display", "[Siren][Metadata]") {
-	RootMetadata meta;
+	MetadataStore meta;
 	// Store a capitalised custom tag
 	meta.addTag("a.wav", "Heavy Bass");
 	auto all = meta.allTags();
@@ -188,10 +188,10 @@ TEST_CASE("addTag: case-insensitive check does not affect allTags display", "[Si
 	REQUIRE(all.count("heavy bass") == 0);
 }
 
-// ─── RootMetadata: JSON I/O ───────────────────────────────────────────────────
+// ─── MetadataStore: JSON I/O ───────────────────────────────────────────────────
 // metadata serialises to JSON and deserialises back correctly.
-TEST_CASE("RootMetadata: JSON round-trip", "[Siren][Metadata]") {
-	RootMetadata meta;
+TEST_CASE("MetadataStore: JSON round-trip", "[Siren][Metadata]") {
+	MetadataStore meta;
 	meta.rootPath = "/test/root";
 	meta.setFavorite("a.wav", true);
 	meta.addTag("a.wav", "drone");
@@ -200,7 +200,7 @@ TEST_CASE("RootMetadata: JSON round-trip", "[Siren][Metadata]") {
 	json_t* j = meta.toJson();
 	REQUIRE(j != nullptr);
 
-	RootMetadata meta2;
+	MetadataStore meta2;
 	meta2.fromJson(j);
 	json_decref(j);
 
@@ -325,7 +325,7 @@ TEST_CASE("SirenDropHandler initial state", "[Siren][DragDrop]") {
 // ─── allTags: starter tags always present ─────────────────────────────────────
 // starter tags are always included in allTags, even when custom tags exist.
 TEST_CASE("allTags: starter tags present even when samples have tags", "[Siren][Metadata]") {
-	RootMetadata meta;
+	MetadataStore meta;
 	meta.rootPath = "/test/root";
 
 	// Assign a custom tag — starter tags must still appear (regression for the
@@ -340,7 +340,7 @@ TEST_CASE("allTags: starter tags present even when samples have tags", "[Siren][
 
 // user tags merge with starter tags; duplicates are prevented.
 TEST_CASE("allTags: user tags merge with starter tags without duplicates", "[Siren][Metadata]") {
-	RootMetadata meta;
+	MetadataStore meta;
 	meta.rootPath = "/test/root";
 
 	// "Drone" is already a starter tag; adding it again must not duplicate it
@@ -470,7 +470,7 @@ TEST_CASE("loadItem: playing stays false when no stream can be opened", "[Siren]
 TEST_CASE("FileSystemDataSource: getMetadata returns valid pointer", "[Siren][FileSystem]") {
 	FileSystemDataSource src("/tmp/siren_test_nonexistent");
 
-	RootMetadata* meta = src.getMetadata();
+	MetadataStore* meta = src.getMetadata();
 	REQUIRE(meta != nullptr);
 	REQUIRE(meta->rootPath == "/tmp/siren_test_nonexistent");
 	// samples may be non-empty if a metadata file was previously persisted for this path
@@ -480,7 +480,7 @@ TEST_CASE("FileSystemDataSource: getMetadata returns valid pointer", "[Siren][Fi
 TEST_CASE("FileSystemDataSource: metadata is mutable through pointer", "[Siren][FileSystem]") {
 	FileSystemDataSource src("/tmp/siren_test_nonexistent");
 
-	RootMetadata* meta = src.getMetadata();
+	MetadataStore* meta = src.getMetadata();
 	meta->addTag("kick.wav", "percussion");
 	REQUIRE(meta->getTags("kick.wav").size() == 1);
 	// Pointer remains stable: same address on second call

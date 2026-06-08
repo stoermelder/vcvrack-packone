@@ -50,7 +50,7 @@ struct SirenTreeRow : widget::OpaqueWidget {
 
 	DataSourceNode node;
 	int indentLevel = 0;
-	RootMetadata* metadata = nullptr;
+	MetadataStore* metadata = nullptr;
 	SirenBrowserPane* pane = nullptr;
 	bool selected = false;
 	bool expanded = false;
@@ -96,7 +96,7 @@ struct SirenTreeRow : widget::OpaqueWidget {
 		OpaqueWidget::onLeave(e);
 	}
 
-	void init(const DataSourceNode& n, int indent, RootMetadata* meta, SirenBrowserPane* p) {
+	void init(const DataSourceNode& n, int indent, MetadataStore* meta, SirenBrowserPane* p) {
 		node = n;
 		indentLevel = indent;
 		metadata = meta;
@@ -401,7 +401,7 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		return -1;
 	}
 
-	bool containerHasMatchingDescendant(int rowIdx, RootMetadata* meta) const {
+	bool containerHasMatchingDescendant(int rowIdx, MetadataStore* meta) const {
 		if (!meta) return false;
 		const std::string dirPrefix = rows[rowIdx].node.relativePath + "/";
 		for (const auto& pair : meta->samples) {
@@ -514,7 +514,7 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		if (!worker || !activeDataSource) return;
 		TagClassifier::registerKeywords(starterTagKeywords());
 		DataSource*   ds    = activeDataSource;
-		RootMetadata* meta  = ds->getMetadata();
+		MetadataStore* meta  = ds->getMetadata();
 		std::string   rel   = node.relativePath;
 		bool          isDir = node.isContainer;
 		std::string   name  = node.name;
@@ -838,7 +838,7 @@ struct SirenTagContainer : widget::OpaqueWidget {
 	void rebuildChips(NVGcontext* vg) {
 		clearChildren();
 		if (!pane || !pane->activeDataSource) { box.size.y = PAD_Y * 2.f; return; }
-		RootMetadata* meta = pane->activeDataSource->getMetadata();
+		MetadataStore* meta = pane->activeDataSource->getMetadata();
 		if (!meta) { box.size.y = PAD_Y * 2.f; return; }
 
 		auto all = meta->allTags();
@@ -975,7 +975,7 @@ inline void SirenBrowserPane::setSize(Vec size) {
 
 inline void SirenBrowserPane::rebuildRowWidgets() {
 	rowContainer->clearChildren();
-	RootMetadata* meta = activeDataSource ? activeDataSource->getMetadata() : nullptr;
+	MetadataStore* meta = activeDataSource ? activeDataSource->getMetadata() : nullptr;
 
 	std::string lq = rack::string::lowercase(searchQuery);
 	float y = 0.f;
@@ -1067,7 +1067,7 @@ inline void SirenTreeRow::onButton(const event::Button& e) {
 			menu->addChild(createMenuItem("Clear tags", "", [this]() {
 				DataSource* ds = pane->activeDataSource;
 				if (!ds) return;
-				RootMetadata* meta = ds->getMetadata();
+				MetadataStore* meta = ds->getMetadata();
 				if (!meta) return;
 				std::vector<std::string> targets;
 				if (node.isContainer) {
