@@ -30,6 +30,7 @@ The lower part of the source menu controls how audio is processed:
 - **Resample on drop** — resample to Rack's current sample rate before handing the file to another module. Prevents pitch shifting in modules that don't resample themselves.
 - **Resample quality** — choose between **Fast** (lowest CPU), **Default** (balanced), and **Best** (highest quality, most CPU). Affects resampling on drop only.
 - **Convert to WAV on drop** — convert FLAC or MP3 files to WAV before dropping. Useful for modules that only accept WAV.
+- **Folder for converted/trimmed files** — when SIREN has to generate a new file (resampling, format conversion, or trimming), it is normally written next to the source file. Use this submenu to redirect those generated files to a single custom folder of your choice. The original file is never modified.
 
 ## Drag and Drop
 
@@ -129,6 +130,8 @@ Right-click a file to open its context menu. Under **Tags**:
 Tags are case-insensitive — "Kick" and "kick" are treated as the same tag.
 
 To tag all audio files inside a folder at once, right-click the folder and use **Tag all files**.
+
+To remove every tag from a file at once, or from every file inside a folder, right-click and choose **Clear tags**.
 
 ### Suggest Tags
 
