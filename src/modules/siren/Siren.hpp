@@ -40,13 +40,52 @@ struct SirenSettings {
 	// alongside the source file.
 	std::string customConvertDir;
 
+	// Saves via rename-write-verify-delete so a crash mid-write can never destroy
+	// the previous settings: the existing file is first moved aside to ".bak",
+	// the new file is written and parsed back to confirm it's valid JSON, and
+	// only then is the backup removed. On verification failure the backup is restored.
 	void save() const {
 		if (isTesting()) return;
-		json_t* j = toJson();
+		std::string jsonPath = sirenFilePath();
 		rack::system::createDirectories(settingsDirPath());
-		FILE* f = fopen(sirenFilePath().c_str(), "w");
-		if (f) { json_dumpf(j, f, JSON_INDENT(2) | JSON_REAL_PRECISION(9)); fclose(f); }
-		json_decref(j);
+
+		json_t* j = toJson();
+		DEFER({ json_decref(j); });
+
+		std::string bakPath = jsonPath + ".bak";
+		std::error_code ec;
+		bool hadExisting = ghc::filesystem::exists(jsonPath, ec);
+		if (hadExisting) {
+			ghc::filesystem::rename(jsonPath, bakPath, ec);
+		}
+
+		FILE* f = fopen(jsonPath.c_str(), "w");
+		if (f) {
+			json_dumpf(j, f, JSON_INDENT(2) | JSON_REAL_PRECISION(9));
+			fclose(f);
+		}
+
+		bool verified = false;
+		FILE* check = fopen(jsonPath.c_str(), "r");
+		if (check) {
+			json_error_t err;
+			json_t* verifyJ = json_loadf(check, 0, &err);
+			fclose(check);
+			if (verifyJ) {
+				verified = true;
+				json_decref(verifyJ);
+			}
+		}
+
+		if (hadExisting) {
+			if (verified) {
+				ghc::filesystem::remove(bakPath, ec);
+			}
+			else {
+				ghc::filesystem::remove(jsonPath, ec);
+				ghc::filesystem::rename(bakPath, jsonPath, ec);
+			}
+		}
 	}
 
 	void load() {
