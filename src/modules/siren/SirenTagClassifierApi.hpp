@@ -173,10 +173,19 @@ struct TagClassifier {
 
 	struct ModelInfo {
 		void (*scoreFn)(const float*, float*) = nullptr;
-		int                numClasses         = 0;
-		const char* const* classNames         = nullptr;
-		void (*lazyInit)()                    = nullptr;  // called once on first scoring use
-		std::map<std::string, std::vector<std::string>> keywords;  // tag name → filename keywords
+		int numClasses = 0;
+		const char* const* classNames = nullptr;
+		// called once on first scoring use
+		void (*lazyInit)() = nullptr;
+		// tag name → filename keywords
+		std::map<std::string, std::vector<std::string>> keywords;
+		// JSON blob describing the training run that produced this model
+		// (dataset path, hyper-parameters, scikit-learn version, …).
+		// Set by the generated model TU via registerTrainingInfo(). May be
+		// nullptr when the model was built without metadata (e.g. legacy
+		// generated files), or a pointer to a static "" when no params
+		// were supplied at training time.
+		const char* trainingInfoJson = nullptr;
 	};
 
 	// Access the singleton. On first call after setLoader(), calls the loader
@@ -202,6 +211,25 @@ struct TagClassifier {
 		m.numClasses = numClasses;
 		m.classNames = classNames;
 		return true;
+	}
+
+	// Register a JSON blob describing the training parameters used to
+	// build the model (dataset path, n_estimators, max_depth, …).
+	// `json` must be a pointer with static storage duration (a string
+	// literal in the generated model TU is ideal). It is NOT copied —
+	// the pointer is stored as-is. Safe to call before or after
+	// registerModel(); the values are independent fields on ModelInfo.
+	// A null pointer is treated as "no metadata available".
+	static void registerTrainingInfo(const char* json) {
+		_model().trainingInfoJson = json;
+	}
+
+	// Returns the training-parameters JSON registered by the loaded
+	// model, or an empty string when none was provided. The pointer is
+	// owned by the model TU; callers must not free it.
+	static const char* trainingInfo() {
+		const char* p = _model().trainingInfoJson;
+		return p ? p : "";
 	}
 
 	// Register filename keywords loaded from SirenTags.json.

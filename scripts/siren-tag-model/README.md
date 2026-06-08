@@ -223,7 +223,17 @@ python3 train_model.py --csv build/synthetic_dataset.csv --n-estimators 64 --max
 
 After pasting the new generated body, bump `MODEL_VERSION` in
 `feature_config.py` and rebuild. The version number is exported as
-`SIREN_TAG_MODEL_VERSION` in the C header — useful for diagnostics.
+`model_version` in the `SIREN_TAG_TRAINING_INFO_JSON` blob (and mirrored in the `// Model version:` header comment) — useful for diagnostics.
+
+The full set of training parameters used for the current run
+(`--csv`, `--n-estimators`, `--max-depth`, `--augment`, `--seed`,
+dataset shape, calibrated-class count, scikit-learn / m2cgen /
+numpy / Python versions, host platform) is also embedded in the
+generated source as a compact JSON blob, and exposed to the plugin
+at runtime via `TagClassifier::trainingInfo()`. The plugin can
+read this back to populate a "model info" panel so users always
+know which dataset / hyper-parameters produced the bundled
+classifier — no sidecar files, no JSON parser dependency.
 
 ## Classifying a single file (Python smoke test)
 

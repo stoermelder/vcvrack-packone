@@ -6,6 +6,14 @@ to paste into. The whole file is the model: it includes
 bridges + Platt-scaled dispatcher, and self-registers via a static
 initializer (lazy, via `_setLoader()`).
 
+The model also embeds a compact JSON blob describing the training
+parameters used to produce it (dataset path, n_estimators, max_depth,
+augment copies, random seed, dataset shape, calibrated-class count, …).
+That blob is registered alongside the model via
+`TagClassifier::registerTrainingInfo()` so the plugin can show the
+provenance of a built-in model in its diagnostics / "About" UI without
+needing a separate sidecar file.
+
 `m2cgen` transpiles a fitted `sklearn` model into plain C. For a
 `MultiOutputClassifier` wrapping a binary `RandomForestClassifier` (our
 default), each per-class estimator is either:
@@ -32,7 +40,9 @@ identical scores to the Python `classify_wav.py` reference at the same
 """
 from __future__ import annotations
 
+import json
 import re
+import sys
 from pathlib import Path
 
 import m2cgen as m2c
@@ -73,6 +83,60 @@ def _shape(estimator) -> str:
     return "binary"
 
 
+def _json_escape(s: str) -> str:
+    """Escape a Python string for inclusion in a C string literal (JSON-style)."""
+    out = []
+    for ch in s:
+        cp = ord(ch)
+        if ch == "\\":
+            out.append("\\\\")
+        elif ch == '"':
+            out.append('\\"')
+        elif cp == 0x08:
+            out.append("\\b")
+        elif cp == 0x09:
+            out.append("\\t")
+        elif cp == 0x0A:
+            out.append("\\n")
+        elif cp == 0x0C:
+            out.append("\\f")
+        elif cp == 0x0D:
+            out.append("\\r")
+        elif cp < 0x20:
+            out.append(f"\\u{cp:04x}")
+        elif cp < 0x7F:
+            out.append(ch)
+        else:
+            out.append(f"\\u{cp:04x}")
+    return "".join(out)
+
+
+def _emit_training_info_block(training_params: dict | None) -> tuple[str, str]:
+    """Render the training-params dict as a JSON literal and a C global.
+
+    Returns (literal_string_for_cpp, var_name). The C++ runtime stores
+    it in a `const char*`; the plugin reads it via
+    `TagClassifier::trainingInfo()`.
+
+    The JSON shape is intentionally tiny and dependency-free so the
+    generated TU doesn't need a JSON parser just to embed this blob.
+    Any keys missing from ``training_params`` are simply omitted.
+    """
+    if not training_params:
+        return '""', "SIREN_TAG_TRAINING_INFO_JSON"
+
+    try:
+        blob = json.dumps(training_params, sort_keys=True, separators=(",", ":"))
+    except (TypeError, ValueError) as e:
+        # Refuse to emit a broken blob — better to fall back to empty than
+        # to break the build with a non-JSON literal.
+        print(f"  warn: could not serialise training_params: {e}", file=sys.stderr)
+        return '""', "SIREN_TAG_TRAINING_INFO_JSON"
+
+    escaped = _json_escape(blob)
+    return f'"{escaped}"', "SIREN_TAG_TRAINING_INFO_JSON"
+
+
 def _emit_bridge(c: int, shape: str, impl_name: str) -> str:
     """Wrap the m2cgen body ``<impl_name>(double *input[, double *output])``
     into a uniform ``static double siren_tag_score_class_<c>(double *input)``
@@ -104,18 +168,29 @@ def emit_cpp(
     model,
     out_path: Path,
     calibration_params: list[tuple[float, float] | None] | None = None,
+    training_params: dict | None = None,
 ) -> None:
     """Write the generated C++ source file to ``out_path``.
 
     The result is consumed by ``src/modules/siren/SirenTagClassifier.cpp``
     (the whole file IS the model — the developer copies it over after
     running ``run.sh``).
+
+    ``training_params`` is an optional dict describing the training run
+    that produced the model (dataset path, n_estimators, max_depth,
+    augment copies, random seed, dataset shape, calibrated-class count,
+    scikit-learn / numpy versions, …). The dict is JSON-serialised and
+    embedded into the generated source as a `const char*` literal, then
+    handed to ``TagClassifier::registerTrainingInfo()`` at static-init
+    time. Any value that isn't JSON-serialisable is silently dropped.
     """
     if not hasattr(model, "estimators_"):
         raise ValueError(
             "emit_cpp expects a MultiOutputClassifier (or any object exposing "
             "`.estimators_`). Wrap with sklearn.multioutput.MultiOutputClassifier."
         )
+
+    json_literal, json_var_name = _emit_training_info_block(training_params)
 
     # Render each per-class estimator as its own C body, then wrap each in a
     # uniform bridge. The m2cgen body is renamed to `siren_tag_class_<c>_impl`
@@ -173,6 +248,15 @@ def emit_cpp(
     parts.append(f"// Model version: {MODEL_VERSION}")
     parts.append(f"// Classes ({NUM_CLASSES}): {', '.join(CLASS_NAMES)}")
     parts.append(f"// Features ({NUM_FEATURES}): see feature_config.FEATURE_NAMES")
+    if training_params:
+        # Mirror the same dict in a multi-line comment so the file is
+        # self-describing even without a JSON parser. The single-line
+        # version below (`SIREN_TAG_TRAINING_INFO_JSON`) is the
+        # machine-readable form the plugin actually reads.
+        parts.append("// Training parameters:")
+        for k in sorted(training_params.keys()):
+            v = training_params[k]
+            parts.append(f"//   {k} = {v!r}")
     parts.append("")
     parts.append('#include "SirenTagClassifierApi.hpp"  // defines TagClassifier, SIREN_TAG_NUM_FEATURES')
     parts.append("#include <cmath>    // for exp() in Platt sigmoid calibration")
@@ -183,13 +267,24 @@ def emit_cpp(
     # This assert fires if the model was trained with a different feature count.
     parts.append(f"static_assert(::StoermelderPackOne::Siren::SIREN_TAG_NUM_FEATURES == {NUM_FEATURES},")
     parts.append(f'    "Model was trained with {NUM_FEATURES} features; re-run scripts/siren-tag-model/run.sh");')
-    parts.append(f"static const int SIREN_TAG_NUM_CLASSES   = {NUM_CLASSES};")
-    parts.append(f"static const int SIREN_TAG_MODEL_VERSION = {MODEL_VERSION};")
+    # NUM_CLASSES is used as the array bound for SIREN_TAG_CLASS_NAMES below
+    # and as the second arg to registerModel. MODEL_VERSION is recorded in the
+    # header comment and in the JSON training-info blob (`"model_version"`)
+    # so the plugin can read it at runtime — emitting it as a separate `const
+    # int` here would trigger -Wunused-const-variable.
+    parts.append(f"static const int SIREN_TAG_NUM_CLASSES = {NUM_CLASSES};")
     parts.append("")
     parts.append("static const char* const SIREN_TAG_CLASS_NAMES[SIREN_TAG_NUM_CLASSES] = {")
     for name in CLASS_NAMES:
         parts.append(f'    "{name}",')
     parts.append("};")
+    parts.append("")
+    # JSON blob of training parameters (empty string if none supplied).
+    # Lives in the generated TU and is handed to the plugin via
+    # TagClassifier::registerTrainingInfo() at static-init time.
+    parts.append("// Training parameters as a compact JSON blob.")
+    parts.append("// Empty string when no training_params were passed to emit_cpp().")
+    parts.append(f"static const char* const {json_var_name} = {json_literal};")
     parts.append("")
 
     # Emit each per-class m2cgen body. The helpers (`add_vectors` /
@@ -235,6 +330,7 @@ def emit_cpp(
     parts.append("static void _siren_load_model() {")
     parts.append("    ::StoermelderPackOne::Siren::TagClassifier::registerModel(")
     parts.append("        siren_tag_score, SIREN_TAG_NUM_CLASSES, SIREN_TAG_CLASS_NAMES);")
+    parts.append(f"    ::StoermelderPackOne::Siren::TagClassifier::registerTrainingInfo({json_var_name});")
     parts.append("}")
     parts.append("namespace {")
     parts.append("    static const bool _siren_loader_set =")

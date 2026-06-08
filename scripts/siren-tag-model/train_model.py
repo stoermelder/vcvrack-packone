@@ -12,10 +12,12 @@ Usage:
 from __future__ import annotations
 
 import csv
+import platform
 import sys
 from pathlib import Path
 
 import numpy as np
+import sklearn
 from scipy.optimize import fmin_bfgs
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report, hamming_loss
@@ -23,7 +25,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.multioutput import MultiOutputClassifier
 
 from emit_cpp import emit_cpp
-from feature_config import CLASS_NAMES, NUM_CLASSES, NUM_FEATURES
+from feature_config import CLASS_NAMES, MODEL_VERSION, NUM_CLASSES, NUM_FEATURES
 
 
 def load_csv(csv_path: Path) -> tuple[np.ndarray, np.ndarray, list[str]]:
@@ -207,9 +209,47 @@ def main() -> int:
         for j in top3:
             print(f"    {CLASS_NAMES[j]:12s}  score={probs[j]:.3f}")
 
+    # Build the training-parameters metadata that gets embedded in the
+    # generated C++ as a JSON blob. This is what the plugin can later
+    # show in its "About / model info" UI to answer "where did this
+    # classifier come from?" without needing any sidecar files.
+    n_cal = sum(1 for p in calibration_params if p is not None)
+    try:
+        m2cgen_version = __import__("m2cgen").__version__
+    except (ImportError, AttributeError):
+        m2cgen_version = None
+    training_params: dict = {
+        "augment_copies":   args.augment,
+        "calibrated_classes": n_cal,
+        "calibration":      "platt_sigmoid",
+        "dataset_csv":      str(args.csv),
+        "dataset_classes":  NUM_CLASSES,
+        "dataset_features": NUM_FEATURES,
+        "dataset_shape":    [int(X.shape[0]), int(X.shape[1])],
+        "max_depth":        args.max_depth,
+        "min_samples_leaf": 2,
+        "model_version":    MODEL_VERSION,
+        "n_estimators":     args.n_estimators,
+        "platform":         platform.platform(),
+        "python_version":   sys.version.split()[0],
+        "random_seed":      args.seed,
+        "sklearn_version":  sklearn.__version__,
+        "test_size":        0.25,
+        "train_samples":    int(X_tr.shape[0]),
+        "test_samples":     int(X_te.shape[0]),
+    }
+    if m2cgen_version:
+        training_params["m2cgen_version"] = m2cgen_version
+    try:
+        training_params["numpy_version"] = np.__version__
+    except AttributeError:
+        pass
+
     # Emit C++
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    emit_cpp(model, args.out, calibration_params=calibration_params)
+    emit_cpp(model, args.out,
+             calibration_params=calibration_params,
+             training_params=training_params)
     print(f"\nWrote generated C++ to {args.out}")
     print("Paste its contents into the marked region of src/modules/Siren/SirenTagClassifier.cpp, then rebuild.")
     return 0
