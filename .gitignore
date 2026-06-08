@@ -2,8 +2,10 @@
 .github/instructions/*.md
 .clinerules
 .DS_Store
+__pycache__
 build
 dist
+var
 metamodule/build
 metamodule/metamodule-plugins
 var
