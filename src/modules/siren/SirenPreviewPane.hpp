@@ -516,6 +516,10 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 				source->appendNodeMenuItems(menu, currentNode, [this]() {
 					if (onMetadataChanged) onMetadataChanged();
 				});
+				menu->addChild(new ui::MenuSeparator);
+				menu->addChild(createMenuItem("Clear tags", "", [this]() {
+					source->getMetadata()->clearTags(currentNode.relativePath);
+				}));
 			}
 		}
 	}

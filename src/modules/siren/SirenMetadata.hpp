@@ -331,6 +331,11 @@ struct MetadataStore {
 		}), tags.end());
 	}
 
+	void clearTags(const std::string& rel) {
+		auto it = samples.find(rel);
+		if (it != samples.end()) it->second.tags.clear();
+	}
+
 	std::vector<std::string> getTags(const std::string& rel) const {
 		auto it = samples.find(rel);
 		if (it == samples.end()) return {};
