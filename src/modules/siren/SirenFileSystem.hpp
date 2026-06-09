@@ -479,6 +479,37 @@ struct FileSystemDataSource : DataSource {
 	}
 
 	void appendNodeMenuItems(ui::Menu* menu, const DataSourceNode& node, std::function<void()> onChanged) override {
+		struct NewTagField : ui::TextField {
+			FileSystemDataSource* src;
+			std::function<void()> onChanged;
+			std::function<void(const std::string&)> applyTag;
+			void onSelectKey(const event::SelectKey& e) override {
+				if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
+					std::string tag = rack::string::trim(text);
+					if (!tag.empty()) {
+						applyTag(tag);
+						src->saveMetadata();
+						if (onChanged) onChanged();
+					}
+					ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
+					if (overlay) overlay->requestDelete();
+					e.consume(this);
+					return;
+				}
+				if (!e.getTarget()) ui::TextField::onSelectKey(e);
+			}
+		};
+		auto addNewTagField = [&](std::function<void(const std::string&)> applyTag) {
+			NewTagField* ntf    = new NewTagField;
+			ntf->box.size.x     = 150.f;
+			ntf->placeholder    = "New tag...";
+			ntf->src            = this;
+			ntf->onChanged      = onChanged;
+			ntf->applyTag       = applyTag;
+			menu->addChild(ntf);
+			APP->event->setSelectedWidget(ntf);
+		};
+
 		if (node.isContainer) {
 			std::string absPath = resolveAbsPath(node.relativePath);
 
@@ -487,6 +518,15 @@ struct FileSystemDataSource : DataSource {
 			}));
 
 			menu->addChild(new ui::MenuSeparator);
+			menu->addChild(createMenuLabel("Tags"));
+
+			std::string folderId = node.relativePath;
+			addNewTagField([this, folderId](const std::string& tag) {
+				auto children = loadChildrenSync(folderId);
+				for (const auto& child : children)
+					if (!child.isContainer)
+						getMetadata()->addTag(child.relativePath, tag);
+			});
 
 			// Sticky submenu: scan container, then show all tags; clicking adds/removes
 			// the tag for every direct audio file in the container.
@@ -571,35 +611,9 @@ struct FileSystemDataSource : DataSource {
 			menu->addChild(new ui::MenuSeparator);
 			menu->addChild(createMenuLabel("Tags"));
 
-			// Text field for adding a new tag
-			struct FileNewTagField : ui::TextField {
-				std::string rel;
-				FileSystemDataSource* src;
-				std::function<void()> onChanged;
-				void onSelectKey(const event::SelectKey& e) override {
-					if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
-						std::string tag = rack::string::trim(text);
-						if (!tag.empty()) {
-							src->getMetadata()->addTag(rel, tag);
-							src->saveMetadata();
-							if (onChanged) onChanged();
-						}
-						ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
-						if (overlay) overlay->requestDelete();
-						e.consume(this);
-						return;
-					}
-					if (!e.getTarget()) ui::TextField::onSelectKey(e);
-				}
-			};
-			FileNewTagField* ntf = new FileNewTagField;
-			ntf->box.size.x  = 150.f;
-			ntf->placeholder = "New tag...";
-			ntf->rel         = rel;
-			ntf->src         = this;
-			ntf->onChanged   = onChanged;
-			menu->addChild(ntf);
-			APP->event->setSelectedWidget(ntf);
+			addNewTagField([this, rel](const std::string& tag) {
+				getMetadata()->addTag(rel, tag);
+			});
 
 			// All known tags with checkmarks — live toggle per item
 			struct FileTagItem : ui::MenuItem {
