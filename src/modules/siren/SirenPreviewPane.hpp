@@ -1,137 +1,133 @@
 #pragma once
 #include <rack.hpp>
 #include "SirenAudio.hpp"
+#include "SirenAudioStream.hpp"
 #include "SirenMetadata.hpp"
 #include "SirenDropHandler.hpp"
 #include "SirenBpmDetector.hpp"
+#include "SirenWaveformCanvas.hpp"
 #include "../../utils/TaskWorker.hpp"
 
 
 namespace StoermelderPackOne {
 namespace Siren {
 
-struct SirenPreviewPane : widget::OpaqueWidget {
-	// ── layout ───────────────────────────────────────────────────────────────
-	static constexpr float TB_H        = 50.f;  // top bar (includes tag chip row)
-	static constexpr float READOUT_H   = 12.f;  // bottom readout bar
-	static constexpr float SCROLLBAR_H = 12.f;  // scrollbar height
-	static constexpr float WAVE_X      = 8.f;   // left margin (for L/R labels)
+// ─── SirenPreviewPane ─────────────────────────────────────────────────────────
+// Orchestrates the preview region: top bar (file info, play button) + the
+// SirenWaveformCanvas child widget.  Owns all file-state, waveform caches, and
+// loop-preview generation logic.
+//
+// Loop-preview workflow:
+//   1. User right-clicks → "Generate loop preview"
+//   2. Worker decodes the trimmed region, applies rotation+crossfade, builds a
+//      waveform cache for the result.
+//   3. step() adopts the MemoryAudioStream into the module and activates the
+//      canvas's loopPreviewMode (gold waveform, no trim handles).
+//   4. Dropping while in loop-preview mode regenerates the loop on disk.
+//   5. "Cancel loop preview" returns to the normal file stream.
 
-	// ── state ────────────────────────────────────────────────────────────────
-	DataSourceNode currentNode;       // the node currently loaded into the preview pane
-	DataSource*  source = nullptr;
-	std::string  displayName;        // cached display name
-	std::string  relPath;            // currentNode.relativePath — kept as alias for readability
+struct SirenPreviewPane : widget::OpaqueWidget {
+	static constexpr float TB_H = 50.f;
+
+	// ── file state ───────────────────────────────────────────────────────────
+	DataSourceNode currentNode;
+	DataSource*  source      = nullptr;
+	std::string  displayName;
+	std::string  relPath;
 	AudioInfo    info;
-	WaveformCache cache;
+
+	// ── normal waveform cache ─────────────────────────────────────────────────
+	WaveformCache     cache;
 	std::atomic<bool> cacheReady{false};
 	std::atomic<bool> cacheBuilding{false};
 
-	float inPoint          = 0.f;   // trim IN handle position [0, 1]
-	float outPoint         = 1.f;   // trim OUT handle position [0, 1]
-	float scrubPos         = 0.f;   // drag-only position; never touched by audio thread
-	float dragStartRackX   = 0.f;   // rack-space X when drag began
-	float dragStartScrub   = 0.f;   // scrubPos / handle pos when drag began
-	bool  draggingPlayhead = false;
-	bool  trimmingIn       = false;  // Shift+drag on IN handle
-	bool  trimmingOut      = false;  // Shift+drag on OUT handle
-	bool  trimmingRange    = false;  // Shift+drag to define a new range from scratch
-	float rangeAnchor      = 0.f;   // normalized start position for trimmingRange
+	struct PendingCache { WaveformCache cache; int gen = -1; bool valid = false; };
+	std::atomic<int> cacheGeneration{0};
+	PendingCache     pendingCache;
+	std::atomic<bool> pendingCacheReady{false};
 
-	// ── zoom and scroll state ─────────────────────────────────────────────────
-	float zoomLevel  = 1.0f;  // 1.0 = fit to width; up to ~10.0 max
-	float scrollPos  = 0.0f;  // horizontal scroll position [0, 1]
-	bool  draggingScrollbar = false;
-	float dragStartScrollbarX = 0.f;
+	float loopCrossfadeDuration = 6.f;
+
+	// ── loop-preview state ────────────────────────────────────────────────────
+	bool          loopPreviewActive   = false;
+	bool          loopPreviewBuilding = false;  // worker running, not yet active
+	WaveformCache loopCache;
+	bool          loopCacheReady     = false;
+	float         loopDurationSeconds = 0.f;
+
+	struct PendingLoopPreview {
+		std::vector<float> samples;
+		int   channels        = 0;
+		int   sampleRate      = 0;
+		float durationSeconds = 0.f;
+		WaveformCache cache;
+		bool  valid           = false;
+	};
+	PendingLoopPreview pendingLoop;
+	std::atomic<bool>  pendingLoopReady{false};
+
+	// ── child widget ──────────────────────────────────────────────────────────
+	SirenWaveformCanvas* canvas = nullptr;
+
+	// ── module interface ──────────────────────────────────────────────────────
+	std::function<void(const std::string&, DataSource*)>      openStreamCallback;
+	std::function<void(std::unique_ptr<AudioStream>, int64_t)> adoptStreamCallback;
+	std::function<void(float)>                                 startPlaybackCallback;
+	std::function<void()>                                      stopPlaybackCallback;
+
+	std::atomic<float>* modulePlayheadPos = nullptr;
+	std::atomic<bool>*  modulePlaying     = nullptr;
+	std::atomic<float>* moduleInPoint     = nullptr;
+	std::atomic<float>* moduleOutPoint    = nullptr;
 
 	SirenDropHandler* dropHandler = nullptr;
 	TaskWorker*       worker      = nullptr;
+	std::string       cacheDir;
 
-	// Metadata is owned by the DataSource, not cached here — deriving it on
-	// demand keeps `source` the single source of truth and avoids a second
-	// pointer that could fall out of sync (or dangle) independently of it.
-	MetadataStore* metadata() const { return source ? source->getMetadata() : nullptr; }
-
-	// Called after any metadata change so the browser pane can refresh
-	std::function<void()> onMetadataChanged;
-
-	// ── module interface (audio state lives in SirenModule) ──────────────────
-	// Callbacks set by SirenWidget after both module and pane are constructed.
-	std::function<void(const std::string& id, DataSource* src)> openStreamCallback;
-	std::function<void(float pos)> startPlaybackCallback;
-	std::function<void()>          stopPlaybackCallback;
-
-	// Direct atomic pointers into the module for low-overhead display reads/writes.
-	std::atomic<float>* modulePlayheadPos = nullptr;
-	std::atomic<bool>*  modulePlaying     = nullptr;
-	std::atomic<float>* moduleInPoint     = nullptr;  // UI writes, DSP reads for loop start
-	std::atomic<float>* moduleOutPoint    = nullptr;  // UI writes, DSP reads for stop frame
-
-	// Pending waveform cache from worker
-	std::atomic<int> cacheGeneration{0};
-	struct PendingCache { WaveformCache cache; int gen = -1; bool valid = false; };
-	PendingCache      pendingCache;
-	std::atomic<bool> pendingCacheReady{false};
-
-	// Cache dir path (set by module widget)
-	std::string cacheDir;
-
-	// ── BPM detection state ────────────────────────────────────────────────────
-	// -1 = running, 0 = not detected, >0 = result in BPM
+	// ── BPM ───────────────────────────────────────────────────────────────────
 	std::atomic<float> bpm{0.f};
 
-	// ── Scrollbar and zoom helpers ────────────────────────────────────────────
-	Rect scrollbarRect() const {
-		float w = box.size.x;
-		float h = box.size.y;
-		float scrollbarY = h - SCROLLBAR_H - READOUT_H;
-		return Rect(Vec(WAVE_X, scrollbarY), Vec(w - WAVE_X - 4.f, SCROLLBAR_H));
-	}
+	MetadataStore* metadata() const { return source ? source->getMetadata() : nullptr; }
+	std::function<void()> onMetadataChanged;
 
-	float getScrollbarThumbWidth() const {
-		Rect sr = scrollbarRect();
-		if (zoomLevel <= 1.0f) return sr.size.x;  // no scrollbar when not zoomed
-		return sr.size.x / zoomLevel;
-	}
+	// ── public accessors for SirenWidget ─────────────────────────────────────
+	bool isLoopPreviewActive() const { return loopPreviewActive; }
 
-	float getScrollbarThumbX() const {
-		Rect sr = scrollbarRect();
-		float thumbW = getScrollbarThumbWidth();
-		float maxScroll = 1.0f - (1.0f / zoomLevel);
-		if (maxScroll <= 0.f) return sr.pos.x;
-		return sr.pos.x + (scrollPos / maxScroll) * (sr.size.x - thumbW);
-	}
-
-	void clampScrollPos() {
-		if (zoomLevel <= 1.0f) {
-			scrollPos = 0.0f;
-		} else {
-			float maxScroll = 1.0f - (1.0f / zoomLevel);
-			scrollPos = rack::math::clamp(scrollPos, 0.0f, std::max(0.0f, maxScroll));
-		}
-	}
+	// ── init ─────────────────────────────────────────────────────────────────
 
 	void init(TaskWorker* tw, SirenDropHandler* dh) {
 		worker      = tw;
 		dropHandler = dh;
+
+		canvas = new SirenWaveformCanvas;
+		canvas->box.pos   = Vec(0.f, TB_H);
+		canvas->dropHandler = dh;
+		canvas->worker      = tw;
+
+		canvas->onInPointChanged = [this](float v) {
+			if (moduleInPoint) moduleInPoint->store(v, std::memory_order_relaxed);
+		};
+		canvas->onOutPointChanged = [this](float v) {
+			if (moduleOutPoint) moduleOutPoint->store(v, std::memory_order_relaxed);
+		};
+		canvas->onScrubTo = [this](float pos) {
+			if (startPlaybackCallback) startPlaybackCallback(pos);
+		};
+		canvas->onCancelLoopPreview = [this]() {
+			cancelLoopPreview();
+		};
+
+		addChild(canvas);
 	}
 
-	void syncInPoint() {
-		if (moduleInPoint)
-			moduleInPoint->store(inPoint, std::memory_order_relaxed);
-	}
-
-	void syncOutPoint() {
-		if (moduleOutPoint)
-			moduleOutPoint->store(outPoint, std::memory_order_relaxed);
-	}
+	// ── file loading ──────────────────────────────────────────────────────────
 
 	void loadItem(const DataSourceNode& node, DataSource* src,
-	        bool startPlay = false, bool forceRebuild = false) {
+	              bool startPlay = false, bool forceRebuild = false) {
 		const std::string& id = node.relativePath;
 
-		if (stopPlaybackCallback)  stopPlaybackCallback();
-		if (openStreamCallback)    openStreamCallback(id, src);
+		if (stopPlaybackCallback) stopPlaybackCallback();
+		if (openStreamCallback)   openStreamCallback(id, src);
 
 		currentNode   = node;
 		source        = src;
@@ -141,20 +137,29 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		cacheBuilding = false;
 		pendingCacheReady.store(false, std::memory_order_relaxed);
 		int gen = ++cacheGeneration;
-		inPoint      = 0.f;
-		outPoint     = 1.f;
-		scrubPos     = 0.f;
-		zoomLevel    = 1.0f;
-		scrollPos    = 0.0f;
+
+		// Cancel any active loop preview when a new file is loaded
+		loopPreviewActive   = false;
+		loopPreviewBuilding = false;
+		loopCacheReady      = false;
+		loopDurationSeconds = 0.f;
+		loopCache           = WaveformCache{};
+
+		if (canvas) {
+			canvas->inPoint  = 0.f;
+			canvas->outPoint = 1.f;
+			canvas->scrubPos = 0.f;
+			canvas->zoomLevel = 1.0f;
+			canvas->scrollPos = 0.0f;
+			canvas->onInPointChanged(0.f);
+			canvas->onOutPointChanged(1.f);
+		}
 		bpm.store(0.f);
-		syncInPoint();
-		syncOutPoint();
 
 		if (id.empty() || !src) return;
 
 		src->loadAudioInfo(id, info);
 
-		// BPM: load from metadata if already stored, otherwise extract from filename.
 		if (MetadataStore* meta = metadata()) {
 			if (!relPath.empty()) {
 				auto it = meta->samples.find(relPath);
@@ -169,9 +174,6 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 						meta->setBpm(relPath, nameBpm, conf);
 					}
 				}
-				// Record that the user has opened this sample so cleanup() can
-				// later find and remove the matching waveform cache file, even
-				// when the user never tags/favorites/BPM-detects the file.
 				meta->markSeen(relPath);
 			}
 		}
@@ -183,14 +185,14 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			if (loadWaveformCacheFile(cacheFile, ts, loaded) && loaded.sampleCount > 0) {
 				cache      = std::move(loaded);
 				cacheReady = true;
-				if (startPlay) { inPoint = 0.f; scrubPos = 0.f; startPlaybackFrom(0.f); }
+				if (startPlay) startPlaybackFrom(0.f);
 				return;
 			}
 		}
 
 		if (!worker) return;
 		cacheBuilding = true;
-		int pw = (int)box.size.x - (int)WAVE_X - 8;
+		int pw = canvas ? (int)canvas->box.size.x - (int)SirenWaveformCanvas::WAVE_X - 8 : 512;
 		if (pw < 64) pw = 512;
 
 		std::string cacheCopy    = cacheFile;
@@ -198,50 +200,83 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		worker->work([this, id, ts, src, cacheCopy, cacheDirCopy, pw, gen]() {
 			WaveformCache built;
 			bool ok = src->buildWaveformCache(id, ts, pw, built);
-
 			if (ok && !cacheDirCopy.empty()) {
 				rack::system::createDirectories(cacheDirCopy);
 				saveWaveformCacheFile(cacheCopy, built);
 			}
-
 			pendingCache.cache = std::move(built);
 			pendingCache.gen   = gen;
 			pendingCache.valid = ok;
 			pendingCacheReady.store(true, std::memory_order_release);
 		});
 
-		if (startPlay) { inPoint = 0.f; scrubPos = 0.f; startPlaybackFrom(0.f); }
+		if (startPlay) startPlaybackFrom(0.f);
 	}
 
-	// ── BPM detection ─────────────────────────────────────────────────────────
+	// ── loop preview ─────────────────────────────────────────────────────────
 
-	void startBpmDetection() {
-		if (!source || currentNode.relativePath.empty()) return;
-		if (bpm.load() < 0.f) return; // Already running
+	void generateLoopPreview() {
+		if (!source || currentNode.relativePath.empty() || !worker) return;
 
-		if (!worker) return;
-		bpm.store(-1.f); // Mark as running
+		loopPreviewBuilding = true;
+		loopPreviewActive   = false;
+		loopCacheReady      = false;
+		loopCache           = WaveformCache{};
 
-		std::string idCopy      = currentNode.relativePath;
-		std::string relPathCopy = relPath;
-		DataSource* ds          = source;
+		DataSource* srcCopy = source;
+		std::string idCopy  = currentNode.relativePath;
+		float trimIn   = canvas ? canvas->inPoint  : 0.f;
+		float trimOut  = canvas ? canvas->outPoint : 1.f;
+		float duration = loopCrossfadeDuration;
+		int pw = canvas ? (int)canvas->box.size.x - (int)SirenWaveformCanvas::WAVE_X - 8 : 512;
+		if (pw < 64) pw = 512;
 
-		worker->work([this, idCopy, relPathCopy, ds]() {
-			float confidence = 0.f;
-			float result = BpmDetector::detectFromDsp(*ds, idCopy, confidence);
+		worker->work([this, srcCopy, idCopy, trimIn, trimOut, duration, pw]() {
+			LoopPreviewResult result = buildLoopPreview(*srcCopy, idCopy, trimIn, trimOut, duration);
 
-			MetadataStore* meta = ds ? ds->getMetadata() : nullptr;
-			if (meta && result > 0.f && !relPathCopy.empty()) {
-				meta->setBpm(relPathCopy, result, confidence);
-				if (ds) ds->saveMetadata();
+			if (result.ok && !result.samples.empty()) {
+				// Build waveform cache directly from the in-memory buffer
+				MemoryAudioStream ms;
+				ms.samples = result.samples;  // copy: cache builder reads it sequentially
+				ms.ch = result.channels;
+				ms.sr = result.sampleRate;
+				WaveformCache wc;
+				buildWaveformCache(0, ms, pw, wc);
+
+				pendingLoop.samples       = std::move(result.samples);
+				pendingLoop.channels      = result.channels;
+				pendingLoop.sampleRate    = result.sampleRate;
+				pendingLoop.durationSeconds = result.durationSeconds;
+				pendingLoop.cache         = std::move(wc);
+				pendingLoop.valid         = true;
 			}
-
-			bpm.store(result);
+			else {
+				pendingLoop.valid = false;
+			}
+			pendingLoopReady.store(true, std::memory_order_release);
 		});
 	}
 
+	void cancelLoopPreview() {
+		loopPreviewActive   = false;
+		loopPreviewBuilding = false;
+		loopCacheReady      = false;
+		loopDurationSeconds = 0.f;
+		loopCache           = WaveformCache{};
+
+		// Restore original file stream and module trim points
+		if (openStreamCallback && source && !currentNode.relativePath.empty())
+			openStreamCallback(currentNode.relativePath, source);
+		if (canvas) {
+			if (moduleInPoint)  moduleInPoint->store(canvas->inPoint,  std::memory_order_relaxed);
+			if (moduleOutPoint) moduleOutPoint->store(canvas->outPoint, std::memory_order_relaxed);
+		}
+	}
+
+	// ── step ─────────────────────────────────────────────────────────────────
+
 	void step() override {
-		// Consume pending waveform cache
+		// Consume pending normal waveform cache
 		if (pendingCacheReady.load(std::memory_order_acquire)) {
 			pendingCacheReady.store(false, std::memory_order_relaxed);
 			if (pendingCache.valid && pendingCache.gen == cacheGeneration.load(std::memory_order_relaxed)) {
@@ -251,438 +286,157 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			}
 		}
 
-		if (dropHandler) dropHandler->step();
+		// Consume pending loop preview
+		if (pendingLoopReady.load(std::memory_order_acquire)) {
+			pendingLoopReady.store(false, std::memory_order_relaxed);
+			if (pendingLoop.valid) {
+				auto ms      = std::unique_ptr<MemoryAudioStream>(new MemoryAudioStream);
+				ms->samples  = std::move(pendingLoop.samples);
+				ms->ch       = pendingLoop.channels;
+				ms->sr       = pendingLoop.sampleRate;
+				int64_t tf   = ms->totalFrames();
+				if (adoptStreamCallback) adoptStreamCallback(std::move(ms), tf);
 
+				loopCache           = std::move(pendingLoop.cache);
+				loopCacheReady      = true;
+				loopDurationSeconds = pendingLoop.durationSeconds;
+				loopPreviewActive   = true;
+				loopPreviewBuilding = false;
+
+				// The loop buffer spans [0, 1] — make the module loop it fully
+				if (moduleInPoint)  moduleInPoint->store(0.f,  std::memory_order_relaxed);
+				if (moduleOutPoint) moduleOutPoint->store(1.f, std::memory_order_relaxed);
+
+				// Reset seek base so playhead is valid in the new stream's frame space
+				if (startPlaybackCallback) startPlaybackCallback(0.f);
+			}
+			else {
+				loopPreviewBuilding = false;
+			}
+		}
+
+		// Update canvas display inputs
+		if (canvas) {
+			canvas->box.size       = Vec(box.size.x, box.size.y - TB_H);
+			canvas->cache          = loopPreviewActive ? &loopCache : &cache;
+			canvas->cacheReady     = loopPreviewActive ? loopCacheReady : (bool)cacheReady;
+			canvas->cacheBuilding  = !loopPreviewActive && cacheBuilding;
+			canvas->generatingLoop = loopPreviewBuilding && !loopPreviewActive;
+			canvas->loopPreviewMode = loopPreviewActive;
+			canvas->hasFile        = !currentNode.relativePath.empty();
+			canvas->durationSeconds = loopPreviewActive ? loopDurationSeconds : info.durationSeconds;
+			canvas->dragPath        = currentNode.relativePath;
+			canvas->dragDisplayName = displayName;
+			canvas->modulePlayheadPos = modulePlayheadPos;
+			canvas->converting     = dropHandler ? &dropHandler->converting : nullptr;
+		}
+
+		if (dropHandler) dropHandler->step();
 		widget::OpaqueWidget::step();
 	}
 
+	// ── draw (top bar only) ───────────────────────────────────────────────────
+
 	void draw(const DrawArgs& args) override {
+		widget::OpaqueWidget::draw(args);  // draw canvas child first
+		if (currentNode.relativePath.empty()) return;
+
 		float w = box.size.x;
-		float h = box.size.y;
-
-		// Derived layout values
-		float waveY = TB_H + 2.f;
-		float waveW = w - WAVE_X - 4.f;
-		float waveH = h - waveY - READOUT_H - SCROLLBAR_H - 4.f;
-		if (waveH < 20.f) waveH = 20.f;
-
 		bool isPlaying = modulePlaying ? modulePlaying->load() : false;
 
-		std::shared_ptr<Font> font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
+		std::shared_ptr<Font> font = APP->window->loadFont(
+			asset::system("res/fonts/ShareTechMono-Regular.ttf"));
 		nvgFontFaceId(args.vg, font->handle);
 
-		// ── top bar ───────────────────────────────────────────────────────────
-		if (!currentNode.relativePath.empty()) {
-			// Play/stop button
-			nvgFontSize(args.vg, 14.f);
-			nvgFillColor(args.vg, isPlaying
-				? nvgRGBf(1.f, 0.85f, 0.1f)
-				: nvgRGBf(0.55f, 0.55f, 0.55f));
-			nvgText(args.vg, 8.f, 12.f, isPlaying ? "■" : "▶", nullptr);
+		// Play/stop button
+		nvgFontSize(args.vg, 14.f);
+		nvgFillColor(args.vg, isPlaying
+			? nvgRGBf(1.f, 0.85f, 0.1f)
+			: nvgRGBf(0.55f, 0.55f, 0.55f));
+		nvgText(args.vg, 8.f, 12.f, isPlaying ? "\xe2\x96\xa0" : "\xe2\x96\xb6", nullptr);
 
-			// Filename — gold when playing, light when idle
-			std::string fname = displayName.empty() ? currentNode.relativePath : displayName;
-			nvgFontSize(args.vg, 12.f);
-			nvgFillColor(args.vg, isPlaying
-				? nvgRGBf(1.f, 0.85f, 0.1f)
-				: nvgRGBf(0.92f, 0.92f, 0.88f));
-			float maxFnW = w - 30.f;
-			nvgScissor(args.vg, 22.f, 0.f, maxFnW, TB_H);
-			nvgText(args.vg, 22.f, 12.f, fname.c_str(), nullptr);
-			nvgResetScissor(args.vg);
+		// Filename — gold when playing or in loop preview, light otherwise
+		std::string fname = displayName.empty() ? currentNode.relativePath : displayName;
+		nvgFontSize(args.vg, 12.f);
+		NVGcolor fnColor = loopPreviewActive ? nvgRGBf(0.35f, 0.80f, 0.85f)
+		                 : isPlaying         ? nvgRGBf(1.f, 0.85f, 0.1f)
+		                 :                     nvgRGBf(0.92f, 0.92f, 0.88f);
+		nvgFillColor(args.vg, fnColor);
+		float maxFnW = w - 30.f;
+		nvgScissor(args.vg, 22.f, 0.f, maxFnW, TB_H);
+		nvgText(args.vg, 22.f, 12.f, fname.c_str(), nullptr);
+		nvgResetScissor(args.vg);
 
-			nvgFontSize(args.vg, 10.f);
+		nvgFontSize(args.vg, 10.f);
+		nvgFillColor(args.vg, nvgRGBf(0.50f, 0.50f, 0.50f));
+
+		// Loop preview label (second row, left side)
+		if (loopPreviewActive) {
+			nvgFillColor(args.vg, nvgRGBf(0.35f, 0.80f, 0.85f));
+			nvgText(args.vg, SirenWaveformCanvas::WAVE_X, 26.f, "LOOP PREVIEW", nullptr);
 			nvgFillColor(args.vg, nvgRGBf(0.50f, 0.50f, 0.50f));
+		}
+		else {
+			// ch · sr · bit badges
+			std::string badges;
+			if (info.bitDepth > 0)   badges = rack::string::f("%dbit", info.bitDepth);
+			if (info.sampleRate > 0) badges = rack::string::f("%dk", info.sampleRate / 1000) + (badges.empty() ? "" : " \xc2\xb7 ") + badges;
+			if (info.channels > 0)   badges = std::string(info.channels == 1 ? "MONO" : "STEREO") + (badges.empty() ? "" : " \xc2\xb7 ") + badges;
+			if (!badges.empty())
+				nvgText(args.vg, SirenWaveformCanvas::WAVE_X, 26.f, badges.c_str(), nullptr);
+		}
 
-			// Zoom level — right-aligned in top bar
-			std::string zoomText = rack::string::f("%.1fx", zoomLevel);
+		// Zoom level — right-aligned
+		if (canvas) {
+			std::string zoomText = rack::string::f("%.1fx", canvas->zoomLevel);
+			nvgFillColor(args.vg, nvgRGBf(0.50f, 0.50f, 0.50f));
 			nvgTextAlign(args.vg, NVG_ALIGN_RIGHT | NVG_ALIGN_BASELINE);
 			nvgText(args.vg, w - 4.f, 26.f, zoomText.c_str(), nullptr);
 			nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_BASELINE);
-
-			// ch · sr · bit (left side of second row)
-			std::string badges;
-			if (info.bitDepth > 0)   badges = rack::string::f("%dbit", info.bitDepth);
-			if (info.sampleRate > 0) badges = rack::string::f("%dk", info.sampleRate / 1000) + (badges.empty() ? "" : " · ") + badges;
-			if (info.channels > 0)   badges = std::string(info.channels == 1 ? "MONO" : "STEREO") + (badges.empty() ? "" : " · ") + badges;
-			if (!badges.empty()) {
-				nvgText(args.vg, WAVE_X, 26.f, badges.c_str(), nullptr);
-			}
-
-			// BPM display (right side, after zoom level)
-			float bpmVal = bpm.load();
-			if (bpmVal > 0.f) {
-				std::string bpmText = rack::string::f("%.1f BPM", bpmVal);
-				nvgFontSize(args.vg, 10.f);
-				nvgFillColor(args.vg, nvgRGBf(0.50f, 0.50f, 0.50f));
-				nvgTextAlign(args.vg, NVG_ALIGN_RIGHT | NVG_ALIGN_BASELINE);
-				nvgText(args.vg, w - 50.f, 26.f, bpmText.c_str(), nullptr);
-				nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_BASELINE);
-			} 
-			else if (bpmVal < 0.f) {
-				nvgFontSize(args.vg, 10.f);
-				nvgFillColor(args.vg, nvgRGBf(0.50f, 0.50f, 0.50f));
-				nvgTextAlign(args.vg, NVG_ALIGN_RIGHT | NVG_ALIGN_BASELINE);
-				nvgText(args.vg, w - 50.f, 26.f, "… BPM", nullptr);
-				nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_BASELINE);
-			}
-
-			// ── tag chips (third row of top bar) ─────────────────────────────────
-			if (MetadataStore* meta = metadata()) {
-				auto tags = meta->getTags(relPath);
-				if (!tags.empty()) {
-					static constexpr float CHIP_H = 10.f;
-					static constexpr float CHIP_Y = 34.f;  // row starts below info row
-					float x    = WAVE_X;
-					float maxX = w - 4.f;
-
-					nvgFontFaceId(args.vg, APP->window->uiFont->handle);
-					nvgFontSize(args.vg, 8.f);
-
-					for (const std::string& tag : tags) {
-						float bounds[4];
-						nvgTextBounds(args.vg, 0.f, 0.f, tag.c_str(), nullptr, bounds);
-						float chipW = bounds[2] - bounds[0] + 10.f;
-						if (x + chipW > maxX) break;
-
-						NVGcolor bgColor = bndGetTheme()->toolTheme.innerColor;
-						bgColor.a *= 0.4f;
-						nvgBeginPath(args.vg);
-						nvgRoundedRect(args.vg, x, CHIP_Y, chipW, CHIP_H, 2.f);
-						nvgFillColor(args.vg, bgColor);
-						nvgFill(args.vg);
-
-						nvgFillColor(args.vg, bndGetTheme()->toolTheme.textColor);
-						nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-						nvgText(args.vg, x + chipW * 0.5f, CHIP_Y + CHIP_H * 0.5f, tag.c_str(), nullptr);
-						nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_BASELINE);
-
-						x += chipW + 4.f;
-					}
-				}
-			}
 		}
 
-		nvgFontFaceId(args.vg, font->handle);
-
-		int numCh = cacheReady ? (int)cache.samples.size() : info.channels;
-		if (numCh < 1) numCh = 1;
-
-		if (cacheReady && !cache.empty()) {
-			float chH          = waveH / numCh;
-			float visibleStart = scrollPos;
-			float visibleEnd   = std::min(scrollPos + 1.0f / zoomLevel, 1.0f);
-
-			nvgLineJoin(args.vg, NVG_ROUND);
-			nvgStrokeColor(args.vg, nvgRGBf(0.70f, 0.70f, 0.63f));
-			nvgStrokeWidth(args.vg, 1.f);
-
-			for (int ch = 0; ch < (int)cache.samples.size(); ch++) {
-				float chY  = waveY + ch * chH;
-				float midY = chY + chH * 0.5f;
-				const auto& chSamples = cache.samples[ch];
-				int n = (int)chSamples.size();
-				if (n == 0) continue;
-
-				int startIdx = rack::math::clamp((int)(visibleStart * n),     0, n - 1);
-				int endIdx   = rack::math::clamp((int)(visibleEnd   * n) + 1, 0, n);
-
-				nvgBeginPath(args.vg);
-				bool first = true;
-				for (int i = startIdx; i < endIdx; i++) {
-					float px = WAVE_X + ((i + 0.5f) / n - scrollPos) * zoomLevel * waveW;
-					float py = midY - chSamples[i] * chH * 0.44f;
-					if (first) { nvgMoveTo(args.vg, px, py); first = false; }
-					else        nvgLineTo(args.vg, px, py);
-				}
-				nvgStroke(args.vg);
-
-				// Zero-line
-				nvgBeginPath(args.vg);
-				nvgMoveTo(args.vg, WAVE_X, midY);
-				nvgLineTo(args.vg, WAVE_X + waveW, midY);
-				nvgStrokeColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.07f));
-				nvgStrokeWidth(args.vg, 0.5f);
-				nvgStroke(args.vg);
-
-				// Channel label
-				nvgFontSize(args.vg, 9.f);
-				nvgFillColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.30f));
-				nvgText(args.vg, WAVE_X + 2.f, chY + 11.f, ch == 0 ? "L" : "R", nullptr);
-
-				// Restore waveform stroke state for next channel
-				nvgStrokeColor(args.vg, nvgRGBf(0.70f, 0.70f, 0.63f));
-				nvgStrokeWidth(args.vg, 1.f);
-			}
-		}
-		else if (cacheBuilding) {
-			float oy = waveY + waveH * 0.5f - 9.f;
-			nvgBeginPath(args.vg);
-			nvgRoundedRect(args.vg, WAVE_X, oy, waveW, 18.f, 3.f);
-			nvgFillColor(args.vg, nvgRGBAf(0.f, 0.f, 0.f, 0.65f));
-			nvgFill(args.vg);
-			nvgFontSize(args.vg, BND_LABEL_FONT_SIZE);
-			nvgFillColor(args.vg, nvgRGBf(1.f, 0.85f, 0.1f));
-			nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-			nvgText(args.vg, WAVE_X + waveW * 0.5f, oy + 9.f, "Building waveform…", nullptr);
-			nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_BASELINE);
-		}
-
-		// Tick marks along waveform bottom
-		if (info.durationSeconds > 0.f && waveW > 0.f) {
-			float dur = info.durationSeconds;
-			float visibleStart = scrollPos;
-			float visibleEnd   = scrollPos + (1.0f / zoomLevel);
-			if (visibleEnd > 1.0f) visibleEnd = 1.0f;
-
-			static const float ivs[] = {0.5f, 1.f, 2.f, 5.f, 10.f, 30.f, 60.f, 300.f};
-			float tickIv = 1.f;
-			float zoomAdjustedDur = dur / zoomLevel;
-			for (float iv : ivs) {
-				if (zoomAdjustedDur / iv <= 14.f) { tickIv = iv; break; }
-			}
-			float tickY = waveY + waveH;
-			float startTime = visibleStart * dur;
-			float endTime = visibleEnd * dur;
-			float firstTick = std::floor(startTime / tickIv) * tickIv;
-			for (float t = firstTick; t <= endTime + 0.001f; t += tickIv) {
-				if (t < startTime) continue;
-				float tNorm = t / dur;
-				float tx = WAVE_X + (tNorm - scrollPos) * zoomLevel * waveW;
-				nvgBeginPath(args.vg);
-				nvgMoveTo(args.vg, tx, tickY - 4.f);
-				nvgLineTo(args.vg, tx, tickY);
-				nvgStrokeColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.18f));
-				nvgStrokeWidth(args.vg, 0.5f);
-				nvgStroke(args.vg);
-			}
-		}
-
-		// Trim region — only shown when at least one handle has been moved from its default
-		if (!currentNode.relativePath.empty() && (inPoint > 0.f || outPoint < 1.f) && outPoint > inPoint) {
-			float x1 = WAVE_X + (inPoint - scrollPos) * zoomLevel * waveW;
-			float x2 = WAVE_X + (outPoint - scrollPos) * zoomLevel * waveW;
-			x1 = rack::math::clamp(x1, WAVE_X, WAVE_X + waveW);
-			x2 = rack::math::clamp(x2, WAVE_X, WAVE_X + waveW);
-			if (x2 > x1) {
-				nvgBeginPath(args.vg);
-				nvgRect(args.vg, x1, waveY, x2 - x1, waveH);
-				nvgFillColor(args.vg, nvgRGBAf(1.f, 0.85f, 0.1f, 0.07f));
-				nvgFill(args.vg);
-			}
-		}
-
-		// OUT handle — only shown when moved from its default (1.0)
-		if (!currentNode.relativePath.empty() && outPoint < 1.f) {
-			float opX = WAVE_X + (outPoint - scrollPos) * zoomLevel * waveW;
-			if (opX >= WAVE_X && opX <= WAVE_X + waveW) {
-				nvgBeginPath(args.vg);
-				nvgMoveTo(args.vg, opX, waveY);
-				nvgLineTo(args.vg, opX, waveY + waveH);
-				nvgStrokeColor(args.vg, nvgRGBAf(1.f, 0.85f, 0.1f, 0.7f));
-				nvgStrokeWidth(args.vg, 1.f);
-				nvgStroke(args.vg);
-
-				const float ts = 4.f;
-				nvgBeginPath(args.vg);
-				nvgMoveTo(args.vg, opX - ts, waveY + waveH);
-				nvgLineTo(args.vg, opX + ts, waveY + waveH);
-				nvgLineTo(args.vg, opX,      waveY + waveH - ts * 1.4f);
-				nvgClosePath(args.vg);
-				nvgFillColor(args.vg, nvgRGBAf(1.f, 0.85f, 0.1f, 0.85f));
-				nvgFill(args.vg);
-			}
-		}
-
-		// IN handle — only shown when moved from its default (0.0)
-		if (!currentNode.relativePath.empty() && inPoint > 0.f) {
-			float ipX = WAVE_X + (inPoint - scrollPos) * zoomLevel * waveW;
-			if (ipX >= WAVE_X && ipX <= WAVE_X + waveW) {
-				nvgBeginPath(args.vg);
-				nvgMoveTo(args.vg, ipX, waveY);
-				nvgLineTo(args.vg, ipX, waveY + waveH);
-				nvgStrokeColor(args.vg, nvgRGBAf(1.f, 0.85f, 0.1f, 0.7f));
-				nvgStrokeWidth(args.vg, 1.f);
-				nvgStroke(args.vg);
-
-				const float ts = 4.f;
-				nvgBeginPath(args.vg);
-				nvgMoveTo(args.vg, ipX - ts, waveY + waveH);
-				nvgLineTo(args.vg, ipX + ts, waveY + waveH);
-				nvgLineTo(args.vg, ipX,      waveY + waveH - ts * 1.4f);
-				nvgClosePath(args.vg);
-				nvgFillColor(args.vg, nvgRGBAf(1.f, 0.85f, 0.1f, 0.85f));
-				nvgFill(args.vg);
-			}
-		}
-
-		// Playhead line + triangle pointer
-		// During a drag we read scrubPos directly — the DSP thread continuously
-		// overwrites modulePlayheadPos via process(), so it lags behind and would
-		// not reflect the drag position until the fill thread finishes seeking.
-		if (!currentNode.relativePath.empty()) {
-			float ph = draggingPlayhead ? scrubPos
-			         : (modulePlayheadPos ? modulePlayheadPos->load(std::memory_order_relaxed) : 0.f);
-			float phX = WAVE_X + (ph - scrollPos) * zoomLevel * waveW;
-			if (phX >= WAVE_X && phX <= WAVE_X + waveW) {
-				nvgBeginPath(args.vg);
-				nvgMoveTo(args.vg, phX, waveY);
-				nvgLineTo(args.vg, phX, waveY + waveH);
-				nvgStrokeColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.7f));
-				nvgStrokeWidth(args.vg, 1.f);
-				nvgStroke(args.vg);
-
-				const float ts = 5.f;
-				nvgBeginPath(args.vg);
-				nvgMoveTo(args.vg, phX - ts, waveY);
-				nvgLineTo(args.vg, phX + ts, waveY);
-				nvgLineTo(args.vg, phX, waveY + ts * 1.6f);
-				nvgClosePath(args.vg);
-				nvgFillColor(args.vg, nvgRGBf(1.f, 1.f, 1.f));
-				nvgFill(args.vg);
-			}
-		}
-
-		// ── bottom readout ────────────────────────────────────────────────────
-		auto formatTime = [](float s) -> std::string {
-			if (s < 0.f) s = 0.f;
-			int mm = (int)(s / 60.f);
-			float ss = s - mm * 60.f;
-			return rack::string::f("%02d:%05.2f", mm, ss);
-		};
-
-		float pos = (draggingPlayhead ? scrubPos
-		           : (modulePlayheadPos ? modulePlayheadPos->load(std::memory_order_relaxed) : 0.f))
-		           * info.durationSeconds;
-		float col = waveW / 4.f + 4.f;
-		nvgFontSize(args.vg, 10.f);
-
-		auto drawReadout = [&](float x, const char* lbl, float val) {
-			nvgFillColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.38f));
-			nvgText(args.vg, x, box.size.y, lbl, nullptr);
-			nvgFillColor(args.vg, nvgRGBf(0.88f, 0.88f, 0.83f));
-			nvgText(args.vg, x + 21.f, box.size.y, formatTime(val).c_str(), nullptr);
-		};
-
-		drawReadout(WAVE_X,           "IN",  inPoint  * info.durationSeconds);
-		drawReadout(WAVE_X + col,     "OUT", outPoint * info.durationSeconds);
-		drawReadout(WAVE_X + col * 2, "LEN", (outPoint - inPoint) * info.durationSeconds);
-		drawReadout(WAVE_X + col * 3, "POS", pos);
-
-		// ── "Converting..." overlay ───────────────────────────────────────────
-		if (dropHandler && dropHandler->converting.load(std::memory_order_relaxed)) {
-			float oy = waveY + waveH * 0.5f - 9.f;
-			nvgBeginPath(args.vg);
-			nvgRoundedRect(args.vg, WAVE_X, oy, waveW, 18.f, 3.f);
-			nvgFillColor(args.vg, nvgRGBAf(0.f, 0.f, 0.f, 0.65f));
-			nvgFill(args.vg);
-			nvgFontFaceId(args.vg, APP->window->uiFont->handle);
-			nvgFontSize(args.vg, BND_LABEL_FONT_SIZE);
-			nvgFillColor(args.vg, nvgRGBf(1.f, 0.85f, 0.1f));
-			nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-			nvgText(args.vg, WAVE_X + waveW * 0.5f, oy + 9.f, "Converting...", nullptr);
-			nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_BASELINE);
-		}
-
-		// ── scrollbar and zoom display ────────────────────────────────────────
-		Rect sr = scrollbarRect();
-		if (sr.size.x > 0.f) {
-			// Scrollbar background
-			/*
-			nvgBeginPath(args.vg);
-			nvgRect(args.vg, sr.pos.x, sr.pos.y, sr.size.x, sr.size.y);
-			nvgFillColor(args.vg, nvgRGBAf(0.f, 0.f, 0.f, 0.3f));
-			nvgFill(args.vg);
-			*/
-
-			// Scrollbar thumb
-			if (zoomLevel > 1.0f) {
-				float thumbW = getScrollbarThumbWidth();
-				float thumbX = getScrollbarThumbX();
-				nvgBeginPath(args.vg);
-				nvgRoundedRect(args.vg, thumbX, sr.pos.y + 1.f, thumbW, sr.size.y - 2.f, 2.f);
-				nvgFillColor(args.vg, nvgRGBAf(0.55f, 0.55f, 0.55f, 0.7f));
-				nvgFill(args.vg);
-			}
-		}
-
-	}
-
-	// ── waveform interaction ──────────────────────────────────────────────────
-
-	Rect waveformRect() const {
-		float waveY = TB_H + 2.f;
-		float waveW = box.size.x - WAVE_X - 4.f;
-		float waveH = box.size.y - waveY - READOUT_H - SCROLLBAR_H - 4.f;
-		if (waveH < 20.f) waveH = 20.f;
-		return Rect(Vec(WAVE_X, waveY), Vec(waveW, waveH));
-	}
-
-	bool inWaveformArea(Vec pos) const {
-		return waveformRect().contains(pos);
-	}
-
-	float posToPlayhead(Vec pos) const {
-		Rect r = waveformRect();
-		float normInView = (pos.x - r.pos.x) / r.size.x;  // [0,1] within visible viewport
-		return rack::math::clamp(scrollPos + normInView / zoomLevel, 0.f, 1.f);
-	}
-
-	void startPlaybackFrom(float pos) {
-		if (startPlaybackCallback) startPlaybackCallback(pos);
-	}
-
-	void createContextMenu() {
-		if (currentNode.relativePath.empty() || !source || !metadata()) return;
-
-		std::string rel = relPath;
-		ui::Menu* menu = createMenu();
-		menu->addChild(createMenuLabel(source->getDisplayName(currentNode.relativePath)));
-		
-		// Reset trim handles
-		menu->addChild(createMenuItem("Reset trim", "",
-			[this]() {
-				inPoint  = 0.f;
-				outPoint = 1.f;
-				syncInPoint();
-				syncOutPoint();
-			},
-			inPoint == 0.f && outPoint == 1.f
-		));
-		// Loop playback toggle — persisted globally via onLoopingChanged callback
-		menu->addChild(createCheckMenuItem("Loop playback", "",
-			[]() { return sirenSettings.loopPlayback; },
-			[]() { sirenSettings.loopPlayback = !sirenSettings.loopPlayback; }
-		));
-
-		// BPM detection (filename detection is automatic; DSP detection is optional)
-		/*
+		// BPM
 		float bpmVal = bpm.load();
-		if (bpmVal == 0.f || bpmVal > 0.f) {
-			// "Detect BPM" now runs DSP-only analysis (filename was already tried on load)
-			menu->addChild(createMenuItem("Detect BPM (DSP)", "", [this]() { startBpmDetection(); },
-				bpmVal < 0.f  // disabled while running
-			));
+		if (bpmVal > 0.f || bpmVal < 0.f) {
+			std::string bpmText = (bpmVal < 0.f) ? "\xe2\x80\xa6 BPM" : rack::string::f("%.1f BPM", bpmVal);
+			nvgFillColor(args.vg, nvgRGBf(0.50f, 0.50f, 0.50f));
+			nvgTextAlign(args.vg, NVG_ALIGN_RIGHT | NVG_ALIGN_BASELINE);
+			nvgText(args.vg, w - 50.f, 26.f, bpmText.c_str(), nullptr);
+			nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_BASELINE);
 		}
-		if (bpmVal > 0.f) {
-			float conf = metadata() ? metadata()->getBpmConfidence(relPath) : 0.f;
-			menu->addChild(createMenuItem("Clear BPM", rack::string::f("Confidence %.2f%%", conf * 100.f), [this]() {
-				bpm.store(0.f);
-				if (MetadataStore* meta = metadata()) {
-					if (!relPath.empty()) {
-						meta->samples[relPath].bpm = 0.f;
-						if (source) source->saveMetadata();
-					}
-				}
-			}));
-		}
-		*/
 
-		menu->addChild(new ui::MenuSeparator);
-		source->appendNodeMenuItems(menu, currentNode, [this]() {
-			if (onMetadataChanged) onMetadataChanged();
-		});
+		// Tag chips (third row of top bar)
+		if (MetadataStore* meta = metadata()) {
+			auto tags = meta->getTags(relPath);
+			if (!tags.empty()) {
+				static constexpr float CHIP_H = 10.f;
+				static constexpr float CHIP_Y = 34.f;
+				float x    = SirenWaveformCanvas::WAVE_X;
+				float maxX = w - 4.f;
+				nvgFontFaceId(args.vg, APP->window->uiFont->handle);
+				nvgFontSize(args.vg, 8.f);
+				for (const std::string& tag : tags) {
+					float bounds[4];
+					nvgTextBounds(args.vg, 0.f, 0.f, tag.c_str(), nullptr, bounds);
+					float chipW = bounds[2] - bounds[0] + 10.f;
+					if (x + chipW > maxX) break;
+					NVGcolor bgColor = bndGetTheme()->toolTheme.innerColor;
+					bgColor.a *= 0.4f;
+					nvgBeginPath(args.vg);
+					nvgRoundedRect(args.vg, x, CHIP_Y, chipW, CHIP_H, 2.f);
+					nvgFillColor(args.vg, bgColor);
+					nvgFill(args.vg);
+					nvgFillColor(args.vg, bndGetTheme()->toolTheme.textColor);
+					nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+					nvgText(args.vg, x + chipW * 0.5f, CHIP_Y + CHIP_H * 0.5f, tag.c_str(), nullptr);
+					nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_BASELINE);
+					x += chipW + 4.f;
+				}
+			}
+		}
 	}
+
+	// ── interaction ───────────────────────────────────────────────────────────
 
 	void onButton(const event::Button& e) override {
 		if (e.button == GLFW_MOUSE_BUTTON_RIGHT && e.action == GLFW_PRESS) {
@@ -690,82 +444,12 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			e.consume(this);
 			return;
 		}
-
-		// Scrollbar click/drag
-		Rect sr = scrollbarRect();
-		if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS && sr.contains(e.pos) && zoomLevel != 1.f) {
-			float thumbW = getScrollbarThumbWidth();
-			float thumbX = getScrollbarThumbX();
-			if (e.pos.x >= thumbX && e.pos.x < thumbX + thumbW) {
-				// Clicked on thumb — start drag (store in rack coords to match onDragMove)
-				draggingScrollbar = true;
-				dragStartScrollbarX = APP->scene->rack->getMousePos().x;
-			}
-			else if (zoomLevel > 1.0f) {
-				// Clicked in track outside thumb — jump scroll so thumb centers on click
-				float newThumbX = e.pos.x - thumbW * 0.5f;
-				float maxThumbX = sr.pos.x + sr.size.x - thumbW;
-				newThumbX = rack::math::clamp(newThumbX, sr.pos.x, maxThumbX);
-				float maxScroll = 1.0f - (1.0f / zoomLevel);
-				scrollPos = ((newThumbX - sr.pos.x) / (sr.size.x - thumbW)) * maxScroll;
-				draggingScrollbar = true;
-				dragStartScrollbarX = APP->scene->rack->getMousePos().x;
-			}
-			e.consume(this);
-			return;
-		}
-
+		// Play/stop button (top bar area only — canvas handles clicks below TB_H)
 		if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS) {
-			if (!currentNode.relativePath.empty() && inWaveformArea(e.pos)) {
-				bool shift = (e.mods & RACK_MOD_SHIFT) != 0;
-				bool ctrl  = (e.mods & RACK_MOD_CTRL) != 0;
-				if (shift) {
-					Rect r = waveformRect();
-					float pos = posToPlayhead(e.pos);
-					dragStartRackX = APP->scene->rack->getMousePos().x;
-					dragStartScrub = pos;
-
-					bool hasRange = (inPoint > 0.f || outPoint < 1.f);
-					float inScreenX  = r.pos.x + (inPoint  - scrollPos) * zoomLevel * r.size.x;
-					float outScreenX = r.pos.x + (outPoint - scrollPos) * zoomLevel * r.size.x;
-					const float handleThresh = 8.f;
-					bool nearIn  = hasRange && std::abs(e.pos.x - inScreenX)  < handleThresh;
-					bool nearOut = hasRange && std::abs(e.pos.x - outScreenX) < handleThresh;
-
-					if (nearIn) {
-						trimmingIn     = true;
-						dragStartScrub = inPoint;
-					}
-					else if (nearOut) {
-						trimmingOut    = true;
-						dragStartScrub = outPoint;
-					}
-					else {
-						// Not near a handle — Shift+drag always defines a new range from scratch
-						rangeAnchor   = pos;
-						inPoint       = pos;
-						outPoint      = pos;
-						trimmingRange = true;
-						syncInPoint();
-						syncOutPoint();
-					}
-				} 
-				else if (!ctrl) {
-					// Playhead scrubbing — moves only the playhead, not the trim handles
-					scrubPos       = posToPlayhead(e.pos);
-					dragStartRackX = APP->scene->rack->getMousePos().x;
-					dragStartScrub = scrubPos;
-					draggingPlayhead = true;
-				}
-				// Ctrl held: no drag mode set → onDragStart initiates a file drag
-
-				e.consume(this);
-				return;
-			}
-			// Play/stop button — always starts from the stored inPoint
 			if (e.pos.x < 26.f && e.pos.y < TB_H) {
 				if (modulePlaying && modulePlaying->load()) stopPlaybackCallback();
-				else if (!currentNode.relativePath.empty()) startPlaybackFrom(inPoint);
+				else if (!currentNode.relativePath.empty())
+					startPlaybackFrom(canvas ? canvas->inPoint : 0.f);
 				e.consume(this);
 				return;
 			}
@@ -774,134 +458,101 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	}
 
 	void onDragStart(const event::DragStart& e) override {
-		if (!currentNode.relativePath.empty() && !draggingPlayhead && !trimmingIn && !trimmingOut && !trimmingRange && !draggingScrollbar && dropHandler) {
+		if (!currentNode.relativePath.empty() && dropHandler)
 			dropHandler->startDrag(currentNode.relativePath, displayName);
-		}
-	}
-
-	void onDragMove(const event::DragMove& e) override {
-		if (draggingScrollbar) {
-			Rect sr = scrollbarRect();
-			if (sr.size.x > 0.f) {
-				float thumbW = getScrollbarThumbWidth();
-				float dx = APP->scene->rack->getMousePos().x - dragStartScrollbarX;
-				float newThumbX = getScrollbarThumbX() + dx;
-				float maxThumbX = sr.pos.x + sr.size.x - thumbW;
-				newThumbX = rack::math::clamp(newThumbX, sr.pos.x, maxThumbX);
-				float maxScroll = 1.0f - (1.0f / zoomLevel);
-				scrollPos = ((newThumbX - sr.pos.x) / (sr.size.x - thumbW)) * maxScroll;
-				dragStartScrollbarX = APP->scene->rack->getMousePos().x;
-			}
-			return;
-		}
-
-		Rect r = waveformRect();
-		if (r.size.x <= 0.f) return;
-		float dx = APP->scene->rack->getMousePos().x - dragStartRackX;
-		float pos = dragStartScrub + dx / (r.size.x * zoomLevel);
-
-		if (trimmingIn) {
-			inPoint = rack::math::clamp(pos, 0.f, outPoint);
-			syncInPoint();
-		}
-		else if (trimmingOut) {
-			outPoint = rack::math::clamp(pos, inPoint, 1.f);
-			syncOutPoint();
-		}
-		else if (trimmingRange) {
-			float currentPos = rack::math::clamp(pos, 0.f, 1.f);
-			inPoint  = std::min(rangeAnchor, currentPos);
-			outPoint = std::max(rangeAnchor, currentPos);
-			syncInPoint();
-			syncOutPoint();
-		}
-		else if (draggingPlayhead && !currentNode.relativePath.empty()) {
-			float newPos = rack::math::clamp(pos, 0.f, 1.f);
-			if (newPos != scrubPos) {
-				scrubPos = newPos;
-				startPlaybackFrom(scrubPos);
-			}
-		}
 	}
 
 	void onDragEnd(const event::DragEnd& e) override {
-		if (draggingScrollbar) {
-			draggingScrollbar = false;
-			return;
-		}
-		if (draggingPlayhead) {
-			draggingPlayhead = false;
-			startPlaybackFrom(scrubPos);
-			return;
-		}
-		if (trimmingIn || trimmingOut || trimmingRange) {
-			trimmingIn    = false;
-			trimmingOut   = false;
-			trimmingRange = false;
-			return;
-		}
-		if (dropHandler && dropHandler->active) {
+		if (dropHandler && dropHandler->active)
 			dropHandler->endDrag(APP->scene->mousePos, worker);
-		}
 	}
 
 	void onSelectKey(const event::SelectKey& e) override {
-		if (e.action == GLFW_PRESS) {
-			// Zoom in with + or ]
-			if (e.key == GLFW_KEY_EQUAL || e.key == GLFW_KEY_RIGHT_BRACKET) {
-				zoomLevel = rack::math::clamp(zoomLevel * 1.3f, 1.0f, 10.0f);
-				clampScrollPos();
-				e.consume(this);
-				return;
-			}
-			// Zoom out with - or [
-			if (e.key == GLFW_KEY_MINUS || e.key == GLFW_KEY_LEFT_BRACKET) {
-				zoomLevel = rack::math::clamp(zoomLevel / 1.3f, 1.0f, 10.0f);
-				clampScrollPos();
-				e.consume(this);
-				return;
-			}
-			// Reset zoom with 0
-			if (e.key == GLFW_KEY_0) {
-				zoomLevel = 1.0f;
-				scrollPos = 0.0f;
-				e.consume(this);
-				return;
-			}
-			// Redirect cursor keys to the module widget for browser navigation
-			if (e.key == GLFW_KEY_SPACE || e.key == GLFW_KEY_UP || e.key == GLFW_KEY_DOWN || e.key == GLFW_KEY_LEFT || e.key == GLFW_KEY_RIGHT) {
-				ModuleWidget* mw = getAncestorOfType<ModuleWidget>();
-				mw->onSelectKey(e);
-				return;
-			}
+		if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ESCAPE && loopPreviewActive) {
+			cancelLoopPreview();
+			e.consume(this);
+			return;
 		}
 		widget::OpaqueWidget::onSelectKey(e);
 	}
 
-	void onHoverScroll(const HoverScrollEvent& e) override {
-		Rect r = waveformRect();
-		// Normalized position under the cursor before zoom change
-		float cursorNorm = (r.size.x > 0.f)
-			? scrollPos + (e.pos.x - r.pos.x) / (r.size.x * zoomLevel)
-			: scrollPos;
+	// ── context menu ──────────────────────────────────────────────────────────
 
-		float factor = (e.scrollDelta.y > 0) ? 1.3f : (1.f / 1.3f);
-		zoomLevel = rack::math::clamp(zoomLevel * factor, 1.0f, 10.0f);
+	void createContextMenu() {
+		if (currentNode.relativePath.empty() || !source) return;
 
-		// Reposition scroll so the point under the cursor stays fixed
-		if (r.size.x > 0.f) {
-			scrollPos = cursorNorm - (e.pos.x - r.pos.x) / (r.size.x * zoomLevel);
+		ui::Menu* menu = createMenu();
+		menu->addChild(createMenuLabel(source->getDisplayName(currentNode.relativePath)));
+
+		if (loopPreviewActive) {
+			// ── loop preview mode ────────────────────────────────────────────
+			menu->addChild(createMenuItem("Cancel loop preview", "", [this]() {
+				cancelLoopPreview();
+			}));
 		}
-		clampScrollPos();
-		e.consume(this);
+		else {
+			// ── normal mode ──────────────────────────────────────────────────
+			menu->addChild(new ui::MenuSeparator);
+			menu->addChild(createMenuItem("Reset trim", "",
+				[this]() { if (canvas) canvas->resetTrimHandles(); },
+				canvas && canvas->inPoint == 0.f && canvas->outPoint == 1.f
+			));
+			menu->addChild(createCheckMenuItem("Loop playback", "",
+				[]() { return sirenSettings.loopPlayback; },
+				[]() { sirenSettings.loopPlayback = !sirenSettings.loopPlayback; }
+			));
+
+			menu->addChild(new ui::MenuSeparator);
+			bool canGenerate = !loopPreviewBuilding;
+			menu->addChild(createMenuItem("Generate crossfade loop", "",
+				[this]() { generateLoopPreview(); APP->event->setSelectedWidget(canvas); },
+				!canGenerate
+			));
+			menu->addChild(Rack::createPtrSlider(
+				&loopCrossfadeDuration, 0.01f, 60.f, 6.f, "Crossfade", " s", 1.f, 150.f));
+
+			if (metadata()) {
+				menu->addChild(new ui::MenuSeparator);
+				source->appendNodeMenuItems(menu, currentNode, [this]() {
+					if (onMetadataChanged) onMetadataChanged();
+				});
+			}
+		}
 	}
 
-	std::string cachePathFor(const std::string& audioPath) const {
-		return cacheDir + "/" + hashPath(audioPath) + ".json";
+	// ── BPM detection ─────────────────────────────────────────────────────────
+
+	void startBpmDetection() {
+		if (!source || currentNode.relativePath.empty() || !worker) return;
+		if (bpm.load() < 0.f) return;
+		bpm.store(-1.f);
+		std::string idCopy      = currentNode.relativePath;
+		std::string relPathCopy = relPath;
+		DataSource* ds          = source;
+		worker->work([this, idCopy, relPathCopy, ds]() {
+			float confidence = 0.f;
+			float result = BpmDetector::detectFromDsp(*ds, idCopy, confidence);
+			MetadataStore* meta = ds ? ds->getMetadata() : nullptr;
+			if (meta && result > 0.f && !relPathCopy.empty()) {
+				meta->setBpm(relPathCopy, result, confidence);
+				if (ds) ds->saveMetadata();
+			}
+			bpm.store(result);
+		});
+	}
+
+	// ── helpers ───────────────────────────────────────────────────────────────
+
+	void startPlaybackFrom(float pos) {
+		if (startPlaybackCallback) startPlaybackCallback(pos);
 	}
 
 	bool isPlaying() const {
 		return modulePlaying && modulePlaying->load();
+	}
+
+	std::string cachePathFor(const std::string& audioPath) const {
+		return cacheDir + "/" + hashPath(audioPath) + ".json";
 	}
 };
 

@@ -12,6 +12,7 @@ SIREN is an audio file browser and playback module: you can drop samples out of 
 - Tag filter with include and exclude states; per-file or per-folder tag editing.
 - Automatic tag suggestions driven by an on-device audio classifier (18-tag vocabulary).
 - Waveform preview with trim IN/OUT handles, looping, zoom, and scrubbing.
+- Crossfade loop: rotate and crossfade the sample into a seamless loop, audition it in-place, then drop the result directly onto a sampler.
 - Resampling on playback and on drop, with selectable quality.
 
 
@@ -114,6 +115,16 @@ The highlighted region between them is the active playback range.
 
 Click the **Loop** context menu option to repeat playback between the IN and OUT points. When loop is off, playback stops at the OUT point.
 
+### Crossfade Loop
+
+SIREN can process the current sample or the current trim region into a seamless loop and let you audition it before committing. Right-click the preview pane and select **Generate crossfade loop**.
+
+SIREN decodes the trimmed region, finds the quietest zero crossing near the midpoint, rotates the buffer so that point becomes the new loop boundary, and blends the join with an equal-power crossfade.
+
+**Crossfade duration** — the slider below **Generate crossfade loop** in the context menu sets the blend length in seconds (default 6s, range 0.01–60s). Longer crossfades produce a smoother join at the cost of shortening the output slightly.
+
+**Dragging from loop preview mode** drops the loop-processed file. SIREN writes a new WAV alongside the source (or in the custom output folder, if set) and hands that file to the receiving module — the same crossfade that you heard during preview is baked in.
+
 ## Organizing Files
 
 ### Favorites
@@ -150,7 +161,7 @@ The dialog groups suggestions by tag. **Check** the ones you want to apply and c
 | `+` or `]` | Zoom in |
 | `−` or `[` | Zoom out |
 | `0` | Fit waveform to width |
-| `Escape` | Clear search |
+| `Escape` | Clear search / cancel loop preview |
 
 ## Tips
 

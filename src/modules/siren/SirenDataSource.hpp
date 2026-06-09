@@ -89,23 +89,33 @@ inline void applyLoopCrossfade(std::vector<float>& samples, int channels, int sa
 	int64_t N = (int64_t)(samples.size() / (size_t)channels);
 	if (N < 4) return;
 
-	// Find zero-crossing of channel 0 nearest the midpoint.
-	int64_t M = N / 2;
+	// Find the zero-crossing of channel 0 within a ¼-second window around the midpoint
+	// that has the lowest splice amplitude (|prev| + |cur|). Minimising amplitude at
+	// the splice — not just proximity to the midpoint — is what eliminates the click:
+	// a zero crossing at -0.8 → +0.6 looks valid but still sounds audible.
+	// We scan the whole window rather than stopping at the first crossing found, so
+	// we can trade a bit of search time for a much quieter loop point.
+	// `mid` is fixed so the symmetric probe positions are always mid ± d.
+	const int64_t mid = N / 2;
+	int64_t M = mid;
 	{
 		const int64_t searchWindow = std::min(N / 4, (int64_t)(sampleRate / 4));
-		int64_t bestDist = N;
+		float bestScore = std::numeric_limits<float>::max();
 		for (int64_t d = 0; d <= searchWindow; d++) {
-			for (int sign : {0, 1}) {
-				int64_t pos = M + (sign ? d : -d);
+			for (int sign : {-1, 1}) {
+				int64_t pos = mid + sign * d;
 				if (pos <= 0 || pos >= N - 1) continue;
 				float cur  = samples[(size_t)(pos       * channels)];
 				float prev = samples[(size_t)((pos - 1) * channels)];
 				if (cur * prev <= 0.f) {
-					int64_t dist = std::abs(pos - N / 2);
-					if (dist < bestDist) { bestDist = dist; M = pos; }
+					float score = std::abs(cur) + std::abs(prev);
+					if (score < bestScore) {
+						bestScore = score;
+						M = pos;
+					}
 				}
 			}
-			if (bestDist <= d) break;
+			if (bestScore < 1e-5f) break;  // essentially silent — can't do better
 		}
 	}
 
@@ -277,6 +287,55 @@ struct DataSource {
 		return ::StoermelderPackOne::Siren::buildWaveformCache(timestamp, *stream, pixelWidth, out);
 	}
 };
+
+// ─── Loop preview: in-memory decode + process ────────────────────────────────
+
+struct LoopPreviewResult {
+	std::vector<float> samples;   // interleaved float PCM after rotation+crossfade
+	int channels = 0;
+	int sampleRate = 0;
+	float durationSeconds = 0.f;  // actual duration of the processed buffer
+	bool ok = false;
+};
+
+// Decode the trimmed region from src/id, apply rotation+crossfade, and return
+// the result as an in-memory buffer. Runs on the worker thread.
+// trimIn/trimOut are normalised [0, 1] over the full file.
+inline LoopPreviewResult buildLoopPreview(DataSource& src, const std::string& id,
+		float trimIn, float trimOut, float crossfadeDuration) {
+	LoopPreviewResult result;
+
+	AudioInfo info;
+	if (!src.loadAudioInfo(id, info)) return result;
+	if (info.channels <= 0 || info.sampleRate <= 0 || info.frameCount <= 0) return result;
+
+	int64_t startFrame = (int64_t)(trimIn * (float)info.frameCount);
+	int64_t endFrame = (int64_t)(trimOut * (float)info.frameCount);
+	startFrame = std::max((int64_t)0, std::min(startFrame, info.frameCount));
+	endFrame = std::max(startFrame, std::min(endFrame, info.frameCount));
+	int64_t trimFrames = endFrame - startFrame;
+	if (trimFrames <= 0) return result;
+
+	// Cap at stereo to match the downstream fill-thread resampler.
+	int ch = std::min(info.channels, 2);
+	result.samples.resize((size_t)(trimFrames * ch));
+
+	auto stream = src.openAudioStream(id);
+	if (!stream) return result;
+	stream->seekTo(startFrame);
+	int64_t framesRead = stream->readF32(result.samples.data(), trimFrames);
+	if (framesRead <= 0) return result;
+	result.samples.resize((size_t)(framesRead * ch));
+
+	applyLoopCrossfade(result.samples, ch, info.sampleRate, crossfadeDuration);
+	if (result.samples.empty()) return result;
+
+	result.channels = ch;
+	result.sampleRate = info.sampleRate;
+	result.durationSeconds = (float)(result.samples.size() / (size_t)ch) / (float)info.sampleRate;
+	result.ok = true;
+	return result;
+}
 
 } // namespace Siren
 } // namespace StoermelderPackOne

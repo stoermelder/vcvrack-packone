@@ -103,6 +103,19 @@ struct SirenModule : Module {
 		static constexpr size_t OUT_MAX = CHUNK * 8;  // headroom for up to 8× upsampling
 		float outBuf[OUT_MAX * 2];  // resampler output — allocated once for the thread lifetime
 
+		// Trim-loop declick crossfade. When looping a sub-range the splice trimOut→trimIn
+		// joins two arbitrary-amplitude samples, producing a click. To hide it the tail of
+		// the range is equal-power crossfaded into its head, in file-frame (pre-resample)
+		// space, so the reconstructed stream the resampler sees is continuous. A full-file
+		// loop needs none of this — its boundaries are already near silence — so it keeps
+		// the cheaper hard seek.
+		static constexpr int64_t LOOP_XFADE = 512;  // ~11 ms @44.1 kHz
+		float   loopHead[LOOP_XFADE * 2];   // first `xfade` frames of the range, cached once
+		float   loopTail[LOOP_XFADE * 2];   // last `xfade` frames of the range, read each period
+		bool    loopHeadValid = false;      // loopHead matches the current range
+		int64_t loopCacheIn   = -1;         // trimIn frame loopHead was built for
+		int64_t loopCacheOut  = -1;         // trimOut frame loopHead was built for
+
 		// Push n frames from buf into the ring, resampling if active.
 		auto pushFrames = [&](const float* buf, int n) {
 			if (fillResample) {
@@ -118,6 +131,151 @@ struct SirenModule : Module {
 					rbL.push(buf[f * fillCh]);
 					rbR.push(fillCh >= 2 ? buf[f * fillCh + 1] : buf[f * fillCh]);
 				}
+			}
+		};
+
+		// Read exactly n frames into buf, zero-padding any shortfall so the fixed-size
+		// crossfade buffers are always fully populated even near EOF.
+		auto readPadded = [&](float* buf, int64_t n) {
+			int64_t got = stream->readF32(buf, n);
+			for (int64_t i = got * fillCh; i < n * fillCh; i++) buf[i] = 0.f;
+		};
+
+		// Splice the loop range's end back to its start with an equal-power crossfade,
+		// hiding the click a hard trimOut→trimIn seek would produce. Works in file-frame
+		// (pre-resample) space so the stream the resampler sees stays continuous. Returns
+		// false when the ring can't yet hold the burst, so the caller retries next cycle.
+		auto crossfadeWrap = [&](int64_t inFrame, int64_t outFrame, int64_t xf) -> bool {
+			size_t need = fillResample ? (size_t)std::ceil((double)xf * fillRatio) + 2 : (size_t)xf;
+			if (rbL.capacity() < need) return false;
+			// The head is constant for the range — read it once.
+			if (!loopHeadValid) {
+				stream->seekTo(inFrame);
+				readPadded(loopHead, xf);
+				loopHeadValid = true;
+			}
+			stream->seekTo(outFrame - xf);
+			readPadded(loopTail, xf);
+			float blend[LOOP_XFADE * 2];
+			for (int64_t i = 0; i < xf; i++) {
+				float angle = ((xf > 1) ? (float)i / (float)(xf - 1) : 1.f) * float(M_PI) * 0.5f;
+				float fo = std::cos(angle), fi = std::sin(angle);
+				for (int c = 0; c < fillCh; c++)
+					blend[i * fillCh + c] = loopTail[i * fillCh + c] * fo + loopHead[i * fillCh + c] * fi;
+			}
+			pushFrames(blend, (int)xf);
+			// Resume after the head frames already consumed by the fade-in.
+			stream->seekTo(inFrame + xf);
+			fillFilePos = inFrame + xf;
+			return true;
+		};
+
+		// Reposition the decoder, (re)configure the resampler, then prime the ring with
+		// audio beginning on a zero crossing so playback starts click-free.
+		auto primeFromSeek = [&](int64_t sf) {
+			// SeekTo first so old audio stays in the ring during seek I/O — MP3 seek can
+			// take ~100ms and an empty ring would be audible silence.
+			stream->seekTo(sf);
+			outputFrameCount.store(0, std::memory_order_relaxed);
+			eofReached.store(false, std::memory_order_relaxed);
+			rbL.clear(); rbR.clear();
+			loopHeadValid = false;
+
+			// Channel count — clamped to the stereo SRC limit.
+			fillCh = stream->channels();
+			if (fillCh < 1) fillCh = 1;
+			if (fillCh > 2) fillCh = 2;
+
+			// Resampler setup — only when file and engine rates differ.
+			int inRate = stream->sampleRate(), outRate = engineSampleRate;
+			fillResample = sirenSettings.resampleOnPlayback && inRate > 0 && outRate > 0 && inRate != outRate;
+			fillRatio = fillResample ? (float)outRate / (float)inRate : 1.f;
+			if (fillResample) { src.setChannels(fillCh); src.setRates(inRate, outRate); }
+			sampleRateRatio.store(fillRatio, std::memory_order_relaxed);
+
+			// ZC lookahead — discard frames up to the first zero crossing on channel 0,
+			// then push the rest to prime the ring.
+			static constexpr size_t ZC_WINDOW = 2048;
+			float zcBuf[ZC_WINDOW * 2];
+			int64_t zcRead = stream->readF32(zcBuf, ZC_WINDOW);
+			int64_t zcOffset = 0;
+			for (int64_t i = 1; i < zcRead; i++)
+				if (zcBuf[(i - 1) * fillCh] * zcBuf[i * fillCh] <= 0.f) { zcOffset = i; break; }
+			for (int64_t r = zcOffset; r < zcRead; r += (int64_t)CHUNK)
+				pushFrames(zcBuf + r * fillCh, (int)std::min((int64_t)CHUNK, zcRead - r));
+
+			// Shift seekBaseFrame so the displayed playhead matches the actual audio start
+			// (written before the playing release-fence).
+			seekBaseFrame += zcOffset;
+			fillFilePos = sf + zcRead;
+			playing.store(true, std::memory_order_release);
+		};
+
+		// Top up the ring while playing, wrapping seamlessly at the loop boundary.
+		auto fillRing = [&]() {
+			bool    isLooping   = sirenSettings.loopPlayback;
+			int64_t totalFrames = streamTotalFrames;
+
+			// Resolve the loop range and crossfade length. A crossfade is used only for a
+			// sub-range (trim points active); a full-file loop wraps at near-silent
+			// boundaries and keeps the cheaper hard seek.
+			int64_t inFrame = 0, outFrame = 0, xfade = 0;
+			bool    trimLoop = false;
+			if (isLooping && totalFrames > 0) {
+				inFrame  = (int64_t)(trimIn.load(std::memory_order_relaxed)  * totalFrames);
+				outFrame = (int64_t)(trimOut.load(std::memory_order_relaxed) * totalFrames);
+				if ((inFrame > 0 || outFrame < totalFrames) && inFrame < outFrame) {
+					xfade    = std::min(LOOP_XFADE, (outFrame - inFrame) / 2);
+					trimLoop = xfade > 0;
+					// Rebuild the cached head whenever the loop range changes.
+					if (inFrame != loopCacheIn || outFrame != loopCacheOut) {
+						loopCacheIn = inFrame; loopCacheOut = outFrame; loopHeadValid = false;
+					}
+				}
+			}
+
+			// A trim loop only governs playback while the position is inside the range.
+			// Seeking past trimOut disengages it: playback runs forward to EOF, where the
+			// process() EOF handler restarts it from trimIn. This way a click after the
+			// range is honoured instead of being yanked straight back into the loop.
+			bool loopEngaged = trimLoop && fillFilePos < outFrame;
+
+			// Seamless wrap WITHOUT clearing the ring, so the DSP never hears a gap. The
+			// crossfaded loop stops `xfade` frames early — crossfadeWrap supplies them.
+			if (loopEngaged && fillFilePos >= outFrame - xfade) {
+				crossfadeWrap(inFrame, outFrame, xfade);  // no-op until the ring has room
+				return;
+			}
+
+			// Full-file loop: hard seek back at the near-silent file boundary.
+			if (isLooping && !trimLoop && totalFrames > 0
+			        && fillFilePos >= outFrame && inFrame < outFrame) {
+				stream->seekTo(inFrame);
+				fillFilePos = inFrame;
+			}
+
+			size_t space = rbL.capacity();
+			if (space == 0) return;
+			float tmp[CHUNK * 2];
+			// Limit input so the resampled output fits in the available ring space.
+			size_t toRead = fillResample
+			    ? std::min(CHUNK, (size_t)std::max(1.0, (double)space / fillRatio))
+			    : std::min(CHUNK, space);
+			// Never read past the loop end: an engaged trim loop stops `xfade` early, a
+			// full-file loop stops at the file end, otherwise read freely to EOF.
+			int64_t fillEnd = loopEngaged ? outFrame - xfade
+			                : (isLooping && !trimLoop && totalFrames > 0) ? outFrame : -1;
+			if (fillEnd >= 0) {
+				int64_t framesLeft = fillEnd - fillFilePos;
+				if (framesLeft <= 0)   toRead = 0;  // wrap fires next iteration
+				else if (fillResample) toRead = std::min(toRead, (size_t)std::max(1.0, (double)framesLeft / fillRatio));
+				else                   toRead = std::min(toRead, (size_t)framesLeft);
+			}
+			if (toRead > 0) {
+				int64_t nRead = stream->readF32(tmp, (int64_t)toRead);
+				pushFrames(tmp, (int)nRead);
+				fillFilePos += nRead;
+				if (nRead == 0) eofReached.store(true, std::memory_order_release);
 			}
 		};
 
@@ -137,123 +295,16 @@ struct SirenModule : Module {
 				eofReached.store(false, std::memory_order_relaxed);
 				rbL.clear(); rbR.clear();
 				fillFilePos = 0;
+				loopHeadValid = false;
 			}
 
 			// ── seek: reposition, configure resampler, prime ring ─────────
 			int64_t sf = pendingSeekFrame.exchange(-1, std::memory_order_acq_rel);
-			if (sf >= 0 && stream) {
-				// SeekTo first so old audio stays in the ring during seek I/O — MP3 seek
-				// can take ~100ms and an empty ring causes audible silence. The spurious
-				// path-2 trigger that previously required pre-clearing no longer applies:
-				// the autonomous fill loop never sets eofReached, so the danger state
-				// (pendingSeekFrame=-1 + eofReached=true + empty ring) cannot occur.
-				stream->seekTo(sf);
-				outputFrameCount.store(0, std::memory_order_relaxed);
-				eofReached.store(false, std::memory_order_relaxed);
-				rbL.clear(); rbR.clear();
-
-				// Channel count — clamped to the stereo SRC limit.
-				fillCh = stream->channels();
-				if (fillCh < 1) fillCh = 1;
-				if (fillCh > 2) fillCh = 2;
-
-				// Resampler setup — only when file and engine rates differ.
-				int inRate  = stream->sampleRate();
-				int outRate = engineSampleRate;
-				fillResample = sirenSettings.resampleOnPlayback && inRate > 0 && outRate > 0 && inRate != outRate;
-				if (fillResample) {
-					fillRatio = (float)outRate / (float)inRate;
-					src.setChannels(fillCh);
-					src.setRates(inRate, outRate);
-					sampleRateRatio.store(fillRatio, std::memory_order_relaxed);
-				}
-				else {
-					fillRatio = 1.f;
-					sampleRateRatio.store(1.f, std::memory_order_relaxed);
-				}
-
-				// ZC lookahead — scan ahead for the first zero crossing so playback
-				// starts near silence, avoiding a click. Frames before the crossing
-				// are discarded; the rest are pushed into the ring to prime it.
-				static constexpr size_t ZC_WINDOW = 2048;
-				float zcBuf[ZC_WINDOW * 2];
-				int64_t zcRead = stream->readF32(zcBuf, ZC_WINDOW);
-				int64_t zcOffset = 0;
-				if (zcRead > 1) {
-					float prev = zcBuf[0];
-					for (int64_t i = 1; i < zcRead; i++) {
-						float cur = zcBuf[i * fillCh];
-						if (prev * cur <= 0.f) { zcOffset = i; break; }
-						prev = cur;
-					}
-				}
-				const float* ptr = zcBuf + zcOffset * fillCh;
-				int64_t remaining = zcRead - zcOffset;
-				while (remaining > 0) {
-					int n = (int)std::min(remaining, (int64_t)CHUNK);
-					pushFrames(ptr, n);
-					ptr += n * fillCh;
-					remaining -= n;
-				}
-
-				// Shift seekBaseFrame forward so the displayed playhead matches
-				// the actual audio start (written before playing release-fence).
-				seekBaseFrame += zcOffset;
-				fillFilePos = sf + zcOffset;
-				playing.store(true, std::memory_order_release);
-			}
+			if (sf >= 0 && stream) primeFromSeek(sf);
 
 			// ── fill: keep ring topped up while playing ───────────────────
-			if (playing.load(std::memory_order_relaxed) && stream && !eofReached.load(std::memory_order_relaxed)) {
-				bool   isLooping    = sirenSettings.loopPlayback;
-				int64_t totalFrames = streamTotalFrames;
-
-				// Seamless autonomous loop: when the fill position reaches trimOut, seek the
-				// stream back to trimIn WITHOUT clearing the ring. The ring then contains a
-				// continuous, gapless stream that wraps the range; the DSP only needs to reset
-				// its display counters when it crosses the boundary — no seek gap, no silence.
-				if (isLooping && totalFrames > 0) {
-					int64_t trimOutFrame = (int64_t)(trimOut.load(std::memory_order_relaxed) * totalFrames);
-					if (fillFilePos >= trimOutFrame) {
-						int64_t trimInFrame = (int64_t)(trimIn.load(std::memory_order_relaxed) * totalFrames);
-						if (trimInFrame < trimOutFrame) {
-							stream->seekTo(trimInFrame);
-							fillFilePos = trimInFrame;
-						}
-					}
-				}
-
-				size_t space = rbL.capacity();
-				if (space > 0) {
-					float tmp[CHUNK * 2];
-					// Limit input so the resampled output fits in the available ring space.
-					size_t toRead = fillResample
-					    ? std::min(CHUNK, (size_t)std::max(1.0, (double)space / fillRatio))
-					    : std::min(CHUNK, space);
-
-					// Cap at trimOut so the ring never contains frames from beyond the range.
-					if (isLooping && totalFrames > 0) {
-						int64_t trimOutFrame = (int64_t)(trimOut.load(std::memory_order_relaxed) * totalFrames);
-						int64_t framesLeft   = trimOutFrame - fillFilePos;
-						if (framesLeft <= 0) {
-							toRead = 0;  // loop-seek will fire at top of next iteration
-						} 
-						else if (fillResample) {
-							toRead = std::min(toRead, (size_t)std::max(1.0, (double)framesLeft / fillRatio));
-						} 
-						else {
-							toRead = std::min(toRead, (size_t)framesLeft);
-						}
-					}
-
-					if (toRead > 0) {
-						int64_t nRead = stream->readF32(tmp, (int64_t)toRead);
-						pushFrames(tmp, (int)nRead);
-						fillFilePos += nRead;
-						if (nRead == 0) eofReached.store(true, std::memory_order_release);
-					}
-				}
-			}
+			if (playing.load(std::memory_order_relaxed) && stream && !eofReached.load(std::memory_order_relaxed))
+				fillRing();
 
 			// ── sleep when idle ───────────────────────────────────────────
 			{
@@ -306,6 +357,15 @@ struct SirenModule : Module {
 			src->loadAudioInfo(id, inf);
 			streamTotalFrames = inf.frameCount;
 		}
+		fillCv.notify_one();
+	}
+
+	// Adopt an in-memory AudioStream (e.g. loop preview) on the UI thread.
+	// totalFrames must be set by the caller since loadAudioInfo is unavailable.
+	void adoptStream(std::unique_ptr<AudioStream> stream, int64_t totalFrames) {
+		AudioStream* ns = stream.release();
+		delete pendingStream.exchange(ns, std::memory_order_acq_rel);
+		streamTotalFrames = totalFrames;
 		fillCv.notify_one();
 	}
 
@@ -518,6 +578,7 @@ struct SirenDisplayWidget : OpaqueWidget {
 struct SirenDragOverlay : widget::TransparentWidget {
 	SirenDropHandler* dropHandler = nullptr;
 	SirenPreviewPane* previewPane = nullptr;
+	TaskWorker*       worker      = nullptr;
 	bool initiated = false;
 
 	void drawLayer(const DrawArgs& args, int layer) override {
@@ -554,11 +615,16 @@ struct SirenDragOverlay : widget::TransparentWidget {
 			e.consume(this);
 		}
 		if (e.action == GLFW_RELEASE && e.button == GLFW_MOUSE_BUTTON_LEFT && initiated) {
-			dropHandler->cancelDrag();
 			initiated = false;
 			e.consume(this);
 		}
 		TransparentWidget::onButton(e);
+	}
+
+	void onDragEnd(const event::DragEnd& e) override {
+		if (dropHandler && dropHandler->active && worker)
+			dropHandler->endDrag(APP->scene->mousePos, worker);
+		initiated = false;
 	}
 };
 
@@ -721,6 +787,9 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 		previewPane->openStreamCallback    = [module](const std::string& id, DataSource* src) {
 			module->openStream(id, src);
 		};
+		previewPane->adoptStreamCallback   = [module](std::unique_ptr<AudioStream> s, int64_t tf) {
+			module->adoptStream(std::move(s), tf);
+		};
 		previewPane->startPlaybackCallback = [module](float pos) {
 			module->startPlayback(pos);
 		};
@@ -741,6 +810,7 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 		dragOverlay->box.size = Vec(1e6f, 1e6f);
 		dragOverlay->dropHandler = &dropHandler;
 		dragOverlay->previewPane = previewPane;
+		dragOverlay->worker      = &taskWorker;
 		APP->scene->rack->addChild(dragOverlay);
 
 		// Load global settings and restore state
@@ -755,12 +825,13 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 			DataSource* src = browserPane->activeDataSource;
 			if (!src) return [id]() { return id; };
 
-			int targetRate = sirenSettings.resampleOnDrop ? this->module->engineSampleRate : 0;
-			float trimIn  = previewPane->inPoint;
-			float trimOut = previewPane->outPoint;
+			int targetRate   = sirenSettings.resampleOnDrop ? this->module->engineSampleRate : 0;
+			bool loopOnDrop  = previewPane->isLoopPreviewActive();
+			float trimIn  = previewPane->canvas ? previewPane->canvas->inPoint  : 0.f;
+			float trimOut = previewPane->canvas ? previewPane->canvas->outPoint : 1.f;
 			return src->prepareForDrop(id, sirenSettings.convertToWavOnDrop,
 				targetRate, trimIn, trimOut, sirenSettings.resampleQuality, sirenSettings.customConvertDir,
-				sirenSettings.loopOnDrop, sirenSettings.loopCrossfadeDuration);
+				loopOnDrop, previewPane->loopCrossfadeDuration);
 		};
 		dropHandler.moduleWidget = this;
 
