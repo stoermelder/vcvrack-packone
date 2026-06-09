@@ -759,7 +759,8 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 			float trimIn  = previewPane->inPoint;
 			float trimOut = previewPane->outPoint;
 			return src->prepareForDrop(id, sirenSettings.convertToWavOnDrop,
-									targetRate, trimIn, trimOut, sirenSettings.resampleQuality, sirenSettings.customConvertDir);
+				targetRate, trimIn, trimOut, sirenSettings.resampleQuality, sirenSettings.customConvertDir,
+				sirenSettings.loopOnDrop, sirenSettings.loopCrossfadeDuration);
 		};
 		dropHandler.moduleWidget = this;
 

@@ -39,6 +39,10 @@ struct SirenSettings {
 	// When non-empty, converted/trimmed files are written here instead of
 	// alongside the source file.
 	std::string customConvertDir;
+	// Apply rotation+crossfade loop processing on drop, producing a loop-ready WAV.
+	bool loopOnDrop = false;
+	// Length of the crossfade applied at the rotation join point (seconds).
+	float loopCrossfadeDuration = 6.f;
 
 	// Saves via rename-write-verify-delete so a crash mid-write can never destroy
 	// the previous settings: the existing file is first moved aside to ".bak",
@@ -129,6 +133,8 @@ struct SirenSettings {
 		json_object_set_new(j, "resampleQuality",    json_integer(resampleQuality));
 		json_object_set_new(j, "convertToWavOnDrop", json_boolean(convertToWavOnDrop));
 		json_object_set_new(j, "customConvertDir", json_string(customConvertDir.c_str()));
+		json_object_set_new(j, "loopOnDrop",             json_boolean(loopOnDrop));
+		json_object_set_new(j, "loopCrossfadeDuration",  json_real(loopCrossfadeDuration));
 		return j;
 	}
 
@@ -151,6 +157,8 @@ struct SirenSettings {
 		v = json_object_get(j, "resampleQuality");     if (v) resampleQuality = (int)json_integer_value(v);
 		v = json_object_get(j, "convertToWavOnDrop");  if (v) convertToWavOnDrop = json_boolean_value(v);
 		v = json_object_get(j, "customConvertDir");    if (v) customConvertDir = json_string_value(v);
+		v = json_object_get(j, "loopOnDrop");             if (v) loopOnDrop = json_boolean_value(v);
+		v = json_object_get(j, "loopCrossfadeDuration");  if (v) loopCrossfadeDuration = (float)json_real_value(v);
 	}
 } sirenSettings;
 

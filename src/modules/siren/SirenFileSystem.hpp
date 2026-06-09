@@ -343,7 +343,8 @@ struct FileSystemDataSource : DataSource {
 
 	std::function<std::string()> prepareForDrop(const std::string& id, bool convertToWav,
 			int targetSampleRate = 0, float trimIn  = 0.f, float trimOut = 1.f,
-			int resampleQuality = 6, const std::string& outputDir = "") override {
+			int resampleQuality = 6, const std::string& outputDir = "",
+			bool loopOnDrop = false, float loopCrossfadeDuration = 8.f) override {
 
 		std::string absPath = resolveAbsPath(id);
 		std::string ext = rack::system::getExtension(rack::system::getFilename(absPath));
@@ -353,7 +354,7 @@ struct FileSystemDataSource : DataSource {
 		bool needResample = targetSampleRate > 0;  // caller passes 0 when resample is off
 		bool needTrim     = trimIn > 0.f || trimOut < 1.f;
 
-		if (!needConvert && !needResample && !needTrim) return [absPath]() { return absPath; };
+		if (!needConvert && !needResample && !needTrim && !loopOnDrop) return [absPath]() { return absPath; };
 
 		std::string dir   = !outputDir.empty() ? outputDir : ghc::filesystem::path(absPath).parent_path().string();
 		std::string fname = rack::system::getFilename(absPath);
@@ -361,16 +362,18 @@ struct FileSystemDataSource : DataSource {
 		std::string stem  = (dot != std::string::npos) ? fname.substr(0, dot) : fname;
 		std::string outPath = dir + "/" + stem + randomFileSuffix() + ".wav";
 
-		return [absPath, outPath, targetSampleRate, trimIn, trimOut, resampleQuality]() -> std::string {
-			return processAudioForDrop(absPath, outPath, targetSampleRate, trimIn, trimOut, resampleQuality);
+		return [absPath, outPath, targetSampleRate, trimIn, trimOut, resampleQuality, loopOnDrop, loopCrossfadeDuration]() -> std::string {
+			return processAudioForDrop(absPath, outPath, targetSampleRate, trimIn, trimOut, resampleQuality, loopOnDrop, loopCrossfadeDuration);
 		};
 	}
 
-	// Trim, decode, and/or resample src into a new WAV file at dstPath.
+	// Trim, decode, resample, and/or loop-process src into a new WAV file at dstPath.
 	// targetSampleRate == 0 keeps the original rate; trimIn/trimOut are normalised [0,1].
 	// resampleQuality is the speex quality (0..10) used when resampling is performed.
+	// loopOnDrop applies rotation+crossfade post-processing to make the sample loop-ready.
 	static std::string processAudioForDrop(const std::string& srcPath, const std::string& dstPath,
-			int targetSampleRate, float trimIn, float trimOut, int resampleQuality = 6) {
+			int targetSampleRate, float trimIn, float trimOut, int resampleQuality = 6,
+			bool loopOnDrop = false, float loopCrossfadeDuration = 8.f) {
 
 		// Read header only to determine trim region without decoding full PCM.
 		AudioInfo info;
@@ -448,6 +451,17 @@ struct FileSystemDataSource : DataSource {
 			resampled.resize((size_t)outF * channels);
 			outPtr    = resampled.data();
 			outFrames = (int64_t)outF;
+		}
+
+		// Loop post-processing: rotation + crossfade so the file loops smoothly.
+		// Operates on an owned copy of the buffer so outPtr/resampled are replaced.
+		if (loopOnDrop) {
+			std::vector<float> loopBuf(outPtr, outPtr + (size_t)(outFrames * channels));
+			::StoermelderPackOne::Siren::applyLoopCrossfade(loopBuf, channels, outRate, loopCrossfadeDuration);
+			resampled = std::move(loopBuf);
+			outPtr    = resampled.data();
+			outFrames = (int64_t)(resampled.size() / (size_t)channels);
+			if (outFrames <= 0) return srcPath;
 		}
 
 		// Write output WAV.

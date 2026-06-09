@@ -64,6 +64,93 @@ inline bool buildWaveformCache(int64_t timestamp, AudioStream& stream, int pixel
 	return true;
 }
 
+// ─── Loop crossfade post-processing ──────────────────────────────────────────
+// Rotation + crossfade: makes a sample loop-ready so that looping at the
+// file boundaries produces a smooth transition.
+//
+// Technique:
+//   1. Find the frame M nearest to the midpoint that crosses zero on channel 0
+//      (minimises the click at the new loop-point).
+//   2. Rearrange: [original[M..N-1], original[0..M-1]]  (swap halves)
+//   3. Crossfade the join: blend the last C frames of the second half (fade-out)
+//      with the first C frames of the first half (fade-in) into a single C-frame
+//      region.  This handles the formerly-glitchy original end→start transition.
+//   4. Output length = N − C.
+//
+// After this the new loop point (output end → output start) lands at the
+// original midpoint M, which is typically a quieter/smoother splice location.
+//
+// `samples` is interleaved float PCM with `channels` channels.
+// `sampleRate` is used only to convert `crossfadeSecs` to frame count.
+// `crossfadeSecs` is clamped so that C ≤ min(M, N-M) − 1; a too-long
+// crossfade is silently shortened rather than failing.
+inline void applyLoopCrossfade(std::vector<float>& samples, int channels, int sampleRate, float crossfadeSecs) {
+	if (channels <= 0 || sampleRate <= 0 || samples.empty()) return;
+	int64_t N = (int64_t)(samples.size() / (size_t)channels);
+	if (N < 4) return;
+
+	// Find zero-crossing of channel 0 nearest the midpoint.
+	int64_t M = N / 2;
+	{
+		const int64_t searchWindow = std::min(N / 4, (int64_t)(sampleRate / 4));
+		int64_t bestDist = N;
+		for (int64_t d = 0; d <= searchWindow; d++) {
+			for (int sign : {0, 1}) {
+				int64_t pos = M + (sign ? d : -d);
+				if (pos <= 0 || pos >= N - 1) continue;
+				float cur  = samples[(size_t)(pos       * channels)];
+				float prev = samples[(size_t)((pos - 1) * channels)];
+				if (cur * prev <= 0.f) {
+					int64_t dist = std::abs(pos - N / 2);
+					if (dist < bestDist) { bestDist = dist; M = pos; }
+				}
+			}
+			if (bestDist <= d) break;
+		}
+	}
+
+	// Clamp crossfade length so it fits in both halves.
+	int64_t C = (int64_t)(crossfadeSecs * (float)sampleRate);
+	int64_t maxC = std::min(M, N - M) - 1;
+	if (maxC <= 0) return;
+	C = std::max((int64_t)1, std::min(C, maxC));
+
+	// Build output of length N−C:
+	//   [original[M .. N-C-1], crossfade, original[C .. M-1]]
+	// where crossfade blends original[N-C .. N-1] (fade-out) and
+	//                         original[0  .. C-1]  (fade-in).
+	int64_t part1Len = (N - C) - M;   // frames from rotation point to end minus tail
+	int64_t part2Len = M - C;          // frames from crossfade end to rotation point
+	int64_t outN     = part1Len + C + part2Len; // == N - C
+
+	std::vector<float> out((size_t)(outN * channels));
+
+	// Part 1: original[M .. N-C-1]
+	for (int64_t f = 0; f < part1Len; f++)
+		for (int ch = 0; ch < channels; ch++)
+			out[(size_t)(f * channels + ch)] = samples[(size_t)((M + f) * channels + ch)];
+
+	// Crossfade: blend tail of second half (fade-out) with head of first half (fade-in)
+	for (int64_t f = 0; f < C; f++) {
+		float alpha   = (C > 1) ? (float)f / (float)(C - 1) : 1.f;
+		float angle   = alpha * float(M_PI) * 0.5f;
+		float fadeOut = std::cos(angle);
+		float fadeIn  = std::sin(angle);
+		for (int ch = 0; ch < channels; ch++) {
+			float s1 = samples[(size_t)((N - C + f) * channels + ch)];
+			float s2 = samples[(size_t)(f            * channels + ch)];
+			out[(size_t)((part1Len + f) * channels + ch)] = s1 * fadeOut + s2 * fadeIn;
+		}
+	}
+
+	// Part 2: original[C .. M-1]
+	for (int64_t f = 0; f < part2Len; f++)
+		for (int ch = 0; ch < channels; ch++)
+			out[(size_t)((part1Len + C + f) * channels + ch)] = samples[(size_t)((C + f) * channels + ch)];
+
+	samples = std::move(out);
+}
+
 // ─── DataSource ──────────────────────────────────────────────────────────────
 
 struct DataSource {
@@ -151,9 +238,11 @@ struct DataSource {
 	//   resampleQuality  — speex resampler quality (0..10) used when targetSampleRate > 0
 	//   outputDir        — when non-empty, write the generated file here instead of
 	//                      alongside the source file
+	//   loopOnDrop       — apply rotation+crossfade to produce a loop-ready WAV
+	//   loopCrossfadeDuration — crossfade length in seconds for the loop join
 	virtual std::function<std::string()> prepareForDrop(const std::string& id, bool convertToWav,
 			int targetSampleRate = 0, float trimIn = 0.f, float trimOut = 1.f, int resampleQuality = 6,
-			const std::string& outputDir = "") {
+			const std::string& outputDir = "", bool loopOnDrop = false, float loopCrossfadeDuration = 8.f) {
 		return [id]() { return id; };
 	}
 

@@ -69,6 +69,10 @@ struct SirenSourceButton : ui::ChoiceButton {
 			pane->setRoots(sirenSettings.rootContainers, sirenSettings.activeRootIdx);
 		}, pane->rootContainers.empty()));
 
+		menu->addChild(new ui::MenuSeparator);
+		menu->addChild(createBoolPtrMenuItem("Crossfade loop on drop", "", &sirenSettings.loopOnDrop));
+		menu->addChild(Rack::createPtrSlider(&sirenSettings.loopCrossfadeDuration, 0.01f, 30.f, 6.f, "Crossfade", " s", 1.f, 150.f));
+
 		menu->addChild(new MenuSeparator);
 		menu->addChild(createBoolPtrMenuItem("Resample on playback", "", &sirenSettings.resampleOnPlayback));
 		menu->addChild(createBoolPtrMenuItem("Resample on drop", "", &sirenSettings.resampleOnDrop));
