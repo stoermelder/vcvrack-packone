@@ -366,6 +366,8 @@ TEST_CASE("Audio output: silence without loaded file", "[Siren][Audio]") {
 TEST_CASE("Playhead clamps to [0, 1]", "[Siren][Preview]") {
 	SirenPreviewPane pane;
 	pane.box.size = Vec(600.f, 380.f);
+	pane.init(nullptr, nullptr);
+	pane.canvas->box.size = Vec(600.f, 380.f - SirenPreviewPane::TB_H);
 
 	SECTION("Below 0 clamps to 0") {
 		float pos = rack::math::clamp(-0.5f, 0.f, 1.f);
@@ -379,9 +381,9 @@ TEST_CASE("Playhead clamps to [0, 1]", "[Siren][Preview]") {
 
 	SECTION("posToPlayhead from inside rect returns value in [0, 1]") {
 		// Simulate a click inside the waveform area
-		Rect wr = pane.waveformRect();
+		Rect wr = pane.canvas->waveformRect();
 		Vec midpoint = wr.pos.plus(wr.size.mult(0.5f));
-		float result = pane.posToPlayhead(midpoint);
+		float result = pane.canvas->posToNormalized(midpoint);
 		REQUIRE(result >= 0.f);
 		REQUIRE(result <= 1.f);
 		REQUIRE(result == Catch::Approx(0.5f).margin(0.05f));
@@ -479,26 +481,27 @@ TEST_CASE("posToPlayhead: scrubPos is display source while draggingPlayhead", "[
 	// the visual position while the fill thread is still processing the seek.
 	SirenPreviewPane pane;
 	pane.box.size = Vec(600.f, 380.f);
+	pane.init(nullptr, nullptr);
 
 	// Simulate a playing module whose playhead is at 0.1
 	std::atomic<float> fakePlayhead{0.1f};
 	pane.modulePlayheadPos = &fakePlayhead;
 
 	// User starts dragging to 0.7
-	pane.scrubPos         = 0.7f;
-	pane.inPoint          = 0.7f;
-	pane.draggingPlayhead = true;
+	pane.canvas->scrubPos         = 0.7f;
+	pane.canvas->inPoint          = 0.7f;
+	pane.canvas->draggingPlayhead = true;
 
 	// The visual playhead should track scrubPos, not modulePlayheadPos
-	float displayedPh = pane.draggingPlayhead
-	    ? pane.scrubPos
+	float displayedPh = pane.canvas->draggingPlayhead
+	    ? pane.canvas->scrubPos
 	    : (pane.modulePlayheadPos ? pane.modulePlayheadPos->load() : 0.f);
 	REQUIRE(displayedPh == Catch::Approx(0.7f));
 
 	// After drag ends, display switches back to modulePlayheadPos
-	pane.draggingPlayhead = false;
-	displayedPh = pane.draggingPlayhead
-	    ? pane.scrubPos
+	pane.canvas->draggingPlayhead = false;
+	displayedPh = pane.canvas->draggingPlayhead
+	    ? pane.canvas->scrubPos
 	    : (pane.modulePlayheadPos ? pane.modulePlayheadPos->load() : 0.f);
 	REQUIRE(displayedPh == Catch::Approx(0.1f));
 }
@@ -507,14 +510,15 @@ TEST_CASE("posToPlayhead: scrubPos is display source while draggingPlayhead", "[
 TEST_CASE("loadItem resets inPoint and scrubPos", "[Siren][Preview]") {
 	SirenPreviewPane pane;
 	pane.box.size = Vec(600.f, 380.f);
+	pane.init(nullptr, nullptr);
 
-	pane.inPoint  = 0.7f;
-	pane.scrubPos = 0.7f;
+	pane.canvas->inPoint  = 0.7f;
+	pane.canvas->scrubPos = 0.7f;
 
 	pane.loadItem(DataSourceNode{}, nullptr);
 
-	REQUIRE(pane.inPoint  == 0.f);
-	REQUIRE(pane.scrubPos == 0.f);
+	REQUIRE(pane.canvas->inPoint  == 0.f);
+	REQUIRE(pane.canvas->scrubPos == 0.f);
 }
 
 // loadItem with empty id or null source leaves currentNode.relativePath empty.
