@@ -29,8 +29,9 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 	WaveformCache*      cache             = nullptr;  // non-owning pointer to parent's active cache
 	bool                cacheReady        = false;
 	bool                cacheBuilding     = false;    // "Building waveform…" overlay
-	bool                generatingLoop    = false;    // "Generating loop preview…" overlay
+	bool                generatingLoop    = false;    // "Generating loop/repitch preview…" overlay
 	bool                loopPreviewMode   = false;    // tint + suppress trim handles
+	bool                previewIsRepitch  = false;    // overlay/exit-button text variant
 	bool                hasFile           = false;
 	float               durationSeconds   = 0.f;
 	std::atomic<float>* modulePlayheadPos = nullptr;
@@ -138,9 +139,14 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 			asset::system("res/fonts/ShareTechMono-Regular.ttf"));
 		nvgFontFaceId(args.vg, font->handle);
 
-		// Waveform stroke color: cyan in loop preview mode, grey-green otherwise
+		// Preview accent color: cyan for loop preview, amber for repitch preview
+		NVGcolor previewColor = previewIsRepitch
+			? nvgRGBf(0.95f, 0.65f, 0.30f)
+			: nvgRGBf(0.35f, 0.80f, 0.85f);
+
+		// Waveform stroke color: preview accent in preview mode, grey-green otherwise
 		NVGcolor waveColor = loopPreviewMode
-			? nvgRGBf(0.35f, 0.80f, 0.85f)
+			? previewColor
 			: nvgRGBf(0.70f, 0.70f, 0.63f);
 
 		// ── waveform ──────────────────────────────────────────────────────────
@@ -270,20 +276,21 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 			nvgRoundedRect(args.vg, br.pos.x, br.pos.y, br.size.x, br.size.y, 2.f);
 			nvgFillColor(args.vg, nvgRGBAf(0.f, 0.f, 0.f, 0.55f));
 			nvgFill(args.vg);
-			nvgStrokeColor(args.vg, nvgRGBAf(0.35f, 0.80f, 0.85f, 0.8f));
+			nvgStrokeColor(args.vg, nvgRGBAf(previewColor.r, previewColor.g, previewColor.b, 0.8f));
 			nvgStrokeWidth(args.vg, 1.f);
 			nvgStroke(args.vg);
 			nvgFontSize(args.vg, 10.f);
-			nvgFillColor(args.vg, nvgRGBf(0.35f, 0.80f, 0.85f));
+			nvgFillColor(args.vg, previewColor);
 			nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
 			nvgText(args.vg, br.pos.x + br.size.x * 0.5f, br.pos.y + br.size.y * 0.5f, "Exit", nullptr);
 			nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_BASELINE);
 		}
 
-		// ── "Generating loop preview…" overlay ────────────────────────────────
+		// ── "Generating loop/repitch preview…" overlay ────────────────────────
 		if (generatingLoop) {
-			drawStatusOverlay(args.vg, waveW, waveY, waveH, "Generating loop preview\xe2\x80\xa6",
-				nvgRGBf(0.35f, 0.80f, 0.85f));
+			drawStatusOverlay(args.vg, waveW, waveY, waveH,
+				previewIsRepitch ? "Generating repitch preview\xe2\x80\xa6" : "Generating loop preview\xe2\x80\xa6",
+				previewColor);
 		}
 
 		// ── "Converting…" overlay ─────────────────────────────────────────────

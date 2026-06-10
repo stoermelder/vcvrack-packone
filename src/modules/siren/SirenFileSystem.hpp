@@ -344,7 +344,8 @@ struct FileSystemDataSource : DataSource {
 	std::function<std::string()> prepareForDrop(const std::string& id, bool convertToWav,
 			int targetSampleRate = 0, float trimIn  = 0.f, float trimOut = 1.f,
 			int resampleQuality = 6, const std::string& outputDir = "",
-			bool loopOnDrop = false, float loopCrossfadeDuration = 8.f) override {
+			bool loopOnDrop = false, float loopCrossfadeDuration = 8.f,
+			float repitchSemitones = 0.f) override {
 
 		std::string absPath = resolveAbsPath(id);
 		std::string ext = rack::system::getExtension(rack::system::getFilename(absPath));
@@ -353,8 +354,9 @@ struct FileSystemDataSource : DataSource {
 		bool needConvert  = convertToWav && (ext == ".flac" || ext == ".mp3");
 		bool needResample = targetSampleRate > 0;  // caller passes 0 when resample is off
 		bool needTrim     = trimIn > 0.f || trimOut < 1.f;
+		bool needRepitch  = repitchSemitones != 0.f;
 
-		if (!needConvert && !needResample && !needTrim && !loopOnDrop) return [absPath]() { return absPath; };
+		if (!needConvert && !needResample && !needTrim && !loopOnDrop && !needRepitch) return [absPath]() { return absPath; };
 
 		std::string dir   = !outputDir.empty() ? outputDir : ghc::filesystem::path(absPath).parent_path().string();
 		std::string fname = rack::system::getFilename(absPath);
@@ -362,8 +364,8 @@ struct FileSystemDataSource : DataSource {
 		std::string stem  = (dot != std::string::npos) ? fname.substr(0, dot) : fname;
 		std::string outPath = dir + "/" + stem + randomFileSuffix() + ".wav";
 
-		return [absPath, outPath, targetSampleRate, trimIn, trimOut, resampleQuality, loopOnDrop, loopCrossfadeDuration]() -> std::string {
-			return processAudioForDrop(absPath, outPath, targetSampleRate, trimIn, trimOut, resampleQuality, loopOnDrop, loopCrossfadeDuration);
+		return [absPath, outPath, targetSampleRate, trimIn, trimOut, resampleQuality, loopOnDrop, loopCrossfadeDuration, repitchSemitones]() -> std::string {
+			return processAudioForDrop(absPath, outPath, targetSampleRate, trimIn, trimOut, resampleQuality, loopOnDrop, loopCrossfadeDuration, repitchSemitones);
 		};
 	}
 
@@ -371,9 +373,10 @@ struct FileSystemDataSource : DataSource {
 	// targetSampleRate == 0 keeps the original rate; trimIn/trimOut are normalised [0,1].
 	// resampleQuality is the speex quality (0..10) used when resampling is performed.
 	// loopOnDrop applies rotation+crossfade post-processing to make the sample loop-ready.
+	// repitchSemitones shifts the pitch without changing duration (0 = off).
 	static std::string processAudioForDrop(const std::string& srcPath, const std::string& dstPath,
 			int targetSampleRate, float trimIn, float trimOut, int resampleQuality = 6,
-			bool loopOnDrop = false, float loopCrossfadeDuration = 8.f) {
+			bool loopOnDrop = false, float loopCrossfadeDuration = 8.f, float repitchSemitones = 0.f) {
 
 		// Read header only to determine trim region without decoding full PCM.
 		AudioInfo info;
@@ -451,6 +454,17 @@ struct FileSystemDataSource : DataSource {
 			resampled.resize((size_t)outF * channels);
 			outPtr    = resampled.data();
 			outFrames = (int64_t)outF;
+		}
+
+		// Repitch: shift pitch by repitchSemitones while preserving duration.
+		// Operates on an owned copy of the buffer so outPtr/resampled are replaced.
+		if (repitchSemitones != 0.f) {
+			std::vector<float> repitchBuf(outPtr, outPtr + (size_t)(outFrames * channels));
+			::StoermelderPackOne::Siren::applyRepitch(repitchBuf, channels, outRate, repitchSemitones);
+			resampled = std::move(repitchBuf);
+			outPtr    = resampled.data();
+			outFrames = (int64_t)(resampled.size() / (size_t)channels);
+			if (outFrames <= 0) return srcPath;
 		}
 
 		// Loop post-processing: rotation + crossfade so the file loops smoothly.

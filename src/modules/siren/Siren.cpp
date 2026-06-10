@@ -827,11 +827,12 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 
 			int targetRate   = sirenSettings.resampleOnDrop ? this->module->engineSampleRate : 0;
 			bool loopOnDrop  = previewPane->isLoopPreviewActive();
+			float repitchOnDrop = previewPane->isRepitchPreviewActive() ? previewPane->repitchTotalSemitones() : 0.f;
 			float trimIn  = previewPane->canvas ? previewPane->canvas->inPoint  : 0.f;
 			float trimOut = previewPane->canvas ? previewPane->canvas->outPoint : 1.f;
 			return src->prepareForDrop(id, sirenSettings.convertToWavOnDrop,
 				targetRate, trimIn, trimOut, sirenSettings.resampleQuality, sirenSettings.customConvertDir,
-				loopOnDrop, previewPane->loopCrossfadeDuration);
+				loopOnDrop, previewPane->loopCrossfadeDuration, repitchOnDrop);
 		};
 		dropHandler.moduleWidget = this;
 

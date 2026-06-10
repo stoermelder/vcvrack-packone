@@ -4,6 +4,7 @@
 #include "SirenMetadata.hpp"
 #include "SirenAudioStream.hpp"
 #include "SirenAudio.hpp"
+#include <SoundTouch.h>
 
 
 namespace StoermelderPackOne {
@@ -161,6 +162,43 @@ inline void applyLoopCrossfade(std::vector<float>& samples, int channels, int sa
 	samples = std::move(out);
 }
 
+// Shift the pitch of `samples` by `semitones` while preserving duration, using
+// the SoundTouch library. `samples` is interleaved float PCM with `channels`
+// channels at `sampleRate`. A no-op (0 semitones) returns immediately.
+inline void applyRepitch(std::vector<float>& samples, int channels, int sampleRate, float semitones) {
+	if (channels <= 0 || sampleRate <= 0 || samples.empty()) return;
+	if (semitones == 0.f) return;
+
+	soundtouch::SoundTouch st;
+	st.setSampleRate((uint)sampleRate);
+	st.setChannels((uint)channels);
+	st.setPitchSemiTones(semitones);
+	st.setTempo(1.0);
+
+	int64_t totalFrames = (int64_t)(samples.size() / (size_t)channels);
+	std::vector<float> out;
+	out.reserve(samples.size());
+
+	const uint blockFrames = 4096;
+	std::vector<float> block(blockFrames * (size_t)channels);
+	for (int64_t pos = 0; pos < totalFrames; pos += blockFrames) {
+		uint n = (uint)std::min((int64_t)blockFrames, totalFrames - pos);
+		std::copy(samples.begin() + (size_t)(pos * channels),
+		          samples.begin() + (size_t)((pos + n) * channels), block.begin());
+		st.putSamples(block.data(), n);
+
+		uint received;
+		while ((received = st.receiveSamples(block.data(), blockFrames)) > 0)
+			out.insert(out.end(), block.begin(), block.begin() + (size_t)(received * channels));
+	}
+	st.flush();
+	uint received;
+	while ((received = st.receiveSamples(block.data(), blockFrames)) > 0)
+		out.insert(out.end(), block.begin(), block.begin() + (size_t)(received * channels));
+
+	samples = std::move(out);
+}
+
 // ─── DataSource ──────────────────────────────────────────────────────────────
 
 struct DataSource {
@@ -250,9 +288,11 @@ struct DataSource {
 	//                      alongside the source file
 	//   loopOnDrop       — apply rotation+crossfade to produce a loop-ready WAV
 	//   loopCrossfadeDuration — crossfade length in seconds for the loop join
+	//   repitchSemitones — shift pitch by this many semitones without changing duration (0 = off)
 	virtual std::function<std::string()> prepareForDrop(const std::string& id, bool convertToWav,
 			int targetSampleRate = 0, float trimIn = 0.f, float trimOut = 1.f, int resampleQuality = 6,
-			const std::string& outputDir = "", bool loopOnDrop = false, float loopCrossfadeDuration = 8.f) {
+			const std::string& outputDir = "", bool loopOnDrop = false, float loopCrossfadeDuration = 8.f,
+			float repitchSemitones = 0.f) {
 		return [id]() { return id; };
 	}
 
@@ -328,6 +368,45 @@ inline LoopPreviewResult buildLoopPreview(DataSource& src, const std::string& id
 	result.samples.resize((size_t)(framesRead * ch));
 
 	applyLoopCrossfade(result.samples, ch, info.sampleRate, crossfadeDuration);
+	if (result.samples.empty()) return result;
+
+	result.channels = ch;
+	result.sampleRate = info.sampleRate;
+	result.durationSeconds = (float)(result.samples.size() / (size_t)ch) / (float)info.sampleRate;
+	result.ok = true;
+	return result;
+}
+
+// Decode the trimmed region from src/id and shift its pitch by `semitones`
+// without changing its duration. Runs on the worker thread.
+// trimIn/trimOut are normalised [0, 1] over the full file.
+inline LoopPreviewResult buildRepitchPreview(DataSource& src, const std::string& id,
+		float trimIn, float trimOut, float semitones) {
+	LoopPreviewResult result;
+
+	AudioInfo info;
+	if (!src.loadAudioInfo(id, info)) return result;
+	if (info.channels <= 0 || info.sampleRate <= 0 || info.frameCount <= 0) return result;
+
+	int64_t startFrame = (int64_t)(trimIn * (float)info.frameCount);
+	int64_t endFrame = (int64_t)(trimOut * (float)info.frameCount);
+	startFrame = std::max((int64_t)0, std::min(startFrame, info.frameCount));
+	endFrame = std::max(startFrame, std::min(endFrame, info.frameCount));
+	int64_t trimFrames = endFrame - startFrame;
+	if (trimFrames <= 0) return result;
+
+	// Cap at stereo to match the downstream fill-thread resampler.
+	int ch = std::min(info.channels, 2);
+	result.samples.resize((size_t)(trimFrames * ch));
+
+	auto stream = src.openAudioStream(id);
+	if (!stream) return result;
+	stream->seekTo(startFrame);
+	int64_t framesRead = stream->readF32(result.samples.data(), trimFrames);
+	if (framesRead <= 0) return result;
+	result.samples.resize((size_t)(framesRead * ch));
+
+	applyRepitch(result.samples, ch, info.sampleRate, semitones);
 	if (result.samples.empty()) return result;
 
 	result.channels = ch;

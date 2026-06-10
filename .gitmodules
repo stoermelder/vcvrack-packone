@@ -6,3 +6,6 @@
 [submodule "dep/tipsy-encoder"]
 	path = dep/tipsy-encoder
 	url = https://github.com/baconpaul/tipsy-encoder
+[submodule "dep/soundtouch"]
+	path = dep/soundtouch
+	url = https://codeberg.org/soundtouch/soundtouch.git

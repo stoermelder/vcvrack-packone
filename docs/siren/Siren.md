@@ -13,6 +13,7 @@ SIREN is an audio file browser and playback module: you can drop samples out of 
 - Automatic tag suggestions driven by an on-device audio classifier (18-tag vocabulary).
 - Waveform preview with trim IN/OUT handles, looping, zoom, and scrubbing.
 - Crossfade loop: rotate and crossfade the sample into a seamless loop, audition it in-place, then drop the result directly onto a sampler.
+- Repitch: shift a sample's pitch by semitones without changing its length, audition it in-place, then drop the repitched result.
 - Resampling on playback and on drop, with selectable quality.
 
 
@@ -124,6 +125,14 @@ SIREN decodes the trimmed region, finds the quietest zero crossing near the midp
 **Crossfade duration** — the slider below **Generate crossfade loop** in the context menu sets the blend length in seconds (default 6s, range 0.01–60s). Longer crossfades produce a smoother join at the cost of shortening the output slightly.
 
 **Dragging from loop preview mode** drops the loop-processed file. SIREN writes a new WAV alongside the source (or in the custom output folder, if set) and hands that file to the receiving module — the same crossfade that you heard during preview is baked in.
+
+### Repitch
+
+SIREN can shift the pitch of the current sample or trim region without changing its duration, and let you audition the result before committing. Right-click the preview pane and select **Generate repitch preview**.
+
+**Repitch** / **Repitch fine** — the sliders below **Generate repitch preview** in the context menu set the pitch shift: **Repitch** in semitones (range -24 to +24, default 0) and **Repitch fine** in cents (range -100 to +100, default 0). The two combine into a single pitch shift. Positive values raise the pitch, negative values lower it.
+
+**Dragging from repitch preview mode** drops the repitched file. SIREN writes a new WAV alongside the source (or in the custom output folder, if set) and hands that file to the receiving module — the same pitch shift that you heard during preview is baked in.
 
 ## Organizing Files
 

@@ -47,10 +47,16 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	std::atomic<bool> pendingCacheReady{false};
 
 	float loopCrossfadeDuration = 6.f;
+	float repitchSemitones      = 0.f;
+	float repitchCents          = 0.f;
+
+	// Total pitch shift in semitones, combining the semitone and cent sliders.
+	float repitchTotalSemitones() const { return repitchSemitones + repitchCents / 100.f; }
 
 	// ── loop-preview state ────────────────────────────────────────────────────
 	bool          loopPreviewActive   = false;
 	bool          loopPreviewBuilding = false;  // worker running, not yet active
+	bool          previewIsRepitch    = false;  // true if the active preview was generated via repitch
 	WaveformCache loopCache;
 	bool          loopCacheReady     = false;
 	float         loopDurationSeconds = 0.f;
@@ -91,7 +97,8 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	std::function<void()> onMetadataChanged;
 
 	// ── public accessors for SirenWidget ─────────────────────────────────────
-	bool isLoopPreviewActive() const { return loopPreviewActive; }
+	bool isLoopPreviewActive() const { return loopPreviewActive && !previewIsRepitch; }
+	bool isRepitchPreviewActive() const { return loopPreviewActive && previewIsRepitch; }
 
 	// ── init ─────────────────────────────────────────────────────────────────
 
@@ -220,6 +227,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 
 		loopPreviewBuilding = true;
 		loopPreviewActive   = false;
+		previewIsRepitch    = false;
 		loopCacheReady      = false;
 		loopCache           = WaveformCache{};
 
@@ -257,9 +265,53 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		});
 	}
 
+	void generateRepitchPreview() {
+		if (!source || currentNode.relativePath.empty() || !worker) return;
+
+		loopPreviewBuilding = true;
+		loopPreviewActive   = false;
+		previewIsRepitch    = true;
+		loopCacheReady      = false;
+		loopCache           = WaveformCache{};
+
+		DataSource* srcCopy = source;
+		std::string idCopy  = currentNode.relativePath;
+		float trimIn   = canvas ? canvas->inPoint  : 0.f;
+		float trimOut  = canvas ? canvas->outPoint : 1.f;
+		float semitones = repitchTotalSemitones();
+		int pw = canvas ? (int)canvas->box.size.x - (int)SirenWaveformCanvas::WAVE_X - 8 : 512;
+		if (pw < 64) pw = 512;
+
+		worker->work([this, srcCopy, idCopy, trimIn, trimOut, semitones, pw]() {
+			LoopPreviewResult result = buildRepitchPreview(*srcCopy, idCopy, trimIn, trimOut, semitones);
+
+			if (result.ok && !result.samples.empty()) {
+				// Build waveform cache directly from the in-memory buffer
+				MemoryAudioStream ms;
+				ms.samples = result.samples;  // copy: cache builder reads it sequentially
+				ms.ch = result.channels;
+				ms.sr = result.sampleRate;
+				WaveformCache wc;
+				buildWaveformCache(0, ms, pw, wc);
+
+				pendingLoop.samples       = std::move(result.samples);
+				pendingLoop.channels      = result.channels;
+				pendingLoop.sampleRate    = result.sampleRate;
+				pendingLoop.durationSeconds = result.durationSeconds;
+				pendingLoop.cache         = std::move(wc);
+				pendingLoop.valid         = true;
+			}
+			else {
+				pendingLoop.valid = false;
+			}
+			pendingLoopReady.store(true, std::memory_order_release);
+		});
+	}
+
 	void cancelLoopPreview() {
 		loopPreviewActive   = false;
 		loopPreviewBuilding = false;
+		previewIsRepitch    = false;
 		loopCacheReady      = false;
 		loopDurationSeconds = 0.f;
 		loopCache           = WaveformCache{};
@@ -323,6 +375,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			canvas->cacheBuilding  = !loopPreviewActive && cacheBuilding;
 			canvas->generatingLoop = loopPreviewBuilding && !loopPreviewActive;
 			canvas->loopPreviewMode = loopPreviewActive;
+			canvas->previewIsRepitch = previewIsRepitch;
 			canvas->hasFile        = !currentNode.relativePath.empty();
 			canvas->durationSeconds = loopPreviewActive ? loopDurationSeconds : info.durationSeconds;
 			canvas->dragPath        = currentNode.relativePath;
@@ -355,10 +408,15 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			: nvgRGBf(0.55f, 0.55f, 0.55f));
 		nvgText(args.vg, 8.f, 12.f, isPlaying ? "\xe2\x96\xa0" : "\xe2\x96\xb6", nullptr);
 
-		// Filename — gold when playing or in loop preview, light otherwise
+		// Preview accent color: cyan for loop preview, amber for repitch preview
+		NVGcolor previewColor = previewIsRepitch
+			? nvgRGBf(0.95f, 0.65f, 0.30f)
+			: nvgRGBf(0.35f, 0.80f, 0.85f);
+
+		// Filename — preview accent when in preview mode, gold when playing, light otherwise
 		std::string fname = displayName.empty() ? currentNode.relativePath : displayName;
 		nvgFontSize(args.vg, 12.f);
-		NVGcolor fnColor = loopPreviewActive ? nvgRGBf(0.35f, 0.80f, 0.85f)
+		NVGcolor fnColor = loopPreviewActive ? previewColor
 		                 : isPlaying         ? nvgRGBf(1.f, 0.85f, 0.1f)
 		                 :                     nvgRGBf(0.92f, 0.92f, 0.88f);
 		nvgFillColor(args.vg, fnColor);
@@ -370,10 +428,10 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		nvgFontSize(args.vg, 10.f);
 		nvgFillColor(args.vg, nvgRGBf(0.50f, 0.50f, 0.50f));
 
-		// Loop preview label (second row, left side)
+		// Preview label (second row, left side)
 		if (loopPreviewActive) {
-			nvgFillColor(args.vg, nvgRGBf(0.35f, 0.80f, 0.85f));
-			nvgText(args.vg, SirenWaveformCanvas::WAVE_X, 26.f, "LOOP PREVIEW", nullptr);
+			nvgFillColor(args.vg, previewColor);
+			nvgText(args.vg, SirenWaveformCanvas::WAVE_X, 26.f, previewIsRepitch ? "REPITCH PREVIEW" : "LOOP PREVIEW", nullptr);
 			nvgFillColor(args.vg, nvgRGBf(0.50f, 0.50f, 0.50f));
 		}
 		else {
@@ -485,8 +543,8 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		menu->addChild(createMenuLabel(source->getDisplayName(currentNode.relativePath)));
 
 		if (loopPreviewActive) {
-			// ── loop preview mode ────────────────────────────────────────────
-			menu->addChild(createMenuItem("Exit loop preview", "", [this]() {
+			// ── preview mode ──────────────────────────────────────────────────
+			menu->addChild(createMenuItem(previewIsRepitch ? "Exit repitch preview" : "Exit loop preview", "", [this]() {
 				cancelLoopPreview();
 			}));
 		}
@@ -503,13 +561,25 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			));
 
 			menu->addChild(new ui::MenuSeparator);
-			bool canGenerate = !loopPreviewBuilding;
-			menu->addChild(createMenuItem("Generate crossfade loop", "",
-				[this]() { generateLoopPreview(); APP->event->setSelectedWidget(canvas); },
-				!canGenerate
-			));
-			menu->addChild(Rack::createPtrSlider(
-				&loopCrossfadeDuration, 0.01f, 60.f, 6.f, "Crossfade", " s", 1.f, 150.f));
+			menu->addChild(createSubmenuItem("Crossfade loop", "", [=](Menu* menu) {
+				menu->addChild(Rack::createPtrSlider(
+					&loopCrossfadeDuration, 0.01f, 60.f, 6.f, "Crossfade", " s", 1.f, 150.f));
+				menu->addChild(createMenuItem("Generate preview", "",
+					[this]() { generateLoopPreview(); APP->event->setSelectedWidget(canvas); }
+				));
+			}));
+
+			menu->addChild(createSubmenuItem("Repitch", "", [=](Menu* menu) {
+				menu->addChild(Rack::createSteppedSlider<int>(
+					[this]() { return (int)repitchSemitones; },
+					[this](int v) { repitchSemitones = (float)v; },
+					-24.f, 24.f, 0.f, "Repitch", " st", nullptr, 150.f));
+				menu->addChild(Rack::createPtrSlider(
+					&repitchCents, -100.f, 100.f, 0.f, "Repitch fine", " ct", 1.f, 150.f));
+				menu->addChild(createMenuItem("Generate preview", "",
+					[this]() { generateRepitchPreview(); APP->event->setSelectedWidget(canvas); }
+				));
+			}));
 
 			if (metadata()) {
 				menu->addChild(new ui::MenuSeparator);
