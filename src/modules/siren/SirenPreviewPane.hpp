@@ -486,7 +486,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 
 		if (loopPreviewActive) {
 			// ── loop preview mode ────────────────────────────────────────────
-			menu->addChild(createMenuItem("Cancel loop preview", "", [this]() {
+			menu->addChild(createMenuItem("Exit loop preview", "", [this]() {
 				cancelLoopPreview();
 			}));
 		}

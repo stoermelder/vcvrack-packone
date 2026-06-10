@@ -75,6 +75,16 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 		return Rect(Vec(WAVE_X, 2.f), Vec(waveW, waveH));
 	}
 
+	static constexpr float EXIT_BTN_W = 36.f;
+	static constexpr float EXIT_BTN_H = 14.f;
+
+	// "Exit" button shown top-right of the waveform while in loop preview mode —
+	// equivalent to the "Cancel loop preview" context menu item.
+	Rect exitButtonRect() const {
+		Rect r = waveformRect();
+		return Rect(Vec(r.pos.x + r.size.x - EXIT_BTN_W - 2.f, r.pos.y + 2.f), Vec(EXIT_BTN_W, EXIT_BTN_H));
+	}
+
 	Rect scrollbarRect() const {
 		float scrollbarY = box.size.y - SCROLLBAR_H - READOUT_H;
 		return Rect(Vec(WAVE_X, scrollbarY), Vec(box.size.x - WAVE_X - 4.f, SCROLLBAR_H));
@@ -253,6 +263,23 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 			}
 		}
 
+		// ── "Exit" button (loop preview mode) ─────────────────────────────────
+		if (loopPreviewMode) {
+			Rect br = exitButtonRect();
+			nvgBeginPath(args.vg);
+			nvgRoundedRect(args.vg, br.pos.x, br.pos.y, br.size.x, br.size.y, 2.f);
+			nvgFillColor(args.vg, nvgRGBAf(0.f, 0.f, 0.f, 0.55f));
+			nvgFill(args.vg);
+			nvgStrokeColor(args.vg, nvgRGBAf(0.35f, 0.80f, 0.85f, 0.8f));
+			nvgStrokeWidth(args.vg, 1.f);
+			nvgStroke(args.vg);
+			nvgFontSize(args.vg, 10.f);
+			nvgFillColor(args.vg, nvgRGBf(0.35f, 0.80f, 0.85f));
+			nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+			nvgText(args.vg, br.pos.x + br.size.x * 0.5f, br.pos.y + br.size.y * 0.5f, "Exit", nullptr);
+			nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_BASELINE);
+		}
+
 		// ── "Generating loop preview…" overlay ────────────────────────────────
 		if (generatingLoop) {
 			drawStatusOverlay(args.vg, waveW, waveY, waveH, "Generating loop preview\xe2\x80\xa6",
@@ -306,6 +333,15 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 	// ── interaction ──────────────────────────────────────────────────────────
 
 	void onButton(const event::Button& e) override {
+		// "Exit" button (loop preview mode)
+		if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS && loopPreviewMode) {
+			if (exitButtonRect().contains(e.pos)) {
+				if (onCancelLoopPreview) onCancelLoopPreview();
+				e.consume(this);
+				return;
+			}
+		}
+
 		// Scrollbar
 		Rect sr = scrollbarRect();
 		if (e.button == GLFW_MOUSE_BUTTON_LEFT && e.action == GLFW_PRESS
