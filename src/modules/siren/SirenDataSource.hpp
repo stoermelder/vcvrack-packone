@@ -1,5 +1,6 @@
 #pragma once
 #include <rack.hpp>
+#include <sstream>
 #include "../../utils/TaskWorker.hpp"
 #include "SirenMetadata.hpp"
 #include "SirenAudioStream.hpp"
@@ -8,6 +9,116 @@
 
 namespace StoermelderPackOne {
 namespace Siren {
+
+// ─── Search query ──────────────────────────────────────────────────────────
+// The search field accepts plain text plus optional numeric filter terms of
+// the form "key:[op]value[unit]", e.g. "bpm:140", "bpm:>120", "length:<1s",
+// "length:>=2.5m". Recognised keys: "bpm", and "length"/"duration"/"len" for
+// the file's duration (unit "s"/"sec" or "m"/"min", default seconds).
+// Operators: "<", "<=", ">", ">=", "=" (default "=", matched with a small
+// tolerance since these are detected/measured values).
+
+enum class SearchFilterField { Bpm, Length };
+enum class SearchFilterOp { Eq, Lt, Le, Gt, Ge };
+
+struct SearchFilter {
+	SearchFilterField field;
+	SearchFilterOp op;
+	float value;
+};
+
+// Attempts to parse a single lowercase, whitespace-free token as a numeric
+// filter. Returns false (leaving `out` untouched) if the token isn't one.
+inline bool parseSearchFilter(const std::string& lowerToken, SearchFilter& out) {
+	size_t colon = lowerToken.find(':');
+	if (colon == std::string::npos) return false;
+	std::string key  = lowerToken.substr(0, colon);
+	std::string rest = lowerToken.substr(colon + 1);
+
+	SearchFilterField field;
+	if (key == "bpm") field = SearchFilterField::Bpm;
+	else if (key == "length" || key == "duration" || key == "len") field = SearchFilterField::Length;
+	else return false;
+
+	SearchFilterOp op = SearchFilterOp::Eq;
+	if (!rest.empty() && (rest[0] == '<' || rest[0] == '>')) {
+		if (rest.size() >= 2 && rest[1] == '=') {
+			op = (rest[0] == '<') ? SearchFilterOp::Le : SearchFilterOp::Ge;
+			rest = rest.substr(2);
+		}
+		else {
+			op = (rest[0] == '<') ? SearchFilterOp::Lt : SearchFilterOp::Gt;
+			rest = rest.substr(1);
+		}
+	}
+	else if (!rest.empty() && rest[0] == '=') {
+		rest = rest.substr(1);
+	}
+
+	if (rest.empty()) return false;
+	size_t numEnd = 0;
+	while (numEnd < rest.size() && (std::isdigit((unsigned char)rest[numEnd]) || rest[numEnd] == '.')) numEnd++;
+	if (numEnd == 0) return false;
+
+	float value;
+	try { value = std::stof(rest.substr(0, numEnd)); }
+	catch (...) { return false; }
+
+	std::string unit = rest.substr(numEnd);
+	if (field == SearchFilterField::Length) {
+		if (unit == "m" || unit == "min") value *= 60.f;
+		else if (!unit.empty() && unit != "s" && unit != "sec") return false;
+	}
+	else if (!unit.empty()) return false;
+
+	out.field = field;
+	out.op = op;
+	out.value = value;
+	return true;
+}
+
+struct SearchQuery {
+	std::string text;  // lowercase plain-text portion, possibly empty
+	std::vector<SearchFilter> filters;
+
+	bool empty() const { return text.empty() && filters.empty(); }
+
+	// Returns true if meta satisfies every numeric filter. Files with an
+	// unknown (zero) value for a filtered field never match that filter.
+	bool matchesMetadata(const SampleMetadata& meta) const {
+		for (const SearchFilter& f : filters) {
+			float v = (f.field == SearchFilterField::Bpm) ? meta.bpm : meta.durationSeconds;
+			if (v <= 0.f) return false;
+			float eps = (f.field == SearchFilterField::Bpm) ? 0.5f : 0.005f;
+			switch (f.op) {
+				case SearchFilterOp::Eq: if (std::abs(v - f.value) > eps) return false; break;
+				case SearchFilterOp::Lt: if (!(v < f.value))  return false; break;
+				case SearchFilterOp::Le: if (!(v <= f.value)) return false; break;
+				case SearchFilterOp::Gt: if (!(v > f.value))  return false; break;
+				case SearchFilterOp::Ge: if (!(v >= f.value)) return false; break;
+			}
+		}
+		return true;
+	}
+};
+
+inline SearchQuery parseSearchQuery(const std::string& query) {
+	SearchQuery q;
+	std::istringstream iss(query);
+	std::string token;
+	while (iss >> token) {
+		std::string lower = rack::string::lowercase(token);
+		SearchFilter f;
+		if (parseSearchFilter(lower, f)) {
+			q.filters.push_back(f);
+		}
+		else {
+			if (!q.text.empty()) q.text += " ";
+			q.text += lower;
+		}
+	}
+	return q;
+}
 
 struct DataSourceNode {
 	std::string name;
@@ -186,41 +297,62 @@ struct DataSource {
 	virtual MetadataStore* getMetadata() { return nullptr; }
 
 	// Returns true if a node matches the search query.
-	// - Own name always checked.
-	// - Containers: also checks all known descendant filenames via metadata.
-	// - Files: also checks every ancestor directory name encoded in relativePath.
-	virtual bool matchesSearch(const std::string& relativePath, bool isContainer, const std::string& lowerQuery) {
-		if (lowerQuery.empty()) return true;
+	// - Own name always checked against the text portion of the query.
+	// - Containers: matches if their own name matches, or any descendant file
+	//   (via metadata) matches both the text portion and any numeric filters.
+	// - Files: own name or any ancestor directory name must match the text
+	//   portion, and the file's metadata must satisfy any numeric filters
+	//   (bpm:/length: etc.) — see SearchQuery.
+	virtual bool matchesSearch(const std::string& relativePath, bool isContainer, const SearchQuery& query) {
+		if (query.empty()) return true;
 
-		// Own name
 		size_t lastSlash = relativePath.rfind('/');
 		std::string ownName = (lastSlash != std::string::npos) ? relativePath.substr(lastSlash + 1) : relativePath;
-		if (rack::string::lowercase(ownName).find(lowerQuery) != std::string::npos)
-			return true;
 
-		if (isContainer) {
-			// Known descendant filenames via metadata
+		if (!isContainer) {
+			bool textMatch = query.text.empty()
+				|| rack::string::lowercase(ownName).find(query.text) != std::string::npos;
+			if (!textMatch) {
+				// Ancestor directory names are encoded in the relative path
+				std::string p = relativePath;
+				size_t pos;
+				while ((pos = p.find('/')) != std::string::npos) {
+					std::string component = p.substr(0, pos);
+					if (rack::string::lowercase(component).find(query.text) != std::string::npos) {
+						textMatch = true;
+						break;
+					}
+					p = p.substr(pos + 1);
+				}
+			}
+			if (!textMatch) return false;
+			if (query.filters.empty()) return true;
+
 			MetadataStore* meta = getMetadata();
 			if (!meta) return false;
-			const std::string dirPrefix = relativePath + "/";
-			for (const auto& pair : meta->samples) {
-				if (pair.first.compare(0, dirPrefix.size(), dirPrefix) != 0) continue;
-				size_t s = pair.first.rfind('/');
-				std::string name = (s != std::string::npos) ? pair.first.substr(s + 1) : pair.first;
-				if (rack::string::lowercase(name).find(lowerQuery) != std::string::npos)
-					return true;
-			}
+			auto it = meta->samples.find(relativePath);
+			if (it == meta->samples.end()) return false;
+			return query.matchesMetadata(it->second);
 		}
-		else {
-			// Ancestor directory names are encoded in the relative path
-			std::string p = relativePath;
-			size_t pos;
-			while ((pos = p.find('/')) != std::string::npos) {
-				std::string component = p.substr(0, pos);
-				if (rack::string::lowercase(component).find(lowerQuery) != std::string::npos)
-					return true;
-				p = p.substr(pos + 1);
-			}
+
+		// Container: own name match is sufficient only when there are no
+		// numeric filters to satisfy against a descendant.
+		if (query.filters.empty()
+				&& (query.text.empty() || rack::string::lowercase(ownName).find(query.text) != std::string::npos))
+			return true;
+
+		// Known descendant files via metadata
+		MetadataStore* meta = getMetadata();
+		if (!meta) return false;
+		const std::string dirPrefix = relativePath + "/";
+		for (const auto& pair : meta->samples) {
+			if (pair.first.compare(0, dirPrefix.size(), dirPrefix) != 0) continue;
+			size_t s = pair.first.rfind('/');
+			std::string name = (s != std::string::npos) ? pair.first.substr(s + 1) : pair.first;
+			if (!query.text.empty() && rack::string::lowercase(name).find(query.text) == std::string::npos)
+				continue;
+			if (!query.matchesMetadata(pair.second)) continue;
+			return true;
 		}
 		return false;
 	}

@@ -62,6 +62,18 @@ Type in the **Search** field (top-right of the display) to filter the tree. Sear
 
 Press **Escape** or double-click the field to clear the search.
 
+#### Filtering by BPM and Length
+
+Alongside plain text, the search field accepts numeric filter terms:
+
+- `bpm:140` — files with a detected BPM of ~140 (small tolerance applied).
+- `bpm:>120`, `bpm:<=90` — BPM above/below a threshold. Operators `<`, `<=`, `>`, `>=`, and `=` are supported.
+- `length:<1s` — files shorter than 1 second. `length` (or `duration`/`len`) accepts seconds (`s`) or minutes (`m`), e.g. `length:>=2.5m`.
+
+Filter terms can be combined with each other and with plain text, e.g. `kick bpm:140 length:<1s`. A folder matches a filter if any file inside it does. Files for which the relevant info hasn't been read yet (see [Indexing](#indexing)) won't match a filter — run **Index metadata for all files** first if filters seem to miss results.
+
+**Right-click** the BPM readout in the preview pane (top-right, shown once a BPM has been detected) for quick filter shortcuts that set the search field to the current file's BPM: an exact match, `bpm:<=`, or `bpm:>=`.
+
 ## Keyboard Navigation
 
 With the browser focused, use the arrow keys to move through the tree:

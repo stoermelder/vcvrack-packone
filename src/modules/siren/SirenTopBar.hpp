@@ -237,6 +237,10 @@ struct SirenTopBar : widget::OpaqueWidget {
 		searchField->box.size = Vec(box.size.x - browserW - gapW, btnH);
 		searchField->pane = pane;
 		addChild(searchField);
+
+		pane->setSearchFieldText = [searchField](const std::string& text) {
+			searchField->setText(text);
+		};
 	}
 };
 

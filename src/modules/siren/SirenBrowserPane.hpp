@@ -239,6 +239,36 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 
 	std::string searchQuery;
 
+	// Set by SirenTopBar so setSearchQuery() can update the displayed text field.
+	std::function<void(const std::string&)> setSearchFieldText;
+
+	void setSearchQuery(const std::string& query) {
+		searchQuery = query;
+		if (setSearchFieldText) setSearchFieldText(query);
+		requestRebuild();
+	}
+
+	// Merges a "bpm:..." filter token into the current search query, replacing
+	// any existing bpm filter token while leaving other text/filters untouched.
+	void setBpmFilter(const std::string& filterToken) {
+		std::istringstream iss(searchQuery);
+		std::string token;
+		std::vector<std::string> tokens;
+		while (iss >> token) {
+			SearchFilter f;
+			if (parseSearchFilter(rack::string::lowercase(token), f) && f.field == SearchFilterField::Bpm) continue;
+			tokens.push_back(token);
+		}
+		tokens.push_back(filterToken);
+
+		std::string newQuery;
+		for (size_t i = 0; i < tokens.size(); i++) {
+			if (i > 0) newQuery += " ";
+			newQuery += tokens[i];
+		}
+		setSearchQuery(newQuery);
+	}
+
 	DataSource* activeDataSource = nullptr;
 
 	struct TreeEntry {
@@ -1077,14 +1107,14 @@ inline void SirenBrowserPane::rebuildRowWidgets() {
 	rowContainer->clearChildren();
 	MetadataStore* meta = activeDataSource ? activeDataSource->getMetadata() : nullptr;
 
-	std::string lq = rack::string::lowercase(searchQuery);
+	SearchQuery sq = parseSearchQuery(searchQuery);
 	float y = 0.f;
 	for (int i = 0; i < (int)rows.size(); i++) {
 		const TreeEntry& entry = rows[i];
 		const DataSourceNode& n = entry.node;
 
-		if (!lq.empty() && activeDataSource) {
-			if (!activeDataSource->matchesSearch(n.relativePath, n.isContainer, lq)) continue;
+		if (!sq.empty() && activeDataSource) {
+			if (!activeDataSource->matchesSearch(n.relativePath, n.isContainer, sq)) continue;
 		}
 
 		if (n.isContainer) {

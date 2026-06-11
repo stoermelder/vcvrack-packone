@@ -583,6 +583,93 @@ TEST_CASE("DataSource: metadata is mutable through pointer", "[Siren][Metadata]"
 }
 
 
+// ─── Search query: parsing and matching ──────────────────────────────────────
+
+TEST_CASE("parseSearchQuery: splits plain text from numeric filters", "[Siren][Search]") {
+	SearchQuery q = parseSearchQuery("Kick bpm:140 length:<1s");
+	REQUIRE(q.text == "kick");
+	REQUIRE(q.filters.size() == 2);
+	REQUIRE(q.filters[0].field == SearchFilterField::Bpm);
+	REQUIRE(q.filters[0].op == SearchFilterOp::Eq);
+	REQUIRE(q.filters[0].value == Catch::Approx(140.f));
+	REQUIRE(q.filters[1].field == SearchFilterField::Length);
+	REQUIRE(q.filters[1].op == SearchFilterOp::Lt);
+	REQUIRE(q.filters[1].value == Catch::Approx(1.f));
+}
+
+TEST_CASE("parseSearchQuery: length filter accepts minute unit and >= operator", "[Siren][Search]") {
+	SearchQuery q = parseSearchQuery("length:>=2.5m");
+	REQUIRE(q.text.empty());
+	REQUIRE(q.filters.size() == 1);
+	REQUIRE(q.filters[0].field == SearchFilterField::Length);
+	REQUIRE(q.filters[0].op == SearchFilterOp::Ge);
+	REQUIRE(q.filters[0].value == Catch::Approx(150.f)); // 2.5 minutes -> seconds
+}
+
+TEST_CASE("parseSearchQuery: unrecognised key:value falls back to plain text", "[Siren][Search]") {
+	SearchQuery q = parseSearchQuery("foo:bar bpm:140");
+	REQUIRE(q.text == "foo:bar");
+	REQUIRE(q.filters.size() == 1);
+}
+
+TEST_CASE("matchesSearch: bpm filter matches within tolerance", "[Siren][Search]") {
+	TestDataSource src("/test/root");
+	MetadataStore* meta = src.getMetadata();
+	meta->setAudioInfo("kick.wav", 1.f, 44100, 16, 2);
+	meta->setBpm("kick.wav", 140.2f);
+	meta->setAudioInfo("snare.wav", 1.f, 44100, 16, 2);
+	meta->setBpm("snare.wav", 90.f);
+
+	SearchQuery q = parseSearchQuery("bpm:140");
+	REQUIRE(src.matchesSearch("kick.wav", false, q) == true);
+	REQUIRE(src.matchesSearch("snare.wav", false, q) == false);
+}
+
+TEST_CASE("matchesSearch: length filter with operator and unit", "[Siren][Search]") {
+	TestDataSource src("/test/root");
+	MetadataStore* meta = src.getMetadata();
+	meta->setAudioInfo("short.wav", 0.5f, 44100, 16, 2);
+	meta->setAudioInfo("long.wav", 5.f, 44100, 16, 2);
+
+	SearchQuery q = parseSearchQuery("length:<1s");
+	REQUIRE(src.matchesSearch("short.wav", false, q) == true);
+	REQUIRE(src.matchesSearch("long.wav", false, q) == false);
+}
+
+TEST_CASE("matchesSearch: file with no metadata never matches a numeric filter", "[Siren][Search]") {
+	TestDataSource src("/test/root");
+
+	SearchQuery q = parseSearchQuery("bpm:140");
+	REQUIRE(src.matchesSearch("unknown.wav", false, q) == false);
+}
+
+TEST_CASE("matchesSearch: combined text and numeric filter", "[Siren][Search]") {
+	TestDataSource src("/test/root");
+	MetadataStore* meta = src.getMetadata();
+	meta->setAudioInfo("kick.wav", 1.f, 44100, 16, 2);
+	meta->setBpm("kick.wav", 140.f);
+	meta->setAudioInfo("kick2.wav", 1.f, 44100, 16, 2);
+	meta->setBpm("kick2.wav", 90.f);
+
+	SearchQuery q = parseSearchQuery("kick bpm:140");
+	REQUIRE(src.matchesSearch("kick.wav", false, q) == true);
+	REQUIRE(src.matchesSearch("kick2.wav", false, q) == false);
+}
+
+TEST_CASE("matchesSearch: container matches when a descendant satisfies the filter", "[Siren][Search]") {
+	TestDataSource src("/test/root");
+	MetadataStore* meta = src.getMetadata();
+	meta->setAudioInfo("drums/kick.wav", 1.f, 44100, 16, 2);
+	meta->setBpm("drums/kick.wav", 140.f);
+	meta->setAudioInfo("vocals/take.wav", 1.f, 44100, 16, 2);
+	meta->setBpm("vocals/take.wav", 90.f);
+
+	SearchQuery q = parseSearchQuery("bpm:140");
+	REQUIRE(src.matchesSearch("drums", true, q) == true);
+	REQUIRE(src.matchesSearch("vocals", true, q) == false);
+}
+
+
 // ─── Audio streaming: ring buffer / DSP ──────────────────────────────────────
 // process() reads from ring buffers and applies volume scaling.
 // Helper: push a stereo frame directly into the module's ring buffers.

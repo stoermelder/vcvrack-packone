@@ -92,9 +92,11 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 
 	// ── BPM ───────────────────────────────────────────────────────────────────
 	std::atomic<float> bpm{0.f};
+	Rect bpmHitRect;
 
 	MetadataStore* metadata() const { return source ? source->getMetadata() : nullptr; }
 	std::function<void()> onMetadataChanged;
+	std::function<void(const std::string&)> onSetSearchQuery;
 
 	// ── public accessors for SirenWidget ─────────────────────────────────────
 	bool isLoopPreviewActive() const { return loopPreviewActive; }
@@ -427,11 +429,17 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 
 		// BPM
 		float bpmVal = bpm.load();
+		bpmHitRect = Rect();
 		if (bpmVal > 0.f || bpmVal < 0.f) {
 			std::string bpmText = (bpmVal < 0.f) ? "\xe2\x80\xa6 BPM" : rack::string::f("%.1f BPM", bpmVal);
 			nvgFillColor(args.vg, nvgRGBf(0.50f, 0.50f, 0.50f));
 			nvgTextAlign(args.vg, NVG_ALIGN_RIGHT | NVG_ALIGN_BASELINE);
 			nvgText(args.vg, w - 50.f, 26.f, bpmText.c_str(), nullptr);
+			if (bpmVal > 0.f) {
+				float bounds[4];
+				nvgTextBounds(args.vg, w - 50.f, 26.f, bpmText.c_str(), nullptr, bounds);
+				bpmHitRect = Rect(Vec(bounds[0], bounds[1]), Vec(bounds[2] - bounds[0], bounds[3] - bounds[1]));
+			}
 			nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_BASELINE);
 		}
 
@@ -470,6 +478,11 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 
 	void onButton(const event::Button& e) override {
 		if (e.button == GLFW_MOUSE_BUTTON_RIGHT && e.action == GLFW_PRESS) {
+			if (bpm.load() > 0.f && bpmHitRect.contains(e.pos)) {
+				createBpmFilterMenu();
+				e.consume(this);
+				return;
+			}
 			createContextMenu();
 			e.consume(this);
 			return;
@@ -552,6 +565,25 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 				}));
 			}
 		}
+	}
+
+	void createBpmFilterMenu() {
+		float bpmVal = bpm.load();
+		if (bpmVal <= 0.f || !onSetSearchQuery) return;
+
+		std::string bpmStr = std::to_string((int)bpmVal);
+
+		ui::Menu* menu = createMenu();
+		menu->addChild(createMenuLabel("Filter by BPM"));
+		menu->addChild(createMenuItem("bpm:" + bpmStr, "", [this, bpmStr]() {
+			onSetSearchQuery("bpm:" + bpmStr);
+		}));
+		menu->addChild(createMenuItem("bpm:<=" + bpmStr, "", [this, bpmStr]() {
+			onSetSearchQuery("bpm:<=" + bpmStr);
+		}));
+		menu->addChild(createMenuItem("bpm:>=" + bpmStr, "", [this, bpmStr]() {
+			onSetSearchQuery("bpm:>=" + bpmStr);
+		}));
 	}
 
 	// ── BPM detection ─────────────────────────────────────────────────────────
