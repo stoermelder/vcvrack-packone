@@ -233,7 +233,8 @@ struct SailModule : Module {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 		inMode = (IN_MODE)json_integer_value(json_object_get(rootJ, "inMode"));
 		outMode = (OUT_MODE)json_integer_value(json_object_get(rootJ, "outMode"));
 		json_t* overlayEnabledJ = json_object_get(rootJ, "overlayEnabled");

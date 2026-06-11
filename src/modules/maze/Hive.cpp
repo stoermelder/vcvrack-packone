@@ -530,7 +530,8 @@ struct HiveModule : Module {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 
 		json_t* gridJ = json_object_get(rootJ, "grid");
 		for (int q = 0; q < grid.arraySize; q++) {
@@ -550,25 +551,38 @@ struct HiveModule : Module {
 		json_t* mirrorJ;
 		size_t mirrorIndex;
 		json_array_foreach(mirrorsJ, mirrorIndex, mirrorJ) {
-			grid.mirrorCenters[mirrorIndex].x = json_integer_value(json_object_get(mirrorJ, "x"));
-			grid.mirrorCenters[mirrorIndex].y = json_integer_value(json_object_get(mirrorJ, "y"));
-			grid.mirrorCenters[mirrorIndex].z = json_integer_value(json_object_get(mirrorJ, "z"));
+			json_t* xJ = json_object_get(mirrorJ, "x");
+			if (xJ) grid.mirrorCenters[mirrorIndex].x = json_integer_value(xJ);
+			json_t* yJ = json_object_get(mirrorJ, "y");
+			if (yJ) grid.mirrorCenters[mirrorIndex].y = json_integer_value(yJ);
+			json_t* zJ = json_object_get(mirrorJ, "z");
+			if (zJ) grid.mirrorCenters[mirrorIndex].z = json_integer_value(zJ);
 		}
 
 		json_t* portsJ = json_object_get(rootJ, "ports");
 		json_t* portJ;
 		size_t portIndex;
 		json_array_foreach(portsJ, portIndex, portJ) {
-			grid.cursor[portIndex].startPos.q = json_integer_value(json_object_get(portJ, "qStartPos"));
-			grid.cursor[portIndex].startPos.r = json_integer_value(json_object_get(portJ, "rStartPos"));	
-			grid.cursor[portIndex].startDir = (DIRECTION)json_integer_value(json_object_get(portJ, "startDir"));
-			grid.cursor[portIndex].pos.q = json_integer_value(json_object_get(portJ, "qPos"));
-			grid.cursor[portIndex].pos.r = json_integer_value(json_object_get(portJ, "rPos"));
-			grid.cursor[portIndex].dir = (DIRECTION)json_integer_value(json_object_get(portJ, "dir"));
-			grid.cursor[portIndex].turnMode = (TURNMODE)json_integer_value(json_object_get(portJ, "turnMode"));
-			grid.cursor[portIndex].ninetyState = (TURNMODE)json_integer_value(json_object_get(portJ, "ninetyState"));
-			grid.cursor[portIndex].outMode = (OUTMODE)json_integer_value(json_object_get(portJ, "outMode"));
-			grid.cursor[portIndex].ratchetingEnabled = (RATCHETMODE)json_integer_value(json_object_get(portJ, "ratchetingEnabled"));
+			json_t* qStartPosJ = json_object_get(portJ, "qStartPos");
+			if (qStartPosJ) grid.cursor[portIndex].startPos.q = json_integer_value(qStartPosJ);
+			json_t* rStartPosJ = json_object_get(portJ, "rStartPos");
+			if (rStartPosJ) grid.cursor[portIndex].startPos.r = json_integer_value(rStartPosJ);
+			json_t* startDirJ = json_object_get(portJ, "startDir");
+			if (startDirJ) grid.cursor[portIndex].startDir = (DIRECTION)json_integer_value(startDirJ);
+			json_t* qPosJ = json_object_get(portJ, "qPos");
+			if (qPosJ) grid.cursor[portIndex].pos.q = json_integer_value(qPosJ);
+			json_t* rPosJ = json_object_get(portJ, "rPos");
+			if (rPosJ) grid.cursor[portIndex].pos.r = json_integer_value(rPosJ);
+			json_t* dirJ = json_object_get(portJ, "dir");
+			if (dirJ) grid.cursor[portIndex].dir = (DIRECTION)json_integer_value(dirJ);
+			json_t* turnModeJ = json_object_get(portJ, "turnMode");
+			if (turnModeJ) grid.cursor[portIndex].turnMode = (TURNMODE)json_integer_value(turnModeJ);
+			json_t* ninetyStateJ = json_object_get(portJ, "ninetyState");
+			if (ninetyStateJ) grid.cursor[portIndex].ninetyState = (TURNMODE)json_integer_value(ninetyStateJ);
+			json_t* outModeJ = json_object_get(portJ, "outMode");
+			if (outModeJ) grid.cursor[portIndex].outMode = (OUTMODE)json_integer_value(outModeJ);
+			json_t* ratchetingEnabledJ = json_object_get(portJ, "ratchetingEnabled");
+			if (ratchetingEnabledJ) grid.cursor[portIndex].ratchetingEnabled = (RATCHETMODE)json_integer_value(ratchetingEnabledJ);
 
 			json_t* ratchetingProbJ = json_object_get(portJ, "ratchetingProb");
 			if (ratchetingProbJ) {
@@ -576,8 +590,10 @@ struct HiveModule : Module {
 			}
 		}
 
-		grid.usedRadius = json_integer_value(json_object_get(rootJ, "usedRadius"));
-		sizeFactor = json_real_value(json_object_get(rootJ, "sizeFactor"));
+		json_t* usedRadiusJ = json_object_get(rootJ, "usedRadius");
+		if (usedRadiusJ) grid.usedRadius = json_integer_value(usedRadiusJ);
+		json_t* sizeFactorJ = json_object_get(rootJ, "sizeFactor");
+		if (sizeFactorJ) sizeFactor = json_real_value(sizeFactorJ);
 
 		json_t* normalizePortsJ = json_object_get(rootJ, "normalizePorts");
 		if (normalizePortsJ) normalizePorts = json_boolean_value(normalizePortsJ);
@@ -587,7 +603,7 @@ struct HiveModule : Module {
 		if (ratchetingEnabledJ) {
 			for (int i = 0; i < NUM_PORTS; i++) {
 				grid.cursor[i].ratchetingEnabled = (RATCHETMODE)json_integer_value(ratchetingEnabledJ);
-				ratchetingSetProb(i, json_real_value(ratchetingProbJ));
+				if (ratchetingProbJ) ratchetingSetProb(i, json_real_value(ratchetingProbJ));
 			}
 		}
 
