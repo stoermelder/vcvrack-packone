@@ -197,6 +197,7 @@ TEST_CASE("MetadataStore: JSON round-trip", "[Siren][Metadata]") {
 	meta.setFavorite("a.wav", true);
 	meta.addTag("a.wav", "drone");
 	meta.addTag("b.wav", "loop");
+	meta.setAudioInfo("a.wav", 12.5f, 44100, 16, 2);
 
 	json_t* j = meta.toJson();
 	REQUIRE(j != nullptr);
@@ -212,6 +213,12 @@ TEST_CASE("MetadataStore: JSON round-trip", "[Siren][Metadata]") {
 	REQUIRE(std::find(tags.begin(), tags.end(), "drone") != tags.end());
 	auto tags2 = meta2.getTags("b.wav");
 	REQUIRE(std::find(tags2.begin(), tags2.end(), "loop") != tags2.end());
+
+	const SampleMetadata& a = meta2.samples.at("a.wav");
+	REQUIRE(a.durationSeconds == Catch::Approx(12.5f));
+	REQUIRE(a.sampleRate == 44100);
+	REQUIRE(a.bitDepth == 16);
+	REQUIRE(a.channels == 2);
 }
 
 // ─── MetadataStore: 3-step save process (rename → write → verify → delete) ────
@@ -227,6 +234,7 @@ TEST_CASE("MetadataStore::save: round-trips through real file I/O", "[Siren][Met
 	store.setFavorite("a.wav", true);
 	store.addTag("a.wav", "drone");
 	store.setBpm("b.wav", 120.f, 0.9f);
+	store.setAudioInfo("a.wav", 12.5f, 44100, 16, 2);
 	store.save();
 
 	REQUIRE(ghc::filesystem::exists(store.filePath()));
@@ -238,6 +246,11 @@ TEST_CASE("MetadataStore::save: round-trips through real file I/O", "[Siren][Met
 	REQUIRE(loaded.isFavorite("a.wav") == true);
 	REQUIRE(loaded.getTags("a.wav") == std::vector<std::string>{"drone"});
 	REQUIRE(loaded.getBpm("b.wav") == Catch::Approx(120.f));
+	const SampleMetadata& a = loaded.samples.at("a.wav");
+	REQUIRE(a.durationSeconds == Catch::Approx(12.5f));
+	REQUIRE(a.sampleRate == 44100);
+	REQUIRE(a.bitDepth == 16);
+	REQUIRE(a.channels == 2);
 }
 
 // A successful save leaves no ".bak" file behind — the backup is removed once

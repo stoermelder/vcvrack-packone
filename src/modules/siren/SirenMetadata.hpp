@@ -138,6 +138,10 @@ struct SampleMetadata {
 	std::vector<std::string> tags;
 	float bpm = 0.f;           // detected BPM, 0 if not detected
 	float bpmConfidence = 0.f; // confidence of BPM detection
+	float durationSeconds = 0.f; // length of the audio file, 0 if unknown
+	int sampleRate = 0;        // sample rate in Hz, 0 if unknown
+	int bitDepth = 0;          // bits per sample, 0 if unknown
+	int channels = 0;          // channel count, 0 if unknown
 };
 
 // Compute 8-char hex hash of a string (for JSON filename derivation)
@@ -245,6 +249,14 @@ struct MetadataStore {
 				json_object_set_new(fileJ, "bpm", json_real(meta.bpm));
 				json_object_set_new(fileJ, "bpmConfidence", json_real(meta.bpmConfidence));
 			}
+			if (meta.durationSeconds > 0.f)
+				json_object_set_new(fileJ, "duration", json_real(meta.durationSeconds));
+			if (meta.sampleRate > 0)
+				json_object_set_new(fileJ, "sampleRate", json_integer(meta.sampleRate));
+			if (meta.bitDepth > 0)
+				json_object_set_new(fileJ, "bitDepth", json_integer(meta.bitDepth));
+			if (meta.channels > 0)
+				json_object_set_new(fileJ, "channels", json_integer(meta.channels));
 			json_array_append_new(filesJ, fileJ);
 		}
 		json_object_set_new(rootJ, "files", filesJ);
@@ -287,6 +299,22 @@ struct MetadataStore {
 					meta.bpm = (float)json_number_value(bpmJ);
 				if (confJ && json_is_number(confJ))
 					meta.bpmConfidence = (float)json_number_value(confJ);
+
+				json_t* durationJ = json_object_get(fileJ, "duration");
+				if (durationJ && json_is_number(durationJ))
+					meta.durationSeconds = (float)json_number_value(durationJ);
+
+				json_t* sampleRateJ = json_object_get(fileJ, "sampleRate");
+				if (sampleRateJ && json_is_integer(sampleRateJ))
+					meta.sampleRate = (int)json_integer_value(sampleRateJ);
+
+				json_t* bitDepthJ = json_object_get(fileJ, "bitDepth");
+				if (bitDepthJ && json_is_integer(bitDepthJ))
+					meta.bitDepth = (int)json_integer_value(bitDepthJ);
+
+				json_t* channelsJ = json_object_get(fileJ, "channels");
+				if (channelsJ && json_is_integer(channelsJ))
+					meta.channels = (int)json_integer_value(channelsJ);
 			}
 		}
 	}
@@ -376,6 +404,16 @@ struct MetadataStore {
 		meta.relativePath = rel;
 		meta.bpm = bpmValue;
 		meta.bpmConfidence = confidence;
+	}
+
+	// Set audio file properties (length, sample rate, bit depth, channels) for a relative path
+	void setAudioInfo(const std::string& rel, float durationSeconds, int sampleRate, int bitDepth, int channels) {
+		auto& meta = samples[rel];
+		meta.relativePath = rel;
+		meta.durationSeconds = durationSeconds;
+		meta.sampleRate = sampleRate;
+		meta.bitDepth = bitDepth;
+		meta.channels = channels;
 	}
 };
 

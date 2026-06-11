@@ -162,6 +162,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 
 		if (MetadataStore* meta = metadata()) {
 			if (!relPath.empty()) {
+				meta->setAudioInfo(relPath, info.durationSeconds, info.sampleRate, info.bitDepth, info.channels);
 				auto it = meta->samples.find(relPath);
 				if (it != meta->samples.end() && it->second.bpm > 0.f) {
 					bpm.store(it->second.bpm);
