@@ -142,6 +142,7 @@ struct SampleMetadata {
 	int sampleRate = 0;        // sample rate in Hz, 0 if unknown
 	int bitDepth = 0;          // bits per sample, 0 if unknown
 	int channels = 0;          // channel count, 0 if unknown
+	int64_t fileTimestamp = 0; // file mtime when the audio info above was last read, 0 if unknown
 };
 
 // Compute 8-char hex hash of a string (for JSON filename derivation)
@@ -257,6 +258,8 @@ struct MetadataStore {
 				json_object_set_new(fileJ, "bitDepth", json_integer(meta.bitDepth));
 			if (meta.channels > 0)
 				json_object_set_new(fileJ, "channels", json_integer(meta.channels));
+			if (meta.fileTimestamp != 0)
+				json_object_set_new(fileJ, "mtime", json_integer((json_int_t)meta.fileTimestamp));
 			json_array_append_new(filesJ, fileJ);
 		}
 		json_object_set_new(rootJ, "files", filesJ);
@@ -315,6 +318,10 @@ struct MetadataStore {
 				json_t* channelsJ = json_object_get(fileJ, "channels");
 				if (channelsJ && json_is_integer(channelsJ))
 					meta.channels = (int)json_integer_value(channelsJ);
+
+				json_t* mtimeJ = json_object_get(fileJ, "mtime");
+				if (mtimeJ && json_is_integer(mtimeJ))
+					meta.fileTimestamp = (int64_t)json_integer_value(mtimeJ);
 			}
 		}
 	}
@@ -406,14 +413,26 @@ struct MetadataStore {
 		meta.bpmConfidence = confidence;
 	}
 
-	// Set audio file properties (length, sample rate, bit depth, channels) for a relative path
-	void setAudioInfo(const std::string& rel, float durationSeconds, int sampleRate, int bitDepth, int channels) {
+	// Set audio file properties (length, sample rate, bit depth, channels) for a relative path,
+	// recording the file's mtime at the time of reading so a later loadChildrenSync/Async can
+	// skip re-reading the audio header as long as the file hasn't changed since.
+	void setAudioInfo(const std::string& rel, float durationSeconds, int sampleRate, int bitDepth, int channels, int64_t fileTimestamp = 0) {
 		auto& meta = samples[rel];
 		meta.relativePath = rel;
 		meta.durationSeconds = durationSeconds;
 		meta.sampleRate = sampleRate;
 		meta.bitDepth = bitDepth;
 		meta.channels = channels;
+		meta.fileTimestamp = fileTimestamp;
+	}
+
+	// Returns true if cached audio info exists for rel and is still valid for fileTimestamp,
+	// i.e. the file hasn't changed since the cached info was read.
+	bool hasValidAudioInfo(const std::string& rel, int64_t fileTimestamp) const {
+		if (fileTimestamp == 0) return false;
+		auto it = samples.find(rel);
+		if (it == samples.end()) return false;
+		return it->second.fileTimestamp == fileTimestamp;
 	}
 };
 

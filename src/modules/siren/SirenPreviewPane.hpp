@@ -36,6 +36,12 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	std::string  relPath;
 	AudioInfo    info;
 
+	// Lowest-priority source for the canvas's background-task overlay: returns
+	// a status message (e.g. "Indexing… N / M") or "" if nothing to show.
+	// Lets a sibling pane (e.g. the browser, while indexing metadata) surface
+	// progress here without this pane depending on its type.
+	std::function<std::string()> externalStatusMessage;
+
 	// ── normal waveform cache ─────────────────────────────────────────────────
 	WaveformCache     cache;
 	std::atomic<bool> cacheReady{false};
@@ -162,7 +168,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 
 		if (MetadataStore* meta = metadata()) {
 			if (!relPath.empty()) {
-				meta->setAudioInfo(relPath, info.durationSeconds, info.sampleRate, info.bitDepth, info.channels);
+				meta->setAudioInfo(relPath, info.durationSeconds, info.sampleRate, info.bitDepth, info.channels, src->getTimestamp(id));
 				auto it = meta->samples.find(relPath);
 				if (it != meta->samples.end() && it->second.bpm > 0.f) {
 					bpm.store(it->second.bpm);
@@ -321,15 +327,38 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			canvas->box.size       = Vec(box.size.x, box.size.y - TB_H);
 			canvas->cache          = loopPreviewActive ? &loopCache : &cache;
 			canvas->cacheReady     = loopPreviewActive ? loopCacheReady : (bool)cacheReady;
-			canvas->cacheBuilding  = !loopPreviewActive && cacheBuilding;
-			canvas->generatingLoop = loopPreviewBuilding && !loopPreviewActive;
 			canvas->loopPreviewMode = loopPreviewActive;
 			canvas->hasFile        = !currentNode.relativePath.empty();
 			canvas->durationSeconds = loopPreviewActive ? loopDurationSeconds : info.durationSeconds;
 			canvas->dragPath        = currentNode.relativePath;
 			canvas->dragDisplayName = displayName;
 			canvas->modulePlayheadPos = modulePlayheadPos;
-			canvas->converting     = dropHandler ? &dropHandler->converting : nullptr;
+
+			// Single background-task overlay. Every source computes a message
+			// ("" = nothing to show), then the first non-empty one wins.
+			bool building = !loopPreviewActive && cacheBuilding;
+			bool generatingLoop = loopPreviewBuilding && !loopPreviewActive;
+			std::string convertingMsg = (dropHandler && dropHandler->converting.load(std::memory_order_relaxed))
+				? "Converting\xe2\x80\xa6" : "";
+			std::string generatingLoopMsg = generatingLoop ? "Generating loop preview\xe2\x80\xa6" : "";
+			std::string buildingMsg = building ? "Building waveform\xe2\x80\xa6" : "";
+			std::string externalMsg = externalStatusMessage ? externalStatusMessage() : "";
+
+			struct StatusCandidate { const std::string& msg; NVGcolor color; };
+			StatusCandidate candidates[] = {
+				{ convertingMsg,     nvgRGBf(1.f, 0.85f, 0.1f) },
+				{ generatingLoopMsg, nvgRGBf(0.35f, 0.80f, 0.85f) },
+				{ buildingMsg,       nvgRGBf(1.f, 0.85f, 0.1f) },
+				{ externalMsg,       nvgRGBf(1.f, 0.85f, 0.1f) },
+			};
+			canvas->statusMessage.clear();
+			for (const StatusCandidate& c : candidates) {
+				if (!c.msg.empty()) {
+					canvas->statusMessage = c.msg;
+					canvas->statusColor   = c.color;
+					break;
+				}
+			}
 		}
 
 		if (dropHandler) dropHandler->step();

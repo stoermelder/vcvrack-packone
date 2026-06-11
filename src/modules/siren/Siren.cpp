@@ -773,6 +773,8 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 		previewPane->box.size = Vec(previewW, paneH);
 		previewPane->init(&taskWorker, &dropHandler);
 		previewPane->cacheDir = sirenCacheDirPath();
+		SirenBrowserPane* bp = browserPane;
+		previewPane->externalStatusMessage = [bp]() { return bp->statusMessage(); };
 		display->addChild(previewPane);
 
 		// The active DataSource (and its MetadataStore) is about to be destroyed —

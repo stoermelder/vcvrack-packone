@@ -28,13 +28,15 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 	// ── display inputs (set by parent each step()) ───────────────────────────
 	WaveformCache*      cache             = nullptr;  // non-owning pointer to parent's active cache
 	bool                cacheReady        = false;
-	bool                cacheBuilding     = false;    // "Building waveform…" overlay
-	bool                generatingLoop    = false;    // "Generating loop preview…" overlay
 	bool                loopPreviewMode   = false;    // tint + suppress trim handles
 	bool                hasFile           = false;
 	float               durationSeconds   = 0.f;
 	std::atomic<float>* modulePlayheadPos = nullptr;
-	std::atomic<bool>*  converting        = nullptr;  // "Converting…" overlay
+
+	// Single overlay for any background task ("Building waveform…", "Converting…",
+	// "Generating loop preview…", "Indexing… N / M", ...). Empty = no overlay.
+	std::string statusMessage;
+	NVGcolor    statusColor = nvgRGBf(1.f, 0.85f, 0.1f);
 
 	// drag source data — updated by parent each step()
 	std::string dragPath;
@@ -192,10 +194,6 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 				nvgStrokeWidth(args.vg, 1.f);
 			}
 		}
-		else if (cacheBuilding && !generatingLoop) {
-			drawStatusOverlay(args.vg, waveW, waveY, waveH, "Building waveform…",
-				nvgRGBf(1.f, 0.85f, 0.1f));
-		}
 
 		// ── tick marks ───────────────────────────────────────────────────────
 		if (durationSeconds > 0.f && waveW > 0.f) {
@@ -280,16 +278,9 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 			nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_BASELINE);
 		}
 
-		// ── "Generating loop preview…" overlay ────────────────────────────────
-		if (generatingLoop) {
-			drawStatusOverlay(args.vg, waveW, waveY, waveH, "Generating loop preview\xe2\x80\xa6",
-				nvgRGBf(0.35f, 0.80f, 0.85f));
-		}
-
-		// ── "Converting…" overlay ─────────────────────────────────────────────
-		if (converting && converting->load(std::memory_order_relaxed)) {
-			drawStatusOverlay(args.vg, waveW, waveY, waveH, "Converting\xe2\x80\xa6",
-				nvgRGBf(1.f, 0.85f, 0.1f));
+		// ── background-task overlay ("Building waveform…", "Converting…", etc.) ──
+		if (!statusMessage.empty()) {
+			drawStatusOverlay(args.vg, waveW, waveY, waveH, statusMessage.c_str(), statusColor);
 		}
 
 		// ── scrollbar ─────────────────────────────────────────────────────────

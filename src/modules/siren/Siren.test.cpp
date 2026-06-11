@@ -720,6 +720,116 @@ TEST_CASE("startPlayback: outputFrameCount reset on each call", "[Siren][Audio]"
 	Test::destroyModule(m);
 }
 
+// ─── SirenBrowserPane: metadata indexing ─────────────────────────────────────
+
+namespace {
+
+// Unique scratch directory for indexing tests; removed on destruction.
+struct IndexTempDir {
+	ghc::filesystem::path path;
+
+	IndexTempDir() {
+		static int seq = 0;
+		path = ghc::filesystem::temp_directory_path()
+		       / ("siren_index_test_" + std::to_string(++seq));
+		ghc::filesystem::create_directories(path);
+	}
+
+	~IndexTempDir() { ghc::filesystem::remove_all(path); }
+
+	std::string filePath(const std::string& name) const { return (path / name).string(); }
+	std::string str() const { return path.string(); }
+};
+
+// Writes a short decodable silent WAV file so loadAudioInfo() can read its header.
+void writeIndexTestWav(const std::string& path, int frames = 4410, int sampleRate = 44100, int channels = 2) {
+	drwav_data_format fmt = {};
+	fmt.container     = drwav_container_riff;
+	fmt.format        = DR_WAVE_FORMAT_IEEE_FLOAT;
+	fmt.channels      = (drwav_uint32)channels;
+	fmt.sampleRate    = (drwav_uint32)sampleRate;
+	fmt.bitsPerSample = 32;
+	drwav wav;
+	drwav_init_file_write(&wav, path.c_str(), &fmt, nullptr);
+	std::vector<float> samples((size_t)frames * channels, 0.f);
+	drwav_write_pcm_frames(&wav, (drwav_uint64)frames, samples.data());
+	drwav_uninit(&wav);
+}
+
+} // namespace
+
+// startIndexing scans every file below the root, fills in audio info (duration,
+// sample rate, bit depth, channels) and detects BPM from filenames — without
+// overwriting BPM values that were already set.
+TEST_CASE("startIndexing: fills audio info and filename-based BPM, preserves existing BPM", "[Siren][Browser]") {
+	IndexTempDir tmp;
+	writeIndexTestWav(tmp.filePath("loop_120bpm.wav"), 4410, 44100, 2);
+	writeIndexTestWav(tmp.filePath("other.wav"), 4410, 48000, 1);
+
+	auto* src = new FileSystemDataSource(tmp.str(), scratchMetadataStore());
+	// Pre-existing BPM must survive indexing unchanged.
+	src->getMetadata()->setBpm("/other.wav", 99.f, 1.f);
+
+	StoermelderPackOne::TaskWorker worker;
+	SirenBrowserPane pane;
+	pane.box.size = Vec(600.f, 380.f);
+	pane.init(&worker);
+	pane.setSize(pane.box.size);
+	pane.activeDataSource = src;
+
+	pane.startIndexing();
+	REQUIRE(pane.indexProgress != nullptr);
+
+	while (!pane.indexProgress->done.load(std::memory_order_acquire)) {
+		std::this_thread::sleep_for(std::chrono::milliseconds(5));
+	}
+
+	MetadataStore* meta = src->getMetadata();
+
+	REQUIRE(meta->samples.count("/loop_120bpm.wav") == 1);
+	const SampleMetadata& m1 = meta->samples.at("/loop_120bpm.wav");
+	REQUIRE(m1.sampleRate == 44100);
+	REQUIRE(m1.channels == 2);
+	REQUIRE(m1.bitDepth == 32);
+	REQUIRE(m1.durationSeconds == Catch::Approx(0.1f));
+	REQUIRE(m1.bpm == Catch::Approx(120.f));
+
+	REQUIRE(meta->samples.count("/other.wav") == 1);
+	const SampleMetadata& m2 = meta->samples.at("/other.wav");
+	REQUIRE(m2.sampleRate == 48000);
+	REQUIRE(m2.channels == 1);
+	// BPM detected from the filename must not overwrite the pre-existing value.
+	REQUIRE(m2.bpm == Catch::Approx(99.f));
+	REQUIRE(m2.bpmConfidence == Catch::Approx(1.f));
+}
+
+// startIndexing is a no-op when called again while a scan is still running.
+TEST_CASE("startIndexing: re-entrant call while running is ignored", "[Siren][Browser]") {
+	IndexTempDir tmp;
+	writeIndexTestWav(tmp.filePath("a.wav"));
+
+	auto* src = new FileSystemDataSource(tmp.str(), scratchMetadataStore());
+
+	StoermelderPackOne::TaskWorker worker;
+	SirenBrowserPane pane;
+	pane.box.size = Vec(600.f, 380.f);
+	pane.init(&worker);
+	pane.setSize(pane.box.size);
+	pane.activeDataSource = src;
+
+	pane.startIndexing();
+	auto firstProgress = pane.indexProgress;
+	REQUIRE(firstProgress != nullptr);
+
+	// A second call before the first finishes must not replace indexProgress.
+	pane.startIndexing();
+	REQUIRE(pane.indexProgress == firstProgress);
+
+	while (!pane.indexProgress->done.load(std::memory_order_acquire)) {
+		std::this_thread::sleep_for(std::chrono::milliseconds(5));
+	}
+}
+
 // openStream with null source leaves pendingStream nullptr.
 TEST_CASE("openStream: null source leaves pendingStream nullptr", "[Siren][Audio]") {
 	auto* m = Test::createModule<SirenModule>("Siren");

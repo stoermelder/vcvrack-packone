@@ -202,10 +202,22 @@ struct FileSystemDataSource : DataSource {
 		node.relativePath    = relativePath;
 		node.name            = ghc::filesystem::path(relativePath).filename().string();
 		node.isContainer     = false;
-		AudioInfo ai;
-		if (::StoermelderPackOne::Siren::loadAudioInfo(resolveAbsPath(relativePath), ai))
-			node.durationSeconds = ai.durationSeconds;
+		node.durationSeconds = loadCachedDuration(relativePath, resolveAbsPath(relativePath));
 		return node;
+	}
+
+	// Returns the duration for relativePath, using cached metadata if it's still valid for the
+	// file's current mtime, otherwise reading the audio header and updating the cache for next time.
+	float loadCachedDuration(const std::string& relativePath, const std::string& absPath) const {
+		int64_t ts = getFileTimestamp(absPath);
+		MetadataStore* meta = metadata_.get();
+		if (meta && meta->hasValidAudioInfo(relativePath, ts))
+			return meta->samples.at(relativePath).durationSeconds;
+
+		AudioInfo ai;
+		if (!::StoermelderPackOne::Siren::loadAudioInfo(absPath, ai)) return 0.f;
+		if (meta) meta->setAudioInfo(relativePath, ai.durationSeconds, ai.sampleRate, ai.bitDepth, ai.channels, ts);
+		return ai.durationSeconds;
 	}
 
 
@@ -213,7 +225,7 @@ struct FileSystemDataSource : DataSource {
 		return isSupportedAudioFile(path);
 	}
 
-	std::vector<DataSourceNode> loadChildrenSync(const std::string& id) override {
+	std::vector<DataSourceNode> loadChildrenSync(const std::string& id, bool withAudioInfo = true) override {
 		std::vector<DataSourceNode> result;
 		std::string scanPath = root + id;
 		ghc::filesystem::path base(root);
@@ -227,9 +239,8 @@ struct FileSystemDataSource : DataSource {
 				if (node.isContainer || isSupportedAudioFile(node.name)) {
 					if (!node.isContainer) {
 						if (isGeneratedFile(node.name)) continue;
-						AudioInfo ai;
-						if (::StoermelderPackOne::Siren::loadAudioInfo(resolveAbsPath(node.relativePath), ai))
-							node.durationSeconds = ai.durationSeconds;
+						if (withAudioInfo)
+							node.durationSeconds = loadCachedDuration(node.relativePath, resolveAbsPath(node.relativePath));
 					}
 					result.push_back(std::move(node));
 				}
@@ -247,7 +258,7 @@ struct FileSystemDataSource : DataSource {
 			std::function<void(std::vector<DataSourceNode>)> onDone) override {
 		std::string scanPath = root + id;
 		std::string rootCopy = root;
-		worker.work([scanPath, rootCopy, onDone]() {
+		worker.work([this, scanPath, rootCopy, onDone]() {
 			std::vector<DataSourceNode> result;
 			ghc::filesystem::path base(rootCopy);
 			try {
@@ -260,10 +271,7 @@ struct FileSystemDataSource : DataSource {
 					if (node.isContainer || isSupportedAudioFile(node.name)) {
 						if (!node.isContainer) {
 							if (isGeneratedFile(node.name)) continue;
-							AudioInfo ai;
-							std::string absPath = rootCopy + node.relativePath;
-							if (::StoermelderPackOne::Siren::loadAudioInfo(absPath, ai))
-								node.durationSeconds = ai.durationSeconds;
+							node.durationSeconds = loadCachedDuration(node.relativePath, rootCopy + node.relativePath);
 						}
 						result.push_back(std::move(node));
 					}
@@ -522,7 +530,7 @@ struct FileSystemDataSource : DataSource {
 
 			std::string folderId = node.relativePath;
 			addNewTagField([this, folderId](const std::string& tag) {
-				auto children = loadChildrenSync(folderId);
+				auto children = loadChildrenSync(folderId, false);
 				for (const auto& child : children)
 					if (!child.isContainer)
 						getMetadata()->addTag(child.relativePath, tag);
@@ -533,7 +541,7 @@ struct FileSystemDataSource : DataSource {
 			std::string id = node.relativePath;
 			menu->addChild(Rack::createStickySubmenuItem("Tag all files", RIGHT_ARROW, [this, id, onChanged](ui::Menu* tagMenu) {
 				// Scan for direct audio children (runs on UI thread; acceptable for a menu action)
-				auto children = loadChildrenSync(id);
+				auto children = loadChildrenSync(id, false);
 				std::vector<std::string> audioRels;
 				for (const auto& child : children)
 					if (!child.isContainer)

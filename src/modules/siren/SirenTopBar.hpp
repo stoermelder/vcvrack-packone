@@ -60,7 +60,13 @@ struct SirenSourceButton : ui::ChoiceButton {
 			pane->activeDataSource->appendSourceMenuItems(menu);
 			if (i != menu->children.size()) menu->addChild(new ui::MenuSeparator);
 		}
-		
+
+		bool indexing = pane->indexProgress && !pane->indexProgress->done.load(std::memory_order_relaxed);
+		menu->addChild(createMenuItem("Index metadata for all files", "", [this]() {
+			pane->startIndexing();
+		}, !pane->activeDataSource || indexing));
+		menu->addChild(new ui::MenuSeparator);
+
 		menu->addChild(createMenuItem("Add root...", "", [this]() {
 			if (pane->onAddRoot) pane->onAddRoot();
 		}));

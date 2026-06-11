@@ -6,6 +6,7 @@
 #include "SirenMetadata.hpp"
 #include "SirenDropHandler.hpp"
 #include "SirenTagClassifierApi.hpp"
+#include "SirenBpmDetector.hpp"
 #include "../../utils/TaskWorker.hpp"
 #include "../../ui/AutoTagDialog.hpp"
 
@@ -207,6 +208,15 @@ struct SirenScrollWidget : ui::ScrollWidget {
 	}
 };
 
+// ─── Indexing progress ─────────────────────────────────────────────────────────
+// Shared between the worker thread (writes) and SirenBrowserPane::draw (reads).
+// Held via shared_ptr so the worker task can safely outlive the pane if the
+// module is removed mid-scan.
+struct IndexProgress {
+	std::atomic<int>  processed{0};
+	std::atomic<bool> done{false};
+};
+
 // ─── SirenBrowserPane (tag bar added after SirenTagBar is defined) ────────────
 
 struct SirenBrowserPane : widget::OpaqueWidget {
@@ -267,11 +277,87 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 	widget::Widget*    rowContainer = nullptr;
 	SirenTagBar*       tagBar       = nullptr;
 
+	// Set while a metadata indexing scan is running; cleared once step() observes
+	// IndexProgress::done. nullptr when no scan is in progress.
+	std::shared_ptr<IndexProgress> indexProgress;
+
 	~SirenBrowserPane() override { delete activeDataSource; }
 
 	// Defined after SirenTagBar
 	void init(TaskWorker* tw);
 	void setSize(Vec size);
+
+	// Status message for the preview pane's generic background-task overlay,
+	// e.g. "Loading…" while the tree is (re)loading, or "Indexing… N files"
+	// while a metadata scan is running. Empty if this pane has nothing to
+	// report. Covers all of this pane's background tasks, so callers don't
+	// need to know which one (if any) is active.
+	std::string statusMessage() const {
+		if (loadPending) return "Loading\xe2\x80\xa6";
+
+		if (!indexProgress) return "";
+		int processed = indexProgress->processed.load(std::memory_order_relaxed);
+
+		char msg[64];
+		std::snprintf(msg, sizeof(msg), "Indexing\xe2\x80\xa6 %d files", processed);
+		return msg;
+	}
+
+	// Recursively scans every supported file below the active root, reading audio
+	// header info (length, sample rate, bit depth, channels) and detecting BPM
+	// from filenames, storing the results in metadata. Does not decode PCM data
+	// or build waveform caches. Runs on the worker thread; progress is reported
+	// via indexProgress for draw() to display.
+	void startIndexing() {
+		if (!worker || !activeDataSource) return;
+		if (indexProgress && !indexProgress->done.load(std::memory_order_relaxed)) return;
+
+		MetadataStore* meta = activeDataSource->getMetadata();
+		if (!meta) return;
+
+		DataSource* ds = activeDataSource;
+		auto progress = std::make_shared<IndexProgress>();
+		indexProgress = progress;
+
+		worker->work([ds, meta, progress](std::atomic<bool>& cancel) {
+			// Index each file as it's discovered, rather than collecting the
+			// full file list up front, so progress and cancellation are
+			// responsive even for very large libraries.
+			std::function<void(const std::string&)> visit = [&](const std::string& id) {
+				if (cancel.load(std::memory_order_relaxed)) return;
+				// withAudioInfo=false: this listing is only used for traversal/file
+				// names here, the full AudioInfo is loaded explicitly below.
+				for (const auto& child : ds->loadChildrenSync(id, false)) {
+					if (cancel.load(std::memory_order_relaxed)) return;
+					if (child.isContainer) {
+						visit(child.relativePath);
+						continue;
+					}
+
+					const std::string& rel = child.relativePath;
+					int64_t ts = ds->getTimestamp(rel);
+					if (!meta->hasValidAudioInfo(rel, ts)) {
+						AudioInfo ai;
+						if (ds->loadAudioInfo(rel, ai))
+							meta->setAudioInfo(rel, ai.durationSeconds, ai.sampleRate, ai.bitDepth, ai.channels, ts);
+					}
+
+					if (meta->getBpm(rel) <= 0.f) {
+						float conf = 0.f;
+						float bpmVal = BpmDetector::detectFromName(rel, conf);
+						if (bpmVal > 0.f) meta->setBpm(rel, bpmVal, conf);
+					}
+					meta->markSeen(rel);
+					progress->processed.fetch_add(1, std::memory_order_relaxed);
+				}
+			};
+			visit(ds->rootId());
+
+			if (!cancel.load(std::memory_order_relaxed))
+				ds->saveMetadata();
+			progress->done.store(true, std::memory_order_release);
+		});
+	}
 
 	std::string getRootDisplayName(int idx) const {
 		if (idx < 0 || idx >= (int)rootContainers.size()) return "";
@@ -357,6 +443,11 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 			}
 		}
 		if (dropHandler) dropHandler->step();
+
+		if (indexProgress && indexProgress->done.load(std::memory_order_acquire)) {
+			indexProgress.reset();
+			requestRebuild();
+		}
 
 		if (rebuildDirty && !(dropHandler && dropHandler->active)) {
 			rebuildDirty = false;
@@ -723,12 +814,6 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		nvgRect(args.vg, 0, 0, w, h);
 		nvgFillColor(args.vg, nvgRGBf(0.12f, 0.12f, 0.09f));
 		nvgFill(args.vg);
-
-		if (loadPending) {
-			nvgFontSize(args.vg, 6.f);
-			nvgFillColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.30f));
-			nvgText(args.vg, 8.f, 8.f, "Loading...", nullptr);
-		}
 
 		OpaqueWidget::draw(args);
 	}

@@ -176,8 +176,11 @@ struct DataSource {
 	virtual void loadChildrenAsync(const std::string& id, TaskWorker& worker,
 		std::function<void(std::vector<DataSourceNode>)> onDone) = 0;
 
-	// Sync version for testing
-	virtual std::vector<DataSourceNode> loadChildrenSync(const std::string& id) = 0;
+	// Sync version for testing. withAudioInfo controls whether each file's audio
+	// header is opened to fill in DataSourceNode::durationSeconds — pass false
+	// for callers that only need names/relativePath/isContainer (e.g. recursive
+	// scans), since opening every file (notably MP3 frame counting) is costly.
+	virtual std::vector<DataSourceNode> loadChildrenSync(const std::string& id, bool withAudioInfo = true) = 0;
 
 	// Per-file metadata (tags, favorites). Returns nullptr if unsupported.
 	virtual MetadataStore* getMetadata() { return nullptr; }
