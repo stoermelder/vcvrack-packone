@@ -146,6 +146,15 @@ struct SirenSearchField : ui::TextField {
 		nvgRestore(args.vg);
 	}
 
+	int getTextPosition(math::Vec mousePos) override {
+		// draw() renders at TOPBAR_SCALE, so the text (and its glyph positions)
+		// are scaled relative to box.size — undo that here, matching draw()'s
+		// effective coordinate space, or the cursor lands at the wrong glyph.
+		return bndTextFieldTextPosition(APP->window->vg, 0.0, 0.0,
+			box.size.x / TOPBAR_SCALE, box.size.y / TOPBAR_SCALE, -1, text.c_str(),
+			mousePos.x / TOPBAR_SCALE, mousePos.y / TOPBAR_SCALE);
+	}
+
 	void onChange(const event::Change& e) override {
 		if (pane) {
 			pane->searchQuery = rack::string::trim(text);
