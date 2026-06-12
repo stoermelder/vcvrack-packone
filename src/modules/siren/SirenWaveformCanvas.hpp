@@ -8,6 +8,27 @@
 namespace StoermelderPackOne {
 namespace Siren {
 
+// Cosmetic info for a special view (e.g. loop/repitch preview). The parent
+// points the canvas's previewMode at one of these each step(). Lets the
+// canvas stay agnostic of how many such views exist — adding one is just a
+// new named instance, not a new flag.
+struct PreviewModeInfo {
+	NVGcolor    accentColor;
+	std::string label;
+	std::string generatingMessage;
+
+	static const PreviewModeInfo& loopCrossfade() {
+		static const PreviewModeInfo info{
+			nvgRGBf(0.35f, 0.80f, 0.85f), "LOOP PREVIEW", "Generating loop preview\xe2\x80\xa6"};
+		return info;
+	}
+	static const PreviewModeInfo& repitch() {
+		static const PreviewModeInfo info{
+			nvgRGBf(0.95f, 0.65f, 0.30f), "REPITCH PREVIEW", "Generating repitch preview\xe2\x80\xa6"};
+		return info;
+	}
+};
+
 // ─── SirenWaveformCanvas ──────────────────────────────────────────────────────
 // Child widget of SirenPreviewPane that owns the waveform region: drawing,
 // trim handles, playhead, scrollbar, readout, and all mouse/keyboard interaction.
@@ -29,7 +50,7 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 	WaveformCache*      cache             = nullptr;  // non-owning pointer to parent's active cache
 	bool                cacheReady        = false;
 	bool                loopPreviewMode   = false;    // tint + suppress trim handles
-	bool                previewIsRepitch  = false;    // overlay/exit-button text variant
+	const PreviewModeInfo* previewMode = &PreviewModeInfo::loopCrossfade(); // active mode's color/label while in loopPreviewMode
 	bool                hasFile           = false;
 	float               durationSeconds   = 0.f;
 	std::atomic<float>* modulePlayheadPos = nullptr;
@@ -141,10 +162,7 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 			asset::system("res/fonts/ShareTechMono-Regular.ttf"));
 		nvgFontFaceId(args.vg, font->handle);
 
-		// Preview accent color: cyan for loop preview, amber for repitch preview
-		NVGcolor previewColor = previewIsRepitch
-			? nvgRGBf(0.95f, 0.65f, 0.30f)
-			: nvgRGBf(0.35f, 0.80f, 0.85f);
+		NVGcolor previewColor = previewMode->accentColor;
 
 		// Waveform stroke color: preview accent in preview mode, grey-green otherwise
 		NVGcolor waveColor = loopPreviewMode

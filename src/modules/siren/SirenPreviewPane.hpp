@@ -395,7 +395,9 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			canvas->cache          = loopPreviewActive ? &loopCache : &cache;
 			canvas->cacheReady     = loopPreviewActive ? loopCacheReady : (bool)cacheReady;
 			canvas->loopPreviewMode = loopPreviewActive;
-			canvas->previewIsRepitch = previewIsRepitch;
+			canvas->previewMode = previewIsRepitch
+				? &PreviewModeInfo::repitch()
+				: &PreviewModeInfo::loopCrossfade();
 			canvas->hasFile        = !currentNode.relativePath.empty();
 			canvas->durationSeconds = loopPreviewActive ? loopDurationSeconds : info.durationSeconds;
 			canvas->dragPath        = currentNode.relativePath;
@@ -408,14 +410,14 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			bool generatingLoop = loopPreviewBuilding && !loopPreviewActive;
 			std::string convertingMsg = (dropHandler && dropHandler->converting.load(std::memory_order_relaxed))
 				? "Converting\xe2\x80\xa6" : "";
-			std::string generatingLoopMsg = generatingLoop ? "Generating loop preview\xe2\x80\xa6" : "";
+			std::string generatingLoopMsg = generatingLoop ? canvas->previewMode->generatingMessage : "";
 			std::string buildingMsg = building ? "Building waveform\xe2\x80\xa6" : "";
 			std::string externalMsg = externalStatusMessage ? externalStatusMessage() : "";
 
 			struct StatusCandidate { const std::string& msg; NVGcolor color; };
 			StatusCandidate candidates[] = {
 				{ convertingMsg,     nvgRGBf(1.f, 0.85f, 0.1f) },
-				{ generatingLoopMsg, nvgRGBf(0.35f, 0.80f, 0.85f) },
+				{ generatingLoopMsg, canvas->previewMode->accentColor },
 				{ buildingMsg,       nvgRGBf(1.f, 0.85f, 0.1f) },
 				{ externalMsg,       nvgRGBf(1.f, 0.85f, 0.1f) },
 			};
@@ -453,10 +455,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			: nvgRGBf(0.55f, 0.55f, 0.55f));
 		nvgText(args.vg, 8.f, 12.f, isPlaying ? "\xe2\x96\xa0" : "\xe2\x96\xb6", nullptr);
 
-		// Preview accent color: cyan for loop preview, amber for repitch preview
-		NVGcolor previewColor = previewIsRepitch
-			? nvgRGBf(0.95f, 0.65f, 0.30f)
-			: nvgRGBf(0.35f, 0.80f, 0.85f);
+		NVGcolor previewColor = canvas ? canvas->previewMode->accentColor : nvgRGBf(0.35f, 0.80f, 0.85f);
 
 		// Filename — preview accent when in preview mode, gold when playing, light otherwise
 		std::string fname = displayName.empty() ? currentNode.relativePath : displayName;
@@ -474,9 +473,9 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		nvgFillColor(args.vg, nvgRGBf(0.50f, 0.50f, 0.50f));
 
 		// Preview label (second row, left side)
-		if (loopPreviewActive) {
+		if (loopPreviewActive && canvas) {
 			nvgFillColor(args.vg, previewColor);
-			nvgText(args.vg, SirenWaveformCanvas::WAVE_X, 26.f, previewIsRepitch ? "REPITCH PREVIEW" : "LOOP PREVIEW", nullptr);
+			nvgText(args.vg, SirenWaveformCanvas::WAVE_X, 26.f, canvas->previewMode->label.c_str(), nullptr);
 			nvgFillColor(args.vg, nvgRGBf(0.50f, 0.50f, 0.50f));
 		}
 		else {
