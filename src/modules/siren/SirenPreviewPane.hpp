@@ -630,6 +630,10 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 				[]() { sirenSettings.loopPlayback = !sirenSettings.loopPlayback; }
 			));
 
+			/*
+			menu->addChild(createMenuItem("Detect BPM", "", [=]() { startBpmDetection(); }));
+			*/
+
 			menu->addChild(new ui::MenuSeparator);
 			menu->addChild(createSubmenuItem("Crossfade loop", "", [=](Menu* menu) {
 				menu->addChild(Rack::createPtrSlider(

@@ -147,9 +147,16 @@ inline AutocorrResult autocorrelate(const float* onsetSignal, int numFrames, flo
 	AutocorrResult result;
 	if (numFrames < 8) return result;
 
-	// Smallest power of 2 with N ≥ numFrames → forward FFT length N.
+	// Linear (non-circular) autocorrelation via FFT requires the signal to be
+	// zero-padded to at least 2·numFrames. With only N ≥ numFrames the inverse
+	// transform yields a *circular* autocorrelation: for any lag k where
+	// N − numFrames < k the term x[i]·x[(i+k) mod N] wraps around and corrupts
+	// r(k). Since the BPM lag window reaches lagMax ≈ frameRate·60/MIN_BPM, a
+	// numFrames landing on (or just above) a power of two would contaminate
+	// every lag we search. Padding to the next power of 2 ≥ 2·numFrames keeps
+	// N − numFrames ≥ numFrames > lagMax, so no in-range lag ever wraps.
 	int n = 1;
-	while (n < numFrames) n <<= 1;
+	while (n < 2 * numFrames) n <<= 1;
 	if (n < 32) n = 32;
 
 	// PFFFT_COMPLEX: input/output/work arrays must hold 2*N floats
