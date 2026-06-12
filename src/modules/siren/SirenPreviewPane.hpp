@@ -296,7 +296,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		loopCacheReady      = false;
 		loopCache           = WaveformCache{};
 
-		DataSource* srcCopy = source;
+		std::shared_ptr<DataSource> srcCopy = source;
 		std::string idCopy  = currentNode.relativePath;
 		float trimIn   = canvas ? canvas->inPoint  : 0.f;
 		float trimOut  = canvas ? canvas->outPoint : 1.f;
