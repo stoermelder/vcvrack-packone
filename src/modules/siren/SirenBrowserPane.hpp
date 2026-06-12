@@ -7,6 +7,7 @@
 #include "SirenDropHandler.hpp"
 #include "SirenTagClassifierApi.hpp"
 #include "SirenBpmDetector.hpp"
+#include "SirenBackgroundTasks.hpp"
 #include "../../utils/TaskWorker.hpp"
 #include "../../ui/AutoTagDialog.hpp"
 
@@ -208,15 +209,6 @@ struct SirenScrollWidget : ui::ScrollWidget {
 	}
 };
 
-// ─── Indexing progress ─────────────────────────────────────────────────────────
-// Shared between the worker thread (writes) and SirenBrowserPane::draw (reads).
-// Held via shared_ptr so the worker task can safely outlive the pane if the
-// module is removed mid-scan.
-struct IndexProgress {
-	std::atomic<int>  processed{0};
-	std::atomic<bool> done{false};
-};
-
 // ─── SirenBrowserPane (tag bar added after SirenTagBar is defined) ────────────
 
 struct SirenBrowserPane : widget::OpaqueWidget {
@@ -318,17 +310,18 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		PendingResult(std::string p, int idx, std::vector<DataSourceNode> n, int g)
 			: parentPath(std::move(p)), insertIdx(idx), nodes(std::move(n)), gen(g) {}
 	};
-	std::atomic<int>  treeGeneration{0};
-	PendingResult     pendingResult;
+	std::atomic<int> treeGeneration{0};
+	PendingResult pendingResult;
 	std::atomic<bool> pendingReady{false};
 
 	SirenScrollWidget* scrollWidget = nullptr;
-	widget::Widget*    rowContainer = nullptr;
-	SirenTagBar*       tagBar       = nullptr;
+	widget::Widget* rowContainer = nullptr;
+	SirenTagBar* tagBar = nullptr;
 
-	// Set while a metadata indexing scan is running; cleared once step() observes
-	// IndexProgress::done. nullptr when no scan is in progress.
-	std::shared_ptr<IndexProgress> indexProgress;
+	// Background scans (indexing, tag classification). Each owns its own progress
+	// tracking and is cleared by step() once it observes completion.
+	SirenIndexTask indexTask;
+	SirenClassifyTask classifyTask;
 
 
 	// Defined after SirenTagBar
@@ -343,74 +336,19 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 	std::string statusMessage() const {
 		if (loadPending) return "Loading\xe2\x80\xa6";
 
-		if (!indexProgress) return "";
-		int processed = indexProgress->processed.load(std::memory_order_relaxed);
-
-		char msg[64];
-		std::snprintf(msg, sizeof(msg), "Indexing\xe2\x80\xa6 %d files", processed);
-		return msg;
+		std::string msg = classifyTask.statusMessage();
+		if (!msg.empty()) return msg;
+		return indexTask.statusMessage();
 	}
 
 	// Recursively scans every supported file below the active root, reading audio
 	// header info (length, sample rate, bit depth, channels) and detecting BPM
 	// from filenames, storing the results in metadata. Does not decode PCM data
 	// or build waveform caches. Runs on the worker thread; progress is reported
-	// via indexProgress for draw() to display.
+	// via indexTask for draw() to display.
 	void startIndexing() {
 		if (!worker || !activeDs) return;
-		if (indexProgress && !indexProgress->done.load(std::memory_order_relaxed)) return;
-
-		MetadataStore* meta = activeDs->getMetadata();
-		if (!meta) return;
-
-		// Captured by the worker lambda so this DataSource (and its MetadataStore)
-		// stay alive for the task's duration even if the active root is switched.
-		std::shared_ptr<DataSource> ds = activeDs;
-		std::shared_ptr<std::atomic<bool>> dsCancel = activeDsCancel;
-		auto progress = std::make_shared<IndexProgress>();
-		indexProgress = progress;
-
-		worker->work([ds, meta, progress, dsCancel](std::atomic<bool>& cancel) {
-			auto cancelled = [&]() {
-				return cancel.load(std::memory_order_relaxed) || dsCancel->load(std::memory_order_relaxed);
-			};
-			// Index each file as it's discovered, rather than collecting the
-			// full file list up front, so progress and cancellation are
-			// responsive even for very large libraries.
-			std::function<void(const std::string&)> visit = [&](const std::string& id) {
-				if (cancelled()) return;
-				// withAudioInfo=false: this listing is only used for traversal/file
-				// names here, the full AudioInfo is loaded explicitly below.
-				for (const auto& child : ds->loadChildrenSync(id, false)) {
-					if (cancelled()) return;
-					if (child.isContainer) {
-						visit(child.relativePath);
-						continue;
-					}
-
-					const std::string& rel = child.relativePath;
-					int64_t ts = ds->getTimestamp(rel);
-					if (!meta->hasValidAudioInfo(rel, ts)) {
-						AudioInfo ai;
-						if (ds->loadAudioInfo(rel, ai))
-							meta->setAudioInfo(rel, ai.durationSeconds, ai.sampleRate, ai.bitDepth, ai.channels, ts);
-					}
-
-					if (meta->getBpm(rel) <= 0.f) {
-						float conf = 0.f;
-						float bpmVal = BpmDetector::detectFromName(rel, conf);
-						if (bpmVal > 0.f) meta->setBpm(rel, bpmVal, conf);
-					}
-					meta->markSeen(rel);
-					progress->processed.fetch_add(1, std::memory_order_relaxed);
-				}
-			};
-			visit(ds->rootId());
-
-			if (!cancelled())
-				ds->saveMetadata();
-			progress->done.store(true, std::memory_order_release);
-		});
+		indexTask.start(worker, activeDs, activeDsCancel);
 	}
 
 	std::string getRootDisplayName(int idx) const {
@@ -498,10 +436,8 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		}
 		if (dropHandler) dropHandler->step();
 
-		if (indexProgress && indexProgress->done.load(std::memory_order_acquire)) {
-			indexProgress.reset();
-			requestRebuild();
-		}
+		if (indexTask.step()) requestRebuild();
+		classifyTask.step();
 
 		if (rebuildDirty && !(dropHandler && dropHandler->active)) {
 			rebuildDirty = false;
@@ -668,60 +604,14 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 
 	void startTagClassification(const DataSourceNode& node) {
 		if (!worker || !activeDs) return;
+		if (classifyTask.running()) return;
 		TagClassifier::registerKeywords(starterTagKeywords());
-		// Captured by the worker lambda (and the dialog's closures below) so this
-		// DataSource stays alive even if the active root is switched mid-scan.
+		// Captured by the worker lambda so this DataSource stays alive even if
+		// the active root is switched mid-scan.
 		std::shared_ptr<DataSource> ds = activeDs;
-		MetadataStore* meta  = ds->getMetadata();
-		std::string   rel   = node.relativePath;
-		bool          isDir = node.isContainer;
-		std::string   name  = node.name;
+		MetadataStore* meta = ds->getMetadata();
 
-		using DataSourceNodeId = std::string;
-
-		auto buildLabel = [this, ds](const std::string& tag, const DataSourceNodeId& fileId) -> widget::Widget* {
-			struct SampleLabel : ui::MenuItem {
-				DataSource*       ds;
-				SirenBrowserPane* pane;
-				DataSourceNodeId  fileId;
-				std::string       groupTag;
-				void onAction(const event::Action& e) override {
-					pane->selectPath(ds->resolveNode(fileId), true);
-					e.unconsume();
-				}
-				void onButton(const ButtonEvent& e) override {
-					if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
-						Menu* menu = createMenu();
-						menu->addChild(createMenuLabel(ds->getDisplayName(fileId)));
-						auto* dlg = getAncestorOfType<ui::TagConfirmDialog<DataSourceNodeId>>();
-						SampleLabel* self = this;
-						menu->addChild(createMenuItem("Remove from group", "", [self, dlg]() {
-							if (!dlg) { self->requestDelete(); return; }
-							for (auto& g : dlg->groups) {
-								if (g.tag == self->groupTag) {
-									g.payloads.erase(self->fileId);
-									break;
-								}
-							}
-							dlg->updateSummary();
-							self->requestDelete();
-						}));
-						e.consume(this);
-						return;
-					}
-					MenuItem::onButton(e);
-				}
-			};
-			SampleLabel* item = new SampleLabel;
-			item->text     = ds->getDisplayName(fileId);
-			item->ds       = ds.get();
-			item->pane     = this;
-			item->fileId   = fileId;
-			item->groupTag = tag;
-			return item;
-		};
-
-		auto applyFn = [this, meta, ds](const std::map<std::string, std::set<DataSourceNodeId>>& filtered) {
+		classifyTask.onApply = [this, meta, ds](const std::map<std::string, std::set<std::string>>& filtered) {
 			for (const auto& pair : filtered)
 				for (const std::string& r : pair.second)
 					meta->addTag(r, pair.first);
@@ -729,63 +619,8 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 			requestRebuild();
 		};
 
-		auto summaryFn = [isDir, name](int sel, int items) -> std::string {
-			if (isDir)
-				return rack::string::f("%d tag%s across %d file%s",
-					sel, sel == 1 ? "" : "s", items, items == 1 ? "" : "s");
-			return rack::string::f("%d tag%s %s", sel, sel == 1 ? "" : "s");
-		};
-
-		std::string header = isDir ? "Suggest tags — " + name : "Suggest tags";
-		using StreamDlg = StoermelderPackOne::ui::StreamingTagDialog<DataSourceNodeId>;
-
-		ui::MenuOverlay* overlay = new ui::MenuOverlay;
-		overlay->bgColor = nvgRGBAf(0.f, 0.f, 0.f, 0.5f);
-		StreamDlg* dlg = new StreamDlg(buildLabel, applyFn, header, summaryFn);
-		overlay->addChild(dlg);
-		APP->scene->addChild(overlay);
-
-		auto progress = dlg->progress;
-		worker->work([progress, rel, isDir, ds, meta]() {
-			std::vector<DataSourceNodeId> files;
-			if (isDir) {
-				std::function<void(const std::string&)> collect = [&](const std::string& id) {
-					for (const auto& child : ds->loadChildrenSync(id)) {
-						if (child.isContainer) collect(child.relativePath);
-						else files.push_back(child.relativePath);
-					}
-				};
-				collect(rel);
-			}
-			else {
-				files = {rel};
-			}
-
-			progress->total = (int)files.size();
-			for (const auto& f : files) {
-				// Skip suggestion emission for tags already applied to this sample.
-				// Matching is case-insensitive on the trimmed name, mirroring addTag().
-				std::set<std::string> existing;
-				if (meta) {
-					for (const std::string& t : meta->getTags(f)) {
-						existing.insert(rack::string::lowercase(rack::string::trim(t)));
-					}
-				}
-
-				auto stream = ds->openAudioStream(f);
-				if (stream) {
-					auto suggestions = TagClassifier::classify(*stream, f, 5);
-					for (const auto& s : suggestions) {
-						if (s.score < 0.5f) continue;
-						std::string nameLow = rack::string::lowercase(rack::string::trim(s.name));
-						if (existing.count(nameLow)) continue;
-						progress->events.push({s.name, f});
-					}
-				}
-				progress->processed++;
-			}
-			progress->done.store(true, std::memory_order_release);
-		});
+		classifyTask.start(worker, ds, meta, node.relativePath, node.isContainer, node.name,
+			[this](const DataSourceNode& n, bool play) { selectPath(n, play); });
 	}
 
 	bool navigateKey(int key) {
