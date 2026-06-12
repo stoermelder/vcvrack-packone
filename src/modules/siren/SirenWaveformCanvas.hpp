@@ -3,6 +3,7 @@
 #include "SirenAudio.hpp"
 #include "SirenDropHandler.hpp"
 #include "../../utils/TaskWorker.hpp"
+#include <vector>
 
 
 namespace StoermelderPackOne {
@@ -183,10 +184,16 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 			float visibleStart = scrollPos;
 			float visibleEnd   = std::min(scrollPos + 1.0f / zoomLevel, 1.0f);
 
-			nvgLineJoin(args.vg, NVG_ROUND);
-			nvgStrokeColor(args.vg, waveColor);
-			nvgStrokeWidth(args.vg, 1.f);
+			// Clip the waveform line to the wave area — some peaks can exceed
+			// their channel's height (e.g. hot/clipping signals).
+			nvgSave(args.vg);
+			nvgScissor(args.vg, WAVE_X, waveY, waveW, waveH);
 
+			nvgLineJoin(args.vg, NVG_ROUND);
+			nvgStrokeWidth(args.vg, 1.f);
+			nvgStrokeColor(args.vg, waveColor);
+
+			std::vector<float> wavePx, wavePy;
 			for (int ch = 0; ch < numCh; ch++) {
 				float chY  = waveY + ch * chH;
 				float midY = chY + chH * 0.5f;
@@ -197,15 +204,21 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 				int startIdx = rack::math::clamp((int)(visibleStart * n),     0, n - 1);
 				int endIdx   = rack::math::clamp((int)(visibleEnd   * n) + 1, 0, n);
 
-				nvgBeginPath(args.vg);
-				bool first = true;
+				wavePx.clear();
+				wavePy.clear();
 				for (int i = startIdx; i < endIdx; i++) {
-					float px = WAVE_X + ((i + 0.5f) / n - scrollPos) * zoomLevel * waveW;
-					float py = midY - chSamples[i] * chH * 0.44f;
-					if (first) { nvgMoveTo(args.vg, px, py); first = false; }
-					else         nvgLineTo(args.vg, px, py);
+					wavePx.push_back(WAVE_X + ((i + 0.5f) / n - scrollPos) * zoomLevel * waveW);
+					wavePy.push_back(midY - chSamples[i] * chH * 0.44f);
 				}
-				nvgStroke(args.vg);
+
+				if (!wavePx.empty()) {
+					nvgBeginPath(args.vg);
+					nvgMoveTo(args.vg, wavePx[0], wavePy[0]);
+					for (size_t i = 1; i < wavePx.size(); i++) nvgLineTo(args.vg, wavePx[i], wavePy[i]);
+					nvgStrokeColor(args.vg, waveColor);
+					nvgStrokeWidth(args.vg, 1.f);
+					nvgStroke(args.vg);
+				}
 
 				// Zero-line
 				nvgBeginPath(args.vg);
@@ -219,11 +232,32 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 				nvgFontSize(args.vg, 9.f);
 				nvgFillColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.30f));
 				nvgText(args.vg, WAVE_X + 2.f, chY + 11.f, ch == 0 ? "L" : "R", nullptr);
-
-				// Restore stroke state for next channel
-				nvgStrokeColor(args.vg, waveColor);
-				nvgStrokeWidth(args.vg, 1.f);
 			}
+
+			// Filter overlay: fade the waveform toward the background color
+			// away from each channel's zero-line, so high-amplitude peaks
+			// look more faint than quiet passages.
+			NVGcolor fadeColor = nvgRGB(0x12, 0x12, 0x12);
+			for (int ch = 0; ch < numCh; ch++) {
+				float chY  = waveY + ch * chH;
+				float midY = chY + chH * 0.5f;
+
+				nvgBeginPath(args.vg);
+				nvgRect(args.vg, WAVE_X, chY, waveW, chH * 0.5f);
+				nvgFillPaint(args.vg, nvgLinearGradient(args.vg, 0.f, midY, 0.f, chY,
+					nvgRGBAf(fadeColor.r, fadeColor.g, fadeColor.b, 0.f),
+					nvgRGBAf(fadeColor.r, fadeColor.g, fadeColor.b, 0.5f)));
+				nvgFill(args.vg);
+
+				nvgBeginPath(args.vg);
+				nvgRect(args.vg, WAVE_X, midY, waveW, chH * 0.5f);
+				nvgFillPaint(args.vg, nvgLinearGradient(args.vg, 0.f, midY, 0.f, chY + chH,
+					nvgRGBAf(fadeColor.r, fadeColor.g, fadeColor.b, 0.f),
+					nvgRGBAf(fadeColor.r, fadeColor.g, fadeColor.b, 0.5f)));
+				nvgFill(args.vg);
+			}
+
+			nvgRestore(args.vg);
 		}
 
 		// ── tick marks ───────────────────────────────────────────────────────
