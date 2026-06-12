@@ -56,16 +56,22 @@ struct SirenSourceButton : ui::ChoiceButton {
 
 		menu->addChild(new ui::MenuSeparator);
 		size_t i = menu->children.size();
-		if (pane->activeDataSource) {
-			pane->activeDataSource->appendSourceMenuItems(menu);
+		if (pane->activeDs) {
+			pane->activeDs->appendSourceMenuItems(menu);
 			if (i != menu->children.size()) menu->addChild(new ui::MenuSeparator);
 		}
-		
+
+		bool indexing = pane->indexProgress && !pane->indexProgress->done.load(std::memory_order_relaxed);
+		menu->addChild(createMenuItem("Index metadata for all files", "", [this]() {
+			pane->startIndexing();
+		}, !pane->activeDs || indexing));
+		menu->addChild(new ui::MenuSeparator);
+
 		menu->addChild(createMenuItem("Add root...", "", [this]() {
 			if (pane->onAddRoot) pane->onAddRoot();
 		}));
 		menu->addChild(createMenuItem("Remove root", "", [this]() {
-			if (!sirenSettings.removeActiveRoot(pane->activeDataSource)) return;
+			if (!sirenSettings.removeActiveRoot(pane->activeDs.get())) return;
 			pane->setRoots(sirenSettings.rootContainers, sirenSettings.activeRootIdx);
 		}, pane->rootContainers.empty()));
 
@@ -138,6 +144,15 @@ struct SirenSearchField : ui::TextField {
 		bndTextField(args.vg, 0, 0, box.size.x / TOPBAR_SCALE, box.size.y / TOPBAR_SCALE,
 		             BND_CORNER_NONE, state, -1, displayText, b, e);
 		nvgRestore(args.vg);
+	}
+
+	int getTextPosition(math::Vec mousePos) override {
+		// draw() renders at TOPBAR_SCALE, so the text (and its glyph positions)
+		// are scaled relative to box.size — undo that here, matching draw()'s
+		// effective coordinate space, or the cursor lands at the wrong glyph.
+		return bndTextFieldTextPosition(APP->window->vg, 0.0, 0.0,
+			box.size.x / TOPBAR_SCALE, box.size.y / TOPBAR_SCALE, -1, text.c_str(),
+			mousePos.x / TOPBAR_SCALE, mousePos.y / TOPBAR_SCALE);
 	}
 
 	void onChange(const event::Change& e) override {
@@ -231,6 +246,10 @@ struct SirenTopBar : widget::OpaqueWidget {
 		searchField->box.size = Vec(box.size.x - browserW - gapW, btnH);
 		searchField->pane = pane;
 		addChild(searchField);
+
+		pane->setSearchFieldText = [searchField](const std::string& text) {
+			searchField->setText(text);
+		};
 	}
 };
 

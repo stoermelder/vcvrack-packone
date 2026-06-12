@@ -201,7 +201,8 @@ struct CVMapModule : CVMapModuleBase<MAX_CHANNELS> {
 
 	void dataFromJson(json_t* rootJ) override {
 		CVMapModuleBase<MAX_CHANNELS>::dataFromJson(rootJ);
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 
 		json_t* audioRateJ = json_object_get(rootJ, "audioRate");
 		if (audioRateJ) audioRate = json_boolean_value(audioRateJ);
@@ -216,12 +217,15 @@ struct CVMapModule : CVMapModuleBase<MAX_CHANNELS> {
 			size_t i;
 			json_t* inputConfigJ;
 			json_array_foreach(inputConfigsJ, i, inputConfigJ) {
-				inputConfig[i].hideUnused = json_boolean_value(json_object_get(inputConfigJ, "hideUnused"));
+				json_t* hideUnusedJ = json_object_get(inputConfigJ, "hideUnused");
+				if (hideUnusedJ) inputConfig[i].hideUnused = json_boolean_value(hideUnusedJ);
 				json_t* labelJ = json_object_get(inputConfigJ, "label");
-				size_t j;
-				json_t* lJ;
-				json_array_foreach(labelJ, j, lJ) {
-					inputConfig[i].label[j] = json_string_value(lJ);
+				if (labelJ) {
+					size_t j;
+					json_t* lJ;
+					json_array_foreach(labelJ, j, lJ) {
+						if (lJ && json_is_string(lJ)) inputConfig[i].label[j] = json_string_value(lJ);
+					}
 				}
 			}
 		}

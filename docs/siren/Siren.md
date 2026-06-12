@@ -34,6 +34,12 @@ The lower part of the source menu controls how audio is processed:
 - **Convert to WAV on drop** — convert FLAC or MP3 files to WAV before dropping. Useful for modules that only accept WAV.
 - **Folder for converted/trimmed files** — when SIREN has to generate a new file (resampling, format conversion, or trimming), it is normally written next to the source file. Use this submenu to redirect those generated files to a single custom folder of your choice. The original file is never modified.
 
+### Indexing
+
+Select **Index metadata for all files** from the source menu to scan the active root in the background: SIREN reads each file's audio info (duration, sample rate, bit depth, channels) and detects BPM from filenames where possible, storing the results in the root's metadata file. A status overlay ("Indexing… N files") shows progress; closing the patch or switching roots cancels an in-progress scan.
+
+Indexing is optional — file info and BPM are also picked up automatically as you browse — but running it once after adding a large root avoids per-file delays the first time each folder is opened. Files are only re-read if they've changed on disk since the last scan, so re-running indexing on an already-indexed root is fast.
+
 ## Drag and Drop
 
 **Drag** any file from the browser onto a compatible module to load it there. If a trim region is set, only that region is prepared for the drop.
@@ -56,6 +62,18 @@ Type in the **Search** field (top-right of the display) to filter the tree. Sear
 - files whose parent folder name matches
 
 Press **Escape** or double-click the field to clear the search.
+
+#### Filtering by BPM and Length
+
+Alongside plain text, the search field accepts numeric filter terms:
+
+- `bpm:140` — files with a detected BPM of ~140 (small tolerance applied).
+- `bpm:>120`, `bpm:<=90` — BPM above/below a threshold. Operators `<`, `<=`, `>`, `>=`, and `=` are supported.
+- `length:<1s` — files shorter than 1 second. `length` (or `duration`/`len`) accepts seconds (`s`) or minutes (`m`), e.g. `length:>=2.5m`.
+
+Filter terms can be combined with each other and with plain text, e.g. `kick bpm:140 length:<1s`. A folder matches a filter if any file inside it does. Files for which the relevant info hasn't been read yet (see [Indexing](#indexing)) won't match a filter — run **Index metadata for all files** first if filters seem to miss results.
+
+**Right-click** the BPM readout in the preview pane (top-right, shown once a BPM has been detected) for quick filter shortcuts that set the search field to the current file's BPM: an exact match, `bpm:<=`, or `bpm:>=`.
 
 ## Keyboard Navigation
 
@@ -178,7 +196,7 @@ The dialog groups suggestions by tag. **Check** the ones you want to apply and c
 
 - **Trimming before drop** — Set IN/OUT trim points first, then drag the file. The receiving module gets only the trimmed segment.
 
-- **Metadata location** — Tags and favorites are saved as a JSON file alongside each root container. They survive module removal and can be backed up or shared.
+- **Metadata location** — Tags, favorites, and cached audio info (duration, sample rate, BPM, etc.) are saved as a JSON file alongside each root container. They survive module removal and can be backed up or shared.
 
 - **Waveform cache** — The first time a file is previewed, SIREN builds a waveform cache in your Rack user folder (`Stoermelder-P1/siren-cache/`). Subsequent opens are instant.
 

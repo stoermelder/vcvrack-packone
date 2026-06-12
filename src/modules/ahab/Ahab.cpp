@@ -332,17 +332,26 @@ struct AhabModule : Module {
 
 	void dataFromJson(json_t* rootJ) override {
 		hasDataLoaded = true;
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
-		midiVirtualPortId = json_integer_value(json_object_get(rootJ, "midiVirtualPortId"));
-		midiOutEnabled = json_boolean_value(json_object_get(rootJ, "midiOutEnabled"));
-		midiOutPort.fromJson(json_object_get(rootJ, "midiOutPort"));
-		midiCcOffset = (uint8_t)json_integer_value(json_object_get(rootJ, "midiCcOffset"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
+		json_t* midiVirtualPortIdJ = json_object_get(rootJ, "midiVirtualPortId");
+		if (midiVirtualPortIdJ) midiVirtualPortId = json_integer_value(midiVirtualPortIdJ);
+		json_t* midiOutEnabledJ = json_object_get(rootJ, "midiOutEnabled");
+		if (midiOutEnabledJ) midiOutEnabled = json_boolean_value(midiOutEnabledJ);
+		json_t* midiOutPortJ = json_object_get(rootJ, "midiOutPort");
+		if (midiOutPortJ) midiOutPort.fromJson(midiOutPortJ);
+		json_t* midiCcOffsetJ = json_object_get(rootJ, "midiCcOffset");
+		if (midiCcOffsetJ) midiCcOffset = (uint8_t)json_integer_value(midiCcOffsetJ);
 		json_t* simJ = json_object_get(rootJ, "sim");
-		sim->fromJson(simJ);
-		simRunning = json_boolean_value(json_object_get(rootJ, "simRunning"));
-		overwriteZeroNoteDuration = json_boolean_value(json_object_get(rootJ, "overwriteZeroNoteDuration"));
-		gridStepCol = (int)json_integer_value(json_object_get(rootJ, "gridStepCol"));
-		gridStepRow = (int)json_integer_value(json_object_get(rootJ, "gridStepRow"));
+		if (simJ && json_is_object(simJ)) sim->fromJson(simJ);
+		json_t* simRunningJ = json_object_get(rootJ, "simRunning");
+		if (simRunningJ) simRunning = json_boolean_value(simRunningJ);
+		json_t* overwriteZeroNoteDurationJ = json_object_get(rootJ, "overwriteZeroNoteDuration");
+		if (overwriteZeroNoteDurationJ) overwriteZeroNoteDuration = json_boolean_value(overwriteZeroNoteDurationJ);
+		json_t* gridStepColJ = json_object_get(rootJ, "gridStepCol");
+		if (gridStepColJ) gridStepCol = (int)json_integer_value(gridStepColJ);
+		json_t* gridStepRowJ = json_object_get(rootJ, "gridStepRow");
+		if (gridStepRowJ) gridStepRow = (int)json_integer_value(gridStepRowJ);
 	}
 };
 

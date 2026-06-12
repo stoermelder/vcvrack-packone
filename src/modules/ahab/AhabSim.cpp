@@ -172,17 +172,17 @@ void AhabSim::fromJson(json_t* rootJ) {
 	field_deinit(&tmp);
 
 	// restore other properties
-	int t = json_integer_value(json_object_get(rootJ, "tick"));
-	tick_number_.store((Usz)t);
-	int rs = json_integer_value(json_object_get(rootJ, "random_seed"));
-	random_seed_ = (Usz)rs;
+	json_t* tickJ = json_object_get(rootJ, "tick");
+	if (tickJ) tick_number_.store((Usz)json_integer_value(tickJ));
+	json_t* rsJ = json_object_get(rootJ, "random_seed");
+	if (rsJ) random_seed_ = (Usz)json_integer_value(rsJ);
 	// Restore UDP settings if present
 	json_t* addrJ = json_object_get(rootJ, "udpAddress");
 	json_t* portJ = json_object_get(rootJ, "udpPort");
 	std::string addr;
 	std::string port;
-	if (json_is_string(addrJ)) addr = json_string_value(addrJ);
-	if (json_is_string(portJ)) port = json_string_value(portJ);
+	if (addrJ && json_is_string(addrJ)) addr = json_string_value(addrJ);
+	if (portJ && json_is_string(portJ)) port = json_string_value(portJ);
 	if (!addr.empty() || !port.empty()) {
 		setUdpDestination(addr, port);
 	}
@@ -191,8 +191,8 @@ void AhabSim::fromJson(json_t* rootJ) {
 	json_t* oscPortJ = json_object_get(rootJ, "oscPort");
 	std::string oscAddr;
 	std::string oscPort;
-	if (json_is_string(oscAddrJ)) oscAddr = json_string_value(oscAddrJ);
-	if (json_is_string(oscPortJ)) oscPort = json_string_value(oscPortJ);
+	if (oscAddrJ && json_is_string(oscAddrJ)) oscAddr = json_string_value(oscAddrJ);
+	if (oscPortJ && json_is_string(oscPortJ)) oscPort = json_string_value(oscPortJ);
 	if (!oscAddr.empty() || !oscPort.empty()) {
 		setOscDestination(oscAddr, oscPort);
 	}

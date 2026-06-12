@@ -237,26 +237,29 @@ struct FourRoundsModule : Module {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 
 		json_t* statesJ = json_object_get(rootJ, "state");
 		json_t* stateJ;
 		size_t stateIndex;
 		json_array_foreach(statesJ, stateIndex, stateJ) {
-			state[stateIndex] = json_real_value(json_object_get(stateJ, "value"));
+			json_t* valueJ = json_object_get(stateJ, "value");
+			if (valueJ) state[stateIndex] = json_real_value(valueJ);
 		}
 
 		json_t* lastValuesJ = json_object_get(rootJ, "lastValue");
 		json_t* lastValueJ;
 		size_t lastValueIndex;
 		json_array_foreach(lastValuesJ, lastValueIndex, lastValueJ) {
-			lastValue[lastValueIndex] = json_real_value(json_object_get(lastValueJ, "value"));
+			json_t* valueJ = json_object_get(lastValueJ, "value");
+			if (valueJ) lastValue[lastValueIndex] = json_real_value(valueJ);
 		}
 
 		json_t* modeJ = json_object_get(rootJ, "mode");
-		mode = (MODE)json_integer_value(modeJ);
+		if (modeJ) mode = (MODE)json_integer_value(modeJ);
 		json_t* invertedJ = json_object_get(rootJ, "inverted");
-		inverted = json_boolean_value(invertedJ);
+		if (invertedJ) inverted = json_boolean_value(invertedJ);
 	}
 };
 

@@ -173,9 +173,11 @@ struct OrbitModule : Module {
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		panelTheme = json_integer_value(json_object_get(rootJ, "panelTheme"));
+		json_t* panelThemeJ = json_object_get(rootJ, "panelTheme");
+		if (panelThemeJ) panelTheme = json_integer_value(panelThemeJ);
 #ifndef METAMODULE
-		polyOut = json_boolean_value(json_object_get(rootJ, "polyOut"));
+		json_t* polyOutJ = json_object_get(rootJ, "polyOut");
+		if (polyOutJ) polyOut = json_boolean_value(polyOutJ);
 #else
 		polyOut = false;
 #endif

@@ -105,10 +105,10 @@ struct SirenSettings {
 	// files for the removed root are deleted while its on-disk metadata file
 	// (tags/favorites/BPM) is preserved. Returns true on success, false if
 	// the index is out of range.
-	bool removeActiveRoot(DataSource* activeDataSource) {
+	bool removeActiveRoot(DataSource* activeDs) {
 		int idx = activeRootIdx;
 		if (idx < 0 || idx >= (int)rootContainers.size()) return false;
-		if (activeDataSource) activeDataSource->cleanup();
+		if (activeDs) activeDs->cleanup();
 		rootContainers.erase(rootContainers.begin() + idx);
 		activeRootIdx = rootContainers.empty() ? -1 : 0;
 		return true;

@@ -20,6 +20,19 @@ TEST_CASE("Construction and initialization", "[Intermix]") {
 	Test::destroyModule(m);
 }
 
+TEST_CASE("Preset JSON null-guards", "[Intermix][JSON]") {
+	auto module = Test::createModule<IntermixModule<8>>("Intermix");
+
+	SECTION("All top-level properties are null-guarded in dataFromJson()") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetNullGuards(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	Test::destroyModule(module);
+}
+
 
 TEST_CASE("Scene selection", "[Intermix]") {
 	auto module = Test::createModule<IntermixModule<8>>("Intermix");

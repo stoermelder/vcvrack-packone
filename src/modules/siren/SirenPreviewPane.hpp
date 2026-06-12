@@ -31,10 +31,19 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 
 	// ── file state ───────────────────────────────────────────────────────────
 	DataSourceNode currentNode;
-	DataSource*  source      = nullptr;
+	// Held via shared_ptr so worker tasks that captured a copy (waveform cache
+	// build, loop preview, BPM detection) keep the source alive even if the
+	// active root is switched while they're running.
+	std::shared_ptr<DataSource> source;
 	std::string  displayName;
 	std::string  relPath;
 	AudioInfo    info;
+
+	// Lowest-priority source for the canvas's background-task overlay: returns
+	// a status message (e.g. "Indexing… N / M") or "" if nothing to show.
+	// Lets a sibling pane (e.g. the browser, while indexing metadata) surface
+	// progress here without this pane depending on its type.
+	std::function<std::string()> externalStatusMessage;
 
 	// ── normal waveform cache ─────────────────────────────────────────────────
 	WaveformCache     cache;
@@ -92,9 +101,21 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 
 	// ── BPM ───────────────────────────────────────────────────────────────────
 	std::atomic<float> bpm{0.f};
+	Rect bpmHitRect;
+
+	// The canvas's bottom readout bar (IN/OUT/LEN/POS), in this widget's local
+	// coordinates — right-clicking it offers length filter shortcuts.
+	Rect lengthFilterHitRect() const {
+		if (!canvas) return Rect();
+		return Rect(
+			Vec(canvas->box.pos.x + SirenWaveformCanvas::WAVE_X, canvas->box.pos.y + canvas->box.size.y - SirenWaveformCanvas::READOUT_H),
+			Vec(canvas->box.size.x - SirenWaveformCanvas::WAVE_X, SirenWaveformCanvas::READOUT_H)
+		);
+	}
 
 	MetadataStore* metadata() const { return source ? source->getMetadata() : nullptr; }
 	std::function<void()> onMetadataChanged;
+	std::function<void(const std::string&)> onSetSearchQuery;
 
 	// ── public accessors for SirenWidget ─────────────────────────────────────
 	bool isLoopPreviewActive() const { return loopPreviewActive && !previewIsRepitch; }
@@ -129,12 +150,12 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 
 	// ── file loading ──────────────────────────────────────────────────────────
 
-	void loadItem(const DataSourceNode& node, DataSource* src,
+	void loadItem(const DataSourceNode& node, std::shared_ptr<DataSource> src,
 	              bool startPlay = false, bool forceRebuild = false) {
 		const std::string& id = node.relativePath;
 
 		if (stopPlaybackCallback) stopPlaybackCallback();
-		if (openStreamCallback)   openStreamCallback(id, src);
+		if (openStreamCallback)   openStreamCallback(id, src.get());
 
 		currentNode   = node;
 		source        = src;
@@ -169,6 +190,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 
 		if (MetadataStore* meta = metadata()) {
 			if (!relPath.empty()) {
+				meta->setAudioInfo(relPath, info.durationSeconds, info.sampleRate, info.bitDepth, info.channels, src->getTimestamp(id));
 				auto it = meta->samples.find(relPath);
 				if (it != meta->samples.end() && it->second.bpm > 0.f) {
 					bpm.store(it->second.bpm);
@@ -231,7 +253,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		loopCacheReady      = false;
 		loopCache           = WaveformCache{};
 
-		DataSource* srcCopy = source;
+		std::shared_ptr<DataSource> srcCopy = source;
 		std::string idCopy  = currentNode.relativePath;
 		float trimIn   = canvas ? canvas->inPoint  : 0.f;
 		float trimOut  = canvas ? canvas->outPoint : 1.f;
@@ -318,7 +340,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 
 		// Restore original file stream and module trim points
 		if (openStreamCallback && source && !currentNode.relativePath.empty())
-			openStreamCallback(currentNode.relativePath, source);
+			openStreamCallback(currentNode.relativePath, source.get());
 		if (canvas) {
 			if (moduleInPoint)  moduleInPoint->store(canvas->inPoint,  std::memory_order_relaxed);
 			if (moduleOutPoint) moduleOutPoint->store(canvas->outPoint, std::memory_order_relaxed);
@@ -372,8 +394,6 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			canvas->box.size       = Vec(box.size.x, box.size.y - TB_H);
 			canvas->cache          = loopPreviewActive ? &loopCache : &cache;
 			canvas->cacheReady     = loopPreviewActive ? loopCacheReady : (bool)cacheReady;
-			canvas->cacheBuilding  = !loopPreviewActive && cacheBuilding;
-			canvas->generatingLoop = loopPreviewBuilding && !loopPreviewActive;
 			canvas->loopPreviewMode = loopPreviewActive;
 			canvas->previewIsRepitch = previewIsRepitch;
 			canvas->hasFile        = !currentNode.relativePath.empty();
@@ -381,7 +401,32 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			canvas->dragPath        = currentNode.relativePath;
 			canvas->dragDisplayName = displayName;
 			canvas->modulePlayheadPos = modulePlayheadPos;
-			canvas->converting     = dropHandler ? &dropHandler->converting : nullptr;
+
+			// Single background-task overlay. Every source computes a message
+			// ("" = nothing to show), then the first non-empty one wins.
+			bool building = !loopPreviewActive && cacheBuilding;
+			bool generatingLoop = loopPreviewBuilding && !loopPreviewActive;
+			std::string convertingMsg = (dropHandler && dropHandler->converting.load(std::memory_order_relaxed))
+				? "Converting\xe2\x80\xa6" : "";
+			std::string generatingLoopMsg = generatingLoop ? "Generating loop preview\xe2\x80\xa6" : "";
+			std::string buildingMsg = building ? "Building waveform\xe2\x80\xa6" : "";
+			std::string externalMsg = externalStatusMessage ? externalStatusMessage() : "";
+
+			struct StatusCandidate { const std::string& msg; NVGcolor color; };
+			StatusCandidate candidates[] = {
+				{ convertingMsg,     nvgRGBf(1.f, 0.85f, 0.1f) },
+				{ generatingLoopMsg, nvgRGBf(0.35f, 0.80f, 0.85f) },
+				{ buildingMsg,       nvgRGBf(1.f, 0.85f, 0.1f) },
+				{ externalMsg,       nvgRGBf(1.f, 0.85f, 0.1f) },
+			};
+			canvas->statusMessage.clear();
+			for (const StatusCandidate& c : candidates) {
+				if (!c.msg.empty()) {
+					canvas->statusMessage = c.msg;
+					canvas->statusColor   = c.color;
+					break;
+				}
+			}
 		}
 
 		if (dropHandler) dropHandler->step();
@@ -455,11 +500,17 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 
 		// BPM
 		float bpmVal = bpm.load();
+		bpmHitRect = Rect();
 		if (bpmVal > 0.f || bpmVal < 0.f) {
 			std::string bpmText = (bpmVal < 0.f) ? "\xe2\x80\xa6 BPM" : rack::string::f("%.1f BPM", bpmVal);
 			nvgFillColor(args.vg, nvgRGBf(0.50f, 0.50f, 0.50f));
 			nvgTextAlign(args.vg, NVG_ALIGN_RIGHT | NVG_ALIGN_BASELINE);
 			nvgText(args.vg, w - 50.f, 26.f, bpmText.c_str(), nullptr);
+			if (bpmVal > 0.f) {
+				float bounds[4];
+				nvgTextBounds(args.vg, w - 50.f, 26.f, bpmText.c_str(), nullptr, bounds);
+				bpmHitRect = Rect(Vec(bounds[0], bounds[1]), Vec(bounds[2] - bounds[0], bounds[3] - bounds[1]));
+			}
 			nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_BASELINE);
 		}
 
@@ -498,6 +549,16 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 
 	void onButton(const event::Button& e) override {
 		if (e.button == GLFW_MOUSE_BUTTON_RIGHT && e.action == GLFW_PRESS) {
+			if (bpm.load() > 0.f && bpmHitRect.contains(e.pos)) {
+				createBpmFilterMenu();
+				e.consume(this);
+				return;
+			}
+			if (info.durationSeconds > 0.f && lengthFilterHitRect().contains(e.pos)) {
+				createLengthFilterMenu();
+				e.consume(this);
+				return;
+			}
 			createContextMenu();
 			e.consume(this);
 			return;
@@ -594,6 +655,40 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		}
 	}
 
+	void createBpmFilterMenu() {
+		float bpmVal = bpm.load();
+		if (bpmVal <= 0.f || !onSetSearchQuery) return;
+
+		std::string bpmStr = std::to_string((int)bpmVal);
+
+		ui::Menu* menu = createMenu();
+		menu->addChild(createMenuLabel("Filter by BPM"));
+		menu->addChild(createMenuItem("bpm:" + bpmStr, "", [this, bpmStr]() {
+			onSetSearchQuery("bpm:" + bpmStr);
+		}));
+		menu->addChild(createMenuItem("bpm:<=" + bpmStr, "", [this, bpmStr]() {
+			onSetSearchQuery("bpm:<=" + bpmStr);
+		}));
+		menu->addChild(createMenuItem("bpm:>=" + bpmStr, "", [this, bpmStr]() {
+			onSetSearchQuery("bpm:>=" + bpmStr);
+		}));
+	}
+
+	void createLengthFilterMenu() {
+		if (info.durationSeconds <= 0.f || !onSetSearchQuery) return;
+
+		std::string lenStr = std::to_string((int)info.durationSeconds);
+
+		ui::Menu* menu = createMenu();
+		menu->addChild(createMenuLabel("Filter by length"));
+		menu->addChild(createMenuItem("length:<=" + lenStr + "s", "", [this, lenStr]() {
+			onSetSearchQuery("length:<=" + lenStr + "s");
+		}));
+		menu->addChild(createMenuItem("length:>=" + lenStr + "s", "", [this, lenStr]() {
+			onSetSearchQuery("length:>=" + lenStr + "s");
+		}));
+	}
+
 	// ── BPM detection ─────────────────────────────────────────────────────────
 
 	void startBpmDetection() {
@@ -602,7 +697,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		bpm.store(-1.f);
 		std::string idCopy      = currentNode.relativePath;
 		std::string relPathCopy = relPath;
-		DataSource* ds          = source;
+		std::shared_ptr<DataSource> ds = source;
 		worker->work([this, idCopy, relPathCopy, ds]() {
 			float confidence = 0.f;
 			float result = BpmDetector::detectFromDsp(*ds, idCopy, confidence);
