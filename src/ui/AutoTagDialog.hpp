@@ -30,7 +30,7 @@ struct TagGroup {
 // "Apply" to invoke the apply callback with the filtered per-tag payload map.
 //
 // Rows can be added after construction via addGroup() — used by
-// StreamingTagDialog to append results as the worker thread produces them.
+// AsyncTagConfirmDialog to populate the dialog once the worker thread finishes.
 
 template <typename TPayload>
 struct TagConfirmDialog : widget::OpaqueWidget {
@@ -102,14 +102,17 @@ struct TagConfirmDialog : widget::OpaqueWidget {
 	GroupVector                                  groups;
 	BuildLabelCallback                           buildLabelCallback;
 	ApplyCallback                                applyCallback;
+	std::function<std::string(int, int)>        summaryCallback;
 
 	// ── ctor ──────────────────────────────────────────────────────────────
 
 	TagConfirmDialog(std::string headerText, GroupVector groups,
-	                 BuildLabelCallback buildLabel, ApplyCallback apply)
+	                 BuildLabelCallback buildLabel, ApplyCallback apply,
+	                 std::function<std::string(int, int)> summaryFn = {})
 		: groups(std::move(groups))
 		, buildLabelCallback(std::move(buildLabel))
-		, applyCallback(std::move(apply)) {
+		, applyCallback(std::move(apply))
+		, summaryCallback(std::move(summaryFn)) {
 
 		box.size = math::Vec(800.f, 500.f);
 
@@ -179,38 +182,10 @@ struct TagConfirmDialog : widget::OpaqueWidget {
 		buttonLayout->addChild(summaryLabel);
 	}
 
-	// ── public mutators ───────────────────────────────────────────────────
-
-	void setHeaderText(const std::string& text) {
-		if (headerLabel) headerLabel->text = text;
-	}
-
-	// Append a new tag group and its row widget. Pre-selects the tag.
-	void addGroup(const TagGroup<TPayload>& g) {
-		groups.push_back(g);
-		selectedTags[g.tag] = true;
-		widget::Widget* row = buildRow(g);
-		tagListLayout->addChild(row);
-		tagListLayout->box.size.y += row->box.size.y + tagListLayout->spacing.y;
-		updateSummary();
-	}
-
-	// Add a single new payload to an existing group: updates both the data
-	// model and appends a label widget to the existing row.
-	void addPayloadToGroup(const std::string& tag, const TPayload& payload) {
-		for (auto& g : groups)
-			if (g.tag == tag) { g.payloads.insert(payload); break; }
-		auto it = labelLayoutByTag.find(tag);
-		if (it != labelLayoutByTag.end() && buildLabelCallback) {
-			widget::Widget* lw = buildLabelCallback(tag, payload);
-			if (lw) it->second->addChild(lw);
-		}
-		updateSummary();
-	}
-
 	// ── overridable summary ───────────────────────────────────────────────
 
 	virtual std::string summaryText(int selectedTagCount, int totalItemCount) const {
+		if (summaryCallback) return summaryCallback(selectedTagCount, totalItemCount);
 		return string::f("%d tag%s selected across %d module%s",
 			selectedTagCount, selectedTagCount == 1 ? "" : "s",
 			totalItemCount,   totalItemCount   == 1 ? "" : "s");
@@ -306,120 +281,6 @@ private:
 };
 
 
-// ─── StreamingTagDialog ─────────────────────────────────────────────────────
-//
-// A TagConfirmDialog that shows immediately (empty) and fills in as a worker
-// thread produces results. Uses a dsp::RingBuffer (SPSC, no mutex) to pass
-// tag events from the worker to step() on the UI thread.
-//
-// Usage:
-//   auto* dlg = new StreamingTagDialog<T>(buildLabel, apply, header, summaryFn);
-//   overlay->addChild(dlg);
-//   APP->scene->addChild(overlay);
-//   auto prog = dlg->progress;           // share with worker
-//   worker->work([prog, ...]() {
-//       prog->total = N;
-//       for each file:
-//           /* classify */
-//           prog->events.push({tag, fileId});
-//           prog->processed++;
-//       prog->done = true;
-//   });
-
-template <typename TPayload>
-struct StreamingTagDialog : TagConfirmDialog<TPayload> {
-	using Base = TagConfirmDialog<TPayload>;
-	using BuildLabelCallback = typename Base::BuildLabelCallback;
-	using ApplyCallback      = typename Base::ApplyCallback;
-
-	struct Progress {
-		// SPSC ring buffer: worker pushes, step() shifts — no mutex needed.
-		// 4096 slots handles any realistic sample library; at ~5 events/file
-		// and 60 fps drain rate the buffer is virtually never more than a few
-		// slots deep.
-		struct TagEvent { std::string tag; TPayload payload; };
-		dsp::RingBuffer<TagEvent, 4096> events;
-		std::atomic<int>  processed{0};
-		std::atomic<int>  total{0};
-		std::atomic<bool> done{false};
-	};
-	std::shared_ptr<Progress> progress = std::make_shared<Progress>();
-
-	std::string                               baseHeader;
-	std::function<std::string(int,int)>       summaryCallback;
-	std::map<std::string, std::set<TPayload>> accumulated;   // UI-thread: all events ever drained
-	std::map<std::string, std::set<TPayload>> shownPayloads; // UI-thread: what widget rows show
-	bool                                      finished = false;
-
-	StreamingTagDialog(BuildLabelCallback buildLabel, ApplyCallback apply,
-	                   std::string header,
-	                   std::function<std::string(int,int)> summaryFn = {})
-		: Base(header, {}, std::move(buildLabel), std::move(apply))
-		, baseHeader(header)
-		, summaryCallback(std::move(summaryFn)) {
-		this->setHeaderText(baseHeader + " — Analysing...");
-	}
-
-	std::string summaryText(int sel, int items) const override {
-		return summaryCallback ? summaryCallback(sel, items)
-		                       : Base::summaryText(sel, items);
-	}
-
-	void step() override {
-		if (!finished) {
-			// Load done with acquire FIRST so the ring buffer's non-atomic
-			// end index is guaranteed visible before we drain below.
-			const bool done = progress->done.load(std::memory_order_acquire);
-			const int  proc = progress->processed.load(std::memory_order_relaxed);
-			const int  tot  = progress->total.load(std::memory_order_relaxed);
-
-			// Drain all events now visible after the acquire load.
-			bool newData = false;
-			while (!progress->events.empty()) {
-				auto ev = progress->events.shift();
-				accumulated[ev.tag].insert(ev.payload);
-				newData = true;
-			}
-
-			if (newData) {
-				for (const auto& kv : accumulated) {
-					if (!shownPayloads.count(kv.first)) {
-						// New tag: add full group with all payloads accumulated so far.
-						shownPayloads[kv.first] = kv.second;
-						this->addGroup({kv.first, kv.second});
-					} else {
-						// Existing tag: append only payloads not yet shown.
-						for (const auto& p : kv.second) {
-							if (!shownPayloads[kv.first].count(p)) {
-								shownPayloads[kv.first].insert(p);
-								this->addPayloadToGroup(kv.first, p);
-							}
-						}
-					}
-				}
-			}
-
-			if (done) {
-				finished = true;
-				if (this->groups.empty()) {
-					osdialog_message(OSDIALOG_INFO, OSDIALOG_OK, "No new tag assignments found.");
-					if (this->getParent()) this->getParent()->requestDelete();
-					return;
-				}
-				this->setHeaderText(baseHeader);
-				this->updateSummary();
-			} else {
-				const std::string suffix = (tot > 0)
-					? " — Analysing " + std::to_string(proc) + "/" + std::to_string(tot) + "..."
-					: " — Analysing...";
-				this->setHeaderText(baseHeader + suffix);
-			}
-		}
-		Base::step();
-	}
-};
-
-
 // ─── AsyncTagConfirmDialog ──────────────────────────────────────────────────
 //
 // Original batch async pattern: a background thread sets `result` once when
@@ -463,19 +324,8 @@ struct AsyncTagConfirmDialog : widget::OpaqueWidget {
 			ui::MenuOverlay* overlay = new ui::MenuOverlay;
 			overlay->bgColor = nvgRGBAf(0.f, 0.f, 0.f, 0.5f);
 
-			struct Dialog : TagConfirmDialog<TPayload> {
-				std::function<std::string(int, int)> sumFn;
-				Dialog(GroupVector g, BuildLabelCallback b, ApplyCallback a,
-				        std::string h, std::function<std::string(int, int)> s)
-					: TagConfirmDialog<TPayload>(h, std::move(g), std::move(b), std::move(a))
-					, sumFn(std::move(s)) {}
-				std::string summaryText(int sel, int items) const override {
-					return sumFn ? sumFn(sel, items) : TagConfirmDialog<TPayload>::summaryText(sel, items);
-				}
-			};
-
-			TagConfirmDialog<TPayload>* dlg = new Dialog(
-				*result, buildLabelCallback, applyCallback, headerText, summaryCallback);
+			auto* dlg = new TagConfirmDialog<TPayload>(
+				headerText, *result, buildLabelCallback, applyCallback, summaryCallback);
 			dlg->updateSummary();
 			overlay->addChild(dlg);
 			APP->scene->addChild(overlay);
@@ -493,10 +343,13 @@ inline void openTagConfirmDialog(
         std::string headerText,
 		typename TagConfirmDialog<TPayload>::GroupVector groups,
 		typename TagConfirmDialog<TPayload>::BuildLabelCallback buildLabel,
-		typename TagConfirmDialog<TPayload>::ApplyCallback apply) {
+		typename TagConfirmDialog<TPayload>::ApplyCallback apply,
+		std::function<std::string(int, int)> summaryFn = {}) {
 	ui::MenuOverlay* overlay = new ui::MenuOverlay;
 	overlay->bgColor = nvgRGBAf(0.f, 0.f, 0.f, 0.5f);
-	overlay->addChild(new TagConfirmDialog<TPayload>(headerText, std::move(groups), std::move(buildLabel), std::move(apply)));
+	auto* dlg = new TagConfirmDialog<TPayload>(headerText, std::move(groups), std::move(buildLabel), std::move(apply), std::move(summaryFn));
+	dlg->updateSummary();
+	overlay->addChild(dlg);
 	APP->scene->addChild(overlay);
 }
 
