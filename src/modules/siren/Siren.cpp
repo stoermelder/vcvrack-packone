@@ -775,7 +775,7 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 		previewPane->cacheDir = sirenCacheDirPath();
 		SirenBrowserPane* bp = browserPane;
 		previewPane->externalStatusMessage = [bp]() { return bp->statusMessage(); };
-		previewPane->onSetSearchQuery = [bp](const std::string& q) { bp->setBpmFilter(q); };
+		previewPane->onSetSearchQuery = [bp](const std::string& q) { bp->setFilter(q); };
 		display->addChild(previewPane);
 
 		// The active DataSource (and its MetadataStore) is about to be destroyed —

@@ -248,15 +248,19 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		requestRebuild();
 	}
 
-	// Merges a "bpm:..." filter token into the current search query, replacing
-	// any existing bpm filter token while leaving other text/filters untouched.
-	void setBpmFilter(const std::string& filterToken) {
+	// Merges a "bpm:..." or "length:..." filter token into the current search
+	// query, replacing any existing filter token for the same field while
+	// leaving other text/filters untouched.
+	void setFilter(const std::string& filterToken) {
+		SearchFilter newFilter;
+		bool isFilter = parseSearchFilter(rack::string::lowercase(filterToken), newFilter);
+
 		std::istringstream iss(searchQuery);
 		std::string token;
 		std::vector<std::string> tokens;
 		while (iss >> token) {
 			SearchFilter f;
-			if (parseSearchFilter(rack::string::lowercase(token), f) && f.field == SearchFilterField::Bpm) continue;
+			if (isFilter && parseSearchFilter(rack::string::lowercase(token), f) && f.field == newFilter.field) continue;
 			tokens.push_back(token);
 		}
 		tokens.push_back(filterToken);

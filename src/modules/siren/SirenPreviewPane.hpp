@@ -94,6 +94,16 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	std::atomic<float> bpm{0.f};
 	Rect bpmHitRect;
 
+	// The canvas's bottom readout bar (IN/OUT/LEN/POS), in this widget's local
+	// coordinates — right-clicking it offers length filter shortcuts.
+	Rect lengthFilterHitRect() const {
+		if (!canvas) return Rect();
+		return Rect(
+			Vec(canvas->box.pos.x + SirenWaveformCanvas::WAVE_X, canvas->box.pos.y + canvas->box.size.y - SirenWaveformCanvas::READOUT_H),
+			Vec(canvas->box.size.x - SirenWaveformCanvas::WAVE_X, SirenWaveformCanvas::READOUT_H)
+		);
+	}
+
 	MetadataStore* metadata() const { return source ? source->getMetadata() : nullptr; }
 	std::function<void()> onMetadataChanged;
 	std::function<void(const std::string&)> onSetSearchQuery;
@@ -483,6 +493,11 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 				e.consume(this);
 				return;
 			}
+			if (info.durationSeconds > 0.f && lengthFilterHitRect().contains(e.pos)) {
+				createLengthFilterMenu();
+				e.consume(this);
+				return;
+			}
 			createContextMenu();
 			e.consume(this);
 			return;
@@ -583,6 +598,21 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		}));
 		menu->addChild(createMenuItem("bpm:>=" + bpmStr, "", [this, bpmStr]() {
 			onSetSearchQuery("bpm:>=" + bpmStr);
+		}));
+	}
+
+	void createLengthFilterMenu() {
+		if (info.durationSeconds <= 0.f || !onSetSearchQuery) return;
+
+		std::string lenStr = std::to_string((int)info.durationSeconds);
+
+		ui::Menu* menu = createMenu();
+		menu->addChild(createMenuLabel("Filter by length"));
+		menu->addChild(createMenuItem("length:<=" + lenStr + "s", "", [this, lenStr]() {
+			onSetSearchQuery("length:<=" + lenStr + "s");
+		}));
+		menu->addChild(createMenuItem("length:>=" + lenStr + "s", "", [this, lenStr]() {
+			onSetSearchQuery("length:>=" + lenStr + "s");
 		}));
 	}
 
