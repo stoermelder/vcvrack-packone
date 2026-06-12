@@ -862,7 +862,7 @@ TEST_CASE("startIndexing: fills audio info and filename-based BPM, preserves exi
 	pane.box.size = Vec(600.f, 380.f);
 	pane.init(&worker);
 	pane.setSize(pane.box.size);
-	pane.activeDataSource = src;
+	pane.activeDs = std::shared_ptr<DataSource>(src);
 
 	pane.startIndexing();
 	REQUIRE(pane.indexProgress != nullptr);
@@ -902,7 +902,7 @@ TEST_CASE("startIndexing: re-entrant call while running is ignored", "[Siren][Br
 	pane.box.size = Vec(600.f, 380.f);
 	pane.init(&worker);
 	pane.setSize(pane.box.size);
-	pane.activeDataSource = src;
+	pane.activeDs = std::shared_ptr<DataSource>(src);
 
 	pane.startIndexing();
 	auto firstProgress = pane.indexProgress;

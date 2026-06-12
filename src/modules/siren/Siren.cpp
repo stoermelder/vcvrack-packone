@@ -825,7 +825,7 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 
 		// Obtain the conversion task from the active source; dispatched by the drop handler.
 		dropHandler.prepareForDropCallback = [this](const std::string& id) -> std::function<std::string()> {
-			DataSource* src = browserPane->activeDataSource;
+			DataSource* src = browserPane->activeDs.get();
 			if (!src) return [id]() { return id; };
 
 			int targetRate   = sirenSettings.resampleOnDrop ? this->module->engineSampleRate : 0;
@@ -842,7 +842,7 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 		std::string restoreFile = module ? module->lastFilePath : sirenSettings.lastFile;
 		float restorePos = module ? module->lastPlayheadPos : sirenSettings.lastPlayheadPos;
 		if (!restoreFile.empty()) {
-			DataSource* src = browserPane->activeDataSource;
+			std::shared_ptr<DataSource> src = browserPane->activeDs;
 			DataSourceNode restoreNode = src ? src->resolveNode(restoreFile) : DataSourceNode{};
 			previewPane->loadItem(restoreNode, src);
 			module->playheadPos.store(restorePos, std::memory_order_relaxed);
@@ -880,7 +880,7 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 	void onFileSelected(const DataSourceNode& node, bool startPlay) {
 		sirenSettings.lastFile = node.relativePath;
 		if (module) module->lastFilePath = node.relativePath;
-		DataSource* src = browserPane->activeDataSource;
+		std::shared_ptr<DataSource> src = browserPane->activeDs;
 		bool autoplay = module && module->params[SirenModule::PARAM_AUTOPLAY].getValue() > 0.5f;
 		previewPane->loadItem(node, src, startPlay || autoplay);
 	}
@@ -939,7 +939,7 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 
 		if (!sirenSettings.rootContainers.empty()) {
 			menu->addChild(createMenuItem("Remove root", "", [this]() {
-				if (!sirenSettings.removeActiveRoot(browserPane->activeDataSource)) return;
+				if (!sirenSettings.removeActiveRoot(browserPane->activeDs.get())) return;
 				browserPane->setRoots(sirenSettings.rootContainers, sirenSettings.activeRootIdx);
 			}));
 		}

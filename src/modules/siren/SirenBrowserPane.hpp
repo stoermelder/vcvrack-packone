@@ -273,7 +273,22 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		setSearchQuery(newQuery);
 	}
 
-	DataSource* activeDataSource = nullptr;
+	// Held via shared_ptr so worker tasks that captured a copy (indexing, tag
+	// classification) keep the source and its MetadataStore alive even if the
+	// active root is switched while they're running.
+	std::shared_ptr<DataSource> activeDs;
+
+	// Signaled (then replaced) whenever the active source changes, so in-flight
+	// indexing/tag-classification tasks for the old source stop promptly instead
+	// of running to completion against a source that's no longer displayed. Each
+	// generation gets its own flag object: a task captures a copy of the shared_ptr
+	// for its generation, which only ever transitions false -> true once.
+	std::shared_ptr<std::atomic<bool>> activeDsCancel = std::make_shared<std::atomic<bool>>(false);
+
+	void cancelActiveSourceTasks() {
+		activeDsCancel->store(true, std::memory_order_relaxed);
+		activeDsCancel = std::make_shared<std::atomic<bool>>(false);
+	}
 
 	struct TreeEntry {
 		DataSourceNode node;
@@ -315,7 +330,6 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 	// IndexProgress::done. nullptr when no scan is in progress.
 	std::shared_ptr<IndexProgress> indexProgress;
 
-	~SirenBrowserPane() override { delete activeDataSource; }
 
 	// Defined after SirenTagBar
 	void init(TaskWorker* tw);
@@ -343,26 +357,32 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 	// or build waveform caches. Runs on the worker thread; progress is reported
 	// via indexProgress for draw() to display.
 	void startIndexing() {
-		if (!worker || !activeDataSource) return;
+		if (!worker || !activeDs) return;
 		if (indexProgress && !indexProgress->done.load(std::memory_order_relaxed)) return;
 
-		MetadataStore* meta = activeDataSource->getMetadata();
+		MetadataStore* meta = activeDs->getMetadata();
 		if (!meta) return;
 
-		DataSource* ds = activeDataSource;
+		// Captured by the worker lambda so this DataSource (and its MetadataStore)
+		// stay alive for the task's duration even if the active root is switched.
+		std::shared_ptr<DataSource> ds = activeDs;
+		std::shared_ptr<std::atomic<bool>> dsCancel = activeDsCancel;
 		auto progress = std::make_shared<IndexProgress>();
 		indexProgress = progress;
 
-		worker->work([ds, meta, progress](std::atomic<bool>& cancel) {
+		worker->work([ds, meta, progress, dsCancel](std::atomic<bool>& cancel) {
+			auto cancelled = [&]() {
+				return cancel.load(std::memory_order_relaxed) || dsCancel->load(std::memory_order_relaxed);
+			};
 			// Index each file as it's discovered, rather than collecting the
 			// full file list up front, so progress and cancellation are
 			// responsive even for very large libraries.
 			std::function<void(const std::string&)> visit = [&](const std::string& id) {
-				if (cancel.load(std::memory_order_relaxed)) return;
+				if (cancelled()) return;
 				// withAudioInfo=false: this listing is only used for traversal/file
 				// names here, the full AudioInfo is loaded explicitly below.
 				for (const auto& child : ds->loadChildrenSync(id, false)) {
-					if (cancel.load(std::memory_order_relaxed)) return;
+					if (cancelled()) return;
 					if (child.isContainer) {
 						visit(child.relativePath);
 						continue;
@@ -387,7 +407,7 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 			};
 			visit(ds->rootId());
 
-			if (!cancel.load(std::memory_order_relaxed))
+			if (!cancelled())
 				ds->saveMetadata();
 			progress->done.store(true, std::memory_order_release);
 		});
@@ -395,8 +415,8 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 
 	std::string getRootDisplayName(int idx) const {
 		if (idx < 0 || idx >= (int)rootContainers.size()) return "";
-		if (idx == activeRootIdx && activeDataSource)
-			return activeDataSource->getRootDisplayName();
+		if (idx == activeRootIdx && activeDs)
+			return activeDs->getRootDisplayName();
 		return FileSystemDataSource::rootDisplayName(rootContainers[idx]);
 	}
 
@@ -408,8 +428,8 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		}
 		else {
 			if (onActiveSourceChanging) onActiveSourceChanging();
-			delete activeDataSource;
-			activeDataSource = nullptr;
+			cancelActiveSourceTasks();
+			activeDs = nullptr;
 			selectedPath.clear();
 			rows.clear();
 			loadPending = false;
@@ -421,15 +441,15 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 
 	void loadRoot(const std::string& root) {
 		if (onActiveSourceChanging) onActiveSourceChanging();
-		delete activeDataSource;
-		activeDataSource = new FileSystemDataSource(root);
+		cancelActiveSourceTasks();
+		activeDs = std::make_shared<FileSystemDataSource>(root);
 		rows.clear();
 		rebuildRowWidgets();
 		pendingReady.store(false, std::memory_order_relaxed);
 		int gen = ++treeGeneration;
 		if (!worker) return;
 		loadPending = true;
-		activeDataSource->loadChildrenAsync(activeDataSource->rootId(), *worker, [this, gen](std::vector<DataSourceNode> nodes) {
+		activeDs->loadChildrenAsync(activeDs->rootId(), *worker, [this, gen](std::vector<DataSourceNode> nodes) {
 			pendingResult = PendingResult("", 0, std::move(nodes), gen);
 			pendingReady.store(true, std::memory_order_release);
 		});
@@ -519,9 +539,9 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		std::string id    = entry.node.relativePath;
 		int insertIdx     = rowIdx + 1;
 
-		if (worker && activeDataSource) {
+		if (worker && activeDs) {
 			int gen = treeGeneration.load(std::memory_order_relaxed);
-			activeDataSource->loadChildrenAsync(id, *worker, [this, insertIdx, gen](std::vector<DataSourceNode> nodes) {
+			activeDs->loadChildrenAsync(id, *worker, [this, insertIdx, gen](std::vector<DataSourceNode> nodes) {
 				pendingResult = PendingResult("", insertIdx, std::move(nodes), gen);
 				pendingReady.store(true, std::memory_order_release);
 			});
@@ -647,9 +667,11 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 	}
 
 	void startTagClassification(const DataSourceNode& node) {
-		if (!worker || !activeDataSource) return;
+		if (!worker || !activeDs) return;
 		TagClassifier::registerKeywords(starterTagKeywords());
-		DataSource*   ds    = activeDataSource;
+		// Captured by the worker lambda (and the dialog's closures below) so this
+		// DataSource stays alive even if the active root is switched mid-scan.
+		std::shared_ptr<DataSource> ds = activeDs;
 		MetadataStore* meta  = ds->getMetadata();
 		std::string   rel   = node.relativePath;
 		bool          isDir = node.isContainer;
@@ -692,7 +714,7 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 			};
 			SampleLabel* item = new SampleLabel;
 			item->text     = ds->getDisplayName(fileId);
-			item->ds       = ds;
+			item->ds       = ds.get();
 			item->pane     = this;
 			item->fileId   = fileId;
 			item->groupTag = tag;
@@ -967,8 +989,8 @@ struct SirenTagContainer : widget::OpaqueWidget {
 
 	void rebuildChips(NVGcontext* vg) {
 		clearChildren();
-		if (!pane || !pane->activeDataSource) { box.size.y = PAD_Y * 2.f; return; }
-		MetadataStore* meta = pane->activeDataSource->getMetadata();
+		if (!pane || !pane->activeDs) { box.size.y = PAD_Y * 2.f; return; }
+		MetadataStore* meta = pane->activeDs->getMetadata();
 		if (!meta) { box.size.y = PAD_Y * 2.f; return; }
 
 		auto all = meta->allTags();
@@ -1104,12 +1126,12 @@ inline void SirenBrowserPane::setSize(Vec size) {
 }
 
 inline MetadataStore* SirenTreeRow::metadata() const {
-	return (pane && pane->activeDataSource) ? pane->activeDataSource->getMetadata() : nullptr;
+	return (pane && pane->activeDs) ? pane->activeDs->getMetadata() : nullptr;
 }
 
 inline void SirenBrowserPane::rebuildRowWidgets() {
 	rowContainer->clearChildren();
-	MetadataStore* meta = activeDataSource ? activeDataSource->getMetadata() : nullptr;
+	MetadataStore* meta = activeDs ? activeDs->getMetadata() : nullptr;
 
 	SearchQuery sq = parseSearchQuery(searchQuery);
 	float y = 0.f;
@@ -1117,8 +1139,8 @@ inline void SirenBrowserPane::rebuildRowWidgets() {
 		const TreeEntry& entry = rows[i];
 		const DataSourceNode& n = entry.node;
 
-		if (!sq.empty() && activeDataSource) {
-			if (!activeDataSource->matchesSearch(n.relativePath, n.isContainer, sq)) continue;
+		if (!sq.empty() && activeDs) {
+			if (!activeDs->matchesSearch(n.relativePath, n.isContainer, sq)) continue;
 		}
 
 		if (n.isContainer) {
@@ -1186,10 +1208,10 @@ inline void SirenTreeRow::onButton(const event::Button& e) {
 		e.consume(this);
 	}
 	if (e.button == GLFW_MOUSE_BUTTON_RIGHT && e.action == GLFW_PRESS) {
-		if (pane->activeDataSource) {
+		if (pane->activeDs) {
 			ui::Menu* menu = createMenu();
-			menu->addChild(createMenuLabel(pane->activeDataSource->getDisplayName(node.relativePath)));
-			pane->activeDataSource->appendNodeMenuItems(menu, node, [this]() {
+			menu->addChild(createMenuLabel(pane->activeDs->getDisplayName(node.relativePath)));
+			pane->activeDs->appendNodeMenuItems(menu, node, [this]() {
 				pane->rebuildRowWidgets();
 			});
 
@@ -1199,7 +1221,7 @@ inline void SirenTreeRow::onButton(const event::Button& e) {
 			}));
 
 			menu->addChild(createMenuItem("Clear tags", "", [this]() {
-				DataSource* ds = pane->activeDataSource;
+				DataSource* ds = pane->activeDs.get();
 				if (!ds) return;
 				MetadataStore* meta = ds->getMetadata();
 				if (!meta) return;

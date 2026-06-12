@@ -31,7 +31,10 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 
 	// ── file state ───────────────────────────────────────────────────────────
 	DataSourceNode currentNode;
-	DataSource*  source      = nullptr;
+	// Held via shared_ptr so worker tasks that captured a copy (waveform cache
+	// build, loop preview, BPM detection) keep the source alive even if the
+	// active root is switched while they're running.
+	std::shared_ptr<DataSource> source;
 	std::string  displayName;
 	std::string  relPath;
 	AudioInfo    info;
@@ -140,12 +143,12 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 
 	// ── file loading ──────────────────────────────────────────────────────────
 
-	void loadItem(const DataSourceNode& node, DataSource* src,
+	void loadItem(const DataSourceNode& node, std::shared_ptr<DataSource> src,
 	              bool startPlay = false, bool forceRebuild = false) {
 		const std::string& id = node.relativePath;
 
 		if (stopPlaybackCallback) stopPlaybackCallback();
-		if (openStreamCallback)   openStreamCallback(id, src);
+		if (openStreamCallback)   openStreamCallback(id, src.get());
 
 		currentNode   = node;
 		source        = src;
@@ -242,7 +245,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		loopCacheReady      = false;
 		loopCache           = WaveformCache{};
 
-		DataSource* srcCopy = source;
+		std::shared_ptr<DataSource> srcCopy = source;
 		std::string idCopy  = currentNode.relativePath;
 		float trimIn   = canvas ? canvas->inPoint  : 0.f;
 		float trimOut  = canvas ? canvas->outPoint : 1.f;
@@ -285,7 +288,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 
 		// Restore original file stream and module trim points
 		if (openStreamCallback && source && !currentNode.relativePath.empty())
-			openStreamCallback(currentNode.relativePath, source);
+			openStreamCallback(currentNode.relativePath, source.get());
 		if (canvas) {
 			if (moduleInPoint)  moduleInPoint->store(canvas->inPoint,  std::memory_order_relaxed);
 			if (moduleOutPoint) moduleOutPoint->store(canvas->outPoint, std::memory_order_relaxed);
@@ -624,7 +627,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		bpm.store(-1.f);
 		std::string idCopy      = currentNode.relativePath;
 		std::string relPathCopy = relPath;
-		DataSource* ds          = source;
+		std::shared_ptr<DataSource> ds = source;
 		worker->work([this, idCopy, relPathCopy, ds]() {
 			float confidence = 0.f;
 			float result = BpmDetector::detectFromDsp(*ds, idCopy, confidence);

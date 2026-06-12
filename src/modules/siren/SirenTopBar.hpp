@@ -56,22 +56,22 @@ struct SirenSourceButton : ui::ChoiceButton {
 
 		menu->addChild(new ui::MenuSeparator);
 		size_t i = menu->children.size();
-		if (pane->activeDataSource) {
-			pane->activeDataSource->appendSourceMenuItems(menu);
+		if (pane->activeDs) {
+			pane->activeDs->appendSourceMenuItems(menu);
 			if (i != menu->children.size()) menu->addChild(new ui::MenuSeparator);
 		}
 
 		bool indexing = pane->indexProgress && !pane->indexProgress->done.load(std::memory_order_relaxed);
 		menu->addChild(createMenuItem("Index metadata for all files", "", [this]() {
 			pane->startIndexing();
-		}, !pane->activeDataSource || indexing));
+		}, !pane->activeDs || indexing));
 		menu->addChild(new ui::MenuSeparator);
 
 		menu->addChild(createMenuItem("Add root...", "", [this]() {
 			if (pane->onAddRoot) pane->onAddRoot();
 		}));
 		menu->addChild(createMenuItem("Remove root", "", [this]() {
-			if (!sirenSettings.removeActiveRoot(pane->activeDataSource)) return;
+			if (!sirenSettings.removeActiveRoot(pane->activeDs.get())) return;
 			pane->setRoots(sirenSettings.rootContainers, sirenSettings.activeRootIdx);
 		}, pane->rootContainers.empty()));
 
