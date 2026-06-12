@@ -395,9 +395,9 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			canvas->cache          = loopPreviewActive ? &loopCache : &cache;
 			canvas->cacheReady     = loopPreviewActive ? loopCacheReady : (bool)cacheReady;
 			canvas->loopPreviewMode = loopPreviewActive;
-			canvas->previewMode = previewIsRepitch
-				? &PreviewModeInfo::repitch()
-				: &PreviewModeInfo::loopCrossfade();
+			canvas->viewMode = !loopPreviewActive ? &CanvasViewMode::normal()
+			                    : previewIsRepitch    ? &CanvasViewMode::repitch()
+			                                          : &CanvasViewMode::loopCrossfade();
 			canvas->hasFile        = !currentNode.relativePath.empty();
 			canvas->durationSeconds = loopPreviewActive ? loopDurationSeconds : info.durationSeconds;
 			canvas->dragPath        = currentNode.relativePath;
@@ -410,14 +410,14 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			bool generatingLoop = loopPreviewBuilding && !loopPreviewActive;
 			std::string convertingMsg = (dropHandler && dropHandler->converting.load(std::memory_order_relaxed))
 				? "Converting\xe2\x80\xa6" : "";
-			std::string generatingLoopMsg = generatingLoop ? canvas->previewMode->generatingMessage : "";
+			std::string generatingLoopMsg = generatingLoop ? canvas->viewMode->generatingMessage : "";
 			std::string buildingMsg = building ? "Building waveform\xe2\x80\xa6" : "";
 			std::string externalMsg = externalStatusMessage ? externalStatusMessage() : "";
 
 			struct StatusCandidate { const std::string& msg; NVGcolor color; };
 			StatusCandidate candidates[] = {
 				{ convertingMsg,     nvgRGBf(1.f, 0.85f, 0.1f) },
-				{ generatingLoopMsg, canvas->previewMode->accentColor },
+				{ generatingLoopMsg, canvas->viewMode->accentColor },
 				{ buildingMsg,       nvgRGBf(1.f, 0.85f, 0.1f) },
 				{ externalMsg,       nvgRGBf(1.f, 0.85f, 0.1f) },
 			};
@@ -455,14 +455,14 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			: nvgRGBf(0.55f, 0.55f, 0.55f));
 		nvgText(args.vg, 8.f, 12.f, isPlaying ? "\xe2\x96\xa0" : "\xe2\x96\xb6", nullptr);
 
-		NVGcolor previewColor = canvas ? canvas->previewMode->accentColor : nvgRGBf(0.35f, 0.80f, 0.85f);
+		NVGcolor previewColor = canvas ? canvas->viewMode->accentColor : nvgRGBf(0.35f, 0.80f, 0.85f);
 
-		// Filename — preview accent when in preview mode, gold when playing, light otherwise
+		// Filename — gold when playing, otherwise the active mode's filename color
 		std::string fname = displayName.empty() ? currentNode.relativePath : displayName;
 		nvgFontSize(args.vg, 12.f);
-		NVGcolor fnColor = loopPreviewActive ? previewColor
-		                 : isPlaying         ? nvgRGBf(1.f, 0.85f, 0.1f)
-		                 :                     nvgRGBf(0.92f, 0.92f, 0.88f);
+		NVGcolor fnColor = isPlaying ? nvgRGBf(1.f, 0.85f, 0.1f)
+		                 : canvas    ? canvas->viewMode->filenameColor
+		                 :             nvgRGBf(0.92f, 0.92f, 0.88f);
 		nvgFillColor(args.vg, fnColor);
 		float maxFnW = w - 30.f;
 		nvgScissor(args.vg, 22.f, 0.f, maxFnW, TB_H);
@@ -470,13 +470,13 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		nvgResetScissor(args.vg);
 
 		nvgFontSize(args.vg, 10.f);
-		nvgFillColor(args.vg, nvgRGBf(0.50f, 0.50f, 0.50f));
+		nvgFillColor(args.vg, previewColor);
 
 		// Preview label (second row, left side)
 		if (loopPreviewActive && canvas) {
 			nvgFillColor(args.vg, previewColor);
-			nvgText(args.vg, SirenWaveformCanvas::WAVE_X, 26.f, canvas->previewMode->label.c_str(), nullptr);
-			nvgFillColor(args.vg, nvgRGBf(0.50f, 0.50f, 0.50f));
+			nvgText(args.vg, SirenWaveformCanvas::WAVE_X, 26.f, canvas->viewMode->label.c_str(), nullptr);
+			nvgFillColor(args.vg, previewColor);
 		}
 		else {
 			// ch · sr · bit badges
@@ -491,7 +491,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		// Zoom level — right-aligned
 		if (canvas) {
 			std::string zoomText = rack::string::f("%.1fx", canvas->zoomLevel);
-			nvgFillColor(args.vg, nvgRGBf(0.50f, 0.50f, 0.50f));
+			nvgFillColor(args.vg, previewColor);
 			nvgTextAlign(args.vg, NVG_ALIGN_RIGHT | NVG_ALIGN_BASELINE);
 			nvgText(args.vg, w - 4.f, 26.f, zoomText.c_str(), nullptr);
 			nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_BASELINE);
@@ -501,14 +501,24 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		float bpmVal = bpm.load();
 		bpmHitRect = Rect();
 		if (bpmVal > 0.f || bpmVal < 0.f) {
-			std::string bpmText = (bpmVal < 0.f) ? "\xe2\x80\xa6 BPM" : rack::string::f("%.1f BPM", bpmVal);
-			nvgFillColor(args.vg, nvgRGBf(0.50f, 0.50f, 0.50f));
+			std::string valueText = (bpmVal < 0.f) ? "\xe2\x80\xa6" : rack::string::f("%.1f", bpmVal);
 			nvgTextAlign(args.vg, NVG_ALIGN_RIGHT | NVG_ALIGN_BASELINE);
-			nvgText(args.vg, w - 50.f, 26.f, bpmText.c_str(), nullptr);
+
+			// "BPM" label dimmed, matching the readout labels at the bottom of the canvas
+			nvgFillColor(args.vg, nvgRGBAf(previewColor.r, previewColor.g, previewColor.b, 0.5f));
+			nvgText(args.vg, w - 50.f, 26.f, "BPM", nullptr);
+
+			float labelBounds[4];
+			nvgTextBounds(args.vg, w - 50.f, 26.f, "BPM", nullptr, labelBounds);
+			float valueX = labelBounds[0] - 4.f;
+
+			nvgFillColor(args.vg, previewColor);
+			nvgText(args.vg, valueX, 26.f, valueText.c_str(), nullptr);
+
 			if (bpmVal > 0.f) {
 				float bounds[4];
-				nvgTextBounds(args.vg, w - 50.f, 26.f, bpmText.c_str(), nullptr, bounds);
-				bpmHitRect = Rect(Vec(bounds[0], bounds[1]), Vec(bounds[2] - bounds[0], bounds[3] - bounds[1]));
+				nvgTextBounds(args.vg, valueX, 26.f, valueText.c_str(), nullptr, bounds);
+				bpmHitRect = Rect(Vec(bounds[0], bounds[1]), Vec((w - 50.f) - bounds[0], labelBounds[3] - bounds[1]));
 			}
 			nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_BASELINE);
 		}

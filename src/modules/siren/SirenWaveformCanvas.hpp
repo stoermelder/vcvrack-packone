@@ -8,23 +8,32 @@
 namespace StoermelderPackOne {
 namespace Siren {
 
-// Cosmetic info for a special view (e.g. loop/repitch preview). The parent
-// points the canvas's previewMode at one of these each step(). Lets the
-// canvas stay agnostic of how many such views exist — adding one is just a
-// new named instance, not a new flag.
-struct PreviewModeInfo {
+// Cosmetic info for the canvas's current display mode — the normal view, or
+// a special view (e.g. loop/repitch preview). The parent points the canvas's
+// viewMode at one of these each step(). Lets the canvas stay agnostic of how
+// many special views exist — adding one is just a new named instance, not a
+// new flag.
+struct CanvasViewMode {
 	NVGcolor    accentColor;
+	NVGcolor    filenameColor;
 	std::string label;
 	std::string generatingMessage;
 
-	static const PreviewModeInfo& loopCrossfade() {
-		static const PreviewModeInfo info{
-			nvgRGBf(0.35f, 0.80f, 0.85f), "LOOP PREVIEW", "Generating loop preview\xe2\x80\xa6"};
+	// Accent color shared by the waveform and the header texts (badges, zoom,
+	// BPM) when no special view is active.
+	static const CanvasViewMode& normal() {
+		static const CanvasViewMode info{
+			nvgRGBf(0.70f, 0.70f, 0.63f), nvgRGBf(0.92f, 0.92f, 0.88f), "", ""};
 		return info;
 	}
-	static const PreviewModeInfo& repitch() {
-		static const PreviewModeInfo info{
-			nvgRGBf(0.95f, 0.65f, 0.30f), "REPITCH PREVIEW", "Generating repitch preview\xe2\x80\xa6"};
+	static const CanvasViewMode& loopCrossfade() {
+		static const CanvasViewMode info{
+			nvgRGBf(0.35f, 0.80f, 0.85f), nvgRGBf(0.75f, 0.95f, 0.97f), "LOOP PREVIEW", "Generating loop preview\xe2\x80\xa6"};
+		return info;
+	}
+	static const CanvasViewMode& repitch() {
+		static const CanvasViewMode info{
+			nvgRGBf(0.95f, 0.65f, 0.30f), nvgRGBf(1.00f, 0.85f, 0.55f), "REPITCH PREVIEW", "Generating repitch preview\xe2\x80\xa6"};
 		return info;
 	}
 };
@@ -50,7 +59,7 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 	WaveformCache*      cache             = nullptr;  // non-owning pointer to parent's active cache
 	bool                cacheReady        = false;
 	bool                loopPreviewMode   = false;    // tint + suppress trim handles
-	const PreviewModeInfo* previewMode = &PreviewModeInfo::loopCrossfade(); // active mode's color/label while in loopPreviewMode
+	const CanvasViewMode* viewMode = &CanvasViewMode::normal(); // active mode's accent color, shared by waveform + header texts
 	bool                hasFile           = false;
 	float               durationSeconds   = 0.f;
 	std::atomic<float>* modulePlayheadPos = nullptr;
@@ -162,12 +171,10 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 			asset::system("res/fonts/ShareTechMono-Regular.ttf"));
 		nvgFontFaceId(args.vg, font->handle);
 
-		NVGcolor previewColor = previewMode->accentColor;
+		NVGcolor previewColor = viewMode->accentColor;
 
-		// Waveform stroke color: preview accent in preview mode, grey-green otherwise
-		NVGcolor waveColor = loopPreviewMode
-			? previewColor
-			: nvgRGBf(0.70f, 0.70f, 0.63f);
+		// Waveform stroke color: shared with the header texts via viewMode
+		NVGcolor waveColor = previewColor;
 
 		// ── waveform ──────────────────────────────────────────────────────────
 		if (cache && cacheReady && !cache->empty()) {
@@ -333,10 +340,11 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 		float col = waveW2 / 4.f + 4.f;
 		nvgFontFaceId(args.vg, font->handle);
 		nvgFontSize(args.vg, 10.f);
+		NVGcolor accent = viewMode->accentColor;
 		auto drawReadout = [&](float x, const char* lbl, float val) {
-			nvgFillColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.38f));
+			nvgFillColor(args.vg, nvgRGBAf(accent.r, accent.g, accent.b, 0.5f));
 			nvgText(args.vg, x, box.size.y, lbl, nullptr);
-			nvgFillColor(args.vg, nvgRGBf(0.88f, 0.88f, 0.83f));
+			nvgFillColor(args.vg, accent);
 			nvgText(args.vg, x + 21.f, box.size.y, formatTime(val).c_str(), nullptr);
 		};
 		drawReadout(WAVE_X,           "IN",  inPoint  * durationSeconds);
