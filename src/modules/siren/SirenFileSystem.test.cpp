@@ -6,6 +6,7 @@
 #include <algorithm>
 
 using namespace StoermelderPackOne::Siren;
+using namespace StoermelderPackOne::Siren::filesystem;
 
 Test::TestContext<> testContext;
 
@@ -91,12 +92,6 @@ TEST_CASE("isGeneratedFile: rejects old .converted.wav and other edge cases", "[
 	REQUIRE(isGeneratedFile(".wav")                    == false);
 }
 
-// rootPath() returns the path passed to the constructor.
-TEST_CASE("FileSystemDataSource: rootPath returns configured root", "[Siren][FileSystem]") {
-	TempDir tmp;
-	FileSystemDataSource src(tmp.str(), scratchMetadataStore());
-	REQUIRE(src.rootPath() == tmp.str());
-}
 
 // ─── loadChildrenSync: generated-file filtering ────────────────────────────
 // files matching the _siren_ pattern are excluded from directory listings.

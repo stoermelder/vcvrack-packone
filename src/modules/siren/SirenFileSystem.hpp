@@ -1,16 +1,19 @@
 #pragma once
 #include <rack.hpp>
-#include "Siren.hpp"
 #include "SirenDataSource.hpp"
 #include "SirenAudio.hpp"
+#include <osdialog.h>
 
 // dr_libs — declarations only (implementations compiled in SirenDrLibs.cpp)
 #include "../../../dep/drlibs/dr_wav.h"
 #include "../../../dep/drlibs/dr_flac.h"
 #include "../../../dep/drlibs/dr_mp3.h"
 
+
 namespace StoermelderPackOne {
 namespace Siren {
+namespace filesystem {
+
 
 inline bool isSupportedAudioFile(const std::string& path) {
 	static const std::vector<std::string> SUPPORTED_EXTENSIONS = { ".wav", ".WAV", ".flac", ".FLAC", ".mp3", ".MP3" };
@@ -187,18 +190,8 @@ struct FileSystemDataSource : DataSource {
 		}
 	}
 
-	std::string rootPath() const override {
-		return root;
-	}
-
-	std::string getRootDisplayName() const override {
-		return rootDisplayName(root);
-	}
-
-	static std::string rootDisplayName(const std::string& rootPath) {
-		ghc::filesystem::path p(rootPath);
-		std::string name = p.filename().string();
-		return name.empty() ? p.string() : name;
+	std::string rootId() const override {
+		return "";
 	}
 
 	std::string resolveAbsPath(const std::string& id) const {
@@ -224,7 +217,7 @@ struct FileSystemDataSource : DataSource {
 		}
 
 		AudioInfo ai;
-		if (!::StoermelderPackOne::Siren::loadAudioInfo(absPath, ai)) return 0.f;
+		if (!filesystem::loadAudioInfo(absPath, ai)) return 0.f;
 		if (meta) meta->setAudioInfo(relativePath, ai.durationSeconds, ai.sampleRate, ai.bitDepth, ai.channels, ts);
 		return ai.durationSeconds;
 	}
@@ -311,7 +304,7 @@ struct FileSystemDataSource : DataSource {
 	}
 
 	bool loadAudioInfo(const std::string& id, AudioInfo& out) const override {
-		return ::StoermelderPackOne::Siren::loadAudioInfo(resolveAbsPath(id), out);
+		return filesystem::loadAudioInfo(resolveAbsPath(id), out);
 	}
 
 	std::unique_ptr<AudioStream> openAudioStream(const std::string& id) const override {
@@ -400,7 +393,7 @@ struct FileSystemDataSource : DataSource {
 
 		// Read header only to determine trim region without decoding full PCM.
 		AudioInfo info;
-		if (!::StoermelderPackOne::Siren::loadAudioInfo(srcPath, info)) return srcPath;
+		if (!filesystem::loadAudioInfo(srcPath, info)) return srcPath;
 		if (info.channels <= 0 || info.sampleRate <= 0 || info.frameCount <= 0) return srcPath;
 
 		int channels = info.channels;
@@ -690,5 +683,35 @@ struct FileSystemDataSource : DataSource {
 	}
 };
 
+// Creates the DataSource implementation appropriate for a RootContainer's
+// type. "fs" (the default, and currently the only type) maps to
+// FileSystemDataSource.
+inline std::shared_ptr<DataSource> createDataSource(const RootContainer& root) {
+	return std::make_shared<FileSystemDataSource>(root.path);
+}
+
+// Builds the RootContainer for a filesystem path (e.g. picked via an
+// "Add root..." folder dialog) — the "fs" type tag is filesystem-specific.
+inline RootContainer createRootContainer(const std::string& path) {
+	ghc::filesystem::path p(path);
+	std::string name = p.filename().string();
+	std::string displayName = name.empty() ? p.string() : name;
+	return RootContainer(path, "fs", displayName);
+}
+
+// Opens a native folder picker and, if the user selects a folder, fills
+// `out` with the corresponding RootContainer. Returns false if the dialog
+// was cancelled. The dialog itself is filesystem-specific, so it lives here
+// alongside the other "fs" root construction logic.
+inline bool createNewRootContainer(RootContainer& out) {
+	char* path = osdialog_file(OSDIALOG_OPEN_DIR, nullptr, nullptr, nullptr);
+	if (!path) return false;
+	std::string p(path);
+	free(path);
+	out = createRootContainer(p);
+	return true;
+}
+
+} // namespace filesystem
 } // namespace Siren
 } // namespace StoermelderPackOne

@@ -748,13 +748,11 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 			{
 				SirenModule* m = module;  // capture for lambdas (template base not visible by plain name)
 				browserPane->onAddRoot = [this, m]() {
-					char* path = osdialog_file(OSDIALOG_OPEN_DIR, nullptr, nullptr, nullptr);
-					if (!path) return;
-					std::string p(path);
-					free(path);
-					if (std::find(sirenSettings.rootContainers.begin(), sirenSettings.rootContainers.end(), p)
+					RootContainer rc;
+					if (!filesystem::createNewRootContainer(rc)) return;
+					if (std::find(sirenSettings.rootContainers.begin(), sirenSettings.rootContainers.end(), rc)
 					    == sirenSettings.rootContainers.end()) {
-						sirenSettings.rootContainers.push_back(p);
+						sirenSettings.rootContainers.push_back(rc);
 						sirenSettings.activeRootIdx = (int)sirenSettings.rootContainers.size() - 1;
 						if (m) m->activeRootIdx = sirenSettings.activeRootIdx;
 						browserPane->setRoots(sirenSettings.rootContainers, sirenSettings.activeRootIdx);
@@ -881,14 +879,6 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 		// Metadata is saved by FileSystemDataSource destructor via ~SirenBrowserPane
 	}
 
-	std::string activeRoot() const {
-		int idx = sirenSettings.activeRootIdx;
-		if (idx >= 0 && idx < (int)sirenSettings.rootContainers.size()) {
-			return sirenSettings.rootContainers[idx];
-		}
-		return "";
-	}
-
 	void onFileSelected(const DataSourceNode& node, bool startPlay) {
 		sirenSettings.lastFile = node.relativePath;
 		if (module) module->lastFilePath = node.relativePath;
@@ -927,8 +917,7 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 
 		// Root container management
 		for (int i = 0; i < (int)sirenSettings.rootContainers.size(); i++) {
-			const std::string& root = sirenSettings.rootContainers[i];
-			std::string label = root;
+			std::string label = sirenSettings.rootContainers[i].name;
 			bool active = (i == sirenSettings.activeRootIdx);
 			menu->addChild(createCheckMenuItem(label, "", [=]() { return active; }, [this, i]() {
 				sirenSettings.activeRootIdx = i;
@@ -937,13 +926,11 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 		}
 
 		menu->addChild(createMenuItem("Add root...", "", [this]() {
-			char* path = osdialog_file(OSDIALOG_OPEN_DIR, nullptr, nullptr, nullptr);
-			if (!path) return;
-			std::string p(path);
-			free(path);
-			if (std::find(sirenSettings.rootContainers.begin(), sirenSettings.rootContainers.end(), p)
+			RootContainer rc;
+			if (!filesystem::createNewRootContainer(rc)) return;
+			if (std::find(sirenSettings.rootContainers.begin(), sirenSettings.rootContainers.end(), rc)
 			    == sirenSettings.rootContainers.end()) {
-				sirenSettings.rootContainers.push_back(p);
+				sirenSettings.rootContainers.push_back(rc);
 				sirenSettings.activeRootIdx = (int)sirenSettings.rootContainers.size() - 1;
 				browserPane->setRoots(sirenSettings.rootContainers, sirenSettings.activeRootIdx);
 			}

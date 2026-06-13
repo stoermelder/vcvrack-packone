@@ -8,9 +8,44 @@
 #include "SirenAudio.hpp"
 #include <SoundTouch.h>
 
-
 namespace StoermelderPackOne {
 namespace Siren {
+
+// A configured root location to browse, plus the type of DataSource that
+// should be created for it. "fs" (FileSystemDataSource) is the default and,
+// currently, the only type — kept explicit so future source types (e.g.
+// cloud or hardware-backed libraries) can be distinguished from plain
+// filesystem roots. See createDataSource() in SirenFileSystem.hpp.
+struct RootContainer {
+	std::string path;
+	std::string type = "fs";
+	std::string name;
+
+	RootContainer() {}
+	RootContainer(const std::string& path, const std::string& type, const std::string& name)
+		: path(path), type(type), name(name) {}
+
+	bool operator==(const RootContainer& other) const {
+		return path == other.path && type == other.type;
+	}
+};
+
+namespace filesystem {
+	// Defined in SirenFileSystem.hpp. Declared here so createRootContainer()
+	// below can dispatch to it without a circular include.
+	RootContainer createRootContainer(const std::string& path);
+}
+
+// Builds the RootContainer for `path` with `type`, dispatching to the
+// type-specific factory (mirroring createDataSource() in SirenFileSystem.hpp)
+// so `name` is always derived consistently with the DataSource that will
+// browse it. "fs" (the default, and currently the only type) maps to
+// filesystem::createRootContainer.
+inline RootContainer createRootContainer(const std::string& path, const std::string& type) {
+	if (type == "fs") return filesystem::createRootContainer(path);
+	return RootContainer();
+}
+
 
 // Search query
 // The search field accepts plain text plus optional numeric filter terms of
@@ -121,6 +156,7 @@ inline SearchQuery parseSearchQuery(const std::string& query) {
 	return q;
 }
 
+
 struct DataSourceNode {
 	std::string name;
 	std::string relativePath;  // relative to root, '/' separated; used as id
@@ -129,200 +165,10 @@ struct DataSourceNode {
 	std::vector<DataSourceNode> children;
 };
 
-enum class LoadState { IDLE, LOADING, READY };
-
-
-// Build a peak waveform by streaming from an open AudioStream — no full-file buffer needed.
-// Single sequential pass: large reads amortize decoder overhead; bucket boundaries are tracked
-// with a running counter so there is no division or seek in the inner loop.
-inline bool buildWaveformCache(int64_t timestamp, AudioStream& stream, int pixelWidth, AudioWaveformCache& out) {
-	int channels = stream.channels();
-	int64_t total = stream.totalFrames();
-	if (pixelWidth <= 0 || total <= 0 || channels <= 0) return false;
-
-	int sampleRes = std::min(pixelWidth * 8, 8192);
-	out.sampleCount   = sampleRes;
-	out.fileTimestamp = timestamp;
-	out.samples.assign(channels, std::vector<float>(sampleRes, 0.f));
-
-	const int64_t BUF_FRAMES = 65536;
-	std::vector<float> buf((size_t)(BUF_FRAMES * channels));
-	double framesPerSample = (double)total / (double)sampleRes;
-	int64_t framePos = 0;
-	int curSample    = 0;
-	bool sampleTaken = false;
-	int64_t nextSampleBoundary = (sampleRes > 1) ? (int64_t)(framesPerSample) : total;
-
-	while (framePos < total) {
-		int64_t toRead = std::min(BUF_FRAMES, total - framePos);
-		int64_t got = stream.readF32(buf.data(), toRead);
-		if (got <= 0) break;
-
-		for (int64_t f = 0; f < got; f++) {
-			while (framePos + f >= nextSampleBoundary && curSample < sampleRes - 1) {
-				curSample++;
-				sampleTaken = false;
-				nextSampleBoundary = (curSample + 1 < sampleRes)
-				                   ? (int64_t)((curSample + 1) * framesPerSample) : total;
-			}
-			if (!sampleTaken) {
-				for (int ch = 0; ch < channels; ch++) {
-					out.samples[ch][curSample] = buf[(size_t)(f * channels + ch)];
-				}
-				sampleTaken = true;
-			}
-		}
-		framePos += got;
-	}
-	return true;
-}
-
-// Loop crossfade post-processing
-// Rotation + crossfade: makes a sample loop-ready so that looping at the
-// file boundaries produces a smooth transition.
-//
-// Technique:
-//   1. Find the frame M nearest to the midpoint that crosses zero on channel 0
-//      (minimises the click at the new loop-point).
-//   2. Rearrange: [original[M..N-1], original[0..M-1]]  (swap halves)
-//   3. Crossfade the join: blend the last C frames of the second half (fade-out)
-//      with the first C frames of the first half (fade-in) into a single C-frame
-//      region.  This handles the formerly-glitchy original end→start transition.
-//   4. Output length = N − C.
-//
-// After this the new loop point (output end → output start) lands at the
-// original midpoint M, which is typically a quieter/smoother splice location.
-//
-// `samples` is interleaved float PCM with `channels` channels.
-// `sampleRate` is used only to convert `crossfadeSecs` to frame count.
-// `crossfadeSecs` is clamped so that C ≤ min(M, N-M) − 1; a too-long
-// crossfade is silently shortened rather than failing.
-inline void applyLoopCrossfade(std::vector<float>& samples, int channels, int sampleRate, float crossfadeSecs) {
-	if (channels <= 0 || sampleRate <= 0 || samples.empty()) return;
-	int64_t N = (int64_t)(samples.size() / (size_t)channels);
-	if (N < 4) return;
-
-	// Find the zero-crossing of channel 0 within a ¼-second window around the midpoint
-	// that has the lowest splice amplitude (|prev| + |cur|). Minimising amplitude at
-	// the splice — not just proximity to the midpoint — is what eliminates the click:
-	// a zero crossing at -0.8 → +0.6 looks valid but still sounds audible.
-	// We scan the whole window rather than stopping at the first crossing found, so
-	// we can trade a bit of search time for a much quieter loop point.
-	// `mid` is fixed so the symmetric probe positions are always mid ± d.
-	const int64_t mid = N / 2;
-	int64_t M = mid;
-	{
-		const int64_t searchWindow = std::min(N / 4, (int64_t)(sampleRate / 4));
-		float bestScore = std::numeric_limits<float>::max();
-		for (int64_t d = 0; d <= searchWindow; d++) {
-			for (int sign : {-1, 1}) {
-				int64_t pos = mid + sign * d;
-				if (pos <= 0 || pos >= N - 1) continue;
-				float cur  = samples[(size_t)(pos       * channels)];
-				float prev = samples[(size_t)((pos - 1) * channels)];
-				if (cur * prev <= 0.f) {
-					float score = std::abs(cur) + std::abs(prev);
-					if (score < bestScore) {
-						bestScore = score;
-						M = pos;
-					}
-				}
-			}
-			if (bestScore < 1e-5f) break;  // essentially silent — can't do better
-		}
-	}
-
-	// Clamp crossfade length so it fits in both halves.
-	int64_t C = (int64_t)(crossfadeSecs * (float)sampleRate);
-	int64_t maxC = std::min(M, N - M) - 1;
-	if (maxC <= 0) return;
-	C = std::max((int64_t)1, std::min(C, maxC));
-
-	// Build output of length N−C:
-	//   [original[M .. N-C-1], crossfade, original[C .. M-1]]
-	// where crossfade blends original[N-C .. N-1] (fade-out) and
-	//                         original[0  .. C-1]  (fade-in).
-	int64_t part1Len = (N - C) - M;   // frames from rotation point to end minus tail
-	int64_t part2Len = M - C;          // frames from crossfade end to rotation point
-	int64_t outN = part1Len + C + part2Len; // == N - C
-
-	std::vector<float> out((size_t)(outN * channels));
-
-	// Part 1: original[M .. N-C-1]
-	for (int64_t f = 0; f < part1Len; f++) {
-		for (int ch = 0; ch < channels; ch++) {
-			out[(size_t)(f * channels + ch)] = samples[(size_t)((M + f) * channels + ch)];
-		}
-	}
-
-	// Crossfade: blend tail of second half (fade-out) with head of first half (fade-in)
-	for (int64_t f = 0; f < C; f++) {
-		float alpha = (C > 1) ? (float)f / (float)(C - 1) : 1.f;
-		float angle = alpha * float(M_PI) * 0.5f;
-		float fadeOut = std::cos(angle);
-		float fadeIn = std::sin(angle);
-		for (int ch = 0; ch < channels; ch++) {
-			float s1 = samples[(size_t)((N - C + f) * channels + ch)];
-			float s2 = samples[(size_t)(f            * channels + ch)];
-			out[(size_t)((part1Len + f) * channels + ch)] = s1 * fadeOut + s2 * fadeIn;
-		}
-	}
-
-	// Part 2: original[C .. M-1]
-	for (int64_t f = 0; f < part2Len; f++) {
-		for (int ch = 0; ch < channels; ch++) {
-			out[(size_t)((part1Len + C + f) * channels + ch)] = samples[(size_t)((C + f) * channels + ch)];
-		}
-	}
-
-	samples = std::move(out);
-}
-
-// Shift the pitch of `samples` by `semitones` while preserving duration, using
-// the SoundTouch library. `samples` is interleaved float PCM with `channels`
-// channels at `sampleRate`. A no-op (0 semitones) returns immediately.
-inline void applyRepitch(std::vector<float>& samples, int channels, int sampleRate, float semitones) {
-	if (channels <= 0 || sampleRate <= 0 || samples.empty()) return;
-	if (semitones == 0.f) return;
-
-	soundtouch::SoundTouch st;
-	st.setSampleRate((uint)sampleRate);
-	st.setChannels((uint)channels);
-	st.setPitchSemiTones(semitones);
-	st.setTempo(1.0);
-
-	int64_t totalFrames = (int64_t)(samples.size() / (size_t)channels);
-	std::vector<float> out;
-	out.reserve(samples.size());
-
-	const uint blockFrames = 4096;
-	std::vector<float> block(blockFrames * (size_t)channels);
-	for (int64_t pos = 0; pos < totalFrames; pos += blockFrames) {
-		uint n = (uint)std::min((int64_t)blockFrames, totalFrames - pos);
-		std::copy(samples.begin() + (size_t)(pos * channels),
-		          samples.begin() + (size_t)((pos + n) * channels), block.begin());
-		st.putSamples(block.data(), n);
-
-		uint received;
-		while ((received = st.receiveSamples(block.data(), blockFrames)) > 0) {
-			out.insert(out.end(), block.begin(), block.begin() + (size_t)(received * channels));
-		}
-	}
-	st.flush();
-	uint received;
-	while ((received = st.receiveSamples(block.data(), blockFrames)) > 0) {
-		out.insert(out.end(), block.begin(), block.begin() + (size_t)(received * channels));
-	}
-	samples = std::move(out);
-}
-
-// DataSource
 struct DataSource {
 	virtual ~DataSource() = default;
 
-	virtual std::string rootPath() const = 0;
-	virtual std::string getRootDisplayName() const { return rootPath(); }
-	virtual std::string rootId() const { return ""; }
+	virtual std::string rootId() const = 0;
 	virtual bool isSupportedFile(const std::string& path) const = 0;
 
 	// Load the top-level children of an item id asynchronously via TaskWorker.
@@ -490,52 +336,58 @@ struct DataSource {
 	}
 };
 
-// Loop preview: in-memory decode + process
-struct AudioPreviewResult {
-	std::vector<float> samples;   // interleaved float PCM after rotation+crossfade
-	int channels = 0;
-	int sampleRate = 0;
-	float durationSeconds = 0.f;  // actual duration of the processed buffer
-	bool ok = false;
-};
+namespace filesystem {
+	// Defined in SirenFileSystem.hpp. Declared here so createDataSource()
+	// below can dispatch to it without a circular include.
+	std::shared_ptr<DataSource> createDataSource(const RootContainer& root);
+}
 
-// Decode the trimmed region from src/id, apply rotation+crossfade, and return
-// the result as an in-memory buffer. Runs on the worker thread.
-// trimIn/trimOut are normalised [0, 1] over the full file.
-inline AudioPreviewResult buildLoopPreview(DataSource& src, const std::string& id,
-		float trimIn, float trimOut, float crossfadeDuration) {
-	AudioPreviewResult result;
+// Creates the DataSource implementation for `root`, dispatching by
+// root.type (mirroring createRootContainer() above). "fs" (the default,
+// and currently the only type) maps to filesystem::createDataSource.
+inline std::shared_ptr<DataSource> createDataSource(const RootContainer& root) {
+	if (root.type == "fs") return filesystem::createDataSource(root);
+	return nullptr;
+}
 
-	AudioInfo info;
-	if (!src.loadAudioInfo(id, info)) return result;
-	if (info.channels <= 0 || info.sampleRate <= 0 || info.frameCount <= 0) return result;
 
-	int64_t startFrame = (int64_t)(trimIn * (float)info.frameCount);
-	int64_t endFrame = (int64_t)(trimOut * (float)info.frameCount);
-	startFrame = std::max((int64_t)0, std::min(startFrame, info.frameCount));
-	endFrame = std::max(startFrame, std::min(endFrame, info.frameCount));
-	int64_t trimFrames = endFrame - startFrame;
-	if (trimFrames <= 0) return result;
 
-	// Cap at stereo to match the downstream fill-thread resampler.
-	int ch = std::min(info.channels, 2);
-	result.samples.resize((size_t)(trimFrames * ch));
+// Shift the pitch of `samples` by `semitones` while preserving duration, using
+// the SoundTouch library. `samples` is interleaved float PCM with `channels`
+// channels at `sampleRate`. A no-op (0 semitones) returns immediately.
+inline void applyRepitch(std::vector<float>& samples, int channels, int sampleRate, float semitones) {
+	if (channels <= 0 || sampleRate <= 0 || samples.empty()) return;
+	if (semitones == 0.f) return;
 
-	auto stream = src.openAudioStream(id);
-	if (!stream) return result;
-	stream->seekTo(startFrame);
-	int64_t framesRead = stream->readF32(result.samples.data(), trimFrames);
-	if (framesRead <= 0) return result;
-	result.samples.resize((size_t)(framesRead * ch));
+	soundtouch::SoundTouch st;
+	st.setSampleRate((uint)sampleRate);
+	st.setChannels((uint)channels);
+	st.setPitchSemiTones(semitones);
+	st.setTempo(1.0);
 
-	applyLoopCrossfade(result.samples, ch, info.sampleRate, crossfadeDuration);
-	if (result.samples.empty()) return result;
+	int64_t totalFrames = (int64_t)(samples.size() / (size_t)channels);
+	std::vector<float> out;
+	out.reserve(samples.size());
 
-	result.channels = ch;
-	result.sampleRate = info.sampleRate;
-	result.durationSeconds = (float)(result.samples.size() / (size_t)ch) / (float)info.sampleRate;
-	result.ok = true;
-	return result;
+	const uint blockFrames = 4096;
+	std::vector<float> block(blockFrames * (size_t)channels);
+	for (int64_t pos = 0; pos < totalFrames; pos += blockFrames) {
+		uint n = (uint)std::min((int64_t)blockFrames, totalFrames - pos);
+		std::copy(samples.begin() + (size_t)(pos * channels),
+		          samples.begin() + (size_t)((pos + n) * channels), block.begin());
+		st.putSamples(block.data(), n);
+
+		uint received;
+		while ((received = st.receiveSamples(block.data(), blockFrames)) > 0) {
+			out.insert(out.end(), block.begin(), block.begin() + (size_t)(received * channels));
+		}
+	}
+	st.flush();
+	uint received;
+	while ((received = st.receiveSamples(block.data(), blockFrames)) > 0) {
+		out.insert(out.end(), block.begin(), block.begin() + (size_t)(received * channels));
+	}
+	samples = std::move(out);
 }
 
 // Decode the trimmed region from src/id and shift its pitch by `semitones`
@@ -568,6 +420,147 @@ inline AudioPreviewResult buildRepitchPreview(DataSource& src, const std::string
 	result.samples.resize((size_t)(framesRead * ch));
 
 	applyRepitch(result.samples, ch, info.sampleRate, semitones);
+	if (result.samples.empty()) return result;
+
+	result.channels = ch;
+	result.sampleRate = info.sampleRate;
+	result.durationSeconds = (float)(result.samples.size() / (size_t)ch) / (float)info.sampleRate;
+	result.ok = true;
+	return result;
+}
+
+
+// Loop crossfade post-processing
+// Rotation + crossfade: makes a sample loop-ready so that looping at the
+// file boundaries produces a smooth transition.
+//
+// Technique:
+//   1. Find the frame M nearest to the midpoint that crosses zero on channel 0
+//      (minimises the click at the new loop-point).
+//   2. Rearrange: [original[M..N-1], original[0..M-1]]  (swap halves)
+//   3. Crossfade the join: blend the last C frames of the second half (fade-out)
+//      with the first C frames of the first half (fade-in) into a single C-frame
+//      region.  This handles the formerly-glitchy original end→start transition.
+//   4. Output length = N − C.
+//
+// After this the new loop point (output end → output start) lands at the
+// original midpoint M, which is typically a quieter/smoother splice location.
+//
+// `samples` is interleaved float PCM with `channels` channels.
+// `sampleRate` is used only to convert `crossfadeSecs` to frame count.
+// `crossfadeSecs` is clamped so that C ≤ min(M, N-M) − 1; a too-long
+// crossfade is silently shortened rather than failing.
+inline void applyLoopCrossfade(std::vector<float>& samples, int channels, int sampleRate, float crossfadeSecs) {
+	if (channels <= 0 || sampleRate <= 0 || samples.empty()) return;
+	int64_t N = (int64_t)(samples.size() / (size_t)channels);
+	if (N < 4) return;
+
+	// Find the zero-crossing of channel 0 within a ¼-second window around the midpoint
+	// that has the lowest splice amplitude (|prev| + |cur|). Minimising amplitude at
+	// the splice — not just proximity to the midpoint — is what eliminates the click:
+	// a zero crossing at -0.8 → +0.6 looks valid but still sounds audible.
+	// We scan the whole window rather than stopping at the first crossing found, so
+	// we can trade a bit of search time for a much quieter loop point.
+	// `mid` is fixed so the symmetric probe positions are always mid ± d.
+	const int64_t mid = N / 2;
+	int64_t M = mid;
+	{
+		const int64_t searchWindow = std::min(N / 4, (int64_t)(sampleRate / 4));
+		float bestScore = std::numeric_limits<float>::max();
+		for (int64_t d = 0; d <= searchWindow; d++) {
+			for (int sign : {-1, 1}) {
+				int64_t pos = mid + sign * d;
+				if (pos <= 0 || pos >= N - 1) continue;
+				float cur  = samples[(size_t)(pos       * channels)];
+				float prev = samples[(size_t)((pos - 1) * channels)];
+				if (cur * prev <= 0.f) {
+					float score = std::abs(cur) + std::abs(prev);
+					if (score < bestScore) {
+						bestScore = score;
+						M = pos;
+					}
+				}
+			}
+			if (bestScore < 1e-5f) break;  // essentially silent — can't do better
+		}
+	}
+
+	// Clamp crossfade length so it fits in both halves.
+	int64_t C = (int64_t)(crossfadeSecs * (float)sampleRate);
+	int64_t maxC = std::min(M, N - M) - 1;
+	if (maxC <= 0) return;
+	C = std::max((int64_t)1, std::min(C, maxC));
+
+	// Build output of length N−C:
+	//   [original[M .. N-C-1], crossfade, original[C .. M-1]]
+	// where crossfade blends original[N-C .. N-1] (fade-out) and
+	//                         original[0  .. C-1]  (fade-in).
+	int64_t part1Len = (N - C) - M;   // frames from rotation point to end minus tail
+	int64_t part2Len = M - C;          // frames from crossfade end to rotation point
+	int64_t outN = part1Len + C + part2Len; // == N - C
+
+	std::vector<float> out((size_t)(outN * channels));
+
+	// Part 1: original[M .. N-C-1]
+	for (int64_t f = 0; f < part1Len; f++) {
+		for (int ch = 0; ch < channels; ch++) {
+			out[(size_t)(f * channels + ch)] = samples[(size_t)((M + f) * channels + ch)];
+		}
+	}
+
+	// Crossfade: blend tail of second half (fade-out) with head of first half (fade-in)
+	for (int64_t f = 0; f < C; f++) {
+		float alpha = (C > 1) ? (float)f / (float)(C - 1) : 1.f;
+		float angle = alpha * float(M_PI) * 0.5f;
+		float fadeOut = std::cos(angle);
+		float fadeIn = std::sin(angle);
+		for (int ch = 0; ch < channels; ch++) {
+			float s1 = samples[(size_t)((N - C + f) * channels + ch)];
+			float s2 = samples[(size_t)(f            * channels + ch)];
+			out[(size_t)((part1Len + f) * channels + ch)] = s1 * fadeOut + s2 * fadeIn;
+		}
+	}
+
+	// Part 2: original[C .. M-1]
+	for (int64_t f = 0; f < part2Len; f++) {
+		for (int ch = 0; ch < channels; ch++) {
+			out[(size_t)((part1Len + C + f) * channels + ch)] = samples[(size_t)((C + f) * channels + ch)];
+		}
+	}
+
+	samples = std::move(out);
+}
+
+// Decode the trimmed region from src/id, apply rotation+crossfade, and return
+// the result as an in-memory buffer. Runs on the worker thread.
+// trimIn/trimOut are normalised [0, 1] over the full file.
+inline AudioPreviewResult buildLoopPreview(DataSource& src, const std::string& id,
+		float trimIn, float trimOut, float crossfadeDuration) {
+	AudioPreviewResult result;
+
+	AudioInfo info;
+	if (!src.loadAudioInfo(id, info)) return result;
+	if (info.channels <= 0 || info.sampleRate <= 0 || info.frameCount <= 0) return result;
+
+	int64_t startFrame = (int64_t)(trimIn * (float)info.frameCount);
+	int64_t endFrame = (int64_t)(trimOut * (float)info.frameCount);
+	startFrame = std::max((int64_t)0, std::min(startFrame, info.frameCount));
+	endFrame = std::max(startFrame, std::min(endFrame, info.frameCount));
+	int64_t trimFrames = endFrame - startFrame;
+	if (trimFrames <= 0) return result;
+
+	// Cap at stereo to match the downstream fill-thread resampler.
+	int ch = std::min(info.channels, 2);
+	result.samples.resize((size_t)(trimFrames * ch));
+
+	auto stream = src.openAudioStream(id);
+	if (!stream) return result;
+	stream->seekTo(startFrame);
+	int64_t framesRead = stream->readF32(result.samples.data(), trimFrames);
+	if (framesRead <= 0) return result;
+	result.samples.resize((size_t)(framesRead * ch));
+
+	applyLoopCrossfade(result.samples, ch, info.sampleRate, crossfadeDuration);
 	if (result.samples.empty()) return result;
 
 	result.channels = ch;

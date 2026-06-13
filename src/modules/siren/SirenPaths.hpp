@@ -1,7 +1,6 @@
 #pragma once
 #include <rack.hpp>
 
-
 namespace StoermelderPackOne {
 namespace Siren {
 

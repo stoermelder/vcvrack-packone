@@ -16,6 +16,15 @@ struct AudioInfo {
 	float durationSeconds = 0.f;
 };
 
+// Loop preview: in-memory decode + process
+struct AudioPreviewResult {
+	std::vector<float> samples;   // interleaved float PCM after rotation+crossfade
+	int channels = 0;
+	int sampleRate = 0;
+	float durationSeconds = 0.f;  // actual duration of the processed buffer
+	bool ok = false;
+};
+
 struct AudioWaveformCache {
 	// samples[channel][i] = sample value [-1, 1], decimated for display
 	std::vector<std::vector<float>> samples;
@@ -159,6 +168,52 @@ inline void saveWaveformCacheFile(const std::string& cachePath, const AudioWavef
 	}
 	json_decref(rootJ);
 }
+
+// Build a peak waveform by streaming from an open AudioStream — no full-file buffer needed.
+// Single sequential pass: large reads amortize decoder overhead; bucket boundaries are tracked
+// with a running counter so there is no division or seek in the inner loop.
+inline bool buildWaveformCache(int64_t timestamp, AudioStream& stream, int pixelWidth, AudioWaveformCache& out) {
+	int channels = stream.channels();
+	int64_t total = stream.totalFrames();
+	if (pixelWidth <= 0 || total <= 0 || channels <= 0) return false;
+
+	int sampleRes = std::min(pixelWidth * 8, 8192);
+	out.sampleCount   = sampleRes;
+	out.fileTimestamp = timestamp;
+	out.samples.assign(channels, std::vector<float>(sampleRes, 0.f));
+
+	const int64_t BUF_FRAMES = 65536;
+	std::vector<float> buf((size_t)(BUF_FRAMES * channels));
+	double framesPerSample = (double)total / (double)sampleRes;
+	int64_t framePos = 0;
+	int curSample    = 0;
+	bool sampleTaken = false;
+	int64_t nextSampleBoundary = (sampleRes > 1) ? (int64_t)(framesPerSample) : total;
+
+	while (framePos < total) {
+		int64_t toRead = std::min(BUF_FRAMES, total - framePos);
+		int64_t got = stream.readF32(buf.data(), toRead);
+		if (got <= 0) break;
+
+		for (int64_t f = 0; f < got; f++) {
+			while (framePos + f >= nextSampleBoundary && curSample < sampleRes - 1) {
+				curSample++;
+				sampleTaken = false;
+				nextSampleBoundary = (curSample + 1 < sampleRes)
+				                   ? (int64_t)((curSample + 1) * framesPerSample) : total;
+			}
+			if (!sampleTaken) {
+				for (int ch = 0; ch < channels; ch++) {
+					out.samples[ch][curSample] = buf[(size_t)(f * channels + ch)];
+				}
+				sampleTaken = true;
+			}
+		}
+		framePos += got;
+	}
+	return true;
+}
+
 
 } // namespace Siren
 } // namespace StoermelderPackOne

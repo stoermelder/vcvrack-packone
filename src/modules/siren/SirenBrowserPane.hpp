@@ -225,7 +225,7 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 	SirenDropHandler* dropHandler = nullptr;
 	TaskWorker* worker = nullptr;
 
-	std::vector<std::string> rootContainers;
+	std::vector<RootContainer> rootContainers;
 	int activeRootIdx = -1;
 	std::string selectedPath;
 	bool favoritesOnly = false;
@@ -354,13 +354,10 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 
 	std::string getRootDisplayName(int idx) const {
 		if (idx < 0 || idx >= (int)rootContainers.size()) return "";
-		if (idx == activeRootIdx && activeDs) {
-			return activeDs->getRootDisplayName();
-		}
-		return FileSystemDataSource::rootDisplayName(rootContainers[idx]);
+		return rootContainers[idx].name;
 	}
 
-	void setRoots(const std::vector<std::string>& roots, int activeIdx) {
+	void setRoots(const std::vector<RootContainer>& roots, int activeIdx) {
 		rootContainers = roots;
 		activeRootIdx = activeIdx;
 		if (activeRootIdx >= 0 && activeRootIdx < (int)rootContainers.size()) {
@@ -379,10 +376,10 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		}
 	}
 
-	void loadRoot(const std::string& root) {
+	void loadRoot(const RootContainer& root) {
 		if (onActiveSourceChanging) onActiveSourceChanging();
 		cancelActiveSourceTasks();
-		activeDs = std::make_shared<FileSystemDataSource>(root);
+		activeDs = createDataSource(root);
 		rows.clear();
 		rebuildRowWidgets();
 		pendingReady.store(false, std::memory_order_relaxed);

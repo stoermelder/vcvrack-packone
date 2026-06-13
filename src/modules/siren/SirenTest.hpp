@@ -34,7 +34,7 @@ struct TestDataSource : DataSource {
 		meta_.rootPath = root;
 	}
 
-	std::string rootPath() const override { return root; }
+	std::string rootId() const override { return root; }
 	bool isSupportedFile(const std::string& path) const override { return true; }
 
 	void loadChildrenAsync(const std::string& id, TaskWorker& worker,

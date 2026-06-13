@@ -7,7 +7,7 @@ namespace StoermelderPackOne {
 namespace Siren {
 
 struct SirenSettings {
-	std::vector<std::string> rootContainers;
+	std::vector<RootContainer> rootContainers;
 	int activeRootIdx = -1;
 	std::string lastFile;
 	float lastPlayheadPos = 0.f;
@@ -100,8 +100,11 @@ struct SirenSettings {
 	json_t* toJson() const {
 		json_t* j = json_object();
 		json_t* rootsJ = json_array();
-		for (const std::string& r : rootContainers) {
-			json_array_append_new(rootsJ, json_string(r.c_str()));
+		for (const RootContainer& r : rootContainers) {
+			json_t* rj = json_object();
+			json_object_set_new(rj, "path", json_string(r.path.c_str()));
+			json_object_set_new(rj, "type", json_string(r.type.c_str()));
+			json_array_append_new(rootsJ, rj);
 		}
 		json_object_set_new(j, "rootContainers", rootsJ);
 		json_object_set_new(j, "activeRootIdx", json_integer(activeRootIdx));
@@ -122,7 +125,18 @@ struct SirenSettings {
 		if (rootsJ && json_is_array(rootsJ)) {
 			size_t i; json_t* v;
 			json_array_foreach(rootsJ, i, v) {
-				if (json_is_string(v)) rootContainers.push_back(json_string_value(v));
+				// Backward compatibility: old settings files stored rootContainers
+				// as a plain array of path strings, implicitly type "fs".
+				if (json_is_string(v)) {
+					rootContainers.push_back(createRootContainer(json_string_value(v), "fs"));
+				}
+				else if (json_is_object(v)) {
+					json_t* pathJ = json_object_get(v, "path");
+					json_t* typeJ = json_object_get(v, "type");
+					std::string path = (pathJ && json_is_string(pathJ)) ? json_string_value(pathJ) : "";
+					std::string type = (typeJ && json_is_string(typeJ)) ? json_string_value(typeJ) : "fs";
+					rootContainers.push_back(createRootContainer(path, type));
+				}
 			}
 		}
 		json_t* v;

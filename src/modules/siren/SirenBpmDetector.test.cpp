@@ -366,7 +366,7 @@ TEST_CASE("BpmDetector::detectFromDsp: spectral path via DataSource", "[Siren][B
 		int sr, ch;
 		ClickTrainDataSource(std::vector<float> s, int sr, int ch)
 			: samples(std::move(s)), sr(sr), ch(ch) {}
-		std::string rootPath() const override { return ""; }
+		std::string rootId() const override { return ""; }
 		bool isSupportedFile(const std::string&) const override { return true; }
 		void loadChildrenAsync(const std::string&, StoermelderPackOne::TaskWorker&,
 			std::function<void(std::vector<DataSourceNode>)>) override {}
