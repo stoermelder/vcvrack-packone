@@ -26,6 +26,20 @@ TEST_CASE("Construction and initialization", "[SpliceKit]") {
 }
 
 
+TEST_CASE("Preset JSON null-guards", "[SpliceKit][JSON]") {
+	auto module = Test::createModule<SpliceKitModule>("SpliceKit");
+
+	SECTION("All top-level properties are null-guarded in dataFromJson()") {
+		json_t* rootJ = module->dataToJson();
+		REQUIRE(rootJ != nullptr);
+		Test::testPresetNullGuards(module, rootJ);
+		json_decref(rootJ);
+	}
+
+	Test::destroyModule(module);
+}
+
+
 TEST_CASE("isConnected and setConnection bitmask", "[SpliceKit]") {
 	SpliceKitModule* m = Test::createModule<SpliceKitModule>("SpliceKit");
 
