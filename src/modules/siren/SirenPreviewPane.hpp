@@ -45,11 +45,11 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	std::function<std::string()> externalStatusMessage;
 
 	// normal waveform cache
-	WaveformCache cache;
+	AudioWaveformCache cache;
 	std::atomic<bool> cacheReady{false};
 	std::atomic<bool> cacheBuilding{false};
 
-	struct PendingCache { WaveformCache cache; int gen = -1; bool valid = false; };
+	struct PendingCache { AudioWaveformCache cache; int gen = -1; bool valid = false; };
 	std::atomic<int> cacheGeneration{0};
 	PendingCache pendingCache;
 	std::atomic<bool> pendingCacheReady{false};
@@ -65,7 +65,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	bool loopPreviewActive = false;
 	bool loopPreviewBuilding = false;  // worker running, not yet active
 	bool previewIsRepitch = false;  // true if the active preview was generated via repitch
-	WaveformCache loopCache;
+	AudioWaveformCache loopCache;
 	bool loopCacheReady = false;
 	float loopDurationSeconds = 0.f;
 
@@ -74,7 +74,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		int channels = 0;
 		int sampleRate = 0;
 		float durationSeconds = 0.f;
-		WaveformCache cache;
+		AudioWaveformCache cache;
 		bool valid = false;
 	};
 	PendingLoopPreview pendingLoop;
@@ -96,7 +96,6 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 
 	SirenDropHandler* dropHandler = nullptr;
 	TaskWorker* worker = nullptr;
-	std::string cacheDir;
 
 	// BPM
 	std::atomic<float> bpm{0.f};
@@ -170,7 +169,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		loopPreviewBuilding = false;
 		loopCacheReady = false;
 		loopDurationSeconds = 0.f;
-		loopCache = WaveformCache{};
+		loopCache = AudioWaveformCache{};
 
 		if (canvas) {
 			canvas->inPoint = 0.f;
@@ -207,10 +206,9 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		}
 
 		int64_t ts = src->getTimestamp(id);
-		std::string cacheFile = cachePathFor(id);
 		if (!forceRebuild) {
-			WaveformCache loaded;
-			if (loadWaveformCacheFile(cacheFile, ts, loaded) && loaded.sampleCount > 0) {
+			AudioWaveformCache loaded;
+			if (src->loadWaveformCache(id, ts, loaded) && loaded.sampleCount > 0) {
 				cache = std::move(loaded);
 				cacheReady = true;
 				if (startPlay) startPlaybackFrom(0.f);
@@ -223,15 +221,10 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		int pw = canvas ? (int)canvas->box.size.x - (int)SirenWaveformCanvas::WAVE_X - 8 : 512;
 		if (pw < 64) pw = 512;
 
-		std::string cacheCopy = cacheFile;
-		std::string cacheDirCopy = cacheDir;
-		worker->work([this, id, ts, src, cacheCopy, cacheDirCopy, pw, gen]() {
-			WaveformCache built;
+		worker->work([this, id, ts, src, pw, gen]() {
+			AudioWaveformCache built;
 			bool ok = src->buildWaveformCache(id, ts, pw, built);
-			if (ok && !cacheDirCopy.empty()) {
-				rack::system::createDirectories(cacheDirCopy);
-				saveWaveformCacheFile(cacheCopy, built);
-			}
+			if (ok) src->saveWaveformCache(id, built);
 			pendingCache.cache = std::move(built);
 			pendingCache.gen = gen;
 			pendingCache.valid = ok;
@@ -241,8 +234,6 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		if (startPlay) startPlaybackFrom(0.f);
 	}
 
-	// loop preview
-
 	void generateLoopPreview() {
 		if (!source || currentNode.relativePath.empty() || !worker) return;
 
@@ -250,7 +241,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		loopPreviewActive = false;
 		previewIsRepitch = false;
 		loopCacheReady = false;
-		loopCache = WaveformCache{};
+		loopCache = AudioWaveformCache{};
 
 		std::shared_ptr<DataSource> srcCopy = source;
 		std::string idCopy = currentNode.relativePath;
@@ -261,23 +252,21 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		if (pw < 64) pw = 512;
 
 		worker->work([this, srcCopy, idCopy, trimIn, trimOut, duration, pw]() {
-			LoopPreviewResult result = buildLoopPreview(*srcCopy, idCopy, trimIn, trimOut, duration);
-
+			AudioPreviewResult result = buildLoopPreview(*srcCopy, idCopy, trimIn, trimOut, duration);
 			if (result.ok && !result.samples.empty()) {
 				// Build waveform cache directly from the in-memory buffer
 				MemoryAudioStream ms;
 				ms.samples = result.samples;  // copy: cache builder reads it sequentially
 				ms.ch = result.channels;
 				ms.sr = result.sampleRate;
-				WaveformCache wc;
+				AudioWaveformCache wc;
 				buildWaveformCache(0, ms, pw, wc);
-
-			pendingLoop.samples = std::move(result.samples);
-			pendingLoop.channels = result.channels;
-			pendingLoop.sampleRate = result.sampleRate;
-			pendingLoop.durationSeconds = result.durationSeconds;
-			pendingLoop.cache = std::move(wc);
-			pendingLoop.valid = true;
+				pendingLoop.samples = std::move(result.samples);
+				pendingLoop.channels = result.channels;
+				pendingLoop.sampleRate = result.sampleRate;
+				pendingLoop.durationSeconds = result.durationSeconds;
+				pendingLoop.cache = std::move(wc);
+				pendingLoop.valid = true;
 			}
 			else {
 				pendingLoop.valid = false;
@@ -293,7 +282,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		loopPreviewActive = false;
 		previewIsRepitch = true;
 		loopCacheReady = false;
-		loopCache = WaveformCache{};
+		loopCache = AudioWaveformCache{};
 
 		std::shared_ptr<DataSource> srcCopy = source;
 		std::string idCopy = currentNode.relativePath;
@@ -304,17 +293,15 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		if (pw < 64) pw = 512;
 
 		worker->work([this, srcCopy, idCopy, trimIn, trimOut, semitones, pw]() {
-			LoopPreviewResult result = buildRepitchPreview(*srcCopy, idCopy, trimIn, trimOut, semitones);
-
+			AudioPreviewResult result = buildRepitchPreview(*srcCopy, idCopy, trimIn, trimOut, semitones);
 			if (result.ok && !result.samples.empty()) {
 				// Build waveform cache directly from the in-memory buffer
 				MemoryAudioStream ms;
 				ms.samples = result.samples;  // copy: cache builder reads it sequentially
 				ms.ch = result.channels;
 				ms.sr = result.sampleRate;
-				WaveformCache wc;
+				AudioWaveformCache wc;
 				buildWaveformCache(0, ms, pw, wc);
-
 				pendingLoop.samples = std::move(result.samples);
 				pendingLoop.channels = result.channels;
 				pendingLoop.sampleRate = result.sampleRate;
@@ -335,7 +322,7 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		previewIsRepitch = false;
 		loopCacheReady = false;
 		loopDurationSeconds = 0.f;
-		loopCache = WaveformCache{};
+		loopCache = AudioWaveformCache{};
 
 		// Restore original file stream and module trim points
 		if (openStreamCallback && source && !currentNode.relativePath.empty())
@@ -345,8 +332,6 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			if (moduleOutPoint) moduleOutPoint->store(canvas->outPoint, std::memory_order_relaxed);
 		}
 	}
-
-	// step
 
 	void step() override {
 		// Consume pending normal waveform cache
@@ -394,9 +379,9 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			canvas->cache = loopPreviewActive ? &loopCache : &cache;
 			canvas->cacheReady = loopPreviewActive ? loopCacheReady : (bool)cacheReady;
 			canvas->loopPreviewMode = loopPreviewActive;
-			canvas->viewMode = !loopPreviewActive ? &CanvasViewMode::normal()
-			                    : previewIsRepitch    ? &CanvasViewMode::repitch()
-			                                          : &CanvasViewMode::loopCrossfade();
+			canvas->viewMode = !loopPreviewActive && !loopPreviewBuilding
+				? &CanvasViewMode::normal()
+				: previewIsRepitch ? &CanvasViewMode::repitch() : &CanvasViewMode::loopCrossfade();
 			canvas->hasFile = !currentNode.relativePath.empty();
 			canvas->durationSeconds = loopPreviewActive ? loopDurationSeconds : info.durationSeconds;
 			canvas->dragPath = currentNode.relativePath;
@@ -434,17 +419,15 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		widget::OpaqueWidget::step();
 	}
 
-	// draw (top bar only)
-
 	void draw(const DrawArgs& args) override {
 		widget::OpaqueWidget::draw(args);  // draw canvas child first
 		if (currentNode.relativePath.empty()) return;
 
 		float w = box.size.x;
 		bool isPlaying = modulePlaying ? modulePlaying->load() : false;
+		NVGcolor previewColor = canvas ? canvas->viewMode->accentColor : nvgRGBf(0.35f, 0.80f, 0.85f);
 
-		std::shared_ptr<Font> font = APP->window->loadFont(
-			asset::system("res/fonts/ShareTechMono-Regular.ttf"));
+		std::shared_ptr<Font> font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
 		nvgFontFaceId(args.vg, font->handle);
 
 		// Play/stop button
@@ -453,8 +436,6 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			? nvgRGBf(1.f, 0.85f, 0.1f)
 			: nvgRGBf(0.55f, 0.55f, 0.55f));
 		nvgText(args.vg, 8.f, 12.f, isPlaying ? "\xe2\x96\xa0" : "\xe2\x96\xb6", nullptr);
-
-		NVGcolor previewColor = canvas ? canvas->viewMode->accentColor : nvgRGBf(0.35f, 0.80f, 0.85f);
 
 		// Filename — gold when playing, otherwise the active mode's filename color
 		std::string fname = displayName.empty() ? currentNode.relativePath : displayName;
@@ -483,8 +464,9 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			if (info.bitDepth > 0) badges = rack::string::f("%dbit", info.bitDepth);
 			if (info.sampleRate > 0) badges = rack::string::f("%dk", info.sampleRate / 1000) + (badges.empty() ? "" : " \xc2\xb7 ") + badges;
 			if (info.channels > 0) badges = std::string(info.channels == 1 ? "MONO" : "STEREO") + (badges.empty() ? "" : " \xc2\xb7 ") + badges;
-			if (!badges.empty())
+			if (!badges.empty()) {
 				nvgText(args.vg, SirenWaveformCanvas::WAVE_X, 26.f, badges.c_str(), nullptr);
+			}
 		}
 
 		// Zoom level — right-aligned
@@ -552,8 +534,6 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 			}
 		}
 	}
-
-	// interaction
 
 	void onButton(const event::Button& e) override {
 		if (e.button == GLFW_MOUSE_BUTTON_RIGHT && e.action == GLFW_PRESS) {
@@ -674,9 +654,8 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		float bpmVal = bpm.load();
 		if (bpmVal <= 0.f || !onSetSearchQuery) return;
 
-		std::string bpmStr = std::to_string((int)bpmVal);
-
 		ui::Menu* menu = createMenu();
+		std::string bpmStr = std::to_string((int)bpmVal);
 		menu->addChild(createMenuLabel("Filter by BPM"));
 		menu->addChild(createMenuItem("bpm:" + bpmStr, "", [this, bpmStr]() {
 			onSetSearchQuery("bpm:" + bpmStr);
@@ -692,9 +671,8 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	void createLengthFilterMenu() {
 		if (info.durationSeconds <= 0.f || !onSetSearchQuery) return;
 
-		std::string lenStr = std::to_string((int)info.durationSeconds);
-
 		ui::Menu* menu = createMenu();
+		std::string lenStr = std::to_string((int)info.durationSeconds);
 		menu->addChild(createMenuLabel("Filter by length"));
 		menu->addChild(createMenuItem("length:<=" + lenStr + "s", "", [this, lenStr]() {
 			onSetSearchQuery("length:<=" + lenStr + "s");
@@ -704,7 +682,6 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		}));
 	}
 
-	// BPM detection
 	void startBpmDetection() {
 		if (!source || currentNode.relativePath.empty() || !worker) return;
 		if (bpm.load() < 0.f) return;
@@ -724,18 +701,12 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		});
 	}
 
-	// helpers
-
 	void startPlaybackFrom(float pos) {
 		if (startPlaybackCallback) startPlaybackCallback(pos);
 	}
 
 	bool isPlaying() const {
 		return modulePlaying && modulePlaying->load();
-	}
-
-	std::string cachePathFor(const std::string& audioPath) const {
-		return cacheDir + "/" + hashPath(audioPath) + ".json";
 	}
 };
 

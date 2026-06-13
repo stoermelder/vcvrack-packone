@@ -783,7 +783,6 @@ struct SirenWidget : ThemedModuleWidget<SirenModule> {
 		previewPane->box.pos = Vec(contentX + browserW + gapW, contentY + topBarH);  // relative to display
 		previewPane->box.size = Vec(previewW, paneH);
 		previewPane->init(&taskWorker, &dropHandler);
-		previewPane->cacheDir = sirenCacheDirPath();
 		SirenBrowserPane* bp = browserPane;
 		previewPane->externalStatusMessage = [bp]() { return bp->statusMessage(); };
 		previewPane->onSetSearchQuery = [bp](const std::string& q) { bp->setFilter(q); };

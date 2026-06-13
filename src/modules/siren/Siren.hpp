@@ -6,20 +6,6 @@
 namespace StoermelderPackOne {
 namespace Siren {
 
-// helper: settings file paths
-inline std::string settingsDirPath() {
-	return rack::asset::user("Stoermelder-P1");
-}
-
-inline std::string sirenFilePath() {
-	return settingsDirPath() + "/siren.json";
-}
-
-inline std::string sirenCacheDirPath() {
-	return settingsDirPath() + "/siren-cache";
-}
-
-// global siren settings
 struct SirenSettings {
 	std::vector<std::string> rootContainers;
 	int activeRootIdx = -1;

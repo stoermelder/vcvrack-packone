@@ -2,6 +2,7 @@
 #include <rack.hpp>
 #include <sstream>
 #include "../../utils/TaskWorker.hpp"
+#include "SirenPaths.hpp"
 #include "SirenMetadata.hpp"
 #include "SirenAudioStream.hpp"
 #include "SirenAudio.hpp"
@@ -134,7 +135,7 @@ enum class LoadState { IDLE, LOADING, READY };
 // Build a peak waveform by streaming from an open AudioStream — no full-file buffer needed.
 // Single sequential pass: large reads amortize decoder overhead; bucket boundaries are tracked
 // with a running counter so there is no division or seek in the inner loop.
-inline bool buildWaveformCache(int64_t timestamp, AudioStream& stream, int pixelWidth, WaveformCache& out) {
+inline bool buildWaveformCache(int64_t timestamp, AudioStream& stream, int pixelWidth, AudioWaveformCache& out) {
 	int channels = stream.channels();
 	int64_t total = stream.totalFrames();
 	if (pixelWidth <= 0 || total <= 0 || channels <= 0) return false;
@@ -450,6 +451,27 @@ struct DataSource {
 	// Modification timestamp for cache invalidation. 0 = caching disabled.
 	virtual int64_t getTimestamp(const std::string& id) const { return 0; }
 
+	// Path to the waveform cache file for `id`. Single source of truth for
+	// where this item's cache lives — callers must not derive or guess this
+	// path themselves. Virtual so subclasses (e.g. tests) can redirect.
+	virtual std::string cacheFilePathFor(const std::string& id) const {
+		return sirenCacheDirPath() + "/" + hashPath(id) + ".json";
+	}
+
+	// Load a previously-built waveform cache for `id`, if one exists and is
+	// still valid for `timestamp` (0 disables timestamp validation).
+	virtual bool loadWaveformCache(const std::string& id, int64_t timestamp, AudioWaveformCache& out) const {
+		return loadWaveformCacheFile(cacheFilePathFor(id), timestamp, out);
+	}
+
+	// Persist a built waveform cache for `id` to disk, creating the cache
+	// directory if necessary.
+	virtual void saveWaveformCache(const std::string& id, const AudioWaveformCache& cache) const {
+		std::string path = cacheFilePathFor(id);
+		rack::system::createDirectories(ghc::filesystem::path(path).parent_path().string());
+		saveWaveformCacheFile(path, cache);
+	}
+
 	// Load audio header metadata only (fast, no PCM decode).
 	virtual bool loadAudioInfo(const std::string& id, AudioInfo& out) const { return false; }
 
@@ -461,7 +483,7 @@ struct DataSource {
 
 	// Build a waveform cache by streaming audio frames — avoids full decode into memory.
 	virtual bool buildWaveformCache(const std::string& id, int64_t timestamp,
-			int pixelWidth, WaveformCache& out) const {
+			int pixelWidth, AudioWaveformCache& out) const {
 		auto stream = openAudioStream(id);
 		if (!stream) return false;
 		return ::StoermelderPackOne::Siren::buildWaveformCache(timestamp, *stream, pixelWidth, out);
@@ -469,7 +491,7 @@ struct DataSource {
 };
 
 // Loop preview: in-memory decode + process
-struct LoopPreviewResult {
+struct AudioPreviewResult {
 	std::vector<float> samples;   // interleaved float PCM after rotation+crossfade
 	int channels = 0;
 	int sampleRate = 0;
@@ -480,9 +502,9 @@ struct LoopPreviewResult {
 // Decode the trimmed region from src/id, apply rotation+crossfade, and return
 // the result as an in-memory buffer. Runs on the worker thread.
 // trimIn/trimOut are normalised [0, 1] over the full file.
-inline LoopPreviewResult buildLoopPreview(DataSource& src, const std::string& id,
+inline AudioPreviewResult buildLoopPreview(DataSource& src, const std::string& id,
 		float trimIn, float trimOut, float crossfadeDuration) {
-	LoopPreviewResult result;
+	AudioPreviewResult result;
 
 	AudioInfo info;
 	if (!src.loadAudioInfo(id, info)) return result;
@@ -519,9 +541,9 @@ inline LoopPreviewResult buildLoopPreview(DataSource& src, const std::string& id
 // Decode the trimmed region from src/id and shift its pitch by `semitones`
 // without changing its duration. Runs on the worker thread.
 // trimIn/trimOut are normalised [0, 1] over the full file.
-inline LoopPreviewResult buildRepitchPreview(DataSource& src, const std::string& id,
+inline AudioPreviewResult buildRepitchPreview(DataSource& src, const std::string& id,
 		float trimIn, float trimOut, float semitones) {
-	LoopPreviewResult result;
+	AudioPreviewResult result;
 
 	AudioInfo info;
 	if (!src.loadAudioInfo(id, info)) return result;

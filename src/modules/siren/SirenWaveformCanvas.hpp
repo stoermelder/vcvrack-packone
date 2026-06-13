@@ -56,7 +56,7 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 	static constexpr float SCROLLBAR_H = 12.f;
 
 	// display inputs (set by parent each step())
-	WaveformCache* cache = nullptr;  // non-owning pointer to parent's active cache
+	AudioWaveformCache* cache = nullptr;  // non-owning pointer to parent's active cache
 	bool cacheReady = false;
 	bool loopPreviewMode = false;    // tint + suppress trim handles
 	const CanvasViewMode* viewMode = &CanvasViewMode::normal(); // active mode's accent color, shared by waveform + header texts

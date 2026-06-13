@@ -334,11 +334,11 @@ TEST_CASE("MetadataStore::load: ignores a corrupt file without crashing", "[Sire
 	REQUIRE(store.getTags("a.wav") == std::vector<std::string>{"kept"});
 }
 
-// ─── WaveformCache: timestamp invalidation ────────────────────────────────────
+// ─── AudioWaveformCache: timestamp invalidation ────────────────────────────────────
 // cache tracks file mtime and reports empty/non-empty state.
-TEST_CASE("WaveformCache: timestamp validation", "[Siren][Audio]") {
+TEST_CASE("AudioWaveformCache: timestamp validation", "[Siren][Audio]") {
 	SECTION("Different timestamp is detected as stale") {
-		WaveformCache cache;
+		AudioWaveformCache cache;
 		cache.fileTimestamp = 12345;
 		// Simulate: stored timestamp != current mtime
 		// (We test the logic by checking the stored value)
@@ -347,12 +347,12 @@ TEST_CASE("WaveformCache: timestamp validation", "[Siren][Audio]") {
 	}
 
 	SECTION("Empty cache reports empty()") {
-		WaveformCache cache;
+		AudioWaveformCache cache;
 		REQUIRE(cache.empty() == true);
 	}
 
 	SECTION("Non-empty cache reports not empty") {
-		WaveformCache cache;
+		AudioWaveformCache cache;
 		cache.sampleCount = 100;
 		cache.samples.push_back(std::vector<float>(100, 0.f));
 		REQUIRE(cache.empty() == false);

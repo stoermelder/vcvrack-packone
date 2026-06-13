@@ -4,6 +4,7 @@
 #include <ghc/filesystem.hpp>
 #include <map>
 #include <vector>
+#include "SirenPaths.hpp"
 
 
 namespace StoermelderPackOne {
@@ -143,18 +144,6 @@ struct SampleMetadata {
 	int channels = 0; // channel count, 0 if unknown
 	int64_t fileTimestamp = 0; // file mtime when the audio info above was last read, 0 if unknown
 };
-
-// Compute 8-char hex hash of a string (for JSON filename derivation)
-inline std::string hashPath(const std::string& path) {
-	uint32_t h = 2166136261u;
-	for (unsigned char c : path) {
-		h ^= c;
-		h *= 16777619u;
-	}
-	char buf[9];
-	snprintf(buf, sizeof(buf), "%08x", h);
-	return std::string(buf);
-}
 
 struct MetadataStore {
 	std::string rootPath;

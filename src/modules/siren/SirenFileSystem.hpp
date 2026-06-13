@@ -12,8 +12,8 @@
 namespace StoermelderPackOne {
 namespace Siren {
 
-static const std::vector<std::string> SUPPORTED_EXTENSIONS = { ".wav", ".WAV", ".flac", ".FLAC", ".mp3", ".MP3" };
 inline bool isSupportedAudioFile(const std::string& path) {
+	static const std::vector<std::string> SUPPORTED_EXTENSIONS = { ".wav", ".WAV", ".flac", ".FLAC", ".mp3", ".MP3" };
 	std::string ext = rack::system::getExtension(rack::system::getFilename(path));
 	for (const std::string& e : SUPPORTED_EXTENSIONS) {
 		if (ext == e) return true;
@@ -48,8 +48,6 @@ inline bool isGeneratedFile(const std::string& filename) {
 	}
 	return filename.compare(filename.size() - 4, 4, ".wav") == 0;
 }
-
-// format-specific audio I/O (only place dr_libs are used directly)
 
 // Decode header-only metadata (fast; does not decode PCM).
 inline bool loadAudioInfo(const std::string& path, AudioInfo& out) {
@@ -153,26 +151,26 @@ struct FileSystemAudioStream : AudioStream {
 // FileSystemDataSource
 struct FileSystemDataSource : DataSource {
 	std::string root;
-	std::unique_ptr<MetadataStore> metadata_;
+	std::unique_ptr<MetadataStore> metadata;
 
 	// The metadata store can be substituted (e.g. in tests, to redirect
 	// persistence to a scratch location instead of the user's real settings
 	// folder) by passing a different MetadataStore subclass instance here.
 	explicit FileSystemDataSource(const std::string& rootPath,
 			std::unique_ptr<MetadataStore> store = std::unique_ptr<MetadataStore>(new MetadataStore()))
-			: root(rootPath), metadata_(std::move(store)) {
-		metadata_->rootPath = root;
-		metadata_->load();
+			: root(rootPath), metadata(std::move(store)) {
+		metadata->rootPath = root;
+		metadata->load();
 	}
 
 	~FileSystemDataSource() override {
 		saveMetadata();
 	}
 
-	MetadataStore* getMetadata() override { return metadata_.get(); }
+	MetadataStore* getMetadata() override { return metadata.get(); }
 
 	void saveMetadata() override {
-		metadata_->save();
+		metadata->save();
 	}
 
 	// Remove every waveform cache file keyed by a relative path in this root's
@@ -180,17 +178,18 @@ struct FileSystemDataSource : DataSource {
 	// re-adding the same root later preserves tags/favorites/BPM.
 	void cleanup() override {
 		if (isTesting()) return;
-		if (metadata_->samples.empty()) return;
+		if (metadata->samples.empty()) return;
 
-		std::string cacheDir = ::StoermelderPackOne::Siren::sirenCacheDirPath();
-		for (const auto& pair : metadata_->samples) {
-			std::string cacheFile = cacheDir + "/" + hashPath(pair.first) + ".json";
+		for (const auto& pair : metadata->samples) {
+			std::string cacheFile = cacheFilePathFor(pair.first);
 			std::error_code ec;
 			ghc::filesystem::remove(ghc::filesystem::path(cacheFile), ec);
 		}
 	}
 
-	std::string rootPath() const override { return root; }
+	std::string rootPath() const override {
+		return root;
+	}
 
 	std::string getRootDisplayName() const override {
 		return rootDisplayName(root);
@@ -202,7 +201,9 @@ struct FileSystemDataSource : DataSource {
 		return name.empty() ? p.string() : name;
 	}
 
-	std::string resolveAbsPath(const std::string& id) const { return root + id; }
+	std::string resolveAbsPath(const std::string& id) const {
+		return root + id;
+	}
 
 	DataSourceNode resolveNode(const std::string& relativePath) const override {
 		DataSourceNode node;
@@ -217,7 +218,7 @@ struct FileSystemDataSource : DataSource {
 	// file's current mtime, otherwise reading the audio header and updating the cache for next time.
 	float loadCachedDuration(const std::string& relativePath, const std::string& absPath) const {
 		int64_t ts = getFileTimestamp(absPath);
-		MetadataStore* meta = metadata_.get();
+		MetadataStore* meta = metadata.get();
 		if (meta && meta->hasValidAudioInfo(relativePath, ts)) {
 			return meta->samples.at(relativePath).durationSeconds;
 		}
@@ -449,6 +450,16 @@ struct FileSystemDataSource : DataSource {
 		samples.resize((size_t)(framesRead * channels));
 		if (framesRead <= 0) return srcPath;
 
+		// Repitch first: SoundTouch's window/hop time constants are tuned for the
+		// source sample rate, and pitch-shifting up can extend the spectrum above
+		// the source Nyquist — running SRC afterwards lets it anti-alias correctly.
+		// Operates on `samples` in place, so outPtr starts pointing at it.
+		if (repitchSemitones != 0.f) {
+			::StoermelderPackOne::Siren::applyRepitch(samples, channels, srcRate, repitchSemitones);
+			framesRead = (int64_t)(samples.size() / (size_t)channels);
+			if (framesRead <= 0) return srcPath;
+		}
+
 		// Resample: convert to targetSampleRate when it differs from the source rate.
 		int outRate = (targetSampleRate > 0 && targetSampleRate != srcRate)
 		            ? targetSampleRate : srcRate;
@@ -473,17 +484,6 @@ struct FileSystemDataSource : DataSource {
 			resampled.resize((size_t)outF * channels);
 			outPtr = resampled.data();
 			outFrames = (int64_t)outF;
-		}
-
-		// Repitch: shift pitch by repitchSemitones while preserving duration.
-		// Operates on an owned copy of the buffer so outPtr/resampled are replaced.
-		if (repitchSemitones != 0.f) {
-			std::vector<float> repitchBuf(outPtr, outPtr + (size_t)(outFrames * channels));
-			::StoermelderPackOne::Siren::applyRepitch(repitchBuf, channels, outRate, repitchSemitones);
-			resampled = std::move(repitchBuf);
-			outPtr = resampled.data();
-			outFrames = (int64_t)(resampled.size() / (size_t)channels);
-			if (outFrames <= 0) return srcPath;
 		}
 
 		// Loop post-processing: rotation + crossfade so the file loops smoothly.
@@ -512,27 +512,28 @@ struct FileSystemDataSource : DataSource {
 	}
 
 	void appendNodeMenuItems(ui::Menu* menu, const DataSourceNode& node, std::function<void()> onChanged) override {
-		struct NewTagField : ui::TextField {
-			FileSystemDataSource* src;
-			std::function<void()> onChanged;
-			std::function<void(const std::string&)> applyTag;
-			void onSelectKey(const event::SelectKey& e) override {
-				if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
-					std::string tag = rack::string::trim(text);
-					if (!tag.empty()) {
-						applyTag(tag);
-						src->saveMetadata();
-						if (onChanged) onChanged();
-					}
-					ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
-					if (overlay) overlay->requestDelete();
-					e.consume(this);
-					return;
-				}
-				if (!e.getTarget()) ui::TextField::onSelectKey(e);
-			}
-		};
 		auto addNewTagField = [&](std::function<void(const std::string&)> applyTag) {
+			struct NewTagField : ui::TextField {
+				FileSystemDataSource* src;
+				std::function<void()> onChanged;
+				std::function<void(const std::string&)> applyTag;
+				void onSelectKey(const event::SelectKey& e) override {
+					if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
+						std::string tag = rack::string::trim(text);
+						if (!tag.empty()) {
+							applyTag(tag);
+							src->saveMetadata();
+							if (onChanged) onChanged();
+						}
+						ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
+						if (overlay) overlay->requestDelete();
+						e.consume(this);
+						return;
+					}
+					if (!e.getTarget()) ui::TextField::onSelectKey(e);
+				}
+			};
+
 			NewTagField* ntf = new NewTagField;
 			ntf->box.size.x = 150.f;
 			ntf->placeholder = "New tag...";
@@ -545,14 +546,12 @@ struct FileSystemDataSource : DataSource {
 
 		if (node.isContainer) {
 			std::string absPath = resolveAbsPath(node.relativePath);
-
 			menu->addChild(createMenuItem("Show folder", "", [absPath]() {
 				rack::system::openDirectory(absPath);
 			}));
 
 			menu->addChild(new ui::MenuSeparator);
 			menu->addChild(createMenuLabel("Tags"));
-
 			std::string folderId = node.relativePath;
 			addNewTagField([this, folderId](const std::string& tag) {
 				auto children = loadChildrenSync(folderId, false);
@@ -582,7 +581,7 @@ struct FileSystemDataSource : DataSource {
 
 				auto allHave = [this, audioRels](std::string tag) {
 					for (const auto& rel : audioRels) {
-						auto fileTags = metadata_->getTags(rel);
+						auto fileTags = metadata->getTags(rel);
 						if (std::find(fileTags.begin(), fileTags.end(), tag) == fileTags.end()) {
 							return false;
 							break;
@@ -591,29 +590,28 @@ struct FileSystemDataSource : DataSource {
 					return true;
 				};
 
-				struct ContainerTagItem : ui::MenuItem {
-					FileSystemDataSource* src;
-					std::vector<std::string> rels;
-					std::string tag;
-					bool wasAllHave;
-					std::function<void()> onChanged;
-					void onAction(const event::Action& e) override {
-						if (wasAllHave) {
-							for (const auto& rel : rels) src->metadata_->removeTag(rel, tag);
-						}
-						else {
-							for (const auto& rel : rels) src->metadata_->addTag(rel, tag);
-						}
-						src->saveMetadata();
-						if (onChanged) onChanged();
-					}
-				};
-
-				auto allTagsSet = metadata_->allTags();
+				auto allTagsSet = metadata->allTags();
 				std::vector<std::string> sorted(allTagsSet.begin(), allTagsSet.end());
 				std::sort(sorted.begin(), sorted.end());
-
 				Rack::addGroupedMenuItems<std::string>(tagMenu, sorted, [this, audioRels, allHave, onChanged](const std::string& tag) -> ui::MenuItem* {
+					struct ContainerTagItem : ui::MenuItem {
+						FileSystemDataSource* src;
+						std::vector<std::string> rels;
+						std::string tag;
+						bool wasAllHave;
+						std::function<void()> onChanged;
+						void onAction(const event::Action& e) override {
+							if (wasAllHave) {
+								for (const auto& rel : rels) src->getMetadata()->removeTag(rel, tag);
+							}
+							else {
+								for (const auto& rel : rels) src->getMetadata()->addTag(rel, tag);
+							}
+							src->saveMetadata();
+							if (onChanged) onChanged();
+						}
+					};
+
 					ContainerTagItem* item = new ContainerTagItem;
 					item->text = tag;
 					item->rightText = CHECKMARK(allHave(tag));
@@ -632,15 +630,12 @@ struct FileSystemDataSource : DataSource {
 				rack::system::openDirectory(dir);
 			}));
 
-			std::string rel = node.relativePath;
-
 			menu->addChild(new ui::MenuSeparator);
-
-			// Favorite toggle
+			std::string rel = node.relativePath;
 			menu->addChild(createCheckMenuItem("Favorite", "",
-				[this, rel]() { return metadata_->isFavorite(rel); },
+				[this, rel]() { return metadata->isFavorite(rel); },
 				[this, rel, onChanged]() {
-					metadata_->setFavorite(rel, !metadata_->isFavorite(rel));
+					metadata->setFavorite(rel, !metadata->isFavorite(rel));
 					saveMetadata();
 					if (onChanged) onChanged();
 				}
@@ -648,7 +643,6 @@ struct FileSystemDataSource : DataSource {
 
 			menu->addChild(new ui::MenuSeparator);
 			menu->addChild(createMenuLabel("Tags"));
-
 			addNewTagField([this, rel](const std::string& tag) {
 				getMetadata()->addTag(rel, tag);
 			});
@@ -660,37 +654,29 @@ struct FileSystemDataSource : DataSource {
 				FileSystemDataSource* src;
 				std::function<void()> onChanged;
 				void onAction(const event::Action& e) override {
-					MetadataStore* metadata = src->getMetadata();
-					auto current = metadata->getTags(rel);
-					std::string tagLow = rack::string::lowercase(tag);
-					bool has = std::any_of(current.begin(), current.end(), [&](const std::string& t) {
-						return rack::string::lowercase(t) == tagLow;
-					});
-					if (has) {
-						metadata->removeTag(rel, tag);
-					}
-					else {
-						metadata->addTag(rel, tag);
-					}
+					if (has()) src->getMetadata()->removeTag(rel, tag);
+					else src->getMetadata()->addTag(rel, tag);
 					src->saveMetadata();
 					if (onChanged) onChanged();
 					e.unconsume();
 				}
 				void step() override {
+					rightText = CHECKMARK(has());
+					MenuItem::step();
+				}
+				bool has() {
 					auto current = src->getMetadata()->getTags(rel);
 					std::string tagLow = rack::string::lowercase(tag);
 					bool has = std::any_of(current.begin(), current.end(), [&](const std::string& t) {
 						return rack::string::lowercase(t) == tagLow;
 					});
-					rightText = CHECKMARK(has);
-					MenuItem::step();
+					return has;
 				}
 			};
 
-			auto allTagsSet = metadata_->allTags();
+			auto allTagsSet = metadata->allTags();
 			std::vector<std::string> sorted(allTagsSet.begin(), allTagsSet.end());
 			std::sort(sorted.begin(), sorted.end());
-
 			Rack::addGroupedMenuItems<std::string>(menu, sorted, [this, rel, onChanged](const std::string& tag) -> ui::MenuItem* {
 				FileTagItem* item = new FileTagItem;
 				item->text = tag;

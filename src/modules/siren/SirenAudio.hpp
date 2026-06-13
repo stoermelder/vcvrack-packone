@@ -16,7 +16,7 @@ struct AudioInfo {
 	float durationSeconds = 0.f;
 };
 
-struct WaveformCache {
+struct AudioWaveformCache {
 	// samples[channel][i] = sample value [-1, 1], decimated for display
 	std::vector<std::vector<float>> samples;
 	int sampleCount = 0;
@@ -87,7 +87,7 @@ inline std::vector<uint8_t> b64Decode(const std::string& s) {
 // int16, then base64-encoded into a JSON string.
 
 // expectedTimestamp == 0 disables cache validation (always load if file exists).
-inline bool loadWaveformCacheFile(const std::string& cachePath, int64_t expectedTimestamp, WaveformCache& out) {
+inline bool loadWaveformCacheFile(const std::string& cachePath, int64_t expectedTimestamp, AudioWaveformCache& out) {
 	if (isTesting()) return false;
 	FILE* f = fopen(cachePath.c_str(), "r");
 	if (!f) return false;
@@ -132,7 +132,7 @@ inline bool loadWaveformCacheFile(const std::string& cachePath, int64_t expected
 	return !out.samples.empty();
 }
 
-inline void saveWaveformCacheFile(const std::string& cachePath, const WaveformCache& cache) {
+inline void saveWaveformCacheFile(const std::string& cachePath, const AudioWaveformCache& cache) {
 	if (isTesting()) return;
 	if (cache.samples.empty() || cache.sampleCount == 0) return;
 
