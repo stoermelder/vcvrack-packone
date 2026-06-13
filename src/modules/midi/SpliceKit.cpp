@@ -31,10 +31,10 @@ static const NVGcolor LED_MIDI_LEARN = nvgRGBf(0.7f,       0.7f,       1.f      
 static const int COLOR_SET_COUNT = 4;
 struct ColorSet { NVGcolor color; const char* name; };
 static const ColorSet COLOR_SETS[COLOR_SET_COUNT] = {
-	{SCHEME_RED,               "Red"   },
-	{nvgRGB(0x10, 0x60, 0xff), "Blue"  },
-	{SCHEME_ORANGE,            "Orange"},
-	{SCHEME_GREEN,             "Green" },
+	{ SCHEME_RED,               "Red"    },
+	{ nvgRGB(0x10, 0x60, 0xff), "Blue"   },
+	{ SCHEME_ORANGE,            "Orange" },
+	{ SCHEME_GREEN,             "Green"  }
 };
 
 
@@ -220,6 +220,11 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 	int  pendingCellId         = -1;
 	bool pendingCellIsPhysical = false; // true = set by physical button, false = set by MIDI
 
+	// Tracks the last MIDI-activated scene that has not yet received a note-off / CC=0.
+	// When a second scene activation arrives while this is set (no release in between),
+	// the pair is interpreted as a copy from pendingMidiSceneId → new sceneId.
+	int pendingMidiSceneId = -1;
+
 	// Resets the pending-cell selection (called on cancel, completion, mode switch, and reset).
 	// Also clears the global cross-instance pending if this module was the initiator.
 	void clearPending() {
@@ -256,6 +261,9 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 	bool crossInstanceEnabled = true;
 	int overlayMessageId = -1;
 	OverlayMessageProvider::Message overlayMessage;
+
+	uint64_t sceneClipboard[MATRIX_COUNT] = {};
+	bool sceneClipboardValid = false;
 
 	// GUI thread — called once by Rack when the module is instantiated.
 	SpliceKitModule() {
@@ -446,8 +454,24 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 				clearPending();
 			}
 		}
-		else if (mapId < (uint16_t)TOTAL_MAPS && value > 0) {
-			requestSceneChange(mapId - MATRIX_COUNT);
+		else if (mapId < (uint16_t)TOTAL_MAPS) {
+			int sceneId = (int)(mapId - MATRIX_COUNT);
+			if (value > 0) {
+				if (pendingMidiSceneId >= 0 && pendingMidiSceneId != sceneId) {
+					// Two consecutive activations without a release: treat as scene copy.
+					int src = pendingMidiSceneId;
+					pendingMidiSceneId = -1;
+					requestCopyScene(src, sceneId);
+				}
+				else {
+					// Normal scene selection.
+					requestSceneChange(sceneId);
+					pendingMidiSceneId = sceneId;
+				}
+			}
+			else {
+				if (pendingMidiSceneId == sceneId) pendingMidiSceneId = -1;
+			}
 		}
 	}
 
@@ -909,6 +933,9 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 		const PortAssignment* outPd = nullptr;
 		const PortAssignment* inPd  = nullptr;
 		int outCell, inCell;
+		if (!a.isValid() || !b.isValid()) {
+			return;
+		}
 		if (a.type == engine::Port::OUTPUT && b.type == engine::Port::INPUT) {
 			outPd = &a; inPd = &b; outCell = cellIdA; inCell = cellIdB;
 		} 
@@ -918,7 +945,7 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 		else {
 			bool bothOut = (a.type == engine::Port::OUTPUT && b.type == engine::Port::OUTPUT);
 			setOverlayMessage(bothOut ? "Both ports are outputs" : "Both ports are inputs",
-			                  portLabel(a), portLabel(b));
+				portLabel(a), portLabel(b));
 			return;
 		}
 
@@ -1051,8 +1078,15 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 							outPd = &rPort; inPd = &iPort;
 						}
 						if (outPd) {
-							vcv::addCableToPort(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId, false);
-							initiator->setOverlayMessage("Cable created", portLabel(*outPd), portLabel(*inPd));
+							CableWidget* cw = vcv::findCable(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId);
+							if (!cw) {
+								vcv::addCableToPort(outPd->moduleId, outPd->portId, inPd->moduleId, inPd->portId, false);
+								setOverlayMessage("Cable created", portLabel(*outPd), portLabel(*inPd));
+							}
+							else {
+								vcv::removeCable(cw, false);
+								setOverlayMessage("Cable removed", portLabel(*outPd), portLabel(*inPd));
+							}
 						}
 					}
 					else {
@@ -1095,6 +1129,22 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 	void requestSceneChange(int i) {
 		if (!guiQueue.full()) {
 			guiQueue.push([this, i]() { switchScene(i); });
+		}
+	}
+
+	// GUI thread — copies scene src's connection topology to scene dst.
+	// If dst is the active scene, cables are updated live via reconcileScene.
+	void copyScene(int src, int dst) {
+		if (src == dst) return;
+		if (src == currentScene) captureScene(src);
+		reconcileScene(dst, sceneConnections[src]);
+		setOverlayMessage("Scene copied", string::f("%d \xe2\x86\x92 %d", src + 1, dst + 1));
+	}
+
+	// Engine thread — enqueues a copyScene call on the GUI thread via guiQueue.
+	void requestCopyScene(int src, int dst) {
+		if (!guiQueue.full()) {
+			guiQueue.push([this, src, dst]() { copyScene(src, dst); });
 		}
 	}
 
@@ -1175,6 +1225,9 @@ struct SpliceKitModule : Module, MidiTrackingProcessorHandler {
 		}
 	}
 };
+
+// Static field to communicate a pending state accross instances
+std::map<Context*, SpliceKitModule::CrossPendingState> SpliceKitModule::crossPending;
 
 
 // Overlay widget added directly to APP->scene->rack — drawn in rack coordinates.
@@ -1345,10 +1398,14 @@ struct SpliceKitVizOverlay : TransparentWidget {
 
 struct SpliceKitWidget;
 
+// Scene button with right-click context menu and drag-and-drop support.
+//   Left-drag  A → B : copy scene A's connections to scene B.
+//   Right-click      : open the per-scene context menu.
 struct SpliceKitSceneButton : app::SvgSwitch {
 	SpliceKitModule* module = nullptr;
 	SpliceKitWidget* mw = nullptr;
 	int sceneId = -1;
+	bool dragging = false;
 
 	SpliceKitSceneButton() {
 		momentary = true;
@@ -1365,6 +1422,38 @@ struct SpliceKitSceneButton : app::SvgSwitch {
 			return;
 		}
 		SvgSwitch::onButton(e);
+	}
+
+	void onDragStart(const event::DragStart& e) override {
+		if (e.button == GLFW_MOUSE_BUTTON_LEFT) dragging = true;
+		SvgSwitch::onDragStart(e);
+	}
+
+	void onDragEnd(const event::DragEnd& e) override {
+		dragging = false;
+		SvgSwitch::onDragEnd(e);
+	}
+
+	void drawLayer(const DrawArgs& args, int layer) override {
+		SvgSwitch::drawLayer(args, layer);
+		if (layer == 1 && dragging) {
+			nvgBeginPath(args.vg);
+			nvgRoundedRect(args.vg, RECT_ARGS(box.zeroPos().grow(2.f)), 3.8f);
+			nvgStrokeColor(args.vg, nvgRGBAf(1.f, 1.f, 1.f, 0.4f));
+			nvgStrokeWidth(args.vg, 1.5f);
+			nvgStroke(args.vg);
+		}
+	}
+
+	// Left-drag A → B copies scene A's connections to scene B.
+	void onDragDrop(const event::DragDrop& e) override {
+		SvgSwitch::onDragDrop(e);
+		if (!module) return;
+		auto* src = dynamic_cast<SpliceKitSceneButton*>(e.origin);
+		if (!src || src->module != module || src->sceneId == sceneId) return;
+		if (e.button == GLFW_MOUSE_BUTTON_LEFT) {
+			module->copyScene(src->sceneId, sceneId);
+		}
 	}
 
 	void createSceneMenu();
@@ -1524,9 +1613,6 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 		if (id != 0) return;
 		m = module->overlayMessage;
 	}
-
-	static uint64_t sceneClipboard[MATRIX_COUNT];
-	static bool sceneClipboardValid;
 
 	void onDeselect(const event::Deselect& e) override {
 		ThemedModuleWidget<SpliceKitModule>::onDeselect(e);
@@ -1708,6 +1794,10 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 			}
 		));
 		menu->addChild(new MenuSeparator);
+		menu->addChild(createCheckMenuItem("Visualize", "Space",
+			[=]() { return vizMode; },
+			[=]() { setVizMode(!vizMode); }
+		));
 		menu->addChild(createCheckMenuItem("Show overlay messages", "",
 			[=]() { return module->overlayEnabled; },
 			[=]() { module->overlayEnabled = !module->overlayEnabled; }
@@ -1733,9 +1823,6 @@ struct SpliceKitWidget : ThemedModuleWidget<SpliceKitModule>, OverlayMessageProv
 };
 
 
-uint64_t SpliceKitWidget::sceneClipboard[MATRIX_COUNT] = {};
-bool SpliceKitWidget::sceneClipboardValid = false;
-
 void SpliceKitCellButton::onEnter(const event::Enter& e) {
 	if (mw && mw->vizOverlay) mw->vizOverlay->hoveredCellId = cellId;
 	SvgSwitch::onEnter(e);
@@ -1759,13 +1846,13 @@ void SpliceKitSceneButton::createSceneMenu() {
 	}));
 	menu->addChild(createMenuItem("Copy", "", [=]() {
 		if (sceneId == module->currentScene) module->captureScene(sceneId);
-		memcpy(SpliceKitWidget::sceneClipboard, module->sceneConnections[sceneId], MATRIX_COUNT * sizeof(uint64_t));
-		SpliceKitWidget::sceneClipboardValid = true;
+		memcpy(module->sceneClipboard, module->sceneConnections[sceneId], MATRIX_COUNT * sizeof(uint64_t));
+		module->sceneClipboardValid = true;
 	}));
 	menu->addChild(createMenuItem("Paste", "", [=]() {
-		if (!SpliceKitWidget::sceneClipboardValid) return;
-		module->reconcileScene(sceneId, SpliceKitWidget::sceneClipboard);
-	}, !SpliceKitWidget::sceneClipboardValid));
+		if (!module->sceneClipboardValid) return;
+		module->reconcileScene(sceneId, module->sceneClipboard);
+	}, !module->sceneClipboardValid));
 
 	menu->addChild(new MenuSeparator);
 
@@ -1790,31 +1877,6 @@ void SpliceKitSceneButton::createSceneMenu() {
 	}
 }
 
-// Static field to communicate a pending state accross instances
-std::map<Context*, SpliceKitModule::CrossPendingState> SpliceKitModule::crossPending;
-
-
-struct LabelField : ui::TextField {
-	SpliceKitModule* module;
-	int id;
-	void onSelectKey(const event::SelectKey& e) override {
-		if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
-			module->cellLabels[id] = text;
-			ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
-			overlay->requestDelete();
-			e.consume(this);
-		}
-		if (!e.getTarget()) {
-			ui::TextField::onSelectKey(e);
-		}
-	}
-	void step() override {
-		APP->event->setSelectedWidget(this);
-		TextField::step();
-	}
-};
-
-
 void SpliceKitCellButton::createCellMenu() {
 	module->lastClickedCell = cellId;
 	auto& pa = module->portAssignments[cellId];
@@ -1831,6 +1893,26 @@ void SpliceKitCellButton::createCellMenu() {
 
 	ui::Menu* menu = createMenu();
 	menu->addChild(createMenuLabel(label.empty() ? string::f("Cell %d (unassigned)", cellId + 1) : label));
+
+	struct LabelField : ui::TextField {
+		SpliceKitModule* module;
+		int id;
+		void onSelectKey(const event::SelectKey& e) override {
+			if (e.action == GLFW_PRESS && e.key == GLFW_KEY_ENTER) {
+				module->cellLabels[id] = text;
+				ui::MenuOverlay* overlay = getAncestorOfType<ui::MenuOverlay>();
+				overlay->requestDelete();
+				e.consume(this);
+			}
+			if (!e.getTarget()) {
+				ui::TextField::onSelectKey(e);
+			}
+		}
+		void step() override {
+			APP->event->setSelectedWidget(this);
+			TextField::step();
+		}
+	};
 
 	menu->addChild(new MenuSeparator);
 	auto* lf = new LabelField;

@@ -29,15 +29,6 @@ When multiple SPLICE-KIT modules are present in the same patch, buttons from dif
 
 Cross-instance cables are **not part of the scene system**. They exist as ordinary patch cables and are not stored in or affected by scene changes on either module. The feature can be disabled per-instance via **Cross-instance patching** in the module context menu.
 
-### Drag gestures
-
-As a faster alternative to the two-press workflow, connections can be created or removed by dragging directly from one cell to another:
-
-- **Left-drag** cell A → cell B — toggle the connection between those two ports (same effect as pressing A then B in sequence).
-- **Shift + left-drag** cell A → cell B — move cell A's assignment to cell B: port, label, color, and all scene connections are transferred. Any previous assignment on cell B is discarded. MIDI mappings are **not** moved — each cell keeps its own mapping because it corresponds to a fixed physical button on the controller.
-
-While dragging, the source cell shows a faint border so it remains identifiable.
-
 ### Scenes
 
 The row of eight buttons at the bottom of the module selects the active scene. Each scene maintains its own independent cable state. Switching scenes reconciles the patch: cables that belong to the previous scene are removed and cables stored in the new scene are created.
@@ -54,6 +45,15 @@ Right-clicking a scene button opens its context menu:
 | **Learn MIDI** | Map a MIDI CC or note to this scene button |
 | **Clear MIDI** | Remove the MIDI mapping from this scene button |
 
+### Drag gestures
+
+As a faster alternative to the two-press workflow, connections can be created or removed by dragging directly from one cell to another:
+
+- **Left-drag** cell A → cell B — toggle the connection between those two ports (same effect as pressing A then B in sequence).
+- **Shift + left-drag** cell A → cell B — move cell A's assignment to cell B: port, label, color, and all scene connections are transferred. Any previous assignment on cell B is discarded. MIDI mappings are **not** moved — each cell keeps its own mapping because it corresponds to a fixed physical button on the controller.
+- **Left-drag on scene buttons** — creates a copy of the scene.
+
+While dragging, the source shows a faint border so it remains identifiable.
 
 ### LED colors
 
