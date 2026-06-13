@@ -36,7 +36,7 @@ static const int SIREN_TAG_NUM_FEATURES = 53;
 
 struct SuggestedTag {
 	std::string name;
-	float       score;
+	float score;
 };
 
 namespace TagClassifierDetail {
@@ -240,10 +240,11 @@ struct TagClassifier {
 	}
 
 	// Number of classes in the loaded model (0 if no model registered yet).
-	static int numClasses() { return _model().numClasses; }
+	static int numClasses() {
+		return _model().numClasses;
+	}
 
 	// Scoring
-
 	// Score a feature vector. `out` must be numClasses() floats.
 	// Clamps features and scores to [0, 1]. No-op if no model is loaded.
 	static void score(const float features[SIREN_TAG_NUM_FEATURES], float* out) {

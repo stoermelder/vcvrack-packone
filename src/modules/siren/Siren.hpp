@@ -110,10 +110,10 @@ struct SirenSettings {
 		json_object_set_new(j, "activeRootIdx", json_integer(activeRootIdx));
 		json_object_set_new(j, "lastFile", json_string(lastFile.c_str()));
 		json_object_set_new(j, "lastPlayheadPos", json_real(lastPlayheadPos));
-		json_object_set_new(j, "loopPlayback",        json_boolean(loopPlayback));
+		json_object_set_new(j, "loopPlayback", json_boolean(loopPlayback));
 		json_object_set_new(j, "resampleOnPlayback", json_boolean(resampleOnPlayback));
-		json_object_set_new(j, "resampleOnDrop",     json_boolean(resampleOnDrop));
-		json_object_set_new(j, "resampleQuality",    json_integer(resampleQuality));
+		json_object_set_new(j, "resampleOnDrop", json_boolean(resampleOnDrop));
+		json_object_set_new(j, "resampleQuality", json_integer(resampleQuality));
 		json_object_set_new(j, "convertToWavOnDrop", json_boolean(convertToWavOnDrop));
 		json_object_set_new(j, "customConvertDir", json_string(customConvertDir.c_str()));
 		return j;

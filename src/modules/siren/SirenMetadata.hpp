@@ -294,31 +294,19 @@ struct MetadataStore {
 				}
 
 				json_t* bpmJ = json_object_get(fileJ, "bpm");
+				if (bpmJ) meta.bpm = (float)json_number_value(bpmJ);
 				json_t* confJ = json_object_get(fileJ, "bpmConfidence");
-				if (bpmJ && json_is_number(bpmJ))
-					meta.bpm = (float)json_number_value(bpmJ);
-				if (confJ && json_is_number(confJ))
-					meta.bpmConfidence = (float)json_number_value(confJ);
-
+				if (confJ) meta.bpmConfidence = (float)json_number_value(confJ);
 				json_t* durationJ = json_object_get(fileJ, "duration");
-				if (durationJ && json_is_number(durationJ))
-					meta.durationSeconds = (float)json_number_value(durationJ);
-
+				if (durationJ) meta.durationSeconds = (float)json_number_value(durationJ);
 				json_t* sampleRateJ = json_object_get(fileJ, "sampleRate");
-				if (sampleRateJ && json_is_integer(sampleRateJ))
-					meta.sampleRate = (int)json_integer_value(sampleRateJ);
-
+				if (sampleRateJ) meta.sampleRate = (int)json_integer_value(sampleRateJ);
 				json_t* bitDepthJ = json_object_get(fileJ, "bitDepth");
-				if (bitDepthJ && json_is_integer(bitDepthJ))
-					meta.bitDepth = (int)json_integer_value(bitDepthJ);
-
+				if (bitDepthJ) meta.bitDepth = (int)json_integer_value(bitDepthJ);
 				json_t* channelsJ = json_object_get(fileJ, "channels");
-				if (channelsJ && json_is_integer(channelsJ))
-					meta.channels = (int)json_integer_value(channelsJ);
-
+				if (channelsJ) meta.channels = (int)json_integer_value(channelsJ);
 				json_t* mtimeJ = json_object_get(fileJ, "mtime");
-				if (mtimeJ && json_is_integer(mtimeJ))
-					meta.fileTimestamp = (int64_t)json_integer_value(mtimeJ);
+				if (mtimeJ) meta.fileTimestamp = (int64_t)json_integer_value(mtimeJ);
 			}
 		}
 	}

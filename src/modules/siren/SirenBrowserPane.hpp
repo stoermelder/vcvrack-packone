@@ -324,7 +324,6 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 	SirenIndexTask indexTask;
 	SirenClassifyTask classifyTask;
 
-
 	// Defined after SirenTagBar
 	void init(TaskWorker* tw);
 	void setSize(Vec size);
@@ -592,8 +591,8 @@ struct SirenBrowserPane : widget::OpaqueWidget {
 		for (int i = 0; i < (int)rows.size(); i++) {
 			const std::string& rp = rows[i].node.relativePath;
 			if (rp.size() > bestLen && rp.size() < pendingRevealPath.size()
-			    && pendingRevealPath.compare(0, rp.size(), rp) == 0
-			    && pendingRevealPath[rp.size()] == '/') {
+					&& pendingRevealPath.compare(0, rp.size(), rp) == 0
+					&& pendingRevealPath[rp.size()] == '/') {
 				bestIdx = i;
 				bestLen = rp.size();
 			}
@@ -882,7 +881,6 @@ struct SirenTagContainer : widget::OpaqueWidget {
 		}
 		OpaqueWidget::onButton(e);
 	}
-
 };
 
 
@@ -937,7 +935,6 @@ struct SirenTagBar : widget::OpaqueWidget {
 
 		OpaqueWidget::draw(args);
 	}
-
 };
 
 
@@ -995,8 +992,9 @@ inline void SirenBrowserPane::rebuildRowWidgets() {
 			}
 		}
 		else {
-			if (favoritesOnly && meta && !meta->isFavorite(n.relativePath))
+			if (favoritesOnly && meta && !meta->isFavorite(n.relativePath)) {
 				continue;
+			}
 			if ((!tagFilter.empty() || !tagExcludeFilter.empty()) && meta) {
 				auto tags = meta->getTags(n.relativePath);
 				if (!tagFilter.empty()) {

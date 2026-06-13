@@ -307,11 +307,9 @@ private:
 	static std::function<std::string(int, int)> makeSummaryFn(bool isDir, std::string name) {
 		return [isDir, name](int sel, int items) -> std::string {
 			if (isDir) {
-				return rack::string::f("%d tag%s across %d file%s",
-					sel, sel == 1 ? "" : "s", items, items == 1 ? "" : "s");
+				return rack::string::f("%d tag%s across %d file%s", sel, sel == 1 ? "" : "s", items, items == 1 ? "" : "s");
 			}
-			return rack::string::f("%d tag%s for %s",
-				sel, sel == 1 ? "" : "s", name.c_str());
+			return rack::string::f("%d tag%s for %s", sel, sel == 1 ? "" : "s", name.c_str());
 		};
 	}
 };

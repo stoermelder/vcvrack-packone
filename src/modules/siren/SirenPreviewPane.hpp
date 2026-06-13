@@ -97,6 +97,9 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 	SirenDropHandler* dropHandler = nullptr;
 	TaskWorker* worker = nullptr;
 
+	std::function<void()> onMetadataChanged;
+	std::function<void(const std::string&)> onSetSearchQuery;
+
 	// BPM
 	std::atomic<float> bpm{0.f};
 	Rect bpmHitRect;
@@ -111,15 +114,17 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		);
 	}
 
-	MetadataStore* metadata() const { return source ? source->getMetadata() : nullptr; }
-	std::function<void()> onMetadataChanged;
-	std::function<void(const std::string&)> onSetSearchQuery;
+	MetadataStore* metadata() const {
+		return source ? source->getMetadata() : nullptr;
+	}
 
-	// public accessors for SirenWidget
-	bool isLoopPreviewActive() const { return loopPreviewActive && !previewIsRepitch; }
-	bool isRepitchPreviewActive() const { return loopPreviewActive && previewIsRepitch; }
+	bool isLoopPreviewActive() const {
+		return loopPreviewActive && !previewIsRepitch;
+	}
 
-	// init
+	bool isRepitchPreviewActive() const {
+		return loopPreviewActive && previewIsRepitch;
+	}
 
 	void init(TaskWorker* tw, SirenDropHandler* dh) {
 		worker = tw;
@@ -146,10 +151,8 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		addChild(canvas);
 	}
 
-	// file loading
-
 	void loadItem(const DataSourceNode& node, std::shared_ptr<DataSource> src,
-	              bool startPlay = false, bool forceRebuild = false) {
+			bool startPlay = false, bool forceRebuild = false) {
 		const std::string& id = node.relativePath;
 
 		if (stopPlaybackCallback) stopPlaybackCallback();
@@ -325,8 +328,9 @@ struct SirenPreviewPane : widget::OpaqueWidget {
 		loopCache = AudioWaveformCache{};
 
 		// Restore original file stream and module trim points
-		if (openStreamCallback && source && !currentNode.relativePath.empty())
+		if (openStreamCallback && source && !currentNode.relativePath.empty()) {
 			openStreamCallback(currentNode.relativePath, source.get());
+		}
 		if (canvas) {
 			if (moduleInPoint) moduleInPoint->store(canvas->inPoint, std::memory_order_relaxed);
 			if (moduleOutPoint) moduleOutPoint->store(canvas->outPoint, std::memory_order_relaxed);

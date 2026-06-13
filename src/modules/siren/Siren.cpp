@@ -43,7 +43,6 @@ struct SirenModule : Module {
 
 	// audio streaming
 	// The module owns all audio state; the widget only drives the UI.
-
 	// lock-free command channel (UI → fill thread)
 	// UI sets; fill thread exchange()s to nullptr/-1/false to consume.
 	// No mutex on any audio path — only atomics and ring buffers.
@@ -419,8 +418,7 @@ struct SirenModule : Module {
 					int64_t stopAt = (int64_t)(trimOut.load(std::memory_order_relaxed) * (float)total);
 					// Convert stopAt (file frames) to output-frame count from the seek base
 					int64_t stopAtOut = (int64_t)(((float)stopAt - (float)seekBaseFrame) * ratio);
-					if (stopAtOut > 0
-					        && count >= stopAtOut
+					if (stopAtOut > 0 && count >= stopAtOut
 					        && pendingSeekFrame.load(std::memory_order_relaxed) < 0) {
 						if (sirenSettings.loopPlayback) {
 							// The fill thread has already wrapped at trimOut → trimIn seamlessly,
@@ -494,9 +492,11 @@ struct SirenModule : Module {
 	}
 };
 
-// display widget
+
 struct SirenDisplayWidget : OpaqueWidget {
-	void draw(const DrawArgs& args) override {}
+	void draw(const DrawArgs& args) override {
+		// Intentionally empty
+	}
 	void drawLayer(const DrawArgs& args, int layer) override {
 		if (layer != 1) return;
 		float b = std::max(0.2f, settings::rackBrightness);
@@ -597,8 +597,8 @@ struct SirenDragOverlay : widget::TransparentWidget {
 		if (dropHandler->mouseIsInsideModule()) return;
 
 		std::string lbl = !dropHandler->dragDisplayName.empty()
-		                ? dropHandler->dragDisplayName
-		                : dropHandler->dragPath;
+			? dropHandler->dragDisplayName
+			: dropHandler->dragPath;
 
 		Vec mp = APP->scene->rack->getMousePos();
 

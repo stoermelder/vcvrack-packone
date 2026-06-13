@@ -602,11 +602,11 @@ TEST_CASE("parseSearchQuery: splits plain text from numeric filters", "[Siren][S
 	SearchQuery q = parseSearchQuery("Kick bpm:140 length:<1s");
 	REQUIRE(q.text == "kick");
 	REQUIRE(q.filters.size() == 2);
-	REQUIRE(q.filters[0].field == SearchFilterField::Bpm);
-	REQUIRE(q.filters[0].op == SearchFilterOp::Eq);
+	REQUIRE(q.filters[0].field == SearchFilter::Field::Bpm);
+	REQUIRE(q.filters[0].op == SearchFilter::Op::Eq);
 	REQUIRE(q.filters[0].value == Catch::Approx(140.f));
-	REQUIRE(q.filters[1].field == SearchFilterField::Length);
-	REQUIRE(q.filters[1].op == SearchFilterOp::Lt);
+	REQUIRE(q.filters[1].field == SearchFilter::Field::Length);
+	REQUIRE(q.filters[1].op == SearchFilter::Op::Lt);
 	REQUIRE(q.filters[1].value == Catch::Approx(1.f));
 }
 
@@ -614,8 +614,8 @@ TEST_CASE("parseSearchQuery: length filter accepts minute unit and >= operator",
 	SearchQuery q = parseSearchQuery("length:>=2.5m");
 	REQUIRE(q.text.empty());
 	REQUIRE(q.filters.size() == 1);
-	REQUIRE(q.filters[0].field == SearchFilterField::Length);
-	REQUIRE(q.filters[0].op == SearchFilterOp::Ge);
+	REQUIRE(q.filters[0].field == SearchFilter::Field::Length);
+	REQUIRE(q.filters[0].op == SearchFilter::Op::Ge);
 	REQUIRE(q.filters[0].value == Catch::Approx(150.f)); // 2.5 minutes -> seconds
 }
 

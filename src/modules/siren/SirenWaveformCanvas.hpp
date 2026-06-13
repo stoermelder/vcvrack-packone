@@ -15,8 +15,8 @@ namespace Siren {
 // many special views exist — adding one is just a new named instance, not a
 // new flag.
 struct CanvasViewMode {
-	NVGcolor    accentColor;
-	NVGcolor    filenameColor;
+	NVGcolor accentColor;
+	NVGcolor filenameColor;
 	std::string label;
 	std::string generatingMessage;
 
@@ -165,8 +165,7 @@ struct SirenWaveformCanvas : widget::OpaqueWidget {
 		float waveH = waveRect.size.y;
 		float waveY = waveRect.pos.y;
 
-		std::shared_ptr<Font> font = APP->window->loadFont(
-			asset::system("res/fonts/ShareTechMono-Regular.ttf"));
+		std::shared_ptr<Font> font = APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
 		nvgFontFaceId(args.vg, font->handle);
 
 		NVGcolor previewColor = viewMode->accentColor;

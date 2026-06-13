@@ -455,7 +455,7 @@ struct FileSystemDataSource : DataSource {
 
 		// Resample: convert to targetSampleRate when it differs from the source rate.
 		int outRate = (targetSampleRate > 0 && targetSampleRate != srcRate)
-		            ? targetSampleRate : srcRate;
+			? targetSampleRate : srcRate;
 		std::vector<float> resampled;
 		const float* outPtr = samples.data();
 		int64_t outFrames = framesRead;
@@ -701,8 +701,7 @@ inline RootContainer createRootContainer(const std::string& path) {
 
 // Opens a native folder picker and, if the user selects a folder, fills
 // `out` with the corresponding RootContainer. Returns false if the dialog
-// was cancelled. The dialog itself is filesystem-specific, so it lives here
-// alongside the other "fs" root construction logic.
+// was cancelled.
 inline bool createNewRootContainer(RootContainer& out) {
 	char* path = osdialog_file(OSDIALOG_OPEN_DIR, nullptr, nullptr, nullptr);
 	if (!path) return false;

@@ -47,19 +47,19 @@ inline RootContainer createRootContainer(const std::string& path, const std::str
 }
 
 
-// Search query
-// The search field accepts plain text plus optional numeric filter terms of
-// the form "key:[op]value[unit]", e.g. "bpm:140", "bpm:>120", "length:<1s",
-// "length:>=2.5m". Recognised keys: "bpm", and "length"/"duration"/"len" for
-// the file's duration (unit "s"/"sec" or "m"/"min", default seconds).
-// Operators: "<", "<=", ">", ">=", "=" (default "=", matched with a small
-// tolerance since these are detected/measured values).
-enum class SearchFilterField { Bpm, Length };
-enum class SearchFilterOp { Eq, Lt, Le, Gt, Ge };
-
 struct SearchFilter {
-	SearchFilterField field;
-	SearchFilterOp op;
+	// Search query
+	// The search field accepts plain text plus optional numeric filter terms of
+	// the form "key:[op]value[unit]", e.g. "bpm:140", "bpm:>120", "length:<1s",
+	// "length:>=2.5m". Recognised keys: "bpm", and "length"/"duration"/"len" for
+	// the file's duration (unit "s"/"sec" or "m"/"min", default seconds).
+	// Operators: "<", "<=", ">", ">=", "=" (default "=", matched with a small
+	// tolerance since these are detected/measured values).
+	enum class Field { Bpm, Length };
+	enum class Op { Eq, Lt, Le, Gt, Ge };
+
+	Field field;
+	Op op;
 	float value;
 };
 
@@ -71,19 +71,19 @@ inline bool parseSearchFilter(const std::string& lowerToken, SearchFilter& out) 
 	std::string key = lowerToken.substr(0, colon);
 	std::string rest = lowerToken.substr(colon + 1);
 
-	SearchFilterField field;
-	if (key == "bpm") field = SearchFilterField::Bpm;
-	else if (key == "length" || key == "duration" || key == "len") field = SearchFilterField::Length;
+	SearchFilter::Field field;
+	if (key == "bpm") field = SearchFilter::Field::Bpm;
+	else if (key == "length" || key == "duration" || key == "len") field = SearchFilter::Field::Length;
 	else return false;
 
-	SearchFilterOp op = SearchFilterOp::Eq;
+	SearchFilter::Op op = SearchFilter::Op::Eq;
 	if (!rest.empty() && (rest[0] == '<' || rest[0] == '>')) {
 		if (rest.size() >= 2 && rest[1] == '=') {
-			op = (rest[0] == '<') ? SearchFilterOp::Le : SearchFilterOp::Ge;
+			op = (rest[0] == '<') ? SearchFilter::Op::Le : SearchFilter::Op::Ge;
 			rest = rest.substr(2);
 		}
 		else {
-			op = (rest[0] == '<') ? SearchFilterOp::Lt : SearchFilterOp::Gt;
+			op = (rest[0] == '<') ? SearchFilter::Op::Lt : SearchFilter::Op::Gt;
 			rest = rest.substr(1);
 		}
 	}
@@ -101,7 +101,7 @@ inline bool parseSearchFilter(const std::string& lowerToken, SearchFilter& out) 
 	catch (...) { return false; }
 
 	std::string unit = rest.substr(numEnd);
-	if (field == SearchFilterField::Length) {
+	if (field == SearchFilter::Field::Length) {
 		if (unit == "m" || unit == "min") value *= 60.f;
 		else if (!unit.empty() && unit != "s" && unit != "sec") return false;
 	}
@@ -117,21 +117,23 @@ struct SearchQuery {
 	std::string text;  // lowercase plain-text portion, possibly empty
 	std::vector<SearchFilter> filters;
 
-	bool empty() const { return text.empty() && filters.empty(); }
+	bool empty() const {
+		return text.empty() && filters.empty();
+	}
 
 	// Returns true if meta satisfies every numeric filter. Files with an
 	// unknown (zero) value for a filtered field never match that filter.
 	bool matchesMetadata(const SampleMetadata& meta) const {
 		for (const SearchFilter& f : filters) {
-			float v = (f.field == SearchFilterField::Bpm) ? meta.bpm : meta.durationSeconds;
+			float v = (f.field == SearchFilter::Field::Bpm) ? meta.bpm : meta.durationSeconds;
 			if (v <= 0.f) return false;
-			float eps = (f.field == SearchFilterField::Bpm) ? 0.5f : 0.005f;
+			float eps = (f.field == SearchFilter::Field::Bpm) ? 0.5f : 0.005f;
 			switch (f.op) {
-				case SearchFilterOp::Eq: if (std::abs(v - f.value) > eps) return false; break;
-				case SearchFilterOp::Lt: if (!(v < f.value))  return false; break;
-				case SearchFilterOp::Le: if (!(v <= f.value)) return false; break;
-				case SearchFilterOp::Gt: if (!(v > f.value))  return false; break;
-				case SearchFilterOp::Ge: if (!(v >= f.value)) return false; break;
+				case SearchFilter::Op::Eq: if (std::abs(v - f.value) > eps) return false; break;
+				case SearchFilter::Op::Lt: if (!(v < f.value)) return false; break;
+				case SearchFilter::Op::Le: if (!(v <= f.value)) return false; break;
+				case SearchFilter::Op::Gt: if (!(v > f.value)) return false; break;
+				case SearchFilter::Op::Ge: if (!(v >= f.value)) return false; break;
 			}
 		}
 		return true;
